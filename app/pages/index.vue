@@ -18,40 +18,32 @@
       </div>
     </section>
 
-    <!-- Statistics Section (Thiết kế lại cao cấp, hiện đại) -->
+    <!-- Statistics Section -->
     <section class="stats-section">
       <div class="container stats-grid">
         <div class="stat-card">
-          <div class="stat-icon-wrapper">
-            <span class="stat-icon-svg">🏢</span>
-          </div>
+          <div class="stat-icon">🏢</div>
           <div class="stat-info">
             <span class="stat-number">63</span>
             <span class="stat-label">Tỉnh / Thành phố đồng hành</span>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon-wrapper">
-            <span class="stat-icon-svg">🤝</span>
-          </div>
+          <div class="stat-icon">🤝</div>
           <div class="stat-info">
             <span class="stat-number">10.000+</span>
             <span class="stat-label">Người hoàn lương được hỗ trợ</span>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon-wrapper">
-            <span class="stat-icon-svg">🌟</span>
-          </div>
+          <div class="stat-icon">🌟</div>
           <div class="stat-info">
             <span class="stat-number">500+</span>
             <span class="stat-label">Mô hình kinh tế tiêu biểu</span>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon-wrapper">
-            <span class="stat-icon-svg">📞</span>
-          </div>
+          <div class="stat-icon">📞</div>
           <div class="stat-info">
             <span class="stat-number">24/7</span>
             <span class="stat-label">Tư vấn pháp lý & Tâm lý miễn phí</span>
@@ -432,94 +424,49 @@ const submitForm = () => {
 /* Statistics Bar */
 .stats-section {
   position: relative;
-  margin-top: -80px;
+  margin-top: -50px;
   z-index: 10;
-  padding: 0;
 }
 
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 24px;
+  gap: 20px;
 }
 
 .stat-card {
-  background: rgba(255, 255, 255, 0.96);
-  backdrop-filter: blur(10px);
+  background-color: var(--white);
   border-radius: var(--radius-md);
-  padding: 30px 20px;
-  box-shadow: 0 15px 35px rgba(74, 103, 65, 0.08);
+  padding: 24px;
+  box-shadow: var(--shadow-md);
   display: flex;
-  flex-direction: column;
   align-items: center;
-  text-align: center;
   gap: 16px;
-  border: 1px solid rgba(255, 255, 255, 0.8);
-  transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
-  position: relative;
-  overflow: hidden;
-}
-
-.stat-card::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 0;
-  height: 4px;
-  background-color: var(--secondary);
-  border-radius: 2px;
+  border-bottom: 4px solid var(--primary);
   transition: var(--transition);
 }
 
 .stat-card:hover {
-  transform: translateY(-8px);
-  box-shadow: 0 20px 45px rgba(74, 103, 65, 0.15);
-  border-color: rgba(124, 179, 66, 0.3);
+  transform: translateY(-4px);
+  border-bottom-color: var(--secondary);
 }
 
-.stat-card:hover::after {
-  width: 50%;
-}
-
-.stat-icon-wrapper {
-  width: 56px;
-  height: 56px;
-  background-color: rgba(74, 103, 65, 0.06);
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: var(--transition);
-}
-
-.stat-card:hover .stat-icon-wrapper {
-  background-color: var(--secondary);
-}
-
-.stat-icon-svg {
-  font-size: 1.6rem;
-  transition: var(--transition);
-}
-
-.stat-card:hover .stat-icon-svg {
-  transform: scale(1.1);
+.stat-icon {
+  font-size: 2.2rem;
 }
 
 .stat-number {
-  font-size: 2rem;
-  font-weight: 850;
+  font-size: 1.8rem;
+  font-weight: 800;
   color: var(--primary-dark);
-  line-height: 1.2;
-  margin-bottom: 6px;
+  display: block;
 }
 
 .stat-label {
-  font-size: 0.85rem;
+  font-size: 0.82rem;
   color: var(--text-medium);
   font-weight: 600;
-  line-height: 1.4;
+  line-height: 1.3;
 }
 
 /* Split News Section (Latest vs Trending) */
