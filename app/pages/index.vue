@@ -345,8 +345,8 @@ const submitForm = () => {
 /* Hero Section */
 .hero-section {
   position: relative;
-  background: url('/assets/hero_banner.jpg') center/cover no-repeat;
-  padding: 100px 0 140px 0;
+  background: url('/assets/hero_banner.jpg') center 65% / cover no-repeat;
+  padding: 70px 0 110px 0;
   color: white;
 }
 
