@@ -130,9 +130,6 @@
         </div>
       </div>
     </section>
-    </section>
-
-    </section>
 
     <!-- Sub News Columns (Tuyên truyền cảnh báo & Tin địa phương) -->
     <section class="section section-bg bca-sub-news-columns">
@@ -1912,6 +1909,5 @@ const toggleFaqIndex = (index) => {
   .faq-accordion-answer {
     padding: 14px 18px;
   }
-}
 }
 </style>
