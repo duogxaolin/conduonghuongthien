@@ -22,32 +22,20 @@
     <section class="stats-section">
       <div class="container stats-grid">
         <div class="stat-card">
-          <div class="stat-icon">🏢</div>
-          <div class="stat-info">
-            <span class="stat-number">63</span>
-            <span class="stat-label">Tỉnh / Thành phố đồng hành</span>
-          </div>
+          <span class="stat-number">63</span>
+          <span class="stat-label">Tỉnh / Thành phố đồng hành</span>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">🤝</div>
-          <div class="stat-info">
-            <span class="stat-number">10.000+</span>
-            <span class="stat-label">Người hoàn lương được hỗ trợ</span>
-          </div>
+          <span class="stat-number">10.000+</span>
+          <span class="stat-label">Người hoàn lương được hỗ trợ</span>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">🌟</div>
-          <div class="stat-info">
-            <span class="stat-number">500+</span>
-            <span class="stat-label">Mô hình kinh tế tiêu biểu</span>
-          </div>
+          <span class="stat-number">500+</span>
+          <span class="stat-label">Mô hình kinh tế tiêu biểu</span>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">📞</div>
-          <div class="stat-info">
-            <span class="stat-number">24/7</span>
-            <span class="stat-label">Tư vấn pháp lý & Tâm lý miễn phí</span>
-          </div>
+          <span class="stat-number">24/7</span>
+          <span class="stat-label">Tư vấn pháp lý & Tâm lý miễn phí</span>
         </div>
       </div>
     </section>
@@ -424,7 +412,7 @@ const submitForm = () => {
 /* Statistics Bar */
 .stats-section {
   position: relative;
-  margin-top: -50px;
+  margin-top: -40px;
   z-index: 10;
 }
 
@@ -436,37 +424,33 @@ const submitForm = () => {
 
 .stat-card {
   background-color: var(--white);
-  border-radius: var(--radius-md);
-  padding: 24px;
-  box-shadow: var(--shadow-md);
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  border-bottom: 4px solid var(--primary);
+  border-radius: var(--radius-sm);
+  padding: 30px 20px;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.04);
+  border: 1px solid var(--border-color);
+  text-align: center;
   transition: var(--transition);
 }
 
 .stat-card:hover {
-  transform: translateY(-4px);
-  border-bottom-color: var(--secondary);
-}
-
-.stat-icon {
-  font-size: 2.2rem;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(0,0,0,0.06);
 }
 
 .stat-number {
-  font-size: 1.8rem;
+  font-size: 2.2rem;
   font-weight: 800;
-  color: var(--primary-dark);
+  color: var(--primary);
   display: block;
+  margin-bottom: 8px;
 }
 
 .stat-label {
-  font-size: 0.82rem;
+  font-size: 0.88rem;
   color: var(--text-medium);
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.4;
+  display: block;
 }
 
 /* Split News Section (Latest vs Trending) */
