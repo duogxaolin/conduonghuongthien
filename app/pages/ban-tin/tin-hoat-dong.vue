@@ -17,9 +17,9 @@
             </div>
             <div class="news-item-info">
               <span class="news-item-date">{{ item.date }} • Tin hoạt động</span>
-              <h3><a href="#">{{ item.title }}</a></h3>
+              <h3><nuxt-link :to="'/ban-tin/' + item.slug">{{ item.title }}</nuxt-link></h3>
               <p>{{ item.excerpt }}</p>
-              <a href="#" class="read-more-link">Chi tiết &rarr;</a>
+              <nuxt-link :to="'/ban-tin/' + item.slug" class="read-more-link">Chi tiết &rarr;</nuxt-link>
             </div>
           </div>
         </div>
@@ -32,6 +32,7 @@
 const newsItems = [
   {
     id: 1,
+    slug: 'quang-ninh-van-don-ho-tro-viec-lam',
     title: 'QUẢNG NINH: Công an đặc khu Vân Đồn hỗ trợ người chấp hành xong án phạt tù tìm kiếm việc làm',
     date: '17/07/2026',
     image: '/assets/news_quangninh.jpg',
@@ -39,6 +40,7 @@ const newsItems = [
   },
   {
     id: 2,
+    slug: 'lam-dong-tham-hoi-tang-qua-dac-xa',
     title: 'CÔNG AN TỈNH LÂM ĐỒNG THĂM HỎI, TẶNG QUÀ, ĐỘNG VIÊN NGƯỜI ĐƯỢC ĐẶC XÁ CÓ HOÀN CẢNH KHÓ KHĂN',
     date: '17/07/2026',
     image: '/assets/news_lamdong.jpg',
@@ -46,6 +48,7 @@ const newsItems = [
   },
   {
     id: 3,
+    slug: 'lam-dong-so-ket-quan-ly-giam-giu',
     title: 'LÂM ĐỒNG: Sơ kết công tác quản lý giam giữ, thi hành án hình sự và hỗ trợ tư pháp 6 tháng đầu năm 2026',
     date: '16/07/2026',
     image: '/assets/news_danang.jpg',

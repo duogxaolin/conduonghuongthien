@@ -17,9 +17,9 @@
             </div>
             <div class="news-item-info">
               <span class="news-item-date">{{ item.date }} • Tin nổi bật</span>
-              <h3><a href="#">{{ item.title }}</a></h3>
+              <h3><nuxt-link :to="'/ban-tin/' + item.slug">{{ item.title }}</nuxt-link></h3>
               <p>{{ item.excerpt }}</p>
-              <a href="#" class="read-more-link">Chi tiết &rarr;</a>
+              <nuxt-link :to="'/ban-tin/' + item.slug" class="read-more-link">Chi tiết &rarr;</nuxt-link>
             </div>
           </div>
         </div>
@@ -32,6 +32,7 @@
 const newsItems = [
   {
     id: 1,
+    slug: 'da-nang-hoi-nghi-doi-thoai-giam-thi-pham-nhan',
     title: 'ĐÀ NẴNG: HỘI NGHỊ ĐỐI THOẠI GIỮA GIÁM THỊ VỚI PHẠM NHÂN',
     date: '17/07/2026',
     image: '/assets/news_danang.jpg',
@@ -39,6 +40,7 @@ const newsItems = [
   },
   {
     id: 2,
+    slug: 'can-tho-diem-tua-tin-dung-cho-nguoi-hoan-luong-tai-hoa-nhap',
     title: 'CẦN THƠ: Điểm tựa tín dụng cho người hoàn lương tái hòa nhập',
     date: '16/07/2026',
     image: '/assets/news_lamdong.jpg',

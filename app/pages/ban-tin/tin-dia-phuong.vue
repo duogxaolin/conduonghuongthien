@@ -17,9 +17,9 @@
             </div>
             <div class="news-item-info">
               <span class="news-item-date">{{ item.date }} • Tin địa phương</span>
-              <h3><a href="#">{{ item.title }}</a></h3>
+              <h3><nuxt-link :to="'/ban-tin/' + item.slug">{{ item.title }}</nuxt-link></h3>
               <p>{{ item.excerpt }}</p>
-              <a href="#" class="read-more-link">Chi tiết &rarr;</a>
+              <nuxt-link :to="'/ban-tin/' + item.slug" class="read-more-link">Chi tiết &rarr;</nuxt-link>
             </div>
           </div>
         </div>
@@ -32,6 +32,7 @@
 const newsItems = [
   {
     id: 1,
+    slug: 'mong-cai-tang-cuong-cam-hoa-giao-duc',
     title: 'QUẢNG NINH: Công an phường Móng Cái 3 tăng cường công tác cảm hóa, giáo dục thi hành án hình sự tại cộng đồng',
     date: '17/07/2026',
     image: '/assets/news_quangninh.jpg',
