@@ -103,7 +103,7 @@ export const useI18n = () => {
       bot_welcome: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi có thể hỗ trợ bạn giải đáp nhanh các câu hỏi pháp lý đã được Cục C11 phê duyệt về công tác tái hòa nhập cộng đồng.',
 
       // About Page
-      about_hero_title: 'Giới Thiệu Ban Biên Tập',
+      about_hero_title: 'Giới Thiệu',
       about_hero_sub: 'Tôn chỉ, mục đích hoạt động và chặng đường đồng hành cùng người hoàn lương',
       about_editorial: 'Về Ban Biên tập',
       about_purpose_title: 'Tôn chỉ & Mục đích',
@@ -227,7 +227,7 @@ export const useI18n = () => {
       bot_welcome: 'Hello! I am Huong Thien AI Assistant. I can help answer legal questions approved by C11 regarding community reintegration.',
 
       // About Page
-      about_hero_title: 'Editorial Board Overview',
+      about_hero_title: 'About Us',
       about_hero_sub: 'Principles, operation goals, and journey of supporting reintegration',
       about_editorial: 'About the Editorial Board',
       about_purpose_title: 'Principles & Goals',
