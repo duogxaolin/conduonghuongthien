@@ -83,6 +83,24 @@
               </button>
             </div>
 
+            <!-- Drawer Controls Row (Đổi ngôn ngữ & Cỡ chữ trên Mobile) -->
+            <div class="drawer-controls-row">
+              <div class="drawer-ctrl-item">
+                <span class="drawer-ctrl-label">{{ t('font_size') }}</span>
+                <div class="accessibility-ctrl">
+                  <button @click="changeFontSize('small')" :class="{ active: fontSize === 'small' }">A-</button>
+                  <button @click="changeFontSize('normal')" :class="{ active: fontSize === 'normal' }">A</button>
+                  <button @click="changeFontSize('large')" :class="{ active: fontSize === 'large' }">A+</button>
+                </div>
+              </div>
+              <div class="drawer-ctrl-item">
+                <div class="lang-switcher">
+                  <button :class="{ active: currentLang === 'VN' }" @click="setLang('VN')">VN</button>
+                  <button :class="{ active: currentLang === 'EN' }" @click="setLang('EN')">EN</button>
+                </div>
+              </div>
+            </div>
+
             <!-- Drawer Search Bar -->
             <div class="drawer-search-wrap">
               <div class="drawer-search-box">
@@ -1868,7 +1886,37 @@ onUnmounted(() => {
   }
 
   .top-bar {
-    display: none;
+    display: block;
+    padding: 4px 0;
+  }
+
+  .top-bar-content {
+    justify-content: space-between;
+  }
+
+  .top-hide-mobile {
+    display: none !important;
+  }
+
+  .drawer-controls-row {
+    display: flex;
+    padding: 10px 18px;
+    background: #f0f6ef;
+    border-bottom: 1px solid #e1e8e0;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .drawer-ctrl-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .drawer-ctrl-label {
+    font-size: 0.78rem;
+    font-weight: 700;
+    color: #1e4620;
   }
 
   .menu-toggle {
