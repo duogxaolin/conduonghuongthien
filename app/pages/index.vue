@@ -42,81 +42,94 @@
 
     <!-- Latest & Trending Split News Section (Section Mới đan xen cực đẹp) -->
     <section class="section split-news-section">
-      <div class="container split-news-grid">
-        <!-- Cột Trái: Tin tức mới nhất (Latest News) -->
-        <div class="latest-news-wrap">
-          <div class="section-title-wrap">
-            <h2 class="section-title">Tin Tức Mới Nhất</h2>
-            <nuxt-link to="/ban-tin" class="view-all-link">Xem tất cả &rarr;</nuxt-link>
+    <!-- BCA Style News Section -->
+    <section class="section bca-news-section">
+      <div class="container bca-news-grid">
+        <!-- Cột Trái: Tin nổi bật & Tin tiêu điểm (2/3 chiều rộng) -->
+        <div class="bca-news-left-col">
+          <div class="bca-title-wrap">
+            <h2 class="bca-section-title">Tin nổi bật</h2>
+            <nuxt-link to="/ban-tin" class="bca-view-all">TẤT CẢ TIN TỨC &rarr;</nuxt-link>
           </div>
           
-          <div class="latest-news-list">
-            <div class="featured-news-main">
-              <div class="main-news-img">
+          <!-- Tin tiêu điểm chính (Overlay text trên ảnh lớn) -->
+          <div class="bca-main-featured">
+            <nuxt-link to="/ban-tin/da-nang-hoi-nghi-doi-thoai-giam-thi-pham-nhan" class="bca-featured-link">
+              <div class="bca-featured-img-wrap">
                 <img src="/assets/news_danang.jpg" alt="Đại hội Đà Nẵng" />
-                <span class="news-badge-cat">Tin nổi bật</span>
+                <div class="bca-featured-overlay"></div>
+                <div class="bca-featured-info">
+                  <span class="bca-badge-cat">TIN NỔI BẬT</span>
+                  <span class="bca-date">📅 17/07/2026</span>
+                  <h3 class="bca-featured-title">ĐÀ NẴNG: HỘI NGHỊ ĐỐI THOẠI GIỮA GIÁM THỊ VỚI PHẠM NHÂN</h3>
+                  <p class="bca-featured-excerpt">Chiều ngày 16/7/2026, Trại Tạm giam số 1 Công an thành phố Đà Nẵng tổ chức Hội nghị đối thoại giữa Giám thị Trại với phạm nhân đang chấp hành án phạt tù lần thứ I năm 2026 nhằm nâng cao chất lượng giáo dục, cải tạo...</p>
+                </div>
               </div>
-              <div class="main-news-body">
-                <span class="news-date">📅 17/07/2026</span>
-                <h3>
-                  <nuxt-link to="/ban-tin/da-nang-hoi-nghi-doi-thoai-giam-thi-pham-nhan">
-                    ĐÀ NẴNG: HỘI NGHỊ ĐỐI THOẠI GIỮA GIÁM THỊ VỚI PHẠM NHÂN
+            </nuxt-link>
+          </div>
+
+          <!-- 2 tin phụ nằm ngang bên dưới -->
+          <div class="bca-sub-grid">
+            <div class="bca-sub-card">
+              <nuxt-link to="/ban-tin/quang-ninh-van-don-ho-tro-viec-lam" class="bca-card-img-link">
+                <img src="/assets/news_quangninh.jpg" alt="Vân đồn việc làm" />
+              </nuxt-link>
+              <div class="bca-card-content">
+                <span class="bca-sub-date">17/07/2026</span>
+                <h4>
+                  <nuxt-link to="/ban-tin/quang-ninh-van-don-ho-tro-viec-lam">
+                    QUẢNG NINH: Hỗ trợ việc làm tại Vân Đồn cho người chấp hành xong án phạt
                   </nuxt-link>
-                </h3>
-                <p>
-                  Chiều ngày 16/7/2026, Trại Tạm giam số 1 Công an thành phố Đà Nẵng tổ chức Hội nghị đối thoại giữa Giám thị Trại với phạm nhân đang chấp hành án phạt tù lần thứ I năm 2026...
-                </p>
-                <nuxt-link to="/ban-tin/da-nang-hoi-nghi-doi-thoai-giam-thi-pham-nhan" class="read-more-link">
-                  Đọc tiếp bài viết &rarr;
-                </nuxt-link>
+                </h4>
               </div>
             </div>
-
-            <div class="news-row-grid">
-              <div class="news-card-inline">
-                <img src="/assets/news_quangninh.jpg" alt="Vân đồn việc làm" />
-                <div class="card-inline-body">
-                  <span class="news-date">📅 17/07/2026</span>
-                  <h4>
-                    <nuxt-link to="/ban-tin/quang-ninh-van-don-ho-tro-viec-lam">
-                      QUẢNG NINH: Hỗ trợ việc làm tại Vân Đồn cho người chấp hành xong án phạt
-                    </nuxt-link>
-                  </h4>
-                </div>
-              </div>
-              <div class="news-card-inline">
+            
+            <div class="bca-sub-card">
+              <nuxt-link to="/ban-tin/lam-dong-tham-hoi-tang-qua-dac-xa" class="bca-card-img-link">
                 <img src="/assets/news_lamdong.jpg" alt="Lâm đồng đặc xá" />
-                <div class="card-inline-body">
-                  <span class="news-date">📅 17/07/2026</span>
-                  <h4>
-                    <nuxt-link to="/ban-tin/lam-dong-tham-hoi-tang-qua-dac-xa">
-                      LÂM ĐỒNG: Thăm hỏi, tặng quà, động viên người được đặc xá khó khăn
-                    </nuxt-link>
-                  </h4>
-                </div>
+              </nuxt-link>
+              <div class="bca-card-content">
+                <span class="bca-sub-date">17/07/2026</span>
+                <h4>
+                  <nuxt-link to="/ban-tin/lam-dong-tham-hoi-tang-qua-dac-xa">
+                    LÂM ĐỒNG: Thăm hỏi, tặng quà, động viên người được đặc xá khó khăn
+                  </nuxt-link>
+                </h4>
               </div>
             </div>
           </div>
         </div>
 
-        <!-- Cột Phải: Tin Thịnh Hành / Xem Nhiều Nhất (Trending/Most Read) -->
-        <div class="trending-news-wrap">
-          <div class="section-title-wrap">
-            <h2 class="section-title">Tin Thịnh Hành</h2>
+        <!-- Cột Phải: Hoạt động & Chỉ đạo (1/3 chiều rộng) -->
+        <div class="bca-news-right-col">
+          <div class="bca-title-wrap">
+            <h2 class="bca-section-title">Chỉ đạo & Hoạt động</h2>
           </div>
           
-          <div class="trending-list">
-            <div v-for="(item, index) in trendingNews" :key="item.id" class="trending-item">
-              <span class="trend-number">{{ '0' + (index + 1) }}</span>
-              <div class="trend-body">
-                <span class="trend-cat">{{ item.category }}</span>
-                <h4><nuxt-link :to="item.link">{{ item.title }}</nuxt-link></h4>
-                <span class="trend-views">🔥 {{ item.views }} lượt xem</span>
+          <div class="bca-text-list">
+            <div v-for="item in trendingNews" :key="item.id" class="bca-text-item">
+              <div class="bca-text-bullet"></div>
+              <div class="bca-text-body">
+                <h4>
+                  <nuxt-link :to="item.link">{{ item.title }}</nuxt-link>
+                </h4>
+                <span class="bca-text-date">📅 Cập nhật: {{ item.id === 1 ? '17/07' : '16/07' }}/2026</span>
               </div>
+            </div>
+          </div>
+
+          <!-- Banner phụ chuyên mục Bộ Công an -->
+          <div class="bca-side-banner">
+            <div class="bca-side-banner-overlay"></div>
+            <div class="bca-side-banner-content">
+              <h3>Hotline Cảnh Sát QLHC</h3>
+              <p>Hỗ trợ giải đáp thủ tục cấp CCCD & Lý lịch tư pháp cho người hoàn lương</p>
+              <span class="bca-side-phone">📞 1900.0368</span>
             </div>
           </div>
         </div>
       </div>
+    </section>
     </section>
 
     <!-- Parallax quote Block (Thiết kế đan xen) -->
@@ -453,151 +466,310 @@ const submitForm = () => {
   display: block;
 }
 
-/* Split News Section (Latest vs Trending) */
-.split-news-grid {
-  display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 40px;
+/* Split News Section - BCA Portal Style */
+.bca-news-section {
+  background-color: var(--white);
+  padding: 60px 0;
 }
 
-.section-title-wrap {
+.bca-news-grid {
+  display: grid;
+  grid-template-columns: 2.1fr 0.9fr;
+  gap: 32px;
+}
+
+.bca-title-wrap {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  margin-bottom: 24px;
-  border-bottom: 2px solid var(--border-color);
-  padding-bottom: 12px;
+  align-items: flex-end;
+  border-bottom: 2px solid #e0e6dd;
+  padding-bottom: 8px;
+  margin-bottom: 20px;
+  position: relative;
 }
 
-.view-all-link {
-  font-size: 0.88rem;
-  color: var(--secondary);
-  font-weight: 700;
+.bca-section-title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--primary-dark);
+  text-transform: uppercase;
+  margin: 0;
+  position: relative;
+  letter-spacing: 0.3px;
+}
+
+.bca-section-title::after {
+  content: '';
+  position: absolute;
+  bottom: -10px;
+  left: 0;
+  width: 60px;
+  height: 2px;
+  background-color: var(--primary);
+}
+
+.bca-view-all {
+  font-size: 0.78rem;
+  font-weight: 800;
+  color: var(--text-medium);
   text-decoration: none;
-}
-
-.view-all-link:hover {
-  color: var(--primary);
-}
-
-.featured-news-main {
-  background-color: var(--white);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border-color);
-  margin-bottom: 24px;
   transition: var(--transition);
 }
 
-.featured-news-main:hover {
-  box-shadow: var(--shadow-md);
+.bca-view-all:hover {
+  color: var(--primary);
 }
 
-.main-news-img {
-  height: 320px;
+/* Main Featured Box (BCA style) */
+.bca-main-featured {
+  margin-bottom: 24px;
+}
+
+.bca-featured-link {
+  display: block;
+  text-decoration: none;
+}
+
+.bca-featured-img-wrap {
   position: relative;
+  height: 420px;
+  border-radius: var(--radius-sm);
   overflow: hidden;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
 }
 
-.main-news-img img {
+.bca-featured-img-wrap img {
   width: 100%;
   height: 100%;
   object-fit: cover;
+  transition: transform 0.6s cubic-bezier(0.165, 0.84, 0.44, 1);
 }
 
-.news-badge-cat {
+.bca-featured-link:hover img {
+  transform: scale(1.03);
+}
+
+.bca-featured-overlay {
   position: absolute;
-  top: 16px;
-  left: 16px;
-  background-color: var(--primary);
-  color: white;
-  padding: 4px 10px;
-  font-size: 0.72rem;
-  font-weight: 700;
-  border-radius: 4px;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 60%;
+  background: linear-gradient(to top, rgba(16, 28, 16, 0.95) 0%, rgba(16, 28, 16, 0.4) 60%, rgba(16, 28, 16, 0) 100%);
+  z-index: 1;
 }
 
-.main-news-body {
+.bca-featured-info {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   padding: 24px;
+  color: white;
+  z-index: 2;
 }
 
-.news-date {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  font-weight: 600;
-  display: block;
+.bca-badge-cat {
+  background-color: var(--secondary);
+  color: white;
+  padding: 3px 8px;
+  font-size: 0.65rem;
+  font-weight: 800;
+  border-radius: 2px;
+  display: inline-block;
   margin-bottom: 8px;
 }
 
-.main-news-body h3 {
-  font-size: 1.3rem;
+.bca-date {
+  font-size: 0.75rem;
+  opacity: 0.85;
+  margin-left: 12px;
+}
+
+.bca-featured-title {
+  font-size: 1.45rem;
   font-weight: 800;
-  margin-bottom: 12px;
+  line-height: 1.3;
+  margin: 6px 0 10px 0;
+  color: white;
+  transition: color 0.2s ease;
 }
 
-.main-news-body h3 a {
-  color: var(--text-dark);
-  text-decoration: none;
-  transition: var(--transition);
+.bca-featured-link:hover .bca-featured-title {
+  color: var(--secondary-light);
 }
 
-.main-news-body h3 a:hover {
-  color: var(--primary);
-}
-
-.main-news-body p {
-  font-size: 0.95rem;
-  color: var(--text-medium);
+.bca-featured-excerpt {
+  font-size: 0.88rem;
   line-height: 1.5;
-  margin-bottom: 16px;
+  opacity: 0.88;
+  margin: 0;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
-.news-row-grid {
+/* Secondary horizontally aligned cards */
+.bca-sub-grid {
   display: grid;
-  grid-template-columns: repeat(2, 1fr);
+  grid-template-columns: 1fr 1fr;
   gap: 20px;
 }
 
-.news-card-inline {
-  background-color: var(--white);
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-md);
-  padding: 16px;
+.bca-sub-card {
   display: flex;
   gap: 16px;
-  align-items: center;
+  background-color: transparent;
+  padding: 12px 0;
+  border-top: 1px dashed var(--border-color);
+}
+
+.bca-card-img-link {
+  width: 130px;
+  height: 85px;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  flex-shrink: 0;
+  box-shadow: var(--shadow-sm);
+}
+
+.bca-card-img-link img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
   transition: var(--transition);
 }
 
-.news-card-inline:hover {
-  border-color: var(--secondary);
+.bca-sub-card:hover .bca-card-img-link img {
+  transform: scale(1.05);
 }
 
-.news-card-inline img {
-  width: 80px;
-  height: 80px;
-  object-fit: cover;
-  border-radius: 4px;
+.bca-card-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.bca-sub-date {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  margin-bottom: 4px;
+}
+
+.bca-card-content h4 {
+  font-size: 0.88rem;
+  font-weight: 700;
+  line-height: 1.35;
+  margin: 0;
+}
+
+.bca-card-content h4 a {
+  color: var(--text-dark);
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.bca-card-content h4 a:hover {
+  color: var(--primary);
+}
+
+/* Right side list (BCA signature style) */
+.bca-text-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.bca-text-item {
+  display: flex;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.bca-text-item:last-child {
+  border-bottom: none;
+}
+
+.bca-text-bullet {
+  width: 6px;
+  height: 6px;
+  background-color: var(--primary);
+  border-radius: 50%;
+  margin-top: 8px;
   flex-shrink: 0;
 }
 
-.card-inline-body h4 {
-  font-size: 0.9rem;
+.bca-text-body h4 {
+  font-size: 0.88rem;
   font-weight: 700;
-  line-height: 1.3;
+  line-height: 1.4;
+  margin: 0 0 6px 0;
 }
 
-.card-inline-body h4 a {
+.bca-text-body h4 a {
   color: var(--text-dark);
   text-decoration: none;
+  transition: var(--transition);
 }
 
-/* Trending Column */
-.trending-list {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
+.bca-text-body h4 a:hover {
+  color: var(--primary);
+}
+
+.bca-text-date {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 600;
+}
+
+/* Side Banner */
+.bca-side-banner {
+  position: relative;
+  background: url('/assets/hero_banner.jpg') center/cover no-repeat;
+  border-radius: var(--radius-sm);
+  padding: 24px;
+  color: white;
+  margin-top: 24px;
+  overflow: hidden;
+  box-shadow: var(--shadow-sm);
+}
+
+.bca-side-banner-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(74, 103, 65, 0.9);
+  z-index: 1;
+}
+
+.bca-side-banner-content {
+  position: relative;
+  z-index: 2;
+}
+
+.bca-side-banner-content h3 {
+  font-size: 1rem;
+  font-weight: 800;
+  margin-top: 0;
+  margin-bottom: 8px;
+  text-transform: uppercase;
+}
+
+.bca-side-banner-content p {
+  font-size: 0.78rem;
+  line-height: 1.4;
+  margin: 0 0 16px 0;
+  opacity: 0.9;
+}
+
+.bca-side-phone {
+  background-color: var(--secondary);
+  color: white;
+  padding: 6px 14px;
+  font-size: 0.9rem;
+  font-weight: 800;
+  border-radius: 4px;
+  display: inline-block;
 }
 
 .trending-item {
