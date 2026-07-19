@@ -818,7 +818,56 @@ const toggleFaqIndex = (index) => {
 
 .hero-actions {
   display: flex;
-  gap: 16px;
+  gap: 14px;
+  align-items: center;
+}
+
+.hero-actions .btn {
+  padding: 11px 24px;
+  font-size: 0.94rem;
+  font-weight: 700;
+  border-radius: 12px;
+}
+
+@media (max-width: 1024px) {
+  .hero-title {
+    font-size: 2.8rem;
+  }
+  .hero-subtitle {
+    font-size: 1.15rem;
+    margin-bottom: 28px;
+  }
+  .hero-actions {
+    gap: 12px;
+  }
+  .hero-actions .btn {
+    padding: 10px 20px;
+    font-size: 0.88rem;
+  }
+}
+
+@media (max-width: 640px) {
+  .hero-section {
+    padding: 50px 0 80px 0;
+  }
+  .hero-title {
+    font-size: 2.1rem;
+  }
+  .hero-subtitle {
+    font-size: 0.98rem;
+    margin-bottom: 22px;
+  }
+  .hero-actions {
+    flex-direction: column;
+    width: 100%;
+    gap: 10px;
+  }
+  .hero-actions .btn {
+    width: 100%;
+    padding: 11px 16px;
+    font-size: 0.88rem;
+    justify-content: center;
+  }
 }
 
 /* Pulse Animation Effect */
