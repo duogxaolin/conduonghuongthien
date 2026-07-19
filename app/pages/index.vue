@@ -757,18 +757,18 @@ const toggleFaqIndex = (index) => {
 </script>
 
 <style scoped>
-/* Hero Section - Ultra Sleek Abstract Gold & Forest Green */
+/* Hero Section - Maximum Contrast & Sleek Institutional Style */
 .hero-section {
   position: relative;
-  background: url('/hero_abstract.jpg') center center / cover no-repeat;
-  padding: 85px 0 120px 0;
+  background: url('/hero_abstract.jpg') center right / cover no-repeat;
+  padding: 90px 0 130px 0;
   color: white;
 }
 
 .hero-bg-overlay {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(135deg, rgba(15, 38, 17, 0.72) 0%, rgba(20, 53, 22, 0.4) 100%);
+  background: linear-gradient(90deg, rgba(8, 22, 10, 0.95) 0%, rgba(14, 38, 16, 0.88) 50%, rgba(20, 53, 22, 0.35) 100%);
 }
 
 .hero-container {
@@ -777,35 +777,41 @@ const toggleFaqIndex = (index) => {
 }
 
 .hero-content {
-  max-width: 850px;
+  max-width: 820px;
 }
 
 .hero-badge {
-  background-color: var(--secondary);
-  color: white;
-  padding: 8px 18px;
-  font-size: 0.85rem;
+  background: linear-gradient(135deg, #ffd700 0%, #f59e0b 100%);
+  color: #0b1f0d;
+  padding: 8px 20px;
+  font-size: 0.86rem;
   font-weight: 800;
-  border-radius: 4px;
+  border-radius: 50px;
   text-transform: uppercase;
   display: inline-block;
   margin-bottom: 24px;
-  letter-spacing: 0.5px;
+  letter-spacing: 0.8px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  box-shadow: 0 4px 14px rgba(0, 0, 0, 0.3);
 }
 
 .hero-title {
   font-size: 4.2rem;
   font-weight: 800;
-  line-height: 1.25;
-  margin-bottom: 20px;
+  line-height: 1.22;
+  margin-bottom: 22px;
   letter-spacing: -0.5px;
+  color: #ffffff;
+  text-shadow: 0 3px 12px rgba(0, 0, 0, 0.6);
 }
 
 .hero-subtitle {
-  font-size: 1.45rem;
-  line-height: 1.6;
-  opacity: 0.95;
-  margin-bottom: 36px;
+  font-size: 1.4rem;
+  line-height: 1.62;
+  color: #e6f4e5;
+  margin-bottom: 38px;
+  font-weight: 500;
+  text-shadow: 0 2px 8px rgba(0, 0, 0, 0.5);
 }
 
 .hero-actions {
