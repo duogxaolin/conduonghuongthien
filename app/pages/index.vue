@@ -132,6 +132,42 @@
     </section>
     </section>
 
+    </section>
+
+    <!-- Sub News Columns (Tuyên truyền cảnh báo & Tin địa phương) -->
+    <section class="section section-bg bca-sub-news-columns">
+      <div class="container bca-sub-news-grid">
+        <!-- Cột Trái: Cảnh báo & Tuyên truyền -->
+        <div class="bca-warning-col">
+          <div class="bca-title-wrap">
+            <h2 class="bca-section-title">Cảnh báo & Tuyên truyền</h2>
+          </div>
+          <div class="bca-warning-list">
+            <div v-for="item in legalWarningNews" :key="item.id" class="bca-warning-card">
+              <div class="bca-warning-card-body">
+                <span class="bca-warning-date">📅 {{ item.date }}</span>
+                <h4><nuxt-link :to="item.link">{{ item.title }}</nuxt-link></h4>
+                <p>{{ item.excerpt }}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Cột Phải: Tin Công an địa phương -->
+        <div class="bca-local-col">
+          <div class="bca-title-wrap">
+            <h2 class="bca-section-title">Tin Công an địa phương</h2>
+          </div>
+          <div class="bca-local-list">
+            <div v-for="item in localPoliceNews" :key="item.id" class="bca-local-item">
+              <span class="bca-local-item-date">[{{ item.date.slice(0,5) }}]</span>
+              <nuxt-link :to="item.link" class="bca-local-item-title">{{ item.title }}</nuxt-link>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Parallax quote Block (Thiết kế đan xen) -->
     <section class="quote-parallax-section">
       <div class="parallax-overlay"></div>
@@ -178,6 +214,34 @@
                 Vượt qua định kiến và mặc cảm ban đầu, chị B kiên trì tham gia các lớp đào tạo may mặc miễn phí do Hội Phụ nữ tổ chức. Đến nay chị đã làm chủ xưởng may gia công xuất khẩu lớn, trực tiếp nâng bước các chị em hoàn lương khác.
               </p>
               <nuxt-link to="/tamguongtieubieu/tran-thi-b" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
+            </div>
+          </div>
+
+          <div class="role-card">
+            <div class="role-avatar-wrap">
+              <img src="/assets/guong_sang_1.jpg" alt="Lê Văn C" />
+            </div>
+            <div class="role-info">
+              <span class="role-location">📍 Tỉnh Đồng Nai</span>
+              <h3>Anh Lê Văn C</h3>
+              <p class="role-desc">
+                Trở về địa phương với nhiều mặc cảm, anh C được Công an xã định hướng làm kinh tế trang trại. Nhờ áp dụng khoa học kỹ thuật và sự kiên trì, mô hình vườn-ao-chuồng của anh hiện đạt doanh thu hàng trăm triệu mỗi năm, giúp đỡ 5 người có hoàn cảnh tương tự làm việc.
+              </p>
+              <nuxt-link to="/tamguongtieubieu" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
+            </div>
+          </div>
+
+          <div class="role-card">
+            <div class="role-avatar-wrap">
+              <img src="/assets/guong_sang_2.jpg" alt="Phạm Thị D" />
+            </div>
+            <div class="role-info">
+              <span class="role-location">📍 TP. Hải Phòng</span>
+              <h3>Chị Phạm Thị D</h3>
+              <p class="role-desc">
+                Chị D tập trung học nghề thêu dệt mỹ nghệ tại lớp đào tạo do Hội phụ nữ tổ chức. Với đôi tay khéo léo và óc kinh doanh nhạy bén, chị đã thành lập Hợp tác xã dệt may nghệ thuật, tạo sinh kế bền vững cho hàng chục phụ nữ lầm lỡ tái hòa nhập.
+              </p>
+              <nuxt-link to="/tamguongtieubieu" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
             </div>
           </div>
         </div>
@@ -427,6 +491,20 @@ const trendingNews = [
   { id: 2, category: 'Tin hoạt động', title: 'QUẢNG NINH: Sàn giao dịch việc làm Vân Đồn tiếp nhận hàng trăm lao động hoàn lương', link: '/ban-tin/quang-ninh-van-don-ho-tro-viec-lam', views: '1.985' },
   { id: 3, category: 'Tin nổi bật', title: 'ĐÀ NẴNG: Cuộc đối thoại nhân văn giữa Giám thị trại giam và các phạm nhân cải tạo', link: '/ban-tin/da-nang-hoi-nghi-doi-thoai-giam-thi-pham-nhan', views: '1.742' },
   { id: 4, category: 'Tin địa phương', title: 'Công an phường Hồng Quang triển khai lập danh sách các hộ có nhu cầu vay vốn chính sách', link: '/ban-tin', views: '1.204' }
+]
+
+const localPoliceNews = [
+  { id: 1, date: '17/07/2026', title: 'BẮC NINH: Công an huyện Tiên Du giúp đỡ 12 người hoàn lương làm thủ tục cấp Căn cước công dân và đăng ký tạm trú', link: '/ban-tin' },
+  { id: 2, date: '16/07/2026', title: 'HÀ NỘI: Công an quận Cầu Giấy phối hợp với các doanh nghiệp trên địa bàn tổ chức ngày hội định nghiệp quý II', link: '/ban-tin' },
+  { id: 3, date: '15/07/2026', title: 'TP. HỒ CHÍ MINH: Công an thành phố Thủ Đức trao tặng 20 xe máy hỗ trợ sinh kế cho cá nhân chấp hành xong án phạt tù', link: '/ban-tin' },
+  { id: 4, date: '14/07/2026', title: 'THANH HÓA: Phổ biến chính sách vay vốn Ngân hàng Chính sách Xã hội theo Quyết định 22 cho hơn 120 hộ gia đình', link: '/ban-tin' },
+  { id: 5, date: '12/07/2026', title: 'ĐỒNG NAI: Khen thưởng các gương doanh nghiệp điển hình tiếp nhận và cảm hóa người lao động hoàn lương', link: '/ban-tin' }
+]
+
+const legalWarningNews = [
+  { id: 1, date: '16/07/2026', title: 'CẢNH BÁO: Cảnh giác với các thủ đoạn lừa đảo qua mạng xã hội hứa hẹn xóa án tích nhanh lấy phí cao', link: '/ban-tin', excerpt: 'Công an C11 khuyến cáo người dân không tin vào các dịch vụ mập mờ trên mạng xã hội cam kết làm dịch vụ lý lịch tư pháp sạch lấy phí khẩn cấp...' },
+  { id: 2, date: '15/07/2026', title: 'TUYÊN TRUYỀN: Quy định mới về mức hỗ trợ tiền ăn và tiền đi lại cho người hoàn lương học nghề từ ngày 01/08/2026', link: '/ban-tin', excerpt: 'Theo đề án sửa đổi mới nhất, mức chi phí hỗ trợ sinh hoạt hàng ngày cho người hoàn lương học nghề tại trung tâm tăng 25%...' },
+  { id: 3, date: '14/07/2026', title: 'HƯỚNG DẪN: Các bước chuẩn bị hồ sơ xin cấp Phiếu lý lịch tư pháp số 2 trực tuyến trên cổng Dịch vụ công Quốc gia', link: '/ban-tin', excerpt: 'Hướng dẫn chi tiết quy trình nộp hồ sơ xin cấp phiếu số 2 qua Cổng dịch vụ công của Sở Tư pháp, giúp tiết kiệm thời gian và đi lại...' }
 ]
 
 const latestDocs = [
@@ -889,6 +967,107 @@ const toggleFaqIndex = (index) => {
   font-weight: 800;
   border-radius: 4px;
   display: inline-block;
+}
+
+/* Sub News Columns - Warning and Local News */
+.bca-sub-news-columns {
+  border-top: 1px solid var(--border-color);
+  padding: 50px 0;
+}
+
+.bca-sub-news-grid {
+  display: grid;
+  grid-template-columns: 1.2fr 0.8fr;
+  gap: 32px;
+}
+
+.bca-warning-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.bca-warning-card {
+  background-color: var(--white);
+  border-left: 3px solid #d9534f; /* Cảnh báo màu đỏ */
+  border-top: 1px solid var(--border-color);
+  border-right: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
+  padding: 18px;
+  border-radius: var(--radius-sm);
+  transition: var(--transition);
+}
+
+.bca-warning-card:hover {
+  box-shadow: var(--shadow-sm);
+  border-left-color: var(--primary);
+}
+
+.bca-warning-date {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  font-weight: 700;
+  display: block;
+  margin-bottom: 6px;
+}
+
+.bca-warning-card h4 {
+  font-size: 0.92rem;
+  font-weight: 800;
+  margin: 0 0 8px 0;
+  line-height: 1.4;
+}
+
+.bca-warning-card h4 a {
+  color: var(--text-dark);
+  text-decoration: none;
+  transition: var(--transition);
+}
+
+.bca-warning-card h4 a:hover {
+  color: var(--primary);
+}
+
+.bca-warning-card p {
+  font-size: 0.82rem;
+  color: var(--text-medium);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.bca-local-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.bca-local-item {
+  display: flex;
+  padding: 12px 0;
+  border-bottom: 1px dashed var(--border-color);
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.bca-local-item:last-child {
+  border-bottom: none;
+}
+
+.bca-local-item-date {
+  color: var(--primary);
+  font-weight: 750;
+  margin-right: 8px;
+  flex-shrink: 0;
+}
+
+.bca-local-item-title {
+  color: var(--text-dark);
+  text-decoration: none;
+  font-weight: 700;
+  transition: var(--transition);
+}
+
+.bca-local-item-title:hover {
+  color: var(--primary);
 }
 
 .trending-item {
