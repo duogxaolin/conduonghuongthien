@@ -204,7 +204,7 @@ export const useI18n = () => {
       gov_dvc: 'National Public Service Portal',
       gov_vbsp: 'Social Policy Bank',
       gov_molisa: 'Ministry of Labor - Invalids & Social Affairs',
-      gov_cand: 'People’s Public Security Newspaper',
+      gov_cand: "People's Public Security Newspaper",
 
       // Footer
       footer_about_desc: 'Electronic Information Portal under the direction of the Ministry of Public Security, C11 Department of Detention & Community Criminal Execution.',

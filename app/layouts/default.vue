@@ -7,19 +7,9 @@
     <div class="top-bar">
       <div class="container top-bar-content">
         <div class="top-left">
-          <span class="live-date top-hide-mobile"><span class="live-date-icon">🕒</span> {{ liveDateTime }}</span>
-          <span class="divider top-hide-mobile">|</span>
           <span>📞 Hotline: 0903.480.985</span>
         </div>
         <div class="top-right">
-          <!-- Text Accessibility Controls -->
-          <div class="accessibility-ctrl">
-            <span class="ctrl-label">{{ t('font_size') }}</span>
-            <button @click="changeFontSize('small')" :class="{ active: fontSize === 'small' }">A-</button>
-            <button @click="changeFontSize('normal')" :class="{ active: fontSize === 'normal' }">A</button>
-            <button @click="changeFontSize('large')" :class="{ active: fontSize === 'large' }">A+</button>
-          </div>
-          <span class="divider">|</span>
           <!-- Language Switcher -->
           <div class="lang-switcher">
             <button :class="{ active: currentLang === 'VN' }" @click="setLang('VN')">VN</button>
