@@ -1,0 +1,138 @@
+/* Google Fonts - Inter */
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  --primary: #4A6741;        /* Xanh bộ đội */
+  --primary-dark: #385130;
+  --primary-light: #618557;
+  --secondary: #7CB342;      /* Xanh mạ non */
+  --secondary-light: #9CCC65;
+  --accent: #8BC34A;
+  --bg-light: #F8FAF7;       /* Nền xanh lá cực nhạt */
+  --text-dark: #1E251C;
+  --text-medium: #4A5545;
+  --text-muted: #7A8675;
+  --white: #FFFFFF;
+  --border-color: #E2E8DF;
+  --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+  --shadow-sm: 0 4px 12px rgba(74, 103, 65, 0.06);
+  --shadow-md: 0 10px 30px rgba(74, 103, 65, 0.08);
+  --shadow-lg: 0 20px 40px rgba(74, 103, 65, 0.12);
+  --radius-sm: 8px;
+  --radius-md: 16px;
+  --radius-lg: 24px;
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: 'Inter', sans-serif;
+  color: var(--text-dark);
+  background-color: var(--white);
+  line-height: 1.6;
+  overflow-x: hidden;
+}
+
+.container {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 24px;
+}
+
+.section {
+  padding: 80px 0;
+}
+
+.section-bg {
+  background-color: var(--bg-light);
+}
+
+.section-title {
+  font-size: 2.2rem;
+  font-weight: 700;
+  color: var(--primary);
+  text-align: center;
+  margin-bottom: 48px;
+  position: relative;
+}
+
+.section-title::after {
+  content: '';
+  position: absolute;
+  bottom: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 60px;
+  height: 4px;
+  background-color: var(--secondary);
+  border-radius: 2px;
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 12px 28px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  border-radius: var(--radius-md);
+  text-decoration: none;
+  cursor: pointer;
+  transition: var(--transition);
+  border: none;
+  gap: 8px;
+}
+
+.btn-primary {
+  background-color: var(--primary);
+  color: var(--white);
+  box-shadow: 0 4px 14px rgba(74, 103, 65, 0.3);
+}
+
+.btn-primary:hover {
+  background-color: var(--primary-dark);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(74, 103, 65, 0.4);
+}
+
+.btn-secondary {
+  background-color: var(--secondary);
+  color: var(--white);
+  box-shadow: 0 4px 14px rgba(124, 179, 66, 0.3);
+}
+
+.btn-secondary:hover {
+  background-color: var(--secondary-light);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(124, 179, 66, 0.4);
+}
+
+.btn-outline {
+  background-color: transparent;
+  border: 2px solid var(--primary);
+  color: var(--primary);
+}
+
+.btn-outline:hover {
+  background-color: var(--primary);
+  color: var(--white);
+  transform: translateY(-2px);
+}
+
+/* Animations on Scroll */
+.fade-in-up {
+  opacity: 0;
+  transform: translateY(30px);
+  transition: opacity 0.8s ease, transform 0.8s ease;
+}
+
+.fade-in-up.active {
+  opacity: 1;
+  transform: translateY(0);
+}
