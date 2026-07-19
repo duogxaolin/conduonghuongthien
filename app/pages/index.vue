@@ -275,6 +275,76 @@
       </div>
     </section>
 
+    <!-- Photo Gallery Section -->
+    <section class="section section-bg" id="photo-library">
+      <div class="container">
+        <div class="section-header-center">
+          <span class="sub-title">Hình ảnh thực tế</span>
+          <h2 class="section-title-center">Thư Viện Ảnh Hoạt Động</h2>
+          <p class="section-desc-center">Ghi nhận những khoảnh khắc hỗ trợ, kết nối doanh nghiệp và sinh hoạt cộng đồng tái hòa nhập</p>
+        </div>
+        
+        <div class="gallery-grid">
+          <div class="gallery-item">
+            <img src="/assets/news_danang.jpg" alt="Đối thoại phạm nhân Đà Nẵng" />
+            <div class="gallery-info">
+              <h4>Hội nghị đối thoại cùng phạm nhân</h4>
+              <span>Trại tạm giam Đà Nẵng</span>
+            </div>
+          </div>
+          <div class="gallery-item">
+            <img src="/assets/news_quangninh.jpg" alt="Hỗ trợ việc làm Vân Đồn" />
+            <div class="gallery-info">
+              <h4>Tư vấn học nghề và việc làm</h4>
+              <span>Sàn GDVL Vân Đồn, Quảng Ninh</span>
+            </div>
+          </div>
+          <div class="gallery-item">
+            <img src="/assets/news_lamdong.jpg" alt="Động viên đặc xá Lâm Đồng" />
+            <div class="gallery-info">
+              <h4>Tặng quà động viên người hoàn lương</h4>
+              <span>Ban chỉ đạo đặc xá Lâm Đồng</span>
+            </div>
+          </div>
+          <div class="gallery-item">
+            <img src="/assets/hero_banner.jpg" alt="Nẻo về hướng thiện" />
+            <div class="gallery-info">
+              <h4>Không gian sinh hoạt cộng đồng</h4>
+              <span>CLB Hòa Nhập Xanh, Bắc Ninh</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Legal FAQ Section -->
+    <section class="section">
+      <div class="container faq-container-width">
+        <div class="section-header-center">
+          <span class="sub-title">Giải đáp nhanh</span>
+          <h2 class="section-title-center">Hỏi Đáp Pháp Luật Thường Gặp</h2>
+          <p class="section-desc-center">Các câu hỏi pháp lý cốt lõi về thủ tục xóa án tích, điều kiện hỗ trợ vay vốn đã được C11 kiểm duyệt</p>
+        </div>
+        
+        <div class="faq-accordion-list">
+          <div 
+            v-for="(faq, index) in localFaqList" 
+            :key="index" 
+            class="faq-accordion-item"
+            :class="{ 'is-active': activeFaqIndex === index }"
+          >
+            <button class="faq-accordion-question" @click="toggleFaqIndex(index)">
+              <span>{{ faq.question }}</span>
+              <span class="faq-icon-arrow">{{ activeFaqIndex === index ? '▲' : '▼' }}</span>
+            </button>
+            <div class="faq-accordion-answer" v-if="activeFaqIndex === index">
+              <p>{{ faq.answer }}</p>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
     <!-- Support Form Section -->
     <section class="section section-bg" id="tro-giup">
       <div class="container form-container">
@@ -313,6 +383,39 @@
         </div>
       </div>
     </section>
+
+    <!-- Useful Links Section (Partner Banners) -->
+    <section class="section useful-links-section">
+      <div class="container">
+        <div class="section-header-center">
+          <span class="sub-title">Liên kết Cổng thông tin</span>
+          <h2 class="section-title-center">Liên Kết Hữu Ích</h2>
+        </div>
+        
+        <div class="links-carousel-grid">
+          <a href="https://bocongan.gov.vn" target="_blank" class="link-partner-card">
+            <div class="partner-logo-box">🏛</div>
+            <span>Bộ Công an</span>
+          </a>
+          <a href="https://dichvucong.gov.vn" target="_blank" class="link-partner-card">
+            <div class="partner-logo-box">💻</div>
+            <span>Cổng Dịch vụ công Quốc gia</span>
+          </a>
+          <a href="https://vbsp.org.vn" target="_blank" class="link-partner-card">
+            <div class="partner-logo-box">🏦</div>
+            <span>NH Chính sách Xã hội</span>
+          </a>
+          <a href="https://molisa.gov.vn" target="_blank" class="link-partner-card">
+            <div class="partner-logo-box">⚖</div>
+            <span>Bộ Lao động - TB&XH</span>
+          </a>
+          <a href="https://cand.com.vn" target="_blank" class="link-partner-card">
+            <div class="partner-logo-box">📰</div>
+            <span>Báo Công an Nhân dân</span>
+          </a>
+        </div>
+      </div>
+    </section>
   </div>
 </template>
 
@@ -345,12 +448,28 @@ const form = reactive({
   message: ''
 })
 
-const submitForm = () => {
-  alert(`Cảm ơn anh/chị ${form.name}. Đơn đăng ký hỗ trợ tại ${form.city} đã được gửi thành công đến cơ quan chuyên môn!`)
-  form.name = ''
-  form.phone = ''
-  form.city = ''
-  form.message = ''
+const localFaqList = [
+  {
+    question: "Điều kiện và thủ tục để người hoàn lương được xóa án tích đương nhiên?",
+    answer: "Người chấp hành xong hình phạt chính (án tù) hoặc thời gian thử thách án treo, đã chấp hành xong các quyết định hình phạt bổ sung (án phí, bồi thường dân sự) và không thực hiện hành vi phạm tội mới trong thời hạn quy định của Bộ luật Hình sự (thông thường từ 1 đến 5 năm tùy mức độ tội danh). Khi đủ thời gian, đương sự làm hồ sơ xin cấp Phiếu lý lịch tư pháp số 2 tại Sở Tư pháp tỉnh/thành phố để xác nhận trạng thái xóa án tích."
+  },
+  {
+    question: "Làm thế nào để tiếp cận nguồn vốn vay ưu đãi 100 triệu theo Quyết định 22/2023/QĐ-TTg?",
+    answer: "Người chấp hành xong án phạt tù (trở về cư trú hợp pháp tại địa phương trong vòng 5 năm) cần làm đơn đề nghị có xác nhận của UBND cấp xã về việc chấp hành tốt pháp luật. Sau đó, hồ sơ được gửi qua tổ tiết kiệm và vay vốn (Hội Phụ nữ, Hội Nông dân, Đoàn Thanh niên...) để chuyển đến Ngân hàng Chính sách Xã hội quận/huyện thẩm định giải ngân tối đa 100 triệu đồng."
+  },
+  {
+    question: "Các trường hợp người hoàn lương được miễn phí đào tạo nghề?",
+    answer: "Theo Nghị định 49/2020/NĐ-CP, người chấp hành xong án phạt tù khi tham gia các lớp đào tạo nghề ngắn hạn (dưới 3 tháng) tại địa phương sẽ được hỗ trợ 100% chi phí học nghề và hỗ trợ tiền ăn, tiền đi lại theo chính sách hiện hành của từng địa phương."
+  },
+  {
+    question: "Ai có trách nhiệm trực tiếp giúp đỡ người hoàn lương tại cơ sở?",
+    answer: "Lực lượng Công an cấp xã/phường có trách nhiệm trực tiếp tham mưu cho UBND cấp xã lập hồ sơ quản lý, phối hợp cùng các tổ chức đoàn thể (Hội Cựu chiến binh, Hội phụ nữ, Đoàn thanh niên) phân công người trực tiếp cảm hóa, giáo dục và hướng dẫn làm các thủ tục giấy tờ công dân."
+  }
+]
+
+const activeFaqIndex = ref(null)
+const toggleFaqIndex = (index) => {
+  activeFaqIndex.value = activeFaqIndex.value === index ? null : index
 }
 </script>
 
@@ -1397,5 +1516,223 @@ const submitForm = () => {
     width: 60px;
     height: 40px;
   }
+}
+
+/* Photo Gallery */
+.gallery-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 20px;
+}
+
+.gallery-item {
+  position: relative;
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  height: 200px;
+  box-shadow: var(--shadow-sm);
+}
+
+.gallery-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  transition: transform 0.4s ease;
+}
+
+.gallery-item::after {
+  content: '';
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  height: 70%;
+  background: linear-gradient(to top, rgba(16, 28, 16, 0.9) 0%, rgba(16, 28, 16, 0) 100%);
+  z-index: 1;
+}
+
+.gallery-info {
+  position: absolute;
+  bottom: 0; left: 0; right: 0;
+  padding: 16px;
+  color: white;
+  z-index: 2;
+  transition: transform 0.3s ease;
+}
+
+.gallery-info h4 {
+  font-size: 0.88rem;
+  font-weight: 800;
+  margin: 0 0 4px 0;
+}
+
+.gallery-info span {
+  font-size: 0.7rem;
+  opacity: 0.8;
+  text-transform: uppercase;
+  font-weight: 750;
+  letter-spacing: 0.5px;
+}
+
+.gallery-item:hover img {
+  transform: scale(1.05);
+}
+
+/* Legal FAQ */
+.faq-container-width {
+  max-width: 800px;
+  margin: 0 auto;
+}
+
+.faq-accordion-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.faq-accordion-item {
+  background-color: var(--white);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  transition: var(--transition);
+}
+
+.faq-accordion-item.is-active {
+  border-color: var(--primary);
+  box-shadow: 0 4px 16px rgba(74, 103, 65, 0.06);
+}
+
+.faq-accordion-question {
+  width: 100%;
+  background: none;
+  border: none;
+  padding: 18px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-align: left;
+  font-size: 0.95rem;
+  font-weight: 750;
+  color: var(--text-dark);
+  cursor: pointer;
+  font-family: inherit;
+  transition: var(--transition);
+}
+
+.faq-accordion-question:hover {
+  color: var(--primary);
+  background-color: #fcfdfe;
+}
+
+.faq-accordion-item.is-active .faq-accordion-question {
+  color: var(--primary);
+  border-bottom: 1px solid var(--border-color);
+}
+
+.faq-icon-arrow {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  transition: var(--transition);
+}
+
+.faq-accordion-item.is-active .faq-icon-arrow {
+  color: var(--primary);
+}
+
+.faq-accordion-answer {
+  padding: 18px 24px;
+  background-color: #fcfdfe;
+}
+
+.faq-accordion-answer p {
+  font-size: 0.88rem;
+  color: var(--text-medium);
+  line-height: 1.6;
+  margin: 0;
+}
+
+/* Useful Links Section */
+.useful-links-section {
+  border-top: 1px solid var(--border-color);
+  background-color: #f7f9f6;
+  padding: 50px 0;
+}
+
+.links-carousel-grid {
+  display: grid;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 20px;
+}
+
+.link-partner-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background-color: var(--white);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 20px;
+  text-align: center;
+  text-decoration: none;
+  color: var(--text-dark);
+  box-shadow: var(--shadow-sm);
+  transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+}
+
+.link-partner-card:hover {
+  transform: translateY(-4px);
+  border-color: var(--primary);
+  box-shadow: var(--shadow-md);
+}
+
+.partner-logo-box {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  background-color: rgba(74, 103, 65, 0.05);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.45rem;
+  margin-bottom: 12px;
+  transition: var(--transition);
+}
+
+.link-partner-card:hover .partner-logo-box {
+  background-color: var(--primary);
+  color: white;
+}
+
+.link-partner-card span {
+  font-size: 0.82rem;
+  font-weight: 750;
+  line-height: 1.3;
+}
+
+/* Additional media query overrides */
+@media (max-width: 900px) {
+  .gallery-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .links-carousel-grid {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
+@media (max-width: 480px) {
+  .gallery-grid {
+    grid-template-columns: 1fr;
+  }
+  .links-carousel-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+  .faq-accordion-question {
+    padding: 14px 18px;
+    font-size: 0.85rem;
+  }
+  .faq-accordion-answer {
+    padding: 14px 18px;
+  }
+}
 }
 </style>
