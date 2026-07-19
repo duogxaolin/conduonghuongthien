@@ -4,8 +4,8 @@
     <section class="contact-hero">
       <div class="contact-hero-overlay"></div>
       <div class="container">
-        <h2 class="contact-hero-title">Liên Hệ & Trợ Giúp</h2>
-        <p class="contact-hero-subtitle">Kết nối với ban biên tập và gửi thông tin yêu cầu trợ giúp trực tiếp</p>
+        <h2 class="contact-hero-title">{{ t('contact_hero_title') }}</h2>
+        <p class="contact-hero-subtitle">{{ t('contact_hero_sub') }}</p>
       </div>
     </section>
 
@@ -15,15 +15,15 @@
         <!-- Contact Details -->
         <div class="contact-details">
           <div class="contact-block">
-            <h3>Thông tin liên hệ Ban Biên tập</h3>
-            <p><strong>Cơ quan chủ quản:</strong> Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an</p>
-            <p><strong>Địa chỉ:</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội</p>
-            <p><strong>Điện thoại đường dây nóng:</strong> 0903.480.985</p>
-            <p><strong>Email tiếp nhận phản ánh:</strong> contact@conduonghuongthien.com.vn</p>
+            <h3>{{ t('contact_editorial_info') }}</h3>
+            <p><strong>{{ t('footer_agency') }}</strong> Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an</p>
+            <p><strong>{{ t('footer_address') }}</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội</p>
+            <p><strong>{{ t('hotline_lbl') }}:</strong> 0903.480.985</p>
+            <p><strong>{{ t('footer_email') }}</strong> contact@conduonghuongthien.com.vn</p>
           </div>
 
           <div class="contact-block">
-            <h3>Cơ chế hỗ trợ</h3>
+            <h3>{{ t('contact_support_mechanism') }}</h3>
             <p class="desc-text">
               Hệ thống trợ giúp tiếp nhận yêu cầu 24/7 từ người chấp hành xong án phạt tù hoặc thân nhân của họ. Sau khi tiếp nhận thông tin, Ban Biên tập sẽ tiến hành bảo mật dữ liệu cá nhân, phân loại nghiệp vụ và chuyển giao nhanh chóng đến lực lượng Công an cấp cơ sở (xã, phường, thị trấn) hoặc ban ngành liên quan tại địa bàn bạn cư trú để hỗ trợ xử lý kịp thời.
             </p>
@@ -32,7 +32,7 @@
 
         <!-- Contact Form -->
         <div class="contact-form-card">
-          <h3>Gửi Yêu Cầu Trợ Giúp Hoặc Ý Kiến Đóng Góp</h3>
+          <h3>{{ t('contact_form_heading') }}</h3>
           <form @submit.prevent="handleSubmit" class="main-contact-form">
             <div class="form-group">
               <label>Họ và tên người đăng ký *</label>
@@ -75,6 +75,8 @@
 
 <script setup>
 import { reactive, ref } from 'vue'
+
+const { t } = useI18n()
 
 useSeoMeta({
   title: 'Liên hệ & Trợ giúp | Con Đường Hướng Thiện',

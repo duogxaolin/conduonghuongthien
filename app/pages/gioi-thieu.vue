@@ -4,18 +4,18 @@
     <section class="about-hero">
       <div class="about-hero-overlay"></div>
       <div class="container">
-        <h2 class="about-hero-title">Giới Thiệu Ban Biên Tập</h2>
-        <p class="about-hero-subtitle">Tôn chỉ, mục đích hoạt động và chặng đường đồng hành cùng người hoàn lương</p>
+        <h2 class="about-hero-title">{{ t('about_hero_title') }}</h2>
+        <p class="about-hero-subtitle">{{ t('about_hero_sub') }}</p>
       </div>
     </section>
 
     <!-- Main Content -->
     <section class="section">
       <div class="container about-container">
-        <SectionBar icon="🏛" title="Về Ban Biên tập" />
+        <SectionBar icon="🏛" :title="t('about_editorial')" />
         <div class="about-main-content">
           <div class="about-block">
-            <h3>Tôn chỉ & Mục đích</h3>
+            <h3>{{ t('about_purpose_title') }}</h3>
             <p>
               Trang thông tin điện tử <strong>Con Đường Hướng Thiện</strong> hoạt động dưới sự chỉ đạo của Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.
             </p>
@@ -198,3 +198,7 @@ useSeoMeta({
   }
 }
 </style>
+
+<script setup>
+const { t } = useI18n()
+</script>

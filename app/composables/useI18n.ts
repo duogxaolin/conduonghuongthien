@@ -100,7 +100,34 @@ export const useI18n = () => {
       bot_clear_history: 'Xóa lịch sử trò chuyện',
       bot_input_ph: 'Hỏi trợ lý về QĐ 22, thủ tục...',
       bot_teaser_badge: 'Gợi ý câu hỏi',
-      bot_welcome: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi có thể hỗ trợ bạn giải đáp nhanh các câu hỏi pháp lý đã được Cục C11 phê duyệt về công tác tái hòa nhập cộng đồng.'
+      bot_welcome: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi có thể hỗ trợ bạn giải đáp nhanh các câu hỏi pháp lý đã được Cục C11 phê duyệt về công tác tái hòa nhập cộng đồng.',
+
+      // About Page
+      about_hero_title: 'Giới Thiệu Ban Biên Tập',
+      about_hero_sub: 'Tôn chỉ, mục đích hoạt động và chặng đường đồng hành cùng người hoàn lương',
+      about_editorial: 'Về Ban Biên tập',
+      about_purpose_title: 'Tôn chỉ & Mục đích',
+      about_purpose_1: 'Trang thông tin điện tử Con Đường Hướng Thiện hoạt động dưới sự chỉ đạo của Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.',
+      about_purpose_2: 'Mục tiêu tối thượng của nền tảng là cung cấp thông tin chính thống về các chính sách, nghị định của Đảng và Nhà nước liên quan đến công tác thi hành án hình sự và hỗ trợ hòa nhập cộng đồng; tuyên truyền, nhân rộng các mô hình sản xuất kinh tế hiệu quả, các tấm gương điển hình tiên tiến hoàn lương lập nghiệp thành công.',
+      about_tasks_title: 'Nhiệm vụ trọng tâm',
+
+      // Contact Page
+      contact_hero_title: 'Liên Hệ & Trợ Giúp',
+      contact_hero_sub: 'Kết nối với ban biên tập và gửi thông tin yêu cầu trợ giúp trực tiếp',
+      contact_editorial_info: 'Thông tin liên hệ Ban Biên tập',
+      contact_support_mechanism: 'Cơ chế hỗ trợ',
+      contact_form_heading: 'Gửi Yêu Cầu Trợ Giúp Hoặc Ý Kiến Đóng Góp',
+
+      // Legal & Q&A Pages
+      qa_hero_title: 'Giải Đáp Pháp Luật Trực Tuyến',
+      qa_hero_sub: 'Tra cứu nhanh các thắc mắc về thi hành án hình sự, tín dụng ưu đãi QĐ 22 và xóa án tích',
+      doc_hero_title: 'Văn Bản Pháp Luật & Thủ Tục',
+      doc_hero_sub: 'Hệ thống các Nghị định, Quyết định và hướng dẫn thi hành mới nhất của Bộ Công an và Chính phủ',
+      doc_search_ph: 'Nhập số hiệu, tên văn bản...',
+      doc_table_num: 'Số hiệu / Ký hiệu',
+      doc_table_date: 'Ngày ban hành',
+      doc_table_title: 'Tên văn bản',
+      doc_table_action: 'Tải về / Thao tác'
     },
     EN: {
       // Header & Nav
@@ -197,8 +224,34 @@ export const useI18n = () => {
       bot_clear_history: 'Clear Chat History',
       bot_input_ph: 'Ask assistant about Decision 22, procedures...',
       bot_teaser_badge: 'Suggested Question',
-      bot_welcome: 'Hello! I am Huong Thien AI Assistant. I can help answer legal questions approved by C11 regarding community reintegration.'
-    }
+      bot_welcome: 'Hello! I am Huong Thien AI Assistant. I can help answer legal questions approved by C11 regarding community reintegration.',
+
+      // About Page
+      about_hero_title: 'Editorial Board Overview',
+      about_hero_sub: 'Principles, operation goals, and journey of supporting reintegration',
+      about_editorial: 'About the Editorial Board',
+      about_purpose_title: 'Principles & Goals',
+      about_purpose_1: 'The Con Duong Huong Thien Information Portal operates under the direction of C11 Department - Ministry of Public Security.',
+      about_purpose_2: 'The ultimate objective is to provide official information regarding policies and decrees related to criminal execution and community reintegration support.',
+      about_tasks_title: 'Key Responsibilities',
+
+      // Contact Page
+      contact_hero_title: 'Contact & Support',
+      contact_hero_sub: 'Connect with the editorial board and submit direct support requests',
+      contact_editorial_info: 'Editorial Board Contact Info',
+      contact_support_mechanism: 'Support Mechanism',
+      contact_form_heading: 'Submit Support Request or Feedback',
+
+      // Legal & Q&A Pages
+      qa_hero_title: 'Online Legal Q&A',
+      qa_hero_sub: 'Quickly look up inquiries about criminal execution, Decision 22 credit loans, and criminal record clearance',
+      doc_hero_title: 'Legal Documents & Procedures',
+      doc_hero_sub: 'System of latest Decrees, Decisions, and execution guidelines by the Government and Ministry of Public Security',
+      doc_search_ph: 'Enter document number or title...',
+      doc_table_num: 'Document No. / Code',
+      doc_table_date: 'Issued Date',
+      doc_table_title: 'Document Title',
+      doc_table_action: 'Download / Action'
   }
 
   const t = (key: string): string => {
