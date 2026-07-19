@@ -1,4 +1,3 @@
-// https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
   compatibilityDate: '2026-07-20',
   devtools: { enabled: true },
@@ -6,6 +5,16 @@ export default defineNuxtConfig({
   css: [
     '~/assets/css/main.css'
   ],
+
+  runtimeConfig: {
+    // Private server keys
+    aiApiKey: process.env.AI_API_KEY || '',
+    aiBaseUrl: process.env.AI_BASE_URL || 'https://api.openai.com/v1',
+    aiModel: process.env.AI_MODEL || 'gpt-4o-mini',
+    
+    // Public keys
+    public: {}
+  },
 
   app: {
     head: {

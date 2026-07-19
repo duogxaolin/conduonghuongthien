@@ -13,6 +13,7 @@
     <section class="section">
       <div class="container docs-container">
         <div class="docs-main-list">
+          <SectionBar icon="📜" title="Văn bản pháp luật mới" />
           <div class="search-bar-wrap">
             <input type="text" placeholder="Nhập từ khóa tìm kiếm văn bản (Ví dụ: 49/2020, vay vốn, xóa án tích...)" v-model="searchQuery" />
             <button class="btn btn-primary">Tìm kiếm</button>
@@ -53,6 +54,11 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+
+useSeoMeta({
+  title: 'Văn bản pháp luật | Con Đường Hướng Thiện',
+  description: 'Tra cứu văn bản quy phạm pháp luật về thi hành án hình sự, chính sách tín dụng và tái hòa nhập cộng đồng.'
+})
 
 const searchQuery = ref('')
 

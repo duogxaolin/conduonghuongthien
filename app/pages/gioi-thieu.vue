@@ -12,11 +12,12 @@
     <!-- Main Content -->
     <section class="section">
       <div class="container about-container">
+        <SectionBar icon="🏛" title="Về Ban Biên tập" />
         <div class="about-main-content">
           <div class="about-block">
             <h3>Tôn chỉ & Mục đích</h3>
             <p>
-              Trang thông tin điện tử **Con Đường Hướng Thiện** hoạt động dưới sự chỉ đạo của Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an. 
+              Trang thông tin điện tử <strong>Con Đường Hướng Thiện</strong> hoạt động dưới sự chỉ đạo của Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.
             </p>
             <p>
               Mục tiêu tối thượng của nền tảng là cung cấp thông tin chính thống về các chính sách, nghị định của Đảng và Nhà nước liên quan đến công tác thi hành án hình sự và hỗ trợ hòa nhập cộng đồng; tuyên truyền, nhân rộng các mô hình sản xuất kinh tế hiệu quả, các tấm gương điển hình tiên tiến hoàn lương lập nghiệp thành công; định hướng tư tưởng, pháp lý và kết nối hỗ trợ trực tuyến 24/7 giúp người lầm lỡ xóa bỏ tự ti, sớm ổn định cuộc sống.
@@ -55,6 +56,13 @@
     </section>
   </div>
 </template>
+
+<script setup>
+useSeoMeta({
+  title: 'Giới thiệu | Con Đường Hướng Thiện',
+  description: 'Giới thiệu Ban Biên tập Cổng thông tin Con Đường Hướng Thiện - Cục C11 Bộ Công an.'
+})
+</script>
 
 <style scoped>
 .about-hero {

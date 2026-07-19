@@ -12,6 +12,7 @@
     <!-- Main List -->
     <section class="section">
       <div class="container">
+        <SectionBar icon="🌟" title="Những tấm gương hoàn lương" />
         <div class="role-list-grid">
           <div v-for="item in roleModels" :key="item.id" class="role-card-item">
             <div class="avatar-wrap">
@@ -31,6 +32,11 @@
 </template>
 
 <script setup>
+useSeoMeta({
+  title: 'Tấm gương tiêu biểu | Con Đường Hướng Thiện',
+  description: 'Những tấm gương hoàn lương lập nghiệp thành công sau khi chấp hành xong án phạt tù.'
+})
+
 const roleModels = [
   {
     id: 1,

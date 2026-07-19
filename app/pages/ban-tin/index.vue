@@ -27,6 +27,14 @@
 
         <!-- News List -->
         <div class="news-main-list">
+          <SectionBar icon="📰" title="Bản tin hoạt động" />
+          <div v-if="searchQuery" class="search-notice">
+            Kết quả tìm kiếm cho từ khóa: <strong>&laquo;{{ searchQuery }}&raquo;</strong>
+            <button class="search-clear" @click="clearSearch">✕ Bỏ tìm kiếm</button>
+          </div>
+          <div v-if="filteredNews.length === 0" class="search-empty">
+            Không tìm thấy bản tin phù hợp. Vui lòng thử từ khóa khác hoặc xem <nuxt-link to="/ban-tin">tất cả bản tin</nuxt-link>.
+          </div>
           <div v-for="item in filteredNews" :key="item.id" class="news-horizontal-card">
             <div class="news-card-img">
               <img :src="item.image" :alt="item.title" />
@@ -48,8 +56,14 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRoute } from 'vue-router'
 
+useSeoMeta({
+  title: 'Bản tin hoạt động | Con Đường Hướng Thiện',
+  description: 'Tin tức, chỉ đạo điều hành và sự kiện hỗ trợ hoàn lương, tái hòa nhập cộng đồng trên toàn quốc.'
+})
+
 const route = useRoute()
 const activeCategory = ref('all')
+const searchQuery = ref('')
 
 const newsItems = [
   {
@@ -115,19 +129,35 @@ const newsItems = [
 ]
 
 const filteredNews = computed(() => {
-  if (activeCategory.value === 'all') {
-    return newsItems
+  let list = activeCategory.value === 'all'
+    ? newsItems
+    : newsItems.filter(item => item.category === activeCategory.value)
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    list = list.filter(item =>
+      item.title.toLowerCase().includes(q) ||
+      item.excerpt.toLowerCase().includes(q) ||
+      item.categoryName.toLowerCase().includes(q)
+    )
   }
-  return newsItems.filter(item => item.category === activeCategory.value)
+  return list
 })
 
 const setCategory = (cat) => {
   activeCategory.value = cat
 }
 
+const clearSearch = () => {
+  searchQuery.value = ''
+  navigateTo({ path: '/ban-tin', query: {} })
+}
+
 onMounted(() => {
   if (route.query.cat) {
     activeCategory.value = route.query.cat
+  }
+  if (route.query.q) {
+    searchQuery.value = String(route.query.q)
   }
 })
 </script>
@@ -292,6 +322,50 @@ onMounted(() => {
   text-decoration: none;
   font-size: 0.88rem;
   align-self: flex-start;
+}
+
+.search-notice {
+  background: var(--bg-light);
+  border: 1px solid var(--border-color);
+  border-left: 4px solid var(--secondary);
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 0.92rem;
+  color: var(--text-medium);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.search-clear {
+  background: none;
+  border: 1px solid var(--border-color);
+  border-radius: 20px;
+  padding: 5px 12px;
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-medium);
+  cursor: pointer;
+  transition: var(--transition);
+}
+.search-clear:hover {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+}
+.search-empty {
+  background: #fff;
+  border: 1px dashed var(--border-color);
+  padding: 40px 24px;
+  border-radius: var(--radius-md);
+  text-align: center;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+.search-empty a {
+  color: var(--primary);
+  font-weight: 700;
 }
 
 @media (max-width: 900px) {

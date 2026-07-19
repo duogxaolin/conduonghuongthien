@@ -7,11 +7,11 @@
     <div class="top-bar">
       <div class="container top-bar-content">
         <div class="top-left">
-          <span class="live-date"><span class="live-date-icon">🕒</span> {{ liveDateTime }}</span>
-          <span class="divider">|</span>
-          <span>📞 Hotline: 0903.480.985</span>
+          <span class="live-date top-hide-mobile"><span class="live-date-icon">🕒</span> {{ liveDateTime }}</span>
           <span class="divider top-hide-mobile">|</span>
-          <span class="top-hide-mobile">✉ Email: contact@conduonghuongthien.com.vn</span>
+          <span>📞 Hotline: 0903.480.985</span>
+          <span class="divider">|</span>
+          <span>✉ Email: contact@conduonghuongthien.com.vn</span>
         </div>
         <div class="top-right">
           <!-- Text Accessibility Controls -->
@@ -49,17 +49,17 @@
 
           <!-- Top Actions -->
           <div class="header-top-actions">
-            <button class="search-btn-toggle" @click="toggleSearch" :class="{ 'is-active': isSearchActive }">
+            <button class="search-btn-toggle" @click="toggleSearch" :class="{ 'is-active': isSearchActive }" :aria-label="isSearchActive ? 'Đóng ô tìm kiếm' : 'Mở ô tìm kiếm'" :aria-expanded="isSearchActive">
               {{ isSearchActive ? '×' : '🔍' }}
             </button>
             <nuxt-link to="/lien-he" class="btn btn-primary btn-support-247">
               <span class="pulse-icon"></span> Hỗ trợ 24/7
             </nuxt-link>
             <!-- Mobile Toggle -->
-            <button class="menu-toggle" @click="toggleMobileMenu">
-              <span class="bar" :class="{ 'bar-open-1': isMobileMenuOpen }"></span>
-              <span class="bar" :class="{ 'bar-open-2': isMobileMenuOpen }"></span>
-              <span class="bar" :class="{ 'bar-open-3': isMobileMenuOpen }"></span>
+            <button class="menu-toggle" :class="{ 'is-hidden': isMobileMenuOpen }" @click="toggleMobileMenu" aria-label="Mở menu">
+              <span class="bar"></span>
+              <span class="bar"></span>
+              <span class="bar"></span>
             </button>
           </div>
         </div>
@@ -68,53 +68,101 @@
       <!-- Dòng 2: Thanh Menu Điều hướng -->
       <div class="header-nav-row" :class="{ 'nav-sticky': isSticky }">
         <div class="container nav-container">
-          <nav class="main-nav" :class="{ 'is-open': isMobileMenuOpen }">
-            <ul class="nav-links">
-              <li><nuxt-link to="/" class="nav-item" active-class="active-item">Trang chủ</nuxt-link></li>
-              <li><nuxt-link to="/gioi-thieu" class="nav-item" active-class="active-item">Giới thiệu</nuxt-link></li>
-              
-              <!-- Dropdown Menu Bản tin -->
-              <li class="has-dropdown" @mouseenter="showDropdown = true" @mouseleave="showDropdown = false">
-                <nuxt-link to="/ban-tin" class="nav-item" active-class="active-item">
-                  Bản tin <span class="arrow">▼</span>
+          <nav class="main-nav" :class="{ 'is-open': isMobileMenuOpen }" @click="onNavClick" @keydown.escape="toggleMobileMenu">
+            <!-- Modern Drawer Header -->
+            <div class="mobile-drawer-head">
+              <div class="drawer-brand-box">
+                <img class="drawer-logo-img" src="/Logo.png" alt="Logo Con Đường Hướng Thiện" />
+                <div class="drawer-brand-info">
+                  <span class="drawer-brand-name">CON ĐƯỜNG HƯỚNG THIỆN</span>
+                  <span class="drawer-brand-sub">Cổng thông tin điện tử C11 - Bộ Công an</span>
+                </div>
+              </div>
+              <button class="drawer-close" @click.stop="toggleMobileMenu" aria-label="Đóng menu">
+                ✕
+              </button>
+            </div>
+
+            <!-- Drawer Search Bar -->
+            <div class="drawer-search-wrap">
+              <div class="drawer-search-box">
+                <span class="search-icon">🔍</span>
+                <input
+                  type="text"
+                  placeholder="Tìm kiếm nội dung..."
+                  v-model="searchQuery"
+                  @keyup.enter="handleSearch"
+                />
+                <button v-if="searchQuery" class="clear-search-btn" @click="searchQuery = ''">✕</button>
+              </div>
+            </div>
+
+            <!-- Drawer Links -->
+            <div class="drawer-body">
+              <ul class="nav-links">
+                <li><nuxt-link to="/" class="nav-item" active-class="active-item">Trang chủ</nuxt-link></li>
+                <li><nuxt-link to="/gioi-thieu" class="nav-item" active-class="active-item">Giới thiệu</nuxt-link></li>
+                
+                <!-- Dropdown Menu Bản tin -->
+                <li class="has-dropdown" :class="{ 'is-mobile-expanded': showDropdown }" @mouseenter="showDropdown = true" @mouseleave="showDropdown = false">
+                  <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('news')">
+                    <nuxt-link to="/ban-tin" active-class="active-item" @click.stop>Bản tin</nuxt-link>
+                    <span class="arrow" :class="{ 'is-rotated': showDropdown }">▼</span>
+                  </div>
+                  <ul class="dropdown-menu" :class="{ 'is-show': showDropdown }">
+                    <li><nuxt-link to="/ban-tin/tin-noi-bat">Tin nổi bật</nuxt-link></li>
+                    <li><nuxt-link to="/ban-tin/tin-hoat-dong">Tin hoạt động</nuxt-link></li>
+                    <li><nuxt-link to="/ban-tin/tin-dia-phuong">Tin địa phương</nuxt-link></li>
+                  </ul>
+                </li>
+
+                <li><nuxt-link to="/tamguongtieubieu" class="nav-item" active-class="active-item">Tấm gương tiêu biểu</nuxt-link></li>
+                <li><nuxt-link to="/mohinhtaihoanhap" class="nav-item" active-class="active-item">Mô hình tái hòa nhập</nuxt-link></li>
+                <li><nuxt-link to="/van-ban" class="nav-item" active-class="active-item">Văn bản</nuxt-link></li>
+                
+                <!-- Dropdown Menu Thư viện -->
+                <li class="has-dropdown" :class="{ 'is-mobile-expanded': showLibraryDropdown }" @mouseenter="showLibraryDropdown = true" @mouseleave="showLibraryDropdown = false">
+                  <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('library')">
+                    <span class="cursor-pointer">Thư viện</span>
+                    <span class="arrow" :class="{ 'is-rotated': showLibraryDropdown }">▼</span>
+                  </div>
+                  <ul class="dropdown-menu" :class="{ 'is-show': showLibraryDropdown }">
+                    <li><a href="#video-library">Thư viện Video</a></li>
+                    <li><a href="#photo-library">Thư viện Ảnh</a></li>
+                  </ul>
+                </li>
+
+                <li><nuxt-link to="/giai-dap-phap-luat" class="nav-item" active-class="active-item">Giải đáp pháp luật</nuxt-link></li>
+                
+                <!-- Dropdown Bộ với công dân -->
+                <li class="has-dropdown" :class="{ 'is-mobile-expanded': showGovDropdown }" @mouseenter="showGovDropdown = true" @mouseleave="showGovDropdown = false">
+                  <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('gov')">
+                    <span class="cursor-pointer">Bộ với Công dân</span>
+                    <span class="arrow" :class="{ 'is-rotated': showGovDropdown }">▼</span>
+                  </div>
+                  <ul class="dropdown-menu" :class="{ 'is-show': showGovDropdown }">
+                    <li><a href="#tro-giup">Đăng ký trợ giúp</a></li>
+                    <li><nuxt-link to="/van-ban">Thủ tục hành chính</nuxt-link></li>
+                  </ul>
+                </li>
+
+                <li><nuxt-link to="/lien-he" class="nav-item" active-class="active-item">Liên hệ</nuxt-link></li>
+              </ul>
+
+              <!-- Drawer Footer Quick Actions -->
+              <div class="mobile-drawer-footer">
+                <a href="tel:0903480985" class="drawer-hotline-card">
+                  <span class="hotline-icon-wrap">📞</span>
+                  <div class="hotline-text">
+                    <span class="hotline-lbl">Hotline Tư Vấn 24/7</span>
+                    <span class="hotline-num">0903.480.985</span>
+                  </div>
+                </a>
+                <nuxt-link to="/lien-he" class="btn btn-primary drawer-support-btn" @click="isMobileMenuOpen = false">
+                  <span class="pulse-icon"></span> Đăng ký tư vấn ngay
                 </nuxt-link>
-                <ul class="dropdown-menu" :class="{ 'is-show': showDropdown }">
-                  <li><nuxt-link to="/ban-tin/tin-noi-bat">Tin nổi bật</nuxt-link></li>
-                  <li><nuxt-link to="/ban-tin/tin-hoat-dong">Tin hoạt động</nuxt-link></li>
-                  <li><nuxt-link to="/ban-tin/tin-dia-phuong">Tin địa phương</nuxt-link></li>
-                </ul>
-              </li>
-
-              <li><nuxt-link to="/tamguongtieubieu" class="nav-item" active-class="active-item">Tấm gương tiêu biểu</nuxt-link></li>
-              <li><nuxt-link to="/mohinhtaihoanhap" class="nav-item" active-class="active-item">Mô hình tái hòa nhập</nuxt-link></li>
-              <li><nuxt-link to="/van-ban" class="nav-item" active-class="active-item">Văn bản</nuxt-link></li>
-              
-              <!-- Dropdown Menu Thư viện -->
-              <li class="has-dropdown" @mouseenter="showLibraryDropdown = true" @mouseleave="showLibraryDropdown = false">
-                <span class="nav-item cursor-pointer">
-                  Thư viện <span class="arrow">▼</span>
-                </span>
-                <ul class="dropdown-menu" :class="{ 'is-show': showLibraryDropdown }">
-                  <li><a href="#video-library">Thư viện Video</a></li>
-                  <li><a href="#photo-library">Thư viện Ảnh</a></li>
-                </ul>
-              </li>
-
-              <li><nuxt-link to="/giai-dap-phap-luat" class="nav-item" active-class="active-item">Giải đáp pháp luật</nuxt-link></li>
-              
-              <!-- Dropdown Bộ với công dân -->
-              <li class="has-dropdown" @mouseenter="showGovDropdown = true" @mouseleave="showGovDropdown = false">
-                <span class="nav-item cursor-pointer">
-                  Bộ với Công dân <span class="arrow">▼</span>
-                </span>
-                <ul class="dropdown-menu" :class="{ 'is-show': showGovDropdown }">
-                  <li><a href="#tro-giup">Đăng ký trợ giúp</a></li>
-                  <li><nuxt-link to="/van-ban">Thủ tục hành chính</nuxt-link></li>
-                </ul>
-              </li>
-
-              <li><nuxt-link to="/lien-he" class="nav-item" active-class="active-item">Liên hệ</nuxt-link></li>
-            </ul>
+              </div>
+            </div>
           </nav>
         </div>
       </div>
@@ -197,22 +245,42 @@
       </div>
     </footer>
 
-    <!-- Chatbot Popup (Hiển thị ở mọi trang) -->
+    <!-- Chatbot Popup (Trợ Lý Pháp Lý C11 Minimalist) -->
     <div class="chatbot-popup" :class="{ 'is-open': isChatbotOpen }">
       <div class="chatbot-header">
         <div class="chatbot-title">
-          <span class="bot-avatar">🤖</span>
-          <div>
-            <h4>Trợ lý ảo Hướng Thiện</h4>
-            <p>Hỗ trợ giải đáp pháp lý tự động</p>
+          <div class="minimal-bot-avatar">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e4620" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <div class="bot-header-meta">
+            <h4>Trợ lý Pháp lý C11</h4>
+            <p><span class="status-dot-green"></span> Sẵn sàng giải đáp 24/7</p>
           </div>
         </div>
-        <button class="close-bot-btn" @click="toggleChatbot">×</button>
+        <div class="header-actions">
+          <button class="clear-history-btn" @click="clearChatHistory" title="Xóa lịch sử trò chuyện" aria-label="Xóa lịch sử">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="3 6 5 6 21 6"></polyline>
+              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+            </svg>
+          </button>
+          <button class="close-bot-btn" @click="toggleChatbot" aria-label="Đóng cửa sổ">✕</button>
+        </div>
       </div>
 
       <div class="chatbot-messages" ref="chatContainer">
         <div v-for="(msg, index) in chatMessages" :key="index" class="chat-msg" :class="msg.sender">
-          <div class="msg-bubble">{{ msg.text }}</div>
+          <div v-if="msg.sender === 'bot'" class="msg-bot-avatar">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1e4620" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+            </svg>
+          </div>
+          <div class="msg-bubble">
+            <div class="markdown-content" v-html="renderMarkdown(msg.text)"></div>
+            <span v-if="msg.isStreaming" class="streaming-cursor">▌</span>
+          </div>
         </div>
       </div>
 
@@ -231,24 +299,104 @@
       <div class="chatbot-input-area">
         <input 
           type="text" 
-          placeholder="Nhập câu hỏi pháp lý của bạn..." 
+          placeholder="Hỏi trợ lý về QĐ 22, thủ tục..." 
           v-model="botInput" 
           @keyup.enter="sendBotMessage"
         />
-        <button class="send-bot-btn" @click="sendBotMessage">➤</button>
+        <button class="send-bot-btn" @click="sendBotMessage" aria-label="Gửi tin nhắn">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="22" y1="2" x2="11" y2="13"></line>
+            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+          </svg>
+        </button>
       </div>
     </div>
 
-    <!-- Toggle Button for Chatbot -->
+    <!-- Chatbot Floating Teaser Bubble (Hiện 4.5s -> Tắt -> Nghỉ 3.5s -> Hiện câu mới) -->
+    <transition name="teaser-pop">
+      <div 
+        v-if="!isChatbotOpen && isTeaserVisible" 
+        class="chatbot-teaser-bubble"
+        @click="toggleChatbot"
+      >
+        <div class="teaser-content">
+          <span class="teaser-badge">Gợi ý câu hỏi</span>
+          <p class="teaser-text">{{ currentTeaserText }}</p>
+        </div>
+        <button class="teaser-close-btn" @click="dismissTeaser" aria-label="Tắt gợi ý">✕</button>
+        <div class="teaser-arrow"></div>
+      </div>
+    </transition>
+
+    <!-- Minimal Floating Toggle Button for Chatbot -->
     <button class="chatbot-toggle-btn" @click="toggleChatbot">
-      <span class="bot-icon">💬</span>
+      <div class="toggle-bot-icon">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+        </svg>
+      </div>
       <span class="bot-badge">Hỏi trợ lý</span>
     </button>
+
+    <!-- Mobile App Bottom Navigation Bar (Liquid Glass Style) -->
+    <nav class="mobile-bottom-nav">
+      <nuxt-link to="/" class="bottom-nav-item" active-class="active">
+        <div class="bottom-nav-icon-wrap">
+          <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+            <polyline points="9 22 9 12 15 12 15 22"></polyline>
+          </svg>
+        </div>
+        <span class="bottom-nav-label">Trang chủ</span>
+      </nuxt-link>
+
+      <nuxt-link to="/ban-tin" class="bottom-nav-item" active-class="active">
+        <div class="bottom-nav-icon-wrap">
+          <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
+          </svg>
+        </div>
+        <span class="bottom-nav-label">Bản tin</span>
+      </nuxt-link>
+
+      <!-- Center Floating Liquid Orb: Hỏi Trợ Lý -->
+      <button class="bottom-nav-item center-action" @click="toggleChatbot" :class="{ 'active': isChatbotOpen }">
+        <div class="center-action-icon">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+        </div>
+        <span class="bottom-nav-label">Hỏi trợ lý</span>
+      </button>
+
+      <nuxt-link to="/van-ban" class="bottom-nav-item" active-class="active">
+        <div class="bottom-nav-icon-wrap">
+          <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="16" y1="13" x2="8" y2="13"></line>
+            <line x1="16" y1="17" x2="8" y2="17"></line>
+          </svg>
+        </div>
+        <span class="bottom-nav-label">Văn bản</span>
+      </nuxt-link>
+
+      <button class="bottom-nav-item" @click="toggleMobileMenu" :class="{ 'active': isMobileMenuOpen }">
+        <div class="bottom-nav-icon-wrap">
+          <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="3" y1="12" x2="21" y2="12"></line>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <line x1="3" y1="18" x2="21" y2="18"></line>
+          </svg>
+        </div>
+        <span class="bottom-nav-label">Danh mục</span>
+      </button>
+    </nav>
   </div>
 </template>
 
 <script setup>
-import { ref, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, reactive, onMounted, onUnmounted, computed, nextTick } from 'vue'
 
 const isSticky = ref(false)
 const isMobileMenuOpen = ref(false)
@@ -272,7 +420,55 @@ const updateLiveDate = () => {
 
 let dateTimer = null
 
-// Chatbot states
+// Chatbot Floating Teaser Prompts (Hiện -> Tắt -> Nghỉ -> Hiện câu mới)
+const botTeasers = [
+  'Bạn muốn hỏi về quy trình?',
+  'Bạn muốn vay vốn theo QĐ 22?',
+  'Bạn hãy đặt câu hỏi cho mình nhé!',
+  'Hồ sơ thủ tục xóa án tích gồm những gì?',
+  'Tư vấn đào tạo nghề & việc làm miễn phí'
+]
+const activeTeaserIndex = ref(0)
+const isTeaserVisible = ref(true)
+const isTeaserDismissed = ref(false)
+let teaserTimeout = null
+
+const currentTeaserText = computed(() => {
+  return botTeasers[activeTeaserIndex.value]
+})
+
+const runTeaserCycle = () => {
+  stopTeaserCycle()
+  if (isTeaserDismissed.value || isChatbotOpen.value) return
+
+  // Phase 1: Hiển thị bong bóng gợi ý
+  isTeaserVisible.value = true
+
+  // Phase 2: Giữ bong bóng hiện 4.5 giây cho người dùng đọc
+  teaserTimeout = setTimeout(() => {
+    isTeaserVisible.value = false // Tắt hoàn toàn bong bóng
+
+    // Phase 3: Tắt xong nghỉ 3.5 giây rồi mới chuyển sang câu tiếp theo và hiện lại
+    teaserTimeout = setTimeout(() => {
+      activeTeaserIndex.value = (activeTeaserIndex.value + 1) % botTeasers.length
+      runTeaserCycle()
+    }, 3500)
+  }, 4500)
+}
+
+const stopTeaserCycle = () => {
+  if (teaserTimeout) {
+    clearTimeout(teaserTimeout)
+    teaserTimeout = null
+  }
+  isTeaserVisible.value = false
+}
+
+const dismissTeaser = (e) => {
+  e.stopPropagation()
+  isTeaserDismissed.value = true
+  stopTeaserCycle()
+}
 const isChatbotOpen = ref(false)
 const botInput = ref('')
 const chatContainer = ref(null)
@@ -302,6 +498,22 @@ const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value
 }
 
+const toggleMobileSubmenu = (menuKey) => {
+  if (menuKey === 'news') {
+    showDropdown.value = !showDropdown.value
+  } else if (menuKey === 'library') {
+    showLibraryDropdown.value = !showLibraryDropdown.value
+  } else if (menuKey === 'gov') {
+    showGovDropdown.value = !showGovDropdown.value
+  }
+}
+
+const onNavClick = (e) => {
+  if (e.target.closest('a')) {
+    isMobileMenuOpen.value = false
+  }
+}
+
 const toggleSearch = async () => {
   isSearchActive.value = !isSearchActive.value
   if (isSearchActive.value) {
@@ -313,8 +525,9 @@ const toggleSearch = async () => {
 }
 
 const handleSearch = () => {
-  if (searchQuery.value.trim() !== '') {
-    alert(`Tìm kiếm từ khóa: ${searchQuery.value}`)
+  const q = searchQuery.value.trim()
+  if (q) {
+    navigateTo({ path: '/ban-tin', query: { q } })
     searchQuery.value = ''
     isSearchActive.value = false
   }
@@ -331,42 +544,226 @@ const changeFontSize = (size) => {
 const toggleChatbot = () => {
   isChatbotOpen.value = !isChatbotOpen.value
   if (isChatbotOpen.value) {
+    stopTeaserCycle()
     scrollChatBottom()
+  } else {
+    setTimeout(() => {
+      runTeaserCycle()
+    }, 2500)
+  }
+}
+
+const renderMarkdown = (text) => {
+  if (!text) return ''
+  let html = text
+
+  // 1. Escape HTML special characters for security
+  html = html
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+
+  // 2. Bold: **text** or __text__
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+  html = html.replace(/__(.*?)__/g, '<strong>$1</strong>')
+
+  // 3. Italic: *text* or _text_
+  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>')
+  html = html.replace(/_(.*?)_/g, '<em>$1</em>')
+
+  // 4. Inline Code: `code`
+  html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
+
+  // 5. Links: [text](url)
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
+
+  // 6. Line & List Processing
+  const lines = html.split('\n')
+  let inList = false
+  let isNumbered = false
+  let resultLines = []
+
+  for (let line of lines) {
+    const trimmed = line.trim()
+
+    // Bullet points (- or *)
+    if (/^[-*]\s+(.*)/.test(trimmed)) {
+      const content = trimmed.replace(/^[-*]\s+/, '')
+      if (!inList) {
+        inList = true
+        isNumbered = false
+        resultLines.push('<ul class="md-list">')
+      }
+      resultLines.push(`<li>${content}</li>`)
+    } 
+    // Numbered lists (1. or 2.)
+    else if (/^\d+\.\s+(.*)/.test(trimmed)) {
+      const content = trimmed.replace(/^\d+\.\s+/, '')
+      if (!inList) {
+        inList = true
+        isNumbered = true
+        resultLines.push('<ol class="md-list">')
+      }
+      resultLines.push(`<li>${content}</li>`)
+    } 
+    else {
+      if (inList) {
+        inList = false
+        resultLines.push(isNumbered ? '</ol>' : '</ul>')
+      }
+      if (trimmed === '') {
+        resultLines.push('<div class="md-spacer"></div>')
+      } else {
+        resultLines.push(`<p>${line}</p>`)
+      }
+    }
+  }
+
+  if (inList) {
+    resultLines.push(isNumbered ? '</ol>' : '</ul>')
+  }
+
+  return resultLines.join('')
+}
+
+const STORAGE_KEY = 'cdkt_chat_history_v1'
+
+const loadChatHistory = () => {
+  if (typeof window !== 'undefined') {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY)
+      if (saved) {
+        const parsed = JSON.parse(saved)
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          chatMessages.value = parsed
+        }
+      }
+    } catch (e) {
+      console.error('Lỗi load lịch sử chat:', e)
+    }
+  }
+}
+
+const saveChatHistory = () => {
+  if (typeof window !== 'undefined') {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(chatMessages.value))
+    } catch (e) {
+      console.error('Lỗi lưu lịch sử chat:', e)
+    }
+  }
+}
+
+const clearChatHistory = () => {
+  chatMessages.value = [
+    { sender: 'bot', text: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi có thể hỗ trợ bạn giải đáp nhanh các câu hỏi pháp lý đã được Cục C11 phê duyệt về công tác tái hòa nhập cộng đồng.' }
+  ]
+  if (typeof window !== 'undefined') {
+    localStorage.removeItem(STORAGE_KEY)
+  }
+}
+
+const fetchStreamBotReply = async () => {
+  const msgObj = reactive({ sender: 'bot', text: '', isStreaming: true })
+  chatMessages.value.push(msgObj)
+  scrollChatBottom()
+
+  let targetFullText = ''
+  let currentRenderedLength = 0
+  let isStreamFetching = true
+
+  // Bộ tiêu thụ từng ký tự client (Typewriter Stream Queue - 15ms/ký tự)
+  const typewriterTimer = setInterval(() => {
+    if (currentRenderedLength < targetFullText.length) {
+      // Mỗi nhịp render 1 - 2 ký tự tạo cảm giác gõ AI siêu mượt
+      const step = Math.min(2, targetFullText.length - currentRenderedLength)
+      currentRenderedLength += step
+      msgObj.text = targetFullText.substring(0, currentRenderedLength)
+      scrollChatBottom()
+    } else if (!isStreamFetching) {
+      // Đã đọc xong từ mạng & đã render đủ toàn bộ ký tự!
+      clearInterval(typewriterTimer)
+      msgObj.isStreaming = false
+      saveChatHistory()
+      scrollChatBottom()
+    }
+  }, 15)
+
+  try {
+    const response = await fetch('/api/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: chatMessages.value.slice(0, -1) })
+    })
+
+    if (!response.ok || !response.body) {
+      throw new Error('Kết nối tới server AI thất bại')
+    }
+
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder('utf-8')
+    let buffer = ''
+
+    while (true) {
+      const { done, value } = await reader.read()
+      if (done) break
+
+      buffer += decoder.decode(value, { stream: true })
+      const lines = buffer.split('\n')
+      buffer = lines.pop() || ''
+
+      for (const line of lines) {
+        const trimmed = line.trim()
+        if (!trimmed || trimmed.startsWith(':')) continue
+
+        if (trimmed === 'data: [DONE]') {
+          break
+        }
+
+        if (trimmed.startsWith('data: ')) {
+          const jsonStr = trimmed.substring(6)
+          try {
+            const data = JSON.parse(jsonStr)
+            const content = data.choices?.[0]?.delta?.content || ''
+            if (content) {
+              targetFullText += content
+            }
+          } catch (e) {
+            targetFullText += jsonStr
+          }
+        }
+      }
+    }
+  } catch (err) {
+    console.error('Streaming error:', err)
+    if (!targetFullText) {
+      targetFullText = 'Xin lỗi, kết nối tới máy chủ AI gặp sự cố. Bạn vui lòng thử lại hoặc gọi hotline 0903.480.985 để được hỗ trợ trực tiếp.'
+    }
+  } finally {
+    isStreamFetching = false
   }
 }
 
 const askBot = (question, answer) => {
   chatMessages.value.push({ sender: 'user', text: question })
+  saveChatHistory()
+  scrollChatBottom()
   setTimeout(() => {
-    chatMessages.value.push({ sender: 'bot', text: answer })
-    scrollChatBottom()
-  }, 400)
+    fetchStreamBotReply()
+  }, 200)
 }
 
 const sendBotMessage = () => {
   if (botInput.value.trim() === '') return
   const text = botInput.value
   chatMessages.value.push({ sender: 'user', text })
+  saveChatHistory()
   botInput.value = ''
   scrollChatBottom()
 
   setTimeout(() => {
-    let reply = "Xin lỗi, câu hỏi này nằm ngoài ngân hàng câu hỏi pháp lý đã được biên soạn sẵn. Bạn vui lòng liên hệ hotline 0903.480.985 để được các cán bộ chuyên môn giải đáp chi tiết."
-    const cleanText = text.toLowerCase()
-    
-    if (cleanText.includes('vay') || cleanText.includes('vốn') || cleanText.includes('tiền')) {
-      reply = "Theo Quyết định 22/2023/QĐ-TTg, bạn được hỗ trợ vay vốn sản xuất tối đa 100 triệu đồng và vay học nghề tối đa 4 triệu đồng/tháng qua Ngân hàng Chính sách Xã hội."
-    } else if (cleanText.includes('xóa') || cleanText.includes('án tích') || cleanText.includes('lý lịch')) {
-      reply = "Thủ tục xóa án tích được quy định tại Bộ luật Hình sự. Khi đủ thời hạn quy định, bạn gửi hồ sơ đề nghị cấp Phiếu lý lịch tư pháp tại Sở Tư pháp tỉnh/thành phố nơi bạn có hộ khẩu thường trú."
-    } else if (cleanText.includes('nghề') || cleanText.includes('học') || cleanText.includes('việc làm')) {
-      reply = "Nghị định 49/2020/NĐ-CP quy định người chấp hành xong án phạt tù được hỗ trợ tư vấn học nghề và giới thiệu việc làm miễn phí thông qua trung tâm dịch vụ việc làm của Sở LĐ-TB&XH."
-    } else if (cleanText.includes('hotline') || cleanText.includes('liên hệ') || cleanText.includes('điện thoại')) {
-      reply = "Đường dây nóng của Ban chỉ đạo Đề án là 0903.480.985. Hỗ trợ 24/7."
-    }
-
-    chatMessages.value.push({ sender: 'bot', text: reply })
-    scrollChatBottom()
-  }, 600)
+    fetchStreamBotReply()
+  }, 200)
 }
 
 const scrollChatBottom = async () => {
@@ -380,11 +777,14 @@ onMounted(() => {
   window.addEventListener('scroll', handleScroll)
   updateLiveDate()
   dateTimer = setInterval(updateLiveDate, 1000)
+  loadChatHistory()
+  runTeaserCycle()
 })
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   if (dateTimer) clearInterval(dateTimer)
+  stopTeaserCycle()
 })
 </script>
 
@@ -523,6 +923,16 @@ onUnmounted(() => {
   margin-top: 2px;
 }
 
+.menu-toggle {
+  display: none;
+}
+
+.mobile-drawer-head,
+.drawer-search-wrap,
+.mobile-drawer-footer {
+  display: none;
+}
+
 .header-top-actions {
   display: flex;
   align-items: center;
@@ -570,12 +980,15 @@ onUnmounted(() => {
   100% { transform: scale(0.9); opacity: 0; box-shadow: 0 0 0 0 rgba(124, 179, 66, 0); }
 }
 
-/* Header Nav Row */
+/* Header Nav Row - Crisp White Background & Deep Green Text (Thanh Lịch, Sạch Sẽ) */
 .header-nav-row {
-  background-color: var(--white);
+  background-color: #ffffff;
+  border-top: 1px solid #edf2ec;
+  border-bottom: 1px solid #e1e8e0;
   height: 50px;
   display: flex;
   align-items: center;
+  box-shadow: 0 4px 12px rgba(15, 35, 18, 0.04);
   transition: var(--transition);
 }
 
@@ -593,41 +1006,70 @@ onUnmounted(() => {
   list-style: none;
   width: 100%;
   justify-content: space-between;
+  align-items: center;
+  gap: 2px;
 }
 
 .nav-item {
   text-decoration: none;
-  color: var(--text-medium);
+  color: #1e4620;
   font-weight: 700;
-  font-size: 0.9rem;
-  padding: 12px 2px;
-  display: block;
+  font-size: 0.88rem;
+  padding: 8px 12px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
   white-space: nowrap;
   position: relative;
-  transition: var(--transition);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.nav-item a {
+  color: inherit;
+  text-decoration: none;
 }
 
 .cursor-pointer {
   cursor: pointer;
 }
 
-.nav-item:hover, .active-item {
-  color: var(--primary);
+.nav-item:hover,
+.nav-item:hover a {
+  color: #143516;
+  background-color: #f0f6ef;
+}
+
+.nav-item.active-item,
+.nav-item:has(a.active-item) {
+  color: #1e4620;
+  background-color: #e4f0e2;
+  font-weight: 800;
+}
+
+.nav-item:has(a.active-item) a {
+  color: #1e4620;
 }
 
 .nav-item::after {
   content: '';
   position: absolute;
   bottom: 0;
-  left: 0;
-  width: 0;
+  left: 12px;
+  right: 12px;
   height: 3px;
-  background-color: var(--secondary);
-  transition: var(--transition);
+  background-color: #1e4620;
+  border-radius: 4px;
+  opacity: 0;
+  transform: scaleX(0);
+  transition: all 0.25s ease;
 }
 
-.nav-item:hover::after, .active-item::after {
-  width: 100%;
+.nav-item:hover::after, 
+.active-item::after,
+.nav-item:has(a.active-item)::after {
+  opacity: 1;
+  transform: scaleX(1);
 }
 
 /* Dropdown Menu */
@@ -635,54 +1077,63 @@ onUnmounted(() => {
   position: relative;
 }
 
+.nav-item-dropdown {
+  cursor: pointer;
+}
+
 .arrow {
   font-size: 0.55rem;
   margin-left: 2px;
   display: inline-block;
-  transition: var(--transition);
+  color: #557757;
+  transition: transform 0.25s ease;
 }
 
-.has-dropdown:hover .arrow {
+.has-dropdown:hover .arrow,
+.arrow.is-rotated {
   transform: rotate(180deg);
+  color: #1e4620;
 }
 
 .dropdown-menu {
   position: absolute;
-  top: 100%;
+  top: calc(100% + 4px);
   left: 0;
-  background-color: var(--white);
-  box-shadow: var(--shadow-md);
-  border-radius: var(--radius-sm);
-  padding: 8px 0;
-  min-width: 210px;
+  background: #ffffff;
+  box-shadow: 0 14px 36px rgba(15, 35, 18, 0.18), 0 2px 8px rgba(0, 0, 0, 0.04);
+  border-radius: 12px;
+  border: 1px solid rgba(30, 70, 32, 0.12);
+  padding: 8px;
+  min-width: 220px;
   list-style: none;
   opacity: 0;
-  transform: translateY(10px);
+  transform: translateY(8px) scale(0.97);
   pointer-events: none;
   z-index: 102;
-  transition: var(--transition);
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .has-dropdown:hover .dropdown-menu, .dropdown-menu.is-show {
   opacity: 1;
-  transform: translateY(0);
+  transform: translateY(0) scale(1);
   pointer-events: auto;
 }
 
 .dropdown-menu a {
   display: block;
-  padding: 10px 20px;
+  padding: 9px 14px;
   text-decoration: none;
-  color: var(--text-medium);
-  font-size: 0.85rem;
+  color: #2d4a2d;
+  font-size: 0.86rem;
   font-weight: 600;
-  transition: var(--transition);
+  border-radius: 8px;
+  transition: all 0.2s ease;
 }
 
 .dropdown-menu a:hover {
-  background-color: var(--bg-light);
-  color: var(--primary);
-  padding-left: 24px;
+  background-color: rgba(30, 70, 32, 0.07);
+  color: #1e4620;
+  padding-left: 18px;
 }
 
 /* Search Dropdown Bar */
@@ -784,6 +1235,10 @@ onUnmounted(() => {
 }
 
 /* Mobile Toggle */
+.mobile-drawer-head {
+  display: none;
+}
+
 .menu-toggle {
   display: none;
   flex-direction: column;
@@ -907,48 +1362,158 @@ onUnmounted(() => {
   align-items: center;
 }
 
-/* Chatbot Styles */
+/* ====== MINIMALIST ELEGANT CHATBOT AI STYLING ====== */
+.chatbot-teaser-bubble {
+  position: fixed;
+  bottom: 84px;
+  right: 24px;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 10px 32px 10px 14px;
+  box-shadow: 0 12px 36px rgba(15, 35, 18, 0.2), 0 2px 8px rgba(0, 0, 0, 0.06);
+  border: 1.5px solid rgba(30, 70, 32, 0.18);
+  z-index: 9999;
+  cursor: pointer;
+  max-width: 280px;
+}
+
+/* Vue Teaser Pop Transition */
+.teaser-pop-enter-active,
+.teaser-pop-leave-active {
+  transition: all 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.teaser-pop-enter-from,
+.teaser-pop-leave-to {
+  opacity: 0;
+  transform: translateY(14px) scale(0.92);
+}
+
+.chatbot-teaser-bubble:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 14px 36px rgba(15, 35, 18, 0.22);
+}
+
+.teaser-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  color: var(--primary);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  display: block;
+  margin-bottom: 2px;
+}
+
+.teaser-text {
+  font-size: 0.84rem;
+  font-weight: 700;
+  color: #1a2e1b;
+  line-height: 1.35;
+  margin: 0;
+  animation: textFadeIn 0.4s ease-out;
+}
+
+.teaser-close-btn {
+  position: absolute;
+  top: 6px;
+  right: 8px;
+  background: none;
+  border: none;
+  color: #9ca3af;
+  font-size: 0.75rem;
+  cursor: pointer;
+  padding: 2px;
+  transition: color 0.2s ease;
+}
+
+.teaser-close-btn:hover {
+  color: #374151;
+}
+
+.teaser-arrow {
+  position: absolute;
+  bottom: -6px;
+  right: 28px;
+  width: 12px;
+  height: 12px;
+  background: #ffffff;
+  border-right: 1px solid rgba(30, 70, 32, 0.14);
+  border-bottom: 1px solid rgba(30, 70, 32, 0.14);
+  transform: rotate(45deg);
+}
+
+@keyframes teaserBounceIn {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes textFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
 .chatbot-toggle-btn {
   position: fixed;
   bottom: 24px;
   right: 24px;
-  background-color: var(--primary);
-  color: white;
-  border: none;
-  padding: 12px 20px;
+  background: #1e4620;
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  padding: 10px 20px 10px 14px;
   border-radius: 50px;
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 8px 24px rgba(30, 70, 32, 0.25);
   cursor: pointer;
   display: flex;
   align-items: center;
   gap: 8px;
   z-index: 999;
-  font-weight: bold;
-  transition: var(--transition);
+  font-weight: 700;
+  font-size: 0.88rem;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .chatbot-toggle-btn:hover {
-  background-color: var(--primary-dark);
   transform: translateY(-2px);
+  background: #153317;
+  box-shadow: 0 12px 30px rgba(30, 70, 32, 0.35);
+}
+
+.toggle-bot-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .chatbot-popup {
   position: fixed;
   bottom: 90px;
   right: 24px;
-  width: 360px;
-  height: 480px;
-  background-color: white;
-  border-radius: var(--radius-md);
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  width: 420px;
+  height: 580px;
+  max-height: calc(100vh - 110px);
+  background: #ffffff;
+  border-radius: 20px;
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.16), 0 4px 16px rgba(0, 0, 0, 0.06);
   display: flex;
   flex-direction: column;
-  z-index: 999;
+  z-index: 9999;
   overflow: hidden;
+  border: 1px solid rgba(0, 0, 0, 0.08);
   opacity: 0;
-  transform: translateY(20px) scale(0.95);
+  transform: translateY(20px) scale(0.96);
   pointer-events: none;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .chatbot-popup.is-open {
@@ -958,42 +1523,99 @@ onUnmounted(() => {
 }
 
 .chatbot-header {
-  background-color: var(--primary);
-  color: white;
-  padding: 16px;
+  background: #ffffff;
+  color: #1f2937;
+  padding: 14px 18px;
   display: flex;
   justify-content: space-between;
   align-items: center;
+  border-bottom: 1px solid #edf2ec;
 }
 
 .chatbot-title {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
 }
 
-.bot-avatar {
-  font-size: 1.5rem;
+.minimal-bot-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #edf5ec;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
 }
 
-.chatbot-title h4 {
-  font-size: 0.95rem;
+.bot-header-meta h4 {
+  font-size: 0.92rem;
   font-weight: 700;
+  color: #1a2e1b;
   margin: 0;
 }
 
-.chatbot-title p {
+.bot-header-meta p {
   font-size: 0.72rem;
-  opacity: 0.8;
-  margin: 0;
+  color: #6b7280;
+  margin: 2px 0 0 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.status-dot-green {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #10b981;
+  display: inline-block;
+}
+
+.header-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.clear-history-btn {
+  background: #f3f4f6;
+  border: none;
+  color: #6b7280;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.clear-history-btn:hover {
+  background: #fee2e2;
+  color: #dc2626;
 }
 
 .close-bot-btn {
-  background: none;
+  background: #f3f4f6;
   border: none;
-  color: white;
-  font-size: 1.5rem;
+  color: #6b7280;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  font-size: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.close-bot-btn:hover {
+  background: #e5e7eb;
+  color: #111827;
 }
 
 .chatbot-messages {
@@ -1003,106 +1625,191 @@ onUnmounted(() => {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background-color: #f7f9f6;
+  background-color: #f9fbf9;
 }
 
 .chat-msg {
   display: flex;
+  gap: 8px;
+  align-items: flex-end;
 }
 
 .chat-msg.user {
   justify-content: flex-end;
 }
 
+.msg-bot-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: #edf5ec;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  margin-bottom: 2px;
+}
+
 .msg-bubble {
-  max-width: 80%;
+  max-width: 86%;
   padding: 10px 14px;
-  border-radius: 12px;
+  border-radius: 16px;
   font-size: 0.88rem;
-  line-height: 1.4;
+  line-height: 1.48;
 }
 
 .chat-msg.bot .msg-bubble {
-  background-color: var(--white);
-  color: var(--text-dark);
-  border-bottom-left-radius: 2px;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+  background: #ffffff;
+  color: #1f2937;
+  border: 1px solid #e8ede7;
+  border-bottom-left-radius: 4px;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
+}
+
+/* Markdown formatted content */
+.markdown-content p {
+  margin: 0 0 6px 0;
+  line-height: 1.5;
+}
+
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+
+.markdown-content strong {
+  font-weight: 700;
+  color: #112812;
+}
+
+.markdown-content ul.md-list,
+.markdown-content ol.md-list {
+  margin: 6px 0 8px 0;
+  padding-left: 18px;
+}
+
+.markdown-content ul.md-list li,
+.markdown-content ol.md-list li {
+  margin-bottom: 4px;
+  line-height: 1.45;
+}
+
+.markdown-content a {
+  color: #1e4620;
+  text-decoration: underline;
+  font-weight: 600;
+}
+
+.markdown-content code {
+  background: #f0f6ef;
+  color: #1e4620;
+  padding: 2px 6px;
+  border-radius: 4px;
+  font-size: 0.82rem;
+  font-family: monospace;
+}
+
+.md-spacer {
+  height: 6px;
+}
+
+.streaming-cursor {
+  display: inline-block;
+  margin-left: 2px;
+  color: var(--primary);
+  font-weight: 700;
+  animation: blinkCursor 0.6s infinite;
+}
+
+@keyframes blinkCursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
 .chat-msg.user .msg-bubble {
-  background-color: var(--secondary);
-  color: white;
-  border-bottom-right-radius: 2px;
+  background: #1e4620;
+  color: #ffffff;
+  border-bottom-right-radius: 4px;
 }
 
 .chatbot-quick-questions {
-  padding: 8px 16px;
-  background-color: #f7f9f6;
+  padding: 10px 14px;
+  background-color: #ffffff;
   display: flex;
   flex-wrap: wrap;
-  gap: 6px;
-  border-top: 1px solid rgba(0,0,0,0.05);
+  gap: 6px 8px;
+  max-height: 110px;
+  overflow-y: auto;
+  border-top: 1px solid #edf2ec;
 }
 
 .quick-q-btn {
-  background-color: var(--white);
-  border: 1px solid var(--border-color);
-  padding: 6px 12px;
-  border-radius: 20px;
-  font-size: 0.78rem;
+  background-color: #f3f6f3;
+  border: 1px solid #e1e8e0;
+  color: #2d4a2d;
+  padding: 5px 12px;
+  border-radius: 16px;
+  font-size: 0.76rem;
+  font-weight: 600;
+  white-space: normal;
+  text-align: left;
+  line-height: 1.3;
   cursor: pointer;
-  transition: var(--transition);
+  transition: all 0.2s ease;
 }
 
 .quick-q-btn:hover {
-  background-color: var(--primary);
-  color: white;
-  border-color: var(--primary);
+  background-color: #1e4620;
+  color: #ffffff;
+  border-color: #1e4620;
 }
 
 .chatbot-input-area {
-  padding: 12px 16px;
+  padding: 12px 14px;
   display: flex;
   gap: 8px;
-  border-top: 1px solid var(--border-color);
+  background: #ffffff;
+  border-top: 1px solid #edf2ec;
 }
 
 .chatbot-input-area input {
   flex: 1;
-  padding: 8px 12px;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border-color);
-  font-size: 0.88rem;
+  padding: 10px 14px;
+  border-radius: 20px;
+  border: 1px solid #e1e8e0;
+  font-size: 0.86rem;
   outline: none;
+  background: #f8faf8;
+  transition: all 0.2s ease;
 }
 
 .chatbot-input-area input:focus {
-  border-color: var(--primary);
+  border-color: #1e4620;
+  background: #ffffff;
 }
 
 .send-bot-btn {
-  background-color: var(--primary);
-  color: white;
+  background: #1e4620;
+  color: #ffffff;
   border: none;
-  width: 36px;
-  height: 36px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: var(--transition);
+  transition: all 0.2s ease;
 }
 
 .send-bot-btn:hover {
-  background-color: var(--primary-dark);
+  background: #153317;
 }
 
 /* Tablet & Mobile responsive */
-@media (max-width: 1200px) {
-  .logo-title { font-size: 1.1rem; }
-  .logo-subtitle { font-size: 0.6rem; }
-  .nav-item { font-size: 0.8rem; }
+@media (max-width: 1280px) {
+  .logo-title { font-size: 1.15rem; }
+  .logo-subtitle { font-size: 0.62rem; }
+  .nav-item { font-size: 0.82rem; padding: 12px 2px; }
 }
 
 @media (max-width: 1024px) {
@@ -1111,11 +1818,52 @@ onUnmounted(() => {
   }
 }
 
-@media (max-width: 900px) {
-  .menu-toggle {
+@media (max-width: 1100px) {
+  .mobile-drawer-head {
     display: flex;
   }
-  
+
+  .drawer-search-wrap {
+    display: block;
+  }
+
+  .mobile-drawer-footer {
+    display: flex;
+  }
+
+  .top-bar {
+    display: none;
+  }
+
+  .menu-toggle {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    gap: 4px;
+    width: 42px;
+    height: 42px;
+    border-radius: 12px;
+    background: rgba(30, 70, 32, 0.06);
+    border: 1px solid rgba(30, 70, 32, 0.12);
+    box-shadow: none;
+    z-index: 10000;
+    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .menu-toggle:hover, .menu-toggle:active {
+    background: rgba(30, 70, 32, 0.12);
+    transform: scale(1.04);
+  }
+
+  .menu-toggle .bar {
+    width: 20px;
+    height: 2px;
+    background-color: var(--primary-dark);
+    border-radius: 4px;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
+  }
+
   .header-nav-row {
     display: block;
     height: 0;
@@ -1125,87 +1873,289 @@ onUnmounted(() => {
     overflow: visible;
   }
 
-  /* ====== LIQUID GLASS MOBILE MENU ====== */
+  .main-header {
+    z-index: auto;
+  }
+
+  .menu-toggle.is-hidden {
+    opacity: 0;
+    pointer-events: none;
+    transform: scale(0.8);
+  }
+
+  /* ====== SLEEK MODERN MOBILE MENU ====== */
   .main-nav {
     position: fixed;
     top: 0;
     right: -100%;
-    width: 85%;
+    width: 86vw;
     max-width: 360px;
     height: 100vh;
-    background: rgba(255, 255, 255, 0.75);
-    backdrop-filter: blur(24px) saturate(180%);
-    -webkit-backdrop-filter: blur(24px) saturate(180%);
-    border-left: 1px solid rgba(255, 255, 255, 0.5);
-    box-shadow: -8px 0 40px rgba(0, 0, 0, 0.12);
+    height: 100dvh;
+    background: #ffffff;
+    box-shadow: -12px 0 40px rgba(15, 35, 18, 0.18);
     z-index: 9999;
     display: flex;
     flex-direction: column;
-    transition: right 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
-    overflow-y: auto;
+    transition: right 0.38s cubic-bezier(0.16, 1, 0.3, 1);
+    overflow: hidden;
     padding: 0;
   }
 
   .main-nav.is-open {
     right: 0;
-    opacity: 1;
-    pointer-events: auto;
-    transform: none;
+  }
+
+  .mobile-drawer-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 18px 20px;
+    background: linear-gradient(135deg, #1e4620 0%, #133215 100%);
+    color: #ffffff;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+    z-index: 2;
+    flex-shrink: 0;
+  }
+
+  .drawer-brand-box {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .drawer-logo-img {
+    height: 36px;
+    width: auto;
+    object-fit: contain;
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
+  }
+
+  .drawer-brand-info {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .drawer-brand-name {
+    font-size: 0.85rem;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    color: #ffffff;
+    line-height: 1.2;
+  }
+
+  .drawer-brand-sub {
+    font-size: 0.65rem;
+    color: rgba(255, 255, 255, 0.75);
+    font-weight: 500;
+    margin-top: 2px;
+  }
+
+  .drawer-close {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(255, 255, 255, 0.12);
+    color: #ffffff;
+    font-size: 0.95rem;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+  }
+
+  .drawer-close:active {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(0.92);
+  }
+
+  /* Drawer Search Bar */
+  .drawer-search-wrap {
+    padding: 12px 16px 4px 16px;
+    background: #fcfdfe;
+    border-bottom: 1px solid rgba(30, 70, 32, 0.06);
+    flex-shrink: 0;
+  }
+
+  .drawer-search-box {
+    display: flex;
+    align-items: center;
+    background: rgba(30, 70, 32, 0.05);
+    border: 1px solid rgba(30, 70, 32, 0.12);
+    border-radius: 10px;
+    padding: 8px 12px;
+    gap: 8px;
+  }
+
+  .drawer-search-box .search-icon {
+    font-size: 0.85rem;
+    opacity: 0.6;
+  }
+
+  .drawer-search-box input {
+    border: none;
+    background: transparent;
+    width: 100%;
+    font-size: 0.88rem;
+    color: var(--text-dark);
+    outline: none;
+  }
+
+  .clear-search-btn {
+    border: none;
+    background: rgba(0,0,0,0.1);
+    border-radius: 50%;
+    width: 18px;
+    height: 18px;
+    font-size: 0.65rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: #555;
+  }
+
+  .drawer-body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
   }
 
   .nav-links {
     flex-direction: column;
-    padding: 80px 24px 32px 24px;
-    gap: 0;
+    padding: 14px 14px 20px 14px;
+    gap: 4px;
   }
 
   .nav-links li {
-    border-bottom: 1px solid rgba(74, 103, 65, 0.08);
-  }
-
-  .nav-links li:last-child {
     border-bottom: none;
+    width: 100%;
   }
 
   .nav-item {
-    padding: 16px 0;
-    font-size: 1rem;
-    font-weight: 700;
+    padding: 12px 16px;
+    font-size: 0.95rem;
+    font-weight: 600;
     color: var(--text-dark);
+    border-radius: 10px;
     display: flex;
     justify-content: space-between;
     align-items: center;
+    transition: all 0.2s ease;
   }
 
-  .nav-item::after {
-    display: none;
+  .nav-item-dropdown {
+    cursor: pointer;
   }
-  
+
+  .nav-item:hover, .nav-item:active, .nav-item.active-item {
+    background: rgba(30, 70, 32, 0.08);
+    color: var(--primary);
+  }
+
+  .nav-item.active-item {
+    font-weight: 800;
+  }
+
+  .arrow {
+    font-size: 0.65rem;
+    transition: transform 0.25s ease;
+    opacity: 0.7;
+  }
+
+  .arrow.is-rotated {
+    transform: rotate(180deg);
+  }
+
   .dropdown-menu {
     position: static;
+    display: none;
     opacity: 1;
     pointer-events: auto;
     transform: none;
     box-shadow: none;
-    padding: 0 0 8px 16px;
-    background: rgba(74, 103, 65, 0.04);
-    border-radius: var(--radius-sm);
-    margin-top: 0;
-    margin-bottom: 8px;
-    border: none;
+    padding: 6px 8px 6px 14px;
+    background: rgba(30, 70, 32, 0.04);
+    border-left: 3px solid var(--primary);
+    border-radius: 0 10px 10px 0;
+    margin: 4px 0 8px 12px;
+  }
+
+  .dropdown-menu.is-show {
+    display: block;
   }
 
   .dropdown-menu a {
-    padding: 10px 16px;
-    font-size: 0.9rem;
-    border-radius: var(--radius-sm);
+    padding: 10px 14px;
+    font-size: 0.88rem;
+    font-weight: 500;
+    color: var(--text-medium);
+    border-radius: 8px;
+    display: block;
   }
 
   .dropdown-menu a:hover {
-    background-color: rgba(74, 103, 65, 0.06);
-    padding-left: 20px;
+    background: rgba(30, 70, 32, 0.08);
+    color: var(--primary);
   }
-  
+
+  .mobile-drawer-footer {
+    padding: 16px;
+    background: #f8faf7;
+    border-top: 1px solid rgba(0, 0, 0, 0.06);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    flex-shrink: 0;
+  }
+
+  .drawer-hotline-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #ffffff;
+    padding: 12px 14px;
+    border-radius: 14px;
+    border: 1px solid rgba(30, 70, 32, 0.12);
+    text-decoration: none;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
+  }
+
+  .hotline-icon-wrap {
+    font-size: 1.2rem;
+  }
+
+  .hotline-text {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .hotline-lbl {
+    font-size: 0.72rem;
+    color: var(--text-muted);
+    font-weight: 600;
+  }
+
+  .hotline-num {
+    font-size: 0.95rem;
+    font-weight: 800;
+    color: var(--primary);
+  }
+
+  .drawer-support-btn {
+    width: 100%;
+    justify-content: center;
+    padding: 12px 16px;
+    font-size: 0.88rem;
+    border-radius: 12px;
+    font-weight: 700;
+  }
+
   .btn-support-247 {
     display: none;
   }
@@ -1220,6 +2170,12 @@ onUnmounted(() => {
   .top-left, .top-right {
     gap: 8px;
     font-size: 0.72rem;
+  }
+
+  .top-left {
+    flex-wrap: wrap;
+    justify-content: center;
+    row-gap: 2px;
   }
 
   .top-hide-mobile {
@@ -1260,9 +2216,9 @@ onUnmounted(() => {
   }
   
   /* Hamburger bars transition */
-  .bar-open-1 { transform: rotate(45deg) translate(5px, 5px); }
+  .bar-open-1 { transform: translateY(7.5px) rotate(45deg); }
   .bar-open-2 { opacity: 0; }
-  .bar-open-3 { transform: rotate(-45deg) translate(6px, -6px); }
+  .bar-open-3 { transform: translateY(-7.5px) rotate(-45deg); }
 
   /* Chatbot mobile */
   .chatbot-popup {
@@ -1314,7 +2270,7 @@ onUnmounted(() => {
     background-color: rgba(45, 74, 45, 0.45);
     backdrop-filter: blur(4px);
     -webkit-backdrop-filter: blur(4px);
-    z-index: 9998;
+    z-index: 99;
     opacity: 0;
     pointer-events: none;
     transition: opacity 0.3s ease;
@@ -1350,6 +2306,164 @@ onUnmounted(() => {
 
   .divider {
     display: none;
+  }
+}
+
+/* ====== LIQUID GLASS MOBILE BOTTOM NAV ====== */
+.mobile-bottom-nav {
+  display: none;
+}
+
+@media (max-width: 1100px) {
+  .mobile-bottom-nav {
+    display: flex;
+    justify-content: space-around;
+    align-items: center;
+    position: fixed;
+    bottom: 10px;
+    left: 12px;
+    right: 12px;
+    height: 64px;
+    background: linear-gradient(135deg, rgba(255, 255, 255, 0.82) 0%, rgba(244, 249, 243, 0.76) 100%);
+    backdrop-filter: blur(28px) saturate(200%);
+    -webkit-backdrop-filter: blur(28px) saturate(200%);
+    border: 1px solid rgba(255, 255, 255, 0.85);
+    border-radius: 28px;
+    box-shadow: 0 12px 36px rgba(15, 35, 18, 0.16), 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1.5px 0 rgba(255, 255, 255, 0.9);
+    z-index: 9990;
+    padding: 0 6px;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .bottom-nav-item {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 2px;
+    text-decoration: none;
+    color: #556655;
+    background: none;
+    border: none;
+    padding: 6px 0;
+    font-family: inherit;
+    font-size: 0.68rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .bottom-nav-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 3px 12px;
+    border-radius: 16px;
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .bottom-nav-item:hover,
+  .bottom-nav-item.active {
+    color: var(--primary);
+  }
+
+  .bottom-nav-item.active .bottom-nav-icon-wrap {
+    background: linear-gradient(135deg, rgba(30, 70, 32, 0.12) 0%, rgba(124, 179, 66, 0.18) 100%);
+    box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.8);
+  }
+
+  .bottom-nav-item.active .bottom-nav-icon {
+    stroke: var(--primary);
+    transform: scale(1.06);
+  }
+
+  .bottom-nav-item.active .bottom-nav-label {
+    color: var(--primary-dark);
+    font-weight: 800;
+  }
+
+  /* Center Highlight Action Button (Hỏi trợ lý AI - Floating Liquid Orb) */
+  .bottom-nav-item.center-action {
+    position: relative;
+    top: -14px;
+  }
+
+  .center-action-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #2e6b32 0%, #173b18 100%);
+    color: #ffffff;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 10px 24px rgba(23, 59, 24, 0.4), 0 2px 6px rgba(0, 0, 0, 0.15), inset 0 2px 4px rgba(255, 255, 255, 0.4);
+    border: 3.5px solid rgba(255, 255, 255, 0.95);
+    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+    animation: liquidOrbGlow 3s infinite ease-in-out;
+  }
+
+  @keyframes liquidOrbGlow {
+    0%, 100% { box-shadow: 0 10px 24px rgba(23, 59, 24, 0.4), 0 0 0 0 rgba(46, 107, 50, 0.3); }
+    50% { box-shadow: 0 12px 28px rgba(23, 59, 24, 0.5), 0 0 0 8px rgba(46, 107, 50, 0); }
+  }
+
+  .center-action-icon svg {
+    stroke: #ffffff;
+  }
+
+  .bottom-nav-item.center-action:active .center-action-icon {
+    transform: scale(0.9);
+  }
+
+  .bottom-nav-item.center-action .bottom-nav-label {
+    margin-top: 3px;
+    color: var(--primary-dark);
+    font-weight: 800;
+  }
+
+  /* Offset layout for floating liquid bottom bar */
+  .main-content {
+    padding-bottom: 80px;
+  }
+
+  .main-footer {
+    padding-bottom: 80px;
+  }
+
+  .chatbot-toggle-btn {
+    bottom: 88px;
+    right: 18px;
+  }
+
+  .chatbot-teaser-bubble {
+    bottom: 144px;
+    right: 16px;
+    max-width: 240px;
+  }
+
+  .chatbot-popup {
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100vw;
+    height: 100vh;
+    height: 100dvh;
+    max-height: 100vh;
+    border-radius: 0;
+    border: none;
+    z-index: 99999;
+  }
+
+  .chatbot-header {
+    padding: 14px 16px;
+    padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
+  }
+
+  .chatbot-input-area {
+    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
   }
 }
 </style>

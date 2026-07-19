@@ -12,6 +12,7 @@
     <!-- Main List -->
     <section class="section">
       <div class="container">
+        <SectionBar icon="🏆" title="Các mô hình tiêu biểu" />
         <div class="models-list-grid">
           <div v-for="item in models" :key="item.id" class="model-detail-card">
             <span class="model-category">💡 Mô hình tiêu biểu</span>
@@ -26,6 +27,11 @@
 </template>
 
 <script setup>
+useSeoMeta({
+  title: 'Mô hình tái hòa nhập | Con Đường Hướng Thiện',
+  description: 'Các mô hình tiêu biểu hỗ trợ người hoàn lương tái hòa nhập cộng đồng: quỹ tín dụng, câu lạc bộ, liên kết đào tạo nghề.'
+})
+
 const models = [
   {
     id: 1,

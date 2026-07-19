@@ -22,7 +22,7 @@
     <section class="stats-section">
       <div class="container stats-grid">
         <div class="stat-card">
-          <span class="stat-number">63</span>
+          <span class="stat-number">34</span>
           <span class="stat-label">Tỉnh / Thành phố đồng hành</span>
         </div>
         <div class="stat-card">
@@ -111,7 +111,7 @@
                 <h4>
                   <nuxt-link :to="item.link">{{ item.title }}</nuxt-link>
                 </h4>
-                <span class="bca-text-date">📅 Cập nhật: {{ item.id === 1 ? '17/07' : '16/07' }}/2026</span>
+                <span class="bca-text-date">📅 {{ item.date }}</span>
               </div>
             </div>
           </div>
@@ -174,8 +174,8 @@
       </div>
     </section>
 
-    <!-- Role Models Section (Tấm gương tiêu biểu) -->
-    <section class="section section-bg">
+    <!-- Role Models Section (Tấm gương tiêu biểu Swiper Slider) -->
+    <section class="section section-bg role-models-section">
       <div class="container">
         <div class="section-header-center">
           <span class="sub-title">Hành trình hướng thiện</span>
@@ -183,68 +183,55 @@
           <p class="section-desc-center">Những câu chuyện nghị lực phi thường vượt qua lầm lỡ, xây dựng cuộc sống ấm no và giúp đỡ đồng đội</p>
         </div>
 
-        <div class="role-models-list">
-          <div class="role-card">
-            <div class="role-avatar-wrap">
-              <img src="/assets/guong_sang_1.jpg" alt="Nguyễn Văn A" />
-            </div>
-            <div class="role-info">
-              <span class="role-location">📍 TP. Đà Nẵng</span>
-              <h3>Anh Nguyễn Văn A</h3>
-              <p class="role-desc">
-                Từng chấp hành án phạt tù 5 năm, anh A trở về lập nghiệp từ hai bàn tay trắng. Được chính quyền hỗ trợ vay vốn 100 triệu, anh mở xưởng sản xuất đồ gỗ mỹ nghệ lớn, tạo việc làm ổn định cho 15 lao động cùng hoàn cảnh tại địa bàn.
-              </p>
-              <nuxt-link to="/tamguongtieubieu/nguyen-van-a" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
+        <div 
+          class="swiper-container-wrap"
+          @mouseenter="stopRoleAutoplay"
+          @mouseleave="startRoleAutoplay"
+        >
+          <button class="swiper-button-prev" @click="prevRoleSlide" aria-label="Slide trước">
+            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+
+          <div class="role-models-slider swiper-wrapper-custom" ref="roleModelsSliderTrack">
+            <div
+              v-for="(model, index) in roleModelsList"
+              :key="model.id"
+              class="role-card swiper-slide-custom"
+              :class="{ 'is-active-slide': activeRoleIndex === index }"
+            >
+              <div class="role-avatar-wrap">
+                <img :src="model.image" :alt="model.name" />
+                <span class="avatar-badge">✓</span>
+              </div>
+              <div class="role-info">
+                <span class="role-location">{{ model.location }}</span>
+                <h3>{{ model.name }}</h3>
+                <p class="role-desc">{{ model.desc }}</p>
+                <nuxt-link :to="`/tamguongtieubieu/${model.id}`" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
+              </div>
             </div>
           </div>
 
-          <div class="role-card">
-            <div class="role-avatar-wrap">
-              <img src="/assets/guong_sang_2.jpg" alt="Trần Thị B" />
-            </div>
-            <div class="role-info">
-              <span class="role-location">📍 Tỉnh Quảng Ninh</span>
-              <h3>Chị Trần Thị B</h3>
-              <p class="role-desc">
-                Vượt qua định kiến và mặc cảm ban đầu, chị B kiên trì tham gia các lớp đào tạo may mặc miễn phí do Hội Phụ nữ tổ chức. Đến nay chị đã làm chủ xưởng may gia công xuất khẩu lớn, trực tiếp nâng bước các chị em hoàn lương khác.
-              </p>
-              <nuxt-link to="/tamguongtieubieu/tran-thi-b" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
-            </div>
-          </div>
+          <button class="swiper-button-next" @click="nextRoleSlide" aria-label="Slide tiếp">
+            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
 
-          <div class="role-card">
-            <div class="role-avatar-wrap">
-              <img src="/assets/guong_sang_1.jpg" alt="Lê Văn C" />
-            </div>
-            <div class="role-info">
-              <span class="role-location">📍 Tỉnh Đồng Nai</span>
-              <h3>Anh Lê Văn C</h3>
-              <p class="role-desc">
-                Trở về địa phương với nhiều mặc cảm, anh C được Công an xã định hướng làm kinh tế trang trại. Nhờ áp dụng khoa học kỹ thuật và sự kiên trì, mô hình vườn-ao-chuồng của anh hiện đạt doanh thu hàng trăm triệu mỗi năm, giúp đỡ 5 người có hoàn cảnh tương tự làm việc.
-              </p>
-              <nuxt-link to="/tamguongtieubieu" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
-            </div>
-          </div>
-
-          <div class="role-card">
-            <div class="role-avatar-wrap">
-              <img src="/assets/guong_sang_2.jpg" alt="Phạm Thị D" />
-            </div>
-            <div class="role-info">
-              <span class="role-location">📍 TP. Hải Phòng</span>
-              <h3>Chị Phạm Thị D</h3>
-              <p class="role-desc">
-                Chị D tập trung học nghề thêu dệt mỹ nghệ tại lớp đào tạo do Hội phụ nữ tổ chức. Với đôi tay khéo léo và óc kinh doanh nhạy bén, chị đã thành lập Hợp tác xã dệt may nghệ thuật, tạo sinh kế bền vững cho hàng chục phụ nữ lầm lỡ tái hòa nhập.
-              </p>
-              <nuxt-link to="/tamguongtieubieu" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
-            </div>
+          <!-- Swiper Pagination Bullets -->
+          <div class="swiper-pagination">
+            <span
+              v-for="(model, index) in roleModelsList"
+              :key="'role-dot-' + index"
+              class="swiper-pagination-bullet"
+              :class="{ 'swiper-pagination-bullet-active': activeRoleIndex === index }"
+              @click="goToRoleSlide(index)"
+            ></span>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Reintegration Models Section (Mô hình kinh tế) -->
-    <section class="section">
+    <!-- Reintegration Models Section (Mô hình kinh tế Swiper Slider) -->
+    <section class="section models-section">
       <div class="container">
         <div class="section-header-center">
           <span class="sub-title">Mô hình hỗ trợ</span>
@@ -252,26 +239,42 @@
           <p class="section-desc-center">Hệ thống giải pháp và cơ sở hỗ trợ sinh kế bền vững do Nhà nước và các địa phương tổ chức</p>
         </div>
 
-        <div class="models-grid">
-          <div class="model-card">
-            <div class="model-icon-wrap">💰</div>
-            <h3>Quỹ Tín dụng vay vốn</h3>
-            <p>Hỗ trợ vay vốn sản xuất kinh doanh ưu đãi lên tới 100 triệu đồng theo Quyết định 22/2023/QĐ-TTg của Thủ tướng Chính phủ.</p>
-            <nuxt-link to="/mohinhtaihoanhap/quy-tin-dung-hoan-luong" class="model-link">Tìm hiểu &rarr;</nuxt-link>
+        <div 
+          class="swiper-container-wrap"
+          @mouseenter="stopModelAutoplay"
+          @mouseleave="startModelAutoplay"
+        >
+          <button class="swiper-button-prev" @click="prevModelSlide" aria-label="Slide trước">
+            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none"><polyline points="15 18 9 12 15 6"></polyline></svg>
+          </button>
+
+          <div class="models-slider swiper-wrapper-custom" ref="reintegrationModelsSliderTrack">
+            <div
+              v-for="(item, index) in reintegrationModelsList"
+              :key="item.id"
+              class="model-card swiper-slide-custom"
+              :class="{ 'is-active-slide': activeModelIndex === index }"
+            >
+              <div class="model-icon-wrap">{{ item.icon }}</div>
+              <h3>{{ item.title }}</h3>
+              <p>{{ item.desc }}</p>
+              <nuxt-link :to="`/mohinhtaihoanhap/${item.id}`" class="model-link">Tìm hiểu &rarr;</nuxt-link>
+            </div>
           </div>
 
-          <div class="model-card">
-            <div class="model-icon-wrap">🌳</div>
-            <h3>CLB Hòa Nhập Xanh</h3>
-            <p>Nơi sinh hoạt cộng đồng sẻ chia kinh nghiệm, trang bị kỹ năng sống và phổ biến kiến thức pháp luật bổ ích cho người hoàn lương.</p>
-            <nuxt-link to="/mohinhtaihoanhap/cau-lac-bo-hoa-nhap-xanh" class="model-link">Tìm hiểu &rarr;</nuxt-link>
-          </div>
+          <button class="swiper-button-next" @click="nextModelSlide" aria-label="Slide tiếp">
+            <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none"><polyline points="9 18 15 12 9 6"></polyline></svg>
+          </button>
 
-          <div class="model-card">
-            <div class="model-icon-wrap">🛠</div>
-            <h3>Đào tạo nghề nhân văn</h3>
-            <p>Tổ chức liên kết dạy nghề mộc, may mặc, cơ khí cắt gọt hoàn toàn miễn phí và giới thiệu bao tiêu đầu ra việc làm ổn định.</p>
-            <nuxt-link to="/mohinhtaihoanhap/lien-ket-dao-tao-nghe-nhan-van" class="model-link">Tìm hiểu &rarr;</nuxt-link>
+          <!-- Swiper Pagination Bullets -->
+          <div class="swiper-pagination">
+            <span
+              v-for="(item, index) in reintegrationModelsList"
+              :key="'model-dot-' + index"
+              class="swiper-pagination-bullet"
+              :class="{ 'swiper-pagination-bullet-active': activeModelIndex === index }"
+              @click="goToModelSlide(index)"
+            ></span>
           </div>
         </div>
       </div>
@@ -305,22 +308,23 @@
             <div class="section-bar-title"><span class="section-bar-icon">▶</span> Thư viện Video</div>
           </div>
           <div class="video-wrapper">
-            <div class="video-placeholder">
-              <img src="/assets/hero_banner.jpg" alt="Video thumbnail" />
+            <a :href="mainVideoUrl" target="_blank" rel="noopener" class="video-placeholder" aria-label="Mở video tài liệu về tái hòa nhập cộng đồng (YouTube)">
+              <img src="/assets/hero_banner.jpg" alt="Ảnh minh họa phim tài liệu Đường về hướng thiện" />
               <div class="play-overlay">
                 <span class="play-icon">▶</span>
+                <span class="play-label">Xem trên YouTube</span>
               </div>
-            </div>
+            </a>
             <h3 class="video-title">Phim tài liệu: Đường về hướng thiện - Nâng bước cuộc sống mới</h3>
           </div>
         </div>
-        
+
         <div class="video-playlist-col">
           <div class="section-bar">
             <div class="section-bar-title"><span class="section-bar-icon">♫</span> Playlist nổi bật</div>
           </div>
           <div class="playlist-list">
-            <div v-for="v in videos" :key="v.id" class="playlist-item">
+            <a v-for="v in videos" :key="v.id" :href="v.url" target="_blank" rel="noopener" class="playlist-item">
               <div class="playlist-thumb">
                 <span class="play-small">▶</span>
               </div>
@@ -328,7 +332,7 @@
                 <h4>{{ v.title }}</h4>
                 <span>{{ v.duration }}</span>
               </div>
-            </div>
+            </a>
           </div>
         </div>
       </div>
@@ -436,7 +440,12 @@
                 <label>Nội dung cần hỗ trợ (Vay vốn, Việc làm, Pháp lý...) *</label>
                 <textarea rows="4" v-model="form.message" required placeholder="Mô tả cụ thể nguyện vọng của bạn..."></textarea>
               </div>
-              <button type="submit" class="btn btn-primary btn-block btn-lg">Gửi thông tin đăng ký</button>
+              <button type="submit" class="btn btn-primary btn-block btn-lg" :disabled="submitStatus === 'loading'">
+                {{ submitStatus === 'loading' ? 'Đang gửi...' : 'Gửi thông tin đăng ký' }}
+              </button>
+              <div v-if="submitMessage" class="form-feedback" :class="submitStatus" role="status" aria-live="polite">
+                {{ submitMessage }}
+              </div>
             </form>
           </div>
         </div>
@@ -479,13 +488,21 @@
 </template>
 
 <script setup>
-import { ref, reactive } from 'vue'
+import { ref, reactive, onMounted, onUnmounted } from 'vue'
+
+useSeoMeta({
+  title: 'Con Đường Hướng Thiện - Hỗ trợ tái hòa nhập cộng đồng',
+  description: 'Cổng thông tin điện tử C11 Bộ Công an hỗ trợ người hoàn lương tái hòa nhập cộng đồng: vay vốn QĐ 22/2023, đào tạo nghề, xóa án tích, tư vấn tâm lý, kết nối doanh nghiệp.',
+  ogTitle: 'Con Đường Hướng Thiện - Hỗ trợ tái hòa nhập cộng đồng',
+  ogDescription: 'Hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý giúp người chấp hành xong án phạt tái hòa nhập cộng đồng.',
+  ogType: 'website'
+})
 
 const trendingNews = [
-  { id: 1, category: 'Tin nổi bật', title: 'CẦN THƠ: Hỗ trợ vay vốn 100 triệu đồng theo Quyết định 22 cho người hoàn lương', link: '/ban-tin/can-tho-diem-tua-tin-dung-cho-nguoi-hoan-luong-tai-hoa-nhap', views: '2.540' },
-  { id: 2, category: 'Tin hoạt động', title: 'QUẢNG NINH: Sàn giao dịch việc làm Vân Đồn tiếp nhận hàng trăm lao động hoàn lương', link: '/ban-tin/quang-ninh-van-don-ho-tro-viec-lam', views: '1.985' },
-  { id: 3, category: 'Tin nổi bật', title: 'ĐÀ NẴNG: Cuộc đối thoại nhân văn giữa Giám thị trại giam và các phạm nhân cải tạo', link: '/ban-tin/da-nang-hoi-nghi-doi-thoai-giam-thi-pham-nhan', views: '1.742' },
-  { id: 4, category: 'Tin địa phương', title: 'Công an phường Hồng Quang triển khai lập danh sách các hộ có nhu cầu vay vốn chính sách', link: '/ban-tin', views: '1.204' }
+  { id: 1, category: 'Tin nổi bật', title: 'CẦN THƠ: Hỗ trợ vay vốn 100 triệu đồng theo Quyết định 22 cho người hoàn lương', link: '/ban-tin/can-tho-diem-tua-tin-dung', date: '16/07/2026' },
+  { id: 2, category: 'Tin hoạt động', title: 'QUẢNG NINH: Sàn giao dịch việc làm Vân Đồn tiếp nhận hàng trăm lao động hoàn lương', link: '/ban-tin/quang-ninh-van-don-ho-tro-viec-lam', date: '17/07/2026' },
+  { id: 3, category: 'Tin nổi bật', title: 'ĐÀ NẴNG: Cuộc đối thoại nhân văn giữa Giám thị trại giam và các phạm nhân cải tạo', link: '/ban-tin/da-nang-doi-thoai-giam-thi-pham-nhan', date: '17/07/2026' },
+  { id: 4, category: 'Tin địa phương', title: 'QUẢNG NINH: Công an phường Móng Cái 3 tăng cường cảm hóa, giáo dục tại cộng đồng', link: '/ban-tin/mong-cai-tang-cuong-cam-hoa-giao-duc', date: '17/07/2026' }
 ]
 
 const localPoliceNews = [
@@ -503,16 +520,180 @@ const legalWarningNews = [
 ]
 
 const latestDocs = [
-  { id: 1, number: 'Quyết định số 22/2023/QĐ-TTg', date: '17/08/2026', title: 'Quyết định của Thủ tướng Chính phủ về chính sách tín dụng đối với người chấp hành xong án phạt tù.' },
-  { id: 2, number: 'Nghị định số 49/2020/NĐ-CP', date: '16/08/2026', title: 'Quy định chi tiết Luật Thi hành án hình sự về các biện pháp bảo đảm tái hòa nhập cộng đồng.' },
-  { id: 3, number: 'Chỉ thị số 05/CT-BCA', date: '15/08/2026', title: 'Chỉ thị của Bộ trưởng Bộ Công an về việc nâng cao hiệu quả công tác cảm hóa, giáo dục thi hành án hình sự tại cộng đồng.' }
+  { id: 1, number: 'Quyết định số 22/2023/QĐ-TTg', date: '17/08/2023', title: 'Quyết định của Thủ tướng Chính phủ về chính sách tín dụng đối với người chấp hành xong án phạt tù.' },
+  { id: 2, number: 'Nghị định số 49/2020/NĐ-CP', date: '27/04/2020', title: 'Quy định chi tiết Luật Thi hành án hình sự về các biện pháp bảo đảm tái hòa nhập cộng đồng.' },
+  { id: 3, number: 'Chỉ thị số 05/CT-BCA', date: '15/06/2024', title: 'Chỉ thị của Bộ trưởng Bộ Công an về việc nâng cao hiệu quả công tác cảm hóa, giáo dục thi hành án hình sự tại cộng đồng.' }
 ]
 
-const videos = [
-  { id: 1, title: 'Hành trình hoàn lương - Kết nối yêu thương tại Đà Nẵng', duration: '08:24' },
-  { id: 2, title: 'Ngày hội việc làm nhân đạo kết nối doanh nghiệp', duration: '12:45' },
-  { id: 3, title: 'Phóng sự: Nguồn lực vay vốn thắp sáng nẻo thiện', duration: '06:18' }
+// ====== ROLE MODELS SWIPER SLIDER ======
+const roleModelsSliderTrack = ref(null)
+const activeRoleIndex = ref(0)
+let roleAutoplayTimer = null
+
+const roleModelsList = [
+  {
+    id: 'nguyen-van-a',
+    name: 'Anh Nguyễn Văn A',
+    location: '📍 TP. Đà Nẵng',
+    image: '/assets/guong_sang_1.jpg',
+    desc: 'Từng chấp hành án phạt tù 5 năm, anh A trở về lập nghiệp từ hai bàn tay trắng. Được chính quyền hỗ trợ vay vốn 100 triệu, anh mở xưởng sản xuất đồ gỗ mỹ nghệ lớn, tạo việc làm ổn định cho 15 lao động cùng hoàn cảnh.'
+  },
+  {
+    id: 'tran-thi-b',
+    name: 'Chị Trần Thị B',
+    location: '📍 Tỉnh Quảng Ninh',
+    image: '/assets/guong_sang_2.jpg',
+    desc: 'Vượt qua định kiến và mặc cảm ban đầu, chị B kiên trì tham gia các lớp đào tạo may mặc miễn phí. Đến nay chị đã làm chủ xưởng may gia công xuất khẩu lớn, trực tiếp nâng bước các chị em hoàn lương.'
+  },
+  {
+    id: 'le-van-c',
+    name: 'Anh Lê Văn C',
+    location: '📍 Tỉnh Đồng Nai',
+    image: '/assets/guong_sang_1.jpg',
+    desc: 'Được hỗ trợ nguồn vốn tín dụng ưu đãi theo Quyết định 22, anh C xây dựng trang trại nông nghiệp công nghệ cao rộng 3 ha, tạo công ăn việc làm cho 10 thanh niên hoàn lương tại địa phương.'
+  },
+  {
+    id: 'pham-thi-d',
+    name: 'Chị Phạm Thị D',
+    location: '📍 TP. Hải Phòng',
+    image: '/assets/guong_sang_2.jpg',
+    desc: 'Vươn lên làm giàu từ mô hình nuôi trồng thủy hải sản sạch. Chị D tích cực tham gia các buổi tuyên truyền pháp luật và giúp đỡ 8 trường hợp tái hòa nhập lập nghiệp thành công.'
+  }
 ]
+
+const scrollRoleToSlide = (idx) => {
+  activeRoleIndex.value = idx
+  if (roleModelsSliderTrack.value) {
+    const card = roleModelsSliderTrack.value.children[idx]
+    if (card) {
+      const scrollPos = card.offsetLeft - roleModelsSliderTrack.value.offsetLeft
+      roleModelsSliderTrack.value.scrollTo({ left: scrollPos, behavior: 'smooth' })
+    }
+  }
+}
+
+const goToRoleSlide = (idx) => {
+  scrollRoleToSlide(idx)
+}
+
+const nextRoleSlide = () => {
+  const nextIdx = (activeRoleIndex.value + 1) % roleModelsList.length
+  scrollRoleToSlide(nextIdx)
+}
+
+const prevRoleSlide = () => {
+  const prevIdx = (activeRoleIndex.value - 1 + roleModelsList.length) % roleModelsList.length
+  scrollRoleToSlide(prevIdx)
+}
+
+const startRoleAutoplay = () => {
+  stopRoleAutoplay()
+  roleAutoplayTimer = setInterval(() => {
+    nextRoleSlide()
+  }, 3500)
+}
+
+const stopRoleAutoplay = () => {
+  if (roleAutoplayTimer) {
+    clearInterval(roleAutoplayTimer)
+    roleAutoplayTimer = null
+  }
+}
+
+// ====== REINTEGRATION MODELS SWIPER SLIDER ======
+const reintegrationModelsSliderTrack = ref(null)
+const activeModelIndex = ref(0)
+let modelAutoplayTimer = null
+
+const reintegrationModelsList = [
+  {
+    id: 'quy-tin-dung-hoan-luong',
+    icon: '💰',
+    title: 'Quỹ Tín dụng vay vốn',
+    desc: 'Hỗ trợ vay vốn sản xuất kinh doanh ưu đãi lên tới 100 triệu đồng theo Quyết định 22/2023/QĐ-TTg của Thủ tướng Chính phủ.'
+  },
+  {
+    id: 'cau-lac-bo-hoa-nhap-xanh',
+    icon: '🌳',
+    title: 'CLB Hòa Nhập Xanh',
+    desc: 'Nơi sinh hoạt cộng đồng sẻ chia kinh nghiệm, trang bị kỹ năng sống và phổ biến kiến thức pháp luật bổ ích cho người hoàn lương.'
+  },
+  {
+    id: 'lien-ket-dao-tao-nghe-nhan-van',
+    icon: '🛠',
+    title: 'Đào tạo nghề nhân văn',
+    desc: 'Tổ chức liên kết dạy nghề mộc, may mặc, cơ khí cắt gọt hoàn toàn miễn phí và giới thiệu bao tiêu đầu ra việc làm ổn định.'
+  },
+  {
+    id: 'to-an-ninh-tu-quan',
+    icon: '🛡️',
+    title: 'Tổ an ninh tự quản',
+    desc: 'Mô hình tự quản cảm hóa người hoàn lương tại cơ sở, gắn kết chính quyền, công an địa phương và gia đình trong việc giám sát, hỗ trợ.'
+  },
+  {
+    id: 'htx-sinh-ke-dong-hanh',
+    icon: '🌾',
+    title: 'HTX Sinh kế đồng hành',
+    desc: 'Hợp tác xã nông sản tập hợp các thành viên hoàn lương cùng phát triển kinh tế tập thể, bao tiêu sản phẩm nông nghiệp và chăn nuôi.'
+  }
+]
+
+const scrollModelToSlide = (idx) => {
+  activeModelIndex.value = idx
+  if (reintegrationModelsSliderTrack.value) {
+    const card = reintegrationModelsSliderTrack.value.children[idx]
+    if (card) {
+      const scrollPos = card.offsetLeft - reintegrationModelsSliderTrack.value.offsetLeft
+      reintegrationModelsSliderTrack.value.scrollTo({ left: scrollPos, behavior: 'smooth' })
+    }
+  }
+}
+
+const goToModelSlide = (idx) => {
+  scrollModelToSlide(idx)
+}
+
+const nextModelSlide = () => {
+  const nextIdx = (activeModelIndex.value + 1) % reintegrationModelsList.length
+  scrollModelToSlide(nextIdx)
+}
+
+const prevModelSlide = () => {
+  const prevIdx = (activeModelIndex.value - 1 + reintegrationModelsList.length) % reintegrationModelsList.length
+  scrollModelToSlide(prevIdx)
+}
+
+const startModelAutoplay = () => {
+  stopModelAutoplay()
+  modelAutoplayTimer = setInterval(() => {
+    nextModelSlide()
+  }, 4000)
+}
+
+const stopModelAutoplay = () => {
+  if (modelAutoplayTimer) {
+    clearInterval(modelAutoplayTimer)
+    modelAutoplayTimer = null
+  }
+}
+
+onMounted(() => {
+  startRoleAutoplay()
+  startModelAutoplay()
+})
+
+onUnmounted(() => {
+  stopRoleAutoplay()
+  stopModelAutoplay()
+})
+
+const videos = [
+  { id: 1, title: 'Hành trình hoàn lương - Kết nối yêu thương tại Đà Nẵng', duration: '08:24', url: 'https://www.youtube.com/results?search_query=hoàn+lương+tái+hòa+nhập+cộng+đồng+đà+nẵng' },
+  { id: 2, title: 'Ngày hội việc làm nhân đạo kết nối doanh nghiệp', duration: '12:45', url: 'https://www.youtube.com/results?search_query=ngày+hội+việc+làm+người+hoàn+lương' },
+  { id: 3, title: 'Phóng sự: Nguồn lực vay vốn thắp sáng nẻo thiện', duration: '06:18', url: 'https://www.youtube.com/results?search_query=quyết+định+22+2023+vay+vốn+hoàn+lương' }
+]
+
+const mainVideoUrl = 'https://www.youtube.com/results?search_query=tái+hòa+nhập+cộng+đồng+người+chấp+hành+xong+án'
 
 const form = reactive({
   name: '',
@@ -520,6 +701,35 @@ const form = reactive({
   city: '',
   message: ''
 })
+
+const submitStatus = ref(null) // null | 'loading' | 'success' | 'error'
+const submitMessage = ref('')
+
+const submitForm = async () => {
+  submitStatus.value = 'loading'
+  submitMessage.value = ''
+  try {
+    await $fetch('/api/submissions', {
+      method: 'POST',
+      body: {
+        type: 'support',
+        name: form.name,
+        phone: form.phone,
+        city: form.city,
+        message: form.message
+      }
+    })
+    submitStatus.value = 'success'
+    submitMessage.value = `Cám ơn ${form.name}. Thông tin đăng ký của bạn đã được ghi nhận. Cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ qua số ${form.phone}.`
+    form.name = ''
+    form.phone = ''
+    form.city = ''
+    form.message = ''
+  } catch (err) {
+    submitStatus.value = 'error'
+    submitMessage.value = err?.data?.statusMessage || 'Có lỗi xảy ra, vui lòng thử lại hoặc gọi hotline 0903.480.985.'
+  }
+}
 
 const localFaqList = [
   {
@@ -1176,37 +1386,174 @@ const toggleFaqIndex = (index) => {
   line-height: 1.5;
 }
 
-/* Role Models List */
-.role-models-list {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 30px;
+/* ====== SWIPER SLIDER CUSTOM STYLING ====== */
+.swiper-container-wrap {
+  position: relative;
+  width: 100%;
+  padding-bottom: 36px;
 }
 
-.role-card {
-  background-color: var(--white);
-  border-radius: var(--radius-md);
-  padding: 30px;
-  box-shadow: var(--shadow-sm);
+.swiper-wrapper-custom {
+  display: grid;
+  grid-auto-flow: column;
+  overflow-x: auto;
+  scroll-behavior: smooth;
+  scroll-snap-type: x mandatory;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+  padding: 12px 6px 20px 6px;
+}
+
+.swiper-wrapper-custom::-webkit-scrollbar {
+  display: none;
+}
+
+.role-models-slider {
+  grid-auto-columns: calc(50% - 14px);
+  gap: 28px;
+}
+
+.models-slider {
+  grid-auto-columns: calc(33.333% - 18px);
+  gap: 26px;
+}
+
+.swiper-slide-custom {
+  scroll-snap-align: start;
+  height: 100%;
+}
+
+/* Swiper Navigation Buttons */
+.swiper-button-prev,
+.swiper-button-next {
+  position: absolute;
+  top: 42%;
+  transform: translateY(-50%);
+  width: 44px;
+  height: 44px;
+  border-radius: 50%;
+  background: #ffffff;
+  border: 1px solid rgba(0, 0, 0, 0.08);
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.09);
+  color: var(--primary);
   display: flex;
-  gap: 24px;
-  border: 1px solid var(--border-color);
-  transition: var(--transition);
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  z-index: 10;
+  transition: all 0.28s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.swiper-button-prev:hover,
+.swiper-button-next:hover {
+  background: var(--primary);
+  color: #ffffff;
+  border-color: var(--primary);
+  transform: translateY(-50%) scale(1.08);
+  box-shadow: 0 8px 24px rgba(30, 70, 32, 0.3);
+}
+
+.swiper-button-prev {
+  left: -22px;
+}
+
+.swiper-button-next {
+  right: -22px;
+}
+
+/* Swiper Pagination Bullets */
+.swiper-pagination {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 8px;
+}
+
+.swiper-pagination-bullet {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: rgba(30, 70, 32, 0.2);
+  cursor: pointer;
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.swiper-pagination-bullet:hover {
+  background: rgba(30, 70, 32, 0.5);
+}
+
+.swiper-pagination-bullet-active {
+  width: 26px;
+  border-radius: 12px;
+  background: var(--primary);
+  box-shadow: 0 2px 8px rgba(30, 70, 32, 0.3);
+}
+
+/* Role Card Swiper Polish */
+.role-card {
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 24px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.04);
+  display: flex;
+  gap: 20px;
+  border: 1px solid rgba(30, 70, 32, 0.08);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.role-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, var(--primary) 0%, var(--secondary) 100%);
+  opacity: 0;
+  transition: opacity 0.3s ease;
 }
 
 .role-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--secondary);
+  transform: translateY(-6px);
+  box-shadow: 0 16px 36px rgba(30, 70, 32, 0.12);
+  border-color: rgba(30, 70, 32, 0.2);
+}
+
+.role-card:hover::before {
+  opacity: 1;
 }
 
 .role-avatar-wrap {
-  width: 100px;
-  height: 100px;
+  position: relative;
+  width: 90px;
+  height: 90px;
   border-radius: 50%;
   overflow: hidden;
-  border: 3px solid var(--bg-light);
+  border: 3px solid rgba(30, 70, 32, 0.1);
   flex-shrink: 0;
+}
+
+.avatar-badge {
+  position: absolute;
+  bottom: 2px;
+  right: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--secondary);
+  color: white;
+  font-size: 0.65rem;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2px solid white;
 }
 
 .role-avatar-wrap img {
@@ -1216,82 +1563,99 @@ const toggleFaqIndex = (index) => {
 }
 
 .role-location {
-  font-size: 0.75rem;
+  font-size: 0.74rem;
   font-weight: 700;
   color: var(--primary);
-  background-color: var(--bg-light);
-  padding: 3px 8px;
-  border-radius: 4px;
+  background: rgba(30, 70, 32, 0.06);
+  padding: 4px 10px;
+  border-radius: 20px;
   display: inline-block;
   margin-bottom: 8px;
 }
 
 .role-info h3 {
-  font-size: 1.15rem;
+  font-size: 1.1rem;
   font-weight: 800;
-  margin-bottom: 10px;
+  color: var(--text-dark);
+  margin-bottom: 8px;
 }
 
 .role-desc {
-  font-size: 0.88rem;
+  font-size: 0.86rem;
   color: var(--text-medium);
   line-height: 1.5;
   margin-bottom: 14px;
 }
 
 .role-link {
-  font-size: 0.85rem;
-  color: var(--secondary);
+  font-size: 0.84rem;
+  color: var(--primary);
   font-weight: 700;
   text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  transition: gap 0.2s ease;
 }
 
-/* Models Grid */
-.models-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 30px;
+.role-link:hover {
+  gap: 8px;
+  color: var(--secondary);
 }
 
+/* Model Card Swiper Polish */
 .model-card {
-  background-color: var(--white);
-  border-radius: var(--radius-md);
-  padding: 40px 30px;
+  background: #ffffff;
+  border-radius: 16px;
+  padding: 32px 24px;
   text-align: center;
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border-color);
-  transition: var(--transition);
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.04);
+  border: 1px solid rgba(30, 70, 32, 0.08);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
 }
 
 .model-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--secondary);
+  transform: translateY(-6px);
+  box-shadow: 0 16px 36px rgba(30, 70, 32, 0.12);
+  border-color: rgba(30, 70, 32, 0.2);
 }
 
 .model-icon-wrap {
-  font-size: 3rem;
-  margin-bottom: 20px;
+  width: 64px;
+  height: 64px;
+  border-radius: 20px;
+  background: linear-gradient(135deg, rgba(30, 70, 32, 0.08) 0%, rgba(124, 179, 66, 0.15) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 2.2rem;
+  margin-bottom: 18px;
+  box-shadow: 0 4px 12px rgba(30, 70, 32, 0.08);
 }
 
 .model-card h3 {
-  font-size: 1.2rem;
+  font-size: 1.12rem;
   font-weight: 800;
-  margin-bottom: 12px;
+  color: var(--text-dark);
+  margin-bottom: 10px;
 }
 
 .model-card p {
-  font-size: 0.9rem;
+  font-size: 0.86rem;
   color: var(--text-medium);
   line-height: 1.5;
-  margin-bottom: 20px;
+  margin-bottom: 18px;
 }
 
 .model-link {
-  font-size: 0.88rem;
-  color: var(--secondary);
+  font-size: 0.84rem;
+  color: var(--primary);
   font-weight: 700;
   text-decoration: none;
+  margin-top: auto;
 }
 
 /* Documents Split Grid */
@@ -1370,10 +1734,12 @@ const toggleFaqIndex = (index) => {
 
 .video-placeholder {
   position: relative;
+  display: block;
   height: 340px;
   border-radius: 4px;
   overflow: hidden;
   cursor: pointer;
+  text-decoration: none;
 }
 
 .video-placeholder img {
@@ -1387,8 +1753,20 @@ const toggleFaqIndex = (index) => {
   top: 0; left: 0; right: 0; bottom: 0;
   background-color: rgba(0,0,0,0.3);
   display: flex;
+  flex-direction: column;
+  gap: 14px;
   align-items: center;
   justify-content: center;
+}
+
+.play-label {
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  background: rgba(0,0,0,0.5);
+  padding: 5px 14px;
+  border-radius: 20px;
+  letter-spacing: 0.3px;
 }
 
 .play-icon {
@@ -1437,6 +1815,8 @@ const toggleFaqIndex = (index) => {
   border: 1px solid var(--border-color);
   border-radius: var(--radius-md);
   cursor: pointer;
+  text-decoration: none;
+  color: inherit;
   transition: var(--transition);
 }
 
@@ -1511,6 +1891,25 @@ const toggleFaqIndex = (index) => {
   border: 1px solid var(--border-color);
 }
 
+.form-feedback {
+  margin-top: 16px;
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.form-feedback.success {
+  background: #e8f5e9;
+  color: #2e6b32;
+  border: 1px solid #b6d7b8;
+}
+.form-feedback.error {
+  background: #fdecea;
+  color: #b71c1c;
+  border: 1px solid #f5c6cb;
+}
+
 .form-group {
   margin-bottom: 20px;
 }
@@ -1549,8 +1948,105 @@ const toggleFaqIndex = (index) => {
   .split-news-grid, .documents-split-grid, .video-grid, .form-grid {
     grid-template-columns: 1fr;
   }
-  .role-models-list {
-    grid-template-columns: 1fr;
+}
+
+@media (max-width: 768px) {
+  .role-models-slider,
+  .models-slider {
+    grid-auto-columns: calc(50% - 6px); /* 1 DÒNG 2 CÁI TRÊN MOBILE */
+    gap: 12px;
+    padding: 6px 2px 14px 2px;
+  }
+
+  .swiper-button-prev,
+  .swiper-button-next {
+    display: none;
+  }
+
+  .swiper-container-wrap {
+    padding-bottom: 28px;
+  }
+
+  .role-card {
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 12px 8px;
+    gap: 8px;
+    border-radius: 12px;
+  }
+
+  .role-avatar-wrap {
+    width: 54px;
+    height: 54px;
+    border-width: 2px;
+  }
+
+  .avatar-badge {
+    width: 16px;
+    height: 16px;
+    font-size: 0.55rem;
+  }
+
+  .role-info h3 {
+    font-size: 0.84rem;
+    margin: 2px 0;
+    line-height: 1.25;
+  }
+
+  .role-location {
+    font-size: 0.62rem;
+    padding: 2px 6px;
+    margin-bottom: 2px;
+  }
+
+  .role-desc {
+    font-size: 0.72rem;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 4px;
+  }
+
+  .role-link {
+    font-size: 0.7rem;
+  }
+
+  .model-card {
+    padding: 14px 8px;
+    text-align: center;
+    border-radius: 12px;
+  }
+
+  .model-icon-wrap {
+    width: 44px;
+    height: 44px;
+    font-size: 1.3rem;
+    border-radius: 14px;
+    margin-bottom: 8px;
+  }
+
+  .model-card h3 {
+    font-size: 0.84rem;
+    margin-bottom: 4px;
+    line-height: 1.25;
+  }
+
+  .model-card p {
+    font-size: 0.72rem;
+    line-height: 1.35;
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    margin-bottom: 6px;
+  }
+
+  .model-link {
+    font-size: 0.7rem;
+    margin-top: auto;
   }
 }
 
@@ -1906,6 +2402,37 @@ const toggleFaqIndex = (index) => {
   }
   .faq-accordion-answer {
     padding: 14px 18px;
+  }
+}
+
+/* ===== NEWS SECTION RESPONSIVE ===== */
+@media (max-width: 1024px) {
+  .bca-news-grid,
+  .bca-sub-news-grid {
+    grid-template-columns: 1fr;
+    gap: 36px;
+  }
+}
+
+@media (max-width: 600px) {
+  .bca-sub-grid {
+    grid-template-columns: 1fr;
+    gap: 14px;
+  }
+  .bca-featured-title {
+    font-size: 1.12rem;
+  }
+  .bca-featured-excerpt {
+    font-size: 0.82rem;
+    -webkit-line-clamp: 3;
+  }
+  .bca-sub-card {
+    gap: 12px;
+  }
+  .bca-text-item h4 a,
+  .bca-local-item-title,
+  .bca-warning-card h4 a {
+    font-size: 0.88rem;
   }
 }
 </style>

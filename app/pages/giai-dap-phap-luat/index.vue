@@ -12,6 +12,7 @@
     <!-- Content -->
     <section class="section">
       <div class="container faq-container">
+        <SectionBar icon="❓" title="Câu hỏi thường gặp" />
         <div class="faq-accordion-wrap">
           <div v-for="(item, index) in faqs" :key="index" class="faq-card" :class="{ 'is-open': activeIndex === index }">
             <button class="faq-btn" @click="toggleFaq(index)">
@@ -30,6 +31,11 @@
 
 <script setup>
 import { ref } from 'vue'
+
+useSeoMeta({
+  title: 'Giải đáp pháp luật | Con Đường Hướng Thiện',
+  description: 'Giải đáp các câu hỏi pháp lý thường gặp về xóa án tích, vay vốn ưu đãi, học nghề cho người hoàn lương.'
+})
 
 const activeIndex = ref(null)
 

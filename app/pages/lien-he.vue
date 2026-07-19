@@ -60,7 +60,12 @@
               <textarea v-model="form.message" rows="5" placeholder="Mô tả cụ thể nguyện vọng (Ví dụ: tư vấn vay vốn theo Quyết định 22, thủ tục đăng ký tạm trú, hỗ trợ học nghề mộc, xóa án tích...)" required></textarea>
             </div>
 
-            <button type="submit" class="btn btn-primary">Gửi yêu cầu trợ giúp</button>
+            <button type="submit" class="btn btn-primary" :disabled="submitStatus === 'loading'">
+              {{ submitStatus === 'loading' ? 'Đang gửi...' : 'Gửi yêu cầu trợ giúp' }}
+            </button>
+            <div v-if="submitMessage" class="form-feedback" :class="submitStatus" role="status" aria-live="polite">
+              {{ submitMessage }}
+            </div>
           </form>
         </div>
       </div>
@@ -69,7 +74,12 @@
 </template>
 
 <script setup>
-import { reactive } from 'vue'
+import { reactive, ref } from 'vue'
+
+useSeoMeta({
+  title: 'Liên hệ & Trợ giúp | Con Đường Hướng Thiện',
+  description: 'Liên hệ Ban Biên tập và gửi yêu cầu trợ giúp tái hòa nhập cộng đồng. Hotline 0903.480.985.'
+})
 
 const form = reactive({
   name: '',
@@ -79,13 +89,35 @@ const form = reactive({
   message: ''
 })
 
-const handleSubmit = () => {
-  alert(`Cám ơn bạn ${form.name}. Yêu cầu hỗ trợ của bạn đã được gửi thành công đến hệ thống của C11. Chúng tôi sẽ phân loại và chuyển tiếp cơ quan chức năng hỗ trợ bạn sớm nhất qua số điện thoại ${form.phone}.`)
-  form.name = ''
-  form.phone = ''
-  form.email = ''
-  form.address = ''
-  form.message = ''
+const submitStatus = ref(null)
+const submitMessage = ref('')
+
+const handleSubmit = async () => {
+  submitStatus.value = 'loading'
+  submitMessage.value = ''
+  try {
+    await $fetch('/api/submissions', {
+      method: 'POST',
+      body: {
+        type: 'contact',
+        name: form.name,
+        phone: form.phone,
+        email: form.email,
+        address: form.address,
+        message: form.message
+      }
+    })
+    submitStatus.value = 'success'
+    submitMessage.value = `Cám ơn ${form.name}. Yêu cầu của bạn đã được gửi đến Ban Biên tập. Chúng tôi sẽ phân loại và chuyển cơ quan chức năng hỗ trợ bạn sớm nhất qua số ${form.phone}.`
+    form.name = ''
+    form.phone = ''
+    form.email = ''
+    form.address = ''
+    form.message = ''
+  } catch (err) {
+    submitStatus.value = 'error'
+    submitMessage.value = err?.data?.statusMessage || 'Có lỗi xảy ra, vui lòng thử lại hoặc gọi hotline 0903.480.985.'
+  }
 }
 </script>
 
@@ -153,6 +185,25 @@ const handleSubmit = () => {
 
 .desc-text {
   text-align: justify;
+}
+
+.form-feedback {
+  margin-top: 16px;
+  padding: 14px 18px;
+  border-radius: var(--radius-sm);
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.5;
+}
+.form-feedback.success {
+  background: #e8f5e9;
+  color: #2e6b32;
+  border: 1px solid #b6d7b8;
+}
+.form-feedback.error {
+  background: #fdecea;
+  color: #b71c1c;
+  border: 1px solid #f5c6cb;
 }
 
 .contact-form-card {
