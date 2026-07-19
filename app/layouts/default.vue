@@ -1,5 +1,5 @@
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :class="fontSizeClass">
     <!-- Mobile Menu Overlay -->
     <div class="mobile-menu-overlay" :class="{ 'is-show': isMobileMenuOpen }" @click="toggleMobileMenu"></div>
     
@@ -16,7 +16,7 @@
         <div class="top-right">
           <!-- Text Accessibility Controls -->
           <div class="accessibility-ctrl">
-            <span class="ctrl-label">Cỡ chữ:</span>
+            <span class="ctrl-label">{{ t('font_size') }}</span>
             <button @click="changeFontSize('small')" :class="{ active: fontSize === 'small' }">A-</button>
             <button @click="changeFontSize('normal')" :class="{ active: fontSize === 'normal' }">A</button>
             <button @click="changeFontSize('large')" :class="{ active: fontSize === 'large' }">A+</button>
@@ -53,7 +53,7 @@
               {{ isSearchActive ? '×' : '🔍' }}
             </button>
             <nuxt-link to="/lien-he" class="btn btn-primary btn-support-247">
-              <span class="pulse-icon"></span> Hỗ trợ 24/7
+              <span class="pulse-icon"></span> {{ t('support_247') }}
             </nuxt-link>
             <!-- Mobile Toggle -->
             <button class="menu-toggle" :class="{ 'is-hidden': isMobileMenuOpen }" @click="toggleMobileMenu" aria-label="Mở menu">
@@ -89,7 +89,7 @@
                 <span class="search-icon">🔍</span>
                 <input
                   type="text"
-                  placeholder="Tìm kiếm nội dung..."
+                  :placeholder="t('search_placeholder')"
                   v-model="searchQuery"
                   @keyup.enter="handleSearch"
                 />
@@ -100,53 +100,53 @@
             <!-- Drawer Links -->
             <div class="drawer-body">
               <ul class="nav-links">
-                <li><nuxt-link to="/" class="nav-item" active-class="active-item">Trang chủ</nuxt-link></li>
-                <li><nuxt-link to="/gioi-thieu" class="nav-item" active-class="active-item">Giới thiệu</nuxt-link></li>
+                <li><nuxt-link to="/" class="nav-item" active-class="active-item">{{ t('home') }}</nuxt-link></li>
+                <li><nuxt-link to="/gioi-thieu" class="nav-item" active-class="active-item">{{ t('about') }}</nuxt-link></li>
                 
                 <!-- Dropdown Menu Bản tin -->
                 <li class="has-dropdown" :class="{ 'is-mobile-expanded': showDropdown }" @mouseenter="showDropdown = true" @mouseleave="showDropdown = false">
                   <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('news')">
-                    <nuxt-link to="/ban-tin" active-class="active-item" @click.stop>Bản tin</nuxt-link>
+                    <nuxt-link to="/ban-tin" active-class="active-item" @click.stop>{{ t('news') }}</nuxt-link>
                     <span class="arrow" :class="{ 'is-rotated': showDropdown }">▼</span>
                   </div>
                   <ul class="dropdown-menu" :class="{ 'is-show': showDropdown }">
-                    <li><nuxt-link to="/ban-tin/tin-noi-bat">Tin nổi bật</nuxt-link></li>
-                    <li><nuxt-link to="/ban-tin/tin-hoat-dong">Tin hoạt động</nuxt-link></li>
-                    <li><nuxt-link to="/ban-tin/tin-dia-phuong">Tin địa phương</nuxt-link></li>
+                    <li><nuxt-link to="/ban-tin/tin-noi-bat">{{ t('news_featured') }}</nuxt-link></li>
+                    <li><nuxt-link to="/ban-tin/tin-hoat-dong">{{ t('news_activities') }}</nuxt-link></li>
+                    <li><nuxt-link to="/ban-tin/tin-dia-phuong">{{ t('news_local') }}</nuxt-link></li>
                   </ul>
                 </li>
 
-                <li><nuxt-link to="/tamguongtieubieu" class="nav-item" active-class="active-item">Tấm gương tiêu biểu</nuxt-link></li>
-                <li><nuxt-link to="/mohinhtaihoanhap" class="nav-item" active-class="active-item">Mô hình tái hòa nhập</nuxt-link></li>
-                <li><nuxt-link to="/van-ban" class="nav-item" active-class="active-item">Văn bản</nuxt-link></li>
+                <li><nuxt-link to="/tamguongtieubieu" class="nav-item" active-class="active-item">{{ t('role_models') }}</nuxt-link></li>
+                <li><nuxt-link to="/mohinhtaihoanhap" class="nav-item" active-class="active-item">{{ t('reintegration') }}</nuxt-link></li>
+                <li><nuxt-link to="/van-ban" class="nav-item" active-class="active-item">{{ t('documents') }}</nuxt-link></li>
                 
                 <!-- Dropdown Menu Thư viện -->
                 <li class="has-dropdown" :class="{ 'is-mobile-expanded': showLibraryDropdown }" @mouseenter="showLibraryDropdown = true" @mouseleave="showLibraryDropdown = false">
                   <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('library')">
-                    <span class="cursor-pointer">Thư viện</span>
+                    <span class="cursor-pointer">{{ t('library') }}</span>
                     <span class="arrow" :class="{ 'is-rotated': showLibraryDropdown }">▼</span>
                   </div>
                   <ul class="dropdown-menu" :class="{ 'is-show': showLibraryDropdown }">
-                    <li><a href="#video-library">Thư viện Video</a></li>
-                    <li><a href="#photo-library">Thư viện Ảnh</a></li>
+                    <li><a href="#video-library">{{ t('video_lib') }}</a></li>
+                    <li><a href="#photo-library">{{ t('photo_lib') }}</a></li>
                   </ul>
                 </li>
 
-                <li><nuxt-link to="/giai-dap-phap-luat" class="nav-item" active-class="active-item">Giải đáp pháp luật</nuxt-link></li>
+                <li><nuxt-link to="/giai-dap-phap-luat" class="nav-item" active-class="active-item">{{ t('faq') }}</nuxt-link></li>
                 
                 <!-- Dropdown Bộ với công dân -->
                 <li class="has-dropdown" :class="{ 'is-mobile-expanded': showGovDropdown }" @mouseenter="showGovDropdown = true" @mouseleave="showGovDropdown = false">
                   <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('gov')">
-                    <span class="cursor-pointer">Bộ với Công dân</span>
+                    <span class="cursor-pointer">{{ t('gov_citizen') }}</span>
                     <span class="arrow" :class="{ 'is-rotated': showGovDropdown }">▼</span>
                   </div>
                   <ul class="dropdown-menu" :class="{ 'is-show': showGovDropdown }">
-                    <li><a href="#tro-giup">Đăng ký trợ giúp</a></li>
-                    <li><nuxt-link to="/van-ban">Thủ tục hành chính</nuxt-link></li>
+                    <li><a href="#tro-giup">{{ t('register_help') }}</a></li>
+                    <li><nuxt-link to="/van-ban">{{ t('procedures') }}</nuxt-link></li>
                   </ul>
                 </li>
 
-                <li><nuxt-link to="/lien-he" class="nav-item" active-class="active-item">Liên hệ</nuxt-link></li>
+                <li><nuxt-link to="/lien-he" class="nav-item" active-class="active-item">{{ t('contact') }}</nuxt-link></li>
               </ul>
 
               <!-- Drawer Footer Quick Actions -->
@@ -347,7 +347,7 @@
             <polyline points="9 22 9 12 15 12 15 22"></polyline>
           </svg>
         </div>
-        <span class="bottom-nav-label">Trang chủ</span>
+        <span class="bottom-nav-label">{{ t('home') }}</span>
       </nuxt-link>
 
       <nuxt-link to="/ban-tin" class="bottom-nav-item" active-class="active">
@@ -356,7 +356,7 @@
             <path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
           </svg>
         </div>
-        <span class="bottom-nav-label">Bản tin</span>
+        <span class="bottom-nav-label">{{ t('news') }}</span>
       </nuxt-link>
 
       <!-- Center Floating Liquid Orb: Hỏi Trợ Lý -->
@@ -366,7 +366,7 @@
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
           </svg>
         </div>
-        <span class="bottom-nav-label">Hỏi trợ lý</span>
+        <span class="bottom-nav-label">{{ t('ask_ai') }}</span>
       </button>
 
       <nuxt-link to="/van-ban" class="bottom-nav-item" active-class="active">
@@ -378,7 +378,7 @@
             <line x1="16" y1="17" x2="8" y2="17"></line>
           </svg>
         </div>
-        <span class="bottom-nav-label">Văn bản</span>
+        <span class="bottom-nav-label">{{ t('documents') }}</span>
       </nuxt-link>
 
       <button class="bottom-nav-item" @click="toggleMobileMenu" :class="{ 'active': isMobileMenuOpen }">
@@ -389,7 +389,7 @@
             <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
         </div>
-        <span class="bottom-nav-label">Danh mục</span>
+        <span class="bottom-nav-label">{{ t('categories') }}</span>
       </button>
     </nav>
   </div>
@@ -533,12 +533,75 @@ const handleSearch = () => {
   }
 }
 
+const i18nData = {
+  VN: {
+    home: 'Trang chủ',
+    about: 'Giới thiệu',
+    news: 'Bản tin',
+    news_featured: 'Tin nổi bật',
+    news_activities: 'Tin hoạt động',
+    news_local: 'Tin địa phương',
+    role_models: 'Tấm gương tiêu biểu',
+    reintegration: 'Mô hình tái hòa nhập',
+    documents: 'Văn bản',
+    library: 'Thư viện',
+    video_lib: 'Thư viện Video',
+    photo_lib: 'Thư viện Ảnh',
+    faq: 'Giải đáp pháp luật',
+    gov_citizen: 'Bộ với Công dân',
+    register_help: 'Đăng ký trợ giúp',
+    procedures: 'Thủ tục hành chính',
+    contact: 'Liên hệ',
+    support_247: 'Hỗ trợ 24/7',
+    font_size: 'Cỡ chữ:',
+    hotline_lbl: 'Hotline Tư Vấn 24/7',
+    ask_ai: 'Hỏi trợ lý',
+    categories: 'Danh mục',
+    search_placeholder: 'Tìm kiếm nội dung...',
+  },
+  EN: {
+    home: 'Home',
+    about: 'About Us',
+    news: 'News',
+    news_featured: 'Featured News',
+    news_activities: 'Activity News',
+    news_local: 'Local News',
+    role_models: 'Exemplary Models',
+    reintegration: 'Reintegration Models',
+    documents: 'Legal Documents',
+    library: 'Library',
+    video_lib: 'Video Gallery',
+    photo_lib: 'Photo Gallery',
+    faq: 'Legal Q&A',
+    gov_citizen: 'Ministry & Citizens',
+    register_help: 'Request Assistance',
+    procedures: 'Administrative Procedures',
+    contact: 'Contact Us',
+    support_247: '24/7 Support',
+    font_size: 'Font size:',
+    hotline_lbl: '24/7 Hotline',
+    ask_ai: 'Ask Assistant',
+    categories: 'Menu',
+    search_placeholder: 'Search content...',
+  }
+}
+
+const t = (key) => {
+  return i18nData[currentLang.value]?.[key] || key
+}
+
 const setLang = (lang) => {
   currentLang.value = lang
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('cdkt_lang', lang)
+  }
 }
 
 const changeFontSize = (size) => {
   fontSize.value = size
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('cdkt_font_size', size)
+  }
 }
 
 const toggleChatbot = () => {
@@ -774,6 +837,17 @@ const scrollChatBottom = async () => {
 }
 
 onMounted(() => {
+  if (typeof window !== 'undefined') {
+    const savedLang = localStorage.getItem('cdkt_lang')
+    if (savedLang && ['VN', 'EN'].includes(savedLang)) {
+      currentLang.value = savedLang
+    }
+    const savedFontSize = localStorage.getItem('cdkt_font_size')
+    if (savedFontSize && ['small', 'normal', 'large'].includes(savedFontSize)) {
+      fontSize.value = savedFontSize
+    }
+  }
+
   window.addEventListener('scroll', handleScroll)
   updateLiveDate()
   dateTimer = setInterval(updateLiveDate, 1000)
@@ -789,6 +863,33 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
+/* Root Font Size Controls (A-, A, A+) */
+.app-layout.font-size-small p,
+.app-layout.font-size-small span,
+.app-layout.font-size-small a,
+.app-layout.font-size-small li,
+.app-layout.font-size-small h1,
+.app-layout.font-size-small h2,
+.app-layout.font-size-small h3,
+.app-layout.font-size-small h4,
+.app-layout.font-size-small input,
+.app-layout.font-size-small button {
+  font-size: 92% !important;
+}
+
+.app-layout.font-size-large p,
+.app-layout.font-size-large span,
+.app-layout.font-size-large a,
+.app-layout.font-size-large li,
+.app-layout.font-size-large h1,
+.app-layout.font-size-large h2,
+.app-layout.font-size-large h3,
+.app-layout.font-size-large h4,
+.app-layout.font-size-large input,
+.app-layout.font-size-large button {
+  font-size: 112% !important;
+}
+
 /* Top Bar */
 .top-bar {
   background-color: var(--primary-dark);
