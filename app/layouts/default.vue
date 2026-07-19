@@ -80,8 +80,8 @@
                 </ul>
               </li>
 
-              <li><nuxt-link to="/tam-guong-tieu-bieu" class="nav-item" active-class="active-item">Tấm gương tiêu biểu</nuxt-link></li>
-              <li><nuxt-link to="/mo-hinh-tai-hoa-nhap" class="nav-item" active-class="active-item">Mô hình tái hòa nhập</nuxt-link></li>
+              <li><nuxt-link to="/tamguongtieubieu" class="nav-item" active-class="active-item">Tấm gương tiêu biểu</nuxt-link></li>
+              <li><nuxt-link to="/mohinhtaihoanhap" class="nav-item" active-class="active-item">Mô hình tái hòa nhập</nuxt-link></li>
               <li><nuxt-link to="/van-ban" class="nav-item" active-class="active-item">Văn bản</nuxt-link></li>
               
               <!-- Dropdown Menu Thư viện -->
@@ -168,8 +168,8 @@
         <div class="footer-col-links">
           <h3 class="footer-col-title">Tái hòa nhập</h3>
           <ul>
-            <li><nuxt-link to="/tam-guong-tieu-bieu">Tấm gương tiêu biểu hoàn lương</nuxt-link></li>
-            <li><nuxt-link to="/mo-hinh-tai-hoa-nhap">Các mô hình kinh tế hỗ trợ</nuxt-link></li>
+            <li><nuxt-link to="/tamguongtieubieu">Tấm gương tiêu biểu hoàn lương</nuxt-link></li>
+            <li><nuxt-link to="/mohinhtaihoanhap">Các mô hình kinh tế hỗ trợ</nuxt-link></li>
             <li><nuxt-link to="/giai-dap-phap-luat">Giải đáp pháp luật trực tuyến</nuxt-link></li>
             <li><nuxt-link to="/lien-he">Thông tin đường dây nóng</nuxt-link></li>
           </ul>

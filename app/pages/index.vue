@@ -147,7 +147,7 @@
               <p class="role-desc">
                 Từng chấp hành án phạt tù 5 năm, anh A trở về lập nghiệp từ hai bàn tay trắng. Được Công an phường và các doanh nghiệp hỗ trợ vay vốn, anh mở xưởng sản xuất đồ gỗ mỹ nghệ thủ công mỹ nghệ tiêu chuẩn cao, hiện tạo việc làm ổn định cho 15 thanh niên lầm lỡ khác tại địa bàn.
               </p>
-              <nuxt-link to="/tam-guong-tieu-bieu/nguyen-van-a" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
+              <nuxt-link to="/tamguongtieubieu/nguyen-van-a" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
             </div>
           </div>
 
@@ -161,7 +161,7 @@
               <p class="role-desc">
                 Vượt qua định kiến và mặc cảm ban đầu, chị B kiên trì tham gia các lớp đào tạo may mặc miễn phí do Hội Phụ nữ địa phương tổ chức. Hiện nay chị đã sở hữu một cơ sở may mặc xuất khẩu thời trang uy tín, tích cực tham gia các phong trào nhân đạo và hỗ trợ phụ nữ hoàn lương tái hòa nhập.
               </p>
-              <nuxt-link to="/tam-guong-tieu-bieu/tran-thi-b" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
+              <nuxt-link to="/tamguongtieubieu/tran-thi-b" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
             </div>
           </div>
         </div>
