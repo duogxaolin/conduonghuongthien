@@ -18,32 +18,40 @@
       </div>
     </section>
 
-    <!-- Statistics Section -->
+    <!-- Statistics Section (Thiết kế lại cao cấp, hiện đại) -->
     <section class="stats-section">
       <div class="container stats-grid">
         <div class="stat-card">
-          <div class="stat-icon">🏢</div>
+          <div class="stat-icon-wrapper">
+            <span class="stat-icon-svg">🏢</span>
+          </div>
           <div class="stat-info">
             <span class="stat-number">63</span>
             <span class="stat-label">Tỉnh / Thành phố đồng hành</span>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">🤝</div>
+          <div class="stat-icon-wrapper">
+            <span class="stat-icon-svg">🤝</span>
+          </div>
           <div class="stat-info">
             <span class="stat-number">10.000+</span>
             <span class="stat-label">Người hoàn lương được hỗ trợ</span>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">🌟</div>
+          <div class="stat-icon-wrapper">
+            <span class="stat-icon-svg">🌟</span>
+          </div>
           <div class="stat-info">
             <span class="stat-number">500+</span>
             <span class="stat-label">Mô hình kinh tế tiêu biểu</span>
           </div>
         </div>
         <div class="stat-card">
-          <div class="stat-icon">📞</div>
+          <div class="stat-icon-wrapper">
+            <span class="stat-icon-svg">📞</span>
+          </div>
           <div class="stat-info">
             <span class="stat-number">24/7</span>
             <span class="stat-label">Tư vấn pháp lý & Tâm lý miễn phí</span>
@@ -358,7 +366,7 @@ const submitForm = () => {
 .hero-section {
   position: relative;
   background: url('/assets/hero_banner.jpg') center/cover no-repeat;
-  padding: 200px 0 220px 0;
+  padding: 240px 0 260px 0;
   color: white;
 }
 
@@ -391,7 +399,7 @@ const submitForm = () => {
 }
 
 .hero-title {
-  font-size: 3.5rem;
+  font-size: 4.2rem;
   font-weight: 800;
   line-height: 1.25;
   margin-bottom: 20px;
@@ -399,7 +407,7 @@ const submitForm = () => {
 }
 
 .hero-subtitle {
-  font-size: 1.3rem;
+  font-size: 1.45rem;
   line-height: 1.6;
   opacity: 0.95;
   margin-bottom: 36px;
@@ -424,35 +432,80 @@ const submitForm = () => {
 /* Statistics Bar */
 .stats-section {
   position: relative;
-  margin-top: -50px;
+  margin-top: -80px;
   z-index: 10;
+  padding: 0;
 }
 
 .stats-grid {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 20px;
+  gap: 24px;
 }
 
 .stat-card {
-  background-color: var(--white);
+  background: rgba(255, 255, 255, 0.96);
+  backdrop-filter: blur(10px);
   border-radius: var(--radius-md);
-  padding: 24px;
-  box-shadow: var(--shadow-md);
+  padding: 30px 20px;
+  box-shadow: 0 15px 35px rgba(74, 103, 65, 0.08);
   display: flex;
+  flex-direction: column;
   align-items: center;
+  text-align: center;
   gap: 16px;
-  border-bottom: 4px solid var(--primary);
+  border: 1px solid rgba(255, 255, 255, 0.8);
+  transition: all 0.3s cubic-bezier(0.165, 0.84, 0.44, 1);
+  position: relative;
+  overflow: hidden;
+}
+
+.stat-card::after {
+  content: '';
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 0;
+  height: 4px;
+  background-color: var(--secondary);
+  border-radius: 2px;
   transition: var(--transition);
 }
 
 .stat-card:hover {
-  transform: translateY(-4px);
-  border-bottom-color: var(--secondary);
+  transform: translateY(-8px);
+  box-shadow: 0 20px 45px rgba(74, 103, 65, 0.15);
+  border-color: rgba(124, 179, 66, 0.3);
 }
 
-.stat-icon {
-  font-size: 2.2rem;
+.stat-card:hover::after {
+  width: 50%;
+}
+
+.stat-icon-wrapper {
+  width: 56px;
+  height: 56px;
+  background-color: rgba(74, 103, 65, 0.06);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+
+.stat-card:hover .stat-icon-wrapper {
+  background-color: var(--secondary);
+}
+
+.stat-icon-svg {
+  font-size: 1.6rem;
+  transition: var(--transition);
+}
+
+.stat-card:hover .stat-icon-svg {
+  transform: scale(1.1);
+}
 }
 
 .stat-number {
