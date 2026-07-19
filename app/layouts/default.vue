@@ -449,9 +449,7 @@ onUnmounted(() => {
 /* Main Header */
 .main-header {
   background-color: var(--white);
-  position: absolute;
-  top: 35px;
-  left: 0;
+  position: relative;
   width: 100%;
   z-index: 100;
   border-bottom: 1px solid var(--border-color);
@@ -757,13 +755,13 @@ onUnmounted(() => {
 
 /* Main Content Padding */
 .main-content {
-  padding-top: 165px;
+  padding-top: 0;
   min-height: calc(100vh - 165px);
   transition: var(--transition);
 }
 
 .main-content.has-sticky-padding {
-  padding-top: 165px;
+  padding-top: 130px;
 }
 
 /* Mobile Toggle */
