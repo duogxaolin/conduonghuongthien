@@ -40,8 +40,6 @@
       </div>
     </section>
 
-    <!-- Latest & Trending Split News Section (Section Mới đan xen cực đẹp) -->
-    <section class="section split-news-section">
     <!-- BCA Style News Section -->
     <section class="section bca-news-section">
       <div class="container bca-news-grid">
