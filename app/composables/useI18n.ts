@@ -251,7 +251,7 @@ export const useI18n = () => {
       doc_table_num: 'Document No. / Code',
       doc_table_date: 'Issued Date',
       doc_table_title: 'Document Title',
-      doc_table_action: 'Download / Action'
+    }
   }
 
   const t = (key: string): string => {
