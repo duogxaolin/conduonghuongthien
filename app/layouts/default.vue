@@ -26,7 +26,7 @@
       </div>
     </div>
 
-    <!-- Main Header (Thiết kế 2 dòng chuẩn Cổng thông tin Chính phủ) -->
+    <!-- Main Header -->
     <header class="main-header" :class="{ 'is-sticky': isSticky }">
       <!-- Dòng 1: Logo & Các nút hành động nhanh -->
       <div class="header-top-row">
@@ -60,7 +60,7 @@
         </div>
       </div>
 
-      <!-- Dòng 2: Thanh Menu Điều hướng (Trải dài, phông chữ thoáng, không bao giờ bị méo chữ) -->
+      <!-- Dòng 2: Thanh Menu Điều hướng -->
       <div class="header-nav-row" :class="{ 'nav-sticky': isSticky }">
         <div class="container nav-container">
           <nav class="main-nav" :class="{ 'is-open': isMobileMenuOpen }">
@@ -137,7 +137,7 @@
       </transition>
     </header>
 
-    <!-- Main Content Area (Khoảng đệm an toàn cao hơn cho Header 2 dòng) -->
+    <!-- Main Content Area -->
     <main class="main-content" :class="[fontSizeClass, { 'has-sticky-padding': isSticky }]">
       <slot />
     </main>
@@ -191,6 +191,54 @@
         </div>
       </div>
     </footer>
+
+    <!-- Chatbot Popup (Hiển thị ở mọi trang) -->
+    <div class="chatbot-popup" :class="{ 'is-open': isChatbotOpen }">
+      <div class="chatbot-header">
+        <div class="chatbot-title">
+          <span class="bot-avatar">🤖</span>
+          <div>
+            <h4>Trợ lý ảo Hướng Thiện</h4>
+            <p>Hỗ trợ giải đáp pháp lý tự động</p>
+          </div>
+        </div>
+        <button class="close-bot-btn" @click="toggleChatbot">×</button>
+      </div>
+
+      <div class="chatbot-messages" ref="chatContainer">
+        <div v-for="(msg, index) in chatMessages" :key="index" class="chat-msg" :class="msg.sender">
+          <div class="msg-bubble">{{ msg.text }}</div>
+        </div>
+      </div>
+
+      <!-- Quick Questions -->
+      <div class="chatbot-quick-questions">
+        <button 
+          v-for="(q, index) in chatbotFaqs" 
+          :key="index" 
+          @click="askBot(q.question, q.answer)"
+          class="quick-q-btn"
+        >
+          {{ q.label }}
+        </button>
+      </div>
+
+      <div class="chatbot-input-area">
+        <input 
+          type="text" 
+          placeholder="Nhập câu hỏi pháp lý của bạn..." 
+          v-model="botInput" 
+          @keyup.enter="sendBotMessage"
+        />
+        <button class="send-bot-btn" @click="sendBotMessage">➤</button>
+      </div>
+    </div>
+
+    <!-- Toggle Button for Chatbot -->
+    <button class="chatbot-toggle-btn" @click="toggleChatbot">
+      <span class="bot-icon">💬</span>
+      <span class="bot-badge">Hỏi trợ lý</span>
+    </button>
   </div>
 </template>
 
@@ -207,6 +255,20 @@ const showGovDropdown = ref(false)
 const currentLang = ref('VN')
 const fontSize = ref('normal') // small, normal, large
 const searchInputRef = ref(null)
+
+// Chatbot states
+const isChatbotOpen = ref(false)
+const botInput = ref('')
+const chatContainer = ref(null)
+const chatMessages = ref([
+  { sender: 'bot', text: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi có thể hỗ trợ bạn giải đáp nhanh các câu hỏi pháp lý đã được Cục C11 phê duyệt về công tác tái hòa nhập cộng đồng.' }
+])
+
+const chatbotFaqs = [
+  { label: 'Hạn mức vay vốn?', question: 'Người hoàn lương được vay vốn tối đa bao nhiêu?', answer: 'Theo Quyết định 22/2023/QĐ-TTg, người chấp hành xong án phạt tù được vay vốn ưu đãi tối đa 100 triệu đồng để làm kinh tế, sản xuất kinh doanh tại Ngân hàng Chính sách Xã hội địa phương.' },
+  { label: 'Làm sao xóa án tích?', question: 'Thủ tục xóa án tích như thế nào?', answer: 'Khi đủ thời gian thử thách và thời gian đương nhiên xóa án tích theo quy định Bộ luật Hình sự, bạn cần đến Sở Tư pháp địa phương để làm thủ tục xin cấp Phiếu lý lịch tư pháp số 2 làm cơ sở xác định việc xóa án tích.' },
+  { label: 'Đăng ký học nghề?', question: 'Làm thế nào để đăng ký học nghề?', answer: 'Bạn hãy liên hệ với UBND hoặc Công an cấp xã/phường nơi cư trú để nhận phiếu giới thiệu học nghề miễn phí hoặc ưu đãi tại các trường dạy nghề liên kết của địa phương theo Nghị định 49/2020/NĐ-CP.' }
+]
 
 const fontSizeClass = computed(() => {
   return `font-size-${fontSize.value}`
@@ -248,6 +310,54 @@ const setLang = (lang) => {
 
 const changeFontSize = (size) => {
   fontSize.value = size
+}
+
+const toggleChatbot = () => {
+  isChatbotOpen.value = !isChatbotOpen.value
+  if (isChatbotOpen.value) {
+    scrollChatBottom()
+  }
+}
+
+const askBot = (question, answer) => {
+  chatMessages.value.push({ sender: 'user', text: question })
+  setTimeout(() => {
+    chatMessages.value.push({ sender: 'bot', text: answer })
+    scrollChatBottom()
+  }, 400)
+}
+
+const sendBotMessage = () => {
+  if (botInput.value.trim() === '') return
+  const text = botInput.value
+  chatMessages.value.push({ sender: 'user', text })
+  botInput.value = ''
+  scrollChatBottom()
+
+  setTimeout(() => {
+    let reply = "Xin lỗi, câu hỏi này nằm ngoài ngân hàng câu hỏi pháp lý đã được biên soạn sẵn. Bạn vui lòng liên hệ hotline 0903.480.985 để được các cán bộ chuyên môn giải đáp chi tiết."
+    const cleanText = text.toLowerCase()
+    
+    if (cleanText.includes('vay') || cleanText.includes('vốn') || cleanText.includes('tiền')) {
+      reply = "Theo Quyết định 22/2023/QĐ-TTg, bạn được hỗ trợ vay vốn sản xuất tối đa 100 triệu đồng và vay học nghề tối đa 4 triệu đồng/tháng qua Ngân hàng Chính sách Xã hội."
+    } else if (cleanText.includes('xóa') || cleanText.includes('án tích') || cleanText.includes('lý lịch')) {
+      reply = "Thủ tục xóa án tích được quy định tại Bộ luật Hình sự. Khi đủ thời hạn quy định, bạn gửi hồ sơ đề nghị cấp Phiếu lý lịch tư pháp tại Sở Tư pháp tỉnh/thành phố nơi bạn có hộ khẩu thường trú."
+    } else if (cleanText.includes('nghề') || cleanText.includes('học') || cleanText.includes('việc làm')) {
+      reply = "Nghị định 49/2020/NĐ-CP quy định người chấp hành xong án phạt tù được hỗ trợ tư vấn học nghề và giới thiệu việc làm miễn phí thông qua trung tâm dịch vụ việc làm của Sở LĐ-TB&XH."
+    } else if (cleanText.includes('hotline') || cleanText.includes('liên hệ') || cleanText.includes('điện thoại')) {
+      reply = "Đường dây nóng của Ban chỉ đạo Đề án là 0903.480.985. Hỗ trợ 24/7."
+    }
+
+    chatMessages.value.push({ sender: 'bot', text: reply })
+    scrollChatBottom()
+  }, 600)
+}
+
+const scrollChatBottom = async () => {
+  await nextTick()
+  if (chatContainer.value) {
+    chatContainer.value.scrollTop = chatContainer.value.scrollHeight
+  }
 }
 
 onMounted(() => {
@@ -336,11 +446,11 @@ onUnmounted(() => {
   border-radius: 4px;
 }
 
-/* Main Header (Thiết kế 2 dòng) */
+/* Main Header */
 .main-header {
   background-color: var(--white);
   position: absolute;
-  top: 35px; /* Chiều cao top-bar */
+  top: 35px;
   left: 0;
   width: 100%;
   z-index: 100;
@@ -378,17 +488,6 @@ onUnmounted(() => {
   width: auto;
   height: 50px;
   object-fit: contain;
-}
-
-.footer-logo-img {
-  width: auto;
-  height: 36px;
-  object-fit: contain;
-}
-
-@keyframes rotateLogo {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
 }
 
 .logo-title {
@@ -454,7 +553,7 @@ onUnmounted(() => {
   100% { transform: scale(0.9); opacity: 0; box-shadow: 0 0 0 0 rgba(124, 179, 66, 0); }
 }
 
-/* Header Nav Row (Dòng 2 rộng rãi chứa Menu) */
+/* Header Nav Row */
 .header-nav-row {
   background-color: var(--white);
   height: 50px;
@@ -476,7 +575,7 @@ onUnmounted(() => {
   display: flex;
   list-style: none;
   width: 100%;
-  justify-content: space-between; /* Trải dài đều các tabs */
+  justify-content: space-between;
 }
 
 .nav-item {
@@ -486,7 +585,7 @@ onUnmounted(() => {
   font-size: 0.9rem;
   padding: 12px 2px;
   display: block;
-  white-space: nowrap; /* Không cho phép ngắt dòng chữ */
+  white-space: nowrap;
   position: relative;
   transition: var(--transition);
 }
@@ -656,9 +755,9 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* Main Content Padding (Bảo đảm không bị Header 2 dòng fixed/sticky che lấp thông tin) */
+/* Main Content Padding */
 .main-content {
-  padding-top: 165px; /* 35px top-bar + 80px header-top + 50px header-nav */
+  padding-top: 165px;
   min-height: calc(100vh - 165px);
   transition: var(--transition);
 }
@@ -712,6 +811,12 @@ onUnmounted(() => {
   align-items: center;
   gap: 12px;
   margin-bottom: 20px;
+}
+
+.footer-logo-img {
+  width: auto;
+  height: 36px;
+  object-fit: contain;
 }
 
 .footer-logo-title {
@@ -785,6 +890,197 @@ onUnmounted(() => {
   align-items: center;
 }
 
+/* Chatbot Styles */
+.chatbot-toggle-btn {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background-color: var(--primary);
+  color: white;
+  border: none;
+  padding: 12px 20px;
+  border-radius: 50px;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.2);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  z-index: 999;
+  font-weight: bold;
+  transition: var(--transition);
+}
+
+.chatbot-toggle-btn:hover {
+  background-color: var(--primary-dark);
+  transform: translateY(-2px);
+}
+
+.chatbot-popup {
+  position: fixed;
+  bottom: 90px;
+  right: 24px;
+  width: 360px;
+  height: 480px;
+  background-color: white;
+  border-radius: var(--radius-md);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  z-index: 999;
+  overflow: hidden;
+  opacity: 0;
+  transform: translateY(20px) scale(0.95);
+  pointer-events: none;
+  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.1);
+}
+
+.chatbot-popup.is-open {
+  opacity: 1;
+  transform: translateY(0) scale(1);
+  pointer-events: auto;
+}
+
+.chatbot-header {
+  background-color: var(--primary);
+  color: white;
+  padding: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.chatbot-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.bot-avatar {
+  font-size: 1.5rem;
+}
+
+.chatbot-title h4 {
+  font-size: 0.95rem;
+  font-weight: 700;
+  margin: 0;
+}
+
+.chatbot-title p {
+  font-size: 0.72rem;
+  opacity: 0.8;
+  margin: 0;
+}
+
+.close-bot-btn {
+  background: none;
+  border: none;
+  color: white;
+  font-size: 1.5rem;
+  cursor: pointer;
+}
+
+.chatbot-messages {
+  flex: 1;
+  padding: 16px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  background-color: #f7f9f6;
+}
+
+.chat-msg {
+  display: flex;
+}
+
+.chat-msg.user {
+  justify-content: flex-end;
+}
+
+.msg-bubble {
+  max-width: 80%;
+  padding: 10px 14px;
+  border-radius: 12px;
+  font-size: 0.88rem;
+  line-height: 1.4;
+}
+
+.chat-msg.bot .msg-bubble {
+  background-color: var(--white);
+  color: var(--text-dark);
+  border-bottom-left-radius: 2px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+}
+
+.chat-msg.user .msg-bubble {
+  background-color: var(--secondary);
+  color: white;
+  border-bottom-right-radius: 2px;
+}
+
+.chatbot-quick-questions {
+  padding: 8px 16px;
+  background-color: #f7f9f6;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  border-top: 1px solid rgba(0,0,0,0.05);
+}
+
+.quick-q-btn {
+  background-color: var(--white);
+  border: 1px solid var(--border-color);
+  padding: 6px 12px;
+  border-radius: 20px;
+  font-size: 0.78rem;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.quick-q-btn:hover {
+  background-color: var(--primary);
+  color: white;
+  border-color: var(--primary);
+}
+
+.chatbot-input-area {
+  padding: 12px 16px;
+  display: flex;
+  gap: 8px;
+  border-top: 1px solid var(--border-color);
+}
+
+.chatbot-input-area input {
+  flex: 1;
+  padding: 8px 12px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  font-size: 0.88rem;
+  outline: none;
+}
+
+.chatbot-input-area input:focus {
+  border-color: var(--primary);
+}
+
+.send-bot-btn {
+  background-color: var(--primary);
+  color: white;
+  border: none;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: var(--transition);
+}
+
+.send-bot-btn:hover {
+  background-color: var(--primary-dark);
+}
+
 /* Tablet & Mobile responsive */
 @media (max-width: 1200px) {
   .logo-title { font-size: 1.1rem; }
@@ -804,7 +1100,7 @@ onUnmounted(() => {
   }
   
   .header-nav-row {
-    display: none; /* Mobile ẩn dòng 2, đưa vào menu-toggle */
+    display: none;
   }
 
   .main-nav {
@@ -859,9 +1155,14 @@ onUnmounted(() => {
     text-align: center;
   }
   
-  /* Hamburger bars transition */
   .bar-open-1 { transform: rotate(45deg) translate(5px, 5px); }
   .bar-open-2 { opacity: 0; }
   .bar-open-3 { transform: rotate(-45deg) translate(6px, -6px); }
+
+  .chatbot-popup {
+    width: 90vw;
+    right: 5vw;
+    left: 5vw;
+  }
 }
 </style>
