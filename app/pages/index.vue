@@ -5,14 +5,14 @@
       <div class="hero-bg-overlay"></div>
       <div class="container hero-container">
         <div class="hero-content">
-          <span class="hero-badge">CỔNG THÔNG TIN C11 - BỘ CÔNG AN</span>
-          <h2 class="hero-title animate-fade-in">Đồng hành cùng hành trình hướng thiện</h2>
+          <span class="hero-badge">{{ t('hero_badge') }}</span>
+          <h2 class="hero-title animate-fade-in">{{ t('hero_title') }}</h2>
           <p class="hero-subtitle">
-            Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý giúp người chấp hành xong án phạt tù vững vàng tái hòa nhập cộng đồng, xây dựng cuộc sống mới bền vững.
+            {{ t('hero_subtitle') }}
           </p>
           <div class="hero-actions">
-            <nuxt-link to="/gioi-thieu" class="btn btn-secondary btn-lg pulse-effect">Về chúng tôi</nuxt-link>
-            <a href="#tro-giup" class="btn btn-outline-white btn-lg">Gửi yêu cầu trợ giúp</a>
+            <nuxt-link to="/gioi-thieu" class="btn btn-secondary btn-lg pulse-effect">{{ t('hero_btn_about') }}</nuxt-link>
+            <a href="#tro-giup" class="btn btn-outline-white btn-lg">{{ t('hero_btn_help') }}</a>
           </div>
         </div>
       </div>
@@ -23,19 +23,19 @@
       <div class="container stats-grid">
         <div class="stat-card">
           <span class="stat-number">34</span>
-          <span class="stat-label">Tỉnh / Thành phố đồng hành</span>
+          <span class="stat-label">{{ t('stat_provinces_label') }}</span>
         </div>
         <div class="stat-card">
           <span class="stat-number">10.000+</span>
-          <span class="stat-label">Người hoàn lương được hỗ trợ</span>
+          <span class="stat-label">{{ t('stat_reintegrated_label') }}</span>
         </div>
         <div class="stat-card">
           <span class="stat-number">500+</span>
-          <span class="stat-label">Mô hình kinh tế tiêu biểu</span>
+          <span class="stat-label">{{ t('stat_models_label') }}</span>
         </div>
         <div class="stat-card">
           <span class="stat-number">24/7</span>
-          <span class="stat-label">Tư vấn pháp lý & Tâm lý miễn phí</span>
+          <span class="stat-label">{{ t('stat_support_label') }}</span>
         </div>
       </div>
     </section>
@@ -413,8 +413,8 @@
       <div class="container form-container">
         <div class="form-grid">
           <div class="form-info-side">
-            <h2>Đăng Ký Nhận Hỗ Trợ Tái Hòa Nhập</h2>
-            <p>Nếu bạn hoặc người thân chấp hành xong án phạt tù có nhu cầu vay vốn chính sách, tư vấn hỗ trợ tâm lý, hướng nghiệp học nghề hoặc xóa án tích, hãy gửi thông tin cho chúng tôi. Các cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ.</p>
+            <h2>{{ t('support_form_title') }}</h2>
+            <p>{{ t('support_form_sub') }}</p>
             <div class="contact-methods">
               <div class="method-item">📞 <span>Hotline hỗ trợ: <strong>0903.480.985</strong></span></div>
               <div class="method-item">✉ <span>Email: <strong>contact@conduonghuongthien.com.vn</strong></span></div>
@@ -423,25 +423,25 @@
           <div class="form-inputs-side">
             <form @submit.prevent="submitForm" class="support-form">
               <div class="form-group">
-                <label>Họ và tên người cần hỗ trợ *</label>
-                <input type="text" v-model="form.name" required placeholder="Nhập họ và tên..." />
+                <label>{{ t('form_name') }}</label>
+                <input type="text" v-model="form.name" required :placeholder="t('form_name_ph')" />
               </div>
               <div class="form-row">
                 <div class="form-group">
-                  <label>Số điện thoại liên hệ *</label>
-                  <input type="tel" v-model="form.phone" required placeholder="Nhập số điện thoại..." />
+                  <label>{{ t('form_phone') }}</label>
+                  <input type="tel" v-model="form.phone" required :placeholder="t('form_phone_ph')" />
                 </div>
                 <div class="form-group">
-                  <label>Tỉnh / Thành phố *</label>
-                  <input type="text" v-model="form.city" required placeholder="Ví dụ: Đà Nẵng, Quảng Ninh..." />
+                  <label>{{ t('form_city') }}</label>
+                  <input type="text" v-model="form.city" required :placeholder="t('form_city_ph')" />
                 </div>
               </div>
               <div class="form-group">
-                <label>Nội dung cần hỗ trợ (Vay vốn, Việc làm, Pháp lý...) *</label>
-                <textarea rows="4" v-model="form.message" required placeholder="Mô tả cụ thể nguyện vọng của bạn..."></textarea>
+                <label>{{ t('form_msg') }}</label>
+                <textarea rows="4" v-model="form.message" required :placeholder="t('form_msg_ph')"></textarea>
               </div>
               <button type="submit" class="btn btn-primary btn-block btn-lg" :disabled="submitStatus === 'loading'">
-                {{ submitStatus === 'loading' ? 'Đang gửi...' : 'Gửi thông tin đăng ký' }}
+                {{ submitStatus === 'loading' ? t('form_submitting') : t('form_submit') }}
               </button>
               <div v-if="submitMessage" class="form-feedback" :class="submitStatus" role="status" aria-live="polite">
                 {{ submitMessage }}
@@ -456,30 +456,30 @@
     <section class="section useful-links-section">
       <div class="container">
         <div class="section-header-center">
-          <span class="sub-title">Liên kết Cổng thông tin</span>
-          <h2 class="section-title-center">Liên Kết Hữu Ích</h2>
+          <span class="sub-title">{{ t('useful_links_sub') }}</span>
+          <h2 class="section-title-center">{{ t('useful_links_title') }}</h2>
         </div>
         
         <div class="links-carousel-grid">
           <a href="https://bocongan.gov.vn" target="_blank" class="link-partner-card">
             <div class="partner-logo-box">🏛</div>
-            <span>Bộ Công an</span>
+            <span>{{ t('gov_bca') }}</span>
           </a>
           <a href="https://dichvucong.gov.vn" target="_blank" class="link-partner-card">
             <div class="partner-logo-box">💻</div>
-            <span>Cổng Dịch vụ công Quốc gia</span>
+            <span>{{ t('gov_dvc') }}</span>
           </a>
           <a href="https://vbsp.org.vn" target="_blank" class="link-partner-card">
             <div class="partner-logo-box">🏦</div>
-            <span>NH Chính sách Xã hội</span>
+            <span>{{ t('gov_vbsp') }}</span>
           </a>
           <a href="https://molisa.gov.vn" target="_blank" class="link-partner-card">
             <div class="partner-logo-box">⚖</div>
-            <span>Bộ Lao động - TB&XH</span>
+            <span>{{ t('gov_molisa') }}</span>
           </a>
           <a href="https://cand.com.vn" target="_blank" class="link-partner-card">
             <div class="partner-logo-box">📰</div>
-            <span>Báo Công an Nhân dân</span>
+            <span>{{ t('gov_cand') }}</span>
           </a>
         </div>
       </div>
@@ -489,6 +489,8 @@
 
 <script setup>
 import { ref, reactive, onMounted, onUnmounted } from 'vue'
+
+const { t } = useI18n()
 
 useSeoMeta({
   title: 'Con Đường Hướng Thiện - Hỗ trợ tái hòa nhập cộng đồng',

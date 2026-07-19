@@ -405,8 +405,7 @@ const searchQuery = ref('')
 const showDropdown = ref(false)
 const showLibraryDropdown = ref(false)
 const showGovDropdown = ref(false)
-const currentLang = ref('VN')
-const fontSize = ref('normal') // small, normal, large
+const { currentLang, fontSize, t, setLang, setFontSize, initSettings } = useI18n()
 const searchInputRef = ref(null)
 const liveDateTime = ref('')
 
@@ -533,75 +532,8 @@ const handleSearch = () => {
   }
 }
 
-const i18nData = {
-  VN: {
-    home: 'Trang chủ',
-    about: 'Giới thiệu',
-    news: 'Bản tin',
-    news_featured: 'Tin nổi bật',
-    news_activities: 'Tin hoạt động',
-    news_local: 'Tin địa phương',
-    role_models: 'Tấm gương tiêu biểu',
-    reintegration: 'Mô hình tái hòa nhập',
-    documents: 'Văn bản',
-    library: 'Thư viện',
-    video_lib: 'Thư viện Video',
-    photo_lib: 'Thư viện Ảnh',
-    faq: 'Giải đáp pháp luật',
-    gov_citizen: 'Bộ với Công dân',
-    register_help: 'Đăng ký trợ giúp',
-    procedures: 'Thủ tục hành chính',
-    contact: 'Liên hệ',
-    support_247: 'Hỗ trợ 24/7',
-    font_size: 'Cỡ chữ:',
-    hotline_lbl: 'Hotline Tư Vấn 24/7',
-    ask_ai: 'Hỏi trợ lý',
-    categories: 'Danh mục',
-    search_placeholder: 'Tìm kiếm nội dung...',
-  },
-  EN: {
-    home: 'Home',
-    about: 'About Us',
-    news: 'News',
-    news_featured: 'Featured News',
-    news_activities: 'Activity News',
-    news_local: 'Local News',
-    role_models: 'Exemplary Models',
-    reintegration: 'Reintegration Models',
-    documents: 'Legal Documents',
-    library: 'Library',
-    video_lib: 'Video Gallery',
-    photo_lib: 'Photo Gallery',
-    faq: 'Legal Q&A',
-    gov_citizen: 'Ministry & Citizens',
-    register_help: 'Request Assistance',
-    procedures: 'Administrative Procedures',
-    contact: 'Contact Us',
-    support_247: '24/7 Support',
-    font_size: 'Font size:',
-    hotline_lbl: '24/7 Hotline',
-    ask_ai: 'Ask Assistant',
-    categories: 'Menu',
-    search_placeholder: 'Search content...',
-  }
-}
-
-const t = (key) => {
-  return i18nData[currentLang.value]?.[key] || key
-}
-
-const setLang = (lang) => {
-  currentLang.value = lang
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('cdkt_lang', lang)
-  }
-}
-
 const changeFontSize = (size) => {
-  fontSize.value = size
-  if (typeof window !== 'undefined') {
-    localStorage.setItem('cdkt_font_size', size)
-  }
+  setFontSize(size)
 }
 
 const toggleChatbot = () => {
@@ -837,16 +769,7 @@ const scrollChatBottom = async () => {
 }
 
 onMounted(() => {
-  if (typeof window !== 'undefined') {
-    const savedLang = localStorage.getItem('cdkt_lang')
-    if (savedLang && ['VN', 'EN'].includes(savedLang)) {
-      currentLang.value = savedLang
-    }
-    const savedFontSize = localStorage.getItem('cdkt_font_size')
-    if (savedFontSize && ['small', 'normal', 'large'].includes(savedFontSize)) {
-      fontSize.value = savedFontSize
-    }
-  }
+  initSettings()
 
   window.addEventListener('scroll', handleScroll)
   updateLiveDate()

@@ -1,5 +1,20 @@
-/* Google Fonts - Inter */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+/* Global Root Font Size Scaling (A-, A, A+) */
+html {
+  font-size: 16px;
+  transition: font-size 0.2s ease;
+}
+
+html.font-scale-small {
+  font-size: 14px !important;
+}
+
+html.font-scale-normal {
+  font-size: 16px !important;
+}
+
+html.font-scale-large {
+  font-size: 18.5px !important;
+}
 
 :root {
   --primary: #4A6741;        /* Xanh bộ đội */
