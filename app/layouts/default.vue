@@ -1,5 +1,8 @@
 <template>
   <div class="app-layout">
+    <!-- Mobile Menu Overlay -->
+    <div class="mobile-menu-overlay" :class="{ 'is-show': isMobileMenuOpen }" @click="toggleMobileMenu"></div>
+    
     <!-- Top Bar -->
     <div class="top-bar">
       <div class="container top-bar-content">
@@ -1098,7 +1101,12 @@ onUnmounted(() => {
   }
   
   .header-nav-row {
-    display: none;
+    display: block;
+    height: 0;
+    padding: 0;
+    margin: 0;
+    border: none;
+    overflow: visible;
   }
 
   /* ====== LIQUID GLASS MOBILE MENU ====== */
@@ -1278,6 +1286,27 @@ onUnmounted(() => {
   .search-dropdown-submit,
   .search-dropdown-close {
     flex: 1;
+  }
+
+  /* Mobile menu overlay style */
+  .mobile-menu-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    background-color: rgba(45, 74, 45, 0.45);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 9998;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  
+  .mobile-menu-overlay.is-show {
+    opacity: 1;
+    pointer-events: auto;
   }
 }
 
