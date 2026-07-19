@@ -757,18 +757,18 @@ const toggleFaqIndex = (index) => {
 </script>
 
 <style scoped>
-/* Hero Section */
+/* Hero Section - Ultra Sleek Abstract Gold & Forest Green */
 .hero-section {
   position: relative;
-  background: url('/hero_symbolic.jpg') center 45% / cover no-repeat;
-  padding: 70px 0 110px 0;
+  background: url('/hero_abstract.jpg') center center / cover no-repeat;
+  padding: 85px 0 120px 0;
   color: white;
 }
 
 .hero-bg-overlay {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(135deg, rgba(15, 38, 17, 0.88) 0%, rgba(20, 53, 22, 0.55) 60%, rgba(30, 70, 32, 0.25) 100%);
+  background: linear-gradient(135deg, rgba(15, 38, 17, 0.72) 0%, rgba(20, 53, 22, 0.4) 100%);
 }
 
 .hero-container {
