@@ -2420,7 +2420,11 @@ onUnmounted(() => {
     border: none;
     padding: 6px 0;
     font-family: inherit;
-    font-size: 0.68rem;
+    font-size: 0.65rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 52px;
     font-weight: 600;
     cursor: pointer;
     transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
