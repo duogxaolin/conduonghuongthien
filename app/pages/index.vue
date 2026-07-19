@@ -1092,6 +1092,7 @@ const submitForm = () => {
 @media (max-width: 900px) {
   .stats-grid {
     grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
   }
   .models-grid {
     grid-template-columns: 1fr;
@@ -1104,6 +1105,125 @@ const submitForm = () => {
   }
   .hero-subtitle {
     font-size: 1rem;
+  }
+  .hero-badge {
+    font-size: 0.72rem;
+    padding: 6px 12px;
+  }
+  .hero-actions {
+    flex-direction: column;
+    gap: 12px;
+  }
+  .hero-actions .btn {
+    text-align: center;
+  }
+  .quote-parallax-section {
+    padding: 60px 0;
+  }
+  .quote-container blockquote {
+    font-size: 1.1rem;
+  }
+  .role-card {
+    flex-direction: column;
+    text-align: center;
+    padding: 24px;
+  }
+  .role-avatar-wrap {
+    margin: 0 auto;
+  }
+  .section-title-center {
+    font-size: 1.6rem;
+  }
+  .docs-info-col h2, .form-info-side h2 {
+    font-size: 1.6rem;
+  }
+  .video-placeholder {
+    height: 220px;
+  }
+  .main-news-img {
+    height: 200px;
+  }
+}
+
+@media (max-width: 480px) {
+  .hero-section {
+    padding: 40px 0 70px 0;
+  }
+  .hero-title {
+    font-size: 1.7rem;
+  }
+  .hero-subtitle {
+    font-size: 0.9rem;
+    margin-bottom: 24px;
+  }
+  .hero-content {
+    max-width: 100%;
+  }
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+  }
+  .stat-card {
+    padding: 20px 12px;
+  }
+  .stat-number {
+    font-size: 1.6rem;
+  }
+  .stat-label {
+    font-size: 0.75rem;
+  }
+  .section-title {
+    font-size: 1.2rem;
+  }
+  .section-title-center {
+    font-size: 1.3rem;
+  }
+  .trending-item {
+    gap: 12px;
+  }
+  .trend-number {
+    font-size: 1.6rem;
+  }
+  .trend-body h4 {
+    font-size: 0.82rem;
+  }
+  .news-card-inline {
+    padding: 12px;
+    gap: 12px;
+  }
+  .news-card-inline img {
+    width: 60px;
+    height: 60px;
+  }
+  .model-card {
+    padding: 24px 16px;
+  }
+  .model-icon-wrap {
+    font-size: 2rem;
+  }
+  .support-form {
+    padding: 24px 16px;
+  }
+  .form-row {
+    grid-template-columns: 1fr;
+  }
+  .quote-parallax-section {
+    padding: 40px 0;
+    background-attachment: scroll;
+  }
+  .quote-container blockquote {
+    font-size: 0.95rem;
+  }
+  .video-placeholder {
+    height: 180px;
+  }
+  .playlist-item {
+    padding: 10px;
+    gap: 12px;
+  }
+  .playlist-thumb {
+    width: 60px;
+    height: 40px;
   }
 }
 </style>

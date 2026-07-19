@@ -1101,31 +1101,60 @@ onUnmounted(() => {
     display: none;
   }
 
+  /* ====== LIQUID GLASS MOBILE MENU ====== */
   .main-nav {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    width: 100%;
-    background-color: white;
-    border-bottom: 1px solid var(--border-color);
-    box-shadow: var(--shadow-md);
-    opacity: 0;
-    pointer-events: none;
-    transform: translateY(-10px);
-    transition: var(--transition);
-    display: block;
+    position: fixed;
+    top: 0;
+    right: -100%;
+    width: 85%;
+    max-width: 360px;
+    height: 100vh;
+    background: rgba(255, 255, 255, 0.75);
+    backdrop-filter: blur(24px) saturate(180%);
+    -webkit-backdrop-filter: blur(24px) saturate(180%);
+    border-left: 1px solid rgba(255, 255, 255, 0.5);
+    box-shadow: -8px 0 40px rgba(0, 0, 0, 0.12);
+    z-index: 9999;
+    display: flex;
+    flex-direction: column;
+    transition: right 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+    overflow-y: auto;
+    padding: 0;
   }
-  
+
   .main-nav.is-open {
+    right: 0;
     opacity: 1;
     pointer-events: auto;
-    transform: translateY(0);
+    transform: none;
   }
-  
+
   .nav-links {
     flex-direction: column;
-    padding: 20px;
-    gap: 16px;
+    padding: 80px 24px 32px 24px;
+    gap: 0;
+  }
+
+  .nav-links li {
+    border-bottom: 1px solid rgba(74, 103, 65, 0.08);
+  }
+
+  .nav-links li:last-child {
+    border-bottom: none;
+  }
+
+  .nav-item {
+    padding: 16px 0;
+    font-size: 1rem;
+    font-weight: 700;
+    color: var(--text-dark);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+
+  .nav-item::after {
+    display: none;
   }
   
   .dropdown-menu {
@@ -1134,17 +1163,70 @@ onUnmounted(() => {
     pointer-events: auto;
     transform: none;
     box-shadow: none;
+    padding: 0 0 8px 16px;
+    background: rgba(74, 103, 65, 0.04);
+    border-radius: var(--radius-sm);
+    margin-top: 0;
+    margin-bottom: 8px;
+    border: none;
+  }
+
+  .dropdown-menu a {
+    padding: 10px 16px;
+    font-size: 0.9rem;
+    border-radius: var(--radius-sm);
+  }
+
+  .dropdown-menu a:hover {
+    background-color: rgba(74, 103, 65, 0.06);
     padding-left: 20px;
-    background-color: var(--bg-light);
-    margin-top: 8px;
   }
   
   .btn-support-247 {
     display: none;
   }
 
+  /* Top bar mobile */
+  .top-bar-content {
+    flex-direction: column;
+    gap: 4px;
+    padding: 4px 0;
+  }
+
+  .top-left, .top-right {
+    gap: 8px;
+    font-size: 0.72rem;
+  }
+
+  .top-left span:nth-child(3) {
+    display: none;
+  }
+
+  /* Header mobile */
+  .header-top-container {
+    height: 60px;
+  }
+
+  .logo-img-ref {
+    height: 36px;
+  }
+
+  .logo-title {
+    font-size: 0.95rem;
+  }
+
+  .logo-subtitle {
+    display: none;
+  }
+
+  /* Footer mobile */
   .footer-grid {
     grid-template-columns: 1fr;
+    gap: 32px;
+  }
+
+  .main-footer {
+    padding: 50px 0 0 0;
   }
 
   .footer-bottom-content {
@@ -1153,14 +1235,77 @@ onUnmounted(() => {
     text-align: center;
   }
   
+  /* Hamburger bars transition */
   .bar-open-1 { transform: rotate(45deg) translate(5px, 5px); }
   .bar-open-2 { opacity: 0; }
   .bar-open-3 { transform: rotate(-45deg) translate(6px, -6px); }
 
+  /* Chatbot mobile */
   .chatbot-popup {
-    width: 90vw;
-    right: 5vw;
-    left: 5vw;
+    width: 92vw;
+    right: 4vw;
+    left: 4vw;
+    bottom: 80px;
+    height: 60vh;
+  }
+
+  .chatbot-toggle-btn {
+    bottom: 16px;
+    right: 16px;
+    padding: 10px 16px;
+    font-size: 0.82rem;
+  }
+
+  .bot-badge {
+    display: none;
+  }
+
+  .chatbot-toggle-btn .bot-icon {
+    font-size: 1.2rem;
+  }
+
+  /* Search mobile */
+  .search-dropdown-container {
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .search-bar-buttons {
+    width: 100%;
+    justify-content: stretch;
+  }
+
+  .search-dropdown-submit,
+  .search-dropdown-close {
+    flex: 1;
+  }
+}
+
+/* Small phone */
+@media (max-width: 480px) {
+  .header-top-container {
+    height: 52px;
+  }
+
+  .logo-area {
+    gap: 8px;
+  }
+
+  .logo-img-ref {
+    height: 30px;
+  }
+
+  .logo-title {
+    font-size: 0.82rem;
+  }
+
+  .accessibility-ctrl {
+    display: none;
+  }
+
+  .divider {
+    display: none;
   }
 }
 </style>
+
