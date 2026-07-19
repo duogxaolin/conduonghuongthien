@@ -1269,6 +1269,10 @@ onUnmounted(() => {
   display: none;
 }
 
+.drawer-controls-row {
+  display: none;
+}
+
 .menu-toggle {
   display: none;
   flex-direction: column;
