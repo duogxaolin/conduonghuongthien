@@ -58,6 +58,8 @@
 </template>
 
 <script setup>
+const { t } = useI18n()
+
 useSeoMeta({
   title: 'Giới thiệu | Con Đường Hướng Thiện',
   description: 'Giới thiệu Ban Biên tập Cổng thông tin Con Đường Hướng Thiện - Cục C11 Bộ Công an.'
@@ -198,7 +200,3 @@ useSeoMeta({
   }
 }
 </style>
-
-<script setup>
-const { t } = useI18n()
-</script>
