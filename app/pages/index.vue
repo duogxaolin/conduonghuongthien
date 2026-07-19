@@ -757,18 +757,18 @@ const toggleFaqIndex = (index) => {
 </script>
 
 <style scoped>
-/* Hero Section - Maximum Contrast & Sleek Institutional Style */
+/* Hero Section */
 .hero-section {
   position: relative;
-  background: url('/hero_abstract.jpg') center right / cover no-repeat;
-  padding: 90px 0 130px 0;
+  background: url('/assets/hero_banner.jpg') center 65% / cover no-repeat;
+  padding: 70px 0 110px 0;
   color: white;
 }
 
 .hero-bg-overlay {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(90deg, rgba(8, 22, 10, 0.95) 0%, rgba(14, 38, 16, 0.88) 50%, rgba(20, 53, 22, 0.35) 100%);
+  background: linear-gradient(135deg, rgba(45, 74, 45, 0.92) 0%, rgba(124, 179, 66, 0.4) 100%);
 }
 
 .hero-container {
