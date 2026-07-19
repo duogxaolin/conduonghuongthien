@@ -136,3 +136,118 @@ body {
   opacity: 1;
   transform: translateY(0);
 }
+
+/* ===================== BCA PORTAL — SECTION BAR (bocongan style) ===================== */
+.section-bar {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  background: linear-gradient(135deg, var(--primary) 0%, var(--primary-dark) 100%);
+  color: #fff;
+  padding: 12px 18px 12px 22px;
+  border-radius: 4px;
+  margin-bottom: 22px;
+  box-shadow: 0 3px 10px rgba(74, 103, 65, 0.18);
+  overflow: hidden;
+}
+
+.section-bar::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 6px;
+  background: var(--secondary);
+}
+
+.section-bar-title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 1.05rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  line-height: 1.2;
+}
+
+.section-bar-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  background: rgba(255, 255, 255, 0.18);
+  border-radius: 4px;
+  font-size: 0.9rem;
+  flex-shrink: 0;
+}
+
+.section-bar-viewall {
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: none;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 12px;
+  border: 1px solid rgba(255, 255, 255, 0.35);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.08);
+  transition: var(--transition);
+}
+
+.section-bar-viewall:hover {
+  background: var(--secondary);
+  border-color: var(--secondary);
+  color: #fff;
+}
+
+/* Variant: light (no gradient) — dùng cho nền section tối */
+.section-bar.section-bar-light {
+  background: var(--bg-light);
+  color: var(--primary-dark);
+  border-bottom: 3px solid var(--primary);
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.section-bar.section-bar-light::before {
+  display: none;
+}
+
+.section-bar.section-bar-light .section-bar-viewall {
+  color: var(--primary);
+  border-color: var(--border-color);
+  background: #fff;
+}
+
+.section-bar.section-bar-light .section-bar-viewall:hover {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.section-bar.section-bar-light .section-bar-icon {
+  background: var(--primary);
+  color: #fff;
+}
+
+/* ===================== DATE/TIME DISPLAY ===================== */
+.live-date {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-weight: 600;
+}
+
+.live-date-icon {
+  opacity: 0.8;
+}

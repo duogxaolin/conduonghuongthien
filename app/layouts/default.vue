@@ -7,9 +7,11 @@
     <div class="top-bar">
       <div class="container top-bar-content">
         <div class="top-left">
-          <span>📞 Hotline: 0903.480.985</span>
+          <span class="live-date"><span class="live-date-icon">🕒</span> {{ liveDateTime }}</span>
           <span class="divider">|</span>
-          <span>✉ Email: contact@conduonghuongthien.com.vn</span>
+          <span>📞 Hotline: 0903.480.985</span>
+          <span class="divider top-hide-mobile">|</span>
+          <span class="top-hide-mobile">✉ Email: contact@conduonghuongthien.com.vn</span>
         </div>
         <div class="top-right">
           <!-- Text Accessibility Controls -->
@@ -123,11 +125,11 @@
           <div class="container search-dropdown-container">
             <div class="search-input-wrap">
               <span class="search-input-icon">🔍</span>
-              <input 
-                type="text" 
-                placeholder="Nhập nội dung cần tìm kiếm trên website..." 
-                v-model="searchQuery" 
-                @keyup.enter="handleSearch" 
+              <input
+                type="text"
+                placeholder="Nhập nội dung cần tìm kiếm trên website..."
+                v-model="searchQuery"
+                @keyup.enter="handleSearch"
                 ref="searchInputRef"
               />
             </div>
@@ -181,7 +183,7 @@
         <div class="footer-col-contact">
           <h3 class="footer-col-title">Thông tin liên hệ</h3>
           <p><strong>Cơ quan chủ quản:</strong> C11 - Bộ Công an</p>
-          <p><strong>Địa chỉ:</strong> Số 47 Phạm Văn Đồng, Cầu Giấy, Hà Nội</p>
+          <p><strong>Địa chỉ:</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội</p>
           <p><strong>Điện thoại:</strong> 0903.480.985</p>
           <p><strong>Email:</strong> contact@conduonghuongthien.com.vn</p>
         </div>
@@ -258,6 +260,17 @@ const showGovDropdown = ref(false)
 const currentLang = ref('VN')
 const fontSize = ref('normal') // small, normal, large
 const searchInputRef = ref(null)
+const liveDateTime = ref('')
+
+const WEEKDAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy']
+const pad = (n) => String(n).padStart(2, '0')
+
+const updateLiveDate = () => {
+  const now = new Date()
+  liveDateTime.value = `${WEEKDAYS[now.getDay()]}, ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} - ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
+}
+
+let dateTimer = null
 
 // Chatbot states
 const isChatbotOpen = ref(false)
@@ -365,10 +378,13 @@ const scrollChatBottom = async () => {
 
 onMounted(() => {
   window.addEventListener('scroll', handleScroll)
+  updateLiveDate()
+  dateTimer = setInterval(updateLiveDate, 1000)
 })
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
+  if (dateTimer) clearInterval(dateTimer)
 })
 </script>
 
@@ -1206,7 +1222,7 @@ onUnmounted(() => {
     font-size: 0.72rem;
   }
 
-  .top-left span:nth-child(3) {
+  .top-hide-mobile {
     display: none;
   }
 

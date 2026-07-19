@@ -45,9 +45,9 @@
       <div class="container bca-news-grid">
         <!-- Cột Trái: Tin nổi bật & Tin tiêu điểm (2/3 chiều rộng) -->
         <div class="bca-news-left-col">
-          <div class="bca-title-wrap">
-            <h2 class="bca-section-title">Tin nổi bật</h2>
-            <nuxt-link to="/ban-tin" class="bca-view-all">TẤT CẢ TIN TỨC &rarr;</nuxt-link>
+          <div class="section-bar">
+            <div class="section-bar-title"><span class="section-bar-icon">★</span> Tin nổi bật</div>
+            <nuxt-link to="/ban-tin" class="section-bar-viewall">Tất cả tin tức →</nuxt-link>
           </div>
           
           <!-- Tin tiêu điểm chính (Overlay text trên ảnh lớn) -->
@@ -100,8 +100,8 @@
 
         <!-- Cột Phải: Hoạt động & Chỉ đạo (1/3 chiều rộng) -->
         <div class="bca-news-right-col">
-          <div class="bca-title-wrap">
-            <h2 class="bca-section-title">Chỉ đạo & Hoạt động</h2>
+          <div class="section-bar">
+            <div class="section-bar-title"><span class="section-bar-icon">⚑</span> Chỉ đạo & Hoạt động</div>
           </div>
           
           <div class="bca-text-list">
@@ -134,8 +134,8 @@
       <div class="container bca-sub-news-grid">
         <!-- Cột Trái: Cảnh báo & Tuyên truyền -->
         <div class="bca-warning-col">
-          <div class="bca-title-wrap">
-            <h2 class="bca-section-title">Cảnh báo & Tuyên truyền</h2>
+          <div class="section-bar section-bar-light">
+            <div class="section-bar-title"><span class="section-bar-icon">⚠</span> Cảnh báo & Tuyên truyền</div>
           </div>
           <div class="bca-warning-list">
             <div v-for="item in legalWarningNews" :key="item.id" class="bca-warning-card">
@@ -150,8 +150,8 @@
 
         <!-- Cột Phải: Tin Công an địa phương -->
         <div class="bca-local-col">
-          <div class="bca-title-wrap">
-            <h2 class="bca-section-title">Tin Công an địa phương</h2>
+          <div class="section-bar section-bar-light">
+            <div class="section-bar-title"><span class="section-bar-icon">📍</span> Tin Công an địa phương</div>
           </div>
           <div class="bca-local-list">
             <div v-for="item in localPoliceNews" :key="item.id" class="bca-local-item">
@@ -301,8 +301,8 @@
     <section class="section">
       <div class="container video-grid">
         <div class="video-main-col">
-          <div class="section-title-wrap">
-            <h2 class="section-title">Thư Viện Video</h2>
+          <div class="section-bar">
+            <div class="section-bar-title"><span class="section-bar-icon">▶</span> Thư viện Video</div>
           </div>
           <div class="video-wrapper">
             <div class="video-placeholder">
@@ -316,8 +316,8 @@
         </div>
         
         <div class="video-playlist-col">
-          <div class="section-title-wrap">
-            <h2 class="section-title">Playlist nổi bật</h2>
+          <div class="section-bar">
+            <div class="section-bar-title"><span class="section-bar-icon">♫</span> Playlist nổi bật</div>
           </div>
           <div class="playlist-list">
             <div v-for="v in videos" :key="v.id" class="playlist-item">

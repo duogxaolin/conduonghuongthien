@@ -17,7 +17,7 @@
           <div class="contact-block">
             <h3>Thông tin liên hệ Ban Biên tập</h3>
             <p><strong>Cơ quan chủ quản:</strong> Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an</p>
-            <p><strong>Địa chỉ:</strong> Số 47 Phạm Văn Đồng, Quận Cầu Giấy, Hà Nội</p>
+            <p><strong>Địa chỉ:</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội</p>
             <p><strong>Điện thoại đường dây nóng:</strong> 0903.480.985</p>
             <p><strong>Email tiếp nhận phản ánh:</strong> contact@conduonghuongthien.com.vn</p>
           </div>
