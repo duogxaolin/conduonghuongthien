@@ -1,18 +1,31 @@
 <template>
   <div class="homepage">
-    <!-- Hero Banner Section -->
+    <!-- Hero Banner Section (Thiết kế Split-Layout Hiện đại, Chân thực, Không AI) -->
     <section class="hero-section">
-      <div class="hero-bg-overlay"></div>
-      <div class="container hero-container">
-        <div class="hero-content">
-          <span class="hero-badge">CỔNG THÔNG TIN C11 - BỘ CÔNG AN</span>
-          <h2 class="hero-title animate-fade-in">Đồng hành cùng hành trình hướng thiện</h2>
+      <div class="container hero-grid-split">
+        <div class="hero-content-left">
+          <span class="hero-badge">Cổng thông tin điện tử C11 — Bộ Công an</span>
+          <h1 class="hero-title animate-fade-in">Đồng hành cùng hành trình hướng thiện</h1>
           <p class="hero-subtitle">
-            Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý giúp người chấp hành xong án phạt tù vững vàng tái hòa nhập cộng đồng, xây dựng cuộc sống mới bền vững.
+            Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý giúp người chấp hành xong án phạt tù vững vàng tái hòa nhập cộng đồng, kiến tạo cuộc sống mới tốt đẹp hơn.
           </p>
           <div class="hero-actions">
-            <nuxt-link to="/gioi-thieu" class="btn btn-secondary btn-lg pulse-effect">Về chúng tôi</nuxt-link>
-            <a href="#tro-giup" class="btn btn-outline-white btn-lg">Gửi yêu cầu trợ giúp</a>
+            <nuxt-link to="/gioi-thieu" class="btn btn-primary btn-lg">Tìm hiểu Đề án &rarr;</nuxt-link>
+            <a href="#tro-giup" class="btn btn-outline-primary btn-lg">Gửi yêu cầu trợ giúp</a>
+          </div>
+        </div>
+        <div class="hero-media-right">
+          <div class="image-stack">
+            <div class="image-stack-item image-stack-item-bottom">
+              <img src="/assets/news_danang.jpg" alt="Hoạt động đối thoại phạm nhân Đà Nẵng" />
+            </div>
+            <div class="image-stack-item image-stack-item-top">
+              <img src="/assets/news_quangninh.jpg" alt="Ngày hội việc làm Vân Đồn" />
+              <div class="floating-badge">
+                <span class="badge-icon">🌟</span>
+                <span class="badge-text">10,000+ Lượt hỗ trợ</span>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -354,55 +367,52 @@ const submitForm = () => {
 </script>
 
 <style scoped>
-/* Hero Section */
+/* Hero Section (Split Layout) */
 .hero-section {
+  background-color: #F8FAF7;
+  padding: 80px 0 100px 0;
+  overflow: hidden;
   position: relative;
-  background: url('/assets/hero_banner.jpg') center/cover no-repeat;
-  padding: 140px 0 160px 0;
-  color: white;
 }
 
-.hero-bg-overlay {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background: linear-gradient(135deg, rgba(45, 74, 45, 0.92) 0%, rgba(124, 179, 66, 0.4) 100%);
+.hero-grid-split {
+  display: grid;
+  grid-template-columns: 1.1fr 0.9fr;
+  gap: 50px;
+  align-items: center;
 }
 
-.hero-container {
-  position: relative;
+.hero-content-left {
   z-index: 2;
 }
 
-.hero-content {
-  max-width: 720px;
-}
-
 .hero-badge {
-  background-color: var(--secondary);
-  color: white;
+  background-color: rgba(74, 103, 65, 0.1);
+  color: var(--primary);
   padding: 6px 14px;
-  font-size: 0.78rem;
-  font-weight: 800;
+  font-size: 0.8rem;
+  font-weight: 700;
   border-radius: 4px;
   text-transform: uppercase;
   display: inline-block;
-  margin-bottom: 24px;
+  margin-bottom: 20px;
   letter-spacing: 0.5px;
 }
 
 .hero-title {
-  font-size: 3rem;
-  font-weight: 800;
-  line-height: 1.2;
+  font-size: 2.8rem;
+  font-weight: 850;
+  line-height: 1.25;
+  color: var(--primary-dark);
   margin-bottom: 20px;
   letter-spacing: -0.5px;
 }
 
 .hero-subtitle {
-  font-size: 1.15rem;
+  font-size: 1.05rem;
   line-height: 1.6;
-  opacity: 0.95;
-  margin-bottom: 36px;
+  color: var(--text-medium);
+  margin-bottom: 32px;
 }
 
 .hero-actions {
@@ -410,21 +420,95 @@ const submitForm = () => {
   gap: 16px;
 }
 
-/* Pulse Animation Effect */
-.pulse-effect {
-  animation: buttonPulse 2s infinite;
+.hero-media-right {
+  position: relative;
+  height: 400px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-@keyframes buttonPulse {
-  0% { box-shadow: 0 0 0 0 rgba(124, 179, 66, 0.7); }
-  70% { box-shadow: 0 0 0 10px rgba(124, 179, 66, 0); }
-  100% { box-shadow: 0 0 0 0 rgba(124, 179, 66, 0); }
+.image-stack {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.image-stack-item {
+  position: absolute;
+  border-radius: var(--radius-md);
+  overflow: hidden;
+  box-shadow: 0 10px 30px rgba(0,0,0,0.1);
+  border: 4px solid var(--white);
+  transition: var(--transition);
+}
+
+.image-stack-item img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.image-stack-item-bottom {
+  width: 75%;
+  height: 250px;
+  bottom: 20px;
+  left: 0;
+  z-index: 1;
+}
+
+.image-stack-item-top {
+  width: 70%;
+  height: 230px;
+  top: 20px;
+  right: 0;
+  z-index: 2;
+}
+
+.image-stack-item:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0,0,0,0.15);
+  z-index: 3;
+}
+
+.floating-badge {
+  position: absolute;
+  bottom: 20px;
+  left: -20px;
+  background-color: var(--white);
+  padding: 10px 18px;
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-md);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  border-left: 4px solid var(--secondary);
+  animation: floating 3s ease-in-out infinite;
+}
+
+@keyframes floating {
+  0% { transform: translateY(0px); }
+  50% { transform: translateY(-8px); }
+  100% { transform: translateY(0px); }
+}
+
+.badge-icon {
+  font-size: 1.2rem;
+}
+
+.badge-text {
+  font-size: 0.85rem;
+  font-weight: 800;
+  color: var(--primary-dark);
 }
 
 /* Statistics Bar */
 .stats-section {
   position: relative;
-  margin-top: -50px;
+  padding: 40px 0;
+  background-color: var(--white);
+  border-top: 1px solid var(--border-color);
+  border-bottom: 1px solid var(--border-color);
   z-index: 10;
 }
 
