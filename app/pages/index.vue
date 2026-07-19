@@ -506,20 +506,20 @@ const submitForm = () => {
 .stat-card:hover .stat-icon-svg {
   transform: scale(1.1);
 }
-}
 
 .stat-number {
-  font-size: 1.8rem;
-  font-weight: 800;
+  font-size: 2rem;
+  font-weight: 850;
   color: var(--primary-dark);
-  display: block;
+  line-height: 1.2;
+  margin-bottom: 6px;
 }
 
 .stat-label {
-  font-size: 0.82rem;
+  font-size: 0.85rem;
   color: var(--text-medium);
   font-weight: 600;
-  line-height: 1.3;
+  line-height: 1.4;
 }
 
 /* Split News Section (Latest vs Trending) */
