@@ -358,7 +358,7 @@ const submitForm = () => {
 .hero-section {
   position: relative;
   background: url('/assets/hero_banner.jpg') center/cover no-repeat;
-  padding: 140px 0 160px 0;
+  padding: 200px 0 220px 0;
   color: white;
 }
 
@@ -374,14 +374,14 @@ const submitForm = () => {
 }
 
 .hero-content {
-  max-width: 720px;
+  max-width: 850px;
 }
 
 .hero-badge {
   background-color: var(--secondary);
   color: white;
-  padding: 6px 14px;
-  font-size: 0.78rem;
+  padding: 8px 18px;
+  font-size: 0.85rem;
   font-weight: 800;
   border-radius: 4px;
   text-transform: uppercase;
@@ -391,15 +391,15 @@ const submitForm = () => {
 }
 
 .hero-title {
-  font-size: 3rem;
+  font-size: 3.5rem;
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1.25;
   margin-bottom: 20px;
   letter-spacing: -0.5px;
 }
 
 .hero-subtitle {
-  font-size: 1.15rem;
+  font-size: 1.3rem;
   line-height: 1.6;
   opacity: 0.95;
   margin-bottom: 36px;
