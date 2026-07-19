@@ -240,7 +240,7 @@
       <div class="footer-bottom">
         <div class="container footer-bottom-content">
           <p>&copy; 2026 Bản quyền thuộc về Cổng thông tin Con Đường Hướng Thiện - C11 Bộ Công an.</p>
-          <p>Thiết kế hiện đại và bảo mật bởi GlobalTech</p>
+          <p><a href="https://www.facebook.com/hi.duogxaolin" target="_blank" rel="noopener noreferrer" class="designer-link">Design by Delify.vn</a></p>
         </div>
       </div>
     </footer>
@@ -1360,6 +1360,18 @@ onUnmounted(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
+}
+
+.designer-link {
+  color: rgba(255, 255, 255, 0.7);
+  text-decoration: none;
+  font-weight: 600;
+  transition: all 0.2s ease;
+}
+
+.designer-link:hover {
+  color: var(--secondary-light);
+  text-decoration: underline;
 }
 
 /* ====== MINIMALIST ELEGANT CHATBOT AI STYLING ====== */
