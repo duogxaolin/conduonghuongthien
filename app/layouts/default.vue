@@ -10,8 +10,6 @@
           <span class="live-date top-hide-mobile"><span class="live-date-icon">🕒</span> {{ liveDateTime }}</span>
           <span class="divider top-hide-mobile">|</span>
           <span>📞 Hotline: 0903.480.985</span>
-          <span class="divider">|</span>
-          <span>✉ Email: contact@conduonghuongthien.com.vn</span>
         </div>
         <div class="top-right">
           <!-- Text Accessibility Controls -->
