@@ -18,17 +18,13 @@ const saving = ref(false)
 const testingR2 = ref(false)
 const testMessage = ref('')
 const testError = ref('')
-const saveMessage = ref('')
-
 const toast = useToast()
 
 const fetchSettings = async () => {
   loading.value = true
   try {
     const res = await $fetch('/api/admin/settings')
-    if (res.ok && res.settings) {
-      Object.assign(settings, res.settings)
-    }
+    if (res.ok && res.settings) Object.assign(settings, res.settings)
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi tải cài đặt lưu trữ')
   } finally {
@@ -38,15 +34,9 @@ const fetchSettings = async () => {
 
 const handleSave = async () => {
   saving.value = true
-  saveMessage.value = ''
   try {
-    const res = await $fetch('/api/admin/settings', {
-      method: 'PUT',
-      body: { settings }
-    })
-    if (res.ok) {
-      toast.success('Đã lưu cấu hình lưu trữ Media thành công!')
-    }
+    const res = await $fetch('/api/admin/settings', { method: 'PUT', body: { settings } })
+    if (res.ok) toast.success('Đã lưu cấu hình lưu trữ Media thành công!')
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi lưu cấu hình')
   } finally {
@@ -61,12 +51,7 @@ const handleTestR2 = async () => {
   try {
     const res = await $fetch('/api/admin/settings/test-r2', {
       method: 'POST',
-      body: {
-        accountId: settings.r2_account_id,
-        accessKeyId: settings.r2_access_key,
-        secretAccessKey: settings.r2_secret_key,
-        bucket: settings.r2_bucket,
-      }
+      body: { accountId: settings.r2_account_id, accessKeyId: settings.r2_access_key, secretAccessKey: settings.r2_secret_key, bucket: settings.r2_bucket }
     })
     if (res.ok) {
       toast.success(res.message || 'Kết nối Cloudflare R2 thành công!')
@@ -81,249 +66,99 @@ const handleTestR2 = async () => {
   }
 }
 
-onMounted(() => {
-  fetchSettings()
-})
+onMounted(() => { fetchSettings() })
 </script>
 
 <template>
-  <div class="media-settings-page">
-    <div class="page-header">
+  <div class="flex flex-col gap-5">
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1>Cấu Hình Lưu Trữ Media (Local vs Cloudflare R2)</h1>
-        <p>Tùy chọn lưu trữ file trực tiếp trên Server VPS hoặc Cloudflare R2 Cloud Storage</p>
+        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Cấu Hình Lưu Trữ Media (Local vs Cloudflare R2)</h1>
+        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Tùy chọn lưu trữ file trực tiếp trên Server VPS hoặc Cloudflare R2 Cloud Storage</p>
       </div>
-      <button class="primary-btn" :disabled="saving" @click="handleSave">
-        <span v-if="saving">Đang lưu...</span>
-        <span v-else>💾 Lưu Cấu Hình</span>
+      <button
+        class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+        :disabled="saving"
+        @click="handleSave"
+      >
+        <i class="fa-solid fa-floppy-disk"></i>
+        {{ saving ? 'Đang lưu...' : 'Lưu Cấu Hình' }}
       </button>
     </div>
 
-    <div v-if="saveMessage" class="success-alert">{{ saveMessage }}</div>
+    <div v-if="loading" class="py-10 text-center text-[#667768]">Đang tải cấu hình...</div>
 
-    <div v-if="loading" class="loading-state">Đang tải cấu hình...</div>
-
-    <div v-else class="settings-container">
+    <div v-else class="flex flex-col gap-5">
       <!-- Provider Selector -->
-      <div class="card">
-        <h3>Chế độ lưu trữ hiện tại</h3>
-        <div class="provider-options">
-          <label class="option-card" :class="{ active: settings.media_provider === 'local' }">
-            <input type="radio" value="local" v-model="settings.media_provider" />
-            <div class="option-info">
-              <strong>📁 Máy chủ Local (VPS)</strong>
-              <p>Lưu vào thư mục <code>/public/uploads/</code> trên máy chủ. Nhẹ, tiện lợi, không cần tài khoản cloud.</p>
+      <div class="bg-white rounded-xl border border-[#e2ece3] p-6">
+        <h3 class="text-[1.05rem] font-bold text-[#122815] m-0 mb-4">Chế độ lưu trữ hiện tại</h3>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <label
+            class="flex gap-4 border-2 rounded-xl p-5 cursor-pointer transition-all"
+            :class="settings.media_provider === 'local' ? 'border-[#2c6e33] bg-[#f8faf8]' : 'border-[#e2ece3] hover:border-[#8ed694]'"
+          >
+            <input type="radio" value="local" v-model="settings.media_provider" class="mt-1 accent-[#2c6e33] shrink-0" />
+            <div>
+              <strong class="block text-[0.95rem] text-[#122815] mb-1">📁 Máy chủ Local (VPS)</strong>
+              <p class="m-0 text-[0.82rem] text-[#667768]">Lưu vào thư mục <code class="bg-[#f0f7f1] px-1 rounded text-xs">/public/uploads/</code> trên máy chủ. Nhẹ, tiện lợi, không cần tài khoản cloud.</p>
             </div>
           </label>
 
-          <label class="option-card" :class="{ active: settings.media_provider === 'r2' }">
-            <input type="radio" value="r2" v-model="settings.media_provider" />
-            <div class="option-info">
-              <strong>☁️ Cloudflare R2 (Object Storage)</strong>
-              <p>Lưu trực tiếp lên Cloudflare R2. Tải nhanh toàn cầu, băng thông miễn phí (10GB/tháng free).</p>
+          <label
+            class="flex gap-4 border-2 rounded-xl p-5 cursor-pointer transition-all"
+            :class="settings.media_provider === 'r2' ? 'border-[#2c6e33] bg-[#f8faf8]' : 'border-[#e2ece3] hover:border-[#8ed694]'"
+          >
+            <input type="radio" value="r2" v-model="settings.media_provider" class="mt-1 accent-[#2c6e33] shrink-0" />
+            <div>
+              <strong class="block text-[0.95rem] text-[#122815] mb-1">☁️ Cloudflare R2 (Object Storage)</strong>
+              <p class="m-0 text-[0.82rem] text-[#667768]">Lưu trực tiếp lên Cloudflare R2. Tải nhanh toàn cầu, băng thông miễn phí (10GB/tháng free).</p>
             </div>
           </label>
         </div>
       </div>
 
       <!-- R2 Credentials Form -->
-      <div class="card" v-if="settings.media_provider === 'r2'">
-        <div class="card-title-row">
-          <h3>Thông số kết nối Cloudflare R2</h3>
-          <button class="test-btn" :disabled="testingR2" @click="handleTestR2">
-            <span v-if="testingR2">Đang kiểm tra...</span>
-            <span v-else>🔌 Kiểm Tra Kết Nối R2</span>
+      <div v-if="settings.media_provider === 'r2'" class="bg-white rounded-xl border border-[#e2ece3] p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
+          <h3 class="text-[1.05rem] font-bold text-[#122815] m-0">Thông số kết nối Cloudflare R2</h3>
+          <button
+            class="inline-flex items-center gap-2 bg-[#f0f7f1] text-[#2c6e33] border border-[#8ed694] px-3.5 py-2 rounded-lg font-bold cursor-pointer text-[0.82rem] hover:bg-[#e4f2e5] transition-colors disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+            :disabled="testingR2"
+            @click="handleTestR2"
+          >
+            <i class="fa-solid fa-plug"></i>
+            {{ testingR2 ? 'Đang kiểm tra...' : 'Kiểm Tra Kết Nối R2' }}
           </button>
         </div>
 
-        <div v-if="testMessage" class="success-alert">{{ testMessage }}</div>
-        <div v-if="testError" class="error-alert">⚠️ {{ testError }}</div>
+        <div v-if="testMessage" class="bg-[#e4f2e5] text-[#2c6e33] px-4 py-3 rounded-lg text-[0.9rem] font-bold mb-4">{{ testMessage }}</div>
+        <div v-if="testError" class="bg-[#ffebe9] text-[#d12420] px-4 py-3 rounded-lg text-[0.85rem] mb-4">{{ testError }}</div>
 
-        <div class="form-grid">
-          <div class="form-group">
-            <label>Cloudflare Account ID (*)</label>
-            <input type="text" v-model="settings.r2_account_id" placeholder="eg: 4f8b9...c312" />
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Cloudflare Account ID (*)</label>
+            <input type="text" v-model="settings.r2_account_id" placeholder="eg: 4f8b9...c312" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" />
           </div>
-
-          <div class="form-group">
-            <label>Bucket Name (*)</label>
-            <input type="text" v-model="settings.r2_bucket" placeholder="eg: cdkt-uploads" />
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Bucket Name (*)</label>
+            <input type="text" v-model="settings.r2_bucket" placeholder="eg: cdkt-uploads" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" />
           </div>
-
-          <div class="form-group">
-            <label>Access Key ID (*)</label>
-            <input type="text" v-model="settings.r2_access_key" placeholder="eg: a1b2c3d4e5f6..." />
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Access Key ID (*)</label>
+            <input type="text" v-model="settings.r2_access_key" placeholder="eg: a1b2c3d4e5f6..." class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" />
           </div>
-
-          <div class="form-group">
-            <label>Secret Access Key (*)</label>
-            <input type="password" v-model="settings.r2_secret_key" placeholder="••••••••••••••••" />
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Secret Access Key (*)</label>
+            <input type="password" v-model="settings.r2_secret_key" placeholder="••••••••••••••••" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" />
           </div>
-
-          <div class="form-group full">
-            <label>Public Domain / R2 Public URL (*)</label>
-            <input type="text" v-model="settings.r2_public_url" placeholder="eg: https://cdn.conduonghuongthien.com.vn" />
-            <span class="field-hint">Tên miền công khai được gắn vào R2 bucket (Custom Domain hoặc pub-xxx.r2.dev)</span>
+          <div class="flex flex-col gap-1.5 sm:col-span-2">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Public Domain / R2 Public URL (*)</label>
+            <input type="text" v-model="settings.r2_public_url" placeholder="eg: https://cdn.conduonghuongthien.com.vn" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" />
+            <span class="text-[0.75rem] text-[#888]">Tên miền công khai được gắn vào R2 bucket (Custom Domain hoặc pub-xxx.r2.dev)</span>
           </div>
         </div>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.media-settings-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.page-header h1 {
-  font-size: 1.3rem;
-  font-weight: 800;
-  margin: 0;
-  color: #122815;
-}
-
-.page-header p {
-  font-size: 0.85rem;
-  color: #667768;
-  margin: 4px 0 0 0;
-}
-
-.primary-btn {
-  background: #1e4620;
-  color: white;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.success-alert {
-  background: #e4f2e5;
-  color: #2c6e33;
-  padding: 12px 16px;
-  border-radius: 8px;
-  font-weight: 700;
-  font-size: 0.9rem;
-}
-
-.error-alert {
-  background: #ffebe9;
-  color: #d12420;
-  padding: 12px 16px;
-  border-radius: 8px;
-  font-size: 0.85rem;
-}
-
-.settings-container {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.card {
-  background: white;
-  padding: 24px;
-  border-radius: 12px;
-  border: 1px solid #e2ece3;
-}
-
-.card h3 {
-  margin: 0 0 16px 0;
-  font-size: 1.05rem;
-  color: #122815;
-}
-
-.card-title-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.test-btn {
-  background: #f0f7f1;
-  color: #2c6e33;
-  border: 1px solid #8ed694;
-  padding: 8px 14px;
-  border-radius: 6px;
-  font-weight: 700;
-  cursor: pointer;
-  font-size: 0.82rem;
-}
-
-.provider-options {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.option-card {
-  border: 2px solid #e2ece3;
-  padding: 20px;
-  border-radius: 12px;
-  cursor: pointer;
-  display: flex;
-  gap: 16px;
-  transition: all 0.2s;
-}
-
-.option-card.active {
-  border-color: #2c6e33;
-  background: #f8faf8;
-}
-
-.option-info strong {
-  display: block;
-  font-size: 0.95rem;
-  margin-bottom: 4px;
-}
-
-.option-info p {
-  margin: 0;
-  font-size: 0.82rem;
-  color: #667768;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-  margin-top: 16px;
-}
-
-.form-group.full {
-  grid-column: span 2;
-}
-
-.form-group label {
-  display: block;
-  font-size: 0.82rem;
-  font-weight: 700;
-  margin-bottom: 6px;
-}
-
-.form-group input {
-  width: 100%;
-  padding: 10px 14px;
-  border: 1px solid #c8d6c9;
-  border-radius: 8px;
-  box-sizing: border-box;
-}
-
-.field-hint {
-  font-size: 0.75rem;
-  color: #888;
-  margin-top: 4px;
-  display: block;
-}
-</style>

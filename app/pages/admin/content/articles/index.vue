@@ -12,11 +12,7 @@ const selectedStatus = ref('')
 const pagination = ref({ page: 1, totalPages: 1, total: 0 })
 
 const typeLabels: Record<string, string> = {
-  news: 'Bản tin',
-  role_model: 'Tấm gương',
-  reintegration: 'Mô hình',
-  document: 'Văn bản',
-  faq: 'Giải đáp',
+  news: 'Bản tin', role_model: 'Tấm gương', reintegration: 'Mô hình', document: 'Văn bản', faq: 'Giải đáp',
 }
 
 const toast = useToast()
@@ -25,18 +21,9 @@ const fetchArticles = async (page = 1) => {
   loading.value = true
   try {
     const res = await $fetch('/api/admin/articles', {
-      params: {
-        page,
-        search: search.value,
-        type: selectedType.value,
-        status: selectedStatus.value,
-        perPage: 15
-      }
+      params: { page, search: search.value, type: selectedType.value, status: selectedStatus.value, perPage: 15 }
     })
-    if (res.ok) {
-      articles.value = res.items
-      pagination.value = res.pagination
-    }
+    if (res.ok) { articles.value = res.items; pagination.value = res.pagination }
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách bài viết')
   } finally {
@@ -55,33 +42,35 @@ const deleteArticle = async (art: any) => {
   }
 }
 
-onMounted(() => {
-  fetchArticles()
-})
+onMounted(() => { fetchArticles() })
 </script>
 
 <template>
-  <div class="articles-page">
-    <div class="page-header">
+  <div class="flex flex-col gap-5">
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1>Quản lý Bài viết & Nội dung</h1>
-        <p>Danh sách bài viết tin tức, tấm gương tiêu biểu, mô hình kinh tế và văn bản</p>
+        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Quản lý Bài viết & Nội dung</h1>
+        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Danh sách bài viết tin tức, tấm gương tiêu biểu, mô hình kinh tế và văn bản</p>
       </div>
-      <nuxt-link to="/admin/content/articles/new" class="primary-btn">
-        ✍️ Viết Bài Mới
+      <nuxt-link
+        to="/admin/content/articles/new"
+        class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg no-underline transition-colors shrink-0"
+      >
+        <i class="fa-solid fa-pen-to-square"></i> Viết Bài Mới
       </nuxt-link>
     </div>
 
     <!-- Filters -->
-    <div class="filter-card">
+    <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col sm:flex-row flex-wrap gap-3">
       <input
         type="text"
         v-model="search"
         placeholder="Tìm theo tiêu đề bài viết..."
         @keyup.enter="fetchArticles(1)"
+        class="flex-1 min-w-[180px] px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
       />
-
-      <select v-model="selectedType" @change="fetchArticles(1)">
+      <select v-model="selectedType" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
         <option value="">Tất cả Thể loại</option>
         <option value="news">Bản tin & Tin tức</option>
         <option value="role_model">Tấm gương tiêu biểu</option>
@@ -89,258 +78,93 @@ onMounted(() => {
         <option value="document">Văn bản pháp luật</option>
         <option value="faq">Giải đáp pháp luật</option>
       </select>
-
-      <select v-model="selectedStatus" @change="fetchArticles(1)">
+      <select v-model="selectedStatus" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
         <option value="">Tất cả Trạng thái</option>
         <option value="published">Đã Xuất Bản</option>
         <option value="draft">Bản Nháp (Draft)</option>
         <option value="archived">Lưu Trữ</option>
       </select>
-
-      <button class="search-btn" @click="fetchArticles(1)">Tìm kiếm</button>
+      <button
+        class="inline-flex items-center gap-2 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors"
+        @click="fetchArticles(1)"
+      >
+        <i class="fa-regular fa-magnifying-glass"></i> Tìm kiếm
+      </button>
     </div>
 
-    <!-- Table -->
-    <div class="table-card">
-      <div v-if="loading" class="loading-state">Đang tải danh sách bài viết...</div>
-
-      <table v-else class="admin-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Ảnh</th>
-            <th>Tiêu đề bài viết</th>
-            <th>Thể loại</th>
-            <th>Trạng thái</th>
-            <th>Tác giả</th>
-            <th>Ngày tạo</th>
-            <th>Thao tác</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="a in articles" :key="a.id">
-            <td>#{{ a.id }}</td>
-            <td class="thumb-cell">
-              <img v-if="a.thumbnailUrl" :src="a.thumbnailUrl" class="thumb-img" />
-              <span v-else class="no-thumb">🖼️</span>
-            </td>
-            <td>
-              <strong class="article-title">{{ a.title }}</strong>
-            </td>
-            <td>
-              <span class="type-badge">{{ typeLabels[a.type] || a.type }}</span>
-            </td>
-            <td>
-              <span class="status-badge" :class="a.status">
-                {{ a.status === 'published' ? 'Đã đăng' : (a.status === 'draft' ? 'Bản nháp' : 'Lưu trữ') }}
-              </span>
-            </td>
-            <td>{{ a.authorName || 'Admin' }}</td>
-            <td>{{ new Date(a.createdAt).toLocaleDateString('vi-VN') }}</td>
-            <td>
-              <div class="action-buttons">
-                <nuxt-link :to="`/admin/content/articles/${a.id}`" class="edit-link">✏️ Sửa</nuxt-link>
-                <button class="delete-btn" @click="deleteArticle(a)">🗑️ Xóa</button>
-              </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- Table Card -->
+    <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
+      <div v-if="loading" class="py-10 text-center text-[#667768]">Đang tải danh sách bài viết...</div>
+      <div v-else class="overflow-x-auto">
+        <table class="w-full border-collapse text-[0.88rem] text-left">
+          <thead>
+            <tr>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">ID</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3]">Ảnh</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3]">Tiêu đề bài viết</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thể loại</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Trạng thái</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Tác giả</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Ngày tạo</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="a in articles" :key="a.id" class="hover:bg-[#fafcfa]">
+              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768]">#{{ a.id }}</td>
+              <td class="px-4 py-3 border-b border-[#eef2ee] w-[50px]">
+                <img v-if="a.thumbnailUrl" :src="a.thumbnailUrl" class="w-11 h-11 object-cover rounded-md" />
+                <i v-else class="fa-regular fa-image text-2xl text-[#c8d6c9]"></i>
+              </td>
+              <td class="px-4 py-3 border-b border-[#eef2ee] max-w-[260px]">
+                <strong class="text-[#122815] line-clamp-2">{{ a.title }}</strong>
+              </td>
+              <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <span class="inline-block bg-[#f0f7f1] text-[#2c6e33] px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap">
+                  {{ typeLabels[a.type] || a.type }}
+                </span>
+              </td>
+              <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <span
+                  class="inline-block px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap"
+                  :class="a.status === 'published' ? 'bg-[#e4f2e5] text-[#2c6e33]' : a.status === 'draft' ? 'bg-[#fff8e1] text-[#b78103]' : 'bg-[#f5f5f5] text-[#888]'"
+                >
+                  {{ a.status === 'published' ? 'Đã đăng' : (a.status === 'draft' ? 'Bản nháp' : 'Lưu trữ') }}
+                </span>
+              </td>
+              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] whitespace-nowrap">{{ a.authorName || 'Admin' }}</td>
+              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] whitespace-nowrap">{{ new Date(a.createdAt).toLocaleDateString('vi-VN') }}</td>
+              <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <div class="flex items-center gap-2">
+                  <nuxt-link
+                    :to="`/admin/content/articles/${a.id}`"
+                    class="inline-flex items-center gap-1 text-[#2c6e33] no-underline font-bold text-[0.82rem] hover:underline"
+                  ><i class="fa-solid fa-pen-to-square"></i> Sửa</nuxt-link>
+                  <button
+                    class="inline-flex items-center gap-1 bg-none border-0 text-[#d12420] cursor-pointer font-bold text-[0.82rem] hover:underline"
+                    @click="deleteArticle(a)"
+                  ><i class="fa-regular fa-trash"></i> Xóa</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Pagination -->
-    <div class="pagination" v-if="pagination.totalPages > 1">
+    <div v-if="pagination.totalPages > 1" class="flex justify-center items-center gap-4">
       <button
         :disabled="pagination.page <= 1"
         @click="fetchArticles(pagination.page - 1)"
-      >
-        ❮ Trang trước
-      </button>
-      <span>Trang {{ pagination.page }} / {{ pagination.totalPages }}</span>
+        class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#f0f7f1] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      ><i class="fa-regular fa-chevron-left"></i> Trang trước</button>
+      <span class="text-sm text-[#667768] font-medium">Trang {{ pagination.page }} / {{ pagination.totalPages }}</span>
       <button
         :disabled="pagination.page >= pagination.totalPages"
         @click="fetchArticles(pagination.page + 1)"
-      >
-        Trang sau ❯
-      </button>
+        class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#f0f7f1] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >Trang sau <i class="fa-regular fa-chevron-right"></i></button>
     </div>
   </div>
 </template>
-
-<style scoped>
-.articles-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.page-header h1 {
-  font-size: 1.3rem;
-  font-weight: 800;
-  margin: 0;
-  color: #122815;
-}
-
-.page-header p {
-  font-size: 0.85rem;
-  color: #667768;
-  margin: 4px 0 0 0;
-}
-
-.primary-btn {
-  background: #1e4620;
-  color: white;
-  text-decoration: none;
-  padding: 10px 18px;
-  border-radius: 8px;
-  font-weight: 700;
-}
-
-.filter-card {
-  background: white;
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid #e2ece3;
-  display: flex;
-  gap: 12px;
-}
-
-.filter-card input, .filter-card select {
-  padding: 10px 14px;
-  border: 1px solid #c8d6c9;
-  border-radius: 8px;
-}
-
-.filter-card input {
-  flex: 1;
-}
-
-.search-btn {
-  background: #2c6e33;
-  color: white;
-  border: none;
-  padding: 0 18px;
-  border-radius: 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.table-card {
-  background: white;
-  border-radius: 12px;
-  border: 1px solid #e2ece3;
-  overflow: hidden;
-}
-
-.admin-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.88rem;
-  text-align: left;
-}
-
-.admin-table th {
-  background: #f8faf8;
-  padding: 12px 16px;
-  color: #667768;
-  border-bottom: 1px solid #e2ece3;
-}
-
-.admin-table td {
-  padding: 14px 16px;
-  border-bottom: 1px solid #eef2ee;
-}
-
-.thumb-cell {
-  width: 50px;
-}
-
-.thumb-img {
-  width: 44px;
-  height: 44px;
-  object-fit: cover;
-  border-radius: 6px;
-}
-
-.no-thumb {
-  font-size: 24px;
-  opacity: 0.5;
-}
-
-.article-title {
-  color: #122815;
-}
-
-.type-badge {
-  background: #f0f7f1;
-  color: #2c6e33;
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-weight: 700;
-  font-size: 0.75rem;
-}
-
-.status-badge {
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-weight: 700;
-  font-size: 0.75rem;
-}
-
-.status-badge.published {
-  background: #e4f2e5;
-  color: #2c6e33;
-}
-
-.status-badge.draft {
-  background: #fff8e1;
-  color: #b78103;
-}
-
-.status-badge.archived {
-  background: #f5f5f5;
-  color: #888;
-}
-
-.action-buttons {
-  display: flex;
-  gap: 8px;
-}
-
-.edit-link {
-  color: #2c6e33;
-  text-decoration: none;
-  font-weight: 700;
-  font-size: 0.82rem;
-}
-
-.delete-btn {
-  background: none;
-  border: none;
-  color: #d12420;
-  cursor: pointer;
-  font-weight: 700;
-  font-size: 0.82rem;
-}
-
-.pagination {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 16px;
-}
-
-.pagination button {
-  background: white;
-  border: 1px solid #c8d6c9;
-  padding: 8px 16px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-</style>

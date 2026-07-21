@@ -36,7 +36,6 @@ const fetchArticle = async () => {
       form.content = res.article.content || ''
       form.thumbnailUrl = res.article.thumbnailUrl || ''
       form.status = res.article.status || 'published'
-      // If TinyMCE is already initialized, set content
       if (tinymceReady.value && (window as any).tinymce) {
         const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
         if (ed) ed.setContent(form.content)
@@ -61,35 +60,18 @@ const getEditorContent = (): string => {
 
 const handleSave = async () => {
   if (!form.title.trim()) {
-    errorMsg.value = 'Tiêu đề bài viết không được để trống'
-    toast.warning('Tiêu đề bài viết không được để trống')
-    return
+    toast.warning('Tiêu đề bài viết không được để trống'); return
   }
-
-  // Get latest content from TinyMCE before saving
   form.content = getEditorContent()
-
   errorMsg.value = ''
   saving.value = true
-
   try {
     if (isNew.value) {
-      const res = await $fetch('/api/admin/articles', {
-        method: 'POST',
-        body: form
-      })
-      if (res.ok) {
-        toast.success('Tạo bài viết mới thành công!')
-        navigateTo('/admin/content/articles')
-      }
+      const res = await $fetch('/api/admin/articles', { method: 'POST', body: form })
+      if (res.ok) { toast.success('Tạo bài viết mới thành công!'); navigateTo('/admin/content/articles') }
     } else {
-      const res = await $fetch(`/api/admin/articles/${articleId.value}`, {
-        method: 'PUT',
-        body: form
-      })
-      if (res.ok) {
-        toast.success('Đã cập nhật bài viết thành công!')
-      }
+      const res = await $fetch(`/api/admin/articles/${articleId.value}`, { method: 'PUT', body: form })
+      if (res.ok) toast.success('Đã cập nhật bài viết thành công!')
     }
   } catch (err: any) {
     errorMsg.value = err?.data?.statusMessage || 'Lỗi lưu bài viết'
@@ -100,13 +82,11 @@ const handleSave = async () => {
 }
 
 const { openPicker } = useImagePicker()
-const { uploading: uploadingThumb, pickAndUpload } = useUpload()
+const { uploading: uploadingThumb, uploadFile } = useUpload()
 
 const openMediaPicker = (target: 'thumbnail' | 'content') => {
   if (target === 'thumbnail') {
-    openPicker({
-      onSelect: (media) => { form.thumbnailUrl = media.url }
-    })
+    openPicker({ onSelect: (media) => { form.thumbnailUrl = media.url } })
   } else {
     openPicker({
       onSelect: (media) => {
@@ -121,21 +101,19 @@ const openMediaPicker = (target: 'thumbnail' | 'content') => {
   }
 }
 
-const uploadThumbnail = async () => {
-  const media = await pickAndUpload('image/*')
+const uploadThumbnailFromInput = async (e: Event) => {
+  const file = (e.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const media = await uploadFile(file)
   if (media) form.thumbnailUrl = media.url
+  ;(e.target as HTMLInputElement).value = ''
 }
 
 const initTinyMCE = () => {
   if (typeof window === 'undefined') return
   const win = window as any
   if (!win.tinymce) return
-
-  // Destroy existing instance if any (SPA navigation)
-  if (win.tinymce.get(TINYMCE_EDITOR_ID)) {
-    win.tinymce.get(TINYMCE_EDITOR_ID).remove()
-  }
-
+  if (win.tinymce.get(TINYMCE_EDITOR_ID)) win.tinymce.get(TINYMCE_EDITOR_ID).remove()
   win.tinymce.init({
     selector: `#${TINYMCE_EDITOR_ID}`,
     height: 480,
@@ -164,14 +142,10 @@ const initTinyMCE = () => {
     quickbars_insert_toolbar: 'quickimage quicktable',
     contextmenu: 'link image table',
     codesample_languages: [
-      { text: 'HTML/XML', value: 'markup' },
-      { text: 'JavaScript', value: 'javascript' },
-      { text: 'CSS', value: 'css' },
-      { text: 'PHP', value: 'php' },
-      { text: 'Python', value: 'python' },
-      { text: 'SQL', value: 'sql' },
-      { text: 'Bash', value: 'bash' },
-      { text: 'JSON', value: 'json' },
+      { text: 'HTML/XML', value: 'markup' }, { text: 'JavaScript', value: 'javascript' },
+      { text: 'CSS', value: 'css' }, { text: 'PHP', value: 'php' },
+      { text: 'Python', value: 'python' }, { text: 'SQL', value: 'sql' },
+      { text: 'Bash', value: 'bash' }, { text: 'JSON', value: 'json' },
     ],
     image_advtab: true,
     image_caption: true,
@@ -179,7 +153,7 @@ const initTinyMCE = () => {
     paste_data_images: true,
     paste_merge_formats: true,
     file_picker_types: 'image',
-    images_upload_handler: (blobInfo: any, progress: any) => new Promise<string>((resolve, reject) => {
+    images_upload_handler: (blobInfo: any) => new Promise<string>((resolve, reject) => {
       const formData = new FormData()
       formData.append('file', blobInfo.blob(), blobInfo.filename())
       $fetch('/api/admin/media/upload', { method: 'POST', body: formData })
@@ -192,62 +166,36 @@ const initTinyMCE = () => {
     setup: (editor: any) => {
       editor.on('init', () => {
         tinymceReady.value = true
-        if (form.content) {
-          editor.setContent(form.content)
-        }
+        if (form.content) editor.setContent(form.content)
       })
-      editor.on('change', () => {
-        form.content = editor.getContent()
-      })
+      editor.on('change', () => { form.content = editor.getContent() })
     },
     content_style: `
-      body {
-        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-        font-size: 14px;
-        line-height: 1.6;
-        padding: 12px;
-        color: #1a1a1a;
-      }
+      body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; padding: 12px; color: #1a1a1a; }
       img { max-width: 100%; height: auto; border-radius: 8px; }
-      pre[class*="language-"] {
-        background: #2d2d2d; border-radius: 6px;
-        padding: 1em; overflow-x: auto;
-      }
-      code {
-        background: #f4f4f4; padding: 2px 6px;
-        border-radius: 4px; font-family: 'Fira Code', monospace;
-      }
-      blockquote {
-        border-left: 4px solid #2c6e33; margin: 1em 0;
-        padding-left: 1em; color: #555;
-      }
+      pre[class*="language-"] { background: #2d2d2d; border-radius: 6px; padding: 1em; overflow-x: auto; }
+      code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-family: 'Fira Code', monospace; }
+      blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
       table { border-collapse: collapse; width: 100%; }
       table td, table th { border: 1px solid #ddd; padding: 8px; }
     `
   })
 }
 
-const loadTinyMCEScript = () => {
-  return new Promise<void>((resolve) => {
-    if ((window as any).tinymce) {
-      resolve()
-      return
-    }
-    // Load từ CDN cdnjs (giống forum) — đầy đủ plugins không cần self-host
-    const script = document.createElement('script')
-    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.6/tinymce.min.js'
-    script.referrerPolicy = 'no-referrer'
-    script.onload = () => resolve()
-    script.onerror = () => {
-      // Fallback về local nếu CDN không khả dụng
-      const fallback = document.createElement('script')
-      fallback.src = '/assets/tinymce/tinymce.min.js'
-      fallback.onload = () => resolve()
-      document.head.appendChild(fallback)
-    }
-    document.head.appendChild(script)
-  })
-}
+const loadTinyMCEScript = () => new Promise<void>((resolve) => {
+  if ((window as any).tinymce) { resolve(); return }
+  const script = document.createElement('script')
+  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.6/tinymce.min.js'
+  script.referrerPolicy = 'no-referrer'
+  script.onload = () => resolve()
+  script.onerror = () => {
+    const fallback = document.createElement('script')
+    fallback.src = '/assets/tinymce/tinymce.min.js'
+    fallback.onload = () => resolve()
+    document.head.appendChild(fallback)
+  }
+  document.head.appendChild(script)
+})
 
 onMounted(async () => {
   await loadTinyMCEScript()
@@ -264,280 +212,119 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div class="article-editor-page">
-    <div class="page-header">
+  <div class="flex flex-col gap-5">
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1>{{ isNew ? '✍️ Viết Bài Mới' : '✏️ Chỉnh Sửa Bài Viết' }}</h1>
-        <p>Soạn thảo nội dung tin tức, bài viết bài bản với thư viện ảnh tích hợp</p>
+        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">
+          {{ isNew ? '✍️ Viết Bài Mới' : '✏️ Chỉnh Sửa Bài Viết' }}
+        </h1>
+        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Soạn thảo nội dung tin tức, bài viết bài bản với thư viện ảnh tích hợp</p>
       </div>
-      <div class="header-actions">
-        <nuxt-link to="/admin/content/articles" class="cancel-btn">Hủy & Quay lại</nuxt-link>
-        <button class="primary-btn" :disabled="saving" @click="handleSave">
-          <span v-if="saving">Đang lưu...</span>
-          <span v-else>💾 {{ isNew ? 'Đăng Bài Mới' : 'Cập Nhật Bài Viết' }}</span>
+      <div class="flex gap-3">
+        <nuxt-link
+          to="/admin/content/articles"
+          class="inline-flex items-center bg-white border border-[#c8d6c9] text-[#667768] no-underline px-4 py-2.5 rounded-lg font-semibold hover:bg-[#f8faf8] transition-colors"
+        >Hủy & Quay lại</nuxt-link>
+        <button
+          class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed"
+          :disabled="saving"
+          @click="handleSave"
+        >
+          <i class="fa-solid fa-floppy-disk"></i>
+          {{ saving ? 'Đang lưu...' : (isNew ? 'Đăng Bài Mới' : 'Cập Nhật Bài Viết') }}
         </button>
       </div>
     </div>
 
-    <div v-if="errorMsg" class="error-alert">{{ errorMsg }}</div>
+    <div v-if="errorMsg" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem]">{{ errorMsg }}</div>
 
-    <div class="editor-grid">
-      <!-- Left Main Form -->
-      <div class="main-form">
-        <div class="form-card">
-          <div class="form-group">
-            <label>Tiêu đề bài viết (*)</label>
-            <input
-              type="text"
-              v-model="form.title"
-              placeholder="Nhập tiêu đề hấp dẫn..."
-              class="title-input"
-            />
-          </div>
+    <!-- Two-column editor grid -->
+    <div class="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-5">
+      <!-- Main Form -->
+      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-5">
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Tiêu đề bài viết (*)</label>
+          <input
+            type="text"
+            v-model="form.title"
+            placeholder="Nhập tiêu đề hấp dẫn..."
+            class="w-full px-3.5 py-3 border border-[#c8d6c9] rounded-lg text-[1.1rem] font-bold outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border"
+          />
+        </div>
 
-          <div class="form-group">
-            <label>Tóm tắt bài viết (Excerpt)</label>
-            <textarea
-              v-model="form.excerpt"
-              rows="3"
-              placeholder="Nhập đoạn tóm tắt ngắn hiển thị ở trang danh sách..."
-            ></textarea>
-          </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Tóm tắt bài viết (Excerpt)</label>
+          <textarea
+            v-model="form.excerpt"
+            rows="3"
+            placeholder="Nhập đoạn tóm tắt ngắn hiển thị ở trang danh sách..."
+            class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border resize-none font-[inherit]"
+          ></textarea>
+        </div>
 
-          <div class="form-group">
-            <div class="label-row">
-              <label>Nội dung chi tiết (HTML / Editor)</label>
-              <button class="media-btn" @click="openMediaPicker('content')">
-                Chèn Ảnh Từ Thư Viện
-              </button>
-            </div>
-            <div :id="TINYMCE_EDITOR_ID" class="tinymce-target"></div>
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between">
+            <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Nội dung chi tiết (HTML / Editor)</label>
+            <button
+              class="inline-flex items-center gap-1.5 bg-[#f0f7f1] text-[#2c6e33] border border-[#8ed694] px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
+              @click="openMediaPicker('content')"
+            >
+              <i class="fa-regular fa-images"></i> Chèn Ảnh Từ Thư Viện
+            </button>
           </div>
+          <div :id="TINYMCE_EDITOR_ID" class="min-h-[480px]"></div>
         </div>
       </div>
 
-      <!-- Right Meta Panel -->
-      <div class="meta-form">
-        <div class="form-card">
-          <h3>Cấu hình xuất bản</h3>
+      <!-- Meta Sidebar -->
+      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-4 self-start">
+        <h3 class="text-[1rem] font-bold text-[#122815] m-0">Cấu hình xuất bản</h3>
 
-          <div class="form-group">
-            <label>Thể loại bài viết (*)</label>
-            <select v-model="form.type">
-              <option value="news">📰 Bản tin & Tin tức</option>
-              <option value="role_model">🏆 Tấm gương tiêu biểu</option>
-              <option value="reintegration">🏭 Mô hình tái hòa nhập</option>
-              <option value="document">📄 Văn bản pháp luật</option>
-              <option value="faq">❓ Giải đáp pháp luật</option>
-            </select>
-          </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Thể loại bài viết (*)</label>
+          <select v-model="form.type" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border">
+            <option value="news">📰 Bản tin & Tin tức</option>
+            <option value="role_model">🏆 Tấm gương tiêu biểu</option>
+            <option value="reintegration">🏭 Mô hình tái hòa nhập</option>
+            <option value="document">📄 Văn bản pháp luật</option>
+            <option value="faq">❓ Giải đáp pháp luật</option>
+          </select>
+        </div>
 
-          <div class="form-group">
-            <label>Trạng thái (*)</label>
-            <select v-model="form.status">
-              <option value="published">🟢 Xuất Bản Ngay</option>
-              <option value="draft">🟡 Bản Nháp (Draft)</option>
-              <option value="archived">⚪ Lưu Trữ</option>
-            </select>
-          </div>
+        <div class="flex flex-col gap-1.5">
+          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Trạng thái (*)</label>
+          <select v-model="form.status" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border">
+            <option value="published">🟢 Xuất Bản Ngay</option>
+            <option value="draft">🟡 Bản Nháp (Draft)</option>
+            <option value="archived">⚪ Lưu Trữ</option>
+          </select>
+        </div>
 
-          <div class="form-group">
-            <label>Ảnh đại diện (Thumbnail)</label>
-            <div class="thumb-picker-wrap">
-              <div v-if="form.thumbnailUrl" class="thumb-preview">
-                <img :src="form.thumbnailUrl" />
-                <button class="remove-thumb" @click="form.thumbnailUrl = ''">✕</button>
-              </div>
-              <div class="thumb-actions">
-                <button class="select-thumb-btn" @click="openMediaPicker('thumbnail')">
-                  <i class="fa-regular fa-images"></i> {{ form.thumbnailUrl ? 'Đổi từ thư viện' : 'Chọn từ thư viện' }}
-                </button>
-                <label class="select-thumb-btn upload-btn" :class="{ disabled: uploadingThumb }">
-                  <i class="fa-regular" :class="uploadingThumb ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i>
-                  {{ uploadingThumb ? 'Đang tải...' : 'Upload ảnh' }}
-                  <input type="file" accept="image/*" class="sr-only" :disabled="uploadingThumb" @change="async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if(f) { const m = await (useUpload().uploadFile)(f); if(m) form.thumbnailUrl = m.url; (e.target as HTMLInputElement).value='' } }" />
-                </label>
-              </div>
-            </div>
+        <div class="flex flex-col gap-2">
+          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Ảnh đại diện (Thumbnail)</label>
+          <div v-if="form.thumbnailUrl" class="relative w-full h-40 rounded-lg overflow-hidden border border-[#e2ece3]">
+            <img :src="form.thumbnailUrl" class="w-full h-full object-cover" />
+            <button class="absolute top-2 right-2 bg-black/70 text-white border-0 w-6 h-6 rounded-full cursor-pointer flex items-center justify-center text-xs" @click="form.thumbnailUrl = ''">
+              <i class="fa-solid fa-xmark"></i>
+            </button>
           </div>
+          <button
+            class="w-full flex items-center justify-center gap-2 bg-[#f0f7f1] border border-[#8ed694] text-[#2c6e33] px-3 py-2.5 rounded-lg font-bold cursor-pointer text-sm hover:bg-[#e4f2e5] transition-colors"
+            @click="openMediaPicker('thumbnail')"
+          >
+            <i class="fa-regular fa-images"></i> {{ form.thumbnailUrl ? 'Đổi từ thư viện' : 'Chọn từ thư viện' }}
+          </button>
+          <label
+            class="w-full flex items-center justify-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white px-3 py-2.5 rounded-lg font-bold cursor-pointer text-sm transition-colors"
+            :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploadingThumb }"
+          >
+            <i class="fa-regular" :class="uploadingThumb ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i>
+            {{ uploadingThumb ? 'Đang tải...' : 'Upload ảnh' }}
+            <input type="file" accept="image/*" class="sr-only" :disabled="uploadingThumb" @change="uploadThumbnailFromInput" />
+          </label>
         </div>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.article-editor-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.page-header h1 {
-  font-size: 1.3rem;
-  font-weight: 800;
-  margin: 0;
-  color: #122815;
-}
-
-.page-header p {
-  font-size: 0.85rem;
-  color: #667768;
-  margin: 4px 0 0 0;
-}
-
-.header-actions {
-  display: flex;
-  gap: 12px;
-}
-
-.primary-btn {
-  background: #1e4620;
-  color: white;
-  border: none;
-  padding: 10px 20px;
-  border-radius: 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.cancel-btn {
-  background: white;
-  border: 1px solid #c8d6c9;
-  color: #667768;
-  text-decoration: none;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-weight: 600;
-}
-
-.error-alert {
-  background: #ffebe9;
-  color: #d12420;
-  padding: 10px 16px;
-  border-radius: 8px;
-  font-size: 0.85rem;
-}
-
-.editor-grid {
-  display: grid;
-  grid-template-columns: 1fr 300px;
-  gap: 20px;
-}
-
-.form-card {
-  background: white;
-  padding: 24px;
-  border-radius: 12px;
-  border: 1px solid #e2ece3;
-}
-
-.form-card h3 {
-  margin: 0 0 16px 0;
-  font-size: 1rem;
-  color: #122815;
-}
-
-.form-group {
-  margin-bottom: 20px;
-}
-
-.label-row {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 8px;
-}
-
-.media-btn {
-  background: #f0f7f1;
-  color: #2c6e33;
-  border: 1px solid #8ed694;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-size: 0.78rem;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.form-group label {
-  display: block;
-  font-size: 0.84rem;
-  font-weight: 700;
-  margin-bottom: 6px;
-  color: #2c3e2e;
-}
-
-.title-input {
-  font-size: 1.1rem;
-  font-weight: 700;
-}
-
-.form-group input, .form-group textarea, .form-group select {
-  width: 100%;
-  padding: 12px;
-  border: 1px solid #c8d6c9;
-  border-radius: 8px;
-  box-sizing: border-box;
-  font-family: inherit;
-  font-size: 0.92rem;
-}
-
-.content-editor {
-  line-height: 1.6;
-}
-
-.tinymce-target {
-  min-height: 480px;
-}
-
-.thumb-picker-wrap {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
-.thumb-preview {
-  position: relative;
-  width: 100%;
-  height: 160px;
-  border-radius: 8px;
-  overflow: hidden;
-  border: 1px solid #e2ece3;
-}
-
-.thumb-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.remove-thumb {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  background: rgba(0, 0, 0, 0.7);
-  color: white;
-  border: none;
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  cursor: pointer;
-}
-
-.select-thumb-btn {
-  background: #f0f7f1;
-  border: 1px border #8ed694;
-  color: #2c6e33;
-  padding: 10px;
-  border-radius: 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-</style>

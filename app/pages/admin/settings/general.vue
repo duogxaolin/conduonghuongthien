@@ -61,160 +61,107 @@ onMounted(() => { fetchSettings() })
 </script>
 
 <template>
-  <div class="settings-page">
-    <div class="page-header">
+  <div class="flex flex-col gap-5">
+    <!-- Page Header -->
+    <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
       <div>
-        <h1>Cài Đặt Chung Website</h1>
-        <p>Chỉnh sửa các thông tin hotline, địa chỉ, email và logo của website</p>
+        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Cài Đặt Chung Website</h1>
+        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Chỉnh sửa các thông tin hotline, địa chỉ, email và logo của website</p>
       </div>
-      <button class="primary-btn" :disabled="saving" @click="handleSave">
+      <button
+        class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-5 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed shrink-0"
+        :disabled="saving"
+        @click="handleSave"
+      >
         <i class="fa-regular" :class="saving ? 'fa-spinner animate-spin' : 'fa-floppy-disk'"></i>
         {{ saving ? 'Đang lưu...' : 'Lưu Cài Đặt' }}
       </button>
     </div>
 
-    <div v-if="loading" class="loading-state">Đang tải cài đặt...</div>
+    <div v-if="loading" class="py-10 text-center text-[#667768]">Đang tải cài đặt...</div>
 
-    <div v-else class="settings-grid">
-      <div class="card">
-        <h3>Thông tin cơ bản</h3>
-        <div class="form-group">
-          <label>Tên Website</label>
-          <input type="text" v-model="settings.site_name" />
-        </div>
-        <div class="form-group">
-          <label>Mô tả Website (SEO Meta)</label>
-          <textarea rows="3" v-model="settings.site_description"></textarea>
+    <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <!-- Basic Info -->
+      <div class="bg-white rounded-xl border border-[#e2ece3] p-6">
+        <h3 class="text-[1.05rem] font-bold text-[#122815] m-0 mb-4">Thông tin cơ bản</h3>
+        <div class="flex flex-col gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tên Website</label>
+            <input type="text" v-model="settings.site_name" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Mô tả Website (SEO Meta)</label>
+            <textarea rows="3" v-model="settings.site_description" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border resize-none"></textarea>
+          </div>
         </div>
       </div>
 
-      <div class="card">
-        <h3>Thông tin liên hệ</h3>
-        <div class="form-group">
-          <label>Hotline Hỗ Trợ (*)</label>
-          <input type="text" v-model="settings.hotline" />
-        </div>
-        <div class="form-group">
-          <label>Email Liên Hệ</label>
-          <input type="email" v-model="settings.email" />
-        </div>
-        <div class="form-group">
-          <label>Địa Chỉ Cơ Quan</label>
-          <input type="text" v-model="settings.address" />
-        </div>
-        <div class="form-group">
-          <label>Đường dẫn Trang Fanpage / Facebook</label>
-          <input type="text" v-model="settings.facebook_url" />
+      <!-- Contact Info -->
+      <div class="bg-white rounded-xl border border-[#e2ece3] p-6">
+        <h3 class="text-[1.05rem] font-bold text-[#122815] m-0 mb-4">Thông tin liên hệ</h3>
+        <div class="flex flex-col gap-4">
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Hotline Hỗ Trợ (*)</label>
+            <input type="text" v-model="settings.hotline" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Email Liên Hệ</label>
+            <input type="email" v-model="settings.email" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Địa Chỉ Cơ Quan</label>
+            <input type="text" v-model="settings.address" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Đường dẫn Trang Fanpage / Facebook</label>
+            <input type="text" v-model="settings.facebook_url" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+          </div>
         </div>
       </div>
 
-      <!-- Hình ảnh & Logo — giờ có picker + upload + preview -->
-      <div class="card full">
-        <h3>Hình ảnh & Logo</h3>
+      <!-- Images & Logo (full width) -->
+      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 md:col-span-2">
+        <h3 class="text-[1.05rem] font-bold text-[#122815] m-0 mb-4">Hình ảnh & Logo</h3>
+        <div class="flex flex-col gap-5">
+          <!-- Logo -->
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Logo Website</label>
+            <div class="flex gap-2 items-center flex-wrap">
+              <input type="text" v-model="settings.logo_url" placeholder="URL hoặc chọn từ thư viện" class="flex-1 min-w-0 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-[#c8d6c9] bg-[#f4f7f4] text-[#1e4620] rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-[#2c6e33] transition-colors shrink-0" @click="pickImage('logo_url')">
+                <i class="fa-regular fa-images"></i> Thư viện
+              </button>
+              <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-[#1e4620] hover:bg-[#2c6e33] text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploading }">
+                <i class="fa-regular" :class="uploading ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i> Upload
+                <input type="file" accept="image/*" class="sr-only" :disabled="uploading" @change="(e) => uploadImage(e, 'logo_url')" />
+              </label>
+            </div>
+            <div v-if="settings.logo_url" class="mt-2 relative inline-block border border-[#e2ece3] rounded-lg overflow-hidden">
+              <img :src="settings.logo_url" alt="Logo preview" class="block max-h-20 max-w-[200px] object-contain" />
+              <button type="button" class="absolute top-1 right-1 bg-black/55 text-white border-0 rounded-full w-5 h-5 flex items-center justify-center text-xs cursor-pointer" @click="settings.logo_url = ''"><i class="fa-regular fa-xmark"></i></button>
+            </div>
+          </div>
 
-        <!-- Logo -->
-        <div class="form-group">
-          <label>Logo Website</label>
-          <div class="img-field">
-            <input type="text" v-model="settings.logo_url" placeholder="URL hoặc chọn từ thư viện" />
-            <button type="button" class="img-btn" @click="pickImage('logo_url')">
-              <i class="fa-regular fa-images"></i> Thư viện
-            </button>
-            <label class="img-btn upload" :class="{ disabled: uploading }">
-              <i class="fa-regular" :class="uploading ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i>
-              Upload
-              <input type="file" accept="image/*" class="sr-only" :disabled="uploading" @change="(e) => uploadImage(e, 'logo_url')" />
-            </label>
-          </div>
-          <div v-if="settings.logo_url" class="img-preview">
-            <img :src="settings.logo_url" alt="Logo preview" />
-            <button type="button" @click="settings.logo_url = ''"><i class="fa-regular fa-xmark"></i></button>
-          </div>
-        </div>
-
-        <!-- Hero Banner -->
-        <div class="form-group">
-          <label>Ảnh Hero Banner Trang Chủ</label>
-          <div class="img-field">
-            <input type="text" v-model="settings.hero_banner_url" placeholder="URL hoặc chọn từ thư viện" />
-            <button type="button" class="img-btn" @click="pickImage('hero_banner_url')">
-              <i class="fa-regular fa-images"></i> Thư viện
-            </button>
-            <label class="img-btn upload" :class="{ disabled: uploading }">
-              <i class="fa-regular" :class="uploading ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i>
-              Upload
-              <input type="file" accept="image/*" class="sr-only" :disabled="uploading" @change="(e) => uploadImage(e, 'hero_banner_url')" />
-            </label>
-          </div>
-          <div v-if="settings.hero_banner_url" class="img-preview wide">
-            <img :src="settings.hero_banner_url" alt="Banner preview" />
-            <button type="button" @click="settings.hero_banner_url = ''"><i class="fa-regular fa-xmark"></i></button>
+          <!-- Hero Banner -->
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Ảnh Hero Banner Trang Chủ</label>
+            <div class="flex gap-2 items-center flex-wrap">
+              <input type="text" v-model="settings.hero_banner_url" placeholder="URL hoặc chọn từ thư viện" class="flex-1 min-w-0 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-[#c8d6c9] bg-[#f4f7f4] text-[#1e4620] rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-[#2c6e33] transition-colors shrink-0" @click="pickImage('hero_banner_url')">
+                <i class="fa-regular fa-images"></i> Thư viện
+              </button>
+              <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-[#1e4620] hover:bg-[#2c6e33] text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploading }">
+                <i class="fa-regular" :class="uploading ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i> Upload
+                <input type="file" accept="image/*" class="sr-only" :disabled="uploading" @change="(e) => uploadImage(e, 'hero_banner_url')" />
+              </label>
+            </div>
+            <div v-if="settings.hero_banner_url" class="mt-2 relative inline-block border border-[#e2ece3] rounded-lg overflow-hidden">
+              <img :src="settings.hero_banner_url" alt="Banner preview" class="block max-h-[120px] max-w-[400px] object-contain" />
+              <button type="button" class="absolute top-1 right-1 bg-black/55 text-white border-0 rounded-full w-5 h-5 flex items-center justify-center text-xs cursor-pointer" @click="settings.hero_banner_url = ''"><i class="fa-regular fa-xmark"></i></button>
+            </div>
           </div>
         </div>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.settings-page { display: flex; flex-direction: column; gap: 20px; }
-
-.page-header { display: flex; justify-content: space-between; align-items: center; }
-.page-header h1 { font-size: 1.3rem; font-weight: 800; margin: 0; color: #122815; }
-.page-header p { font-size: 0.85rem; color: #667768; margin: 4px 0 0 0; }
-
-.primary-btn {
-  display: inline-flex; align-items: center; gap: 6px;
-  background: #1e4620; color: white; border: none;
-  padding: 10px 20px; border-radius: 8px; font-weight: 700; cursor: pointer;
-  transition: background 0.15s;
-}
-.primary-btn:hover:not(:disabled) { background: #2c6e33; }
-.primary-btn:disabled { opacity: 0.6; cursor: not-allowed; }
-
-.settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-.card { background: white; padding: 24px; border-radius: 12px; border: 1px solid #e2ece3; }
-.card.full { grid-column: span 2; }
-.card h3 { margin: 0 0 16px 0; font-size: 1.05rem; color: #122815; }
-
-.form-group { margin-bottom: 16px; }
-.form-group label { display: block; font-size: 0.82rem; font-weight: 700; margin-bottom: 6px; }
-.form-group input, .form-group textarea {
-  width: 100%; padding: 10px 14px; border: 1px solid #c8d6c9;
-  border-radius: 8px; box-sizing: border-box; font-size: 0.875rem;
-}
-.form-group input:focus, .form-group textarea:focus {
-  outline: none; border-color: #2c6e33; box-shadow: 0 0 0 3px rgba(44,110,51,.1);
-}
-
-/* Image field row */
-.img-field { display: flex; gap: 6px; align-items: center; }
-.img-field input { flex: 1; }
-.img-btn {
-  display: inline-flex; align-items: center; gap: 5px;
-  height: 38px; padding: 0 12px; border-radius: 8px; font-size: 0.8rem;
-  font-weight: 600; cursor: pointer; white-space: nowrap; border: 1px solid #c8d6c9;
-  background: #f4f7f4; color: #1e4620; transition: background 0.15s;
-  flex-shrink: 0;
-}
-.img-btn:hover:not(.disabled) { background: #e6f2e6; border-color: #2c6e33; }
-.img-btn.upload { background: #1e4620; color: white; border-color: #1e4620; }
-.img-btn.upload:hover:not(.disabled) { background: #2c6e33; }
-.img-btn.disabled { opacity: 0.6; cursor: not-allowed; pointer-events: none; }
-
-/* Preview */
-.img-preview {
-  margin-top: 8px; position: relative; display: inline-block;
-  border: 1px solid #e2ece3; border-radius: 8px; overflow: hidden;
-}
-.img-preview img { display: block; max-height: 80px; max-width: 200px; object-fit: contain; }
-.img-preview.wide img { max-height: 120px; max-width: 400px; }
-.img-preview button {
-  position: absolute; top: 4px; right: 4px; background: rgba(0,0,0,0.55);
-  color: white; border: none; border-radius: 50%; width: 22px; height: 22px;
-  font-size: 0.75rem; cursor: pointer; display: flex; align-items: center; justify-content: center;
-}
-
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
-.loading-state { text-align: center; padding: 40px; color: #667768; }
-</style>

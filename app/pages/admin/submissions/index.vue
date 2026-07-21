@@ -9,16 +9,13 @@ const loading = ref(true)
 const search = ref('')
 const typeFilter = ref('')
 const selectedSub = ref<any>(null)
-
 const toast = useToast()
 
 const fetchSubmissions = async () => {
   loading.value = true
   try {
     const res = await $fetch('/api/admin/submissions')
-    if (res.ok) {
-      submissions.value = res.submissions
-    }
+    if (res.ok) submissions.value = res.submissions
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách đơn đăng ký')
   } finally {
@@ -32,298 +29,130 @@ const filteredSubmissions = computed(() => {
       s.name?.toLowerCase().includes(search.value.toLowerCase()) ||
       s.phone?.includes(search.value) ||
       s.city?.toLowerCase().includes(search.value.toLowerCase())
-
     const matchType = !typeFilter.value || s.type === typeFilter.value
     return matchSearch && matchType
   })
 })
 
-onMounted(() => {
-  fetchSubmissions()
-})
+onMounted(() => { fetchSubmissions() })
 </script>
 
 <template>
-  <div class="submissions-page">
-    <div class="page-header">
-      <div>
-        <h1>Danh sách Đơn đăng ký Hỗ trợ</h1>
-        <p>Tiếp nhận và xử lý thông tin từ người dân đăng ký tư vấn tái hòa nhập cộng đồng</p>
-      </div>
+  <div class="flex flex-col gap-5">
+    <!-- Page Header -->
+    <div>
+      <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Danh sách Đơn đăng ký Hỗ trợ</h1>
+      <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Tiếp nhận và xử lý thông tin từ người dân đăng ký tư vấn tái hòa nhập cộng đồng</p>
     </div>
 
-    <!-- Filters -->
-    <div class="filter-card">
+    <!-- Filter Bar -->
+    <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col sm:flex-row gap-3">
       <input
         type="text"
         v-model="search"
         placeholder="Tìm theo họ tên, số điện thoại, tỉnh thành..."
+        class="flex-1 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
       />
-
-      <select v-model="typeFilter">
+      <select
+        v-model="typeFilter"
+        class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
+      >
         <option value="">Tất cả loại yêu cầu</option>
         <option value="support">Tư vấn Hỗ trợ (Tái hòa nhập)</option>
         <option value="contact">Liên hệ thông thường</option>
       </select>
     </div>
 
-    <!-- Table -->
-    <div class="table-card">
-      <div v-if="loading" class="loading-state">Đang tải danh sách...</div>
-
-      <table v-else class="admin-table">
-        <thead>
-          <tr>
-            <th>ID</th>
-            <th>Họ và tên</th>
-            <th>Số điện thoại</th>
-            <th>Tỉnh / Thành</th>
-            <th>Loại yêu cầu</th>
-            <th>Ngày gửi</th>
-            <th>Thao tác</th>
-          </tr>
-        </thead>
-        <tbody>
-          <tr v-for="s in filteredSubmissions" :key="s.id">
-            <td>#{{ s.id }}</td>
-            <td><strong>{{ s.name }}</strong></td>
-            <td><code>{{ s.phone }}</code></td>
-            <td>{{ s.city || '—' }}</td>
-            <td>
-              <span class="type-badge" :class="s.type">
-                {{ s.type === 'support' ? 'Hỗ trợ tái hòa nhập' : 'Liên hệ' }}
-              </span>
-            </td>
-            <td>{{ new Date(s.submittedAt).toLocaleString('vi-VN') }}</td>
-            <td>
-              <button class="view-btn" @click="selectedSub = s">👁️ Xem chi tiết</button>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+    <!-- Table Card -->
+    <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
+      <div v-if="loading" class="p-10 text-center text-[#667768]">Đang tải danh sách...</div>
+      <div v-else class="overflow-x-auto">
+        <table class="w-full border-collapse text-[0.88rem] text-left">
+          <thead>
+            <tr>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">ID</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Họ và tên</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Số điện thoại</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Tỉnh / Thành</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Loại yêu cầu</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Ngày gửi</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="s in filteredSubmissions" :key="s.id" class="hover:bg-[#fafcfa]">
+              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#667768]">#{{ s.id }}</td>
+              <td class="px-4 py-3.5 border-b border-[#eef2ee] font-bold text-[#122815]">{{ s.name }}</td>
+              <td class="px-4 py-3.5 border-b border-[#eef2ee]"><code class="bg-[#f4f7f4] px-1.5 py-0.5 rounded text-xs">{{ s.phone }}</code></td>
+              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#2c3e2e]">{{ s.city || '—' }}</td>
+              <td class="px-4 py-3.5 border-b border-[#eef2ee]">
+                <span
+                  class="px-2 py-1 rounded-md text-[0.75rem] font-bold"
+                  :class="s.type === 'support' ? 'bg-[#e4f2e5] text-[#2c6e33]' : 'bg-[#eef2f8] text-[#1a4f8b]'"
+                >
+                  {{ s.type === 'support' ? 'Hỗ trợ tái hòa nhập' : 'Liên hệ' }}
+                </span>
+              </td>
+              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#667768] text-[0.82rem] whitespace-nowrap">
+                {{ new Date(s.submittedAt).toLocaleString('vi-VN') }}
+              </td>
+              <td class="px-4 py-3.5 border-b border-[#eef2ee]">
+                <button
+                  class="inline-flex items-center gap-1.5 bg-[#f0f7f1] text-[#2c6e33] border border-[#8ed694] px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
+                  @click="selectedSub = s"
+                >
+                  <i class="fa-solid fa-eye"></i> Xem chi tiết
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
     </div>
 
     <!-- Detail Modal -->
-    <div v-if="selectedSub" class="modal-overlay" @click.self="selectedSub = null">
-      <div class="modal-card">
-        <h3>📋 Chi tiết Đơn đăng ký #{{ selectedSub.id }}</h3>
-        <p class="modal-subtitle">Gửi lúc: {{ new Date(selectedSub.submittedAt).toLocaleString('vi-VN') }}</p>
+    <div v-if="selectedSub" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4" @click.self="selectedSub = null">
+      <div class="bg-white rounded-2xl p-7 w-full max-w-[520px] max-h-[90vh] overflow-y-auto">
+        <h3 class="text-[1.15rem] font-extrabold text-[#122815] m-0 mb-1">📋 Chi tiết Đơn đăng ký #{{ selectedSub.id }}</h3>
+        <p class="text-[0.82rem] text-[#667768] m-0 mb-5">Gửi lúc: {{ new Date(selectedSub.submittedAt).toLocaleString('vi-VN') }}</p>
 
-        <div class="detail-grid">
-          <div class="detail-item">
-            <span class="label">Họ và tên:</span>
-            <strong>{{ selectedSub.name }}</strong>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div class="flex flex-col gap-1">
+            <span class="text-[0.78rem] text-[#667768] font-bold">Họ và tên:</span>
+            <strong class="text-[#122815]">{{ selectedSub.name }}</strong>
           </div>
-          <div class="detail-item">
-            <span class="label">Số điện thoại:</span>
-            <code>{{ selectedSub.phone }}</code>
+          <div class="flex flex-col gap-1">
+            <span class="text-[0.78rem] text-[#667768] font-bold">Số điện thoại:</span>
+            <code class="bg-[#f4f7f4] px-2 py-1 rounded text-sm self-start">{{ selectedSub.phone }}</code>
           </div>
-          <div class="detail-item" v-if="selectedSub.email">
-            <span class="label">Email:</span>
+          <div v-if="selectedSub.email" class="flex flex-col gap-1">
+            <span class="text-[0.78rem] text-[#667768] font-bold">Email:</span>
             <span>{{ selectedSub.email }}</span>
           </div>
-          <div class="detail-item" v-if="selectedSub.city">
-            <span class="label">Tỉnh / Thành phố:</span>
+          <div v-if="selectedSub.city" class="flex flex-col gap-1">
+            <span class="text-[0.78rem] text-[#667768] font-bold">Tỉnh / Thành phố:</span>
             <span>{{ selectedSub.city }}</span>
           </div>
-          <div class="detail-item full" v-if="selectedSub.address">
-            <span class="label">Địa chỉ chi tiết:</span>
+          <div v-if="selectedSub.address" class="flex flex-col gap-1 sm:col-span-2">
+            <span class="text-[0.78rem] text-[#667768] font-bold">Địa chỉ chi tiết:</span>
             <span>{{ selectedSub.address }}</span>
           </div>
-          <div class="detail-item full">
-            <span class="label">Nội dung yêu cầu / Hoàn cảnh:</span>
-            <div class="message-box">{{ selectedSub.message }}</div>
+          <div class="flex flex-col gap-1 sm:col-span-2">
+            <span class="text-[0.78rem] text-[#667768] font-bold">Nội dung yêu cầu / Hoàn cảnh:</span>
+            <div class="bg-[#f8faf8] border border-[#e2ece3] px-3 py-3 rounded-lg text-[0.9rem] leading-relaxed whitespace-pre-wrap">{{ selectedSub.message }}</div>
           </div>
         </div>
 
-        <div class="modal-actions">
-          <button class="cancel-btn" @click="selectedSub = null">Đóng</button>
-          <a :href="`tel:${selectedSub.phone}`" class="primary-btn">📞 Gọi Điện Tư Vấn</a>
+        <div class="flex justify-end gap-3 mt-6">
+          <button class="bg-[#f0f0f0] border-0 px-4 py-2.5 rounded-lg cursor-pointer font-medium" @click="selectedSub = null">Đóng</button>
+          <a
+            :href="`tel:${selectedSub.phone}`"
+            class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg no-underline transition-colors"
+          >
+            <i class="fa-solid fa-phone"></i> Gọi Điện Tư Vấn
+          </a>
         </div>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.submissions-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.page-header h1 {
-  font-size: 1.3rem;
-  font-weight: 800;
-  margin: 0;
-  color: #122815;
-}
-
-.page-header p {
-  font-size: 0.85rem;
-  color: #667768;
-  margin: 4px 0 0 0;
-}
-
-.filter-card {
-  background: white;
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid #e2ece3;
-  display: flex;
-  gap: 12px;
-}
-
-.filter-card input, .filter-card select {
-  padding: 10px 14px;
-  border: 1px solid #c8d6c9;
-  border-radius: 8px;
-}
-
-.filter-card input {
-  flex: 1;
-}
-
-.table-card {
-  background: white;
-  border-radius: 12px;
-  border: 1px solid #e2ece3;
-  overflow: hidden;
-}
-
-.admin-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.88rem;
-  text-align: left;
-}
-
-.admin-table th {
-  background: #f8faf8;
-  padding: 12px 16px;
-  color: #667768;
-  border-bottom: 1px solid #e2ece3;
-}
-
-.admin-table td {
-  padding: 14px 16px;
-  border-bottom: 1px solid #eef2ee;
-}
-
-.type-badge {
-  padding: 4px 8px;
-  border-radius: 6px;
-  font-weight: 700;
-  font-size: 0.75rem;
-}
-
-.type-badge.support {
-  background: #e4f2e5;
-  color: #2c6e33;
-}
-
-.type-badge.contact {
-  background: #eef2f8;
-  color: #1a4f8b;
-}
-
-.view-btn {
-  background: #f0f7f1;
-  color: #2c6e33;
-  border: 1px solid #8ed694;
-  padding: 4px 10px;
-  border-radius: 6px;
-  font-weight: 700;
-  cursor: pointer;
-  font-size: 0.78rem;
-}
-
-/* Modal */
-.modal-overlay {
-  position: fixed;
-  top: 0;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  background: rgba(0, 0, 0, 0.5);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 2000;
-}
-
-.modal-card {
-  background: white;
-  padding: 28px;
-  border-radius: 14px;
-  width: 100%;
-  max-width: 520px;
-}
-
-.modal-card h3 {
-  margin: 0 0 4px 0;
-  font-size: 1.15rem;
-}
-
-.modal-subtitle {
-  font-size: 0.82rem;
-  color: #667768;
-  margin: 0 0 20px 0;
-}
-
-.detail-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.detail-item {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.detail-item.full {
-  grid-column: span 2;
-}
-
-.detail-item .label {
-  font-size: 0.78rem;
-  color: #667768;
-  font-weight: 700;
-}
-
-.message-box {
-  background: #f8faf8;
-  border: 1px solid #e2ece3;
-  padding: 12px;
-  border-radius: 8px;
-  font-size: 0.9rem;
-  line-height: 1.5;
-  white-space: pre-wrap;
-}
-
-.modal-actions {
-  display: flex;
-  justify-content: flex-end;
-  gap: 12px;
-  margin-top: 24px;
-}
-
-.cancel-btn {
-  background: #f0f0f0;
-  border: none;
-  padding: 10px 16px;
-  border-radius: 6px;
-  cursor: pointer;
-}
-
-.primary-btn {
-  background: #1e4620;
-  color: white;
-  text-decoration: none;
-  padding: 10px 18px;
-  border-radius: 6px;
-  font-weight: 700;
-}
-</style>

@@ -24,7 +24,6 @@ const resourcesList = [
 ]
 
 const permissionMatrix = reactive<Record<string, { canCreate: boolean; canRead: boolean; canUpdate: boolean; canDelete: boolean }>>({})
-
 const toast = useToast()
 
 const fetchRoles = async () => {
@@ -33,9 +32,7 @@ const fetchRoles = async () => {
     const res = await $fetch('/api/admin/roles')
     if (res.ok) {
       roles.value = res.roles
-      if (roles.value.length > 0 && !selectedRole.value) {
-        selectRole(roles.value[0])
-      }
+      if (roles.value.length > 0 && !selectedRole.value) selectRole(roles.value[0])
     }
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách vai trò')
@@ -46,7 +43,6 @@ const fetchRoles = async () => {
 
 const selectRole = (role: any) => {
   selectedRole.value = role
-  // Reset matrix
   resourcesList.forEach(r => {
     const existingPerm = role.permissions?.find((p: any) => p.resource === r.key)
     permissionMatrix[r.key] = {
@@ -61,21 +57,13 @@ const selectRole = (role: any) => {
 const handleSavePermissions = async () => {
   if (!selectedRole.value) return
   saving.value = true
-
-  const permsPayload = Object.entries(permissionMatrix).map(([resource, perm]) => ({
-    resource,
-    ...perm
-  }))
-
+  const permsPayload = Object.entries(permissionMatrix).map(([resource, perm]) => ({ resource, ...perm }))
   try {
     const res = await $fetch(`/api/admin/roles/${selectedRole.value.id}`, {
       method: 'PUT',
       body: { permissions: permsPayload }
     })
-    if (res.ok) {
-      toast.success('Đã cập nhật phân quyền thành công!')
-      await fetchRoles()
-    }
+    if (res.ok) { toast.success('Đã cập nhật phân quyền thành công!'); await fetchRoles() }
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi lưu phân quyền')
   } finally {
@@ -83,252 +71,94 @@ const handleSavePermissions = async () => {
   }
 }
 
-onMounted(() => {
-  fetchRoles()
-})
+onMounted(() => { fetchRoles() })
 </script>
 
 <template>
-  <div class="roles-page">
-    <div class="page-header">
-      <div>
-        <h1>Quản lý Vai trò & Phân quyền Rules</h1>
-        <p>Thiết lập chi tiết quyền Xem, Thêm, Sửa, Xóa cho từng vai trò trong hệ thống</p>
-      </div>
+  <div class="flex flex-col gap-5">
+    <!-- Page Header -->
+    <div>
+      <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Quản lý Vai trò & Phân quyền Rules</h1>
+      <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Thiết lập chi tiết quyền Xem, Thêm, Sửa, Xóa cho từng vai trò trong hệ thống</p>
     </div>
 
-    <div class="roles-layout">
-      <!-- Sidebar Roles list -->
-      <div class="roles-sidebar">
-        <h3>Danh sách Vai trò</h3>
-        <div class="role-list">
+    <!-- Two-column layout: sidebar + matrix -->
+    <div class="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-5">
+      <!-- Roles Sidebar -->
+      <div class="bg-white rounded-xl border border-[#e2ece3] p-4">
+        <h3 class="text-[0.95rem] font-extrabold text-[#122815] m-0 mb-3">Danh sách Vai trò</h3>
+        <div class="flex flex-col gap-2">
           <button
             v-for="r in roles"
             :key="r.id"
-            class="role-item"
-            :class="{ active: selectedRole?.id === r.id }"
+            class="text-left border rounded-lg p-3 cursor-pointer transition-all"
+            :class="selectedRole?.id === r.id ? 'bg-[#e4f2e5] border-[#2c6e33]' : 'bg-[#f8faf8] border-[#e2ece3] hover:border-[#8ed694]'"
             @click="selectRole(r)"
           >
-            <div class="role-item-title">
-              <strong>{{ r.name }}</strong>
-              <span v-if="r.isSystem" class="sys-badge">Hệ thống</span>
+            <div class="flex items-center justify-between mb-1">
+              <strong class="text-[0.88rem] text-[#122815]">{{ r.name }}</strong>
+              <span v-if="r.isSystem" class="text-[0.65rem] bg-[#2c6e33] text-white px-1.5 py-0.5 rounded font-bold">Hệ thống</span>
             </div>
-            <span class="role-item-desc">{{ r.description }}</span>
+            <span class="text-[0.75rem] text-[#667768]">{{ r.description }}</span>
           </button>
         </div>
       </div>
 
       <!-- Permission Matrix -->
-      <div class="matrix-card" v-if="selectedRole">
-        <div class="matrix-header">
+      <div v-if="selectedRole" class="bg-white rounded-xl border border-[#e2ece3] p-6">
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div>
-            <h2>Ma trận Phân quyền: {{ selectedRole.name }}</h2>
-            <p>{{ selectedRole.description }}</p>
+            <h2 class="text-[1.1rem] font-extrabold text-[#122815] m-0">Ma trận Phân quyền: {{ selectedRole.name }}</h2>
+            <p class="text-[0.82rem] text-[#667768] mt-1 mb-0">{{ selectedRole.description }}</p>
           </div>
           <button
-            class="primary-btn"
+            class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
             @click="handleSavePermissions"
             :disabled="saving || selectedRole.isSystem"
           >
-            <span v-if="saving">Đang lưu...</span>
-            <span v-else>💾 Lưu Phân Quyền</span>
+            <i class="fa-solid fa-floppy-disk"></i>
+            {{ saving ? 'Đang lưu...' : 'Lưu Phân Quyền' }}
           </button>
         </div>
 
-        <div v-if="selectedRole.isSystem" class="info-banner">
+        <div v-if="selectedRole.isSystem" class="bg-[#eef7ee] border border-[#cce5cd] text-[#1e4620] px-4 py-3 rounded-lg text-[0.85rem] mb-4">
           🔒 Vai trò hệ thống <strong>(SuperAdmin)</strong> mặc định có toàn bộ quyền trên website.
         </div>
 
-        <table class="matrix-table">
-          <thead>
-            <tr>
-              <th>Tài nguyên / Tính năng</th>
-              <th>Thêm mới (Create)</th>
-              <th>Xem dữ liệu (Read)</th>
-              <th>Chỉnh sửa (Update)</th>
-              <th>Xóa dữ liệu (Delete)</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="res in resourcesList" :key="res.key">
-              <td><strong>{{ res.label }}</strong> <code>({{ res.key }})</code></td>
-              <td>
-                <input type="checkbox" v-model="permissionMatrix[res.key].canCreate" :disabled="selectedRole.isSystem" />
-              </td>
-              <td>
-                <input type="checkbox" v-model="permissionMatrix[res.key].canRead" :disabled="selectedRole.isSystem" />
-              </td>
-              <td>
-                <input type="checkbox" v-model="permissionMatrix[res.key].canUpdate" :disabled="selectedRole.isSystem" />
-              </td>
-              <td>
-                <input type="checkbox" v-model="permissionMatrix[res.key].canDelete" :disabled="selectedRole.isSystem" />
-              </td>
-            </tr>
-          </tbody>
-        </table>
+        <div class="overflow-x-auto">
+          <table class="w-full border-collapse text-[0.88rem]">
+            <thead>
+              <tr>
+                <th class="bg-[#f8faf8] px-3 py-3 text-left text-[#667768] font-bold border-b border-[#e2ece3]">Tài nguyên / Tính năng</th>
+                <th class="bg-[#f8faf8] px-3 py-3 text-center text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thêm (Create)</th>
+                <th class="bg-[#f8faf8] px-3 py-3 text-center text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Xem (Read)</th>
+                <th class="bg-[#f8faf8] px-3 py-3 text-center text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Sửa (Update)</th>
+                <th class="bg-[#f8faf8] px-3 py-3 text-center text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Xóa (Delete)</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="res in resourcesList" :key="res.key" class="hover:bg-[#fafcfa]">
+                <td class="px-3 py-3 border-b border-[#eef2ee]">
+                  <strong>{{ res.label }}</strong>
+                  <code class="ml-1.5 text-[0.72rem] text-[#888]">({{ res.key }})</code>
+                </td>
+                <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
+                  <input type="checkbox" v-model="permissionMatrix[res.key].canCreate" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                </td>
+                <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
+                  <input type="checkbox" v-model="permissionMatrix[res.key].canRead" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                </td>
+                <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
+                  <input type="checkbox" v-model="permissionMatrix[res.key].canUpdate" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                </td>
+                <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
+                  <input type="checkbox" v-model="permissionMatrix[res.key].canDelete" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.roles-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.page-header h1 {
-  font-size: 1.3rem;
-  font-weight: 800;
-  margin: 0;
-  color: #122815;
-}
-
-.page-header p {
-  font-size: 0.85rem;
-  color: #667768;
-  margin: 4px 0 0 0;
-}
-
-.roles-layout {
-  display: grid;
-  grid-template-columns: 280px 1fr;
-  gap: 20px;
-}
-
-.roles-sidebar {
-  background: white;
-  border-radius: 12px;
-  border: 1px solid #e2ece3;
-  padding: 16px;
-}
-
-.roles-sidebar h3 {
-  font-size: 0.95rem;
-  font-weight: 800;
-  margin: 0 0 12px 0;
-  color: #122815;
-}
-
-.role-list {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.role-item {
-  background: #f8faf8;
-  border: 1px solid #e2ece3;
-  padding: 12px;
-  border-radius: 8px;
-  text-align: left;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.role-item.active {
-  background: #e4f2e5;
-  border-color: #2c6e33;
-}
-
-.role-item-title {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 4px;
-}
-
-.sys-badge {
-  font-size: 0.65rem;
-  background: #2c6e33;
-  color: white;
-  padding: 2px 6px;
-  border-radius: 4px;
-}
-
-.role-item-desc {
-  font-size: 0.75rem;
-  color: #667768;
-}
-
-.matrix-card {
-  background: white;
-  border-radius: 12px;
-  border: 1px solid #e2ece3;
-  padding: 24px;
-}
-
-.matrix-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 16px;
-}
-
-.matrix-header h2 {
-  font-size: 1.1rem;
-  font-weight: 800;
-  margin: 0;
-}
-
-.matrix-header p {
-  font-size: 0.82rem;
-  color: #667768;
-  margin: 4px 0 0 0;
-}
-
-.primary-btn {
-  background: #1e4620;
-  color: white;
-  border: none;
-  padding: 10px 18px;
-  border-radius: 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.info-banner {
-  background: #eef7ee;
-  border: 1px solid #cce5cd;
-  color: #1e4620;
-  padding: 12px 16px;
-  border-radius: 8px;
-  font-size: 0.85rem;
-  margin-bottom: 20px;
-}
-
-.matrix-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 0.88rem;
-}
-
-.matrix-table th {
-  background: #f8faf8;
-  padding: 12px;
-  text-align: center;
-  border-bottom: 1px solid #e2ece3;
-  color: #667768;
-}
-
-.matrix-table th:first-child {
-  text-align: left;
-}
-
-.matrix-table td {
-  padding: 12px;
-  text-align: center;
-  border-bottom: 1px solid #eef2ee;
-}
-
-.matrix-table td:first-child {
-  text-align: left;
-}
-
-.matrix-table code {
-  font-size: 0.75rem;
-  color: #888;
-}
-</style>

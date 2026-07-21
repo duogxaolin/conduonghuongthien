@@ -1,5 +1,7 @@
-/* Tailwind CSS v4 */
-@import "tailwindcss";
+/* Tailwind CSS v3 */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
 
 /* Global Root Font Size Scaling (A-, A, A+) */
 html {

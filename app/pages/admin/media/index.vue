@@ -71,287 +71,104 @@ onMounted(() => { fetchMedia() })
 </script>
 
 <template>
-  <div class="media-page">
-    <div class="page-header">
-      <div>
-        <h1>Thư viện Media & Tải lên</h1>
-        <p>Quản lý toàn bộ hình ảnh, tài liệu và video được tải lên website</p>
-      </div>
+  <div class="flex flex-col gap-5">
+    <!-- Page Header -->
+    <div>
+      <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Thư viện Media & Tải lên</h1>
+      <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Quản lý toàn bộ hình ảnh, tài liệu và video được tải lên website</p>
     </div>
 
-    <!-- Upload Zone — drag & drop hoặc click -->
+    <!-- Upload Zone -->
     <label
-      class="upload-zone"
-      :class="{ 'drag-over': isDragOver, 'is-uploading': uploading }"
+      class="flex flex-col items-center justify-content-center gap-1.5 border-2 border-dashed border-[#c8d6c9] rounded-2xl py-9 px-6 bg-[#f8fbf8] cursor-pointer text-center transition-all duration-150"
+      :class="{ 'border-[#2c6e33] bg-[#edf7ed]': isDragOver, 'opacity-70 cursor-not-allowed pointer-events-none': uploading }"
       @dragover.prevent="isDragOver = true"
       @dragleave="isDragOver = false"
       @drop.prevent="onDrop"
     >
       <input type="file" accept="image/*,application/pdf" multiple class="sr-only" :disabled="uploading" @change="onFileInput" />
-      <i class="fa-regular text-4xl" :class="uploading ? 'fa-spinner animate-spin text-green-700' : 'fa-cloud-arrow-up text-green-700'"></i>
-      <strong class="mt-3 text-base text-gray-800">{{ uploading ? 'Đang tải lên...' : 'Kéo thả file vào đây hoặc bấm để chọn' }}</strong>
-      <span class="text-sm text-gray-500 mt-1">Hỗ trợ JPEG, PNG, WebP, GIF, PDF — tối đa 20MB mỗi file</span>
+      <i class="fa-regular text-4xl" :class="uploading ? 'fa-spinner animate-spin text-[#2c6e33]' : 'fa-cloud-arrow-up text-[#2c6e33]'"></i>
+      <strong class="mt-2 text-base text-[#1a2e1c]">{{ uploading ? 'Đang tải lên...' : 'Kéo thả file vào đây hoặc bấm để chọn' }}</strong>
+      <span class="text-sm text-[#667768]">Hỗ trợ JPEG, PNG, WebP, GIF, PDF — tối đa 20MB mỗi file</span>
     </label>
 
     <!-- Filter Bar -->
-    <div class="filter-card">
-      <input type="text" v-model="search" placeholder="Tìm kiếm file..." @keyup.enter="fetchMedia(1)" />
-      <select v-model="filterType" @change="fetchMedia(1)">
+    <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col sm:flex-row gap-3">
+      <input
+        type="text"
+        v-model="search"
+        placeholder="Tìm kiếm file..."
+        @keyup.enter="fetchMedia(1)"
+        class="flex-1 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+      />
+      <select
+        v-model="filterType"
+        @change="fetchMedia(1)"
+        class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
+      >
         <option value="">Tất cả định dạng</option>
         <option value="image">Chỉ Ảnh (Image)</option>
         <option value="video">Chỉ Video</option>
       </select>
-      <button class="search-btn" @click="fetchMedia(1)">
+      <button
+        class="inline-flex items-center gap-2 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors"
+        @click="fetchMedia(1)"
+      >
         <i class="fa-regular fa-magnifying-glass"></i> Tìm kiếm
       </button>
     </div>
 
     <!-- Media Grid -->
-    <div v-if="loading" class="loading-state">Đang tải danh sách media...</div>
+    <div v-if="loading" class="py-16 text-center text-[#667768]">Đang tải danh sách media...</div>
 
-    <div v-else-if="mediaItems.length === 0" class="empty-state">
-      <i class="fa-regular fa-images text-5xl text-gray-300"></i>
-      <p>Chưa có file nào. Hãy tải lên file đầu tiên!</p>
+    <div v-else-if="mediaItems.length === 0" class="flex flex-col items-center gap-3 py-16 text-[#9ca3af]">
+      <i class="fa-regular fa-images text-5xl text-[#d1d5db]"></i>
+      <p class="m-0 text-[0.9rem]">Chưa có file nào. Hãy tải lên file đầu tiên!</p>
     </div>
 
-    <div v-else class="media-grid">
-      <div v-for="m in mediaItems" :key="m.id" class="media-card">
-        <div class="media-preview">
-          <img v-if="m.mimeType?.startsWith('image/')" :src="m.url" :alt="m.originalName" loading="lazy" />
-          <div v-else class="file-placeholder">
-            <i class="fa-regular fa-file-lines text-3xl text-gray-400"></i>
+    <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
+      <div v-for="m in mediaItems" :key="m.id" class="bg-white border border-[#e2ece3] rounded-xl overflow-hidden flex flex-col">
+        <div class="h-[140px] bg-[#f8faf8] relative flex items-center justify-center">
+          <img v-if="m.mimeType?.startsWith('image/')" :src="m.url" :alt="m.originalName" loading="lazy" class="w-full h-full object-cover" />
+          <div v-else class="flex items-center justify-center">
+            <i class="fa-regular fa-file-lines text-4xl text-[#9ca3af]"></i>
           </div>
-          <span class="provider-badge" :class="m.provider">{{ m.provider?.toUpperCase() }}</span>
+          <span
+            class="absolute top-2 right-2 text-[0.65rem] font-bold px-1.5 py-0.5 rounded text-white"
+            :class="m.provider === 'r2' ? 'bg-orange-500' : 'bg-black/60'"
+          >{{ m.provider?.toUpperCase() }}</span>
         </div>
-        <div class="media-info">
-          <span class="media-title" :title="m.originalName">{{ m.originalName }}</span>
-          <span class="media-size">{{ (m.sizeBytes / 1024).toFixed(1) }} KB</span>
-          <div class="media-actions">
-            <a :href="m.url" target="_blank" class="action-btn">
-              <i class="fa-regular fa-link"></i> Link
-            </a>
-            <button class="action-btn delete" @click="deleteMedia(m)">
-              <i class="fa-regular fa-trash"></i> Xóa
-            </button>
+        <div class="p-3 flex flex-col gap-1 flex-1">
+          <span class="text-[0.82rem] font-bold text-[#122815] truncate" :title="m.originalName">{{ m.originalName }}</span>
+          <span class="text-[0.72rem] text-[#9ca3af]">{{ (m.sizeBytes / 1024).toFixed(1) }} KB</span>
+          <div class="flex gap-2 mt-1">
+            <a
+              :href="m.url"
+              target="_blank"
+              class="flex-1 text-center text-[0.75rem] py-1 rounded-md bg-[#f0f7f1] text-[#2c6e33] no-underline hover:bg-[#e4f2e5] transition-colors font-medium"
+            ><i class="fa-regular fa-link"></i> Link</a>
+            <button
+              class="flex-1 text-[0.75rem] py-1 rounded-md bg-[#ffebe9] text-[#d12420] border-0 cursor-pointer hover:bg-red-200 transition-colors font-medium"
+              @click="deleteMedia(m)"
+            ><i class="fa-regular fa-trash"></i> Xóa</button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Pagination -->
-    <div class="pagination" v-if="pagination.totalPages > 1">
-      <button :disabled="pagination.page <= 1" @click="fetchMedia(pagination.page - 1)">
-        <i class="fa-regular fa-chevron-left"></i> Trang trước
-      </button>
-      <span>Trang {{ pagination.page }} / {{ pagination.totalPages }}</span>
-      <button :disabled="pagination.page >= pagination.totalPages" @click="fetchMedia(pagination.page + 1)">
-        Trang sau <i class="fa-regular fa-chevron-right"></i>
-      </button>
+    <div v-if="pagination.totalPages > 1" class="flex justify-center items-center gap-4 mt-2">
+      <button
+        :disabled="pagination.page <= 1"
+        @click="fetchMedia(pagination.page - 1)"
+        class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#f0f7f1] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      ><i class="fa-regular fa-chevron-left"></i> Trang trước</button>
+      <span class="text-sm text-[#667768] font-medium">Trang {{ pagination.page }} / {{ pagination.totalPages }}</span>
+      <button
+        :disabled="pagination.page >= pagination.totalPages"
+        @click="fetchMedia(pagination.page + 1)"
+        class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#f0f7f1] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+      >Trang sau <i class="fa-regular fa-chevron-right"></i></button>
     </div>
   </div>
 </template>
-
-<style scoped>
-.media-page { display: flex; flex-direction: column; gap: 20px; }
-
-.page-header { display: flex; justify-content: space-between;
-  align-items: center;
-}
-
-.page-header h1 {
-  font-size: 1.3rem;
-  font-weight: 800;
-  margin: 0;
-  color: #122815;
-}
-
-.page-header p {
-  font-size: 0.85rem;
-  color: #667768;
-  margin: 4px 0 0 0;
-}
-
-.primary-btn {
-  background: #1e4620;
-  color: white;
-  border: none;
-  padding: 10px 18px;
-  border-radius: 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-/* Upload zone */
-.upload-zone {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border: 2px dashed #c8d6c9;
-  border-radius: 14px;
-  padding: 36px 24px;
-  background: #f8fbf8;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  text-align: center;
-}
-.upload-zone:hover, .upload-zone.drag-over {
-  border-color: #2c6e33;
-  background: #edf7ed;
-}
-.upload-zone.is-uploading { opacity: 0.7; cursor: not-allowed; pointer-events: none; }
-.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
-
-/* Empty state */
-.empty-state {
-  display: flex; flex-direction: column; align-items: center;
-  gap: 12px; padding: 60px 0; color: #9ca3af;
-}
-.empty-state p { margin: 0; font-size: 0.9rem; }
-
-.filter-card {
-  background: white;
-  padding: 16px;
-  border-radius: 12px;
-  border: 1px solid #e2ece3;
-  display: flex;
-  gap: 12px;
-}
-
-.filter-card input, .filter-card select {
-  padding: 10px 14px;
-  border: 1px solid #c8d6c9;
-  border-radius: 8px;
-}
-
-.filter-card input {
-  flex: 1;
-}
-
-.search-btn {
-  background: #2c6e33;
-  color: white;
-  border: none;
-  padding: 0 18px;
-  border-radius: 8px;
-  font-weight: 700;
-  cursor: pointer;
-}
-
-.media-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-  gap: 16px;
-}
-
-.media-card {
-  background: white;
-  border: 1px solid #e2ece3;
-  border-radius: 12px;
-  overflow: hidden;
-  display: flex;
-  flex-direction: column;
-}
-
-.media-preview {
-  height: 140px;
-  background: #f8faf8;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.media-preview img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.file-placeholder {
-  font-size: 40px;
-}
-
-.provider-badge {
-  position: absolute;
-  top: 8px;
-  right: 8px;
-  font-size: 0.65rem;
-  font-weight: bold;
-  padding: 2px 6px;
-  border-radius: 4px;
-  background: rgba(0, 0, 0, 0.6);
-  color: white;
-}
-
-.provider-badge.r2 {
-  background: #f38020;
-}
-
-.media-info {
-  padding: 12px;
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.media-title {
-  font-size: 0.82rem;
-  font-weight: 700;
-  color: #122815;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.media-size {
-  font-size: 0.72rem;
-  color: #888;
-}
-
-.media-actions {
-  display: flex;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.action-btn {
-  flex: 1;
-  text-align: center;
-  font-size: 0.75rem;
-  padding: 4px;
-  border-radius: 6px;
-  text-decoration: none;
-  background: #f0f7f1;
-  color: #2c6e33;
-  border: none;
-  cursor: pointer;
-}
-
-.action-btn.delete {
-  background: #ffebe9;
-  color: #d12420;
-}
-
-.pagination {
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  gap: 16px;
-  margin-top: 10px;
-}
-
-.pagination button {
-  background: white;
-  border: 1px solid #c8d6c9;
-  padding: 8px 16px;
-  border-radius: 8px;
-  cursor: pointer;
-}
-
-.pagination button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-</style>
