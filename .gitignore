@@ -29,3 +29,7 @@ openspec/
 
 # Large binary assets (tracked separately or ignored)
 *.zip
+
+# FontAwesome Pro — large binary, deploy manually to server
+public/assets/fontawesome/
+.claude/settings.local.json
