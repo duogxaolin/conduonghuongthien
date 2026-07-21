@@ -105,6 +105,9 @@ const menuGroups = [
       </main>
     </div>
   </div>
+
+  <!-- Global Media Library Modal — rendered once, driven by useImagePicker() -->
+  <AdminMediaLibraryModal />
 </template>
 
 <style scoped>

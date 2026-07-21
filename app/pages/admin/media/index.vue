@@ -4,14 +4,15 @@ definePageMeta({
   middleware: 'admin-auth'
 })
 
-const showModal = ref(false)
 const mediaItems = ref<any[]>([])
 const loading = ref(true)
 const search = ref('')
 const filterType = ref('')
 const pagination = ref({ page: 1, totalPages: 1, total: 0 })
+const isDragOver = ref(false)
 
 const toast = useToast()
+const { uploading, uploadFile } = useUpload()
 
 const fetchMedia = async (page = 1) => {
   loading.value = true
@@ -30,6 +31,31 @@ const fetchMedia = async (page = 1) => {
   }
 }
 
+const handleUpload = async (files: FileList | File[]) => {
+  const list = Array.from(files)
+  let ok = 0
+  for (const file of list) {
+    const media = await uploadFile(file)
+    if (media) ok++
+  }
+  if (ok > 0) {
+    toast.success(`Đã tải lên ${ok} file thành công!`)
+    await fetchMedia(1)
+  }
+}
+
+const onFileInput = (e: Event) => {
+  const files = (e.target as HTMLInputElement).files
+  if (files?.length) handleUpload(files)
+  ;(e.target as HTMLInputElement).value = ''
+}
+
+const onDrop = (e: DragEvent) => {
+  isDragOver.value = false
+  const files = e.dataTransfer?.files
+  if (files?.length) handleUpload(files)
+}
+
 const deleteMedia = async (item: any) => {
   if (!confirm(`Bạn có chắc muốn xóa file ${item.originalName}?`)) return
   try {
@@ -41,9 +67,7 @@ const deleteMedia = async (item: any) => {
   }
 }
 
-onMounted(() => {
-  fetchMedia()
-})
+onMounted(() => { fetchMedia() })
 </script>
 
 <template>
@@ -53,46 +77,62 @@ onMounted(() => {
         <h1>Thư viện Media & Tải lên</h1>
         <p>Quản lý toàn bộ hình ảnh, tài liệu và video được tải lên website</p>
       </div>
-      <button class="primary-btn" @click="showModal = true">
-        📤 Tải lên File Mới
-      </button>
     </div>
+
+    <!-- Upload Zone — drag & drop hoặc click -->
+    <label
+      class="upload-zone"
+      :class="{ 'drag-over': isDragOver, 'is-uploading': uploading }"
+      @dragover.prevent="isDragOver = true"
+      @dragleave="isDragOver = false"
+      @drop.prevent="onDrop"
+    >
+      <input type="file" accept="image/*,application/pdf" multiple class="sr-only" :disabled="uploading" @change="onFileInput" />
+      <i class="fa-regular text-4xl" :class="uploading ? 'fa-spinner animate-spin text-green-700' : 'fa-cloud-arrow-up text-green-700'"></i>
+      <strong class="mt-3 text-base text-gray-800">{{ uploading ? 'Đang tải lên...' : 'Kéo thả file vào đây hoặc bấm để chọn' }}</strong>
+      <span class="text-sm text-gray-500 mt-1">Hỗ trợ JPEG, PNG, WebP, GIF, PDF — tối đa 20MB mỗi file</span>
+    </label>
 
     <!-- Filter Bar -->
     <div class="filter-card">
-      <input
-        type="text"
-        v-model="search"
-        placeholder="Tìm kiếm file..."
-        @keyup.enter="fetchMedia(1)"
-      />
+      <input type="text" v-model="search" placeholder="Tìm kiếm file..." @keyup.enter="fetchMedia(1)" />
       <select v-model="filterType" @change="fetchMedia(1)">
         <option value="">Tất cả định dạng</option>
         <option value="image">Chỉ Ảnh (Image)</option>
         <option value="video">Chỉ Video</option>
       </select>
-      <button class="search-btn" @click="fetchMedia(1)">Tìm kiếm</button>
+      <button class="search-btn" @click="fetchMedia(1)">
+        <i class="fa-regular fa-magnifying-glass"></i> Tìm kiếm
+      </button>
     </div>
 
     <!-- Media Grid -->
     <div v-if="loading" class="loading-state">Đang tải danh sách media...</div>
 
+    <div v-else-if="mediaItems.length === 0" class="empty-state">
+      <i class="fa-regular fa-images text-5xl text-gray-300"></i>
+      <p>Chưa có file nào. Hãy tải lên file đầu tiên!</p>
+    </div>
+
     <div v-else class="media-grid">
       <div v-for="m in mediaItems" :key="m.id" class="media-card">
         <div class="media-preview">
-          <img v-if="m.mimeType.startsWith('image/')" :src="m.url" :alt="m.originalName" />
+          <img v-if="m.mimeType?.startsWith('image/')" :src="m.url" :alt="m.originalName" loading="lazy" />
           <div v-else class="file-placeholder">
-            <span>📄</span>
+            <i class="fa-regular fa-file-lines text-3xl text-gray-400"></i>
           </div>
-          <span class="provider-badge" :class="m.provider">{{ m.provider.toUpperCase() }}</span>
+          <span class="provider-badge" :class="m.provider">{{ m.provider?.toUpperCase() }}</span>
         </div>
-
         <div class="media-info">
           <span class="media-title" :title="m.originalName">{{ m.originalName }}</span>
           <span class="media-size">{{ (m.sizeBytes / 1024).toFixed(1) }} KB</span>
           <div class="media-actions">
-            <a :href="m.url" target="_blank" class="action-btn">🔗 Link</a>
-            <button class="action-btn delete" @click="deleteMedia(m)">🗑️ Xóa</button>
+            <a :href="m.url" target="_blank" class="action-btn">
+              <i class="fa-regular fa-link"></i> Link
+            </a>
+            <button class="action-btn delete" @click="deleteMedia(m)">
+              <i class="fa-regular fa-trash"></i> Xóa
+            </button>
           </div>
         </div>
       </div>
@@ -100,35 +140,21 @@ onMounted(() => {
 
     <!-- Pagination -->
     <div class="pagination" v-if="pagination.totalPages > 1">
-      <button
-        :disabled="pagination.page <= 1"
-        @click="fetchMedia(pagination.page - 1)"
-      >
-        ❮ Trang trước
+      <button :disabled="pagination.page <= 1" @click="fetchMedia(pagination.page - 1)">
+        <i class="fa-regular fa-chevron-left"></i> Trang trước
       </button>
       <span>Trang {{ pagination.page }} / {{ pagination.totalPages }}</span>
-      <button
-        :disabled="pagination.page >= pagination.totalPages"
-        @click="fetchMedia(pagination.page + 1)"
-      >
-        Trang sau ❯
+      <button :disabled="pagination.page >= pagination.totalPages" @click="fetchMedia(pagination.page + 1)">
+        Trang sau <i class="fa-regular fa-chevron-right"></i>
       </button>
     </div>
-
-    <MediaLibraryModal :show="showModal" @close="showModal = false" @select="fetchMedia(1)" />
   </div>
 </template>
 
 <style scoped>
-.media-page {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
+.media-page { display: flex; flex-direction: column; gap: 20px; }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
+.page-header { display: flex; justify-content: space-between;
   align-items: center;
 }
 
@@ -154,6 +180,35 @@ onMounted(() => {
   font-weight: 700;
   cursor: pointer;
 }
+
+/* Upload zone */
+.upload-zone {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 2px dashed #c8d6c9;
+  border-radius: 14px;
+  padding: 36px 24px;
+  background: #f8fbf8;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s;
+  text-align: center;
+}
+.upload-zone:hover, .upload-zone.drag-over {
+  border-color: #2c6e33;
+  background: #edf7ed;
+}
+.upload-zone.is-uploading { opacity: 0.7; cursor: not-allowed; pointer-events: none; }
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0,0,0,0); }
+
+/* Empty state */
+.empty-state {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 12px; padding: 60px 0; color: #9ca3af;
+}
+.empty-state p { margin: 0; font-size: 0.9rem; }
 
 .filter-card {
   background: white;

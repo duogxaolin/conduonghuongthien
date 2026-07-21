@@ -8,9 +8,6 @@ const route = useRoute()
 const isNew = computed(() => route.params.id === 'new')
 const articleId = computed(() => isNew.value ? null : Number(route.params.id))
 
-const showMediaModal = ref(false)
-const mediaPickerTarget = ref<'thumbnail' | 'content'>('thumbnail')
-
 const TINYMCE_EDITOR_ID = 'tinymce-content-editor'
 
 const form = reactive({
@@ -102,26 +99,31 @@ const handleSave = async () => {
   }
 }
 
+const { openPicker } = useImagePicker()
+const { uploading: uploadingThumb, pickAndUpload } = useUpload()
+
 const openMediaPicker = (target: 'thumbnail' | 'content') => {
-  mediaPickerTarget.value = target
-  showMediaModal.value = true
+  if (target === 'thumbnail') {
+    openPicker({
+      onSelect: (media) => { form.thumbnailUrl = media.url }
+    })
+  } else {
+    openPicker({
+      onSelect: (media) => {
+        const imgHtml = `<p><img src="${media.url}" alt="${media.originalName}" /></p>`
+        if ((window as any).tinymce) {
+          const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+          if (ed) { ed.insertContent(imgHtml); return }
+        }
+        form.content += '\n' + imgHtml
+      }
+    })
+  }
 }
 
-const handleMediaSelected = (media: any) => {
-  if (mediaPickerTarget.value === 'thumbnail') {
-    form.thumbnailUrl = media.url
-  } else if (mediaPickerTarget.value === 'content') {
-    // Insert image into TinyMCE or append to form.content
-    const imgHtml = `<p><img src="${media.url}" alt="${media.originalName}" /></p>`
-    if ((window as any).tinymce) {
-      const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
-      if (ed) {
-        ed.insertContent(imgHtml)
-        return
-      }
-    }
-    form.content += '\n' + imgHtml
-  }
+const uploadThumbnail = async () => {
+  const media = await pickAndUpload('image/*')
+  if (media) form.thumbnailUrl = media.url
 }
 
 const initTinyMCE = () => {
@@ -346,21 +348,21 @@ onUnmounted(() => {
                 <img :src="form.thumbnailUrl" />
                 <button class="remove-thumb" @click="form.thumbnailUrl = ''">✕</button>
               </div>
-              <button class="select-thumb-btn" @click="openMediaPicker('thumbnail')">
-                🖼️ {{ form.thumbnailUrl ? 'Đổi Ảnh Đại Diện' : 'Chọn Ảnh Từ Thư Viện' }}
-              </button>
+              <div class="thumb-actions">
+                <button class="select-thumb-btn" @click="openMediaPicker('thumbnail')">
+                  <i class="fa-regular fa-images"></i> {{ form.thumbnailUrl ? 'Đổi từ thư viện' : 'Chọn từ thư viện' }}
+                </button>
+                <label class="select-thumb-btn upload-btn" :class="{ disabled: uploadingThumb }">
+                  <i class="fa-regular" :class="uploadingThumb ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i>
+                  {{ uploadingThumb ? 'Đang tải...' : 'Upload ảnh' }}
+                  <input type="file" accept="image/*" class="sr-only" :disabled="uploadingThumb" @change="async (e) => { const f = (e.target as HTMLInputElement).files?.[0]; if(f) { const m = await (useUpload().uploadFile)(f); if(m) form.thumbnailUrl = m.url; (e.target as HTMLInputElement).value='' } }" />
+                </label>
+              </div>
             </div>
           </div>
         </div>
       </div>
     </div>
-
-    <!-- Media Library Modal -->
-    <MediaLibraryModal
-      :show="showMediaModal"
-      @close="showMediaModal = false"
-      @select="handleMediaSelected"
-    />
   </div>
 </template>
 

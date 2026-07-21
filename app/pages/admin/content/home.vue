@@ -11,8 +11,6 @@ const selectedSection = ref<any>(null)
 const editConfig = ref<any>({})
 const activeTab = ref<'content' | 'style' | 'preview'>('content')
 
-const showMediaModal = ref(false)
-
 const sectionTypes: Record<string, { name: string; icon: string; desc: string }> = {
   hero:          { name: 'Hero Banner Đầu trang', icon: 'fa-solid fa-image', desc: 'Khối hình ảnh banner lớn kèm nút kêu gọi hành động (CTA)' },
   stats:         { name: 'Khối Thống kê Con số', icon: 'fa-solid fa-chart-line', desc: 'Hiển thị các chỉ số ấn tượng về công tác hỗ trợ tái hòa nhập' },
@@ -120,9 +118,27 @@ const moveSection = async (index: number, direction: 'up' | 'down') => {
   }
 }
 
-const onSelectMedia = (media: any) => {
-  editConfig.value.bgImage = media.url
-  toast.success('Đã chọn hình ảnh từ Thư viện Media!')
+const { openPicker } = useImagePicker()
+const { uploading: uploadingBg, uploadFile } = useUpload()
+
+const openBgImagePicker = () => {
+  openPicker({
+    onSelect: (media) => {
+      editConfig.value.bgImage = media.url
+      toast.success('Đã chọn hình ảnh từ Thư viện Media!')
+    }
+  })
+}
+
+const uploadBgImage = async (event: Event) => {
+  const file = (event.target as HTMLInputElement).files?.[0]
+  if (!file) return
+  const media = await uploadFile(file)
+  if (media) {
+    editConfig.value.bgImage = media.url
+    toast.success('Đã tải và chọn ảnh nền!')
+  }
+  ;(event.target as HTMLInputElement).value = ''
 }
 
 onMounted(() => {
@@ -336,9 +352,14 @@ onMounted(() => {
               <label>Hình ảnh Banner / Nền Block</label>
               <div class="media-picker-group">
                 <input type="text" v-model="editConfig.bgImage" placeholder="Đường dẫn ảnh (/uploads/...)" />
-                <button type="button" class="media-select-btn" @click="showMediaModal = true">
-                  <i class="fa-solid fa-images"></i> Thư viện Media
+                <button type="button" class="media-select-btn" @click="openBgImagePicker">
+                  <i class="fa-regular fa-images"></i> Thư viện
                 </button>
+                <label class="media-select-btn upload-btn" :class="{ disabled: uploadingBg }">
+                  <i class="fa-regular" :class="uploadingBg ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i>
+                  {{ uploadingBg ? '...' : 'Upload' }}
+                  <input type="file" accept="image/*" class="sr-only" :disabled="uploadingBg" @change="uploadBgImage" />
+                </label>
               </div>
               <div v-if="editConfig.bgImage" class="image-preview-box">
                 <img :src="editConfig.bgImage" alt="Preview Background" />
@@ -387,12 +408,6 @@ onMounted(() => {
       </div>
     </div>
 
-    <!-- Media Library Picker Modal -->
-    <AdminMediaLibraryModal
-      :show="showMediaModal"
-      @close="showMediaModal = false"
-      @select="onSelectMedia"
-    />
   </div>
 </template>
 
