@@ -1,5 +1,5 @@
-import { getDb } from '../../utils/db'
-import { activityLogs } from '../../db/schema'
+import { getDb } from '../../../utils/db'
+import { activityLogs } from '../../../db/schema'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser

@@ -11,45 +11,47 @@
 
     <!-- Main Content -->
     <section class="section">
-      <div class="container about-container">
+      <div class="container">
         <SectionBar icon="🏛" :title="t('about_editorial')" />
-        <div class="about-main-content">
-          <div class="about-block">
-            <h3>{{ t('about_purpose_title') }}</h3>
-            <p>
-              Trang thông tin điện tử <strong>Con Đường Hướng Thiện</strong> hoạt động dưới sự chỉ đạo của Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.
-            </p>
-            <p>
-              Mục tiêu tối thượng của nền tảng là cung cấp thông tin chính thống về các chính sách, nghị định của Đảng và Nhà nước liên quan đến công tác thi hành án hình sự và hỗ trợ hòa nhập cộng đồng; tuyên truyền, nhân rộng các mô hình sản xuất kinh tế hiệu quả, các tấm gương điển hình tiên tiến hoàn lương lập nghiệp thành công; định hướng tư tưởng, pháp lý và kết nối hỗ trợ trực tuyến 24/7 giúp người lầm lỡ xóa bỏ tự ti, sớm ổn định cuộc sống.
-            </p>
+        <div class="about-container">
+          <div class="about-main-content">
+            <div class="about-block">
+              <h3>{{ t('about_purpose_title') }}</h3>
+              <p>
+                Trang thông tin điện tử <strong>Con Đường Hướng Thiện</strong> hoạt động dưới sự chỉ đạo của Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.
+              </p>
+              <p>
+                Mục tiêu tối thượng của nền tảng là cung cấp thông tin chính thống về các chính sách, nghị định của Đảng và Nhà nước liên quan đến công tác thi hành án hình sự và hỗ trợ hòa nhập cộng đồng; tuyên truyền, nhân rộng các mô hình sản xuất kinh tế hiệu quả, các tấm gương điển hình tiên tiến hoàn lương lập nghiệp thành công; định hướng tư tưởng, pháp lý và kết nối hỗ trợ trực tuyến 24/7 giúp người lầm lỡ xóa bỏ tự ti, sớm ổn định cuộc sống.
+              </p>
+            </div>
+
+            <div class="about-block">
+              <h3>Nhiệm vụ trọng tâm</h3>
+              <ul class="task-list">
+                <li>
+                  <strong>Tuyên truyền & Giáo dục pháp luật:</strong> Phổ biến các quy định về xóa án tích, chính sách vay vốn ưu đãi, quyền và nghĩa vụ công dân giúp người hoàn lương nâng cao hiểu biết pháp lý.
+                </li>
+                <li>
+                  <strong>Đào tạo & Hướng nghiệp:</strong> Kết nối các cơ sở đào tạo nghề và các doanh nghiệp nhân văn nhằm tổ chức các lớp học nghề, tạo cơ hội việc làm công bằng cho người lầm lỡ.
+                </li>
+                <li>
+                  <strong>Tư vấn & Trợ giúp trực tuyến:</strong> Xây dựng hệ thống giải đáp tự động và đường dây nóng tiếp nhận thông tin đăng ký hỗ trợ trực tiếp 24/7 trên phạm vi cả nước.
+                </li>
+              </ul>
+            </div>
           </div>
 
-          <div class="about-block">
-            <h3>Nhiệm vụ trọng tâm</h3>
-            <ul class="task-list">
-              <li>
-                <strong>Tuyên truyền & Giáo dục pháp luật:</strong> Phổ biến các quy định về xóa án tích, chính sách vay vốn ưu đãi, quyền và nghĩa vụ công dân giúp người hoàn lương nâng cao hiểu biết pháp lý.
-              </li>
-              <li>
-                <strong>Đào tạo & Hướng nghiệp:</strong> Kết nối các cơ sở đào tạo nghề và các doanh nghiệp nhân văn nhằm tổ chức các lớp học nghề, tạo cơ hội việc làm công bằng cho người lầm lỡ.
-              </li>
-              <li>
-                <strong>Tư vấn & Trợ giúp trực tuyến:</strong> Xây dựng hệ thống giải đáp tự động và đường dây nóng tiếp nhận thông tin đăng ký hỗ trợ trực tiếp 24/7 trên phạm vi cả nước.
-              </li>
-            </ul>
-          </div>
-        </div>
-
-        <!-- Sidebar thông tin tổ chức -->
-        <div class="about-sidebar">
-          <div class="org-card">
-            <h4>ĐƠN VỊ CHỦ QUẢN</h4>
-            <p class="org-name">Cục Cảnh sát QLTHG, TG và THAHS tại cộng đồng (C11)</p>
-            <p><strong>Bộ Công an</strong></p>
-            <div class="org-divider"></div>
-            <p><strong>Ban Biên Tập:</strong> Đại diện Cảnh sát Thi hành án hình sự & Hỗ trợ tư pháp công an các địa phương.</p>
-            <p><strong>Hotline liên hệ trực tiếp:</strong></p>
-            <p class="hotline-text">0903.480.985</p>
+          <!-- Sidebar thông tin tổ chức -->
+          <div class="about-sidebar">
+            <div class="org-card">
+              <h4>ĐƠN VỊ CHỦ QUẢN</h4>
+              <p class="org-name">Cục Cảnh sát QLTHG, TG và THAHS tại cộng đồng (C11)</p>
+              <p><strong>Bộ Công an</strong></p>
+              <div class="org-divider"></div>
+              <p><strong>Ban Biên Tập:</strong> Đại diện Cảnh sát Thi hành án hình sự & Hỗ trợ tư pháp công an các địa phương.</p>
+              <p><strong>Hotline liên hệ trực tiếp:</strong></p>
+              <p class="hotline-text">0903.480.985</p>
+            </div>
           </div>
         </div>
       </div>

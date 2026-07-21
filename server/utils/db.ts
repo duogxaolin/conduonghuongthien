@@ -7,7 +7,7 @@ let _db: ReturnType<typeof drizzle> | null = null
 export function getDb() {
   if (_db) return _db
 
-  const config = useRuntimeConfig()
+  const config = typeof globalThis.useRuntimeConfig === 'function' ? globalThis.useRuntimeConfig() : ({} as any)
 
   const pool = mysql.createPool({
     host:     config.dbHost     || process.env.DB_HOST     || '127.0.0.1',
