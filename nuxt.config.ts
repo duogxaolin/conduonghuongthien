@@ -42,11 +42,8 @@ export default defineNuxtConfig({
           rel: 'stylesheet',
           href: 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap'
         },
-        // FontAwesome — async load riêng từng file để không block first paint
-        { rel: 'stylesheet', href: '/assets/fontawesome/css/fontawesome.css', media: 'print', onload: "this.media='all'" },
-        { rel: 'stylesheet', href: '/assets/fontawesome/css/regular.css',     media: 'print', onload: "this.media='all'" },
-        { rel: 'stylesheet', href: '/assets/fontawesome/css/solid.css',       media: 'print', onload: "this.media='all'" },
-        { rel: 'stylesheet', href: '/assets/fontawesome/css/brands.css',      media: 'print', onload: "this.media='all'" }
+        // FontAwesome Pro 7.3.0
+        { rel: 'stylesheet', href: '/assets/fontawesome/css/all.min.css' }
       ]
     }
   }
