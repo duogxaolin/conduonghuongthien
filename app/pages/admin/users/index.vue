@@ -8,6 +8,7 @@ const users = ref<any[]>([])
 const roles = ref<any[]>([])
 const loading = ref(true)
 const showModal = ref(false)
+const showEditModal = ref(false)
 
 const form = reactive({
   username: '',
@@ -15,7 +16,18 @@ const form = reactive({
   password: '',
   roleId: 2,
 })
+
+const editForm = reactive({
+  id: 0,
+  username: '',
+  email: '',
+  password: '',
+  roleId: 2,
+  isActive: true
+})
+
 const errorMsg = ref('')
+const toast = useToast()
 
 const fetchUsers = async () => {
   loading.value = true
@@ -28,6 +40,7 @@ const fetchUsers = async () => {
     if (rRes.ok) roles.value = rRes.roles
   } catch (err: any) {
     errorMsg.value = err?.data?.statusMessage || 'Lỗi tải danh sách người dùng'
+    toast.error(errorMsg.value)
   } finally {
     loading.value = false
   }
@@ -41,6 +54,7 @@ const handleCreateUser = async () => {
       body: form
     })
     if (res.ok) {
+      toast.success(`Đã tạo tài khoản ${form.username} thành công!`)
       showModal.value = false
       form.username = ''
       form.email = ''
@@ -49,10 +63,54 @@ const handleCreateUser = async () => {
     }
   } catch (err: any) {
     errorMsg.value = err?.data?.statusMessage || 'Tạo người dùng thất bại'
+    toast.error(errorMsg.value)
   }
 }
 
-const toast = useToast()
+const openEditModal = (user: any) => {
+  editForm.id = user.id
+  editForm.username = user.username
+  editForm.email = user.email || ''
+  editForm.roleId = user.roleId || 2
+  editForm.password = ''
+  editForm.isActive = user.isActive
+  errorMsg.value = ''
+  showEditModal.value = true
+}
+
+const handleUpdateUser = async () => {
+  errorMsg.value = ''
+  try {
+    const body: any = {
+      email: editForm.email,
+      roleId: editForm.roleId,
+      isActive: editForm.isActive
+    }
+
+    if (editForm.password.trim()) {
+      if (editForm.password.trim().length < 6) {
+        errorMsg.value = 'Mật khẩu mới phải có ít nhất 6 ký tự'
+        toast.warning(errorMsg.value)
+        return
+      }
+      body.password = editForm.password.trim()
+    }
+
+    const res = await $fetch(`/api/admin/users/${editForm.id}`, {
+      method: 'PUT',
+      body
+    })
+
+    if (res.ok) {
+      toast.success(`Đã cập nhật tài khoản ${editForm.username} thành công!`)
+      showEditModal.value = false
+      await fetchUsers()
+    }
+  } catch (err: any) {
+    errorMsg.value = err?.data?.statusMessage || 'Cập nhật người dùng thất bại'
+    toast.error(errorMsg.value)
+  }
+}
 
 const toggleActive = async (user: any) => {
   try {
@@ -91,7 +149,7 @@ onMounted(() => {
         <p>Danh sách các tài khoản được cấp quyền truy cập Admin Panel</p>
       </div>
       <button class="primary-btn" @click="showModal = true">
-        ➕ Thêm Người dùng Mới
+        <i class="fa-solid fa-user-plus"></i> Thêm Người dùng Mới
       </button>
     </div>
 
@@ -121,13 +179,22 @@ onMounted(() => {
                 class="status-btn"
                 :class="{ active: u.isActive }"
                 @click="toggleActive(u)"
+                :title="u.isActive ? 'Bấm để khóa tài khoản' : 'Bấm để mở khóa tài khoản'"
               >
-                {{ u.isActive ? 'Kích hoạt' : 'Khóa' }}
+                <i :class="u.isActive ? 'fa-solid fa-lock-open' : 'fa-solid fa-lock'"></i>
+                {{ u.isActive ? 'Hoạt động' : 'Đã khóa' }}
               </button>
             </td>
             <td>{{ u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString('vi-VN') : 'Chưa đăng nhập' }}</td>
             <td>
-              <button class="delete-icon-btn" @click="deleteUser(u)" title="Xóa tài khoản">🗑️</button>
+              <div class="action-buttons">
+                <button class="action-btn edit-btn" @click="openEditModal(u)" title="Chỉnh sửa tài khoản (Email, Mật khẩu, Vai trò)">
+                  <i class="fa-solid fa-pen-to-square"></i>
+                </button>
+                <button class="action-btn delete-btn" @click="deleteUser(u)" title="Xóa tài khoản">
+                  <i class="fa-solid fa-trash-can"></i>
+                </button>
+              </div>
             </td>
           </tr>
         </tbody>
@@ -174,6 +241,55 @@ onMounted(() => {
         </form>
       </div>
     </div>
+
+    <!-- Edit User Modal -->
+    <div v-if="showEditModal" class="modal-overlay">
+      <div class="modal-card">
+        <h3>Chỉnh sửa Tài khoản: {{ editForm.username }}</h3>
+        <p class="modal-subtitle">Cập nhật Email, Vai trò, Trạng thái hoặc Đổi mật khẩu mới</p>
+
+        <div v-if="errorMsg" class="error-alert">{{ errorMsg }}</div>
+
+        <form @submit.prevent="handleUpdateUser" class="modal-form">
+          <div class="form-group">
+            <label>Tên đăng nhập</label>
+            <input type="text" :value="editForm.username" disabled class="input-disabled" />
+          </div>
+
+          <div class="form-group">
+            <label>Email</label>
+            <input type="email" v-model="editForm.email" placeholder="eg: user@conduonghuongthien.com.vn" />
+          </div>
+
+          <div class="form-group">
+            <label>Vai trò (Role)</label>
+            <select v-model="editForm.roleId" required>
+              <option v-for="r in roles" :key="r.id" :value="r.id">
+                {{ r.name }} — {{ r.description }}
+              </option>
+            </select>
+          </div>
+
+          <div class="form-group">
+            <label>Đổi mật khẩu mới (Để trống nếu giữ nguyên)</label>
+            <input type="password" v-model="editForm.password" minlength="6" placeholder="Nhập mật khẩu mới nếu muốn đổi" />
+          </div>
+
+          <div class="form-group">
+            <label>Trạng thái tài khoản</label>
+            <select v-model="editForm.isActive">
+              <option :value="true">🟢 Hoạt động (Được phép đăng nhập)</option>
+              <option :value="false">🔴 Đã khóa (Bị chặn đăng nhập)</option>
+            </select>
+          </div>
+
+          <div class="modal-actions">
+            <button type="button" class="cancel-btn" @click="showEditModal = false">Hủy</button>
+            <button type="submit" class="primary-btn">Cập Nhật Tài Khoản</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -211,6 +327,9 @@ onMounted(() => {
   border-radius: 8px;
   font-weight: 700;
   cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
 }
 
 .primary-btn:hover {
@@ -252,6 +371,7 @@ onMounted(() => {
   font-weight: 700;
   background: #eef2ee;
   color: #556655;
+  text-transform: capitalize;
 }
 
 .role-badge.superadmin {
@@ -266,13 +386,17 @@ onMounted(() => {
 
 .status-btn {
   border: none;
-  padding: 4px 10px;
+  padding: 5px 12px;
   border-radius: 6px;
-  font-size: 0.75rem;
+  font-size: 0.78rem;
   font-weight: 700;
   cursor: pointer;
-  background: #f5f5f5;
-  color: #888;
+  background: #ffebe9;
+  color: #d12420;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: all 0.2s ease;
 }
 
 .status-btn.active {
@@ -280,11 +404,36 @@ onMounted(() => {
   color: #2c6e33;
 }
 
-.delete-icon-btn {
-  background: none;
-  border: none;
+.action-buttons {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.action-btn {
+  background: #f4f6f4;
+  border: 1px solid #dce4dd;
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   cursor: pointer;
-  font-size: 1rem;
+  color: #445544;
+  transition: all 0.2s ease;
+}
+
+.edit-btn:hover {
+  background: #e4f2e5;
+  color: #1e4620;
+  border-color: #a8d5ab;
+}
+
+.delete-btn:hover {
+  background: #ffebe9;
+  color: #d12420;
+  border-color: #f7b5b2;
 }
 
 /* Modal */
@@ -306,7 +455,7 @@ onMounted(() => {
   padding: 28px;
   border-radius: 14px;
   width: 100%;
-  max-width: 440px;
+  max-width: 460px;
 }
 
 .modal-card h3 {
@@ -347,6 +496,12 @@ onMounted(() => {
   border: 1px solid #c8d6c9;
   border-radius: 6px;
   box-sizing: border-box;
+}
+
+.input-disabled {
+  background-color: #f5f7f5;
+  color: #778877;
+  cursor: not-allowed;
 }
 
 .modal-actions {
