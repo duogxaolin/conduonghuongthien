@@ -11,7 +11,7 @@
             {{ t('hero_subtitle') }}
           </p>
           <div class="hero-actions">
-            <nuxt-link to="/gioi-thieu" class="btn btn-secondary btn-lg pulse-effect">{{ t('hero_btn_about') }}</nuxt-link>
+            <nuxt-link to="/about" class="btn btn-secondary btn-lg pulse-effect">{{ t('hero_btn_about') }}</nuxt-link>
             <a href="#tro-giup" class="btn btn-outline-white btn-lg">{{ t('hero_btn_help') }}</a>
           </div>
         </div>
@@ -47,12 +47,12 @@
         <div class="bca-news-left-col">
           <div class="section-bar">
             <div class="section-bar-title"><span class="section-bar-icon">★</span> Tin nổi bật</div>
-            <nuxt-link to="/ban-tin" class="section-bar-viewall">Tất cả tin tức →</nuxt-link>
+            <nuxt-link to="/news" class="section-bar-viewall">Tất cả tin tức →</nuxt-link>
           </div>
           
           <!-- Tin tiêu điểm chính (Overlay text trên ảnh lớn) -->
           <div class="bca-main-featured">
-            <nuxt-link to="/ban-tin/da-nang-hoi-nghi-doi-thoai-giam-thi-pham-nhan" class="bca-featured-link">
+            <nuxt-link to="/news/da-nang-hoi-nghi-doi-thoai-giam-thi-pham-nhan" class="bca-featured-link">
               <div class="bca-featured-img-wrap">
                 <img src="/assets/news_danang.jpg" alt="Đại hội Đà Nẵng" />
                 <div class="bca-featured-overlay"></div>
@@ -69,13 +69,13 @@
           <!-- 2 tin phụ nằm ngang bên dưới -->
           <div class="bca-sub-grid">
             <div class="bca-sub-card">
-              <nuxt-link to="/ban-tin/quang-ninh-van-don-ho-tro-viec-lam" class="bca-card-img-link">
+              <nuxt-link to="/news/quang-ninh-van-don-ho-tro-viec-lam" class="bca-card-img-link">
                 <img src="/assets/news_quangninh.jpg" alt="Vân đồn việc làm" />
               </nuxt-link>
               <div class="bca-card-content">
                 <span class="bca-sub-date">17/07/2026</span>
                 <h4>
-                  <nuxt-link to="/ban-tin/quang-ninh-van-don-ho-tro-viec-lam">
+                  <nuxt-link to="/news/quang-ninh-van-don-ho-tro-viec-lam">
                     QUẢNG NINH: Hỗ trợ việc làm tại Vân Đồn cho người chấp hành xong án phạt
                   </nuxt-link>
                 </h4>
@@ -83,13 +83,13 @@
             </div>
             
             <div class="bca-sub-card">
-              <nuxt-link to="/ban-tin/lam-dong-tham-hoi-tang-qua-dac-xa" class="bca-card-img-link">
+              <nuxt-link to="/news/lam-dong-tham-hoi-tang-qua-dac-xa" class="bca-card-img-link">
                 <img src="/assets/news_lamdong.jpg" alt="Lâm đồng đặc xá" />
               </nuxt-link>
               <div class="bca-card-content">
                 <span class="bca-sub-date">17/07/2026</span>
                 <h4>
-                  <nuxt-link to="/ban-tin/lam-dong-tham-hoi-tang-qua-dac-xa">
+                  <nuxt-link to="/news/lam-dong-tham-hoi-tang-qua-dac-xa">
                     LÂM ĐỒNG: Thăm hỏi, tặng quà, động viên người được đặc xá khó khăn
                   </nuxt-link>
                 </h4>
@@ -207,7 +207,7 @@
                 <span class="role-location">{{ model.location }}</span>
                 <h3>{{ model.name }}</h3>
                 <p class="role-desc">{{ model.desc }}</p>
-                <nuxt-link :to="`/tamguongtieubieu/${model.id}`" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
+                <nuxt-link :to="`/role-models/${model.id}`" class="role-link">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
               </div>
             </div>
           </div>
@@ -258,7 +258,7 @@
               <div class="model-icon-wrap">{{ item.icon }}</div>
               <h3>{{ item.title }}</h3>
               <p>{{ item.desc }}</p>
-              <nuxt-link :to="`/mohinhtaihoanhap/${item.id}`" class="model-link">Tìm hiểu &rarr;</nuxt-link>
+              <nuxt-link :to="`/reintegration-models/${item.id}`" class="model-link">Tìm hiểu &rarr;</nuxt-link>
             </div>
           </div>
 
@@ -286,7 +286,7 @@
         <div class="docs-info-col">
           <h2 class="section-title">Văn Bản Pháp Quy Mới</h2>
           <p>Cập nhật liên tục các quyết định chỉ đạo của Thủ tướng Chính phủ, các thông tư chỉ thị của Bộ Công an về công tác thi hành án hình sự và hỗ trợ hòa nhập cộng đồng.</p>
-          <nuxt-link to="/van-ban" class="btn btn-primary">Tra cứu thư viện văn bản</nuxt-link>
+          <nuxt-link to="/documents" class="btn btn-primary">Tra cứu thư viện văn bản</nuxt-link>
         </div>
         <div class="docs-list-col">
           <div v-for="doc in latestDocs" :key="doc.id" class="doc-card-mini">

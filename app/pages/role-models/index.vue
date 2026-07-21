@@ -22,7 +22,7 @@
               <span class="location">📍 {{ item.location }}</span>
               <h3>{{ item.title }}</h3>
               <p class="excerpt">{{ item.excerpt }}</p>
-              <nuxt-link :to="`/tamguongtieubieu/${item.slug}`" class="btn btn-outline">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
+              <nuxt-link :to="`/role-models/${item.slug}`" class="btn btn-outline">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
             </div>
           </div>
         </div>

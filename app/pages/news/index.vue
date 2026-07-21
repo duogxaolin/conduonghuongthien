@@ -33,7 +33,7 @@
             <button class="search-clear" @click="clearSearch">✕ Bỏ tìm kiếm</button>
           </div>
           <div v-if="filteredNews.length === 0" class="search-empty">
-            Không tìm thấy bản tin phù hợp. Vui lòng thử từ khóa khác hoặc xem <nuxt-link to="/ban-tin">tất cả bản tin</nuxt-link>.
+            Không tìm thấy bản tin phù hợp. Vui lòng thử từ khóa khác hoặc xem <nuxt-link to="/news">tất cả bản tin</nuxt-link>.
           </div>
           <div v-for="item in filteredNews" :key="item.id" class="news-horizontal-card">
             <div class="news-card-img">
@@ -41,9 +41,9 @@
             </div>
             <div class="news-card-info">
               <span class="news-card-date">{{ item.date }} • {{ item.categoryName }}</span>
-              <h3><nuxt-link :to="`/ban-tin/${item.slug}`">{{ item.title }}</nuxt-link></h3>
+              <h3><nuxt-link :to="`/news/${item.slug}`">{{ item.title }}</nuxt-link></h3>
               <p>{{ item.excerpt }}</p>
-              <nuxt-link :to="`/ban-tin/${item.slug}`" class="read-more-btn">Xem chi tiết &rarr;</nuxt-link>
+              <nuxt-link :to="`/news/${item.slug}`" class="read-more-btn">Xem chi tiết &rarr;</nuxt-link>
             </div>
           </div>
         </div>
@@ -149,7 +149,7 @@ const setCategory = (cat) => {
 
 const clearSearch = () => {
   searchQuery.value = ''
-  navigateTo({ path: '/ban-tin', query: {} })
+  navigateTo({ path: '/news', query: {} })
 }
 
 onMounted(() => {

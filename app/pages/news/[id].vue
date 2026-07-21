@@ -4,7 +4,7 @@
       <!-- Breadcrumb -->
       <div class="breadcrumb">
         <nuxt-link to="/">Trang chủ</nuxt-link> &raquo; 
-        <nuxt-link to="/ban-tin">Bản tin</nuxt-link> &raquo; 
+        <nuxt-link to="/news">Bản tin</nuxt-link> &raquo; 
         <span>Chi tiết tin tức</span>
       </div>
 
@@ -28,13 +28,13 @@
 
         <!-- Back Link -->
         <div class="back-wrap">
-          <nuxt-link to="/ban-tin" class="btn btn-primary">&larr; Quay lại danh sách Bản tin</nuxt-link>
+          <nuxt-link to="/news" class="btn btn-primary">&larr; Quay lại danh sách Bản tin</nuxt-link>
         </div>
       </article>
 
       <div class="not-found" v-else>
         <p>Không tìm thấy tin tức yêu cầu hoặc bài viết đang được cập nhật.</p>
-        <nuxt-link to="/ban-tin" class="btn btn-primary">Quay lại danh sách Bản tin</nuxt-link>
+        <nuxt-link to="/news" class="btn btn-primary">Quay lại danh sách Bản tin</nuxt-link>
       </div>
     </div>
   </div>

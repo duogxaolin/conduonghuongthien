@@ -4,7 +4,7 @@
       <!-- Breadcrumb -->
       <div class="breadcrumb">
         <nuxt-link to="/">Trang chủ</nuxt-link> &raquo; 
-        <nuxt-link to="/tamguongtieubieu">Tấm gương tiêu biểu</nuxt-link> &raquo; 
+        <nuxt-link to="/role-models">Tấm gương tiêu biểu</nuxt-link> &raquo; 
         <span>Chi tiết câu chuyện</span>
       </div>
 
@@ -28,13 +28,13 @@
 
         <!-- Back Link -->
         <div class="back-wrap">
-          <nuxt-link to="/tamguongtieubieu" class="btn btn-primary">&larr; Quay lại danh sách tấm gương</nuxt-link>
+          <nuxt-link to="/role-models" class="btn btn-primary">&larr; Quay lại danh sách tấm gương</nuxt-link>
         </div>
       </article>
 
       <div class="not-found" v-else>
         <p>Không tìm thấy bài viết yêu cầu hoặc bài viết đang được cập nhật.</p>
-        <nuxt-link to="/tamguongtieubieu" class="btn btn-primary">Quay lại danh sách</nuxt-link>
+        <nuxt-link to="/role-models" class="btn btn-primary">Quay lại danh sách</nuxt-link>
       </div>
     </div>
   </div>

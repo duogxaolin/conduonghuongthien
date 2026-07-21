@@ -3,8 +3,8 @@
     <section class="cat-hero">
       <div class="cat-hero-overlay"></div>
       <div class="container">
-        <h2 class="cat-hero-title">Tin Nổi Bật</h2>
-        <p class="cat-hero-subtitle">Các sự kiện và tin tức nổi bật về công tác tái hòa nhập cộng đồng</p>
+        <h2 class="cat-hero-title">Tin Hoạt Động</h2>
+        <p class="cat-hero-subtitle">Các hoạt động, chỉ đạo nghiệp vụ thi hành án hình sự và tái hòa nhập</p>
       </div>
     </section>
 
@@ -16,10 +16,10 @@
               <img :src="item.image" :alt="item.title" />
             </div>
             <div class="news-item-info">
-              <span class="news-item-date">{{ item.date }} • Tin nổi bật</span>
-              <h3><nuxt-link :to="'/ban-tin/' + item.slug">{{ item.title }}</nuxt-link></h3>
+              <span class="news-item-date">{{ item.date }} • Tin hoạt động</span>
+              <h3><nuxt-link :to="'/news/' + item.slug">{{ item.title }}</nuxt-link></h3>
               <p>{{ item.excerpt }}</p>
-              <nuxt-link :to="'/ban-tin/' + item.slug" class="read-more-link">Chi tiết &rarr;</nuxt-link>
+              <nuxt-link :to="'/news/' + item.slug" class="read-more-link">Chi tiết &rarr;</nuxt-link>
             </div>
           </div>
         </div>
@@ -32,19 +32,27 @@
 const newsItems = [
   {
     id: 1,
-    slug: 'da-nang-hoi-nghi-doi-thoai-giam-thi-pham-nhan',
-    title: 'ĐÀ NẴNG: HỘI NGHỊ ĐỐI THOẠI GIỮA GIÁM THỊ VỚI PHẠM NHÂN',
+    slug: 'quang-ninh-van-don-ho-tro-viec-lam',
+    title: 'QUẢNG NINH: Công an đặc khu Vân Đồn hỗ trợ người chấp hành xong án phạt tù tìm kiếm việc làm',
     date: '17/07/2026',
-    image: '/assets/news_danang.jpg',
-    excerpt: 'Chiều ngày 16/7/2026, Trại Tạm giam số 1 Công an thành phố Đà Nẵng tổ chức Hội nghị đối thoại giữa Giám thị Trại với phạm nhân đang chấp hành án phạt tù lần thứ I năm 2026 để kịp thời tháo gỡ vướng mắc, động viên cải tạo.'
+    image: '/assets/news_quangninh.jpg',
+    excerpt: 'Nhằm tạo điều kiện tốt nhất cho người chấp hành xong án phạt tù xóa bỏ tự ti và có thu nhập ổn định, Công an đặc khu Vân Đồn phối hợp cơ quan chức năng tổ chức sàn giao dịch hướng nghiệp kết nối trực tiếp doanh nghiệp.'
   },
   {
     id: 2,
-    slug: 'can-tho-diem-tua-tin-dung-cho-nguoi-hoan-luong-tai-hoa-nhap',
-    title: 'CẦN THƠ: Điểm tựa tín dụng cho người hoàn lương tái hòa nhập',
-    date: '16/07/2026',
+    slug: 'lam-dong-tham-hoi-tang-qua-dac-xa',
+    title: 'CÔNG AN TỈNH LÂM ĐỒNG THĂM HỎI, TẶNG QUÀ, ĐỘNG VIÊN NGƯỜI ĐƯỢC ĐẶC XÁ CÓ HOÀN CẢNH KHÓ KHĂN',
+    date: '17/07/2026',
     image: '/assets/news_lamdong.jpg',
-    excerpt: 'Triển khai chính sách tín dụng ưu đãi từ Ngân hàng Chính sách Xã hội theo Quyết định 22/2023/QĐ-TTg, giúp hàng chục hộ gia đình người hoàn lương tại Cần Thơ tiếp cận nguồn vốn ưu đãi 100 triệu đồng để mở rộng làm ăn.'
+    excerpt: 'Phòng Cảnh sát thi hành án hình sự và hỗ trợ tư pháp Công an tỉnh Lâm Đồng phối hợp với Công an các địa bàn tổ chức thăm hỏi, trao tặng các phần quà hỗ trợ thiết thực động viên tinh thần người chấp hành đặc xá vươn lên.'
+  },
+  {
+    id: 3,
+    slug: 'lam-dong-so-ket-quan-ly-giam-giu',
+    title: 'LÂM ĐỒNG: Sơ kết công tác quản lý giam giữ, thi hành án hình sự và hỗ trợ tư pháp 6 tháng đầu năm 2026',
+    date: '16/07/2026',
+    image: '/assets/news_danang.jpg',
+    excerpt: 'Công an tỉnh Lâm Đồng sơ kết đánh giá kết quả triển khai công tác quản lý giam giữ và hỗ trợ tái hòa nhập cộng đồng 6 tháng đầu năm, đề ra phương hướng chỉ đạo sát sao cho 6 tháng cuối năm.'
   }
 ]
 </script>

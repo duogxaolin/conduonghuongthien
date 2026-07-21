@@ -4,7 +4,7 @@
       <!-- Breadcrumb -->
       <div class="breadcrumb">
         <nuxt-link to="/">Trang chủ</nuxt-link> &raquo; 
-        <nuxt-link to="/mohinhtaihoanhap">Mô hình tái hòa nhập</nuxt-link> &raquo; 
+        <nuxt-link to="/reintegration-models">Mô hình tái hòa nhập</nuxt-link> &raquo; 
         <span>Chi tiết mô hình</span>
       </div>
 
@@ -28,13 +28,13 @@
 
         <!-- Back Link -->
         <div class="back-wrap">
-          <nuxt-link to="/mohinhtaihoanhap" class="btn btn-primary">&larr; Quay lại danh sách mô hình</nuxt-link>
+          <nuxt-link to="/reintegration-models" class="btn btn-primary">&larr; Quay lại danh sách mô hình</nuxt-link>
         </div>
       </article>
 
       <div class="not-found" v-else>
         <p>Không tìm thấy mô hình yêu cầu hoặc nội dung đang được cập nhật.</p>
-        <nuxt-link to="/mohinhtaihoanhap" class="btn btn-primary">Quay lại danh sách</nuxt-link>
+        <nuxt-link to="/reintegration-models" class="btn btn-primary">Quay lại danh sách</nuxt-link>
       </div>
     </div>
   </div>

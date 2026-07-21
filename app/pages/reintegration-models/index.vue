@@ -18,7 +18,7 @@
             <span class="model-category">💡 Mô hình tiêu biểu</span>
             <h3>{{ item.title }}</h3>
             <p class="model-desc">{{ item.excerpt }}</p>
-            <nuxt-link :to="`/mohinhtaihoanhap/${item.slug}`" class="read-more-btn">Xem chi tiết mô hình &rarr;</nuxt-link>
+            <nuxt-link :to="`/reintegration-models/${item.slug}`" class="read-more-btn">Xem chi tiết mô hình &rarr;</nuxt-link>
           </div>
         </div>
       </div>

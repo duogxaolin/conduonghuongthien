@@ -107,24 +107,24 @@
             <div class="drawer-body">
               <ul class="nav-links">
                 <li><nuxt-link to="/" class="nav-item" active-class="active-item">{{ t('home') }}</nuxt-link></li>
-                <li><nuxt-link to="/gioi-thieu" class="nav-item" active-class="active-item">{{ t('about') }}</nuxt-link></li>
+                <li><nuxt-link to="/about" class="nav-item" active-class="active-item">{{ t('about') }}</nuxt-link></li>
                 
                 <!-- Dropdown Menu Bản tin -->
                 <li class="has-dropdown" :class="{ 'is-mobile-expanded': showDropdown }" @mouseenter="showDropdown = true" @mouseleave="showDropdown = false">
                   <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('news')">
-                    <nuxt-link to="/ban-tin" active-class="active-item" @click.stop>{{ t('news') }}</nuxt-link>
+                    <nuxt-link to="/news" active-class="active-item" @click.stop>{{ t('news') }}</nuxt-link>
                     <span class="arrow" :class="{ 'is-rotated': showDropdown }">▼</span>
                   </div>
                   <ul class="dropdown-menu" :class="{ 'is-show': showDropdown }">
-                    <li><nuxt-link to="/ban-tin/tin-noi-bat">{{ t('news_featured') }}</nuxt-link></li>
-                    <li><nuxt-link to="/ban-tin/tin-hoat-dong">{{ t('news_activities') }}</nuxt-link></li>
-                    <li><nuxt-link to="/ban-tin/tin-dia-phuong">{{ t('news_local') }}</nuxt-link></li>
+                    <li><nuxt-link to="/news/featured-news">{{ t('news_featured') }}</nuxt-link></li>
+                    <li><nuxt-link to="/news/activity-news">{{ t('news_activities') }}</nuxt-link></li>
+                    <li><nuxt-link to="/news/local-news">{{ t('news_local') }}</nuxt-link></li>
                   </ul>
                 </li>
 
-                <li><nuxt-link to="/tamguongtieubieu" class="nav-item" active-class="active-item">{{ t('role_models') }}</nuxt-link></li>
-                <li><nuxt-link to="/mohinhtaihoanhap" class="nav-item" active-class="active-item">{{ t('reintegration') }}</nuxt-link></li>
-                <li><nuxt-link to="/van-ban" class="nav-item" active-class="active-item">{{ t('documents') }}</nuxt-link></li>
+                <li><nuxt-link to="/role-models" class="nav-item" active-class="active-item">{{ t('role_models') }}</nuxt-link></li>
+                <li><nuxt-link to="/reintegration-models" class="nav-item" active-class="active-item">{{ t('reintegration') }}</nuxt-link></li>
+                <li><nuxt-link to="/documents" class="nav-item" active-class="active-item">{{ t('documents') }}</nuxt-link></li>
                 
                 <!-- Dropdown Menu Thư viện -->
                 <li class="has-dropdown" :class="{ 'is-mobile-expanded': showLibraryDropdown }" @mouseenter="showLibraryDropdown = true" @mouseleave="showLibraryDropdown = false">
@@ -138,7 +138,7 @@
                   </ul>
                 </li>
 
-                <li><nuxt-link to="/giai-dap-phap-luat" class="nav-item" active-class="active-item">{{ t('faq') }}</nuxt-link></li>
+                <li><nuxt-link to="/legal-qa" class="nav-item" active-class="active-item">{{ t('faq') }}</nuxt-link></li>
                 
                 <!-- Dropdown Bộ với công dân -->
                 <li class="has-dropdown" :class="{ 'is-mobile-expanded': showGovDropdown }" @mouseenter="showGovDropdown = true" @mouseleave="showGovDropdown = false">
@@ -148,11 +148,11 @@
                   </div>
                   <ul class="dropdown-menu" :class="{ 'is-show': showGovDropdown }">
                     <li><a href="#tro-giup">{{ t('register_help') }}</a></li>
-                    <li><nuxt-link to="/van-ban">{{ t('procedures') }}</nuxt-link></li>
+                    <li><nuxt-link to="/documents">{{ t('procedures') }}</nuxt-link></li>
                   </ul>
                 </li>
 
-                <li><nuxt-link to="/lien-he" class="nav-item" active-class="active-item">{{ t('contact') }}</nuxt-link></li>
+                <li><nuxt-link to="/contact" class="nav-item" active-class="active-item">{{ t('contact') }}</nuxt-link></li>
               </ul>
 
               <!-- Drawer Footer Quick Actions -->
@@ -218,19 +218,19 @@
           <h3 class="footer-col-title">Liên kết chính</h3>
           <ul>
             <li><nuxt-link to="/">Trang chủ</nuxt-link></li>
-            <li><nuxt-link to="/gioi-thieu">Giới thiệu ban biên tập</nuxt-link></li>
-            <li><nuxt-link to="/ban-tin">Bản tin hoạt động</nuxt-link></li>
-            <li><nuxt-link to="/van-ban">Văn bản pháp luật mới</nuxt-link></li>
+            <li><nuxt-link to="/about">Giới thiệu ban biên tập</nuxt-link></li>
+            <li><nuxt-link to="/news">Bản tin hoạt động</nuxt-link></li>
+            <li><nuxt-link to="/documents">Văn bản pháp luật mới</nuxt-link></li>
           </ul>
         </div>
 
         <div class="footer-col-links">
           <h3 class="footer-col-title">Tái hòa nhập</h3>
           <ul>
-            <li><nuxt-link to="/tamguongtieubieu">Tấm gương tiêu biểu hoàn lương</nuxt-link></li>
-            <li><nuxt-link to="/mohinhtaihoanhap">Các mô hình kinh tế hỗ trợ</nuxt-link></li>
-            <li><nuxt-link to="/giai-dap-phap-luat">Giải đáp pháp luật trực tuyến</nuxt-link></li>
-            <li><nuxt-link to="/lien-he">Thông tin đường dây nóng</nuxt-link></li>
+            <li><nuxt-link to="/role-models">Tấm gương tiêu biểu hoàn lương</nuxt-link></li>
+            <li><nuxt-link to="/reintegration-models">Các mô hình kinh tế hỗ trợ</nuxt-link></li>
+            <li><nuxt-link to="/legal-qa">Giải đáp pháp luật trực tuyến</nuxt-link></li>
+            <li><nuxt-link to="/contact">Thông tin đường dây nóng</nuxt-link></li>
           </ul>
         </div>
 
@@ -532,7 +532,7 @@ const toggleSearch = async () => {
 const handleSearch = () => {
   const q = searchQuery.value.trim()
   if (q) {
-    navigateTo({ path: '/ban-tin', query: { q } })
+    navigateTo({ path: '/news', query: { q } })
     searchQuery.value = ''
     isSearchActive.value = false
   }

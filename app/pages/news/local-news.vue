@@ -3,8 +3,8 @@
     <section class="cat-hero">
       <div class="cat-hero-overlay"></div>
       <div class="container">
-        <h2 class="cat-hero-title">Tin Hoạt Động</h2>
-        <p class="cat-hero-subtitle">Các hoạt động, chỉ đạo nghiệp vụ thi hành án hình sự và tái hòa nhập</p>
+        <h2 class="cat-hero-title">Tin Địa Phương</h2>
+        <p class="cat-hero-subtitle">Hoạt động thi hành án hình sự và công tác cộng đồng tại địa bàn xã, phường</p>
       </div>
     </section>
 
@@ -16,10 +16,10 @@
               <img :src="item.image" :alt="item.title" />
             </div>
             <div class="news-item-info">
-              <span class="news-item-date">{{ item.date }} • Tin hoạt động</span>
-              <h3><nuxt-link :to="'/ban-tin/' + item.slug">{{ item.title }}</nuxt-link></h3>
+              <span class="news-item-date">{{ item.date }} • Tin địa phương</span>
+              <h3><nuxt-link :to="'/news/' + item.slug">{{ item.title }}</nuxt-link></h3>
               <p>{{ item.excerpt }}</p>
-              <nuxt-link :to="'/ban-tin/' + item.slug" class="read-more-link">Chi tiết &rarr;</nuxt-link>
+              <nuxt-link :to="'/news/' + item.slug" class="read-more-link">Chi tiết &rarr;</nuxt-link>
             </div>
           </div>
         </div>
@@ -32,27 +32,11 @@
 const newsItems = [
   {
     id: 1,
-    slug: 'quang-ninh-van-don-ho-tro-viec-lam',
-    title: 'QUẢNG NINH: Công an đặc khu Vân Đồn hỗ trợ người chấp hành xong án phạt tù tìm kiếm việc làm',
+    slug: 'mong-cai-tang-cuong-cam-hoa-giao-duc',
+    title: 'QUẢNG NINH: Công an phường Móng Cái 3 tăng cường công tác cảm hóa, giáo dục thi hành án hình sự tại cộng đồng',
     date: '17/07/2026',
     image: '/assets/news_quangninh.jpg',
-    excerpt: 'Nhằm tạo điều kiện tốt nhất cho người chấp hành xong án phạt tù xóa bỏ tự ti và có thu nhập ổn định, Công an đặc khu Vân Đồn phối hợp cơ quan chức năng tổ chức sàn giao dịch hướng nghiệp kết nối trực tiếp doanh nghiệp.'
-  },
-  {
-    id: 2,
-    slug: 'lam-dong-tham-hoi-tang-qua-dac-xa',
-    title: 'CÔNG AN TỈNH LÂM ĐỒNG THĂM HỎI, TẶNG QUÀ, ĐỘNG VIÊN NGƯỜI ĐƯỢC ĐẶC XÁ CÓ HOÀN CẢNH KHÓ KHĂN',
-    date: '17/07/2026',
-    image: '/assets/news_lamdong.jpg',
-    excerpt: 'Phòng Cảnh sát thi hành án hình sự và hỗ trợ tư pháp Công an tỉnh Lâm Đồng phối hợp với Công an các địa bàn tổ chức thăm hỏi, trao tặng các phần quà hỗ trợ thiết thực động viên tinh thần người chấp hành đặc xá vươn lên.'
-  },
-  {
-    id: 3,
-    slug: 'lam-dong-so-ket-quan-ly-giam-giu',
-    title: 'LÂM ĐỒNG: Sơ kết công tác quản lý giam giữ, thi hành án hình sự và hỗ trợ tư pháp 6 tháng đầu năm 2026',
-    date: '16/07/2026',
-    image: '/assets/news_danang.jpg',
-    excerpt: 'Công an tỉnh Lâm Đồng sơ kết đánh giá kết quả triển khai công tác quản lý giam giữ và hỗ trợ tái hòa nhập cộng đồng 6 tháng đầu năm, đề ra phương hướng chỉ đạo sát sao cho 6 tháng cuối năm.'
+    excerpt: 'Tăng cường điểm danh, kiểm diện và lập hồ sơ theo dõi sát sao, kết hợp rà soát hoàn cảnh gia đình để có phương hướng cảm hóa giáo dục phù hợp, phòng ngừa tái phạm tội trên địa bàn phường Móng Cái 3.'
   }
 ]
 </script>

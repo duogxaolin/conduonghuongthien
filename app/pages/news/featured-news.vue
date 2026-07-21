@@ -3,8 +3,8 @@
     <section class="cat-hero">
       <div class="cat-hero-overlay"></div>
       <div class="container">
-        <h2 class="cat-hero-title">Tin Địa Phương</h2>
-        <p class="cat-hero-subtitle">Hoạt động thi hành án hình sự và công tác cộng đồng tại địa bàn xã, phường</p>
+        <h2 class="cat-hero-title">Tin Nổi Bật</h2>
+        <p class="cat-hero-subtitle">Các sự kiện và tin tức nổi bật về công tác tái hòa nhập cộng đồng</p>
       </div>
     </section>
 
@@ -16,10 +16,10 @@
               <img :src="item.image" :alt="item.title" />
             </div>
             <div class="news-item-info">
-              <span class="news-item-date">{{ item.date }} • Tin địa phương</span>
-              <h3><nuxt-link :to="'/ban-tin/' + item.slug">{{ item.title }}</nuxt-link></h3>
+              <span class="news-item-date">{{ item.date }} • Tin nổi bật</span>
+              <h3><nuxt-link :to="'/news/' + item.slug">{{ item.title }}</nuxt-link></h3>
               <p>{{ item.excerpt }}</p>
-              <nuxt-link :to="'/ban-tin/' + item.slug" class="read-more-link">Chi tiết &rarr;</nuxt-link>
+              <nuxt-link :to="'/news/' + item.slug" class="read-more-link">Chi tiết &rarr;</nuxt-link>
             </div>
           </div>
         </div>
@@ -32,11 +32,19 @@
 const newsItems = [
   {
     id: 1,
-    slug: 'mong-cai-tang-cuong-cam-hoa-giao-duc',
-    title: 'QUẢNG NINH: Công an phường Móng Cái 3 tăng cường công tác cảm hóa, giáo dục thi hành án hình sự tại cộng đồng',
+    slug: 'da-nang-hoi-nghi-doi-thoai-giam-thi-pham-nhan',
+    title: 'ĐÀ NẴNG: HỘI NGHỊ ĐỐI THOẠI GIỮA GIÁM THỊ VỚI PHẠM NHÂN',
     date: '17/07/2026',
-    image: '/assets/news_quangninh.jpg',
-    excerpt: 'Tăng cường điểm danh, kiểm diện và lập hồ sơ theo dõi sát sao, kết hợp rà soát hoàn cảnh gia đình để có phương hướng cảm hóa giáo dục phù hợp, phòng ngừa tái phạm tội trên địa bàn phường Móng Cái 3.'
+    image: '/assets/news_danang.jpg',
+    excerpt: 'Chiều ngày 16/7/2026, Trại Tạm giam số 1 Công an thành phố Đà Nẵng tổ chức Hội nghị đối thoại giữa Giám thị Trại với phạm nhân đang chấp hành án phạt tù lần thứ I năm 2026 để kịp thời tháo gỡ vướng mắc, động viên cải tạo.'
+  },
+  {
+    id: 2,
+    slug: 'can-tho-diem-tua-tin-dung-cho-nguoi-hoan-luong-tai-hoa-nhap',
+    title: 'CẦN THƠ: Điểm tựa tín dụng cho người hoàn lương tái hòa nhập',
+    date: '16/07/2026',
+    image: '/assets/news_lamdong.jpg',
+    excerpt: 'Triển khai chính sách tín dụng ưu đãi từ Ngân hàng Chính sách Xã hội theo Quyết định 22/2023/QĐ-TTg, giúp hàng chục hộ gia đình người hoàn lương tại Cần Thơ tiếp cận nguồn vốn ưu đãi 100 triệu đồng để mở rộng làm ăn.'
   }
 ]
 </script>
