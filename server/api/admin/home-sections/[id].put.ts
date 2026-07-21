@@ -21,12 +21,17 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
 
+  const updateData: any = {
+    config,
+    updatedAt: new Date(),
+    updatedBy: adminUser.id,
+  }
+  if (body.title) {
+    updateData.title = String(body.title)
+  }
+
   await db.update(homeSections)
-    .set({
-      config,
-      updatedAt: new Date(),
-      updatedBy: adminUser.id,
-    })
+    .set(updateData)
     .where(eq(homeSections.id, id))
 
   await db.insert(activityLogs).values({
