@@ -32,9 +32,12 @@ services:
       DB_PASSWORD: rootpassword
       DB_NAME: cdkt_admin
       JWT_SECRET: cdkt_docker_jwt_secret_987654321
+    volumes:
+      - uploads_data:/app/public/uploads
     depends_on:
       mysql:
         condition: service_healthy
 
 volumes:
   mysql_data:
+  uploads_data:
