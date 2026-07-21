@@ -1,0 +1,51 @@
+import { getDb } from '../../../utils/db'
+import { roles, permissions, activityLogs } from '../../../db/schema'
+import { checkPermission } from '../../../utils/auth'
+
+export default defineEventHandler(async (event) => {
+  const adminUser = event.context.adminUser
+  if (!checkPermission(adminUser.permissions, 'roles', 'create', adminUser.isSuperAdmin)) {
+    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
+  }
+
+  const body = await readBody(event).catch(() => ({}))
+  const name = String(body?.name || '').trim()
+  const description = String(body?.description || '').trim() || null
+  const permsInput = Array.isArray(body?.permissions) ? body.permissions : []
+
+  if (!name || name.length < 2) {
+    throw createError({ statusCode: 400, statusMessage: 'Tên vai trò phải từ 2 ký tự trở lên.' })
+  }
+
+  const db = getDb()
+
+  const [res] = await db.insert(roles).values({
+    name,
+    description,
+    isSystem: false,
+  })
+
+  const newRoleId = res.insertId
+
+  if (permsInput.length > 0) {
+    const permValues = permsInput.map((p: any) => ({
+      roleId: newRoleId,
+      resource: String(p.resource),
+      canCreate: Boolean(p.canCreate),
+      canRead: Boolean(p.canRead),
+      canUpdate: Boolean(p.canUpdate),
+      canDelete: Boolean(p.canDelete),
+    }))
+    await db.insert(permissions).values(permValues)
+  }
+
+  await db.insert(activityLogs).values({
+    userId: adminUser.id,
+    action: 'create',
+    resource: 'roles',
+    resourceId: newRoleId,
+    meta: { name },
+  })
+
+  return { ok: true, id: newRoleId }
+})

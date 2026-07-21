@@ -1,0 +1,56 @@
+import { getDb } from '../../../utils/db'
+import { users, activityLogs } from '../../../db/schema'
+import { checkPermission, hashPassword } from '../../../utils/auth'
+
+export default defineEventHandler(async (event) => {
+  const adminUser = event.context.adminUser
+  if (!checkPermission(adminUser.permissions, 'users', 'create', adminUser.isSuperAdmin)) {
+    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
+  }
+
+  const body = await readBody(event).catch(() => ({}))
+  const username = String(body?.username || '').trim()
+  const email = String(body?.email || '').trim() || null
+  const password = String(body?.password || '').trim()
+  const roleId = Number(body?.roleId)
+
+  if (!username || username.length < 3) {
+    throw createError({ statusCode: 400, statusMessage: 'Tên đăng nhập phải ít nhất 3 ký tự.' })
+  }
+  if (!password || password.length < 6) {
+    throw createError({ statusCode: 400, statusMessage: 'Mật khẩu phải ít nhất 6 ký tự.' })
+  }
+  if (!roleId) {
+    throw createError({ statusCode: 400, statusMessage: 'Vui lòng chọn Vai trò (Role).' })
+  }
+
+  const db = getDb()
+  const passwordHash = await hashPassword(password)
+
+  try {
+    const [result] = await db.insert(users).values({
+      username,
+      email,
+      passwordHash,
+      roleId,
+      isActive: true,
+    })
+
+    const newUserId = result.insertId
+
+    await db.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'create',
+      resource: 'users',
+      resourceId: newUserId,
+      meta: { username, roleId },
+    })
+
+    return { ok: true, id: newUserId }
+  } catch (err: any) {
+    if (err?.code === 'ER_DUP_ENTRY') {
+      throw createError({ statusCode: 400, statusMessage: 'Tên đăng nhập hoặc Email đã tồn tại.' })
+    }
+    throw createError({ statusCode: 500, statusMessage: err?.message || 'Lỗi hệ thống' })
+  }
+})

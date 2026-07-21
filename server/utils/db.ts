@@ -1,0 +1,25 @@
+import { drizzle } from 'drizzle-orm/mysql2'
+import mysql from 'mysql2/promise'
+import * as schema from '../db/schema'
+
+let _db: ReturnType<typeof drizzle> | null = null
+
+export function getDb() {
+  if (_db) return _db
+
+  const config = useRuntimeConfig()
+
+  const pool = mysql.createPool({
+    host:     config.dbHost     || process.env.DB_HOST     || '127.0.0.1',
+    port:     Number(config.dbPort || process.env.DB_PORT  || 3306),
+    user:     config.dbUser     || process.env.DB_USER     || 'root',
+    password: config.dbPassword || process.env.DB_PASSWORD || '',
+    database: config.dbName     || process.env.DB_NAME     || 'cdkt_admin',
+    waitForConnections: true,
+    connectionLimit: 10,
+    timezone: '+07:00',
+  })
+
+  _db = drizzle(pool, { schema, mode: 'default' })
+  return _db
+}
