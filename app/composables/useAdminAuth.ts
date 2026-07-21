@@ -20,7 +20,8 @@ export const useAdminAuth = () => {
   const fetchUser = async () => {
     loading.value = true
     try {
-      const res = await $fetch<{ ok: boolean; user: AdminUser }>('/api/admin/auth/me')
+      const headers = useRequestHeaders(['cookie']) as Record<string, string>
+      const res = await $fetch<{ ok: boolean; user: AdminUser }>('/api/admin/auth/me', { headers })
       if (res.ok && res.user) {
         user.value = res.user
       } else {

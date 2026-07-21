@@ -88,12 +88,14 @@ export default defineEventHandler(async (event) => {
     roleName: user.roleName!,
   })
 
-  // Set httpOnly cookie (8 giờ)
+  const isHttps = getRequestHeader(event, 'x-forwarded-proto') === 'https' || getRequestURL(event).protocol === 'https:'
+
+  // Set httpOnly cookie (7 ngày)
   setCookie(event, 'cdkt_admin', token, {
     httpOnly: true,
-    secure:   process.env.NODE_ENV === 'production',
-    sameSite: 'strict',
-    maxAge:   8 * 60 * 60,
+    secure:   isHttps,
+    sameSite: 'lax',
+    maxAge:   7 * 24 * 60 * 60,
     path:     '/',
   })
 
