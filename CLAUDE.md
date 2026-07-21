@@ -6,7 +6,8 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 
 ## 🛠️ Công Nghệ Sử Dụng (Tech Stack)
 
-- **Frontend**: Nuxt 4 (Vue 3 SFC, TypeScript, Composition API), HTML5, Vanilla CSS, FontAwesome 6 Free Vector Icons.
+- **Frontend**: Nuxt 4 (Vue 3 SFC, TypeScript, Composition API), **Tailwind CSS v4** (via `@tailwindcss/vite`), FontAwesome 6 Pro (local self-hosted).
+- **CSS Rule**: **Tất cả code mới phải dùng Tailwind CSS v4 utility classes.** Không viết `<style scoped>` hay CSS tùy chỉnh cho component/page mới. CSS cũ (pre-Tailwind) vẫn giữ nguyên, không xóa — sẽ migrate dần sau.
 - **Backend / API**: Nuxt Server Engine (Nitro / H3), Drizzle ORM, MySQL 8.0 / MariaDB, JWT Auth (`cdkt_admin` HTTP-only Cookie).
 - **Database**: MySQL 8.0 (Auto DDL init script `server/db/init.ts` và Auto Seed script `server/db/seed.ts`).
 - **Media Engine**: Dual-mode Storage (Local server `/public/uploads/YYYY/MM/` & Cloudflare R2 Cloud Storage với AWS S3 SDK & Sharp image optimization).

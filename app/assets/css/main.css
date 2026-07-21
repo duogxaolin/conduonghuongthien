@@ -1,3 +1,6 @@
+/* Tailwind CSS v4 */
+@import "tailwindcss";
+
 /* Global Root Font Size Scaling (A-, A, A+) */
 html {
   font-size: 16px;
