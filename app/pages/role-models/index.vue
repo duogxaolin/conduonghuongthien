@@ -12,7 +12,7 @@
     <!-- Main List -->
     <section class="section">
       <div class="container">
-        <SectionBar icon="🌟" title="Những tấm gương hoàn lương" />
+        <SectionBar icon="fa-solid fa-star" title="Những tấm gương hoàn lương" />
         <div class="role-list-grid">
           <div v-for="item in roleModels" :key="item.id" class="role-card-item">
             <div class="avatar-wrap">

@@ -12,7 +12,7 @@
     <!-- Content -->
     <section class="section">
       <div class="container faq-container">
-        <SectionBar icon="❓" title="Câu hỏi thường gặp" />
+        <SectionBar icon="fa-solid fa-circle-question" title="Câu hỏi thường gặp" />
         <div class="faq-accordion-wrap">
           <div v-for="(item, index) in faqs" :key="index" class="faq-card" :class="{ 'is-open': activeIndex === index }">
             <button class="faq-btn" @click="toggleFaq(index)">

@@ -12,7 +12,7 @@
     <!-- Main List -->
     <section class="section">
       <div class="container">
-        <SectionBar icon="🏆" title="Các mô hình tiêu biểu" />
+        <SectionBar icon="fa-solid fa-trophy" title="Các mô hình tiêu biểu" />
         <div class="models-list-grid">
           <div v-for="item in models" :key="item.id" class="model-detail-card">
             <span class="model-category">💡 Mô hình tiêu biểu</span>

@@ -13,7 +13,7 @@
     <section class="section">
       <div class="container docs-container">
         <div class="docs-main-list">
-          <SectionBar icon="📜" title="Văn bản pháp luật mới" />
+          <SectionBar icon="fa-solid fa-file-contract" title="Văn bản pháp luật mới" />
           <div class="search-bar-wrap">
             <input type="text" placeholder="Nhập từ khóa tìm kiếm văn bản (Ví dụ: 49/2020, vay vốn, xóa án tích...)" v-model="searchQuery" />
             <button class="btn btn-primary">Tìm kiếm</button>

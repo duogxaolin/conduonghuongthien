@@ -7,7 +7,7 @@
     <div class="top-bar">
       <div class="container top-bar-content">
         <div class="top-left">
-          <span>📞 Hotline: 0903.480.985</span>
+          <span><i class="fa-solid fa-phone"></i> Hotline: 0903.480.985</span>
         </div>
         <div class="top-right">
           <!-- Language Switcher -->
@@ -38,10 +38,10 @@
           <!-- Top Actions -->
           <div class="header-top-actions">
             <button class="search-btn-toggle" @click="toggleSearch" :class="{ 'is-active': isSearchActive }" :aria-label="isSearchActive ? 'Đóng ô tìm kiếm' : 'Mở ô tìm kiếm'" :aria-expanded="isSearchActive">
-              {{ isSearchActive ? '×' : '🔍' }}
+              <i :class="isSearchActive ? 'fa-solid fa-xmark' : 'fa-solid fa-magnifying-glass'"></i>
             </button>
-            <nuxt-link to="/lien-he" class="btn btn-primary btn-support-247">
-              <span class="pulse-icon"></span> {{ t('support_247') }}
+            <nuxt-link to="/contact" class="btn btn-primary btn-support-247">
+              <i class="fa-solid fa-headset"></i> {{ t('support_247') }}
             </nuxt-link>
             <!-- Mobile Toggle -->
             <button class="menu-toggle" :class="{ 'is-hidden': isMobileMenuOpen }" @click="toggleMobileMenu" aria-label="Mở menu">
@@ -113,7 +113,7 @@
                 <li class="has-dropdown" :class="{ 'is-mobile-expanded': showDropdown }" @mouseenter="showDropdown = true" @mouseleave="showDropdown = false">
                   <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('news')">
                     <nuxt-link to="/news" active-class="active-item" @click.stop>{{ t('news') }}</nuxt-link>
-                    <span class="arrow" :class="{ 'is-rotated': showDropdown }">▼</span>
+                    <i class="fa-solid fa-chevron-down arrow" :class="{ 'is-rotated': showDropdown }"></i>
                   </div>
                   <ul class="dropdown-menu" :class="{ 'is-show': showDropdown }">
                     <li><nuxt-link to="/news/featured-news">{{ t('news_featured') }}</nuxt-link></li>
@@ -130,7 +130,7 @@
                 <li class="has-dropdown" :class="{ 'is-mobile-expanded': showLibraryDropdown }" @mouseenter="showLibraryDropdown = true" @mouseleave="showLibraryDropdown = false">
                   <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('library')">
                     <span class="cursor-pointer">{{ t('library') }}</span>
-                    <span class="arrow" :class="{ 'is-rotated': showLibraryDropdown }">▼</span>
+                    <i class="fa-solid fa-chevron-down arrow" :class="{ 'is-rotated': showLibraryDropdown }"></i>
                   </div>
                   <ul class="dropdown-menu" :class="{ 'is-show': showLibraryDropdown }">
                     <li><a href="#video-library">{{ t('video_lib') }}</a></li>
@@ -144,7 +144,7 @@
                 <li class="has-dropdown" :class="{ 'is-mobile-expanded': showGovDropdown }" @mouseenter="showGovDropdown = true" @mouseleave="showGovDropdown = false">
                   <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('gov')">
                     <span class="cursor-pointer">{{ t('gov_citizen') }}</span>
-                    <span class="arrow" :class="{ 'is-rotated': showGovDropdown }">▼</span>
+                    <i class="fa-solid fa-chevron-down arrow" :class="{ 'is-rotated': showGovDropdown }"></i>
                   </div>
                   <ul class="dropdown-menu" :class="{ 'is-show': showGovDropdown }">
                     <li><a href="#tro-giup">{{ t('register_help') }}</a></li>

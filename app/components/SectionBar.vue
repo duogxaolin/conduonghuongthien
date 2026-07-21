@@ -1,7 +1,8 @@
 <template>
   <div class="section-bar" :class="{ 'section-bar-light': variant === 'light' }">
     <div class="section-bar-title">
-      <span v-if="icon" class="section-bar-icon" aria-hidden="true">{{ icon }}</span>
+      <i v-if="icon && icon.includes('fa-')" :class="[icon, 'section-bar-icon']" aria-hidden="true"></i>
+      <span v-else-if="icon" class="section-bar-icon" aria-hidden="true">{{ icon }}</span>
       <slot name="title">{{ title }}</slot>
     </div>
     <nuxt-link

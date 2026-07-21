@@ -12,7 +12,7 @@
     <!-- Main Content -->
     <section class="section">
       <div class="container">
-        <SectionBar icon="🏛" :title="t('about_editorial')" />
+        <SectionBar icon="fa-solid fa-building-columns" :title="t('about_editorial')" />
         <div class="about-container">
           <div class="about-main-content">
             <div class="about-block">

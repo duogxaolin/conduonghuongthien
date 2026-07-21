@@ -27,7 +27,7 @@
 
         <!-- News List -->
         <div class="news-main-list">
-          <SectionBar icon="📰" title="Bản tin hoạt động" />
+          <SectionBar icon="fa-solid fa-newspaper" title="Bản tin hoạt động" />
           <div v-if="searchQuery" class="search-notice">
             Kết quả tìm kiếm cho từ khóa: <strong>&laquo;{{ searchQuery }}&raquo;</strong>
             <button class="search-clear" @click="clearSearch">✕ Bỏ tìm kiếm</button>

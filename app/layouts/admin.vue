@@ -12,30 +12,30 @@ const menuGroups = [
   {
     title: 'Tổng quan',
     items: [
-      { label: 'Dashboard', icon: '📊', path: '/admin', resource: 'dashboard' },
+      { label: 'Dashboard', icon: 'fa-solid fa-chart-pie', path: '/admin', resource: 'dashboard' },
     ]
   },
   {
     title: 'Hệ thống & Nhân sự',
     items: [
-      { label: 'Người dùng', icon: '👥', path: '/admin/users', resource: 'users' },
-      { label: 'Vai trò & Phân quyền', icon: '🛡️', path: '/admin/users/roles', resource: 'roles' },
+      { label: 'Người dùng', icon: 'fa-solid fa-users', path: '/admin/users', resource: 'users' },
+      { label: 'Vai trò & Phân quyền', icon: 'fa-solid fa-user-shield', path: '/admin/users/roles', resource: 'roles' },
     ]
   },
   {
     title: 'Nội dung Website',
     items: [
-      { label: 'Trang chủ (Kéo-thả)', icon: '🧩', path: '/admin/content/home', resource: 'home_sections' },
-      { label: 'Bài viết & Bản tin', icon: '📰', path: '/admin/content/articles', resource: 'news' },
-      { label: 'Thư viện Media', icon: '🖼️', path: '/admin/media', resource: 'media' },
+      { label: 'Trang chủ (Kéo-thả)', icon: 'fa-solid fa-cubes', path: '/admin/content/home', resource: 'home_sections' },
+      { label: 'Bài viết & Bản tin', icon: 'fa-solid fa-newspaper', path: '/admin/content/articles', resource: 'news' },
+      { label: 'Thư viện Media', icon: 'fa-solid fa-images', path: '/admin/media', resource: 'media' },
     ]
   },
   {
     title: 'Yêu cầu & Cài đặt',
     items: [
-      { label: 'Đơn đăng ký hỗ trợ', icon: '📬', path: '/admin/submissions', resource: 'submissions' },
-      { label: 'Cài đặt chung', icon: '⚙️', path: '/admin/settings/general', resource: 'settings' },
-      { label: 'Lưu trữ Media (R2)', icon: '☁️', path: '/admin/settings/media-storage', resource: 'settings' },
+      { label: 'Đơn đăng ký hỗ trợ', icon: 'fa-solid fa-envelope-open-text', path: '/admin/submissions', resource: 'submissions' },
+      { label: 'Cài đặt chung', icon: 'fa-solid fa-gear', path: '/admin/settings/general', resource: 'settings' },
+      { label: 'Lưu trữ Media (R2)', icon: 'fa-solid fa-cloud-arrow-up', path: '/admin/settings/media-storage', resource: 'settings' },
     ]
   }
 ]
@@ -47,11 +47,11 @@ const menuGroups = [
     <aside class="admin-sidebar">
       <div class="sidebar-header">
         <div class="brand-logo">
-          <span class="logo-icon">🌿</span>
+          <i class="fa-solid fa-leaf logo-icon"></i>
           <span class="logo-text" v-if="!isSidebarCollapsed">ADMIN PANEL</span>
         </div>
         <button class="collapse-btn" @click="toggleSidebar" :title="isSidebarCollapsed ? 'Mở rộng' : 'Thu gọn'">
-          {{ isSidebarCollapsed ? '➔' : '❮' }}
+          <i :class="isSidebarCollapsed ? 'fa-solid fa-arrow-right' : 'fa-solid fa-arrow-left'"></i>
         </button>
       </div>
 
@@ -61,7 +61,7 @@ const menuGroups = [
           <ul>
             <li v-for="item in group.items" :key="item.path">
               <nuxt-link :to="item.path" class="nav-link" active-class="active">
-                <span class="nav-icon">{{ item.icon }}</span>
+                <i :class="item.icon" class="nav-icon"></i>
                 <span class="nav-label" v-if="!isSidebarCollapsed">{{ item.label }}</span>
               </nuxt-link>
             </li>
@@ -78,7 +78,7 @@ const menuGroups = [
           </div>
         </div>
         <button class="logout-btn" @click="logout" title="Đăng xuất">
-          <span>🚪</span>
+          <i class="fa-solid fa-right-from-bracket"></i>
           <span v-if="!isSidebarCollapsed">Thoát</span>
         </button>
       </div>
@@ -94,7 +94,7 @@ const menuGroups = [
         </div>
         <div class="topbar-right">
           <nuxt-link to="/" target="_blank" class="view-site-link">
-            🌐 Xem Website ↗
+            <i class="fa-solid fa-globe"></i> Xem Website ↗
           </nuxt-link>
         </div>
       </header>
