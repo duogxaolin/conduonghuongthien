@@ -44,9 +44,12 @@ const fetchArticle = async () => {
   }
 }
 
+const toast = useToast()
+
 const handleSave = async () => {
   if (!form.title.trim()) {
-    errorMsg.value = 'Vui lòng nhập tiêu đề bài viết.'
+    errorMsg.value = 'Tiêu đề bài viết không được để trống'
+    toast.warning('Tiêu đề bài viết không được để trống')
     return
   }
 
@@ -60,7 +63,7 @@ const handleSave = async () => {
         body: form
       })
       if (res.ok) {
-        alert('Tạo bài viết mới thành công!')
+        toast.success('Tạo bài viết mới thành công!')
         navigateTo('/admin/content/articles')
       }
     } else {
@@ -69,11 +72,12 @@ const handleSave = async () => {
         body: form
       })
       if (res.ok) {
-        alert('Đã cập nhật bài viết!')
+        toast.success('Đã cập nhật bài viết thành công!')
       }
     }
   } catch (err: any) {
     errorMsg.value = err?.data?.statusMessage || 'Lỗi lưu bài viết'
+    toast.error(errorMsg.value)
   } finally {
     saving.value = false
   }

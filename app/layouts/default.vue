@@ -1,5 +1,6 @@
 <template>
   <div class="app-layout" :class="fontSizeClass">
+    <ToastContainer />
     <!-- Mobile Menu Overlay -->
     <div class="mobile-menu-overlay" :class="{ 'is-show': isMobileMenuOpen }" @click="toggleMobileMenu"></div>
     

@@ -19,6 +19,8 @@ const typeLabels: Record<string, string> = {
   faq: 'Giải đáp',
 }
 
+const toast = useToast()
+
 const fetchArticles = async (page = 1) => {
   loading.value = true
   try {
@@ -36,7 +38,7 @@ const fetchArticles = async (page = 1) => {
       pagination.value = res.pagination
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi tải danh sách bài viết')
+    toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách bài viết')
   } finally {
     loading.value = false
   }
@@ -46,9 +48,10 @@ const deleteArticle = async (art: any) => {
   if (!confirm(`Bạn có chắc muốn xóa bài viết "${art.title}"?`)) return
   try {
     await $fetch(`/api/admin/articles/${art.id}`, { method: 'DELETE' })
+    toast.success('Đã xóa bài viết thành công!')
     await fetchArticles(pagination.value.page)
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi xóa bài viết')
+    toast.error(err?.data?.statusMessage || 'Lỗi xóa bài viết')
   }
 }
 

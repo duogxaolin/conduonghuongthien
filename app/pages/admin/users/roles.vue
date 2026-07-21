@@ -25,6 +25,8 @@ const resourcesList = [
 
 const permissionMatrix = reactive<Record<string, { canCreate: boolean; canRead: boolean; canUpdate: boolean; canDelete: boolean }>>({})
 
+const toast = useToast()
+
 const fetchRoles = async () => {
   loading.value = true
   try {
@@ -36,7 +38,7 @@ const fetchRoles = async () => {
       }
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi tải danh sách vai trò')
+    toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách vai trò')
   } finally {
     loading.value = false
   }
@@ -71,11 +73,11 @@ const handleSavePermissions = async () => {
       body: { permissions: permsPayload }
     })
     if (res.ok) {
-      alert('Đã cập nhật phân quyền thành công!')
+      toast.success('Đã cập nhật phân quyền thành công!')
       await fetchRoles()
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi lưu phân quyền')
+    toast.error(err?.data?.statusMessage || 'Lỗi lưu phân quyền')
   } finally {
     saving.value = false
   }

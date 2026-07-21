@@ -10,6 +10,8 @@ const search = ref('')
 const typeFilter = ref('')
 const selectedSub = ref<any>(null)
 
+const toast = useToast()
+
 const fetchSubmissions = async () => {
   loading.value = true
   try {
@@ -18,7 +20,7 @@ const fetchSubmissions = async () => {
       submissions.value = res.submissions
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi tải danh sách đơn đăng ký')
+    toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách đơn đăng ký')
   } finally {
     loading.value = false
   }

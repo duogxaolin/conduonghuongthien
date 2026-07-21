@@ -11,6 +11,8 @@ const search = ref('')
 const filterType = ref('')
 const pagination = ref({ page: 1, totalPages: 1, total: 0 })
 
+const toast = useToast()
+
 const fetchMedia = async (page = 1) => {
   loading.value = true
   try {
@@ -22,7 +24,7 @@ const fetchMedia = async (page = 1) => {
       pagination.value = res.pagination
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi tải thư viện media')
+    toast.error(err?.data?.statusMessage || 'Lỗi tải thư viện media')
   } finally {
     loading.value = false
   }
@@ -32,9 +34,10 @@ const deleteMedia = async (item: any) => {
   if (!confirm(`Bạn có chắc muốn xóa file ${item.originalName}?`)) return
   try {
     await $fetch(`/api/admin/media/${item.id}`, { method: 'DELETE' })
+    toast.success('Đã xóa tệp media thành công!')
     await fetchMedia(pagination.value.page)
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi xóa file')
+    toast.error(err?.data?.statusMessage || 'Lỗi xóa file')
   }
 }
 

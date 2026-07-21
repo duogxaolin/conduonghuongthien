@@ -43,6 +43,7 @@ const menuGroups = [
 
 <template>
   <div class="admin-wrapper" :class="{ 'sidebar-collapsed': isSidebarCollapsed }">
+    <ToastContainer />
     <!-- Sidebar -->
     <aside class="admin-sidebar">
       <div class="sidebar-header">

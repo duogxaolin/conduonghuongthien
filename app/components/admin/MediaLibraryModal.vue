@@ -12,6 +12,8 @@ const uploading = ref(false)
 const searchQuery = ref('')
 const selectedMedia = ref<any>(null)
 
+const toast = useToast()
+
 const fetchMedia = async () => {
   loading.value = true
   try {
@@ -22,7 +24,7 @@ const fetchMedia = async () => {
       mediaItems.value = res.items
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi tải thư viện media')
+    toast.error(err?.data?.statusMessage || 'Lỗi tải thư viện media')
   } finally {
     loading.value = false
   }
@@ -43,12 +45,13 @@ const handleFileUpload = async (event: Event) => {
       body: formData,
     })
     if (res.ok && res.media) {
+      toast.success('Tải ảnh lên thư viện thành công!')
       activeTab.value = 'browse'
       await fetchMedia()
       selectedMedia.value = res.media
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Tải ảnh lên thất bại')
+    toast.error(err?.data?.statusMessage || 'Tải ảnh lên thất bại')
   } finally {
     uploading.value = false
   }

@@ -21,6 +21,8 @@ const sectionLabels: Record<string, { name: string; icon: string }> = {
   links:         { name: 'Liên Kết Hữu Ích', icon: '🔗' },
 }
 
+const toast = useToast()
+
 const fetchSections = async () => {
   loading.value = true
   try {
@@ -29,7 +31,7 @@ const fetchSections = async () => {
       sections.value = res.sections
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi tải danh sách sections')
+    toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách sections')
   } finally {
     loading.value = false
   }
@@ -40,9 +42,10 @@ const toggleVisibility = async (sec: any) => {
     const res = await $fetch(`/api/admin/home-sections/${sec.id}/toggle`, { method: 'PATCH' })
     if (res.ok) {
       sec.isVisible = res.isVisible
+      toast.success(`Đã ${res.isVisible ? 'hiển thị' : 'ẩn'} section "${sec.title}"!`)
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi đổi trạng thái hiển thị')
+    toast.error(err?.data?.statusMessage || 'Lỗi đổi trạng thái hiển thị')
   }
 }
 
@@ -62,10 +65,10 @@ const saveSectionConfig = async () => {
     if (res.ok) {
       selectedSection.value.config = JSON.parse(JSON.stringify(editConfig.value))
       selectedSection.value = null
-      alert('Đã cập nhật cấu hình Section!')
+      toast.success('Đã cập nhật cấu hình Section thành công!')
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi lưu cấu hình')
+    toast.error(err?.data?.statusMessage || 'Lỗi lưu cấu hình')
   } finally {
     saving.value = false
   }
@@ -91,8 +94,9 @@ const moveSection = async (index: number, direction: 'up' | 'down') => {
       method: 'PUT',
       body: { orders: ordersPayload }
     })
+    toast.success('Đã cập nhật thứ tự hiển thị!')
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi lưu thứ tự mới')
+    toast.error(err?.data?.statusMessage || 'Lỗi lưu thứ tự mới')
   }
 }
 

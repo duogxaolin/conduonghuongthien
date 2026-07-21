@@ -17,6 +17,7 @@ const settings = reactive({
 
 const loading = ref(true)
 const saving = ref(false)
+const toast = useToast()
 const message = ref('')
 
 const fetchSettings = async () => {
@@ -27,7 +28,7 @@ const fetchSettings = async () => {
       Object.assign(settings, res.settings)
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi tải cài đặt')
+    toast.error(err?.data?.statusMessage || 'Lỗi tải cài đặt')
   } finally {
     loading.value = false
   }
@@ -42,10 +43,10 @@ const handleSave = async () => {
       body: { settings }
     })
     if (res.ok) {
-      message.value = '✅ Đã lưu cài đặt thành công!'
+      toast.success('Đã lưu cài đặt website thành công!')
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi lưu cài đặt')
+    toast.error(err?.data?.statusMessage || 'Lỗi lưu cài đặt')
   } finally {
     saving.value = false
   }

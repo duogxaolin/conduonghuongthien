@@ -20,6 +20,8 @@ const testMessage = ref('')
 const testError = ref('')
 const saveMessage = ref('')
 
+const toast = useToast()
+
 const fetchSettings = async () => {
   loading.value = true
   try {
@@ -28,7 +30,7 @@ const fetchSettings = async () => {
       Object.assign(settings, res.settings)
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi tải cài đặt lưu trữ')
+    toast.error(err?.data?.statusMessage || 'Lỗi tải cài đặt lưu trữ')
   } finally {
     loading.value = false
   }
@@ -43,10 +45,10 @@ const handleSave = async () => {
       body: { settings }
     })
     if (res.ok) {
-      saveMessage.value = '✅ Đã lưu cấu hình lưu trữ Media thành công!'
+      toast.success('Đã lưu cấu hình lưu trữ Media thành công!')
     }
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Lỗi lưu cấu hình')
+    toast.error(err?.data?.statusMessage || 'Lỗi lưu cấu hình')
   } finally {
     saving.value = false
   }
@@ -67,10 +69,13 @@ const handleTestR2 = async () => {
       }
     })
     if (res.ok) {
+      toast.success(res.message || 'Kết nối Cloudflare R2 thành công!')
       testMessage.value = '🎉 ' + res.message
     }
   } catch (err: any) {
-    testError.value = err?.data?.statusMessage || 'Kết nối R2 thất bại'
+    const msg = err?.data?.statusMessage || 'Kết nối R2 thất bại'
+    toast.error(msg)
+    testError.value = '❌ ' + msg
   } finally {
     testingR2.value = false
   }

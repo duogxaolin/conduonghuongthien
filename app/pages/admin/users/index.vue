@@ -52,6 +52,8 @@ const handleCreateUser = async () => {
   }
 }
 
+const toast = useToast()
+
 const toggleActive = async (user: any) => {
   try {
     await $fetch(`/api/admin/users/${user.id}`, {
@@ -59,8 +61,9 @@ const toggleActive = async (user: any) => {
       body: { isActive: !user.isActive }
     })
     user.isActive = !user.isActive
+    toast.success(`Đã ${user.isActive ? 'kích hoạt' : 'khóa'} tài khoản ${user.username}!`)
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Không thể đổi trạng thái')
+    toast.error(err?.data?.statusMessage || 'Không thể đổi trạng thái')
   }
 }
 
@@ -68,9 +71,10 @@ const deleteUser = async (user: any) => {
   if (!confirm(`Bạn có chắc muốn xóa tài khoản ${user.username}?`)) return
   try {
     await $fetch(`/api/admin/users/${user.id}`, { method: 'DELETE' })
+    toast.success('Đã xóa người dùng thành công!')
     await fetchUsers()
   } catch (err: any) {
-    alert(err?.data?.statusMessage || 'Không thể xóa người dùng')
+    toast.error(err?.data?.statusMessage || 'Không thể xóa người dùng')
   }
 }
 
