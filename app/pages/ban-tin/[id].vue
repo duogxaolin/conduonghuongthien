@@ -128,8 +128,33 @@ const articlesData = {
   }
 }
 
+const dynamicArticle = ref(null)
+
+const fetchDynamicArticle = async () => {
+  try {
+    const res = await $fetch(`/api/public/articles/${slug}`)
+    if (res.ok && res.article) {
+      dynamicArticle.value = {
+        category: res.article.type === 'news' ? 'Bản tin' : (res.article.type === 'role_model' ? 'Tấm gương' : 'Thông tin'),
+        date: new Date(res.article.publishedAt || res.article.createdAt).toLocaleDateString('vi-VN'),
+        title: res.article.title,
+        image: res.article.thumbnailUrl || null,
+        caption: res.article.title,
+        lead: res.article.excerpt || '',
+        content: res.article.content || '',
+      }
+    }
+  } catch {
+    // Ignore error, fallback to mockup
+  }
+}
+
+onMounted(() => {
+  fetchDynamicArticle()
+})
+
 const article = computed(() => {
-  return articlesData[slug] || null
+  return dynamicArticle.value || articlesData[slug] || null
 })
 </script>
 
