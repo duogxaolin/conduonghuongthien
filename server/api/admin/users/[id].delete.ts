@@ -1,5 +1,5 @@
 import { getDb } from '../../../utils/db'
-import { users, activityLogs } from '../../../db/schema'
+import { users, roles, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { eq } from 'drizzle-orm'
 
@@ -17,6 +17,18 @@ export default defineEventHandler(async (event) => {
   }
 
   const db = getDb()
+
+  const [existingUser] = await db
+    .select({ id: users.id, isSystem: roles.isSystem })
+    .from(users)
+    .leftJoin(roles, eq(users.roleId, roles.id))
+    .where(eq(users.id, id))
+    .limit(1)
+
+  if (existingUser?.isSystem) {
+    throw createError({ statusCode: 403, statusMessage: 'Không thể xóa tài khoản hệ thống SuperAdmin.' })
+  }
+
   await db.delete(users).where(eq(users.id, id))
 
   await db.insert(activityLogs).values({

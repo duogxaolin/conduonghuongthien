@@ -19,8 +19,13 @@ export async function uploadLocalFile(fileBuffer: Buffer, filename: string): Pro
 }
 
 export async function deleteLocalFile(storagePath: string): Promise<boolean> {
+  const uploadsRoot = path.resolve(process.cwd(), 'public/uploads/')
+  const resolvedPath = path.resolve(storagePath)
+  if (!resolvedPath.startsWith(uploadsRoot + path.sep) && resolvedPath !== uploadsRoot) {
+    throw new Error(`Path traversal attempt blocked: ${storagePath}`)
+  }
   try {
-    await fs.unlink(storagePath)
+    await fs.unlink(resolvedPath)
     return true
   } catch {
     return false

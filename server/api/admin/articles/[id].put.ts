@@ -35,7 +35,18 @@ export default defineEventHandler(async (event) => {
   if (body.excerpt !== undefined) updateFields.excerpt = String(body.excerpt).trim() || null
   if (body.content !== undefined) updateFields.content = String(body.content)
   if (body.thumbnailUrl !== undefined) updateFields.thumbnailUrl = String(body.thumbnailUrl).trim() || null
-  if (body.type !== undefined) updateFields.type = String(body.type).trim()
+
+  // If the type is changing, re-check permission against the new type
+  if (body.type !== undefined) {
+    const newType = String(body.type).trim()
+    if (newType !== existingArticle.type) {
+      const newPermResource = resourceMap[newType] || 'news'
+      if (!checkPermission(adminUser.permissions, newPermResource, 'update', adminUser.isSuperAdmin)) {
+        throw createError({ statusCode: 403, statusMessage: 'Forbidden: Không có quyền với thể loại mới này' })
+      }
+    }
+    updateFields.type = newType
+  }
 
   if (body.status !== undefined) {
     const newStatus = String(body.status).trim()

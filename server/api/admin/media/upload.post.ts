@@ -22,17 +22,45 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'File không hợp lệ.' })
   }
 
+  // Hard 20 MB size cap (before any processing)
+  const MAX_SIZE = 20 * 1024 * 1024
+  if (fileItem.data.length > MAX_SIZE) {
+    throw createError({ statusCode: 413, statusMessage: 'File vượt quá giới hạn 20 MB.' })
+  }
+
+  // Magic-byte MIME detection helper
+  const detectMime = (buf: Buffer): string | null => {
+    if (buf.length < 4) return null
+    // JPEG: FF D8 FF
+    if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg'
+    // PNG: 89 50 4E 47
+    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png'
+    // GIF: 47 49 46
+    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif'
+    // WebP: 52 49 46 46 ... 57 45 42 50 (RIFF....WEBP)
+    if (buf.length >= 12 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
+        && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp'
+    return null
+  }
+
   const originalName = fileItem.filename || 'uploaded_file'
   const mimeType = fileItem.type || 'application/octet-stream'
   let buffer = fileItem.data
 
-  // Validate mime type
+  // Validate mime type by magic bytes for image uploads
   const isImage = mimeType.startsWith('image/')
   const isVideo = mimeType.startsWith('video/')
   const isPdf = mimeType === 'application/pdf'
 
   if (!isImage && !isVideo && !isPdf) {
     throw createError({ statusCode: 400, statusMessage: 'Chỉ chấp nhận file Ảnh, Video hoặc PDF.' })
+  }
+
+  if (isImage) {
+    const detectedMime = detectMime(buffer)
+    if (!detectedMime) {
+      throw createError({ statusCode: 415, statusMessage: 'File không phải là ảnh hợp lệ (JPEG/PNG/GIF/WebP).' })
+    }
   }
 
   let width: number | null = null

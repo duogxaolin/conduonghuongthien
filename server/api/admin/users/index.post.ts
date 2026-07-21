@@ -23,6 +23,12 @@ export default defineEventHandler(async (event) => {
   if (!roleId) {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng chọn Vai trò (Role).' })
   }
+  if (email) {
+    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+    if (!EMAIL_RE.test(email)) {
+      throw createError({ statusCode: 400, statusMessage: 'Email không hợp lệ' })
+    }
+  }
 
   const db = getDb()
   const passwordHash = await hashPassword(password)

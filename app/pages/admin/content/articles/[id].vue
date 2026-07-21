@@ -11,6 +11,8 @@ const articleId = computed(() => isNew.value ? null : Number(route.params.id))
 const showMediaModal = ref(false)
 const mediaPickerTarget = ref<'thumbnail' | 'content'>('thumbnail')
 
+const TINYMCE_EDITOR_ID = 'tinymce-content-editor'
+
 const form = reactive({
   title: '',
   type: 'news',
@@ -23,6 +25,7 @@ const form = reactive({
 const loading = ref(false)
 const saving = ref(false)
 const errorMsg = ref('')
+const tinymceReady = ref(false)
 
 const fetchArticle = async () => {
   if (isNew.value || !articleId.value) return
@@ -36,6 +39,11 @@ const fetchArticle = async () => {
       form.content = res.article.content || ''
       form.thumbnailUrl = res.article.thumbnailUrl || ''
       form.status = res.article.status || 'published'
+      // If TinyMCE is already initialized, set content
+      if (tinymceReady.value && (window as any).tinymce) {
+        const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+        if (ed) ed.setContent(form.content)
+      }
     }
   } catch (err: any) {
     errorMsg.value = err?.data?.statusMessage || 'Lỗi tải bài viết'
@@ -46,12 +54,23 @@ const fetchArticle = async () => {
 
 const toast = useToast()
 
+const getEditorContent = (): string => {
+  if ((window as any).tinymce) {
+    const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+    if (ed) return ed.getContent()
+  }
+  return form.content
+}
+
 const handleSave = async () => {
   if (!form.title.trim()) {
     errorMsg.value = 'Tiêu đề bài viết không được để trống'
     toast.warning('Tiêu đề bài viết không được để trống')
     return
   }
+
+  // Get latest content from TinyMCE before saving
+  form.content = getEditorContent()
 
   errorMsg.value = ''
   saving.value = true
@@ -92,14 +111,153 @@ const handleMediaSelected = (media: any) => {
   if (mediaPickerTarget.value === 'thumbnail') {
     form.thumbnailUrl = media.url
   } else if (mediaPickerTarget.value === 'content') {
-    // Append image tag into content textarea
-    const imgHtml = `<p><img src="${media.url}" alt="${media.originalName}" /></p>\n`
-    form.content += imgHtml
+    // Insert image into TinyMCE or append to form.content
+    const imgHtml = `<p><img src="${media.url}" alt="${media.originalName}" /></p>`
+    if ((window as any).tinymce) {
+      const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+      if (ed) {
+        ed.insertContent(imgHtml)
+        return
+      }
+    }
+    form.content += '\n' + imgHtml
   }
 }
 
-onMounted(() => {
-  fetchArticle()
+const initTinyMCE = () => {
+  if (typeof window === 'undefined') return
+  const win = window as any
+  if (!win.tinymce) return
+
+  // Destroy existing instance if any (SPA navigation)
+  if (win.tinymce.get(TINYMCE_EDITOR_ID)) {
+    win.tinymce.get(TINYMCE_EDITOR_ID).remove()
+  }
+
+  win.tinymce.init({
+    selector: `#${TINYMCE_EDITOR_ID}`,
+    height: 480,
+    menubar: true,
+    promotion: false,
+    branding: false,
+    skin: 'oxide',
+    content_css: 'default',
+    relative_urls: false,
+    remove_script_host: false,
+    convert_urls: true,
+    plugins: [
+      'advlist', 'autolink', 'lists', 'link', 'image', 'charmap', 'preview',
+      'anchor', 'searchreplace', 'visualblocks', 'code', 'fullscreen',
+      'insertdatetime', 'media', 'table', 'help', 'wordcount', 'codesample',
+      'emoticons', 'quickbars'
+    ],
+    toolbar: 'undo redo | blocks | ' +
+      'bold italic underline strikethrough | forecolor backcolor | ' +
+      'alignleft aligncenter alignright alignjustify | ' +
+      'bullist numlist outdent indent | ' +
+      'link image media codesample | emoticons | ' +
+      'table | removeformat | fullscreen code help',
+    toolbar_mode: 'sliding',
+    quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
+    quickbars_insert_toolbar: 'quickimage quicktable',
+    contextmenu: 'link image table',
+    codesample_languages: [
+      { text: 'HTML/XML', value: 'markup' },
+      { text: 'JavaScript', value: 'javascript' },
+      { text: 'CSS', value: 'css' },
+      { text: 'PHP', value: 'php' },
+      { text: 'Python', value: 'python' },
+      { text: 'SQL', value: 'sql' },
+      { text: 'Bash', value: 'bash' },
+      { text: 'JSON', value: 'json' },
+    ],
+    image_advtab: true,
+    image_caption: true,
+    automatic_uploads: true,
+    paste_data_images: true,
+    paste_merge_formats: true,
+    file_picker_types: 'image',
+    images_upload_handler: (blobInfo: any, progress: any) => new Promise<string>((resolve, reject) => {
+      const formData = new FormData()
+      formData.append('file', blobInfo.blob(), blobInfo.filename())
+      $fetch('/api/admin/media/upload', { method: 'POST', body: formData })
+        .then((res: any) => {
+          if (res.ok && res.media?.url) resolve(res.media.url)
+          else reject('Upload thất bại')
+        })
+        .catch((err: any) => reject(err?.data?.statusMessage || 'Upload thất bại'))
+    }),
+    setup: (editor: any) => {
+      editor.on('init', () => {
+        tinymceReady.value = true
+        if (form.content) {
+          editor.setContent(form.content)
+        }
+      })
+      editor.on('change', () => {
+        form.content = editor.getContent()
+      })
+    },
+    content_style: `
+      body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+        font-size: 14px;
+        line-height: 1.6;
+        padding: 12px;
+        color: #1a1a1a;
+      }
+      img { max-width: 100%; height: auto; border-radius: 8px; }
+      pre[class*="language-"] {
+        background: #2d2d2d; border-radius: 6px;
+        padding: 1em; overflow-x: auto;
+      }
+      code {
+        background: #f4f4f4; padding: 2px 6px;
+        border-radius: 4px; font-family: 'Fira Code', monospace;
+      }
+      blockquote {
+        border-left: 4px solid #2c6e33; margin: 1em 0;
+        padding-left: 1em; color: #555;
+      }
+      table { border-collapse: collapse; width: 100%; }
+      table td, table th { border: 1px solid #ddd; padding: 8px; }
+    `
+  })
+}
+
+const loadTinyMCEScript = () => {
+  return new Promise<void>((resolve) => {
+    if ((window as any).tinymce) {
+      resolve()
+      return
+    }
+    // Load từ CDN cdnjs (giống forum) — đầy đủ plugins không cần self-host
+    const script = document.createElement('script')
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.6/tinymce.min.js'
+    script.referrerPolicy = 'no-referrer'
+    script.onload = () => resolve()
+    script.onerror = () => {
+      // Fallback về local nếu CDN không khả dụng
+      const fallback = document.createElement('script')
+      fallback.src = '/assets/tinymce/tinymce.min.js'
+      fallback.onload = () => resolve()
+      document.head.appendChild(fallback)
+    }
+    document.head.appendChild(script)
+  })
+}
+
+onMounted(async () => {
+  await loadTinyMCEScript()
+  initTinyMCE()
+  await fetchArticle()
+})
+
+onUnmounted(() => {
+  if ((window as any).tinymce) {
+    const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+    if (ed) ed.destroy()
+  }
 })
 </script>
 
@@ -148,15 +306,10 @@ onMounted(() => {
             <div class="label-row">
               <label>Nội dung chi tiết (HTML / Editor)</label>
               <button class="media-btn" @click="openMediaPicker('content')">
-                🖼️ Chèn Ảnh Từ Thư Viện
+                Chèn Ảnh Từ Thư Viện
               </button>
             </div>
-            <textarea
-              v-model="form.content"
-              rows="16"
-              class="content-editor"
-              placeholder="Nhập nội dung bài viết ở đây. Bạn có thể sử dụng các thẻ HTML như <p>, <h2>, <ul>, <strong> hoặc chèn ảnh từ Thư viện..."
-            ></textarea>
+            <div :id="TINYMCE_EDITOR_ID" class="tinymce-target"></div>
           </div>
         </div>
       </div>
@@ -336,6 +489,10 @@ onMounted(() => {
 
 .content-editor {
   line-height: 1.6;
+}
+
+.tinymce-target {
+  min-height: 480px;
 }
 
 .thumb-picker-wrap {

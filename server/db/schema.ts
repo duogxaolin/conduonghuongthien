@@ -1,6 +1,6 @@
 import {
-  mysqlTable, int, varchar, text, longtext, boolean,
-  timestamp, json, uniqueIndex, index
+  mysqlTable, int, bigint, varchar, text, longtext, boolean,
+  timestamp, datetime, json, uniqueIndex, index
 } from 'drizzle-orm/mysql-core'
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
@@ -124,6 +124,17 @@ export const activityLogs = mysqlTable('activity_logs', {
   userIdx: index('user_idx').on(t.userId),
 }))
 
+// ─── Submissions ─────────────────────────────────────────────────────────────
+export const submissions = mysqlTable('submissions', {
+  id:        bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
+  fullName:  varchar('full_name', { length: 255 }).notNull(),
+  phone:     varchar('phone', { length: 30 }).notNull(),
+  email:     varchar('email', { length: 255 }),
+  address:   text('address'),
+  message:   text('message'),
+  createdAt: timestamp('created_at').defaultNow(),
+})
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 export type Role        = typeof roles.$inferSelect
 export type Permission  = typeof permissions.$inferSelect
@@ -134,3 +145,4 @@ export type HomeSection = typeof homeSections.$inferSelect
 export type PageContent = typeof pageContents.$inferSelect
 export type Setting     = typeof settings.$inferSelect
 export type ActivityLog = typeof activityLogs.$inferSelect
+export type Submission  = typeof submissions.$inferSelect

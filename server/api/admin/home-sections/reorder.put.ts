@@ -18,13 +18,15 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
 
-  for (const item of orders) {
-    if (item.id && typeof item.displayOrder === 'number') {
-      await db.update(homeSections)
-        .set({ displayOrder: item.displayOrder, updatedAt: new Date(), updatedBy: adminUser.id })
-        .where(eq(homeSections.id, Number(item.id)))
+  await db.transaction(async (tx) => {
+    for (const item of orders) {
+      if (item.id && typeof item.displayOrder === 'number') {
+        await tx.update(homeSections)
+          .set({ displayOrder: item.displayOrder, updatedAt: new Date(), updatedBy: adminUser.id })
+          .where(eq(homeSections.id, Number(item.id)))
+      }
     }
-  }
+  })
 
   await db.insert(activityLogs).values({
     userId: adminUser.id,

@@ -1,5 +1,5 @@
 import { getDb } from '../../../utils/db'
-import { users, activityLogs } from '../../../db/schema'
+import { users, roles, activityLogs } from '../../../db/schema'
 import { checkPermission, hashPassword } from '../../../utils/auth'
 import { eq } from 'drizzle-orm'
 
@@ -15,9 +15,18 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event).catch(() => ({}))
   const db = getDb()
 
-  const [existingUser] = await db.select().from(users).where(eq(users.id, id)).limit(1)
+  const [existingUser] = await db
+    .select({ id: users.id, isSystem: roles.isSystem })
+    .from(users)
+    .leftJoin(roles, eq(users.roleId, roles.id))
+    .where(eq(users.id, id))
+    .limit(1)
   if (!existingUser) {
     throw createError({ statusCode: 404, statusMessage: 'Người dùng không tồn tại' })
+  }
+
+  if (existingUser.isSystem) {
+    throw createError({ statusCode: 403, statusMessage: 'Không thể sửa tài khoản hệ thống SuperAdmin.' })
   }
 
   const updateData: Partial<typeof users.$inferInsert> = {}

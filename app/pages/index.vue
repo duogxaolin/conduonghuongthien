@@ -488,7 +488,7 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted } from 'vue'
 
 const { t } = useI18n()
 
@@ -500,68 +500,105 @@ useSeoMeta({
   ogType: 'website'
 })
 
-const trendingNews = [
-  { id: 1, category: 'Tin nổi bật', title: 'CẦN THƠ: Hỗ trợ vay vốn 100 triệu đồng theo Quyết định 22 cho người hoàn lương', link: '/ban-tin/can-tho-diem-tua-tin-dung', date: '16/07/2026' },
-  { id: 2, category: 'Tin hoạt động', title: 'QUẢNG NINH: Sàn giao dịch việc làm Vân Đồn tiếp nhận hàng trăm lao động hoàn lương', link: '/ban-tin/quang-ninh-van-don-ho-tro-viec-lam', date: '17/07/2026' },
-  { id: 3, category: 'Tin nổi bật', title: 'ĐÀ NẴNG: Cuộc đối thoại nhân văn giữa Giám thị trại giam và các phạm nhân cải tạo', link: '/ban-tin/da-nang-doi-thoai-giam-thi-pham-nhan', date: '17/07/2026' },
-  { id: 4, category: 'Tin địa phương', title: 'QUẢNG NINH: Công an phường Móng Cái 3 tăng cường cảm hóa, giáo dục tại cộng đồng', link: '/ban-tin/mong-cai-tang-cuong-cam-hoa-giao-duc', date: '17/07/2026' }
-]
+// Helper to format a date string for display
+const formatDate = (dateStr) => {
+  if (!dateStr) return ''
+  return new Date(dateStr).toLocaleDateString('vi-VN')
+}
 
-const localPoliceNews = [
-  { id: 1, date: '17/07/2026', title: 'BẮC NINH: Công an huyện Tiên Du giúp đỡ 12 người hoàn lương làm thủ tục cấp Căn cước công dân và đăng ký tạm trú', link: '/ban-tin' },
-  { id: 2, date: '16/07/2026', title: 'HÀ NỘI: Công an quận Cầu Giấy phối hợp với các doanh nghiệp trên địa bàn tổ chức ngày hội định nghiệp quý II', link: '/ban-tin' },
-  { id: 3, date: '15/07/2026', title: 'TP. HỒ CHÍ MINH: Công an thành phố Thủ Đức trao tặng 20 xe máy hỗ trợ sinh kế cho cá nhân chấp hành xong án phạt tù', link: '/ban-tin' },
-  { id: 4, date: '14/07/2026', title: 'THANH HÓA: Phổ biến chính sách vay vốn Ngân hàng Chính sách Xã hội theo Quyết định 22 cho hơn 120 hộ gia đình', link: '/ban-tin' },
-  { id: 5, date: '12/07/2026', title: 'ĐỒNG NAI: Khen thưởng các gương doanh nghiệp điển hình tiếp nhận và cảm hóa người lao động hoàn lương', link: '/ban-tin' }
-]
+// ====== DYNAMIC DATA FROM APIs ======
 
-const legalWarningNews = [
-  { id: 1, date: '16/07/2026', title: 'CẢNH BÁO: Cảnh giác với các thủ đoạn lừa đảo qua mạng xã hội hứa hẹn xóa án tích nhanh lấy phí cao', link: '/ban-tin', excerpt: 'Công an C11 khuyến cáo người dân không tin vào các dịch vụ mập mờ trên mạng xã hội cam kết làm dịch vụ lý lịch tư pháp sạch lấy phí khẩn cấp...' },
-  { id: 2, date: '15/07/2026', title: 'TUYÊN TRUYỀN: Quy định mới về mức hỗ trợ tiền ăn và tiền đi lại cho người hoàn lương học nghề từ ngày 01/08/2026', link: '/ban-tin', excerpt: 'Theo đề án sửa đổi mới nhất, mức chi phí hỗ trợ sinh hoạt hàng ngày cho người hoàn lương học nghề tại trung tâm tăng 25%...' },
-  { id: 3, date: '14/07/2026', title: 'HƯỚNG DẪN: Các bước chuẩn bị hồ sơ xin cấp Phiếu lý lịch tư pháp số 2 trực tuyến trên cổng Dịch vụ công Quốc gia', link: '/ban-tin', excerpt: 'Hướng dẫn chi tiết quy trình nộp hồ sơ xin cấp phiếu số 2 qua Cổng dịch vụ công của Sở Tư pháp, giúp tiết kiệm thời gian và đi lại...' }
-]
+const { data: trendingNewsData } = await useAsyncData(
+  'trending-news',
+  () => $fetch('/api/public/articles', { params: { type: 'news', limit: 4 } }),
+  { default: () => ({ articles: [] }) }
+)
+const trendingNews = computed(() =>
+  (trendingNewsData.value?.articles || []).map(a => ({
+    id: a.id,
+    category: 'Tin nổi bật',
+    title: a.title,
+    link: `/news/${a.slug}`,
+    date: formatDate(a.publishedAt || a.createdAt),
+  }))
+)
 
-const latestDocs = [
-  { id: 1, number: 'Quyết định số 22/2023/QĐ-TTg', date: '17/08/2023', title: 'Quyết định của Thủ tướng Chính phủ về chính sách tín dụng đối với người chấp hành xong án phạt tù.' },
-  { id: 2, number: 'Nghị định số 49/2020/NĐ-CP', date: '27/04/2020', title: 'Quy định chi tiết Luật Thi hành án hình sự về các biện pháp bảo đảm tái hòa nhập cộng đồng.' },
-  { id: 3, number: 'Chỉ thị số 05/CT-BCA', date: '15/06/2024', title: 'Chỉ thị của Bộ trưởng Bộ Công an về việc nâng cao hiệu quả công tác cảm hóa, giáo dục thi hành án hình sự tại cộng đồng.' }
-]
+const { data: localPoliceNewsData } = await useAsyncData(
+  'local-police-news',
+  () => $fetch('/api/public/articles', { params: { type: 'local_news', limit: 5 } }),
+  { default: () => ({ articles: [] }) }
+)
+const localPoliceNews = computed(() =>
+  (localPoliceNewsData.value?.articles || []).map(a => ({
+    id: a.id,
+    date: formatDate(a.publishedAt || a.createdAt),
+    title: a.title,
+    link: `/news/${a.slug}`,
+  }))
+)
+
+const { data: legalWarningNewsData } = await useAsyncData(
+  'legal-warning-news',
+  () => $fetch('/api/public/articles', { params: { type: 'featured_news', limit: 3 } }),
+  { default: () => ({ articles: [] }) }
+)
+const legalWarningNews = computed(() =>
+  (legalWarningNewsData.value?.articles || []).map(a => ({
+    id: a.id,
+    date: formatDate(a.publishedAt || a.createdAt),
+    title: a.title,
+    link: `/news/${a.slug}`,
+    excerpt: a.excerpt || '',
+  }))
+)
+
+const { data: latestDocsData } = await useAsyncData(
+  'latest-docs',
+  () => $fetch('/api/public/articles', { params: { type: 'document', limit: 3 } }),
+  { default: () => ({ articles: [] }) }
+)
+const latestDocs = computed(() =>
+  (latestDocsData.value?.articles || []).map(a => ({
+    id: a.id,
+    number: a.title,
+    date: formatDate(a.publishedAt || a.createdAt),
+    title: a.excerpt || a.title,
+  }))
+)
+
+const { data: roleModelsData } = await useAsyncData(
+  'role-models',
+  () => $fetch('/api/public/articles', { params: { type: 'role_model', limit: 4 } }),
+  { default: () => ({ articles: [] }) }
+)
+const roleModelsList = computed(() =>
+  (roleModelsData.value?.articles || []).map(a => ({
+    id: a.slug,
+    name: a.title,
+    location: '',
+    image: a.thumbnailUrl || '/assets/guong_sang_1.jpg',
+    desc: a.excerpt || '',
+  }))
+)
+
+const { data: reintegrationModelsData } = await useAsyncData(
+  'reintegration-models',
+  () => $fetch('/api/public/articles', { params: { type: 'reintegration_model', limit: 4 } }),
+  { default: () => ({ articles: [] }) }
+)
+const reintegrationModelsList = computed(() =>
+  (reintegrationModelsData.value?.articles || []).map(a => ({
+    id: a.slug,
+    icon: '🌱',
+    title: a.title,
+    desc: a.excerpt || '',
+  }))
+)
 
 // ====== ROLE MODELS SWIPER SLIDER ======
 const roleModelsSliderTrack = ref(null)
 const activeRoleIndex = ref(0)
 let roleAutoplayTimer = null
-
-const roleModelsList = [
-  {
-    id: 'nguyen-van-a',
-    name: 'Anh Nguyễn Văn A',
-    location: '📍 TP. Đà Nẵng',
-    image: '/assets/guong_sang_1.jpg',
-    desc: 'Từng chấp hành án phạt tù 5 năm, anh A trở về lập nghiệp từ hai bàn tay trắng. Được chính quyền hỗ trợ vay vốn 100 triệu, anh mở xưởng sản xuất đồ gỗ mỹ nghệ lớn, tạo việc làm ổn định cho 15 lao động cùng hoàn cảnh.'
-  },
-  {
-    id: 'tran-thi-b',
-    name: 'Chị Trần Thị B',
-    location: '📍 Tỉnh Quảng Ninh',
-    image: '/assets/guong_sang_2.jpg',
-    desc: 'Vượt qua định kiến và mặc cảm ban đầu, chị B kiên trì tham gia các lớp đào tạo may mặc miễn phí. Đến nay chị đã làm chủ xưởng may gia công xuất khẩu lớn, trực tiếp nâng bước các chị em hoàn lương.'
-  },
-  {
-    id: 'le-van-c',
-    name: 'Anh Lê Văn C',
-    location: '📍 Tỉnh Đồng Nai',
-    image: '/assets/guong_sang_1.jpg',
-    desc: 'Được hỗ trợ nguồn vốn tín dụng ưu đãi theo Quyết định 22, anh C xây dựng trang trại nông nghiệp công nghệ cao rộng 3 ha, tạo công ăn việc làm cho 10 thanh niên hoàn lương tại địa phương.'
-  },
-  {
-    id: 'pham-thi-d',
-    name: 'Chị Phạm Thị D',
-    location: '📍 TP. Hải Phòng',
-    image: '/assets/guong_sang_2.jpg',
-    desc: 'Vươn lên làm giàu từ mô hình nuôi trồng thủy hải sản sạch. Chị D tích cực tham gia các buổi tuyên truyền pháp luật và giúp đỡ 8 trường hợp tái hòa nhập lập nghiệp thành công.'
-  }
-]
 
 const scrollRoleToSlide = (idx) => {
   activeRoleIndex.value = idx
@@ -579,12 +616,12 @@ const goToRoleSlide = (idx) => {
 }
 
 const nextRoleSlide = () => {
-  const nextIdx = (activeRoleIndex.value + 1) % roleModelsList.length
+  const nextIdx = (activeRoleIndex.value + 1) % roleModelsList.value.length
   scrollRoleToSlide(nextIdx)
 }
 
 const prevRoleSlide = () => {
-  const prevIdx = (activeRoleIndex.value - 1 + roleModelsList.length) % roleModelsList.length
+  const prevIdx = (activeRoleIndex.value - 1 + roleModelsList.value.length) % roleModelsList.value.length
   scrollRoleToSlide(prevIdx)
 }
 
@@ -607,39 +644,6 @@ const reintegrationModelsSliderTrack = ref(null)
 const activeModelIndex = ref(0)
 let modelAutoplayTimer = null
 
-const reintegrationModelsList = [
-  {
-    id: 'quy-tin-dung-hoan-luong',
-    icon: '💰',
-    title: 'Quỹ Tín dụng vay vốn',
-    desc: 'Hỗ trợ vay vốn sản xuất kinh doanh ưu đãi lên tới 100 triệu đồng theo Quyết định 22/2023/QĐ-TTg của Thủ tướng Chính phủ.'
-  },
-  {
-    id: 'cau-lac-bo-hoa-nhap-xanh',
-    icon: '🌳',
-    title: 'CLB Hòa Nhập Xanh',
-    desc: 'Nơi sinh hoạt cộng đồng sẻ chia kinh nghiệm, trang bị kỹ năng sống và phổ biến kiến thức pháp luật bổ ích cho người hoàn lương.'
-  },
-  {
-    id: 'lien-ket-dao-tao-nghe-nhan-van',
-    icon: '🛠',
-    title: 'Đào tạo nghề nhân văn',
-    desc: 'Tổ chức liên kết dạy nghề mộc, may mặc, cơ khí cắt gọt hoàn toàn miễn phí và giới thiệu bao tiêu đầu ra việc làm ổn định.'
-  },
-  {
-    id: 'to-an-ninh-tu-quan',
-    icon: '🛡️',
-    title: 'Tổ an ninh tự quản',
-    desc: 'Mô hình tự quản cảm hóa người hoàn lương tại cơ sở, gắn kết chính quyền, công an địa phương và gia đình trong việc giám sát, hỗ trợ.'
-  },
-  {
-    id: 'htx-sinh-ke-dong-hanh',
-    icon: '🌾',
-    title: 'HTX Sinh kế đồng hành',
-    desc: 'Hợp tác xã nông sản tập hợp các thành viên hoàn lương cùng phát triển kinh tế tập thể, bao tiêu sản phẩm nông nghiệp và chăn nuôi.'
-  }
-]
-
 const scrollModelToSlide = (idx) => {
   activeModelIndex.value = idx
   if (reintegrationModelsSliderTrack.value) {
@@ -656,12 +660,12 @@ const goToModelSlide = (idx) => {
 }
 
 const nextModelSlide = () => {
-  const nextIdx = (activeModelIndex.value + 1) % reintegrationModelsList.length
+  const nextIdx = (activeModelIndex.value + 1) % reintegrationModelsList.value.length
   scrollModelToSlide(nextIdx)
 }
 
 const prevModelSlide = () => {
-  const prevIdx = (activeModelIndex.value - 1 + reintegrationModelsList.length) % reintegrationModelsList.length
+  const prevIdx = (activeModelIndex.value - 1 + reintegrationModelsList.value.length) % reintegrationModelsList.value.length
   scrollModelToSlide(prevIdx)
 }
 

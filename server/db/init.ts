@@ -154,6 +154,19 @@ async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  // Submissions table
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`submissions\` (
+      \`id\` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      \`full_name\` VARCHAR(255) NOT NULL,
+      \`phone\` VARCHAR(30) NOT NULL,
+      \`email\` VARCHAR(255) NULL,
+      \`address\` TEXT NULL,
+      \`message\` TEXT NULL,
+      \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
   await db.end()
   console.log('✅ All MySQL tables exist and ready!')
 }

@@ -15,9 +15,10 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng nhập tài khoản và mật khẩu.' })
   }
 
-  // Rate limit theo IP
+  // Rate limit theo IP + username (composite key — ngăn credential stuffing)
   const ip = getRequestHeader(event, 'x-forwarded-for') || 'unknown'
-  const attempts = loginAttempts.get(ip) || { count: 0, lastAttempt: 0 }
+  const rateLimitKey = `${ip}:${username.toLowerCase()}`
+  const attempts = loginAttempts.get(rateLimitKey) || { count: 0, lastAttempt: 0 }
   const now = Date.now()
 
   if (attempts.count >= 5 && now - attempts.lastAttempt < 15 * 60 * 1000) {
@@ -44,7 +45,7 @@ export default defineEventHandler(async (event) => {
     .limit(1)
 
   if (!user) {
-    loginAttempts.set(ip, { count: attempts.count + 1, lastAttempt: now })
+    loginAttempts.set(rateLimitKey, { count: attempts.count + 1, lastAttempt: now })
     throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.' })
   }
 
@@ -54,12 +55,12 @@ export default defineEventHandler(async (event) => {
 
   const valid = await verifyPassword(password, user.passwordHash)
   if (!valid) {
-    loginAttempts.set(ip, { count: attempts.count + 1, lastAttempt: now })
+    loginAttempts.set(rateLimitKey, { count: attempts.count + 1, lastAttempt: now })
     throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.' })
   }
 
   // Reset rate limit khi đăng nhập thành công
-  loginAttempts.delete(ip)
+  loginAttempts.delete(rateLimitKey)
 
   // Load permissions
   const userPermissions = await db
