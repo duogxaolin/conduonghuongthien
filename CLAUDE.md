@@ -8,8 +8,8 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 
 ## 🛠️ Công Nghệ Sử Dụng (Tech Stack)
 
-- **Frontend**: Nuxt 4 (Vue 3 SFC, TypeScript, Composition API), **Tailwind CSS v4** (via `@tailwindcss/vite`), FontAwesome 6 Pro (local self-hosted).
-- **CSS Rule**: **Tất cả code mới phải dùng Tailwind CSS v4 utility classes.** Không viết `<style scoped>` hay CSS tùy chỉnh cho component/page mới. CSS cũ (pre-Tailwind) vẫn giữ nguyên, không xóa — sẽ migrate dần sau.
+- **Frontend**: Nuxt 4 (Vue 3 SFC, TypeScript, Composition API), **Tailwind CSS v3** (via `@nuxtjs/tailwindcss`), FontAwesome 6 Pro (local self-hosted).
+- **CSS Rule**: **Tất cả code mới phải dùng Tailwind CSS v3 utility classes.** Không viết `<style scoped>` hay CSS tùy chỉnh cho component/page mới — ngoại lệ duy nhất là pseudo-element (`::before`), keyframes, hoặc `:deep()` rich-text không biểu diễn được bằng utility. CSS cũ (pre-Tailwind) vẫn giữ nguyên, không xóa — sẽ migrate dần sau. (Đã migrate Tailwind v4 → v3 ở commit `a02ca17`.)
 - **Backend / API**: Nuxt Server Engine (Nitro / H3), Drizzle ORM, MySQL 8.0 / MariaDB, JWT Auth (`cdkt_admin` HTTP-only Cookie).
 - **Database**: MySQL 8.0 (Auto DDL init script `server/db/init.ts` và Auto Seed script `server/db/seed.ts`).
 - **Media Engine**: Dual-mode Storage (Local server `/public/uploads/YYYY/MM/` & Cloudflare R2 Cloud Storage với AWS S3 SDK & Sharp image optimization).
@@ -55,17 +55,29 @@ app/
     │   └── index.vue
     ├── legal-qa/                # Giải đáp pháp luật & Hỏi đáp
     │   └── index.vue
+    ├── [slug].vue               # Catch-all: render trang tùy biến từ block data (404 nếu slug không tồn tại)
     └── admin/                   # Hệ thống Quản trị Admin Panel
         ├── index.vue            # Dashboard Tổng quan
         ├── login.vue            # Trang Đăng nhập Admin
         ├── content/
-        │   ├── home.vue         # WordPress Gutenberg Style Home Block Editor
+        │   ├── home.vue         # WordPress Gutenberg Style Home Block Editor (legacy)
+        │   ├── pages/           # Page Builder: quản lý & dựng trang bằng block
+        │   │   ├── index.vue    # Danh sách trang (tạo / xóa / badge trang hệ thống)
+        │   │   └── [id].vue     # Trình dựng trang kéo-thả (block list, palette, edit drawer)
         │   └── articles/        # Quản lý Bài viết & Tin tức (CRUD)
         ├── media/               # Quản lý Thư viện Media Upload (Local / R2)
         ├── settings/            # Cài đặt chung & Cấu hình Cloudflare R2
         ├── submissions/         # Quản lý Đơn đăng ký tư vấn 24/7
         └── users/               # Quản lý Người dùng Admin & Phân quyền Roles
 ```
+
+### Kiến trúc Page Builder (Block System)
+
+- **Block Registry** (`app/utils/blocks/registry.ts`): nguồn chân lý duy nhất cho toàn bộ block. Mỗi block định nghĩa `{label, icon, category, defaultData, fields}`. Registry được dùng chung bởi: builder UI (render palette + edit drawer), server validation (`isValidBlockType`), và seed (`getDefaultData`). 14 block: `hero, stats, news, role_models, reintegration, documents, support_form, links` (section) + `heading, richtext, image, cta, gallery, contact_form` (content).
+- **Renderer** (`app/components/PageRenderer.vue`): map `blockType` → component trong `app/components/blocks/*.vue`. Section block giữ nguyên markup thiết kế gốc của trang chủ; content block là mới.
+- **Bảng dữ liệu**: `pages` (slug, title, isSystem, seo*) + `page_blocks` (pageId, blockType, displayOrder, data JSON, isVisible). Bảng `home_sections` cũ được giữ; seed migrate `home_sections` → block trang `home` một lần (guard trên "trang chưa có block").
+- **API**: admin CRUD tại `server/api/admin/pages/**` (gated bằng resource `pages`); public read-only tại `server/api/public/pages/[slug].get.ts` (chỉ trả block `isVisible=true`, slug không tồn tại → `{ok:false}` 2xx).
+- **Trang hệ thống** (`home`, `about`, `contact`): `isSystem=true` — sửa được nhưng khóa slug và không xóa được.
 
 ---
 
@@ -79,10 +91,14 @@ app/
 
 ### 2. Hệ thống Quản trị Admin Panel (`/admin`)
 - **Phân quyền RBAC (Role-Based Access Control)**:
-  - Admin có thể tạo các Vai trò (Roles) và thiết lập Ma trận quyền chi tiết (`Create`, `Read`, `Update`, `Delete`) trên từng tài nguyên (`users`, `roles`, `news`, `home_sections`, `media`, `settings`, `submissions`, `documents`, `faq`...).
+  - Admin có thể tạo các Vai trò (Roles) và thiết lập Ma trận quyền chi tiết (`Create`, `Read`, `Update`, `Delete`) trên từng tài nguyên (`users`, `roles`, `news`, `home_sections`, `pages`, `categories`, `media`, `settings`, `submissions`, `documents`, `faq`, `analytics`, `chatbot_knowledge`, `chatbot_settings`...).
 - **Quản lý Người dùng (User Management - `/admin/users`)**:
   - Modal Chỉnh sửa tài khoản full tính năng: Đổi Email, Đổi Mật khẩu (bcrypt hash), Đổi Vai trò (Role), Khóa / Mở khóa trạng thái tài khoản.
-- **WordPress Gutenberg Style Home Editor (`/admin/content/home`)**:
+- **Page Builder Toàn Site (`/admin/content/pages`)**:
+  - Trang public (chủ, giới thiệu, liên hệ + trang tùy biến) render trực tiếp từ dữ liệu block trong DB thay vì markup hardcode — chỉnh sửa của editor có hiệu lực thật trên site.
+  - Danh sách trang: tạo trang tùy biến (slug tự sinh), xóa (trang hệ thống bị khóa), badge phân biệt trang hệ thống.
+  - Trình dựng trang (`/admin/content/pages/[id]`): kéo-thả sắp xếp block (HTML5 DnD + nút `▲/▼`), bật/tắt hiển thị, palette thêm block nhóm theo category, edit drawer sinh động từ registry `fields`, cấu hình meta/SEO trang.
+- **WordPress Gutenberg Style Home Editor (`/admin/content/home`)** (legacy, vẫn dùng được):
   - Danh sách Block kéo-thả trực quan kèm nút di chuyển `▲ / ▼` và bật/tắt hiển thị `Hiển thị / Đã ẩn`.
   - Drawer Modal Tùy biến Block chia thành 3 Tab:
     1. **Nội dung & Văn bản**: Tiêu đề chính, Subtitle, Đoạn mô tả, Nút bấm CTA, Số lượng bài hiển thị.
