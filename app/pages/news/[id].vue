@@ -1,39 +1,39 @@
 <template>
-  <div class="article-detail-page section-bg">
-    <div class="container article-container">
+  <div class="py-10 bg-[#F8FAF7]">
+    <div class="max-w-[800px] mx-auto px-4">
       <!-- Breadcrumb -->
-      <div class="breadcrumb">
-        <nuxt-link to="/">Trang chủ</nuxt-link> &raquo; 
-        <nuxt-link to="/news">Bản tin</nuxt-link> &raquo; 
+      <div class="text-[0.85rem] text-[#7A8675] mb-6">
+        <nuxt-link to="/" class="text-[#4A6741] no-underline hover:underline">Trang chủ</nuxt-link> &raquo;
+        <nuxt-link to="/news" class="text-[#4A6741] no-underline hover:underline">Bản tin</nuxt-link> &raquo;
         <span>Chi tiết tin tức</span>
       </div>
 
       <!-- Main Content -->
-      <article class="article-content" v-if="article">
-        <span class="meta-tag">📰 {{ article.category }} • Ngày đăng: {{ article.date }}</span>
-        <h1 class="article-title">{{ article.title }}</h1>
-        
-        <div class="article-lead">
+      <article v-if="article">
+        <span class="text-[0.85rem] font-bold text-[#4A6741] bg-[#F8FAF7] px-3 py-1.5 rounded inline-block mb-4">📰 {{ article.category }} • Ngày đăng: {{ article.date }}</span>
+        <h1 class="text-[2.2rem] font-extrabold leading-[1.3] text-[#1E251C] mb-5">{{ article.title }}</h1>
+
+        <div class="text-[1.12rem] font-semibold text-[#4A5545] leading-[1.6] border-l-4 border-[#7CB342] pl-5 mb-8">
           <p>{{ article.lead }}</p>
         </div>
 
-        <div class="article-body">
-          <div class="article-img-wrap" v-if="article.image">
-            <img :src="article.image" :alt="article.title" />
-            <span class="img-caption" v-if="article.caption">{{ article.caption }}</span>
+        <div class="article-body text-[1.05rem] leading-[1.7] text-[#4A5545]">
+          <div class="my-8 text-center" v-if="article.image">
+            <img :src="article.image" :alt="article.title" class="w-full max-h-[450px] object-cover rounded-lg shadow-sm" />
+            <span v-if="article.caption" class="text-[0.85rem] text-[#7A8675] italic mt-2 block">{{ article.caption }}</span>
           </div>
 
           <div v-html="article.content"></div>
         </div>
 
         <!-- Back Link -->
-        <div class="back-wrap">
+        <div class="mt-10 border-t border-[#E2E8DF] pt-8">
           <nuxt-link to="/news" class="btn btn-primary">&larr; Quay lại danh sách Bản tin</nuxt-link>
         </div>
       </article>
 
-      <div class="not-found" v-else>
-        <p>Không tìm thấy tin tức yêu cầu hoặc bài viết đang được cập nhật.</p>
+      <div class="py-10 text-center" v-else>
+        <p class="text-[#4A5545] mb-4">Không tìm thấy tin tức yêu cầu hoặc bài viết đang được cập nhật.</p>
         <nuxt-link to="/news" class="btn btn-primary">Quay lại danh sách Bản tin</nuxt-link>
       </div>
     </div>
@@ -159,109 +159,30 @@ const article = computed(() => {
 </script>
 
 <style scoped>
-.article-detail-page {
-  padding: 40px 0;
-}
-
-.article-container {
-  max-width: 800px;
-  margin: 0 auto;
-}
-
-.breadcrumb {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  margin-bottom: 24px;
-}
-
-.breadcrumb a {
-  color: var(--primary);
-  text-decoration: none;
-}
-
-.breadcrumb a:hover {
-  text-underline: underline;
-}
-
-.meta-tag {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--primary);
-  background-color: var(--bg-light);
-  padding: 6px 12px;
-  border-radius: 4px;
-  display: inline-block;
-  margin-bottom: 16px;
-}
-
-.article-title {
-  font-size: 2.2rem;
-  font-weight: 800;
-  line-height: 1.3;
-  color: var(--text-dark);
-  margin-bottom: 20px;
-}
-
-.article-lead {
-  font-size: 1.12rem;
-  font-weight: 600;
-  color: var(--text-medium);
-  line-height: 1.6;
-  border-left: 4px solid var(--secondary);
-  padding-left: 20px;
-  margin-bottom: 30px;
-}
-
-.article-img-wrap {
-  margin: 30px 0;
-  text-align: center;
-}
-
-.article-img-wrap img {
-  width: 100%;
-  max-height: 450px;
-  object-fit: cover;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-sm);
-}
-
-.img-caption {
-  font-size: 0.85rem;
-  color: var(--text-muted);
-  font-style: italic;
-  margin-top: 8px;
-  display: block;
-}
-
+/* Retained for v-html deep content — not expressible with Tailwind utility classes */
 .article-body :deep(p) {
   font-size: 1.05rem;
   line-height: 1.7;
-  color: var(--text-medium);
+  color: #4A5545;
   margin-bottom: 20px;
 }
 
 .article-body :deep(blockquote) {
-  background-color: var(--bg-light);
-  border-left: 4px solid var(--primary);
+  background-color: #F8FAF7;
+  border-left: 4px solid #4A6741;
   padding: 20px 24px;
   margin: 30px 0;
   font-style: italic;
   font-size: 1.1rem;
-  color: var(--primary-dark);
+  color: #385130;
 }
 
 .article-body :deep(blockquote span) {
   display: block;
   font-size: 0.85rem;
-  color: var(--text-muted);
+  color: #7A8675;
   margin-top: 8px;
   font-weight: 700;
   font-style: normal;
-}
-
-.back-wrap {
-  margin-top: 40px;
-  border-top: 1px solid var(--border-color);
-  padding-top: 30px;
 }
 </style>

@@ -1,25 +1,34 @@
 <template>
-  <div class="news-category-page section-bg">
-    <section class="cat-hero">
-      <div class="cat-hero-overlay"></div>
-      <div class="container">
-        <h2 class="cat-hero-title">Tin Hoạt Động</h2>
-        <p class="cat-hero-subtitle">Các hoạt động, chỉ đạo nghiệp vụ thi hành án hình sự và tái hòa nhập</p>
+  <div class="bg-[#F8FAF7]">
+    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover py-20 text-center text-white">
+      <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)]"></div>
+      <div class="container relative z-10">
+        <h2 class="text-[2.2rem] font-extrabold mb-2">Tin Hoạt Động</h2>
+        <p class="text-base opacity-90">Các hoạt động, chỉ đạo nghiệp vụ thi hành án hình sự và tái hòa nhập</p>
       </div>
     </section>
 
-    <section class="section">
+    <section class="py-12">
       <div class="container">
-        <div class="news-list-container">
-          <div v-for="item in newsItems" :key="item.id" class="news-item-card-vertical">
-            <div class="news-item-img">
-              <img :src="item.image" :alt="item.title" />
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-[30px] max-w-[1000px] mx-auto">
+          <div
+            v-for="item in newsItems"
+            :key="item.id"
+            class="bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] transition-all duration-300 hover:-translate-y-1 hover:shadow-md hover:border-[#7CB342]"
+          >
+            <div class="h-[220px] overflow-hidden">
+              <img :src="item.image" :alt="item.title" class="w-full h-full object-cover" />
             </div>
-            <div class="news-item-info">
-              <span class="news-item-date">{{ item.date }} • Tin hoạt động</span>
-              <h3><nuxt-link :to="'/news/' + item.slug">{{ item.title }}</nuxt-link></h3>
-              <p>{{ item.excerpt }}</p>
-              <nuxt-link :to="'/news/' + item.slug" class="read-more-link">Chi tiết &rarr;</nuxt-link>
+            <div class="p-6">
+              <span class="block text-[0.8rem] text-[#7A8675] font-semibold mb-2">{{ item.date }} • Tin hoạt động</span>
+              <h3 class="text-[1.15rem] font-bold leading-[1.4] mb-2.5">
+                <nuxt-link
+                  :to="'/news/' + item.slug"
+                  class="no-underline text-[#1E251C] transition-colors duration-300 hover:text-[#4A6741]"
+                >{{ item.title }}</nuxt-link>
+              </h3>
+              <p class="text-[0.9rem] text-[#4A5545] leading-[1.5] mb-4">{{ item.excerpt }}</p>
+              <nuxt-link :to="'/news/' + item.slug" class="text-[#7CB342] font-bold no-underline text-[0.88rem]">Chi tiết &rarr;</nuxt-link>
             </div>
           </div>
         </div>
@@ -56,117 +65,3 @@ const newsItems = [
   }
 ]
 </script>
-
-<style scoped>
-.cat-hero {
-  position: relative;
-  background: url('/assets/hero_banner.jpg') center/cover no-repeat;
-  padding: 80px 0;
-  text-align: center;
-  color: white;
-}
-
-.cat-hero-overlay {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(74, 103, 65, 0.9);
-}
-
-.cat-hero-title {
-  position: relative;
-  z-index: 2;
-  font-size: 2.2rem;
-  font-weight: 800;
-  margin-bottom: 8px;
-}
-
-.cat-hero-subtitle {
-  position: relative;
-  z-index: 2;
-  font-size: 1rem;
-  opacity: 0.9;
-}
-
-.news-list-container {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 30px;
-  max-width: 1000px;
-  margin: 0 auto;
-}
-
-.news-item-card-vertical {
-  background-color: var(--white);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border-color);
-  transition: var(--transition);
-}
-
-.news-item-card-vertical:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--secondary);
-}
-
-.news-item-img {
-  height: 220px;
-  overflow: hidden;
-}
-
-.news-item-img img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.news-item-info {
-  padding: 24px;
-}
-
-.news-item-date {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  font-weight: 600;
-  display: block;
-  margin-bottom: 8px;
-}
-
-.news-item-info h3 {
-  font-size: 1.15rem;
-  font-weight: 700;
-  line-height: 1.4;
-  margin-bottom: 10px;
-}
-
-.news-item-info h3 a {
-  text-decoration: none;
-  color: var(--text-dark);
-  transition: var(--transition);
-}
-
-.news-item-info h3 a:hover {
-  color: var(--primary);
-}
-
-.news-item-info p {
-  font-size: 0.9rem;
-  color: var(--text-medium);
-  line-height: 1.5;
-  margin-bottom: 16px;
-}
-
-.read-more-link {
-  color: var(--secondary);
-  font-weight: 700;
-  text-decoration: none;
-  font-size: 0.88rem;
-}
-
-@media (max-width: 768px) {
-  .news-list-container {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

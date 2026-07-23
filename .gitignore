@@ -32,4 +32,5 @@ openspec/
 
 # FontAwesome Pro — large binary, deploy manually to server
 public/assets/fontawesome/
-.claude/settings.local.json
+.claude/
+.mcp.json

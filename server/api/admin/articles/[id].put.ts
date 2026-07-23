@@ -35,6 +35,8 @@ export default defineEventHandler(async (event) => {
   if (body.excerpt !== undefined) updateFields.excerpt = String(body.excerpt).trim() || null
   if (body.content !== undefined) updateFields.content = String(body.content)
   if (body.thumbnailUrl !== undefined) updateFields.thumbnailUrl = String(body.thumbnailUrl).trim() || null
+  if (body.category !== undefined) updateFields.category = String(body.category).trim() || null
+  if ('categoryId' in body) updateFields.categoryId = body.categoryId ? Number(body.categoryId) : null
 
   // If the type is changing, re-check permission against the new type
   if (body.type !== undefined) {

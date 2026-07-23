@@ -12,6 +12,7 @@ const pagination = ref({ page: 1, totalPages: 1, total: 0 })
 const isDragOver = ref(false)
 
 const toast = useToast()
+const { confirm } = useConfirm()
 const { uploading, uploadFile } = useUpload()
 
 const fetchMedia = async (page = 1) => {
@@ -57,7 +58,8 @@ const onDrop = (e: DragEvent) => {
 }
 
 const deleteMedia = async (item: any) => {
-  if (!confirm(`Bạn có chắc muốn xóa file ${item.originalName}?`)) return
+  const ok = await confirm({ title: 'Xóa tệp', message: `Bạn có chắc muốn xóa file ${item.originalName}?`, danger: true, confirmLabel: 'Xóa' })
+  if (!ok) return
   try {
     await $fetch(`/api/admin/media/${item.id}`, { method: 'DELETE' })
     toast.success('Đã xóa tệp media thành công!')

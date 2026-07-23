@@ -3,60 +3,43 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Global Root Font Size Scaling (A-, A, A+) */
-html {
-  font-size: 16px;
-  transition: font-size 0.2s ease;
+@layer base {
+  html {
+    font-size: 16px;
+  }
+
+  :root {
+    --primary: #4A6741;
+    --primary-dark: #385130;
+    --primary-light: #618557;
+    --secondary: #7CB342;
+    --secondary-light: #9CCC65;
+    --accent: #8BC34A;
+    --bg-light: #F8FAF7;
+    --text-dark: #1E251C;
+    --text-medium: #4A5545;
+    --text-muted: #7A8675;
+    --white: #FFFFFF;
+    --border-color: #E2E8DF;
+    --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
+    --shadow-sm: 0 4px 12px rgba(74, 103, 65, 0.06);
+    --shadow-md: 0 10px 30px rgba(74, 103, 65, 0.08);
+    --shadow-lg: 0 20px 40px rgba(74, 103, 65, 0.12);
+    --radius-sm: 8px;
+    --radius-md: 16px;
+    --radius-lg: 24px;
+  }
+
+  body {
+    font-family: 'Inter', sans-serif;
+    color: var(--text-dark);
+    background-color: var(--white);
+    line-height: 1.6;
+    overflow-x: hidden;
+  }
 }
 
-html.font-scale-small {
-  font-size: 14px !important;
-}
-
-html.font-scale-normal {
-  font-size: 16px !important;
-}
-
-html.font-scale-large {
-  font-size: 18.5px !important;
-}
-
-:root {
-  --primary: #4A6741;        /* Xanh bộ đội */
-  --primary-dark: #385130;
-  --primary-light: #618557;
-  --secondary: #7CB342;      /* Xanh mạ non */
-  --secondary-light: #9CCC65;
-  --accent: #8BC34A;
-  --bg-light: #F8FAF7;       /* Nền xanh lá cực nhạt */
-  --text-dark: #1E251C;
-  --text-medium: #4A5545;
-  --text-muted: #7A8675;
-  --white: #FFFFFF;
-  --border-color: #E2E8DF;
-  --transition: all 0.3s cubic-bezier(0.25, 0.8, 0.25, 1);
-  --shadow-sm: 0 4px 12px rgba(74, 103, 65, 0.06);
-  --shadow-md: 0 10px 30px rgba(74, 103, 65, 0.08);
-  --shadow-lg: 0 20px 40px rgba(74, 103, 65, 0.12);
-  --radius-sm: 8px;
-  --radius-md: 16px;
-  --radius-lg: 24px;
-}
-
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: 'Inter', sans-serif;
-  color: var(--text-dark);
-  background-color: var(--white);
-  line-height: 1.6;
-  overflow-x: hidden;
-}
-
+@layer components {
 .container {
   width: 100%;
   max-width: 1240px;
@@ -303,4 +286,5 @@ body {
 
 .live-date-icon {
   opacity: 0.8;
+}
 }

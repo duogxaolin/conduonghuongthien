@@ -12,6 +12,7 @@ export default defineEventHandler(async (event) => {
       .select({
         id:           articles.id,
         type:         articles.type,
+        category:     articles.category,
         title:        articles.title,
         slug:         articles.slug,
         excerpt:      articles.excerpt,

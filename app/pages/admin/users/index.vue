@@ -14,6 +14,7 @@ const form = reactive({ username: '', email: '', password: '', roleId: 2 })
 const editForm = reactive({ id: 0, username: '', email: '', password: '', roleId: 2, isActive: true })
 const errorMsg = ref('')
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const fetchUsers = async () => {
   loading.value = true
@@ -84,7 +85,8 @@ const toggleActive = async (user: any) => {
 }
 
 const deleteUser = async (user: any) => {
-  if (!confirm(`Bạn có chắc muốn xóa tài khoản ${user.username}?`)) return
+  const ok = await confirm({ title: 'Xóa tài khoản', message: `Bạn có chắc muốn xóa tài khoản ${user.username}?`, danger: true, confirmLabel: 'Xóa' })
+  if (!ok) return
   try {
     await $fetch(`/api/admin/users/${user.id}`, { method: 'DELETE' })
     toast.success('Đã xóa người dùng thành công!'); await fetchUsers()

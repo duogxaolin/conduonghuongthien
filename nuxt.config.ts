@@ -1,3 +1,40 @@
+import { resolveAnalyticsRetentionConfig } from './server/utils/analytics-config'
+
+const parseAnalyticsInteger = (name: string, fallback: number, min: number, max: number) => {
+  const rawValue = process.env[name]
+  if (rawValue === undefined || rawValue === '') return fallback
+
+  const value = Number(rawValue)
+  if (!Number.isSafeInteger(value) || value < min || value > max) {
+    throw new Error(`${name} must be an integer between ${min} and ${max}`)
+  }
+
+  return value
+}
+
+const parseAnalyticsBoolean = (name: string, fallback: boolean) => {
+  const rawValue = process.env[name]
+  if (rawValue === undefined || rawValue === '') return fallback
+  if (rawValue === 'true' || rawValue === '1') return true
+  if (rawValue === 'false' || rawValue === '0') return false
+  throw new Error(`${name} must be one of: true, false, 1, 0`)
+}
+
+const analyticsHmacSecret = process.env.ANALYTICS_HMAC_SECRET?.trim() || ''
+if (analyticsHmacSecret && analyticsHmacSecret.length < 32) {
+  throw new Error('ANALYTICS_HMAC_SECRET must contain at least 32 characters')
+}
+if (process.env.NODE_ENV === 'production' && !analyticsHmacSecret) {
+  throw new Error('ANALYTICS_HMAC_SECRET is required in production')
+}
+
+const analyticsRetention = resolveAnalyticsRetentionConfig()
+const analyticsDefaultRangeDays = parseAnalyticsInteger('ANALYTICS_DEFAULT_RANGE_DAYS', 30, 1, 366)
+const analyticsMaxRangeDays = parseAnalyticsInteger('ANALYTICS_MAX_RANGE_DAYS', 366, 1, 366)
+if (analyticsDefaultRangeDays > analyticsMaxRangeDays) {
+  throw new Error('ANALYTICS_DEFAULT_RANGE_DAYS must not exceed ANALYTICS_MAX_RANGE_DAYS')
+}
+
 export default defineNuxtConfig({
   compatibilityDate: '2026-07-20',
   devtools: { enabled: true },
@@ -9,16 +46,23 @@ export default defineNuxtConfig({
     configPath: 'tailwind.config.js',
   },
 
-  css: [
-    '~/assets/css/main.css'
-  ],
-
   runtimeConfig: {
     // Private server keys
     aiApiKey: process.env.AI_API_KEY || '',
     aiBaseUrl: process.env.AI_BASE_URL || 'https://api.openai.com/v1',
     aiModel: process.env.AI_MODEL || 'gpt-4o-mini',
-    
+    analytics: {
+      hmacSecret: analyticsHmacSecret,
+      collectionEnabled: parseAnalyticsBoolean('ANALYTICS_COLLECTION_ENABLED', false),
+      rawRetentionDays: parseAnalyticsInteger('ANALYTICS_RAW_RETENTION_DAYS', 14, 1, 30),
+      aggregateRetentionDays: parseAnalyticsInteger('ANALYTICS_AGGREGATE_RETENTION_DAYS', 762, 30, 3650),
+      defaultRangeDays: analyticsDefaultRangeDays,
+      maxRangeDays: analyticsMaxRangeDays,
+      freshnessThresholdHours: parseAnalyticsInteger('ANALYTICS_FRESHNESS_THRESHOLD_HOURS', 48, 1, 168),
+      liveRetentionHours: analyticsRetention.liveRetentionHours,
+      nocRetentionDays: analyticsRetention.nocRetentionDays,
+    },
+
     // Public keys
     public: {}
   },

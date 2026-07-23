@@ -1,5 +1,5 @@
 import { getDb } from '../../../utils/db'
-import { articles, users, media } from '../../../db/schema'
+import { articles, users, categories } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { eq, like, desc, sql, count } from 'drizzle-orm'
 
@@ -16,6 +16,7 @@ export default defineEventHandler(async (event) => {
   const search = String(query.search || '').trim()
   const typeFilter = String(query.type || '').trim()
   const statusFilter = String(query.status || '').trim()
+  const categoryIdFilter = query.categoryId ? Number(query.categoryId) : null
 
   const db = getDb()
 
@@ -29,6 +30,9 @@ export default defineEventHandler(async (event) => {
   if (statusFilter) {
     conditions.push(eq(articles.status, statusFilter))
   }
+  if (categoryIdFilter) {
+    conditions.push(eq(articles.categoryId, categoryIdFilter))
+  }
 
   const whereClause = conditions.length > 0 ? sql`${sql.join(conditions, sql` AND `)}` : undefined
 
@@ -36,6 +40,10 @@ export default defineEventHandler(async (event) => {
     .select({
       id:           articles.id,
       type:         articles.type,
+      category:     articles.category,
+      categoryId:       articles.categoryId,
+      categoryName:     categories.name,
+      categoryParentId: categories.parentId,
       title:        articles.title,
       slug:         articles.slug,
       excerpt:      articles.excerpt,
@@ -48,6 +56,7 @@ export default defineEventHandler(async (event) => {
     })
     .from(articles)
     .leftJoin(users, eq(articles.authorId, users.id))
+    .leftJoin(categories, eq(articles.categoryId, categories.id))
     .where(whereClause)
     .orderBy(desc(articles.createdAt))
     .limit(perPage)

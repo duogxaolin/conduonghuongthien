@@ -1,11 +1,47 @@
-import { useState } from '#imports'
+import { computed, watch } from 'vue'
+import { useCookie, useHead, useState } from '#imports'
+
+type LocaleCode = 'vi' | 'en'
+
+export const localeOptions = [
+  { code: 'vi' as const, label: 'VN', name: 'Tiếng Việt', htmlLang: 'vi' },
+  { code: 'en' as const, label: 'EN', name: 'English', htmlLang: 'en' },
+] satisfies ReadonlyArray<{ code: LocaleCode, label: string, name: string, htmlLang: string }>
+
+const DEFAULT_LOCALE: LocaleCode = 'vi'
+const LOCALE_CODES = new Set<LocaleCode>(localeOptions.map(locale => locale.code))
+
+const normalizeLocale = (value: unknown): LocaleCode => {
+  return typeof value === 'string' && LOCALE_CODES.has(value as LocaleCode)
+    ? value as LocaleCode
+    : DEFAULT_LOCALE
+}
 
 export const useI18n = () => {
-  const currentLang = useState<string>('currentLang', () => 'VN')
-  const fontSize = useState<string>('fontSize', () => 'normal')
+  const localeCookie = useCookie<string>('cdkt_lang', {
+    default: () => DEFAULT_LOCALE,
+    maxAge: 60 * 60 * 24 * 365,
+    sameSite: 'lax',
+  })
+  const currentLang = useState<LocaleCode>('currentLang', () => normalizeLocale(localeCookie.value))
+  const currentLocale = computed(() => localeOptions.find(locale => locale.code === currentLang.value) || localeOptions[0])
+
+  if (localeCookie.value !== currentLang.value) {
+    localeCookie.value = currentLang.value
+  }
+
+  watch(currentLang, (locale) => {
+    localeCookie.value = locale
+  })
+
+  useHead(() => ({
+    htmlAttrs: {
+      lang: currentLocale.value.htmlLang,
+    },
+  }))
 
   const dictionary: Record<string, Record<string, string>> = {
-    VN: {
+    vi: {
       // Header & Nav
       home: 'Trang chủ',
       about: 'Giới thiệu',
@@ -25,10 +61,14 @@ export const useI18n = () => {
       procedures: 'Thủ tục hành chính',
       contact: 'Liên hệ',
       support_247: 'Hỗ trợ 24/7',
-      font_size: 'Cỡ chữ:',
       hotline_lbl: 'Hotline Tư Vấn 24/7',
       ask_ai: 'Hỏi trợ lý',
       categories: 'Danh mục',
+      language_switcher: 'Chọn ngôn ngữ',
+      search_open: 'Mở ô tìm kiếm',
+      search_close: 'Đóng ô tìm kiếm',
+      menu_open: 'Mở menu',
+      menu_close: 'Đóng menu',
       search_placeholder: 'Tìm kiếm nội dung trên website...',
       search_submit: 'Tìm kiếm',
       close: 'Đóng',
@@ -129,7 +169,7 @@ export const useI18n = () => {
       doc_table_title: 'Tên văn bản',
       doc_table_action: 'Tải về / Thao tác'
     },
-    EN: {
+    en: {
       // Header & Nav
       home: 'Home',
       about: 'About Us',
@@ -149,10 +189,14 @@ export const useI18n = () => {
       procedures: 'Administrative Procedures',
       contact: 'Contact Us',
       support_247: '24/7 Support',
-      font_size: 'Font size:',
       hotline_lbl: '24/7 Hotline',
       ask_ai: 'AI Chat',
       categories: 'Menu',
+      language_switcher: 'Choose language',
+      search_open: 'Open search',
+      search_close: 'Close search',
+      menu_open: 'Open menu',
+      menu_close: 'Close menu',
       search_placeholder: 'Search content on website...',
       search_submit: 'Search',
       close: 'Close',
@@ -258,41 +302,15 @@ export const useI18n = () => {
     return dictionary[currentLang.value]?.[key] || key
   }
 
-  const setLang = (lang: string) => {
-    currentLang.value = lang
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('cdkt_lang', lang)
-    }
-  }
-
-  const setFontSize = (size: string) => {
-    fontSize.value = size
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('cdkt_font_size', size)
-      document.documentElement.className = `font-scale-${size}`
-    }
-  }
-
-  const initSettings = () => {
-    if (typeof window !== 'undefined') {
-      const savedLang = localStorage.getItem('cdkt_lang')
-      if (savedLang && ['VN', 'EN'].includes(savedLang)) {
-        currentLang.value = savedLang
-      }
-      const savedSize = localStorage.getItem('cdkt_font_size')
-      if (savedSize && ['small', 'normal', 'large'].includes(savedSize)) {
-        fontSize.value = savedSize
-        document.documentElement.className = `font-scale-${savedSize}`
-      }
-    }
+  const setLang = (locale: string) => {
+    currentLang.value = normalizeLocale(locale)
   }
 
   return {
     currentLang,
-    fontSize,
+    currentLocale,
+    locales: localeOptions,
     t,
     setLang,
-    setFontSize,
-    initSettings
   }
 }

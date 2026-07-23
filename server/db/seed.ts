@@ -1,10 +1,11 @@
 import { getDb } from '../utils/db'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings } from '../db/schema'
 
 const RESOURCES = [
   'news', 'role_models', 'reintegration', 'documents', 'faq',
-  'home_sections', 'users', 'roles', 'media', 'settings', 'submissions'
+  'home_sections', 'users', 'roles', 'media', 'settings', 'submissions', 'analytics',
+  'chatbot_settings', 'chatbot_knowledge'
 ]
 
 async function seed() {
@@ -34,32 +35,33 @@ async function seed() {
   const superadminPerms = RESOURCES.map(resource => ({
     roleId: superadminRole.id, resource,
     canCreate: true, canRead: true, canUpdate: true, canDelete: true,
+    canPublish: true, canArchive: true, canTest: true,
   }))
 
   // Editor: CRUD news/role_models/reintegration/documents/faq, read home_sections & submissions, no users/roles/settings
   const editorPerms = RESOURCES.map(resource => {
     const contentResources = ['news', 'role_models', 'reintegration', 'documents', 'faq']
     if (contentResources.includes(resource)) {
-      return { roleId: editorRole.id, resource, canCreate: true, canRead: true, canUpdate: true, canDelete: false }
+      return { roleId: editorRole.id, resource, canCreate: true, canRead: true, canUpdate: true, canDelete: false, canPublish: false, canArchive: false, canTest: false }
     }
     if (resource === 'media') {
-      return { roleId: editorRole.id, resource, canCreate: true, canRead: true, canUpdate: false, canDelete: false }
+      return { roleId: editorRole.id, resource, canCreate: true, canRead: true, canUpdate: false, canDelete: false, canPublish: false, canArchive: false, canTest: false }
     }
     if (resource === 'home_sections' || resource === 'submissions') {
-      return { roleId: editorRole.id, resource, canCreate: false, canRead: true, canUpdate: false, canDelete: false }
+      return { roleId: editorRole.id, resource, canCreate: false, canRead: true, canUpdate: false, canDelete: false, canPublish: false, canArchive: false, canTest: false }
     }
-    return { roleId: editorRole.id, resource, canCreate: false, canRead: false, canUpdate: false, canDelete: false }
+    return { roleId: editorRole.id, resource, canCreate: false, canRead: false, canUpdate: false, canDelete: false, canPublish: false, canArchive: false, canTest: false }
   })
 
   // Moderator: read + update status bài viết, xem submissions
   const moderatorPerms = RESOURCES.map(resource => {
     if (['news', 'role_models', 'reintegration', 'documents', 'faq'].includes(resource)) {
-      return { roleId: moderatorRole.id, resource, canCreate: false, canRead: true, canUpdate: true, canDelete: false }
+      return { roleId: moderatorRole.id, resource, canCreate: false, canRead: true, canUpdate: true, canDelete: false, canPublish: false, canArchive: false, canTest: false }
     }
     if (resource === 'submissions') {
-      return { roleId: moderatorRole.id, resource, canCreate: false, canRead: true, canUpdate: true, canDelete: false }
+      return { roleId: moderatorRole.id, resource, canCreate: false, canRead: true, canUpdate: true, canDelete: false, canPublish: false, canArchive: false, canTest: false }
     }
-    return { roleId: moderatorRole.id, resource, canCreate: false, canRead: false, canUpdate: false, canDelete: false }
+    return { roleId: moderatorRole.id, resource, canCreate: false, canRead: false, canUpdate: false, canDelete: false, canPublish: false, canArchive: false, canTest: false }
   })
 
   // Viewer: chỉ đọc submissions
@@ -69,11 +71,14 @@ async function seed() {
     canRead: resource === 'submissions',
     canUpdate: false,
     canDelete: false,
+    canPublish: false,
+    canArchive: false,
+    canTest: false,
   }))
 
   for (const perm of [...superadminPerms, ...editorPerms, ...moderatorPerms, ...viewerPerms]) {
     await db.insert(permissions).values(perm)
-      .onDuplicateKeyUpdate({ set: { canCreate: perm.canCreate, canRead: perm.canRead, canUpdate: perm.canUpdate, canDelete: perm.canDelete } })
+      .onDuplicateKeyUpdate({ set: { canCreate: perm.canCreate, canRead: perm.canRead, canUpdate: perm.canUpdate, canDelete: perm.canDelete, canPublish: perm.canPublish, canArchive: perm.canArchive, canTest: perm.canTest } })
   }
 
   // ── SuperAdmin User ──────────────────────────────────────────────────────
@@ -130,6 +135,10 @@ async function seed() {
     await db.insert(settings).values(s)
       .onDuplicateKeyUpdate({ set: { value: s.value } })
   }
+
+  // Preserve administrator configuration on reruns; only create the disabled baseline.
+  await db.insert(chatbotSettings).values({ id: 1, enabled: false })
+    .onDuplicateKeyUpdate({ set: { id: chatbotSettings.id } })
 
   console.log('✅ Seed complete!')
   console.log(`📋 Login: username=admin  password=${adminPassword}`)

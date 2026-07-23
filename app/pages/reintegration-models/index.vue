@@ -1,24 +1,33 @@
 <template>
-  <div class="models-page section-bg">
+  <div class="bg-[#F8FAF7]">
     <!-- Hero Header -->
-    <section class="models-hero">
-      <div class="models-hero-overlay"></div>
-      <div class="container">
-        <h2 class="models-hero-title">Mô Hình Tái Hòa Nhập Cộng Đồng</h2>
-        <p class="models-hero-subtitle">Các mô hình kinh tế tập thể, quỹ hỗ trợ nhân văn giúp người hoàn lương ổn định cuộc sống</p>
+    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover px-4 py-16 text-center text-white sm:py-[100px]">
+      <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)]"></div>
+      <div class="container relative z-10">
+        <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem]">Mô Hình Tái Hòa Nhập Cộng Đồng</h2>
+        <p class="text-[1.1rem] opacity-90">Các mô hình kinh tế tập thể, quỹ hỗ trợ nhân văn giúp người hoàn lương ổn định cuộc sống</p>
       </div>
     </section>
 
     <!-- Main List -->
-    <section class="section">
+    <section class="py-12">
       <div class="container">
         <SectionBar icon="fa-solid fa-trophy" title="Các mô hình tiêu biểu" />
-        <div class="models-list-grid">
-          <div v-for="item in models" :key="item.id" class="model-detail-card">
-            <span class="model-category">💡 Mô hình tiêu biểu</span>
-            <h3>{{ item.title }}</h3>
-            <p class="model-desc">{{ item.excerpt }}</p>
-            <nuxt-link :to="`/reintegration-models/${item.slug}`" class="read-more-btn">Xem chi tiết mô hình &rarr;</nuxt-link>
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-[30px]">
+          <div
+            v-for="item in models"
+            :key="item.id"
+            class="bg-white rounded-lg px-[30px] py-[40px] shadow-sm border border-[#E2E8DF] flex flex-col justify-between transition-all duration-300 hover:-translate-y-1 hover:shadow-md hover:border-[#7CB342]"
+          >
+            <div class="flex flex-col flex-grow">
+              <span class="text-[0.75rem] font-bold text-[#4A6741] uppercase tracking-wide mb-[10px] block">💡 Mô hình tiêu biểu</span>
+              <h3 class="text-[1.25rem] font-bold text-[#1E251C] mb-4 leading-[1.4]">{{ item.title }}</h3>
+              <p class="text-[0.92rem] text-[#4A5545] leading-[1.6] mb-6 flex-grow">{{ item.excerpt }}</p>
+            </div>
+            <nuxt-link
+              :to="`/reintegration-models/${item.slug}`"
+              class="text-[#7CB342] font-bold no-underline text-[0.9rem] transition-all duration-300 hover:text-[#4A6741]"
+            >Xem chi tiết mô hình &rarr;</nuxt-link>
           </div>
         </div>
       </div>
@@ -53,101 +62,3 @@ const models = [
   }
 ]
 </script>
-
-<style scoped>
-.models-hero {
-  position: relative;
-  background: url('/assets/hero_banner.jpg') center/cover no-repeat;
-  padding: 100px 0;
-  text-align: center;
-  color: white;
-}
-
-.models-hero-overlay {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(74, 103, 65, 0.9);
-}
-
-.models-hero-title {
-  position: relative;
-  z-index: 2;
-  font-size: 2.5rem;
-  font-weight: 800;
-  margin-bottom: 12px;
-}
-
-.models-hero-subtitle {
-  position: relative;
-  z-index: 2;
-  font-size: 1.1rem;
-  opacity: 0.9;
-}
-
-.models-list-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 30px;
-}
-
-.model-detail-card {
-  background-color: var(--white);
-  border-radius: var(--radius-md);
-  padding: 40px 30px;
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border-color);
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-  transition: var(--transition);
-}
-
-.model-detail-card:hover {
-  transform: translateY(-4px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--secondary);
-}
-
-.model-category {
-  font-size: 0.75rem;
-  font-weight: 700;
-  color: var(--primary);
-  text-transform: uppercase;
-  margin-bottom: 10px;
-  display: block;
-}
-
-.model-detail-card h3 {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--text-dark);
-  margin-bottom: 16px;
-  line-height: 1.4;
-}
-
-.model-desc {
-  font-size: 0.92rem;
-  color: var(--text-medium);
-  line-height: 1.6;
-  margin-bottom: 24px;
-  flex-grow: 1;
-}
-
-.read-more-btn {
-  color: var(--secondary);
-  font-weight: 700;
-  text-decoration: none;
-  font-size: 0.9rem;
-  transition: var(--transition);
-}
-
-.read-more-btn:hover {
-  color: var(--primary);
-}
-
-@media (max-width: 900px) {
-  .models-list-grid {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

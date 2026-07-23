@@ -1,5 +1,7 @@
 # Con Đường Hướng Thiện (CDKT) - System Documentation & Changelog
 
+UI/UX work must read `openspec/ui-dna.md` (or the existing DNA doc) before any visual change.
+
 Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhập cộng đồng — Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.
 
 ---

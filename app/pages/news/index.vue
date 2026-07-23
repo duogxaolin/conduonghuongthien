@@ -1,49 +1,94 @@
 <template>
-  <div class="news-page section-bg">
+  <div class="bg-[#F8FAF7]">
     <!-- Hero Header -->
-    <section class="news-hero">
-      <div class="news-hero-overlay"></div>
-      <div class="container">
-        <h2 class="news-hero-title">Bản Tin Hoạt Động</h2>
-        <p class="news-hero-subtitle">Cập nhật tin tức, chỉ đạo điều hành và sự kiện hỗ trợ hoàn lương trên toàn quốc</p>
+    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover px-4 py-16 text-center text-white sm:py-[100px]">
+      <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)]"></div>
+      <div class="container relative z-10">
+        <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem]">Bản Tin Hoạt Động</h2>
+        <p class="text-[1.1rem] opacity-90">Cập nhật tin tức, chỉ đạo điều hành và sự kiện hỗ trợ hoàn lương trên toàn quốc</p>
       </div>
     </section>
 
     <!-- Main Content Grid -->
     <section class="section">
-      <div class="container news-container">
+      <div class="container grid grid-cols-1 lg:grid-cols-[1fr_3fr] gap-[30px]">
         <!-- Filter Sidebar -->
-        <aside class="news-filter-sidebar">
-          <div class="filter-card">
-            <h4>DANH MỤC TIN TỨC</h4>
-            <ul>
-              <li><button :class="{ active: activeCategory === 'all' }" @click="setCategory('all')">Tất cả bản tin</button></li>
-              <li><button :class="{ active: activeCategory === 'tin-noi-bat' }" @click="setCategory('tin-noi-bat')">Tin nổi bật</button></li>
-              <li><button :class="{ active: activeCategory === 'tin-hoat-dong' }" @click="setCategory('tin-hoat-dong')">Tin hoạt động</button></li>
-              <li><button :class="{ active: activeCategory === 'tin-dia-phuong' }" @click="setCategory('tin-dia-phuong')">Tin địa phương</button></li>
+        <aside>
+          <div class="bg-white p-6 rounded-lg border border-[#E2E8DF] shadow-sm sticky top-[100px]">
+            <h4 class="text-[0.9rem] font-bold text-[#4A6741] mb-4 border-b-2 border-[#E2E8DF] pb-2">DANH MỤC TIN TỨC</h4>
+            <ul class="list-none flex flex-col gap-2 p-0 m-0">
+              <li>
+                <button
+                  :class="activeCategory === 'all' ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
+                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px]"
+                  @click="setCategory('all')"
+                >Tất cả bản tin</button>
+              </li>
+              <li>
+                <button
+                  :class="activeCategory === 'tin-noi-bat' ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
+                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px]"
+                  @click="setCategory('tin-noi-bat')"
+                >Tin nổi bật</button>
+              </li>
+              <li>
+                <button
+                  :class="activeCategory === 'tin-hoat-dong' ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
+                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px]"
+                  @click="setCategory('tin-hoat-dong')"
+                >Tin hoạt động</button>
+              </li>
+              <li>
+                <button
+                  :class="activeCategory === 'tin-dia-phuong' ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
+                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px]"
+                  @click="setCategory('tin-dia-phuong')"
+                >Tin địa phương</button>
+              </li>
             </ul>
           </div>
         </aside>
 
         <!-- News List -->
-        <div class="news-main-list">
+        <div class="flex flex-col gap-6">
           <SectionBar icon="fa-solid fa-newspaper" title="Bản tin hoạt động" />
-          <div v-if="searchQuery" class="search-notice">
+          <div
+            v-if="searchQuery"
+            class="bg-[#F8FAF7] border border-[#E2E8DF] border-l-4 border-l-[#7CB342] px-[18px] py-[14px] rounded text-[0.92rem] text-[#4A5545] flex items-center justify-between gap-3 flex-wrap"
+          >
             Kết quả tìm kiếm cho từ khóa: <strong>&laquo;{{ searchQuery }}&raquo;</strong>
-            <button class="search-clear" @click="clearSearch">✕ Bỏ tìm kiếm</button>
+            <button
+              class="bg-transparent border border-[#E2E8DF] rounded-[20px] px-3 py-[5px] text-[0.8rem] font-bold text-[#4A5545] cursor-pointer transition-all duration-300 hover:bg-[#4A6741] hover:border-[#4A6741] hover:text-white"
+              @click="clearSearch"
+            >✕ Bỏ tìm kiếm</button>
           </div>
-          <div v-if="filteredNews.length === 0" class="search-empty">
-            Không tìm thấy bản tin phù hợp. Vui lòng thử từ khóa khác hoặc xem <nuxt-link to="/news">tất cả bản tin</nuxt-link>.
+          <div
+            v-if="filteredNews.length === 0"
+            class="bg-white border border-dashed border-[#E2E8DF] px-6 py-10 rounded-lg text-center text-[#7A8675] text-[0.95rem]"
+          >
+            Không tìm thấy bản tin phù hợp. Vui lòng thử từ khóa khác hoặc xem <nuxt-link to="/news" class="text-[#4A6741] font-bold">tất cả bản tin</nuxt-link>.
           </div>
-          <div v-for="item in filteredNews" :key="item.id" class="news-horizontal-card">
-            <div class="news-card-img">
-              <img :src="item.image" :alt="item.title" />
+          <div
+            v-for="item in filteredNews"
+            :key="item.id"
+            class="flex flex-col sm:flex-row bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-[#7CB342]"
+          >
+            <div class="w-full sm:w-[260px] h-[200px] sm:h-[180px] flex-shrink-0">
+              <img :src="item.image" :alt="item.title" class="w-full h-full object-cover" />
             </div>
-            <div class="news-card-info">
-              <span class="news-card-date">{{ item.date }} • {{ item.categoryName }}</span>
-              <h3><nuxt-link :to="`/news/${item.slug}`">{{ item.title }}</nuxt-link></h3>
-              <p>{{ item.excerpt }}</p>
-              <nuxt-link :to="`/news/${item.slug}`" class="read-more-btn">Xem chi tiết &rarr;</nuxt-link>
+            <div class="p-6 flex flex-col justify-between">
+              <span class="text-[0.8rem] text-[#7A8675] font-semibold mb-1.5 block">{{ item.date }} • {{ item.categoryName }}</span>
+              <h3 class="text-[1.15rem] font-bold leading-[1.4] mb-2">
+                <nuxt-link
+                  :to="`/news/${item.slug}`"
+                  class="no-underline text-[#1E251C] transition-all duration-300 hover:text-[#4A6741]"
+                >{{ item.title }}</nuxt-link>
+              </h3>
+              <p class="text-[0.88rem] text-[#4A5545] leading-[1.5] mb-3">{{ item.excerpt }}</p>
+              <nuxt-link
+                :to="`/news/${item.slug}`"
+                class="text-[#7CB342] font-bold no-underline text-[0.88rem] self-start"
+              >Xem chi tiết &rarr;</nuxt-link>
             </div>
           </div>
         </div>
@@ -161,223 +206,3 @@ onMounted(() => {
   }
 })
 </script>
-
-<style scoped>
-.news-hero {
-  position: relative;
-  background: url('/assets/hero_banner.jpg') center/cover no-repeat;
-  padding: 100px 0;
-  text-align: center;
-  color: white;
-}
-
-.news-hero-overlay {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(74, 103, 65, 0.9);
-}
-
-.news-hero-title {
-  position: relative;
-  z-index: 2;
-  font-size: 2.5rem;
-  font-weight: 800;
-  margin-bottom: 12px;
-}
-
-.news-hero-subtitle {
-  position: relative;
-  z-index: 2;
-  font-size: 1.1rem;
-  opacity: 0.9;
-}
-
-.news-container {
-  display: grid;
-  grid-template-columns: 1fr 3fr;
-  gap: 30px;
-}
-
-.filter-card {
-  background-color: var(--white);
-  padding: 24px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
-  position: sticky;
-  top: 100px;
-}
-
-.filter-card h4 {
-  font-size: 0.9rem;
-  font-weight: 700;
-  color: var(--primary);
-  margin-bottom: 16px;
-  border-bottom: 2px solid var(--border-color);
-  padding-bottom: 8px;
-}
-
-.filter-card ul {
-  list-style: none;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.filter-card button {
-  width: 100%;
-  text-align: left;
-  background: none;
-  border: none;
-  padding: 10px 14px;
-  font-size: 0.9rem;
-  font-weight: 600;
-  color: var(--text-medium);
-  border-radius: var(--radius-sm);
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.filter-card button:hover, .filter-card button.active {
-  background-color: var(--bg-light);
-  color: var(--primary);
-  padding-left: 18px;
-}
-
-.news-main-list {
-  display: flex;
-  flex-direction: column;
-  gap: 24px;
-}
-
-.news-horizontal-card {
-  display: flex;
-  background-color: var(--white);
-  border-radius: var(--radius-md);
-  overflow: hidden;
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border-color);
-  transition: var(--transition);
-}
-
-.news-horizontal-card:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-md);
-  border-color: var(--secondary);
-}
-
-.news-card-img {
-  width: 260px;
-  height: 180px;
-  flex-shrink: 0;
-}
-
-.news-card-img img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.news-card-info {
-  padding: 24px;
-  display: flex;
-  flex-direction: column;
-  justify-content: space-between;
-}
-
-.news-card-date {
-  font-size: 0.8rem;
-  color: var(--text-muted);
-  font-weight: 600;
-  margin-bottom: 6px;
-}
-
-.news-card-info h3 {
-  font-size: 1.15rem;
-  font-weight: 700;
-  line-height: 1.4;
-  margin-bottom: 8px;
-}
-
-.news-card-info h3 a {
-  text-decoration: none;
-  color: var(--text-dark);
-  transition: var(--transition);
-}
-
-.news-card-info h3 a:hover {
-  color: var(--primary);
-}
-
-.news-card-info p {
-  font-size: 0.88rem;
-  color: var(--text-medium);
-  line-height: 1.5;
-  margin-bottom: 12px;
-}
-
-.read-more-btn {
-  color: var(--secondary);
-  font-weight: 700;
-  text-decoration: none;
-  font-size: 0.88rem;
-  align-self: flex-start;
-}
-
-.search-notice {
-  background: var(--bg-light);
-  border: 1px solid var(--border-color);
-  border-left: 4px solid var(--secondary);
-  padding: 14px 18px;
-  border-radius: var(--radius-sm);
-  font-size: 0.92rem;
-  color: var(--text-medium);
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-.search-clear {
-  background: none;
-  border: 1px solid var(--border-color);
-  border-radius: 20px;
-  padding: 5px 12px;
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--text-medium);
-  cursor: pointer;
-  transition: var(--transition);
-}
-.search-clear:hover {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
-}
-.search-empty {
-  background: #fff;
-  border: 1px dashed var(--border-color);
-  padding: 40px 24px;
-  border-radius: var(--radius-md);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: 0.95rem;
-}
-.search-empty a {
-  color: var(--primary);
-  font-weight: 700;
-}
-
-@media (max-width: 900px) {
-  .news-container {
-    grid-template-columns: 1fr;
-  }
-  .news-horizontal-card {
-    flex-direction: column;
-  }
-  .news-card-img {
-    width: 100%;
-    height: 200px;
-  }
-}
-</style>

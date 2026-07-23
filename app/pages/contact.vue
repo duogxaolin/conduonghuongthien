@@ -1,69 +1,115 @@
 <template>
-  <div class="contact-page section-bg">
+  <div class="bg-[#F8FAF7]">
     <!-- Hero Header -->
-    <section class="contact-hero">
-      <div class="contact-hero-overlay"></div>
-      <div class="container">
-        <h2 class="contact-hero-title">{{ t('contact_hero_title') }}</h2>
-        <p class="contact-hero-subtitle">{{ t('contact_hero_sub') }}</p>
+    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover px-4 py-16 text-center text-white sm:py-[100px]">
+      <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)]"></div>
+      <div class="container relative z-10">
+        <h2 class="text-[1.9rem] font-extrabold mb-3 relative z-10 sm:text-[2.5rem]">{{ t('contact_hero_title') }}</h2>
+        <p class="text-[1.1rem] opacity-90 relative z-10">{{ t('contact_hero_sub') }}</p>
       </div>
     </section>
 
     <!-- Content Grid -->
     <section class="section">
-      <div class="container contact-grid">
+      <div class="container grid grid-cols-1 lg:grid-cols-2 gap-[60px]">
         <!-- Contact Details -->
-        <div class="contact-details">
-          <div class="contact-block">
-            <h3>{{ t('contact_editorial_info') }}</h3>
-            <p><strong>{{ t('footer_agency') }}</strong> Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an</p>
-            <p><strong>{{ t('footer_address') }}</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội</p>
-            <p><strong>{{ t('hotline_lbl') }}:</strong> 0903.480.985</p>
-            <p><strong>{{ t('footer_email') }}</strong> contact@conduonghuongthien.com.vn</p>
+        <div class="flex flex-col gap-10">
+          <div>
+            <h3 class="text-[1.4rem] font-bold text-[#4A6741] mb-5 border-b-2 border-[#E2E8DF] pb-2">{{ t('contact_editorial_info') }}</h3>
+            <p class="text-[0.95rem] text-[#4A5545] mb-3 leading-relaxed">
+              <strong class="text-[#1E251C]">{{ t('footer_agency') }}</strong> Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an
+            </p>
+            <p class="text-[0.95rem] text-[#4A5545] mb-3 leading-relaxed">
+              <strong class="text-[#1E251C]">{{ t('footer_address') }}</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội
+            </p>
+            <p class="text-[0.95rem] text-[#4A5545] mb-3 leading-relaxed">
+              <strong class="text-[#1E251C]">{{ t('hotline_lbl') }}:</strong> 0903.480.985
+            </p>
+            <p class="text-[0.95rem] text-[#4A5545] mb-3 leading-relaxed">
+              <strong class="text-[#1E251C]">{{ t('footer_email') }}</strong> contact@conduonghuongthien.com.vn
+            </p>
           </div>
 
-          <div class="contact-block">
-            <h3>{{ t('contact_support_mechanism') }}</h3>
-            <p class="desc-text">
+          <div>
+            <h3 class="text-[1.4rem] font-bold text-[#4A6741] mb-5 border-b-2 border-[#E2E8DF] pb-2">{{ t('contact_support_mechanism') }}</h3>
+            <p class="text-[0.95rem] text-[#4A5545] leading-relaxed text-justify">
               Hệ thống trợ giúp tiếp nhận yêu cầu 24/7 từ người chấp hành xong án phạt tù hoặc thân nhân của họ. Sau khi tiếp nhận thông tin, Ban Biên tập sẽ tiến hành bảo mật dữ liệu cá nhân, phân loại nghiệp vụ và chuyển giao nhanh chóng đến lực lượng Công an cấp cơ sở (xã, phường, thị trấn) hoặc ban ngành liên quan tại địa bàn bạn cư trú để hỗ trợ xử lý kịp thời.
             </p>
           </div>
         </div>
 
         <!-- Contact Form -->
-        <div class="contact-form-card">
-          <h3>{{ t('contact_form_heading') }}</h3>
-          <form @submit.prevent="handleSubmit" class="main-contact-form">
-            <div class="form-group">
-              <label>Họ và tên người đăng ký *</label>
-              <input type="text" v-model="form.name" placeholder="Nhập đầy đủ họ và tên" required />
+        <div class="bg-white p-10 md:p-6 rounded-lg shadow-md border border-[#E2E8DF]">
+          <h3 class="text-[1.3rem] font-bold text-[#4A6741] mb-6">{{ t('contact_form_heading') }}</h3>
+          <form @submit.prevent="handleSubmit" class="flex flex-col gap-5">
+            <div class="flex flex-col gap-2">
+              <label class="text-[0.85rem] font-bold text-[#4A5545]">Họ và tên người đăng ký *</label>
+              <input
+                type="text"
+                v-model="form.name"
+                placeholder="Nhập đầy đủ họ và tên"
+                required
+                class="px-3 py-3 border border-[#E2E8DF] rounded bg-[#F8FAF7] font-[inherit] text-[0.9rem] outline-none transition-all duration-300 focus:border-[#7CB342] focus:bg-white focus:shadow-sm"
+              />
             </div>
 
-            <div class="form-row">
-              <div class="form-group">
-                <label>Số điện thoại *</label>
-                <input type="tel" v-model="form.phone" placeholder="Nhập số điện thoại liên hệ" required />
+            <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div class="flex flex-col gap-2">
+                <label class="text-[0.85rem] font-bold text-[#4A5545]">Số điện thoại *</label>
+                <input
+                  type="tel"
+                  v-model="form.phone"
+                  placeholder="Nhập số điện thoại liên hệ"
+                  required
+                  class="px-3 py-3 border border-[#E2E8DF] rounded bg-[#F8FAF7] font-[inherit] text-[0.9rem] outline-none transition-all duration-300 focus:border-[#7CB342] focus:bg-white focus:shadow-sm"
+                />
               </div>
-              <div class="form-group">
-                <label>Email liên hệ (nếu có)</label>
-                <input type="email" v-model="form.email" placeholder="Nhập địa chỉ email" />
+              <div class="flex flex-col gap-2">
+                <label class="text-[0.85rem] font-bold text-[#4A5545]">Email liên hệ (nếu có)</label>
+                <input
+                  type="email"
+                  v-model="form.email"
+                  placeholder="Nhập địa chỉ email"
+                  class="px-3 py-3 border border-[#E2E8DF] rounded bg-[#F8FAF7] font-[inherit] text-[0.9rem] outline-none transition-all duration-300 focus:border-[#7CB342] focus:bg-white focus:shadow-sm"
+                />
               </div>
             </div>
 
-            <div class="form-group">
-              <label>Địa chỉ thường trú / cư trú *</label>
-              <input type="text" v-model="form.address" placeholder="Số nhà, đường phố, xã/phường, quận/huyện, tỉnh/thành phố" required />
+            <div class="flex flex-col gap-2">
+              <label class="text-[0.85rem] font-bold text-[#4A5545]">Địa chỉ thường trú / cư trú *</label>
+              <input
+                type="text"
+                v-model="form.address"
+                placeholder="Số nhà, đường phố, xã/phường, quận/huyện, tỉnh/thành phố"
+                required
+                class="px-3 py-3 border border-[#E2E8DF] rounded bg-[#F8FAF7] font-[inherit] text-[0.9rem] outline-none transition-all duration-300 focus:border-[#7CB342] focus:bg-white focus:shadow-sm"
+              />
             </div>
 
-            <div class="form-group">
-              <label>Nội dung chi tiết cần trợ giúp *</label>
-              <textarea v-model="form.message" rows="5" placeholder="Mô tả cụ thể nguyện vọng (Ví dụ: tư vấn vay vốn theo Quyết định 22, thủ tục đăng ký tạm trú, hỗ trợ học nghề mộc, xóa án tích...)" required></textarea>
+            <div class="flex flex-col gap-2">
+              <label class="text-[0.85rem] font-bold text-[#4A5545]">Nội dung chi tiết cần trợ giúp *</label>
+              <textarea
+                v-model="form.message"
+                rows="5"
+                placeholder="Mô tả cụ thể nguyện vọng (Ví dụ: tư vấn vay vốn theo Quyết định 22, thủ tục đăng ký tạm trú, hỗ trợ học nghề mộc, xóa án tích...)"
+                required
+                class="px-3 py-3 border border-[#E2E8DF] rounded bg-[#F8FAF7] font-[inherit] text-[0.9rem] outline-none transition-all duration-300 focus:border-[#7CB342] focus:bg-white focus:shadow-sm resize-y"
+              ></textarea>
             </div>
 
             <button type="submit" class="btn btn-primary" :disabled="submitStatus === 'loading'">
               {{ submitStatus === 'loading' ? 'Đang gửi...' : 'Gửi yêu cầu trợ giúp' }}
             </button>
-            <div v-if="submitMessage" class="form-feedback" :class="submitStatus" role="status" aria-live="polite">
+
+            <div
+              v-if="submitMessage"
+              role="status"
+              aria-live="polite"
+              class="mt-4 px-[18px] py-[14px] rounded text-[0.9rem] font-semibold leading-relaxed"
+              :class="submitStatus === 'success'
+                ? 'bg-[#e8f5e9] text-[#2e6b32] border border-[#b6d7b8]'
+                : 'bg-[#fdecea] text-[#b71c1c] border border-[#f5c6cb]'"
+            >
               {{ submitMessage }}
             </div>
           </form>
@@ -122,157 +168,3 @@ const handleSubmit = async () => {
   }
 }
 </script>
-
-<style scoped>
-.contact-hero {
-  position: relative;
-  background: url('/assets/hero_banner.jpg') center/cover no-repeat;
-  padding: 100px 0;
-  text-align: center;
-  color: white;
-}
-
-.contact-hero-overlay {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(74, 103, 65, 0.9);
-}
-
-.contact-hero-title {
-  position: relative;
-  z-index: 2;
-  font-size: 2.5rem;
-  font-weight: 800;
-  margin-bottom: 12px;
-}
-
-.contact-hero-subtitle {
-  position: relative;
-  z-index: 2;
-  font-size: 1.1rem;
-  opacity: 0.9;
-}
-
-.contact-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 60px;
-}
-
-.contact-details {
-  display: flex;
-  flex-direction: column;
-  gap: 40px;
-}
-
-.contact-block h3 {
-  font-size: 1.4rem;
-  font-weight: 700;
-  color: var(--primary);
-  margin-bottom: 20px;
-  border-bottom: 2px solid var(--border-color);
-  padding-bottom: 8px;
-}
-
-.contact-block p {
-  font-size: 0.95rem;
-  color: var(--text-medium);
-  margin-bottom: 12px;
-  line-height: 1.6;
-}
-
-.contact-block strong {
-  color: var(--text-dark);
-}
-
-.desc-text {
-  text-align: justify;
-}
-
-.form-feedback {
-  margin-top: 16px;
-  padding: 14px 18px;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  font-weight: 600;
-  line-height: 1.5;
-}
-.form-feedback.success {
-  background: #e8f5e9;
-  color: #2e6b32;
-  border: 1px solid #b6d7b8;
-}
-.form-feedback.error {
-  background: #fdecea;
-  color: #b71c1c;
-  border: 1px solid #f5c6cb;
-}
-
-.contact-form-card {
-  background-color: var(--white);
-  padding: 40px;
-  border-radius: var(--radius-md);
-  box-shadow: var(--shadow-md);
-  border: 1px solid var(--border-color);
-}
-
-.contact-form-card h3 {
-  font-size: 1.3rem;
-  font-weight: 700;
-  color: var(--primary);
-  margin-bottom: 24px;
-}
-
-.main-contact-form {
-  display: flex;
-  flex-direction: column;
-  gap: 20px;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-.form-row {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.form-group label {
-  font-size: 0.85rem;
-  font-weight: 700;
-  color: var(--text-medium);
-}
-
-.form-group input, .form-group textarea {
-  padding: 12px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  font-family: inherit;
-  font-size: 0.9rem;
-  outline: none;
-  background-color: var(--bg-light);
-  transition: var(--transition);
-}
-
-.form-group input:focus, .form-group textarea:focus {
-  border-color: var(--secondary);
-  background-color: var(--white);
-  box-shadow: var(--shadow-sm);
-}
-
-@media (max-width: 900px) {
-  .contact-grid {
-    grid-template-columns: 1fr;
-  }
-  .contact-form-card {
-    padding: 24px;
-  }
-  .form-row {
-    grid-template-columns: 1fr;
-  }
-}
-</style>

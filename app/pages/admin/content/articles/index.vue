@@ -4,25 +4,77 @@ definePageMeta({
   middleware: 'admin-auth'
 })
 
+const route = useRoute()
 const articles = ref<any[]>([])
 const loading = ref(true)
 const search = ref('')
 const selectedType = ref('')
 const selectedStatus = ref('')
+const selectedParentCategoryId = ref<number | null>(null)
+const selectedCategoryId = ref<number | null>(null)
 const pagination = ref({ page: 1, totalPages: 1, total: 0 })
+
+// Category state
+const allCategories = ref<any[]>([])
 
 const typeLabels: Record<string, string> = {
   news: 'Bản tin', role_model: 'Tấm gương', reintegration: 'Mô hình', document: 'Văn bản', faq: 'Giải đáp',
 }
 
 const toast = useToast()
+const { confirm } = useConfirm()
 
+// ─── Category helpers ─────────────────────────────────────────────────────────
+// Root categories matching the current type filter
+const parentCategoryOptions = computed(() => {
+  return allCategories.value.filter(
+    (c) => !c.parentId && (!selectedType.value || c.type === selectedType.value)
+  )
+})
+
+// Children of the selected parent
+const subCategoryOptions = computed(() => {
+  if (!selectedParentCategoryId.value) return []
+  return allCategories.value.filter((c) => c.parentId === selectedParentCategoryId.value)
+})
+
+const fetchCategories = async () => {
+  try {
+    const params: any = {}
+    if (selectedType.value) params.type = selectedType.value
+    const res = await $fetch('/api/admin/categories', { params })
+    if (res.ok) allCategories.value = res.items
+  } catch { /* non-critical */ }
+}
+
+// When type filter changes: reload categories, reset category filters
+watch(selectedType, async () => {
+  selectedParentCategoryId.value = null
+  selectedCategoryId.value = null
+  await fetchCategories()
+})
+
+// When parent category changes: reset sub-category selection
+watch(selectedParentCategoryId, () => {
+  selectedCategoryId.value = null
+})
+
+// ─── Articles fetch ───────────────────────────────────────────────────────────
 const fetchArticles = async (page = 1) => {
   loading.value = true
   try {
-    const res = await $fetch('/api/admin/articles', {
-      params: { page, search: search.value, type: selectedType.value, status: selectedStatus.value, perPage: 15 }
-    })
+    const params: any = {
+      page,
+      search: search.value,
+      type: selectedType.value,
+      status: selectedStatus.value,
+      perPage: 15,
+    }
+    // Wire category filter: prefer sub-category if selected, else parent
+    const effectiveCategoryId = selectedCategoryId.value ?? selectedParentCategoryId.value
+    if (effectiveCategoryId) params.categoryId = effectiveCategoryId
+
+    const res = await $fetch('/api/admin/articles', { params })
     if (res.ok) { articles.value = res.items; pagination.value = res.pagination }
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách bài viết')
@@ -32,7 +84,8 @@ const fetchArticles = async (page = 1) => {
 }
 
 const deleteArticle = async (art: any) => {
-  if (!confirm(`Bạn có chắc muốn xóa bài viết "${art.title}"?`)) return
+  const ok = await confirm({ title: 'Xóa bài viết', message: `Bạn có chắc muốn xóa bài viết "${art.title}"?`, danger: true, confirmLabel: 'Xóa' })
+  if (!ok) return
   try {
     await $fetch(`/api/admin/articles/${art.id}`, { method: 'DELETE' })
     toast.success('Đã xóa bài viết thành công!')
@@ -42,7 +95,26 @@ const deleteArticle = async (art: any) => {
   }
 }
 
-onMounted(() => { fetchArticles() })
+onMounted(async () => {
+  // Pre-select categoryId from query param (coming from categories page "Xem bài")
+  const qCategoryId = route.query.categoryId ? Number(route.query.categoryId) : null
+  await fetchCategories()
+  if (qCategoryId) {
+    // Find the category to set up parent/child properly
+    const cat = allCategories.value.find((c) => c.id === qCategoryId)
+    if (cat) {
+      if (cat.parentId) {
+        selectedParentCategoryId.value = cat.parentId
+        selectedCategoryId.value = cat.id
+        if (cat.type) selectedType.value = cat.type
+      } else {
+        selectedParentCategoryId.value = cat.id
+        if (cat.type) selectedType.value = cat.type
+      }
+    }
+  }
+  await fetchArticles()
+})
 </script>
 
 <template>
@@ -77,6 +149,25 @@ onMounted(() => { fetchArticles() })
         <option value="reintegration">Mô hình tái hòa nhập</option>
         <option value="document">Văn bản pháp luật</option>
         <option value="faq">Giải đáp pháp luật</option>
+      </select>
+      <!-- Parent category filter -->
+      <select
+        v-model="selectedParentCategoryId"
+        @change="fetchArticles(1)"
+        class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
+      >
+        <option :value="null">Tất cả Danh mục</option>
+        <option v-for="cat in parentCategoryOptions" :key="cat.id" :value="cat.id">{{ cat.name }}</option>
+      </select>
+      <!-- Sub-category filter (only shown when parent is selected and has children) -->
+      <select
+        v-if="selectedParentCategoryId && subCategoryOptions.length > 0"
+        v-model="selectedCategoryId"
+        @change="fetchArticles(1)"
+        class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
+      >
+        <option :value="null">Tất cả danh mục con</option>
+        <option v-for="sub in subCategoryOptions" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
       </select>
       <select v-model="selectedStatus" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
         <option value="">Tất cả Trạng thái</option>

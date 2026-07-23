@@ -1,27 +1,31 @@
 <template>
-  <div class="role-models-page section-bg">
+  <div class="bg-[#F8FAF7]">
     <!-- Hero Header -->
-    <section class="role-hero">
-      <div class="role-hero-overlay"></div>
-      <div class="container">
-        <h2 class="role-hero-title">Tấm Gương Tiêu Biểu</h2>
-        <p class="role-hero-subtitle">Hành trình vươn lên từ lầm lỡ, khẳng định giá trị bản thân và đóng góp tích cực cho cộng đồng</p>
+    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover px-4 py-16 text-center text-white sm:py-[100px]">
+      <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)]"></div>
+      <div class="container relative z-10">
+        <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem]">Tấm Gương Tiêu Biểu</h2>
+        <p class="text-[1.1rem] opacity-90">Hành trình vươn lên từ lầm lỡ, khẳng định giá trị bản thân và đóng góp tích cực cho cộng đồng</p>
       </div>
     </section>
 
     <!-- Main List -->
-    <section class="section">
+    <section class="py-12">
       <div class="container">
         <SectionBar icon="fa-solid fa-star" title="Những tấm gương hoàn lương" />
-        <div class="role-list-grid">
-          <div v-for="item in roleModels" :key="item.id" class="role-card-item">
-            <div class="avatar-wrap">
-              <img :src="item.image" :alt="item.name" />
+        <div class="flex flex-col gap-[30px] max-w-[900px] mx-auto">
+          <div
+            v-for="item in roleModels"
+            :key="item.id"
+            class="bg-white rounded-lg p-5 sm:p-[30px] flex flex-col items-center text-center gap-5 sm:gap-[30px] shadow-sm border border-[#E2E8DF] transition-all duration-300 hover:shadow-md hover:border-[#7CB342] md:flex-row md:items-start md:text-left"
+          >
+            <div class="w-24 h-24 sm:w-[140px] sm:h-[140px] rounded-full overflow-hidden border-4 border-[#F8FAF7] shrink-0">
+              <img :src="item.image" :alt="item.name" class="w-full h-full object-cover" />
             </div>
-            <div class="info-wrap">
-              <span class="location">📍 {{ item.location }}</span>
-              <h3>{{ item.title }}</h3>
-              <p class="excerpt">{{ item.excerpt }}</p>
+            <div>
+              <span class="text-[0.8rem] font-bold text-[#4A6741] bg-[#F8FAF7] px-[10px] py-[4px] rounded inline-block mb-[10px]">📍 {{ item.location }}</span>
+              <h3 class="text-[1.3rem] font-bold mb-3 text-[#1E251C]">{{ item.title }}</h3>
+              <p class="text-[0.95rem] text-[#4A5545] leading-[1.6] mb-5">{{ item.excerpt }}</p>
               <nuxt-link :to="`/role-models/${item.slug}`" class="btn btn-outline">Đọc câu chuyện hoàn lương &rarr;</nuxt-link>
             </div>
           </div>
@@ -58,106 +62,3 @@ const roleModels = [
   }
 ]
 </script>
-
-<style scoped>
-.role-hero {
-  position: relative;
-  background: url('/assets/hero_banner.jpg') center/cover no-repeat;
-  padding: 100px 0;
-  text-align: center;
-  color: white;
-}
-
-.role-hero-overlay {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(74, 103, 65, 0.9);
-}
-
-.role-hero-title {
-  position: relative;
-  z-index: 2;
-  font-size: 2.5rem;
-  font-weight: 800;
-  margin-bottom: 12px;
-}
-
-.role-hero-subtitle {
-  position: relative;
-  z-index: 2;
-  font-size: 1.1rem;
-  opacity: 0.9;
-}
-
-.role-list-grid {
-  display: flex;
-  flex-direction: column;
-  gap: 30px;
-  max-width: 900px;
-  margin: 0 auto;
-}
-
-.role-card-item {
-  background-color: var(--white);
-  border-radius: var(--radius-md);
-  padding: 30px;
-  display: flex;
-  gap: 30px;
-  box-shadow: var(--shadow-sm);
-  border: 1px solid var(--border-color);
-  transition: var(--transition);
-}
-
-.role-card-item:hover {
-  box-shadow: var(--shadow-md);
-  border-color: var(--secondary);
-}
-
-.avatar-wrap {
-  width: 140px;
-  height: 140px;
-  border-radius: 50%;
-  overflow: hidden;
-  border: 4px solid var(--bg-light);
-  flex-shrink: 0;
-}
-
-.avatar-wrap img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.location {
-  font-size: 0.8rem;
-  font-weight: 700;
-  color: var(--primary);
-  background-color: var(--bg-light);
-  padding: 4px 10px;
-  border-radius: 4px;
-  display: inline-block;
-  margin-bottom: 10px;
-}
-
-.info-wrap h3 {
-  font-size: 1.3rem;
-  font-weight: 700;
-  margin-bottom: 12px;
-  color: var(--text-dark);
-}
-
-.excerpt {
-  font-size: 0.95rem;
-  color: var(--text-medium);
-  line-height: 1.6;
-  margin-bottom: 20px;
-}
-
-@media (max-width: 768px) {
-  .role-card-item {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
-}
-</style>

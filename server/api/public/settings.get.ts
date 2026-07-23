@@ -9,7 +9,7 @@ export default defineEventHandler(async () => {
     const publicSettings: Record<string, string | null> = {}
     const allowedKeys = [
       'site_name', 'site_description', 'hotline', 'email',
-      'address', 'facebook_url', 'logo_url', 'hero_banner_url'
+      'address', 'facebook_url', 'logo_url', 'hero_banner_url', 'nav_menu'
     ]
 
     for (const s of allSettings) {

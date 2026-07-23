@@ -20,6 +20,8 @@ export default defineEventHandler(async (event) => {
 
   const body = await readBody(event).catch(() => ({}))
   const type = String(body?.type || 'news').trim()
+  const category = String(body?.category || '').trim() || null
+  const categoryId = body?.categoryId ? Number(body.categoryId) : null
   const title = String(body?.title || '').trim()
   const excerpt = String(body?.excerpt || '').trim() || null
   const content = String(body?.content || '')
@@ -52,6 +54,8 @@ export default defineEventHandler(async (event) => {
 
   const [res] = await db.insert(articles).values({
     type,
+    category,
+    categoryId,
     title,
     slug: uniqueSlug,
     excerpt,

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-const { user, logout } = useAdminAuth()
+const { user, logout, hasPermission } = useAdminAuth()
 const route = useRoute()
 
 const isSidebarCollapsed = ref(false)
@@ -10,11 +10,12 @@ const toggleMobileMenu = () => { isMobileMenuOpen.value = !isMobileMenuOpen.valu
 
 watch(() => route.fullPath, () => { isMobileMenuOpen.value = false })
 
-const menuGroups = [
+const menuGroups = computed(() => [
   {
     title: 'Tổng quan',
     items: [
       { label: 'Dashboard', icon: 'fa-solid fa-chart-pie', path: '/admin' },
+      ...(hasPermission('analytics', 'read') ? [{ label: 'Thống kê truy cập', icon: 'fa-solid fa-chart-line', path: '/admin/analytics' }] : []),
     ]
   },
   {
@@ -28,8 +29,10 @@ const menuGroups = [
     title: 'Nội dung Website',
     items: [
       { label: 'Trang chủ (Kéo-thả)', icon: 'fa-solid fa-cubes', path: '/admin/content/home' },
+      { label: 'Menu Điều hướng', icon: 'fa-solid fa-bars', path: '/admin/content/navigation' },
       { label: 'Bài viết & Bản tin', icon: 'fa-solid fa-newspaper', path: '/admin/content/articles' },
       { label: 'Thư viện Media', icon: 'fa-solid fa-images', path: '/admin/media' },
+      ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Kho kiến thức Chatbot', icon: 'fa-solid fa-book-open', path: '/admin/chatbot/knowledge' }] : []),
     ]
   },
   {
@@ -38,9 +41,10 @@ const menuGroups = [
       { label: 'Đơn đăng ký hỗ trợ', icon: 'fa-solid fa-envelope-open-text', path: '/admin/submissions' },
       { label: 'Cài đặt chung', icon: 'fa-solid fa-gear', path: '/admin/settings/general' },
       { label: 'Lưu trữ Media (R2)', icon: 'fa-solid fa-cloud-arrow-up', path: '/admin/settings/media-storage' },
+      ...(hasPermission('chatbot_settings', 'read') ? [{ label: 'Cài đặt Chatbot', icon: 'fa-solid fa-robot', path: '/admin/chatbot/settings' }] : []),
     ]
   }
-]
+])
 </script>
 
 <template>
@@ -80,6 +84,20 @@ const menuGroups = [
         >
           <i class="fa-solid fa-xmark"></i>
         </button>
+      </div>
+
+      <!-- Mobile-only user card -->
+      <div
+        v-if="user && !isSidebarCollapsed"
+        class="flex lg:hidden items-center gap-3 px-4 py-3 border-b border-white/10 bg-white/5"
+      >
+        <div class="w-9 h-9 rounded-full bg-[#2c6e33] text-white flex items-center justify-center font-bold text-sm shrink-0">
+          {{ user.username.charAt(0).toUpperCase() }}
+        </div>
+        <div class="flex flex-col min-w-0">
+          <span class="text-[0.85rem] font-bold text-white truncate">{{ user.username }}</span>
+          <span class="text-[0.7rem] text-[#8ed694]">{{ user.isSuperAdmin ? 'SuperAdmin' : user.roleName }}</span>
+        </div>
       </div>
 
       <!-- Nav -->
@@ -146,14 +164,43 @@ const menuGroups = [
             <span class="text-[#122815] font-bold">{{ route.name || 'Admin' }}</span>
           </div>
         </div>
-        <nuxt-link
-          to="/"
-          target="_blank"
-          class="inline-flex items-center gap-1.5 text-[#2c6e33] no-underline font-semibold text-[0.85rem] px-3 py-1.5 rounded-md bg-[#f0f7f1] hover:bg-[#e1f0e2] transition-colors"
-        >
-          <i class="fa-solid fa-globe"></i>
-          <span class="hidden sm:inline">Xem Website ↗</span>
-        </nuxt-link>
+        <!-- Topbar right: user chip with dropdown (desktop) -->
+        <div class="flex items-center gap-2">
+          <div v-if="user" class="relative group hidden sm:flex">
+            <button class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#f0f7f1] hover:bg-[#e1f0e2] transition-colors cursor-pointer border-0">
+              <div class="w-8 h-8 rounded-full bg-[#2c6e33] text-white text-sm font-bold flex items-center justify-center shrink-0">
+                {{ user.username.charAt(0).toUpperCase() }}
+              </div>
+              <span class="text-[0.85rem] font-semibold text-[#122815] truncate max-w-[100px]">{{ user.username }}</span>
+              <i class="fa-solid fa-caret-down text-[#2c6e33] text-xs"></i>
+            </button>
+            <!-- Dropdown panel -->
+            <div class="absolute top-full right-0 mt-1 w-52 bg-white border border-[#e2ece3] rounded-lg shadow-lg z-50 opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all duration-150">
+              <div class="px-4 py-3">
+                <div class="text-[0.85rem] font-bold text-[#122815]">{{ user.username }}</div>
+                <div class="text-[0.75rem] text-[#667768]">{{ user.isSuperAdmin ? 'SuperAdmin' : user.roleName }}</div>
+              </div>
+              <div class="border-t border-[#e2ece3]"></div>
+              <div class="px-2 py-2 flex flex-col gap-1">
+                <nuxt-link
+                  to="/"
+                  target="_blank"
+                  class="flex items-center gap-2 px-3 py-2 rounded-md text-[0.85rem] text-[#2c6e33] font-semibold no-underline hover:bg-[#f0f7f1] transition-colors"
+                >
+                  <i class="fa-solid fa-globe w-4 text-center"></i>
+                  <span>Xem Website ↗</span>
+                </nuxt-link>
+                <button
+                  class="flex items-center gap-2 px-3 py-2 rounded-md text-[0.85rem] text-red-500 font-semibold hover:bg-red-50 transition-colors cursor-pointer border-0 w-full text-left"
+                  @click="logout"
+                >
+                  <i class="fa-solid fa-right-from-bracket w-4 text-center"></i>
+                  <span>Đăng xuất</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </header>
 
       <!-- Page Content -->
@@ -165,6 +212,8 @@ const menuGroups = [
 
   <!-- Global Media Library Modal — rendered once, driven by useImagePicker() -->
   <AdminMediaLibraryModal />
+  <!-- Global Confirm Dialog — rendered once, driven by useConfirm() -->
+  <AdminConfirmModal />
 </template>
 
 <style scoped>

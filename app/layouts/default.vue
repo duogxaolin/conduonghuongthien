@@ -1,196 +1,232 @@
 <template>
-  <div class="app-layout" :class="fontSizeClass">
+  <div class="app-layout">
     <ToastContainer />
     <!-- Mobile Menu Overlay -->
-    <div class="mobile-menu-overlay" :class="{ 'is-show': isMobileMenuOpen }" @click="toggleMobileMenu"></div>
-    
+    <div
+      class="fixed inset-0 w-screen h-screen bg-[rgba(20,43,23,0.58)] backdrop-blur-[2px] z-[10000] opacity-0 pointer-events-none transition-opacity duration-300"
+      :class="{ 'opacity-100 pointer-events-auto': isMobileMenuOpen }"
+      @click="toggleMobileMenu"
+    ></div>
+
     <!-- Top Bar -->
-    <div class="top-bar">
-      <div class="container top-bar-content">
-        <div class="top-left">
-          <span><i class="fa-solid fa-phone"></i> Hotline: 0903.480.985</span>
+    <div class="bg-[#385130] text-white py-2 text-[0.82rem] border-b border-white/10 relative z-[101]">
+      <div class="container flex justify-between items-center">
+        <div class="flex items-center gap-4">
+          <span><i class="fa-solid fa-phone" aria-hidden="true"></i> {{ t('hotline_lbl') }}: 0903.480.985</span>
         </div>
-        <div class="top-right">
-          <!-- Language Switcher -->
-          <div class="lang-switcher">
-            <button :class="{ active: currentLang === 'VN' }" @click="setLang('VN')">VN</button>
-            <button :class="{ active: currentLang === 'EN' }" @click="setLang('EN')">EN</button>
+        <div class="flex items-center gap-4">
+          <div class="flex items-center">
+            <button
+              v-for="locale in locales"
+              :key="`top-${locale.code}`"
+              :class="currentLang === locale.code ? 'text-white bg-[#4A6741] rounded' : 'text-white/70'"
+              class="bg-transparent border-none font-semibold cursor-pointer text-[0.78rem] px-1.5 py-0.5 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9CCC65]"
+              :aria-label="locale.name"
+              :aria-pressed="currentLang === locale.code"
+              @click="setLang(locale.code)">{{ locale.label }}</button>
           </div>
         </div>
       </div>
     </div>
 
     <!-- Main Header -->
-    <header class="main-header" :class="{ 'is-sticky': isSticky }">
+    <header
+      class="main-header bg-white w-full z-[10001] border-b border-[#E2E8DF] transition-all"
+      :class="isSticky ? 'fixed top-0 shadow-md' : 'relative'"
+    >
       <!-- Dòng 1: Logo & Các nút hành động nhanh -->
-      <div class="header-top-row">
-        <div class="container header-top-container">
+      <div class="border-b border-[#E2E8DF] bg-white">
+        <div class="container flex justify-between items-center h-16 lg:h-20">
           <!-- Logo Area -->
-          <nuxt-link to="/" class="logo-area">
-            <div class="logo-icon-wrap">
-              <img class="logo-img-ref" src="/Logo.png" alt="Logo Con Đường Hướng Thiện" />
+          <nuxt-link to="/" class="flex items-center gap-[14px] no-underline">
+            <div>
+              <img class="h-9 lg:h-[50px] w-auto object-contain" src="/Logo.png" alt="Logo Con Đường Hướng Thiện" />
             </div>
-            <div class="logo-text">
-              <h1 class="logo-title">CON ĐƯỜNG HƯỚNG THIỆN</h1>
-              <p class="logo-subtitle">Cổng thông tin điện tử hỗ trợ tái hòa nhập cộng đồng — Bộ Công an</p>
+            <div>
+              <h1 class="text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.5px] leading-[1.2]">CON ĐƯỜNG HƯỚNG THIỆN</h1>
+              <p class="hidden lg:block text-[0.72rem] font-semibold text-[#7A8675] uppercase mt-0.5">Cổng thông tin điện tử hỗ trợ tái hòa nhập cộng đồng — Bộ Công an</p>
             </div>
           </nuxt-link>
 
           <!-- Top Actions -->
-          <div class="header-top-actions">
-            <button class="search-btn-toggle" @click="toggleSearch" :class="{ 'is-active': isSearchActive }" :aria-label="isSearchActive ? 'Đóng ô tìm kiếm' : 'Mở ô tìm kiếm'" :aria-expanded="isSearchActive">
+          <div class="flex items-center gap-3">
+            <button
+              class="bg-[#F8FAF7] border border-[#E2E8DF] w-[38px] h-[38px] rounded-full flex items-center justify-center cursor-pointer text-[0.95rem] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
+              :class="{ 'bg-[#4A6741] text-white border-[#4A6741]': isSearchActive }"
+              @click="toggleSearch"
+              :aria-label="isSearchActive ? t('search_close') : t('search_open')"
+              :aria-expanded="isSearchActive">
               <i :class="isSearchActive ? 'fa-solid fa-xmark' : 'fa-solid fa-magnifying-glass'"></i>
             </button>
-            <nuxt-link to="/contact" class="btn btn-primary btn-support-247">
+            <nuxt-link to="/contact" class="hidden lg:inline-flex items-center gap-2 btn btn-primary px-5 py-2.5 text-[0.85rem] rounded-sm">
               <i class="fa-solid fa-headset"></i> {{ t('support_247') }}
             </nuxt-link>
             <!-- Mobile Toggle -->
-            <button class="menu-toggle" :class="{ 'is-hidden': isMobileMenuOpen }" @click="toggleMobileMenu" aria-label="Mở menu">
-              <span class="bar"></span>
-              <span class="bar"></span>
-              <span class="bar"></span>
+            <button
+              class="lg:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all z-[10003] hover:bg-[#e4f0e2]"
+              @click="toggleMobileMenu"
+              :aria-label="isMobileMenuOpen ? t('menu_close') : t('menu_open')"
+              :aria-expanded="isMobileMenuOpen">
+              <span class="block w-5 h-[2px] rounded-[4px] bg-current transition-transform" :class="{ 'translate-y-[3px] rotate-45': isMobileMenuOpen }"></span>
+              <span class="block w-5 h-[2px] rounded-[4px] bg-current transition-opacity" :class="{ 'opacity-0': isMobileMenuOpen }"></span>
+              <span class="block w-5 h-[2px] rounded-[4px] bg-current transition-transform" :class="{ '-translate-y-[3px] -rotate-45': isMobileMenuOpen }"></span>
             </button>
           </div>
         </div>
       </div>
 
-      <!-- Dòng 2: Thanh Menu Điều hướng -->
-      <div class="header-nav-row" :class="{ 'nav-sticky': isSticky }">
-        <div class="container nav-container">
-          <nav class="main-nav" :class="{ 'is-open': isMobileMenuOpen }" @click="onNavClick" @keydown.escape="toggleMobileMenu">
-            <!-- Modern Drawer Header -->
-            <div class="mobile-drawer-head">
-              <div class="drawer-brand-box">
-                <img class="drawer-logo-img" src="/Logo.png" alt="Logo Con Đường Hướng Thiện" />
-                <div class="drawer-brand-info">
-                  <span class="drawer-brand-name">CON ĐƯỜNG HƯỚNG THIỆN</span>
-                  <span class="drawer-brand-sub">Cổng thông tin điện tử C11 - Bộ Công an</span>
+      <!-- Mobile Drawer Nav -->
+      <nav
+        class="fixed top-0 w-[min(88vw,380px)] max-w-full h-[100dvh] flex flex-col bg-white shadow-[-12px_0_40px_rgba(15,35,18,0.24)] z-[10002] transition-[right] duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden lg:hidden"
+        :class="isMobileMenuOpen ? 'right-0' : '-right-full'"
+        @click="onNavClick" @keydown.escape="toggleMobileMenu"
+      >
+        <!-- Drawer Header -->
+        <div class="flex items-center justify-between px-5 py-[18px] bg-gradient-to-br from-[#1e4620] to-[#133215] text-white border-b border-white/10 z-[2] flex-shrink-0">
+          <div class="flex items-center gap-3">
+            <img src="/Logo.png" alt="Logo Con Đường Hướng Thiện" class="h-9 w-auto object-contain drop-shadow-md" />
+            <div class="flex flex-col">
+              <span class="text-[0.85rem] font-extrabold tracking-[0.4px] text-white leading-[1.2]">CON ĐƯỜNG HƯỚNG THIỆN</span>
+              <span class="text-[0.65rem] text-white/75 font-medium mt-0.5">Cổng thông tin điện tử C11 - Bộ Công an</span>
+            </div>
+          </div>
+          <button
+            class="w-[34px] h-[34px] rounded-full border border-white/20 bg-white/[0.12] text-white text-[0.95rem] flex items-center justify-center cursor-pointer transition-all active:bg-white/25 active:scale-[0.92]"
+            @click.stop="toggleMobileMenu" :aria-label="t('menu_close')">✕</button>
+        </div>
+
+        <!-- Drawer Locale Switcher -->
+        <div class="flex justify-end items-center px-[18px] py-2.5 bg-[#f0f6ef] border-b border-[#e1e8e0] flex-shrink-0">
+          <div class="flex items-center" role="group" :aria-label="t('language_switcher')">
+            <button
+              v-for="locale in locales"
+              :key="`drawer-${locale.code}`"
+              :class="currentLang === locale.code ? 'text-white bg-[#4A6741] rounded' : 'text-[#1e4620]/70'"
+              class="bg-transparent border-none font-semibold cursor-pointer text-[0.78rem] px-1.5 py-0.5 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4A6741]"
+              :aria-label="locale.name"
+              :aria-pressed="currentLang === locale.code"
+              @click="setLang(locale.code)">{{ locale.label }}</button>
+          </div>
+        </div>
+
+        <!-- Drawer Search -->
+        <div class="px-4 pt-3 pb-1 bg-[#fcfdfe] border-b border-[rgba(30,70,32,0.06)] flex-shrink-0">
+          <div class="flex items-center bg-[rgba(30,70,32,0.05)] border border-[rgba(30,70,32,0.12)] rounded-[10px] px-3 py-2 gap-2">
+            <span class="text-[0.85rem] opacity-60">🔍</span>
+            <input type="text" :placeholder="t('search_placeholder')" v-model="searchQuery" @keyup.enter="handleSearch" class="border-none bg-transparent w-full text-[0.88rem] text-[#1E251C] outline-none" />
+            <button v-if="searchQuery" class="border-none bg-black/10 rounded-full w-[18px] h-[18px] text-[0.65rem] flex items-center justify-center cursor-pointer text-[#555]" @click="searchQuery = ''">✕</button>
+          </div>
+        </div>
+
+        <!-- Drawer Body -->
+        <div class="flex-1 flex flex-col justify-between overflow-y-auto [-webkit-overflow-scrolling:touch]">
+          <ul class="list-none flex flex-col px-3.5 pt-3.5 pb-5 gap-1">
+            <li v-for="item in navMenu" :key="item.id">
+              <!-- Has children: accordion -->
+              <template v-if="item.children && item.children.length">
+                <div
+                  class="no-underline text-[#1E251C] font-semibold text-[0.95rem] px-4 py-3 rounded-[10px] flex justify-between items-center cursor-pointer transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-[#4A6741]"
+                  @click.stop="toggleMobileSubmenu(item.id)"
+                >
+                  <component
+                    :is="item.url && item.url !== '#' ? 'nuxt-link' : 'span'"
+                    v-bind="item.url && item.url !== '#' ? { to: item.url, class: 'text-inherit no-underline' } : {}"
+                    @click.stop
+                  >{{ navItemLabel(item) }}</component>
+                  <i class="fa-solid fa-chevron-down text-[0.65rem] opacity-70 transition-transform duration-200" :class="{ 'rotate-180': mobileOpenSubmenu === item.id }" aria-hidden="true"></i>
                 </div>
-              </div>
-              <button class="drawer-close" @click.stop="toggleMobileMenu" aria-label="Đóng menu">
-                ✕
-              </button>
-            </div>
+                <ul v-if="mobileOpenSubmenu === item.id" class="list-none static opacity-100 pointer-events-auto transform-none shadow-none p-1.5 pl-3.5 bg-[rgba(30,70,32,0.04)] border-l-[3px] border-[#4A6741] rounded-[0_10px_10px_0] my-1 ml-3">
+                  <li v-for="child in item.children" :key="child.id">
+                    <component
+                      :is="child.url && child.url.startsWith('http') ? 'a' : 'nuxt-link'"
+                      v-bind="child.url && child.url.startsWith('http') ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url }"
+                      class="block px-3.5 py-2.5 text-[0.88rem] font-medium text-[#4A5545] rounded-lg no-underline transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-[#4A6741]"
+                    >{{ navItemLabel(child) }}</component>
+                  </li>
+                </ul>
+              </template>
+              <!-- No children: simple link -->
+              <template v-else>
+                <component
+                  :is="item.url && item.url.startsWith('http') ? 'a' : 'nuxt-link'"
+                  v-bind="item.url && item.url.startsWith('http') ? { href: item.url, target: item.openNewTab ? '_blank' : undefined, rel: item.openNewTab ? 'noopener noreferrer' : undefined } : { to: item.url, 'active-class': 'bg-[rgba(30,70,32,0.08)] text-[#4A6741] font-extrabold' }"
+                  class="no-underline text-[#1E251C] font-semibold text-[0.95rem] px-4 py-3 rounded-[10px] flex justify-between items-center transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-[#4A6741]"
+                >{{ navItemLabel(item) }}</component>
+              </template>
+            </li>
+          </ul>
 
-            <!-- Drawer Controls Row (Đổi ngôn ngữ & Cỡ chữ trên Mobile) -->
-            <div class="drawer-controls-row">
-              <div class="drawer-ctrl-item">
-                <span class="drawer-ctrl-label">{{ t('font_size') }}</span>
-                <div class="accessibility-ctrl">
-                  <button @click="changeFontSize('small')" :class="{ active: fontSize === 'small' }">A-</button>
-                  <button @click="changeFontSize('normal')" :class="{ active: fontSize === 'normal' }">A</button>
-                  <button @click="changeFontSize('large')" :class="{ active: fontSize === 'large' }">A+</button>
-                </div>
+          <!-- Drawer Footer -->
+          <div class="px-4 py-4 bg-[#f8faf7] border-t border-black/[0.06] flex flex-col gap-2.5 flex-shrink-0">
+            <a href="tel:0903480985" class="flex items-center gap-3 bg-white px-3.5 py-3 rounded-[14px] border border-[rgba(30,70,32,0.12)] no-underline shadow-sm">
+              <span class="text-xl">📞</span>
+              <div class="flex flex-col">
+                <span class="text-[0.72rem] text-[#7A8675] font-semibold">{{ t('hotline_lbl') }}</span>
+                <span class="text-[0.95rem] font-extrabold text-[#4A6741]">0903.480.985</span>
               </div>
-              <div class="drawer-ctrl-item">
-                <div class="lang-switcher">
-                  <button :class="{ active: currentLang === 'VN' }" @click="setLang('VN')">VN</button>
-                  <button :class="{ active: currentLang === 'EN' }" @click="setLang('EN')">EN</button>
-                </div>
-              </div>
-            </div>
-
-            <!-- Drawer Search Bar -->
-            <div class="drawer-search-wrap">
-              <div class="drawer-search-box">
-                <span class="search-icon">🔍</span>
-                <input
-                  type="text"
-                  :placeholder="t('search_placeholder')"
-                  v-model="searchQuery"
-                  @keyup.enter="handleSearch"
-                />
-                <button v-if="searchQuery" class="clear-search-btn" @click="searchQuery = ''">✕</button>
-              </div>
-            </div>
-
-            <!-- Drawer Links -->
-            <div class="drawer-body">
-              <ul class="nav-links">
-                <li><nuxt-link to="/" class="nav-item" active-class="active-item">{{ t('home') }}</nuxt-link></li>
-                <li><nuxt-link to="/about" class="nav-item" active-class="active-item">{{ t('about') }}</nuxt-link></li>
-                
-                <!-- Dropdown Menu Bản tin -->
-                <li class="has-dropdown" :class="{ 'is-mobile-expanded': showDropdown }" @mouseenter="showDropdown = true" @mouseleave="showDropdown = false">
-                  <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('news')">
-                    <nuxt-link to="/news" active-class="active-item" @click.stop>{{ t('news') }}</nuxt-link>
-                    <i class="fa-solid fa-chevron-down arrow" :class="{ 'is-rotated': showDropdown }"></i>
+            </a>
+            <nuxt-link to="/contact" class="btn btn-primary w-full flex items-center justify-center gap-2 px-4 py-3 text-[0.88rem] font-bold rounded-xl" @click="isMobileMenuOpen = false">
+              <span class="w-1.5 h-1.5 bg-[#7CB342] rounded-full inline-block animate-pulse"></span> Đăng ký tư vấn ngay
+            </nuxt-link>
+          </div>
+        </div>
+      </nav>
+      <div class="hidden lg:flex bg-white border-t border-[#edf2ec] border-b border-[#e1e8e0] h-[50px] items-center shadow-[0_4px_12px_rgba(15,35,18,0.04)] transition-all">
+        <div class="container w-full">
+          <nav class="flex w-full" @click="onNavClick" @keydown.escape="toggleMobileMenu">
+            <ul class="flex list-none w-full justify-between items-center gap-0.5">
+              <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group' : ''">
+                <!-- With children: dropdown -->
+                <template v-if="item.children && item.children.length">
+                  <div class="nav-item no-underline text-[#1e4620] font-bold text-[0.88rem] px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-[#f0f6ef] hover:text-[#143516]">
+                    <component
+                      :is="item.url && item.url !== '#' ? 'nuxt-link' : 'span'"
+                      v-bind="item.url && item.url !== '#' ? { to: item.url, 'active-class': 'active-item', class: 'text-inherit no-underline' } : {}"
+                    >{{ navItemLabel(item) }}</component>
+                    <i class="fa-solid fa-chevron-down text-[0.55rem] ml-0.5 text-[#557757] transition-transform duration-200 group-hover:rotate-180" aria-hidden="true"></i>
                   </div>
-                  <ul class="dropdown-menu" :class="{ 'is-show': showDropdown }">
-                    <li><nuxt-link to="/news/featured-news">{{ t('news_featured') }}</nuxt-link></li>
-                    <li><nuxt-link to="/news/activity-news">{{ t('news_activities') }}</nuxt-link></li>
-                    <li><nuxt-link to="/news/local-news">{{ t('news_local') }}</nuxt-link></li>
+                  <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-2 min-w-[220px] list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto">
+                    <li v-for="child in item.children" :key="child.id">
+                      <component
+                        :is="child.url && child.url.startsWith('http') ? 'a' : 'nuxt-link'"
+                        v-bind="child.url && child.url.startsWith('http') ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url }"
+                        class="block px-3.5 py-2.5 no-underline text-[#2d4a2d] text-[0.86rem] font-semibold rounded-lg transition-all hover:bg-[rgba(30,70,32,0.07)] hover:text-[#1e4620] hover:pl-[18px]"
+                      >{{ navItemLabel(child) }}</component>
+                    </li>
                   </ul>
-                </li>
-
-                <li><nuxt-link to="/role-models" class="nav-item" active-class="active-item">{{ t('role_models') }}</nuxt-link></li>
-                <li><nuxt-link to="/reintegration-models" class="nav-item" active-class="active-item">{{ t('reintegration') }}</nuxt-link></li>
-                <li><nuxt-link to="/documents" class="nav-item" active-class="active-item">{{ t('documents') }}</nuxt-link></li>
-                
-                <!-- Dropdown Menu Thư viện -->
-                <li class="has-dropdown" :class="{ 'is-mobile-expanded': showLibraryDropdown }" @mouseenter="showLibraryDropdown = true" @mouseleave="showLibraryDropdown = false">
-                  <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('library')">
-                    <span class="cursor-pointer">{{ t('library') }}</span>
-                    <i class="fa-solid fa-chevron-down arrow" :class="{ 'is-rotated': showLibraryDropdown }"></i>
-                  </div>
-                  <ul class="dropdown-menu" :class="{ 'is-show': showLibraryDropdown }">
-                    <li><a href="#video-library">{{ t('video_lib') }}</a></li>
-                    <li><a href="#photo-library">{{ t('photo_lib') }}</a></li>
-                  </ul>
-                </li>
-
-                <li><nuxt-link to="/legal-qa" class="nav-item" active-class="active-item">{{ t('faq') }}</nuxt-link></li>
-                
-                <!-- Dropdown Bộ với công dân -->
-                <li class="has-dropdown" :class="{ 'is-mobile-expanded': showGovDropdown }" @mouseenter="showGovDropdown = true" @mouseleave="showGovDropdown = false">
-                  <div class="nav-item nav-item-dropdown" @click.stop="toggleMobileSubmenu('gov')">
-                    <span class="cursor-pointer">{{ t('gov_citizen') }}</span>
-                    <i class="fa-solid fa-chevron-down arrow" :class="{ 'is-rotated': showGovDropdown }"></i>
-                  </div>
-                  <ul class="dropdown-menu" :class="{ 'is-show': showGovDropdown }">
-                    <li><a href="#tro-giup">{{ t('register_help') }}</a></li>
-                    <li><nuxt-link to="/documents">{{ t('procedures') }}</nuxt-link></li>
-                  </ul>
-                </li>
-
-                <li><nuxt-link to="/contact" class="nav-item" active-class="active-item">{{ t('contact') }}</nuxt-link></li>
-              </ul>
-
-              <!-- Drawer Footer Quick Actions -->
-              <div class="mobile-drawer-footer">
-                <a href="tel:0903480985" class="drawer-hotline-card">
-                  <span class="hotline-icon-wrap">📞</span>
-                  <div class="hotline-text">
-                    <span class="hotline-lbl">Hotline Tư Vấn 24/7</span>
-                    <span class="hotline-num">0903.480.985</span>
-                  </div>
-                </a>
-                <nuxt-link to="/lien-he" class="btn btn-primary drawer-support-btn" @click="isMobileMenuOpen = false">
-                  <span class="pulse-icon"></span> Đăng ký tư vấn ngay
-                </nuxt-link>
-              </div>
-            </div>
+                </template>
+                <!-- No children: simple link -->
+                <template v-else>
+                  <component
+                    :is="item.url && item.url.startsWith('http') ? 'a' : 'nuxt-link'"
+                    v-bind="item.url && item.url.startsWith('http') ? { href: item.url, target: item.openNewTab ? '_blank' : undefined, rel: item.openNewTab ? 'noopener noreferrer' : undefined } : { to: item.url, 'active-class': 'active-item bg-[#e4f0e2] font-extrabold' }"
+                    class="nav-item no-underline text-[#1e4620] font-bold text-[0.88rem] px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap relative transition-all hover:bg-[#f0f6ef] hover:text-[#143516]"
+                  >{{ navItemLabel(item) }}</component>
+                </template>
+              </li>
+            </ul>
           </nav>
         </div>
       </div>
 
       <!-- Search Dropdown Bar -->
       <transition name="slide-down">
-        <div class="search-dropdown-bar" v-if="isSearchActive">
-          <div class="container search-dropdown-container">
-            <div class="search-input-wrap">
-              <span class="search-input-icon">🔍</span>
+        <div class="absolute top-full left-0 w-full bg-[#4A6741] py-4 shadow-md z-[99]" v-if="isSearchActive">
+          <div class="container flex flex-col sm:flex-row gap-4 items-center">
+            <div class="relative flex-1 w-full">
+              <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#7A8675]">🔍</span>
               <input
                 type="text"
                 placeholder="Nhập nội dung cần tìm kiếm trên website..."
                 v-model="searchQuery"
                 @keyup.enter="handleSearch"
                 ref="searchInputRef"
+                class="w-full py-3 pl-[42px] pr-3.5 rounded-sm border-none font-[inherit] text-[0.95rem] outline-none"
               />
             </div>
-            <div class="search-bar-buttons">
-              <button class="search-dropdown-submit" @click="handleSearch">Tìm kiếm</button>
-              <button class="search-dropdown-close" @click="toggleSearch">Đóng ×</button>
+            <div class="flex gap-2 w-full sm:w-auto">
+              <button class="flex-1 sm:flex-none bg-[#7CB342] text-white border-none px-6 py-3 rounded-sm font-bold text-[0.9rem] cursor-pointer transition-all hover:opacity-90" @click="handleSearch">Tìm kiếm</button>
+              <button class="flex-1 sm:flex-none bg-transparent text-white border border-white/30 px-4 py-3 rounded-sm text-[0.9rem] cursor-pointer transition-all hover:bg-white/10" @click="toggleSearch">Đóng ×</button>
             </div>
           </div>
         </div>
@@ -198,212 +234,251 @@
     </header>
 
     <!-- Main Content Area -->
-    <main class="main-content" :class="[fontSizeClass, { 'has-sticky-padding': isSticky }]">
+    <main
+      class="min-h-[calc(100vh-165px)] transition-all pb-24 lg:pb-0"
+      :class="{ 'pt-[100px] lg:pt-[130px]': isSticky }"
+    >
       <slot />
     </main>
 
     <!-- Footer Area -->
-    <footer class="main-footer">
-      <div class="container footer-grid">
-        <div class="footer-col-about">
-          <div class="footer-logo">
-            <img class="footer-logo-img" src="/Logo.png" alt="Logo Con Đường Hướng Thiện" />
-            <span class="footer-logo-title">CON ĐƯỜNG HƯỚNG THIỆN</span>
+    <footer class="bg-[#385130] text-white/80 pt-20 border-t-4 border-[#7CB342] lg:pb-0 pb-20">
+      <div class="container grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_2fr] gap-8 lg:gap-10 mb-12 lg:mb-16">
+        <div>
+          <div class="flex items-center gap-3 mb-5">
+            <img src="/Logo.png" alt="Logo Con Đường Hướng Thiện" class="h-9 w-auto object-contain" />
+            <span class="text-white font-extrabold text-[1.2rem] tracking-[0.5px]">CON ĐƯỜNG HƯỚNG THIỆN</span>
           </div>
-          <p class="footer-desc">
+          <p class="text-[0.9rem] leading-relaxed">
             Trang thông tin điện tử dưới sự chỉ đạo sát sao của Bộ Công an, Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11).
           </p>
         </div>
 
-        <div class="footer-col-links">
-          <h3 class="footer-col-title">Liên kết chính</h3>
-          <ul>
-            <li><nuxt-link to="/">Trang chủ</nuxt-link></li>
-            <li><nuxt-link to="/about">Giới thiệu ban biên tập</nuxt-link></li>
-            <li><nuxt-link to="/news">Bản tin hoạt động</nuxt-link></li>
-            <li><nuxt-link to="/documents">Văn bản pháp luật mới</nuxt-link></li>
+        <div>
+          <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">Liên kết chính</h3>
+          <ul class="list-none space-y-3">
+            <li><nuxt-link to="/" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Trang chủ</nuxt-link></li>
+            <li><nuxt-link to="/about" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Giới thiệu ban biên tập</nuxt-link></li>
+            <li><nuxt-link to="/news" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Bản tin hoạt động</nuxt-link></li>
+            <li><nuxt-link to="/documents" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Văn bản pháp luật mới</nuxt-link></li>
           </ul>
         </div>
 
-        <div class="footer-col-links">
-          <h3 class="footer-col-title">Tái hòa nhập</h3>
-          <ul>
-            <li><nuxt-link to="/role-models">Tấm gương tiêu biểu hoàn lương</nuxt-link></li>
-            <li><nuxt-link to="/reintegration-models">Các mô hình kinh tế hỗ trợ</nuxt-link></li>
-            <li><nuxt-link to="/legal-qa">Giải đáp pháp luật trực tuyến</nuxt-link></li>
-            <li><nuxt-link to="/contact">Thông tin đường dây nóng</nuxt-link></li>
+        <div>
+          <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">Tái hòa nhập</h3>
+          <ul class="list-none space-y-3">
+            <li><nuxt-link to="/role-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Tấm gương tiêu biểu hoàn lương</nuxt-link></li>
+            <li><nuxt-link to="/reintegration-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Các mô hình kinh tế hỗ trợ</nuxt-link></li>
+            <li><nuxt-link to="/legal-qa" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Giải đáp pháp luật trực tuyến</nuxt-link></li>
+            <li><nuxt-link to="/contact" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Thông tin đường dây nóng</nuxt-link></li>
           </ul>
         </div>
 
-        <div class="footer-col-contact">
-          <h3 class="footer-col-title">Thông tin liên hệ</h3>
-          <p><strong>Cơ quan chủ quản:</strong> C11 - Bộ Công an</p>
-          <p><strong>Địa chỉ:</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội</p>
-          <p><strong>Điện thoại:</strong> 0903.480.985</p>
-          <p><strong>Email:</strong> contact@conduonghuongthien.com.vn</p>
+        <div>
+          <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">Thông tin liên hệ</h3>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Cơ quan chủ quản:</strong> C11 - Bộ Công an</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Địa chỉ:</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Điện thoại:</strong> 0903.480.985</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Email:</strong> contact@conduonghuongthien.com.vn</p>
         </div>
       </div>
 
-      <div class="footer-bottom">
-        <div class="container footer-bottom-content">
+      <div class="border-t border-white/[0.08] py-6 text-[0.85rem]">
+        <div class="container flex flex-col sm:flex-row justify-between items-center gap-3 text-center sm:text-left">
           <p>&copy; 2026 Bản quyền thuộc về Cổng thông tin Con Đường Hướng Thiện - C11 Bộ Công an.</p>
-          <p><a href="https://www.facebook.com/hi.duogxaolin" target="_blank" rel="noopener noreferrer" class="designer-link">Design by Delify.vn</a></p>
+          <p><a href="https://www.facebook.com/hi.duogxaolin" target="_blank" rel="noopener noreferrer" class="text-white/70 no-underline font-semibold transition-all hover:text-[#7CB342] hover:underline">Design by Delify.vn</a></p>
         </div>
       </div>
     </footer>
 
-    <!-- Chatbot Popup (Trợ Lý Pháp Lý C11 Minimalist) -->
-    <div class="chatbot-popup" :class="{ 'is-open': isChatbotOpen }">
-      <div class="chatbot-header">
-        <div class="chatbot-title">
-          <div class="minimal-bot-avatar">
+    <!-- Chatbot Popup -->
+    <div
+      id="public-chatbot-dialog"
+      ref="chatbotDialog"
+      class="chatbot-popup fixed bottom-[84px] right-3 w-[calc(100vw-24px)] max-w-[420px] h-[min(580px,calc(100dvh-110px))] bg-white rounded-[20px] shadow-[0_20px_50px_rgba(0,0,0,0.16),0_4px_16px_rgba(0,0,0,0.06)] flex flex-col z-[9500] overflow-hidden border border-black/[0.08] opacity-0 translate-y-5 scale-[0.96] pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none sm:right-6"
+      :class="{ 'is-open opacity-100 translate-y-0 scale-100 pointer-events-auto': isChatbotOpen }"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="public-chatbot-title"
+      :aria-hidden="!isChatbotOpen"
+      :inert="!isChatbotOpen"
+      @keydown="handleChatbotDialogKeydown"
+    >
+      <div class="bg-white text-[#1f2937] px-[18px] py-3.5 flex justify-between items-center border-b border-[#edf2ec]">
+        <div class="flex items-center gap-3">
+          <div class="w-9 h-9 rounded-full bg-[#edf5ec] flex items-center justify-center flex-shrink-0">
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e4620" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
             </svg>
           </div>
-          <div class="bot-header-meta">
-            <h4>Trợ lý Pháp lý C11</h4>
-            <p><span class="status-dot-green"></span> Sẵn sàng giải đáp 24/7</p>
+          <div>
+            <h4 id="public-chatbot-title" class="text-[0.92rem] font-bold text-[#1a2e1b] m-0">Trợ lý Pháp lý C11</h4>
+            <p class="text-[0.72rem] text-[#6b7280] mt-0.5 mb-0 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#10b981] inline-block" aria-hidden="true"></span> Thông tin từ kho dữ liệu đã phê duyệt
+            </p>
           </div>
         </div>
-        <div class="header-actions">
-          <button class="clear-history-btn" @click="clearChatHistory" title="Xóa lịch sử trò chuyện" aria-label="Xóa lịch sử">
+        <div class="flex items-center gap-2">
+          <button class="bg-[#f3f4f6] border-none text-[#6b7280] w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-all hover:bg-[#fee2e2] hover:text-[#dc2626]" @click="clearChatHistory" title="Xóa lịch sử trò chuyện" aria-label="Xóa lịch sử">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
               <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
             </svg>
           </button>
-          <button class="close-bot-btn" @click="toggleChatbot" aria-label="Đóng cửa sổ">✕</button>
+          <button ref="chatCloseButton" class="bg-[#f3f4f6] border-none text-[#6b7280] w-7 h-7 rounded-full text-[0.85rem] flex items-center justify-center cursor-pointer transition-all hover:bg-[#e5e7eb] hover:text-[#111827] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2" @click="closeChatbot" aria-label="Đóng cửa sổ">✕</button>
         </div>
       </div>
 
-      <div class="chatbot-messages" ref="chatContainer">
-        <div v-for="(msg, index) in chatMessages" :key="index" class="chat-msg" :class="msg.sender">
-          <div v-if="msg.sender === 'bot'" class="msg-bot-avatar">
+      <div ref="chatContainer" class="flex-1 px-4 py-4 overflow-y-auto overscroll-contain flex flex-col gap-3 bg-[#f9fbf9]" aria-live="polite" aria-relevant="additions text">
+        <div v-for="(msg, index) in chatMessages" :key="msg.id || index" class="flex gap-2 items-end" :class="{ 'justify-end': msg.sender === 'user' }">
+          <div v-if="msg.sender === 'bot'" class="w-6 h-6 rounded-full bg-[#edf5ec] flex items-center justify-center flex-shrink-0 mb-0.5" aria-hidden="true">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1e4620" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
               <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
             </svg>
           </div>
-          <div class="msg-bubble">
-            <div class="markdown-content" v-html="renderMarkdown(msg.text)"></div>
-            <span v-if="msg.isStreaming" class="streaming-cursor">▌</span>
+          <div
+            class="max-w-[86%] break-words px-3.5 py-2.5 rounded-2xl text-[0.88rem] leading-[1.48]"
+            :class="msg.sender === 'bot' ? 'bg-white text-[#1f2937] border border-[#e8ede7] rounded-bl-[4px] shadow-sm' : 'bg-[#1e4620] text-white rounded-br-[4px]'"
+          >
+            <p class="m-0 whitespace-pre-wrap">{{ msg.text }}</p>
+            <p v-if="msg.kind && msg.sender === 'bot'" class="mt-2 mb-0 text-[0.72rem] font-semibold" :class="messageKindClass(msg.kind)" role="status">
+              {{ messageKindLabel(msg.kind) }}
+            </p>
+            <ul v-if="msg.sources?.length" class="mt-2 mb-0 space-y-1 border-t border-[#e1e8e0] pt-2" aria-label="Nguồn tham khảo công khai">
+              <li v-for="source in msg.sources" :key="source.id" class="text-[0.72rem] leading-snug text-[#4A5545]">
+                <span class="font-bold text-[#2d4a2d]">Nguồn:</span>
+                <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]">{{ source.label }}</a>
+                <span v-else class="font-semibold">{{ source.label }}</span>
+                <span v-if="source.reference"> — {{ source.reference }}</span>
+              </li>
+            </ul>
+            <span v-if="msg.isStreaming" class="inline-block ml-0.5 text-[#4A6741] font-bold animate-[blinkCursor_0.6s_infinite] motion-reduce:animate-none" aria-hidden="true">▌</span>
           </div>
         </div>
+        <p v-if="isSubmitting" class="m-0 text-[0.78rem] text-[#556655]" role="status">Đang nhận phản hồi an toàn từ trợ lý…</p>
       </div>
 
-      <!-- Quick Questions -->
-      <div class="chatbot-quick-questions">
-        <button 
-          v-for="(q, index) in chatbotFaqs" 
-          :key="index" 
-          @click="askBot(q.question, q.answer)"
-          class="quick-q-btn"
-        >
-          {{ q.label }}
-        </button>
+      <div class="px-3.5 py-2.5 bg-white border-t border-[#edf2ec]">
+        <p class="m-0 text-[0.75rem] font-semibold text-[#556655]" role="status" aria-live="polite">{{ quickQuestionStatusText }}</p>
+        <div v-if="quickQuestionState === 'success'" class="flex flex-wrap gap-1.5 mt-2 max-h-[88px] overflow-y-auto overscroll-contain">
+          <button
+            v-for="question in quickQuestions"
+            :key="question.id"
+            type="button"
+            :disabled="isSubmitting"
+            @click="askBot(question.question)"
+            class="bg-[#f3f6f3] border border-[#e1e8e0] text-[#2d4a2d] px-3 py-[5px] rounded-2xl text-[0.76rem] font-semibold whitespace-normal text-left leading-[1.3] cursor-pointer transition-all hover:bg-[#1e4620] hover:text-white hover:border-[#1e4620] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
+          >{{ question.question }}</button>
+        </div>
+        <button v-else-if="quickQuestionState === 'error'" type="button" class="mt-2 text-[0.75rem] font-bold text-[#1e4620] underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]" @click="loadQuickQuestions">Thử tải lại</button>
       </div>
 
-      <div class="chatbot-input-area">
-        <input 
-          type="text" 
-          placeholder="Hỏi trợ lý về QĐ 22, thủ tục..." 
-          v-model="botInput" 
-          @keyup.enter="sendBotMessage"
-        />
-        <button class="send-bot-btn" @click="sendBotMessage" aria-label="Gửi tin nhắn">
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="22" y1="2" x2="11" y2="13"></line>
-            <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-          </svg>
-        </button>
-      </div>
+      <form class="px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] bg-white border-t border-[#edf2ec]" @submit.prevent="sendBotMessage">
+        <label for="public-chatbot-input" class="sr-only">Nhập câu hỏi cho trợ lý</label>
+        <div class="flex gap-2">
+          <input
+            id="public-chatbot-input"
+            ref="botInputRef"
+            type="text"
+            placeholder="Nhập câu hỏi cần hỗ trợ..."
+            v-model="botInput"
+            :maxlength="CHATBOT_CLIENT_LIMITS.maxMessageChars"
+            :aria-describedby="botInputError ? 'public-chatbot-error public-chatbot-counter' : 'public-chatbot-counter'"
+            :aria-invalid="Boolean(botInputError)"
+            :disabled="isSubmitting"
+            class="min-w-0 flex-1 px-3.5 py-2.5 rounded-[20px] border border-[#e1e8e0] text-[0.86rem] outline-none bg-[#f8faf8] transition-all focus:border-[#1e4620] focus:bg-white focus-visible:ring-2 focus-visible:ring-[#4A6741]/40 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none"
+          />
+          <button type="submit" :disabled="isSubmitting || !botInput.trim()" class="bg-[#1e4620] text-white border-none w-[38px] h-[38px] rounded-full flex flex-shrink-0 items-center justify-center cursor-pointer transition-all hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none" aria-label="Gửi tin nhắn">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+              <line x1="22" y1="2" x2="11" y2="13"></line>
+              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+            </svg>
+          </button>
+        </div>
+        <div class="mt-1 flex items-start justify-between gap-2 text-[0.7rem]">
+          <p id="public-chatbot-error" class="m-0 text-[#b42318]" role="alert">{{ botInputError }}</p>
+          <span id="public-chatbot-counter" class="ml-auto whitespace-nowrap text-[#6b7280]">{{ botInput.length }}/{{ CHATBOT_CLIENT_LIMITS.maxMessageChars }}</span>
+        </div>
+      </form>
     </div>
 
-    <!-- Chatbot Floating Teaser Bubble (Hiện 4.5s -> Tắt -> Nghỉ 3.5s -> Hiện câu mới) -->
-    <transition name="teaser-pop">
-      <div 
-        v-if="!isChatbotOpen && isTeaserVisible" 
-        class="chatbot-teaser-bubble"
-        @click="toggleChatbot"
-      >
-        <div class="teaser-content">
-          <span class="teaser-badge">Gợi ý câu hỏi</span>
-          <p class="teaser-text">{{ currentTeaserText }}</p>
-        </div>
-        <button class="teaser-close-btn" @click="dismissTeaser" aria-label="Tắt gợi ý">✕</button>
-        <div class="teaser-arrow"></div>
-      </div>
-    </transition>
-
-    <!-- Minimal Floating Toggle Button for Chatbot -->
-    <button class="chatbot-toggle-btn" @click="toggleChatbot">
-      <div class="toggle-bot-icon">
+    <!-- Chatbot Toggle Button -->
+    <button
+      ref="chatToggleButton"
+      class="chatbot-toggle-btn fixed right-4 bottom-[88px] bg-[#1e4620] text-white border border-white/20 px-4 py-2.5 pl-3.5 rounded-[50px] shadow-[0_8px_24px_rgba(30,70,32,0.25)] cursor-pointer flex items-center gap-2 z-[9400] font-bold text-[0.88rem] transition-all hover:-translate-y-0.5 hover:bg-[#153317] hover:shadow-[0_12px_30px_rgba(30,70,32,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] focus-visible:ring-offset-2 motion-reduce:transition-none sm:right-6 sm:bottom-6"
+      aria-controls="public-chatbot-dialog"
+      :aria-expanded="isChatbotOpen"
+      @click="toggleChatbot">
+      <div class="flex items-center justify-center">
         <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
         </svg>
       </div>
-      <span class="bot-badge">Hỏi trợ lý</span>
+      <span class="bot-label">Hỏi trợ lý</span>
     </button>
 
-    <!-- Mobile App Bottom Navigation Bar (Liquid Glass Style) -->
-    <nav class="mobile-bottom-nav">
-      <nuxt-link to="/" class="bottom-nav-item" active-class="active">
-        <div class="bottom-nav-icon-wrap">
-          <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+    <!-- Mobile Bottom Nav -->
+    <nav
+      class="fixed bottom-2.5 left-3 right-3 h-16 bg-[linear-gradient(135deg,rgba(255,255,255,0.94)_0%,rgba(244,249,243,0.92)_100%)] backdrop-blur-[20px] border border-white/90 rounded-[24px] shadow-[0_12px_32px_rgba(15,35,18,0.16)] z-[9000] flex justify-around items-center px-1.5 transition-opacity lg:hidden"
+      :class="{ 'opacity-0 pointer-events-none': isMobileMenuOpen || isChatbotOpen }"
+      aria-label="Điều hướng nhanh"
+      style="padding-bottom: env(safe-area-inset-bottom, 0px)"
+    >
+      <nuxt-link to="/" class="flex-1 flex flex-col items-center justify-center gap-0.5 no-underline text-[#556655] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all active:text-[#4A6741]" active-class="text-[#4A6741]">
+        <div class="flex items-center justify-center px-3 py-0.5 rounded-2xl transition-all">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
             <polyline points="9 22 9 12 15 12 15 22"></polyline>
           </svg>
         </div>
-        <span class="bottom-nav-label">{{ t('home') }}</span>
+        <span>{{ t('home') }}</span>
       </nuxt-link>
 
-      <nuxt-link to="/ban-tin" class="bottom-nav-item" active-class="active">
-        <div class="bottom-nav-icon-wrap">
-          <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <nuxt-link to="/news" class="flex-1 flex flex-col items-center justify-center gap-0.5 no-underline text-[#556655] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all" active-class="text-[#4A6741]">
+        <div class="flex items-center justify-center px-3 py-0.5 rounded-2xl transition-all">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
           </svg>
         </div>
-        <span class="bottom-nav-label">{{ t('news') }}</span>
+        <span>{{ t('news') }}</span>
       </nuxt-link>
 
-      <!-- Center Floating Liquid Orb: Hỏi Trợ Lý -->
-      <button class="bottom-nav-item center-action" @click="toggleChatbot" :class="{ 'active': isChatbotOpen }">
-        <div class="center-action-icon">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="flex-1 relative flex flex-col items-center justify-center gap-0.5 bg-transparent border-none text-[#385130] max-w-[52px] font-extrabold text-[0.65rem] -top-3.5 cursor-pointer transition-all font-[inherit]" @click="toggleChatbot" :class="{ 'text-[#4A6741]': isChatbotOpen }">
+        <div class="w-[50px] h-[50px] rounded-full bg-gradient-to-br from-[#2e6b32] to-[#173b18] text-white flex items-center justify-center shadow-[0_10px_24px_rgba(23,59,24,0.4),inset_0_2px_4px_rgba(255,255,255,0.4)] border-[3.5px] border-white/95 transition-all active:scale-90">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
           </svg>
         </div>
-        <span class="bottom-nav-label">{{ t('ask_ai') }}</span>
+        <span class="mt-0.5">{{ t('ask_ai') }}</span>
       </button>
 
-      <nuxt-link to="/van-ban" class="bottom-nav-item" active-class="active">
-        <div class="bottom-nav-icon-wrap">
-          <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <nuxt-link to="/documents" class="flex-1 flex flex-col items-center justify-center gap-0.5 no-underline text-[#556655] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all" active-class="text-[#4A6741]">
+        <div class="flex items-center justify-center px-3 py-0.5 rounded-2xl transition-all">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
             <polyline points="14 2 14 8 20 8"></polyline>
             <line x1="16" y1="13" x2="8" y2="13"></line>
             <line x1="16" y1="17" x2="8" y2="17"></line>
           </svg>
         </div>
-        <span class="bottom-nav-label">{{ t('documents') }}</span>
+        <span>{{ t('documents') }}</span>
       </nuxt-link>
 
-      <button class="bottom-nav-item" @click="toggleMobileMenu" :class="{ 'active': isMobileMenuOpen }">
-        <div class="bottom-nav-icon-wrap">
-          <svg class="bottom-nav-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+      <button class="flex-1 flex flex-col items-center justify-center gap-0.5 bg-transparent border-none text-[#556655] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all font-[inherit]" :class="{ 'text-[#4A6741]': isMobileMenuOpen }" @click="toggleMobileMenu">
+        <div class="flex items-center justify-center px-3 py-0.5 rounded-2xl transition-all">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <line x1="3" y1="12" x2="21" y2="12"></line>
             <line x1="3" y1="6" x2="21" y2="6"></line>
             <line x1="3" y1="18" x2="21" y2="18"></line>
           </svg>
         </div>
-        <span class="bottom-nav-label">{{ t('categories') }}</span>
+        <span>{{ t('categories') }}</span>
       </button>
     </nav>
   </div>
 </template>
-
 <script setup>
-import { ref, reactive, onMounted, onUnmounted, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
 
 const isSticky = ref(false)
 const isMobileMenuOpen = ref(false)
@@ -412,9 +487,45 @@ const searchQuery = ref('')
 const showDropdown = ref(false)
 const showLibraryDropdown = ref(false)
 const showGovDropdown = ref(false)
-const { currentLang, fontSize, t, setLang, setFontSize, initSettings } = useI18n()
+const { currentLang, locales, t, setLang } = useI18n()
 const searchInputRef = ref(null)
 const liveDateTime = ref('')
+
+// Dynamic nav menu from admin settings (falls back to DEFAULT_NAV)
+const DEFAULT_NAV = [
+  { id: 'home', label: null, labelKey: 'home', url: '/', children: [] },
+  { id: 'about', label: null, labelKey: 'about', url: '/about', children: [] },
+  {
+    id: 'news', label: null, labelKey: 'news', url: '/news',
+    children: [
+      { id: 'news-featured', label: null, labelKey: 'news_featured', url: '/news/featured-news' },
+      { id: 'news-activity', label: null, labelKey: 'news_activities', url: '/news/activity-news' },
+      { id: 'news-local', label: null, labelKey: 'news_local', url: '/news/local-news' },
+    ]
+  },
+  { id: 'role-models', label: null, labelKey: 'role_models', url: '/role-models', children: [] },
+  { id: 'reintegration', label: null, labelKey: 'reintegration', url: '/reintegration-models', children: [] },
+  { id: 'documents', label: null, labelKey: 'documents', url: '/documents', children: [] },
+  { id: 'legal-qa', label: null, labelKey: 'faq', url: '/legal-qa', children: [] },
+  { id: 'contact', label: null, labelKey: 'contact', url: '/contact', children: [] },
+]
+
+const navMenuRaw = ref(null) // null = use DEFAULT_NAV
+const navMenu = computed(() => {
+  if (Array.isArray(navMenuRaw.value) && navMenuRaw.value.length) return navMenuRaw.value
+  return DEFAULT_NAV
+})
+
+const navItemLabel = (item) => item.label || (item.labelKey ? t(item.labelKey) : item.url)
+
+const loadNavMenu = async () => {
+  try {
+    const res = await $fetch('/api/public/settings')
+    if (res?.settings?.nav_menu) {
+      try { navMenuRaw.value = JSON.parse(res.settings.nav_menu) } catch { /* ignore */ }
+    }
+  } catch { /* ignore — use default */ }
+}
 
 const WEEKDAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy']
 const pad = (n) => String(n).padStart(2, '0')
@@ -426,71 +537,117 @@ const updateLiveDate = () => {
 
 let dateTimer = null
 
-// Chatbot Floating Teaser Prompts (Hiện -> Tắt -> Nghỉ -> Hiện câu mới)
-const botTeasers = [
-  'Bạn muốn hỏi về quy trình?',
-  'Bạn muốn vay vốn theo QĐ 22?',
-  'Bạn hãy đặt câu hỏi cho mình nhé!',
-  'Hồ sơ thủ tục xóa án tích gồm những gì?',
-  'Tư vấn đào tạo nghề & việc làm miễn phí'
-]
-const activeTeaserIndex = ref(0)
-const isTeaserVisible = ref(true)
-const isTeaserDismissed = ref(false)
-let teaserTimeout = null
-
-const currentTeaserText = computed(() => {
-  return botTeasers[activeTeaserIndex.value]
+const CHATBOT_CLIENT_LIMITS = Object.freeze({
+  maxMessageChars: 2000,
+  maxOutputChars: 8000,
+  maxHistoryMessages: 8,
+  maxTotalUserChars: 30000,
+  maxQuickQuestions: 8,
+  maxSources: 3,
+  maxSourceLabelChars: 160,
+  maxSourceReferenceChars: 160,
+})
+const CHATBOT_RESPONSE_KINDS = new Set(['curated', 'provider', 'not_found', 'unavailable', 'rate_limited'])
+const CHATBOT_STORAGE_KEY = 'cdkt_chat_history_v2'
+const CHATBOT_WELCOME_MESSAGE = Object.freeze({
+  id: 'welcome',
+  sender: 'bot',
+  text: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi chỉ hỗ trợ theo thông tin công khai trong kho dữ liệu đã được Cục C11 phê duyệt.',
 })
 
-const runTeaserCycle = () => {
-  stopTeaserCycle()
-  if (isTeaserDismissed.value || isChatbotOpen.value) return
-
-  // Phase 1: Hiển thị bong bóng gợi ý
-  isTeaserVisible.value = true
-
-  // Phase 2: Giữ bong bóng hiện 4.5 giây cho người dùng đọc
-  teaserTimeout = setTimeout(() => {
-    isTeaserVisible.value = false // Tắt hoàn toàn bong bóng
-
-    // Phase 3: Tắt xong nghỉ 3.5 giây rồi mới chuyển sang câu tiếp theo và hiện lại
-    teaserTimeout = setTimeout(() => {
-      activeTeaserIndex.value = (activeTeaserIndex.value + 1) % botTeasers.length
-      runTeaserCycle()
-    }, 3500)
-  }, 4500)
-}
-
-const stopTeaserCycle = () => {
-  if (teaserTimeout) {
-    clearTimeout(teaserTimeout)
-    teaserTimeout = null
-  }
-  isTeaserVisible.value = false
-}
-
-const dismissTeaser = (e) => {
-  e.stopPropagation()
-  isTeaserDismissed.value = true
-  stopTeaserCycle()
-}
 const isChatbotOpen = ref(false)
+const isSubmitting = ref(false)
 const botInput = ref('')
+const botInputError = ref('')
 const chatContainer = ref(null)
-const chatMessages = ref([
-  { sender: 'bot', text: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi có thể hỗ trợ bạn giải đáp nhanh các câu hỏi pháp lý đã được Cục C11 phê duyệt về công tác tái hòa nhập cộng đồng.' }
-])
+const chatbotDialog = ref(null)
+const botInputRef = ref(null)
+const chatCloseButton = ref(null)
+const chatToggleButton = ref(null)
+const chatMessages = ref([{ ...CHATBOT_WELCOME_MESSAGE }])
+const quickQuestions = ref([])
+const quickQuestionState = ref('loading')
+let quickQuestionsController = null
+let chatRequestController = null
+let botRequestSequence = 0
+let messageSequence = 0
 
-const chatbotFaqs = [
-  { label: 'Hạn mức vay vốn?', question: 'Người hoàn lương được vay vốn tối đa bao nhiêu?', answer: 'Theo Quyết định 22/2023/QĐ-TTg, người chấp hành xong án phạt tù được vay vốn ưu đãi tối đa 100 triệu đồng để làm kinh tế, sản xuất kinh doanh tại Ngân hàng Chính sách Xã hội địa phương.' },
-  { label: 'Làm sao xóa án tích?', question: 'Thủ tục xóa án tích như thế nào?', answer: 'Khi đủ thời gian thử thách và thời gian đương nhiên xóa án tích theo quy định Bộ luật Hình sự, bạn cần đến Sở Tư pháp địa phương để làm thủ tục xin cấp Phiếu lý lịch tư pháp số 2 làm cơ sở xác định việc xóa án tích.' },
-  { label: 'Đăng ký học nghề?', question: 'Làm thế nào để đăng ký học nghề?', answer: 'Bạn hãy liên hệ với UBND hoặc Công an cấp xã/phường nơi cư trú để nhận phiếu giới thiệu học nghề miễn phí hoặc ưu đãi tại các trường dạy nghề liên kết của địa phương theo Nghị định 49/2020/NĐ-CP.' }
-]
-
-const fontSizeClass = computed(() => {
-  return `font-size-${fontSize.value}`
+const quickQuestionStatusText = computed(() => {
+  if (quickQuestionState.value === 'loading') return 'Đang tải câu hỏi đã được phê duyệt…'
+  if (quickQuestionState.value === 'error') return 'Hiện không thể tải câu hỏi gợi ý. Bạn vẫn có thể nhập câu hỏi bên dưới.'
+  if (quickQuestionState.value === 'empty') return 'Hiện chưa có câu hỏi gợi ý đã được phê duyệt. Bạn vẫn có thể nhập câu hỏi bên dưới.'
+  return 'Câu hỏi gợi ý từ kho dữ liệu đã phê duyệt'
 })
+
+const messageKindLabel = (kind) => ({
+  curated: 'Trả lời từ nội dung đã phê duyệt',
+  provider: 'Giải thích có tham chiếu nội dung đã phê duyệt',
+  not_found: 'Chưa tìm thấy thông tin phù hợp',
+  unavailable: 'Dịch vụ tạm thời chưa sẵn sàng',
+  rate_limited: 'Tạm giới hạn yêu cầu',
+}[kind] || '')
+
+const messageKindClass = (kind) => kind === 'not_found' || kind === 'unavailable' || kind === 'rate_limited'
+  ? 'text-[#9a3412]'
+  : 'text-[#385130]'
+
+const normalizeQuickQuestion = (item) => {
+  if (!item || typeof item !== 'object') return null
+  const id = typeof item.id === 'number' || typeof item.id === 'string' ? String(item.id) : ''
+  const question = typeof item.question === 'string' ? item.question.normalize('NFKC').trim() : ''
+  if (!id || !question || question.length > CHATBOT_CLIENT_LIMITS.maxMessageChars) return null
+  return { id, question }
+}
+
+const safeHttpsUrl = (value) => {
+  if (typeof value !== 'string') return null
+  try {
+    const url = new URL(value)
+    return url.protocol === 'https:' ? url.toString() : null
+  } catch {
+    return null
+  }
+}
+
+const normalizeSource = (item, index) => {
+  if (!item || typeof item !== 'object') return null
+  const rawSource = item.source && typeof item.source === 'object' ? item.source : item
+  const label = typeof rawSource.label === 'string' ? rawSource.label.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxSourceLabelChars) : ''
+  const reference = typeof rawSource.reference === 'string' ? rawSource.reference.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxSourceReferenceChars) : ''
+  const url = safeHttpsUrl(rawSource.url)
+  if (!label && !reference) return null
+  return {
+    id: `${typeof item.id === 'number' || typeof item.id === 'string' ? item.id : index}-${label}-${reference}`,
+    label: label || 'Tài liệu công khai',
+    reference,
+    url,
+  }
+}
+
+const loadQuickQuestions = async () => {
+  if (quickQuestionsController) quickQuestionsController.abort()
+  quickQuestionsController = new AbortController()
+  quickQuestionState.value = 'loading'
+  quickQuestions.value = []
+  try {
+    const response = await fetch('/api/public/chatbot/quick-questions', {
+      headers: { Accept: 'application/json' },
+      signal: quickQuestionsController.signal,
+    })
+    if (!response.ok) throw new Error('QUICK_QUESTIONS_UNAVAILABLE')
+    const data = await response.json()
+    const items = Array.isArray(data?.items)
+      ? data.items.slice(0, CHATBOT_CLIENT_LIMITS.maxQuickQuestions).map(normalizeQuickQuestion).filter(Boolean)
+      : []
+    quickQuestions.value = items
+    quickQuestionState.value = data?.ok === true && data?.available === true && items.length > 0 ? 'success' : 'empty'
+  } catch (error) {
+    if (error?.name !== 'AbortError') quickQuestionState.value = 'error'
+  } finally {
+    quickQuestionsController = null
+  }
+}
+
 
 const handleScroll = () => {
   if (window.scrollY > 80) {
@@ -504,14 +661,26 @@ const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value
 }
 
-const toggleMobileSubmenu = (menuKey) => {
-  if (menuKey === 'news') {
-    showDropdown.value = !showDropdown.value
-  } else if (menuKey === 'library') {
-    showLibraryDropdown.value = !showLibraryDropdown.value
-  } else if (menuKey === 'gov') {
-    showGovDropdown.value = !showGovDropdown.value
+watch([isMobileMenuOpen, isChatbotOpen], ([isMenuOpen, isChatOpen]) => {
+  if (typeof document !== 'undefined') {
+    document.body.style.overflow = isMenuOpen || isChatOpen ? 'hidden' : ''
   }
+})
+
+const handleKeydown = (event) => {
+  if (event.key === 'Escape' && isChatbotOpen.value) {
+    closeChatbot()
+    return
+  }
+  if (event.key === 'Escape' && isMobileMenuOpen.value) {
+    isMobileMenuOpen.value = false
+  }
+}
+
+const mobileOpenSubmenu = ref(null)
+
+const toggleMobileSubmenu = (menuKey) => {
+  mobileOpenSubmenu.value = mobileOpenSubmenu.value === menuKey ? null : menuKey
 }
 
 const onNavClick = (e) => {
@@ -539,234 +708,231 @@ const handleSearch = () => {
   }
 }
 
-const changeFontSize = (size) => {
-  setFontSize(size)
+
+const handleChatbotDialogKeydown = (event) => {
+  if (event.key === 'Escape') {
+    closeChatbot()
+    return
+  }
+  if (event.key !== 'Tab' || !chatbotDialog.value) return
+  const focusable = [...chatbotDialog.value.querySelectorAll('button:not([disabled]), a[href], input:not([disabled])')]
+  if (!focusable.length) return
+  const first = focusable[0]
+  const last = focusable[focusable.length - 1]
+  if (event.shiftKey && document.activeElement === first) {
+    event.preventDefault()
+    last.focus()
+  } else if (!event.shiftKey && document.activeElement === last) {
+    event.preventDefault()
+    first.focus()
+  }
+}
+
+const openChatbot = async () => {
+  isChatbotOpen.value = true
+  if (quickQuestionState.value === 'error' || quickQuestionState.value === 'empty') loadQuickQuestions()
+  await nextTick()
+  chatCloseButton.value?.focus()
+  scrollChatBottom()
+}
+
+const closeChatbot = async () => {
+  isChatbotOpen.value = false
+  await nextTick()
+  chatToggleButton.value?.focus()
 }
 
 const toggleChatbot = () => {
-  isChatbotOpen.value = !isChatbotOpen.value
-  if (isChatbotOpen.value) {
-    stopTeaserCycle()
-    scrollChatBottom()
-  } else {
-    setTimeout(() => {
-      runTeaserCycle()
-    }, 2500)
-  }
+  if (isChatbotOpen.value) closeChatbot()
+  else openChatbot()
 }
 
-const renderMarkdown = (text) => {
-  if (!text) return ''
-  let html = text
-
-  // 1. Escape HTML special characters for security
-  html = html
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-
-  // 2. Bold: **text** or __text__
-  html = html.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-  html = html.replace(/__(.*?)__/g, '<strong>$1</strong>')
-
-  // 3. Italic: *text* or _text_
-  html = html.replace(/\*(.*?)\*/g, '<em>$1</em>')
-  html = html.replace(/_(.*?)_/g, '<em>$1</em>')
-
-  // 4. Inline Code: `code`
-  html = html.replace(/`([^`]+)`/g, '<code>$1</code>')
-
-  // 5. Links: [text](url)
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>')
-
-  // 6. Line & List Processing
-  const lines = html.split('\n')
-  let inList = false
-  let isNumbered = false
-  let resultLines = []
-
-  for (let line of lines) {
-    const trimmed = line.trim()
-
-    // Bullet points (- or *)
-    if (/^[-*]\s+(.*)/.test(trimmed)) {
-      const content = trimmed.replace(/^[-*]\s+/, '')
-      if (!inList) {
-        inList = true
-        isNumbered = false
-        resultLines.push('<ul class="md-list">')
-      }
-      resultLines.push(`<li>${content}</li>`)
-    } 
-    // Numbered lists (1. or 2.)
-    else if (/^\d+\.\s+(.*)/.test(trimmed)) {
-      const content = trimmed.replace(/^\d+\.\s+/, '')
-      if (!inList) {
-        inList = true
-        isNumbered = true
-        resultLines.push('<ol class="md-list">')
-      }
-      resultLines.push(`<li>${content}</li>`)
-    } 
-    else {
-      if (inList) {
-        inList = false
-        resultLines.push(isNumbered ? '</ol>' : '</ul>')
-      }
-      if (trimmed === '') {
-        resultLines.push('<div class="md-spacer"></div>')
-      } else {
-        resultLines.push(`<p>${line}</p>`)
-      }
-    }
-  }
-
-  if (inList) {
-    resultLines.push(isNumbered ? '</ol>' : '</ul>')
-  }
-
-  return resultLines.join('')
+const normalizeStoredMessage = (item, index) => {
+  if (!item || typeof item !== 'object' || (item.sender !== 'user' && item.sender !== 'bot')) return null
+  const maxChars = item.sender === 'user' ? CHATBOT_CLIENT_LIMITS.maxMessageChars : CHATBOT_CLIENT_LIMITS.maxOutputChars
+  const text = typeof item.text === 'string' ? item.text.normalize('NFKC').trim().slice(0, maxChars) : ''
+  if (!text) return null
+  if (item.sender === 'user') return { id: `stored-${index}`, sender: 'user', text }
+  const kind = CHATBOT_RESPONSE_KINDS.has(item.kind) ? item.kind : undefined
+  const sources = Array.isArray(item.sources)
+    ? item.sources.slice(0, CHATBOT_CLIENT_LIMITS.maxSources).map(normalizeSource).filter(Boolean)
+    : []
+  return { id: `stored-${index}`, sender: 'bot', text, kind, sources }
 }
-
-const STORAGE_KEY = 'cdkt_chat_history_v1'
 
 const loadChatHistory = () => {
-  if (typeof window !== 'undefined') {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      if (saved) {
-        const parsed = JSON.parse(saved)
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          chatMessages.value = parsed
-        }
-      }
-    } catch (e) {
-      console.error('Lỗi load lịch sử chat:', e)
-    }
+  if (typeof window === 'undefined') return
+  try {
+    const saved = localStorage.getItem(CHATBOT_STORAGE_KEY)
+    const parsed = saved ? JSON.parse(saved) : null
+    if (!Array.isArray(parsed)) return
+    const bounded = parsed.slice(-(CHATBOT_CLIENT_LIMITS.maxHistoryMessages * 2)).map(normalizeStoredMessage).filter(Boolean)
+    if (bounded.length > 0) chatMessages.value = [{ ...CHATBOT_WELCOME_MESSAGE }, ...bounded.filter(item => item.id !== 'welcome')]
+  } catch {
+    localStorage.removeItem(CHATBOT_STORAGE_KEY)
   }
 }
 
 const saveChatHistory = () => {
-  if (typeof window !== 'undefined') {
-    try {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(chatMessages.value))
-    } catch (e) {
-      console.error('Lỗi lưu lịch sử chat:', e)
-    }
+  if (typeof window === 'undefined') return
+  const bounded = chatMessages.value
+    .filter(item => item.id !== 'welcome' && !item.isStreaming && typeof item.text === 'string' && item.text.trim())
+    .slice(-(CHATBOT_CLIENT_LIMITS.maxHistoryMessages * 2))
+    .map(({ sender, text, kind, sources }) => ({ sender, text, kind, sources }))
+  try {
+    localStorage.setItem(CHATBOT_STORAGE_KEY, JSON.stringify(bounded))
+  } catch {
+    // Storage can be unavailable in private browsing; chat remains usable in memory.
   }
 }
 
 const clearChatHistory = () => {
-  chatMessages.value = [
-    { sender: 'bot', text: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi có thể hỗ trợ bạn giải đáp nhanh các câu hỏi pháp lý đã được Cục C11 phê duyệt về công tác tái hòa nhập cộng đồng.' }
-  ]
-  if (typeof window !== 'undefined') {
-    localStorage.removeItem(STORAGE_KEY)
+  botRequestSequence += 1
+  if (chatRequestController) chatRequestController.abort()
+  isSubmitting.value = false
+  botInputError.value = ''
+  chatMessages.value = [{ ...CHATBOT_WELCOME_MESSAGE }]
+  if (typeof window !== 'undefined') localStorage.removeItem(CHATBOT_STORAGE_KEY)
+  nextTick(() => botInputRef.value?.focus())
+}
+
+const boundedUserHistory = () => {
+  const messages = chatMessages.value
+    .filter(item => item.sender === 'user' && typeof item.text === 'string')
+    .map(item => ({ sender: 'user', text: item.text.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxMessageChars) }))
+    .filter(item => item.text)
+    .slice(-CHATBOT_CLIENT_LIMITS.maxHistoryMessages)
+  let total = 0
+  return messages.reverse().filter((item) => {
+    if (total + item.text.length > CHATBOT_CLIENT_LIMITS.maxTotalUserChars) return false
+    total += item.text.length
+    return true
+  }).reverse()
+}
+
+const parseSseLine = (line, targetMessage) => {
+  const trimmed = line.trim()
+  if (!trimmed.startsWith('data: ') || trimmed === 'data: [DONE]') return
+  let data
+  try {
+    data = JSON.parse(trimmed.slice(6))
+  } catch {
+    return
+  }
+  const content = typeof data?.choices?.[0]?.delta?.content === 'string' ? data.choices[0].delta.content : ''
+  if (content) targetMessage.text = `${targetMessage.text}${content}`.slice(0, CHATBOT_CLIENT_LIMITS.maxOutputChars)
+  const chatbot = data?.chatbot
+  if (chatbot && typeof chatbot === 'object') {
+    targetMessage.kind = CHATBOT_RESPONSE_KINDS.has(chatbot.kind) ? chatbot.kind : 'unavailable'
+    targetMessage.sources = Array.isArray(chatbot.sources)
+      ? chatbot.sources.slice(0, CHATBOT_CLIENT_LIMITS.maxSources).map(normalizeSource).filter(Boolean)
+      : []
   }
 }
 
 const fetchStreamBotReply = async () => {
-  const msgObj = reactive({ sender: 'bot', text: '', isStreaming: true })
-  chatMessages.value.push(msgObj)
+  if (isSubmitting.value) return false
+  const requestSequence = ++botRequestSequence
+  isSubmitting.value = true
+  botInputError.value = ''
+  chatRequestController = new AbortController()
+  const requestController = chatRequestController
+  const botMessage = {
+    id: `bot-${++messageSequence}`,
+    sender: 'bot',
+    text: '',
+    kind: undefined,
+    sources: [],
+    isStreaming: true,
+  }
+  chatMessages.value.push(botMessage)
   scrollChatBottom()
 
-  let targetFullText = ''
-  let currentRenderedLength = 0
-  let isStreamFetching = true
-
-  // Bộ tiêu thụ từng ký tự client (Typewriter Stream Queue - 15ms/ký tự)
-  const typewriterTimer = setInterval(() => {
-    if (currentRenderedLength < targetFullText.length) {
-      // Mỗi nhịp render 1 - 2 ký tự tạo cảm giác gõ AI siêu mượt
-      const step = Math.min(2, targetFullText.length - currentRenderedLength)
-      currentRenderedLength += step
-      msgObj.text = targetFullText.substring(0, currentRenderedLength)
-      scrollChatBottom()
-    } else if (!isStreamFetching) {
-      // Đã đọc xong từ mạng & đã render đủ toàn bộ ký tự!
-      clearInterval(typewriterTimer)
-      msgObj.isStreaming = false
-      saveChatHistory()
-      scrollChatBottom()
-    }
-  }, 15)
-
   try {
-    const response = await fetch('/api/chat', {
+    const response = await fetch('/api/public/chatbot', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: chatMessages.value.slice(0, -1) })
+      headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: boundedUserHistory() }),
+      signal: requestController.signal,
     })
-
-    if (!response.ok || !response.body) {
-      throw new Error('Kết nối tới server AI thất bại')
-    }
+    if (!response.ok || !response.body) throw new Error('CHATBOT_UNAVAILABLE')
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
-
-    while (true) {
+    let doneEvent = false
+    while (!doneEvent) {
       const { done, value } = await reader.read()
-      if (done) break
-
-      buffer += decoder.decode(value, { stream: true })
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
       const lines = buffer.split('\n')
-      buffer = lines.pop() || ''
-
+      buffer = done ? '' : lines.pop() || ''
       for (const line of lines) {
-        const trimmed = line.trim()
-        if (!trimmed || trimmed.startsWith(':')) continue
-
-        if (trimmed === 'data: [DONE]') {
+        if (line.trim() === 'data: [DONE]') {
+          doneEvent = true
           break
         }
-
-        if (trimmed.startsWith('data: ')) {
-          const jsonStr = trimmed.substring(6)
-          try {
-            const data = JSON.parse(jsonStr)
-            const content = data.choices?.[0]?.delta?.content || ''
-            if (content) {
-              targetFullText += content
-            }
-          } catch (e) {
-            targetFullText += jsonStr
-          }
-        }
+        parseSseLine(line, botMessage)
       }
+      if (done) break
+      scrollChatBottom()
     }
-  } catch (err) {
-    console.error('Streaming error:', err)
-    if (!targetFullText) {
-      targetFullText = 'Xin lỗi, kết nối tới máy chủ AI gặp sự cố. Bạn vui lòng thử lại hoặc gọi hotline 0903.480.985 để được hỗ trợ trực tiếp.'
+    if (buffer) parseSseLine(buffer, botMessage)
+    if (!botMessage.text.trim()) throw new Error('EMPTY_CHATBOT_RESPONSE')
+    if (!botMessage.kind) botMessage.kind = 'unavailable'
+    botMessage.isStreaming = false
+    saveChatHistory()
+    return true
+  } catch (error) {
+    const index = chatMessages.value.findIndex(item => item.id === botMessage.id)
+    if (index !== -1) chatMessages.value.splice(index, 1)
+    if (error?.name !== 'AbortError' && requestSequence === botRequestSequence) {
+      botInputError.value = 'Không thể nhận phản hồi lúc này. Nội dung câu hỏi đã được giữ lại để bạn thử lại.'
     }
+    return false
   } finally {
-    isStreamFetching = false
+    if (requestSequence === botRequestSequence) {
+      isSubmitting.value = false
+      chatRequestController = null
+    }
+    scrollChatBottom()
   }
 }
 
-const askBot = (question, answer) => {
-  chatMessages.value.push({ sender: 'user', text: question })
-  saveChatHistory()
+const submitBotQuestion = async (rawText) => {
+  if (isSubmitting.value) return
+  const text = typeof rawText === 'string' ? rawText.normalize('NFKC').trim() : ''
+  if (!text) {
+    botInputError.value = 'Vui lòng nhập câu hỏi.'
+    return
+  }
+  if (text.length > CHATBOT_CLIENT_LIMITS.maxMessageChars) {
+    botInputError.value = `Câu hỏi không được vượt quá ${CHATBOT_CLIENT_LIMITS.maxMessageChars} ký tự.`
+    return
+  }
+  const userMessage = { id: `user-${++messageSequence}`, sender: 'user', text }
+  chatMessages.value.push(userMessage)
   scrollChatBottom()
-  setTimeout(() => {
-    fetchStreamBotReply()
-  }, 200)
+  const requestSequence = botRequestSequence + 1
+  const succeeded = await fetchStreamBotReply()
+  if (requestSequence !== botRequestSequence) return
+  if (succeeded) {
+    botInput.value = ''
+    saveChatHistory()
+  } else {
+    const index = chatMessages.value.findIndex(item => item.id === userMessage.id)
+    if (index !== -1) chatMessages.value.splice(index, 1)
+    botInput.value = text
+  }
+  nextTick(() => botInputRef.value?.focus())
 }
 
-const sendBotMessage = () => {
-  if (botInput.value.trim() === '') return
-  const text = botInput.value
-  chatMessages.value.push({ sender: 'user', text })
-  saveChatHistory()
-  botInput.value = ''
-  scrollChatBottom()
-
-  setTimeout(() => {
-    fetchStreamBotReply()
-  }, 200)
+const askBot = (question) => {
+  if (isSubmitting.value) return
+  botInput.value = question
+  submitBotQuestion(question)
 }
+
+const sendBotMessage = () => submitBotQuestion(botInput.value)
 
 const scrollChatBottom = async () => {
   await nextTick()
@@ -776,312 +942,109 @@ const scrollChatBottom = async () => {
 }
 
 onMounted(() => {
-  initSettings()
-
   window.addEventListener('scroll', handleScroll)
+  window.addEventListener('keydown', handleKeydown)
   updateLiveDate()
   dateTimer = setInterval(updateLiveDate, 1000)
   loadChatHistory()
-  runTeaserCycle()
+  loadQuickQuestions()
+  loadNavMenu()
 })
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
+  window.removeEventListener('keydown', handleKeydown)
+  if (typeof document !== 'undefined') document.body.style.overflow = ''
   if (dateTimer) clearInterval(dateTimer)
-  stopTeaserCycle()
+  quickQuestionsController?.abort()
+  chatRequestController?.abort()
 })
 </script>
 
 <style scoped>
-/* Root Font Size Controls (A-, A, A+) */
-.app-layout.font-size-small p,
-.app-layout.font-size-small span,
-.app-layout.font-size-small a,
-.app-layout.font-size-small li,
-.app-layout.font-size-small h1,
-.app-layout.font-size-small h2,
-.app-layout.font-size-small h3,
-.app-layout.font-size-small h4,
-.app-layout.font-size-small input,
-.app-layout.font-size-small button {
-  font-size: 92% !important;
+/* Slide-down transition for search bar */
+.slide-down-enter-active, .slide-down-leave-active {
+  transition: transform 0.25s ease, opacity 0.25s ease;
+}
+.slide-down-enter-from, .slide-down-leave-to {
+  transform: translateY(-20px);
+  opacity: 0;
 }
 
-.app-layout.font-size-large p,
-.app-layout.font-size-large span,
-.app-layout.font-size-large a,
-.app-layout.font-size-large li,
-.app-layout.font-size-large h1,
-.app-layout.font-size-large h2,
-.app-layout.font-size-large h3,
-.app-layout.font-size-large h4,
-.app-layout.font-size-large input,
-.app-layout.font-size-large button {
-  font-size: 112% !important;
+/* Teaser pop transition */
+.teaser-pop-enter-active,
+.teaser-pop-leave-active {
+  transition: all 0.45s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.teaser-pop-enter-from,
+.teaser-pop-leave-to {
+  opacity: 0;
+  transform: translateY(14px) scale(0.92);
 }
 
-/* Top Bar */
-.top-bar {
-  background-color: var(--primary-dark);
-  color: var(--white);
-  padding: 8px 0;
-  font-size: 0.82rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-  position: relative;
-  z-index: 101;
+/* Chatbot popup: full screen on mobile when open */
+@media (max-width: 1100px) {
+  .chatbot-popup.is-open {
+    top: 0 !important;
+    left: 0 !important;
+    right: 0 !important;
+    bottom: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    height: 100dvh !important;
+    max-height: 100vh !important;
+    border-radius: 0 !important;
+    border: none !important;
+    z-index: 99999 !important;
+  }
+  .chatbot-toggle-btn-mobile {
+    bottom: 88px !important;
+    right: 18px !important;
+  }
+  .chatbot-toggle-btn {
+    bottom: 88px;
+    right: 18px;
+    padding: 10px 16px;
+    font-size: 0.82rem;
+  }
+  .chatbot-toggle-btn .bot-label {
+    display: none;
+  }
+  .chatbot-teaser {
+    bottom: 144px;
+    right: 16px;
+    max-width: 240px;
+  }
 }
 
-.top-bar-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
+/* Streaming cursor blink */
+@keyframes blinkCursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
 }
 
-.top-left, .top-right {
-  display: flex;
-  align-items: center;
-  gap: 16px;
+/* Liquid orb glow animation */
+@keyframes liquidOrbGlow {
+  0%, 100% { box-shadow: 0 10px 24px rgba(23, 59, 24, 0.4), 0 0 0 0 rgba(46, 107, 50, 0.3); }
+  50% { box-shadow: 0 12px 28px rgba(23, 59, 24, 0.5), 0 0 0 8px rgba(46, 107, 50, 0); }
 }
 
-.divider {
-  opacity: 0.3;
-}
+/* Markdown content inside chatbot */
+.markdown-content p { margin: 0 0 6px 0; line-height: 1.5; }
+.markdown-content p:last-child { margin-bottom: 0; }
+.markdown-content strong { font-weight: 700; color: #112812; }
+.markdown-content ul.md-list,
+.markdown-content ol.md-list { margin: 6px 0 8px 0; padding-left: 18px; }
+.markdown-content ul.md-list li,
+.markdown-content ol.md-list li { margin-bottom: 4px; line-height: 1.45; }
+.markdown-content a { color: #1e4620; text-decoration: underline; font-weight: 600; }
+.markdown-content code { background: #f0f6ef; color: #1e4620; padding: 2px 6px; border-radius: 4px; font-size: 0.82rem; font-family: monospace; }
+.md-spacer { height: 6px; }
 
-.accessibility-ctrl {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.ctrl-label {
-  font-weight: 500;
-  font-size: 0.78rem;
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.accessibility-ctrl button {
-  background: rgba(255, 255, 255, 0.1);
-  border: none;
-  color: white;
-  width: 22px;
-  height: 22px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 0.7rem;
-  font-weight: bold;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: var(--transition);
-}
-
-.accessibility-ctrl button:hover, .accessibility-ctrl button.active {
-  background-color: var(--secondary);
-}
-
-.lang-switcher button {
-  background: none;
-  border: none;
-  color: rgba(255, 255, 255, 0.7);
-  font-weight: 600;
-  cursor: pointer;
-  font-size: 0.78rem;
-  padding: 2px 6px;
-  transition: var(--transition);
-}
-
-.lang-switcher button:hover, .lang-switcher button.active {
-  color: white;
-  background-color: var(--primary);
-  border-radius: 4px;
-}
-
-/* Main Header */
-.main-header {
-  background-color: var(--white);
-  position: relative;
-  width: 100%;
-  z-index: 100;
-  border-bottom: 1px solid var(--border-color);
-  transition: var(--transition);
-}
-
-.main-header.is-sticky {
-  position: fixed;
-  top: 0;
-  box-shadow: var(--shadow-md);
-}
-
-/* Header Top Row */
-.header-top-row {
-  border-bottom: 1px solid var(--border-color);
-  background-color: var(--white);
-}
-
-.header-top-container {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  height: 80px;
-}
-
-.logo-area {
-  display: flex;
-  align-items: center;
-  gap: 14px;
-  text-decoration: none;
-}
-
-.logo-img-ref {
-  width: auto;
-  height: 50px;
-  object-fit: contain;
-}
-
-.logo-title {
-  font-size: 1.35rem;
-  font-weight: 800;
-  color: var(--primary);
-  letter-spacing: 0.5px;
-  line-height: 1.2;
-}
-
-.logo-subtitle {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text-muted);
-  text-transform: uppercase;
-  margin-top: 2px;
-}
-
-.menu-toggle {
-  display: none;
-}
-
-.mobile-drawer-head,
-.drawer-search-wrap,
-.mobile-drawer-footer {
-  display: none;
-}
-
-.header-top-actions {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.search-btn-toggle {
-  background: var(--bg-light);
-  border: 1px solid var(--border-color);
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font-size: 0.95rem;
-  transition: var(--transition);
-}
-
-.search-btn-toggle:hover, .search-btn-toggle.is-active {
-  background-color: var(--primary);
-  color: white;
-  border-color: var(--primary);
-}
-
-.btn-support-247 {
-  padding: 10px 20px;
-  font-size: 0.85rem;
-  border-radius: var(--radius-sm);
-}
-
-.pulse-icon {
-  width: 6px;
-  height: 6px;
-  background-color: var(--secondary);
-  border-radius: 50%;
-  display: inline-block;
-  animation: pulse 1.5s infinite;
-}
-
-@keyframes pulse {
-  0% { transform: scale(0.9); opacity: 1; box-shadow: 0 0 0 0 rgba(124, 179, 66, 0.7); }
-  70% { transform: scale(1.1); opacity: 0.5; box-shadow: 0 0 0 6px rgba(124, 179, 66, 0); }
-  100% { transform: scale(0.9); opacity: 0; box-shadow: 0 0 0 0 rgba(124, 179, 66, 0); }
-}
-
-/* Header Nav Row - Crisp White Background & Deep Green Text (Thanh Lịch, Sạch Sẽ) */
-.header-nav-row {
-  background-color: #ffffff;
-  border-top: 1px solid #edf2ec;
-  border-bottom: 1px solid #e1e8e0;
-  height: 50px;
-  display: flex;
-  align-items: center;
-  box-shadow: 0 4px 12px rgba(15, 35, 18, 0.04);
-  transition: var(--transition);
-}
-
-.nav-container {
-  width: 100%;
-}
-
-.main-nav {
-  display: flex;
-  width: 100%;
-}
-
-.nav-links {
-  display: flex;
-  list-style: none;
-  width: 100%;
-  justify-content: space-between;
-  align-items: center;
-  gap: 2px;
-}
-
+/* Nav item pseudo-element underline (desktop nav) */
 .nav-item {
-  text-decoration: none;
-  color: #1e4620;
-  font-weight: 700;
-  font-size: 0.88rem;
-  padding: 8px 12px;
-  border-radius: 8px;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  white-space: nowrap;
   position: relative;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
 }
-
-.nav-item a {
-  color: inherit;
-  text-decoration: none;
-}
-
-.cursor-pointer {
-  cursor: pointer;
-}
-
-.nav-item:hover,
-.nav-item:hover a {
-  color: #143516;
-  background-color: #f0f6ef;
-}
-
-.nav-item.active-item,
-.nav-item:has(a.active-item) {
-  color: #1e4620;
-  background-color: #e4f0e2;
-  font-weight: 800;
-}
-
-.nav-item:has(a.active-item) a {
-  color: #1e4620;
-}
-
 .nav-item::after {
   content: '';
   position: absolute;
@@ -1095,1457 +1058,23 @@ onUnmounted(() => {
   transform: scaleX(0);
   transition: all 0.25s ease;
 }
-
-.nav-item:hover::after, 
+.nav-item:hover::after,
 .active-item::after,
 .nav-item:has(a.active-item)::after {
   opacity: 1;
   transform: scaleX(1);
 }
-
-/* Dropdown Menu */
-.has-dropdown {
-  position: relative;
+.nav-item:has(a.active-item) {
+  color: #1e4620;
+  background-color: #e4f0e2;
+  font-weight: 800;
 }
-
-.nav-item-dropdown {
-  cursor: pointer;
-}
-
-.arrow {
-  font-size: 0.55rem;
-  margin-left: 2px;
-  display: inline-block;
-  color: #557757;
-  transition: transform 0.25s ease;
-}
-
-.has-dropdown:hover .arrow,
-.arrow.is-rotated {
-  transform: rotate(180deg);
+.nav-item:has(a.active-item) a {
   color: #1e4620;
 }
 
-.dropdown-menu {
-  position: absolute;
-  top: calc(100% + 4px);
-  left: 0;
-  background: #ffffff;
-  box-shadow: 0 14px 36px rgba(15, 35, 18, 0.18), 0 2px 8px rgba(0, 0, 0, 0.04);
-  border-radius: 12px;
-  border: 1px solid rgba(30, 70, 32, 0.12);
-  padding: 8px;
-  min-width: 220px;
-  list-style: none;
-  opacity: 0;
-  transform: translateY(8px) scale(0.97);
-  pointer-events: none;
-  z-index: 102;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.has-dropdown:hover .dropdown-menu, .dropdown-menu.is-show {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
-}
-
-.dropdown-menu a {
-  display: block;
-  padding: 9px 14px;
-  text-decoration: none;
-  color: #2d4a2d;
-  font-size: 0.86rem;
-  font-weight: 600;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.dropdown-menu a:hover {
-  background-color: rgba(30, 70, 32, 0.07);
-  color: #1e4620;
-  padding-left: 18px;
-}
-
-/* Search Dropdown Bar */
-.search-dropdown-bar {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  width: 100%;
-  background-color: var(--primary);
-  padding: 16px 0;
-  box-shadow: var(--shadow-md);
-  z-index: 99;
-}
-
-.search-dropdown-container {
-  display: flex;
-  gap: 16px;
-  align-items: center;
-}
-
-.search-input-wrap {
-  position: relative;
-  flex: 1;
-}
-
-.search-input-icon {
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  color: var(--text-muted);
-}
-
-.search-dropdown-bar input {
-  width: 100%;
-  padding: 12px 14px 12px 42px;
-  border-radius: var(--radius-sm);
-  border: none;
-  font-family: inherit;
-  font-size: 0.95rem;
-  outline: none;
-}
-
-.search-bar-buttons {
-  display: flex;
-  gap: 8px;
-}
-
-.search-dropdown-submit {
-  background-color: var(--secondary);
-  color: white;
-  border: none;
-  padding: 12px 24px;
-  border-radius: var(--radius-sm);
-  font-weight: 700;
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.search-dropdown-submit:hover {
-  background-color: var(--secondary-light);
-}
-
-.search-dropdown-close {
-  background: transparent;
-  color: white;
-  border: 1px solid rgba(255,255,255,0.3);
-  padding: 12px 18px;
-  border-radius: var(--radius-sm);
-  font-size: 0.9rem;
-  cursor: pointer;
-  transition: var(--transition);
-}
-
-.search-dropdown-close:hover {
-  background-color: rgba(255,255,255,0.1);
-}
-
-/* Slide Down Transition */
-.slide-down-enter-active, .slide-down-leave-active {
-  transition: transform 0.25s ease, opacity 0.25s ease;
-}
-
-.slide-down-enter-from, .slide-down-leave-to {
-  transform: translateY(-20px);
-  opacity: 0;
-}
-
-/* Main Content Padding */
-.main-content {
-  padding-top: 0;
-  min-height: calc(100vh - 165px);
-  transition: var(--transition);
-}
-
-.main-content.has-sticky-padding {
-  padding-top: 130px;
-}
-
-/* Mobile Toggle */
-.mobile-drawer-head {
-  display: none;
-}
-
-.drawer-controls-row {
-  display: none;
-}
-
-.menu-toggle {
-  display: none;
-  flex-direction: column;
-  justify-content: space-between;
-  width: 24px;
-  height: 18px;
-  background: none;
-  border: none;
-  cursor: pointer;
-}
-
-.menu-toggle .bar {
-  width: 100%;
-  height: 3px;
-  background-color: var(--primary);
-  border-radius: 2px;
-  transition: var(--transition);
-}
-
-/* Accessibility classes */
-.font-size-small { font-size: 0.9rem; }
-.font-size-normal { font-size: 1rem; }
-.font-size-large { font-size: 1.15rem; }
-
-/* Footer */
-.main-footer {
-  background-color: var(--primary-dark);
-  color: rgba(255, 255, 255, 0.8);
-  padding: 80px 0 0 0;
-  border-top: 4px solid var(--secondary);
-}
-
-.footer-grid {
-  display: grid;
-  grid-template-columns: 2fr 1fr 1fr 2fr;
-  gap: 40px;
-  margin-bottom: 60px;
-}
-
-.footer-logo {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-.footer-logo-img {
-  width: auto;
-  height: 36px;
-  object-fit: contain;
-}
-
-.footer-logo-title {
-  color: white;
-  font-weight: 800;
-  font-size: 1.2rem;
-  letter-spacing: 0.5px;
-}
-
-.footer-desc {
-  font-size: 0.9rem;
-  line-height: 1.6;
-}
-
-.footer-col-title {
-  color: white;
-  font-size: 1.1rem;
-  font-weight: 700;
-  margin-bottom: 24px;
-  position: relative;
-}
-
-.footer-col-title::after {
-  content: '';
-  position: absolute;
-  bottom: -8px;
-  left: 0;
-  width: 30px;
-  height: 3px;
-  background-color: var(--secondary);
-}
-
-.footer-col-links ul {
-  list-style: none;
-}
-
-.footer-col-links li {
-  margin-bottom: 12px;
-}
-
-.footer-col-links a {
-  color: rgba(255, 255, 255, 0.7);
-  text-decoration: none;
-  font-size: 0.9rem;
-  transition: var(--transition);
-}
-
-.footer-col-links a:hover {
-  color: var(--secondary-light);
-  padding-left: 6px;
-}
-
-.footer-col-contact p {
-  margin-bottom: 12px;
-  font-size: 0.9rem;
-}
-
-.footer-col-contact strong {
-  color: white;
-}
-
-.footer-bottom {
-  border-top: 1px solid rgba(255, 255, 255, 0.08);
-  padding: 24px 0;
-  font-size: 0.85rem;
-}
-
-.footer-bottom-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-}
-
-.designer-link {
-  color: rgba(255, 255, 255, 0.7);
-  text-decoration: none;
-  font-weight: 600;
-  transition: all 0.2s ease;
-}
-
-.designer-link:hover {
-  color: var(--secondary-light);
-  text-decoration: underline;
-}
-
-/* ====== MINIMALIST ELEGANT CHATBOT AI STYLING ====== */
-.chatbot-teaser-bubble {
-  position: fixed;
-  bottom: 84px;
-  right: 24px;
-  background: #ffffff;
-  border-radius: 16px;
-  padding: 10px 32px 10px 14px;
-  box-shadow: 0 12px 36px rgba(15, 35, 18, 0.2), 0 2px 8px rgba(0, 0, 0, 0.06);
-  border: 1.5px solid rgba(30, 70, 32, 0.18);
-  z-index: 9999;
-  cursor: pointer;
-  max-width: 280px;
-}
-
-/* Vue Teaser Pop Transition */
-.teaser-pop-enter-active,
-.teaser-pop-leave-active {
-  transition: all 0.45s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.teaser-pop-enter-from,
-.teaser-pop-leave-to {
-  opacity: 0;
-  transform: translateY(14px) scale(0.92);
-}
-
-.chatbot-teaser-bubble:hover {
-  transform: translateY(-3px);
-  box-shadow: 0 14px 36px rgba(15, 35, 18, 0.22);
-}
-
-.teaser-badge {
-  font-size: 0.65rem;
-  font-weight: 800;
-  color: var(--primary);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  display: block;
-  margin-bottom: 2px;
-}
-
+/* Teaser text animation */
 .teaser-text {
-  font-size: 0.84rem;
-  font-weight: 700;
-  color: #1a2e1b;
-  line-height: 1.35;
-  margin: 0;
   animation: textFadeIn 0.4s ease-out;
 }
-
-.teaser-close-btn {
-  position: absolute;
-  top: 6px;
-  right: 8px;
-  background: none;
-  border: none;
-  color: #9ca3af;
-  font-size: 0.75rem;
-  cursor: pointer;
-  padding: 2px;
-  transition: color 0.2s ease;
-}
-
-.teaser-close-btn:hover {
-  color: #374151;
-}
-
-.teaser-arrow {
-  position: absolute;
-  bottom: -6px;
-  right: 28px;
-  width: 12px;
-  height: 12px;
-  background: #ffffff;
-  border-right: 1px solid rgba(30, 70, 32, 0.14);
-  border-bottom: 1px solid rgba(30, 70, 32, 0.14);
-  transform: rotate(45deg);
-}
-
-@keyframes teaserBounceIn {
-  from {
-    opacity: 0;
-    transform: translateY(12px) scale(0.92);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
-}
-
-@keyframes textFadeIn {
-  from {
-    opacity: 0;
-    transform: translateY(4px);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
-}
-.chatbot-toggle-btn {
-  position: fixed;
-  bottom: 24px;
-  right: 24px;
-  background: #1e4620;
-  color: #ffffff;
-  border: 1px solid rgba(255, 255, 255, 0.2);
-  padding: 10px 20px 10px 14px;
-  border-radius: 50px;
-  box-shadow: 0 8px 24px rgba(30, 70, 32, 0.25);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  z-index: 999;
-  font-weight: 700;
-  font-size: 0.88rem;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.chatbot-toggle-btn:hover {
-  transform: translateY(-2px);
-  background: #153317;
-  box-shadow: 0 12px 30px rgba(30, 70, 32, 0.35);
-}
-
-.toggle-bot-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.chatbot-popup {
-  position: fixed;
-  bottom: 90px;
-  right: 24px;
-  width: 420px;
-  height: 580px;
-  max-height: calc(100vh - 110px);
-  background: #ffffff;
-  border-radius: 20px;
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.16), 0 4px 16px rgba(0, 0, 0, 0.06);
-  display: flex;
-  flex-direction: column;
-  z-index: 9999;
-  overflow: hidden;
-  border: 1px solid rgba(0, 0, 0, 0.08);
-  opacity: 0;
-  transform: translateY(20px) scale(0.96);
-  pointer-events: none;
-  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.chatbot-popup.is-open {
-  opacity: 1;
-  transform: translateY(0) scale(1);
-  pointer-events: auto;
-}
-
-.chatbot-header {
-  background: #ffffff;
-  color: #1f2937;
-  padding: 14px 18px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid #edf2ec;
-}
-
-.chatbot-title {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-}
-
-.minimal-bot-avatar {
-  width: 36px;
-  height: 36px;
-  border-radius: 50%;
-  background: #edf5ec;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.bot-header-meta h4 {
-  font-size: 0.92rem;
-  font-weight: 700;
-  color: #1a2e1b;
-  margin: 0;
-}
-
-.bot-header-meta p {
-  font-size: 0.72rem;
-  color: #6b7280;
-  margin: 2px 0 0 0;
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-
-.status-dot-green {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: #10b981;
-  display: inline-block;
-}
-
-.header-actions {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.clear-history-btn {
-  background: #f3f4f6;
-  border: none;
-  color: #6b7280;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.clear-history-btn:hover {
-  background: #fee2e2;
-  color: #dc2626;
-}
-
-.close-bot-btn {
-  background: #f3f4f6;
-  border: none;
-  color: #6b7280;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  font-size: 0.85rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.close-bot-btn:hover {
-  background: #e5e7eb;
-  color: #111827;
-}
-
-.chatbot-messages {
-  flex: 1;
-  padding: 16px;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  background-color: #f9fbf9;
-}
-
-.chat-msg {
-  display: flex;
-  gap: 8px;
-  align-items: flex-end;
-}
-
-.chat-msg.user {
-  justify-content: flex-end;
-}
-
-.msg-bot-avatar {
-  width: 24px;
-  height: 24px;
-  border-radius: 50%;
-  background: #edf5ec;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  margin-bottom: 2px;
-}
-
-.msg-bubble {
-  max-width: 86%;
-  padding: 10px 14px;
-  border-radius: 16px;
-  font-size: 0.88rem;
-  line-height: 1.48;
-}
-
-.chat-msg.bot .msg-bubble {
-  background: #ffffff;
-  color: #1f2937;
-  border: 1px solid #e8ede7;
-  border-bottom-left-radius: 4px;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.02);
-}
-
-/* Markdown formatted content */
-.markdown-content p {
-  margin: 0 0 6px 0;
-  line-height: 1.5;
-}
-
-.markdown-content p:last-child {
-  margin-bottom: 0;
-}
-
-.markdown-content strong {
-  font-weight: 700;
-  color: #112812;
-}
-
-.markdown-content ul.md-list,
-.markdown-content ol.md-list {
-  margin: 6px 0 8px 0;
-  padding-left: 18px;
-}
-
-.markdown-content ul.md-list li,
-.markdown-content ol.md-list li {
-  margin-bottom: 4px;
-  line-height: 1.45;
-}
-
-.markdown-content a {
-  color: #1e4620;
-  text-decoration: underline;
-  font-weight: 600;
-}
-
-.markdown-content code {
-  background: #f0f6ef;
-  color: #1e4620;
-  padding: 2px 6px;
-  border-radius: 4px;
-  font-size: 0.82rem;
-  font-family: monospace;
-}
-
-.md-spacer {
-  height: 6px;
-}
-
-.streaming-cursor {
-  display: inline-block;
-  margin-left: 2px;
-  color: var(--primary);
-  font-weight: 700;
-  animation: blinkCursor 0.6s infinite;
-}
-
-@keyframes blinkCursor {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-.chat-msg.user .msg-bubble {
-  background: #1e4620;
-  color: #ffffff;
-  border-bottom-right-radius: 4px;
-}
-
-.chatbot-quick-questions {
-  padding: 10px 14px;
-  background-color: #ffffff;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px 8px;
-  max-height: 110px;
-  overflow-y: auto;
-  border-top: 1px solid #edf2ec;
-}
-
-.quick-q-btn {
-  background-color: #f3f6f3;
-  border: 1px solid #e1e8e0;
-  color: #2d4a2d;
-  padding: 5px 12px;
-  border-radius: 16px;
-  font-size: 0.76rem;
-  font-weight: 600;
-  white-space: normal;
-  text-align: left;
-  line-height: 1.3;
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.quick-q-btn:hover {
-  background-color: #1e4620;
-  color: #ffffff;
-  border-color: #1e4620;
-}
-
-.chatbot-input-area {
-  padding: 12px 14px;
-  display: flex;
-  gap: 8px;
-  background: #ffffff;
-  border-top: 1px solid #edf2ec;
-}
-
-.chatbot-input-area input {
-  flex: 1;
-  padding: 10px 14px;
-  border-radius: 20px;
-  border: 1px solid #e1e8e0;
-  font-size: 0.86rem;
-  outline: none;
-  background: #f8faf8;
-  transition: all 0.2s ease;
-}
-
-.chatbot-input-area input:focus {
-  border-color: #1e4620;
-  background: #ffffff;
-}
-
-.send-bot-btn {
-  background: #1e4620;
-  color: #ffffff;
-  border: none;
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-}
-
-.send-bot-btn:hover {
-  background: #153317;
-}
-
-/* Tablet & Mobile responsive */
-@media (max-width: 1280px) {
-  .logo-title { font-size: 1.15rem; }
-  .logo-subtitle { font-size: 0.62rem; }
-  .nav-item { font-size: 0.82rem; padding: 12px 2px; }
-}
-
-@media (max-width: 1024px) {
-  .footer-grid {
-    grid-template-columns: 1fr 1fr;
-  }
-}
-
-@media (max-width: 1100px) {
-  .mobile-drawer-head {
-    display: flex;
-  }
-
-  .drawer-search-wrap {
-    display: block;
-  }
-
-  .mobile-drawer-footer {
-    display: flex;
-  }
-
-  .top-bar {
-    display: block;
-    padding: 4px 0;
-  }
-
-  .top-bar-content {
-    justify-content: space-between;
-  }
-
-  .top-hide-mobile {
-    display: none !important;
-  }
-
-  .drawer-controls-row {
-    display: flex;
-    padding: 10px 18px;
-    background: #f0f6ef;
-    border-bottom: 1px solid #e1e8e0;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .drawer-ctrl-item {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .drawer-ctrl-label {
-    font-size: 0.78rem;
-    font-weight: 700;
-    color: #1e4620;
-  }
-
-  .menu-toggle {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    align-items: center;
-    gap: 4px;
-    width: 42px;
-    height: 42px;
-    border-radius: 12px;
-    background: rgba(30, 70, 32, 0.06);
-    border: 1px solid rgba(30, 70, 32, 0.12);
-    box-shadow: none;
-    z-index: 10000;
-    transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .menu-toggle:hover, .menu-toggle:active {
-    background: rgba(30, 70, 32, 0.12);
-    transform: scale(1.04);
-  }
-
-  .menu-toggle .bar {
-    width: 20px;
-    height: 2px;
-    background-color: var(--primary-dark);
-    border-radius: 4px;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.2s ease;
-  }
-
-  .header-nav-row {
-    display: block;
-    height: 0;
-    padding: 0;
-    margin: 0;
-    border: none;
-    overflow: visible;
-  }
-
-  .main-header {
-    z-index: auto;
-  }
-
-  .menu-toggle.is-hidden {
-    opacity: 0;
-    pointer-events: none;
-    transform: scale(0.8);
-  }
-
-  /* ====== SLEEK MODERN MOBILE MENU ====== */
-  .main-nav {
-    position: fixed;
-    top: 0;
-    right: -100%;
-    width: 86vw;
-    max-width: 360px;
-    height: 100vh;
-    height: 100dvh;
-    background: #ffffff;
-    box-shadow: -12px 0 40px rgba(15, 35, 18, 0.18);
-    z-index: 9999;
-    display: flex;
-    flex-direction: column;
-    transition: right 0.38s cubic-bezier(0.16, 1, 0.3, 1);
-    overflow: hidden;
-    padding: 0;
-  }
-
-  .main-nav.is-open {
-    right: 0;
-  }
-
-  .mobile-drawer-head {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 18px 20px;
-    background: linear-gradient(135deg, #1e4620 0%, #133215 100%);
-    color: #ffffff;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    z-index: 2;
-    flex-shrink: 0;
-  }
-
-  .drawer-brand-box {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-  }
-
-  .drawer-logo-img {
-    height: 36px;
-    width: auto;
-    object-fit: contain;
-    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.2));
-  }
-
-  .drawer-brand-info {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .drawer-brand-name {
-    font-size: 0.85rem;
-    font-weight: 800;
-    letter-spacing: 0.4px;
-    color: #ffffff;
-    line-height: 1.2;
-  }
-
-  .drawer-brand-sub {
-    font-size: 0.65rem;
-    color: rgba(255, 255, 255, 0.75);
-    font-weight: 500;
-    margin-top: 2px;
-  }
-
-  .drawer-close {
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    background: rgba(255, 255, 255, 0.12);
-    color: #ffffff;
-    font-size: 0.95rem;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: all 0.2s ease;
-  }
-
-  .drawer-close:active {
-    background: rgba(255, 255, 255, 0.25);
-    transform: scale(0.92);
-  }
-
-  /* Drawer Search Bar */
-  .drawer-search-wrap {
-    padding: 12px 16px 4px 16px;
-    background: #fcfdfe;
-    border-bottom: 1px solid rgba(30, 70, 32, 0.06);
-    flex-shrink: 0;
-  }
-
-  .drawer-search-box {
-    display: flex;
-    align-items: center;
-    background: rgba(30, 70, 32, 0.05);
-    border: 1px solid rgba(30, 70, 32, 0.12);
-    border-radius: 10px;
-    padding: 8px 12px;
-    gap: 8px;
-  }
-
-  .drawer-search-box .search-icon {
-    font-size: 0.85rem;
-    opacity: 0.6;
-  }
-
-  .drawer-search-box input {
-    border: none;
-    background: transparent;
-    width: 100%;
-    font-size: 0.88rem;
-    color: var(--text-dark);
-    outline: none;
-  }
-
-  .clear-search-btn {
-    border: none;
-    background: rgba(0,0,0,0.1);
-    border-radius: 50%;
-    width: 18px;
-    height: 18px;
-    font-size: 0.65rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    color: #555;
-  }
-
-  .drawer-body {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .nav-links {
-    flex-direction: column;
-    padding: 14px 14px 20px 14px;
-    gap: 4px;
-  }
-
-  .nav-links li {
-    border-bottom: none;
-    width: 100%;
-  }
-
-  .nav-item {
-    padding: 12px 16px;
-    font-size: 0.95rem;
-    font-weight: 600;
-    color: var(--text-dark);
-    border-radius: 10px;
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    transition: all 0.2s ease;
-  }
-
-  .nav-item-dropdown {
-    cursor: pointer;
-  }
-
-  .nav-item:hover, .nav-item:active, .nav-item.active-item {
-    background: rgba(30, 70, 32, 0.08);
-    color: var(--primary);
-  }
-
-  .nav-item.active-item {
-    font-weight: 800;
-  }
-
-  .arrow {
-    font-size: 0.65rem;
-    transition: transform 0.25s ease;
-    opacity: 0.7;
-  }
-
-  .arrow.is-rotated {
-    transform: rotate(180deg);
-  }
-
-  .dropdown-menu {
-    position: static;
-    display: none;
-    opacity: 1;
-    pointer-events: auto;
-    transform: none;
-    box-shadow: none;
-    padding: 6px 8px 6px 14px;
-    background: rgba(30, 70, 32, 0.04);
-    border-left: 3px solid var(--primary);
-    border-radius: 0 10px 10px 0;
-    margin: 4px 0 8px 12px;
-  }
-
-  .dropdown-menu.is-show {
-    display: block;
-  }
-
-  .dropdown-menu a {
-    padding: 10px 14px;
-    font-size: 0.88rem;
-    font-weight: 500;
-    color: var(--text-medium);
-    border-radius: 8px;
-    display: block;
-  }
-
-  .dropdown-menu a:hover {
-    background: rgba(30, 70, 32, 0.08);
-    color: var(--primary);
-  }
-
-  .mobile-drawer-footer {
-    padding: 16px;
-    background: #f8faf7;
-    border-top: 1px solid rgba(0, 0, 0, 0.06);
-    display: flex;
-    flex-direction: column;
-    gap: 10px;
-    flex-shrink: 0;
-  }
-
-  .drawer-hotline-card {
-    display: flex;
-    align-items: center;
-    gap: 12px;
-    background: #ffffff;
-    padding: 12px 14px;
-    border-radius: 14px;
-    border: 1px solid rgba(30, 70, 32, 0.12);
-    text-decoration: none;
-    box-shadow: 0 2px 8px rgba(0,0,0,0.03);
-  }
-
-  .hotline-icon-wrap {
-    font-size: 1.2rem;
-  }
-
-  .hotline-text {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .hotline-lbl {
-    font-size: 0.72rem;
-    color: var(--text-muted);
-    font-weight: 600;
-  }
-
-  .hotline-num {
-    font-size: 0.95rem;
-    font-weight: 800;
-    color: var(--primary);
-  }
-
-  .drawer-support-btn {
-    width: 100%;
-    justify-content: center;
-    padding: 12px 16px;
-    font-size: 0.88rem;
-    border-radius: 12px;
-    font-weight: 700;
-  }
-
-  .btn-support-247 {
-    display: none;
-  }
-
-  /* Top bar mobile */
-  .top-bar-content {
-    flex-direction: column;
-    gap: 4px;
-    padding: 4px 0;
-  }
-
-  .top-left, .top-right {
-    gap: 8px;
-    font-size: 0.72rem;
-  }
-
-  .top-left {
-    flex-wrap: wrap;
-    justify-content: center;
-    row-gap: 2px;
-  }
-
-  .top-hide-mobile {
-    display: none;
-  }
-
-  /* Header mobile */
-  .header-top-container {
-    height: 60px;
-  }
-
-  .logo-img-ref {
-    height: 36px;
-  }
-
-  .logo-title {
-    font-size: 0.95rem;
-  }
-
-  .logo-subtitle {
-    display: none;
-  }
-
-  /* Footer mobile */
-  .footer-grid {
-    grid-template-columns: 1fr;
-    gap: 32px;
-  }
-
-  .main-footer {
-    padding: 50px 0 0 0;
-  }
-
-  .footer-bottom-content {
-    flex-direction: column;
-    gap: 12px;
-    text-align: center;
-  }
-  
-  /* Hamburger bars transition */
-  .bar-open-1 { transform: translateY(7.5px) rotate(45deg); }
-  .bar-open-2 { opacity: 0; }
-  .bar-open-3 { transform: translateY(-7.5px) rotate(-45deg); }
-
-  /* Chatbot mobile */
-  .chatbot-popup {
-    width: 92vw;
-    right: 4vw;
-    left: 4vw;
-    bottom: 80px;
-    height: 60vh;
-  }
-
-  .chatbot-toggle-btn {
-    bottom: 16px;
-    right: 16px;
-    padding: 10px 16px;
-    font-size: 0.82rem;
-  }
-
-  .bot-badge {
-    display: none;
-  }
-
-  .chatbot-toggle-btn .bot-icon {
-    font-size: 1.2rem;
-  }
-
-  /* Search mobile */
-  .search-dropdown-container {
-    flex-direction: column;
-    gap: 12px;
-  }
-
-  .search-bar-buttons {
-    width: 100%;
-    justify-content: stretch;
-  }
-
-  .search-dropdown-submit,
-  .search-dropdown-close {
-    flex: 1;
-  }
-
-  /* Mobile menu overlay style */
-  .mobile-menu-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    width: 100vw;
-    height: 100vh;
-    background-color: rgba(45, 74, 45, 0.45);
-    backdrop-filter: blur(4px);
-    -webkit-backdrop-filter: blur(4px);
-    z-index: 99;
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity 0.3s ease;
-  }
-  
-  .mobile-menu-overlay.is-show {
-    opacity: 1;
-    pointer-events: auto;
-  }
-}
-
-/* Small phone */
-@media (max-width: 480px) {
-  .header-top-container {
-    height: 52px;
-  }
-
-  .logo-area {
-    gap: 8px;
-  }
-
-  .logo-img-ref {
-    height: 30px;
-  }
-
-  .logo-title {
-    font-size: 0.82rem;
-  }
-
-  .accessibility-ctrl {
-    display: none;
-  }
-
-  .divider {
-    display: none;
-  }
-}
-
-/* ====== LIQUID GLASS MOBILE BOTTOM NAV ====== */
-.mobile-bottom-nav {
-  display: none;
-}
-
-@media (max-width: 1100px) {
-  .mobile-bottom-nav {
-    display: flex;
-    justify-content: space-around;
-    align-items: center;
-    position: fixed;
-    bottom: 10px;
-    left: 12px;
-    right: 12px;
-    height: 64px;
-    background: linear-gradient(135deg, rgba(255, 255, 255, 0.82) 0%, rgba(244, 249, 243, 0.76) 100%);
-    backdrop-filter: blur(28px) saturate(200%);
-    -webkit-backdrop-filter: blur(28px) saturate(200%);
-    border: 1px solid rgba(255, 255, 255, 0.85);
-    border-radius: 28px;
-    box-shadow: 0 12px 36px rgba(15, 35, 18, 0.16), 0 2px 8px rgba(0, 0, 0, 0.04), inset 0 1.5px 0 rgba(255, 255, 255, 0.9);
-    z-index: 9990;
-    padding: 0 6px;
-    padding-bottom: env(safe-area-inset-bottom, 0px);
-  }
-
-  .bottom-nav-item {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 2px;
-    text-decoration: none;
-    color: #556655;
-    background: none;
-    border: none;
-    padding: 6px 0;
-    font-family: inherit;
-    font-size: 0.65rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    max-width: 52px;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .bottom-nav-icon-wrap {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 3px 12px;
-    border-radius: 16px;
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .bottom-nav-item:hover,
-  .bottom-nav-item.active {
-    color: var(--primary);
-  }
-
-  .bottom-nav-item.active .bottom-nav-icon-wrap {
-    background: linear-gradient(135deg, rgba(30, 70, 32, 0.12) 0%, rgba(124, 179, 66, 0.18) 100%);
-    box-shadow: inset 0 1px 2px rgba(255, 255, 255, 0.8);
-  }
-
-  .bottom-nav-item.active .bottom-nav-icon {
-    stroke: var(--primary);
-    transform: scale(1.06);
-  }
-
-  .bottom-nav-item.active .bottom-nav-label {
-    color: var(--primary-dark);
-    font-weight: 800;
-  }
-
-  /* Center Highlight Action Button (Hỏi trợ lý AI - Floating Liquid Orb) */
-  .bottom-nav-item.center-action {
-    position: relative;
-    top: -14px;
-  }
-
-  .center-action-icon {
-    width: 50px;
-    height: 50px;
-    border-radius: 50%;
-    background: linear-gradient(135deg, #2e6b32 0%, #173b18 100%);
-    color: #ffffff;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    box-shadow: 0 10px 24px rgba(23, 59, 24, 0.4), 0 2px 6px rgba(0, 0, 0, 0.15), inset 0 2px 4px rgba(255, 255, 255, 0.4);
-    border: 3.5px solid rgba(255, 255, 255, 0.95);
-    transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
-    animation: liquidOrbGlow 3s infinite ease-in-out;
-  }
-
-  @keyframes liquidOrbGlow {
-    0%, 100% { box-shadow: 0 10px 24px rgba(23, 59, 24, 0.4), 0 0 0 0 rgba(46, 107, 50, 0.3); }
-    50% { box-shadow: 0 12px 28px rgba(23, 59, 24, 0.5), 0 0 0 8px rgba(46, 107, 50, 0); }
-  }
-
-  .center-action-icon svg {
-    stroke: #ffffff;
-  }
-
-  .bottom-nav-item.center-action:active .center-action-icon {
-    transform: scale(0.9);
-  }
-
-  .bottom-nav-item.center-action .bottom-nav-label {
-    margin-top: 3px;
-    color: var(--primary-dark);
-    font-weight: 800;
-  }
-
-  /* Offset layout for floating liquid bottom bar */
-  .main-content {
-    padding-bottom: 80px;
-  }
-
-  .main-footer {
-    padding-bottom: 80px;
-  }
-
-  .chatbot-toggle-btn {
-    bottom: 88px;
-    right: 18px;
-  }
-
-  .chatbot-teaser-bubble {
-    bottom: 144px;
-    right: 16px;
-    max-width: 240px;
-  }
-
-  .chatbot-popup {
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    width: 100vw;
-    height: 100vh;
-    height: 100dvh;
-    max-height: 100vh;
-    border-radius: 0;
-    border: none;
-    z-index: 99999;
-  }
-
-  .chatbot-header {
-    padding: 14px 16px;
-    padding-top: calc(env(safe-area-inset-top, 0px) + 10px);
-  }
-
-  .chatbot-input-area {
-    padding-bottom: calc(env(safe-area-inset-bottom, 0px) + 12px);
-  }
-}
 </style>
-

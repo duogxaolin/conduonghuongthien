@@ -1,46 +1,56 @@
 <template>
-  <div class="legal-docs-page section-bg">
+  <div class="bg-[#F8FAF7]">
     <!-- Hero Header -->
-    <section class="docs-hero">
-      <div class="docs-hero-overlay"></div>
-      <div class="container">
-        <h2 class="docs-hero-title">Văn Bản Quy Phạm Pháp Luật</h2>
-        <p class="docs-hero-subtitle">Tra cứu các nghị định, chính sách, chỉ thị về công tác quản lý thi hành án hình sự và tái hòa nhập cộng đồng</p>
+    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover px-4 py-16 text-center text-white sm:py-[100px]">
+      <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)]"></div>
+      <div class="container relative z-[2]">
+        <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem]">Văn Bản Quy Phạm Pháp Luật</h2>
+        <p class="text-[1.1rem] opacity-90">Tra cứu các nghị định, chính sách, chỉ thị về công tác quản lý thi hành án hình sự và tái hòa nhập cộng đồng</p>
       </div>
     </section>
 
     <!-- Main Content -->
     <section class="section">
-      <div class="container docs-container">
-        <div class="docs-main-list">
+      <div class="container">
+        <div>
           <SectionBar icon="fa-solid fa-file-contract" title="Văn bản pháp luật mới" />
-          <div class="search-bar-wrap">
-            <input type="text" placeholder="Nhập từ khóa tìm kiếm văn bản (Ví dụ: 49/2020, vay vốn, xóa án tích...)" v-model="searchQuery" />
-            <button class="btn btn-primary">Tìm kiếm</button>
+
+          <!-- Search Bar -->
+          <div class="flex flex-col gap-3 mb-[30px] bg-white p-4 rounded-lg border border-[#E2E8DF] shadow-sm sm:flex-row">
+            <input
+              type="text"
+              placeholder="Nhập từ khóa tìm kiếm văn bản (Ví dụ: 49/2020, vay vốn, xóa án tích...)"
+              v-model="searchQuery"
+              class="flex-1 px-3 py-3 border border-[#E2E8DF] rounded text-[0.95rem] outline-none focus:border-[#7CB342] font-[inherit] transition-colors duration-200"
+            />
+            <button class="btn btn-primary w-full sm:w-auto">Tìm kiếm</button>
           </div>
 
-          <div class="docs-table-wrap">
-            <table class="docs-table">
+          <!-- Table -->
+          <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm overflow-x-auto">
+            <table class="w-full border-collapse text-left">
               <thead>
                 <tr>
-                  <th width="15%">Số ký hiệu / Ngày</th>
-                  <th width="55%">Trích yếu nội dung</th>
-                  <th width="20%">Cơ quan ban hành</th>
-                  <th width="10%">Tải về</th>
+                  <th class="w-[15%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Số ký hiệu / Ngày</th>
+                  <th class="w-[55%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Trích yếu nội dung</th>
+                  <th class="w-[20%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Cơ quan ban hành</th>
+                  <th class="w-[10%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Tải về</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="doc in filteredDocs" :key="doc.id">
-                  <td class="doc-meta">
-                    <strong>{{ doc.code }}</strong>
-                    <span>{{ doc.date }}</span>
+                  <td class="px-5 py-4 border-b border-[#E2E8DF] text-[0.9rem]">
+                    <div class="flex flex-col gap-1">
+                      <strong class="text-[#4A6741] text-[0.88rem]">{{ doc.code }}</strong>
+                      <span class="text-[0.78rem] text-[#7A8675]">{{ doc.date }}</span>
+                    </div>
                   </td>
-                  <td class="doc-title">
-                    <a href="#">{{ doc.title }}</a>
+                  <td class="px-5 py-4 border-b border-[#E2E8DF] text-[0.9rem]">
+                    <a href="#" class="no-underline text-[#1E251C] font-semibold leading-snug hover:text-[#4A6741] transition-colors duration-300">{{ doc.title }}</a>
                   </td>
-                  <td class="doc-org">{{ doc.org }}</td>
-                  <td class="doc-download">
-                    <a href="#" class="download-link">📄 PDF</a>
+                  <td class="px-5 py-4 border-b border-[#E2E8DF] text-[0.9rem] text-[#4A5545] font-medium">{{ doc.org }}</td>
+                  <td class="px-5 py-4 border-b border-[#E2E8DF] text-[0.9rem]">
+                    <a href="#" class="text-[#D32F2F] no-underline font-bold hover:underline">📄 PDF</a>
                   </td>
                 </tr>
               </tbody>
@@ -98,138 +108,10 @@ const filteredDocs = computed(() => {
     return docs
   }
   const cleanQ = searchQuery.value.toLowerCase()
-  return docs.filter(doc => 
-    doc.code.toLowerCase().includes(cleanQ) || 
-    doc.title.toLowerCase().includes(cleanQ) || 
+  return docs.filter(doc =>
+    doc.code.toLowerCase().includes(cleanQ) ||
+    doc.title.toLowerCase().includes(cleanQ) ||
     doc.org.toLowerCase().includes(cleanQ)
   )
 })
 </script>
-
-<style scoped>
-.docs-hero {
-  position: relative;
-  background: url('/assets/hero_banner.jpg') center/cover no-repeat;
-  padding: 100px 0;
-  text-align: center;
-  color: white;
-}
-
-.docs-hero-overlay {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(74, 103, 65, 0.9);
-}
-
-.docs-hero-title {
-  position: relative;
-  z-index: 2;
-  font-size: 2.5rem;
-  font-weight: 800;
-  margin-bottom: 12px;
-}
-
-.docs-hero-subtitle {
-  position: relative;
-  z-index: 2;
-  font-size: 1.1rem;
-  opacity: 0.9;
-}
-
-.search-bar-wrap {
-  display: flex;
-  gap: 12px;
-  margin-bottom: 30px;
-  background-color: var(--white);
-  padding: 16px;
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
-}
-
-.search-bar-wrap input {
-  flex: 1;
-  padding: 12px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--radius-sm);
-  outline: none;
-  font-family: inherit;
-  font-size: 0.95rem;
-}
-
-.search-bar-wrap input:focus {
-  border-color: var(--secondary);
-}
-
-.docs-table-wrap {
-  background-color: var(--white);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
-  box-shadow: var(--shadow-sm);
-  overflow-x: auto;
-}
-
-.docs-table {
-  width: 100%;
-  border-collapse: collapse;
-  text-align: left;
-}
-
-.docs-table th, .docs-table td {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--border-color);
-  font-size: 0.9rem;
-}
-
-.docs-table th {
-  background-color: var(--bg-light);
-  color: var(--primary);
-  font-weight: 700;
-  text-transform: uppercase;
-  font-size: 0.8rem;
-  letter-spacing: 0.5px;
-}
-
-.doc-meta {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.doc-meta strong {
-  color: var(--primary);
-  font-size: 0.88rem;
-}
-
-.doc-meta span {
-  font-size: 0.78rem;
-  color: var(--text-muted);
-}
-
-.doc-title a {
-  text-decoration: none;
-  color: var(--text-dark);
-  font-weight: 600;
-  line-height: 1.4;
-  transition: var(--transition);
-}
-
-.doc-title a:hover {
-  color: var(--primary);
-}
-
-.doc-org {
-  color: var(--text-medium);
-  font-weight: 500;
-}
-
-.download-link {
-  color: #D32F2F;
-  text-decoration: none;
-  font-weight: 700;
-}
-
-.download-link:hover {
-  text-decoration: underline;
-}
-</style>

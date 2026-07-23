@@ -1,25 +1,39 @@
 <template>
-  <div class="faq-page section-bg">
+  <div class="bg-[#F8FAF7]">
     <!-- Hero Header -->
-    <section class="faq-hero">
-      <div class="faq-hero-overlay"></div>
-      <div class="container">
-        <h2 class="faq-hero-title">Giải Đáp Pháp Luật</h2>
-        <p class="faq-hero-subtitle">Ngân hàng câu hỏi đáp pháp luật, quy trình thủ tục hành chính hỗ trợ xóa án tích, vay vốn</p>
+    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover px-4 py-16 text-center text-white sm:py-[100px]">
+      <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)]"></div>
+      <div class="container relative z-[2]">
+        <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem]">Giải Đáp Pháp Luật</h2>
+        <p class="text-[1.1rem] opacity-90">Ngân hàng câu hỏi đáp pháp luật, quy trình thủ tục hành chính hỗ trợ xóa án tích, vay vốn</p>
       </div>
     </section>
 
     <!-- Content -->
     <section class="section">
-      <div class="container faq-container">
+      <div class="container">
         <SectionBar icon="fa-solid fa-circle-question" title="Câu hỏi thường gặp" />
-        <div class="faq-accordion-wrap">
-          <div v-for="(item, index) in faqs" :key="index" class="faq-card" :class="{ 'is-open': activeIndex === index }">
-            <button class="faq-btn" @click="toggleFaq(index)">
+        <div class="max-w-[800px] mx-auto flex flex-col gap-4">
+          <div
+            v-for="(item, index) in faqs"
+            :key="index"
+            class="bg-white rounded-lg overflow-hidden transition-all duration-300"
+            :class="activeIndex === index
+              ? 'border border-[#4A6741] shadow-sm'
+              : 'border border-[#E2E8DF]'"
+          >
+            <button
+              class="w-full px-6 py-5 flex justify-between items-center bg-transparent border-none font-[inherit] text-base font-bold text-left cursor-pointer transition-colors duration-200 hover:text-[#4A6741]"
+              :class="activeIndex === index ? 'text-[#4A6741]' : 'text-[#1E251C]'"
+              @click="toggleFaq(index)"
+            >
               <span>{{ item.question }}</span>
-              <span class="faq-sign">{{ activeIndex === index ? '−' : '+' }}</span>
+              <span class="text-[1.4rem] text-[#7A8675]">{{ activeIndex === index ? '−' : '+' }}</span>
             </button>
-            <div class="faq-answer-block" v-show="activeIndex === index">
+            <div
+              v-show="activeIndex === index"
+              class="px-6 pb-5 pt-0 text-[0.95rem] text-[#4A5545] leading-[1.6] border-t border-[#E2E8DF] bg-[#F8FAF7]"
+            >
               <p>{{ item.answer }}</p>
             </div>
           </div>
@@ -58,89 +72,3 @@ const toggleFaq = (index) => {
   activeIndex.value = activeIndex.value === index ? null : index
 }
 </script>
-
-<style scoped>
-.faq-hero {
-  position: relative;
-  background: url('/assets/hero_banner.jpg') center/cover no-repeat;
-  padding: 100px 0;
-  text-align: center;
-  color: white;
-}
-
-.faq-hero-overlay {
-  position: absolute;
-  top: 0; left: 0; right: 0; bottom: 0;
-  background-color: rgba(74, 103, 65, 0.9);
-}
-
-.faq-hero-title {
-  position: relative;
-  z-index: 2;
-  font-size: 2.5rem;
-  font-weight: 800;
-  margin-bottom: 12px;
-}
-
-.faq-hero-subtitle {
-  position: relative;
-  z-index: 2;
-  font-size: 1.1rem;
-  opacity: 0.9;
-}
-
-.faq-accordion-wrap {
-  max-width: 800px;
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-}
-
-.faq-card {
-  background-color: var(--white);
-  border-radius: var(--radius-md);
-  border: 1px solid var(--border-color);
-  overflow: hidden;
-  transition: var(--transition);
-}
-
-.faq-card.is-open {
-  border-color: var(--primary);
-  box-shadow: var(--shadow-sm);
-}
-
-.faq-btn {
-  width: 100%;
-  padding: 20px 24px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  background: none;
-  border: none;
-  font-family: inherit;
-  font-size: 1rem;
-  font-weight: 700;
-  color: var(--text-dark);
-  text-align: left;
-  cursor: pointer;
-}
-
-.faq-card:hover .faq-btn {
-  color: var(--primary);
-}
-
-.faq-sign {
-  font-size: 1.4rem;
-  color: var(--text-muted);
-}
-
-.faq-answer-block {
-  padding: 0 24px 20px 24px;
-  font-size: 0.95rem;
-  color: var(--text-medium);
-  line-height: 1.6;
-  border-top: 1px solid var(--border-color);
-  background-color: var(--bg-light);
-}
-</style>

@@ -32,6 +32,9 @@ services:
       DB_PASSWORD: rootpassword
       DB_NAME: cdkt_admin
       JWT_SECRET: cdkt_docker_jwt_secret_987654321
+      CHATBOT_ENCRYPTION_SECRET: LBniQfaxO3ar1Nd0aFDA02RA12mx4+VlLeH++0fiFLc=
+      ANALYTICS_COLLECTION_ENABLED: "true"
+      NUXT_ANALYTICS_COLLECTION_ENABLED: "true"
     volumes:
       - uploads_data:/app/public/uploads
     depends_on:

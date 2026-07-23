@@ -1,0 +1,4 @@
+import { transitionKnowledge, adminKnowledge, ChatbotKnowledgeValidationError } from '../../../../../services/chatbot-knowledge'
+import { requireChatbotKnowledgePermission } from '../../../../../utils/permissions'
+
+export default defineEventHandler(async (event) => { const actor = requireChatbotKnowledgePermission(event, 'publish'); const id = Number(getRouterParam(event, 'id')); if (!Number.isSafeInteger(id) || id <= 0) throw createError({ statusCode: 400, statusMessage: 'Invalid knowledge ID' }); try { const item = await transitionKnowledge(actor.id, id, 'published'); if (!item) throw createError({ statusCode: 404, statusMessage: 'Knowledge entry not found' }); return { ok: true, item: adminKnowledge(item) } } catch (error) { if (error instanceof ChatbotKnowledgeValidationError) throw createError({ statusCode: 400, statusMessage: error.message }); throw error } })

@@ -13,6 +13,8 @@ const TINYMCE_EDITOR_ID = 'tinymce-content-editor'
 const form = reactive({
   title: '',
   type: 'news',
+  category: '',
+  categoryId: null as number | null,
   excerpt: '',
   content: '',
   thumbnailUrl: '',
@@ -24,6 +26,23 @@ const saving = ref(false)
 const errorMsg = ref('')
 const tinymceReady = ref(false)
 
+// Dynamic categories for the selected article type
+const availableCategories = ref<any[]>([])
+
+const fetchCategories = async (type: string) => {
+  try {
+    const res = await $fetch('/api/admin/categories', { params: { type } })
+    if (res.ok) availableCategories.value = res.items
+  } catch { availableCategories.value = [] }
+}
+
+// When article type changes: refetch categories and reset categoryId
+watch(() => form.type, async (newType) => {
+  form.category = ''
+  form.categoryId = null
+  await fetchCategories(newType)
+})
+
 const fetchArticle = async () => {
   if (isNew.value || !articleId.value) return
   loading.value = true
@@ -32,6 +51,8 @@ const fetchArticle = async () => {
     if (res.ok && res.article) {
       form.title = res.article.title || ''
       form.type = res.article.type || 'news'
+      form.category = res.article.category || ''
+      form.categoryId = res.article.categoryId ?? null
       form.excerpt = res.article.excerpt || ''
       form.content = res.article.content || ''
       form.thumbnailUrl = res.article.thumbnailUrl || ''
@@ -200,6 +221,7 @@ const loadTinyMCEScript = () => new Promise<void>((resolve) => {
 onMounted(async () => {
   await loadTinyMCEScript()
   initTinyMCE()
+  await fetchCategories(form.type)
   await fetchArticle()
 })
 
@@ -289,6 +311,21 @@ onUnmounted(() => {
             <option value="reintegration">🏭 Mô hình tái hòa nhập</option>
             <option value="document">📄 Văn bản pháp luật</option>
             <option value="faq">❓ Giải đáp pháp luật</option>
+          </select>
+        </div>
+
+        <!-- Dynamic category select — populated from DB by type -->
+        <div v-if="availableCategories.length > 0" class="flex flex-col gap-1.5">
+          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">
+            Danh mục
+            <span class="font-normal text-[#667768]">— tùy chọn</span>
+          </label>
+          <select v-model="form.categoryId" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border">
+            <option :value="null">— Không có danh mục —</option>
+            <template v-for="cat in availableCategories" :key="cat.id">
+              <option v-if="!cat.parentId" :value="cat.id" class="font-bold">{{ cat.name }}</option>
+              <option v-else :value="cat.id">&nbsp;&nbsp;↳ {{ cat.name }}</option>
+            </template>
           </select>
         </div>
 
