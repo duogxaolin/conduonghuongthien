@@ -1,5 +1,5 @@
 import type { getDb } from './db'
-import { categories, contentTypes } from '../db/schema'
+import { categories, contentTypes, pages } from '../db/schema'
 import { ne, and, like } from 'drizzle-orm'
 
 type Db = ReturnType<typeof getDb>
@@ -68,4 +68,28 @@ export async function uniqueContentTypeSlug(db: Db, base: string, excludeId?: nu
   let n = 2
   while (taken.has(`${baseSlug}_${n}`)) n++
   return `${baseSlug}_${n}`
+}
+
+/**
+ * Resolve a collision-safe page slug by appending the smallest free
+ * `-2`, `-3`, … suffix. `excludeId` skips the current row when editing.
+ */
+export async function uniquePageSlug(db: Db, base: string, excludeId?: number): Promise<string> {
+  const baseSlug = slugify(base) || 'trang'
+
+  const rows = await db
+    .select({ id: pages.id, slug: pages.slug })
+    .from(pages)
+    .where(
+      excludeId
+        ? and(like(pages.slug, `${baseSlug}%`), ne(pages.id, excludeId))
+        : like(pages.slug, `${baseSlug}%`),
+    )
+
+  const taken = new Set(rows.map((r) => r.slug))
+  if (!taken.has(baseSlug)) return baseSlug
+
+  let n = 2
+  while (taken.has(`${baseSlug}-${n}`)) n++
+  return `${baseSlug}-${n}`
 }

@@ -138,6 +138,37 @@ export const pageContents = mysqlTable('page_contents', {
   slugSectionIdx: uniqueIndex('slug_section_idx').on(t.slug, t.sectionKey),
 }))
 
+// ─── Pages ─────────────────────────────────────────────────────────────────
+// Generic page container. slug: home | about | contact | <custom>.
+// isSystem=true → editable meta/blocks but not deletable, and slug locked.
+export const pages = mysqlTable('pages', {
+  id:             int('id').autoincrement().primaryKey(),
+  slug:           varchar('slug', { length: 64 }).notNull().unique(),
+  title:          varchar('title', { length: 255 }).notNull(),
+  isSystem:       boolean('is_system').default(false),
+  seoTitle:       varchar('seo_title', { length: 255 }),
+  seoDescription: text('seo_description'),
+  updatedAt:      timestamp('updated_at').defaultNow().onUpdateNow(),
+  updatedBy:      int('updated_by').references(() => users.id, { onDelete: 'set null' }),
+})
+
+// ─── Page Blocks ───────────────────────────────────────────────────────────
+// Ordered content blocks belonging to a page. blockType is a registry key
+// (hero | stats | news | … | heading | richtext | image | …). data is the
+// block-specific payload (title, html, imageUrl, maxItems, …).
+export const pageBlocks = mysqlTable('page_blocks', {
+  id:           int('id').autoincrement().primaryKey(),
+  pageId:       int('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
+  blockType:    varchar('block_type', { length: 48 }).notNull(),
+  displayOrder: int('display_order').notNull().default(0),
+  data:         json('data'),
+  isVisible:    boolean('is_visible').default(true),
+  updatedAt:    timestamp('updated_at').defaultNow().onUpdateNow(),
+  updatedBy:    int('updated_by').references(() => users.id, { onDelete: 'set null' }),
+}, (t) => ({
+  pageOrderIdx: index('page_blocks_page_order_idx').on(t.pageId, t.displayOrder),
+}))
+
 // ─── Settings ────────────────────────────────────────────────────────────────
 export const settings = mysqlTable('settings', {
   key:   varchar('key', { length: 128 }).primaryKey(),
@@ -362,6 +393,10 @@ export type Category    = typeof categories.$inferSelect
 export type Article     = typeof articles.$inferSelect
 export type HomeSection = typeof homeSections.$inferSelect
 export type PageContent = typeof pageContents.$inferSelect
+export type Page        = typeof pages.$inferSelect
+export type NewPage     = typeof pages.$inferInsert
+export type PageBlock   = typeof pageBlocks.$inferSelect
+export type NewPageBlock = typeof pageBlocks.$inferInsert
 export type Setting     = typeof settings.$inferSelect
 export type ActivityLog = typeof activityLogs.$inferSelect
 export type Submission  = typeof submissions.$inferSelect

@@ -1,10 +1,11 @@
 import { getDb } from '../utils/db'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings, chatbotSettings, categories, contentTypes } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings, categories, contentTypes, pages, pageBlocks } from '../db/schema'
+import { eq, asc } from 'drizzle-orm'
 
 const RESOURCES = [
   'news', 'role_models', 'reintegration', 'documents', 'faq', 'categories',
-  'home_sections', 'users', 'roles', 'media', 'settings', 'submissions', 'analytics',
+  'home_sections', 'pages', 'users', 'roles', 'media', 'settings', 'submissions', 'analytics',
   'chatbot_settings', 'chatbot_knowledge'
 ]
 
@@ -17,6 +18,14 @@ const DEFAULT_CONTENT_TYPES = [
   { name: 'Mô hình tái hòa nhập',  slug: 'reintegration', icon: 'fa-solid fa-people-roof',      displayOrder: 3 },
   { name: 'Văn bản pháp luật',     slug: 'document',      icon: 'fa-solid fa-file-lines',       displayOrder: 4 },
   { name: 'Giải đáp pháp luật',    slug: 'faq',           icon: 'fa-solid fa-circle-question',  displayOrder: 5 },
+]
+
+// System pages backing the fixed public routes. isSystem=true → editable but
+// not deletable and slug locked. Seeded idempotently on unique slug.
+const DEFAULT_PAGES = [
+  { slug: 'home',    title: 'Trang chủ',  seoTitle: null, seoDescription: null },
+  { slug: 'about',   title: 'Giới thiệu', seoTitle: null, seoDescription: null },
+  { slug: 'contact', title: 'Liên hệ',    seoTitle: null, seoDescription: null },
 ]
 
 const DEFAULT_CATEGORIES = [
@@ -61,7 +70,7 @@ async function seed() {
 
   // Editor: CRUD news/role_models/reintegration/documents/faq, read home_sections & submissions, no users/roles/settings
   const editorPerms = RESOURCES.map(resource => {
-    const contentResources = ['news', 'role_models', 'reintegration', 'documents', 'faq', 'categories']
+    const contentResources = ['news', 'role_models', 'reintegration', 'documents', 'faq', 'categories', 'pages']
     if (contentResources.includes(resource)) {
       return { roleId: editorRole.id, resource, canCreate: true, canRead: true, canUpdate: true, canDelete: false, canPublish: false, canArchive: false, canTest: false }
     }
@@ -180,6 +189,73 @@ async function seed() {
       parentId: null,
       displayOrder: c.displayOrder,
     }).onDuplicateKeyUpdate({ set: { slug: categories.slug } })
+  }
+
+  // ── System Pages + block migration ────────────────────────────────────────
+  // Additive: home_sections / page_contents are left intact. Guarded on
+  // "page has zero blocks" so re-seeding never duplicates or clobbers editor edits.
+  console.log('Creating system pages...')
+  for (const p of DEFAULT_PAGES) {
+    await db.insert(pages).values({
+      slug: p.slug,
+      title: p.title,
+      isSystem: true,
+      seoTitle: p.seoTitle,
+      seoDescription: p.seoDescription,
+    }).onDuplicateKeyUpdate({ set: { slug: pages.slug } })
+  }
+
+  const [homePage]    = await db.select().from(pages).where(eq(pages.slug, 'home')).limit(1)
+  const [aboutPage]   = await db.select().from(pages).where(eq(pages.slug, 'about')).limit(1)
+  const [contactPage] = await db.select().from(pages).where(eq(pages.slug, 'contact')).limit(1)
+
+  // Migrate existing home_sections → page_blocks of the home page (once).
+  if (homePage) {
+    const existingHomeBlocks = await db.select().from(pageBlocks).where(eq(pageBlocks.pageId, homePage.id)).limit(1)
+    if (existingHomeBlocks.length === 0) {
+      console.log('Migrating home_sections → home page blocks...')
+      const sections = await db.select().from(homeSections).orderBy(asc(homeSections.displayOrder), asc(homeSections.id))
+      for (const s of sections) {
+        await db.insert(pageBlocks).values({
+          pageId: homePage.id,
+          blockType: s.type,
+          displayOrder: s.displayOrder,
+          data: (s.config ?? {}) as any,
+          isVisible: s.isVisible ?? true,
+        })
+      }
+    }
+  }
+
+  // Seed default about blocks (only when empty).
+  if (aboutPage) {
+    const existing = await db.select().from(pageBlocks).where(eq(pageBlocks.pageId, aboutPage.id)).limit(1)
+    if (existing.length === 0) {
+      console.log('Seeding default about blocks...')
+      const aboutBlocks = [
+        { blockType: 'heading', displayOrder: 1, data: { text: 'Giới thiệu', subtitle: 'Ban Biên tập Cổng thông tin Con Đường Hướng Thiện', align: 'center' } },
+        { blockType: 'richtext', displayOrder: 2, data: { html: '<h3>Mục đích hoạt động</h3><p>Trang thông tin điện tử <strong>Con Đường Hướng Thiện</strong> hoạt động dưới sự chỉ đạo của Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.</p><p>Mục tiêu tối thượng của nền tảng là cung cấp thông tin chính thống về các chính sách, nghị định của Đảng và Nhà nước liên quan đến công tác thi hành án hình sự và hỗ trợ hòa nhập cộng đồng; tuyên truyền, nhân rộng các mô hình sản xuất kinh tế hiệu quả, các tấm gương điển hình tiên tiến hoàn lương lập nghiệp thành công; định hướng tư tưởng, pháp lý và kết nối hỗ trợ trực tuyến 24/7 giúp người lầm lỡ xóa bỏ tự ti, sớm ổn định cuộc sống.</p>' } },
+      ]
+      for (const b of aboutBlocks) {
+        await db.insert(pageBlocks).values({ pageId: aboutPage.id, ...b } as any)
+      }
+    }
+  }
+
+  // Seed default contact blocks (only when empty).
+  if (contactPage) {
+    const existing = await db.select().from(pageBlocks).where(eq(pageBlocks.pageId, contactPage.id)).limit(1)
+    if (existing.length === 0) {
+      console.log('Seeding default contact blocks...')
+      const contactBlocks = [
+        { blockType: 'heading', displayOrder: 1, data: { text: 'Liên hệ & Trợ giúp', subtitle: 'Hotline 0903.480.985 — Tiếp nhận yêu cầu trợ giúp 24/7', align: 'center' } },
+        { blockType: 'richtext', displayOrder: 2, data: { html: '<h3>Thông tin Ban Biên tập</h3><p><strong>Đơn vị chủ quản:</strong> Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.</p><p><strong>Địa chỉ:</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội.</p><p><strong>Hotline:</strong> 0903.480.985</p><p><strong>Email:</strong> contact@conduonghuongthien.com.vn</p>' } },
+        { blockType: 'contact_form', displayOrder: 3, data: { title: 'Đăng ký nhận trợ giúp' } },
+      ]
+      for (const b of contactBlocks) {
+        await db.insert(pageBlocks).values({ pageId: contactPage.id, ...b } as any)
+      }
+    }
   }
 
   // Preserve administrator configuration on reruns; only create the disabled baseline.

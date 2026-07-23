@@ -608,6 +608,38 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  // Pages table (generic page container for the block builder)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`pages\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`slug\` VARCHAR(64) NOT NULL UNIQUE,
+      \`title\` VARCHAR(255) NOT NULL,
+      \`is_system\` TINYINT(1) DEFAULT 0,
+      \`seo_title\` VARCHAR(255) NULL,
+      \`seo_description\` TEXT NULL,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      \`updated_by\` INT NULL,
+      CONSTRAINT \`fk_pages_updated_by\` FOREIGN KEY (\`updated_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // Page Blocks table (ordered content blocks belonging to a page)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`page_blocks\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`page_id\` INT NOT NULL,
+      \`block_type\` VARCHAR(48) NOT NULL,
+      \`display_order\` INT NOT NULL DEFAULT 0,
+      \`data\` JSON NULL,
+      \`is_visible\` TINYINT(1) DEFAULT 1,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      \`updated_by\` INT NULL,
+      KEY \`page_blocks_page_order_idx\` (\`page_id\`, \`display_order\`),
+      CONSTRAINT \`fk_page_blocks_page\` FOREIGN KEY (\`page_id\`) REFERENCES \`pages\` (\`id\`) ON DELETE CASCADE,
+      CONSTRAINT \`fk_page_blocks_updated_by\` FOREIGN KEY (\`updated_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
   // Settings table
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`settings\` (

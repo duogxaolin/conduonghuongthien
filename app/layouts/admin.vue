@@ -29,6 +29,7 @@ const menuGroups = computed(() => [
     title: 'Nội dung Website',
     items: [
       { label: 'Trang chủ (Kéo-thả)', icon: 'fa-solid fa-cubes', path: '/admin/content/home' },
+      ...(hasPermission('pages', 'read') ? [{ label: 'Quản lý Trang', icon: 'fa-solid fa-file-lines', path: '/admin/content/pages' }] : []),
       { label: 'Menu chính (Navbar + ☰)', icon: 'fa-solid fa-bars-staggered', path: '/admin/content/navigation/navbar' },
       { label: 'Thanh nổi dưới (Mobile)', icon: 'fa-solid fa-mobile-screen', path: '/admin/content/navigation/mobile' },
       { label: 'Thể loại nội dung', icon: 'fa-solid fa-layer-group', path: '/admin/content/content-types' },
