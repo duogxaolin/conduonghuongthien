@@ -464,6 +464,38 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  // Content Types table (Thể Loại) — top-level taxonomy tier
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`content_types\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`name\` VARCHAR(255) NOT NULL,
+      \`slug\` VARCHAR(64) NOT NULL UNIQUE,
+      \`icon\` VARCHAR(64) NULL,
+      \`description\` TEXT NULL,
+      \`display_order\` INT NOT NULL DEFAULT 0,
+      \`is_system\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // Seed the 5 system content types idempotently (keyed on unique slug).
+  // is_system=1 → editable name/icon/order but NOT deletable (fixed public pages depend on them).
+  const systemTypes: Array<[string, string, string, number]> = [
+    ['Bản tin & Tin tức', 'news', 'fa-solid fa-newspaper', 1],
+    ['Tấm gương tiêu biểu', 'role_model', 'fa-solid fa-award', 2],
+    ['Mô hình tái hòa nhập', 'reintegration', 'fa-solid fa-people-roof', 3],
+    ['Văn bản pháp luật', 'document', 'fa-solid fa-file-lines', 4],
+    ['Giải đáp pháp luật', 'faq', 'fa-solid fa-circle-question', 5],
+  ]
+  for (const [name, slug, icon, displayOrder] of systemTypes) {
+    await db.query(
+      `INSERT INTO \`content_types\` (\`name\`, \`slug\`, \`icon\`, \`display_order\`, \`is_system\`)
+       VALUES (?, ?, ?, ?, 1)
+       ON DUPLICATE KEY UPDATE \`slug\` = \`slug\``,
+      [name, slug, icon, displayOrder],
+    )
+  }
+
   // Categories table (create before articles FK reference)
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`categories\` (

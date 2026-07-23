@@ -60,8 +60,22 @@ export const media = mysqlTable('media', {
   mimeIdx: index('mime_type_idx').on(t.mimeType),
 }))
 
+// ─── Content Types (Thể Loại) ───────────────────────────────────────────────
+// Top-level taxonomy tier. Categories reference a type via its `slug`.
+// System types (isSystem=1) back the fixed public pages and cannot be deleted.
+export const contentTypes = mysqlTable('content_types', {
+  id:           int('id').autoincrement().primaryKey(),
+  name:         varchar('name', { length: 255 }).notNull(),
+  slug:         varchar('slug', { length: 64 }).notNull().unique(),
+  icon:         varchar('icon', { length: 64 }),
+  description:  text('description'),
+  displayOrder: int('display_order').default(0),
+  isSystem:     boolean('is_system').default(false),
+  createdAt:    timestamp('created_at').defaultNow(),
+})
+
 // ─── Categories ───────────────────────────────────────────────────────────────
-// type: news | role_model | reintegration | document | faq
+// type: slug of a content_types row (news | role_model | reintegration | document | faq | custom…)
 export const categories = mysqlTable('categories', {
   id:           int('id').autoincrement().primaryKey(),
   name:         varchar('name', { length: 255 }).notNull(),

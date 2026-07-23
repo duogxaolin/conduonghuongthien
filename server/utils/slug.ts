@@ -1,5 +1,5 @@
 import type { getDb } from './db'
-import { categories } from '../db/schema'
+import { categories, contentTypes } from '../db/schema'
 import { ne, and, like } from 'drizzle-orm'
 
 type Db = ReturnType<typeof getDb>
@@ -42,4 +42,30 @@ export async function uniqueCategorySlug(db: Db, base: string, excludeId?: numbe
   let n = 2
   while (taken.has(`${baseSlug}-${n}`)) n++
   return `${baseSlug}-${n}`
+}
+
+/**
+ * Resolve a collision-safe content-type slug. Content-type slugs are the `type`
+ * key referenced by categories/articles, so they use `_` instead of `-` between
+ * words to stay consistent with the built-in system slugs (role_model, etc.).
+ * `excludeId` skips the current row when editing.
+ */
+export async function uniqueContentTypeSlug(db: Db, base: string, excludeId?: number): Promise<string> {
+  const baseSlug = (slugify(base) || 'the-loai').replace(/-/g, '_')
+
+  const rows = await db
+    .select({ id: contentTypes.id, slug: contentTypes.slug })
+    .from(contentTypes)
+    .where(
+      excludeId
+        ? and(like(contentTypes.slug, `${baseSlug}%`), ne(contentTypes.id, excludeId))
+        : like(contentTypes.slug, `${baseSlug}%`),
+    )
+
+  const taken = new Set(rows.map((r) => r.slug))
+  if (!taken.has(baseSlug)) return baseSlug
+
+  let n = 2
+  while (taken.has(`${baseSlug}_${n}`)) n++
+  return `${baseSlug}_${n}`
 }

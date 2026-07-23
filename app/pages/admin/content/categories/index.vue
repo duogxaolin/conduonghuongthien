@@ -6,26 +6,26 @@ definePageMeta({
 
 const toast = useToast()
 const { confirm } = useConfirm()
+const route = useRoute()
 
 // ─── State ────────────────────────────────────────────────────────────────────
 const categories = ref<any[]>([])
+const contentTypes = ref<any[]>([])
 const loading = ref(true)
 
-const typeLabels: Record<string, string> = {
-  news: 'Bản tin',
-  role_model: 'Tấm gương',
-  reintegration: 'Mô hình',
-  document: 'Văn bản',
-  faq: 'Giải đáp',
-}
+// Type filter from ?type= query (set by the Thể loại → Danh mục link)
+const typeFilter = ref(String(route.query.type || '').trim())
 
-const typeOptions = [
-  { value: 'news',          label: 'Bản tin & Tin tức' },
-  { value: 'role_model',    label: 'Tấm gương tiêu biểu' },
-  { value: 'reintegration', label: 'Mô hình tái hòa nhập' },
-  { value: 'document',      label: 'Văn bản pháp luật' },
-  { value: 'faq',           label: 'Giải đáp pháp luật' },
-]
+// Options + labels derived from the content_types table (dynamic)
+const typeOptions = computed(() =>
+  contentTypes.value.map((t) => ({ value: t.slug, label: t.name }))
+)
+const typeLabels = computed<Record<string, string>>(() => {
+  const map: Record<string, string> = {}
+  for (const t of contentTypes.value) map[t.slug] = t.name
+  return map
+})
+const defaultType = computed(() => typeFilter.value || contentTypes.value[0]?.slug || '')
 
 // ─── Modal state ──────────────────────────────────────────────────────────────
 const showModal = ref(false)
@@ -61,10 +61,13 @@ watch(() => form.name, (val) => {
 
 // ─── Computed tree ────────────────────────────────────────────────────────────
 const tree = computed(() => {
-  const roots = categories.value.filter((c) => !c.parentId)
+  const scoped = typeFilter.value
+    ? categories.value.filter((c) => c.type === typeFilter.value)
+    : categories.value
+  const roots = scoped.filter((c) => !c.parentId)
   return roots.map((root) => ({
     ...root,
-    children: categories.value.filter((c) => c.parentId === root.id),
+    children: scoped.filter((c) => c.parentId === root.id),
   }))
 })
 
@@ -88,13 +91,22 @@ const fetchCategories = async () => {
   }
 }
 
+const fetchContentTypes = async () => {
+  try {
+    const res = await $fetch('/api/admin/content-types')
+    if (res.ok) contentTypes.value = res.items
+  } catch (err: any) {
+    toast.error(err?.data?.statusMessage || 'Lỗi tải thể loại')
+  }
+}
+
 // ─── Open modal ───────────────────────────────────────────────────────────────
 const openCreate = (presetParentId?: number) => {
   modalMode.value = 'create'
   editingId.value = null
   form.name = ''
   form.slug = ''
-  form.type = 'news'
+  form.type = defaultType.value || contentTypes.value[0]?.slug || ''
   form.description = ''
   form.parentId = presetParentId ?? null
   form.displayOrder = 0
@@ -155,7 +167,10 @@ const deleteCategory = async (cat: any) => {
   }
 }
 
-onMounted(() => { fetchCategories() })
+onMounted(() => {
+  fetchContentTypes()
+  fetchCategories()
+})
 </script>
 
 <template>

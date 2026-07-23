@@ -1,6 +1,6 @@
 import { getDb } from '../utils/db'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings, chatbotSettings, categories } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings, categories, contentTypes } from '../db/schema'
 
 const RESOURCES = [
   'news', 'role_models', 'reintegration', 'documents', 'faq', 'categories',
@@ -10,6 +10,15 @@ const RESOURCES = [
 
 // Default categories seeded idempotently (keyed on unique slug).
 // News slugs match the legacy hardcoded slugs to ease future categorization.
+// System content types (Thể Loại). isSystem=true → editable but not deletable.
+const DEFAULT_CONTENT_TYPES = [
+  { name: 'Bản tin & Tin tức',     slug: 'news',          icon: 'fa-solid fa-newspaper',        displayOrder: 1 },
+  { name: 'Tấm gương tiêu biểu',   slug: 'role_model',    icon: 'fa-solid fa-award',            displayOrder: 2 },
+  { name: 'Mô hình tái hòa nhập',  slug: 'reintegration', icon: 'fa-solid fa-people-roof',      displayOrder: 3 },
+  { name: 'Văn bản pháp luật',     slug: 'document',      icon: 'fa-solid fa-file-lines',       displayOrder: 4 },
+  { name: 'Giải đáp pháp luật',    slug: 'faq',           icon: 'fa-solid fa-circle-question',  displayOrder: 5 },
+]
+
 const DEFAULT_CATEGORIES = [
   { name: 'Tin nổi bật',      slug: 'tin-noi-bat',      type: 'news',          displayOrder: 1 },
   { name: 'Tin hoạt động',    slug: 'tin-hoat-dong',    type: 'news',          displayOrder: 2 },
@@ -146,6 +155,18 @@ async function seed() {
   for (const s of defaultSettings) {
     await db.insert(settings).values(s)
       .onDuplicateKeyUpdate({ set: { value: s.value } })
+  }
+
+  // ── System Content Types (Thể Loại) ───────────────────────────────────────
+  console.log('Creating system content types...')
+  for (const ct of DEFAULT_CONTENT_TYPES) {
+    await db.insert(contentTypes).values({
+      name: ct.name,
+      slug: ct.slug,
+      icon: ct.icon,
+      displayOrder: ct.displayOrder,
+      isSystem: true,
+    }).onDuplicateKeyUpdate({ set: { slug: contentTypes.slug } })
   }
 
   // ── Default Categories ───────────────────────────────────────────────────
