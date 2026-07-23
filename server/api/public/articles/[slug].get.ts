@@ -1,5 +1,5 @@
 import { getDb } from '../../../utils/db'
-import { articles, users } from '../../../db/schema'
+import { articles, users, categories } from '../../../db/schema'
 import { eq, and } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -13,6 +13,9 @@ export default defineEventHandler(async (event) => {
         id:           articles.id,
         type:         articles.type,
         category:     articles.category,
+        categoryId:   articles.categoryId,
+        categoryName: categories.name,
+        categorySlug: categories.slug,
         title:        articles.title,
         slug:         articles.slug,
         excerpt:      articles.excerpt,
@@ -24,6 +27,7 @@ export default defineEventHandler(async (event) => {
       })
       .from(articles)
       .leftJoin(users, eq(articles.authorId, users.id))
+      .leftJoin(categories, eq(articles.categoryId, categories.id))
       .where(and(eq(articles.slug, slug), eq(articles.status, 'published')))
       .limit(1)
 

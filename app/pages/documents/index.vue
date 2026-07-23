@@ -16,41 +16,55 @@
           <SectionBar icon="fa-solid fa-file-contract" title="Văn bản pháp luật mới" />
 
           <!-- Search Bar -->
-          <div class="flex flex-col gap-3 mb-[30px] bg-white p-4 rounded-lg border border-[#E2E8DF] shadow-sm sm:flex-row">
+          <form class="flex flex-col gap-3 mb-[30px] bg-white p-4 rounded-lg border border-[#E2E8DF] shadow-sm sm:flex-row" @submit.prevent="applySearch">
             <input
               type="text"
               placeholder="Nhập từ khóa tìm kiếm văn bản (Ví dụ: 49/2020, vay vốn, xóa án tích...)"
-              v-model="searchQuery"
+              v-model="searchInput"
               class="flex-1 px-3 py-3 border border-[#E2E8DF] rounded text-[0.95rem] outline-none focus:border-[#7CB342] font-[inherit] transition-colors duration-200"
             />
-            <button class="btn btn-primary w-full sm:w-auto">Tìm kiếm</button>
+            <button type="submit" class="btn btn-primary w-full sm:w-auto">Tìm kiếm</button>
+          </form>
+
+          <!-- Loading -->
+          <div v-if="pending" class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm p-6 flex flex-col gap-4">
+            <div v-for="n in 5" :key="n" class="h-5 w-full bg-[#EEF2EC] rounded animate-pulse"></div>
+          </div>
+
+          <!-- Error -->
+          <div v-else-if="loadError" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+            <i class="fa-solid fa-triangle-exclamation mr-2"></i>
+            Không thể tải văn bản. Vui lòng <button class="text-[#4A6741] font-bold underline" @click="refresh()">thử lại</button>.
+          </div>
+
+          <!-- Empty -->
+          <div v-else-if="docs.length === 0" class="bg-white border border-dashed border-[#E2E8DF] px-6 py-10 rounded-lg text-center text-[#7A8675] text-[0.95rem]">
+            Không tìm thấy văn bản phù hợp.
           </div>
 
           <!-- Table -->
-          <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm overflow-x-auto">
+          <div v-else class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm overflow-x-auto">
             <table class="w-full border-collapse text-left">
               <thead>
                 <tr>
-                  <th class="w-[15%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Số ký hiệu / Ngày</th>
-                  <th class="w-[55%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Trích yếu nội dung</th>
-                  <th class="w-[20%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Cơ quan ban hành</th>
-                  <th class="w-[10%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Tải về</th>
+                  <th class="w-[15%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Ngày ban hành</th>
+                  <th class="w-[60%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Trích yếu nội dung</th>
+                  <th class="w-[15%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Loại văn bản</th>
+                  <th class="w-[10%] px-5 py-4 border-b border-[#E2E8DF] bg-[#F8FAF7] text-[#4A6741] font-bold text-[0.8rem] uppercase tracking-[0.5px]">Xem</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="doc in filteredDocs" :key="doc.id">
+                <tr v-for="doc in docs" :key="doc.id">
                   <td class="px-5 py-4 border-b border-[#E2E8DF] text-[0.9rem]">
-                    <div class="flex flex-col gap-1">
-                      <strong class="text-[#4A6741] text-[0.88rem]">{{ doc.code }}</strong>
-                      <span class="text-[0.78rem] text-[#7A8675]">{{ doc.date }}</span>
-                    </div>
+                    <span class="text-[0.82rem] text-[#7A8675]">{{ formatDate(doc) }}</span>
                   </td>
                   <td class="px-5 py-4 border-b border-[#E2E8DF] text-[0.9rem]">
-                    <a href="#" class="no-underline text-[#1E251C] font-semibold leading-snug hover:text-[#4A6741] transition-colors duration-300">{{ doc.title }}</a>
+                    <nuxt-link :to="`/news/${doc.slug}`" class="no-underline text-[#1E251C] font-semibold leading-snug hover:text-[#4A6741] transition-colors duration-300">{{ doc.title }}</nuxt-link>
+                    <p v-if="doc.excerpt" class="text-[0.82rem] text-[#7A8675] mt-1 leading-snug">{{ doc.excerpt }}</p>
                   </td>
-                  <td class="px-5 py-4 border-b border-[#E2E8DF] text-[0.9rem] text-[#4A5545] font-medium">{{ doc.org }}</td>
+                  <td class="px-5 py-4 border-b border-[#E2E8DF] text-[0.9rem] text-[#4A5545] font-medium">{{ doc.categoryName || 'Văn bản' }}</td>
                   <td class="px-5 py-4 border-b border-[#E2E8DF] text-[0.9rem]">
-                    <a href="#" class="text-[#D32F2F] no-underline font-bold hover:underline">📄 PDF</a>
+                    <nuxt-link :to="`/news/${doc.slug}`" class="text-[#4A6741] no-underline font-bold hover:underline">Chi tiết &rarr;</nuxt-link>
                   </td>
                 </tr>
               </tbody>
@@ -64,54 +78,40 @@
 
 <script setup>
 import { ref, computed } from 'vue'
+import { useRoute } from 'vue-router'
 
 useSeoMeta({
   title: 'Văn bản pháp luật | Con Đường Hướng Thiện',
   description: 'Tra cứu văn bản quy phạm pháp luật về thi hành án hình sự, chính sách tín dụng và tái hòa nhập cộng đồng.'
 })
 
-const searchQuery = ref('')
+const route = useRoute()
+const searchQuery = ref(route.query.q ? String(route.query.q) : '')
+const searchInput = ref(searchQuery.value)
 
-const docs = [
-  {
-    id: 1,
-    code: 'Nghị định 49/2020/NĐ-CP',
-    date: '17/04/2020',
-    title: 'Nghị định quy định chi tiết thi hành Luật Thi hành án hình sự về các biện pháp bảo đảm tái hòa nhập cộng đồng đối với người chấp hành xong án phạt tù.',
-    org: 'Chính phủ',
-  },
-  {
-    id: 2,
-    code: 'Quyết định 22/2023/QĐ-TTg',
-    date: '17/08/2023',
-    title: 'Quyết định của Thủ tướng Chính phủ về chính sách tín dụng đối với người chấp hành xong án phạt tù vay vốn ưu đãi tại Ngân hàng Chính sách Xã hội.',
-    org: 'Thủ tướng Chính phủ',
-  },
-  {
-    id: 3,
-    code: 'Thông tư 12/2022/TT-BTTTT',
-    date: '12/08/2022',
-    title: 'Thông tư quy định chi tiết và hướng dẫn về các yêu cầu, tiêu chuẩn kỹ thuật trong xây dựng hồ sơ thiết kế an toàn thông tin cấp độ mạng.',
-    org: 'Bộ Thông tin & Truyền thông',
-  },
-  {
-    id: 4,
-    code: 'Luật số 41/2019/QH14',
-    date: '14/06/2019',
-    title: 'Luật Thi hành án hình sự năm 2019 của Quốc hội nước Cộng hòa Xã hội Chủ nghĩa Việt Nam.',
-    org: 'Quốc hội',
-  }
-]
-
-const filteredDocs = computed(() => {
-  if (searchQuery.value.trim() === '') {
-    return docs
-  }
-  const cleanQ = searchQuery.value.toLowerCase()
-  return docs.filter(doc =>
-    doc.code.toLowerCase().includes(cleanQ) ||
-    doc.title.toLowerCase().includes(cleanQ) ||
-    doc.org.toLowerCase().includes(cleanQ)
-  )
+const articlesQuery = computed(() => {
+  const q = { type: 'document', limit: 50 }
+  if (searchQuery.value) q.search = searchQuery.value
+  return q
 })
+const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
+  query: articlesQuery,
+  default: () => ({ ok: true, articles: [], pagination: {} })
+})
+const docs = computed(() => data.value?.articles || [])
+const loadError = computed(() => !!error.value || data.value?.ok === false)
+
+const applySearch = () => {
+  searchQuery.value = searchInput.value.trim()
+  navigateTo({ path: '/documents', query: searchQuery.value ? { q: searchQuery.value } : {} })
+}
+
+const formatDate = (item) => {
+  const raw = item.publishedAt || item.createdAt
+  if (!raw) return ''
+  const d = new Date(raw)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
+}
 </script>

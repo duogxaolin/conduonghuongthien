@@ -1,11 +1,23 @@
 import { getDb } from '../utils/db'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings, chatbotSettings } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings, categories } from '../db/schema'
 
 const RESOURCES = [
-  'news', 'role_models', 'reintegration', 'documents', 'faq',
+  'news', 'role_models', 'reintegration', 'documents', 'faq', 'categories',
   'home_sections', 'users', 'roles', 'media', 'settings', 'submissions', 'analytics',
   'chatbot_settings', 'chatbot_knowledge'
+]
+
+// Default categories seeded idempotently (keyed on unique slug).
+// News slugs match the legacy hardcoded slugs to ease future categorization.
+const DEFAULT_CATEGORIES = [
+  { name: 'Tin nổi bật',      slug: 'tin-noi-bat',      type: 'news',          displayOrder: 1 },
+  { name: 'Tin hoạt động',    slug: 'tin-hoat-dong',    type: 'news',          displayOrder: 2 },
+  { name: 'Tin địa phương',   slug: 'tin-dia-phuong',   type: 'news',          displayOrder: 3 },
+  { name: 'Tấm gương tiêu biểu', slug: 'tam-guong-tieu-bieu', type: 'role_model',   displayOrder: 1 },
+  { name: 'Mô hình tái hòa nhập', slug: 'mo-hinh-tai-hoa-nhap', type: 'reintegration', displayOrder: 1 },
+  { name: 'Văn bản pháp luật', slug: 'van-ban-phap-luat', type: 'document',      displayOrder: 1 },
+  { name: 'Hỏi đáp pháp luật', slug: 'hoi-dap-phap-luat', type: 'faq',           displayOrder: 1 },
 ]
 
 async function seed() {
@@ -40,7 +52,7 @@ async function seed() {
 
   // Editor: CRUD news/role_models/reintegration/documents/faq, read home_sections & submissions, no users/roles/settings
   const editorPerms = RESOURCES.map(resource => {
-    const contentResources = ['news', 'role_models', 'reintegration', 'documents', 'faq']
+    const contentResources = ['news', 'role_models', 'reintegration', 'documents', 'faq', 'categories']
     if (contentResources.includes(resource)) {
       return { roleId: editorRole.id, resource, canCreate: true, canRead: true, canUpdate: true, canDelete: false, canPublish: false, canArchive: false, canTest: false }
     }
@@ -134,6 +146,19 @@ async function seed() {
   for (const s of defaultSettings) {
     await db.insert(settings).values(s)
       .onDuplicateKeyUpdate({ set: { value: s.value } })
+  }
+
+  // ── Default Categories ───────────────────────────────────────────────────
+  // Idempotent on unique slug; re-running never duplicates and preserves edits.
+  console.log('Creating default categories...')
+  for (const c of DEFAULT_CATEGORIES) {
+    await db.insert(categories).values({
+      name: c.name,
+      slug: c.slug,
+      type: c.type,
+      parentId: null,
+      displayOrder: c.displayOrder,
+    }).onDuplicateKeyUpdate({ set: { slug: categories.slug } })
   }
 
   // Preserve administrator configuration on reruns; only create the disabled baseline.

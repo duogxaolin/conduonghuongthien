@@ -5,7 +5,7 @@ import { eq, desc, count } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'news', 'read', adminUser.isSuperAdmin)) {
+  if (!checkPermission(adminUser.permissions, 'categories', 'read', adminUser.isSuperAdmin)) {
     throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
   }
 

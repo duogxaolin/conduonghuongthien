@@ -1,24 +1,12 @@
 import { getDb } from '../../../utils/db'
 import { categories } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
+import { uniqueCategorySlug } from '../../../utils/slug'
 import { eq } from 'drizzle-orm'
-
-function slugify(text: string): string {
-  return text
-    .toString()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[đĐ]/g, 'd')
-    .replace(/([^0-9a-z-\s])/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-}
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'news', 'update', adminUser.isSuperAdmin)) {
+  if (!checkPermission(adminUser.permissions, 'categories', 'update', adminUser.isSuperAdmin)) {
     throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
   }
 
@@ -39,16 +27,20 @@ export default defineEventHandler(async (event) => {
   if (body.description !== undefined) updateFields.description = String(body.description).trim() || null
   if (body.displayOrder !== undefined) updateFields.displayOrder = Number(body.displayOrder)
 
-  // Slug update
-  if (body.slug !== undefined) {
-    const rawSlug = String(body.slug).trim()
-    updateFields.slug = rawSlug ? slugify(rawSlug) : slugify(updateFields.name || existing.name)
+  // Slug: regenerate/validate on name or slug change, excluding the current row from collision check
+  if (body.slug !== undefined || body.name !== undefined) {
+    const rawSlug = body.slug !== undefined ? String(body.slug).trim() : ''
+    const base = rawSlug || updateFields.name || existing.name
+    updateFields.slug = await uniqueCategorySlug(db, base, id)
   }
 
   // parentId update
   if ('parentId' in body) {
     const parentId = body.parentId ? Number(body.parentId) : null
     if (parentId) {
+      if (parentId === id) {
+        throw createError({ statusCode: 400, statusMessage: 'Không thể đặt danh mục làm cha của chính nó.' })
+      }
       const [parent] = await db.select().from(categories).where(eq(categories.id, parentId)).limit(1)
       if (!parent) {
         throw createError({ statusCode: 400, statusMessage: 'Danh mục cha không tồn tại.' })
@@ -70,5 +62,5 @@ export default defineEventHandler(async (event) => {
   }
 
   await db.update(categories).set(updateFields).where(eq(categories.id, id))
-  return { ok: true }
+  return { ok: true, slug: updateFields.slug ?? existing.slug }
 })

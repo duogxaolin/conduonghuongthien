@@ -24,26 +24,21 @@
                   @click="setCategory('all')"
                 >Tất cả bản tin</button>
               </li>
-              <li>
+              <li v-for="cat in rootCategories" :key="cat.id">
                 <button
-                  :class="activeCategory === 'tin-noi-bat' ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
+                  :class="activeCategory === cat.slug ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
                   class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px]"
-                  @click="setCategory('tin-noi-bat')"
-                >Tin nổi bật</button>
-              </li>
-              <li>
-                <button
-                  :class="activeCategory === 'tin-hoat-dong' ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
-                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px]"
-                  @click="setCategory('tin-hoat-dong')"
-                >Tin hoạt động</button>
-              </li>
-              <li>
-                <button
-                  :class="activeCategory === 'tin-dia-phuong' ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
-                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px]"
-                  @click="setCategory('tin-dia-phuong')"
-                >Tin địa phương</button>
+                  @click="setCategory(cat.slug)"
+                >{{ cat.name }}</button>
+                <ul v-if="childrenOf(cat.id).length" class="list-none flex flex-col gap-1 pl-3 mt-1 mb-1">
+                  <li v-for="child in childrenOf(cat.id)" :key="child.id">
+                    <button
+                      :class="activeCategory === child.slug ? 'text-[#4A6741] font-bold' : 'text-[#7A8675]'"
+                      class="w-full text-left bg-transparent border-0 px-[14px] py-[7px] text-[0.83rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:text-[#4A6741]"
+                      @click="setCategory(child.slug)"
+                    >— {{ child.name }}</button>
+                  </li>
+                </ul>
               </li>
             </ul>
           </div>
@@ -52,6 +47,8 @@
         <!-- News List -->
         <div class="flex flex-col gap-6">
           <SectionBar icon="fa-solid fa-newspaper" title="Bản tin hoạt động" />
+
+          <!-- Search result banner -->
           <div
             v-if="searchQuery"
             class="bg-[#F8FAF7] border border-[#E2E8DF] border-l-4 border-l-[#7CB342] px-[18px] py-[14px] rounded text-[0.92rem] text-[#4A5545] flex items-center justify-between gap-3 flex-wrap"
@@ -62,22 +59,57 @@
               @click="clearSearch"
             >✕ Bỏ tìm kiếm</button>
           </div>
+
+          <!-- Loading state -->
+          <div v-if="pending" class="flex flex-col gap-6">
+            <div
+              v-for="n in 4"
+              :key="n"
+              class="flex flex-col sm:flex-row bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] animate-pulse"
+            >
+              <div class="w-full sm:w-[260px] h-[200px] sm:h-[180px] flex-shrink-0 bg-[#EEF2EC]"></div>
+              <div class="p-6 flex flex-col gap-3 flex-1">
+                <div class="h-3 w-32 bg-[#EEF2EC] rounded"></div>
+                <div class="h-4 w-3/4 bg-[#EEF2EC] rounded"></div>
+                <div class="h-3 w-full bg-[#EEF2EC] rounded"></div>
+                <div class="h-3 w-2/3 bg-[#EEF2EC] rounded"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Error state -->
           <div
-            v-if="filteredNews.length === 0"
+            v-else-if="loadError"
+            class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]"
+          >
+            <i class="fa-solid fa-triangle-exclamation mr-2"></i>
+            Không thể tải bản tin. Vui lòng
+            <button class="text-[#4A6741] font-bold underline" @click="refresh()">thử lại</button>.
+          </div>
+
+          <!-- Empty state -->
+          <div
+            v-else-if="newsList.length === 0"
             class="bg-white border border-dashed border-[#E2E8DF] px-6 py-10 rounded-lg text-center text-[#7A8675] text-[0.95rem]"
           >
-            Không tìm thấy bản tin phù hợp. Vui lòng thử từ khóa khác hoặc xem <nuxt-link to="/news" class="text-[#4A6741] font-bold">tất cả bản tin</nuxt-link>.
+            Không tìm thấy bản tin phù hợp. Vui lòng thử từ khóa khác hoặc xem
+            <button class="text-[#4A6741] font-bold underline" @click="setCategory('all')">tất cả bản tin</button>.
           </div>
+
+          <!-- News cards -->
           <div
-            v-for="item in filteredNews"
+            v-for="item in newsList"
+            v-else
             :key="item.id"
             class="flex flex-col sm:flex-row bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-[#7CB342]"
           >
             <div class="w-full sm:w-[260px] h-[200px] sm:h-[180px] flex-shrink-0">
-              <img :src="item.image" :alt="item.title" class="w-full h-full object-cover" />
+              <img :src="item.thumbnailUrl || '/assets/hero_banner.jpg'" :alt="item.title" class="w-full h-full object-cover" />
             </div>
             <div class="p-6 flex flex-col justify-between">
-              <span class="text-[0.8rem] text-[#7A8675] font-semibold mb-1.5 block">{{ item.date }} • {{ item.categoryName }}</span>
+              <span class="text-[0.8rem] text-[#7A8675] font-semibold mb-1.5 block">
+                {{ formatDate(item) }}<template v-if="item.categoryName"> • {{ item.categoryName }}</template>
+              </span>
               <h3 class="text-[1.15rem] font-bold leading-[1.4] mb-2">
                 <nuxt-link
                   :to="`/news/${item.slug}`"
@@ -98,7 +130,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 
 useSeoMeta({
@@ -107,102 +139,55 @@ useSeoMeta({
 })
 
 const route = useRoute()
-const activeCategory = ref('all')
-const searchQuery = ref('')
+const activeCategory = ref(route.query.cat ? String(route.query.cat) : 'all')
+const searchQuery = ref(route.query.q ? String(route.query.q) : '')
 
-const newsItems = [
-  {
-    id: 1,
-    title: 'ĐÀ NẴNG: HỘI NGHỊ ĐỐI THOẠI GIỮA GIÁM THỊ VỚI PHẠM NHÂN',
-    slug: 'da-nang-doi-thoai-giam-thi-pham-nhan',
-    category: 'tin-noi-bat',
-    categoryName: 'Tin nổi bật',
-    date: '17/07/2026',
-    image: '/assets/news_danang.jpg',
-    excerpt: 'Chiều ngày 16/7/2026, Trại Tạm giam số 1 Công an thành phố Đà Nẵng tổ chức Hội nghị đối thoại giữa Giám thị Trại với phạm nhân đang chấp hành án phạt tù lần thứ I năm 2026 để kịp thời tháo gỡ vướng mắc, động viên cải tạo.'
-  },
-  {
-    id: 2,
-    title: 'QUẢNG NINH: Công an đặc khu Vân Đồn hỗ trợ người chấp hành xong án phạt tù tìm kiếm việc làm',
-    slug: 'quang-ninh-van-don-ho-tro-viec-lam',
-    category: 'tin-hoat-dong',
-    categoryName: 'Tin hoạt động',
-    date: '17/07/2026',
-    image: '/assets/news_quangninh.jpg',
-    excerpt: 'Nhằm tạo điều kiện tốt nhất cho người chấp hành xong án phạt tù xóa bỏ tự ti và có thu nhập ổn định, Công an đặc khu Vân Đồn phối hợp cơ quan chức năng tổ chức sàn giao dịch hướng nghiệp kết nối trực tiếp doanh nghiệp.'
-  },
-  {
-    id: 3,
-    title: 'CÔNG AN TỈNH LÂM ĐỒNG THĂM HỎI, TẶNG QUÀ, ĐỘNG VIÊN NGƯỜI ĐƯỢC ĐẶC XÁ CÓ HOÀN CẢNH KHÓ KHĂN',
-    slug: 'lam-dong-tham-hoi-tang-qua-dac-xa',
-    category: 'tin-hoat-dong',
-    categoryName: 'Tin hoạt động',
-    date: '17/07/2026',
-    image: '/assets/news_lamdong.jpg',
-    excerpt: 'Phòng Cảnh sát thi hành án hình sự và hỗ trợ tư pháp Công an tỉnh Lâm Đồng phối hợp với Công an các địa bàn tổ chức thăm hỏi, trao tặng các phần quà hỗ trợ thiết thực động viên tinh thần người chấp hành đặc xá vươn lên.'
-  },
-  {
-    id: 4,
-    title: 'QUẢNG NINH: Công an phường Móng Cái 3 tăng cường công tác cảm hóa, giáo dục thi hành án hình sự tại cộng đồng',
-    slug: 'mong-cai-tang-cuong-cam-hoa-giao-duc',
-    category: 'tin-dia-phuong',
-    categoryName: 'Tin địa phương',
-    date: '17/07/2026',
-    image: '/assets/news_quangninh.jpg',
-    excerpt: 'Tăng cường điểm danh, kiểm diện và lập hồ sơ theo dõi sát sao, kết hợp rà soát hoàn cảnh gia đình để có phương hướng cảm hóa giáo dục phù hợp, phòng ngừa tái phạm tội trên địa bàn phường Móng Cái 3.'
-  },
-  {
-    id: 5,
-    title: 'CẦN THƠ: Điểm tựa tín dụng cho người hoàn lương tái hòa nhập',
-    slug: 'can-tho-diem-tua-tin-dung',
-    category: 'tin-noi-bat',
-    categoryName: 'Tin nổi bật',
-    date: '16/07/2026',
-    image: '/assets/news_lamdong.jpg',
-    excerpt: 'Triển khai chính sách tín dụng ưu đãi từ Ngân hàng Chính sách Xã hội theo Quyết định 22/2023/QĐ-TTg, giúp hàng chục hộ gia đình người hoàn lương tại Cần Thơ tiếp cận nguồn vốn ưu đãi 100 triệu đồng để mở rộng làm ăn.'
-  },
-  {
-    id: 6,
-    title: 'LÂM ĐỒNG: Sơ kết công tác quản lý giam giữ, thi hành án hình sự và hỗ trợ tư pháp 6 tháng đầu năm 2026',
-    slug: 'lam-dong-so-ket-cong-tac',
-    category: 'tin-hoat-dong',
-    categoryName: 'Tin hoạt động',
-    date: '16/07/2026',
-    image: '/assets/news_danang.jpg',
-    excerpt: 'Công an tỉnh Lâm Đồng sơ kết đánh giá kết quả triển khai công tác quản lý giam giữ và hỗ trợ tái hòa nhập cộng đồng 6 tháng đầu năm, đề ra phương hướng chỉ đạo sát sao cho 6 tháng cuối năm.'
-  }
-]
-
-const filteredNews = computed(() => {
-  let list = activeCategory.value === 'all'
-    ? newsItems
-    : newsItems.filter(item => item.category === activeCategory.value)
-  if (searchQuery.value) {
-    const q = searchQuery.value.toLowerCase()
-    list = list.filter(item =>
-      item.title.toLowerCase().includes(q) ||
-      item.excerpt.toLowerCase().includes(q) ||
-      item.categoryName.toLowerCase().includes(q)
-    )
-  }
-  return list
+// Category sidebar — DB-driven via /api/public/categories?type=news
+const { data: catData } = await useFetch('/api/public/categories', {
+  query: { type: 'news' },
+  default: () => ({ ok: true, items: [] })
 })
+const allCategories = computed(() => catData.value?.items || [])
+const rootCategories = computed(() => allCategories.value.filter((c) => c.parentId === null))
+const childrenOf = (parentId) => allCategories.value.filter((c) => c.parentId === parentId)
+
+// Article list — DB-driven, refetches reactively when category/search change
+const articlesQuery = computed(() => {
+  const q = { type: 'news', limit: 20 }
+  if (activeCategory.value !== 'all') q.categorySlug = activeCategory.value
+  if (searchQuery.value) q.search = searchQuery.value
+  return q
+})
+const { data: articlesData, pending, error, refresh } = await useFetch('/api/public/articles', {
+  query: articlesQuery,
+  default: () => ({ ok: true, articles: [], pagination: {} })
+})
+const newsList = computed(() => articlesData.value?.articles || [])
+const loadError = computed(() => !!error.value || articlesData.value?.ok === false)
+
+const formatDate = (item) => {
+  const raw = item.publishedAt || item.createdAt
+  if (!raw) return ''
+  const d = new Date(raw)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
+}
+
+const syncUrl = () => {
+  const query = {}
+  if (activeCategory.value !== 'all') query.cat = activeCategory.value
+  if (searchQuery.value) query.q = searchQuery.value
+  navigateTo({ path: '/news', query })
+}
 
 const setCategory = (cat) => {
   activeCategory.value = cat
+  syncUrl()
 }
 
 const clearSearch = () => {
   searchQuery.value = ''
-  navigateTo({ path: '/news', query: {} })
+  syncUrl()
 }
-
-onMounted(() => {
-  if (route.query.cat) {
-    activeCategory.value = route.query.cat
-  }
-  if (route.query.q) {
-    searchQuery.value = String(route.query.q)
-  }
-})
 </script>

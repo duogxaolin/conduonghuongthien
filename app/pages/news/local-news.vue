@@ -10,17 +10,41 @@
 
     <section class="section">
       <div class="container">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-[30px] max-w-[1000px] mx-auto">
+        <!-- Loading -->
+        <div v-if="pending" class="grid grid-cols-1 md:grid-cols-2 gap-[30px] max-w-[1000px] mx-auto">
+          <div v-for="n in 4" :key="n" class="bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] animate-pulse">
+            <div class="h-[220px] bg-[#EEF2EC]"></div>
+            <div class="p-6 flex flex-col gap-3">
+              <div class="h-3 w-32 bg-[#EEF2EC] rounded"></div>
+              <div class="h-4 w-3/4 bg-[#EEF2EC] rounded"></div>
+              <div class="h-3 w-full bg-[#EEF2EC] rounded"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div v-else-if="loadError" class="max-w-[1000px] mx-auto bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+          <i class="fa-solid fa-triangle-exclamation mr-2"></i>
+          Không thể tải tin tức. Vui lòng <button class="text-[#4A6741] font-bold underline" @click="refresh()">thử lại</button>.
+        </div>
+
+        <!-- Empty -->
+        <div v-else-if="newsList.length === 0" class="max-w-[1000px] mx-auto bg-white border border-dashed border-[#E2E8DF] px-6 py-10 rounded-lg text-center text-[#7A8675] text-[0.95rem]">
+          Chưa có tin địa phương nào. Xem <nuxt-link to="/news" class="text-[#4A6741] font-bold">tất cả bản tin</nuxt-link>.
+        </div>
+
+        <!-- List -->
+        <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-[30px] max-w-[1000px] mx-auto">
           <div
-            v-for="item in newsItems"
+            v-for="item in newsList"
             :key="item.id"
             class="bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] transition-all duration-300 hover:-translate-y-1 hover:shadow-md hover:border-[#7CB342]"
           >
             <div class="h-[220px] overflow-hidden">
-              <img :src="item.image" :alt="item.title" class="w-full h-full object-cover" />
+              <img :src="item.thumbnailUrl || '/assets/hero_banner.jpg'" :alt="item.title" class="w-full h-full object-cover" />
             </div>
             <div class="p-6">
-              <span class="block text-[0.8rem] text-[#7A8675] font-semibold mb-2">{{ item.date }} • Tin địa phương</span>
+              <span class="block text-[0.8rem] text-[#7A8675] font-semibold mb-2">{{ formatDate(item) }} • {{ item.categoryName || 'Tin địa phương' }}</span>
               <h3 class="text-[1.15rem] font-bold leading-[1.4] mb-[10px]">
                 <nuxt-link
                   :to="'/news/' + item.slug"
@@ -38,14 +62,26 @@
 </template>
 
 <script setup>
-const newsItems = [
-  {
-    id: 1,
-    slug: 'mong-cai-tang-cuong-cam-hoa-giao-duc',
-    title: 'QUẢNG NINH: Công an phường Móng Cái 3 tăng cường công tác cảm hóa, giáo dục thi hành án hình sự tại cộng đồng',
-    date: '17/07/2026',
-    image: '/assets/news_quangninh.jpg',
-    excerpt: 'Tăng cường điểm danh, kiểm diện và lập hồ sơ theo dõi sát sao, kết hợp rà soát hoàn cảnh gia đình để có phương hướng cảm hóa giáo dục phù hợp, phòng ngừa tái phạm tội trên địa bàn phường Móng Cái 3.'
-  }
-]
+import { computed } from 'vue'
+
+useSeoMeta({
+  title: 'Tin địa phương | Con Đường Hướng Thiện',
+  description: 'Hoạt động thi hành án hình sự và công tác cộng đồng tại địa bàn xã, phường.'
+})
+
+const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
+  query: { type: 'news', categorySlug: 'tin-dia-phuong', limit: 20 },
+  default: () => ({ ok: true, articles: [], pagination: {} })
+})
+const newsList = computed(() => data.value?.articles || [])
+const loadError = computed(() => !!error.value || data.value?.ok === false)
+
+const formatDate = (item) => {
+  const raw = item.publishedAt || item.createdAt
+  if (!raw) return ''
+  const d = new Date(raw)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
+}
 </script>

@@ -1,24 +1,12 @@
 import { getDb } from '../../../utils/db'
 import { categories } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
+import { uniqueCategorySlug } from '../../../utils/slug'
 import { eq } from 'drizzle-orm'
-
-function slugify(text: string): string {
-  return text
-    .toString()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[đĐ]/g, 'd')
-    .replace(/([^0-9a-z-\s])/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-}
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'news', 'create', adminUser.isSuperAdmin)) {
+  if (!checkPermission(adminUser.permissions, 'categories', 'create', adminUser.isSuperAdmin)) {
     throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
   }
 
@@ -36,11 +24,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Loại danh mục không được để trống.' })
   }
 
-  // Auto-gen slug from name if not provided
-  const rawSlug = String(body?.slug || '').trim()
-  const baseSlug = rawSlug ? slugify(rawSlug) : slugify(name)
-  const uniqueSlug = `${baseSlug}-${Date.now().toString(36)}`
-
   const db = getDb()
 
   // Validate parentId: parent must exist and be a root category
@@ -53,6 +36,10 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'Chỉ cho phép 1 cấp cha-con. Không thể chọn danh mục con làm cha.' })
     }
   }
+
+  // Clean, collision-safe slug: derived from provided slug or name, deduped by -2, -3, …
+  const rawSlug = String(body?.slug || '').trim()
+  const uniqueSlug = await uniqueCategorySlug(db, rawSlug || name)
 
   const [res] = await db.insert(categories).values({
     name,

@@ -10,17 +10,41 @@
 
     <section class="py-12">
       <div class="container">
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-[30px] max-w-[1000px] mx-auto">
+        <!-- Loading -->
+        <div v-if="pending" class="grid grid-cols-1 md:grid-cols-2 gap-[30px] max-w-[1000px] mx-auto">
+          <div v-for="n in 4" :key="n" class="bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] animate-pulse">
+            <div class="h-[220px] bg-[#EEF2EC]"></div>
+            <div class="p-6 flex flex-col gap-3">
+              <div class="h-3 w-32 bg-[#EEF2EC] rounded"></div>
+              <div class="h-4 w-3/4 bg-[#EEF2EC] rounded"></div>
+              <div class="h-3 w-full bg-[#EEF2EC] rounded"></div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <div v-else-if="loadError" class="max-w-[1000px] mx-auto bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+          <i class="fa-solid fa-triangle-exclamation mr-2"></i>
+          Không thể tải tin tức. Vui lòng <button class="text-[#4A6741] font-bold underline" @click="refresh()">thử lại</button>.
+        </div>
+
+        <!-- Empty -->
+        <div v-else-if="newsList.length === 0" class="max-w-[1000px] mx-auto bg-white border border-dashed border-[#E2E8DF] px-6 py-10 rounded-lg text-center text-[#7A8675] text-[0.95rem]">
+          Chưa có tin hoạt động nào. Xem <nuxt-link to="/news" class="text-[#4A6741] font-bold">tất cả bản tin</nuxt-link>.
+        </div>
+
+        <!-- List -->
+        <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-[30px] max-w-[1000px] mx-auto">
           <div
-            v-for="item in newsItems"
+            v-for="item in newsList"
             :key="item.id"
             class="bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] transition-all duration-300 hover:-translate-y-1 hover:shadow-md hover:border-[#7CB342]"
           >
             <div class="h-[220px] overflow-hidden">
-              <img :src="item.image" :alt="item.title" class="w-full h-full object-cover" />
+              <img :src="item.thumbnailUrl || '/assets/hero_banner.jpg'" :alt="item.title" class="w-full h-full object-cover" />
             </div>
             <div class="p-6">
-              <span class="block text-[0.8rem] text-[#7A8675] font-semibold mb-2">{{ item.date }} • Tin hoạt động</span>
+              <span class="block text-[0.8rem] text-[#7A8675] font-semibold mb-2">{{ formatDate(item) }} • {{ item.categoryName || 'Tin hoạt động' }}</span>
               <h3 class="text-[1.15rem] font-bold leading-[1.4] mb-2.5">
                 <nuxt-link
                   :to="'/news/' + item.slug"
@@ -38,30 +62,26 @@
 </template>
 
 <script setup>
-const newsItems = [
-  {
-    id: 1,
-    slug: 'quang-ninh-van-don-ho-tro-viec-lam',
-    title: 'QUẢNG NINH: Công an đặc khu Vân Đồn hỗ trợ người chấp hành xong án phạt tù tìm kiếm việc làm',
-    date: '17/07/2026',
-    image: '/assets/news_quangninh.jpg',
-    excerpt: 'Nhằm tạo điều kiện tốt nhất cho người chấp hành xong án phạt tù xóa bỏ tự ti và có thu nhập ổn định, Công an đặc khu Vân Đồn phối hợp cơ quan chức năng tổ chức sàn giao dịch hướng nghiệp kết nối trực tiếp doanh nghiệp.'
-  },
-  {
-    id: 2,
-    slug: 'lam-dong-tham-hoi-tang-qua-dac-xa',
-    title: 'CÔNG AN TỈNH LÂM ĐỒNG THĂM HỎI, TẶNG QUÀ, ĐỘNG VIÊN NGƯỜI ĐƯỢC ĐẶC XÁ CÓ HOÀN CẢNH KHÓ KHĂN',
-    date: '17/07/2026',
-    image: '/assets/news_lamdong.jpg',
-    excerpt: 'Phòng Cảnh sát thi hành án hình sự và hỗ trợ tư pháp Công an tỉnh Lâm Đồng phối hợp với Công an các địa bàn tổ chức thăm hỏi, trao tặng các phần quà hỗ trợ thiết thực động viên tinh thần người chấp hành đặc xá vươn lên.'
-  },
-  {
-    id: 3,
-    slug: 'lam-dong-so-ket-quan-ly-giam-giu',
-    title: 'LÂM ĐỒNG: Sơ kết công tác quản lý giam giữ, thi hành án hình sự và hỗ trợ tư pháp 6 tháng đầu năm 2026',
-    date: '16/07/2026',
-    image: '/assets/news_danang.jpg',
-    excerpt: 'Công an tỉnh Lâm Đồng sơ kết đánh giá kết quả triển khai công tác quản lý giam giữ và hỗ trợ tái hòa nhập cộng đồng 6 tháng đầu năm, đề ra phương hướng chỉ đạo sát sao cho 6 tháng cuối năm.'
-  }
-]
+import { computed } from 'vue'
+
+useSeoMeta({
+  title: 'Tin hoạt động | Con Đường Hướng Thiện',
+  description: 'Các hoạt động, chỉ đạo nghiệp vụ thi hành án hình sự và tái hòa nhập cộng đồng.'
+})
+
+const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
+  query: { type: 'news', categorySlug: 'tin-hoat-dong', limit: 20 },
+  default: () => ({ ok: true, articles: [], pagination: {} })
+})
+const newsList = computed(() => data.value?.articles || [])
+const loadError = computed(() => !!error.value || data.value?.ok === false)
+
+const formatDate = (item) => {
+  const raw = item.publishedAt || item.createdAt
+  if (!raw) return ''
+  const d = new Date(raw)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
+}
 </script>

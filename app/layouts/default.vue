@@ -424,56 +424,46 @@
       aria-label="Điều hướng nhanh"
       style="padding-bottom: env(safe-area-inset-bottom, 0px)"
     >
-      <nuxt-link to="/" class="flex-1 flex flex-col items-center justify-center gap-0.5 no-underline text-[#556655] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all active:text-[#4A6741]" active-class="text-[#4A6741]">
-        <div class="flex items-center justify-center px-3 py-0.5 rounded-2xl transition-all">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
-            <polyline points="9 22 9 12 15 12 15 22"></polyline>
-          </svg>
-        </div>
-        <span>{{ t('home') }}</span>
-      </nuxt-link>
+      <template v-for="item in bottomNav" :key="item.id">
+        <!-- Featured raised center button -->
+        <button
+          v-if="item.featured"
+          class="flex-1 relative flex flex-col items-center justify-center gap-0.5 bg-transparent border-none text-[#385130] max-w-[52px] font-extrabold text-[0.65rem] -top-3.5 cursor-pointer transition-all font-[inherit]"
+          :class="{ 'text-[#4A6741]': (item.type === 'chatbot' && isChatbotOpen) || (item.type === 'drawer' && isMobileMenuOpen) }"
+          @click="item.type === 'link' ? navigateTo(item.url) : onBottomNavClick(item)"
+        >
+          <div class="w-[50px] h-[50px] rounded-full bg-gradient-to-br from-[#2e6b32] to-[#173b18] text-white flex items-center justify-center shadow-[0_10px_24px_rgba(23,59,24,0.4),inset_0_2px_4px_rgba(255,255,255,0.4)] border-[3.5px] border-white/95 transition-all active:scale-90">
+            <i :class="item.icon || 'fa-solid fa-circle'" class="text-[1.3rem]" aria-hidden="true"></i>
+          </div>
+          <span class="mt-0.5">{{ navItemLabel(item) }}</span>
+        </button>
 
-      <nuxt-link to="/news" class="flex-1 flex flex-col items-center justify-center gap-0.5 no-underline text-[#556655] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all" active-class="text-[#4A6741]">
-        <div class="flex items-center justify-center px-3 py-0.5 rounded-2xl transition-all">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M19 20H5a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1m2 13a2 2 0 0 1-2-2V7m2 13a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-2m-4-3H9M7 16h6M7 8h6v4H7V8z"></path>
-          </svg>
-        </div>
-        <span>{{ t('news') }}</span>
-      </nuxt-link>
+        <!-- Normal link item -->
+        <nuxt-link
+          v-else-if="item.type === 'link'"
+          :to="item.url || '/'"
+          class="flex-1 flex flex-col items-center justify-center gap-0.5 no-underline text-[#556655] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all active:text-[#4A6741]"
+          active-class="text-[#4A6741]"
+        >
+          <div class="flex items-center justify-center px-3 py-0.5 rounded-2xl transition-all">
+            <i :class="item.icon || 'fa-solid fa-circle'" class="text-[1.25rem]" aria-hidden="true"></i>
+          </div>
+          <span>{{ navItemLabel(item) }}</span>
+        </nuxt-link>
 
-      <button class="flex-1 relative flex flex-col items-center justify-center gap-0.5 bg-transparent border-none text-[#385130] max-w-[52px] font-extrabold text-[0.65rem] -top-3.5 cursor-pointer transition-all font-[inherit]" @click="toggleChatbot" :class="{ 'text-[#4A6741]': isChatbotOpen }">
-        <div class="w-[50px] h-[50px] rounded-full bg-gradient-to-br from-[#2e6b32] to-[#173b18] text-white flex items-center justify-center shadow-[0_10px_24px_rgba(23,59,24,0.4),inset_0_2px_4px_rgba(255,255,255,0.4)] border-[3.5px] border-white/95 transition-all active:scale-90">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
-        </div>
-        <span class="mt-0.5">{{ t('ask_ai') }}</span>
-      </button>
-
-      <nuxt-link to="/documents" class="flex-1 flex flex-col items-center justify-center gap-0.5 no-underline text-[#556655] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all" active-class="text-[#4A6741]">
-        <div class="flex items-center justify-center px-3 py-0.5 rounded-2xl transition-all">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
-            <polyline points="14 2 14 8 20 8"></polyline>
-            <line x1="16" y1="13" x2="8" y2="13"></line>
-            <line x1="16" y1="17" x2="8" y2="17"></line>
-          </svg>
-        </div>
-        <span>{{ t('documents') }}</span>
-      </nuxt-link>
-
-      <button class="flex-1 flex flex-col items-center justify-center gap-0.5 bg-transparent border-none text-[#556655] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all font-[inherit]" :class="{ 'text-[#4A6741]': isMobileMenuOpen }" @click="toggleMobileMenu">
-        <div class="flex items-center justify-center px-3 py-0.5 rounded-2xl transition-all">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="3" y1="12" x2="21" y2="12"></line>
-            <line x1="3" y1="6" x2="21" y2="6"></line>
-            <line x1="3" y1="18" x2="21" y2="18"></line>
-          </svg>
-        </div>
-        <span>{{ t('categories') }}</span>
-      </button>
+        <!-- Action item (chatbot / drawer) -->
+        <button
+          v-else
+          class="flex-1 flex flex-col items-center justify-center gap-0.5 bg-transparent border-none text-[#556655] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all font-[inherit]"
+          :class="{ 'text-[#4A6741]': (item.type === 'chatbot' && isChatbotOpen) || (item.type === 'drawer' && isMobileMenuOpen) }"
+          @click="onBottomNavClick(item)"
+        >
+          <div class="flex items-center justify-center px-3 py-0.5 rounded-2xl transition-all">
+            <i :class="item.icon || 'fa-solid fa-circle'" class="text-[1.25rem]" aria-hidden="true"></i>
+          </div>
+          <span>{{ navItemLabel(item) }}</span>
+        </button>
+      </template>
     </nav>
   </div>
 </template>
@@ -511,18 +501,47 @@ const DEFAULT_NAV = [
 ]
 
 const navMenuRaw = ref(null) // null = use DEFAULT_NAV
+
 const navMenu = computed(() => {
   if (Array.isArray(navMenuRaw.value) && navMenuRaw.value.length) return navMenuRaw.value
   return DEFAULT_NAV
 })
 
+// Mobile bottom navigation bar (floating tab bar). Different shape from navMenu:
+// each item has an icon + a type ('link' | 'chatbot' | 'drawer') + featured flag.
+const DEFAULT_BOTTOM_NAV = [
+  { id: 'home', label: null, labelKey: 'home', icon: 'fa-solid fa-house', type: 'link', url: '/', featured: false },
+  { id: 'news', label: null, labelKey: 'news', icon: 'fa-solid fa-newspaper', type: 'link', url: '/news', featured: false },
+  { id: 'chatbot', label: null, labelKey: 'ask_ai', icon: 'fa-solid fa-comment-dots', type: 'chatbot', url: '', featured: true },
+  { id: 'documents', label: null, labelKey: 'documents', icon: 'fa-solid fa-file-lines', type: 'link', url: '/documents', featured: false },
+  { id: 'drawer', label: null, labelKey: 'categories', icon: 'fa-solid fa-bars', type: 'drawer', url: '', featured: false },
+]
+
+const bottomNavRaw = ref(null) // null = use DEFAULT_BOTTOM_NAV
+const bottomNav = computed(() => {
+  if (Array.isArray(bottomNavRaw.value) && bottomNavRaw.value.length) return bottomNavRaw.value
+  return DEFAULT_BOTTOM_NAV
+})
+
 const navItemLabel = (item) => item.label || (item.labelKey ? t(item.labelKey) : item.url)
+
+const onBottomNavClick = (item) => {
+  if (item.type === 'chatbot') toggleChatbot()
+  else if (item.type === 'drawer') toggleMobileMenu()
+}
 
 const loadNavMenu = async () => {
   try {
     const res = await $fetch('/api/public/settings')
-    if (res?.settings?.nav_menu) {
-      try { navMenuRaw.value = JSON.parse(res.settings.nav_menu) } catch { /* ignore */ }
+    // Desktop navbar: prefer nav_menu_navbar, fallback to nav_menu
+    const navbarRaw = res?.settings?.nav_menu_navbar || res?.settings?.nav_menu
+    if (navbarRaw) {
+      try { navMenuRaw.value = JSON.parse(navbarRaw) } catch { /* ignore */ }
+    }
+    // Mobile bottom nav: its own shape, no fallback to nav_menu
+    const mobileRaw = res?.settings?.nav_menu_mobile
+    if (mobileRaw) {
+      try { bottomNavRaw.value = JSON.parse(mobileRaw) } catch { /* ignore */ }
     }
   } catch { /* ignore — use default */ }
 }

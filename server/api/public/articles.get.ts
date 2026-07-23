@@ -1,6 +1,6 @@
 import { getDb } from '../../utils/db'
-import { articles, users } from '../../db/schema'
-import { eq, like, desc, sql, count } from 'drizzle-orm'
+import { articles, users, categories } from '../../db/schema'
+import { eq, like, desc, count, inArray, and } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   try {
@@ -10,8 +10,40 @@ export default defineEventHandler(async (event) => {
     const offset = (page - 1) * limit
     const search = String(query.search || '').trim()
     const type = String(query.type || '').trim()
+    const categorySlug = String(query.categorySlug || '').trim()
+    const categoryIdParam = Number(query.categoryId || 0)
 
     const db = getDb()
+
+    // Resolve category filter → set of category IDs (root includes its children).
+    let categoryIds: number[] | null = null
+    if (categorySlug || categoryIdParam) {
+      const [target] = await db
+        .select({ id: categories.id, parentId: categories.parentId })
+        .from(categories)
+        .where(categorySlug ? eq(categories.slug, categorySlug) : eq(categories.id, categoryIdParam))
+        .limit(1)
+
+      if (!target) {
+        // Unknown category → empty result, not an error.
+        return {
+          ok: true,
+          articles: [],
+          pagination: { page, limit, total: 0, totalPages: 0 },
+        }
+      }
+
+      if (target.parentId === null) {
+        // Root category: include the root and all its children.
+        const children = await db
+          .select({ id: categories.id })
+          .from(categories)
+          .where(eq(categories.parentId, target.id))
+        categoryIds = [target.id, ...children.map((c) => c.id)]
+      } else {
+        categoryIds = [target.id]
+      }
+    }
 
     const conditions = [eq(articles.status, 'published')]
     if (search) {
@@ -20,14 +52,20 @@ export default defineEventHandler(async (event) => {
     if (type) {
       conditions.push(eq(articles.type, type))
     }
+    if (categoryIds) {
+      conditions.push(categoryIds.length === 1 ? eq(articles.categoryId, categoryIds[0]) : inArray(articles.categoryId, categoryIds))
+    }
 
-    const whereClause = sql`${sql.join(conditions, sql` AND `)}`
+    const whereClause = and(...conditions)
 
     const items = await db
       .select({
         id:           articles.id,
         type:         articles.type,
         category:     articles.category,
+        categoryId:   articles.categoryId,
+        categoryName: categories.name,
+        categorySlug: categories.slug,
         title:        articles.title,
         slug:         articles.slug,
         excerpt:      articles.excerpt,
@@ -38,6 +76,7 @@ export default defineEventHandler(async (event) => {
       })
       .from(articles)
       .leftJoin(users, eq(articles.authorId, users.id))
+      .leftJoin(categories, eq(articles.categoryId, categories.id))
       .where(whereClause)
       .orderBy(desc(articles.publishedAt), desc(articles.createdAt))
       .limit(limit)

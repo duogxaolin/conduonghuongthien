@@ -29,7 +29,9 @@ const menuGroups = computed(() => [
     title: 'Nội dung Website',
     items: [
       { label: 'Trang chủ (Kéo-thả)', icon: 'fa-solid fa-cubes', path: '/admin/content/home' },
-      { label: 'Menu Điều hướng', icon: 'fa-solid fa-bars', path: '/admin/content/navigation' },
+      { label: 'Menu chính (Navbar + ☰)', icon: 'fa-solid fa-bars-staggered', path: '/admin/content/navigation/navbar' },
+      { label: 'Thanh nổi dưới (Mobile)', icon: 'fa-solid fa-mobile-screen', path: '/admin/content/navigation/mobile' },
+      { label: 'Danh mục & Thể loại', icon: 'fa-solid fa-folder-tree', path: '/admin/content/categories' },
       { label: 'Bài viết & Bản tin', icon: 'fa-solid fa-newspaper', path: '/admin/content/articles' },
       { label: 'Thư viện Media', icon: 'fa-solid fa-images', path: '/admin/media' },
       ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Kho kiến thức Chatbot', icon: 'fa-solid fa-book-open', path: '/admin/chatbot/knowledge' }] : []),
@@ -205,7 +207,9 @@ const menuGroups = computed(() => [
 
       <!-- Page Content -->
       <main class="p-4 md:p-6 flex-1">
-        <slot />
+        <div class="mx-auto w-full max-w-[1600px]">
+          <slot />
+        </div>
       </main>
     </div>
   </div>

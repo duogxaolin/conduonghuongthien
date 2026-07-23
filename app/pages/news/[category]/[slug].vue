@@ -4,23 +4,31 @@
       <div class="text-[0.85rem] text-[#7A8675] mb-6">
         <nuxt-link to="/" class="text-[#4A6741] no-underline hover:underline">Trang chủ</nuxt-link> &raquo;
         <nuxt-link to="/news" class="text-[#4A6741] no-underline hover:underline">Bản tin</nuxt-link> &raquo;
-        <nuxt-link :to="`/news?category=${route.params.category}`" class="text-[#4A6741] no-underline hover:underline">{{ categoryLabel }}</nuxt-link> &raquo;
+        <nuxt-link :to="`/news?cat=${categorySlug}`" class="text-[#4A6741] no-underline hover:underline">{{ categoryLabel }}</nuxt-link> &raquo;
         <span>Chi tiết</span>
       </div>
 
-      <article v-if="article">
+      <!-- Loading -->
+      <div v-if="pending" class="animate-pulse flex flex-col gap-5">
+        <div class="h-5 w-40 bg-[#EEF2EC] rounded"></div>
+        <div class="h-9 w-3/4 bg-[#EEF2EC] rounded"></div>
+        <div class="h-24 w-full bg-[#EEF2EC] rounded"></div>
+        <div class="h-64 w-full bg-[#EEF2EC] rounded-lg"></div>
+      </div>
+
+      <article v-else-if="article">
         <span class="text-[0.85rem] font-bold text-[#4A6741] bg-[#F8FAF7] px-3 py-1.5 rounded inline-block mb-4">
-          📰 {{ categoryLabel }} • Ngày đăng: {{ article.date }}
+          📰 {{ categoryLabel }} • Ngày đăng: {{ formattedDate }}
         </span>
         <h1 class="text-[2.2rem] font-extrabold leading-[1.3] text-[#1E251C] mb-5">{{ article.title }}</h1>
 
-        <div class="text-[1.12rem] font-semibold text-[#4A5545] leading-[1.6] border-l-4 border-[#7CB342] pl-5 mb-8">
-          <p>{{ article.lead }}</p>
+        <div v-if="article.excerpt" class="text-[1.12rem] font-semibold text-[#4A5545] leading-[1.6] border-l-4 border-[#7CB342] pl-5 mb-8">
+          <p>{{ article.excerpt }}</p>
         </div>
 
         <div class="article-body text-[1.05rem] leading-[1.7] text-[#4A5545]">
-          <div class="my-8 text-center" v-if="article.image">
-            <img :src="article.image" :alt="article.title" class="w-full max-h-[450px] object-cover rounded-lg shadow-sm" />
+          <div class="my-8 text-center" v-if="article.thumbnailUrl">
+            <img :src="article.thumbnailUrl" :alt="article.title" class="w-full max-h-[450px] object-cover rounded-lg shadow-sm" />
           </div>
           <div v-html="article.content"></div>
         </div>
@@ -30,7 +38,7 @@
         </div>
       </article>
 
-      <div v-else-if="!pending" class="py-10 text-center">
+      <div v-else class="py-10 text-center">
         <p class="text-[#4A5545] mb-4">Không tìm thấy bài viết yêu cầu.</p>
         <nuxt-link to="/news" class="btn btn-primary">Quay lại Bản tin</nuxt-link>
       </div>
@@ -39,35 +47,41 @@
 </template>
 
 <script setup>
+import { computed } from 'vue'
+
 const route = useRoute()
+const categorySlug = computed(() => String(route.params.category || ''))
 
-const categoryLabels = {
-  'tin-noi-bat':    'Tin nổi bật',
-  'tin-hoat-dong':  'Tin hoạt động',
-  'tin-dia-phuong': 'Tin địa phương',
-  'tin-moi-nhat':   'Tin mới nhất',
-}
+const { data, pending } = await useFetch(`/api/public/articles/${route.params.slug}`, {
+  default: () => ({ ok: false, article: null }),
+})
+const article = computed(() => data.value?.article || null)
 
-const categoryLabel = computed(() => categoryLabels[route.params.category] || route.params.category)
+const categoryLabel = computed(() => {
+  const a = article.value
+  if (a?.categoryName) return a.categoryName
+  // Fallback: humanize the URL slug
+  return categorySlug.value
+    .split('-')
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1))
+    .join(' ') || 'Bản tin'
+})
 
-const article = ref(null)
-const pending = ref(true)
+const formattedDate = computed(() => {
+  const a = article.value
+  if (!a) return ''
+  const raw = a.publishedAt || a.createdAt
+  if (!raw) return ''
+  const d = new Date(raw)
+  if (isNaN(d.getTime())) return ''
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
+})
 
-onMounted(async () => {
-  try {
-    const res = await $fetch(`/api/public/articles/${route.params.slug}`)
-    if (res.ok && res.article) {
-      article.value = {
-        date:    new Date(res.article.publishedAt || res.article.createdAt).toLocaleDateString('vi-VN'),
-        title:   res.article.title,
-        image:   res.article.thumbnailUrl || null,
-        lead:    res.article.excerpt || '',
-        content: res.article.content || '',
-      }
-    }
-  } catch { /* 404 — show not found */ } finally {
-    pending.value = false
-  }
+useSeoMeta({
+  title: computed(() => article.value ? `${article.value.title} | Con Đường Hướng Thiện` : 'Chi tiết | Con Đường Hướng Thiện'),
+  description: computed(() => article.value?.excerpt || 'Tin tức hỗ trợ hoàn lương, tái hòa nhập cộng đồng.'),
 })
 </script>
 

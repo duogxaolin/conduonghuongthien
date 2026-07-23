@@ -36,8 +36,14 @@ const fetchCategories = async (type: string) => {
   } catch { availableCategories.value = [] }
 }
 
-// When article type changes: refetch categories and reset categoryId
+// Guard: true while fetchArticle is populating the form on initial load.
+// Prevents the type watcher from resetting categoryId during article load.
+let suppressTypeReset = false
+
+// When article type changes: refetch categories and reset categoryId.
+// Skipped during initial load via suppressTypeReset so the saved value is preserved.
 watch(() => form.type, async (newType) => {
+  if (suppressTypeReset) return
   form.category = ''
   form.categoryId = null
   await fetchCategories(newType)
@@ -45,6 +51,7 @@ watch(() => form.type, async (newType) => {
 
 const fetchArticle = async () => {
   if (isNew.value || !articleId.value) return
+  suppressTypeReset = true  // block watcher resets during form population
   loading.value = true
   try {
     const res = await $fetch(`/api/admin/articles/${articleId.value}`)
@@ -57,6 +64,9 @@ const fetchArticle = async () => {
       form.content = res.article.content || ''
       form.thumbnailUrl = res.article.thumbnailUrl || ''
       form.status = res.article.status || 'published'
+      // Explicitly load categories for the article's type so the dropdown
+      // renders the saved selection. The watcher is suppressed and won't do this.
+      await fetchCategories(form.type)
       if (tinymceReady.value && (window as any).tinymce) {
         const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
         if (ed) ed.setContent(form.content)
@@ -66,6 +76,10 @@ const fetchArticle = async () => {
     errorMsg.value = err?.data?.statusMessage || 'Lỗi tải bài viết'
   } finally {
     loading.value = false
+    // Wait for Vue to flush the queued watcher (triggered by form.type assignment
+    // above) so it runs — and is suppressed — before we release the guard.
+    await nextTick()
+    suppressTypeReset = false
   }
 }
 
