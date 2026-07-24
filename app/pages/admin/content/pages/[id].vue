@@ -1,108 +1,103 @@
 <template>
-  <div>
-    <!-- Header -->
-    <div class="flex items-center justify-between mb-6">
+  <div class="flex h-[calc(100vh-6.5rem)] flex-col">
+    <!-- Top bar -->
+    <div class="flex shrink-0 items-center justify-between border-b border-gray-200 pb-3">
       <div class="flex items-center gap-3">
         <nuxt-link to="/admin/content/pages" class="rounded-lg border border-gray-200 px-3 py-2 text-sm text-gray-600 transition hover:bg-gray-50">
           <i class="fa-solid fa-arrow-left"></i>
         </nuxt-link>
         <div>
-          <h1 class="text-xl font-bold text-gray-800">{{ page?.title || 'Trình dựng trang' }}</h1>
-          <p class="text-xs text-gray-500 mt-0.5">
+          <h1 class="text-lg font-bold text-gray-800">{{ page?.title || 'Trình dựng trang' }}</h1>
+          <p class="mt-0.5 text-xs text-gray-500">
             <code class="rounded bg-gray-100 px-1.5 py-0.5">/{{ page?.slug === 'home' ? '' : page?.slug }}</code>
             <span v-if="page?.isSystem" class="ml-2 text-blue-600"><i class="fa-solid fa-lock"></i> Trang hệ thống</span>
           </p>
         </div>
       </div>
-      <div class="flex items-center gap-2">
+      <div class="flex items-center gap-3">
+        <span class="flex items-center gap-1.5 text-xs font-semibold" :class="saveState.color">
+          <i :class="saveState.icon"></i> {{ saveState.text }}
+        </span>
+        <nuxt-link v-if="page" :to="page.slug === 'home' ? '/' : `/${page.slug}`" target="_blank" class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50">
+          <i class="fa-solid fa-up-right-from-square mr-1"></i> Xem trang
+        </nuxt-link>
         <button class="rounded-lg border border-gray-200 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" @click="openMeta">
           <i class="fa-solid fa-gear mr-1"></i> Cấu hình
         </button>
-        <button class="inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800" @click="showPalette = true">
-          <i class="fa-solid fa-plus"></i> Thêm block
-        </button>
       </div>
     </div>
 
-    <div v-if="loading" class="flex items-center justify-center py-20 text-gray-400">
-      <i class="fa-solid fa-spinner fa-spin text-2xl"></i>
-    </div>
-
-    <div v-else-if="loadError" class="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-red-600">
+    <div v-if="loading" class="flex flex-1 items-center justify-center text-gray-400"><i class="fa-solid fa-spinner fa-spin text-2xl"></i></div>
+    <div v-else-if="loadError" class="flex flex-1 flex-col items-center justify-center gap-3 text-red-600">
       <p>{{ loadError }}</p>
-      <button class="mt-3 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold hover:bg-red-100" @click="fetchPage">Thử lại</button>
+      <button class="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold hover:bg-red-100" @click="fetchPage">Thử lại</button>
     </div>
 
-    <template v-else>
-      <!-- Empty -->
-      <div v-if="!blocks.length" class="rounded-lg border border-dashed border-gray-300 bg-white p-12 text-center text-gray-500">
-        <i class="fa-solid fa-cubes text-4xl text-gray-300"></i>
-        <p class="mt-3">Trang chưa có block nào. Nhấn "Thêm block" để bắt đầu dựng trang.</p>
-      </div>
-
-      <!-- Block list -->
-      <div v-else class="space-y-3">
-        <div
-          v-for="(block, index) in blocks"
-          :key="block.id"
-          class="group flex items-center gap-3 rounded-xl border bg-white p-4 shadow-sm transition"
-          :class="[
-            dragOverIndex === index ? 'border-green-500 ring-2 ring-green-100' : 'border-gray-200',
-            block.isVisible ? '' : 'opacity-60',
-          ]"
-          draggable="true"
-          @dragstart="onDragStart(index)"
-          @dragover.prevent="dragOverIndex = index"
-          @drop.prevent="onDrop(index)"
-          @dragend="onDragEnd"
-        >
-          <span class="cursor-grab text-gray-300 transition group-hover:text-gray-400" title="Kéo để sắp xếp">
-            <i class="fa-solid fa-grip-vertical"></i>
-          </span>
-
-          <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-green-50 text-green-700">
-            <i :class="registry[block.blockType]?.icon || 'fa-solid fa-cube'"></i>
-          </div>
-
-          <div class="min-w-0 flex-1">
-            <p class="truncate text-sm font-semibold text-gray-800">{{ registry[block.blockType]?.label || block.blockType }}</p>
-            <p class="truncate text-xs text-gray-400">{{ blockPreviewText(block) }}</p>
-          </div>
-
-          <!-- Reorder arrows (fallback / accessibility, works alongside DnD) -->
-          <div class="flex flex-col">
-            <button class="px-1 text-gray-300 hover:text-green-600 disabled:opacity-30" :disabled="index === 0" @click="move(index, -1)"><i class="fa-solid fa-chevron-up text-xs"></i></button>
-            <button class="px-1 text-gray-300 hover:text-green-600 disabled:opacity-30" :disabled="index === blocks.length - 1" @click="move(index, 1)"><i class="fa-solid fa-chevron-down text-xs"></i></button>
-          </div>
-
-          <button
-            class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold transition"
-            :class="block.isVisible ? 'text-gray-600 hover:bg-gray-50' : 'text-orange-500 hover:bg-orange-50'"
-            @click="toggleVisible(block)"
-          >
-            <i :class="block.isVisible ? 'fa-solid fa-eye' : 'fa-solid fa-eye-slash'"></i>
-            {{ block.isVisible ? 'Hiển thị' : 'Đã ẩn' }}
-          </button>
-
-          <button class="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-semibold text-gray-700 transition hover:border-green-600 hover:text-green-700" @click="openEdit(block)">
-            <i class="fa-solid fa-pen-to-square mr-1"></i> Sửa
-          </button>
-
-          <button class="rounded-lg border border-red-200 px-3 py-1.5 text-xs font-semibold text-red-600 transition hover:bg-red-50" @click="removeBlock(block)">
-            <i class="fa-solid fa-trash"></i>
+    <!-- 3-pane workspace -->
+    <div v-else class="flex min-h-0 flex-1 gap-0 overflow-hidden rounded-xl border border-gray-200 bg-white">
+      <!-- Left: navigator -->
+      <aside class="flex w-64 shrink-0 flex-col border-r border-gray-200">
+        <div class="shrink-0 border-b border-gray-200 p-3">
+          <button class="flex w-full items-center justify-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800" @click="showPalette = true">
+            <i class="fa-solid fa-plus"></i> Thêm block
           </button>
         </div>
-      </div>
-    </template>
+        <div class="flex-1 overflow-y-auto p-2">
+          <p v-if="!blocks.length" class="px-2 py-4 text-center text-xs text-gray-400">Chưa có block nào.</p>
+          <div
+            v-for="(block, index) in blocks"
+            :key="block.id"
+            class="group mb-1 flex cursor-pointer items-center gap-2 rounded-lg px-2 py-2 transition"
+            :class="[
+              selectedId === block.id ? 'bg-green-50 ring-1 ring-green-300' : 'hover:bg-gray-50',
+              dragOverIndex === index ? 'ring-2 ring-green-400' : '',
+              block.isVisible ? '' : 'opacity-50',
+            ]"
+            draggable="true"
+            @dragstart="onDragStart(index)"
+            @dragover.prevent="dragOverIndex = index"
+            @drop.prevent="onDrop(index)"
+            @dragend="onDragEnd"
+            @click="selectedId = block.id"
+          >
+            <i class="fa-solid fa-grip-vertical cursor-grab text-gray-300 group-hover:text-gray-400"></i>
+            <span class="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-green-50 text-xs text-green-700"><i :class="registry[block.blockType]?.icon || 'fa-solid fa-cube'"></i></span>
+            <div class="min-w-0 flex-1">
+              <p class="truncate text-xs font-semibold text-gray-700">{{ registry[block.blockType]?.label || block.blockType }}</p>
+              <p class="truncate text-[0.68rem] text-gray-400">{{ blockPreviewText(block) }}</p>
+            </div>
+            <i v-if="!block.isVisible" class="fa-solid fa-eye-slash text-[0.7rem] text-orange-400" title="Đang ẩn"></i>
+          </div>
+        </div>
+      </aside>
+
+      <!-- Center: live canvas -->
+      <BuilderCanvas
+        class="min-w-0 flex-1"
+        :blocks="blocks"
+        :selected-id="selectedId"
+        :viewport="viewport"
+        @select="selectedId = $event"
+        @move="move"
+        @duplicate="duplicateBlock"
+        @delete="removeBlock"
+        @toggle-visible="toggleVisible"
+        @update:viewport="viewport = $event"
+      />
+
+      <!-- Right: property panel -->
+      <aside class="w-80 shrink-0 border-l border-gray-200">
+        <PropertyPanel :block="selectedBlock" />
+      </aside>
+    </div>
 
     <!-- Block palette drawer -->
     <div v-if="showPalette" class="fixed inset-0 z-50 flex justify-end bg-black/40" @click.self="showPalette = false">
       <div class="h-full w-full max-w-md overflow-y-auto bg-white p-6 shadow-xl">
-        <div class="flex items-center justify-between mb-4">
+        <div class="mb-4 flex items-center justify-between">
           <h2 class="text-lg font-bold text-gray-800">Thêm block</h2>
           <button class="text-gray-400 hover:text-gray-600" @click="showPalette = false"><i class="fa-solid fa-xmark text-xl"></i></button>
         </div>
-
         <div v-for="(group, cat) in grouped" :key="cat" class="mb-6">
           <h3 class="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">{{ cat === 'section' ? 'Khối trang chủ' : 'Khối nội dung' }}</h3>
           <div class="grid grid-cols-2 gap-2">
@@ -121,114 +116,33 @@
       </div>
     </div>
 
-    <!-- Edit drawer -->
-    <div v-if="editing" class="fixed inset-0 z-50 flex justify-end bg-black/40" @click.self="closeEdit">
-      <div class="h-full w-full max-w-lg overflow-y-auto bg-white p-6 shadow-xl">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-lg font-bold text-gray-800">
-            <i :class="registry[editing.blockType]?.icon" class="mr-2 text-green-700"></i>
-            {{ registry[editing.blockType]?.label || editing.blockType }}
-          </h2>
-          <button class="text-gray-400 hover:text-gray-600" @click="closeEdit"><i class="fa-solid fa-xmark text-xl"></i></button>
-        </div>
-
-        <div class="space-y-4">
-          <div v-for="field in editFields" :key="field.key">
-            <label class="block text-sm font-semibold text-gray-700 mb-1">{{ field.label }}</label>
-
-            <input
-              v-if="field.type === 'text' || field.type === 'url'"
-              v-model="editData[field.key]"
-              type="text"
-              :placeholder="field.placeholder || ''"
-              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
-            />
-
-            <input
-              v-else-if="field.type === 'number'"
-              v-model.number="editData[field.key]"
-              type="number"
-              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
-            />
-
-            <textarea
-              v-else-if="field.type === 'textarea'"
-              v-model="editData[field.key]"
-              rows="3"
-              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
-            ></textarea>
-
-            <textarea
-              v-else-if="field.type === 'richtext'"
-              v-model="editData[field.key]"
-              rows="8"
-              class="w-full rounded-lg border border-gray-300 px-3 py-2 font-mono text-xs outline-none focus:border-green-600"
-            ></textarea>
-
-            <select
-              v-else-if="field.type === 'select'"
-              v-model="editData[field.key]"
-              class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
-            >
-              <option v-for="opt in field.options" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
-            </select>
-
-            <div v-else-if="field.type === 'image'" class="flex items-center gap-3">
-              <div v-if="editData[field.key]" class="h-16 w-24 overflow-hidden rounded-lg border border-gray-200">
-                <img :src="editData[field.key]" class="h-full w-full object-cover" />
-              </div>
-              <button class="rounded-lg border border-gray-300 px-3 py-2 text-sm font-semibold text-gray-700 hover:bg-gray-50" @click="pickImage(field.key)">
-                <i class="fa-solid fa-image mr-1"></i> Chọn ảnh
-              </button>
-              <button v-if="editData[field.key]" class="text-sm text-red-500 hover:underline" @click="editData[field.key] = ''">Xóa</button>
-            </div>
-
-            <p v-if="field.help" class="mt-1 text-xs text-gray-400">{{ field.help }}</p>
-          </div>
-        </div>
-
-        <div class="mt-6 flex justify-end gap-2 border-t border-gray-100 pt-4">
-          <button class="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100" @click="closeEdit">Hủy</button>
-          <button
-            class="inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50"
-            :disabled="savingBlock"
-            @click="saveBlock"
-          >
-            <i v-if="savingBlock" class="fa-solid fa-spinner fa-spin"></i>
-            Lưu thay đổi
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <!-- Meta drawer -->
+    <!-- Meta modal -->
     <div v-if="showMeta" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showMeta = false">
       <div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
-        <h2 class="text-lg font-bold text-gray-800 mb-4">Cấu hình trang</h2>
+        <h2 class="mb-4 text-lg font-bold text-gray-800">Cấu hình trang</h2>
         <div class="space-y-4">
           <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-1">Tiêu đề trang</label>
+            <label class="mb-1 block text-sm font-semibold text-gray-700">Tiêu đề trang</label>
             <input v-model="metaForm.title" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600" />
           </div>
           <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-1">Đường dẫn (slug)</label>
+            <label class="mb-1 block text-sm font-semibold text-gray-700">Đường dẫn (slug)</label>
             <input v-model="metaForm.slug" type="text" :disabled="page?.isSystem" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600 disabled:bg-gray-100 disabled:text-gray-400" />
             <p v-if="page?.isSystem" class="mt-1 text-xs text-gray-400">Trang hệ thống không thể đổi đường dẫn.</p>
           </div>
           <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-1">SEO Title</label>
+            <label class="mb-1 block text-sm font-semibold text-gray-700">SEO Title</label>
             <input v-model="metaForm.seoTitle" type="text" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600" />
           </div>
           <div>
-            <label class="block text-sm font-semibold text-gray-700 mb-1">SEO Description</label>
+            <label class="mb-1 block text-sm font-semibold text-gray-700">SEO Description</label>
             <textarea v-model="metaForm.seoDescription" rows="3" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"></textarea>
           </div>
         </div>
         <div class="mt-6 flex justify-end gap-2">
           <button class="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100" @click="showMeta = false">Hủy</button>
           <button class="inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50" :disabled="savingMeta" @click="saveMeta">
-            <i v-if="savingMeta" class="fa-solid fa-spinner fa-spin"></i>
-            Lưu
+            <i v-if="savingMeta" class="fa-solid fa-spinner fa-spin"></i> Lưu
           </button>
         </div>
       </div>
@@ -238,6 +152,8 @@
 
 <script setup lang="ts">
 import { BLOCK_REGISTRY, blocksByCategory, getDefaultData } from '~/utils/blocks/registry'
+import BuilderCanvas from '~/components/admin/builder/BuilderCanvas.vue'
+import PropertyPanel from '~/components/admin/builder/PropertyPanel.vue'
 
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
@@ -245,7 +161,6 @@ const route = useRoute()
 const pageId = computed(() => Number(route.params.id))
 const toast = useToast()
 const { confirm } = useConfirm()
-const { openPicker } = useImagePicker()
 
 const registry = BLOCK_REGISTRY
 const grouped = blocksByCategory()
@@ -255,6 +170,10 @@ const blocks = ref<any[]>([])
 const loading = ref(true)
 const loadError = ref('')
 
+const selectedId = ref<number | null>(null)
+const viewport = ref<'desktop' | 'tablet' | 'mobile'>('desktop')
+const selectedBlock = computed(() => blocks.value.find(b => b.id === selectedId.value) || null)
+
 const fetchPage = async () => {
   loading.value = true
   loadError.value = ''
@@ -262,7 +181,9 @@ const fetchPage = async () => {
     const res: any = await $fetch(`/api/admin/pages/${pageId.value}`)
     if (res.ok) {
       page.value = res.page
-      blocks.value = res.blocks
+      // Ensure every block has a data object so panel/canvas can bind reactively.
+      blocks.value = (res.blocks || []).map((b: any) => ({ ...b, data: b.data || {} }))
+      if (blocks.value.length) selectedId.value = blocks.value[0].id
     }
   } catch (err: any) {
     loadError.value = err?.data?.statusMessage || 'Không tải được trang.'
@@ -271,10 +192,9 @@ const fetchPage = async () => {
   }
 }
 
-// ── Block preview text for the list row ──
 const blockPreviewText = (block: any) => {
   const d = block.data || {}
-  return d.title || d.text || d.badge || d.html?.replace(/<[^>]+>/g, '').slice(0, 60) || '—'
+  return d.title || d.text || d.badge || d.titleLine1 || d.html?.replace(/<[^>]+>/g, '').slice(0, 40) || '—'
 }
 
 // ── Palette / add ──
@@ -288,7 +208,8 @@ const addBlock = async (type: string) => {
       body: { blockType: type, data: getDefaultData(type) },
     })
     if (res.ok) {
-      blocks.value.push(res.block)
+      blocks.value.push({ ...res.block, data: res.block.data || {} })
+      selectedId.value = res.block.id
       showPalette.value = false
       toast.success('Đã thêm block.')
     }
@@ -299,79 +220,81 @@ const addBlock = async (type: string) => {
   }
 }
 
-// ── Edit drawer ──
-const editing = ref<any>(null)
-const editData = reactive<Record<string, any>>({})
-const savingBlock = ref(false)
-const editFields = computed(() => (editing.value ? registry[editing.value.blockType]?.fields || [] : []))
-
-const openEdit = (block: any) => {
-  editing.value = block
-  // Deep copy current data into editData; serialize array/object fields to JSON text for textarea editing.
-  const raw = { ...(block.data || {}) }
-  Object.keys(editData).forEach(k => delete editData[k])
-  const fields = registry[block.blockType]?.fields || []
-  for (const f of fields) {
-    let v = raw[f.key]
-    if ((f.type === 'textarea' || f.type === 'richtext') && v !== null && typeof v === 'object') {
-      v = JSON.stringify(v, null, 2)
-    }
-    editData[f.key] = v ?? (f.type === 'number' ? 0 : '')
-  }
-}
-
-const closeEdit = () => {
-  editing.value = null
-}
-
-const pickImage = (key: string) => {
-  openPicker({ onSelect: (img: any) => { editData[key] = img.url } })
-}
-
-const saveBlock = async () => {
-  if (!editing.value) return
-  savingBlock.value = true
+// ── Duplicate ──
+const duplicateBlock = async (block: any) => {
   try {
-    // Reconstruct data, parsing JSON-textarea fields back into arrays/objects.
-    const fields = registry[editing.value.blockType]?.fields || []
-    const data: Record<string, any> = {}
-    for (const f of fields) {
-      let v = editData[f.key]
-      if ((f.type === 'textarea' || f.type === 'richtext') && typeof v === 'string' && looksLikeJson(v)) {
-        try { v = JSON.parse(v) } catch { /* keep string if invalid JSON */ }
-      }
-      data[f.key] = v
-    }
-    const res: any = await $fetch(`/api/admin/pages/${pageId.value}/blocks/${editing.value.id}`, {
-      method: 'PUT',
-      body: { data },
+    const res: any = await $fetch(`/api/admin/pages/${pageId.value}/blocks`, {
+      method: 'POST',
+      body: { blockType: block.blockType, data: JSON.parse(JSON.stringify(block.data || {})) },
     })
     if (res.ok) {
-      const idx = blocks.value.findIndex(b => b.id === editing.value.id)
-      if (idx !== -1) blocks.value[idx] = res.block
-      toast.success('Đã lưu block.')
-      closeEdit()
+      blocks.value.push({ ...res.block, data: res.block.data || {} })
+      selectedId.value = res.block.id
+      toast.success('Đã nhân đôi block.')
     }
   } catch (err: any) {
+    toast.error(err?.data?.statusMessage || 'Không nhân đôi được block.')
+  }
+}
+// ── Auto-save (debounced) of the selected block's data ──
+type SaveStatus = 'idle' | 'dirty' | 'saving' | 'saved' | 'error'
+const status = ref<SaveStatus>('idle')
+let saveTimer: ReturnType<typeof setTimeout> | null = null
+let lastSnapshot = ''
+
+const saveState = computed(() => {
+  switch (status.value) {
+    case 'saving': return { text: 'Đang lưu…', icon: 'fa-solid fa-spinner fa-spin', color: 'text-gray-500' }
+    case 'saved': return { text: 'Đã lưu', icon: 'fa-solid fa-circle-check', color: 'text-green-600' }
+    case 'dirty': return { text: 'Chưa lưu', icon: 'fa-solid fa-pen', color: 'text-orange-500' }
+    case 'error': return { text: 'Lỗi lưu', icon: 'fa-solid fa-triangle-exclamation', color: 'text-red-600' }
+    default: return { text: 'Tự động lưu', icon: 'fa-solid fa-cloud', color: 'text-gray-400' }
+  }
+})
+
+// When selection changes, snapshot its data so we don't fire a spurious save.
+watch(selectedId, () => {
+  lastSnapshot = selectedBlock.value ? JSON.stringify(selectedBlock.value.data) : ''
+  status.value = 'idle'
+})
+
+// Deep-watch the selected block's data → debounce a PUT.
+watch(
+  () => selectedBlock.value?.data,
+  (data) => {
+    if (!selectedBlock.value || !data) return
+    const snap = JSON.stringify(data)
+    if (snap === lastSnapshot) return
+    status.value = 'dirty'
+    if (saveTimer) clearTimeout(saveTimer)
+    const target = selectedBlock.value
+    saveTimer = setTimeout(() => persistBlockData(target, snap), 800)
+  },
+  { deep: true }
+)
+
+const persistBlockData = async (block: any, snap: string) => {
+  status.value = 'saving'
+  try {
+    const res: any = await $fetch(`/api/admin/pages/${pageId.value}/blocks/${block.id}`, {
+      method: 'PUT',
+      body: { data: block.data },
+    })
+    if (res.ok) {
+      if (block.id === selectedId.value) lastSnapshot = snap
+      status.value = 'saved'
+    }
+  } catch (err: any) {
+    status.value = 'error'
     toast.error(err?.data?.statusMessage || 'Không lưu được block.')
-  } finally {
-    savingBlock.value = false
   }
 }
 
-const looksLikeJson = (s: string) => {
-  const t = s.trim()
-  return (t.startsWith('[') && t.endsWith(']')) || (t.startsWith('{') && t.endsWith('}'))
-}
-
-// ── Visibility toggle ──
+// ── Visibility ──
 const toggleVisible = async (block: any) => {
   const next = !block.isVisible
   try {
-    await $fetch(`/api/admin/pages/${pageId.value}/blocks/${block.id}`, {
-      method: 'PUT',
-      body: { isVisible: next },
-    })
+    await $fetch(`/api/admin/pages/${pageId.value}/blocks/${block.id}`, { method: 'PUT', body: { isVisible: next } })
     block.isVisible = next
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Không cập nhật được.')
@@ -380,26 +303,21 @@ const toggleVisible = async (block: any) => {
 
 // ── Delete ──
 const removeBlock = async (block: any) => {
-  const ok = await confirm({
-    title: 'Xóa block',
-    message: `Xóa block "${registry[block.blockType]?.label || block.blockType}"?`,
-    danger: true,
-    confirmLabel: 'Xóa',
-  })
+  const ok = await confirm({ title: 'Xóa block', message: `Xóa block "${registry[block.blockType]?.label || block.blockType}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
     await $fetch(`/api/admin/pages/${pageId.value}/blocks/${block.id}`, { method: 'DELETE' })
     blocks.value = blocks.value.filter(b => b.id !== block.id)
+    if (selectedId.value === block.id) selectedId.value = blocks.value[0]?.id ?? null
     toast.success('Đã xóa block.')
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Không xóa được block.')
   }
 }
 
-// ── Reorder (drag-and-drop + arrows) ──
+// ── Reorder (drag in navigator + arrows in canvas) ──
 const dragIndex = ref<number | null>(null)
 const dragOverIndex = ref<number | null>(null)
-
 const onDragStart = (index: number) => { dragIndex.value = index }
 const onDragEnd = () => { dragIndex.value = null; dragOverIndex.value = null }
 const onDrop = (index: number) => {
@@ -409,7 +327,6 @@ const onDrop = (index: number) => {
   onDragEnd()
   persistOrder()
 }
-
 const move = (index: number, dir: number) => {
   const target = index + dir
   if (target < 0 || target >= blocks.value.length) return
@@ -417,15 +334,10 @@ const move = (index: number, dir: number) => {
   ;[arr[index], arr[target]] = [arr[target], arr[index]]
   persistOrder()
 }
-
 const persistOrder = async () => {
   const orders = blocks.value.map((b, i) => ({ id: b.id, displayOrder: i + 1 }))
-  // Optimistic: local order already updated. Persist and toast on failure.
   try {
-    await $fetch(`/api/admin/pages/${pageId.value}/blocks/reorder`, {
-      method: 'PUT',
-      body: { orders },
-    })
+    await $fetch(`/api/admin/pages/${pageId.value}/blocks/reorder`, { method: 'PUT', body: { orders } })
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Không lưu được thứ tự. Đang tải lại.')
     await fetchPage()
@@ -436,7 +348,6 @@ const persistOrder = async () => {
 const showMeta = ref(false)
 const savingMeta = ref(false)
 const metaForm = reactive({ title: '', slug: '', seoTitle: '', seoDescription: '' })
-
 const openMeta = () => {
   metaForm.title = page.value?.title || ''
   metaForm.slug = page.value?.slug || ''
@@ -444,15 +355,10 @@ const openMeta = () => {
   metaForm.seoDescription = page.value?.seoDescription || ''
   showMeta.value = true
 }
-
 const saveMeta = async () => {
   savingMeta.value = true
   try {
-    const body: any = {
-      title: metaForm.title,
-      seoTitle: metaForm.seoTitle,
-      seoDescription: metaForm.seoDescription,
-    }
+    const body: any = { title: metaForm.title, seoTitle: metaForm.seoTitle, seoDescription: metaForm.seoDescription }
     if (!page.value?.isSystem) body.slug = metaForm.slug
     const res: any = await $fetch(`/api/admin/pages/${pageId.value}`, { method: 'PUT', body })
     if (res.ok) {
