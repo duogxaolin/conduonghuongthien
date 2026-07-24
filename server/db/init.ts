@@ -701,6 +701,10 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  // Contact-form builder additive columns — free-form answers + originating form title.
+  await ensureColumn(db, database, 'submissions', 'answers', 'JSON NULL')
+  await ensureColumn(db, database, 'submissions', 'form_title', 'VARCHAR(255) NULL')
+
   // Governed chatbot settings and knowledge bank
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`chatbot_settings\` (

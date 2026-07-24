@@ -28,10 +28,30 @@
             <button v-if="item[col.key]" class="text-xs text-red-500 hover:underline" @click="item[col.key] = ''">Xóa</button>
           </div>
 
+          <select
+            v-else-if="col.type === 'select'"
+            v-model="item[col.key]"
+            class="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm outline-none focus:border-green-600"
+          >
+            <option v-for="opt in (col.options || [])" :key="opt.value" :value="opt.value">{{ opt.label }}</option>
+          </select>
+
+          <label v-else-if="col.type === 'toggle'" class="inline-flex cursor-pointer items-center gap-2">
+            <input type="checkbox" v-model="item[col.key]" class="h-4 w-4 rounded border-gray-300 text-green-600 focus:ring-green-600" />
+            <span class="text-sm text-gray-600">{{ item[col.key] ? 'Bật' : 'Tắt' }}</span>
+          </label>
+
+          <textarea
+            v-else-if="col.type === 'textarea'"
+            v-model="item[col.key]"
+            rows="3"
+            class="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm outline-none focus:border-green-600"
+          ></textarea>
+
           <input
             v-else
             v-model="item[col.key]"
-            :type="col.type === 'url' ? 'text' : 'text'"
+            type="text"
             class="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm outline-none focus:border-green-600"
           />
         </div>
@@ -48,14 +68,23 @@
 </template>
 
 <script setup lang="ts">
-type Col = { key: string; label: string; type: 'text' | 'url' | 'image' }
+type Col = {
+  key: string
+  label: string
+  type: 'text' | 'url' | 'image' | 'textarea' | 'select' | 'toggle'
+  options?: Array<{ value: string; label: string }>
+}
 
 const props = defineProps<{ items: any[]; schema: Col[] }>()
 defineEmits<{ (e: 'pick-image', cb: (url: string) => void): void }>()
 
 const addItem = () => {
-  const blank: Record<string, string> = {}
-  for (const col of props.schema) blank[col.key] = ''
+  const blank: Record<string, unknown> = {}
+  for (const col of props.schema) {
+    if (col.type === 'toggle') blank[col.key] = false
+    else if (col.type === 'select') blank[col.key] = col.options?.[0]?.value ?? ''
+    else blank[col.key] = ''
+  }
   props.items.push(blank)
 }
 

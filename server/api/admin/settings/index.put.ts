@@ -22,6 +22,10 @@ export default defineEventHandler(async (event) => {
     if (key === 'r2_secret_key' && value === '********') {
       continue
     }
+    // Same masking guard for the SMTP password (mirrors r2_secret_key).
+    if (key === 'smtp_pass' && value === '********') {
+      continue
+    }
 
     const strValue = value === null || value === undefined ? '' : String(value)
     await db.insert(settings).values({

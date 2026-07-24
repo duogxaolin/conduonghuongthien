@@ -16,6 +16,10 @@ export default defineEventHandler(async (event) => {
     // Mask sensitive keys for safety unless superadmin
     if (s.key === 'r2_secret_key' && s.value && !adminUser.isSuperAdmin) {
       settingsMap[s.key] = '********'
+    } else if (s.key === 'smtp_pass' && s.value) {
+      // SMTP password is always masked on read (mirrors r2_secret_key); the
+      // real value never leaves the server. Write-side skips the mask token.
+      settingsMap[s.key] = '********'
     } else {
       settingsMap[s.key] = s.value
     }

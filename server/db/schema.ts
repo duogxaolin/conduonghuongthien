@@ -225,6 +225,10 @@ export const submissions = mysqlTable('submissions', {
   email:     varchar('email', { length: 255 }),
   address:   text('address'),
   message:   text('message'),
+  // Free-form contact-form answers that don't map to a fixed column: [{ label, value }]
+  answers:   json('answers'),
+  // Title of the form/block that produced this submission.
+  formTitle: varchar('form_title', { length: 255 }),
   createdAt: timestamp('created_at').defaultNow(),
 })
 

@@ -25,24 +25,44 @@
           </div>
           <form @submit.prevent="submitForm" class="bg-white p-10 sm:p-6 rounded-lg shadow-md border border-[#E2E8DF]">
             <h3 v-if="hasInfo" class="text-[1.3rem] font-bold text-[#4A6741] mb-6">{{ d.title || 'Đăng ký nhận trợ giúp' }}</h3>
-            <div class="mb-5">
-              <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">Họ và tên</label>
-              <input type="text" v-model="form.name" required placeholder="Nguyễn Văn A" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+
+            <!-- Dynamic fields -->
+            <div v-for="field in renderFields" :key="field.id" class="mb-5">
+              <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">
+                {{ field.label }}<span v-if="field.required" class="text-[#b71c1c]"> *</span>
+              </label>
+
+              <textarea
+                v-if="field.type === 'textarea'"
+                rows="4"
+                v-model="values[field.id]"
+                :placeholder="field.placeholder || ''"
+                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"
+                :class="errors[field.id] ? 'border-[#f5c6cb]' : 'border-[#E2E8DF]'"
+              ></textarea>
+
+              <select
+                v-else-if="field.type === 'select'"
+                v-model="values[field.id]"
+                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741] bg-white"
+                :class="errors[field.id] ? 'border-[#f5c6cb]' : 'border-[#E2E8DF]'"
+              >
+                <option value="">-- Chọn --</option>
+                <option v-for="(opt, oi) in selectOptions(field)" :key="oi" :value="opt">{{ opt }}</option>
+              </select>
+
+              <input
+                v-else
+                :type="inputType(field.type)"
+                v-model="values[field.id]"
+                :placeholder="field.placeholder || ''"
+                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"
+                :class="errors[field.id] ? 'border-[#f5c6cb]' : 'border-[#E2E8DF]'"
+              />
+
+              <p v-if="errors[field.id]" class="mt-1.5 text-[0.78rem] font-semibold text-[#b71c1c]">{{ errors[field.id] }}</p>
             </div>
-            <div class="grid grid-cols-1 gap-5 mb-5 sm:grid-cols-2">
-              <div>
-                <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">Số điện thoại</label>
-                <input type="tel" v-model="form.phone" required placeholder="09xx xxx xxx" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
-              </div>
-              <div>
-                <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">Tỉnh / Thành phố</label>
-                <input type="text" v-model="form.city" required placeholder="Hà Nội" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
-              </div>
-            </div>
-            <div class="mb-5">
-              <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">Nội dung cần hỗ trợ</label>
-              <textarea rows="4" v-model="form.message" required placeholder="Mô tả ngắn gọn vấn đề bạn cần được tư vấn..." class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"></textarea>
-            </div>
+
             <button type="submit" class="btn btn-primary w-full text-lg" :disabled="submitStatus === 'loading'">
               {{ submitStatus === 'loading' ? 'Đang gửi...' : 'Gửi đăng ký' }}
             </button>
@@ -72,21 +92,94 @@ const d = computed(() => props.block?.data || {})
 const infoRows = computed(() => Array.isArray(d.value.infoRows) ? d.value.infoRows.filter((r) => r && (r.label || r.value)) : [])
 const hasInfo = computed(() => !!d.value.showInfo && (!!d.value.infoTitle || infoRows.value.length > 0 || !!d.value.noteTitle || !!d.value.noteText))
 
-const form = reactive({ name: '', phone: '', city: '', message: '' })
+// Legacy fallback: blocks created before the field builder have no data.fields.
+// Reproduce the original four-field layout so those pages stay pixel-stable.
+const LEGACY_FIELDS = [
+  { id: 'f_name', label: 'Họ và tên', type: 'text', required: true, placeholder: 'Nguyễn Văn A', map: 'name' },
+  { id: 'f_phone', label: 'Số điện thoại', type: 'tel', required: true, placeholder: '09xx xxx xxx', map: 'phone' },
+  { id: 'f_city', label: 'Tỉnh / Thành phố', type: 'text', required: true, placeholder: 'Hà Nội', map: 'address' },
+  { id: 'f_message', label: 'Nội dung cần hỗ trợ', type: 'textarea', required: true, placeholder: 'Mô tả ngắn gọn vấn đề bạn cần được tư vấn...', map: 'message' },
+]
+
+const VALID_TYPES = ['text', 'email', 'tel', 'number', 'textarea', 'select']
+
+// Normalize configured fields; assign stable ids for rendering/validation.
+const renderFields = computed(() => {
+  const raw = Array.isArray(d.value.fields) ? d.value.fields.filter((f) => f && f.label) : []
+  const source = raw.length ? raw : LEGACY_FIELDS
+  return source.map((f, i) => ({
+    id: String(f.id || `f_${i}`),
+    label: String(f.label || ''),
+    type: VALID_TYPES.includes(f.type) ? f.type : 'text',
+    required: !!f.required,
+    placeholder: f.placeholder || '',
+    map: f.map || 'none',
+    optionsText: f.optionsText || '',
+  }))
+})
+
+const selectOptions = (field) => String(field.optionsText || '').split('\n').map((s) => s.trim()).filter(Boolean)
+const inputType = (type) => (type === 'email' ? 'email' : type === 'tel' ? 'tel' : type === 'number' ? 'number' : 'text')
+
+const values = reactive({})
+const errors = reactive({})
 const submitStatus = ref(null)
 const submitMessage = ref('')
 
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
+const PHONE_RE = /^[0-9+()\-\s.]{7,20}$/
+const NUMBER_RE = /^-?\d+(\.\d+)?$/
+
+const validate = () => {
+  for (const k of Object.keys(errors)) delete errors[k]
+  let ok = true
+  for (const field of renderFields.value) {
+    const val = String(values[field.id] ?? '').trim()
+    if (field.required && !val) {
+      errors[field.id] = 'Trường này là bắt buộc.'
+      ok = false
+      continue
+    }
+    if (!val) continue
+    if (field.type === 'email' && !EMAIL_RE.test(val)) { errors[field.id] = 'Email không hợp lệ.'; ok = false }
+    else if (field.type === 'tel' && !PHONE_RE.test(val)) { errors[field.id] = 'Số điện thoại không hợp lệ.'; ok = false }
+    else if (field.type === 'number' && !NUMBER_RE.test(val)) { errors[field.id] = 'Vui lòng nhập một số hợp lệ.'; ok = false }
+  }
+  return ok
+}
+
 const submitForm = async () => {
-  submitStatus.value = 'loading'
   submitMessage.value = ''
+  if (!validate()) {
+    submitStatus.value = 'error'
+    submitMessage.value = 'Vui lòng kiểm tra lại các trường được đánh dấu.'
+    return
+  }
+  submitStatus.value = 'loading'
   try {
+    const answers = renderFields.value.map((field) => ({
+      id: field.id,
+      label: field.label,
+      value: String(values[field.id] ?? '').trim(),
+      map: field.map,
+      type: field.type,
+      required: field.required,
+    }))
     await $fetch('/api/submissions', {
       method: 'POST',
-      body: { type: 'support', name: form.name, phone: form.phone, city: form.city, message: form.message },
+      body: {
+        type: 'support',
+        formTitle: d.value.title || '',
+        recipientEmail: d.value.recipientEmail || '',
+        answers,
+      },
     })
     submitStatus.value = 'success'
-    submitMessage.value = `Cám ơn ${form.name}. Thông tin đăng ký của bạn đã được ghi nhận. Cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ qua số ${form.phone}.`
-    form.name = ''; form.phone = ''; form.city = ''; form.message = ''
+    const named = answers.find((a) => a.map === 'name')?.value
+    submitMessage.value = named
+      ? `Cám ơn ${named}. Thông tin đăng ký của bạn đã được ghi nhận. Cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ.`
+      : 'Thông tin đăng ký của bạn đã được ghi nhận. Cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ.'
+    for (const field of renderFields.value) values[field.id] = ''
   } catch (err) {
     submitStatus.value = 'error'
     submitMessage.value = err?.data?.statusMessage || 'Có lỗi xảy ra, vui lòng thử lại hoặc gọi hotline 0903.480.985.'

@@ -7,7 +7,6 @@ definePageMeta({
 const submissions = ref<any[]>([])
 const loading = ref(true)
 const search = ref('')
-const typeFilter = ref('')
 const selectedSub = ref<any>(null)
 const toast = useToast()
 
@@ -23,16 +22,29 @@ const fetchSubmissions = async () => {
   }
 }
 
+// The API returns the raw submissions row shape (fullName/phone/email/address/
+// message/answers/formTitle/createdAt) — filter against those real columns.
 const filteredSubmissions = computed(() => {
-  return submissions.value.filter(s => {
-    const matchSearch = !search.value ||
-      s.name?.toLowerCase().includes(search.value.toLowerCase()) ||
-      s.phone?.includes(search.value) ||
-      s.city?.toLowerCase().includes(search.value.toLowerCase())
-    const matchType = !typeFilter.value || s.type === typeFilter.value
-    return matchSearch && matchType
-  })
+  const q = search.value.trim().toLowerCase()
+  if (!q) return submissions.value
+  return submissions.value.filter(s =>
+    s.fullName?.toLowerCase().includes(q) ||
+    s.phone?.includes(search.value.trim()) ||
+    s.address?.toLowerCase().includes(q) ||
+    s.formTitle?.toLowerCase().includes(q)
+  )
 })
+
+// Free-form answers whose fields weren't mapped to a fixed column. Stored as
+// JSON [{label,value}]; may be null on legacy rows or a stringified JSON.
+const extraAnswers = (sub: any): Array<{ label: string; value: string }> => {
+  const raw = sub?.answers
+  if (!raw) return []
+  const arr = typeof raw === 'string' ? (() => { try { return JSON.parse(raw) } catch { return [] } })() : raw
+  return Array.isArray(arr) ? arr.filter((a: any) => a && (a.label || a.value)) : []
+}
+
+const fmtDate = (v: any) => (v ? new Date(v).toLocaleString('vi-VN') : '—')
 
 onMounted(() => { fetchSubmissions() })
 </script>
@@ -50,17 +62,9 @@ onMounted(() => { fetchSubmissions() })
       <input
         type="text"
         v-model="search"
-        placeholder="Tìm theo họ tên, số điện thoại, tỉnh thành..."
+        placeholder="Tìm theo họ tên, số điện thoại, địa chỉ, tiêu đề biểu mẫu..."
         class="flex-1 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
       />
-      <select
-        v-model="typeFilter"
-        class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
-      >
-        <option value="">Tất cả loại yêu cầu</option>
-        <option value="support">Tư vấn Hỗ trợ (Tái hòa nhập)</option>
-        <option value="contact">Liên hệ thông thường</option>
-      </select>
     </div>
 
     <!-- Table Card -->
@@ -73,8 +77,8 @@ onMounted(() => { fetchSubmissions() })
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">ID</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Họ và tên</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Số điện thoại</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Tỉnh / Thành</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Loại yêu cầu</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Địa chỉ</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Biểu mẫu</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Ngày gửi</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thao tác</th>
             </tr>
@@ -82,19 +86,12 @@ onMounted(() => { fetchSubmissions() })
           <tbody>
             <tr v-for="s in filteredSubmissions" :key="s.id" class="hover:bg-[#fafcfa]">
               <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#667768]">#{{ s.id }}</td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee] font-bold text-[#122815]">{{ s.name }}</td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee]"><code class="bg-[#f4f7f4] px-1.5 py-0.5 rounded text-xs">{{ s.phone }}</code></td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#2c3e2e]">{{ s.city || '—' }}</td>
-              <td class="px-4 py-3.5 border-b border-[#eef2ee]">
-                <span
-                  class="px-2 py-1 rounded-md text-[0.75rem] font-bold"
-                  :class="s.type === 'support' ? 'bg-[#e4f2e5] text-[#2c6e33]' : 'bg-[#eef2f8] text-[#1a4f8b]'"
-                >
-                  {{ s.type === 'support' ? 'Hỗ trợ tái hòa nhập' : 'Liên hệ' }}
-                </span>
-              </td>
+              <td class="px-4 py-3.5 border-b border-[#eef2ee] font-bold text-[#122815]">{{ s.fullName || '—' }}</td>
+              <td class="px-4 py-3.5 border-b border-[#eef2ee]"><code class="bg-[#f4f7f4] px-1.5 py-0.5 rounded text-xs">{{ s.phone || '—' }}</code></td>
+              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#2c3e2e]">{{ s.address || '—' }}</td>
+              <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#2c3e2e]">{{ s.formTitle || '—' }}</td>
               <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#667768] text-[0.82rem] whitespace-nowrap">
-                {{ new Date(s.submittedAt).toLocaleString('vi-VN') }}
+                {{ fmtDate(s.createdAt) }}
               </td>
               <td class="px-4 py-3.5 border-b border-[#eef2ee]">
                 <button
@@ -114,14 +111,16 @@ onMounted(() => { fetchSubmissions() })
     <div v-if="selectedSub" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4" @click.self="selectedSub = null">
       <div class="bg-white rounded-2xl p-7 w-full max-w-[520px] max-h-[90vh] overflow-y-auto">
         <h3 class="text-[1.15rem] font-extrabold text-[#122815] m-0 mb-1">📋 Chi tiết Đơn đăng ký #{{ selectedSub.id }}</h3>
-        <p class="text-[0.82rem] text-[#667768] m-0 mb-5">Gửi lúc: {{ new Date(selectedSub.submittedAt).toLocaleString('vi-VN') }}</p>
+        <p class="text-[0.82rem] text-[#667768] m-0 mb-1">Gửi lúc: {{ fmtDate(selectedSub.createdAt) }}</p>
+        <p v-if="selectedSub.formTitle" class="text-[0.85rem] text-[#2c6e33] font-bold m-0 mb-5">Biểu mẫu: {{ selectedSub.formTitle }}</p>
+        <div v-else class="mb-5"></div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <div class="flex flex-col gap-1">
+          <div v-if="selectedSub.fullName" class="flex flex-col gap-1">
             <span class="text-[0.78rem] text-[#667768] font-bold">Họ và tên:</span>
-            <strong class="text-[#122815]">{{ selectedSub.name }}</strong>
+            <strong class="text-[#122815]">{{ selectedSub.fullName }}</strong>
           </div>
-          <div class="flex flex-col gap-1">
+          <div v-if="selectedSub.phone" class="flex flex-col gap-1">
             <span class="text-[0.78rem] text-[#667768] font-bold">Số điện thoại:</span>
             <code class="bg-[#f4f7f4] px-2 py-1 rounded text-sm self-start">{{ selectedSub.phone }}</code>
           </div>
@@ -129,17 +128,18 @@ onMounted(() => { fetchSubmissions() })
             <span class="text-[0.78rem] text-[#667768] font-bold">Email:</span>
             <span>{{ selectedSub.email }}</span>
           </div>
-          <div v-if="selectedSub.city" class="flex flex-col gap-1">
-            <span class="text-[0.78rem] text-[#667768] font-bold">Tỉnh / Thành phố:</span>
-            <span>{{ selectedSub.city }}</span>
-          </div>
           <div v-if="selectedSub.address" class="flex flex-col gap-1 sm:col-span-2">
-            <span class="text-[0.78rem] text-[#667768] font-bold">Địa chỉ chi tiết:</span>
+            <span class="text-[0.78rem] text-[#667768] font-bold">Địa chỉ:</span>
             <span>{{ selectedSub.address }}</span>
           </div>
-          <div class="flex flex-col gap-1 sm:col-span-2">
+          <div v-if="selectedSub.message" class="flex flex-col gap-1 sm:col-span-2">
             <span class="text-[0.78rem] text-[#667768] font-bold">Nội dung yêu cầu / Hoàn cảnh:</span>
             <div class="bg-[#f8faf8] border border-[#e2ece3] px-3 py-3 rounded-lg text-[0.9rem] leading-relaxed whitespace-pre-wrap">{{ selectedSub.message }}</div>
+          </div>
+          <!-- Free-form answers (fields not mapped to a fixed column) -->
+          <div v-for="(a, i) in extraAnswers(selectedSub)" :key="i" class="flex flex-col gap-1 sm:col-span-2">
+            <span class="text-[0.78rem] text-[#667768] font-bold">{{ a.label }}:</span>
+            <span class="whitespace-pre-wrap">{{ a.value || '—' }}</span>
           </div>
         </div>
 

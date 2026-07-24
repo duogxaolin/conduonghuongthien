@@ -19,7 +19,13 @@ export interface EditorField {
   help?: string
   placeholder?: string
   /** For type: 'array' — column schema for each repeated item. */
-  itemSchema?: Array<{ key: string; label: string; type: 'text' | 'url' | 'image' }>
+  itemSchema?: Array<{
+    key: string
+    label: string
+    type: 'text' | 'url' | 'image' | 'textarea' | 'select' | 'toggle'
+    /** For column type 'select' — the static option list. */
+    options?: Array<{ value: string; label: string }>
+  }>
   /** For type: 'category' — content type whose categories populate the dropdown. */
   categoryType?: string
 }
@@ -304,9 +310,44 @@ export const BLOCK_REGISTRY: Record<string, BlockDefinition> = {
     label: 'Biểu mẫu liên hệ',
     icon: 'fa-solid fa-envelope',
     category: 'content',
-    defaultData: { title: 'Đăng ký nhận trợ giúp', showInfo: false, infoTitle: '', infoRows: [], noteTitle: '', noteText: '' },
+    defaultData: {
+      title: 'Đăng ký nhận trợ giúp',
+      recipientEmail: '',
+      // Default fields reproduce the legacy four-field layout so existing pages
+      // are visually unchanged. map targets the fixed submissions columns.
+      fields: [
+        { id: 'f_name', label: 'Họ và tên', type: 'text', required: true, placeholder: 'Nguyễn Văn A', map: 'name', optionsText: '' },
+        { id: 'f_phone', label: 'Số điện thoại', type: 'tel', required: true, placeholder: '09xx xxx xxx', map: 'phone', optionsText: '' },
+        { id: 'f_city', label: 'Tỉnh / Thành phố', type: 'text', required: true, placeholder: 'Hà Nội', map: 'address', optionsText: '' },
+        { id: 'f_message', label: 'Nội dung cần hỗ trợ', type: 'textarea', required: true, placeholder: 'Mô tả ngắn gọn vấn đề bạn cần được tư vấn...', map: 'message', optionsText: '' },
+      ],
+      showInfo: false, infoTitle: '', infoRows: [], noteTitle: '', noteText: '',
+    },
     fields: [
       { key: 'title', label: 'Tiêu đề biểu mẫu', type: 'text' },
+      { key: 'recipientEmail', label: 'Email nhận thông báo', type: 'text', help: 'Địa chỉ nhận email khi có đơn mới (cần cấu hình SMTP). Để trống = chỉ lưu vào hệ thống.' },
+      { key: 'fields', label: 'Các trường biểu mẫu', type: 'array', itemSchema: [
+        { key: 'label', label: 'Nhãn hiển thị', type: 'text' },
+        { key: 'type', label: 'Kiểu trường', type: 'select', options: [
+          { value: 'text', label: 'Văn bản (text)' },
+          { value: 'email', label: 'Email' },
+          { value: 'tel', label: 'Điện thoại (tel)' },
+          { value: 'number', label: 'Số (number)' },
+          { value: 'textarea', label: 'Đoạn văn (textarea)' },
+          { value: 'select', label: 'Chọn (select)' },
+        ] },
+        { key: 'required', label: 'Bắt buộc', type: 'toggle' },
+        { key: 'placeholder', label: 'Gợi ý (placeholder)', type: 'text' },
+        { key: 'map', label: 'Ánh xạ cột dữ liệu', type: 'select', options: [
+          { value: 'none', label: 'Không (lưu vào answers)' },
+          { value: 'name', label: 'Họ tên → full_name' },
+          { value: 'phone', label: 'Điện thoại → phone' },
+          { value: 'email', label: 'Email → email' },
+          { value: 'address', label: 'Địa chỉ → address' },
+          { value: 'message', label: 'Nội dung → message' },
+        ] },
+        { key: 'optionsText', label: 'Tùy chọn (mỗi dòng 1 mục — chỉ cho kiểu select)', type: 'textarea' },
+      ] },
       { key: 'showInfo', label: 'Bố cục 2 cột (hiện cột thông tin)', type: 'toggle' },
       { key: 'infoTitle', label: 'Cột thông tin — tiêu đề', type: 'text', help: 'Chỉ hiện khi bật bố cục 2 cột' },
       { key: 'infoRows', label: 'Cột thông tin — các dòng', type: 'array', itemSchema: [
