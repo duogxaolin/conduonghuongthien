@@ -131,10 +131,11 @@ async function seed() {
     { type: 'stats',          displayOrder: 2, isVisible: true, config: { stats: [{ value: '34', label: 'Tỉnh / Thành phố đồng hành' }, { value: '10.000+', label: 'Người hoàn lương được hỗ trợ' }, { value: '500+', label: 'Mô hình kinh tế tiêu biểu' }, { value: '24/7', label: 'Tư vấn pháp lý & Tâm lý miễn phí' }] } },
     { type: 'news',           displayOrder: 3, isVisible: true, config: { title: 'Tin nổi bật', maxItems: 5 } },
     { type: 'role_models',    displayOrder: 4, isVisible: true, config: { title: 'Tấm Gương Tiêu Biểu', subtitle: 'Nghị lực vươn lên', maxItems: 3 } },
-    { type: 'reintegration',  displayOrder: 5, isVisible: true, config: { title: 'Mô Hình Tái Hòa Nhập', subtitle: 'Sinh kế bền vững', maxItems: 3 } },
-    { type: 'documents',      displayOrder: 6, isVisible: true, config: { title: 'Văn bản Pháp luật Mới ban hành', maxItems: 6 } },
-    { type: 'support_form',   displayOrder: 7, isVisible: true, config: { title: 'Đăng Ký Tư Vấn & Hỗ Trợ Tái Hòa Nhập' } },
-    { type: 'links',          displayOrder: 8, isVisible: true, config: { title: 'Liên Kết Hữu Ích' } },
+    { type: 'quote',          displayOrder: 5, isVisible: true, config: { quote: 'Mỗi con người lầm lỡ đều xứng đáng có một cơ hội thứ hai để hướng thiện. Sự chung tay, đồng hành của gia đình và toàn xã hội chính là ánh dương thắp sáng nẻo về lương thiện.', cite: '— Đề án Tái hòa nhập cộng đồng, C11 Bộ Công an', bgImage: '/assets/hero_banner.jpg' } },
+    { type: 'reintegration',  displayOrder: 6, isVisible: true, config: { title: 'Mô Hình Tái Hòa Nhập', subtitle: 'Sinh kế bền vững', maxItems: 3 } },
+    { type: 'documents',      displayOrder: 7, isVisible: true, config: { title: 'Văn bản Pháp luật Mới ban hành', maxItems: 6 } },
+    { type: 'support_form',   displayOrder: 8, isVisible: true, config: { title: 'Đăng Ký Tư Vấn & Hỗ Trợ Tái Hòa Nhập' } },
+    { type: 'links',          displayOrder: 9, isVisible: true, config: { title: 'Liên Kết Hữu Ích' } },
   ]
 
   for (const section of defaultSections) {

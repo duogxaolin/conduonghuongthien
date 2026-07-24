@@ -295,8 +295,8 @@
     <div
       id="public-chatbot-dialog"
       ref="chatbotDialog"
-      class="chatbot-popup fixed bottom-[84px] right-3 w-[calc(100vw-24px)] max-w-[420px] h-[min(580px,calc(100dvh-110px))] bg-white rounded-[20px] shadow-[0_20px_50px_rgba(0,0,0,0.16),0_4px_16px_rgba(0,0,0,0.06)] flex flex-col z-[9500] overflow-hidden border border-black/[0.08] opacity-0 translate-y-5 scale-[0.96] pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none sm:right-6"
-      :class="{ 'is-open opacity-100 translate-y-0 scale-100 pointer-events-auto': isChatbotOpen }"
+      class="chatbot-popup fixed bottom-[84px] left-0 right-0 w-auto h-[min(85dvh,calc(100dvh-104px))] bg-white rounded-t-[20px] shadow-[0_20px_50px_rgba(0,0,0,0.16),0_4px_16px_rgba(0,0,0,0.06)] flex flex-col z-[9500] overflow-hidden border border-black/[0.08] opacity-0 translate-y-full scale-100 pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:left-auto md:right-6 md:bottom-6 md:w-[420px] md:max-w-[420px] md:h-[min(580px,calc(100dvh-110px))] md:rounded-[20px] md:translate-y-5 md:scale-[0.96]"
+      :class="{ 'is-open opacity-100 !translate-y-0 !scale-100 pointer-events-auto': isChatbotOpen }"
       role="dialog"
       aria-modal="true"
       aria-labelledby="public-chatbot-title"
@@ -405,7 +405,7 @@
     <!-- Chatbot Toggle Button -->
     <button
       ref="chatToggleButton"
-      class="chatbot-toggle-btn fixed right-4 bottom-[88px] bg-[#1e4620] text-white border border-white/20 px-4 py-2.5 pl-3.5 rounded-[50px] shadow-[0_8px_24px_rgba(30,70,32,0.25)] cursor-pointer flex items-center gap-2 z-[9400] font-bold text-[0.88rem] transition-all hover:-translate-y-0.5 hover:bg-[#153317] hover:shadow-[0_12px_30px_rgba(30,70,32,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] focus-visible:ring-offset-2 motion-reduce:transition-none sm:right-6 sm:bottom-6"
+      class="chatbot-toggle-btn hidden md:flex fixed md:right-6 md:bottom-6 bg-[#1e4620] text-white border border-white/20 px-4 py-2.5 pl-3.5 rounded-[50px] shadow-[0_8px_24px_rgba(30,70,32,0.25)] cursor-pointer items-center gap-2 z-[9400] font-bold text-[0.88rem] transition-all hover:-translate-y-0.5 hover:bg-[#153317] hover:shadow-[0_12px_30px_rgba(30,70,32,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] focus-visible:ring-offset-2 motion-reduce:transition-none"
       aria-controls="public-chatbot-dialog"
       :aria-expanded="isChatbotOpen"
       @click="toggleChatbot">
@@ -419,7 +419,7 @@
 
     <!-- Mobile Bottom Nav -->
     <nav
-      class="fixed bottom-2.5 left-3 right-3 h-16 bg-[linear-gradient(135deg,rgba(255,255,255,0.94)_0%,rgba(244,249,243,0.92)_100%)] backdrop-blur-[20px] border border-white/90 rounded-[24px] shadow-[0_12px_32px_rgba(15,35,18,0.16)] z-[9000] flex justify-around items-center px-1.5 transition-opacity md:hidden"
+      class="fixed bottom-2.5 left-3 right-3 h-16 bg-[linear-gradient(135deg,rgba(255,255,255,0.94)_0%,rgba(244,249,243,0.92)_100%)] backdrop-blur-md border border-white/90 rounded-[24px] shadow-[0_12px_32px_rgba(15,35,18,0.16)] z-[9000] flex justify-around items-center px-1.5 transition-opacity md:hidden"
       :class="{ 'opacity-0 pointer-events-none': isMobileMenuOpen || isChatbotOpen }"
       aria-label="Điều hướng nhanh"
       style="padding-bottom: env(safe-area-inset-bottom, 0px)"
@@ -672,12 +672,21 @@ const loadQuickQuestions = async () => {
 }
 
 
+// rAF-throttled scroll handler: coalesces bursts of scroll events into one write
+// per frame and only mutates `isSticky` when the boolean actually flips. Hysteresis
+// (sticky >80, unsticky <60) prevents flicker right at the threshold. The listener
+// is registered passive (see onMounted) so it never blocks the compositor.
+let scrollTicking = false
+const applyStickyState = () => {
+  scrollTicking = false
+  const y = window.scrollY
+  const next = isSticky.value ? y > 60 : y > 80
+  if (next !== isSticky.value) isSticky.value = next
+}
 const handleScroll = () => {
-  if (window.scrollY > 80) {
-    isSticky.value = true
-  } else {
-    isSticky.value = false
-  }
+  if (scrollTicking) return
+  scrollTicking = true
+  requestAnimationFrame(applyStickyState)
 }
 
 const toggleMobileMenu = () => {
@@ -965,7 +974,7 @@ const scrollChatBottom = async () => {
 }
 
 onMounted(() => {
-  window.addEventListener('scroll', handleScroll)
+  window.addEventListener('scroll', handleScroll, { passive: true })
   window.addEventListener('keydown', handleKeydown)
   updateLiveDate()
   dateTimer = setInterval(updateLiveDate, 1000)
@@ -1003,41 +1012,6 @@ onUnmounted(() => {
 .teaser-pop-leave-to {
   opacity: 0;
   transform: translateY(14px) scale(0.92);
-}
-
-/* Chatbot popup: full screen on mobile when open */
-@media (max-width: 1100px) {
-  .chatbot-popup.is-open {
-    top: 0 !important;
-    left: 0 !important;
-    right: 0 !important;
-    bottom: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    height: 100dvh !important;
-    max-height: 100vh !important;
-    border-radius: 0 !important;
-    border: none !important;
-    z-index: 99999 !important;
-  }
-  .chatbot-toggle-btn-mobile {
-    bottom: 88px !important;
-    right: 18px !important;
-  }
-  .chatbot-toggle-btn {
-    bottom: 88px;
-    right: 18px;
-    padding: 10px 16px;
-    font-size: 0.82rem;
-  }
-  .chatbot-toggle-btn .bot-label {
-    display: none;
-  }
-  .chatbot-teaser {
-    bottom: 144px;
-    right: 16px;
-    max-width: 240px;
-  }
 }
 
 /* Streaming cursor blink */

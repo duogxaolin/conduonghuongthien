@@ -167,6 +167,11 @@
   100% { box-shadow: 0 0 0 0 rgba(124, 179, 66, 0); }
 }
 
+/* Respect reduced-motion: the infinite box-shadow pulse repaints every frame. */
+@media (prefers-reduced-motion: reduce) {
+  .pulse-effect { animation: none; }
+}
+
 /* Animations on Scroll */
 .fade-in-up {
   opacity: 0;

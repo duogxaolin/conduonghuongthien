@@ -13,6 +13,7 @@ import ReintegrationBlock from './ReintegrationBlock.vue'
 import DocumentsBlock from './DocumentsBlock.vue'
 import SupportFormBlock from './SupportFormBlock.vue'
 import LinksBlock from './LinksBlock.vue'
+import QuoteBlock from './QuoteBlock.vue'
 import HeadingBlock from './HeadingBlock.vue'
 import RichTextBlock from './RichTextBlock.vue'
 import ImageBlock from './ImageBlock.vue'
@@ -30,6 +31,7 @@ export const BLOCK_COMPONENTS: Record<string, Component> = {
   documents: DocumentsBlock,
   support_form: SupportFormBlock,
   links: LinksBlock,
+  quote: QuoteBlock,
   heading: HeadingBlock,
   richtext: RichTextBlock,
   image: ImageBlock,

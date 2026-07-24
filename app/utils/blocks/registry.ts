@@ -211,6 +211,21 @@ export const BLOCK_REGISTRY: Record<string, BlockDefinition> = {
       ] },
     ],
   },
+  quote: {
+    label: 'Trích dẫn (Parallax)',
+    icon: 'fa-solid fa-quote-right',
+    category: 'section',
+    defaultData: {
+      quote: 'Mỗi con người lầm lỡ đều xứng đáng có một cơ hội thứ hai để hướng thiện. Sự chung tay, đồng hành của gia đình và toàn xã hội chính là ánh dương thắp sáng nẻo về lương thiện.',
+      cite: '— Đề án Tái hòa nhập cộng đồng, C11 Bộ Công an',
+      bgImage: '/assets/hero_banner.jpg',
+    },
+    fields: [
+      { key: 'quote', label: 'Nội dung trích dẫn', type: 'textarea' },
+      { key: 'cite', label: 'Nguồn / tác giả', type: 'text' },
+      { key: 'bgImage', label: 'Ảnh nền', type: 'image' },
+    ],
+  },
 
   // ─── Content blocks (new) ─────────────────────────────────────────────────
   heading: {
