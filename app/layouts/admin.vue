@@ -209,7 +209,7 @@ const menuGroups = computed(() => [
 
       <!-- Page Content -->
       <main class="p-4 md:p-6 flex-1">
-        <div class="mx-auto w-full max-w-[1600px]">
+        <div class="mx-auto w-full max-w-[1920px]">
           <slot />
         </div>
       </main>
