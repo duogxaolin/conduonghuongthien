@@ -9,7 +9,9 @@ const { confirm } = useConfirm()
 
 // ─── State ────────────────────────────────────────────────────────────────────
 const types = ref<any[]>([])
+const allCategories = ref<any[]>([])
 const loading = ref(true)
+const showTree = ref(true)
 
 // ─── Modal state ──────────────────────────────────────────────────────────────
 const showModal = ref(false)
@@ -56,6 +58,30 @@ const fetchTypes = async () => {
     loading.value = false
   }
 }
+
+const fetchCategories = async () => {
+  try {
+    const res = await $fetch('/api/admin/categories')
+    if (res.ok) allCategories.value = res.items
+  } catch (err: any) {
+    // Non-blocking: tree preview just shows types without children
+  }
+}
+
+// ─── Tree preview: Thể loại → Danh mục → Danh mục con ──────────────────────────
+const tree = computed(() =>
+  types.value.map((ct) => {
+    const scoped = allCategories.value.filter((c) => c.type === ct.slug)
+    const roots = scoped.filter((c) => !c.parentId)
+    return {
+      ...ct,
+      children: roots.map((root) => ({
+        ...root,
+        children: scoped.filter((c) => c.parentId === root.id),
+      })),
+    }
+  })
+)
 
 // ─── Open modal ───────────────────────────────────────────────────────────────
 const openCreate = () => {
@@ -126,7 +152,10 @@ const deleteType = async (ct: any) => {
   }
 }
 
-onMounted(() => { fetchTypes() })
+onMounted(() => {
+  fetchTypes()
+  fetchCategories()
+})
 </script>
 
 <template>
@@ -137,12 +166,21 @@ onMounted(() => { fetchTypes() })
         <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Quản lý Thể loại</h1>
         <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Cấp phân loại cao nhất — mỗi thể loại chứa các danh mục và bài viết riêng</p>
       </div>
-      <button
-        class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors shrink-0"
-        @click="openCreate()"
-      >
-        <i class="fa-solid fa-plus"></i> Tạo Thể Loại Mới
-      </button>
+      <div class="flex items-center gap-2 shrink-0">
+        <button
+          class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] text-[#2c6e33] font-bold px-3.5 py-2.5 rounded-lg cursor-pointer transition-colors hover:bg-[#f8faf8]"
+          @click="showTree = !showTree"
+        >
+          <i :class="showTree ? 'fa-solid fa-list' : 'fa-solid fa-sitemap'"></i>
+          {{ showTree ? 'Xem bảng' : 'Xem cây' }}
+        </button>
+        <button
+          class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors"
+          @click="openCreate()"
+        >
+          <i class="fa-solid fa-plus"></i> Tạo Thể Loại Mới
+        </button>
+      </div>
     </div>
 
     <!-- Loading -->
@@ -160,6 +198,60 @@ onMounted(() => { fetchTypes() })
       >
         <i class="fa-solid fa-plus"></i> Tạo Thể Loại
       </button>
+    </div>
+
+    <!-- Tree preview: Thể loại → Danh mục → Danh mục con -->
+    <div v-else-if="showTree" class="bg-white rounded-xl border border-[#e2ece3] p-4 sm:p-6">
+      <div class="flex flex-col gap-4">
+        <div v-for="ct in tree" :key="ct.id" class="rounded-xl border border-[#e2ece3] overflow-hidden">
+          <!-- Level 1: Thể loại -->
+          <div class="flex items-center gap-3 px-4 py-3 bg-[#f0f7f1] border-b border-[#e2ece3]">
+            <span class="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg bg-[#1e4620] text-white">
+              <i :class="ct.icon || 'fa-solid fa-folder'"></i>
+            </span>
+            <div class="flex flex-col min-w-0">
+              <span class="font-extrabold text-[#122815] flex items-center gap-2 flex-wrap">
+                {{ ct.name }}
+                <span v-if="ct.isSystem" class="text-[0.68rem] bg-[#eef2ff] text-[#3050b0] px-1.5 py-0.5 rounded font-semibold">Hệ thống</span>
+                <code class="text-[0.72rem] text-[#667768] bg-white/70 px-1.5 py-0.5 rounded font-normal">{{ ct.slug }}</code>
+              </span>
+              <span class="text-[0.75rem] text-[#667768]">{{ ct.categoryCount }} danh mục · {{ ct.articleCount }} bài viết</span>
+            </div>
+          </div>
+
+          <!-- Levels 2 & 3: Danh mục → Danh mục con -->
+          <div class="px-4 py-3">
+            <p v-if="ct.children.length === 0" class="text-[0.82rem] text-[#8a9a8c] italic m-0">
+              Chưa có danh mục nào trong thể loại này.
+            </p>
+            <ul v-else class="flex flex-col gap-2 m-0 p-0 list-none">
+              <li v-for="cat in ct.children" :key="cat.id" class="flex flex-col gap-1.5">
+                <!-- Level 2: Danh mục gốc -->
+                <div class="flex items-center gap-2 text-[0.88rem]">
+                  <i class="fa-solid fa-folder text-[#2c6e33]"></i>
+                  <span class="font-bold text-[#2c3e2e]">{{ cat.name }}</span>
+                  <code class="text-[0.72rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ cat.slug }}</code>
+                  <span v-if="cat.children.length" class="text-[0.7rem] bg-[#f0f7f1] text-[#2c6e33] px-1.5 py-0.5 rounded font-semibold">{{ cat.children.length }} con</span>
+                </div>
+                <!-- Level 3: Danh mục con -->
+                <ul v-if="cat.children.length" class="flex flex-col gap-1 m-0 p-0 list-none pl-6 border-l-2 border-[#e2ece3] ml-2">
+                  <li v-for="sub in cat.children" :key="sub.id" class="flex items-center gap-2 text-[0.84rem] text-[#3a4a3c]">
+                    <i class="fa-regular fa-folder text-[#8ed694]"></i>
+                    <span>{{ sub.name }}</span>
+                    <code class="text-[0.7rem] text-[#8a9a8c] bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ sub.slug }}</code>
+                  </li>
+                </ul>
+              </li>
+            </ul>
+            <nuxt-link
+              :to="`/admin/content/categories?type=${ct.slug}`"
+              class="inline-flex items-center gap-1.5 mt-3 text-[#2c6e33] no-underline font-bold text-[0.8rem] hover:underline"
+            >
+              <i class="fa-solid fa-folder-plus text-xs"></i> Quản lý danh mục của thể loại này
+            </nuxt-link>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Table -->

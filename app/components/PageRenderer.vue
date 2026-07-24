@@ -1,17 +1,28 @@
 <template>
   <div>
-    <template v-for="block in blocks" :key="block.id">
-      <component :is="resolveBlockComponent(block.blockType)" v-if="resolveBlockComponent(block.blockType)" :block="block" />
-      <!-- Unknown block types are silently skipped (defensive against stale/removed types). -->
-    </template>
+    <BlockNode
+      v-for="node in blocks"
+      :key="node.id"
+      :node="node"
+      :interactive="interactive"
+      :selected-id="selectedId"
+    />
   </div>
 </template>
 
 <script setup>
-// Maps each blockType (registry key) to its renderer component via the shared
-// blockComponents map — the admin live canvas uses the same map, so the editor
-// preview matches the published page exactly.
-import { resolveBlockComponent } from './blocks/blockComponents'
+// Renders a page's node tree. Each root node is delegated to the recursive
+// BlockNode, which handles containers (section/row/column) and leaf blocks alike.
+// A legacy flat array is simply a list of childless root nodes — rendered
+// identically to before (each maps to its block component).
+//
+// `interactive` + `selectedId` are only set when embedded in the builder preview
+// (see usePagePreview); on the live site both are inert.
+import BlockNode from './blocks/BlockNode.vue'
 
-defineProps({ blocks: { type: Array, default: () => [] } })
+defineProps({
+  blocks: { type: Array, default: () => [] },
+  interactive: { type: Boolean, default: false },
+  selectedId: { type: [Number, String, null], default: null },
+})
 </script>

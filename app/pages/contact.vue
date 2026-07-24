@@ -1,6 +1,6 @@
 <template>
   <div class="bg-[#F8FAF7]">
-    <PageRenderer v-if="blocks.length" :blocks="blocks" />
+    <PageRenderer v-if="blocks.length" :blocks="blocks" :interactive="isPreview" :selected-id="selectedId" />
 
     <!-- Fallback if the page has no blocks yet. -->
     <section v-else class="section">
@@ -22,7 +22,11 @@ const { data } = await useAsyncData(
 )
 
 const page = computed(() => data.value?.page || null)
-const blocks = computed(() => data.value?.blocks || [])
+
+// Builder preview: when embedded in the editor iframe, live-edited blocks
+// pushed via postMessage override the fetched ones (see usePagePreview).
+const { isPreview, previewBlocks, selectedId } = usePagePreview()
+const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
 
 useSeoMeta({
   title: () => page.value?.seoTitle || 'Liên hệ & Trợ giúp | Con Đường Hướng Thiện',

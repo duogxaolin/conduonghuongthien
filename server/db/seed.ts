@@ -233,8 +233,18 @@ async function seed() {
     if (existing.length === 0) {
       console.log('Seeding default about blocks...')
       const aboutBlocks = [
-        { blockType: 'heading', displayOrder: 1, data: { text: 'Giới thiệu', subtitle: 'Ban Biên tập Cổng thông tin Con Đường Hướng Thiện', align: 'center' } },
-        { blockType: 'richtext', displayOrder: 2, data: { html: '<h3>Mục đích hoạt động</h3><p>Trang thông tin điện tử <strong>Con Đường Hướng Thiện</strong> hoạt động dưới sự chỉ đạo của Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.</p><p>Mục tiêu tối thượng của nền tảng là cung cấp thông tin chính thống về các chính sách, nghị định của Đảng và Nhà nước liên quan đến công tác thi hành án hình sự và hỗ trợ hòa nhập cộng đồng; tuyên truyền, nhân rộng các mô hình sản xuất kinh tế hiệu quả, các tấm gương điển hình tiên tiến hoàn lương lập nghiệp thành công; định hướng tư tưởng, pháp lý và kết nối hỗ trợ trực tuyến 24/7 giúp người lầm lỡ xóa bỏ tự ti, sớm ổn định cuộc sống.</p>' } },
+        { blockType: 'heading', displayOrder: 1, data: { text: 'Giới thiệu', subtitle: 'Ban Biên tập Cổng thông tin Con Đường Hướng Thiện', variant: 'banner', bgImage: '/assets/hero_banner.jpg', align: 'center' } },
+        { blockType: 'content_aside', displayOrder: 2, data: {
+          title: 'Ban Biên tập',
+          icon: 'fa-solid fa-building-columns',
+          bodyHtml: '<h3>Mục đích hoạt động</h3><p>Trang thông tin điện tử <strong>Con Đường Hướng Thiện</strong> hoạt động dưới sự chỉ đạo của Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.</p><p>Mục tiêu tối thượng của nền tảng là cung cấp thông tin chính thống về các chính sách, nghị định của Đảng và Nhà nước liên quan đến công tác thi hành án hình sự và hỗ trợ hòa nhập cộng đồng; tuyên truyền, nhân rộng các mô hình sản xuất kinh tế hiệu quả, các tấm gương điển hình tiên tiến hoàn lương lập nghiệp thành công; định hướng tư tưởng, pháp lý và kết nối hỗ trợ trực tuyến 24/7 giúp người lầm lỡ xóa bỏ tự ti, sớm ổn định cuộc sống.</p><h3>Nhiệm vụ trọng tâm</h3><ul><li><strong>Tuyên truyền &amp; Giáo dục pháp luật:</strong> Phổ biến các quy định về xóa án tích, chính sách vay vốn ưu đãi, quyền và nghĩa vụ công dân giúp người hoàn lương nâng cao hiểu biết pháp lý.</li><li><strong>Đào tạo &amp; Hướng nghiệp:</strong> Kết nối các cơ sở đào tạo nghề và các doanh nghiệp nhân văn nhằm tổ chức các lớp học nghề, tạo cơ hội việc làm công bằng cho người lầm lỡ.</li><li><strong>Tư vấn &amp; Trợ giúp trực tuyến:</strong> Xây dựng hệ thống giải đáp tự động và đường dây nóng tiếp nhận thông tin đăng ký hỗ trợ trực tiếp 24/7 trên phạm vi cả nước.</li></ul>',
+          asideLabel: 'ĐƠN VỊ CHỦ QUẢN',
+          asideTitle: 'Cục Cảnh sát QLTHG, TG và THAHS tại cộng đồng (C11)',
+          asideSubtitle: 'Bộ Công an',
+          asideNote: 'Ban Biên Tập: Đại diện Cảnh sát Thi hành án hình sự & Hỗ trợ tư pháp công an các địa phương.',
+          highlightLabel: 'Hotline liên hệ trực tiếp:',
+          highlightValue: '0903.480.985',
+        } },
       ]
       for (const b of aboutBlocks) {
         await db.insert(pageBlocks).values({ pageId: aboutPage.id, ...b } as any)
@@ -248,9 +258,20 @@ async function seed() {
     if (existing.length === 0) {
       console.log('Seeding default contact blocks...')
       const contactBlocks = [
-        { blockType: 'heading', displayOrder: 1, data: { text: 'Liên hệ & Trợ giúp', subtitle: 'Hotline 0903.480.985 — Tiếp nhận yêu cầu trợ giúp 24/7', align: 'center' } },
-        { blockType: 'richtext', displayOrder: 2, data: { html: '<h3>Thông tin Ban Biên tập</h3><p><strong>Đơn vị chủ quản:</strong> Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.</p><p><strong>Địa chỉ:</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội.</p><p><strong>Hotline:</strong> 0903.480.985</p><p><strong>Email:</strong> contact@conduonghuongthien.com.vn</p>' } },
-        { blockType: 'contact_form', displayOrder: 3, data: { title: 'Đăng ký nhận trợ giúp' } },
+        { blockType: 'heading', displayOrder: 1, data: { text: 'Liên hệ & Trợ giúp', subtitle: 'Hotline 0903.480.985 — Tiếp nhận yêu cầu trợ giúp 24/7', variant: 'banner', bgImage: '/assets/hero_banner.jpg', align: 'center' } },
+        { blockType: 'contact_form', displayOrder: 2, data: {
+          title: 'Gửi yêu cầu trợ giúp',
+          showInfo: true,
+          infoTitle: 'Thông tin Ban Biên tập',
+          infoRows: [
+            { label: 'Đơn vị chủ quản:', value: 'Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an' },
+            { label: 'Địa chỉ:', value: 'Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội' },
+            { label: 'Hotline:', value: '0903.480.985' },
+            { label: 'Email:', value: 'contact@conduonghuongthien.com.vn' },
+          ],
+          noteTitle: 'Cơ chế trợ giúp',
+          noteText: 'Hệ thống trợ giúp tiếp nhận yêu cầu 24/7 từ người chấp hành xong án phạt tù hoặc thân nhân của họ. Sau khi tiếp nhận thông tin, Ban Biên tập sẽ tiến hành bảo mật dữ liệu cá nhân, phân loại nghiệp vụ và chuyển giao nhanh chóng đến lực lượng Công an cấp cơ sở (xã, phường, thị trấn) hoặc ban ngành liên quan tại địa bàn bạn cư trú để hỗ trợ xử lý kịp thời.',
+        } },
       ]
       for (const b of contactBlocks) {
         await db.insert(pageBlocks).values({ pageId: contactPage.id, ...b } as any)

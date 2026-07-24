@@ -1,9 +1,9 @@
 <template>
   <section class="section bg-[#F8FAF7]" id="tro-giup">
     <div class="container">
-      <div class="grid grid-cols-1 items-center gap-[50px] md:grid-cols-2">
+      <div class="grid grid-cols-1 items-center gap-[50px] sm:grid-cols-2">
         <div>
-          <h2 class="text-[2.2rem] md:text-[1.6rem] font-extrabold text-[#1E251C] mb-4">{{ d.title || 'Đăng Ký Tư Vấn & Hỗ Trợ Tái Hòa Nhập' }}</h2>
+          <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] mb-4">{{ d.title || 'Đăng Ký Tư Vấn & Hỗ Trợ Tái Hòa Nhập' }}</h2>
           <p class="text-[#4A5545] leading-[1.6] mb-[30px]">{{ d.subtitle || 'Điền thông tin để cán bộ chuyên môn liên hệ tư vấn miễn phí trong vòng 24 giờ.' }}</p>
           <div class="flex flex-col gap-3">
             <div class="text-[0.95rem] text-[#4A5545]">📞 <span>Hotline hỗ trợ: <strong>{{ d.hotline || '0903.480.985' }}</strong></span></div>

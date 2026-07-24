@@ -1,6 +1,6 @@
 <template>
   <div>
-    <PageRenderer v-if="blocks.length" :blocks="blocks" />
+    <PageRenderer v-if="blocks.length" :blocks="blocks" :interactive="isPreview" :selected-id="selectedId" />
 
     <!-- Graceful fallback if the page has no blocks or the fetch failed. -->
     <section v-else class="section bg-white">
@@ -22,7 +22,11 @@ const { data } = await useAsyncData(
 )
 
 const page = computed(() => data.value?.page || null)
-const blocks = computed(() => data.value?.blocks || [])
+
+// Builder preview: when embedded in the editor iframe, live-edited blocks
+// pushed via postMessage override the fetched ones (see usePagePreview).
+const { isPreview, previewBlocks, selectedId } = usePagePreview()
+const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
 
 // SEO: prefer page meta, fall back to the original homepage defaults.
 useSeoMeta({

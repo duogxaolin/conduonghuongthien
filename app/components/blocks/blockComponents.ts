@@ -19,6 +19,7 @@ import ImageBlock from './ImageBlock.vue'
 import CtaBlock from './CtaBlock.vue'
 import GalleryBlock from './GalleryBlock.vue'
 import ContactFormBlock from './ContactFormBlock.vue'
+import ContentAsideBlock from './ContentAsideBlock.vue'
 
 export const BLOCK_COMPONENTS: Record<string, Component> = {
   hero: HeroBlock,
@@ -35,6 +36,7 @@ export const BLOCK_COMPONENTS: Record<string, Component> = {
   cta: CtaBlock,
   gallery: GalleryBlock,
   contact_form: ContactFormBlock,
+  content_aside: ContentAsideBlock,
 }
 
 /** Returns the renderer component for a blockType, or null if unknown (stale/removed). */

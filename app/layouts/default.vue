@@ -63,7 +63,7 @@
             </nuxt-link>
             <!-- Mobile Toggle -->
             <button
-              class="lg:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all z-[10003] hover:bg-[#e4f0e2]"
+              class="md:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all z-[10003] hover:bg-[#e4f0e2]"
               @click="toggleMobileMenu"
               :aria-label="isMobileMenuOpen ? t('menu_close') : t('menu_open')"
               :aria-expanded="isMobileMenuOpen">
@@ -77,7 +77,7 @@
 
       <!-- Mobile Drawer Nav -->
       <nav
-        class="fixed top-0 w-[min(88vw,380px)] max-w-full h-[100dvh] flex flex-col bg-white shadow-[-12px_0_40px_rgba(15,35,18,0.24)] z-[10002] transition-[right] duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden lg:hidden"
+        class="fixed top-0 w-[min(88vw,380px)] max-w-full h-[100dvh] flex flex-col bg-white shadow-[-12px_0_40px_rgba(15,35,18,0.24)] z-[10002] transition-[right] duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden md:hidden"
         :class="isMobileMenuOpen ? 'right-0' : '-right-full'"
         @click="onNavClick" @keydown.escape="toggleMobileMenu"
       >
@@ -129,7 +129,7 @@
                   @click.stop="toggleMobileSubmenu(item.id)"
                 >
                   <component
-                    :is="item.url && item.url !== '#' ? 'nuxt-link' : 'span'"
+                    :is="item.url && item.url !== '#' ? NuxtLink : 'span'"
                     v-bind="item.url && item.url !== '#' ? { to: item.url, class: 'text-inherit no-underline' } : {}"
                     @click.stop
                   >{{ navItemLabel(item) }}</component>
@@ -138,7 +138,7 @@
                 <ul v-if="mobileOpenSubmenu === item.id" class="list-none static opacity-100 pointer-events-auto transform-none shadow-none p-1.5 pl-3.5 bg-[rgba(30,70,32,0.04)] border-l-[3px] border-[#4A6741] rounded-[0_10px_10px_0] my-1 ml-3">
                   <li v-for="child in item.children" :key="child.id">
                     <component
-                      :is="child.url && child.url.startsWith('http') ? 'a' : 'nuxt-link'"
+                      :is="child.url && child.url.startsWith('http') ? 'a' : NuxtLink"
                       v-bind="child.url && child.url.startsWith('http') ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url }"
                       class="block px-3.5 py-2.5 text-[0.88rem] font-medium text-[#4A5545] rounded-lg no-underline transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-[#4A6741]"
                     >{{ navItemLabel(child) }}</component>
@@ -148,7 +148,7 @@
               <!-- No children: simple link -->
               <template v-else>
                 <component
-                  :is="item.url && item.url.startsWith('http') ? 'a' : 'nuxt-link'"
+                  :is="item.url && item.url.startsWith('http') ? 'a' : NuxtLink"
                   v-bind="item.url && item.url.startsWith('http') ? { href: item.url, target: item.openNewTab ? '_blank' : undefined, rel: item.openNewTab ? 'noopener noreferrer' : undefined } : { to: item.url, 'active-class': 'bg-[rgba(30,70,32,0.08)] text-[#4A6741] font-extrabold' }"
                   class="no-underline text-[#1E251C] font-semibold text-[0.95rem] px-4 py-3 rounded-[10px] flex justify-between items-center transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-[#4A6741]"
                 >{{ navItemLabel(item) }}</component>
@@ -171,16 +171,16 @@
           </div>
         </div>
       </nav>
-      <div class="hidden lg:flex bg-white border-t border-[#edf2ec] border-b border-[#e1e8e0] h-[50px] items-center shadow-[0_4px_12px_rgba(15,35,18,0.04)] transition-all">
+      <div class="hidden md:flex bg-white border-t border-[#edf2ec] border-b border-[#e1e8e0] h-[50px] items-center shadow-[0_4px_12px_rgba(15,35,18,0.04)] transition-all">
         <div class="container w-full">
           <nav class="flex w-full" @click="onNavClick" @keydown.escape="toggleMobileMenu">
             <ul class="flex list-none w-full justify-between items-center gap-0.5">
               <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group' : ''">
                 <!-- With children: dropdown -->
                 <template v-if="item.children && item.children.length">
-                  <div class="nav-item no-underline text-[#1e4620] font-bold text-[0.88rem] px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-[#f0f6ef] hover:text-[#143516]">
+                  <div class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-[#f0f6ef] hover:text-[#143516]">
                     <component
-                      :is="item.url && item.url !== '#' ? 'nuxt-link' : 'span'"
+                      :is="item.url && item.url !== '#' ? NuxtLink : 'span'"
                       v-bind="item.url && item.url !== '#' ? { to: item.url, 'active-class': 'active-item', class: 'text-inherit no-underline' } : {}"
                     >{{ navItemLabel(item) }}</component>
                     <i class="fa-solid fa-chevron-down text-[0.55rem] ml-0.5 text-[#557757] transition-transform duration-200 group-hover:rotate-180" aria-hidden="true"></i>
@@ -188,7 +188,7 @@
                   <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-2 min-w-[220px] list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto">
                     <li v-for="child in item.children" :key="child.id">
                       <component
-                        :is="child.url && child.url.startsWith('http') ? 'a' : 'nuxt-link'"
+                        :is="child.url && child.url.startsWith('http') ? 'a' : NuxtLink"
                         v-bind="child.url && child.url.startsWith('http') ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url }"
                         class="block px-3.5 py-2.5 no-underline text-[#2d4a2d] text-[0.86rem] font-semibold rounded-lg transition-all hover:bg-[rgba(30,70,32,0.07)] hover:text-[#1e4620] hover:pl-[18px]"
                       >{{ navItemLabel(child) }}</component>
@@ -198,9 +198,9 @@
                 <!-- No children: simple link -->
                 <template v-else>
                   <component
-                    :is="item.url && item.url.startsWith('http') ? 'a' : 'nuxt-link'"
+                    :is="item.url && item.url.startsWith('http') ? 'a' : NuxtLink"
                     v-bind="item.url && item.url.startsWith('http') ? { href: item.url, target: item.openNewTab ? '_blank' : undefined, rel: item.openNewTab ? 'noopener noreferrer' : undefined } : { to: item.url, 'active-class': 'active-item bg-[#e4f0e2] font-extrabold' }"
-                    class="nav-item no-underline text-[#1e4620] font-bold text-[0.88rem] px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap relative transition-all hover:bg-[#f0f6ef] hover:text-[#143516]"
+                    class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap relative transition-all hover:bg-[#f0f6ef] hover:text-[#143516]"
                   >{{ navItemLabel(item) }}</component>
                 </template>
               </li>
@@ -235,14 +235,14 @@
 
     <!-- Main Content Area -->
     <main
-      class="min-h-[calc(100vh-165px)] transition-all pb-24 lg:pb-0"
-      :class="{ 'pt-[100px] lg:pt-[130px]': isSticky }"
+      class="min-h-[calc(100vh-165px)] transition-all pb-24 md:pb-0"
+      :class="{ 'pt-[100px] md:pt-[130px]': isSticky }"
     >
       <slot />
     </main>
 
     <!-- Footer Area -->
-    <footer class="bg-[#385130] text-white/80 pt-20 border-t-4 border-[#7CB342] lg:pb-0 pb-20">
+    <footer class="bg-[#385130] text-white/80 pt-20 border-t-4 border-[#7CB342] md:pb-0 pb-20">
       <div class="container grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_2fr] gap-8 lg:gap-10 mb-12 lg:mb-16">
         <div>
           <div class="flex items-center gap-3 mb-5">
@@ -419,7 +419,7 @@
 
     <!-- Mobile Bottom Nav -->
     <nav
-      class="fixed bottom-2.5 left-3 right-3 h-16 bg-[linear-gradient(135deg,rgba(255,255,255,0.94)_0%,rgba(244,249,243,0.92)_100%)] backdrop-blur-[20px] border border-white/90 rounded-[24px] shadow-[0_12px_32px_rgba(15,35,18,0.16)] z-[9000] flex justify-around items-center px-1.5 transition-opacity lg:hidden"
+      class="fixed bottom-2.5 left-3 right-3 h-16 bg-[linear-gradient(135deg,rgba(255,255,255,0.94)_0%,rgba(244,249,243,0.92)_100%)] backdrop-blur-[20px] border border-white/90 rounded-[24px] shadow-[0_12px_32px_rgba(15,35,18,0.16)] z-[9000] flex justify-around items-center px-1.5 transition-opacity md:hidden"
       :class="{ 'opacity-0 pointer-events-none': isMobileMenuOpen || isChatbotOpen }"
       aria-label="Điều hướng nhanh"
       style="padding-bottom: env(safe-area-inset-bottom, 0px)"
@@ -468,7 +468,11 @@
   </div>
 </template>
 <script setup>
-import { ref, onMounted, onUnmounted, computed, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, computed, nextTick, watch, resolveComponent } from 'vue'
+
+// Resolve NuxtLink once so runtime `:is` bindings render a real <a> (a string
+// `:is="'nuxt-link'"` renders an inert custom element that never navigates).
+const NuxtLink = resolveComponent('NuxtLink')
 
 const isSticky = ref(false)
 const isMobileMenuOpen = ref(false)

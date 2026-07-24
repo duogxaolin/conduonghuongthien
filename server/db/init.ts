@@ -640,6 +640,29 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  // Draft (unpublished working copy) columns on pages — additive, idempotent.
+  await ensureColumn(db, database, 'pages', 'draft_blocks', 'JSON NULL')
+  await ensureColumn(db, database, 'pages', 'draft_updated_at', 'TIMESTAMP NULL')
+  await ensureColumn(db, database, 'pages', 'draft_updated_by', 'INT NULL')
+  // Published node tree (nested-grid model) — additive; NULL falls back to page_blocks.
+  await ensureColumn(db, database, 'pages', 'published_blocks', 'JSON NULL')
+
+  // Page Versions table (restore/backup snapshots: origin | auto | manual)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`page_versions\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`page_id\` INT NOT NULL,
+      \`kind\` ENUM('origin','auto','manual') NOT NULL DEFAULT 'auto',
+      \`label\` VARCHAR(128) NULL,
+      \`blocks\` JSON NOT NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`created_by\` INT NULL,
+      KEY \`page_versions_page_kind_idx\` (\`page_id\`, \`kind\`, \`id\`),
+      CONSTRAINT \`fk_page_versions_page\` FOREIGN KEY (\`page_id\`) REFERENCES \`pages\` (\`id\`) ON DELETE CASCADE,
+      CONSTRAINT \`fk_page_versions_created_by\` FOREIGN KEY (\`created_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
   // Settings table
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`settings\` (

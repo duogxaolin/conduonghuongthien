@@ -148,6 +148,15 @@ export const pages = mysqlTable('pages', {
   isSystem:       boolean('is_system').default(false),
   seoTitle:       varchar('seo_title', { length: 255 }),
   seoDescription: text('seo_description'),
+  // Published node tree (JSON). NULL = page has never been published under the
+  // nested-tree model → public read falls back to the flat page_blocks table.
+  // Shape: recursive [{ id, blockType, data, isVisible, colSpan?, children?[] }, ...]
+  publishedBlocks: json('published_blocks'),
+  // Unpublished working copy. NULL = no pending draft (published == what's live).
+  // Shape: [{ id|tmpId, blockType, displayOrder, data, isVisible, colSpan?, children? }, ...]
+  draftBlocks:    json('draft_blocks'),
+  draftUpdatedAt: timestamp('draft_updated_at'),
+  draftUpdatedBy: int('draft_updated_by').references(() => users.id, { onDelete: 'set null' }),
   updatedAt:      timestamp('updated_at').defaultNow().onUpdateNow(),
   updatedBy:      int('updated_by').references(() => users.id, { onDelete: 'set null' }),
 })
@@ -167,6 +176,24 @@ export const pageBlocks = mysqlTable('page_blocks', {
   updatedBy:    int('updated_by').references(() => users.id, { onDelete: 'set null' }),
 }, (t) => ({
   pageOrderIdx: index('page_blocks_page_order_idx').on(t.pageId, t.displayOrder),
+}))
+
+// ─── Page Versions ───────────────────────────────────────────────────────────
+// Saved snapshots of a page's blocks for restore/backup.
+//   kind = 'origin' : the locked default baseline (max 1 per page).
+//   kind = 'auto'   : auto-captured before each publish, ring-buffered (max 5).
+//   kind = 'manual' : user-named backups kept on purpose (max 4).
+// blocks holds the full block array snapshot; label is user text for manual/origin.
+export const pageVersions = mysqlTable('page_versions', {
+  id:        int('id').autoincrement().primaryKey(),
+  pageId:    int('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
+  kind:      mysqlEnum('kind', ['origin', 'auto', 'manual']).notNull().default('auto'),
+  label:     varchar('label', { length: 128 }),
+  blocks:    json('blocks').notNull(),
+  createdAt: timestamp('created_at').defaultNow(),
+  createdBy: int('created_by').references(() => users.id, { onDelete: 'set null' }),
+}, (t) => ({
+  pageKindIdx: index('page_versions_page_kind_idx').on(t.pageId, t.kind, t.id),
 }))
 
 // ─── Settings ────────────────────────────────────────────────────────────────

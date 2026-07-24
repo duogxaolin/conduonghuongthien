@@ -1,8 +1,8 @@
 <template>
   <section class="section bg-[#F8FAF7]">
-    <div class="container grid grid-cols-1 items-center gap-10 md:grid-cols-2">
+    <div class="container grid grid-cols-1 items-center gap-10 sm:grid-cols-2">
       <div>
-        <h2 class="text-[2.2rem] md:text-[1.6rem] font-extrabold text-[#1E251C] mb-4">{{ d.title || 'Văn Bản Pháp Quy Mới' }}</h2>
+        <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] mb-4">{{ d.title || 'Văn Bản Pháp Quy Mới' }}</h2>
         <p class="text-[#4A5545] mb-6 leading-[1.6]">{{ d.description || 'Cập nhật liên tục các quyết định chỉ đạo của Thủ tướng Chính phủ, các thông tư chỉ thị của Bộ Công an về công tác thi hành án hình sự và hỗ trợ hòa nhập cộng đồng.' }}</p>
         <nuxt-link :to="d.btnLink || '/documents'" class="btn btn-primary">{{ d.btnText || 'Tra cứu thư viện văn bản' }}</nuxt-link>
       </div>
@@ -27,10 +27,17 @@ const d = computed(() => props.block?.data || {})
 
 const formatDate = (dateStr) => (dateStr ? new Date(dateStr).toLocaleDateString('vi-VN') : '')
 const maxItems = computed(() => Number(d.value.maxItems) || 3)
+const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data } = await useAsyncData(
-  `block-documents-${props.block.id}`,
-  () => $fetch('/api/public/articles', { params: { type: 'document', limit: maxItems.value } }),
+  `block-documents-${props.block.id}-${categorySlug.value}`,
+  () => $fetch('/api/public/articles', {
+    params: {
+      type: 'document',
+      limit: maxItems.value,
+      ...(categorySlug.value ? { categorySlug: categorySlug.value } : {}),
+    },
+  }),
   { default: () => ({ articles: [] }) }
 )
 

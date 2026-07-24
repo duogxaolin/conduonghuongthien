@@ -47,11 +47,10 @@ const stats = computed(() => {
   return arr
 })
 
-// Wrap trailing +, /, and other markers in the accent color, matching the original design.
+// Wrap +, / markers in the accent color, matching the original design.
+// Single pass over the raw value so inserted markup is never re-scanned
+// (chained replaces used to match the "/" inside a freshly-inserted </span>).
 function formatValue(v) {
-  const s = String(v ?? '')
-  return s
-    .replace(/\+/g, '<span class="text-[#6da33e]">+</span>')
-    .replace(/\//g, '<span class="text-[#6da33e]">/</span>')
+  return String(v ?? '').replace(/[+/]/g, (m) => `<span class="text-[#6da33e]">${m}</span>`)
 }
 </script>
