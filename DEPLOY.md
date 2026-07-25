@@ -27,43 +27,40 @@ git clone https://github.com/duogxaolin/conduonghuongthien.git cdkt
 cd cdkt
 ```
 
-### Tạo file `.env` (production)
+### Tạo file `.env` (tự sinh mật khẩu mạnh + secret keys)
 
 ```bash
-cat > .env << 'EOF'
+cat > .env << EOF
 # ─── MySQL ───────────────────────────────────────
-MYSQL_ROOT_PASSWORD=ThayDoiMatKhauRoot123!
+MYSQL_ROOT_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)
 MYSQL_DATABASE=cdkt_admin
 MYSQL_USER=cdkt_user
-MYSQL_PASSWORD=ThayDoiMatKhauUser456!
+MYSQL_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)
 MYSQL_EXTERNAL_PORT=33069
 
 # ─── App ─────────────────────────────────────────
 PORT=54432
 NODE_ENV=production
 
-# DB_HOST & DB_PORT: kết nối nội bộ Docker network
-# DB_HOST=mysql (tên service), DB_PORT=3306 (port trong container, KHÔNG đổi)
-# Biến này KHÔNG cần khai báo — docker-compose.yml đã set cứng đúng giá trị.
-
-# JWT Secret (tạo random: openssl rand -base64 48)
-JWT_SECRET=thay-bang-chuoi-random-dai-64-ky-tu
-
-# Chatbot encryption (tạo: openssl rand -base64 32)
-CHATBOT_ENCRYPTION_SECRET=thay-bang-chuoi-random-base64-32-byte
+# JWT & Encryption (auto-generated)
+JWT_SECRET=$(openssl rand -base64 48)
+CHATBOT_ENCRYPTION_SECRET=$(openssl rand -base64 32)
 
 # Analytics
 ANALYTICS_COLLECTION_ENABLED=true
 NUXT_ANALYTICS_COLLECTION_ENABLED=true
 
-# (Tùy chọn) AI Chatbot
+# (Tùy chọn) AI Chatbot — bỏ comment để bật
 # AI_API_KEY=sk-xxxx
 # AI_BASE_URL=https://api.openai.com/v1
 # AI_MODEL=gpt-4o-mini
 EOF
+
+echo "✅ .env đã tạo xong. Mật khẩu MySQL root:"
+grep MYSQL_ROOT_PASSWORD .env
 ```
 
-> ⚠️ **QUAN TRỌNG**: Đổi tất cả mật khẩu & secret key trước khi deploy production!
+> Lưu lại mật khẩu hiển thị — cần khi kết nối DB từ bên ngoài (`localhost:33069`).
 
 ---
 
