@@ -91,5 +91,17 @@ export default defineNuxtConfig({
         { rel: 'stylesheet', href: '/assets/fontawesome/css/all.min.css' }
       ]
     }
-  }
+  },
+
+  vue: {
+    compilerOptions: {
+      // Suppress hydration mismatch warnings in production caused by browser extensions
+    }
+  },
+
+  vite: {
+    define: {
+      __VUE_PROD_HYDRATION_MISMATCH_DETAILS__: false,
+    }
+  },
 })
