@@ -172,9 +172,9 @@
         </div>
       </nav>
       <div class="hidden md:flex bg-white border-t border-[#edf2ec] border-b border-[#e1e8e0] h-[50px] items-center shadow-[0_4px_12px_rgba(15,35,18,0.04)] transition-all">
-        <div class="container w-full">
-          <nav class="flex w-full" @click="onNavClick" @keydown.escape="toggleMobileMenu">
-            <ul class="flex list-none w-full justify-between items-center gap-0.5">
+        <div class="container w-full overflow-x-auto scrollbar-hide">
+          <nav class="flex w-max min-w-full" @click="onNavClick" @keydown.escape="toggleMobileMenu">
+            <ul class="flex list-none w-full justify-between items-center gap-1">
               <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group' : ''">
                 <!-- With children: dropdown -->
                 <template v-if="item.children && item.children.length">
@@ -292,135 +292,188 @@
     </footer>
 
     <!-- Chatbot Popup -->
-    <div
-      id="public-chatbot-dialog"
-      ref="chatbotDialog"
-      class="chatbot-popup fixed bottom-[84px] left-0 right-0 w-auto h-[min(85dvh,calc(100dvh-104px))] bg-white rounded-t-[20px] shadow-[0_20px_50px_rgba(0,0,0,0.16),0_4px_16px_rgba(0,0,0,0.06)] flex flex-col z-[9500] overflow-hidden border border-black/[0.08] opacity-0 translate-y-full scale-100 pointer-events-none transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:left-auto md:right-6 md:bottom-6 md:w-[420px] md:max-w-[420px] md:h-[min(580px,calc(100dvh-110px))] md:rounded-[20px] md:translate-y-5 md:scale-[0.96]"
-      :class="{ 'is-open opacity-100 !translate-y-0 !scale-100 pointer-events-auto': isChatbotOpen }"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="public-chatbot-title"
-      :aria-hidden="!isChatbotOpen"
-      :inert="!isChatbotOpen"
-      @keydown="handleChatbotDialogKeydown"
-    >
-      <div class="bg-white text-[#1f2937] px-[18px] py-3.5 flex justify-between items-center border-b border-[#edf2ec]">
-        <div class="flex items-center gap-3">
-          <div class="w-9 h-9 rounded-full bg-[#edf5ec] flex items-center justify-center flex-shrink-0">
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#1e4620" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-          </div>
-          <div>
-            <h4 id="public-chatbot-title" class="text-[0.92rem] font-bold text-[#1a2e1b] m-0">Trợ lý Pháp lý C11</h4>
-            <p class="text-[0.72rem] text-[#6b7280] mt-0.5 mb-0 flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-[#10b981] inline-block" aria-hidden="true"></span> Thông tin từ kho dữ liệu đã phê duyệt
-            </p>
+    <Teleport to="body">
+      <div
+        id="public-chatbot-dialog"
+        ref="chatbotDialog"
+        class="fixed inset-0 w-screen h-[100dvh] bg-[#f0f4ef] flex flex-col z-[99999] overflow-hidden opacity-0 pointer-events-none translate-y-[20px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:inset-auto md:fixed md:right-5 md:bottom-5 md:w-[400px] md:h-[min(600px,calc(100dvh-100px))] md:rounded-2xl md:shadow-[0_25px_60px_rgba(0,0,0,0.2)] md:border md:border-black/10 md:translate-y-3 md:scale-[0.96]"
+        :class="{ '!opacity-100 !pointer-events-auto !translate-y-0 md:!scale-100': isChatbotOpen }"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="public-chatbot-title"
+        :aria-hidden="!isChatbotOpen"
+        :inert="!isChatbotOpen"
+        @keydown="handleChatbotDialogKeydown"
+      >
+        <!-- Header -->
+        <div class="flex-shrink-0 bg-[#1e4620] px-4 pt-[calc(env(safe-area-inset-top,0px)+12px)] pb-3 md:pt-3 md:rounded-t-2xl">
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              <button class="md:hidden w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[0.9rem] border-none cursor-pointer transition-all active:scale-90" @click="closeChatbot" aria-label="Quay lại">
+                <i class="fa-solid fa-arrow-left"></i>
+              </button>
+              <div class="w-10 h-10 rounded-full bg-white/15 border-2 border-white/30 flex items-center justify-center flex-shrink-0">
+                <i class="fa-solid fa-robot text-white text-[1.1rem]"></i>
+              </div>
+              <div>
+                <h4 id="public-chatbot-title" class="text-[0.95rem] font-bold text-white m-0 leading-tight">Trợ lý Hướng Thiện</h4>
+                <p class="text-[0.7rem] text-white/60 mt-0.5 mb-0 flex items-center gap-1.5">
+                  <span class="w-2 h-2 rounded-full bg-[#7CB342] inline-block animate-pulse" aria-hidden="true"></span>
+                  Đang hoạt động
+                </p>
+              </div>
+            </div>
+            <div class="flex items-center gap-1.5">
+              <button class="w-8 h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="clearChatHistory" title="Xóa lịch sử" aria-label="Xóa lịch sử">
+                <i class="fa-solid fa-broom text-[0.8rem]"></i>
+              </button>
+              <button ref="chatCloseButton" class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50" @click="closeChatbot" aria-label="Đóng">
+                <i class="fa-solid fa-xmark text-[0.9rem]"></i>
+              </button>
+            </div>
           </div>
         </div>
-        <div class="flex items-center gap-2">
-          <button class="bg-[#f3f4f6] border-none text-[#6b7280] w-7 h-7 rounded-full flex items-center justify-center cursor-pointer transition-all hover:bg-[#fee2e2] hover:text-[#dc2626]" @click="clearChatHistory" title="Xóa lịch sử trò chuyện" aria-label="Xóa lịch sử">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <polyline points="3 6 5 6 21 6"></polyline>
-              <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-            </svg>
+
+        <!-- Chat Messages -->
+        <div ref="chatContainer" class="flex-1 px-4 py-5 overflow-y-auto overscroll-contain flex flex-col gap-4" aria-live="polite" aria-relevant="additions text">
+          <!-- Welcome card -->
+          <div v-if="chatMessages.length <= 1" class="mx-auto mt-4 mb-2 max-w-[280px] text-center">
+            <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-[#1e4620]/10 flex items-center justify-center">
+              <i class="fa-solid fa-shield-halved text-[#1e4620] text-[1.4rem]"></i>
+            </div>
+            <p class="text-[0.82rem] text-[#4A5545] leading-relaxed m-0">Xin chào! Tôi hỗ trợ tra cứu thông tin từ kho dữ liệu đã được <strong class="text-[#1e4620]">Cục C11</strong> phê duyệt.</p>
+          </div>
+
+          <template v-for="(msg, index) in chatMessages" :key="msg.id || index">
+            <div v-if="msg.id !== 'welcome'" class="flex gap-2.5" :class="msg.sender === 'user' ? 'justify-end' : 'justify-start'">
+              <!-- Bot avatar -->
+              <div v-if="msg.sender === 'bot'" class="w-7 h-7 rounded-full bg-[#1e4620] flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm" aria-hidden="true">
+                <i class="fa-solid fa-robot text-white text-[0.65rem]"></i>
+              </div>
+              <!-- Message bubble -->
+              <div
+                class="max-w-[80%] break-words px-4 py-3 text-[0.875rem] leading-[1.55]"
+                :class="msg.sender === 'bot'
+                  ? 'bg-white text-[#1f2937] rounded-[4px_18px_18px_18px] shadow-[0_1px_3px_rgba(0,0,0,0.06)]'
+                  : 'bg-[#1e4620] text-white rounded-[18px_4px_18px_18px] shadow-[0_2px_8px_rgba(30,70,32,0.2)]'"
+              >
+                <p class="m-0 whitespace-pre-wrap">{{ msg.text }}</p>
+                <p v-if="msg.kind && msg.sender === 'bot'" class="mt-2 mb-0 text-[0.7rem] font-semibold flex items-center gap-1" :class="messageKindClass(msg.kind)" role="status">
+                  <i class="fa-solid" :class="msg.kind === 'curated' || msg.kind === 'provider' ? 'fa-circle-check text-[#1e4620]' : 'fa-circle-exclamation text-[#9a3412]'" aria-hidden="true"></i>
+                  {{ messageKindLabel(msg.kind) }}
+                </p>
+                <ul v-if="msg.sources?.length" class="mt-2 mb-0 space-y-1 border-t border-[#e1e8e0] pt-2 list-none pl-0" aria-label="Nguồn tham khảo">
+                  <li v-for="source in msg.sources" :key="source.id" class="text-[0.7rem] leading-snug text-[#4A5545]">
+                    <i class="fa-solid fa-link text-[0.55rem] text-[#7CB342] mr-1" aria-hidden="true"></i>
+                    <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2">{{ source.label }}</a>
+                    <span v-else class="font-semibold">{{ source.label }}</span>
+                    <span v-if="source.reference" class="text-[#6b7280]"> — {{ source.reference }}</span>
+                  </li>
+                </ul>
+                <span v-if="msg.isStreaming" class="inline-block ml-0.5 text-[#7CB342] font-bold animate-[blinkCursor_0.6s_infinite] motion-reduce:animate-none" aria-hidden="true">▌</span>
+              </div>
+            </div>
+          </template>
+
+          <!-- Typing indicator -->
+          <div v-if="isSubmitting" class="flex gap-2.5 justify-start">
+            <div class="w-7 h-7 rounded-full bg-[#1e4620] flex items-center justify-center flex-shrink-0 shadow-sm">
+              <i class="fa-solid fa-robot text-white text-[0.65rem]"></i>
+            </div>
+            <div class="bg-white px-4 py-3 rounded-[4px_18px_18px_18px] shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
+              <div class="flex gap-1 items-center">
+                <span class="w-2 h-2 bg-[#1e4620]/40 rounded-full animate-bounce [animation-delay:0ms]"></span>
+                <span class="w-2 h-2 bg-[#1e4620]/40 rounded-full animate-bounce [animation-delay:150ms]"></span>
+                <span class="w-2 h-2 bg-[#1e4620]/40 rounded-full animate-bounce [animation-delay:300ms]"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Quick Questions (collapsible) -->
+        <div v-if="quickQuestionState === 'success' && quickQuestions.length" class="flex-shrink-0 border-t border-[#e1e8e0]">
+          <button type="button" class="w-full px-4 py-2 bg-white text-[0.75rem] font-semibold text-[#4A5545] flex items-center justify-between border-none cursor-pointer transition-all hover:bg-[#f8faf8]" @click="isQuickQuestionsExpanded = !isQuickQuestionsExpanded">
+            <span class="flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-[#7CB342] text-[0.7rem]" aria-hidden="true"></i> Câu hỏi gợi ý</span>
+            <i class="fa-solid fa-chevron-up text-[0.6rem] transition-transform duration-200" :class="{ 'rotate-180': !isQuickQuestionsExpanded }" aria-hidden="true"></i>
           </button>
-          <button ref="chatCloseButton" class="bg-[#f3f4f6] border-none text-[#6b7280] w-7 h-7 rounded-full text-[0.85rem] flex items-center justify-center cursor-pointer transition-all hover:bg-[#e5e7eb] hover:text-[#111827] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2" @click="closeChatbot" aria-label="Đóng cửa sổ">✕</button>
-        </div>
-      </div>
-
-      <div ref="chatContainer" class="flex-1 px-4 py-4 overflow-y-auto overscroll-contain flex flex-col gap-3 bg-[#f9fbf9]" aria-live="polite" aria-relevant="additions text">
-        <div v-for="(msg, index) in chatMessages" :key="msg.id || index" class="flex gap-2 items-end" :class="{ 'justify-end': msg.sender === 'user' }">
-          <div v-if="msg.sender === 'bot'" class="w-6 h-6 rounded-full bg-[#edf5ec] flex items-center justify-center flex-shrink-0 mb-0.5" aria-hidden="true">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#1e4620" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-            </svg>
-          </div>
-          <div
-            class="max-w-[86%] break-words px-3.5 py-2.5 rounded-2xl text-[0.88rem] leading-[1.48]"
-            :class="msg.sender === 'bot' ? 'bg-white text-[#1f2937] border border-[#e8ede7] rounded-bl-[4px] shadow-sm' : 'bg-[#1e4620] text-white rounded-br-[4px]'"
-          >
-            <p class="m-0 whitespace-pre-wrap">{{ msg.text }}</p>
-            <p v-if="msg.kind && msg.sender === 'bot'" class="mt-2 mb-0 text-[0.72rem] font-semibold" :class="messageKindClass(msg.kind)" role="status">
-              {{ messageKindLabel(msg.kind) }}
-            </p>
-            <ul v-if="msg.sources?.length" class="mt-2 mb-0 space-y-1 border-t border-[#e1e8e0] pt-2" aria-label="Nguồn tham khảo công khai">
-              <li v-for="source in msg.sources" :key="source.id" class="text-[0.72rem] leading-snug text-[#4A5545]">
-                <span class="font-bold text-[#2d4a2d]">Nguồn:</span>
-                <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]">{{ source.label }}</a>
-                <span v-else class="font-semibold">{{ source.label }}</span>
-                <span v-if="source.reference"> — {{ source.reference }}</span>
-              </li>
-            </ul>
-            <span v-if="msg.isStreaming" class="inline-block ml-0.5 text-[#4A6741] font-bold animate-[blinkCursor_0.6s_infinite] motion-reduce:animate-none" aria-hidden="true">▌</span>
+          <div v-show="isQuickQuestionsExpanded" class="px-3.5 pb-2.5 bg-white">
+            <div class="flex flex-wrap gap-1.5 max-h-[68px] overflow-y-auto overscroll-contain">
+              <button
+                v-for="question in quickQuestions"
+                :key="question.id"
+                type="button"
+                :disabled="isSubmitting"
+                @click="askBot(question.question)"
+                class="bg-[#f0f6ef] border border-[#d4e4d2] text-[#2d4a2d] px-2.5 py-1 rounded-full text-[0.72rem] font-medium whitespace-nowrap cursor-pointer transition-all hover:bg-[#1e4620] hover:text-white hover:border-[#1e4620] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
+              >{{ question.question }}</button>
+            </div>
           </div>
         </div>
-        <p v-if="isSubmitting" class="m-0 text-[0.78rem] text-[#556655]" role="status">Đang nhận phản hồi an toàn từ trợ lý…</p>
-      </div>
 
-      <div class="px-3.5 py-2.5 bg-white border-t border-[#edf2ec]">
-        <p class="m-0 text-[0.75rem] font-semibold text-[#556655]" role="status" aria-live="polite">{{ quickQuestionStatusText }}</p>
-        <div v-if="quickQuestionState === 'success'" class="flex flex-wrap gap-1.5 mt-2 max-h-[88px] overflow-y-auto overscroll-contain">
-          <button
-            v-for="question in quickQuestions"
-            :key="question.id"
-            type="button"
-            :disabled="isSubmitting"
-            @click="askBot(question.question)"
-            class="bg-[#f3f6f3] border border-[#e1e8e0] text-[#2d4a2d] px-3 py-[5px] rounded-2xl text-[0.76rem] font-semibold whitespace-normal text-left leading-[1.3] cursor-pointer transition-all hover:bg-[#1e4620] hover:text-white hover:border-[#1e4620] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-1 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none"
-          >{{ question.question }}</button>
+        <!-- Input Form -->
+        <div class="flex-shrink-0 bg-white border-t border-[#e1e8e0] px-3 pt-2.5 pb-[calc(10px+env(safe-area-inset-bottom,0px))] md:pb-3 md:rounded-b-2xl">
+          <form class="flex items-end gap-2" @submit.prevent="sendBotMessage">
+            <div class="flex-1 min-w-0">
+              <label for="public-chatbot-input" class="sr-only">Nhập câu hỏi cho trợ lý</label>
+              <input
+                id="public-chatbot-input"
+                ref="botInputRef"
+                type="text"
+                placeholder="Hỏi tôi bất cứ điều gì..."
+                v-model="botInput"
+                :maxlength="CHATBOT_CLIENT_LIMITS.maxMessageChars"
+                :aria-describedby="botInputError ? 'public-chatbot-error public-chatbot-counter' : 'public-chatbot-counter'"
+                :aria-invalid="Boolean(botInputError)"
+                :disabled="isSubmitting"
+                class="w-full px-4 py-3 rounded-full border border-[#d4e4d2] text-[0.88rem] outline-none bg-[#f8faf8] transition-all focus:border-[#1e4620] focus:bg-white focus:shadow-[0_0_0_3px_rgba(30,70,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
+              />
+              <div v-if="botInputError" class="mt-1 px-4">
+                <p id="public-chatbot-error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ botInputError }}</p>
+              </div>
+            </div>
+            <button type="submit" :disabled="isSubmitting || !botInput.trim()" class="w-11 h-11 rounded-full bg-[#1e4620] text-white border-none flex flex-shrink-0 items-center justify-center cursor-pointer transition-all hover:bg-[#153317] hover:shadow-[0_4px_12px_rgba(30,70,32,0.3)] active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:bg-[#a0b89e]" aria-label="Gửi tin nhắn">
+              <i class="fa-solid fa-paper-plane text-[0.85rem]"></i>
+            </button>
+          </form>
+          <p id="public-chatbot-counter" class="m-0 mt-1 text-[0.65rem] text-[#9ca3af] text-right px-2" :class="{ '!text-[#b42318]': botInput.length > CHATBOT_CLIENT_LIMITS.maxMessageChars * 0.9 }">{{ botInput.length }}/{{ CHATBOT_CLIENT_LIMITS.maxMessageChars }}</p>
         </div>
-        <button v-else-if="quickQuestionState === 'error'" type="button" class="mt-2 text-[0.75rem] font-bold text-[#1e4620] underline underline-offset-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]" @click="loadQuickQuestions">Thử tải lại</button>
       </div>
+    </Teleport>
 
-      <form class="px-3.5 pt-3 pb-[calc(0.75rem+env(safe-area-inset-bottom))] bg-white border-t border-[#edf2ec]" @submit.prevent="sendBotMessage">
-        <label for="public-chatbot-input" class="sr-only">Nhập câu hỏi cho trợ lý</label>
-        <div class="flex gap-2">
-          <input
-            id="public-chatbot-input"
-            ref="botInputRef"
-            type="text"
-            placeholder="Nhập câu hỏi cần hỗ trợ..."
-            v-model="botInput"
-            :maxlength="CHATBOT_CLIENT_LIMITS.maxMessageChars"
-            :aria-describedby="botInputError ? 'public-chatbot-error public-chatbot-counter' : 'public-chatbot-counter'"
-            :aria-invalid="Boolean(botInputError)"
-            :disabled="isSubmitting"
-            class="min-w-0 flex-1 px-3.5 py-2.5 rounded-[20px] border border-[#e1e8e0] text-[0.86rem] outline-none bg-[#f8faf8] transition-all focus:border-[#1e4620] focus:bg-white focus-visible:ring-2 focus-visible:ring-[#4A6741]/40 disabled:cursor-not-allowed disabled:opacity-60 motion-reduce:transition-none"
-          />
-          <button type="submit" :disabled="isSubmitting || !botInput.trim()" class="bg-[#1e4620] text-white border-none w-[38px] h-[38px] rounded-full flex flex-shrink-0 items-center justify-center cursor-pointer transition-all hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 motion-reduce:transition-none" aria-label="Gửi tin nhắn">
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-              <line x1="22" y1="2" x2="11" y2="13"></line>
-              <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-            </svg>
-          </button>
+
+    <!-- Chatbot Toggle Button + Teaser Bubble -->
+    <div class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[10050] flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
+      <!-- Teaser bubble -->
+      <div
+        v-if="chatTeaserVisible && !isChatbotOpen"
+        class="relative max-w-[220px] bg-white text-[#1f2937] text-[0.8rem] leading-snug px-3.5 py-2.5 rounded-[16px_16px_4px_16px] shadow-[0_4px_20px_rgba(0,0,0,0.12)] border border-black/5 animate-[fadeSlideUp_0.3s_ease-out] cursor-pointer"
+        @click="toggleChatbot"
+      >
+        <p class="m-0">{{ chatTeaserText }}</p>
+        <button type="button" class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#e5e7eb] text-[#6b7280] text-[0.6rem] flex items-center justify-center border-none cursor-pointer hover:bg-[#d1d5db]" @click.stop="dismissTeaser" aria-label="Đóng">
+          <i class="fa-solid fa-xmark"></i>
+        </button>
+      </div>
+      <!-- Toggle button -->
+      <button
+        ref="chatToggleButton"
+        class="chatbot-toggle-btn flex bg-[#1e4620] text-white border border-white/20 px-4 py-2.5 pl-3.5 rounded-[50px] shadow-[0_8px_24px_rgba(30,70,32,0.25)] cursor-pointer items-center gap-2 font-bold text-[0.88rem] transition-all hover:-translate-y-0.5 hover:bg-[#153317] hover:shadow-[0_12px_30px_rgba(30,70,32,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] focus-visible:ring-offset-2 motion-reduce:transition-none"
+        aria-controls="public-chatbot-dialog"
+        :aria-expanded="isChatbotOpen"
+        @click="toggleChatbot">
+        <div class="flex items-center justify-center">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
         </div>
-        <div class="mt-1 flex items-start justify-between gap-2 text-[0.7rem]">
-          <p id="public-chatbot-error" class="m-0 text-[#b42318]" role="alert">{{ botInputError }}</p>
-          <span id="public-chatbot-counter" class="ml-auto whitespace-nowrap text-[#6b7280]">{{ botInput.length }}/{{ CHATBOT_CLIENT_LIMITS.maxMessageChars }}</span>
-        </div>
-      </form>
+        <span class="bot-label">Hỏi trợ lý</span>
+      </button>
     </div>
-
-    <!-- Chatbot Toggle Button -->
-    <button
-      ref="chatToggleButton"
-      class="chatbot-toggle-btn hidden md:flex fixed md:right-6 md:bottom-6 bg-[#1e4620] text-white border border-white/20 px-4 py-2.5 pl-3.5 rounded-[50px] shadow-[0_8px_24px_rgba(30,70,32,0.25)] cursor-pointer items-center gap-2 z-[9400] font-bold text-[0.88rem] transition-all hover:-translate-y-0.5 hover:bg-[#153317] hover:shadow-[0_12px_30px_rgba(30,70,32,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] focus-visible:ring-offset-2 motion-reduce:transition-none"
-      aria-controls="public-chatbot-dialog"
-      :aria-expanded="isChatbotOpen"
-      @click="toggleChatbot">
-      <div class="flex items-center justify-center">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-        </svg>
-      </div>
-      <span class="bot-label">Hỏi trợ lý</span>
-    </button>
 
     <!-- Mobile Bottom Nav -->
     <nav
-      class="fixed bottom-2.5 left-3 right-3 h-16 bg-[linear-gradient(135deg,rgba(255,255,255,0.94)_0%,rgba(244,249,243,0.92)_100%)] backdrop-blur-md border border-white/90 rounded-[24px] shadow-[0_12px_32px_rgba(15,35,18,0.16)] z-[9000] flex justify-around items-center px-1.5 transition-opacity md:hidden"
-      :class="{ 'opacity-0 pointer-events-none': isMobileMenuOpen || isChatbotOpen }"
+      class="fixed bottom-2.5 left-3 right-3 h-16 bg-[linear-gradient(135deg,rgba(255,255,255,0.94)_0%,rgba(244,249,243,0.92)_100%)] backdrop-blur-md border border-white/90 rounded-[24px] shadow-[0_12px_32px_rgba(15,35,18,0.16)] z-[9900] flex justify-around items-center px-1.5 transition-all md:hidden"
+      :class="{ 'opacity-0 pointer-events-none translate-y-4': isMobileMenuOpen || isChatbotOpen }"
       aria-label="Điều hướng nhanh"
       style="padding-bottom: env(safe-area-inset-bottom, 0px)"
     >
@@ -590,10 +643,51 @@ const chatToggleButton = ref(null)
 const chatMessages = ref([{ ...CHATBOT_WELCOME_MESSAGE }])
 const quickQuestions = ref([])
 const quickQuestionState = ref('loading')
+const isQuickQuestionsExpanded = ref(true)
 let quickQuestionsController = null
 let chatRequestController = null
 let botRequestSequence = 0
 let messageSequence = 0
+
+// Chat teaser bubble logic
+const CHAT_TEASER_MESSAGES = [
+  'Bạn cần tìm hiểu về quyền lợi sau khi chấp hành xong án phạt tù?',
+  'Tôi có thể giúp bạn tra cứu thủ tục xóa án tích miễn phí.',
+  'Cần hỗ trợ tìm việc làm sau khi tái hòa nhập cộng đồng?',
+  'Hỏi tôi về chính sách hỗ trợ vay vốn cho người hoàn lương nhé!',
+  'Bạn muốn biết về các mô hình tái hòa nhập thành công?',
+  'Tôi giúp bạn tìm hiểu quy trình đăng ký tạm trú sau mãn hạn tù.',
+  'Cần tư vấn về quyền học nghề, học văn hóa miễn phí?',
+]
+const chatTeaserVisible = ref(false)
+const chatTeaserText = ref('')
+let teaserTimer = null
+let teaserDismissed = false
+
+const showRandomTeaser = () => {
+  if (isChatbotOpen.value || teaserDismissed) return
+  const msg = CHAT_TEASER_MESSAGES[Math.floor(Math.random() * CHAT_TEASER_MESSAGES.length)]
+  chatTeaserText.value = msg
+  chatTeaserVisible.value = true
+  // Auto-hide after 6s
+  setTimeout(() => { chatTeaserVisible.value = false }, 6000)
+}
+
+const dismissTeaser = () => {
+  chatTeaserVisible.value = false
+  teaserDismissed = true
+  if (teaserTimer) { clearInterval(teaserTimer); teaserTimer = null }
+}
+
+const startTeaserCycle = () => {
+  if (teaserTimer) return
+  // First teaser after 5s, then every 20s
+  const initTimer = setTimeout(() => {
+    showRandomTeaser()
+    teaserTimer = setInterval(showRandomTeaser, 20000)
+  }, 5000)
+  teaserTimer = initTimer
+}
 
 const quickQuestionStatusText = computed(() => {
   if (quickQuestionState.value === 'loading') return 'Đang tải câu hỏi đã được phê duyệt…'
@@ -762,6 +856,9 @@ const handleChatbotDialogKeydown = (event) => {
 
 const openChatbot = async () => {
   isChatbotOpen.value = true
+  chatTeaserVisible.value = false
+  teaserDismissed = true
+  if (teaserTimer) { clearInterval(teaserTimer); teaserTimer = null }
   if (quickQuestionState.value === 'error' || quickQuestionState.value === 'empty') loadQuickQuestions()
   await nextTick()
   chatCloseButton.value?.focus()
@@ -981,6 +1078,7 @@ onMounted(() => {
   loadChatHistory()
   loadQuickQuestions()
   loadNavMenu()
+  startTeaserCycle()
 })
 
 onUnmounted(() => {
@@ -988,12 +1086,22 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   if (typeof document !== 'undefined') document.body.style.overflow = ''
   if (dateTimer) clearInterval(dateTimer)
+  if (teaserTimer) clearInterval(teaserTimer)
   quickQuestionsController?.abort()
   chatRequestController?.abort()
 })
 </script>
 
 <style scoped>
+/* Hide scrollbar but keep scroll functionality */
+.scrollbar-hide {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+.scrollbar-hide::-webkit-scrollbar {
+  display: none;
+}
+
 /* Slide-down transition for search bar */
 .slide-down-enter-active, .slide-down-leave-active {
   transition: transform 0.25s ease, opacity 0.25s ease;
@@ -1018,6 +1126,12 @@ onUnmounted(() => {
 @keyframes blinkCursor {
   0%, 100% { opacity: 1; }
   50% { opacity: 0; }
+}
+
+/* Teaser bubble slide up */
+@keyframes fadeSlideUp {
+  from { opacity: 0; transform: translateY(8px) scale(0.95); }
+  to { opacity: 1; transform: translateY(0) scale(1); }
 }
 
 /* Liquid orb glow animation */
