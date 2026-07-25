@@ -291,8 +291,9 @@
       </div>
     </footer>
 
-    <!-- Chatbot Popup -->
+    <!-- Chatbot Popup (client-only: uses localStorage history, skip SSR to avoid hydration mismatch) -->
     <div
+      v-if="clientMounted"
       id="public-chatbot-dialog"
       ref="chatbotDialog"
       class="fixed inset-0 w-screen h-[100dvh] bg-[#f0f4ef] flex flex-col z-[99999] overflow-hidden opacity-0 pointer-events-none translate-y-[20px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:inset-auto md:fixed md:right-5 md:bottom-5 md:w-[400px] md:h-[min(600px,calc(100dvh-100px))] md:rounded-2xl md:shadow-[0_25px_60px_rgba(0,0,0,0.2)] md:border md:border-black/10 md:translate-y-3 md:scale-[0.96]"
@@ -439,8 +440,8 @@
     </div>
 
 
-    <!-- Chatbot Toggle Button + Teaser Bubble -->
-    <div class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[10050] flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
+    <!-- Chatbot Toggle Button + Teaser Bubble (client-only) -->
+    <div v-if="clientMounted" class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[10050] flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
       <!-- Teaser bubble -->
       <div
         v-if="chatTeaserVisible && !isChatbotOpen"
@@ -525,6 +526,7 @@ import { ref, onMounted, onUnmounted, computed, nextTick, watch, resolveComponen
 // `:is="'nuxt-link'"` renders an inert custom element that never navigates).
 const NuxtLink = resolveComponent('NuxtLink')
 
+const clientMounted = ref(false) // true after onMounted — gates client-only UI (chatbot)
 const isSticky = ref(false)
 const isMobileMenuOpen = ref(false)
 const isSearchActive = ref(false)
@@ -585,21 +587,23 @@ const onBottomNavClick = (item) => {
   else if (item.type === 'drawer') toggleMobileMenu()
 }
 
-const loadNavMenu = async () => {
-  try {
-    const res = await $fetch('/api/public/settings')
-    // Desktop navbar: prefer nav_menu_navbar, fallback to nav_menu
-    const navbarRaw = res?.settings?.nav_menu_navbar || res?.settings?.nav_menu
-    if (navbarRaw) {
-      try { navMenuRaw.value = JSON.parse(navbarRaw) } catch { /* ignore */ }
-    }
-    // Mobile bottom nav: its own shape, no fallback to nav_menu
-    const mobileRaw = res?.settings?.nav_menu_mobile
-    if (mobileRaw) {
-      try { bottomNavRaw.value = JSON.parse(mobileRaw) } catch { /* ignore */ }
-    }
-  } catch { /* ignore — use default */ }
-}
+// Use useFetch so the payload is serialized from SSR and reused on client
+// hydration without a second network request — eliminates nav data mismatch.
+const { data: settingsData } = await useFetch('/api/public/settings', {
+  key: 'public-settings-nav',
+  default: () => null,
+  lazy: false,
+})
+
+// Derive nav from the fetched settings (reactive — updates if data refetches)
+const _parseNav = (raw) => { try { return JSON.parse(raw) } catch { return null } }
+watch(settingsData, (res) => {
+  if (!res?.settings) return
+  const navbarRaw = res.settings.nav_menu_navbar || res.settings.nav_menu
+  if (navbarRaw) navMenuRaw.value = _parseNav(navbarRaw)
+  const mobileRaw = res.settings.nav_menu_mobile
+  if (mobileRaw) bottomNavRaw.value = _parseNav(mobileRaw)
+}, { immediate: true })
 
 const WEEKDAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy']
 const pad = (n) => String(n).padStart(2, '0')
@@ -1072,13 +1076,13 @@ const scrollChatBottom = async () => {
 }
 
 onMounted(() => {
+  clientMounted.value = true
   window.addEventListener('scroll', handleScroll, { passive: true })
   window.addEventListener('keydown', handleKeydown)
   updateLiveDate()
   dateTimer = setInterval(updateLiveDate, 1000)
   loadChatHistory()
   loadQuickQuestions()
-  loadNavMenu()
   startTeaserCycle()
 })
 
