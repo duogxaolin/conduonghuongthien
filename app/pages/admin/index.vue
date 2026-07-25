@@ -145,7 +145,7 @@ const stats = ref([
 ])
 
 const quickActions = [
-  { title: 'Tùy chỉnh Trang chủ', desc: 'Kéo-thả sắp xếp lại section & đổi nội dung', path: '/admin/content/home', icon: 'fa-solid fa-cubes', accent: '#2c6e33' },
+  { title: 'Quản lý Trang', desc: 'Kéo-thả sắp xếp lại section & đổi nội dung', path: '/admin/content/pages', icon: 'fa-solid fa-cubes', accent: '#2c6e33' },
   { title: 'Viết bài mới', desc: 'Soạn thảo tin tức, bài viết với TinyMCE Editor', path: '/admin/content/articles/new', icon: 'fa-solid fa-pen-to-square', accent: '#2e7db8' },
   { title: 'Quản lý Người dùng', desc: 'Thêm tài khoản admin mới, thiết lập phân quyền', path: '/admin/users', icon: 'fa-solid fa-users', accent: '#c8832a' },
   { title: 'Cấu hình Lưu trữ Media', desc: 'Chuyển đổi Local / Cloudflare R2 storage', path: '/admin/settings/media-storage', icon: 'fa-solid fa-cloud-arrow-up', accent: '#7a5cbf' },
