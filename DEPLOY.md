@@ -47,6 +47,7 @@ JWT_SECRET=$(openssl rand -base64 48)
 CHATBOT_ENCRYPTION_SECRET=$(openssl rand -base64 32)
 
 # Analytics
+ANALYTICS_HMAC_SECRET=$(openssl rand -base64 48)
 ANALYTICS_COLLECTION_ENABLED=true
 NUXT_ANALYTICS_COLLECTION_ENABLED=true
 
@@ -68,12 +69,10 @@ grep MYSQL_ROOT_PASSWORD .env
 
 `docker-compose.yml` đã tự đọc biến từ `.env` — không cần sửa gì thêm.
 
-```bash
-# Build app (Nuxt production build)
-npm install
-npx nuxi build
+Docker tự build app bên trong container (Node 22, multi-stage) — **không cần cài Node trên host**.
 
-# Khởi động Docker
+```bash
+# Khởi động Docker (build + chạy)
 docker compose up --build -d
 
 # Kiểm tra logs
@@ -165,8 +164,6 @@ Cài SSL: `sudo certbot --nginx -d conduonghuongthien.com.vn`
 ```bash
 cd cdkt
 git pull origin main
-npm install
-npx nuxi build
 docker compose up --build -d
 ```
 

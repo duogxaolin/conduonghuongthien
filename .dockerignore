@@ -1,0 +1,12 @@
+node_modules
+.output
+.nuxt
+.data
+.env
+.env.*
+!.env.example
+*.log
+.git
+.DS_Store
+mysql_data
+uploads_data
