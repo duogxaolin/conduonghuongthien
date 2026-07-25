@@ -5,7 +5,7 @@
 - **OS**: Ubuntu 22.04+ / Debian 12+ / CentOS 9
 - **RAM**: tối thiểu 1 GB (khuyến nghị 2 GB)
 - **Docker**: Docker Engine 24+ & Docker Compose v2+
-- **Port**: 3000 (app) — hoặc dùng reverse proxy (Nginx/Caddy) để map 80/443
+- **Node.js**: KHÔNG cần cài — Docker multi-stage build dùng Node 22 bên trong
 
 ---
 
@@ -61,44 +61,45 @@ echo "✅ .env đã tạo xong. Mật khẩu MySQL root:"
 grep MYSQL_ROOT_PASSWORD .env
 ```
 
-> Lưu lại mật khẩu hiển thị — cần khi kết nối DB từ bên ngoài (`localhost:33069`).
+> Lưu lại mật khẩu — cần khi kết nối DB từ bên ngoài (`localhost:33069`).
 
 ---
 
 ## Bước 3: Build & Chạy
 
-`docker-compose.yml` đã tự đọc biến từ `.env` — không cần sửa gì thêm.
+```bash
+docker compose build --no-cache
+docker compose up -d
+```
 
-Docker tự build app bên trong container (Node 22, multi-stage) — **không cần cài Node trên host**.
+Chờ ~60-90s (MySQL healthy + app start). Kiểm tra:
 
 ```bash
-# Khởi động Docker (build + chạy)
-docker compose up --build -d
-
-# Kiểm tra logs
 docker logs cdkt_app -f
 ```
 
-Khi thấy `Listening on http://0.0.0.0:54432` → app đã sẵn sàng.
-
-App tự động chạy `init.ts` (tạo bảng) + `seed.ts` (tạo data mặc định) mỗi lần start.
+Khi thấy `Listening on http://0.0.0.0:54432` → app sẵn sàng.
 
 ---
 
-## Bước 4 (Tùy chọn): Import SQL Migration thủ công
+## Bước 4: Import Database
 
-Nếu muốn import schema + data đầy đủ (thay vì dùng auto-init/seed):
+### Cách A: Import full dump (khuyến nghị — có sẵn data mẫu)
 
 ```bash
-# Chờ MySQL healthy
-docker exec cdkt_mysql mysqladmin ping -u root -p$MYSQL_ROOT_PASSWORD --wait=30
+# Chờ MySQL sẵn sàng
+sleep 30
 
-# Import schema
-docker exec -i cdkt_mysql mysql -u root -p$MYSQL_ROOT_PASSWORD cdkt_admin < migrations/001_full_schema.sql
+# Import full dump (schema + data)
+docker exec -i cdkt_mysql mysql -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin < migrations/full_dump.sql
 
-# Import seed data
-docker exec -i cdkt_mysql mysql -u root -p$MYSQL_ROOT_PASSWORD cdkt_admin < migrations/002_seed_data.sql
+# Restart app để nhận DB mới
+docker restart cdkt_app
 ```
+
+### Cách B: Để app tự tạo (DB trống, chỉ có seed mặc định)
+
+Không cần làm gì — app tự chạy `init.ts` + `seed.ts` khi start.
 
 ---
 
@@ -112,7 +113,7 @@ sudo apt install caddy
 
 File `/etc/caddy/Caddyfile`:
 ```
-conduonghuongthien.com.vn {
+yourdomain.com {
     reverse_proxy localhost:54432
 }
 ```
@@ -126,7 +127,7 @@ sudo systemctl reload caddy
 ```nginx
 server {
     listen 80;
-    server_name conduonghuongthien.com.vn;
+    server_name yourdomain.com;
 
     location / {
         proxy_pass http://127.0.0.1:54432;
@@ -143,7 +144,7 @@ server {
 }
 ```
 
-Cài SSL: `sudo certbot --nginx -d conduonghuongthien.com.vn`
+SSL: `sudo certbot --nginx -d yourdomain.com`
 
 ---
 
@@ -164,19 +165,39 @@ Cài SSL: `sudo certbot --nginx -d conduonghuongthien.com.vn`
 ```bash
 cd cdkt
 git pull origin main
-docker compose up --build -d
+docker compose build --no-cache
+docker compose up -d
+```
+
+> Database **không bị mất** khi update — volume `mysql_data` persist giữa các lần rebuild.
+> Chỉ mất khi chạy `docker compose down -v` hoặc `docker volume rm`.
+
+---
+
+## Backup & Restore
+
+```bash
+# Backup
+docker exec cdkt_mysql mysqldump -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin > backup_$(date +%Y%m%d).sql
+
+# Restore
+docker exec -i cdkt_mysql mysql -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin < backup.sql
 ```
 
 ---
 
-## Backup Database
+## Chuyển máy chủ
 
 ```bash
-# Backup
-docker exec cdkt_mysql mysqldump -u root -p$MYSQL_ROOT_PASSWORD cdkt_admin > backup_$(date +%Y%m%d).sql
+# ─── Máy cũ ─────────────────────────────────────
+docker exec cdkt_mysql mysqldump -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin > backup.sql
+docker cp cdkt_app:/app/public/uploads ./uploads_backup
+scp backup.sql uploads_backup .env root@ip-may-moi:/path/to/cdkt/
 
-# Restore
-docker exec -i cdkt_mysql mysql -u root -p$MYSQL_ROOT_PASSWORD cdkt_admin < backup_20260725.sql
+# ─── Máy mới (sau khi clone + docker compose up) ─
+docker exec -i cdkt_mysql mysql -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin < backup.sql
+docker cp uploads_backup/. cdkt_app:/app/public/uploads/
+docker restart cdkt_app
 ```
 
 ---
@@ -185,7 +206,11 @@ docker exec -i cdkt_mysql mysql -u root -p$MYSQL_ROOT_PASSWORD cdkt_admin < back
 
 | Vấn đề | Giải pháp |
 |--------|-----------|
-| App không start | `docker logs cdkt_app` — kiểm tra lỗi kết nối DB |
-| MySQL refuse connection | Kiểm tra healthcheck: `docker inspect cdkt_mysql` |
-| Upload ảnh lỗi | Volume mount: `docker volume inspect cdkt_uploads_data` |
-| Port conflict | Đổi port mapping: `"8080:3000"` trong compose |
+| `Access denied` khi start | Xóa volume cũ: `docker compose down && docker volume rm conduonghuongthien_mysql_data && docker compose up -d` |
+| App không start | `docker logs cdkt_app` — kiểm tra lỗi |
+| MySQL refuse connection | Chờ healthy: `docker exec cdkt_mysql mysqladmin ping -u root -p<PW>` |
+| Upload ảnh lỗi | Kiểm tra volume: `docker volume inspect conduonghuongthien_uploads_data` |
+| Port conflict | Đổi `PORT=` trong `.env` rồi `docker compose up -d` |
+| Docker build dùng cache cũ | `docker compose build --no-cache` |
+| `Unknown column` errors | Import lại dump: xem Bước 4 Cách A |
+| Git "dubious ownership" | `git config --global --add safe.directory /path/to/repo` |
