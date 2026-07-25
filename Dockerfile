@@ -11,12 +11,11 @@ COPY .output ./.output
 COPY server ./server
 COPY public ./public
 
-# Environment variables
+# Environment variables (PORT is overridden by docker-compose from .env)
 ENV NODE_ENV=production
-ENV PORT=3000
 ENV HOST=0.0.0.0
 
-EXPOSE 3000
+EXPOSE ${PORT:-54432}
 
 # Auto-initialize & seed MySQL database then start production server
 CMD sh -c "npx tsx server/db/init.ts && npx tsx server/db/seed.ts && node .output/server/index.mjs"
