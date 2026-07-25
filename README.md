@@ -1,75 +1,29 @@
-# Nuxt Minimal Starter
+# Con Đường Hướng Thiện (CDKT)
 
-Look at the [Nuxt documentation](https://nuxt.com/docs/getting-started/introduction) to learn more.
+Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhập cộng đồng — Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.
 
-## Setup
+## Tech Stack
 
-Make sure to install dependencies:
+- **Frontend**: Nuxt 4 (Vue 3, TypeScript, Composition API), Tailwind CSS v3, FontAwesome 6 Pro
+- **Backend**: Nitro / H3, Drizzle ORM, MySQL 8.0, JWT Auth
+- **Deploy**: Docker Compose, PM2
+
+## Quick Start (Development)
 
 ```bash
-# npm
 npm install
-
-# pnpm
-pnpm install
-
-# yarn
-yarn install
-
-# bun
-bun install
-```
-
-## Development Server
-
-Start the development server on `http://localhost:3000`:
-
-```bash
-# npm
 npm run dev
-
-# pnpm
-pnpm dev
-
-# yarn
-yarn dev
-
-# bun
-bun run dev
 ```
 
-## Production
+## Production Deploy
 
-Build the application for production:
+Xem [DEPLOY.md](./DEPLOY.md) để triển khai VPS với Docker.
 
-```bash
-# npm
-npm run build
+## Admin Panel
 
-# pnpm
-pnpm build
+- URL: `/admin`
+- Tài khoản mặc định: `admin` / `Admin@123456`
 
-# yarn
-yarn build
+## License
 
-# bun
-bun run build
-```
-
-Locally preview production build:
-
-```bash
-# npm
-npm run preview
-
-# pnpm
-pnpm preview
-
-# yarn
-yarn preview
-
-# bun
-bun run preview
-```
-
-Check out the [deployment documentation](https://nuxt.com/docs/getting-started/deployment) for more information.
+Private — All rights reserved.
