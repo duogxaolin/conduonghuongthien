@@ -30,7 +30,12 @@ openspec/
 # Large binary assets (tracked separately or ignored)
 *.zip
 
-# FontAwesome Pro — large binary, deploy manually to server
-public/assets/fontawesome/
+# FontAwesome Pro — track css + webfonts (7MB), skip js SVG bundles (112MB)
+public/assets/fontawesome/js/
+public/assets/fontawesome/sprites/
+public/assets/fontawesome/svgs/
+public/assets/fontawesome/less/
+public/assets/fontawesome/scss/
+public/assets/fontawesome/metadata/
 .claude/
 .mcp.json
