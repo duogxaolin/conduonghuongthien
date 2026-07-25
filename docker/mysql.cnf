@@ -1,17 +1,29 @@
 [mysqld]
-# ─── Memory (tune for 1-2GB VPS) ────────────────
-innodb_buffer_pool_size = 256M
-innodb_log_file_size = 64M
-innodb_log_buffer_size = 16M
+# ─── Memory (tuned for 16GB VPS) ────────────────
+innodb_buffer_pool_size = 2G
+innodb_buffer_pool_instances = 4
+innodb_log_file_size = 256M
+innodb_log_buffer_size = 64M
 
 # ─── Connections ─────────────────────────────────
-max_connections = 50
-thread_cache_size = 8
+max_connections = 200
+thread_cache_size = 16
+table_open_cache = 4096
 
 # ─── Performance ─────────────────────────────────
 innodb_flush_log_at_trx_commit = 2
 innodb_flush_method = O_DIRECT
+innodb_io_capacity = 2000
+innodb_io_capacity_max = 4000
+innodb_read_io_threads = 4
+innodb_write_io_threads = 4
 skip_name_resolve = 1
+
+# ─── Temp & Sort ─────────────────────────────────
+tmp_table_size = 64M
+max_heap_table_size = 64M
+sort_buffer_size = 4M
+join_buffer_size = 4M
 
 # ─── Charset ─────────────────────────────────────
 character_set_server = utf8mb4
