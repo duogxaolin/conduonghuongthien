@@ -534,26 +534,13 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
-  // Add category column if not exists (migration for existing DBs)
-  await db.query(`
-    ALTER TABLE \`articles\`
-    ADD COLUMN IF NOT EXISTS \`category\` VARCHAR(128) NULL AFTER \`type\`,
-    ADD INDEX IF NOT EXISTS \`category_idx\` (\`category\`);
-  `).catch(() => {/* ignore if already exists */})
+  // Add category columns (MySQL 8.0 doesn't support IF NOT EXISTS — use helper)
+  await ensureColumn(db, database, 'articles', 'category', 'VARCHAR(128) NULL AFTER `type`')
+  await ensureIndex(db, database, 'articles', 'category_idx', 'INDEX `category_idx` (`category`)')
+  await ensureColumn(db, database, 'articles', 'category_id', 'INT NULL AFTER `category`')
+  await ensureIndex(db, database, 'articles', 'category_id_idx', 'INDEX `category_id_idx` (`category_id`)')
 
-  // Add category_id FK column if not exists (migration for existing DBs)
-  await db.query(`
-    ALTER TABLE \`articles\`
-    ADD COLUMN IF NOT EXISTS \`category_id\` INT NULL AFTER \`category\`;
-  `).catch(() => {/* ignore if already exists */})
-
-  // Add category_id index if not exists
-  await db.query(`
-    ALTER TABLE \`articles\`
-    ADD INDEX IF NOT EXISTS \`category_id_idx\` (\`category_id\`);
-  `).catch(() => {/* ignore if already exists */})
-
-  // Add FK constraint (wrapped in try/catch to ignore if already exists)
+  // Add FK constraint for category_id
   await db.query(`
     ALTER TABLE \`articles\`
     ADD CONSTRAINT \`fk_articles_category\` FOREIGN KEY (\`category_id\`) REFERENCES \`categories\` (\`id\`) ON DELETE SET NULL;
