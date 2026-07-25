@@ -209,7 +209,36 @@ onMounted(async () => {
     <!-- Table Card -->
     <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
       <div v-if="loading" class="py-10 text-center text-[#667768]">Đang tải danh sách bài viết...</div>
-      <div v-else class="overflow-x-auto">
+
+      <!-- Mobile Card View -->
+      <div v-else class="md:hidden divide-y divide-[#eef2ee]">
+        <div v-for="a in articles" :key="'m-'+a.id" class="p-4 flex gap-3">
+          <div class="w-14 h-10 rounded-lg overflow-hidden bg-[#f0f4f0] flex-shrink-0 border border-[#e2ece3]">
+            <img v-if="a.thumbnailUrl" :src="a.thumbnailUrl" class="w-full h-full object-cover" />
+            <div v-else class="w-full h-full flex items-center justify-center"><i class="fa-regular fa-image text-sm text-[#c8d6c9]"></i></div>
+          </div>
+          <div class="flex-1 min-w-0">
+            <p class="text-[0.85rem] font-semibold text-[#122815] line-clamp-2 m-0">{{ a.title }}</p>
+            <div class="flex flex-wrap items-center gap-2 mt-1.5">
+              <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.68rem] font-bold" :class="typeColors[a.type] || 'bg-gray-100 text-gray-600'">
+                <i :class="typeIcons[a.type]" class="text-[0.6rem]"></i>{{ typeLabels[a.type] || a.type }}
+              </span>
+              <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.68rem] font-bold" :class="a.status === 'published' ? 'bg-[#e4f2e5] text-[#2c6e33]' : a.status === 'draft' ? 'bg-[#fff8e1] text-[#b78103]' : 'bg-[#f5f5f5] text-[#888]'">
+                {{ a.status === 'published' ? 'Đã đăng' : (a.status === 'draft' ? 'Nháp' : 'Lưu trữ') }}
+              </span>
+              <span v-if="categoryDisplay(a)" class="text-[0.7rem] text-[#667768]">{{ categoryDisplay(a) }}</span>
+            </div>
+            <div class="flex items-center gap-3 mt-2">
+              <nuxt-link :to="`/admin/content/articles/${a.id}`" class="text-[#2c6e33] font-bold text-[0.8rem] no-underline"><i class="fa-solid fa-pen-to-square"></i> Sửa</nuxt-link>
+              <button class="bg-none border-0 text-[#d12420] font-bold text-[0.8rem] cursor-pointer p-0" @click="deleteArticle(a)"><i class="fa-regular fa-trash"></i> Xóa</button>
+            </div>
+          </div>
+        </div>
+        <div v-if="articles.length === 0" class="p-8 text-center text-[#667768] text-sm">Không có bài viết nào.</div>
+      </div>
+
+      <!-- Desktop Table View -->
+      <div v-if="!loading" class="hidden md:block overflow-x-auto">
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
