@@ -2,6 +2,7 @@ import { getDb } from '../../../utils/db'
 import { articles, users, categories } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { eq, like, desc, sql, count } from 'drizzle-orm'
+import { alias } from 'drizzle-orm/mysql-core'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -19,6 +20,7 @@ export default defineEventHandler(async (event) => {
   const categoryIdFilter = query.categoryId ? Number(query.categoryId) : null
 
   const db = getDb()
+  const parentCategories = alias(categories, 'parentCategories')
 
   const conditions = []
   if (search) {
@@ -44,6 +46,7 @@ export default defineEventHandler(async (event) => {
       categoryId:       articles.categoryId,
       categoryName:     categories.name,
       categoryParentId: categories.parentId,
+      parentCategoryName: parentCategories.name,
       title:        articles.title,
       slug:         articles.slug,
       excerpt:      articles.excerpt,
@@ -57,6 +60,7 @@ export default defineEventHandler(async (event) => {
     .from(articles)
     .leftJoin(users, eq(articles.authorId, users.id))
     .leftJoin(categories, eq(articles.categoryId, categories.id))
+    .leftJoin(parentCategories, eq(categories.parentId, parentCategories.id))
     .where(whereClause)
     .orderBy(desc(articles.createdAt))
     .limit(perPage)

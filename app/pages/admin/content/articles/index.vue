@@ -21,6 +21,29 @@ const typeLabels: Record<string, string> = {
   news: 'Bản tin', role_model: 'Tấm gương', reintegration: 'Mô hình', document: 'Văn bản', faq: 'Giải đáp',
 }
 
+const typeColors: Record<string, string> = {
+  news: 'bg-emerald-50 text-emerald-700',
+  role_model: 'bg-purple-50 text-purple-700',
+  reintegration: 'bg-orange-50 text-orange-700',
+  document: 'bg-blue-50 text-blue-700',
+  faq: 'bg-amber-50 text-amber-700',
+}
+
+const typeIcons: Record<string, string> = {
+  news: 'fa-solid fa-newspaper',
+  role_model: 'fa-solid fa-medal',
+  reintegration: 'fa-solid fa-people-arrows',
+  document: 'fa-solid fa-file-lines',
+  faq: 'fa-solid fa-circle-question',
+}
+
+/** Build display string for category: "Parent > Child" or just "Name" */
+const categoryDisplay = (a: any) => {
+  if (!a.categoryName) return ''
+  if (a.parentCategoryName) return `${a.parentCategoryName} › ${a.categoryName}`
+  return a.categoryName
+}
+
 const toast = useToast()
 const { confirm } = useConfirm()
 
@@ -190,41 +213,61 @@ onMounted(async () => {
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">ID</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3]">Ảnh</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3]">Tiêu đề bài viết</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3]">Bài viết</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thể loại</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Danh mục</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Trạng thái</th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Tác giả</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Ngày tạo</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thao tác</th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="a in articles" :key="a.id" class="hover:bg-[#fafcfa]">
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768]">#{{ a.id }}</td>
-              <td class="px-4 py-3 border-b border-[#eef2ee] w-[50px]">
-                <img v-if="a.thumbnailUrl" :src="a.thumbnailUrl" class="w-11 h-11 object-cover rounded-md" />
-                <i v-else class="fa-regular fa-image text-2xl text-[#c8d6c9]"></i>
-              </td>
-              <td class="px-4 py-3 border-b border-[#eef2ee] max-w-[260px]">
-                <strong class="text-[#122815] line-clamp-2">{{ a.title }}</strong>
-              </td>
+            <tr v-for="a in articles" :key="a.id" class="hover:bg-[#fafcfa] group">
+              <!-- Thumbnail + Title combined -->
               <td class="px-4 py-3 border-b border-[#eef2ee]">
-                <span class="inline-block bg-[#f0f7f1] text-[#2c6e33] px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap">
+                <div class="flex items-center gap-3">
+                  <div class="w-16 h-10 rounded-lg overflow-hidden bg-[#f0f4f0] flex-shrink-0 border border-[#e2ece3]">
+                    <img v-if="a.thumbnailUrl" :src="a.thumbnailUrl" class="w-full h-full object-cover" />
+                    <div v-else class="w-full h-full flex items-center justify-center">
+                      <i class="fa-regular fa-image text-lg text-[#c8d6c9]"></i>
+                    </div>
+                  </div>
+                  <div class="min-w-0">
+                    <p class="text-[#122815] font-semibold line-clamp-1 m-0 text-[0.85rem]">{{ a.title }}</p>
+                    <p class="text-[#8a9f8c] text-[0.75rem] m-0 mt-0.5">{{ a.authorName || 'Admin' }}</p>
+                  </div>
+                </div>
+              </td>
+              <!-- Type badge with icon + color -->
+              <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <span
+                  class="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap"
+                  :class="typeColors[a.type] || 'bg-gray-100 text-gray-600'"
+                >
+                  <i :class="typeIcons[a.type] || 'fa-solid fa-file'" class="text-[0.65rem]"></i>
                   {{ typeLabels[a.type] || a.type }}
                 </span>
               </td>
+              <!-- Category with hierarchy -->
+              <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <span v-if="categoryDisplay(a)" class="text-[0.82rem] text-[#445546]">
+                  {{ categoryDisplay(a) }}
+                </span>
+                <span v-else class="text-[0.8rem] text-[#bbb] italic">Chưa phân loại</span>
+              </td>
+              <!-- Status -->
               <td class="px-4 py-3 border-b border-[#eef2ee]">
                 <span
-                  class="inline-block px-2 py-1 rounded-md text-[0.75rem] font-bold whitespace-nowrap"
+                  class="inline-flex items-center gap-1 px-2 py-1 rounded-full text-[0.72rem] font-bold whitespace-nowrap"
                   :class="a.status === 'published' ? 'bg-[#e4f2e5] text-[#2c6e33]' : a.status === 'draft' ? 'bg-[#fff8e1] text-[#b78103]' : 'bg-[#f5f5f5] text-[#888]'"
                 >
-                  {{ a.status === 'published' ? 'Đã đăng' : (a.status === 'draft' ? 'Bản nháp' : 'Lưu trữ') }}
+                  <span class="w-1.5 h-1.5 rounded-full" :class="a.status === 'published' ? 'bg-[#2c6e33]' : a.status === 'draft' ? 'bg-[#b78103]' : 'bg-[#888]'"></span>
+                  {{ a.status === 'published' ? 'Đã đăng' : (a.status === 'draft' ? 'Nháp' : 'Lưu trữ') }}
                 </span>
               </td>
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] whitespace-nowrap">{{ a.authorName || 'Admin' }}</td>
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] whitespace-nowrap">{{ new Date(a.createdAt).toLocaleDateString('vi-VN') }}</td>
+              <!-- Date -->
+              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] text-[0.82rem] whitespace-nowrap">{{ new Date(a.createdAt).toLocaleDateString('vi-VN') }}</td>
+              <!-- Actions -->
               <td class="px-4 py-3 border-b border-[#eef2ee]">
                 <div class="flex items-center gap-2">
                   <nuxt-link
