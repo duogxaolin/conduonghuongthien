@@ -114,7 +114,32 @@ onMounted(() => { fetchUsers() })
 
     <!-- Table Card -->
     <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
-      <div class="overflow-x-auto">
+      <!-- Mobile Card View -->
+      <div class="md:hidden divide-y divide-[#eef2ee]">
+        <div v-for="u in users" :key="'m-'+u.id" class="p-4">
+          <div class="flex items-center justify-between mb-2">
+            <div class="flex items-center gap-2">
+              <span class="font-bold text-[#122815] text-[0.9rem]">{{ u.username }}</span>
+              <span class="px-2 py-0.5 rounded-xl text-[0.68rem] font-bold capitalize" :class="u.roleName === 'superadmin' ? 'bg-[#ffebe9] text-[#d12420]' : u.roleName === 'editor' ? 'bg-[#e4f2e5] text-[#2c6e33]' : 'bg-[#eef2ee] text-[#556655]'">{{ u.roleName }}</span>
+            </div>
+            <span class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[0.7rem] font-bold" :class="u.isActive ? 'bg-[#e4f2e5] text-[#2c6e33]' : 'bg-[#ffebe9] text-[#d12420]'">
+              <i :class="u.isActive ? 'fa-solid fa-lock-open' : 'fa-solid fa-lock'" class="text-[0.6rem]"></i>
+              {{ u.isActive ? 'Hoạt động' : 'Đã khóa' }}
+            </span>
+          </div>
+          <p class="text-[0.8rem] text-[#667768] m-0">{{ u.email || 'Chưa có email' }}</p>
+          <div class="flex items-center gap-3 mt-2.5">
+            <button class="inline-flex items-center gap-1 text-[#2c6e33] font-bold text-[0.8rem] bg-none border-0 cursor-pointer p-0" @click="openEditModal(u)"><i class="fa-solid fa-pen-to-square"></i> Sửa</button>
+            <button class="inline-flex items-center gap-1 text-[#d12420] font-bold text-[0.8rem] bg-none border-0 cursor-pointer p-0" @click="deleteUser(u)"><i class="fa-solid fa-trash-can"></i> Xóa</button>
+            <button class="inline-flex items-center gap-1 font-bold text-[0.8rem] bg-none border-0 cursor-pointer p-0" :class="u.isActive ? 'text-[#b78103]' : 'text-[#2c6e33]'" @click="toggleActive(u)">
+              <i :class="u.isActive ? 'fa-solid fa-lock' : 'fa-solid fa-lock-open'"></i> {{ u.isActive ? 'Khóa' : 'Mở khóa' }}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Desktop Table View -->
+      <div class="hidden md:block overflow-x-auto">
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>

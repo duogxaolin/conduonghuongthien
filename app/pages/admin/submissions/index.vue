@@ -70,7 +70,25 @@ onMounted(() => { fetchSubmissions() })
     <!-- Table Card -->
     <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
       <div v-if="loading" class="p-10 text-center text-[#667768]">Đang tải danh sách...</div>
-      <div v-else class="overflow-x-auto">
+
+      <!-- Mobile Card View -->
+      <div v-else class="md:hidden divide-y divide-[#eef2ee]">
+        <div v-for="s in filteredSubmissions" :key="'m-'+s.id" class="p-4" @click="selectedSub = s">
+          <div class="flex items-center justify-between mb-1">
+            <span class="font-bold text-[#122815] text-[0.9rem]">{{ s.fullName || 'Không tên' }}</span>
+            <span class="text-[0.72rem] text-[#667768]">{{ fmtDate(s.createdAt) }}</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2 text-[0.8rem] text-[#445546]">
+            <span v-if="s.phone"><i class="fa-solid fa-phone text-[0.65rem] text-[#667768]"></i> {{ s.phone }}</span>
+            <span v-if="s.address" class="truncate max-w-[180px]"><i class="fa-solid fa-location-dot text-[0.65rem] text-[#667768]"></i> {{ s.address }}</span>
+          </div>
+          <p v-if="s.formTitle" class="text-[0.75rem] text-[#2c6e33] font-medium m-0 mt-1">{{ s.formTitle }}</p>
+        </div>
+        <div v-if="filteredSubmissions.length === 0" class="p-8 text-center text-[#667768] text-sm">Không có đơn đăng ký nào.</div>
+      </div>
+
+      <!-- Desktop Table View -->
+      <div v-if="!loading" class="hidden md:block overflow-x-auto">
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>

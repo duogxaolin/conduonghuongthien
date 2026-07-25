@@ -208,7 +208,43 @@ onMounted(() => {
 
     <!-- Tree table -->
     <div v-else class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
-      <div class="overflow-x-auto">
+      <!-- Mobile Card View -->
+      <div class="md:hidden divide-y divide-[#eef2ee]">
+        <template v-for="root in tree" :key="'m-'+root.id">
+          <div class="p-4">
+            <div class="flex items-center gap-2 mb-1">
+              <i class="fa-solid fa-folder text-[#2c6e33]"></i>
+              <span class="font-bold text-[#122815] text-[0.9rem]">{{ root.name }}</span>
+              <span class="text-[0.68rem] bg-[#f0f7f1] text-[#2c6e33] px-1.5 py-0.5 rounded font-semibold">{{ root.children.length }} con</span>
+            </div>
+            <div class="flex flex-wrap items-center gap-2 mb-2">
+              <span class="inline-block bg-[#f0f7f1] text-[#2c6e33] px-1.5 py-0.5 rounded text-[0.7rem] font-bold">{{ typeLabels[root.type] || root.type }}</span>
+              <code class="text-[0.72rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ root.slug }}</code>
+            </div>
+            <div class="flex flex-wrap items-center gap-3">
+              <button class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="openCreate(root.id)"><i class="fa-solid fa-folder-plus text-xs"></i> Thêm con</button>
+              <button class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="openEdit(root)"><i class="fa-solid fa-pen text-xs"></i> Sửa</button>
+              <button class="text-[#d12420] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="deleteCategory(root)"><i class="fa-regular fa-trash text-xs"></i> Xóa</button>
+            </div>
+            <!-- Children inline -->
+            <div v-if="root.children.length" class="mt-3 ml-4 border-l-2 border-[#e2ece3] pl-3 space-y-2">
+              <div v-for="child in root.children" :key="'mc-'+child.id" class="flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <i class="fa-regular fa-folder text-[#8ed694] text-xs"></i>
+                  <span class="text-[0.82rem] text-[#2c3e2e]">{{ child.name }}</span>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button class="text-[#2c6e33] text-[0.72rem] font-bold bg-none border-0 cursor-pointer p-0" @click="openEdit(child)"><i class="fa-solid fa-pen"></i></button>
+                  <button class="text-[#d12420] text-[0.72rem] font-bold bg-none border-0 cursor-pointer p-0" @click="deleteCategory(child)"><i class="fa-regular fa-trash"></i></button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+      <!-- Desktop Table View -->
+      <div class="hidden md:block overflow-x-auto">
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
