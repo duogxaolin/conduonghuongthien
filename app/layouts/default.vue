@@ -292,6 +292,7 @@
     </footer>
 
     <!-- Chatbot Popup -->
+    <ClientOnly>
     <Teleport to="body">
       <div
         id="public-chatbot-dialog"
@@ -439,6 +440,7 @@
         </div>
       </div>
     </Teleport>
+    </ClientOnly>
 
 
     <!-- Chatbot Toggle Button + Teaser Bubble -->
@@ -661,7 +663,8 @@ const CHAT_TEASER_MESSAGES = [
 ]
 const chatTeaserVisible = ref(false)
 const chatTeaserText = ref('')
-let teaserTimer = null
+let teaserInterval = null
+let teaserInitTimeout = null
 let teaserDismissed = false
 
 const showRandomTeaser = () => {
@@ -676,17 +679,18 @@ const showRandomTeaser = () => {
 const dismissTeaser = () => {
   chatTeaserVisible.value = false
   teaserDismissed = true
-  if (teaserTimer) { clearInterval(teaserTimer); teaserTimer = null }
+  if (teaserInterval) { clearInterval(teaserInterval); teaserInterval = null }
+  if (teaserInitTimeout) { clearTimeout(teaserInitTimeout); teaserInitTimeout = null }
 }
 
 const startTeaserCycle = () => {
-  if (teaserTimer) return
-  // First teaser after 5s, then every 20s
-  const initTimer = setTimeout(() => {
+  if (teaserInterval || teaserInitTimeout) return
+  // First teaser after 2s, then every 8s
+  teaserInitTimeout = setTimeout(() => {
+    teaserInitTimeout = null
     showRandomTeaser()
-    teaserTimer = setInterval(showRandomTeaser, 20000)
-  }, 5000)
-  teaserTimer = initTimer
+    teaserInterval = setInterval(showRandomTeaser, 8000)
+  }, 2000)
 }
 
 const quickQuestionStatusText = computed(() => {
@@ -858,7 +862,8 @@ const openChatbot = async () => {
   isChatbotOpen.value = true
   chatTeaserVisible.value = false
   teaserDismissed = true
-  if (teaserTimer) { clearInterval(teaserTimer); teaserTimer = null }
+  if (teaserInterval) { clearInterval(teaserInterval); teaserInterval = null }
+  if (teaserInitTimeout) { clearTimeout(teaserInitTimeout); teaserInitTimeout = null }
   if (quickQuestionState.value === 'error' || quickQuestionState.value === 'empty') loadQuickQuestions()
   await nextTick()
   chatCloseButton.value?.focus()
@@ -1086,7 +1091,8 @@ onUnmounted(() => {
   window.removeEventListener('keydown', handleKeydown)
   if (typeof document !== 'undefined') document.body.style.overflow = ''
   if (dateTimer) clearInterval(dateTimer)
-  if (teaserTimer) clearInterval(teaserTimer)
+  if (teaserInterval) clearInterval(teaserInterval)
+  if (teaserInitTimeout) clearTimeout(teaserInitTimeout)
   quickQuestionsController?.abort()
   chatRequestController?.abort()
 })
