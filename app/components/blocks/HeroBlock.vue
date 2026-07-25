@@ -4,7 +4,7 @@
     <div class="absolute inset-0" style="background: linear-gradient(120deg, rgba(28,54,28,0.95) 0%, rgba(45,74,45,0.82) 45%, rgba(90,140,60,0.45) 100%);"></div>
     <div class="absolute inset-0 opacity-[0.04]" style="background: repeating-linear-gradient(135deg, #fff 0px, #fff 1px, transparent 1px, transparent 40px);"></div>
 
-    <div class="container relative z-10 flex items-center px-4 pb-24 pt-16 sm:px-0 sm:pb-32 sm:pt-[90px]">
+    <div class="container relative z-10 flex items-center px-4 pb-24 pt-16 sm:px-6 sm:pb-32 sm:pt-[90px] lg:px-8">
       <div class="max-w-[780px]">
         <div v-if="d.badge" class="flex items-center gap-3 mb-7">
           <span class="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-[0.75rem] font-extrabold uppercase tracking-[1px] text-[#1a3a1a]" style="background: linear-gradient(135deg, #ffd700 0%, #f59e0b 100%); box-shadow: 0 3px 12px rgba(245,158,11,0.5);">
