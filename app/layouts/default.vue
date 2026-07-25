@@ -172,7 +172,7 @@
         </div>
       </nav>
       <div class="hidden md:flex bg-white border-t border-[#edf2ec] border-b border-[#e1e8e0] h-[50px] items-center shadow-[0_4px_12px_rgba(15,35,18,0.04)] transition-all">
-        <div class="container w-full overflow-x-auto scrollbar-hide">
+        <div class="container w-full overflow-visible">
           <nav class="flex w-max min-w-full" @click="onNavClick" @keydown.escape="toggleMobileMenu">
             <ul class="flex list-none w-full justify-between items-center gap-1">
               <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group' : ''">
