@@ -1,6 +1,8 @@
 services:
   mysql:
-    image: mysql:8.0
+    build:
+      context: ./docker
+      dockerfile: Dockerfile.mysql
     container_name: cdkt_mysql
     restart: always
     environment:
@@ -12,7 +14,6 @@ services:
       - "${MYSQL_EXTERNAL_PORT:-33069}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
-      - ./docker/mysql.cnf:/etc/mysql/conf.d/custom.cnf:ro
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       timeout: 5s

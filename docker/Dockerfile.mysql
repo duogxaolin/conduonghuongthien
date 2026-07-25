@@ -1,0 +1,7 @@
+FROM mysql:8.0
+
+COPY mysql-autotune.sh /usr/local/bin/mysql-autotune.sh
+RUN chmod +x /usr/local/bin/mysql-autotune.sh
+
+# Run autotune then start mysqld
+CMD ["sh", "-c", "/usr/local/bin/mysql-autotune.sh && exec docker-entrypoint.sh mysqld"]
