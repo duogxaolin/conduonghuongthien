@@ -36,15 +36,15 @@ MYSQL_ROOT_PASSWORD=ThayDoiMatKhauRoot123!
 MYSQL_DATABASE=cdkt_admin
 MYSQL_USER=cdkt_user
 MYSQL_PASSWORD=ThayDoiMatKhauUser456!
+MYSQL_EXTERNAL_PORT=33069
 
 # ─── App ─────────────────────────────────────────
-PORT=3000
+PORT=54432
 NODE_ENV=production
-DB_HOST=mysql
-DB_PORT=3306
-DB_USER=root
-DB_PASSWORD=ThayDoiMatKhauRoot123!
-DB_NAME=cdkt_admin
+
+# DB_HOST & DB_PORT: kết nối nội bộ Docker network
+# DB_HOST=mysql (tên service), DB_PORT=3306 (port trong container, KHÔNG đổi)
+# Biến này KHÔNG cần khai báo — docker-compose.yml đã set cứng đúng giá trị.
 
 # JWT Secret (tạo random: openssl rand -base64 48)
 JWT_SECRET=thay-bang-chuoi-random-dai-64-ky-tu
@@ -67,52 +67,12 @@ EOF
 
 ---
 
-## Bước 3: Cập nhật `docker-compose.yml` dùng `.env`
+## Bước 3: Build & Chạy
 
-Tạo file `docker-compose.prod.yml` (hoặc sửa trực tiếp `docker-compose.yml`):
-
-```yaml
-services:
-  mysql:
-    image: mysql:8.0
-    container_name: cdkt_mysql
-    restart: always
-    environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD}
-      MYSQL_DATABASE: ${MYSQL_DATABASE}
-      MYSQL_USER: ${MYSQL_USER}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD}
-    volumes:
-      - mysql_data:/var/lib/mysql
-    healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
-      timeout: 5s
-      retries: 10
-
-  app:
-    build: .
-    container_name: cdkt_app
-    restart: always
-    ports:
-      - "3000:3000"
-    env_file: .env
-    volumes:
-      - uploads_data:/app/public/uploads
-    depends_on:
-      mysql:
-        condition: service_healthy
-
-volumes:
-  mysql_data:
-  uploads_data:
-```
-
----
-
-## Bước 4: Build & Chạy
+`docker-compose.yml` đã tự đọc biến từ `.env` — không cần sửa gì thêm.
 
 ```bash
-# Build app (Nuxt production build chạy trên máy local hoặc CI)
+# Build app (Nuxt production build)
 npm install
 npx nuxi build
 
@@ -123,13 +83,13 @@ docker compose up --build -d
 docker logs cdkt_app -f
 ```
 
-Khi thấy `Listening on http://0.0.0.0:3000` → app đã sẵn sàng.
+Khi thấy `Listening on http://0.0.0.0:54432` → app đã sẵn sàng.
 
 App tự động chạy `init.ts` (tạo bảng) + `seed.ts` (tạo data mặc định) mỗi lần start.
 
 ---
 
-## Bước 5 (Tùy chọn): Import SQL Migration thủ công
+## Bước 4 (Tùy chọn): Import SQL Migration thủ công
 
 Nếu muốn import schema + data đầy đủ (thay vì dùng auto-init/seed):
 
@@ -146,7 +106,7 @@ docker exec -i cdkt_mysql mysql -u root -p$MYSQL_ROOT_PASSWORD cdkt_admin < migr
 
 ---
 
-## Bước 6: Reverse Proxy (HTTPS)
+## Bước 5: Reverse Proxy (HTTPS)
 
 ### Dùng Caddy (đơn giản nhất)
 
@@ -157,7 +117,7 @@ sudo apt install caddy
 File `/etc/caddy/Caddyfile`:
 ```
 conduonghuongthien.com.vn {
-    reverse_proxy localhost:3000
+    reverse_proxy localhost:54432
 }
 ```
 
@@ -173,7 +133,7 @@ server {
     server_name conduonghuongthien.com.vn;
 
     location / {
-        proxy_pass http://127.0.0.1:3000;
+        proxy_pass http://127.0.0.1:54432;
         proxy_http_version 1.1;
         proxy_set_header Upgrade $http_upgrade;
         proxy_set_header Connection 'upgrade';

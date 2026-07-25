@@ -4,12 +4,12 @@ services:
     container_name: cdkt_mysql
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: rootpassword
-      MYSQL_DATABASE: cdkt_admin
-      MYSQL_USER: cdkt_user
-      MYSQL_PASSWORD: cdkt_password
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-cdkt_admin}
+      MYSQL_USER: ${MYSQL_USER:-cdkt_user}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cdkt_password}
     ports:
-      - "3306:3306"
+      - "${MYSQL_EXTERNAL_PORT:-33069}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -22,19 +22,19 @@ services:
     container_name: cdkt_app
     restart: always
     ports:
-      - "3000:3000"
+      - "${PORT:-3000}:${PORT:-3000}"
     environment:
-      PORT: 3000
+      PORT: ${PORT:-3000}
       NODE_ENV: production
       DB_HOST: mysql
       DB_PORT: 3306
       DB_USER: root
-      DB_PASSWORD: rootpassword
-      DB_NAME: cdkt_admin
-      JWT_SECRET: cdkt_docker_jwt_secret_987654321
-      CHATBOT_ENCRYPTION_SECRET: LBniQfaxO3ar1Nd0aFDA02RA12mx4+VlLeH++0fiFLc=
-      ANALYTICS_COLLECTION_ENABLED: "true"
-      NUXT_ANALYTICS_COLLECTION_ENABLED: "true"
+      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      DB_NAME: ${MYSQL_DATABASE:-cdkt_admin}
+      JWT_SECRET: ${JWT_SECRET:-cdkt_docker_jwt_secret_987654321}
+      CHATBOT_ENCRYPTION_SECRET: ${CHATBOT_ENCRYPTION_SECRET:-LBniQfaxO3ar1Nd0aFDA02RA12mx4+VlLeH++0fiFLc=}
+      ANALYTICS_COLLECTION_ENABLED: ${ANALYTICS_COLLECTION_ENABLED:-true}
+      NUXT_ANALYTICS_COLLECTION_ENABLED: ${NUXT_ANALYTICS_COLLECTION_ENABLED:-true}
     volumes:
       - uploads_data:/app/public/uploads
     depends_on:
