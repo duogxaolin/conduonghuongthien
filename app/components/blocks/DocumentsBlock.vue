@@ -22,10 +22,11 @@
 
 <script setup>
 import { computed } from 'vue'
+import { formatDateVN } from '~/utils/formatDate'
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
-const formatDate = (dateStr) => (dateStr ? new Date(dateStr).toLocaleDateString('vi-VN') : '')
+const formatDate = (dateStr) => formatDateVN(dateStr)
 const maxItems = computed(() => Number(d.value.maxItems) || 3)
 const categorySlug = computed(() => d.value.categorySlug || '')
 
