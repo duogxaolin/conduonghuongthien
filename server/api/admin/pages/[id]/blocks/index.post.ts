@@ -2,6 +2,7 @@ import { getDb } from '../../../../../utils/db'
 import { pages, pageBlocks, activityLogs } from '../../../../../db/schema'
 import { checkPermission } from '../../../../../utils/auth'
 import { isValidBlockType, getDefaultData } from '../../../../../../app/utils/blocks/registry'
+import { sanitizeBlockData } from '../../../../../utils/sanitize-html'
 import { eq, sql } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -31,7 +32,8 @@ export default defineEventHandler(async (event) => {
     .from(pageBlocks)
     .where(eq(pageBlocks.pageId, pageId))
 
-  const data = body?.data && typeof body.data === 'object' ? body.data : getDefaultData(blockType)
+  // Sanitize rich-text fields — block data is rendered with v-html publicly.
+  const data = sanitizeBlockData(body?.data && typeof body.data === 'object' ? body.data : getDefaultData(blockType))
 
   const [res] = await db.insert(pageBlocks).values({
     pageId,

@@ -1,6 +1,7 @@
 import { getDb } from '../../../utils/db'
 import { roles, permissions, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
+import { assertAssignablePermissions } from '../../../utils/permissions'
 import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -33,18 +34,26 @@ export default defineEventHandler(async (event) => {
   }
 
   if (Array.isArray(body.permissions)) {
-    await db.delete(permissions).where(eq(permissions.roleId, id))
-    if (body.permissions.length > 0) {
-      const permValues = body.permissions.map((p: any) => ({
-        roleId: id,
-        resource: String(p.resource),
-        canCreate: Boolean(p.canCreate),
-        canRead: Boolean(p.canRead),
-        canUpdate: Boolean(p.canUpdate),
-        canDelete: Boolean(p.canDelete),
-      }))
-      await db.insert(permissions).values(permValues)
+    // A system role's permission matrix may only be edited by a superadmin.
+    if (existingRole.isSystem && adminUser.isSuperAdmin !== true) {
+      throw createError({ statusCode: 403, statusMessage: 'Chỉ SuperAdmin mới được sửa quyền của vai trò hệ thống.' })
     }
+    // Reject invalid resources and block granting permissions the actor lacks.
+    assertAssignablePermissions(adminUser, body.permissions)
+
+    const permValues = body.permissions.map((p: any) => ({
+      roleId: id,
+      resource: String(p.resource),
+      canCreate: Boolean(p.canCreate),
+      canRead: Boolean(p.canRead),
+      canUpdate: Boolean(p.canUpdate),
+      canDelete: Boolean(p.canDelete),
+    }))
+    // Atomic replace so a failed insert never leaves the role with zero permissions.
+    await db.transaction(async (tx) => {
+      await tx.delete(permissions).where(eq(permissions.roleId, id))
+      if (permValues.length > 0) await tx.insert(permissions).values(permValues)
+    })
   }
 
   await db.insert(activityLogs).values({

@@ -1,6 +1,7 @@
 import { getDb } from '../../../utils/db'
 import { users, roles, activityLogs } from '../../../db/schema'
 import { checkPermission, hashPassword } from '../../../utils/auth'
+import { assertRoleAssignable } from '../../../utils/permissions'
 import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -32,7 +33,14 @@ export default defineEventHandler(async (event) => {
   const updateData: Partial<typeof users.$inferInsert> = {}
 
   if (body.email !== undefined) updateData.email = String(body.email).trim() || null
-  if (body.roleId !== undefined) updateData.roleId = Number(body.roleId)
+  if (body.roleId !== undefined) {
+    const targetRoleId = Number(body.roleId)
+    const [targetRole] = await db.select({ isSystem: roles.isSystem }).from(roles).where(eq(roles.id, targetRoleId)).limit(1)
+    if (!targetRole) throw createError({ statusCode: 400, statusMessage: 'Vai trò không tồn tại.' })
+    // Only a superadmin may move a user into a system (superadmin) role.
+    assertRoleAssignable(adminUser, targetRole.isSystem)
+    updateData.roleId = targetRoleId
+  }
   if (body.isActive !== undefined) updateData.isActive = Boolean(body.isActive)
   if (body.password && String(body.password).trim().length >= 6) {
     updateData.passwordHash = await hashPassword(String(body.password).trim())

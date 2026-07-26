@@ -18,15 +18,26 @@ export interface AdminTokenPayload {
   roleName: string
 }
 
+// Resolve the JWT signing secret. In production a real secret is REQUIRED — there
+// is no hardcoded fallback (a known default would let anyone forge an admin token).
+// Boot is additionally guarded by server/plugins/require-secrets.ts.
+function jwtSecret(): string {
+  const secret = (process.env.JWT_SECRET || '').trim()
+  if (secret) return secret
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET is not configured (required in production).')
+  }
+  // Development only — never reached in production (guarded above + startup plugin).
+  return 'cdkt_dev_only_insecure_jwt_secret_do_not_use_in_prod'
+}
+
 export function signToken(payload: AdminTokenPayload): string {
-  const secret = process.env.JWT_SECRET || 'cdkt_admin_secret_change_me'
-  return jwt.sign(payload, secret, { expiresIn: '8h' })
+  return jwt.sign(payload, jwtSecret(), { expiresIn: '8h' })
 }
 
 export function verifyToken(token: string): AdminTokenPayload | null {
   try {
-    const secret = process.env.JWT_SECRET || 'cdkt_admin_secret_change_me'
-    return jwt.verify(token, secret) as AdminTokenPayload
+    return jwt.verify(token, jwtSecret()) as AdminTokenPayload
   } catch {
     return null
   }

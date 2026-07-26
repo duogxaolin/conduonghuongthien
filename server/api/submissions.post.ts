@@ -1,7 +1,25 @@
+import { getRequestIP } from 'h3'
 import { getDb } from '../utils/db'
 import { submissions, pages, pageBlocks } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { getSmtpConfig, sendMail } from '../utils/mailer'
+import { escapeHtml } from '../utils/escape-html'
+
+// Public, unauthenticated endpoint → rate limit by the real peer IP
+// (`x-forwarded-for` is client-controlled and therefore spoofable).
+const submitBuckets = new Map<string, number[]>()
+const SUBMIT_LIMIT = 5
+const SUBMIT_WINDOW_MS = 10 * 60 * 1000
+
+function submitRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const recent = (submitBuckets.get(ip) || []).filter(t => t > now - SUBMIT_WINDOW_MS)
+  if (recent.length >= SUBMIT_LIMIT) { submitBuckets.set(ip, recent); return true }
+  recent.push(now)
+  submitBuckets.set(ip, recent)
+  if (submitBuckets.size > 5000) submitBuckets.delete(submitBuckets.keys().next().value as string)
+  return false
+}
 
 const PHONE_RE = /^[0-9+()\-\s.]{7,20}$/
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -96,6 +114,11 @@ async function getConfiguredRecipients(db: ReturnType<typeof getDb>): Promise<Se
 }
 
 export default defineEventHandler(async (event) => {
+  const clientIp = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  if (submitRateLimited(clientIp)) {
+    throw createError({ statusCode: 429, statusMessage: 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.' })
+  }
+
   const body = await readBody(event).catch(() => ({}))
 
   const formTitle = String(body?.formTitle || '').trim() || null
@@ -196,14 +219,16 @@ export default defineEventHandler(async (event) => {
       if (config) {
         const subject = `[CDKT] Đơn đăng ký mới${formTitle ? `: ${formTitle}` : ''}`
         const lines = emailAnswers.map((a) => `${a.label}: ${a.value}`).join('\n')
+        // Escape: label/value are visitor-supplied and would otherwise inject
+        // arbitrary HTML/links into the notification email read by staff.
         const rowsHtml = emailAnswers
-          .map((a) => `<tr><td style="padding:6px 12px;font-weight:bold;color:#1E251C;">${a.label}</td><td style="padding:6px 12px;color:#4A5545;">${a.value}</td></tr>`)
+          .map((a) => `<tr><td style="padding:6px 12px;font-weight:bold;color:#1E251C;">${escapeHtml(a.label)}</td><td style="padding:6px 12px;color:#4A5545;white-space:pre-wrap;">${escapeHtml(a.value)}</td></tr>`)
           .join('')
         await sendMail({
           to: recipientEmail,
           subject,
           text: `${formTitle ? formTitle + '\n\n' : ''}${lines}`,
-          html: `<div style="font-family:Arial,sans-serif;"><h2 style="color:#4A6741;">${formTitle || 'Đơn đăng ký mới'}</h2><table style="border-collapse:collapse;">${rowsHtml}</table></div>`,
+          html: `<div style="font-family:Arial,sans-serif;"><h2 style="color:#4A6741;">${escapeHtml(formTitle || 'Đơn đăng ký mới')}</h2><table style="border-collapse:collapse;">${rowsHtml}</table></div>`,
           config,
         })
       }

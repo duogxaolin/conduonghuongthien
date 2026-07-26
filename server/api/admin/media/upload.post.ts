@@ -56,11 +56,16 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Chỉ chấp nhận file Ảnh, Video hoặc PDF.' })
   }
 
+  // `effectiveMime` is the MIME we TRUST: for images it comes from the magic
+  // bytes (not the client-declared header), so the stored extension can never
+  // disagree with the real content.
+  let effectiveMime = mimeType
   if (isImage) {
     const detectedMime = detectMime(buffer)
     if (!detectedMime) {
       throw createError({ statusCode: 415, statusMessage: 'File không phải là ảnh hợp lệ (JPEG/PNG/GIF/WebP).' })
     }
+    effectiveMime = detectedMime
   }
 
   let width: number | null = null
@@ -86,9 +91,28 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  // Generate safe unique filename
-  const ext = path.extname(originalName) || '.bin'
-  const safeBasename = path.basename(originalName, ext).replace(/[^a-zA-Z0-9_-]/g, '_')
+  // Derive the stored extension from the VALIDATED MIME type, never from the
+  // client-supplied filename. Otherwise a request declaring `application/pdf`
+  // with the name `x.svg` would be stored as .svg and later served as
+  // image/svg+xml — an executable document (stored XSS).
+  const EXT_BY_MIME: Record<string, string> = {
+    'image/jpeg': '.jpg',
+    'image/png': '.png',
+    'image/gif': '.gif',
+    'image/webp': '.webp',
+    'application/pdf': '.pdf',
+  }
+  let ext = EXT_BY_MIME[effectiveMime]
+  if (!ext) {
+    if (isVideo) {
+      // Videos are not magic-byte checked; accept a conservative extension allowlist.
+      const raw = path.extname(originalName).toLowerCase()
+      ext = ['.mp4', '.webm', '.ogg', '.mov', '.m4v'].includes(raw) ? raw : '.mp4'
+    } else {
+      throw createError({ statusCode: 415, statusMessage: 'Định dạng tệp không được hỗ trợ.' })
+    }
+  }
+  const safeBasename = path.basename(originalName, path.extname(originalName)).replace(/[^a-zA-Z0-9_-]/g, '_').slice(0, 80) || 'file'
   const uniqueFilename = `${Date.now()}_${safeBasename}${ext}`
 
   const db = getDb()
@@ -111,7 +135,7 @@ export default defineEventHandler(async (event) => {
     if (!r2Config.accountId || !r2Config.accessKeyId || !r2Config.secretAccessKey || !r2Config.bucket) {
       throw createError({ statusCode: 400, statusMessage: 'Cấu hình Cloudflare R2 chưa đầy đủ. Hãy kiểm tra lại Cài đặt.' })
     }
-    uploadResult = await uploadR2File(buffer, uniqueFilename, mimeType, r2Config)
+    uploadResult = await uploadR2File(buffer, uniqueFilename, effectiveMime, r2Config)
   } else {
     uploadResult = await uploadLocalFile(buffer, uniqueFilename)
   }
@@ -120,7 +144,7 @@ export default defineEventHandler(async (event) => {
   const [insertRes] = await db.insert(media).values({
     filename:     uniqueFilename,
     originalName,
-    mimeType,
+    mimeType:     effectiveMime,
     sizeBytes:    buffer.length,
     provider,
     url:          uploadResult.url,
@@ -146,7 +170,7 @@ export default defineEventHandler(async (event) => {
       id: newMediaId,
       filename: uniqueFilename,
       originalName,
-      mimeType,
+      mimeType: effectiveMime,
       sizeBytes: buffer.length,
       provider,
       url: uploadResult.url,
