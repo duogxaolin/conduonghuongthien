@@ -2,6 +2,7 @@ import { getRequestIP } from 'h3'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
 import { submissions, settings } from '../../../db/schema'
+import { logError } from '../../../utils/logger'
 import { getSmtpConfig, sendMail } from '../../../utils/mailer'
 import { getChatbotSettings } from '../../../services/chatbot-settings'
 import { escapeHtml } from '../../../utils/escape-html'
@@ -82,7 +83,7 @@ export default defineEventHandler(async (event) => {
       }
     }
   } catch (err) {
-    console.error('[chatbot/lead] Gửi email thông báo thất bại:', err)
+    logError({ event: 'chatbot.lead_email_failed', error: err })
   }
 
   return { ok: true, id: result.insertId }

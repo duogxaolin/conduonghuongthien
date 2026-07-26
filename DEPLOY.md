@@ -220,7 +220,7 @@ SSL: `sudo certbot --nginx -d yourdomain.com`
 |-----------|---------|
 | URL | `https://domain/admin` |
 | Username | `admin` |
-| Password | Giá trị `ADMIN_PASSWORD` trong `.env` (nếu để trống: `Admin@123456`) |
+| Password | Giá trị `ADMIN_PASSWORD` trong `.env` — **bắt buộc**, seed sẽ dừng nếu để trống hoặc quá yếu (tối thiểu 12 ký tự, đủ 3/4 nhóm) |
 
 > ⚡ **Đổi mật khẩu ngay sau lần đăng nhập đầu tiên.** Hash của mật khẩu mặc định từng nằm trong file dump được commit lên GitHub, nên phải coi mật khẩu mặc định là **đã lộ công khai**.
 
@@ -274,12 +274,41 @@ docker compose up -d
 
 ## Backup & Restore
 
-```bash
-# Backup
-docker exec cdkt_mysql mysqldump -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin > backup_$(date +%Y%m%d).sql
+### Sao lưu tự động (BẮT BUỘC)
 
-# Restore
-docker exec -i cdkt_mysql mysql -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin < backup.sql
+`scripts/backup-db.sh` dump CSDL, nén, **kiểm chứng** rồi xoay vòng. Kiểm chứng là
+phần quan trọng nhất: một bản dump đứt giữa chừng trông y hệt bản tốt cho tới ngày
+anh cần dùng. Script kiểm dấu `Dump completed` ở cuối tệp, đếm số bảng, đo dung
+lượng SQL sau giải nén — thiếu bất kỳ điều kiện nào thì **xoá bản hỏng** và thoát
+với mã lỗi khác 0 để cron báo về.
+
+```bash
+# Chạy thử một lần
+./scripts/backup-db.sh
+
+# Thêm vào crontab của host — 2h sáng mỗi ngày
+0 2 * * * cd /path/to/CDKT && ./scripts/backup-db.sh >> /var/log/cdkt-backup.log 2>&1
+```
+
+Tuỳ chọn trong `.env`: `BACKUP_DIR` (mặc định `./backups`), `BACKUP_KEEP_DAYS`
+(mặc định 14).
+
+### Kiểm chứng khôi phục (nên làm hàng tháng)
+
+Bản sao lưu chưa từng được khôi phục chỉ là một giả thuyết. Script dưới đây nạp
+dump vào một CSDL tạm trong cùng container, đếm bảng và bản ghi, rồi **xoá CSDL
+tạm** — không đụng tới dữ liệu đang chạy.
+
+```bash
+./scripts/verify-restore.sh backups/cdkt-cdkt_admin-20260726T020000Z-1234.sql.gz
+```
+
+### Khôi phục thật (khi có sự cố)
+
+```bash
+gzip -dc backups/<tệp>.sql.gz | \
+  docker exec -i -e MYSQL_PWD="$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2)" \
+  cdkt_mysql mysql -u root --default-character-set=utf8mb4 cdkt_admin
 ```
 
 ---

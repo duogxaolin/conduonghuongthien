@@ -1,0 +1,119 @@
+name: CI
+
+# The repository had no automation at all: 295 tests that only ran when someone
+# remembered to, a schema-drift checker nobody invoked, and a build that was
+# first exercised on the production VPS.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+
+jobs:
+  test:
+    name: Tests and schema drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # `nuxt prepare` (postinstall) needs no network beyond the registry.
+      - run: npm ci
+
+      - name: Unit and contract tests
+        run: npm test
+
+      # schema.ts and init.ts are two hand-maintained descriptions of the same
+      # 28 tables. They drift silently; this is the only thing that notices.
+      - name: Schema drift
+        run: npm run db:drift
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # `nuxt build` forces NODE_ENV=production, and nuxt.config refuses to
+      # evaluate in production without an analytics HMAC secret. Locally that
+      # comes from .env; CI has none, so a throwaway value is supplied here. It
+      # signs nothing — the bundle never embeds it, and the runtime reads the
+      # real one from the environment.
+      - name: Build
+        run: npm run build
+        env:
+          ANALYTICS_HMAC_SECRET: ci-build-placeholder-not-a-real-secret-000
+
+      # Proves the bundle compiles, which used to be discovered on the VPS.
+
+      - name: Fail if the bundle did not appear
+        run: test -d .output/server && test -d .output/public
+
+  hygiene:
+    name: Secrets and defaults
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      # The admin password hash reached this repository once already, inside a
+      # committed SQL dump. This is the cheap guard against a repeat.
+      - name: No .env file committed
+        run: |
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error::.env is tracked in git"
+            exit 1
+          fi
+
+      - name: No private keys or credential blobs added
+        run: |
+          if git grep -nIE 'BEGIN (RSA|OPENSSH|DSA|EC|PGP) PRIVATE KEY' -- . ':!*.md'; then
+            echo "::error::a private key is committed"
+            exit 1
+          fi
+
+      - name: No known-default secrets in tracked files
+        run: |
+          # These exact strings shipped as defaults at some point in this
+          # repository's history. None of them may come back.
+          patterns='cdkt_admin_secret_change_me|cdkt_docker_jwt_secret_987654321|cdkt_secret_key_change_me_123456'
+          if git grep -nIE "$patterns" -- . ':!server/plugins/require-secrets.ts' ':!tests/*' ':!*.md'; then
+            echo "::error::a known-default secret is present outside the guard that rejects it"
+            exit 1
+          fi
+
+      - name: Shell scripts parse
+        run: |
+          for script in scripts/*.sh; do
+            bash -n "$script" || exit 1
+          done
+
+      - uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: ./scripts
+          severity: warning

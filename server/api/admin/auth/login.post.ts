@@ -4,6 +4,7 @@ import { users, roles, permissions, activityLogs } from '../../../db/schema'
 import { verifyPassword, signToken } from '../../../utils/auth'
 import { eq } from 'drizzle-orm'
 import { getPool } from '../../../utils/db'
+import { logInfo, logWarn, SECURITY_EVENTS } from '../../../utils/logger'
 import {
   clearRateLimit,
   peekRateLimit,
@@ -47,6 +48,14 @@ export default defineEventHandler(async (event) => {
     peekRateLimit(userBucket, USER_RULE, deps),
   ])
   if (ipState.blocked || userState.blocked) {
+    logWarn({
+      event: SECURITY_EVENTS.loginLocked,
+      username: userKey,
+      ip,
+      scope: ipState.blocked ? 'source' : 'account',
+      attempts: Math.max(ipState.count, userState.count),
+      backend: ipState.backend,
+    })
     setResponseHeader(event, 'Retry-After', String(Math.max(ipState.retryAfterSeconds, userState.retryAfterSeconds)))
     throw createError({ statusCode: 429, statusMessage: 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau 15 phút.' })
   }
@@ -76,6 +85,8 @@ export default defineEventHandler(async (event) => {
       recordRateLimitHit(ipBucket, IP_RULE, deps),
       recordRateLimitHit(userBucket, USER_RULE, deps),
     ])
+    // `reason` is for the operator only; all three branches answer identically.
+    logWarn({ event: SECURITY_EVENTS.loginFailed, username: userKey, ip, reason: 'unknown_user' })
     throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.' })
   }
 
@@ -85,6 +96,8 @@ export default defineEventHandler(async (event) => {
       recordRateLimitHit(ipBucket, IP_RULE, deps),
       recordRateLimitHit(userBucket, USER_RULE, deps),
     ])
+    // `reason` is for the operator only; all three branches answer identically.
+    logWarn({ event: SECURITY_EVENTS.loginFailed, username: userKey, ip, reason: 'account_disabled' })
     throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.' })
   }
 
@@ -94,11 +107,14 @@ export default defineEventHandler(async (event) => {
       recordRateLimitHit(ipBucket, IP_RULE, deps),
       recordRateLimitHit(userBucket, USER_RULE, deps),
     ])
+    // `reason` is for the operator only; all three branches answer identically.
+    logWarn({ event: SECURITY_EVENTS.loginFailed, username: userKey, ip, reason: 'bad_password' })
     throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.' })
   }
 
   // Reset rate limit khi đăng nhập thành công
   await Promise.all([clearRateLimit(ipBucket, deps), clearRateLimit(userBucket, deps)])
+  logInfo({ event: SECURITY_EVENTS.loginSucceeded, username: user.username, userId: user.id, ip })
 
   // Load permissions
   const userPermissions = await db
