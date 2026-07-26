@@ -8,6 +8,7 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
+    "typecheck": "nuxt typecheck",
     "test": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test tests/*.test.ts",
     "test:watch": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test --watch tests/*.test.ts",
     "analytics:maintenance": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/analytics-maintenance.ts",
