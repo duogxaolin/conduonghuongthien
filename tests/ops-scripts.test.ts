@@ -95,6 +95,8 @@ test('the build job supplies the secret nuxt.config demands in production', () =
 test('CI refuses a committed .env or a known-default secret', () => {
   const workflow = read('.github/workflows/ci.yml')
   assert.match(workflow, /git ls-files --error-unmatch \.env/)
-  assert.match(workflow, /cdkt_admin_secret_change_me/)
+  // The grep pattern in ci.yml brackets its final character (change_m[e]) so
+  // the pattern line does not match itself; the assertion mirrors that form.
+  assert.match(workflow, /cdkt_admin_secret_change_m\[e\]/)
   assert.match(workflow, /PRIVATE KEY/)
 })

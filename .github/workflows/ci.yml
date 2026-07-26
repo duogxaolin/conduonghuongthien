@@ -74,11 +74,13 @@ jobs:
 
       # Installed here rather than declared in package.json on purpose: adding a
       # devDependency without regenerating package-lock.json makes `npm ci` fail
-      # in every other job. To promote it properly, run
-      #   npm i -D vue-tsc typescript
-      # locally (that updates the lockfile) and delete this step.
+      # in every other job. A plain dev install mutates package.json and the
+      # lockfile only in this runner's throwaway checkout — nothing is committed.
+      # (`--no-save --no-package-lock` crashes npm's tree builder: "Cannot read
+      # properties of null (reading 'edgesOut')".) To promote it properly, run
+      # `npm i -D vue-tsc typescript` locally and delete this step.
       - name: Install the typechecker
-        run: npm i --no-save --no-package-lock vue-tsc typescript
+        run: npm i -D vue-tsc typescript
 
       - name: Typecheck
         run: |
