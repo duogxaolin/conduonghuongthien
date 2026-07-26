@@ -77,7 +77,10 @@ test('login rate-limits on the observed peer, not a client-supplied header', () 
   const login = read('server/api/admin/auth/login.post.ts')
   assert.match(login, /getRequestIP\(event, \{ xForwardedFor: false \}\)/)
   assert.doesNotMatch(login, /const ip = getRequestHeader\(event, 'x-forwarded-for'\)/)
-  assert.match(login, /usernameAttempts/, 'missing per-username lockout')
+  // Named for the bucket, not the data structure: this assertion previously
+  // pinned a `Map` variable name and broke when the counters moved to a shared
+  // table, even though the lockout itself never went away.
+  assert.match(login, /login:user:/, 'missing per-username lockout')
 })
 
 test('a disabled account is indistinguishable from a wrong password', () => {
