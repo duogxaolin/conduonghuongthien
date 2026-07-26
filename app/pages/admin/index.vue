@@ -34,7 +34,7 @@ const activeSlice = ref<{ scope: 'source' | 'device'; row: BreakdownRow } | null
 const today = () => new Date().toISOString().slice(0, 10)
 const daysAgo = (n: number) => {
   const d = new Date()
-  d.setDate(d.getDate() - n)
+  d.setUTCDate(d.getUTCDate() - n)
   return d.toISOString().slice(0, 10)
 }
 

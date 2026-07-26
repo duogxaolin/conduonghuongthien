@@ -79,6 +79,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { formatDateVN } from '~/utils/formatDate'
 
 useSeoMeta({
   title: 'Văn bản pháp luật | Con Đường Hướng Thiện',
@@ -106,12 +107,5 @@ const applySearch = () => {
   navigateTo({ path: '/documents', query: searchQuery.value ? { q: searchQuery.value } : {} })
 }
 
-const formatDate = (item) => {
-  const raw = item.publishedAt || item.createdAt
-  if (!raw) return ''
-  const d = new Date(raw)
-  if (isNaN(d.getTime())) return ''
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
-}
+const formatDate = (item) => formatDateVN(item.publishedAt || item.createdAt)
 </script>
