@@ -59,6 +59,7 @@ export default defineEventHandler(async (event) => {
       roleId:       users.roleId,
       roleName:     roles.name,
       isSystem:     roles.isSystem,
+      tokenVersion: users.tokenVersion,
     })
     .from(users)
     .leftJoin(roles, eq(users.roleId, roles.id))
@@ -113,6 +114,7 @@ export default defineEventHandler(async (event) => {
     username: user.username,
     roleId:   user.roleId!,
     roleName: user.roleName!,
+    tokenVersion: user.tokenVersion ?? 0,
   })
 
   const isHttps = getRequestHeader(event, 'x-forwarded-proto') === 'https' || getRequestURL(event).protocol === 'https:'

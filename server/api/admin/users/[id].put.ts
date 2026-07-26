@@ -2,7 +2,7 @@ import { getDb } from '../../../utils/db'
 import { users, roles, activityLogs } from '../../../db/schema'
 import { checkPermission, hashPassword } from '../../../utils/auth'
 import { assertRoleAssignable } from '../../../utils/permissions'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -44,6 +44,9 @@ export default defineEventHandler(async (event) => {
   if (body.isActive !== undefined) updateData.isActive = Boolean(body.isActive)
   if (body.password && String(body.password).trim().length >= 6) {
     updateData.passwordHash = await hashPassword(String(body.password).trim())
+    // Changing a password must terminate that user's existing sessions,
+    // otherwise a compromised session survives the very action taken to stop it.
+    updateData.tokenVersion = sql`${users.tokenVersion} + 1` as unknown as number
   }
 
   await db.update(users).set(updateData).where(eq(users.id, id))

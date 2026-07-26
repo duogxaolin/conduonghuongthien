@@ -16,6 +16,8 @@ export interface AdminTokenPayload {
   username: string
   roleId:   number
   roleName: string
+  /** Session generation; compared against users.token_version on every request. */
+  tokenVersion?: number
 }
 
 // Resolve the JWT signing secret. In production a real secret is REQUIRED — there

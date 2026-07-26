@@ -12,7 +12,7 @@
     <div class="bg-[#385130] text-white py-2 text-[0.82rem] border-b border-white/10 relative z-[101]">
       <div class="container flex justify-between items-center">
         <div class="flex items-center gap-4">
-          <span><i class="fa-solid fa-phone" aria-hidden="true"></i> {{ t('hotline_lbl') }}: 0903.480.985</span>
+          <span><i class="fa-solid fa-phone" aria-hidden="true"></i> {{ t('hotline_lbl') }}: {{ siteHotline }}</span>
         </div>
         <div class="flex items-center gap-4">
           <div class="flex items-center">
@@ -158,11 +158,11 @@
 
           <!-- Drawer Footer -->
           <div class="px-4 py-4 bg-[#f8faf7] border-t border-black/[0.06] flex flex-col gap-2.5 flex-shrink-0">
-            <a href="tel:0903480985" class="flex items-center gap-3 bg-white px-3.5 py-3 rounded-[14px] border border-[rgba(30,70,32,0.12)] no-underline shadow-sm">
+            <a :href="siteHotlineTel" class="flex items-center gap-3 bg-white px-3.5 py-3 rounded-[14px] border border-[rgba(30,70,32,0.12)] no-underline shadow-sm">
               <span class="text-xl">📞</span>
               <div class="flex flex-col">
                 <span class="text-[0.72rem] text-[#7A8675] font-semibold">{{ t('hotline_lbl') }}</span>
-                <span class="text-[0.95rem] font-extrabold text-[#4A6741]">0903.480.985</span>
+                <span class="text-[0.95rem] font-extrabold text-[#4A6741]">{{ siteHotline }}</span>
               </div>
             </a>
             <nuxt-link to="/contact" class="btn btn-primary w-full flex items-center justify-center gap-2 px-4 py-3 text-[0.88rem] font-bold rounded-xl" @click="isMobileMenuOpen = false">
@@ -175,17 +175,17 @@
         <div class="container w-full overflow-visible">
           <nav class="flex w-max min-w-full" @click="onNavClick" @keydown.escape="toggleMobileMenu">
             <ul class="flex list-none w-full justify-between items-center gap-1">
-              <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group' : ''">
+              <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group focus-within:z-[103]' : ''">
                 <!-- With children: dropdown -->
                 <template v-if="item.children && item.children.length">
-                  <div class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-[#f0f6ef] hover:text-[#143516]">
+                  <div class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-[#f0f6ef] hover:text-[#143516]" aria-haspopup="true">
                     <component
                       :is="item.url && item.url !== '#' ? NuxtLink : 'span'"
                       v-bind="item.url && item.url !== '#' ? { to: item.url, 'active-class': 'active-item', class: 'text-inherit no-underline' } : {}"
                     >{{ navItemLabel(item) }}</component>
-                    <i class="fa-solid fa-chevron-down text-[0.55rem] ml-0.5 text-[#557757] transition-transform duration-200 group-hover:rotate-180" aria-hidden="true"></i>
+                    <i class="fa-solid fa-chevron-down text-[0.55rem] ml-0.5 text-[#557757] transition-transform duration-200 group-hover:rotate-180 group-focus-within:rotate-180" aria-hidden="true"></i>
                   </div>
-                  <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-2 min-w-[220px] list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto">
+                  <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-2 min-w-[220px] list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100 group-focus-within:pointer-events-auto">
                     <li v-for="child in item.children" :key="child.id">
                       <component
                         :is="child.url && child.url.startsWith('http') ? 'a' : NuxtLink"
@@ -277,9 +277,9 @@
         <div>
           <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">Thông tin liên hệ</h3>
           <p class="mb-3 text-[0.9rem]"><strong class="text-white">Cơ quan chủ quản:</strong> C11 - Bộ Công an</p>
-          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Địa chỉ:</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội</p>
-          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Điện thoại:</strong> 0903.480.985</p>
-          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Email:</strong> contact@conduonghuongthien.com.vn</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Địa chỉ:</strong> {{ siteAddress }}</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Điện thoại:</strong> {{ siteHotline }}</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Email:</strong> {{ siteEmail }}</p>
         </div>
       </div>
 
@@ -606,6 +606,15 @@ const { data: settingsData } = await useFetch('/api/public/settings', {
   default: () => null,
   lazy: false,
 })
+
+// Site-wide contact details come from Cài đặt chung so an editor's change takes
+// effect on the live site. The literals are only a fallback for the very first
+// render before settings exist.
+const sitePublicSettings = computed(() => settingsData.value?.settings || {})
+const siteHotline = computed(() => sitePublicSettings.value.hotline?.trim() || '0903.480.985')
+const siteEmail = computed(() => sitePublicSettings.value.email?.trim() || 'contact@conduonghuongthien.com.vn')
+const siteAddress = computed(() => sitePublicSettings.value.address?.trim() || 'Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội')
+const siteHotlineTel = computed(() => 'tel:' + siteHotline.value.replace(/[^0-9+]/g, ''))
 
 // Derive nav from the fetched settings (reactive — updates if data refetches)
 const _parseNav = (raw) => { try { return JSON.parse(raw) } catch { return null } }
