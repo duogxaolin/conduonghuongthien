@@ -692,6 +692,16 @@ export async function initDb() {
 
   // Activity Logs table
   await db.query(`
+    CREATE TABLE IF NOT EXISTS \`rate_limit_counters\` (
+      \`bucket_key\` VARCHAR(191) NOT NULL PRIMARY KEY,
+      \`hit_count\` INT NOT NULL DEFAULT 0,
+      \`window_expires_at\` DATETIME(3) NOT NULL,
+      KEY \`rate_limit_expiry_idx\` (\`window_expires_at\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // Activity log
+  await db.query(`
     CREATE TABLE IF NOT EXISTS \`activity_logs\` (
       \`id\` INT AUTO_INCREMENT PRIMARY KEY,
       \`user_id\` INT NULL,

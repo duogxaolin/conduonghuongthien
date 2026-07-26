@@ -30,6 +30,7 @@ const output = {
   retention: retention && {
     status: retention.status,
     tables: retention.tables,
+    purgedRateLimits: retention.purgedRateLimits,
     message: retention.message,
   },
   scheduler: 'Invoke this command from cron. Enable an in-process scheduler only for a guaranteed single scheduler instance.',

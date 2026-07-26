@@ -3,27 +3,26 @@ import { getDb } from '../../../utils/db'
 import { users, roles, permissions, activityLogs } from '../../../db/schema'
 import { verifyPassword, signToken } from '../../../utils/auth'
 import { eq } from 'drizzle-orm'
+import { getPool } from '../../../utils/db'
+import {
+  clearRateLimit,
+  peekRateLimit,
+  recordRateLimitHit,
+  type RateLimitRule,
+} from '../../../utils/rate-limit-store'
 
-// Rate limiting: max 5 lần sai / 15 phút, theo IP thật + username.
-// NOTE: in-memory and therefore per-worker under PM2 cluster mode. For a hard
-// guarantee across workers, move this to a shared store (DB/Redis).
-const loginAttempts = new Map<string, { count: number; lastAttempt: number }>()
-// Per-username lockout (independent of source IP) to stop distributed guessing.
-const usernameAttempts = new Map<string, { count: number; lastAttempt: number }>()
-const MAX_ATTEMPTS_PER_IP = 5
-const MAX_ATTEMPTS_PER_USER = 15
-const WINDOW_MS = 15 * 60 * 1000
+// Rate limiting: 5 lần sai / 15 phút theo IP thật + username, và 15 lần / 15 phút
+// theo riêng username (chặn đoán phân tán từ nhiều IP).
+//
+// Bộ đếm nằm trong bảng MySQL dùng chung: khởi động lại container không còn xoá
+// sạch khoá, và giới hạn vẫn đúng khi chạy nhiều worker/replica. Mất kết nối CSDL
+// thì tự lùi về bộ nhớ tiến trình — đúng bằng hành vi cũ, không mở toang.
+const IP_RULE: RateLimitRule = { limit: 5, windowSeconds: 15 * 60 }
+const USER_RULE: RateLimitRule = { limit: 15, windowSeconds: 15 * 60 }
 
-function bump(store: Map<string, { count: number; lastAttempt: number }>, key: string, now: number) {
-  const prev = store.get(key)
-  const fresh = !prev || now - prev.lastAttempt >= WINDOW_MS
-  store.set(key, { count: fresh ? 1 : prev!.count + 1, lastAttempt: now })
-  if (store.size > 10_000) store.delete(store.keys().next().value as string)
-}
-
-function blocked(store: Map<string, { count: number; lastAttempt: number }>, key: string, limit: number, now: number) {
-  const entry = store.get(key)
-  return !!entry && entry.count >= limit && now - entry.lastAttempt < WINDOW_MS
+function limiterDeps() {
+  const pool = getPool()
+  return { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
 }
 
 export default defineEventHandler(async (event) => {
@@ -39,10 +38,16 @@ export default defineEventHandler(async (event) => {
   // nên giả mạo được — dùng peer IP mà máy chủ quan sát (xForwardedFor: false).
   const ip = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
   const userKey = username.toLowerCase()
-  const rateLimitKey = `${ip}:${userKey}`
-  const now = Date.now()
+  const ipBucket = `login:ip:${ip}:${userKey}`
+  const userBucket = `login:user:${userKey}`
+  const deps = limiterDeps()
 
-  if (blocked(loginAttempts, rateLimitKey, MAX_ATTEMPTS_PER_IP, now) || blocked(usernameAttempts, userKey, MAX_ATTEMPTS_PER_USER, now)) {
+  const [ipState, userState] = await Promise.all([
+    peekRateLimit(ipBucket, IP_RULE, deps),
+    peekRateLimit(userBucket, USER_RULE, deps),
+  ])
+  if (ipState.blocked || userState.blocked) {
+    setResponseHeader(event, 'Retry-After', String(Math.max(ipState.retryAfterSeconds, userState.retryAfterSeconds)))
     throw createError({ statusCode: 429, statusMessage: 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau 15 phút.' })
   }
 
@@ -67,27 +72,33 @@ export default defineEventHandler(async (event) => {
     .limit(1)
 
   if (!user) {
-    bump(loginAttempts, rateLimitKey, now)
-    bump(usernameAttempts, userKey, now)
+    await Promise.all([
+      recordRateLimitHit(ipBucket, IP_RULE, deps),
+      recordRateLimitHit(userBucket, USER_RULE, deps),
+    ])
     throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.' })
   }
 
   // Tài khoản bị khóa: đếm như một lần thất bại để tránh dò trạng thái tài khoản.
   if (!user.isActive) {
-    bump(loginAttempts, rateLimitKey, now)
+    await Promise.all([
+      recordRateLimitHit(ipBucket, IP_RULE, deps),
+      recordRateLimitHit(userBucket, USER_RULE, deps),
+    ])
     throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.' })
   }
 
   const valid = await verifyPassword(password, user.passwordHash)
   if (!valid) {
-    bump(loginAttempts, rateLimitKey, now)
-    bump(usernameAttempts, userKey, now)
+    await Promise.all([
+      recordRateLimitHit(ipBucket, IP_RULE, deps),
+      recordRateLimitHit(userBucket, USER_RULE, deps),
+    ])
     throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.' })
   }
 
   // Reset rate limit khi đăng nhập thành công
-  loginAttempts.delete(rateLimitKey)
-  usernameAttempts.delete(userKey)
+  await Promise.all([clearRateLimit(ipBucket, deps), clearRateLimit(userBucket, deps)])
 
   // Load permissions
   const userPermissions = await db
