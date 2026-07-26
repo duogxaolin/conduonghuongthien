@@ -1,4 +1,5 @@
 import { getDb } from '../utils/db'
+import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
 import { roles, permissions, users, homeSections, settings, chatbotSettings, categories, contentTypes, pages, pageBlocks } from '../db/schema'
 import { eq, asc } from 'drizzle-orm'
@@ -116,7 +117,16 @@ async function seed() {
 
   // ── SuperAdmin User ──────────────────────────────────────────────────────
   console.log('Creating superadmin user...')
-  const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123456'
+  // There is no fallback any more. The old default was documented publicly and
+  // sits in this repository's history, which made it the first thing anyone
+  // would try against a fresh install.
+  const adminPassword = String(process.env.ADMIN_PASSWORD || '')
+  const adminProblem = passwordRejectionMessage(adminPassword, { username: 'admin' })
+  if (adminProblem) {
+    console.error('❌ ADMIN_PASSWORD chưa đạt yêu cầu:', adminProblem)
+    console.error('   Đặt ADMIN_PASSWORD trong .env rồi chạy lại, ví dụ: ADMIN_PASSWORD=$(openssl rand -base64 18)')
+    process.exit(1)
+  }
   const passwordHash = await hashPassword(adminPassword)
 
   // Insert-only: NEVER reset the admin password on re-run. Overwriting it every
@@ -293,7 +303,7 @@ async function seed() {
     .onDuplicateKeyUpdate({ set: { id: chatbotSettings.id } })
 
   console.log('✅ Seed complete!')
-  console.log('📋 Login username: admin (mật khẩu lấy từ ADMIN_PASSWORD hoặc mặc định lần khởi tạo đầu — không in ra log).')
+  console.log('📋 Login username: admin (mật khẩu lấy từ ADMIN_PASSWORD — không in ra log).')
   process.exit(0)
 }
 

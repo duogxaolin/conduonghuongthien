@@ -1,4 +1,5 @@
 import { getDb } from '../../../utils/db'
+import { passwordRejectionMessage } from '../../../utils/password-policy'
 import { users, roles, activityLogs } from '../../../db/schema'
 import { checkPermission, hashPassword } from '../../../utils/auth'
 import { assertRoleAssignable } from '../../../utils/permissions'
@@ -19,8 +20,9 @@ export default defineEventHandler(async (event) => {
   if (!username || username.length < 3) {
     throw createError({ statusCode: 400, statusMessage: 'Tên đăng nhập phải ít nhất 3 ký tự.' })
   }
-  if (!password || password.length < 6) {
-    throw createError({ statusCode: 400, statusMessage: 'Mật khẩu phải ít nhất 6 ký tự.' })
+  const passwordProblem = passwordRejectionMessage(password, { username })
+  if (passwordProblem) {
+    throw createError({ statusCode: 400, statusMessage: passwordProblem })
   }
   if (!roleId) {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng chọn Vai trò (Role).' })

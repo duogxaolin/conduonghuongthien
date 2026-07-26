@@ -225,6 +225,8 @@ export const activityLogs = mysqlTable('activity_logs', {
   createdAt:  timestamp('created_at').defaultNow(),
 }, (t) => ({
   userIdx: index('user_idx').on(t.userId),
+  // Retention purges and the admin log view both filter on time.
+  createdIdx: index('activity_created_idx').on(t.createdAt),
 }))
 
 // ─── Submissions ─────────────────────────────────────────────────────────────
@@ -243,7 +245,9 @@ export const submissions = mysqlTable('submissions', {
   // The distinction matters: MySQL converts TIMESTAMP to/from UTC but stores
   // DATETIME verbatim, and the connection pool runs with timezone '+07:00'.
   createdAt: datetime('created_at', { mode: 'date' }).default(sql`CURRENT_TIMESTAMP`),
-})
+}, (t) => ({
+  createdIdx: index('submissions_created_idx').on(t.createdAt),
+}))
 
 // ─── Governed Chatbot ─────────────────────────────────────────────────────────
 export const chatbotSettings = mysqlTable('chatbot_settings', {

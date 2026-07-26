@@ -2,6 +2,7 @@ import { getDb } from '../../../utils/db'
 import { users, roles, activityLogs } from '../../../db/schema'
 import { checkPermission, hashPassword } from '../../../utils/auth'
 import { assertRoleAssignable } from '../../../utils/permissions'
+import { passwordRejectionMessage } from '../../../utils/password-policy'
 import { eq, sql } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -17,7 +18,7 @@ export default defineEventHandler(async (event) => {
   const db = getDb()
 
   const [existingUser] = await db
-    .select({ id: users.id, isSystem: roles.isSystem })
+    .select({ id: users.id, username: users.username, isSystem: roles.isSystem })
     .from(users)
     .leftJoin(roles, eq(users.roleId, roles.id))
     .where(eq(users.id, id))
@@ -42,8 +43,13 @@ export default defineEventHandler(async (event) => {
     updateData.roleId = targetRoleId
   }
   if (body.isActive !== undefined) updateData.isActive = Boolean(body.isActive)
-  if (body.password && String(body.password).trim().length >= 6) {
-    updateData.passwordHash = await hashPassword(String(body.password).trim())
+  if (body.password !== undefined && String(body.password) !== '') {
+    const newPassword = String(body.password)
+    // Rejected outright rather than silently ignored: the old code skipped a
+    // too-short password without a word, so the admin believed it had changed.
+    const problem = passwordRejectionMessage(newPassword, { username: existingUser.username })
+    if (problem) throw createError({ statusCode: 400, statusMessage: problem })
+    updateData.passwordHash = await hashPassword(newPassword)
     // Changing a password must terminate that user's existing sessions,
     // otherwise a compromised session survives the very action taken to stop it.
     updateData.tokenVersion = sql`${users.tokenVersion} + 1` as unknown as number
