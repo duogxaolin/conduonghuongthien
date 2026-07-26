@@ -3,6 +3,7 @@ import test from 'node:test'
 import { slugify } from '../server/utils/slug'
 import { normalizeBlocks, VERSION_LIMITS } from '../server/utils/page-versions'
 import { clampColSpan, isValidBlockType, getDefaultData, BLOCK_TYPES } from '../app/utils/blocks/registry'
+import { readFileSync } from 'node:fs'
 
 /**
  * The page builder is the CMS surface an editor actually touches, and it is the
@@ -107,4 +108,35 @@ test('the block validator rejects anything outside the registry', () => {
 test('version quotas leave room for the origin snapshot plus manual saves', () => {
   assert.equal(VERSION_LIMITS.origin, 1)
   assert.ok(VERSION_LIMITS.auto >= 1 && VERSION_LIMITS.manual >= 1)
+})
+
+// ─── One definition of the block tree ────────────────────────────────────────
+test('the block tree shape is declared once and shared', () => {
+  const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+  const types = read('app/utils/blocks/types.ts')
+  assert.match(types, /export interface BlockNode/)
+  assert.match(types, /export type BuilderNode/)
+
+  // The server previously carried its own copy of the interface; the client
+  // carried `any`. Either one drifting from the other silently corrupts a page
+  // on save, so both must come from the shared module.
+  const versions = read('server/utils/page-versions.ts')
+  assert.match(versions, /export type SnapshotBlock = BlockNode/, 'the server redeclares the tree shape')
+  assert.doesNotMatch(versions, /interface SnapshotBlock/)
+
+  const builder = read('app/pages/admin/content/pages/[id].vue')
+  assert.match(builder, /import type \{[^}]*BuilderNode[^}]*\} from '~\/utils\/blocks\/types'/)
+  assert.doesNotMatch(builder, /const blocks = ref<any\[\]>/, 'the builder holds an untyped tree again')
+})
+
+test('the JSON columns holding block trees declare what is in them', () => {
+  const schema = readFileSync(new URL('../server/db/schema.ts', import.meta.url), 'utf8')
+  for (const column of ['published_blocks', 'draft_blocks']) {
+    assert.match(
+      schema,
+      new RegExp(`json\\('${column}'\\)\\.\\$type<BlockNode\\[\\]>`),
+      `${column} is back to an untyped json column`,
+    )
+  }
+  assert.match(schema, /json\('blocks'\)\.notNull\(\)\.\$type<BlockNode\[\]>/)
 })

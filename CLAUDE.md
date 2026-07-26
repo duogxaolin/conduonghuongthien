@@ -14,6 +14,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 - **Database**: MySQL 8.0 — **27 bảng** (15 CMS + 3 chatbot + 9 analytics). Nguồn chân lý schema là `server/db/schema.ts` (Drizzle); `server/db/init.ts` là DDL chạy lúc khởi động (idempotent, tự thêm cột còn thiếu); `server/db/seed.ts` là seed **insert-only** — chạy lại KHÔNG ghi đè mật khẩu / ma trận quyền / cấu hình đã sửa.
 - **Kiểm thử**: `npm test` — dùng test runner sẵn có của Node, **không cần cài thêm gói**. Bộ nạp `scripts/ts-resolver.mjs` cho phép import trực tiếp file `.ts`. Yêu cầu Node >= 22.15.
 - **Schema tooling**: `npm run db:drift` đối chiếu `schema.ts` ↔ `init.ts`; `npm run db:generate` sinh diff SQL để review (không tự áp lên DB). `migrations/*.sql` là **snapshot mysqldump**, KHÔNG phải chuỗi migration — đã có guard chặn chạy nhầm (chứa `DROP TABLE` toàn bộ).
+- **Webfont & Icon**: Inter tải từ Google CDN theo mặc định; chạy `node scripts/fetch-fonts.mjs` một lần để tự chủ hoàn toàn (`nuxt.config.ts` tự phát hiện `public/assets/fonts/inter.css` lúc build và bỏ hẳn thẻ `<link>` tới Google). FontAwesome chỉ nạp `fontawesome.min.css` + hai họ thực dùng (`solid`, `regular`) — khai báo tại `ICON_FAMILIES` trong `nuxt.config.ts`, có test chặn nếu template dùng họ chưa nạp.
 - **Media Engine**: Dual-mode Storage (Local server `/public/uploads/YYYY/MM/` & Cloudflare R2 Cloud Storage với AWS S3 SDK & Sharp image optimization).
 - **Containerization & Deploy**: Docker, Docker Compose, aaPanel Node.js/PM2 preset.
 
@@ -28,8 +29,15 @@ app/
 ├── components/
 │   ├── SectionBar.vue           # Thanh tiêu đề Section hỗ trợ FontAwesome
 │   ├── ToastContainer.vue        # Container hiển thị Toast thông báo toàn hệ thống
+│   ├── ArticleDetail.vue        # Trang chi tiết bài viết dùng chung (news / role-models / reintegration)
+│   ├── NewsCategoryList.vue     # Danh sách tin theo chuyên mục dùng chung
 │   └── admin/
 │       └── MediaLibraryModal.vue # Modal chọn tệp từ Thư viện Media
+├── utils/
+│   ├── formatDate.ts            # formatDateVN — định dạng ngày theo UTC (tránh lệch ngày SSR ↔ trình duyệt)
+│   └── blocks/
+│       ├── registry.ts          # Nguồn chân lý của toàn bộ block
+│       └── types.ts             # BlockNode / BuilderNode — hình dạng cây block dùng chung client ↔ server
 ├── composables/
 │   ├── useAdminAuth.ts          # State quản lý xác thực Admin & SSR Cookie forwarding
 │   ├── useI18n.ts               # Bộ từ điển Đa ngôn ngữ (VN / EN)
@@ -80,6 +88,7 @@ app/
 - **Bảng dữ liệu**: `pages` (slug, title, isSystem, seo*) + `page_blocks` (pageId, blockType, displayOrder, data JSON, isVisible). Bảng `home_sections` cũ được giữ; seed migrate `home_sections` → block trang `home` một lần (guard trên "trang chưa có block").
 - **API**: admin CRUD tại `server/api/admin/pages/**` (gated bằng resource `pages`); public read-only tại `server/api/public/pages/[slug].get.ts` (chỉ trả block `isVisible=true`, slug không tồn tại → `{ok:false}` 2xx).
 - **Trang hệ thống** (`home`, `about`, `contact`): `isSystem=true` — sửa được nhưng khóa slug và không xóa được.
+- **Kiểu dữ liệu cây block** (`app/utils/blocks/types.ts`): `BlockNode` (đã lưu) và `BuilderNode` (đang dựng, chưa có `displayOrder`) là **một định nghĩa duy nhất** dùng chung cho builder UI, API, và cột JSON (`pages.published_blocks`, `pages.draft_blocks`, `page_versions.blocks` đều khai báo `.$type<BlockNode[]>()`). Trước đây server tự khai báo interface riêng còn client dùng `any`, nên hai đầu lệch nhau sẽ hỏng trang lúc lưu mà không ai báo.
 
 ---
 
