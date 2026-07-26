@@ -18,6 +18,13 @@ permissions:
 
 env:
   NODE_VERSION: '22'
+  # Every job needs this, including plain `npm ci`: postinstall runs
+  # `nuxt prepare`, which evaluates nuxt.config in production mode, and the
+  # config refuses to evaluate without an analytics HMAC secret (>= 32 chars).
+  # Locally that comes from .env; CI has none. It signs nothing here — the
+  # bundle never embeds it, and the runtime reads the real one from the
+  # environment.
+  ANALYTICS_HMAC_SECRET: ci-placeholder-not-a-real-secret-000000
 
 jobs:
   test:
@@ -95,10 +102,6 @@ jobs:
           } >> "$GITHUB_STEP_SUMMARY"
           tail -80 /tmp/tsc.log
           exit $status
-        env:
-          # Same reason as the build job: nuxt.config refuses to evaluate in
-          # production without this, and it signs nothing here.
-          ANALYTICS_HMAC_SECRET: ci-typecheck-placeholder-not-a-real-secret-0
 
   build:
     name: Production build
@@ -114,15 +117,8 @@ jobs:
 
       - run: npm ci
 
-      # `nuxt build` forces NODE_ENV=production, and nuxt.config refuses to
-      # evaluate in production without an analytics HMAC secret. Locally that
-      # comes from .env; CI has none, so a throwaway value is supplied here. It
-      # signs nothing — the bundle never embeds it, and the runtime reads the
-      # real one from the environment.
       - name: Build
         run: npm run build
-        env:
-          ANALYTICS_HMAC_SECRET: ci-build-placeholder-not-a-real-secret-000
 
       # Proves the bundle compiles, which used to be discovered on the VPS.
 
@@ -157,8 +153,10 @@ jobs:
       - name: No known-default secrets in tracked files
         run: |
           # These exact strings shipped as defaults at some point in this
-          # repository's history. None of them may come back.
-          patterns='cdkt_admin_secret_change_me|cdkt_docker_jwt_secret_987654321|cdkt_secret_key_change_me_123456'
+          # repository's history. None of them may come back. The bracketed
+          # last character keeps this pattern line from matching itself, so
+          # the workflow file stays covered by its own scan.
+          patterns='cdkt_admin_secret_change_m[e]|cdkt_docker_jwt_secret_98765432[1]|cdkt_secret_key_change_me_12345[6]'
           if git grep -nIE "$patterns" -- . ':!server/plugins/require-secrets.ts' ':!tests/*' ':!*.md'; then
             echo "::error::a known-default secret is present outside the guard that rejects it"
             exit 1
