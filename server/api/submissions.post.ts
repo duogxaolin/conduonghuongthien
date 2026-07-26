@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm'
 import { getSmtpConfig, sendMail } from '../utils/mailer'
 import { escapeHtml } from '../utils/escape-html'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
+import { logError, logWarn, SECURITY_EVENTS } from '../utils/logger'
 
 // Public, unauthenticated endpoint → rate limit by the real peer IP
 // (`x-forwarded-for` is client-controlled and therefore spoofable).
@@ -115,6 +116,7 @@ export default defineEventHandler(async (event) => {
   const clientIp = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
   const submitLimit = await submitRateLimited(clientIp)
   if (submitLimit.limited) {
+    logWarn({ event: SECURITY_EVENTS.submissionThrottled, ip: clientIp })
     setResponseHeader(event, 'Retry-After', String(submitLimit.retryAfterSeconds))
     throw createError({ statusCode: 429, statusMessage: 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.' })
   }
@@ -234,7 +236,7 @@ export default defineEventHandler(async (event) => {
       }
     } catch (err) {
       // Log only — a mail failure must never surface to the visitor.
-      console.error('[submissions] Gửi email thông báo thất bại:', err)
+      logError({ event: 'public.submission_email_failed', submissionId: result.insertId, error: err })
     }
   }
 

@@ -45,3 +45,6 @@ public/assets/fontawesome/metadata/
 # trong từng tệp). Chỉ bỏ qua bản sao lưu tạm sinh ra khi vận hành.
 *.dump.sql
 backup_*.sql
+
+# Bản sao lưu do scripts/backup-db.sh sinh ra
+backups/
