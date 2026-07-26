@@ -106,9 +106,12 @@ async function seed() {
     canTest: false,
   }))
 
+  // Insert-only: on re-run (e.g. every container start) do NOT overwrite an
+  // administrator's customized permission matrix. New (role, resource) pairs are
+  // still inserted; existing rows are preserved (no-op update).
   for (const perm of [...superadminPerms, ...editorPerms, ...moderatorPerms, ...viewerPerms]) {
     await db.insert(permissions).values(perm)
-      .onDuplicateKeyUpdate({ set: { canCreate: perm.canCreate, canRead: perm.canRead, canUpdate: perm.canUpdate, canDelete: perm.canDelete, canPublish: perm.canPublish, canArchive: perm.canArchive, canTest: perm.canTest } })
+      .onDuplicateKeyUpdate({ set: { roleId: permissions.roleId } })
   }
 
   // ── SuperAdmin User ──────────────────────────────────────────────────────
@@ -116,13 +119,16 @@ async function seed() {
   const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123456'
   const passwordHash = await hashPassword(adminPassword)
 
+  // Insert-only: NEVER reset the admin password on re-run. Overwriting it every
+  // container start would revert the password to the (public) default and is a
+  // critical account-takeover risk. Create the account once; leave it thereafter.
   await db.insert(users).values({
     username: 'admin',
     email: process.env.ADMIN_EMAIL || 'admin@conduonghuongthien.com.vn',
     passwordHash,
     roleId: superadminRole.id,
     isActive: true,
-  }).onDuplicateKeyUpdate({ set: { passwordHash } })
+  }).onDuplicateKeyUpdate({ set: { username: users.username } })
 
   // ── Home Sections ────────────────────────────────────────────────────────
   console.log('Creating home sections...')
@@ -162,9 +168,11 @@ async function seed() {
     { key: 'r2_public_url',    value: '',                                                       group: 'media'   },
   ]
 
+  // Insert-only: preserve administrator-edited settings (hotline, R2 credentials,
+  // media_provider, …) across re-runs. Only missing keys are seeded.
   for (const s of defaultSettings) {
     await db.insert(settings).values(s)
-      .onDuplicateKeyUpdate({ set: { value: s.value } })
+      .onDuplicateKeyUpdate({ set: { key: settings.key } })
   }
 
   // ── System Content Types (Thể Loại) ───────────────────────────────────────
@@ -285,7 +293,7 @@ async function seed() {
     .onDuplicateKeyUpdate({ set: { id: chatbotSettings.id } })
 
   console.log('✅ Seed complete!')
-  console.log(`📋 Login: username=admin  password=${adminPassword}`)
+  console.log('📋 Login username: admin (mật khẩu lấy từ ADMIN_PASSWORD hoặc mặc định lần khởi tạo đầu — không in ra log).')
   process.exit(0)
 }
 

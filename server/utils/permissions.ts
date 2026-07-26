@@ -10,6 +10,53 @@ export type ChatbotResource = typeof CHATBOT_RESOURCES[keyof typeof CHATBOT_RESO
 export type ChatbotSettingsAction = 'read' | 'update' | 'clear' | 'test' | 'rotate_key'
 export type ChatbotKnowledgeAction = 'read' | 'create' | 'update' | 'delete' | 'publish' | 'archive'
 
+// Canonical set of RBAC resources. Permission grants outside this set are rejected.
+export const VALID_RESOURCES = new Set<string>([
+  'news', 'role_models', 'reintegration', 'documents', 'faq', 'categories',
+  'home_sections', 'pages', 'users', 'roles', 'media', 'settings', 'submissions',
+  'analytics', 'chatbot_settings', 'chatbot_knowledge',
+])
+
+const ACTION_FLAGS = [
+  ['canCreate', 'create'], ['canRead', 'read'], ['canUpdate', 'update'], ['canDelete', 'delete'],
+] as const
+
+type ActorLike = { id?: number; isSuperAdmin?: boolean | null; permissions?: Array<{ resource: string; canCreate: boolean | null; canRead: boolean | null; canUpdate: boolean | null; canDelete: boolean | null }> | null }
+
+/**
+ * Guard against privilege escalation when writing role permissions: every
+ * resource must be valid, and a non-superadmin may not grant a permission they
+ * do not themselves hold ("no granting what you don't have").
+ */
+export function assertAssignablePermissions(actor: ActorLike, permsInput: unknown): void {
+  if (!Array.isArray(permsInput)) return
+  const isSuper = actor?.isSuperAdmin === true
+  const actorPerms = actor?.permissions || []
+  for (const raw of permsInput) {
+    const p = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
+    const resource = String(p.resource || '')
+    if (!VALID_RESOURCES.has(resource)) {
+      throw createError({ statusCode: 400, statusMessage: `Tài nguyên phân quyền không hợp lệ: ${resource || '(trống)'}` })
+    }
+    if (isSuper) continue
+    for (const [flag, action] of ACTION_FLAGS) {
+      if (p[flag] === true && !checkPermission(actorPerms as any, resource, action, false)) {
+        throw createError({ statusCode: 403, statusMessage: `Bạn không thể cấp quyền ${resource}:${action} mà chính bạn chưa có.` })
+      }
+    }
+  }
+}
+
+/**
+ * Guard against privilege escalation when assigning a role to a user: only a
+ * superadmin may put a user into a system role (which confers superadmin).
+ */
+export function assertRoleAssignable(actor: ActorLike, targetRoleIsSystem: boolean | null | undefined): void {
+  if (targetRoleIsSystem && actor?.isSuperAdmin !== true) {
+    throw createError({ statusCode: 403, statusMessage: 'Chỉ SuperAdmin mới được gán vai trò hệ thống.' })
+  }
+}
+
 type BasePermission = {
   resource: string
   canCreate: boolean | null

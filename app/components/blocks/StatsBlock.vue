@@ -48,9 +48,21 @@ const stats = computed(() => {
 })
 
 // Wrap +, / markers in the accent color, matching the original design.
-// Single pass over the raw value so inserted markup is never re-scanned
-// (chained replaces used to match the "/" inside a freshly-inserted </span>).
+// The value is admin-authored but rendered with v-html, so it MUST be HTML-escaped
+// first — otherwise a stat value like `<img src=x onerror=...>` executes (XSS).
+// Escaping happens before the marker pass; the escaped text contains no '+' or '/'
+// artifacts of its own except inside entities (&#39;), which are left untouched
+// because the replacement only wraps the bare characters.
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
 function formatValue(v) {
-  return String(v ?? '').replace(/[+/]/g, (m) => `<span class="text-[#6da33e]">${m}</span>`)
+  return escapeHtml(v).replace(/[+/]/g, (m) => `<span class="text-[#6da33e]">${m}</span>`)
 }
 </script>

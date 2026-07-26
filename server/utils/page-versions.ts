@@ -1,4 +1,5 @@
 import { isValidBlockType, isContainerType, clampColSpan } from '../../app/utils/blocks/registry'
+import { sanitizeBlockData } from './sanitize-html'
 
 // Guard against pathological / malicious nesting from the client. Section → Row →
 // Column → Element is depth 4; a small buffer above that is plenty.
@@ -44,7 +45,10 @@ export function normalizeBlocks(input: unknown, depth = 0): SnapshotBlock[] {
     const b = raw as Record<string, any>
     const blockType = String(b.blockType || '').trim()
     if (!isValidBlockType(blockType)) continue
-    const data = b.data && typeof b.data === 'object' ? b.data : {}
+    // Rich-text fields inside block data are rendered with v-html on the public
+    // site — sanitize here so every write path (draft save, publish, version
+    // restore) stores safe markup.
+    const data = sanitizeBlockData(b.data && typeof b.data === 'object' ? b.data : {}) as Record<string, any>
     const node: SnapshotBlock = {
       id: typeof b.id === 'number' || typeof b.id === 'string' ? b.id : undefined,
       blockType,

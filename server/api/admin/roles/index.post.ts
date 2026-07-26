@@ -1,6 +1,7 @@
 import { getDb } from '../../../utils/db'
 import { roles, permissions, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
+import { assertAssignablePermissions } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -28,6 +29,8 @@ export default defineEventHandler(async (event) => {
   const newRoleId = res.insertId
 
   if (permsInput.length > 0) {
+    // Reject invalid resources and block granting permissions the actor lacks.
+    assertAssignablePermissions(adminUser, permsInput)
     const permValues = permsInput.map((p: any) => ({
       roleId: newRoleId,
       resource: String(p.resource),

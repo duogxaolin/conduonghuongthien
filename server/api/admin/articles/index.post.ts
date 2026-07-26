@@ -1,6 +1,7 @@
 import { getDb } from '../../../utils/db'
 import { articles, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
+import { sanitizeHtml } from '../../../utils/sanitize-html'
 
 function slugify(text: string): string {
   return text
@@ -24,7 +25,9 @@ export default defineEventHandler(async (event) => {
   const categoryId = body?.categoryId ? Number(body.categoryId) : null
   const title = String(body?.title || '').trim()
   const excerpt = String(body?.excerpt || '').trim() || null
-  const content = String(body?.content || '')
+  // Rich text is rendered with v-html on the public site — sanitize on write so
+  // a low-privilege editor cannot store executable markup (stored XSS).
+  const content = sanitizeHtml(String(body?.content || ''))
   const status = String(body?.status || 'draft').trim()
   const thumbnailUrl = String(body?.thumbnailUrl || '').trim() || null
 

@@ -6,12 +6,14 @@ services:
     container_name: cdkt_mysql
     restart: always
     environment:
-      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      # Required — no defaults. Set these in the .env file next to docker-compose.yml.
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:?MYSQL_ROOT_PASSWORD is required}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-cdkt_admin}
       MYSQL_USER: ${MYSQL_USER:-cdkt_user}
-      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cdkt_password}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
     ports:
-      - "${MYSQL_EXTERNAL_PORT:-33069}:3306"
+      # Loopback-only: the database must not be reachable from the network.
+      - "127.0.0.1:${MYSQL_EXTERNAL_PORT:-33069}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
@@ -30,14 +32,25 @@ services:
       NODE_ENV: production
       DB_HOST: mysql
       DB_PORT: 3306
-      DB_USER: root
-      DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-rootpassword}
+      # Defaults to root for backwards compatibility. To run with least
+      # privilege set DB_USER=cdkt_user and DB_PASSWORD=<MYSQL_PASSWORD>.
+      DB_USER: ${DB_USER:-root}
+      DB_PASSWORD: ${DB_PASSWORD:-${MYSQL_ROOT_PASSWORD}}
       DB_NAME: ${MYSQL_DATABASE:-cdkt_admin}
-      JWT_SECRET: ${JWT_SECRET:-cdkt_docker_jwt_secret_987654321}
-      CHATBOT_ENCRYPTION_SECRET: ${CHATBOT_ENCRYPTION_SECRET:-LBniQfaxO3ar1Nd0aFDA02RA12mx4+VlLeH++0fiFLc=}
-      ANALYTICS_HMAC_SECRET: ${ANALYTICS_HMAC_SECRET:-cdkt_default_hmac_secret_change_me_in_production_64}
+      # ── Secrets: REQUIRED, no defaults (a committed default is forgeable). ──
+      #   JWT_SECRET / ANALYTICS_HMAC_SECRET : openssl rand -hex 32
+      #   CHATBOT_ENCRYPTION_SECRET          : openssl rand -base64 32
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required - generate with openssl rand -hex 32}
+      CHATBOT_ENCRYPTION_SECRET: ${CHATBOT_ENCRYPTION_SECRET:?CHATBOT_ENCRYPTION_SECRET is required - generate with openssl rand -base64 32}
+      # The build-time value is only a placeholder: Nitro reads the NUXT_-prefixed
+      # name at runtime, so BOTH must be supplied for the real secret to apply.
+      ANALYTICS_HMAC_SECRET: ${ANALYTICS_HMAC_SECRET:?ANALYTICS_HMAC_SECRET is required - generate with openssl rand -hex 32}
+      NUXT_ANALYTICS_HMAC_SECRET: ${ANALYTICS_HMAC_SECRET}
       ANALYTICS_COLLECTION_ENABLED: ${ANALYTICS_COLLECTION_ENABLED:-true}
       NUXT_ANALYTICS_COLLECTION_ENABLED: ${NUXT_ANALYTICS_COLLECTION_ENABLED:-true}
+      # Used ONLY when the superadmin account is first created (seed is insert-only).
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
+      ADMIN_EMAIL: ${ADMIN_EMAIL:-}
     volumes:
       - uploads_data:/app/public/uploads
     depends_on:

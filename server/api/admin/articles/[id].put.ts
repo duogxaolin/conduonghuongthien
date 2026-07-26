@@ -1,6 +1,7 @@
 import { getDb } from '../../../utils/db'
 import { articles, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
+import { sanitizeHtml } from '../../../utils/sanitize-html'
 import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -33,7 +34,8 @@ export default defineEventHandler(async (event) => {
 
   if (body.title !== undefined) updateFields.title = String(body.title).trim()
   if (body.excerpt !== undefined) updateFields.excerpt = String(body.excerpt).trim() || null
-  if (body.content !== undefined) updateFields.content = String(body.content)
+  // Rich text is rendered with v-html on the public site — sanitize on write.
+  if (body.content !== undefined) updateFields.content = sanitizeHtml(String(body.content))
   if (body.thumbnailUrl !== undefined) updateFields.thumbnailUrl = String(body.thumbnailUrl).trim() || null
   if (body.category !== undefined) updateFields.category = String(body.category).trim() || null
   if ('categoryId' in body) updateFields.categoryId = body.categoryId ? Number(body.categoryId) : null
