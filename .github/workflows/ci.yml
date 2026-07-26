@@ -78,9 +78,12 @@ jobs:
       # lockfile only in this runner's throwaway checkout — nothing is committed.
       # (`--no-save --no-package-lock` crashes npm's tree builder: "Cannot read
       # properties of null (reading 'edgesOut')".) To promote it properly, run
-      # `npm i -D vue-tsc typescript` locally and delete this step.
+      # `npm i -D vue-tsc typescript@^5` locally and delete this step.
+      #
+      # typescript is pinned to ^5: 7.x is the Go rewrite and no longer exports
+      # lib/tsc.js, which vue-tsc requires at startup (ERR_PACKAGE_PATH_NOT_EXPORTED).
       - name: Install the typechecker
-        run: npm i -D vue-tsc typescript
+        run: npm i -D vue-tsc typescript@^5
 
       - name: Typecheck
         run: |
