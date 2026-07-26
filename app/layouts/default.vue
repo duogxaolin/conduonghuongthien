@@ -451,7 +451,6 @@
         </div>
     </div>
 
-
     <!-- Chatbot Toggle Button + Teaser Bubble (client-only) -->
     <div v-if="clientMounted" class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[10050] flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
       <!-- Teaser bubble -->
@@ -543,12 +542,8 @@ const isSticky = ref(false)
 const isMobileMenuOpen = ref(false)
 const isSearchActive = ref(false)
 const searchQuery = ref('')
-const showDropdown = ref(false)
-const showLibraryDropdown = ref(false)
-const showGovDropdown = ref(false)
 const { currentLang, locales, t, setLang } = useI18n()
 const searchInputRef = ref(null)
-const liveDateTime = ref('')
 
 // Dynamic nav menu from admin settings (falls back to DEFAULT_NAV)
 const DEFAULT_NAV = [
@@ -625,16 +620,6 @@ watch(settingsData, (res) => {
   const mobileRaw = res.settings.nav_menu_mobile
   if (mobileRaw) bottomNavRaw.value = _parseNav(mobileRaw)
 }, { immediate: true })
-
-const WEEKDAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy']
-const pad = (n) => String(n).padStart(2, '0')
-
-const updateLiveDate = () => {
-  const now = new Date()
-  liveDateTime.value = `${WEEKDAYS[now.getDay()]}, ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} - ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
-}
-
-let dateTimer = null
 
 const CHATBOT_CLIENT_LIMITS = Object.freeze({
   maxMessageChars: 2000,
@@ -790,7 +775,6 @@ const loadQuickQuestions = async () => {
   }
 }
 
-
 // rAF-throttled scroll handler: coalesces bursts of scroll events into one write
 // per frame and only mutates `isSticky` when the boolean actually flips. Hysteresis
 // (sticky >80, unsticky <60) prevents flicker right at the threshold. The listener
@@ -858,7 +842,6 @@ const handleSearch = () => {
     isSearchActive.value = false
   }
 }
-
 
 const handleChatbotDialogKeydown = (event) => {
   if (event.key === 'Escape') {
@@ -1129,8 +1112,6 @@ onMounted(() => {
   clientMounted.value = true
   window.addEventListener('scroll', handleScroll, { passive: true })
   window.addEventListener('keydown', handleKeydown)
-  updateLiveDate()
-  dateTimer = setInterval(updateLiveDate, 1000)
   loadChatHistory()
   loadQuickQuestions()
   startTeaserCycle()
@@ -1140,7 +1121,6 @@ onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   window.removeEventListener('keydown', handleKeydown)
   if (typeof document !== 'undefined') document.body.style.overflow = ''
-  if (dateTimer) clearInterval(dateTimer)
   if (teaserInterval) clearInterval(teaserInterval)
   if (teaserInitTimeout) clearTimeout(teaserInitTimeout)
   quickQuestionsController?.abort()
@@ -1149,14 +1129,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* Hide scrollbar but keep scroll functionality */
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
 
 /* Slide-down transition for search bar */
 .slide-down-enter-active, .slide-down-leave-active {
@@ -1165,17 +1137,6 @@ onUnmounted(() => {
 .slide-down-enter-from, .slide-down-leave-to {
   transform: translateY(-20px);
   opacity: 0;
-}
-
-/* Teaser pop transition */
-.teaser-pop-enter-active,
-.teaser-pop-leave-active {
-  transition: all 0.45s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.teaser-pop-enter-from,
-.teaser-pop-leave-to {
-  opacity: 0;
-  transform: translateY(14px) scale(0.92);
 }
 
 /* Streaming cursor blink */
@@ -1191,27 +1152,8 @@ onUnmounted(() => {
 }
 
 /* Liquid orb glow animation */
-@keyframes liquidOrbGlow {
-  0%, 100% { box-shadow: 0 10px 24px rgba(23, 59, 24, 0.4), 0 0 0 0 rgba(46, 107, 50, 0.3); }
-  50% { box-shadow: 0 12px 28px rgba(23, 59, 24, 0.5), 0 0 0 8px rgba(46, 107, 50, 0); }
-}
 
 /* Markdown content inside chatbot */
-.markdown-content p { margin: 0 0 6px 0; line-height: 1.5; }
-.markdown-content p:last-child { margin-bottom: 0; }
-.markdown-content strong { font-weight: 700; color: #112812; }
-.markdown-content ul.md-list,
-.markdown-content ol.md-list { margin: 6px 0 8px 0; padding-left: 18px; }
-.markdown-content ul.md-list li,
-.markdown-content ol.md-list li { margin-bottom: 4px; line-height: 1.45; }
-.markdown-content a { color: #1e4620; text-decoration: underline; font-weight: 600; }
-.markdown-content code { background: #f0f6ef; color: #1e4620; padding: 2px 6px; border-radius: 4px; font-size: 0.82rem; font-family: monospace; }
-.md-spacer { height: 6px; }
-
-/* Nav item pseudo-element underline (desktop nav) */
-.nav-item {
-  position: relative;
-}
 .nav-item::after {
   content: '';
   position: absolute;
@@ -1240,8 +1182,4 @@ onUnmounted(() => {
   color: #1e4620;
 }
 
-/* Teaser text animation */
-.teaser-text {
-  animation: textFadeIn 0.4s ease-out;
-}
 </style>
