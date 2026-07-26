@@ -1,3 +1,5 @@
+import { existsSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { resolveAnalyticsRetentionConfig } from './server/utils/analytics-config'
 
 const parseAnalyticsInteger = (name: string, fallback: number, min: number, max: number) => {
@@ -27,6 +29,38 @@ if (analyticsHmacSecret && analyticsHmacSecret.length < 32) {
 if (process.env.NODE_ENV === 'production' && !analyticsHmacSecret) {
   throw new Error('ANALYTICS_HMAC_SECRET is required in production')
 }
+
+/**
+ * Inter is loaded from Google unless the webfont has been self-hosted, which is
+ * what `node scripts/fetch-fonts.mjs` does. Self-hosting keeps every visitor's
+ * IP off a third-party CDN and keeps the typography intact on networks where
+ * fonts.gstatic.com is slow or filtered. This is a build-time check: run the
+ * script, rebuild, and the Google tags stop being emitted.
+ */
+const selfHostedFontCss = resolve(process.cwd(), 'public/assets/fonts/inter.css')
+const fontLinks = existsSync(selfHostedFontCss)
+  ? [{ rel: 'stylesheet', href: '/assets/fonts/inter.css' }]
+  : [
+      { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
+      { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+      {
+        rel: 'stylesheet',
+        href: 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap',
+      },
+    ]
+
+/**
+ * FontAwesome Pro 7.3.0, webfont build. Loading the icon map plus only the two
+ * families the templates use, rather than all.min.css, drops the brand icon map
+ * and the @font-face declarations for eleven families nothing here references.
+ * tests/asset-pipeline.test.ts fails if a template starts using a family that
+ * is not listed here — otherwise those icons would silently render as blanks.
+ */
+const ICON_FAMILIES = ['solid', 'regular']
+const iconLinks = ['fontawesome', ...ICON_FAMILIES].map(name => ({
+  rel: 'stylesheet',
+  href: `/assets/fontawesome/css/${name}.min.css`,
+}))
 
 const analyticsRetention = resolveAnalyticsRetentionConfig()
 const analyticsDefaultRangeDays = parseAnalyticsInteger('ANALYTICS_DEFAULT_RANGE_DAYS', 30, 1, 366)
@@ -81,14 +115,8 @@ export default defineNuxtConfig({
       ],
       link: [
         { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
-        { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-        { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-        {
-          rel: 'stylesheet',
-          href: 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap'
-        },
-        // FontAwesome Pro 7.3.0
-        { rel: 'stylesheet', href: '/assets/fontawesome/css/all.min.css' }
+        ...fontLinks,
+        ...iconLinks,
       ]
     }
   },

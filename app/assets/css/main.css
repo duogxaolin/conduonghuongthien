@@ -31,7 +31,11 @@
   }
 
   body {
-    font-family: 'Inter', sans-serif;
+    /* Inter is served from /assets/fonts when scripts/fetch-fonts.mjs has been
+       run, and from Google otherwise. The rest of the stack keeps the page
+       legible when neither is reachable — a real risk on restricted networks. */
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+      'Helvetica Neue', Arial, 'Noto Sans', sans-serif;
     color: var(--text-dark);
     background-color: var(--white);
     line-height: 1.6;
