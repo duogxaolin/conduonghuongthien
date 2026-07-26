@@ -67,6 +67,19 @@ echo "MySQL root: $(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2)"
 echo "Mật khẩu admin lần đầu: $(grep ADMIN_PASSWORD .env | cut -d= -f2)"
 ```
 
+### Tuỳ chọn tài nguyên & độ bền (thêm vào `.env` nếu cần)
+
+```env
+# Giới hạn RAM container. MySQL tự dò giới hạn này (cgroup) để tính buffer pool,
+# nên đặt đúng sẽ tránh bị OOM-kill trên VPS nhỏ.
+MYSQL_MEM_LIMIT=1g
+APP_MEM_LIMIT=1g
+
+# strict = full ACID (chậm hơn, không mất giao dịch khi máy chủ mất điện)
+# mặc định (fast) = có thể mất ~1 giây giao dịch cuối nếu HOST sập
+MYSQL_DURABILITY=fast
+```
+
 > ⚠️ **Bắt buộc**: `docker compose` sẽ **báo lỗi và dừng** nếu thiếu `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD`, `JWT_SECRET`, `CHATBOT_ENCRYPTION_SECRET` hoặc `ANALYTICS_HMAC_SECRET`. Đây là chủ đích — để không bao giờ chạy production bằng khóa mặc định công khai.
 
 > Lưu lại mật khẩu — cần khi kết nối DB từ bên ngoài (`localhost:33069`).
@@ -92,18 +105,33 @@ Khi thấy `Listening on http://0.0.0.0:54432` → app sẵn sàng.
 
 ## Bước 4: Database
 
-### Cách A: Để app tự khởi tạo (khuyến nghị)
+### Cách A: Để app tự khởi tạo (khuyến nghị cho cài mới)
 
-**Không cần làm gì.** App tự chạy `init.ts` (tạo/hội tụ 27 bảng) + `seed.ts` (tạo tài khoản, vai trò, trang hệ thống) mỗi lần khởi động. Cả hai đều **idempotent**: chạy lại không ghi đè mật khẩu, phân quyền hay cấu hình mà bạn đã sửa.
+**Không cần làm gì.** App tự chạy `init.ts` (tạo/hội tụ 27 bảng) + `seed.ts` (tài khoản, vai trò, trang hệ thống) mỗi lần khởi động. Cả hai **idempotent**: chạy lại không ghi đè mật khẩu, phân quyền hay cấu hình bạn đã sửa.
 
-### Cách B: Khôi phục từ bản sao lưu của chính bạn
+### Cách B: Import dump có sẵn dữ liệu mẫu
 
 ```bash
-docker exec -i cdkt_mysql mysql -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin < backup.sql
+# Chờ MySQL healthy
+docker compose ps mysql
+
+# Dump có guard chống chạy nhầm — phải bật cờ mới thực thi
+docker exec -i cdkt_mysql mysql -u root -p"$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2)" \
+  --init-command="SET @CDKT_ALLOW_DESTRUCTIVE_RESTORE=1" \
+  "$(grep MYSQL_DATABASE .env | cut -d= -f2)" < migrations/full_dump.sql
+
 docker restart cdkt_app
 ```
 
-> Repo **không còn chứa** file dump dữ liệu (`full_dump.sql`, `002_seed_data.sql`) — dump chứa hash mật khẩu và log truy cập thật nên không được commit. Xem mục **Backup & Restore** để tự tạo bản sao lưu.
+> ⚠️ Dump chứa lệnh `DROP TABLE` cho **toàn bộ** bảng — chỉ dùng cho cài mới hoặc khi cố ý ghi đè. Không có cờ `CDKT_ALLOW_DESTRUCTIVE_RESTORE=1`, script sẽ tự dừng.
+
+### Cách C: Khôi phục từ bản sao lưu của bạn
+
+```bash
+docker exec -i cdkt_mysql mysql -u root -p"$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2)" \
+  "$(grep MYSQL_DATABASE .env | cut -d= -f2)" < backup.sql
+docker restart cdkt_app
+```
 
 ---
 

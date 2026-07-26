@@ -11,15 +11,33 @@ services:
       MYSQL_DATABASE: ${MYSQL_DATABASE:-cdkt_admin}
       MYSQL_USER: ${MYSQL_USER:-cdkt_user}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:?MYSQL_PASSWORD is required}
+      # "strict" = full ACID (innodb_flush_log_at_trx_commit=1).
+      # Default trades up to ~1s of commits on a HOST crash for throughput.
+      MYSQL_DURABILITY: ${MYSQL_DURABILITY:-fast}
     ports:
       # Loopback-only: the database must not be reachable from the network.
       - "127.0.0.1:${MYSQL_EXTERNAL_PORT:-33069}:3306"
     volumes:
       - mysql_data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      # Authenticated ping: an unauthenticated ping answers "alive" while the
+      # server is still initialising, which let the app start too early.
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      interval: 10s
       timeout: 5s
-      retries: 10
+      retries: 12
+      start_period: 40s
+    # MySQL needs time to flush and close cleanly; the 10s default can corrupt
+    # a busy InnoDB shutdown.
+    stop_grace_period: 60s
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    deploy:
+      resources:
+        limits:
+          # Autotune reads this limit (cgroup) rather than host RAM.
+          memory: ${MYSQL_MEM_LIMIT:-1g}
 
   app:
     build: .
@@ -56,6 +74,13 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    logging:
+      driver: json-file
+      options: { max-size: "10m", max-file: "3" }
+    deploy:
+      resources:
+        limits:
+          memory: ${APP_MEM_LIMIT:-1g}
 
 volumes:
   mysql_data:
