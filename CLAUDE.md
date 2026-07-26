@@ -81,6 +81,23 @@ app/
         └── users/               # Quản lý Người dùng Admin & Phân quyền Roles
 ```
 
+### Vận hành & an toàn
+
+- **Chính sách mật khẩu** (`server/utils/password-policy.ts`): tối thiểu 12 ký tự, đủ 3/4 nhóm ký tự, chặn mật khẩu mặc định/phổ biến và mật khẩu chứa tên đăng nhập. Áp ở **mọi nơi đặt mật khẩu** (tạo user, đổi mật khẩu, seed, guard lúc khởi động) và **không áp lúc đăng nhập** — tài khoản cũ mật khẩu ngắn vẫn vào được, khoá họ ra khỏi cổng đang chạy còn tệ hơn.
+- **Giới hạn tần suất** (`server/utils/rate-limit-store.ts`): bộ đếm nằm ở bảng `rate_limit_counters`, không mất khi restart và đúng khi chạy nhiều replica. Mất CSDL thì lùi về bộ nhớ tiến trình — **không bao giờ mở toang**.
+- **Lưu trữ dữ liệu cá nhân** (`server/services/data-retention.ts`): `activity_logs` mặc định 365 ngày; `submissions` mặc định **0 = không tự xoá** vì thời hạn lưu hồ sơ công dân do quy định của cơ quan quyết định. Chạy chung một dòng cron với bảo trì analytics.
+- **Log có cấu trúc** (`server/utils/logger.ts`): mỗi sự kiện một dòng JSON, tự che các trường có tên gợi ý bí mật. `SECURITY_EVENTS` là danh sách sự kiện an ninh để viết cảnh báo (`auth.login_failed`, `auth.login_rate_limited`, `auth.session_revoked`, …).
+- **Sao lưu** (`scripts/backup-db.sh`, `scripts/verify-restore.sh`): dump → kiểm chứng (dấu kết thúc, số bảng, dung lượng SQL) → xoay vòng. Bản không đạt bị **xoá** thay vì để lại trông như bản tốt.
+- **CI** (`.github/workflows/ci.yml`): mỗi push chạy test, kiểm drift schema, build thật, và một job vệ sinh (chặn `.env` bị commit, private key, secret mặc định cũ).
+
+### Hạn chế đã biết
+
+- **Đa ngôn ngữ mới xong phần khung.** `app/composables/useI18n.ts` có 209 khoá và bộ chuyển ngôn ngữ hoạt động, nhưng chỉ `app/layouts/default.vue` dùng — **toàn bộ nội dung trang vẫn là tiếng Việt**. Khách chuyển sang tiếng Anh sẽ thấy menu tiếng Anh bọc quanh nội dung tiếng Việt. Hai lối đi: bỏ nút chuyển ngôn ngữ (cổng thông tin chỉ phục vụ tiếng Việt), hoặc dịch cả nội dung CMS (cần thêm cột/bản ghi theo ngôn ngữ). Chưa chọn hướng nào nên chưa đụng vào.
+- **Không có typecheck.** Dự án không cài `typescript`; các chú thích kiểu là tài liệu, build hiện không kiểm. Thêm `vue-tsc` là bước tiếp theo hợp lý.
+- **Test phần lớn không chạm hệ thống thật.** Ba tệp `*-ddl-integration` nối MySQL thật; phần còn lại kiểm logic thuần hoặc kiểm văn bản mã nguồn. Loại sau chặn được việc xoá nhầm một guard, **không** chứng minh guard đó chạy đúng.
+
+---
+
 ### Kiến trúc Page Builder (Block System)
 
 - **Block Registry** (`app/utils/blocks/registry.ts`): nguồn chân lý duy nhất cho toàn bộ block. Mỗi block định nghĩa `{label, icon, category, defaultData, fields}`. Registry được dùng chung bởi: builder UI (render palette + edit drawer), server validation (`isValidBlockType`), và seed (`getDefaultData`). **19 block**: `hero, stats, news, role_models, reintegration, documents, support_form, links, quote` (section) + `heading, richtext, image, cta, gallery, contact_form, content_aside` (content) + `section, row, column` (layout container). `content_aside` là block 2 cột: thẻ nội dung rich-text bên trái + cột thông tin xanh "ĐƠN VỊ CHỦ QUẢN" bên phải (tái tạo thiết kế trang Giới thiệu gốc).
