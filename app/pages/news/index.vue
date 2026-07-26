@@ -132,6 +132,7 @@
 <script setup>
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
+import { formatDateVN } from '~/utils/formatDate'
 
 useSeoMeta({
   title: 'Bản tin hoạt động | Con Đường Hướng Thiện',
@@ -165,14 +166,7 @@ const { data: articlesData, pending, error, refresh } = await useFetch('/api/pub
 const newsList = computed(() => articlesData.value?.articles || [])
 const loadError = computed(() => !!error.value || articlesData.value?.ok === false)
 
-const formatDate = (item) => {
-  const raw = item.publishedAt || item.createdAt
-  if (!raw) return ''
-  const d = new Date(raw)
-  if (isNaN(d.getTime())) return ''
-  const pad = (n) => String(n).padStart(2, '0')
-  return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`
-}
+const formatDate = (item) => formatDateVN(item.publishedAt || item.createdAt)
 
 const syncUrl = () => {
   const query = {}
