@@ -506,8 +506,12 @@ onBeforeUnmount(() => {
           <div v-else-if="livePanelError" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ livePanelError }}<span v-if="liveData"> — đang hiển thị dữ liệu gần nhất.</span>
           </div>
-          <div v-else-if="liveData?.stale" class="hidden" aria-hidden="true"></div>
         </div>
+        <!-- Freshness footer: shows whether the held data is stale and when the last successful poll landed (UTC). -->
+        <p class="mb-4 -mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.72rem] text-[#8ea98f]">
+          <span v-if="livePanelState.stale && liveData" class="flex items-center gap-1 font-semibold text-amber-700"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>Dữ liệu có thể chưa mới nhất</span>
+          <span>Lần cập nhật thành công (UTC): <time v-if="livePanelState.lastSuccessfulAt" :datetime="utcDateTime(livePanelState.lastSuccessfulAt)">{{ formatUtc(livePanelState.lastSuccessfulAt) }}</time><span v-else>Chưa có</span></span>
+        </p>
 
         <!-- Legend -->
         <div class="mb-3 flex flex-wrap gap-4 text-[0.75rem] font-semibold text-[#667768]">
@@ -526,16 +530,37 @@ onBeforeUnmount(() => {
                 :title="`${formatUtc(point.bucketStart)}: ${point.pageViews} lượt xem, ${point.approximateUniqueVisitors} khách`"
               >
                 <span class="flex h-40 items-end justify-center gap-px">
-                  <span class="w-1/2 rounded-t bg-[#2c6e33] transition-opacity group-hover:opacity-80" :style="{ height: point.pageViews === 0 ? '1px' : `${Math.max(3, point.pageViews / maxLiveMetric * 100)}%` }"><span class="sr-only">{{ point.pageViews }} lượt xem</span></span>
-                  <span class="w-1/2 rounded-t bg-[#5b8fce] transition-opacity group-hover:opacity-80" :style="{ height: point.approximateUniqueVisitors === 0 ? '1px' : `${Math.max(3, point.approximateUniqueVisitors / maxLiveMetric * 100)}%` }"><span class="sr-only">{{ point.approximateUniqueVisitors }} khách</span></span>
+                  <span class="w-1/2 rounded-t bg-[#2c6e33] transition-opacity group-hover:opacity-80" :style="{ height: point.pageViews === 0 ? '0%' : `${Math.max(3, point.pageViews / maxLiveMetric * 100)}%` }"><span class="sr-only">{{ point.pageViews }} lượt xem</span></span>
+                  <span class="w-1/2 rounded-t bg-[#5b8fce] transition-opacity group-hover:opacity-80" :style="{ height: point.approximateUniqueVisitors === 0 ? '0%' : `${Math.max(3, point.approximateUniqueVisitors / maxLiveMetric * 100)}%` }"><span class="sr-only">{{ point.approximateUniqueVisitors }} khách</span></span>
                 </span>
-                <time v-if="index === 0 || index === liveData.points.length - 1 || index % 12 === 0" :datetime="point.bucketStart" class="mt-1 block whitespace-nowrap text-[9px] text-[#8ea98f]">{{ formatUtc(point.bucketStart).slice(0, 16) }}</time>
+                <time v-if="index === 0 || index === (liveData?.points.length || 0) - 1 || index % 10 === 0" :datetime="point.bucketStart" class="mt-1 block whitespace-nowrap text-[9px] text-[#8ea98f]">{{ formatUtc(point.bucketStart).slice(0, 16) }}</time>
                 <span v-else class="h-3.5" aria-hidden="true"></span>
               </div>
             </template>
             <p v-else class="m-auto text-sm text-[#667768]">Chưa có dữ liệu theo phút.</p>
           </div>
         </div>
+
+        <!-- Screen-reader parity table: the full text alternative for the chart above (role="img"). -->
+        <table class="sr-only">
+          <caption>Dữ liệu đầy đủ tương ứng biểu đồ trực tiếp</caption>
+          <thead>
+            <tr>
+              <th class="px-3 py-2">Mốc UTC</th>
+              <th class="px-3 py-2">Lượt xem</th>
+              <th class="px-3 py-2">Khách ước tính</th>
+              <th class="px-3 py-2">Ngữ nghĩa khách</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-for="point in (liveData?.points || [])" :key="`parity-${point.bucketStart}`">
+              <td class="px-3 py-2">{{ formatUtc(point.bucketStart) }}</td>
+              <td class="px-3 py-2">{{ point.pageViews }}</td>
+              <td class="px-3 py-2">{{ point.approximateUniqueVisitors }}</td>
+              <td class="px-3 py-2">{{ point.uniqueVisitorSemantics }}</td>
+            </tr>
+          </tbody>
+        </table>
 
         <!-- Table -->
         <div class="mt-5">
@@ -632,8 +657,12 @@ onBeforeUnmount(() => {
           <div v-else-if="breakdownPanelError" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ breakdownPanelError }}<span v-if="breakdownData"> — đang hiển thị dữ liệu gần nhất.</span>
           </div>
-          <div v-else-if="breakdownData?.stale" class="hidden" aria-hidden="true"></div>
         </div>
+        <!-- Freshness footer -->
+        <p class="mt-2 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.72rem] text-[#8ea98f]">
+          <span v-if="breakdownPanelState.stale && breakdownData" class="flex items-center gap-1 font-semibold text-amber-700"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>Dữ liệu có thể chưa mới nhất</span>
+          <span>Lần cập nhật thành công (UTC): <time v-if="breakdownPanelState.lastSuccessfulAt" :datetime="utcDateTime(breakdownPanelState.lastSuccessfulAt)">{{ formatUtc(breakdownPanelState.lastSuccessfulAt) }}</time><span v-else>Chưa có</span></span>
+        </p>
 
         <!-- Donut chart + bar chart side-by-side when data exists -->
         <div v-if="breakdownData && breakdownData.rows.length" class="mt-5 flex flex-col gap-6 lg:flex-row lg:items-start">
@@ -772,6 +801,11 @@ onBeforeUnmount(() => {
             <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ nocPanelError }}<span v-if="nocData"> — đang hiển thị dữ liệu gần nhất.</span>
           </div>
         </div>
+        <!-- Freshness footer -->
+        <p class="mb-4 flex flex-wrap items-center gap-x-3 gap-y-1 text-[0.72rem] text-[#8ea98f]">
+          <span v-if="nocPanelState.stale && nocData" class="flex items-center gap-1 font-semibold text-amber-700"><i class="fa-solid fa-clock-rotate-left" aria-hidden="true"></i>Dữ liệu có thể chưa mới nhất</span>
+          <span>Lần cập nhật thành công (UTC): <time v-if="nocPanelState.lastSuccessfulAt" :datetime="utcDateTime(nocPanelState.lastSuccessfulAt)">{{ formatUtc(nocPanelState.lastSuccessfulAt) }}</time><span v-else>Chưa có</span></span>
+        </p>
 
         <!-- NOC summary cards -->
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 mb-5">
@@ -853,8 +887,7 @@ onBeforeUnmount(() => {
                     <span class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-[0.7rem] font-bold"
                       :class="/^(error|critical)$/i.test(row.severity) ? 'bg-red-100 text-red-700' : /^(warning|warn)$/i.test(row.severity) ? 'bg-amber-100 text-amber-700' : 'bg-[#e8f5e9] text-[#1e4620]'"
                     >
-                      <i class="fa-solid text-[0.6rem]" :class="/^(error|critical)$/i.test(row.severity) ? 'fa-circle-exclamation' : /^(warning|warn)$/i.test(row.severity) ? 'fa-triangle-exclamation' : 'fa-circle-check'" aria-hidden="true"></i>
-                      {{ row.severity }}
+                      <i class="fa-solid" :class="[/^(error|critical)$/i.test(row.severity) ? 'fa-circle-exclamation' : /^(warning|warn)$/i.test(row.severity) ? 'fa-triangle-exclamation' : 'fa-circle-check', 'text-[0.6rem]']" aria-hidden="true"></i><span>{{ row.severity }}</span>
                     </span>
                   </td>
                   <td class="px-4 py-2.5 text-[#334e36] font-semibold">{{ row.component }}</td>
@@ -906,7 +939,11 @@ onBeforeUnmount(() => {
                       </div>
                       <div v-if="row.details" class="sm:col-span-2 xl:col-span-3">
                         <p class="text-[0.68rem] font-bold uppercase tracking-wide text-[#667768] mb-1">Chi tiết kỹ thuật</p>
-                        <pre class="rounded-lg bg-[#122815] text-[#8ed694] px-4 py-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap">{{ safeDetails(row.details) }}</pre>
+                        <!-- Native disclosure: keyboard-operable without JS; content is escaped by safeDetails(). -->
+                        <details v-if="row.details">
+                          <summary class="cursor-pointer text-[0.8rem] font-semibold text-[#2c6e33] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2c6e33]">Xem chi tiết an toàn</summary>
+                          <pre class="mt-2 rounded-lg bg-[#122815] text-[#8ed694] px-4 py-3 text-xs font-mono overflow-x-auto whitespace-pre-wrap">{{ safeDetails(row.details) }}</pre>
+                        </details>
                       </div>
                     </div>
                     <div class="mt-4 flex gap-2">

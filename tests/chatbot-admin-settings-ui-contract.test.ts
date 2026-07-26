@@ -70,7 +70,9 @@ test('admin navigation targets actual chatbot pages and keeps dedicated read per
   assert.match(layoutSource, /hasPermission\('chatbot_knowledge', 'read'\)[^\n]+path: '\/admin\/chatbot\/knowledge'/)
   assert.match(layoutSource, /hasPermission\('chatbot_settings', 'read'\)[^\n]+path: '\/admin\/chatbot\/settings'/)
   assert.doesNotMatch(layoutSource, /\/admin\/content\/chatbot-knowledge|\/admin\/settings\/chatbot/)
-  assert.match(layoutSource, /path: '\/admin\/content\/home'/)
+  // The legacy single-page home editor was superseded by the site-wide Page
+  // Builder; the sidebar now links to that instead.
+  assert.match(layoutSource, /path: '\/admin\/content\/pages'/)
   assert.match(layoutSource, /path: '\/admin\/settings\/general'/)
 })
 
@@ -127,7 +129,10 @@ test('system prompt and API key are omitted by default and included only as inte
 
 test('API key clear is an explicit action and never uses blank PATCH semantics', () => {
   const clearKey = extractFunction('clearKey', 'testConnection')
-  assert.match(clearKey, /window\.confirm\('Xóa API key khỏi cấu hình chatbot\?'\)/)
+  // Browser confirm() was replaced by the in-app ConfirmModal (useConfirm);
+  // the contract is unchanged: clearing the key requires explicit confirmation.
+  assert.match(clearKey, /await confirm\(\{[^}]*Xóa API key khỏi cấu hình chatbot\?/s)
+  assert.match(clearKey, /danger: true/)
   assert.match(clearKey, /\$fetch\('\/api\/admin\/chatbot\/settings\/clear', \{ method: 'POST' \}\)/)
   assert.match(clearRouteSource, /clearChatbotApiKey/)
   assert.match(validatorSource, /input\.apiKey === ''[^\n]+explicit clear operation/)
