@@ -104,7 +104,7 @@
             class="flex flex-col sm:flex-row bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-[#7CB342]"
           >
             <div class="w-full sm:w-[260px] h-[200px] sm:h-[180px] flex-shrink-0">
-              <img :src="item.thumbnailUrl || '/assets/hero_banner.jpg'" :alt="item.title" class="w-full h-full object-cover" />
+              <img :src="item.thumbnailUrl || '/assets/hero_banner.jpg'" :alt="item.title" class="w-full h-full object-cover"  loading="lazy" decoding="async" />
             </div>
             <div class="p-6 flex flex-col justify-between">
               <span class="text-[0.8rem] text-[#7A8675] font-semibold mb-1.5 block">

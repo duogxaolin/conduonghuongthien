@@ -45,7 +45,7 @@
             class="bg-white rounded-lg p-5 sm:p-[30px] flex flex-col items-center text-center gap-5 sm:gap-[30px] shadow-sm border border-[#E2E8DF] transition-all duration-300 hover:shadow-md hover:border-[#7CB342] md:flex-row md:items-start md:text-left"
           >
             <div class="w-24 h-24 sm:w-[140px] sm:h-[140px] rounded-full overflow-hidden border-4 border-[#F8FAF7] shrink-0">
-              <img :src="item.thumbnailUrl || '/assets/hero_banner.jpg'" :alt="item.title" class="w-full h-full object-cover" />
+              <img :src="item.thumbnailUrl || '/assets/hero_banner.jpg'" :alt="item.title" class="w-full h-full object-cover"  loading="lazy" decoding="async" />
             </div>
             <div>
               <span v-if="item.categoryName" class="text-[0.8rem] font-bold text-[#4A6741] bg-[#F8FAF7] px-[10px] py-[4px] rounded inline-block mb-[10px]">📍 {{ item.categoryName }}</span>

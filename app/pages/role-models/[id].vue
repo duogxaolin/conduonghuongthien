@@ -29,7 +29,7 @@
 
         <div class="article-body">
           <div class="my-8 text-center" v-if="article.thumbnailUrl">
-            <img :src="article.thumbnailUrl" :alt="article.title" class="w-full max-h-[450px] object-cover rounded-md shadow-sm" />
+            <img :src="article.thumbnailUrl" :alt="article.title" class="w-full max-h-[450px] object-cover rounded-md shadow-sm"  loading="lazy" decoding="async" />
           </div>
 
           <div v-html="article.content"></div>

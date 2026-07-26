@@ -350,6 +350,7 @@ async function convergeChatbotSchema(db: Connection, database: string) {
 
   // Answer-mode & lead-capture columns — idempotent add for pre-existing databases.
   const modeColumnExisted = await hasColumn(db, database, 'chatbot_settings', 'mode')
+  await ensureColumn(db, database, 'users', 'token_version', 'INT NOT NULL DEFAULT 0')
   await ensureColumn(db, database, 'chatbot_settings', 'mode', "VARCHAR(16) NOT NULL DEFAULT 'knowledge'")
   if (!modeColumnExisted) {
     // Upgrade path: a deployment that already had a working provider keeps using
@@ -466,6 +467,7 @@ export async function initDb() {
       \`password_hash\` VARCHAR(255) NOT NULL,
       \`role_id\` INT,
       \`is_active\` TINYINT(1) DEFAULT 1,
+      \`token_version\` INT NOT NULL DEFAULT 0,
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       \`last_login_at\` TIMESTAMP NULL,
       CONSTRAINT \`fk_users_role\` FOREIGN KEY (\`role_id\`) REFERENCES \`roles\` (\`id\`) ON DELETE SET NULL

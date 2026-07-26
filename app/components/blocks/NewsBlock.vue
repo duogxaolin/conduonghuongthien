@@ -10,7 +10,7 @@
           <div class="mb-6">
             <nuxt-link :to="`/news/${featured.slug}`" class="block no-underline group">
               <div class="relative h-[300px] rounded-lg overflow-hidden sm:h-[420px] shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-                <img :src="featured.thumbnailUrl || '/assets/news_danang.jpg'" :alt="featured.title" class="w-full h-full object-cover transition-transform duration-[0.6s] ease-[cubic-bezier(0.165,0.84,0.44,1)] group-hover:scale-[1.03]" />
+                <img :src="featured.thumbnailUrl || '/assets/news_danang.jpg'" :alt="featured.title" class="w-full h-full object-cover transition-transform duration-[0.6s] ease-[cubic-bezier(0.165,0.84,0.44,1)] group-hover:scale-[1.03]"  loading="lazy" decoding="async" />
                 <div class="absolute bottom-0 left-0 right-0 h-[60%] z-[1]" style="background: linear-gradient(to top, rgba(16,28,16,0.95) 0%, rgba(16,28,16,0.4) 60%, rgba(16,28,16,0) 100%);"></div>
                 <div class="absolute bottom-0 left-0 right-0 p-6 text-white z-[2]">
                   <span class="inline-block bg-[#7CB342] text-white px-2 py-[3px] text-[0.65rem] font-extrabold rounded-sm mb-2">TIN NỔI BẬT</span>
@@ -26,7 +26,7 @@
           <div class="grid grid-cols-1 gap-[14px] sm:grid-cols-2 sm:gap-5">
             <div v-for="item in subCards" :key="item.id" class="flex gap-4 py-3 border-t border-dashed border-[#E2E8DF] group">
               <nuxt-link :to="`/news/${item.slug}`" class="w-[130px] h-[85px] rounded-lg overflow-hidden flex-shrink-0 shadow-sm">
-                <img :src="item.thumbnailUrl || '/assets/news_quangninh.jpg'" :alt="item.title" class="w-full h-full object-cover transition group-hover:scale-[1.05]" />
+                <img :src="item.thumbnailUrl || '/assets/news_quangninh.jpg'" :alt="item.title" class="w-full h-full object-cover transition group-hover:scale-[1.05]"  loading="lazy" decoding="async" />
               </nuxt-link>
               <div class="flex flex-col">
                 <span class="text-[0.72rem] text-[#7A8675] font-bold mb-1">{{ formatDate(item.publishedAt || item.createdAt) }}</span>

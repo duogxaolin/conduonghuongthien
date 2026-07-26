@@ -40,6 +40,10 @@ export const users = mysqlTable('users', {
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
   roleId:       int('role_id').references(() => roles.id),
   isActive:     boolean('is_active').default(true),
+  // Bumped whenever every existing session for this user must stop working
+  // (logout, password change). Tokens carry the value they were minted with,
+  // so a stolen cookie stops being accepted as soon as this moves.
+  tokenVersion: int('token_version').notNull().default(0),
   createdAt:    timestamp('created_at').defaultNow(),
   lastLoginAt:  timestamp('last_login_at'),
 })

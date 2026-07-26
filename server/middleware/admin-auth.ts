@@ -32,6 +32,7 @@ export default defineEventHandler(async (event) => {
       roleId:   users.roleId,
       roleName: roles.name,
       isSystem: roles.isSystem,
+      tokenVersion: users.tokenVersion,
     })
     .from(users)
     .leftJoin(roles, eq(users.roleId, roles.id))
@@ -40,6 +41,13 @@ export default defineEventHandler(async (event) => {
 
   if (!user || !user.isActive) {
     throw createError({ statusCode: 401, statusMessage: 'Unauthorized: User inactive or not found' })
+  }
+
+  // Reject sessions minted before the user's last logout / password change.
+  // Tokens issued before this field existed carry no version and are treated as
+  // generation 0, matching the column default.
+  if ((payload.tokenVersion ?? 0) !== (user.tokenVersion ?? 0)) {
+    throw createError({ statusCode: 401, statusMessage: 'Unauthorized: Session revoked' })
   }
 
   const userPermissions = await db

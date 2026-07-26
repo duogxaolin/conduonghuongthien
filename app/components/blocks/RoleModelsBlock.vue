@@ -23,7 +23,7 @@
             :class="{ 'is-active-slide': activeIndex === index }"
           >
             <div class="relative w-[90px] h-[90px] sm:w-[54px] sm:h-[54px] rounded-full overflow-hidden border-[3px] border-[rgba(30,70,32,0.1)] flex-shrink-0 sm:mx-auto">
-              <img :src="model.image" :alt="model.name" class="w-full h-full object-cover" />
+              <img :src="model.image" :alt="model.name" class="w-full h-full object-cover"  loading="lazy" decoding="async" />
               <span class="absolute bottom-[2px] right-[2px] w-5 h-5 sm:w-4 sm:h-4 rounded-full bg-[#7CB342] text-white text-[0.65rem] sm:text-[0.55rem] font-black flex items-center justify-center border-2 border-white">✓</span>
             </div>
             <div>
