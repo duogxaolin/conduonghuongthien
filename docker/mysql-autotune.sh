@@ -3,9 +3,57 @@
 # Generates /etc/mysql/conf.d/auto-tune.cnf at container startup
 # Run before mysqld starts
 
-TOTAL_RAM_KB=$(grep MemTotal /proc/meminfo | awk '{print $2}')
-TOTAL_RAM_MB=$((TOTAL_RAM_KB / 1024))
-CPU_CORES=$(nproc)
+# Resolve the memory this CONTAINER may use, not the host's total RAM.
+# /proc/meminfo always reports the host, so with a compose `mem_limit` the old
+# logic sized the buffer pool from host RAM and the container got OOM-killed.
+# cgroup v2 exposes memory.max, cgroup v1 memory.limit_in_bytes; both report a
+# very large sentinel value ("max" / ~9.2e18) when no limit is set.
+read_cgroup_mem_mb() {
+  _limit=""
+  if [ -r /sys/fs/cgroup/memory.max ]; then
+    _limit=$(cat /sys/fs/cgroup/memory.max 2>/dev/null)
+  elif [ -r /sys/fs/cgroup/memory/memory.limit_in_bytes ]; then
+    _limit=$(cat /sys/fs/cgroup/memory/memory.limit_in_bytes 2>/dev/null)
+  fi
+  case "$_limit" in
+    ''|max|*[!0-9]*) echo "" ; return ;;
+  esac
+  # Treat anything above 1 TiB as "no limit set".
+  if [ "$_limit" -gt 1099511627776 ] 2>/dev/null; then echo ""; return; fi
+  echo $((_limit / 1024 / 1024))
+}
+
+# Effective CPU quota (cgroup v2 "quota period", v1 cfs_quota/cfs_period).
+read_cgroup_cpus() {
+  if [ -r /sys/fs/cgroup/cpu.max ]; then
+    set -- $(cat /sys/fs/cgroup/cpu.max 2>/dev/null)
+    [ "$1" = "max" ] && { echo ""; return; }
+    [ -n "$1" ] && [ -n "$2" ] && [ "$2" -gt 0 ] 2>/dev/null && echo $(( ($1 + $2 - 1) / $2 )) && return
+  elif [ -r /sys/fs/cgroup/cpu/cpu.cfs_quota_us ]; then
+    _q=$(cat /sys/fs/cgroup/cpu/cpu.cfs_quota_us 2>/dev/null)
+    _p=$(cat /sys/fs/cgroup/cpu/cpu.cfs_period_us 2>/dev/null)
+    [ "$_q" -gt 0 ] 2>/dev/null && [ "$_p" -gt 0 ] 2>/dev/null && echo $(( (_q + _p - 1) / _p )) && return
+  fi
+  echo ""
+}
+
+HOST_RAM_MB=$(($(grep MemTotal /proc/meminfo | awk '{print $2}') / 1024))
+CGROUP_RAM_MB=$(read_cgroup_mem_mb)
+if [ -n "$CGROUP_RAM_MB" ] && [ "$CGROUP_RAM_MB" -gt 0 ] 2>/dev/null; then
+  TOTAL_RAM_MB=$CGROUP_RAM_MB
+  RAM_SOURCE="giới hạn container"
+else
+  TOTAL_RAM_MB=$HOST_RAM_MB
+  RAM_SOURCE="RAM máy chủ"
+fi
+
+CGROUP_CPUS=$(read_cgroup_cpus)
+if [ -n "$CGROUP_CPUS" ] && [ "$CGROUP_CPUS" -gt 0 ] 2>/dev/null; then
+  CPU_CORES=$CGROUP_CPUS
+else
+  CPU_CORES=$(nproc)
+fi
+[ "$CPU_CORES" -lt 1 ] 2>/dev/null && CPU_CORES=1
 
 # Buffer pool: ~25% of total RAM (safe for shared VPS with app container)
 BUFFER_POOL_MB=$((TOTAL_RAM_MB / 4))
@@ -64,11 +112,15 @@ SORT_BUFFER_MB=$((TOTAL_RAM_MB / 2048))
 [ $SORT_BUFFER_MB -lt 2 ] && SORT_BUFFER_MB=2
 [ $SORT_BUFFER_MB -gt 16 ] && SORT_BUFFER_MB=16
 
+# Durability: default keeps the existing (fast) behaviour.
+if [ "${MYSQL_DURABILITY}" = "strict" ]; then FLUSH_AT_COMMIT=1; else FLUSH_AT_COMMIT=2; fi
+
 echo "── MySQL Auto-Tune ──────────────────────────────"
-echo "   RAM: ${TOTAL_RAM_MB}MB | CPU: ${CPU_CORES} cores"
+echo "   RAM: ${TOTAL_RAM_MB}MB (${RAM_SOURCE}) | CPU: ${CPU_CORES} cores"
 echo "   Buffer Pool: ${BUFFER_POOL_MB}MB (${POOL_INSTANCES} instances)"
 echo "   Max Connections: ${MAX_CONN}"
 echo "   IO Threads: ${IO_THREADS} | IO Capacity: ${IO_CAPACITY}"
+echo "   Durability: innodb_flush_log_at_trx_commit=${FLUSH_AT_COMMIT}"
 echo "──────────────────────────────────────────────────"
 
 cat > /etc/mysql/conf.d/auto-tune.cnf << CNFEOF
@@ -83,7 +135,11 @@ max_connections = ${MAX_CONN}
 thread_cache_size = ${THREAD_CACHE}
 table_open_cache = ${TABLE_CACHE}
 
-innodb_flush_log_at_trx_commit = 2
+# 2 = flush to OS cache each commit, fsync once per second. Faster, but up to
+# ~1s of committed transactions can be lost if the HOST crashes (a container or
+# mysqld crash alone loses nothing). Set MYSQL_DURABILITY=strict in .env for
+# full ACID (=1) on machines where that matters.
+innodb_flush_log_at_trx_commit = ${FLUSH_AT_COMMIT}
 innodb_flush_method = O_DIRECT
 innodb_io_capacity = ${IO_CAPACITY}
 innodb_io_capacity_max = ${IO_CAPACITY_MAX}

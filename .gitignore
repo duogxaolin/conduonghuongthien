@@ -40,9 +40,8 @@ public/assets/fontawesome/metadata/
 .claude/
 .mcp.json
 
-# ─── Database dumps (chứa dữ liệu thật: hash mật khẩu, log truy cập) ───
-# KHÔNG commit dump. Sao lưu để ngoài repo. Xem DEPLOY.md phần Backup.
-migrations/full_dump.sql
-migrations/002_seed_data.sql
+# ─── Sao lưu database do bạn tự tạo ───
+# Các dump chính thức trong migrations/ vẫn được track (xem header cảnh báo
+# trong từng tệp). Chỉ bỏ qua bản sao lưu tạm sinh ra khi vận hành.
 *.dump.sql
 backup_*.sql
