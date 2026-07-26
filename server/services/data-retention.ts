@@ -1,6 +1,7 @@
 import type { Pool, PoolConnection } from 'mysql2/promise'
 import { createAnalyticsPool } from './analytics-maintenance'
 import { resolveDataRetentionConfig } from '../utils/data-retention-config'
+import { purgeExpiredRateLimits } from '../utils/rate-limit-store'
 
 /**
  * Purge the operational tables that hold personal data past their retention
@@ -36,6 +37,8 @@ export type TableRetentionOutcome = {
 export type DataRetentionResult = {
   status: 'success' | 'warning' | 'failed'
   tables: TableRetentionOutcome[]
+  /** Lapsed rate-limit buckets removed in the same pass. */
+  purgedRateLimits: number
   message?: string
 }
 
@@ -90,6 +93,7 @@ export async function runDataRetention(options: DataRetentionOptions = {}): Prom
   const pool = options.connection ?? createAnalyticsPool()
   const ownsPool = !options.connection
   const tables: TableRetentionOutcome[] = []
+  let purgedRateLimits = 0
 
   let connection: PoolConnection | null = null
   try {
@@ -102,10 +106,17 @@ export async function runDataRetention(options: DataRetentionOptions = {}): Prom
       const { deleted, bounded } = await purgeOlderThan(connection, table, cutoff(now, days), batchSize, maxBatches)
       tables.push({ table, retentionDays: days, deleted, bounded })
     }
+    // Lapsed lockout counters serve no purpose and would otherwise accumulate
+    // one row per source IP for the life of the deployment.
+    purgedRateLimits = await purgeExpiredRateLimits({
+      now: () => now.getTime(),
+      execute: (sql, params) => connection!.query(sql, params),
+    })
   } catch (error) {
     return {
       status: 'failed',
       tables,
+      purgedRateLimits,
       message: error instanceof Error ? error.message : String(error),
     }
   } finally {
@@ -117,6 +128,7 @@ export async function runDataRetention(options: DataRetentionOptions = {}): Prom
   return {
     status: bounded ? 'warning' : 'success',
     tables,
+    purgedRateLimits,
     message: bounded ? 'Batch limit reached; rows remain. The next run continues.' : undefined,
   }
 }

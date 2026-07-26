@@ -215,6 +215,17 @@ export const settings = mysqlTable('settings', {
 })
 
 // ─── Activity Logs ───────────────────────────────────────────────────────────
+// ─── Rate limit counters ─────────────────────────────────────────────────────
+// Shared across workers and across restarts. A `Map` in the worker process lost
+// every lockout on deploy and only ever bound one replica.
+export const rateLimitCounters = mysqlTable('rate_limit_counters', {
+  bucketKey:       varchar('bucket_key', { length: 191 }).primaryKey(),
+  hitCount:        int('hit_count').notNull().default(0),
+  windowExpiresAt: datetime('window_expires_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (t) => ({
+  expiryIdx: index('rate_limit_expiry_idx').on(t.windowExpiresAt),
+}))
+
 export const activityLogs = mysqlTable('activity_logs', {
   id:         int('id').autoincrement().primaryKey(),
   userId:     int('user_id').references(() => users.id),

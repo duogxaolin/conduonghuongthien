@@ -22,6 +22,7 @@ function fakePool(rowsPerTable: Record<string, number[]> = {}) {
   const queues: Record<string, number[]> = {
     activity_logs: [...(rowsPerTable.activity_logs ?? [0])],
     submissions: [...(rowsPerTable.submissions ?? [0])],
+    rate_limit_counters: [...(rowsPerTable.rate_limit_counters ?? [0])],
   }
   let released = 0
   let ended = 0
@@ -96,7 +97,8 @@ test('a disabled window issues no DELETE at all', async () => {
   const pool = fakePool()
   const result = await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, connection: pool as never })
 
-  assert.equal(pool.calls.length, 0, 'a disabled retention window still touched the table')
+  const tableCalls = pool.calls.filter(c => !c.sql.includes('rate_limit_counters'))
+  assert.equal(tableCalls.length, 0, 'a disabled retention window still touched the table')
   assert.deepEqual(result.tables.map(t => [t.table, t.retentionDays, t.deleted]), [
     ['activity_logs', 0, 0],
     ['submissions', 0, 0],
@@ -109,7 +111,8 @@ test('both tables are purged when both windows are set', async () => {
     now: NOW, activityLogDays: 90, submissionDays: 730, batchSize: 1000, connection: pool as never,
   })
   assert.deepEqual(result.tables.map(t => [t.table, t.deleted]), [['activity_logs', 5], ['submissions', 3]])
-  assert.equal((pool.calls[1].params[0] as Date).toISOString(), '2024-07-26T03:00:00.000Z')
+  const subDelete = pool.calls.find(c => c.sql.includes('DELETE FROM submissions'))!
+  assert.equal((subDelete.params[0] as Date).toISOString(), '2024-07-26T03:00:00.000Z')
 })
 
 test('hitting the batch ceiling is reported, not passed off as a clean run', async () => {
@@ -132,6 +135,18 @@ test('the statement is ordered and limited so one run cannot lock the table', as
   const pool = fakePool({ activity_logs: [0] })
   await runDataRetention({ now: NOW, activityLogDays: 365, connection: pool as never })
   assert.match(pool.calls[0].sql, /ORDER BY id LIMIT \?$/)
+})
+
+test('lapsed rate-limit buckets are swept in the same nightly pass', async () => {
+  // Otherwise the table keeps one row per source IP for the life of the deploy.
+  const pool = fakePool({ activity_logs: [0], rate_limit_counters: [42] })
+  const result = await runDataRetention({ now: NOW, activityLogDays: 365, connection: pool as never })
+
+  const sweep = pool.calls.find(c => c.sql.includes('rate_limit_counters'))
+  assert.ok(sweep, 'expired lockout counters are never removed')
+  assert.match(sweep!.sql, /window_expires_at <= \?/)
+  assert.equal((sweep!.params[0] as Date).toISOString(), NOW.toISOString())
+  assert.equal(result.purgedRateLimits, 42)
 })
 
 test('a database failure is reported rather than thrown at cron', async () => {

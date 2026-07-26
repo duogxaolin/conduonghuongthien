@@ -3,6 +3,7 @@ import mysql from 'mysql2/promise'
 import * as schema from '../db/schema'
 
 let _db: ReturnType<typeof drizzle> | null = null
+let _pool: mysql.Pool | null = null
 
 export function getDb() {
   if (_db) return _db
@@ -20,6 +21,17 @@ export function getDb() {
     timezone: '+07:00',
   })
 
+  _pool = pool
   _db = drizzle(pool, { schema, mode: 'default' })
   return _db
+}
+
+/**
+ * The underlying mysql2 pool, for the few places that need plain SQL rather
+ * than the query builder (the shared rate-limit counters). Returns null before
+ * the first getDb() call so a caller can degrade instead of throwing.
+ */
+export function getPool(): mysql.Pool | null {
+  if (!_pool) getDb()
+  return _pool
 }
