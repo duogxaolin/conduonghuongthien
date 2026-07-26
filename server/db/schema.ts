@@ -1,6 +1,8 @@
 import {
   mysqlTable, int, bigint, varchar, text, longtext, boolean,
   timestamp, datetime, date, json, mysqlEnum, uniqueIndex, index} from 'drizzle-orm/mysql-core'
+import type { AnyMySqlColumn } from 'drizzle-orm/mysql-core'
+import { sql } from 'drizzle-orm'
 import { ANALYTICS_LIVE_SCOPE_TYPES } from '../utils/analytics-live'
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
@@ -80,7 +82,10 @@ export const categories = mysqlTable('categories', {
   id:           int('id').autoincrement().primaryKey(),
   name:         varchar('name', { length: 255 }).notNull(),
   slug:         varchar('slug', { length: 255 }).notNull().unique(),
-  parentId:     int('parent_id'),
+  // Self-referencing FK — mirrors the `fk_categories_parent` constraint created
+  // by server/db/init.ts (ON DELETE SET NULL). Previously missing here, which
+  // made schema.ts disagree with the real database.
+  parentId:     int('parent_id').references((): AnyMySqlColumn => categories.id, { onDelete: 'set null' }),
   type:         varchar('type', { length: 32 }).notNull(),
   description:  text('description'),
   displayOrder: int('display_order').default(0),
@@ -229,7 +234,10 @@ export const submissions = mysqlTable('submissions', {
   answers:   json('answers'),
   // Title of the form/block that produced this submission.
   formTitle: varchar('form_title', { length: 255 }),
-  createdAt: timestamp('created_at').defaultNow(),
+  // DATETIME (not TIMESTAMP) to match the column created by server/db/init.ts.
+  // The distinction matters: MySQL converts TIMESTAMP to/from UTC but stores
+  // DATETIME verbatim, and the connection pool runs with timezone '+07:00'.
+  createdAt: datetime('created_at', { mode: 'date' }).default(sql`CURRENT_TIMESTAMP`),
 })
 
 // ─── Governed Chatbot ─────────────────────────────────────────────────────────
@@ -241,6 +249,13 @@ export const chatbotSettings = mysqlTable('chatbot_settings', {
   model:                 varchar('model', { length: 128 }),
   systemPrompt:          text('system_prompt'),
   allowedHosts:          json('allowed_hosts').$type<string[]>(),
+  // Answer mode & lead capture (added for AI / knowledge-only modes)
+  mode:                  varchar('mode', { length: 16 }).notNull().default('knowledge'),
+  outOfScopeBehavior:    varchar('out_of_scope_behavior', { length: 24 }).notNull().default('knowledge_only'),
+  knowledgeGreeting:     varchar('knowledge_greeting', { length: 500 }),
+  fallbackMessage:       varchar('fallback_message', { length: 1000 }),
+  leadCaptureEnabled:    boolean('lead_capture_enabled').notNull().default(true),
+  leadCaptureEmail:      varchar('lead_capture_email', { length: 255 }),
   requestTimeoutMs:      int('request_timeout_ms', { unsigned: true }).notNull().default(10000),
   maxResponseBytes:      int('max_response_bytes', { unsigned: true }).notNull().default(262144),
   maxInputChars:         int('max_input_chars', { unsigned: true }).notNull().default(2000),

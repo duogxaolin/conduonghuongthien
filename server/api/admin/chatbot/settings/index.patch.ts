@@ -2,7 +2,7 @@ import { ChatbotSettingsValidationError, type ChatbotSettingsUpdate } from '../.
 import { requireChatbotSettingsPermission } from '../../../../utils/permissions'
 import { publicChatbotSettings, updateChatbotSettings } from '../../../../services/chatbot-settings'
 
-const FIELDS = new Set(['enabled', 'providerPolicy', 'baseUrl', 'model', 'systemPrompt', 'allowedHosts', 'requestTimeoutMs', 'maxResponseBytes', 'maxInputChars', 'maxHistoryMessages', 'retrievalTopK', 'referenceCharBudget', 'rateLimitRequests', 'rateLimitWindowSeconds', 'apiKey'])
+const FIELDS = new Set(['enabled', 'providerPolicy', 'baseUrl', 'model', 'systemPrompt', 'allowedHosts', 'mode', 'outOfScopeBehavior', 'knowledgeGreeting', 'fallbackMessage', 'leadCaptureEnabled', 'leadCaptureEmail', 'requestTimeoutMs', 'maxResponseBytes', 'maxInputChars', 'maxHistoryMessages', 'retrievalTopK', 'referenceCharBudget', 'rateLimitRequests', 'rateLimitWindowSeconds', 'apiKey'])
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event).catch(() => null)

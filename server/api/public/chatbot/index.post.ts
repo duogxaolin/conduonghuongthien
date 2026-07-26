@@ -14,6 +14,6 @@ export default defineEventHandler(async (event) => {
   setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
   setHeader(event, 'Cache-Control', 'no-cache, no-transform')
   setHeader(event, 'Connection', 'keep-alive')
-  const payload = JSON.stringify({ choices: [{ delta: { content: result.answer } }], chatbot: { kind: result.kind, sources: result.sources, retryAfter: result.retryAfter || null } })
+  const payload = JSON.stringify({ choices: [{ delta: { content: result.answer } }], chatbot: { kind: result.kind, sources: result.sources, retryAfter: result.retryAfter || null, askContact: result.askContact || false } })
   return `data: ${payload}\n\ndata: [DONE]\n\n`
 })
