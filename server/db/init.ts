@@ -701,6 +701,7 @@ export async function initDb() {
       \`meta\` JSON NULL,
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       KEY \`user_idx\` (\`user_id\`),
+      KEY \`activity_created_idx\` (\`created_at\`),
       CONSTRAINT \`fk_logs_user\` FOREIGN KEY (\`user_id\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
@@ -714,13 +715,19 @@ export async function initDb() {
       \`email\` VARCHAR(255) NULL,
       \`address\` TEXT NULL,
       \`message\` TEXT NULL,
-      \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+      \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+      KEY \`submissions_created_idx\` (\`created_at\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
   // Contact-form builder additive columns — free-form answers + originating form title.
   await ensureColumn(db, database, 'submissions', 'answers', 'JSON NULL')
   await ensureColumn(db, database, 'submissions', 'form_title', 'VARCHAR(255) NULL')
+
+  // Retention purges filter on created_at. Deployments created before the
+  // retention policy existed have the tables but not these indexes.
+  await ensureIndex(db, database, 'activity_logs', 'activity_created_idx', 'INDEX `activity_created_idx` (`created_at`)')
+  await ensureIndex(db, database, 'submissions', 'submissions_created_idx', 'INDEX `submissions_created_idx` (`created_at`)')
 
   // Governed chatbot settings and knowledge bank
   await db.query(`
