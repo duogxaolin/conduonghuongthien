@@ -43,6 +43,63 @@ jobs:
       - name: Schema drift
         run: npm run db:drift
 
+  typecheck:
+    name: Types (report only)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # This project has never been typechecked. `typescript` is not a dependency,
+    # so every type annotation in the codebase is documentation that nothing
+    # verifies. Switching that on as a blocking gate would fail on the first run
+    # for reasons unrelated to whatever is being pushed, and a gate that is red
+    # on arrival gets ignored rather than fixed. So it reports and does not block.
+    #
+    # Flip `continue-on-error` to false once the count in the job summary is 0.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      # Installed here rather than declared in package.json on purpose: adding a
+      # devDependency without regenerating package-lock.json makes `npm ci` fail
+      # in every other job. To promote it properly, run
+      #   npm i -D vue-tsc typescript
+      # locally (that updates the lockfile) and delete this step.
+      - name: Install the typechecker
+        run: npm i --no-save --no-package-lock vue-tsc typescript
+
+      - name: Typecheck
+        run: |
+          set +e
+          npx nuxt typecheck > /tmp/tsc.log 2>&1
+          status=$?
+          set -e
+          errors=$(grep -cE 'error TS[0-9]+' /tmp/tsc.log || true)
+          {
+            echo "### Typecheck"
+            echo
+            echo "**$errors** type error(s) reported."
+            echo
+            echo '<details><summary>Last 200 lines</summary>'
+            echo
+            echo '```'
+            tail -200 /tmp/tsc.log
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+          tail -80 /tmp/tsc.log
+          exit $status
+        env:
+          # Same reason as the build job: nuxt.config refuses to evaluate in
+          # production without this, and it signs nothing here.
+          ANALYTICS_HMAC_SECRET: ci-typecheck-placeholder-not-a-real-secret-0
+
   build:
     name: Production build
     runs-on: ubuntu-latest
