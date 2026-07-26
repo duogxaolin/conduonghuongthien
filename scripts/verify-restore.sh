@@ -18,7 +18,7 @@ cd "$REPO_ROOT"
 
 if [[ -f .env ]]; then
   set -a
-  # shellcheck disable=SC1091
+  # shellcheck disable=SC1090,SC1091
   source <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env)
   set +a
 fi
