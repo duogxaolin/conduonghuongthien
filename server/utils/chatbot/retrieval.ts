@@ -59,12 +59,29 @@ export function retrieveKnowledge(entries: RetrievalEntry[], query: string, opti
       const keywords = terms.filter(term => term.kind === 'keyword').map(term => term.normalized)
       const exact = canonical === querySearch
       const aliasExact = aliases.includes(querySearch)
-      const matchedKeywords = keywords.filter(keyword => queryTokens.some(token => keyword === token || keyword.includes(token) || token.includes(keyword))).length
+      // Substring (fuzzy) matching is gated to tokens/keywords of length >= 3 so
+      // that ubiquitous 2-char syllables (e.g. "an" inside "san"/"hanh") do not
+      // create spurious matches; exact equality still matches any length.
+      // Multi-word terms must appear as a whole phrase in the query. Matching
+      // them per-token would let "công tác" fire on an unrelated question that
+      // merely contains "công". Single-word terms keep the token rules above.
+      const matchedKeywords = keywords.filter((keyword) => {
+        if (keyword.includes(' ')) return querySearch.includes(keyword)
+        return queryTokens.some(token => keyword === token || (token.length >= 3 && keyword.includes(token)) || (keyword.length >= 3 && token.includes(keyword)))
+      }).length
       const canonicalTokens = tokens(entry.canonicalQuestion)
       const partial = canonicalTokens.filter(token => queryTokens.includes(token)).length
       const score = exact ? 10000 : aliasExact ? 9000 : matchedKeywords * 100 + partial
       return { entry, score, exact, aliasExact, matchedKeywords, partial }
-    }).filter(item => item.score > 0)
+    })
+    // Relevance floor. Sharing a single ordinary word with a question is not
+    // evidence of relevance — without this, an unrelated query ("công thức nấu
+    // phở") matches any entry containing "công" and the assistant answers with
+    // an irrelevant legal text instead of offering to take the visitor's details.
+    // An entry still qualifies on any keyword/alias hit, or on two or more
+    // overlapping words of the canonical question (which keeps entries that were
+    // created without explicit keyword terms working).
+    .filter(item => item.exact || item.aliasExact || item.matchedKeywords >= 1 || item.partial >= 2)
     .sort((a, b) => b.score - a.score || Number(b.entry.priority) - Number(a.entry.priority) || Number(a.entry.id) - Number(b.entry.id))
 
   const result: PublicKnowledgeReference[] = []

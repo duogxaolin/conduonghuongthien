@@ -370,6 +370,18 @@
                     <span v-if="source.reference" class="text-[#6b7280]"> — {{ source.reference }}</span>
                   </li>
                 </ul>
+                <div v-if="msg.askContact && msg.lead" class="mt-3 border-t border-[#e1e8e0] pt-3">
+                  <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.78rem] font-semibold text-[#1e4620]"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i> Đã gửi thông tin. Cán bộ sẽ liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn ạ!</p>
+                  <form v-else class="flex flex-col gap-2" @submit.prevent="submitLead(msg)">
+                    <p class="m-0 text-[0.75rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
+                    <input v-model="msg.lead.name" type="text" placeholder="Họ và tên" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                    <input v-model="msg.lead.phone" type="tel" placeholder="Số điện thoại" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                    <input v-model="msg.lead.email" type="email" placeholder="Email (nếu có)" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                    <textarea v-model="msg.lead.question" rows="2" placeholder="Nội dung cần hỗ trợ" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]"></textarea>
+                    <p v-if="msg.lead.error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
+                    <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-[#1e4620] px-4 py-1.5 text-[0.78rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">{{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}</button>
+                  </form>
+                </div>
                 <span v-if="msg.isStreaming" class="inline-block ml-0.5 text-[#7CB342] font-bold animate-[blinkCursor_0.6s_infinite] motion-reduce:animate-none" aria-hidden="true">▌</span>
               </div>
             </div>
@@ -961,6 +973,10 @@ const parseSseLine = (line, targetMessage) => {
     targetMessage.sources = Array.isArray(chatbot.sources)
       ? chatbot.sources.slice(0, CHATBOT_CLIENT_LIMITS.maxSources).map(normalizeSource).filter(Boolean)
       : []
+    targetMessage.askContact = chatbot.askContact === true
+    if (targetMessage.askContact && !targetMessage.lead) {
+      targetMessage.lead = { name: '', phone: '', email: '', question: '', status: 'idle', error: '' }
+    }
   }
 }
 
@@ -977,6 +993,8 @@ const fetchStreamBotReply = async () => {
     text: '',
     kind: undefined,
     sources: [],
+    askContact: false,
+    lead: null,
     isStreaming: true,
   }
   chatMessages.value.push(botMessage)
@@ -1067,6 +1085,29 @@ const askBot = (question) => {
 }
 
 const sendBotMessage = () => submitBotQuestion(botInput.value)
+
+// Lead capture: when the bot has no answer, the visitor may leave contact
+// details. Posts to the server which persists a submission + emails staff.
+const submitLead = async (msg) => {
+  const lead = msg?.lead
+  if (!lead || lead.status === 'sending' || lead.status === 'done') return
+  if (!lead.phone.trim() && !lead.email.trim()) {
+    lead.error = 'Vui lòng nhập số điện thoại hoặc email để cán bộ liên hệ.'
+    return
+  }
+  lead.status = 'sending'
+  lead.error = ''
+  try {
+    await $fetch('/api/public/chatbot/lead', {
+      method: 'POST',
+      body: { name: lead.name, phone: lead.phone, email: lead.email, question: lead.question },
+    })
+    lead.status = 'done'
+  } catch (error) {
+    lead.status = 'idle'
+    lead.error = error?.data?.statusMessage || 'Không gửi được thông tin. Vui lòng thử lại.'
+  }
+}
 
 const scrollChatBottom = async () => {
   await nextTick()

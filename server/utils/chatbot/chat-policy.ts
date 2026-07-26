@@ -8,7 +8,7 @@ export const HOTLINE = '0903.480.985'
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
 
 export type ChatMessage = { role?: unknown; sender?: unknown; content?: unknown; text?: unknown }
-export type ChatResult = { answer: string; sources: PublicKnowledgeReference[]; kind: 'curated' | 'provider' | 'not_found' | 'unavailable' | 'rate_limited'; retryAfter?: number }
+export type ChatResult = { answer: string; sources: PublicKnowledgeReference[]; kind: 'curated' | 'provider' | 'not_found' | 'unavailable' | 'rate_limited'; retryAfter?: number; askContact?: boolean }
 export type ChatEvent = H3Event
 export type ChatDependencies = {
   loadPublishedEntries: () => Promise<RetrievalEntry[]>
@@ -63,6 +63,38 @@ export function approvedFallback(references: PublicKnowledgeReference[]): ChatRe
   return { answer: `Hiện chưa có thông tin phù hợp trong kho dữ liệu đã được phê duyệt. Vui lòng liên hệ đường dây nóng ${HOTLINE} hoặc Công an xã/phường gần nhất để được hướng dẫn.`, sources: [], kind: 'not_found' }
 }
 
+/** Curated answer from the approved knowledge base, with an optional friendly greeting (knowledge-only mode). */
+function friendlyKnowledgeAnswer(settings: ChatbotSettings, references: PublicKnowledgeReference[]): ChatResult {
+  const top = references[0]!
+  const greeting = settings.knowledgeGreeting?.trim()
+  const answer = greeting ? `${greeting}\n\n${top.answer}` : top.answer
+  return { answer, sources: top.source ? references.slice(0, 1) : [], kind: 'curated' }
+}
+
+/** No answer available in either mode: invite the visitor to leave contact details (lead capture) or point to the hotline. */
+function outOfScopeResult(settings: ChatbotSettings): ChatResult {
+  const base = settings.fallbackMessage?.trim() || 'Xin lỗi, hiện tôi chưa tìm thấy thông tin phù hợp trong kho dữ liệu đã được phê duyệt.'
+  if (settings.leadCaptureEnabled ?? true) {
+    return { answer: `${base}\n\nAnh/chị vui lòng để lại thông tin liên hệ bên dưới, cán bộ sẽ phản hồi trong thời gian sớm nhất ạ. Hoặc gọi hotline ${HOTLINE}.`, sources: [], kind: 'not_found', askContact: true }
+  }
+  return { answer: `${base} Vui lòng liên hệ đường dây nóng ${HOTLINE} hoặc Công an xã/phường gần nhất để được hướng dẫn.`, sources: [], kind: 'not_found' }
+}
+
+/** Whether the AI provider is fully configured and enabled. */
+function aiProviderReady(settings: ChatbotSettings): boolean {
+  return Boolean(settings.enabled && settings.baseUrl && settings.model && settings.allowedHosts?.length)
+}
+
+/** Call the provider; returns the answer text, or null on any failure/empty output. */
+async function callProvider(settings: ChatbotSettings, dependencies: ChatDependencies, references: PublicKnowledgeReference[], history: ChatMessage[]): Promise<string | null> {
+  const secret = dependencies.configuredSecret(settings)
+  if (!secret) return null
+  const response = await dependencies.providerRequest({ url: `${settings.baseUrl!.replace(/\/$/u, '')}/chat/completions`, allowedHosts: settings.allowedHosts!, method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ model: settings.model, messages: buildChatMessages(settings.systemPrompt || '', references, history), stream: false, max_tokens: 1200 }), timeoutMs: settings.requestTimeoutMs, maxResponseBytes: settings.maxResponseBytes })
+  if (response.status < 200 || response.status >= 300) return null
+  const payload = JSON.parse(Buffer.from(response.body).toString('utf8')) as { choices?: Array<{ message?: { content?: unknown } }> }
+  return text(payload.choices?.[0]?.message?.content).slice(0, CHAT_LIMITS.maxOutputChars) || null
+}
+
 export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSettings, messages: unknown, dependencies: ChatDependencies): Promise<ChatResult> {
   validateChatRequestBody({ messages })
   const history = validateChatMessages(messages, settings)
@@ -74,22 +106,39 @@ export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSett
   try {
     references = (dependencies.retrieve ?? retrieveKnowledge)(await dependencies.loadPublishedEntries(), query, { topK: settings.retrievalTopK, charBudget: settings.referenceCharBudget })
   } catch {
-    return approvedFallback([])
+    references = []
   }
 
-  // No approved grounding means no provider access under any configuration.
-  if (references.length === 0) return approvedFallback([])
+  // Backwards compatibility: only an EXPLICIT 'knowledge' value forces
+  // knowledge-only answering. A missing/unknown value keeps the historical
+  // behaviour (use the provider when it is fully configured), so upgrading an
+  // existing deployment never silently disables an already-working AI chatbot.
+  const mode = settings.mode === 'knowledge' ? 'knowledge' : 'ai'
 
-  if (!settings.enabled || !settings.baseUrl || !settings.model || !settings.allowedHosts?.length) return approvedFallback(references)
-  const secret = dependencies.configuredSecret(settings)
-  if (!secret) return approvedFallback(references)
+  // ── Knowledge-only mode: answer from the approved bank, never call the AI. ──
+  if (mode !== 'ai') {
+    if (references.length) return friendlyKnowledgeAnswer(settings, references)
+    return outOfScopeResult(settings)
+  }
+
+  // ── AI mode ──
+  if (references.length === 0) {
+    // Nothing in the approved bank matches. Only free-form AI if the admin opted in.
+    if (settings.outOfScopeBehavior === 'ai_freeform' && aiProviderReady(settings)) {
+      try {
+        const freeform = await callProvider(settings, dependencies, [], history)
+        if (freeform) return { answer: freeform, sources: [], kind: 'provider' }
+      } catch { /* fall through to lead capture */ }
+    }
+    return outOfScopeResult(settings)
+  }
+
+  // Grounded AI answer; degrade to the curated knowledge answer if AI is unconfigured or fails.
+  if (!aiProviderReady(settings)) return friendlyKnowledgeAnswer(settings, references)
   try {
-    const response = await dependencies.providerRequest({ url: `${settings.baseUrl.replace(/\/$/u, '')}/chat/completions`, allowedHosts: settings.allowedHosts, method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ model: settings.model, messages: buildChatMessages(settings.systemPrompt || '', references, history), stream: false, max_tokens: 1200 }), timeoutMs: settings.requestTimeoutMs, maxResponseBytes: settings.maxResponseBytes })
-    if (response.status < 200 || response.status >= 300) return approvedFallback(references)
-    const payload = JSON.parse(Buffer.from(response.body).toString('utf8')) as { choices?: Array<{ message?: { content?: unknown } }> }
-    const answer = text(payload.choices?.[0]?.message?.content).slice(0, CHAT_LIMITS.maxOutputChars)
-    return answer ? { answer, sources: references.filter(ref => ref.source), kind: 'provider' } : approvedFallback(references)
+    const grounded = await callProvider(settings, dependencies, references, history)
+    return grounded ? { answer: grounded, sources: references.filter(ref => ref.source), kind: 'provider' } : friendlyKnowledgeAnswer(settings, references)
   } catch {
-    return approvedFallback(references)
+    return friendlyKnowledgeAnswer(settings, references)
   }
 }

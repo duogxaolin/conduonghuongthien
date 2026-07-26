@@ -348,6 +348,26 @@ async function convergeChatbotSchema(db: Connection, database: string) {
   await releaseChatbotForeignKeysBlockingColumnChanges(db, database)
   for (const migration of chatbotColumnMigrations) await ensureChatbotColumn(db, database, migration)
 
+  // Answer-mode & lead-capture columns — idempotent add for pre-existing databases.
+  const modeColumnExisted = await hasColumn(db, database, 'chatbot_settings', 'mode')
+  await ensureColumn(db, database, 'chatbot_settings', 'mode', "VARCHAR(16) NOT NULL DEFAULT 'knowledge'")
+  if (!modeColumnExisted) {
+    // Upgrade path: a deployment that already had a working provider keeps using
+    // it. Fresh installs have no provider configured, so they stay 'knowledge'.
+    await db.query(`
+      UPDATE \`chatbot_settings\`
+      SET \`mode\` = 'ai'
+      WHERE \`enabled\` = 1
+        AND \`base_url\` IS NOT NULL AND \`base_url\` <> ''
+        AND \`model\` IS NOT NULL AND \`model\` <> ''
+    `)
+  }
+  await ensureColumn(db, database, 'chatbot_settings', 'out_of_scope_behavior', "VARCHAR(24) NOT NULL DEFAULT 'knowledge_only'")
+  await ensureColumn(db, database, 'chatbot_settings', 'knowledge_greeting', 'VARCHAR(500) NULL')
+  await ensureColumn(db, database, 'chatbot_settings', 'fallback_message', 'VARCHAR(1000) NULL')
+  await ensureColumn(db, database, 'chatbot_settings', 'lead_capture_enabled', "TINYINT(1) NOT NULL DEFAULT 1")
+  await ensureColumn(db, database, 'chatbot_settings', 'lead_capture_email', 'VARCHAR(255) NULL')
+
   await db.query('UPDATE `chatbot_settings` s LEFT JOIN `users` u ON u.`id` = s.`updated_by` SET s.`updated_by` = NULL WHERE s.`updated_by` IS NOT NULL AND u.`id` IS NULL')
   await db.query('UPDATE `chatbot_knowledge` k LEFT JOIN `users` u ON u.`id` = k.`author_id` SET k.`author_id` = NULL WHERE k.`author_id` IS NOT NULL AND u.`id` IS NULL')
   await db.query('UPDATE `chatbot_knowledge` k LEFT JOIN `users` u ON u.`id` = k.`reviewer_id` SET k.`reviewer_id` = NULL WHERE k.`reviewer_id` IS NOT NULL AND u.`id` IS NULL')
@@ -363,6 +383,14 @@ async function convergeChatbotSchema(db: Connection, database: string) {
 
   for (const migration of chatbotConvergentIndexMigrations) await ensureChatbotIndex(db, database, migration)
   for (const migration of chatbotForeignKeyMigrations) await ensureChatbotForeignKey(db, database, migration)
+}
+
+async function hasColumn(db: Connection, database: string, table: string, column: string): Promise<boolean> {
+  const [rows] = await db.execute<RowDataPacket[]>(
+    'SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1',
+    [database, table, column],
+  )
+  return rows.length > 0
 }
 
 async function ensureColumn(db: Connection, database: string, table: string, column: string, definition: string) {
@@ -702,6 +730,12 @@ export async function initDb() {
       \`model\` VARCHAR(128) NULL,
       \`system_prompt\` TEXT NULL,
       \`allowed_hosts\` JSON NULL,
+      \`mode\` VARCHAR(16) NOT NULL DEFAULT 'knowledge',
+      \`out_of_scope_behavior\` VARCHAR(24) NOT NULL DEFAULT 'knowledge_only',
+      \`knowledge_greeting\` VARCHAR(500) NULL,
+      \`fallback_message\` VARCHAR(1000) NULL,
+      \`lead_capture_enabled\` TINYINT(1) NOT NULL DEFAULT 1,
+      \`lead_capture_email\` VARCHAR(255) NULL,
       \`request_timeout_ms\` INT UNSIGNED NOT NULL DEFAULT 10000,
       \`max_response_bytes\` INT UNSIGNED NOT NULL DEFAULT 262144,
       \`max_input_chars\` INT UNSIGNED NOT NULL DEFAULT 2000,
