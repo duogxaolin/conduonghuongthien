@@ -44,7 +44,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // Prefer the published tree when it is a non-empty array.
-    const tree = (page as any).publishedBlocks
+    const tree = page.publishedBlocks
     if (Array.isArray(tree) && tree.length) {
       return { ok: true, page: pageMeta, blocks: pruneHiddenTree(tree) }
     }

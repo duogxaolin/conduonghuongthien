@@ -162,16 +162,17 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import type { BuilderNode } from '~/utils/blocks/types'
 import { BLOCK_REGISTRY, clampColSpan, GRID_COLUMNS, MIN_COL_SPAN, MAX_COL_SPAN, type EditorField } from '~/utils/blocks/registry'
 import TinyMceEditor from '~/components/admin/TinyMceEditor.vue'
 import BuilderArrayEditor from '~/components/admin/builder/BuilderArrayEditor.vue'
 
-const props = defineProps<{ block: any | null; index: number; total: number }>()
+const props = defineProps<{ block: BuilderNode | null; index: number; total: number }>()
 defineEmits<{
   (e: 'move', index: number, dir: number): void
-  (e: 'duplicate', block: any): void
-  (e: 'delete', block: any): void
-  (e: 'toggle-visible', block: any): void
+  (e: 'duplicate', block: BuilderNode): void
+  (e: 'delete', block: BuilderNode): void
+  (e: 'toggle-visible', block: BuilderNode): void
 }>()
 const { openPicker } = useImagePicker()
 

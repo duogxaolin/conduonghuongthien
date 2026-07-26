@@ -4,6 +4,7 @@ import {
 import type { AnyMySqlColumn } from 'drizzle-orm/mysql-core'
 import { sql } from 'drizzle-orm'
 import { ANALYTICS_LIVE_SCOPE_TYPES } from '../utils/analytics-live'
+import type { BlockData, BlockNode } from '../../app/utils/blocks/types'
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 export const roles = mysqlTable('roles', {
@@ -160,10 +161,10 @@ export const pages = mysqlTable('pages', {
   // Published node tree (JSON). NULL = page has never been published under the
   // nested-tree model → public read falls back to the flat page_blocks table.
   // Shape: recursive [{ id, blockType, data, isVisible, colSpan?, children?[] }, ...]
-  publishedBlocks: json('published_blocks'),
+  publishedBlocks: json('published_blocks').$type<BlockNode[]>(),
   // Unpublished working copy. NULL = no pending draft (published == what's live).
   // Shape: [{ id|tmpId, blockType, displayOrder, data, isVisible, colSpan?, children? }, ...]
-  draftBlocks:    json('draft_blocks'),
+  draftBlocks:    json('draft_blocks').$type<BlockNode[]>(),
   draftUpdatedAt: timestamp('draft_updated_at'),
   draftUpdatedBy: int('draft_updated_by').references(() => users.id, { onDelete: 'set null' }),
   updatedAt:      timestamp('updated_at').defaultNow().onUpdateNow(),
@@ -179,7 +180,7 @@ export const pageBlocks = mysqlTable('page_blocks', {
   pageId:       int('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
   blockType:    varchar('block_type', { length: 48 }).notNull(),
   displayOrder: int('display_order').notNull().default(0),
-  data:         json('data'),
+  data:         json('data').$type<BlockData>(),
   isVisible:    boolean('is_visible').default(true),
   updatedAt:    timestamp('updated_at').defaultNow().onUpdateNow(),
   updatedBy:    int('updated_by').references(() => users.id, { onDelete: 'set null' }),
@@ -198,7 +199,7 @@ export const pageVersions = mysqlTable('page_versions', {
   pageId:    int('page_id').notNull().references(() => pages.id, { onDelete: 'cascade' }),
   kind:      mysqlEnum('kind', ['origin', 'auto', 'manual']).notNull().default('auto'),
   label:     varchar('label', { length: 128 }),
-  blocks:    json('blocks').notNull(),
+  blocks:    json('blocks').notNull().$type<BlockNode[]>(),
   createdAt: timestamp('created_at').defaultNow(),
   createdBy: int('created_by').references(() => users.id, { onDelete: 'set null' }),
 }, (t) => ({
