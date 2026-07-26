@@ -51,15 +51,23 @@ ANALYTICS_HMAC_SECRET=$(openssl rand -base64 48)
 ANALYTICS_COLLECTION_ENABLED=true
 NUXT_ANALYTICS_COLLECTION_ENABLED=true
 
+# Tài khoản quản trị đầu tiên — CHỈ dùng khi tạo tài khoản lần đầu.
+# Seed là insert-only nên các lần chạy sau KHÔNG ghi đè mật khẩu đã đổi.
+ADMIN_PASSWORD=$(openssl rand -base64 18)
+ADMIN_EMAIL=admin@conduonghuongthien.com.vn
+
 # (Tùy chọn) AI Chatbot — bỏ comment để bật
 # AI_API_KEY=sk-xxxx
 # AI_BASE_URL=https://api.openai.com/v1
 # AI_MODEL=gpt-4o-mini
 EOF
 
-echo "✅ .env đã tạo xong. Mật khẩu MySQL root:"
-grep MYSQL_ROOT_PASSWORD .env
+echo "✅ .env đã tạo xong."
+echo "MySQL root: $(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2)"
+echo "Mật khẩu admin lần đầu: $(grep ADMIN_PASSWORD .env | cut -d= -f2)"
 ```
+
+> ⚠️ **Bắt buộc**: `docker compose` sẽ **báo lỗi và dừng** nếu thiếu `MYSQL_ROOT_PASSWORD`, `MYSQL_PASSWORD`, `JWT_SECRET`, `CHATBOT_ENCRYPTION_SECRET` hoặc `ANALYTICS_HMAC_SECRET`. Đây là chủ đích — để không bao giờ chạy production bằng khóa mặc định công khai.
 
 > Lưu lại mật khẩu — cần khi kết nối DB từ bên ngoài (`localhost:33069`).
 
@@ -82,24 +90,33 @@ Khi thấy `Listening on http://0.0.0.0:54432` → app sẵn sàng.
 
 ---
 
-## Bước 4: Import Database
+## Bước 4: Database
 
-### Cách A: Import full dump (khuyến nghị — có sẵn data mẫu)
+### Cách A: Để app tự khởi tạo (khuyến nghị)
+
+**Không cần làm gì.** App tự chạy `init.ts` (tạo/hội tụ 27 bảng) + `seed.ts` (tạo tài khoản, vai trò, trang hệ thống) mỗi lần khởi động. Cả hai đều **idempotent**: chạy lại không ghi đè mật khẩu, phân quyền hay cấu hình mà bạn đã sửa.
+
+### Cách B: Khôi phục từ bản sao lưu của chính bạn
 
 ```bash
-# Chờ MySQL sẵn sàng
-sleep 30
-
-# Import full dump (schema + data)
-docker exec -i cdkt_mysql mysql -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin < migrations/full_dump.sql
-
-# Restart app để nhận DB mới
+docker exec -i cdkt_mysql mysql -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin < backup.sql
 docker restart cdkt_app
 ```
 
-### Cách B: Để app tự tạo (DB trống, chỉ có seed mặc định)
+> Repo **không còn chứa** file dump dữ liệu (`full_dump.sql`, `002_seed_data.sql`) — dump chứa hash mật khẩu và log truy cập thật nên không được commit. Xem mục **Backup & Restore** để tự tạo bản sao lưu.
 
-Không cần làm gì — app tự chạy `init.ts` + `seed.ts` khi start.
+---
+
+## Bước 4b: Nâng cấp từ image cũ (chỉ làm 1 lần)
+
+Image mới chạy bằng user không đặc quyền (`node`). Volume upload tạo bởi image cũ vẫn thuộc `root`, cần chuyển quyền một lần — nếu bỏ qua, **tải ảnh lên sẽ lỗi**:
+
+```bash
+docker compose run --rm --user root app chown -R node:node /app/public/uploads
+docker compose up -d
+```
+
+Cài mới hoàn toàn thì bỏ qua bước này.
 
 ---
 
@@ -148,15 +165,47 @@ SSL: `sudo certbot --nginx -d yourdomain.com`
 
 ---
 
-## Tài khoản Admin mặc định
+## Tài khoản Admin
 
 | Thông tin | Giá trị |
 |-----------|---------|
 | URL | `https://domain/admin` |
 | Username | `admin` |
-| Password | `Admin@123456` |
+| Password | Giá trị `ADMIN_PASSWORD` trong `.env` (nếu để trống: `Admin@123456`) |
 
-> ⚡ Đổi mật khẩu ngay sau lần đăng nhập đầu tiên!
+> ⚡ **Đổi mật khẩu ngay sau lần đăng nhập đầu tiên.** Hash của mật khẩu mặc định từng nằm trong file dump được commit lên GitHub, nên phải coi mật khẩu mặc định là **đã lộ công khai**.
+
+---
+
+## Bảo trì định kỳ (BẮT BUỘC)
+
+Tác vụ dọn dữ liệu analytics **không tự chạy**. Không đặt cron thì bảng `analytics_page_view_events` phình vô hạn cho tới khi đầy đĩa.
+
+```bash
+# Thêm vào crontab của host (chạy 3h sáng mỗi ngày)
+0 3 * * * cd /path/to/cdkt && docker compose exec -T app npm run analytics:maintenance >> /var/log/cdkt-analytics.log 2>&1
+```
+
+Chạy thủ công để kiểm tra:
+
+```bash
+docker compose exec app npm run analytics:maintenance
+```
+
+---
+
+## Kiểm tra sức khỏe hệ thống
+
+```bash
+# Trạng thái healthcheck của container
+docker inspect --format '{{.State.Health.Status}}' cdkt_app
+
+# Chạy bộ kiểm thử (trên máy dev, không cần cài thêm gói)
+npm test
+
+# Đối chiếu schema.ts với init.ts (phát hiện lệch schema)
+npm run db:drift
+```
 
 ---
 
@@ -212,5 +261,7 @@ docker restart cdkt_app
 | Upload ảnh lỗi | Kiểm tra volume: `docker volume inspect conduonghuongthien_uploads_data` |
 | Port conflict | Đổi `PORT=` trong `.env` rồi `docker compose up -d` |
 | Docker build dùng cache cũ | `docker compose build --no-cache` |
-| `Unknown column` errors | Import lại dump: xem Bước 4 Cách A |
+| `Unknown column` errors | `docker restart cdkt_app` — `init.ts` tự thêm cột còn thiếu |
+| Upload ảnh lỗi sau khi nâng cấp | Chuyển quyền volume: xem **Bước 4b** |
+| App từ chối khởi động, log báo thiếu secret | Bổ sung secret còn thiếu vào `.env` (xem Bước 2) |
 | Git "dubious ownership" | `git config --global --add safe.directory /path/to/repo` |
