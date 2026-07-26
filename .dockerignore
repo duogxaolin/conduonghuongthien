@@ -10,3 +10,15 @@ node_modules
 .DS_Store
 mysql_data
 uploads_data
+
+# Không cần trong image (giảm build context)
+tests
+migrations
+docs
+*.md
+!README.md
+.github
+TMP
+openspec
+.claude
+.mcp.json
