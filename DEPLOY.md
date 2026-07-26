@@ -86,6 +86,27 @@ MYSQL_DURABILITY=fast
 
 ---
 
+## Bước 2b: Tự chủ webfont (khuyến nghị, làm 1 lần)
+
+Mặc định trang tải font Inter từ `fonts.googleapis.com`. Với cổng thông tin của
+Bộ Công an, điều đó có nghĩa là IP của mọi người truy cập đều đi qua một bên thứ
+ba, và chữ sẽ vỡ bố cục khi mạng chặn hoặc chậm tới CDN đó.
+
+Chạy **một lần trên máy có Internet** (trước khi build):
+
+```bash
+node scripts/fetch-fonts.mjs
+```
+
+Script tải các tệp `.woff2` về `public/assets/fonts/` và sinh `inter.css`.
+`nuxt.config.ts` tự phát hiện tệp này lúc build và **ngừng phát ra thẻ `<link>`
+tới Google** — không cần sửa cấu hình. Muốn quay lại CDN thì xóa thư mục
+`public/assets/fonts/` rồi build lại.
+
+> Nếu bỏ qua bước này, trang vẫn chạy bình thường bằng CDN.
+
+---
+
 ## Bước 3: Build & Chạy
 
 ```bash
