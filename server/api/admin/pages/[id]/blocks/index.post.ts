@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Next display order = current max + 1
-  const [{ maxOrder }] = await db
+  const [{ maxOrder } = { maxOrder: 0 }] = await db
     .select({ maxOrder: sql<number>`coalesce(max(${pageBlocks.displayOrder}), 0)` })
     .from(pageBlocks)
     .where(eq(pageBlocks.pageId, pageId))

@@ -21,6 +21,7 @@ type LiveResponse = {
 type BreakdownResponse = {
   scope: BreakdownScope
   rows: { rank: number; value: string; pageViews: number; approximateUniqueVisitors: number; share: number; uniqueVisitorSemantics: UniqueVisitorSemantics }[]
+  totalPageViews: number
   generatedAt: string
   latestBucketStart: string | null
   nextPollAfterSeconds: number

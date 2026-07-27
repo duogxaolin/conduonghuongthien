@@ -33,9 +33,13 @@ export interface BlockNode {
 /**
  * A node as the builder holds it in memory. Identical to a BlockNode except
  * that `displayOrder` is assigned when the tree is serialised for save, so an
- * in-flight node does not carry one yet.
+ * in-flight node does not carry one yet — which also applies to its children,
+ * hence the recursive override rather than inheriting `children: BlockNode[]`.
  */
-export type BuilderNode = Omit<BlockNode, 'displayOrder'> & { displayOrder?: number }
+export type BuilderNode = Omit<BlockNode, 'displayOrder' | 'children'> & {
+  displayOrder?: number
+  children?: BuilderNode[]
+}
 
 /** Where a node sits in the tree: its sibling array, its index, its parent. */
 export interface NodeLocation {

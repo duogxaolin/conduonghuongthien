@@ -53,7 +53,8 @@ export default defineEventHandler(async (event) => {
       conditions.push(eq(articles.type, type))
     }
     if (categoryIds) {
-      conditions.push(categoryIds.length === 1 ? eq(articles.categoryId, categoryIds[0]) : inArray(articles.categoryId, categoryIds))
+      const onlyId = categoryIds.length === 1 ? categoryIds[0] : undefined
+      conditions.push(onlyId !== undefined ? eq(articles.categoryId, onlyId) : inArray(articles.categoryId, categoryIds))
     }
 
     const whereClause = and(...conditions)
@@ -82,7 +83,7 @@ export default defineEventHandler(async (event) => {
       .limit(limit)
       .offset(offset)
 
-    const [{ total }] = await db
+    const [{ total } = { total: 0 }] = await db
       .select({ total: count() })
       .from(articles)
       .where(whereClause)

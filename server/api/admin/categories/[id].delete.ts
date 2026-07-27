@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Guard: reject if has children
-  const [{ childCount }] = await db
+  const [{ childCount } = { childCount: 0 }] = await db
     .select({ childCount: count() })
     .from(categories)
     .where(eq(categories.parentId, id))
@@ -31,7 +31,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Guard: reject if has articles
-  const [{ articleCount }] = await db
+  const [{ articleCount } = { articleCount: 0 }] = await db
     .select({ articleCount: count() })
     .from(articles)
     .where(eq(articles.categoryId, id))

@@ -86,7 +86,7 @@ function collectText(fragment: string): string {
   let out = ''
   const re = /<t[^>]*>([\s\S]*?)<\/t>/g
   let m: RegExpExecArray | null
-  while ((m = re.exec(fragment))) out += xmlUnescape(m[1])
+  while ((m = re.exec(fragment))) out += xmlUnescape(m[1] ?? '')
   return out
 }
 
@@ -109,7 +109,7 @@ export function readXlsxGrid(buf: Buffer): SheetGrid {
   if (sharedXml) {
     const re = /<si>([\s\S]*?)<\/si>/g
     let m: RegExpExecArray | null
-    while ((m = re.exec(sharedXml))) shared.push(collectText(m[1]))
+    while ((m = re.exec(sharedXml))) shared.push(collectText(m[1] ?? ''))
   }
 
   // First worksheet by sorted name (sheet1.xml, sheet2.xml, …).
@@ -127,8 +127,10 @@ export function readXlsxGrid(buf: Buffer): SheetGrid {
     const cells: string[] = []
     let cellMatch: RegExpExecArray | null
     cellRe.lastIndex = 0
-    while ((cellMatch = cellRe.exec(rowMatch[1]))) {
-      const col = cellMatch[1] || cellMatch[4]
+    while ((cellMatch = cellRe.exec(rowMatch[1] ?? ''))) {
+      // One branch of the alternation matches, so exactly one of the two column
+      // groups is present; an empty string would index to -1, which no cell uses.
+      const col = cellMatch[1] || cellMatch[4] || ''
       const attrs = cellMatch[2] || cellMatch[5] || ''
       const inner = cellMatch[3] || ''
       const ci = columnToIndex(col)
@@ -187,7 +189,7 @@ export function gridToQaRows(grid: SheetGrid): QaRow[] {
   let headerIdx = -1
   let qCol = 1, aCol = 2, nCol = 3, sCol = 0
   for (let i = 0; i < Math.min(grid.length, 10); i++) {
-    const norm = grid[i].map(strip)
+    const norm = (grid[i] ?? []).map(strip)
     const qi = norm.findIndex(c => c.includes('cau hoi'))
     const ai = norm.findIndex(c => c.includes('tra loi') || c.includes('cau tra loi'))
     if (qi >= 0 && ai >= 0) {
@@ -200,7 +202,7 @@ export function gridToQaRows(grid: SheetGrid): QaRow[] {
   const start = headerIdx >= 0 ? headerIdx + 1 : 0
   const out: QaRow[] = []
   for (let i = start; i < grid.length; i++) {
-    const r = grid[i]
+    const r = grid[i] ?? []
     const question = (r[qCol] || '').replace(/\s+/g, ' ').trim()
     const answer = (r[aCol] || '').trim()
     if (!question || !answer) continue

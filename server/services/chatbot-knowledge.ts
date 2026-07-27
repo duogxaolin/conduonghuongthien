@@ -115,7 +115,7 @@ export async function listKnowledge(params: { page?: number; perPage?: number; s
   if (params.status) { if (!(KNOWLEDGE_STATUSES as readonly string[]).includes(params.status)) throw new ChatbotKnowledgeValidationError('status is invalid'); conditions.push(eq(chatbotKnowledge.status, params.status as KnowledgeStatus)) }
   const where = conditions.length ? and(...conditions) : undefined
   const rows = await db.select().from(chatbotKnowledge).where(where).orderBy(desc(chatbotKnowledge.priority), desc(chatbotKnowledge.updatedAt), asc(chatbotKnowledge.id)).limit(perPage).offset((page - 1) * perPage)
-  const [{ total }] = await db.select({ total: count() }).from(chatbotKnowledge).where(where)
+  const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(chatbotKnowledge).where(where)
   return { items: await Promise.all(rows.map(row => withTerms(db, row))), pagination: { page, perPage, total: Number(total), totalPages: Math.ceil(Number(total) / perPage) } }
 }
 
@@ -127,6 +127,7 @@ export async function createKnowledge(actorId: number, input: KnowledgeInput) {
   const db = getDb()
   return db.transaction(async (tx) => {
     const [result] = await tx.insert(chatbotKnowledge).values({ canonicalQuestion: value.canonicalQuestion!, normalizedQuestion: normalize(value.canonicalQuestion!), approvedAnswer: value.approvedAnswer!, topic: value.topic!, sourceLabel: value.sourceLabel, sourceUrl: value.sourceUrl, sourceReference: value.sourceReference, internalNotes: value.internalNotes, status: 'draft', priority: value.priority!, isQuickQuestion: value.isQuickQuestion!, authorId: actorId, reviewerId: null, reviewedAt: null, publishedAt: null, archivedAt: null }).$returningId()
+    if (!result) throw new Error('insert into chatbot_knowledge returned no id')
     const id = Number(result.id)
     await replaceTermsWithTx(tx, id, value.aliases || [], value.keywords || [])
     await audit(tx, actorId, 'create', id, { changedFields: Object.keys(input), termCount: (value.aliases?.length || 0) + (value.keywords?.length || 0) })
@@ -152,6 +153,6 @@ export async function updateKnowledge(actorId: number, id: number, input: Knowle
   })
 }
 
-export async function transitionKnowledge(actorId: number, id: number, target: 'published' | 'archived') { const current = await getKnowledge(id); if (!current) return null; if (target === 'published') validatePublish(current.approvedAnswer, current.sourceLabel, current.sourceReference, current.sourceUrl); const db = getDb(); const now = new Date(); await db.update(chatbotKnowledge).set({ status: target, publishedAt: target === 'published' ? now : current.publishedAt, archivedAt: target === 'archived' ? now : null, reviewerId: actorId, reviewedAt: now }).where(eq(chatbotKnowledge.id, id)); await audit(db, actorId, target, id, { fromStatus: current.status, toStatus: target, termCount: current.aliases.length + current.keywords.length }); return getKnowledge(id) }
+export async function transitionKnowledge(actorId: number, id: number, target: 'published' | 'archived') { const current = await getKnowledge(id); if (!current) return null; if (target === 'published') validatePublish(current.approvedAnswer, current.sourceLabel, current.sourceReference, current.sourceUrl); const db = getDb(); const now = new Date(); await db.update(chatbotKnowledge).set({ status: target, publishedAt: target === 'published' ? now : current.publishedAt, archivedAt: target === 'archived' ? now : null, reviewerId: actorId, reviewedAt: now }).where(eq(chatbotKnowledge.id, id)); await audit(db, actorId, target === 'published' ? 'publish' : 'archive', id, { fromStatus: current.status, toStatus: target, termCount: current.aliases.length + current.keywords.length }); return getKnowledge(id) }
 export async function deleteKnowledge(actorId: number, id: number) { const current = await getKnowledge(id); if (!current) return false; const db = getDb(); await db.delete(chatbotKnowledge).where(eq(chatbotKnowledge.id, id)); await audit(db, actorId, 'delete', id); return true }
 export function adminKnowledge(entry: Awaited<ReturnType<typeof getKnowledge>>) { return entry ? { ...serializeAdminKnowledge(entry), aliases: entry.aliases, keywords: entry.keywords } : null }

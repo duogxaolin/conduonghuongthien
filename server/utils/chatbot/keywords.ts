@@ -49,8 +49,11 @@ export function extractKeywords(question: string): string[] {
   // questions. Pairs where both halves are generic are skipped as noise.
   const bigrams: string[] = []
   for (let i = 0; i < raw.length - 1; i++) {
-    if (isStop(raw[i]) && isStop(raw[i + 1])) continue
-    bigrams.push(`${raw[i]} ${raw[i + 1]}`)
+    const left = raw[i]
+    const right = raw[i + 1]
+    if (left === undefined || right === undefined) continue
+    if (isStop(left) && isStop(right)) continue
+    bigrams.push(`${left} ${right}`)
   }
 
   // Unigrams first (never dropped by the cap), then distinct bigrams.

@@ -117,7 +117,7 @@ export default defineEventHandler(async (event) => {
   const submitLimit = await submitRateLimited(clientIp)
   if (submitLimit.limited) {
     logWarn({ event: SECURITY_EVENTS.submissionThrottled, ip: clientIp })
-    setResponseHeader(event, 'Retry-After', String(submitLimit.retryAfterSeconds))
+    setResponseHeader(event, 'Retry-After', submitLimit.retryAfterSeconds)
     throw createError({ statusCode: 429, statusMessage: 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.' })
   }
 

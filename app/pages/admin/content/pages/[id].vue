@@ -230,7 +230,9 @@ import { BLOCK_REGISTRY, blocksByCategory, getDefaultData, isContainerType, clam
 import type { BlockNode, BuilderNode, NodeLocation } from '~/utils/blocks/types'
 
 /** A node id: numeric once persisted, `tmp_*` while unsaved, null for "root". */
-type NodeId = number | string | null
+// `undefined` is part of the domain: BlockNode.id is optional until the node is
+// persisted, so every lookup by id has to accept a not-yet-saved node.
+type NodeId = number | string | null | undefined
 import BuilderCanvas from '~/components/admin/builder/BuilderCanvas.vue'
 import PropertyPanel from '~/components/admin/builder/PropertyPanel.vue'
 import BlockTreeNode from '~/components/admin/builder/BlockTreeNode.vue'
@@ -344,7 +346,7 @@ const fetchPage = async () => {
         blocks.value = published
         draftStatus.value = 'idle'
       }
-      if (blocks.value.length) selectedId.value = blocks.value[0].id
+      selectedId.value = blocks.value[0]?.id ?? null
     }
   } catch (err: any) {
     loadError.value = err?.data?.statusMessage || 'Không tải được trang.'
@@ -419,7 +421,7 @@ const paletteContextLabel = computed(() => {
 // add. selectedId is exposed as the raw ref so children read `.value` reactively.
 provide('builderTree', {
   selectedId,
-  select: (id: NodeId) => { selectedId.value = id },
+  select: (id: NodeId) => { selectedId.value = id ?? null },
   openPalette,
 })
 
@@ -440,7 +442,7 @@ const addBlock = (type: string) => {
       blocks.value.push(node)
     }
   }
-  selectedId.value = node.id
+  selectedId.value = node.id ?? null
   showPalette.value = false
   paletteParentId.value = null
   scheduleDraftSave()
@@ -464,7 +466,7 @@ const duplicateBlock = (block: BuilderNode) => {
   if (!loc) return
   const copy = cloneSubtree(block)
   loc.siblings.splice(loc.index + 1, 0, copy)
-  selectedId.value = copy.id
+  selectedId.value = copy.id ?? null
   scheduleDraftSave()
   toast.success('Đã nhân đôi block.')
 }
@@ -593,7 +595,11 @@ const move = (index: number, dir: number) => {
   const from = loc.index
   const target = from + dir
   if (target < 0 || target >= arr.length) return
-  ;[arr[from], arr[target]] = [arr[target], arr[from]]
+  const a = arr[from]
+  const b = arr[target]
+  if (a === undefined || b === undefined) return
+  arr[from] = b
+  arr[target] = a
   scheduleDraftSave()
 }
 

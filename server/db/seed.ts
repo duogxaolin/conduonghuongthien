@@ -2,7 +2,18 @@ import { getDb } from '../utils/db'
 import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
 import { roles, permissions, users, homeSections, settings, chatbotSettings, categories, contentTypes, pages, pageBlocks } from '../db/schema'
-import { eq, asc } from 'drizzle-orm'
+import { eq, asc, sql } from 'drizzle-orm'
+
+/**
+ * `SET col = col` on duplicate key: MySQL has no "do nothing on conflict", so
+ * assigning a column to itself is the idiom for it. This seed is insert-only —
+ * re-running it must never overwrite a password, a permission matrix or a
+ * setting an administrator has since changed.
+ *
+ * Written as `sql` rather than passing the column object, which drizzle types
+ * as a value assignment and rejects.
+ */
+const keepExisting = (column: string) => sql.raw(`\`${column}\``)
 
 const RESOURCES = [
   'news', 'role_models', 'reintegration', 'documents', 'faq', 'categories',
@@ -51,7 +62,7 @@ async function seed() {
     { name: 'editor',     description: 'Quản lý nội dung bài viết' },
     { name: 'moderator',  description: 'Xét duyệt và xem nội dung' },
     { name: 'viewer',     description: 'Chỉ xem submissions' },
-  ]).onDuplicateKeyUpdate({ set: { name: roles.name } })
+  ]).onDuplicateKeyUpdate({ set: { name: keepExisting('name') } })
 
   const allRoles = await db.select().from(roles)
   const superadminRole = allRoles.find(r => r.name === 'superadmin')!
@@ -112,7 +123,7 @@ async function seed() {
   // still inserted; existing rows are preserved (no-op update).
   for (const perm of [...superadminPerms, ...editorPerms, ...moderatorPerms, ...viewerPerms]) {
     await db.insert(permissions).values(perm)
-      .onDuplicateKeyUpdate({ set: { roleId: permissions.roleId } })
+      .onDuplicateKeyUpdate({ set: { roleId: keepExisting('role_id') } })
   }
 
   // ── SuperAdmin User ──────────────────────────────────────────────────────
@@ -138,7 +149,7 @@ async function seed() {
     passwordHash,
     roleId: superadminRole.id,
     isActive: true,
-  }).onDuplicateKeyUpdate({ set: { username: users.username } })
+  }).onDuplicateKeyUpdate({ set: { username: keepExisting('username') } })
 
   // ── Home Sections ────────────────────────────────────────────────────────
   console.log('Creating home sections...')
@@ -182,7 +193,7 @@ async function seed() {
   // media_provider, …) across re-runs. Only missing keys are seeded.
   for (const s of defaultSettings) {
     await db.insert(settings).values(s)
-      .onDuplicateKeyUpdate({ set: { key: settings.key } })
+      .onDuplicateKeyUpdate({ set: { key: keepExisting('key') } })
   }
 
   // ── System Content Types (Thể Loại) ───────────────────────────────────────
@@ -194,7 +205,7 @@ async function seed() {
       icon: ct.icon,
       displayOrder: ct.displayOrder,
       isSystem: true,
-    }).onDuplicateKeyUpdate({ set: { slug: contentTypes.slug } })
+    }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
   }
 
   // ── Default Categories ───────────────────────────────────────────────────
@@ -207,7 +218,7 @@ async function seed() {
       type: c.type,
       parentId: null,
       displayOrder: c.displayOrder,
-    }).onDuplicateKeyUpdate({ set: { slug: categories.slug } })
+    }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
   }
 
   // ── System Pages + block migration ────────────────────────────────────────
@@ -221,7 +232,7 @@ async function seed() {
       isSystem: true,
       seoTitle: p.seoTitle,
       seoDescription: p.seoDescription,
-    }).onDuplicateKeyUpdate({ set: { slug: pages.slug } })
+    }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
   }
 
   const [homePage]    = await db.select().from(pages).where(eq(pages.slug, 'home')).limit(1)
@@ -300,7 +311,7 @@ async function seed() {
 
   // Preserve administrator configuration on reruns; only create the disabled baseline.
   await db.insert(chatbotSettings).values({ id: 1, enabled: false })
-    .onDuplicateKeyUpdate({ set: { id: chatbotSettings.id } })
+    .onDuplicateKeyUpdate({ set: { id: keepExisting('id') } })
 
   console.log('✅ Seed complete!')
   console.log('📋 Login username: admin (mật khẩu lấy từ ADMIN_PASSWORD — không in ra log).')

@@ -237,6 +237,6 @@ const ensureArray = (key: string): any[] => {
 }
 
 const pickImage = (key: string) => {
-  openPicker({ onSelect: (img: any) => { props.block.data[key] = img.url } })
+  openPicker({ onSelect: (img: any) => { if (props.block) props.block.data[key] = img.url } })
 }
 </script>

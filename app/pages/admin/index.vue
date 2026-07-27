@@ -123,7 +123,7 @@ function buildDonutArcs(rows: BreakdownRow[], colors: string[]) {
   let offset = 0
   return rows.map((row, i) => {
     const dashLength = row.share * circumference
-    const arc = { share: row.share, dashLength, dashOffset: -offset, color: colors[i % colors.length] }
+    const arc = { row, share: row.share, dashLength, dashOffset: -offset, color: colors[i % colors.length] ?? colors[0] ?? '#2c6e33' }
     offset += dashLength
     return arc
   })
@@ -158,9 +158,13 @@ onMounted(async () => {
       $fetch('/api/admin/submissions').catch(() => null),
       $fetch('/api/admin/media').catch(() => null),
     ])
-    if (artRes?.ok) stats.value[0].value = String(artRes.pagination?.total || 0)
-    if (subRes?.ok) stats.value[2].value = String(subRes.submissions?.length || 0)
-    if (mediaRes?.ok) stats.value[3].value = String(mediaRes.pagination?.total || 0)
+    const setStat = (index: number, value: number) => {
+      const card = stats.value[index]
+      if (card) card.value = String(value)
+    }
+    if (artRes?.ok) setStat(0, artRes.pagination?.total || 0)
+    if (subRes?.ok) setStat(2, subRes.submissions?.length || 0)
+    if (mediaRes?.ok) setStat(3, mediaRes.pagination?.total || 0)
   } catch { /* ignore */ }
   await Promise.all([loadTraffic(), loadLive(), loadBreakdowns()])
 })
@@ -376,12 +380,12 @@ onMounted(async () => {
                     :stroke-dashoffset="arc.dashOffset"
                     stroke-linecap="butt"
                     class="cursor-pointer transition-opacity duration-150"
-                    :style="`transform-origin: 52px 52px; transform: rotate(-90deg); opacity: ${activeSlice && activeSlice.scope === 'source' && activeSlice.row.value !== sourceData.rows[i].value ? 0.3 : 1}`"
+                    :style="`transform-origin: 52px 52px; transform: rotate(-90deg); opacity: ${activeSlice && activeSlice.scope === 'source' && activeSlice.row.value !== arc.row.value ? 0.3 : 1}`"
                     tabindex="0"
-                    :aria-label="`${friendlyLabel('source', sourceData.rows[i].value)}: ${formatPct(arc.share)}`"
+                    :aria-label="`${friendlyLabel('source', arc.row.value)}: ${formatPct(arc.share)}`"
                     role="button"
-                    @click="onSliceClick('source', sourceData.rows[i])"
-                    @keydown.enter.space.prevent="onSliceClick('source', sourceData.rows[i])"
+                    @click="onSliceClick('source', arc.row)"
+                    @keydown.enter.space.prevent="onSliceClick('source', arc.row)"
                   />
                   <text x="52" y="49" text-anchor="middle" font-size="11" font-weight="800" fill="#122815">{{ formatNum(sourceData.totalPageViews) }}</text>
                   <text x="52" y="62" text-anchor="middle" font-size="8" fill="#667768">lượt xem</text>
@@ -467,12 +471,12 @@ onMounted(async () => {
                     :stroke-dashoffset="arc.dashOffset"
                     stroke-linecap="butt"
                     class="cursor-pointer transition-opacity duration-150"
-                    :style="`transform-origin: 52px 52px; transform: rotate(-90deg); opacity: ${activeSlice && activeSlice.scope === 'device' && activeSlice.row.value !== deviceData.rows[i].value ? 0.3 : 1}`"
+                    :style="`transform-origin: 52px 52px; transform: rotate(-90deg); opacity: ${activeSlice && activeSlice.scope === 'device' && activeSlice.row.value !== arc.row.value ? 0.3 : 1}`"
                     tabindex="0"
-                    :aria-label="`${friendlyLabel('device', deviceData.rows[i].value)}: ${formatPct(arc.share)}`"
+                    :aria-label="`${friendlyLabel('device', arc.row.value)}: ${formatPct(arc.share)}`"
                     role="button"
-                    @click="onSliceClick('device', deviceData.rows[i])"
-                    @keydown.enter.space.prevent="onSliceClick('device', deviceData.rows[i])"
+                    @click="onSliceClick('device', arc.row)"
+                    @keydown.enter.space.prevent="onSliceClick('device', arc.row)"
                   />
                   <text x="52" y="49" text-anchor="middle" font-size="11" font-weight="800" fill="#122815">{{ formatNum(deviceData.totalPageViews) }}</text>
                   <text x="52" y="62" text-anchor="middle" font-size="8" fill="#667768">lượt xem</text>

@@ -41,6 +41,8 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/nodemailer": "6.4.17",
     "@types/sharp": "^0.31.1",
-    "drizzle-kit": "^0.31.10"
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.8"
   }
 }

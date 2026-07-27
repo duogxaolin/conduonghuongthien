@@ -46,7 +46,10 @@ export function verifyToken(token: string): AdminTokenPayload | null {
 }
 
 export function checkPermission(
-  permissions: Array<{ resource: string; canCreate: boolean; canRead: boolean; canUpdate: boolean; canDelete: boolean }>,
+  // Nullable flags: the permission matrix comes straight out of MySQL, where an
+  // unset column reads as null. Every check below is `=== true`, so null is
+  // already treated as "not granted".
+  permissions: Array<{ resource: string; canCreate: boolean | null; canRead: boolean | null; canUpdate: boolean | null; canDelete: boolean | null }>,
   resource: string,
   action: 'create' | 'read' | 'update' | 'delete',
   isSuperAdmin: boolean = false

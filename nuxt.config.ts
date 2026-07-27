@@ -39,12 +39,12 @@ if (process.env.NODE_ENV === 'production' && !analyticsHmacSecret) {
  */
 const selfHostedFontCss = resolve(process.cwd(), 'public/assets/fonts/inter.css')
 const fontLinks = existsSync(selfHostedFontCss)
-  ? [{ rel: 'stylesheet', href: '/assets/fonts/inter.css' }]
+  ? [{ rel: 'stylesheet' as const, href: '/assets/fonts/inter.css' }]
   : [
-      { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
-      { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
+      { rel: 'preconnect' as const, href: 'https://fonts.googleapis.com' },
+      { rel: 'preconnect' as const, href: 'https://fonts.gstatic.com', crossorigin: '' as const },
       {
-        rel: 'stylesheet',
+        rel: 'stylesheet' as const,
         href: 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap',
       },
     ]
@@ -58,7 +58,7 @@ const fontLinks = existsSync(selfHostedFontCss)
  */
 const ICON_FAMILIES = ['solid', 'regular']
 const iconLinks = ['fontawesome', ...ICON_FAMILIES].map(name => ({
-  rel: 'stylesheet',
+  rel: 'stylesheet' as const,
   href: `/assets/fontawesome/css/${name}.min.css`,
 }))
 

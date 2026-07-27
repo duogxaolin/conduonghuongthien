@@ -14,6 +14,8 @@ export default defineNuxtPlugin((nuxtApp) => {
     }),
   })
 
-  nuxtApp.hook('app:mounted', () => emit(nuxtApp.$router.currentRoute.value.fullPath))
-  nuxtApp.hook('page:finish', () => emit(nuxtApp.$router.currentRoute.value.fullPath))
+  // The hooks expect void; emit() returns a boolean the collector uses for its
+  // own bookkeeping, which must not be handed back as a hook result.
+  nuxtApp.hook('app:mounted', () => { emit(nuxtApp.$router.currentRoute.value.fullPath) })
+  nuxtApp.hook('page:finish', () => { emit(nuxtApp.$router.currentRoute.value.fullPath) })
 })
