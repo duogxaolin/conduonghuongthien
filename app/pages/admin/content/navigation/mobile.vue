@@ -97,8 +97,12 @@ function removeItem(idx: number) { menu.value.splice(idx, 1) }
 function moveItem(idx: number, dir: -1 | 1) {
   const to = idx + dir
   if (to < 0 || to >= menu.value.length) return
-  const arr = [...menu.value];
-  [arr[idx], arr[to]] = [arr[to], arr[idx]]
+  const arr = [...menu.value]
+  const left = arr[idx]
+  const right = arr[to]
+  if (left === undefined || right === undefined) return
+  arr[idx] = right
+  arr[to] = left
   menu.value = arr
 }
 
@@ -107,7 +111,8 @@ function setFeatured(idx: number, val: boolean) {
   if (val) {
     menu.value.forEach((it, i) => { it.featured = i === idx })
   } else {
-    menu.value[idx].featured = false
+    const item = menu.value[idx]
+    if (item) item.featured = false
   }
 }
 

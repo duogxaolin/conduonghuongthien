@@ -20,7 +20,7 @@ export default defineEventHandler(async (event) => {
 
   // Live published baseline. Prefer the node tree in published_blocks (tree
   // pages); fall back to the flat page_blocks rows (legacy flat pages).
-  const publishedTree = (page as any).publishedBlocks
+  const publishedTree = page.publishedBlocks
   let blocks: any[]
   let tree = false
   if (Array.isArray(publishedTree) && publishedTree.length) {
@@ -36,9 +36,9 @@ export default defineEventHandler(async (event) => {
 
   // Pending unpublished draft, if any (MySQL JSON comes back parsed via drizzle).
   let draft: any = null
-  const rawDraft = (page as any).draftBlocks
+  const rawDraft = page.draftBlocks
   if (Array.isArray(rawDraft)) {
-    draft = { blocks: rawDraft, updatedAt: (page as any).draftUpdatedAt || null }
+    draft = { blocks: rawDraft, updatedAt: page.draftUpdatedAt || null }
   }
 
   return { ok: true, page, blocks, draft, tree }

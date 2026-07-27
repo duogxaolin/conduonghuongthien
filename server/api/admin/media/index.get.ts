@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
     .limit(perPage)
     .offset(offset)
 
-  const [{ total }] = await db
+  const [{ total } = { total: 0 }] = await db
     .select({ total: count() })
     .from(media)
     .where(whereClause)

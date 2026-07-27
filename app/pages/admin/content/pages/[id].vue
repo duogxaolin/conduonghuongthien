@@ -227,6 +227,12 @@
 <script setup lang="ts">
 import { provide } from 'vue'
 import { BLOCK_REGISTRY, blocksByCategory, getDefaultData, isContainerType, clampColSpan, DEFAULT_COL_SPAN } from '~/utils/blocks/registry'
+import type { BlockNode, BuilderNode, NodeLocation } from '~/utils/blocks/types'
+
+/** A node id: numeric once persisted, `tmp_*` while unsaved, null for "root". */
+// `undefined` is part of the domain: BlockNode.id is optional until the node is
+// persisted, so every lookup by id has to accept a not-yet-saved node.
+type NodeId = number | string | null | undefined
 import BuilderCanvas from '~/components/admin/builder/BuilderCanvas.vue'
 import PropertyPanel from '~/components/admin/builder/PropertyPanel.vue'
 import BlockTreeNode from '~/components/admin/builder/BlockTreeNode.vue'
@@ -242,7 +248,7 @@ const registry = BLOCK_REGISTRY
 const grouped = blocksByCategory()
 
 const page = ref<any>(null)
-const blocks = ref<any[]>([])
+const blocks = ref<BuilderNode[]>([])
 const loading = ref(true)
 const loadError = ref('')
 
@@ -253,7 +259,7 @@ const viewport = ref<'desktop' | 'tablet' | 'mobile'>('desktop')
 // The working copy `blocks` is a tree of nodes { id, blockType, data, isVisible,
 // colSpan?, children?[] }. A legacy flat page is a list of childless root nodes.
 // These walkers locate nodes/parents/sibling-arrays by id at any depth.
-const findNode = (id: any, list: any[] = blocks.value): any => {
+const findNode = (id: NodeId, list: BuilderNode[] = blocks.value): BuilderNode | null => {
   for (const n of list) {
     if (n.id === id) return n
     if (Array.isArray(n.children)) {
@@ -264,7 +270,7 @@ const findNode = (id: any, list: any[] = blocks.value): any => {
   return null
 }
 // Returns { siblings, index, parent } for the node with `id`; parent is null at root.
-const locateNode = (id: any, list: any[] = blocks.value, parent: any = null): { siblings: any[]; index: number; parent: any } | null => {
+const locateNode = (id: NodeId, list: BuilderNode[] = blocks.value, parent: BuilderNode | null = null): NodeLocation | null => {
   const idx = list.findIndex(n => n.id === id)
   if (idx !== -1) return { siblings: list, index: idx, parent }
   for (const n of list) {
@@ -289,7 +295,7 @@ const nextTmpId = () => `tmp_${tmpCounter++}`
 // Snapshot of what's actually LIVE (published), for the dirty comparison. Walks
 // the whole tree so structural edits (nesting, colSpan, order) are detected.
 const publishedSnapshot = ref('')
-const strip = (arr: any[]): any[] => arr.map(b => {
+const strip = (arr: BuilderNode[]): BuilderNode[] => arr.map(b => {
   const o: any = { blockType: b.blockType, isVisible: b.isVisible !== false, data: b.data || {} }
   if (b.blockType === 'column') o.colSpan = b.colSpan ?? 12
   if (Array.isArray(b.children)) o.children = strip(b.children)
@@ -308,7 +314,7 @@ const previewPath = computed(() => (!page.value ? '/' : page.value.slug === 'hom
 // Recursively normalize a loaded node tree into the working-copy shape: ensure
 // every node has an id (tmp for unsaved), a data object, a boolean isVisible,
 // columns carry colSpan, and containers carry a (possibly empty) children array.
-const hydrateNodes = (list: any[]): any[] => (Array.isArray(list) ? list : []).map((b: any) => {
+const hydrateNodes = (list: unknown): BuilderNode[] => (Array.isArray(list) ? list : []).map((b: BuilderNode) => {
   const node: any = {
     ...b,
     id: b.id ?? nextTmpId(),
@@ -340,7 +346,7 @@ const fetchPage = async () => {
         blocks.value = published
         draftStatus.value = 'idle'
       }
-      if (blocks.value.length) selectedId.value = blocks.value[0].id
+      selectedId.value = blocks.value[0]?.id ?? null
     }
   } catch (err: any) {
     loadError.value = err?.data?.statusMessage || 'Không tải được trang.'
@@ -350,7 +356,7 @@ const fetchPage = async () => {
   }
 }
 
-const blockPreviewText = (block: any) => {
+const blockPreviewText = (block: BuilderNode) => {
   const d = block.data || {}
   return d.title || d.text || d.badge || d.titleLine1 || d.html?.replace(/<[^>]+>/g, '').slice(0, 40) || '—'
 }
@@ -359,12 +365,12 @@ const blockPreviewText = (block: any) => {
 // `paletteParentId` = the container the palette is adding INTO (null = root).
 const showPalette = ref(false)
 const adding = ref(false)
-const paletteParentId = ref<any>(null)
+const paletteParentId = ref<NodeId>(null)
 
 // Build a fresh node for `type`; containers start with an empty children array,
 // columns with a default colSpan.
 const makeNode = (type: string) => {
-  const node: any = { id: nextTmpId(), blockType: type, data: getDefaultData(type), isVisible: true }
+  const node: BuilderNode = { id: nextTmpId(), blockType: type, data: getDefaultData(type), isVisible: true }
   if (type === 'column') node.colSpan = DEFAULT_COL_SPAN
   if (isContainerType(type)) node.children = []
   return node
@@ -372,7 +378,7 @@ const makeNode = (type: string) => {
 
 // Open the add-palette targeting a specific parent container (from the tree's
 // "+" affordance), or at root level when no parent is given.
-const openPalette = (parentId: any = null) => {
+const openPalette = (parentId: NodeId = null) => {
   paletteParentId.value = parentId ?? null
   showPalette.value = true
 }
@@ -415,7 +421,7 @@ const paletteContextLabel = computed(() => {
 // add. selectedId is exposed as the raw ref so children read `.value` reactively.
 provide('builderTree', {
   selectedId,
-  select: (id: any) => { selectedId.value = id },
+  select: (id: NodeId) => { selectedId.value = id ?? null },
   openPalette,
 })
 
@@ -436,7 +442,7 @@ const addBlock = (type: string) => {
       blocks.value.push(node)
     }
   }
-  selectedId.value = node.id
+  selectedId.value = node.id ?? null
   showPalette.value = false
   paletteParentId.value = null
   scheduleDraftSave()
@@ -444,7 +450,7 @@ const addBlock = (type: string) => {
 }
 
 // ── Duplicate (local only) — deep-clones the node and its whole subtree ──
-const cloneSubtree = (node: any): any => {
+const cloneSubtree = (node: BuilderNode): BuilderNode => {
   const copy: any = {
     id: nextTmpId(),
     blockType: node.blockType,
@@ -455,12 +461,12 @@ const cloneSubtree = (node: any): any => {
   if (Array.isArray(node.children)) copy.children = node.children.map(cloneSubtree)
   return copy
 }
-const duplicateBlock = (block: any) => {
+const duplicateBlock = (block: BuilderNode) => {
   const loc = locateNode(block.id)
   if (!loc) return
   const copy = cloneSubtree(block)
   loc.siblings.splice(loc.index + 1, 0, copy)
-  selectedId.value = copy.id
+  selectedId.value = copy.id ?? null
   scheduleDraftSave()
   toast.success('Đã nhân đôi block.')
 }
@@ -486,7 +492,7 @@ const scheduleDraftSave = () => {
 
 // Recursively serialize the working tree for draft/publish/version payloads.
 // Preserves nesting (children), column widths (colSpan), and per-level order.
-const serializeNodes = (list: any[]): any[] => list.map((b, i) => {
+const serializeNodes = (list: BuilderNode[]): BlockNode[] => list.map((b, i) => {
   const out: any = {
     id: typeof b.id === 'number' ? b.id : undefined,
     blockType: b.blockType,
@@ -557,13 +563,13 @@ const discardDraft = async () => {
 }
 
 // ── Visibility (local) ──
-const toggleVisible = (block: any) => {
+const toggleVisible = (block: BuilderNode) => {
   block.isVisible = !block.isVisible
   scheduleDraftSave()
 }
 
 // ── Delete (local) — removes the node (and its subtree) from its own parent ──
-const removeBlock = async (block: any) => {
+const removeBlock = async (block: BuilderNode) => {
   const ok = await confirm({ title: 'Xóa block', message: `Xóa block "${registry[block.blockType]?.label || block.blockType}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   const loc = locateNode(block.id)
@@ -589,7 +595,11 @@ const move = (index: number, dir: number) => {
   const from = loc.index
   const target = from + dir
   if (target < 0 || target >= arr.length) return
-  ;[arr[from], arr[target]] = [arr[target], arr[from]]
+  const a = arr[from]
+  const b = arr[target]
+  if (a === undefined || b === undefined) return
+  arr[from] = b
+  arr[target] = a
   scheduleDraftSave()
 }
 

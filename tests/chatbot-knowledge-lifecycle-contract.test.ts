@@ -56,7 +56,8 @@ test('editor payload excludes status and lifecycle buttons call dedicated endpoi
   assert.match(editor, /Trạng thái hiện tại/)
   assert.match(editor, /`\/api\/admin\/chatbot\/knowledge\/\$\{route\.params\.id\}\/\$\{action\}`/)
   assert.match(editor, /method: 'POST'/)
-  assert.match(editor, /window\.confirm\(confirmation\)/)
+  // Browser confirm() was replaced by the in-app ConfirmModal (useConfirm).
+  assert.match(editor, /await confirm\(\{ message: confirmation/)
   assert.match(editor, /await load\(\)/)
   assert.match(editor, /transition\('publish'\)/)
   assert.match(editor, /transition\('archive'\)/)

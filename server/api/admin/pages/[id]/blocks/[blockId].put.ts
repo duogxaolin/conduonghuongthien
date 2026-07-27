@@ -1,6 +1,7 @@
 import { getDb } from '../../../../../utils/db'
 import { pageBlocks, activityLogs } from '../../../../../db/schema'
 import { checkPermission } from '../../../../../utils/auth'
+import { sanitizeBlockData } from '../../../../../utils/sanitize-html'
 import { and, eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -30,7 +31,8 @@ export default defineEventHandler(async (event) => {
     if (typeof body.data !== 'object' || body.data === null) {
       throw createError({ statusCode: 400, statusMessage: 'Dữ liệu block không hợp lệ.' })
     }
-    updateFields.data = body.data
+    // Sanitize rich-text fields — block data is rendered with v-html publicly.
+    updateFields.data = sanitizeBlockData(body.data)
   }
   if (body.isVisible !== undefined) updateFields.isVisible = !!body.isVisible
 

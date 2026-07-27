@@ -6,6 +6,7 @@ import {
   parseBoundedAnalyticsInteger,
   resolveAnalyticsRetentionConfig,
 } from '../utils/analytics-config'
+import { tryRuntimeConfig } from '../utils/runtime-config'
 import {
   normalizeAnalyticsNocEvent,
   type AnalyticsNocErrorCode,
@@ -70,7 +71,7 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
 }
 
 function runtimeAnalytics() {
-  const runtime = typeof globalThis.useRuntimeConfig === 'function' ? globalThis.useRuntimeConfig() : undefined
+  const runtime = tryRuntimeConfig()
   const analytics = runtime?.analytics || {}
   const envRetention = resolveAnalyticsRetentionConfig(process.env)
 
@@ -112,7 +113,7 @@ export function shiftUtcDay(day: string, amount: number) {
 }
 
 export function normalizeAggregatePath(path: string) {
-  const normalized = path.split(/[?#]/, 1)[0].trim()
+  const normalized = (path.split(/[?#]/, 1)[0] ?? '').trim()
   return normalized && normalized.startsWith('/') && normalized.length <= 512 ? normalized : '/other'
 }
 
@@ -170,7 +171,7 @@ async function aggregateDay(connection: PoolConnection, day: string, pageLimit: 
       }
     }
     const [[snapshot]] = await connection.query<RowDataPacket[]>('SELECT COUNT(*) AS total_users, COALESCE(SUM(is_active = 1), 0) AS active_users FROM users')
-    await connection.query('INSERT INTO analytics_daily_admin_users (day, total_users, active_users) VALUES (?, ?, ?)', [day, Number(snapshot.total_users), Number(snapshot.active_users)])
+    await connection.query('INSERT INTO analytics_daily_admin_users (day, total_users, active_users) VALUES (?, ?, ?)', [day, Number(snapshot?.total_users), Number(snapshot?.active_users)])
     await connection.query(`INSERT INTO analytics_maintenance_runs (day, status, started_at, completed_at, event_count, error_summary, worker_token)
       VALUES (?, 'complete', UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?, NULL, ?)
       ON DUPLICATE KEY UPDATE status = 'complete', completed_at = UTC_TIMESTAMP(), event_count = VALUES(event_count), error_summary = NULL, worker_token = VALUES(worker_token)`, [day, events.length, workerToken])
@@ -309,7 +310,7 @@ export async function runAnalyticsMaintenance(options: MaintenanceOptions = {}):
 
   try {
     const [[lock]] = await connection.query<RowDataPacket[]>('SELECT GET_LOCK(?, 0) AS acquired', [LOCK_NAME])
-    if (Number(lock.acquired) !== 1) {
+    if (Number(lock?.acquired) !== 1) {
       await emitNocBestEffort(connection, now, {
         eventType: 'maintenance_lock_contention', severity: 'warning', status: 'locked', errorCode: 'lock_unavailable',
         details: { reasonCode: 'lock_unavailable' },
@@ -392,7 +393,7 @@ export async function runAnalyticsMaintenance(options: MaintenanceOptions = {}):
     let stale = true
     try {
       const [[fresh]] = await connection.query<RowDataPacket[]>('SELECT MAX(day) AS last_day FROM analytics_maintenance_runs WHERE status = \'complete\'')
-      lastAggregatedDay = fresh.last_day ? utcDay(new Date(fresh.last_day)) : null
+      lastAggregatedDay = fresh?.last_day ? utcDay(new Date(fresh.last_day)) : null
       stale = !lastAggregatedDay || now.getTime() - new Date(`${lastAggregatedDay}T23:59:59Z`).getTime() > config.freshnessThresholdHours * 3600000
     } catch {
       retentionFailed = true

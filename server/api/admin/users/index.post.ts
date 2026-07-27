@@ -1,6 +1,9 @@
 import { getDb } from '../../../utils/db'
-import { users, activityLogs } from '../../../db/schema'
+import { passwordRejectionMessage } from '../../../utils/password-policy'
+import { users, roles, activityLogs } from '../../../db/schema'
 import { checkPermission, hashPassword } from '../../../utils/auth'
+import { assertRoleAssignable } from '../../../utils/permissions'
+import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -17,8 +20,9 @@ export default defineEventHandler(async (event) => {
   if (!username || username.length < 3) {
     throw createError({ statusCode: 400, statusMessage: 'Tên đăng nhập phải ít nhất 3 ký tự.' })
   }
-  if (!password || password.length < 6) {
-    throw createError({ statusCode: 400, statusMessage: 'Mật khẩu phải ít nhất 6 ký tự.' })
+  const passwordProblem = passwordRejectionMessage(password, { username })
+  if (passwordProblem) {
+    throw createError({ statusCode: 400, statusMessage: passwordProblem })
   }
   if (!roleId) {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng chọn Vai trò (Role).' })
@@ -31,6 +35,12 @@ export default defineEventHandler(async (event) => {
   }
 
   const db = getDb()
+
+  // Only a superadmin may create a user directly inside a system (superadmin) role.
+  const [targetRole] = await db.select({ isSystem: roles.isSystem }).from(roles).where(eq(roles.id, roleId)).limit(1)
+  if (!targetRole) throw createError({ statusCode: 400, statusMessage: 'Vai trò không tồn tại.' })
+  assertRoleAssignable(adminUser, targetRole.isSystem)
+
   const passwordHash = await hashPassword(password)
 
   try {

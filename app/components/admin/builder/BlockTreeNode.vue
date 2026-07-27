@@ -53,11 +53,12 @@
 // a contextual "+ add child" button. Selection + palette are driven through an
 // injected `tree` bridge so this component recurses cleanly at any depth.
 import { computed, inject } from 'vue'
+import type { BuilderNode } from '~/utils/blocks/types'
 import { BLOCK_REGISTRY, isContainerType } from '~/utils/blocks/registry'
 
 defineOptions({ name: 'BlockTreeNode' })
 
-const props = defineProps<{ node: any; depth: number }>()
+const props = defineProps<{ node: BuilderNode; depth: number }>()
 
 const tree = inject<any>('builderTree')
 

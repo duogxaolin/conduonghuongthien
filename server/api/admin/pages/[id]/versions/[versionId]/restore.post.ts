@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
   const blocks = normalizeBlocks(version.blocks)
 
   await db.update(pages).set({
-    draftBlocks: blocks as any,
+    draftBlocks: blocks,
     draftUpdatedAt: new Date(),
     draftUpdatedBy: adminUser.id,
   }).where(eq(pages.id, pageId))

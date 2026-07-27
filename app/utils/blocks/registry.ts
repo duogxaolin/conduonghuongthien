@@ -452,7 +452,8 @@ export function blocksByCategory(): Record<'section' | 'content' | 'layout', Arr
   const grouped: Record<'section' | 'content' | 'layout', Array<{ type: string } & BlockDefinition>> = { section: [], content: [], layout: [] }
   for (const type of BLOCK_TYPES) {
     const def = BLOCK_REGISTRY[type]
-    grouped[def.category].push({ type, ...def })
+    if (!def) continue
+    grouped[def.category].push({ ...def, type })
   }
   return grouped
 }

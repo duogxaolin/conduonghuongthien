@@ -1,11 +1,34 @@
-import { createError, defineEventHandler, readRawBody, setResponseStatus } from 'h3'
+import { createError, defineEventHandler, getRequestIP, readRawBody, setResponseStatus } from 'h3'
 import { ingestAnalyticsPageView } from '../../../services/analytics-ingestion'
 
 const MAX_BODY_BYTES = 1024
 
+// Each accepted page-view fans out to ~13 database writes, so an unthrottled
+// public endpoint can inflate the metrics and amplify DB load. Cap per peer IP
+// (generous enough for a real browsing session, low enough to stop flooding).
+const viewBuckets = new Map<string, number[]>()
+const VIEW_LIMIT = 120
+const VIEW_WINDOW_MS = 60 * 1000
+
+function viewRateLimited(ip: string): boolean {
+  const now = Date.now()
+  const recent = (viewBuckets.get(ip) || []).filter(t => t > now - VIEW_WINDOW_MS)
+  if (recent.length >= VIEW_LIMIT) { viewBuckets.set(ip, recent); return true }
+  recent.push(now)
+  viewBuckets.set(ip, recent)
+  if (viewBuckets.size > 20_000) viewBuckets.delete(viewBuckets.keys().next().value as string)
+  return false
+}
+
 export default defineEventHandler(async (event) => {
   const config = (useRuntimeConfig(event) as unknown as { analytics: { collectionEnabled?: boolean; hmacSecret?: string } }).analytics
   if (config.collectionEnabled !== true) {
+    setResponseStatus(event, 202)
+    return { accepted: false }
+  }
+
+  // Silently accept (202) when throttled: analytics must never disturb browsing.
+  if (viewRateLimited(getRequestIP(event, { xForwardedFor: false }) || 'unknown')) {
     setResponseStatus(event, 202)
     return { accepted: false }
   }

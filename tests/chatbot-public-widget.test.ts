@@ -27,7 +27,9 @@ test('quick-question loading, error, empty, success, and retry states are explic
   assert.match(script, /Đang tải câu hỏi đã được phê duyệt/)
   assert.match(script, /Hiện không thể tải câu hỏi gợi ý/)
   assert.match(script, /Hiện chưa có câu hỏi gợi ý đã được phê duyệt/)
-  assert.match(template, /Thử tải lại/)
+  // Retry is no longer a separate button: reopening the panel re-fetches the
+  // quick questions whenever the previous attempt errored or came back empty.
+  assert.match(script, /quickQuestionState\.value === 'error' \|\| quickQuestionState\.value === 'empty'\) loadQuickQuestions\(\)/)
   assert.match(script, /maxQuickQuestions: 8/)
   assert.match(script, /data\?\.ok === true && data\?\.available === true && items\.length > 0/)
 })
@@ -42,7 +44,7 @@ test('governed SSE endpoint and response metadata drive public status rendering'
   }
   assert.match(template, /messageKindLabel\(msg\.kind\)/)
   assert.match(template, /msg\.sources\?\.length/)
-  assert.match(template, /aria-label="Nguồn tham khảo công khai"/)
+  assert.match(template, /aria-label="Nguồn tham khảo"/)
 })
 
 test('public source rendering is allowlisted and only permits HTTPS links', () => {
@@ -80,7 +82,8 @@ test('widget exposes accessible status, focus, reduced-motion, and mobile-safe c
   assert.match(template, /role="alert"/)
   assert.match(template, /focus-visible:ring-2/)
   assert.match(template, /motion-reduce:/)
-  assert.match(template, /env\(safe-area-inset-bottom\)/)
+  // A fallback value is supplied: env(safe-area-inset-bottom, 0px).
+  assert.match(template, /env\(safe-area-inset-bottom\s*[,)]/)
   assert.match(script, /event\.key !== 'Tab'/)
   assert.match(script, /chatToggleButton\.value\?\.focus\(\)/)
 })

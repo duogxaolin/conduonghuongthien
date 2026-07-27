@@ -25,7 +25,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Guard: reject if categories still reference this type
-  const [{ catCount }] = await db
+  const [{ catCount } = { catCount: 0 }] = await db
     .select({ catCount: count() })
     .from(categories)
     .where(eq(categories.type, existing.slug))
@@ -34,7 +34,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Guard: reject if articles still reference this type
-  const [{ artCount }] = await db
+  const [{ artCount } = { artCount: 0 }] = await db
     .select({ artCount: count() })
     .from(articles)
     .where(eq(articles.type, existing.slug))

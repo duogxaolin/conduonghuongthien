@@ -1,4 +1,5 @@
 import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
+import type { BlockNode } from '~/utils/blocks/types'
 
 // ─── Page Builder preview bridge ─────────────────────────────────────────────
 // Runs on a *public* page when it is loaded inside the builder's preview
@@ -17,13 +18,13 @@ import { ref, computed, onMounted, onBeforeUnmount } from 'vue'
 export function usePagePreview() {
   const route = useRoute()
   const isPreview = computed(() => '__preview' in route.query)
-  const previewBlocks = ref<any[] | null>(null)
+  const previewBlocks = ref<BlockNode[] | null>(null)
   const selectedId = ref<number | string | null>(null)
 
   // Node ids are numeric for legacy flat pages but tmp strings ("tmp_3") for the
   // nested-tree pages. Coerce a raw id to a number only when it is purely numeric
   // so tree ids survive the round-trip instead of becoming NaN.
-  const normId = (raw: any): number | string | null => {
+  const normId = (raw: unknown): number | string | null => {
     if (raw == null) return null
     const s = String(raw)
     return /^\d+$/.test(s) ? Number(s) : s

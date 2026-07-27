@@ -12,7 +12,7 @@
     <div class="bg-[#385130] text-white py-2 text-[0.82rem] border-b border-white/10 relative z-[101]">
       <div class="container flex justify-between items-center">
         <div class="flex items-center gap-4">
-          <span><i class="fa-solid fa-phone" aria-hidden="true"></i> {{ t('hotline_lbl') }}: 0903.480.985</span>
+          <span><i class="fa-solid fa-phone" aria-hidden="true"></i> {{ t('hotline_lbl') }}: {{ siteHotline }}</span>
         </div>
         <div class="flex items-center gap-4">
           <div class="flex items-center">
@@ -158,11 +158,11 @@
 
           <!-- Drawer Footer -->
           <div class="px-4 py-4 bg-[#f8faf7] border-t border-black/[0.06] flex flex-col gap-2.5 flex-shrink-0">
-            <a href="tel:0903480985" class="flex items-center gap-3 bg-white px-3.5 py-3 rounded-[14px] border border-[rgba(30,70,32,0.12)] no-underline shadow-sm">
+            <a :href="siteHotlineTel" class="flex items-center gap-3 bg-white px-3.5 py-3 rounded-[14px] border border-[rgba(30,70,32,0.12)] no-underline shadow-sm">
               <span class="text-xl">📞</span>
               <div class="flex flex-col">
                 <span class="text-[0.72rem] text-[#7A8675] font-semibold">{{ t('hotline_lbl') }}</span>
-                <span class="text-[0.95rem] font-extrabold text-[#4A6741]">0903.480.985</span>
+                <span class="text-[0.95rem] font-extrabold text-[#4A6741]">{{ siteHotline }}</span>
               </div>
             </a>
             <nuxt-link to="/contact" class="btn btn-primary w-full flex items-center justify-center gap-2 px-4 py-3 text-[0.88rem] font-bold rounded-xl" @click="isMobileMenuOpen = false">
@@ -175,17 +175,17 @@
         <div class="container w-full overflow-visible">
           <nav class="flex w-max min-w-full" @click="onNavClick" @keydown.escape="toggleMobileMenu">
             <ul class="flex list-none w-full justify-between items-center gap-1">
-              <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group' : ''">
+              <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group focus-within:z-[103]' : ''">
                 <!-- With children: dropdown -->
                 <template v-if="item.children && item.children.length">
-                  <div class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-[#f0f6ef] hover:text-[#143516]">
+                  <div class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-[#f0f6ef] hover:text-[#143516]" aria-haspopup="true">
                     <component
                       :is="item.url && item.url !== '#' ? NuxtLink : 'span'"
                       v-bind="item.url && item.url !== '#' ? { to: item.url, 'active-class': 'active-item', class: 'text-inherit no-underline' } : {}"
                     >{{ navItemLabel(item) }}</component>
-                    <i class="fa-solid fa-chevron-down text-[0.55rem] ml-0.5 text-[#557757] transition-transform duration-200 group-hover:rotate-180" aria-hidden="true"></i>
+                    <i class="fa-solid fa-chevron-down text-[0.55rem] ml-0.5 text-[#557757] transition-transform duration-200 group-hover:rotate-180 group-focus-within:rotate-180" aria-hidden="true"></i>
                   </div>
-                  <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-2 min-w-[220px] list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto">
+                  <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-2 min-w-[220px] list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100 group-focus-within:pointer-events-auto">
                     <li v-for="child in item.children" :key="child.id">
                       <component
                         :is="child.url && child.url.startsWith('http') ? 'a' : NuxtLink"
@@ -277,9 +277,9 @@
         <div>
           <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">Thông tin liên hệ</h3>
           <p class="mb-3 text-[0.9rem]"><strong class="text-white">Cơ quan chủ quản:</strong> C11 - Bộ Công an</p>
-          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Địa chỉ:</strong> Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội</p>
-          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Điện thoại:</strong> 0903.480.985</p>
-          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Email:</strong> contact@conduonghuongthien.com.vn</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Địa chỉ:</strong> {{ siteAddress }}</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Điện thoại:</strong> {{ siteHotline }}</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Email:</strong> {{ siteEmail }}</p>
         </div>
       </div>
 
@@ -370,6 +370,18 @@
                     <span v-if="source.reference" class="text-[#6b7280]"> — {{ source.reference }}</span>
                   </li>
                 </ul>
+                <div v-if="msg.askContact && msg.lead" class="mt-3 border-t border-[#e1e8e0] pt-3">
+                  <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.78rem] font-semibold text-[#1e4620]"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i> Đã gửi thông tin. Cán bộ sẽ liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn ạ!</p>
+                  <form v-else class="flex flex-col gap-2" @submit.prevent="submitLead(msg)">
+                    <p class="m-0 text-[0.75rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
+                    <input v-model="msg.lead.name" type="text" placeholder="Họ và tên" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                    <input v-model="msg.lead.phone" type="tel" placeholder="Số điện thoại" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                    <input v-model="msg.lead.email" type="email" placeholder="Email (nếu có)" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                    <textarea v-model="msg.lead.question" rows="2" placeholder="Nội dung cần hỗ trợ" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]"></textarea>
+                    <p v-if="msg.lead.error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
+                    <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-[#1e4620] px-4 py-1.5 text-[0.78rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">{{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}</button>
+                  </form>
+                </div>
                 <span v-if="msg.isStreaming" class="inline-block ml-0.5 text-[#7CB342] font-bold animate-[blinkCursor_0.6s_infinite] motion-reduce:animate-none" aria-hidden="true">▌</span>
               </div>
             </div>
@@ -438,7 +450,6 @@
           <p id="public-chatbot-counter" class="m-0 mt-1 text-[0.65rem] text-[#9ca3af] text-right px-2" :class="{ '!text-[#b42318]': botInput.length > CHATBOT_CLIENT_LIMITS.maxMessageChars * 0.9 }">{{ botInput.length }}/{{ CHATBOT_CLIENT_LIMITS.maxMessageChars }}</p>
         </div>
     </div>
-
 
     <!-- Chatbot Toggle Button + Teaser Bubble (client-only) -->
     <div v-if="clientMounted" class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[10050] flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
@@ -531,12 +542,8 @@ const isSticky = ref(false)
 const isMobileMenuOpen = ref(false)
 const isSearchActive = ref(false)
 const searchQuery = ref('')
-const showDropdown = ref(false)
-const showLibraryDropdown = ref(false)
-const showGovDropdown = ref(false)
 const { currentLang, locales, t, setLang } = useI18n()
 const searchInputRef = ref(null)
-const liveDateTime = ref('')
 
 // Dynamic nav menu from admin settings (falls back to DEFAULT_NAV)
 const DEFAULT_NAV = [
@@ -595,6 +602,15 @@ const { data: settingsData } = await useFetch('/api/public/settings', {
   lazy: false,
 })
 
+// Site-wide contact details come from Cài đặt chung so an editor's change takes
+// effect on the live site. The literals are only a fallback for the very first
+// render before settings exist.
+const sitePublicSettings = computed(() => settingsData.value?.settings || {})
+const siteHotline = computed(() => sitePublicSettings.value.hotline?.trim() || '0903.480.985')
+const siteEmail = computed(() => sitePublicSettings.value.email?.trim() || 'contact@conduonghuongthien.com.vn')
+const siteAddress = computed(() => sitePublicSettings.value.address?.trim() || 'Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội')
+const siteHotlineTel = computed(() => 'tel:' + siteHotline.value.replace(/[^0-9+]/g, ''))
+
 // Derive nav from the fetched settings (reactive — updates if data refetches)
 const _parseNav = (raw) => { try { return JSON.parse(raw) } catch { return null } }
 watch(settingsData, (res) => {
@@ -604,16 +620,6 @@ watch(settingsData, (res) => {
   const mobileRaw = res.settings.nav_menu_mobile
   if (mobileRaw) bottomNavRaw.value = _parseNav(mobileRaw)
 }, { immediate: true })
-
-const WEEKDAYS = ['Chủ Nhật', 'Thứ Hai', 'Thứ Ba', 'Thứ Tư', 'Thứ Năm', 'Thứ Sáu', 'Thứ Bảy']
-const pad = (n) => String(n).padStart(2, '0')
-
-const updateLiveDate = () => {
-  const now = new Date()
-  liveDateTime.value = `${WEEKDAYS[now.getDay()]}, ${pad(now.getDate())}/${pad(now.getMonth() + 1)}/${now.getFullYear()} - ${pad(now.getHours())}:${pad(now.getMinutes())}:${pad(now.getSeconds())}`
-}
-
-let dateTimer = null
 
 const CHATBOT_CLIENT_LIMITS = Object.freeze({
   maxMessageChars: 2000,
@@ -769,7 +775,6 @@ const loadQuickQuestions = async () => {
   }
 }
 
-
 // rAF-throttled scroll handler: coalesces bursts of scroll events into one write
 // per frame and only mutates `isSticky` when the boolean actually flips. Hysteresis
 // (sticky >80, unsticky <60) prevents flicker right at the threshold. The listener
@@ -837,7 +842,6 @@ const handleSearch = () => {
     isSearchActive.value = false
   }
 }
-
 
 const handleChatbotDialogKeydown = (event) => {
   if (event.key === 'Escape') {
@@ -961,6 +965,10 @@ const parseSseLine = (line, targetMessage) => {
     targetMessage.sources = Array.isArray(chatbot.sources)
       ? chatbot.sources.slice(0, CHATBOT_CLIENT_LIMITS.maxSources).map(normalizeSource).filter(Boolean)
       : []
+    targetMessage.askContact = chatbot.askContact === true
+    if (targetMessage.askContact && !targetMessage.lead) {
+      targetMessage.lead = { name: '', phone: '', email: '', question: '', status: 'idle', error: '' }
+    }
   }
 }
 
@@ -977,6 +985,8 @@ const fetchStreamBotReply = async () => {
     text: '',
     kind: undefined,
     sources: [],
+    askContact: false,
+    lead: null,
     isStreaming: true,
   }
   chatMessages.value.push(botMessage)
@@ -1068,6 +1078,29 @@ const askBot = (question) => {
 
 const sendBotMessage = () => submitBotQuestion(botInput.value)
 
+// Lead capture: when the bot has no answer, the visitor may leave contact
+// details. Posts to the server which persists a submission + emails staff.
+const submitLead = async (msg) => {
+  const lead = msg?.lead
+  if (!lead || lead.status === 'sending' || lead.status === 'done') return
+  if (!lead.phone.trim() && !lead.email.trim()) {
+    lead.error = 'Vui lòng nhập số điện thoại hoặc email để cán bộ liên hệ.'
+    return
+  }
+  lead.status = 'sending'
+  lead.error = ''
+  try {
+    await $fetch('/api/public/chatbot/lead', {
+      method: 'POST',
+      body: { name: lead.name, phone: lead.phone, email: lead.email, question: lead.question },
+    })
+    lead.status = 'done'
+  } catch (error) {
+    lead.status = 'idle'
+    lead.error = error?.data?.statusMessage || 'Không gửi được thông tin. Vui lòng thử lại.'
+  }
+}
+
 const scrollChatBottom = async () => {
   await nextTick()
   if (chatContainer.value) {
@@ -1079,8 +1112,6 @@ onMounted(() => {
   clientMounted.value = true
   window.addEventListener('scroll', handleScroll, { passive: true })
   window.addEventListener('keydown', handleKeydown)
-  updateLiveDate()
-  dateTimer = setInterval(updateLiveDate, 1000)
   loadChatHistory()
   loadQuickQuestions()
   startTeaserCycle()
@@ -1090,7 +1121,6 @@ onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   window.removeEventListener('keydown', handleKeydown)
   if (typeof document !== 'undefined') document.body.style.overflow = ''
-  if (dateTimer) clearInterval(dateTimer)
   if (teaserInterval) clearInterval(teaserInterval)
   if (teaserInitTimeout) clearTimeout(teaserInitTimeout)
   quickQuestionsController?.abort()
@@ -1099,14 +1129,6 @@ onUnmounted(() => {
 </script>
 
 <style scoped>
-/* Hide scrollbar but keep scroll functionality */
-.scrollbar-hide {
-  -ms-overflow-style: none;
-  scrollbar-width: none;
-}
-.scrollbar-hide::-webkit-scrollbar {
-  display: none;
-}
 
 /* Slide-down transition for search bar */
 .slide-down-enter-active, .slide-down-leave-active {
@@ -1115,17 +1137,6 @@ onUnmounted(() => {
 .slide-down-enter-from, .slide-down-leave-to {
   transform: translateY(-20px);
   opacity: 0;
-}
-
-/* Teaser pop transition */
-.teaser-pop-enter-active,
-.teaser-pop-leave-active {
-  transition: all 0.45s cubic-bezier(0.16, 1, 0.3, 1);
-}
-.teaser-pop-enter-from,
-.teaser-pop-leave-to {
-  opacity: 0;
-  transform: translateY(14px) scale(0.92);
 }
 
 /* Streaming cursor blink */
@@ -1141,27 +1152,8 @@ onUnmounted(() => {
 }
 
 /* Liquid orb glow animation */
-@keyframes liquidOrbGlow {
-  0%, 100% { box-shadow: 0 10px 24px rgba(23, 59, 24, 0.4), 0 0 0 0 rgba(46, 107, 50, 0.3); }
-  50% { box-shadow: 0 12px 28px rgba(23, 59, 24, 0.5), 0 0 0 8px rgba(46, 107, 50, 0); }
-}
 
 /* Markdown content inside chatbot */
-.markdown-content p { margin: 0 0 6px 0; line-height: 1.5; }
-.markdown-content p:last-child { margin-bottom: 0; }
-.markdown-content strong { font-weight: 700; color: #112812; }
-.markdown-content ul.md-list,
-.markdown-content ol.md-list { margin: 6px 0 8px 0; padding-left: 18px; }
-.markdown-content ul.md-list li,
-.markdown-content ol.md-list li { margin-bottom: 4px; line-height: 1.45; }
-.markdown-content a { color: #1e4620; text-decoration: underline; font-weight: 600; }
-.markdown-content code { background: #f0f6ef; color: #1e4620; padding: 2px 6px; border-radius: 4px; font-size: 0.82rem; font-family: monospace; }
-.md-spacer { height: 6px; }
-
-/* Nav item pseudo-element underline (desktop nav) */
-.nav-item {
-  position: relative;
-}
 .nav-item::after {
   content: '';
   position: absolute;
@@ -1190,8 +1182,4 @@ onUnmounted(() => {
   color: #1e4620;
 }
 
-/* Teaser text animation */
-.teaser-text {
-  animation: textFadeIn 0.4s ease-out;
-}
 </style>

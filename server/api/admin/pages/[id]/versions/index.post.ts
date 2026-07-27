@@ -25,8 +25,8 @@ export default defineEventHandler(async (event) => {
 
   // Snapshot source: explicit body.blocks → draft → published.
   let snapshot = normalizeBlocks(body?.blocks)
-  if (!snapshot.length && Array.isArray((page as any).draftBlocks)) {
-    snapshot = normalizeBlocks((page as any).draftBlocks)
+  if (!snapshot.length && Array.isArray(page.draftBlocks)) {
+    snapshot = normalizeBlocks(page.draftBlocks)
   }
   if (!snapshot.length) {
     const published = await db
@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
     snapshot = published.map((b) => ({
       blockType: b.blockType,
       displayOrder: b.displayOrder,
-      data: b.data as any,
+      data: b.data ?? {},
       isVisible: !!b.isVisible,
     }))
   }
@@ -52,11 +52,11 @@ export default defineEventHandler(async (event) => {
     if (existing.length >= VERSION_LIMITS.manual) {
       throw createError({ statusCode: 400, statusMessage: `Đã đạt tối đa ${VERSION_LIMITS.manual} bản sao lưu. Vui lòng xóa bớt trước khi lưu mới.` })
     }
-    await db.insert(pageVersions).values({ pageId, kind: 'manual', label, blocks: cleanBlocks as any, createdBy: adminUser.id })
+    await db.insert(pageVersions).values({ pageId, kind: 'manual', label, blocks: cleanBlocks, createdBy: adminUser.id })
   } else {
     // origin: replace any previous origin (keep exactly 1).
     await db.delete(pageVersions).where(and(eq(pageVersions.pageId, pageId), eq(pageVersions.kind, 'origin')))
-    await db.insert(pageVersions).values({ pageId, kind: 'origin', label: label || 'Bản gốc', blocks: cleanBlocks as any, createdBy: adminUser.id })
+    await db.insert(pageVersions).values({ pageId, kind: 'origin', label: label || 'Bản gốc', blocks: cleanBlocks, createdBy: adminUser.id })
   }
 
   await db.insert(activityLogs).values({

@@ -23,8 +23,8 @@
 
           <!-- Error -->
           <div v-else-if="loadError" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
-            <i class="fa-solid fa-triangle-exclamation mr-2"></i>
-            Không thể tải câu hỏi. Vui lòng <button class="text-[#4A6741] font-bold underline" @click="refresh()">thử lại</button>.
+            <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
+            Không thể tải câu hỏi. Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="refresh()">thử lại</button>.
           </div>
 
           <!-- Empty -->
@@ -43,15 +43,23 @@
                 : 'border border-[#E2E8DF]'"
             >
               <button
-                class="w-full px-6 py-5 flex justify-between items-center bg-transparent border-none font-[inherit] text-base font-bold text-left cursor-pointer transition-colors duration-200 hover:text-[#4A6741]"
+                :id="`faq-question-${item.id}`"
+                type="button"
+                :aria-expanded="activeIndex === index"
+                :aria-controls="`faq-answer-${item.id}`"
+                class="w-full px-6 py-5 flex justify-between items-center bg-transparent border-none font-[inherit] text-base font-bold text-left cursor-pointer transition-colors duration-200 hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#7CB342]"
                 :class="activeIndex === index ? 'text-[#4A6741]' : 'text-[#1E251C]'"
                 @click="toggleFaq(index)"
               >
                 <span>{{ item.title }}</span>
-                <span class="text-[1.4rem] text-[#7A8675]">{{ activeIndex === index ? '−' : '+' }}</span>
+                <span class="text-[1.4rem] text-[#7A8675]" aria-hidden="true">{{ activeIndex === index ? '−' : '+' }}</span>
               </button>
+              <!-- The panel is deliberately not a landmark: the APG advises against
+                   the region landmark once an accordion can hold more than about
+                   six panels, and this list renders up to 50. -->
               <div
                 v-show="activeIndex === index"
+                :id="`faq-answer-${item.id}`"
                 class="px-6 pb-5 pt-0 text-[0.95rem] text-[#4A5545] leading-[1.6] border-t border-[#E2E8DF] bg-[#F8FAF7]"
               >
                 <p>{{ item.excerpt }}</p>

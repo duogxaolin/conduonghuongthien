@@ -1,7 +1,19 @@
 import { getDb } from '../utils/db'
+import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
 import { roles, permissions, users, homeSections, settings, chatbotSettings, categories, contentTypes, pages, pageBlocks } from '../db/schema'
-import { eq, asc } from 'drizzle-orm'
+import { eq, asc, sql } from 'drizzle-orm'
+
+/**
+ * `SET col = col` on duplicate key: MySQL has no "do nothing on conflict", so
+ * assigning a column to itself is the idiom for it. This seed is insert-only —
+ * re-running it must never overwrite a password, a permission matrix or a
+ * setting an administrator has since changed.
+ *
+ * Written as `sql` rather than passing the column object, which drizzle types
+ * as a value assignment and rejects.
+ */
+const keepExisting = (column: string) => sql.raw(`\`${column}\``)
 
 const RESOURCES = [
   'news', 'role_models', 'reintegration', 'documents', 'faq', 'categories',
@@ -50,7 +62,7 @@ async function seed() {
     { name: 'editor',     description: 'Quản lý nội dung bài viết' },
     { name: 'moderator',  description: 'Xét duyệt và xem nội dung' },
     { name: 'viewer',     description: 'Chỉ xem submissions' },
-  ]).onDuplicateKeyUpdate({ set: { name: roles.name } })
+  ]).onDuplicateKeyUpdate({ set: { name: keepExisting('name') } })
 
   const allRoles = await db.select().from(roles)
   const superadminRole = allRoles.find(r => r.name === 'superadmin')!
@@ -106,23 +118,38 @@ async function seed() {
     canTest: false,
   }))
 
+  // Insert-only: on re-run (e.g. every container start) do NOT overwrite an
+  // administrator's customized permission matrix. New (role, resource) pairs are
+  // still inserted; existing rows are preserved (no-op update).
   for (const perm of [...superadminPerms, ...editorPerms, ...moderatorPerms, ...viewerPerms]) {
     await db.insert(permissions).values(perm)
-      .onDuplicateKeyUpdate({ set: { canCreate: perm.canCreate, canRead: perm.canRead, canUpdate: perm.canUpdate, canDelete: perm.canDelete, canPublish: perm.canPublish, canArchive: perm.canArchive, canTest: perm.canTest } })
+      .onDuplicateKeyUpdate({ set: { roleId: keepExisting('role_id') } })
   }
 
   // ── SuperAdmin User ──────────────────────────────────────────────────────
   console.log('Creating superadmin user...')
-  const adminPassword = process.env.ADMIN_PASSWORD || 'Admin@123456'
+  // There is no fallback any more. The old default was documented publicly and
+  // sits in this repository's history, which made it the first thing anyone
+  // would try against a fresh install.
+  const adminPassword = String(process.env.ADMIN_PASSWORD || '')
+  const adminProblem = passwordRejectionMessage(adminPassword, { username: 'admin' })
+  if (adminProblem) {
+    console.error('❌ ADMIN_PASSWORD chưa đạt yêu cầu:', adminProblem)
+    console.error('   Đặt ADMIN_PASSWORD trong .env rồi chạy lại, ví dụ: ADMIN_PASSWORD=$(openssl rand -base64 18)')
+    process.exit(1)
+  }
   const passwordHash = await hashPassword(adminPassword)
 
+  // Insert-only: NEVER reset the admin password on re-run. Overwriting it every
+  // container start would revert the password to the (public) default and is a
+  // critical account-takeover risk. Create the account once; leave it thereafter.
   await db.insert(users).values({
     username: 'admin',
     email: process.env.ADMIN_EMAIL || 'admin@conduonghuongthien.com.vn',
     passwordHash,
     roleId: superadminRole.id,
     isActive: true,
-  }).onDuplicateKeyUpdate({ set: { passwordHash } })
+  }).onDuplicateKeyUpdate({ set: { username: keepExisting('username') } })
 
   // ── Home Sections ────────────────────────────────────────────────────────
   console.log('Creating home sections...')
@@ -162,9 +189,11 @@ async function seed() {
     { key: 'r2_public_url',    value: '',                                                       group: 'media'   },
   ]
 
+  // Insert-only: preserve administrator-edited settings (hotline, R2 credentials,
+  // media_provider, …) across re-runs. Only missing keys are seeded.
   for (const s of defaultSettings) {
     await db.insert(settings).values(s)
-      .onDuplicateKeyUpdate({ set: { value: s.value } })
+      .onDuplicateKeyUpdate({ set: { key: keepExisting('key') } })
   }
 
   // ── System Content Types (Thể Loại) ───────────────────────────────────────
@@ -176,7 +205,7 @@ async function seed() {
       icon: ct.icon,
       displayOrder: ct.displayOrder,
       isSystem: true,
-    }).onDuplicateKeyUpdate({ set: { slug: contentTypes.slug } })
+    }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
   }
 
   // ── Default Categories ───────────────────────────────────────────────────
@@ -189,7 +218,7 @@ async function seed() {
       type: c.type,
       parentId: null,
       displayOrder: c.displayOrder,
-    }).onDuplicateKeyUpdate({ set: { slug: categories.slug } })
+    }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
   }
 
   // ── System Pages + block migration ────────────────────────────────────────
@@ -203,7 +232,7 @@ async function seed() {
       isSystem: true,
       seoTitle: p.seoTitle,
       seoDescription: p.seoDescription,
-    }).onDuplicateKeyUpdate({ set: { slug: pages.slug } })
+    }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
   }
 
   const [homePage]    = await db.select().from(pages).where(eq(pages.slug, 'home')).limit(1)
@@ -282,10 +311,10 @@ async function seed() {
 
   // Preserve administrator configuration on reruns; only create the disabled baseline.
   await db.insert(chatbotSettings).values({ id: 1, enabled: false })
-    .onDuplicateKeyUpdate({ set: { id: chatbotSettings.id } })
+    .onDuplicateKeyUpdate({ set: { id: keepExisting('id') } })
 
   console.log('✅ Seed complete!')
-  console.log(`📋 Login: username=admin  password=${adminPassword}`)
+  console.log('📋 Login username: admin (mật khẩu lấy từ ADMIN_PASSWORD — không in ra log).')
   process.exit(0)
 }
 
