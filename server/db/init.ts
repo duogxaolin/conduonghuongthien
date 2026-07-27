@@ -231,7 +231,7 @@ export async function ensureRequiredColumn(db: Connection, database: string, mig
     await db.query(`ALTER TABLE \`${migration.table}\` ADD COLUMN \`${migration.column}\` ${migration.nullableDefinition}`)
   }
   await db.query(`UPDATE \`${migration.table}\` SET \`${migration.column}\` = ${migration.backfillExpression} WHERE \`${migration.column}\` IS NULL`)
-  if (rows.length === 0 || rows[0].IS_NULLABLE === 'YES') {
+  if (rows.length === 0 || rows[0]?.IS_NULLABLE === 'YES') {
     await db.query(`ALTER TABLE \`${migration.table}\` MODIFY COLUMN \`${migration.column}\` ${migration.finalDefinition}`)
   }
 }

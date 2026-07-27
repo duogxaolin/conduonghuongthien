@@ -70,25 +70,33 @@ function addItem() {
   menu.value.push({ id: uid(), label: 'Mục mới', url: '/', openNewTab: false, children: [] })
 }
 function removeItem(idx: number) { menu.value.splice(idx, 1) }
+function swap<T>(arr: T[], a: number, b: number) {
+  const left = arr[a]
+  const right = arr[b]
+  if (left === undefined || right === undefined) return
+  arr[a] = right
+  arr[b] = left
+}
 function moveItem(idx: number, dir: -1 | 1) {
   const to = idx + dir
   if (to < 0 || to >= menu.value.length) return
-  const arr = [...menu.value];
-  [arr[idx], arr[to]] = [arr[to], arr[idx]]
+  const arr = [...menu.value]
+  swap(arr, idx, to)
   menu.value = arr
 }
 
 function addChild(parentIdx: number) {
-  menu.value[parentIdx].children.push({ id: uid(), label: 'Mục con mới', url: '/', openNewTab: false })
+  menu.value[parentIdx]?.children.push({ id: uid(), label: 'Mục con mới', url: '/', openNewTab: false })
 }
 function removeChild(parentIdx: number, childIdx: number) {
-  menu.value[parentIdx].children.splice(childIdx, 1)
+  menu.value[parentIdx]?.children.splice(childIdx, 1)
 }
 function moveChild(parentIdx: number, childIdx: number, dir: -1 | 1) {
-  const arr = menu.value[parentIdx].children
+  const arr = menu.value[parentIdx]?.children
+  if (!arr) return
   const to = childIdx + dir
-  if (to < 0 || to >= arr.length) return;
-  [arr[childIdx], arr[to]] = [arr[to], arr[childIdx]]
+  if (to < 0 || to >= arr.length) return
+  swap(arr, childIdx, to)
 }
 
 const expanded = ref<Set<string>>(new Set())

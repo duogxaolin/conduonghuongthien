@@ -45,8 +45,8 @@ export default defineEventHandler(async (event) => {
       snapshot = current.map((b) => ({
         blockType: b.blockType,
         displayOrder: b.displayOrder,
-        data: b.data,
-        isVisible: b.isVisible,
+        data: b.data ?? {},
+        isVisible: b.isVisible !== false,
       }))
     }
 
@@ -65,8 +65,8 @@ export default defineEventHandler(async (event) => {
         .where(and(eq(pageVersions.pageId, pageId), eq(pageVersions.kind, 'auto')))
         .orderBy(asc(pageVersions.id))
       const excess = autos.length - VERSION_LIMITS.auto
-      for (let i = 0; i < excess; i++) {
-        await tx.delete(pageVersions).where(eq(pageVersions.id, autos[i].id))
+      for (const stale of autos.slice(0, excess)) {
+        await tx.delete(pageVersions).where(eq(pageVersions.id, stale.id))
       }
     }
 

@@ -48,6 +48,7 @@ export default defineEventHandler(async (event) => {
 
   for (let i = 0; i < rows.length; i++) {
     const row = rows[i]
+    if (!row) continue
     const question = row.question.slice(0, 1000)
     try {
       const entry = await createKnowledge(actor.id, {

@@ -51,17 +51,16 @@ jobs:
         run: npm run db:drift
 
   typecheck:
-    name: Types (report only)
+    name: Types
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # This project has never been typechecked. `typescript` is not a dependency,
-    # so every type annotation in the codebase is documentation that nothing
-    # verifies. Switching that on as a blocking gate would fail on the first run
-    # for reasons unrelated to whatever is being pushed, and a gate that is red
-    # on arrival gets ignored rather than fixed. So it reports and does not block.
+    # Blocking gate. It started as report-only because the codebase had never
+    # been typechecked and the first run surfaced 598 errors; those are fixed, so
+    # the count is now 0 and a regression should fail the build.
     #
-    # Flip `continue-on-error` to false once the count in the job summary is 0.
-    continue-on-error: true
+    # typescript is pinned to ^5 in package.json: 7.x is the Go rewrite and no
+    # longer exports lib/tsc.js, which vue-tsc requires at startup
+    # (ERR_PACKAGE_PATH_NOT_EXPORTED).
     steps:
       - uses: actions/checkout@v7
 
@@ -71,19 +70,6 @@ jobs:
           cache: npm
 
       - run: npm ci
-
-      # Installed here rather than declared in package.json on purpose: adding a
-      # devDependency without regenerating package-lock.json makes `npm ci` fail
-      # in every other job. A plain dev install mutates package.json and the
-      # lockfile only in this runner's throwaway checkout — nothing is committed.
-      # (`--no-save --no-package-lock` crashes npm's tree builder: "Cannot read
-      # properties of null (reading 'edgesOut')".) To promote it properly, run
-      # `npm i -D vue-tsc typescript@^5` locally and delete this step.
-      #
-      # typescript is pinned to ^5: 7.x is the Go rewrite and no longer exports
-      # lib/tsc.js, which vue-tsc requires at startup (ERR_PACKAGE_PATH_NOT_EXPORTED).
-      - name: Install the typechecker
-        run: npm i -D vue-tsc typescript@^5
 
       - name: Typecheck
         run: |

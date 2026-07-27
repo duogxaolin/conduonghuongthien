@@ -9,6 +9,10 @@ export const localeOptions = [
 ] satisfies ReadonlyArray<{ code: LocaleCode, label: string, name: string, htmlLang: string }>
 
 const DEFAULT_LOCALE: LocaleCode = 'vi'
+// The locale every "no match" path falls back to. Spelled out rather than taken
+// as localeOptions[0], which an index read can only type as possibly undefined.
+const FALLBACK_LOCALE = localeOptions.find(locale => locale.code === DEFAULT_LOCALE)
+  ?? { code: DEFAULT_LOCALE, label: 'VN', name: 'Tiếng Việt', htmlLang: 'vi' }
 const LOCALE_CODES = new Set<LocaleCode>(localeOptions.map(locale => locale.code))
 
 const normalizeLocale = (value: unknown): LocaleCode => {
@@ -24,7 +28,7 @@ export const useI18n = () => {
     sameSite: 'lax',
   })
   const currentLang = useState<LocaleCode>('currentLang', () => normalizeLocale(localeCookie.value))
-  const currentLocale = computed(() => localeOptions.find(locale => locale.code === currentLang.value) || localeOptions[0])
+  const currentLocale = computed(() => localeOptions.find(locale => locale.code === currentLang.value) ?? FALLBACK_LOCALE)
 
   if (localeCookie.value !== currentLang.value) {
     localeCookie.value = currentLang.value

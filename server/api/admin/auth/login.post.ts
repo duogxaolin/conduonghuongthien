@@ -56,7 +56,7 @@ export default defineEventHandler(async (event) => {
       attempts: Math.max(ipState.count, userState.count),
       backend: ipState.backend,
     })
-    setResponseHeader(event, 'Retry-After', String(Math.max(ipState.retryAfterSeconds, userState.retryAfterSeconds)))
+    setResponseHeader(event, 'Retry-After', Math.max(ipState.retryAfterSeconds, userState.retryAfterSeconds))
     throw createError({ statusCode: 429, statusMessage: 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau 15 phút.' })
   }
 

@@ -2,7 +2,7 @@ import { getDb } from '../../../utils/db'
 import { media, settings, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { deleteLocalFile } from '../../../utils/media-local'
-import { deleteR2File, R2Config } from '../../../utils/media-r2'
+import { deleteR2File, type R2Config } from '../../../utils/media-r2'
 import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {

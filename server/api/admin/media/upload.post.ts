@@ -2,7 +2,7 @@ import { getDb } from '../../../utils/db'
 import { media, settings, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { uploadLocalFile } from '../../../utils/media-local'
-import { uploadR2File, R2Config } from '../../../utils/media-r2'
+import { uploadR2File, type R2Config } from '../../../utils/media-r2'
 import sharp from 'sharp'
 import path from 'node:path'
 

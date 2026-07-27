@@ -37,7 +37,7 @@ export default defineEventHandler(async (event) => {
     snapshot = published.map((b) => ({
       blockType: b.blockType,
       displayOrder: b.displayOrder,
-      data: b.data,
+      data: b.data ?? {},
       isVisible: !!b.isVisible,
     }))
   }

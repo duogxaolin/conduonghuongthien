@@ -95,7 +95,7 @@ function filterAttributes(tag: string, attrString: string): string {
   const re = /([a-zA-Z_:][-a-zA-Z0-9_:.]*)\s*(?:=\s*("[^"]*"|'[^']*'|[^\s"'>]+))?/g
   let m: RegExpExecArray | null
   while ((m = re.exec(attrString))) {
-    const name = m[1].toLowerCase()
+    const name = (m[1] ?? '').toLowerCase()
     let value = m[2] || ''
     if (value.startsWith('"') || value.startsWith("'")) value = value.slice(1, -1)
     if (name.startsWith('on')) continue // event handlers
@@ -148,12 +148,12 @@ export function sanitizeHtml(input: unknown): string {
     const openMatch = /^([a-zA-Z][a-zA-Z0-9]*)([\s\S]*?)\/?$/.exec(rawTag)
 
     if (closeMatch) {
-      const tag = closeMatch[1].toLowerCase()
+      const tag = (closeMatch[1] ?? '').toLowerCase()
       if (ALLOWED_TAGS.has(tag) && !VOID_TAGS.has(tag)) out += `</${tag}>`
       continue
     }
     if (!openMatch) continue
-    const tag = openMatch[1].toLowerCase()
+    const tag = (openMatch[1] ?? '').toLowerCase()
 
     if (DROP_TREE.has(tag)) {
       // Skip the element's entire content up to its matching close tag.

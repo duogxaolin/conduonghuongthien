@@ -12,6 +12,7 @@ import {
   type AnalyticsRange,
 } from '../utils/analytics-reporting'
 import type { AnalyticsLiveScopeType } from '../utils/analytics-live'
+import { tryRuntimeConfig } from '../utils/runtime-config'
 import {
   isAnalyticsNocComponent,
   isAnalyticsNocEventType,
@@ -112,12 +113,8 @@ export type AnalyticsNocReport = {
   meta: AnalyticsLiveMeta
 }
 
-function runtimeConfig() {
-  return typeof globalThis.useRuntimeConfig === 'function' ? globalThis.useRuntimeConfig() : undefined
-}
-
 function runtimeValue(name: string) {
-  return runtimeConfig()?.[name]
+  return tryRuntimeConfig()?.[name]
 }
 
 export function createAnalyticsReportingPool(): Pool {
@@ -471,7 +468,7 @@ function serializeNocRow(row: RowDataPacket): AnalyticsNocRow | null {
 }
 
 function configuredNocRetentionDays() {
-  const runtimeValue = runtimeConfig()?.analytics?.nocRetentionDays ?? process.env.ANALYTICS_NOC_RETENTION_DAYS
+  const runtimeValue = tryRuntimeConfig()?.analytics?.nocRetentionDays ?? process.env.ANALYTICS_NOC_RETENTION_DAYS
   const parsed = Number(runtimeValue)
   return Number.isSafeInteger(parsed) && parsed >= 7 && parsed <= 90 ? parsed : 30
 }
@@ -503,7 +500,7 @@ export async function getAnalyticsNocReport(
       return {
         rows: safeRows,
         nextCursor,
-        meta: liveMeta(now, safeRows.length ? new Date(safeRows[0].bucketStart) : null, safeRows.length > 0),
+        meta: liveMeta(now, safeRows[0] ? new Date(safeRows[0].bucketStart) : null, safeRows.length > 0),
       }
     })
     await emitReportingNoc('reporting_success', { windowMinutes: 60, rowCount: result.rows.length }, options.connection)
