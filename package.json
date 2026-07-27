@@ -8,7 +8,18 @@
     "generate": "nuxt generate",
     "preview": "nuxt preview",
     "postinstall": "nuxt prepare",
-    "analytics:maintenance": "tsx scripts/analytics-maintenance.ts"
+    "typecheck": "nuxt typecheck",
+    "test": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test tests/*.test.ts",
+    "test:watch": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test --watch tests/*.test.ts",
+    "analytics:maintenance": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/analytics-maintenance.ts",
+    "db:init": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs server/db/init.ts",
+    "db:seed": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs server/db/seed.ts",
+    "db:generate": "drizzle-kit generate",
+    "db:check": "drizzle-kit check",
+    "db:drift": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/check-schema-drift.ts"
+  },
+  "engines": {
+    "node": ">=22.15"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1091.0",
@@ -30,6 +41,8 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/nodemailer": "6.4.17",
     "@types/sharp": "^0.31.1",
-    "drizzle-kit": "^0.31.10"
+    "drizzle-kit": "^0.31.10",
+    "typescript": "^5.9.3",
+    "vue-tsc": "^3.3.8"
   }
 }

@@ -10,3 +10,24 @@ node_modules
 .DS_Store
 mysql_data
 uploads_data
+
+# Không cần trong image (giảm build context)
+tests
+migrations
+docs
+*.md
+!README.md
+.github
+TMP
+openspec
+.claude
+.mcp.json
+
+# FontAwesome Pro ships 113MB of SVG-JS bundles the site never loads (it uses
+# the webfont CSS). Same list as .gitignore — keep them out of the image too.
+public/assets/fontawesome/js
+public/assets/fontawesome/sprites
+public/assets/fontawesome/svgs
+public/assets/fontawesome/less
+public/assets/fontawesome/scss
+public/assets/fontawesome/metadata

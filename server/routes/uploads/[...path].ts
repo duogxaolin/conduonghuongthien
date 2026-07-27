@@ -27,12 +27,16 @@ export default defineEventHandler(async (event) => {
 
   if (!stat.isFile()) throw createError({ statusCode: 404 })
 
-  // MIME type by extension
+  // MIME type by extension. NOTE: `.svg` is deliberately ABSENT — an SVG served
+  // as image/svg+xml is an executable document (it may contain <script>) running
+  // on our own origin. Legacy .svg files therefore fall through to
+  // application/octet-stream + Content-Disposition: attachment (download, never render).
   const ext = path.extname(filePath).toLowerCase()
   const mimeMap: Record<string, string> = {
     '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
-    '.gif': 'image/gif',  '.webp': 'image/webp', '.svg': 'image/svg+xml',
+    '.gif': 'image/gif',  '.webp': 'image/webp',
     '.avif': 'image/avif', '.pdf': 'application/pdf',
+    '.mp4': 'video/mp4', '.webm': 'video/webm', '.ogg': 'video/ogg',
   }
   const contentType = mimeMap[ext] || 'application/octet-stream'
 
@@ -40,6 +44,10 @@ export default defineEventHandler(async (event) => {
     'Content-Type': contentType,
     'Content-Length': String(stat.size),
     'Cache-Control': 'public, max-age=31536000, immutable',
+    // Prevent the browser from re-interpreting the bytes as HTML/SVG.
+    'X-Content-Type-Options': 'nosniff',
+    // Anything outside the known-safe list downloads instead of rendering.
+    ...(contentType === 'application/octet-stream' ? { 'Content-Disposition': 'attachment' } : {}),
   })
 
   return sendStream(event, createReadStream(filePath))

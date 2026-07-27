@@ -1,6 +1,7 @@
 import { createError, type H3Event } from 'h3'
 import { checkPermission } from './auth'
 import { isAnalyticsLiveScopeType, type AnalyticsLiveScopeType } from './analytics-live'
+import { tryRuntimeConfig } from './runtime-config'
 
 const DAY_MS = 86_400_000
 const ISO_DAY_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -39,7 +40,7 @@ function boundedInteger(value: unknown, fallback: number, min: number, max: numb
 }
 
 export function getAnalyticsReportingConfig(): AnalyticsReportingConfig {
-  const runtime = typeof globalThis.useRuntimeConfig === 'function' ? globalThis.useRuntimeConfig() : undefined
+  const runtime = tryRuntimeConfig()
   const analytics = runtime?.analytics || {}
   const maxRangeDays = boundedInteger(analytics.maxRangeDays ?? process.env.ANALYTICS_MAX_RANGE_DAYS, 366, 1, 366)
   const defaultRangeDays = boundedInteger(analytics.defaultRangeDays ?? process.env.ANALYTICS_DEFAULT_RANGE_DAYS, 30, 1, maxRangeDays)
@@ -54,7 +55,7 @@ function parseIsoDay(value: unknown, name: string): number {
   if (typeof value !== 'string' || !ISO_DAY_PATTERN.test(value)) {
     throw createError({ statusCode: 400, statusMessage: `${name} must be an ISO date (YYYY-MM-DD)` })
   }
-  const [year, month, day] = value.split('-').map(Number)
+  const [year = NaN, month = NaN, day = NaN] = value.split('-').map(Number)
   const timestamp = Date.UTC(year, month - 1, day)
   const date = new Date(timestamp)
   if (date.getUTCFullYear() !== year || date.getUTCMonth() !== month - 1 || date.getUTCDate() !== day) {

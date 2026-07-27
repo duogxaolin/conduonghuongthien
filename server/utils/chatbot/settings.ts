@@ -6,6 +6,9 @@ export const CHATBOT_SETTINGS_ID = 1
 export const CHATBOT_DEFAULTS = Object.freeze({
   enabled: false,
   providerPolicy: 'openai-compatible',
+  mode: 'knowledge',
+  outOfScopeBehavior: 'knowledge_only',
+  leadCaptureEnabled: true,
   requestTimeoutMs: 10_000,
   maxResponseBytes: 262_144,
   maxInputChars: 2_000,
@@ -16,8 +19,13 @@ export const CHATBOT_DEFAULTS = Object.freeze({
   rateLimitWindowSeconds: 60,
 })
 
+export const CHATBOT_MODES = ['ai', 'knowledge'] as const
+export const CHATBOT_OUT_OF_SCOPE = ['knowledge_only', 'ai_freeform'] as const
+
 export type ChatbotSettingsUpdate = Partial<Pick<ChatbotSettings,
   | 'enabled' | 'providerPolicy' | 'baseUrl' | 'model' | 'systemPrompt' | 'allowedHosts'
+  | 'mode' | 'outOfScopeBehavior' | 'knowledgeGreeting' | 'fallbackMessage'
+  | 'leadCaptureEnabled' | 'leadCaptureEmail'
   | 'requestTimeoutMs' | 'maxResponseBytes' | 'maxInputChars' | 'maxHistoryMessages'
   | 'retrievalTopK' | 'referenceCharBudget' | 'rateLimitRequests' | 'rateLimitWindowSeconds'
 >> & { apiKey?: string }
@@ -54,6 +62,12 @@ export function validateChatbotSettingsUpdate(input: ChatbotSettingsUpdate): Cha
   }
   if (input.providerPolicy != null && (typeof input.providerPolicy !== 'string' || !/^[a-z0-9-]{1,64}$/u.test(input.providerPolicy))) throw new ChatbotSettingsValidationError('Invalid provider policy')
   if (input.allowedHosts != null && (!Array.isArray(input.allowedHosts) || input.allowedHosts.length > 20 || input.allowedHosts.some(host => typeof host !== 'string' || host.length > 253))) throw new ChatbotSettingsValidationError('Invalid allowed host list')
+  if (input.mode !== undefined && !(CHATBOT_MODES as readonly string[]).includes(input.mode as string)) throw new ChatbotSettingsValidationError('mode must be one of: ai, knowledge')
+  if (input.outOfScopeBehavior !== undefined && !(CHATBOT_OUT_OF_SCOPE as readonly string[]).includes(input.outOfScopeBehavior as string)) throw new ChatbotSettingsValidationError('outOfScopeBehavior must be one of: knowledge_only, ai_freeform')
+  if (input.leadCaptureEnabled !== undefined && typeof input.leadCaptureEnabled !== 'boolean') throw new ChatbotSettingsValidationError('leadCaptureEnabled must be boolean')
+  if (input.knowledgeGreeting != null && (typeof input.knowledgeGreeting !== 'string' || input.knowledgeGreeting.length > 500)) throw new ChatbotSettingsValidationError('Invalid knowledge greeting')
+  if (input.fallbackMessage != null && (typeof input.fallbackMessage !== 'string' || input.fallbackMessage.length > 1000)) throw new ChatbotSettingsValidationError('Invalid fallback message')
+  if (input.leadCaptureEmail != null && (typeof input.leadCaptureEmail !== 'string' || input.leadCaptureEmail.length > 255 || (input.leadCaptureEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(input.leadCaptureEmail.trim())))) throw new ChatbotSettingsValidationError('Invalid lead capture email')
 
   for (const [field, [minimum, maximum]] of Object.entries(INTEGER_LIMITS)) {
     const value = input[field as keyof ChatbotSettingsUpdate]

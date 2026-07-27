@@ -4,6 +4,12 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 type EditableSettings = {
   enabled: boolean
   providerPolicy: string
+  mode: string
+  outOfScopeBehavior: string
+  knowledgeGreeting: string
+  fallbackMessage: string
+  leadCaptureEnabled: boolean
+  leadCaptureEmail: string
   baseUrl: string
   model: string
   allowedHosts: string
@@ -35,6 +41,12 @@ type SettingsPatch = Omit<EditableSettings, 'allowedHosts'> & {
 const DEFAULT_FORM: EditableSettings = {
   enabled: false,
   providerPolicy: 'openai-compatible',
+  mode: 'knowledge',
+  outOfScopeBehavior: 'knowledge_only',
+  knowledgeGreeting: '',
+  fallbackMessage: '',
+  leadCaptureEnabled: true,
+  leadCaptureEmail: '',
   baseUrl: '',
   model: '',
   allowedHosts: '',
@@ -107,6 +119,12 @@ function readNumber(value: unknown, fallback: number) {
 function applySettingsResponse(value: SettingsResponse) {
   form.enabled = readBoolean(value.enabled, DEFAULT_FORM.enabled)
   form.providerPolicy = readString(value.providerPolicy, DEFAULT_FORM.providerPolicy)
+  form.mode = readString(value.mode, DEFAULT_FORM.mode)
+  form.outOfScopeBehavior = readString(value.outOfScopeBehavior, DEFAULT_FORM.outOfScopeBehavior)
+  form.knowledgeGreeting = readString(value.knowledgeGreeting, DEFAULT_FORM.knowledgeGreeting)
+  form.fallbackMessage = readString(value.fallbackMessage, DEFAULT_FORM.fallbackMessage)
+  form.leadCaptureEnabled = readBoolean(value.leadCaptureEnabled, DEFAULT_FORM.leadCaptureEnabled)
+  form.leadCaptureEmail = readString(value.leadCaptureEmail, DEFAULT_FORM.leadCaptureEmail)
   form.baseUrl = readString(value.baseUrl, DEFAULT_FORM.baseUrl)
   form.model = readString(value.model, DEFAULT_FORM.model)
   form.allowedHosts = Array.isArray(value.allowedHosts)
@@ -134,6 +152,12 @@ function buildPatchPayload(): SettingsPatch {
   const body: SettingsPatch = {
     enabled: form.enabled,
     providerPolicy: form.providerPolicy,
+    mode: form.mode,
+    outOfScopeBehavior: form.outOfScopeBehavior,
+    knowledgeGreeting: form.knowledgeGreeting,
+    fallbackMessage: form.fallbackMessage,
+    leadCaptureEnabled: form.leadCaptureEnabled,
+    leadCaptureEmail: form.leadCaptureEmail,
     baseUrl: form.baseUrl,
     model: form.model,
     allowedHosts: normalizedHosts(form.allowedHosts),
@@ -155,6 +179,12 @@ function buildPatchPayload(): SettingsPatch {
 
   const apiKey = newApiKey.value.trim()
   if (apiKey) body.apiKey = apiKey
+
+  // Base URL / Model are only meaningful in AI mode; omit when empty so the
+  // server does not reject an empty model in knowledge-only mode.
+  const record = body as Record<string, unknown>
+  if (!form.baseUrl.trim()) delete record.baseUrl
+  if (!form.model.trim()) delete record.model
   return body
 }
 
@@ -176,8 +206,8 @@ async function load() {
 async function save() {
   errorMessage.value = ''
   testMessage.value = ''
-  if (!form.baseUrl.trim() || !form.model.trim()) {
-    errorMessage.value = 'Base URL và model là bắt buộc.'
+  if (form.mode === 'ai' && (!form.baseUrl.trim() || !form.model.trim())) {
+    errorMessage.value = 'Chế độ AI cần Base URL và Model.'
     return
   }
 
@@ -260,6 +290,55 @@ onMounted(load)
     </div>
 
     <form v-else class="flex flex-col gap-5" @submit.prevent="save">
+      <!-- Answer mode + lead capture -->
+      <section class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-5">
+        <div>
+          <h2 class="m-0 text-base font-extrabold text-[#122815]">Chế độ trả lời</h2>
+          <p class="m-0 mt-1 text-sm text-[#667768]">Chọn cách trợ lý trả lời người dùng.</p>
+        </div>
+
+        <div class="grid gap-3 sm:grid-cols-2">
+          <label class="flex cursor-pointer flex-col gap-1 rounded-lg border p-3 transition-colors" :class="form.mode === 'knowledge' ? 'border-[#2c6e33] bg-[#f0f7f1]' : 'border-[#c8d6c9] hover:bg-[#f8faf8]'">
+            <span class="flex items-center gap-2 text-sm font-bold text-[#122815]"><input type="radio" value="knowledge" v-model="form.mode" class="h-4 w-4 accent-[#2c6e33]" /> Chỉ kho kiến thức (không AI)</span>
+            <span class="pl-6 text-xs text-[#667768]">Trả lời vui vẻ dựa trên câu trả lời đã duyệt trong Kho kiến thức, khớp theo từ khoá. Không gọi AI.</span>
+          </label>
+          <label class="flex cursor-pointer flex-col gap-1 rounded-lg border p-3 transition-colors" :class="form.mode === 'ai' ? 'border-[#2c6e33] bg-[#f0f7f1]' : 'border-[#c8d6c9] hover:bg-[#f8faf8]'">
+            <span class="flex items-center gap-2 text-sm font-bold text-[#122815]"><input type="radio" value="ai" v-model="form.mode" class="h-4 w-4 accent-[#2c6e33]" /> Dùng AI</span>
+            <span class="pl-6 text-xs text-[#667768]">AI + system prompt, ưu tiên dữ liệu trong Kho kiến thức. Cần cấu hình Nhà cung cấp bên dưới.</span>
+          </label>
+        </div>
+
+        <label v-if="form.mode === 'ai'" class="flex flex-col gap-1.5 text-sm font-bold">
+          Khi câu hỏi nằm ngoài Kho kiến thức
+          <select v-model="form.outOfScopeBehavior" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20">
+            <option value="knowledge_only">Chỉ bám Kho kiến thức + mời để lại thông tin (an toàn)</option>
+            <option value="ai_freeform">Cho AI tự trả lời theo hiểu biết chung</option>
+          </select>
+        </label>
+
+        <label v-if="form.mode === 'knowledge'" class="flex flex-col gap-1.5 text-sm font-bold">
+          Lời chào vui vẻ (tùy chọn)
+          <span class="font-normal text-[#667768]">Thêm vào đầu mỗi câu trả lời ở chế độ Kho kiến thức. VD: “Dạ, em xin phép trả lời ạ 😊”.</span>
+          <input v-model="form.knowledgeGreeting" maxlength="500" autocomplete="off" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+        </label>
+
+        <div class="flex flex-col gap-3 border-t border-[#e2ece3] pt-4">
+          <label class="flex items-start gap-3 text-sm font-semibold">
+            <input v-model="form.leadCaptureEnabled" type="checkbox" class="mt-0.5 h-4 w-4 accent-[#2c6e33]" />
+            <span>Khi không có câu trả lời, mời khách để lại thông tin liên hệ<br /><span class="font-normal text-[#667768]">Áp dụng cho cả 2 chế độ. Thông tin được lưu ở mục Đơn đăng ký và gửi email cho cán bộ.</span></span>
+          </label>
+          <label class="flex flex-col gap-1.5 text-sm font-bold">
+            Email nhận thông tin liên hệ
+            <span class="font-normal text-[#667768]">Để trống sẽ dùng email liên hệ chung của trang (trong Cài đặt chung).</span>
+            <input v-model="form.leadCaptureEmail" type="email" autocomplete="off" placeholder="canbo@donvi.gov.vn" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+          </label>
+          <label class="flex flex-col gap-1.5 text-sm font-bold">
+            Câu thông báo khi chưa có câu trả lời (tùy chọn)
+            <input v-model="form.fallbackMessage" maxlength="1000" autocomplete="off" placeholder="Xin lỗi, hiện tôi chưa tìm thấy thông tin phù hợp…" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+          </label>
+        </div>
+      </section>
+
       <section class="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <div class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-5">
           <h2 class="m-0 text-base font-extrabold text-[#122815]">Nhà cung cấp</h2>
@@ -276,12 +355,12 @@ onMounted(load)
 
           <label class="flex flex-col gap-1.5 text-sm font-bold">
             Base URL
-            <input v-model="form.baseUrl" type="url" required autocomplete="url" placeholder="https://provider.example/v1" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+            <input v-model="form.baseUrl" type="url" :required="form.mode === 'ai'" autocomplete="url" placeholder="https://provider.example/v1" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
           </label>
 
           <label class="flex flex-col gap-1.5 text-sm font-bold">
             Model
-            <input v-model="form.model" required autocomplete="off" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+            <input v-model="form.model" :required="form.mode === 'ai'" autocomplete="off" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
           </label>
 
           <div class="flex flex-col gap-1.5">

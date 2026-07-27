@@ -54,6 +54,14 @@ const selectRole = (role: any) => {
   })
 }
 
+// One row per resource paired with its (always-present) matrix entry: selectRole
+// seeds every key before the table renders, and pairing here gives v-model a
+// non-optional target.
+const matrixRows = computed(() => resourcesList.flatMap((res) => {
+  const perm = permissionMatrix[res.key]
+  return perm ? [{ res, perm }] : []
+}))
+
 const handleSavePermissions = async () => {
   if (!selectedRole.value) return
   saving.value = true
@@ -137,22 +145,22 @@ onMounted(() => { fetchRoles() })
               </tr>
             </thead>
             <tbody>
-              <tr v-for="res in resourcesList" :key="res.key" class="hover:bg-[#fafcfa]">
+              <tr v-for="{ res, perm } in matrixRows" :key="res.key" class="hover:bg-[#fafcfa]">
                 <td class="px-3 py-3 border-b border-[#eef2ee]">
                   <strong>{{ res.label }}</strong>
                   <code class="ml-1.5 text-[0.72rem] text-[#888]">({{ res.key }})</code>
                 </td>
                 <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="permissionMatrix[res.key].canCreate" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                  <input type="checkbox" v-model="perm.canCreate" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
                 </td>
                 <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="permissionMatrix[res.key].canRead" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                  <input type="checkbox" v-model="perm.canRead" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
                 </td>
                 <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="permissionMatrix[res.key].canUpdate" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                  <input type="checkbox" v-model="perm.canUpdate" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
                 </td>
                 <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="permissionMatrix[res.key].canDelete" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                  <input type="checkbox" v-model="perm.canDelete" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
                 </td>
               </tr>
             </tbody>

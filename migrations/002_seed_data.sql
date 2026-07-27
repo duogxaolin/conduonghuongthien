@@ -1,3 +1,32 @@
+-- ############################################################################
+-- ##  CẢNH BÁO: ĐÂY LÀ BẢN MYSQLDUMP, KHÔNG PHẢI MIGRATION.                 ##
+-- ##                                                                        ##
+-- ##  Tệp này chứa lệnh DROP TABLE cho TOÀN BỘ bảng. Chạy nhầm lên cơ sở    ##
+-- ##  dữ liệu đang hoạt động sẽ XOÁ SẠCH DỮ LIỆU.                           ##
+-- ##                                                                        ##
+-- ##  Nguồn schema chính thức:                                              ##
+-- ##    - server/db/schema.ts  (khai bao Drizzle - nguon chan ly)           ##
+-- ##    - server/db/init.ts    (DDL chay luc khoi dong, idempotent)         ##
+-- ##                                                                        ##
+-- ##  Khoi tao DB moi:  npm run db:init && npm run db:seed                  ##
+-- ##                                                                        ##
+-- ##  Chi dung tep nay khi CO Y khoi phuc toan bo tu snapshot:              ##
+-- ##    mysql -u root -p \                                                  ##
+-- ##      --init-command="SET @CDKT_ALLOW_DESTRUCTIVE_RESTORE=1" \          ##
+-- ##      cdkt_admin < migrations/<ten-tep>.sql                             ##
+-- ############################################################################
+
+SELECT 'DUNG LAI: dump nay se XOA toan bo bang. Xem huong dan o dau tep.' AS canh_bao;
+
+-- Guard: neu bien CDKT_ALLOW_DESTRUCTIVE_RESTORE chua duoc dat = 1, cau lenh
+-- duoi day co y gay loi (subquery tra ve nhieu dong) de dung toan bo script.
+SET @cdkt_guard = (
+  SELECT CASE WHEN COALESCE(@CDKT_ALLOW_DESTRUCTIVE_RESTORE, 0) = 1
+              THEN 1
+              ELSE (SELECT 1 UNION ALL SELECT 2)
+         END
+);
+
 -- MySQL dump 10.13  Distrib 8.0.46, for Linux (aarch64)
 --
 -- Host: localhost    Database: cdkt_admin

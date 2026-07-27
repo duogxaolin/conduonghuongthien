@@ -1,4 +1,5 @@
 import { getDb } from '../utils/db'
+import { logWarn, SECURITY_EVENTS } from '../utils/logger'
 import { users, roles, permissions } from '../db/schema'
 import { verifyToken } from '../utils/auth'
 import { eq } from 'drizzle-orm'
@@ -32,6 +33,7 @@ export default defineEventHandler(async (event) => {
       roleId:   users.roleId,
       roleName: roles.name,
       isSystem: roles.isSystem,
+      tokenVersion: users.tokenVersion,
     })
     .from(users)
     .leftJoin(roles, eq(users.roleId, roles.id))
@@ -40,6 +42,14 @@ export default defineEventHandler(async (event) => {
 
   if (!user || !user.isActive) {
     throw createError({ statusCode: 401, statusMessage: 'Unauthorized: User inactive or not found' })
+  }
+
+  // Reject sessions minted before the user's last logout / password change.
+  // Tokens issued before this field existed carry no version and are treated as
+  // generation 0, matching the column default.
+  if ((payload.tokenVersion ?? 0) !== (user.tokenVersion ?? 0)) {
+    logWarn({ event: SECURITY_EVENTS.sessionRevoked, userId: payload.userId, username: payload.username })
+    throw createError({ statusCode: 401, statusMessage: 'Unauthorized: Session revoked' })
   }
 
   const userPermissions = await db

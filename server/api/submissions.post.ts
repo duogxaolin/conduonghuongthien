@@ -1,7 +1,24 @@
-import { getDb } from '../utils/db'
+import { getRequestIP } from 'h3'
+import { getDb, getPool } from '../utils/db'
 import { submissions, pages, pageBlocks } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { getSmtpConfig, sendMail } from '../utils/mailer'
+import { escapeHtml } from '../utils/escape-html'
+import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
+import { logError, logWarn, SECURITY_EVENTS } from '../utils/logger'
+
+// Public, unauthenticated endpoint → rate limit by the real peer IP
+// (`x-forwarded-for` is client-controlled and therefore spoofable).
+// Counters live in a shared table so a restart or a second replica does not
+// hand every source a fresh quota. See server/utils/rate-limit-store.ts.
+const SUBMIT_RULE: RateLimitRule = { limit: 5, windowSeconds: 10 * 60 }
+
+async function submitRateLimited(ip: string): Promise<{ limited: boolean; retryAfterSeconds: number }> {
+  const pool = getPool()
+  const deps = { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
+  const state = await recordRateLimitHit(`submit:${ip}`, SUBMIT_RULE, deps)
+  return { limited: state.blocked, retryAfterSeconds: state.retryAfterSeconds }
+}
 
 const PHONE_RE = /^[0-9+()\-\s.]{7,20}$/
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -96,6 +113,14 @@ async function getConfiguredRecipients(db: ReturnType<typeof getDb>): Promise<Se
 }
 
 export default defineEventHandler(async (event) => {
+  const clientIp = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const submitLimit = await submitRateLimited(clientIp)
+  if (submitLimit.limited) {
+    logWarn({ event: SECURITY_EVENTS.submissionThrottled, ip: clientIp })
+    setResponseHeader(event, 'Retry-After', submitLimit.retryAfterSeconds)
+    throw createError({ statusCode: 429, statusMessage: 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau ít phút.' })
+  }
+
   const body = await readBody(event).catch(() => ({}))
 
   const formTitle = String(body?.formTitle || '').trim() || null
@@ -196,20 +221,22 @@ export default defineEventHandler(async (event) => {
       if (config) {
         const subject = `[CDKT] Đơn đăng ký mới${formTitle ? `: ${formTitle}` : ''}`
         const lines = emailAnswers.map((a) => `${a.label}: ${a.value}`).join('\n')
+        // Escape: label/value are visitor-supplied and would otherwise inject
+        // arbitrary HTML/links into the notification email read by staff.
         const rowsHtml = emailAnswers
-          .map((a) => `<tr><td style="padding:6px 12px;font-weight:bold;color:#1E251C;">${a.label}</td><td style="padding:6px 12px;color:#4A5545;">${a.value}</td></tr>`)
+          .map((a) => `<tr><td style="padding:6px 12px;font-weight:bold;color:#1E251C;">${escapeHtml(a.label)}</td><td style="padding:6px 12px;color:#4A5545;white-space:pre-wrap;">${escapeHtml(a.value)}</td></tr>`)
           .join('')
         await sendMail({
           to: recipientEmail,
           subject,
           text: `${formTitle ? formTitle + '\n\n' : ''}${lines}`,
-          html: `<div style="font-family:Arial,sans-serif;"><h2 style="color:#4A6741;">${formTitle || 'Đơn đăng ký mới'}</h2><table style="border-collapse:collapse;">${rowsHtml}</table></div>`,
+          html: `<div style="font-family:Arial,sans-serif;"><h2 style="color:#4A6741;">${escapeHtml(formTitle || 'Đơn đăng ký mới')}</h2><table style="border-collapse:collapse;">${rowsHtml}</table></div>`,
           config,
         })
       }
     } catch (err) {
       // Log only — a mail failure must never surface to the visitor.
-      console.error('[submissions] Gửi email thông báo thất bại:', err)
+      logError({ event: 'public.submission_email_failed', submissionId: result.insertId, error: err })
     }
   }
 

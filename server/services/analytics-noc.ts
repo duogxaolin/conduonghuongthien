@@ -1,5 +1,6 @@
 import mysql, { type Pool } from 'mysql2/promise'
 import { normalizeAnalyticsNocEvent } from '../utils/analytics-noc'
+import { tryRuntimeConfig } from '../utils/runtime-config'
 
 export type AnalyticsNocConnection = Pick<Pool, 'query'>
 
@@ -10,8 +11,7 @@ export type RecordAnalyticsNocInput = Parameters<typeof normalizeAnalyticsNocEve
 }
 
 function runtimeValue(name: string) {
-  const runtime = typeof globalThis.useRuntimeConfig === 'function' ? globalThis.useRuntimeConfig() : undefined
-  return runtime?.[name]
+  return tryRuntimeConfig()?.[name]
 }
 
 export function createAnalyticsNocPool(): Pool {

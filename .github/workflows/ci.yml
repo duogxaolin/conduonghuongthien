@@ -1,0 +1,168 @@
+name: CI
+
+# The repository had no automation at all: 295 tests that only ran when someone
+# remembered to, a schema-drift checker nobody invoked, and a build that was
+# first exercised on the production VPS.
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '22'
+  # Every job needs this, including plain `npm ci`: postinstall runs
+  # `nuxt prepare`, which evaluates nuxt.config in production mode, and the
+  # config refuses to evaluate without an analytics HMAC secret (>= 32 chars).
+  # Locally that comes from .env; CI has none. It signs nothing here — the
+  # bundle never embeds it, and the runtime reads the real one from the
+  # environment.
+  ANALYTICS_HMAC_SECRET: ci-placeholder-not-a-real-secret-000000
+
+jobs:
+  test:
+    name: Tests and schema drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      # `nuxt prepare` (postinstall) needs no network beyond the registry.
+      - run: npm ci
+
+      - name: Unit and contract tests
+        run: npm test
+
+      # schema.ts and init.ts are two hand-maintained descriptions of the same
+      # 28 tables. They drift silently; this is the only thing that notices.
+      - name: Schema drift
+        run: npm run db:drift
+
+  typecheck:
+    name: Types
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # Blocking gate. It started as report-only because the codebase had never
+    # been typechecked and the first run surfaced 598 errors; those are fixed, so
+    # the count is now 0 and a regression should fail the build.
+    #
+    # typescript is pinned to ^5 in package.json: 7.x is the Go rewrite and no
+    # longer exports lib/tsc.js, which vue-tsc requires at startup
+    # (ERR_PACKAGE_PATH_NOT_EXPORTED).
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Typecheck
+        run: |
+          set +e
+          npx nuxt typecheck > /tmp/tsc.log 2>&1
+          status=$?
+          set -e
+          errors=$(grep -cE 'error TS[0-9]+' /tmp/tsc.log || true)
+          {
+            echo "### Typecheck"
+            echo
+            echo "**$errors** type error(s) reported."
+            echo
+            echo '<details><summary>Last 200 lines</summary>'
+            echo
+            echo '```'
+            tail -200 /tmp/tsc.log
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+          tail -80 /tmp/tsc.log
+          exit $status
+
+  build:
+    name: Production build
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
+      - name: Build
+        run: npm run build
+
+      # Proves the bundle compiles, which used to be discovered on the VPS.
+
+      - name: Fail if the bundle did not appear
+        run: test -d .output/server && test -d .output/public
+
+  hygiene:
+    name: Secrets and defaults
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # The admin password hash reached this repository once already, inside a
+      # committed SQL dump. This is the cheap guard against a repeat.
+      - name: No .env file committed
+        run: |
+          if git ls-files --error-unmatch .env >/dev/null 2>&1; then
+            echo "::error::.env is tracked in git"
+            exit 1
+          fi
+
+      - name: No private keys or credential blobs added
+        run: |
+          if git grep -nIE 'BEGIN (RSA|OPENSSH|DSA|EC|PGP) PRIVATE KEY' -- . ':!*.md'; then
+            echo "::error::a private key is committed"
+            exit 1
+          fi
+
+      - name: No known-default secrets in tracked files
+        run: |
+          # These exact strings shipped as defaults at some point in this
+          # repository's history. None of them may come back. The bracketed
+          # last character keeps this pattern line from matching itself, so
+          # the workflow file stays covered by its own scan.
+          patterns='cdkt_admin_secret_change_m[e]|cdkt_docker_jwt_secret_98765432[1]|cdkt_secret_key_change_me_12345[6]'
+          if git grep -nIE "$patterns" -- . ':!server/plugins/require-secrets.ts' ':!tests/*' ':!*.md'; then
+            echo "::error::a known-default secret is present outside the guard that rejects it"
+            exit 1
+          fi
+
+      - name: Shell scripts parse
+        run: |
+          for script in scripts/*.sh; do
+            bash -n "$script" || exit 1
+          done
+
+      # Third-party action, so pinned to a commit rather than a moving ref:
+      # @master would run whatever that branch holds at the time of the build.
+      # The trailing comment is the human-readable version of that SHA.
+      - uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        with:
+          scandir: ./scripts
+          severity: warning

@@ -1,4 +1,5 @@
 import { getDb } from '../../../utils/db'
+import { logError } from '../../../utils/logger'
 import { pages, pageBlocks } from '../../../db/schema'
 import { and, eq, asc } from 'drizzle-orm'
 
@@ -44,7 +45,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // Prefer the published tree when it is a non-empty array.
-    const tree = (page as any).publishedBlocks
+    const tree = page.publishedBlocks
     if (Array.isArray(tree) && tree.length) {
       return { ok: true, page: pageMeta, blocks: pruneHiddenTree(tree) }
     }
@@ -63,7 +64,7 @@ export default defineEventHandler(async (event) => {
 
     return { ok: true, page: pageMeta, blocks }
   } catch (err) {
-    console.error('[public/pages] error:', err)
+    logError({ event: 'public.page_render_failed', slug, error: err })
     return { ok: false }
   }
 })

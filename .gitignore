@@ -39,3 +39,12 @@ public/assets/fontawesome/scss/
 public/assets/fontawesome/metadata/
 .claude/
 .mcp.json
+
+# ─── Sao lưu database do bạn tự tạo ───
+# Các dump chính thức trong migrations/ vẫn được track (xem header cảnh báo
+# trong từng tệp). Chỉ bỏ qua bản sao lưu tạm sinh ra khi vận hành.
+*.dump.sql
+backup_*.sql
+
+# Bản sao lưu do scripts/backup-db.sh sinh ra
+backups/

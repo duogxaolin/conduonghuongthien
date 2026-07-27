@@ -231,7 +231,7 @@ export async function ensureRequiredColumn(db: Connection, database: string, mig
     await db.query(`ALTER TABLE \`${migration.table}\` ADD COLUMN \`${migration.column}\` ${migration.nullableDefinition}`)
   }
   await db.query(`UPDATE \`${migration.table}\` SET \`${migration.column}\` = ${migration.backfillExpression} WHERE \`${migration.column}\` IS NULL`)
-  if (rows.length === 0 || rows[0].IS_NULLABLE === 'YES') {
+  if (rows.length === 0 || rows[0]?.IS_NULLABLE === 'YES') {
     await db.query(`ALTER TABLE \`${migration.table}\` MODIFY COLUMN \`${migration.column}\` ${migration.finalDefinition}`)
   }
 }
@@ -348,6 +348,27 @@ async function convergeChatbotSchema(db: Connection, database: string) {
   await releaseChatbotForeignKeysBlockingColumnChanges(db, database)
   for (const migration of chatbotColumnMigrations) await ensureChatbotColumn(db, database, migration)
 
+  // Answer-mode & lead-capture columns — idempotent add for pre-existing databases.
+  const modeColumnExisted = await hasColumn(db, database, 'chatbot_settings', 'mode')
+  await ensureColumn(db, database, 'users', 'token_version', 'INT NOT NULL DEFAULT 0')
+  await ensureColumn(db, database, 'chatbot_settings', 'mode', "VARCHAR(16) NOT NULL DEFAULT 'knowledge'")
+  if (!modeColumnExisted) {
+    // Upgrade path: a deployment that already had a working provider keeps using
+    // it. Fresh installs have no provider configured, so they stay 'knowledge'.
+    await db.query(`
+      UPDATE \`chatbot_settings\`
+      SET \`mode\` = 'ai'
+      WHERE \`enabled\` = 1
+        AND \`base_url\` IS NOT NULL AND \`base_url\` <> ''
+        AND \`model\` IS NOT NULL AND \`model\` <> ''
+    `)
+  }
+  await ensureColumn(db, database, 'chatbot_settings', 'out_of_scope_behavior', "VARCHAR(24) NOT NULL DEFAULT 'knowledge_only'")
+  await ensureColumn(db, database, 'chatbot_settings', 'knowledge_greeting', 'VARCHAR(500) NULL')
+  await ensureColumn(db, database, 'chatbot_settings', 'fallback_message', 'VARCHAR(1000) NULL')
+  await ensureColumn(db, database, 'chatbot_settings', 'lead_capture_enabled', "TINYINT(1) NOT NULL DEFAULT 1")
+  await ensureColumn(db, database, 'chatbot_settings', 'lead_capture_email', 'VARCHAR(255) NULL')
+
   await db.query('UPDATE `chatbot_settings` s LEFT JOIN `users` u ON u.`id` = s.`updated_by` SET s.`updated_by` = NULL WHERE s.`updated_by` IS NOT NULL AND u.`id` IS NULL')
   await db.query('UPDATE `chatbot_knowledge` k LEFT JOIN `users` u ON u.`id` = k.`author_id` SET k.`author_id` = NULL WHERE k.`author_id` IS NOT NULL AND u.`id` IS NULL')
   await db.query('UPDATE `chatbot_knowledge` k LEFT JOIN `users` u ON u.`id` = k.`reviewer_id` SET k.`reviewer_id` = NULL WHERE k.`reviewer_id` IS NOT NULL AND u.`id` IS NULL')
@@ -363,6 +384,14 @@ async function convergeChatbotSchema(db: Connection, database: string) {
 
   for (const migration of chatbotConvergentIndexMigrations) await ensureChatbotIndex(db, database, migration)
   for (const migration of chatbotForeignKeyMigrations) await ensureChatbotForeignKey(db, database, migration)
+}
+
+async function hasColumn(db: Connection, database: string, table: string, column: string): Promise<boolean> {
+  const [rows] = await db.execute<RowDataPacket[]>(
+    'SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND COLUMN_NAME = ? LIMIT 1',
+    [database, table, column],
+  )
+  return rows.length > 0
 }
 
 async function ensureColumn(db: Connection, database: string, table: string, column: string, definition: string) {
@@ -438,6 +467,7 @@ export async function initDb() {
       \`password_hash\` VARCHAR(255) NOT NULL,
       \`role_id\` INT,
       \`is_active\` TINYINT(1) DEFAULT 1,
+      \`token_version\` INT NOT NULL DEFAULT 0,
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       \`last_login_at\` TIMESTAMP NULL,
       CONSTRAINT \`fk_users_role\` FOREIGN KEY (\`role_id\`) REFERENCES \`roles\` (\`id\`) ON DELETE SET NULL
@@ -662,6 +692,16 @@ export async function initDb() {
 
   // Activity Logs table
   await db.query(`
+    CREATE TABLE IF NOT EXISTS \`rate_limit_counters\` (
+      \`bucket_key\` VARCHAR(191) NOT NULL PRIMARY KEY,
+      \`hit_count\` INT NOT NULL DEFAULT 0,
+      \`window_expires_at\` DATETIME(3) NOT NULL,
+      KEY \`rate_limit_expiry_idx\` (\`window_expires_at\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // Activity log
+  await db.query(`
     CREATE TABLE IF NOT EXISTS \`activity_logs\` (
       \`id\` INT AUTO_INCREMENT PRIMARY KEY,
       \`user_id\` INT NULL,
@@ -671,6 +711,7 @@ export async function initDb() {
       \`meta\` JSON NULL,
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       KEY \`user_idx\` (\`user_id\`),
+      KEY \`activity_created_idx\` (\`created_at\`),
       CONSTRAINT \`fk_logs_user\` FOREIGN KEY (\`user_id\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
@@ -684,13 +725,19 @@ export async function initDb() {
       \`email\` VARCHAR(255) NULL,
       \`address\` TEXT NULL,
       \`message\` TEXT NULL,
-      \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP
+      \`created_at\` DATETIME DEFAULT CURRENT_TIMESTAMP,
+      KEY \`submissions_created_idx\` (\`created_at\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
   // Contact-form builder additive columns — free-form answers + originating form title.
   await ensureColumn(db, database, 'submissions', 'answers', 'JSON NULL')
   await ensureColumn(db, database, 'submissions', 'form_title', 'VARCHAR(255) NULL')
+
+  // Retention purges filter on created_at. Deployments created before the
+  // retention policy existed have the tables but not these indexes.
+  await ensureIndex(db, database, 'activity_logs', 'activity_created_idx', 'INDEX `activity_created_idx` (`created_at`)')
+  await ensureIndex(db, database, 'submissions', 'submissions_created_idx', 'INDEX `submissions_created_idx` (`created_at`)')
 
   // Governed chatbot settings and knowledge bank
   await db.query(`
@@ -702,6 +749,12 @@ export async function initDb() {
       \`model\` VARCHAR(128) NULL,
       \`system_prompt\` TEXT NULL,
       \`allowed_hosts\` JSON NULL,
+      \`mode\` VARCHAR(16) NOT NULL DEFAULT 'knowledge',
+      \`out_of_scope_behavior\` VARCHAR(24) NOT NULL DEFAULT 'knowledge_only',
+      \`knowledge_greeting\` VARCHAR(500) NULL,
+      \`fallback_message\` VARCHAR(1000) NULL,
+      \`lead_capture_enabled\` TINYINT(1) NOT NULL DEFAULT 1,
+      \`lead_capture_email\` VARCHAR(255) NULL,
       \`request_timeout_ms\` INT UNSIGNED NOT NULL DEFAULT 10000,
       \`max_response_bytes\` INT UNSIGNED NOT NULL DEFAULT 262144,
       \`max_input_chars\` INT UNSIGNED NOT NULL DEFAULT 2000,
