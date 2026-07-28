@@ -1,10 +1,12 @@
 import { getRequestIP } from 'h3'
 import { getDb } from '../../../utils/db'
-import { users, roles, permissions, activityLogs } from '../../../db/schema'
-import { verifyPassword, signToken } from '../../../utils/auth'
+import { users, roles } from '../../../db/schema'
+import { verifyPassword } from '../../../utils/auth'
 import { eq } from 'drizzle-orm'
 import { getPool } from '../../../utils/db'
 import { logInfo, logWarn, SECURITY_EVENTS } from '../../../utils/logger'
+import { completeLogin, setChallengeCookie } from '../../../utils/mfa/session'
+import { countUnusedRecoveryCodes, usableFactorTypes } from '../../../utils/mfa/factors'
 import {
   clearRateLimit,
   peekRateLimit,
@@ -114,57 +116,33 @@ export default defineEventHandler(async (event) => {
 
   // Reset rate limit khi đăng nhập thành công
   await Promise.all([clearRateLimit(ipBucket, deps), clearRateLimit(userBucket, deps)])
-  logInfo({ event: SECURITY_EVENTS.loginSucceeded, username: user.username, userId: user.id, ip })
 
-  // Load permissions
-  const userPermissions = await db
-    .select()
-    .from(permissions)
-    .where(eq(permissions.roleId, user.roleId!))
-
-  // Cập nhật last_login_at
-  await db.update(users)
-    .set({ lastLoginAt: new Date() })
-    .where(eq(users.id, user.id))
-
-  // Log activity
-  await db.insert(activityLogs).values({
-    userId:   user.id,
-    action:   'login',
-    resource: 'auth',
-    meta:     { ip, userAgent: getRequestHeader(event, 'user-agent') || '' },
-  })
-
-  // Tạo JWT
-  const token = signToken({
-    userId:   user.id,
-    username: user.username,
-    roleId:   user.roleId!,
-    roleName: user.roleName!,
-    tokenVersion: user.tokenVersion ?? 0,
-  })
-
-  const isHttps = getRequestHeader(event, 'x-forwarded-proto') === 'https' || getRequestURL(event).protocol === 'https:'
-
-  // Cookie lifetime khớp đúng hạn của JWT (8 giờ). Trước đây cookie sống 7 ngày
-  // trong khi token chỉ 8 giờ → người dùng giữ cookie đã hết hạn và bị 401 khó hiểu.
-  setCookie(event, 'cdkt_admin', token, {
-    httpOnly: true,
-    secure:   isHttps,
-    sameSite: 'lax',
-    maxAge:   8 * 60 * 60,
-    path:     '/',
-  })
-
-  return {
-    ok: true,
-    user: {
-      id:          user.id,
-      username:    user.username,
-      email:       user.email,
-      roleName:    user.roleName,
-      isSuperAdmin: user.isSystem === true,
-      permissions: userPermissions,
+  // ── Chốt yếu tố thứ hai ────────────────────────────────────────────────────
+  // Mật khẩu đúng nhưng tài khoản đã bật yếu tố thứ hai thì KHÔNG cấp phiên.
+  // Thay vào đó phát một vé thử thách sống 5 phút, không mang quyền quản trị nào
+  // (`server/middleware/admin-auth.ts` từ chối mọi token không phải stage phiên).
+  //
+  // `usableFactorTypes` bỏ qua yếu tố TOTP không giải mã được (ví dụ sau khi xoay
+  // JWT_SECRET), nên tài khoản lùi về yếu tố khác chứ không bị kẹt ngoài cổng.
+  const usable = await usableFactorTypes(user.id)
+  if (usable.length > 0) {
+    logInfo({
+      event: 'auth.mfa_challenge_issued',
+      username: user.username,
+      userId: user.id,
+      ip,
+      methods: usable.join(','),
+    })
+    setChallengeCookie(event, user)
+    return {
+      ok: true,
+      mfaRequired: true,
+      // Chỉ tên phương thức — không secret, không mã, không hash.
+      methods: usable,
+      recoveryCodesAvailable: (await countUnusedRecoveryCodes(user.id)) > 0,
     }
   }
+
+  logInfo({ event: SECURITY_EVENTS.loginSucceeded, username: user.username, userId: user.id, ip })
+  return completeLogin(event, user, { ip })
 })

@@ -21,6 +21,9 @@ const menuGroups = computed(() => [
   {
     title: 'Hệ thống & Nhân sự',
     items: [
+      // Không gắn hasPermission: đây là tài khoản của chính người đang đăng nhập,
+      // ai cũng phải đổi được mật khẩu và xem được lịch sử truy cập của mình.
+      { label: 'Tài khoản của tôi', icon: 'fa-solid fa-user-gear', path: '/admin/profile' },
       { label: 'Người dùng', icon: 'fa-solid fa-users', path: '/admin/users' },
       { label: 'Vai trò & Phân quyền', icon: 'fa-solid fa-user-shield', path: '/admin/users/roles' },
     ]
@@ -187,6 +190,13 @@ const menuGroups = computed(() => [
               </div>
               <div class="border-t border-[#e2ece3]"></div>
               <div class="px-2 py-2 flex flex-col gap-1">
+                <nuxt-link
+                  to="/admin/profile"
+                  class="flex items-center gap-2 px-3 py-2 rounded-md text-[0.85rem] text-[#122815] font-semibold no-underline hover:bg-[#f0f7f1] transition-colors"
+                >
+                  <i class="fa-solid fa-user-gear w-4 text-center" aria-hidden="true"></i>
+                  <span>Tài khoản của tôi</span>
+                </nuxt-link>
                 <nuxt-link
                   to="/"
                   target="_blank"
