@@ -49,6 +49,65 @@ export const users = mysqlTable('users', {
   lastLoginAt:  timestamp('last_login_at'),
 })
 
+// ─── Multi-factor authentication ─────────────────────────────────────────────
+// One row per (user, factor type). A factor is enabled by the *existence* of a
+// row with state 'active' and disabled by deleting the row, so "disabled" can
+// never drift from "material still sitting in the database".
+export const userMfaFactors = mysqlTable('user_mfa_factors', {
+  id:         int('id').autoincrement().primaryKey(),
+  userId:     int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  // totp = authenticator app | email_otp = code mailed to the account address
+  // | second_password = second-tier password
+  factorType: mysqlEnum('factor_type', ['totp', 'email_otp', 'second_password']).notNull(),
+  // 'pending' factors are ignored by the login challenge until confirmed.
+  state:      mysqlEnum('state', ['pending', 'active']).notNull().default('pending'),
+
+  // TOTP only — AES-256-GCM envelope, same shape as chatbot provider keys.
+  // Never a plaintext column: the secret must be recoverable to verify codes,
+  // so encryption (not hashing) is the only option for this one factor.
+  secretCiphertext: text('secret_ciphertext'),
+  secretNonce:      varchar('secret_nonce', { length: 64 }),
+  secretAuthTag:    varchar('secret_auth_tag', { length: 64 }),
+  secretVersion:    int('secret_version'),
+  // Lets a key rotation be detected instead of surfacing as a decrypt failure.
+  secretKeyId:      varchar('secret_key_id', { length: 32 }),
+
+  // second_password only — bcrypt, verify-only.
+  passwordHash: varchar('password_hash', { length: 255 }),
+
+  // email_otp only — the outstanding code. bcrypt rather than SHA-256: six
+  // digits is a 10^6 space, which a fast hash surrenders instantly on a leak.
+  pendingCodeHash:      varchar('pending_code_hash', { length: 255 }),
+  pendingCodeExpiresAt: datetime('pending_code_expires_at', { mode: 'date', fsp: 3 }),
+  pendingCodeAttempts:  int('pending_code_attempts').notNull().default(0),
+
+  // Enrollment window for a 'pending' factor; past this it cannot be confirmed.
+  pendingExpiresAt: datetime('pending_expires_at', { mode: 'date', fsp: 3 }),
+  // Last accepted TOTP step, so a code observed in transit cannot be replayed.
+  lastAcceptedStep: bigint('last_accepted_step', { mode: 'number' }),
+
+  lastUsedAt: timestamp('last_used_at'),
+  createdAt:  timestamp('created_at').defaultNow(),
+  updatedAt:  timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  userFactorIdx: uniqueIndex('user_factor_idx').on(t.userId, t.factorType),
+}))
+
+// One row per code: single-use consumption is a per-code fact, not a counter.
+export const userRecoveryCodes = mysqlTable('user_recovery_codes', {
+  id:       int('id').autoincrement().primaryKey(),
+  userId:   int('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  // bcrypt, verify-only. Displayed once at generation and never again.
+  codeHash: varchar('code_hash', { length: 255 }).notNull(),
+  // Regenerating issues a new batch; codes from older batches stop verifying
+  // without having to delete them in the same transaction.
+  batchId:  varchar('batch_id', { length: 32 }).notNull(),
+  usedAt:   timestamp('used_at'),
+  createdAt: timestamp('created_at').defaultNow(),
+}, (t) => ({
+  userBatchIdx: index('recovery_user_batch_idx').on(t.userId, t.batchId),
+}))
+
 // ─── Media ───────────────────────────────────────────────────────────────────
 export const media = mysqlTable('media', {
   id:           int('id').autoincrement().primaryKey(),
@@ -454,6 +513,9 @@ export const analyticsMaintenanceRuns = mysqlTable('analytics_maintenance_runs',
 export type Role        = typeof roles.$inferSelect
 export type Permission  = typeof permissions.$inferSelect
 export type User        = typeof users.$inferSelect
+export type UserMfaFactor = typeof userMfaFactors.$inferSelect
+export type NewUserMfaFactor = typeof userMfaFactors.$inferInsert
+export type UserRecoveryCode = typeof userRecoveryCodes.$inferSelect
 export type Media       = typeof media.$inferSelect
 export type Category    = typeof categories.$inferSelect
 export type Article     = typeof articles.$inferSelect
