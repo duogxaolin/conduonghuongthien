@@ -98,12 +98,46 @@ const fetchArticles = async (page = 1) => {
     if (effectiveCategoryId) params.categoryId = effectiveCategoryId
 
     const res = await $fetch('/api/admin/articles', { params })
-    if (res.ok) { articles.value = res.items; pagination.value = res.pagination }
+    if (res.ok) {
+      articles.value = res.items
+      pagination.value = res.pagination
+      // Ids from the previous page/filter no longer refer to anything on screen.
+      selection.keepOnly(visibleIds.value)
+    }
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách bài viết')
   } finally {
     loading.value = false
   }
+}
+
+// ─── Bulk selection ───────────────────────────────────────────────────────────
+const selection = useBulkSelection()
+const bulk = useBulkAction(selection)
+const visibleIds = computed(() => articles.value.map((a: any) => Number(a.id)))
+
+const bulkDelete = () => bulk.run({
+  url: '/api/admin/articles/bulk-delete',
+  noun: 'bài viết',
+  confirm: {
+    title: 'Xóa bài viết',
+    message: `Xóa ${selection.count.value} bài viết đã chọn? Thao tác không thể hoàn tác.`,
+    danger: true,
+    confirmLabel: 'Xóa',
+  },
+  reload: () => fetchArticles(pagination.value.page),
+})
+
+/** Hiding an article means archiving it — that is what the public read path filters on. */
+const bulkStatus = (status: 'published' | 'draft' | 'archived') => {
+  const verb = status === 'published' ? 'Xuất bản' : status === 'draft' ? 'Chuyển về nháp' : 'Lưu trữ (ẩn)'
+  return bulk.run({
+    url: '/api/admin/articles/bulk-status',
+    body: { status },
+    noun: 'bài viết',
+    confirm: { message: `${verb} ${selection.count.value} bài viết đã chọn?`, confirmLabel: verb },
+    reload: () => fetchArticles(pagination.value.page),
+  })
 }
 
 const deleteArticle = async (art: any) => {
@@ -206,13 +240,32 @@ onMounted(async () => {
       </button>
     </div>
 
+    <AdminBulkActionBar
+      v-if="selection.count.value"
+      :count="selection.count.value"
+      :busy="bulk.busy.value"
+      noun="bài viết"
+      @clear="selection.clear()"
+    >
+      <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="bulkStatus('published')">Xuất bản</button>
+      <button type="button" class="rounded-lg border border-[#b78103] bg-white px-3 py-2 text-sm font-bold text-[#765b00] hover:bg-white/70" @click="bulkStatus('archived')">Lưu trữ (ẩn)</button>
+      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+    </AdminBulkActionBar>
+
     <!-- Table Card -->
     <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
       <div v-if="loading" class="py-10 text-center text-[#667768]">Đang tải danh sách bài viết...</div>
 
       <!-- Mobile Card View -->
       <div v-else class="md:hidden divide-y divide-[#eef2ee]">
-        <div v-for="a in articles" :key="'m-'+a.id" class="p-4 flex gap-3">
+        <div v-for="a in articles" :key="'m-'+a.id" class="p-4 flex gap-3" :class="selection.isSelected(Number(a.id)) ? 'bg-[#f0f7f1]' : ''">
+          <input
+            type="checkbox"
+            class="mt-1 h-4 w-4 flex-shrink-0 accent-[#2c6e33]"
+            :checked="selection.isSelected(Number(a.id))"
+            :aria-label="`Chọn bài viết: ${a.title}`"
+            @change="selection.toggle(Number(a.id))"
+          />
           <div class="w-14 h-10 rounded-lg overflow-hidden bg-[#f0f4f0] flex-shrink-0 border border-[#e2ece3]">
             <img v-if="a.thumbnailUrl" :src="a.thumbnailUrl" class="w-full h-full object-cover" />
             <div v-else class="w-full h-full flex items-center justify-center"><i class="fa-regular fa-image text-sm text-[#c8d6c9]"></i></div>
@@ -242,6 +295,16 @@ onMounted(async () => {
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
+              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-[#e2ece3]">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-[#2c6e33]"
+                  :checked="selection.allSelected(visibleIds)"
+                  :indeterminate="selection.someSelected(visibleIds)"
+                  aria-label="Chọn tất cả bài viết trên trang"
+                  @change="selection.toggleAll(visibleIds)"
+                />
+              </th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3]">Bài viết</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thể loại</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Danh mục</th>
@@ -251,7 +314,21 @@ onMounted(async () => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="a in articles" :key="a.id" class="hover:bg-[#fafcfa] group">
+            <tr
+              v-for="a in articles"
+              :key="a.id"
+              class="hover:bg-[#fafcfa] group"
+              :class="selection.isSelected(Number(a.id)) ? 'bg-[#f0f7f1]' : ''"
+            >
+              <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-[#2c6e33]"
+                  :checked="selection.isSelected(Number(a.id))"
+                  :aria-label="`Chọn bài viết: ${a.title}`"
+                  @change="selection.toggle(Number(a.id))"
+                />
+              </td>
               <!-- Thumbnail + Title combined -->
               <td class="px-4 py-3 border-b border-[#eef2ee]">
                 <div class="flex items-center gap-3">
