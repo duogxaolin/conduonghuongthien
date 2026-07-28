@@ -11,6 +11,17 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
   return bcrypt.compare(plain, hash)
 }
 
+/**
+ * Which half of the login a token belongs to.
+ *
+ * 'session' grants admin access. 'mfa-challenge' grants nothing but the right to
+ * submit a second factor: it is issued after the password verifies and exchanged
+ * for a session only once a factor is satisfied. Both are signed by the same
+ * key, so the stage claim — checked explicitly in server/middleware/admin-auth.ts
+ * — is what keeps a challenge token from being spent as a session.
+ */
+export type AdminTokenStage = 'session' | 'mfa-challenge'
+
 export interface AdminTokenPayload {
   userId:   number
   username: string
@@ -18,6 +29,26 @@ export interface AdminTokenPayload {
   roleName: string
   /** Session generation; compared against users.token_version on every request. */
   tokenVersion?: number
+  /**
+   * Absent on tokens minted before this claim existed. Those are sessions by
+   * definition (the challenge stage did not exist yet), so absence reads as
+   * 'session' and live sessions survive the deploy.
+   */
+  stage?: AdminTokenStage
+}
+
+/** Minutes, not hours: long enough to fetch a code from an app or an inbox. */
+export const MFA_CHALLENGE_TTL_SECONDS = 5 * 60
+
+export interface MfaChallengePayload {
+  userId:   number
+  username: string
+  stage:    'mfa-challenge'
+  /**
+   * Ties the challenge to the account's session generation at password time. If
+   * anything revokes sessions mid-challenge, the challenge dies with them.
+   */
+  tokenVersion: number
 }
 
 // Resolve the JWT signing secret. In production a real secret is REQUIRED — there
@@ -34,12 +65,40 @@ function jwtSecret(): string {
 }
 
 export function signToken(payload: AdminTokenPayload): string {
-  return jwt.sign(payload, jwtSecret(), { expiresIn: '8h' })
+  return jwt.sign({ stage: 'session' as const, ...payload }, jwtSecret(), { expiresIn: '8h' })
 }
 
 export function verifyToken(token: string): AdminTokenPayload | null {
   try {
     return jwt.verify(token, jwtSecret()) as AdminTokenPayload
+  } catch {
+    return null
+  }
+}
+
+/** True for a session token, including legacy tokens minted without a stage. */
+export function isSessionStage(payload: { stage?: string } | null | undefined): boolean {
+  return !payload?.stage || payload.stage === 'session'
+}
+
+export function signMfaChallenge(payload: Omit<MfaChallengePayload, 'stage'>): string {
+  return jwt.sign(
+    { ...payload, stage: 'mfa-challenge' as const },
+    jwtSecret(),
+    { expiresIn: MFA_CHALLENGE_TTL_SECONDS },
+  )
+}
+
+/**
+ * Verify a challenge token. Returns null for anything that is not *explicitly*
+ * stage 'mfa-challenge' — a session token must never be accepted here either,
+ * or holding a session would let a caller skip a fresh password check.
+ */
+export function verifyMfaChallenge(token: string): MfaChallengePayload | null {
+  try {
+    const payload = jwt.verify(token, jwtSecret()) as MfaChallengePayload
+    if (payload?.stage !== 'mfa-challenge') return null
+    return payload
   } catch {
     return null
   }

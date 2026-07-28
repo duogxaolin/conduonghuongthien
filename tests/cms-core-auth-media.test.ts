@@ -43,10 +43,13 @@ test('the superadmin flag overrides the matrix, and only when true', () => {
 test('tokens carry a version that the admin middleware enforces', () => {
   const auth = read('server/utils/auth.ts')
   const middleware = read('server/middleware/admin-auth.ts')
-  const login = read('server/api/admin/auth/login.post.ts')
+  // Minting moved out of the login handler when the MFA challenge split the flow
+  // into "password accepted" and "session issued"; the guarantee is unchanged, so
+  // this now reads the single place that mints.
+  const session = read('server/utils/mfa/session.ts')
 
   assert.match(auth, /tokenVersion\??:\s*number/)
-  assert.match(login, /tokenVersion:\s*user\.tokenVersion/)
+  assert.match(session, /tokenVersion:\s*user\.tokenVersion/)
   assert.match(middleware, /tokenVersion:\s*users\.tokenVersion/)
   assert.match(middleware, /payload\.tokenVersion \?\? 0\) !== \(user\.tokenVersion \?\? 0\)/)
   assert.match(middleware, /Session revoked/)
@@ -92,10 +95,28 @@ test('a disabled account is indistinguishable from a wrong password', () => {
 })
 
 test('the session cookie is httpOnly and no longer outlives its token', () => {
-  const login = read('server/api/admin/auth/login.post.ts')
-  assert.match(login, /httpOnly:\s*true/)
-  assert.match(login, /sameSite:\s*'lax'/)
-  assert.match(login, /maxAge:\s*8 \* 60 \* 60/)
+  const session = read('server/utils/mfa/session.ts')
+  assert.match(session, /httpOnly:\s*true/)
+  assert.match(session, /sameSite:\s*'lax'/)
+  assert.match(session, /maxAge:\s*SESSION_MAX_AGE/)
+  assert.match(session, /SESSION_MAX_AGE = 8 \* 60 \* 60/)
+})
+
+test('the MFA challenge ticket is a separate, short-lived cookie', () => {
+  const session = read('server/utils/mfa/session.ts')
+  // A distinct name matters: every existing /api/admin/** route reads `cdkt_admin`,
+  // so a half-authenticated ticket landing in that cookie would be spent as a session.
+  assert.match(session, /CHALLENGE_COOKIE = 'cdkt_mfa'/)
+  assert.match(session, /SESSION_COOKIE = 'cdkt_admin'/)
+  assert.match(session, /maxAge:\s*MFA_CHALLENGE_TTL_SECONDS/)
+
+  const auth = read('server/utils/auth.ts')
+  assert.match(auth, /stage: 'mfa-challenge'/)
+  // Absence of the claim must read as a session, or the deploy logs everyone out.
+  assert.match(auth, /!payload\?\.stage \|\| payload\.stage === 'session'/)
+
+  const middleware = read('server/middleware/admin-auth.ts')
+  assert.match(middleware, /!isSessionStage\(payload\)/, 'middleware no longer rejects a challenge ticket')
 })
 
 // ─── Uploads ─────────────────────────────────────────────────────────────────
