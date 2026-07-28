@@ -83,7 +83,8 @@ app/
 
 ### Vận hành & an toàn
 
-- **Chính sách mật khẩu** (`server/utils/password-policy.ts`): tối thiểu 12 ký tự, đủ 3/4 nhóm ký tự, chặn mật khẩu mặc định/phổ biến và mật khẩu chứa tên đăng nhập. Áp ở **mọi nơi đặt mật khẩu** (tạo user, đổi mật khẩu, seed, guard lúc khởi động) và **không áp lúc đăng nhập** — tài khoản cũ mật khẩu ngắn vẫn vào được, khoá họ ra khỏi cổng đang chạy còn tệ hơn.
+- **Chính sách mật khẩu** (`server/utils/password-policy.ts`): tối thiểu 12 ký tự, đủ 3/4 nhóm ký tự, chặn mật khẩu mặc định/phổ biến và mật khẩu chứa tên đăng nhập. Áp ở **mọi nơi đặt mật khẩu** (tạo user, đổi mật khẩu, seed, guard lúc khởi động) và **không áp lúc đăng nhập**
+  - **Guard lúc build** (`scripts/check-admin-password.ts`, chạy trong `npm run build` trước `nuxt build`): hai chốt cũ (seed và boot) đều nằm **sau** khi build đã xong, nên một `ADMIN_PASSWORD` sai chỉ lộ ra sau khi đã trả tiền cho cả lần build. Guard đọc `ADMIN_PASSWORD` → `ADMIN_PASSWORD_FILE` → `.env` (đúng thứ tự ưu tiên lúc chạy), dùng chung `password-policy.ts`. **Sai → exit 1; không đặt → cảnh báo rồi cho qua** (CI và builder stage của Docker không có `.env`, và seed là insert-only nên deployment cũ không cần giữ mật khẩu trong `.env`). Trong Docker, giá trị vào bằng **BuildKit secret** (`docker-compose.yml` → `secrets.admin_password.environment`), không phải build arg — build arg bị ghi vĩnh viễn vào `docker history`. — tài khoản cũ mật khẩu ngắn vẫn vào được, khoá họ ra khỏi cổng đang chạy còn tệ hơn.
 - **Giới hạn tần suất** (`server/utils/rate-limit-store.ts`): bộ đếm nằm ở bảng `rate_limit_counters`, không mất khi restart và đúng khi chạy nhiều replica. Mất CSDL thì lùi về bộ nhớ tiến trình — **không bao giờ mở toang**.
 - **Lưu trữ dữ liệu cá nhân** (`server/services/data-retention.ts`): `activity_logs` mặc định 365 ngày; `submissions` mặc định **0 = không tự xoá** vì thời hạn lưu hồ sơ công dân do quy định của cơ quan quyết định. Chạy chung một dòng cron với bảo trì analytics.
 - **Log có cấu trúc** (`server/utils/logger.ts`): mỗi sự kiện một dòng JSON, tự che các trường có tên gợi ý bí mật. `SECURITY_EVENTS` là danh sách sự kiện an ninh để viết cảnh báo (`auth.login_failed`, `auth.login_rate_limited`, `auth.session_revoked`, …).
@@ -183,7 +184,9 @@ CHATBOT_ENCRYPTION_SECRET=   # openssl rand -base64 32  (base64 của đúng 32 
 ANALYTICS_HMAC_SECRET=       # openssl rand -hex 32
 
 # Mật khẩu SuperAdmin — CHỈ dùng lần đầu tạo tài khoản (seed là insert-only)
-ADMIN_PASSWORD=DatMatKhauManhODay!
+# Sinh bằng: openssl rand -base64 18
+# KHÔNG được chứa chuỗi "admin" (tên tài khoản seed) — "Admin@..." sẽ bị từ chối.
+ADMIN_PASSWORD=
 ADMIN_EMAIL=admin@conduonghuongthien.com.vn
 ```
 
@@ -219,7 +222,7 @@ docker compose up --build -d
 
 - **URL Admin**: `http://localhost:3000/admin` (hoặc `https://domain-cua-ban.com/admin`)
 - **Tài khoản**: `admin`
-- **Mật khẩu**: lấy từ `ADMIN_PASSWORD` lúc khởi tạo lần đầu (nếu không đặt: `Admin@123456`).
+- **Mật khẩu**: lấy từ `ADMIN_PASSWORD` lúc khởi tạo lần đầu. **Không còn giá trị mặc định** — để trống thì seed dừng (exit 1).
 
 > ⚠️ **Đổi mật khẩu admin ngay sau lần đăng nhập đầu tiên.** Bản hash của mật khẩu mặc định từng nằm trong `migrations/002_seed_data.sql` của repo nên phải coi như đã lộ.
 
