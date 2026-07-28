@@ -6,6 +6,11 @@ import {
   passwordRejectionMessage,
   validatePassword,
 } from '../server/utils/password-policy'
+import {
+  SEED_USERNAME,
+  evaluateAdminPassword,
+  parseEnvFile,
+} from '../scripts/check-admin-password'
 
 /**
  * These accounts publish to a Ministry of Public Security portal, create other
@@ -128,4 +133,103 @@ test('production refuses to boot on a weak ADMIN_PASSWORD', () => {
   const guard = read('server/plugins/require-secrets.ts')
   assert.match(guard, /ADMIN_PASSWORD/)
   assert.match(guard, /passwordRejectionMessage/)
+})
+
+// ─── The build-time guard ────────────────────────────────────────────────────
+/**
+ * Both enforcement points above run *after* a build has already succeeded, so a
+ * bad ADMIN_PASSWORD used to cost a full `nuxt build` before anyone found out.
+ * The build guard reads the same policy and runs first.
+ */
+test('an invalid password stops the build, a valid one lets it through', () => {
+  const bad = evaluateAdminPassword({ processValue: 'Admin@conduonghuongthien2026' })
+  assert.equal(bad.status, 'invalid', 'the value that broke the production deploy was accepted')
+  assert.ok(bad.status === 'invalid' && bad.errors.some(e => /chứa tên đăng nhập/.test(e)))
+
+  assert.equal(evaluateAdminPassword({ processValue: 'Xy7#mQp2Lv8Ns' }).status, 'ok')
+})
+
+test('the policy is applied against the account the seed actually creates', () => {
+  // Checking against some other username would let "Admin@..." through here and
+  // fail later in the seed — the exact split this guard exists to close.
+  assert.equal(SEED_USERNAME, 'admin')
+  const source = read('server/db/seed.ts')
+  assert.match(source, /username: 'admin'/, 'the seed no longer creates "admin"; the guard checks the wrong name')
+})
+
+test('an absent password warns instead of failing the build', () => {
+  // CI and the Docker builder stage have no .env at all (.dockerignore excludes
+  // it). Seed is insert-only, so an existing deployment has no reason to keep the
+  // password around either. Failing those builds would be noise, not safety.
+  assert.equal(evaluateAdminPassword({ processValue: '', envFileText: null }).status, 'absent')
+  assert.equal(evaluateAdminPassword({ processValue: '   ', envFileText: '' }).status, 'absent')
+  assert.equal(evaluateAdminPassword({ envFileText: 'PORT=3000\n' }).status, 'absent')
+})
+
+test('the value is read from .env, since a plain build has no env var set', () => {
+  const verdict = evaluateAdminPassword({
+    envFileText: '# comment\nPORT=3000\nADMIN_PASSWORD=Admin@conduonghuongthien2026\n',
+  })
+  assert.equal(verdict.status, 'invalid', '.env was not consulted, so the guard would miss the real mistake')
+})
+
+test('an env var wins over .env, matching what the app will see at runtime', () => {
+  // Reporting a verdict on a value the deployment will not use is worse than not
+  // checking: it says "ok" about the wrong password.
+  const verdict = evaluateAdminPassword({
+    processValue: 'Xy7#mQp2Lv8Ns',
+    envFileText: 'ADMIN_PASSWORD=admin\n',
+  })
+  assert.equal(verdict.status, 'ok')
+})
+
+test('a secret file is read, because the Docker build has no .env', () => {
+  const verdict = evaluateAdminPassword({ secretValue: 'Admin@conduonghuongthien2026\n' })
+  assert.equal(verdict.status, 'invalid', 'the BuildKit secret path skips the check entirely')
+  // Secret files almost always end in a newline; it is not part of the password.
+  assert.equal(evaluateAdminPassword({ secretValue: 'Xy7#mQp2Lv8Ns\n' }).status, 'ok')
+})
+
+test('the .env reader handles quoting the way a password needs it', () => {
+  // A generated password can contain '#'. Stripping it as a comment would check a
+  // different string than the one the seed will hash.
+  assert.equal(parseEnvFile('ADMIN_PASSWORD="Xy7#mQp2 Lv8Ns"').ADMIN_PASSWORD, 'Xy7#mQp2 Lv8Ns')
+  assert.equal(parseEnvFile("ADMIN_PASSWORD='Xy7#mQp2Lv8Ns'").ADMIN_PASSWORD, 'Xy7#mQp2Lv8Ns')
+  // A '#' only starts a comment when whitespace precedes it, so an unquoted
+  // password keeps its '#' — the common case, and the one that matters.
+  assert.equal(parseEnvFile('ADMIN_PASSWORD=Xy7#mQp2Lv8Ns').ADMIN_PASSWORD, 'Xy7#mQp2Lv8Ns')
+  assert.equal(parseEnvFile('ADMIN_PASSWORD=Xy7mQp2Lv8Ns  # note').ADMIN_PASSWORD, 'Xy7mQp2Lv8Ns')
+  assert.equal(parseEnvFile('export ADMIN_PASSWORD=Xy7#mQp2Lv8Ns').ADMIN_PASSWORD, 'Xy7#mQp2Lv8Ns')
+  // Base64 output from `openssl rand -base64 18` ends in '=' and must survive.
+  assert.equal(parseEnvFile('ADMIN_PASSWORD=c24Y0E3MBfywyQuR/ZPw=').ADMIN_PASSWORD, 'c24Y0E3MBfywyQuR/ZPw=')
+})
+
+test('the guard is wired into npm run build, not merely available', () => {
+  const pkg = JSON.parse(read('package.json'))
+  assert.match(pkg.scripts.build, /check:admin-password/, 'npm run build skips the guard')
+  assert.match(pkg.scripts.build, /check:admin-password.*&&.*nuxt build/, 'the guard must run BEFORE the build')
+  assert.ok(pkg.scripts['check:admin-password'], 'no way to run the check on its own')
+})
+
+test('the Docker build runs the guard, and via a secret rather than a build arg', () => {
+  const dockerfile = read('Dockerfile')
+  assert.match(dockerfile, /--mount=type=secret,id=admin_password/, 'the Docker build skips the guard')
+  assert.match(dockerfile, /ADMIN_PASSWORD_FILE=\/run\/secrets\/admin_password npm run check:admin-password/)
+  // A build ARG is recorded in `docker history` for the life of the image.
+  assert.doesNotMatch(dockerfile, /ARG ADMIN_PASSWORD/, 'the password is baked into the image history')
+  // The guard is worthless if it runs after the expensive step.
+  const guardAt = dockerfile.indexOf('check:admin-password')
+  const buildAt = dockerfile.indexOf('nuxi build')
+  assert.ok(guardAt !== -1 && buildAt !== -1 && guardAt < buildAt, 'the guard runs after nuxi build')
+})
+
+test('compose passes ADMIN_PASSWORD to the build as a secret', () => {
+  const compose = read('docker-compose.yml')
+  // Comment lines sit between these keys, so match the declaration, not a layout.
+  assert.match(compose, /^secrets:$/m, 'no top-level secrets block')
+  assert.match(compose, /^ {2}admin_password:$/m, 'the admin_password secret is not declared')
+  assert.match(compose, /^ {4}environment: ADMIN_PASSWORD$/m, 'the secret is not sourced from ADMIN_PASSWORD')
+  // Nested under app.build, so eight spaces — not under app itself (six), which
+  // would mount it at RUNTIME and leave the build unchecked.
+  assert.match(compose, /^ {8}- admin_password$/m, 'the app build never receives the secret')
 })
