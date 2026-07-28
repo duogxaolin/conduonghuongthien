@@ -40,7 +40,15 @@ services:
           memory: ${MYSQL_MEM_LIMIT:-1g}
 
   app:
-    build: .
+    build:
+      context: .
+      # The build stage checks ADMIN_PASSWORD against the password policy before
+      # spending minutes on `nuxi build`. It arrives as a BuildKit secret, not a
+      # build arg: a build arg is recorded in `docker history` forever.
+      # Mounted with required=false, so a build with no ADMIN_PASSWORD set still
+      # works — the check simply reports "absent" and lets the build through.
+      secrets:
+        - admin_password
     container_name: cdkt_app
     restart: always
     ports:
@@ -85,3 +93,10 @@ services:
 volumes:
   mysql_data:
   uploads_data:
+
+secrets:
+  # Sourced from the environment (i.e. the .env next to this file), so the value
+  # never lands in the build context or an image layer. Compose tolerates it
+  # being unset; the Dockerfile mounts it with required=false to match.
+  admin_password:
+    environment: ADMIN_PASSWORD
