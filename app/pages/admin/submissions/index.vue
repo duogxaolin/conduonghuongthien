@@ -46,6 +46,33 @@ const extraAnswers = (sub: any): Array<{ label: string; value: string }> => {
 
 const fmtDate = (v: any) => (v ? new Date(v).toLocaleString('vi-VN') : '—')
 
+// ─── Bulk selection ───────────────────────────────────────────────────────────
+const selection = useBulkSelection()
+const bulk = useBulkAction(selection)
+
+// Search filters client-side here, so the selectable set is the filtered list —
+// a row the operator cannot currently see must not be in the lot.
+const visibleIds = computed(() => filteredSubmissions.value.map((s: any) => Number(s.id)))
+
+// Selection survives typing in the search box but drops rows the filter hid, so
+// narrowing the search can never widen what a delete would touch. This also
+// covers the reload after a delete, when the removed rows leave the list.
+watch(visibleIds, (ids) => selection.keepOnly(ids))
+
+const bulkDelete = () => bulk.run({
+  url: '/api/admin/submissions/bulk-delete',
+  noun: 'đơn đăng ký',
+  confirm: {
+    title: 'Xóa đơn đăng ký',
+    // Spelled out because this is citizens' contact data and there is no archive
+    // to fall back on — the row is gone from the database.
+    message: `Xóa ${selection.count.value} đơn đăng ký đã chọn? Thông tin liên hệ của người dân sẽ bị xóa vĩnh viễn và không thể phục hồi.`,
+    danger: true,
+    confirmLabel: 'Xóa',
+  },
+  reload: fetchSubmissions,
+})
+
 onMounted(() => { fetchSubmissions() })
 </script>
 
@@ -67,15 +94,44 @@ onMounted(() => { fetchSubmissions() })
       />
     </div>
 
+    <!-- Bulk action bar -->
+    <AdminBulkActionBar
+      v-if="selection.count.value"
+      :count="selection.count.value"
+      :busy="bulk.busy.value"
+      noun="đơn đăng ký"
+      @clear="selection.clear()"
+    >
+      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+    </AdminBulkActionBar>
+
     <!-- Table Card -->
     <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
       <div v-if="loading" class="p-10 text-center text-[#667768]">Đang tải danh sách...</div>
 
       <!-- Mobile Card View -->
       <div v-else class="md:hidden divide-y divide-[#eef2ee]">
-        <div v-for="s in filteredSubmissions" :key="'m-'+s.id" class="p-4" @click="selectedSub = s">
+        <div
+          v-for="s in filteredSubmissions"
+          :key="'m-'+s.id"
+          class="p-4"
+          :class="selection.isSelected(Number(s.id)) ? 'bg-[#f0f7f1]' : ''"
+          @click="selectedSub = s"
+        >
           <div class="flex items-center justify-between mb-1">
-            <span class="font-bold text-[#122815] text-[0.9rem]">{{ s.fullName || 'Không tên' }}</span>
+            <span class="flex min-w-0 items-center gap-2">
+              <!-- .stop: the whole card opens the detail modal, and ticking a box
+                   must not also open it. -->
+              <input
+                type="checkbox"
+                class="h-4 w-4 shrink-0 accent-[#2c6e33]"
+                :checked="selection.isSelected(Number(s.id))"
+                :aria-label="`Chọn đơn của ${s.fullName || 'người gửi không tên'}`"
+                @click.stop
+                @change="selection.toggle(Number(s.id))"
+              />
+              <span class="truncate font-bold text-[#122815] text-[0.9rem]">{{ s.fullName || 'Không tên' }}</span>
+            </span>
             <span class="text-[0.72rem] text-[#667768]">{{ fmtDate(s.createdAt) }}</span>
           </div>
           <div class="flex flex-wrap items-center gap-2 text-[0.8rem] text-[#445546]">
@@ -92,6 +148,16 @@ onMounted(() => { fetchSubmissions() })
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
+              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-[#e2ece3]">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-[#2c6e33]"
+                  :checked="selection.allSelected(visibleIds)"
+                  :indeterminate="selection.someSelected(visibleIds)"
+                  aria-label="Chọn tất cả đơn đăng ký đang hiển thị"
+                  @change="selection.toggleAll(visibleIds)"
+                />
+              </th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">ID</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Họ và tên</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Số điện thoại</th>
@@ -102,7 +168,21 @@ onMounted(() => { fetchSubmissions() })
             </tr>
           </thead>
           <tbody>
-            <tr v-for="s in filteredSubmissions" :key="s.id" class="hover:bg-[#fafcfa]">
+            <tr
+              v-for="s in filteredSubmissions"
+              :key="s.id"
+              class="hover:bg-[#fafcfa]"
+              :class="selection.isSelected(Number(s.id)) ? 'bg-[#f0f7f1]' : ''"
+            >
+              <td class="px-4 py-3.5 border-b border-[#eef2ee]">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-[#2c6e33]"
+                  :checked="selection.isSelected(Number(s.id))"
+                  :aria-label="`Chọn đơn của ${s.fullName || 'người gửi không tên'}`"
+                  @change="selection.toggle(Number(s.id))"
+                />
+              </td>
               <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#667768]">#{{ s.id }}</td>
               <td class="px-4 py-3.5 border-b border-[#eef2ee] font-bold text-[#122815]">{{ s.fullName || '—' }}</td>
               <td class="px-4 py-3.5 border-b border-[#eef2ee]"><code class="bg-[#f4f7f4] px-1.5 py-0.5 rounded text-xs">{{ s.phone || '—' }}</code></td>

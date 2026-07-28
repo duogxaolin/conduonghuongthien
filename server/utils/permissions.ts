@@ -21,7 +21,25 @@ const ACTION_FLAGS = [
   ['canCreate', 'create'], ['canRead', 'read'], ['canUpdate', 'update'], ['canDelete', 'delete'],
 ] as const
 
-type ActorLike = { id?: number; isSuperAdmin?: boolean | null; permissions?: Array<{ resource: string; canCreate: boolean | null; canRead: boolean | null; canUpdate: boolean | null; canDelete: boolean | null }> | null }
+/**
+ * The shape every admin handler already has on `event.context.adminUser`.
+ * Exported so the delete/update services can take an actor without each one
+ * restating this structural type — seven private copies would drift.
+ */
+export type ActorLike = { id?: number; isSuperAdmin?: boolean | null; permissions?: Array<{ resource: string; canCreate: boolean | null; canRead: boolean | null; canUpdate: boolean | null; canDelete: boolean | null }> | null }
+
+/**
+ * Throw 403 unless the actor holds `action` on `resource`.
+ *
+ * The shared services call this instead of inlining the `checkPermission` +
+ * `createError` pair, so a bulk route cannot accidentally omit the check for
+ * rows it processes after the first.
+ */
+export function requireResourcePermission(actor: ActorLike, resource: string, action: 'create' | 'read' | 'update' | 'delete'): void {
+  if (!checkPermission(actor?.permissions || [], resource, action, actor?.isSuperAdmin === true)) {
+    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
+  }
+}
 
 /**
  * Guard against privilege escalation when writing role permissions: every
