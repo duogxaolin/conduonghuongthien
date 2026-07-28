@@ -1,6 +1,7 @@
 import type { ChatbotSettings } from '../../db/schema'
 import { encryptChatbotSecret } from './crypto'
 import { normalizeProviderUrl } from './outbound'
+import { CHATBOT_PROVIDER_POLICIES } from './providers'
 
 export const CHATBOT_SETTINGS_ID = 1
 export const CHATBOT_DEFAULTS = Object.freeze({
@@ -60,7 +61,10 @@ export function validateChatbotSettingsUpdate(input: ChatbotSettingsUpdate): Cha
     try { normalizeProviderUrl(input.baseUrl, { allowedHosts: input.allowedHosts }) }
     catch { throw new ChatbotSettingsValidationError('Provider URL is not approved') }
   }
-  if (input.providerPolicy != null && (typeof input.providerPolicy !== 'string' || !/^[a-z0-9-]{1,64}$/u.test(input.providerPolicy))) throw new ChatbotSettingsValidationError('Invalid provider policy')
+  // A closed set now that the value selects a real request adapter. Legacy rows
+  // holding some other label still LOAD (resolveProviderPolicy treats anything
+  // unknown as openai-compatible); only writing a new unknown value is refused.
+  if (input.providerPolicy != null && !(CHATBOT_PROVIDER_POLICIES as readonly string[]).includes(input.providerPolicy)) throw new ChatbotSettingsValidationError(`providerPolicy must be one of: ${CHATBOT_PROVIDER_POLICIES.join(', ')}`)
   if (input.allowedHosts != null && (!Array.isArray(input.allowedHosts) || input.allowedHosts.length > 20 || input.allowedHosts.some(host => typeof host !== 'string' || host.length > 253))) throw new ChatbotSettingsValidationError('Invalid allowed host list')
   if (input.mode !== undefined && !(CHATBOT_MODES as readonly string[]).includes(input.mode as string)) throw new ChatbotSettingsValidationError('mode must be one of: ai, knowledge')
   if (input.outOfScopeBehavior !== undefined && !(CHATBOT_OUT_OF_SCOPE as readonly string[]).includes(input.outOfScopeBehavior as string)) throw new ChatbotSettingsValidationError('outOfScopeBehavior must be one of: knowledge_only, ai_freeform')

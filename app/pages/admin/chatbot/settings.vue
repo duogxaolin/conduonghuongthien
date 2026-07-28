@@ -23,6 +23,8 @@ type EditableSettings = {
   rateLimitWindowSeconds: number
 }
 
+type ProviderPreset = { label: string, baseUrl: string, host: string, model: string, hint: string }
+
 type SettingsMetadata = {
   systemPromptConfigured: boolean
   systemPromptLength: number
@@ -60,6 +62,27 @@ const DEFAULT_FORM: EditableSettings = {
   rateLimitWindowSeconds: 60,
 }
 
+/**
+ * Fallback presets. The server sends the authoritative list in the GET response;
+ * these keep the selector usable if that field is ever absent (older server).
+ */
+const FALLBACK_PRESETS: Record<string, ProviderPreset> = {
+  'openai-compatible': {
+    label: 'OpenAI (và các API tương thích OpenAI)',
+    baseUrl: 'https://api.openai.com/v1',
+    host: 'api.openai.com',
+    model: 'gpt-4o-mini',
+    hint: 'Dùng cho OpenAI hoặc bất kỳ dịch vụ nói cùng giao thức /chat/completions.',
+  },
+  anthropic: {
+    label: 'Anthropic Claude',
+    baseUrl: 'https://api.anthropic.com',
+    host: 'api.anthropic.com',
+    model: 'claude-opus-5',
+    hint: 'Dùng Messages API của Anthropic.',
+  },
+}
+
 const toast = useToast()
 const { confirm } = useConfirm()
 const loading = ref(true)
@@ -79,7 +102,17 @@ const metadata = reactive<SettingsMetadata>({
   hasApiKey: false,
   apiKeyMasked: null,
 })
+/** Server-supplied defaults. Not secrets: the shipped prompt and the preset table. */
+const defaultSystemPrompt = ref('')
+const providerPresets = ref<Record<string, ProviderPreset>>({ ...FALLBACK_PRESETS })
 const baseline = ref('')
+
+const usingAi = computed(() => form.mode === 'ai')
+const presetList = computed(() => Object.entries(providerPresets.value))
+const activePreset = computed(() => providerPresets.value[form.providerPolicy] || null)
+const promptMatchesDefault = computed(
+  () => systemPromptReplacement.value.trim() === defaultSystemPrompt.value.trim(),
+)
 
 function editableSnapshot() {
   return JSON.stringify({
@@ -116,6 +149,23 @@ function readNumber(value: unknown, fallback: number) {
   return typeof value === 'number' && Number.isFinite(value) ? value : fallback
 }
 
+function readPresets(value: unknown): Record<string, ProviderPreset> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return { ...FALLBACK_PRESETS }
+  const result: Record<string, ProviderPreset> = {}
+  for (const [key, preset] of Object.entries(value as Record<string, unknown>)) {
+    if (!preset || typeof preset !== 'object') continue
+    const entry = preset as Record<string, unknown>
+    result[key] = {
+      label: readString(entry.label, key),
+      baseUrl: readString(entry.baseUrl, ''),
+      host: readString(entry.host, ''),
+      model: readString(entry.model, ''),
+      hint: readString(entry.hint, ''),
+    }
+  }
+  return Object.keys(result).length ? result : { ...FALLBACK_PRESETS }
+}
+
 function applySettingsResponse(value: SettingsResponse) {
   form.enabled = readBoolean(value.enabled, DEFAULT_FORM.enabled)
   form.providerPolicy = readString(value.providerPolicy, DEFAULT_FORM.providerPolicy)
@@ -143,9 +193,35 @@ function applySettingsResponse(value: SettingsResponse) {
   metadata.systemPromptLength = typeof value.systemPromptLength === 'number' ? value.systemPromptLength : 0
   metadata.hasApiKey = value.hasApiKey === true
   metadata.apiKeyMasked = typeof value.apiKeyMasked === 'string' ? value.apiKeyMasked : null
+  defaultSystemPrompt.value = readString(value.defaultSystemPrompt, '')
+  providerPresets.value = readPresets(value.providerPresets)
   newApiKey.value = ''
-  systemPromptReplacement.value = ''
+  // An unconfigured deployment starts from the shipped prompt, so saving once
+  // stores a governed instruction instead of leaving the field empty. A stored
+  // prompt is never echoed back, so the box stays empty and means "keep".
+  systemPromptReplacement.value = metadata.systemPromptConfigured ? '' : defaultSystemPrompt.value
   keyVisible.value = false
+}
+
+/** Put the shipped prompt back in the box. Saving is still an explicit action. */
+function restoreDefaultPrompt() {
+  systemPromptReplacement.value = defaultSystemPrompt.value
+}
+
+/**
+ * Fill provider fields from the preset when switching policy, without clobbering
+ * anything the operator typed themselves: a value is replaced only when it is
+ * empty or still equal to the previous policy's preset.
+ */
+function applyProviderPreset(previousPolicy: string) {
+  const preset = providerPresets.value[form.providerPolicy]
+  if (!preset) return
+  const previous = providerPresets.value[previousPolicy]
+
+  if (!form.baseUrl.trim() || form.baseUrl.trim() === previous?.baseUrl) form.baseUrl = preset.baseUrl
+  if (!form.model.trim() || form.model.trim() === previous?.model) form.model = preset.model
+  const hosts = normalizedHosts(form.allowedHosts)
+  if (hosts.length === 0 || (hosts.length === 1 && hosts[0] === previous?.host)) form.allowedHosts = preset.host
 }
 
 function buildPatchPayload(): SettingsPatch {
@@ -266,6 +342,9 @@ async function testConnection() {
 watch(form, markDirty, { deep: true })
 watch(newApiKey, markDirty)
 watch(systemPromptReplacement, markDirty)
+watch(() => form.providerPolicy, (_, previous) => {
+  if (previous) applyProviderPreset(previous)
+})
 onBeforeRouteLeave(() => {
   if (dirty.value) toast.warning('Bạn có thay đổi chưa lưu trong cài đặt chatbot.')
 })
@@ -297,18 +376,23 @@ onMounted(load)
           <p class="m-0 mt-1 text-sm text-[#667768]">Chọn cách trợ lý trả lời người dùng.</p>
         </div>
 
+        <label class="flex items-center gap-3 text-sm font-semibold">
+          <input v-model="form.enabled" type="checkbox" class="h-4 w-4 accent-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/30" />
+          Bật chatbot cho người dùng
+        </label>
+
         <div class="grid gap-3 sm:grid-cols-2">
           <label class="flex cursor-pointer flex-col gap-1 rounded-lg border p-3 transition-colors" :class="form.mode === 'knowledge' ? 'border-[#2c6e33] bg-[#f0f7f1]' : 'border-[#c8d6c9] hover:bg-[#f8faf8]'">
             <span class="flex items-center gap-2 text-sm font-bold text-[#122815]"><input type="radio" value="knowledge" v-model="form.mode" class="h-4 w-4 accent-[#2c6e33]" /> Chỉ kho kiến thức (không AI)</span>
-            <span class="pl-6 text-xs text-[#667768]">Trả lời vui vẻ dựa trên câu trả lời đã duyệt trong Kho kiến thức, khớp theo từ khoá. Không gọi AI.</span>
+            <span class="pl-6 text-xs text-[#667768]">Trả lời vui vẻ dựa trên câu trả lời đã duyệt trong Kho kiến thức, khớp theo từ khoá. Không gọi AI, không cần API key.</span>
           </label>
           <label class="flex cursor-pointer flex-col gap-1 rounded-lg border p-3 transition-colors" :class="form.mode === 'ai' ? 'border-[#2c6e33] bg-[#f0f7f1]' : 'border-[#c8d6c9] hover:bg-[#f8faf8]'">
             <span class="flex items-center gap-2 text-sm font-bold text-[#122815]"><input type="radio" value="ai" v-model="form.mode" class="h-4 w-4 accent-[#2c6e33]" /> Dùng AI</span>
-            <span class="pl-6 text-xs text-[#667768]">AI + system prompt, ưu tiên dữ liệu trong Kho kiến thức. Cần cấu hình Nhà cung cấp bên dưới.</span>
+            <span class="pl-6 text-xs text-[#667768]">AI + system prompt, ưu tiên dữ liệu trong Kho kiến thức. Mở thêm mục Nhà cung cấp và Chỉ dẫn bên dưới.</span>
           </label>
         </div>
 
-        <label v-if="form.mode === 'ai'" class="flex flex-col gap-1.5 text-sm font-bold">
+        <label v-if="usingAi" class="flex flex-col gap-1.5 text-sm font-bold">
           Khi câu hỏi nằm ngoài Kho kiến thức
           <select v-model="form.outOfScopeBehavior" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20">
             <option value="knowledge_only">Chỉ bám Kho kiến thức + mời để lại thông tin (an toàn)</option>
@@ -339,28 +423,28 @@ onMounted(load)
         </div>
       </section>
 
-      <section class="grid grid-cols-1 gap-5 xl:grid-cols-2">
+      <!-- Provider + system prompt: only meaningful once AI answering is chosen. -->
+      <section v-if="usingAi" class="grid grid-cols-1 gap-5 xl:grid-cols-2">
         <div class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-5">
           <h2 class="m-0 text-base font-extrabold text-[#122815]">Nhà cung cấp</h2>
 
-          <label class="flex items-center gap-3 text-sm font-semibold">
-            <input v-model="form.enabled" type="checkbox" class="h-4 w-4 accent-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/30" />
-            Bật chatbot cho người dùng
-          </label>
-
           <label class="flex flex-col gap-1.5 text-sm font-bold">
             Chính sách nhà cung cấp
-            <input v-model="form.providerPolicy" required autocomplete="off" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+            <select v-model="form.providerPolicy" required class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20">
+              <option v-for="[key, preset] in presetList" :key="key" :value="key">{{ preset.label }}</option>
+            </select>
+            <span v-if="activePreset" class="font-normal text-[#667768]">{{ activePreset.hint }}</span>
           </label>
 
           <label class="flex flex-col gap-1.5 text-sm font-bold">
             Base URL
-            <input v-model="form.baseUrl" type="url" :required="form.mode === 'ai'" autocomplete="url" placeholder="https://provider.example/v1" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+            <span class="font-normal text-[#667768]">Sửa được, để trỏ sang cổng trung gian hoặc bản tự triển khai.</span>
+            <input v-model="form.baseUrl" type="url" :required="usingAi" autocomplete="url" :placeholder="activePreset?.baseUrl || 'https://provider.example/v1'" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
           </label>
 
           <label class="flex flex-col gap-1.5 text-sm font-bold">
             Model
-            <input v-model="form.model" :required="form.mode === 'ai'" autocomplete="off" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+            <input v-model="form.model" :required="usingAi" autocomplete="off" :placeholder="activePreset?.model || ''" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
           </label>
 
           <div class="flex flex-col gap-1.5">
@@ -382,21 +466,8 @@ onMounted(load)
 
           <label class="flex flex-col gap-1.5 text-sm font-bold">
             Hostname được phép
-            <span class="font-normal text-[#667768]">Mỗi hostname một dòng, tối đa 20 hostname.</span>
+            <span class="font-normal text-[#667768]">Mỗi hostname một dòng, tối đa 20 hostname. Yêu cầu ra ngoài chỉ đi tới các host trong danh sách này.</span>
             <textarea v-model="form.allowedHosts" rows="3" autocomplete="off" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"></textarea>
-          </label>
-        </div>
-
-        <div class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-5">
-          <h2 class="m-0 text-base font-extrabold text-[#122815]">Chỉ dẫn và giới hạn</h2>
-
-          <div class="rounded-lg border border-[#d7e5d8] bg-[#f0f7f1] p-3 text-sm text-[#38553b]" role="status">
-            System prompt hiện tại: {{ metadata.systemPromptConfigured ? `đã cấu hình (${metadata.systemPromptLength} ký tự)` : 'chưa cấu hình' }}. Nội dung đã lưu không được hiển thị lại.
-          </div>
-          <label class="flex flex-col gap-1.5 text-sm font-bold">
-            Thay thế system prompt
-            <span class="font-normal text-[#667768]">Để trống để giữ nguyên prompt hiện tại. Chỉ nội dung mới bạn nhập mới được gửi.</span>
-            <textarea v-model="systemPromptReplacement" rows="7" maxlength="20000" autocomplete="off" placeholder="Nhập prompt mới khi bạn muốn thay thế" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"></textarea>
           </label>
 
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -408,37 +479,67 @@ onMounted(load)
               Phản hồi tối đa (byte)
               <input v-model.number="form.maxResponseBytes" type="number" min="1024" max="1048576" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
             </label>
-            <label class="flex flex-col gap-1 text-sm font-bold">
-              Top K
-              <input v-model.number="form.retrievalTopK" type="number" min="1" max="10" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
-            </label>
-            <label class="flex flex-col gap-1 text-sm font-bold">
-              Ngân sách tham chiếu
-              <input v-model.number="form.referenceCharBudget" type="number" min="500" max="20000" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
-            </label>
-            <label class="flex flex-col gap-1 text-sm font-bold">
-              Giới hạn câu hỏi
-              <input v-model.number="form.maxInputChars" type="number" min="1" max="10000" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
-            </label>
-            <label class="flex flex-col gap-1 text-sm font-bold">
-              Số tin nhắn lịch sử
-              <input v-model.number="form.maxHistoryMessages" type="number" min="0" max="20" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
-            </label>
-            <label class="flex flex-col gap-1 text-sm font-bold">
-              Số lượt / cửa sổ
-              <input v-model.number="form.rateLimitRequests" type="number" min="1" max="100" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
-            </label>
-            <label class="flex flex-col gap-1 text-sm font-bold">
-              Cửa sổ rate limit (giây)
-              <input v-model.number="form.rateLimitWindowSeconds" type="number" min="10" max="3600" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
-            </label>
           </div>
+        </div>
+
+        <div class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-5">
+          <div class="flex flex-wrap items-start justify-between gap-2">
+            <h2 class="m-0 text-base font-extrabold text-[#122815]">Chỉ dẫn cho AI</h2>
+            <button type="button" :disabled="!defaultSystemPrompt || promptMatchesDefault" class="rounded-lg border border-[#c8d6c9] bg-white px-3 py-1.5 text-sm font-semibold text-[#2c3e2e] hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30 disabled:cursor-not-allowed disabled:opacity-60" @click="restoreDefaultPrompt">
+              Khôi phục mặc định
+            </button>
+          </div>
+
+          <div class="rounded-lg border border-[#d7e5d8] bg-[#f0f7f1] p-3 text-sm text-[#38553b]" role="status">
+            System prompt hiện tại: {{ metadata.systemPromptConfigured ? `đã cấu hình (${metadata.systemPromptLength} ký tự)` : 'chưa cấu hình — ô bên dưới đang điền sẵn mẫu mặc định, bấm Lưu để áp dụng' }}. Nội dung đã lưu không được hiển thị lại.
+          </div>
+          <label class="flex flex-col gap-1.5 text-sm font-bold">
+            Thay thế system prompt
+            <span class="font-normal text-[#667768]">Để trống để giữ nguyên prompt hiện tại. Chỉ nội dung mới bạn nhập mới được gửi.</span>
+            <textarea v-model="systemPromptReplacement" rows="16" maxlength="20000" autocomplete="off" placeholder="Nhập prompt mới khi bạn muốn thay thế" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"></textarea>
+            <span class="font-normal text-[#667768]">{{ systemPromptReplacement.length }}/20000 ký tự</span>
+          </label>
+        </div>
+      </section>
+
+      <!-- Safety limits apply to both modes, so they stay visible. -->
+      <section class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-5">
+        <div>
+          <h2 class="m-0 text-base font-extrabold text-[#122815]">Giới hạn an toàn</h2>
+          <p class="m-0 mt-1 text-sm text-[#667768]">Áp dụng cho cả hai chế độ trả lời.</p>
+        </div>
+
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          <label class="flex flex-col gap-1 text-sm font-bold">
+            Top K
+            <input v-model.number="form.retrievalTopK" type="number" min="1" max="10" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm font-bold">
+            Ngân sách tham chiếu
+            <input v-model.number="form.referenceCharBudget" type="number" min="500" max="20000" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm font-bold">
+            Giới hạn câu hỏi
+            <input v-model.number="form.maxInputChars" type="number" min="1" max="10000" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm font-bold">
+            Số tin nhắn lịch sử
+            <input v-model.number="form.maxHistoryMessages" type="number" min="0" max="20" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm font-bold">
+            Số lượt / cửa sổ
+            <input v-model.number="form.rateLimitRequests" type="number" min="1" max="100" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+          </label>
+          <label class="flex flex-col gap-1 text-sm font-bold">
+            Cửa sổ rate limit (giây)
+            <input v-model.number="form.rateLimitWindowSeconds" type="number" min="10" max="3600" step="1" required class="rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+          </label>
         </div>
       </section>
 
       <div v-if="testMessage" class="rounded-lg border border-[#8ed694] bg-[#f0f7f1] p-3 text-sm text-[#1e4620]" role="status">{{ testMessage }}</div>
       <div class="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
-        <button type="button" :disabled="testing || saving || clearingKey" class="rounded-lg border border-[#c8d6c9] bg-white px-4 py-2.5 font-bold text-[#2c3e2e] hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30 disabled:cursor-not-allowed disabled:opacity-60" @click="testConnection">
+        <button v-if="usingAi" type="button" :disabled="testing || saving || clearingKey" class="rounded-lg border border-[#c8d6c9] bg-white px-4 py-2.5 font-bold text-[#2c3e2e] hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30 disabled:cursor-not-allowed disabled:opacity-60" @click="testConnection">
           {{ testing ? 'Đang kiểm tra...' : 'Kiểm tra kết nối' }}
         </button>
         <button type="submit" :disabled="saving || clearingKey" class="rounded-lg bg-[#1e4620] px-5 py-2.5 font-bold text-white hover:bg-[#2c6e33] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/40 focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60">
