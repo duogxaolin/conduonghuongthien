@@ -3,7 +3,8 @@
   "type": "module",
   "private": true,
   "scripts": {
-    "build": "nuxt build",
+    "build": "npm run check:admin-password && nuxt build",
+    "check:admin-password": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/check-admin-password.ts",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",

@@ -53,6 +53,8 @@ NUXT_ANALYTICS_COLLECTION_ENABLED=true
 
 # Tài khoản quản trị đầu tiên — CHỈ dùng khi tạo tài khoản lần đầu.
 # Seed là insert-only nên các lần chạy sau KHÔNG ghi đè mật khẩu đã đổi.
+# KHÔNG được chứa chuỗi "admin" (tên đăng nhập). Dùng lệnh sinh dưới đây thay vì
+# tự đặt: build sẽ dừng ngay nếu mật khẩu không đạt chính sách.
 ADMIN_PASSWORD=$(openssl rand -base64 18)
 ADMIN_EMAIL=admin@conduonghuongthien.com.vn
 
@@ -342,4 +344,5 @@ docker restart cdkt_app
 | `Unknown column` errors | `docker restart cdkt_app` — `init.ts` tự thêm cột còn thiếu |
 | Upload ảnh lỗi sau khi nâng cấp | Chuyển quyền volume: xem **Bước 4b** |
 | App từ chối khởi động, log báo thiếu secret | Bổ sung secret còn thiếu vào `.env` (xem Bước 2) |
+| Build dừng: `ADMIN_PASSWORD ... không đạt chính sách mật khẩu` | Đặt lại `ADMIN_PASSWORD` trong `.env`: `openssl rand -base64 18`. Thường gặp nhất là mật khẩu chứa chuỗi `admin` (ví dụ `Admin@...`) — bị chặn vì đó là tên đăng nhập. Kiểm tra riêng bằng `npm run check:admin-password` |
 | Git "dubious ownership" | `git config --global --add safe.directory /path/to/repo` |

@@ -15,6 +15,14 @@ COPY . .
 ENV NODE_ENV=production
 ENV ANALYTICS_HMAC_SECRET=build-time-placeholder-not-used-at-runtime-32chars
 
+# Reject an ADMIN_PASSWORD the seed will refuse, BEFORE paying for the build.
+# `.env` is excluded from the build context (.dockerignore), so the value arrives
+# as a BuildKit secret: never written to a layer and absent from `docker history`.
+# `required=false` keeps builds that supply nothing working — the guard then warns
+# and passes, because on an existing deployment the admin account already exists.
+RUN --mount=type=secret,id=admin_password,required=false \
+    ADMIN_PASSWORD_FILE=/run/secrets/admin_password npm run check:admin-password
+
 RUN npx nuxi build
 
 # ─── Stage 2: Runtime ─────────────────────────────
