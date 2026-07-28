@@ -1,4 +1,6 @@
 import type { ChatbotKnowledge, ChatbotSettings } from '../../db/schema'
+import { DEFAULT_CHATBOT_SYSTEM_PROMPT } from './prompt-defaults'
+import { CHATBOT_PROVIDER_PRESETS, resolveProviderPolicy } from './providers'
 
 function hasCompleteEncryptedKey(settings: ChatbotSettings): boolean {
   return Boolean(
@@ -15,11 +17,16 @@ export function serializeChatbotSettings(settings: ChatbotSettings) {
   return {
     id: settings.id,
     enabled: settings.enabled,
-    providerPolicy: settings.providerPolicy,
+    providerPolicy: resolveProviderPolicy(settings.providerPolicy),
     baseUrl: settings.baseUrl,
     model: settings.model,
     systemPromptConfigured: Boolean(settings.systemPrompt?.trim()),
     systemPromptLength: settings.systemPrompt?.length ?? 0,
+    // The stored prompt stays hidden; the SHIPPED DEFAULT is not a secret, and
+    // the form needs it to pre-fill an unconfigured deployment and to power
+    // "restore default" without keeping a second copy of the text in the client.
+    defaultSystemPrompt: DEFAULT_CHATBOT_SYSTEM_PROMPT,
+    providerPresets: CHATBOT_PROVIDER_PRESETS,
     allowedHosts: settings.allowedHosts ?? [],
     mode: settings.mode ?? 'knowledge',
     outOfScopeBehavior: settings.outOfScopeBehavior ?? 'knowledge_only',
