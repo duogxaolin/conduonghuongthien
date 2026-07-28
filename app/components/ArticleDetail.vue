@@ -41,19 +41,61 @@
           <p>{{ article.excerpt }}</p>
         </div>
 
-        <div class="article-body text-[1.05rem] leading-[1.7] text-[#4A5545]">
-          <div v-if="article.thumbnailUrl" class="my-8 text-center">
-            <img
-              :src="article.thumbnailUrl"
-              :alt="article.title"
-              class="w-full max-h-[450px] object-cover rounded-lg shadow-sm"
-              loading="lazy"
-              decoding="async"
-            />
-          </div>
+        <div v-if="article.thumbnailUrl" class="my-8 text-center">
+          <img
+            :src="article.thumbnailUrl"
+            :alt="article.title"
+            class="w-full max-h-[450px] object-cover rounded-lg shadow-sm"
+            loading="lazy"
+            decoding="async"
+          />
+        </div>
 
-          <!-- eslint-disable-next-line vue/no-v-html — sanitised server-side by sanitizeHtml() on write -->
-          <div v-html="article.content"></div>
+        <!--
+          Mục lục tự động: chỉ hiện khi bài đủ dài để cần điều hướng.
+
+          Deliberately a sibling of .article-body, not a child: the heading rules
+          below are `.article-body :deep(h2)`, which would also claim this card's
+          own <h2> and beat its utility classes on specificity.
+        -->
+        <nav
+          v-if="toc.headings.length >= TOC_MIN_HEADINGS"
+          class="my-8 rounded-lg border border-[#E2E8DF] bg-white px-6 py-5 shadow-sm"
+          aria-labelledby="muc-luc-heading"
+        >
+          <div class="flex items-center justify-between gap-3">
+            <h2 id="muc-luc-heading" class="m-0 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
+              <i class="fa-solid fa-list-ul mr-2 text-[#7CB342]" aria-hidden="true"></i>Mục lục
+            </h2>
+            <button
+              type="button"
+              class="rounded px-2 py-1 text-[0.8rem] font-bold text-[#4A6741] transition hover:bg-[#F8FAF7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+              :aria-expanded="tocOpen"
+              aria-controls="muc-luc-list"
+              @click="tocOpen = !tocOpen"
+            >
+              {{ tocOpen ? 'Thu gọn' : 'Mở rộng' }}
+              <i :class="tocOpen ? 'fa-solid fa-chevron-up' : 'fa-solid fa-chevron-down'" class="ml-1" aria-hidden="true"></i>
+            </button>
+          </div>
+          <ol v-show="tocOpen" id="muc-luc-list" class="mt-4 mb-0 list-none space-y-1.5 pl-0">
+            <li
+              v-for="heading in toc.headings"
+              :key="heading.id"
+              :style="{ paddingLeft: `${(heading.level - 2) * 16}px` }"
+            >
+              <a
+                :href="`#${heading.id}`"
+                class="text-[0.95rem] font-semibold text-[#4A6741] no-underline transition hover:text-[#385130] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                :class="heading.level > 2 ? 'font-medium text-[0.9rem] text-[#5C6B55]' : ''"
+              >{{ heading.text }}</a>
+            </li>
+          </ol>
+        </nav>
+
+        <div class="article-body text-[1.05rem] leading-[1.7] text-[#4A5545]">
+          <!-- eslint-disable-next-line vue/no-v-html — sanitised server-side by sanitizeHtml() on write; buildToc only adds anchor ids -->
+          <div v-html="toc.html"></div>
         </div>
 
         <!-- Back link -->
@@ -86,8 +128,9 @@
  * through the `crumb` slot, which receives the resolved category label so the
  * crumb and the badge can never disagree.
  */
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
+import { buildToc, TOC_MIN_HEADINGS } from '~/utils/toc'
 
 const props = defineProps({
   /** Article slug (or id) to fetch. */
@@ -128,6 +171,14 @@ const categoryLabel = computed(() => {
 
 const formattedDate = computed(() => formatDateVN(article.value?.publishedAt || article.value?.createdAt))
 
+/**
+ * Outline + anchored body in one pass, so a list entry and its heading can never
+ * point at different ids. Recomputed with the article, which also covers the
+ * client-side navigation between two detail pages.
+ */
+const toc = computed(() => buildToc(article.value?.content))
+const tocOpen = ref(true)
+
 useSeoMeta({
   title: computed(() => (article.value ? `${article.value.title} | Con Đường Hướng Thiện` : props.seoFallbackTitle)),
   description: computed(() => article.value?.excerpt || props.seoFallbackDescription),
@@ -136,6 +187,25 @@ useSeoMeta({
 
 <style scoped>
 /* Retained for v-html deep content — not expressible with Tailwind utility classes */
+
+/* Anchor landing offset. The public header becomes `fixed` once the visitor
+   scrolls (see layouts/default.vue), so a bare #fragment jump puts the target
+   heading underneath it — the reader clicks a table-of-contents entry and lands
+   on the paragraph above the one they asked for. 130px clears the desktop
+   header, which is the taller of the two. */
+.article-body :deep(h2),
+.article-body :deep(h3),
+.article-body :deep(h4) { scroll-margin-top: 130px; }
+
+/* Article bodies had no heading rules at all, so an h2 written in the editor
+   rendered at the browser default inside otherwise styled prose. The outline
+   only exists once authors write headings, so they need to look deliberate.
+   Sizes match the richtext block (components/blocks/RichTextBlock.vue) — the
+   two render the same admin-authored HTML and should not disagree. */
+.article-body :deep(h2) { font-size: 1.5rem; font-weight: 800; color: #1E251C; margin: 2rem 0 0.8rem; }
+.article-body :deep(h3) { font-size: 1.2rem; font-weight: 800; color: #1E251C; margin: 1.6rem 0 0.6rem; }
+.article-body :deep(h4) { font-size: 1.05rem; font-weight: 700; color: #2b352a; margin: 1.3rem 0 0.5rem; }
+
 .article-body :deep(p) { font-size: 1.05rem; line-height: 1.7; color: #4A5545; margin-bottom: 20px; }
 .article-body :deep(blockquote) { background-color: #F8FAF7; border-left: 4px solid #4A6741; padding: 20px 24px; margin: 30px 0; font-style: italic; font-size: 1.1rem; color: #385130; }
 .article-body :deep(blockquote span) { display: block; font-size: 0.85rem; color: #7A8675; margin-top: 8px; font-weight: 700; font-style: normal; }

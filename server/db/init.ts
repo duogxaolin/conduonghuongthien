@@ -716,6 +716,49 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  // Multi-factor authentication — one row per (user, factor type). A factor is
+  // enabled by the existence of an 'active' row, so disabling deletes the row
+  // and its material rather than flagging it.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`user_mfa_factors\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`user_id\` INT NOT NULL,
+      \`factor_type\` ENUM('totp','email_otp','second_password') NOT NULL,
+      \`state\` ENUM('pending','active') NOT NULL DEFAULT 'pending',
+      \`secret_ciphertext\` TEXT NULL,
+      \`secret_nonce\` VARCHAR(64) NULL,
+      \`secret_auth_tag\` VARCHAR(64) NULL,
+      \`secret_version\` INT NULL,
+      \`secret_key_id\` VARCHAR(32) NULL,
+      \`password_hash\` VARCHAR(255) NULL,
+      \`pending_code_hash\` VARCHAR(255) NULL,
+      \`pending_code_expires_at\` DATETIME(3) NULL,
+      \`pending_code_attempts\` INT NOT NULL DEFAULT 0,
+      \`pending_expires_at\` DATETIME(3) NULL,
+      \`last_accepted_step\` BIGINT NULL,
+      \`last_used_at\` TIMESTAMP NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY \`user_factor_idx\` (\`user_id\`, \`factor_type\`),
+      CONSTRAINT \`fk_mfa_user\` FOREIGN KEY (\`user_id\`) REFERENCES \`users\` (\`id\`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // Recovery codes — one row per code so single-use consumption is a per-code
+  // fact. A regeneration writes a new batch_id, retiring the previous set.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`user_recovery_codes\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`user_id\` INT NOT NULL,
+      \`code_hash\` VARCHAR(255) NOT NULL,
+      \`batch_id\` VARCHAR(32) NOT NULL,
+      \`used_at\` TIMESTAMP NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      KEY \`recovery_user_batch_idx\` (\`user_id\`, \`batch_id\`),
+      CONSTRAINT \`fk_recovery_user\` FOREIGN KEY (\`user_id\`) REFERENCES \`users\` (\`id\`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
   // Submissions table
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`submissions\` (

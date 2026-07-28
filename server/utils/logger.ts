@@ -86,4 +86,14 @@ export const SECURITY_EVENTS = {
   sessionRevoked: 'auth.session_revoked',
   permissionDenied: 'auth.permission_denied',
   submissionThrottled: 'public.submission_rate_limited',
+  // Second-factor lifecycle. The failure and lockout events are the ones worth
+  // alerting on: they mean someone holds a valid password and is guessing codes.
+  mfaChallengeFailed: 'auth.mfa_challenge_failed',
+  mfaChallengeLocked: 'auth.mfa_challenge_locked',
+  mfaRecoveryCodeUsed: 'auth.mfa_recovery_code_used',
+  mfaFactorEnabled: 'auth.mfa_factor_enabled',
+  mfaFactorDisabled: 'auth.mfa_factor_disabled',
+  // Break-glass: a SuperAdmin stripping another account's factors.
+  mfaFactorsCleared: 'auth.mfa_factors_cleared',
+  passwordChanged: 'auth.password_changed',
 } as const
