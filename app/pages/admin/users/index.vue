@@ -25,6 +25,8 @@ const fetchUsers = async () => {
     ])
     if (uRes.ok) users.value = uRes.users
     if (rRes.ok) roles.value = rRes.roles
+    // Ids from the previous load are meaningless once the list changes.
+    selection.keepOnly(visibleIds.value)
   } catch (err: any) {
     errorMsg.value = err?.data?.statusMessage || 'Lỗi tải danh sách người dùng'
     toast.error(errorMsg.value)
@@ -93,6 +95,47 @@ const deleteUser = async (user: any) => {
   } catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể xóa người dùng') }
 }
 
+// ─── Bulk selection ───────────────────────────────────────────────────────────
+const selection = useBulkSelection()
+const bulk = useBulkAction(selection)
+const { user: currentUser } = useAdminAuth()
+
+/** Role ids the server refuses to touch, derived from the roles list already fetched. */
+const systemRoleIds = computed(() => new Set(roles.value.filter((r: any) => r.isSystem).map((r: any) => Number(r.id))))
+
+/**
+ * A row is selectable only if the server would actually act on it: not the
+ * SuperAdmin account, and not the operator's own. Offering a checkbox on a row
+ * that is guaranteed to come back as a failure is just a trap.
+ */
+const canSelect = (u: any) => !systemRoleIds.value.has(Number(u.roleId)) && Number(u.id) !== Number(currentUser.value?.id)
+const visibleIds = computed(() => users.value.filter(canSelect).map((u: any) => Number(u.id)))
+
+const bulkDelete = () => bulk.run({
+  url: '/api/admin/users/bulk-delete',
+  noun: 'tài khoản',
+  confirm: {
+    title: 'Xóa tài khoản',
+    message: `Xóa ${selection.count.value} tài khoản đã chọn? Thao tác không thể hoàn tác.`,
+    danger: true,
+    confirmLabel: 'Xóa',
+  },
+  reload: fetchUsers,
+})
+
+/** Locking is what "hide" means for an account: admin-auth re-reads isActive per request. */
+const bulkActive = (isActive: boolean) => bulk.run({
+  url: '/api/admin/users/bulk-active',
+  body: { isActive },
+  noun: 'tài khoản',
+  confirm: {
+    message: `${isActive ? 'Mở khóa' : 'Khóa'} ${selection.count.value} tài khoản đã chọn?`,
+    confirmLabel: isActive ? 'Mở khóa' : 'Khóa',
+    danger: !isActive,
+  },
+  reload: fetchUsers,
+})
+
 onMounted(() => { fetchUsers() })
 </script>
 
@@ -112,13 +155,36 @@ onMounted(() => { fetchUsers() })
       </button>
     </div>
 
+    <!-- Bulk action bar -->
+    <AdminBulkActionBar
+      v-if="selection.count.value"
+      :count="selection.count.value"
+      :busy="bulk.busy.value"
+      noun="tài khoản"
+      @clear="selection.clear()"
+    >
+      <button type="button" class="rounded-lg border border-[#b78103] bg-white px-3 py-2 text-sm font-bold text-[#765b00] hover:bg-white/70" @click="bulkActive(false)">Khóa (ẩn)</button>
+      <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="bulkActive(true)">Mở khóa</button>
+      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+    </AdminBulkActionBar>
+
     <!-- Table Card -->
     <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
       <!-- Mobile Card View -->
       <div class="md:hidden divide-y divide-[#eef2ee]">
-        <div v-for="u in users" :key="'m-'+u.id" class="p-4">
+        <div v-for="u in users" :key="'m-'+u.id" class="p-4" :class="selection.isSelected(Number(u.id)) ? 'bg-[#f0f7f1]' : ''">
           <div class="flex items-center justify-between mb-2">
             <div class="flex items-center gap-2">
+              <!-- No checkbox on a row the server would refuse: the SuperAdmin
+                   account and the operator's own. -->
+              <input
+                v-if="canSelect(u)"
+                type="checkbox"
+                class="h-4 w-4 shrink-0 accent-[#2c6e33]"
+                :checked="selection.isSelected(Number(u.id))"
+                :aria-label="`Chọn tài khoản ${u.username}`"
+                @change="selection.toggle(Number(u.id))"
+              />
               <span class="font-bold text-[#122815] text-[0.9rem]">{{ u.username }}</span>
               <span class="px-2 py-0.5 rounded-xl text-[0.68rem] font-bold capitalize" :class="u.roleName === 'superadmin' ? 'bg-[#ffebe9] text-[#d12420]' : u.roleName === 'editor' ? 'bg-[#e4f2e5] text-[#2c6e33]' : 'bg-[#eef2ee] text-[#556655]'">{{ u.roleName }}</span>
             </div>
@@ -143,6 +209,16 @@ onMounted(() => { fetchUsers() })
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
+              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-[#e2ece3]">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-[#2c6e33]"
+                  :checked="selection.allSelected(visibleIds)"
+                  :indeterminate="selection.someSelected(visibleIds)"
+                  aria-label="Chọn tất cả tài khoản có thể xử lý"
+                  @change="selection.toggleAll(visibleIds)"
+                />
+              </th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">ID</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Tên đăng nhập</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Email</th>
@@ -153,7 +229,22 @@ onMounted(() => { fetchUsers() })
             </tr>
           </thead>
           <tbody>
-            <tr v-for="u in users" :key="u.id" class="hover:bg-[#fafcfa]">
+            <tr
+              v-for="u in users"
+              :key="u.id"
+              class="hover:bg-[#fafcfa]"
+              :class="selection.isSelected(Number(u.id)) ? 'bg-[#f0f7f1]' : ''"
+            >
+              <td class="px-4 py-3.5 border-b border-[#eef2ee]">
+                <input
+                  v-if="canSelect(u)"
+                  type="checkbox"
+                  class="h-4 w-4 accent-[#2c6e33]"
+                  :checked="selection.isSelected(Number(u.id))"
+                  :aria-label="`Chọn tài khoản ${u.username}`"
+                  @change="selection.toggle(Number(u.id))"
+                />
+              </td>
               <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#667768]">#{{ u.id }}</td>
               <td class="px-4 py-3.5 border-b border-[#eef2ee] font-bold text-[#122815]">{{ u.username }}</td>
               <td class="px-4 py-3.5 border-b border-[#eef2ee] text-[#2c3e2e]">{{ u.email || '—' }}</td>

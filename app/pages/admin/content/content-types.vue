@@ -51,7 +51,10 @@ const fetchTypes = async () => {
   loading.value = true
   try {
     const res = await $fetch('/api/admin/content-types')
-    if (res.ok) types.value = res.items
+    if (res.ok) {
+      types.value = res.items
+      selection.keepOnly(visibleIds.value)
+    }
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi tải thể loại')
   } finally {
@@ -139,6 +142,28 @@ const handleSave = async () => {
   }
 }
 
+// ─── Bulk selection ───────────────────────────────────────────────────────────
+const selection = useBulkSelection()
+const bulk = useBulkAction(selection)
+/**
+ * System types back fixed public pages and can never be deleted, so they get no
+ * checkbox at all — offering one that always fails would be a worse UI than
+ * offering none.
+ */
+const visibleIds = computed(() => types.value.filter((ct: any) => !ct.isSystem).map((ct: any) => Number(ct.id)))
+
+const bulkDelete = () => bulk.run({
+  url: '/api/admin/content-types/bulk-delete',
+  noun: 'thể loại',
+  confirm: {
+    title: 'Xóa thể loại',
+    message: `Xóa ${selection.count.value} thể loại đã chọn? Thể loại còn danh mục hoặc bài viết sẽ bị bỏ qua.`,
+    danger: true,
+    confirmLabel: 'Xóa',
+  },
+  reload: () => fetchTypes(),
+})
+
 // ─── Delete ───────────────────────────────────────────────────────────────────
 const deleteType = async (ct: any) => {
   const ok = await confirm({ title: 'Xóa thể loại', message: `Bạn có chắc muốn xóa thể loại "${ct.name}"?`, danger: true, confirmLabel: 'Xóa' })
@@ -182,6 +207,16 @@ onMounted(() => {
         </button>
       </div>
     </div>
+
+    <AdminBulkActionBar
+      v-if="selection.count.value"
+      :count="selection.count.value"
+      :busy="bulk.busy.value"
+      noun="thể loại"
+      @clear="selection.clear()"
+    >
+      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+    </AdminBulkActionBar>
 
     <!-- Loading -->
     <div v-if="loading" class="bg-white rounded-xl border border-[#e2ece3] py-12 text-center text-[#667768]">
@@ -260,6 +295,16 @@ onMounted(() => {
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
+              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-[#e2ece3]">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-[#2c6e33]"
+                  :checked="selection.allSelected(visibleIds)"
+                  :indeterminate="selection.someSelected(visibleIds)"
+                  aria-label="Chọn tất cả thể loại có thể xóa"
+                  @change="selection.toggleAll(visibleIds)"
+                />
+              </th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3]">Thể loại</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Định danh (slug)</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Danh mục</th>
@@ -269,7 +314,25 @@ onMounted(() => {
             </tr>
           </thead>
           <tbody>
-            <tr v-for="ct in types" :key="ct.id" class="hover:bg-[#fafcfa]">
+            <tr
+              v-for="ct in types"
+              :key="ct.id"
+              class="hover:bg-[#fafcfa]"
+              :class="selection.isSelected(Number(ct.id)) ? 'bg-[#f0f7f1]' : ''"
+            >
+              <td class="px-4 py-3 border-b border-[#eef2ee]">
+                <!-- A system type can never be deleted, so it gets no checkbox: an
+                     operator should not be able to tick a row that is certain to
+                     come back as a failure. -->
+                <input
+                  v-if="!ct.isSystem"
+                  type="checkbox"
+                  class="h-4 w-4 accent-[#2c6e33]"
+                  :checked="selection.isSelected(Number(ct.id))"
+                  :aria-label="`Chọn thể loại ${ct.name}`"
+                  @change="selection.toggle(Number(ct.id))"
+                />
+              </td>
               <td class="px-4 py-3 border-b border-[#eef2ee]">
                 <div class="flex items-center gap-2.5">
                   <i :class="ct.icon || 'fa-solid fa-folder'" class="text-[#2c6e33] w-5 text-center"></i>
