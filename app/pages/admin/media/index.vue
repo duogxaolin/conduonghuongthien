@@ -24,6 +24,8 @@ const fetchMedia = async (page = 1) => {
     if (res.ok) {
       mediaItems.value = res.items
       pagination.value = res.pagination
+      // Ids from the previous page are meaningless once the grid changes.
+      selection.keepOnly(visibleIds.value)
     }
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi tải thư viện media')
@@ -68,6 +70,25 @@ const deleteMedia = async (item: any) => {
     toast.error(err?.data?.statusMessage || 'Lỗi xóa file')
   }
 }
+
+// ─── Bulk selection ───────────────────────────────────────────────────────────
+const selection = useBulkSelection()
+const bulk = useBulkAction(selection)
+const visibleIds = computed(() => mediaItems.value.map((m: any) => Number(m.id)))
+
+const bulkDelete = () => bulk.run({
+  url: '/api/admin/media/bulk-delete',
+  noun: 'tệp',
+  confirm: {
+    title: 'Xóa tệp',
+    // Worth spelling out: the file leaves storage too, so anything still linking
+    // to it from an article body will break.
+    message: `Xóa ${selection.count.value} tệp đã chọn? Tệp sẽ bị xóa khỏi kho lưu trữ và các liên kết đang dùng tệp này sẽ bị hỏng.`,
+    danger: true,
+    confirmLabel: 'Xóa',
+  },
+  reload: () => fetchMedia(pagination.value.page),
+})
 
 onMounted(() => { fetchMedia() })
 </script>
@@ -128,13 +149,52 @@ onMounted(() => { fetchMedia() })
       <p class="m-0 text-[0.9rem]">Chưa có file nào. Hãy tải lên file đầu tiên!</p>
     </div>
 
-    <div v-else class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
-      <div v-for="m in mediaItems" :key="m.id" class="bg-white border border-[#e2ece3] rounded-xl overflow-hidden flex flex-col">
+    <!-- Bulk action bar -->
+    <AdminBulkActionBar
+      v-if="selection.count.value"
+      :count="selection.count.value"
+      :busy="bulk.busy.value"
+      noun="tệp"
+      @clear="selection.clear()"
+    >
+      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+    </AdminBulkActionBar>
+
+    <!-- A grid has no header row to hang "select all" off, so it gets its own control. -->
+    <label v-if="!loading && mediaItems.length" class="flex w-fit items-center gap-2 text-sm font-semibold text-[#2c3e2e]">
+      <input
+        type="checkbox"
+        class="h-4 w-4 accent-[#2c6e33]"
+        :checked="selection.allSelected(visibleIds)"
+        :indeterminate="selection.someSelected(visibleIds)"
+        @change="selection.toggleAll(visibleIds)"
+      />
+      Chọn tất cả tệp trên trang
+    </label>
+
+    <div v-if="!loading && mediaItems.length" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
+      <div
+        v-for="m in mediaItems"
+        :key="m.id"
+        class="bg-white border rounded-xl overflow-hidden flex flex-col"
+        :class="selection.isSelected(Number(m.id)) ? 'border-[#2c6e33] ring-2 ring-[#2c6e33]/25' : 'border-[#e2ece3]'"
+      >
         <div class="h-[140px] bg-[#f8faf8] relative flex items-center justify-center">
           <img v-if="m.mimeType?.startsWith('image/')" :src="m.url" :alt="m.originalName" loading="lazy" class="w-full h-full object-cover" />
           <div v-else class="flex items-center justify-center">
             <i class="fa-regular fa-file-lines text-4xl text-[#9ca3af]"></i>
           </div>
+          <!-- Corner checkbox: this is a card grid, not a table, so there is no
+               row to put it in. White backing keeps it visible over any image. -->
+          <label class="absolute top-2 left-2 flex h-6 w-6 cursor-pointer items-center justify-center rounded bg-white/90 shadow">
+            <input
+              type="checkbox"
+              class="h-4 w-4 accent-[#2c6e33]"
+              :checked="selection.isSelected(Number(m.id))"
+              :aria-label="`Chọn tệp ${m.originalName}`"
+              @change="selection.toggle(Number(m.id))"
+            />
+          </label>
           <span
             class="absolute top-2 right-2 text-[0.65rem] font-bold px-1.5 py-0.5 rounded text-white"
             :class="m.provider === 'r2' ? 'bg-orange-500' : 'bg-black/60'"

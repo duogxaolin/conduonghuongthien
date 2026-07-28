@@ -81,6 +81,37 @@ function safeCodePoint(code: number): string {
   try { return String.fromCodePoint(code) } catch { return '' }
 }
 
+/**
+ * Excel cannot put a raw control character in sharedStrings, so it escapes them
+ * as `_xHHHH_` — an in-cell line break becomes `_x000A_`. A literal underscore
+ * that would otherwise start such a sequence is itself escaped as `_x005F_`.
+ *
+ * Decoded in ONE left-to-right pass so that ordering is honoured: `_x005F_x000A_`
+ * is the literal text "_x000A_", not a newline. Escapes other than CR/LF are
+ * left verbatim — this exists to preserve line structure, not to be a general
+ * unescaper.
+ */
+function decodeExcelEscapes(value: string): string {
+  return value.replace(/_x005F_|_x([0-9A-Fa-f]{4})_/g, (match, hex?: string) => {
+    if (!hex) return '_'
+    const code = Number.parseInt(hex, 16)
+    if (code === 10) return '\n'
+    if (code === 13) return ''
+    return match
+  })
+}
+
+/**
+ * A cell's text with its line structure intact.
+ *
+ * Excel writes an in-cell break as a literal LF, as `&#10;`, or as `_x000A_`;
+ * all three must survive as `\n`. Only the outer edges are trimmed — collapsing
+ * the interior is what turned a numbered answer into a single run-on line.
+ */
+function normalizeCellText(value: string): string {
+  return decodeExcelEscapes(value).replace(/\r\n?/gu, '\n').trim()
+}
+
 /** Concatenate every <t>…</t> run inside a fragment (handles <si> and <is>). */
 function collectText(fragment: string): string {
   let out = ''
@@ -121,18 +152,27 @@ export function readXlsxGrid(buf: Buffer): SheetGrid {
 
   const grid: SheetGrid = []
   const rowRe = /<row[^>]*>([\s\S]*?)<\/row>/g
-  const cellRe = /<c r="([A-Z]+)\d+"([^>]*)>([\s\S]*?)<\/c>|<c r="([A-Z]+)\d+"([^>]*)\/>/g
+  /**
+   * The attribute run is LAZY and the two endings are one alternation, so a
+   * self-closing `<c r="A3"/>` cannot be read as an open tag.
+   *
+   * The previous form — `…"([^>]*)>([\s\S]*?)<\/c>|…"([^>]*)\/>` — let `[^>]*`
+   * consume the `/` of a self-closing cell; the first branch then matched and its
+   * lazy body ran on to the NEXT `</c>`, swallowing every cell in between. Any
+   * row with a blank cell before a populated one silently lost that cell, which
+   * is how continuation rows arrived empty.
+   */
+  const cellRe = /<c r="([A-Z]+)\d+"([^>]*?)(?:\/>|>([\s\S]*?)<\/c>)/g
   let rowMatch: RegExpExecArray | null
   while ((rowMatch = rowRe.exec(sheetXml))) {
     const cells: string[] = []
     let cellMatch: RegExpExecArray | null
     cellRe.lastIndex = 0
     while ((cellMatch = cellRe.exec(rowMatch[1] ?? ''))) {
-      // One branch of the alternation matches, so exactly one of the two column
-      // groups is present; an empty string would index to -1, which no cell uses.
-      const col = cellMatch[1] || cellMatch[4] || ''
-      const attrs = cellMatch[2] || cellMatch[5] || ''
-      const inner = cellMatch[3] || ''
+      const col = cellMatch[1] ?? ''
+      const attrs = cellMatch[2] ?? ''
+      // Absent for a self-closing cell, which carries no value.
+      const inner = cellMatch[3] ?? ''
       const ci = columnToIndex(col)
       const type = /t="([^"]+)"/.exec(attrs)?.[1]
       let value = ''
@@ -145,7 +185,7 @@ export function readXlsxGrid(buf: Buffer): SheetGrid {
         const raw = /<v>([\s\S]*?)<\/v>/.exec(inner)?.[1]
         value = raw ? xmlUnescape(raw) : ''
       }
-      cells[ci] = value.trim()
+      cells[ci] = normalizeCellText(value)
     }
     for (let i = 0; i < cells.length; i++) if (cells[i] === undefined) cells[i] = ''
     grid.push(cells)
@@ -169,11 +209,11 @@ export function readCsvGrid(buf: Buffer): SheetGrid {
       } else field += ch
     } else if (ch === '"') inQuotes = true
     else if (ch === ',') { row.push(field); field = '' }
-    else if (ch === '\n') { row.push(field); grid.push(row.map(c => c.trim())); row = []; field = '' }
+    else if (ch === '\n') { row.push(field); grid.push(row.map(normalizeCellText)); row = []; field = '' }
     else if (ch === '\r') { /* ignore, handled by \n */ }
     else field += ch
   }
-  if (field.length || row.length) { row.push(field); grid.push(row.map(c => c.trim())) }
+  if (field.length || row.length) { row.push(field); grid.push(row.map(normalizeCellText)) }
   return grid.filter(r => r.some(c => c !== ''))
 }
 
@@ -203,14 +243,32 @@ export function gridToQaRows(grid: SheetGrid): QaRow[] {
   const out: QaRow[] = []
   for (let i = start; i < grid.length; i++) {
     const r = grid[i] ?? []
-    const question = (r[qCol] || '').replace(/\s+/g, ' ').trim()
+    // A question is one logical line however the author wrapped it; an answer
+    // keeps its own line structure, because numbered steps depend on it.
+    const question = (r[qCol] || '').replace(/\s+/gu, ' ').trim()
     const answer = (r[aCol] || '').trim()
-    if (!question || !answer) continue
+    const note = nCol >= 0 ? (r[nCol] || '').trim() : ''
+
+    // A long answer is routinely typed across several spreadsheet rows, with the
+    // question cell left blank on every row after the first. Those rows are the
+    // REST of the preceding answer — dropping them (which is what this loop used
+    // to do) truncated the entry at its lead-in line, e.g. "…như sau:" with the
+    // enumeration that followed silently gone.
+    if (!question) {
+      const previous = out[out.length - 1]
+      if (previous && answer) {
+        previous.answer = `${previous.answer}\n${answer}`
+        if (note && !previous.note) previous.note = note
+      }
+      continue
+    }
+    if (!answer) continue
+
     out.push({
       stt: sCol >= 0 ? (r[sCol] || '').trim() : String(out.length + 1),
       question,
       answer,
-      note: nCol >= 0 ? (r[nCol] || '').trim() : '',
+      note,
     })
   }
   return out

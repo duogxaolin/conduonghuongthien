@@ -83,7 +83,10 @@ const fetchCategories = async () => {
   loading.value = true
   try {
     const res = await $fetch('/api/admin/categories')
-    if (res.ok) categories.value = res.items
+    if (res.ok) {
+      categories.value = res.items
+      selection.keepOnly(visibleIds.value)
+    }
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi tải danh mục')
   } finally {
@@ -154,6 +157,34 @@ const handleSave = async () => {
   }
 }
 
+// ─── Bulk selection ───────────────────────────────────────────────────────────
+const selection = useBulkSelection()
+const bulk = useBulkAction(selection)
+/**
+ * Flattened over BOTH levels: the table renders a root row followed by its child
+ * rows, so a header checkbox that only covered roots would look like "select all"
+ * while leaving every child untouched.
+ */
+const visibleIds = computed(() => tree.value.flatMap(root => [Number(root.id), ...root.children.map((c: any) => Number(c.id))]))
+
+/**
+ * A parent is refused while it still has children, so selecting a parent and its
+ * children together works only because runBulk is sequential: the children are
+ * deleted first when they sort earlier, and otherwise the parent is reported as
+ * blocked and stays ticked for a second pass.
+ */
+const bulkDelete = () => bulk.run({
+  url: '/api/admin/categories/bulk-delete',
+  noun: 'danh mục',
+  confirm: {
+    title: 'Xóa danh mục',
+    message: `Xóa ${selection.count.value} danh mục đã chọn? Danh mục còn danh mục con hoặc còn bài viết sẽ bị bỏ qua.`,
+    danger: true,
+    confirmLabel: 'Xóa',
+  },
+  reload: () => fetchCategories(),
+})
+
 // ─── Delete ───────────────────────────────────────────────────────────────────
 const deleteCategory = async (cat: any) => {
   const ok = await confirm({ title: 'Xóa danh mục', message: `Bạn có chắc muốn xóa danh mục "${cat.name}"?`, danger: true, confirmLabel: 'Xóa' })
@@ -189,6 +220,16 @@ onMounted(() => {
       </button>
     </div>
 
+    <AdminBulkActionBar
+      v-if="selection.count.value"
+      :count="selection.count.value"
+      :busy="bulk.busy.value"
+      noun="danh mục"
+      @clear="selection.clear()"
+    >
+      <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+    </AdminBulkActionBar>
+
     <!-- Loading -->
     <div v-if="loading" class="bg-white rounded-xl border border-[#e2ece3] py-12 text-center text-[#667768]">
       Đang tải danh mục...
@@ -211,8 +252,15 @@ onMounted(() => {
       <!-- Mobile Card View -->
       <div class="md:hidden divide-y divide-[#eef2ee]">
         <template v-for="root in tree" :key="'m-'+root.id">
-          <div class="p-4">
+          <div class="p-4" :class="selection.isSelected(Number(root.id)) ? 'bg-[#f0f7f1]' : ''">
             <div class="flex items-center gap-2 mb-1">
+              <input
+                type="checkbox"
+                class="h-4 w-4 shrink-0 accent-[#2c6e33]"
+                :checked="selection.isSelected(Number(root.id))"
+                :aria-label="`Chọn danh mục ${root.name}`"
+                @change="selection.toggle(Number(root.id))"
+              />
               <i class="fa-solid fa-folder text-[#2c6e33]"></i>
               <span class="font-bold text-[#122815] text-[0.9rem]">{{ root.name }}</span>
               <span class="text-[0.68rem] bg-[#f0f7f1] text-[#2c6e33] px-1.5 py-0.5 rounded font-semibold">{{ root.children.length }} con</span>
@@ -230,6 +278,13 @@ onMounted(() => {
             <div v-if="root.children.length" class="mt-3 ml-4 border-l-2 border-[#e2ece3] pl-3 space-y-2">
               <div v-for="child in root.children" :key="'mc-'+child.id" class="flex items-center justify-between">
                 <div class="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 shrink-0 accent-[#2c6e33]"
+                    :checked="selection.isSelected(Number(child.id))"
+                    :aria-label="`Chọn danh mục ${child.name}`"
+                    @change="selection.toggle(Number(child.id))"
+                  />
                   <i class="fa-regular fa-folder text-[#8ed694] text-xs"></i>
                   <span class="text-[0.82rem] text-[#2c3e2e]">{{ child.name }}</span>
                 </div>
@@ -248,6 +303,16 @@ onMounted(() => {
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
+              <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-[#e2ece3]">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-[#2c6e33]"
+                  :checked="selection.allSelected(visibleIds)"
+                  :indeterminate="selection.someSelected(visibleIds)"
+                  aria-label="Chọn tất cả danh mục"
+                  @change="selection.toggleAll(visibleIds)"
+                />
+              </th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3]">Tên danh mục</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Slug</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Loại</th>
@@ -258,7 +323,16 @@ onMounted(() => {
           <tbody>
             <template v-for="root in tree" :key="root.id">
               <!-- Root row -->
-              <tr class="hover:bg-[#fafcfa] bg-[#f8faf8]/60">
+              <tr class="hover:bg-[#fafcfa]" :class="selection.isSelected(Number(root.id)) ? 'bg-[#f0f7f1]' : 'bg-[#f8faf8]/60'">
+                <td class="px-4 py-3 border-b border-[#eef2ee]">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 accent-[#2c6e33]"
+                    :checked="selection.isSelected(Number(root.id))"
+                    :aria-label="`Chọn danh mục ${root.name}`"
+                    @change="selection.toggle(Number(root.id))"
+                  />
+                </td>
                 <td class="px-4 py-3 border-b border-[#eef2ee]">
                   <div class="flex items-center gap-2">
                     <i class="fa-solid fa-folder text-[#2c6e33]"></i>
@@ -297,7 +371,21 @@ onMounted(() => {
                 </td>
               </tr>
               <!-- Child rows -->
-              <tr v-for="child in root.children" :key="child.id" class="hover:bg-[#fafcfa]">
+              <tr
+                v-for="child in root.children"
+                :key="child.id"
+                class="hover:bg-[#fafcfa]"
+                :class="selection.isSelected(Number(child.id)) ? 'bg-[#f0f7f1]' : ''"
+              >
+                <td class="px-4 py-3 border-b border-[#eef2ee]">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 accent-[#2c6e33]"
+                    :checked="selection.isSelected(Number(child.id))"
+                    :aria-label="`Chọn danh mục ${child.name}`"
+                    @change="selection.toggle(Number(child.id))"
+                  />
+                </td>
                 <td class="px-4 py-3 border-b border-[#eef2ee]">
                   <div class="flex items-center gap-2 pl-8">
                     <i class="fa-regular fa-folder text-[#8ed694]"></i>
