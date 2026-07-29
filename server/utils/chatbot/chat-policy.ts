@@ -5,6 +5,7 @@ import type { SafeProviderRequestOptions, SafeProviderResponse } from './outboun
 import { retrieveKnowledge, type PublicKnowledgeReference, type RetrievalEntry } from './retrieval'
 import { CHATBOT_HOTLINE, DEFAULT_CHATBOT_SYSTEM_PROMPT } from './prompt-defaults'
 import { buildProviderChatCall, extractProviderAnswer } from './providers'
+import { selectSmallTalk, type SemanticSmallTalkProvider, type SmallTalkSemanticConfig } from './small-talk-semantic'
 import { classifySmallTalk, type SmallTalkContext, type SmallTalkEntry } from './small-talk'
 
 export const HOTLINE = CHATBOT_HOTLINE
@@ -19,6 +20,8 @@ export type ChatDependencies = {
   configuredSecret: (settings: ChatbotSettings) => string | null
   providerRequest: (options: SafeProviderRequestOptions) => Promise<SafeProviderResponse>
   retrieve?: typeof retrieveKnowledge
+  semanticSmallTalkProvider?: SemanticSmallTalkProvider | null
+  semanticSmallTalkConfig?: Partial<SmallTalkSemanticConfig>
 }
 
 const rateBuckets = new Map<string, number[]>()
@@ -100,10 +103,22 @@ async function smallTalkResult(settings: ChatbotSettings, dependencies: ChatDepe
     : ''
   const previousMatch = previous ? classifySmallTalk(entries, previous) : null
   const context: SmallTalkContext = previousMatch ? { previousIntent: previousMatch.intent } : {}
-  const match = classifySmallTalk(entries, query, context)
-  if (!match) return null
+  const selection = await selectSmallTalk({
+    businessReferences: [],
+    entries,
+    query,
+    ruleMatcher: (candidateEntries, value) => classifySmallTalk(candidateEntries, value, context),
+    semanticProvider: dependencies.semanticSmallTalkProvider,
+    semanticConfig: dependencies.semanticSmallTalkConfig,
+  })
+  if (!selection) return null
+
+  // The selector returns only a trusted ID/metadata tuple. Resolve the answer
+  // from the original DB row so a semantic provider can never supply content.
+  const matchedEntry = entries.find(entry => entry.id === selection.entryId)
+  if (!matchedEntry) return null
   const greeting = settings.knowledgeGreeting?.trim()
-  const answer = greeting && match.category !== 'social' ? `${greeting}\n\n${match.answer}` : match.answer
+  const answer = greeting && matchedEntry.category !== 'social' ? `${greeting}\n\n${matchedEntry.answer}` : matchedEntry.answer
   return { answer, sources: [], kind: 'small_talk' }
 }
 

@@ -118,7 +118,7 @@ function inferIntent(category: string, normalized: string, context: SmallTalkCon
   if (/^(?:xin chao|chao|hi|hello|alo|good morning|good afternoon|good evening)(?:$|\s)/u.test(normalized)) return 'greeting'
   if (/(?:^|\s)(?:cam on|biet on)(?:$|\s)/u.test(normalized)) return 'thanks'
   if (/^(?:bye|goodbye|tam biet|hen gap lai|toi di day|minh di nhe)(?:$|\s)/u.test(normalized)) return 'goodbye'
-  if (/^(?:hay|hay qua|tuyet|tuyet voi|gioi qua|tot|tot qua|qua tuyet|de thuong qua)(?:$|\s)/u.test(normalized)) return 'praise'
+  if (/^(?:hay|hay qua|tuyet|tuyet voi|gioi qua|tot|tot qua|qua tuyet|de thuong qua|lam tot lam)(?:$|\s)/u.test(normalized)) return 'praise'
   if (/(?:xin loi|cham qua|phan hoi cham|lam phien|phien qua|buc|kho chiu|khong hai long)/u.test(normalized)) return 'complaint'
   if (/^(?:ok|okay|oke|okey|uh|uhm|um|u|da|duoc|duoc roi|roi|vang|hieu roi|biet roi|ro roi|nam duoc roi)(?:$|\s)/u.test(normalized)) return 'acknowledgement'
 
@@ -141,21 +141,21 @@ function toMatch(entry: SmallTalkEntry): SmallTalkMatch {
  * of four characters or fewer only matches the entire message. In addition,
  * acknowledgement/thanks rows cannot capture a longer business-looking query.
  */
-export function matchSmallTalk(entries: SmallTalkEntry[], query: unknown): SmallTalkMatch | null {
+export function matchSmallTalk(entries: readonly SmallTalkEntry[], query: unknown): SmallTalkMatch | null {
   if (!Array.isArray(entries) || entries.length === 0 || typeof query !== 'string') return null
   const normalized = plain(query)
   if (!normalized || normalized.length > MAX_CHARS) return null
   const tokens = tokensOf(normalized)
   if (!tokens.length || tokens.length > MAX_TOKENS) return null
 
-  const prepared = entries
+  const prepared = [...entries]
     .filter(entry => entry.isEnabled)
     .map(entry => ({
       entry,
       patterns: (entry.patterns ?? [])
-        .map(pattern => plain(String(pattern)))
+        .map((pattern: string) => plain(String(pattern)))
         .filter(Boolean)
-        .map(text => ({ text, tokens: tokensOf(text) })),
+        .map((text: string) => ({ text, tokens: tokensOf(text) })),
       normalizedQuestionPlain: plain(entry.normalizedQuestion),
     }))
   if (!prepared.length) return null
@@ -167,7 +167,7 @@ export function matchSmallTalk(entries: SmallTalkEntry[], query: unknown): Small
 
   if (!selected) {
     selected = prepared
-      .filter(item => item.patterns.some(pattern => pattern.text === normalized))
+      .filter(item => item.patterns.some((pattern: { text: string }) => pattern.text === normalized))
       .map(item => item.entry)
       .sort(order)[0]
   }
@@ -200,7 +200,7 @@ export function matchSmallTalk(entries: SmallTalkEntry[], query: unknown): Small
 }
 
 /** Classify a turn and return the answer selected from the matched DB row. */
-export function classifySmallTalk(entries: SmallTalkEntry[], query: unknown, context: SmallTalkContext = {}): SmallTalkClassification | null {
+export function classifySmallTalk(entries: readonly SmallTalkEntry[], query: unknown, context: SmallTalkContext = {}): SmallTalkClassification | null {
   const match = matchSmallTalk(entries, query)
   if (!match || typeof query !== 'string') return null
   return { ...match, intent: inferIntent(match.category, plain(query), context) }

@@ -6,6 +6,7 @@ import type { RetrievalEntry } from './retrieval'
 import type { SmallTalkEntry } from './small-talk'
 import { safeProviderRequest } from './outbound'
 import { answerGroundedChat } from './chat-policy'
+import { getSmallTalkSemanticProvider, readSmallTalkSemanticConfig } from './small-talk-semantic'
 
 /**
  * Load every published knowledge entry together with its alias/keyword terms.
@@ -70,5 +71,7 @@ export async function answerChat(event: Parameters<typeof answerGroundedChat>[0]
     loadSmallTalkEntries,
     configuredSecret: configuredChatbotSecret,
     providerRequest: safeProviderRequest,
+    semanticSmallTalkProvider: getSmallTalkSemanticProvider(),
+    semanticSmallTalkConfig: readSmallTalkSemanticConfig(),
   })
 }

@@ -30,9 +30,9 @@ test('each of the five groups has at least 10 entries', () => {
 
 // ── patterns ──────────────────────────────────────────────────────────────────
 
-test('every entry ships 3-6 patterns, all diacritic-free lowercase', () => {
+test('every entry ships 3-7 patterns, all diacritic-free lowercase', () => {
   for (const entry of CHATBOT_SMALL_TALK_SEED) {
-    assert.ok(entry.patterns.length >= 3 && entry.patterns.length <= 6,
+    assert.ok(entry.patterns.length >= 3 && entry.patterns.length <= 7,
       `"${entry.question}" has ${entry.patterns.length} patterns`)
     for (const pattern of entry.patterns) {
       assert.equal(typeof pattern, 'string')

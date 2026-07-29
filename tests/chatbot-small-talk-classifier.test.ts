@@ -60,6 +60,11 @@ test('the shipped DB seed covers every required short intent', () => {
   }
 })
 
+test('legacy goodbye and praise aliases remain available', () => {
+  assert.equal(classifySmallTalk(seededEntries, 'mình đi nhé')?.intent, 'goodbye')
+  assert.equal(classifySmallTalk(seededEntries, 'làm tốt lắm')?.intent, 'praise')
+})
+
 test('hay is praise only as a short standalone phrase, never inside a longer sentence', () => {
   assert.equal(classifySmallTalk(entries, 'hay')?.intent, 'praise')
   assert.equal(classifySmallTalk(entries, 'hay quá')?.intent, 'praise')
