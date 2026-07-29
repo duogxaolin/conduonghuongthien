@@ -37,8 +37,8 @@ export const CHATBOT_SMALL_TALK_SEED: SmallTalkSeedEntry[] = [
   {
     category: 'social',
     question: 'Xin chào',
-    patterns: ['xin chao', 'chao ban', 'chao anh', 'chao chi', 'chao bot'],
-    answer: 'Xin chào anh/chị! Tôi là Trợ lý ảo Hướng Thiện. Tôi hỗ trợ thông tin về tái hòa nhập cộng đồng cho người hoàn lương. Anh/chị cần tôi giúp gì hôm nay ạ?',
+    patterns: ['xin chao', 'chao ban', 'chao anh', 'chao chi', 'hi', 'hello'],
+    answer: 'Xin chào anh/chị. Anh/chị cần tôi hỗ trợ thông tin gì?',
   },
   {
     category: 'social',
@@ -55,13 +55,13 @@ export const CHATBOT_SMALL_TALK_SEED: SmallTalkSeedEntry[] = [
   {
     category: 'social',
     question: 'Cảm ơn',
-    patterns: ['cam on', 'cam on ban', 'cam on nhieu', 'cam on nhe', 'da cam on'],
+    patterns: ['cam on', 'cam on ban', 'cam on nhieu', 'cam on nhe', 'da cam on', 'thanks'],
     answer: 'Dạ không có gì ạ. Anh/chị cần hỏi thêm điều gì về tái hòa nhập cộng đồng, cứ nhắn cho tôi nhé.',
   },
   {
     category: 'social',
     question: 'Tạm biệt',
-    patterns: ['tam biet', 'chao tam biet', 'hen gap lai', 'toi di day', 'minh di nhe'],
+    patterns: ['tam biet', 'chao tam biet', 'hen gap lai', 'toi di day', 'minh di nhe', 'bye', 'goodbye'],
     answer: `Cảm ơn anh/chị đã liên hệ. Chúc anh/chị nhiều sức khỏe và thuận lợi. Khi cần hỗ trợ, anh/chị có thể quay lại đây hoặc gọi đường dây nóng ${CHATBOT_HOTLINE}.`,
   },
   {
@@ -73,7 +73,7 @@ export const CHATBOT_SMALL_TALK_SEED: SmallTalkSeedEntry[] = [
   {
     category: 'social',
     question: 'Bạn giỏi quá',
-    patterns: ['ban gioi qua', 'hay qua', 'tuyet voi', 'lam tot lam', 'gioi that'],
+    patterns: ['ban gioi qua', 'hay', 'hay qua', 'tuyet', 'tuyet voi', 'lam tot lam', 'gioi that'],
     answer: 'Dạ, cảm ơn anh/chị đã động viên ạ. Tôi sẽ cố gắng hỗ trợ anh/chị tốt nhất trong phạm vi thông tin của Cổng thông tin.',
   },
   {
