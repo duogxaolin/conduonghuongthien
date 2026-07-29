@@ -38,8 +38,7 @@ const menuGroups = computed(() => [
       { label: 'Danh mục', icon: 'fa-solid fa-folder-tree', path: '/admin/content/categories' },
       { label: 'Bài viết & Bản tin', icon: 'fa-solid fa-newspaper', path: '/admin/content/articles' },
       { label: 'Thư viện Media', icon: 'fa-solid fa-images', path: '/admin/media' },
-      ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Kho kiến thức Chatbot', icon: 'fa-solid fa-book-open', path: '/admin/chatbot/knowledge' }] : []),
-      ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Trả lời thường nhật Chatbot', icon: 'fa-solid fa-comment-dots', path: '/admin/chatbot/small-talk' }] : []),
+      ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Kho nội dung Chatbot', icon: 'fa-solid fa-book-open', path: '/admin/chatbot/knowledge' }] : []),
     ]
   },
   {
