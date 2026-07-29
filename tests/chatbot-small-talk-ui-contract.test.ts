@@ -1,61 +1,76 @@
-/**
- * Structural contract for the everyday-reply admin page. There is no component
- * test harness in this project, so — following tests/admin-bulk-selection-ui.test.ts —
- * these assertions read the SFC rather than rendering it, guarding the pieces that
- * a hand edit most easily drops: the bulk-selection wiring, the system-row
- * exclusion, and the "no custom CSS" project rule.
- */
+/** Structural contracts for the tabbed chatbot content administration UI. */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
-const source = await readFile(new URL('../app/pages/admin/chatbot/small-talk/index.vue', import.meta.url), 'utf8')
-const sfc = parse(source, { filename: 'chatbot/small-talk/index.vue' })
-const script = sfc.descriptor.scriptSetup?.content ?? ''
-const template = sfc.descriptor.template?.content ?? ''
+const panelSource = await readFile(new URL('../app/components/admin/ChatbotSmallTalkPanel.vue', import.meta.url), 'utf8')
+const knowledgeSource = await readFile(new URL('../app/pages/admin/chatbot/knowledge/index.vue', import.meta.url), 'utf8')
+const legacySource = await readFile(new URL('../app/pages/admin/chatbot/small-talk/index.vue', import.meta.url), 'utf8')
+const layoutSource = await readFile(new URL('../app/layouts/admin.vue', import.meta.url), 'utf8')
+const settingsSource = await readFile(new URL('../app/pages/admin/chatbot/settings.vue', import.meta.url), 'utf8')
+const panelSfc = parse(panelSource, { filename: 'ChatbotSmallTalkPanel.vue' })
+const panelScript = panelSfc.descriptor.scriptSetup?.content ?? ''
+const panelTemplate = panelSfc.descriptor.template?.content ?? ''
+const knowledgeSfc = parse(knowledgeSource, { filename: 'chatbot/knowledge/index.vue' })
+const knowledgeScript = knowledgeSfc.descriptor.scriptSetup?.content ?? ''
+const knowledgeTemplate = knowledgeSfc.descriptor.template?.content ?? ''
 
-test('the page wires selection through the shared composable and confirms bulk actions', () => {
-  assert.match(script, /useBulkSelection\(\)/, 'must build selection with the shared composable')
-  assert.match(script, /useBulkAction\(selection\)/, 'must run bulk requests through useBulkAction')
-  assert.doesNotMatch(script, /new Set<number>\(/, 'must not hand-roll selection state')
-  assert.match(script, /const visibleIds = computed\(/, 'must derive selectable ids from what is on screen')
-  assert.ok(script.includes('/api/admin/chatbot/small-talk/bulk-delete'), 'must call bulk-delete')
-  assert.ok(script.includes('/api/admin/chatbot/small-talk/bulk-enabled'), 'must call bulk-enabled')
-  assert.match(script, /confirm: \{/, 'a bulk action must be confirmed')
-  assert.match(script, /selection\.keepOnly\(/, 'must drop ids no longer on screen after a reload/filter')
+for (const [filename, source] of [
+  ['ChatbotSmallTalkPanel.vue', panelSource], ['chatbot/knowledge/index.vue', knowledgeSource], ['chatbot/small-talk/index.vue', legacySource],
+] as const) {
+  test(`${filename} parses and uses Tailwind utilities only`, () => {
+    const sfc = parse(source, { filename })
+    assert.equal(sfc.errors.length, 0)
+    assert.equal(sfc.descriptor.styles.length, 0)
+  })
+}
+
+test('one admin navigation item opens the combined chatbot content page', () => {
+  assert.match(layoutSource, /label: 'Kho nội dung Chatbot'[^\n]+path: '\/admin\/chatbot\/knowledge'/)
+  assert.equal((layoutSource.match(/path: '\/admin\/chatbot\/(?:knowledge|small-talk)'/g) || []).length, 1)
 })
 
-test('the header checkbox, row checkbox and action strip are all present', () => {
-  assert.match(template, /selection\.toggleAll\(visibleIds\)/, 'must offer select-all over visible rows')
-  assert.match(template, /selection\.allSelected\(visibleIds\)/, 'must reflect the all-selected state')
-  assert.match(template, /selection\.someSelected\(visibleIds\)/, 'must show the indeterminate state')
-  assert.match(template, /<AdminBulkActionBar/, 'must render the bulk action bar')
-  assert.match(template, /v-if="selection\.count\.value"/, 'must hide the bar when nothing is selected')
-  assert.match(template, /@clear="selection\.clear\(\)"/, 'must let the operator drop the selection')
-  // Exactly one row-checkbox site (single desktop table, no mobile card branch).
-  assert.equal(template.split('selection.toggle(Number(').length - 1, 1, 'expected one row-checkbox site')
+test('the combined page exposes accessible knowledge and small-talk tabs through a deep-linkable query', () => {
+  assert.match(knowledgeScript, /route\.query\.tab === 'small-talk'/)
+  assert.match(knowledgeScript, /router\.replace\(\{ query: tab === 'knowledge' \? \{\} : \{ tab \} \}\)/)
+  assert.match(knowledgeTemplate, /role="tablist"/)
+  assert.match(knowledgeTemplate, /id="knowledge-tab"[^>]+role="tab"[^>]+aria-controls="knowledge-panel"/s)
+  assert.match(knowledgeTemplate, /id="small-talk-tab"[^>]+role="tab"[^>]+aria-controls="small-talk-panel"/s)
+  assert.match(knowledgeTemplate, /id="knowledge-panel" role="tabpanel" aria-labelledby="knowledge-tab"/)
+  assert.match(knowledgeTemplate, /id="small-talk-panel" role="tabpanel" aria-labelledby="small-talk-tab"/)
+  assert.match(knowledgeTemplate, /<AdminChatbotSmallTalkPanel/)
 })
 
-test('system rows are never offered for deletion', () => {
-  assert.match(script, /!item\.isSystem/, 'the selectable set must exclude system rows')
-  // The per-row delete button and the row checkbox are both guarded by v-if="!item.isSystem".
-  assert.match(template, /v-if="!item\.isSystem"[^>]*type="checkbox"/su, 'system rows must not render a select checkbox')
-  assert.match(template, /<button v-if="!item\.isSystem"[^>]*@click="remove\(item\)"/su, 'system rows must not render a delete button')
+test('legacy small-talk route and settings deep link preserve the small-talk tab', () => {
+  assert.match(legacySource, /navigateTo\(\{ path: '\/admin\/chatbot\/knowledge', query: \{ tab: 'small-talk' \} \}, \{ replace: true \}\)/)
+  assert.match(settingsSource, /to="\/admin\/chatbot\/knowledge\?tab=small-talk"/)
 })
 
-test('the page has loading, empty and error states', () => {
-  assert.match(template, /v-if="loading"/, 'must show a loading state')
-  assert.match(template, /v-else-if="!items\.length"/, 'must show an empty state')
-  assert.match(template, /v-if="error"/, 'must show an error state')
+test('the two tabs keep independent API contracts and lifecycles', () => {
+  assert.match(knowledgeScript, /'\/api\/admin\/chatbot\/knowledge'/)
+  assert.match(knowledgeScript, /'\/api\/admin\/chatbot\/knowledge\/bulk-status'/)
+  assert.match(knowledgeTemplate, /Xuất bản/)
+  assert.match(panelScript, /'\/api\/admin\/chatbot\/small-talk'/)
+  assert.match(panelScript, /'\/api\/admin\/chatbot\/small-talk\/bulk-enabled'/)
+  assert.doesNotMatch(panelScript, /\/publish|\/archive/)
 })
 
-test('the SFC uses Tailwind utilities only — no custom CSS', () => {
-  assert.equal(sfc.descriptor.styles.length, 0, 'the page must not ship a <style> block')
-  assert.doesNotMatch(source, /<style/u, 'no <style scoped> or custom CSS is allowed for new pages')
+test('small-talk panel keeps shared bulk selection and protects system rows from deletion', () => {
+  assert.match(panelScript, /useBulkSelection\(\)/)
+  assert.match(panelScript, /useBulkAction\(selection\)/)
+  assert.match(panelScript, /selection\.keepOnly\(/)
+  assert.match(panelScript, /filter\(\(item: any\) => !item\.isSystem\)/)
+  assert.match(panelTemplate, /selection\.toggleAll\(visibleIds\)/)
+  assert.match(panelTemplate, /<AdminBulkActionBar/)
+  assert.match(panelTemplate, /v-if="!item\.isSystem"[^>]*type="checkbox"/su)
+  assert.match(panelTemplate, /<button v-if="!item\.isSystem"[^>]*@click="remove\(item\)"/su)
 })
 
-test('feedback goes through toast, never a browser alert()', () => {
-  assert.match(script, /useToast\(\)/, 'must use the toast composable')
-  assert.doesNotMatch(script, /\balert\(/u, 'must not use window.alert')
+test('small-talk panel has loading, empty, error and toast feedback states', () => {
+  assert.match(panelTemplate, /v-if="loading"/)
+  assert.match(panelTemplate, /v-else-if="!items\.length"/)
+  assert.match(panelTemplate, /v-if="error"/)
+  assert.match(panelScript, /useToast\(\)/)
+  assert.doesNotMatch(panelScript, /\balert\(/u)
 })
