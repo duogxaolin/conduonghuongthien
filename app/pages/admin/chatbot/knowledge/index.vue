@@ -1,5 +1,8 @@
 <script setup lang="ts">
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
+const route = useRoute(); const router = useRouter()
+const activeTab = computed(() => route.query.tab === 'small-talk' ? 'small-talk' : 'knowledge')
+function selectTab(tab: 'knowledge' | 'small-talk') { return router.replace({ query: tab === 'knowledge' ? {} : { tab } }) }
 const toast = useToast(); const { confirm } = useConfirm(); const items = ref<any[]>([]); const loading = ref(true); const error = ref(''); const search = ref(''); const topic = ref(''); const status = ref(''); const pagination = ref({ page: 1, totalPages: 1, total: 0 }); const page = ref(1)
 const statusLabel: Record<string, string> = { draft: 'Bản nháp', published: 'Đã xuất bản', archived: 'Đã lưu trữ' }
 const statusTone: Record<string, string> = { draft: 'border-[#d8c99a] bg-[#fffaf0] text-[#765b00]', published: 'border-[#8ed694] bg-[#f0f7f1] text-[#1e4620]', archived: 'border-[#c8d6c9] bg-[#f4f7f4] text-[#667768]' }
@@ -68,7 +71,13 @@ watch([topic, status], () => load(1)); onMounted(() => load())
 </script>
 <template>
   <div class="flex flex-col gap-5">
-    <header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h1 class="m-0 text-[1.3rem] font-extrabold text-[#122815]">Kho kiến thức Chatbot</h1><p class="m-0 mt-1 text-sm text-[#667768]">Biên tập câu hỏi, câu trả lời và nguồn tham khảo đã được duyệt.</p></div><div class="flex flex-wrap gap-2"><button type="button" @click="showImport = true" class="inline-flex items-center justify-center gap-2 rounded-lg border border-[#2c6e33] px-4 py-2.5 font-bold text-[#2c6e33] hover:bg-[#f0f7f1]"><i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i> Nhập từ Excel</button><nuxt-link to="/admin/chatbot/knowledge/new" class="inline-flex items-center justify-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2.5 font-bold text-white no-underline hover:bg-[#2c6e33]">Tạo mục mới</nuxt-link></div></header>
+    <header><h1 class="m-0 text-[1.3rem] font-extrabold text-[#122815]">Kho nội dung Chatbot</h1><p class="m-0 mt-1 text-sm text-[#667768]">Quản lý riêng kho nghiệp vụ đã duyệt và kho trả lời thường nhật trên cùng một màn hình.</p></header>
+    <div class="flex overflow-x-auto rounded-xl border border-[#d7e5d8] bg-white p-1" role="tablist" aria-label="Chọn kho nội dung chatbot">
+      <button id="knowledge-tab" type="button" role="tab" :aria-selected="activeTab === 'knowledge'" aria-controls="knowledge-panel" class="min-w-max flex-1 rounded-lg px-4 py-3 text-sm font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30" :class="activeTab === 'knowledge' ? 'bg-[#1e4620] text-white' : 'text-[#38553b] hover:bg-[#f0f7f1]'" @click="selectTab('knowledge')"><i class="fa-solid fa-book-open mr-2" aria-hidden="true"></i>Kho nghiệp vụ</button>
+      <button id="small-talk-tab" type="button" role="tab" :aria-selected="activeTab === 'small-talk'" aria-controls="small-talk-panel" class="min-w-max flex-1 rounded-lg px-4 py-3 text-sm font-bold transition-colors focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30" :class="activeTab === 'small-talk' ? 'bg-[#1e4620] text-white' : 'text-[#38553b] hover:bg-[#f0f7f1]'" @click="selectTab('small-talk')"><i class="fa-solid fa-comment-dots mr-2" aria-hidden="true"></i>Trả lời thường nhật</button>
+    </div>
+    <section v-if="activeTab === 'knowledge'" id="knowledge-panel" role="tabpanel" aria-labelledby="knowledge-tab" class="flex flex-col gap-5">
+    <header class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between"><div><h2 class="m-0 text-lg font-extrabold text-[#122815]">Kho nghiệp vụ</h2><p class="m-0 mt-1 text-sm text-[#667768]">Biên tập câu hỏi, câu trả lời và nguồn tham khảo theo quy trình nháp, duyệt và xuất bản.</p></div><div class="flex flex-wrap gap-2"><button type="button" @click="showImport = true" class="inline-flex items-center justify-center gap-2 rounded-lg border border-[#2c6e33] px-4 py-2.5 font-bold text-[#2c6e33] hover:bg-[#f0f7f1]"><i class="fa-solid fa-file-arrow-up" aria-hidden="true"></i> Nhập từ Excel</button><nuxt-link to="/admin/chatbot/knowledge/new" class="inline-flex items-center justify-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2.5 font-bold text-white no-underline hover:bg-[#2c6e33]">Tạo mục mới</nuxt-link></div></header>
     <div class="flex flex-col gap-3 rounded-xl border border-[#e2ece3] bg-white p-4 sm:flex-row sm:flex-wrap"><label class="min-w-[220px] flex-1 text-sm font-bold">Tìm kiếm<input v-model="search" @keyup.enter="load(1)" type="search" placeholder="Câu hỏi, câu trả lời, từ khóa" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" /></label><label class="text-sm font-bold">Chủ đề<input v-model="topic" @keyup.enter="load(1)" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]" /></label><label class="text-sm font-bold">Trạng thái<select v-model="status" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33]"><option value="">Tất cả</option><option value="draft">Bản nháp</option><option value="published">Đã xuất bản</option><option value="archived">Đã lưu trữ</option></select></label><button type="button" class="self-end rounded-lg border border-[#c8d6c9] px-4 py-2.5 font-bold text-[#2c6e33]" @click="load(1)">Lọc</button></div>
     <AdminBulkActionBar v-if="selection.count.value" :count="selection.count.value" :busy="bulk.busy.value" noun="mục kiến thức" @clear="selection.clear()">
       <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="bulkStatus('published')">Xuất bản</button>
@@ -105,6 +114,10 @@ watch([topic, status], () => load(1)); onMounted(() => load())
           <button type="button" :disabled="importing || !importFile" class="rounded-lg bg-[#1e4620] px-5 py-2.5 font-bold text-white hover:bg-[#2c6e33] disabled:cursor-not-allowed disabled:opacity-60" @click="runImport">{{ importing ? 'Đang nhập...' : 'Nhập' }}</button>
         </div>
       </div>
+    </div>
+    </section>
+    <div v-else id="small-talk-panel" role="tabpanel" aria-labelledby="small-talk-tab">
+      <AdminChatbotSmallTalkPanel />
     </div>
   </div>
 </template>
