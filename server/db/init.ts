@@ -368,6 +368,9 @@ async function convergeChatbotSchema(db: Connection, database: string) {
   await ensureColumn(db, database, 'chatbot_settings', 'fallback_message', 'VARCHAR(1000) NULL')
   await ensureColumn(db, database, 'chatbot_settings', 'lead_capture_enabled', "TINYINT(1) NOT NULL DEFAULT 1")
   await ensureColumn(db, database, 'chatbot_settings', 'lead_capture_email', 'VARCHAR(255) NULL')
+  // Default ON: an existing deployment gains greeting replies without an admin
+  // visiting the settings page, which is the point of the feature.
+  await ensureColumn(db, database, 'chatbot_settings', 'small_talk_enabled', 'TINYINT(1) NOT NULL DEFAULT 1')
 
   await db.query('UPDATE `chatbot_settings` s LEFT JOIN `users` u ON u.`id` = s.`updated_by` SET s.`updated_by` = NULL WHERE s.`updated_by` IS NOT NULL AND u.`id` IS NULL')
   await db.query('UPDATE `chatbot_knowledge` k LEFT JOIN `users` u ON u.`id` = k.`author_id` SET k.`author_id` = NULL WHERE k.`author_id` IS NOT NULL AND u.`id` IS NULL')
@@ -798,6 +801,7 @@ export async function initDb() {
       \`fallback_message\` VARCHAR(1000) NULL,
       \`lead_capture_enabled\` TINYINT(1) NOT NULL DEFAULT 1,
       \`lead_capture_email\` VARCHAR(255) NULL,
+      \`small_talk_enabled\` TINYINT(1) NOT NULL DEFAULT 1,
       \`request_timeout_ms\` INT UNSIGNED NOT NULL DEFAULT 10000,
       \`max_response_bytes\` INT UNSIGNED NOT NULL DEFAULT 262144,
       \`max_input_chars\` INT UNSIGNED NOT NULL DEFAULT 2000,
@@ -860,6 +864,24 @@ export async function initDb() {
       UNIQUE KEY \`chatbot_terms_knowledge_kind_normalized_idx\` (\`knowledge_id\`, \`kind\`, \`normalized_value\`),
       KEY \`chatbot_terms_kind_normalized_knowledge_idx\` (\`kind\`, \`normalized_value\`, \`knowledge_id\`),
       CONSTRAINT \`fk_chatbot_terms_knowledge\` FOREIGN KEY (\`knowledge_id\`) REFERENCES \`chatbot_knowledge\` (\`id\`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`chatbot_small_talk\` (
+      \`id\` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      \`category\` VARCHAR(32) NOT NULL,
+      \`question\` VARCHAR(500) NOT NULL,
+      \`normalized_question\` VARCHAR(191) NOT NULL,
+      \`answer\` TEXT NOT NULL,
+      \`patterns\` JSON NULL,
+      \`is_enabled\` TINYINT(1) NOT NULL DEFAULT 1,
+      \`is_system\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`display_order\` INT NOT NULL DEFAULT 0,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY \`chatbot_small_talk_normalized_question_idx\` (\`normalized_question\`),
+      KEY \`chatbot_small_talk_enabled_category_id_idx\` (\`is_enabled\`, \`category\`, \`id\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 

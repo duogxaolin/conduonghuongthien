@@ -32,6 +32,34 @@ test('knowledge validation enforces canonical fields, terms, priority, and safe 
 test('ordinary create and update validation reject every lifecycle status injection', () => { for (const status of ['draft', 'published', 'archived']) { assert.throws(() => validateKnowledgeInput({ canonicalQuestion: 'Q', approvedAnswer: 'A', topic: 't', sourceReference: 'Law', status }), /status can only be changed through publish\/archive endpoints/); assert.throws(() => validateKnowledgeInput({ status }, true), /status can only be changed through publish\/archive endpoints/) } })
 test('create and update reject injected status before any database access', async () => { await assert.rejects(createKnowledge(1, { canonicalQuestion: 'Q', approvedAnswer: 'A', topic: 't', sourceReference: 'Law', status: 'published' }), ChatbotKnowledgeValidationError); await assert.rejects(updateKnowledge(1, 42, { status: 'archived' }), ChatbotKnowledgeValidationError) })
 
+// ─── Substring-match floor raised from 3 to 4 characters (small-talk prerequisite) ──
+// With the old threshold of 3, keyword "thủ" (search form "thu") matched token
+// "thức" ("thuc"), so an out-of-scope query fired on an unrelated legal entry,
+// references were non-empty, and the small-talk layer never ran.
+test('short single-syllable keywords no longer match longer unrelated tokens', () => {
+  const rows = [entry(1, {
+    canonicalQuestion: 'Thủ tục xóa án tích như thế nào?',
+    normalizedQuestion: 'thủ tục xóa án tích như thế nào?',
+    terms: [
+      { kind: 'keyword', value: 'thủ', normalizedValue: 'thủ' },
+      { kind: 'keyword', value: 'tục', normalizedValue: 'tục' },
+      { kind: 'keyword', value: 'xóa', normalizedValue: 'xóa' },
+      { kind: 'keyword', value: 'án', normalizedValue: 'án' },
+      { kind: 'keyword', value: 'tích', normalizedValue: 'tích' },
+    ] as any,
+  })]
+  assert.deepEqual(retrieveKnowledge(rows, 'cho tôi công thức nấu phở bò truyền thống', { topK: 3 }), [])
+})
+
+test('multi-character prefix keywords still match', () => {
+  const rows = [entry(1, {
+    canonicalQuestion: 'Cần chuẩn bị giấy tờ gì?',
+    normalizedQuestion: 'cần chuẩn bị giấy tờ gì?',
+    terms: [{ kind: 'keyword', value: 'giấy tờ', normalizedValue: 'giấy tờ' }] as any,
+  })]
+  assert.deepEqual(retrieveKnowledge(rows, 'tôi cần giấy tờ tùy thân nào', { topK: 3 }).map(item => item.id), [1])
+})
+
 // ─── CRITICAL 2 regression: Unicode-normalized term deduplication ──────────────
 
 test('full-width and ASCII Unicode-equivalent aliases collapse to one entry (first display form wins)', () => {

@@ -1,8 +1,9 @@
-import { eq, inArray } from 'drizzle-orm'
-import { chatbotKnowledge, chatbotKnowledgeTerms, type ChatbotSettings } from '../../db/schema'
+import { eq, inArray, asc } from 'drizzle-orm'
+import { chatbotKnowledge, chatbotKnowledgeTerms, chatbotSmallTalk, type ChatbotSettings } from '../../db/schema'
 import { getDb } from '../db'
 import { configuredChatbotSecret } from '../../services/chatbot-settings'
 import type { RetrievalEntry } from './retrieval'
+import type { SmallTalkEntry } from './small-talk'
 import { safeProviderRequest } from './outbound'
 import { answerGroundedChat } from './chat-policy'
 
@@ -39,9 +40,34 @@ async function publishedEntries(): Promise<RetrievalEntry[]> {
   return entries.map(entry => ({ ...entry, terms: termsByKnowledge.get(entry.id) || [] }))
 }
 
+/**
+ * Load the enabled everyday-reply rows for the small-talk matcher, projecting
+ * only the columns matching/answering needs. Called lazily by the policy — only
+ * when the approved bank matched nothing and the global switch is on — so a
+ * message the knowledge bank can answer never touches this table.
+ */
+async function loadSmallTalkEntries(): Promise<SmallTalkEntry[]> {
+  const db = getDb()
+  const rows = await db
+    .select({
+      id: chatbotSmallTalk.id,
+      category: chatbotSmallTalk.category,
+      answer: chatbotSmallTalk.answer,
+      patterns: chatbotSmallTalk.patterns,
+      normalizedQuestion: chatbotSmallTalk.normalizedQuestion,
+      isEnabled: chatbotSmallTalk.isEnabled,
+      displayOrder: chatbotSmallTalk.displayOrder,
+    })
+    .from(chatbotSmallTalk)
+    .where(eq(chatbotSmallTalk.isEnabled, true))
+    .orderBy(asc(chatbotSmallTalk.displayOrder), asc(chatbotSmallTalk.id))
+  return rows.map(row => ({ ...row, patterns: row.patterns ?? [] }))
+}
+
 export async function answerChat(event: Parameters<typeof answerGroundedChat>[0], settings: ChatbotSettings, messages: unknown) {
   return answerGroundedChat(event, settings, messages, {
     loadPublishedEntries: publishedEntries,
+    loadSmallTalkEntries,
     configuredSecret: configuredChatbotSecret,
     providerRequest: safeProviderRequest,
   })

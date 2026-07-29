@@ -10,6 +10,7 @@ export const CHATBOT_DEFAULTS = Object.freeze({
   mode: 'knowledge',
   outOfScopeBehavior: 'knowledge_only',
   leadCaptureEnabled: true,
+  smallTalkEnabled: true,
   requestTimeoutMs: 10_000,
   maxResponseBytes: 262_144,
   maxInputChars: 2_000,
@@ -26,7 +27,7 @@ export const CHATBOT_OUT_OF_SCOPE = ['knowledge_only', 'ai_freeform'] as const
 export type ChatbotSettingsUpdate = Partial<Pick<ChatbotSettings,
   | 'enabled' | 'providerPolicy' | 'baseUrl' | 'model' | 'systemPrompt' | 'allowedHosts'
   | 'mode' | 'outOfScopeBehavior' | 'knowledgeGreeting' | 'fallbackMessage'
-  | 'leadCaptureEnabled' | 'leadCaptureEmail'
+  | 'leadCaptureEnabled' | 'leadCaptureEmail' | 'smallTalkEnabled'
   | 'requestTimeoutMs' | 'maxResponseBytes' | 'maxInputChars' | 'maxHistoryMessages'
   | 'retrievalTopK' | 'referenceCharBudget' | 'rateLimitRequests' | 'rateLimitWindowSeconds'
 >> & { apiKey?: string }
@@ -69,6 +70,7 @@ export function validateChatbotSettingsUpdate(input: ChatbotSettingsUpdate): Cha
   if (input.mode !== undefined && !(CHATBOT_MODES as readonly string[]).includes(input.mode as string)) throw new ChatbotSettingsValidationError('mode must be one of: ai, knowledge')
   if (input.outOfScopeBehavior !== undefined && !(CHATBOT_OUT_OF_SCOPE as readonly string[]).includes(input.outOfScopeBehavior as string)) throw new ChatbotSettingsValidationError('outOfScopeBehavior must be one of: knowledge_only, ai_freeform')
   if (input.leadCaptureEnabled !== undefined && typeof input.leadCaptureEnabled !== 'boolean') throw new ChatbotSettingsValidationError('leadCaptureEnabled must be boolean')
+  if (input.smallTalkEnabled !== undefined && typeof input.smallTalkEnabled !== 'boolean') throw new ChatbotSettingsValidationError('smallTalkEnabled must be boolean')
   if (input.knowledgeGreeting != null && (typeof input.knowledgeGreeting !== 'string' || input.knowledgeGreeting.length > 500)) throw new ChatbotSettingsValidationError('Invalid knowledge greeting')
   if (input.fallbackMessage != null && (typeof input.fallbackMessage !== 'string' || input.fallbackMessage.length > 1000)) throw new ChatbotSettingsValidationError('Invalid fallback message')
   if (input.leadCaptureEmail != null && (typeof input.leadCaptureEmail !== 'string' || input.leadCaptureEmail.length > 255 || (input.leadCaptureEmail.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/u.test(input.leadCaptureEmail.trim())))) throw new ChatbotSettingsValidationError('Invalid lead capture email')

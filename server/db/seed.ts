@@ -1,8 +1,10 @@
 import { getDb } from '../utils/db'
 import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings, chatbotSettings, categories, contentTypes, pages, pageBlocks } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks } from '../db/schema'
 import { eq, asc, sql } from 'drizzle-orm'
+import { CHATBOT_SMALL_TALK_SEED } from '../data/chatbot-small-talk-seed'
+import { normalizeQuestion } from '../utils/chatbot/small-talk'
 
 /**
  * `SET col = col` on duplicate key: MySQL has no "do nothing on conflict", so
@@ -312,6 +314,27 @@ async function seed() {
   // Preserve administrator configuration on reruns; only create the disabled baseline.
   await db.insert(chatbotSettings).values({ id: 1, enabled: false })
     .onDuplicateKeyUpdate({ set: { id: keepExisting('id') } })
+
+  // ── Chatbot small-talk dataset (insert-only, keyed on normalized question) ──
+  // System rows: editable and toggleable by officers, but not deletable. On
+  // rerun `keepExisting` leaves any edited wording / disabled flag untouched.
+  // normalizeQuestion() is the SAME normalization the matcher uses, so two rows
+  // differing only in spacing/case never split into duplicates.
+  console.log('Seeding chatbot small-talk dataset...')
+  const smallTalkRows = CHATBOT_SMALL_TALK_SEED.map((entry, index) => ({
+    category: entry.category,
+    question: entry.question,
+    normalizedQuestion: normalizeQuestion(entry.question),
+    answer: entry.answer,
+    patterns: entry.patterns,
+    isEnabled: true,
+    isSystem: true,
+    displayOrder: index,
+  }))
+  for (let i = 0; i < smallTalkRows.length; i += 50) {
+    await db.insert(chatbotSmallTalk).values(smallTalkRows.slice(i, i + 50))
+      .onDuplicateKeyUpdate({ set: { normalizedQuestion: keepExisting('normalized_question') } })
+  }
 
   console.log('✅ Seed complete!')
   console.log('📋 Login username: admin (mật khẩu lấy từ ADMIN_PASSWORD — không in ra log).')

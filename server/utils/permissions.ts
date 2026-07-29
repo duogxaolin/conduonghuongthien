@@ -9,6 +9,10 @@ export const CHATBOT_RESOURCES = Object.freeze({
 export type ChatbotResource = typeof CHATBOT_RESOURCES[keyof typeof CHATBOT_RESOURCES]
 export type ChatbotSettingsAction = 'read' | 'update' | 'clear' | 'test' | 'rotate_key'
 export type ChatbotKnowledgeAction = 'read' | 'create' | 'update' | 'delete' | 'publish' | 'archive'
+// The everyday-reply store shares the chatbot_knowledge resource on purpose
+// (see design decision 3). It has no publish/archive lifecycle, so its actions
+// are the CRUD subset only.
+export type ChatbotSmallTalkAction = 'read' | 'create' | 'update' | 'delete'
 
 // Canonical set of RBAC resources. Permission grants outside this set are rejected.
 export const VALID_RESOURCES = new Set<string>([
@@ -152,5 +156,22 @@ export function requireChatbotKnowledgePermission(event: H3Event, action: Chatbo
     isSuperAdmin,
   )) forbidden()
 
+  return user
+}
+
+/**
+ * Gate the everyday-reply store. Shares the `chatbot_knowledge` resource — no
+ * new RBAC resource is introduced (design decision 3), so a role that can edit
+ * the knowledge bank can edit small talk. Plain CRUD; there is no publish flow.
+ */
+export function requireChatbotSmallTalkPermission(event: H3Event, action: ChatbotSmallTalkAction): ChatbotAdminUser {
+  const user = requireAdminUser(event)
+  const isSuperAdmin = user.isSuperAdmin === true
+  if (!checkPermission(
+    user.permissions || [],
+    CHATBOT_RESOURCES.knowledge,
+    action,
+    isSuperAdmin,
+  )) forbidden()
   return user
 }
