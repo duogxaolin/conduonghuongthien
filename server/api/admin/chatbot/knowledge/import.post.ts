@@ -7,6 +7,7 @@ import { logError } from '../../../../utils/logger'
 const MAX_FILE_BYTES = 8 * 1024 * 1024 // 8 MB
 const MAX_ROWS = 2000
 const RAW_LIMITS = { stt: 120, question: 1000, answer: 4000, note: 512 } as const
+const RAW_EXTRA_LIMITS = { columns: 32, value: 512 } as const
 
 type ImportStage = 'parse' | 'save' | 'publish'
 type ImportError = {
@@ -30,6 +31,14 @@ function previewRaw(raw: QaRawRow): Pick<ImportError, 'raw' | 'truncatedFields'>
       truncatedFields.push(field)
     } else preview[field] = value
   }
+  if (raw.rawExtraColumns?.length) {
+    preview.rawExtraColumns = raw.rawExtraColumns.slice(0, RAW_EXTRA_LIMITS.columns).map((item, index) => {
+      if (item.value.length <= RAW_EXTRA_LIMITS.value) return item
+      truncatedFields.push(`rawExtraColumns.${index}.value`)
+      return { column: item.column, value: `${item.value.slice(0, RAW_EXTRA_LIMITS.value)}…` }
+    })
+    if (raw.rawExtraColumns.length > RAW_EXTRA_LIMITS.columns) truncatedFields.push('rawExtraColumns')
+  }
   return { raw: preview, truncatedFields }
 }
 
@@ -41,6 +50,7 @@ function safeValidationMessage(message: string): { code: string; message: string
     [/approvedAnswer exceeds (\d+) characters/, 'answer_too_long', 'Trả lời vượt quá giới hạn cho phép.'],
     [/topic exceeds (\d+) characters/, 'topic_too_long', 'Chủ đề vượt quá giới hạn cho phép.'],
     [/sourceLabel exceeds (\d+) characters/, 'source_too_long', 'Nguồn vượt quá giới hạn cho phép.'],
+    [/sourceReference exceeds (\d+) characters/, 'source_reference_too_long', 'Ghi chú/Tham chiếu nguồn vượt quá giới hạn cho phép.'],
     [/published knowledge requires source metadata/, 'missing_source', 'Mục xuất bản phải có nguồn tham khảo.'],
   ]
   for (const [pattern, code, localized] of known) if (pattern.test(message)) return { code, message: localized }

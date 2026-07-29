@@ -20,6 +20,7 @@ mock.module(new URL('../server/services/chatbot-knowledge.ts', import.meta.url),
       const question = String(input.canonicalQuestion || '')
       if (question === 'Lỗi nội bộ') throw new Error('ER_DUP_ENTRY secret_table SQLSTATE 23000')
       if (question === 'Preview dài') throw new ValidationError('approvedAnswer exceeds 100000 characters')
+      if (question === 'Tham chiếu dài') throw new ValidationError('sourceReference exceeds 512 characters')
       const entry = { id: nextId++, question }
       created.push(entry)
       return entry
@@ -85,6 +86,29 @@ test('partial import returns every parse issue rather than capping errors at 20'
     raw: { stt: '1', question: 'Câu hỏi 1', answer: '', note: '' },
     truncatedFields: [],
   })
+})
+
+test('unmapped-column data is returned as a parse issue with bounded raw preview', async () => {
+  reset()
+  const extraValue = 'x'.repeat(700)
+  const response = await handler(event(`STT,Câu hỏi,Trả lời,Ghi chú,Cột lạ\n1,Hỏi?,Đáp án,,${extraValue}\n`))
+  const [error] = response.errors
+
+  assert.equal(response.total, 1)
+  assert.equal(response.imported, 0)
+  assert.equal(response.skipped, 1)
+  assert.equal(error.code, 'unmapped_data')
+  assert.deepEqual(error.raw.rawExtraColumns?.map((item: any) => item.column), ['E'])
+  assert.equal(error.raw.rawExtraColumns?.[0].value.length, 513)
+  assert.deepEqual(error.truncatedFields, ['rawExtraColumns.0.value'])
+})
+
+test('source-reference length errors have a field-specific Vietnamese message', async () => {
+  reset()
+  const response = await handler(event('STT,Câu hỏi,Trả lời,Ghi chú\n1,Tham chiếu dài,Đáp án,nguồn\n'))
+
+  assert.equal(response.errors[0].code, 'source_reference_too_long')
+  assert.equal(response.errors[0].message, 'Ghi chú/Tham chiếu nguồn vượt quá giới hạn cho phép.')
 })
 
 test('raw previews are bounded and retain truncation metadata', async () => {
