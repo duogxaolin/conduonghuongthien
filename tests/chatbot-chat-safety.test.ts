@@ -62,6 +62,7 @@ function dependencies(rows: RetrievalEntry[]) {
   const calls = { loading: 0, retrieval: 0, provider: 0, secret: 0 }
   const value: ChatDependencies = {
     loadPublishedEntries: async () => { calls.loading++; return rows },
+    loadSmallTalkEntries: async () => [],
     retrieve: (entries, query, options) => { calls.retrieval++; return retrieveKnowledge(entries, query, options) },
     configuredSecret: () => { calls.secret++; return 'provider-secret' },
     providerRequest: async () => {

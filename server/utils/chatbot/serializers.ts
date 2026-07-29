@@ -34,6 +34,7 @@ export function serializeChatbotSettings(settings: ChatbotSettings) {
     fallbackMessage: settings.fallbackMessage ?? '',
     leadCaptureEnabled: settings.leadCaptureEnabled ?? true,
     leadCaptureEmail: settings.leadCaptureEmail ?? '',
+    smallTalkEnabled: settings.smallTalkEnabled ?? true,
     requestTimeoutMs: settings.requestTimeoutMs,
     maxResponseBytes: settings.maxResponseBytes,
     maxInputChars: settings.maxInputChars,

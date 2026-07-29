@@ -72,6 +72,7 @@ function deps(overrides: Partial<ChatDependencies> = {}): Harness {
   const state = { calls: 0 }
   const dependencies: ChatDependencies = {
     loadPublishedEntries: async () => [entry()],
+    loadSmallTalkEntries: async () => [],
     configuredSecret: () => 'secret-key',
     providerRequest: async () => {
       state.calls += 1

@@ -59,15 +59,21 @@ export function retrieveKnowledge(entries: RetrievalEntry[], query: string, opti
       const keywords = terms.filter(term => term.kind === 'keyword').map(term => term.normalized)
       const exact = canonical === querySearch
       const aliasExact = aliases.includes(querySearch)
-      // Substring (fuzzy) matching is gated to tokens/keywords of length >= 3 so
-      // that ubiquitous 2-char syllables (e.g. "an" inside "san"/"hanh") do not
-      // create spurious matches; exact equality still matches any length.
+      // Substring (fuzzy) matching is gated to tokens/keywords of length >= 4 so
+      // that ubiquitous short syllables do not create spurious matches; exact
+      // equality still matches any length. Vietnamese syllables in their
+      // diacritic-stripped form are mostly 2-3 characters ("thu", "cong",
+      // "tac"), so a threshold of 3 lets nearly every single syllable through —
+      // that is why keyword "thủ" (search form "thu") matched token "thức"
+      // ("thuc"), pulling "công thức nấu phở" into a legal entry. A threshold of
+      // 4 cuts that class while keeping meaningful prefix matches ("giay to"
+      // matching "giay to tuy than" is 7 chars).
       // Multi-word terms must appear as a whole phrase in the query. Matching
       // them per-token would let "công tác" fire on an unrelated question that
       // merely contains "công". Single-word terms keep the token rules above.
       const matchedKeywords = keywords.filter((keyword) => {
         if (keyword.includes(' ')) return querySearch.includes(keyword)
-        return queryTokens.some(token => keyword === token || (token.length >= 3 && keyword.includes(token)) || (keyword.length >= 3 && token.includes(keyword)))
+        return queryTokens.some(token => keyword === token || (token.length >= 4 && keyword.includes(token)) || (keyword.length >= 4 && token.includes(keyword)))
       }).length
       const canonicalTokens = tokens(entry.canonicalQuestion)
       const partial = canonicalTokens.filter(token => queryTokens.includes(token)).length

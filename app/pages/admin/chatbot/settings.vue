@@ -9,6 +9,7 @@ type EditableSettings = {
   knowledgeGreeting: string
   fallbackMessage: string
   leadCaptureEnabled: boolean
+  smallTalkEnabled: boolean
   leadCaptureEmail: string
   baseUrl: string
   model: string
@@ -48,6 +49,7 @@ const DEFAULT_FORM: EditableSettings = {
   knowledgeGreeting: '',
   fallbackMessage: '',
   leadCaptureEnabled: true,
+  smallTalkEnabled: true,
   leadCaptureEmail: '',
   baseUrl: '',
   model: '',
@@ -174,6 +176,7 @@ function applySettingsResponse(value: SettingsResponse) {
   form.knowledgeGreeting = readString(value.knowledgeGreeting, DEFAULT_FORM.knowledgeGreeting)
   form.fallbackMessage = readString(value.fallbackMessage, DEFAULT_FORM.fallbackMessage)
   form.leadCaptureEnabled = readBoolean(value.leadCaptureEnabled, DEFAULT_FORM.leadCaptureEnabled)
+  form.smallTalkEnabled = readBoolean(value.smallTalkEnabled, DEFAULT_FORM.smallTalkEnabled)
   form.leadCaptureEmail = readString(value.leadCaptureEmail, DEFAULT_FORM.leadCaptureEmail)
   form.baseUrl = readString(value.baseUrl, DEFAULT_FORM.baseUrl)
   form.model = readString(value.model, DEFAULT_FORM.model)
@@ -233,6 +236,7 @@ function buildPatchPayload(): SettingsPatch {
     knowledgeGreeting: form.knowledgeGreeting,
     fallbackMessage: form.fallbackMessage,
     leadCaptureEnabled: form.leadCaptureEnabled,
+    smallTalkEnabled: form.smallTalkEnabled,
     leadCaptureEmail: form.leadCaptureEmail,
     baseUrl: form.baseUrl,
     model: form.model,
@@ -404,6 +408,11 @@ onMounted(load)
           Lời chào vui vẻ (tùy chọn)
           <span class="font-normal text-[#667768]">Thêm vào đầu mỗi câu trả lời ở chế độ Kho kiến thức. VD: “Dạ, em xin phép trả lời ạ 😊”.</span>
           <input v-model="form.knowledgeGreeting" maxlength="500" autocomplete="off" class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20" />
+        </label>
+
+        <label class="flex items-start gap-3 border-t border-[#e2ece3] pt-4 text-sm font-semibold">
+          <input v-model="form.smallTalkEnabled" type="checkbox" class="mt-0.5 h-4 w-4 accent-[#2c6e33]" />
+          <span>Trả lời thường nhật<br /><span class="font-normal text-[#667768]">Áp dụng cho cả 2 chế độ. Các câu như “hi”, “chào bạn”, “cảm ơn”, “bạn là ai”, “tôi mới ra tù tôi lo lắm” sẽ được trả lời bằng nội dung trong kho <nuxt-link to="/admin/chatbot/small-talk" class="font-semibold text-[#2c6e33] underline">Trả lời thường nhật</nuxt-link> quản lý được, thay vì hỏi ngay thông tin liên hệ. Câu trả lời trong Kho kiến thức luôn được ưu tiên. Tắt công tắc này thì mọi câu không khớp kho kiến thức đều quay về hỏi thông tin liên hệ.</span></span>
         </label>
 
         <div class="flex flex-col gap-3 border-t border-[#e2ece3] pt-4">

@@ -359,7 +359,7 @@
               >
                 <p class="m-0 whitespace-pre-wrap">{{ msg.text }}</p>
                 <p v-if="msg.kind && msg.sender === 'bot'" class="mt-2 mb-0 text-[0.7rem] font-semibold flex items-center gap-1" :class="messageKindClass(msg.kind)" role="status">
-                  <i class="fa-solid" :class="msg.kind === 'curated' || msg.kind === 'provider' ? 'fa-circle-check text-[#1e4620]' : 'fa-circle-exclamation text-[#9a3412]'" aria-hidden="true"></i>
+                  <i class="fa-solid" :class="isProblemKind(msg.kind) ? 'fa-circle-exclamation text-[#9a3412]' : 'fa-circle-check text-[#1e4620]'" aria-hidden="true"></i>
                   {{ messageKindLabel(msg.kind) }}
                 </p>
                 <ul v-if="msg.sources?.length" class="mt-2 mb-0 space-y-1 border-t border-[#e1e8e0] pt-2 list-none pl-0" aria-label="Nguồn tham khảo">
@@ -631,7 +631,7 @@ const CHATBOT_CLIENT_LIMITS = Object.freeze({
   maxSourceLabelChars: 160,
   maxSourceReferenceChars: 160,
 })
-const CHATBOT_RESPONSE_KINDS = new Set(['curated', 'provider', 'not_found', 'unavailable', 'rate_limited'])
+const CHATBOT_RESPONSE_KINDS = new Set(['curated', 'provider', 'small_talk', 'not_found', 'unavailable', 'rate_limited'])
 const CHATBOT_STORAGE_KEY = 'cdkt_chat_history_v2'
 const CHATBOT_WELCOME_MESSAGE = Object.freeze({
   id: 'welcome',
@@ -709,14 +709,17 @@ const quickQuestionStatusText = computed(() => {
 const messageKindLabel = (kind) => ({
   curated: 'Trả lời từ nội dung đã phê duyệt',
   provider: 'Giải thích có tham chiếu nội dung đã phê duyệt',
+  small_talk: 'Trả lời chào hỏi',
   not_found: 'Chưa tìm thấy thông tin phù hợp',
   unavailable: 'Dịch vụ tạm thời chưa sẵn sàng',
   rate_limited: 'Tạm giới hạn yêu cầu',
 }[kind] || '')
 
-const messageKindClass = (kind) => kind === 'not_found' || kind === 'unavailable' || kind === 'rate_limited'
-  ? 'text-[#9a3412]'
-  : 'text-[#385130]'
+// One definition of "this reply did not answer the question", used by both the
+// icon and the caption colour so they can never disagree.
+const isProblemKind = (kind) => kind === 'not_found' || kind === 'unavailable' || kind === 'rate_limited'
+
+const messageKindClass = (kind) => isProblemKind(kind) ? 'text-[#9a3412]' : 'text-[#385130]'
 
 const normalizeQuickQuestion = (item) => {
   if (!item || typeof item !== 'object') return null
