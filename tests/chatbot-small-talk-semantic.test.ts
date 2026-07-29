@@ -146,6 +146,23 @@ test('unknown IDs, malformed scores, provider errors and unavailable runtime fai
   }
 })
 
+test('non-array provider output fails closed', async () => {
+  const malformedProvider = {
+    rank: async () => ({}),
+  } as unknown as SemanticSmallTalkProvider
+
+  const result = await selectSmallTalk({
+    businessReferences: [],
+    entries,
+    query: 'câu không khớp luật',
+    ruleMatcher: noRuleMatch,
+    semanticProvider: malformedProvider,
+    semanticConfig: enabled,
+  })
+
+  assert.equal(result, null)
+})
+
 test('bounded timeout aborts a slow provider and falls back to no match', async () => {
   let aborted = false
   const slowProvider: SemanticSmallTalkProvider = {
