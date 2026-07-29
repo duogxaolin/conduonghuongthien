@@ -14,6 +14,23 @@ import { inflateRawSync } from 'node:zlib'
 
 export type SheetGrid = string[][]
 
+type SourceRange = { start: number; end: number }
+const SOURCE_RANGE = Symbol('xlsx-reader-source-range')
+type SourceRow = string[] & { [SOURCE_RANGE]?: SourceRange }
+
+function setSourceRange(row: string[], start: number, end = start): void {
+  Object.defineProperty(row, SOURCE_RANGE, {
+    value: { start, end },
+    configurable: false,
+    enumerable: false,
+    writable: false,
+  })
+}
+
+function sourceRange(row: string[] | undefined, fallback: number): SourceRange {
+  return (row as SourceRow | undefined)?.[SOURCE_RANGE] ?? { start: fallback, end: fallback }
+}
+
 const MAX_ENTRIES = 4096
 const MAX_UNCOMPRESSED = 40 * 1024 * 1024 // 40 MB guard per extracted XML part
 
@@ -166,6 +183,7 @@ export function readXlsxGrid(buf: Buffer): SheetGrid {
   let rowMatch: RegExpExecArray | null
   while ((rowMatch = rowRe.exec(sheetXml))) {
     const cells: string[] = []
+    const physicalRow = Number(/\br="(\d+)"/.exec(rowMatch[0])?.[1]) || grid.length + 1
     let cellMatch: RegExpExecArray | null
     cellRe.lastIndex = 0
     while ((cellMatch = cellRe.exec(rowMatch[1] ?? ''))) {
@@ -188,6 +206,7 @@ export function readXlsxGrid(buf: Buffer): SheetGrid {
       cells[ci] = normalizeCellText(value)
     }
     for (let i = 0; i < cells.length; i++) if (cells[i] === undefined) cells[i] = ''
+    setSourceRange(cells, physicalRow)
     grid.push(cells)
   }
   return grid
@@ -201,30 +220,55 @@ export function readCsvGrid(buf: Buffer): SheetGrid {
   let row: string[] = []
   let field = ''
   let inQuotes = false
+  let recordStartLine = 1
+  let physicalLine = 1
+
+  const finishRow = (endLine: number) => {
+    const normalized = row.map(normalizeCellText)
+    setSourceRange(normalized, recordStartLine, endLine)
+    grid.push(normalized)
+    row = []
+    field = ''
+  }
+
   for (let i = 0; i < text.length; i++) {
     const ch = text[i]
     if (inQuotes) {
       if (ch === '"') {
         if (text[i + 1] === '"') { field += '"'; i++ } else inQuotes = false
-      } else field += ch
+      } else {
+        field += ch
+        if (ch === '\n') physicalLine++
+      }
     } else if (ch === '"') inQuotes = true
     else if (ch === ',') { row.push(field); field = '' }
-    else if (ch === '\n') { row.push(field); grid.push(row.map(normalizeCellText)); row = []; field = '' }
-    else if (ch === '\r') { /* ignore, handled by \n */ }
+    else if (ch === '\n') {
+      row.push(field)
+      finishRow(physicalLine)
+      physicalLine++
+      recordStartLine = physicalLine
+    } else if (ch === '\r') { /* ignore, handled by \n */ }
     else field += ch
   }
-  if (field.length || row.length) { row.push(field); grid.push(row.map(normalizeCellText)) }
-  return grid.filter(r => r.some(c => c !== ''))
+  if (field.length || row.length) { row.push(field); finishRow(physicalLine) }
+  return grid
 }
 
-export type QaRow = { stt: string; question: string; answer: string; note: string }
+export type QaRawRow = { stt: string; question: string; answer: string; note: string }
+export type QaRow = QaRawRow & { sourceRow?: number; sourceEndRow?: number }
+export type QaParseIssueCode = 'missing_answer' | 'missing_question' | 'missing_required_fields'
+export type QaParseIssue = {
+  row: number
+  endRow: number
+  code: QaParseIssueCode
+  message: string
+  raw: QaRawRow
+}
+export type QaParseDiagnostics = { rows: QaRow[]; issues: QaParseIssue[]; scannedRows: number }
 
-/**
- * Map a raw grid to Q&A rows. Detects the header row by matching Vietnamese
- * column names (Câu hỏi / Trả lời / Ghi chú, diacritic-insensitive); falls back
- * to positional columns A=STT, B=Câu hỏi, C=Trả lời, D=Ghi chú.
- */
-export function gridToQaRows(grid: SheetGrid): QaRow[] {
+type QaColumns = { headerIdx: number; qCol: number; aCol: number; nCol: number; sCol: number }
+
+function detectQaColumns(grid: SheetGrid): QaColumns {
   const strip = (s: string) => s.normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/đ/g, 'd').toLowerCase().trim()
   let headerIdx = -1
   let qCol = 1, aCol = 2, nCol = 3, sCol = 0
@@ -239,44 +283,85 @@ export function gridToQaRows(grid: SheetGrid): QaRow[] {
       break
     }
   }
-  const start = headerIdx >= 0 ? headerIdx + 1 : 0
-  const out: QaRow[] = []
-  for (let i = start; i < grid.length; i++) {
-    const r = grid[i] ?? []
-    // A question is one logical line however the author wrapped it; an answer
-    // keeps its own line structure, because numbered steps depend on it.
-    const question = (r[qCol] || '').replace(/\s+/gu, ' ').trim()
-    const answer = (r[aCol] || '').trim()
-    const note = nCol >= 0 ? (r[nCol] || '').trim() : ''
-
-    // A long answer is routinely typed across several spreadsheet rows, with the
-    // question cell left blank on every row after the first. Those rows are the
-    // REST of the preceding answer — dropping them (which is what this loop used
-    // to do) truncated the entry at its lead-in line, e.g. "…như sau:" with the
-    // enumeration that followed silently gone.
-    if (!question) {
-      const previous = out[out.length - 1]
-      if (previous && answer) {
-        previous.answer = `${previous.answer}\n${answer}`
-        if (note && !previous.note) previous.note = note
-      }
-      continue
-    }
-    if (!answer) continue
-
-    out.push({
-      stt: sCol >= 0 ? (r[sCol] || '').trim() : String(out.length + 1),
-      question,
-      answer,
-      note,
-    })
-  }
-  return out
+  return { headerIdx, qCol, aCol, nCol, sCol }
 }
 
-/** Detect format by magic bytes and parse to Q&A rows. */
-export function parseQaWorkbook(buf: Buffer): QaRow[] {
+/**
+ * Diagnose a raw Q&A grid without silently discarding malformed nonblank rows.
+ * Valid continuation rows extend the previous candidate's source range.
+ */
+export function diagnoseQaGrid(grid: SheetGrid): QaParseDiagnostics {
+  const { headerIdx, qCol, aCol, nCol, sCol } = detectQaColumns(grid)
+  const start = headerIdx >= 0 ? headerIdx + 1 : 0
+  const rows: QaRow[] = []
+  const issues: QaParseIssue[] = []
+  let openRow: QaRow | null = null
+  let scannedRows = 0
+
+  for (let i = start; i < grid.length; i++) {
+    const cells = grid[i] ?? []
+    const range = sourceRange(cells, i + 1)
+    const raw: QaRawRow = {
+      stt: sCol >= 0 ? (cells[sCol] || '').trim() : '',
+      question: (cells[qCol] || '').trim(),
+      answer: (cells[aCol] || '').trim(),
+      note: nCol >= 0 ? (cells[nCol] || '').trim() : '',
+    }
+    if (!Object.values(raw).some(Boolean)) continue
+    scannedRows++
+
+    // Questions are one logical line; answers retain line structure.
+    const question = raw.question.replace(/\s+/gu, ' ').trim()
+    if (question && raw.answer) {
+      openRow = {
+        ...raw,
+        question,
+        stt: raw.stt || String(rows.length + 1),
+        sourceRow: range.start,
+        sourceEndRow: range.end,
+      }
+      rows.push(openRow)
+      continue
+    }
+
+    if (!question && raw.answer && !raw.stt && openRow) {
+      openRow.answer = `${openRow.answer}\n${raw.answer}`
+      if (raw.note && !openRow.note) openRow.note = raw.note
+      openRow.sourceEndRow = range.end
+      continue
+    }
+
+    if (question && !raw.answer) {
+      issues.push({ row: range.start, endRow: range.end, code: 'missing_answer', message: 'Thiếu Trả lời.', raw })
+    } else if (!question && raw.answer) {
+      issues.push({ row: range.start, endRow: range.end, code: 'missing_question', message: 'Thiếu Câu hỏi hoặc không có mục hợp lệ phía trên để nối tiếp.', raw })
+    } else {
+      issues.push({ row: range.start, endRow: range.end, code: 'missing_required_fields', message: 'Thiếu Câu hỏi và Trả lời.', raw })
+    }
+    // A malformed row breaks the continuation chain, preventing later text from
+    // being attached to an unrelated valid item above it.
+    openRow = null
+  }
+
+  return { rows, issues, scannedRows }
+}
+
+/**
+ * Map a raw grid to compatible Q&A rows. Existing callers still receive only
+ * valid candidates; diagnostics are available through diagnoseQaGrid().
+ */
+export function gridToQaRows(grid: SheetGrid): QaRow[] {
+  return diagnoseQaGrid(grid).rows
+}
+
+/** Detect format by magic bytes and parse to Q&A rows with diagnostics. */
+export function parseQaWorkbookDiagnostics(buf: Buffer): QaParseDiagnostics {
   const isZip = buf.length > 4 && buf[0] === 0x50 && buf[1] === 0x4b && (buf[2] === 0x03 || buf[2] === 0x05)
   const grid = isZip ? readXlsxGrid(buf) : readCsvGrid(buf)
-  return gridToQaRows(grid)
+  return diagnoseQaGrid(grid)
+}
+
+/** Detect format by magic bytes and preserve the original parser API. */
+export function parseQaWorkbook(buf: Buffer): QaRow[] {
+  return parseQaWorkbookDiagnostics(buf).rows
 }
