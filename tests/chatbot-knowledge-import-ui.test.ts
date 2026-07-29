@@ -35,6 +35,56 @@ test('raw previews preserve line breaks, wrap safely, and expose truncation', ()
   assert.doesNotMatch(template, /v-html/)
 })
 
+/**
+ * `rawExtraColumns` is an ARRAY of `{ column, value }`, not a string. It used to
+ * fall through the scalar `importRawFields` loop, so the operator saw serialized
+ * JSON under the literal key name "rawExtraColumns" instead of a readable
+ * "Cột E: …" line — precisely the diagnostic that tells them which stray column
+ * broke the row.
+ */
+test('unmapped extra columns render as readable per-column entries, not raw JSON', () => {
+  // Excluded from the scalar list, so the array can never be stringified into a <dd>.
+  assert.match(script, /function importRawFields[\s\S]*?field !== 'rawExtraColumns'/)
+  // Rendered from its own helper, labelled by spreadsheet column letter.
+  assert.match(script, /function importExtraColumns\(/)
+  assert.match(script, /`Cột \$\{entry\?\.column \|\| '\?'\}`/)
+  assert.match(template, /importExtraColumns\(e\)\.length/)
+  assert.match(template, /v-for="\(entry, index\) in importExtraColumns\(e\)"/)
+  assert.match(template, /importExtraColumnLabel\(entry\)/)
+  assert.match(template, /\{\{ entry\.value \}\}/)
+})
+
+test('extra-column values keep line structure, wrap, and stay escaped by Vue', () => {
+  const block = template.match(/<section v-if="importExtraColumns\(e\)\.length"[\s\S]*?<\/section>/)?.[0] ?? ''
+  assert.ok(block, 'the unmapped-column block must exist')
+  assert.match(block, /whitespace-pre-wrap/)
+  assert.match(block, /break-words/)
+  // Interpolation only: a stray column may carry attacker-controlled text.
+  assert.doesNotMatch(block, /v-html/)
+})
+
+/**
+ * The server emits two DIFFERENT truncation keys: the indexed
+ * `rawExtraColumns.<i>.value` when one column's value was clipped, and the bare
+ * `rawExtraColumns` when whole columns were dropped. Matching only the bare key
+ * left every clipped value looking complete.
+ */
+test('truncation badges match the indexed key the server actually sends', () => {
+  assert.match(script, /function importExtraColumnTruncated[\s\S]*?`rawExtraColumns\.\$\{index\}\.value`/)
+  assert.match(script, /function importExtraColumnsTruncated[\s\S]*?'rawExtraColumns'/)
+  assert.match(template, /importExtraColumnTruncated\(e, index\)/)
+  assert.match(template, /importExtraColumnsTruncated\(e\)/)
+})
+
+test('extra columns keep server order so positional truncation keys stay aligned', () => {
+  // Filtering entries here would shift later indices and pin a badge to the
+  // wrong column, so the helper must pass the array through untouched.
+  const helper = script.match(/function importExtraColumns\(item: any\)[^\n]*/)?.[0] ?? ''
+  assert.ok(helper)
+  assert.doesNotMatch(helper, /\.filter\(/)
+  assert.doesNotMatch(helper, /\.sort\(/)
+})
+
 test('summary distinguishes clean, partial, and failed imports', () => {
   assert.match(template, /importResult\.errors\?\.length/)
   assert.match(template, /importResult\.imported \? 'border-\[#e8c56f\]/)
