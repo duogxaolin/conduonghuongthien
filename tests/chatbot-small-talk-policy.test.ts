@@ -76,6 +76,7 @@ function deps(overrides: Partial<ChatDependencies> = {}): Harness {
 }
 
 const ask = (text: string) => [{ role: 'user', content: text }]
+const conversation = (...turns: string[]) => turns.map(content => ({ role: 'user', content }))
 
 test('the approved bank wins: a matching business question is never routed to small talk', async () => {
   const { dependencies, state } = deps()
@@ -129,4 +130,45 @@ test('both banks silent: falls through to lead capture (not_found + askContact)'
   const result = await answerGroundedChat(event(), settingsOf({ mode: 'knowledge' }), ask('câu hỏi hoàn toàn ngoài phạm vi xyz'), dependencies)
   assert.equal(result.kind, 'not_found')
   assert.equal(result.askContact, true)
+})
+
+test('multi-turn context is server-derived from user history and cannot create a match', async () => {
+  const { dependencies } = deps({
+    loadPublishedEntries: async () => [],
+    loadSmallTalkEntries: async () => [
+      ...SMALL_TALK,
+      { id: 3, category: 'social', answer: 'Dạ vâng.', patterns: ['vay a'], normalizedQuestion: 'vậy à', isEnabled: true, displayOrder: 2 },
+    ],
+  })
+  const matched = await answerGroundedChat(event(), settingsOf({ mode: 'knowledge' }), conversation('xin chào', 'vậy à'), dependencies)
+  assert.equal(matched.kind, 'small_talk')
+  assert.equal(matched.answer, 'Dạ vâng.')
+
+  const unmatched = await answerGroundedChat(event(), settingsOf({ mode: 'knowledge' }), conversation('xin chào', 'thủ tục hoàn toàn không có trong kho'), dependencies)
+  assert.equal(unmatched.kind, 'not_found', 'prior greeting must not bypass current-turn matching')
+})
+
+test('business retrieval wins on a later turn even after small talk context', async () => {
+  const { dependencies, state } = deps()
+  const result = await answerGroundedChat(
+    event(),
+    settingsOf({ mode: 'knowledge' }),
+    conversation('xin chào', 'cảm ơn', 'thủ tục xóa án tích cần giấy tờ gì'),
+    dependencies,
+  )
+  assert.equal(result.kind, 'curated')
+  assert.equal(result.answer, 'Nội dung đã được phê duyệt.')
+  assert.equal(state.smallTalkLoads, 0, 'business knowledge must prevent any small-talk load')
+})
+
+test('long business queries containing thanks or acknowledgement are not captured', async () => {
+  const rows: SmallTalkEntry[] = [
+    { id: 4, category: 'social', answer: 'Cảm ơn.', patterns: ['cam on'], normalizedQuestion: 'cảm ơn', isEnabled: true, displayOrder: 0 },
+    { id: 5, category: 'social', answer: 'Dạ vâng.', patterns: ['duoc'], normalizedQuestion: 'được', isEnabled: true, displayOrder: 1 },
+  ]
+  const { dependencies } = deps({ loadPublishedEntries: async () => [], loadSmallTalkEntries: async () => rows })
+  for (const query of ['cảm ơn, cho tôi hỏi thủ tục xóa án tích', 'tôi có được vay vốn không']) {
+    const result = await answerGroundedChat(event(), settingsOf({ mode: 'knowledge' }), ask(query), dependencies)
+    assert.equal(result.kind, 'not_found', query)
+  }
 })
