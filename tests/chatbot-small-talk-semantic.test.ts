@@ -104,7 +104,8 @@ test('semantic match returns trusted entry metadata only after threshold and mar
 
   assert.deepEqual(result, { entryId: 1, intent: 'greeting', category: 'social', confidence: 0.96 })
   assert.equal('answer' in result!, false)
-  assert.deepEqual(semantic.calls.candidates, entries)
+  assert.deepEqual(semantic.calls.candidates, entries.map(({ id, intent, category, semanticExamples }) => ({ id, intent, category, semanticExamples })))
+  assert.equal('answer' in semantic.calls.candidates[0]!, false)
 })
 
 test('semantic threshold and top1-top2 margin reject uncertain matches', async () => {
@@ -130,6 +131,7 @@ test('unknown IDs, malformed scores, provider errors and unavailable runtime fai
     provider([{ entryId: 999, confidence: 0.99 }]).value,
     provider([{ entryId: 1, confidence: Number.NaN }]).value,
     { rank: async () => { throw new Error('runtime unavailable') } },
+    { rank: () => { throw new Error('synchronous runtime failure') } },
     null,
   ]) {
     const result = await selectSmallTalk({

@@ -22,12 +22,22 @@ const LIMITS = Object.freeze({
   maximumQueryChars: 2_000,
 })
 
-/** Metadata and examples a local ranker may inspect. Answers are never exposed. */
+/** Exact metadata and examples a local ranker may inspect. Answers are never exposed. */
 export type SemanticSmallTalkEntry = {
   id: number
-  intent?: string | null
+  intent: string | null
   category: string
   semanticExamples: readonly string[]
+}
+
+/** DB-backed source rows accepted by the selector before metadata projection. */
+export type SemanticSmallTalkSource = {
+  id: number
+  category: string
+  normalizedQuestion?: string | null
+  patterns?: readonly string[] | null
+  intent?: string | null
+  semanticExamples?: readonly string[]
 }
 
 /** The only accepted provider output: an entry ID and its numeric confidence. */
@@ -42,6 +52,27 @@ export type SemanticSmallTalkProvider = {
     candidates: readonly SemanticSmallTalkEntry[]
     signal: AbortSignal
   }) => Promise<readonly SemanticSmallTalkScore[]>
+}
+
+/**
+ * Optional provider hook for deployments that install a local ranker without
+ * changing the chatbot request path. The hook is deliberately inert unless a
+ * provider is explicitly installed by server bootstrap code.
+ */
+const semanticProviderSlot = Symbol.for('cdkt.chatbot.smallTalkSemanticProvider')
+
+type SemanticProviderRegistry = { [semanticProviderSlot]?: SemanticSmallTalkProvider }
+
+export function installSmallTalkSemanticProvider(provider: SemanticSmallTalkProvider | null): void {
+  const registry = globalThis as typeof globalThis & SemanticProviderRegistry
+  if (provider) registry[semanticProviderSlot] = provider
+  else delete registry[semanticProviderSlot]
+}
+
+export function getSmallTalkSemanticProvider(): SemanticSmallTalkProvider | null {
+  const registry = globalThis as typeof globalThis & SemanticProviderRegistry
+  const provider = registry[semanticProviderSlot]
+  return provider && typeof provider.rank === 'function' ? provider : null
 }
 
 export type SmallTalkSelection = {
@@ -63,7 +94,7 @@ export type SmallTalkRuleMatcher<Entry> = (
   query: unknown,
 ) => { id: number } | null
 
-export type SelectSmallTalkOptions<Entry extends SemanticSmallTalkEntry> = {
+export type SelectSmallTalkOptions<Entry extends SemanticSmallTalkSource> = {
   /** Non-empty means the governed business bank won; small-talk is not consulted. */
   businessReferences: readonly unknown[]
   entries: readonly Entry[]
@@ -71,6 +102,21 @@ export type SelectSmallTalkOptions<Entry extends SemanticSmallTalkEntry> = {
   ruleMatcher: SmallTalkRuleMatcher<Entry>
   semanticProvider?: SemanticSmallTalkProvider | null
   semanticConfig?: Partial<SmallTalkSemanticConfig>
+}
+
+/** Project a DB row to the exact metadata contract exposed to a semantic provider. */
+export function projectSemanticEntry(entry: SemanticSmallTalkSource): SemanticSmallTalkEntry {
+  const examples = [
+    ...(entry.semanticExamples ?? []),
+    ...(entry.normalizedQuestion ? [entry.normalizedQuestion] : []),
+    ...(entry.patterns ?? []),
+  ].filter((example): example is string => typeof example === 'string' && example.trim().length > 0)
+  return {
+    id: entry.id,
+    intent: entry.intent ?? null,
+    category: entry.category,
+    semanticExamples: [...new Set(examples)],
+  }
 }
 
 function finiteNumber(value: unknown, fallback: number, minimum: number, maximum: number): number {
@@ -169,7 +215,7 @@ async function rankWithinTimeout(
 
   try {
     return await Promise.race([
-      Promise.resolve(provider.rank({ query, candidates: entries, signal: controller.signal })).catch(() => null),
+      Promise.resolve().then(() => provider.rank({ query, candidates: entries, signal: controller.signal })).catch(() => null),
       timeout,
     ])
   } finally {
@@ -188,7 +234,7 @@ async function rankWithinTimeout(
  * The selected metadata is resolved from the trusted entry list. A provider
  * cannot inject an answer, intent, or category in its response.
  */
-export async function selectSmallTalk<Entry extends SemanticSmallTalkEntry>(
+export async function selectSmallTalk<Entry extends SemanticSmallTalkSource>(
   options: SelectSmallTalkOptions<Entry>,
 ): Promise<SmallTalkSelection | null> {
   if (options.businessReferences.length > 0) return null
@@ -199,22 +245,24 @@ export async function selectSmallTalk<Entry extends SemanticSmallTalkEntry>(
   const entriesById = new Map(options.entries.map(entry => [entry.id, entry]))
   const rule = options.ruleMatcher(options.entries, query)
   const ruleEntry = rule ? entriesById.get(rule.id) : undefined
-  if (ruleEntry) return selection(ruleEntry, 1)
+  if (ruleEntry) return selection(projectSemanticEntry(ruleEntry), 1)
 
   const config = normalizeConfig(options.semanticConfig)
   if (!config.enabled || !options.semanticProvider || options.entries.length === 0) return null
   if (query.length > LIMITS.maximumQueryChars) return null
 
-  const rawScores = await rankWithinTimeout(options.semanticProvider, query, options.entries, config.timeoutMs)
+  const projectedEntries = options.entries.map(projectSemanticEntry)
+  const projectedById = new Map(projectedEntries.map(entry => [entry.id, entry]))
+  const rawScores = await rankWithinTimeout(options.semanticProvider, query, projectedEntries, config.timeoutMs)
   if (!rawScores) return null
 
-  const ranked = acceptedScores(rawScores, entriesById)
+  const ranked = acceptedScores(rawScores, projectedById)
   const top = ranked[0]
   if (!top || top.confidence < config.confidenceThreshold) return null
 
   const runnerUpConfidence = ranked[1]?.confidence ?? 0
   if (top.confidence - runnerUpConfidence < config.top1Top2Margin) return null
 
-  const matchedEntry = entriesById.get(top.entryId)
+  const matchedEntry = projectedById.get(top.entryId)
   return matchedEntry ? selection(matchedEntry, top.confidence) : null
 }

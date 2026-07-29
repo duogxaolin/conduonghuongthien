@@ -61,7 +61,7 @@ export const CHATBOT_SMALL_TALK_SEED: SmallTalkSeedEntry[] = [
   {
     category: 'social',
     question: 'Tạm biệt',
-    patterns: ['tam biet', 'chao tam biet', 'hen gap lai', 'toi di day', 'bye', 'goodbye'],
+    patterns: ['tam biet', 'chao tam biet', 'hen gap lai', 'toi di day', 'minh di nhe', 'bye', 'goodbye'],
     answer: `Cảm ơn anh/chị đã liên hệ. Chúc anh/chị nhiều sức khỏe và thuận lợi. Khi cần hỗ trợ, anh/chị có thể quay lại đây hoặc gọi đường dây nóng ${CHATBOT_HOTLINE}.`,
   },
   {
@@ -73,7 +73,7 @@ export const CHATBOT_SMALL_TALK_SEED: SmallTalkSeedEntry[] = [
   {
     category: 'social',
     question: 'Bạn giỏi quá',
-    patterns: ['ban gioi qua', 'hay', 'hay qua', 'tuyet', 'tuyet voi', 'gioi that'],
+    patterns: ['ban gioi qua', 'hay', 'hay qua', 'tuyet', 'tuyet voi', 'lam tot lam', 'gioi that'],
     answer: 'Dạ, cảm ơn anh/chị đã động viên ạ. Tôi sẽ cố gắng hỗ trợ anh/chị tốt nhất trong phạm vi thông tin của Cổng thông tin.',
   },
   {
