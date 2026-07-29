@@ -335,6 +335,9 @@ export const chatbotSettings = mysqlTable('chatbot_settings', {
   fallbackMessage:       varchar('fallback_message', { length: 1000 }),
   leadCaptureEnabled:    boolean('lead_capture_enabled').notNull().default(true),
   leadCaptureEmail:      varchar('lead_capture_email', { length: 255 }),
+  // Fixed greeting/thanks/"who are you" replies when the knowledge bank matches
+  // nothing. See utils/chatbot/small-talk.ts.
+  smallTalkEnabled:      boolean('small_talk_enabled').notNull().default(true),
   requestTimeoutMs:      int('request_timeout_ms', { unsigned: true }).notNull().default(10000),
   maxResponseBytes:      int('max_response_bytes', { unsigned: true }).notNull().default(262144),
   maxInputChars:         int('max_input_chars', { unsigned: true }).notNull().default(2000),
@@ -391,6 +394,29 @@ export const chatbotKnowledgeTerms = mysqlTable('chatbot_knowledge_terms', {
 }, (t) => ({
   uniqueTermIdx: uniqueIndex('chatbot_terms_knowledge_kind_normalized_idx').on(t.knowledgeId, t.kind, t.normalizedValue),
   retrievalIdx: index('chatbot_terms_kind_normalized_knowledge_idx').on(t.kind, t.normalizedValue, t.knowledgeId),
+}))
+
+// ─── Chatbot small talk (everyday replies) ────────────────────────────────────
+// A store kept fully separate from chatbot_knowledge: greetings, "who are you",
+// portal navigation, emotional support, portal facts. No draft→published flow
+// and no source requirement — those belong to the approved knowledge bank. The
+// business bank always wins; this store is only consulted when retrieval returns
+// nothing. Keeping it in its own table means public queries (quick-questions,
+// sources) never risk leaking an everyday reply into the approved surface.
+export const chatbotSmallTalk = mysqlTable('chatbot_small_talk', {
+  id:                 bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
+  category:           varchar('category', { length: 32 }).notNull(),
+  question:           varchar('question', { length: 500 }).notNull(),
+  normalizedQuestion: varchar('normalized_question', { length: 191 }).notNull().unique(),
+  answer:             text('answer').notNull(),
+  patterns:           json('patterns').$type<string[]>(),
+  isEnabled:          boolean('is_enabled').notNull().default(true),
+  isSystem:           boolean('is_system').notNull().default(false),
+  displayOrder:       int('display_order').notNull().default(0),
+  createdAt:          timestamp('created_at').defaultNow(),
+  updatedAt:          timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  runtimeIdx: index('chatbot_small_talk_enabled_category_id_idx').on(t.isEnabled, t.category, t.id),
 }))
 
 // ─── Privacy-preserving Analytics ─────────────────────────────────────────────
@@ -534,6 +560,8 @@ export type ChatbotKnowledge = typeof chatbotKnowledge.$inferSelect
 export type NewChatbotKnowledge = typeof chatbotKnowledge.$inferInsert
 export type ChatbotKnowledgeTerm = typeof chatbotKnowledgeTerms.$inferSelect
 export type NewChatbotKnowledgeTerm = typeof chatbotKnowledgeTerms.$inferInsert
+export type ChatbotSmallTalk = typeof chatbotSmallTalk.$inferSelect
+export type NewChatbotSmallTalk = typeof chatbotSmallTalk.$inferInsert
 export type AnalyticsPageViewEvent = typeof analyticsPageViewEvents.$inferSelect
 export type AnalyticsLiveMinuteBucket = typeof analyticsLiveMinuteBuckets.$inferSelect
 export type AnalyticsLiveDeduplication = typeof analyticsLiveDeduplication.$inferSelect

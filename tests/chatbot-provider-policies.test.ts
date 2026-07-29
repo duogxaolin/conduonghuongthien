@@ -305,6 +305,7 @@ function capturingDeps(responseBody: unknown) {
   const sent: Array<{ url: string; headers: Record<string, unknown>; body?: string }> = []
   const dependencies: ChatDependencies = {
     loadPublishedEntries: async () => [entry()],
+    loadSmallTalkEntries: async () => [],
     configuredSecret: () => 'provider-secret',
     providerRequest: async (options) => {
       sent.push({ url: String(options.url), headers: { ...options.headers }, body: options.body as string })
