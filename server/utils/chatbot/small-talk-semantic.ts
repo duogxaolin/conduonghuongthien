@@ -254,7 +254,7 @@ export async function selectSmallTalk<Entry extends SemanticSmallTalkSource>(
   const projectedEntries = options.entries.map(projectSemanticEntry)
   const projectedById = new Map(projectedEntries.map(entry => [entry.id, entry]))
   const rawScores = await rankWithinTimeout(options.semanticProvider, query, projectedEntries, config.timeoutMs)
-  if (!rawScores) return null
+  if (!Array.isArray(rawScores)) return null
 
   const ranked = acceptedScores(rawScores, projectedById)
   const top = ranked[0]
