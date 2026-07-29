@@ -5,16 +5,18 @@ import type { SafeProviderRequestOptions, SafeProviderResponse } from './outboun
 import { retrieveKnowledge, type PublicKnowledgeReference, type RetrievalEntry } from './retrieval'
 import { CHATBOT_HOTLINE, DEFAULT_CHATBOT_SYSTEM_PROMPT } from './prompt-defaults'
 import { buildProviderChatCall, extractProviderAnswer } from './providers'
+import { matchSmallTalk, type SmallTalkEntry } from './small-talk'
 
 /** Re-exported so the hotline has exactly one definition (see prompt-defaults). */
 export const HOTLINE = CHATBOT_HOTLINE
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
 
 export type ChatMessage = { role?: unknown; sender?: unknown; content?: unknown; text?: unknown }
-export type ChatResult = { answer: string; sources: PublicKnowledgeReference[]; kind: 'curated' | 'provider' | 'not_found' | 'unavailable' | 'rate_limited'; retryAfter?: number; askContact?: boolean }
+export type ChatResult = { answer: string; sources: PublicKnowledgeReference[]; kind: 'curated' | 'provider' | 'small_talk' | 'not_found' | 'unavailable' | 'rate_limited'; retryAfter?: number; askContact?: boolean }
 export type ChatEvent = H3Event
 export type ChatDependencies = {
   loadPublishedEntries: () => Promise<RetrievalEntry[]>
+  loadSmallTalkEntries: () => Promise<SmallTalkEntry[]>
   configuredSecret: (settings: ChatbotSettings) => string | null
   providerRequest: (options: SafeProviderRequestOptions) => Promise<SafeProviderResponse>
   retrieve?: typeof retrieveKnowledge
@@ -96,6 +98,34 @@ function friendlyKnowledgeAnswer(settings: ChatbotSettings, references: PublicKn
   return { answer, sources: top.source ? references.slice(0, 1) : [], kind: 'curated' }
 }
 
+/**
+ * A greeting / thanks / "who are you" turn, answered from the everyday-reply
+ * store (table chatbot_small_talk). Only reached when the approved bank matched
+ * NOTHING, so a curated answer always outranks it.
+ *
+ * `smallTalkEnabled` defaults to ON when the column is absent (older row), which
+ * is the behaviour the operator asked for; setting it false restores the old
+ * "everything unmatched goes to lead capture" flow. The switch is checked
+ * BEFORE loading rows, so a disabled store costs no query.
+ */
+async function smallTalkResult(settings: ChatbotSettings, dependencies: ChatDependencies, query: string): Promise<ChatResult | null> {
+  if ((settings.smallTalkEnabled ?? true) === false) return null
+  let entries: SmallTalkEntry[]
+  try {
+    entries = await dependencies.loadSmallTalkEntries()
+  } catch {
+    return null
+  }
+  const match = matchSmallTalk(entries, query)
+  if (!match) return null
+  const greeting = settings.knowledgeGreeting?.trim()
+  // The operator greeting is prepended only where it is not redundant: bolting
+  // "Xin chào!" onto a social reply (which already opens with a greeting) reads
+  // like a stutter, so the whole `social` group is exempt.
+  const answer = greeting && match.category !== 'social' ? `${greeting}\n\n${match.answer}` : match.answer
+  return { answer, sources: [], kind: 'small_talk' }
+}
+
 /** No answer available in either mode: invite the visitor to leave contact details (lead capture) or point to the hotline. */
 function outOfScopeResult(settings: ChatbotSettings): ChatResult {
   const base = settings.fallbackMessage?.trim() || 'Xin lỗi, hiện tôi chưa tìm thấy thông tin phù hợp trong kho dữ liệu đã được phê duyệt.'
@@ -167,11 +197,16 @@ export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSett
   // ── Knowledge-only mode: answer from the approved bank, never call the AI. ──
   if (mode !== 'ai') {
     if (references.length) return friendlyKnowledgeAnswer(settings, references)
-    return outOfScopeResult(settings)
+    // "hi" / "cảm ơn" / "bạn là ai" reach a reply instead of a contact form.
+    return (await smallTalkResult(settings, dependencies, query)) ?? outOfScopeResult(settings)
   }
 
   // ── AI mode ──
   if (references.length === 0) {
+    // Small talk first: it is free, instant, and gives the portal one consistent
+    // voice for greetings whether or not a provider happens to be reachable.
+    const chitChat = await smallTalkResult(settings, dependencies, query)
+    if (chitChat) return chitChat
     // Nothing in the approved bank matches. Only free-form AI if the admin opted in.
     if (settings.outOfScopeBehavior === 'ai_freeform' && aiProviderReady(settings)) {
       try {
