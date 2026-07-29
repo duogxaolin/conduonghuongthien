@@ -37,8 +37,24 @@ const showImport = ref(false); const importFile = ref<File | null>(null); const 
 const importStageLabel: Record<string, string> = { parse: 'Đọc tệp', save: 'Lưu dữ liệu', publish: 'Xuất bản' }
 const importRawLabels: Record<string, string> = { stt: 'STT', question: 'Câu hỏi', answer: 'Trả lời', note: 'Ghi chú' }
 function importRowLabel(item: any) { return item.row === item.endRow ? `Dòng ${item.row}` : `Dòng ${item.row}–${item.endRow}` }
-function importRawFields(item: any) { return Object.entries(item.raw || {}).filter(([, value]) => String(value || '').length > 0) }
+/**
+ * Only the four mapped text fields belong in the scalar list. `rawExtraColumns`
+ * is an array of `{ column, value }`, so leaving it here rendered it as raw JSON
+ * under the literal key name — it gets its own readable list below.
+ */
+function importRawFields(item: any) { return Object.entries(item.raw || {}).filter(([field, value]) => field !== 'rawExtraColumns' && String(value || '').length > 0) }
+/**
+ * Kept in server order WITHOUT filtering: the truncation markers are positional
+ * (`rawExtraColumns.<index>.value`), so dropping an entry here would shift every
+ * later index and pin the badge to the wrong column.
+ */
+function importExtraColumns(item: any) { return (item.raw?.rawExtraColumns || []) as Array<{ column?: string; value?: string }> }
 function importFieldTruncated(item: any, field: string) { return (item.truncatedFields || []).includes(field) }
+/** The whole list was cut short (more columns than the server previews). */
+function importExtraColumnsTruncated(item: any) { return importFieldTruncated(item, 'rawExtraColumns') }
+/** This one column's value was cut short — server key is `rawExtraColumns.<index>.value`. */
+function importExtraColumnTruncated(item: any, index: number) { return importFieldTruncated(item, `rawExtraColumns.${index}.value`) }
+function importExtraColumnLabel(entry: { column?: string }) { return `Cột ${entry?.column || '?'}` }
 function onImportFile(e: Event) { importFile.value = (e.target as HTMLInputElement).files?.[0] || null; importResult.value = null }
 const downloadingTemplate = ref(false)
 /**
@@ -139,6 +155,19 @@ watch([topic, status], () => load(1)); onMounted(() => load())
                   <dd class="m-0 mt-0.5 whitespace-pre-wrap break-words rounded bg-[#fff8f7] px-2 py-1.5 font-mono text-xs text-[#6f1b18]">{{ value }}</dd>
                 </div>
               </dl>
+              <section v-if="importExtraColumns(e).length" class="mt-3 border-t border-[#f1d0ce] pt-3">
+                <p class="m-0 text-xs font-bold uppercase tracking-wide">Cột chưa được ánh xạ</p>
+                <dl class="m-0 mt-2 flex flex-col gap-2">
+                  <div v-for="(entry, index) in importExtraColumns(e)" :key="`${entry.column}-${index}`">
+                    <dt class="font-bold">
+                      {{ importExtraColumnLabel(entry) }}
+                      <span v-if="importExtraColumnTruncated(e, index)" class="ml-1 rounded bg-[#fbe5e3] px-1.5 py-0.5 text-xs font-semibold">đã rút gọn</span>
+                    </dt>
+                    <dd class="m-0 mt-0.5 whitespace-pre-wrap break-words rounded bg-[#fff8f7] px-2 py-1.5 font-mono text-xs text-[#6f1b18]">{{ entry.value }}</dd>
+                  </div>
+                </dl>
+                <p v-if="importExtraColumnsTruncated(e)" class="m-0 mt-2 text-xs font-semibold">Danh sách cột đã rút gọn, còn cột khác không hiển thị.</p>
+              </section>
             </article>
           </div>
         </section>
