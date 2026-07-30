@@ -1,10 +1,21 @@
 import { runAnalyticsMaintenance } from '../server/services/analytics-maintenance'
-import { runDataRetention } from '../server/services/data-retention'
+import { runRetentionPass } from '../server/services/retention-scheduler'
+import { closeDb } from '../server/utils/db'
 
 /**
  * The single nightly maintenance entrypoint. It runs analytics aggregation and
  * purge first, then the retention purge for the operational tables holding
  * personal data. One cron line, so an operator cannot install half of it.
+ *
+ * Retention now also runs from an in-process scheduler (see
+ * server/plugins/retention-scheduler.ts), because a purge that only happens
+ * when someone remembers a crontab line mostly does not happen. Both paths take
+ * the same MySQL named lock, so running cron alongside the scheduler is safe —
+ * whichever arrives second reports `skipped: locked` and does nothing.
+ *
+ * `ignoreSchedule` rather than `force`: the crontab line is this run's schedule,
+ * so `runHour` does not apply — but the auto-cleanup switch in the admin still
+ * does. A switch that cron ignores is not a switch.
  */
 
 const catchUpArgument = process.argv.find(argument => argument.startsWith('--catch-up-days='))
@@ -18,7 +29,7 @@ const result = await runAnalyticsMaintenance({ catchUpDays })
 // means the database is unreachable.
 const retention = result.status === 'failed'
   ? null
-  : await runDataRetention()
+  : await runRetentionPass({ ignoreSchedule: true, trigger: 'cron' })
 
 const output = {
   status: result.status,
@@ -27,16 +38,24 @@ const output = {
   purgedAggregates: result.purgedAggregates,
   lastAggregatedDay: result.lastAggregatedDay,
   stale: result.stale,
-  retention: retention && {
-    status: retention.status,
-    tables: retention.tables,
-    purgedRateLimits: retention.purgedRateLimits,
-    message: retention.message,
-  },
-  scheduler: 'Invoke this command from cron. Enable an in-process scheduler only for a guaranteed single scheduler instance.',
+  retention: retention && (retention.ran
+    ? {
+        ran: true,
+        status: retention.result.status,
+        tables: retention.result.tables,
+        purgedRateLimits: retention.result.purgedRateLimits,
+        message: retention.result.message,
+      }
+    : { ran: false, skipped: retention.reason }),
+  scheduler: 'The app also runs this purge in-process. Both paths share a MySQL lock, so cron remains safe to keep.',
 }
 
 console.log(JSON.stringify(output))
 
-if (result.status === 'failed' || retention?.status === 'failed') process.exitCode = 1
-else if (result.status === 'locked' || result.status === 'warning' || retention?.status === 'warning') process.exitCode = 2
+await closeDb()
+
+const retentionFailed = retention?.ran === true && retention.result.status === 'failed'
+const retentionWarned = retention?.ran === true && retention.result.status === 'warning'
+
+if (result.status === 'failed' || retentionFailed) process.exitCode = 1
+else if (result.status === 'locked' || result.status === 'warning' || retentionWarned) process.exitCode = 2

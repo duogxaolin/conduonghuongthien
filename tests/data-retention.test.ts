@@ -17,7 +17,12 @@ import {
 
 type QueryCall = { sql: string; params: unknown[] }
 
-function fakePool(rowsPerTable: Record<string, number[]> = {}) {
+/**
+ * `rowsPerTable` queues affectedRows per DELETE; `counts` answers the row-cap
+ * pass's COUNT(*). Anything the engine issues that is not one of the statements
+ * modelled here throws, so a new write path cannot slip in unnoticed.
+ */
+function fakePool(rowsPerTable: Record<string, number[]> = {}, counts: Record<string, number> = {}) {
   const calls: QueryCall[] = []
   const queues: Record<string, number[]> = {
     activity_logs: [...(rowsPerTable.activity_logs ?? [0])],
@@ -31,6 +36,9 @@ function fakePool(rowsPerTable: Record<string, number[]> = {}) {
     release() { released += 1 },
     async query(sql: string, params: unknown[] = []) {
       calls.push({ sql, params })
+      const counted = Object.keys(queues).find(name => sql.includes(`COUNT(*) AS total FROM ${name}`))
+      if (counted) return [[{ total: counts[counted] ?? 0 }]]
+      if (sql.includes('INSERT INTO data_retention_state')) return [{ affectedRows: 1 }]
       const table = Object.keys(queues).find(name => sql.includes(`DELETE FROM ${name} `))
       if (!table) throw new Error(`unexpected statement: ${sql}`)
       return [{ affectedRows: queues[table].shift() ?? 0 }]
@@ -159,6 +167,119 @@ test('a database failure is reported rather than thrown at cron', async () => {
   assert.match(result.message ?? '', /connection refused/)
 })
 
+// ─── The row cap ─────────────────────────────────────────────────────────────
+test('the row cap trims down to the cap, oldest first, and only the excess', async () => {
+  // 12,500 rows against a cap of 10,000 — exactly 2,500 must go, no more.
+  const pool = fakePool({ activity_logs: [1000, 1000, 500] }, { activity_logs: 12_500 })
+  const result = await runDataRetention({
+    now: NOW, activityLogDays: 0, submissionDays: 0,
+    activityLogMaxRows: 10_000, batchSize: 1000, connection: pool as never,
+  })
+
+  const logs = result.tables.find(t => t.table === 'activity_logs')!
+  assert.equal(logs.deletedByRowCap, 2500)
+  assert.equal(logs.deletedByAge, 0, 'the age pass ran with days = 0')
+  assert.equal(logs.bounded, false)
+
+  const deletes = pool.calls.filter(c => c.sql.includes('DELETE FROM activity_logs'))
+  // Oldest first, and no cutoff clause: the cap is about size, not age.
+  assert.match(deletes[0].sql, /^DELETE FROM activity_logs ORDER BY id LIMIT \?$/)
+  // The last batch is clamped to what is left, so a run cannot overshoot the cap
+  // even when the queue would have returned a full batch.
+  assert.deepEqual(deletes.map(c => c.params[0]), [1000, 1000, 500])
+})
+
+test('a table inside its cap is counted but never deleted from', async () => {
+  const pool = fakePool({ activity_logs: [999] }, { activity_logs: 4_000 })
+  const result = await runDataRetention({
+    now: NOW, activityLogDays: 0, submissionDays: 0,
+    activityLogMaxRows: 10_000, connection: pool as never,
+  })
+  assert.equal(result.tables[0].deleted, 0)
+  assert.equal(pool.calls.filter(c => c.sql.startsWith('DELETE FROM activity_logs')).length, 0)
+})
+
+test('a cap of 0 disables the condition without counting the table', async () => {
+  const pool = fakePool({}, { activity_logs: 9_000_000 })
+  await runDataRetention({
+    now: NOW, activityLogDays: 0, submissionDays: 0,
+    activityLogMaxRows: 0, submissionMaxRows: 0, connection: pool as never,
+  })
+  assert.equal(pool.calls.filter(c => c.sql.includes('COUNT(*)')).length, 0)
+})
+
+test('the two conditions add up and are reported separately', async () => {
+  // Age clears 40; the cap then finds 10,050 rows left against a cap of 10,000.
+  const pool = fakePool({ activity_logs: [40, 50] }, { activity_logs: 10_050 })
+  const result = await runDataRetention({
+    now: NOW, activityLogDays: 365, submissionDays: 0,
+    activityLogMaxRows: 10_000, batchSize: 1000, connection: pool as never,
+  })
+  const logs = result.tables[0]
+  assert.equal(logs.deletedByAge, 40)
+  assert.equal(logs.deletedByRowCap, 50)
+  assert.equal(logs.deleted, 90, 'the reported total must be the sum of both conditions')
+})
+
+test('the cap is skipped when the age pass is still catching up', async () => {
+  // The age pass hit its batch ceiling, so the table is mid-shrink. Counting rows
+  // now would measure a table that is still being drained and delete past the cap.
+  const pool = fakePool({ activity_logs: [10, 10, 10] }, { activity_logs: 10_000_000 })
+  const result = await runDataRetention({
+    now: NOW, activityLogDays: 365, submissionDays: 0, activityLogMaxRows: 1_000,
+    batchSize: 10, maxBatches: 3, connection: pool as never,
+  })
+  assert.equal(result.tables[0].bounded, true)
+  assert.equal(result.tables[0].deletedByRowCap, 0)
+  assert.equal(pool.calls.filter(c => c.sql.includes('COUNT(*)')).length, 0)
+})
+
+test('a cap larger than the batch ceiling reports bounded instead of finishing quietly', async () => {
+  const pool = fakePool({ activity_logs: [10, 10] }, { activity_logs: 1_000_000 })
+  const result = await runDataRetention({
+    now: NOW, activityLogDays: 0, submissionDays: 0, activityLogMaxRows: 1_000,
+    batchSize: 10, maxBatches: 2, connection: pool as never,
+  })
+  assert.equal(result.tables[0].bounded, true)
+  assert.equal(result.status, 'warning')
+})
+
+// ─── Banked counters ─────────────────────────────────────────────────────────
+test('the deleted count is banked before the rows are gone, and accumulates', async () => {
+  const pool = fakePool({ activity_logs: [7], submissions: [3] })
+  await runDataRetention({
+    now: NOW, activityLogDays: 365, submissionDays: 730,
+    trigger: 'scheduler', connection: pool as never,
+  })
+
+  const banked = pool.calls.filter(c => c.sql.includes('INSERT INTO data_retention_state'))
+  assert.equal(banked.length, 2, 'one row per purged table')
+  // Incremented, not replaced: the lifetime figure is this counter plus the live
+  // count, so overwriting it would erase every earlier run.
+  assert.match(banked[0].sql, /purged_total = purged_total \+ VALUES\(purged_total\)/)
+  assert.deepEqual(banked.map(c => [c.params[0], c.params[1]]), [['activity_logs', 7], ['submissions', 3]])
+  assert.equal(banked[0].params[4], 'scheduler')
+  assert.equal(banked[0].params[5], 'success')
+})
+
+test('a bounded run banks what it did delete and says it is unfinished', async () => {
+  const pool = fakePool({ activity_logs: [10, 10] })
+  await runDataRetention({
+    now: NOW, activityLogDays: 365, submissionDays: 0,
+    batchSize: 10, maxBatches: 2, trigger: 'cron', connection: pool as never,
+  })
+  const banked = pool.calls.filter(c => c.sql.includes('INSERT INTO data_retention_state'))
+  assert.equal(banked[0].params[1], 20, 'the rows are gone; the count has to survive them')
+  assert.equal(banked[0].params[5], 'warning')
+  assert.equal(banked[0].params[4], 'cron')
+})
+
+test('without a trigger the run writes nothing, so bookkeeping is never hidden', async () => {
+  const pool = fakePool({ activity_logs: [5] })
+  await runDataRetention({ now: NOW, activityLogDays: 365, connection: pool as never })
+  assert.equal(pool.calls.filter(c => c.sql.includes('data_retention_state')).length, 0)
+})
+
 test('a caller-supplied pool is released but not closed', async () => {
   const pool = fakePool()
   await runDataRetention({ now: NOW, activityLogDays: 365, connection: pool as never })
@@ -169,8 +290,19 @@ test('a caller-supplied pool is released but not closed', async () => {
 // ─── The cron entrypoint ─────────────────────────────────────────────────────
 test('the nightly script runs retention as well as analytics', () => {
   const script = readFileSync(new URL('../scripts/analytics-maintenance.ts', import.meta.url), 'utf8')
-  assert.match(script, /runDataRetention/)
+  // Goes through the scheduler so the cron path obeys the same stored policy and
+  // the same lock as the in-process runner — two entrypoints, one set of rules.
+  assert.match(script, /runRetentionPass/)
+  // Cron's schedule is its crontab line, so `runHour` is irrelevant to it. The
+  // on/off switch is not: an operator who turns auto-cleanup off must stop
+  // deletions everywhere, or the switch is a lie.
+  assert.match(script, /ignoreSchedule: true/)
+  assert.match(script, /trigger: 'cron'/)
+  assert.doesNotMatch(script, /force: true/)
   // A stale aggregate must not stop a retention purge that is a policy obligation.
   assert.match(script, /result\.status === 'failed'\s*\?\s*null/)
-  assert.match(script, /retention\?\.status === 'failed'/)
+  assert.match(script, /retention\.result\.status === 'failed'/)
+  // An open pool keeps the event loop alive, so the cron job would print its
+  // result and then hang instead of exiting.
+  assert.match(script, /closeDb\(\)/)
 })

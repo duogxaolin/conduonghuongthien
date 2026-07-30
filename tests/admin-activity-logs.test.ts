@@ -88,9 +88,15 @@ test('retention endpoint is gated, read-only, and reports a missing purge', () =
   assert.doesNotMatch(codeOnly(retentionSource), /\.delete\(|runDataRetention|DELETE FROM/)
   assert.match(retentionSource, /purgeOverdue/)
   assert.match(retentionSource, /purgeDisabled/)
-  assert.match(retentionSource, /resolveDataRetentionConfig/)
-  // 0 days means the purge is off, so nothing can be counted as overdue.
-  assert.match(retentionSource, /activityLogDays > 0/)
+  // The effective policy, not the raw environment: a value edited in the admin
+  // form has to be the one this page reports, or the page contradicts itself.
+  assert.match(retentionSource, /resolveRetentionPolicy/)
+  // 0 days means the age condition is off, so nothing can be counted as overdue.
+  assert.match(retentionSource, /retentionDays > 0/)
+  // The banked counter is what makes a completed purge visible after its rows
+  // are gone. Lifetime volume is that counter plus what is still live.
+  assert.match(retentionSource, /purgedTotal/)
+  assert.match(retentionSource, /lifetimeTotal: total \+ purgedTotal/)
   assert.match(retentionSource, /command: 'npm run analytics:maintenance'/)
 })
 

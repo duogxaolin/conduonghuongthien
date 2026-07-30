@@ -719,6 +719,21 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  // Data retention bookkeeping. `purged_total` survives the rows it counted, so
+  // a purge that worked is still visible after the evidence is deleted.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`data_retention_state\` (
+      \`scope\` VARCHAR(32) NOT NULL PRIMARY KEY,
+      \`purged_total\` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+      \`last_run_at\` DATETIME NULL,
+      \`last_deleted\` INT NOT NULL DEFAULT 0,
+      \`last_trigger\` VARCHAR(16) NULL,
+      \`last_status\` VARCHAR(16) NULL,
+      \`last_message\` VARCHAR(512) NULL,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
   // Multi-factor authentication — one row per (user, factor type). A factor is
   // enabled by the existence of an 'active' row, so disabling deletes the row
   // and its material rather than flagging it.
