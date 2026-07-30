@@ -6,6 +6,8 @@ import { serializeAdminKnowledge } from '../utils/chatbot/serializers'
 
 export const KNOWLEDGE_STATUSES = ['draft', 'published', 'archived'] as const
 export type KnowledgeStatus = typeof KNOWLEDGE_STATUSES[number]
+/** Tri-state filter: absent means "either", so the default listing is unchanged. */
+export const QUICK_QUESTION_FILTERS = ['yes', 'no'] as const
 export type KnowledgeInput = {
   canonicalQuestion?: unknown
   approvedAnswer?: unknown
@@ -96,7 +98,7 @@ async function getKnowledgeFrom(db: KnowledgeStore, id: number) {
 }
 
 export async function getKnowledge(id: number) { return getKnowledgeFrom(getDb(), id) }
-export async function listKnowledge(params: { page?: number; perPage?: number; search?: string; topic?: string; status?: string }) {
+export async function listKnowledge(params: { page?: number; perPage?: number; search?: string; topic?: string; status?: string; quick?: string }) {
   const db = getDb()
   if (params.page !== undefined && (!Number.isSafeInteger(params.page) || params.page < 1)) throw new ChatbotKnowledgeValidationError('page is invalid')
   if (params.perPage !== undefined && (!Number.isSafeInteger(params.perPage) || params.perPage < 1)) throw new ChatbotKnowledgeValidationError('perPage is invalid')
@@ -113,6 +115,10 @@ export async function listKnowledge(params: { page?: number; perPage?: number; s
   }
   if (params.topic) conditions.push(eq(chatbotKnowledge.topic, params.topic))
   if (params.status) { if (!(KNOWLEDGE_STATUSES as readonly string[]).includes(params.status)) throw new ChatbotKnowledgeValidationError('status is invalid'); conditions.push(eq(chatbotKnowledge.status, params.status as KnowledgeStatus)) }
+  if (params.quick) {
+    if (!(QUICK_QUESTION_FILTERS as readonly string[]).includes(params.quick)) throw new ChatbotKnowledgeValidationError('quick is invalid')
+    conditions.push(eq(chatbotKnowledge.isQuickQuestion, params.quick === 'yes'))
+  }
   const where = conditions.length ? and(...conditions) : undefined
   const rows = await db.select().from(chatbotKnowledge).where(where).orderBy(desc(chatbotKnowledge.priority), desc(chatbotKnowledge.updatedAt), asc(chatbotKnowledge.id)).limit(perPage).offset((page - 1) * perPage)
   const [{ total } = { total: 0 }] = await db.select({ total: count() }).from(chatbotKnowledge).where(where)

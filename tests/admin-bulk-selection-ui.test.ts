@@ -39,7 +39,7 @@ const pages: Page[] = [
   },
   {
     file: 'chatbot/knowledge/index.vue',
-    endpoints: ['/api/admin/chatbot/knowledge/bulk-delete', '/api/admin/chatbot/knowledge/bulk-status'],
+    endpoints: ['/api/admin/chatbot/knowledge/bulk-delete', '/api/admin/chatbot/knowledge/bulk-status', '/api/admin/chatbot/knowledge/bulk-quick-question'],
     rowCheckboxSites: 1,
   },
   {
