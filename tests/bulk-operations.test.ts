@@ -70,6 +70,14 @@ mock.module(new URL('../server/services/chatbot-knowledge.ts', import.meta.url),
   namedExports: {
     ChatbotKnowledgeValidationError: KnowledgeValidationError,
     deleteKnowledge: async (actorId: number, id: number) => { record('knowledge.delete', actorId, id); return true },
+    updateKnowledge: async (actorId: number, id: number, patch: any) => {
+      // Same shape as the real service: a lifecycle rule is a validation error,
+      // and a missing row is a null return rather than a throw.
+      if (id === 999) throw new KnowledgeValidationError('Cần nguồn tham khảo trước khi xuất bản.')
+      if (id === 404) return null
+      record('knowledge.quick', actorId, id, String(patch?.isQuickQuestion))
+      return { id, isQuickQuestion: patch?.isQuickQuestion }
+    },
     transitionKnowledge: async (actorId: number, id: number, target: string) => {
       // A lifecycle rule surfaces as a validation error, which the route has to
       // translate into a 400 rather than letting it escape as a 500.
@@ -98,6 +106,7 @@ const categoriesDelete = (await import('../server/api/admin/categories/bulk-dele
 const submissionsDelete = (await import('../server/api/admin/submissions/bulk-delete.post')).default
 const knowledgeDelete = (await import('../server/api/admin/chatbot/knowledge/bulk-delete.post')).default
 const knowledgeStatus = (await import('../server/api/admin/chatbot/knowledge/bulk-status.post')).default
+const knowledgeQuick = (await import('../server/api/admin/chatbot/knowledge/bulk-quick-question.post')).default
 
 function event(adminUser: unknown, body: Record<string, unknown>) {
   return { context: { adminUser, body } } as any
@@ -298,6 +307,54 @@ test('bulk knowledge delete requires the delete grant', async () => {
   assert.equal(result.succeeded, 2)
 })
 
+test('bulk quick-question needs the update grant and refuses a non-boolean target', async () => {
+  reset()
+  // The flag decides what the widget shows, so it rides on `update` — not on
+  // publish/archive. A reader must not be able to change the strip.
+  const reader = { id: 6, permissions: [knowledgePermission({ canRead: true })] }
+  await assert.rejects(
+    () => knowledgeQuick(event(reader, { ids: [1], isQuickQuestion: true })),
+    (error: any) => error?.statusCode === 403,
+  )
+  assert.deepEqual(calls, [])
+
+  const editor = { id: 8, permissions: [knowledgePermission({ canUpdate: true })] }
+  for (const value of ['true', 1, null, undefined]) {
+    reset()
+    await assert.rejects(
+      () => knowledgeQuick(event(editor, { ids: [1], isQuickQuestion: value })),
+      (error: any) => error?.statusCode === 400,
+      `isQuickQuestion "${String(value)}" must be refused rather than coerced`,
+    )
+    assert.deepEqual(calls, [])
+  }
+})
+
+test('bulk quick-question sets both directions and reports blocked rows per row', async () => {
+  reset()
+  const editor = { id: 8, permissions: [knowledgePermission({ canUpdate: true })] }
+
+  const added: any = await knowledgeQuick(event(editor, { ids: [1, 2], isQuickQuestion: true }))
+  assert.equal(added.succeeded, 2)
+  assert.deepEqual(calls.map(call => call.extra), ['true', 'true'])
+
+  reset()
+  const removed: any = await knowledgeQuick(event(editor, { ids: [3], isQuickQuestion: false }))
+  assert.equal(removed.succeeded, 1)
+  assert.deepEqual(calls.map(call => call.extra), ['false'])
+
+  // 999 breaks a lifecycle rule, 404 does not exist: both are per-row failures
+  // and neither cancels the rows around them.
+  reset()
+  const mixed: any = await knowledgeQuick(event(editor, { ids: [1, 999, 404, 2], isQuickQuestion: true }))
+  assert.equal(mixed.succeeded, 2)
+  assert.deepEqual(mixed.succeededIds, [1, 2])
+  assert.deepEqual(mixed.failed, [
+    { id: 999, message: 'Cần nguồn tham khảo trước khi xuất bản.' },
+    { id: 404, message: 'Mục kiến thức không tồn tại.' },
+  ])
+})
+
 test('bulk knowledge status rejects a target outside the lifecycle', async () => {
   reset()
   const superAdmin = { id: 1, isSuperAdmin: true, permissions: [] }
@@ -332,6 +389,7 @@ test('every bulk route validates its ids before doing any work', async () => {
     ['submissions/bulk-delete', submissionsDelete, {}],
     ['knowledge/bulk-delete', knowledgeDelete, {}],
     ['knowledge/bulk-status', knowledgeStatus, { status: 'archived' }],
+    ['knowledge/bulk-quick-question', knowledgeQuick, { isQuickQuestion: true }],
   ]
 
   for (const [name, handler, extra] of routes) {

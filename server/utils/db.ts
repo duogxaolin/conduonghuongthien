@@ -50,3 +50,15 @@ export function getPool(): mysql.Pool | null {
   if (!_pool) getDb()
   return _pool
 }
+
+/**
+ * Release the pool. Only needed by the standalone CLI scripts: an open pool
+ * keeps the event loop alive, so a cron job that touched the database would
+ * hang after printing its result instead of exiting. The server never calls it.
+ */
+export async function closeDb(): Promise<void> {
+  const pool = _pool
+  _pool = null
+  _db = null
+  if (pool) await pool.end().catch(() => {})
+}

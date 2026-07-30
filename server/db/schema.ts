@@ -299,6 +299,25 @@ export const activityLogs = mysqlTable('activity_logs', {
   createdIdx: index('activity_created_idx').on(t.createdAt),
 }))
 
+// ─── Data retention state ────────────────────────────────────────────────────
+// One row per purged table. Two jobs:
+//
+//   1. `purgedTotal` is a running counter. A purge that works is indistinguish-
+//      able from a purge that never ran once the rows are gone, so the count has
+//      to be banked before deletion. Lifetime volume = purgedTotal + live rows.
+//   2. `lastRunAt` is how the in-process scheduler knows today's run already
+//      happened, so a restart does not re-purge on every boot.
+export const dataRetentionState = mysqlTable('data_retention_state', {
+  scope:         varchar('scope', { length: 32 }).primaryKey(), // activity_logs | submissions
+  purgedTotal:   bigint('purged_total', { mode: 'number', unsigned: true }).notNull().default(0),
+  lastRunAt:     datetime('last_run_at', { mode: 'date' }),
+  lastDeleted:   int('last_deleted').notNull().default(0),
+  lastTrigger:   varchar('last_trigger', { length: 16 }), // scheduler | cron | manual
+  lastStatus:    varchar('last_status', { length: 16 }),  // success | warning | failed
+  lastMessage:   varchar('last_message', { length: 512 }),
+  updatedAt:     timestamp('updated_at').defaultNow().onUpdateNow(),
+})
+
 // ─── Submissions ─────────────────────────────────────────────────────────────
 export const submissions = mysqlTable('submissions', {
   id:        bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
@@ -553,6 +572,7 @@ export type PageBlock   = typeof pageBlocks.$inferSelect
 export type NewPageBlock = typeof pageBlocks.$inferInsert
 export type Setting     = typeof settings.$inferSelect
 export type ActivityLog = typeof activityLogs.$inferSelect
+export type DataRetentionState = typeof dataRetentionState.$inferSelect
 export type Submission  = typeof submissions.$inferSelect
 export type ChatbotSettings = typeof chatbotSettings.$inferSelect
 export type NewChatbotSettings = typeof chatbotSettings.$inferInsert
