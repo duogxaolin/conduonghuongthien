@@ -88,6 +88,26 @@ test('widget exposes accessible status, focus, reduced-motion, and mobile-safe c
   assert.match(script, /chatToggleButton\.value\?\.focus\(\)/)
 })
 
+test('the panel grows on tablet and desktop without escaping the viewport', () => {
+  const dialog = template.match(/id="public-chatbot-dialog"[\s\S]*?\n\s*>/)?.[0] ?? ''
+  assert.ok(dialog, 'the dialog element must be findable')
+
+  // Phones stay full-screen; the floating panel only starts at md.
+  assert.match(dialog, /w-screen h-\[100dvh\]/)
+
+  // Both breakpoints cap against the viewport rather than naming a fixed size,
+  // so a short window or a narrow tablet cannot push the panel off screen.
+  const widths = [...dialog.matchAll(/\b(md|lg):w-\[([^\]]+)\]/g)].map(match => match[2])
+  const heights = [...dialog.matchAll(/\b(md|lg):h-\[([^\]]+)\]/g)].map(match => match[2])
+  assert.equal(widths.length, 2, 'the panel must set a width at md and again at lg')
+  assert.equal(heights.length, 2, 'the panel must set a height at md and again at lg')
+  for (const height of heights) assert.match(height, /min\(.*100dvh/, `height ${height} must clamp to the viewport`)
+  assert.ok(
+    widths.some(width => /min\(.*100vw/.test(width)),
+    'the md width must clamp to the viewport for narrow tablets',
+  )
+})
+
 test('public widget contains no provider settings, secrets, internals, or raw errors', () => {
   const forbidden = [
     'apiKey',
