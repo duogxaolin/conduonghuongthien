@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { deflateRawSync } from 'node:zlib'
 import { extractKeywords } from '../server/utils/chatbot/keywords'
-import { readCsvGrid, gridToQaRows, parseQaWorkbook, readXlsxGrid, XlsxError } from '../server/utils/xlsx-reader'
+import { diagnoseQaGrid, parseQaWorkbookDiagnostics, readCsvGrid, gridToQaRows, parseQaWorkbook, readXlsxGrid, XlsxError } from '../server/utils/xlsx-reader'
 import { retrieveKnowledge, type RetrievalEntry } from '../server/utils/chatbot/retrieval'
 
 /**
@@ -118,7 +118,7 @@ test('the header row is located by name, not by position', () => {
   assert.equal(rows[0].stt, '9')
 })
 
-test('rows missing a question or an answer are skipped', () => {
+test('rows missing a question or an answer are skipped by the compatible API', () => {
   const rows = gridToQaRows([
     ['STT', 'Câu hỏi', 'Trả lời'],
     ['1', 'Có câu hỏi', ''],
@@ -127,6 +127,114 @@ test('rows missing a question or an answer are skipped', () => {
   ])
   assert.equal(rows.length, 1)
   assert.equal(rows[0].question, 'Đầy đủ')
+})
+
+test('header detection ignores an arbitrarily long unrelated preamble and preserves source rows', () => {
+  const preamble = Array.from({ length: 24 }, (_, index) => [`Báo cáo nội bộ ${index + 1}`])
+  const result = diagnoseQaGrid([
+    ...preamble,
+    ['STT', 'Câu hỏi', 'Trả lời', 'Ghi chú'],
+    ['7', 'Hỏi sau phần mở đầu?', 'Đáp án.', 'Nguồn'],
+  ])
+  assert.equal(result.issues.length, 0)
+  assert.equal(result.rows[0]!.sourceRow, 26)
+  assert.equal(result.rows[0]!.question, 'Hỏi sau phần mở đầu?')
+})
+
+test('data in an unmapped column is reported with a raw extra-column preview', () => {
+  const result = diagnoseQaGrid([
+    ['STT', 'Câu hỏi', 'Trả lời', 'Ghi chú'],
+    ['1', 'Hỏi hợp lệ?', 'Đáp án.', '', 'Dữ liệu cột dư'],
+  ])
+  assert.equal(result.rows.length, 0)
+  assert.deepEqual(result.issues[0], {
+    row: 2,
+    endRow: 2,
+    code: 'unmapped_data',
+    message: 'Có dữ liệu ở cột chưa được ánh xạ: E.',
+    raw: {
+      stt: '1',
+      question: 'Hỏi hợp lệ?',
+      answer: 'Đáp án.',
+      note: '',
+      rawExtraColumns: [{ column: 'E', value: 'Dữ liệu cột dư' }],
+    },
+  })
+})
+
+test('diagnostics reports malformed nonblank rows and keeps valid rows', () => {
+  const result = diagnoseQaGrid([
+    ['STT', 'Câu hỏi', 'Trả lời', 'Ghi chú'],
+    ['1', 'Thiếu đáp án', '', 'nguồn'],
+    ['2', '', 'Mồ côi', ''],
+    ['3', 'Đủ dữ liệu', 'Đáp án', ''],
+    ['', '', 'Nối tiếp hợp lệ', ''],
+    ['', '', '', ''],
+    ['4', '', '', 'Chỉ ghi chú'],
+  ])
+  assert.equal(result.rows.length, 1)
+  assert.equal(result.rows[0]!.answer, 'Đáp án\nNối tiếp hợp lệ')
+  assert.deepEqual(result.issues.map(item => [item.code, item.row]), [
+    ['missing_answer', 2],
+    ['missing_question', 3],
+    ['missing_required_fields', 7],
+  ])
+})
+
+test('an immediate continuation merges even when STT is repeated', () => {
+  const result = diagnoseQaGrid([
+    ['STT', 'Câu hỏi', 'Trả lời', 'Ghi chú'],
+    ['1', 'Hỏi?', 'Mở đầu', ''],
+    ['1', '', 'Phần tiếp', ''],
+    ['', '', 'Sau dòng có STT', ''],
+    ['2', 'Hỏi hai?', 'Đáp hai', ''],
+  ])
+  assert.equal(result.rows.length, 2)
+  assert.equal(result.rows[0]!.answer, 'Mở đầu\nPhần tiếp\nSau dòng có STT')
+  assert.equal(result.rows[0]!.sourceEndRow, 4)
+  assert.equal(result.issues.length, 0)
+})
+
+test('STT-only and other malformed rows are reported and break continuation', () => {
+  const result = diagnoseQaGrid([
+    ['STT', 'Câu hỏi', 'Trả lời', 'Ghi chú'],
+    ['1', 'Hỏi?', 'Mở đầu', ''],
+    ['2', '', '', ''],
+    ['', '', 'Không được nối vào mục trước', ''],
+  ])
+  assert.equal(result.rows[0]!.answer, 'Mở đầu')
+  assert.deepEqual(result.issues.map(item => [item.code, item.row]), [
+    ['missing_required_fields', 3],
+    ['missing_question', 4],
+  ])
+})
+
+test('valid continuation reports the physical source range in XLSX', () => {
+  const shared = ['STT', 'Câu hỏi', 'Trả lời', '1', 'Hỏi?', 'Dẫn nhập', 'Bước hai']
+  const cell = (ref: string, index: number) => `<c r="${ref}" t="s"><v>${index}</v></c>`
+  const sheet = '<worksheet><sheetData>'
+    + `<row r="1">${cell('A1', 0)}${cell('B1', 1)}${cell('C1', 2)}</row>`
+    + `<row r="2">${cell('A2', 3)}${cell('B2', 4)}${cell('C2', 5)}</row>`
+    + '<row r="5"><c r="A5"/><c r="B5"/>' + cell('C5', 6) + '</row>'
+    + '</sheetData></worksheet>'
+  const book = zip([
+    { name: 'xl/sharedStrings.xml', content: `<sst>${shared.map(item => `<si><t>${item}</t></si>`).join('')}</sst>` },
+    { name: 'xl/worksheets/sheet1.xml', content: sheet },
+  ])
+  const result = parseQaWorkbookDiagnostics(book)
+  assert.equal(result.rows[0]!.sourceRow, 2)
+  assert.equal(result.rows[0]!.sourceEndRow, 5)
+  assert.equal(result.rows[0]!.answer, 'Dẫn nhập\nBước hai')
+})
+
+test('unrelated text without a real Q&A header is rejected instead of parsed positionally', () => {
+  assert.throws(
+    () => diagnoseQaGrid([
+      ['Báo cáo tổng hợp'],
+      ['Nội dung mô tả', 'Không phải câu hỏi', 'Không phải trả lời'],
+    ]),
+    (error: unknown) => error instanceof XlsxError && /hàng tiêu đề/.test(error.message),
+  )
 })
 
 test('CSV input is accepted, including quoted fields and embedded separators', () => {

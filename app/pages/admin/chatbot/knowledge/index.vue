@@ -34,6 +34,27 @@ async function transition(item: any, action: 'publish' | 'archive') { const verb
 async function remove(item: any) { const ok = await confirm({ title: 'Xóa mục kiến thức', message: 'Xóa mục kiến thức này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return; try { await $fetch(`/api/admin/chatbot/knowledge/${item.id}`, { method: 'DELETE' }); toast.success('Đã xóa mục kiến thức.'); await load(page.value) } catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể xóa mục kiến thức.') } }
 // ── Excel/CSV import ──
 const showImport = ref(false); const importFile = ref<File | null>(null); const importPublish = ref(false); const importTopic = ref(''); const importing = ref(false); const importResult = ref<any>(null)
+const importStageLabel: Record<string, string> = { parse: 'Đọc tệp', save: 'Lưu dữ liệu', publish: 'Xuất bản' }
+const importRawLabels: Record<string, string> = { stt: 'STT', question: 'Câu hỏi', answer: 'Trả lời', note: 'Ghi chú' }
+function importRowLabel(item: any) { return item.row === item.endRow ? `Dòng ${item.row}` : `Dòng ${item.row}–${item.endRow}` }
+/**
+ * Only the four mapped text fields belong in the scalar list. `rawExtraColumns`
+ * is an array of `{ column, value }`, so leaving it here rendered it as raw JSON
+ * under the literal key name — it gets its own readable list below.
+ */
+function importRawFields(item: any) { return Object.entries(item.raw || {}).filter(([field, value]) => field !== 'rawExtraColumns' && String(value || '').length > 0) }
+/**
+ * Kept in server order WITHOUT filtering: the truncation markers are positional
+ * (`rawExtraColumns.<index>.value`), so dropping an entry here would shift every
+ * later index and pin the badge to the wrong column.
+ */
+function importExtraColumns(item: any) { return (item.raw?.rawExtraColumns || []) as Array<{ column?: string; value?: string }> }
+function importFieldTruncated(item: any, field: string) { return (item.truncatedFields || []).includes(field) }
+/** The whole list was cut short (more columns than the server previews). */
+function importExtraColumnsTruncated(item: any) { return importFieldTruncated(item, 'rawExtraColumns') }
+/** This one column's value was cut short — server key is `rawExtraColumns.<index>.value`. */
+function importExtraColumnTruncated(item: any, index: number) { return importFieldTruncated(item, `rawExtraColumns.${index}.value`) }
+function importExtraColumnLabel(entry: { column?: string }) { return `Cột ${entry?.column || '?'}` }
 function onImportFile(e: Event) { importFile.value = (e.target as HTMLInputElement).files?.[0] || null; importResult.value = null }
 const downloadingTemplate = ref(false)
 /**
@@ -63,7 +84,9 @@ async function runImport() {
     const fd = new FormData(); fd.append('file', importFile.value); fd.append('publish', importPublish.value ? '1' : '0'); if (importTopic.value.trim()) fd.append('topic', importTopic.value.trim())
     const res = await $fetch<any>('/api/admin/chatbot/knowledge/import', { method: 'POST', body: fd })
     importResult.value = res
-    toast.success(`Đã nhập ${res.imported}/${res.total} mục${res.published ? `, xuất bản ${res.published}` : ''}.`)
+    const message = `Đã nhập ${res.imported}/${res.total} mục${res.published ? `, xuất bản ${res.published}` : ''}.`
+    if (res.errors?.length) toast.warning(message, 'Nhập tệp chưa hoàn tất')
+    else toast.success(message)
     await load(1)
   } catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể nhập tệp.') } finally { importing.value = false }
 }
@@ -89,8 +112,8 @@ watch([topic, status], () => load(1)); onMounted(() => load())
 
     <!-- Import Excel modal -->
     <div v-if="showImport" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-4" @click.self="closeImport">
-      <div class="w-full max-w-lg rounded-xl bg-white p-5 shadow-xl">
-        <h2 class="m-0 text-lg font-extrabold text-[#122815]">Nhập câu hỏi từ Excel</h2>
+      <div class="flex max-h-[calc(100vh-2rem)] w-full max-w-3xl flex-col overflow-hidden rounded-xl bg-white p-5 shadow-xl" role="dialog" aria-modal="true" aria-labelledby="import-dialog-title">
+        <h2 id="import-dialog-title" class="m-0 text-lg font-extrabold text-[#122815]">Nhập câu hỏi từ Excel</h2>
         <p class="m-0 mt-1 text-sm text-[#667768]">Tệp <strong>.xlsx</strong> hoặc <strong>.csv</strong> với các cột: <strong>STT · Câu hỏi · Trả lời · Ghi chú</strong>. Hệ thống tự tách từ khoá để khớp câu hỏi đời thường.</p>
         <p class="m-0 mt-1 text-sm text-[#667768]">Câu trả lời dài giữ nguyên định dạng xuống dòng. Có thể xuống dòng trong ô (Alt + Enter) hoặc viết tiếp ở dòng dưới và để trống ô Câu hỏi.</p>
         <button type="button" :disabled="downloadingTemplate" class="mt-3 inline-flex items-center gap-2 self-start rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30 disabled:cursor-not-allowed disabled:opacity-60" @click="downloadTemplate">
@@ -105,10 +128,49 @@ watch([topic, status], () => load(1)); onMounted(() => load())
           </label>
           <label class="flex items-start gap-2 text-sm font-semibold"><input v-model="importPublish" type="checkbox" class="mt-0.5 h-4 w-4 accent-[#2c6e33]" /><span>Xuất bản ngay<br /><span class="font-normal text-[#667768]">Bỏ chọn để lưu Bản nháp chờ duyệt (khuyến nghị). Cần quyền “Xuất bản”.</span></span></label>
         </div>
-        <div v-if="importResult" class="mt-3 rounded-lg border border-[#8ed694] bg-[#f0f7f1] p-3 text-sm text-[#1e4620]">
-          Đã nhập <strong>{{ importResult.imported }}/{{ importResult.total }}</strong> mục<span v-if="importResult.published">, xuất bản {{ importResult.published }}</span><span v-if="importResult.skipped">, bỏ qua {{ importResult.skipped }}</span>.
-          <ul v-if="importResult.errors?.length" class="m-0 mt-1 list-disc pl-5 text-[#a32924]"><li v-for="(e, i) in importResult.errors" :key="i">Dòng {{ e.row }}: {{ e.message }}</li></ul>
-        </div>
+        <section
+          v-if="importResult"
+          class="mt-3 min-h-0 overflow-y-auto rounded-lg border p-3 text-sm"
+          :class="importResult.errors?.length ? (importResult.imported ? 'border-[#e8c56f] bg-[#fffaf0] text-[#765b00]' : 'border-[#f1b8b5] bg-[#fff4f3] text-[#a32924]') : 'border-[#8ed694] bg-[#f0f7f1] text-[#1e4620]'"
+          role="alert"
+          aria-live="polite"
+          aria-label="Kết quả nhập tệp"
+        >
+          <p class="m-0 font-semibold">
+            Đã nhập <strong>{{ importResult.imported }}/{{ importResult.total }}</strong> mục<span v-if="importResult.published">, xuất bản {{ importResult.published }}</span><span v-if="importResult.skipped">, chưa nhập {{ importResult.skipped }}</span>.
+          </p>
+          <div v-if="importResult.errors?.length" class="mt-3 flex flex-col gap-3">
+            <article v-for="e in importResult.errors" :key="`${e.row}-${e.endRow}-${e.stage}-${e.code}`" class="rounded-lg border border-[#e4a4a1] bg-white p-3 text-[#8f211d]">
+              <header class="flex flex-wrap items-center gap-2">
+                <strong>{{ importRowLabel(e) }}</strong>
+                <span class="rounded-full border border-[#e4a4a1] bg-[#fff4f3] px-2 py-0.5 text-xs font-bold">{{ importStageLabel[e.stage] || e.stage }}</span>
+              </header>
+              <p class="m-0 mt-2 font-semibold">{{ e.message }}</p>
+              <dl v-if="importRawFields(e).length" class="m-0 mt-3 flex flex-col gap-2 border-t border-[#f1d0ce] pt-3">
+                <div v-for="([field, value]) in importRawFields(e)" :key="field">
+                  <dt class="font-bold">
+                    {{ importRawLabels[field] || field }}
+                    <span v-if="importFieldTruncated(e, field)" class="ml-1 rounded bg-[#fbe5e3] px-1.5 py-0.5 text-xs font-semibold">đã rút gọn</span>
+                  </dt>
+                  <dd class="m-0 mt-0.5 whitespace-pre-wrap break-words rounded bg-[#fff8f7] px-2 py-1.5 font-mono text-xs text-[#6f1b18]">{{ value }}</dd>
+                </div>
+              </dl>
+              <section v-if="importExtraColumns(e).length" class="mt-3 border-t border-[#f1d0ce] pt-3">
+                <p class="m-0 text-xs font-bold uppercase tracking-wide">Cột chưa được ánh xạ</p>
+                <dl class="m-0 mt-2 flex flex-col gap-2">
+                  <div v-for="(entry, index) in importExtraColumns(e)" :key="`${entry.column}-${index}`">
+                    <dt class="font-bold">
+                      {{ importExtraColumnLabel(entry) }}
+                      <span v-if="importExtraColumnTruncated(e, index)" class="ml-1 rounded bg-[#fbe5e3] px-1.5 py-0.5 text-xs font-semibold">đã rút gọn</span>
+                    </dt>
+                    <dd class="m-0 mt-0.5 whitespace-pre-wrap break-words rounded bg-[#fff8f7] px-2 py-1.5 font-mono text-xs text-[#6f1b18]">{{ entry.value }}</dd>
+                  </div>
+                </dl>
+                <p v-if="importExtraColumnsTruncated(e)" class="m-0 mt-2 text-xs font-semibold">Danh sách cột đã rút gọn, còn cột khác không hiển thị.</p>
+              </section>
+            </article>
+          </div>
+        </section>
         <div class="mt-5 flex justify-end gap-2">
           <button type="button" class="rounded-lg border border-[#c8d6c9] bg-white px-4 py-2.5 font-bold text-[#2c3e2e] hover:bg-[#f0f7f1]" @click="closeImport">Đóng</button>
           <button type="button" :disabled="importing || !importFile" class="rounded-lg bg-[#1e4620] px-5 py-2.5 font-bold text-white hover:bg-[#2c6e33] disabled:cursor-not-allowed disabled:opacity-60" @click="runImport">{{ importing ? 'Đang nhập...' : 'Nhập' }}</button>
