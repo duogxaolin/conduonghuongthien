@@ -26,6 +26,9 @@ const menuGroups = computed(() => [
       { label: 'Tài khoản của tôi', icon: 'fa-solid fa-user-gear', path: '/admin/profile' },
       { label: 'Người dùng', icon: 'fa-solid fa-users', path: '/admin/users' },
       { label: 'Vai trò & Phân quyền', icon: 'fa-solid fa-user-shield', path: '/admin/users/roles' },
+      // Lịch sử của MỌI tài khoản — khác 'Tài khoản của tôi' (chỉ của chính mình),
+      // nên phải có quyền đọc 'users' mới thấy mục này.
+      ...(hasPermission('users', 'read') ? [{ label: 'Lịch sử hoạt động', icon: 'fa-solid fa-clock-rotate-left', path: '/admin/users/activity' }] : []),
     ]
   },
   {
