@@ -262,6 +262,14 @@ npm run db:drift
 
 ## Cập nhật code
 
+### Cách A: Tự động qua CI/CD (khuyến nghị)
+
+Đã cấu hình xong theo [CI-CD.md](./CI-CD.md) thì không phải làm gì: mỗi lần merge
+vào `main`, GitHub Actions chạy đủ bốn cổng kiểm tra, xây image, đẩy lên GHCR, rồi
+ssh vào VPS kéo về và khởi động lại. Deploy hỏng thì tự lùi về image cũ.
+
+### Cách B: Thủ công
+
 ```bash
 cd cdkt
 git pull origin main
@@ -271,6 +279,21 @@ docker compose up -d
 
 > Database **không bị mất** khi update — volume `mysql_data` persist giữa các lần rebuild.
 > Chỉ mất khi chạy `docker compose down -v` hoặc `docker volume rm`.
+
+---
+
+## CI/CD tự động
+
+Toàn bộ hướng dẫn cài đặt, vận hành và xử lý sự cố nằm ở **[CI-CD.md](./CI-CD.md)**.
+
+Tóm tắt: mỗi lần merge vào `main`, GitHub Actions chạy bốn cổng kiểm tra (test,
+typecheck, build, hygiene), xây image và đẩy lên GHCR theo tag `sha-<commit>`, rồi
+ssh vào VPS kéo image về và khởi động lại. Container mới không `healthy` thì script
+tự trỏ `.env` về image cũ.
+
+Cần khai trước 4 secret (`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_SSH_KNOWN_HOSTS`)
+và 2 variable (`VPS_PORT`, `VPS_APP_DIR`) trên GitHub, cộng một lần `docker login
+ghcr.io` trên VPS — GHCR để package ở chế độ private kể cả khi repo là public.
 
 ---
 
