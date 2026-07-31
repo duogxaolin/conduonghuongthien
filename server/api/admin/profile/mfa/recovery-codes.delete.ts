@@ -2,12 +2,13 @@
  * Turn recovery codes off. Deletes every stored code for the account; the
  * emailed code becomes the remaining recovery path, and the response says so.
  */
-import { getRequestIP } from 'h3'
+
 import { getDb } from '../../../../utils/db'
 import { activityLogs } from '../../../../db/schema'
 import { logInfo } from '../../../../utils/logger'
 import { requireCurrentPassword } from '../../../../utils/mfa/reauth'
 import { deleteAllRecoveryCodes, usableFactorTypes } from '../../../../utils/mfa/factors'
+import { getClientIp } from '../../../../utils/client-ip'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -21,7 +22,7 @@ export default defineEventHandler(async (event) => {
   const usable = await usableFactorTypes(admin.id)
   const emailUsable = usable.includes('email_otp')
 
-  const ip = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const ip = getClientIp(event)
   const db = getDb()
   await db.insert(activityLogs).values({
     userId: admin.id,

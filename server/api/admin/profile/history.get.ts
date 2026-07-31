@@ -6,10 +6,11 @@
  * is itself recorded — a history view that can be read silently is a surveillance
  * tool rather than an audit trail.
  */
-import { getRequestIP } from 'h3'
+
 import { and, desc, eq, gte, lte, sql } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
 import { activityLogs, users } from '../../../db/schema'
+import { getClientIp } from '../../../utils/client-ip'
 
 const DEFAULT_PAGE_SIZE = 20
 const MAX_PAGE_SIZE = 100
@@ -110,7 +111,7 @@ export default defineEventHandler(async (event) => {
       resourceId: targetId,
       meta: {
         targetUsername: target.username,
-        ip: getRequestIP(event, { xForwardedFor: false }) || 'unknown',
+        ip: getClientIp(event),
       },
     })
   }

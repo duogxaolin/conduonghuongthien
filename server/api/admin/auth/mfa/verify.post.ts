@@ -7,7 +7,7 @@
  * per-challenge attempt ceiling that burns the ticket, and a per-account window
  * that survives the attacker discarding the ticket and re-entering the password.
  */
-import { getRequestIP } from 'h3'
+
 import { verifyMfaChallenge } from '../../../../utils/auth'
 import { getPool } from '../../../../utils/db'
 import { logInfo, logWarn, SECURITY_EVENTS } from '../../../../utils/logger'
@@ -23,6 +23,7 @@ import {
   completeLogin,
   loadSessionUser,
 } from '../../../../utils/mfa/session'
+import { getClientIp } from '../../../../utils/client-ip'
 import {
   attemptEmailCode,
   attemptRecoveryCode,
@@ -44,7 +45,7 @@ type Method = FactorType | 'recovery_code'
 const METHODS: Method[] = ['totp', 'email_otp', 'second_password', 'recovery_code']
 
 export default defineEventHandler(async (event) => {
-  const ip = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const ip = getClientIp(event)
 
   const ticket = getCookie(event, CHALLENGE_COOKIE)
   const challenge = ticket ? verifyMfaChallenge(ticket) : null

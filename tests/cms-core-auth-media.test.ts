@@ -76,9 +76,13 @@ test('production refuses to run on a missing or known-default JWT secret', () =>
 })
 
 // ─── Login hardening ─────────────────────────────────────────────────────────
-test('login rate-limits on the observed peer, not a client-supplied header', () => {
+test('login rate-limits on an address the client cannot choose', () => {
   const login = read('server/api/admin/auth/login.post.ts')
-  assert.match(login, /getRequestIP\(event, \{ xForwardedFor: false \}\)/)
+  // This used to pin `getRequestIP(event, { xForwardedFor: false })`, which is
+  // unforgeable but, once nginx is in front, identical for every visitor — the
+  // per-source limit became a second copy of the per-username one. getClientIp
+  // reads the forwarded chain only from a proxy we listed; see client-ip.test.ts.
+  assert.match(login, /getClientIp\(event\)/)
   assert.doesNotMatch(login, /const ip = getRequestHeader\(event, 'x-forwarded-for'\)/)
   // Named for the bucket, not the data structure: this assertion previously
   // pinned a `Map` variable name and broke when the counters moved to a shared
@@ -146,7 +150,9 @@ test('the uploads route still refuses to escape its root', () => {
 test('the public form is rate-limited and cannot pick an arbitrary recipient', () => {
   const submissions = read('server/api/submissions.post.ts')
   assert.match(submissions, /submitRateLimited/)
-  assert.match(submissions, /getRequestIP\(event, \{ xForwardedFor: false \}\)/)
+  // Same reasoning as the login test above: behind a proxy the peer address is
+  // one shared value, so the 5-per-10-minutes quota would be shared too.
+  assert.match(submissions, /getClientIp\(event\)/)
   assert.match(submissions, /getConfiguredRecipients/, 'recipient allow-list removed')
   assert.match(submissions, /allowed\.has\(to\)/)
 })

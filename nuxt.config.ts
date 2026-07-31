@@ -85,6 +85,10 @@ export default defineNuxtConfig({
     aiApiKey: process.env.AI_API_KEY || '',
     aiBaseUrl: process.env.AI_BASE_URL || 'https://api.openai.com/v1',
     aiModel: process.env.AI_MODEL || 'gpt-4o-mini',
+    // Addresses of our own reverse proxies. Only these are allowed to speak for
+    // a client via x-forwarded-for; see server/utils/client-ip.ts. Empty means
+    // loopback only, which is correct for an app with nothing in front of it.
+    trustedProxyIps: process.env.TRUSTED_PROXY_IPS || '',
     analytics: {
       hmacSecret: analyticsHmacSecret,
       collectionEnabled: parseAnalyticsBoolean('ANALYTICS_COLLECTION_ENABLED', false),
