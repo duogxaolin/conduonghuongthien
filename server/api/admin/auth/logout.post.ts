@@ -1,5 +1,6 @@
 import { eq, sql } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
+import { getClientIp } from '../../../utils/client-ip'
 import { users, activityLogs } from '../../../db/schema'
 
 export default defineEventHandler(async (event) => {
@@ -23,7 +24,9 @@ export default defineEventHandler(async (event) => {
       userId: adminUser.id,
       action: 'logout',
       resource: 'auth',
-      meta: { ip: getRequestHeader(event, 'x-forwarded-for') || 'unknown' },
+      // This alone read the raw header, which any client can set: the audit trail
+      // for "who signed out" was writing whatever the caller claimed.
+      meta: { ip: getClientIp(event) },
     }).catch(() => {})
   }
 

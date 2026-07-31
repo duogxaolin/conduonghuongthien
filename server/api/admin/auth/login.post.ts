@@ -1,4 +1,3 @@
-import { getRequestIP } from 'h3'
 import { getDb } from '../../../utils/db'
 import { users, roles } from '../../../db/schema'
 import { verifyPassword } from '../../../utils/auth'
@@ -7,6 +6,7 @@ import { getPool } from '../../../utils/db'
 import { logInfo, logWarn, SECURITY_EVENTS } from '../../../utils/logger'
 import { completeLogin, setChallengeCookie } from '../../../utils/mfa/session'
 import { countUnusedRecoveryCodes, usableFactorTypes } from '../../../utils/mfa/factors'
+import { getClientIp } from '../../../utils/client-ip'
 import {
   clearRateLimit,
   peekRateLimit,
@@ -39,7 +39,7 @@ export default defineEventHandler(async (event) => {
 
   // Rate limit theo IP thật + username. `x-forwarded-for` là header do client gửi
   // nên giả mạo được — dùng peer IP mà máy chủ quan sát (xForwardedFor: false).
-  const ip = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const ip = getClientIp(event)
   const userKey = username.toLowerCase()
   const ipBucket = `login:ip:${ip}:${userKey}`
   const userBucket = `login:user:${userKey}`

@@ -100,3 +100,104 @@ test('CI refuses a committed .env or a known-default secret', () => {
   assert.match(workflow, /cdkt_admin_secret_change_m\[e\]/)
   assert.match(workflow, /PRIVATE KEY/)
 })
+
+// ─── Deploy ──────────────────────────────────────────────────────────────────
+test('nothing reaches the VPS without passing every gate first', () => {
+  const workflow = read('.github/workflows/ci.yml')
+  // The image job depends on all four gates, and deploy depends on the image
+  // job. Drop one name here and a commit that fails typecheck ships anyway.
+  const imageNeeds = /image:\s*\n[\s\S]*?needs: \[([^\]]+)\]/.exec(workflow)?.[1] ?? ''
+  for (const gate of ['test', 'typecheck', 'build', 'hygiene']) {
+    assert.ok(imageNeeds.includes(gate), `the image job does not wait for the ${gate} job`)
+  }
+  assert.match(workflow, /deploy:\s*\n[\s\S]*?needs: image/, 'deploy does not wait for the image')
+  // Deploying a pull request would push a fork's code onto the server.
+  assert.match(workflow, /if: github\.ref == 'refs\/heads\/main' && github\.event_name != 'pull_request'/)
+})
+
+test('the deployed image is pinned to a commit, not to a moving tag', () => {
+  const workflow = read('.github/workflows/ci.yml')
+  // `latest` can move between the image job finishing and the deploy starting,
+  // and it is useless for rolling back.
+  assert.match(workflow, /image=ghcr\.io\/\$repo:sha-\$\{\{ github\.sha \}\}/)
+  assert.match(workflow, /IMAGE: \$\{\{ needs\.image\.outputs\.image \}\}/)
+})
+
+test('the SSH host key is pinned rather than accepted on sight', () => {
+  const workflow = read('.github/workflows/ci.yml')
+  // ssh-keyscan at run time trusts whoever answers, on every run — which is the
+  // one party that must not be trusted, since they would receive the session.
+  assert.match(workflow, /StrictHostKeyChecking=yes/)
+  // Only as a command — the comment above it names ssh-keyscan to explain why
+  // the key is pinned instead.
+  assert.doesNotMatch(workflow, /^(?!\s*#).*ssh-keyscan/m, 'the host key is discovered instead of pinned')
+  assert.match(workflow, /SSH_KNOWN_HOSTS: \$\{\{ secrets\.VPS_SSH_KNOWN_HOSTS \}\}/)
+})
+
+test('a deploy run is never cancelled halfway through', () => {
+  const workflow = read('.github/workflows/ci.yml')
+  // The workflow-level group sets cancel-in-progress, which is right for tests
+  // and wrong here: a cancelled deploy leaves .env pointing at an image the
+  // running container is not using.
+  const deploy = workflow.slice(workflow.indexOf('\n  deploy:'))
+  assert.match(deploy, /group: deploy-production/)
+  assert.match(deploy, /cancel-in-progress: false/)
+})
+
+test('the remote deploy script is executable and fails loudly', () => {
+  const mode = statSync(new URL('../scripts/deploy-remote.sh', import.meta.url)).mode
+  assert.ok(mode & 0o111, 'scripts/deploy-remote.sh is not executable')
+  assert.match(read('scripts/deploy-remote.sh'), /set -euo pipefail/)
+})
+
+test('the deploy verifies the new container instead of assuming it started', () => {
+  const script = read('scripts/deploy-remote.sh')
+  // `docker compose up -d` returns as soon as the container is created, long
+  // before the app has connected to MySQL or answered a request.
+  assert.match(script, /State\.Health\.Status/)
+  assert.match(script, /wait_healthy/)
+  // A missing HEALTHCHECK means we are looking at the wrong image; it must not
+  // read as success.
+  assert.match(script, /none\)[\s\S]*?return 1/, 'a container without a healthcheck passes silently')
+})
+
+test('a failed deploy rolls back to the image that was running', () => {
+  const script = read('scripts/deploy-remote.sh')
+  assert.match(script, /PREVIOUS=\$\(current_image\)/)
+  assert.match(script, /set_image "\$PREVIOUS"/)
+  // The first deploy has nothing to roll back to; saying so beats a confusing
+  // failure inside the rollback path.
+  assert.match(script, /không có image trước đó để lùi về/)
+  // Every exit from the failure path is non-zero, including the one where the
+  // rollback succeeded — the commit did not ship.
+  assert.match(script, /exit 1\s*$/m)
+})
+
+test('the deploy pulls before it touches .env', () => {
+  const script = read('scripts/deploy-remote.sh')
+  // A bad tag or an unreachable registry must leave the running deployment
+  // untouched, so the pull has to come first.
+  assert.ok(
+    script.indexOf('docker pull') < script.indexOf('set_image "$IMAGE"'),
+    'the image reference is written before the image is known to exist',
+  )
+})
+
+test('rewriting .env cannot truncate it or widen its permissions', () => {
+  const script = read('scripts/deploy-remote.sh')
+  // .env holds JWT_SECRET and the database password. An interrupted rewrite
+  // that leaves a half-file takes the site down and loses secrets.
+  assert.match(script, /mktemp/)
+  assert.match(script, /mv "\$TMP_ENV" \.env/)
+  // A fresh temp file is world-readable by default; the copy carries the
+  // original owner and mode across.
+  assert.match(script, /cp -p \.env "\$TMP_ENV"/)
+})
+
+test('compose can pull a prebuilt image and still build locally', () => {
+  const compose = read('docker-compose.yml')
+  // `docker compose pull` does nothing for a service that only declares build:.
+  assert.match(compose, /image: \$\{CDKT_IMAGE:-cdkt\/app:local\}/)
+  // The local default keeps `docker compose build` working for development.
+  assert.match(compose, /build:\s*\n\s*context: \./)
+})

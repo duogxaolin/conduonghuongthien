@@ -9,12 +9,13 @@
  * lockout possible, and an unreachable admin account on a public-facing portal is
  * worse than the residual risk of a loud, logged override.
  */
-import { getRequestIP } from 'h3'
+
 import { eq } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { users, roles, userMfaFactors, userRecoveryCodes, activityLogs } from '../../../../db/schema'
 import { logWarn, SECURITY_EVENTS } from '../../../../utils/logger'
 import { revokeSessions } from '../../../../utils/mfa/factors'
+import { getClientIp } from '../../../../utils/client-ip'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -41,7 +42,7 @@ export default defineEventHandler(async (event) => {
   // to be the only party holding one.
   await revokeSessions(id)
 
-  const ip = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const ip = getClientIp(event)
   // Two rows: one against the actor, one against the target, so the act is
   // visible from either account's history.
   await db.insert(activityLogs).values([

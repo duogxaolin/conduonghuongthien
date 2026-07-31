@@ -19,7 +19,8 @@ Yêu cầu: Node.js ≥ 22.19, MySQL 8.0 running locally.
 
 ## Production Deploy
 
-Xem [DEPLOY.md](./DEPLOY.md) để triển khai VPS với Docker.
+Xem [DEPLOY.md](./DEPLOY.md) để triển khai VPS với Docker, và [CI-CD.md](./CI-CD.md) để
+tự động deploy mỗi lần merge vào `main` (GitHub Actions → GHCR → VPS).
 
 **Không cần cài Node.js trên VPS** — Docker multi-stage build tự dùng Node 22 bên trong container.
 

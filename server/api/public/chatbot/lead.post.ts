@@ -1,4 +1,3 @@
-import { getRequestIP } from 'h3'
 import { eq } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
 import { submissions, settings } from '../../../db/schema'
@@ -6,6 +5,7 @@ import { logError } from '../../../utils/logger'
 import { getSmtpConfig, sendMail } from '../../../utils/mailer'
 import { getChatbotSettings } from '../../../services/chatbot-settings'
 import { escapeHtml } from '../../../utils/escape-html'
+import { getClientIp } from '../../../utils/client-ip'
 
 const PHONE_RE = /^[0-9+()\-\s.]{7,20}$/
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -31,7 +31,7 @@ function rateLimited(ip: string): boolean {
  * request body, so this cannot be abused as an open relay.
  */
 export default defineEventHandler(async (event) => {
-  const ip = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const ip = getClientIp(event)
   if (rateLimited(ip)) throw createError({ statusCode: 429, statusMessage: 'Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.' })
 
   const body = await readBody(event).catch(() => ({}))

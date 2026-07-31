@@ -40,6 +40,16 @@ services:
           memory: ${MYSQL_MEM_LIMIT:-1g}
 
   app:
+    # CI xây image rồi đẩy lên GHCR; VPS chỉ kéo về. `docker compose pull` không
+    # làm gì được với service chỉ khai `build:`, nên tên image là bắt buộc.
+    # Mặc định `cdkt/app:local` giữ nguyên luồng cũ cho máy phát triển: không
+    # đặt CDKT_IMAGE thì `docker compose build` vẫn tự xây và tự gắn tên đó.
+    #
+    # Vì sao build ở CI chứ không `git pull && build` trên VPS: `nuxi build` ngốn
+    # RAM, và trên VPS 1-2GB nó bị OOM-kill giữa chừng — đúng lúc container cũ đã
+    # dừng. Build ở nơi khác thì một lần build hỏng không chạm được vào trang
+    # đang chạy, và lùi phiên bản chỉ là trỏ lại tag cũ thay vì xây lại từ đầu.
+    image: ${CDKT_IMAGE:-cdkt/app:local}
     build:
       context: .
       # The build stage checks ADMIN_PASSWORD against the password policy before
@@ -52,7 +62,13 @@ services:
     container_name: cdkt_app
     restart: always
     ports:
-      - "${PORT:-3000}:${PORT:-3000}"
+      # Loopback only, matching the mysql service above. Published on 0.0.0.0 this
+      # answered plain HTTP on :3000 from the internet, which bypasses whatever
+      # TLS the reverse proxy terminates — the certificate is not optional if the
+      # port it protects is also reachable without it. Put nginx in front and
+      # proxy to 127.0.0.1:3000. To run with no proxy at all, override with
+      # APP_BIND=0.0.0.0 and terminate TLS somewhere else.
+      - "${APP_BIND:-127.0.0.1}:${PORT:-3000}:${PORT:-3000}"
     environment:
       PORT: ${PORT:-3000}
       NODE_ENV: production
@@ -74,6 +90,13 @@ services:
       NUXT_ANALYTICS_HMAC_SECRET: ${ANALYTICS_HMAC_SECRET}
       ANALYTICS_COLLECTION_ENABLED: ${ANALYTICS_COLLECTION_ENABLED:-true}
       NUXT_ANALYTICS_COLLECTION_ENABLED: ${NUXT_ANALYTICS_COLLECTION_ENABLED:-true}
+      # Behind a proxy the peer address is the docker bridge gateway for every
+      # visitor, so per-IP rate limits collapse into one shared bucket and audit
+      # rows record the proxy. Naming the proxy here restores the real address
+      # without trusting a header from an unknown sender. Both names are needed:
+      # Nitro reads the NUXT_-prefixed one at runtime.
+      TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
+      NUXT_TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
       # Used ONLY when the superadmin account is first created (seed is insert-only).
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}

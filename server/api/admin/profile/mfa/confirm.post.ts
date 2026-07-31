@@ -5,7 +5,7 @@
  * already proven at enrollment (the caller typed it), so confirming it re-asks
  * for it to catch a typo before it becomes a login requirement.
  */
-import { getRequestIP } from 'h3'
+
 import { eq, sql } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { userMfaFactors, users, activityLogs } from '../../../../db/schema'
@@ -16,6 +16,7 @@ import { unsealTotpSecret } from '../../../../utils/mfa/crypto'
 import { verifyTotp } from '../../../../utils/mfa/totp'
 import { FACTOR_TYPES, FACTOR_LABELS, getFactor, revokeSessions, type FactorType } from '../../../../utils/mfa/factors'
 import { setSessionCookie } from '../../../../utils/mfa/session'
+import { getClientIp } from '../../../../utils/client-ip'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -107,7 +108,7 @@ export default defineEventHandler(async (event) => {
     tokenVersion,
   })
 
-  const ip = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const ip = getClientIp(event)
   await db.insert(activityLogs).values({
     userId: admin.id,
     action: 'update',

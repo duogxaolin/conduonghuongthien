@@ -5,7 +5,7 @@
  * by the challenge ticket, so it carries its own rate limit: without one it would
  * be a mail-sending endpoint reachable by anyone holding a stolen password.
  */
-import { getRequestIP } from 'h3'
+
 import { verifyMfaChallenge } from '../../../../utils/auth'
 import { getPool } from '../../../../utils/db'
 import { logWarn } from '../../../../utils/logger'
@@ -13,6 +13,7 @@ import { recordRateLimitHit, peekRateLimit, type RateLimitRule } from '../../../
 import { CHALLENGE_COOKIE, clearChallengeCookie, loadSessionUser } from '../../../../utils/mfa/session'
 import { getFactor } from '../../../../utils/mfa/factors'
 import { issueEmailCode } from '../../../../utils/mfa/email-code'
+import { getClientIp } from '../../../../utils/client-ip'
 
 /** Tight: a legitimate caller needs one code, maybe two if the first is slow. */
 const SEND_RULE: RateLimitRule = { limit: 3, windowSeconds: 10 * 60 }
@@ -23,7 +24,7 @@ function limiterDeps() {
 }
 
 export default defineEventHandler(async (event) => {
-  const ip = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const ip = getClientIp(event)
 
   const ticket = getCookie(event, CHALLENGE_COOKIE)
   const challenge = ticket ? verifyMfaChallenge(ticket) : null
