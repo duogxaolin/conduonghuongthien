@@ -1,4 +1,3 @@
-import { getRequestIP } from 'h3'
 import { getDb, getPool } from '../utils/db'
 import { submissions, pages, pageBlocks } from '../db/schema'
 import { eq } from 'drizzle-orm'
@@ -6,6 +5,7 @@ import { getSmtpConfig, sendMail } from '../utils/mailer'
 import { escapeHtml } from '../utils/escape-html'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
 import { logError, logWarn, SECURITY_EVENTS } from '../utils/logger'
+import { getClientIp } from '../utils/client-ip'
 
 // Public, unauthenticated endpoint → rate limit by the real peer IP
 // (`x-forwarded-for` is client-controlled and therefore spoofable).
@@ -113,7 +113,7 @@ async function getConfiguredRecipients(db: ReturnType<typeof getDb>): Promise<Se
 }
 
 export default defineEventHandler(async (event) => {
-  const clientIp = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const clientIp = getClientIp(event)
   const submitLimit = await submitRateLimited(clientIp)
   if (submitLimit.limited) {
     logWarn({ event: SECURITY_EVENTS.submissionThrottled, ip: clientIp })

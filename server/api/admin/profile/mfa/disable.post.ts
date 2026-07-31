@@ -2,7 +2,7 @@
  * Turn a factor off. The row and its stored material are deleted rather than
  * flagged, so "disabled" cannot drift from "secret still in the database".
  */
-import { getRequestIP } from 'h3'
+
 import { getDb } from '../../../../utils/db'
 import { activityLogs } from '../../../../db/schema'
 import { logInfo, SECURITY_EVENTS } from '../../../../utils/logger'
@@ -18,6 +18,7 @@ import {
   type FactorType,
 } from '../../../../utils/mfa/factors'
 import { setSessionCookie } from '../../../../utils/mfa/session'
+import { getClientIp } from '../../../../utils/client-ip'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -53,7 +54,7 @@ export default defineEventHandler(async (event) => {
     tokenVersion,
   })
 
-  const ip = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const ip = getClientIp(event)
   const db = getDb()
   await db.insert(activityLogs).values({
     userId: admin.id,

@@ -1,10 +1,11 @@
 import { createHash } from 'node:crypto'
 import type { H3Event } from 'h3'
-import { getHeader, getRequestIP } from 'h3'
+import { getHeader } from 'h3'
 import { sql, type SQL } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { buildMinimalPageViewRow, type MinimalPageViewRow, type TrustedGeography } from '../utils/analytics-collection'
 import type { AnalyticsLiveScopeType } from '../utils/analytics-live'
+import { getClientIp } from '../utils/client-ip'
 import {
   formatUtcDateTime,
   recordAnalyticsNocBestEffort,
@@ -169,7 +170,7 @@ export async function ingestAnalyticsPageView(options: {
     row = buildMinimalPageViewRow({
       payload: options.payload,
       secret: options.config.hmacSecret,
-      ip: getRequestIP(options.event) || 'unknown',
+      ip: getClientIp(options.event) || 'unknown',
       userAgent,
       now,
       trustedGeography: (options.event.context as AnalyticsEventContext).analyticsGeography,

@@ -13,11 +13,12 @@
  * `profile/history.get.ts` is: an audit trail that can be swept silently is a
  * surveillance tool. One row per request, not per log line displayed.
  */
-import { getRequestIP } from 'h3'
+
 import { and, desc, eq, gte, lte, sql } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
 import { activityLogs, users } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { getClientIp } from '../../../utils/client-ip'
 
 const DEFAULT_PAGE_SIZE = 25
 const MAX_PAGE_SIZE = 100
@@ -118,7 +119,7 @@ export default defineEventHandler(async (event) => {
     resourceId: userId,
     meta: {
       filters: { userId, action, resource, from: query.from ?? null, to: query.to ?? null },
-      ip: getRequestIP(event, { xForwardedFor: false }) || 'unknown',
+      ip: getClientIp(event),
     },
   })
 

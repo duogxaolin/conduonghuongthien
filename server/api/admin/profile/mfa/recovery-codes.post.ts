@@ -5,7 +5,7 @@
  * A regeneration deletes the previous batch outright rather than relying on the
  * batch id alone, so a leaked older sheet cannot be redeemed.
  */
-import { getRequestIP } from 'h3'
+
 import { getDb } from '../../../../utils/db'
 import { userRecoveryCodes, activityLogs } from '../../../../db/schema'
 import { logInfo } from '../../../../utils/logger'
@@ -23,6 +23,7 @@ import {
   revokeSessions,
 } from '../../../../utils/mfa/factors'
 import { setSessionCookie } from '../../../../utils/mfa/session'
+import { getClientIp } from '../../../../utils/client-ip'
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -65,7 +66,7 @@ export default defineEventHandler(async (event) => {
     tokenVersion,
   })
 
-  const ip = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const ip = getClientIp(event)
   await db.insert(activityLogs).values({
     userId: admin.id,
     action: 'update',

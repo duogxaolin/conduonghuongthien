@@ -7,7 +7,7 @@
  * ability to rewrite every account, or having a SuperAdmin set the password and
  * therefore know it.
  */
-import { getRequestIP } from 'h3'
+
 import { eq, sql } from 'drizzle-orm'
 import { getDb, getPool } from '../../../utils/db'
 import { users, activityLogs } from '../../../db/schema'
@@ -16,6 +16,7 @@ import { passwordRejectionMessage } from '../../../utils/password-policy'
 import { logInfo, logWarn, SECURITY_EVENTS } from '../../../utils/logger'
 import { peekRateLimit, recordRateLimitHit, clearRateLimit, type RateLimitRule } from '../../../utils/rate-limit-store'
 import { setSessionCookie } from '../../../utils/mfa/session'
+import { getClientIp } from '../../../utils/client-ip'
 
 /** Holding a session is not licence to grind the current password. */
 const RULE: RateLimitRule = { limit: 5, windowSeconds: 15 * 60 }
@@ -37,7 +38,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng nhập mật khẩu hiện tại và mật khẩu mới.' })
   }
 
-  const ip = getRequestIP(event, { xForwardedFor: false }) || 'unknown'
+  const ip = getClientIp(event)
   const deps = limiterDeps()
   const bucket = `profile:password:user:${admin.id}`
   const state = await peekRateLimit(bucket, RULE, deps)
