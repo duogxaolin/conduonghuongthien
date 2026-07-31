@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto'
-import { getRequestIP, type H3Event } from 'h3'
+import { type H3Event } from 'h3'
+import { getClientIp } from '../client-ip'
 import type { ChatbotSettings } from '../../db/schema'
 import type { SafeProviderRequestOptions, SafeProviderResponse } from './outbound'
 import { retrieveKnowledge, type PublicKnowledgeReference, type RetrievalEntry } from './retrieval'
@@ -29,8 +30,10 @@ const RATE_LIMIT_NAMESPACE = 'cdkt-chat-rate-limit-v1'
 
 function text(value: unknown): string { return typeof value === 'string' ? value.normalize('NFKC').trim() : '' }
 function clientKey(event: ChatEvent): string {
-  const peerAddress = getRequestIP(event, { xForwardedFor: false })?.normalize('NFKC').trim().toLowerCase()
-  const identity = peerAddress || 'anonymous'
+  // Behind nginx every visitor shares one peer address, so keying on it made the
+  // 10/minute limit global: visitor eleven was refused because of ten strangers.
+  const clientAddress = getClientIp(event).normalize('NFKC').trim().toLowerCase()
+  const identity = clientAddress && clientAddress !== 'unknown' ? clientAddress : 'anonymous'
   return createHash('sha256').update(RATE_LIMIT_NAMESPACE).update('\0').update(identity).digest('hex')
 }
 

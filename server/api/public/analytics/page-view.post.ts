@@ -1,5 +1,6 @@
-import { createError, defineEventHandler, getRequestIP, readRawBody, setResponseStatus } from 'h3'
+import { createError, defineEventHandler, readRawBody, setResponseStatus } from 'h3'
 import { ingestAnalyticsPageView } from '../../../services/analytics-ingestion'
+import { getClientIp } from '../../../utils/client-ip'
 
 const MAX_BODY_BYTES = 1024
 
@@ -28,7 +29,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Silently accept (202) when throttled: analytics must never disturb browsing.
-  if (viewRateLimited(getRequestIP(event, { xForwardedFor: false }) || 'unknown')) {
+  if (viewRateLimited(getClientIp(event))) {
     setResponseStatus(event, 202)
     return { accepted: false }
   }
