@@ -166,3 +166,133 @@ jobs:
         with:
           scandir: ./scripts
           severity: warning
+
+  # ── Triển khai ──────────────────────────────────────────────────────────────
+  # Hai job dưới đây chỉ chạy trên `main`, và chỉ SAU khi cả bốn cổng trên đã
+  # xanh. Chúng nằm trong cùng một workflow (thay vì `workflow_run` riêng) để
+  # điều đó là một ràng buộc của đồ thị phụ thuộc chứ không phải một lời hứa:
+  # không có commit nào đi ra VPS mà chưa qua test, typecheck, build và hygiene.
+
+  image:
+    name: Build and push image
+    needs: [test, typecheck, build, hygiene]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      # Chỉ job này được ghi vào registry; ba job kia vẫn chỉ đọc mã nguồn.
+      packages: write
+    outputs:
+      image: ${{ steps.meta.outputs.image }}
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          # Token của chính lượt chạy, sống đúng bằng job. Không có PAT nào phải
+          # tạo, phải xoay, hay phải nhớ đã cấp cho ai.
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve image reference
+        id: meta
+        run: |
+          # Tên chủ sở hữu trên GHCR phải viết thường; tên đăng nhập GitHub thì
+          # không bắt buộc, nên hạ chữ ở đây thay vì trông chờ vào may mắn.
+          repo=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          {
+            echo "repo=ghcr.io/$repo"
+            # Ghim theo SHA đầy đủ: `latest` là thứ có thể trỏ đi chỗ khác giữa
+            # lúc job image kết thúc và job deploy bắt đầu. Muốn lùi phiên bản
+            # thì đây cũng chính là tag để trỏ lại.
+            echo "image=ghcr.io/$repo:sha-${{ github.sha }}"
+          } >> "$GITHUB_OUTPUT"
+
+      - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ steps.meta.outputs.image }}
+            ${{ steps.meta.outputs.repo }}:latest
+          # Bộ nhớ đệm tầng của Actions: `npm ci` và `nuxi build` là phần đắt
+          # nhất, và giữa hai lần push chúng gần như không đổi.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          # Dockerfile mount bí mật `admin_password` với required=false, và CI cố
+          # ý KHÔNG cung cấp: seed là insert-only nên tài khoản quản trị trên
+          # deployment đang chạy đã tồn tại từ lâu, và một mật khẩu quản trị
+          # không có lý do gì phải đi qua CI. Guard báo "absent" rồi cho qua.
+
+  deploy:
+    name: Deploy to VPS
+    needs: image
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Nhóm riêng và KHÔNG huỷ giữa chừng: nhóm `ci-${{ github.ref }}` ở đầu tệp
+    # đặt cancel-in-progress, đúng cho một lượt test bị bỏ qua, nhưng cắt ngang
+    # một lượt deploy sẽ để lại .env đã trỏ sang image mới trong khi container
+    # vẫn đang chạy image cũ.
+    concurrency:
+      group: deploy-production
+      cancel-in-progress: false
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Deploy over SSH
+        env:
+          SSH_KEY: ${{ secrets.VPS_SSH_KEY }}
+          SSH_HOST: ${{ secrets.VPS_HOST }}
+          SSH_USER: ${{ secrets.VPS_USER }}
+          SSH_KNOWN_HOSTS: ${{ secrets.VPS_SSH_KNOWN_HOSTS }}
+          SSH_PORT: ${{ vars.VPS_PORT || '22' }}
+          APP_DIR: ${{ vars.VPS_APP_DIR }}
+          IMAGE: ${{ needs.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          for required in SSH_KEY SSH_HOST SSH_USER SSH_KNOWN_HOSTS APP_DIR; do
+            if [ -z "${!required}" ]; then
+              echo "::error::thiếu $required — xem mục CI/CD trong DEPLOY.md"
+              exit 1
+            fi
+          done
+
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/deploy_key
+          chmod 600 ~/.ssh/deploy_key
+          # Khoá máy chủ được ghim sẵn thay vì `ssh-keyscan` lúc chạy: keyscan là
+          # tin-lần-đầu ở MỌI lần chạy, tức là không bảo vệ gì trước một bên xen
+          # giữa — mà bên đó sẽ nhận được cả phiên deploy.
+          printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+          # Nạp script qua stdin: VPS chạy đúng bản của commit đang được triển
+          # khai, không phải bản nằm sẵn trên máy chủ từ lần deploy nào đó trước.
+          ssh -i ~/.ssh/deploy_key \
+              -o IdentitiesOnly=yes \
+              -o StrictHostKeyChecking=yes \
+              -o UserKnownHostsFile=~/.ssh/known_hosts \
+              -p "$SSH_PORT" \
+              "$SSH_USER@$SSH_HOST" \
+              "bash -s -- '$APP_DIR' '$IMAGE'" < scripts/deploy-remote.sh
+
+      - name: Report
+        if: always()
+        run: |
+          {
+            echo "### Deploy"
+            echo
+            echo "- Image: \`${{ needs.image.outputs.image }}\`"
+            echo "- Kết quả: ${{ job.status }}"
+            echo
+            echo "Lùi phiên bản thủ công trên VPS:"
+            echo '```bash'
+            echo "cd <VPS_APP_DIR>"
+            echo "sed -i 's|^CDKT_IMAGE=.*|CDKT_IMAGE=<image-cũ>|' .env"
+            echo "docker compose up -d app"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
