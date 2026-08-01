@@ -5,14 +5,15 @@ import { requireResourcePermission } from '../../../../utils/permissions'
 import { logInfo } from '../../../../utils/logger'
 
 export default defineEventHandler(async (event) => {
-  const adminUser = await requireResourcePermission(event, 'chatbot_knowledge', 'delete')
+  const adminUser = event.context.adminUser
+  requireResourcePermission(adminUser, 'chatbot_knowledge', 'delete')
   const body = await readBody(event)
 
   if (!body?.ids || !Array.isArray(body.ids) || body.ids.length === 0) {
     throw createError({ statusCode: 400, message: 'Session IDs required' })
   }
 
-  const ids = body.ids.filter((id): id is string => typeof id === 'string' && id.length > 0)
+  const ids = body.ids.filter((id: unknown): id is string => typeof id === 'string' && id.length > 0)
 
   if (ids.length === 0) {
     throw createError({ statusCode: 400, message: 'No valid session IDs provided' })
