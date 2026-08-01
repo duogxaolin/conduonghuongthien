@@ -138,9 +138,29 @@ onMounted(loadMenu)
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="flex items-center gap-3 rounded-xl border border-[#e2ece3] bg-white p-8 text-[#667768] text-sm">
-      <i class="fa-solid fa-spinner fa-spin text-[#2c6e33]" aria-hidden="true"></i>
-      Đang tải cấu hình menu…
+    <div v-if="loading" class="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start" role="status" aria-busy="true">
+      <span class="sr-only">Đang tải cấu hình menu</span>
+      <div class="flex flex-col gap-3" aria-hidden="true">
+        <div class="h-3 w-48 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+        <div
+          v-for="n in 5"
+          :key="'nv-' + n"
+          class="rounded-xl border border-[#e2ece3] bg-white shadow-sm overflow-hidden"
+        >
+          <div class="flex items-center gap-3 px-4 py-3 bg-[#fafcfa]">
+            <div class="w-6 h-11 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none shrink-0"></div>
+            <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
+              <div class="h-8 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+              <div class="h-8 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+            </div>
+            <div class="h-8 w-24 rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none shrink-0"></div>
+          </div>
+        </div>
+      </div>
+      <div class="rounded-xl border border-[#e2ece3] bg-white p-4 flex flex-col gap-3" aria-hidden="true">
+        <div class="h-3 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+        <div class="h-[220px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+      </div>
     </div>
 
     <template v-else>

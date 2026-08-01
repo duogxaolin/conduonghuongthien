@@ -109,7 +109,7 @@ onMounted(() => { fetchSettings() })
       </button>
     </div>
 
-    <div v-if="loading" class="py-10 text-center text-[#667768]">Đang tải cài đặt...</div>
+    <SkeletonForm v-if="loading" label="Đang tải cài đặt theo dõi" :fields="5" />
 
     <template v-else>
       <!-- Master switch -->

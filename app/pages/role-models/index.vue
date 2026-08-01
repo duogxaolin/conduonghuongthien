@@ -16,7 +16,7 @@
 
         <!-- Loading -->
         <div v-if="pending" class="flex flex-col gap-[30px] max-w-[900px] mx-auto">
-          <div v-for="n in 3" :key="n" class="bg-white rounded-lg p-5 sm:p-[30px] flex flex-col md:flex-row items-center gap-5 sm:gap-[30px] shadow-sm border border-[#E2E8DF] animate-pulse">
+          <div v-for="n in 3" :key="n" class="bg-white rounded-lg p-5 sm:p-[30px] flex flex-col md:flex-row items-center gap-5 sm:gap-[30px] shadow-sm border border-[#E2E8DF] animate-pulse motion-reduce:animate-none">
             <div class="w-24 h-24 sm:w-[140px] sm:h-[140px] rounded-full bg-[#EEF2EC] shrink-0"></div>
             <div class="flex-1 flex flex-col gap-3 w-full">
               <div class="h-3 w-32 bg-[#EEF2EC] rounded"></div>
@@ -68,8 +68,13 @@ useSeoMeta({
   description: 'Những tấm gương hoàn lương lập nghiệp thành công sau khi chấp hành xong án phạt tù.'
 })
 
-const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
+// `lazy` chỉ bỏ chặn điều hướng phía client — lượt dựng phía máy chủ vẫn chờ dữ
+// liệu, nên HTML đầu tiên và thẻ SEO không đổi. Khung xương `v-if="pending"` ở
+// trên vốn đã có; thiếu `lazy` thì nó không bao giờ được vẽ vì router giữ lại
+// trang cũ cho tới khi fetch xong.
+const { data, pending, error, refresh } = useFetch('/api/public/articles', {
   query: { type: 'role_model', limit: 30 },
+  lazy: true,
   default: () => ({ ok: true, articles: [], pagination: {} })
 })
 const roleModels = computed(() => data.value?.articles || [])

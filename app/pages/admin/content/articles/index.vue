@@ -152,6 +152,145 @@ const deleteArticle = async (art: any) => {
   }
 }
 
+// ─── Thống kê lượt xem ────────────────────────────────────────────────────────
+/**
+ * Con số hiển thị công khai là tổng của lượt xem thật và lượt xem ảo, nhưng
+ * trong trang quản trị hai phần đó không bao giờ được gộp lại thành một số duy
+ * nhất. Cán bộ mở modal này phải luôn đọc được bao nhiêu là thật — nếu không,
+ * chính người trong cơ quan cũng không trả lời được câu hỏi "số đó có thật
+ * không", và đó là câu hỏi bắt buộc phải trả lời được.
+ */
+const statsArticle = ref<any>(null)
+const statsLoading = ref(false)
+const statsError = ref('')
+const statsData = ref<any>(null)
+const runningBoost = ref<any>(null)
+
+const boostMode = ref<'instant' | 'gradual'>('instant')
+const boostAmount = ref<number | null>(null)
+const boostMinutes = ref<number | null>(60)
+const boostSubmitting = ref(false)
+
+const formatViews = (value: unknown) => Number(value || 0).toLocaleString('vi-VN')
+
+const sourceLabels: Record<string, string> = {
+  direct: 'Truy cập trực tiếp',
+  search: 'Từ công cụ tìm kiếm',
+  social: 'Từ mạng xã hội',
+  referral: 'Từ trang khác dẫn sang',
+  email: 'Từ thư điện tử',
+  other: 'Nguồn khác',
+}
+
+/** Phần trăm đã giao của lượt tăng dần đang chạy, để thanh tiến độ có ý nghĩa. */
+const boostProgress = computed(() => {
+  const job = runningBoost.value
+  if (!job || !Number(job.totalAmount)) return 0
+  return Math.min(100, Math.round((Number(job.appliedAmount) / Number(job.totalAmount)) * 100))
+})
+
+/** Cột cao nhất trong biểu đồ ngày, dùng làm mốc quy đổi chiều cao các cột còn lại. */
+const dailyPeak = computed(() => {
+  const rows = statsData.value?.daily || []
+  return rows.reduce((max: number, row: any) => Math.max(max, Number(row.total || 0)), 0)
+})
+
+const loadStats = async () => {
+  if (!statsArticle.value) return
+  statsLoading.value = true
+  statsError.value = ''
+  try {
+    const res: any = await $fetch(`/api/admin/articles/${statsArticle.value.id}/stats`)
+    statsData.value = res.stats
+    runningBoost.value = res.boost
+  } catch (err: any) {
+    // Giữ lại lỗi trên màn hình kèm nút thử lại: một modal trống không nói được
+    // là "bài này chưa có lượt xem" hay "không tải được số liệu".
+    statsError.value = err?.data?.statusMessage || 'Không tải được số liệu lượt xem.'
+    statsData.value = null
+    runningBoost.value = null
+  } finally {
+    statsLoading.value = false
+  }
+}
+
+const openStats = async (art: any) => {
+  statsArticle.value = art
+  statsData.value = null
+  runningBoost.value = null
+  statsError.value = ''
+  boostMode.value = 'instant'
+  boostAmount.value = null
+  boostMinutes.value = 60
+  await loadStats()
+}
+
+const closeStats = () => {
+  statsArticle.value = null
+  statsData.value = null
+  runningBoost.value = null
+  statsError.value = ''
+}
+
+const submitBoost = async () => {
+  if (!statsArticle.value || boostSubmitting.value) return
+  const amount = Number(boostAmount.value)
+  if (!Number.isInteger(amount) || amount < 1) {
+    toast.error('Vui lòng nhập số lượt xem là số nguyên lớn hơn 0.')
+    return
+  }
+  const minutes = Number(boostMinutes.value)
+  if (boostMode.value === 'gradual' && (!Number.isInteger(minutes) || minutes < 1)) {
+    toast.error('Vui lòng nhập thời lượng là số nguyên phút lớn hơn 0.')
+    return
+  }
+
+  const ok = await confirm({
+    title: 'Tăng lượt xem ảo',
+    message: boostMode.value === 'instant'
+      ? `Cộng ngay ${amount.toLocaleString('vi-VN')} lượt xem ảo cho bài "${statsArticle.value.title}"? Thao tác này được ghi vào nhật ký hoạt động kèm tên tài khoản của bạn.`
+      : `Cộng dần ${amount.toLocaleString('vi-VN')} lượt xem ảo trong ${minutes.toLocaleString('vi-VN')} phút cho bài "${statsArticle.value.title}"? Thao tác này được ghi vào nhật ký hoạt động kèm tên tài khoản của bạn.`,
+    confirmLabel: 'Xác nhận',
+  })
+  if (!ok) return
+
+  boostSubmitting.value = true
+  try {
+    const body: Record<string, unknown> = { mode: boostMode.value, amount }
+    if (boostMode.value === 'gradual') body.minutes = minutes
+    await $fetch(`/api/admin/articles/${statsArticle.value.id}/boost`, { method: 'POST', body })
+    toast.success(boostMode.value === 'instant' ? 'Đã cộng lượt xem ảo.' : 'Đã tạo lượt tăng dần.')
+    boostAmount.value = null
+    await loadStats()
+    await fetchArticles(pagination.value.page)
+  } catch (err: any) {
+    toast.error(err?.data?.statusMessage || 'Không thực hiện được thao tác tăng lượt xem.')
+  } finally {
+    boostSubmitting.value = false
+  }
+}
+
+const cancelBoost = async () => {
+  if (!statsArticle.value || !runningBoost.value) return
+  const ok = await confirm({
+    title: 'Huỷ lượt tăng dần',
+    // Nói rõ phần đã cộng vẫn giữ: người vận hành cần biết huỷ là dừng phần còn
+    // lại, không phải hoàn tác phần đã chạy.
+    message: `Dừng lượt tăng dần đang chạy? Phần đã cộng (${formatViews(runningBoost.value.appliedAmount)} lượt) vẫn được giữ nguyên.`,
+    danger: true,
+    confirmLabel: 'Huỷ lượt tăng',
+  })
+  if (!ok) return
+  try {
+    await $fetch(`/api/admin/articles/${statsArticle.value.id}/boost`, { method: 'DELETE' })
+    toast.success('Đã huỷ lượt tăng dần.')
+    await loadStats()
+  } catch (err: any) {
+    toast.error(err?.data?.statusMessage || 'Không huỷ được lượt tăng dần.')
+  }
+}
+
+
 onMounted(async () => {
   // Pre-select categoryId from query param (coming from categories page "Xem bài")
   const qCategoryId = route.query.categoryId ? Number(route.query.categoryId) : null
@@ -254,7 +393,7 @@ onMounted(async () => {
 
     <!-- Table Card -->
     <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
-      <div v-if="loading" class="py-10 text-center text-[#667768]">Đang tải danh sách bài viết...</div>
+      <SkeletonTable v-if="loading" label="Đang tải danh sách bài viết" :rows="6" :cols="8" />
 
       <!-- Mobile Card View -->
       <div v-else class="md:hidden divide-y divide-[#eef2ee]">
@@ -283,6 +422,12 @@ onMounted(async () => {
             </div>
             <div class="flex items-center gap-3 mt-2">
               <nuxt-link :to="`/admin/content/articles/${a.id}`" class="text-[#2c6e33] font-bold text-[0.8rem] no-underline"><i class="fa-solid fa-pen-to-square"></i> Sửa</nuxt-link>
+              <button
+                type="button"
+                class="bg-none border-0 p-0 text-[#2c6e33] font-bold text-[0.8rem] cursor-pointer"
+                :aria-label="`Xem thống kê lượt xem bài viết: ${a.title}`"
+                @click="openStats(a)"
+              ><i class="fa-regular fa-eye" aria-hidden="true"></i> {{ formatViews(a.viewTotal) }} lượt xem</button>
               <button class="bg-none border-0 text-[#d12420] font-bold text-[0.8rem] cursor-pointer p-0" @click="deleteArticle(a)"><i class="fa-regular fa-trash"></i> Xóa</button>
             </div>
           </div>
@@ -309,6 +454,7 @@ onMounted(async () => {
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thể loại</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Danh mục</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Trạng thái</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Lượt xem</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Ngày tạo</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thao tác</th>
             </tr>
@@ -371,6 +517,18 @@ onMounted(async () => {
                   {{ a.status === 'published' ? 'Đã đăng' : (a.status === 'draft' ? 'Nháp' : 'Lưu trữ') }}
                 </span>
               </td>
+              <!-- Views -->
+              <td class="px-4 py-3 border-b border-[#eef2ee] whitespace-nowrap">
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-1.5 rounded-md border border-[#e2ece3] bg-white px-2 py-1 text-[0.82rem] font-bold text-[#2c6e33] transition-colors hover:bg-[#f0f7f1] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2c6e33]/40"
+                  :aria-label="`Xem thống kê lượt xem bài viết: ${a.title}`"
+                  @click="openStats(a)"
+                >
+                  <i class="fa-regular fa-eye text-[0.75rem]" aria-hidden="true"></i>
+                  {{ formatViews(a.viewTotal) }}
+                </button>
+              </td>
               <!-- Date -->
               <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] text-[0.82rem] whitespace-nowrap">{{ new Date(a.createdAt).toLocaleDateString('vi-VN') }}</td>
               <!-- Actions -->
@@ -405,6 +563,181 @@ onMounted(async () => {
         @click="fetchArticles(pagination.page + 1)"
         class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#f0f7f1] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
       >Trang sau <i class="fa-regular fa-chevron-right"></i></button>
+    </div>
+
+    <!-- Modal: thống kê lượt xem & tăng lượt xem ảo -->
+    <div
+      v-if="statsArticle"
+      class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="stats-modal-title"
+      @click.self="closeStats"
+    >
+      <div class="w-full max-w-2xl rounded-xl border border-[#e2ece3] bg-white shadow-lg">
+        <div class="flex items-start justify-between gap-3 border-b border-[#eef2ee] px-5 py-4">
+          <div class="min-w-0">
+            <h2 id="stats-modal-title" class="m-0 text-[1.05rem] font-extrabold text-[#122815]">Thống kê lượt xem</h2>
+            <p class="m-0 mt-1 line-clamp-2 text-[0.82rem] text-[#667768]">{{ statsArticle.title }}</p>
+          </div>
+          <button
+            type="button"
+            class="shrink-0 rounded-lg border-0 bg-none p-1.5 text-[#667768] hover:text-[#122815] cursor-pointer"
+            aria-label="Đóng"
+            @click="closeStats"
+          ><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
+        </div>
+
+        <div class="px-5 py-4">
+          <div v-if="statsLoading" class="py-10 text-center text-[0.85rem] text-[#667768]">Đang tải số liệu lượt xem...</div>
+
+          <div v-else-if="statsError" class="rounded-lg border border-dashed border-[#e2b3b3] bg-[#fdf6f6] px-4 py-6 text-center">
+            <p class="m-0 text-[0.85rem] font-semibold text-[#b01f1b]">{{ statsError }}</p>
+            <button
+              type="button"
+              class="mt-3 rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] cursor-pointer hover:bg-[#f0f7f1]"
+              @click="loadStats"
+            >Thử lại</button>
+          </div>
+
+          <div v-else-if="statsData" class="flex flex-col gap-5">
+            <!--
+              Ba ô, không bao giờ chỉ một. Con số công khai là tổng, nhưng cán bộ
+              phải đọc được ngay phần nào là thật và phần nào do quản trị viên
+              cộng vào.
+            -->
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+              <div class="rounded-lg border border-[#e2ece3] bg-[#f8faf8] px-4 py-3">
+                <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-[#667768]">Tổng hiển thị</p>
+                <p class="m-0 mt-1 text-[1.35rem] font-extrabold text-[#122815]">{{ formatViews(statsData.totalDisplayed) }}</p>
+              </div>
+              <div class="rounded-lg border border-[#cfe4d1] bg-[#f0f7f1] px-4 py-3">
+                <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-[#2c6e33]">Lượt xem thật</p>
+                <p class="m-0 mt-1 text-[1.35rem] font-extrabold text-[#1e4620]">{{ formatViews(statsData.totalReal) }}</p>
+              </div>
+              <div class="rounded-lg border border-[#f0dcae] bg-[#fff8e1] px-4 py-3">
+                <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-[#b78103]">Lượt xem ảo</p>
+                <p class="m-0 mt-1 text-[1.35rem] font-extrabold text-[#765b00]">{{ formatViews(statsData.totalFabricated) }}</p>
+              </div>
+            </div>
+
+            <!-- Lượt tăng dần đang chạy -->
+            <div v-if="runningBoost" class="rounded-lg border border-[#f0dcae] bg-[#fffdf6] px-4 py-3">
+              <div class="flex flex-wrap items-center justify-between gap-2">
+                <p class="m-0 text-[0.82rem] font-bold text-[#765b00]">
+                  Đang cộng dần: {{ formatViews(runningBoost.appliedAmount) }} / {{ formatViews(runningBoost.totalAmount) }} lượt
+                  ({{ formatViews(runningBoost.durationMinutes) }} phút)
+                </p>
+                <button
+                  type="button"
+                  class="rounded-lg border border-[#d12420] bg-white px-3 py-1.5 text-[0.8rem] font-bold text-[#d12420] cursor-pointer hover:bg-[#fdf6f6]"
+                  @click="cancelBoost"
+                >Huỷ lượt tăng</button>
+              </div>
+              <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#f0e6c8]">
+                <div class="h-full rounded-full bg-[#b78103] transition-all" :style="{ width: `${boostProgress}%` }"></div>
+              </div>
+              <p class="m-0 mt-1.5 text-[0.75rem] text-[#8a7a4a]">Kết thúc lúc {{ new Date(runningBoost.endsAt).toLocaleString('vi-VN') }}</p>
+            </div>
+
+            <!-- Nguồn truy cập (chỉ lượt xem thật) -->
+            <div>
+              <h3 class="m-0 mb-2 text-[0.85rem] font-extrabold text-[#122815]">
+                Nguồn truy cập <span class="font-medium text-[#667768]">— {{ statsData.days }} ngày gần nhất, chỉ tính lượt xem thật</span>
+              </h3>
+              <table v-if="statsData.bySource.length" class="w-full border-collapse text-left text-[0.82rem]">
+                <thead>
+                  <tr>
+                    <th class="border-b border-[#e2ece3] bg-[#f8faf8] px-3 py-2 font-bold text-[#667768]">Nguồn</th>
+                    <th class="border-b border-[#e2ece3] bg-[#f8faf8] px-3 py-2 text-right font-bold text-[#667768]">Lượt xem</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr v-for="row in statsData.bySource" :key="row.sourceCategory">
+                    <td class="border-b border-[#eef2ee] px-3 py-2 text-[#445546]">{{ sourceLabels[row.sourceCategory] || row.sourceCategory }}</td>
+                    <td class="border-b border-[#eef2ee] px-3 py-2 text-right font-bold text-[#122815]">{{ formatViews(row.views) }}</td>
+                  </tr>
+                </tbody>
+              </table>
+              <p v-else class="m-0 rounded-lg border border-dashed border-[#e2ece3] px-3 py-4 text-center text-[0.82rem] text-[#8a9f8c]">
+                Chưa ghi nhận lượt xem thật nào trong khoảng thời gian này.
+              </p>
+            </div>
+
+            <!-- Diễn biến theo ngày -->
+            <div>
+              <h3 class="m-0 mb-2 text-[0.85rem] font-extrabold text-[#122815]">Diễn biến theo ngày</h3>
+              <ul v-if="statsData.daily.length" class="m-0 flex list-none flex-col gap-1.5 p-0">
+                <li v-for="row in statsData.daily" :key="row.day" class="flex items-center gap-3">
+                  <span class="w-20 shrink-0 text-[0.78rem] text-[#667768]">{{ new Date(row.day).toLocaleDateString('vi-VN') }}</span>
+                  <span class="h-2 flex-1 overflow-hidden rounded-full bg-[#eef2ee]">
+                    <span class="block h-full rounded-full bg-[#2c6e33]" :style="{ width: dailyPeak ? `${(row.total / dailyPeak) * 100}%` : '0%' }"></span>
+                  </span>
+                  <span class="w-32 shrink-0 text-right text-[0.78rem] text-[#445546]">
+                    <strong class="text-[#122815]">{{ formatViews(row.total) }}</strong>
+                    <span class="text-[#8a9f8c]"> ({{ formatViews(row.real) }} thật / {{ formatViews(row.fabricated) }} ảo)</span>
+                  </span>
+                </li>
+              </ul>
+              <p v-else class="m-0 rounded-lg border border-dashed border-[#e2ece3] px-3 py-4 text-center text-[0.82rem] text-[#8a9f8c]">
+                Bài viết chưa có lượt xem nào được ghi nhận.
+              </p>
+            </div>
+
+            <!-- Tăng lượt xem ảo -->
+            <div class="rounded-lg border border-[#e2ece3] bg-[#f8faf8] px-4 py-4">
+              <h3 class="m-0 text-[0.85rem] font-extrabold text-[#122815]">Tăng lượt xem ảo</h3>
+              <p class="m-0 mt-1 text-[0.78rem] text-[#667768]">
+                Lượt xem ảo được lưu tách khỏi lượt xem thật và mọi thao tác đều ghi vào nhật ký hoạt động kèm tên tài khoản thực hiện.
+              </p>
+              <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
+                <label class="flex flex-col gap-1">
+                  <span class="text-[0.75rem] font-bold text-[#667768]">Chế độ</span>
+                  <select
+                    v-model="boostMode"
+                    class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+                  >
+                    <option value="instant">Cộng ngay</option>
+                    <option value="gradual">Cộng dần theo thời gian</option>
+                  </select>
+                </label>
+                <label class="flex flex-col gap-1">
+                  <span class="text-[0.75rem] font-bold text-[#667768]">Số lượt xem</span>
+                  <input
+                    v-model.number="boostAmount"
+                    type="number"
+                    min="1"
+                    max="1000000"
+                    step="1"
+                    placeholder="Ví dụ: 500"
+                    class="w-40 rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+                  />
+                </label>
+                <label v-if="boostMode === 'gradual'" class="flex flex-col gap-1">
+                  <span class="text-[0.75rem] font-bold text-[#667768]">Thời lượng (phút)</span>
+                  <input
+                    v-model.number="boostMinutes"
+                    type="number"
+                    min="1"
+                    max="10080"
+                    step="1"
+                    class="w-40 rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+                  />
+                </label>
+                <button
+                  type="button"
+                  class="inline-flex items-center gap-2 rounded-lg border-0 bg-[#2c6e33] px-4 py-2.5 font-bold text-white transition-colors hover:bg-[#1e4620] disabled:cursor-not-allowed disabled:opacity-50"
+                  :disabled="boostSubmitting"
+                  @click="submitBoost"
+                >
+                  <i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i>
+                  {{ boostSubmitting ? 'Đang thực hiện...' : 'Thực hiện' }}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
