@@ -107,7 +107,7 @@ onMounted(() => { fetchSubmissions() })
 
     <!-- Table Card -->
     <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
-      <div v-if="loading" class="p-10 text-center text-[#667768]">Đang tải danh sách...</div>
+      <SkeletonTable v-if="loading" label="Đang tải danh sách đơn đăng ký" :rows="6" :cols="8" />
 
       <!-- Mobile Card View -->
       <div v-else class="md:hidden divide-y divide-[#eef2ee]">

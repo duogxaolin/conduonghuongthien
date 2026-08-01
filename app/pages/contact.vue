@@ -1,6 +1,14 @@
 <template>
   <div class="bg-[#F8FAF7]">
-    <PageRenderer v-if="blocks.length" :blocks="blocks" :interactive="isPreview" :selected-id="selectedId" />
+    <PageRenderer
+      v-if="pending || loadError || blocks.length"
+      :blocks="blocks"
+      :interactive="isPreview"
+      :selected-id="selectedId"
+      :pending="pending"
+      :load-error="loadError"
+      :on-retry="refresh"
+    />
 
     <!-- Fallback if the page has no blocks yet. -->
     <section v-else class="section">
@@ -15,12 +23,15 @@
 <script setup>
 import { computed } from 'vue'
 
-const { data } = await useAsyncData(
+// `lazy`: bỏ chặn điều hướng phía client, lượt dựng phía máy chủ vẫn chờ dữ
+// liệu nên HTML đầu tiên và thẻ SEO không đổi (design.md D2).
+const { data, pending, error, refresh } = useAsyncData(
   'page-contact',
   () => $fetch('/api/public/pages/contact'),
-  { default: () => ({ ok: false, page: null, blocks: [] }) }
+  { lazy: true, default: () => ({ ok: false, page: null, blocks: [] }) }
 )
 
+const loadError = computed(() => error.value || null)
 const page = computed(() => data.value?.page || null)
 
 // Builder preview: when embedded in the editor iframe, live-edited blocks

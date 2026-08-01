@@ -170,6 +170,38 @@ onMounted(() => { fetchUsers() })
 
     <!-- Table Card -->
     <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
+      <!-- Loading: two placeholders at the SAME breakpoints as the two real
+           layouts below, so the shape does not change when the rows arrive. -->
+      <template v-if="loading">
+        <!-- Mobile card list (matches the md:hidden branch) -->
+        <div class="md:hidden divide-y divide-[#eef2ee]" role="status" aria-busy="true">
+          <span class="sr-only">Đang tải danh sách người dùng</span>
+          <div v-for="n in 5" :key="'ml-' + n" class="p-4 flex flex-col gap-2.5" aria-hidden="true">
+            <div class="flex items-center justify-between">
+              <div class="h-4 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+              <div class="h-4 w-20 rounded-md bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+            </div>
+            <div class="h-3 w-52 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+            <div class="h-3 w-44 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          </div>
+        </div>
+        <!-- Desktop table, 8 columns matching the real header (matches the
+             hidden md:block branch) -->
+        <div class="hidden md:block">
+          <SkeletonTable label="Đang tải danh sách người dùng" :rows="5" :cols="8" />
+        </div>
+      </template>
+
+      <!-- Empty — one branch for both layouts, so an empty list never reads as a
+           bare table header. -->
+      <div v-else-if="users.length === 0" class="py-14 flex flex-col items-center gap-3 text-center">
+        <i class="fa-solid fa-users text-3xl text-[#c8d6c9]" aria-hidden="true"></i>
+        <p class="text-[#667768] text-[0.9rem] m-0">Chưa có tài khoản nào. Hãy thêm người dùng đầu tiên!</p>
+      </div>
+
+      <!-- Content — both layouts under one branch, so neither can paint next to
+           its own placeholder or next to the empty state. -->
+      <template v-else>
       <!-- Mobile Card View -->
       <div class="md:hidden divide-y divide-[#eef2ee]">
         <div v-for="u in users" :key="'m-'+u.id" class="p-4" :class="selection.isSelected(Number(u.id)) ? 'bg-[#f0f7f1]' : ''">
@@ -288,6 +320,7 @@ onMounted(() => { fetchUsers() })
           </tbody>
         </table>
       </div>
+      </template>
     </div>
 
     <!-- Create User Modal -->

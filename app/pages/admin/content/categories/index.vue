@@ -231,9 +231,7 @@ onMounted(() => {
     </AdminBulkActionBar>
 
     <!-- Loading -->
-    <div v-if="loading" class="bg-white rounded-xl border border-[#e2ece3] py-12 text-center text-[#667768]">
-      Đang tải danh mục...
-    </div>
+    <SkeletonTable v-if="loading" label="Đang tải danh mục" :rows="6" :cols="6" />
 
     <!-- Empty state -->
     <div v-else-if="tree.length === 0" class="bg-white rounded-xl border border-[#e2ece3] py-14 flex flex-col items-center gap-3 text-center">

@@ -95,7 +95,19 @@ onMounted(() => { fetchRoles() })
       <!-- Roles Sidebar -->
       <div class="bg-white rounded-xl border border-[#e2ece3] p-4">
         <h3 class="text-[0.95rem] font-extrabold text-[#122815] m-0 mb-3">Danh sách Vai trò</h3>
-        <div class="flex flex-col gap-2">
+        <div v-if="loading" class="flex flex-col gap-2" role="status" aria-busy="true">
+          <span class="sr-only">Đang tải danh sách vai trò</span>
+          <div
+            v-for="n in 4"
+            :key="'rs-' + n"
+            class="rounded-lg border border-[#e2ece3] bg-[#f8faf8] p-3 flex flex-col gap-2"
+            aria-hidden="true"
+          >
+            <div class="h-4 w-32 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+            <div class="h-3 w-44 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          </div>
+        </div>
+        <div v-else class="flex flex-col gap-2">
           <button
             v-for="r in roles"
             :key="r.id"
@@ -112,8 +124,34 @@ onMounted(() => { fetchRoles() })
         </div>
       </div>
 
+      <!-- Permission Matrix — loading. Stays inline: the matrix is a one-off
+           shape (a label column plus four narrow checkbox columns), not the
+           generic table SkeletonTable draws. -->
+      <div v-if="loading" class="bg-white rounded-xl border border-[#e2ece3] p-6" role="status" aria-busy="true">
+        <span class="sr-only">Đang tải ma trận phân quyền</span>
+        <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4" aria-hidden="true">
+          <div class="flex flex-col gap-2">
+            <div class="h-5 w-64 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+            <div class="h-3 w-48 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          </div>
+          <div class="h-10 w-40 rounded-lg bg-[#dfe9e0] animate-pulse motion-reduce:animate-none shrink-0"></div>
+        </div>
+        <div class="overflow-x-auto" aria-hidden="true">
+          <div class="flex items-center gap-3 bg-[#f8faf8] border-b border-[#e2ece3] px-3 py-3">
+            <div class="h-3 flex-1 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+            <div v-for="c in 4" :key="'mh-' + c" class="h-3 w-24 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+          </div>
+          <div v-for="n in 11" :key="'mr-' + n" class="flex items-center gap-3 border-b border-[#eef2ee] px-3 py-3">
+            <div class="h-4 flex-1 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+            <div v-for="c in 4" :key="'mc-' + c" class="h-4 w-24 flex justify-center">
+              <div class="h-4 w-4 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Permission Matrix -->
-      <div v-if="selectedRole" class="bg-white rounded-xl border border-[#e2ece3] p-6">
+      <div v-else-if="selectedRole" class="bg-white rounded-xl border border-[#e2ece3] p-6">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div>
             <h2 class="text-[1.1rem] font-extrabold text-[#122815] m-0">Ma trận Phân quyền: {{ selectedRole.name }}</h2>

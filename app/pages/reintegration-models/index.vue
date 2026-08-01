@@ -16,7 +16,7 @@
 
         <!-- Loading -->
         <div v-if="pending" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-[30px]">
-          <div v-for="n in 6" :key="n" class="bg-white rounded-lg px-[30px] py-[40px] shadow-sm border border-[#E2E8DF] animate-pulse flex flex-col gap-4">
+          <div v-for="n in 6" :key="n" class="bg-white rounded-lg px-[30px] py-[40px] shadow-sm border border-[#E2E8DF] animate-pulse motion-reduce:animate-none flex flex-col gap-4">
             <div class="h-3 w-28 bg-[#EEF2EC] rounded"></div>
             <div class="h-5 w-3/4 bg-[#EEF2EC] rounded"></div>
             <div class="h-3 w-full bg-[#EEF2EC] rounded"></div>
@@ -66,8 +66,10 @@ useSeoMeta({
   description: 'Các mô hình tiêu biểu hỗ trợ người hoàn lương tái hòa nhập cộng đồng: quỹ tín dụng, câu lạc bộ, liên kết đào tạo nghề.'
 })
 
-const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
+// Xem ghi chú ở role-models/index.vue.
+const { data, pending, error, refresh } = useFetch('/api/public/articles', {
   query: { type: 'reintegration', limit: 30 },
+  lazy: true,
   default: () => ({ ok: true, articles: [], pagination: {} })
 })
 const models = computed(() => data.value?.articles || [])

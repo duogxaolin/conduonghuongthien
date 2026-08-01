@@ -16,7 +16,7 @@
         <div class="max-w-[800px] mx-auto flex flex-col gap-4">
           <!-- Loading -->
           <template v-if="pending">
-            <div v-for="n in 3" :key="n" class="bg-white rounded-lg border border-[#E2E8DF] px-6 py-5 animate-pulse">
+            <div v-for="n in 3" :key="n" class="bg-white rounded-lg border border-[#E2E8DF] px-6 py-5 animate-pulse motion-reduce:animate-none">
               <div class="h-4 w-2/3 bg-[#EEF2EC] rounded"></div>
             </div>
           </template>
@@ -87,8 +87,11 @@ useSeoMeta({
 
 const activeIndex = ref(null)
 
-const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
+// Xem ghi chú ở role-models/index.vue: `lazy` chỉ bỏ chặn điều hướng phía client,
+// lượt dựng phía máy chủ vẫn chờ dữ liệu nên SEO không đổi.
+const { data, pending, error, refresh } = useFetch('/api/public/articles', {
   query: { type: 'faq', limit: 50 },
+  lazy: true,
   default: () => ({ ok: true, articles: [], pagination: {} })
 })
 const faqs = computed(() => data.value?.articles || [])
