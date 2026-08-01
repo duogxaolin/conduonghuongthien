@@ -21,7 +21,10 @@ const form = reactive({
   status: 'published',
 })
 
-const loading = ref(false)
+// True from the first frame when editing an existing article, so the editor
+// grid is never painted empty before the fetched values arrive. A new article
+// has nothing to fetch, so it starts false.
+const loading = ref(!isNew.value)
 const saving = ref(false)
 const errorMsg = ref('')
 const tinymceReady = ref(false)
@@ -233,10 +236,15 @@ const loadTinyMCEScript = () => new Promise<void>((resolve) => {
 })
 
 onMounted(async () => {
-  await loadTinyMCEScript()
-  initTinyMCE()
+  // The script download runs alongside the data fetch, but initTinyMCE must
+  // come last: it attaches to #tinymce-content-editor, which only exists once
+  // the loading placeholder has been replaced by the real editor grid.
+  const scriptReady = loadTinyMCEScript()
   await fetchCategories(form.type)
   await fetchArticle()
+  await scriptReady
+  await nextTick()
+  initTinyMCE()
 })
 
 onUnmounted(() => {
@@ -275,8 +283,46 @@ onUnmounted(() => {
 
     <div v-if="errorMsg" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem]">{{ errorMsg }}</div>
 
+    <!-- Loading — shaped like the editor grid below, which is `v-else`, so the
+         real grid does not exist in the DOM while this is showing. That is safe
+         only because of the ordering in onMounted: initTinyMCE() runs after
+         `await fetchArticle()` and a nextTick(), i.e. after the flag has flipped
+         and #tinymce-content-editor has actually been rendered. Moving
+         initTinyMCE() ahead of the fetch would attach the editor to an element
+         that is about to be unmounted. -->
+    <div v-if="loading" class="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-5" role="status" aria-busy="true">
+      <span class="sr-only">Đang tải nội dung bài viết</span>
+      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-5" aria-hidden="true">
+        <div class="flex flex-col gap-1.5">
+          <div class="h-3 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-[50px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+        </div>
+        <div class="flex flex-col gap-1.5">
+          <div class="h-3 w-48 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-20 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+        </div>
+        <div class="flex flex-col gap-2">
+          <div class="h-3 w-56 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+          <div class="min-h-[480px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+        </div>
+      </div>
+      <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-4 self-start" aria-hidden="true">
+        <div class="h-4 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+        <div v-for="n in 3" :key="'sf-' + n" class="flex flex-col gap-1.5">
+          <div class="h-3 w-28 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-10 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+        </div>
+        <div class="flex flex-col gap-2">
+          <div class="h-3 w-36 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-40 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-10 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="h-10 w-full rounded-lg bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+        </div>
+      </div>
+    </div>
+
     <!-- Two-column editor grid -->
-    <div class="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-5">
+    <div v-else class="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-5">
       <!-- Main Form -->
       <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-5">
         <div class="flex flex-col gap-1.5">

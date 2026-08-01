@@ -600,6 +600,48 @@ export async function initDb() {
     )
   }
 
+  // Per-article view counter. Real and fabricated views are separated twice:
+  // by column, and by a `source_category` value ('boost') that the public
+  // allowlist does not contain — so SUM(real_views) stays honest even if one of
+  // the two separations is broken by a future coding error.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`article_view_daily\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`day\` DATE NOT NULL,
+      \`article_id\` INT NOT NULL,
+      \`source_category\` VARCHAR(32) NOT NULL DEFAULT 'direct',
+      \`real_views\` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+      \`fabricated_views\` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY \`article_view_daily_day_article_source_idx\` (\`day\`, \`article_id\`, \`source_category\`),
+      KEY \`article_view_daily_article_idx\` (\`article_id\`),
+      CONSTRAINT \`fk_article_view_daily_article\` FOREIGN KEY (\`article_id\`) REFERENCES \`articles\` (\`id\`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // Gradual inflation jobs. Instant mode writes nothing here — it is complete on
+  // authorisation and the activity log already records who did it.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`article_view_boost\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`article_id\` INT NOT NULL,
+      \`total_amount\` INT UNSIGNED NOT NULL,
+      \`applied_amount\` INT UNSIGNED NOT NULL DEFAULT 0,
+      \`duration_minutes\` INT UNSIGNED NOT NULL,
+      \`started_at\` DATETIME NOT NULL,
+      \`ends_at\` DATETIME NOT NULL,
+      \`status\` VARCHAR(16) NOT NULL DEFAULT 'running',
+      \`created_by\` INT NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY \`article_view_boost_status_ends_idx\` (\`status\`, \`ends_at\`),
+      KEY \`article_view_boost_article_idx\` (\`article_id\`),
+      CONSTRAINT \`fk_article_view_boost_article\` FOREIGN KEY (\`article_id\`) REFERENCES \`articles\` (\`id\`) ON DELETE CASCADE,
+      CONSTRAINT \`fk_article_view_boost_user\` FOREIGN KEY (\`created_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
   // Home Sections table
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`home_sections\` (

@@ -10,7 +10,7 @@
       </nav>
 
       <!-- Loading -->
-      <div v-if="pending" class="animate-pulse flex flex-col gap-5">
+      <div v-if="pending" class="animate-pulse motion-reduce:animate-none flex flex-col gap-5">
         <div class="h-5 w-40 bg-[#EEF2EC] rounded"></div>
         <div class="h-9 w-3/4 bg-[#EEF2EC] rounded"></div>
         <div class="h-24 w-full bg-[#EEF2EC] rounded"></div>
@@ -128,8 +128,9 @@
  * through the `crumb` slot, which receives the resolved category label so the
  * crumb and the badge can never disagree.
  */
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
+import { classifySource } from '~/utils/analytics-collector'
 import { buildToc, TOC_MIN_HEADINGS } from '~/utils/toc'
 
 const props = defineProps({
@@ -154,8 +155,13 @@ const props = defineProps({
   seoFallbackDescription: { type: String, required: true },
 })
 
-const { data, pending, error, refresh } = await useFetch(() => `/api/public/articles/${props.slug}`, {
+// `lazy` chỉ bỏ chặn điều hướng phía client — lượt dựng phía máy chủ vẫn chờ dữ
+// liệu, nên HTML đầu tiên, thẻ SEO và mục lục không đổi. Đi từ danh sách sang
+// chi tiết là lúc thấy rõ nhất: không có nó thì bấm vào một bài trông như bấm
+// hụt cho tới khi bài về.
+const { data, pending, error, refresh } = useFetch(() => `/api/public/articles/${props.slug}`, {
   key: () => `article-detail-${props.slug}`,
+  lazy: true,
   default: () => ({ ok: false, article: null }),
 })
 
@@ -183,6 +189,37 @@ useSeoMeta({
   title: computed(() => (article.value ? `${article.value.title} | Con Đường Hướng Thiện` : props.seoFallbackTitle)),
   description: computed(() => article.value?.excerpt || props.seoFallbackDescription),
 })
+
+/**
+ * Ghi nhận lượt xem từ trình duyệt, không phải từ lượt dựng phía máy chủ.
+ *
+ * Trang chi tiết bài viết được phục vụ từ bộ nhớ đệm SWR 60 giây
+ * (`nuxt.config.ts`), nên người đọc thứ hai trở đi trong một cửa sổ 60 giây
+ * không chạm vào mã máy chủ nào cả. Đếm ở phía máy chủ sẽ thiếu đúng bằng phần
+ * mà bộ nhớ đệm đang phát huy tác dụng — và con số thiếu đó trông vẫn hợp lý.
+ *
+ * Mọi lỗi đều nuốt: một bộ đếm lượt xem không có tư cách làm hỏng trang của
+ * khách. Việc chống bấm F5 liên tục do máy chủ lo (cửa sổ 30 phút), không phải
+ * do phía client — client-side thì xoá cache trình duyệt là thoát.
+ */
+const sentSlug = ref('')
+
+function pingView(slug) {
+  if (!slug || sentSlug.value === slug) return
+  sentSlug.value = slug
+  $fetch(`/api/public/articles/${encodeURIComponent(slug)}/view`, {
+    method: 'POST',
+    body: { sourceCategory: classifySource(document.referrer, window.location.hostname) },
+    keepalive: true,
+    retry: 0,
+    timeout: 1500,
+  }).catch(() => {})
+}
+
+onMounted(() => pingView(props.slug))
+// Điều hướng phía client giữa hai bài viết dùng lại chính component này, nên
+// `onMounted` chỉ chạy một lần cho cả chuỗi bài đọc liên tiếp.
+watch(() => props.slug, slug => pingView(slug))
 </script>
 
 <style scoped>
