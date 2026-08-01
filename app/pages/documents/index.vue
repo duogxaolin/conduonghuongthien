@@ -28,7 +28,7 @@
 
           <!-- Loading -->
           <div v-if="pending" class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm p-6 flex flex-col gap-4">
-            <div v-for="n in 5" :key="n" class="h-5 w-full bg-[#EEF2EC] rounded animate-pulse"></div>
+            <div v-for="n in 5" :key="n" class="h-5 w-full bg-[#EEF2EC] rounded animate-pulse motion-reduce:animate-none"></div>
           </div>
 
           <!-- Error -->
@@ -95,8 +95,12 @@ const articlesQuery = computed(() => {
   if (searchQuery.value) q.search = searchQuery.value
   return q
 })
-const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
+// Xem ghi chú ở role-models/index.vue. Ở trang này `lazy` còn quan trọng hơn:
+// mỗi lần tìm kiếm là một lượt fetch mới, và không có nó thì ô tìm kiếm đứng im
+// cho tới khi kết quả về.
+const { data, pending, error, refresh } = useFetch('/api/public/articles', {
   query: articlesQuery,
+  lazy: true,
   default: () => ({ ok: true, articles: [], pagination: {} })
 })
 const docs = computed(() => data.value?.articles || [])

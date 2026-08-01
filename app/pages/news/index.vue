@@ -65,7 +65,7 @@
             <div
               v-for="n in 4"
               :key="n"
-              class="flex flex-col sm:flex-row bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] animate-pulse"
+              class="flex flex-col sm:flex-row bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] animate-pulse motion-reduce:animate-none"
             >
               <div class="w-full sm:w-[260px] h-[200px] sm:h-[180px] flex-shrink-0 bg-[#EEF2EC]"></div>
               <div class="p-6 flex flex-col gap-3 flex-1">
@@ -144,8 +144,13 @@ const activeCategory = ref(route.query.cat ? String(route.query.cat) : 'all')
 const searchQuery = ref(route.query.q ? String(route.query.q) : '')
 
 // Category sidebar — DB-driven via /api/public/categories?type=news
-const { data: catData } = await useFetch('/api/public/categories', {
+// Không `await`: hai lượt fetch của trang này độc lập với nhau, nên `await` ở đây
+// chỉ có tác dụng bắt lượt fetch bài viết bên dưới xếp hàng đợi danh mục xong
+// mới bắt đầu. Bỏ đi thì cả hai khởi động cùng lúc, thời gian chờ là lượt chậm
+// hơn chứ không phải tổng hai lượt.
+const { data: catData } = useFetch('/api/public/categories', {
   query: { type: 'news' },
+  lazy: true,
   default: () => ({ ok: true, items: [] })
 })
 const allCategories = computed(() => catData.value?.items || [])
@@ -159,8 +164,9 @@ const articlesQuery = computed(() => {
   if (searchQuery.value) q.search = searchQuery.value
   return q
 })
-const { data: articlesData, pending, error, refresh } = await useFetch('/api/public/articles', {
+const { data: articlesData, pending, error, refresh } = useFetch('/api/public/articles', {
   query: articlesQuery,
+  lazy: true,
   default: () => ({ ok: true, articles: [], pagination: {} })
 })
 const newsList = computed(() => articlesData.value?.articles || [])

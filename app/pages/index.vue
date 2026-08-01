@@ -1,8 +1,16 @@
 <template>
   <div>
-    <PageRenderer v-if="blocks.length" :blocks="blocks" :interactive="isPreview" :selected-id="selectedId" />
+    <PageRenderer
+      v-if="pending || loadError || blocks.length"
+      :blocks="blocks"
+      :interactive="isPreview"
+      :selected-id="selectedId"
+      :pending="pending"
+      :load-error="loadError"
+      :on-retry="refresh"
+    />
 
-    <!-- Graceful fallback if the page has no blocks or the fetch failed. -->
+    <!-- Graceful fallback if the page has no blocks. -->
     <section v-else class="section bg-white">
       <div class="container text-center py-20">
         <h1 class="text-[1.8rem] font-extrabold text-[#1E251C] mb-3">Con Đường Hướng Thiện</h1>
@@ -15,12 +23,17 @@
 <script setup>
 import { computed } from 'vue'
 
-const { data } = await useAsyncData(
+// `lazy` chỉ bỏ chặn điều hướng phía client — lượt dựng phía máy chủ vẫn chờ dữ
+// liệu, nên HTML đầu tiên và thẻ SEO không đổi (design.md D2). Không có nó thì
+// bấm một liên kết về trang chủ giữ nguyên trang cũ trên màn hình cho tới khi
+// dữ liệu về, trông y hệt bấm hụt.
+const { data, pending, error, refresh } = useAsyncData(
   'page-home',
   () => $fetch('/api/public/pages/home'),
-  { default: () => ({ ok: false, page: null, blocks: [] }) }
+  { lazy: true, default: () => ({ ok: false, page: null, blocks: [] }) }
 )
 
+const loadError = computed(() => error.value || null)
 const page = computed(() => data.value?.page || null)
 
 // Builder preview: when embedded in the editor iframe, live-edited blocks

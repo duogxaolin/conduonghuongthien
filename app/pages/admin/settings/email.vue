@@ -94,7 +94,10 @@ onMounted(() => { fetchSettings() })
       </button>
     </div>
 
-    <div v-if="loading" class="py-10 text-center text-[#667768]">Đang tải cài đặt...</div>
+    <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <SkeletonForm label="Đang tải cấu hình email" :fields="4" />
+      <SkeletonForm label="Đang tải cấu hình email" :fields="4" :has-action="false" />
+    </div>
 
     <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-5">
       <!-- SMTP Server -->

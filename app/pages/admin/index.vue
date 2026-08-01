@@ -273,7 +273,7 @@ onMounted(async () => {
       <!-- Live stats row — 3 metric cards -->
       <div class="grid grid-cols-3 gap-4">
         <template v-if="liveLoading">
-          <div v-for="n in 3" :key="n" class="rounded-2xl border border-[#e2ece3] bg-white p-5 animate-pulse h-24" role="status" aria-label="Đang tải…"></div>
+          <div v-for="n in 3" :key="n" class="rounded-2xl border border-[#e2ece3] bg-white p-5 animate-pulse motion-reduce:animate-none h-24" role="status" aria-label="Đang tải…"></div>
         </template>
         <template v-else-if="liveError">
           <div class="col-span-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-500 flex items-center gap-2">
@@ -327,7 +327,15 @@ onMounted(async () => {
           </div>
           <nuxt-link to="/admin/analytics" class="text-[0.78rem] font-semibold text-[#2c6e33] no-underline hover:underline">Chi tiết →</nuxt-link>
         </div>
-        <div v-if="trafficLoading" class="rounded-xl bg-[#f4f7f4] h-40 flex items-center justify-center text-sm text-[#667768] animate-pulse" role="status">Đang tải biểu đồ…</div>
+        <div v-if="trafficLoading" class="rounded-xl bg-[#f4f7f4] h-40 flex items-end gap-2 p-4" role="status" aria-busy="true">
+          <span class="sr-only">Đang tải biểu đồ xu hướng 7 ngày</span>
+          <div
+            v-for="(h, n) in ['h-1/3', 'h-2/3', 'h-1/2', 'h-full', 'h-3/5', 'h-2/5', 'h-4/5']"
+            :key="n"
+            :class="['flex-1 rounded-t bg-[#dfe9e0] animate-pulse motion-reduce:animate-none', h]"
+            aria-hidden="true"
+          ></div>
+        </div>
         <div v-else-if="trafficError" class="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-500 flex items-center gap-2">
           <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Không thể tải dữ liệu thống kê.
         </div>
@@ -338,7 +346,15 @@ onMounted(async () => {
         <ClientOnly v-else>
           <AnalyticsTrafficChart :points="trafficPoints" />
           <template #fallback>
-            <div class="rounded-xl bg-[#f4f7f4] h-40 flex items-center justify-center text-sm text-[#667768]" role="status">Đang tải biểu đồ tương tác…</div>
+            <div class="rounded-xl bg-[#f4f7f4] h-40 flex items-end gap-2 p-4" role="status" aria-busy="true">
+              <span class="sr-only">Đang tải biểu đồ tương tác</span>
+              <div
+                v-for="(h, n) in ['h-1/3', 'h-2/3', 'h-1/2', 'h-full', 'h-3/5', 'h-2/5', 'h-4/5']"
+                :key="n"
+                :class="['flex-1 rounded-t bg-[#dfe9e0] animate-pulse motion-reduce:animate-none', h]"
+                aria-hidden="true"
+              ></div>
+            </div>
           </template>
         </ClientOnly>
       </div>
@@ -356,7 +372,13 @@ onMounted(async () => {
             </div>
             <nuxt-link to="/admin/analytics" class="text-[0.72rem] font-semibold text-[#2c6e33] no-underline hover:underline">Chi tiết →</nuxt-link>
           </div>
-          <div v-if="sourceLoading" class="flex items-center justify-center h-28 text-sm text-[#667768] animate-pulse" role="status">Đang tải…</div>
+          <div v-if="sourceLoading" class="flex items-center gap-4 h-28" role="status" aria-busy="true">
+            <span class="sr-only">Đang tải nguồn truy cập</span>
+            <div class="h-[104px] w-[104px] shrink-0 rounded-full bg-[#dfe9e0] animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+            <div class="flex flex-1 flex-col gap-2" aria-hidden="true">
+              <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+            </div>
+          </div>
           <div v-else-if="sourceError" class="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-500 flex items-center gap-2">
             <i class="fa-solid fa-triangle-exclamation shrink-0" aria-hidden="true"></i> Không thể tải dữ liệu.
           </div>
@@ -447,7 +469,13 @@ onMounted(async () => {
             </div>
             <nuxt-link to="/admin/analytics" class="text-[0.72rem] font-semibold text-[#2c6e33] no-underline hover:underline">Chi tiết →</nuxt-link>
           </div>
-          <div v-if="deviceLoading" class="flex items-center justify-center h-28 text-sm text-[#667768] animate-pulse" role="status">Đang tải…</div>
+          <div v-if="deviceLoading" class="flex items-center gap-4 h-28" role="status" aria-busy="true">
+            <span class="sr-only">Đang tải thiết bị truy cập</span>
+            <div class="h-[104px] w-[104px] shrink-0 rounded-full bg-[#dfe9e0] animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
+            <div class="flex flex-1 flex-col gap-2" aria-hidden="true">
+              <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+            </div>
+          </div>
           <div v-else-if="deviceError" class="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-500 flex items-center gap-2">
             <i class="fa-solid fa-triangle-exclamation shrink-0" aria-hidden="true"></i> Không thể tải dữ liệu.
           </div>

@@ -142,7 +142,7 @@ onMounted(() => { fetchMedia() })
     </div>
 
     <!-- Media Grid -->
-    <div v-if="loading" class="py-16 text-center text-[#667768]">Đang tải danh sách media...</div>
+    <SkeletonCards v-if="loading" label="Đang tải danh sách media" :count="12" />
 
     <div v-else-if="mediaItems.length === 0" class="flex flex-col items-center gap-3 py-16 text-[#9ca3af]">
       <i class="fa-regular fa-images text-5xl text-[#d1d5db]"></i>

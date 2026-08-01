@@ -12,7 +12,7 @@
       <div class="container">
         <!-- Loading -->
         <div v-if="pending" class="grid grid-cols-1 md:grid-cols-2 gap-[30px] max-w-[1000px] mx-auto">
-          <div v-for="n in 4" :key="n" class="bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] animate-pulse">
+          <div v-for="n in 4" :key="n" class="bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] animate-pulse motion-reduce:animate-none">
             <div class="h-[220px] bg-[#EEF2EC]"></div>
             <div class="p-6 flex flex-col gap-3">
               <div class="h-3 w-32 bg-[#EEF2EC] rounded"></div>

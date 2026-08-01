@@ -87,7 +87,7 @@ onMounted(() => { fetchSettings() })
       </button>
     </div>
 
-    <div v-if="loading" class="py-10 text-center text-[#667768]">Đang tải cấu hình...</div>
+    <SkeletonForm v-if="loading" label="Đang tải cấu hình lưu trữ" :fields="5" />
 
     <div v-else class="flex flex-col gap-5">
       <!-- Provider Selector -->

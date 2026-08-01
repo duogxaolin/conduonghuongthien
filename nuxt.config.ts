@@ -80,6 +80,36 @@ export default defineNuxtConfig({
     configPath: 'tailwind.config.js',
   },
 
+  /**
+   * Bộ nhớ đệm theo tuyến. Mỗi lượt xem trang công khai đang dựng lại HTML từ
+   * đầu — cùng một truy vấn CSDL, cùng một kết quả, cho mọi khách.
+   *
+   * `swr: 60` phục vụ bản đã dựng ngay lập tức và dựng lại nền khi quá 60 giây,
+   * nên biên tập viên sửa bài thấy thay đổi trong vòng một phút mà khách không
+   * ai phải đợi lượt dựng đó.
+   *
+   * Chỉ áp cho trang KHÔNG phụ thuộc phiên: đã rà `app/pages/`, không trang công
+   * khai nào đọc `useAdminAuth` hay cookie `cdkt_admin`. `/admin/**` và toàn bộ
+   * `/api/**` cố ý KHÔNG cache — phục vụ lại một trang quản trị đã đăng nhập là
+   * phát nó cho người kế tiếp.
+   */
+  routeRules: {
+    '/': { swr: 60 },
+    '/about': { swr: 60 },
+    '/contact': { swr: 60 },
+    '/news/**': { swr: 60 },
+    '/role-models/**': { swr: 60 },
+    '/reintegration-models/**': { swr: 60 },
+    '/documents/**': { swr: 60 },
+    '/legal-qa/**': { swr: 60 },
+    '/admin/**': { cache: false },
+    '/api/**': { cache: false },
+    // Tài nguyên có vân tay trong tên tệp: đổi nội dung là đổi tên, nên bản cũ
+    // không bao giờ bị phục vụ nhầm.
+    '/assets/fonts/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
+    '/assets/fontawesome/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
+  },
+
   runtimeConfig: {
     // Private server keys
     aiApiKey: process.env.AI_API_KEY || '',
