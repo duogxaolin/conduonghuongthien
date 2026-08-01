@@ -137,7 +137,10 @@ onMounted(load)
     </header>
 
     <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }}</div>
-    <div v-if="loading" class="rounded-xl border border-[#e2ece3] bg-white p-12 text-center text-sm text-[#667768]">Đang tải...</div>
+    <div v-if="loading" class="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]">
+      <SkeletonForm label="Đang tải mục kiến thức" :fields="4" />
+      <SkeletonForm label="Đang tải mục kiến thức" :fields="3" :has-action="false" />
+    </div>
 
     <form v-else class="grid grid-cols-1 gap-5 xl:grid-cols-[1fr_320px]" @submit.prevent="save">
       <section class="flex flex-col gap-4 rounded-xl border border-[#e2ece3] bg-white p-5">

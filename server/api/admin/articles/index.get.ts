@@ -1,5 +1,5 @@
 import { getDb } from '../../../utils/db'
-import { articles, users, categories } from '../../../db/schema'
+import { articles, users, categories, articleViewDaily } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { eq, like, desc, sql, count } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/mysql-core'
@@ -56,6 +56,21 @@ export default defineEventHandler(async (event) => {
       createdAt:    articles.createdAt,
       updatedAt:    articles.updatedAt,
       authorName:   users.username,
+      /**
+       * Total displayed views (real + fabricated) per row.
+       *
+       * A correlated subquery rather than a fourth left join: `article_view_daily`
+       * holds one row per day per source, so joining it would fan each article
+       * out into many rows and `limit`/`offset` would then paginate view rows
+       * instead of articles. Still one statement for the whole page — the
+       * per-row fetch this replaces would be N+1 on a list that already joins
+       * three tables. Articles with no views report 0, not null.
+       */
+      viewTotal: sql<number>`(
+        SELECT COALESCE(SUM(${articleViewDaily.realViews} + ${articleViewDaily.fabricatedViews}), 0)
+        FROM ${articleViewDaily}
+        WHERE ${articleViewDaily.articleId} = ${articles.id}
+      )`,
     })
     .from(articles)
     .leftJoin(users, eq(articles.authorId, users.id))

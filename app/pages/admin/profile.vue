@@ -578,10 +578,25 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         Bật hoặc tắt sẽ thu hồi các phiên đăng nhập khác.
       </p>
 
-      <!-- Loading -->
-      <div v-if="mfaLoading" class="flex items-center gap-3 rounded-lg border border-[#e2ece3] bg-[#fafcfa] p-6 text-[0.85rem] text-[#667768]">
-        <i class="fa-solid fa-spinner fa-spin text-[#2c6e33]" aria-hidden="true"></i>
-        Đang tải trạng thái xác thực…
+      <!-- Loading — three factor cards, the shape the list below always renders -->
+      <div v-if="mfaLoading" class="flex flex-col gap-3" role="status" aria-busy="true">
+        <span class="sr-only">Đang tải trạng thái xác thực hai bước</span>
+        <div
+          v-for="n in 3"
+          :key="'mf-' + n"
+          class="rounded-xl border border-[#e2ece3] bg-white p-4 flex items-start gap-4 flex-wrap"
+          aria-hidden="true"
+        >
+          <div class="w-10 h-10 rounded-xl bg-[#dfe9e0] animate-pulse motion-reduce:animate-none shrink-0"></div>
+          <div class="flex-1 min-w-[220px] flex flex-col gap-2">
+            <div class="flex items-center gap-2">
+              <div class="h-4 w-44 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+              <div class="h-4 w-24 rounded-full bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+            </div>
+            <div class="h-3 w-full max-w-[420px] rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          </div>
+          <div class="h-9 w-28 rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+        </div>
       </div>
 
       <!-- Error -->
@@ -769,10 +784,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
         <span>Bạn đang xem lịch sử của <strong>{{ historyTargetName }}</strong>. Lần xem này được ghi vào nhật ký hệ thống.</span>
       </p>
 
-      <div v-if="historyLoading" class="flex items-center gap-3 rounded-lg border border-[#e2ece3] bg-[#fafcfa] p-6 text-[0.85rem] text-[#667768]">
-        <i class="fa-solid fa-spinner fa-spin text-[#2c6e33]" aria-hidden="true"></i>
-        Đang tải lịch sử…
-      </div>
+      <SkeletonTable v-if="historyLoading" label="Đang tải lịch sử hoạt động" :rows="6" :cols="5" />
 
       <div v-else-if="historyError" class="flex items-start gap-2 bg-[#ffebe9] border border-[#ffc1ba] text-[#d12420] px-3.5 py-3 rounded-lg text-[0.84rem]" role="alert">
         <i class="fa-solid fa-triangle-exclamation shrink-0 mt-0.5" aria-hidden="true"></i>

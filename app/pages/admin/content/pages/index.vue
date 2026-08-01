@@ -15,9 +15,7 @@
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="flex items-center justify-center py-20 text-gray-400">
-      <i class="fa-solid fa-spinner fa-spin text-2xl"></i>
-    </div>
+    <SkeletonTable v-if="loading" label="Đang tải danh sách trang" :rows="5" :cols="6" />
 
     <!-- Error -->
     <div v-else-if="loadError" class="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-red-600">

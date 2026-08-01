@@ -197,7 +197,7 @@ onMounted(load)
       </div>
     </div>
 
-    <div v-if="loading" class="py-10 text-center text-[#667768]">Đang tải cấu hình...</div>
+    <SkeletonForm v-if="loading" label="Đang tải cấu hình dọn dữ liệu" :fields="5" />
 
     <template v-else>
       <!-- Trạng thái nổi bật -->

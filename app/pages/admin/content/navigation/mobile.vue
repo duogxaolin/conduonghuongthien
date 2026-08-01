@@ -145,9 +145,35 @@ onMounted(loadMenu)
     </div>
 
     <!-- Loading -->
-    <div v-if="loading" class="flex items-center gap-3 rounded-xl border border-[#e2ece3] bg-white p-8 text-[#667768] text-sm">
-      <i class="fa-solid fa-spinner fa-spin text-[#2c6e33]" aria-hidden="true"></i>
-      Đang tải cấu hình…
+    <div v-if="loading" class="grid grid-cols-1 xl:grid-cols-2 gap-6 items-start" role="status" aria-busy="true">
+      <span class="sr-only">Đang tải cấu hình thanh điều hướng</span>
+      <div class="flex flex-col gap-3" aria-hidden="true">
+        <div class="h-3 w-48 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+        <div
+          v-for="n in 5"
+          :key="'mb-' + n"
+          class="rounded-xl border border-[#e2ece3] bg-white shadow-sm overflow-hidden"
+        >
+          <div class="flex items-start gap-3 px-4 py-3">
+            <div class="w-6 h-11 rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none shrink-0"></div>
+            <div class="w-10 h-10 rounded-xl bg-[#dfe9e0] animate-pulse motion-reduce:animate-none shrink-0 mt-0.5"></div>
+            <div class="flex-1 min-w-0 flex flex-col gap-2">
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div class="h-8 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+                <div class="h-8 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+              </div>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <div class="h-8 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+                <div class="h-8 w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="rounded-xl border border-[#e2ece3] bg-white p-4 flex flex-col gap-3" aria-hidden="true">
+        <div class="h-3 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
+        <div class="h-[220px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+      </div>
     </div>
 
     <template v-else>

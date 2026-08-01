@@ -368,9 +368,7 @@ onMounted(load)
     <div v-if="errorMessage" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">
       <strong>Lỗi:</strong> {{ errorMessage }}
     </div>
-    <div v-if="loading" class="rounded-xl border border-[#e2ece3] bg-white p-12 text-center text-sm text-[#667768]" aria-live="polite">
-      Đang tải cấu hình chatbot...
-    </div>
+    <SkeletonForm v-if="loading" label="Đang tải cấu hình chatbot" :fields="5" />
 
     <form v-else class="flex flex-col gap-5" @submit.prevent="save">
       <!-- Answer mode + lead capture -->
