@@ -295,199 +295,13 @@
       </div>
     </footer>
 
-    <!-- Chatbot Popup (client-only: uses localStorage history, skip SSR to avoid hydration mismatch) -->
-    <div
-      v-if="clientMounted"
-      id="public-chatbot-dialog"
-      ref="chatbotDialog"
-      class="fixed inset-0 w-screen h-[100dvh] bg-[#f0f4ef] flex flex-col z-[99999] overflow-hidden opacity-0 pointer-events-none translate-y-[20px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:inset-auto md:fixed md:right-5 md:bottom-5 md:w-[min(460px,calc(100vw-40px))] md:h-[min(680px,calc(100dvh-100px))] lg:w-[520px] lg:h-[min(760px,calc(100dvh-110px))] md:rounded-2xl md:shadow-[0_25px_60px_rgba(0,0,0,0.2)] md:border md:border-black/10 md:translate-y-3 md:scale-[0.96]"
-      :class="{ '!opacity-100 !pointer-events-auto !translate-y-0 md:!scale-100': isChatbotOpen }"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="public-chatbot-title"
-      :aria-hidden="!isChatbotOpen"
-      :inert="!isChatbotOpen"
-      @keydown="handleChatbotDialogKeydown"
-    >
-        <!-- Header -->
-        <div class="flex-shrink-0 bg-[#1e4620] px-4 pt-[calc(env(safe-area-inset-top,0px)+12px)] pb-3 md:pt-3 md:rounded-t-2xl">
-          <div class="flex items-center justify-between">
-            <div class="flex items-center gap-3">
-              <button class="md:hidden w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[0.9rem] border-none cursor-pointer transition-all active:scale-90" @click="closeChatbot" aria-label="Quay lại">
-                <i class="fa-solid fa-arrow-left"></i>
-              </button>
-              <div class="w-10 h-10 rounded-full bg-white/15 border-2 border-white/30 flex items-center justify-center flex-shrink-0">
-                <i class="fa-solid fa-robot text-white text-[1.1rem]"></i>
-              </div>
-              <div>
-                <h4 id="public-chatbot-title" class="text-[0.95rem] font-bold text-white m-0 leading-tight">Trợ lý Hướng Thiện</h4>
-                <p class="text-[0.7rem] text-white/60 mt-0.5 mb-0 flex items-center gap-1.5">
-                  <span class="w-2 h-2 rounded-full bg-[#7CB342] inline-block animate-pulse" aria-hidden="true"></span>
-                  Đang hoạt động
-                </p>
-              </div>
-            </div>
-            <div class="flex items-center gap-1.5">
-              <button class="w-8 h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="clearChatHistory" title="Xóa lịch sử" aria-label="Xóa lịch sử">
-                <i class="fa-solid fa-broom text-[0.8rem]"></i>
-              </button>
-              <button ref="chatCloseButton" class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50" @click="closeChatbot" aria-label="Đóng">
-                <i class="fa-solid fa-xmark text-[0.9rem]"></i>
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Chat Messages -->
-        <div ref="chatContainer" class="flex-1 px-4 py-5 overflow-y-auto overscroll-contain flex flex-col gap-4" aria-live="polite" aria-relevant="additions text">
-          <!-- Welcome card -->
-          <div v-if="chatMessages.length <= 1" class="mx-auto mt-4 mb-2 max-w-[280px] text-center">
-            <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-[#1e4620]/10 flex items-center justify-center">
-              <i class="fa-solid fa-shield-halved text-[#1e4620] text-[1.4rem]"></i>
-            </div>
-            <p class="text-[0.82rem] text-[#4A5545] leading-relaxed m-0">Xin chào! Tôi hỗ trợ tra cứu thông tin từ kho dữ liệu đã được <strong class="text-[#1e4620]">Cục C11</strong> phê duyệt.</p>
-          </div>
-
-          <template v-for="(msg, index) in chatMessages" :key="msg.id || index">
-            <div v-if="msg.id !== 'welcome'" class="flex gap-2.5" :class="msg.sender === 'user' ? 'justify-end' : 'justify-start'">
-              <!-- Bot avatar -->
-              <div v-if="msg.sender === 'bot'" class="w-7 h-7 rounded-full bg-[#1e4620] flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm" aria-hidden="true">
-                <i class="fa-solid fa-robot text-white text-[0.65rem]"></i>
-              </div>
-              <!-- Message bubble -->
-              <div
-                class="max-w-[80%] break-words px-4 py-3 text-[0.875rem] leading-[1.55] lg:text-[0.92rem]"
-                :class="msg.sender === 'bot'
-                  ? 'bg-white text-[#1f2937] rounded-[4px_18px_18px_18px] shadow-[0_1px_3px_rgba(0,0,0,0.06)]'
-                  : 'bg-[#1e4620] text-white rounded-[18px_4px_18px_18px] shadow-[0_2px_8px_rgba(30,70,32,0.2)]'"
-              >
-                <p class="m-0 whitespace-pre-wrap">{{ msg.text }}</p>
-                <p v-if="msg.kind && msg.sender === 'bot'" class="mt-2 mb-0 text-[0.7rem] font-semibold flex items-center gap-1" :class="messageKindClass(msg.kind)" role="status">
-                  <i class="fa-solid" :class="isProblemKind(msg.kind) ? 'fa-circle-exclamation text-[#9a3412]' : 'fa-circle-check text-[#1e4620]'" aria-hidden="true"></i>
-                  {{ messageKindLabel(msg.kind) }}
-                </p>
-                <ul v-if="msg.sources?.length" class="mt-2 mb-0 space-y-1 border-t border-[#e1e8e0] pt-2 list-none pl-0" aria-label="Nguồn tham khảo">
-                  <li v-for="source in msg.sources" :key="source.id" class="text-[0.7rem] leading-snug text-[#4A5545]">
-                    <i class="fa-solid fa-link text-[0.55rem] text-[#7CB342] mr-1" aria-hidden="true"></i>
-                    <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2">{{ source.label }}</a>
-                    <span v-else class="font-semibold">{{ source.label }}</span>
-                    <span v-if="source.reference" class="text-[#6b7280]"> — {{ source.reference }}</span>
-                  </li>
-                </ul>
-                <div v-if="msg.askContact && msg.lead" class="mt-3 border-t border-[#e1e8e0] pt-3">
-                  <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.78rem] font-semibold text-[#1e4620]"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i> Đã gửi thông tin. Cán bộ sẽ liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn ạ!</p>
-                  <form v-else class="flex flex-col gap-2" @submit.prevent="submitLead(msg)">
-                    <p class="m-0 text-[0.75rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
-                    <input v-model="msg.lead.name" type="text" placeholder="Họ và tên" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                    <input v-model="msg.lead.phone" type="tel" placeholder="Số điện thoại" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                    <input v-model="msg.lead.email" type="email" placeholder="Email (nếu có)" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                    <textarea v-model="msg.lead.question" rows="2" placeholder="Nội dung cần hỗ trợ" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]"></textarea>
-                    <p v-if="msg.lead.error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
-                    <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-[#1e4620] px-4 py-1.5 text-[0.78rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">{{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}</button>
-                  </form>
-                </div>
-                <span v-if="msg.isStreaming" class="inline-block ml-0.5 text-[#7CB342] font-bold animate-[blinkCursor_0.6s_infinite] motion-reduce:animate-none" aria-hidden="true">▌</span>
-              </div>
-            </div>
-          </template>
-
-          <!-- Typing indicator -->
-          <div v-if="isSubmitting" class="flex gap-2.5 justify-start">
-            <div class="w-7 h-7 rounded-full bg-[#1e4620] flex items-center justify-center flex-shrink-0 shadow-sm">
-              <i class="fa-solid fa-robot text-white text-[0.65rem]"></i>
-            </div>
-            <div class="bg-white px-4 py-3 rounded-[4px_18px_18px_18px] shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-              <div class="flex gap-1 items-center">
-                <span class="w-2 h-2 bg-[#1e4620]/40 rounded-full animate-bounce [animation-delay:0ms]"></span>
-                <span class="w-2 h-2 bg-[#1e4620]/40 rounded-full animate-bounce [animation-delay:150ms]"></span>
-                <span class="w-2 h-2 bg-[#1e4620]/40 rounded-full animate-bounce [animation-delay:300ms]"></span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Quick Questions (collapsible) -->
-        <div v-if="quickQuestionState === 'success' && quickQuestions.length" class="flex-shrink-0 border-t border-[#e1e8e0]">
-          <button type="button" class="w-full px-4 py-2 bg-white text-[0.75rem] font-semibold text-[#4A5545] flex items-center justify-between border-none cursor-pointer transition-all hover:bg-[#f8faf8]" @click="isQuickQuestionsExpanded = !isQuickQuestionsExpanded">
-            <span class="flex items-center gap-1.5"><i class="fa-solid fa-lightbulb text-[#7CB342] text-[0.7rem]" aria-hidden="true"></i> Câu hỏi gợi ý</span>
-            <i class="fa-solid fa-chevron-up text-[0.6rem] transition-transform duration-200" :class="{ 'rotate-180': !isQuickQuestionsExpanded }" aria-hidden="true"></i>
-          </button>
-          <div v-show="isQuickQuestionsExpanded" class="px-3.5 pb-2.5 bg-white">
-            <div class="flex flex-wrap gap-1.5 max-h-[68px] overflow-y-auto overscroll-contain lg:max-h-[96px]">
-              <button
-                v-for="question in quickQuestions"
-                :key="question.id"
-                type="button"
-                :disabled="isSubmitting"
-                @click="askBot(question.question)"
-                class="bg-[#f0f6ef] border border-[#d4e4d2] text-[#2d4a2d] px-2.5 py-1 rounded-full text-[0.72rem] font-medium whitespace-nowrap cursor-pointer transition-all hover:bg-[#1e4620] hover:text-white hover:border-[#1e4620] active:scale-95 disabled:cursor-not-allowed disabled:opacity-50"
-              >{{ question.question }}</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- Input Form -->
-        <div class="flex-shrink-0 bg-white border-t border-[#e1e8e0] px-3 pt-2.5 pb-[calc(10px+env(safe-area-inset-bottom,0px))] md:pb-3 md:rounded-b-2xl">
-          <form class="flex items-end gap-2" @submit.prevent="sendBotMessage">
-            <div class="flex-1 min-w-0">
-              <label for="public-chatbot-input" class="sr-only">Nhập câu hỏi cho trợ lý</label>
-              <input
-                id="public-chatbot-input"
-                ref="botInputRef"
-                type="text"
-                placeholder="Hỏi tôi bất cứ điều gì..."
-                v-model="botInput"
-                :maxlength="CHATBOT_CLIENT_LIMITS.maxMessageChars"
-                :aria-describedby="botInputError ? 'public-chatbot-error public-chatbot-counter' : 'public-chatbot-counter'"
-                :aria-invalid="Boolean(botInputError)"
-                :disabled="isSubmitting"
-                class="w-full px-4 py-3 rounded-full border border-[#d4e4d2] text-[0.88rem] outline-none bg-[#f8faf8] transition-all focus:border-[#1e4620] focus:bg-white focus:shadow-[0_0_0_3px_rgba(30,70,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
-              />
-              <div v-if="botInputError" class="mt-1 px-4">
-                <p id="public-chatbot-error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ botInputError }}</p>
-              </div>
-            </div>
-            <button type="submit" :disabled="isSubmitting || !botInput.trim()" class="w-11 h-11 rounded-full bg-[#1e4620] text-white border-none flex flex-shrink-0 items-center justify-center cursor-pointer transition-all hover:bg-[#153317] hover:shadow-[0_4px_12px_rgba(30,70,32,0.3)] active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:bg-[#a0b89e]" aria-label="Gửi tin nhắn">
-              <i class="fa-solid fa-paper-plane text-[0.85rem]"></i>
-            </button>
-          </form>
-          <p id="public-chatbot-counter" class="m-0 mt-1 text-[0.65rem] text-[#9ca3af] text-right px-2" :class="{ '!text-[#b42318]': botInput.length > CHATBOT_CLIENT_LIMITS.maxMessageChars * 0.9 }">{{ botInput.length }}/{{ CHATBOT_CLIENT_LIMITS.maxMessageChars }}</p>
-        </div>
-    </div>
-
-    <!-- Chatbot Toggle Button + Teaser Bubble (client-only) -->
-    <div v-if="clientMounted" class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[10050] flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
-      <!-- Teaser bubble -->
-      <div
-        v-if="chatTeaserVisible && !isChatbotOpen"
-        class="relative max-w-[220px] bg-white text-[#1f2937] text-[0.8rem] leading-snug px-3.5 py-2.5 rounded-[16px_16px_4px_16px] shadow-[0_4px_20px_rgba(0,0,0,0.12)] border border-black/5 animate-[fadeSlideUp_0.3s_ease-out] cursor-pointer"
-        @click="toggleChatbot"
-      >
-        <p class="m-0">{{ chatTeaserText }}</p>
-        <button type="button" class="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-[#e5e7eb] text-[#6b7280] text-[0.6rem] flex items-center justify-center border-none cursor-pointer hover:bg-[#d1d5db]" @click.stop="dismissTeaser" aria-label="Đóng">
-          <i class="fa-solid fa-xmark"></i>
-        </button>
-      </div>
-      <!-- Toggle button -->
-      <button
-        ref="chatToggleButton"
-        class="chatbot-toggle-btn flex bg-[#1e4620] text-white border border-white/20 px-4 py-2.5 pl-3.5 rounded-[50px] shadow-[0_8px_24px_rgba(30,70,32,0.25)] cursor-pointer items-center gap-2 font-bold text-[0.88rem] transition-all hover:-translate-y-0.5 hover:bg-[#153317] hover:shadow-[0_12px_30px_rgba(30,70,32,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] focus-visible:ring-offset-2 motion-reduce:transition-none"
-        aria-controls="public-chatbot-dialog"
-        :aria-expanded="isChatbotOpen"
-        @click="toggleChatbot">
-        <div class="flex items-center justify-center">
-          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
-          </svg>
-        </div>
-        <span class="bot-label">Hỏi trợ lý</span>
-      </button>
-    </div>
+    <!-- Chatbot: all state and markup live in the component. -->
+    <ChatWidget ref="chatWidget" />
 
     <!-- Mobile Bottom Nav -->
     <nav
       class="fixed bottom-2.5 left-3 right-3 h-16 bg-[linear-gradient(135deg,rgba(255,255,255,0.94)_0%,rgba(244,249,243,0.92)_100%)] backdrop-blur-md border border-white/90 rounded-[24px] shadow-[0_12px_32px_rgba(15,35,18,0.16)] z-[9900] flex justify-around items-center px-1.5 transition-all md:hidden"
-      :class="{ 'opacity-0 pointer-events-none translate-y-4': isMobileMenuOpen || isChatbotOpen }"
+      :class="{ 'opacity-0 pointer-events-none translate-y-4': isMobileMenuOpen || isChatOpen }"
       aria-label="Điều hướng nhanh"
       style="padding-bottom: env(safe-area-inset-bottom, 0px)"
     >
@@ -496,7 +310,7 @@
         <button
           v-if="item.featured"
           class="flex-1 relative flex flex-col items-center justify-center gap-0.5 bg-transparent border-none text-[#385130] max-w-[52px] font-extrabold text-[0.65rem] -top-3.5 cursor-pointer transition-all font-[inherit]"
-          :class="{ 'text-[#4A6741]': (item.type === 'chatbot' && isChatbotOpen) || (item.type === 'drawer' && isMobileMenuOpen) }"
+          :class="{ 'text-[#4A6741]': (item.type === 'chatbot' && isChatOpen) || (item.type === 'drawer' && isMobileMenuOpen) }"
           @click="item.type === 'link' ? navigateTo(item.url) : onBottomNavClick(item)"
         >
           <div class="w-[50px] h-[50px] rounded-full bg-gradient-to-br from-[#2e6b32] to-[#173b18] text-white flex items-center justify-center shadow-[0_10px_24px_rgba(23,59,24,0.4),inset_0_2px_4px_rgba(255,255,255,0.4)] border-[3.5px] border-white/95 transition-all active:scale-90">
@@ -522,7 +336,7 @@
         <button
           v-else
           class="flex-1 flex flex-col items-center justify-center gap-0.5 bg-transparent border-none text-[#556655] max-w-[52px] font-semibold text-[0.65rem] py-1.5 cursor-pointer transition-all font-[inherit]"
-          :class="{ 'text-[#4A6741]': (item.type === 'chatbot' && isChatbotOpen) || (item.type === 'drawer' && isMobileMenuOpen) }"
+          :class="{ 'text-[#4A6741]': (item.type === 'chatbot' && isChatOpen) || (item.type === 'drawer' && isMobileMenuOpen) }"
           @click="onBottomNavClick(item)"
         >
           <div class="flex items-center justify-center px-3 py-0.5 rounded-2xl transition-all">
@@ -594,7 +408,7 @@ const bottomNav = computed(() => {
 const navItemLabel = (item) => item.label || (item.labelKey ? t(item.labelKey) : item.url)
 
 const onBottomNavClick = (item) => {
-  if (item.type === 'chatbot') toggleChatbot()
+  if (item.type === 'chatbot') chatWidget.value?.toggleChatbot()
   else if (item.type === 'drawer') toggleMobileMenu()
 }
 
@@ -625,163 +439,6 @@ watch(settingsData, (res) => {
   if (mobileRaw) bottomNavRaw.value = _parseNav(mobileRaw)
 }, { immediate: true })
 
-const CHATBOT_CLIENT_LIMITS = Object.freeze({
-  maxMessageChars: 2000,
-  maxOutputChars: 8000,
-  maxHistoryMessages: 8,
-  maxTotalUserChars: 30000,
-  maxQuickQuestions: 8,
-  maxSources: 3,
-  maxSourceLabelChars: 160,
-  maxSourceReferenceChars: 160,
-})
-const CHATBOT_RESPONSE_KINDS = new Set(['curated', 'provider', 'small_talk', 'not_found', 'unavailable', 'rate_limited'])
-const CHATBOT_STORAGE_KEY = 'cdkt_chat_history_v2'
-const CHATBOT_WELCOME_MESSAGE = Object.freeze({
-  id: 'welcome',
-  sender: 'bot',
-  text: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi chỉ hỗ trợ theo thông tin công khai trong kho dữ liệu đã được Cục C11 phê duyệt.',
-})
-
-const isChatbotOpen = ref(false)
-const isSubmitting = ref(false)
-const botInput = ref('')
-const botInputError = ref('')
-const chatContainer = ref(null)
-const chatbotDialog = ref(null)
-const botInputRef = ref(null)
-const chatCloseButton = ref(null)
-const chatToggleButton = ref(null)
-const chatMessages = ref([{ ...CHATBOT_WELCOME_MESSAGE }])
-const quickQuestions = ref([])
-const quickQuestionState = ref('loading')
-const isQuickQuestionsExpanded = ref(true)
-let quickQuestionsController = null
-let chatRequestController = null
-let botRequestSequence = 0
-let messageSequence = 0
-
-// Chat teaser bubble logic
-const CHAT_TEASER_MESSAGES = [
-  'Bạn cần tìm hiểu về quyền lợi sau khi chấp hành xong án phạt tù?',
-  'Tôi có thể giúp bạn tra cứu thủ tục xóa án tích miễn phí.',
-  'Cần hỗ trợ tìm việc làm sau khi tái hòa nhập cộng đồng?',
-  'Hỏi tôi về chính sách hỗ trợ vay vốn cho người hoàn lương nhé!',
-  'Bạn muốn biết về các mô hình tái hòa nhập thành công?',
-  'Tôi giúp bạn tìm hiểu quy trình đăng ký tạm trú sau mãn hạn tù.',
-  'Cần tư vấn về quyền học nghề, học văn hóa miễn phí?',
-]
-const chatTeaserVisible = ref(false)
-const chatTeaserText = ref('')
-let teaserInterval = null
-let teaserInitTimeout = null
-let teaserDismissed = false
-
-const showRandomTeaser = () => {
-  if (isChatbotOpen.value || teaserDismissed) return
-  const msg = CHAT_TEASER_MESSAGES[Math.floor(Math.random() * CHAT_TEASER_MESSAGES.length)]
-  chatTeaserText.value = msg
-  chatTeaserVisible.value = true
-  // Auto-hide after 6s
-  setTimeout(() => { chatTeaserVisible.value = false }, 6000)
-}
-
-const dismissTeaser = () => {
-  chatTeaserVisible.value = false
-  teaserDismissed = true
-  if (teaserInterval) { clearInterval(teaserInterval); teaserInterval = null }
-  if (teaserInitTimeout) { clearTimeout(teaserInitTimeout); teaserInitTimeout = null }
-}
-
-const startTeaserCycle = () => {
-  if (teaserInterval || teaserInitTimeout) return
-  // First teaser after 2s, then every 8s
-  teaserInitTimeout = setTimeout(() => {
-    teaserInitTimeout = null
-    showRandomTeaser()
-    teaserInterval = setInterval(showRandomTeaser, 8000)
-  }, 2000)
-}
-
-const quickQuestionStatusText = computed(() => {
-  if (quickQuestionState.value === 'loading') return 'Đang tải câu hỏi đã được phê duyệt…'
-  if (quickQuestionState.value === 'error') return 'Hiện không thể tải câu hỏi gợi ý. Bạn vẫn có thể nhập câu hỏi bên dưới.'
-  if (quickQuestionState.value === 'empty') return 'Hiện chưa có câu hỏi gợi ý đã được phê duyệt. Bạn vẫn có thể nhập câu hỏi bên dưới.'
-  return 'Câu hỏi gợi ý từ kho dữ liệu đã phê duyệt'
-})
-
-const messageKindLabel = (kind) => ({
-  curated: 'Trả lời từ nội dung đã phê duyệt',
-  provider: 'Giải thích có tham chiếu nội dung đã phê duyệt',
-  small_talk: 'Trả lời chào hỏi',
-  not_found: 'Chưa tìm thấy thông tin phù hợp',
-  unavailable: 'Dịch vụ tạm thời chưa sẵn sàng',
-  rate_limited: 'Tạm giới hạn yêu cầu',
-}[kind] || '')
-
-// One definition of "this reply did not answer the question", used by both the
-// icon and the caption colour so they can never disagree.
-const isProblemKind = (kind) => kind === 'not_found' || kind === 'unavailable' || kind === 'rate_limited'
-
-const messageKindClass = (kind) => isProblemKind(kind) ? 'text-[#9a3412]' : 'text-[#385130]'
-
-const normalizeQuickQuestion = (item) => {
-  if (!item || typeof item !== 'object') return null
-  const id = typeof item.id === 'number' || typeof item.id === 'string' ? String(item.id) : ''
-  const question = typeof item.question === 'string' ? item.question.normalize('NFKC').trim() : ''
-  if (!id || !question || question.length > CHATBOT_CLIENT_LIMITS.maxMessageChars) return null
-  return { id, question }
-}
-
-const safeHttpsUrl = (value) => {
-  if (typeof value !== 'string') return null
-  try {
-    const url = new URL(value)
-    return url.protocol === 'https:' ? url.toString() : null
-  } catch {
-    return null
-  }
-}
-
-const normalizeSource = (item, index) => {
-  if (!item || typeof item !== 'object') return null
-  const rawSource = item.source && typeof item.source === 'object' ? item.source : item
-  const label = typeof rawSource.label === 'string' ? rawSource.label.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxSourceLabelChars) : ''
-  const reference = typeof rawSource.reference === 'string' ? rawSource.reference.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxSourceReferenceChars) : ''
-  const url = safeHttpsUrl(rawSource.url)
-  if (!label && !reference) return null
-  return {
-    id: `${typeof item.id === 'number' || typeof item.id === 'string' ? item.id : index}-${label}-${reference}`,
-    label: label || 'Tài liệu công khai',
-    reference,
-    url,
-  }
-}
-
-const loadQuickQuestions = async () => {
-  if (quickQuestionsController) quickQuestionsController.abort()
-  quickQuestionsController = new AbortController()
-  quickQuestionState.value = 'loading'
-  quickQuestions.value = []
-  try {
-    const response = await fetch('/api/public/chatbot/quick-questions', {
-      headers: { Accept: 'application/json' },
-      signal: quickQuestionsController.signal,
-    })
-    if (!response.ok) throw new Error('QUICK_QUESTIONS_UNAVAILABLE')
-    const data = await response.json()
-    const items = Array.isArray(data?.items)
-      ? data.items.slice(0, CHATBOT_CLIENT_LIMITS.maxQuickQuestions).map(normalizeQuickQuestion).filter(Boolean)
-      : []
-    quickQuestions.value = items
-    quickQuestionState.value = data?.ok === true && data?.available === true && items.length > 0 ? 'success' : 'empty'
-  } catch (error) {
-    if (error?.name !== 'AbortError') quickQuestionState.value = 'error'
-  } finally {
-    quickQuestionsController = null
-  }
-}
-
 // rAF-throttled scroll handler: coalesces bursts of scroll events into one write
 // per frame and only mutates `isSticky` when the boolean actually flips. Hysteresis
 // (sticky >80, unsticky <60) prevents flicker right at the threshold. The listener
@@ -803,17 +460,22 @@ const toggleMobileMenu = () => {
   isMobileMenuOpen.value = !isMobileMenuOpen.value
 }
 
-watch([isMobileMenuOpen, isChatbotOpen], ([isMenuOpen, isChatOpen]) => {
+// The bottom nav dims itself while the chat is open and highlights its chatbot
+// item; both need to read the widget's state, which the widget owns.
+const chatWidget = ref(null)
+const isChatOpen = computed(() => chatWidget.value?.isChatbotOpen ?? false)
+
+// The widget locks scroll for itself while its dialog is open; the layout only
+// answers for the mobile menu.
+watch(isMobileMenuOpen, (isMenuOpen) => {
   if (typeof document !== 'undefined') {
-    document.body.style.overflow = isMenuOpen || isChatOpen ? 'hidden' : ''
+    document.body.style.overflow = isMenuOpen ? 'hidden' : ''
   }
 })
 
 const handleKeydown = (event) => {
-  if (event.key === 'Escape' && isChatbotOpen.value) {
-    closeChatbot()
-    return
-  }
+  // The chatbot dialog handles its own Escape via a keydown on the dialog; this
+  // only needs to catch the mobile menu.
   if (event.key === 'Escape' && isMobileMenuOpen.value) {
     isMobileMenuOpen.value = false
   }
@@ -850,288 +512,16 @@ const handleSearch = () => {
   }
 }
 
-const handleChatbotDialogKeydown = (event) => {
-  if (event.key === 'Escape') {
-    closeChatbot()
-    return
-  }
-  if (event.key !== 'Tab' || !chatbotDialog.value) return
-  const focusable = [...chatbotDialog.value.querySelectorAll('button:not([disabled]), a[href], input:not([disabled])')]
-  if (!focusable.length) return
-  const first = focusable[0]
-  const last = focusable[focusable.length - 1]
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
-}
-
-const openChatbot = async () => {
-  isChatbotOpen.value = true
-  chatTeaserVisible.value = false
-  teaserDismissed = true
-  if (teaserInterval) { clearInterval(teaserInterval); teaserInterval = null }
-  if (teaserInitTimeout) { clearTimeout(teaserInitTimeout); teaserInitTimeout = null }
-  if (quickQuestionState.value === 'error' || quickQuestionState.value === 'empty') loadQuickQuestions()
-  await nextTick()
-  chatCloseButton.value?.focus()
-  scrollChatBottom()
-}
-
-const closeChatbot = async () => {
-  isChatbotOpen.value = false
-  await nextTick()
-  chatToggleButton.value?.focus()
-}
-
-const toggleChatbot = () => {
-  if (isChatbotOpen.value) closeChatbot()
-  else openChatbot()
-}
-
-const normalizeStoredMessage = (item, index) => {
-  if (!item || typeof item !== 'object' || (item.sender !== 'user' && item.sender !== 'bot')) return null
-  const maxChars = item.sender === 'user' ? CHATBOT_CLIENT_LIMITS.maxMessageChars : CHATBOT_CLIENT_LIMITS.maxOutputChars
-  const text = typeof item.text === 'string' ? item.text.normalize('NFKC').trim().slice(0, maxChars) : ''
-  if (!text) return null
-  if (item.sender === 'user') return { id: `stored-${index}`, sender: 'user', text }
-  const kind = CHATBOT_RESPONSE_KINDS.has(item.kind) ? item.kind : undefined
-  const sources = Array.isArray(item.sources)
-    ? item.sources.slice(0, CHATBOT_CLIENT_LIMITS.maxSources).map(normalizeSource).filter(Boolean)
-    : []
-  return { id: `stored-${index}`, sender: 'bot', text, kind, sources }
-}
-
-const loadChatHistory = () => {
-  if (typeof window === 'undefined') return
-  try {
-    const saved = localStorage.getItem(CHATBOT_STORAGE_KEY)
-    const parsed = saved ? JSON.parse(saved) : null
-    if (!Array.isArray(parsed)) return
-    const bounded = parsed.slice(-(CHATBOT_CLIENT_LIMITS.maxHistoryMessages * 2)).map(normalizeStoredMessage).filter(Boolean)
-    if (bounded.length > 0) chatMessages.value = [{ ...CHATBOT_WELCOME_MESSAGE }, ...bounded.filter(item => item.id !== 'welcome')]
-  } catch {
-    localStorage.removeItem(CHATBOT_STORAGE_KEY)
-  }
-}
-
-const saveChatHistory = () => {
-  if (typeof window === 'undefined') return
-  const bounded = chatMessages.value
-    .filter(item => item.id !== 'welcome' && !item.isStreaming && typeof item.text === 'string' && item.text.trim())
-    .slice(-(CHATBOT_CLIENT_LIMITS.maxHistoryMessages * 2))
-    .map(({ sender, text, kind, sources }) => ({ sender, text, kind, sources }))
-  try {
-    localStorage.setItem(CHATBOT_STORAGE_KEY, JSON.stringify(bounded))
-  } catch {
-    // Storage can be unavailable in private browsing; chat remains usable in memory.
-  }
-}
-
-const clearChatHistory = () => {
-  botRequestSequence += 1
-  if (chatRequestController) chatRequestController.abort()
-  isSubmitting.value = false
-  botInputError.value = ''
-  chatMessages.value = [{ ...CHATBOT_WELCOME_MESSAGE }]
-  if (typeof window !== 'undefined') localStorage.removeItem(CHATBOT_STORAGE_KEY)
-  nextTick(() => botInputRef.value?.focus())
-}
-
-const boundedUserHistory = () => {
-  const messages = chatMessages.value
-    .filter(item => item.sender === 'user' && typeof item.text === 'string')
-    .map(item => ({ sender: 'user', text: item.text.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxMessageChars) }))
-    .filter(item => item.text)
-    .slice(-CHATBOT_CLIENT_LIMITS.maxHistoryMessages)
-  let total = 0
-  return messages.reverse().filter((item) => {
-    if (total + item.text.length > CHATBOT_CLIENT_LIMITS.maxTotalUserChars) return false
-    total += item.text.length
-    return true
-  }).reverse()
-}
-
-const parseSseLine = (line, targetMessage) => {
-  const trimmed = line.trim()
-  if (!trimmed.startsWith('data: ') || trimmed === 'data: [DONE]') return
-  let data
-  try {
-    data = JSON.parse(trimmed.slice(6))
-  } catch {
-    return
-  }
-  const content = typeof data?.choices?.[0]?.delta?.content === 'string' ? data.choices[0].delta.content : ''
-  if (content) targetMessage.text = `${targetMessage.text}${content}`.slice(0, CHATBOT_CLIENT_LIMITS.maxOutputChars)
-  const chatbot = data?.chatbot
-  if (chatbot && typeof chatbot === 'object') {
-    targetMessage.kind = CHATBOT_RESPONSE_KINDS.has(chatbot.kind) ? chatbot.kind : 'unavailable'
-    targetMessage.sources = Array.isArray(chatbot.sources)
-      ? chatbot.sources.slice(0, CHATBOT_CLIENT_LIMITS.maxSources).map(normalizeSource).filter(Boolean)
-      : []
-    targetMessage.askContact = chatbot.askContact === true
-    if (targetMessage.askContact && !targetMessage.lead) {
-      targetMessage.lead = { name: '', phone: '', email: '', question: '', status: 'idle', error: '' }
-    }
-  }
-}
-
-const fetchStreamBotReply = async () => {
-  if (isSubmitting.value) return false
-  const requestSequence = ++botRequestSequence
-  isSubmitting.value = true
-  botInputError.value = ''
-  chatRequestController = new AbortController()
-  const requestController = chatRequestController
-  const botMessage = {
-    id: `bot-${++messageSequence}`,
-    sender: 'bot',
-    text: '',
-    kind: undefined,
-    sources: [],
-    askContact: false,
-    lead: null,
-    isStreaming: true,
-  }
-  chatMessages.value.push(botMessage)
-  scrollChatBottom()
-
-  try {
-    const response = await fetch('/api/public/chatbot', {
-      method: 'POST',
-      headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: boundedUserHistory() }),
-      signal: requestController.signal,
-    })
-    if (!response.ok || !response.body) throw new Error('CHATBOT_UNAVAILABLE')
-
-    const reader = response.body.getReader()
-    const decoder = new TextDecoder('utf-8')
-    let buffer = ''
-    let doneEvent = false
-    while (!doneEvent) {
-      const { done, value } = await reader.read()
-      buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
-      const lines = buffer.split('\n')
-      buffer = done ? '' : lines.pop() || ''
-      for (const line of lines) {
-        if (line.trim() === 'data: [DONE]') {
-          doneEvent = true
-          break
-        }
-        parseSseLine(line, botMessage)
-      }
-      if (done) break
-      scrollChatBottom()
-    }
-    if (buffer) parseSseLine(buffer, botMessage)
-    if (!botMessage.text.trim()) throw new Error('EMPTY_CHATBOT_RESPONSE')
-    if (!botMessage.kind) botMessage.kind = 'unavailable'
-    botMessage.isStreaming = false
-    saveChatHistory()
-    return true
-  } catch (error) {
-    const index = chatMessages.value.findIndex(item => item.id === botMessage.id)
-    if (index !== -1) chatMessages.value.splice(index, 1)
-    if (error?.name !== 'AbortError' && requestSequence === botRequestSequence) {
-      botInputError.value = 'Không thể nhận phản hồi lúc này. Nội dung câu hỏi đã được giữ lại để bạn thử lại.'
-    }
-    return false
-  } finally {
-    if (requestSequence === botRequestSequence) {
-      isSubmitting.value = false
-      chatRequestController = null
-    }
-    scrollChatBottom()
-  }
-}
-
-const submitBotQuestion = async (rawText) => {
-  if (isSubmitting.value) return
-  const text = typeof rawText === 'string' ? rawText.normalize('NFKC').trim() : ''
-  if (!text) {
-    botInputError.value = 'Vui lòng nhập câu hỏi.'
-    return
-  }
-  if (text.length > CHATBOT_CLIENT_LIMITS.maxMessageChars) {
-    botInputError.value = `Câu hỏi không được vượt quá ${CHATBOT_CLIENT_LIMITS.maxMessageChars} ký tự.`
-    return
-  }
-  const userMessage = { id: `user-${++messageSequence}`, sender: 'user', text }
-  chatMessages.value.push(userMessage)
-  scrollChatBottom()
-  const requestSequence = botRequestSequence + 1
-  const succeeded = await fetchStreamBotReply()
-  if (requestSequence !== botRequestSequence) return
-  if (succeeded) {
-    botInput.value = ''
-    saveChatHistory()
-  } else {
-    const index = chatMessages.value.findIndex(item => item.id === userMessage.id)
-    if (index !== -1) chatMessages.value.splice(index, 1)
-    botInput.value = text
-  }
-  nextTick(() => botInputRef.value?.focus())
-}
-
-const askBot = (question) => {
-  if (isSubmitting.value) return
-  botInput.value = question
-  submitBotQuestion(question)
-}
-
-const sendBotMessage = () => submitBotQuestion(botInput.value)
-
-// Lead capture: when the bot has no answer, the visitor may leave contact
-// details. Posts to the server which persists a submission + emails staff.
-const submitLead = async (msg) => {
-  const lead = msg?.lead
-  if (!lead || lead.status === 'sending' || lead.status === 'done') return
-  if (!lead.phone.trim() && !lead.email.trim()) {
-    lead.error = 'Vui lòng nhập số điện thoại hoặc email để cán bộ liên hệ.'
-    return
-  }
-  lead.status = 'sending'
-  lead.error = ''
-  try {
-    await $fetch('/api/public/chatbot/lead', {
-      method: 'POST',
-      body: { name: lead.name, phone: lead.phone, email: lead.email, question: lead.question },
-    })
-    lead.status = 'done'
-  } catch (error) {
-    lead.status = 'idle'
-    lead.error = error?.data?.statusMessage || 'Không gửi được thông tin. Vui lòng thử lại.'
-  }
-}
-
-const scrollChatBottom = async () => {
-  await nextTick()
-  if (chatContainer.value) {
-    chatContainer.value.scrollTop = chatContainer.value.scrollHeight
-  }
-}
-
 onMounted(() => {
   clientMounted.value = true
   window.addEventListener('scroll', handleScroll, { passive: true })
   window.addEventListener('keydown', handleKeydown)
-  loadChatHistory()
-  loadQuickQuestions()
-  startTeaserCycle()
 })
 
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   window.removeEventListener('keydown', handleKeydown)
   if (typeof document !== 'undefined') document.body.style.overflow = ''
-  if (teaserInterval) clearInterval(teaserInterval)
-  if (teaserInitTimeout) clearTimeout(teaserInitTimeout)
-  quickQuestionsController?.abort()
-  chatRequestController?.abort()
 })
 </script>
 
