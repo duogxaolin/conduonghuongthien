@@ -1,6 +1,8 @@
 import { createHash } from 'node:crypto'
 import { type H3Event } from 'h3'
 import { getClientIp } from '../client-ip'
+import { getPool } from '../db'
+import { recordRateLimitHit, type RateLimitRule } from '../rate-limit-store'
 import type { ChatbotSettings } from '../../db/schema'
 import type { SafeProviderRequestOptions, SafeProviderResponse } from './outbound'
 import { retrieveKnowledge, type PublicKnowledgeReference, type RetrievalEntry } from './retrieval'
@@ -25,8 +27,12 @@ export type ChatDependencies = {
   semanticSmallTalkConfig?: Partial<SmallTalkSemanticConfig>
 }
 
-const rateBuckets = new Map<string, number[]>()
 const RATE_LIMIT_NAMESPACE = 'cdkt-chat-rate-limit-v1'
+
+/** AI provider calls per browser session. Guards spend, not abuse of the portal. */
+export const AI_QUOTA_RULE: RateLimitRule = { limit: 20, windowSeconds: 60 * 60 }
+
+const AI_QUOTA_MESSAGE = `Bạn đã dùng hết lượt hỏi trợ lý AI trong giờ này. Vui lòng thử lại sau, hoặc liên hệ đường dây nóng ${CHATBOT_HOTLINE} để được hỗ trợ ngay.`
 
 function text(value: unknown): string { return typeof value === 'string' ? value.normalize('NFKC').trim() : '' }
 function clientKey(event: ChatEvent): string {
@@ -34,13 +40,53 @@ function clientKey(event: ChatEvent): string {
   // 10/minute limit global: visitor eleven was refused because of ten strangers.
   const clientAddress = getClientIp(event).normalize('NFKC').trim().toLowerCase()
   const identity = clientAddress && clientAddress !== 'unknown' ? clientAddress : 'anonymous'
-  return createHash('sha256').update(RATE_LIMIT_NAMESPACE).update('\0').update(identity).digest('hex')
+  return `chat:${createHash('sha256').update(RATE_LIMIT_NAMESPACE).update('\0').update(identity).digest('hex')}`
 }
 
-export function enforceChatRateLimit(key: string, limit: number, windowSeconds: number): number | null {
-  const now = Date.now(); const windowMs = windowSeconds * 1000; const recent = (rateBuckets.get(key) || []).filter(time => time > now - windowMs)
-  if (recent.length >= limit) { rateBuckets.set(key, recent); return Math.max(1, Math.ceil((recent[0]! + windowMs - now) / 1000)) }
-  recent.push(now); rateBuckets.set(key, recent); if (rateBuckets.size > 10_000) rateBuckets.delete(rateBuckets.keys().next().value as string); return null
+function limiterDeps() {
+  const pool = getPool()
+  return { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
+}
+
+/**
+ * Translates "allow N requests per window" into the store's rule shape.
+ *
+ * The store increments first and then blocks on `count >= rule.limit`, so
+ * passing N straight through would refuse the very first request when N is 1.
+ * The limit the admin configures means *requests allowed*, so the rule handed
+ * to the store is one higher: the (N+1)-th request is the one that blocks.
+ */
+function storeRule(allowedRequests: number, windowSeconds: number): RateLimitRule {
+  return { limit: Math.max(1, allowedRequests) + 1, windowSeconds }
+}
+
+/**
+ * Records a hit and returns retry-after seconds when the caller is over the
+ * limit, else null.
+ *
+ * Counters live in `rate_limit_counters`, so a restart no longer wipes every
+ * window and two replicas no longer grant double the allowance. If the database
+ * is unreachable the store falls back to an in-process counter — still a limit,
+ * just per worker, which is exactly the behaviour this replaced.
+ */
+export async function enforceChatRateLimit(key: string, limit: number, windowSeconds: number): Promise<number | null> {
+  const state = await recordRateLimitHit(key, storeRule(limit, windowSeconds), limiterDeps())
+  return state.blocked ? Math.max(1, state.retryAfterSeconds) : null
+}
+
+/**
+ * Per-session quota on AI provider calls, checked only when a provider call is
+ * actually about to happen.
+ *
+ * Keyed on the session rather than the IP on purpose: a family or an office
+ * shares one address, and one person's long conversation should not spend the
+ * next person's allowance. Sessions without a verified token fall back to the
+ * IP key — otherwise dropping the header would be a way to opt out of the quota.
+ */
+export async function enforceAiQuota(event: ChatEvent, sessionId: string | null): Promise<number | null> {
+  const key = sessionId ? `chat-ai:${sessionId}` : `chat-ai-ip:${clientKey(event)}`
+  const state = await recordRateLimitHit(key, storeRule(AI_QUOTA_RULE.limit, AI_QUOTA_RULE.windowSeconds), limiterDeps())
+  return state.blocked ? Math.max(1, state.retryAfterSeconds) : null
 }
 
 export function validateChatRequestBody(body: unknown): void {
@@ -165,7 +211,7 @@ async function callProvider(settings: ChatbotSettings, dependencies: ChatDepende
 export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSettings, messages: unknown, dependencies: ChatDependencies): Promise<ChatResult> {
   validateChatRequestBody({ messages })
   const history = validateChatMessages(messages, settings)
-  const retryAfter = enforceChatRateLimit(clientKey(event), settings.rateLimitRequests, settings.rateLimitWindowSeconds)
+  const retryAfter = await enforceChatRateLimit(clientKey(event), settings.rateLimitRequests, settings.rateLimitWindowSeconds)
   if (retryAfter) return { answer: 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau.', sources: [], kind: 'rate_limited', retryAfter }
 
   const query = text(history[history.length - 1]!.content ?? history[history.length - 1]!.text)
@@ -183,10 +229,20 @@ export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSett
     return (await smallTalkResult(settings, dependencies, query, history)) ?? outOfScopeResult(settings)
   }
 
+  // The AI quota is charged only where a provider call is imminent. Charging it
+  // at the top of the handler would spend allowance on curated answers that
+  // never reach a provider, and a visitor reading approved content would be cut
+  // off for consuming nothing.
+  const sessionId = typeof (event.context as { chatSessionId?: unknown } | undefined)?.chatSessionId === 'string'
+    ? (event.context as { chatSessionId: string }).chatSessionId
+    : null
+
   if (references.length === 0) {
     const smallTalk = await smallTalkResult(settings, dependencies, query, history)
     if (smallTalk) return smallTalk
     if (settings.outOfScopeBehavior === 'ai_freeform' && aiProviderReady(settings)) {
+      const quotaRetryAfter = await enforceAiQuota(event, sessionId)
+      if (quotaRetryAfter) return { answer: AI_QUOTA_MESSAGE, sources: [], kind: 'rate_limited', retryAfter: quotaRetryAfter }
       try {
         const freeform = await callProvider(settings, dependencies, [], history)
         if (freeform) return { answer: freeform, sources: [], kind: 'provider' }
@@ -196,6 +252,13 @@ export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSett
   }
 
   if (!aiProviderReady(settings)) return friendlyKnowledgeAnswer(settings, references)
+
+  // Over quota with references in hand is not a dead end: the approved answer is
+  // still the answer. Falling back to it beats refusing a question the knowledge
+  // bank can already answer.
+  const groundedQuotaRetryAfter = await enforceAiQuota(event, sessionId)
+  if (groundedQuotaRetryAfter) return friendlyKnowledgeAnswer(settings, references)
+
   try {
     const grounded = await callProvider(settings, dependencies, references, history)
     return grounded ? { answer: grounded, sources: references.filter(ref => ref.source), kind: 'provider' } : friendlyKnowledgeAnswer(settings, references)

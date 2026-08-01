@@ -46,7 +46,8 @@ jobs:
         run: npm test
 
       # schema.ts and init.ts are two hand-maintained descriptions of the same
-      # 28 tables. They drift silently; this is the only thing that notices.
+      # set of tables. They drift silently; this is the only thing that notices.
+      # (Deliberately not quoting a table count here — it went stale twice.)
       - name: Schema drift
         run: npm run db:drift
 

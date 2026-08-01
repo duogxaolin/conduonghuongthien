@@ -152,6 +152,8 @@ test('the admin form and the public widget both know the small-talk field', () =
   assert.match(form, /v-model="form\.smallTalkEnabled"/u)
   assert.match(form, /smallTalkEnabled: form\.smallTalkEnabled/u)
 
-  const layout = readFileSync(new URL('../app/layouts/default.vue', import.meta.url), 'utf8')
-  assert.match(layout, /'small_talk'/u, 'the widget must accept the small_talk response kind')
+  // The widget's response-kind vocabulary moved out of the layout and into the
+  // composable when the widget was extracted so `/tro-ly` could reuse it.
+  const composable = readFileSync(new URL('../app/composables/useChatbot.ts', import.meta.url), 'utf8')
+  assert.match(composable, /'small_talk'/u, 'the widget must accept the small_talk response kind')
 })

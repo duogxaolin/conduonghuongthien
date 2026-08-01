@@ -11,7 +11,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 - **Frontend**: Nuxt 4 (Vue 3 SFC, TypeScript, Composition API), **Tailwind CSS v3** (via `@nuxtjs/tailwindcss`), FontAwesome 6 Pro (local self-hosted).
 - **CSS Rule**: **Tất cả code mới phải dùng Tailwind CSS v3 utility classes.** Không viết `<style scoped>` hay CSS tùy chỉnh cho component/page mới — ngoại lệ duy nhất là pseudo-element (`::before`), keyframes, hoặc `:deep()` rich-text không biểu diễn được bằng utility. CSS cũ (pre-Tailwind) vẫn giữ nguyên, không xóa — sẽ migrate dần sau. (Đã migrate Tailwind v4 → v3 ở commit `a02ca17`.)
 - **Backend / API**: Nuxt Server Engine (Nitro / H3), Drizzle ORM, MySQL 8.0 / MariaDB, JWT Auth (`cdkt_admin` HTTP-only Cookie).
-- **Database**: MySQL 8.0 — **34 bảng** (15 CMS + 4 chatbot: 3 cũ + `chatbot_small_talk` kho trả lời thường nhật + 9 analytics + `rate_limit_counters` + 2 MFA: `user_mfa_factors`, `user_recovery_codes` + `data_retention_state` sổ ghi lượt dọn dữ liệu + 2 lượt xem bài viết: `article_view_daily` đếm theo ngày/nguồn, `article_view_boost` lịch cộng dần lượt xem ảo). Nguồn chân lý schema là `server/db/schema.ts` (Drizzle); `server/db/init.ts` là DDL chạy lúc khởi động (idempotent, tự thêm cột còn thiếu); `server/db/seed.ts` là seed **insert-only** — chạy lại KHÔNG ghi đè mật khẩu / ma trận quyền / cấu hình đã sửa.
+- **Database**: MySQL 8.0 — **36 bảng** (15 CMS + 4 chatbot: 3 cũ + `chatbot_small_talk` kho trả lời thường nhật + 2 phiên trò chuyện: `chat_sessions`, `chat_messages` + 9 analytics + `rate_limit_counters` + 2 MFA: `user_mfa_factors`, `user_recovery_codes` + `data_retention_state` sổ ghi lượt dọn dữ liệu + 2 lượt xem bài viết: `article_view_daily` đếm theo ngày/nguồn, `article_view_boost` lịch cộng dần lượt xem ảo). Nguồn chân lý schema là `server/db/schema.ts` (Drizzle); `server/db/init.ts` là DDL chạy lúc khởi động (idempotent, tự thêm cột còn thiếu); `server/db/seed.ts` là seed **insert-only** — chạy lại KHÔNG ghi đè mật khẩu / ma trận quyền / cấu hình đã sửa.
 - **Kiểm thử**: `npm test` — dùng test runner sẵn có của Node, **không cần cài thêm gói**. Bộ nạp `scripts/ts-resolver.mjs` cho phép import trực tiếp file `.ts`. Yêu cầu Node >= 22.15.
 - **Schema tooling**: `npm run db:drift` đối chiếu `schema.ts` ↔ `init.ts`; `npm run db:generate` sinh diff SQL để review (không tự áp lên DB). `migrations/*.sql` là **snapshot mysqldump**, KHÔNG phải chuỗi migration — đã có guard chặn chạy nhầm (chứa `DROP TABLE` toàn bộ).
 - **Webfont & Icon**: Inter **đã tự chủ** — `public/assets/fonts/` chứa 7 tệp `.woff2` + `inter.css` do `node scripts/fetch-fonts.mjs` tải về, và `nuxt.config.ts` tự phát hiện tệp CSS đó lúc build rồi bỏ hẳn ba thẻ `<link>` tới Google (2 preconnect + 1 stylesheet). Kiểm chứng bằng cách grep `.output/` sau khi build: không còn tham chiếu `fonts.googleapis.com` nào. Xoá thư mục đó đi thì lần build sau tự quay lại dùng CDN — nhánh này là `existsSync` lúc build, không phải cấu hình. FontAwesome chỉ nạp `fontawesome.min.css` + hai họ thực dùng (`solid`, `regular`) — khai báo tại `ICON_FAMILIES` trong `nuxt.config.ts`, có test chặn nếu template dùng họ chưa nạp.
@@ -42,6 +42,7 @@ app/
 │   ├── SectionBar.vue           # Thanh tiêu đề Section hỗ trợ FontAwesome
 │   ├── ToastContainer.vue        # Container hiển thị Toast thông báo toàn hệ thống
 │   ├── ArticleDetail.vue        # Trang chi tiết bài viết dùng chung (news / role-models / reintegration)
+│   ├── ChatWidget.vue           # Widget chatbot nổi (nút mở rộng ≥768px → /tro-ly)
 │   ├── NewsCategoryList.vue     # Danh sách tin theo chuyên mục dùng chung
 │   └── admin/
 │       └── MediaLibraryModal.vue # Modal chọn tệp từ Thư viện Media
@@ -52,6 +53,7 @@ app/
 │       └── types.ts             # BlockNode / BuilderNode — hình dạng cây block dùng chung client ↔ server
 ├── composables/
 │   ├── useAdminAuth.ts          # State quản lý xác thực Admin & SSR Cookie forwarding
+│   ├── useChatbot.ts            # State + hành vi chatbot dùng chung widget ↔ /tro-ly (module-level)
 │   ├── useI18n.ts               # Bộ từ điển Đa ngôn ngữ (VN / EN)
 │   └── useToast.ts              # System Toast Notification reactive composable
 ├── layouts/
@@ -77,6 +79,7 @@ app/
     │   └── index.vue
     ├── legal-qa/                # Giải đáp pháp luật & Hỏi đáp
     │   └── index.vue
+    ├── tro-ly.vue               # Trợ lý AI toàn màn hình (sidebar cuộc hội thoại + khung chat)
     ├── [slug].vue               # Catch-all: render trang tùy biến từ block data (404 nếu slug không tồn tại)
     └── admin/                   # Hệ thống Quản trị Admin Panel
         ├── index.vue            # Dashboard Tổng quan
@@ -91,6 +94,7 @@ app/
         ├── chatbot/             # Trợ lý AI Chatbot
         │   ├── knowledge/       # Kho kiến thức nghiệp vụ (duyệt nháp→published, bắt buộc nguồn)
         │   ├── small-talk/      # Kho trả lời thường nhật (quản lý được, không duyệt, 5 nhóm)
+        │   ├── sessions/        # Phiên trò chuyện của khách: danh sách + nội dung, IP/trình duyệt, đối chiếu đơn đăng ký
         │   └── settings.vue     # Cấu hình provider AI, chế độ trả lời, công tắc small_talk
         ├── media/               # Quản lý Thư viện Media Upload (Local / R2)
         ├── settings/            # Cài đặt chung, SMTP, Cloudflare R2
@@ -213,6 +217,16 @@ app/
 - **Nhập câu hỏi từ Excel** (`/admin/chatbot/knowledge` → "Nhập từ Excel"): đọc `.xlsx`/`.csv` cột `STT · Câu hỏi · Trả lời · Ghi chú`, tự tách từ khoá tiếng Việt (từ đơn + cụm 2 từ) để khớp câu hỏi đời thường. Trình đọc XLSX tự viết (`server/utils/xlsx-reader.ts`), không phụ thuộc thư viện ngoài. Mặc định nhập vào trạng thái Bản nháp chờ duyệt.
 - **Câu hỏi nhanh quản trực tiếp trên danh sách** (`/admin/chatbot/knowledge`): cột "Câu hỏi nhanh" bật/tắt tại chỗ (PUT qua route sửa thường, nên vẫn chịu mọi quy tắc vòng đời và vẫn ghi audit), thanh hành động hàng loạt có "Đưa vào / Bỏ khỏi câu hỏi nhanh" (`bulk-quick-question.post.ts`, cần quyền `update`), và bộ lọc ba trạng thái `quick=`(rỗng)`|yes|no`. Giá trị lạ bị **từ chối** chứ không suy diễn — `quick=1` đọc thành "yes" sẽ hiện danh sách đã lọc trong khi ô chọn vẫn ghi "Tất cả". Cờ này **không tự xuất bản**: widget chỉ đọc `status='published' AND is_quick_question=1`, nên gắn cờ cho bản nháp chỉ là xếp lịch cho lúc nó được xuất bản.
 
+- **Phiên trò chuyện: chữ ra từ từ, nhiều cuộc hội thoại, trang toàn màn hình, lưu SQL** — bốn thứ này ăn khớp nhau qua **một** composable `app/composables/useChatbot.ts`. Widget (`app/components/ChatWidget.vue`) và trang `/tro-ly` là hai bề mặt của cùng một state ở **cấp module**, không phải state theo từng lời gọi: khách bấm nút mở rộng giữa cuộc hội thoại phải rơi vào đúng cuộc đó, không phải một cuộc mới.
+  - **"Chữ ra từ từ" là hiệu ứng phía client, không phải streaming truyền tải.** `/api/public/chatbot` đợi xong cả câu trả lời rồi phát **một** sự kiện SSE — nó luôn làm vậy, và đổi thành streaming token thật sẽ phải viết lại từng provider. `playTypewriter` tách chữ bằng `fullText.match(/\S+\s*/g)` — **giữ nguyên dấu phân cách** nên chuỗi ghép lại giống hệt từng byte; `split(' ')` sẽ gộp mất dòng mới và **âm thầm định dạng lại văn bản pháp luật** trên đường ra màn hình. Tôn trọng `prefers-reduced-motion` (hiện ngay). Trong lúc chạy, `isStreaming` **che nhãn loại trả lời, danh sách nguồn và biểu mẫu để lại liên hệ** — ba thứ này xuất hiện giữa lúc chữ đang chạy sẽ trông như câu trả lời đã xong khi nó chưa xong. `persist()` **bỏ qua** tin nhắn còn `isStreaming`: tải lại trang mà phục hồi một câu mới gõ được nửa thì không còn gì để gõ tiếp.
+  - **Vé phiên do máy chủ cấp, không phải client tự ký** (`server/utils/chatbot/session-token.ts`, `POST /api/public/chatbot/session`): `<uuid>.<hmac>` với hmac là `HMAC-SHA256(ANALYTICS_HMAC_SECRET, uuid)` cắt còn 32 hex, so bằng `timingSafeEqual`. Trình duyệt **không thể** tự tính HMAC mà không giữ bí mật, và gửi bí mật xuống trình duyệt là làm chữ ký thành vô nghĩa — ai cũng ký được mọi thứ. Vé này là **khoá tương quan, không phải xác thực**: cổng chat không cần đăng nhập và sẽ không bao giờ cần. Chữ ký mua đúng một thứ — không ai chèn được tin nhắn vào một `sessionId` mà họ không được cấp, nên một bản ghi hội thoại không bị trộn tin của người khác và trang quản trị không bị gieo hội thoại giả. Bỏ header đi thì khách chỉ mất bản ghi **của chính họ**.
+  - **Bẫy bot `_h`** (honeypot, nằm ngoài thứ tự tab): điền vào thì trả **200 kèm một câu trả lời hợp lý**, không bao giờ 400/403 — mã trạng thái khác sẽ chỉ cho con script biết đúng ô nào đã tố nó.
+  - **Giới hạn tần suất đã chuyển sang bảng `rate_limit_counters`** (`chat-policy.ts` — `Map` trong tiến trình đã bị **xoá**): sống qua restart, đúng khi chạy nhiều replica, mất CSDL thì lùi về bộ nhớ tiến trình chứ không mở toang. Hạn mức AI **tính theo phiên** (20 lượt / 60 phút) và **trừ ngay trước mỗi lời gọi provider**, không trừ ở đầu handler: trừ trước sẽ tiêu hạn mức cho những câu trả lời lấy từ kho mà không hề gọi provider, rồi cắt một người chưa dùng gì. Hết hạn mức mà **đã có tham chiếu trong tay** thì lùi về câu trả lời đã duyệt — câu đã duyệt vẫn là câu trả lời; chỉ nhánh hỏi tự do mới trả `rate_limited`.
+  - **Ghi CSDL được `await`, không bắn rồi bỏ** (`session-db.ts`): Nitro có thể dỡ context của request khi handler trả về, cắt một promise rời tay giữa lúc truy vấn. Hàm **tự nuốt lỗi của mình** (`chat_session.persist_failed`) nên `await` không thể làm hỏng câu trả lời — một bộ ghi log không có tư cách làm sập trang của khách. `ON DUPLICATE KEY UPDATE` **không chạm `started_at`**: một phiên bắt đầu đúng một lần. Số điện thoại / họ tên phát hiện được ghi bằng `COALESCE` nên tên nêu ở lượt 2 và số nêu ở lượt 5 **cùng sống**, chứ không xoá nhau.
+  - **Trang quản trị `/admin/chatbot/sessions`** dùng chung quyền `chatbot_knowledge.read` — ai được đọc kho câu trả lời đã duyệt thì cũng được đọc câu hỏi khách đặt cho nó; tạo resource mới là buộc cấp lại quyền cho mọi vai trò đang có trước khi trang chạy được. **Mọi lượt xem tự ghi một dòng `activity_logs`** kèm bộ lọc: những hàng này chứa địa chỉ IP và có khi cả số điện thoại, và một nhật ký quét được trong im lặng là công cụ theo dõi. Trang chi tiết **đối chiếu số điện thoại với `submissions`** bằng 9 chữ số cuối (`REGEXP_REPLACE` + `RIGHT`) chứ không so chuỗi thô — biểu mẫu nhận cả `0903 480 985`, `+84903480985` và `0903480985` là cùng một số, nên so thẳng sẽ trượt gần hết ca thật. Đây là lý do việc phát hiện số điện thoại tồn tại: một người hỏi bot rồi sau đó gửi biểu mẫu là **một người với một vấn đề**, và cán bộ không thấy được cả hai nửa sẽ gọi lại hỏi đúng thứ họ đã gõ.
+  - **Phát hiện liên hệ cố tình bảo thủ** (`contact-detect.ts`): chỉ nhận đầu số di động (`03/05/07/08/09`, đúng 10 số) — số cố định **cố ý loại ra**, và số căn cước / số nghị định không được ghi thành số liên hệ. Tên chỉ nhận khi có động từ giới thiệu tường minh ("tôi tên", "em là"); đoán tên theo chữ hoa sẽ sai liên tục trong tiếng Việt, và một cái tên sai gắn vào phiên còn tệ hơn không có tên. Tiểu từ cuối câu bị cắt (`ạ`, `nhé`, `ơi`, …) nhưng **"a" không dấu thì không** — "Nguyễn Văn A" là cách viết tên phổ biến nhất, cắt chữ "A" đó sẽ phá nhiều tên hơn số tiểu từ dọn được.
+  - **Không đăng ký với `data-retention.ts`.** Hai bảng này **có** chứa IP, user agent và có khi cả số điện thoại — tức là đúng loại dữ liệu cần thời hạn lưu. Chưa gắn là **món nợ có chủ đích**, đã ghi trong `proposal.md` phần Out of scope, không phải đã xong.
+
 ### 4. Bảo mật (bắt buộc khi triển khai)
 - **Bí mật BẮT BUỘC ở production** — thiếu là app từ chối khởi động (`server/plugins/require-secrets.ts`): `JWT_SECRET`, `CHATBOT_ENCRYPTION_SECRET`, `ANALYTICS_HMAC_SECRET`. Không còn giá trị mặc định trong mã nguồn hay `docker-compose.yml`.
 - **Chống leo thang đặc quyền**: chỉ SuperAdmin được gán vai trò hệ thống; không ai cấp được quyền mà chính mình chưa có (`server/utils/permissions.ts`).
@@ -221,7 +235,7 @@ app/
 - **Xác thực hai bước tự phục vụ** (`/admin/profile`): ba yếu tố bật tắt độc lập (ứng dụng xác thực / mã về email / mật khẩu cấp 2), mã dự phòng tuỳ chọn, break-glass chỉ SuperAdmin. Xem "Vận hành & an toàn" ở trên, **đặc biệt là runbook xoay `JWT_SECRET`** — xoay khoá này làm mọi secret TOTP đã lưu hết dùng được.
 
 ### 5. Khởi tạo Cơ sở dữ liệu & Docker
-- **MySQL Database Auto-Init (`server/db/init.ts`)**: Tự động kết nối server MySQL, tạo database `cdkt_admin` và toàn bộ 34 bảng dữ liệu nếu chưa tồn tại (idempotent, tự thêm cột còn thiếu).
+- **MySQL Database Auto-Init (`server/db/init.ts`)**: Tự động kết nối server MySQL, tạo database `cdkt_admin` và toàn bộ 36 bảng dữ liệu nếu chưa tồn tại (idempotent, tự thêm cột còn thiếu).
 - **Database Seed (`server/db/seed.ts`)**: Tạo tài khoản SuperAdmin (`admin`, mật khẩu lấy từ `ADMIN_PASSWORD`), các vai trò, bảng phân quyền và dữ liệu thiết lập ban đầu. **Insert-only**: chạy lại (kể cả mỗi lần khởi động container) sẽ KHÔNG ghi đè mật khẩu, ma trận quyền hay cấu hình mà quản trị viên đã sửa.
 - **Docker Compose**: Đóng gói môi trường containerized hoàn chỉnh gồm 2 service `cdkt_mysql` (MySQL 8.0) và `cdkt_app` (Nuxt 4 app) chạy trên cổng `3000`.
 
