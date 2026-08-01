@@ -13,6 +13,8 @@
  * protected and unprotected.
  */
 
+import { logWarn } from './logger'
+
 export type RateLimitRule = { limit: number; windowSeconds: number }
 
 export type RateLimitState = {
@@ -112,7 +114,12 @@ export async function peekRateLimit(key: string, rule: RateLimitRule, deps: Rate
       [key],
     )
     return stateFromRow(firstRow(result), rule, now)
-  } catch {
+  } catch (error) {
+    logWarn({
+      event: 'rate_limit.database_read_failed',
+      error,
+      consequence: 'falling back to in-process counter for this request',
+    })
     return readMemory(deps, key, rule, now)
   }
 }
@@ -141,7 +148,12 @@ export async function recordRateLimitHit(key: string, rule: RateLimitRule, deps:
       [key],
     )
     return stateFromRow(firstRow(result), rule, now)
-  } catch {
+  } catch (error) {
+    logWarn({
+      event: 'rate_limit.database_write_failed',
+      error,
+      consequence: 'falling back to in-process counter for this request',
+    })
     return bumpMemory(deps, key, rule, now)
   }
 }

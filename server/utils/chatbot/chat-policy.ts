@@ -10,6 +10,7 @@ import { CHATBOT_HOTLINE, DEFAULT_CHATBOT_SYSTEM_PROMPT } from './prompt-default
 import { buildProviderChatCall, extractProviderAnswer } from './providers'
 import { selectSmallTalk, type SemanticSmallTalkProvider, type SmallTalkSemanticConfig } from './small-talk-semantic'
 import { classifySmallTalk, type SmallTalkContext, type SmallTalkEntry } from './small-talk'
+import { logWarn, logError } from '../logger'
 
 export const HOTLINE = CHATBOT_HOTLINE
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
@@ -144,7 +145,12 @@ async function smallTalkResult(settings: ChatbotSettings, dependencies: ChatDepe
   let entries: SmallTalkEntry[]
   try {
     entries = await dependencies.loadSmallTalkEntries()
-  } catch {
+  } catch (error) {
+    logWarn({
+      event: 'chatbot.small_talk_load_failed',
+      error,
+      consequence: 'small-talk unavailable for this request',
+    })
     return null
   }
   const previous = history.length > 1
@@ -218,7 +224,12 @@ export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSett
   let references: PublicKnowledgeReference[]
   try {
     references = (dependencies.retrieve ?? retrieveKnowledge)(await dependencies.loadPublishedEntries(), query, { topK: settings.retrievalTopK, charBudget: settings.referenceCharBudget })
-  } catch {
+  } catch (error) {
+    logWarn({
+      event: 'chatbot.knowledge_retrieval_failed',
+      error,
+      consequence: 'knowledge bank unavailable, falling back to small-talk or out-of-scope',
+    })
     references = []
   }
 
@@ -246,7 +257,13 @@ export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSett
       try {
         const freeform = await callProvider(settings, dependencies, [], history)
         if (freeform) return { answer: freeform, sources: [], kind: 'provider' }
-      } catch { /* fall through */ }
+      } catch (error) {
+        logWarn({
+          event: 'chatbot.freeform_provider_failed',
+          error,
+          consequence: 'falling back to out-of-scope message',
+        })
+      }
     }
     return outOfScopeResult(settings)
   }
@@ -262,7 +279,12 @@ export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSett
   try {
     const grounded = await callProvider(settings, dependencies, references, history)
     return grounded ? { answer: grounded, sources: references.filter(ref => ref.source), kind: 'provider' } : friendlyKnowledgeAnswer(settings, references)
-  } catch {
+  } catch (error) {
+    logWarn({
+      event: 'chatbot.grounded_provider_failed',
+      error,
+      consequence: 'falling back to approved knowledge answer',
+    })
     return friendlyKnowledgeAnswer(settings, references)
   }
 }

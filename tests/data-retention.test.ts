@@ -27,6 +27,8 @@ function fakePool(rowsPerTable: Record<string, number[]> = {}, counts: Record<st
   const queues: Record<string, number[]> = {
     activity_logs: [...(rowsPerTable.activity_logs ?? [0])],
     submissions: [...(rowsPerTable.submissions ?? [0])],
+    chat_sessions: [...(rowsPerTable.chat_sessions ?? [0])],
+    chat_messages: [...(rowsPerTable.chat_messages ?? [0])],
     rate_limit_counters: [...(rowsPerTable.rate_limit_counters ?? [0])],
   }
   let released = 0
@@ -103,13 +105,15 @@ test('rows older than the window are deleted from the cutoff, in batches', async
 
 test('a disabled window issues no DELETE at all', async () => {
   const pool = fakePool()
-  const result = await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, connection: pool as never })
+  const result = await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 0, chatMessageDays: 0, connection: pool as never })
 
   const tableCalls = pool.calls.filter(c => !c.sql.includes('rate_limit_counters'))
   assert.equal(tableCalls.length, 0, 'a disabled retention window still touched the table')
   assert.deepEqual(result.tables.map(t => [t.table, t.retentionDays, t.deleted]), [
     ['activity_logs', 0, 0],
     ['submissions', 0, 0],
+    ['chat_sessions', 0, 0],
+    ['chat_messages', 0, 0],
   ])
 })
 
@@ -118,7 +122,12 @@ test('both tables are purged when both windows are set', async () => {
   const result = await runDataRetention({
     now: NOW, activityLogDays: 90, submissionDays: 730, batchSize: 1000, connection: pool as never,
   })
-  assert.deepEqual(result.tables.map(t => [t.table, t.deleted]), [['activity_logs', 5], ['submissions', 3]])
+  assert.deepEqual(result.tables.map(t => [t.table, t.deleted]), [
+    ['activity_logs', 5],
+    ['submissions', 3],
+    ['chat_sessions', 0],
+    ['chat_messages', 0],
+  ])
   const subDelete = pool.calls.find(c => c.sql.includes('DELETE FROM submissions'))!
   assert.equal((subDelete.params[0] as Date).toISOString(), '2024-07-26T03:00:00.000Z')
 })
@@ -253,11 +262,16 @@ test('the deleted count is banked before the rows are gone, and accumulates', as
   })
 
   const banked = pool.calls.filter(c => c.sql.includes('INSERT INTO data_retention_state'))
-  assert.equal(banked.length, 2, 'one row per purged table')
+  assert.equal(banked.length, 4, 'one row per purged table')
   // Incremented, not replaced: the lifetime figure is this counter plus the live
   // count, so overwriting it would erase every earlier run.
   assert.match(banked[0].sql, /purged_total = purged_total \+ VALUES\(purged_total\)/)
-  assert.deepEqual(banked.map(c => [c.params[0], c.params[1]]), [['activity_logs', 7], ['submissions', 3]])
+  assert.deepEqual(banked.map(c => [c.params[0], c.params[1]]), [
+    ['activity_logs', 7],
+    ['submissions', 3],
+    ['chat_sessions', 0],
+    ['chat_messages', 0],
+  ])
   assert.equal(banked[0].params[4], 'scheduler')
   assert.equal(banked[0].params[5], 'success')
 })
