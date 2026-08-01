@@ -21,15 +21,19 @@ import { purgeExpiredRateLimits } from '../utils/rate-limit-store'
  * the next run continues where this one stopped.
  */
 
-export type RetentionTarget = 'activity_logs' | 'submissions'
+export type RetentionTarget = 'activity_logs' | 'submissions' | 'chat_sessions' | 'chat_messages'
 
 export type DataRetentionOptions = {
   now?: Date
   activityLogDays?: number
   submissionDays?: number
+  chatSessionDays?: number
+  chatMessageDays?: number
   /** 0 = no cap. Rows beyond this are deleted oldest-first. */
   activityLogMaxRows?: number
   submissionMaxRows?: number
+  chatSessionMaxRows?: number
+  chatMessageMaxRows?: number
   batchSize?: number
   maxBatches?: number
   connection?: Pool
@@ -176,6 +180,16 @@ export async function runDataRetention(options: DataRetentionOptions = {}): Prom
       table: 'submissions',
       days: boundedInteger(options.submissionDays, configured.submissionDays, 0, 3650),
       maxRows: boundedInteger(options.submissionMaxRows, 0, 0, 100_000_000),
+    },
+    {
+      table: 'chat_sessions',
+      days: boundedInteger(options.chatSessionDays, configured.chatSessionDays, 0, 3650),
+      maxRows: boundedInteger(options.chatSessionMaxRows, 0, 0, 100_000_000),
+    },
+    {
+      table: 'chat_messages',
+      days: boundedInteger(options.chatMessageDays, configured.chatMessageDays, 0, 3650),
+      maxRows: boundedInteger(options.chatMessageMaxRows, 0, 0, 100_000_000),
     },
   ]
 

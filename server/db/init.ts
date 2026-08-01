@@ -942,6 +942,41 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  // Visitor chat sessions and transcripts. The session id is a client-generated
+  // UUID admitted only after its HMAC verifies, so a forged header cannot inject
+  // rows under someone else's id.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`chat_sessions\` (
+      \`id\` VARCHAR(36) NOT NULL PRIMARY KEY,
+      \`ip\` VARCHAR(45) NULL,
+      \`user_agent\` VARCHAR(512) NULL,
+      \`detected_phone\` VARCHAR(20) NULL,
+      \`detected_name\` VARCHAR(128) NULL,
+      \`message_count\` INT UNSIGNED NOT NULL DEFAULT 0,
+      \`started_at\` DATETIME NOT NULL,
+      \`last_message_at\` DATETIME NOT NULL,
+      KEY \`chat_sessions_last_message_idx\` (\`last_message_at\`),
+      KEY \`chat_sessions_started_idx\` (\`started_at\`),
+      KEY \`chat_sessions_detected_phone_idx\` (\`detected_phone\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`chat_messages\` (
+      \`id\` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      \`session_id\` VARCHAR(36) NOT NULL,
+      \`role\` ENUM('user','assistant') NOT NULL,
+      \`content\` TEXT NOT NULL,
+      \`kind\` VARCHAR(32) NULL,
+      \`created_at\` DATETIME NOT NULL,
+      KEY \`chat_messages_session_created_idx\` (\`session_id\`, \`created_at\`),
+      CONSTRAINT \`fk_chat_messages_session\` FOREIGN KEY (\`session_id\`) REFERENCES \`chat_sessions\` (\`id\`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // Detected-name arrived after the first deployments of the two tables above.
+  await ensureColumn(db, database, 'chat_sessions', 'detected_name', 'VARCHAR(128) NULL')
+
   // Privacy-preserving analytics raw events and durable daily aggregates
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`analytics_live_minute_buckets\` (

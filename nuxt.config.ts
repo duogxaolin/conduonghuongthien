@@ -102,6 +102,12 @@ export default defineNuxtConfig({
     '/reintegration-models/**': { swr: 60 },
     '/documents/**': { swr: 60 },
     '/legal-qa/**': { swr: 60 },
+    // `/tro-ly` is deliberately absent. Its server-rendered output is an empty
+    // shell — the conversation list, transcript and quick questions are all
+    // fetched or read from localStorage on the client — so an SWR window would
+    // cache nothing worth caching. Listing it would also invite the assumption
+    // that some visitor state is being served from cache, which is the one thing
+    // that must never become true here.
     '/admin/**': { cache: false },
     '/api/**': { cache: false },
     // Tài nguyên có vân tay trong tên tệp: đổi nội dung là đổi tên, nên bản cũ

@@ -490,6 +490,44 @@ export const chatbotSmallTalk = mysqlTable('chatbot_small_talk', {
   runtimeIdx: index('chatbot_small_talk_enabled_category_id_idx').on(t.isEnabled, t.category, t.id),
 }))
 
+// ─── Chat sessions & messages (visitor conversation history) ──────────────────
+// One row per browser conversation. `id` is a client-generated UUID that arrives
+// on the `X-Chat-Session` header alongside an HMAC of itself; the server only
+// writes a row once that signature verifies. The token is a *correlation* key,
+// not an authentication credential — stripping the header costs the visitor
+// nothing except their transcript, which is the intended trade-off for a portal
+// that requires no login.
+export const chatSessions = mysqlTable('chat_sessions', {
+  id:             varchar('id', { length: 36 }).primaryKey(),
+  ip:             varchar('ip', { length: 45 }),
+  userAgent:      varchar('user_agent', { length: 512 }),
+  detectedPhone:  varchar('detected_phone', { length: 20 }),
+  detectedName:   varchar('detected_name', { length: 128 }),
+  messageCount:   int('message_count', { unsigned: true }).notNull().default(0),
+  startedAt:      datetime('started_at', { mode: 'date' }).notNull(),
+  lastMessageAt:  datetime('last_message_at', { mode: 'date' }).notNull(),
+}, (t) => ({
+  // Admin list orders by recency; the detected-phone index backs the
+  // "has contact info" filter and the submissions cross-link lookup.
+  recentIdx: index('chat_sessions_last_message_idx').on(t.lastMessageAt),
+  startedIdx: index('chat_sessions_started_idx').on(t.startedAt),
+  phoneIdx: index('chat_sessions_detected_phone_idx').on(t.detectedPhone),
+}))
+
+export const chatMessages = mysqlTable('chat_messages', {
+  id:        bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
+  sessionId: varchar('session_id', { length: 36 }).notNull().references(() => chatSessions.id, { onDelete: 'cascade' }),
+  role:      mysqlEnum('role', ['user', 'assistant']).notNull(),
+  content:   text('content').notNull(),
+  // Mirrors the `kind` the public endpoint returns (knowledge | ai | small_talk |
+  // rate_limited | error) so the admin transcript can show *why* a reply looked
+  // the way it did without re-running retrieval.
+  kind:      varchar('kind', { length: 32 }),
+  createdAt: datetime('created_at', { mode: 'date' }).notNull(),
+}, (t) => ({
+  transcriptIdx: index('chat_messages_session_created_idx').on(t.sessionId, t.createdAt),
+}))
+
 // ─── Privacy-preserving Analytics ─────────────────────────────────────────────
 export const analyticsPageViewEvents = mysqlTable('analytics_page_view_events', {
   id:             bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
@@ -637,6 +675,10 @@ export type ChatbotKnowledgeTerm = typeof chatbotKnowledgeTerms.$inferSelect
 export type NewChatbotKnowledgeTerm = typeof chatbotKnowledgeTerms.$inferInsert
 export type ChatbotSmallTalk = typeof chatbotSmallTalk.$inferSelect
 export type NewChatbotSmallTalk = typeof chatbotSmallTalk.$inferInsert
+export type ChatSession = typeof chatSessions.$inferSelect
+export type NewChatSession = typeof chatSessions.$inferInsert
+export type ChatMessage = typeof chatMessages.$inferSelect
+export type NewChatMessage = typeof chatMessages.$inferInsert
 export type AnalyticsPageViewEvent = typeof analyticsPageViewEvents.$inferSelect
 export type AnalyticsLiveMinuteBucket = typeof analyticsLiveMinuteBuckets.$inferSelect
 export type AnalyticsLiveDeduplication = typeof analyticsLiveDeduplication.$inferSelect

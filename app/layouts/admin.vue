@@ -42,6 +42,9 @@ const menuGroups = computed(() => [
       { label: 'Bài viết & Bản tin', icon: 'fa-solid fa-newspaper', path: '/admin/content/articles' },
       { label: 'Thư viện Media', icon: 'fa-solid fa-images', path: '/admin/media' },
       ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Kho nội dung Chatbot', icon: 'fa-solid fa-book-open', path: '/admin/chatbot/knowledge' }] : []),
+      // Same gate as the knowledge bank: whoever may read the approved answers
+      // may read the questions visitors asked of them.
+      ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Phiên trò chuyện', icon: 'fa-solid fa-comments', path: '/admin/chatbot/sessions' }] : []),
     ]
   },
   {
