@@ -5,7 +5,8 @@ import { requireResourcePermission } from '../../../../../utils/permissions'
 import { logInfo } from '../../../../../utils/logger'
 
 export default defineEventHandler(async (event) => {
-  const adminUser = await requireResourcePermission(event, 'chatbot_knowledge', 'delete')
+  const adminUser = event.context.adminUser
+  requireResourcePermission(adminUser, 'chatbot_knowledge', 'delete')
   const sessionId = getRouterParam(event, 'id')
 
   if (!sessionId) {
