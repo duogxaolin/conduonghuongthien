@@ -182,6 +182,58 @@ export const articles = mysqlTable('articles', {
   categoryIdIdx: index('category_id_idx').on(t.categoryId),
 }))
 
+// ─── Article view counter ────────────────────────────────────────────────────
+// One row per (day, article, source category). Deliberately NOT joined to
+// `analytics_daily_pages`: that table is keyed on URL path, so it answers "how
+// busy was this URL", not "how many people read this article" — slugs move and
+// four route prefixes map to the same content type.
+//
+// Real and fabricated counts are separated twice over: by column, and by a
+// `source_category` value ('boost') that the public allowlist does not contain.
+// Either separation alone would leave SUM(real_views) honest, which is the
+// point — the true figure has to stay recoverable with one sum, forever.
+//
+// Holds no personal data: a day, an article, a category and two counts. That is
+// why it is not registered with server/services/data-retention.ts.
+export const articleViewDaily = mysqlTable('article_view_daily', {
+  id:              int('id').autoincrement().primaryKey(),
+  day:             date('day', { mode: 'string' }).notNull(),
+  articleId:       int('article_id').notNull().references(() => articles.id, { onDelete: 'cascade' }),
+  sourceCategory:  varchar('source_category', { length: 32 }).notNull().default('direct'),
+  realViews:       bigint('real_views', { mode: 'number', unsigned: true }).notNull().default(0),
+  fabricatedViews: bigint('fabricated_views', { mode: 'number', unsigned: true }).notNull().default(0),
+  createdAt:       timestamp('created_at').defaultNow(),
+  updatedAt:       timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  dayArticleSourceIdx: uniqueIndex('article_view_daily_day_article_source_idx').on(t.day, t.articleId, t.sourceCategory),
+  articleIdx: index('article_view_daily_article_idx').on(t.articleId),
+}))
+
+// ─── Gradual view inflation jobs ─────────────────────────────────────────────
+// Only gradual mode writes here. Instant inflation is complete the moment it is
+// authorised, and the activity log already records who did it — a row that says
+// "finished" on creation would be a record of nothing.
+//
+// `applied_amount` is what the delivery pass compares against a time-derived
+// target, so a missed tick, a restart, or a pass that ran late all resolve to
+// the same answer instead of silently losing the downtime window.
+export const articleViewBoost = mysqlTable('article_view_boost', {
+  id:              int('id').autoincrement().primaryKey(),
+  articleId:       int('article_id').notNull().references(() => articles.id, { onDelete: 'cascade' }),
+  totalAmount:     int('total_amount', { unsigned: true }).notNull(),
+  appliedAmount:   int('applied_amount', { unsigned: true }).notNull().default(0),
+  durationMinutes: int('duration_minutes', { unsigned: true }).notNull(),
+  startedAt:       datetime('started_at', { mode: 'date' }).notNull(),
+  endsAt:          datetime('ends_at', { mode: 'date' }).notNull(),
+  status:          varchar('status', { length: 16 }).notNull().default('running'), // running | completed | cancelled
+  createdBy:       int('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt:       timestamp('created_at').defaultNow(),
+  updatedAt:       timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  statusEndsAtIdx: index('article_view_boost_status_ends_idx').on(t.status, t.endsAt),
+  articleIdx: index('article_view_boost_article_idx').on(t.articleId),
+}))
+
 // ─── Home Sections ───────────────────────────────────────────────────────────
 // type: hero | stats | news | role_models | reintegration | documents | links | chatbot_cta
 export const homeSections = mysqlTable('home_sections', {
@@ -564,6 +616,9 @@ export type UserRecoveryCode = typeof userRecoveryCodes.$inferSelect
 export type Media       = typeof media.$inferSelect
 export type Category    = typeof categories.$inferSelect
 export type Article     = typeof articles.$inferSelect
+export type ArticleViewDaily = typeof articleViewDaily.$inferSelect
+export type ArticleViewBoost = typeof articleViewBoost.$inferSelect
+export type NewArticleViewBoost = typeof articleViewBoost.$inferInsert
 export type HomeSection = typeof homeSections.$inferSelect
 export type PageContent = typeof pageContents.$inferSelect
 export type Page        = typeof pages.$inferSelect
