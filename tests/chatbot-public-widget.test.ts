@@ -3,11 +3,23 @@ import { readFile } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
-const layoutPath = new URL('../app/layouts/default.vue', import.meta.url)
-const source = await readFile(layoutPath, 'utf8')
-const descriptor = parse(source, { filename: 'default.vue' })
+// The widget was extracted out of `app/layouts/default.vue` so that the full-page
+// assistant at `/tro-ly` could render the same conversation without duplicating
+// it: markup now lives in `ChatWidget.vue` and the logic in `useChatbot.ts`.
+//
+// Every contract below is about the public widget's *behaviour*, not about which
+// file holds a given line, so `script` spans both halves. Splitting the
+// assertions by file would make a future move of one function look like a
+// regression.
+const widgetPath = new URL('../app/components/ChatWidget.vue', import.meta.url)
+const composablePath = new URL('../app/composables/useChatbot.ts', import.meta.url)
+const widgetSource = await readFile(widgetPath, 'utf8')
+const composableSource = await readFile(composablePath, 'utf8')
+
+const descriptor = parse(widgetSource, { filename: 'ChatWidget.vue' })
 const template = descriptor.descriptor.template?.content ?? ''
-const script = descriptor.descriptor.scriptSetup?.content ?? ''
+const script = `${descriptor.descriptor.scriptSetup?.content ?? ''}\n${composableSource}`
+const source = `${widgetSource}\n${composableSource}`
 
 test('public widget SFC parses and uses API-backed quick questions only', () => {
   assert.equal(descriptor.errors.length, 0)
@@ -64,12 +76,17 @@ test('client submission is bounded, single-flight, abortable, and preserves fail
   assert.match(script, /maxMessageChars: 2000/)
   assert.match(script, /maxHistoryMessages: 8/)
   assert.match(script, /maxTotalUserChars: 30000/)
-  assert.match(template, /:maxlength="CHATBOT_CLIENT_LIMITS\.maxMessageChars"/)
+  // The bound must come from the shared constant, whether it is referenced
+  // directly or through the composable's `limits` alias — what matters is that
+  // it is not a second hardcoded number that can drift from the server's.
+  assert.match(template, /:maxlength="(?:CHATBOT_CLIENT_LIMITS|limits)\.maxMessageChars"/)
   assert.match(template, /:disabled="isSubmitting \|\| !botInput\.trim\(\)"/)
   assert.match(script, /if \(isSubmitting\.value\) return/)
   assert.match(script, /slice\(-CHATBOT_CLIENT_LIMITS\.maxHistoryMessages\)/)
   assert.match(script, /signal: requestController\.signal/)
-  assert.match(script, /chatRequestController\?\.abort\(\)/)
+  // An in-flight request must be cancellable. The guard style — optional
+  // chaining or a plain if — is not the contract.
+  assert.match(script, /chatRequestController(?:\?)?\.abort\(\)/)
   assert.match(script, /botInput\.value = text/)
   assert.match(script, /if \(succeeded\) \{\s*botInput\.value = ''/s)
 })
