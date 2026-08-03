@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
+import { nextTick, ref, watchEffect } from 'vue'
 
 import { playTypewriter, normalizeSource, type ChatMessage } from '../app/composables/useChatbot'
 
@@ -63,6 +64,121 @@ test('reduced motion and delayMs 0 both settle without animating', async () => {
   await playTypewriter(message, 'Nội dung đầy đủ ngay lập tức', { delayMs: 0 })
   assert.equal(message.text, 'Nội dung đầy đủ ngay lập tức')
   assert.equal(message.isStreaming, false)
+})
+
+// ─── Pacing ──────────────────────────────────────────────────────────────────
+
+test('a long answer finishes in bounded time instead of scaling with length', async () => {
+  // The complaint this fixes: at a fixed 30ms per word, the knowledge bank's
+  // longer legal answers (~330 words) took ~10 seconds. The whole answer was
+  // already in memory; the visitor was made to wait for an animation.
+  const long = 'Theo quy định tại Nghị định số 49/2020/NĐ-CP về tái hòa nhập cộng đồng, '.repeat(30)
+  const words = (long.match(/\S+\s*/g) ?? []).length
+  assert.ok(words > 300, `sample should be long; got ${words} words`)
+
+  const message = botMessage()
+  const startedAt = performance.now()
+  await playTypewriter(message, long)
+  const elapsed = performance.now() - startedAt
+
+  assert.equal(message.text, long, 'the full answer must still arrive intact')
+  assert.ok(
+    elapsed < 4000,
+    `${words} words took ${Math.round(elapsed)}ms; playback duration must not scale with answer length`,
+  )
+})
+
+test('playback repaints once per frame, not once per word', async () => {
+  // Each tick writes to the DOM and the surfaces then read `scrollHeight`, which
+  // forces layout. One of those per word is one forced layout per word.
+  const long = 'Người chấp hành xong hình phạt tù được hỗ trợ đào tạo nghề nghiệp. '.repeat(30)
+  const words = (long.match(/\S+\s*/g) ?? []).length
+
+  const message = botMessage()
+  let ticks = 0
+  await playTypewriter(message, long, { onTick: () => { ticks += 1 } })
+
+  assert.equal(message.text, long)
+  assert.ok(
+    ticks < words,
+    `${ticks} ticks for ${words} words; batches per frame are what keep layout work bounded`,
+  )
+})
+
+test('both surfaces follow the transcript without seizing the scrollbar', () => {
+  // Playback now ticks every frame, so an unconditional `scrollTop = scrollHeight`
+  // would drag the view down repeatedly while the visitor is scrolled up reading
+  // an earlier answer — they would physically be unable to stay there.
+  for (const file of SURFACES) {
+    const source = read(file)
+    assert.match(source, /const wasAtBottom = force \|\|/, `${file} must check position before scrolling`)
+    assert.match(source, /const followChatBottom = \(\) =>/, `${file} needs a follow-only wrapper for onTick`)
+    // Playback and sends follow conditionally; opening/switching/mounting land at
+    // the bottom on purpose and pass `force`.
+    assert.match(source, /submitBotQuestion\([^)]*followChatBottom\)/, `${file} must pass the follow wrapper to playback`)
+    assert.doesNotMatch(
+      source,
+      /submitBotQuestion\([^)]*, scrollChatBottom\)/,
+      `${file} passes the raw scroll fn to playback, which forwards args into \`force\``,
+    )
+  }
+})
+
+// ─── Reactivity ──────────────────────────────────────────────────────────────
+
+test('playback drives a re-render on every word, not just on the first', async () => {
+  // The bug this pins: `conversations` is a `ref`, so Vue hands out a proxy per
+  // element and only writes made *through that proxy* schedule a render. Playback
+  // used to type into the raw object literal it had just pushed, so the data was
+  // correct and nothing on screen moved — the bubble froze on the first word and
+  // filled in all at once when the visitor sent their next message. Every
+  // assertion in the rest of this file passed throughout, because they all
+  // operate on plain objects where raw and proxy are the same thing.
+  const conversations = ref<{ id: string, messages: ChatMessage[] }[]>([{ id: 'c1', messages: [] }])
+  const conversation = conversations.value.find(item => item.id === 'c1')!
+
+  const raw: ChatMessage = { id: 'bot-1', sender: 'bot', text: '' }
+  conversation.messages.push(raw)
+
+  let renders = 0
+  let painted = ''
+  watchEffect(() => {
+    renders += 1
+    painted = conversation.messages.map(item => item.text).join('')
+  })
+  await nextTick()
+  const rendersBefore = renders
+
+  // Read the element back out to get the tracked proxy — exactly what the
+  // composable now hands to `playTypewriter`.
+  const tracked = conversation.messages[conversation.messages.length - 1]!
+  await playTypewriter(tracked, 'Vấn đề của anh chị', { delayMs: 1 })
+  await nextTick()
+
+  assert.equal(painted, 'Vấn đề của anh chị', 'the rendered text never caught up with the data')
+  assert.ok(
+    renders > rendersBefore + 1,
+    `playback produced ${renders - rendersBefore} render(s); a frozen bubble that fills in later looks exactly like this`,
+  )
+})
+
+test('the composable hands playback the array element, never the local literal', () => {
+  // Guards the fix at its one call site. `playTypewriter(botMessage, ...)` reads
+  // as correct and is the version that shipped broken, so the distinction needs
+  // to be asserted rather than left to reviewer memory.
+  const source = read('../app/composables/useChatbot.ts')
+  const call = source.match(/playTypewriter\((\w+), accumulator\.text/)
+  assert.ok(call, 'the playback call site moved; re-check that it passes a tracked element')
+  assert.notEqual(
+    call[1],
+    'botMessage',
+    'playback must receive the element read back out of conversation.messages, not the raw literal',
+  )
+  assert.match(
+    source,
+    /const tracked = conversation\.messages\[conversation\.messages\.length - 1\]!/,
+    'the tracked element must come from the array Vue is observing',
+  )
 })
 
 // ─── Reference identity ──────────────────────────────────────────────────────

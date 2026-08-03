@@ -31,8 +31,15 @@ const CHATBOT_RESPONSE_KINDS = new Set(['curated', 'provider', 'small_talk', 'no
 const SESSIONS_KEY = 'cdkt_sessions_v1'
 const LEGACY_HISTORY_KEY = 'cdkt_chat_history_v2'
 
-/** Milliseconds between words during typewriter playback. */
+/**
+ * Playback pacing. A fixed per-word delay made playback duration a function of
+ * answer length, so the knowledge bank's longer legal answers (~330 words) took
+ * ~10 seconds to finish — the visitor had the whole answer sitting in memory and
+ * was made to wait for it. The per-word figure now only sets the pace for short
+ * replies; `TYPEWRITER_MAX_MS` caps the total so length cannot run away.
+ */
 const TYPEWRITER_WORD_DELAY_MS = 30
+const TYPEWRITER_MAX_MS = 2200
 
 export const CHATBOT_WELCOME_MESSAGE = Object.freeze({
   id: 'welcome',
@@ -80,7 +87,8 @@ let quickQuestionsController: AbortController | null = null
 let chatRequestController: AbortController | null = null
 let botRequestSequence = 0
 let messageSequence = 0
-let typewriterTimer: ReturnType<typeof setInterval> | null = null
+/** Frame handle during playback (rAF id on the client, timeout id on the server). */
+let typewriterTimer: ReturnType<typeof setTimeout> | null = null
 /** Set when playback is cut short so the message can be completed in one step. */
 let typewriterFinish: (() => void) | null = null
 
@@ -351,13 +359,40 @@ function prefersReducedMotion(): boolean {
   return window.matchMedia('(prefers-reduced-motion: reduce)').matches
 }
 
+/** Monotonic where available, so a clock adjustment mid-answer cannot skew pacing. */
+function now(): number {
+  return typeof performance?.now === 'function' ? performance.now() : Date.now()
+}
+
+/**
+ * One playback step per animation frame, so the DOM write and the scroll that
+ * follows it happen at the rate the browser actually paints. A background tab
+ * stops painting and therefore stops firing these — which is correct here,
+ * because there is nobody watching the words appear. Pacing is read from the
+ * clock, so the frame that arrives on return reveals everything now due.
+ */
+function schedule(step: () => void): ReturnType<typeof setTimeout> {
+  if (import.meta.client && typeof requestAnimationFrame === 'function') {
+    return requestAnimationFrame(step) as unknown as ReturnType<typeof setTimeout>
+  }
+  return setTimeout(step, 16)
+}
+
+function cancel(handle: ReturnType<typeof setTimeout>): void {
+  if (import.meta.client && typeof cancelAnimationFrame === 'function') {
+    cancelAnimationFrame(handle as unknown as number)
+    return
+  }
+  clearTimeout(handle)
+}
+
 /**
  * Ends playback. `complete` fills in whatever had not been typed yet, so an
  * interrupted message is left whole rather than truncated mid-sentence.
  */
 function stopTypewriter(complete: boolean): void {
   if (typewriterTimer) {
-    clearInterval(typewriterTimer)
+    cancel(typewriterTimer)
     typewriterTimer = null
   }
   if (complete && typewriterFinish) typewriterFinish()
@@ -365,13 +400,23 @@ function stopTypewriter(complete: boolean): void {
 }
 
 /**
- * Reveals `fullText` on `message` one word at a time.
+ * Reveals `fullText` on `message` progressively.
  *
  * The server sends the whole answer in a single SSE event, so this is a
  * presentation effect rather than transport streaming. Splitting on whitespace
  * while *keeping* the separators means the reassembled text is byte-identical to
  * what arrived — a plain `split(' ')` would collapse newlines and double spaces,
  * quietly reformatting legal text.
+ *
+ * Paced by *elapsed time* rather than by counting timer firings. A `setInterval`
+ * at one word per tick made three separate promises the browser does not keep:
+ * that ticks arrive on schedule (they are throttled to ~1/second in a background
+ * tab, so switching away mid-answer stretched playback to minutes), that a tick
+ * costs nothing (each one wrote to the DOM and forced a synchronous
+ * `scrollHeight` read — one layout per word), and that answer length is bounded
+ * (it was not; ~330-word answers ran ~10 seconds). Reading the clock each frame
+ * makes a late or coalesced frame catch up by revealing more words, so the answer
+ * always lands within `TYPEWRITER_MAX_MS` regardless of length or tab state.
  */
 export function playTypewriter(
   message: ChatMessage,
@@ -399,6 +444,11 @@ export function playTypewriter(
   message.text = ''
   message.isStreaming = true
 
+  // Short replies keep the per-word feel; long ones compress to fit the cap
+  // instead of making the visitor wait proportionally longer.
+  const perWord = options.delayMs ?? TYPEWRITER_WORD_DELAY_MS
+  const totalMs = Math.min(chunks.length * perWord, TYPEWRITER_MAX_MS)
+
   return new Promise<void>((resolve) => {
     let index = 0
     const settle = () => {
@@ -421,18 +471,29 @@ export function playTypewriter(
       return
     }
 
-    typewriterTimer = setInterval(() => {
-      message.text += chunks[index]!
-      index += 1
+    const startedAt = now()
+    const step = () => {
+      // How many words *should* be visible by now. Whole batches land per frame
+      // on long answers, which is also what keeps the DOM writes to one per frame.
+      const elapsed = now() - startedAt
+      const target = Math.max(
+        index + 1,
+        Math.ceil((elapsed / totalMs) * chunks.length),
+      )
+      message.text = chunks.slice(0, Math.min(target, chunks.length)).join('')
+      index = Math.min(target, chunks.length)
       options.onTick?.()
+
       if (index >= chunks.length) {
-        if (typewriterTimer) clearInterval(typewriterTimer)
         typewriterTimer = null
         typewriterFinish = null
         message.isStreaming = false
         resolve()
+        return
       }
-    }, options.delayMs ?? TYPEWRITER_WORD_DELAY_MS)
+      typewriterTimer = schedule(step)
+    }
+    typewriterTimer = schedule(step)
   })
 }
 
@@ -577,6 +638,15 @@ async function fetchStreamBotReply(onScroll?: () => void): Promise<boolean> {
     // point the typing indicator stood in for it, so the two never coexist.
     conversation.messages.push(botMessage)
 
+    // Playback must mutate the message through the array, not through the local
+    // `botMessage` literal. `conversations` is a `ref`, so Vue hands out a proxy
+    // per element and only writes made *through that proxy* schedule a re-render.
+    // Typing into the raw object updated the data and told no one: the bubble
+    // stayed frozen on whatever the first paint caught, then filled in all at
+    // once the next time anything else touched the array — which is why the
+    // answer appeared only after the visitor sent their next message.
+    const tracked = conversation.messages[conversation.messages.length - 1]!
+
     // Playback is a presentation effect, so nothing waits on it. Awaiting it here
     // held the send back for the whole animation: the caller could not clear the
     // input box, and the question sat there looking unsent until the last word
@@ -584,7 +654,7 @@ async function fetchStreamBotReply(onScroll?: () => void): Promise<boolean> {
     // still mid-playback is deliberately not written to storage.
     isSubmitting.value = false
     chatRequestController = null
-    void playTypewriter(botMessage, accumulator.text, { onTick: onScroll }).then(persist)
+    void playTypewriter(tracked, accumulator.text, { onTick: onScroll }).then(persist)
     return true
   } catch (error) {
     // The bot message is only in the transcript if the reply arrived, so a failure

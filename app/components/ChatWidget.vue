@@ -353,10 +353,28 @@ const startTeaserCycle = () => {
 }
 
 // ─── Open / close ────────────────────────────────────────────────────────────
-const scrollChatBottom = async () => {
+/**
+ * Follows the newest content. During playback this runs every frame, and yanking
+ * the view down while someone is scrolled up re-reading an earlier answer fights
+ * them for control of the scrollbar — so by default it only follows when they are
+ * already at the bottom. The 48px tolerance covers sub-pixel heights and the
+ * moment a new line exists but has not been scrolled past.
+ *
+ * `force` is for opening the panel, switching conversation and first mount, where
+ * the container starts at `scrollTop = 0` and the bottom is the intended landing
+ * spot rather than somewhere the visitor chose to be.
+ */
+const scrollChatBottom = async (force = false) => {
+  const el = chatContainer.value
+  if (!el) return
+  const wasAtBottom = force || el.scrollHeight - el.scrollTop - el.clientHeight < 48
   await nextTick()
-  if (chatContainer.value) chatContainer.value.scrollTop = chatContainer.value.scrollHeight
+  if (wasAtBottom && chatContainer.value) {
+    chatContainer.value.scrollTop = chatContainer.value.scrollHeight
+  }
 }
+/** Playback passes this as `onTick`, which would otherwise forward its own args. */
+const followChatBottom = () => { void scrollChatBottom() }
 
 const openChatbot = async () => {
   isChatbotOpen.value = true
@@ -366,7 +384,7 @@ const openChatbot = async () => {
   if (quickQuestionState.value === 'error' || quickQuestionState.value === 'empty') loadQuickQuestions()
   await nextTick()
   chatCloseButton.value?.focus()
-  scrollChatBottom()
+  scrollChatBottom(true)
 }
 
 const closeChatbot = async () => {
@@ -423,7 +441,7 @@ const onCreateConversation = () => {
 const onSwitchConversation = (id: string) => {
   switchConversation(id)
   isConversationListOpen.value = false
-  scrollChatBottom()
+  scrollChatBottom(true)
 }
 
 const conversationMeta = (conversation: StoredConversation) => {
@@ -439,13 +457,13 @@ const sendBotMessage = () => {
   // round-trip; the server checks again because a client-side check protects
   // nothing on its own.
   if (honeypot.value.trim() !== '') return
-  submitBotQuestion(botInput.value, scrollChatBottom).then(() => nextTick(() => botInputRef.value?.focus()))
+  submitBotQuestion(botInput.value, followChatBottom).then(() => nextTick(() => botInputRef.value?.focus()))
 }
 
 const askBot = (question: string) => {
   if (isSubmitting.value) return
   botInput.value = question
-  submitBotQuestion(question, scrollChatBottom)
+  submitBotQuestion(question, followChatBottom)
 }
 
 onMounted(() => {
