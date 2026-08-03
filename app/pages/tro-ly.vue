@@ -128,12 +128,37 @@
                       <i class="fa-solid" :class="isProblemKind(msg.kind) ? 'fa-circle-exclamation text-[#9a3412]' : 'fa-circle-check text-[#1e4620]'" aria-hidden="true"></i>
                       {{ messageKindLabel(msg.kind) }}
                     </p>
-                    <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-2 mb-0 list-none space-y-1 border-t border-[#e1e8e0] pl-0 pt-2" aria-label="Nguồn tham khảo">
+                    <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-2 mb-0 list-none space-y-2 border-t border-[#e1e8e0] pl-0 pt-2" aria-label="Nguồn tham khảo">
                       <li v-for="source in msg.sources" :key="source.id" class="text-[0.74rem] leading-snug text-[#4A5545]">
                         <i class="fa-solid fa-link mr-1 text-[0.58rem] text-[#7CB342]" aria-hidden="true"></i>
                         <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2">{{ source.label }}</a>
                         <span v-else class="font-semibold">{{ source.label }}</span>
                         <span v-if="source.reference" class="text-[#6b7280]"> — {{ source.reference }}</span>
+
+                        <!-- Most imported rows have a label and no URL, so this is
+                             the only way to read the text behind the citation. -->
+                        <button
+                          v-if="source.entryId !== null"
+                          type="button"
+                          class="mt-1 flex cursor-pointer items-center gap-1 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-2.5 py-0.5 text-[0.72rem] font-semibold text-[#1e4620] transition-colors hover:bg-[#1e4620] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                          :aria-expanded="isSourceExpanded(source.entryId)"
+                          @click="toggleSourceDetail(source.entryId)"
+                        >
+                          <i class="fa-solid fa-book-open text-[0.62rem]" aria-hidden="true"></i>
+                          {{ isSourceExpanded(source.entryId) ? 'Thu gọn' : 'Xem đầy đủ' }}
+                        </button>
+
+                        <div v-if="isSourceExpanded(source.entryId)" class="mt-2 rounded-xl border border-[#e1e8e0] bg-[#f8faf8] px-3 py-2.5">
+                          <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.72rem] text-[#667768]" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
+                          <div v-else-if="sourceDetailOf(source.entryId)?.status === 'error'" role="alert">
+                            <p class="m-0 text-[0.72rem] text-[#b42318]">Không tải được nội dung đầy đủ.</p>
+                            <button type="button" class="mt-1.5 cursor-pointer rounded-full border-none bg-[#1e4620] px-3 py-1 text-[0.7rem] font-bold text-white hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]" @click="retrySourceDetail(source.entryId)">Thử lại</button>
+                          </div>
+                          <template v-else-if="sourceDetailOf(source.entryId)?.status === 'ready'">
+                            <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1.5 text-[0.76rem] font-bold text-[#1e4620]">{{ sourceDetailOf(source.entryId)?.question }}</p>
+                            <p class="m-0 whitespace-pre-wrap text-[0.76rem] leading-[1.65] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
+                          </template>
+                        </div>
                       </li>
                     </ul>
                     <div v-if="msg.askContact && msg.lead && !msg.isStreaming" class="mt-3 border-t border-[#e1e8e0] pt-3">
@@ -153,20 +178,23 @@
                         </button>
                       </form>
                     </div>
-                    <span v-if="msg.isStreaming" class="ml-0.5 inline-block animate-[blinkCursor_0.6s_infinite] font-bold text-[#7CB342] motion-reduce:animate-none" aria-hidden="true">▌</span>
                   </div>
                 </div>
               </template>
 
+              <!-- One indicator, from send until the first word lands. The bot
+                   message is not in the transcript yet, so this never sits beside
+                   an empty bubble. -->
               <div v-if="isSubmitting" class="flex justify-start gap-3">
-                <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#1e4620] shadow-sm">
-                  <i class="fa-solid fa-robot text-[0.7rem] text-white" aria-hidden="true"></i>
+                <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#1e4620] shadow-sm" aria-hidden="true">
+                  <i class="fa-solid fa-robot text-[0.7rem] text-white"></i>
                 </div>
-                <div class="rounded-[4px_18px_18px_18px] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-                  <div class="flex items-center gap-1">
-                    <span class="h-2 w-2 animate-bounce rounded-full bg-[#1e4620]/40 [animation-delay:0ms]"></span>
-                    <span class="h-2 w-2 animate-bounce rounded-full bg-[#1e4620]/40 [animation-delay:150ms]"></span>
-                    <span class="h-2 w-2 animate-bounce rounded-full bg-[#1e4620]/40 [animation-delay:300ms]"></span>
+                <div class="rounded-[4px_18px_18px_18px] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)]" role="status" aria-live="polite">
+                  <span class="sr-only">Trợ lý đang soạn câu trả lời</span>
+                  <div class="flex items-center gap-1" aria-hidden="true">
+                    <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-[#1e4620] motion-reduce:animate-none motion-reduce:opacity-60"></span>
+                    <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-[#1e4620] [animation-delay:200ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
+                    <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-[#1e4620] [animation-delay:400ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
                   </div>
                 </div>
               </div>
@@ -226,6 +254,7 @@ const {
   hydrate, loadQuickQuestions,
   createConversation, switchConversation, deleteConversation, clearChatHistory,
   submitBotQuestion, submitLead,
+  isSourceExpanded, sourceDetailOf, toggleSourceDetail, retrySourceDetail,
   isProblemKind, messageKindLabel, messageKindClass,
 } = useChatbot()
 
@@ -300,10 +329,3 @@ onMounted(() => {
   scrollChatBottom()
 })
 </script>
-
-<style scoped>
-@keyframes blinkCursor {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-</style>

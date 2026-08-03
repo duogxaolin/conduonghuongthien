@@ -109,12 +109,37 @@
                 <i class="fa-solid" :class="isProblemKind(msg.kind) ? 'fa-circle-exclamation text-[#9a3412]' : 'fa-circle-check text-[#1e4620]'" aria-hidden="true"></i>
                 {{ messageKindLabel(msg.kind) }}
               </p>
-              <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-2 mb-0 space-y-1 border-t border-[#e1e8e0] pt-2 list-none pl-0" aria-label="Nguồn tham khảo">
+              <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-2 mb-0 space-y-1.5 border-t border-[#e1e8e0] pt-2 list-none pl-0" aria-label="Nguồn tham khảo">
                 <li v-for="source in msg.sources" :key="source.id" class="text-[0.7rem] leading-snug text-[#4A5545]">
                   <i class="fa-solid fa-link text-[0.55rem] text-[#7CB342] mr-1" aria-hidden="true"></i>
                   <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2">{{ source.label }}</a>
                   <span v-else class="font-semibold">{{ source.label }}</span>
                   <span v-if="source.reference" class="text-[#6b7280]"> — {{ source.reference }}</span>
+
+                  <!-- Most imported rows have a label and no URL, so this is the
+                       only way to read the approved text behind the citation. -->
+                  <button
+                    v-if="source.entryId !== null"
+                    type="button"
+                    class="mt-1 flex items-center gap-1 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-2 py-0.5 text-[0.68rem] font-semibold text-[#1e4620] cursor-pointer transition-colors hover:bg-[#1e4620] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                    :aria-expanded="isSourceExpanded(source.entryId)"
+                    @click="toggleSourceDetail(source.entryId)"
+                  >
+                    <i class="fa-solid fa-book-open text-[0.6rem]" aria-hidden="true"></i>
+                    {{ isSourceExpanded(source.entryId) ? 'Thu gọn' : 'Xem đầy đủ' }}
+                  </button>
+
+                  <div v-if="isSourceExpanded(source.entryId)" class="mt-1.5 rounded-lg border border-[#e1e8e0] bg-[#f8faf8] px-2.5 py-2">
+                    <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.68rem] text-[#667768]" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
+                    <div v-else-if="sourceDetailOf(source.entryId)?.status === 'error'" role="alert">
+                      <p class="m-0 text-[0.68rem] text-[#b42318]">Không tải được nội dung đầy đủ.</p>
+                      <button type="button" class="mt-1 rounded-full bg-[#1e4620] px-2.5 py-0.5 text-[0.66rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]" @click="retrySourceDetail(source.entryId)">Thử lại</button>
+                    </div>
+                    <template v-else-if="sourceDetailOf(source.entryId)?.status === 'ready'">
+                      <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.7rem] font-bold text-[#1e4620]">{{ sourceDetailOf(source.entryId)?.question }}</p>
+                      <p class="m-0 whitespace-pre-wrap text-[0.7rem] leading-[1.6] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
+                    </template>
+                  </div>
                 </li>
               </ul>
               <div v-if="msg.askContact && msg.lead && !msg.isStreaming" class="mt-3 border-t border-[#e1e8e0] pt-3">
@@ -129,20 +154,23 @@
                   <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-[#1e4620] px-4 py-1.5 text-[0.78rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">{{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}</button>
                 </form>
               </div>
-              <span v-if="msg.isStreaming" class="inline-block ml-0.5 text-[#7CB342] font-bold animate-[blinkCursor_0.6s_infinite] motion-reduce:animate-none" aria-hidden="true">▌</span>
             </div>
           </div>
         </template>
 
+        <!-- One indicator, from send until the first word lands. The bot message
+             is not in the transcript yet, so this never sits beside an empty
+             bubble. -->
         <div v-if="isSubmitting" class="flex gap-2.5 justify-start">
-          <div class="w-7 h-7 rounded-full bg-[#1e4620] flex items-center justify-center flex-shrink-0 shadow-sm">
+          <div class="w-7 h-7 rounded-full bg-[#1e4620] flex items-center justify-center flex-shrink-0 shadow-sm" aria-hidden="true">
             <i class="fa-solid fa-robot text-white text-[0.65rem]"></i>
           </div>
-          <div class="bg-white px-4 py-3 rounded-[4px_18px_18px_18px] shadow-[0_1px_3px_rgba(0,0,0,0.06)]">
-            <div class="flex gap-1 items-center">
-              <span class="w-2 h-2 bg-[#1e4620]/40 rounded-full animate-bounce [animation-delay:0ms]"></span>
-              <span class="w-2 h-2 bg-[#1e4620]/40 rounded-full animate-bounce [animation-delay:150ms]"></span>
-              <span class="w-2 h-2 bg-[#1e4620]/40 rounded-full animate-bounce [animation-delay:300ms]"></span>
+          <div class="bg-white px-3.5 py-3 rounded-[4px_18px_18px_18px] shadow-[0_1px_3px_rgba(0,0,0,0.06)]" role="status" aria-live="polite">
+            <span class="sr-only">Trợ lý đang soạn câu trả lời</span>
+            <div class="flex gap-1 items-center" aria-hidden="true">
+              <span class="w-1.5 h-1.5 bg-[#1e4620] rounded-full animate-typing-dot motion-reduce:animate-none motion-reduce:opacity-60"></span>
+              <span class="w-1.5 h-1.5 bg-[#1e4620] rounded-full animate-typing-dot [animation-delay:200ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
+              <span class="w-1.5 h-1.5 bg-[#1e4620] rounded-full animate-typing-dot [animation-delay:400ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
             </div>
           </div>
         </div>
@@ -216,7 +244,7 @@
     <div v-if="showLauncher" class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[10050] flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
       <div
         v-if="chatTeaserVisible && !isChatbotOpen"
-        class="relative max-w-[220px] bg-white text-[#1f2937] text-[0.8rem] leading-snug px-3.5 py-2.5 rounded-[16px_16px_4px_16px] shadow-[0_4px_20px_rgba(0,0,0,0.12)] border border-black/5 animate-[fadeSlideUp_0.3s_ease-out] cursor-pointer"
+        class="relative max-w-[220px] bg-white text-[#1f2937] text-[0.8rem] leading-snug px-3.5 py-2.5 rounded-[16px_16px_4px_16px] shadow-[0_4px_20px_rgba(0,0,0,0.12)] border border-black/5 animate-fade-slide-up motion-reduce:animate-none cursor-pointer"
         @click="toggleChatbot"
       >
         <p class="m-0">{{ chatTeaserText }}</p>
@@ -252,6 +280,7 @@ const {
   hydrate, loadQuickQuestions,
   createConversation, switchConversation, deleteConversation, clearChatHistory,
   submitBotQuestion, submitLead,
+  isSourceExpanded, sourceDetailOf, toggleSourceDetail, retrySourceDetail,
   isProblemKind, messageKindLabel, messageKindClass,
 } = useChatbot()
 
@@ -431,15 +460,3 @@ onUnmounted(() => {
   if (typeof document !== 'undefined') document.body.style.overflow = ''
 })
 </script>
-
-<style scoped>
-@keyframes blinkCursor {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-@keyframes fadeSlideUp {
-  from { opacity: 0; transform: translateY(8px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-</style>
