@@ -92,6 +92,33 @@ test('the build job supplies the secret nuxt.config demands in production', () =
   assert.match(secret, /placeholder|not-a-real/, 'the CI value does not read as a throwaway')
 })
 
+test('the browser suite runs in CI, with a database and a browser to run against', () => {
+  // Playwright skips nothing and fails nothing when it is simply never invoked:
+  // the run stays green and the one check that exercises a real click quietly
+  // stops happening. Three things have to hold together, and each is useless
+  // alone — the invocation, the browser download, and a reachable MySQL for
+  // tests/e2e/global-setup.ts to build its throwaway database in.
+  const workflow = read('.github/workflows/ci.yml')
+  assert.match(workflow, /run: npm run test:e2e$/m, 'CI never invokes the browser suite')
+  assert.match(workflow, /run: npm run test:e2e:install/, 'CI runs the suite without installing a browser')
+
+  // The e2e step lives in the build job because it needs that job's bundle. So
+  // that job — not just the test job — is the one that needs the MySQL service.
+  const build = workflow.slice(workflow.indexOf('\n  build:'), workflow.indexOf('\n  hygiene:'))
+  assert.match(build, /image: mysql:8\.0/, 'the build job has no database for the browser suite to seed')
+  for (const variable of ['E2E_DB_HOST', 'E2E_DB_PORT', 'E2E_DB_USER', 'E2E_DB_PASSWORD']) {
+    assert.match(build, new RegExp(`${variable}:`), `the browser suite has no ${variable}`)
+  }
+})
+
+test('a failing browser run keeps the evidence of what the page showed', () => {
+  // A CI-only failure is otherwise a single assertion line. The trace and
+  // screenshot are written only on failure, so this uploads nothing when green.
+  const workflow = read('.github/workflows/ci.yml')
+  assert.match(workflow, /uses: actions\/upload-artifact@v4/)
+  assert.match(workflow, /if: failure\(\)/)
+})
+
 test('CI refuses a committed .env or a known-default secret', () => {
   const workflow = read('.github/workflows/ci.yml')
   assert.match(workflow, /git ls-files --error-unmatch \.env/)

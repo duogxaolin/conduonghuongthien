@@ -71,7 +71,7 @@
         </div>
       </aside>
     </div>
-    <div v-else-if="loadError" class="flex flex-1 flex-col items-center justify-center gap-3 text-red-600">
+    <div v-else-if="loadError" role="alert" class="flex flex-1 flex-col items-center justify-center gap-3 text-red-600">
       <p>{{ loadError }}</p>
       <button class="rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold hover:bg-red-100" @click="fetchPage">Thử lại</button>
     </div>

@@ -104,7 +104,7 @@ onMounted(() => { fetchSessions() })
 
     <SkeletonTable v-if="loading" label="Đang tải danh sách phiên trò chuyện" :rows="6" :cols="6" />
 
-    <div v-else-if="loadError" class="rounded-xl border border-dashed border-[#e2a0a0] bg-white px-6 py-10 text-center text-[0.9rem] text-[#b04a4a]">
+    <div v-else-if="loadError" role="alert" class="rounded-xl border border-dashed border-[#e2a0a0] bg-white px-6 py-10 text-center text-[0.9rem] text-[#b04a4a]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ loadError }}
       <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="fetchSessions()">Thử lại</button>

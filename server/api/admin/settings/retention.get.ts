@@ -11,7 +11,7 @@
  */
 import { sql } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
-import { activityLogs, submissions } from '../../../db/schema'
+import { activityLogs, submissions, chatSessions } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import {
   resolveRetentionPolicy,
@@ -30,16 +30,27 @@ export default defineEventHandler(async (event) => {
   const state = await loadRetentionState()
   const db = getDb()
 
-  const table = { activity_logs: activityLogs, submissions } as const
+  /**
+   * The column each scope is aged against. This MUST be the same column
+   * `data-retention.ts` deletes on: if this endpoint counted `started_at` while
+   * the purge measured `last_message_at`, the page would report a number of
+   * overdue rows that the next run does not delete, and the discrepancy would
+   * read as a broken purge rather than as two different questions.
+   */
+  const scopeTable = {
+    activity_logs: { target: activityLogs, timestamp: activityLogs.createdAt },
+    submissions: { target: submissions, timestamp: submissions.createdAt },
+    chat_sessions: { target: chatSessions, timestamp: chatSessions.lastMessageAt },
+  } as const
 
   const scopes = await Promise.all(policy.scopes.map(async (scope) => {
-    const target = table[scope.scope]
+    const { target, timestamp } = scopeTable[scope.scope]
     const [row] = await db
       .select({
         total: sql<number>`COUNT(*)`,
-        oldest: sql<string | null>`MIN(${target.createdAt})`,
+        oldest: sql<string | null>`MIN(${timestamp})`,
         overdue: scope.days > 0
-          ? sql<number>`SUM(CASE WHEN ${target.createdAt} < (NOW() - INTERVAL ${sql.raw(String(scope.days))} DAY) THEN 1 ELSE 0 END)`
+          ? sql<number>`SUM(CASE WHEN ${timestamp} < (NOW() - INTERVAL ${sql.raw(String(scope.days))} DAY) THEN 1 ELSE 0 END)`
           : sql<number>`0`,
       })
       .from(target)

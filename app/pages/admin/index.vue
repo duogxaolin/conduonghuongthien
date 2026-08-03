@@ -276,9 +276,10 @@ onMounted(async () => {
           <div v-for="n in 3" :key="n" class="rounded-2xl border border-[#e2ece3] bg-white p-5 animate-pulse motion-reduce:animate-none h-24" role="status" aria-label="Đang tải…"></div>
         </template>
         <template v-else-if="liveError">
-          <div class="col-span-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-500 flex items-center gap-2">
+          <div role="alert" class="col-span-3 rounded-2xl border border-red-100 bg-red-50 p-4 text-sm text-red-500 flex items-center gap-2">
             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             Không thể tải dữ liệu trực tiếp.
+            <button type="button" class="ml-1 font-bold underline" @click="loadLive()">Thử lại</button>
           </div>
         </template>
         <template v-else-if="liveData">
@@ -336,8 +337,9 @@ onMounted(async () => {
             aria-hidden="true"
           ></div>
         </div>
-        <div v-else-if="trafficError" class="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-500 flex items-center gap-2">
+        <div v-else-if="trafficError" role="alert" class="rounded-xl border border-red-100 bg-red-50 p-4 text-sm text-red-500 flex items-center gap-2">
           <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i> Không thể tải dữ liệu thống kê.
+          <button type="button" class="ml-1 font-bold underline" @click="loadTraffic()">Thử lại</button>
         </div>
         <div v-else-if="trafficPoints.length === 0" class="rounded-xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] p-8 text-center text-sm text-[#667768]">
           <i class="fa-solid fa-chart-area text-2xl text-[#c8d6c9] mb-2 block" aria-hidden="true"></i>
@@ -379,8 +381,9 @@ onMounted(async () => {
               <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
             </div>
           </div>
-          <div v-else-if="sourceError" class="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-500 flex items-center gap-2">
+          <div v-else-if="sourceError" role="alert" class="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-500 flex items-center gap-2">
             <i class="fa-solid fa-triangle-exclamation shrink-0" aria-hidden="true"></i> Không thể tải dữ liệu.
+            <button type="button" class="ml-1 font-bold underline" @click="loadBreakdowns()">Thử lại</button>
           </div>
           <div v-else-if="!sourceData || sourceData.rows.length === 0" class="flex flex-col items-center justify-center h-28 rounded-xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] text-sm text-[#667768] gap-2">
             <i class="fa-solid fa-globe text-xl text-[#c8d6c9]" aria-hidden="true"></i>
@@ -476,8 +479,9 @@ onMounted(async () => {
               <div v-for="n in 3" :key="n" class="h-3 w-full rounded bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
             </div>
           </div>
-          <div v-else-if="deviceError" class="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-500 flex items-center gap-2">
+          <div v-else-if="deviceError" role="alert" class="rounded-lg border border-red-100 bg-red-50 p-3 text-sm text-red-500 flex items-center gap-2">
             <i class="fa-solid fa-triangle-exclamation shrink-0" aria-hidden="true"></i> Không thể tải dữ liệu.
+            <button type="button" class="ml-1 font-bold underline" @click="loadBreakdowns()">Thử lại</button>
           </div>
           <div v-else-if="!deviceData || deviceData.rows.length === 0" class="flex flex-col items-center justify-center h-28 rounded-xl border border-dashed border-[#afc8b1] bg-[#f7fbf7] text-sm text-[#667768] gap-2">
             <i class="fa-solid fa-mobile-screen text-xl text-[#c8d6c9]" aria-hidden="true"></i>

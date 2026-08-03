@@ -198,11 +198,6 @@ export function trustedProxies(): string[] {
   return cachedTrustedProxies
 }
 
-/** Test seam: the module-level cache would otherwise leak between cases. */
-export function resetTrustedProxiesCache(): void {
-  cachedTrustedProxies = null
-}
-
 /**
  * The call every handler makes. Replaces
  * `getRequestIP(event, { xForwardedFor: false }) || 'unknown'`, which was

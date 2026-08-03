@@ -7,6 +7,7 @@ definePageMeta({
 const route = useRoute()
 const articles = ref<any[]>([])
 const loading = ref(true)
+const loadError = ref('')
 const search = ref('')
 const selectedType = ref('')
 const selectedStatus = ref('')
@@ -85,6 +86,7 @@ watch(selectedParentCategoryId, () => {
 // ─── Articles fetch ───────────────────────────────────────────────────────────
 const fetchArticles = async (page = 1) => {
   loading.value = true
+  loadError.value = ''
   try {
     const params: any = {
       page,
@@ -106,6 +108,7 @@ const fetchArticles = async (page = 1) => {
     }
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách bài viết')
+    loadError.value = err?.data?.statusMessage || 'Lỗi tải danh sách bài viết'
   } finally {
     loading.value = false
   }
@@ -395,6 +398,12 @@ onMounted(async () => {
     <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
       <SkeletonTable v-if="loading" label="Đang tải danh sách bài viết" :rows="6" :cols="8" />
 
+      <!-- Error -->
+      <div v-else-if="loadError" role="alert" class="px-6 py-10 text-center text-[#b04a4a] text-[0.9rem]">
+        <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
+        {{ loadError }}. Vui lòng <button type="button" class="text-[#2c6e33] font-bold underline bg-transparent border-0 cursor-pointer p-0" @click="fetchArticles(1)">thử lại</button>.
+      </div>
+
       <!-- Mobile Card View -->
       <div v-else class="md:hidden divide-y divide-[#eef2ee]">
         <div v-for="a in articles" :key="'m-'+a.id" class="p-4 flex gap-3" :class="selection.isSelected(Number(a.id)) ? 'bg-[#f0f7f1]' : ''">
@@ -436,7 +445,7 @@ onMounted(async () => {
       </div>
 
       <!-- Desktop Table View -->
-      <div v-if="!loading" class="hidden md:block overflow-x-auto">
+      <div v-if="!loading && !loadError" class="hidden md:block overflow-x-auto">
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
