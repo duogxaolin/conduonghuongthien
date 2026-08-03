@@ -40,8 +40,11 @@ export const CHATBOT_WELCOME_MESSAGE = Object.freeze({
   text: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi chỉ hỗ trợ theo thông tin công khai trong kho dữ liệu đã được Cục C11 phê duyệt.',
 })
 
-export type ChatSource = { id: string, label: string, reference: string, url: string | null }
+export type ChatSource = { id: string, label: string, reference: string, url: string | null, entryId: number | null }
 export type ChatLead = { name: string, phone: string, email: string, question: string, status: 'idle' | 'sending' | 'done', error: string }
+
+/** One reference's approved Q&A, fetched on demand when the visitor opens it. */
+export type SourceDetailState = { status: 'loading' | 'ready' | 'error', question: string, answer: string }
 
 export type ChatMessage = {
   id: string
@@ -118,6 +121,18 @@ function safeHttpsUrl(value: unknown): string | null {
   }
 }
 
+/** The knowledge-bank row id, when the payload carries a usable one. */
+function knowledgeEntryId(raw: Record<string, unknown>): number | null {
+  // Fresh replies carry the numeric row id at the top level of the reference.
+  // Re-read localStorage carries it as `entryId`, because `id` was already
+  // folded into a composite render key by an earlier pass through this function.
+  for (const candidate of [raw.entryId, raw.id]) {
+    const value = typeof candidate === 'number' ? candidate : Number(candidate)
+    if (Number.isSafeInteger(value) && value > 0) return value
+  }
+  return null
+}
+
 export function normalizeSource(item: unknown, index: number): ChatSource | null {
   if (!item || typeof item !== 'object') return null
   const raw = item as Record<string, unknown>
@@ -127,7 +142,7 @@ export function normalizeSource(item: unknown, index: number): ChatSource | null
   const url = safeHttpsUrl(rawSource.url)
   if (!label && !reference) return null
   const idPart = typeof raw.id === 'number' || typeof raw.id === 'string' ? raw.id : index
-  return { id: `${idPart}-${label}-${reference}`, label: label || 'Tài liệu công khai', reference, url }
+  return { id: `${idPart}-${label}-${reference}`, label: label || 'Tài liệu công khai', reference, url, entryId: knowledgeEntryId(raw) }
 }
 
 function normalizeStoredMessage(item: unknown, index: number): ChatMessage | null {
@@ -211,7 +226,15 @@ function persist(): void {
         messages: conversation.messages
           .filter(item => item.id !== 'welcome' && !item.isStreaming && typeof item.text === 'string' && item.text.trim())
           .slice(-(CHATBOT_CLIENT_LIMITS.maxHistoryMessages * 2))
-          .map(({ sender, text, kind, sources }) => ({ sender, text, kind, sources })),
+          // `sources` is rewritten rather than copied: the render key in `id` is
+          // derived, while `entryId` is the only field that can reopen the full
+          // approved answer after a reload.
+          .map(({ sender, text, kind, sources }) => ({
+            sender,
+            text,
+            kind,
+            sources: (sources ?? []).map(({ label, reference, url, entryId }) => ({ label, reference, url, entryId })),
+          })),
       })),
     }
     localStorage.setItem(SESSIONS_KEY, JSON.stringify(payload))
@@ -385,6 +408,19 @@ export function playTypewriter(
     }
     typewriterFinish = settle
 
+    // The first word lands in this tick, not after the first delay. Waiting meant
+    // the bubble appeared empty for one interval right as the typing indicator
+    // disappeared — a blank white box flickering between the two states.
+    message.text += chunks[index]!
+    index += 1
+    options.onTick?.()
+    if (index >= chunks.length) {
+      typewriterFinish = null
+      message.isStreaming = false
+      resolve()
+      return
+    }
+
     typewriterTimer = setInterval(() => {
       message.text += chunks[index]!
       index += 1
@@ -495,7 +531,10 @@ async function fetchStreamBotReply(onScroll?: () => void): Promise<boolean> {
     lead: null,
     isStreaming: true,
   }
-  conversation.messages.push(botMessage)
+  // Deliberately not pushed yet. Pushing it here rendered an empty bubble holding
+  // nothing but the streaming cursor *alongside* the typing indicator, for the
+  // whole network wait — two indicators for one pending reply. It joins the
+  // transcript once there is text to show.
   onScroll?.()
 
   const accumulator = { text: '', message: botMessage }
@@ -534,14 +573,23 @@ async function fetchStreamBotReply(onScroll?: () => void): Promise<boolean> {
     if (!accumulator.text.trim()) throw new Error('EMPTY_CHATBOT_RESPONSE')
     if (!botMessage.kind) botMessage.kind = 'unavailable'
 
-    // The visitor can send again while this plays; `isSubmitting` is released
-    // first so the input is not locked for the duration of the animation.
+    // The reply joins the transcript only now that it has content. Until this
+    // point the typing indicator stood in for it, so the two never coexist.
+    conversation.messages.push(botMessage)
+
+    // Playback is a presentation effect, so nothing waits on it. Awaiting it here
+    // held the send back for the whole animation: the caller could not clear the
+    // input box, and the question sat there looking unsent until the last word
+    // had been typed. `persist()` runs when playback ends, because a message
+    // still mid-playback is deliberately not written to storage.
     isSubmitting.value = false
     chatRequestController = null
-    await playTypewriter(botMessage, accumulator.text, { onTick: onScroll })
-    persist()
+    void playTypewriter(botMessage, accumulator.text, { onTick: onScroll }).then(persist)
     return true
   } catch (error) {
+    // The bot message is only in the transcript if the reply arrived, so a failure
+    // before that point has nothing to remove. Removing it unconditionally would
+    // have deleted whichever message happened to be last.
     const index = conversation.messages.findIndex(item => item.id === botMessage.id)
     if (index !== -1) conversation.messages.splice(index, 1)
     if ((error as Error)?.name !== 'AbortError' && requestSequence === botRequestSequence) {
@@ -648,6 +696,69 @@ async function submitLead(msg: ChatMessage): Promise<void> {
   }
 }
 
+// ─── Reference detail ────────────────────────────────────────────────────────
+// Most knowledge-bank rows are imported from a spreadsheet and carry a source
+// label but no URL ("Tài liệu Hỏi – Đáp"), so there was nothing to click and no
+// way to read the approved answer behind a citation. These expand in place: the
+// widget already runs its own Tab trap, and a modal inside a focus trap is a
+// second trap fighting the first.
+
+const sourceDetails = ref<Record<number, SourceDetailState>>({})
+const expandedSourceIds = ref<number[]>([])
+
+export function sourceDetailOf(entryId: number | null): SourceDetailState | null {
+  return entryId === null ? null : sourceDetails.value[entryId] ?? null
+}
+
+export function isSourceExpanded(entryId: number | null): boolean {
+  return entryId !== null && expandedSourceIds.value.includes(entryId)
+}
+
+async function loadSourceDetail(entryId: number): Promise<void> {
+  // A row already read stays read: reopening a citation must not re-query.
+  const current = sourceDetails.value[entryId]
+  if (current?.status === 'ready' || current?.status === 'loading') return
+  sourceDetails.value = { ...sourceDetails.value, [entryId]: { status: 'loading', question: '', answer: '' } }
+  try {
+    const response = await fetch(`/api/public/chatbot/sources?id=${encodeURIComponent(String(entryId))}`, {
+      headers: { Accept: 'application/json' },
+    })
+    if (!response.ok) throw new Error('SOURCE_UNAVAILABLE')
+    const data = await response.json() as { ok?: unknown, source?: Record<string, unknown> }
+    const question = typeof data?.source?.question === 'string'
+      ? data.source.question.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxMessageChars)
+      : ''
+    const answer = typeof data?.source?.answer === 'string'
+      ? data.source.answer.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxOutputChars)
+      : ''
+    if (data?.ok !== true || !answer) throw new Error('SOURCE_EMPTY')
+    sourceDetails.value = { ...sourceDetails.value, [entryId]: { status: 'ready', question, answer } }
+  } catch {
+    // An unreachable citation must read as broken, not as an empty document: the
+    // visible branch offers a retry of this same request.
+    sourceDetails.value = { ...sourceDetails.value, [entryId]: { status: 'error', question: '', answer: '' } }
+  }
+}
+
+function toggleSourceDetail(entryId: number | null): void {
+  if (entryId === null) return
+  if (expandedSourceIds.value.includes(entryId)) {
+    expandedSourceIds.value = expandedSourceIds.value.filter(id => id !== entryId)
+    return
+  }
+  expandedSourceIds.value = [...expandedSourceIds.value, entryId]
+  void loadSourceDetail(entryId)
+}
+
+/** Retries the request that failed, rather than reloading the whole page. */
+function retrySourceDetail(entryId: number | null): void {
+  if (entryId === null) return
+  const next = { ...sourceDetails.value }
+  delete next[entryId]
+  sourceDetails.value = next
+  void loadSourceDetail(entryId)
+}
+
 // ─── Presentation helpers ────────────────────────────────────────────────────
 
 /**
@@ -717,6 +828,14 @@ export function useChatbot() {
     submitBotQuestion,
     submitLead,
     stopTypewriter,
+
+    // reference detail
+    sourceDetails,
+    expandedSourceIds,
+    sourceDetailOf,
+    isSourceExpanded,
+    toggleSourceDetail,
+    retrySourceDetail,
 
     // helpers
     limits: CHATBOT_CLIENT_LIMITS,

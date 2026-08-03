@@ -29,8 +29,14 @@
 
       <!-- Main content -->
       <article v-else-if="article">
-        <span class="text-[0.85rem] font-bold text-[#4A6741] bg-[#F8FAF7] px-3 py-1.5 rounded inline-block mb-4">
-          <span aria-hidden="true">{{ metaIcon }}</span> {{ categoryLabel }} • Ngày đăng: {{ formattedDate }}
+        <span class="text-[0.85rem] font-bold text-[#4A6741] bg-[#F8FAF7] px-3 py-1.5 rounded inline-flex flex-wrap items-center gap-x-2 mb-4">
+          <span><span aria-hidden="true">{{ metaIcon }}</span> {{ categoryLabel }}</span>
+          <span aria-hidden="true">•</span>
+          <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> Ngày đăng: {{ formattedDate }}</span>
+          <span aria-hidden="true">•</span>
+          <span><i class="fa-regular fa-user" aria-hidden="true"></i> {{ authorDisplay }}</span>
+          <span aria-hidden="true">•</span>
+          <span><i class="fa-regular fa-eye" aria-hidden="true"></i> {{ formattedViews }} lượt xem</span>
         </span>
         <h1 class="text-[2.2rem] font-extrabold leading-[1.3] text-[#1E251C] mb-5">{{ article.title }}</h1>
 
@@ -176,6 +182,11 @@ const categoryLabel = computed(() => {
 })
 
 const formattedDate = computed(() => formatDateVN(article.value?.publishedAt || article.value?.createdAt))
+
+// Bài viết cũ có thể không còn tác giả (`author_id` nullable, tài khoản đã xoá).
+// "Ban biên tập" là chủ thể phát ngôn thật của cổng trong trường hợp đó.
+const authorDisplay = computed(() => article.value?.authorName || 'Ban biên tập')
+const formattedViews = computed(() => Number(article.value?.viewTotal || 0).toLocaleString('vi-VN'))
 
 /**
  * Outline + anchored body in one pass, so a list entry and its heading can never

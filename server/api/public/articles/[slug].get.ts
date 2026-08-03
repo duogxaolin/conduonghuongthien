@@ -1,6 +1,6 @@
 import { getDb } from '../../../utils/db'
-import { articles, users, categories } from '../../../db/schema'
-import { eq, and } from 'drizzle-orm'
+import { articles, users, categories, articleViewDaily } from '../../../db/schema'
+import { eq, and, sql } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug')
@@ -24,6 +24,17 @@ export default defineEventHandler(async (event) => {
         publishedAt:  articles.publishedAt,
         createdAt:    articles.createdAt,
         authorName:   users.username,
+        /**
+         * Tổng lượt xem hiển thị (thật + ảo) — cùng con số `totalDisplayed` mà
+         * trang quản trị báo, nên hai nơi không bao giờ nói hai điều khác nhau.
+         * Correlated subquery chứ không join: `article_view_daily` có một hàng
+         * mỗi ngày mỗi nguồn, join vào sẽ nhân bài viết lên nhiều hàng.
+         */
+        viewTotal: sql<number>`(
+          SELECT COALESCE(SUM(${articleViewDaily.realViews} + ${articleViewDaily.fabricatedViews}), 0)
+          FROM ${articleViewDaily}
+          WHERE ${articleViewDaily.articleId} = ${articles.id}
+        )`,
       })
       .from(articles)
       .leftJoin(users, eq(articles.authorId, users.id))
