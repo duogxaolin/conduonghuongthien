@@ -7,9 +7,11 @@
  * they will fail loudly if someone deletes one while refactoring. They prove
  * nothing about whether the placeholder actually paints, occupies the right
  * footprint, or is announced correctly by a screen reader. Those checks need a
- * real browser, which this repository has no framework for (see section 9 of
- * openspec/changes/site-wide-skeleton-loading/tasks.md). Treat this file as a
- * guard against silent removal, not as evidence of correct rendering.
+ * real browser: `npm run test:e2e` (tests/e2e/) drives Chromium against a
+ * throwaway portal and covers the loading→error→content transition on two
+ * representative pages. It does not cover every view listed below, so treat
+ * this file as a guard against silent removal, not as evidence of correct
+ * rendering.
  */
 import assert from 'node:assert/strict'
 import { readFile } from 'node:fs/promises'

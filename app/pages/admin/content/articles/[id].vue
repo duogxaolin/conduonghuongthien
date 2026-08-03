@@ -281,7 +281,10 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <div v-if="errorMsg" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem]">{{ errorMsg }}</div>
+    <div v-if="errorMsg" role="alert" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+      <span>{{ errorMsg }}</span>
+      <button v-if="!loading && !saving" type="button" class="shrink-0 text-sm font-bold underline text-[#d12420] bg-transparent border-0 cursor-pointer p-0 hover:no-underline whitespace-nowrap" @click="fetchArticle">Thử lại</button>
+    </div>
 
     <!-- Loading — shaped like the editor grid below, which is `v-else`, so the
          real grid does not exist in the DOM while this is showing. That is safe

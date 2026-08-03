@@ -7,6 +7,7 @@ definePageMeta({
 const roles = ref<any[]>([])
 const selectedRole = ref<any>(null)
 const loading = ref(true)
+const error = ref('')
 const saving = ref(false)
 
 const resourcesList = [
@@ -28,14 +29,17 @@ const toast = useToast()
 
 const fetchRoles = async () => {
   loading.value = true
+  error.value = ''
   try {
     const res = await $fetch('/api/admin/roles')
     if (res.ok) {
       roles.value = res.roles
       if (roles.value.length > 0 && !selectedRole.value) selectRole(roles.value[0])
+    } else {
+      error.value = 'Không tải được danh sách vai trò.'
     }
   } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách vai trò')
+    error.value = err?.data?.statusMessage || 'Không tải được danh sách vai trò.'
   } finally {
     loading.value = false
   }
@@ -150,7 +154,11 @@ onMounted(() => { fetchRoles() })
         </div>
       </div>
 
-      <!-- Permission Matrix -->
+      <!-- Error -->
+      <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+        <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
+        {{ error }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchRoles()">thử lại</button>.
+      </div>
       <div v-else-if="selectedRole" class="bg-white rounded-xl border border-[#e2ece3] p-6">
         <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-4">
           <div>

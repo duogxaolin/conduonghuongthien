@@ -31,6 +31,19 @@ jobs:
     name: Tests and schema drift
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_root_password
+          MYSQL_DATABASE: cdkt_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
     steps:
       - uses: actions/checkout@v7
 
@@ -42,8 +55,58 @@ jobs:
       # `nuxt prepare` (postinstall) needs no network beyond the registry.
       - run: npm ci
 
+      # All five integration suites are switched on here. Each one creates and
+      # drops its own single-use database, so they cannot collide with each other
+      # or with the `cdkt_test` database the service declares. Enabling only some
+      # of them is the failure mode this block replaced: the suites that stayed
+      # off kept reporting SKIP, which reads identically to "passed" in a summary.
       - name: Unit and contract tests
+        env:
+          ANALYTICS_DDL_INTEGRATION: 1
+          ANALYTICS_DDL_PORT: 3306
+          ANALYTICS_DDL_USER: root
+          ANALYTICS_DDL_PASSWORD: test_root_password
+          CHATBOT_DDL_INTEGRATION: 1
+          CHATBOT_DDL_PORT: 3306
+          CHATBOT_DDL_USER: root
+          CHATBOT_DDL_PASSWORD: test_root_password
+          MFA_DDL_INTEGRATION: 1
+          MFA_DDL_PORT: 3306
+          MFA_DDL_USER: root
+          MFA_DDL_PASSWORD: test_root_password
+          VIEW_BOOST_INTEGRATION: 1
+          VIEW_BOOST_PORT: 3306
+          VIEW_BOOST_USER: root
+          VIEW_BOOST_PASSWORD: test_root_password
+          CHAT_RETENTION_INTEGRATION: 1
+          CHAT_RETENTION_PORT: 3306
+          CHAT_RETENTION_USER: root
+          CHAT_RETENTION_PASSWORD: test_root_password
         run: npm test
+
+      # A suite that silently stops running is worse than one that fails: the run
+      # stays green. Integration tests self-skip when their switch is absent, so
+      # the switch being wired is the only thing that separates "ran" from "was
+      # quietly ignored" — and nothing else in this workflow would notice.
+      - name: Fail if an integration suite skipped
+        run: |
+          set -euo pipefail
+          declare -A switches=(
+            [analytics-ddl-integration]=ANALYTICS_DDL_INTEGRATION
+            [chatbot-ddl-integration]=CHATBOT_DDL_INTEGRATION
+            [mfa-email-code-integration]=MFA_DDL_INTEGRATION
+            [view-boost-integration]=VIEW_BOOST_INTEGRATION
+            [chat-retention-integration]=CHAT_RETENTION_INTEGRATION
+          )
+          status=0
+          for file in tests/*-integration.test.ts; do
+            name=$(basename "$file" .test.ts)
+            if [ -z "${switches[$name]+set}" ]; then
+              echo "::error::$file has no switch wired in the test step above"
+              status=1
+            fi
+          done
+          exit $status
 
       # schema.ts and init.ts are two hand-maintained descriptions of the same
       # set of tables. They drift silently; this is the only thing that notices.
@@ -98,7 +161,22 @@ jobs:
   build:
     name: Production build
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
+    # The browser suite runs in this job rather than its own because it needs the
+    # bundle this job just produced. A separate job would either rebuild (another
+    # five minutes) or pass .output between jobs as an artifact.
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_root_password
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
     steps:
       - uses: actions/checkout@v7
 
@@ -116,6 +194,35 @@ jobs:
 
       - name: Fail if the bundle did not appear
         run: test -d .output/server && test -d .output/public
+
+      # Chromium only — see playwright.config.ts. Each additional browser is
+      # another ~100 MB download and answers nothing these specs ask.
+      - name: Install Chromium
+        run: npm run test:e2e:install
+
+      # What no source-text test can reach: the retry button actually re-issuing
+      # the failed request, in a browser, without reloading the document.
+      # tests/e2e/global-setup.ts creates its own single-use database and drops
+      # it again, so it cannot collide with the suites in the test job.
+      - name: Browser tests
+        env:
+          E2E_DB_HOST: 127.0.0.1
+          E2E_DB_PORT: 3306
+          E2E_DB_USER: root
+          E2E_DB_PASSWORD: test_root_password
+        run: npm run test:e2e
+
+      # Traces and screenshots are written only for failures, so this uploads
+      # nothing on a green run. Without it a CI-only failure is a one-line
+      # assertion message with no way to see what the page actually showed.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          retention-days: 7
 
   hygiene:
     name: Secrets and defaults

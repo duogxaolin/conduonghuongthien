@@ -48,3 +48,10 @@ backup_*.sql
 
 # Bản sao lưu do scripts/backup-db.sh sinh ra
 backups/
+
+# ─── Kết quả chạy Playwright ───
+# Trace và ảnh chụp chỉ giữ lại khi test đỏ, nên đây là tệp gỡ lỗi tạm.
+playwright-report/
+test-results/
+blob-report/
+.playwright/

@@ -7,6 +7,7 @@ definePageMeta({
 const users = ref<any[]>([])
 const roles = ref<any[]>([])
 const loading = ref(true)
+const loadError = ref('')
 const showModal = ref(false)
 const showEditModal = ref(false)
 
@@ -18,6 +19,7 @@ const { confirm } = useConfirm()
 
 const fetchUsers = async () => {
   loading.value = true
+  loadError.value = ''
   try {
     const [uRes, rRes] = await Promise.all([
       $fetch('/api/admin/users'),
@@ -28,8 +30,8 @@ const fetchUsers = async () => {
     // Ids from the previous load are meaningless once the list changes.
     selection.keepOnly(visibleIds.value)
   } catch (err: any) {
-    errorMsg.value = err?.data?.statusMessage || 'Lỗi tải danh sách người dùng'
-    toast.error(errorMsg.value)
+    loadError.value = err?.data?.statusMessage || 'Lỗi tải danh sách người dùng'
+    toast.error(loadError.value)
   } finally {
     loading.value = false
   }
@@ -194,6 +196,11 @@ onMounted(() => { fetchUsers() })
 
       <!-- Empty — one branch for both layouts, so an empty list never reads as a
            bare table header. -->
+      <div v-else-if="loadError" role="alert" class="px-6 py-10 text-center text-[#B04A4A] text-[0.95rem]">
+        <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
+        {{ loadError }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchUsers()">thử lại</button>.
+      </div>
+
       <div v-else-if="users.length === 0" class="py-14 flex flex-col items-center gap-3 text-center">
         <i class="fa-solid fa-users text-3xl text-[#c8d6c9]" aria-hidden="true"></i>
         <p class="text-[#667768] text-[0.9rem] m-0">Chưa có tài khoản nào. Hãy thêm người dùng đầu tiên!</p>

@@ -5,11 +5,11 @@ import { purgeExpiredRateLimits } from '../utils/rate-limit-store'
 
 /**
  * Purge the operational tables that hold personal data past their retention
- * window. Analytics maintenance already prunes its own nine tables; these two
- * were never covered.
+ * window. Analytics maintenance already prunes its own nine tables; these were
+ * never covered.
  *
  * Two independent conditions delete rows, in this order:
- *   1. age     — `created_at` older than the retention window (a policy limit)
+ *   1. age     — the table's timestamp older than the retention window (policy)
  *   2. row cap — rows beyond `maxRows`, oldest first (a capacity limit)
  * Age runs first so the cap only ever has to remove what a busy period added.
  * A cap alone would delete this morning's audit trail on a heavy day; age alone
@@ -21,19 +21,46 @@ import { purgeExpiredRateLimits } from '../utils/rate-limit-store'
  * the next run continues where this one stopped.
  */
 
-export type RetentionTarget = 'activity_logs' | 'submissions' | 'chat_sessions' | 'chat_messages'
+export type RetentionTarget = 'activity_logs' | 'submissions' | 'chat_sessions'
+
+/**
+ * Per-table column names. Not every table calls its timestamp `created_at`, and
+ * not every primary key is chronological — hardcoding either is how a purge
+ * either crashes or silently deletes the wrong rows.
+ *
+ *   • `timestamp` is the column the retention window is measured against.
+ *     `chat_sessions` uses `last_message_at`, not `started_at`: a conversation
+ *     is finished when its final message lands, and measuring from the start
+ *     would delete a thread that is still being replied to.
+ *   • `order` is the column that defines "oldest first" for batched deletes.
+ *     `activity_logs` and `submissions` have AUTO_INCREMENT keys, so id order
+ *     *is* time order and the primary key gives the cheapest contiguous range.
+ *     `chat_sessions.id` is a UUID — ordering by it is lexicographic noise, so
+ *     the row cap would evict an arbitrary set of conversations rather than the
+ *     oldest ones. Both `order` columns below are indexed.
+ *
+ * `chat_messages` is deliberately absent. Its FK to `chat_sessions` is
+ * ON DELETE CASCADE, so purging a conversation removes its transcript in the
+ * same statement. Giving messages their own window would let a transcript be
+ * deleted while its session row survives, leaving a record that claims N
+ * messages and can show none — and a row cap on messages would truncate
+ * conversations mid-thread. One window, on the conversation, cannot do either.
+ */
+const TABLE_COLUMNS: Record<RetentionTarget, { timestamp: string; order: string }> = {
+  activity_logs: { timestamp: 'created_at', order: 'id' },
+  submissions: { timestamp: 'created_at', order: 'id' },
+  chat_sessions: { timestamp: 'last_message_at', order: 'last_message_at' },
+}
 
 export type DataRetentionOptions = {
   now?: Date
   activityLogDays?: number
   submissionDays?: number
   chatSessionDays?: number
-  chatMessageDays?: number
   /** 0 = no cap. Rows beyond this are deleted oldest-first. */
   activityLogMaxRows?: number
   submissionMaxRows?: number
   chatSessionMaxRows?: number
-  chatMessageMaxRows?: number
   batchSize?: number
   maxBatches?: number
   connection?: Pool
@@ -80,9 +107,8 @@ function cutoff(now: Date, days: number) {
 }
 
 /**
- * `DELETE ... ORDER BY id LIMIT ?` repeatedly. Ordering by the primary key
- * keeps each statement working on a contiguous range instead of scattering
- * across the table.
+ * `DELETE ... ORDER BY <order> LIMIT ?` repeatedly, so each statement works on a
+ * contiguous indexed range instead of scattering across the table.
  */
 async function purgeOlderThan(
   connection: PoolConnection,
@@ -91,8 +117,10 @@ async function purgeOlderThan(
   batchSize: number,
   maxBatches: number,
 ): Promise<{ deleted: number; bounded: boolean }> {
-  // `table` is a union of two literals, never caller input — no interpolation risk.
-  const statement = `DELETE FROM ${table} WHERE created_at IS NOT NULL AND created_at < ? ORDER BY id LIMIT ?`
+  // `table` is a union of literals and the column names come from TABLE_COLUMNS,
+  // never from caller input — no interpolation risk.
+  const { timestamp, order } = TABLE_COLUMNS[table]
+  const statement = `DELETE FROM ${table} WHERE ${timestamp} IS NOT NULL AND ${timestamp} < ? ORDER BY ${order} LIMIT ?`
   let deleted = 0
   for (let batch = 0; batch < maxBatches; batch += 1) {
     const [result] = await connection.query(statement, [before, batchSize])
@@ -122,7 +150,7 @@ async function purgeBeyondRowCap(
   let remaining = total - maxRows
   if (remaining <= 0) return { deleted: 0, bounded: false }
 
-  const statement = `DELETE FROM ${table} ORDER BY id LIMIT ?`
+  const statement = `DELETE FROM ${table} ORDER BY ${TABLE_COLUMNS[table].order} LIMIT ?`
   let deleted = 0
   for (let batch = 0; batch < maxBatches && remaining > 0; batch += 1) {
     const limit = Math.min(batchSize, remaining)
@@ -185,11 +213,6 @@ export async function runDataRetention(options: DataRetentionOptions = {}): Prom
       table: 'chat_sessions',
       days: boundedInteger(options.chatSessionDays, configured.chatSessionDays, 0, 3650),
       maxRows: boundedInteger(options.chatSessionMaxRows, 0, 0, 100_000_000),
-    },
-    {
-      table: 'chat_messages',
-      days: boundedInteger(options.chatMessageDays, configured.chatMessageDays, 0, 3650),
-      maxRows: boundedInteger(options.chatMessageMaxRows, 0, 0, 100_000_000),
     },
   ]
 
