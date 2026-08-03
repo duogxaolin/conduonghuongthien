@@ -1,7 +1,8 @@
 import { getDb } from '../../../utils/db'
 import { articles, users, categories, articleViewDaily } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
-import { eq, like, desc, sql, count } from 'drizzle-orm'
+import { ArticleFilterValidationError, parseAuthorFilter } from '../../../utils/article-filters'
+import { eq, like, desc, sql, count, isNull } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/mysql-core'
 
 export default defineEventHandler(async (event) => {
@@ -19,6 +20,20 @@ export default defineEventHandler(async (event) => {
   const statusFilter = String(query.status || '').trim()
   const categoryIdFilter = query.categoryId ? Number(query.categoryId) : null
 
+  /**
+   * Bộ lọc theo người đăng bài. Giá trị lạ bị từ chối chứ không suy diễn — xem
+   * `server/utils/article-filters.ts`.
+   */
+  let authorFilter
+  try {
+    authorFilter = parseAuthorFilter(query.authorId)
+  } catch (err) {
+    if (err instanceof ArticleFilterValidationError) {
+      throw createError({ statusCode: 400, statusMessage: err.message })
+    }
+    throw err
+  }
+
   const db = getDb()
   const parentCategories = alias(categories, 'parentCategories')
 
@@ -34,6 +49,17 @@ export default defineEventHandler(async (event) => {
   }
   if (categoryIdFilter) {
     conditions.push(eq(articles.categoryId, categoryIdFilter))
+  }
+  /**
+   * Lọc trên `articles.author_id`, KHÔNG trên `users.username`: truy vấn đếm ở
+   * dưới dùng chung `whereClause` nhưng `.from(articles)` không có join nào, nên
+   * một điều kiện trỏ vào bảng `users` sẽ làm câu đếm hỏng — danh sách ra đúng mà
+   * số trang thì sai. Cột này cũng đã có khoá ngoại `fk_articles_author`.
+   */
+  if (authorFilter.kind === 'user') {
+    conditions.push(eq(articles.authorId, authorFilter.userId))
+  } else if (authorFilter.kind === 'none') {
+    conditions.push(isNull(articles.authorId))
   }
 
   const whereClause = conditions.length > 0 ? sql`${sql.join(conditions, sql` AND `)}` : undefined
