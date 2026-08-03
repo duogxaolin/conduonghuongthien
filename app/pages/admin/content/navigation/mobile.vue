@@ -31,6 +31,7 @@ const TYPE_OPTIONS: { value: NavType; label: string; hint: string }[] = [
 
 const menu = ref<BottomNavItem[]>([])
 const loading = ref(true)
+const error = ref('')
 const saving = ref(false)
 
 function uid() { return Math.random().toString(36).slice(2, 10) }
@@ -48,6 +49,7 @@ function normalize(item: any): BottomNavItem {
 
 async function loadMenu() {
   loading.value = true
+  error.value = ''
   try {
     const res = await $fetch<{ ok: boolean; menu: BottomNavItem[] | null }>('/api/admin/settings/navigation/mobile')
     if (res.ok && Array.isArray(res.menu) && res.menu.length) {
@@ -55,8 +57,8 @@ async function loadMenu() {
     } else {
       menu.value = DEFAULT_MENU.map(i => ({ ...i }))
     }
-  } catch {
-    toast.error('Không thể tải cấu hình thanh điều hướng')
+  } catch (err: any) {
+    error.value = err?.data?.statusMessage || 'Không tải được cấu hình thanh điều hướng.'
     menu.value = DEFAULT_MENU.map(i => ({ ...i }))
   } finally {
     loading.value = false
@@ -174,6 +176,12 @@ onMounted(loadMenu)
         <div class="h-3 w-40 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
         <div class="h-[220px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
       </div>
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+      <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
+      {{ error }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="loadMenu()">thử lại</button>.
     </div>
 
     <template v-else>

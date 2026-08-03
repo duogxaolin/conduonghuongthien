@@ -70,7 +70,6 @@ export function log(level: LogLevel, fields: LogFields): void {
   else console.log(line)
 }
 
-export const logDebug = (fields: LogFields) => log('debug', fields)
 export const logInfo = (fields: LogFields) => log('info', fields)
 export const logWarn = (fields: LogFields) => log('warn', fields)
 export const logError = (fields: LogFields) => log('error', fields)

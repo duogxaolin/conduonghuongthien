@@ -366,7 +366,7 @@ onMounted(load)
     </header>
 
     <div v-if="errorMessage" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">
-      <strong>Lỗi:</strong> {{ errorMessage }}
+      <strong>Lỗi:</strong> {{ errorMessage }}<template v-if="!loading && !saving"> Vui lòng <button type="button" class="font-bold underline text-[#4A6741]" @click="load()">thử lại</button>.</template>
     </div>
     <SkeletonForm v-if="loading" label="Đang tải cấu hình chatbot" :fields="5" />
 

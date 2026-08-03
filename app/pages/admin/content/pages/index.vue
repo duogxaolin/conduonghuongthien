@@ -18,7 +18,7 @@
     <SkeletonTable v-if="loading" label="Đang tải danh sách trang" :rows="5" :cols="6" />
 
     <!-- Error -->
-    <div v-else-if="loadError" class="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-red-600">
+    <div v-else-if="loadError" role="alert" class="rounded-lg border border-red-200 bg-red-50 p-6 text-center text-red-600">
       <p>{{ loadError }}</p>
       <button class="mt-3 rounded-lg border border-red-300 px-4 py-2 text-sm font-semibold hover:bg-red-100" @click="fetchPages">Thử lại</button>
     </div>

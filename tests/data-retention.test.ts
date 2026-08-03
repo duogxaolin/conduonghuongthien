@@ -9,10 +9,11 @@ import {
 } from '../server/utils/data-retention-config'
 
 /**
- * activity_logs and submissions were the two tables analytics maintenance never
- * touched, and both hold personal data: caller IP and User-Agent in the audit
- * log's `meta`, and citizens' names, phones, emails and free text in the
- * submissions. These tests pin the purge that now bounds them.
+ * activity_logs, submissions, and chat_sessions are the tables that hold
+ * personal data: caller IP and User-Agent in the audit log, citizens' names,
+ * phones, emails and free text in the submissions, and conversation content
+ * with IPs (and sometimes phone numbers) in the chat sessions.
+ * These tests pin the purge that now bounds them.
  */
 
 type QueryCall = { sql: string; params: unknown[] }
@@ -28,7 +29,6 @@ function fakePool(rowsPerTable: Record<string, number[]> = {}, counts: Record<st
     activity_logs: [...(rowsPerTable.activity_logs ?? [0])],
     submissions: [...(rowsPerTable.submissions ?? [0])],
     chat_sessions: [...(rowsPerTable.chat_sessions ?? [0])],
-    chat_messages: [...(rowsPerTable.chat_messages ?? [0])],
     rate_limit_counters: [...(rowsPerTable.rate_limit_counters ?? [0])],
   }
   let released = 0
@@ -105,7 +105,7 @@ test('rows older than the window are deleted from the cutoff, in batches', async
 
 test('a disabled window issues no DELETE at all', async () => {
   const pool = fakePool()
-  const result = await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 0, chatMessageDays: 0, connection: pool as never })
+  const result = await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 0, connection: pool as never })
 
   const tableCalls = pool.calls.filter(c => !c.sql.includes('rate_limit_counters'))
   assert.equal(tableCalls.length, 0, 'a disabled retention window still touched the table')
@@ -113,7 +113,6 @@ test('a disabled window issues no DELETE at all', async () => {
     ['activity_logs', 0, 0],
     ['submissions', 0, 0],
     ['chat_sessions', 0, 0],
-    ['chat_messages', 0, 0],
   ])
 })
 
@@ -126,7 +125,6 @@ test('both tables are purged when both windows are set', async () => {
     ['activity_logs', 5],
     ['submissions', 3],
     ['chat_sessions', 0],
-    ['chat_messages', 0],
   ])
   const subDelete = pool.calls.find(c => c.sql.includes('DELETE FROM submissions'))!
   assert.equal((subDelete.params[0] as Date).toISOString(), '2024-07-26T03:00:00.000Z')
@@ -262,7 +260,7 @@ test('the deleted count is banked before the rows are gone, and accumulates', as
   })
 
   const banked = pool.calls.filter(c => c.sql.includes('INSERT INTO data_retention_state'))
-  assert.equal(banked.length, 4, 'one row per purged table')
+  assert.equal(banked.length, 3, 'one row per purged table')
   // Incremented, not replaced: the lifetime figure is this counter plus the live
   // count, so overwriting it would erase every earlier run.
   assert.match(banked[0].sql, /purged_total = purged_total \+ VALUES\(purged_total\)/)
@@ -270,7 +268,6 @@ test('the deleted count is banked before the rows are gone, and accumulates', as
     ['activity_logs', 7],
     ['submissions', 3],
     ['chat_sessions', 0],
-    ['chat_messages', 0],
   ])
   assert.equal(banked[0].params[4], 'scheduler')
   assert.equal(banked[0].params[5], 'success')
@@ -319,4 +316,52 @@ test('the nightly script runs retention as well as analytics', () => {
   // An open pool keeps the event loop alive, so the cron job would print its
   // result and then hang instead of exiting.
   assert.match(script, /closeDb\(\)/)
+})
+
+// ─── chat_sessions scope ──────────────────────────────────────────────────────
+test('chat sessions older than the window are deleted, non-zero days coverage', async () => {
+  const pool = fakePool({ chat_sessions: [100, 50] })
+  const result = await runDataRetention({
+    now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 90,
+    batchSize: 100, connection: pool as never,
+  })
+
+  assert.equal(result.status, 'success')
+  const sessions = result.tables.find(t => t.table === 'chat_sessions')!
+  assert.equal(sessions.deleted, 150)
+  assert.equal(sessions.bounded, false)
+
+  const deletes = pool.calls.filter(c => c.sql.includes('DELETE FROM chat_sessions'))
+  assert.equal(deletes.length, 2)
+  // 2026-07-26 minus 90 days.
+  assert.equal((deletes[0].params[0] as Date).toISOString(), '2026-04-27T03:00:00.000Z')
+})
+
+test('chat sessions purge uses last_message_at, not created_at', async () => {
+  // If the service used created_at, it would throw ER_BAD_FIELD_ERROR at runtime
+  // because chat_sessions has started_at/last_message_at, not created_at.
+  const pool = fakePool({ chat_sessions: [0] })
+  await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 90, connection: pool as never })
+  const del = pool.calls.find(c => c.sql.includes('DELETE FROM chat_sessions'))!
+  assert.match(del.sql, /last_message_at IS NOT NULL AND last_message_at < \?/)
+  // Not created_at — that column does not exist on this table.
+  assert.doesNotMatch(del.sql, /created_at/)
+})
+
+test('chat sessions age purge orders by last_message_at, not id (id is UUID, lexicographic noise)', async () => {
+  const pool = fakePool({ chat_sessions: [0] })
+  await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 90, connection: pool as never })
+  const del = pool.calls.find(c => c.sql.includes('DELETE FROM chat_sessions'))!
+  assert.match(del.sql, /ORDER BY last_message_at LIMIT \?$/)
+  assert.doesNotMatch(del.sql, /ORDER BY id/)
+})
+
+test('chat sessions row cap also orders by last_message_at', async () => {
+  const pool = fakePool({ chat_sessions: [100] }, { chat_sessions: 1_100 })
+  await runDataRetention({
+    now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 0,
+    chatSessionMaxRows: 1_000, batchSize: 1000, connection: pool as never,
+  })
+  const capDelete = pool.calls.find(c => c.sql.includes('DELETE FROM chat_sessions'))!
+  assert.match(capDelete.sql, /^DELETE FROM chat_sessions ORDER BY last_message_at LIMIT \?$/)
 })

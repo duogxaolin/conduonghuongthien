@@ -197,7 +197,7 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
       </div>
     </div>
 
-    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }}</div>
+    <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-[#4A6741]" @click="load()">thử lại</button>.</div>
 
     <SkeletonTable v-if="loading" label="Đang tải lịch sử hoạt động" :rows="8" :cols="6" />
 

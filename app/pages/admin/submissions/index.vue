@@ -6,17 +6,23 @@ definePageMeta({
 
 const submissions = ref<any[]>([])
 const loading = ref(true)
+const error = ref('')
 const search = ref('')
 const selectedSub = ref<any>(null)
 const toast = useToast()
 
 const fetchSubmissions = async () => {
   loading.value = true
+  error.value = ''
   try {
     const res = await $fetch('/api/admin/submissions')
-    if (res.ok) submissions.value = res.submissions
+    if (res.ok) {
+      submissions.value = res.submissions
+    } else {
+      error.value = 'Không tải được danh sách đơn đăng ký.'
+    }
   } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách đơn đăng ký')
+    error.value = err?.data?.statusMessage || 'Không tải được danh sách đơn đăng ký.'
   } finally {
     loading.value = false
   }
@@ -107,7 +113,21 @@ onMounted(() => { fetchSubmissions() })
 
     <!-- Table Card -->
     <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
-      <SkeletonTable v-if="loading" label="Đang tải danh sách đơn đăng ký" :rows="6" :cols="8" />
+      <!-- Loading -->
+      <div v-if="loading" role="status" aria-busy="true" class="p-6">
+        <span class="sr-only">Đang tải danh sách đơn đăng ký</span>
+        <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
+          <div v-for="n in 6" :key="n" class="flex gap-3">
+            <div v-for="c in 8" :key="c" class="h-10 bg-[#EEF2EC] rounded flex-1" aria-hidden="true"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Error -->
+      <div v-else-if="error" role="alert" class="px-6 py-10 text-center text-[#B04A4A] text-[0.95rem]">
+        <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
+        {{ error }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchSubmissions()">thử lại</button>.
+      </div>
 
       <!-- Mobile Card View -->
       <div v-else class="md:hidden divide-y divide-[#eef2ee]">
@@ -144,7 +164,12 @@ onMounted(() => { fetchSubmissions() })
       </div>
 
       <!-- Desktop Table View -->
-      <div v-if="!loading" class="hidden md:block overflow-x-auto">
+      <!-- Not chained with v-else: the mobile card view above owns that slot, so
+           both views need the loading and error conditions spelled out. Omitting
+           !error renders an empty table underneath the alert, which reads as
+           "loaded, found nothing" — the exact confusion the error branch exists
+           to prevent. -->
+      <div v-if="!loading && !error" class="hidden md:block overflow-x-auto">
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>

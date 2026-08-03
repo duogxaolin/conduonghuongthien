@@ -6,10 +6,10 @@
  * and its `meta` column carries the caller's IP and User-Agent.
  * `submissions` holds what citizens type into the public forms: full name,
  * phone, email, address, free-text message.
- * `chat_sessions` and `chat_messages` hold chatbot conversations with IP,
- * user-agent, and detected contact info (phone, name).
+ * `chat_sessions` holds chatbot conversations with IP, user-agent, and detected
+ * contact info (phone, name).
  *
- * All were kept forever (chat tables added in 2026-08). A default of "forever"
+ * All were kept forever (chat sessions added in 2026-08). A default of "forever"
  * is a decision nobody made, so these values make it explicit and configurable.
  *
  * `0` means "keep indefinitely" and disables the purge for that table. It is
@@ -18,9 +18,10 @@
  * not the place to guess it. Set SUBMISSION_RETENTION_DAYS once that schedule
  * is known.
  *
- * Chat tables default to 90 days: enough to correlate a conversation with a
+ * Chat sessions default to 90 days: enough to correlate a conversation with a
  * later submission, but short enough that casual browsing history does not
- * accumulate indefinitely.
+ * accumulate indefinitely. `chat_messages` has no window of its own — its FK
+ * cascades from `chat_sessions`, so the transcript goes with the conversation.
  */
 
 export const DATA_RETENTION_DEFAULTS = {
@@ -30,14 +31,12 @@ export const DATA_RETENTION_DEFAULTS = {
   submissionDays: 0,
   /** Chatbot conversations. 90 days balances correlation with submissions against indefinite browsing history. */
   chatSessionDays: 90,
-  chatMessageDays: 90,
 } as const
 
 export const DATA_RETENTION_BOUNDS = {
   activityLogDays: { min: 30, max: 3650 },
   submissionDays: { min: 30, max: 3650 },
   chatSessionDays: { min: 30, max: 3650 },
-  chatMessageDays: { min: 30, max: 3650 },
 } as const
 
 /**
@@ -86,13 +85,6 @@ export function resolveDataRetentionConfig(env: Record<string, unknown> = proces
       DATA_RETENTION_DEFAULTS.chatSessionDays,
       DATA_RETENTION_BOUNDS.chatSessionDays.min,
       DATA_RETENTION_BOUNDS.chatSessionDays.max,
-    ),
-    chatMessageDays: parseRetentionDays(
-      'CHAT_MESSAGE_RETENTION_DAYS',
-      env.CHAT_MESSAGE_RETENTION_DAYS,
-      DATA_RETENTION_DEFAULTS.chatMessageDays,
-      DATA_RETENTION_BOUNDS.chatMessageDays.min,
-      DATA_RETENTION_BOUNDS.chatMessageDays.max,
     ),
   }
 }

@@ -23,7 +23,7 @@ import {
  * one can be disabled with 0; both disabled means nothing is ever deleted.
  */
 
-export const RETENTION_SCOPES = ['activity_logs', 'submissions'] as const
+export const RETENTION_SCOPES = ['activity_logs', 'submissions', 'chat_sessions'] as const
 export type RetentionScope = typeof RETENTION_SCOPES[number]
 
 export const RETENTION_TRIGGERS = ['scheduler', 'cron', 'manual'] as const
@@ -40,6 +40,8 @@ export const RETENTION_SETTING_KEYS = {
   activityLogMaxRows: 'retention_activity_log_max_rows',
   submissionDays: 'retention_submission_days',
   submissionMaxRows: 'retention_submission_max_rows',
+  chatSessionDays: 'retention_chat_session_days',
+  chatSessionMaxRows: 'retention_chat_session_max_rows',
 } as const
 
 export const RETENTION_DEFAULTS = {
@@ -50,7 +52,60 @@ export const RETENTION_DEFAULTS = {
   /** 0 = no cap. A cap has to be chosen against the box, so it is not guessed. */
   activityLogMaxRows: 0,
   submissionMaxRows: 0,
+  chatSessionMaxRows: 0,
 } as const
+
+/**
+ * Everything that differs per scope, in one table keyed by the scope itself.
+ *
+ * This was three parallel ternary chains (`scope === 'activity_logs' ? … : …`),
+ * which read as a coin flip and quietly meant "submissions" for any scope that
+ * was not the audit log. Adding a third scope to that shape would have given
+ * chat history the submissions keys — a purge window silently editing the wrong
+ * table. Keyed by `RetentionScope`, the compiler now refuses an incomplete map.
+ */
+const SCOPE_SETTINGS: Record<RetentionScope, {
+  daysKey: string
+  maxRowsKey: string
+  envKey: string
+  envField: 'activityLogDays' | 'submissionDays' | 'chatSessionDays'
+  /** Field names on RetentionPolicyInput — what the admin form sends. */
+  inputDaysField: 'activityLogDays' | 'submissionDays' | 'chatSessionDays'
+  inputMaxRowsField: 'activityLogMaxRows' | 'submissionMaxRows' | 'chatSessionMaxRows'
+  bounds: { min: number; max: number }
+  maxRowsDefault: number
+}> = {
+  activity_logs: {
+    daysKey: RETENTION_SETTING_KEYS.activityLogDays,
+    maxRowsKey: RETENTION_SETTING_KEYS.activityLogMaxRows,
+    envKey: 'ACTIVITY_LOG_RETENTION_DAYS',
+    envField: 'activityLogDays',
+    inputDaysField: 'activityLogDays',
+    inputMaxRowsField: 'activityLogMaxRows',
+    bounds: DATA_RETENTION_BOUNDS.activityLogDays,
+    maxRowsDefault: RETENTION_DEFAULTS.activityLogMaxRows,
+  },
+  submissions: {
+    daysKey: RETENTION_SETTING_KEYS.submissionDays,
+    maxRowsKey: RETENTION_SETTING_KEYS.submissionMaxRows,
+    envKey: 'SUBMISSION_RETENTION_DAYS',
+    envField: 'submissionDays',
+    inputDaysField: 'submissionDays',
+    inputMaxRowsField: 'submissionMaxRows',
+    bounds: DATA_RETENTION_BOUNDS.submissionDays,
+    maxRowsDefault: RETENTION_DEFAULTS.submissionMaxRows,
+  },
+  chat_sessions: {
+    daysKey: RETENTION_SETTING_KEYS.chatSessionDays,
+    maxRowsKey: RETENTION_SETTING_KEYS.chatSessionMaxRows,
+    envKey: 'CHAT_SESSION_RETENTION_DAYS',
+    envField: 'chatSessionDays',
+    inputDaysField: 'chatSessionDays',
+    inputMaxRowsField: 'chatSessionMaxRows',
+    bounds: DATA_RETENTION_BOUNDS.chatSessionDays,
+    maxRowsDefault: RETENTION_DEFAULTS.chatSessionMaxRows,
+  },
+}
 
 export type PolicySource = 'database' | 'environment' | 'default'
 
@@ -126,14 +181,8 @@ export function buildRetentionPolicy(
   }
 
   const daysFor = (scope: RetentionScope) => {
-    const key = scope === 'activity_logs'
-      ? RETENTION_SETTING_KEYS.activityLogDays
-      : RETENTION_SETTING_KEYS.submissionDays
-    const envKey = scope === 'activity_logs' ? 'ACTIVITY_LOG_RETENTION_DAYS' : 'SUBMISSION_RETENTION_DAYS'
-    const envValue = scope === 'activity_logs' ? fromEnv.activityLogDays : fromEnv.submissionDays
-    const bounds = scope === 'activity_logs'
-      ? DATA_RETENTION_BOUNDS.activityLogDays
-      : DATA_RETENTION_BOUNDS.submissionDays
+    const { daysKey: key, envKey, envField, bounds } = SCOPE_SETTINGS[scope]
+    const envValue = fromEnv[envField]
 
     if (!has(key)) {
       return {
@@ -152,12 +201,7 @@ export function buildRetentionPolicy(
   }
 
   const maxRowsFor = (scope: RetentionScope) => {
-    const key = scope === 'activity_logs'
-      ? RETENTION_SETTING_KEYS.activityLogMaxRows
-      : RETENTION_SETTING_KEYS.submissionMaxRows
-    const fallback = scope === 'activity_logs'
-      ? RETENTION_DEFAULTS.activityLogMaxRows
-      : RETENTION_DEFAULTS.submissionMaxRows
+    const { maxRowsKey: key, maxRowsDefault: fallback } = SCOPE_SETTINGS[scope]
     if (!has(key)) return { maxRows: fallback, source: 'default' as PolicySource }
     return { maxRows: parseMaxRows('Số bản ghi tối đa', stored[key], fallback), source: 'database' as PolicySource }
   }
@@ -210,6 +254,8 @@ export type RetentionPolicyInput = {
   activityLogMaxRows?: unknown
   submissionDays?: unknown
   submissionMaxRows?: unknown
+  chatSessionDays?: unknown
+  chatSessionMaxRows?: unknown
 }
 
 /**
@@ -227,28 +273,28 @@ export async function saveRetentionPolicy(input: RetentionPolicyInput): Promise<
     pending.push([RETENTION_SETTING_KEYS.runHour, String(parseRunHour(input.runHour, RETENTION_DEFAULTS.runHour))])
   }
 
-  const days: Array<[string, unknown, { min: number; max: number }]> = [
-    [RETENTION_SETTING_KEYS.activityLogDays, input.activityLogDays, DATA_RETENTION_BOUNDS.activityLogDays],
-    [RETENTION_SETTING_KEYS.submissionDays, input.submissionDays, DATA_RETENTION_BOUNDS.submissionDays],
-  ]
-  for (const [key, value, bounds] of days) {
+  // Driven from RETENTION_SCOPES rather than a hand-written pair of lists: those
+  // lists were the reason chat history could be purged on a 90-day window that no
+  // form could see or change. A scope added to RETENTION_SCOPES is now saveable
+  // by construction, and SCOPE_SETTINGS makes the compiler supply its field names.
+  for (const scope of RETENTION_SCOPES) {
+    const { daysKey, inputDaysField, bounds } = SCOPE_SETTINGS[scope]
+    const value = input[inputDaysField]
     if (value === undefined) continue
     let parsed: number
     try {
-      parsed = parseRetentionDays(key, value, 0, bounds.min, bounds.max)
+      parsed = parseRetentionDays(daysKey, value, 0, bounds.min, bounds.max)
     } catch {
       fail(`Số ngày lưu phải là 0 (giữ vô thời hạn) hoặc từ ${bounds.min} đến ${bounds.max}.`)
     }
-    pending.push([key, String(parsed)])
+    pending.push([daysKey, String(parsed)])
   }
 
-  const caps: Array<[string, unknown]> = [
-    [RETENTION_SETTING_KEYS.activityLogMaxRows, input.activityLogMaxRows],
-    [RETENTION_SETTING_KEYS.submissionMaxRows, input.submissionMaxRows],
-  ]
-  for (const [key, value] of caps) {
+  for (const scope of RETENTION_SCOPES) {
+    const { maxRowsKey, inputMaxRowsField } = SCOPE_SETTINGS[scope]
+    const value = input[inputMaxRowsField]
     if (value === undefined) continue
-    pending.push([key, String(parseMaxRows('Số bản ghi tối đa', value, 0))])
+    pending.push([maxRowsKey, String(parseMaxRows('Số bản ghi tối đa', value, 0))])
   }
 
   if (pending.length === 0) fail('Không có giá trị nào để lưu.')

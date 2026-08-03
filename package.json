@@ -12,6 +12,8 @@
     "typecheck": "nuxt typecheck",
     "test": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test tests/*.test.ts",
     "test:watch": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test --watch tests/*.test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:install": "playwright install --with-deps chromium",
     "analytics:maintenance": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/analytics-maintenance.ts",
     "check:resources": "bash scripts/check-resources.sh",
     "db:init": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs server/db/init.ts",
@@ -39,6 +41,7 @@
     "vue-router": "^5.2.0"
   },
   "devDependencies": {
+    "@playwright/test": "1.62.1",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/nodemailer": "6.4.17",

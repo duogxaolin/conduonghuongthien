@@ -113,8 +113,13 @@ export async function runRetentionPass(options: RunPassOptions = {}): Promise<Ru
     }
   }
 
+  // Every scope the policy knows about has to be handed over explicitly.
+  // Omitting one does not disable it — runDataRetention falls back to the
+  // environment default for a missing option, so a scope left out here keeps
+  // deleting on a window the operator cannot see or change on the settings page.
   const activity = policy.scopes.find(scope => scope.scope === 'activity_logs')
   const submissions = policy.scopes.find(scope => scope.scope === 'submissions')
+  const chatSessions = policy.scopes.find(scope => scope.scope === 'chat_sessions')
 
   const pool = createAnalyticsPool()
   try {
@@ -126,6 +131,8 @@ export async function runRetentionPass(options: RunPassOptions = {}): Promise<Ru
       activityLogMaxRows: activity?.maxRows ?? 0,
       submissionDays: submissions?.days ?? 0,
       submissionMaxRows: submissions?.maxRows ?? 0,
+      chatSessionDays: chatSessions?.days ?? 0,
+      chatSessionMaxRows: chatSessions?.maxRows ?? 0,
     }))
     if (!result) return { ran: false, reason: 'locked' }
 
