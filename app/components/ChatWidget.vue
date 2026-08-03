@@ -138,6 +138,11 @@
                     <template v-else-if="sourceDetailOf(source.entryId)?.status === 'ready'">
                       <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.7rem] font-bold text-[#1e4620]">{{ sourceDetailOf(source.entryId)?.question }}</p>
                       <p class="m-0 whitespace-pre-wrap text-[0.7rem] leading-[1.6] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
+                      <!-- Expanding in place keeps the visitor in their conversation;
+                           this is the way out to the surrounding topic, and it is a
+                           link rather than a second panel because the full document
+                           page is a different question from "what did you just cite". -->
+                      <nuxt-link :to="`/tai-lieu-hoi-dap#qa-${source.entryId}`" class="mt-1.5 inline-block text-[0.66rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
                     </template>
                   </div>
                 </li>

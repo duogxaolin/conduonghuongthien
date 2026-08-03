@@ -102,6 +102,10 @@ export default defineNuxtConfig({
     '/reintegration-models/**': { swr: 60 },
     '/documents/**': { swr: 60 },
     '/legal-qa/**': { swr: 60 },
+    // Đọc kho câu trả lời đã duyệt — nội dung chỉ đổi khi cán bộ xuất bản một
+    // mục mới, và mọi khách thấy cùng một danh sách nên không có gì riêng tư để
+    // rò rỉ qua bộ nhớ đệm.
+    '/tai-lieu-hoi-dap': { swr: 60 },
     // `/tro-ly` is deliberately absent. Its server-rendered output is an empty
     // shell — the conversation list, transcript and quick questions are all
     // fetched or read from localStorage on the client — so an SWR window would

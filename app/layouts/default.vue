@@ -274,6 +274,7 @@
             <li><nuxt-link to="/role-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Tấm gương tiêu biểu hoàn lương</nuxt-link></li>
             <li><nuxt-link to="/reintegration-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Các mô hình kinh tế hỗ trợ</nuxt-link></li>
             <li><nuxt-link to="/legal-qa" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Giải đáp pháp luật trực tuyến</nuxt-link></li>
+            <li><nuxt-link to="/tai-lieu-hoi-dap" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Tài liệu Hỏi – Đáp đã phê duyệt</nuxt-link></li>
             <li><nuxt-link to="/contact" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Thông tin đường dây nóng</nuxt-link></li>
           </ul>
         </div>
@@ -378,7 +379,17 @@ const DEFAULT_NAV = [
   { id: 'role-models', label: null, labelKey: 'role_models', url: '/role-models', children: [] },
   { id: 'reintegration', label: null, labelKey: 'reintegration', url: '/reintegration-models', children: [] },
   { id: 'documents', label: null, labelKey: 'documents', url: '/documents', children: [] },
-  { id: 'legal-qa', label: null, labelKey: 'faq', url: '/legal-qa', children: [] },
+  // Hỏi – Đáp mở ra hai nguồn khác nhau, nên nó là dropdown chứ không phải một
+  // liên kết: `/legal-qa` là bài biên tập (`articles` type=faq), còn
+  // `/tai-lieu-hoi-dap` là kho câu trả lời đã duyệt mà chính trợ lý ảo dẫn lại.
+  // Thêm mục thứ 9 ngang hàng sẽ làm tràn thanh nav ở md.
+  {
+    id: 'legal-qa', label: null, labelKey: 'faq', url: '/legal-qa',
+    children: [
+      { id: 'legal-qa-articles', label: null, labelKey: 'faq_articles', url: '/legal-qa' },
+      { id: 'qa-approved-docs', label: null, labelKey: 'faq_approved_docs', url: '/tai-lieu-hoi-dap' },
+    ]
+  },
   { id: 'contact', label: null, labelKey: 'contact', url: '/contact', children: [] },
 ]
 
