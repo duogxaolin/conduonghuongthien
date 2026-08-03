@@ -536,21 +536,6 @@ onUnmounted(() => {
   opacity: 0;
 }
 
-/* Streaming cursor blink */
-@keyframes blinkCursor {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0; }
-}
-
-/* Teaser bubble slide up */
-@keyframes fadeSlideUp {
-  from { opacity: 0; transform: translateY(8px) scale(0.95); }
-  to { opacity: 1; transform: translateY(0) scale(1); }
-}
-
-/* Liquid orb glow animation */
-
-/* Markdown content inside chatbot */
 .nav-item::after {
   content: '';
   position: absolute;
