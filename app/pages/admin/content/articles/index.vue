@@ -13,10 +13,20 @@ const selectedType = ref('')
 const selectedStatus = ref('')
 const selectedParentCategoryId = ref<number | null>(null)
 const selectedCategoryId = ref<number | null>(null)
+/**
+ * Người đăng bài. `''` là không lọc, `'none'` là nhóm bài đã mất tác giả, còn
+ * lại là id dạng chuỗi. Dùng chuỗi thay vì `number | null` để ba trạng thái đó
+ * cùng nằm trong một `<select>` mà không phải trộn kiểu trong `:value`.
+ */
+const selectedAuthorId = ref('')
 const pagination = ref({ page: 1, totalPages: 1, total: 0 })
 
 // Category state
 const allCategories = ref<any[]>([])
+
+// Người đăng bài — chỉ những ai đã thực sự có bài, kèm số bài mất tác giả.
+const authorOptions = ref<any[]>([])
+const orphanAuthorCount = ref(0)
 
 const typeLabels: Record<string, string> = {
   news: 'Bản tin', role_model: 'Tấm gương', reintegration: 'Mô hình', document: 'Văn bản', faq: 'Giải đáp',
@@ -71,6 +81,21 @@ const fetchCategories = async () => {
   } catch { /* non-critical */ }
 }
 
+/**
+ * Danh sách người đăng bài đến từ endpoint riêng gác bằng `news.read`, không
+ * phải `/api/admin/users` (endpoint đó cần `users.read`, biên tập viên chỉ có
+ * quyền nội dung sẽ nhận 403 và ô lọc rỗng không lời giải thích).
+ */
+const fetchAuthors = async () => {
+  try {
+    const res = await $fetch('/api/admin/articles/authors')
+    if (res.ok) {
+      authorOptions.value = res.items
+      orphanAuthorCount.value = res.orphanCount
+    }
+  } catch { /* non-critical */ }
+}
+
 // When type filter changes: reload categories, reset category filters
 watch(selectedType, async () => {
   selectedParentCategoryId.value = null
@@ -98,6 +123,9 @@ const fetchArticles = async (page = 1) => {
     // Wire category filter: prefer sub-category if selected, else parent
     const effectiveCategoryId = selectedCategoryId.value ?? selectedParentCategoryId.value
     if (effectiveCategoryId) params.categoryId = effectiveCategoryId
+    // Chuỗi rỗng nghĩa là không lọc — gửi lên thì máy chủ cũng đọc thành không
+    // lọc, nhưng để URL và params sạch thì chỉ gửi khi có chọn.
+    if (selectedAuthorId.value) params.authorId = selectedAuthorId.value
 
     const res = await $fetch('/api/admin/articles', { params })
     if (res.ok) {
@@ -297,7 +325,9 @@ const cancelBoost = async () => {
 onMounted(async () => {
   // Pre-select categoryId from query param (coming from categories page "Xem bài")
   const qCategoryId = route.query.categoryId ? Number(route.query.categoryId) : null
-  await fetchCategories()
+  // Hai lượt này độc lập nhau — danh sách người đăng không phụ thuộc thể loại —
+  // nên chạy song song thay vì nối đuôi.
+  await Promise.all([fetchCategories(), fetchAuthors()])
   if (qCategoryId) {
     // Find the category to set up parent/child properly
     const cat = allCategories.value.find((c) => c.id === qCategoryId)
@@ -373,6 +403,21 @@ onMounted(async () => {
         <option value="published">Đã Xuất Bản</option>
         <option value="draft">Bản Nháp (Draft)</option>
         <option value="archived">Lưu Trữ</option>
+      </select>
+      <!-- Người đăng bài. Tuỳ chọn "Không rõ tác giả" chỉ hiện khi thật sự có bài
+           mất tác giả (tài khoản đã xoá → author_id NULL) — một lựa chọn luôn cho
+           ra danh sách rỗng thì không nên có mặt. -->
+      <select
+        v-model="selectedAuthorId"
+        aria-label="Lọc theo người đăng bài"
+        @change="fetchArticles(1)"
+        class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
+      >
+        <option value="">Tất cả Người đăng</option>
+        <option v-for="author in authorOptions" :key="author.id" :value="String(author.id)">
+          {{ author.username }} ({{ author.articleCount }})
+        </option>
+        <option v-if="orphanAuthorCount > 0" value="none">Không rõ tác giả ({{ orphanAuthorCount }})</option>
       </select>
       <button
         class="inline-flex items-center gap-2 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors"
