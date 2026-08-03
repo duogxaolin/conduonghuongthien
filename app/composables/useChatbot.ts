@@ -32,14 +32,25 @@ const SESSIONS_KEY = 'cdkt_sessions_v1'
 const LEGACY_HISTORY_KEY = 'cdkt_chat_history_v2'
 
 /**
- * Playback pacing. A fixed per-word delay made playback duration a function of
- * answer length, so the knowledge bank's longer legal answers (~330 words) took
- * ~10 seconds to finish — the visitor had the whole answer sitting in memory and
- * was made to wait for it. The per-word figure now only sets the pace for short
- * replies; `TYPEWRITER_MAX_MS` caps the total so length cannot run away.
+ * Playback pacing — a reading pace, not a progress bar.
+ *
+ * These two numbers answer different questions and the earlier pair had both
+ * wrong in the same direction. `TYPEWRITER_WORD_DELAY_MS` sets how fast words
+ * appear; at 30ms it revealed ~33 words per second, and since the everyday
+ * replies measure a median of 33 words, a whole answer flashed into place in
+ * under a second. Nothing was legible while it moved, so the effect read as a
+ * glitch rather than as typing. 70ms is roughly 14 words per second — the pace
+ * of the streaming chat interfaces a visitor has already seen, and slow enough
+ * that the text can be followed as it lands.
+ *
+ * `TYPEWRITER_MAX_MS` only exists for the long tail: the knowledge bank's legal
+ * answers run to ~330 words, which at 70ms each would hold the visitor for 23
+ * seconds over text already sitting in memory. The cap engages past ~85 words,
+ * so every everyday reply and most approved answers keep the full per-word pace
+ * and only the genuinely long ones compress.
  */
-const TYPEWRITER_WORD_DELAY_MS = 30
-const TYPEWRITER_MAX_MS = 2200
+export const TYPEWRITER_WORD_DELAY_MS = 70
+export const TYPEWRITER_MAX_MS = 6000
 
 export const CHATBOT_WELCOME_MESSAGE = Object.freeze({
   id: 'welcome',
@@ -414,9 +425,10 @@ function stopTypewriter(complete: boolean): void {
  * tab, so switching away mid-answer stretched playback to minutes), that a tick
  * costs nothing (each one wrote to the DOM and forced a synchronous
  * `scrollHeight` read — one layout per word), and that answer length is bounded
- * (it was not; ~330-word answers ran ~10 seconds). Reading the clock each frame
- * makes a late or coalesced frame catch up by revealing more words, so the answer
- * always lands within `TYPEWRITER_MAX_MS` regardless of length or tab state.
+ * (it was not; ~330-word answers ran ~23 seconds at the current pace). Reading
+ * the clock each frame makes a late or coalesced frame catch up by revealing more
+ * words, so the answer always lands within `TYPEWRITER_MAX_MS` regardless of
+ * length or tab state.
  */
 export function playTypewriter(
   message: ChatMessage,
@@ -444,8 +456,9 @@ export function playTypewriter(
   message.text = ''
   message.isStreaming = true
 
-  // Short replies keep the per-word feel; long ones compress to fit the cap
-  // instead of making the visitor wait proportionally longer.
+  // Cap engages past ~85 words; everything shorter runs at the full per-word
+  // pace. `perWord` is also the whole answer's rate now that no per-frame floor
+  // overrides it, so this figure is what a visitor actually experiences.
   const perWord = options.delayMs ?? TYPEWRITER_WORD_DELAY_MS
   const totalMs = Math.min(chunks.length * perWord, TYPEWRITER_MAX_MS)
 
@@ -473,16 +486,26 @@ export function playTypewriter(
 
     const startedAt = now()
     const step = () => {
-      // How many words *should* be visible by now. Whole batches land per frame
-      // on long answers, which is also what keeps the DOM writes to one per frame.
+      // How many words are due by now. No floor of `index + 1` here, and that
+      // absence is the point: with it, every frame advanced at least one word, so
+      // playback ran at the refresh rate (~60 words/second at 60fps) and the
+      // per-word constant only ever governed answers long enough to hit the cap.
+      // Raising it changed nothing a visitor could see. Reading the clock alone
+      // makes the pace mean what it says.
       const elapsed = now() - startedAt
-      const target = Math.max(
-        index + 1,
+      const target = Math.min(
+        chunks.length,
         Math.ceil((elapsed / totalMs) * chunks.length),
       )
-      message.text = chunks.slice(0, Math.min(target, chunks.length)).join('')
-      index = Math.min(target, chunks.length)
-      options.onTick?.()
+
+      // A frame with no word due writes nothing and fires no tick. `onTick` makes
+      // the surfaces read `scrollHeight`, so an unconditional call here would
+      // force a layout on every frame to display text that had not changed.
+      if (target > index) {
+        message.text = chunks.slice(0, target).join('')
+        index = target
+        options.onTick?.()
+      }
 
       if (index >= chunks.length) {
         typewriterTimer = null

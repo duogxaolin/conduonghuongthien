@@ -4,7 +4,7 @@ import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 import { nextTick, ref, watchEffect } from 'vue'
 
-import { playTypewriter, normalizeSource, type ChatMessage } from '../app/composables/useChatbot'
+import { playTypewriter, normalizeSource, TYPEWRITER_MAX_MS, TYPEWRITER_WORD_DELAY_MS, type ChatMessage } from '../app/composables/useChatbot'
 
 /**
  * The waiting/typing indicator and the reveal animation, tested by *running*
@@ -68,13 +68,56 @@ test('reduced motion and delayMs 0 both settle without animating', async () => {
 
 // ─── Pacing ──────────────────────────────────────────────────────────────────
 
+test('the pace is slow enough to read and the cap is short enough to sit through', () => {
+  // Both numbers have been retuned twice in opposite directions — first too slow
+  // (~10s on a long answer), then too fast to read (a median 33-word reply flashed
+  // by in under a second). These bounds pin the window that complaint pair leaves
+  // open, so the next adjustment cannot silently walk back out of it.
+  assert.ok(
+    TYPEWRITER_WORD_DELAY_MS >= 45 && TYPEWRITER_WORD_DELAY_MS <= 110,
+    `${TYPEWRITER_WORD_DELAY_MS}ms per word is outside the readable band (~9-22 words/second)`,
+  )
+  assert.ok(
+    TYPEWRITER_MAX_MS >= 3000 && TYPEWRITER_MAX_MS <= 8000,
+    `a ${TYPEWRITER_MAX_MS}ms cap is either too tight to read or long enough to feel like a wait`,
+  )
+})
+
+test('a short reply is paced by the per-word delay, not by the refresh rate', async () => {
+  // The defect this pins: `target` used to carry a `Math.max(index + 1, …)` floor,
+  // so every animation frame advanced at least one word and playback ran at ~60
+  // words/second whatever the constant said. Raising the delay changed nothing a
+  // visitor could see, because the floor — not the clock — set the pace for any
+  // answer short enough to stay under the cap. The everyday replies measure a
+  // median of 33 words, so that covers effectively all of them.
+  const words = 20
+  const reply = 'từ '.repeat(words).trim()
+  const expected = words * TYPEWRITER_WORD_DELAY_MS
+  assert.ok(expected < TYPEWRITER_MAX_MS, 'sample must stay under the cap to test the per-word path')
+
+  const message = botMessage()
+  const startedAt = performance.now()
+  await playTypewriter(message, reply)
+  const elapsed = performance.now() - startedAt
+
+  assert.equal(message.text, reply)
+  assert.ok(
+    elapsed > expected * 0.6,
+    `${words} words took ${Math.round(elapsed)}ms; at ${TYPEWRITER_WORD_DELAY_MS}ms/word it should approach ${expected}ms, so something is outrunning the clock`,
+  )
+})
+
 test('a long answer finishes in bounded time instead of scaling with length', async () => {
-  // The complaint this fixes: at a fixed 30ms per word, the knowledge bank's
+  // The complaint this fixes: at a fixed per-word delay, the knowledge bank's
   // longer legal answers (~330 words) took ~10 seconds. The whole answer was
   // already in memory; the visitor was made to wait for an animation.
   const long = 'Theo quy định tại Nghị định số 49/2020/NĐ-CP về tái hòa nhập cộng đồng, '.repeat(30)
   const words = (long.match(/\S+\s*/g) ?? []).length
   assert.ok(words > 300, `sample should be long; got ${words} words`)
+  assert.ok(
+    words * TYPEWRITER_WORD_DELAY_MS > TYPEWRITER_MAX_MS * 2,
+    'sample must be long enough that the cap is what bounds it, not the per-word pace',
+  )
 
   const message = botMessage()
   const startedAt = performance.now()
@@ -83,8 +126,8 @@ test('a long answer finishes in bounded time instead of scaling with length', as
 
   assert.equal(message.text, long, 'the full answer must still arrive intact')
   assert.ok(
-    elapsed < 4000,
-    `${words} words took ${Math.round(elapsed)}ms; playback duration must not scale with answer length`,
+    elapsed < TYPEWRITER_MAX_MS * 1.5,
+    `${words} words took ${Math.round(elapsed)}ms against a ${TYPEWRITER_MAX_MS}ms cap; playback duration must not scale with answer length`,
   )
 })
 

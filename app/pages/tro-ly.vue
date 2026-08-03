@@ -157,6 +157,10 @@
                           <template v-else-if="sourceDetailOf(source.entryId)?.status === 'ready'">
                             <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1.5 text-[0.76rem] font-bold text-[#1e4620]">{{ sourceDetailOf(source.entryId)?.question }}</p>
                             <p class="m-0 whitespace-pre-wrap text-[0.76rem] leading-[1.65] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
+                            <!-- Expanding in place keeps the visitor in their
+                                 conversation; this is the way out to the surrounding
+                                 topic. -->
+                            <nuxt-link :to="`/tai-lieu-hoi-dap#qa-${source.entryId}`" class="mt-2 inline-block text-[0.72rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
                           </template>
                         </div>
                       </li>
