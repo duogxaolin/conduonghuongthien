@@ -1,7 +1,6 @@
 import { CHATBOT_RESOURCES } from '../permissions'
 
-export const CHATBOT_AUDIT_OUTCOMES = ['success', 'failure'] as const
-export type ChatbotAuditOutcome = typeof CHATBOT_AUDIT_OUTCOMES[number]
+export type ChatbotAuditOutcome = 'success' | 'failure'
 
 const SETTINGS_CHANGE_FIELDS = Object.freeze({
   enabled: 'enabled',

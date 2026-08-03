@@ -15,7 +15,7 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  */
 
 type Scope = {
-  scope: 'activity_logs' | 'submissions'
+  scope: 'activity_logs' | 'submissions' | 'chat_sessions'
   days: number
   daysSource: string
   maxRows: number
@@ -36,10 +36,12 @@ type Scope = {
 const SCOPE_LABELS: Record<string, string> = {
   activity_logs: 'Lịch sử hoạt động',
   submissions: 'Đơn đăng ký hỗ trợ',
+  chat_sessions: 'Phiên trò chuyện chatbot',
 }
 const SCOPE_NOTES: Record<string, string> = {
   activity_logs: 'Mỗi lần đăng nhập và mọi thao tác thêm/sửa/xoá đều sinh một dòng, kèm IP và trình duyệt.',
   submissions: 'Chứa họ tên, số điện thoại, email và nội dung công dân tự nhập. Thời hạn lưu do quy định của cơ quan quyết định.',
+  chat_sessions: 'Chứa nội dung hội thoại giữa khách và trợ lý AI, kèm IP và có khi cả số điện thoại. Tin nhắn tự xoá theo phiên (ON DELETE CASCADE) — chỉ cần đặt điều kiện dọn cho bảng phiên.',
 }
 const SOURCE_LABELS: Record<string, string> = {
   database: 'đang đặt tại đây',
@@ -54,6 +56,7 @@ const TRIGGER_LABELS: Record<string, string> = {
 
 const toast = useToast()
 const loading = ref(true)
+const error = ref('')
 const saving = ref(false)
 const running = ref(false)
 const scopes = ref<Scope[]>([])
@@ -66,12 +69,15 @@ const form = reactive({
   activityLogMaxRows: 0,
   submissionDays: 0,
   submissionMaxRows: 0,
+  chatSessionDays: 90,
+  chatSessionMaxRows: 0,
 })
 const autoEnabledSource = ref('default')
 const runHourSource = ref('default')
 
 const activity = computed(() => scopes.value.find(s => s.scope === 'activity_logs') ?? null)
 const submission = computed(() => scopes.value.find(s => s.scope === 'submissions') ?? null)
+const chatSession = computed(() => scopes.value.find(s => s.scope === 'chat_sessions') ?? null)
 
 /** Nothing configured to delete anything — the switch being on changes nothing. */
 const nothingWillBeDeleted = computed(() =>
@@ -90,9 +96,13 @@ function formatMoment(value: string | null) {
 
 async function load() {
   loading.value = true
+  error.value = ''
   try {
     const res = await $fetch<any>('/api/admin/settings/retention')
-    if (!res?.ok) return
+    if (!res?.ok) {
+      error.value = 'Không tải được cấu hình dọn dữ liệu.'
+      return
+    }
     scopes.value = res.scopes || []
     command.value = res.command || command.value
     form.autoEnabled = res.autoEnabled === true
@@ -103,13 +113,16 @@ async function load() {
       if (scope.scope === 'activity_logs') {
         form.activityLogDays = scope.days
         form.activityLogMaxRows = scope.maxRows
-      } else {
+      } else if (scope.scope === 'submissions') {
         form.submissionDays = scope.days
         form.submissionMaxRows = scope.maxRows
+      } else if (scope.scope === 'chat_sessions') {
+        form.chatSessionDays = scope.days
+        form.chatSessionMaxRows = scope.maxRows
       }
     }
   } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không tải được cấu hình dọn dữ liệu.')
+    error.value = err?.data?.statusMessage || 'Không tải được cấu hình dọn dữ liệu.'
   } finally {
     loading.value = false
   }
@@ -127,6 +140,8 @@ async function save() {
         activityLogMaxRows: Number(form.activityLogMaxRows),
         submissionDays: Number(form.submissionDays),
         submissionMaxRows: Number(form.submissionMaxRows),
+        chatSessionDays: Number(form.chatSessionDays),
+        chatSessionMaxRows: Number(form.chatSessionMaxRows),
       },
     })
     toast.success('Đã lưu cấu hình dọn dữ liệu.')
@@ -172,7 +187,7 @@ onMounted(load)
       <div>
         <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Tự Động Dọn Dữ Liệu</h1>
         <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">
-          Giới hạn thời gian lưu và số bản ghi của lịch sử hoạt động và đơn đăng ký — hai bảng chứa dữ liệu cá nhân
+          Giới hạn thời gian lưu và số bản ghi của lịch sử hoạt động, đơn đăng ký và phiên trò chuyện chatbot — ba bảng chứa dữ liệu cá nhân
         </p>
       </div>
       <div class="flex gap-2 shrink-0">
@@ -197,7 +212,22 @@ onMounted(load)
       </div>
     </div>
 
-    <SkeletonForm v-if="loading" label="Đang tải cấu hình dọn dữ liệu" :fields="5" />
+    <!-- Loading -->
+    <div v-if="loading" role="status" aria-busy="true" class="bg-white rounded-xl border border-[#e2ece3] p-6">
+      <span class="sr-only">Đang tải cấu hình dọn dữ liệu</span>
+      <div class="flex flex-col gap-4">
+        <div v-for="n in 5" :key="n" class="animate-pulse motion-reduce:animate-none">
+          <div class="h-4 bg-[#EEF2EC] rounded w-1/4 mb-2" aria-hidden="true"></div>
+          <div class="h-10 bg-[#EEF2EC] rounded" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+      <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
+      {{ error }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="load()">thử lại</button>.
+    </div>
 
     <template v-else>
       <!-- Trạng thái nổi bật -->
@@ -373,6 +403,25 @@ onMounted(load)
                 <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số bản ghi tối đa</label>
                 <input type="number" min="0" v-model.number="form.submissionMaxRows" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
                 <p class="text-[0.72rem] text-[#8a9a8c] m-0">Nên để 0: đơn của công dân không nên bị xoá vì bảng đầy.</p>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-lg border border-[#e2ece3] p-4">
+            <p class="text-[0.88rem] font-bold text-[#122815] m-0 mb-3">Phiên trò chuyện chatbot</p>
+            <div class="flex flex-col gap-3">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số ngày lưu</label>
+                <input type="number" min="0" max="3650" v-model.number="form.chatSessionDays" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+                <p class="text-[0.72rem] text-[#8a9a8c] m-0">
+                  0 hoặc từ 30 đến 3650. Tin nhắn trong phiên tự xoá theo (ON DELETE CASCADE) — chỉ cần đặt điều kiện dọn cho bảng phiên.
+                  <span v-if="chatSession">Hiện {{ SOURCE_LABELS[chatSession.daysSource] }}.</span>
+                </p>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số bản ghi tối đa</label>
+                <input type="number" min="0" v-model.number="form.chatSessionMaxRows" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+                <p class="text-[0.72rem] text-[#8a9a8c] m-0">0 (không giới hạn) hoặc từ 1.000 trở lên.</p>
               </div>
             </div>
           </div>

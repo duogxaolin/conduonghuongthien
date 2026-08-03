@@ -6,6 +6,7 @@ definePageMeta({
 
 const mediaItems = ref<any[]>([])
 const loading = ref(true)
+const loadError = ref('')
 const search = ref('')
 const filterType = ref('')
 const pagination = ref({ page: 1, totalPages: 1, total: 0 })
@@ -17,6 +18,7 @@ const { uploading, uploadFile } = useUpload()
 
 const fetchMedia = async (page = 1) => {
   loading.value = true
+  loadError.value = ''
   try {
     const res = await $fetch('/api/admin/media', {
       params: { page, search: search.value, type: filterType.value, perPage: 24 }
@@ -29,6 +31,7 @@ const fetchMedia = async (page = 1) => {
     }
   } catch (err: any) {
     toast.error(err?.data?.statusMessage || 'Lỗi tải thư viện media')
+    loadError.value = err?.data?.statusMessage || 'Lỗi tải thư viện media'
   } finally {
     loading.value = false
   }
@@ -144,6 +147,14 @@ onMounted(() => { fetchMedia() })
     <!-- Media Grid -->
     <SkeletonCards v-if="loading" label="Đang tải danh sách media" :count="12" />
 
+    <div v-else-if="loadError" role="alert" class="flex flex-col items-center gap-3 py-16 text-[#b04a4a]">
+      <i class="fa-solid fa-triangle-exclamation text-4xl text-[#e2a0a0]" aria-hidden="true"></i>
+      <p class="m-0 text-[0.9rem]">{{ loadError }}</p>
+      <button type="button" class="inline-flex items-center gap-2 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-4 py-2 rounded-lg cursor-pointer border-0 transition-colors text-sm" @click="fetchMedia(1)">
+        <i class="fa-solid fa-rotate-right" aria-hidden="true"></i> Thử lại
+      </button>
+    </div>
+
     <div v-else-if="mediaItems.length === 0" class="flex flex-col items-center gap-3 py-16 text-[#9ca3af]">
       <i class="fa-regular fa-images text-5xl text-[#d1d5db]"></i>
       <p class="m-0 text-[0.9rem]">Chưa có file nào. Hãy tải lên file đầu tiên!</p>
@@ -160,8 +171,11 @@ onMounted(() => { fetchMedia() })
       <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
 
-    <!-- A grid has no header row to hang "select all" off, so it gets its own control. -->
-    <label v-if="!loading && mediaItems.length" class="flex w-fit items-center gap-2 text-sm font-semibold text-[#2c3e2e]">
+    <!-- A grid has no header row to hang "select all" off, so it gets its own control.
+         !loadError is part of the condition, not decoration: a failed reload keeps
+         the previous page's items in mediaItems, so without it the alert appears
+         above a grid of stale tiles that look current. -->
+    <label v-if="!loading && !loadError && mediaItems.length" class="flex w-fit items-center gap-2 text-sm font-semibold text-[#2c3e2e]">
       <input
         type="checkbox"
         class="h-4 w-4 accent-[#2c6e33]"
@@ -172,7 +186,7 @@ onMounted(() => { fetchMedia() })
       Chọn tất cả tệp trên trang
     </label>
 
-    <div v-if="!loading && mediaItems.length" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
+    <div v-if="!loading && !loadError && mediaItems.length" class="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 xl:grid-cols-6 gap-4">
       <div
         v-for="m in mediaItems"
         :key="m.id"
@@ -219,7 +233,7 @@ onMounted(() => { fetchMedia() })
     </div>
 
     <!-- Pagination -->
-    <div v-if="pagination.totalPages > 1" class="flex justify-center items-center gap-4 mt-2">
+    <div v-if="!loadError && pagination.totalPages > 1" class="flex justify-center items-center gap-4 mt-2">
       <button
         :disabled="pagination.page <= 1"
         @click="fetchMedia(pagination.page - 1)"

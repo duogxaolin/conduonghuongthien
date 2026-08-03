@@ -11,6 +11,7 @@ const { confirm } = useConfirm()
 const types = ref<any[]>([])
 const allCategories = ref<any[]>([])
 const loading = ref(true)
+const error = ref('')
 const showTree = ref(true)
 
 // ─── Modal state ──────────────────────────────────────────────────────────────
@@ -49,14 +50,17 @@ watch(() => form.name, (val) => {
 // ─── Fetch ────────────────────────────────────────────────────────────────────
 const fetchTypes = async () => {
   loading.value = true
+  error.value = ''
   try {
     const res = await $fetch('/api/admin/content-types')
     if (res.ok) {
       types.value = res.items
       selection.keepOnly(visibleIds.value)
+    } else {
+      error.value = 'Không tải được danh sách thể loại.'
     }
   } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi tải thể loại')
+    error.value = err?.data?.statusMessage || 'Không tải được danh sách thể loại.'
   } finally {
     loading.value = false
   }
@@ -219,7 +223,20 @@ onMounted(() => {
     </AdminBulkActionBar>
 
     <!-- Loading -->
-    <SkeletonTable v-if="loading" label="Đang tải thể loại" :rows="6" :cols="7" />
+    <div v-if="loading" role="status" aria-busy="true" class="bg-white rounded-xl border border-[#e2ece3] p-6">
+      <span class="sr-only">Đang tải danh sách thể loại</span>
+      <div class="flex flex-col gap-3 animate-pulse motion-reduce:animate-none">
+        <div v-for="n in 6" :key="n" class="flex gap-3">
+          <div v-for="c in 7" :key="c" class="h-10 bg-[#EEF2EC] rounded flex-1" aria-hidden="true"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+      <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
+      {{ error }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchTypes()">thử lại</button>.
+    </div>
 
     <!-- Empty state -->
     <div v-else-if="types.length === 0" class="bg-white rounded-xl border border-[#e2ece3] py-14 flex flex-col items-center gap-3 text-center">

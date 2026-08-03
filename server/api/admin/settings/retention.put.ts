@@ -40,6 +40,8 @@ export default defineEventHandler(async (event) => {
       activityLogMaxRows: body.activityLogMaxRows,
       submissionDays: body.submissionDays,
       submissionMaxRows: body.submissionMaxRows,
+      chatSessionDays: body.chatSessionDays,
+      chatSessionMaxRows: body.chatSessionMaxRows,
     })
   } catch (error) {
     if (error instanceof RetentionPolicyValidationError) {

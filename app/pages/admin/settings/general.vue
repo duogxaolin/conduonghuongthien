@@ -16,6 +16,7 @@ const settings = reactive({
 })
 
 const loading = ref(true)
+const error = ref('')
 const saving = ref(false)
 const toast = useToast()
 const { openPicker } = useImagePicker()
@@ -23,11 +24,16 @@ const { uploading, uploadFile } = useUpload()
 
 const fetchSettings = async () => {
   loading.value = true
+  error.value = ''
   try {
     const res = await $fetch('/api/admin/settings')
-    if (res.ok && res.settings) Object.assign(settings, res.settings)
+    if (res.ok && res.settings) {
+      Object.assign(settings, res.settings)
+    } else {
+      error.value = 'Không tải được cài đặt website.'
+    }
   } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi tải cài đặt')
+    error.value = err?.data?.statusMessage || 'Không tải được cài đặt website.'
   } finally {
     loading.value = false
   }
@@ -78,9 +84,23 @@ onMounted(() => { fetchSettings() })
       </button>
     </div>
 
-    <div v-if="loading" class="grid grid-cols-1 md:grid-cols-2 gap-5">
-      <SkeletonForm label="Đang tải cài đặt chung" :fields="4" />
-      <SkeletonForm label="Đang tải cài đặt chung" :fields="4" :has-action="false" />
+    <!-- Loading -->
+    <div v-if="loading" role="status" aria-busy="true" class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <span class="sr-only">Đang tải cài đặt chung website</span>
+      <div v-for="n in 2" :key="n" class="bg-white rounded-xl border border-[#e2ece3] p-6">
+        <div class="flex flex-col gap-4 animate-pulse motion-reduce:animate-none">
+          <div v-for="i in 4" :key="i">
+            <div class="h-4 bg-[#EEF2EC] rounded w-1/4 mb-2" aria-hidden="true"></div>
+            <div class="h-10 bg-[#EEF2EC] rounded" aria-hidden="true"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Error -->
+    <div v-else-if="error" role="alert" class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]">
+      <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
+      {{ error }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchSettings()">thử lại</button>.
     </div>
 
     <div v-else class="grid grid-cols-1 md:grid-cols-2 gap-5">
