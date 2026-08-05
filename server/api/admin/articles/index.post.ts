@@ -2,6 +2,7 @@ import { getDb } from '../../../utils/db'
 import { articles, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { sanitizeHtml } from '../../../utils/sanitize-html'
+import { defaultCommentsEnabled } from '../../../services/google-oauth-settings'
 
 function slugify(text: string): string {
   return text
@@ -53,6 +54,15 @@ export default defineEventHandler(async (event) => {
   const uniqueSlug = `${baseSlug}-${Date.now().toString(36)}`
   const publishedAt = status === 'published' ? new Date() : null
 
+  // A new article takes the portal-wide default (design.md D9), which ships off.
+  // An explicit value in the request wins so the create form can offer the switch
+  // directly; without the stored default every new article would need a manual
+  // toggle forever, and that permanent friction is what ends with somebody
+  // changing the column default and reopening the whole archive.
+  const commentsEnabled = body?.commentsEnabled !== undefined
+    ? Boolean(body.commentsEnabled)
+    : await defaultCommentsEnabled()
+
   const db = getDb()
 
   const [res] = await db.insert(articles).values({
@@ -65,6 +75,7 @@ export default defineEventHandler(async (event) => {
     content,
     status,
     thumbnailUrl,
+    commentsEnabled,
     authorId: adminUser.id,
     publishedAt,
   })
@@ -76,7 +87,7 @@ export default defineEventHandler(async (event) => {
     action: 'create',
     resource: 'articles',
     resourceId: newArticleId,
-    meta: { title, type, status },
+    meta: { title, type, status, commentsEnabled },
   })
 
   return { ok: true, id: newArticleId, slug: uniqueSlug }

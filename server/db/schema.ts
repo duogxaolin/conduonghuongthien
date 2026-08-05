@@ -175,6 +175,10 @@ export const articles = mysqlTable('articles', {
   publishedAt: timestamp('published_at'),
   createdAt:   timestamp('created_at').defaultNow(),
   updatedAt:   timestamp('updated_at').defaultNow().onUpdateNow(),
+  // Off by default (reader-google-login-comments design.md D9): opening every
+  // historical article the moment this feature deploys would be a moderation
+  // load no officer chose, decided by a schema migration rather than a click.
+  commentsEnabled: boolean('comments_enabled').notNull().default(false),
 }, (t) => ({
   typeIdx:      index('type_idx').on(t.type),
   statusIdx:    index('status_idx').on(t.status),
@@ -644,6 +648,84 @@ export const analyticsMaintenanceRuns = mysqlTable('analytics_maintenance_runs',
   completedAtIdx: index('analytics_maintenance_completed_at_idx').on(t.completedAt),
 }))
 
+// ─── Reader accounts (Google sign-in) & public comments ──────────────────────
+// A reader is a member of the public who signed in with Google to comment.
+// Keyed on the Google `sub` claim, never on email (reader-google-login-comments
+// design.md D6: email is mutable and reassignable, sub is not). No avatar
+// column: avatars are rendered locally from the display name (design.md D7) so
+// no visitor request ever reaches a Google-hosted image.
+export const readerAccounts = mysqlTable('reader_accounts', {
+  id:            int('id').autoincrement().primaryKey(),
+  googleSub:     varchar('google_sub', { length: 255 }).notNull().unique(),
+  email:         varchar('email', { length: 255 }),
+  displayName:   varchar('display_name', { length: 255 }),
+  isBanned:      boolean('is_banned').notNull().default(false),
+  banReason:     text('ban_reason'),
+  bannedAt:      datetime('banned_at', { mode: 'date' }),
+  bannedBy:      int('banned_by').references(() => users.id, { onDelete: 'set null' }),
+  // Bumped on ban so an existing 30-day reader ticket stops being accepted
+  // immediately — the same mechanism users.tokenVersion already provides.
+  tokenVersion:  int('token_version').notNull().default(0),
+  createdAt:     timestamp('created_at').defaultNow(),
+  // Ages and orders the retention scope (design.md D16) — created_at would
+  // delete an account that signed up long ago but commented yesterday.
+  lastSeenAt:    datetime('last_seen_at', { mode: 'date' }).notNull(),
+  lastIp:        varchar('last_ip', { length: 45 }),
+  lastUserAgent: varchar('last_user_agent', { length: 512 }),
+}, (t) => ({
+  lastSeenIdx: index('reader_accounts_last_seen_at_idx').on(t.lastSeenAt),
+  isBannedIdx: index('reader_accounts_is_banned_idx').on(t.isBanned),
+}))
+
+// One row per comment or administrator reply. parentId self-references for the
+// single reply level. Every FK cascades except adminUserId (design.md D8): a
+// staff account being deleted must not remove the portal's public replies.
+export const articleComments = mysqlTable('article_comments', {
+  id:          bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
+  articleId:   int('article_id').notNull().references(() => articles.id, { onDelete: 'cascade' }),
+  readerId:    int('reader_id').references(() => readerAccounts.id, { onDelete: 'cascade' }),
+  adminUserId: int('admin_user_id').references(() => users.id, { onDelete: 'set null' }),
+  parentId:    bigint('parent_id', { mode: 'number', unsigned: true }).references((): AnyMySqlColumn => articleComments.id, { onDelete: 'cascade' }),
+  body:        text('body').notNull(),
+  ip:          varchar('ip', { length: 45 }),
+  userAgent:   varchar('user_agent', { length: 512 }),
+  createdAt:   datetime('created_at', { mode: 'date' }).notNull(),
+}, (t) => ({
+  articleParentCreatedIdx: index('article_comments_article_parent_created_idx').on(t.articleId, t.parentId, t.createdAt),
+  readerIdx: index('article_comments_reader_id_idx').on(t.readerId),
+}))
+
+// Address bans for sign-in and comment writes. `value` is a single IPv4/IPv6
+// address or an IPv4 CIDR block, validated by server/utils/ip-ban.ts before a
+// row is ever written (design.md D11) — a stored value that never matches
+// produces a ban the officer believes is in force.
+export const readerIpBans = mysqlTable('reader_ip_bans', {
+  id:        int('id').autoincrement().primaryKey(),
+  value:     varchar('value', { length: 64 }).notNull().unique(),
+  reason:    text('reason'),
+  createdBy: int('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt: timestamp('created_at').defaultNow(),
+})
+
+// Single-row Google OAuth configuration. The secret envelope columns mirror
+// chatbotSettings.apiKey* exactly (design.md D3): same AES-256-GCM primitives,
+// distinct context label, so a copy-pasted ciphertext from one table fails
+// authentication when read as the other.
+export const googleOauthSettings = mysqlTable('google_oauth_settings', {
+  id:                     int('id').primaryKey().default(1),
+  clientId:               varchar('client_id', { length: 255 }),
+  clientSecretCiphertext: text('client_secret_ciphertext'),
+  clientSecretNonce:      varchar('client_secret_nonce', { length: 64 }),
+  clientSecretAuthTag:    varchar('client_secret_auth_tag', { length: 64 }),
+  clientSecretVersion:    int('client_secret_version', { unsigned: true }),
+  clientSecretKeyId:      varchar('client_secret_key_id', { length: 64 }),
+  clientSecretLastFour:   varchar('client_secret_last_four', { length: 4 }),
+  isEnabled:              boolean('is_enabled').notNull().default(false),
+  defaultCommentsEnabled: boolean('default_comments_enabled').notNull().default(false),
+  updatedAt:              timestamp('updated_at').defaultNow().onUpdateNow(),
+  updatedBy:              int('updated_by').references(() => users.id, { onDelete: 'set null' }),
+})
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 export type Role        = typeof roles.$inferSelect
 export type Permission  = typeof permissions.$inferSelect
@@ -688,3 +770,11 @@ export type AnalyticsDailyPage = typeof analyticsDailyPages.$inferSelect
 export type AnalyticsDailyDimension = typeof analyticsDailyDimensions.$inferSelect
 export type AnalyticsDailyAdminUser = typeof analyticsDailyAdminUsers.$inferSelect
 export type AnalyticsMaintenanceRun = typeof analyticsMaintenanceRuns.$inferSelect
+export type ReaderAccount = typeof readerAccounts.$inferSelect
+export type NewReaderAccount = typeof readerAccounts.$inferInsert
+export type ArticleComment = typeof articleComments.$inferSelect
+export type NewArticleComment = typeof articleComments.$inferInsert
+export type ReaderIpBan = typeof readerIpBans.$inferSelect
+export type NewReaderIpBan = typeof readerIpBans.$inferInsert
+export type GoogleOauthSettings = typeof googleOauthSettings.$inferSelect
+export type NewGoogleOauthSettings = typeof googleOauthSettings.$inferInsert

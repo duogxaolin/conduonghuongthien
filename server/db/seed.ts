@@ -20,7 +20,14 @@ const keepExisting = (column: string) => sql.raw(`\`${column}\``)
 const RESOURCES = [
   'news', 'role_models', 'reintegration', 'documents', 'faq', 'categories',
   'home_sections', 'pages', 'users', 'roles', 'media', 'settings', 'submissions', 'analytics',
-  'chatbot_settings', 'chatbot_knowledge'
+  'chatbot_settings', 'chatbot_knowledge',
+  // Reader moderation (design.md D13, reader-google-login-comments). These fall
+  // through every role branch below to the all-false default on purpose: only
+  // superadmin gets them at seed time, and an administrator has to grant them
+  // deliberately after upgrading. Adding them to the editor or moderator branch
+  // would silently hand citizens' email addresses and posting histories to
+  // whoever already held one of those roles.
+  'readers', 'comments',
 ]
 
 // Default categories seeded idempotently (keyed on unique slug).

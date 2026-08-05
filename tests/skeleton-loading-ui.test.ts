@@ -81,6 +81,13 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/content/pages/[id].vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/content/navigation/navbar.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/content/navigation/mobile.vue', marker: 'v-if="loading"' },
+
+  // Reader moderation and Google sign-in configuration.
+  { file: 'pages/admin/readers/index.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/readers/[id].vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/comments/index.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/settings/google-oauth.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/settings/ip-bans.vue', marker: 'v-if="loading"' },
 ]
 
 /** Files whose loading branch is drawn inline rather than by a shared component. */
@@ -93,6 +100,16 @@ const INLINE_PLACEHOLDER_FILES = [
   'pages/admin/content/pages/[id].vue',
   'pages/admin/content/navigation/navbar.vue',
   'pages/admin/content/navigation/mobile.vue',
+  // Reader moderation: a reader row is an avatar plus two stacked lines, a
+  // comment row is a header plus a wrapped body, and the OAuth form is a mix of
+  // text fields and a read-only URL block. SkeletonTable/Cards/Form describe
+  // none of those, and forcing one in would produce a placeholder whose size
+  // does not match what replaces it.
+  'pages/admin/readers/index.vue',
+  'pages/admin/readers/[id].vue',
+  'pages/admin/comments/index.vue',
+  'pages/admin/settings/google-oauth.vue',
+  'pages/admin/settings/ip-bans.vue',
 ]
 
 /**
@@ -112,6 +129,8 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
     // Public placeholders that predate this change and were retrofitted with the guard.
     'components/NewsCategoryList.vue',
     'components/ArticleDetail.vue',
+    // The public comment thread's loading state.
+    'components/ArticleComments.vue',
     'pages/legal-qa/index.vue',
     'pages/role-models/index.vue',
     'pages/reintegration-models/index.vue',

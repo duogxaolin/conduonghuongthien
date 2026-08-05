@@ -1104,6 +1104,90 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  // ── Reader accounts (Google sign-in) & public comments ──────────────────
+  // reader-google-login-comments design.md D1/D7/D16: keyed on google_sub (not
+  // email), no avatar column, last_seen_at drives both the "recently active"
+  // index and the retention scope.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`reader_accounts\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`google_sub\` VARCHAR(255) NOT NULL UNIQUE,
+      \`email\` VARCHAR(255) NULL,
+      \`display_name\` VARCHAR(255) NULL,
+      \`is_banned\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`ban_reason\` TEXT NULL,
+      \`banned_at\` DATETIME NULL,
+      \`banned_by\` INT NULL,
+      \`token_version\` INT NOT NULL DEFAULT 0,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`last_seen_at\` DATETIME NOT NULL,
+      \`last_ip\` VARCHAR(45) NULL,
+      \`last_user_agent\` VARCHAR(512) NULL,
+      KEY \`reader_accounts_last_seen_at_idx\` (\`last_seen_at\`),
+      KEY \`reader_accounts_is_banned_idx\` (\`is_banned\`),
+      CONSTRAINT \`fk_reader_accounts_banned_by\` FOREIGN KEY (\`banned_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // design.md D8: every FK cascades except admin_user_id (SET NULL) — deleting
+  // a staff account must not remove the portal's public replies.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`article_comments\` (
+      \`id\` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      \`article_id\` INT NOT NULL,
+      \`reader_id\` INT NULL,
+      \`admin_user_id\` INT NULL,
+      \`parent_id\` BIGINT UNSIGNED NULL,
+      \`body\` TEXT NOT NULL,
+      \`ip\` VARCHAR(45) NULL,
+      \`user_agent\` VARCHAR(512) NULL,
+      \`created_at\` DATETIME NOT NULL,
+      KEY \`article_comments_article_parent_created_idx\` (\`article_id\`, \`parent_id\`, \`created_at\`),
+      KEY \`article_comments_reader_id_idx\` (\`reader_id\`),
+      CONSTRAINT \`fk_article_comments_article\` FOREIGN KEY (\`article_id\`) REFERENCES \`articles\` (\`id\`) ON DELETE CASCADE,
+      CONSTRAINT \`fk_article_comments_reader\` FOREIGN KEY (\`reader_id\`) REFERENCES \`reader_accounts\` (\`id\`) ON DELETE CASCADE,
+      CONSTRAINT \`fk_article_comments_admin_user\` FOREIGN KEY (\`admin_user_id\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL,
+      CONSTRAINT \`fk_article_comments_parent\` FOREIGN KEY (\`parent_id\`) REFERENCES \`article_comments\` (\`id\`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // design.md D11: value is validated (single IPv4/IPv6 address or IPv4 CIDR)
+  // by server/utils/ip-ban.ts before a row is ever written.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`reader_ip_bans\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`value\` VARCHAR(64) NOT NULL UNIQUE,
+      \`reason\` TEXT NULL,
+      \`created_by\` INT NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT \`fk_reader_ip_bans_created_by\` FOREIGN KEY (\`created_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // design.md D3: envelope columns mirror chatbot_settings.api_key* exactly,
+  // bound to a distinct context label (cdkt-google-oauth-secret:v1) so a
+  // copy-pasted ciphertext from one table fails authentication as the other.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`google_oauth_settings\` (
+      \`id\` INT PRIMARY KEY DEFAULT 1,
+      \`client_id\` VARCHAR(255) NULL,
+      \`client_secret_ciphertext\` TEXT NULL,
+      \`client_secret_nonce\` VARCHAR(64) NULL,
+      \`client_secret_auth_tag\` VARCHAR(64) NULL,
+      \`client_secret_version\` INT UNSIGNED NULL,
+      \`client_secret_key_id\` VARCHAR(64) NULL,
+      \`client_secret_last_four\` VARCHAR(4) NULL,
+      \`is_enabled\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`default_comments_enabled\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      \`updated_by\` INT NULL,
+      CONSTRAINT \`fk_google_oauth_settings_updated_by\` FOREIGN KEY (\`updated_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // design.md D9: existing articles start with comments closed (default 0).
+  await ensureColumn(db, database, 'articles', 'comments_enabled', 'TINYINT(1) NOT NULL DEFAULT 0')
+
   // Existing installations converge without table recreation or row loss.
   await ensureColumn(db, database, 'permissions', 'can_publish', 'TINYINT(1) DEFAULT 0')
   await ensureColumn(db, database, 'permissions', 'can_archive', 'TINYINT(1) DEFAULT 0')

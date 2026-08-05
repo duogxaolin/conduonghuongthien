@@ -82,3 +82,46 @@ export async function setArticleStatus(actor: ActorLike, id: number, status: Art
     meta: { fromStatus: existing.status, toStatus: status },
   })
 }
+
+/**
+ * Open or close the comment thread on one article (design.md D9/D10).
+ *
+ * Gated by `update` on the article's own type resource — the same grant that
+ * already lets this officer edit this article, following the view-boost
+ * precedent. No new RBAC resource: deciding whether a piece of content accepts
+ * replies is part of editing that content, and a separate permission would have
+ * to be granted to every existing role before the toggle worked for anyone.
+ *
+ * The check is inside this per-row function for the same reason
+ * `setArticleStatus`'s is: the bulk route calls it once per article, so an
+ * officer holding `news.update` but not `documents.update` gets the news items
+ * changed and the documents reported as refused, rather than either a silent
+ * success or an all-or-nothing failure.
+ *
+ * Turning the switch off never deletes anything — the thread stops rendering and
+ * stops accepting writes, and administrators keep seeing it in moderation.
+ */
+export async function setArticleCommentsEnabled(actor: ActorLike, id: number, enabled: boolean): Promise<void> {
+  const db = getDb()
+  const [existing] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
+  if (!existing) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
+
+  requireArticlePermission(actor, existing.type, 'update')
+
+  if (existing.commentsEnabled === enabled) return
+
+  // Toggle and audit row in one transaction. The two neighbouring functions above
+  // (deleteArticleById, setArticleStatus) predate this change and still write the
+  // pair unwrapped — deliberately left alone rather than widened into unrelated
+  // code, but a new write path has no reason to copy that.
+  await db.transaction(async (tx) => {
+    await tx.update(articles).set({ commentsEnabled: enabled }).where(eq(articles.id, id))
+    await tx.insert(activityLogs).values({
+      userId: actor.id,
+      action: 'update',
+      resource: 'articles',
+      resourceId: id,
+      meta: { commentsEnabled: enabled, title: existing.title },
+    })
+  })
+}

@@ -102,6 +102,10 @@ export default defineNuxtConfig({
     '/reintegration-models/**': { swr: 60 },
     '/documents/**': { swr: 60 },
     '/legal-qa/**': { swr: 60 },
+    // Đọc kho câu trả lời đã duyệt — nội dung chỉ đổi khi cán bộ xuất bản một
+    // mục mới, và mọi khách thấy cùng một danh sách nên không có gì riêng tư để
+    // rò rỉ qua bộ nhớ đệm.
+    '/tai-lieu-hoi-dap': { swr: 60 },
     // `/tro-ly` is deliberately absent. Its server-rendered output is an empty
     // shell — the conversation list, transcript and quick questions are all
     // fetched or read from localStorage on the client — so an SWR window would
@@ -125,6 +129,13 @@ export default defineNuxtConfig({
     // a client via x-forwarded-for; see server/utils/client-ip.ts. Empty means
     // loopback only, which is correct for an app with nothing in front of it.
     trustedProxyIps: process.env.TRUSTED_PROXY_IPS || '',
+    // Public address of this deployment, used to build the Google OAuth redirect
+    // URI. Read through runtimeConfig rather than process.env alone for the same
+    // reason trustedProxyIps is: Nitro resolves NUXT_-prefixed variables at
+    // runtime, and a bare name set only in the container env would be invisible
+    // here. Empty falls back to the request host with a warning on the settings
+    // page (server/utils/google-oauth/config.ts).
+    publicBaseUrl: process.env.PUBLIC_BASE_URL || '',
     analytics: {
       hmacSecret: analyticsHmacSecret,
       collectionEnabled: parseAnalyticsBoolean('ANALYTICS_COLLECTION_ENABLED', false),
