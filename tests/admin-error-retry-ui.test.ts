@@ -58,6 +58,8 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/settings/email.vue', refs: ['error'], retries: ['fetchSettings'] },
   { file: 'pages/admin/settings/media-storage.vue', refs: ['error'], retries: ['fetchSettings'] },
   { file: 'pages/admin/settings/tracking.vue', refs: ['error'], retries: ['fetchSettings'] },
+  { file: 'pages/admin/settings/google-oauth.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/settings/ip-bans.vue', refs: ['error'], retries: ['load'] },
 
   // Content.
   { file: 'pages/admin/content/articles/index.vue', refs: ['loadError'], retries: ['fetchArticles'] },
@@ -75,6 +77,13 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/chatbot/settings.vue', refs: ['errorMessage'], retries: ['load'] },
   { file: 'pages/admin/chatbot/sessions/index.vue', refs: ['loadError'], retries: ['fetchSessions'] },
   { file: 'pages/admin/chatbot/sessions/[id].vue', refs: ['loadError'], retries: ['fetchSession'] },
+
+  // Reader moderation. These read citizens' personal data, so a failed fetch
+  // rendering as "chưa có ai" is worse than usual: an officer would conclude
+  // nobody has signed up rather than that the query broke.
+  { file: 'pages/admin/readers/index.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/readers/[id].vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/comments/index.vue', refs: ['error'], retries: ['load'] },
 
   // Users, media, submissions.
   { file: 'pages/admin/users/index.vue', refs: ['loadError'], retries: ['fetchUsers'] },

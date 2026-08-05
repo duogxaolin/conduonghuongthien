@@ -22,6 +22,15 @@
  * later submission, but short enough that casual browsing history does not
  * accumulate indefinitely. `chat_messages` has no window of its own — its FK
  * cascades from `chat_sessions`, so the transcript goes with the conversation.
+ *
+ * `reader_accounts` holds a Google identity (the provider's subject id, email,
+ * display name) plus the last IP and User-Agent seen. One year is the same
+ * window the audit trail uses, and it is measured against `last_seen_at`, not
+ * `created_at`: an account opened three years ago that commented yesterday is a
+ * live reader, and deleting it would take their comments with it. Like
+ * `chat_messages`, `article_comments` has no window of its own — its FKs cascade
+ * from both `reader_accounts` and `articles`, so a comment (and any reply under
+ * it) goes with whichever parent is purged.
  */
 
 export const DATA_RETENTION_DEFAULTS = {
@@ -31,12 +40,15 @@ export const DATA_RETENTION_DEFAULTS = {
   submissionDays: 0,
   /** Chatbot conversations. 90 days balances correlation with submissions against indefinite browsing history. */
   chatSessionDays: 90,
+  /** Reader accounts, measured against `last_seen_at`. Same window as the audit trail. */
+  readerAccountDays: 365,
 } as const
 
 export const DATA_RETENTION_BOUNDS = {
   activityLogDays: { min: 30, max: 3650 },
   submissionDays: { min: 30, max: 3650 },
   chatSessionDays: { min: 30, max: 3650 },
+  readerAccountDays: { min: 30, max: 3650 },
 } as const
 
 /**
@@ -85,6 +97,13 @@ export function resolveDataRetentionConfig(env: Record<string, unknown> = proces
       DATA_RETENTION_DEFAULTS.chatSessionDays,
       DATA_RETENTION_BOUNDS.chatSessionDays.min,
       DATA_RETENTION_BOUNDS.chatSessionDays.max,
+    ),
+    readerAccountDays: parseRetentionDays(
+      'READER_ACCOUNT_RETENTION_DAYS',
+      env.READER_ACCOUNT_RETENTION_DAYS,
+      DATA_RETENTION_DEFAULTS.readerAccountDays,
+      DATA_RETENTION_BOUNDS.readerAccountDays.min,
+      DATA_RETENTION_BOUNDS.readerAccountDays.max,
     ),
   }
 }

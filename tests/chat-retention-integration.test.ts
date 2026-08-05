@@ -128,6 +128,7 @@ test('chat history is purged by last_message_at, cascades to messages, and the c
       activityLogDays: 0,
       submissionDays: 0,
       chatSessionDays: 90,
+      readerAccountDays: 0,
       batchSize: 500,
       // Bookkeeping is deliberately gated on `trigger`, so a run without one
       // banks nothing. The counters are part of what this test proves.
@@ -165,7 +166,7 @@ test('chat history is purged by last_message_at, cascades to messages, and the c
     // retention target, and listing it would invite a future window on it.
     assert.deepEqual(
       aged.tables.map(t => t.table),
-      ['activity_logs', 'submissions', 'chat_sessions'],
+      ['activity_logs', 'submissions', 'chat_sessions', 'reader_accounts'],
       'chat_messages must not be a retention target — the cascade owns it',
     )
 
@@ -188,6 +189,7 @@ test('chat history is purged by last_message_at, cascades to messages, and the c
       submissionDays: 0,
       chatSessionDays: 0,
       chatSessionMaxRows: 2,
+      readerAccountDays: 0,
       batchSize: 500,
       trigger: 'manual',
     })

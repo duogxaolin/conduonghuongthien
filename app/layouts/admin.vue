@@ -45,16 +45,23 @@ const menuGroups = computed(() => [
       // Same gate as the knowledge bank: whoever may read the approved answers
       // may read the questions visitors asked of them.
       ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Phiên trò chuyện', icon: 'fa-solid fa-comments', path: '/admin/chatbot/sessions' }] : []),
+      // Bình luận công khai. Gác bằng resource `comments` chứ không phải quyền
+      // bài viết: cán bộ được viết tin không vì thế mà được đọc email và lịch sử
+      // phát ngôn của công dân — đó là loại dữ liệu khác.
+      ...(hasPermission('comments', 'read') ? [{ label: 'Kiểm duyệt bình luận', icon: 'fa-solid fa-comment-dots', path: '/admin/comments' }] : []),
     ]
   },
   {
     title: 'Yêu cầu & Cài đặt',
     items: [
       { label: 'Đơn đăng ký hỗ trợ', icon: 'fa-solid fa-envelope-open-text', path: '/admin/submissions' },
+      ...(hasPermission('readers', 'read') ? [{ label: 'Người đọc & bình luận', icon: 'fa-solid fa-user-group', path: '/admin/readers' }] : []),
       { label: 'Cài đặt chung', icon: 'fa-solid fa-gear', path: '/admin/settings/general' },
       ...(hasPermission('settings', 'read') ? [{ label: 'Cấu hình Email (SMTP)', icon: 'fa-solid fa-envelope', path: '/admin/settings/email' }] : []),
       ...(hasPermission('settings', 'read') ? [{ label: 'Tracking & Marketing', icon: 'fa-solid fa-chart-simple', path: '/admin/settings/tracking' }] : []),
       ...(hasPermission('settings', 'read') ? [{ label: 'Tự động dọn dữ liệu', icon: 'fa-solid fa-broom', path: '/admin/settings/data-retention' }] : []),
+      ...(hasPermission('settings', 'read') ? [{ label: 'Đăng nhập Google', icon: 'fa-solid fa-right-to-bracket', path: '/admin/settings/google-oauth' }] : []),
+      ...(hasPermission('readers', 'read') ? [{ label: 'Chặn địa chỉ IP', icon: 'fa-solid fa-ban', path: '/admin/settings/ip-bans' }] : []),
       { label: 'Lưu trữ Media (R2)', icon: 'fa-solid fa-cloud-arrow-up', path: '/admin/settings/media-storage' },
       ...(hasPermission('chatbot_settings', 'read') ? [{ label: 'Cài đặt Chatbot', icon: 'fa-solid fa-robot', path: '/admin/chatbot/settings' }] : []),
     ]

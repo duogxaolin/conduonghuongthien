@@ -39,6 +39,10 @@ export default defineEventHandler(async (event) => {
   if (body.thumbnailUrl !== undefined) updateFields.thumbnailUrl = String(body.thumbnailUrl).trim() || null
   if (body.category !== undefined) updateFields.category = String(body.category).trim() || null
   if ('categoryId' in body) updateFields.categoryId = body.categoryId ? Number(body.categoryId) : null
+  // Whether this article accepts public comments. Gated by the same type
+  // permission checked above — deciding if a piece of content takes replies is
+  // part of editing that content (design.md D13).
+  if (body.commentsEnabled !== undefined) updateFields.commentsEnabled = Boolean(body.commentsEnabled)
 
   // If the type is changing, re-check permission against the new type
   if (body.type !== undefined) {
