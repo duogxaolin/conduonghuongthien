@@ -179,7 +179,15 @@ export default defineEventHandler(async (event) => {
       lastUserAgent: userAgent,
     })
 
-    readerId = Number((inserted as unknown as { insertId?: number }).insertId ?? 0)
+    // `db.insert()` resolves to an ARRAY whose first element carries the header —
+    // so `inserted.insertId` is `undefined` and `Number(undefined ?? 0)` is 0.
+    // That read failed the guard below *after the row had already been written*,
+    // which is exactly the shape of the bug reported from production: the first
+    // sign-in reported an error, and the second succeeded because it took the
+    // `existing` branch (which never reads insertId). Destructuring is how every
+    // other insert site in this project reads it.
+    const [header] = inserted
+    readerId = Number(header?.insertId ?? 0)
     tokenVersion = 0
 
     if (!readerId) {

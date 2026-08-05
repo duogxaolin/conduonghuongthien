@@ -70,7 +70,13 @@ export async function createIpBan(params: { value: string, reason: string | null
       reason:    params.reason?.trim() || null,
       createdBy: params.actorId,
     })
-    id = Number((inserted as unknown as { insertId?: number }).insertId ?? 0)
+    // Array-with-header, not the header itself — see the note in
+    // server/api/auth/google/callback.get.ts. Reading it the other way yielded 0,
+    // and the audit row below carried `resourceId: 0`: a ban in force whose log
+    // entry points at no row, which is the one thing wrapping these two writes in
+    // a transaction was meant to prevent.
+    const [header] = inserted
+    id = Number(header?.insertId ?? 0)
 
     await tx.insert(activityLogs).values({
       userId:     params.actorId,
