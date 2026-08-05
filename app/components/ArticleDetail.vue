@@ -1,6 +1,12 @@
 <template>
   <div class="py-10 bg-[#F8FAF7]">
-    <div class="max-w-[800px] mx-auto px-4">
+    <!--
+      Container rộng 1200px thay vì 800px, vì từ khi có khối liên quan thì trang
+      này không còn là một cột chữ nữa. Cột đọc vẫn giữ đúng bề rộng cũ (~800px)
+      — nới nó ra theo container là đổi một khoảng trắng hai bên thành một dòng
+      chữ quá dài, mà dòng quá dài thì mắt mất chỗ khi xuống hàng.
+    -->
+    <div class="max-w-[1200px] mx-auto px-4">
       <!-- Breadcrumb -->
       <nav class="text-[0.85rem] text-[#7A8675] mb-6" aria-label="Đường dẫn">
         <nuxt-link to="/" class="text-[#4A6741] no-underline hover:underline">Trang chủ</nuxt-link> &raquo;
@@ -9,8 +15,9 @@
         <span>{{ currentCrumb }}</span>
       </nav>
 
-      <!-- Loading -->
-      <div v-if="pending" role="status" aria-busy="true" class="animate-pulse motion-reduce:animate-none flex flex-col gap-5">
+      <!-- Loading. Giới hạn theo bề rộng cột đọc, không theo container: một khung
+           chờ trải hết 1200px hứa một bố cục rộng rồi trả về một cột hẹp. -->
+      <div v-if="pending" role="status" aria-busy="true" class="lg:max-w-[820px] animate-pulse motion-reduce:animate-none flex flex-col gap-5">
         <span class="sr-only">Đang tải nội dung bài viết</span>
         <div aria-hidden="true" class="h-5 w-40 bg-[#EEF2EC] rounded"></div>
         <div aria-hidden="true" class="h-9 w-3/4 bg-[#EEF2EC] rounded"></div>
@@ -22,7 +29,7 @@
       <div
         v-else-if="loadError"
         role="alert"
-        class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]"
+        class="lg:max-w-[820px] bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]"
       >
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
         Không thể tải nội dung. Vui lòng
@@ -30,7 +37,23 @@
       </div>
 
       <!-- Main content -->
-      <article v-else-if="article">
+      <!--
+        Bố cục hai cột trên PC: cột đọc bên trái, khối liên quan thành cột phải.
+
+        Trước đây khối liên quan là một dải ngang dưới đáy bài, nên trên màn hình
+        rộng phần "đọc gì tiếp" nằm dưới đúng cái màn hình vừa cuộn hết — người
+        đọc phải cuộn thêm để thấy nó, còn hai bên cột chữ là khoảng trắng không
+        làm gì. Đưa nó sang phải giải quyết cả hai bằng một thay đổi.
+
+        `items-start` là điều kiện tiên quyết, không phải tinh chỉnh: mặc định
+        `stretch` sẽ kéo cột phải cao bằng bài viết, và `sticky` bên trong một ô
+        lưới cao bằng cả bài thì không bao giờ dính — nó chỉ dính khi ô của nó
+        thấp hơn vùng cuộn.
+      -->
+      <article v-else-if="article" class="lg:grid lg:grid-cols-[minmax(0,820px)_320px] lg:items-start lg:gap-10">
+        <!-- Cột đọc. `min-w-0` để một khối `v-html` rộng (bảng, ảnh, code) co lại
+             theo cột thay vì nong cột ra và đẩy cột phải tràn khỏi container. -->
+        <div class="min-w-0">
         <span class="text-[0.85rem] font-bold text-[#4A6741] bg-[#F8FAF7] px-3 py-1.5 rounded inline-flex flex-wrap items-center gap-x-2 mb-4">
           <span><span aria-hidden="true">{{ metaIcon }}</span> {{ categoryLabel }}</span>
           <span aria-hidden="true">•</span>
@@ -106,8 +129,22 @@
           <div v-html="toc.html"></div>
         </div>
 
+        <!-- Bình luận công khai. Ở trong cột đọc, không ở cột phải: một luồng hội
+             thoại dài không đoán được độ dài sẽ phá bố cục của một cột hẹp, và
+             bình luận là phần *nội dung* của bài này chứ không phải điều hướng đi
+             nơi khác. Toàn bộ component tự nạp sau khi mount nên không có gì phụ
+             thuộc người đọc lọt vào HTML của trang đã cache. -->
+        <ArticleComments :slug="slug" />
+
+        <!-- Back link -->
+        <div class="mt-10 border-t border-[#E2E8DF] pt-8">
+          <nuxt-link :to="backTo" class="btn btn-primary">&larr; {{ backCtaLabel }}</nuxt-link>
+        </div>
+        </div>
+        <!-- ↑ hết cột đọc -->
+
         <!--
-          Nội dung liên quan.
+          Nội dung liên quan — cột phải trên PC, dải ngang dưới đáy trên mobile.
 
           Trước đây trang kết thúc ngay tại nút quay lại, nên đọc xong một bài là
           hết đường đi: người đọc phải về danh sách rồi tự tìm bài kế tiếp. Khối
@@ -115,18 +152,23 @@
           trong nhóm này" (chủ đề) — và chỉ hiện khi thật sự có nội dung, vì một
           tiêu đề "Bài viết liên quan" bên trên khoảng trắng còn trống trải hơn
           chỗ trống ban đầu.
+
+          `sticky top-[100px]` là cùng giá trị mà sidebar của `/news` dùng — nó
+          phải chừa được cái header `fixed` (xem layouts/default.vue), y như
+          `scroll-margin-top` của các heading trong bài.
         -->
-        <section
+        <aside
           v-if="relatedPending || relatedError || relatedArticles.length || showTopics"
-          class="mt-12 border-t border-[#E2E8DF] pt-8"
+          class="mt-12 border-t border-[#E2E8DF] pt-8 lg:mt-0 lg:border-t-0 lg:pt-0 lg:sticky lg:top-[100px]"
           aria-labelledby="noi-dung-lien-quan-heading"
         >
           <h2 id="noi-dung-lien-quan-heading" class="m-0 mb-5 text-[1.15rem] font-extrabold text-[#1E251C]">
             <i class="fa-solid fa-layer-group mr-2 text-[#7CB342]" aria-hidden="true"></i>Nội dung liên quan
           </h2>
 
-          <!-- Đang tải -->
-          <div v-if="relatedPending" role="status" aria-busy="true" class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+          <!-- Đang tải. Lưới 2 cột trên mobile/tablet, một cột trên PC — cột phải
+               rộng 320px nên hai thẻ cạnh nhau ở đó sẽ hẹp hơn ảnh của chúng. -->
+          <div v-if="relatedPending" role="status" aria-busy="true" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-5">
             <span class="sr-only">Đang tải nội dung liên quan</span>
             <div
               v-for="n in 4"
@@ -156,7 +198,7 @@
           </div>
 
           <template v-else>
-            <div v-if="relatedArticles.length" class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <div v-if="relatedArticles.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-5">
               <article
                 v-for="item in relatedArticles"
                 :key="item.id"
@@ -207,20 +249,7 @@
               </div>
             </div>
           </template>
-        </section>
-
-        <!-- Bình luận công khai. Đặt SAU khối nội dung liên quan có chủ đích:
-             người đọc xong bài thường muốn "đọc gì tiếp" trước khi muốn "nói gì
-             về bài này", và một khung soạn bình luận chen giữa bài viết và các
-             bài liên quan sẽ đẩy phần điều hướng xuống dưới một luồng hội thoại
-             dài không đoán được độ dài. Toàn bộ component tự nạp sau khi mount
-             nên không có gì phụ thuộc người đọc lọt vào HTML của trang đã cache. -->
-        <ArticleComments :slug="slug" />
-
-        <!-- Back link -->
-        <div class="mt-10 border-t border-[#E2E8DF] pt-8">
-          <nuxt-link :to="backTo" class="btn btn-primary">&larr; {{ backCtaLabel }}</nuxt-link>
-        </div>
+        </aside>
       </article>
 
       <!-- Not found -->

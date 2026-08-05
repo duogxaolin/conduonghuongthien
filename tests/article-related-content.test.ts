@@ -358,12 +358,90 @@ test('cả khối ẩn đi khi không có gì để hiện', () => {
 test('khối liên quan nằm trong nhánh bài viết, không phải nhánh 404', () => {
   // Đặt ngoài `<article v-else-if="article">` là hiện "nội dung liên quan" trên
   // một trang không tìm thấy bài nào.
+  //
+  // Định vị thẻ mở bằng regex chứ không bằng chuỗi `'<article v-else-if="article">'`
+  // khớp cứng: thẻ đó nay mang thêm class lưới hai cột, và một khẳng định về
+  // *thứ tự* không nên đỏ chỉ vì một class được thêm vào. Bản khớp cứng đã đỏ
+  // đúng như vậy — và nếu đọc nhầm nó thành "khối liên quan sai chỗ" thì việc
+  // sửa sẽ là di chuyển khối, tức phá đúng thứ guard này đang bảo vệ.
   const source = template(COMPONENT)
-  const articleStart = source.indexOf('<article v-else-if="article">')
+  const articleStart = source.search(/<article\s+v-else-if="article"/)
   const relatedStart = source.indexOf('aria-labelledby="noi-dung-lien-quan-heading"')
   const notFound = source.indexOf('<div v-else class="py-10 text-center">')
   assert.ok(articleStart >= 0 && relatedStart > articleStart, 'khối liên quan phải nằm sau <article>')
   assert.ok(notFound > relatedStart, 'khối liên quan phải nằm trước nhánh không tìm thấy')
+})
+
+// ─── Bố cục hai cột ────────────────────────────────────────────────────────
+
+test('khối liên quan là cột phải trên PC, không phải dải ngang dưới đáy', () => {
+  // Trên màn hình rộng, một dải ngang dưới đáy bài đặt phần "đọc gì tiếp" ngay
+  // dưới cái màn hình vừa cuộn hết — người đọc phải cuộn thêm để thấy nó, còn
+  // hai bên cột chữ là khoảng trắng không làm gì.
+  const source = template(COMPONENT)
+  const grid = source.match(/<article\s+v-else-if="article"[^>]*>/)?.[0] ?? ''
+  assert.match(grid, /lg:grid\b/, 'lưới chỉ bật từ lg — mobile vẫn là một luồng xếp dọc')
+  assert.match(grid, /lg:grid-cols-\[minmax\(0,820px\)_320px\]/, 'cột đọc trần 820px, cột phải cố định 320px')
+
+  // `items-start` là điều kiện tiên quyết của `sticky`, không phải tinh chỉnh:
+  // mặc định `stretch` kéo ô lưới cao bằng bài viết, và `sticky` trong một ô cao
+  // bằng cả vùng cuộn thì không bao giờ dính.
+  assert.match(grid, /lg:items-start/, 'thiếu items-start thì sticky ở cột phải không bao giờ dính')
+
+  const aside = source.match(/<aside[^>]*aria-labelledby="noi-dung-lien-quan-heading"[\s\S]{0,400}?>/)?.[0] ?? ''
+  assert.ok(aside, 'khối liên quan phải là <aside> — nó là điều hướng phụ, không phải một mục của bài')
+  assert.match(aside, /lg:sticky/)
+  // Cùng giá trị mà sidebar của /news dùng, và cùng lý do: chừa cái header
+  // `fixed` của layouts/default.vue.
+  assert.match(aside, /lg:top-\[100px\]/)
+  // Đường kẻ ngang chỉ có nghĩa khi khối nằm DƯỚI bài; ở cột phải nó là một nét
+  // cắt ngang giữa hai cột.
+  assert.match(aside, /lg:border-t-0/)
+})
+
+test('cột đọc giữ nguyên bề rộng đọc được và không bị khối v-html nong ra', () => {
+  const source = template(COMPONENT)
+  // Container nới ra để có chỗ cho cột phải, nhưng cột chữ KHÔNG được nới theo:
+  // một dòng chữ dài 1200px thì mắt mất chỗ khi xuống hàng.
+  assert.match(source, /max-w-\[1200px\]/, 'container phải đủ rộng cho hai cột')
+  assert.doesNotMatch(source, /max-w-\[800px\]/, 'bề rộng cột đọc nay do lưới quyết định, không do container')
+
+  // `min-w-0` để một bảng hoặc ảnh rộng trong `v-html` co lại theo cột thay vì
+  // nong cột ra và đẩy cột phải tràn khỏi container. Đây là hành vi mặc định của
+  // grid item (`min-width: auto`), nên thiếu class này là một lỗi bố cục chỉ lộ
+  // ra với đúng những bài có nội dung rộng.
+  assert.match(source, /<div class="min-w-0">/, 'cột đọc cần min-w-0')
+
+  // Khung chờ và nhánh lỗi của cả trang phải khớp bề rộng cột đọc: trải hết
+  // 1200px là hứa một bố cục rộng rồi trả về một cột hẹp.
+  const skeleton = source.match(/<div\s+v-if="pending"[^>]*>/)?.[0] ?? ''
+  assert.match(skeleton, /lg:max-w-\[820px\]/)
+  const mainError = source.match(/<div\s+v-else-if="loadError"[\s\S]{0,300}?>/)?.[0] ?? ''
+  assert.match(mainError, /lg:max-w-\[820px\]/)
+})
+
+test('thẻ bài liên quan xếp một cột ở cột phải, hai cột khi còn đủ chỗ', () => {
+  // Cột phải rộng 320px, nên hai thẻ cạnh nhau ở đó hẹp hơn cả ảnh của chúng.
+  // Nhưng trên mobile/tablet khối này lại là dải ngang chiếm hết bề rộng, và ở
+  // đó một cột là bỏ không nửa màn hình.
+  const source = template(COMPONENT)
+  for (const marker of ['v-if="relatedPending"', 'v-if="relatedArticles.length"']) {
+    const tag = source.match(new RegExp(`<div[^>]*${marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^>]*>`))?.[0] ?? ''
+    assert.ok(tag, `không tìm thấy lưới cho ${marker}`)
+    assert.match(tag, /sm:grid-cols-2/, `${marker}: tablet còn chỗ cho hai cột`)
+    assert.match(tag, /lg:grid-cols-1/, `${marker}: ở cột phải 320px phải quay về một cột`)
+  }
+})
+
+test('bình luận ở trong cột đọc, không ở cột phải', () => {
+  // Một luồng hội thoại dài không đoán được độ dài sẽ phá bố cục của một cột
+  // hẹp — và bình luận là phần *nội dung* của bài này, không phải điều hướng đi
+  // nơi khác.
+  const source = template(COMPONENT)
+  const comments = source.indexOf('<ArticleComments')
+  const asideStart = source.search(/<aside[^>]*aria-labelledby="noi-dung-lien-quan-heading"/)
+  assert.ok(comments >= 0 && asideStart >= 0, 'không tìm thấy bình luận hoặc khối liên quan')
+  assert.ok(comments < asideStart, 'bình luận phải nằm trong cột đọc, tức trước <aside>')
 })
 
 test('id tiêu đề khối không đụng vào anchor do buildToc sinh', () => {
