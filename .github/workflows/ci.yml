@@ -86,6 +86,10 @@ jobs:
           READER_RETENTION_PORT: 3306
           READER_RETENTION_USER: root
           READER_RETENTION_PASSWORD: test_root_password
+          INSERT_ID_INTEGRATION: 1
+          INSERT_ID_PORT: 3306
+          INSERT_ID_USER: root
+          INSERT_ID_PASSWORD: test_root_password
         run: npm test
 
       # A suite that silently stops running is worse than one that fails: the run
@@ -102,6 +106,7 @@ jobs:
             [view-boost-integration]=VIEW_BOOST_INTEGRATION
             [chat-retention-integration]=CHAT_RETENTION_INTEGRATION
             [reader-retention-integration]=READER_RETENTION_INTEGRATION
+            [insert-id-integration]=INSERT_ID_INTEGRATION
           )
           status=0
           for file in tests/*-integration.test.ts; do
