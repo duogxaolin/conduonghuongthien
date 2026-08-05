@@ -132,3 +132,46 @@ test('the accordion +/− glyph is not read out as content', () => {
 test('keyboard users get a visible focus ring on the accordion', () => {
   assert.match(read('pages/legal-qa/index.vue'), /focus-visible:ring-2/)
 })
+
+// ─── Thanh điều hướng: một đường vào duy nhất ở mọi bề rộng ─────────────────
+
+test('thanh điều hướng ngang và hamburger chuyển giao ở cùng một breakpoint', () => {
+  // `nav` trong thanh ngang mang `w-max`, nên nó rộng theo NỘI DUNG chứ không
+  // theo container: tám mục mặc định cần ~852px. Khi thanh này bật ở `md`
+  // (768px), phần thừa đẩy ra ngoài và **cả trang cuộn ngang được** — trên mọi
+  // trang, không riêng trang nào. Đo trên bản build: 768px cho scrollWidth 852
+  // trên clientWidth 768.
+  //
+  // Hai lớp phải chuyển giao ở CÙNG một breakpoint, và đó là điều kiện then
+  // chốt: lệch nhau một bậc thì có một dải bề rộng **không có đường vào menu
+  // nào** (cả hai đều ẩn) hoặc **có hai** (hamburger nổi trên thanh ngang).
+  const source = read('layouts/default.vue')
+
+  const bar = source.match(/<div class="hidden (md|lg):flex bg-white border-t[^"]*"/)?.[0] ?? ''
+  assert.ok(bar, 'không tìm thấy thanh điều hướng ngang')
+  assert.match(bar, /hidden lg:flex/, 'thanh ngang phải bật từ lg — ở md nó rộng hơn khung chứa nó')
+
+  // Hamburger: nút duy nhất mang aria-expanded gắn với isMobileMenuOpen.
+  const burger = source.match(/class="(md|lg):hidden flex flex-col justify-center[^"]*"/)?.[0] ?? ''
+  assert.ok(burger, 'không tìm thấy nút hamburger')
+  assert.match(burger, /lg:hidden/, 'hamburger phải sống tới lg, nếu không 768–1023px không còn đường vào menu')
+
+  // Drawer phải theo cùng nút mở nó. Đây là chỗ đã sai một lần: đổi hamburger
+  // sang `lg:hidden` mà để drawer ở `md:hidden` thì nút hiện ra nhưng bấm vào
+  // không có gì mở — đúng dải bề rộng vừa được giao cho nó.
+  const drawer = source.match(/class="fixed top-0 w-\[min\(88vw,380px\)\][^"]*"/)?.[0] ?? ''
+  assert.ok(drawer, 'không tìm thấy drawer menu')
+  assert.match(drawer, /lg:hidden/, 'drawer phải ẩn ở cùng breakpoint với hamburger')
+})
+
+test('drawer dựng từ cùng nguồn menu với thanh ngang', () => {
+  // Chuyển 768–1023px sang hamburger chỉ không mất gì NẾU drawer hiện đủ những
+  // mục mà thanh ngang hiện — kể cả mục con. Cả hai lặp trên `navMenu`, và
+  // drawer có accordion riêng cho `item.children`.
+  const source = read('layouts/default.vue')
+  assert.ok(
+    (source.match(/v-for="item in navMenu"/g) ?? []).length >= 2,
+    'thanh ngang và drawer phải đọc cùng một navMenu, không phải hai danh sách rời',
+  )
+  assert.match(source, /toggleMobileSubmenu\(item\.id\)/, 'drawer cần accordion cho mục có con')
+})

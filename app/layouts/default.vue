@@ -97,7 +97,7 @@
             </client-only>
             <!-- Mobile Toggle -->
             <button
-              class="md:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all z-[10003] hover:bg-[#e4f0e2]"
+              class="lg:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all z-[10003] hover:bg-[#e4f0e2]"
               @click="toggleMobileMenu"
               :aria-label="isMobileMenuOpen ? t('menu_close') : t('menu_open')"
               :aria-expanded="isMobileMenuOpen">
@@ -111,7 +111,7 @@
 
       <!-- Mobile Drawer Nav -->
       <nav
-        class="fixed top-0 w-[min(88vw,380px)] max-w-full h-[100dvh] flex flex-col bg-white shadow-[-12px_0_40px_rgba(15,35,18,0.24)] z-[10002] transition-[right] duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden md:hidden"
+        class="fixed top-0 w-[min(88vw,380px)] max-w-full h-[100dvh] flex flex-col bg-white shadow-[-12px_0_40px_rgba(15,35,18,0.24)] z-[10002] transition-[right] duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden lg:hidden"
         :class="isMobileMenuOpen ? 'right-0' : '-right-full'"
         @click="onNavClick" @keydown.escape="toggleMobileMenu"
       >
@@ -205,7 +205,28 @@
           </div>
         </div>
       </nav>
-      <div class="hidden md:flex bg-white border-t border-[#edf2ec] border-b border-[#e1e8e0] h-[50px] items-center shadow-[0_4px_12px_rgba(15,35,18,0.04)] transition-all">
+      <!--
+        Thanh điều hướng ngang chỉ hiện từ `lg` (1024px), không từ `md` (768px).
+
+        `nav` mang `w-max`, nên nó rộng theo NỘI DUNG chứ không theo container:
+        tám mục mặc định cần ~852px. Ở `md` thanh này bật lên trong một khung chỉ
+        rộng 768px, nên `min-w-full` không cứu được gì — phần thừa đẩy ra ngoài và
+        **cả trang cuộn ngang được**, ở mọi trang chứ không riêng trang nào. Đây
+        là lý do các mục cuối ("Liên hệ") bị cắt trên tablet.
+
+        Không chọn `overflow-x-auto` cho container: dropdown là `absolute` mở
+        xuống dưới, và một khung cuộn ngang cũng cắt luôn chiều dọc (`overflow-x`
+        khác `visible` biến `overflow-y: visible` thành `auto`) — nó sẽ cắt mất
+        đúng menu con. Cũng không cho `ul` xuống dòng: thanh này cao cố định 50px.
+
+        Khoảng 768–1023px giao cho hamburger, và không mất gì: drawer dựng từ
+        cùng `navMenu`, có accordion cho mục con.
+
+        ⚠️ Menu do admin cấu hình được (`/admin/content/navigation/navbar`), nên
+        thêm thật nhiều mục vẫn có thể vượt cả 1024px. Đó là tính chất có sẵn của
+        một thanh ngang cao cố định, không phải thứ breakpoint này hứa sẽ chặn.
+      -->
+      <div class="hidden lg:flex bg-white border-t border-[#edf2ec] border-b border-[#e1e8e0] h-[50px] items-center shadow-[0_4px_12px_rgba(15,35,18,0.04)] transition-all">
         <div class="container w-full overflow-visible">
           <nav class="flex w-max min-w-full" @click="onNavClick" @keydown.escape="toggleMobileMenu">
             <ul class="flex list-none w-full justify-between items-center gap-1">
