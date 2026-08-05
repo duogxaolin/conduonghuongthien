@@ -15,7 +15,7 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  */
 
 type Scope = {
-  scope: 'activity_logs' | 'submissions' | 'chat_sessions'
+  scope: 'activity_logs' | 'submissions' | 'chat_sessions' | 'reader_accounts'
   days: number
   daysSource: string
   maxRows: number
@@ -37,11 +37,13 @@ const SCOPE_LABELS: Record<string, string> = {
   activity_logs: 'Lịch sử hoạt động',
   submissions: 'Đơn đăng ký hỗ trợ',
   chat_sessions: 'Phiên trò chuyện chatbot',
+  reader_accounts: 'Tài khoản người đọc',
 }
 const SCOPE_NOTES: Record<string, string> = {
   activity_logs: 'Mỗi lần đăng nhập và mọi thao tác thêm/sửa/xoá đều sinh một dòng, kèm IP và trình duyệt.',
   submissions: 'Chứa họ tên, số điện thoại, email và nội dung công dân tự nhập. Thời hạn lưu do quy định của cơ quan quyết định.',
   chat_sessions: 'Chứa nội dung hội thoại giữa khách và trợ lý AI, kèm IP và có khi cả số điện thoại. Tin nhắn tự xoá theo phiên (ON DELETE CASCADE) — chỉ cần đặt điều kiện dọn cho bảng phiên.',
+  reader_accounts: 'Tài khoản đăng nhập Google để bình luận: email, tên hiển thị, IP và trình duyệt lần gần nhất. Tính tuổi theo lần truy cập gần nhất, không theo ngày tạo. Bình luận tự xoá theo tài khoản (ON DELETE CASCADE), kể cả phản hồi của Ban quản trị nằm dưới.',
 }
 const SOURCE_LABELS: Record<string, string> = {
   database: 'đang đặt tại đây',
@@ -71,6 +73,8 @@ const form = reactive({
   submissionMaxRows: 0,
   chatSessionDays: 90,
   chatSessionMaxRows: 0,
+  readerAccountDays: 365,
+  readerAccountMaxRows: 0,
 })
 const autoEnabledSource = ref('default')
 const runHourSource = ref('default')
@@ -78,6 +82,7 @@ const runHourSource = ref('default')
 const activity = computed(() => scopes.value.find(s => s.scope === 'activity_logs') ?? null)
 const submission = computed(() => scopes.value.find(s => s.scope === 'submissions') ?? null)
 const chatSession = computed(() => scopes.value.find(s => s.scope === 'chat_sessions') ?? null)
+const readerAccount = computed(() => scopes.value.find(s => s.scope === 'reader_accounts') ?? null)
 
 /** Nothing configured to delete anything — the switch being on changes nothing. */
 const nothingWillBeDeleted = computed(() =>
@@ -119,6 +124,9 @@ async function load() {
       } else if (scope.scope === 'chat_sessions') {
         form.chatSessionDays = scope.days
         form.chatSessionMaxRows = scope.maxRows
+      } else if (scope.scope === 'reader_accounts') {
+        form.readerAccountDays = scope.days
+        form.readerAccountMaxRows = scope.maxRows
       }
     }
   } catch (err: any) {
@@ -142,6 +150,8 @@ async function save() {
         submissionMaxRows: Number(form.submissionMaxRows),
         chatSessionDays: Number(form.chatSessionDays),
         chatSessionMaxRows: Number(form.chatSessionMaxRows),
+        readerAccountDays: Number(form.readerAccountDays),
+        readerAccountMaxRows: Number(form.readerAccountMaxRows),
       },
     })
     toast.success('Đã lưu cấu hình dọn dữ liệu.')
@@ -422,6 +432,24 @@ onMounted(load)
                 <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số bản ghi tối đa</label>
                 <input type="number" min="0" v-model.number="form.chatSessionMaxRows" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
                 <p class="text-[0.72rem] text-[#8a9a8c] m-0">0 (không giới hạn) hoặc từ 1.000 trở lên.</p>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-lg border border-[#e2ece3] p-4">
+            <p class="text-[0.88rem] font-bold text-[#122815] m-0 mb-3">Tài khoản người đọc</p>
+            <div class="flex flex-col gap-3">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số ngày lưu</label>
+                <input type="number" min="0" max="3650" v-model.number="form.readerAccountDays" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+                <p class="text-[0.72rem] text-[#8a9a8c] m-0">
+                  0 hoặc từ 30 đến 3650. Tính theo lần truy cập gần nhất, không theo ngày tạo — một tài khoản mở từ lâu nhưng vừa bình luận hôm qua vẫn là người đọc đang hoạt động.
+                  <span v-if="readerAccount">Hiện {{ SOURCE_LABELS[readerAccount.daysSource] }}.</span>
+                </p>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số bản ghi tối đa</label>
+                <input type="number" min="0" v-model.number="form.readerAccountMaxRows" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+                <p class="text-[0.72rem] text-[#8a9a8c] m-0">Nên để 0: xoá một tài khoản là xoá luôn toàn bộ bình luận công khai của người đó.</p>
               </div>
             </div>
           </div>

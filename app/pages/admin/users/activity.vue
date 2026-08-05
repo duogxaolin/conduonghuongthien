@@ -19,18 +19,41 @@ type LogItem = {
   mfaMethod: string | null
 }
 
+/**
+ * Nhãn của bộ lọc là một hợp đồng HAI CHIỀU với những chuỗi mà máy chủ thật sự
+ * ghi vào `activity_logs`, và cả hai chiều đều sai được trong im lặng:
+ *
+ *   - Thiếu nhãn: dòng log hiện ra chuỗi thô (`reader_ip_bans`) và **không có
+ *     mục nào trong ô lọc**, nên một cán bộ đi tìm "ai đã chặn địa chỉ này" sẽ
+ *     kết luận nhật ký không ghi việc đó. Nó có ghi — chỉ là không lọc tới được.
+ *   - Nhãn trỏ vào khoá không ai ghi: ô lọc quảng cáo một mục, bấm vào thì bảng
+ *     rỗng, và cái rỗng đó đọc y hệt "không ai làm việc này bao giờ". `news` và
+ *     `chatbot_settings` từng nằm đây vì lẫn với **tên tài nguyên RBAC**; hai
+ *     không gian tên đó trùng nhau một phần nên chỗ lệch không lộ ra.
+ *
+ * Đối chiếu bằng cách quét `resource:` / `action:` trong `server/**`, không phải
+ * bằng cách đọc thuộc lòng — có test chặn để lần thêm đường ghi sau không lặng
+ * lẽ mở lại khoảng trống này.
+ */
 const ACTION_LABELS: Record<string, string> = {
   login: 'Đăng nhập', logout: 'Đăng xuất', create: 'Thêm mới',
   update: 'Cập nhật', delete: 'Xoá', read: 'Xem',
-  publish: 'Xuất bản', archive: 'Lưu trữ',
+  publish: 'Xuất bản',
+  boost: 'Tăng lượt xem', reorder: 'Sắp xếp lại',
+  version: 'Lưu phiên bản', restore: 'Phục hồi phiên bản',
 }
 const RESOURCE_LABELS: Record<string, string> = {
   auth: 'Xác thực', profile_password: 'Mật khẩu tài khoản', profile_mfa: 'Xác thực hai bước',
   profile_recovery_codes: 'Mã dự phòng', user_mfa: 'Xác thực hai bước (tài khoản khác)',
   user_history: 'Lịch sử tài khoản khác', activity_logs: 'Lịch sử toàn hệ thống',
-  news: 'Bài viết', media: 'Thư viện Media', pages: 'Trang', users: 'Người dùng',
+  articles: 'Bài viết', media: 'Thư viện Media', pages: 'Trang', users: 'Người dùng',
   roles: 'Vai trò', settings: 'Cài đặt', submissions: 'Đơn đăng ký',
-  chatbot_knowledge: 'Kho kiến thức Chatbot', chatbot_settings: 'Cài đặt Chatbot',
+  home_sections: 'Khối trang chủ', data_retention: 'Tự động dọn dữ liệu',
+  chatbot_knowledge: 'Kho nội dung Chatbot', chat_sessions: 'Phiên trò chuyện',
+  // Đăng nhập Google & bình luận công khai. Không có nhóm này thì mọi thao tác
+  // kiểm duyệt dữ liệu công dân đều nằm ngoài tầm bộ lọc của trang kiểm toán.
+  readers: 'Người đọc', comments: 'Bình luận', article_comments: 'Bình luận bài viết',
+  reader_ip_bans: 'Chặn địa chỉ IP', google_oauth_settings: 'Đăng nhập Google',
 }
 const MFA_METHOD_LABELS: Record<string, string> = {
   totp: 'ứng dụng xác thực', email_otp: 'mã qua email',

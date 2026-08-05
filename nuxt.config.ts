@@ -129,6 +129,13 @@ export default defineNuxtConfig({
     // a client via x-forwarded-for; see server/utils/client-ip.ts. Empty means
     // loopback only, which is correct for an app with nothing in front of it.
     trustedProxyIps: process.env.TRUSTED_PROXY_IPS || '',
+    // Public address of this deployment, used to build the Google OAuth redirect
+    // URI. Read through runtimeConfig rather than process.env alone for the same
+    // reason trustedProxyIps is: Nitro resolves NUXT_-prefixed variables at
+    // runtime, and a bare name set only in the container env would be invisible
+    // here. Empty falls back to the request host with a warning on the settings
+    // page (server/utils/google-oauth/config.ts).
+    publicBaseUrl: process.env.PUBLIC_BASE_URL || '',
     analytics: {
       hmacSecret: analyticsHmacSecret,
       collectionEnabled: parseAnalyticsBoolean('ANALYTICS_COLLECTION_ENABLED', false),

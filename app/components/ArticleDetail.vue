@@ -209,6 +209,14 @@
           </template>
         </section>
 
+        <!-- Bình luận công khai. Đặt SAU khối nội dung liên quan có chủ đích:
+             người đọc xong bài thường muốn "đọc gì tiếp" trước khi muốn "nói gì
+             về bài này", và một khung soạn bình luận chen giữa bài viết và các
+             bài liên quan sẽ đẩy phần điều hướng xuống dưới một luồng hội thoại
+             dài không đoán được độ dài. Toàn bộ component tự nạp sau khi mount
+             nên không có gì phụ thuộc người đọc lọt vào HTML của trang đã cache. -->
+        <ArticleComments :slug="slug" />
+
         <!-- Back link -->
         <div class="mt-10 border-t border-[#E2E8DF] pt-8">
           <nuxt-link :to="backTo" class="btn btn-primary">&larr; {{ backCtaLabel }}</nuxt-link>

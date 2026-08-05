@@ -23,7 +23,7 @@ import {
  * one can be disabled with 0; both disabled means nothing is ever deleted.
  */
 
-export const RETENTION_SCOPES = ['activity_logs', 'submissions', 'chat_sessions'] as const
+export const RETENTION_SCOPES = ['activity_logs', 'submissions', 'chat_sessions', 'reader_accounts'] as const
 export type RetentionScope = typeof RETENTION_SCOPES[number]
 
 export const RETENTION_TRIGGERS = ['scheduler', 'cron', 'manual'] as const
@@ -42,6 +42,8 @@ export const RETENTION_SETTING_KEYS = {
   submissionMaxRows: 'retention_submission_max_rows',
   chatSessionDays: 'retention_chat_session_days',
   chatSessionMaxRows: 'retention_chat_session_max_rows',
+  readerAccountDays: 'retention_reader_account_days',
+  readerAccountMaxRows: 'retention_reader_account_max_rows',
 } as const
 
 export const RETENTION_DEFAULTS = {
@@ -53,6 +55,7 @@ export const RETENTION_DEFAULTS = {
   activityLogMaxRows: 0,
   submissionMaxRows: 0,
   chatSessionMaxRows: 0,
+  readerAccountMaxRows: 0,
 } as const
 
 /**
@@ -68,10 +71,10 @@ const SCOPE_SETTINGS: Record<RetentionScope, {
   daysKey: string
   maxRowsKey: string
   envKey: string
-  envField: 'activityLogDays' | 'submissionDays' | 'chatSessionDays'
+  envField: 'activityLogDays' | 'submissionDays' | 'chatSessionDays' | 'readerAccountDays'
   /** Field names on RetentionPolicyInput — what the admin form sends. */
-  inputDaysField: 'activityLogDays' | 'submissionDays' | 'chatSessionDays'
-  inputMaxRowsField: 'activityLogMaxRows' | 'submissionMaxRows' | 'chatSessionMaxRows'
+  inputDaysField: 'activityLogDays' | 'submissionDays' | 'chatSessionDays' | 'readerAccountDays'
+  inputMaxRowsField: 'activityLogMaxRows' | 'submissionMaxRows' | 'chatSessionMaxRows' | 'readerAccountMaxRows'
   bounds: { min: number; max: number }
   maxRowsDefault: number
 }> = {
@@ -104,6 +107,16 @@ const SCOPE_SETTINGS: Record<RetentionScope, {
     inputMaxRowsField: 'chatSessionMaxRows',
     bounds: DATA_RETENTION_BOUNDS.chatSessionDays,
     maxRowsDefault: RETENTION_DEFAULTS.chatSessionMaxRows,
+  },
+  reader_accounts: {
+    daysKey: RETENTION_SETTING_KEYS.readerAccountDays,
+    maxRowsKey: RETENTION_SETTING_KEYS.readerAccountMaxRows,
+    envKey: 'READER_ACCOUNT_RETENTION_DAYS',
+    envField: 'readerAccountDays',
+    inputDaysField: 'readerAccountDays',
+    inputMaxRowsField: 'readerAccountMaxRows',
+    bounds: DATA_RETENTION_BOUNDS.readerAccountDays,
+    maxRowsDefault: RETENTION_DEFAULTS.readerAccountMaxRows,
   },
 }
 
@@ -256,6 +269,8 @@ export type RetentionPolicyInput = {
   submissionMaxRows?: unknown
   chatSessionDays?: unknown
   chatSessionMaxRows?: unknown
+  readerAccountDays?: unknown
+  readerAccountMaxRows?: unknown
 }
 
 /**

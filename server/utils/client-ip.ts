@@ -81,7 +81,7 @@ export function normalizeIp(value: string | null | undefined): string | null {
   return text || null
 }
 
-function ipv4ToInt(ip: string): number | null {
+export function ipv4ToInt(ip: string): number | null {
   const parts = ip.split('.')
   if (parts.length !== 4) return null
   let value = 0
@@ -95,17 +95,24 @@ function ipv4ToInt(ip: string): number | null {
 }
 
 /**
- * Literal match, or IPv4 CIDR containment. IPv6 ranges are deliberately not
- * supported: a half-correct IPv6 mask that silently matches too much would be a
- * worse outcome than requiring the literal address, and every proxy this app
- * runs behind is reachable at a fixed one.
+ * Does `ip` match any entry of `list`? Literal match, or IPv4 CIDR containment.
+ *
+ * IPv6 ranges are deliberately not supported: a half-correct IPv6 mask that
+ * silently matches too much would be a worse outcome than requiring the literal
+ * address, and every proxy this app runs behind is reachable at a fixed one. An
+ * IPv6 literal still matches exactly; only a `/` range is refused.
+ *
+ * Extracted from `isTrustedProxy` so the same matcher backs the reader IP ban
+ * list (`server/utils/ip-ban.ts`) — decision D11. Two independent copies of
+ * CIDR arithmetic would drift, and the half that drifted would be the one whose
+ * failure is silent: a ban that quietly matches nothing.
  */
-export function isTrustedProxy(ip: string | null, trusted: readonly string[]): boolean {
+export function matchesIpList(ip: string | null | undefined, list: readonly string[]): boolean {
   if (!ip) return false
   const address = normalizeIp(ip)
   if (!address) return false
 
-  for (const entry of trusted) {
+  for (const entry of list) {
     const candidate = entry.trim().toLowerCase()
     if (!candidate) continue
 
@@ -129,6 +136,11 @@ export function isTrustedProxy(ip: string | null, trusted: readonly string[]): b
   }
 
   return false
+}
+
+/** Is the socket peer one of the proxies we listed ourselves? */
+export function isTrustedProxy(ip: string | null, trusted: readonly string[]): boolean {
+  return matchesIpList(ip, trusted)
 }
 
 /**

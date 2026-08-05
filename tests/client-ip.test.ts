@@ -246,10 +246,34 @@ describe('call sites', () => {
       'server/services/analytics-ingestion.ts',
       'server/api/admin/activity-logs/index.get.ts',
       'server/api/admin/profile/history.get.ts',
+      // Reader sign-in and public comments. Both write the caller's address into a
+      // row (reader_accounts.last_ip, article_comments.ip) and both key a rate
+      // limit on it, so the shared-bucket-behind-nginx failure applies to them
+      // exactly as it did to the chat handler.
+      'server/api/auth/google/start.get.ts',
+      'server/api/auth/google/callback.get.ts',
+      'server/api/public/comments/index.post.ts',
+      'server/api/admin/comments/reply.post.ts',
+      'server/utils/reader-auth.ts',
     ]) {
       if (/getRequestIP\(/.test(read(file))) offenders.push(file)
     }
     assert.deepEqual(offenders, [])
+  })
+
+  it('the OAuth redirect helper uses the peer address only to decide proxy trust', () => {
+    // This is the one new file allowed to call getRequestIP. It must ask
+    // isTrustedProxy about the peer — never treat the peer as the visitor's
+    // address, and never honour a forwarded host without that check, or a forged
+    // header would choose the redirect URI sent to Google.
+    const source = read('server/utils/google-oauth/config.ts')
+    assert.match(source, /isTrustedProxy\(/)
+    assert.match(source, /xForwardedFor: false/)
+    assert.doesNotMatch(
+      source,
+      /getClientIp\(/,
+      'config.ts must not resolve a client address — it only decides whether the peer is our proxy',
+    )
   })
 
   it('the chat rate-limit key is derived from the resolved client address', () => {

@@ -15,10 +15,18 @@ export type ChatbotKnowledgeAction = 'read' | 'create' | 'update' | 'delete' | '
 export type ChatbotSmallTalkAction = 'read' | 'create' | 'update' | 'delete'
 
 // Canonical set of RBAC resources. Permission grants outside this set are rejected.
+//
+// `readers` and `comments` are deliberately NOT folded into an article resource
+// (design.md D13, reader-google-login-comments). An officer who may publish news
+// is not thereby authorized to read citizens' email addresses and posting
+// histories — that is a different category of data. Both ship granted to no
+// existing role, so an administrator has to hand them out after upgrading;
+// seeding them onto current roles would silently widen access to personal data
+// for whoever already held one.
 export const VALID_RESOURCES = new Set<string>([
   'news', 'role_models', 'reintegration', 'documents', 'faq', 'categories',
   'home_sections', 'pages', 'users', 'roles', 'media', 'settings', 'submissions',
-  'analytics', 'chatbot_settings', 'chatbot_knowledge',
+  'analytics', 'chatbot_settings', 'chatbot_knowledge', 'readers', 'comments',
 ])
 
 const ACTION_FLAGS = [

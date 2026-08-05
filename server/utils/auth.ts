@@ -1,5 +1,6 @@
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
+import { hkdfSync } from 'node:crypto'
 
 const ROUNDS = 12
 
@@ -19,8 +20,15 @@ export async function verifyPassword(plain: string, hash: string): Promise<boole
  * for a session only once a factor is satisfied. Both are signed by the same
  * key, so the stage claim — checked explicitly in server/middleware/admin-auth.ts
  * — is what keeps a challenge token from being spent as a session.
+ *
+ * 'reader' is a different audience entirely (public commenters, not admins) and
+ * is signed under a key *derived* from JWT_SECRET (see readerSigningKey below),
+ * not the raw secret used above. That makes the stage claim and the signing key
+ * two independent barriers: forging a reader ticket into an admin session would
+ * require both guessing the derived key and getting server/middleware/admin-auth.ts
+ * to accept a non-'session' stage.
  */
-export type AdminTokenStage = 'session' | 'mfa-challenge'
+export type AdminTokenStage = 'session' | 'mfa-challenge' | 'reader'
 
 export interface AdminTokenPayload {
   userId:   number
@@ -98,6 +106,92 @@ export function verifyMfaChallenge(token: string): MfaChallengePayload | null {
   try {
     const payload = jwt.verify(token, jwtSecret()) as MfaChallengePayload
     if (payload?.stage !== 'mfa-challenge') return null
+    return payload
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Reader session tokens (design.md D1, reader-google-login-comments).
+ *
+ * Deliberately signed under a key DERIVED from JWT_SECRET via HKDF-SHA256,
+ * never under jwtSecret() directly — mirrors server/utils/mfa/key.ts. This is
+ * the second of the two independent barriers between reader tickets and admin
+ * sessions: even if a future refactor accidentally dropped the `stage` check
+ * in server/middleware/admin-auth.ts (isSessionStage), a reader ticket still
+ * would not verify against jwtSecret(), because it was never signed with it.
+ */
+const READER_KEY_INFO = 'cdkt-reader-session:v1'
+const READER_KEY_BYTES = 32
+
+/**
+ * Fixed, non-secret salt — same reasoning as mfa/key.ts's SALT: JWT_SECRET is
+ * already high-entropy input keying material, so a stored per-row salt buys
+ * nothing here.
+ */
+const READER_KEY_SALT = Buffer.from('cdkt-reader-hkdf-salt:v1', 'utf8')
+
+/**
+ * Input keying material for the reader key, read the same way jwtSecret() and
+ * mfa/key.ts's inputKeyMaterial() read it — including the development
+ * fallback. Production absence is impossible (require-secrets.ts blocks boot)
+ * but is treated as fatal here regardless of NODE_ENV shape.
+ */
+function readerKeyMaterial(): string {
+  const secret = (process.env.JWT_SECRET || '').trim()
+  if (secret) return secret
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error('JWT_SECRET is not configured (required to sign reader sessions).')
+  }
+  return 'cdkt_dev_only_insecure_jwt_secret_do_not_use_in_prod'
+}
+
+/**
+ * Derive the reader signing key. Deterministic for a given JWT_SECRET, and
+ * cryptographically unrelated to jwtSecret() itself — rotating JWT_SECRET
+ * rotates this too, but neither key can be recovered from the other.
+ */
+export function readerSigningKey(): Buffer {
+  const ikm = readerKeyMaterial()
+  return Buffer.from(hkdfSync('sha256', Buffer.from(ikm, 'utf8'), READER_KEY_SALT, Buffer.from(READER_KEY_INFO, 'utf8'), READER_KEY_BYTES))
+}
+
+export interface ReaderTokenPayload {
+  readerId: number
+  /** Compared against reader_accounts.token_version; bumping it revokes every issued ticket. */
+  tokenVersion: number
+  stage: 'reader'
+}
+
+/**
+ * 30 days: readers are anonymous commenters, not admins — there is no adjacent
+ * privileged action worth a short-lived ticket, and forcing frequent re-login
+ * only pushes people back through the Google consent screen for no security
+ * gain. No email or display name in the payload: those live in reader_accounts
+ * and can change (or the row can be banned) without needing to reissue tickets
+ * already in browsers.
+ */
+const READER_TOKEN_TTL = '30d'
+
+export function signReaderToken(payload: { readerId: number, tokenVersion: number }): string {
+  return jwt.sign(
+    { ...payload, stage: 'reader' as const },
+    readerSigningKey(),
+    { expiresIn: READER_TOKEN_TTL },
+  )
+}
+
+/**
+ * Verify a reader ticket. Returns null for anything not *explicitly* stage
+ * 'reader' — including a well-formed admin session token, which would fail
+ * here anyway since it was signed with a different key (jwtSecret(), not
+ * readerSigningKey()).
+ */
+export function verifyReaderToken(raw: string): ReaderTokenPayload | null {
+  try {
+    const payload = jwt.verify(raw, readerSigningKey()) as ReaderTokenPayload
+    if (payload?.stage !== 'reader') return null
     return payload
   } catch {
     return null
