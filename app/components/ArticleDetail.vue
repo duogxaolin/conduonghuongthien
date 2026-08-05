@@ -10,16 +10,18 @@
       </nav>
 
       <!-- Loading -->
-      <div v-if="pending" class="animate-pulse motion-reduce:animate-none flex flex-col gap-5">
-        <div class="h-5 w-40 bg-[#EEF2EC] rounded"></div>
-        <div class="h-9 w-3/4 bg-[#EEF2EC] rounded"></div>
-        <div class="h-24 w-full bg-[#EEF2EC] rounded"></div>
-        <div class="h-64 w-full bg-[#EEF2EC] rounded-lg"></div>
+      <div v-if="pending" role="status" aria-busy="true" class="animate-pulse motion-reduce:animate-none flex flex-col gap-5">
+        <span class="sr-only">Đang tải nội dung bài viết</span>
+        <div aria-hidden="true" class="h-5 w-40 bg-[#EEF2EC] rounded"></div>
+        <div aria-hidden="true" class="h-9 w-3/4 bg-[#EEF2EC] rounded"></div>
+        <div aria-hidden="true" class="h-24 w-full bg-[#EEF2EC] rounded"></div>
+        <div aria-hidden="true" class="h-64 w-full bg-[#EEF2EC] rounded-lg"></div>
       </div>
 
       <!-- Load failure — distinct from "not published", so the visitor knows to retry -->
       <div
         v-else-if="loadError"
+        role="alert"
         class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]"
       >
         <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
@@ -103,6 +105,109 @@
           <!-- eslint-disable-next-line vue/no-v-html — sanitised server-side by sanitizeHtml() on write; buildToc only adds anchor ids -->
           <div v-html="toc.html"></div>
         </div>
+
+        <!--
+          Nội dung liên quan.
+
+          Trước đây trang kết thúc ngay tại nút quay lại, nên đọc xong một bài là
+          hết đường đi: người đọc phải về danh sách rồi tự tìm bài kế tiếp. Khối
+          này trả lời hai câu hỏi khác nhau — "đọc gì tiếp" (bài viết) và "còn gì
+          trong nhóm này" (chủ đề) — và chỉ hiện khi thật sự có nội dung, vì một
+          tiêu đề "Bài viết liên quan" bên trên khoảng trắng còn trống trải hơn
+          chỗ trống ban đầu.
+        -->
+        <section
+          v-if="relatedPending || relatedError || relatedArticles.length || showTopics"
+          class="mt-12 border-t border-[#E2E8DF] pt-8"
+          aria-labelledby="noi-dung-lien-quan-heading"
+        >
+          <h2 id="noi-dung-lien-quan-heading" class="m-0 mb-5 text-[1.15rem] font-extrabold text-[#1E251C]">
+            <i class="fa-solid fa-layer-group mr-2 text-[#7CB342]" aria-hidden="true"></i>Nội dung liên quan
+          </h2>
+
+          <!-- Đang tải -->
+          <div v-if="relatedPending" role="status" aria-busy="true" class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+            <span class="sr-only">Đang tải nội dung liên quan</span>
+            <div
+              v-for="n in 4"
+              :key="n"
+              aria-hidden="true"
+              class="bg-white rounded-lg border border-[#E2E8DF] overflow-hidden animate-pulse motion-reduce:animate-none"
+            >
+              <div class="h-[140px] bg-[#EEF2EC]"></div>
+              <div class="p-4 flex flex-col gap-2.5">
+                <div class="h-3 w-28 bg-[#EEF2EC] rounded"></div>
+                <div class="h-4 w-full bg-[#EEF2EC] rounded"></div>
+                <div class="h-4 w-2/3 bg-[#EEF2EC] rounded"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Lỗi: gọi lại chính lượt fetch đã hỏng, không tải lại trang — bài
+               viết ở trên vẫn đọc được và không có lý do gì để mất nó. -->
+          <div
+            v-else-if="relatedError"
+            role="alert"
+            class="bg-white border border-dashed border-[#E2A0A0] px-6 py-8 rounded-lg text-center text-[#B04A4A] text-[0.95rem]"
+          >
+            <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
+            Không thể tải nội dung liên quan. Vui lòng
+            <button type="button" class="text-[#4A6741] font-bold underline" @click="refreshRelated()">thử lại</button>.
+          </div>
+
+          <template v-else>
+            <div v-if="relatedArticles.length" class="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <article
+                v-for="item in relatedArticles"
+                :key="item.id"
+                class="bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-md hover:border-[#7CB342]"
+              >
+                <nuxt-link :to="`${backTo}/${item.slug}`" class="block h-[140px] overflow-hidden" tabindex="-1" aria-hidden="true">
+                  <img
+                    :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
+                    alt=""
+                    loading="lazy"
+                    decoding="async"
+                    class="w-full h-full object-cover"
+                  />
+                </nuxt-link>
+                <div class="p-4 flex flex-col flex-grow">
+                  <span class="block text-[0.78rem] text-[#7A8675] font-semibold mb-2">
+                    {{ formatDateVN(item.publishedAt || item.createdAt) }}
+                    <span v-if="item.categoryName"> • {{ item.categoryName }}</span>
+                  </span>
+                  <h3 class="text-[1rem] font-bold leading-[1.45] mb-0">
+                    <nuxt-link
+                      :to="`${backTo}/${item.slug}`"
+                      class="no-underline text-[#1E251C] transition-colors duration-300 hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                    >{{ item.title }}</nuxt-link>
+                  </h3>
+                  <p v-if="item.excerpt" class="text-[0.88rem] text-[#4A5545] leading-[1.5] mt-2 mb-0 line-clamp-2">{{ item.excerpt }}</p>
+                </div>
+              </article>
+            </div>
+
+            <!-- Chủ đề liên quan. Chỉ hiện cho /news vì đó là danh sách duy nhất
+                 đọc được `?cat=`; ba danh sách còn lại bỏ qua tham số đó, nên một
+                 chip ở đó sẽ mở ra đúng trang chưa lọc và trông như bấm hụt. -->
+            <div v-if="showTopics" class="mt-7">
+              <h3 class="m-0 mb-3 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
+                <i class="fa-solid fa-tags mr-2 text-[#7CB342]" aria-hidden="true"></i>Chủ đề liên quan
+              </h3>
+              <div class="flex flex-wrap gap-2">
+                <nuxt-link
+                  v-for="topic in relatedTopics"
+                  :key="topic.slug"
+                  :to="`${backTo}?cat=${topic.slug}`"
+                  class="px-3 py-1.5 rounded-full text-[0.85rem] font-semibold border no-underline transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                  :class="topic.isCurrent
+                    ? 'bg-[#4A6741] border-[#4A6741] text-white'
+                    : 'bg-white border-[#E2E8DF] text-[#4A5545] hover:border-[#7CB342]'"
+                >{{ topic.name }} <span class="opacity-70">({{ topic.total }})</span></nuxt-link>
+              </div>
+            </div>
+          </template>
+        </section>
 
         <!-- Back link -->
         <div class="mt-10 border-t border-[#E2E8DF] pt-8">
@@ -195,6 +300,48 @@ const formattedViews = computed(() => Number(article.value?.viewTotal || 0).toLo
  */
 const toc = computed(() => buildToc(article.value?.content))
 const tocOpen = ref(true)
+
+/**
+ * Nội dung liên quan — lượt fetch thứ hai, ref đặt tên riêng.
+ *
+ * Không gộp vào endpoint chi tiết: bài viết là thứ trang này tồn tại để hiện, và
+ * một truy vấn phụ hỏng hoặc chậm không được phép giữ nó lại. Tách ra thì phần
+ * thân bài về ngay còn khối này tự lo khung chờ và nhánh lỗi của mình.
+ *
+ * `error.value` của lượt này KHÔNG được gộp vào `loadError` ở trên: gộp là biến
+ * một khối phụ hỏng thành một trang lỗi, ném đi đúng nội dung đã tải xong.
+ */
+const {
+  data: relatedData,
+  pending: relatedPending,
+  error: relatedFetchError,
+  refresh: refreshRelated,
+} = useFetch(() => `/api/public/articles/${props.slug}/related`, {
+  key: () => `article-related-${props.slug}`,
+  lazy: true,
+  default: () => ({ ok: true, articles: [], topics: [] }),
+})
+
+const relatedArticles = computed(() => relatedData.value?.articles || [])
+const relatedTopics = computed(() => relatedData.value?.topics || [])
+// `ok: false` là lượt truy vấn hỏng phía máy chủ — phải đọc ra như một lỗi, chứ
+// không phải như "không có gì liên quan".
+const relatedError = computed(() => !!relatedFetchError.value || relatedData.value?.ok === false)
+
+/**
+ * Chip chủ đề trỏ vào `${backTo}?cat=<slug>`, và hai điều kiện dưới đây phải
+ * đúng **cả hai** mới có cú bấm thật:
+ *
+ * 1. `/news` là danh sách **duy nhất** đọc `?cat=` — `/role-models`,
+ *    `/reintegration-models` và `/documents` bỏ qua tham số đó và trả về đúng
+ *    danh sách chưa lọc, nên ở đó chip là một cú bấm không thay đổi gì.
+ * 2. `/news` cũng **ghim cứng** `type: 'news'` trong truy vấn của nó, nên chủ đề
+ *    của một bài `document` hay `faq` (cả hai cũng render tại `/news/<slug>`) sẽ
+ *    mở ra một danh sách rỗng — chip vẫn bấm được, chỉ là không có gì phía sau.
+ */
+const showTopics = computed(
+  () => props.backTo === '/news' && article.value?.type === 'news' && relatedTopics.value.length > 0,
+)
 
 useSeoMeta({
   title: computed(() => (article.value ? `${article.value.title} | Con Đường Hướng Thiện` : props.seoFallbackTitle)),
