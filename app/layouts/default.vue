@@ -65,6 +65,36 @@
             <nuxt-link to="/contact" class="hidden lg:inline-flex items-center gap-2 btn btn-primary px-5 py-2.5 text-[0.85rem] rounded-sm">
               <i class="fa-solid fa-headset"></i> {{ t('support_247') }}
             </nuxt-link>
+
+            <!-- Trạng thái đăng nhập của người đọc.
+
+                 `<client-only>` là điều kiện tiên quyết, không phải tinh chỉnh:
+                 mọi trang công khai phục vụ qua `swr: 60`, nên một cái tên hiện
+                 trong HTML dựng phía máy chủ sẽ được phát lại cho người kế tiếp
+                 trong cùng cửa sổ 60 giây. Không có `fallback`: chỗ này để trống
+                 tới khi biết được người đọc là ai — một nút "Đăng nhập" nhấp nháy
+                 rồi đổi thành tên còn tệ hơn là xuất hiện muộn nửa giây. -->
+            <client-only>
+              <div v-if="readerLoaded" class="hidden lg:flex items-center gap-2">
+                <template v-if="reader">
+                  <ReaderAvatar :initials="reader.initials" size="sm" />
+                  <span class="max-w-[140px] truncate text-[0.82rem] font-semibold text-[#385130]">{{ reader.displayName }}</span>
+                  <button
+                    type="button"
+                    class="text-[0.8rem] font-semibold text-[#7A8675] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+                    @click="readerSignOut"
+                  >Đăng xuất</button>
+                </template>
+                <button
+                  v-else
+                  type="button"
+                  class="inline-flex items-center gap-2 bg-[#F8FAF7] border border-[#E2E8DF] px-3.5 py-2 rounded-sm text-[0.82rem] font-semibold text-[#385130] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                  @click="readerSignIn()"
+                >
+                  <i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i> Đăng nhập
+                </button>
+              </div>
+            </client-only>
             <!-- Mobile Toggle -->
             <button
               class="md:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all z-[10003] hover:bg-[#e4f0e2]"
@@ -364,6 +394,22 @@ const searchQuery = ref('')
 const { currentLang, locales, t, setLang } = useI18n()
 const searchInputRef = ref(null)
 
+// Trạng thái đăng nhập của người đọc. State ở cấp module trong composable, nên
+// header và khối bình luận trong bài đọc cùng một danh tính — hai lượt fetch
+// riêng sẽ có lúc nói hai điều khác nhau trên cùng một trang.
+const {
+  reader,
+  loaded: readerLoaded,
+  load: loadReader,
+  signIn: readerSignIn,
+  signOut: readerSignOut,
+  signInMessage: readerSignInMessage,
+} = useReaderAuth()
+
+const route = useRoute()
+const router = useRouter()
+const { error: toastError } = useToast()
+
 // Dynamic nav menu from admin settings (falls back to DEFAULT_NAV)
 const DEFAULT_NAV = [
   { id: 'home', label: null, labelKey: 'home', url: '/', children: [] },
@@ -527,6 +573,21 @@ onMounted(() => {
   clientMounted.value = true
   window.addEventListener('scroll', handleScroll, { passive: true })
   window.addEventListener('keydown', handleKeydown)
+  // Sau khi mount, không phải trong lúc dựng: mọi trang công khai phục vụ qua
+  // `swr: 60`, nên danh tính người đọc mà lọt vào HTML sẽ được phát lại cho
+  // người kế tiếp. Không `await`: header không được chặn lượt vẽ đầu để chờ một
+  // lượt fetch chỉ quyết định hiện tên hay hiện nút đăng nhập.
+  loadReader()
+
+  // Cổng OAuth chuyển người đọc về kèm `?dangnhap=<lý do>` khi lượt đăng nhập bị
+  // từ chối. Không có chỗ hiện lý do thì một cú bấm "Đăng nhập" không dẫn tới
+  // đâu cả, và người đọc chỉ biết là nó không chạy.
+  const reason = readerSignInMessage(route.query.dangnhap)
+  if (reason) {
+    toastError(reason)
+    // Gỡ tham số khỏi URL để F5 không hiện lại thông báo của một lượt đã xong.
+    router.replace({ query: { ...route.query, dangnhap: undefined } })
+  }
 })
 
 onUnmounted(() => {

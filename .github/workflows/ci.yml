@@ -55,7 +55,7 @@ jobs:
       # `nuxt prepare` (postinstall) needs no network beyond the registry.
       - run: npm ci
 
-      # All five integration suites are switched on here. Each one creates and
+      # All six integration suites are switched on here. Each one creates and
       # drops its own single-use database, so they cannot collide with each other
       # or with the `cdkt_test` database the service declares. Enabling only some
       # of them is the failure mode this block replaced: the suites that stayed
@@ -82,6 +82,10 @@ jobs:
           CHAT_RETENTION_PORT: 3306
           CHAT_RETENTION_USER: root
           CHAT_RETENTION_PASSWORD: test_root_password
+          READER_RETENTION_INTEGRATION: 1
+          READER_RETENTION_PORT: 3306
+          READER_RETENTION_USER: root
+          READER_RETENTION_PASSWORD: test_root_password
         run: npm test
 
       # A suite that silently stops running is worse than one that fails: the run
@@ -97,6 +101,7 @@ jobs:
             [mfa-email-code-integration]=MFA_DDL_INTEGRATION
             [view-boost-integration]=VIEW_BOOST_INTEGRATION
             [chat-retention-integration]=CHAT_RETENTION_INTEGRATION
+            [reader-retention-integration]=READER_RETENTION_INTEGRATION
           )
           status=0
           for file in tests/*-integration.test.ts; do

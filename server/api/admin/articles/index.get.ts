@@ -78,6 +78,7 @@ export default defineEventHandler(async (event) => {
       excerpt:      articles.excerpt,
       status:       articles.status,
       thumbnailUrl: articles.thumbnailUrl,
+      commentsEnabled: articles.commentsEnabled,
       publishedAt:  articles.publishedAt,
       createdAt:    articles.createdAt,
       updatedAt:    articles.updatedAt,

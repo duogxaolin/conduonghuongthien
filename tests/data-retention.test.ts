@@ -9,10 +9,11 @@ import {
 } from '../server/utils/data-retention-config'
 
 /**
- * activity_logs, submissions, and chat_sessions are the tables that hold
- * personal data: caller IP and User-Agent in the audit log, citizens' names,
- * phones, emails and free text in the submissions, and conversation content
- * with IPs (and sometimes phone numbers) in the chat sessions.
+ * activity_logs, submissions, chat_sessions and reader_accounts are the tables
+ * that hold personal data: caller IP and User-Agent in the audit log, citizens'
+ * names, phones, emails and free text in the submissions, conversation content
+ * with IPs (and sometimes phone numbers) in the chat sessions, and a Google
+ * identity plus last-seen address in the reader accounts.
  * These tests pin the purge that now bounds them.
  */
 
@@ -29,6 +30,7 @@ function fakePool(rowsPerTable: Record<string, number[]> = {}, counts: Record<st
     activity_logs: [...(rowsPerTable.activity_logs ?? [0])],
     submissions: [...(rowsPerTable.submissions ?? [0])],
     chat_sessions: [...(rowsPerTable.chat_sessions ?? [0])],
+    reader_accounts: [...(rowsPerTable.reader_accounts ?? [0])],
     rate_limit_counters: [...(rowsPerTable.rate_limit_counters ?? [0])],
   }
   let released = 0
@@ -88,7 +90,7 @@ test('an unset variable falls back without throwing', () => {
 test('rows older than the window are deleted from the cutoff, in batches', async () => {
   const pool = fakePool({ activity_logs: [1000, 1000, 250] })
   const result = await runDataRetention({
-    now: NOW, activityLogDays: 365, submissionDays: 0, batchSize: 1000, connection: pool as never,
+    now: NOW, activityLogDays: 365, submissionDays: 0, readerAccountDays: 0, batchSize: 1000, connection: pool as never,
   })
 
   assert.equal(result.status, 'success')
@@ -105,7 +107,7 @@ test('rows older than the window are deleted from the cutoff, in batches', async
 
 test('a disabled window issues no DELETE at all', async () => {
   const pool = fakePool()
-  const result = await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 0, connection: pool as never })
+  const result = await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, chatSessionDays: 0, connection: pool as never })
 
   const tableCalls = pool.calls.filter(c => !c.sql.includes('rate_limit_counters'))
   assert.equal(tableCalls.length, 0, 'a disabled retention window still touched the table')
@@ -113,18 +115,20 @@ test('a disabled window issues no DELETE at all', async () => {
     ['activity_logs', 0, 0],
     ['submissions', 0, 0],
     ['chat_sessions', 0, 0],
+    ['reader_accounts', 0, 0],
   ])
 })
 
 test('both tables are purged when both windows are set', async () => {
   const pool = fakePool({ activity_logs: [5], submissions: [3] })
   const result = await runDataRetention({
-    now: NOW, activityLogDays: 90, submissionDays: 730, batchSize: 1000, connection: pool as never,
+    now: NOW, activityLogDays: 90, submissionDays: 730, readerAccountDays: 0, batchSize: 1000, connection: pool as never,
   })
   assert.deepEqual(result.tables.map(t => [t.table, t.deleted]), [
     ['activity_logs', 5],
     ['submissions', 3],
     ['chat_sessions', 0],
+    ['reader_accounts', 0],
   ])
   const subDelete = pool.calls.find(c => c.sql.includes('DELETE FROM submissions'))!
   assert.equal((subDelete.params[0] as Date).toISOString(), '2024-07-26T03:00:00.000Z')
@@ -133,7 +137,7 @@ test('both tables are purged when both windows are set', async () => {
 test('hitting the batch ceiling is reported, not passed off as a clean run', async () => {
   const pool = fakePool({ activity_logs: [10, 10, 10] })
   const result = await runDataRetention({
-    now: NOW, activityLogDays: 365, submissionDays: 0, batchSize: 10, maxBatches: 3, connection: pool as never,
+    now: NOW, activityLogDays: 365, submissionDays: 0, readerAccountDays: 0, batchSize: 10, maxBatches: 3, connection: pool as never,
   })
   assert.equal(result.status, 'warning')
   assert.equal(result.tables[0].bounded, true)
@@ -179,7 +183,7 @@ test('the row cap trims down to the cap, oldest first, and only the excess', asy
   // 12,500 rows against a cap of 10,000 — exactly 2,500 must go, no more.
   const pool = fakePool({ activity_logs: [1000, 1000, 500] }, { activity_logs: 12_500 })
   const result = await runDataRetention({
-    now: NOW, activityLogDays: 0, submissionDays: 0,
+    now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0,
     activityLogMaxRows: 10_000, batchSize: 1000, connection: pool as never,
   })
 
@@ -199,7 +203,7 @@ test('the row cap trims down to the cap, oldest first, and only the excess', asy
 test('a table inside its cap is counted but never deleted from', async () => {
   const pool = fakePool({ activity_logs: [999] }, { activity_logs: 4_000 })
   const result = await runDataRetention({
-    now: NOW, activityLogDays: 0, submissionDays: 0,
+    now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0,
     activityLogMaxRows: 10_000, connection: pool as never,
   })
   assert.equal(result.tables[0].deleted, 0)
@@ -209,7 +213,7 @@ test('a table inside its cap is counted but never deleted from', async () => {
 test('a cap of 0 disables the condition without counting the table', async () => {
   const pool = fakePool({}, { activity_logs: 9_000_000 })
   await runDataRetention({
-    now: NOW, activityLogDays: 0, submissionDays: 0,
+    now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0,
     activityLogMaxRows: 0, submissionMaxRows: 0, connection: pool as never,
   })
   assert.equal(pool.calls.filter(c => c.sql.includes('COUNT(*)')).length, 0)
@@ -219,7 +223,7 @@ test('the two conditions add up and are reported separately', async () => {
   // Age clears 40; the cap then finds 10,050 rows left against a cap of 10,000.
   const pool = fakePool({ activity_logs: [40, 50] }, { activity_logs: 10_050 })
   const result = await runDataRetention({
-    now: NOW, activityLogDays: 365, submissionDays: 0,
+    now: NOW, activityLogDays: 365, submissionDays: 0, readerAccountDays: 0,
     activityLogMaxRows: 10_000, batchSize: 1000, connection: pool as never,
   })
   const logs = result.tables[0]
@@ -233,7 +237,7 @@ test('the cap is skipped when the age pass is still catching up', async () => {
   // now would measure a table that is still being drained and delete past the cap.
   const pool = fakePool({ activity_logs: [10, 10, 10] }, { activity_logs: 10_000_000 })
   const result = await runDataRetention({
-    now: NOW, activityLogDays: 365, submissionDays: 0, activityLogMaxRows: 1_000,
+    now: NOW, activityLogDays: 365, submissionDays: 0, readerAccountDays: 0, activityLogMaxRows: 1_000,
     batchSize: 10, maxBatches: 3, connection: pool as never,
   })
   assert.equal(result.tables[0].bounded, true)
@@ -244,7 +248,7 @@ test('the cap is skipped when the age pass is still catching up', async () => {
 test('a cap larger than the batch ceiling reports bounded instead of finishing quietly', async () => {
   const pool = fakePool({ activity_logs: [10, 10] }, { activity_logs: 1_000_000 })
   const result = await runDataRetention({
-    now: NOW, activityLogDays: 0, submissionDays: 0, activityLogMaxRows: 1_000,
+    now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, activityLogMaxRows: 1_000,
     batchSize: 10, maxBatches: 2, connection: pool as never,
   })
   assert.equal(result.tables[0].bounded, true)
@@ -255,12 +259,12 @@ test('a cap larger than the batch ceiling reports bounded instead of finishing q
 test('the deleted count is banked before the rows are gone, and accumulates', async () => {
   const pool = fakePool({ activity_logs: [7], submissions: [3] })
   await runDataRetention({
-    now: NOW, activityLogDays: 365, submissionDays: 730,
+    now: NOW, activityLogDays: 365, submissionDays: 730, readerAccountDays: 0,
     trigger: 'scheduler', connection: pool as never,
   })
 
   const banked = pool.calls.filter(c => c.sql.includes('INSERT INTO data_retention_state'))
-  assert.equal(banked.length, 3, 'one row per purged table')
+  assert.equal(banked.length, 4, 'one row per purged table')
   // Incremented, not replaced: the lifetime figure is this counter plus the live
   // count, so overwriting it would erase every earlier run.
   assert.match(banked[0].sql, /purged_total = purged_total \+ VALUES\(purged_total\)/)
@@ -268,6 +272,7 @@ test('the deleted count is banked before the rows are gone, and accumulates', as
     ['activity_logs', 7],
     ['submissions', 3],
     ['chat_sessions', 0],
+    ['reader_accounts', 0],
   ])
   assert.equal(banked[0].params[4], 'scheduler')
   assert.equal(banked[0].params[5], 'success')
@@ -276,7 +281,7 @@ test('the deleted count is banked before the rows are gone, and accumulates', as
 test('a bounded run banks what it did delete and says it is unfinished', async () => {
   const pool = fakePool({ activity_logs: [10, 10] })
   await runDataRetention({
-    now: NOW, activityLogDays: 365, submissionDays: 0,
+    now: NOW, activityLogDays: 365, submissionDays: 0, readerAccountDays: 0,
     batchSize: 10, maxBatches: 2, trigger: 'cron', connection: pool as never,
   })
   const banked = pool.calls.filter(c => c.sql.includes('INSERT INTO data_retention_state'))
@@ -322,7 +327,7 @@ test('the nightly script runs retention as well as analytics', () => {
 test('chat sessions older than the window are deleted, non-zero days coverage', async () => {
   const pool = fakePool({ chat_sessions: [100, 50] })
   const result = await runDataRetention({
-    now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 90,
+    now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, chatSessionDays: 90,
     batchSize: 100, connection: pool as never,
   })
 
@@ -341,7 +346,7 @@ test('chat sessions purge uses last_message_at, not created_at', async () => {
   // If the service used created_at, it would throw ER_BAD_FIELD_ERROR at runtime
   // because chat_sessions has started_at/last_message_at, not created_at.
   const pool = fakePool({ chat_sessions: [0] })
-  await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 90, connection: pool as never })
+  await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, chatSessionDays: 90, connection: pool as never })
   const del = pool.calls.find(c => c.sql.includes('DELETE FROM chat_sessions'))!
   assert.match(del.sql, /last_message_at IS NOT NULL AND last_message_at < \?/)
   // Not created_at — that column does not exist on this table.
@@ -350,7 +355,7 @@ test('chat sessions purge uses last_message_at, not created_at', async () => {
 
 test('chat sessions age purge orders by last_message_at, not id (id is UUID, lexicographic noise)', async () => {
   const pool = fakePool({ chat_sessions: [0] })
-  await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 90, connection: pool as never })
+  await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, chatSessionDays: 90, connection: pool as never })
   const del = pool.calls.find(c => c.sql.includes('DELETE FROM chat_sessions'))!
   assert.match(del.sql, /ORDER BY last_message_at LIMIT \?$/)
   assert.doesNotMatch(del.sql, /ORDER BY id/)
@@ -359,7 +364,7 @@ test('chat sessions age purge orders by last_message_at, not id (id is UUID, lex
 test('chat sessions row cap also orders by last_message_at', async () => {
   const pool = fakePool({ chat_sessions: [100] }, { chat_sessions: 1_100 })
   await runDataRetention({
-    now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 0,
+    now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, chatSessionDays: 0,
     chatSessionMaxRows: 1_000, batchSize: 1000, connection: pool as never,
   })
   const capDelete = pool.calls.find(c => c.sql.includes('DELETE FROM chat_sessions'))!

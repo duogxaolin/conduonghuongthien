@@ -21,7 +21,7 @@ import { purgeExpiredRateLimits } from '../utils/rate-limit-store'
  * the next run continues where this one stopped.
  */
 
-export type RetentionTarget = 'activity_logs' | 'submissions' | 'chat_sessions'
+export type RetentionTarget = 'activity_logs' | 'submissions' | 'chat_sessions' | 'reader_accounts'
 
 /**
  * Per-table column names. Not every table calls its timestamp `created_at`, and
@@ -37,7 +37,11 @@ export type RetentionTarget = 'activity_logs' | 'submissions' | 'chat_sessions'
  *     *is* time order and the primary key gives the cheapest contiguous range.
  *     `chat_sessions.id` is a UUID — ordering by it is lexicographic noise, so
  *     the row cap would evict an arbitrary set of conversations rather than the
- *     oldest ones. Both `order` columns below are indexed.
+ *     oldest ones. `reader_accounts` has an AUTO_INCREMENT key but still orders
+ *     by `last_seen_at`, because id order is *signup* order: ordering by id would
+ *     evict the portal's earliest-registered readers even when they commented
+ *     this morning, which is the same mistake as ageing them by `created_at`.
+ *     Both non-id `order` columns below are indexed.
  *
  * `chat_messages` is deliberately absent. Its FK to `chat_sessions` is
  * ON DELETE CASCADE, so purging a conversation removes its transcript in the
@@ -45,11 +49,20 @@ export type RetentionTarget = 'activity_logs' | 'submissions' | 'chat_sessions'
  * deleted while its session row survives, leaving a record that claims N
  * messages and can show none — and a row cap on messages would truncate
  * conversations mid-thread. One window, on the conversation, cannot do either.
+ *
+ * `article_comments` is absent for exactly the same reason (design.md D16,
+ * reader-google-login-comments). Its FKs cascade from BOTH `reader_accounts` and
+ * `articles`, so it is already bounded by whichever parent goes first. An
+ * independent age window would delete a reader's question while the portal's
+ * official reply still displayed underneath as an answer to nothing, and a row
+ * cap would cut a public exchange between a citizen and an officer in half — the
+ * remaining half reading as something the whole never said.
  */
 const TABLE_COLUMNS: Record<RetentionTarget, { timestamp: string; order: string }> = {
   activity_logs: { timestamp: 'created_at', order: 'id' },
   submissions: { timestamp: 'created_at', order: 'id' },
   chat_sessions: { timestamp: 'last_message_at', order: 'last_message_at' },
+  reader_accounts: { timestamp: 'last_seen_at', order: 'last_seen_at' },
 }
 
 export type DataRetentionOptions = {
@@ -57,10 +70,12 @@ export type DataRetentionOptions = {
   activityLogDays?: number
   submissionDays?: number
   chatSessionDays?: number
+  readerAccountDays?: number
   /** 0 = no cap. Rows beyond this are deleted oldest-first. */
   activityLogMaxRows?: number
   submissionMaxRows?: number
   chatSessionMaxRows?: number
+  readerAccountMaxRows?: number
   batchSize?: number
   maxBatches?: number
   connection?: Pool
@@ -213,6 +228,11 @@ export async function runDataRetention(options: DataRetentionOptions = {}): Prom
       table: 'chat_sessions',
       days: boundedInteger(options.chatSessionDays, configured.chatSessionDays, 0, 3650),
       maxRows: boundedInteger(options.chatSessionMaxRows, 0, 0, 100_000_000),
+    },
+    {
+      table: 'reader_accounts',
+      days: boundedInteger(options.readerAccountDays, configured.readerAccountDays, 0, 3650),
+      maxRows: boundedInteger(options.readerAccountMaxRows, 0, 0, 100_000_000),
     },
   ]
 

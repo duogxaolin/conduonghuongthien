@@ -171,6 +171,48 @@ const bulkStatus = (status: 'published' | 'draft' | 'archived') => {
   })
 }
 
+/** Mở/đóng bình luận cho nhiều bài cùng lúc.
+ *
+ *  Tồn tại vì `comments_enabled` mặc định TẮT cho mọi bài đã có: mặc định ngược
+ *  lại sẽ mở bình luận cho toàn bộ kho lưu trữ ngay lúc triển khai, một khối
+ *  lượng kiểm duyệt không ai chọn. Không có hành động hàng loạt thì "mở những
+ *  bài cần mở" là hàng trăm cú bấm, và chính loại ma sát đó dẫn tới việc ai đó
+ *  đi đổi giá trị mặc định của cột. */
+const bulkComments = (enabled: boolean) => {
+  const verb = enabled ? 'Mở bình luận' : 'Đóng bình luận'
+  return bulk.run({
+    url: '/api/admin/articles/bulk-comments',
+    body: { enabled },
+    noun: 'bài viết',
+    confirm: {
+      message: enabled
+        ? `${verb} cho ${selection.count.value} bài viết đã chọn? Khách đã đăng nhập Google sẽ bình luận được ngay.`
+        : `${verb} của ${selection.count.value} bài viết đã chọn? Bình luận cũ không bị xoá, chỉ ẩn khỏi trang công khai.`,
+      confirmLabel: verb,
+    },
+    reload: () => fetchArticles(pagination.value.page),
+  })
+}
+
+/** Bật/tắt tại chỗ. Lỗi thì trả công tắc về giá trị đã lưu: một công tắc hiện
+ *  "đang mở" trong khi máy chủ vẫn đóng là lời nói dối về trạng thái thật, và
+ *  cán bộ sẽ đi tìm xem vì sao trang công khai không có khung bình luận. */
+const togglingComments = ref<number | null>(null)
+const toggleComments = async (art: any) => {
+  const next = !art.commentsEnabled
+  togglingComments.value = Number(art.id)
+  art.commentsEnabled = next
+  try {
+    await $fetch(`/api/admin/articles/${art.id}`, { method: 'PUT', body: { commentsEnabled: next } })
+    toast.success(next ? 'Đã mở bình luận cho bài viết này.' : 'Đã đóng bình luận của bài viết này.')
+  } catch (err: any) {
+    art.commentsEnabled = !next
+    toast.error(err?.data?.statusMessage || 'Không đổi được trạng thái bình luận.')
+  } finally {
+    togglingComments.value = null
+  }
+}
+
 const deleteArticle = async (art: any) => {
   const ok = await confirm({ title: 'Xóa bài viết', message: `Bạn có chắc muốn xóa bài viết "${art.title}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
@@ -436,6 +478,8 @@ onMounted(async () => {
     >
       <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="bulkStatus('published')">Xuất bản</button>
       <button type="button" class="rounded-lg border border-[#b78103] bg-white px-3 py-2 text-sm font-bold text-[#765b00] hover:bg-white/70" @click="bulkStatus('archived')">Lưu trữ (ẩn)</button>
+      <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="bulkComments(true)">Mở bình luận</button>
+      <button type="button" class="rounded-lg border border-[#c8d6c9] bg-white px-3 py-2 text-sm font-bold text-[#3d4f3f] hover:bg-white/70" @click="bulkComments(false)">Đóng bình luận</button>
       <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
 
@@ -509,6 +553,7 @@ onMounted(async () => {
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Danh mục</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Trạng thái</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Lượt xem</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Bình luận</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Ngày tạo</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thao tác</th>
             </tr>
@@ -581,6 +626,22 @@ onMounted(async () => {
                 >
                   <i class="fa-regular fa-eye text-[0.75rem]" aria-hidden="true"></i>
                   {{ formatViews(a.viewTotal) }}
+                </button>
+              </td>
+              <!-- Comments switch. Bật/tắt tại chỗ qua chính route sửa bài, nên
+                   vẫn chịu đúng kiểm tra quyền theo thể loại và vẫn ghi audit. -->
+              <td class="px-4 py-3 border-b border-[#eef2ee] whitespace-nowrap">
+                <button
+                  type="button"
+                  :disabled="togglingComments === Number(a.id)"
+                  class="inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.75rem] font-bold transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-[#2c6e33]/40 disabled:opacity-60"
+                  :class="a.commentsEnabled ? 'bg-[#e4f2e5] text-[#2c6e33] hover:bg-[#d6ecd8]' : 'bg-[#f5f5f5] text-[#888] hover:bg-[#ededed]'"
+                  :aria-pressed="a.commentsEnabled ? 'true' : 'false'"
+                  :aria-label="`${a.commentsEnabled ? 'Đóng' : 'Mở'} bình luận cho bài viết: ${a.title}`"
+                  @click="toggleComments(a)"
+                >
+                  <i :class="a.commentsEnabled ? 'fa-solid fa-comments' : 'fa-solid fa-comment-slash'" class="text-[0.7rem]" aria-hidden="true"></i>
+                  {{ a.commentsEnabled ? 'Đang mở' : 'Đang đóng' }}
                 </button>
               </td>
               <!-- Date -->

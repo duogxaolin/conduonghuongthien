@@ -97,6 +97,26 @@ services:
       # Nitro reads the NUXT_-prefixed one at runtime.
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
       NUXT_TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
+      # Public address of the portal, used to build the Google OAuth redirect URI
+      # that Google matches byte for byte. Same two-name treatment as the proxy
+      # list above and for the same reason: Nitro reads the NUXT_-prefixed one at
+      # runtime, the bare name is for maintenance scripts running outside Nitro.
+      # Not required to boot — empty falls back to the request host and the
+      # settings page says so out loud.
+      PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      NUXT_PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      # Cửa sổ lưu dữ liệu cá nhân. Cả bốn khai ở đây vì compose KHÔNG dùng
+      # env_file: một biến đặt trong .env mà không được liệt kê thì không tới được
+      # container, nên người vận hành sẽ sửa tệp rồi không thấy gì thay đổi.
+      # Tất cả chỉ là GIÁ TRỊ KHỞI ĐIỂM — khi quản trị viên lưu cấu hình tại
+      # /admin/settings/data-retention thì giá trị trong CSDL thắng, và trang đó
+      # nói rõ từng ô đang lấy từ đâu.
+      ACTIVITY_LOG_RETENTION_DAYS: ${ACTIVITY_LOG_RETENTION_DAYS:-}
+      SUBMISSION_RETENTION_DAYS: ${SUBMISSION_RETENTION_DAYS:-}
+      CHAT_SESSION_RETENTION_DAYS: ${CHAT_SESSION_RETENTION_DAYS:-}
+      # Tài khoản người đọc — scope thứ tư. Tính tuổi theo last_seen_at, không
+      # theo created_at: xoá một tài khoản là xoá luôn bình luận công khai của họ.
+      READER_ACCOUNT_RETENTION_DAYS: ${READER_ACCOUNT_RETENTION_DAYS:-}
       # Used ONLY when the superadmin account is first created (seed is insert-only).
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}

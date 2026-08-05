@@ -11,7 +11,7 @@
  */
 import { sql } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
-import { activityLogs, submissions, chatSessions } from '../../../db/schema'
+import { activityLogs, submissions, chatSessions, readerAccounts } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import {
   resolveRetentionPolicy,
@@ -41,6 +41,7 @@ export default defineEventHandler(async (event) => {
     activity_logs: { target: activityLogs, timestamp: activityLogs.createdAt },
     submissions: { target: submissions, timestamp: submissions.createdAt },
     chat_sessions: { target: chatSessions, timestamp: chatSessions.lastMessageAt },
+    reader_accounts: { target: readerAccounts, timestamp: readerAccounts.lastSeenAt },
   } as const
 
   const scopes = await Promise.all(policy.scopes.map(async (scope) => {

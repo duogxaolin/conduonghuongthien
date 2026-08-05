@@ -120,6 +120,7 @@ export async function runRetentionPass(options: RunPassOptions = {}): Promise<Ru
   const activity = policy.scopes.find(scope => scope.scope === 'activity_logs')
   const submissions = policy.scopes.find(scope => scope.scope === 'submissions')
   const chatSessions = policy.scopes.find(scope => scope.scope === 'chat_sessions')
+  const readerAccounts = policy.scopes.find(scope => scope.scope === 'reader_accounts')
 
   const pool = createAnalyticsPool()
   try {
@@ -133,6 +134,8 @@ export async function runRetentionPass(options: RunPassOptions = {}): Promise<Ru
       submissionMaxRows: submissions?.maxRows ?? 0,
       chatSessionDays: chatSessions?.days ?? 0,
       chatSessionMaxRows: chatSessions?.maxRows ?? 0,
+      readerAccountDays: readerAccounts?.days ?? 0,
+      readerAccountMaxRows: readerAccounts?.maxRows ?? 0,
     }))
     if (!result) return { ran: false, reason: 'locked' }
 
