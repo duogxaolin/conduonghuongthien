@@ -49,7 +49,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<any>('/api/admin/readers', {
+    const res = await $fetch('/api/admin/readers', {
       query: { q: search.value || undefined, banned: banned.value, page: page.value },
     })
     if (!res?.ok) {

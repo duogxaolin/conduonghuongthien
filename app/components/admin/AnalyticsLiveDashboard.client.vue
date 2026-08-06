@@ -29,7 +29,7 @@ type BreakdownResponse = {
   stale: boolean
 }
 type NocResponse = {
-  rows: { id: number; bucketStart: string; eventType: string; severity: string; component: string; status: string; errorCode: string; eventCount: number; duration: { count: number; averageMs: number; maxMs: number }; details: Record<string, number | boolean | string> | null }[]
+  rows: NocRow[]
   generatedAt: string
   latestBucketStart: string | null
   nextPollAfterSeconds: number
@@ -154,35 +154,34 @@ const LIVE_PAGE_SIZE = 15
 const BREAKDOWN_PAGE_SIZE = 10
 // Hai hàm thuần sống ở app/utils/analytics-noc.ts để kiểm được — safeDetails
 // là bộ lọc quyền riêng tư, nó cần test riêng chứ không chỉ nằm trong SFC.
-const NOC_PAGE_SIZE = 10
 const liveTablePage = ref(1)
 const breakdownTablePage = ref(1)
-const nocTablePage = ref(1)
 
-// NOC interaction state
-const nocSeverityFilter = ref(false)   // true = show only warning/error rows
-const dismissedNocIds = ref(new Set<number>())
-const expandedNocId = ref<number | null>(null)
-
-function toggleNocSeverityFilter() {
-  nocSeverityFilter.value = !nocSeverityFilter.value
-  nocTablePage.value = 1
-}
-function dismissNocRow(id: number) {
-  dismissedNocIds.value = new Set([...dismissedNocIds.value, id])
-  if (expandedNocId.value === id) expandedNocId.value = null
-}
-function undismissAll() {
-  dismissedNocIds.value = new Set()
-}
-function toggleNocRow(id: number) {
-  expandedNocId.value = expandedNocId.value === id ? null : id
-}
+/**
+ * Trạng thái bảng NOC ở `app/composables/useAnalyticsNocTable.ts`.
+ *
+ * Khối đó tách ra được vì nó chỉ cần dữ liệu NOC vào; phần template của bảng thì
+ * ở nguyên đây, nó dùng 22 định danh của component này. Việc tách cũng gộp một
+ * bản sao: `nocSummary` từng viết lại chính regex của `isWarningOrError`.
+ */
+const {
+  page: nocTablePage,
+  severityOnly: nocSeverityFilter,
+  dismissedIds: dismissedNocIds,
+  expandedId: expandedNocId,
+  filtered: filteredNocRows,
+  pageRows: nocTableRows,
+  totalPages: nocTotalPages,
+  summary: nocSummary,
+  toggleSeverityFilter: toggleNocSeverityFilter,
+  dismissRow: dismissNocRow,
+  undismissAll,
+  toggleRow: toggleNocRow,
+} = useAnalyticsNocTable(computed(() => nocData.value?.rows))
 
 // Reset pages when data changes
 watch(liveData, () => { liveTablePage.value = 1 })
 watch(breakdownData, () => { breakdownTablePage.value = 1 })
-watch(nocData, () => { nocTablePage.value = 1 })
 
 const liveTableRows = computed(() => {
   const rows = liveData.value?.points || []
@@ -199,12 +198,6 @@ const breakdownTableRows = computed(() => {
 })
 const breakdownTotalPages = computed(() => Math.max(1, Math.ceil((breakdownData.value?.rows.length || 0) / BREAKDOWN_PAGE_SIZE)))
 
-const nocTableRows = computed(() => {
-  const rows = filteredNocRows.value
-  const start = (nocTablePage.value - 1) * NOC_PAGE_SIZE
-  return rows.slice(start, start + NOC_PAGE_SIZE)
-})
-const nocTotalPages = computed(() => Math.max(1, Math.ceil((filteredNocRows.value.length || 0) / NOC_PAGE_SIZE)))
 
 // Donut chart for breakdown panel
 const BREAKDOWN_COLORS = ['#2c6e33', '#5a9e60', '#8ed694', '#afc8b1', '#c8ddc9', '#deeede', '#122815', '#3d8045', '#a0c8a3', '#b8d6ba']
@@ -271,21 +264,6 @@ const liveDelaySeconds = computed(() => {
 })
 const maxLiveMetric = computed(() => Math.max(1, ...(liveData.value?.points.flatMap(point => [point.pageViews, point.approximateUniqueVisitors]) || [1])))
 const maxBreakdownMetric = computed(() => Math.max(1, ...(breakdownData.value?.rows.flatMap(row => [row.pageViews, row.approximateUniqueVisitors]) || [1])))
-const newestNocRows = computed(() => [...(nocData.value?.rows || [])].sort((a, b) => Date.parse(b.bucketStart) - Date.parse(a.bucketStart)))
-const filteredNocRows = computed(() => {
-  let rows = newestNocRows.value.filter(r => !dismissedNocIds.value.has(r.id))
-  if (nocSeverityFilter.value) rows = rows.filter(r => isWarningOrError(r.severity))
-  return rows
-})
-const nocSummary = computed(() => {
-  const rows = newestNocRows.value
-  return {
-    totalEvents: rows.reduce((sum, row) => sum + row.eventCount, 0),
-    warningErrorEvents: rows.filter(row => /^(warning|warn|error|critical)$/i.test(row.severity)).reduce((sum, row) => sum + row.eventCount, 0),
-    maxDuration: Math.max(0, ...rows.map(row => row.duration.maxMs)),
-    latestStatus: rows.length ? rows[0]!.status : 'Không có sự kiện',
-  }
-})
 
 function syncRouteQuery(scope: BreakdownScope, filter: string | null) {
   const currentScope = route.query.liveScope

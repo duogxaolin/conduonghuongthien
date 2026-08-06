@@ -77,6 +77,47 @@ export type AdminPageDetail = Payload<PageDetailHandler>
 type PageUpdateHandler = typeof import('~~/server/api/admin/pages/[id].put').default
 export type AdminPageUpdateResult = Payload<PageUpdateHandler>
 
+// ─── Người đọc ───────────────────────────────────────────────────────────────
+type ReaderDetailHandler = typeof import('~~/server/api/admin/readers/[id].get').default
+export type AdminReaderDetail = Payload<ReaderDetailHandler>
+
+type ReaderImpactHandler = typeof import('~~/server/api/admin/readers/[id]/impact.get').default
+export type AdminReaderImpact = Payload<ReaderImpactHandler>
+
+// ─── Kho kiến thức (một mục) ─────────────────────────────────────────────────
+type KnowledgeDetailHandler = typeof import('~~/server/api/admin/chatbot/knowledge/[id].get').default
+export type AdminKnowledgeDetail = Payload<KnowledgeDetailHandler>
+
+// ─── Nhập Excel & thống kê lượt xem ──────────────────────────────────────────
+type KnowledgeImportHandler = typeof import('~~/server/api/admin/chatbot/knowledge/import.post').default
+export type AdminKnowledgeImportResult = Payload<KnowledgeImportHandler>
+export type AdminKnowledgeImportError = ItemOf<AdminKnowledgeImportResult['errors']>
+
+type ArticleStatsHandler = typeof import('~~/server/api/admin/articles/[id]/stats.get').default
+export type AdminArticleStatsResult = Payload<ArticleStatsHandler>
+/** Chỉ khối `stats` — modal giữ đúng nhánh này, không giữ cả phản hồi. */
+export type AdminArticleStats = AdminArticleStatsResult['stats']
+export type AdminArticleBoost = AdminArticleStatsResult['boost']
+
+type ArticleAuthorsHandler = typeof import('~~/server/api/admin/articles/authors.get').default
+export type AdminArticleAuthorRow = ItemOf<Payload<ArticleAuthorsHandler>['items']>
+
+type SmallTalkHandler = typeof import('~~/server/api/admin/chatbot/small-talk/index.get').default
+export type AdminSmallTalkRow = ItemOf<Payload<SmallTalkHandler>['items']>
+
+type ReaderBanHandler = typeof import('~~/server/api/admin/readers/[id]/ban.post').default
+export type AdminReaderBanResult = Payload<ReaderBanHandler>
+
+type ReaderCommentsDeleteHandler = typeof import('~~/server/api/admin/readers/[id]/comments.delete').default
+export type AdminReaderCommentsDeleteResult = Payload<ReaderCommentsDeleteHandler>
+
+// ─── Lịch sử hoạt động ───────────────────────────────────────────────────────
+type ActivityRetentionHandler = typeof import('~~/server/api/admin/activity-logs/retention.get').default
+export type ActivityRetentionStatus = Payload<ActivityRetentionHandler>
+
 // ─── Thư viện ảnh ────────────────────────────────────────────────────────────
 type MediaUploadHandler = typeof import('~~/server/api/admin/media/upload.post').default
 export type AdminMediaUploadResult = Payload<MediaUploadHandler>
+
+type MediaListHandler = typeof import('~~/server/api/admin/media/index.get').default
+export type AdminMediaRow = ItemOf<Payload<MediaListHandler>['items']>

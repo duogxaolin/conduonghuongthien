@@ -1,7 +1,7 @@
 import { and, asc, count, desc, eq, inArray, like, or } from 'drizzle-orm'
 import { chatbotKnowledge, chatbotKnowledgeTerms, activityLogs, type ChatbotKnowledge } from '../db/schema'
 import { getDb } from '../utils/db'
-import { buildChatbotKnowledgeAudit } from '../utils/chatbot/audit'
+import { buildChatbotKnowledgeAudit, type KnowledgeAuditInput } from '../utils/chatbot/audit'
 import { serializeAdminKnowledge } from '../utils/chatbot/serializers'
 
 export const KNOWLEDGE_STATUSES = ['draft', 'published', 'archived'] as const
@@ -83,8 +83,19 @@ export function validateKnowledgeInput(input: KnowledgeInput, partial = false) {
 
 type KnowledgeStore = Pick<ReturnType<typeof getDb>, 'select' | 'insert' | 'update' | 'delete'>
 
-async function audit(db: KnowledgeStore, actorId: number, operation: Parameters<typeof buildChatbotKnowledgeAudit>[0]['operation'], id: number | undefined, extra: Record<string, unknown> = {}) {
-  await db.insert(activityLogs).values(buildChatbotKnowledgeAudit({ actorId, operation, knowledgeId: id, ...extra } as any))
+/**
+ * `extra` khai theo đúng các field tuỳ chọn mà bộ dựng audit đọc, không phải
+ * `Record<string, unknown>` rồi ép kiểu.
+ *
+ * Ép kiểu ở đây từng che đúng loại lỗi mà bộ dựng ra đời để chặn: nó lọc
+ * `changedFields` theo một allowlist, nên một khoá gõ sai (`changedField`) không
+ * bao giờ tới được allowlist — dòng audit vẫn ghi, chỉ **thiếu** đúng phần nói
+ * cán bộ đã sửa gì. Khai kiểu thật thì lỗi đó đỏ ngay lượt typecheck.
+ */
+type KnowledgeAuditExtra = Pick<KnowledgeAuditInput, 'changedFields' | 'fromStatus' | 'toStatus' | 'termCount'>
+
+async function audit(db: KnowledgeStore, actorId: number, operation: KnowledgeAuditInput['operation'], id: number | undefined, extra: KnowledgeAuditExtra = {}) {
+  await db.insert(activityLogs).values(buildChatbotKnowledgeAudit({ actorId, operation, knowledgeId: id, ...extra }))
 }
 
 async function withTerms(db: KnowledgeStore, entry: ChatbotKnowledge): Promise<ChatbotKnowledge & { aliases: string[]; keywords: string[] }> {
@@ -149,8 +160,8 @@ export async function updateKnowledge(actorId: number, id: number, input: Knowle
   const next = { ...current, ...Object.fromEntries(Object.entries(value).filter(([, item]) => item !== undefined)) } as typeof current
   if (current.status === 'published') validatePublish(next.approvedAnswer, next.sourceLabel, next.sourceReference, next.sourceUrl)
   return db.transaction(async (tx) => {
-    const patch: any = {}
-    for (const [key, item] of Object.entries(value)) if (item !== undefined && !['aliases', 'keywords'].includes(key)) patch[key] = item
+    const patch: Partial<typeof chatbotKnowledge.$inferInsert> = {}
+    for (const [key, item] of Object.entries(value)) if (item !== undefined && !['aliases', 'keywords'].includes(key)) Object.assign(patch, { [key]: item })
     if (value.canonicalQuestion !== undefined) patch.normalizedQuestion = normalize(value.canonicalQuestion!)
     if (Object.keys(patch).length) await tx.update(chatbotKnowledge).set(patch).where(eq(chatbotKnowledge.id, id))
     if (value.aliases !== undefined || value.keywords !== undefined) await replaceTermsWithTx(tx, id, value.aliases ?? current.aliases, value.keywords ?? current.keywords)

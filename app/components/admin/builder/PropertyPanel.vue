@@ -106,7 +106,7 @@
           <!-- image -->
           <div v-else-if="field.type === 'image'" class="flex items-center gap-3">
             <div v-if="block.data[field.key]" class="h-16 w-24 shrink-0 overflow-hidden rounded-lg border border-gray-200">
-              <img :src="block.data[field.key]" class="h-full w-full object-cover" />
+              <img :src="blockText(block.data, field.key)" class="h-full w-full object-cover" />
             </div>
             <div class="flex flex-col gap-1">
               <button class="rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-semibold text-gray-700 hover:bg-gray-50" @click="pickImage(field.key)">
@@ -120,8 +120,9 @@
           <TinyMceEditor
             v-else-if="field.type === 'richtext'"
             :key="`${block.id}-${field.key}-${expanded ? 'wide' : 'narrow'}`"
-            v-model="block.data[field.key]"
+            :model-value="blockText(block.data, field.key)"
             :height="expanded ? 560 : 320"
+            @update:model-value="(v: string) => { if (block) block.data[field.key] = v }"
             :placeholder="field.placeholder || ''"
           />
 
@@ -147,7 +148,8 @@
           <!-- plain textarea -->
           <textarea
             v-else-if="field.type === 'textarea'"
-            v-model="block.data[field.key]"
+            :value="blockText(block.data, field.key)"
+            @input="block.data[field.key] = ($event.target as HTMLTextAreaElement).value"
             rows="3"
             class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
           ></textarea>
@@ -162,6 +164,8 @@
 
 <script setup lang="ts">
 import { computed, ref, watch, onMounted, onBeforeUnmount } from 'vue'
+import { blockArray, blockText } from '~/utils/blocks/types'
+import type { BlockData } from '~/utils/blocks/types'
 import type { BuilderNode } from '~/utils/blocks/types'
 import { BLOCK_REGISTRY, clampColSpan, GRID_COLUMNS, MIN_COL_SPAN, MAX_COL_SPAN, type EditorField } from '~/utils/blocks/registry'
 import TinyMceEditor from '~/components/admin/TinyMceEditor.vue'
@@ -201,7 +205,7 @@ const colSpan = computed({
 // Categories are fetched lazily per content type and cached so switching
 // between blocks of the same type doesn't refetch. Fetch errors degrade
 // gracefully to just the "Tất cả" option (editing is never blocked).
-type Category = { slug: string; name: string; [k: string]: any }
+type Category = { slug: string; name: string }
 const categoryCache = ref<Record<string, Category[]>>({})
 const categoryLoading = ref<Record<string, boolean>>({})
 
@@ -212,7 +216,7 @@ const loadCategories = async (type: string) => {
   if (!type || categoryCache.value[type] || categoryLoading.value[type]) return
   categoryLoading.value[type] = true
   try {
-    const res: any = await $fetch('/api/public/categories', { params: { type } })
+    const res = await $fetch('/api/public/categories', { params: { type } })
     categoryCache.value[type] = Array.isArray(res?.items) ? res.items : []
   } catch {
     categoryCache.value[type] = [] // fall back to just "Tất cả"
@@ -229,14 +233,10 @@ watch(fields, (list) => {
 }, { immediate: true })
 
 // Guarantee block.data[key] is an array so the repeater can bind to it.
-const ensureArray = (key: string): any[] => {
-  if (!props.block) return []
-  const cur = props.block.data[key]
-  if (!Array.isArray(cur)) props.block.data[key] = []
-  return props.block.data[key]
-}
+const ensureArray = (key: string): BlockData[] =>
+  (props.block ? (blockArray(props.block.data, key) as BlockData[]) : [])
 
 const pickImage = (key: string) => {
-  openPicker({ onSelect: (img: any) => { if (props.block) props.block.data[key] = img.url } })
+  openPicker({ onSelect: (img: { url: string }) => { if (props.block) props.block.data[key] = img.url } })
 }
 </script>

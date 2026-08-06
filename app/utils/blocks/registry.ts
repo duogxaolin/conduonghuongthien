@@ -7,6 +7,8 @@
 // Section blocks reproduce the existing homepage sections (design preserved);
 // content blocks are new, for about/contact/custom pages.
 
+import type { BlockData } from './types'
+
 export type EditorFieldType =
   | 'text' | 'textarea' | 'richtext' | 'number' | 'select' | 'image' | 'toggle' | 'url'
   | 'array' | 'category'
@@ -34,7 +36,7 @@ export interface BlockDefinition {
   label: string
   icon: string
   category: 'section' | 'content' | 'layout'
-  defaultData: Record<string, any>
+  defaultData: BlockData
   fields: EditorField[]
   /** true for blocks that fetch articles at render time (news, role_models, …) */
   dataDriven?: boolean
@@ -441,7 +443,7 @@ export function isContainerType(type: unknown): type is string {
 }
 
 /** Fresh copy of a block type's default data (safe to mutate). */
-export function getDefaultData(type: string): Record<string, any> {
+export function getDefaultData(type: string): BlockData {
   const def = BLOCK_REGISTRY[type]
   if (!def) return {}
   return JSON.parse(JSON.stringify(def.defaultData))

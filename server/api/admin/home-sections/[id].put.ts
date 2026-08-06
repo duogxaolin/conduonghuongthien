@@ -19,15 +19,19 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
 
-  const updateData: any = {
+  const updateData: Partial<typeof homeSections.$inferInsert> = {
     config,
     updatedAt: new Date(),
     updatedBy: adminUser.id,
   }
-  if (body.title) {
-    updateData.title = String(body.title)
-  }
-
+  /**
+   * KHÔNG có nhánh `body.title` ở đây, và đó là một lần sửa lỗi chứ không phải
+   * lược bớt: `home_sections` **không có cột `title`** — tiêu đề của một khối
+   * nằm trong cột JSON `config`, do trình dựng trang ghi. Nhánh cũ
+   * (`updateData.title = String(body.title)`) đọc trót lọt vì `updateData` khai
+   * `any`; nó gửi một khoá lạ xuống Drizzle và không nơi nào trong giao diện
+   * từng gửi `title` lên, nên nó chưa bao giờ nổ. Khai kiểu thật làm nó đỏ.
+   */
   /**
    * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
    *

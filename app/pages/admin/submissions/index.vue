@@ -44,7 +44,7 @@ const filteredSubmissions = computed(() => {
 
 // Free-form answers whose fields weren't mapped to a fixed column. Stored as
 // JSON [{label,value}]; may be null on legacy rows or a stringified JSON.
-const extraAnswers = (sub: any): Array<{ label: string; value: string }> => {
+const extraAnswers = (sub: AdminSubmissionRow): Array<{ label: string; value: string }> => {
   const raw = sub?.answers
   if (!raw) return []
   const arr = typeof raw === 'string' ? (() => { try { return JSON.parse(raw) } catch { return [] } })() : raw

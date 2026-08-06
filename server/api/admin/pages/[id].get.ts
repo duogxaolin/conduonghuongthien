@@ -20,17 +20,24 @@ export default defineEventHandler(async (event) => {
   // Live published baseline. Prefer the node tree in published_blocks (tree
   // pages); fall back to the flat page_blocks rows (legacy flat pages).
   const publishedTree = page.publishedBlocks
-  let blocks: any[]
+  let blocks: BlockNode[]
   let tree = false
   if (Array.isArray(publishedTree) && publishedTree.length) {
     blocks = publishedTree
     tree = true
   } else {
-    blocks = await db
+    /**
+     * `page_blocks.data` là cột JSON nullable, còn `BlockNode.data` thì không:
+     * mọi nơi đọc cây block (trình dựng, renderer) đều đọc thẳng `node.data.x`.
+     * Một hàng cũ có `data = NULL` sẽ làm nổ đúng ở đó, nên chuẩn hoá về `{}`
+     * tại biên đọc — một lần, chứ không phải một `?? {}` ở từng nơi đọc.
+     */
+    const rows = await db
       .select()
       .from(pageBlocks)
       .where(eq(pageBlocks.pageId, id))
       .orderBy(asc(pageBlocks.displayOrder), asc(pageBlocks.id))
+    blocks = rows.map(row => ({ ...row, data: row.data ?? {}, isVisible: row.isVisible ?? true }))
   }
 
   // Pending unpublished draft, if any (MySQL JSON comes back parsed via drizzle).

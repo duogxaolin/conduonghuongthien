@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AdminArticleAuthorRow, AdminArticleBoost, AdminArticleStats, AdminArticleStatsResult, AdminCategoryRow } from '~/types/admin-api'
 import type { AdminArticleRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
@@ -23,10 +24,10 @@ const selectedAuthorId = ref('')
 const pagination = ref({ page: 1, totalPages: 1, total: 0 })
 
 // Category state
-const allCategories = ref<any[]>([])
+const allCategories = ref<AdminCategoryRow[]>([])
 
 // Người đăng bài — chỉ những ai đã thực sự có bài, kèm số bài mất tác giả.
-const authorOptions = ref<any[]>([])
+const authorOptions = ref<AdminArticleAuthorRow[]>([])
 const orphanAuthorCount = ref(0)
 
 const typeLabels: Record<string, string> = {
@@ -75,7 +76,7 @@ const subCategoryOptions = computed(() => {
 
 const fetchCategories = async () => {
   try {
-    const params: any = {}
+    const params: Record<string, string> = {}
     if (selectedType.value) params.type = selectedType.value
     const res = await $fetch('/api/admin/categories', { params })
     if (res.ok) allCategories.value = res.items
@@ -114,7 +115,7 @@ const fetchArticles = async (page = 1) => {
   loading.value = true
   loadError.value = ''
   try {
-    const params: any = {
+    const params: Record<string, string | number> = {
       page,
       search: search.value,
       type: selectedType.value,
@@ -237,8 +238,8 @@ const deleteArticle = async (art: AdminArticleRow) => {
 const statsArticle = ref<AdminArticleRow | null>(null)
 const statsLoading = ref(false)
 const statsError = ref('')
-const statsData = ref<any>(null)
-const runningBoost = ref<any>(null)
+const statsData = ref<AdminArticleStats | null>(null)
+const runningBoost = ref<AdminArticleBoost>(null)
 
 const boostMode = ref<'instant' | 'gradual'>('instant')
 const boostAmount = ref<number | null>(null)
@@ -266,7 +267,7 @@ const boostProgress = computed(() => {
 /** Cột cao nhất trong biểu đồ ngày, dùng làm mốc quy đổi chiều cao các cột còn lại. */
 const dailyPeak = computed(() => {
   const rows = statsData.value?.daily || []
-  return rows.reduce((max: number, row: any) => Math.max(max, Number(row.total || 0)), 0)
+  return rows.reduce((max: number, row: { total?: number }) => Math.max(max, Number(row.total || 0)), 0)
 })
 
 const loadStats = async () => {
@@ -274,7 +275,7 @@ const loadStats = async () => {
   statsLoading.value = true
   statsError.value = ''
   try {
-    const res: any = await $fetch(`/api/admin/articles/${statsArticle.value.id}/stats`)
+    const res = await $fetch<AdminArticleStatsResult>(`/api/admin/articles/${statsArticle.value.id}/stats`)
     statsData.value = res.stats
     runningBoost.value = res.boost
   } catch (err: unknown) {
@@ -288,7 +289,7 @@ const loadStats = async () => {
   }
 }
 
-const openStats = async (art: any) => {
+const openStats = async (art: AdminArticleRow) => {
   statsArticle.value = art
   statsData.value = null
   runningBoost.value = null

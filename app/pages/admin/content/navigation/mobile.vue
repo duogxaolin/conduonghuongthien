@@ -36,12 +36,12 @@ const saving = ref(false)
 
 function uid() { return Math.random().toString(36).slice(2, 10) }
 
-function normalize(item: any): BottomNavItem {
+function normalize(item: Partial<BottomNavItem>): BottomNavItem {
   return {
     id: typeof item.id === 'string' ? item.id : uid(),
     label: item.label ?? '',
     icon: item.icon ?? 'fa-solid fa-circle',
-    type: (['link', 'chatbot', 'drawer'].includes(item.type) ? item.type : 'link') as NavType,
+    type: (item.type && ['link', 'chatbot', 'drawer'].includes(item.type) ? item.type : 'link') as NavType,
     url: item.url ?? '',
     featured: Boolean(item.featured),
   }

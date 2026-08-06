@@ -106,7 +106,19 @@ test('the page renders the log, its filters, and the retention warning', () => {
   const template = descriptor.descriptor.template?.content ?? ''
   const script = descriptor.descriptor.scriptSetup?.content ?? ''
 
-  assert.match(script, /\$fetch<any>\('\/api\/admin\/activity-logs\/retention'\)/)
+  assert.match(script, /\$fetch\('\/api\/admin\/activity-logs\/retention'\)/)
+  /**
+   * KHÔNG `$fetch<any>` ở đâu trong trang này.
+   *
+   * Lượt fetch trên để Nitro tự suy kiểu từ handler, và `retention` khai
+   * `ActivityRetentionStatus` (cũng suy từ handler). `any` ở một trong hai chỗ
+   * là mất đúng phần có giá trị: trang này đọc `retention.purgeOverdue`,
+   * `retention.command`, `retention.lifetimeTotal` — một tên gõ sai hoặc một
+   * trường endpoint ngừng trả về sẽ hiện ra là một ô trống trên trang cảnh báo
+   * lưu trữ, tức là báo "không có gì quá hạn" cho một bảng đang quá hạn.
+   */
+  assert.doesNotMatch(script, /\$fetch<any>/)
+  assert.match(script, /ref<ActivityRetentionStatus \| null>/)
   assert.match(script, /'\/api\/admin\/activity-logs'/)
   for (const filter of ['filterUserId', 'filterAction', 'filterResource', 'filterFrom', 'filterTo']) {
     assert.match(script, new RegExp(`${filter}`))

@@ -70,7 +70,7 @@ export function assertAssignablePermissions(actor: ActorLike, permsInput: unknow
     }
     if (isSuper) continue
     for (const [flag, action] of ACTION_FLAGS) {
-      if (p[flag] === true && !checkPermission(actorPerms as any, resource, action, false)) {
+      if (p[flag] === true && !checkPermission(actorPerms, resource, action, false)) {
         throw createError({ statusCode: 403, statusMessage: `Bạn không thể cấp quyền ${resource}:${action} mà chính bạn chưa có.` })
       }
     }

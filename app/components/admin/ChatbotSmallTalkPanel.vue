@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import type { AdminSmallTalkRow } from '~/types/admin-api'
 const toast = useToast(); const { confirm } = useConfirm()
-const items = ref<any[]>([]); const loading = ref(true); const error = ref('')
+const items = ref<AdminSmallTalkRow[]>([]); const loading = ref(true); const error = ref('')
 const search = ref(''); const category = ref(''); const enabled = ref('')
 const pagination = ref({ page: 1, totalPages: 1, total: 0 }); const page = ref(1)
 
@@ -13,33 +14,33 @@ const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABELS).map(([value, label]) =>
 async function load(next = 1) {
   loading.value = true; error.value = ''; page.value = next
   try {
-    const res = await $fetch<any>('/api/admin/chatbot/small-talk', { params: { page: next, perPage: 15, search: search.value, category: category.value, enabled: enabled.value } })
+    const res = await $fetch('/api/admin/chatbot/small-talk', { params: { page: next, perPage: 15, search: search.value, category: category.value, enabled: enabled.value } })
     items.value = res.items || []; pagination.value = res.pagination; selection.keepOnly(visibleIds.value)
   } catch (err: unknown) { error.value = errorMessage(err, 'Không thể tải kho trả lời thường nhật.') } finally { loading.value = false }
 }
 
 const selection = useBulkSelection(); const bulk = useBulkAction(selection)
-const visibleIds = computed(() => items.value.filter((item: any) => !item.isSystem).map((item: any) => Number(item.id)))
+const visibleIds = computed(() => items.value.filter(item => !item.isSystem).map(item => Number(item.id)))
 function bulkDelete() {
   return bulk.run({ url: '/api/admin/chatbot/small-talk/bulk-delete', noun: 'mục trả lời', confirm: { title: 'Xóa mục trả lời', message: `Xóa ${selection.count.value} mục đã chọn? Thao tác không thể hoàn tác. Mục hệ thống sẽ bị bỏ qua.`, danger: true, confirmLabel: 'Xóa' }, reload: () => load(page.value) })
 }
 function bulkEnabled(isEnabled: boolean) {
   return bulk.run({ url: '/api/admin/chatbot/small-talk/bulk-enabled', body: { isEnabled }, noun: 'mục trả lời', confirm: { message: `${isEnabled ? 'Bật' : 'Tắt'} ${selection.count.value} mục đã chọn?`, confirmLabel: isEnabled ? 'Bật' : 'Tắt' }, reload: () => load(page.value) })
 }
-async function toggle(item: any) {
+async function toggle(item: AdminSmallTalkRow) {
   try { await $fetch(`/api/admin/chatbot/small-talk/${item.id}/toggle`, { method: 'PATCH' }); toast.success(item.isEnabled ? 'Đã tắt mục.' : 'Đã bật mục.'); await load(page.value) }
   catch (err: unknown) { toast.error(errorMessage(err, 'Không thể đổi trạng thái mục.')) }
 }
-async function remove(item: any) {
+async function remove(item: AdminSmallTalkRow) {
   const ok = await confirm({ title: 'Xóa mục trả lời', message: 'Xóa mục này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return
   try { await $fetch(`/api/admin/chatbot/small-talk/${item.id}`, { method: 'DELETE' }); toast.success('Đã xóa mục.'); await load(page.value) }
   catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa mục.')) }
 }
 
-const showEditor = ref(false); const saving = ref(false); const editorError = ref(''); const editing = ref<any>(null)
+const showEditor = ref(false); const saving = ref(false); const editorError = ref(''); const editing = ref<AdminSmallTalkRow | null>(null)
 const form = reactive({ category: 'social', question: '', answer: '', patternsText: '' })
 function openCreate() { editing.value = null; form.category = 'social'; form.question = ''; form.answer = ''; form.patternsText = ''; editorError.value = ''; showEditor.value = true }
-function openEdit(item: any) { editing.value = item; form.category = item.category; form.question = item.question; form.answer = item.answer; form.patternsText = (item.patterns || []).join('\n'); editorError.value = ''; showEditor.value = true }
+function openEdit(item: AdminSmallTalkRow) { editing.value = item; form.category = item.category; form.question = item.question; form.answer = item.answer; form.patternsText = (item.patterns || []).join('\n'); editorError.value = ''; showEditor.value = true }
 function closeEditor() { showEditor.value = false; editing.value = null; editorError.value = '' }
 async function saveEditor() {
   saving.value = true; editorError.value = ''; const patterns = form.patternsText.split('\n').map(line => line.trim()).filter(Boolean)

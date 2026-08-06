@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import type { AdminMediaRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
 })
 
-const mediaItems = ref<any[]>([])
+const mediaItems = ref<AdminMediaRow[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const search = ref('')
@@ -62,7 +63,7 @@ const onDrop = (e: DragEvent) => {
   if (files?.length) handleUpload(files)
 }
 
-const deleteMedia = async (item: any) => {
+const deleteMedia = async (item: AdminMediaRow) => {
   const ok = await confirm({ title: 'Xóa tệp', message: `Bạn có chắc muốn xóa file ${item.originalName}?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
@@ -77,7 +78,7 @@ const deleteMedia = async (item: any) => {
 // ─── Bulk selection ───────────────────────────────────────────────────────────
 const selection = useBulkSelection()
 const bulk = useBulkAction(selection)
-const visibleIds = computed(() => mediaItems.value.map((m: any) => Number(m.id)))
+const visibleIds = computed(() => mediaItems.value.map((m: AdminMediaRow) => Number(m.id)))
 
 const bulkDelete = () => bulk.run({
   url: '/api/admin/media/bulk-delete',

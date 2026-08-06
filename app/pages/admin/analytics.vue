@@ -82,8 +82,10 @@ const validationError = computed(() => {
 const isEmpty = computed(() => summary.value !== null && summary.value.traffic.length === 0)
 const formatNumber = (value: number) => new Intl.NumberFormat('vi-VN').format(value)
 const formatDay = (day: string | null) => day ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${day}T00:00:00Z`)) : 'Chưa có dữ liệu'
-const errorStatus = (error: any) => Number(error?.statusCode || error?.response?.status || error?.data?.statusCode || 0)
-const errorMessage = (error: any, fallback: string) => error?.data?.statusMessage || error?.statusMessage || fallback
+// Dùng helper dùng chung (`app/utils/errorMessage.ts`) thay hai bản sao viết tay:
+// hai bản đọc lỗi khác nhau trên cùng một dự án là hai cách hiển thị khác nhau
+// cho cùng một lỗi máy chủ.
+import { errorMessage, errorStatus } from '~/utils/errorMessage'
 const queryRange = () => ({ start: start.value, end: end.value })
 const replaceQuery = async () => {
   const preservedQuery = { ...route.query }

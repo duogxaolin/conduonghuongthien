@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { ActivityRetentionStatus } from '~/types/admin-api'
 /**
  * System-wide activity log. Complements /admin/profile, which only shows the
  * signed-in account's own trail: this page reads every account's, so it is
@@ -75,7 +76,7 @@ const filterFrom = ref('')
 const filterTo = ref('')
 
 const accounts = ref<Array<{ id: number; username: string }>>([])
-const retention = ref<any>(null)
+const retention = ref<ActivityRetentionStatus | null>(null)
 
 async function loadAccounts() {
   try {
@@ -85,7 +86,7 @@ async function loadAccounts() {
 }
 
 async function loadRetention() {
-  try { retention.value = await $fetch<any>('/api/admin/activity-logs/retention') } catch { retention.value = null }
+  try { retention.value = await $fetch('/api/admin/activity-logs/retention') } catch { retention.value = null }
 }
 
 async function load(next = page.value) {

@@ -60,7 +60,7 @@ test('small-talk panel keeps shared bulk selection and protects system rows from
   assert.match(panelScript, /useBulkSelection\(\)/)
   assert.match(panelScript, /useBulkAction\(selection\)/)
   assert.match(panelScript, /selection\.keepOnly\(/)
-  assert.match(panelScript, /filter\(\(item: any\) => !item\.isSystem\)/)
+  assert.match(panelScript, /filter\(item => !item\.isSystem\)/)
   assert.match(panelTemplate, /selection\.toggleAll\(visibleIds\)/)
   assert.match(panelTemplate, /<AdminBulkActionBar/)
   assert.match(panelTemplate, /v-if="!item\.isSystem"[^>]*type="checkbox"/su)

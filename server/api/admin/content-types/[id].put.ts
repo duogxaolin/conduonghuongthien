@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event).catch(() => ({}))
-  const updateFields: any = {}
+  const updateFields: Partial<typeof contentTypes.$inferInsert> = {}
 
   if (body.name !== undefined) updateFields.name = String(body.name).trim()
   if (body.icon !== undefined) updateFields.icon = String(body.icon).trim() || null

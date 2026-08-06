@@ -95,9 +95,23 @@ test('sanitizeBlockData cleans rich-text fields and leaves other fields untouche
   assert.equal(data.maxItems, 5, 'non-string fields must not be altered')
 })
 
-test('sanitizeBlockData tolerates non-object input', () => {
-  assert.equal(sanitizeBlockData(null), null)
-  assert.deepEqual(sanitizeBlockData([1, 2]), [1, 2])
+/**
+ * Đầu vào không phải object cho ra `{}`, KHÔNG phải chính giá trị đó.
+ *
+ * Trước đây hàm khai trả `unknown` và trả nguyên đầu vào, nên `null` đi xuyên
+ * qua nó rồi vào cột `page_blocks.data`. Cột đó nullable ở CSDL nhưng
+ * `BlockNode.data` thì không — mọi nơi đọc cây block (trình dựng, renderer) đọc
+ * thẳng `node.data.x`, nên một hàng `data = NULL` nổ ở đúng đó, trên trang công
+ * khai. Ba nơi gọi thật đều đã tự chặn non-object trước khi gọi
+ * (`[blockId].put.ts` trả 400, hai nơi kia thay bằng `{}`), nên hợp đồng "luôn
+ * trả về một BlockData" không làm mất dữ liệu của ai — nó chỉ bỏ đi con đường
+ * mà một nơi gọi thứ tư có thể vô tình ghi `NULL` vào cột.
+ */
+test('sanitizeBlockData luôn trả về một object block, kể cả với đầu vào lạ', () => {
+  assert.deepEqual(sanitizeBlockData(null), {})
+  assert.deepEqual(sanitizeBlockData(undefined), {})
+  assert.deepEqual(sanitizeBlockData([1, 2]), {})
+  assert.deepEqual(sanitizeBlockData('text'), {})
 })
 
 test('escapeHtml neutralises the five HTML metacharacters', () => {

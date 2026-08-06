@@ -230,7 +230,7 @@
                   <i :class="[kindMeta[v.kind]?.icon, kindMeta[v.kind]?.color]"></i>
                   <span class="truncate">{{ v.label || kindMeta[v.kind]?.label || v.kind }}</span>
                 </p>
-                <p class="mt-0.5 text-xs text-gray-400">{{ kindMeta[v.kind]?.label }} · {{ v.blockCount }} block · {{ fmtDate(v.createdAt) }}</p>
+                <p class="mt-0.5 text-xs text-gray-400">{{ kindMeta[v.kind]?.label }} · {{ v.blockCount }} block · {{ v.createdAt ? fmtDate(v.createdAt) : '—' }}</p>
               </div>
               <span v-if="v.kind === 'origin'" class="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[0.65rem] font-semibold text-blue-600">KHÓA</span>
             </div>
@@ -257,12 +257,14 @@
 import type { PageVersionRow, AdminPageDetail, AdminPageUpdateResult } from '~/types/admin-api'
 import { provide } from 'vue'
 import { BLOCK_REGISTRY, blocksByCategory, getDefaultData, isContainerType, clampColSpan, DEFAULT_COL_SPAN } from '~/utils/blocks/registry'
+import { blockText } from '~/utils/blocks/types'
+import type { BuilderTreeApi, NodeId } from '~/utils/blocks/types'
 import type { BlockNode, BuilderNode, NodeLocation } from '~/utils/blocks/types'
 
 /** A node id: numeric once persisted, `tmp_*` while unsaved, null for "root". */
 // `undefined` is part of the domain: BlockNode.id is optional until the node is
 // persisted, so every lookup by id has to accept a not-yet-saved node.
-type NodeId = number | string | null | undefined
+
 import BuilderCanvas from '~/components/admin/builder/BuilderCanvas.vue'
 import PropertyPanel from '~/components/admin/builder/PropertyPanel.vue'
 import BlockTreeNode from '~/components/admin/builder/BlockTreeNode.vue'
@@ -401,7 +403,12 @@ const fetchPage = async () => {
 
 const blockPreviewText = (block: BuilderNode) => {
   const d = block.data || {}
-  return d.title || d.text || d.badge || d.titleLine1 || d.html?.replace(/<[^>]+>/g, '').slice(0, 40) || '—'
+  for (const key of ['title', 'text', 'badge', 'titleLine1']) {
+    const value = blockText(d, key)
+    if (value) return value
+  }
+  const html = blockText(d, 'html')
+  return html ? html.replace(/<[^>]+>/g, '').slice(0, 40) : '—'
 }
 
 // ── Palette / add (local only; persisted to draft) ──
@@ -462,7 +469,7 @@ const paletteContextLabel = computed(() => {
 
 // Bridge injected by the recursive BlockTreeNode navigator: selection + contextual
 // add. selectedId is exposed as the raw ref so children read `.value` reactively.
-provide('builderTree', {
+provide<BuilderTreeApi>('builderTree', {
   selectedId,
   select: (id: NodeId) => { selectedId.value = id ?? null },
   openPalette,
@@ -682,7 +689,7 @@ const saveMeta = async () => {
 
 // ── Versions ──
 const showVersions = ref(false)
-const versions = ref<any[]>([])
+const versions = ref<PageVersionRow[]>([])
 const versionsLoading = ref(false)
 const savingBackup = ref(false)
 const backupLabel = ref('')

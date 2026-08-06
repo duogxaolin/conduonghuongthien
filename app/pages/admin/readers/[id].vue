@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AdminReaderBanResult, AdminReaderCommentsDeleteResult } from '~/types/admin-api'
+import type { AdminReaderDetail, AdminReaderImpact } from '~/types/admin-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -59,7 +61,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<any>(`/api/admin/readers/${readerId.value}`)
+    const res = await $fetch<AdminReaderDetail>(`/api/admin/readers/${readerId.value}`)
     if (!res?.ok) {
       error.value = 'Không tải được thông tin người đọc.'
       return
@@ -78,7 +80,7 @@ async function load() {
  *  may have arrived while the officer was reading. */
 async function currentImpact() {
   try {
-    const res = await $fetch<any>(`/api/admin/readers/${readerId.value}/impact`)
+    const res = await $fetch<AdminReaderImpact>(`/api/admin/readers/${readerId.value}/impact`)
     return res?.impact || impact.value
   } catch {
     return impact.value
@@ -124,7 +126,7 @@ async function banReader() {
 
   busy.value = true
   try {
-    const res = await $fetch<any>(`/api/admin/readers/${readerId.value}/ban`, { method: 'POST', body: { reason } })
+    const res = await $fetch<AdminReaderBanResult>(`/api/admin/readers/${readerId.value}/ban`, { method: 'POST', body: { reason } })
     toast.success(`Đã chặn tài khoản và xoá ${res?.impact?.comments ?? 0} bình luận.`)
     await load()
   } catch (err: unknown) {
@@ -161,7 +163,7 @@ async function purgeComments() {
 
   busy.value = true
   try {
-    const res = await $fetch<any>(`/api/admin/readers/${readerId.value}/comments`, { method: 'DELETE' })
+    const res = await $fetch<AdminReaderCommentsDeleteResult>(`/api/admin/readers/${readerId.value}/comments`, { method: 'DELETE' })
     toast.success(`Đã xoá ${res?.impact?.comments ?? 0} bình luận.`)
     await load()
   } catch (err: unknown) {

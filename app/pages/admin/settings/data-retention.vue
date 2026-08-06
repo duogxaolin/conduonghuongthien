@@ -103,7 +103,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<any>('/api/admin/settings/retention')
+    const res = await $fetch('/api/admin/settings/retention')
     if (!res?.ok) {
       error.value = 'Không tải được cấu hình dọn dữ liệu.'
       return
@@ -176,8 +176,8 @@ async function runNow() {
 
   running.value = true
   try {
-    const res = await $fetch<any>('/api/admin/settings/retention-run', { method: 'POST', body: { confirm: true } })
-    const deleted = (res?.tables || []).reduce((sum: number, t: any) => sum + Number(t.deleted || 0), 0)
+    const res = await $fetch('/api/admin/settings/retention-run', { method: 'POST', body: { confirm: true } })
+    const deleted = (res?.tables || []).reduce((sum: number, t: { deleted?: number }) => sum + Number(t.deleted || 0), 0)
     if (res?.status === 'warning') toast.info(`Đã xoá ${formatNumber(deleted)} bản ghi. Còn bản ghi chờ lượt sau.`)
     else toast.success(deleted > 0 ? `Đã xoá ${formatNumber(deleted)} bản ghi.` : 'Không có bản ghi nào cần xoá.')
     await load()
