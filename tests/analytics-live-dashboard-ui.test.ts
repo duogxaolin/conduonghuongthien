@@ -105,7 +105,7 @@ test('accepts canonical bounded values and nulls invalid URL filters before requ
     ['path', `/${'a'.repeat(512)}`],
     ['path', '//external.example'],
     ['path', '/bad\\path'],
-    ['path', '/badpath'],
+    ['path', '/bad\u007Fpath'],
     ['source_category', 'affiliate'],
     ['device_class', 'watch'],
     ['country_code', 'VNM'],
