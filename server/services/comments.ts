@@ -39,6 +39,8 @@ import { isIpBanned } from '../utils/ip-ban'
 import { loadIpBanValues } from './ip-bans'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
 import { effectiveDisplayName, initialsFrom } from '../utils/display-name'
+import { createReplyNotification } from './notifications'
+import { sendReplyEmail } from './notification-email'
 
 /** Long enough for a real question, short enough that one row cannot dominate a page. */
 export const COMMENT_MAX_LENGTH = 2000
@@ -293,23 +295,60 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     }
   }
 
-  const inserted = await db.insert(articleComments).values({
-    articleId: input.articleId,
-    readerId:  input.readerId,
-    parentId:  input.parentId,
-    body:      input.body,
-    ip:        input.ip,
-    userAgent: (input.userAgent || '').slice(0, 512) || null,
-    // Drizzle query builder, never pool.query — design.md D17.
-    createdAt: new Date(),
+  /**
+   * Comment and notification commit together.
+   *
+   * The reply and the notice that it happened are one fact, not two. Written as
+   * insert-then-notify, a failure on the second statement leaves a reply on the
+   * page that its author is never told about — which is the exact state this
+   * feature exists to prevent, and it fails silently: the thread looks correct to
+   * everyone except the one person waiting for an answer.
+   */
+  let id = 0
+  let notifiedReaderId: number | null = null
+  await db.transaction(async (tx) => {
+    const inserted = await tx.insert(articleComments).values({
+      articleId: input.articleId,
+      readerId:  input.readerId,
+      parentId:  input.parentId,
+      body:      input.body,
+      ip:        input.ip,
+      userAgent: (input.userAgent || '').slice(0, 512) || null,
+      // Drizzle query builder, never pool.query — design.md D17.
+      createdAt: new Date(),
+    })
+
+    // Destructured: db.insert() resolves to [ResultSetHeader, FieldPacket[]], so
+    // `.insertId` on the array itself is undefined and `Number(undefined ?? 0)` is 0
+    // — silently. Same trap as callback.get.ts and ip-bans.ts, guarded by
+    // tests/insert-id-integration.test.ts.
+    const [header] = inserted
+    id = Number(header?.insertId ?? 0)
+
+    // No-op for a top-level comment, and for a reader answering themselves.
+    notifiedReaderId = await createReplyNotification({
+      commentId:     id,
+      parentId:      input.parentId,
+      actorReaderId: input.readerId,
+      tx,
+    })
   })
 
-  // Destructured: db.insert() resolves to [ResultSetHeader, FieldPacket[]], so
-  // `.insertId` on the array itself is undefined and `Number(undefined ?? 0)` is 0
-  // — silently. Same trap as callback.get.ts and ip-bans.ts, guarded by
-  // tests/insert-id-integration.test.ts.
-  const [header] = inserted
-  return { ok: true, id: Number(header?.insertId ?? 0) }
+  /**
+   * The email goes out AFTER the transaction commits, never inside it.
+   *
+   * Inside, an unreachable SMTP host would hold this comment's row locks open for
+   * the length of a network timeout — turning a mail outage into a comment outage.
+   * After, the row is already durable and the worst a mail failure costs is the
+   * email. `sendReplyEmail` throws nothing and awaits its own errors into a log
+   * line; it is awaited rather than fired off because Nitro can tear down the
+   * request context when a handler returns, cutting a loose promise mid-flight.
+   */
+  if (notifiedReaderId !== null && input.parentId !== null) {
+    await sendReplyEmail({ commentId: id, parentId: input.parentId, recipientId: notifiedReaderId })
+  }
+
+  return { ok: true, id }
 }
 
 export type DeleteActor =
@@ -713,6 +752,7 @@ export async function createAdminReply(params: {
   // record of which admin posted it is the same unaccountable gap this file's
   // deleteComment guards against, just on the write side instead of the delete side.
   let id = 0
+  let notifiedReaderId: number | null = null
   await db.transaction(async (tx) => {
     const inserted = await tx.insert(articleComments).values({
       articleId:   parent.articleId,
@@ -740,7 +780,24 @@ export async function createAdminReply(params: {
       resourceId: id,
       meta:       { operation: 'admin_reply', articleId: parent.articleId, parentId: parent.id },
     })
+
+    // The portal answering is the notification that matters most: it is the
+    // official reply the citizen has been waiting for. `actorReaderId: null`
+    // because the author is an officer, not a reader — so the self-reply guard
+    // never suppresses it.
+    notifiedReaderId = await createReplyNotification({
+      commentId:     id,
+      parentId:      parent.id,
+      actorReaderId: null,
+      tx,
+    })
   })
+
+  // After the commit, never inside it — an unreachable SMTP host must not hold
+  // this reply's row locks open for a network timeout. See createComment.
+  if (notifiedReaderId !== null) {
+    await sendReplyEmail({ commentId: id, parentId: parent.id, recipientId: notifiedReaderId })
+  }
 
   return { ok: true, id }
 }

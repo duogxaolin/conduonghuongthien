@@ -1,5 +1,5 @@
 /**
- * Contract for the reader's own profile page (`/nguoi-doc`).
+ * Contract for the reader's own profile page (`/profile`).
  *
  * This page is different from every other public page in one way that governs
  * everything below: its content is ONE person's — their name, their email, their
@@ -9,7 +9,7 @@
  *
  * Five things are pinned:
  *
- *   1. `/nguoi-doc` is absent from `routeRules`. An SWR window on this route hands
+ *   1. `/profile` is absent from `routeRules`. An SWR window on this route hands
  *      one citizen's page to whoever visits next inside 60 seconds.
  *   2. Nothing is fetched during SSR. Same reason: reader data that reaches
  *      server-rendered HTML can be replayed from cache.
@@ -30,7 +30,7 @@ import { readFileSync } from 'node:fs'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
-const PAGE = 'app/pages/nguoi-doc.vue'
+const PAGE = 'app/pages/profile.vue'
 const source = readFileSync(new URL(`../${PAGE}`, import.meta.url), 'utf8')
 const { descriptor } = parse(source)
 const template = descriptor.template?.content ?? ''
@@ -53,15 +53,28 @@ const code = script
 
 // ─── 1. The cache-safety constraint ─────────────────────────────────────────
 
-test('/nguoi-doc is NOT in routeRules', () => {
+test('/profile is NOT given a cache rule', () => {
   const config = readFileSync(new URL('../nuxt.config.ts', import.meta.url), 'utf8')
   const rules = config.slice(config.indexOf('routeRules:'), config.indexOf('runtimeConfig:'))
 
+  /**
+   * `/profile` appears in routeRules as the TARGET of the 301 from the old
+   * `/nguoi-doc` path — that mention is required, and matching on the bare word
+   * would fail on it. What must never exist is a rule keyed on the route itself,
+   * because that is the shape that could carry `swr`.
+   */
   assert.doesNotMatch(
     rules,
-    /nguoi-doc/,
-    'an SWR window on /nguoi-doc serves one reader\'s name, email, comments and chat '
+    /['"]\/profile(\/\*\*)?['"]\s*:/,
+    'an SWR window on /profile serves one reader\'s name, email, comments and chat '
     + 'transcripts to the next visitor inside the same 60 seconds',
+  )
+
+  // The redirect itself must survive: /nguoi-doc was live, shared and indexed.
+  assert.match(
+    rules,
+    /['"]\/nguoi-doc['"]\s*:\s*\{\s*redirect/,
+    'the 301 from the old /nguoi-doc path is gone — every link already shared now 404s',
   )
 })
 

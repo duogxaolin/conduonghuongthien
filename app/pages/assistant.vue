@@ -160,7 +160,7 @@
                             <!-- Expanding in place keeps the visitor in their
                                  conversation; this is the way out to the surrounding
                                  topic. -->
-                            <nuxt-link :to="`/tai-lieu-hoi-dap#qa-${source.entryId}`" class="mt-2 inline-block text-[0.72rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
+                            <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-2 inline-block text-[0.72rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
                           </template>
                         </div>
                       </li>

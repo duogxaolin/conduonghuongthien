@@ -86,7 +86,7 @@ test('the shared detail component resolves the category label by precedence', ()
  * day about the same article. That argument needs two things to be true: the
  * value comes from the database, and the markup is rendered on both sides.
  *
- * `pages/nguoi-doc.vue` is the one place where neither holds. Its reading-history
+ * `pages/profile.vue` is the one place where neither holds. Its reading-history
  * timestamps are epoch milliseconds produced by `Date.now()` in this very browser
  * and stored only in this browser's localStorage (see
  * app/composables/useReadingHistory.ts for why they are deliberately NOT on the
@@ -101,7 +101,7 @@ test('the shared detail component resolves the category label by precedence', ()
  */
 const LOCAL_TIME_EXEMPTIONS: Record<string, number> = {
   // getDate() + getMonth() + getFullYear(), all inside formatReadAt().
-  'pages/nguoi-doc.vue': 3,
+  'pages/profile.vue': 3,
 }
 
 test('no public page formats a date in local time', () => {
@@ -129,7 +129,7 @@ test('the exempted local-time formatter is still confined to client-only, device
   // The exemption above is only defensible while both of its premises hold. If the
   // reading history ever moves to the server, or the block leaves <client-only>,
   // the SSR-vs-browser mismatch becomes real and the exemption has to go.
-  const source = read('pages/nguoi-doc.vue')
+  const source = read('pages/profile.vue')
   // Anchored to a line that IS the tag, not merely a line mentioning it. A bare
   // /<client-only>/ also matches the prose above the template explaining why the
   // tag is there — so deleting the tag while keeping the comment would leave this
@@ -250,7 +250,7 @@ test('khối danh tính người đọc có mặt ở cả header desktop và ng
     'chỉ còn một nút đăng nhập — một trong hai bề mặt (header desktop / ngăn kéo mobile) đã mất khối danh tính',
   )
   assert.ok(
-    (source.match(/to="\/nguoi-doc"/g) ?? []).length >= 2,
+    (source.match(/to="\/profile"/g) ?? []).length >= 2,
     'thiếu đường vào trang cá nhân ở một trong hai bề mặt',
   )
   assert.ok(
