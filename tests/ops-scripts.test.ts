@@ -131,12 +131,32 @@ test('CI refuses a committed .env or a known-default secret', () => {
 // ─── Deploy ──────────────────────────────────────────────────────────────────
 test('nothing reaches the VPS without passing every gate first', () => {
   const workflow = read('.github/workflows/ci.yml')
-  // The image job depends on all four gates, and deploy depends on the image
-  // job. Drop one name here and a commit that fails typecheck ships anyway.
+  // The image job depends on every gate job, and deploy depends on the image
+  // job. Drop one name here and a commit that fails a gate ships anyway.
   const imageNeeds = /image:\s*\n[\s\S]*?needs: \[([^\]]+)\]/.exec(workflow)?.[1] ?? ''
-  for (const gate of ['test', 'typecheck', 'build', 'hygiene']) {
+  for (const gate of ['test', 'build', 'hygiene']) {
     assert.ok(imageNeeds.includes(gate), `the image job does not wait for the ${gate} job`)
   }
+
+  /**
+   * Typecheck KHÔNG còn là một job riêng — nó là một bước trong job `test`.
+   *
+   * Gộp vào vì mỗi job là một runner phải xin cấp riêng, và trên tài khoản này
+   * hai job nhẹ nhất liên tục bị huỷ sau ~15 phút xếp hàng mà **chưa bao giờ
+   * được cấp máy** (`runner: ""`, `steps_run: 0`) — bảng CI báo đỏ cho một thứ
+   * chưa từng chạy.
+   *
+   * Nhưng nó vẫn phải là cổng **chặn**, và đó là điều hai khẳng định dưới đây
+   * canh: bước tồn tại trong job `test` (job mà `image` đã chờ), và nó `exit`
+   * theo mã trạng thái thật thay vì nuốt lỗi. Bỏ `exit $status` đi là biến một
+   * cổng chặn thành một dòng nhật ký, mà nhìn từ bảng CI thì hai thứ đó giống
+   * hệt nhau — cùng một dấu tích xanh.
+   */
+  const testJob = /\n  test:\n([\s\S]*?)(?=\n  [a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
+  assert.match(testJob, /- name: Typecheck/,
+    'bước Typecheck không còn trong job `test` — cổng kiểu đã biến mất khỏi CI')
+  assert.match(testJob, /exit \$status/,
+    'Typecheck không thoát theo mã trạng thái thật — một lỗi kiểu sẽ hiện ra là màu xanh')
   assert.match(workflow, /deploy:\s*\n[\s\S]*?needs: image/, 'deploy does not wait for the image')
   // Deploying a pull request would push a fork's code onto the server.
   assert.match(workflow, /if: github\.ref == 'refs\/heads\/main' && github\.event_name != 'pull_request'/)
