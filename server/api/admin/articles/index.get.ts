@@ -1,3 +1,4 @@
+import { finitePositive, MAX_PAGE } from '../../../utils/query-number'
 import { getDb } from '../../../utils/db'
 import { articles, users, categories, articleViewDaily } from '../../../db/schema'
 import { ArticleFilterValidationError, parseAuthorFilter } from '../../../utils/article-filters'
@@ -10,7 +11,7 @@ export default defineEventHandler(async (event) => {
   requireResourcePermission(adminUser, 'news', 'read')
 
   const query = getQuery(event)
-  const page = Math.max(1, Number(query.page || 1))
+  const page = finitePositive(query.page, 1, MAX_PAGE)
   const perPage = Math.min(100, Math.max(10, Number(query.perPage || 20)))
   const offset = (page - 1) * perPage
   const search = String(query.search || '').trim()
