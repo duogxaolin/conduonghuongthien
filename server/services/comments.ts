@@ -40,6 +40,7 @@ import { loadIpBanValues } from './ip-bans'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
 import { effectiveDisplayName, initialsFrom } from '../utils/display-name'
 import { createReplyNotification } from './notifications'
+import { sendReplyEmail } from './notification-email'
 
 /** Long enough for a real question, short enough that one row cannot dominate a page. */
 export const COMMENT_MAX_LENGTH = 2000
@@ -304,6 +305,7 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
    * everyone except the one person waiting for an answer.
    */
   let id = 0
+  let notifiedReaderId: number | null = null
   await db.transaction(async (tx) => {
     const inserted = await tx.insert(articleComments).values({
       articleId: input.articleId,
@@ -324,13 +326,27 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     id = Number(header?.insertId ?? 0)
 
     // No-op for a top-level comment, and for a reader answering themselves.
-    await createReplyNotification({
+    notifiedReaderId = await createReplyNotification({
       commentId:     id,
       parentId:      input.parentId,
       actorReaderId: input.readerId,
       tx,
     })
   })
+
+  /**
+   * The email goes out AFTER the transaction commits, never inside it.
+   *
+   * Inside, an unreachable SMTP host would hold this comment's row locks open for
+   * the length of a network timeout — turning a mail outage into a comment outage.
+   * After, the row is already durable and the worst a mail failure costs is the
+   * email. `sendReplyEmail` throws nothing and awaits its own errors into a log
+   * line; it is awaited rather than fired off because Nitro can tear down the
+   * request context when a handler returns, cutting a loose promise mid-flight.
+   */
+  if (notifiedReaderId !== null && input.parentId !== null) {
+    await sendReplyEmail({ commentId: id, parentId: input.parentId, recipientId: notifiedReaderId })
+  }
 
   return { ok: true, id }
 }
@@ -736,6 +752,7 @@ export async function createAdminReply(params: {
   // record of which admin posted it is the same unaccountable gap this file's
   // deleteComment guards against, just on the write side instead of the delete side.
   let id = 0
+  let notifiedReaderId: number | null = null
   await db.transaction(async (tx) => {
     const inserted = await tx.insert(articleComments).values({
       articleId:   parent.articleId,
@@ -768,13 +785,19 @@ export async function createAdminReply(params: {
     // official reply the citizen has been waiting for. `actorReaderId: null`
     // because the author is an officer, not a reader — so the self-reply guard
     // never suppresses it.
-    await createReplyNotification({
+    notifiedReaderId = await createReplyNotification({
       commentId:     id,
       parentId:      parent.id,
       actorReaderId: null,
       tx,
     })
   })
+
+  // After the commit, never inside it — an unreachable SMTP host must not hold
+  // this reply's row locks open for a network timeout. See createComment.
+  if (notifiedReaderId !== null) {
+    await sendReplyEmail({ commentId: id, parentId: parent.id, recipientId: notifiedReaderId })
+  }
 
   return { ok: true, id }
 }

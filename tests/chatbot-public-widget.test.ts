@@ -4,7 +4,7 @@ import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
 // The widget was extracted out of `app/layouts/default.vue` so that the full-page
-// assistant at `/tro-ly` could render the same conversation without duplicating
+// assistant at `/assistant` could render the same conversation without duplicating
 // it: markup now lives in `ChatWidget.vue` and the logic in `useChatbot.ts`.
 //
 // Every contract below is about the public widget's *behaviour*, not about which

@@ -142,7 +142,7 @@
                            this is the way out to the surrounding topic, and it is a
                            link rather than a second panel because the full document
                            page is a different question from "what did you just cite". -->
-                      <nuxt-link :to="`/tai-lieu-hoi-dap#qa-${source.entryId}`" class="mt-1.5 inline-block text-[0.66rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
+                      <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1.5 inline-block text-[0.66rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
                     </template>
                   </div>
                 </li>
@@ -305,11 +305,11 @@ const chatCloseButton = ref<HTMLButtonElement | null>(null)
 const chatToggleButton = ref<HTMLButtonElement | null>(null)
 
 /**
- * The launcher is hidden on /tro-ly: that page *is* the chat, so a floating
+ * The launcher is hidden on /assistant: that page *is* the chat, so a floating
  * button offering to open a smaller copy of it is noise.
  */
 const route = useRoute()
-const showLauncher = computed(() => route.path !== '/tro-ly')
+const showLauncher = computed(() => route.path !== '/assistant')
 
 // ─── Teaser bubble ───────────────────────────────────────────────────────────
 const CHAT_TEASER_MESSAGES = [
@@ -410,7 +410,7 @@ defineExpose({ openChatbot, closeChatbot, toggleChatbot, isChatbotOpen })
 
 const openFullPage = () => {
   isChatbotOpen.value = false
-  navigateTo('/tro-ly')
+  navigateTo('/assistant')
 }
 
 const handleChatbotDialogKeydown = (event: KeyboardEvent) => {

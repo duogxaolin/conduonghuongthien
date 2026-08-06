@@ -2,7 +2,7 @@
  * Reader notifications — "somebody replied to you".
  *
  * State lives at MODULE level, not per call, for the same reason useReaderAuth
- * does: the header bell and the list on /nguoi-doc are two components on the same
+ * does: the header bell and the list on /profile are two components on the same
  * page. A per-call ref would have each of them fetch separately and then disagree
  * — the bell could show "3" while the list below it showed none, and marking one
  * read would not clear the other.
@@ -61,7 +61,7 @@ const loaded = ref(false)
 /**
  * The request currently in flight, if any.
  *
- * Two callers race on every page load of /nguoi-doc: the layout starts a load as
+ * Two callers race on every page load of /profile: the layout starts a load as
  * soon as `reader` resolves, and the page's own `onMounted` asks for one too. A
  * bare `if (pending) return` would make the second call resolve IMMEDIATELY while
  * the data was still arriving — so the page's `await` would fall through to code

@@ -16,7 +16,7 @@
  *      nothing failing anywhere.
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { existsSync, readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
 import {
@@ -54,7 +54,7 @@ describe('notificationTargetPage', () => {
   })
 
   /**
-   * A NaN page number would serialise into the URL as `binhluan=NaN`, and the
+   * A NaN page number would serialise into the URL as `page=NaN`, and the
    * component's `Number.isSafeInteger` check would then reject it and silently
    * show page 1 — the exact "link goes nowhere" symptom, arrived at by a
    * different route.
@@ -201,15 +201,27 @@ describe('notifications never enter server-rendered HTML', () => {
    * Public article routes are served with `swr: 60`, so anything reader-specific
    * that reached the server render would be handed to the next visitor from
    * cache — a notification list is one person's name, words and reading history.
+   *
+   * `/profile` DOES appear in routeRules now, as the destination of the 301 from
+   * the old `/nguoi-doc`. That is required, not a regression — so this checks the
+   * thing that actually matters: that no rule gives `/profile` a cache window.
    */
-  it('/nguoi-doc is absent from routeRules', () => {
+  it('/profile never gains a cache rule', () => {
     const config = stripComments(read('nuxt.config.ts'))
-    const rules = config.slice(config.indexOf('routeRules'), config.indexOf('routeRules') + 1400)
-    assert.ok(!rules.includes('/nguoi-doc'), '/nguoi-doc gained a cache rule — reader data would be served to strangers')
+    const rules = config.slice(config.indexOf('routeRules'), config.indexOf('runtimeConfig'))
+
+    // A key for the route itself — `'/profile': { ... }` — as opposed to the
+    // `to: '/profile'` inside the redirect, which is the one legitimate mention.
+    assert.ok(
+      !/['"]\/profile(\/\*\*)?['"]\s*:/.test(rules),
+      '/profile gained its own routeRules entry — an SWR window there would serve one reader\'s data to the next visitor',
+    )
+    // And the redirect that keeps old shared links alive must still be there.
+    assert.match(rules, /['"]\/nguoi-doc['"]\s*:\s*\{\s*redirect/, 'the 301 from /nguoi-doc is gone — every shared link to it now 404s')
   })
 
   it('the profile page fetches notifications after mount, not via useFetch', () => {
-    const page = stripComments(read('app/pages/nguoi-doc.vue'))
+    const page = stripComments(read('app/pages/profile.vue'))
     assert.ok(!/useFetch\(|useAsyncData\(/.test(page), 'the profile page gained an SSR data fetch')
     assert.match(page, /onMounted\(/, 'the profile page no longer loads after mount')
   })
@@ -247,7 +259,48 @@ describe('the bell exists on BOTH surfaces', () => {
   })
 
   it('the mobile entry links to the notifications block on the profile page', () => {
-    assert.match(layout, /\/nguoi-doc#thong-bao/, 'the mobile drawer no longer reaches notifications')
+    assert.match(layout, /\/profile#notifications/, 'the mobile drawer no longer reaches notifications')
+  })
+})
+
+describe('the old Vietnamese paths keep working', () => {
+  /**
+   * All three routes were live on production, shared, and indexed — and the
+   * chatbot itself cited /tai-lieu-hoi-dap in its answers. Renaming them without
+   * these redirects kills every link already in the wild, including ones printed
+   * on paper or sitting in somebody's messages. A link has no expiry date; the
+   * cost of keeping it alive is three lines of config.
+   */
+  const REDIRECTS: Array<[string, string]> = [
+    ['/nguoi-doc', '/profile'],
+    ['/tai-lieu-hoi-dap', '/qa-documents'],
+    ['/tro-ly', '/assistant'],
+  ]
+
+  const rules = (() => {
+    const config = read('nuxt.config.ts')
+    return config.slice(config.indexOf('routeRules'), config.indexOf('runtimeConfig'))
+  })()
+
+  for (const [from, to] of REDIRECTS) {
+    it(`${from} still redirects to ${to}`, () => {
+      const pattern = new RegExp(`['"]${from}['"]\\s*:\\s*\\{\\s*redirect:\\s*\\{[^}]*to:\\s*['"]${to}['"]`)
+      assert.match(rules, pattern, `${from} no longer redirects — links already shared will 404`)
+    })
+  }
+
+  /** 301, not 302: a temporary redirect leaves search engines indexing both
+   *  addresses instead of moving the ranking across. */
+  it('uses permanent redirects', () => {
+    const permanent = rules.match(/statusCode:\s*301/g) ?? []
+    assert.ok(permanent.length >= REDIRECTS.length, `expected ${REDIRECTS.length} permanent redirects, found ${permanent.length}`)
+  })
+
+  it('no Vietnamese page file remains', () => {
+    for (const [from] of REDIRECTS) {
+      const stale = new URL(`../app/pages${from}.vue`, import.meta.url)
+      assert.ok(!existsSync(stale), `${from}.vue still exists — the redirect will never fire, the page wins`)
+    }
   })
 })
 
@@ -261,13 +314,13 @@ describe('every comment is addressable', () => {
    * what a "copy link" on that reply produces.
    */
   it('top-level comments and replies both carry an anchor id', () => {
-    const anchors = component.match(/:id="`binh-luan-\$\{(comment|reply)\.id\}`"/g) ?? []
+    const anchors = component.match(/:id="`comment-\$\{(comment|reply)\.id\}`"/g) ?? []
     assert.equal(anchors.length, 2, `expected an id on both comments and replies, found ${anchors.length}`)
   })
 
   it('reads the requested page before the first load', () => {
     const mounted = component.slice(component.indexOf('onMounted(async'))
-    const queryRead = mounted.indexOf('route.query.binhluan')
+    const queryRead = mounted.indexOf('route.query.comments')
     const load = mounted.indexOf('loadThread()')
     assert.ok(queryRead !== -1, 'the component ignores the page a notification asked for')
     assert.ok(queryRead < load, 'the page is read after the thread loads — the anchor will not be found')
@@ -275,7 +328,7 @@ describe('every comment is addressable', () => {
 
   /**
    * `Number(hash)` alone yields NaN for junk, which then reaches getElementById
-   * as the string "NaN". Same check /tai-lieu-hoi-dap uses for `#qa-<id>`.
+   * as the string "NaN". Same check /qa-documents uses for `#qa-<id>`.
    */
   it('validates the hash as a safe integer', () => {
     assert.match(component, /Number\.isSafeInteger\(raw\)/, 'the anchor id is no longer validated')

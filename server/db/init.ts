@@ -1135,6 +1135,7 @@ export async function initDb() {
       \`email\` VARCHAR(255) NULL,
       \`display_name\` VARCHAR(255) NULL,
       \`custom_display_name\` VARCHAR(255) NULL,
+      \`email_notifications\` TINYINT(1) NOT NULL DEFAULT 1,
       \`is_banned\` TINYINT(1) NOT NULL DEFAULT 0,
       \`ban_reason\` TEXT NULL,
       \`banned_at\` DATETIME NULL,
@@ -1241,6 +1242,10 @@ export async function initDb() {
   // every sign-in: writing the chosen name into that column would have the next
   // sign-in quietly erase it. Read only through effectiveDisplayName().
   await ensureColumn(db, database, 'reader_accounts', 'custom_display_name', 'VARCHAR(255) NULL AFTER `display_name`')
+  // Defaults to 1 so an existing reader keeps being told when the portal answers
+  // them. Switchable from /profile — emailing a citizen with no way to stop is
+  // spam, whoever is sending it.
+  await ensureColumn(db, database, 'reader_accounts', 'email_notifications', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER `custom_display_name`')
 
   // Which reader a conversation belongs to, once they claim it.
   //

@@ -2,7 +2,7 @@ import { ref, computed, nextTick } from 'vue'
 
 /**
  * All chatbot state and behaviour, shared by the floating widget and the
- * full-screen /tro-ly page.
+ * full-screen /assistant page.
  *
  * Module-level refs, not per-call state: both surfaces must show the same
  * conversations, and a visitor who expands the widget mid-conversation should

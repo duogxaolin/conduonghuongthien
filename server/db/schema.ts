@@ -678,6 +678,15 @@ export const readerAccounts = mysqlTable('reader_accounts', {
   // name falls back to the Google one. Read only through effectiveDisplayName()
   // in server/services/readers.ts, never column-by-column at a call site.
   customDisplayName: varchar('custom_display_name', { length: 255 }),
+  /**
+   * Whether to email this reader when somebody answers their comment.
+   *
+   * Defaults ON because the notification is the whole point — a citizen asks a
+   * legal question and leaves, and the in-portal bell only reaches them if they
+   * happen to come back. But it MUST be switchable from the profile page:
+   * emailing a citizen with no way to stop is spam, whoever is sending it.
+   */
+  emailNotifications: boolean('email_notifications').notNull().default(true),
   isBanned:      boolean('is_banned').notNull().default(false),
   banReason:     text('ban_reason'),
   bannedAt:      datetime('banned_at', { mode: 'date' }),

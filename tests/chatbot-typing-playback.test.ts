@@ -20,7 +20,7 @@ import { playTypewriter, normalizeSource, TYPEWRITER_MAX_MS, TYPEWRITER_WORD_DEL
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-const SURFACES = ['../app/components/ChatWidget.vue', '../app/pages/tro-ly.vue'] as const
+const SURFACES = ['../app/components/ChatWidget.vue', '../app/pages/assistant.vue'] as const
 
 function botMessage(): ChatMessage {
   return { id: 'bot-test', sender: 'bot', text: '' }

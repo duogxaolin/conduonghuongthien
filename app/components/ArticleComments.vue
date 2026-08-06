@@ -9,16 +9,16 @@
   server.
 
   Bodies are rendered with `{{ }}` and `whitespace-pre-line break-words`, never
-  `v-html` — the same rule /tai-lieu-hoi-dap follows. The server stores what a
+  `v-html` — the same rule /qa-documents follows. The server stores what a
   citizen typed verbatim precisely because this template cannot interpret it.
 -->
 <template>
   <section
     v-if="enabled || pending || errorMessage"
     class="mt-12 border-t border-[#E2E8DF] pt-8"
-    aria-labelledby="binh-luan-heading"
+    aria-labelledby="comments-heading"
   >
-    <h2 id="binh-luan-heading" class="m-0 mb-5 text-[1.15rem] font-extrabold text-[#1E251C]">
+    <h2 id="comments-heading" class="m-0 mb-5 text-[1.15rem] font-extrabold text-[#1E251C]">
       <i class="fa-solid fa-comments mr-2 text-[#7CB342]" aria-hidden="true"></i>Bình luận
       <span v-if="total" class="ml-1 text-[0.95rem] font-semibold text-[#7A8675]">({{ total }})</span>
     </h2>
@@ -62,7 +62,7 @@
       <ul v-else class="list-none p-0 m-0 mb-6 flex flex-col gap-5">
         <li v-for="comment in comments" :key="comment.id">
           <article
-            :id="`binh-luan-${comment.id}`"
+            :id="`comment-${comment.id}`"
             class="bg-white border rounded-lg p-4 transition-colors duration-700"
             :class="highlightId === comment.id
               ? 'border-[#7CB342] bg-[#F4F9F0] ring-2 ring-[#7CB342]/40'
@@ -91,7 +91,7 @@
                     <i class="fa-solid fa-reply mr-1" aria-hidden="true"></i>Trả lời
                   </button>
                   <!-- Mỗi bình luận có địa chỉ riêng, chia sẻ được — cùng ý với
-                       neo `#qa-<id>` của /tai-lieu-hoi-dap. -->
+                       neo `#qa-<id>` của /qa-documents. -->
                   <button
                     type="button"
                     class="text-[0.82rem] font-semibold text-[#7A8675] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
@@ -118,7 +118,7 @@
                 <ul v-if="comment.replies && comment.replies.length" class="list-none p-0 mt-4 mb-0 flex flex-col gap-3 border-l-2 border-[#E2E8DF] pl-4">
                   <li v-for="reply in comment.replies" :key="reply.id">
                     <div
-                      :id="`binh-luan-${reply.id}`"
+                      :id="`comment-${reply.id}`"
                       class="flex gap-2.5 rounded-lg transition-colors duration-700"
                       :class="highlightId === reply.id ? 'bg-[#F4F9F0] ring-2 ring-[#7CB342]/40 p-2 -m-2' : ''"
                     >
@@ -224,9 +224,9 @@
 
       <!-- 5. Khung soạn bình luận -->
       <form v-else class="bg-white border border-[#E2E8DF] rounded-lg p-4" @submit.prevent="submit(null)">
-        <label for="binh-luan-noi-dung" class="block mb-2 text-[0.9rem] font-bold text-[#385130]">Bình luận của bạn</label>
+        <label for="comment-body" class="block mb-2 text-[0.9rem] font-bold text-[#385130]">Bình luận của bạn</label>
         <textarea
-          id="binh-luan-noi-dung"
+          id="comment-body"
           v-model="body"
           rows="4"
           :maxlength="MAX_LENGTH"
@@ -292,14 +292,14 @@ const highlightId = ref(null)
 const copiedId = ref(null)
 
 /**
- * Id bình luận nêu trong `#binh-luan-<id>`.
+ * Id bình luận nêu trong `#comment-<id>`.
  *
- * Cùng cách đọc mà /tai-lieu-hoi-dap dùng cho `#qa-<id>`: `Number.isSafeInteger`
+ * Cùng cách đọc mà /qa-documents dùng cho `#qa-<id>`: `Number.isSafeInteger`
  * chứ không chỉ `Number`, nếu không một hash rác sẽ thành `NaN` rồi đi tiếp vào
  * `getElementById` như chuỗi "NaN".
  */
 function anchoredCommentId() {
-  const raw = Number(String(route.hash || '').replace('#binh-luan-', ''))
+  const raw = Number(String(route.hash || '').replace('#comment-', ''))
   return Number.isSafeInteger(raw) && raw > 0 ? raw : null
 }
 
@@ -316,7 +316,7 @@ async function focusAnchoredComment() {
   if (!id || typeof window === 'undefined') return
 
   await nextTick()
-  const element = document.getElementById(`binh-luan-${id}`)
+  const element = document.getElementById(`comment-${id}`)
   if (!element) return
 
   // Người bật giảm chuyển động vẫn cần tới đúng chỗ — chỉ bỏ phần cuộn mượt.
@@ -334,16 +334,16 @@ async function focusAnchoredComment() {
  *
  * Dựng từ `window.location` chứ không ghép chuỗi từ slug: trang này tới được từ
  * nhiều nơi và địa chỉ thật là thứ duy nhất chắc chắn mở lại đúng nó. Giữ luôn
- * `?binhluan=` của trang đang xem, nếu không thì liên kết tới một bình luận ở
+ * `?page=` của trang đang xem, nếu không thì liên kết tới một bình luận ở
  * trang 3 sẽ mở trang 1 và không tìm thấy gì.
  */
 async function copyLink(id) {
   if (typeof window === 'undefined') return
 
   const url = new URL(window.location.href)
-  url.hash = `binh-luan-${id}`
-  if (page.value > 1) url.searchParams.set('binhluan', String(page.value))
-  else url.searchParams.delete('binhluan')
+  url.hash = `comment-${id}`
+  if (page.value > 1) url.searchParams.set('comments', String(page.value))
+  else url.searchParams.delete('comments')
 
   try {
     await navigator.clipboard.writeText(url.toString())
@@ -518,12 +518,12 @@ onMounted(async () => {
   /**
    * Trang phân trang phải đặt TRƯỚC lượt nạp đầu tiên.
    *
-   * Thông báo trỏ tới `?binhluan=3#binh-luan-45`. Nạp trang 1 rồi mới nhảy sang
+   * Thông báo trỏ tới `?page=3#comment-45`. Nạp trang 1 rồi mới nhảy sang
    * trang 3 là hai lượt fetch và một cú nháy; tệ hơn, `focusAnchoredComment` sẽ
    * chạy trên trang 1 và không tìm thấy gì. Cùng cách đọc số như máy chủ:
    * `Number.isSafeInteger` chứ không phải `Math.max(1, Number(...))`.
    */
-  const requested = Number(route.query.binhluan)
+  const requested = Number(route.query.comments)
   if (Number.isSafeInteger(requested) && requested > 0) page.value = requested
 
   await loadReader()
