@@ -1,13 +1,11 @@
 import { getDb } from '../../../utils/db'
 import { homeSections, activityLogs } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { eq } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'home_sections', 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'home_sections', 'update')
 
   const body = await readBody(event).catch(() => ({}))
   const orders = Array.isArray(body?.orders) ? body.orders : [] // [{ id: 1, displayOrder: 1 }, ...]

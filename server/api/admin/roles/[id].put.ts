@@ -1,14 +1,11 @@
 import { getDb } from '../../../utils/db'
 import { roles, permissions, activityLogs } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
-import { assertAssignablePermissions } from '../../../utils/permissions'
+import { assertAssignablePermissions, requireResourcePermission } from '../../../utils/permissions'
 import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'roles', 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'roles', 'update')
 
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid role ID' })

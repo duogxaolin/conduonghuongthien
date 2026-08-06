@@ -1,13 +1,11 @@
 import { getDb } from '../../../utils/db'
 import { pages, activityLogs } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { uniquePageSlug } from '../../../utils/slug'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'pages', 'create', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'pages', 'create')
 
   const body = await readBody(event).catch(() => ({}))
   const title = String(body?.title || '').trim()

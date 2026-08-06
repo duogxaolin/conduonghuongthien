@@ -120,3 +120,53 @@ describe('runtime config is read through typed accessors', () => {
     }
   })
 })
+
+describe('permission checks have one shape', () => {
+  const API_FILES = SERVER_FILES.filter(path => path.includes('/server/api/'))
+
+  /**
+   * 50 endpoints hand-rolled `if (!checkPermission(adminUser.permissions, …))
+   * throw createError({ statusCode: 403, … })` while `requireResourcePermission()`
+   * already existed and 28 others used it.
+   *
+   * No live bug came of it — the hand-rolled form was consistent, and the admin
+   * middleware throws 401 before any handler runs so `adminUser` is never null.
+   * But this is SECURITY code existing in two shapes, and whoever writes the next
+   * endpoint copies whichever they happen to see first. Six navigation endpoints
+   * had already drifted to a bare `'Forbidden'` message, so the same refusal read
+   * differently depending on which route you hit.
+   */
+  it('no endpoint rebuilds the check inline', () => {
+    const offenders = API_FILES
+      .filter(path => /if \(!checkPermission\(adminUser\.permissions,\s*'/.test(read(path)))
+      .map(relative)
+
+    assert.deepEqual(offenders, [],
+      'these endpoints hand-roll the permission check instead of calling requireResourcePermission()')
+  })
+
+  /**
+   * One exception, kept on purpose: `articles/[id].put.ts` checks a SECOND
+   * permission when an edit moves an article between types, and refuses with a
+   * message naming that specific reason. The generic helper's message would lose
+   * it, and the officer would not know which of the two checks failed.
+   */
+  it('the one documented exception is still the only one', () => {
+    const inline = API_FILES
+      .filter(path => /if \(!checkPermission\(adminUser/.test(read(path)))
+      .map(relative)
+      .sort()
+
+    assert.deepEqual(inline, ['server/api/admin/articles/[id].put.ts'],
+      'the set of endpoints checking permissions inline changed — a new one needs a stated reason, or the helper')
+  })
+
+  /** One condition, one refusal message. */
+  it('refusals do not drift into a second wording', () => {
+    const bare = API_FILES
+      .filter(path => /statusMessage: 'Forbidden'/.test(read(path)))
+      .map(relative)
+
+    assert.deepEqual(bare, [], 'these endpoints refuse with a different message for the same condition')
+  })
+})

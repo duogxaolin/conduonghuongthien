@@ -139,3 +139,102 @@ describe('the shared deletion path can join a caller transaction', () => {
     )
   })
 })
+
+/**
+ * The same pairing, enforced on admin endpoints that query the database directly.
+ *
+ * The guard above covers `server/services/**`, where the reader-side write paths
+ * live. But 92 of 171 endpoints call `getDb()` themselves, and 43 of those also
+ * write an `activity_logs` row — so the identical defect class existed in a part
+ * of the tree nothing was watching. All of them were written delete-then-log on
+ * the pool, which is exactly the shape this file was created to reject.
+ *
+ * The destructive subset is guarded here. It is the subset where an audit insert
+ * failing after the mutation is unrecoverable rather than merely untidy: the row
+ * is already gone, so the log is the only remaining evidence of who removed it,
+ * and it is the thing that failed. `activity_logs.user_id` is a foreign key into
+ * `users` and `meta` is a JSON column, so the second statement has its own ways
+ * to fail independently of the first — this is not a hypothetical ordering.
+ *
+ * Non-destructive endpoints (create/update) are deliberately NOT listed. A failed
+ * audit after an update leaves a row that still exists and can be inspected,
+ * compared and corrected; a failed audit after a delete leaves nothing at all.
+ * Fixing 39 endpoints mechanically would also mean 39 chances to introduce a new
+ * bug in code that is currently working, and the convention recorded in CLAUDE.md
+ * is what governs the ones not listed here.
+ */
+const AUDITED_DELETE_ENDPOINTS: Array<{ file: string, why: string }> = [
+  {
+    file: 'server/api/admin/roles/[id].delete.ts',
+    why: 'a permission role is destroyed with nothing recording who removed it',
+  },
+  {
+    file: 'server/api/admin/users/[id]/mfa.delete.ts',
+    why: "another administrator's second factors are stripped and the override leaves no trace",
+  },
+  {
+    file: 'server/api/admin/pages/[id]/blocks/[blockId].delete.ts',
+    why: 'a block disappears from a live page with nobody accountable',
+  },
+  {
+    file: 'server/api/admin/pages/[id]/versions/[versionId].delete.ts',
+    why: 'a saved backup is discarded untraceably',
+  },
+  {
+    file: 'server/api/admin/pages/[id]/versions/index.post.ts',
+    why: 'the origin path deletes the old baseline before writing the new one — a failure between them leaves the page with no baseline at all',
+  },
+]
+
+describe('destructive admin endpoints commit their delete and their audit row together', () => {
+  for (const { file, why } of AUDITED_DELETE_ENDPOINTS) {
+    it(`${file.replace('server/api/admin/', '')} wraps both in one transaction`, () => {
+      const source = read(file)
+
+      assert.match(
+        source,
+        /db\.transaction\(/,
+        `writes outside a transaction — if the audit insert fails, ${why}`,
+      )
+      assert.match(
+        source,
+        /tx\.insert\(activityLogs\)/,
+        'the audit row is inserted on the pool rather than the transaction handle — it would commit independently',
+      )
+      assert.ok(
+        !/\bdb\.insert\(activityLogs\)/.test(source),
+        'a pool-level activityLogs insert remains; move it onto the tx handle',
+      )
+      assert.match(
+        source,
+        /tx\.(insert|update|delete)\(/,
+        'opens a transaction but performs its mutation outside it — the audit would roll back while the deletion stood',
+      )
+    })
+  }
+})
+
+describe('the MFA-confirm exclusion is deliberate and still correct', () => {
+  /**
+   * `profile/mfa/confirm.post.ts` mutates and audits WITHOUT a transaction, on
+   * purpose: it calls `setSessionCookie(event, …)` between the two, which is a
+   * side effect on the HTTP response that no rollback can retract. Wrapping it
+   * would create a worse state than the one it fixes — a session cookie already
+   * handed to the browser while the factor activation it represents was rolled
+   * back.
+   *
+   * Asserted rather than assumed: if someone later moves the cookie write out of
+   * the middle, this fails and the endpoint should join the list above.
+   */
+  it('the cookie is still issued between the mutation and the audit row', () => {
+    const source = read('server/api/admin/profile/mfa/confirm.post.ts')
+    const cookie = source.indexOf('setSessionCookie(event')
+    const audit = source.indexOf('db.insert(activityLogs)')
+    assert.ok(cookie !== -1, 'setSessionCookie is gone — re-evaluate whether this endpoint can now be wrapped')
+    assert.ok(audit !== -1, 'the audit insert is gone')
+    assert.ok(
+      cookie < audit,
+      'the cookie is no longer written between the mutation and the audit — this endpoint can and should now be wrapped in a transaction',
+    )
+  })
+})

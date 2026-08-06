@@ -1,12 +1,10 @@
 import { createR2Client } from '../../../utils/media-r2'
 import { ListObjectsV2Command } from '@aws-sdk/client-s3'
-import { checkPermission } from '../../../utils/auth'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'settings', 'read', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'settings', 'read')
 
   const body = await readBody(event).catch(() => ({}))
   const accountId = String(body?.accountId || '').trim()

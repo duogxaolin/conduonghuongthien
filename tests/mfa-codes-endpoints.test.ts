@@ -359,7 +359,21 @@ test('break-glass clears both factors and codes, revokes the target, and logs bo
   const src = read('server/api/admin/users/[id]/mfa.delete.ts')
   assert.match(src, /delete\(userMfaFactors\)\.where\(eq\(userMfaFactors\.userId, id\)\)/)
   assert.match(src, /delete\(userRecoveryCodes\)\.where\(eq\(userRecoveryCodes\.userId, id\)\)/)
-  assert.match(src, /await revokeSessions\(id\)/)
+  /**
+   * Sessions are revoked by bumping `tokenVersion`, asserted on the effect
+   * rather than on a call to `revokeSessions()`.
+   *
+   * The helper opens its own `getDb()` handle, so it cannot join this endpoint's
+   * transaction — and the four writes here have to commit together, or a
+   * break-glass override can leave factors cleared with sessions still live, or
+   * (worse) leave no audit trail for an override that stood. The one statement
+   * is therefore inlined on `tx`. What matters is that the target's live
+   * sessions still die, so that is what this checks.
+   */
+  assert.match(src, /tokenVersion: sql`\$\{users\.tokenVersion\} \+ 1`/,
+    "the target's live sessions are no longer revoked")
+  assert.match(src, /db\.transaction\(/,
+    'the four writes are no longer atomic — a partial break-glass is the worst outcome here')
   // Two rows so the act is visible from either account's history.
   assert.match(src, /userId: admin\.id,\s*action: 'delete',\s*resource: 'user_mfa'/)
   assert.match(src, /userId: id,\s*action: 'delete',\s*resource: 'user_mfa'/)

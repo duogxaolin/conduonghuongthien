@@ -1,16 +1,14 @@
 import { getDb } from '../../../../../../utils/db'
 import { pages, pageVersions, activityLogs } from '../../../../../../db/schema'
-import { checkPermission } from '../../../../../../utils/auth'
 import { normalizeBlocks } from '../../../../../../utils/page-versions'
 import { and, eq } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../../../../utils/permissions'
 
 // Restore a version INTO THE DRAFT (not live). The editor previews it; the user
 // must Publish to make it live. This keeps restore non-destructive.
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'pages', 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'pages', 'update')
 
   const pageId = Number(getRouterParam(event, 'id'))
   const versionId = Number(getRouterParam(event, 'versionId'))

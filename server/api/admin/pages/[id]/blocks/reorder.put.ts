@@ -1,13 +1,11 @@
 import { getDb } from '../../../../../utils/db'
 import { pages, pageBlocks, activityLogs } from '../../../../../db/schema'
-import { checkPermission } from '../../../../../utils/auth'
 import { and, eq } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'pages', 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'pages', 'update')
 
   const pageId = Number(getRouterParam(event, 'id'))
   if (!pageId) throw createError({ statusCode: 400, statusMessage: 'Invalid page ID' })

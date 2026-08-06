@@ -1,15 +1,13 @@
 import { getDb } from '../../../utils/db'
 import { users, roles, activityLogs } from '../../../db/schema'
-import { checkPermission, hashPassword } from '../../../utils/auth'
-import { assertRoleAssignable } from '../../../utils/permissions'
+import { hashPassword } from '../../../utils/auth'
+import { assertRoleAssignable, requireResourcePermission } from '../../../utils/permissions'
 import { passwordRejectionMessage } from '../../../utils/password-policy'
 import { eq, sql } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'users', 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'users', 'update')
 
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid user ID' })

@@ -1,8 +1,8 @@
 import { getDb } from '../../../utils/db'
 import { articles, activityLogs } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { sanitizeHtml } from '../../../utils/sanitize-html'
 import { defaultCommentsEnabled } from '../../../services/google-oauth-settings'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 function slugify(text: string): string {
   return text
@@ -42,9 +42,7 @@ export default defineEventHandler(async (event) => {
   }
   const permResource = resourceMap[type] || 'news'
 
-  if (!checkPermission(adminUser.permissions, permResource, 'create', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, permResource, 'create')
 
   if (!title || title.length < 3) {
     throw createError({ statusCode: 400, statusMessage: 'Tiêu đề bài viết quá ngắn.' })

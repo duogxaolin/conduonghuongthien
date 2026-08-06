@@ -3,6 +3,7 @@ import { articles, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { sanitizeHtml } from '../../../utils/sanitize-html'
 import { eq } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -25,9 +26,7 @@ export default defineEventHandler(async (event) => {
   }
   const permResource = resourceMap[existingArticle.type] || 'news'
 
-  if (!checkPermission(adminUser.permissions, permResource, 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, permResource, 'update')
 
   const body = await readBody(event).catch(() => ({}))
   const updateFields: any = {}

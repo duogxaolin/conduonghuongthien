@@ -1,13 +1,11 @@
 import { getDb } from '../../../utils/db'
 import { contentTypes, categories, articles } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { asc, eq, count } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'categories', 'read', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'categories', 'read')
 
   const db = getDb()
 
