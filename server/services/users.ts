@@ -45,12 +45,20 @@ export async function deleteUserById(actor: ActorLike, id: number): Promise<void
   }
 
   const db = getDb()
-  await db.delete(users).where(eq(users.id, id))
-  await db.insert(activityLogs).values({
-    userId: actor.id,
-    action: 'delete',
-    resource: 'users',
-    resourceId: id,
+  // Xoá và dòng audit commit cùng nhau, hoặc không cái nào. Viết rời thì câu
+  // audit có cách hỏng riêng của nó — `activity_logs.user_id` là khoá ngoại tới
+  // `users`, và `meta` là cột JSON — nên hàng đã mất mà **không còn gì ghi lại
+  // ai xoá**. Với một tài khoản quản trị, đó là đúng dấu vết cần giữ nhất.
+  // Chạy trên `tx`, không phải `db`: một `db.insert()` đặt trong khối
+  // transaction vẫn commit độc lập trên pool.
+  await db.transaction(async (tx) => {
+    await tx.delete(users).where(eq(users.id, id))
+    await tx.insert(activityLogs).values({
+      userId: actor.id,
+      action: 'delete',
+      resource: 'users',
+      resourceId: id,
+    })
   })
 }
 
@@ -72,12 +80,14 @@ export async function setUserActive(actor: ActorLike, id: number, isActive: bool
   }
 
   const db = getDb()
-  await db.update(users).set({ isActive }).where(eq(users.id, id))
-  await db.insert(activityLogs).values({
-    userId: actor.id,
-    action: 'update',
-    resource: 'users',
-    resourceId: id,
-    meta: { isActive },
+  await db.transaction(async (tx) => {
+    await tx.update(users).set({ isActive }).where(eq(users.id, id))
+    await tx.insert(activityLogs).values({
+      userId: actor.id,
+      action: 'update',
+      resource: 'users',
+      resourceId: id,
+      meta: { isActive },
+    })
   })
 }

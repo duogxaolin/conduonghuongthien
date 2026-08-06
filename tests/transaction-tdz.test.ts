@@ -54,6 +54,21 @@ function transactionBody(source: string, startIndex: number): string {
   return ''
 }
 
+/**
+ * Bỏ nội dung chuỗi ký tự khỏi một dòng trước khi tìm định danh.
+ *
+ * `\bid\b` khớp chữ "id" trong câu `throw new Error('… returned no id')` — một
+ * thông điệp lỗi bằng tiếng Anh, không phải một phép đọc biến. Đây là dương tính
+ * giả đã xảy ra thật với `chatbot-small-talk.ts`, và nó tệ hơn một lỗi thường: nó
+ * dạy người đọc rằng guard này ồn, và bước tiếp theo của bài học đó là tắt nó đi.
+ */
+function withoutStringLiterals(line: string): string {
+  return line
+    .replace(/'(?:[^'\\]|\\.)*'/g, "''")
+    .replace(/"(?:[^"\\]|\\.)*"/g, '""')
+    .replace(/`(?:[^`\\]|\\.)*`/g, '``')
+}
+
 describe('không có tham chiếu TDZ trong khối db.transaction', () => {
   const files = [...walk('server/api'), ...walk('server/services')]
 
@@ -71,8 +86,13 @@ describe('không có tham chiếu TDZ trong khối db.transaction', () => {
       const offenders = body
         .split('\n')
         .map(line => line.trim())
-        .filter(line => new RegExp(`\\b${variable}\\b`).test(line))
         .filter(line => !line.startsWith('//') && !line.startsWith('*'))
+        .map(withoutStringLiterals)
+        // `(?<![.\w$])` chặn khớp sau một dấu chấm: `result.id` là một thuộc tính
+        // của giá trị khác, không phải biến đang trong TDZ. Không có nó thì mọi
+        // transaction gán vào một biến tên `id` đều đỏ ngay khi bên trong có bất
+        // cứ phép đọc `.id` nào — tức là hầu như luôn luôn.
+        .filter(line => new RegExp(`(?<![.\\w$])${variable}\\b`).test(line))
 
       it(`${file}: \`${variable}\` không được đọc trong chính khối của nó`, () => {
         assert.deepEqual(offenders, [],
@@ -81,4 +101,52 @@ describe('không có tham chiếu TDZ trong khối db.transaction', () => {
       })
     }
   }
+})
+
+/**
+ * Kiểm chứng âm tính: phần nới lỏng ở trên KHÔNG làm guard ngừng bắt lỗi thật.
+ *
+ * Guard vừa được nới hai lần — bỏ nội dung chuỗi ký tự, và bỏ khớp sau dấu chấm —
+ * và mỗi lần nới một cổng là một cơ hội để nó trở thành cổng không kiểm gì cả.
+ * Riêng dạng hỏng đó thì im lặng: một guard đã ngừng chặn đọc ra y hệt một guard
+ * đang chạy đúng, vì cả hai đều xanh.
+ *
+ * Nên phần phát hiện được chạy lại ở đây trên bốn mẫu dựng tay: hai mẫu **phải**
+ * bị bắt (đúng hình dạng đã làm mọi lượt tạo bài viết trả 500), hai mẫu **không
+ * được** bị bắt (đúng hai dương tính giả vừa sửa).
+ */
+describe('phần phát hiện TDZ vẫn bắt được lỗi thật sau khi nới', () => {
+  function detects(body: string, variable: string): boolean {
+    return body
+      .split('\n')
+      .map(line => line.trim())
+      .filter(line => !line.startsWith('//') && !line.startsWith('*'))
+      .map(withoutStringLiterals)
+      .some(line => new RegExp(`(?<![.\\w$])${variable}\\b`).test(line))
+  }
+
+  it('bắt được phép đọc trần — đúng hình dạng đã trả 500 ở bốn endpoint', () => {
+    assert.ok(
+      detects("await tx.insert(activityLogs).values({ resourceId: newArticleId })", 'newArticleId'),
+      'guard đã ngừng chặn chính lỗi nó ra đời để chặn',
+    )
+  })
+
+  it('bắt được phép đọc nằm sâu trong một biểu thức', () => {
+    assert.ok(detects('meta: { id: Number(created), n: 1 }', 'created'))
+  })
+
+  it('KHÔNG bắt một thuộc tính cùng tên', () => {
+    assert.ok(
+      !detects('const created = Number(result.id)', 'id'),
+      '`result.id` là thuộc tính của giá trị khác — bắt nó là làm mọi transaction tên `id` đỏ',
+    )
+  })
+
+  it('KHÔNG bắt chữ nằm trong một thông điệp lỗi', () => {
+    assert.ok(
+      !detects("if (!result) throw new Error('insert returned no id')", 'id'),
+      'chữ "id" trong một câu tiếng Anh không phải một phép đọc biến',
+    )
+  })
 })

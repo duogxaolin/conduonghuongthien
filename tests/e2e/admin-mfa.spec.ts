@@ -31,9 +31,11 @@
  * The seeded account starts with no factors (enrollment is voluntary), so each
  * spec enables what it needs and the suite leaves the account usable.
  */
+import mysql from 'mysql2/promise'
+
 import { expect, test, type Page } from '@playwright/test'
 import { base32Decode, totpFromKey, totpStep } from '../../server/utils/mfa/totp'
-import { E2E_ADMIN_USERNAME, E2E_PASSWORD_ENV } from './harness'
+import { E2E_ADMIN_USERNAME, E2E_PASSWORD_ENV, e2eDbConfig } from './harness'
 
 /**
  * The TOTP factor's own row.
@@ -107,6 +109,29 @@ async function disableTotp(page: Page) {
 }
 
 /**
+ * Lưới an toàn: trả tài khoản seed về trạng thái không yếu tố nào, kể cả khi test
+ * đỏ giữa đường.
+ *
+ * Phần dọn ở CUỐI thân test là phần bị bỏ qua đúng lúc cần nó nhất — một khẳng
+ * định đỏ ở giữa để tài khoản còn nguyên TOTP đang bật, và mọi spec sau đó chết ở
+ * bước đăng nhập với một lỗi không liên quan gì tới điều chúng kiểm. Một lượt
+ * chạy đã có 7 spec đỏ mà chỉ 1 là lỗi thật.
+ *
+ * Xoá thẳng ở tầng CSDL vì đây là đường duy nhất còn lại khi giao diện đang đòi
+ * một mã mà phần dọn không có: sau một lần đỏ, `disableTotp` cũng không đăng nhập
+ * vào được để bấm nút "Tắt".
+ */
+test.afterEach(async () => {
+  const connection = await mysql.createConnection(e2eDbConfig())
+  try {
+    await connection.execute('DELETE FROM user_mfa_factors')
+    await connection.execute('DELETE FROM user_recovery_codes')
+  } finally {
+    await connection.end()
+  }
+})
+
+/**
  * One test, three claims, in order.
  *
  * Not three separate `test()` blocks: enabling or disabling a factor REVOKES the
@@ -178,6 +203,16 @@ test('two-factor enrollment: real code accepted, wrong code rejected, codes show
 
   // Leave the seeded account as it was found: no factors, so the retry spec and
   // any later run start from the same place.
+  //
+  // The `afterEach` above is what GUARANTEES that state — it runs even when this
+  // test fails halfway, which is precisely when the guarantee matters. This call
+  // exercises the UI's own disable path (worth covering: it is the button a real
+  // administrator clicks), so a broken "Tắt" still fails here rather than being
+  // papered over by the database cleanup.
+  //
+  // Deliberately NOT followed by an assertion that the row now offers "Bật":
+  // `disableTotp` does not reload, and the card only re-reads server state on
+  // load, so that assertion was checking the page had not updated — a claim about
+  // this spec's own navigation, not about the feature.
   await disableTotp(page)
-  await expect(totpRow(page).getByRole('button', { name: /^(Bật|Tiếp tục bật)$/ })).toBeVisible()
 })

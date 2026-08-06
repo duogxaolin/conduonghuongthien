@@ -3,19 +3,15 @@ import { articles, activityLogs } from '../../../db/schema'
 import { sanitizeHtml } from '../../../utils/sanitize-html'
 import { defaultCommentsEnabled } from '../../../services/google-oauth-settings'
 import { requireResourcePermission } from '../../../utils/permissions'
-
-function slugify(text: string): string {
-  return text
-    .toString()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[đĐ]/g, 'd')
-    .replace(/([^0-9a-z-\s])/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-}
+// Bản dùng chung, KHÔNG phải một bản chép cục bộ. Endpoint này từng giữ bản riêng
+// của nó, và bản đó thiếu đúng một dòng — phép cắt dấu gạch treo hai đầu — nên
+// mọi tiêu đề mở đầu bằng ký tự bị lược sinh slug dị dạng: `"— Tin nóng —"` →
+// `-tin-nong-`. Sáu endpoint khác (`categories`, `content-types`, `pages`) đều
+// import bản này; chỉ đường tạo bài viết là lệch, và **`articles/[id].put.ts`
+// không slugify lại**, nên một slug dị dạng sinh ra lúc tạo là vĩnh viễn: nó đi
+// vào URL công khai `/news/<slug>`, vào email thông báo trả lời bình luận, và
+// vào chỉ mục tìm kiếm.
+import { slugify } from '../../../utils/slug'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
