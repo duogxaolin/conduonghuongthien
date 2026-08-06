@@ -92,11 +92,21 @@ export default defineEventHandler(async (event) => {
        * instead of articles. Still one statement for the whole page — the
        * per-row fetch this replaces would be N+1 on a list that already joins
        * three tables. Articles with no views report 0, not null.
+       *
+       * ⚠️ Tên bảng viết THẲNG RA, không nội suy `${articleViewDaily.articleId}`.
+       * Drizzle chỉ gắn tiền tố tên bảng khi truy vấn bao ngoài CÓ JOIN; không có
+       * join thì nó phát ra tên cột trần, và trong một truy vấn con trên
+       * `article_view_daily` thì `` \`id\` `` trần trỏ vào khoá chính của chính
+       * bảng đó chứ không phải bài viết ở ngoài — tương quan lặng lẽ ngừng tương
+       * quan, MySQL không báo gì, và mọi bài đều trả về 0. Ở đây hiện có join nên
+       * dạng nội suy vẫn đúng; nó chỉ đúng NHỜ một phần khác của truy vấn, và xoá
+       * join đi là hỏng bộ đếm mà không có gì đỏ. Xem
+       * tests/correlated-subquery-qualification.test.ts.
        */
       viewTotal: sql<number>`(
-        SELECT COALESCE(SUM(${articleViewDaily.realViews} + ${articleViewDaily.fabricatedViews}), 0)
-        FROM ${articleViewDaily}
-        WHERE ${articleViewDaily.articleId} = ${articles.id}
+        SELECT COALESCE(SUM(\`v\`.\`real_views\` + \`v\`.\`fabricated_views\`), 0)
+        FROM \`article_view_daily\` \`v\`
+        WHERE \`v\`.\`article_id\` = \`articles\`.\`id\`
       )`,
     })
     .from(articles)

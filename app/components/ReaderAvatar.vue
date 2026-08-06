@@ -27,13 +27,22 @@ import { computed } from 'vue'
 
 const props = defineProps({
   initials: { type: String, default: '?' },
-  /** 'sm' for inline use in the header, 'md' for a comment row. */
+  /** 'sm' for inline use in the header, 'md' for a comment row, 'lg' for the
+   *  reader's own profile page, where the avatar is the page's subject rather
+   *  than a marker beside a line of text. */
   size: { type: String, default: 'md' },
   /** The portal speaking, rather than a member of the public. */
   isAdmin: { type: Boolean, default: false },
 })
 
-const sizeClass = computed(() => (props.size === 'sm' ? 'w-7 h-7 text-[0.7rem]' : 'w-9 h-9 text-[0.8rem]'))
+// Literal strings per branch, never `w-${n}` — Tailwind v3 scans source text at
+// build time, so an interpolated class emits no CSS and the circle collapses with
+// no error anywhere.
+const sizeClass = computed(() => {
+  if (props.size === 'sm') return 'w-7 h-7 text-[0.7rem]'
+  if (props.size === 'lg') return 'w-14 h-14 text-[1.15rem]'
+  return 'w-9 h-9 text-[0.8rem]'
+})
 
 // Deep forest green for the portal, pale leaf green for readers: an official
 // reply has to be distinguishable at a glance, and the "Ban quản trị" label
