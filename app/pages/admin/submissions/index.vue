@@ -1,14 +1,15 @@
 <script setup lang="ts">
+import type { AdminSubmissionRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
 })
 
-const submissions = ref<any[]>([])
+const submissions = ref<AdminSubmissionRow[]>([])
 const loading = ref(true)
 const error = ref('')
 const search = ref('')
-const selectedSub = ref<any>(null)
+const selectedSub = ref<AdminSubmissionRow | null>(null)
 const toast = useToast()
 
 const fetchSubmissions = async () => {
@@ -47,10 +48,10 @@ const extraAnswers = (sub: any): Array<{ label: string; value: string }> => {
   const raw = sub?.answers
   if (!raw) return []
   const arr = typeof raw === 'string' ? (() => { try { return JSON.parse(raw) } catch { return [] } })() : raw
-  return Array.isArray(arr) ? arr.filter((a: any) => a && (a.label || a.value)) : []
+  return Array.isArray(arr) ? arr.filter((a) => a && (a.label || a.value)) : []
 }
 
-const fmtDate = (v: any) => (v ? new Date(v).toLocaleString('vi-VN') : '—')
+const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleString('vi-VN') : '—')
 
 // ─── Bulk selection ───────────────────────────────────────────────────────────
 const selection = useBulkSelection()
@@ -58,7 +59,7 @@ const bulk = useBulkAction(selection)
 
 // Search filters client-side here, so the selectable set is the filtered list —
 // a row the operator cannot currently see must not be in the lot.
-const visibleIds = computed(() => filteredSubmissions.value.map((s: any) => Number(s.id)))
+const visibleIds = computed(() => filteredSubmissions.value.map((s) => Number(s.id)))
 
 // Selection survives typing in the search box but drops rows the filter hid, so
 // narrowing the search can never widen what a delete would touch. This also

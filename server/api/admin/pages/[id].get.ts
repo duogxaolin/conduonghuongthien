@@ -1,3 +1,4 @@
+import type { BlockNode } from '../../../../app/utils/blocks/types'
 import { getDb } from '../../../utils/db'
 import { pages, pageBlocks } from '../../../db/schema'
 import { eq, asc } from 'drizzle-orm'
@@ -33,7 +34,13 @@ export default defineEventHandler(async (event) => {
   }
 
   // Pending unpublished draft, if any (MySQL JSON comes back parsed via drizzle).
-  let draft: any = null
+  //
+  // Kiểu khai tường minh, không `any`: kiểu trả về của handler này chính là kiểu
+  // trang quản trị đọc được (`AdminPageDetail` suy thẳng từ đây), nên một `any` ở
+  // đây lan sang cả trình dựng trang — và `Serialize` của Nitro thì **nuốt hẳn**
+  // trường kiểu `any`, khiến trang báo "không có thuộc tính draft" cho một trường
+  // máy chủ vẫn đang trả về.
+  let draft: { blocks: BlockNode[], updatedAt: Date | null } | null = null
   const rawDraft = page.draftBlocks
   if (Array.isArray(rawDraft)) {
     draft = { blocks: rawDraft, updatedAt: page.draftUpdatedAt || null }

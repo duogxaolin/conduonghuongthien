@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import type { AdminUserRow, AdminRoleRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
 })
 
-const users = ref<any[]>([])
-const roles = ref<any[]>([])
+const users = ref<AdminUserRow[]>([])
+const roles = ref<AdminRoleRow[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const showModal = ref(false)
@@ -53,9 +54,9 @@ const handleCreateUser = async () => {
   }
 }
 
-const openEditModal = (user: any) => {
+const openEditModal = (user: AdminUserRow) => {
   editForm.id = user.id; editForm.username = user.username; editForm.email = user.email || ''
-  editForm.roleId = user.roleId || 2; editForm.password = ''; editForm.isActive = user.isActive
+  editForm.roleId = user.roleId || 2; editForm.password = ''; editForm.isActive = user.isActive !== false  // cột nullable: null đọc là đang bật, đúng DEFAULT của DB
   errorMsg.value = ''; showEditModal.value = true
 }
 
@@ -80,7 +81,7 @@ const handleUpdateUser = async () => {
   }
 }
 
-const toggleActive = async (user: any) => {
+const toggleActive = async (user: AdminUserRow) => {
   try {
     await $fetch(`/api/admin/users/${user.id}`, { method: 'PUT', body: { isActive: !user.isActive } })
     user.isActive = !user.isActive
@@ -88,7 +89,7 @@ const toggleActive = async (user: any) => {
   } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể đổi trạng thái')) }
 }
 
-const deleteUser = async (user: any) => {
+const deleteUser = async (user: AdminUserRow) => {
   const ok = await confirm({ title: 'Xóa tài khoản', message: `Bạn có chắc muốn xóa tài khoản ${user.username}?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
@@ -103,15 +104,15 @@ const bulk = useBulkAction(selection)
 const { user: currentUser } = useAdminAuth()
 
 /** Role ids the server refuses to touch, derived from the roles list already fetched. */
-const systemRoleIds = computed(() => new Set(roles.value.filter((r: any) => r.isSystem).map((r: any) => Number(r.id))))
+const systemRoleIds = computed(() => new Set(roles.value.filter((r) => r.isSystem).map((r) => Number(r.id))))
 
 /**
  * A row is selectable only if the server would actually act on it: not the
  * SuperAdmin account, and not the operator's own. Offering a checkbox on a row
  * that is guaranteed to come back as a failure is just a trap.
  */
-const canSelect = (u: any) => !systemRoleIds.value.has(Number(u.roleId)) && Number(u.id) !== Number(currentUser.value?.id)
-const visibleIds = computed(() => users.value.filter(canSelect).map((u: any) => Number(u.id)))
+const canSelect = (u: AdminUserRow) => !systemRoleIds.value.has(Number(u.roleId)) && Number(u.id) !== Number(currentUser.value?.id)
+const visibleIds = computed(() => users.value.filter(canSelect).map((u) => Number(u.id)))
 
 const bulkDelete = () => bulk.run({
   url: '/api/admin/users/bulk-delete',

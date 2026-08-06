@@ -18,7 +18,9 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event).catch(() => ({}))
-  const updateFields: any = {}
+  // Kiểu tường minh thay cho `any`: `slug` đi vào giá trị trả về của handler, và
+  // `Serialize` nuốt trường kiểu `any` nên trang gọi sẽ không thấy nó.
+  const updateFields: Partial<{ title: string, slug: string, seoTitle: string | null, seoDescription: string | null, updatedBy: number }> = {}
 
   if (body.title !== undefined) {
     const title = String(body.title).trim()

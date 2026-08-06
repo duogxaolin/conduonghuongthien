@@ -63,3 +63,18 @@ export function errorStatus(error: unknown): number | null {
   }
   return null
 }
+
+/**
+ * Lượt fetch này có phải bị **chính mình huỷ** không.
+ *
+ * Một `AbortController` bị `abort()` sẽ ném ra như bất kỳ lỗi nào khác, nhưng
+ * nó **không phải hỏng** — nó là kết quả mong muốn khi người dùng đổi bộ lọc
+ * trước lúc lượt cũ về. Đối xử với nó như lỗi sẽ hiện một thông báo đỏ cho một
+ * thao tác đã thành công, và tệ hơn: thông báo đó thuộc về lượt fetch **cũ**,
+ * nên nó đè lên kết quả của lượt mới vừa hiện ra.
+ */
+export function isAbortError(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false
+  const name = (error as { name?: unknown }).name
+  return name === 'AbortError' || name === 'CanceledError'
+}
