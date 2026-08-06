@@ -21,8 +21,8 @@ const fetchSubmissions = async () => {
     } else {
       error.value = 'Không tải được danh sách đơn đăng ký.'
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được danh sách đơn đăng ký.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được danh sách đơn đăng ký.')
   } finally {
     loading.value = false
   }

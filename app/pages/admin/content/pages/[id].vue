@@ -377,8 +377,8 @@ const fetchPage = async () => {
       }
       selectedId.value = blocks.value[0]?.id ?? null
     }
-  } catch (err: any) {
-    loadError.value = err?.data?.statusMessage || 'Không tải được trang.'
+  } catch (err: unknown) {
+    loadError.value = errorMessage(err, 'Không tải được trang.')
   } finally {
     loading.value = false
     nextTick(() => { hydrating = false })
@@ -540,9 +540,9 @@ const saveDraft = async () => {
   try {
     await $fetch(`/api/admin/pages/${pageId.value}/draft`, { method: 'PUT', body: { blocks: draftPayload() } })
     draftStatus.value = 'saved'
-  } catch (err: any) {
+  } catch (err: unknown) {
     draftStatus.value = 'error'
-    toast.error(err?.data?.statusMessage || 'Không lưu được nháp.')
+    toast.error(errorMessage(err, 'Không lưu được nháp.'))
   }
 }
 
@@ -568,8 +568,8 @@ const publish = async () => {
       nextTick(() => { hydrating = false })
       toast.success('Đã xuất bản lên site.')
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không xuất bản được.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không xuất bản được.'))
   } finally {
     publishing.value = false
   }
@@ -585,9 +585,9 @@ const discardDraft = async () => {
     await $fetch(`/api/admin/pages/${pageId.value}/draft`, { method: 'PUT', body: {} }) // clears draft → null
     await fetchPage() // reloads published (no draft present) and resets hydration flag
     toast.success('Đã quay lại bản đang chạy.')
-  } catch (err: any) {
+  } catch (err: unknown) {
     hydrating = false
-    toast.error(err?.data?.statusMessage || 'Không hủy được thay đổi.')
+    toast.error(errorMessage(err, 'Không hủy được thay đổi.'))
   }
 }
 
@@ -657,8 +657,8 @@ const saveMeta = async () => {
       toast.success('Đã lưu cấu hình trang.')
       showMeta.value = false
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không lưu được cấu hình.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không lưu được cấu hình.'))
   } finally {
     savingMeta.value = false
   }
@@ -688,8 +688,8 @@ const loadVersions = async () => {
   try {
     const res: any = await $fetch(`/api/admin/pages/${pageId.value}/versions`)
     if (res.ok) versions.value = res.versions || []
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không tải được danh sách phiên bản.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không tải được danh sách phiên bản.'))
   } finally {
     versionsLoading.value = false
   }
@@ -710,8 +710,8 @@ const restoreVersion = async (v: any) => {
       showVersions.value = false
       toast.success('Đã nạp vào bản nháp. Xem trước rồi bấm Xuất bản.')
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không khôi phục được.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không khôi phục được.'))
   }
 }
 
@@ -722,8 +722,8 @@ const deleteVersion = async (v: any) => {
     await $fetch(`/api/admin/pages/${pageId.value}/versions/${v.id}`, { method: 'DELETE' })
     await loadVersions()
     toast.success('Đã xóa phiên bản.')
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không xóa được phiên bản.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không xóa được phiên bản.'))
   }
 }
 
@@ -737,8 +737,8 @@ const saveBackup = async () => {
       await loadVersions()
       toast.success('Đã lưu bản sao lưu.')
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không lưu được bản sao lưu.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không lưu được bản sao lưu.'))
   } finally {
     savingBackup.value = false
   }
@@ -754,8 +754,8 @@ const setOrigin = async () => {
       await loadVersions()
       toast.success('Đã chỉ định bản gốc.')
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không chỉ định được bản gốc.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không chỉ định được bản gốc.'))
   }
 }
 

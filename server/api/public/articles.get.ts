@@ -98,7 +98,7 @@ export default defineEventHandler(async (event) => {
         totalPages: Math.ceil(Number(total) / limit)
       }
     }
-  } catch (err: any) {
+  } catch {
     return { ok: false, articles: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 1 } }
   }
 })

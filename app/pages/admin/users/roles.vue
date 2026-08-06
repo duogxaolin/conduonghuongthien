@@ -38,8 +38,8 @@ const fetchRoles = async () => {
     } else {
       error.value = 'Không tải được danh sách vai trò.'
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được danh sách vai trò.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được danh sách vai trò.')
   } finally {
     loading.value = false
   }
@@ -76,8 +76,8 @@ const handleSavePermissions = async () => {
       body: { permissions: permsPayload }
     })
     if (res.ok) { toast.success('Đã cập nhật phân quyền thành công!'); await fetchRoles() }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu phân quyền')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu phân quyền'))
   } finally {
     saving.value = false
   }

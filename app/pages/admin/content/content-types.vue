@@ -59,8 +59,8 @@ const fetchTypes = async () => {
     } else {
       error.value = 'Không tải được danh sách thể loại.'
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được danh sách thể loại.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được danh sách thể loại.')
   } finally {
     loading.value = false
   }
@@ -70,7 +70,7 @@ const fetchCategories = async () => {
   try {
     const res = await $fetch('/api/admin/categories')
     if (res.ok) allCategories.value = res.items
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Non-blocking: tree preview just shows types without children
   }
 }
@@ -139,8 +139,8 @@ const handleSave = async () => {
     }
     showModal.value = false
     await fetchTypes()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu thể loại')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu thể loại'))
   } finally {
     saving.value = false
   }
@@ -176,8 +176,8 @@ const deleteType = async (ct: any) => {
     await $fetch(`/api/admin/content-types/${ct.id}`, { method: 'DELETE' })
     toast.success('Đã xóa thể loại thành công!')
     await fetchTypes()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi xóa thể loại')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi xóa thể loại'))
   }
 }
 

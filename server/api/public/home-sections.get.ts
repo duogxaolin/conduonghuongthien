@@ -12,7 +12,7 @@ export default defineEventHandler(async () => {
       .orderBy(asc(homeSections.displayOrder))
 
     return { ok: true, sections }
-  } catch (err: any) {
+  } catch {
     return { ok: false, sections: [] }
   }
 })

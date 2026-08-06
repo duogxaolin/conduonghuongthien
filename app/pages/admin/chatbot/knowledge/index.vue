@@ -6,7 +6,7 @@ function selectTab(tab: 'knowledge' | 'small-talk') { return router.replace({ qu
 const toast = useToast(); const { confirm } = useConfirm(); const items = ref<any[]>([]); const loading = ref(true); const error = ref(''); const search = ref(''); const topic = ref(''); const status = ref(''); const quick = ref(''); const pagination = ref({ page: 1, totalPages: 1, total: 0 }); const page = ref(1)
 const statusLabel: Record<string, string> = { draft: 'Bản nháp', published: 'Đã xuất bản', archived: 'Đã lưu trữ' }
 const statusTone: Record<string, string> = { draft: 'border-[#d8c99a] bg-[#fffaf0] text-[#765b00]', published: 'border-[#8ed694] bg-[#f0f7f1] text-[#1e4620]', archived: 'border-[#c8d6c9] bg-[#f4f7f4] text-[#667768]' }
-async function load(next = 1) { loading.value = true; error.value = ''; page.value = next; try { const res = await $fetch<any>('/api/admin/chatbot/knowledge', { params: { page: next, perPage: 15, search: search.value, topic: topic.value, status: status.value, quick: quick.value } }); items.value = res.items || []; pagination.value = res.pagination; selection.keepOnly(visibleIds.value) } catch (err: any) { error.value = err?.data?.statusMessage || 'Không thể tải kho kiến thức.' } finally { loading.value = false } }
+async function load(next = 1) { loading.value = true; error.value = ''; page.value = next; try { const res = await $fetch<any>('/api/admin/chatbot/knowledge', { params: { page: next, perPage: 15, search: search.value, topic: topic.value, status: status.value, quick: quick.value } }); items.value = res.items || []; pagination.value = res.pagination; selection.keepOnly(visibleIds.value) } catch (err: unknown) { error.value = errorMessage(err, 'Không thể tải kho kiến thức.') } finally { loading.value = false } }
 
 // ── Bulk selection ──
 const selection = useBulkSelection()
@@ -51,13 +51,13 @@ async function toggleQuickQuestion(item: any) {
   try {
     await $fetch(`/api/admin/chatbot/knowledge/${item.id}`, { method: 'PUT', body: { isQuickQuestion: target } })
     toast.success(target ? 'Đã đưa vào câu hỏi nhanh.' : 'Đã bỏ khỏi câu hỏi nhanh.')
-  } catch (err: any) {
+  } catch (err: unknown) {
     item.isQuickQuestion = !target
-    toast.error(err?.data?.statusMessage || 'Không thể cập nhật câu hỏi nhanh.')
+    toast.error(errorMessage(err, 'Không thể cập nhật câu hỏi nhanh.'))
   }
 }
-async function transition(item: any, action: 'publish' | 'archive') { const verb = action === 'publish' ? 'xuất bản' : 'lưu trữ'; const ok = await confirm({ message: `Bạn có chắc muốn ${verb} mục này?`, confirmLabel: verb === 'xuất bản' ? 'Xuất bản' : 'Lưu trữ' }); if (!ok) return; try { await $fetch(`/api/admin/chatbot/knowledge/${item.id}/${action}`, { method: 'POST' }); toast.success(`Đã ${verb} mục kiến thức.`); await load(page.value) } catch (err: any) { toast.error(err?.data?.statusMessage || `Không thể ${verb} mục kiến thức.`) } }
-async function remove(item: any) { const ok = await confirm({ title: 'Xóa mục kiến thức', message: 'Xóa mục kiến thức này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return; try { await $fetch(`/api/admin/chatbot/knowledge/${item.id}`, { method: 'DELETE' }); toast.success('Đã xóa mục kiến thức.'); await load(page.value) } catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể xóa mục kiến thức.') } }
+async function transition(item: any, action: 'publish' | 'archive') { const verb = action === 'publish' ? 'xuất bản' : 'lưu trữ'; const ok = await confirm({ message: `Bạn có chắc muốn ${verb} mục này?`, confirmLabel: verb === 'xuất bản' ? 'Xuất bản' : 'Lưu trữ' }); if (!ok) return; try { await $fetch(`/api/admin/chatbot/knowledge/${item.id}/${action}`, { method: 'POST' }); toast.success(`Đã ${verb} mục kiến thức.`); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, 'Đã xảy ra lỗi.') || `Không thể ${verb} mục kiến thức.`) } }
+async function remove(item: any) { const ok = await confirm({ title: 'Xóa mục kiến thức', message: 'Xóa mục kiến thức này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return; try { await $fetch(`/api/admin/chatbot/knowledge/${item.id}`, { method: 'DELETE' }); toast.success('Đã xóa mục kiến thức.'); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa mục kiến thức.')) } }
 // ── Excel/CSV import ──
 const showImport = ref(false); const importFile = ref<File | null>(null); const importPublish = ref(false); const importTopic = ref(''); const importing = ref(false); const importResult = ref<any>(null)
 const importStageLabel: Record<string, string> = { parse: 'Đọc tệp', save: 'Lưu dữ liệu', publish: 'Xuất bản' }
@@ -100,7 +100,7 @@ async function downloadTemplate() {
     link.click()
     link.remove()
     URL.revokeObjectURL(url)
-  } catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể tải tệp mẫu.') } finally { downloadingTemplate.value = false }
+  } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể tải tệp mẫu.')) } finally { downloadingTemplate.value = false }
 }
 function closeImport() { showImport.value = false; importFile.value = null; importResult.value = null; importPublish.value = false; importTopic.value = '' }
 async function runImport() {
@@ -114,7 +114,7 @@ async function runImport() {
     if (res.errors?.length) toast.warning(message, 'Nhập tệp chưa hoàn tất')
     else toast.success(message)
     await load(1)
-  } catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể nhập tệp.') } finally { importing.value = false }
+  } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể nhập tệp.')) } finally { importing.value = false }
 }
 watch([topic, status, quick], () => load(1)); onMounted(() => load())
 </script>

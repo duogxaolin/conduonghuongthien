@@ -129,8 +129,8 @@ async function load() {
         form.readerAccountMaxRows = scope.maxRows
       }
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được cấu hình dọn dữ liệu.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được cấu hình dọn dữ liệu.')
   } finally {
     loading.value = false
   }
@@ -156,8 +156,8 @@ async function save() {
     })
     toast.success('Đã lưu cấu hình dọn dữ liệu.')
     await load()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không lưu được cấu hình.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không lưu được cấu hình.'))
   } finally {
     saving.value = false
   }
@@ -181,8 +181,8 @@ async function runNow() {
     if (res?.status === 'warning') toast.info(`Đã xoá ${formatNumber(deleted)} bản ghi. Còn bản ghi chờ lượt sau.`)
     else toast.success(deleted > 0 ? `Đã xoá ${formatNumber(deleted)} bản ghi.` : 'Không có bản ghi nào cần xoá.')
     await load()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Chạy dọn dữ liệu thất bại.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Chạy dọn dữ liệu thất bại.'))
   } finally {
     running.value = false
   }

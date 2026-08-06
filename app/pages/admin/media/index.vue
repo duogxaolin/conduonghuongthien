@@ -29,9 +29,9 @@ const fetchMedia = async (page = 1) => {
       // Ids from the previous page are meaningless once the grid changes.
       selection.keepOnly(visibleIds.value)
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi tải thư viện media')
-    loadError.value = err?.data?.statusMessage || 'Lỗi tải thư viện media'
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi tải thư viện media'))
+    loadError.value = errorMessage(err, 'Lỗi tải thư viện media')
   } finally {
     loading.value = false
   }
@@ -69,8 +69,8 @@ const deleteMedia = async (item: any) => {
     await $fetch(`/api/admin/media/${item.id}`, { method: 'DELETE' })
     toast.success('Đã xóa tệp media thành công!')
     await fetchMedia(pagination.value.page)
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi xóa file')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi xóa file'))
   }
 }
 

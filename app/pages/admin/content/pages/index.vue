@@ -164,8 +164,8 @@ const fetchPages = async () => {
       pages.value = res.items
       selection.keepOnly(visibleIds.value)
     }
-  } catch (err: any) {
-    loadError.value = err?.data?.statusMessage || 'Không tải được danh sách trang.'
+  } catch (err: unknown) {
+    loadError.value = errorMessage(err, 'Không tải được danh sách trang.')
   } finally {
     loading.value = false
   }
@@ -212,8 +212,8 @@ const createPage = async () => {
       showCreate.value = false
       await navigateTo(`/admin/content/pages/${res.id}`)
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không tạo được trang.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không tạo được trang.'))
   } finally {
     creating.value = false
   }
@@ -231,8 +231,8 @@ const removePage = async (p: any) => {
     await $fetch(`/api/admin/pages/${p.id}`, { method: 'DELETE' })
     toast.success('Đã xóa trang.')
     await fetchPages()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không xóa được trang.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không xóa được trang.'))
   }
 }
 

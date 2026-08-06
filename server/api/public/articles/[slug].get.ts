@@ -57,8 +57,8 @@ export default defineEventHandler(async (event) => {
     }
 
     return { ok: true, article }
-  } catch (err: any) {
-    if (err?.statusCode === 404) throw err
+  } catch (err: unknown) {
+    if ((err as { statusCode?: number })?.statusCode === 404) throw err
     throw createError({ statusCode: 500, statusMessage: 'Lỗi máy chủ' })
   }
 })

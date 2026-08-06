@@ -35,8 +35,8 @@ const fetchSettings = async () => {
     } else {
       error.value = 'Không tải được cài đặt email.'
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được cài đặt email.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được cài đặt email.')
   } finally {
     loading.value = false
   }
@@ -51,8 +51,8 @@ const handleSave = async () => {
       // Re-fetch so the password field shows the mask again after saving.
       await fetchSettings()
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu cài đặt')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu cài đặt'))
   } finally {
     saving.value = false
   }
@@ -70,8 +70,8 @@ const handleTest = async () => {
       body: { ...settings, to: testEmail.value.trim() },
     })
     if (res.ok) toast.success(res.message || 'Đã gửi email thử.')
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Gửi email thử thất bại.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Gửi email thử thất bại.'))
   } finally {
     testing.value = false
   }

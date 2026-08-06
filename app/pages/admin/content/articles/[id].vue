@@ -75,8 +75,8 @@ const fetchArticle = async () => {
         if (ed) ed.setContent(form.content)
       }
     }
-  } catch (err: any) {
-    errorMsg.value = err?.data?.statusMessage || 'Lỗi tải bài viết'
+  } catch (err: unknown) {
+    errorMsg.value = errorMessage(err, 'Lỗi tải bài viết')
   } finally {
     loading.value = false
     // Wait for Vue to flush the queued watcher (triggered by form.type assignment
@@ -111,8 +111,8 @@ const handleSave = async () => {
       const res = await $fetch(`/api/admin/articles/${articleId.value}`, { method: 'PUT', body: form })
       if (res.ok) toast.success('Đã cập nhật bài viết thành công!')
     }
-  } catch (err: any) {
-    errorMsg.value = err?.data?.statusMessage || 'Lỗi lưu bài viết'
+  } catch (err: unknown) {
+    errorMsg.value = errorMessage(err, 'Lỗi lưu bài viết')
     toast.error(errorMsg.value)
   } finally {
     saving.value = false
@@ -199,7 +199,7 @@ const initTinyMCE = () => {
           if (res.ok && res.media?.url) resolve(res.media.url)
           else reject('Upload thất bại')
         })
-        .catch((err: any) => reject(err?.data?.statusMessage || 'Upload thất bại'))
+        .catch((err: any) => reject(errorMessage(err, 'Upload thất bại')))
     }),
     setup: (editor: any) => {
       editor.on('init', () => {

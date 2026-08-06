@@ -57,8 +57,8 @@ const fetchSession = async () => {
       relatedSubmissions.value = res.relatedSubmissions
       truncated.value = res.truncated
     }
-  } catch (err: any) {
-    loadError.value = err?.data?.statusMessage || 'Không thể tải nội dung phiên trò chuyện.'
+  } catch (err: unknown) {
+    loadError.value = errorMessage(err, 'Không thể tải nội dung phiên trò chuyện.')
   } finally {
     loading.value = false
   }

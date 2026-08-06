@@ -29,8 +29,8 @@ const fetchUsers = async () => {
     if (rRes.ok) roles.value = rRes.roles
     // Ids from the previous load are meaningless once the list changes.
     selection.keepOnly(visibleIds.value)
-  } catch (err: any) {
-    loadError.value = err?.data?.statusMessage || 'Lỗi tải danh sách người dùng'
+  } catch (err: unknown) {
+    loadError.value = errorMessage(err, 'Lỗi tải danh sách người dùng')
     toast.error(loadError.value)
   } finally {
     loading.value = false
@@ -47,8 +47,8 @@ const handleCreateUser = async () => {
       form.username = ''; form.email = ''; form.password = ''
       await fetchUsers()
     }
-  } catch (err: any) {
-    errorMsg.value = err?.data?.statusMessage || 'Tạo người dùng thất bại'
+  } catch (err: unknown) {
+    errorMsg.value = errorMessage(err, 'Tạo người dùng thất bại')
     toast.error(errorMsg.value)
   }
 }
@@ -74,8 +74,8 @@ const handleUpdateUser = async () => {
       toast.success(`Đã cập nhật tài khoản ${editForm.username} thành công!`)
       showEditModal.value = false; await fetchUsers()
     }
-  } catch (err: any) {
-    errorMsg.value = err?.data?.statusMessage || 'Cập nhật người dùng thất bại'
+  } catch (err: unknown) {
+    errorMsg.value = errorMessage(err, 'Cập nhật người dùng thất bại')
     toast.error(errorMsg.value)
   }
 }
@@ -85,7 +85,7 @@ const toggleActive = async (user: any) => {
     await $fetch(`/api/admin/users/${user.id}`, { method: 'PUT', body: { isActive: !user.isActive } })
     user.isActive = !user.isActive
     toast.success(`Đã ${user.isActive ? 'kích hoạt' : 'khóa'} tài khoản ${user.username}!`)
-  } catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể đổi trạng thái') }
+  } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể đổi trạng thái')) }
 }
 
 const deleteUser = async (user: any) => {
@@ -94,7 +94,7 @@ const deleteUser = async (user: any) => {
   try {
     await $fetch(`/api/admin/users/${user.id}`, { method: 'DELETE' })
     toast.success('Đã xóa người dùng thành công!'); await fetchUsers()
-  } catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể xóa người dùng') }
+  } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa người dùng')) }
 }
 
 // ─── Bulk selection ───────────────────────────────────────────────────────────

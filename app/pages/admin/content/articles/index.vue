@@ -134,9 +134,9 @@ const fetchArticles = async (page = 1) => {
       // Ids from the previous page/filter no longer refer to anything on screen.
       selection.keepOnly(visibleIds.value)
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách bài viết')
-    loadError.value = err?.data?.statusMessage || 'Lỗi tải danh sách bài viết'
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi tải danh sách bài viết'))
+    loadError.value = errorMessage(err, 'Lỗi tải danh sách bài viết')
   } finally {
     loading.value = false
   }
@@ -205,9 +205,9 @@ const toggleComments = async (art: any) => {
   try {
     await $fetch(`/api/admin/articles/${art.id}`, { method: 'PUT', body: { commentsEnabled: next } })
     toast.success(next ? 'Đã mở bình luận cho bài viết này.' : 'Đã đóng bình luận của bài viết này.')
-  } catch (err: any) {
+  } catch (err: unknown) {
     art.commentsEnabled = !next
-    toast.error(err?.data?.statusMessage || 'Không đổi được trạng thái bình luận.')
+    toast.error(errorMessage(err, 'Không đổi được trạng thái bình luận.'))
   } finally {
     togglingComments.value = null
   }
@@ -220,8 +220,8 @@ const deleteArticle = async (art: any) => {
     await $fetch(`/api/admin/articles/${art.id}`, { method: 'DELETE' })
     toast.success('Đã xóa bài viết thành công!')
     await fetchArticles(pagination.value.page)
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi xóa bài viết')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi xóa bài viết'))
   }
 }
 
@@ -276,10 +276,10 @@ const loadStats = async () => {
     const res: any = await $fetch(`/api/admin/articles/${statsArticle.value.id}/stats`)
     statsData.value = res.stats
     runningBoost.value = res.boost
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Giữ lại lỗi trên màn hình kèm nút thử lại: một modal trống không nói được
     // là "bài này chưa có lượt xem" hay "không tải được số liệu".
-    statsError.value = err?.data?.statusMessage || 'Không tải được số liệu lượt xem.'
+    statsError.value = errorMessage(err, 'Không tải được số liệu lượt xem.')
     statsData.value = null
     runningBoost.value = null
   } finally {
@@ -336,8 +336,8 @@ const submitBoost = async () => {
     boostAmount.value = null
     await loadStats()
     await fetchArticles(pagination.value.page)
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không thực hiện được thao tác tăng lượt xem.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thực hiện được thao tác tăng lượt xem.'))
   } finally {
     boostSubmitting.value = false
   }
@@ -358,8 +358,8 @@ const cancelBoost = async () => {
     await $fetch(`/api/admin/articles/${statsArticle.value.id}/boost`, { method: 'DELETE' })
     toast.success('Đã huỷ lượt tăng dần.')
     await loadStats()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không huỷ được lượt tăng dần.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không huỷ được lượt tăng dần.'))
   }
 }
 

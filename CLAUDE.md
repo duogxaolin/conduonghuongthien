@@ -187,6 +187,21 @@ Hiện có **171 endpoint**: **92** gọi `getDb()` thẳng, **85** đi qua `ser
     - **`db.transaction()` phải TRẢ VỀ id sinh ra**, không để biến rò ra ngoài khối. Sáu endpoint tạo mới (`articles`, `media`, `pages`, `page blocks`, `roles`, `users`) khai `insertId` bên trong rồi dùng ở `return` bên ngoài — typecheck bắt được cả sáu.
     - **`settings/index.put.ts` bọc CẢ vòng lặp**, không chỉ hai lượt ghi cuối: vòng lặp có thể `throw` 403 giữa chừng (khoá chỉ SuperAdmin sửa được), nên viết rời thì các khoá xử lý trước lúc ném **đã ghi xong và nằm lại** — một lượt lưu bị từ chối vẫn đổi được một phần cấu hình.
 
+### Xử lý lỗi ở tầng giao diện
+
+- **`catch (err: any)` đã bị xoá khỏi toàn dự án** (111 khối). Thay bằng `catch (err: unknown)` + `errorMessage(err, 'câu dự phòng')` ở `app/utils/errorMessage.ts`. Vấn đề không phải dài dòng mà là `any` **tắt trình kiểm kiểu ở đúng chỗ hay sai nhất**: trong khối `catch`, giá trị bắt được có thể là `FetchError`, một `TypeError` do lỗi lập trình ngay trong `try`, hay một chuỗi ai đó `throw` ra — nên `err.data.statusMessage` (không `?.`) biên dịch trót lọt rồi **ném thêm một lỗi thứ hai ngay trong trình xử lý lỗi**, che mất lỗi gốc. Đó là kiểu hỏng khó truy nhất: thứ người dùng thấy không liên quan gì tới thứ thật sự sai.
+  - **Không bao giờ trả chuỗi rỗng** — một hộp thoại lỗi trống rỗng đọc ra là giao diện bị hỏng, không phải thao tác đã thất bại.
+  - **`errorStatus()` tách riêng** vì phân biệt 401 với 403 là **quyết định hành vi**, không phải hiển thị: 401 là vé hết hiệu lực (mời đăng nhập lại), 403 là bị chặn nhưng **vẫn đang đăng nhập** (mời đăng nhập lại là mời một lượt sẽ thành công mà không đổi gì).
+  - Server không import được `app/utils`, nên 9 khối bên đó xử lý tại chỗ: 5 endpoint public không hề dùng `err` → `catch` trần; 4 chỗ còn lại thu hẹp kiểu tường minh.
+
+### Tệp lớn đã tách (và một tệp cố ý KHÔNG tách)
+
+- **`server/db/init.ts`**: `initDb()` từng dài 690 dòng. Tách `applyAdditiveMigrations()` — 45 lượt `ensureColumn`/`ensureIndex`/FK chạy **sau** 41 câu `CREATE TABLE`. Ranh giới này là **ràng buộc thứ tự thật**, không phải chuyện thẩm mỹ: một FK chỉ gắn được khi cả hai bảng đã có, và `chat_sessions.reader_id` trỏ sang bảng ra đời sau nó. Gọi sớm là lỗi thời điểm **chỉ lộ trên database trống** — đã kiểm bằng MySQL thật: 41 bảng, 377 cột, 4/4 cột do migrate thêm đều có mặt.
+- **`app/composables/useChatbot.ts`** (939 → 759): tách `useChatbotTypewriter.ts`. Khối này **không đọc state hội thoại nào** — chỉ nhận một `message` và một chuỗi — nên kiểm được mà không cần dựng cả trợ lý. `useChatbot` re-export lại để mọi nơi gọi cũ và bộ test giữ nguyên một đường import.
+- **`app/pages/admin/profile.vue`** (1076 → 875): tách `ProfileActivityHistory.vue`, expose `reload()` vì bật/tắt yếu tố ghi thêm dòng vào chính bảng nó hiển thị.
+- **`app/layouts/default.vue`** (991 → 866): tách `ReaderNotificationBell.client.vue`.
+- **`AnalyticsLiveDashboard.client.vue` CỐ Ý chỉ tách hai hàm thuần**, không tách panel NOC. Đo được: template NOC dùng **22 định danh của component cha** (đồng hồ, trạng thái kết nối, bộ đếm poll dùng chung với hai panel kia) — đẩy 22 thứ đó qua props/emit là **tăng** bề mặt phức tạp để giảm số dòng, tức đổi một tệp dài lấy hai tệp buộc nhau chặt hơn. Thứ được rút ra là `safeDetails` và `isWarningOrError` (`app/utils/analytics-noc.ts`), vì **`safeDetails` là bộ lọc quyền riêng tư** chặn IP/email/số điện thoại/token lọt lên màn hình quản trị, mà nằm trong `<script setup>` thì không nơi nào import được nên **chưa từng có test**. Một danh sách chặn im lặng ngừng chặn trông y hệt một danh sách đang chạy đúng (`tests/analytics-noc-privacy.test.ts`, 13 test, đã thử nghiệm âm tính: thu hẹp danh sách → 7 test đỏ).
+
 ### Hạn chế đã biết
 
 - **Đa ngôn ngữ mới xong phần khung.** `app/composables/useI18n.ts` có 209 khoá và bộ chuyển ngôn ngữ hoạt động, nhưng chỉ `app/layouts/default.vue` dùng — **toàn bộ nội dung trang vẫn là tiếng Việt**. Khách chuyển sang tiếng Anh sẽ thấy menu tiếng Anh bọc quanh nội dung tiếng Việt. Hai lối đi: bỏ nút chuyển ngôn ngữ (cổng thông tin chỉ phục vụ tiếng Việt), hoặc dịch cả nội dung CMS (cần thêm cột/bản ghi theo ngôn ngữ). Chưa chọn hướng nào nên chưa đụng vào.
