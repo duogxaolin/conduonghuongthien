@@ -17,10 +17,19 @@ import { getDb } from '../../../utils/db'
 import { articles } from '../../../db/schema'
 import { optionalReader } from '../../../utils/reader-auth'
 import { COMMENT_MAX_PER_PAGE, loadCommentThread } from '../../../services/comments'
+import { COMMENT_THREAD_PER_PAGE } from '../../../services/notifications'
 
-/** Small enough to keep the first paint quick, large enough that most threads
- *  fit on one page. */
-const DEFAULT_PER_PAGE = 20
+/**
+ * Small enough to keep the first paint quick, large enough that most threads fit
+ * on one page.
+ *
+ * Imported rather than declared here: services/notifications.ts converts a
+ * comment's position into the page number a notification link carries, and if
+ * that arithmetic used a different page size from this endpoint, every deep link
+ * would be off by the drift — landing readers near their comment instead of on
+ * it, with nothing failing anywhere.
+ */
+const DEFAULT_PER_PAGE = COMMENT_THREAD_PER_PAGE
 
 /**
  * A query number is finite or it is the default — never `Math.max(1, Number(x))`.

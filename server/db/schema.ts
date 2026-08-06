@@ -714,6 +714,49 @@ export const articleComments = mysqlTable('article_comments', {
   readerIdx: index('article_comments_reader_id_idx').on(t.readerId),
 }))
 
+/**
+ * "Somebody replied to you" — one row per reply, addressed to the author of the
+ * comment it answers.
+ *
+ * **Both FKs cascade, and that is what keeps this table honest.** A notification
+ * is a pointer to a row somebody can go and read; when the reply is deleted the
+ * notification has nothing left to point at, and following it would land the
+ * reader on an article with no such comment — which reads as the portal having
+ * removed their words. Deleting the reader takes their notifications too, on the
+ * same reasoning that already governs `article_comments`.
+ *
+ * **Deliberately NOT a retention scope** (`server/services/data-retention.ts`).
+ * Every row here hangs off `article_comments`, which itself cascades from both
+ * `articles` and `reader_accounts` — two scopes that already exist — so this
+ * table is bounded before retention ever looks at it. An independent age window
+ * would delete the notification while the reply is still sitting on the page
+ * unread, and a row cap would drop the oldest notifications of the most active
+ * readers first. Same reasoning that keeps `chat_messages` and `article_comments`
+ * out of the scope list; adding a fifth scope for this is the mistake to avoid.
+ *
+ * `UNIQUE (reader_id, comment_id)` makes the write idempotent: one reply can
+ * never announce itself twice, whatever retries happen above.
+ */
+export const readerNotifications = mysqlTable('reader_notifications', {
+  id:        bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
+  // Who is being told. Not "who acted" — the actor is reachable through the
+  // comment, and storing it here would invite a query that filters by it.
+  readerId:  int('reader_id').notNull().references(() => readerAccounts.id, { onDelete: 'cascade' }),
+  // The reply itself. Everything shown in the list (excerpt, article, timestamp)
+  // is read through this, so nothing here can drift out of sync with the thread.
+  commentId: bigint('comment_id', { mode: 'number', unsigned: true }).notNull().references((): AnyMySqlColumn => articleComments.id, { onDelete: 'cascade' }),
+  // Only 'comment_reply' today. A column rather than an implied constant so a
+  // second kind (a new article in a followed topic) does not need a migration.
+  type:      varchar('type', { length: 32 }).notNull().default('comment_reply'),
+  isRead:    boolean('is_read').notNull().default(false),
+  createdAt: datetime('created_at', { mode: 'date' }).notNull(),
+}, (t) => ({
+  // Serves both the unread badge and the list, which are the only two reads.
+  readerUnreadIdx: index('reader_notifications_reader_read_created_idx').on(t.readerId, t.isRead, t.createdAt),
+  commentIdx:      index('reader_notifications_comment_id_idx').on(t.commentId),
+  readerCommentUq: uniqueIndex('reader_notifications_reader_comment_uq').on(t.readerId, t.commentId),
+}))
+
 // Address bans for sign-in and comment writes. `value` is a single IPv4/IPv6
 // address or an IPv4 CIDR block, validated by server/utils/ip-ban.ts before a
 // row is ever written (design.md D11) — a stored value that never matches
@@ -793,6 +836,8 @@ export type ReaderAccount = typeof readerAccounts.$inferSelect
 export type NewReaderAccount = typeof readerAccounts.$inferInsert
 export type ArticleComment = typeof articleComments.$inferSelect
 export type NewArticleComment = typeof articleComments.$inferInsert
+export type ReaderNotification = typeof readerNotifications.$inferSelect
+export type NewReaderNotification = typeof readerNotifications.$inferInsert
 export type ReaderIpBan = typeof readerIpBans.$inferSelect
 export type NewReaderIpBan = typeof readerIpBans.$inferInsert
 export type GoogleOauthSettings = typeof googleOauthSettings.$inferSelect

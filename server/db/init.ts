@@ -1172,6 +1172,32 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  // "Somebody replied to you". Both FKs CASCADE on purpose: a notification is a
+  // pointer to a row the reader can go and read, so when the reply (or the
+  // reader) is gone there is nothing left to point at and following it would
+  // land on an article with no such comment.
+  //
+  // Deliberately NOT registered as a retention scope — every row hangs off
+  // `article_comments`, which already cascades from both `articles` and
+  // `reader_accounts`, so this table is bounded before retention looks at it.
+  // An independent age window would delete the notification while the reply sat
+  // unread on the page. See the comment on readerNotifications in schema.ts.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`reader_notifications\` (
+      \`id\` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      \`reader_id\` INT NOT NULL,
+      \`comment_id\` BIGINT UNSIGNED NOT NULL,
+      \`type\` VARCHAR(32) NOT NULL DEFAULT 'comment_reply',
+      \`is_read\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`created_at\` DATETIME NOT NULL,
+      UNIQUE KEY \`reader_notifications_reader_comment_uq\` (\`reader_id\`, \`comment_id\`),
+      KEY \`reader_notifications_reader_read_created_idx\` (\`reader_id\`, \`is_read\`, \`created_at\`),
+      KEY \`reader_notifications_comment_id_idx\` (\`comment_id\`),
+      CONSTRAINT \`fk_reader_notifications_reader\` FOREIGN KEY (\`reader_id\`) REFERENCES \`reader_accounts\` (\`id\`) ON DELETE CASCADE,
+      CONSTRAINT \`fk_reader_notifications_comment\` FOREIGN KEY (\`comment_id\`) REFERENCES \`article_comments\` (\`id\`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
   // design.md D11: value is validated (single IPv4/IPv6 address or IPv4 CIDR)
   // by server/utils/ip-ban.ts before a row is ever written.
   await db.query(`
