@@ -33,7 +33,7 @@
 
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
 
-import { getDb, getPool } from '../utils/db'
+import { getDb } from '../utils/db'
 import { activityLogs, articleComments, articles, readerAccounts, users } from '../db/schema'
 import { isIpBanned } from '../utils/ip-ban'
 import { loadIpBanValues } from './ip-bans'
@@ -41,6 +41,7 @@ import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-stor
 import { effectiveDisplayName, initialsFrom } from '../utils/display-name'
 import { createReplyNotification } from './notifications'
 import { sendReplyEmail } from './notification-email'
+import { rateLimitDeps } from '../utils/rate-limit-deps'
 
 /** Long enough for a real question, short enough that one row cannot dominate a page. */
 export const COMMENT_MAX_LENGTH = 2000
@@ -188,11 +189,6 @@ export function serializePublicComment(row: CommentRow, viewerReaderId: number |
   }
 }
 
-function limiterDeps() {
-  const pool = getPool()
-  return { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
-}
-
 async function loadIpBans(): Promise<string[]> {
   return loadIpBanValues()
 }
@@ -273,7 +269,7 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
   }
 
   // ── Everything above was a reason to refuse. Only now is allowance spent. ──
-  const deps = limiterDeps()
+  const deps = rateLimitDeps()
   const readerState = await recordRateLimitHit(`comment:reader:${input.readerId}`, COMMENT_READER_RULE, deps)
   if (readerState.blocked) {
     return {

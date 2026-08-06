@@ -1,5 +1,6 @@
 import { createError } from 'h3'
 import { issueSessionToken } from '../../../utils/chatbot/session-token'
+import { analyticsHmacSecret } from '../../../utils/runtime-config'
 
 /**
  * Mints a chat session token: `{ token: "<uuid>.<hmac>" }`.
@@ -14,8 +15,7 @@ import { issueSessionToken } from '../../../utils/chatbot/session-token'
  * id.
  */
 export default defineEventHandler(async (event) => {
-  const config = useRuntimeConfig(event) as unknown as { analytics?: { hmacSecret?: string } }
-  const secret = config.analytics?.hmacSecret
+  const secret = analyticsHmacSecret(event)
 
   if (!secret) {
     // No secret means no verifiable token, and an unverifiable token would let

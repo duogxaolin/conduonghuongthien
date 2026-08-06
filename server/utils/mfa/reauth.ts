@@ -8,18 +8,14 @@
  */
 import type { H3Event } from 'h3'
 import { eq } from 'drizzle-orm'
-import { getDb, getPool } from '../db'
+import { getDb } from '../db'
 import { users } from '../../db/schema'
 import { verifyPassword } from '../auth'
 import { logWarn, SECURITY_EVENTS } from '../logger'
 import { peekRateLimit, recordRateLimitHit, clearRateLimit, type RateLimitRule } from '../rate-limit-store'
+import { rateLimitDeps } from '../rate-limit-deps'
 
 const RULE: RateLimitRule = { limit: 5, windowSeconds: 15 * 60 }
-
-function limiterDeps() {
-  const pool = getPool()
-  return { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
-}
 
 /**
  * Throws 401/429 unless the supplied password matches the caller's own. Returns
@@ -36,7 +32,7 @@ export async function requireCurrentPassword(
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng nhập mật khẩu hiện tại để xác nhận.' })
   }
 
-  const deps = limiterDeps()
+  const deps = rateLimitDeps()
   const bucket = `profile:reauth:user:${userId}`
   const state = await peekRateLimit(bucket, RULE, deps)
   if (state.blocked) {

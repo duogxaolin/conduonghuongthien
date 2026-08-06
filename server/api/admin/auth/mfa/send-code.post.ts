@@ -7,21 +7,16 @@
  */
 
 import { verifyMfaChallenge } from '../../../../utils/auth'
-import { getPool } from '../../../../utils/db'
 import { logWarn } from '../../../../utils/logger'
 import { recordRateLimitHit, peekRateLimit, type RateLimitRule } from '../../../../utils/rate-limit-store'
 import { CHALLENGE_COOKIE, clearChallengeCookie, loadSessionUser } from '../../../../utils/mfa/session'
 import { getFactor } from '../../../../utils/mfa/factors'
 import { issueEmailCode } from '../../../../utils/mfa/email-code'
 import { getClientIp } from '../../../../utils/client-ip'
+import { rateLimitDeps } from '../../../../utils/rate-limit-deps'
 
 /** Tight: a legitimate caller needs one code, maybe two if the first is slow. */
 const SEND_RULE: RateLimitRule = { limit: 3, windowSeconds: 10 * 60 }
-
-function limiterDeps() {
-  const pool = getPool()
-  return { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
-}
 
 export default defineEventHandler(async (event) => {
   const ip = getClientIp(event)
@@ -33,7 +28,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'Phiên xác thực đã hết hạn. Vui lòng đăng nhập lại.' })
   }
 
-  const deps = limiterDeps()
+  const deps = rateLimitDeps()
   const bucket = `mfa:sendcode:user:${challenge.userId}`
   const state = await peekRateLimit(bucket, SEND_RULE, deps)
   if (state.blocked) {

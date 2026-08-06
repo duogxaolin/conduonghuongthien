@@ -90,6 +90,14 @@ jobs:
           INSERT_ID_PORT: 3306
           INSERT_ID_USER: root
           INSERT_ID_PASSWORD: test_root_password
+          NOTIFICATION_PAGE_INTEGRATION: 1
+          NOTIFICATION_PAGE_PORT: 3306
+          NOTIFICATION_PAGE_USER: root
+          NOTIFICATION_PAGE_PASSWORD: test_root_password
+          NOTIFICATION_EMAIL_INTEGRATION: 1
+          NOTIFICATION_EMAIL_PORT: 3306
+          NOTIFICATION_EMAIL_USER: root
+          NOTIFICATION_EMAIL_PASSWORD: test_root_password
         run: npm test
 
       # A suite that silently stops running is worse than one that fails: the run
@@ -107,6 +115,8 @@ jobs:
             [chat-retention-integration]=CHAT_RETENTION_INTEGRATION
             [reader-retention-integration]=READER_RETENTION_INTEGRATION
             [insert-id-integration]=INSERT_ID_INTEGRATION
+            [notification-page-integration]=NOTIFICATION_PAGE_INTEGRATION
+            [notification-email-integration]=NOTIFICATION_EMAIL_INTEGRATION
           )
           status=0
           for file in tests/*-integration.test.ts; do

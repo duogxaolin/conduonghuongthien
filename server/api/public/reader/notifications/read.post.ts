@@ -12,8 +12,8 @@
  */
 import { requireReader } from '../../../../utils/reader-auth'
 import { markAllRead, markRead } from '../../../../services/notifications'
-import { getPool } from '../../../../utils/db'
 import { recordRateLimitHit, type RateLimitRule } from '../../../../utils/rate-limit-store'
+import { rateLimitDeps } from '../../../../utils/rate-limit-deps'
 
 /** Per account. No address key: this publishes nothing to anyone else, so an
  *  office behind one NAT has no shared cost to protect. */
@@ -51,8 +51,7 @@ export default defineEventHandler(async (event) => {
    * own allowance on calls that were always going to fail, which is the ordering
    * mistake the comment and rename paths both document.
    */
-  const pool = getPool()
-  const deps = { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
+  const deps = rateLimitDeps()
   const state = await recordRateLimitHit(`notif:read:${reader.id}`, MARK_READ_RULE, deps)
   if (state.blocked) {
     throw createError({

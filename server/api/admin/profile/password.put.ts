@@ -9,7 +9,7 @@
  */
 
 import { eq, sql } from 'drizzle-orm'
-import { getDb, getPool } from '../../../utils/db'
+import { getDb } from '../../../utils/db'
 import { users, activityLogs } from '../../../db/schema'
 import { hashPassword, verifyPassword } from '../../../utils/auth'
 import { passwordRejectionMessage } from '../../../utils/password-policy'
@@ -17,14 +17,10 @@ import { logInfo, logWarn, SECURITY_EVENTS } from '../../../utils/logger'
 import { peekRateLimit, recordRateLimitHit, clearRateLimit, type RateLimitRule } from '../../../utils/rate-limit-store'
 import { setSessionCookie } from '../../../utils/mfa/session'
 import { getClientIp } from '../../../utils/client-ip'
+import { rateLimitDeps } from '../../../utils/rate-limit-deps'
 
 /** Holding a session is not licence to grind the current password. */
 const RULE: RateLimitRule = { limit: 5, windowSeconds: 15 * 60 }
-
-function limiterDeps() {
-  const pool = getPool()
-  return { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
-}
 
 export default defineEventHandler(async (event) => {
   const admin = event.context.adminUser
@@ -39,7 +35,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const ip = getClientIp(event)
-  const deps = limiterDeps()
+  const deps = rateLimitDeps()
   const bucket = `profile:password:user:${admin.id}`
   const state = await peekRateLimit(bucket, RULE, deps)
   if (state.blocked) {
