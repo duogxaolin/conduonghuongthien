@@ -46,6 +46,16 @@ env:
   ANALYTICS_HMAC_SECRET: ci-placeholder-not-a-real-secret-000000
 
 jobs:
+  # Typecheck chạy TRONG job này, không phải một job riêng.
+  #
+  # Nó từng là job thứ tư chạy song song, và mỗi job là một runner phải xin cấp
+  # riêng. Trên tài khoản này, hai job nhẹ nhất **liên tục bị huỷ sau ~15 phút
+  # xếp hàng mà chưa bao giờ được cấp máy** (`runner: ""`, `steps_run: 0`) —
+  # tức là bảng CI báo đỏ cho một thứ chưa từng chạy. Gộp vào đây cũng bỏ được
+  # một lượt `npm ci` trùng lặp.
+  #
+  # Vẫn là cổng CHẶN: bước typecheck `exit $status`, nên một lỗi kiểu vẫn làm
+  # job này đỏ. Cái đổi là số runner phải xin, không phải mức nghiêm ngặt.
   test:
     name: Tests and schema drift
     runs-on: ubuntu-latest
@@ -152,27 +162,6 @@ jobs:
       # (Deliberately not quoting a table count here — it went stale twice.)
       - name: Schema drift
         run: npm run db:drift
-
-  typecheck:
-    name: Types
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Blocking gate. It started as report-only because the codebase had never
-    # been typechecked and the first run surfaced 598 errors; those are fixed, so
-    # the count is now 0 and a regression should fail the build.
-    #
-    # typescript is pinned to ^5 in package.json: 7.x is the Go rewrite and no
-    # longer exports lib/tsc.js, which vue-tsc requires at startup
-    # (ERR_PACKAGE_PATH_NOT_EXPORTED).
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - run: npm ci
 
       - name: Typecheck
         run: |
@@ -322,7 +311,7 @@ jobs:
 
   image:
     name: Build and push image
-    needs: [test, typecheck, build, hygiene]
+    needs: [test, build, hygiene]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
