@@ -58,7 +58,7 @@ export default defineEventHandler(async (event) => {
       userId: adminUser.id,
       action: 'create',
       resource: 'pages',
-      meta: { pageId, blockId: Number(insertedId), blockType },
+      meta: { pageId, blockId: Number(created), blockType },
     })
 
     return created

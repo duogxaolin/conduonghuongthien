@@ -3,14 +3,33 @@ name: CI
 # The repository had no automation at all: 295 tests that only ran when someone
 # remembered to, a schema-drift checker nobody invoked, and a build that was
 # first exercised on the production VPS.
+#
+# `push` CHỈ trên nhánh mặc định, không phải `['**']`.
+#
+# Với `branches: ['**']`, một nhánh đang mở PR nổ **hai** lượt chạy cho **cùng
+# một commit** — một từ `push`, một từ `pull_request`. Chúng không dedupe được
+# vì `github.ref` khác nhau (`refs/heads/…` với `refs/pull/N/merge`), nên nhóm
+# concurrency cũng khác. Hậu quả không chỉ là tốn gấp đôi: hai lượt **tranh
+# nhau cùng một service MySQL** trên cùng runner pool, và một nửa số "CI đỏ"
+# trên PR này là lượt bị huỷ hoặc bị tranh chấp chứ không phải mã hỏng. Một
+# bảng CI mà quá nửa màu đỏ là nhiễu sẽ được đọc như nhiễu — kể cả cái đỏ thật.
+#
+# Nhánh chưa có PR vẫn được chạy nhờ `pull_request`, và `workflow_dispatch` cho
+# lượt chạy tay khi cần.
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
+# Khoá theo **PR hoặc nhánh**, không theo `github.ref` trần.
+#
+# `github.ref` với một lượt `pull_request` là `refs/pull/N/merge`, còn với
+# `push` là `refs/heads/…` — hai chuỗi khác nhau cho cùng một nhánh, nên nhóm
+# concurrency không bao giờ trùng và `cancel-in-progress` không huỷ được lượt
+# nó cần huỷ. `github.head_ref` có giá trị đúng trên PR và rỗng ở nơi khác.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 permissions:
