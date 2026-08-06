@@ -18,6 +18,8 @@ export type ReaderProfile = {
   displayName: string
   email:       string | null
   initials:    string
+  /** The name the reader chose, or null when the Google one is showing. */
+  customDisplayName?: string | null
 }
 
 /** Module-level: one identity per page, not one per component. */
@@ -25,6 +27,37 @@ const reader = ref<ReaderProfile | null>(null)
 const loading = ref(false)
 const loaded = ref(false)
 const failed = ref(false)
+
+/**
+ * Where the chat widget keeps `{id, token}` per conversation.
+ *
+ * Duplicated from useChatbot.ts rather than imported, and the duplication is the
+ * lesser evil: importing it would pull the whole chatbot composable — its
+ * module-level conversation state, its typewriter timers — into every page that
+ * renders a header. This composable needs one string.
+ */
+const CHAT_SESSIONS_KEY = 'cdkt_sessions_v1'
+
+/** Set once per browser session after a claim attempt, successful or not. */
+const CLAIM_FLAG_KEY = 'cdkt_chats_claimed_v1'
+
+/**
+ * Drop the once-per-session claim flag.
+ *
+ * Called on sign-out and whenever the server stops accepting the ticket. Without
+ * it, a shared computer breaks in a specific way: reader A signs in, the flag is
+ * set, A signs out, B signs in — and B's conversations are never offered for
+ * claiming, because the flag says this browser session already asked. The flag
+ * means "this ACCOUNT has been asked", so it has to die with the account's session.
+ */
+function clearClaimFlag(): void {
+  if (typeof window === 'undefined') return
+  try {
+    sessionStorage.removeItem(CLAIM_FLAG_KEY)
+  } catch {
+    // Private browsing can refuse storage access; nothing here is load-bearing.
+  }
+}
 
 /** Reasons the portal refused a sign-in, as the OAuth endpoints report them. */
 const SIGN_IN_MESSAGES: Record<string, string> = {
@@ -38,6 +71,48 @@ const SIGN_IN_MESSAGES: Record<string, string> = {
 }
 
 export function useReaderAuth() {
+  /**
+   * Hand the server the tickets for conversations held in this browser, so they
+   * attach to the account.
+   *
+   * Once per browser session, flagged in `sessionStorage`. Not `localStorage`: a
+   * conversation started later in the same browser would then never be claimed,
+   * because the flag from months ago would still be set.
+   *
+   * Everything here is swallowed. This runs on every page load for every signed-in
+   * reader, on pages whose job is to display an article — a failed claim has no
+   * standing to surface an error, and the reader can always retry from /nguoi-doc.
+   */
+  async function claimChats(): Promise<void> {
+    if (typeof window === 'undefined') return
+    try {
+      if (sessionStorage.getItem(CLAIM_FLAG_KEY)) return
+
+      const raw = localStorage.getItem(CHAT_SESSIONS_KEY)
+      if (!raw) return
+
+      const parsed = JSON.parse(raw) as { sessions?: unknown }
+      if (!Array.isArray(parsed?.sessions)) return
+
+      // Only entries that actually carry a ticket. A conversation the visitor
+      // started but never sent a message in has `token: null` — there is nothing
+      // to prove and no row on the server to attach.
+      const sessions = parsed.sessions
+        .filter((item): item is { token: string } =>
+          !!item && typeof item === 'object' && typeof (item as { token?: unknown }).token === 'string' && !!(item as { token: string }).token)
+        .map(item => ({ token: item.token }))
+
+      // The flag is set even when there is nothing to send: the answer would be
+      // the same on every subsequent page load in this session.
+      sessionStorage.setItem(CLAIM_FLAG_KEY, '1')
+      if (!sessions.length) return
+
+      await $fetch('/api/public/reader/claim-chats', { method: 'POST', body: { sessions } })
+    } catch {
+      // Deliberately silent — see above.
+    }
+  }
+
   async function load(force = false): Promise<void> {
     if (loading.value) return
     if (loaded.value && !force) return
@@ -48,6 +123,9 @@ export function useReaderAuth() {
       const response = await $fetch<{ ok: boolean, reader: ReaderProfile | null }>('/api/public/reader/me')
       reader.value = response?.reader ?? null
       loaded.value = true
+      // Only once identity is confirmed: an anonymous visitor has no account to
+      // attach conversations to, and the endpoint would reject them anyway.
+      if (reader.value) void claimChats()
     } catch {
       // A failed identity lookup means "not signed in" as far as the page is
       // concerned. It must never turn a readable article into an error page.
@@ -80,6 +158,7 @@ export function useReaderAuth() {
     }
     reader.value = null
     loaded.value = true
+    clearClaimFlag()
   }
 
   /**
@@ -98,6 +177,25 @@ export function useReaderAuth() {
   function forgetReader(): void {
     reader.value = null
     loaded.value = true
+    clearClaimFlag()
+  }
+
+  /**
+   * Update the cached identity after a successful rename.
+   *
+   * The state is module-level, so this is what makes the header change the moment
+   * the profile form saves. Without it the reader would see their new name in the
+   * form and the old one in the header until the next full page load, and the
+   * obvious reading of that is that the rename did not take.
+   */
+  function applyDisplayName(next: { displayName: string, initials: string }): void {
+    if (!reader.value) return
+    reader.value = {
+      ...reader.value,
+      displayName:       next.displayName,
+      initials:          next.initials,
+      customDisplayName: next.displayName,
+    }
   }
 
   /** Turn a `?dangnhap=` reason into a sentence, or null when there is none. */
@@ -117,5 +215,12 @@ export function useReaderAuth() {
     signOut,
     forgetReader,
     signInMessage,
+    applyDisplayName,
+    /** Exposed so /nguoi-doc can offer a retry button; `load()` already runs it
+     *  once per browser session on its own. */
+    claimChats,
+    /** Exposed for the same retry: without clearing the flag, pressing the button
+     *  a second time would return immediately having done nothing. */
+    clearClaimFlag,
   }
 }

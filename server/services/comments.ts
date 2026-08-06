@@ -38,15 +38,13 @@ import { activityLogs, articleComments, articles, readerAccounts, users } from '
 import { isIpBanned } from '../utils/ip-ban'
 import { loadIpBanValues } from './ip-bans'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
+import { effectiveDisplayName, initialsFrom } from '../utils/display-name'
 
 /** Long enough for a real question, short enough that one row cannot dominate a page. */
 export const COMMENT_MAX_LENGTH = 2000
 
 /** Display name shown for every administrator reply — see serializePublicComment. */
 export const ADMIN_REPLY_DISPLAY_NAME = 'Ban quản trị'
-
-/** Fallback when a reader has no Google display name on file. */
-const READER_FALLBACK_NAME = 'Người dùng'
 
 /** Per reader. Deliberately tighter than the address rule: one person writing
  *  five comments in ten minutes is already at the edge of a conversation. */
@@ -122,14 +120,10 @@ export function checkParentEligibility(parent: ParentCandidate | null | undefine
   return { ok: true }
 }
 
-/** Initials for the locally rendered avatar (design.md D7 — no Google image
- *  request ever leaves a visitor's browser). */
-export function initialsFrom(name: string): string {
-  const words = name.trim().split(/\s+/).filter(Boolean)
-  if (!words.length) return '?'
-  if (words.length === 1) return words[0]!.slice(0, 1).toUpperCase()
-  return (words[0]!.slice(0, 1) + words[words.length - 1]!.slice(0, 1)).toUpperCase()
-}
+/** Re-exported from utils/display-name.ts, which owns every decision about how a
+ *  reader is named and drawn. Kept exported here so the existing call sites and
+ *  tests/comment-validation.test.ts keep one import path. */
+export { initialsFrom }
 
 export type CommentRow = {
   id:           number
@@ -139,7 +133,12 @@ export type CommentRow = {
   parentId:     number | null
   body:         string
   createdAt:    Date | null
-  readerName:   string | null
+  // BOTH name columns, never just one: `display_name` is refreshed from Google on
+  // every sign-in and `custom_display_name` holds what the reader chose, so either
+  // one alone renders a name that is wrong for half the readers. Reconciled by
+  // effectiveDisplayName — see utils/display-name.ts.
+  readerName:       string | null
+  readerCustomName: string | null
 }
 
 export type PublicComment = {
@@ -171,7 +170,7 @@ export function serializePublicComment(row: CommentRow, viewerReaderId: number |
   const isAdminReply = row.adminUserId !== null
   const authorName = isAdminReply
     ? ADMIN_REPLY_DISPLAY_NAME
-    : (row.readerName?.trim() || READER_FALLBACK_NAME)
+    : effectiveDisplayName({ customDisplayName: row.readerCustomName, displayName: row.readerName })
 
   return {
     id:           row.id,
@@ -305,8 +304,12 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     createdAt: new Date(),
   })
 
-  const id = Number((inserted as unknown as { insertId?: number }).insertId ?? 0)
-  return { ok: true, id }
+  // Destructured: db.insert() resolves to [ResultSetHeader, FieldPacket[]], so
+  // `.insertId` on the array itself is undefined and `Number(undefined ?? 0)` is 0
+  // — silently. Same trap as callback.get.ts and ip-bans.ts, guarded by
+  // tests/insert-id-integration.test.ts.
+  const [header] = inserted
+  return { ok: true, id: Number(header?.insertId ?? 0) }
 }
 
 export type DeleteActor =
@@ -525,7 +528,8 @@ export async function loadCommentThread(params: {
     parentId:    articleComments.parentId,
     body:        articleComments.body,
     createdAt:   articleComments.createdAt,
-    readerName:  readerAccounts.displayName,
+    readerName:       readerAccounts.displayName,
+    readerCustomName: readerAccounts.customDisplayName,
   }
 
   const topRows = await db
@@ -573,6 +577,9 @@ export type AdminCommentRow = {
   articleSlug:  string | null
   readerId:     number | null
   readerName:   string | null
+  /** The raw Google column, kept on the row so /admin/readers/[id] can show what
+   *  the account was originally called next to the chosen name. */
+  readerCustomName: string | null
   readerEmail:  string | null
   adminUserId:  number | null
   adminName:    string | null
@@ -622,7 +629,8 @@ export async function listCommentsForAdmin(params: {
       articleTitle: articles.title,
       articleSlug:  articles.slug,
       readerId:     articleComments.readerId,
-      readerName:   readerAccounts.displayName,
+      readerName:       readerAccounts.displayName,
+      readerCustomName: readerAccounts.customDisplayName,
       readerEmail:  readerAccounts.email,
       adminUserId:  articleComments.adminUserId,
       adminName:    users.username,
@@ -639,7 +647,22 @@ export async function listCommentsForAdmin(params: {
     .limit(perPage)
     .offset((page - 1) * perPage)
 
-  return { comments: rows, total, page, perPage, totalPages }
+  return {
+    // `readerName` is resolved to the name the PUBLIC sees, not the raw Google
+    // column. An officer acting on a report about "Bác Ba" has to be able to find
+    // the row that says "Bác Ba"; a moderation list showing a different name from
+    // the thread it moderates is a list that cannot be used for its one job.
+    comments: rows.map(row => ({
+      ...row,
+      readerName: row.readerId === null
+        ? null
+        : effectiveDisplayName({ customDisplayName: row.readerCustomName, displayName: row.readerName }),
+    })),
+    total,
+    page,
+    perPage,
+    totalPages,
+  }
 }
 
 export type AdminReplyResult =
@@ -703,7 +726,12 @@ export async function createAdminReply(params: {
       createdAt:   new Date(),
     })
 
-    id = Number((inserted as unknown as { insertId?: number }).insertId ?? 0)
+    // Destructured for the reason above — and here the cost of getting it wrong is
+    // the concrete one: `resourceId: 0` on the audit row below, an official reply
+    // in force whose audit entry points at no row. Exactly what wrapping these two
+    // writes in a transaction exists to prevent.
+    const [header] = inserted
+    id = Number(header?.insertId ?? 0)
 
     await tx.insert(activityLogs).values({
       userId:     params.actorId,

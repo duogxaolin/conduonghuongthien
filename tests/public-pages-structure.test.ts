@@ -77,6 +77,33 @@ test('the shared detail component resolves the category label by precedence', ()
 })
 
 // ─── The timezone bug the consolidation removed ──────────────────────────────
+
+/**
+ * Named exemptions, counted per occurrence.
+ *
+ * The rule below exists because a date rendered with `getDate()` reads the
+ * RUNTIME timezone, so the server and the visitor's browser can disagree by a
+ * day about the same article. That argument needs two things to be true: the
+ * value comes from the database, and the markup is rendered on both sides.
+ *
+ * `pages/nguoi-doc.vue` is the one place where neither holds. Its reading-history
+ * timestamps are epoch milliseconds produced by `Date.now()` in this very browser
+ * and stored only in this browser's localStorage (see
+ * app/composables/useReadingHistory.ts for why they are deliberately NOT on the
+ * server), and the whole block sits inside `<client-only>`. Formatting those with
+ * `formatDateVN` — which reads `getUTC*` — is the bug rather than the fix: it
+ * shifts every stamp back 7 hours, so an article read at 6am in Vietnam is
+ * reported as having been read the previous day.
+ *
+ * The count is pinned, not just the filename: a second local-time formatter added
+ * to this page would be a real regression, and a bare allowlist entry would hide
+ * it. Adding an entry here is meant to require justifying it.
+ */
+const LOCAL_TIME_EXEMPTIONS: Record<string, number> = {
+  // getDate() + getMonth() + getFullYear(), all inside formatReadAt().
+  'pages/nguoi-doc.vue': 3,
+}
+
 test('no public page formats a date in local time', () => {
   const offenders: string[] = []
   const walk = (dir: string) => {
@@ -87,13 +114,38 @@ test('no public page formats a date in local time', () => {
         const source = readFileSync(new URL(path, appRoot), 'utf8')
         // getDate/getMonth/getFullYear read the *runtime* timezone; the server
         // and the visitor's browser can disagree by a day.
-        if (/\.get(Date|Month|FullYear)\(\)/.test(source)) offenders.push(path)
+        const hits = source.match(/\.get(Date|Month|FullYear)\(\)/g)?.length ?? 0
+        const allowed = LOCAL_TIME_EXEMPTIONS[path] ?? 0
+        if (hits > allowed) offenders.push(`${path} (${hits} occurrences, ${allowed} allowed)`)
       }
     }
   }
   walk('pages/')
   walk('components/')
   assert.deepEqual(offenders, [], `local-time date formatting reintroduced in: ${offenders.join(', ')}`)
+})
+
+test('the exempted local-time formatter is still confined to client-only, device-local data', () => {
+  // The exemption above is only defensible while both of its premises hold. If the
+  // reading history ever moves to the server, or the block leaves <client-only>,
+  // the SSR-vs-browser mismatch becomes real and the exemption has to go.
+  const source = read('pages/nguoi-doc.vue')
+  // Anchored to a line that IS the tag, not merely a line mentioning it. A bare
+  // /<client-only>/ also matches the prose above the template explaining why the
+  // tag is there — so deleting the tag while keeping the comment would leave this
+  // test green, and the comment would go on describing a guard that was gone.
+  assert.match(source, /^\s*<client-only>\s*$/m, 'the profile page no longer defers rendering to the client')
+  assert.match(source, /^\s*<\/client-only>\s*$/m, 'the client-only wrapper is no longer closed')
+  assert.match(
+    source,
+    /function formatReadAt\(/,
+    'the exempted formatter was renamed or removed — revisit LOCAL_TIME_EXEMPTIONS',
+  )
+  assert.doesNotMatch(
+    source,
+    /formatDateVN\(item\.readAt\)/,
+    'reading-history stamps are epoch ms from this browser; formatDateVN reads getUTC* and shifts them back 7 hours',
+  )
 })
 
 test('the shared components format dates through the UTC-safe helper', () => {
@@ -174,4 +226,67 @@ test('drawer dựng từ cùng nguồn menu với thanh ngang', () => {
     'thanh ngang và drawer phải đọc cùng một navMenu, không phải hai danh sách rời',
   )
   assert.match(source, /toggleMobileSubmenu\(item\.id\)/, 'drawer cần accordion cho mục có con')
+})
+
+// ─── Khối danh tính người đọc: phải có ở CẢ HAI bề mặt ───────────────────────
+
+test('khối danh tính người đọc có mặt ở cả header desktop và ngăn kéo mobile', () => {
+  /**
+   * Đây là phần vá lỗi, không phải trang trí.
+   *
+   * Khối ở header mang `hidden lg:flex`, và ngăn kéo mobile trước đây **không có**
+   * khối nào tương đương — nên trên điện thoại, tính năng đăng nhập của người đọc
+   * không tồn tại, trong khi phần lớn công dân đọc cổng này bằng điện thoại. Một
+   * lần dọn dẹp sau này rất dễ gộp hai khối lại thành một rồi vô tình bỏ mất bản
+   * trong ngăn kéo, và triệu chứng chỉ hiện ra trên điện thoại.
+   *
+   * Đếm theo số lần xuất hiện thay vì chỉ tìm một chuỗi: một khối đúng nhưng bị
+   * nhân bản ở sai chỗ vẫn khớp một phép tìm đơn lẻ.
+   */
+  const source = read('layouts/default.vue')
+
+  assert.ok(
+    (source.match(/@click="readerSignIn\(\)"/g) ?? []).length >= 2,
+    'chỉ còn một nút đăng nhập — một trong hai bề mặt (header desktop / ngăn kéo mobile) đã mất khối danh tính',
+  )
+  assert.ok(
+    (source.match(/to="\/nguoi-doc"/g) ?? []).length >= 2,
+    'thiếu đường vào trang cá nhân ở một trong hai bề mặt',
+  )
+  assert.ok(
+    (source.match(/@click="onReaderSignOut"/g) ?? []).length >= 2,
+    'thiếu nút đăng xuất ở một trong hai bề mặt',
+  )
+})
+
+test('cả hai khối danh tính đều dựng phía client và không có fallback', () => {
+  /**
+   * Điều kiện tiên quyết, không phải tinh chỉnh: mọi trang công khai phục vụ qua
+   * `swr: 60`, nên một cái tên lọt vào HTML dựng phía máy chủ sẽ được phát lại cho
+   * người kế tiếp trong cùng cửa sổ 60 giây.
+   *
+   * Và không `fallback`: một nút "Đăng nhập" nhấp nháy rồi đổi thành tên là câu trả
+   * lời sai hiện ra trước câu trả lời đúng.
+   */
+  const source = read('layouts/default.vue')
+
+  assert.ok(
+    (source.match(/v-if="readerLoaded"/g) ?? []).length >= 2,
+    'một khối danh tính vẽ trước khi biết người đọc là ai',
+  )
+  assert.doesNotMatch(
+    source,
+    /<client-only[^>]*>[\s\S]*?<template #fallback>/,
+    'fallback làm nhấp nháy trạng thái đăng nhập',
+  )
+})
+
+test('menu danh tính đóng được bằng Escape và bằng cú bấm ra ngoài', () => {
+  // Một menu chỉ đóng được bằng cách bấm lại đúng nút đã mở nó là một cái bẫy bàn
+  // phím. `mousedown` chứ không `click`: đóng ở `click` thì handler chạy sau khi
+  // Vue đã tháo phần tử, nên liên kết bên trong menu không kịp điều hướng.
+  const source = read('layouts/default.vue')
+  assert.match(source, /isReaderMenuOpen\.value = false/, 'không có đường đóng menu danh tính')
+  assert.match(source, /mousedown', handleDocumentPointerDown/, 'bấm ra ngoài không đóng menu')
+  assert.match(source, /removeEventListener\('mousedown', handleDocumentPointerDown\)/, 'listener không được dọn khi unmount')
 })

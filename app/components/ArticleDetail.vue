@@ -285,6 +285,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { classifySource } from '~/utils/analytics-collector'
 import { buildToc, TOC_MIN_HEADINGS } from '~/utils/toc'
+import { useReadingHistory } from '~/composables/useReadingHistory'
+
+const { record: recordRead } = useReadingHistory()
 
 const props = defineProps({
   /** Article slug (or id) to fetch. */
@@ -421,6 +424,25 @@ onMounted(() => pingView(props.slug))
 // `onMounted` chỉ chạy một lần cho cả chuỗi bài đọc liên tiếp.
 watch(() => props.slug, slug => pingView(slug))
 
+/**
+ * Ghi bài vừa đọc vào lịch sử đọc của **thiết bị này** (`localStorage`).
+ *
+ * Cố ý không có bảng nào trên máy chủ: xem `app/composables/useReadingHistory.ts`
+ * để biết vì sao — một bảng "công dân nào đã đọc bài nào, lúc nào" là dữ liệu nhạy
+ * cảm nhất mà dự án này chưa từng có, và nó sẽ sống lâu hơn mọi ai còn quan tâm
+ * tới danh sách "bài đã đọc".
+ *
+ * Theo `article.value` chứ không theo `props.slug`: `lazy: true` nghĩa là bài về
+ * **sau** mount, nên ghi lúc mount sẽ lưu một hàng không có tiêu đề — và trang cá
+ * nhân sẽ liệt kê một danh sách slug thay vì một danh sách bài viết. `watch` với
+ * `immediate` phủ cả hai trường hợp: lượt tải đầu (dữ liệu về sau) và điều hướng
+ * phía client sang bài kế tiếp (component được dùng lại).
+ *
+ * Không nuốt lỗi ở đây vì không có gì để nuốt — `record` tự lo phần đó.
+ */
+watch(article, value => {
+  if (value?.slug) recordRead(value.slug, value.title || '')
+}, { immediate: true })
 </script>
 
 <style scoped>
