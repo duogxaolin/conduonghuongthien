@@ -33,22 +33,35 @@ export default defineEventHandler(async (event) => {
   // Sanitize rich-text fields — block data is rendered with v-html publicly.
   const data = sanitizeBlockData(body?.data && typeof body.data === 'object' ? body.data : getDefaultData(blockType))
 
-  const [res] = await db.insert(pageBlocks).values({
-    pageId,
-    blockType,
-    displayOrder: Number(maxOrder) + 1,
-    data: data as any,
-    isVisible: true,
-    updatedBy: adminUser.id,
-  })
+  /**
+   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+   *
+   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+   * commit độc lập trên pool.
+   */
+  const insertedId = await db.transaction(async (tx) => {
+    const [res] = await tx.insert(pageBlocks).values({
+      pageId,
+      blockType,
+      displayOrder: Number(maxOrder) + 1,
+      data: data as any,
+      isVisible: true,
+      updatedBy: adminUser.id,
+    })
 
-  const insertedId = (res as any).insertId
+    const created = (res as any).insertId
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'create',
-    resource: 'pages',
-    meta: { pageId, blockId: Number(insertedId), blockType },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'create',
+      resource: 'pages',
+      meta: { pageId, blockId: Number(insertedId), blockType },
+    })
+
+    return created
   })
 
   const [block] = await db.select().from(pageBlocks).where(eq(pageBlocks.id, Number(insertedId))).limit(1)

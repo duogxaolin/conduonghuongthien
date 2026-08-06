@@ -238,3 +238,97 @@ describe('the MFA-confirm exclusion is deliberate and still correct', () => {
     )
   })
 })
+
+
+/**
+ * Every remaining admin endpoint that mutates and audits on the same request.
+ *
+ * The destructive subset above was fixed first because a failed audit after a
+ * delete is unrecoverable. This list is the rest: create and update paths, where
+ * a failed audit leaves a row that still exists but no record of who changed it.
+ * That is a weaker failure, not a harmless one — on a government portal, "who
+ * granted this role", "who edited this article" and "who changed this setting"
+ * are exactly the questions the log exists to answer.
+ *
+ * Discovered by measurement, not by reading: 43 of the 92 endpoints that call
+ * `getDb()` directly also write `activity_logs`, and 39 of those wrote the pair
+ * unwrapped. Nothing was watching that part of the tree.
+ *
+ * DELIBERATELY EXCLUDED, and asserted separately below:
+ *   • profile/mfa/confirm.post.ts, profile/mfa/recovery-codes.post.ts,
+ *     auth/logout.post.ts — each writes an HTTP cookie between the two database
+ *     writes. A cookie is a side effect on the response that no rollback can
+ *     retract, so wrapping would create a worse state than it fixes.
+ *   • articles/[id]/boost.post.ts — audits through the shared boost service
+ *     rather than inline, so it has no local pair to wrap.
+ */
+const AUDITED_MUTATION_ENDPOINTS: string[] = [
+  'server/api/admin/articles/[id].put.ts',
+  'server/api/admin/articles/index.post.ts',
+  'server/api/admin/home-sections/[id].put.ts',
+  'server/api/admin/home-sections/[id]/toggle.patch.ts',
+  'server/api/admin/media/upload.post.ts',
+  'server/api/admin/pages/[id].put.ts',
+  'server/api/admin/pages/[id]/blocks/[blockId].put.ts',
+  'server/api/admin/pages/[id]/blocks/index.post.ts',
+  'server/api/admin/pages/[id]/versions/[versionId]/restore.post.ts',
+  'server/api/admin/pages/index.post.ts',
+  'server/api/admin/roles/index.post.ts',
+  'server/api/admin/settings/index.put.ts',
+  'server/api/admin/settings/navigation.put.ts',
+  'server/api/admin/settings/navigation/mobile.put.ts',
+  'server/api/admin/settings/navigation/navbar.put.ts',
+  'server/api/admin/users/[id].put.ts',
+  'server/api/admin/users/index.post.ts',
+]
+
+describe('admin mutation endpoints commit their write and their audit row together', () => {
+  for (const file of AUDITED_MUTATION_ENDPOINTS) {
+    it(`${file.replace('server/api/admin/', '')} wraps both in one transaction`, () => {
+      const source = read(file)
+      assert.match(source, /db\.transaction\(/, 'the write and its audit row are not atomic')
+      assert.match(source, /tx\.insert\(activityLogs\)/,
+        'the audit row is inserted on the pool rather than the transaction handle — it would commit independently')
+      assert.ok(!/\bawait db\.insert\(activityLogs\)/.test(source),
+        'a pool-level activityLogs insert remains; move it onto the tx handle')
+    })
+  }
+
+  /**
+   * The mutation must be on `tx` too. A transaction carrying only the audit row
+   * is worse than none: the log would roll back while the change stood.
+   */
+  it('no pool-level write survives inside a transaction block', () => {
+    for (const file of AUDITED_MUTATION_ENDPOINTS) {
+      const source = read(file)
+      const start = source.indexOf('db.transaction(')
+      let depth = 0, started = false, end = start
+      for (let i = start; i < source.length; i++) {
+        if (source[i] === '{') { depth++; started = true }
+        else if (source[i] === '}') depth--
+        if (started && depth === 0) { end = i; break }
+      }
+      const body = source.slice(start, end)
+      assert.ok(!/\bdb\.(insert|update|delete)\(/.test(body),
+        `${file} performs a pool-level write inside its transaction — it commits independently`)
+    }
+  })
+})
+
+describe('cookie-writing endpoints are excluded on purpose', () => {
+  /**
+   * Asserted rather than assumed. If the cookie write moves out from between the
+   * two database writes, these fail and the endpoint should join the list above.
+   */
+  for (const file of [
+    'server/api/admin/profile/mfa/confirm.post.ts',
+    'server/api/admin/profile/mfa/recovery-codes.post.ts',
+    'server/api/admin/auth/logout.post.ts',
+  ]) {
+    it(`${file.replace('server/api/admin/', '')} still writes a cookie mid-request`, () => {
+      const source = read(file)
+      assert.match(source, /setSessionCookie\(|deleteCookie\(|setCookie\(/,
+        'the cookie write is gone — re-evaluate whether this endpoint can now be wrapped in a transaction')
+    })
+  }
+})

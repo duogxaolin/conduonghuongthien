@@ -42,22 +42,35 @@ export default defineEventHandler(async (event) => {
   const passwordHash = await hashPassword(password)
 
   try {
-    const [result] = await db.insert(users).values({
-      username,
-      email,
-      passwordHash,
-      roleId,
-      isActive: true,
-    })
+    /**
+     * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+     *
+     * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+     * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+     * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+     * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+     * commit độc lập trên pool.
+     */
+    const newUserId = await db.transaction(async (tx) => {
+      const [result] = await tx.insert(users).values({
+        username,
+        email,
+        passwordHash,
+        roleId,
+        isActive: true,
+      })
 
-    const newUserId = result.insertId
+      const created = result.insertId
 
-    await db.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'create',
-      resource: 'users',
-      resourceId: newUserId,
-      meta: { username, roleId },
+      await tx.insert(activityLogs).values({
+        userId: adminUser.id,
+        action: 'create',
+        resource: 'users',
+        resourceId: created,
+        meta: { username, roleId },
+      })
+
+      return created
     })
 
     return { ok: true, id: newUserId }
