@@ -1,16 +1,14 @@
 import { getDb } from '../../../utils/db'
 import { media, settings, activityLogs } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { uploadLocalFile } from '../../../utils/media-local'
 import { uploadR2File, type R2Config } from '../../../utils/media-r2'
 import sharp from 'sharp'
 import path from 'node:path'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'media', 'create', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'media', 'create')
 
   const form = await readMultipartFormData(event)
   if (!form || form.length === 0) {

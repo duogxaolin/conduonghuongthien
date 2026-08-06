@@ -1,6 +1,6 @@
 import { getDb } from '../../../../utils/db'
 import { settings, activityLogs } from '../../../../db/schema'
-import { checkPermission } from '../../../../utils/auth'
+import { requireResourcePermission } from '../../../../utils/permissions'
 
 type MenuItem = {
   id: string
@@ -40,9 +40,7 @@ function sanitizeItem(item: unknown): MenuItem | null {
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'settings', 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden' })
-  }
+  requireResourcePermission(adminUser, 'settings', 'update')
 
   const body = await readBody(event).catch(() => ({}))
   if (!Array.isArray(body?.menu)) {

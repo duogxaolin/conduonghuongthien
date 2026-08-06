@@ -1,7 +1,7 @@
 import { getDb } from '../../../utils/db'
 import { articles, users } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { eq, count, desc, asc, isNull } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 /**
  * Danh sách người đăng bài, để đổ vào ô lọc ở `/admin/content/articles`.
@@ -21,9 +21,7 @@ import { eq, count, desc, asc, isNull } from 'drizzle-orm'
  */
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'news', 'read', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'news', 'read')
 
   const db = getDb()
 

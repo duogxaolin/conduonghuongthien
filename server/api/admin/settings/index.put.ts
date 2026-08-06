@@ -1,6 +1,6 @@
 import { getDb } from '../../../utils/db'
 import { settings, activityLogs } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 /**
  * Allow-list of settings keys writable through this endpoint. Previously ANY key
@@ -34,9 +34,7 @@ const MAX_VALUE_LENGTH = 20_000
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'settings', 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'settings', 'update')
 
   const body = await readBody(event).catch(() => ({}))
   const newSettings = body?.settings

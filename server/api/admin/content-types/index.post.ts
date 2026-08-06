@@ -1,13 +1,11 @@
 import { getDb } from '../../../utils/db'
 import { contentTypes } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { uniqueContentTypeSlug } from '../../../utils/slug'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'categories', 'create', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'categories', 'create')
 
   const body = await readBody(event).catch(() => ({}))
   const name = String(body?.name || '').trim()

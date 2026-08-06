@@ -1,13 +1,11 @@
 import { getDb } from '../../../utils/db'
 import { roles, permissions } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { eq } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'roles', 'read', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'roles', 'read')
 
   const db = getDb()
   const roleList = await db.select().from(roles)

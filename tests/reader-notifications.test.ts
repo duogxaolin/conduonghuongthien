@@ -226,40 +226,90 @@ describe('notifications never enter server-rendered HTML', () => {
     assert.match(page, /onMounted\(/, 'the profile page no longer loads after mount')
   })
 
-  it('the header bell is wrapped in client-only', () => {
+  it('the header bell never renders on the server', () => {
+    /**
+     * The bell moved into `ReaderNotificationBell.client.vue`. The `.client`
+     * suffix is a stronger guarantee than a `<client-only>` wrapper — Nuxt never
+     * includes the component in the server bundle at all, so there is no wrapper
+     * for a later edit to accidentally drop.
+     *
+     * The constraint being protected is unchanged and is the load-bearing one:
+     * every public route is served with `swr: 60`, so anything rendered on the
+     * server carrying one reader's unread count would be replayed to the next
+     * visitor inside that window.
+     */
     const layout = read('app/layouts/default.vue')
-    const bell = layout.indexOf('fa-bell')
-    assert.ok(bell !== -1, 'the header bell is gone')
-    // The nearest enclosing <client-only> opens before the bell and closes after.
-    const before = layout.slice(0, bell)
-    assert.ok(before.lastIndexOf('<client-only>') > before.lastIndexOf('</client-only>'),
-      'the notification bell is rendered outside <client-only>')
+    /**
+     * Matched on the dropdown, not on `fa-bell`: the mobile drawer entry
+     * legitimately uses that same icon next to `unreadCount`, so a proximity
+     * match cannot tell the two surfaces apart. `aria-haspopup="menu"` is the
+     * part only the desktop bell has, and it is what would come back if someone
+     * inlined the component again.
+     */
+    assert.ok(!/aria-haspopup="menu"[\s\S]{0,600}fa-bell/.test(layout),
+      'the desktop bell dropdown came back into the layout — it belongs in the .client component')
+    assert.match(layout, /<ReaderNotificationBell/, 'the layout no longer renders the bell at all')
+
+    const clientOnly = existsSync(new URL('../app/components/ReaderNotificationBell.client.vue', import.meta.url))
+    assert.ok(clientOnly,
+      'the bell component lost its .client suffix — it would now render during SSR, '
+      + 'and swr:60 would serve one reader’s notifications to the next visitor')
   })
 })
 
 describe('the bell exists on BOTH surfaces', () => {
   const layout = read('app/layouts/default.vue')
+  const bell = read('app/components/ReaderNotificationBell.client.vue')
 
   /**
-   * Counted by occurrence, not by presence.
+   * Counted by occurrence across BOTH files, not by presence in one.
    *
-   * The desktop block carries `hidden lg:flex`, so a later tidy-up that merged
-   * the two surfaces into one would remove the mobile entry and the symptom would
+   * The desktop bell lives in its own component and the mobile entry lives in
+   * the drawer inside the layout, so this reads the pair. A later tidy-up that
+   * merged the two surfaces would remove the mobile entry and the symptom would
    * appear only on phones — which is exactly what happened once already with the
    * sign-in button. Most citizens read this portal on a phone.
    */
   it('renders a bell on desktop and a notifications entry in the mobile drawer', () => {
-    const bells = layout.match(/fa-bell/g) ?? []
-    assert.ok(bells.length >= 2, `expected a bell on both surfaces, found ${bells.length}`)
+    const desktop = (bell.match(/fa-bell/g) ?? []).length
+    const mobile = (layout.match(/fa-bell/g) ?? []).length
+    assert.ok(desktop >= 1, 'the desktop bell is gone from ReaderNotificationBell.client.vue')
+    assert.ok(mobile >= 1, 'the mobile drawer lost its bell — the symptom would only show on phones')
   })
 
   it('shows the unread badge on both surfaces', () => {
-    const badges = layout.match(/unreadCount > 9 \? '9\+' : unreadCount/g) ?? []
-    assert.ok(badges.length >= 2, `expected an unread badge on both surfaces, found ${badges.length}`)
+    const badge = /unreadCount > 9 \? '9\+' : unreadCount/g
+    assert.ok((bell.match(badge) ?? []).length >= 1, 'the desktop badge is gone')
+    assert.ok((layout.match(badge) ?? []).length >= 1, 'the mobile drawer badge is gone')
+  })
+
+  /**
+   * The mobile badge is the reason the layout still loads notifications eagerly
+   * instead of leaving it to the bell's open handler: the drawer entry is a flat
+   * link with no open event to hang a fetch on. Drop this and the number on
+   * phones is permanently 0 while the feature looks broken.
+   */
+  it('the layout still loads notifications so the mobile badge has a number', () => {
+    assert.match(layout, /watch\(reader/, 'the eager load is gone — the mobile badge would always read 0')
+    assert.match(layout, /loadNotifications\(/, 'the layout no longer triggers the notification load')
   })
 
   it('the mobile entry links to the notifications block on the profile page', () => {
     assert.match(layout, /\/profile#notifications/, 'the mobile drawer no longer reaches notifications')
+  })
+
+  /**
+   * The extraction only pays for itself if the component owns its own dismissal.
+   * While Escape and outside-click lived in the layout, the layout had to keep a
+   * ref and two branches for a menu it no longer draws — moving the markup alone
+   * would have relocated text without removing the coupling.
+   */
+  it('the bell owns its own dismissal handlers', () => {
+    assert.match(bell, /Escape/, 'the bell cannot be closed with the keyboard — that is a keyboard trap')
+    assert.match(bell, /addEventListener\('mousedown'/, 'the bell no longer closes on an outside click')
+    assert.match(bell, /removeEventListener\('mousedown'/, 'the bell leaks a document listener on unmount')
+    assert.ok(!/notifMenuRef|isNotifMenuOpen/.test(layout),
+      'the layout still holds bell menu state — the split did not actually decouple anything')
   })
 })
 
