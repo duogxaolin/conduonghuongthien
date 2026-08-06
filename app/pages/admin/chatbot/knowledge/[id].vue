@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AdminKnowledgeDetail } from '~/types/admin-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const route = useRoute()
@@ -32,7 +33,7 @@ const form = reactive({
 
 const split = (value: string) => value.split(/[\n,]/u).map(item => item.trim()).filter(Boolean)
 
-function applyItem(item: any) {
+function applyItem(item: NonNullable<AdminKnowledgeDetail['item']>) {
   form.canonicalQuestion = item.canonicalQuestion || ''
   form.approvedAnswer = item.approvedAnswer || ''
   form.topic = item.topic || 'general'
@@ -68,7 +69,8 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const response = await $fetch<any>(`/api/admin/chatbot/knowledge/${route.params.id}`)
+    const response = await $fetch<AdminKnowledgeDetail>(`/api/admin/chatbot/knowledge/${route.params.id}`)
+    if (!response?.item) throw createError({ statusCode: 404, statusMessage: 'Mục kiến thức không tồn tại.' })
     applyItem(response.item)
   } catch (err: unknown) {
     error.value = errorMessage(err, 'Không thể tải mục kiến thức.')
@@ -85,10 +87,18 @@ async function save() {
   }
   saving.value = true
   try {
-    const response = await $fetch<any>(isNew.value ? '/api/admin/chatbot/knowledge' : `/api/admin/chatbot/knowledge/${route.params.id}`, {
+    const response = await $fetch<AdminKnowledgeDetail>(isNew.value ? '/api/admin/chatbot/knowledge' : `/api/admin/chatbot/knowledge/${route.params.id}`, {
       method: isNew.value ? 'POST' : 'PUT',
       body: contentPayload(),
     })
+    /**
+     * `adminKnowledge()` trả `null` khi không tìm thấy hàng, nên phản hồi khai
+     * `item: … | null`. Trước đây `$fetch<any>` che chỗ này: `response.item.id`
+     * trên một `null` sẽ ném **trong khối `try`**, nên nó hiện ra dưới dạng
+     * "Không thể lưu mục kiến thức" — tức là báo lưu thất bại cho một lượt lưu
+     * đã thành công, và cán bộ sẽ đi bấm lưu lần nữa.
+     */
+    if (!response?.item) throw createError({ statusCode: 500, statusMessage: 'Máy chủ không trả về nội dung vừa lưu.' })
     applyItem(response.item)
     toast.success(isNew.value ? 'Đã tạo bản nháp kiến thức.' : 'Đã cập nhật nội dung kiến thức.')
     if (isNew.value) await navigateTo(`/admin/chatbot/knowledge/${response.item.id}`)

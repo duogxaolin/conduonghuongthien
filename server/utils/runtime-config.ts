@@ -10,10 +10,44 @@
  *
  * Returns undefined outside Nitro so callers keep falling back to process.env.
  */
-export function tryRuntimeConfig(): Record<string, any> | undefined {
+/**
+ * Khối `runtimeConfig` như `nuxt.config.ts` khai, phản chiếu từng trường.
+ *
+ * Trước đây hàm dò trả `Record<string, any>`, và **tám** nơi gọi mỗi nơi tự đoán
+ * hình dạng của nó: `tryRuntimeConfig()?.[name]` (hai bản sao, khoá là chuỗi tuỳ
+ * ý), `tryRuntimeConfig() as { publicBaseUrl?: unknown }`, `?? {}` rồi đọc
+ * `config.dbHost`. Nghĩa là một khoá gõ sai — `dpHost`, `trustedProxyIp` —
+ * biên dịch trót lọt rồi **âm thầm rơi về `process.env`**, tức là về đúng giá
+ * trị mặc định. Trên máy dev không có biến đó thì kết quả giống hệt cấu hình
+ * đúng; chỉ ở production, nơi biến `NUXT_`-prefix mới có tác dụng, nó mới lệch.
+ *
+ * `trustedProxyIps` là chỗ hậu quả nặng nhất: đọc trượt khoá đó là danh sách
+ * proxy tin cậy thành rỗng, tức mọi khách sau nginx bị gộp thành **một** ô đếm
+ * giới hạn tần suất (lỗi đã ghi trong CLAUDE.md), và không có gì báo.
+ *
+ * Khai một chỗ thì thêm trường vào `nuxt.config.ts` là thêm ở đây, và mọi nơi
+ * đọc sai khoá đỏ ngay lượt typecheck.
+ */
+export interface AppRuntimeConfig {
+  aiApiKey?: string
+  aiBaseUrl?: string
+  aiModel?: string
+  trustedProxyIps?: string
+  publicBaseUrl?: string
+  analytics?: AnalyticsRuntimeConfig
+  /** Nitro tự nạp `NUXT_`-prefix cho các khoá CSDL; không khai trong nuxt.config.ts. */
+  dbHost?: string
+  dbPort?: string
+  dbUser?: string
+  dbPassword?: string
+  dbName?: string
+  public?: Record<string, unknown>
+}
+
+export function tryRuntimeConfig(): AppRuntimeConfig | undefined {
   const candidate = (globalThis as Record<string, unknown>).useRuntimeConfig
   return typeof candidate === 'function'
-    ? (candidate as () => Record<string, any>)()
+    ? (candidate as () => AppRuntimeConfig)()
     : undefined
 }
 

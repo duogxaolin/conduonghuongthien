@@ -18,7 +18,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event).catch(() => ({}))
-  const updateFields: any = {}
+  const updateFields: Partial<typeof categories.$inferInsert> = {}
 
   if (body.name !== undefined) updateFields.name = String(body.name).trim()
   if (body.type !== undefined) updateFields.type = String(body.type).trim()

@@ -121,7 +121,7 @@ const handleSave = async () => {
   if (!form.name.trim()) { toast.warning('Tên thể loại không được để trống'); return }
   saving.value = true
   try {
-    const payload: any = {
+    const payload: Record<string, string | boolean | number | null> = {
       name: form.name.trim(),
       icon: form.icon.trim() || null,
       description: form.description.trim() || null,

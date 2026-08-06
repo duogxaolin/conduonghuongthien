@@ -32,7 +32,7 @@ export function usePagePreview() {
 
   let ro: ResizeObserver | null = null
 
-  const post = (msg: any) => {
+  const post = (msg: Record<string, unknown>) => {
     try { window.parent?.postMessage(msg, window.location.origin) } catch { /* ignore */ }
   }
 

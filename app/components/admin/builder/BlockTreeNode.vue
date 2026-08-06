@@ -52,15 +52,25 @@
 // its registry icon/label, indents by depth, and — for layout containers — offers
 // a contextual "+ add child" button. Selection + palette are driven through an
 // injected `tree` bridge so this component recurses cleanly at any depth.
-import { computed, inject } from 'vue'
-import type { BuilderNode } from '~/utils/blocks/types'
+import { computed, inject, ref } from 'vue'
+import type { BuilderNode, BuilderTreeApi } from '~/utils/blocks/types'
 import { BLOCK_REGISTRY, isContainerType } from '~/utils/blocks/registry'
 
 defineOptions({ name: 'BlockTreeNode' })
 
 const props = defineProps<{ node: BuilderNode; depth: number }>()
 
-const tree = inject<any>('builderTree')
+/**
+ * `inject` không có giá trị mặc định sẽ trả `undefined` khi component được dùng
+ * ngoài trang dựng — và template thì đọc `tree.selectedId` không qua `?.`, nên
+ * `inject<any>` cũ biến chuyện đó thành một lỗi lúc chạy. Giá trị dự phòng khai
+ * tường minh: cây vẫn vẽ được (chỉ là không chọn được gì), thay vì trắng màn.
+ */
+const tree = inject<BuilderTreeApi>('builderTree', {
+  selectedId: ref<number | string | null>(null),
+  select: () => {},
+  openPalette: () => {},
+})
 
 const def = computed(() => BLOCK_REGISTRY[props.node?.blockType])
 const isContainer = computed(() => isContainerType(props.node?.blockType))

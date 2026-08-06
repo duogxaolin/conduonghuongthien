@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { WindowWithTinyMce } from '~/types/tinymce'
 import type { AdminCategoryRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
@@ -71,8 +72,8 @@ const fetchArticle = async () => {
       // Explicitly load categories for the article's type so the dropdown
       // renders the saved selection. The watcher is suppressed and won't do this.
       await fetchCategories(form.type)
-      if (tinymceReady.value && (window as any).tinymce) {
-        const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+      if (tinymceReady.value && (window as WindowWithTinyMce).tinymce) {
+        const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
         if (ed) ed.setContent(form.content)
       }
     }
@@ -90,8 +91,8 @@ const fetchArticle = async () => {
 const toast = useToast()
 
 const getEditorContent = (): string => {
-  if ((window as any).tinymce) {
-    const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+  if ((window as WindowWithTinyMce).tinymce) {
+    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
     if (ed) return ed.getContent()
   }
   return form.content
@@ -130,8 +131,8 @@ const openMediaPicker = (target: 'thumbnail' | 'content') => {
     openPicker({
       onSelect: (media) => {
         const imgHtml = `<p><img src="${media.url}" alt="${media.originalName}" /></p>`
-        if ((window as any).tinymce) {
-          const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+        if ((window as WindowWithTinyMce).tinymce) {
+          const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
           if (ed) { ed.insertContent(imgHtml); return }
         }
         form.content += '\n' + imgHtml
@@ -150,9 +151,12 @@ const uploadThumbnailFromInput = async (e: Event) => {
 
 const initTinyMCE = () => {
   if (typeof window === 'undefined') return
-  const win = window as any
+  const win = window as WindowWithTinyMce
   if (!win.tinymce) return
-  if (win.tinymce.get(TINYMCE_EDITOR_ID)) win.tinymce.get(TINYMCE_EDITOR_ID).remove()
+  // Lấy một lần rồi dùng: gọi `.get()` hai lần thì lời gọi thứ hai có thể trả
+    // `undefined` khi trình soạn thảo bị gỡ giữa hai lần — và `.remove()` trên
+    // undefined là một lỗi lúc chạy ngay giữa lượt điều hướng.
+    win.tinymce?.get(TINYMCE_EDITOR_ID)?.remove()
   win.tinymce.init({
     selector: `#${TINYMCE_EDITOR_ID}`,
     height: 480,
@@ -226,7 +230,7 @@ const initTinyMCE = () => {
 }
 
 const loadTinyMCEScript = () => new Promise<void>((resolve) => {
-  if ((window as any).tinymce) { resolve(); return }
+  if ((window as WindowWithTinyMce).tinymce) { resolve(); return }
   const script = document.createElement('script')
   script.src = 'https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.6/tinymce.min.js'
   script.referrerPolicy = 'no-referrer'
@@ -253,8 +257,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if ((window as any).tinymce) {
-    const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+  if ((window as WindowWithTinyMce).tinymce) {
+    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
     if (ed) ed.destroy()
   }
 })

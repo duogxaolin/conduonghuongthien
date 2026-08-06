@@ -63,7 +63,7 @@ const openEditModal = (user: AdminUserRow) => {
 const handleUpdateUser = async () => {
   errorMsg.value = ''
   try {
-    const body: any = { email: editForm.email, roleId: editForm.roleId, isActive: editForm.isActive }
+    const body: Record<string, string | number | boolean> = { email: editForm.email, roleId: editForm.roleId, isActive: editForm.isActive }
     if (editForm.password.trim()) {
       if (editForm.password.trim().length < 6) {
         toast.warning('Mật khẩu mới phải có ít nhất 6 ký tự'); return

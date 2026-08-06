@@ -80,9 +80,17 @@ function fromSchemaTs(unmapped: Set<string>): Map<string, TableShape> {
     const nameSymbol = symbols.find(s => s.description === 'drizzle:Name')
     const columnsSymbol = symbols.find(s => s.description === 'drizzle:Columns')
     if (!nameSymbol || !columnsSymbol) continue
-    const table = (value as any)[nameSymbol] as string
+    /**
+     * Drizzle giữ tên bảng và bản đồ cột dưới **symbol nội bộ**, không phải khoá
+     * chuỗi — nên không có kiểu công khai nào để đọc chúng. Khai đúng hình dạng
+     * cần dùng (thay cho `as any`) để một lần đổi cấu trúc cột của Drizzle làm
+     * cổng này đỏ, chứ không âm thầm đọc `undefined` rồi báo "không lệch gì".
+     */
+    const internals = value as unknown as Record<symbol, unknown>
+    const table = internals[nameSymbol] as string
     const columns = new Map<string, ColumnShape>()
-    for (const column of Object.values((value as any)[columnsSymbol] as Record<string, any>)) {
+    const columnMap = internals[columnsSymbol] as Record<string, DrizzleColumnInternals>
+    for (const column of Object.values(columnMap)) {
       const mapped = DRIZZLE_TO_SQL[column.constructor.name]
       if (!mapped) unmapped.add(column.constructor.name)
       columns.set(column.name, {
@@ -96,9 +104,23 @@ function fromSchemaTs(unmapped: Set<string>): Map<string, TableShape> {
   return out
 }
 
-/** Columns created by init.ts: CREATE TABLE bodies + additive migrations. */
+/**
+ * Cột do DDL khởi động tạo ra: thân `CREATE TABLE` + các lượt di trú bổ sung.
+ *
+ * Đọc **hai** tệp, và đó là điều kiện tiên quyết chứ không phải sự tiện lợi:
+ * `init.ts` giữ các câu `CREATE TABLE` còn `migrations-additive.ts` giữ các lượt
+ * `ensureColumn`. Đọc mỗi `init.ts` là bỏ qua đúng nhóm cột **mới nhất** — những
+ * cột chỉ tồn tại dưới dạng một lượt `ALTER` vì bảng đã có dữ liệu của cơ quan
+ * trên đó (`articles.comments_enabled`, `chat_sessions.reader_id` là hai ví dụ).
+ * Và đó là nhóm dễ lệch nhất, nên miễn trừ chúng là làm cổng này vô nghĩa ở đúng
+ * chỗ nó cần chặt nhất. Ghép nối chuỗi trước khi phân tích: hai tệp là một nguồn
+ * DDL, và một biểu thức chính quy chạy trên chuỗi ghép không cần biết ranh giới.
+ */
 function fromInitTs(): Map<string, TableShape> {
-  const source = readFileSync(path.join(root, 'server/db/init.ts'), 'utf8')
+  const source = [
+    readFileSync(path.join(root, 'server/db/init.ts'), 'utf8'),
+    readFileSync(path.join(root, 'server/db/migrations-additive.ts'), 'utf8'),
+  ].join('\n')
   const out = new Map<string, TableShape>()
 
   /** `\`col\` TYPE ...rest` → the shape, or null if the line is not a column. */

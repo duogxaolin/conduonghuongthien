@@ -23,7 +23,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const body = await readBody(event).catch(() => ({}))
-  const updateFields: any = {}
+  const updateFields: Partial<typeof pageBlocks.$inferInsert> = {}
 
   if (body.data !== undefined) {
     if (typeof body.data !== 'object' || body.data === null) {

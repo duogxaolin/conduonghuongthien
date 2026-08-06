@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
     if (permsInput.length > 0) {
       // Reject invalid resources and block granting permissions the actor lacks.
       assertAssignablePermissions(adminUser, permsInput)
-      const permValues = permsInput.map((p: any) => ({
+      const permValues = (permsInput as Array<Record<string, unknown>>).map(p => ({
         roleId: newRoleId,
         resource: String(p.resource),
         canCreate: Boolean(p.canCreate),

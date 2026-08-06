@@ -104,7 +104,7 @@ export default defineEventHandler(async (event) => {
             isVisible: b.isVisible,
             updatedBy: adminUser.id,
           })
-          keepIds.add(Number((res as any).insertId))
+          keepIds.add(Number(res.insertId))
         }
       }
 

@@ -45,7 +45,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<any>('/api/admin/ip-bans')
+    const res = await $fetch('/api/admin/ip-bans')
     if (!res?.ok) {
       error.value = 'Không tải được danh sách chặn.'
       return

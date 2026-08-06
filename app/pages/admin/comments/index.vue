@@ -55,7 +55,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<any>('/api/admin/comments', {
+    const res = await $fetch('/api/admin/comments', {
       query: { articleId: articleFilter.value || undefined, page: page.value },
     })
     if (!res?.ok) {

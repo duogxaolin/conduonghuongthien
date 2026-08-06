@@ -29,7 +29,7 @@ export default defineEventHandler(async (event) => {
   requireResourcePermission(adminUser, permResource, 'update')
 
   const body = await readBody(event).catch(() => ({}))
-  const updateFields: any = {}
+  const updateFields: Partial<typeof articles.$inferInsert> = {}
 
   if (body.title !== undefined) updateFields.title = String(body.title).trim()
   if (body.excerpt !== undefined) updateFields.excerpt = String(body.excerpt).trim() || null

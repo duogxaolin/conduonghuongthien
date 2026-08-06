@@ -47,12 +47,12 @@ export default defineEventHandler(async (event) => {
       pageId,
       blockType,
       displayOrder: Number(maxOrder) + 1,
-      data: data as any,
+      data,
       isVisible: true,
       updatedBy: adminUser.id,
     })
 
-    const created = (res as any).insertId
+    const created = res.insertId
 
     await tx.insert(activityLogs).values({
       userId: adminUser.id,

@@ -10,7 +10,9 @@ export type RecordAnalyticsNocInput = Parameters<typeof normalizeAnalyticsNocEve
   durationMs?: number
 }
 
-function runtimeValue(name: string) {
+/** Đọc một khoá CSDL của runtimeConfig. Khai `keyof` nên gõ sai khoá là lỗi
+ *  biên dịch, không phải một lượt âm thầm rơi về `process.env`. */
+function runtimeValue(name: 'dbHost' | 'dbPort' | 'dbUser' | 'dbPassword' | 'dbName') {
   return tryRuntimeConfig()?.[name]
 }
 

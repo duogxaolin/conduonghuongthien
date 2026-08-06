@@ -22,7 +22,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Không thể đổi tên vai trò hệ thống.' })
   }
 
-  const updateFields: any = {}
+  const updateFields: Partial<{ name: string, description: string | null }> = {}
   if (body.name) updateFields.name = String(body.name).trim()
   if (body.description !== undefined) updateFields.description = String(body.description).trim() || null
 
@@ -38,7 +38,7 @@ export default defineEventHandler(async (event) => {
     // Reject invalid resources and block granting permissions the actor lacks.
     assertAssignablePermissions(adminUser, body.permissions)
 
-    const permValues = body.permissions.map((p: any) => ({
+    const permValues = (body.permissions as Array<Record<string, unknown>>).map(p => ({
       roleId: id,
       resource: String(p.resource),
       canCreate: Boolean(p.canCreate),

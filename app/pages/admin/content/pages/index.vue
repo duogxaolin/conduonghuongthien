@@ -160,7 +160,7 @@ const fetchPages = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const res: any = await $fetch('/api/admin/pages')
+    const res = await $fetch('/api/admin/pages')
     if (res.ok) {
       pages.value = res.items
       selection.keepOnly(visibleIds.value)
@@ -204,7 +204,7 @@ const createPage = async () => {
   if (!createForm.title.trim()) return
   creating.value = true
   try {
-    const res: any = await $fetch('/api/admin/pages', {
+    const res = await $fetch('/api/admin/pages', {
       method: 'POST',
       body: { title: createForm.title.trim(), slug: createForm.slug.trim() || undefined },
     })

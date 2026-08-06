@@ -1,4 +1,7 @@
 <script setup lang="ts">
+// `errorMessage` ở tệp này đã là tên một ref hiển thị, nên helper dùng chung
+// vào dưới alias — trùng tên sẽ khiến ref che mất hàm và không có lỗi nào.
+import { errorMessage as readErrorMessage } from '~/utils/errorMessage'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 type EditableSettings = {
@@ -128,8 +131,8 @@ function markDirty() {
   dirty.value = editableSnapshot() !== baseline.value
 }
 
-function errorText(error: any) {
-  return error?.data?.statusMessage || 'Không thể hoàn tất thao tác. Vui lòng kiểm tra lại.'
+function errorText(error: unknown) {
+  return readErrorMessage(error, 'Không thể hoàn tất thao tác. Vui lòng kiểm tra lại.')
 }
 
 function normalizedHosts(value: string) {
@@ -332,9 +335,20 @@ async function testConnection() {
   testMessage.value = ''
   errorMessage.value = ''
   try {
-    const response = await $fetch<any>('/api/admin/chatbot/test', { method: 'POST' })
-    testMessage.value = response.result?.status === 'success'
-      ? `Kết nối thành công (${response.result.statusCode}, ${response.result.durationMs} ms).`
+    const response = await $fetch('/api/admin/chatbot/test', { method: 'POST' })
+    /**
+     * Thu hẹp bằng `'statusCode' in result`, không bằng `status === 'success'`.
+     *
+     * Endpoint trả **hai hình dạng khác nhau** — nhánh thành công có
+     * `statusCode`/`durationMs`, nhánh lỗi có `code`/`message` — nhưng cả hai
+     * đều mang `status`, nên so `status` không nói cho trình biên dịch biết
+     * đang cầm hình dạng nào. Trước đây `$fetch<any>` che chỗ này: đọc
+     * `.statusCode` trên nhánh lỗi cho ra `undefined` và in ra
+     * "Kết nối thành công (undefined, undefined ms)".
+     */
+    const result = response.result
+    testMessage.value = result && 'statusCode' in result
+      ? `Kết nối thành công (${result.statusCode}, ${result.durationMs} ms).`
       : 'Kết nối chưa thành công. Kiểm tra cấu hình và thử lại.'
   } catch (error) {
     errorMessage.value = errorText(error)
