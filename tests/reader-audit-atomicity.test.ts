@@ -22,7 +22,8 @@
  * gap is visible and a future change can close it on purpose.
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, it } from 'node:test'
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
@@ -331,4 +332,98 @@ describe('cookie-writing endpoints are excluded on purpose', () => {
         'the cookie write is gone — re-evaluate whether this endpoint can now be wrapped in a transaction')
     })
   }
+})
+
+/**
+ * Các SERVICE ghi audit — nhóm bị bỏ sót cho tới lượt rà này.
+ *
+ * Ba danh sách phía trên liệt kê **đường dẫn cụ thể** trong `server/api/admin/**`,
+ * nên toàn bộ `server/services/**` nằm ngoài tầm với của chúng, trừ sáu service
+ * phía người đọc được nêu tên riêng. Bảy đường ghi thật đã sống ở đó không ai
+ * canh: `deleteUserById`, `setUserActive`, `deletePageById`, `deleteMediaById`,
+ * `deleteSubmissionById`, `updateChatbotSettings`/`clearChatbotApiKey`, và bốn
+ * hàm trong `chatbot-small-talk.ts`.
+ *
+ * Nhóm này nghiêm trọng hơn nhóm endpoint theo một điểm **đo được**: cả năm hàm
+ * xoá đều được gọi từ **cả** tuyến xoá một hàng **lẫn** tuyến `bulk-delete`
+ * (`users/bulk-delete.post.ts`, `pages/`, `media/`, `submissions/`), nên một lượt
+ * xoá hàng loạt nhân số cơ hội lỗi lên theo số bản ghi được chọn. `deleteSubmissionById`
+ * là ca xấu nhất: nó xoá hồ sơ liên hệ của một công dân, và dòng audit là thứ duy
+ * nhất còn lại sau đó.
+ */
+const AUDITED_SERVICES: string[] = [
+  'server/services/users.ts',
+  'server/services/pages.ts',
+  'server/services/media.ts',
+  'server/services/submissions.ts',
+  'server/services/chatbot-settings.ts',
+  'server/services/chatbot-small-talk.ts',
+]
+
+describe('service-layer writes commit their mutation and their audit row together', () => {
+  for (const file of AUDITED_SERVICES) {
+    it(`${file.replace('server/services/', '')} wraps every audited write`, () => {
+      const source = read(file)
+      assert.match(source, /db\.transaction\(/, 'the write and its audit row are not atomic')
+      // `chatbot-small-talk.ts` audits through a local `audit(store, …)` helper
+      // whose PARAMETER is also named `db`, so a literal search for
+      // `db.insert(activityLogs)` matches the helper body and reports a pool-level
+      // write that does not exist. What decides atomicity there is the call site,
+      // and that is asserted separately below. So the pool-write check is scoped
+      // to files that write `activityLogs` inline.
+      const auditsViaHelper = /async function audit\(/.test(source)
+      if (!auditsViaHelper) {
+        assert.ok(
+          !/\bawait db\.insert\(activityLogs\)/.test(source),
+          'a pool-level activityLogs insert remains; move it onto the tx handle',
+        )
+      }
+      assert.ok(
+        !/\baudit\(db,/.test(source),
+        'the audit helper is still being handed the pool — pass `tx` so the row commits with the mutation',
+      )
+    })
+  }
+})
+
+/**
+ * Cổng quét cả THƯ MỤC, không chỉ danh sách tên ở trên.
+ *
+ * Đây là phần đợt trước thiếu, và nó thiếu theo cách không nhìn thấy được: ba
+ * danh sách kia liệt kê đường dẫn, nên chúng **xanh vĩnh viễn** với bất cứ tệp
+ * nào không ai nghĩ ra để thêm vào. Một service mới ghi cặp mutation + audit
+ * không bọc sẽ đi qua toàn bộ bộ test này mà không có gì đỏ.
+ *
+ * Guard này thì ngược lại: nó tự tìm mọi tệp trong `server/services/` có chạm
+ * `activityLogs`, và đòi mỗi tệp đó **hoặc** có `db.transaction(`, **hoặc** được
+ * nêu tên trong danh sách miễn trừ kèm lý do. Thêm một service mới là buộc phải
+ * chọn một trong hai — không còn nhánh im lặng.
+ */
+const SERVICE_EXEMPTIONS: Record<string, string> = {
+  // Ghi audit cho một lượt tăng lượt xem ảo đã do người gọi mở transaction; bọc
+  // lần thứ hai ở đây là lồng transaction chứ không thêm bảo đảm nào.
+  'article-views.ts': 'audits inside the caller-provided transaction',
+  'view-boost-scheduler.ts': 'audits inside the caller-provided transaction',
+}
+
+describe('no service writes activity_logs outside a transaction', () => {
+  it('every audited service is either wrapped or exempt with a stated reason', () => {
+    const dir = 'server/services'
+    const offenders: string[] = []
+    for (const entry of readdirSync(dir)) {
+      if (!entry.endsWith('.ts')) continue
+      const source = read(join(dir, entry))
+      if (!/activityLogs/.test(source)) continue
+      if (/db\.transaction\(/.test(source)) continue
+      if (SERVICE_EXEMPTIONS[entry]) continue
+      offenders.push(entry)
+    }
+    assert.deepEqual(
+      offenders,
+      [],
+      'ghi `activity_logs` mà không có `db.transaction(` — bọc lại, hoặc khai vào '
+      + 'SERVICE_EXEMPTIONS kèm lý do. Một danh sách liệt kê tên tệp thì xanh vĩnh viễn '
+      + 'với tệp nó chưa biết; guard này quét cả thư mục chính vì thế.',
+    )
+  })
 })
