@@ -1,3 +1,4 @@
+import { affectedRowsOrZero } from '../../../../utils/affected-rows'
 import { inArray } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { chatSessions, chatMessages } from '../../../../db/schema'
@@ -49,7 +50,7 @@ export default defineEventHandler(async (event) => {
    * tests/insert-id-integration.test.ts.
    */
   const [header] = deleted
-  const deletedCount = Number(header?.affectedRows ?? 0)
+  const deletedCount = affectedRowsOrZero(header)
 
   logInfo({
     event: 'chatbot.sessions_bulk_deleted',
