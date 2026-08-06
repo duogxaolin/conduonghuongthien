@@ -283,7 +283,7 @@ test('khung chờ của khối liên quan được thông báo và tôn trọng 
   const container = source.match(/<div\s+v-if="relatedPending"[\s\S]{0,300}?>/)?.[0] ?? ''
   assert.match(container, /role="status"/)
   assert.match(container, /aria-busy="true"/)
-  assert.match(source, /sr-only">Đang tải nội dung liên quan/, 'khung chờ cần một nhãn tiếng Việt')
+  assert.match(source, /sr-only">Đang tải bài viết khác/, 'khung chờ cần một nhãn tiếng Việt')
 
   // Kiểm theo **từng thẻ**: một tệp có hai khung chờ mà chỉ một cái được gắn
   // guard vẫn phải trượt. Đây là cùng luật mà skeleton-loading-ui.test.ts áp.
@@ -322,14 +322,24 @@ test('link bài liên quan dựng từ backTo, không thêm prop mới', () => {
   assert.match(template(COMPONENT), /:to="`\$\{backTo\}\/\$\{item\.slug\}`"/)
 })
 
-test('ảnh thẻ liên quan không phải một điểm dừng tab thứ hai', () => {
-  // Ảnh và tiêu đề trỏ cùng một chỗ. Để cả hai vào thứ tự tab là buộc người dùng
-  // bàn phím bấm Tab hai lần cho mỗi thẻ để đi qua danh sách.
-  const imageLink = template(COMPONENT).match(/<nuxt-link :to="`\$\{backTo\}\/\$\{item\.slug\}`" class="block h-\[140px\][^>]*>/)?.[0]
-  assert.ok(imageLink, 'link ảnh của thẻ liên quan đã đổi')
-  assert.match(imageLink, /tabindex="-1"/)
-  assert.match(imageLink, /aria-hidden="true"/)
-  assert.match(template(COMPONENT), /alt=""/, 'ảnh trang trí phải có alt rỗng, không lặp lại tiêu đề')
+test('mỗi mục bài viết khác là MỘT điểm dừng tab, không phải hai', () => {
+  // Ảnh và tiêu đề trỏ cùng một chỗ, nên hai link riêng buộc người dùng bàn phím
+  // bấm Tab hai lần cho mỗi mục để đi qua danh sách.
+  //
+  // Bản thẻ trước đó giải bằng `tabindex="-1"` + `aria-hidden` trên link ảnh —
+  // đúng, nhưng là hai thứ phải nhớ gắn. Bản danh sách này bọc cả ảnh lẫn tiêu đề
+  // trong MỘT `<nuxt-link>`, nên vấn đề không còn tồn tại để mà quên: nếu ai đó
+  // tách ảnh ra thành link riêng, số link trong mỗi `<li>` tăng lên và test đỏ.
+  const source = template(COMPONENT)
+  const item = source.match(/<li v-for="item in relatedArticles"[\s\S]*?<\/li>/)?.[0]
+  assert.ok(item, 'không tìm thấy mục trong danh sách bài viết khác')
+  assert.equal(
+    (item.match(/<nuxt-link/g) || []).length,
+    1,
+    'mỗi mục phải có đúng một link bọc cả ảnh và tiêu đề',
+  )
+  assert.match(item, /<img/, 'ảnh nhỏ vẫn ở lại — nó giúp nhận ra bài đã đọc trong nháy mắt')
+  assert.match(item, /alt=""/, 'ảnh trang trí phải có alt rỗng, không lặp lại tiêu đề ngay cạnh nó')
 })
 
 test('chip chủ đề chỉ hiện ở nơi cú bấm thật sự lọc được', () => {
@@ -420,17 +430,30 @@ test('cột đọc giữ nguyên bề rộng đọc được và không bị kh�
   assert.match(mainError, /lg:max-w-\[820px\]/)
 })
 
-test('thẻ bài liên quan xếp một cột ở cột phải, hai cột khi còn đủ chỗ', () => {
-  // Cột phải rộng 320px, nên hai thẻ cạnh nhau ở đó hẹp hơn cả ảnh của chúng.
-  // Nhưng trên mobile/tablet khối này lại là dải ngang chiếm hết bề rộng, và ở
-  // đó một cột là bỏ không nửa màn hình.
+test('bài viết khác là danh sách hàng ngang, không phải lưới thẻ', () => {
+  // Bản đầu là lưới thẻ: ảnh cao 140px + ngày + danh mục + hai dòng tóm tắt, tức
+  // mỗi mục cao khoảng 250px. Năm mục như vậy chiếm nhiều chiều cao hơn cả phần
+  // đầu của bài đang đọc — một danh sách điều hướng phụ tự nhận lấy sự chú ý mà
+  // bài viết đáng được nhận.
+  //
+  // Test này chốt ba thứ làm nên "nhỏ thôi": hàng ngang (`flex`, không `grid`),
+  // ảnh ở kích thước thumbnail cố định, và KHÔNG có đoạn tóm tắt.
   const source = template(COMPONENT)
-  for (const marker of ['v-if="relatedPending"', 'v-if="relatedArticles.length"']) {
-    const tag = source.match(new RegExp(`<div[^>]*${marker.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}[^>]*>`))?.[0] ?? ''
-    assert.ok(tag, `không tìm thấy lưới cho ${marker}`)
-    assert.match(tag, /sm:grid-cols-2/, `${marker}: tablet còn chỗ cho hai cột`)
-    assert.match(tag, /lg:grid-cols-1/, `${marker}: ở cột phải 320px phải quay về một cột`)
-  }
+
+  const list = source.match(/<ul v-if="relatedArticles\.length"[^>]*>/)?.[0] ?? ''
+  assert.ok(list, 'không tìm thấy danh sách bài viết khác')
+  assert.doesNotMatch(list, /grid-cols/, 'không còn là lưới thẻ')
+  assert.match(list, /divide-y/, 'các mục phân cách bằng đường kẻ, không phải viền thẻ')
+
+  const item = source.match(/<li v-for="item in relatedArticles"[\s\S]*?<\/li>/)?.[0] ?? ''
+  assert.match(item, /flex items-start/, 'ảnh và chữ nằm cạnh nhau trên một hàng')
+  assert.match(item, /w-\[72px\] h-\[54px\]/, 'ảnh ở kích thước thumbnail cố định')
+  assert.doesNotMatch(item, /item\.excerpt/, 'đoạn tóm tắt là phần chiếm chiều cao nhiều nhất và đã bỏ')
+
+  // Khung chờ phải mang cùng hình dạng, nếu không trang sẽ nhảy đúng lúc nội dung
+  // về — và đó là loại lỗi chỉ thấy được trên mạng chậm.
+  const skeletonItem = source.match(/<div\s+v-if="relatedPending"[\s\S]*?<\/div>\s*<\/div>/)?.[0] ?? ''
+  assert.match(skeletonItem, /w-\[72px\] h-\[54px\]/, 'khung chờ phải đo theo nội dung thật')
 })
 
 test('bình luận ở trong cột đọc, không ở cột phải', () => {

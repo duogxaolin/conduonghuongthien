@@ -415,6 +415,26 @@ async function ensureIndex(db: Connection, database: string, table: string, inde
   }
 }
 
+/**
+ * Adds a foreign key only when no constraint of that name exists yet.
+ *
+ * Distinct from ensureChatbotForeignKey above, which *reconciles* a constraint —
+ * it drops every FK on the column and rebuilds it whenever the delete rule or the
+ * referenced column has changed. That is right for the chatbot tables, whose FKs
+ * were reshaped after they had shipped. It is wrong here: this constraint is new,
+ * has never had another shape, and a drop-and-rebuild on a table holding live
+ * transcripts is a real risk taken for no benefit.
+ */
+async function ensureForeignKeyIfMissing(db: Connection, database: string, table: string, name: string, definition: string) {
+  const [rows] = await db.execute<RowDataPacket[]>(
+    'SELECT 1 FROM information_schema.TABLE_CONSTRAINTS WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = ? AND CONSTRAINT_NAME = ? AND CONSTRAINT_TYPE = ? LIMIT 1',
+    [database, table, name, 'FOREIGN KEY'],
+  )
+  if (rows.length === 0) {
+    await db.query(`ALTER TABLE \`${table}\` ADD CONSTRAINT \`${name}\` ${definition}`)
+  }
+}
+
 export async function initDb() {
   console.log('🔄 Checking & Creating MySQL tables...')
 
@@ -1114,6 +1134,7 @@ export async function initDb() {
       \`google_sub\` VARCHAR(255) NOT NULL UNIQUE,
       \`email\` VARCHAR(255) NULL,
       \`display_name\` VARCHAR(255) NULL,
+      \`custom_display_name\` VARCHAR(255) NULL,
       \`is_banned\` TINYINT(1) NOT NULL DEFAULT 0,
       \`ban_reason\` TEXT NULL,
       \`banned_at\` DATETIME NULL,
@@ -1187,6 +1208,28 @@ export async function initDb() {
 
   // design.md D9: existing articles start with comments closed (default 0).
   await ensureColumn(db, database, 'articles', 'comments_enabled', 'TINYINT(1) NOT NULL DEFAULT 0')
+
+  // ── Reader profile page ───────────────────────────────────────────────────
+  // The reader's own chosen name. Deliberately a separate column from
+  // `display_name`, which the OAuth callback keeps refreshing from Google on
+  // every sign-in: writing the chosen name into that column would have the next
+  // sign-in quietly erase it. Read only through effectiveDisplayName().
+  await ensureColumn(db, database, 'reader_accounts', 'custom_display_name', 'VARCHAR(255) NULL AFTER `display_name`')
+
+  // Which reader a conversation belongs to, once they claim it.
+  //
+  // Added here rather than in the CREATE TABLE above because `chat_sessions` is
+  // created long before `reader_accounts` exists — the FK has nothing to point at
+  // at that point in this function. SET NULL, not CASCADE: chat_sessions is its
+  // own retention scope (90 days) while reader_accounts keeps 365, and cascading
+  // would make deleting a reader destroy transcripts the confirmation dialog does
+  // not count.
+  await ensureColumn(db, database, 'chat_sessions', 'reader_id', 'INT NULL')
+  await ensureIndex(db, database, 'chat_sessions', 'chat_sessions_reader_id_idx', 'INDEX `chat_sessions_reader_id_idx` (`reader_id`)')
+  await ensureForeignKeyIfMissing(
+    db, database, 'chat_sessions', 'fk_chat_sessions_reader',
+    'FOREIGN KEY (`reader_id`) REFERENCES `reader_accounts` (`id`) ON DELETE SET NULL',
+  )
 
   // Existing installations converge without table recreation or row loss.
   await ensureColumn(db, database, 'permissions', 'can_publish', 'TINYINT(1) DEFAULT 0')

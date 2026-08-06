@@ -24,10 +24,31 @@ import { and, desc, eq, like, or, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { activityLogs, articleComments, articles, readerAccounts, users } from '../db/schema'
 import { countReaderCommentImpact, deleteReaderComments, type ReaderCommentImpact } from './comments'
+import { effectiveDisplayName } from '../utils/display-name'
 
 /** Server-enforced ceiling. A client-supplied page size is a request. */
 export const READER_MAX_PER_PAGE = 100
 const READER_DEFAULT_PER_PAGE = 25
+
+// ─── Display name ────────────────────────────────────────────────────────────
+
+/**
+ * Re-exported from utils/display-name.ts, which is where the name logic actually
+ * lives — this module cannot host it, because services/comments.ts needs the same
+ * functions to render names on the public thread and already imports this file.
+ *
+ * Re-exported rather than moved silently so the existing call sites and
+ * tests/reader-profile.test.ts keep one obvious import path.
+ */
+export {
+  DISPLAY_NAME_FALLBACK,
+  DISPLAY_NAME_MAX_LENGTH,
+  DISPLAY_NAME_MIN_LENGTH,
+  effectiveDisplayName,
+  initialsFrom,
+  validateDisplayName,
+  type DisplayNameValidation,
+} from '../utils/display-name'
 
 export type ReaderBanFilter = 'all' | 'banned' | 'active'
 
@@ -383,4 +404,72 @@ export async function auditReaderRead(params: { actorId: number, resourceId?: nu
     resourceId: params.resourceId ?? null,
     meta:       params.meta,
   })
+}
+
+export type RenameReaderResult =
+  | { ok: true, displayName: string }
+  | { ok: false, statusCode: number, message: string }
+
+/**
+ * A reader renaming themselves.
+ *
+ * Writes `custom_display_name` and leaves `display_name` untouched — see
+ * effectiveDisplayName above for why those are two columns.
+ *
+ * The audit row is inserted on the `tx` handle inside the same transaction as the
+ * UPDATE (design.md D14, guarded by tests/reader-audit-atomicity.test.ts). A
+ * `db.insert()` placed inside a transaction block still runs on the pool and
+ * commits independently, which is the same bug wearing a transaction's clothes.
+ *
+ * `userId` is null: activity_logs.user_id references `users`, and a reader has no
+ * row there. The actor is named in `meta.readerId` instead — writing a reader id
+ * into a column that means "staff account id" would make every audit query that
+ * joins `users` quietly attribute this to whichever officer holds that id.
+ */
+export async function renameReader(params: { readerId: number, name: string }): Promise<RenameReaderResult> {
+  const db = getDb()
+
+  const [existing] = await db
+    .select({
+      id:                readerAccounts.id,
+      isBanned:          readerAccounts.isBanned,
+      displayName:       readerAccounts.displayName,
+      customDisplayName: readerAccounts.customDisplayName,
+    })
+    .from(readerAccounts)
+    .where(eq(readerAccounts.id, params.readerId))
+    .limit(1)
+
+  if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
+
+  // A banned reader keeps their ticket until it expires, so this path is
+  // reachable. Letting them rename would let a banned account keep changing how
+  // it appears on comments the moderator has already reviewed.
+  if (existing.isBanned) {
+    return { ok: false, statusCode: 403, message: 'Tài khoản của bạn đang bị hạn chế.' }
+  }
+
+  const previous = effectiveDisplayName(existing)
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(readerAccounts)
+      .set({ customDisplayName: params.name })
+      .where(eq(readerAccounts.id, params.readerId))
+
+    await tx.insert(activityLogs).values({
+      userId:     null,
+      action:     'update',
+      resource:   'readers',
+      resourceId: params.readerId,
+      meta: {
+        operation: 'rename_self',
+        readerId:  params.readerId,
+        before:    previous,
+        after:     params.name,
+      },
+    })
+  })
+
+  return { ok: true, displayName: params.name }
 }

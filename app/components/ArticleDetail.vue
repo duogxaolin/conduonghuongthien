@@ -144,14 +144,20 @@
         <!-- ↑ hết cột đọc -->
 
         <!--
-          Nội dung liên quan — cột phải trên PC, dải ngang dưới đáy trên mobile.
+          Bài viết khác — cột phải trên PC, dải ngang dưới đáy trên mobile.
 
           Trước đây trang kết thúc ngay tại nút quay lại, nên đọc xong một bài là
           hết đường đi: người đọc phải về danh sách rồi tự tìm bài kế tiếp. Khối
           này trả lời hai câu hỏi khác nhau — "đọc gì tiếp" (bài viết) và "còn gì
           trong nhóm này" (chủ đề) — và chỉ hiện khi thật sự có nội dung, vì một
-          tiêu đề "Bài viết liên quan" bên trên khoảng trắng còn trống trải hơn
-          chỗ trống ban đầu.
+          tiêu đề "Bài viết khác" bên trên khoảng trắng còn trống trải hơn chỗ
+          trống ban đầu.
+
+          Đây là điều hướng phụ, nên nó được trình bày như một DANH SÁCH chứ không
+          phải một lưới thẻ: mỗi mục một hàng ngang, ảnh 72×54, không đoạn tóm tắt.
+          Bản thẻ trước đó cao gần bằng phần đầu của chính bài đang đọc, và một
+          danh sách "đọc gì tiếp" to hơn nội dung nó đứng cạnh sẽ tự nhận lấy sự
+          chú ý mà bài viết đáng được nhận.
 
           `sticky top-[100px]` là cùng giá trị mà sidebar của `/news` dùng — nó
           phải chừa được cái header `fixed` (xem layouts/default.vue), y như
@@ -162,25 +168,25 @@
           class="mt-12 border-t border-[#E2E8DF] pt-8 lg:mt-0 lg:border-t-0 lg:pt-0 lg:sticky lg:top-[100px]"
           aria-labelledby="noi-dung-lien-quan-heading"
         >
-          <h2 id="noi-dung-lien-quan-heading" class="m-0 mb-5 text-[1.15rem] font-extrabold text-[#1E251C]">
-            <i class="fa-solid fa-layer-group mr-2 text-[#7CB342]" aria-hidden="true"></i>Nội dung liên quan
+          <h2 id="noi-dung-lien-quan-heading" class="m-0 mb-4 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
+            <i class="fa-solid fa-layer-group mr-2 text-[#7CB342]" aria-hidden="true"></i>Bài viết khác
           </h2>
 
-          <!-- Đang tải. Lưới 2 cột trên mobile/tablet, một cột trên PC — cột phải
-               rộng 320px nên hai thẻ cạnh nhau ở đó sẽ hẹp hơn ảnh của chúng. -->
-          <div v-if="relatedPending" role="status" aria-busy="true" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-5">
-            <span class="sr-only">Đang tải nội dung liên quan</span>
+          <!-- Đang tải. Cùng hình dạng hàng ngang với nội dung thật bên dưới:
+               một khung chờ có kích thước khác thứ nó thay thế sẽ làm trang nhảy
+               đúng lúc nội dung về. -->
+          <div v-if="relatedPending" role="status" aria-busy="true" class="flex flex-col divide-y divide-[#E2E8DF]">
+            <span class="sr-only">Đang tải bài viết khác</span>
             <div
-              v-for="n in 4"
+              v-for="n in 5"
               :key="n"
               aria-hidden="true"
-              class="bg-white rounded-lg border border-[#E2E8DF] overflow-hidden animate-pulse motion-reduce:animate-none"
+              class="flex items-start gap-3 py-3 first:pt-0 animate-pulse motion-reduce:animate-none"
             >
-              <div class="h-[140px] bg-[#EEF2EC]"></div>
-              <div class="p-4 flex flex-col gap-2.5">
-                <div class="h-3 w-28 bg-[#EEF2EC] rounded"></div>
-                <div class="h-4 w-full bg-[#EEF2EC] rounded"></div>
-                <div class="h-4 w-2/3 bg-[#EEF2EC] rounded"></div>
+              <div class="w-[72px] h-[54px] shrink-0 bg-[#EEF2EC] rounded"></div>
+              <div class="min-w-0 flex-grow flex flex-col gap-2">
+                <div class="h-3.5 w-full bg-[#EEF2EC] rounded"></div>
+                <div class="h-3.5 w-3/5 bg-[#EEF2EC] rounded"></div>
               </div>
             </div>
           </div>
@@ -193,41 +199,40 @@
             class="bg-white border border-dashed border-[#E2A0A0] px-6 py-8 rounded-lg text-center text-[#B04A4A] text-[0.95rem]"
           >
             <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
-            Không thể tải nội dung liên quan. Vui lòng
+            Không thể tải bài viết khác. Vui lòng
             <button type="button" class="text-[#4A6741] font-bold underline" @click="refreshRelated()">thử lại</button>.
           </div>
 
           <template v-else>
-            <div v-if="relatedArticles.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-1 gap-5">
-              <article
-                v-for="item in relatedArticles"
-                :key="item.id"
-                class="bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] flex flex-col transition-all duration-300 hover:-translate-y-1 hover:shadow-md hover:border-[#7CB342]"
-              >
-                <nuxt-link :to="`${backTo}/${item.slug}`" class="block h-[140px] overflow-hidden" tabindex="-1" aria-hidden="true">
+            <!-- Hàng ngang, ảnh nhỏ bên trái, không thẻ và không đoạn tóm tắt.
+                 Trước đây mỗi mục là một thẻ cao ~250px với ảnh 140px và hai dòng
+                 mô tả, nên năm bài liên quan chiếm nhiều chiều cao hơn cả phần đầu
+                 bài đang đọc — một danh sách điều hướng phụ không được phép to hơn
+                 nội dung nó đứng cạnh. Ảnh giữ lại ở kích thước nhỏ vì nó giúp
+                 nhận ra bài đã đọc trong nháy mắt; `object-cover` trên khung cố
+                 định nên ảnh dọc hay ngang đều không phá hàng. -->
+            <ul v-if="relatedArticles.length" class="list-none m-0 p-0 flex flex-col divide-y divide-[#E2E8DF]">
+              <li v-for="item in relatedArticles" :key="item.id" class="py-3 first:pt-0">
+                <nuxt-link
+                  :to="`${backTo}/${item.slug}`"
+                  class="group flex items-start gap-3 no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+                >
                   <img
                     :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
                     alt=""
                     loading="lazy"
                     decoding="async"
-                    class="w-full h-full object-cover"
+                    class="w-[72px] h-[54px] shrink-0 object-cover rounded bg-[#EEF2EC]"
                   />
-                </nuxt-link>
-                <div class="p-4 flex flex-col flex-grow">
-                  <span class="block text-[0.78rem] text-[#7A8675] font-semibold mb-2">
-                    {{ formatDateVN(item.publishedAt || item.createdAt) }}
-                    <span v-if="item.categoryName"> • {{ item.categoryName }}</span>
+                  <span class="min-w-0 flex-grow">
+                    <span class="block text-[0.9rem] font-bold leading-[1.4] text-[#1E251C] transition-colors duration-200 group-hover:text-[#4A6741] line-clamp-3">{{ item.title }}</span>
+                    <span class="block mt-1 text-[0.75rem] text-[#7A8675] font-semibold">
+                      {{ formatDateVN(item.publishedAt || item.createdAt) }}
+                    </span>
                   </span>
-                  <h3 class="text-[1rem] font-bold leading-[1.45] mb-0">
-                    <nuxt-link
-                      :to="`${backTo}/${item.slug}`"
-                      class="no-underline text-[#1E251C] transition-colors duration-300 hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
-                    >{{ item.title }}</nuxt-link>
-                  </h3>
-                  <p v-if="item.excerpt" class="text-[0.88rem] text-[#4A5545] leading-[1.5] mt-2 mb-0 line-clamp-2">{{ item.excerpt }}</p>
-                </div>
-              </article>
-            </div>
+                </nuxt-link>
+              </li>
+            </ul>
 
             <!-- Chủ đề liên quan. Chỉ hiện cho /news vì đó là danh sách duy nhất
                  đọc được `?cat=`; ba danh sách còn lại bỏ qua tham số đó, nên một
@@ -280,6 +285,9 @@ import { computed, onMounted, ref, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { classifySource } from '~/utils/analytics-collector'
 import { buildToc, TOC_MIN_HEADINGS } from '~/utils/toc'
+import { useReadingHistory } from '~/composables/useReadingHistory'
+
+const { record: recordRead } = useReadingHistory()
 
 const props = defineProps({
   /** Article slug (or id) to fetch. */
@@ -415,6 +423,26 @@ onMounted(() => pingView(props.slug))
 // Điều hướng phía client giữa hai bài viết dùng lại chính component này, nên
 // `onMounted` chỉ chạy một lần cho cả chuỗi bài đọc liên tiếp.
 watch(() => props.slug, slug => pingView(slug))
+
+/**
+ * Ghi bài vừa đọc vào lịch sử đọc của **thiết bị này** (`localStorage`).
+ *
+ * Cố ý không có bảng nào trên máy chủ: xem `app/composables/useReadingHistory.ts`
+ * để biết vì sao — một bảng "công dân nào đã đọc bài nào, lúc nào" là dữ liệu nhạy
+ * cảm nhất mà dự án này chưa từng có, và nó sẽ sống lâu hơn mọi ai còn quan tâm
+ * tới danh sách "bài đã đọc".
+ *
+ * Theo `article.value` chứ không theo `props.slug`: `lazy: true` nghĩa là bài về
+ * **sau** mount, nên ghi lúc mount sẽ lưu một hàng không có tiêu đề — và trang cá
+ * nhân sẽ liệt kê một danh sách slug thay vì một danh sách bài viết. `watch` với
+ * `immediate` phủ cả hai trường hợp: lượt tải đầu (dữ liệu về sau) và điều hướng
+ * phía client sang bài kế tiếp (component được dùng lại).
+ *
+ * Không nuốt lỗi ở đây vì không có gì để nuốt — `record` tự lo phần đó.
+ */
+watch(article, value => {
+  if (value?.slug) recordRead(value.slug, value.title || '')
+}, { immediate: true })
 </script>
 
 <style scoped>

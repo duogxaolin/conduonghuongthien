@@ -75,16 +75,54 @@
                  tới khi biết được người đọc là ai — một nút "Đăng nhập" nhấp nháy
                  rồi đổi thành tên còn tệ hơn là xuất hiện muộn nửa giây. -->
             <client-only>
-              <div v-if="readerLoaded" class="hidden lg:flex items-center gap-2">
-                <template v-if="reader">
-                  <ReaderAvatar :initials="reader.initials" size="sm" />
-                  <span class="max-w-[140px] truncate text-[0.82rem] font-semibold text-[#385130]">{{ reader.displayName }}</span>
+              <div v-if="readerLoaded" class="hidden lg:flex items-center">
+                <!-- Đã đăng nhập: một nút mở menu nhỏ.
+
+                     `relative` nằm ở đây, và tổ tiên của nó **không được** có
+                     `overflow-x` khác `visible` — `overflow-x: auto` biến
+                     `overflow-y: visible` thành `auto`, tức là cắt mất đúng cái
+                     menu này. Cùng cái bẫy đã ghi ở thanh điều hướng phía dưới. -->
+                <div v-if="reader" ref="readerMenuRef" class="relative">
                   <button
                     type="button"
-                    class="text-[0.8rem] font-semibold text-[#7A8675] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
-                    @click="readerSignOut"
-                  >Đăng xuất</button>
-                </template>
+                    class="flex items-center gap-2 bg-[#F8FAF7] border border-[#E2E8DF] pl-1.5 pr-2.5 py-1.5 rounded-full transition-all hover:bg-[#EEF2EC] hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                    :aria-expanded="isReaderMenuOpen"
+                    aria-haspopup="menu"
+                    @click="isReaderMenuOpen = !isReaderMenuOpen"
+                  >
+                    <ReaderAvatar :initials="reader.initials" size="sm" />
+                    <span class="max-w-[132px] truncate text-[0.82rem] font-bold text-[#385130]">{{ reader.displayName }}</span>
+                    <i class="fa-solid fa-chevron-down text-[0.6rem] text-[#7A8675] transition-transform duration-200" :class="{ 'rotate-180': isReaderMenuOpen }" aria-hidden="true"></i>
+                  </button>
+
+                  <div
+                    v-if="isReaderMenuOpen"
+                    role="menu"
+                    class="absolute right-0 top-[calc(100%+8px)] z-[10004] w-[236px] rounded-xl border border-[#E2E8DF] bg-white p-1.5 shadow-[0_12px_32px_rgba(15,35,18,0.14)]"
+                  >
+                    <!-- Địa chỉ email chỉ hiện trong menu đã mở, không hiện trên
+                         thanh header: nó là dữ liệu cá nhân của người đọc, và một
+                         màn hình đang chia sẻ thì cả phòng đọc được. -->
+                    <p v-if="reader.email" class="m-0 px-3 pt-1.5 pb-2 text-[0.72rem] text-[#7A8675] truncate border-b border-[#EEF2EC]">{{ reader.email }}</p>
+                    <nuxt-link
+                      to="/nguoi-doc"
+                      role="menuitem"
+                      class="mt-1 flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[0.85rem] font-semibold text-[#1E251C] no-underline transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                      @click="isReaderMenuOpen = false"
+                    >
+                      <i class="fa-solid fa-user w-4 text-center text-[#7CB342]" aria-hidden="true"></i> Trang cá nhân
+                    </nuxt-link>
+                    <button
+                      type="button"
+                      role="menuitem"
+                      class="mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[0.85rem] font-semibold text-[#1E251C] transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                      @click="onReaderSignOut"
+                    >
+                      <i class="fa-solid fa-right-from-bracket w-4 text-center text-[#7A8675]" aria-hidden="true"></i> Đăng xuất
+                    </button>
+                  </div>
+                </div>
+
                 <button
                   v-else
                   type="button"
@@ -192,6 +230,60 @@
 
           <!-- Drawer Footer -->
           <div class="px-4 py-4 bg-[#f8faf7] border-t border-black/[0.06] flex flex-col gap-2.5 flex-shrink-0">
+            <!-- Khối danh tính người đọc trên điện thoại.
+
+                 Đây là phần VÁ LỖI, không phải trang trí: khối ở header mang
+                 `hidden lg:flex`, và ngăn kéo này trước đây không có khối nào
+                 tương đương — nên trên điện thoại, tính năng đăng nhập của người
+                 đọc **không tồn tại**, trong khi phần lớn công dân đọc cổng này
+                 bằng điện thoại.
+
+                 `<client-only>` cùng lý do như ở header: mọi trang công khai phục
+                 vụ qua `swr: 60`, nên một cái tên lọt vào HTML dựng phía máy chủ
+                 sẽ được phát lại cho người kế tiếp. Không có `fallback`.
+
+                 Không dùng dropdown ở đây: ngăn kéo đã là một lớp phủ, và hai
+                 liên kết phẳng thì bấm được bằng ngón tay ngay, không cần mở thêm
+                 một lớp nữa. -->
+            <client-only>
+              <div v-if="readerLoaded">
+                <div v-if="reader" class="flex flex-col gap-2">
+                  <div class="flex items-center gap-3 bg-white px-3.5 py-3 rounded-[14px] border border-[rgba(30,70,32,0.12)] shadow-sm">
+                    <ReaderAvatar :initials="reader.initials" />
+                    <div class="flex flex-col min-w-0">
+                      <span class="text-[0.9rem] font-extrabold text-[#1E251C] truncate">{{ reader.displayName }}</span>
+                      <span v-if="reader.email" class="text-[0.72rem] text-[#7A8675] truncate">{{ reader.email }}</span>
+                    </div>
+                  </div>
+                  <div class="flex gap-2">
+                    <nuxt-link
+                      to="/nguoi-doc"
+                      class="flex-1 flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3 py-2.5 text-[0.85rem] font-bold text-[#385130] no-underline transition-colors active:bg-[#EEF2EC]"
+                      @click="isMobileMenuOpen = false"
+                    >
+                      <i class="fa-solid fa-user text-[#7CB342]" aria-hidden="true"></i> Trang cá nhân
+                    </nuxt-link>
+                    <button
+                      type="button"
+                      class="flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-[#7A8675] transition-colors active:bg-[#EEF2EC]"
+                      @click="onReaderSignOut"
+                    >
+                      <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Đăng xuất
+                    </button>
+                  </div>
+                </div>
+
+                <button
+                  v-else
+                  type="button"
+                  class="w-full flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-4 py-3 text-[0.88rem] font-bold text-[#385130] shadow-sm transition-colors active:bg-[#EEF2EC]"
+                  @click="readerSignIn()"
+                >
+                  <i class="fa-solid fa-right-to-bracket text-[#7CB342]" aria-hidden="true"></i> Đăng nhập để bình luận
+                </button>
+              </div>
+            </client-only>
+
             <a :href="siteHotlineTel" class="flex items-center gap-3 bg-white px-3.5 py-3 rounded-[14px] border border-[rgba(30,70,32,0.12)] no-underline shadow-sm">
               <span class="text-xl">📞</span>
               <div class="flex flex-col">
@@ -427,6 +519,23 @@ const {
   signInMessage: readerSignInMessage,
 } = useReaderAuth()
 
+// Menu nhỏ dưới nút danh tính ở header desktop.
+const isReaderMenuOpen = ref(false)
+const readerMenuRef = ref(null)
+
+/**
+ * Đăng xuất từ cả hai bề mặt (menu desktop và ngăn kéo mobile).
+ *
+ * Đóng cả hai lớp phủ trước khi gọi: `signOut` xoá danh tính, nên khối chứa nút
+ * vừa bấm bị `v-if` tháo ra. Để menu mở lại thì lần đăng nhập sau nó vẫn còn mở
+ * đúng ở chỗ đó, treo dưới một cái tên đã không còn.
+ */
+async function onReaderSignOut() {
+  isReaderMenuOpen.value = false
+  isMobileMenuOpen.value = false
+  await readerSignOut()
+}
+
 const route = useRoute()
 const router = useRouter()
 const { error: toastError } = useToast()
@@ -554,9 +663,26 @@ watch(isMobileMenuOpen, (isMenuOpen) => {
 const handleKeydown = (event) => {
   // The chatbot dialog handles its own Escape via a keydown on the dialog; this
   // only needs to catch the mobile menu.
-  if (event.key === 'Escape' && isMobileMenuOpen.value) {
-    isMobileMenuOpen.value = false
-  }
+  if (event.key !== 'Escape') return
+  if (isMobileMenuOpen.value) isMobileMenuOpen.value = false
+  // Đóng cả menu danh tính: một menu chỉ đóng được bằng cách bấm lại đúng nút đã
+  // mở nó là một cái bẫy bàn phím — Escape là cách người dùng bàn phím thoát khỏi
+  // mọi lớp phủ khác trên trang này.
+  if (isReaderMenuOpen.value) isReaderMenuOpen.value = false
+}
+
+/**
+ * Bấm ra ngoài thì đóng menu danh tính.
+ *
+ * Bắt ở pha `mousedown` chứ không `click`: một cú bấm vào liên kết bên trong menu
+ * là `mousedown` rồi `click`, và nếu đóng ở `click` thì handler này chạy **sau**
+ * khi Vue đã tháo phần tử — nhưng bắt ở `mousedown` với kiểm tra `contains` thì
+ * liên kết vẫn còn trong cây, nên nó vẫn điều hướng bình thường.
+ */
+const handleDocumentPointerDown = (event) => {
+  if (!isReaderMenuOpen.value) return
+  const root = readerMenuRef.value
+  if (root && !root.contains(event.target)) isReaderMenuOpen.value = false
 }
 
 const mobileOpenSubmenu = ref(null)
@@ -594,6 +720,7 @@ onMounted(() => {
   clientMounted.value = true
   window.addEventListener('scroll', handleScroll, { passive: true })
   window.addEventListener('keydown', handleKeydown)
+  document.addEventListener('mousedown', handleDocumentPointerDown)
   // Sau khi mount, không phải trong lúc dựng: mọi trang công khai phục vụ qua
   // `swr: 60`, nên danh tính người đọc mà lọt vào HTML sẽ được phát lại cho
   // người kế tiếp. Không `await`: header không được chặn lượt vẽ đầu để chờ một
@@ -614,6 +741,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('scroll', handleScroll)
   window.removeEventListener('keydown', handleKeydown)
+  document.removeEventListener('mousedown', handleDocumentPointerDown)
   if (typeof document !== 'undefined') document.body.style.overflow = ''
 })
 </script>
