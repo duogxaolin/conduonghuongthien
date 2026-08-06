@@ -168,7 +168,7 @@
                     </div>
 
                     <nuxt-link
-                      to="/nguoi-doc"
+                      to="/profile"
                       class="block border-t border-[#EEF2EC] px-3.5 py-2.5 text-center text-[0.8rem] font-bold text-[#4A6741] no-underline transition-colors hover:bg-[#F7FAF6]"
                       @click="isNotifMenuOpen = false"
                     >Xem tất cả trên trang cá nhân</nuxt-link>
@@ -204,7 +204,7 @@
                          màn hình đang chia sẻ thì cả phòng đọc được. -->
                     <p v-if="reader.email" class="m-0 px-3 pt-1.5 pb-2 text-[0.72rem] text-[#7A8675] truncate border-b border-[#EEF2EC]">{{ reader.email }}</p>
                     <nuxt-link
-                      to="/nguoi-doc"
+                      to="/profile"
                       role="menuitem"
                       class="mt-1 flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[0.85rem] font-semibold text-[#1E251C] no-underline transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
                       @click="isReaderMenuOpen = false"
@@ -356,7 +356,7 @@
                   </div>
                   <div class="flex gap-2">
                     <nuxt-link
-                      to="/nguoi-doc"
+                      to="/profile"
                       class="flex-1 flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3 py-2.5 text-[0.85rem] font-bold text-[#385130] no-underline transition-colors active:bg-[#EEF2EC]"
                       @click="isMobileMenuOpen = false"
                     >
@@ -383,7 +383,7 @@
                     đã có sẵn.
                   -->
                   <nuxt-link
-                    to="/nguoi-doc#thong-bao"
+                    to="/profile#notifications"
                     class="flex items-center justify-between gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-[#385130] no-underline transition-colors active:bg-[#EEF2EC]"
                     @click="isMobileMenuOpen = false"
                   >
@@ -541,7 +541,7 @@
             <li><nuxt-link to="/role-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Tấm gương tiêu biểu hoàn lương</nuxt-link></li>
             <li><nuxt-link to="/reintegration-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Các mô hình kinh tế hỗ trợ</nuxt-link></li>
             <li><nuxt-link to="/legal-qa" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Giải đáp pháp luật trực tuyến</nuxt-link></li>
-            <li><nuxt-link to="/tai-lieu-hoi-dap" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Tài liệu Hỏi – Đáp đã phê duyệt</nuxt-link></li>
+            <li><nuxt-link to="/qa-documents" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Tài liệu Hỏi – Đáp đã phê duyệt</nuxt-link></li>
             <li><nuxt-link to="/contact" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Thông tin đường dây nóng</nuxt-link></li>
           </ul>
         </div>
@@ -648,7 +648,7 @@ const isReaderMenuOpen = ref(false)
 const readerMenuRef = ref(null)
 
 // ─── Thông báo ──────────────────────────────────────────────────────────────
-// Cũng ở cấp module trong composable: chuông ở đây và danh sách trên /nguoi-doc
+// Cũng ở cấp module trong composable: chuông ở đây và danh sách trên /profile
 // là hai component trên cùng một trang, hai lượt fetch riêng sẽ đếm lệch nhau.
 const {
   items: notifications,
@@ -753,13 +753,13 @@ const DEFAULT_NAV = [
   { id: 'documents', label: null, labelKey: 'documents', url: '/documents', children: [] },
   // Hỏi – Đáp mở ra hai nguồn khác nhau, nên nó là dropdown chứ không phải một
   // liên kết: `/legal-qa` là bài biên tập (`articles` type=faq), còn
-  // `/tai-lieu-hoi-dap` là kho câu trả lời đã duyệt mà chính trợ lý ảo dẫn lại.
+  // `/qa-documents` là kho câu trả lời đã duyệt mà chính trợ lý ảo dẫn lại.
   // Thêm mục thứ 9 ngang hàng sẽ làm tràn thanh nav ở md.
   {
     id: 'legal-qa', label: null, labelKey: 'faq', url: '/legal-qa',
     children: [
       { id: 'legal-qa-articles', label: null, labelKey: 'faq_articles', url: '/legal-qa' },
-      { id: 'qa-approved-docs', label: null, labelKey: 'faq_approved_docs', url: '/tai-lieu-hoi-dap' },
+      { id: 'qa-approved-docs', label: null, labelKey: 'faq_approved_docs', url: '/qa-documents' },
     ]
   },
   { id: 'contact', label: null, labelKey: 'contact', url: '/contact', children: [] },

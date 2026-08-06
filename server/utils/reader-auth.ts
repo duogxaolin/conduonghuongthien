@@ -44,6 +44,13 @@ export interface ReaderIdentity {
    * disagree with the others about what somebody is called.
    */
   customDisplayName: string | null
+  /**
+   * Whether the portal emails this reader when somebody answers their comment.
+   *
+   * Carried on the identity so the reply path can decide without a second query,
+   * and so /profile renders the switch in the state the server actually holds.
+   */
+  emailNotifications: boolean
   tokenVersion: number
 }
 
@@ -92,6 +99,7 @@ async function resolveReader(event: H3Event): Promise<ReaderLookup> {
       email:        readerAccounts.email,
       displayName:  readerAccounts.displayName,
       customDisplayName: readerAccounts.customDisplayName,
+      emailNotifications: readerAccounts.emailNotifications,
       isBanned:     readerAccounts.isBanned,
       tokenVersion: readerAccounts.tokenVersion,
     })
@@ -112,6 +120,11 @@ async function resolveReader(event: H3Event): Promise<ReaderLookup> {
       email:        row.email,
       displayName:  row.displayName,
       customDisplayName: row.customDisplayName,
+      // Normalised here, once. Drizzle maps a TINYINT(1) through the driver and
+      // callers should never have to wonder whether they hold `1` or `true` —
+      // `=== false` on a numeric 0 is the kind of comparison that silently
+      // decides to email somebody who opted out.
+      emailNotifications: Boolean(row.emailNotifications),
       tokenVersion: row.tokenVersion,
     },
   }

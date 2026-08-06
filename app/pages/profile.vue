@@ -3,7 +3,7 @@
 
   Bốn ràng buộc ở đây là bắt buộc, không phải lựa chọn phong cách:
 
-  1. **`/nguoi-doc` KHÔNG có trong `routeRules`.** Mọi tuyến công khai khác phục vụ
+  1. **`/profile` KHÔNG có trong `routeRules`.** Mọi tuyến công khai khác phục vụ
      qua `swr: 60`; một cửa sổ đệm ở trang này là phát tên, email, bình luận và
      đoạn chat của người này cho người kế tiếp ghé vào trong 60 giây.
   2. **Mọi dữ liệu nạp SAU MOUNT.** Không `await useFetch` ở cấp thiết lập, không
@@ -64,7 +64,7 @@
             <button
               type="button"
               class="btn btn-primary inline-flex items-center gap-2 px-6 py-3 text-[0.9rem]"
-              @click="readerSignIn('/nguoi-doc')"
+              @click="readerSignIn('/profile')"
             >
               <i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i> Đăng nhập bằng Google
             </button>
@@ -124,7 +124,7 @@
             </section>
 
             <!-- ── Khối 2: Thông báo ────────────────────────────────────────── -->
-            <section id="thong-bao" class="rounded-xl border border-[#E2E8DF] bg-white p-6 scroll-mt-24">
+            <section id="notifications" class="rounded-xl border border-[#E2E8DF] bg-white p-6 scroll-mt-24">
               <header class="mb-4 flex items-center justify-between gap-3">
                 <h2 class="m-0 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
                   <i class="fa-solid fa-bell mr-2 text-[#7CB342]" aria-hidden="true"></i>Thông báo
@@ -140,6 +140,50 @@
                   @click="markAllNotificationsRead"
                 >Đánh dấu tất cả đã đọc</button>
               </header>
+
+              <!--
+                Công tắc nhận email.
+
+                Đặt trong khối thông báo chứ không ở khối thông tin: nó nói về
+                chính những thông báo bên dưới, và một thiết lập nằm cách xa thứ
+                nó điều khiển là thiết lập người đọc không tìm thấy khi cần tắt.
+              -->
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-lg bg-[#F3F7F1] px-3.5 py-3">
+                <div class="min-w-0 flex-1">
+                  <p class="m-0 text-[0.85rem] font-bold text-[#385130]">
+                    <i class="fa-solid fa-envelope mr-1.5 text-[#7CB342]" aria-hidden="true"></i>
+                    Gửi email khi có người trả lời
+                  </p>
+                  <p v-if="reader.email" class="m-0 mt-1 text-[0.78rem] leading-relaxed text-[#4A5545]">
+                    Gửi tới <strong class="break-all">{{ reader.email }}</strong>. Bạn có thể tắt bất cứ lúc nào.
+                  </p>
+                  <!-- Tài khoản Google không có email thì không có gì để gửi tới;
+                       hiện một công tắc bật được ở đây là hứa một việc sẽ không
+                       bao giờ xảy ra. -->
+                  <p v-else class="m-0 mt-1 text-[0.78rem] italic leading-relaxed text-[#7A8675]">
+                    Tài khoản của bạn không có địa chỉ email nên cổng thông tin không gửi được.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  :aria-checked="emailNotificationsOn"
+                  :disabled="savingEmailPref || !reader.email"
+                  class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  :class="emailNotificationsOn ? 'bg-[#4A6741]' : 'bg-[#CFDDC8]'"
+                  @click="toggleEmailNotifications"
+                >
+                  <span class="sr-only">Gửi email khi có người trả lời</span>
+                  <span
+                    class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                    :class="emailNotificationsOn ? 'translate-x-6' : 'translate-x-1'"
+                    aria-hidden="true"
+                  ></span>
+                </button>
+                <p v-if="emailPrefError" role="alert" class="m-0 w-full text-[0.8rem] text-[#B04A4A]">
+                  <i class="fa-solid fa-circle-exclamation mr-1.5" aria-hidden="true"></i>{{ emailPrefError }}
+                </p>
+              </div>
 
               <div v-if="notifPending" role="status" aria-busy="true" class="flex flex-col gap-3">
                 <span class="sr-only">Đang tải thông báo</span>
@@ -345,7 +389,7 @@
                 <h2 class="m-0 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
                   <i class="fa-solid fa-robot mr-2 text-[#7CB342]" aria-hidden="true"></i>Đoạn chat của tôi
                 </h2>
-                <nuxt-link to="/tro-ly" class="shrink-0 text-[0.8rem] font-semibold text-[#4A6741] no-underline hover:underline">
+                <nuxt-link to="/assistant" class="shrink-0 text-[0.8rem] font-semibold text-[#4A6741] no-underline hover:underline">
                   Mở trợ lý &rarr;
                 </nuxt-link>
               </header>
@@ -445,6 +489,7 @@ const {
   load: loadReader,
   signIn: readerSignIn,
   applyDisplayName,
+  applyEmailPreference,
   claimChats,
   clearClaimFlag,
   forgetReader,
@@ -552,6 +597,37 @@ function reloadNotifications() {
  */
 function onNotificationClick(item) {
   if (!item.isRead) void markNotificationsRead([item.id])
+}
+
+// ─── Công tắc nhận email ────────────────────────────────────────────────────
+const savingEmailPref = ref(false)
+const emailPrefError = ref('')
+
+/** Mặc định bật khi máy chủ chưa nói gì — cùng mặc định với cột trong CSDL. */
+const emailNotificationsOn = computed(() => reader.value?.emailNotifications !== false)
+
+async function toggleEmailNotifications() {
+  if (savingEmailPref.value || !reader.value?.email) return
+
+  const next = !emailNotificationsOn.value
+  savingEmailPref.value = true
+  emailPrefError.value = ''
+  try {
+    await $fetch('/api/public/reader/profile/email-notifications', {
+      method: 'PUT',
+      body: { enabled: next },
+    })
+    // State ở cấp module, nên mọi bề mặt đọc nó đổi theo cùng lúc.
+    applyEmailPreference(next)
+  } catch (err) {
+    emailPrefError.value = err?.statusMessage || err?.data?.statusMessage || 'Không thể lưu thiết lập. Vui lòng thử lại.'
+    // 401: vé hết hiệu lực giữa lúc trang mở — bỏ danh tính để trang đổi sang
+    // khối mời đăng nhập. 403 thì KHÔNG: đó là lệnh chặn, người đọc vẫn đang
+    // đăng nhập và mời họ đăng nhập lại là mời một lượt không đổi được gì.
+    if (err?.statusCode === 401) forgetReader()
+  } finally {
+    savingEmailPref.value = false
+  }
 }
 
 // ─── Bình luận của tôi ──────────────────────────────────────────────────────

@@ -38,7 +38,7 @@ const DEFAULT_PER_PAGE = COMMENT_THREAD_PER_PAGE
  * that way passes NaN straight through into `.offset()` and serialises as
  * `page: null`: the endpoint returns rows while claiming to be on no page at all.
  * `?page=1e999` (Infinity) gets through the same hole. This is the bug the
- * /tai-lieu-hoi-dap work already hit once; the check has to come BEFORE the clamp.
+ * /qa-documents work already hit once; the check has to come BEFORE the clamp.
  */
 function finitePositive(raw: unknown, fallback: number, max: number): number {
   const value = Number(raw)

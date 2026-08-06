@@ -297,10 +297,10 @@ export async function listNotifications(params: {
              * that renders every type. A per-type prefix would 404 exactly the
              * comments left on a legal document.
              *
-             * `?binhluan=` carries the page so the thread opens where the comment
+             * `?comments=` carries the page so the thread opens where the comment
              * actually is; the hash names the comment within it.
              */
-            url: `/news/${row.articleSlug}${targetPage > 1 ? `?binhluan=${targetPage}` : ''}#binh-luan-${row.rootId ?? row.id}`,
+            url: `/news/${row.articleSlug}${targetPage > 1 ? `?comments=${targetPage}` : ''}#comment-${row.rootId ?? row.id}`,
           }
         : null,
     }

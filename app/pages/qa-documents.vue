@@ -170,7 +170,7 @@
         <div class="max-w-[860px] mt-10 bg-white border border-[#E2E8DF] rounded-lg px-6 py-6">
           <p class="m-0 text-[0.95rem] text-[#4A5545] leading-[1.7]">
             Không tìm thấy nội dung anh/chị cần?
-            <nuxt-link to="/tro-ly" class="text-[#4A6741] font-bold underline">Đặt câu hỏi cho Trợ lý ảo</nuxt-link>
+            <nuxt-link to="/assistant" class="text-[#4A6741] font-bold underline">Đặt câu hỏi cho Trợ lý ảo</nuxt-link>
             hoặc liên hệ Công an xã/phường nơi cư trú để được hướng dẫn trực tiếp.
           </p>
         </div>
@@ -243,7 +243,7 @@ const toggle = (id) => {
   openIds.value = next
 }
 
-const push = (query) => navigateTo({ path: '/tai-lieu-hoi-dap', query })
+const push = (query) => navigateTo({ path: '/qa-documents', query })
 const applySearch = () => {
   const value = searchInput.value.trim()
   push({ ...(value ? { q: value } : {}), ...(activeTopic.value ? { topic: activeTopic.value } : {}) })

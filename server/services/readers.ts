@@ -473,3 +473,70 @@ export async function renameReader(params: { readerId: number, name: string }): 
 
   return { ok: true, displayName: params.name }
 }
+
+export type EmailPreferenceResult =
+  | { ok: true, emailNotifications: boolean }
+  | { ok: false, statusCode: number, message: string }
+
+/**
+ * A reader turning reply emails on or off for themselves.
+ *
+ * Audited in the same transaction as the update, for the same reason
+ * `renameReader` is: this is a write to a citizen's record, and "who changed
+ * this, and when" has to stay answerable. `userId: null` because the actor is a
+ * member of the public and `activityLogs.userId` is a FK to `users` — the reader
+ * is identified in `meta`. Putting a reader id in the officer column would make
+ * every audit query that joins `users` quietly attribute this to whichever
+ * officer holds that id.
+ *
+ * A banned reader is refused, matching renameReader: they keep their ticket until
+ * it expires, so this path is reachable, and there is nothing to email them about
+ * once their comments are gone.
+ */
+export async function setReaderEmailPreference(params: {
+  readerId: number
+  enabled:  boolean
+}): Promise<EmailPreferenceResult> {
+  const db = getDb()
+
+  const [existing] = await db
+    .select({
+      id:                 readerAccounts.id,
+      isBanned:           readerAccounts.isBanned,
+      emailNotifications: readerAccounts.emailNotifications,
+    })
+    .from(readerAccounts)
+    .where(eq(readerAccounts.id, params.readerId))
+    .limit(1)
+
+  if (!existing) return { ok: false, statusCode: 404, message: 'Không tìm thấy tài khoản người đọc.' }
+  if (existing.isBanned) return { ok: false, statusCode: 403, message: 'Tài khoản của bạn đang bị hạn chế.' }
+
+  // Already in the requested state: no write, no audit row. Recording a change
+  // that did not happen makes the log harder to read, not more complete.
+  if (Boolean(existing.emailNotifications) === params.enabled) {
+    return { ok: true, emailNotifications: params.enabled }
+  }
+
+  await db.transaction(async (tx) => {
+    await tx
+      .update(readerAccounts)
+      .set({ emailNotifications: params.enabled })
+      .where(eq(readerAccounts.id, params.readerId))
+
+    await tx.insert(activityLogs).values({
+      userId:     null,
+      action:     'update',
+      resource:   'readers',
+      resourceId: params.readerId,
+      meta: {
+        operation: 'email_preference_self',
+        readerId:  params.readerId,
+        before:    Boolean(existing.emailNotifications),
+        after:     params.enabled,
+      },
+    })
+  })
+
+  return { ok: true, emailNotifications: params.enabled }
+}

@@ -36,7 +36,7 @@ export default defineEventHandler(async (event) => {
 
   // The one place the two name columns are reconciled. Reading `displayName`
   // directly here would make the header ignore a name the reader chose on
-  // /nguoi-doc — visible only to them, and only on the one page where their own
+  // /profile — visible only to them, and only on the one page where their own
   // name appears twice.
   const displayName = effectiveDisplayName(reader)
 
@@ -52,6 +52,10 @@ export default defineEventHandler(async (event) => {
       // Rendered locally in a tinted circle — no request to a Google image host
       // ever leaves a visitor's browser (design.md D7).
       initials: initialsFrom(displayName),
+      // So the profile toggle renders in the state the server actually holds.
+      // Without it the switch would default to "on" for a reader who turned it
+      // off, and turning it off again would be a no-op they cannot see.
+      emailNotifications: Boolean(reader.emailNotifications),
     },
   }
 })

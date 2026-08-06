@@ -13,7 +13,7 @@
  * view — the same reasoning that keeps `checkPermission` off /admin/profile and
  * auditing off GET /api/public/reader/comments.
  *
- * Never SSR-rendered: article routes are SWR-cached and /nguoi-doc is not in
+ * Never SSR-rendered: article routes are SWR-cached and /profile is not in
  * routeRules at all, so this is fetched after mount like every other
  * reader-specific response.
  */
@@ -30,7 +30,7 @@ const DEFAULT_PER_PAGE = 10
  * `Math.max(1, Number('abc'))` is NaN — every comparison with NaN is false, so
  * the clamp passes it straight through into `.offset()` and serialises as
  * `page: null`: rows returned while claiming to be on no page at all.
- * `?page=1e999` gets through the same hole. This is the bug /tai-lieu-hoi-dap
+ * `?page=1e999` gets through the same hole. This is the bug /qa-documents
  * already hit once, so the check comes BEFORE the clamp here too.
  */
 function finitePositive(raw: unknown, fallback: number, max: number): number {
