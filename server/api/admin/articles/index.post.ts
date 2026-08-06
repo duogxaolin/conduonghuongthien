@@ -94,7 +94,7 @@ export default defineEventHandler(async (event) => {
       userId: adminUser.id,
       action: 'create',
       resource: 'articles',
-      resourceId: newArticleId,
+      resourceId: created,
       meta: { title, type, status, commentsEnabled },
     })
 

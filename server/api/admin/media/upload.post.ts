@@ -168,7 +168,7 @@ export default defineEventHandler(async (event) => {
       userId: adminUser.id,
       action: 'create',
       resource: 'media',
-      resourceId: newMediaId,
+      resourceId: created,
       meta: { originalName, url: uploadResult.url, provider },
     })
 
