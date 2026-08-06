@@ -68,7 +68,7 @@ describe('isSafeReturnPath', () => {
   it('safeReturnPathOr never returns hostile input', () => {
     assert.equal(safeReturnPathOr('/news/1'), '/news/1')
     assert.equal(safeReturnPathOr('//evil.com'), '/')
-    assert.equal(safeReturnPathOr(undefined, '/tro-ly'), '/tro-ly')
+    assert.equal(safeReturnPathOr(undefined, '/assistant'), '/assistant')
   })
 })
 

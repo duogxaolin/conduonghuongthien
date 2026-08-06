@@ -8,7 +8,7 @@
  * verifies every ticket and ignores the id on any that fails.
  *
  * Without the signature check this route would be "tell me a uuid and I will hand
- * you the transcript", and `/nguoi-doc` would display a stranger's conversation —
+ * you the transcript", and `/profile` would display a stranger's conversation —
  * transcripts that can contain a phone number and a description of somebody's
  * criminal record.
  *

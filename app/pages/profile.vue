@@ -3,7 +3,7 @@
 
   Bốn ràng buộc ở đây là bắt buộc, không phải lựa chọn phong cách:
 
-  1. **`/nguoi-doc` KHÔNG có trong `routeRules`.** Mọi tuyến công khai khác phục vụ
+  1. **`/profile` KHÔNG có trong `routeRules`.** Mọi tuyến công khai khác phục vụ
      qua `swr: 60`; một cửa sổ đệm ở trang này là phát tên, email, bình luận và
      đoạn chat của người này cho người kế tiếp ghé vào trong 60 giây.
   2. **Mọi dữ liệu nạp SAU MOUNT.** Không `await useFetch` ở cấp thiết lập, không
@@ -64,7 +64,7 @@
             <button
               type="button"
               class="btn btn-primary inline-flex items-center gap-2 px-6 py-3 text-[0.9rem]"
-              @click="readerSignIn('/nguoi-doc')"
+              @click="readerSignIn('/profile')"
             >
               <i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i> Đăng nhập bằng Google
             </button>
@@ -123,7 +123,143 @@
               </form>
             </section>
 
-            <!-- ── Khối 2: Bình luận của tôi ───────────────────────────────── -->
+            <!-- ── Khối 2: Thông báo ────────────────────────────────────────── -->
+            <section id="notifications" class="rounded-xl border border-[#E2E8DF] bg-white p-6 scroll-mt-24">
+              <header class="mb-4 flex items-center justify-between gap-3">
+                <h2 class="m-0 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
+                  <i class="fa-solid fa-bell mr-2 text-[#7CB342]" aria-hidden="true"></i>Thông báo
+                  <span
+                    v-if="unreadCount > 0"
+                    class="ml-1.5 rounded-full bg-[#B04A4A] px-2 py-0.5 text-[0.7rem] font-bold text-white"
+                  >{{ unreadCount }} mới</span>
+                </h2>
+                <button
+                  v-if="unreadCount > 0"
+                  type="button"
+                  class="shrink-0 text-[0.8rem] font-semibold text-[#4A6741] underline transition-colors hover:text-[#385130]"
+                  @click="markAllNotificationsRead"
+                >Đánh dấu tất cả đã đọc</button>
+              </header>
+
+              <!--
+                Công tắc nhận email.
+
+                Đặt trong khối thông báo chứ không ở khối thông tin: nó nói về
+                chính những thông báo bên dưới, và một thiết lập nằm cách xa thứ
+                nó điều khiển là thiết lập người đọc không tìm thấy khi cần tắt.
+              -->
+              <div class="mb-4 flex flex-wrap items-start justify-between gap-3 rounded-lg bg-[#F3F7F1] px-3.5 py-3">
+                <div class="min-w-0 flex-1">
+                  <p class="m-0 text-[0.85rem] font-bold text-[#385130]">
+                    <i class="fa-solid fa-envelope mr-1.5 text-[#7CB342]" aria-hidden="true"></i>
+                    Gửi email khi có người trả lời
+                  </p>
+                  <p v-if="reader.email" class="m-0 mt-1 text-[0.78rem] leading-relaxed text-[#4A5545]">
+                    Gửi tới <strong class="break-all">{{ reader.email }}</strong>. Bạn có thể tắt bất cứ lúc nào.
+                  </p>
+                  <!-- Tài khoản Google không có email thì không có gì để gửi tới;
+                       hiện một công tắc bật được ở đây là hứa một việc sẽ không
+                       bao giờ xảy ra. -->
+                  <p v-else class="m-0 mt-1 text-[0.78rem] italic leading-relaxed text-[#7A8675]">
+                    Tài khoản của bạn không có địa chỉ email nên cổng thông tin không gửi được.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  role="switch"
+                  :aria-checked="emailNotificationsOn"
+                  :disabled="savingEmailPref || !reader.email"
+                  class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  :class="emailNotificationsOn ? 'bg-[#4A6741]' : 'bg-[#CFDDC8]'"
+                  @click="toggleEmailNotifications"
+                >
+                  <span class="sr-only">Gửi email khi có người trả lời</span>
+                  <span
+                    class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
+                    :class="emailNotificationsOn ? 'translate-x-6' : 'translate-x-1'"
+                    aria-hidden="true"
+                  ></span>
+                </button>
+                <p v-if="emailPrefError" role="alert" class="m-0 w-full text-[0.8rem] text-[#B04A4A]">
+                  <i class="fa-solid fa-circle-exclamation mr-1.5" aria-hidden="true"></i>{{ emailPrefError }}
+                </p>
+              </div>
+
+              <div v-if="notifPending" role="status" aria-busy="true" class="flex flex-col gap-3">
+                <span class="sr-only">Đang tải thông báo</span>
+                <div v-for="n in 3" :key="n" aria-hidden="true" class="rounded-lg border border-[#EEF2EC] p-4">
+                  <div class="h-3 w-44 animate-pulse rounded bg-[#EEF2EC] motion-reduce:animate-none"></div>
+                  <div class="mt-2.5 h-3.5 w-full animate-pulse rounded bg-[#F1F5F0] motion-reduce:animate-none"></div>
+                </div>
+              </div>
+
+              <p v-else-if="notifFailed" role="alert" class="m-0 rounded-lg border border-dashed border-[#E2A0A0] bg-[#FDF6F6] px-4 py-6 text-center text-[0.9rem] text-[#B04A4A]">
+                <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
+                Không thể tải thông báo.
+                <button type="button" class="font-bold text-[#4A6741] underline" @click="reloadNotifications">Thử lại</button>.
+              </p>
+
+              <p v-else-if="!notifications.length" class="m-0 rounded-lg border border-dashed border-[#E2E8DF] px-4 py-8 text-center text-[0.9rem] text-[#7A8675]">
+                Chưa có thông báo nào. Khi có người trả lời bình luận của bạn, thông báo sẽ hiện ở đây.
+              </p>
+
+              <ul v-else class="m-0 flex list-none flex-col gap-3 p-0">
+                <li v-for="item in notifications" :key="item.id">
+                  <component
+                    :is="item.target ? NuxtLink : 'div'"
+                    v-bind="item.target ? { to: item.target.url } : {}"
+                    class="flex gap-3 rounded-lg border p-4 no-underline transition-colors"
+                    :class="[
+                      item.isRead ? 'border-[#EEF2EC] bg-[#FCFDFC]' : 'border-[#CFDDC8] bg-[#F4F9F0]',
+                      item.target ? 'cursor-pointer hover:border-[#7CB342]' : 'cursor-default',
+                    ]"
+                    @click="onNotificationClick(item)"
+                  >
+                    <span
+                      class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                      :class="item.isRead ? 'bg-transparent' : 'bg-[#7CB342]'"
+                      aria-hidden="true"
+                    ></span>
+                    <span class="min-w-0 flex-1">
+                      <span class="block text-[0.88rem] leading-snug text-[#1E251C]">
+                        <strong class="font-bold">{{ item.authorName }}</strong>
+                        đã trả lời bình luận của bạn
+                        <span v-if="item.createdAt" class="ml-1 text-[0.78rem] font-normal text-[#7A8675]">
+                          • {{ formatDateVN(item.createdAt) }}
+                        </span>
+                      </span>
+                      <span class="mt-1 block break-words text-[0.85rem] leading-relaxed text-[#4A5545]">{{ item.excerpt }}</span>
+                      <span v-if="item.target" class="mt-1.5 block truncate text-[0.78rem] font-semibold text-[#4A6741]">
+                        {{ item.target.articleTitle }} &rarr;
+                      </span>
+                      <!-- Bài đã ẩn hoặc đã đóng bình luận: nói ra thay vì đưa một
+                           liên kết dẫn tới trang không có luồng bình luận nào. -->
+                      <span v-else class="mt-1.5 block text-[0.78rem] italic text-[#7A8675]">
+                        Bài viết hiện không mở bình luận
+                      </span>
+                    </span>
+                  </component>
+                </li>
+              </ul>
+
+              <div v-if="notifTotalPages > 1" class="mt-4 flex items-center justify-center gap-3">
+                <button
+                  type="button"
+                  class="rounded-lg border border-[#E2E8DF] px-3 py-2 text-[0.82rem] font-semibold text-[#385130] disabled:opacity-50"
+                  :disabled="notifPage <= 1 || notifPending"
+                  @click="loadNotifications(notifPage - 1)"
+                >Trước</button>
+                <span class="text-[0.82rem] text-[#7A8675]">Trang {{ notifPage }} / {{ notifTotalPages }}</span>
+                <button
+                  type="button"
+                  class="rounded-lg border border-[#E2E8DF] px-3 py-2 text-[0.82rem] font-semibold text-[#385130] disabled:opacity-50"
+                  :disabled="notifPage >= notifTotalPages || notifPending"
+                  @click="loadNotifications(notifPage + 1)"
+                >Sau</button>
+              </div>
+            </section>
+
+            <!-- ── Khối 3: Bình luận của tôi ───────────────────────────────── -->
             <section class="rounded-xl border border-[#E2E8DF] bg-white p-6">
               <header class="mb-4 flex items-center justify-between gap-3">
                 <h2 class="m-0 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
@@ -197,7 +333,7 @@
               </div>
             </section>
 
-            <!-- ── Khối 3: Bài đã đọc ──────────────────────────────────────── -->
+            <!-- ── Khối 4: Bài đã đọc ──────────────────────────────────────── -->
             <section class="rounded-xl border border-[#E2E8DF] bg-white p-6">
               <header class="mb-2 flex items-center justify-between gap-3">
                 <h2 class="m-0 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
@@ -247,13 +383,13 @@
               </ul>
             </section>
 
-            <!-- ── Khối 4: Đoạn chat của tôi ───────────────────────────────── -->
+            <!-- ── Khối 5: Đoạn chat của tôi ───────────────────────────────── -->
             <section class="rounded-xl border border-[#E2E8DF] bg-white p-6">
               <header class="mb-4 flex items-center justify-between gap-3">
                 <h2 class="m-0 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
                   <i class="fa-solid fa-robot mr-2 text-[#7CB342]" aria-hidden="true"></i>Đoạn chat của tôi
                 </h2>
-                <nuxt-link to="/tro-ly" class="shrink-0 text-[0.8rem] font-semibold text-[#4A6741] no-underline hover:underline">
+                <nuxt-link to="/assistant" class="shrink-0 text-[0.8rem] font-semibold text-[#4A6741] no-underline hover:underline">
                   Mở trợ lý &rarr;
                 </nuxt-link>
               </header>
@@ -319,10 +455,15 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref, watch } from 'vue'
+import { computed, onMounted, ref, resolveComponent, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useReaderAuth } from '~/composables/useReaderAuth'
+import { useReaderNotifications } from '~/composables/useReaderNotifications'
 import { useReadingHistory } from '~/composables/useReadingHistory'
+
+// Resolve once so the runtime `:is` binding renders a real <a> — a string name
+// would render a literal <nuxtlink> element that navigates nowhere.
+const NuxtLink = resolveComponent('NuxtLink')
 
 /**
  * Giữ đồng bộ với `DISPLAY_NAME_*` trong server/utils/display-name.ts.
@@ -348,6 +489,7 @@ const {
   load: loadReader,
   signIn: readerSignIn,
   applyDisplayName,
+  applyEmailPreference,
   claimChats,
   clearClaimFlag,
   forgetReader,
@@ -424,6 +566,69 @@ watch(reader, value => {
 // Xoá thông báo "đã lưu" ngay khi người đọc gõ tiếp: để nó ở lại thì lần sửa sau
 // trông như đã được lưu trong khi chưa.
 watch(nameDraft, () => { nameSaved.value = false })
+
+// ─── Thông báo ──────────────────────────────────────────────────────────────
+// State ở cấp module trong composable, dùng chung với chuông ở header: đánh dấu
+// đã đọc tại đây làm huy hiệu trên header rụng ngay, không đợi tải lại trang.
+const {
+  items: notifications,
+  unreadCount,
+  page: notifPage,
+  totalPages: notifTotalPages,
+  pending: notifPending,
+  failed: notifFailed,
+  load: loadNotifications,
+  markRead: markNotificationsRead,
+  markAllRead: markAllNotificationsRead,
+} = useReaderNotifications()
+
+/** Nút thử lại gọi lại CHÍNH lượt fetch đã hỏng, ở đúng trang đang xem. */
+function reloadNotifications() {
+  loadNotifications(notifPage.value).catch((err) => {
+    if (err?.statusCode === 401) forgetReader()
+  })
+}
+
+/**
+ * Bấm một thông báo: đánh dấu đã đọc, để `NuxtLink` tự điều hướng.
+ *
+ * Không `preventDefault`: phần tử đã là một liên kết thật khi có đích, nên chuột
+ * giữa và "mở tab mới" vẫn hoạt động như người đọc mong đợi.
+ */
+function onNotificationClick(item) {
+  if (!item.isRead) void markNotificationsRead([item.id])
+}
+
+// ─── Công tắc nhận email ────────────────────────────────────────────────────
+const savingEmailPref = ref(false)
+const emailPrefError = ref('')
+
+/** Mặc định bật khi máy chủ chưa nói gì — cùng mặc định với cột trong CSDL. */
+const emailNotificationsOn = computed(() => reader.value?.emailNotifications !== false)
+
+async function toggleEmailNotifications() {
+  if (savingEmailPref.value || !reader.value?.email) return
+
+  const next = !emailNotificationsOn.value
+  savingEmailPref.value = true
+  emailPrefError.value = ''
+  try {
+    await $fetch('/api/public/reader/profile/email-notifications', {
+      method: 'PUT',
+      body: { enabled: next },
+    })
+    // State ở cấp module, nên mọi bề mặt đọc nó đổi theo cùng lúc.
+    applyEmailPreference(next)
+  } catch (err) {
+    emailPrefError.value = err?.statusMessage || err?.data?.statusMessage || 'Không thể lưu thiết lập. Vui lòng thử lại.'
+    // 401: vé hết hiệu lực giữa lúc trang mở — bỏ danh tính để trang đổi sang
+    // khối mời đăng nhập. 403 thì KHÔNG: đó là lệnh chặn, người đọc vẫn đang
+    // đăng nhập và mời họ đăng nhập lại là mời một lượt không đổi được gì.
+    if (err?.statusCode === 401) forgetReader()
+  } finally {
+    savingEmailPref.value = false
+  }
+}
 
 // ─── Bình luận của tôi ──────────────────────────────────────────────────────
 const commentsData = ref(null)
@@ -504,8 +709,16 @@ onMounted(async () => {
   loadHistory()
   await loadReader()
   if (!reader.value) return
-  // Hai lượt độc lập nên chạy cùng lúc: nối đuôi thì thời gian chờ là tổng, còn
-  // song song thì là lượt chậm hơn.
-  await Promise.all([loadComments(), loadChats()])
+  // Ba lượt độc lập nên chạy cùng lúc: nối đuôi thì thời gian chờ là tổng, còn
+  // song song thì là lượt chậm nhất. `loadNotifications` có thể ném 401 (vé hết
+  // hiệu lực giữa lúc trang mở) nên bắt riêng — để lọt thì `Promise.all` huỷ cả
+  // hai lượt kia và trang trống trơn không có lời giải thích nào.
+  await Promise.all([
+    loadComments(),
+    loadChats(),
+    loadNotifications().catch((err) => {
+      if (err?.statusCode === 401) forgetReader()
+    }),
+  ])
 })
 </script>

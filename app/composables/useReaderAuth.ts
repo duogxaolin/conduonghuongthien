@@ -20,6 +20,8 @@ export type ReaderProfile = {
   initials:    string
   /** The name the reader chose, or null when the Google one is showing. */
   customDisplayName?: string | null
+  /** Whether the portal emails this reader when somebody answers them. */
+  emailNotifications?: boolean
 }
 
 /** Module-level: one identity per page, not one per component. */
@@ -81,7 +83,7 @@ export function useReaderAuth() {
    *
    * Everything here is swallowed. This runs on every page load for every signed-in
    * reader, on pages whose job is to display an article — a failed claim has no
-   * standing to surface an error, and the reader can always retry from /nguoi-doc.
+   * standing to surface an error, and the reader can always retry from /profile.
    */
   async function claimChats(): Promise<void> {
     if (typeof window === 'undefined') return
@@ -198,6 +200,18 @@ export function useReaderAuth() {
     }
   }
 
+  /**
+   * Update the cached email preference after the server accepts a change.
+   *
+   * The state is module-level, so without this the toggle would show the new
+   * position while `reader.emailNotifications` still held the old one — and any
+   * other surface reading it (or a later re-render) would snap it back.
+   */
+  function applyEmailPreference(enabled: boolean): void {
+    if (!reader.value) return
+    reader.value = { ...reader.value, emailNotifications: enabled }
+  }
+
   /** Turn a `?dangnhap=` reason into a sentence, or null when there is none. */
   function signInMessage(reason: unknown): string | null {
     if (typeof reason !== 'string' || !reason) return null
@@ -216,7 +230,8 @@ export function useReaderAuth() {
     forgetReader,
     signInMessage,
     applyDisplayName,
-    /** Exposed so /nguoi-doc can offer a retry button; `load()` already runs it
+    applyEmailPreference,
+    /** Exposed so /profile can offer a retry button; `load()` already runs it
      *  once per browser session on its own. */
     claimChats,
     /** Exposed for the same retry: without clearing the flag, pressing the button

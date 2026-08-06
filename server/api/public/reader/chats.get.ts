@@ -11,7 +11,7 @@
  * citizen reading their own.
  *
  * Returns a SUMMARY, never the transcript. The reader already has their own
- * messages in this browser's localStorage, and /nguoi-doc only needs to show that
+ * messages in this browser's localStorage, and /profile only needs to show that
  * the conversation is attached to the account. Shipping full transcripts would put
  * every claimed conversation's text into a response that exists to render a list.
  */

@@ -19,9 +19,9 @@ import { parse } from '@vue/compiler-sfc'
 
 const read = (path: string) => readFileSync(new URL(path, import.meta.url), 'utf8')
 
-const PAGE = '../app/pages/tai-lieu-hoi-dap.vue'
+const PAGE = '../app/pages/qa-documents.vue'
 const HANDLER = '../server/api/public/chatbot/knowledge.get.ts'
-const CHAT_SURFACES = ['../app/components/ChatWidget.vue', '../app/pages/tro-ly.vue'] as const
+const CHAT_SURFACES = ['../app/components/ChatWidget.vue', '../app/pages/assistant.vue'] as const
 
 const template = (path: string) => parse(read(path), { filename: path }).descriptor.template?.content ?? ''
 
@@ -209,7 +209,7 @@ test('both chat surfaces link a citation to the full page', () => {
     const source = template(file)
     assert.match(
       source,
-      /:to="`\/tai-lieu-hoi-dap#qa-\$\{source\.entryId\}`"/,
+      /:to="`\/qa-documents#qa-\$\{source\.entryId\}`"/,
       `${file} must deep-link the cited entry`,
     )
     assert.match(source, /Mở trong Tài liệu Hỏi – Đáp/, `${file} link text changed wording`)
@@ -227,8 +227,8 @@ test('the page is reachable without going through the assistant', () => {
   // `DEFAULT_NAV` is only the fallback, so a deployment whose officers have saved
   // a custom menu would not show the header entry at all.
   const layout = read('../app/layouts/default.vue')
-  assert.match(layout, /to="\/tai-lieu-hoi-dap"/, 'the footer must link the page')
-  assert.match(layout, /url: '\/tai-lieu-hoi-dap'/, 'the default nav must offer the page too')
+  assert.match(layout, /to="\/qa-documents"/, 'the footer must link the page')
+  assert.match(layout, /url: '\/qa-documents'/, 'the default nav must offer the page too')
   // The nav labels come from the dictionary, so a missing key renders as the raw URL.
   const dictionary = read('../app/composables/useI18n.ts')
   for (const key of ['faq_articles', 'faq_approved_docs']) {
@@ -242,5 +242,5 @@ test('the page is reachable without going through the assistant', () => {
 test('the page is cached like the other public reading pages', () => {
   // Same reasoning as /legal-qa: content changes only when an officer publishes,
   // and every visitor sees the same list, so there is nothing private to leak.
-  assert.match(read('../nuxt.config.ts'), /'\/tai-lieu-hoi-dap': \{ swr: 60 \}/)
+  assert.match(read('../nuxt.config.ts'), /'\/qa-documents': \{ swr: 60 \}/)
 })

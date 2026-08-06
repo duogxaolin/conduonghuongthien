@@ -1135,6 +1135,7 @@ export async function initDb() {
       \`email\` VARCHAR(255) NULL,
       \`display_name\` VARCHAR(255) NULL,
       \`custom_display_name\` VARCHAR(255) NULL,
+      \`email_notifications\` TINYINT(1) NOT NULL DEFAULT 1,
       \`is_banned\` TINYINT(1) NOT NULL DEFAULT 0,
       \`ban_reason\` TEXT NULL,
       \`banned_at\` DATETIME NULL,
@@ -1169,6 +1170,32 @@ export async function initDb() {
       CONSTRAINT \`fk_article_comments_reader\` FOREIGN KEY (\`reader_id\`) REFERENCES \`reader_accounts\` (\`id\`) ON DELETE CASCADE,
       CONSTRAINT \`fk_article_comments_admin_user\` FOREIGN KEY (\`admin_user_id\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL,
       CONSTRAINT \`fk_article_comments_parent\` FOREIGN KEY (\`parent_id\`) REFERENCES \`article_comments\` (\`id\`) ON DELETE CASCADE
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // "Somebody replied to you". Both FKs CASCADE on purpose: a notification is a
+  // pointer to a row the reader can go and read, so when the reply (or the
+  // reader) is gone there is nothing left to point at and following it would
+  // land on an article with no such comment.
+  //
+  // Deliberately NOT registered as a retention scope — every row hangs off
+  // `article_comments`, which already cascades from both `articles` and
+  // `reader_accounts`, so this table is bounded before retention looks at it.
+  // An independent age window would delete the notification while the reply sat
+  // unread on the page. See the comment on readerNotifications in schema.ts.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`reader_notifications\` (
+      \`id\` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      \`reader_id\` INT NOT NULL,
+      \`comment_id\` BIGINT UNSIGNED NOT NULL,
+      \`type\` VARCHAR(32) NOT NULL DEFAULT 'comment_reply',
+      \`is_read\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`created_at\` DATETIME NOT NULL,
+      UNIQUE KEY \`reader_notifications_reader_comment_uq\` (\`reader_id\`, \`comment_id\`),
+      KEY \`reader_notifications_reader_read_created_idx\` (\`reader_id\`, \`is_read\`, \`created_at\`),
+      KEY \`reader_notifications_comment_id_idx\` (\`comment_id\`),
+      CONSTRAINT \`fk_reader_notifications_reader\` FOREIGN KEY (\`reader_id\`) REFERENCES \`reader_accounts\` (\`id\`) ON DELETE CASCADE,
+      CONSTRAINT \`fk_reader_notifications_comment\` FOREIGN KEY (\`comment_id\`) REFERENCES \`article_comments\` (\`id\`) ON DELETE CASCADE
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
@@ -1215,6 +1242,10 @@ export async function initDb() {
   // every sign-in: writing the chosen name into that column would have the next
   // sign-in quietly erase it. Read only through effectiveDisplayName().
   await ensureColumn(db, database, 'reader_accounts', 'custom_display_name', 'VARCHAR(255) NULL AFTER `display_name`')
+  // Defaults to 1 so an existing reader keeps being told when the portal answers
+  // them. Switchable from /profile — emailing a citizen with no way to stop is
+  // spam, whoever is sending it.
+  await ensureColumn(db, database, 'reader_accounts', 'email_notifications', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER `custom_display_name`')
 
   // Which reader a conversation belongs to, once they claim it.
   //

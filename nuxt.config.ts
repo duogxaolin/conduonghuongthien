@@ -94,6 +94,22 @@ export default defineNuxtConfig({
    * phát nó cho người kế tiếp.
    */
   routeRules: {
+    /**
+     * Chuyển hướng vĩnh viễn từ ba tuyến tiếng Việt cũ.
+     *
+     * `/nguoi-doc`, `/tai-lieu-hoi-dap` và `/tro-ly` đã chạy trên production, đã
+     * được chia sẻ và đã vào chỉ mục tìm kiếm. Đổi tên mà không có mấy dòng này là
+     * **làm chết mọi liên kết đã phát ra ngoài** — kể cả tham chiếu mà chính trợ lý
+     * ảo đã dẫn cho khách. 301 (không phải 302) để công cụ tìm kiếm chuyển hẳn thứ
+     * hạng sang địa chỉ mới thay vì giữ cả hai.
+     *
+     * **Đừng xoá theo kiểu dọn dẹp.** Một liên kết đã in ra giấy hay đã lưu trong
+     * tin nhắn không có hạn sử dụng, và cái giá để giữ là ba dòng cấu hình.
+     */
+    '/nguoi-doc':        { redirect: { to: '/profile', statusCode: 301 } },
+    '/tai-lieu-hoi-dap': { redirect: { to: '/qa-documents', statusCode: 301 } },
+    '/tro-ly':           { redirect: { to: '/assistant', statusCode: 301 } },
+
     '/': { swr: 60 },
     '/about': { swr: 60 },
     '/contact': { swr: 60 },
@@ -105,8 +121,8 @@ export default defineNuxtConfig({
     // Đọc kho câu trả lời đã duyệt — nội dung chỉ đổi khi cán bộ xuất bản một
     // mục mới, và mọi khách thấy cùng một danh sách nên không có gì riêng tư để
     // rò rỉ qua bộ nhớ đệm.
-    '/tai-lieu-hoi-dap': { swr: 60 },
-    // `/tro-ly` is deliberately absent. Its server-rendered output is an empty
+    '/qa-documents': { swr: 60 },
+    // `/assistant` is deliberately absent. Its server-rendered output is an empty
     // shell — the conversation list, transcript and quick questions are all
     // fetched or read from localStorage on the client — so an SWR window would
     // cache nothing worth caching. Listing it would also invite the assumption
