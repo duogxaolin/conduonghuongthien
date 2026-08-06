@@ -1,4 +1,4 @@
-import { getDb, getPool } from '../utils/db'
+import { getDb } from '../utils/db'
 import { submissions, pages, pageBlocks } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { getSmtpConfig, sendMail } from '../utils/mailer'
@@ -6,6 +6,7 @@ import { escapeHtml } from '../utils/escape-html'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
 import { logError, logWarn, SECURITY_EVENTS } from '../utils/logger'
 import { getClientIp } from '../utils/client-ip'
+import { rateLimitDeps } from '../utils/rate-limit-deps'
 
 // Public, unauthenticated endpoint → rate limit by the real peer IP
 // (`x-forwarded-for` is client-controlled and therefore spoofable).
@@ -14,8 +15,7 @@ import { getClientIp } from '../utils/client-ip'
 const SUBMIT_RULE: RateLimitRule = { limit: 5, windowSeconds: 10 * 60 }
 
 async function submitRateLimited(ip: string): Promise<{ limited: boolean; retryAfterSeconds: number }> {
-  const pool = getPool()
-  const deps = { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
+  const deps = rateLimitDeps()
   const state = await recordRateLimitHit(`submit:${ip}`, SUBMIT_RULE, deps)
   return { limited: state.blocked, retryAfterSeconds: state.retryAfterSeconds }
 }

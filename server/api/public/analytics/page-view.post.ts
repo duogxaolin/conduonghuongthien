@@ -1,6 +1,7 @@
 import { createError, defineEventHandler, readRawBody, setResponseStatus } from 'h3'
 import { ingestAnalyticsPageView } from '../../../services/analytics-ingestion'
 import { getClientIp } from '../../../utils/client-ip'
+import { analyticsConfig } from '../../../utils/runtime-config'
 
 const MAX_BODY_BYTES = 1024
 
@@ -22,7 +23,7 @@ function viewRateLimited(ip: string): boolean {
 }
 
 export default defineEventHandler(async (event) => {
-  const config = (useRuntimeConfig(event) as unknown as { analytics: { collectionEnabled?: boolean; hmacSecret?: string } }).analytics
+  const config = analyticsConfig(event)
   if (config.collectionEnabled !== true) {
     setResponseStatus(event, 202)
     return { accepted: false }

@@ -1,7 +1,6 @@
 import { createHash } from 'node:crypto'
 import { type H3Event } from 'h3'
 import { getClientIp } from '../client-ip'
-import { getPool } from '../db'
 import { recordRateLimitHit, type RateLimitRule } from '../rate-limit-store'
 import type { ChatbotSettings } from '../../db/schema'
 import type { SafeProviderRequestOptions, SafeProviderResponse } from './outbound'
@@ -11,6 +10,7 @@ import { buildProviderChatCall, extractProviderAnswer } from './providers'
 import { selectSmallTalk, type SemanticSmallTalkProvider, type SmallTalkSemanticConfig } from './small-talk-semantic'
 import { classifySmallTalk, type SmallTalkContext, type SmallTalkEntry } from './small-talk'
 import { logWarn, logError } from '../logger'
+import { rateLimitDeps } from '../rate-limit-deps'
 
 export const HOTLINE = CHATBOT_HOTLINE
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
@@ -44,11 +44,6 @@ function clientKey(event: ChatEvent): string {
   return `chat:${createHash('sha256').update(RATE_LIMIT_NAMESPACE).update('\0').update(identity).digest('hex')}`
 }
 
-function limiterDeps() {
-  const pool = getPool()
-  return { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
-}
-
 /**
  * Translates "allow N requests per window" into the store's rule shape.
  *
@@ -71,7 +66,7 @@ function storeRule(allowedRequests: number, windowSeconds: number): RateLimitRul
  * just per worker, which is exactly the behaviour this replaced.
  */
 export async function enforceChatRateLimit(key: string, limit: number, windowSeconds: number): Promise<number | null> {
-  const state = await recordRateLimitHit(key, storeRule(limit, windowSeconds), limiterDeps())
+  const state = await recordRateLimitHit(key, storeRule(limit, windowSeconds), rateLimitDeps())
   return state.blocked ? Math.max(1, state.retryAfterSeconds) : null
 }
 
@@ -86,7 +81,7 @@ export async function enforceChatRateLimit(key: string, limit: number, windowSec
  */
 export async function enforceAiQuota(event: ChatEvent, sessionId: string | null): Promise<number | null> {
   const key = sessionId ? `chat-ai:${sessionId}` : `chat-ai-ip:${clientKey(event)}`
-  const state = await recordRateLimitHit(key, storeRule(AI_QUOTA_RULE.limit, AI_QUOTA_RULE.windowSeconds), limiterDeps())
+  const state = await recordRateLimitHit(key, storeRule(AI_QUOTA_RULE.limit, AI_QUOTA_RULE.windowSeconds), rateLimitDeps())
   return state.blocked ? Math.max(1, state.retryAfterSeconds) : null
 }
 

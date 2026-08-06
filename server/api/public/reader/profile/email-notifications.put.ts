@@ -12,8 +12,8 @@
  */
 import { requireReader, touchReader } from '../../../../utils/reader-auth'
 import { setReaderEmailPreference } from '../../../../services/readers'
-import { getPool } from '../../../../utils/db'
 import { recordRateLimitHit, type RateLimitRule } from '../../../../utils/rate-limit-store'
+import { rateLimitDeps } from '../../../../utils/rate-limit-deps'
 
 /** Per account. A toggle publishes nothing to anyone else, so there is no
  *  address key — an office behind one NAT has no shared cost to protect. */
@@ -44,8 +44,7 @@ export default defineEventHandler(async (event) => {
 
   // Allowance spent after every reason to refuse, immediately before the write —
   // the ordering the comment and rename paths both document.
-  const pool = getPool()
-  const deps = { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
+  const deps = rateLimitDeps()
   const limit = await recordRateLimitHit(`reader:emailpref:${reader.id}`, PREFERENCE_RULE, deps)
   if (limit.blocked) {
     setResponseHeader(event, 'retry-after', Math.max(1, limit.retryAfterSeconds))

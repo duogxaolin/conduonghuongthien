@@ -9,7 +9,6 @@
  */
 
 import { verifyMfaChallenge } from '../../../../utils/auth'
-import { getPool } from '../../../../utils/db'
 import { logInfo, logWarn, SECURITY_EVENTS } from '../../../../utils/logger'
 import {
   peekRateLimit,
@@ -32,14 +31,10 @@ import {
   usableFactorTypes,
   type FactorType,
 } from '../../../../utils/mfa/factors'
+import { rateLimitDeps } from '../../../../utils/rate-limit-deps'
 
 /** Sustained pressure on one account, across as many fresh tickets as they like. */
 const ACCOUNT_RULE: RateLimitRule = { limit: 10, windowSeconds: 15 * 60 }
-
-function limiterDeps() {
-  const pool = getPool()
-  return { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
-}
 
 type Method = FactorType | 'recovery_code'
 const METHODS: Method[] = ['totp', 'email_otp', 'second_password', 'recovery_code']
@@ -63,7 +58,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng chọn phương thức và nhập mã xác thực.' })
   }
 
-  const deps = limiterDeps()
+  const deps = rateLimitDeps()
   const accountBucket = `mfa:verify:user:${challenge.userId}`
   const accountState = await peekRateLimit(accountBucket, ACCOUNT_RULE, deps)
   if (accountState.blocked) {

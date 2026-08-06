@@ -2,7 +2,6 @@ import { getDb } from '../../../utils/db'
 import { users, roles } from '../../../db/schema'
 import { verifyPassword } from '../../../utils/auth'
 import { eq } from 'drizzle-orm'
-import { getPool } from '../../../utils/db'
 import { logInfo, logWarn, SECURITY_EVENTS } from '../../../utils/logger'
 import { completeLogin, setChallengeCookie } from '../../../utils/mfa/session'
 import { countUnusedRecoveryCodes, usableFactorTypes } from '../../../utils/mfa/factors'
@@ -13,6 +12,7 @@ import {
   recordRateLimitHit,
   type RateLimitRule,
 } from '../../../utils/rate-limit-store'
+import { rateLimitDeps } from '../../../utils/rate-limit-deps'
 
 // Rate limiting: 5 lần sai / 15 phút theo IP thật + username, và 15 lần / 15 phút
 // theo riêng username (chặn đoán phân tán từ nhiều IP).
@@ -22,11 +22,6 @@ import {
 // thì tự lùi về bộ nhớ tiến trình — đúng bằng hành vi cũ, không mở toang.
 const IP_RULE: RateLimitRule = { limit: 5, windowSeconds: 15 * 60 }
 const USER_RULE: RateLimitRule = { limit: 15, windowSeconds: 15 * 60 }
-
-function limiterDeps() {
-  const pool = getPool()
-  return { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
-}
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event).catch(() => ({}))
@@ -43,7 +38,7 @@ export default defineEventHandler(async (event) => {
   const userKey = username.toLowerCase()
   const ipBucket = `login:ip:${ip}:${userKey}`
   const userBucket = `login:user:${userKey}`
-  const deps = limiterDeps()
+  const deps = rateLimitDeps()
 
   const [ipState, userState] = await Promise.all([
     peekRateLimit(ipBucket, IP_RULE, deps),
