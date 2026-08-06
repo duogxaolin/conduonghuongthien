@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AdminMediaUploadResult } from '~/types/admin-api'
 // ─── Reusable TinyMCE rich-text editor (v-model) ─────────────────────────────
 // Single source for TinyMCE in the admin. Used by the page builder's richtext
 // fields (PropertyPanel) so the in-builder editing experience matches the
@@ -16,13 +17,41 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
 // Unique id per instance so multiple editors can coexist on one page.
 const editorId = `tinymce-${Math.random().toString(36).slice(2, 10)}`
-let editor: any = null
+
+/**
+ * Bề mặt TinyMCE mà component này thật sự chạm tới — bốn phương thức, không hơn.
+ *
+ * TinyMCE nạp bằng thẻ `<script>` (tự chủ, có CDN dự phòng) chứ không phải một
+ * gói npm, nên nó **không mang theo kiểu nào**. Khai đúng phần đang dùng thay vì
+ * `any`: `any` không chỉ tắt kiểm kiểu cho lời gọi hợp lệ mà còn nuốt luôn lỗi
+ * gõ sai tên phương thức — `editor.setConten(...)` biên dịch trót lọt rồi ném
+ * lúc chạy, ở một trình soạn thảo mà lỗi đó nghĩa là **mất bài viết đang gõ**.
+ *
+ * Cố ý không cài `@types/tinymce`: dự án chỉ dùng bốn phương thức, còn gói kiểu
+ * đầy đủ là một phụ thuộc nữa phải cập nhật cho một thư viện đang nạp từ tệp
+ * tĩnh.
+ */
+interface TinyMceEditorInstance {
+  on: (event: string, handler: () => void) => void
+  getContent: () => string
+  setContent: (html: string) => void
+  remove: () => void
+}
+
+interface TinyMceGlobal {
+  init: (config: Record<string, unknown>) => void
+}
+
+/** `window` kèm TinyMCE, sau khi thẻ script đã nạp xong. */
+type WindowWithTinyMce = Window & { tinymce?: TinyMceGlobal }
+
+let editor: TinyMceEditorInstance | null = null
 let internalUpdate = false
 
 // Load self-hosted first (instant, offline-safe, no external dependency for an
 // auth-gated admin tool); fall back to the CDN only if the local asset is missing.
 const loadScript = () => new Promise<void>((resolve) => {
-  if ((window as any).tinymce) { resolve(); return }
+  if ((window as WindowWithTinyMce).tinymce) { resolve(); return }
   const script = document.createElement('script')
   script.src = '/assets/tinymce/tinymce.min.js'
   script.onload = () => resolve()
@@ -39,7 +68,7 @@ const loadScript = () => new Promise<void>((resolve) => {
 onMounted(async () => {
   if (typeof window === 'undefined') return
   await loadScript()
-  const win = window as any
+  const win = window as WindowWithTinyMce
   if (!win.tinymce) return
   win.tinymce.init({
     selector: `#${editorId}`,
@@ -68,17 +97,17 @@ onMounted(async () => {
     automatic_uploads: true,
     paste_data_images: true,
     file_picker_types: 'image',
-    images_upload_handler: (blobInfo: any) => new Promise<string>((resolve, reject) => {
+    images_upload_handler: (blobInfo: { blob: () => Blob, filename: () => string }) => new Promise<string>((resolve, reject) => {
       const formData = new FormData()
       formData.append('file', blobInfo.blob(), blobInfo.filename())
       $fetch('/api/admin/media/upload', { method: 'POST', body: formData })
-        .then((res: any) => {
+        .then((res: AdminMediaUploadResult) => {
           if (res.ok && res.media?.url) resolve(res.media.url)
           else reject('Upload thất bại')
         })
-        .catch((err: any) => reject(err?.data?.statusMessage || 'Upload thất bại'))
+        .catch((err: unknown) => reject(errorMessage(err, 'Upload thất bại')))
     }),
-    setup: (ed: any) => {
+    setup: (ed: TinyMceEditorInstance) => {
       editor = ed
       ed.on('init', () => { ed.setContent(props.modelValue || '') })
       const push = () => {

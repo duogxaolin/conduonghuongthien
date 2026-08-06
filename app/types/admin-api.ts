@@ -1,0 +1,82 @@
+/**
+ * Kiểu bản ghi mà các trang quản trị nhận từ API.
+ *
+ * **Suy ra từ chính handler, không viết tay.** Đó là điểm mấu chốt: các endpoint
+ * này gần như đều dùng projection (`db.select({ ... })`) chứ không trả nguyên
+ * một hàng, và nhiều cái còn có trường ghép từ `leftJoin` — `users` trả kèm
+ * `roleName` vốn không tồn tại trong bảng `users`. Nên dùng thẳng
+ * `typeof users.$inferSelect` từ `schema.ts` sẽ **sai theo hai hướng cùng lúc**:
+ * thừa cột không được trả về, thiếu cột được trả về.
+ *
+ * Một interface viết tay thì đúng đúng một lần — vào ngày nó được viết. Thêm
+ * một cột vào projection mà quên sửa interface, và TypeScript vẫn xanh trong
+ * khi trang không biết trường mới tồn tại; bỏ một cột đi thì tệ hơn, vì mã đọc
+ * trường đã biến mất vẫn biên dịch được rồi hiện `undefined` cho cán bộ.
+ * `Awaited<ReturnType<typeof handler>>` không có khoảng cách đó: đổi projection
+ * là kiểu đổi theo, và mọi nơi đọc sai sẽ đỏ ngay ở lượt typecheck kế tiếp.
+ *
+ * Lối này đã có tiền lệ trong dự án — `adminKnowledge()` ở
+ * `server/services/chatbot-knowledge.ts` dùng đúng kỹ thuật này.
+ *
+ * Chỉ khai những kiểu **có nơi dùng thật**. Một kiểu dự phòng không ai import
+ * là một lời khẳng định chưa bao giờ được đối chiếu với gì.
+ */
+
+/**
+ * Phản hồi **sau khi đi qua JSON**, không phải giá trị handler trả về.
+ *
+ * Khác biệt này là thật và cổng typecheck đã bắt được ngay: handler trả `Date`
+ * cho các cột thời gian, nhưng `$fetch` nhận về **chuỗi** — JSON không có kiểu
+ * ngày. Suy thẳng `Awaited<ReturnType<...>>` sẽ khai `createdAt: Date`, nên mã
+ * gọi `.getTime()` trên một chuỗi vẫn biên dịch trót lọt rồi hỏng lúc chạy.
+ * `Serialize` của Nitro mô phỏng đúng phép biến đổi đó (`Date → string`,
+ * `Map`/`Set → {}`, `undefined` biến mất), nên kiểu ở đây khớp với **thứ trình
+ * duyệt thật sự cầm trên tay**.
+ */
+import type { Serialize } from 'nitropack/types'
+
+type Payload<T> = Serialize<Awaited<ReturnType<T extends (...args: never[]) => unknown ? T : never>>>
+
+/** Lấy phần tử của một mảng nằm trong phản hồi, ví dụ `{ ok, users: [...] }`. */
+type ItemOf<T> = T extends readonly (infer U)[] ? U : never
+
+// ─── Người dùng & phân quyền ─────────────────────────────────────────────────
+type UsersHandler = typeof import('~~/server/api/admin/users/index.get').default
+export type AdminUserRow = ItemOf<Payload<UsersHandler>['users']>
+
+type RolesHandler = typeof import('~~/server/api/admin/roles/index.get').default
+export type AdminRoleRow = ItemOf<Payload<RolesHandler>['roles']>
+
+// ─── Nội dung ────────────────────────────────────────────────────────────────
+type CategoriesHandler = typeof import('~~/server/api/admin/categories/index.get').default
+export type AdminCategoryRow = ItemOf<Payload<CategoriesHandler>['items']>
+
+type ContentTypesHandler = typeof import('~~/server/api/admin/content-types/index.get').default
+export type AdminContentTypeRow = ItemOf<Payload<ContentTypesHandler>['items']>
+
+type PagesHandler = typeof import('~~/server/api/admin/pages/index.get').default
+export type AdminPageRow = ItemOf<Payload<PagesHandler>['items']>
+
+// ─── Đơn đăng ký ─────────────────────────────────────────────────────────────
+type SubmissionsHandler = typeof import('~~/server/api/admin/submissions/index.get').default
+export type AdminSubmissionRow = ItemOf<Payload<SubmissionsHandler>['submissions']>
+
+// ─── Bài viết & kho kiến thức ────────────────────────────────────────────────
+type ArticlesHandler = typeof import('~~/server/api/admin/articles/index.get').default
+export type AdminArticleRow = ItemOf<Payload<ArticlesHandler>['items']>
+
+type KnowledgeHandler = typeof import('~~/server/api/admin/chatbot/knowledge/index.get').default
+export type AdminKnowledgeRow = ItemOf<Payload<KnowledgeHandler>['items']>
+
+type PageVersionsHandler = typeof import('~~/server/api/admin/pages/[id]/versions/index.get').default
+export type PageVersionRow = ItemOf<Payload<PageVersionsHandler>['versions']>
+
+type PageDetailHandler = typeof import('~~/server/api/admin/pages/[id].get').default
+export type AdminPageDetail = Payload<PageDetailHandler>
+
+type PageUpdateHandler = typeof import('~~/server/api/admin/pages/[id].put').default
+export type AdminPageUpdateResult = Payload<PageUpdateHandler>
+
+// ─── Thư viện ảnh ────────────────────────────────────────────────────────────
+type MediaUploadHandler = typeof import('~~/server/api/admin/media/upload.post').default
+export type AdminMediaUploadResult = Payload<MediaUploadHandler>

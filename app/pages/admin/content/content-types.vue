@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AdminContentTypeRow, AdminCategoryRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -8,8 +9,8 @@ const toast = useToast()
 const { confirm } = useConfirm()
 
 // ─── State ────────────────────────────────────────────────────────────────────
-const types = ref<any[]>([])
-const allCategories = ref<any[]>([])
+const types = ref<AdminContentTypeRow[]>([])
+const allCategories = ref<AdminCategoryRow[]>([])
 const loading = ref(true)
 const error = ref('')
 const showTree = ref(true)
@@ -103,7 +104,7 @@ const openCreate = () => {
   showModal.value = true
 }
 
-const openEdit = (ct: any) => {
+const openEdit = (ct: AdminContentTypeRow) => {
   modalMode.value = 'edit'
   editingId.value = ct.id
   editingIsSystem.value = !!ct.isSystem
@@ -154,7 +155,7 @@ const bulk = useBulkAction(selection)
  * checkbox at all — offering one that always fails would be a worse UI than
  * offering none.
  */
-const visibleIds = computed(() => types.value.filter((ct: any) => !ct.isSystem).map((ct: any) => Number(ct.id)))
+const visibleIds = computed(() => types.value.filter((ct) => !ct.isSystem).map((ct) => Number(ct.id)))
 
 const bulkDelete = () => bulk.run({
   url: '/api/admin/content-types/bulk-delete',
@@ -169,7 +170,7 @@ const bulkDelete = () => bulk.run({
 })
 
 // ─── Delete ───────────────────────────────────────────────────────────────────
-const deleteType = async (ct: any) => {
+const deleteType = async (ct: AdminContentTypeRow) => {
   const ok = await confirm({ title: 'Xóa thể loại', message: `Bạn có chắc muốn xóa thể loại "${ct.name}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {

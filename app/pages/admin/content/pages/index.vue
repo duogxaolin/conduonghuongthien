@@ -142,12 +142,13 @@
 </template>
 
 <script setup lang="ts">
+import type { AdminPageRow } from '~/types/admin-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const toast = useToast()
 const { confirm } = useConfirm()
 
-const pages = ref<any[]>([])
+const pages = ref<AdminPageRow[]>([])
 const loading = ref(true)
 const loadError = ref('')
 
@@ -179,7 +180,7 @@ const bulk = useBulkAction(selection)
  * System pages back fixed public routes and can never be deleted, so they are
  * left out of the selectable set entirely rather than offered and then refused.
  */
-const visibleIds = computed(() => pages.value.filter((p: any) => !p.isSystem).map((p: any) => Number(p.id)))
+const visibleIds = computed(() => pages.value.filter((p) => !p.isSystem).map((p) => Number(p.id)))
 
 const bulkDelete = () => bulk.run({
   url: '/api/admin/pages/bulk-delete',
@@ -219,7 +220,7 @@ const createPage = async () => {
   }
 }
 
-const removePage = async (p: any) => {
+const removePage = async (p: AdminPageRow) => {
   const ok = await confirm({
     title: 'Xóa trang',
     message: `Xóa trang "${p.title}"? Toàn bộ block của trang sẽ bị xóa. Hành động này không thể hoàn tác.`,

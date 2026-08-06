@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AdminCategoryRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -30,7 +31,7 @@ const errorMsg = ref('')
 const tinymceReady = ref(false)
 
 // Dynamic categories for the selected article type
-const availableCategories = ref<any[]>([])
+const availableCategories = ref<AdminCategoryRow[]>([])
 
 const fetchCategories = async (type: string) => {
   try {
@@ -191,17 +192,21 @@ const initTinyMCE = () => {
     paste_data_images: true,
     paste_merge_formats: true,
     file_picker_types: 'image',
-    images_upload_handler: (blobInfo: any) => new Promise<string>((resolve, reject) => {
+    images_upload_handler: (blobInfo: { blob: () => Blob, filename: () => string }) => new Promise<string>((resolve, reject) => {
       const formData = new FormData()
       formData.append('file', blobInfo.blob(), blobInfo.filename())
       $fetch('/api/admin/media/upload', { method: 'POST', body: formData })
-        .then((res: any) => {
+        .then((res) => {
           if (res.ok && res.media?.url) resolve(res.media.url)
           else reject('Upload thất bại')
         })
-        .catch((err: any) => reject(errorMessage(err, 'Upload thất bại')))
+        .catch((err) => reject(errorMessage(err, 'Upload thất bại')))
     }),
-    setup: (editor: any) => {
+    setup: (editor: {
+        on: (event: string, handler: () => void) => void
+        setContent: (html: string) => void
+        getContent: () => string
+      }) => {
       editor.on('init', () => {
         tinymceReady.value = true
         if (form.content) editor.setContent(form.content)

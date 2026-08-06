@@ -1,11 +1,12 @@
 <script setup lang="ts">
+import type { AdminArticleRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
 })
 
 const route = useRoute()
-const articles = ref<any[]>([])
+const articles = ref<AdminArticleRow[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const search = ref('')
@@ -49,7 +50,7 @@ const typeIcons: Record<string, string> = {
 }
 
 /** Build display string for category: "Parent > Child" or just "Name" */
-const categoryDisplay = (a: any) => {
+const categoryDisplay = (a: AdminArticleRow) => {
   if (!a.categoryName) return ''
   if (a.parentCategoryName) return `${a.parentCategoryName} › ${a.categoryName}`
   return a.categoryName
@@ -145,7 +146,7 @@ const fetchArticles = async (page = 1) => {
 // ─── Bulk selection ───────────────────────────────────────────────────────────
 const selection = useBulkSelection()
 const bulk = useBulkAction(selection)
-const visibleIds = computed(() => articles.value.map((a: any) => Number(a.id)))
+const visibleIds = computed(() => articles.value.map((a) => Number(a.id)))
 
 const bulkDelete = () => bulk.run({
   url: '/api/admin/articles/bulk-delete',
@@ -198,7 +199,7 @@ const bulkComments = (enabled: boolean) => {
  *  "đang mở" trong khi máy chủ vẫn đóng là lời nói dối về trạng thái thật, và
  *  cán bộ sẽ đi tìm xem vì sao trang công khai không có khung bình luận. */
 const togglingComments = ref<number | null>(null)
-const toggleComments = async (art: any) => {
+const toggleComments = async (art: AdminArticleRow) => {
   const next = !art.commentsEnabled
   togglingComments.value = Number(art.id)
   art.commentsEnabled = next
@@ -213,7 +214,7 @@ const toggleComments = async (art: any) => {
   }
 }
 
-const deleteArticle = async (art: any) => {
+const deleteArticle = async (art: AdminArticleRow) => {
   const ok = await confirm({ title: 'Xóa bài viết', message: `Bạn có chắc muốn xóa bài viết "${art.title}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
@@ -233,7 +234,7 @@ const deleteArticle = async (art: any) => {
  * chính người trong cơ quan cũng không trả lời được câu hỏi "số đó có thật
  * không", và đó là câu hỏi bắt buộc phải trả lời được.
  */
-const statsArticle = ref<any>(null)
+const statsArticle = ref<AdminArticleRow | null>(null)
 const statsLoading = ref(false)
 const statsError = ref('')
 const statsData = ref<any>(null)
@@ -645,7 +646,7 @@ onMounted(async () => {
                 </button>
               </td>
               <!-- Date -->
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] text-[0.82rem] whitespace-nowrap">{{ new Date(a.createdAt).toLocaleDateString('vi-VN') }}</td>
+              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] text-[0.82rem] whitespace-nowrap">{{ formatDateTimeVN(a.createdAt) }}</td>
               <!-- Actions -->
               <td class="px-4 py-3 border-b border-[#eef2ee]">
                 <div class="flex items-center gap-2">
