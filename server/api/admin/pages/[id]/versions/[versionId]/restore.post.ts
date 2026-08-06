@@ -24,17 +24,28 @@ export default defineEventHandler(async (event) => {
 
   const blocks = normalizeBlocks(version.blocks)
 
-  await db.update(pages).set({
-    draftBlocks: blocks,
-    draftUpdatedAt: new Date(),
-    draftUpdatedBy: adminUser.id,
-  }).where(eq(pages.id, pageId))
+  /**
+   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+   *
+   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+   * commit độc lập trên pool.
+   */
+  await db.transaction(async (tx) => {
+    await tx.update(pages).set({
+      draftBlocks: blocks,
+      draftUpdatedAt: new Date(),
+      draftUpdatedBy: adminUser.id,
+    }).where(eq(pages.id, pageId))
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'update',
-    resource: 'pages',
-    meta: { pageId, action: 'restore', versionId, kind: version.kind },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'update',
+      resource: 'pages',
+      meta: { pageId, action: 'restore', versionId, kind: version.kind },
+    })
   })
 
   return { ok: true, blocks }

@@ -63,29 +63,42 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
 
-  const [res] = await db.insert(articles).values({
-    type,
-    category,
-    categoryId,
-    title,
-    slug: uniqueSlug,
-    excerpt,
-    content,
-    status,
-    thumbnailUrl,
-    commentsEnabled,
-    authorId: adminUser.id,
-    publishedAt,
-  })
+  /**
+   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+   *
+   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+   * commit độc lập trên pool.
+   */
+  const newArticleId = await db.transaction(async (tx) => {
+    const [res] = await tx.insert(articles).values({
+      type,
+      category,
+      categoryId,
+      title,
+      slug: uniqueSlug,
+      excerpt,
+      content,
+      status,
+      thumbnailUrl,
+      commentsEnabled,
+      authorId: adminUser.id,
+      publishedAt,
+    })
 
-  const newArticleId = res.insertId
+    const created = res.insertId
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'create',
-    resource: 'articles',
-    resourceId: newArticleId,
-    meta: { title, type, status, commentsEnabled },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'create',
+      resource: 'articles',
+      resourceId: newArticleId,
+      meta: { title, type, status, commentsEnabled },
+    })
+
+    return created
   })
 
   return { ok: true, id: newArticleId, slug: uniqueSlug }

@@ -52,40 +52,55 @@ export default defineEventHandler(async (event) => {
   const isSuperAdmin = adminUser.isSuperAdmin === true
   const applied: string[] = []
 
-  for (const [key, value] of Object.entries(newSettings)) {
-    if (!ALLOWED_SETTING_KEYS.has(key)) {
-      throw createError({ statusCode: 400, statusMessage: `Khóa cài đặt không hợp lệ: ${key}` })
-    }
-
-    // Masked secrets: the UI sends '********' when the field was left untouched.
-    if ((key === 'r2_secret_key' || key === 'smtp_pass') && value === '********') continue
-
-    const strValue = value === null || value === undefined ? '' : String(value)
-    if (strValue.length > MAX_VALUE_LENGTH) {
-      throw createError({ statusCode: 400, statusMessage: `Giá trị cài đặt "${key}" quá dài.` })
-    }
-
-    if (SUPERADMIN_ONLY_KEYS.has(key)) {
-      const unchanged = (current.get(key) ?? '') === strValue
-      if (unchanged) continue // no-op: let non-superadmins save the rest of the form
-      if (!isSuperAdmin) {
-        throw createError({
-          statusCode: 403,
-          statusMessage: 'Chỉ SuperAdmin mới được thay đổi mã tuỳ chỉnh (Custom head/body) vì mã này chạy trên toàn bộ trang công khai.',
-        })
+  /**
+   * Cả vòng lặp VÀ dòng audit trong một transaction.
+   *
+   * Ở đây transaction mua thêm một thứ mà các endpoint khác không cần: vòng lặp
+   * có thể `throw` 403 ở giữa chừng (khoá chỉ SuperAdmin sửa được). Viết rời,
+   * các khoá xử lý TRƯỚC lúc ném đã ghi xong và nằm lại — một lượt lưu biểu mẫu
+   * bị từ chối vẫn đổi được một phần cấu hình, và `applied` trong dòng audit thì
+   * không bao giờ được ghi. Bọc lại thì 403 hoàn tác sạch, đúng nghĩa "lượt lưu
+   * này đã bị từ chối".
+   *
+   * Chạy trên `tx`, không phải `db`: một `db.insert()` đặt trong khối
+   * transaction vẫn commit độc lập trên pool.
+   */
+  await db.transaction(async (tx) => {
+    for (const [key, value] of Object.entries(newSettings)) {
+      if (!ALLOWED_SETTING_KEYS.has(key)) {
+        throw createError({ statusCode: 400, statusMessage: `Khóa cài đặt không hợp lệ: ${key}` })
       }
+
+      // Masked secrets: the UI sends '********' when the field was left untouched.
+      if ((key === 'r2_secret_key' || key === 'smtp_pass') && value === '********') continue
+
+      const strValue = value === null || value === undefined ? '' : String(value)
+      if (strValue.length > MAX_VALUE_LENGTH) {
+        throw createError({ statusCode: 400, statusMessage: `Giá trị cài đặt "${key}" quá dài.` })
+      }
+
+      if (SUPERADMIN_ONLY_KEYS.has(key)) {
+        const unchanged = (current.get(key) ?? '') === strValue
+        if (unchanged) continue // no-op: let non-superadmins save the rest of the form
+        if (!isSuperAdmin) {
+          throw createError({
+            statusCode: 403,
+            statusMessage: 'Chỉ SuperAdmin mới được thay đổi mã tuỳ chỉnh (Custom head/body) vì mã này chạy trên toàn bộ trang công khai.',
+          })
+        }
+      }
+
+      await tx.insert(settings).values({ key, value: strValue })
+        .onDuplicateKeyUpdate({ set: { value: strValue } })
+      applied.push(key)
     }
 
-    await db.insert(settings).values({ key, value: strValue })
-      .onDuplicateKeyUpdate({ set: { value: strValue } })
-    applied.push(key)
-  }
-
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'update',
-    resource: 'settings',
-    meta: { keysUpdated: applied },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'update',
+      resource: 'settings',
+      meta: { keysUpdated: applied },
+    })
   })
 
   return { ok: true }

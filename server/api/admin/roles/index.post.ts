@@ -17,34 +17,47 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
 
-  const [res] = await db.insert(roles).values({
-    name,
-    description,
-    isSystem: false,
-  })
+  /**
+   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+   *
+   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+   * commit độc lập trên pool.
+   */
+  const newRoleId = await db.transaction(async (tx) => {
+    const [res] = await tx.insert(roles).values({
+      name,
+      description,
+      isSystem: false,
+    })
 
-  const newRoleId = res.insertId
+    const created = res.insertId
 
-  if (permsInput.length > 0) {
-    // Reject invalid resources and block granting permissions the actor lacks.
-    assertAssignablePermissions(adminUser, permsInput)
-    const permValues = permsInput.map((p: any) => ({
-      roleId: newRoleId,
-      resource: String(p.resource),
-      canCreate: Boolean(p.canCreate),
-      canRead: Boolean(p.canRead),
-      canUpdate: Boolean(p.canUpdate),
-      canDelete: Boolean(p.canDelete),
-    }))
-    await db.insert(permissions).values(permValues)
-  }
+    if (permsInput.length > 0) {
+      // Reject invalid resources and block granting permissions the actor lacks.
+      assertAssignablePermissions(adminUser, permsInput)
+      const permValues = permsInput.map((p: any) => ({
+        roleId: newRoleId,
+        resource: String(p.resource),
+        canCreate: Boolean(p.canCreate),
+        canRead: Boolean(p.canRead),
+        canUpdate: Boolean(p.canUpdate),
+        canDelete: Boolean(p.canDelete),
+      }))
+      await tx.insert(permissions).values(permValues)
+    }
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'create',
-    resource: 'roles',
-    resourceId: newRoleId,
-    meta: { name },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'create',
+      resource: 'roles',
+      resourceId: newRoleId,
+      meta: { name },
+    })
+
+    return created
   })
 
   return { ok: true, id: newRoleId }

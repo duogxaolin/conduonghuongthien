@@ -135,8 +135,8 @@ export const contentTypes = mysqlTable('content_types', {
   slug:         varchar('slug', { length: 64 }).notNull().unique(),
   icon:         varchar('icon', { length: 64 }),
   description:  text('description'),
-  displayOrder: int('display_order').default(0),
-  isSystem:     boolean('is_system').default(false),
+  displayOrder: int('display_order').notNull().default(0),
+  isSystem:     boolean('is_system').notNull().default(false),
   createdAt:    timestamp('created_at').defaultNow(),
 })
 
@@ -152,7 +152,7 @@ export const categories = mysqlTable('categories', {
   parentId:     int('parent_id').references((): AnyMySqlColumn => categories.id, { onDelete: 'set null' }),
   type:         varchar('type', { length: 32 }).notNull(),
   description:  text('description'),
-  displayOrder: int('display_order').default(0),
+  displayOrder: int('display_order').notNull().default(0),
   createdAt:    timestamp('created_at').defaultNow(),
 })
 
