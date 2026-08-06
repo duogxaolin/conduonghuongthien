@@ -1,3 +1,4 @@
+import { finitePositive, MAX_PAGE } from '../../../../utils/query-number'
 import { getDb } from '../../../../utils/db'
 import { articles, users, categories } from '../../../../db/schema'
 import { eq, desc, count } from 'drizzle-orm'
@@ -19,7 +20,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const query = getQuery(event)
-  const page = Math.max(1, Number(query.page || 1))
+  const page = finitePositive(query.page, 1, MAX_PAGE)
   const perPage = Math.min(100, Math.max(10, Number(query.perPage || 20)))
   const offset = (page - 1) * perPage
 
