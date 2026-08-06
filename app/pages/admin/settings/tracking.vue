@@ -69,8 +69,8 @@ const fetchSettings = async () => {
     } else {
       error.value = 'Không tải được cấu hình theo dõi.'
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được cấu hình theo dõi.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được cấu hình theo dõi.')
   } finally {
     loading.value = false
   }
@@ -85,8 +85,8 @@ const handleSave = async () => {
   try {
     const res = await $fetch('/api/admin/settings', { method: 'PUT', body: { settings } })
     if (res.ok) toast.success('Đã lưu cấu hình Tracking & Marketing!')
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu cài đặt')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu cài đặt'))
   } finally {
     saving.value = false
   }

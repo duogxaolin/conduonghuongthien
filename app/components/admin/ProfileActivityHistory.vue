@@ -76,8 +76,8 @@ async function loadHistory() {
     historyTotal.value = res.total ?? 0
     historyTotalPages.value = res.totalPages ?? 1
     historyTargetName.value = res.targetUsername
-  } catch (err: any) {
-    historyError.value = err?.data?.statusMessage || 'Không tải được lịch sử.'
+  } catch (err: unknown) {
+    historyError.value = errorMessage(err, 'Không tải được lịch sử.')
     history.value = []
   } finally {
     historyLoading.value = false

@@ -73,8 +73,8 @@ async function changePassword() {
     })
     toast.success(res.message || 'Đã đổi mật khẩu.')
     pw.current = ''; pw.next = ''; pw.confirm = ''
-  } catch (err: any) {
-    pwError.value = err?.data?.statusMessage || 'Không đổi được mật khẩu.'
+  } catch (err: unknown) {
+    pwError.value = errorMessage(err, 'Không đổi được mật khẩu.')
   } finally {
     pwSaving.value = false
   }
@@ -90,8 +90,8 @@ async function loadMfa() {
   mfaError.value = ''
   try {
     mfa.value = await $fetch<MfaStatus>('/api/admin/profile/mfa')
-  } catch (err: any) {
-    mfaError.value = err?.data?.statusMessage || 'Không tải được trạng thái xác thực hai bước.'
+  } catch (err: unknown) {
+    mfaError.value = errorMessage(err, 'Không tải được trạng thái xác thực hai bước.')
   } finally {
     mfaLoading.value = false
   }
@@ -187,8 +187,8 @@ async function submitEnroll() {
     enrollDialog.stage = 'confirm'
     // Bước 2 thay hẳn nội dung hộp thoại, nên tiêu điểm phải đi theo.
     focusFirstField(enrollDialog.factorType === 'second_password' ? 'enroll-sp-confirm' : 'enroll-code')
-  } catch (err: any) {
-    enrollDialog.error = err?.data?.statusMessage || 'Không bắt đầu được việc bật xác thực.'
+  } catch (err: unknown) {
+    enrollDialog.error = errorMessage(err, 'Không bắt đầu được việc bật xác thực.')
   } finally {
     enrollDialog.busy = false
   }
@@ -211,8 +211,8 @@ async function submitConfirm() {
     toast.success(res.message || 'Đã bật xác thực hai bước.')
     closeEnroll()
     await Promise.all([loadMfa(), loadHistory()])
-  } catch (err: any) {
-    enrollDialog.error = err?.data?.statusMessage || 'Mã không đúng.'
+  } catch (err: unknown) {
+    enrollDialog.error = errorMessage(err, 'Mã không đúng.')
     if (needsCode) enrollDialog.code = ''
   } finally {
     enrollDialog.busy = false
@@ -230,8 +230,8 @@ async function resendEnrollCode() {
     })
     enrollDialog.sentTo = res.sentTo || enrollDialog.sentTo
     toast.info('Đã gửi lại mã mới. Mã cũ không còn dùng được.')
-  } catch (err: any) {
-    enrollDialog.error = err?.data?.statusMessage || 'Không gửi lại được mã.'
+  } catch (err: unknown) {
+    enrollDialog.error = errorMessage(err, 'Không gửi lại được mã.')
   } finally {
     enrollDialog.busy = false
   }
@@ -272,8 +272,8 @@ async function submitDisable() {
     disableDialog.open = false
     disableDialog.currentPassword = ''
     await Promise.all([loadMfa(), loadHistory()])
-  } catch (err: any) {
-    disableDialog.error = err?.data?.statusMessage || 'Không tắt được yếu tố xác thực.'
+  } catch (err: unknown) {
+    disableDialog.error = errorMessage(err, 'Không tắt được yếu tố xác thực.')
   } finally {
     disableDialog.busy = false
   }
@@ -326,8 +326,8 @@ async function submitRecovery() {
     recoveryDialog.open = false
     recoveryDialog.currentPassword = ''
     await loadMfa()
-  } catch (err: any) {
-    recoveryDialog.error = err?.data?.statusMessage || 'Không thực hiện được.'
+  } catch (err: unknown) {
+    recoveryDialog.error = errorMessage(err, 'Không thực hiện được.')
   } finally {
     recoveryDialog.busy = false
   }

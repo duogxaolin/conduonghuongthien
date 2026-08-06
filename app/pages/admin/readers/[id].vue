@@ -67,8 +67,8 @@ async function load() {
     reader.value = res.reader
     comments.value = res.comments || []
     impact.value = res.impact || { comments: 0, adminReplies: 0 }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được thông tin người đọc.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được thông tin người đọc.')
   } finally {
     loading.value = false
   }
@@ -127,8 +127,8 @@ async function banReader() {
     const res = await $fetch<any>(`/api/admin/readers/${readerId.value}/ban`, { method: 'POST', body: { reason } })
     toast.success(`Đã chặn tài khoản và xoá ${res?.impact?.comments ?? 0} bình luận.`)
     await load()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không chặn được tài khoản này.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không chặn được tài khoản này.'))
   } finally {
     busy.value = false
   }
@@ -141,8 +141,8 @@ async function unbanReader() {
     await $fetch(`/api/admin/readers/${readerId.value}/unban`, { method: 'POST' })
     toast.success('Đã bỏ chặn tài khoản.')
     await load()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không bỏ chặn được tài khoản này.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không bỏ chặn được tài khoản này.'))
   } finally {
     busy.value = false
   }
@@ -164,8 +164,8 @@ async function purgeComments() {
     const res = await $fetch<any>(`/api/admin/readers/${readerId.value}/comments`, { method: 'DELETE' })
     toast.success(`Đã xoá ${res?.impact?.comments ?? 0} bình luận.`)
     await load()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không xoá được bình luận.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không xoá được bình luận.'))
   } finally {
     busy.value = false
   }
@@ -183,8 +183,8 @@ async function deleteAccount() {
     await $fetch(`/api/admin/readers/${readerId.value}`, { method: 'DELETE' })
     toast.success('Đã xoá tài khoản người đọc.')
     router.push('/admin/readers')
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không xoá được tài khoản này.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không xoá được tài khoản này.'))
     busy.value = false
   }
 }
@@ -201,8 +201,8 @@ async function deleteOneComment(comment: Comment) {
     await $fetch(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
     toast.success('Đã xoá bình luận.')
     await load()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không xoá được bình luận.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không xoá được bình luận.'))
   } finally {
     busy.value = false
   }

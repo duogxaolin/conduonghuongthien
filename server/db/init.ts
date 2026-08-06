@@ -435,6 +435,101 @@ async function ensureForeignKeyIfMissing(db: Connection, database: string, table
   }
 }
 
+
+/**
+ * Cột, chỉ mục và khoá ngoại thêm vào SAU khi 41 bảng đã tồn tại.
+ *
+ * Tách khỏi `initDb()` — hàm đó từng dài 690 dòng — nhưng ranh giới ở đây
+ * không phải để cho đẹp: nó là **ràng buộc thứ tự thật**. Một khoá ngoại chỉ
+ * gắn được khi cả hai bảng đã có, và vài cột ở đây trỏ sang bảng được tạo ở
+ * cuối danh sách CREATE TABLE (`chat_sessions.reader_id` là ví dụ: bảng phiên
+ * chat ra đời từ lâu trước `reader_accounts`, nên lúc tạo nó thì chưa có gì để
+ * FK trỏ tới). Gọi hàm này **trước** khi bảng dựng xong là một lỗi thời điểm,
+ * và nó chỉ lộ ra trên một database trống.
+ *
+ * Toàn bộ vẫn idempotent: mỗi helper tự kiểm tra sự tồn tại trước khi ghi, nên
+ * chạy lại trên database đã đầy đủ thì không làm gì cả.
+ */
+async function applyAdditiveMigrations(db: Connection, database: string) {
+
+  // design.md D9: existing articles start with comments closed (default 0).
+  await ensureColumn(db, database, 'articles', 'comments_enabled', 'TINYINT(1) NOT NULL DEFAULT 0')
+
+  // ── Reader profile page ───────────────────────────────────────────────────
+  // The reader's own chosen name. Deliberately a separate column from
+  // `display_name`, which the OAuth callback keeps refreshing from Google on
+  // every sign-in: writing the chosen name into that column would have the next
+  // sign-in quietly erase it. Read only through effectiveDisplayName().
+  await ensureColumn(db, database, 'reader_accounts', 'custom_display_name', 'VARCHAR(255) NULL AFTER `display_name`')
+  // Defaults to 1 so an existing reader keeps being told when the portal answers
+  // them. Switchable from /profile — emailing a citizen with no way to stop is
+  // spam, whoever is sending it.
+  await ensureColumn(db, database, 'reader_accounts', 'email_notifications', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER `custom_display_name`')
+
+  // Which reader a conversation belongs to, once they claim it.
+  //
+  // Added here rather than in the CREATE TABLE above because `chat_sessions` is
+  // created long before `reader_accounts` exists — the FK has nothing to point at
+  // at that point in this function. SET NULL, not CASCADE: chat_sessions is its
+  // own retention scope (90 days) while reader_accounts keeps 365, and cascading
+  // would make deleting a reader destroy transcripts the confirmation dialog does
+  // not count.
+  await ensureColumn(db, database, 'chat_sessions', 'reader_id', 'INT NULL')
+  await ensureIndex(db, database, 'chat_sessions', 'chat_sessions_reader_id_idx', 'INDEX `chat_sessions_reader_id_idx` (`reader_id`)')
+  await ensureForeignKeyIfMissing(
+    db, database, 'chat_sessions', 'fk_chat_sessions_reader',
+    'FOREIGN KEY (`reader_id`) REFERENCES `reader_accounts` (`id`) ON DELETE SET NULL',
+  )
+
+  // Existing installations converge without table recreation or row loss.
+  await ensureColumn(db, database, 'permissions', 'can_publish', 'TINYINT(1) DEFAULT 0')
+  await ensureColumn(db, database, 'permissions', 'can_archive', 'TINYINT(1) DEFAULT 0')
+  await ensureColumn(db, database, 'permissions', 'can_test', 'TINYINT(1) DEFAULT 0')
+  await convergeChatbotSchema(db, database)
+
+  // Required columns use nullable add → deterministic backfill → NOT NULL enforcement.
+  // Timestamp helpers are installed first where a required-column backfill derives UTC time from them.
+  for (const [table, column, definition] of realtimeAnalyticsOptionalColumns.filter(([, column]) => column === 'id' || column === 'updated_at' || column === 'created_at')) {
+    await ensureColumn(db, database, table, column, definition)
+  }
+  for (const migration of realtimeAnalyticsRequiredColumnMigrations) {
+    await ensureRequiredColumn(db, database, migration)
+  }
+  for (const [table, column, definition] of realtimeAnalyticsOptionalColumns.filter(([, column]) => column !== 'id' && column !== 'updated_at' && column !== 'created_at')) {
+    await ensureColumn(db, database, table, column, definition)
+  }
+  for (const [table, indexName, definition] of realtimeAnalyticsIndexMigrations) {
+    await ensureIndex(db, database, table, indexName, definition)
+  }
+
+  await ensureColumn(db, database, 'analytics_page_view_events', 'created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
+  await ensureColumn(db, database, 'analytics_daily_traffic', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
+  await ensureColumn(db, database, 'analytics_daily_pages', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
+  await ensureColumn(db, database, 'analytics_daily_dimensions', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
+  await ensureColumn(db, database, 'analytics_daily_admin_users', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
+  await ensureColumn(db, database, 'analytics_maintenance_runs', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
+  for (const migration of requiredAnalyticsColumnMigrations) {
+    await ensureRequiredColumn(db, database, migration)
+  }
+
+  await ensureColumn(db, database, 'analytics_page_view_events', 'country_code', 'VARCHAR(2) NULL')
+  await ensureColumn(db, database, 'analytics_page_view_events', 'region_code', 'VARCHAR(16) NULL')
+  await ensureColumn(db, database, 'analytics_maintenance_runs', 'completed_at', 'DATETIME NULL')
+  await ensureColumn(db, database, 'analytics_maintenance_runs', 'error_summary', 'VARCHAR(512) NULL')
+  await ensureColumn(db, database, 'analytics_maintenance_runs', 'worker_token', 'VARCHAR(64) NULL')
+
+  await ensureIndex(db, database, 'analytics_page_view_events', 'analytics_events_day_path_idx', 'INDEX `analytics_events_day_path_idx` (`event_day`, `path`)')
+  await ensureIndex(db, database, 'analytics_page_view_events', 'analytics_events_day_visitor_idx', 'INDEX `analytics_events_day_visitor_idx` (`event_day`, `visitor_token`)')
+  await ensureIndex(db, database, 'analytics_page_view_events', 'analytics_events_occurred_at_idx', 'INDEX `analytics_events_occurred_at_idx` (`occurred_at`)')
+  await ensureIndex(db, database, 'analytics_daily_pages', 'analytics_daily_pages_day_path_idx', 'UNIQUE INDEX `analytics_daily_pages_day_path_idx` (`day`, `path`)')
+  await ensureIndex(db, database, 'analytics_daily_pages', 'analytics_daily_pages_day_views_idx', 'INDEX `analytics_daily_pages_day_views_idx` (`day`, `page_views`)')
+  await ensureIndex(db, database, 'analytics_daily_dimensions', 'analytics_dimensions_day_dimension_value_idx', 'UNIQUE INDEX `analytics_dimensions_day_dimension_value_idx` (`day`, `dimension`, `value`)')
+  await ensureIndex(db, database, 'analytics_daily_dimensions', 'analytics_dimensions_day_dimension_views_idx', 'INDEX `analytics_dimensions_day_dimension_views_idx` (`day`, `dimension`, `page_views`)')
+  await ensureIndex(db, database, 'analytics_maintenance_runs', 'analytics_maintenance_status_day_idx', 'INDEX `analytics_maintenance_status_day_idx` (`status`, `day`)')
+  await ensureIndex(db, database, 'analytics_maintenance_runs', 'analytics_maintenance_completed_at_idx', 'INDEX `analytics_maintenance_completed_at_idx` (`completed_at`)')
+
+}
+
 export async function initDb() {
   console.log('🔄 Checking & Creating MySQL tables...')
 
@@ -1233,81 +1328,7 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
-  // design.md D9: existing articles start with comments closed (default 0).
-  await ensureColumn(db, database, 'articles', 'comments_enabled', 'TINYINT(1) NOT NULL DEFAULT 0')
-
-  // ── Reader profile page ───────────────────────────────────────────────────
-  // The reader's own chosen name. Deliberately a separate column from
-  // `display_name`, which the OAuth callback keeps refreshing from Google on
-  // every sign-in: writing the chosen name into that column would have the next
-  // sign-in quietly erase it. Read only through effectiveDisplayName().
-  await ensureColumn(db, database, 'reader_accounts', 'custom_display_name', 'VARCHAR(255) NULL AFTER `display_name`')
-  // Defaults to 1 so an existing reader keeps being told when the portal answers
-  // them. Switchable from /profile — emailing a citizen with no way to stop is
-  // spam, whoever is sending it.
-  await ensureColumn(db, database, 'reader_accounts', 'email_notifications', 'TINYINT(1) NOT NULL DEFAULT 1 AFTER `custom_display_name`')
-
-  // Which reader a conversation belongs to, once they claim it.
-  //
-  // Added here rather than in the CREATE TABLE above because `chat_sessions` is
-  // created long before `reader_accounts` exists — the FK has nothing to point at
-  // at that point in this function. SET NULL, not CASCADE: chat_sessions is its
-  // own retention scope (90 days) while reader_accounts keeps 365, and cascading
-  // would make deleting a reader destroy transcripts the confirmation dialog does
-  // not count.
-  await ensureColumn(db, database, 'chat_sessions', 'reader_id', 'INT NULL')
-  await ensureIndex(db, database, 'chat_sessions', 'chat_sessions_reader_id_idx', 'INDEX `chat_sessions_reader_id_idx` (`reader_id`)')
-  await ensureForeignKeyIfMissing(
-    db, database, 'chat_sessions', 'fk_chat_sessions_reader',
-    'FOREIGN KEY (`reader_id`) REFERENCES `reader_accounts` (`id`) ON DELETE SET NULL',
-  )
-
-  // Existing installations converge without table recreation or row loss.
-  await ensureColumn(db, database, 'permissions', 'can_publish', 'TINYINT(1) DEFAULT 0')
-  await ensureColumn(db, database, 'permissions', 'can_archive', 'TINYINT(1) DEFAULT 0')
-  await ensureColumn(db, database, 'permissions', 'can_test', 'TINYINT(1) DEFAULT 0')
-  await convergeChatbotSchema(db, database)
-
-  // Required columns use nullable add → deterministic backfill → NOT NULL enforcement.
-  // Timestamp helpers are installed first where a required-column backfill derives UTC time from them.
-  for (const [table, column, definition] of realtimeAnalyticsOptionalColumns.filter(([, column]) => column === 'id' || column === 'updated_at' || column === 'created_at')) {
-    await ensureColumn(db, database, table, column, definition)
-  }
-  for (const migration of realtimeAnalyticsRequiredColumnMigrations) {
-    await ensureRequiredColumn(db, database, migration)
-  }
-  for (const [table, column, definition] of realtimeAnalyticsOptionalColumns.filter(([, column]) => column !== 'id' && column !== 'updated_at' && column !== 'created_at')) {
-    await ensureColumn(db, database, table, column, definition)
-  }
-  for (const [table, indexName, definition] of realtimeAnalyticsIndexMigrations) {
-    await ensureIndex(db, database, table, indexName, definition)
-  }
-
-  await ensureColumn(db, database, 'analytics_page_view_events', 'created_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP')
-  await ensureColumn(db, database, 'analytics_daily_traffic', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
-  await ensureColumn(db, database, 'analytics_daily_pages', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
-  await ensureColumn(db, database, 'analytics_daily_dimensions', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
-  await ensureColumn(db, database, 'analytics_daily_admin_users', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
-  await ensureColumn(db, database, 'analytics_maintenance_runs', 'updated_at', 'TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP')
-  for (const migration of requiredAnalyticsColumnMigrations) {
-    await ensureRequiredColumn(db, database, migration)
-  }
-
-  await ensureColumn(db, database, 'analytics_page_view_events', 'country_code', 'VARCHAR(2) NULL')
-  await ensureColumn(db, database, 'analytics_page_view_events', 'region_code', 'VARCHAR(16) NULL')
-  await ensureColumn(db, database, 'analytics_maintenance_runs', 'completed_at', 'DATETIME NULL')
-  await ensureColumn(db, database, 'analytics_maintenance_runs', 'error_summary', 'VARCHAR(512) NULL')
-  await ensureColumn(db, database, 'analytics_maintenance_runs', 'worker_token', 'VARCHAR(64) NULL')
-
-  await ensureIndex(db, database, 'analytics_page_view_events', 'analytics_events_day_path_idx', 'INDEX `analytics_events_day_path_idx` (`event_day`, `path`)')
-  await ensureIndex(db, database, 'analytics_page_view_events', 'analytics_events_day_visitor_idx', 'INDEX `analytics_events_day_visitor_idx` (`event_day`, `visitor_token`)')
-  await ensureIndex(db, database, 'analytics_page_view_events', 'analytics_events_occurred_at_idx', 'INDEX `analytics_events_occurred_at_idx` (`occurred_at`)')
-  await ensureIndex(db, database, 'analytics_daily_pages', 'analytics_daily_pages_day_path_idx', 'UNIQUE INDEX `analytics_daily_pages_day_path_idx` (`day`, `path`)')
-  await ensureIndex(db, database, 'analytics_daily_pages', 'analytics_daily_pages_day_views_idx', 'INDEX `analytics_daily_pages_day_views_idx` (`day`, `page_views`)')
-  await ensureIndex(db, database, 'analytics_daily_dimensions', 'analytics_dimensions_day_dimension_value_idx', 'UNIQUE INDEX `analytics_dimensions_day_dimension_value_idx` (`day`, `dimension`, `value`)')
-  await ensureIndex(db, database, 'analytics_daily_dimensions', 'analytics_dimensions_day_dimension_views_idx', 'INDEX `analytics_dimensions_day_dimension_views_idx` (`day`, `dimension`, `page_views`)')
-  await ensureIndex(db, database, 'analytics_maintenance_runs', 'analytics_maintenance_status_day_idx', 'INDEX `analytics_maintenance_status_day_idx` (`status`, `day`)')
-  await ensureIndex(db, database, 'analytics_maintenance_runs', 'analytics_maintenance_completed_at_idx', 'INDEX `analytics_maintenance_completed_at_idx` (`completed_at`)')
+  await applyAdditiveMigrations(db, database)
 
   await db.end()
   console.log('✅ All MySQL tables exist and ready!')

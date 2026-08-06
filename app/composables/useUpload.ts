@@ -20,8 +20,8 @@ export const useUpload = () => {
       if (res.ok && res.media) return res.media
       toast.error('Upload thất bại')
       return null
-    } catch (err: any) {
-      toast.error(err?.data?.statusMessage || 'Upload thất bại')
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'Upload thất bại'))
       return null
     } finally {
       uploading.value = false

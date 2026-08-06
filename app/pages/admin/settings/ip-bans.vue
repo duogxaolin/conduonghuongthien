@@ -51,8 +51,8 @@ async function load() {
       return
     }
     bans.value = res.bans || []
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được danh sách chặn.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được danh sách chặn.')
   } finally {
     loading.value = false
   }
@@ -71,8 +71,8 @@ async function addBan() {
     newReason.value = ''
     toast.success('Đã thêm vào danh sách chặn.')
     await load()
-  } catch (err: any) {
-    formError.value = err?.data?.statusMessage || 'Không thêm được mục chặn.'
+  } catch (err: unknown) {
+    formError.value = errorMessage(err, 'Không thêm được mục chặn.')
   } finally {
     busy.value = false
   }
@@ -85,8 +85,8 @@ async function liftBan(ban: Ban) {
     await $fetch(`/api/admin/ip-bans/${ban.id}`, { method: 'DELETE' })
     toast.success('Đã bỏ chặn địa chỉ.')
     await load()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không bỏ chặn được địa chỉ này.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không bỏ chặn được địa chỉ này.'))
   } finally {
     busy.value = false
   }

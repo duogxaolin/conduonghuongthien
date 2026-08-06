@@ -22,7 +22,7 @@ export default defineEventHandler(async () => {
       .orderBy(asc(contentTypes.displayOrder), asc(contentTypes.id))
 
     return { ok: true, items: rows }
-  } catch (err: any) {
+  } catch {
     return { ok: false, items: [] }
   }
 })

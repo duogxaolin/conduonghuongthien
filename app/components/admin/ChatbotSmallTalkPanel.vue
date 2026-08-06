@@ -15,7 +15,7 @@ async function load(next = 1) {
   try {
     const res = await $fetch<any>('/api/admin/chatbot/small-talk', { params: { page: next, perPage: 15, search: search.value, category: category.value, enabled: enabled.value } })
     items.value = res.items || []; pagination.value = res.pagination; selection.keepOnly(visibleIds.value)
-  } catch (err: any) { error.value = err?.data?.statusMessage || 'Không thể tải kho trả lời thường nhật.' } finally { loading.value = false }
+  } catch (err: unknown) { error.value = errorMessage(err, 'Không thể tải kho trả lời thường nhật.') } finally { loading.value = false }
 }
 
 const selection = useBulkSelection(); const bulk = useBulkAction(selection)
@@ -28,12 +28,12 @@ function bulkEnabled(isEnabled: boolean) {
 }
 async function toggle(item: any) {
   try { await $fetch(`/api/admin/chatbot/small-talk/${item.id}/toggle`, { method: 'PATCH' }); toast.success(item.isEnabled ? 'Đã tắt mục.' : 'Đã bật mục.'); await load(page.value) }
-  catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể đổi trạng thái mục.') }
+  catch (err: unknown) { toast.error(errorMessage(err, 'Không thể đổi trạng thái mục.')) }
 }
 async function remove(item: any) {
   const ok = await confirm({ title: 'Xóa mục trả lời', message: 'Xóa mục này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return
   try { await $fetch(`/api/admin/chatbot/small-talk/${item.id}`, { method: 'DELETE' }); toast.success('Đã xóa mục.'); await load(page.value) }
-  catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể xóa mục.') }
+  catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa mục.')) }
 }
 
 const showEditor = ref(false); const saving = ref(false); const editorError = ref(''); const editing = ref<any>(null)
@@ -48,7 +48,7 @@ async function saveEditor() {
     if (editing.value) await $fetch(`/api/admin/chatbot/small-talk/${editing.value.id}`, { method: 'PUT', body })
     else await $fetch('/api/admin/chatbot/small-talk', { method: 'POST', body })
     toast.success(editing.value ? 'Đã cập nhật mục.' : 'Đã thêm mục mới.'); closeEditor(); await load(editing.value ? page.value : 1)
-  } catch (err: any) { editorError.value = err?.data?.statusMessage || 'Không thể lưu mục.' } finally { saving.value = false }
+  } catch (err: unknown) { editorError.value = errorMessage(err, 'Không thể lưu mục.') } finally { saving.value = false }
 }
 watch([category, enabled], () => load(1)); onMounted(() => load())
 </script>

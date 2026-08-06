@@ -57,8 +57,8 @@ async function loadMenu() {
     } else {
       menu.value = DEFAULT_MENU.map(i => ({ ...i }))
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được cấu hình thanh điều hướng.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được cấu hình thanh điều hướng.')
     menu.value = DEFAULT_MENU.map(i => ({ ...i }))
   } finally {
     loading.value = false
@@ -76,8 +76,8 @@ async function saveMenu() {
   try {
     await $fetch('/api/admin/settings/navigation/mobile', { method: 'PUT', body: { menu: menu.value } })
     toast.success('Đã lưu thanh điều hướng mobile thành công!')
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu menu')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu menu'))
   } finally {
     saving.value = false
   }

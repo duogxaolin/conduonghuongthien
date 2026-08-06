@@ -70,8 +70,8 @@ async function load() {
   try {
     const response = await $fetch<any>(`/api/admin/chatbot/knowledge/${route.params.id}`)
     applyItem(response.item)
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không thể tải mục kiến thức.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không thể tải mục kiến thức.')
   } finally {
     loading.value = false
   }
@@ -93,8 +93,8 @@ async function save() {
     toast.success(isNew.value ? 'Đã tạo bản nháp kiến thức.' : 'Đã cập nhật nội dung kiến thức.')
     if (isNew.value) await navigateTo(`/admin/chatbot/knowledge/${response.item.id}`)
     else await load()
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không thể lưu mục kiến thức.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không thể lưu mục kiến thức.')
   } finally {
     saving.value = false
   }
@@ -116,8 +116,8 @@ async function transition(action: 'publish' | 'archive') {
     await $fetch(`/api/admin/chatbot/knowledge/${route.params.id}/${action}`, { method: 'POST' })
     toast.success(publishing ? 'Đã xuất bản mục kiến thức.' : 'Đã lưu trữ mục kiến thức.')
     await load()
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || (publishing ? 'Không thể xuất bản mục kiến thức.' : 'Không thể lưu trữ mục kiến thức.')
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Đã xảy ra lỗi.') || (publishing ? 'Không thể xuất bản mục kiến thức.' : 'Không thể lưu trữ mục kiến thức.')
   } finally {
     transitioning.value = null
   }

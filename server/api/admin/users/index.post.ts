@@ -74,10 +74,10 @@ export default defineEventHandler(async (event) => {
     })
 
     return { ok: true, id: newUserId }
-  } catch (err: any) {
-    if (err?.code === 'ER_DUP_ENTRY') {
+  } catch (err: unknown) {
+    if ((err as { code?: string })?.code === 'ER_DUP_ENTRY') {
       throw createError({ statusCode: 400, statusMessage: 'Tên đăng nhập hoặc Email đã tồn tại.' })
     }
-    throw createError({ statusCode: 500, statusMessage: err?.message || 'Lỗi hệ thống' })
+    throw createError({ statusCode: 500, statusMessage: (err instanceof Error ? err.message : undefined) || 'Lỗi hệ thống' })
   }
 })

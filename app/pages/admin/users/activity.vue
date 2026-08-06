@@ -108,8 +108,8 @@ async function load(next = page.value) {
     items.value = res.items ?? []
     total.value = res.total ?? 0
     totalPages.value = res.totalPages ?? 1
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được lịch sử hoạt động.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được lịch sử hoạt động.')
     items.value = []
   } finally {
     loading.value = false

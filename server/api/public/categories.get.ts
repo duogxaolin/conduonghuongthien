@@ -27,7 +27,7 @@ export default defineEventHandler(async (event) => {
       .orderBy(asc(categories.displayOrder), asc(categories.id))
 
     return { ok: true, items: rows }
-  } catch (err: any) {
+  } catch {
     return { ok: false, items: [] }
   }
 })

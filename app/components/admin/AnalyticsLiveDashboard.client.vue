@@ -152,6 +152,8 @@ const nocPoller = createAnalyticsPanelPoller<NocResponse>({
 // Pagination state
 const LIVE_PAGE_SIZE = 15
 const BREAKDOWN_PAGE_SIZE = 10
+// Hai hàm thuần sống ở app/utils/analytics-noc.ts để kiểm được — safeDetails
+// là bộ lọc quyền riêng tư, nó cần test riêng chứ không chỉ nằm trong SFC.
 const NOC_PAGE_SIZE = 10
 const liveTablePage = ref(1)
 const breakdownTablePage = ref(1)
@@ -175,9 +177,6 @@ function undismissAll() {
 }
 function toggleNocRow(id: number) {
   expandedNocId.value = expandedNocId.value === id ? null : id
-}
-function isWarningOrError(severity: string) {
-  return /^(warning|warn|error|critical)$/i.test(severity)
 }
 
 // Reset pages when data changes
@@ -340,12 +339,6 @@ function formatUtc(value: string | number | null | undefined) {
 }
 function utcDateTime(value: number) {
   return new Date(value).toISOString()
-}
-function safeDetails(details: Record<string, number | boolean | string> | null) {
-  if (!details) return '—'
-  const blocked = /(visitor|token|cookie|session|email|phone|address|ip|user|authorization)/i
-  const safe = Object.fromEntries(Object.entries(details).filter(([key]) => !blocked.test(key)))
-  return Object.keys(safe).length ? JSON.stringify(safe) : '—'
 }
 function freshnessLabel(data: { freshness: Freshness; stale: boolean } | null) {
   if (!data) return 'Không khả dụng'

@@ -91,8 +91,8 @@ const fetchCategories = async () => {
     } else {
       error.value = 'Không tải được danh sách danh mục.'
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được danh sách danh mục.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được danh sách danh mục.')
   } finally {
     loading.value = false
   }
@@ -102,8 +102,8 @@ const fetchContentTypes = async () => {
   try {
     const res = await $fetch('/api/admin/content-types')
     if (res.ok) contentTypes.value = res.items
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi tải thể loại')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi tải thể loại'))
   }
 }
 
@@ -154,8 +154,8 @@ const handleSave = async () => {
     }
     showModal.value = false
     await fetchCategories()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu danh mục')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu danh mục'))
   } finally {
     saving.value = false
   }
@@ -197,8 +197,8 @@ const deleteCategory = async (cat: any) => {
     await $fetch(`/api/admin/categories/${cat.id}`, { method: 'DELETE' })
     toast.success('Đã xóa danh mục thành công!')
     await fetchCategories()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi xóa danh mục')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi xóa danh mục'))
   }
 }
 
