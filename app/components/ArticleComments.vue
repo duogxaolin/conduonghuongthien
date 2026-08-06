@@ -61,7 +61,13 @@
 
       <ul v-else class="list-none p-0 m-0 mb-6 flex flex-col gap-5">
         <li v-for="comment in comments" :key="comment.id">
-          <article class="bg-white border border-[#E2E8DF] rounded-lg p-4">
+          <article
+            :id="`binh-luan-${comment.id}`"
+            class="bg-white border rounded-lg p-4 transition-colors duration-700"
+            :class="highlightId === comment.id
+              ? 'border-[#7CB342] bg-[#F4F9F0] ring-2 ring-[#7CB342]/40'
+              : 'border-[#E2E8DF]'"
+          >
             <div class="flex gap-3">
               <ReaderAvatar :initials="comment.initials" :is-admin="comment.isAdminReply" />
               <div class="flex-grow min-w-0">
@@ -84,6 +90,16 @@
                   >
                     <i class="fa-solid fa-reply mr-1" aria-hidden="true"></i>Trả lời
                   </button>
+                  <!-- Mỗi bình luận có địa chỉ riêng, chia sẻ được — cùng ý với
+                       neo `#qa-<id>` của /tai-lieu-hoi-dap. -->
+                  <button
+                    type="button"
+                    class="text-[0.82rem] font-semibold text-[#7A8675] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+                    @click="copyLink(comment.id)"
+                  >
+                    <i class="fa-solid fa-link mr-1" aria-hidden="true"></i>
+                    {{ copiedId === comment.id ? 'Đã chép liên kết' : 'Chép liên kết' }}
+                  </button>
                   <button
                     v-if="comment.canDelete"
                     type="button"
@@ -101,7 +117,11 @@
                      điện thoại. -->
                 <ul v-if="comment.replies && comment.replies.length" class="list-none p-0 mt-4 mb-0 flex flex-col gap-3 border-l-2 border-[#E2E8DF] pl-4">
                   <li v-for="reply in comment.replies" :key="reply.id">
-                    <div class="flex gap-2.5">
+                    <div
+                      :id="`binh-luan-${reply.id}`"
+                      class="flex gap-2.5 rounded-lg transition-colors duration-700"
+                      :class="highlightId === reply.id ? 'bg-[#F4F9F0] ring-2 ring-[#7CB342]/40 p-2 -m-2' : ''"
+                    >
                       <ReaderAvatar :initials="reply.initials" :is-admin="reply.isAdminReply" size="sm" />
                       <div class="flex-grow min-w-0">
                         <div class="flex flex-wrap items-center gap-x-2 gap-y-1 mb-1">
@@ -113,16 +133,26 @@
                           <span class="text-[0.75rem] text-[#7A8675]">{{ formatDateVN(reply.createdAt) }}</span>
                         </div>
                         <p class="m-0 text-[0.9rem] leading-[1.55] text-[#2C3529] whitespace-pre-line break-words">{{ reply.body }}</p>
-                        <button
-                          v-if="reply.canDelete"
-                          type="button"
-                          class="mt-1.5 text-[0.8rem] font-semibold text-[#B04A4A] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded"
-                          :disabled="deletingId === reply.id"
-                          @click="removeComment(reply)"
-                        >
-                          <i class="fa-solid fa-trash-can mr-1" aria-hidden="true"></i>
-                          {{ deletingId === reply.id ? 'Đang xoá…' : 'Xoá' }}
-                        </button>
+                        <div class="mt-1.5 flex flex-wrap items-center gap-3">
+                          <button
+                            type="button"
+                            class="text-[0.8rem] font-semibold text-[#7A8675] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+                            @click="copyLink(reply.id)"
+                          >
+                            <i class="fa-solid fa-link mr-1" aria-hidden="true"></i>
+                            {{ copiedId === reply.id ? 'Đã chép liên kết' : 'Chép liên kết' }}
+                          </button>
+                          <button
+                            v-if="reply.canDelete"
+                            type="button"
+                            class="text-[0.8rem] font-semibold text-[#B04A4A] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded"
+                            :disabled="deletingId === reply.id"
+                            @click="removeComment(reply)"
+                          >
+                            <i class="fa-solid fa-trash-can mr-1" aria-hidden="true"></i>
+                            {{ deletingId === reply.id ? 'Đang xoá…' : 'Xoá' }}
+                          </button>
+                        </div>
                       </div>
                     </div>
                   </li>
@@ -221,7 +251,8 @@
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
 import { useReaderAuth } from '~/composables/useReaderAuth'
 
@@ -233,7 +264,12 @@ const props = defineProps({
  *  only stops the reader typing past a limit the write would then refuse. */
 const MAX_LENGTH = 2000
 
+/** Bao lâu thì bỏ tô sáng. Đủ để mắt bắt được sau cú cuộn, đủ ngắn để không
+ *  biến thành một trạng thái thường trực khiến bình luận trông như bị đánh dấu. */
+const HIGHLIGHT_MS = 3000
+
 const { isSignedIn, signIn, load: loadReader, forgetReader } = useReaderAuth()
+const route = useRoute()
 
 const comments = ref([])
 const total = ref(0)
@@ -251,6 +287,74 @@ const submitError = ref('')
 const deletingId = ref(null)
 /** Đúng khi máy chủ vừa từ chối một lượt ghi bằng 401 — xem reportFailure. */
 const sessionLapsed = ref(false)
+/** Bình luận đang được tô sáng vì vừa được điều hướng tới. */
+const highlightId = ref(null)
+const copiedId = ref(null)
+
+/**
+ * Id bình luận nêu trong `#binh-luan-<id>`.
+ *
+ * Cùng cách đọc mà /tai-lieu-hoi-dap dùng cho `#qa-<id>`: `Number.isSafeInteger`
+ * chứ không chỉ `Number`, nếu không một hash rác sẽ thành `NaN` rồi đi tiếp vào
+ * `getElementById` như chuỗi "NaN".
+ */
+function anchoredCommentId() {
+  const raw = Number(String(route.hash || '').replace('#binh-luan-', ''))
+  return Number.isSafeInteger(raw) && raw > 0 ? raw : null
+}
+
+/**
+ * Cuộn tới bình luận được trỏ tới và tô sáng nó một lúc.
+ *
+ * Phải chạy SAU khi luồng đã vẽ (`nextTick`), không thì phần tử chưa tồn tại và
+ * lượt cuộn im lặng không làm gì. Nếu không tìm thấy id — bình luận đã bị xoá, hay
+ * liên kết trỏ sang trang khác — thì **không làm gì cả**: cuộn về đầu danh sách sẽ
+ * trông như đã tới đúng chỗ trong khi không phải vậy.
+ */
+async function focusAnchoredComment() {
+  const id = anchoredCommentId()
+  if (!id || typeof window === 'undefined') return
+
+  await nextTick()
+  const element = document.getElementById(`binh-luan-${id}`)
+  if (!element) return
+
+  // Người bật giảm chuyển động vẫn cần tới đúng chỗ — chỉ bỏ phần cuộn mượt.
+  const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)')?.matches
+  element.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'center' })
+
+  highlightId.value = id
+  window.setTimeout(() => {
+    if (highlightId.value === id) highlightId.value = null
+  }, HIGHLIGHT_MS)
+}
+
+/**
+ * Chép địa chỉ của một bình luận.
+ *
+ * Dựng từ `window.location` chứ không ghép chuỗi từ slug: trang này tới được từ
+ * nhiều nơi và địa chỉ thật là thứ duy nhất chắc chắn mở lại đúng nó. Giữ luôn
+ * `?binhluan=` của trang đang xem, nếu không thì liên kết tới một bình luận ở
+ * trang 3 sẽ mở trang 1 và không tìm thấy gì.
+ */
+async function copyLink(id) {
+  if (typeof window === 'undefined') return
+
+  const url = new URL(window.location.href)
+  url.hash = `binh-luan-${id}`
+  if (page.value > 1) url.searchParams.set('binhluan', String(page.value))
+  else url.searchParams.delete('binhluan')
+
+  try {
+    await navigator.clipboard.writeText(url.toString())
+    copiedId.value = id
+    window.setTimeout(() => { if (copiedId.value === id) copiedId.value = null }, 2000)
+  } catch {
+    // Clipboard bị từ chối (không phải HTTPS, hoặc người dùng chặn). Ghi địa chỉ
+    // vào thanh URL để vẫn còn cách chép tay, thay vì báo một lỗi không làm gì.
+    window.history.replaceState(null, '', url.toString())
+  }
+}
 
 /**
  * Nháp sống qua lượt điều hướng đăng nhập lại.
@@ -311,6 +415,9 @@ async function loadThread() {
 function goToPage(next) {
   if (next < 1 || next > totalPages.value) return
   page.value = next
+  // Tô sáng thuộc về bình luận ở trang trước; giữ lại thì sau khi đổi trang nó
+  // sẽ tô nhầm một bình luận khác trùng vị trí.
+  highlightId.value = null
   loadThread()
 }
 
@@ -408,10 +515,22 @@ async function removeComment(comment) {
 // After mount only — see the template comment. Nothing reader-specific may enter
 // server-rendered HTML on an SWR-cached route.
 onMounted(async () => {
+  /**
+   * Trang phân trang phải đặt TRƯỚC lượt nạp đầu tiên.
+   *
+   * Thông báo trỏ tới `?binhluan=3#binh-luan-45`. Nạp trang 1 rồi mới nhảy sang
+   * trang 3 là hai lượt fetch và một cú nháy; tệ hơn, `focusAnchoredComment` sẽ
+   * chạy trên trang 1 và không tìm thấy gì. Cùng cách đọc số như máy chủ:
+   * `Number.isSafeInteger` chứ không phải `Math.max(1, Number(...))`.
+   */
+  const requested = Number(route.query.binhluan)
+  if (Number.isSafeInteger(requested) && requested > 0) page.value = requested
+
   await loadReader()
   // Chỉ phục hồi khi đã đăng nhập được: điền lại nháp vào một trang vẫn chưa đăng
   // nhập là đưa văn bản vào một khung soạn không hiện ra.
   if (isSignedIn.value) restoreDraft()
   await loadThread()
+  await focusAnchoredComment()
 })
 </script>

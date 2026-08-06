@@ -11,7 +11,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 - **Frontend**: Nuxt 4 (Vue 3 SFC, TypeScript, Composition API), **Tailwind CSS v3** (via `@nuxtjs/tailwindcss`), FontAwesome 6 Pro (local self-hosted).
 - **CSS Rule**: **Tất cả code mới phải dùng Tailwind CSS v3 utility classes.** Không viết `<style scoped>` hay CSS tùy chỉnh cho component/page mới — ngoại lệ duy nhất là pseudo-element (`::before`), keyframes, hoặc `:deep()` rich-text không biểu diễn được bằng utility. CSS cũ (pre-Tailwind) vẫn giữ nguyên, không xóa — sẽ migrate dần sau. (Đã migrate Tailwind v4 → v3 ở commit `a02ca17`.)
 - **Backend / API**: Nuxt Server Engine (Nitro / H3), Drizzle ORM, MySQL 8.0 / MariaDB, JWT Auth (`cdkt_admin` HTTP-only Cookie).
-- **Database**: MySQL 8.0 — **40 bảng** (15 CMS + 4 chatbot: 3 cũ + `chatbot_small_talk` kho trả lời thường nhật + 2 phiên trò chuyện: `chat_sessions`, `chat_messages` + 9 analytics + `rate_limit_counters` + 2 MFA: `user_mfa_factors`, `user_recovery_codes` + `data_retention_state` sổ ghi lượt dọn dữ liệu + 2 lượt xem bài viết: `article_view_daily` đếm theo ngày/nguồn, `article_view_boost` lịch cộng dần lượt xem ảo + 4 bình luận công khai: `reader_accounts` tài khoản Google của người đọc, `article_comments` bình luận và phản hồi, `reader_ip_bans` danh sách chặn địa chỉ, `google_oauth_settings` cấu hình OAuth một dòng). Nguồn chân lý schema là `server/db/schema.ts` (Drizzle); `server/db/init.ts` là DDL chạy lúc khởi động (idempotent, tự thêm cột còn thiếu); `server/db/seed.ts` là seed **insert-only** — chạy lại KHÔNG ghi đè mật khẩu / ma trận quyền / cấu hình đã sửa.
+- **Database**: MySQL 8.0 — **41 bảng** (15 CMS + 4 chatbot: 3 cũ + `chatbot_small_talk` kho trả lời thường nhật + 2 phiên trò chuyện: `chat_sessions`, `chat_messages` + 9 analytics + `rate_limit_counters` + 2 MFA: `user_mfa_factors`, `user_recovery_codes` + `data_retention_state` sổ ghi lượt dọn dữ liệu + 2 lượt xem bài viết: `article_view_daily` đếm theo ngày/nguồn, `article_view_boost` lịch cộng dần lượt xem ảo + 5 bình luận công khai: `reader_accounts` tài khoản Google của người đọc, `article_comments` bình luận và phản hồi, `reader_notifications` thông báo khi có người trả lời, `reader_ip_bans` danh sách chặn địa chỉ, `google_oauth_settings` cấu hình OAuth một dòng). Nguồn chân lý schema là `server/db/schema.ts` (Drizzle); `server/db/init.ts` là DDL chạy lúc khởi động (idempotent, tự thêm cột còn thiếu); `server/db/seed.ts` là seed **insert-only** — chạy lại KHÔNG ghi đè mật khẩu / ma trận quyền / cấu hình đã sửa.
 - **Kiểm thử**: `npm test` — dùng test runner sẵn có của Node, **không cần cài thêm gói**. Bộ nạp `scripts/ts-resolver.mjs` cho phép import trực tiếp file `.ts`. Yêu cầu Node >= 22.15.
 - **Schema tooling**: `npm run db:drift` đối chiếu `schema.ts` ↔ `init.ts`; `npm run db:generate` sinh diff SQL để review (không tự áp lên DB). `migrations/*.sql` là **snapshot mysqldump**, KHÔNG phải chuỗi migration — đã có guard chặn chạy nhầm (chứa `DROP TABLE` toàn bộ).
 - **Webfont & Icon**: Inter **đã tự chủ** — `public/assets/fonts/` chứa 7 tệp `.woff2` + `inter.css` do `node scripts/fetch-fonts.mjs` tải về, và `nuxt.config.ts` tự phát hiện tệp CSS đó lúc build rồi bỏ hẳn ba thẻ `<link>` tới Google (2 preconnect + 1 stylesheet). Kiểm chứng bằng cách grep `.output/` sau khi build: không còn tham chiếu `fonts.googleapis.com` nào. Xoá thư mục đó đi thì lần build sau tự quay lại dùng CDN — nhánh này là `existsSync` lúc build, không phải cấu hình. FontAwesome chỉ nạp `fontawesome.min.css` + hai họ thực dùng (`solid`, `regular`) — khai báo tại `ICON_FAMILIES` trong `nuxt.config.ts`, có test chặn nếu template dùng họ chưa nạp.
@@ -46,7 +46,7 @@ app/
 │   ├── ArticleDetail.vue        # Trang chi tiết bài viết dùng chung (news / role-models / reintegration)
 │   ├── ChatWidget.vue           # Widget chatbot nổi (nút mở rộng ≥768px → /tro-ly)
 │   ├── NewsCategoryList.vue     # Danh sách tin theo chuyên mục dùng chung
-│   ├── ArticleComments.vue      # Luồng bình luận công khai (nạp sau mount, một cấp trả lời, không v-html)
+│   ├── ArticleComments.vue      # Luồng bình luận công khai (nạp sau mount, một cấp trả lời, không v-html, neo `#binh-luan-<id>`)
 │   ├── ReaderAvatar.vue         # Avatar chữ cái đầu vẽ tại chỗ — không tải ảnh từ Google
 │   └── admin/
 │       └── MediaLibraryModal.vue # Modal chọn tệp từ Thư viện Media
@@ -60,6 +60,7 @@ app/
 │   ├── useChatbot.ts            # State + hành vi chatbot dùng chung widget ↔ /tro-ly (module-level)
 │   ├── useI18n.ts               # Bộ từ điển Đa ngôn ngữ (VN / EN)
 │   ├── useReaderAuth.ts         # Danh tính người đọc (state cấp module, chỉ fetch sau mount) + tự nhận đoạn chat cũ một lần mỗi phiên
+│   ├── useReaderNotifications.ts # Thông báo trả lời (state cấp module, không polling, đánh dấu đã đọc lạc quan)
 │   ├── useReadingHistory.ts     # Bài đã đọc — chỉ `localStorage`, cố ý KHÔNG có bảng nào trên máy chủ
 │   └── useToast.ts              # System Toast Notification reactive composable
 ├── layouts/
@@ -87,7 +88,7 @@ app/
     │   └── index.vue
     ├── tai-lieu-hoi-dap.vue     # Tài liệu Hỏi – Đáp: đọc kho `chatbot_knowledge` đã duyệt (tìm kiếm, lọc chủ đề, neo `#qa-<id>`)
     ├── tro-ly.vue               # Trợ lý AI toàn màn hình (sidebar cuộc hội thoại + khung chat)
-    ├── nguoi-doc.vue            # Trang cá nhân người đọc: đổi tên hiển thị, bình luận đã gửi, bài đã đọc (localStorage), đoạn chat đã nhận. KHÔNG có trong `routeRules`
+    ├── nguoi-doc.vue            # Trang cá nhân người đọc: đổi tên hiển thị, thông báo (`#thong-bao`), bình luận đã gửi, bài đã đọc (localStorage), đoạn chat đã nhận. KHÔNG có trong `routeRules`
     ├── [slug].vue               # Catch-all: render trang tùy biến từ block data (404 nếu slug không tồn tại)
     └── admin/                   # Hệ thống Quản trị Admin Panel
         ├── index.vue            # Dashboard Tổng quan
@@ -353,6 +354,29 @@ Cổng vốn chỉ nói ra mà không nghe được: người đọc một bài 
 - **Khối danh tính phải có ở CẢ HAI bề mặt** — header desktop và ngăn kéo mobile. `tests/public-pages-structure.test.ts` đếm **số lần xuất hiện** của nút đăng nhập / liên kết `/nguoi-doc` / nút đăng xuất, vì một lần dọn dẹp sau này rất dễ gộp hai khối thành một rồi bỏ mất bản trong ngăn kéo, và triệu chứng chỉ hiện trên điện thoại.
 - **`db.insert()` trả về MẢNG — đã sửa thêm hai chỗ nữa.** `createComment` và `createAdminReply` (`services/comments.ts`) đọc `.insertId` trên giá trị **chưa destructure**, nên luôn ra `undefined` → `0`. Ở `createAdminReply` hậu quả là `resourceId: 0` trong `activity_logs`: một phản hồi chính thức đang hiển thị mà dòng audit trỏ vào hàng không tồn tại — đúng cái mà việc bọc hai lượt ghi vào một transaction ra đời để ngăn. Tổng cộng **bốn** chỗ đã viết sai (`callback.get.ts`, `ip-bans.ts`, và hai chỗ này); `tests/insert-id-integration.test.ts` là suite duy nhất bắt được loại lỗi này vì chỉ driver thật mới phản đối.
 
+### 4c. Thông báo trả lời & neo tới từng bình luận
+
+Luồng bình luận vốn **một chiều**: công dân đặt câu hỏi dưới bài viết rồi rời đi, và không có đường nào biết đã có ai trả lời. Ban quản trị trả lời một câu hỏi pháp lý — người hỏi không bao giờ thấy. Đó là hỏng đúng phần có giá trị nhất của tính năng bình luận. Kèm theo: bình luận trước đây **không có địa chỉ riêng**, nên không chia sẻ được và một thông báo có bấm được cũng không có chỗ để tới.
+
+- **Bảng `reader_notifications` (bảng thứ 41), không suy ra từ `article_comments`.** Phương án suy ra (so với một mốc `notifications_seen_at`) chỉ đánh dấu đã đọc được **toàn bộ một lượt** và khoá cứng vào đúng một loại thông báo. Cột `type` mở đường cho loại thứ hai mà không cần migration.
+- **Cả hai FK đều CASCADE, và đó là thứ giữ bảng này trung thực.** Xoá trả lời → thông báo về nó biến mất (một thông báo trỏ vào hàng không tồn tại sẽ dẫn người đọc tới một bài viết không có bình luận đó — đọc ra là cổng đã xoá lời họ viết). Xoá tài khoản → thông báo đi theo.
+- **CỐ Ý KHÔNG phải scope lưu trữ.** Mọi hàng treo trên `article_comments`, vốn đã cascade từ **cả** `articles` **và** `reader_accounts` — hai scope đã có — nên bảng này bị chặn trước khi `data-retention.ts` nhìn tới. Một cửa sổ tuổi độc lập sẽ xoá thông báo **trong khi trả lời vẫn nằm trên trang chưa ai đọc**, còn một cap số bản ghi sẽ đuổi thông báo cũ nhất của đúng những người hoạt động nhiều nhất. Cùng lý do `chat_messages` và `article_comments` không phải scope — thêm scope thứ năm cho bảng này là lỗi cần tránh.
+- **`UNIQUE (reader_id, comment_id)` + `onDuplicateKeyUpdate`, không phải đọc-rồi-ghi.** Chỉ số là thẩm quyền; kiểm tra trước rồi mới ghi thì hai lượt trả lời đồng thời đều thấy "chưa có hàng" và đều chèn.
+- **Thông báo ghi trong CÙNG transaction với trả lời.** Cả hai nơi gọi (`createComment` — nay đã bọc transaction, `createAdminReply` — đã có sẵn) truyền `tx` xuống. Một trả lời tồn tại mà không ai được báo là **đúng cái tính năng này ra đời để ngăn**, và nó hỏng trong im lặng: luồng trông đúng với tất cả mọi người trừ người đang chờ câu trả lời.
+- **Tự trả lời KHÔNG sinh thông báo**; trả lời của **cả** người đọc khác **lẫn** Ban quản trị thì có. Không có ràng buộc nào về ai được trả lời (chính điều mà `countReaderCommentImpact` phải đếm riêng), nên chỉ báo phản hồi cán bộ thì A không bao giờ biết B đã trả lời mình.
+- **`COMMENT_THREAD_PER_PAGE` sống ở `services/notifications.ts` và được endpoint luồng bình luận `import`, không khai hai nơi.** Thông báo trỏ vào một *trả lời*, nhưng luồng phân trang theo *bình luận gốc* — nên số trang phải suy từ cha. Hai bản sao lệch nhau là kiểu hỏng cho ra liên kết rơi **cạnh** bình luận thay vì **trúng** nó, mà **không có gì báo lỗi ở đâu cả**. `notificationTargetPage` là hàm thuần nên ghim được bằng test; việc nó khớp với luồng thật đã kiểm bằng MySQL thật lúc phát triển (dựng 45 bình luận gốc, đòi trang 3 chứa đúng bình luận được neo).
+- **URL là `/news/<slug>?binhluan=<trang>#binh-luan-<id>`** và neo **bình luận gốc**, không neo trả lời — trả lời luôn render dưới cha nên cha là thứ phải mở. Trang phải đọc **trước** lượt nạp đầu tiên, không thì `focusAnchoredComment` chạy trên trang 1 và không tìm thấy gì.
+- **Đọc hash bằng `Number.isSafeInteger`**, cùng cách `/tai-lieu-hoi-dap` đọc `#qa-<id>`: `Number()` trần cho ra `NaN` rồi đi tiếp vào `getElementById` dưới dạng chuỗi `"NaN"`.
+- **Chuông phải có ở CẢ HAI bề mặt.** Khối desktop mang `hidden lg:flex`, nên thiếu mục trong ngăn kéo mobile là **trên điện thoại tính năng không tồn tại** — đúng lỗi đã xảy ra một lần với nút đăng nhập. `tests/reader-notifications.test.ts` đếm **số lần xuất hiện** của `fa-bell` và của huy hiệu. Ngăn kéo **không dựng lại danh sách** (ngăn kéo đã là một lớp phủ; một danh sách cuộn lồng trong đó thì bấm hụt liên tục) mà dẫn thẳng tới `/nguoi-doc#thong-bao`.
+- **Nạp bằng `watch(reader)` ở layout, không phải trong `onMounted`.** `loadReader()` cố ý không được `await` (header không chặn lượt vẽ đầu), nên lúc mount `reader` vẫn null và gọi thẳng sẽ nhận 401. Nạp sẵn thay vì đợi mở chuông **vì huy hiệu ở ngăn kéo mobile không có cú mở nào để bám vào** — không nạp thì trên điện thoại con số vĩnh viễn bằng 0.
+- **`load()` chia sẻ promise đang bay, không `if (pending) return`.** Layout và `/nguoi-doc` cùng gọi trên mỗi lượt tải trang cá nhân; một `return` trơn sẽ khiến lượt gọi thứ hai resolve **ngay lập tức** trong khi dữ liệu còn đang về, nên `await` của trang rơi xuống đoạn mã tưởng danh sách đã có. Chỉ chia sẻ khi **cùng số trang** — nếu không, bấm "trang sau" giữa lúc lượt đầu đang bay sẽ lặng lẽ trả về trang cũ.
+- **Đánh dấu đã đọc là lạc quan.** Người đọc vừa bấm đúng thứ đó; đợi round-trip mới hạ huy hiệu làm cú bấm có cảm giác bị bỏ qua. Ghi hỏng thì hàng trên máy chủ vẫn chưa đọc và lượt nạp sau khôi phục con số thật — giá của việc sai là một huy hiệu quay lại, không phải mất dữ liệu.
+- **`reset()` chạy khi đăng xuất, và xoá cả promise đang bay.** State ở cấp module sống qua lượt đăng xuất; trên máy dùng chung người kế tiếp sẽ thấy huy hiệu của người trước.
+- **Không polling nền.** Một lượt poll là một request mỗi vài giây từ **mọi tab đang mở**, đổi lấy một con số không bao giờ khẩn cấp — không ai chờ một câu trả lời pháp lý theo từng giây.
+- **Hai endpoint không ghi `activity_logs`**, cùng lý do `GET /reader/comments` không ghi: quy tắc audit nhắm vào **cán bộ đọc dữ liệu công dân**, không phải công dân xem trang của chính mình. Danh tính từ vé, **không có tham số `readerId`**; `markRead`/`markAllRead` luôn có `readerId` trong mệnh đề `WHERE`.
+- **Hạn mức trừ NGAY TRƯỚC lượt ghi**, sau mọi lý do từ chối — cùng thứ tự mà đường ghi bình luận và đường đổi tên đã ghi.
+- **Bắt đầu từ 0, không backfill.** Chỉ trả lời **từ lúc triển khai** mới sinh hàng, cùng lối đi với lượt xem bài viết. Người có câu hỏi đã được trả lời trước đó sẽ không thấy gì. **Không có thông báo qua email** — chỉ trong cổng.
+
 
 ### 5. Bảo mật (bắt buộc khi triển khai)
 - **Bí mật BẮT BUỘC ở production** — thiếu là app từ chối khởi động (`server/plugins/require-secrets.ts`): `JWT_SECRET`, `CHATBOT_ENCRYPTION_SECRET`, `ANALYTICS_HMAC_SECRET`. Không còn giá trị mặc định trong mã nguồn hay `docker-compose.yml`.
@@ -363,7 +387,7 @@ Cổng vốn chỉ nói ra mà không nghe được: người đọc một bài 
 - **Xác thực hai bước tự phục vụ** (`/admin/profile`): ba yếu tố bật tắt độc lập (ứng dụng xác thực / mã về email / mật khẩu cấp 2), mã dự phòng tuỳ chọn, break-glass chỉ SuperAdmin. Xem "Vận hành & an toàn" ở trên, **đặc biệt là runbook xoay `JWT_SECRET`** — xoay khoá này làm mọi secret TOTP đã lưu hết dùng được.
 
 ### 6. Khởi tạo Cơ sở dữ liệu & Docker
-- **MySQL Database Auto-Init (`server/db/init.ts`)**: Tự động kết nối server MySQL, tạo database `cdkt_admin` và toàn bộ 40 bảng dữ liệu nếu chưa tồn tại (idempotent, tự thêm cột còn thiếu).
+- **MySQL Database Auto-Init (`server/db/init.ts`)**: Tự động kết nối server MySQL, tạo database `cdkt_admin` và toàn bộ 41 bảng dữ liệu nếu chưa tồn tại (idempotent, tự thêm cột còn thiếu).
 - **Database Seed (`server/db/seed.ts`)**: Tạo tài khoản SuperAdmin (`admin`, mật khẩu lấy từ `ADMIN_PASSWORD`), các vai trò, bảng phân quyền và dữ liệu thiết lập ban đầu. **Insert-only**: chạy lại (kể cả mỗi lần khởi động container) sẽ KHÔNG ghi đè mật khẩu, ma trận quyền hay cấu hình mà quản trị viên đã sửa.
 - **Docker Compose**: Đóng gói môi trường containerized hoàn chỉnh gồm 2 service `cdkt_mysql` (MySQL 8.0) và `cdkt_app` (Nuxt 4 app) chạy trên cổng `3000`.
 

@@ -75,7 +75,106 @@
                  tới khi biết được người đọc là ai — một nút "Đăng nhập" nhấp nháy
                  rồi đổi thành tên còn tệ hơn là xuất hiện muộn nửa giây. -->
             <client-only>
-              <div v-if="readerLoaded" class="hidden lg:flex items-center">
+              <div v-if="readerLoaded" class="hidden lg:flex items-center gap-2">
+                <!--
+                  Chuông thông báo.
+
+                  `relative` ở đây, và tổ tiên của nó **không được** có `overflow-x`
+                  khác `visible` — `overflow-x: auto` biến `overflow-y: visible`
+                  thành `auto` và cắt mất menu này. Cùng cái bẫy đã ghi ở menu danh
+                  tính ngay bên dưới và ở thanh điều hướng.
+                -->
+                <div v-if="reader" ref="notifMenuRef" class="relative">
+                  <button
+                    type="button"
+                    class="relative flex items-center justify-center w-9 h-9 rounded-full bg-[#F8FAF7] border border-[#E2E8DF] text-[#385130] transition-all hover:bg-[#EEF2EC] hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                    :aria-expanded="isNotifMenuOpen"
+                    aria-haspopup="menu"
+                    :aria-label="unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : 'Thông báo'"
+                    @click="toggleNotifMenu"
+                  >
+                    <i class="fa-solid fa-bell text-[0.9rem]" aria-hidden="true"></i>
+                    <!-- Huy hiệu là chỉ báo trạng thái, không phải khung chờ, nên
+                         không có `animate-pulse` để phải miễn trừ. -->
+                    <span
+                      v-if="unreadCount > 0"
+                      class="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 flex items-center justify-center rounded-full bg-[#B04A4A] text-white text-[0.65rem] font-bold leading-none"
+                    >{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
+                  </button>
+
+                  <div
+                    v-if="isNotifMenuOpen"
+                    role="menu"
+                    class="absolute right-0 top-[calc(100%+8px)] z-[10004] w-[340px] max-w-[calc(100vw-2rem)] rounded-xl border border-[#E2E8DF] bg-white shadow-[0_12px_32px_rgba(15,35,18,0.14)]"
+                  >
+                    <div class="flex items-center justify-between gap-2 border-b border-[#EEF2EC] px-3.5 py-2.5">
+                      <span class="text-[0.82rem] font-extrabold uppercase tracking-wide text-[#385130]">Thông báo</span>
+                      <button
+                        v-if="unreadCount > 0"
+                        type="button"
+                        class="text-[0.75rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+                        @click="markAllNotificationsRead"
+                      >Đánh dấu đã đọc</button>
+                    </div>
+
+                    <div class="max-h-[380px] overflow-y-auto">
+                      <div v-if="notifPending" role="status" aria-busy="true" class="p-3.5">
+                        <span class="sr-only">Đang tải thông báo</span>
+                        <div v-for="n in 3" :key="n" aria-hidden="true" class="mb-3 last:mb-0">
+                          <div class="h-3 w-28 animate-pulse rounded bg-[#EEF2EC] motion-reduce:animate-none"></div>
+                          <div class="mt-2 h-3.5 w-full animate-pulse rounded bg-[#F1F5F0] motion-reduce:animate-none"></div>
+                        </div>
+                      </div>
+
+                      <p v-else-if="notifFailed" role="alert" class="m-0 px-3.5 py-6 text-center text-[0.85rem] text-[#B04A4A]">
+                        <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>
+                        Không thể tải thông báo.
+                        <button type="button" class="font-bold text-[#4A6741] underline" @click="loadNotifications()">Thử lại</button>.
+                      </p>
+
+                      <p v-else-if="!notifications.length" class="m-0 px-3.5 py-8 text-center text-[0.85rem] text-[#7A8675]">
+                        Chưa có thông báo nào. Khi có người trả lời bình luận của bạn, thông báo sẽ hiện ở đây.
+                      </p>
+
+                      <ul v-else class="m-0 list-none p-0">
+                        <li v-for="item in notifications" :key="item.id" class="border-b border-[#F1F5F0] last:border-b-0">
+                          <component
+                            :is="item.target ? NuxtLink : 'div'"
+                            v-bind="item.target ? { to: item.target.url } : {}"
+                            class="flex w-full gap-2.5 px-3.5 py-3 no-underline transition-colors"
+                            :class="[
+                              item.target ? 'cursor-pointer hover:bg-[#F7FAF6]' : 'cursor-default',
+                              item.isRead ? '' : 'bg-[#F4F9F0]',
+                            ]"
+                            @click="onNotificationClick(item)"
+                          >
+                            <span
+                              class="mt-1.5 h-2 w-2 shrink-0 rounded-full"
+                              :class="item.isRead ? 'bg-transparent' : 'bg-[#7CB342]'"
+                              aria-hidden="true"
+                            ></span>
+                            <span class="min-w-0 flex-1">
+                              <span class="block text-[0.83rem] leading-snug text-[#1E251C]">
+                                <strong class="font-bold">{{ item.authorName }}</strong>
+                                đã trả lời bình luận của bạn
+                              </span>
+                              <span class="mt-0.5 block line-clamp-2 break-words text-[0.8rem] leading-snug text-[#4A5545]">{{ item.excerpt }}</span>
+                              <span v-if="item.target" class="mt-1 block truncate text-[0.74rem] text-[#7A8675]">{{ item.target.articleTitle }}</span>
+                              <span v-else class="mt-1 block text-[0.74rem] italic text-[#7A8675]">Bài viết hiện không mở bình luận</span>
+                            </span>
+                          </component>
+                        </li>
+                      </ul>
+                    </div>
+
+                    <nuxt-link
+                      to="/nguoi-doc"
+                      class="block border-t border-[#EEF2EC] px-3.5 py-2.5 text-center text-[0.8rem] font-bold text-[#4A6741] no-underline transition-colors hover:bg-[#F7FAF6]"
+                      @click="isNotifMenuOpen = false"
+                    >Xem tất cả trên trang cá nhân</nuxt-link>
+                  </div>
+                </div>
+
                 <!-- Đã đăng nhập: một nút mở menu nhỏ.
 
                      `relative` nằm ở đây, và tổ tiên của nó **không được** có
@@ -271,6 +370,31 @@
                       <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Đăng xuất
                     </button>
                   </div>
+
+                  <!--
+                    Thông báo ở ngăn kéo.
+
+                    Bản mobile của chuông, và nó phải tồn tại riêng: khối desktop
+                    mang `hidden lg:flex`, nên thiếu chỗ này là **trên điện thoại
+                    tính năng không tồn tại** — đúng lỗi đã xảy ra một lần với nút
+                    đăng nhập. Không dựng lại danh sách ở đây: ngăn kéo đã là một
+                    lớp phủ, và một danh sách cuộn được lồng trong đó thì bấm hụt
+                    liên tục. Nó dẫn thẳng sang trang cá nhân, nơi danh sách đầy đủ
+                    đã có sẵn.
+                  -->
+                  <nuxt-link
+                    to="/nguoi-doc#thong-bao"
+                    class="flex items-center justify-between gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-[#385130] no-underline transition-colors active:bg-[#EEF2EC]"
+                    @click="isMobileMenuOpen = false"
+                  >
+                    <span class="flex items-center gap-2">
+                      <i class="fa-solid fa-bell text-[#7CB342]" aria-hidden="true"></i> Thông báo
+                    </span>
+                    <span
+                      v-if="unreadCount > 0"
+                      class="min-w-[20px] h-5 px-1.5 flex items-center justify-center rounded-full bg-[#B04A4A] text-white text-[0.7rem] font-bold leading-none"
+                    >{{ unreadCount > 9 ? '9+' : unreadCount }}</span>
+                  </nuxt-link>
                 </div>
 
                 <button
@@ -523,6 +647,74 @@ const {
 const isReaderMenuOpen = ref(false)
 const readerMenuRef = ref(null)
 
+// ─── Thông báo ──────────────────────────────────────────────────────────────
+// Cũng ở cấp module trong composable: chuông ở đây và danh sách trên /nguoi-doc
+// là hai component trên cùng một trang, hai lượt fetch riêng sẽ đếm lệch nhau.
+const {
+  items: notifications,
+  unreadCount,
+  pending: notifPending,
+  failed: notifFailed,
+  loaded: notifLoaded,
+  load: loadNotifications,
+  markRead: markNotificationsRead,
+  markAllRead: markAllNotificationsRead,
+  reset: resetNotifications,
+} = useReaderNotifications()
+
+const isNotifMenuOpen = ref(false)
+const notifMenuRef = ref(null)
+
+/**
+ * Mở chuông.
+ *
+ * Danh sách đã được nạp bởi `watch(reader)` ngay khi biết người đọc là ai — huy
+ * hiệu ở ngăn kéo mobile cần con số đó mà không có cú mở nào để bám vào. Ở đây
+ * chỉ nạp bù cho trường hợp lượt đầu đã hỏng, để cú bấm không mở ra một danh sách
+ * rỗng vĩnh viễn.
+ */
+function toggleNotifMenu() {
+  isNotifMenuOpen.value = !isNotifMenuOpen.value
+  if (isNotifMenuOpen.value && !notifLoaded.value && !notifPending.value) {
+    void loadNotifications().catch(() => {})
+  }
+}
+
+/**
+ * Bấm một thông báo: đánh dấu đã đọc rồi để `NuxtLink` điều hướng.
+ *
+ * Không `preventDefault`, không tự `navigateTo`: phần tử đã là một liên kết thật
+ * khi có đích, nên chuột giữa và "mở tab mới" vẫn hoạt động. Lượt đánh dấu là
+ * lạc quan trong composable nên nó không chặn cú điều hướng.
+ */
+function onNotificationClick(item) {
+  isNotifMenuOpen.value = false
+  if (!item.isRead) void markNotificationsRead([item.id])
+}
+
+/**
+ * Nạp thông báo ngay khi biết được người đọc là ai.
+ *
+ * Phải là `watch` chứ không nằm trong `onMounted`: `loadReader()` cố ý không được
+ * `await` (header không chặn lượt vẽ đầu để chờ nó), nên tại thời điểm mount thì
+ * `reader` vẫn còn null và một lượt gọi thẳng sẽ nhận 401.
+ *
+ * Nạp sẵn thay vì đợi mở chuông, vì **huy hiệu ở ngăn kéo mobile không có cú mở
+ * nào để bám vào** — nó là một liên kết phẳng, không phải một menu. Không nạp ở
+ * đây thì trên điện thoại con số vĩnh viễn bằng 0 và tính năng trông như không
+ * chạy. Đúng một request cho mỗi lượt tải trang của người đã đăng nhập.
+ */
+watch(reader, (value) => {
+  if (!value) { resetNotifications(); return }
+  if (!notifLoaded.value) {
+    loadNotifications().catch(() => {
+      // 401 ở đây nghĩa là vé đã hết hiệu lực. `useReaderAuth` sở hữu quyết định
+      // đó và lượt tải trang sau sẽ tự chỉnh; một thông báo lỗi ở header cho một
+      // danh sách chưa ai mở là tiếng ồn.
+    })
+  }
+})
+
 /**
  * Đăng xuất từ cả hai bề mặt (menu desktop và ngăn kéo mobile).
  *
@@ -532,8 +724,12 @@ const readerMenuRef = ref(null)
  */
 async function onReaderSignOut() {
   isReaderMenuOpen.value = false
+  isNotifMenuOpen.value = false
   isMobileMenuOpen.value = false
   await readerSignOut()
+  // Xoá luôn danh sách và bộ đếm: state ở cấp module nên nó sống qua lượt đăng
+  // xuất, và trên máy dùng chung người kế tiếp sẽ thấy huy hiệu của người trước.
+  resetNotifications()
 }
 
 const route = useRoute()
@@ -669,6 +865,7 @@ const handleKeydown = (event) => {
   // mở nó là một cái bẫy bàn phím — Escape là cách người dùng bàn phím thoát khỏi
   // mọi lớp phủ khác trên trang này.
   if (isReaderMenuOpen.value) isReaderMenuOpen.value = false
+  if (isNotifMenuOpen.value) isNotifMenuOpen.value = false
 }
 
 /**
@@ -680,9 +877,15 @@ const handleKeydown = (event) => {
  * liên kết vẫn còn trong cây, nên nó vẫn điều hướng bình thường.
  */
 const handleDocumentPointerDown = (event) => {
-  if (!isReaderMenuOpen.value) return
-  const root = readerMenuRef.value
-  if (root && !root.contains(event.target)) isReaderMenuOpen.value = false
+  if (isReaderMenuOpen.value) {
+    const root = readerMenuRef.value
+    if (root && !root.contains(event.target)) isReaderMenuOpen.value = false
+  }
+  // Cùng lý do `mousedown` như trên: menu thông báo chứa toàn liên kết điều hướng.
+  if (isNotifMenuOpen.value) {
+    const notifRoot = notifMenuRef.value
+    if (notifRoot && !notifRoot.contains(event.target)) isNotifMenuOpen.value = false
+  }
 }
 
 const mobileOpenSubmenu = ref(null)
