@@ -52,6 +52,13 @@ const AUDITED_WRITES: Array<{ file: string, fn: string, why: string }> = [
   { file: 'server/services/google-oauth-settings.ts', fn: 'clearGoogleOAuthSecret', why: 'credentials are dropped with no record of it' },
   { file: 'server/services/articles.ts', fn: 'setArticleCommentsEnabled', why: 'a thread opens or closes with nobody accountable' },
   { file: 'server/services/comments.ts', fn: 'createAdminReply', why: 'an administrator\'s public reply exists with no record of which admin posted it' },
+  // A rename is a write to a citizen's personal data, and it is the one audited
+  // path here whose actor is NOT a member of staff — see the `userId: null` note in
+  // renameReader for why the reader's id goes in `meta` instead of the user column.
+  // "Who was this account called before, and when did that change" has to stay
+  // answerable: a moderator acting on a report about a name needs to be able to
+  // tell a renamed account from the wrong account.
+  { file: 'server/services/readers.ts', fn: 'renameReader', why: 'a display name changes on every comment already published with nothing recording the old one' },
 ]
 
 describe('a row and its audit row commit together', () => {

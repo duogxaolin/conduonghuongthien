@@ -507,6 +507,17 @@ export const chatSessions = mysqlTable('chat_sessions', {
   userAgent:      varchar('user_agent', { length: 512 }),
   detectedPhone:  varchar('detected_phone', { length: 20 }),
   detectedName:   varchar('detected_name', { length: 128 }),
+  // Set when a signed-in reader claims a conversation they held in this browser
+  // before signing in — the claim endpoint verifies the session's HMAC ticket, so
+  // this is never taken on the client's word.
+  //
+  // SET NULL on delete, deliberately not CASCADE. chat_sessions is its own
+  // retention scope with its own 90-day window; reader_accounts keeps 365 days.
+  // Cascading would make deleting a reader also destroy chat transcripts that the
+  // delete-confirmation dialog does not count — an officer agreeing to one thing
+  // and getting another. SET NULL leaves the session exactly as it was before it
+  // was claimed.
+  readerId:       int('reader_id').references(() => readerAccounts.id, { onDelete: 'set null' }),
   messageCount:   int('message_count', { unsigned: true }).notNull().default(0),
   startedAt:      datetime('started_at', { mode: 'date' }).notNull(),
   lastMessageAt:  datetime('last_message_at', { mode: 'date' }).notNull(),
@@ -516,6 +527,7 @@ export const chatSessions = mysqlTable('chat_sessions', {
   recentIdx: index('chat_sessions_last_message_idx').on(t.lastMessageAt),
   startedIdx: index('chat_sessions_started_idx').on(t.startedAt),
   phoneIdx: index('chat_sessions_detected_phone_idx').on(t.detectedPhone),
+  readerIdx: index('chat_sessions_reader_id_idx').on(t.readerId),
 }))
 
 export const chatMessages = mysqlTable('chat_messages', {
@@ -659,6 +671,13 @@ export const readerAccounts = mysqlTable('reader_accounts', {
   googleSub:     varchar('google_sub', { length: 255 }).notNull().unique(),
   email:         varchar('email', { length: 255 }),
   displayName:   varchar('display_name', { length: 255 }),
+  // The name the reader chose for themselves, kept in a column of its own so the
+  // OAuth callback can keep refreshing `display_name` from Google on every
+  // sign-in — which it does deliberately — without that refresh silently
+  // erasing a name the reader typed. Null means "no custom name": the effective
+  // name falls back to the Google one. Read only through effectiveDisplayName()
+  // in server/services/readers.ts, never column-by-column at a call site.
+  customDisplayName: varchar('custom_display_name', { length: 255 }),
   isBanned:      boolean('is_banned').notNull().default(false),
   banReason:     text('ban_reason'),
   bannedAt:      datetime('banned_at', { mode: 'date' }),

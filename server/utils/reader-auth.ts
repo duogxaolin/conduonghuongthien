@@ -33,6 +33,17 @@ export interface ReaderIdentity {
   googleSub:    string
   email:        string | null
   displayName:  string | null
+  /**
+   * The name the reader chose, when they have chosen one.
+   *
+   * Carried here rather than re-queried per endpoint so that every surface
+   * resolves the name from the same row read in the same request. Read it through
+   * effectiveDisplayName() in services/readers.ts — never on its own, and never
+   * `displayName` on its own either: those two columns only mean something as a
+   * pair, and a call site that picks one is a surface that will eventually
+   * disagree with the others about what somebody is called.
+   */
+  customDisplayName: string | null
   tokenVersion: number
 }
 
@@ -80,6 +91,7 @@ async function resolveReader(event: H3Event): Promise<ReaderLookup> {
       googleSub:    readerAccounts.googleSub,
       email:        readerAccounts.email,
       displayName:  readerAccounts.displayName,
+      customDisplayName: readerAccounts.customDisplayName,
       isBanned:     readerAccounts.isBanned,
       tokenVersion: readerAccounts.tokenVersion,
     })
@@ -99,6 +111,7 @@ async function resolveReader(event: H3Event): Promise<ReaderLookup> {
       googleSub:    row.googleSub,
       email:        row.email,
       displayName:  row.displayName,
+      customDisplayName: row.customDisplayName,
       tokenVersion: row.tokenVersion,
     },
   }
