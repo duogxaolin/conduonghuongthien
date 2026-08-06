@@ -1,3 +1,4 @@
+import { readAffectedRows } from '../utils/affected-rows'
 import { createHash } from 'node:crypto'
 import type { H3Event } from 'h3'
 import { getHeader } from 'h3'
@@ -51,14 +52,17 @@ type DrizzleTransactionDb = SqlExecutor & {
   transaction<T>(callback: (tx: SqlExecutor) => Promise<T>): Promise<T>
 }
 
+/**
+ * Ở đây `null` là LỖI, không phải `0` — khác các vòng dọn theo lô.
+ *
+ * Con số này quyết định một lượt ghi có phải bản đầu tiên của (ngày, bài, nguồn)
+ * hay là một bản trùng, nên đọc "không biết" thành `0` sẽ âm thầm bỏ đúng những
+ * lượt xem mà bộ khử trùng lặp tồn tại để đếm.
+ */
 function affectedRows(result: unknown): number {
-  if (result && typeof result === 'object' && 'affectedRows' in result) {
-    return Number((result as { affectedRows: unknown }).affectedRows)
-  }
-  if (Array.isArray(result) && result[0] && typeof result[0] === 'object' && 'affectedRows' in result[0]) {
-    return Number((result[0] as { affectedRows: unknown }).affectedRows)
-  }
-  throw new Error('analytics deduplication result is unavailable')
+  const value = readAffectedRows(result)
+  if (value === null) throw new Error('analytics deduplication result is unavailable')
+  return value
 }
 
 function hashLiveScope(scopeType: AnalyticsLiveScopeType, scopeValue: string) {

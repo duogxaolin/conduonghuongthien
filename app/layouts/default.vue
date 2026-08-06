@@ -524,6 +524,12 @@
   </div>
 </template>
 <script setup>
+import {
+  DEFAULT_BOTTOM_NAV,
+  DEFAULT_NAV,
+  parseBottomNavConfig,
+  parseNavConfig,
+} from '~/utils/nav-config'
 import { ref, onMounted, onUnmounted, computed, nextTick, watch, resolveComponent } from 'vue'
 
 // Resolve NuxtLink once so runtime `:is` bindings render a real <a> (a string
@@ -618,33 +624,6 @@ const router = useRouter()
 const { error: toastError } = useToast()
 
 // Dynamic nav menu from admin settings (falls back to DEFAULT_NAV)
-const DEFAULT_NAV = [
-  { id: 'home', label: null, labelKey: 'home', url: '/', children: [] },
-  { id: 'about', label: null, labelKey: 'about', url: '/about', children: [] },
-  {
-    id: 'news', label: null, labelKey: 'news', url: '/news',
-    children: [
-      { id: 'news-featured', label: null, labelKey: 'news_featured', url: '/news/featured-news' },
-      { id: 'news-activity', label: null, labelKey: 'news_activities', url: '/news/activity-news' },
-      { id: 'news-local', label: null, labelKey: 'news_local', url: '/news/local-news' },
-    ]
-  },
-  { id: 'role-models', label: null, labelKey: 'role_models', url: '/role-models', children: [] },
-  { id: 'reintegration', label: null, labelKey: 'reintegration', url: '/reintegration-models', children: [] },
-  { id: 'documents', label: null, labelKey: 'documents', url: '/documents', children: [] },
-  // Hỏi – Đáp mở ra hai nguồn khác nhau, nên nó là dropdown chứ không phải một
-  // liên kết: `/legal-qa` là bài biên tập (`articles` type=faq), còn
-  // `/qa-documents` là kho câu trả lời đã duyệt mà chính trợ lý ảo dẫn lại.
-  // Thêm mục thứ 9 ngang hàng sẽ làm tràn thanh nav ở md.
-  {
-    id: 'legal-qa', label: null, labelKey: 'faq', url: '/legal-qa',
-    children: [
-      { id: 'legal-qa-articles', label: null, labelKey: 'faq_articles', url: '/legal-qa' },
-      { id: 'qa-approved-docs', label: null, labelKey: 'faq_approved_docs', url: '/qa-documents' },
-    ]
-  },
-  { id: 'contact', label: null, labelKey: 'contact', url: '/contact', children: [] },
-]
 
 const navMenuRaw = ref(null) // null = use DEFAULT_NAV
 
@@ -653,15 +632,6 @@ const navMenu = computed(() => {
   return DEFAULT_NAV
 })
 
-// Mobile bottom navigation bar (floating tab bar). Different shape from navMenu:
-// each item has an icon + a type ('link' | 'chatbot' | 'drawer') + featured flag.
-const DEFAULT_BOTTOM_NAV = [
-  { id: 'home', label: null, labelKey: 'home', icon: 'fa-solid fa-house', type: 'link', url: '/', featured: false },
-  { id: 'news', label: null, labelKey: 'news', icon: 'fa-solid fa-newspaper', type: 'link', url: '/news', featured: false },
-  { id: 'chatbot', label: null, labelKey: 'ask_ai', icon: 'fa-solid fa-comment-dots', type: 'chatbot', url: '', featured: true },
-  { id: 'documents', label: null, labelKey: 'documents', icon: 'fa-solid fa-file-lines', type: 'link', url: '/documents', featured: false },
-  { id: 'drawer', label: null, labelKey: 'categories', icon: 'fa-solid fa-bars', type: 'drawer', url: '', featured: false },
-]
 
 const bottomNavRaw = ref(null) // null = use DEFAULT_BOTTOM_NAV
 const bottomNav = computed(() => {
@@ -694,13 +664,20 @@ const siteAddress = computed(() => sitePublicSettings.value.address?.trim() || '
 const siteHotlineTel = computed(() => 'tel:' + siteHotline.value.replace(/[^0-9+]/g, ''))
 
 // Derive nav from the fetched settings (reactive — updates if data refetches)
-const _parseNav = (raw) => { try { return JSON.parse(raw) } catch { return null } }
+//
+// `parseNavConfig` / `parseBottomNavConfig` (app/utils/nav-config.ts) kiểm cả
+// HÌNH DẠNG, không chỉ cú pháp JSON. Bản cũ ở đây chỉ có `try/catch`, nên một
+// JSON hợp lệ mà sai hình dạng (`{}`, `[{}]`) đi qua trót lọt rồi làm
+// `<NuxtLink :to="undefined">` — thanh điều hướng biến mất hoặc dựng liên kết
+// chết trên TOÀN cổng, do một ô cấu hình lưu thành công mà không có gì báo.
+// `null` nghĩa là lùi về bảng mặc định: một cấu hình sai nên làm cổng trông như
+// chưa cấu hình, không nên làm cổng trông như bị hỏng.
 watch(settingsData, (res) => {
   if (!res?.settings) return
   const navbarRaw = res.settings.nav_menu_navbar || res.settings.nav_menu
-  if (navbarRaw) navMenuRaw.value = _parseNav(navbarRaw)
+  if (navbarRaw) navMenuRaw.value = parseNavConfig(navbarRaw)
   const mobileRaw = res.settings.nav_menu_mobile
-  if (mobileRaw) bottomNavRaw.value = _parseNav(mobileRaw)
+  if (mobileRaw) bottomNavRaw.value = parseBottomNavConfig(mobileRaw)
 }, { immediate: true })
 
 // rAF-throttled scroll handler: coalesces bursts of scroll events into one write

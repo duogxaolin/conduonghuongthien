@@ -1,6 +1,35 @@
 import { ref, computed, nextTick } from 'vue'
 
 /**
+ * Khử độc dữ liệu đọc lại từ `localStorage` ở `app/utils/chatbot-storage.ts`.
+ *
+ * Tách ra vì đó là **biên tin cậy**: khách sửa được `localStorage` bằng
+ * devtools, và `ChatSource.url` đi thẳng vào `:href` trên trang công khai. Nằm
+ * cùng module với state cấp module và các lời gọi `$fetch` thì chỉ kiểm được
+ * bằng cách nạp cả composable.
+ *
+ * Re-export nguyên vẹn để hai bề mặt (widget + `/assistant`) và các test đang
+ * import từ đây không phải đổi đường dẫn.
+ */
+export * from '../utils/chatbot-storage'
+import {
+  CHATBOT_CLIENT_LIMITS,
+  CHATBOT_WELCOME_MESSAGE,
+  normalizeConversation as normalizeConversationRaw,
+  normalizeSource,
+  normalizeStoredMessage,
+  type ChatLead,
+  type ChatMessage,
+  type ChatSource,
+  type StoredConversation,
+} from '../utils/chatbot-storage'
+
+/** Bọc lại để nơi gọi trong tệp này giữ nguyên chữ ký một tham số. */
+function normalizeConversation(item: unknown): StoredConversation | null {
+  return normalizeConversationRaw(item, newLocalId, () => Date.now())
+}
+
+/**
  * All chatbot state and behaviour, shared by the floating widget and the
  * full-screen /assistant page.
  *
@@ -12,57 +41,13 @@ import { ref, computed, nextTick } from 'vue'
  * `import.meta.client` guard so importing this file during SSR is inert.
  */
 
-export const CHATBOT_CLIENT_LIMITS = Object.freeze({
-  maxMessageChars: 2000,
-  maxOutputChars: 8000,
-  maxHistoryMessages: 8,
-  maxTotalUserChars: 30000,
-  maxQuickQuestions: 8,
-  maxSources: 3,
-  maxSourceLabelChars: 160,
-  maxSourceReferenceChars: 160,
-  maxConversations: 10,
-  maxTitleChars: 40,
-})
-
-const CHATBOT_RESPONSE_KINDS = new Set(['curated', 'provider', 'small_talk', 'not_found', 'unavailable', 'rate_limited'])
 
 /** Multi-conversation store. The v2 key held a single flat message array. */
 const SESSIONS_KEY = 'cdkt_sessions_v1'
 const LEGACY_HISTORY_KEY = 'cdkt_chat_history_v2'
 
 
-export const CHATBOT_WELCOME_MESSAGE = Object.freeze({
-  id: 'welcome',
-  sender: 'bot' as const,
-  text: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi chỉ hỗ trợ theo thông tin công khai trong kho dữ liệu đã được Cục C11 phê duyệt.',
-})
 
-export type ChatSource = { id: string, label: string, reference: string, url: string | null, entryId: number | null }
-export type ChatLead = { name: string, phone: string, email: string, question: string, status: 'idle' | 'sending' | 'done', error: string }
-
-/** One reference's approved Q&A, fetched on demand when the visitor opens it. */
-export type SourceDetailState = { status: 'loading' | 'ready' | 'error', question: string, answer: string }
-
-export type ChatMessage = {
-  id: string
-  sender: 'user' | 'bot'
-  text: string
-  kind?: string | undefined
-  sources?: ChatSource[]
-  askContact?: boolean
-  lead?: ChatLead | null
-  isStreaming?: boolean
-}
-
-export type StoredConversation = {
-  id: string
-  /** Opaque `<uuid>.<hmac>` minted by the server. Null until the first send. */
-  token: string | null
-  title: string
-  createdAt: number
-  messages: ChatMessage[]
-}
 
 // ─── Shared state ────────────────────────────────────────────────────────────
 const conversations = ref<StoredConversation[]>([])
@@ -103,77 +88,6 @@ const activeConversation = computed<StoredConversation>(() => {
 
 /** The active conversation's messages — what both surfaces render. */
 const chatMessages = computed<ChatMessage[]>(() => activeConversation.value.messages)
-
-// ─── Normalisation ───────────────────────────────────────────────────────────
-// Everything read back from localStorage is untrusted: the visitor can edit it,
-// and an older build may have written a different shape.
-
-function safeHttpsUrl(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  try {
-    const url = new URL(value)
-    return url.protocol === 'https:' ? url.toString() : null
-  } catch {
-    return null
-  }
-}
-
-/** The knowledge-bank row id, when the payload carries a usable one. */
-function knowledgeEntryId(raw: Record<string, unknown>): number | null {
-  // Fresh replies carry the numeric row id at the top level of the reference.
-  // Re-read localStorage carries it as `entryId`, because `id` was already
-  // folded into a composite render key by an earlier pass through this function.
-  for (const candidate of [raw.entryId, raw.id]) {
-    const value = typeof candidate === 'number' ? candidate : Number(candidate)
-    if (Number.isSafeInteger(value) && value > 0) return value
-  }
-  return null
-}
-
-export function normalizeSource(item: unknown, index: number): ChatSource | null {
-  if (!item || typeof item !== 'object') return null
-  const raw = item as Record<string, unknown>
-  const rawSource = (raw.source && typeof raw.source === 'object' ? raw.source : raw) as Record<string, unknown>
-  const label = typeof rawSource.label === 'string' ? rawSource.label.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxSourceLabelChars) : ''
-  const reference = typeof rawSource.reference === 'string' ? rawSource.reference.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxSourceReferenceChars) : ''
-  const url = safeHttpsUrl(rawSource.url)
-  if (!label && !reference) return null
-  const idPart = typeof raw.id === 'number' || typeof raw.id === 'string' ? raw.id : index
-  return { id: `${idPart}-${label}-${reference}`, label: label || 'Tài liệu công khai', reference, url, entryId: knowledgeEntryId(raw) }
-}
-
-function normalizeStoredMessage(item: unknown, index: number): ChatMessage | null {
-  if (!item || typeof item !== 'object') return null
-  const raw = item as Record<string, unknown>
-  if (raw.sender !== 'user' && raw.sender !== 'bot') return null
-  const maxChars = raw.sender === 'user' ? CHATBOT_CLIENT_LIMITS.maxMessageChars : CHATBOT_CLIENT_LIMITS.maxOutputChars
-  const text = typeof raw.text === 'string' ? raw.text.normalize('NFKC').trim().slice(0, maxChars) : ''
-  if (!text) return null
-  if (raw.sender === 'user') return { id: `stored-${index}`, sender: 'user', text }
-  const kind = typeof raw.kind === 'string' && CHATBOT_RESPONSE_KINDS.has(raw.kind) ? raw.kind : undefined
-  const sources = Array.isArray(raw.sources)
-    ? raw.sources.slice(0, CHATBOT_CLIENT_LIMITS.maxSources).map(normalizeSource).filter((value): value is ChatSource => value !== null)
-    : []
-  return { id: `stored-${index}`, sender: 'bot', text, kind, sources }
-}
-
-function normalizeConversation(item: unknown): StoredConversation | null {
-  if (!item || typeof item !== 'object') return null
-  const raw = item as Record<string, unknown>
-  const id = typeof raw.id === 'string' && raw.id ? raw.id : newLocalId()
-  const token = typeof raw.token === 'string' && raw.token ? raw.token : null
-  const title = typeof raw.title === 'string' && raw.title.trim()
-    ? raw.title.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxTitleChars)
-    : 'Cuộc trò chuyện mới'
-  const createdAt = typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now()
-  const messages = Array.isArray(raw.messages)
-    ? raw.messages
-        .slice(-(CHATBOT_CLIENT_LIMITS.maxHistoryMessages * 2))
-        .map(normalizeStoredMessage)
-        .filter((value): value is ChatMessage => value !== null)
-    : []
-  return { id, token, title, createdAt, messages: [{ ...CHATBOT_WELCOME_MESSAGE }, ...messages.filter(m => m.id !== 'welcome')] }
-}
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
 

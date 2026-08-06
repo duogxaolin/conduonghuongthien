@@ -130,7 +130,11 @@ test('summarizeUserAgent keeps an unrecognised agent visible rather than hiding 
 // bare Node test. The word-splitting rule is the part that can silently corrupt
 // content, so it is re-derived here and pinned against the source text.
 
+// Ghép cả `chatbot-storage.ts`: phần khử độc dữ liệu `localStorage` đã sang tệp
+// đó để kiểm được không cần nạp composable. Các khẳng định ở đây nói về hành vi,
+// nên chia theo tệp sẽ khiến một lần chuyển hàm trông như một hồi quy.
 const COMPOSABLE = readFileSync('app/composables/useChatbot.ts', 'utf8')
+  + '\n' + readFileSync('app/utils/chatbot-storage.ts', 'utf8')
 // Playback moved into its own module — the composable had grown to 939 lines and
 // this block reads nothing from the conversation state, so it is testable on its
 // own. `useChatbot` re-exports it, so every call site kept one import path.
