@@ -18,6 +18,7 @@
  * cấu hình, không nên làm cổng trông như *bị hỏng*.
  */
 import assert from 'node:assert/strict'
+import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
 import {
@@ -97,6 +98,87 @@ describe('parseNavConfig — mọi đầu vào không dùng được ra null', (
     for (const item of DEFAULT_NAV) {
       assert.ok(item.id, 'mọi mục mặc định phải có id (dùng làm :key của v-for)')
       assert.ok(item.url, 'mọi mục mặc định phải có url')
+    }
+  })
+
+  /**
+   * `openNewTab` phải sống sót qua bộ khử độc — nó ĐÃ TỪNG không.
+   *
+   * Cán bộ tick ô "Mở tab mới", `navigation.put.ts` lưu đúng trường đó, rồi
+   * `normalizeNavItem` dựng lại node từng trường và **không copy nó**. Kết quả là
+   * trang công khai bỏ qua thiết lập sau một lượt lưu *thành công*, với ô vẫn còn
+   * tick khi tải lại — không có triệu chứng nào chỉ vào nguyên nhân.
+   *
+   * Hồi quy này đến từ việc đổi `JSON.parse` passthrough (giữ mọi trường, kể cả
+   * trường nó không biết) sang một bộ khử độc allowlist (chỉ giữ trường được nêu
+   * tên). Bộ khử độc đúng hơn — đó là lý do nó tồn tại — nhưng nó **im lặng** với
+   * trường bị quên, nên chỗ duy nhất phát hiện được là một test như thế này.
+   */
+  it('giữ openNewTab ở cả mục cha và mục con', () => {
+    const items = parseNavConfig(JSON.stringify([{
+      id: 'ext', label: 'Cổng Bộ Công an', url: 'https://bocongan.gov.vn', openNewTab: true,
+      children: [{ id: 'ext-vb', label: 'Văn bản', url: 'https://bocongan.gov.vn/vb', openNewTab: true }],
+    }]))
+    assert.equal(items![0]!.openNewTab, true,
+      'ô "Mở tab mới" của mục cha bị bộ khử độc bỏ qua — cán bộ lưu thành công mà cổng không đổi gì')
+    assert.equal(items![0]!.children![0]!.openNewTab, true,
+      'mục con đi qua cùng hàm, nên nó phải giữ cờ này y như mục cha')
+  })
+
+  /**
+   * Vắng mặt và `false` phải cho ra **cùng một** kết quả dùng được.
+   *
+   * Template đọc cờ này bằng một phép kiểm truthy, nên `undefined` và `false` hành
+   * xử giống nhau — nhưng chỉ khi giá trị không dùng được không lọt qua thành
+   * truthy. `"false"` là chuỗi, và chuỗi nào cũng truthy: đọc bằng `Boolean(...)`
+   * sẽ **bật** cờ mà cán bộ vừa tắt, nếu một đường ghi nào đó (hay một lượt sửa
+   * tay trong CSDL) từng lưu nó dưới dạng chuỗi.
+   */
+  it('chỉ boolean true bật cờ — chuỗi "false" không được lọt qua', () => {
+    const notEnabled: Array<[string, unknown]> = [
+      ['vắng mặt', undefined],
+      ['false', false],
+      ['chuỗi "false"', 'false'],
+      ['chuỗi "true"', 'true'],
+      ['số 1', 1],
+      ['null', null],
+    ]
+    for (const [label, value] of notEnabled) {
+      const raw = JSON.stringify([{ id: 'a', label: 'A', url: 'https://x.vn', openNewTab: value }])
+      assert.notEqual(parseNavConfig(raw)![0]!.openNewTab, true,
+        `openNewTab: ${label} không được đọc thành "bật" — nó sẽ mở tab mới trái ý cán bộ`)
+    }
+  })
+})
+
+/**
+ * `target="_blank"` phải LUÔN đi kèm `rel="noopener noreferrer"`.
+ *
+ * Không có `noopener`, trang được mở giữ được `window.opener` và **ghi được** vào
+ * `location` của cổng — tức là một liên kết ngoài do cán bộ cấu hình có thể bị
+ * trang đích chuyển hướng sang một bản sao giả mạo của chính cổng này. Trên cổng
+ * của cơ quan nhà nước, đó là đúng loại chuyển hướng mà người đọc không có cách
+ * nào phát hiện.
+ *
+ * Kiểm ở đây, cùng chỗ với bộ đọc `openNewTab`, vì cờ đó chính là thứ **bật**
+ * `target="_blank"` lên: hai thứ này chỉ đúng khi đi cùng nhau, nên chúng được
+ * kiểm cùng nhau.
+ */
+describe('template nav — target="_blank" không bao giờ đứng một mình', () => {
+  it('mọi chỗ đặt target _blank đều đặt kèm rel noopener', () => {
+    const layout = readFileSync(
+      new URL('../app/layouts/default.vue', import.meta.url), 'utf8')
+    const bindings = layout.match(/openNewTab \? '_blank'[^"]*/g) ?? []
+    assert.ok(bindings.length >= 4,
+      `tìm thấy ${bindings.length} chỗ dùng openNewTab để đặt target; nav có 4 (cha/con × desktop/mobile) — ` +
+      'ít hơn nghĩa là một bề mặt đã ngừng đọc cờ này')
+    for (const binding of bindings) {
+      assert.match(binding, /rel:/,
+        `một chỗ đặt target="_blank" mà không có rel kèm theo: ${binding}`)
+    }
+    for (const match of layout.matchAll(/rel: [^,}]*openNewTab[^,}]*/g)) {
+      assert.match(match[0], /noopener/,
+        `rel thiếu noopener — trang đích ghi được vào location của cổng: ${match[0]}`)
     }
   })
 })
