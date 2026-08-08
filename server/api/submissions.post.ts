@@ -1,4 +1,4 @@
-import { getDb, getPool } from '../utils/db'
+import { getDb } from '../utils/db'
 import { submissions, pages, pageBlocks } from '../db/schema'
 import { eq } from 'drizzle-orm'
 import { getSmtpConfig, sendMail } from '../utils/mailer'
@@ -6,6 +6,7 @@ import { escapeHtml } from '../utils/escape-html'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
 import { logError, logWarn, SECURITY_EVENTS } from '../utils/logger'
 import { getClientIp } from '../utils/client-ip'
+import { rateLimitDeps } from '../utils/rate-limit-deps'
 
 // Public, unauthenticated endpoint → rate limit by the real peer IP
 // (`x-forwarded-for` is client-controlled and therefore spoofable).
@@ -14,8 +15,7 @@ import { getClientIp } from '../utils/client-ip'
 const SUBMIT_RULE: RateLimitRule = { limit: 5, windowSeconds: 10 * 60 }
 
 async function submitRateLimited(ip: string): Promise<{ limited: boolean; retryAfterSeconds: number }> {
-  const pool = getPool()
-  const deps = { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
+  const deps = rateLimitDeps()
   const state = await recordRateLimitHit(`submit:${ip}`, SUBMIT_RULE, deps)
   return { limited: state.blocked, retryAfterSeconds: state.retryAfterSeconds }
 }
@@ -45,14 +45,17 @@ function normalizeAnswers(raw: unknown): Answer[] {
   if (!Array.isArray(raw)) return []
   return raw
     .filter((a) => a && typeof a === 'object')
-    .map((a: any, i: number) => ({
-      id: String(a.id || `f_${i}`),
-      label: String(a.label || '').trim(),
-      value: String(a.value ?? '').trim(),
-      map: VALID_MAPS.includes(a.map) ? a.map : 'none',
-      type: VALID_TYPES.includes(a.type) ? a.type : 'text',
-      required: !!a.required,
-    }))
+    .map((item, i) => {
+      const a = item as Record<string, unknown>
+      return {
+        id: String(a.id || `f_${i}`),
+        label: String(a.label || '').trim(),
+        value: String(a.value ?? '').trim(),
+        map: VALID_MAPS.includes(String(a.map)) ? (a.map as Answer['map']) : 'none',
+        type: VALID_TYPES.includes(String(a.type)) ? (a.type as Answer['type']) : 'text',
+        required: !!a.required,
+      }
+    })
     .filter((a) => a.label)
 }
 
@@ -72,8 +75,9 @@ function validateAnswer(a: Answer): string | null {
  */
 function collectFromTree(nodes: unknown, out: Set<string>): void {
   if (!Array.isArray(nodes)) return
-  for (const n of nodes as any[]) {
-    if (!n || typeof n !== 'object') continue
+  for (const item of nodes) {
+    if (!item || typeof item !== 'object') continue
+    const n = item as { blockType?: unknown, data?: { recipientEmail?: unknown }, children?: unknown }
     if (n.blockType === 'contact_form' || n.blockType === 'support_form') {
       const to = String(n.data?.recipientEmail || '').trim().toLowerCase()
       if (to && EMAIL_RE.test(to)) out.add(to)
@@ -97,8 +101,8 @@ async function getConfiguredRecipients(db: ReturnType<typeof getDb>): Promise<Se
     .select({ published: pages.publishedBlocks, draft: pages.draftBlocks })
     .from(pages)
   for (const row of pageRows) {
-    collectFromTree((row as any).published, out)
-    collectFromTree((row as any).draft, out)
+    collectFromTree(row.published, out)
+    collectFromTree(row.draft, out)
   }
   // Legacy flat blocks.
   const flat = await db
@@ -106,7 +110,7 @@ async function getConfiguredRecipients(db: ReturnType<typeof getDb>): Promise<Se
     .from(pageBlocks)
     .where(eq(pageBlocks.blockType, 'contact_form'))
   for (const b of flat) {
-    const to = String((b as any).data?.recipientEmail || '').trim().toLowerCase()
+    const to = String(b.data?.recipientEmail || '').trim().toLowerCase()
     if (to && EMAIL_RE.test(to)) out.add(to)
   }
   return out

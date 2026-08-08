@@ -19,7 +19,7 @@ export default defineEventHandler(async () => {
     }
 
     return { ok: true, settings: publicSettings }
-  } catch (err: any) {
+  } catch {
     return { ok: false, settings: {} }
   }
 })

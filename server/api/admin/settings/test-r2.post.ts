@@ -1,12 +1,10 @@
 import { createR2Client } from '../../../utils/media-r2'
 import { ListObjectsV2Command } from '@aws-sdk/client-s3'
-import { checkPermission } from '../../../utils/auth'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'settings', 'read', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'settings', 'read')
 
   const body = await readBody(event).catch(() => ({}))
   const accountId = String(body?.accountId || '').trim()
@@ -33,10 +31,10 @@ export default defineEventHandler(async (event) => {
     }))
 
     return { ok: true, message: 'Kết nối Cloudflare R2 thành công!' }
-  } catch (err: any) {
+  } catch (err: unknown) {
     throw createError({
       statusCode: 400,
-      statusMessage: `Kết nối R2 thất bại: ${err?.message || 'Lỗi xác thực hoặc không tìm thấy Bucket.'}`
+      statusMessage: `Kết nối R2 thất bại: ${(err instanceof Error ? err.message : undefined) || 'Lỗi xác thực hoặc không tìm thấy Bucket.'}`
     })
   }
 })

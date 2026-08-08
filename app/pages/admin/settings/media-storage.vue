@@ -31,8 +31,8 @@ const fetchSettings = async () => {
     } else {
       error.value = 'Không tải được cấu hình lưu trữ.'
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được cấu hình lưu trữ.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được cấu hình lưu trữ.')
   } finally {
     loading.value = false
   }
@@ -43,8 +43,8 @@ const handleSave = async () => {
   try {
     const res = await $fetch('/api/admin/settings', { method: 'PUT', body: { settings } })
     if (res.ok) toast.success('Đã lưu cấu hình lưu trữ Media thành công!')
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu cấu hình')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu cấu hình'))
   } finally {
     saving.value = false
   }
@@ -63,8 +63,8 @@ const handleTestR2 = async () => {
       toast.success(res.message || 'Kết nối Cloudflare R2 thành công!')
       testMessage.value = '🎉 ' + res.message
     }
-  } catch (err: any) {
-    const msg = err?.data?.statusMessage || 'Kết nối R2 thất bại'
+  } catch (err: unknown) {
+    const msg = errorMessage(err, 'Kết nối R2 thất bại')
     toast.error(msg)
     testError.value = '❌ ' + msg
   } finally {

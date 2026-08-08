@@ -1,13 +1,11 @@
 import { getDb } from '../../../utils/db'
 import { articles, users } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { eq } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'news', 'read', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'news', 'read')
 
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid article ID' })

@@ -17,27 +17,13 @@
  * routeRules at all, so this is fetched after mount like every other
  * reader-specific response.
  */
+import { finitePositive } from '../../../utils/query-number'
 import { requireReader } from '../../../utils/reader-auth'
 import { listNotifications } from '../../../services/notifications'
 
 /** Server-enforced ceiling. A client-supplied page size is a request. */
 const MAX_PER_PAGE = 30
 const DEFAULT_PER_PAGE = 10
-
-/**
- * Finite first, THEN clamped.
- *
- * `Math.max(1, Number('abc'))` is NaN — every comparison with NaN is false, so
- * the clamp passes it straight through into `.offset()` and serialises as
- * `page: null`: rows returned while claiming to be on no page at all.
- * `?page=1e999` gets through the same hole. This is the bug /qa-documents
- * already hit once, so the check comes BEFORE the clamp here too.
- */
-function finitePositive(raw: unknown, fallback: number, max: number): number {
-  const value = Number(raw)
-  if (!Number.isFinite(value)) return fallback
-  return Math.min(Math.max(1, Math.floor(value)), max)
-}
 
 export default defineEventHandler(async (event) => {
   const reader = await requireReader(event)

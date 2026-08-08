@@ -15,7 +15,7 @@ import { randomBytes } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import mysql from 'mysql2/promise'
 import { passwordRejectionMessage } from '../../server/utils/password-policy'
-import { E2E_ADMIN_USERNAME, E2E_BASE_URL, E2E_PASSWORD_ENV, E2E_PORT } from './harness'
+import { E2E_ADMIN_USERNAME, E2E_BASE_URL, E2E_DB_ENV, E2E_PASSWORD_ENV, E2E_PORT } from './harness'
 
 const host = process.env.E2E_DB_HOST || '127.0.0.1'
 const port = Number(process.env.E2E_DB_PORT || 3306)
@@ -126,6 +126,13 @@ export default async function globalSetup() {
   // Workers are forked after globalSetup returns, so they inherit this.
   // It is a throwaway credential for a database that is dropped below.
   process.env[E2E_PASSWORD_ENV] = adminPassword
+  // Cùng lý do: spec cần dựng dữ liệu trực tiếp thay vì đi vòng qua một tính
+  // năng nó không kiểm. CSDL này bị xoá ở teardown ngay bên dưới.
+  process.env[E2E_DB_ENV.host] = host
+  process.env[E2E_DB_ENV.port] = String(port)
+  process.env[E2E_DB_ENV.user] = user
+  process.env[E2E_DB_ENV.password] = password
+  process.env[E2E_DB_ENV.database] = database
 
   return async () => {
     if (server) {
@@ -138,6 +145,7 @@ export default async function globalSetup() {
       server = null
     }
     delete process.env[E2E_PASSWORD_ENV]
+    for (const key of Object.values(E2E_DB_ENV)) delete process.env[key]
     await dropDatabase()
   }
 }

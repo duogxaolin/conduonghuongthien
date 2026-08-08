@@ -2,6 +2,7 @@ import { getDb } from '../utils/db'
 import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
 import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks } from '../db/schema'
+import type { BlockData } from '../../app/utils/blocks/types'
 import { eq, asc, sql } from 'drizzle-orm'
 import { CHATBOT_SMALL_TALK_SEED } from '../data/chatbot-small-talk-seed'
 import { normalizeQuestion } from '../utils/chatbot/small-talk'
@@ -259,7 +260,7 @@ async function seed() {
           pageId: homePage.id,
           blockType: s.type,
           displayOrder: s.displayOrder,
-          data: (s.config ?? {}) as any,
+          data: (s.config ?? {}) as BlockData,
           isVisible: s.isVisible ?? true,
         })
       }
@@ -286,7 +287,7 @@ async function seed() {
         } },
       ]
       for (const b of aboutBlocks) {
-        await db.insert(pageBlocks).values({ pageId: aboutPage.id, ...b } as any)
+        await db.insert(pageBlocks).values({ pageId: aboutPage.id, ...b })
       }
     }
   }
@@ -313,7 +314,7 @@ async function seed() {
         } },
       ]
       for (const b of contactBlocks) {
-        await db.insert(pageBlocks).values({ pageId: contactPage.id, ...b } as any)
+        await db.insert(pageBlocks).values({ pageId: contactPage.id, ...b })
       }
     }
   }

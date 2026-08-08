@@ -159,7 +159,7 @@
           </div>
           <div>
             <label class="mb-1 block text-sm font-semibold text-gray-700">Đường dẫn (slug)</label>
-            <input v-model="metaForm.slug" type="text" :disabled="page?.isSystem" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600 disabled:bg-gray-100 disabled:text-gray-400" />
+            <input v-model="metaForm.slug" type="text" :disabled="page?.isSystem === true" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600 disabled:bg-gray-100 disabled:text-gray-400" />
             <p v-if="page?.isSystem" class="mt-1 text-xs text-gray-400">Trang hệ thống không thể đổi đường dẫn.</p>
           </div>
           <div>
@@ -230,7 +230,7 @@
                   <i :class="[kindMeta[v.kind]?.icon, kindMeta[v.kind]?.color]"></i>
                   <span class="truncate">{{ v.label || kindMeta[v.kind]?.label || v.kind }}</span>
                 </p>
-                <p class="mt-0.5 text-xs text-gray-400">{{ kindMeta[v.kind]?.label }} · {{ v.blockCount }} block · {{ fmtDate(v.createdAt) }}</p>
+                <p class="mt-0.5 text-xs text-gray-400">{{ kindMeta[v.kind]?.label }} · {{ v.blockCount }} block · {{ v.createdAt ? fmtDate(v.createdAt) : '—' }}</p>
               </div>
               <span v-if="v.kind === 'origin'" class="shrink-0 rounded-full bg-blue-50 px-2 py-0.5 text-[0.65rem] font-semibold text-blue-600">KHÓA</span>
             </div>
@@ -254,14 +254,17 @@
 </template>
 
 <script setup lang="ts">
+import type { PageVersionRow, AdminPageDetail, AdminPageUpdateResult } from '~/types/admin-api'
 import { provide } from 'vue'
 import { BLOCK_REGISTRY, blocksByCategory, getDefaultData, isContainerType, clampColSpan, DEFAULT_COL_SPAN } from '~/utils/blocks/registry'
+import { blockText } from '~/utils/blocks/types'
+import type { BuilderTreeApi, NodeId } from '~/utils/blocks/types'
 import type { BlockNode, BuilderNode, NodeLocation } from '~/utils/blocks/types'
 
 /** A node id: numeric once persisted, `tmp_*` while unsaved, null for "root". */
 // `undefined` is part of the domain: BlockNode.id is optional until the node is
 // persisted, so every lookup by id has to accept a not-yet-saved node.
-type NodeId = number | string | null | undefined
+
 import BuilderCanvas from '~/components/admin/builder/BuilderCanvas.vue'
 import PropertyPanel from '~/components/admin/builder/PropertyPanel.vue'
 import BlockTreeNode from '~/components/admin/builder/BlockTreeNode.vue'
@@ -274,9 +277,16 @@ const toast = useToast()
 const { confirm } = useConfirm()
 
 const registry = BLOCK_REGISTRY
+
+/** Một mục trong bảng chọn khối — đúng phần tử `blocksByCategory()` sinh ra, nên
+ *  thêm block mới vào registry là kiểu này tự theo. */
+type PaletteItem = ReturnType<typeof blocksByCategory>['section'][number]
 const grouped = blocksByCategory()
 
-const page = ref<any>(null)
+// Hàng từ endpoint CHI TIẾT, không phải từ danh sách: danh sách kèm thêm
+// `blockCount` mà trang này không nhận, nên dùng nhầm kiểu sẽ khai một trường
+// vĩnh viễn `undefined`.
+const page = ref<AdminPageDetail['page'] | null>(null)
 const blocks = ref<BuilderNode[]>([])
 const loading = ref(true)
 const loadError = ref('')
@@ -325,7 +335,7 @@ const nextTmpId = () => `tmp_${tmpCounter++}`
 // the whole tree so structural edits (nesting, colSpan, order) are detected.
 const publishedSnapshot = ref('')
 const strip = (arr: BuilderNode[]): BuilderNode[] => arr.map(b => {
-  const o: any = { blockType: b.blockType, isVisible: b.isVisible !== false, data: b.data || {} }
+  const o: BuilderNode = { blockType: b.blockType, isVisible: b.isVisible !== false, data: b.data || {} }
   if (b.blockType === 'column') o.colSpan = b.colSpan ?? 12
   if (Array.isArray(b.children)) o.children = strip(b.children)
   return o
@@ -344,7 +354,7 @@ const previewPath = computed(() => (!page.value ? '/' : page.value.slug === 'hom
 // every node has an id (tmp for unsaved), a data object, a boolean isVisible,
 // columns carry colSpan, and containers carry a (possibly empty) children array.
 const hydrateNodes = (list: unknown): BuilderNode[] => (Array.isArray(list) ? list : []).map((b: BuilderNode) => {
-  const node: any = {
+  const node: BuilderNode = {
     ...b,
     id: b.id ?? nextTmpId(),
     data: b.data || {},
@@ -360,7 +370,13 @@ const fetchPage = async () => {
   loadError.value = ''
   hydrating = true
   try {
-    const res: any = await $fetch(`/api/admin/pages/${pageId.value}`)
+    /**
+     * Kiểu khai tường minh: `$fetch` suy kiểu theo **chuỗi URL**, mà URL ở đây
+     * dựng động nên nó khớp nhầm sang một route khác cùng tiền tố — rồi báo là
+     * `res.draft` không tồn tại trong khi endpoint có trả. Suy từ chính handler
+     * thì kiểu bám vào mã máy chủ chứ không bám vào cách viết URL.
+     */
+    const res = await $fetch<AdminPageDetail>(`/api/admin/pages/${pageId.value}`)
     if (res.ok) {
       page.value = res.page
       // Published blocks are the live baseline for the dirty check.
@@ -377,8 +393,8 @@ const fetchPage = async () => {
       }
       selectedId.value = blocks.value[0]?.id ?? null
     }
-  } catch (err: any) {
-    loadError.value = err?.data?.statusMessage || 'Không tải được trang.'
+  } catch (err: unknown) {
+    loadError.value = errorMessage(err, 'Không tải được trang.')
   } finally {
     loading.value = false
     nextTick(() => { hydrating = false })
@@ -387,7 +403,12 @@ const fetchPage = async () => {
 
 const blockPreviewText = (block: BuilderNode) => {
   const d = block.data || {}
-  return d.title || d.text || d.badge || d.titleLine1 || d.html?.replace(/<[^>]+>/g, '').slice(0, 40) || '—'
+  for (const key of ['title', 'text', 'badge', 'titleLine1']) {
+    const value = blockText(d, key)
+    if (value) return value
+  }
+  const html = blockText(d, 'html')
+  return html ? html.replace(/<[^>]+>/g, '').slice(0, 40) : '—'
 }
 
 // ── Palette / add (local only; persisted to draft) ──
@@ -416,7 +437,7 @@ const openPalette = (parentId: NodeId = null) => {
 //   root/section → section blocks + layout containers
 //   row          → column only
 //   column       → element (section + content) blocks only, no containers
-const paletteGroups = computed<Array<{ key: string; title: string; items: any[] }>>(() => {
+const paletteGroups = computed<Array<{ key: string; title: string; items: PaletteItem[] }>>(() => {
   const parent = paletteParentId.value == null ? null : findNode(paletteParentId.value)
   const pType = parent?.blockType
   if (pType === 'row') {
@@ -448,7 +469,7 @@ const paletteContextLabel = computed(() => {
 
 // Bridge injected by the recursive BlockTreeNode navigator: selection + contextual
 // add. selectedId is exposed as the raw ref so children read `.value` reactively.
-provide('builderTree', {
+provide<BuilderTreeApi>('builderTree', {
   selectedId,
   select: (id: NodeId) => { selectedId.value = id ?? null },
   openPalette,
@@ -480,7 +501,7 @@ const addBlock = (type: string) => {
 
 // ── Duplicate (local only) — deep-clones the node and its whole subtree ──
 const cloneSubtree = (node: BuilderNode): BuilderNode => {
-  const copy: any = {
+  const copy: BuilderNode = {
     id: nextTmpId(),
     blockType: node.blockType,
     data: JSON.parse(JSON.stringify(node.data || {})),
@@ -522,7 +543,7 @@ const scheduleDraftSave = () => {
 // Recursively serialize the working tree for draft/publish/version payloads.
 // Preserves nesting (children), column widths (colSpan), and per-level order.
 const serializeNodes = (list: BuilderNode[]): BlockNode[] => list.map((b, i) => {
-  const out: any = {
+  const out: BlockNode = {
     id: typeof b.id === 'number' ? b.id : undefined,
     blockType: b.blockType,
     displayOrder: i + 1,
@@ -540,9 +561,9 @@ const saveDraft = async () => {
   try {
     await $fetch(`/api/admin/pages/${pageId.value}/draft`, { method: 'PUT', body: { blocks: draftPayload() } })
     draftStatus.value = 'saved'
-  } catch (err: any) {
+  } catch (err: unknown) {
     draftStatus.value = 'error'
-    toast.error(err?.data?.statusMessage || 'Không lưu được nháp.')
+    toast.error(errorMessage(err, 'Không lưu được nháp.'))
   }
 }
 
@@ -555,7 +576,7 @@ const publish = async () => {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
   publishing.value = true
   try {
-    const res: any = await $fetch(`/api/admin/pages/${pageId.value}/publish`, { method: 'POST', body: { blocks: draftPayload() } })
+    const res = await $fetch(`/api/admin/pages/${pageId.value}/publish`, { method: 'POST', body: { blocks: draftPayload() } })
     if (res.ok) {
       const prevSelected = selectedId.value
       hydrating = true
@@ -568,8 +589,8 @@ const publish = async () => {
       nextTick(() => { hydrating = false })
       toast.success('Đã xuất bản lên site.')
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không xuất bản được.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không xuất bản được.'))
   } finally {
     publishing.value = false
   }
@@ -585,9 +606,9 @@ const discardDraft = async () => {
     await $fetch(`/api/admin/pages/${pageId.value}/draft`, { method: 'PUT', body: {} }) // clears draft → null
     await fetchPage() // reloads published (no draft present) and resets hydration flag
     toast.success('Đã quay lại bản đang chạy.')
-  } catch (err: any) {
+  } catch (err: unknown) {
     hydrating = false
-    toast.error(err?.data?.statusMessage || 'Không hủy được thay đổi.')
+    toast.error(errorMessage(err, 'Không hủy được thay đổi.'))
   }
 }
 
@@ -646,10 +667,12 @@ const openMeta = () => {
 const saveMeta = async () => {
   savingMeta.value = true
   try {
-    const body: any = { title: metaForm.title, seoTitle: metaForm.seoTitle, seoDescription: metaForm.seoDescription }
+    const body: Record<string, unknown> = { title: metaForm.title, seoTitle: metaForm.seoTitle, seoDescription: metaForm.seoDescription }
     if (!page.value?.isSystem) body.slug = metaForm.slug
-    const res: any = await $fetch(`/api/admin/pages/${pageId.value}`, { method: 'PUT', body })
-    if (res.ok) {
+    const res = await $fetch<AdminPageUpdateResult>(`/api/admin/pages/${pageId.value}`, { method: 'PUT', body })
+    // `page.value` đọc lại sau `await`: điều hướng khỏi trang giữa lúc lưu sẽ
+    // gỡ nó về null, và gán vào null là một lỗi thật chứ không phải giả định.
+    if (res.ok && page.value) {
       page.value.title = metaForm.title
       page.value.slug = res.slug
       page.value.seoTitle = metaForm.seoTitle
@@ -657,8 +680,8 @@ const saveMeta = async () => {
       toast.success('Đã lưu cấu hình trang.')
       showMeta.value = false
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không lưu được cấu hình.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không lưu được cấu hình.'))
   } finally {
     savingMeta.value = false
   }
@@ -666,7 +689,7 @@ const saveMeta = async () => {
 
 // ── Versions ──
 const showVersions = ref(false)
-const versions = ref<any[]>([])
+const versions = ref<PageVersionRow[]>([])
 const versionsLoading = ref(false)
 const savingBackup = ref(false)
 const backupLabel = ref('')
@@ -686,21 +709,21 @@ const openVersions = async () => {
 const loadVersions = async () => {
   versionsLoading.value = true
   try {
-    const res: any = await $fetch(`/api/admin/pages/${pageId.value}/versions`)
+    const res = await $fetch(`/api/admin/pages/${pageId.value}/versions`)
     if (res.ok) versions.value = res.versions || []
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không tải được danh sách phiên bản.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không tải được danh sách phiên bản.'))
   } finally {
     versionsLoading.value = false
   }
 }
 
 // Load a version into the working copy (draft) — user must Publish to go live.
-const restoreVersion = async (v: any) => {
+const restoreVersion = async (v: PageVersionRow) => {
   const ok = await confirm({ title: 'Khôi phục phiên bản', message: `Nạp "${v.label || kindMeta[v.kind]?.label}" vào bản nháp? Bản đang chạy trên site không đổi cho tới khi bạn Xuất bản.`, confirmLabel: 'Khôi phục' })
   if (!ok) return
   try {
-    const res: any = await $fetch(`/api/admin/pages/${pageId.value}/versions/${v.id}/restore`, { method: 'POST' })
+    const res = await $fetch(`/api/admin/pages/${pageId.value}/versions/${v.id}/restore`, { method: 'POST' })
     if (res.ok) {
       hydrating = true
       blocks.value = hydrateNodes(res.blocks || [])
@@ -710,20 +733,20 @@ const restoreVersion = async (v: any) => {
       showVersions.value = false
       toast.success('Đã nạp vào bản nháp. Xem trước rồi bấm Xuất bản.')
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không khôi phục được.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không khôi phục được.'))
   }
 }
 
-const deleteVersion = async (v: any) => {
+const deleteVersion = async (v: PageVersionRow) => {
   const ok = await confirm({ title: 'Xóa phiên bản', message: `Xóa "${v.label || kindMeta[v.kind]?.label}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
     await $fetch(`/api/admin/pages/${pageId.value}/versions/${v.id}`, { method: 'DELETE' })
     await loadVersions()
     toast.success('Đã xóa phiên bản.')
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không xóa được phiên bản.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không xóa được phiên bản.'))
   }
 }
 
@@ -731,14 +754,14 @@ const deleteVersion = async (v: any) => {
 const saveBackup = async () => {
   savingBackup.value = true
   try {
-    const res: any = await $fetch(`/api/admin/pages/${pageId.value}/versions`, { method: 'POST', body: { kind: 'manual', label: backupLabel.value, blocks: draftPayload() } })
+    const res = await $fetch(`/api/admin/pages/${pageId.value}/versions`, { method: 'POST', body: { kind: 'manual', label: backupLabel.value, blocks: draftPayload() } })
     if (res.ok) {
       backupLabel.value = ''
       await loadVersions()
       toast.success('Đã lưu bản sao lưu.')
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không lưu được bản sao lưu.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không lưu được bản sao lưu.'))
   } finally {
     savingBackup.value = false
   }
@@ -749,13 +772,13 @@ const setOrigin = async () => {
   const ok = await confirm({ title: 'Chỉ định bản gốc', message: hasOrigin.value ? 'Ghi đè bản gốc hiện tại bằng nội dung đang dựng?' : 'Đặt nội dung đang dựng làm bản gốc (khóa, dùng để khôi phục sau này)?', confirmLabel: 'Chỉ định' })
   if (!ok) return
   try {
-    const res: any = await $fetch(`/api/admin/pages/${pageId.value}/versions`, { method: 'POST', body: { kind: 'origin', blocks: draftPayload() } })
+    const res = await $fetch(`/api/admin/pages/${pageId.value}/versions`, { method: 'POST', body: { kind: 'origin', blocks: draftPayload() } })
     if (res.ok) {
       await loadVersions()
       toast.success('Đã chỉ định bản gốc.')
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không chỉ định được bản gốc.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không chỉ định được bản gốc.'))
   }
 }
 

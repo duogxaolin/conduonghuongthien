@@ -21,8 +21,8 @@ import { isIpBanned } from '../../../utils/ip-ban'
 import { loadIpBanValues } from '../../../services/ip-bans'
 import { getClientIp } from '../../../utils/client-ip'
 import { recordRateLimitHit, type RateLimitRule } from '../../../utils/rate-limit-store'
-import { getPool } from '../../../utils/db'
 import { logWarn } from '../../../utils/logger'
+import { rateLimitDeps } from '../../../utils/rate-limit-deps'
 
 /** Per address. Ten starts in ten minutes is far above any human retry pattern
  *  and far below what a script needs to be useful. */
@@ -38,8 +38,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const ip = getClientIp(event)
-  const pool = getPool()
-  const deps = { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
+  const deps = rateLimitDeps()
 
   const state = await recordRateLimitHit(`reader:signin:${ip}`, SIGN_IN_RULE, deps)
   if (state.blocked) {

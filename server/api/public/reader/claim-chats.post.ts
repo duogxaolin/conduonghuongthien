@@ -22,6 +22,7 @@ import { getDb } from '../../../utils/db'
 import { chatSessions } from '../../../db/schema'
 import { requireReader } from '../../../utils/reader-auth'
 import { verifySessionToken } from '../../../utils/chatbot/session-token'
+import { analyticsHmacSecret } from '../../../utils/runtime-config'
 
 /**
  * At most 50 tickets per call.
@@ -36,8 +37,7 @@ const MAX_TICKETS = 50
 export default defineEventHandler(async (event) => {
   const reader = await requireReader(event)
 
-  const config = useRuntimeConfig(event) as unknown as { analytics?: { hmacSecret?: string } }
-  const secret = config.analytics?.hmacSecret
+  const secret = analyticsHmacSecret(event)
   if (!secret) {
     // No secret means no ticket can be verified, and claiming on the client's word
     // is the one thing this endpoint exists not to do. Reported as "claimed

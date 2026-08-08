@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -9,8 +10,8 @@ const { confirm } = useConfirm()
 const route = useRoute()
 
 // ─── State ────────────────────────────────────────────────────────────────────
-const categories = ref<any[]>([])
-const contentTypes = ref<any[]>([])
+const categories = ref<AdminCategoryRow[]>([])
+const contentTypes = ref<AdminContentTypeRow[]>([])
 const loading = ref(true)
 const error = ref('')
 
@@ -91,8 +92,8 @@ const fetchCategories = async () => {
     } else {
       error.value = 'Không tải được danh sách danh mục.'
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được danh sách danh mục.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được danh sách danh mục.')
   } finally {
     loading.value = false
   }
@@ -102,8 +103,8 @@ const fetchContentTypes = async () => {
   try {
     const res = await $fetch('/api/admin/content-types')
     if (res.ok) contentTypes.value = res.items
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi tải thể loại')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi tải thể loại'))
   }
 }
 
@@ -120,7 +121,7 @@ const openCreate = (presetParentId?: number) => {
   showModal.value = true
 }
 
-const openEdit = (cat: any) => {
+const openEdit = (cat: AdminCategoryRow) => {
   modalMode.value = 'edit'
   editingId.value = cat.id
   form.name = cat.name
@@ -154,8 +155,8 @@ const handleSave = async () => {
     }
     showModal.value = false
     await fetchCategories()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu danh mục')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu danh mục'))
   } finally {
     saving.value = false
   }
@@ -169,7 +170,7 @@ const bulk = useBulkAction(selection)
  * rows, so a header checkbox that only covered roots would look like "select all"
  * while leaving every child untouched.
  */
-const visibleIds = computed(() => tree.value.flatMap(root => [Number(root.id), ...root.children.map((c: any) => Number(c.id))]))
+const visibleIds = computed(() => tree.value.flatMap(root => [Number(root.id), ...root.children.map((c) => Number(c.id))]))
 
 /**
  * A parent is refused while it still has children, so selecting a parent and its
@@ -190,15 +191,15 @@ const bulkDelete = () => bulk.run({
 })
 
 // ─── Delete ───────────────────────────────────────────────────────────────────
-const deleteCategory = async (cat: any) => {
+const deleteCategory = async (cat: AdminCategoryRow) => {
   const ok = await confirm({ title: 'Xóa danh mục', message: `Bạn có chắc muốn xóa danh mục "${cat.name}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
     await $fetch(`/api/admin/categories/${cat.id}`, { method: 'DELETE' })
     toast.success('Đã xóa danh mục thành công!')
     await fetchCategories()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi xóa danh mục')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi xóa danh mục'))
   }
 }
 

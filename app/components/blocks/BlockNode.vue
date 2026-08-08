@@ -78,10 +78,12 @@
 // A legacy flat block (no children, non-container blockType) renders as a leaf.
 import { computed } from 'vue'
 import { isContainerType, clampColSpan } from '~/utils/blocks/registry'
+import { blockText } from '~/utils/blocks/types'
+import type { BuilderNode } from '~/utils/blocks/types'
 import { resolveBlockComponent } from './blockComponents'
 
 const props = defineProps<{
-  node: any
+  node: BuilderNode
   interactive?: boolean
   selectedId?: number | string | null
 }>()
@@ -120,7 +122,10 @@ const SECTION_PY: Record<string, string> = {
 }
 const sectionClasses = computed(() => {
   const d = props.node?.data || {}
-  return [SECTION_BG[d.bgVariant] || SECTION_BG.white, SECTION_PY[d.paddingY] || SECTION_PY.md]
+  return [
+    SECTION_BG[blockText(d, 'bgVariant')] || SECTION_BG.white,
+    SECTION_PY[blockText(d, 'paddingY')] || SECTION_PY.md,
+  ]
 })
 
 // ── Row grid gap + vertical alignment (static maps) ──
@@ -135,6 +140,6 @@ const ROW_ALIGN: Record<string, string> = {
   center: 'items-center',
   stretch: 'items-stretch',
 }
-const rowGapClass = computed(() => ROW_GAP[props.node?.data?.gap] || ROW_GAP.md)
-const rowAlignClass = computed(() => ROW_ALIGN[props.node?.data?.align] || ROW_ALIGN.stretch)
+const rowGapClass = computed(() => ROW_GAP[blockText(props.node?.data ?? {}, 'gap')] || ROW_GAP.md)
+const rowAlignClass = computed(() => ROW_ALIGN[blockText(props.node?.data ?? {}, 'align')] || ROW_ALIGN.stretch)
 </script>

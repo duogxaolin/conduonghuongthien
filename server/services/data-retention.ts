@@ -1,3 +1,4 @@
+import { affectedRowsOrZero } from '../utils/affected-rows'
 import type { Pool, PoolConnection } from 'mysql2/promise'
 import { createAnalyticsPool } from './analytics-maintenance'
 import { resolveDataRetentionConfig } from '../utils/data-retention-config'
@@ -139,7 +140,7 @@ async function purgeOlderThan(
   let deleted = 0
   for (let batch = 0; batch < maxBatches; batch += 1) {
     const [result] = await connection.query(statement, [before, batchSize])
-    const affected = Number((result as { affectedRows?: number }).affectedRows || 0)
+    const affected = affectedRowsOrZero(result)
     deleted += affected
     if (affected < batchSize) return { deleted, bounded: false }
   }
@@ -170,7 +171,7 @@ async function purgeBeyondRowCap(
   for (let batch = 0; batch < maxBatches && remaining > 0; batch += 1) {
     const limit = Math.min(batchSize, remaining)
     const [result] = await connection.query(statement, [limit])
-    const affected = Number((result as { affectedRows?: number }).affectedRows || 0)
+    const affected = affectedRowsOrZero(result)
     deleted += affected
     remaining -= affected
     if (affected < limit) return { deleted, bounded: false }

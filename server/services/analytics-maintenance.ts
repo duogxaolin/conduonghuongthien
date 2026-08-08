@@ -1,3 +1,4 @@
+import { affectedRowsOrZero } from '../utils/affected-rows'
 import mysql, { type Pool, type PoolConnection, type RowDataPacket } from 'mysql2/promise'
 import { randomUUID } from 'node:crypto'
 import {
@@ -196,7 +197,7 @@ async function purgeInBatches(
   let count = 0
   for (let batch = 0; batch < maxBatches; batch += 1) {
     const [result] = await connection.query(statement, [...params, batchSize])
-    const affected = Number((result as { affectedRows?: number }).affectedRows || 0)
+    const affected = affectedRowsOrZero(result)
     count += affected
     if (affected < batchSize) return { count, bounded: false }
   }

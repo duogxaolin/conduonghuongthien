@@ -1,13 +1,11 @@
 import { getDb } from '../../../../../utils/db'
 import { pageBlocks, activityLogs } from '../../../../../db/schema'
-import { checkPermission } from '../../../../../utils/auth'
 import { and, eq } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'pages', 'delete', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'pages', 'delete')
 
   const pageId = Number(getRouterParam(event, 'id'))
   const blockId = Number(getRouterParam(event, 'blockId'))
@@ -23,13 +21,22 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Block không tồn tại.' })
   }
 
-  await db.delete(pageBlocks).where(eq(pageBlocks.id, blockId))
+  /**
+   * The block and its audit line commit together, or neither does. Written
+   * unwrapped, a failed audit insert (`activity_logs.user_id` is a foreign key,
+   * `meta` is JSON) leaves a block deleted from a live page with nothing
+   * recording who removed it. Runs on `tx`, not `db`: a `db.insert()` inside a
+   * transaction block still commits independently on the pool.
+   */
+  await db.transaction(async (tx) => {
+    await tx.delete(pageBlocks).where(eq(pageBlocks.id, blockId))
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'delete',
-    resource: 'pages',
-    meta: { pageId, blockId, blockType: existing.blockType },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'delete',
+      resource: 'pages',
+      meta: { pageId, blockId, blockType: existing.blockType },
+    })
   })
 
   return { ok: true }

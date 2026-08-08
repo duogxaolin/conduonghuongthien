@@ -1,13 +1,11 @@
 import { getDb } from '../../../utils/db'
 import { pages, activityLogs } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { uniquePageSlug } from '../../../utils/slug'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'pages', 'create', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'pages', 'create')
 
   const body = await readBody(event).catch(() => ({}))
   const title = String(body?.title || '').trim()
@@ -19,22 +17,35 @@ export default defineEventHandler(async (event) => {
   const base = String(body?.slug || title).trim()
   const slug = await uniquePageSlug(db, base)
 
-  const [res] = await db.insert(pages).values({
-    slug,
-    title,
-    isSystem: false,
-    seoTitle: body?.seoTitle ? String(body.seoTitle).trim() : null,
-    seoDescription: body?.seoDescription ? String(body.seoDescription).trim() : null,
-    updatedBy: adminUser.id,
-  })
+  /**
+   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+   *
+   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+   * commit độc lập trên pool.
+   */
+  const insertedId = await db.transaction(async (tx) => {
+    const [res] = await tx.insert(pages).values({
+      slug,
+      title,
+      isSystem: false,
+      seoTitle: body?.seoTitle ? String(body.seoTitle).trim() : null,
+      seoDescription: body?.seoDescription ? String(body.seoDescription).trim() : null,
+      updatedBy: adminUser.id,
+    })
 
-  const insertedId = (res as any).insertId
+    const created = res.insertId
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'create',
-    resource: 'pages',
-    meta: { slug, title },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'create',
+      resource: 'pages',
+      meta: { slug, title },
+    })
+
+    return created
   })
 
   return { ok: true, id: Number(insertedId), slug }

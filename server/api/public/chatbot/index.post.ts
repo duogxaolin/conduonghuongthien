@@ -5,6 +5,7 @@ import { validateChatRequestBody } from '../../../utils/chatbot/chat-policy'
 import { verifySessionToken } from '../../../utils/chatbot/session-token'
 import { persistChatTurn } from '../../../utils/chatbot/session-db'
 import { getClientIp } from '../../../utils/client-ip'
+import { analyticsHmacSecret } from '../../../utils/runtime-config'
 
 /** Serialises a result into the single-event SSE envelope the widget parses. */
 function sseEnvelope(answer: string, kind: string, sources: unknown, retryAfter: number | null, askContact: boolean): string {
@@ -57,8 +58,7 @@ export default defineEventHandler(async (event) => {
 
   // Verify before answering: the AI quota is keyed on the session, so the policy
   // needs the id already resolved by the time it decides to call a provider.
-  const config = useRuntimeConfig(event) as unknown as { analytics?: { hmacSecret?: string } }
-  const sessionId = verifySessionToken(getRequestHeader(event, 'x-chat-session'), config.analytics?.hmacSecret ?? '')
+  const sessionId = verifySessionToken(getRequestHeader(event, 'x-chat-session'), analyticsHmacSecret(event))
   if (sessionId) event.context.chatSessionId = sessionId
 
   const messages = (body as { messages?: unknown } | null)?.messages

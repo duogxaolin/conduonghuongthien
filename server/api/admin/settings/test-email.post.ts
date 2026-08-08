@@ -1,16 +1,14 @@
-import { checkPermission } from '../../../utils/auth'
 import { getDb } from '../../../utils/db'
 import { settings } from '../../../db/schema'
 import { getSmtpConfig, sendMail, type SmtpConfig } from '../../../utils/mailer'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 // Sends a test message using either the payload's SMTP fields (when the admin is
 // trying settings before saving) or the persisted config. Gated by the
 // `settings` `update` permission — same trust level as saving SMTP config.
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'settings', 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'settings', 'update')
 
   const body = await readBody(event).catch(() => ({}))
   const to = String(body?.to || '').trim()
@@ -55,10 +53,10 @@ export default defineEventHandler(async (event) => {
       config,
     })
     return { ok: true, message: `Đã gửi email thử tới ${to}. Vui lòng kiểm tra hộp thư.` }
-  } catch (err: any) {
+  } catch (err: unknown) {
     throw createError({
       statusCode: 400,
-      statusMessage: `Gửi email thử thất bại: ${err?.message || 'Lỗi kết nối SMTP.'}`,
+      statusMessage: `Gửi email thử thất bại: ${(err instanceof Error ? err.message : undefined) || 'Lỗi kết nối SMTP.'}`,
     })
   }
 })

@@ -113,7 +113,9 @@ export type AnalyticsNocReport = {
   meta: AnalyticsLiveMeta
 }
 
-function runtimeValue(name: string) {
+/** Đọc một khoá CSDL của runtimeConfig. Khai `keyof` nên gõ sai khoá là lỗi
+ *  biên dịch, không phải một lượt âm thầm rơi về `process.env`. */
+function runtimeValue(name: 'dbHost' | 'dbPort' | 'dbUser' | 'dbPassword' | 'dbName') {
   return tryRuntimeConfig()?.[name]
 }
 

@@ -1,3 +1,4 @@
+import { finitePositive, MAX_PAGE } from '../../utils/query-number'
 import { getDb } from '../../utils/db'
 import { articles, users, categories } from '../../db/schema'
 import { eq, like, desc, count, inArray, and } from 'drizzle-orm'
@@ -5,8 +6,8 @@ import { eq, like, desc, count, inArray, and } from 'drizzle-orm'
 export default defineEventHandler(async (event) => {
   try {
     const query = getQuery(event)
-    const page = Math.max(1, Number(query.page || 1))
-    const limit = Math.min(50, Math.max(1, Number(query.limit || 10)))
+    const page = finitePositive(query.page, 1, MAX_PAGE)
+    const limit = finitePositive(query.limit, 10, 50)
     const offset = (page - 1) * limit
     const search = String(query.search || '').trim()
     const type = String(query.type || '').trim()
@@ -98,7 +99,7 @@ export default defineEventHandler(async (event) => {
         totalPages: Math.ceil(Number(total) / limit)
       }
     }
-  } catch (err: any) {
+  } catch {
     return { ok: false, articles: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 1 } }
   }
 })

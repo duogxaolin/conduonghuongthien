@@ -1,21 +1,17 @@
 import { getDb } from '../../../utils/db'
 import { articles, activityLogs } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { sanitizeHtml } from '../../../utils/sanitize-html'
 import { defaultCommentsEnabled } from '../../../services/google-oauth-settings'
-
-function slugify(text: string): string {
-  return text
-    .toString()
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[đĐ]/g, 'd')
-    .replace(/([^0-9a-z-\s])/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-}
+import { requireResourcePermission } from '../../../utils/permissions'
+// Bản dùng chung, KHÔNG phải một bản chép cục bộ. Endpoint này từng giữ bản riêng
+// của nó, và bản đó thiếu đúng một dòng — phép cắt dấu gạch treo hai đầu — nên
+// mọi tiêu đề mở đầu bằng ký tự bị lược sinh slug dị dạng: `"— Tin nóng —"` →
+// `-tin-nong-`. Sáu endpoint khác (`categories`, `content-types`, `pages`) đều
+// import bản này; chỉ đường tạo bài viết là lệch, và **`articles/[id].put.ts`
+// không slugify lại**, nên một slug dị dạng sinh ra lúc tạo là vĩnh viễn: nó đi
+// vào URL công khai `/news/<slug>`, vào email thông báo trả lời bình luận, và
+// vào chỉ mục tìm kiếm.
+import { slugify } from '../../../utils/slug'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -42,9 +38,7 @@ export default defineEventHandler(async (event) => {
   }
   const permResource = resourceMap[type] || 'news'
 
-  if (!checkPermission(adminUser.permissions, permResource, 'create', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, permResource, 'create')
 
   if (!title || title.length < 3) {
     throw createError({ statusCode: 400, statusMessage: 'Tiêu đề bài viết quá ngắn.' })
@@ -65,29 +59,42 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
 
-  const [res] = await db.insert(articles).values({
-    type,
-    category,
-    categoryId,
-    title,
-    slug: uniqueSlug,
-    excerpt,
-    content,
-    status,
-    thumbnailUrl,
-    commentsEnabled,
-    authorId: adminUser.id,
-    publishedAt,
-  })
+  /**
+   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+   *
+   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+   * commit độc lập trên pool.
+   */
+  const newArticleId = await db.transaction(async (tx) => {
+    const [res] = await tx.insert(articles).values({
+      type,
+      category,
+      categoryId,
+      title,
+      slug: uniqueSlug,
+      excerpt,
+      content,
+      status,
+      thumbnailUrl,
+      commentsEnabled,
+      authorId: adminUser.id,
+      publishedAt,
+    })
 
-  const newArticleId = res.insertId
+    const created = res.insertId
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'create',
-    resource: 'articles',
-    resourceId: newArticleId,
-    meta: { title, type, status, commentsEnabled },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'create',
+      resource: 'articles',
+      resourceId: created,
+      meta: { title, type, status, commentsEnabled },
+    })
+
+    return created
   })
 
   return { ok: true, id: newArticleId, slug: uniqueSlug }

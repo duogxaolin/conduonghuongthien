@@ -20,7 +20,7 @@
 
           <div v-if="col.type === 'image'" class="flex items-center gap-2">
             <div v-if="item[col.key]" class="h-12 w-16 shrink-0 overflow-hidden rounded border border-gray-200">
-              <img :src="item[col.key]" class="h-full w-full object-cover" />
+              <img :src="blockText(item, col.key)" class="h-full w-full object-cover" />
             </div>
             <button class="rounded border border-gray-300 bg-white px-2 py-1 text-xs font-semibold text-gray-600 hover:bg-gray-50" @click="$emit('pick-image', (url: string) => item[col.key] = url)">
               <i class="fa-solid fa-image mr-1"></i> Chọn
@@ -43,7 +43,8 @@
 
           <textarea
             v-else-if="col.type === 'textarea'"
-            v-model="item[col.key]"
+            :value="blockText(item, col.key)"
+            @input="item[col.key] = ($event.target as HTMLTextAreaElement).value"
             rows="3"
             class="w-full rounded-md border border-gray-300 px-2.5 py-1.5 text-sm outline-none focus:border-green-600"
           ></textarea>
@@ -68,6 +69,8 @@
 </template>
 
 <script setup lang="ts">
+import { blockText } from '~/utils/blocks/types'
+import type { BlockData } from '~/utils/blocks/types'
 type Col = {
   key: string
   label: string
@@ -75,11 +78,11 @@ type Col = {
   options?: Array<{ value: string; label: string }>
 }
 
-const props = defineProps<{ items: any[]; schema: Col[] }>()
+const props = defineProps<{ items: BlockData[]; schema: Col[] }>()
 defineEmits<{ (e: 'pick-image', cb: (url: string) => void): void }>()
 
 const addItem = () => {
-  const blank: Record<string, unknown> = {}
+  const blank: BlockData = {}
   for (const col of props.schema) {
     if (col.type === 'toggle') blank[col.key] = false
     else if (col.type === 'select') blank[col.key] = col.options?.[0]?.value ?? ''
@@ -93,6 +96,10 @@ const removeItem = (i: number) => { props.items.splice(i, 1) }
 const moveItem = (i: number, dir: number) => {
   const t = i + dir
   if (t < 0 || t >= props.items.length) return
-  ;[props.items[i], props.items[t]] = [props.items[t], props.items[i]]
+  const a = props.items[i]
+  const b = props.items[t]
+  if (!a || !b) return
+  props.items[i] = b
+  props.items[t] = a
 }
 </script>

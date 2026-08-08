@@ -1,13 +1,11 @@
 import { getDb } from '../../../utils/db'
 import { homeSections, activityLogs } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { eq } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'home_sections', 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'home_sections', 'update')
 
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid section ID' })
@@ -21,25 +19,40 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
 
-  const updateData: any = {
+  const updateData: Partial<typeof homeSections.$inferInsert> = {
     config,
     updatedAt: new Date(),
     updatedBy: adminUser.id,
   }
-  if (body.title) {
-    updateData.title = String(body.title)
-  }
+  /**
+   * KHÔNG có nhánh `body.title` ở đây, và đó là một lần sửa lỗi chứ không phải
+   * lược bớt: `home_sections` **không có cột `title`** — tiêu đề của một khối
+   * nằm trong cột JSON `config`, do trình dựng trang ghi. Nhánh cũ
+   * (`updateData.title = String(body.title)`) đọc trót lọt vì `updateData` khai
+   * `any`; nó gửi một khoá lạ xuống Drizzle và không nơi nào trong giao diện
+   * từng gửi `title` lên, nên nó chưa bao giờ nổ. Khai kiểu thật làm nó đỏ.
+   */
+  /**
+   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+   *
+   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+   * commit độc lập trên pool.
+   */
+  await db.transaction(async (tx) => {
+    await tx.update(homeSections)
+      .set(updateData)
+      .where(eq(homeSections.id, id))
 
-  await db.update(homeSections)
-    .set(updateData)
-    .where(eq(homeSections.id, id))
-
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'update',
-    resource: 'home_sections',
-    resourceId: id,
-    meta: { config },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'update',
+      resource: 'home_sections',
+      resourceId: id,
+      meta: { config },
+    })
   })
 
   return { ok: true }

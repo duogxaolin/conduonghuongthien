@@ -13,8 +13,13 @@ import { parse } from '@vue/compiler-sfc'
 // regression.
 const widgetPath = new URL('../app/components/ChatWidget.vue', import.meta.url)
 const composablePath = new URL('../app/composables/useChatbot.ts', import.meta.url)
+// Phần khử độc dữ liệu `localStorage` đã sang `app/utils/chatbot-storage.ts` để
+// kiểm được không cần nạp cả composable (`tests/chatbot-storage-boundary.test.ts`).
+// Ghép vào đây theo đúng nguyên tắc đã nêu ở trên: các khẳng định dưới đây nói về
+// **hành vi** của widget, không về việc tệp nào giữ dòng nào.
+const storagePath = new URL('../app/utils/chatbot-storage.ts', import.meta.url)
 const widgetSource = await readFile(widgetPath, 'utf8')
-const composableSource = await readFile(composablePath, 'utf8')
+const composableSource = `${await readFile(composablePath, 'utf8')}\n${await readFile(storagePath, 'utf8')}`
 
 const descriptor = parse(widgetSource, { filename: 'ChatWidget.vue' })
 const template = descriptor.descriptor.template?.content ?? ''

@@ -22,7 +22,8 @@
  * gap is visible and a future change can close it on purpose.
  */
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 import { describe, it } from 'node:test'
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
@@ -136,6 +137,293 @@ describe('the shared deletion path can join a caller transaction', () => {
     assert.ok(
       !/tx\.delete\(articleComments\)/.test(body),
       'purgeReaderComments issues its own DELETE — deletion semantics must live in one function (design.md D8)',
+    )
+  })
+})
+
+/**
+ * The same pairing, enforced on admin endpoints that query the database directly.
+ *
+ * The guard above covers `server/services/**`, where the reader-side write paths
+ * live. But 92 of 171 endpoints call `getDb()` themselves, and 43 of those also
+ * write an `activity_logs` row — so the identical defect class existed in a part
+ * of the tree nothing was watching. All of them were written delete-then-log on
+ * the pool, which is exactly the shape this file was created to reject.
+ *
+ * The destructive subset is guarded here. It is the subset where an audit insert
+ * failing after the mutation is unrecoverable rather than merely untidy: the row
+ * is already gone, so the log is the only remaining evidence of who removed it,
+ * and it is the thing that failed. `activity_logs.user_id` is a foreign key into
+ * `users` and `meta` is a JSON column, so the second statement has its own ways
+ * to fail independently of the first — this is not a hypothetical ordering.
+ *
+ * Non-destructive endpoints (create/update) are deliberately NOT listed. A failed
+ * audit after an update leaves a row that still exists and can be inspected,
+ * compared and corrected; a failed audit after a delete leaves nothing at all.
+ * Fixing 39 endpoints mechanically would also mean 39 chances to introduce a new
+ * bug in code that is currently working, and the convention recorded in CLAUDE.md
+ * is what governs the ones not listed here.
+ */
+const AUDITED_DELETE_ENDPOINTS: Array<{ file: string, why: string }> = [
+  {
+    file: 'server/api/admin/roles/[id].delete.ts',
+    why: 'a permission role is destroyed with nothing recording who removed it',
+  },
+  {
+    file: 'server/api/admin/users/[id]/mfa.delete.ts',
+    why: "another administrator's second factors are stripped and the override leaves no trace",
+  },
+  {
+    file: 'server/api/admin/pages/[id]/blocks/[blockId].delete.ts',
+    why: 'a block disappears from a live page with nobody accountable',
+  },
+  {
+    file: 'server/api/admin/pages/[id]/versions/[versionId].delete.ts',
+    why: 'a saved backup is discarded untraceably',
+  },
+  {
+    file: 'server/api/admin/pages/[id]/versions/index.post.ts',
+    why: 'the origin path deletes the old baseline before writing the new one — a failure between them leaves the page with no baseline at all',
+  },
+]
+
+describe('destructive admin endpoints commit their delete and their audit row together', () => {
+  for (const { file, why } of AUDITED_DELETE_ENDPOINTS) {
+    it(`${file.replace('server/api/admin/', '')} wraps both in one transaction`, () => {
+      const source = read(file)
+
+      assert.match(
+        source,
+        /db\.transaction\(/,
+        `writes outside a transaction — if the audit insert fails, ${why}`,
+      )
+      assert.match(
+        source,
+        /tx\.insert\(activityLogs\)/,
+        'the audit row is inserted on the pool rather than the transaction handle — it would commit independently',
+      )
+      assert.ok(
+        !/\bdb\.insert\(activityLogs\)/.test(source),
+        'a pool-level activityLogs insert remains; move it onto the tx handle',
+      )
+      assert.match(
+        source,
+        /tx\.(insert|update|delete)\(/,
+        'opens a transaction but performs its mutation outside it — the audit would roll back while the deletion stood',
+      )
+    })
+  }
+})
+
+describe('the MFA-confirm exclusion is deliberate and still correct', () => {
+  /**
+   * `profile/mfa/confirm.post.ts` mutates and audits WITHOUT a transaction, on
+   * purpose: it calls `setSessionCookie(event, …)` between the two, which is a
+   * side effect on the HTTP response that no rollback can retract. Wrapping it
+   * would create a worse state than the one it fixes — a session cookie already
+   * handed to the browser while the factor activation it represents was rolled
+   * back.
+   *
+   * Asserted rather than assumed: if someone later moves the cookie write out of
+   * the middle, this fails and the endpoint should join the list above.
+   */
+  it('the cookie is still issued between the mutation and the audit row', () => {
+    const source = read('server/api/admin/profile/mfa/confirm.post.ts')
+    const cookie = source.indexOf('setSessionCookie(event')
+    const audit = source.indexOf('db.insert(activityLogs)')
+    assert.ok(cookie !== -1, 'setSessionCookie is gone — re-evaluate whether this endpoint can now be wrapped')
+    assert.ok(audit !== -1, 'the audit insert is gone')
+    assert.ok(
+      cookie < audit,
+      'the cookie is no longer written between the mutation and the audit — this endpoint can and should now be wrapped in a transaction',
+    )
+  })
+})
+
+
+/**
+ * Every remaining admin endpoint that mutates and audits on the same request.
+ *
+ * The destructive subset above was fixed first because a failed audit after a
+ * delete is unrecoverable. This list is the rest: create and update paths, where
+ * a failed audit leaves a row that still exists but no record of who changed it.
+ * That is a weaker failure, not a harmless one — on a government portal, "who
+ * granted this role", "who edited this article" and "who changed this setting"
+ * are exactly the questions the log exists to answer.
+ *
+ * Discovered by measurement, not by reading: 43 of the 92 endpoints that call
+ * `getDb()` directly also write `activity_logs`, and 39 of those wrote the pair
+ * unwrapped. Nothing was watching that part of the tree.
+ *
+ * DELIBERATELY EXCLUDED, and asserted separately below:
+ *   • profile/mfa/confirm.post.ts, profile/mfa/recovery-codes.post.ts,
+ *     auth/logout.post.ts — each writes an HTTP cookie between the two database
+ *     writes. A cookie is a side effect on the response that no rollback can
+ *     retract, so wrapping would create a worse state than it fixes.
+ *   • articles/[id]/boost.post.ts — audits through the shared boost service
+ *     rather than inline, so it has no local pair to wrap.
+ */
+const AUDITED_MUTATION_ENDPOINTS: string[] = [
+  'server/api/admin/articles/[id].put.ts',
+  'server/api/admin/articles/index.post.ts',
+  'server/api/admin/home-sections/[id].put.ts',
+  'server/api/admin/home-sections/[id]/toggle.patch.ts',
+  'server/api/admin/media/upload.post.ts',
+  'server/api/admin/pages/[id].put.ts',
+  'server/api/admin/pages/[id]/blocks/[blockId].put.ts',
+  'server/api/admin/pages/[id]/blocks/index.post.ts',
+  'server/api/admin/pages/[id]/versions/[versionId]/restore.post.ts',
+  'server/api/admin/pages/index.post.ts',
+  'server/api/admin/roles/index.post.ts',
+  'server/api/admin/settings/index.put.ts',
+  'server/api/admin/settings/navigation.put.ts',
+  'server/api/admin/settings/navigation/mobile.put.ts',
+  'server/api/admin/settings/navigation/navbar.put.ts',
+  'server/api/admin/users/[id].put.ts',
+  'server/api/admin/users/index.post.ts',
+]
+
+describe('admin mutation endpoints commit their write and their audit row together', () => {
+  for (const file of AUDITED_MUTATION_ENDPOINTS) {
+    it(`${file.replace('server/api/admin/', '')} wraps both in one transaction`, () => {
+      const source = read(file)
+      assert.match(source, /db\.transaction\(/, 'the write and its audit row are not atomic')
+      assert.match(source, /tx\.insert\(activityLogs\)/,
+        'the audit row is inserted on the pool rather than the transaction handle — it would commit independently')
+      assert.ok(!/\bawait db\.insert\(activityLogs\)/.test(source),
+        'a pool-level activityLogs insert remains; move it onto the tx handle')
+    })
+  }
+
+  /**
+   * The mutation must be on `tx` too. A transaction carrying only the audit row
+   * is worse than none: the log would roll back while the change stood.
+   */
+  it('no pool-level write survives inside a transaction block', () => {
+    for (const file of AUDITED_MUTATION_ENDPOINTS) {
+      const source = read(file)
+      const start = source.indexOf('db.transaction(')
+      let depth = 0, started = false, end = start
+      for (let i = start; i < source.length; i++) {
+        if (source[i] === '{') { depth++; started = true }
+        else if (source[i] === '}') depth--
+        if (started && depth === 0) { end = i; break }
+      }
+      const body = source.slice(start, end)
+      assert.ok(!/\bdb\.(insert|update|delete)\(/.test(body),
+        `${file} performs a pool-level write inside its transaction — it commits independently`)
+    }
+  })
+})
+
+describe('cookie-writing endpoints are excluded on purpose', () => {
+  /**
+   * Asserted rather than assumed. If the cookie write moves out from between the
+   * two database writes, these fail and the endpoint should join the list above.
+   */
+  for (const file of [
+    'server/api/admin/profile/mfa/confirm.post.ts',
+    'server/api/admin/profile/mfa/recovery-codes.post.ts',
+    'server/api/admin/auth/logout.post.ts',
+  ]) {
+    it(`${file.replace('server/api/admin/', '')} still writes a cookie mid-request`, () => {
+      const source = read(file)
+      assert.match(source, /setSessionCookie\(|deleteCookie\(|setCookie\(/,
+        'the cookie write is gone — re-evaluate whether this endpoint can now be wrapped in a transaction')
+    })
+  }
+})
+
+/**
+ * Các SERVICE ghi audit — nhóm bị bỏ sót cho tới lượt rà này.
+ *
+ * Ba danh sách phía trên liệt kê **đường dẫn cụ thể** trong `server/api/admin/**`,
+ * nên toàn bộ `server/services/**` nằm ngoài tầm với của chúng, trừ sáu service
+ * phía người đọc được nêu tên riêng. Bảy đường ghi thật đã sống ở đó không ai
+ * canh: `deleteUserById`, `setUserActive`, `deletePageById`, `deleteMediaById`,
+ * `deleteSubmissionById`, `updateChatbotSettings`/`clearChatbotApiKey`, và bốn
+ * hàm trong `chatbot-small-talk.ts`.
+ *
+ * Nhóm này nghiêm trọng hơn nhóm endpoint theo một điểm **đo được**: cả năm hàm
+ * xoá đều được gọi từ **cả** tuyến xoá một hàng **lẫn** tuyến `bulk-delete`
+ * (`users/bulk-delete.post.ts`, `pages/`, `media/`, `submissions/`), nên một lượt
+ * xoá hàng loạt nhân số cơ hội lỗi lên theo số bản ghi được chọn. `deleteSubmissionById`
+ * là ca xấu nhất: nó xoá hồ sơ liên hệ của một công dân, và dòng audit là thứ duy
+ * nhất còn lại sau đó.
+ */
+const AUDITED_SERVICES: string[] = [
+  'server/services/users.ts',
+  'server/services/pages.ts',
+  'server/services/media.ts',
+  'server/services/submissions.ts',
+  'server/services/chatbot-settings.ts',
+  'server/services/chatbot-small-talk.ts',
+]
+
+describe('service-layer writes commit their mutation and their audit row together', () => {
+  for (const file of AUDITED_SERVICES) {
+    it(`${file.replace('server/services/', '')} wraps every audited write`, () => {
+      const source = read(file)
+      assert.match(source, /db\.transaction\(/, 'the write and its audit row are not atomic')
+      // `chatbot-small-talk.ts` audits through a local `audit(store, …)` helper
+      // whose PARAMETER is also named `db`, so a literal search for
+      // `db.insert(activityLogs)` matches the helper body and reports a pool-level
+      // write that does not exist. What decides atomicity there is the call site,
+      // and that is asserted separately below. So the pool-write check is scoped
+      // to files that write `activityLogs` inline.
+      const auditsViaHelper = /async function audit\(/.test(source)
+      if (!auditsViaHelper) {
+        assert.ok(
+          !/\bawait db\.insert\(activityLogs\)/.test(source),
+          'a pool-level activityLogs insert remains; move it onto the tx handle',
+        )
+      }
+      assert.ok(
+        !/\baudit\(db,/.test(source),
+        'the audit helper is still being handed the pool — pass `tx` so the row commits with the mutation',
+      )
+    })
+  }
+})
+
+/**
+ * Cổng quét cả THƯ MỤC, không chỉ danh sách tên ở trên.
+ *
+ * Đây là phần đợt trước thiếu, và nó thiếu theo cách không nhìn thấy được: ba
+ * danh sách kia liệt kê đường dẫn, nên chúng **xanh vĩnh viễn** với bất cứ tệp
+ * nào không ai nghĩ ra để thêm vào. Một service mới ghi cặp mutation + audit
+ * không bọc sẽ đi qua toàn bộ bộ test này mà không có gì đỏ.
+ *
+ * Guard này thì ngược lại: nó tự tìm mọi tệp trong `server/services/` có chạm
+ * `activityLogs`, và đòi mỗi tệp đó **hoặc** có `db.transaction(`, **hoặc** được
+ * nêu tên trong danh sách miễn trừ kèm lý do. Thêm một service mới là buộc phải
+ * chọn một trong hai — không còn nhánh im lặng.
+ */
+const SERVICE_EXEMPTIONS: Record<string, string> = {
+  // Ghi audit cho một lượt tăng lượt xem ảo đã do người gọi mở transaction; bọc
+  // lần thứ hai ở đây là lồng transaction chứ không thêm bảo đảm nào.
+  'article-views.ts': 'audits inside the caller-provided transaction',
+  'view-boost-scheduler.ts': 'audits inside the caller-provided transaction',
+}
+
+describe('no service writes activity_logs outside a transaction', () => {
+  it('every audited service is either wrapped or exempt with a stated reason', () => {
+    const dir = 'server/services'
+    const offenders: string[] = []
+    for (const entry of readdirSync(dir)) {
+      if (!entry.endsWith('.ts')) continue
+      const source = read(join(dir, entry))
+      if (!/activityLogs/.test(source)) continue
+      if (/db\.transaction\(/.test(source)) continue
+      if (SERVICE_EXEMPTIONS[entry]) continue
+      offenders.push(entry)
+    }
+    assert.deepEqual(
+      offenders,
+      [],
+      'ghi `activity_logs` mà không có `db.transaction(` — bọc lại, hoặc khai vào '
+      + 'SERVICE_EXEMPTIONS kèm lý do. Một danh sách liệt kê tên tệp thì xanh vĩnh viễn '
+      + 'với tệp nó chưa biết; guard này quét cả thư mục chính vì thế.',
     )
   })
 })

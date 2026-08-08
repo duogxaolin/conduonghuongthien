@@ -90,8 +90,8 @@ const handleLogin = async () => {
       return
     }
     if (res.ok) navigateTo('/admin')
-  } catch (err: any) {
-    errorMsg.value = err?.data?.statusMessage || err?.message || 'Đăng nhập thất bại'
+  } catch (err: unknown) {
+    errorMsg.value = errorMessage(err, 'Đăng nhập thất bại')
   } finally {
     loading.value = false
   }
@@ -108,9 +108,9 @@ const handleVerify = async () => {
   try {
     const res = await verifyMfa(selectedMethod.value, code.value.trim())
     if (res.ok) navigateTo('/admin')
-  } catch (err: any) {
-    const status = err?.response?.status ?? err?.statusCode
-    errorMsg.value = err?.data?.statusMessage || err?.message || 'Xác thực thất bại'
+  } catch (err: unknown) {
+    const status = errorStatus(err)
+    errorMsg.value = errorMessage(err, 'Xác thực thất bại')
     code.value = ''
     // 401 = hết vé thử thách; 429 = đã bị chặn tạm thời. Cả hai đều phải quay lại
     // bước mật khẩu, vì vé trong cookie đã bị xoá phía server.
@@ -132,8 +132,8 @@ const handleSendCode = async () => {
     const res = await $fetch<{ ok: boolean; sentTo?: string }>('/api/admin/auth/mfa/send-code', { method: 'POST' })
     if (res.ok) infoMsg.value = `Đã gửi mã tới ${res.sentTo || 'email của bạn'}. Mã có hiệu lực 10 phút.`
     nextTick(() => codeInput.value?.focus())
-  } catch (err: any) {
-    errorMsg.value = err?.data?.statusMessage || 'Không gửi được mã. Vui lòng thử cách khác.'
+  } catch (err: unknown) {
+    errorMsg.value = errorMessage(err, 'Không gửi được mã. Vui lòng thử cách khác.')
   } finally {
     sendingCode.value = false
   }

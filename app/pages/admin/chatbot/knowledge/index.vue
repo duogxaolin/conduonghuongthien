@@ -1,17 +1,19 @@
 <script setup lang="ts">
+import type { AdminKnowledgeImportError, AdminKnowledgeImportResult } from '~/types/admin-api'
+import type { AdminKnowledgeRow } from '~/types/admin-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 const route = useRoute(); const router = useRouter()
 const activeTab = computed(() => route.query.tab === 'small-talk' ? 'small-talk' : 'knowledge')
 function selectTab(tab: 'knowledge' | 'small-talk') { return router.replace({ query: tab === 'knowledge' ? {} : { tab } }) }
-const toast = useToast(); const { confirm } = useConfirm(); const items = ref<any[]>([]); const loading = ref(true); const error = ref(''); const search = ref(''); const topic = ref(''); const status = ref(''); const quick = ref(''); const pagination = ref({ page: 1, totalPages: 1, total: 0 }); const page = ref(1)
+const toast = useToast(); const { confirm } = useConfirm(); const items = ref<AdminKnowledgeRow[]>([]); const loading = ref(true); const error = ref(''); const search = ref(''); const topic = ref(''); const status = ref(''); const quick = ref(''); const pagination = ref({ page: 1, totalPages: 1, total: 0 }); const page = ref(1)
 const statusLabel: Record<string, string> = { draft: 'Bản nháp', published: 'Đã xuất bản', archived: 'Đã lưu trữ' }
 const statusTone: Record<string, string> = { draft: 'border-[#d8c99a] bg-[#fffaf0] text-[#765b00]', published: 'border-[#8ed694] bg-[#f0f7f1] text-[#1e4620]', archived: 'border-[#c8d6c9] bg-[#f4f7f4] text-[#667768]' }
-async function load(next = 1) { loading.value = true; error.value = ''; page.value = next; try { const res = await $fetch<any>('/api/admin/chatbot/knowledge', { params: { page: next, perPage: 15, search: search.value, topic: topic.value, status: status.value, quick: quick.value } }); items.value = res.items || []; pagination.value = res.pagination; selection.keepOnly(visibleIds.value) } catch (err: any) { error.value = err?.data?.statusMessage || 'Không thể tải kho kiến thức.' } finally { loading.value = false } }
+async function load(next = 1) { loading.value = true; error.value = ''; page.value = next; try { const res = await $fetch('/api/admin/chatbot/knowledge', { params: { page: next, perPage: 15, search: search.value, topic: topic.value, status: status.value, quick: quick.value } }); items.value = res.items || []; pagination.value = res.pagination; selection.keepOnly(visibleIds.value) } catch (err: unknown) { error.value = errorMessage(err, 'Không thể tải kho kiến thức.') } finally { loading.value = false } }
 
 // ── Bulk selection ──
 const selection = useBulkSelection()
 const bulk = useBulkAction(selection)
-const visibleIds = computed(() => items.value.map((item: any) => Number(item.id)))
+const visibleIds = computed(() => items.value.map((item) => Number(item.id)))
 function bulkDelete() {
   return bulk.run({
     url: '/api/admin/chatbot/knowledge/bulk-delete',
@@ -45,41 +47,41 @@ function bulkQuickQuestion(target: boolean) {
  * so it has to answer immediately. A failure puts the old value back and says
  * why, rather than reloading the page and losing their scroll position.
  */
-async function toggleQuickQuestion(item: any) {
+async function toggleQuickQuestion(item: AdminKnowledgeRow) {
   const target = !(item.isQuickQuestion === true)
   item.isQuickQuestion = target
   try {
     await $fetch(`/api/admin/chatbot/knowledge/${item.id}`, { method: 'PUT', body: { isQuickQuestion: target } })
     toast.success(target ? 'Đã đưa vào câu hỏi nhanh.' : 'Đã bỏ khỏi câu hỏi nhanh.')
-  } catch (err: any) {
+  } catch (err: unknown) {
     item.isQuickQuestion = !target
-    toast.error(err?.data?.statusMessage || 'Không thể cập nhật câu hỏi nhanh.')
+    toast.error(errorMessage(err, 'Không thể cập nhật câu hỏi nhanh.'))
   }
 }
-async function transition(item: any, action: 'publish' | 'archive') { const verb = action === 'publish' ? 'xuất bản' : 'lưu trữ'; const ok = await confirm({ message: `Bạn có chắc muốn ${verb} mục này?`, confirmLabel: verb === 'xuất bản' ? 'Xuất bản' : 'Lưu trữ' }); if (!ok) return; try { await $fetch(`/api/admin/chatbot/knowledge/${item.id}/${action}`, { method: 'POST' }); toast.success(`Đã ${verb} mục kiến thức.`); await load(page.value) } catch (err: any) { toast.error(err?.data?.statusMessage || `Không thể ${verb} mục kiến thức.`) } }
-async function remove(item: any) { const ok = await confirm({ title: 'Xóa mục kiến thức', message: 'Xóa mục kiến thức này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return; try { await $fetch(`/api/admin/chatbot/knowledge/${item.id}`, { method: 'DELETE' }); toast.success('Đã xóa mục kiến thức.'); await load(page.value) } catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể xóa mục kiến thức.') } }
+async function transition(item: AdminKnowledgeRow, action: 'publish' | 'archive') { const verb = action === 'publish' ? 'xuất bản' : 'lưu trữ'; const ok = await confirm({ message: `Bạn có chắc muốn ${verb} mục này?`, confirmLabel: verb === 'xuất bản' ? 'Xuất bản' : 'Lưu trữ' }); if (!ok) return; try { await $fetch(`/api/admin/chatbot/knowledge/${item.id}/${action}`, { method: 'POST' }); toast.success(`Đã ${verb} mục kiến thức.`); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, 'Đã xảy ra lỗi.') || `Không thể ${verb} mục kiến thức.`) } }
+async function remove(item: AdminKnowledgeRow) { const ok = await confirm({ title: 'Xóa mục kiến thức', message: 'Xóa mục kiến thức này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return; try { await $fetch(`/api/admin/chatbot/knowledge/${item.id}`, { method: 'DELETE' }); toast.success('Đã xóa mục kiến thức.'); await load(page.value) } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa mục kiến thức.')) } }
 // ── Excel/CSV import ──
-const showImport = ref(false); const importFile = ref<File | null>(null); const importPublish = ref(false); const importTopic = ref(''); const importing = ref(false); const importResult = ref<any>(null)
+const showImport = ref(false); const importFile = ref<File | null>(null); const importPublish = ref(false); const importTopic = ref(''); const importing = ref(false); const importResult = ref<AdminKnowledgeImportResult | null>(null)
 const importStageLabel: Record<string, string> = { parse: 'Đọc tệp', save: 'Lưu dữ liệu', publish: 'Xuất bản' }
 const importRawLabels: Record<string, string> = { stt: 'STT', question: 'Câu hỏi', answer: 'Trả lời', note: 'Ghi chú' }
-function importRowLabel(item: any) { return item.row === item.endRow ? `Dòng ${item.row}` : `Dòng ${item.row}–${item.endRow}` }
+function importRowLabel(item: AdminKnowledgeImportError) { return item.row === item.endRow ? `Dòng ${item.row}` : `Dòng ${item.row}–${item.endRow}` }
 /**
  * Only the four mapped text fields belong in the scalar list. `rawExtraColumns`
  * is an array of `{ column, value }`, so leaving it here rendered it as raw JSON
  * under the literal key name — it gets its own readable list below.
  */
-function importRawFields(item: any) { return Object.entries(item.raw || {}).filter(([field, value]) => field !== 'rawExtraColumns' && String(value || '').length > 0) }
+function importRawFields(item: AdminKnowledgeImportError) { return Object.entries(item.raw || {}).filter(([field, value]) => field !== 'rawExtraColumns' && String(value || '').length > 0) }
 /**
  * Kept in server order WITHOUT filtering: the truncation markers are positional
  * (`rawExtraColumns.<index>.value`), so dropping an entry here would shift every
  * later index and pin the badge to the wrong column.
  */
-function importExtraColumns(item: any) { return (item.raw?.rawExtraColumns || []) as Array<{ column?: string; value?: string }> }
-function importFieldTruncated(item: any, field: string) { return (item.truncatedFields || []).includes(field) }
+function importExtraColumns(item: AdminKnowledgeImportError) { return (item.raw?.rawExtraColumns || []) as Array<{ column?: string; value?: string }> }
+function importFieldTruncated(item: AdminKnowledgeImportError, field: string) { return (item.truncatedFields || []).includes(field) }
 /** The whole list was cut short (more columns than the server previews). */
-function importExtraColumnsTruncated(item: any) { return importFieldTruncated(item, 'rawExtraColumns') }
+function importExtraColumnsTruncated(item: AdminKnowledgeImportError) { return importFieldTruncated(item, 'rawExtraColumns') }
 /** This one column's value was cut short — server key is `rawExtraColumns.<index>.value`. */
-function importExtraColumnTruncated(item: any, index: number) { return importFieldTruncated(item, `rawExtraColumns.${index}.value`) }
+function importExtraColumnTruncated(item: AdminKnowledgeImportError, index: number) { return importFieldTruncated(item, `rawExtraColumns.${index}.value`) }
 function importExtraColumnLabel(entry: { column?: string }) { return `Cột ${entry?.column || '?'}` }
 function onImportFile(e: Event) { importFile.value = (e.target as HTMLInputElement).files?.[0] || null; importResult.value = null }
 const downloadingTemplate = ref(false)
@@ -100,7 +102,7 @@ async function downloadTemplate() {
     link.click()
     link.remove()
     URL.revokeObjectURL(url)
-  } catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể tải tệp mẫu.') } finally { downloadingTemplate.value = false }
+  } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể tải tệp mẫu.')) } finally { downloadingTemplate.value = false }
 }
 function closeImport() { showImport.value = false; importFile.value = null; importResult.value = null; importPublish.value = false; importTopic.value = '' }
 async function runImport() {
@@ -108,13 +110,13 @@ async function runImport() {
   importing.value = true; importResult.value = null
   try {
     const fd = new FormData(); fd.append('file', importFile.value); fd.append('publish', importPublish.value ? '1' : '0'); if (importTopic.value.trim()) fd.append('topic', importTopic.value.trim())
-    const res = await $fetch<any>('/api/admin/chatbot/knowledge/import', { method: 'POST', body: fd })
+    const res = await $fetch('/api/admin/chatbot/knowledge/import', { method: 'POST', body: fd })
     importResult.value = res
     const message = `Đã nhập ${res.imported}/${res.total} mục${res.published ? `, xuất bản ${res.published}` : ''}.`
     if (res.errors?.length) toast.warning(message, 'Nhập tệp chưa hoàn tất')
     else toast.success(message)
     await load(1)
-  } catch (err: any) { toast.error(err?.data?.statusMessage || 'Không thể nhập tệp.') } finally { importing.value = false }
+  } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể nhập tệp.')) } finally { importing.value = false }
 }
 watch([topic, status, quick], () => load(1)); onMounted(() => load())
 </script>

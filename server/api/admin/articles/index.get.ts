@@ -1,18 +1,17 @@
+import { finitePositive, MAX_PAGE } from '../../../utils/query-number'
 import { getDb } from '../../../utils/db'
 import { articles, users, categories, articleViewDaily } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { ArticleFilterValidationError, parseAuthorFilter } from '../../../utils/article-filters'
 import { eq, like, desc, sql, count, isNull } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/mysql-core'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'news', 'read', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'news', 'read')
 
   const query = getQuery(event)
-  const page = Math.max(1, Number(query.page || 1))
+  const page = finitePositive(query.page, 1, MAX_PAGE)
   const perPage = Math.min(100, Math.max(10, Number(query.perPage || 20)))
   const offset = (page - 1) * perPage
   const search = String(query.search || '').trim()

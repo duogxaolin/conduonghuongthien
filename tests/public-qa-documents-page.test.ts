@@ -228,7 +228,12 @@ test('the page is reachable without going through the assistant', () => {
   // a custom menu would not show the header entry at all.
   const layout = read('../app/layouts/default.vue')
   assert.match(layout, /to="\/qa-documents"/, 'the footer must link the page')
-  assert.match(layout, /url: '\/qa-documents'/, 'the default nav must offer the page too')
+  // `DEFAULT_NAV` moved to `app/utils/nav-config.ts`, where the shape checks that
+  // guard admin-supplied nav config are testable without mounting the layout
+  // (`tests/nav-config-boundary.test.ts`). The claim is about reachability, not
+  // about which file holds the table.
+  const navConfig = read('../app/utils/nav-config.ts')
+  assert.match(navConfig, /url: '\/qa-documents'/, 'the default nav must offer the page too')
   // The nav labels come from the dictionary, so a missing key renders as the raw URL.
   const dictionary = read('../app/composables/useI18n.ts')
   for (const key of ['faq_articles', 'faq_approved_docs']) {

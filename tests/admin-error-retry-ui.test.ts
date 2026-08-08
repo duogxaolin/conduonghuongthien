@@ -94,7 +94,10 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
 
   // Views whose panels fail independently. Each ref is its own branch, so a
   // failed history load still leaves the password form usable.
-  { file: 'pages/admin/profile.vue', refs: ['historyError', 'mfaError'], retries: ['loadHistory', 'loadMfa'] },
+  // The activity-history panel moved into its own component; the contract
+  // followed it rather than being dropped. profile.vue keeps only the MFA panel.
+  { file: 'pages/admin/profile.vue', refs: ['mfaError'], retries: ['loadMfa'] },
+  { file: 'components/admin/ProfileActivityHistory.vue', refs: ['historyError'], retries: ['loadHistory'] },
   {
     file: 'pages/admin/index.vue',
     refs: ['trafficError', 'liveError', 'sourceError', 'deviceError'],

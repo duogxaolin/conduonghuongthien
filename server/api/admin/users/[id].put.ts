@@ -1,15 +1,13 @@
 import { getDb } from '../../../utils/db'
 import { users, roles, activityLogs } from '../../../db/schema'
-import { checkPermission, hashPassword } from '../../../utils/auth'
-import { assertRoleAssignable } from '../../../utils/permissions'
+import { hashPassword } from '../../../utils/auth'
+import { assertRoleAssignable, requireResourcePermission } from '../../../utils/permissions'
 import { passwordRejectionMessage } from '../../../utils/password-policy'
 import { eq, sql } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'users', 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'users', 'update')
 
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid user ID' })
@@ -55,14 +53,25 @@ export default defineEventHandler(async (event) => {
     updateData.tokenVersion = sql`${users.tokenVersion} + 1` as unknown as number
   }
 
-  await db.update(users).set(updateData).where(eq(users.id, id))
+  /**
+   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+   *
+   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+   * commit độc lập trên pool.
+   */
+  await db.transaction(async (tx) => {
+    await tx.update(users).set(updateData).where(eq(users.id, id))
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'update',
-    resource: 'users',
-    resourceId: id,
-    meta: { fieldsUpdated: Object.keys(updateData) },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'update',
+      resource: 'users',
+      resourceId: id,
+      meta: { fieldsUpdated: Object.keys(updateData) },
+    })
   })
 
   return { ok: true }

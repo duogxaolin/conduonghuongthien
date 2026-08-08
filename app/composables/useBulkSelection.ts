@@ -144,8 +144,8 @@ export function useBulkAction(selection: ReturnType<typeof useBulkSelection>) {
       toast[tone](detail ? `${text} ${detail}` : text)
 
       await options.reload()
-    } catch (err: any) {
-      toast.error(err?.data?.statusMessage || 'Không thể thực hiện thao tác hàng loạt.')
+    } catch (err: unknown) {
+      toast.error(errorMessage(err, 'Không thể thực hiện thao tác hàng loạt.'))
     } finally {
       busy.value = false
     }
