@@ -427,3 +427,114 @@ describe('no service writes activity_logs outside a transaction', () => {
     )
   })
 })
+
+/**
+ * Câu hỏi mà KHÔNG cổng nào trong repo này từng đặt ra: "một endpoint quản trị
+ * xoá dữ liệu thì có ghi lại rằng nó đã xoá không?"
+ *
+ * Ba cổng phía trên đều bắt đầu từ tiền đề "tệp có chạm `activityLogs`" rồi mới
+ * hỏi tính nguyên tử. Một endpoint xoá hàng mà **không chạm `activityLogs` chút
+ * nào** thì không có gì để chúng hỏi — nó đi qua toàn bộ bộ test này, đi qua
+ * `typecheck`, đi qua `db:drift`, và không có gì đỏ ở đâu cả.
+ *
+ * Đó không phải giả thuyết. Hai endpoint xoá phiên trò chuyện đã sống ở đúng
+ * khoảng trống này: `sessions/index.get.ts` ghi một dòng audit cho mỗi lượt
+ * **xem** danh sách, còn hai đường **xoá** thì chỉ gọi `logInfo()` — một dòng
+ * JSON ra stdout, không phải hàng trong bảng kiểm toán. Nghĩa là một cán bộ xem
+ * danh sách phiên chat để lại dấu vết truy được ở `/admin/users/activity`, nhưng
+ * cùng cán bộ đó xoá sạch những phiên ấy — kèm số điện thoại và câu hỏi của công
+ * dân — thì trang đó không có gì. Chiều bất đối xứng đúng là chiều tệ nhất:
+ * `logInfo` đi vào nhật ký tiến trình có thời hạn lưu riêng và không truy vấn
+ * được từ giao diện, nên nó không thay thế được một hàng `activity_logs`.
+ *
+ * Guard này quét đệ quy `server/api/admin/**`, tìm mọi tệp **tự tay** xoá hàng
+ * (`db.delete(` / `tx.delete(`), và đòi mỗi tệp đó **hoặc** chạm `activityLogs`,
+ * **hoặc** được nêu tên kèm lý do. Endpoint uỷ quyền cho một service (như
+ * `knowledge/[id].delete.ts` → `deleteKnowledge`) không có lệnh xoá thô nào nên
+ * không bị hỏi — chính service đó đã bị guard phía trên canh.
+ */
+const UNAUDITED_DELETE_EXEMPTIONS: Record<string, string> = {
+  // Xoá một factor `pending` của CHÍNH tài khoản đang đăng nhập khi lượt gửi mã
+  // OTP thất bại. Đây là dọn một hàng vừa tạo dở, không phải phá bản ghi: không
+  // có trạng thái nào tồn tại trước request này để mà mất, và lượt bật yếu tố
+  // thành công thì đã có dòng audit riêng của nó.
+  'profile/mfa/enroll.post.ts': 'rolls back a half-created pending factor it just wrote itself',
+}
+
+describe('every admin endpoint that deletes rows records that it did', () => {
+  it('each raw delete either writes activity_logs or is exempt with a stated reason', () => {
+    const root = 'server/api/admin'
+
+    const walk = (dir: string): string[] => {
+      const found: string[] = []
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name)
+        if (entry.isDirectory()) found.push(...walk(path))
+        else if (entry.name.endsWith('.ts')) found.push(path)
+      }
+      return found
+    }
+
+    const offenders: string[] = []
+    for (const file of walk(root)) {
+      const source = read(file)
+      // Only files that delete rows themselves. A handler that calls a service
+      // has no raw delete here, and the service is covered by the guard above.
+      if (!/\b(?:db|tx)\.delete\(/.test(source)) continue
+      if (/activityLogs/.test(source)) continue
+      const key = file.slice(`${root}/`.length)
+      if (UNAUDITED_DELETE_EXEMPTIONS[key]) continue
+      offenders.push(key)
+    }
+
+    assert.deepEqual(
+      offenders,
+      [],
+      'xoá hàng mà không ghi `activity_logs` — sau khi hàng mất thì dòng audit là '
+      + 'bằng chứng duy nhất còn lại về việc ai đã xoá. `logInfo()` KHÔNG thay thế '
+      + 'được: nó ra nhật ký tiến trình, không truy vấn được từ /admin/users/activity. '
+      + 'Ghi audit, hoặc khai vào UNAUDITED_DELETE_EXEMPTIONS kèm lý do.',
+    )
+  })
+
+  it('the two chat-session delete paths audit on the transaction handle', () => {
+    // Ghim đúng hai tệp đã từng ở trong khoảng trống trên, để một lần dọn dẹp sau
+    // này không lặng lẽ đưa chúng về `logInfo` rồi lại xanh.
+    for (const file of [
+      'server/api/admin/chatbot/sessions/[id]/index.delete.ts',
+      'server/api/admin/chatbot/sessions/bulk-delete.post.ts',
+    ]) {
+      const source = read(file)
+      assert.match(source, /db\.transaction\(/, `${file}: lệnh xoá và dòng audit phải cùng commit`)
+      assert.match(source, /tx\.insert\(activityLogs\)/, `${file}: dòng audit phải nằm trên handle tx`)
+      assert.match(source, /tx\.delete\(/, `${file}: mở transaction nhưng xoá ở ngoài nó`)
+      assert.ok(
+        !/\bdb\.insert\(activityLogs\)/.test(source),
+        `${file}: còn một lượt insert audit trên pool — nó commit độc lập`,
+      )
+      assert.match(
+        source,
+        /resource: 'chat_sessions'/,
+        `${file}: phải dùng cùng resource với đường ĐỌC (sessions/index.get.ts), `
+        + 'nếu không thì lọc theo đối tượng ở /admin/users/activity sẽ thấy lượt xem mà không thấy lượt xoá',
+      )
+    }
+  })
+
+  it('the delete audit records whether contact data went with it, but not the data itself', () => {
+    // `hasContact` là boolean có chủ đích. Dòng audit ghi lại RẰNG có dữ liệu liên
+    // hệ trong phần vừa xoá — đủ để đánh giá mức độ của một lượt xoá — mà không
+    // nhân bản số điện thoại của công dân ra thêm một bảng có thời hạn lưu khác.
+    for (const file of [
+      'server/api/admin/chatbot/sessions/[id]/index.delete.ts',
+      'server/api/admin/chatbot/sessions/bulk-delete.post.ts',
+    ]) {
+      const source = read(file)
+      assert.match(source, /hasContact:/, `${file}: thiếu cờ hasContact`)
+      assert.ok(
+        !/meta:[\s\S]{0,400}detectedPhone:/.test(source),
+        `${file}: số điện thoại đi vào meta — ghi cờ boolean, không ghi chính dữ liệu`,
+      )
+    }
+  })
+})
