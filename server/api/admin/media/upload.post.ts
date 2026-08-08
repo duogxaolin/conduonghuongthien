@@ -5,6 +5,12 @@ import { uploadR2File, type R2Config } from '../../../utils/media-r2'
 import sharp from 'sharp'
 import path from 'node:path'
 import { requireResourcePermission } from '../../../utils/permissions'
+import {
+  EXT_BY_IMAGE_MIME,
+  detectImageMime,
+  isSharpDecodable,
+  type DetectedImageMime,
+} from '../../../utils/image-mime'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -26,28 +32,6 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 413, statusMessage: 'File vượt quá giới hạn 20 MB.' })
   }
 
-  // Magic-byte MIME detection helper
-  const detectMime = (buf: Buffer): string | null => {
-    if (buf.length < 4) return null
-    // JPEG: FF D8 FF
-    if (buf[0] === 0xFF && buf[1] === 0xD8 && buf[2] === 0xFF) return 'image/jpeg'
-    // PNG: 89 50 4E 47
-    if (buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4E && buf[3] === 0x47) return 'image/png'
-    // GIF: 47 49 46
-    if (buf[0] === 0x47 && buf[1] === 0x49 && buf[2] === 0x46) return 'image/gif'
-    // WebP: 52 49 46 46 ... 57 45 42 50 (RIFF....WEBP)
-    if (buf.length >= 12 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
-        && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp'
-    // ICO: 00 00 01 00 (reserved=0, type=1 "icon"). Accepted because "favicon"
-    // MEANS a .ico file to the officer holding one, and refusing the very file
-    // they have with "không phải là ảnh hợp lệ" is a dead end with no way out of
-    // it. Unlike image/svg+xml — which this endpoint deliberately never stores —
-    // an ICO is not an executable document, so this widens the format list
-    // without widening what a stored file can DO.
-    if (buf[0] === 0x00 && buf[1] === 0x00 && buf[2] === 0x01 && buf[3] === 0x00) return 'image/x-icon'
-    return null
-  }
-
   const originalName = fileItem.filename || 'uploaded_file'
   const mimeType = fileItem.type || 'application/octet-stream'
   let buffer = fileItem.data
@@ -65,24 +49,34 @@ export default defineEventHandler(async (event) => {
   // bytes (not the client-declared header), so the stored extension can never
   // disagree with the real content.
   let effectiveMime = mimeType
+  /** Non-null only for images, and then it is the magic-byte verdict — which is
+   *  what the sharp guard and the extension lookup below must both key off. */
+  let detectedImageMime: DetectedImageMime | null = null
   if (isImage) {
-    const detectedMime = detectMime(buffer)
-    if (!detectedMime) {
+    detectedImageMime = detectImageMime(buffer)
+    if (!detectedImageMime) {
       throw createError({ statusCode: 415, statusMessage: 'File không phải là ảnh hợp lệ (JPEG/PNG/GIF/WebP/ICO).' })
     }
-    effectiveMime = detectedMime
+    effectiveMime = detectedImageMime
   }
 
   let width: number | null = null
   let height: number | null = null
 
   // Auto-resize / optimize image if > 2400px
-  // ICO is excluded: sharp cannot decode it (confirmed — `sharp.format.ico` is
-  // undefined), and a favicon is never 2400px wide in practice. Without this
-  // guard the call below still "succeeds" silently (the surrounding catch
-  // swallows the decode failure), which is the kind of no-op that invites a
-  // future refactor to move real logic into a branch that never runs.
-  if (isImage && effectiveMime !== 'image/x-icon' && !mimeType.includes('gif') && !mimeType.includes('svg')) {
+  //
+  // ICO is excluded because sharp cannot decode it (confirmed — `sharp.format.ico`
+  // is undefined), and a favicon is never 2400px wide in practice. Without the
+  // guard the call below still "succeeds" silently — the surrounding catch
+  // swallows the decode failure — which is the kind of no-op that invites a future
+  // refactor to move real logic into a branch that never runs.
+  //
+  // GIF is excluded for a different reason: sharp CAN decode it, but resizing
+  // flattens an animated GIF to its first frame. Both exclusions now key off the
+  // MAGIC-BYTE verdict rather than the client-declared header, which also closes a
+  // gap: a real animated GIF uploaded with a `image/png` content-type used to pass
+  // this condition and get flattened.
+  if (detectedImageMime && isSharpDecodable(detectedImageMime) && detectedImageMime !== 'image/gif') {
     try {
       const metadata = await sharp(buffer).metadata()
       width = metadata.width || null
@@ -105,12 +99,12 @@ export default defineEventHandler(async (event) => {
   // client-supplied filename. Otherwise a request declaring `application/pdf`
   // with the name `x.svg` would be stored as .svg and later served as
   // image/svg+xml — an executable document (stored XSS).
+  // The image half comes from the shared table so this endpoint and
+  // `/api/admin/settings/favicon` can never disagree about which formats exist.
+  // PDF is added here only: it is not an image, so it has no place in a table the
+  // favicon path reads.
   const EXT_BY_MIME: Record<string, string> = {
-    'image/jpeg': '.jpg',
-    'image/png': '.png',
-    'image/gif': '.gif',
-    'image/webp': '.webp',
-    'image/x-icon': '.ico',
+    ...EXT_BY_IMAGE_MIME,
     'application/pdf': '.pdf',
   }
   let ext = EXT_BY_MIME[effectiveMime]

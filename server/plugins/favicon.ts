@@ -1,7 +1,6 @@
-import { getDb } from '../utils/db'
-import { settings } from '../db/schema'
 import { escapeHtml } from '../utils/escape-html'
-import { DEFAULT_FAVICON_URL, buildFaviconTags, safeFaviconUrl } from '../utils/favicon'
+import { buildFaviconTags } from '../utils/favicon'
+import { loadFaviconSetting } from '../utils/favicon-setting'
 
 /**
  * Favicon injector.
@@ -29,38 +28,6 @@ import { DEFAULT_FAVICON_URL, buildFaviconTags, safeFaviconUrl } from '../utils/
  * Never throws. A favicon has no business breaking a citizen's page render.
  */
 
-/** Same TTL as `plugins/tracking.ts`, on purpose — a second number for the same
- *  job is where two values drift apart. */
-const CACHE_TTL_MS = 30_000
-
-let cache: { url: string; expires: number } | null = null
-
-/**
- * The configured icon URL, or the bundled default.
- *
- * Returns the default for every unusable outcome — no row, empty string, a value
- * that fails `safeFaviconUrl`, or a database that is down — so callers have one
- * shape to handle and there is no branch that yields "no icon at all".
- */
-async function loadFaviconUrl(): Promise<string> {
-  const now = Date.now()
-  if (cache && cache.expires > now) return cache.url
-
-  try {
-    const db = getDb()
-    const rows = await db.select({ key: settings.key, value: settings.value }).from(settings)
-    const raw = rows.find(row => row.key === 'favicon_url')?.value
-    const url = safeFaviconUrl(raw) ?? DEFAULT_FAVICON_URL
-    cache = { url, expires: now + CACHE_TTL_MS }
-    return url
-  } catch {
-    // Cache the fallback too: a database that is down would otherwise be retried
-    // on every single render, turning one outage into a second one.
-    cache = { url: DEFAULT_FAVICON_URL, expires: now + CACHE_TTL_MS }
-    return DEFAULT_FAVICON_URL
-  }
-}
-
 export default defineNitroPlugin((nitroApp) => {
   nitroApp.hooks.hook('render:html', async (html, { event }) => {
     // API routes render no document. Match the real `/api` surface only — not a
@@ -69,13 +36,18 @@ export default defineNitroPlugin((nitroApp) => {
     const path = event?.path || ''
     if (path === '/api' || path.startsWith('/api/')) return
 
-    const url = await loadFaviconUrl()
+    // Read through the shared loader, which also backs `routes/favicon.ico.ts`.
+    // A second cache here would expire on its own schedule, so for up to 30
+    // seconds the `<link>` tag and `/favicon.ico` could point at two different
+    // icons — and browsers cache favicons for a long time, so one skewed read
+    // lingers well past the window that produced it.
+    const { iconUrl } = await loadFaviconSetting()
 
     // Two layers, answering two different questions: `safeFaviconUrl` (already
     // applied in the loader) decides whether the value may be used at all, and
     // `escapeHtml` decides how it is embedded once accepted. The second is what
     // keeps a stray quote from ending the attribute.
-    for (const tag of buildFaviconTags(url)) {
+    for (const tag of buildFaviconTags(iconUrl)) {
       const type = tag.type ? ` type="${escapeHtml(tag.type)}"` : ''
       const sizes = tag.sizes ? ` sizes="${escapeHtml(tag.sizes)}"` : ''
       html.head.push(`<link rel="${escapeHtml(tag.rel)}"${type}${sizes} href="${escapeHtml(tag.href)}">`)

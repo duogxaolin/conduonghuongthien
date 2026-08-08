@@ -25,8 +25,32 @@ import {
   faviconMimeType,
   safeFaviconUrl,
 } from '../server/utils/favicon.ts'
+import { DEFAULT_ICO_FILENAME, wrapPngAsIco } from '../server/utils/favicon-image.ts'
+import {
+  EXT_BY_IMAGE_MIME,
+  detectImageMime,
+  isSharpDecodable,
+  type DetectedImageMime,
+} from '../server/utils/image-mime.ts'
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
+
+/**
+ * Bỏ comment trước khi khẳng định một chuỗi **không** xuất hiện.
+ *
+ * Cùng cách `tests/public-qa-documents-page.test.ts` đã làm, và vì cùng một lý do
+ * đã trả giá: chính dòng giải thích *vì sao* `immutable` là sai ở tuyến
+ * `/favicon.ico` sẽ làm đỏ cái test nó đang giải thích. Bài học rút ra từ một test
+ * như thế là xoá lời giải thích, không phải giữ guard.
+ */
+const stripComments = (source: string) =>
+  source
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/<!--[\s\S]*?-->/g, '')
+    // `[^:]` giữ `https://` khỏi bị coi là comment một dòng.
+    .replace(/(^|[^:])\/\/[^\n]*/gm, '$1')
+
+const readCode = (path: string) => stripComments(read(path))
 
 // ─── safeFaviconUrl: mọi giá trị không dùng được ra null ─────────────────────
 
@@ -256,7 +280,7 @@ describe('tệp favicon mặc định', () => {
   for (const url of [DEFAULT_FAVICON_URL, DEFAULT_APPLE_ICON_URL]) {
     it(`${url} tồn tại và là PNG thật`, () => {
       const path = new URL(`../public${url}`, import.meta.url)
-      assert.ok(existsSync(path), `${url} không có trên đĩa — chạy node scripts/make-favicon.mjs`)
+      assert.ok(existsSync(path), `${url} không có trên đĩa — chạy npm run make:favicon`)
 
       const head = readFileSync(path).subarray(0, 4)
       assert.ok(
@@ -267,17 +291,32 @@ describe('tệp favicon mặc định', () => {
     })
   }
 
-  // `public/favicon.ico` KHÔNG được khẳng định là vắng ở đây, dù bản đầu của tệp
-  // test này từng làm vậy.
-  //
-  // Giả định lúc đó là "tệp hỏng nên phải xoá". Đo trên máy chủ thật thì xoá đi
-  // không cho ra 404 mà cho ra placeholder có sẵn của Nitro: `200`,
-  // `content-type: image/x-icon`, thân là chuỗi `data:image/gif;base64,…`. Tức là
-  // vẫn không có icon, chỉ đổi nguồn của thứ sai. Yêu cầu đúng vì thế là **có mặt
-  // và mang byte thật** — khẳng định ở suite "bộ favicon mặc định là ảnh thật".
+  /**
+   * `public/favicon.ico` phải VẮNG, và khẳng định này đã bị đảo ngược hai lần.
+   *
+   * Bản đầu đòi tệp phải vắng ("tệp hỏng thì xoá"). Rồi phép đo cho thấy xoá đi
+   * không ra 404 mà ra placeholder của Nitro (`200`, `content-type: image/x-icon`,
+   * thân là chuỗi `data:image/gif;base64,…`), nên khẳng định đổi thành "phải có
+   * mặt và mang byte thật".
+   *
+   * Phép đo thứ ba mới cho ra câu trả lời đúng, và nó phản trực giác: một tệp tĩnh
+   * ở `public/favicon.ico` **thắng** route handler cùng đường dẫn, nên nó làm
+   * `server/routes/favicon.ico.ts` **không bao giờ chạy** — favicon cán bộ cấu
+   * hình bị bỏ qua ở đúng đường dẫn mà máy quét gọi tới. Còn tệ hơn: tệp có lúc
+   * build rồi mất lúc chạy thì manifest tĩnh vẫn khai nó còn, `readFile` ném
+   * `ENOENT`, và khách nhận **500** chứ không phải 404.
+   *
+   * Nên bộ mặc định mang tên `favicon-default.ico` và tuyến sở hữu đường dẫn.
+   */
+  it('không có tệp tĩnh favicon.ico che tuyến động', () => {
+    assert.ok(
+      !existsSync(new URL('../public/favicon.ico', import.meta.url)),
+      'public/favicon.ico đã quay lại — tệp tĩnh thắng route, nên favicon đã cấu hình sẽ bị bỏ qua ở /favicon.ico',
+    )
+  })
 
   it('script sinh icon có trong repo để lượt sinh này tái lập được', () => {
-    assert.ok(existsSync(new URL('../scripts/make-favicon.mjs', import.meta.url)))
+    assert.ok(existsSync(new URL('../scripts/make-favicon.ts', import.meta.url)))
   })
 })
 
@@ -312,10 +351,11 @@ test('favicon_url được phát ra cho trang công khai', () => {
   assert.match(code, /'favicon_url'/, 'lưu được mà trang công khai không đọc được')
 })
 
-test('seed có hàng favicon_url mặc định', () => {
-  const code = read('server/db/seed.ts')
-  assert.match(code, /key: 'favicon_url'/, 'một CSDL mới không có giá trị nào cho ô này')
-})
+// Khẳng định về hàng seed nằm ở cuối tệp, và nó đã bị ĐẢO NGƯỢC: test cũ ở đây đòi
+// seed **phải** ghi `favicon_url = '/favicon-32.png'` với lý do "một CSDL mới không
+// có giá trị nào cho ô này". Giả định đó sai — bộ đọc tự lùi về đúng đường dẫn đó
+// khi hàng vắng — và hàng seed gây ra một lỗi đo được: `/favicon.ico` phục vụ PNG.
+// Xem test `seed KHÔNG ghi hàng favicon_url`.
 
 // ─── Plugin: khác tracking.ts ở hai điểm, và cả hai đều có lý do ─────────────
 
@@ -342,21 +382,164 @@ describe('plugin favicon', () => {
     assert.match(plugin, /startsWith\('\/api\/'\)/, 'tuyến API không dựng tài liệu nào')
   })
 
-  it('lỗi CSDL vẫn chèn thẻ mặc định, không chèn rỗng', () => {
-    // Khác tracking.ts (ở đó "không chèn gì" là kết quả an toàn). Ở đây "không
-    // chèn gì" nghĩa là mọi khách thấy tab trắng suốt thời gian CSDL có vấn đề,
-    // trong khi tệp mặc định đã nằm sẵn trên đĩa và biết là dùng được.
-    const branch = plugin.slice(plugin.indexOf('catch'))
-    assert.match(branch, /DEFAULT_FAVICON_URL/, 'nhánh lỗi không lùi về mặc định')
-  })
-
   it('nội suy href qua escapeHtml', () => {
     assert.match(plugin, /escapeHtml/, 'giá trị đi vào thuộc tính HTML mà không escape')
   })
 
-  it('đi qua safeFaviconUrl trước khi dùng', () => {
-    assert.match(plugin, /safeFaviconUrl/, 'thiếu biên tin cậy')
+  /**
+   * Plugin **không** tự đọc CSDL, và điều đó là ràng buộc chứ không phải gọn gàng.
+   *
+   * Tuyến `/favicon.ico` cần **cùng** giá trị này. Mỗi nơi một bộ đệm là hai lượt
+   * hết hạn lệch nhau, nên trong tối đa 30 giây thẻ `<link>` và `/favicon.ico` có
+   * thể trỏ **hai icon khác nhau** — mà favicon bị trình duyệt đệm rất lâu, nên
+   * một lần đọc lệch đọng lại rất dai.
+   */
+  it('đọc qua bộ đọc dùng chung, không tự truy vấn', () => {
+    assert.match(plugin, /loadFaviconSetting/, 'plugin phải dùng bộ đọc dùng chung')
+    assert.doesNotMatch(
+      plugin,
+      /getDb\(\)/,
+      'plugin tự truy vấn CSDL — bộ đệm thứ hai sẽ lệch với tuyến /favicon.ico',
+    )
   })
+})
+
+// ─── Bộ đọc dùng chung: một bộ đệm cho cả thẻ <link> và tuyến /favicon.ico ───
+
+describe('bộ đọc cấu hình favicon', () => {
+  const loader = read('server/utils/favicon-setting.ts')
+
+  it('lỗi CSDL vẫn lùi về mặc định, không trả rỗng', () => {
+    // Khác tracking.ts (ở đó "không chèn gì" là kết quả an toàn). Ở đây "không
+    // chèn gì" nghĩa là mọi khách thấy tab trắng suốt thời gian CSDL có vấn đề,
+    // trong khi tệp mặc định đã nằm sẵn trên đĩa và biết là dùng được.
+    const branch = loader.slice(loader.indexOf('catch'))
+    assert.match(branch, /FALLBACK|DEFAULT_FAVICON_URL/, 'nhánh lỗi không lùi về mặc định')
+  })
+
+  it('đi qua safeFaviconUrl trước khi dùng', () => {
+    assert.match(loader, /safeFaviconUrl/, 'thiếu biên tin cậy')
+  })
+
+  /**
+   * Bộ đệm phải bỏ được, và đây là phần dễ bỏ sót nhất.
+   *
+   * Trang cài đặt đã phải cảnh báo rằng **trình duyệt** đệm favicon rất lâu. Thêm
+   * một lớp đệm phía máy chủ mà không có đường xoá là làm lời cảnh báo đó thành vô
+   * ích: cán bộ lưu xong, tải lại, thấy icon cũ, và không phân biệt được hai
+   * nguyên nhân — cả hai đều trông như "không lưu được".
+   */
+  it('có đường bỏ bộ đệm sau khi lưu', () => {
+    assert.match(loader, /export function clearFaviconSettingCache/, 'không có đường bỏ bộ đệm')
+  })
+})
+
+// ─── Tuyến /favicon.ico: đường dẫn mà máy quét gọi TRỰC TIẾP ─────────────────
+
+/**
+ * Thẻ `<link>` chỉ phục vụ những nơi phân tích HTML. Trình duyệt cũ, đầu đọc RSS,
+ * phần mềm gom tin và phần lớn bộ dò liên kết gọi thẳng `/favicon.ico`.
+ *
+ * Tuyến này tồn tại vì **phép đo**, không vì suy luận. Ba kết quả đo được trên bản
+ * build, và cả ba đều phản trực giác:
+ *  1. `public/favicon.ico` có lúc build → tệp tĩnh **thắng** tuyến, hàm không bao
+ *     giờ chạy, cấu hình bị bỏ qua trong im lặng.
+ *  2. Tệp có lúc build rồi mất lúc chạy → manifest tĩnh vẫn khai nó còn, `readFile`
+ *     ném `ENOENT` → **500**, không phải 404.
+ *  3. Không có tệp tĩnh → tuyến thắng, kể cả thắng placeholder data-URI của Nitro.
+ */
+describe('tuyến /favicon.ico', () => {
+  // Bỏ comment: suite này có cả khẳng định "phải vắng", và docstring của tuyến
+  // giải thích *vì sao* `immutable` sai — nó sẽ khớp vào chính guard đó.
+  const route = readCode('server/routes/favicon.ico.ts')
+
+  it('đọc qua bộ đọc dùng chung với plugin', () => {
+    assert.match(route, /loadFaviconSetting/, 'tuyến phải phục vụ favicon ĐÃ CẤU HÌNH, không phải bản cố định')
+  })
+
+  it('lấy tên tệp mặc định từ hằng số, không viết cứng', () => {
+    assert.match(route, /DEFAULT_ICO_FILENAME/, 'tên tệp viết cứng ở hai chỗ sẽ lệch nhau')
+    assert.doesNotMatch(
+      route,
+      /'favicon-default\.ico'/,
+      'viết cứng tên tệp — script sinh tệp và tuyến đọc tệp phải cùng đọc một hằng số',
+    )
+  })
+
+  /**
+   * `immutable` là đúng cho `/uploads/**` (tên tệp có dấu thời gian) và **sai** ở
+   * đây: đường dẫn cố định trong khi nội dung đổi được từ trang quản trị, nên
+   * `max-age=31536000, immutable` ghim icon cũ trong máy khách suốt một năm.
+   */
+  it('không đệm immutable', () => {
+    assert.doesNotMatch(route, /immutable/, 'đường dẫn cố định + nội dung đổi được: immutable ghim icon cũ cả năm')
+    assert.match(route, /max-age=\d+/, 'thiếu Cache-Control')
+  })
+
+  it('chặn đi ra khỏi thư mục public', () => {
+    assert.match(route, /\.\.'?\)|includes\('\.\.'\)/, 'thiếu phép chặn path traversal')
+    assert.match(route, /startsWith\(publicRoot/, 'thiếu phép kiểm đường dẫn đã resolve còn trong gốc')
+  })
+
+  /**
+   * Cấu hình trỏ tới một tệp đã bị xoá khỏi Thư viện Media **không** được thành
+   * 404: cổng vẫn còn một icon dùng được trên đĩa, và một tab trắng vì lý do đó là
+   * hỏng ở chỗ không cần hỏng.
+   */
+  it('lùi về tệp mặc định thay vì 404 khi tệp đã cấu hình biến mất', () => {
+    assert.match(route, /continue/, 'không đi tiếp tới ứng viên sau khi statSync thất bại')
+    assert.match(route, /candidates\.push\(\{ file: fallback/, 'tệp mặc định không nằm trong danh sách ứng viên')
+  })
+
+  it('gắn nosniff', () => {
+    assert.match(route, /X-Content-Type-Options/, 'byte ảnh không được để trình duyệt diễn giải lại')
+  })
+
+  /**
+   * Tuyến này phục vụ **chỉ** ICO, và đây là lỗi đã ĐO ĐƯỢC trên máy chủ thật.
+   *
+   * Bản đầu nhận bất kỳ icon cục bộ nào rồi tự gắn `image/png` khi tệp không phải
+   * `.ico`. Với hàng seed `favicon_url = '/favicon-32.png'`, `/favicon.ico` trả
+   * `content-type: image/png`, 2213 byte — ở đúng đường dẫn mà máy quét, đầu đọc
+   * RSS và trình duyệt cũ gọi **để lấy ICO**. Phần lớn chấp nhận PNG, nhưng chính
+   * những chương trình cũ là lý do tuyến này tồn tại thì không.
+   *
+   * Lỗi lọt qua 1404 test vì mọi test đều kiểm mã ở trạng thái nghỉ; chỉ một lượt
+   * `curl` trên bản build mới nói ra.
+   */
+  it('chỉ phục vụ ICO, không bao giờ PNG', () => {
+    assert.doesNotMatch(
+      route,
+      /image\/png/,
+      'tuyến /favicon.ico phục vụ PNG — máy quét gọi đường dẫn này để lấy ICO',
+    )
+    assert.match(
+      route,
+      /endsWith\('\.ico'\)/,
+      'không kiểm tệp đã cấu hình có thật là .ico',
+    )
+  })
+})
+
+/**
+ * `favicon_url` **không** được có hàng seed.
+ *
+ * `loadFaviconSetting` đã tự lùi về `/favicon-32.png` khi hàng vắng, nên hàng seed
+ * không mua thêm gì — nhưng nó gây ra hai chuyện sai. Một là lỗi đo được ở trên
+ * (`/favicon.ico` trả PNG). Hai là `/admin/settings/general` hiện ra như "đã cấu
+ * hình" trong khi cổng đang dùng bộ mặc định, nên nút "Về mặc định" trông như không
+ * làm gì.
+ *
+ * Vắng mặt là cách diễn đạt đúng cho "chưa cấu hình", và là trạng thái mà
+ * `favicon.delete.ts` trả về.
+ */
+test('seed KHÔNG ghi hàng favicon_url', () => {
+  const code = read('server/db/seed.ts')
+  assert.doesNotMatch(
+    code,
+    /\{\s*key:\s*'favicon_url'/,
+    'hàng seed favicon_url đã quay lại: /favicon.ico sẽ phục vụ PNG, và trang cài đặt khai "đã cấu hình" cho chính giá trị mặc định',
+  )
 })
 
 test('nuxt.config không còn thẻ icon viết cứng', () => {
@@ -372,23 +555,78 @@ test('nuxt.config không còn thẻ icon viết cứng', () => {
 
 // ─── Upload nhận .ico ───────────────────────────────────────────────────────
 
+/**
+ * Phép nhận diện định dạng **chạy thật**, không soi văn bản mã nguồn.
+ *
+ * Ba khẳng định đầu của suite này từng soi chữ trong `upload.post.ts` (`0x00 &&
+ * buf[1] === 0x00 …`), và chúng đỏ ngay khi logic dời sang module dùng chung dù
+ * hành vi không đổi một chút nào. Đó là dấu hiệu chúng ghim **cách viết** chứ
+ * không ghim **hành vi**. Gọi thẳng hàm thì phép kiểm sống qua mọi lần dời chỗ, và
+ * nó khẳng định được thứ mạnh hơn: giá trị trả về đúng.
+ */
+describe('nhận diện định dạng ảnh theo magic byte', () => {
+  /** Vỏ ICO thật, dựng bằng chính hàm mà bộ mặc định dùng. */
+  const realIco = wrapPngAsIco(readFileSync(new URL('../public/favicon-32.png', import.meta.url)))
+
+  const SAMPLES: Array<[string, Buffer, DetectedImageMime | null]> = [
+    ['PNG', readFileSync(new URL('../public/favicon-32.png', import.meta.url)), 'image/png'],
+    ['ICO', realIco, 'image/x-icon'],
+    ['JPEG', Buffer.from([0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10]), 'image/jpeg'],
+    ['GIF', Buffer.from('GIF89a....', 'latin1'), 'image/gif'],
+    ['WebP', Buffer.concat([Buffer.from('RIFF', 'latin1'), Buffer.alloc(4), Buffer.from('WEBP', 'latin1')]), 'image/webp'],
+    // Đây chính là ca đã kiểm trên máy chủ thật: một tệp văn bản đổi tên thành
+    // `.ico` kèm `Content-Type: image/x-icon` phải bị từ chối — magic byte là
+    // thẩm quyền, không phải tên tệp hay header client gửi.
+    ['văn bản đội tên .ico', Buffer.from('day khong phai icon, chi la van ban thuong.', 'latin1'), null],
+    ['HTML (đúng lỗi favicon gốc)', Buffer.from('<!DOCTYPE html><html></html>', 'latin1'), null],
+    ['SVG', Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"></svg>', 'latin1'), null],
+    ['quá ngắn', Buffer.from([0x00, 0x00]), null],
+    ['rỗng', Buffer.alloc(0), null],
+  ]
+
+  for (const [label, bytes, expected] of SAMPLES) {
+    it(`${label} → ${expected ?? 'null'}`, () => {
+      assert.equal(detectImageMime(bytes), expected)
+    })
+  }
+
+  it('mọi định dạng nhận được đều có đuôi tệp', () => {
+    // Một MIME nhận được mà không có đuôi tệp sẽ ném 415 ở cuối đường tải lên —
+    // sau khi đã qua phép kiểm magic byte, tức là một tệp hợp lệ bị từ chối với
+    // một lý do không liên quan gì tới nó.
+    for (const [, , mime] of SAMPLES) {
+      if (mime) assert.ok(EXT_BY_IMAGE_MIME[mime], `${mime} thiếu đuôi tệp`)
+    }
+  })
+
+  it('.svg vắng khỏi bảng đuôi tệp', () => {
+    // Tiêu chí là "có chạy được hay không", không phải "định dạng nào quen hơn":
+    // SVG phục vụ inline là tài liệu chạy được trên origin của cổng.
+    assert.ok(!Object.keys(EXT_BY_IMAGE_MIME).includes('image/svg+xml'))
+  })
+
+  /**
+   * sharp **không** giải mã được ICO (đã kiểm: `sharp.format.ico` là undefined).
+   * Khối `try/catch` quanh sharp nuốt lỗi nên lời gọi vẫn *chạy được*, và đi qua
+   * một nhánh xử lý không áp dụng được là mời một lần refactor sau này dời logic
+   * thật vào một nhánh không bao giờ chạy.
+   */
+  it('ICO bị loại khỏi nhánh sharp, các định dạng khác thì không', () => {
+    assert.equal(isSharpDecodable('image/x-icon'), false)
+    for (const mime of ['image/png', 'image/jpeg', 'image/webp', 'image/gif'] as DetectedImageMime[]) {
+      assert.equal(isSharpDecodable(mime), true, `${mime} bị loại oan khỏi nhánh sharp`)
+    }
+  })
+})
+
 describe('upload nhận .ico', () => {
   const upload = read('server/api/admin/media/upload.post.ts')
 
-  it('nhận diện ICO theo magic byte, không theo tên tệp', () => {
-    assert.match(upload, /0x00 && buf\[1\] === 0x00 && buf\[2\] === 0x01/, 'thiếu nhận diện ICO')
-  })
-
-  it('có đuôi tệp cho ICO', () => {
-    assert.match(upload, /'image\/x-icon': '\.ico'/)
-  })
-
-  it('bỏ qua sharp cho ICO', () => {
-    // sharp không giải mã được ICO (đã kiểm: `sharp.format.ico` là undefined).
-    // Khối try/catch quanh sharp sẽ nuốt lỗi nên nó *chạy được*, nhưng đi qua một
-    // nhánh xử lý không áp dụng được là mời một lần refactor sau này biến nó
-    // thành lỗi thật.
-    assert.match(upload, /effectiveMime !== 'image\/x-icon'/, 'ICO vẫn đi vào nhánh sharp')
+  it('dùng bộ nhận diện dùng chung, không viết bản riêng', () => {
+    // Hai bộ nhận diện là hai danh sách định dạng sẽ lệch nhau — đúng hình dạng
+    // lỗi mà `.ico` vừa gây ra giữa đường tải lên và đường phục vụ.
+    assert.match(upload, /detectImageMime/, 'endpoint phải dùng bộ nhận diện dùng chung')
+    assert.doesNotMatch(upload, /const detectMime =/, 'bản nhận diện riêng đã quay lại')
   })
 
   it('thông báo lỗi nêu đủ định dạng được nhận', () => {
@@ -404,6 +642,18 @@ describe('upload nhận .ico', () => {
       'đuôi tệp phải suy từ MIME đã kiểm bằng magic byte',
     )
   })
+
+  /**
+   * Guard sharp phải key theo **kết quả magic byte**, không theo header client.
+   *
+   * Bản cũ viết `!mimeType.includes('gif')` trên chuỗi do client khai, nên một GIF
+   * động tải lên kèm `Content-Type: image/png` đi qua điều kiện đó và **bị làm
+   * phẳng còn một khung**. Việc gộp về module chung đã đóng luôn khoảng trống này.
+   */
+  it('guard sharp key theo magic byte, không theo header client', () => {
+    assert.match(upload, /isSharpDecodable\(detectedImageMime\)/, 'guard không dùng kết quả magic byte')
+    assert.doesNotMatch(upload, /mimeType\.includes\('gif'\)/, 'guard còn đọc header do client khai')
+  })
 })
 
 // ─── Ô nhập trong trang admin ───────────────────────────────────────────────
@@ -415,14 +665,61 @@ describe('ô nhập favicon ở /admin/settings/general', () => {
     assert.match(page, /favicon_url:/)
   })
 
-  it('dùng lại Thư viện Media và Upload như ô logo', () => {
+  it('vẫn chọn được từ Thư viện Media', () => {
     assert.match(page, /pickImage\('favicon_url'\)/, 'thiếu nút Thư viện')
-    assert.match(page, /uploadImage\(e, 'favicon_url'\)/, 'thiếu nút Upload')
   })
 
-  it('input file nhận cả .ico', () => {
-    const accept = /accept="([^"]*)"[^>]*favicon/.test(page) || page.includes('.png,.ico')
-    assert.ok(accept, 'cán bộ có tệp .ico sẽ không chọn được nó trong hộp thoại tệp')
+  /**
+   * Tệp tải lên đi qua endpoint SINH ẢNH, **không** qua `uploadImage`.
+   *
+   * Đây là chỗ khẳng định đã bị đảo ngược: bản đầu đòi ô này dùng lại `uploadImage`
+   * "cho giống ô logo". Nhưng `uploadImage` lưu **nguyên** tệp cán bộ chọn, và ảnh
+   * cán bộ có trong tay là logo cơ quan — thường 1200×800 và vài trăm KB. Dán thẳng
+   * nó vào thẻ `<link rel="icon">` là cả mấy trăm KB đó tải trên **mọi** trang của
+   * cổng, cộng với việc bị bóp méo vì không vuông. Không có gì báo, ở cả hai chuyện.
+   *
+   * Nên "giống ô logo" là tiêu chí sai ở đúng ô này.
+   */
+  it('tải ảnh lên đi qua endpoint sinh bộ favicon, không lưu tệp gốc', () => {
+    assert.match(page, /uploadFavicon/, 'thiếu đường sinh bộ favicon')
+    assert.doesNotMatch(
+      page,
+      /uploadImage\(e, 'favicon_url'\)/,
+      'favicon đi qua uploadImage: tệp gốc 1200×800 sẽ tải trên mọi trang và bị bóp méo',
+    )
+    assert.match(page, /\/api\/admin\/settings\/favicon/, 'không gọi endpoint favicon')
+  })
+
+  /**
+   * Đặt lại về mặc định phải là một NÚT, không phải xoá ô rồi bấm Lưu.
+   *
+   * Lượt lưu chung chỉ biết `favicon_url`; bản `.ico` dẫn xuất nằm ở khoá riêng
+   * `favicon_ico_url` mà biểu mẫu không hề biết tới — nên xoá ô trống rồi lưu sẽ để
+   * tuyến `/favicon.ico` phục vụ icon cũ trong khi thẻ `<link>` đã về mặc định.
+   */
+  it('có nút trả về mặc định gọi DELETE', () => {
+    assert.match(page, /resetFavicon/, 'thiếu nút trả về mặc định')
+    assert.match(page, /method: 'DELETE'/, 'nút trả về mặc định không gọi DELETE')
+  })
+
+  /**
+   * Hai nút này có hiệu lực **ngay**, khác mọi ô khác trên trang, nên phải nói ra.
+   *
+   * Chúng ghi tệp ra đĩa nên không hoãn được tới lượt "Lưu Cài Đặt" chung. Một thay
+   * đổi đã có hiệu lực mà trông như đang chờ lưu là cách cán bộ bỏ trang đi và tưởng
+   * mình chưa đổi gì.
+   */
+  it('nói rõ hai nút đó có hiệu lực ngay', () => {
+    assert.match(page, /không cần bấm "Lưu Cài Đặt"/, 'không nói ra sự bất đối xứng với các ô khác')
+  })
+
+  it('input file nhận PNG, JPG và ICO', () => {
+    const accept = page.match(/accept="([^"]*)"[^>]*:disabled="uploadingFavicon"/)?.[1]
+      ?? page.match(/accept="([^"]*)"/g)?.find(value => value.includes('.ico'))
+      ?? ''
+    for (const ext of ['.png', '.jpg', '.ico']) {
+      assert.ok(accept.includes(ext), `hộp thoại tệp không cho chọn ${ext}`)
+    }
   })
 
   /**
@@ -478,17 +775,29 @@ describe('đường tải lên và đường phục vụ nhận cùng định d�
     )
   })
 
-  it('đường tải lên nhận .ico bằng magic-byte, không bằng đuôi tệp', () => {
-    assert.match(
-      uploadRoute,
-      /'image\/x-icon':\s*'\.ico'/,
-      'thiếu .ico trong EXT_BY_MIME',
-    )
-    assert.match(
-      uploadRoute,
-      /0x00.*0x00.*0x01.*0x00|buf\[0\]\s*===\s*0x00/s,
-      'thiếu phép kiểm magic-byte 00 00 01 00 cho ICO',
-    )
+  /**
+   * ĐỐI CHIẾU THẬT hai danh sách, không soi chữ ở một trong hai tệp.
+   *
+   * Bản đầu khẳng định bằng cách tìm `'image/x-icon': '.ico'` trong
+   * `upload.post.ts`, và nó đỏ ngay khi bảng đó dời sang module dùng chung — dù
+   * hành vi không đổi. Tệ hơn: nó chỉ kiểm được **một** định dạng, nên thêm một
+   * định dạng thứ sáu vào đường tải lên mà quên đường phục vụ vẫn **xanh**. Đó
+   * đúng là lỗ đã đo được với `.ico`.
+   *
+   * Nay nó lặp qua **mọi** định dạng đường tải lên nhận, và đòi đường phục vụ khai
+   * MIME ảnh cho từng cái.
+   */
+  it('mọi định dạng nhận ở cổng vào đều hiện được ở cổng ra', () => {
+    for (const ext of Object.values(EXT_BY_IMAGE_MIME)) {
+      const declared = new RegExp(`'\\${ext}':\\s*'image/`)
+      assert.match(
+        serveRoute,
+        declared,
+        `${ext} nhận được ở đường tải lên nhưng thiếu ở mimeMap của đường phục vụ: ` +
+        'tệp sẽ phục vụ dưới application/octet-stream + Content-Disposition: attachment, ' +
+        'tức trình duyệt TỪ CHỐI vẽ nó — tải lên thành công mà tab vẫn trống',
+      )
+    }
   })
 
   /**
@@ -517,29 +826,28 @@ describe('đường tải lên và đường phục vụ nhận cùng định d�
 // ─── Bộ mặc định đi kèm mã nguồn ────────────────────────────────────────────
 
 /**
- * `public/favicon.ico` phải là một icon **thật**, và phép kiểm nhìn vào byte.
+ * Bộ `.ico` mặc định phải là một icon **thật**, và phép kiểm nhìn vào byte.
  *
- * Xoá tệp hỏng đi là chưa đủ: khi đường dẫn đó không có tệp, Nitro trả về
- * placeholder có sẵn của nó (`nitropack/.../renderer.mjs`) — `200` kèm
- * `content-type: image/x-icon`, thân là **chuỗi văn bản** `data:image/gif;base64,…`
- * chứ không phải byte ảnh. Đo được trên máy chủ thật sau khi xoá. Tức là cùng một
- * kiểu hỏng, chỉ đổi nguồn: trạng thái đúng, nhãn đúng, byte sai.
+ * Tệp mang tên `favicon-default.ico`, **không** phải `favicon.ico`: một tệp tĩnh ở
+ * đường dẫn sau sẽ thắng `server/routes/favicon.ico.ts` và làm tuyến đó không bao
+ * giờ chạy (đã đo trên bản build), nên favicon cán bộ cấu hình bị bỏ qua ở đúng
+ * đường dẫn mà máy quét, đầu đọc RSS và trình duyệt cũ gọi trực tiếp.
  *
- * Tệp phải có mặt vì thẻ `<link>` chỉ phục vụ những nơi **đọc HTML**; máy quét,
- * đầu đọc RSS và trình duyệt cũ gọi `/favicon.ico` trực tiếp.
+ * Tệp phải có mặt vì tuyến đó lùi về nó ở mọi nhánh lỗi — chưa cấu hình gì, CSDL
+ * không nối được, hay cấu hình trỏ vào một tệp đã bị xoá khỏi Thư viện Media.
  */
 describe('bộ favicon mặc định là ảnh thật', () => {
   const asBuffer = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url))
+  const ICO = `public/${DEFAULT_ICO_FILENAME}`
 
-  it('favicon.ico có mặt và mang magic-byte của ICO', () => {
-    const path = 'public/favicon.ico'
-    assert.ok(existsSync(new URL(`../${path}`, import.meta.url)), `thiếu ${path}`)
+  it('có mặt và mang magic-byte của ICO', () => {
+    assert.ok(existsSync(new URL(`../${ICO}`, import.meta.url)), `thiếu ${ICO}`)
 
-    const buf = asBuffer(path)
+    const buf = asBuffer(ICO)
     assert.deepEqual(
       [buf[0], buf[1], buf[2], buf[3]],
       [0x00, 0x00, 0x01, 0x00],
-      'favicon.ico không mang magic-byte ICO — có thể lại là HTML hoặc một placeholder',
+      `${ICO} không mang magic-byte ICO — có thể lại là HTML hoặc một placeholder`,
     )
   })
 
@@ -549,20 +857,20 @@ describe('bộ favicon mặc định là ảnh thật', () => {
    * thật sự đã xảy ra trên đường dẫn này, nên chúng được nêu tên: một test đỏ nên
    * chỉ vào triệu chứng đã biết chứ không chỉ vào một mảng byte.
    */
-  it('favicon.ico không phải HTML cũng không phải chuỗi data-URI', () => {
-    const head = asBuffer('public/favicon.ico').subarray(0, 64).toString('latin1')
-    assert.doesNotMatch(head, /<!DOCTYPE|<html/i, 'favicon.ico lại là một trang HTML')
-    assert.doesNotMatch(head, /^data:/, 'favicon.ico là placeholder data-URI của Nitro, không phải tệp thật')
+  it('không phải HTML cũng không phải chuỗi data-URI', () => {
+    const head = asBuffer(ICO).subarray(0, 64).toString('latin1')
+    assert.doesNotMatch(head, /<!DOCTYPE|<html/i, `${ICO} lại là một trang HTML`)
+    assert.doesNotMatch(head, /^data:/, `${ICO} là placeholder data-URI của Nitro, không phải tệp thật`)
   })
 
   it('ICO dùng lại đúng ảnh 32px, không phải một tệp rời', () => {
-    const ico = asBuffer('public/favicon.ico')
+    const ico = asBuffer(ICO)
     const png = asBuffer('public/favicon-32.png')
 
     // Vỏ ICO là 6 byte tiêu đề + 16 byte mục thư mục, rồi tới nguyên PNG.
     assert.ok(
       ico.subarray(22).equals(png),
-      'phần thân ICO khác favicon-32.png — hai icon sẽ lệch nhau khi logo đổi',
+      `phần thân ${DEFAULT_ICO_FILENAME} khác favicon-32.png — hai icon sẽ lệch nhau khi logo đổi`,
     )
   })
 })

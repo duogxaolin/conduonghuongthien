@@ -1,6 +1,9 @@
+import { eq } from 'drizzle-orm'
+
 import { getDb } from '../../../utils/db'
 import { settings, activityLogs } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { FAVICON_ICO_SETTING_KEY, clearFaviconSettingCache } from '../../../utils/favicon-setting'
 
 /**
  * Allow-list of settings keys writable through this endpoint. Previously ANY key
@@ -97,6 +100,23 @@ export default defineEventHandler(async (event) => {
       await tx.insert(settings).values({ key, value: strValue })
         .onDuplicateKeyUpdate({ set: { value: strValue } })
       applied.push(key)
+
+      /**
+       * Đổi `favicon_url` bằng tay thì bản `.ico` dẫn xuất phải mất theo.
+       *
+       * `favicon_ico_url` là bản `.ico` sinh ra từ ảnh **trước đó**. Để nó nằm lại
+       * thì tuyến `/favicon.ico` phục vụ icon cũ trong khi thẻ `<link>` phục vụ
+       * icon mới — hai địa chỉ của cùng một cổng trả về hai logo khác nhau, và
+       * trình duyệt đệm favicon rất lâu nên tình trạng đó rất dai. Xoá đi thì
+       * tuyến kia lùi về bộ mặc định: kém hơn một bản `.ico` khớp, nhưng nó **nhất
+       * quán**, và đó là điều đáng giữ hơn.
+       *
+       * Nằm trong cùng transaction với lượt ghi trên: viết rời thì một lỗi ở giữa
+       * để lại đúng trạng thái lệch mà nó ra đời để ngăn.
+       */
+      if (key === 'favicon_url' && (current.get(key) ?? '') !== strValue) {
+        await tx.delete(settings).where(eq(settings.key, FAVICON_ICO_SETTING_KEY))
+      }
     }
 
     await tx.insert(activityLogs).values({
@@ -106,6 +126,23 @@ export default defineEventHandler(async (event) => {
       meta: { keysUpdated: applied },
     })
   })
+
+  /**
+   * Bỏ bộ đệm favicon SAU khi commit, không phải trong transaction.
+   *
+   * Trong transaction thì một lượt rollback để lại bộ đệm đã bị xoá cho một giá trị
+   * chưa bao giờ được ghi — lần đọc kế tiếp truy vấn lại và lấy đúng giá trị cũ,
+   * nên hậu quả chỉ là một lượt truy vấn dư. Nhưng thứ tự này vẫn là thứ tự đúng, và
+   * lý do đáng ghi: trạng thái ngoài CSDL không tham gia được vào tính nguyên tử của
+   * CSDL, nên nó phải đợi kết quả thay vì đoán trước.
+   *
+   * Không có lời gọi này thì cán bộ lưu xong, tải lại trang, và thấy icon cũ tới 30
+   * giây. Trang cài đặt đã phải cảnh báo rằng **trình duyệt** đệm favicon rất lâu;
+   * thêm một lớp đệm phía máy chủ vào đúng lúc đó là làm lời cảnh báo kia thành vô
+   * ích — cán bộ không phân biệt được hai nguyên nhân, và cả hai đều đọc ra là
+   * "không lưu được".
+   */
+  if (applied.includes('favicon_url')) clearFaviconSettingCache()
 
   return { ok: true }
 })
