@@ -61,6 +61,16 @@ export type AdminPageRow = ItemOf<Payload<PagesHandler>['items']>
 type SubmissionsHandler = typeof import('~~/server/api/admin/submissions/index.get').default
 export type AdminSubmissionRow = ItemOf<Payload<SubmissionsHandler>['submissions']>
 
+/**
+ * Chi tiết một đơn và nhật ký xử lý của nó. **Không** dùng lại
+ * `AdminSubmissionRow`: hai endpoint có projection khác nhau — trang danh sách
+ * không trả nhật ký, trang chi tiết không trả cột dùng để sắp xếp bảng. Gộp kiểu
+ * là khai một trường tồn tại ở nơi nó không tồn tại.
+ */
+type SubmissionDetailHandler = typeof import('~~/server/api/admin/submissions/[id]/index.get').default
+export type AdminSubmissionDetail = Payload<SubmissionDetailHandler>['submission']
+export type AdminSubmissionEvent = ItemOf<Payload<SubmissionDetailHandler>['events']>
+
 // ─── Bài viết & kho kiến thức ────────────────────────────────────────────────
 type ArticlesHandler = typeof import('~~/server/api/admin/articles/index.get').default
 export type AdminArticleRow = ItemOf<Payload<ArticlesHandler>['items']>
