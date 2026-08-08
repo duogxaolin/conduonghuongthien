@@ -191,6 +191,11 @@ async function seed() {
     { key: 'facebook_url',     value: 'https://facebook.com',                                  group: 'contact' },
     { key: 'logo_url',         value: '/Logo.png',                                             group: 'general' },
     { key: 'hero_banner_url',  value: '/assets/hero_banner.jpg',                              group: 'general' },
+    // Sinh từ `public/Logo.png` bởi `node scripts/make-favicon.mjs`. Hàng này chỉ
+    // là điểm khởi đầu cán bộ sửa được ở `/admin/settings/general`; giá trị thật
+    // dùng lúc dựng trang do `server/plugins/favicon.ts` đọc, và nó tự lùi về
+    // đúng đường dẫn này khi hàng bị xoá hoặc mang giá trị không dùng được.
+    { key: 'favicon_url',      value: '/favicon-32.png',                                       group: 'general' },
     { key: 'media_provider',   value: 'local',                                                 group: 'media'   },
     { key: 'r2_account_id',    value: '',                                                       group: 'media'   },
     { key: 'r2_access_key',    value: '',                                                       group: 'media'   },

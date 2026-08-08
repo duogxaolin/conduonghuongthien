@@ -38,6 +38,13 @@ export default defineEventHandler(async (event) => {
     // WebP: 52 49 46 46 ... 57 45 42 50 (RIFF....WEBP)
     if (buf.length >= 12 && buf[0] === 0x52 && buf[1] === 0x49 && buf[2] === 0x46 && buf[3] === 0x46
         && buf[8] === 0x57 && buf[9] === 0x45 && buf[10] === 0x42 && buf[11] === 0x50) return 'image/webp'
+    // ICO: 00 00 01 00 (reserved=0, type=1 "icon"). Accepted because "favicon"
+    // MEANS a .ico file to the officer holding one, and refusing the very file
+    // they have with "không phải là ảnh hợp lệ" is a dead end with no way out of
+    // it. Unlike image/svg+xml — which this endpoint deliberately never stores —
+    // an ICO is not an executable document, so this widens the format list
+    // without widening what a stored file can DO.
+    if (buf[0] === 0x00 && buf[1] === 0x00 && buf[2] === 0x01 && buf[3] === 0x00) return 'image/x-icon'
     return null
   }
 
@@ -61,7 +68,7 @@ export default defineEventHandler(async (event) => {
   if (isImage) {
     const detectedMime = detectMime(buffer)
     if (!detectedMime) {
-      throw createError({ statusCode: 415, statusMessage: 'File không phải là ảnh hợp lệ (JPEG/PNG/GIF/WebP).' })
+      throw createError({ statusCode: 415, statusMessage: 'File không phải là ảnh hợp lệ (JPEG/PNG/GIF/WebP/ICO).' })
     }
     effectiveMime = detectedMime
   }
@@ -70,7 +77,12 @@ export default defineEventHandler(async (event) => {
   let height: number | null = null
 
   // Auto-resize / optimize image if > 2400px
-  if (isImage && !mimeType.includes('gif') && !mimeType.includes('svg')) {
+  // ICO is excluded: sharp cannot decode it (confirmed — `sharp.format.ico` is
+  // undefined), and a favicon is never 2400px wide in practice. Without this
+  // guard the call below still "succeeds" silently (the surrounding catch
+  // swallows the decode failure), which is the kind of no-op that invites a
+  // future refactor to move real logic into a branch that never runs.
+  if (isImage && effectiveMime !== 'image/x-icon' && !mimeType.includes('gif') && !mimeType.includes('svg')) {
     try {
       const metadata = await sharp(buffer).metadata()
       width = metadata.width || null
@@ -98,6 +110,7 @@ export default defineEventHandler(async (event) => {
     'image/png': '.png',
     'image/gif': '.gif',
     'image/webp': '.webp',
+    'image/x-icon': '.ico',
     'application/pdf': '.pdf',
   }
   let ext = EXT_BY_MIME[effectiveMime]

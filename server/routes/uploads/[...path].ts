@@ -31,11 +31,25 @@ export default defineEventHandler(async (event) => {
   // as image/svg+xml is an executable document (it may contain <script>) running
   // on our own origin. Legacy .svg files therefore fall through to
   // application/octet-stream + Content-Disposition: attachment (download, never render).
+  //
+  // `.ico` CÓ trong danh sách, và nó phải có: đường tải lên
+  // (`server/api/admin/media/upload.post.ts`) nhận `.ico` bằng magic-byte để cán
+  // bộ đặt favicon riêng. Thiếu mục này thì tệp rơi xuống
+  // `application/octet-stream`, và hai header ngay dưới — `nosniff` cùng
+  // `Content-Disposition: attachment` — tồn tại để trình duyệt **từ chối vẽ** nó.
+  // Kết quả là một favicon tải lên thành công, phục vụ với mã `200`, mà tab vẫn
+  // trống: cùng một kiểu hỏng như tệp `favicon.ico` HTML mà việc này ra đời để
+  // dứt điểm. Nhận một định dạng ở cổng vào mà không nhận ở cổng ra là không nhận.
+  //
+  // ICO an toàn theo đúng cái tiêu chí loại `.svg` ra: nó là **thùng chứa ảnh
+  // raster**, không phải một tài liệu chạy được. Không có `<script>` nào trong
+  // một ICO, và `nosniff` vẫn giữ nguyên cho mọi thứ khác.
   const ext = path.extname(filePath).toLowerCase()
   const mimeMap: Record<string, string> = {
     '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
     '.gif': 'image/gif',  '.webp': 'image/webp',
-    '.avif': 'image/avif', '.pdf': 'application/pdf',
+    '.avif': 'image/avif', '.ico': 'image/x-icon',
+    '.pdf': 'application/pdf',
     '.mp4': 'video/mp4', '.webm': 'video/webm', '.ogg': 'video/ogg',
   }
   const contentType = mimeMap[ext] || 'application/octet-stream'
