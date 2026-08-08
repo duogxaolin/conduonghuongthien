@@ -8,13 +8,24 @@ const toast = useToast()
 
 const mediaItems = ref<MediaItem[]>([])
 const loading = ref(false)
+const loadError = ref('')
 const searchQuery = ref('')
 const selectedMultiple = ref<MediaItem[]>([])
 const page = ref(1)
 const totalPages = ref(1)
 
+/**
+ * A rejection has to land in persistent markup, not only in a toast.
+ *
+ * The toast is gone in four seconds; the empty branch below ("Chưa có ảnh nào.
+ * Hãy tải ảnh lên!") stays on screen indefinitely. So a failed fetch used to read
+ * as an empty library — and the invitation printed on it is to upload an image
+ * that is already there. Same contract as the admin pages in
+ * tests/admin-error-retry-ui.test.ts.
+ */
 const fetchMedia = async (pg = 1) => {
   loading.value = true
+  loadError.value = ''
   try {
     const res = await $fetch<{ ok: boolean; items: MediaItem[]; totalPages: number }>('/api/admin/media', {
       params: { search: searchQuery.value, perPage: 20, page: pg }
@@ -25,7 +36,8 @@ const fetchMedia = async (pg = 1) => {
       page.value = pg
     }
   } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Lỗi tải thư viện media'))
+    loadError.value = errorMessage(err, 'Lỗi tải thư viện media')
+    toast.error(loadError.value)
   } finally {
     loading.value = false
   }
@@ -138,6 +150,19 @@ watch(isOpen, (val) => {
             <!-- Loading -->
             <div v-if="loading" class="flex items-center justify-center py-12">
               <i class="fa-regular fa-spinner animate-spin text-4xl text-green-700"></i>
+            </div>
+
+            <!-- Error — must come before the empty branch, or a failed fetch reads as "no images yet". -->
+            <div v-else-if="loadError" role="alert" class="py-12 text-center">
+              <i class="fa-solid fa-triangle-exclamation text-4xl text-red-400" aria-hidden="true"></i>
+              <p class="mt-4 text-sm text-red-600">{{ loadError }}</p>
+              <button
+                type="button"
+                class="mt-3 rounded-lg border border-red-300 px-4 py-2 text-sm font-bold text-red-700 hover:bg-red-50"
+                @click="fetchMedia(page)"
+              >
+                Thử lại
+              </button>
             </div>
 
             <!-- Empty -->

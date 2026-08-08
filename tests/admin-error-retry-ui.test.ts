@@ -35,7 +35,7 @@
  * depth check; neither replaces the other.
  */
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
@@ -104,7 +104,53 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
     retries: ['loadTraffic', 'loadLive', 'loadBreakdowns'],
   },
   { file: 'pages/admin/analytics.vue', refs: ['summaryError', 'drillError'], retries: ['loadSummary', 'loadDrill'] },
+
+  // Components that fetch on their own. These were outside this guard entirely
+  // until the coverage gate below was added — the list above names page files, so
+  // a fetch living in a component was invisible to it no matter how load-bearing.
+  //
+  // Each of the three failed differently, which is why they are listed and not
+  // fixed in bulk:
+  //   - MediaLibraryModal had NO error branch. A failed load showed a 4-second
+  //     toast and then "Chưa có ảnh nào. Hãy tải ảnh lên!" — the officer reads an
+  //     empty library and re-uploads a file that is already there. That is the
+  //     exact failure this whole contract exists to prevent, sitting in the one
+  //     surface used from every editor screen.
+  //   - ChatbotSmallTalkPanel held an error and rendered it, but offered no way
+  //     out: the message stayed on screen until the next page load.
+  //   - AnalyticsLiveDashboard already had all three branches and all three retry
+  //     buttons; it was missing only role="alert", so a screen-reader user was
+  //     told nothing while a sighted user saw amber.
+  { file: 'components/admin/MediaLibraryModal.vue', refs: ['loadError'], retries: ['fetchMedia'] },
+  { file: 'components/admin/ChatbotSmallTalkPanel.vue', refs: ['error'], retries: ['load'] },
+  {
+    file: 'components/admin/AnalyticsLiveDashboard.client.vue',
+    refs: ['livePanelError', 'breakdownPanelError', 'nocPanelError'],
+    retries: ['retryLivePanel', 'retryBreakdownPanel', 'retryNocPanel'],
+  },
 ]
+
+/**
+ * Admin views that fetch but deliberately carry no error/retry contract.
+ *
+ * Named here rather than skipped, because the coverage gate below treats any
+ * unlisted fetcher as a gap. Each reason has to survive the question "what does
+ * the operator see when this request fails?".
+ */
+const NO_CONTRACT_NEEDED: Record<string, string> = {
+  // The retry IS the submit button. A failed sign-in already renders its reason in
+  // two role="alert" branches; adding a separate "thử lại" would re-post the same
+  // credentials, which is the same action the form already offers.
+  'pages/admin/login.vue': 'the form submit is the retry',
+  // Swallows its failure into an empty category list on purpose, so the field
+  // falls back to "Tất cả" and the block stays editable. There is no error state
+  // to render — a failed lookup degrades a dropdown, it does not blank a page.
+  'components/admin/builder/PropertyPanel.vue': 'failure degrades to an empty dropdown, nothing to retry',
+  // Rejects the upload promise back to TinyMCE, which shows the failure in its own
+  // dialog and keeps the file selected so the user can press upload again. Holding
+  // a second copy of that state here would let the two disagree.
+  'components/admin/TinyMceEditor.vue': 'rejects to the editor, which owns the retry affordance',
+}
 
 test('every admin view that fetches keeps somewhere for a rejection to land', async () => {
   for (const { file, refs } of VIEWS_WITH_ERROR_BRANCH) {
@@ -113,9 +159,14 @@ test('every admin view that fetches keeps somewhere for a rejection to land', as
     const script = sfc.descriptor.scriptSetup?.content ?? sfc.descriptor.script?.content ?? ''
 
     for (const ref of refs) {
+      // `computed(` counts as well as `ref(`. AnalyticsLiveDashboard derives its
+      // three panel errors from poller state rather than holding them separately,
+      // which is the better shape — one source of truth per panel instead of a
+      // copy that can drift. Pinning only `ref(` would have failed working code
+      // and pushed whoever hit it toward duplicating the state to satisfy a test.
       assert.match(
         script,
-        new RegExp(`const ${ref}\\s*=\\s*ref\\(`),
+        new RegExp(`const ${ref}\\s*=\\s*(ref|computed)\\(`),
         `${file} must declare ${ref} — without it a failed fetch falls through to the empty state`,
       )
     }
@@ -195,4 +246,83 @@ test('no admin view reaches for a full page reload as its retry', async () => {
       `${file} navigates instead of retrying — call the page's own fetch instead`,
     )
   }
+})
+
+/**
+ * COVERAGE GATE — the part that makes the list above stop being a blind spot.
+ *
+ * Everything before this point asserts against `VIEWS_WITH_ERROR_BRANCH`, which is
+ * a hand-written list of paths. A list is green forever for any file nobody thought
+ * to add to it: a new admin page that fetches, renders an empty state on failure
+ * and offers no way out passes every assertion above by simply not being mentioned.
+ * That is not hypothetical — it was measured on this very file. Five admin
+ * components fetched data and only one of them was listed, so the contract was
+ * unenforced on `MediaLibraryModal` (a failed fetch read as "Chưa có ảnh nào. Hãy
+ * tải ảnh lên!"), on `ChatbotSmallTalkPanel` (error branch, no way to retry it)
+ * and on all three panels of `AnalyticsLiveDashboard` (no `role="alert"`).
+ *
+ * So this walks the directories instead of trusting the list, and demands that
+ * every admin view which fetches is EITHER covered above OR named in
+ * `NO_CONTRACT_NEEDED` with the reason it genuinely needs no error branch. Adding
+ * a new admin view now forces that choice — there is no silent third option.
+ *
+ * Same shape as the directory-scanning guards in tests/reader-audit-atomicity.ts
+ * and tests/client-ip.test.ts, and for the same reason.
+ */
+const FETCH_CALL = /\$fetch|useFetch\(|useAsyncData\(/
+
+async function adminViewsThatFetch(): Promise<string[]> {
+  const roots = ['pages/admin', 'components/admin']
+  const found: string[] = []
+
+  const walk = async (relative: string) => {
+    const dir = new URL(`../app/${relative}`, import.meta.url)
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const child = `${relative}/${entry.name}`
+      if (entry.isDirectory()) {
+        await walk(child)
+        continue
+      }
+      if (!entry.name.endsWith('.vue')) continue
+      if (FETCH_CALL.test(await read(child))) found.push(child)
+    }
+  }
+
+  for (const root of roots) await walk(root)
+  return found.sort()
+}
+
+test('every admin view that fetches is either covered or exempt with a stated reason', async () => {
+  const listed = new Set(VIEWS_WITH_ERROR_BRANCH.map(view => view.file))
+  const uncovered: string[] = []
+
+  for (const file of await adminViewsThatFetch()) {
+    if (listed.has(file)) continue
+    if (NO_CONTRACT_NEEDED[file]) continue
+    uncovered.push(file)
+  }
+
+  assert.deepEqual(
+    uncovered,
+    [],
+    'these admin views fetch data but no error/retry contract covers them — add them to '
+    + 'VIEWS_WITH_ERROR_BRANCH, or to NO_CONTRACT_NEEDED with the reason they need none. '
+    + 'A hand-written list is green forever for files it has never heard of; this gate '
+    + 'scans the directory precisely because of that.',
+  )
+})
+
+test('neither list has drifted from what is on disk', async () => {
+  // A stale entry is the mirror failure: it keeps passing against a file that no
+  // longer fetches (or no longer exists), so the list reads as broader coverage
+  // than it has. `ProfileActivityHistory.vue` was listed while a grep for fetch
+  // calls missed it, which is what prompted checking both directions.
+  const fetching = new Set(await adminViewsThatFetch())
+
+  const staleExemptions = Object.keys(NO_CONTRACT_NEEDED).filter(file => !fetching.has(file))
+  assert.deepEqual(
+    staleExemptions,
+    [],
+    'exempt but no longer fetches — drop it from NO_CONTRACT_NEEDED so the list keeps meaning something',
+  )
 })

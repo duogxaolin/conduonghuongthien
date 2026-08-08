@@ -471,11 +471,11 @@ onBeforeUnmount(() => {
           <div v-else-if="livePanelState.denied" class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <i class="fa-solid fa-lock" aria-hidden="true"></i> Không có quyền truy cập (401/403).
           </div>
-          <div v-else-if="livePanelState.connectionState === 'disconnected'" class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div v-else-if="livePanelState.connectionState === 'disconnected'" role="alert" class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span><i class="fa-solid fa-wifi-slash mr-1.5" aria-hidden="true"></i>Mất kết nối<span v-if="liveData"> — đang giữ dữ liệu gần nhất</span>.</span>
             <button type="button" class="rounded-md border border-red-300 px-2 py-1 text-xs font-bold hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500" @click="retryLivePanel">Thử lại</button>
           </div>
-          <div v-else-if="livePanelError" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div v-else-if="livePanelError" role="alert" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ livePanelError }}<span v-if="liveData"> — đang hiển thị dữ liệu gần nhất.</span>
           </div>
         </div>
@@ -622,11 +622,11 @@ onBeforeUnmount(() => {
           <div v-else-if="breakdownPanelState.denied" class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <i class="fa-solid fa-lock" aria-hidden="true"></i> Không có quyền truy cập (401/403).
           </div>
-          <div v-else-if="breakdownPanelState.connectionState === 'disconnected'" class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div v-else-if="breakdownPanelState.connectionState === 'disconnected'" role="alert" class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span><i class="fa-solid fa-wifi-slash mr-1.5" aria-hidden="true"></i>Mất kết nối<span v-if="breakdownData"> — đang giữ dữ liệu gần nhất</span>.</span>
             <button type="button" class="rounded-md border border-red-300 px-2 py-1 text-xs font-bold hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500" @click="retryBreakdownPanel">Thử lại</button>
           </div>
-          <div v-else-if="breakdownPanelError" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div v-else-if="breakdownPanelError" role="alert" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ breakdownPanelError }}<span v-if="breakdownData"> — đang hiển thị dữ liệu gần nhất.</span>
           </div>
         </div>
@@ -765,11 +765,11 @@ onBeforeUnmount(() => {
           <div v-else-if="nocPanelState.denied" class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <i class="fa-solid fa-lock" aria-hidden="true"></i> Không có quyền truy cập.
           </div>
-          <div v-else-if="nocPanelState.connectionState === 'disconnected'" class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          <div v-else-if="nocPanelState.connectionState === 'disconnected'" role="alert" class="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
             <span><i class="fa-solid fa-wifi-slash mr-1.5" aria-hidden="true"></i>Mất kết nối<span v-if="nocData"> — đang giữ dữ liệu gần nhất</span>.</span>
             <button type="button" class="rounded-md border border-red-300 px-2 py-1 text-xs font-bold hover:bg-red-100 focus:outline-none focus:ring-2 focus:ring-red-500" @click="retryNocPanel">Thử lại</button>
           </div>
-          <div v-else-if="nocPanelError" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+          <div v-else-if="nocPanelError" role="alert" class="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
             <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>{{ nocPanelError }}<span v-if="nocData"> — đang hiển thị dữ liệu gần nhất.</span>
           </div>
         </div>
