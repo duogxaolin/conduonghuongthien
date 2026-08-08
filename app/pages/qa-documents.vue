@@ -179,7 +179,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
@@ -206,7 +206,11 @@ const searchInput = ref(searchQuery.value)
 watch(searchQuery, value => { searchInput.value = value })
 
 const listQuery = computed(() => {
-  const query = { page: page.value, perPage: 20 }
+  // Khai tường minh: một object literal suy ra `{page,perPage}` nên hai phép gán
+  // bên dưới không biên dịch được. Cả hai để tuỳ chọn vì bỏ hẳn khoá khác với gửi
+  // chuỗi rỗng — `?search=` vào bộ nhớ đệm dưới một khoá khác cho cùng danh sách.
+  const query: { page: number; perPage: number; search?: string; topic?: string } =
+    { page: page.value, perPage: 20 }
   if (searchQuery.value) query.search = searchQuery.value
   if (activeTopic.value) query.topic = activeTopic.value
   return query
@@ -232,26 +236,28 @@ const highlightId = computed(() => {
   return Number.isSafeInteger(raw) && raw > 0 ? raw : null
 })
 
-const openIds = ref(new Set())
+// `Set<number>` tường minh: `new Set()` trần suy ra `Set<unknown>`, nên `.has(id)`
+// nhận mọi thứ và phép mở theo neo `#qa-<id>` mất kiểm kiểu.
+const openIds = ref<Set<number>>(new Set())
 watch(highlightId, value => { if (value) openIds.value = new Set([...openIds.value, value]) }, { immediate: true })
 
-const isOpen = (id) => openIds.value.has(id)
-const toggle = (id) => {
+const isOpen = (id: number) => openIds.value.has(id)
+const toggle = (id: number) => {
   const next = new Set(openIds.value)
   if (next.has(id)) next.delete(id)
   else next.add(id)
   openIds.value = next
 }
 
-const push = (query) => navigateTo({ path: '/qa-documents', query })
+const push = (query: Record<string, string | number>) => navigateTo({ path: '/qa-documents', query })
 const applySearch = () => {
   const value = searchInput.value.trim()
   push({ ...(value ? { q: value } : {}), ...(activeTopic.value ? { topic: activeTopic.value } : {}) })
 }
-const applyTopic = (topic) => {
+const applyTopic = (topic: string) => {
   push({ ...(searchQuery.value ? { q: searchQuery.value } : {}), ...(topic ? { topic } : {}) })
 }
-const goToPage = (next) => {
+const goToPage = (next: number) => {
   push({
     ...(searchQuery.value ? { q: searchQuery.value } : {}),
     ...(activeTopic.value ? { topic: activeTopic.value } : {}),

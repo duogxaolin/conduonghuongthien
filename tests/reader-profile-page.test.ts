@@ -263,11 +263,18 @@ test('a 401 mid-session drops the cached identity, and a 403 does not', () => {
    * them to sign in again invites an attempt that will succeed and change nothing,
    * which reads as the portal being broken rather than as somebody's decision.
    */
-  assert.match(code, /statusCode === 401/, 'an expired ticket leaves the reader in a dead end')
+  // Nhận cả `err?.statusCode === 401` và `errorStatus(err) === 401`: kể từ khi tệp
+  // này bật `lang="ts"`, việc dò bốn đường trên một giá trị `unknown` đi qua helper
+  // dùng chung `errorStatus()` (nó bao cả `statusCode`, `status`, `response.status`,
+  // tức là **rộng hơn** phép đọc cũ). Điều test này bảo vệ không phải cách viết mà
+  // là sự **bất đối xứng giữa 401 và 403**, và cả hai khẳng định dưới đây vẫn nói
+  // đúng điều đó.
+  assert.match(code, /(?:statusCode|errorStatus\(\w+\)) === 401/,
+    'an expired ticket leaves the reader in a dead end')
   assert.match(code, /forgetReader\(\)/, 'nothing clears the stale identity')
   assert.doesNotMatch(
     code,
-    /statusCode === 403[\s\S]{0,80}forgetReader/,
+    /(?:statusCode|errorStatus\(\w+\)) === 403[\s\S]{0,80}forgetReader/,
     'a banned reader is invited to sign in again, which changes nothing and reads as a broken portal',
   )
 })

@@ -129,7 +129,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
@@ -155,11 +155,14 @@ const { data: catData } = useFetch('/api/public/categories', {
 })
 const allCategories = computed(() => catData.value?.items || [])
 const rootCategories = computed(() => allCategories.value.filter((c) => c.parentId === null))
-const childrenOf = (parentId) => allCategories.value.filter((c) => c.parentId === parentId)
+const childrenOf = (parentId: number) => allCategories.value.filter((c) => c.parentId === parentId)
 
 // Article list — DB-driven, refetches reactively when category/search change
 const articlesQuery = computed(() => {
-  const q = { type: 'news', limit: 20 }
+  // Khai tường minh: object literal suy ra `{type,limit}` nên hai phép gán bên
+  // dưới không biên dịch được. Tuỳ chọn để khoá được bỏ hẳn khi không dùng.
+  const q: { type: string; limit: number; categorySlug?: string; search?: string } =
+    { type: 'news', limit: 20 }
   if (activeCategory.value !== 'all') q.categorySlug = activeCategory.value
   if (searchQuery.value) q.search = searchQuery.value
   return q
@@ -172,16 +175,17 @@ const { data: articlesData, pending, error, refresh } = useFetch('/api/public/ar
 const newsList = computed(() => articlesData.value?.articles || [])
 const loadError = computed(() => !!error.value || articlesData.value?.ok === false)
 
-const formatDate = (item) => formatDateVN(item.publishedAt || item.createdAt)
+const formatDate = (item: { publishedAt?: string | null; createdAt?: string | null }) =>
+  formatDateVN(item.publishedAt || item.createdAt)
 
 const syncUrl = () => {
-  const query = {}
+  const query: { cat?: string; q?: string } = {}
   if (activeCategory.value !== 'all') query.cat = activeCategory.value
   if (searchQuery.value) query.q = searchQuery.value
   navigateTo({ path: '/news', query })
 }
 
-const setCategory = (cat) => {
+const setCategory = (cat: string) => {
   activeCategory.value = cat
   syncUrl()
 }
