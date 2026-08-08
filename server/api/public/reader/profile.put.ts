@@ -15,8 +15,8 @@
 import { requireReader, touchReader } from '../../../utils/reader-auth'
 import { renameReader, validateDisplayName } from '../../../services/readers'
 import { initialsFrom } from '../../../services/comments'
-import { getPool } from '../../../utils/db'
 import { recordRateLimitHit, type RateLimitRule } from '../../../utils/rate-limit-store'
+import { rateLimitDeps } from '../../../utils/rate-limit-deps'
 
 /**
  * Ten renames per ten minutes, per account.
@@ -56,8 +56,7 @@ export default defineEventHandler(async (event) => {
    * having renamed anything, and anyone able to trigger rejected requests could
    * burn someone else's allowance with calls that were always going to fail.
    */
-  const pool = getPool()
-  const deps = { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
+  const deps = rateLimitDeps()
   const limit = await recordRateLimitHit(`reader:rename:${reader.id}`, RENAME_RULE, deps)
   if (limit.blocked) {
     setResponseHeader(event, 'retry-after', Math.max(1, limit.retryAfterSeconds))

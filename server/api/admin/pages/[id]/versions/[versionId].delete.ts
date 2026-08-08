@@ -1,14 +1,12 @@
 import { getDb } from '../../../../../utils/db'
 import { pageVersions, activityLogs } from '../../../../../db/schema'
-import { checkPermission } from '../../../../../utils/auth'
 import { and, eq } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../../../utils/permissions'
 
 // Delete a single version. Origin is protected (must be replaced via POST).
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'pages', 'delete', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'pages', 'delete')
 
   const pageId = Number(getRouterParam(event, 'id'))
   const versionId = Number(getRouterParam(event, 'versionId'))
@@ -25,13 +23,21 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Không thể xóa bản gốc. Hãy chỉ định bản gốc khác để thay thế.' })
   }
 
-  await db.delete(pageVersions).where(eq(pageVersions.id, versionId))
+  /**
+   * The version and its audit line commit together, or neither does. A saved
+   * backup vanishing with no record of who discarded it defeats the purpose of
+   * keeping versions at all. Runs on `tx`, not `db`: a `db.insert()` inside a
+   * transaction block still commits independently on the pool.
+   */
+  await db.transaction(async (tx) => {
+    await tx.delete(pageVersions).where(eq(pageVersions.id, versionId))
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'delete',
-    resource: 'pages',
-    meta: { pageId, versionId, kind: existing.kind },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'delete',
+      resource: 'pages',
+      meta: { pageId, versionId, kind: existing.kind },
+    })
   })
 
   return { ok: true }

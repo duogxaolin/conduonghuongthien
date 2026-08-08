@@ -48,12 +48,19 @@ export async function deleteMediaById(actor: ActorLike, id: number, r2Config?: R
   if (item.provider === 'r2') await deleteR2File(item.storagePath, r2Config ?? await loadR2Config())
   else await deleteLocalFile(item.storagePath)
 
-  await db.delete(media).where(eq(media.id, id))
-  await db.insert(activityLogs).values({
-    userId: actor.id,
-    action: 'delete',
-    resource: 'media',
-    resourceId: id,
-    meta: { filename: item.filename },
+  // Chỉ hai lượt ghi CSDL nằm trong transaction; lượt xoá tệp ở TRÊN, cố ý ngoài
+  // khối. Tệp đã bị xoá khỏi đĩa hay khỏi R2 thì rollback không lấy lại được,
+  // nên gói nó vào chỉ tạo ra một trạng thái tệ hơn: hàng còn nguyên và trông
+  // như tệp vẫn ở đó. Trong khối, `tx` chứ không `db` — một `db.insert()` đặt
+  // trong transaction vẫn commit độc lập trên pool.
+  await db.transaction(async (tx) => {
+    await tx.delete(media).where(eq(media.id, id))
+    await tx.insert(activityLogs).values({
+      userId: actor.id,
+      action: 'delete',
+      resource: 'media',
+      resourceId: id,
+      meta: { filename: item.filename },
+    })
   })
 }

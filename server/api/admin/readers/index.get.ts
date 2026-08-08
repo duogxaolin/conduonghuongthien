@@ -8,16 +8,12 @@
  * Every call writes one audit row carrying the filters used, on the same path as
  * the read (design.md D14).
  */
+import { finitePositive } from '../../../utils/query-number'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { auditReaderRead, isReaderBanFilter, listReaders, READER_MAX_PER_PAGE } from '../../../services/readers'
 
 /** Finite before clamped — see the note in the public thread endpoint. NaN
  *  survives `Math.max` and serialises as `page: null`. */
-function finitePositive(raw: unknown, fallback: number, max: number): number {
-  const value = Number(raw)
-  if (!Number.isFinite(value)) return fallback
-  return Math.min(Math.max(1, Math.floor(value)), max)
-}
 
 export default defineEventHandler(async (event) => {
   const actor = event.context.adminUser

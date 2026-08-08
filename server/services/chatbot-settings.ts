@@ -27,15 +27,22 @@ export async function updateChatbotSettings(actorId: number, input: ChatbotSetti
   const patch = buildChatbotSettingsPatch(input, process.env.CHATBOT_ENCRYPTION_SECRET)
   if (Object.keys(patch).length === 0) return current
   patch.updatedBy = actorId
-  await db.update(chatbotSettings).set(patch).where(eq(chatbotSettings.id, CHATBOT_SETTINGS_ID))
-  await db.insert(activityLogs).values(buildChatbotSettingsAudit({ actorId, operation: input.apiKey !== undefined ? 'rotate_key' : 'update', changedFields: Object.keys(input), configured: input.apiKey !== undefined, outcome: 'success', requestId }))
+  // Cùng transaction, `tx` chứ không `db`. Riêng ở đây dòng audit là thứ **duy
+  // nhất** ghi lại việc xoay khoá API nhà cung cấp: bản thân bản ghi cấu hình chỉ
+  // giữ ciphertext mới, không giữ dấu vết rằng nó vừa đổi hay ai đổi.
+  await db.transaction(async (tx) => {
+    await tx.update(chatbotSettings).set(patch).where(eq(chatbotSettings.id, CHATBOT_SETTINGS_ID))
+    await tx.insert(activityLogs).values(buildChatbotSettingsAudit({ actorId, operation: input.apiKey !== undefined ? 'rotate_key' : 'update', changedFields: Object.keys(input), configured: input.apiKey !== undefined, outcome: 'success', requestId }))
+  })
   return getChatbotSettings()
 }
 
 export async function clearChatbotApiKey(actorId: number, requestId?: unknown) {
   const db = getDb(); const current = await getChatbotSettings()
-  await db.update(chatbotSettings).set({ ...buildChatbotApiKeyClearPatch(), updatedBy: actorId }).where(eq(chatbotSettings.id, CHATBOT_SETTINGS_ID))
-  await db.insert(activityLogs).values(buildChatbotSettingsAudit({ actorId, operation: 'clear_key', configured: false, outcome: 'success', requestId }))
+  await db.transaction(async (tx) => {
+    await tx.update(chatbotSettings).set({ ...buildChatbotApiKeyClearPatch(), updatedBy: actorId }).where(eq(chatbotSettings.id, CHATBOT_SETTINGS_ID))
+    await tx.insert(activityLogs).values(buildChatbotSettingsAudit({ actorId, operation: 'clear_key', configured: false, outcome: 'success', requestId }))
+  })
   return current
 }
 

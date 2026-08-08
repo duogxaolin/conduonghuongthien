@@ -2,19 +2,38 @@ import { getDb } from '../../../utils/db'
 import { logError } from '../../../utils/logger'
 import { pages, pageBlocks } from '../../../db/schema'
 import { and, eq, asc } from 'drizzle-orm'
+import type { BlockData, BlockNode } from '../../../../app/utils/blocks/types'
+
+/**
+ * Một node đã lọc để phát ra công khai.
+ *
+ * KHÔNG phải `BlockNode`: cờ `isVisible` bị **cắt bỏ** ở đây có chủ đích — phần
+ * tải công khai chỉ chứa node đang hiện, nên gửi kèm một cờ luôn bằng `true` là
+ * mời mã phía client đi kiểm lại một điều đã được quyết định ở máy chủ. Khai
+ * đúng hình dạng thật (thay cho `any[]`) để một lần đổi projection sau này
+ * không âm thầm thêm lại một trường chỉ dùng cho trình dựng trang.
+ */
+interface PublicBlockNode {
+  id?: number | string
+  blockType: string
+  data: BlockData
+  colSpan?: number
+  children?: PublicBlockNode[]
+}
 
 // Recursively drop any node with isVisible === false (and its whole subtree),
 // and strip the isVisible flag from the returned tree (public payload = visible
 // nodes only). Preserves colSpan and recurses into container children.
-function pruneHiddenTree(nodes: any[]): any[] {
+function pruneHiddenTree(nodes: unknown): PublicBlockNode[] {
   if (!Array.isArray(nodes)) return []
-  const out: any[] = []
-  for (const n of nodes) {
-    if (!n || typeof n !== 'object') continue
+  const out: PublicBlockNode[] = []
+  for (const item of nodes) {
+    if (!item || typeof item !== 'object') continue
+    const n = item as Partial<BlockNode>
     if (n.isVisible === false) continue
-    const node: any = {
+    const node: PublicBlockNode = {
       id: n.id,
-      blockType: n.blockType,
+      blockType: String(n.blockType ?? ''),
       data: n.data || {},
     }
     if (typeof n.colSpan === 'number') node.colSpan = n.colSpan

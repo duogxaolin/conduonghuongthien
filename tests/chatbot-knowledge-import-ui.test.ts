@@ -79,7 +79,7 @@ test('truncation badges match the indexed key the server actually sends', () => 
 test('extra columns keep server order so positional truncation keys stay aligned', () => {
   // Filtering entries here would shift later indices and pin a badge to the
   // wrong column, so the helper must pass the array through untouched.
-  const helper = script.match(/function importExtraColumns\(item: any\)[^\n]*/)?.[0] ?? ''
+  const helper = script.match(/function importExtraColumns\(item: \w+\)[^\n]*/)?.[0] ?? ''
   assert.ok(helper)
   assert.doesNotMatch(helper, /\.filter\(/)
   assert.doesNotMatch(helper, /\.sort\(/)

@@ -1,3 +1,4 @@
+import type { BlockData } from '../../app/utils/blocks/types'
 /**
  * Dependency-free, allowlist HTML sanitizer for admin-authored rich text
  * (article bodies, richtext / content_aside blocks). Rendered on the public site
@@ -175,11 +176,12 @@ export function sanitizeHtml(input: unknown): string {
 const HTML_BLOCK_FIELDS = ['html', 'bodyHtml', 'content', 'body', 'richtext', 'text_html']
 
 /** Sanitize the known rich-text fields of a block's `data` object (shallow). */
-export function sanitizeBlockData(data: unknown): unknown {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return data
-  const obj = data as Record<string, unknown>
+export function sanitizeBlockData(data: unknown): BlockData {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) return {}
+  const obj = data as BlockData
   for (const field of HTML_BLOCK_FIELDS) {
-    if (typeof obj[field] === 'string') obj[field] = sanitizeHtml(obj[field])
+    const value = obj[field]
+    if (typeof value === 'string') obj[field] = sanitizeHtml(value)
   }
   return obj
 }

@@ -1,16 +1,14 @@
 import { getDb } from '../../../utils/db'
 import { media, settings, activityLogs } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
 import { uploadLocalFile } from '../../../utils/media-local'
 import { uploadR2File, type R2Config } from '../../../utils/media-r2'
 import sharp from 'sharp'
 import path from 'node:path'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'media', 'create', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'media', 'create')
 
   const form = await readMultipartFormData(event)
   if (!form || form.length === 0) {
@@ -141,27 +139,40 @@ export default defineEventHandler(async (event) => {
   }
 
   // Save to DB
-  const [insertRes] = await db.insert(media).values({
-    filename:     uniqueFilename,
-    originalName,
-    mimeType:     effectiveMime,
-    sizeBytes:    buffer.length,
-    provider,
-    url:          uploadResult.url,
-    storagePath:  uploadResult.storagePath,
-    width,
-    height,
-    uploadedBy:   adminUser.id,
-  })
+  /**
+   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+   *
+   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+   * commit độc lập trên pool.
+   */
+  const newMediaId = await db.transaction(async (tx) => {
+    const [insertRes] = await tx.insert(media).values({
+      filename:     uniqueFilename,
+      originalName,
+      mimeType:     effectiveMime,
+      sizeBytes:    buffer.length,
+      provider,
+      url:          uploadResult.url,
+      storagePath:  uploadResult.storagePath,
+      width,
+      height,
+      uploadedBy:   adminUser.id,
+    })
 
-  const newMediaId = insertRes.insertId
+    const created = insertRes.insertId
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'create',
-    resource: 'media',
-    resourceId: newMediaId,
-    meta: { originalName, url: uploadResult.url, provider },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'create',
+      resource: 'media',
+      resourceId: created,
+      meta: { originalName, url: uploadResult.url, provider },
+    })
+
+    return created
   })
 
   return {

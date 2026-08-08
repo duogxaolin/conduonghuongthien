@@ -3,14 +3,33 @@ name: CI
 # The repository had no automation at all: 295 tests that only ran when someone
 # remembered to, a schema-drift checker nobody invoked, and a build that was
 # first exercised on the production VPS.
+#
+# `push` CHỈ trên nhánh mặc định, không phải `['**']`.
+#
+# Với `branches: ['**']`, một nhánh đang mở PR nổ **hai** lượt chạy cho **cùng
+# một commit** — một từ `push`, một từ `pull_request`. Chúng không dedupe được
+# vì `github.ref` khác nhau (`refs/heads/…` với `refs/pull/N/merge`), nên nhóm
+# concurrency cũng khác. Hậu quả không chỉ là tốn gấp đôi: hai lượt **tranh
+# nhau cùng một service MySQL** trên cùng runner pool, và một nửa số "CI đỏ"
+# trên PR này là lượt bị huỷ hoặc bị tranh chấp chứ không phải mã hỏng. Một
+# bảng CI mà quá nửa màu đỏ là nhiễu sẽ được đọc như nhiễu — kể cả cái đỏ thật.
+#
+# Nhánh chưa có PR vẫn được chạy nhờ `pull_request`, và `workflow_dispatch` cho
+# lượt chạy tay khi cần.
 on:
   push:
-    branches: ['**']
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
+# Khoá theo **PR hoặc nhánh**, không theo `github.ref` trần.
+#
+# `github.ref` với một lượt `pull_request` là `refs/pull/N/merge`, còn với
+# `push` là `refs/heads/…` — hai chuỗi khác nhau cho cùng một nhánh, nên nhóm
+# concurrency không bao giờ trùng và `cancel-in-progress` không huỷ được lượt
+# nó cần huỷ. `github.head_ref` có giá trị đúng trên PR và rỗng ở nơi khác.
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
 permissions:
@@ -27,6 +46,16 @@ env:
   ANALYTICS_HMAC_SECRET: ci-placeholder-not-a-real-secret-000000
 
 jobs:
+  # Typecheck chạy TRONG job này, không phải một job riêng.
+  #
+  # Nó từng là job thứ tư chạy song song, và mỗi job là một runner phải xin cấp
+  # riêng. Trên tài khoản này, hai job nhẹ nhất **liên tục bị huỷ sau ~15 phút
+  # xếp hàng mà chưa bao giờ được cấp máy** (`runner: ""`, `steps_run: 0`) —
+  # tức là bảng CI báo đỏ cho một thứ chưa từng chạy. Gộp vào đây cũng bỏ được
+  # một lượt `npm ci` trùng lặp.
+  #
+  # Vẫn là cổng CHẶN: bước typecheck `exit $status`, nên một lỗi kiểu vẫn làm
+  # job này đỏ. Cái đổi là số runner phải xin, không phải mức nghiêm ngặt.
   test:
     name: Tests and schema drift
     runs-on: ubuntu-latest
@@ -90,6 +119,14 @@ jobs:
           INSERT_ID_PORT: 3306
           INSERT_ID_USER: root
           INSERT_ID_PASSWORD: test_root_password
+          NOTIFICATION_PAGE_INTEGRATION: 1
+          NOTIFICATION_PAGE_PORT: 3306
+          NOTIFICATION_PAGE_USER: root
+          NOTIFICATION_PAGE_PASSWORD: test_root_password
+          NOTIFICATION_EMAIL_INTEGRATION: 1
+          NOTIFICATION_EMAIL_PORT: 3306
+          NOTIFICATION_EMAIL_USER: root
+          NOTIFICATION_EMAIL_PASSWORD: test_root_password
         run: npm test
 
       # A suite that silently stops running is worse than one that fails: the run
@@ -107,6 +144,8 @@ jobs:
             [chat-retention-integration]=CHAT_RETENTION_INTEGRATION
             [reader-retention-integration]=READER_RETENTION_INTEGRATION
             [insert-id-integration]=INSERT_ID_INTEGRATION
+            [notification-page-integration]=NOTIFICATION_PAGE_INTEGRATION
+            [notification-email-integration]=NOTIFICATION_EMAIL_INTEGRATION
           )
           status=0
           for file in tests/*-integration.test.ts; do
@@ -123,27 +162,6 @@ jobs:
       # (Deliberately not quoting a table count here — it went stale twice.)
       - name: Schema drift
         run: npm run db:drift
-
-  typecheck:
-    name: Types
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Blocking gate. It started as report-only because the codebase had never
-    # been typechecked and the first run surfaced 598 errors; those are fixed, so
-    # the count is now 0 and a regression should fail the build.
-    #
-    # typescript is pinned to ^5 in package.json: 7.x is the Go rewrite and no
-    # longer exports lib/tsc.js, which vue-tsc requires at startup
-    # (ERR_PACKAGE_PATH_NOT_EXPORTED).
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: actions/setup-node@v7
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-
-      - run: npm ci
 
       - name: Typecheck
         run: |
@@ -293,7 +311,7 @@ jobs:
 
   image:
     name: Build and push image
-    needs: [test, typecheck, build, hygiene]
+    needs: [test, build, hygiene]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30

@@ -155,5 +155,8 @@ test('the admin form and the public widget both know the small-talk field', () =
   // The widget's response-kind vocabulary moved out of the layout and into the
   // composable when the widget was extracted so `/assistant` could reuse it.
   const composable = readFileSync(new URL('../app/composables/useChatbot.ts', import.meta.url), 'utf8')
+    // Phần khử độc dữ liệu `localStorage` đã sang `app/utils/chatbot-storage.ts`.
+    // Khẳng định dưới đây nói về hành vi của widget, không về tệp nào giữ dòng nào.
+    + '\n' + readFileSync(new URL('../app/utils/chatbot-storage.ts', import.meta.url), 'utf8')
   assert.match(composable, /'small_talk'/u, 'the widget must accept the small_talk response kind')
 })

@@ -1,6 +1,35 @@
 import { ref, computed, nextTick } from 'vue'
 
 /**
+ * Khử độc dữ liệu đọc lại từ `localStorage` ở `app/utils/chatbot-storage.ts`.
+ *
+ * Tách ra vì đó là **biên tin cậy**: khách sửa được `localStorage` bằng
+ * devtools, và `ChatSource.url` đi thẳng vào `:href` trên trang công khai. Nằm
+ * cùng module với state cấp module và các lời gọi `$fetch` thì chỉ kiểm được
+ * bằng cách nạp cả composable.
+ *
+ * Re-export nguyên vẹn để hai bề mặt (widget + `/assistant`) và các test đang
+ * import từ đây không phải đổi đường dẫn.
+ */
+export * from '../utils/chatbot-storage'
+import {
+  CHATBOT_CLIENT_LIMITS,
+  CHATBOT_WELCOME_MESSAGE,
+  normalizeConversation as normalizeConversationRaw,
+  normalizeSource,
+  normalizeStoredMessage,
+  type ChatLead,
+  type ChatMessage,
+  type ChatSource,
+  type StoredConversation,
+} from '../utils/chatbot-storage'
+
+/** Bọc lại để nơi gọi trong tệp này giữ nguyên chữ ký một tham số. */
+function normalizeConversation(item: unknown): StoredConversation | null {
+  return normalizeConversationRaw(item, newLocalId, () => Date.now())
+}
+
+/**
  * All chatbot state and behaviour, shared by the floating widget and the
  * full-screen /assistant page.
  *
@@ -12,77 +41,13 @@ import { ref, computed, nextTick } from 'vue'
  * `import.meta.client` guard so importing this file during SSR is inert.
  */
 
-export const CHATBOT_CLIENT_LIMITS = Object.freeze({
-  maxMessageChars: 2000,
-  maxOutputChars: 8000,
-  maxHistoryMessages: 8,
-  maxTotalUserChars: 30000,
-  maxQuickQuestions: 8,
-  maxSources: 3,
-  maxSourceLabelChars: 160,
-  maxSourceReferenceChars: 160,
-  maxConversations: 10,
-  maxTitleChars: 40,
-})
-
-const CHATBOT_RESPONSE_KINDS = new Set(['curated', 'provider', 'small_talk', 'not_found', 'unavailable', 'rate_limited'])
 
 /** Multi-conversation store. The v2 key held a single flat message array. */
 const SESSIONS_KEY = 'cdkt_sessions_v1'
 const LEGACY_HISTORY_KEY = 'cdkt_chat_history_v2'
 
-/**
- * Playback pacing — a reading pace, not a progress bar.
- *
- * These two numbers answer different questions and the earlier pair had both
- * wrong in the same direction. `TYPEWRITER_WORD_DELAY_MS` sets how fast words
- * appear; at 30ms it revealed ~33 words per second, and since the everyday
- * replies measure a median of 33 words, a whole answer flashed into place in
- * under a second. Nothing was legible while it moved, so the effect read as a
- * glitch rather than as typing. 70ms is roughly 14 words per second — the pace
- * of the streaming chat interfaces a visitor has already seen, and slow enough
- * that the text can be followed as it lands.
- *
- * `TYPEWRITER_MAX_MS` only exists for the long tail: the knowledge bank's legal
- * answers run to ~330 words, which at 70ms each would hold the visitor for 23
- * seconds over text already sitting in memory. The cap engages past ~85 words,
- * so every everyday reply and most approved answers keep the full per-word pace
- * and only the genuinely long ones compress.
- */
-export const TYPEWRITER_WORD_DELAY_MS = 70
-export const TYPEWRITER_MAX_MS = 6000
 
-export const CHATBOT_WELCOME_MESSAGE = Object.freeze({
-  id: 'welcome',
-  sender: 'bot' as const,
-  text: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi chỉ hỗ trợ theo thông tin công khai trong kho dữ liệu đã được Cục C11 phê duyệt.',
-})
 
-export type ChatSource = { id: string, label: string, reference: string, url: string | null, entryId: number | null }
-export type ChatLead = { name: string, phone: string, email: string, question: string, status: 'idle' | 'sending' | 'done', error: string }
-
-/** One reference's approved Q&A, fetched on demand when the visitor opens it. */
-export type SourceDetailState = { status: 'loading' | 'ready' | 'error', question: string, answer: string }
-
-export type ChatMessage = {
-  id: string
-  sender: 'user' | 'bot'
-  text: string
-  kind?: string | undefined
-  sources?: ChatSource[]
-  askContact?: boolean
-  lead?: ChatLead | null
-  isStreaming?: boolean
-}
-
-export type StoredConversation = {
-  id: string
-  /** Opaque `<uuid>.<hmac>` minted by the server. Null until the first send. */
-  token: string | null
-  title: string
-  createdAt: number
-  messages: ChatMessage[]
-}
 
 // ─── Shared state ────────────────────────────────────────────────────────────
 const conversations = ref<StoredConversation[]>([])
@@ -99,9 +64,7 @@ let chatRequestController: AbortController | null = null
 let botRequestSequence = 0
 let messageSequence = 0
 /** Frame handle during playback (rAF id on the client, timeout id on the server). */
-let typewriterTimer: ReturnType<typeof setTimeout> | null = null
 /** Set when playback is cut short so the message can be completed in one step. */
-let typewriterFinish: (() => void) | null = null
 
 function newLocalId(): string {
   if (import.meta.client && typeof crypto?.randomUUID === 'function') return crypto.randomUUID()
@@ -125,77 +88,6 @@ const activeConversation = computed<StoredConversation>(() => {
 
 /** The active conversation's messages — what both surfaces render. */
 const chatMessages = computed<ChatMessage[]>(() => activeConversation.value.messages)
-
-// ─── Normalisation ───────────────────────────────────────────────────────────
-// Everything read back from localStorage is untrusted: the visitor can edit it,
-// and an older build may have written a different shape.
-
-function safeHttpsUrl(value: unknown): string | null {
-  if (typeof value !== 'string') return null
-  try {
-    const url = new URL(value)
-    return url.protocol === 'https:' ? url.toString() : null
-  } catch {
-    return null
-  }
-}
-
-/** The knowledge-bank row id, when the payload carries a usable one. */
-function knowledgeEntryId(raw: Record<string, unknown>): number | null {
-  // Fresh replies carry the numeric row id at the top level of the reference.
-  // Re-read localStorage carries it as `entryId`, because `id` was already
-  // folded into a composite render key by an earlier pass through this function.
-  for (const candidate of [raw.entryId, raw.id]) {
-    const value = typeof candidate === 'number' ? candidate : Number(candidate)
-    if (Number.isSafeInteger(value) && value > 0) return value
-  }
-  return null
-}
-
-export function normalizeSource(item: unknown, index: number): ChatSource | null {
-  if (!item || typeof item !== 'object') return null
-  const raw = item as Record<string, unknown>
-  const rawSource = (raw.source && typeof raw.source === 'object' ? raw.source : raw) as Record<string, unknown>
-  const label = typeof rawSource.label === 'string' ? rawSource.label.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxSourceLabelChars) : ''
-  const reference = typeof rawSource.reference === 'string' ? rawSource.reference.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxSourceReferenceChars) : ''
-  const url = safeHttpsUrl(rawSource.url)
-  if (!label && !reference) return null
-  const idPart = typeof raw.id === 'number' || typeof raw.id === 'string' ? raw.id : index
-  return { id: `${idPart}-${label}-${reference}`, label: label || 'Tài liệu công khai', reference, url, entryId: knowledgeEntryId(raw) }
-}
-
-function normalizeStoredMessage(item: unknown, index: number): ChatMessage | null {
-  if (!item || typeof item !== 'object') return null
-  const raw = item as Record<string, unknown>
-  if (raw.sender !== 'user' && raw.sender !== 'bot') return null
-  const maxChars = raw.sender === 'user' ? CHATBOT_CLIENT_LIMITS.maxMessageChars : CHATBOT_CLIENT_LIMITS.maxOutputChars
-  const text = typeof raw.text === 'string' ? raw.text.normalize('NFKC').trim().slice(0, maxChars) : ''
-  if (!text) return null
-  if (raw.sender === 'user') return { id: `stored-${index}`, sender: 'user', text }
-  const kind = typeof raw.kind === 'string' && CHATBOT_RESPONSE_KINDS.has(raw.kind) ? raw.kind : undefined
-  const sources = Array.isArray(raw.sources)
-    ? raw.sources.slice(0, CHATBOT_CLIENT_LIMITS.maxSources).map(normalizeSource).filter((value): value is ChatSource => value !== null)
-    : []
-  return { id: `stored-${index}`, sender: 'bot', text, kind, sources }
-}
-
-function normalizeConversation(item: unknown): StoredConversation | null {
-  if (!item || typeof item !== 'object') return null
-  const raw = item as Record<string, unknown>
-  const id = typeof raw.id === 'string' && raw.id ? raw.id : newLocalId()
-  const token = typeof raw.token === 'string' && raw.token ? raw.token : null
-  const title = typeof raw.title === 'string' && raw.title.trim()
-    ? raw.title.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxTitleChars)
-    : 'Cuộc trò chuyện mới'
-  const createdAt = typeof raw.createdAt === 'number' && Number.isFinite(raw.createdAt) ? raw.createdAt : Date.now()
-  const messages = Array.isArray(raw.messages)
-    ? raw.messages
-        .slice(-(CHATBOT_CLIENT_LIMITS.maxHistoryMessages * 2))
-        .map(normalizeStoredMessage)
-        .filter((value): value is ChatMessage => value !== null)
-    : []
-  return { id, token, title, createdAt, messages: [{ ...CHATBOT_WELCOME_MESSAGE }, ...messages.filter(m => m.id !== 'welcome')] }
-}
 
 // ─── Persistence ─────────────────────────────────────────────────────────────
 
@@ -363,172 +255,14 @@ function clearChatHistory(): void {
   persist()
 }
 
-// ─── Typewriter playback ─────────────────────────────────────────────────────
+export {
+  playTypewriter,
+  stopTypewriter,
+  TYPEWRITER_WORD_DELAY_MS,
+  TYPEWRITER_MAX_MS,
+} from './useChatbotTypewriter'
+import { playTypewriter, stopTypewriter } from './useChatbotTypewriter'
 
-function prefersReducedMotion(): boolean {
-  if (!import.meta.client || typeof window.matchMedia !== 'function') return false
-  return window.matchMedia('(prefers-reduced-motion: reduce)').matches
-}
-
-/** Monotonic where available, so a clock adjustment mid-answer cannot skew pacing. */
-function now(): number {
-  return typeof performance?.now === 'function' ? performance.now() : Date.now()
-}
-
-/**
- * One playback step per animation frame, so the DOM write and the scroll that
- * follows it happen at the rate the browser actually paints. A background tab
- * stops painting and therefore stops firing these — which is correct here,
- * because there is nobody watching the words appear. Pacing is read from the
- * clock, so the frame that arrives on return reveals everything now due.
- */
-function schedule(step: () => void): ReturnType<typeof setTimeout> {
-  if (import.meta.client && typeof requestAnimationFrame === 'function') {
-    return requestAnimationFrame(step) as unknown as ReturnType<typeof setTimeout>
-  }
-  return setTimeout(step, 16)
-}
-
-function cancel(handle: ReturnType<typeof setTimeout>): void {
-  if (import.meta.client && typeof cancelAnimationFrame === 'function') {
-    cancelAnimationFrame(handle as unknown as number)
-    return
-  }
-  clearTimeout(handle)
-}
-
-/**
- * Ends playback. `complete` fills in whatever had not been typed yet, so an
- * interrupted message is left whole rather than truncated mid-sentence.
- */
-function stopTypewriter(complete: boolean): void {
-  if (typewriterTimer) {
-    cancel(typewriterTimer)
-    typewriterTimer = null
-  }
-  if (complete && typewriterFinish) typewriterFinish()
-  typewriterFinish = null
-}
-
-/**
- * Reveals `fullText` on `message` progressively.
- *
- * The server sends the whole answer in a single SSE event, so this is a
- * presentation effect rather than transport streaming. Splitting on whitespace
- * while *keeping* the separators means the reassembled text is byte-identical to
- * what arrived — a plain `split(' ')` would collapse newlines and double spaces,
- * quietly reformatting legal text.
- *
- * Paced by *elapsed time* rather than by counting timer firings. A `setInterval`
- * at one word per tick made three separate promises the browser does not keep:
- * that ticks arrive on schedule (they are throttled to ~1/second in a background
- * tab, so switching away mid-answer stretched playback to minutes), that a tick
- * costs nothing (each one wrote to the DOM and forced a synchronous
- * `scrollHeight` read — one layout per word), and that answer length is bounded
- * (it was not; ~330-word answers ran ~23 seconds at the current pace). Reading
- * the clock each frame makes a late or coalesced frame catch up by revealing more
- * words, so the answer always lands within `TYPEWRITER_MAX_MS` regardless of
- * length or tab state.
- */
-export function playTypewriter(
-  message: ChatMessage,
-  fullText: string,
-  options: { onTick?: () => void, delayMs?: number } = {},
-): Promise<void> {
-  stopTypewriter(true)
-
-  const chunks = fullText.match(/\S+\s*/g) ?? []
-  if (chunks.length === 0) {
-    message.text = fullText
-    message.isStreaming = false
-    return Promise.resolve()
-  }
-
-  // Reduced motion is an accessibility setting for people who get motion sick.
-  // Text appearing progressively is exactly the kind of movement it turns off.
-  if (prefersReducedMotion() || options.delayMs === 0) {
-    message.text = fullText
-    message.isStreaming = false
-    options.onTick?.()
-    return Promise.resolve()
-  }
-
-  message.text = ''
-  message.isStreaming = true
-
-  // Cap engages past ~85 words; everything shorter runs at the full per-word
-  // pace. `perWord` is also the whole answer's rate now that no per-frame floor
-  // overrides it, so this figure is what a visitor actually experiences.
-  const perWord = options.delayMs ?? TYPEWRITER_WORD_DELAY_MS
-  const totalMs = Math.min(chunks.length * perWord, TYPEWRITER_MAX_MS)
-
-  return new Promise<void>((resolve) => {
-    let index = 0
-    const settle = () => {
-      message.text = fullText
-      message.isStreaming = false
-      resolve()
-    }
-    typewriterFinish = settle
-
-    // The first word lands in this tick, not after the first delay. Waiting meant
-    // the bubble appeared empty for one interval right as the typing indicator
-    // disappeared — a blank white box flickering between the two states.
-    message.text += chunks[index]!
-    index += 1
-    options.onTick?.()
-    if (index >= chunks.length) {
-      typewriterFinish = null
-      message.isStreaming = false
-      resolve()
-      return
-    }
-
-    const startedAt = now()
-    const step = () => {
-      // How many words are due by now. No floor of `index + 1` here, and that
-      // absence is the point: with it, every frame advanced at least one word, so
-      // playback ran at the refresh rate (~60 words/second at 60fps) and the
-      // per-word constant only ever governed answers long enough to hit the cap.
-      // Raising it changed nothing a visitor could see. Reading the clock alone
-      // makes the pace mean what it says.
-      const elapsed = now() - startedAt
-      const target = Math.min(
-        chunks.length,
-        Math.ceil((elapsed / totalMs) * chunks.length),
-      )
-
-      // A frame with no word due writes nothing and fires no tick. `onTick` makes
-      // the surfaces read `scrollHeight`, so an unconditional call here would
-      // force a layout on every frame to display text that had not changed.
-      if (target > index) {
-        message.text = chunks.slice(0, target).join('')
-        index = target
-        options.onTick?.()
-      }
-
-      if (index >= chunks.length) {
-        typewriterTimer = null
-        typewriterFinish = null
-        message.isStreaming = false
-        resolve()
-        return
-      }
-      typewriterTimer = schedule(step)
-    }
-    typewriterTimer = schedule(step)
-  })
-}
-
-// ─── Session token ───────────────────────────────────────────────────────────
-
-/**
- * Fetches the conversation's session token, once, lazily.
- *
- * The server mints it because signing needs a secret the browser must never
- * hold. A failure here is not fatal: the reply still goes out, only the
- * transcript is skipped, so this never blocks a send.
- */
 async function ensureSessionToken(conversation: StoredConversation): Promise<string | null> {
   if (conversation.token) return conversation.token
   try {

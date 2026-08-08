@@ -15,7 +15,7 @@
  */
 import { defineEventHandler, getRouterParam, readBody, setResponseStatus } from 'h3'
 import { and, eq } from 'drizzle-orm'
-import { getDb, getPool } from '../../../../utils/db'
+import { getDb } from '../../../../utils/db'
 import { articles } from '../../../../db/schema'
 import { getClientIp } from '../../../../utils/client-ip'
 import { deriveDailyVisitorToken } from '../../../../utils/analytics-collection'
@@ -28,6 +28,8 @@ import {
   viewDay,
   VIEW_DEDUPE_WINDOW_SECONDS,
 } from '../../../../services/article-views'
+import { rateLimitDeps } from '../../../../utils/rate-limit-deps'
+import { analyticsConfig } from '../../../../utils/runtime-config'
 
 /**
  * `limit: 1` makes the store's own counter the dedupe decision: `count === 1`
@@ -66,7 +68,7 @@ export default defineEventHandler(async (event) => {
     // editorial statistic about its own content. A deployment that turned
     // collection off and then found every article reporting zero forever, with
     // nothing on screen saying why, is a silent dead end.
-    const config = (useRuntimeConfig(event) as unknown as { analytics?: { hmacSecret?: string } }).analytics
+    const config = analyticsConfig(event)
     const day = viewDay()
 
     let visitorToken: string
@@ -91,9 +93,7 @@ export default defineEventHandler(async (event) => {
       }
       return { accepted: false }
     }
-
-    const pool = getPool()
-    const deps = { execute: pool ? ((sql: string, params: unknown[]) => pool.query(sql, params)) : null }
+    const deps = rateLimitDeps()
     const state = await recordRateLimitHit(buildViewDedupeKey(article.id, visitorToken), DEDUPE_RULE, deps)
     if (state.count !== 1) return { accepted: false }
 

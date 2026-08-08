@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { WindowWithTinyMce } from '~/types/tinymce'
+import type { AdminCategoryRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -30,7 +32,7 @@ const errorMsg = ref('')
 const tinymceReady = ref(false)
 
 // Dynamic categories for the selected article type
-const availableCategories = ref<any[]>([])
+const availableCategories = ref<AdminCategoryRow[]>([])
 
 const fetchCategories = async (type: string) => {
   try {
@@ -70,13 +72,13 @@ const fetchArticle = async () => {
       // Explicitly load categories for the article's type so the dropdown
       // renders the saved selection. The watcher is suppressed and won't do this.
       await fetchCategories(form.type)
-      if (tinymceReady.value && (window as any).tinymce) {
-        const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+      if (tinymceReady.value && (window as WindowWithTinyMce).tinymce) {
+        const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
         if (ed) ed.setContent(form.content)
       }
     }
-  } catch (err: any) {
-    errorMsg.value = err?.data?.statusMessage || 'Lỗi tải bài viết'
+  } catch (err: unknown) {
+    errorMsg.value = errorMessage(err, 'Lỗi tải bài viết')
   } finally {
     loading.value = false
     // Wait for Vue to flush the queued watcher (triggered by form.type assignment
@@ -89,8 +91,8 @@ const fetchArticle = async () => {
 const toast = useToast()
 
 const getEditorContent = (): string => {
-  if ((window as any).tinymce) {
-    const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+  if ((window as WindowWithTinyMce).tinymce) {
+    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
     if (ed) return ed.getContent()
   }
   return form.content
@@ -111,8 +113,8 @@ const handleSave = async () => {
       const res = await $fetch(`/api/admin/articles/${articleId.value}`, { method: 'PUT', body: form })
       if (res.ok) toast.success('Đã cập nhật bài viết thành công!')
     }
-  } catch (err: any) {
-    errorMsg.value = err?.data?.statusMessage || 'Lỗi lưu bài viết'
+  } catch (err: unknown) {
+    errorMsg.value = errorMessage(err, 'Lỗi lưu bài viết')
     toast.error(errorMsg.value)
   } finally {
     saving.value = false
@@ -129,8 +131,8 @@ const openMediaPicker = (target: 'thumbnail' | 'content') => {
     openPicker({
       onSelect: (media) => {
         const imgHtml = `<p><img src="${media.url}" alt="${media.originalName}" /></p>`
-        if ((window as any).tinymce) {
-          const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+        if ((window as WindowWithTinyMce).tinymce) {
+          const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
           if (ed) { ed.insertContent(imgHtml); return }
         }
         form.content += '\n' + imgHtml
@@ -149,9 +151,12 @@ const uploadThumbnailFromInput = async (e: Event) => {
 
 const initTinyMCE = () => {
   if (typeof window === 'undefined') return
-  const win = window as any
+  const win = window as WindowWithTinyMce
   if (!win.tinymce) return
-  if (win.tinymce.get(TINYMCE_EDITOR_ID)) win.tinymce.get(TINYMCE_EDITOR_ID).remove()
+  // Lấy một lần rồi dùng: gọi `.get()` hai lần thì lời gọi thứ hai có thể trả
+    // `undefined` khi trình soạn thảo bị gỡ giữa hai lần — và `.remove()` trên
+    // undefined là một lỗi lúc chạy ngay giữa lượt điều hướng.
+    win.tinymce?.get(TINYMCE_EDITOR_ID)?.remove()
   win.tinymce.init({
     selector: `#${TINYMCE_EDITOR_ID}`,
     height: 480,
@@ -191,17 +196,21 @@ const initTinyMCE = () => {
     paste_data_images: true,
     paste_merge_formats: true,
     file_picker_types: 'image',
-    images_upload_handler: (blobInfo: any) => new Promise<string>((resolve, reject) => {
+    images_upload_handler: (blobInfo: { blob: () => Blob, filename: () => string }) => new Promise<string>((resolve, reject) => {
       const formData = new FormData()
       formData.append('file', blobInfo.blob(), blobInfo.filename())
       $fetch('/api/admin/media/upload', { method: 'POST', body: formData })
-        .then((res: any) => {
+        .then((res) => {
           if (res.ok && res.media?.url) resolve(res.media.url)
           else reject('Upload thất bại')
         })
-        .catch((err: any) => reject(err?.data?.statusMessage || 'Upload thất bại'))
+        .catch((err) => reject(errorMessage(err, 'Upload thất bại')))
     }),
-    setup: (editor: any) => {
+    setup: (editor: {
+        on: (event: string, handler: () => void) => void
+        setContent: (html: string) => void
+        getContent: () => string
+      }) => {
       editor.on('init', () => {
         tinymceReady.value = true
         if (form.content) editor.setContent(form.content)
@@ -221,7 +230,7 @@ const initTinyMCE = () => {
 }
 
 const loadTinyMCEScript = () => new Promise<void>((resolve) => {
-  if ((window as any).tinymce) { resolve(); return }
+  if ((window as WindowWithTinyMce).tinymce) { resolve(); return }
   const script = document.createElement('script')
   script.src = 'https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.6/tinymce.min.js'
   script.referrerPolicy = 'no-referrer'
@@ -248,8 +257,8 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  if ((window as any).tinymce) {
-    const ed = (window as any).tinymce.get(TINYMCE_EDITOR_ID)
+  if ((window as WindowWithTinyMce).tinymce) {
+    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
     if (ed) ed.destroy()
   }
 })

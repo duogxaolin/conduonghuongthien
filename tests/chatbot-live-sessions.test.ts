@@ -130,14 +130,22 @@ test('summarizeUserAgent keeps an unrecognised agent visible rather than hiding 
 // bare Node test. The word-splitting rule is the part that can silently corrupt
 // content, so it is re-derived here and pinned against the source text.
 
+// Ghép cả `chatbot-storage.ts`: phần khử độc dữ liệu `localStorage` đã sang tệp
+// đó để kiểm được không cần nạp composable. Các khẳng định ở đây nói về hành vi,
+// nên chia theo tệp sẽ khiến một lần chuyển hàm trông như một hồi quy.
 const COMPOSABLE = readFileSync('app/composables/useChatbot.ts', 'utf8')
+  + '\n' + readFileSync('app/utils/chatbot-storage.ts', 'utf8')
+// Playback moved into its own module — the composable had grown to 939 lines and
+// this block reads nothing from the conversation state, so it is testable on its
+// own. `useChatbot` re-exports it, so every call site kept one import path.
+const TYPEWRITER = readFileSync('app/composables/useChatbotTypewriter.ts', 'utf8')
 
 test('playTypewriter splits with a separator-preserving pattern', () => {
   // `split(' ')` would collapse newlines and double spaces, quietly reformatting
   // legal text on its way to the screen. The match keeps the trailing
   // whitespace with each chunk so the reassembly is byte-identical.
-  assert.match(COMPOSABLE, /match\(\/\\S\+\\s\*\/g\)/, 'uses /\\S+\\s*/g')
-  assert.doesNotMatch(COMPOSABLE, /fullText\.split\(' '\)/, 'never a naive space split')
+  assert.match(TYPEWRITER, /match\(\/\\S\+\\s\*\/g\)/, 'uses /\\S+\\s*/g')
+  assert.doesNotMatch(TYPEWRITER, /fullText\.split\(' '\)/, 'never a naive space split')
 })
 
 test('the separator-preserving split reassembles legal text byte for byte', () => {
@@ -155,10 +163,10 @@ test('the separator-preserving split reassembles legal text byte for byte', () =
 })
 
 test('playTypewriter honours prefers-reduced-motion and a zero delay', () => {
-  assert.match(COMPOSABLE, /prefers-reduced-motion/, 'checks the media query')
+  assert.match(TYPEWRITER, /prefers-reduced-motion/, 'checks the media query')
   // Both shortcuts must exist: the OS setting, and an explicit delayMs === 0
   // for callers that want the text now (e.g. restoring a persisted message).
-  assert.match(COMPOSABLE, /delayMs\s*(?:===|<=)\s*0/, 'has an instant path')
+  assert.match(TYPEWRITER, /delayMs\s*(?:===|<=)\s*0/, 'has an instant path')
 })
 
 test('persisted conversations never include a half-typed message', () => {

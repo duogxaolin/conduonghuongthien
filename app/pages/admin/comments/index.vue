@@ -55,7 +55,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<any>('/api/admin/comments', {
+    const res = await $fetch('/api/admin/comments', {
       query: { articleId: articleFilter.value || undefined, page: page.value },
     })
     if (!res?.ok) {
@@ -66,8 +66,8 @@ async function load() {
     total.value = res.total || 0
     totalPages.value = res.totalPages || 1
     page.value = res.page || 1
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được danh sách bình luận.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được danh sách bình luận.')
   } finally {
     loading.value = false
   }
@@ -106,8 +106,8 @@ async function submitReply(comment: Comment) {
     replyTo.value = null
     toast.success('Đã gửi phản hồi của Ban quản trị.')
     await load()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không gửi được phản hồi.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không gửi được phản hồi.'))
   } finally {
     replying.value = false
   }
@@ -125,8 +125,8 @@ async function deleteOne(comment: Comment) {
     await $fetch(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
     toast.success('Đã xoá bình luận.')
     await load()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không xoá được bình luận.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không xoá được bình luận.'))
   } finally {
     busy.value = false
   }

@@ -1,12 +1,10 @@
 import { getDb } from '../../../utils/db'
 import { settings } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'settings', 'read', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'settings', 'read')
 
   const db = getDb()
   const allSettings = await db.select().from(settings)

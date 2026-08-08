@@ -13,6 +13,7 @@
  * protected and unprotected.
  */
 
+import { affectedRowsOrZero } from './affected-rows'
 import { logWarn } from './logger'
 
 export type RateLimitRule = { limit: number; windowSeconds: number }
@@ -180,6 +181,5 @@ export async function purgeExpiredRateLimits(deps: RateLimitDeps = {}): Promise<
     `DELETE FROM ${RATE_LIMIT_TABLE} WHERE window_expires_at <= ? LIMIT 5000`,
     [new Date(now)],
   )
-  const payload = Array.isArray(result) ? result[0] : result
-  return Number((payload as { affectedRows?: number } | null)?.affectedRows ?? 0)
+  return affectedRowsOrZero(result)
 }

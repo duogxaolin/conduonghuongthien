@@ -1,14 +1,11 @@
 import { getDb } from '../../../utils/db'
 import { roles, permissions, activityLogs } from '../../../db/schema'
-import { checkPermission } from '../../../utils/auth'
-import { assertAssignablePermissions } from '../../../utils/permissions'
+import { assertAssignablePermissions, requireResourcePermission } from '../../../utils/permissions'
 import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'roles', 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'roles', 'update')
 
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid role ID' })
@@ -25,7 +22,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Không thể đổi tên vai trò hệ thống.' })
   }
 
-  const updateFields: any = {}
+  const updateFields: Partial<{ name: string, description: string | null }> = {}
   if (body.name) updateFields.name = String(body.name).trim()
   if (body.description !== undefined) updateFields.description = String(body.description).trim() || null
 
@@ -41,7 +38,7 @@ export default defineEventHandler(async (event) => {
     // Reject invalid resources and block granting permissions the actor lacks.
     assertAssignablePermissions(adminUser, body.permissions)
 
-    const permValues = body.permissions.map((p: any) => ({
+    const permValues = (body.permissions as Array<Record<string, unknown>>).map(p => ({
       roleId: id,
       resource: String(p.resource),
       canCreate: Boolean(p.canCreate),

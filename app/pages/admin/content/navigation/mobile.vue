@@ -36,12 +36,12 @@ const saving = ref(false)
 
 function uid() { return Math.random().toString(36).slice(2, 10) }
 
-function normalize(item: any): BottomNavItem {
+function normalize(item: Partial<BottomNavItem>): BottomNavItem {
   return {
     id: typeof item.id === 'string' ? item.id : uid(),
     label: item.label ?? '',
     icon: item.icon ?? 'fa-solid fa-circle',
-    type: (['link', 'chatbot', 'drawer'].includes(item.type) ? item.type : 'link') as NavType,
+    type: (item.type && ['link', 'chatbot', 'drawer'].includes(item.type) ? item.type : 'link') as NavType,
     url: item.url ?? '',
     featured: Boolean(item.featured),
   }
@@ -57,8 +57,8 @@ async function loadMenu() {
     } else {
       menu.value = DEFAULT_MENU.map(i => ({ ...i }))
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được cấu hình thanh điều hướng.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được cấu hình thanh điều hướng.')
     menu.value = DEFAULT_MENU.map(i => ({ ...i }))
   } finally {
     loading.value = false
@@ -76,8 +76,8 @@ async function saveMenu() {
   try {
     await $fetch('/api/admin/settings/navigation/mobile', { method: 'PUT', body: { menu: menu.value } })
     toast.success('Đã lưu thanh điều hướng mobile thành công!')
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu menu')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu menu'))
   } finally {
     saving.value = false
   }

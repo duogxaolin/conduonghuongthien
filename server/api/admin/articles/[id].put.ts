@@ -3,6 +3,7 @@ import { articles, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { sanitizeHtml } from '../../../utils/sanitize-html'
 import { eq } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -25,12 +26,10 @@ export default defineEventHandler(async (event) => {
   }
   const permResource = resourceMap[existingArticle.type] || 'news'
 
-  if (!checkPermission(adminUser.permissions, permResource, 'update', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, permResource, 'update')
 
   const body = await readBody(event).catch(() => ({}))
-  const updateFields: any = {}
+  const updateFields: Partial<typeof articles.$inferInsert> = {}
 
   if (body.title !== undefined) updateFields.title = String(body.title).trim()
   if (body.excerpt !== undefined) updateFields.excerpt = String(body.excerpt).trim() || null
@@ -64,14 +63,25 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  await db.update(articles).set(updateFields).where(eq(articles.id, id))
+  /**
+   * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+   *
+   * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+   * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+   * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+   * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+   * commit độc lập trên pool.
+   */
+  await db.transaction(async (tx) => {
+    await tx.update(articles).set(updateFields).where(eq(articles.id, id))
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'update',
-    resource: 'articles',
-    resourceId: id,
-    meta: { fieldsUpdated: Object.keys(updateFields) },
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'update',
+      resource: 'articles',
+      resourceId: id,
+      meta: { fieldsUpdated: Object.keys(updateFields) },
+    })
   })
 
   return { ok: true }

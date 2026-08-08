@@ -39,10 +39,11 @@
 </template>
 
 <script setup lang="ts">
+import type { BuilderNode } from '~/utils/blocks/types'
 import { computed, onMounted, onBeforeUnmount, ref, watch } from 'vue'
 
 const props = defineProps<{
-  blocks: any[]
+  blocks: BuilderNode[]
   selectedId: number | string | null
   viewport: 'desktop' | 'tablet' | 'mobile'
   previewPath: string
@@ -84,13 +85,13 @@ const scale = computed(() => {
 
 const origin = () => (typeof window !== 'undefined' ? window.location.origin : '*')
 
-const postToFrame = (msg: any) => {
+const postToFrame = (msg: Record<string, unknown>) => {
   frameRef.value?.contentWindow?.postMessage(msg, origin())
 }
 
 // Reactive proxies can't be structured-cloned across postMessage → send plain JSON.
 const plainVisibleBlocks = () =>
-  JSON.parse(JSON.stringify(props.blocks.filter((b: any) => b.isVisible)))
+  JSON.parse(JSON.stringify(props.blocks.filter(b => b.isVisible)))
 
 const pushBlocks = () => { if (ready.value) postToFrame({ type: 'cdkt:blocks', blocks: plainVisibleBlocks() }) }
 const pushSelection = () => { if (ready.value) postToFrame({ type: 'cdkt:select', id: props.selectedId }) }

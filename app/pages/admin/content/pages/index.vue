@@ -142,12 +142,13 @@
 </template>
 
 <script setup lang="ts">
+import type { AdminPageRow } from '~/types/admin-api'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const toast = useToast()
 const { confirm } = useConfirm()
 
-const pages = ref<any[]>([])
+const pages = ref<AdminPageRow[]>([])
 const loading = ref(true)
 const loadError = ref('')
 
@@ -159,13 +160,13 @@ const fetchPages = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const res: any = await $fetch('/api/admin/pages')
+    const res = await $fetch('/api/admin/pages')
     if (res.ok) {
       pages.value = res.items
       selection.keepOnly(visibleIds.value)
     }
-  } catch (err: any) {
-    loadError.value = err?.data?.statusMessage || 'Không tải được danh sách trang.'
+  } catch (err: unknown) {
+    loadError.value = errorMessage(err, 'Không tải được danh sách trang.')
   } finally {
     loading.value = false
   }
@@ -179,7 +180,7 @@ const bulk = useBulkAction(selection)
  * System pages back fixed public routes and can never be deleted, so they are
  * left out of the selectable set entirely rather than offered and then refused.
  */
-const visibleIds = computed(() => pages.value.filter((p: any) => !p.isSystem).map((p: any) => Number(p.id)))
+const visibleIds = computed(() => pages.value.filter((p) => !p.isSystem).map((p) => Number(p.id)))
 
 const bulkDelete = () => bulk.run({
   url: '/api/admin/pages/bulk-delete',
@@ -203,7 +204,7 @@ const createPage = async () => {
   if (!createForm.title.trim()) return
   creating.value = true
   try {
-    const res: any = await $fetch('/api/admin/pages', {
+    const res = await $fetch('/api/admin/pages', {
       method: 'POST',
       body: { title: createForm.title.trim(), slug: createForm.slug.trim() || undefined },
     })
@@ -212,14 +213,14 @@ const createPage = async () => {
       showCreate.value = false
       await navigateTo(`/admin/content/pages/${res.id}`)
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không tạo được trang.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không tạo được trang.'))
   } finally {
     creating.value = false
   }
 }
 
-const removePage = async (p: any) => {
+const removePage = async (p: AdminPageRow) => {
   const ok = await confirm({
     title: 'Xóa trang',
     message: `Xóa trang "${p.title}"? Toàn bộ block của trang sẽ bị xóa. Hành động này không thể hoàn tác.`,
@@ -231,8 +232,8 @@ const removePage = async (p: any) => {
     await $fetch(`/api/admin/pages/${p.id}`, { method: 'DELETE' })
     toast.success('Đã xóa trang.')
     await fetchPages()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không xóa được trang.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không xóa được trang.'))
   }
 }
 

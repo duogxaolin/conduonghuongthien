@@ -61,7 +61,7 @@ type SettingsAuditInput = AuditContext & {
   durationMs?: unknown
 }
 
-type KnowledgeAuditInput = AuditContext & {
+export type KnowledgeAuditInput = AuditContext & {
   operation: 'read' | 'create' | 'update' | 'delete' | 'publish' | 'archive'
   knowledgeId?: unknown
   changedFields?: unknown

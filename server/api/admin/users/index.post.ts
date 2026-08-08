@@ -1,15 +1,13 @@
 import { getDb } from '../../../utils/db'
 import { passwordRejectionMessage } from '../../../utils/password-policy'
 import { users, roles, activityLogs } from '../../../db/schema'
-import { checkPermission, hashPassword } from '../../../utils/auth'
-import { assertRoleAssignable } from '../../../utils/permissions'
+import { hashPassword } from '../../../utils/auth'
+import { assertRoleAssignable, requireResourcePermission } from '../../../utils/permissions'
 import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'users', 'create', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'users', 'create')
 
   const body = await readBody(event).catch(() => ({}))
   const username = String(body?.username || '').trim()
@@ -44,29 +42,42 @@ export default defineEventHandler(async (event) => {
   const passwordHash = await hashPassword(password)
 
   try {
-    const [result] = await db.insert(users).values({
-      username,
-      email,
-      passwordHash,
-      roleId,
-      isActive: true,
-    })
+    /**
+     * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
+     *
+     * Viết rời, câu audit có cách hỏng riêng của nó — `activity_logs.user_id`
+     * là khoá ngoại tới `users` và `meta` là cột JSON — nên một lượt ghi đã
+     * xong có thể còn lại mà không có gì ghi lại ai đã làm. Chạy trên `tx`,
+     * không phải `db`: một `db.insert()` đặt trong khối transaction vẫn
+     * commit độc lập trên pool.
+     */
+    const newUserId = await db.transaction(async (tx) => {
+      const [result] = await tx.insert(users).values({
+        username,
+        email,
+        passwordHash,
+        roleId,
+        isActive: true,
+      })
 
-    const newUserId = result.insertId
+      const created = result.insertId
 
-    await db.insert(activityLogs).values({
-      userId: adminUser.id,
-      action: 'create',
-      resource: 'users',
-      resourceId: newUserId,
-      meta: { username, roleId },
+      await tx.insert(activityLogs).values({
+        userId: adminUser.id,
+        action: 'create',
+        resource: 'users',
+        resourceId: created,
+        meta: { username, roleId },
+      })
+
+      return created
     })
 
     return { ok: true, id: newUserId }
-  } catch (err: any) {
-    if (err?.code === 'ER_DUP_ENTRY') {
+  } catch (err: unknown) {
+    if ((err as { code?: string })?.code === 'ER_DUP_ENTRY') {
       throw createError({ statusCode: 400, statusMessage: 'Tên đăng nhập hoặc Email đã tồn tại.' })
     }
-    throw createError({ statusCode: 500, statusMessage: err?.message || 'Lỗi hệ thống' })
+    throw createError({ statusCode: 500, statusMessage: (err instanceof Error ? err.message : undefined) || 'Lỗi hệ thống' })
   }
 })

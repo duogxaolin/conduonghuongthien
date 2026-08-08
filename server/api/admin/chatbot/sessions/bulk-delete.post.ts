@@ -1,3 +1,4 @@
+import { affectedRowsOrZero } from '../../../../utils/affected-rows'
 import { inArray } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { chatSessions, chatMessages } from '../../../../db/schema'
@@ -29,9 +30,27 @@ export default defineEventHandler(async (event) => {
   await db.delete(chatMessages).where(inArray(chatMessages.sessionId, ids))
 
   // Delete sessions
-  const result = await db.delete(chatSessions).where(inArray(chatSessions.id, ids))
+  const deleted = await db.delete(chatSessions).where(inArray(chatSessions.id, ids))
 
-  const deletedCount = Number((result as unknown as { affectedRows?: number }).affectedRows || 0)
+  /**
+   * Destructured. `db.delete()` resolves to `[ResultSetHeader, FieldPacket[]]`,
+   * so `.affectedRows` read off the array itself is `undefined` — and
+   * `Number(undefined || 0)` is `0`, silently.
+   *
+   * This was live: the officer saw "0 deleted" after removing real conversations,
+   * the audit line recorded `deletedCount: 0` alongside a `consequence` sentence
+   * claiming zero rows went, and the rows were gone regardless. A destroyed record
+   * whose only trace says nothing was destroyed is the exact failure the audit log
+   * exists to prevent.
+   *
+   * Same trap as callback.get.ts, ip-bans.ts, createComment and createAdminReply.
+   * `as unknown as { affectedRows?: number }` is what hid it: the cast asserts the
+   * shape instead of checking it, so typecheck, a fake pool and every source-text
+   * test all agreed with the wrong reading. Guarded by
+   * tests/insert-id-integration.test.ts.
+   */
+  const [header] = deleted
+  const deletedCount = affectedRowsOrZero(header)
 
   logInfo({
     event: 'chatbot.sessions_bulk_deleted',

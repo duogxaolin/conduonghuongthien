@@ -25,11 +25,16 @@ export async function deletePageById(actor: ActorLike, id: number): Promise<void
     throw createError({ statusCode: 400, statusMessage: 'Không thể xóa trang hệ thống.' })
   }
 
-  await db.delete(pages).where(eq(pages.id, id))
-  await db.insert(activityLogs).values({
-    userId: actor.id,
-    action: 'delete',
-    resource: 'pages',
-    meta: { id, slug: existing.slug },
+  // Cùng transaction: một trang đã xoá kéo theo toàn bộ `page_blocks` qua
+  // cascade, nên nếu câu audit lỗi thì phần biến mất là cả một trang công khai
+  // và không còn gì ghi lại ai xoá. Chạy trên `tx`, không phải `db`.
+  await db.transaction(async (tx) => {
+    await tx.delete(pages).where(eq(pages.id, id))
+    await tx.insert(activityLogs).values({
+      userId: actor.id,
+      action: 'delete',
+      resource: 'pages',
+      meta: { id, slug: existing.slug },
+    })
   })
 }

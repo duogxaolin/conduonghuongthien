@@ -48,8 +48,8 @@ const fetchSessions = async () => {
       total.value = res.total
       totalPages.value = res.totalPages
     }
-  } catch (err: any) {
-    loadError.value = err?.data?.statusMessage || 'Không thể tải danh sách phiên trò chuyện.'
+  } catch (err: unknown) {
+    loadError.value = errorMessage(err, 'Không thể tải danh sách phiên trò chuyện.')
   } finally {
     loading.value = false
   }

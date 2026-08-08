@@ -158,6 +158,54 @@ test('a new reader account yields a usable id on the FIRST insert', {
     assert.ok(logRow, 'no audit row was written')
     assert.notEqual(logRow.resourceId, 0, 'the audit row points at row 0 — the ban cannot be traced')
     assert.equal(logRow.resourceId, banId, 'the audit row must name the ban it records')
+
+    /**
+     * ── The sibling shape: db.delete() and .affectedRows ────────────────────
+     *
+     * This suite was written for `insertId` and stopped there, so the identical
+     * mistake on the delete side went on living: `bulk-delete.post.ts` read
+     * `(result as unknown as { affectedRows?: number }).affectedRows` off the
+     * array, always got `undefined`, and reported `deleted: 0` while removing
+     * real conversations — and wrote that zero into `activity_logs`, so the only
+     * record of a destructive action claimed nothing had been destroyed.
+     *
+     * The same three reasons apply: the cast satisfied the compiler, a fake pool
+     * would have confirmed whatever shape its author believed in, and a
+     * source-text test can pin the characters but not the value. Only the driver
+     * objects — so the driver is asked here, about deletes as well as inserts.
+     */
+    const [banB] = await db.insert(readerIpBans).values({
+      value: '203.0.113.78', reason: 'xoá thử', createdBy: officerId,
+    })
+    const [banC] = await db.insert(readerIpBans).values({
+      value: '203.0.113.79', reason: 'xoá thử', createdBy: officerId,
+    })
+    const doomed = [Number(banB?.insertId ?? 0), Number(banC?.insertId ?? 0)]
+    assert.ok(doomed.every(id => id > 0))
+
+    const { inArray } = await import('drizzle-orm')
+    const removed = await db.delete(readerIpBans).where(inArray(readerIpBans.id, doomed))
+
+    assert.ok(Array.isArray(removed), 'db.delete() resolves to an array too')
+    assert.equal(
+      (removed as unknown as { affectedRows?: number }).affectedRows,
+      undefined,
+      'reading .affectedRows off the array must stay undefined — this is the bulk-delete bug',
+    )
+
+    const [deleteHeader] = removed
+    assert.equal(
+      Number(deleteHeader?.affectedRows ?? 0),
+      2,
+      'the destructured header must report the rows actually removed; reporting 0 while rows '
+      + 'disappear is a destructive action whose audit trail denies it happened',
+    )
+
+    const survivors = await db
+      .select({ id: readerIpBans.id })
+      .from(readerIpBans)
+      .where(inArray(readerIpBans.id, doomed))
+    assert.equal(survivors.length, 0, 'the rows were reported gone but are still present')
   } finally {
     const { getPool } = await import('../server/utils/db')
     await getPool()?.end()

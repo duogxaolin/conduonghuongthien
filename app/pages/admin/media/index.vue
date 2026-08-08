@@ -1,10 +1,11 @@
 <script setup lang="ts">
+import type { AdminMediaRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
 })
 
-const mediaItems = ref<any[]>([])
+const mediaItems = ref<AdminMediaRow[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const search = ref('')
@@ -29,9 +30,9 @@ const fetchMedia = async (page = 1) => {
       // Ids from the previous page are meaningless once the grid changes.
       selection.keepOnly(visibleIds.value)
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi tải thư viện media')
-    loadError.value = err?.data?.statusMessage || 'Lỗi tải thư viện media'
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi tải thư viện media'))
+    loadError.value = errorMessage(err, 'Lỗi tải thư viện media')
   } finally {
     loading.value = false
   }
@@ -62,22 +63,22 @@ const onDrop = (e: DragEvent) => {
   if (files?.length) handleUpload(files)
 }
 
-const deleteMedia = async (item: any) => {
+const deleteMedia = async (item: AdminMediaRow) => {
   const ok = await confirm({ title: 'Xóa tệp', message: `Bạn có chắc muốn xóa file ${item.originalName}?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
     await $fetch(`/api/admin/media/${item.id}`, { method: 'DELETE' })
     toast.success('Đã xóa tệp media thành công!')
     await fetchMedia(pagination.value.page)
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi xóa file')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi xóa file'))
   }
 }
 
 // ─── Bulk selection ───────────────────────────────────────────────────────────
 const selection = useBulkSelection()
 const bulk = useBulkAction(selection)
-const visibleIds = computed(() => mediaItems.value.map((m: any) => Number(m.id)))
+const visibleIds = computed(() => mediaItems.value.map((m: AdminMediaRow) => Number(m.id)))
 
 const bulkDelete = () => bulk.run({
   url: '/api/admin/media/bulk-delete',

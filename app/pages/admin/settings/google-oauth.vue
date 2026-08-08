@@ -71,8 +71,8 @@ async function load() {
     form.clientId = res.settings.clientId
     form.isEnabled = res.settings.isEnabled
     form.defaultCommentsEnabled = res.settings.defaultCommentsEnabled
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được cấu hình đăng nhập Google.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được cấu hình đăng nhập Google.')
   } finally {
     loading.value = false
   }
@@ -99,8 +99,8 @@ async function save() {
     newSecret.value = ''
     secretVisible.value = false
     toast.success('Đã lưu cấu hình đăng nhập Google.')
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không lưu được cấu hình.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không lưu được cấu hình.'))
   } finally {
     saving.value = false
   }
@@ -114,8 +114,8 @@ async function clearSecret() {
     settings.value = res.settings
     form.isEnabled = res.settings.isEnabled
     toast.success('Đã xoá Client secret.')
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không xoá được Client secret.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không xoá được Client secret.'))
   } finally {
     clearing.value = false
   }

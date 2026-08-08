@@ -49,7 +49,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<any>('/api/admin/readers', {
+    const res = await $fetch('/api/admin/readers', {
       query: { q: search.value || undefined, banned: banned.value, page: page.value },
     })
     if (!res?.ok) {
@@ -60,10 +60,10 @@ async function load() {
     total.value = res.total || 0
     totalPages.value = res.totalPages || 1
     page.value = res.page || 1
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Never left as an empty table: an empty list and a failed fetch look
     // identical on screen, and an officer would conclude nobody has signed up.
-    error.value = err?.data?.statusMessage || 'Không tải được danh sách người đọc.'
+    error.value = errorMessage(err, 'Không tải được danh sách người đọc.')
   } finally {
     loading.value = false
   }

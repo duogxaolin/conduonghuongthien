@@ -43,8 +43,8 @@ async function loadMenu() {
     } else {
       menu.value = DEFAULT_MENU.map(item => ({ ...item, children: item.children.map(c => ({ ...c })) }))
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được cấu hình menu navbar.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được cấu hình menu navbar.')
     menu.value = DEFAULT_MENU.map(item => ({ ...item, children: item.children.map(c => ({ ...c })) }))
   } finally {
     loading.value = false
@@ -56,8 +56,8 @@ async function saveMenu() {
   try {
     await $fetch('/api/admin/settings/navigation/navbar', { method: 'PUT', body: { menu: menu.value } })
     toast.success('Đã lưu cấu hình navbar thành công!')
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu menu')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu menu'))
   } finally {
     saving.value = false
   }

@@ -24,8 +24,8 @@ const fetchMedia = async (pg = 1) => {
       totalPages.value = res.totalPages || 1
       page.value = pg
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi tải thư viện media')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi tải thư viện media'))
   } finally {
     loading.value = false
   }

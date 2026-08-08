@@ -4,14 +4,10 @@
  * `comments.read`, and one audit row per call carrying the filter — these rows
  * carry citizens' names, email addresses and IP addresses (design.md D14).
  */
+import { finitePositive } from '../../../utils/query-number'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { auditCommentRead, listCommentsForAdmin, COMMENT_MAX_PER_PAGE } from '../../../services/comments'
 
-function finitePositive(raw: unknown, fallback: number, max: number): number {
-  const value = Number(raw)
-  if (!Number.isFinite(value)) return fallback
-  return Math.min(Math.max(1, Math.floor(value)), max)
-}
 
 export default defineEventHandler(async (event) => {
   const actor = event.context.adminUser

@@ -1,14 +1,12 @@
 import { getDb } from '../../../../../utils/db'
 import { pageVersions } from '../../../../../db/schema'
-import { checkPermission } from '../../../../../utils/auth'
 import { eq, desc } from 'drizzle-orm'
+import { requireResourcePermission } from '../../../../../utils/permissions'
 
 // List version metadata for a page (no heavy blocks JSON).
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  if (!checkPermission(adminUser.permissions, 'pages', 'read', adminUser.isSuperAdmin)) {
-    throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
-  }
+  requireResourcePermission(adminUser, 'pages', 'read')
 
   const pageId = Number(getRouterParam(event, 'id'))
   if (!pageId) throw createError({ statusCode: 400, statusMessage: 'Invalid page ID' })

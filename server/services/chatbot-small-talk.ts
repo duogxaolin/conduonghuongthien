@@ -156,19 +156,26 @@ export async function createSmallTalk(actorId: number, input: SmallTalkInput) {
   const normalizedQuestion = normalizeQuestion(value.question!)
   if (!normalizedQuestion) throw new ChatbotSmallTalkValidationError('question is required')
   try {
-    const [result] = await db.insert(chatbotSmallTalk).values({
-      category: value.category!,
-      question: value.question!,
-      normalizedQuestion,
-      answer: value.answer!,
-      patterns: value.patterns ?? [],
-      isEnabled: value.isEnabled ?? true,
-      isSystem: false,
-      displayOrder: 0,
-    }).$returningId()
-    if (!result) throw new Error('insert into chatbot_small_talk returned no id')
-    const id = Number(result.id)
-    await audit(db, actorId, 'create', id, { category: value.category })
+    // Trả `id` RA KHỎI khối, không đọc biến ngoài từ bên trong: một
+    // `const id = await db.transaction(… id …)` để `id` trong vùng chết tạm thời
+    // suốt callback và ném `ReferenceError` **lúc chạy** — typecheck và build đều
+    // không thấy (đã trả giá một lần ở bốn endpoint tạo mới).
+    const id = await db.transaction(async (tx) => {
+      const [result] = await tx.insert(chatbotSmallTalk).values({
+        category: value.category!,
+        question: value.question!,
+        normalizedQuestion,
+        answer: value.answer!,
+        patterns: value.patterns ?? [],
+        isEnabled: value.isEnabled ?? true,
+        isSystem: false,
+        displayOrder: 0,
+      }).$returningId()
+      if (!result) throw new Error('insert into chatbot_small_talk returned no id')
+      const created = Number(result.id)
+      await audit(tx, actorId, 'create', created, { category: value.category })
+      return created
+    })
     return getSmallTalk(id)
   } catch (error) {
     if (isDuplicateKeyError(error)) throw new ChatbotSmallTalkValidationError('Đã có mục với câu hỏi này. Vui lòng dùng câu hỏi khác.')
@@ -192,15 +199,21 @@ export async function updateSmallTalk(actorId: number, id: number, input: SmallT
     patch.question = value.question
     patch.normalizedQuestion = normalizedQuestion
   }
-  if (Object.keys(patch).length) {
-    try {
-      await db.update(chatbotSmallTalk).set(patch).where(eq(chatbotSmallTalk.id, id))
-    } catch (error) {
-      if (isDuplicateKeyError(error)) throw new ChatbotSmallTalkValidationError('Đã có mục với câu hỏi này. Vui lòng dùng câu hỏi khác.')
-      throw error
+  // Cùng transaction, và `audit` nhận `tx` — `SmallTalkStore` được khai làm một
+  // `Pick<>` chính để nhận cả handle transaction. Truyền `db` vào đây thì câu
+  // audit chạy trên pool và commit độc lập: đúng con bug đó nhưng khoác áo
+  // transaction.
+  await db.transaction(async (tx) => {
+    if (Object.keys(patch).length) {
+      try {
+        await tx.update(chatbotSmallTalk).set(patch).where(eq(chatbotSmallTalk.id, id))
+      } catch (error) {
+        if (isDuplicateKeyError(error)) throw new ChatbotSmallTalkValidationError('Đã có mục với câu hỏi này. Vui lòng dùng câu hỏi khác.')
+        throw error
+      }
     }
-  }
-  await audit(db, actorId, 'update', id, { changedFields: Object.keys(patch) })
+    await audit(tx, actorId, 'update', id, { changedFields: Object.keys(patch) })
+  })
   return getSmallTalk(id)
 }
 
@@ -208,8 +221,10 @@ export async function setSmallTalkEnabled(actorId: number, id: number, isEnabled
   const db = getDb()
   const current = await getSmallTalk(id)
   if (!current) return null
-  await db.update(chatbotSmallTalk).set({ isEnabled }).where(eq(chatbotSmallTalk.id, id))
-  await audit(db, actorId, 'toggle', id, { isEnabled })
+  await db.transaction(async (tx) => {
+    await tx.update(chatbotSmallTalk).set({ isEnabled }).where(eq(chatbotSmallTalk.id, id))
+    await audit(tx, actorId, 'toggle', id, { isEnabled })
+  })
   return getSmallTalk(id)
 }
 
@@ -219,8 +234,10 @@ export async function deleteSmallTalk(actorId: number, id: number): Promise<bool
   const current = await getSmallTalk(id)
   if (!current) return false
   if (current.isSystem) throw new ChatbotSmallTalkValidationError('Không thể xóa mục hệ thống. Anh/chị có thể tắt mục này thay vì xóa.')
-  await db.delete(chatbotSmallTalk).where(eq(chatbotSmallTalk.id, id))
-  await audit(db, actorId, 'delete', id)
+  await db.transaction(async (tx) => {
+    await tx.delete(chatbotSmallTalk).where(eq(chatbotSmallTalk.id, id))
+    await audit(tx, actorId, 'delete', id)
+  })
   return true
 }
 

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import type { AdminContentTypeRow, AdminCategoryRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -8,8 +9,8 @@ const toast = useToast()
 const { confirm } = useConfirm()
 
 // ─── State ────────────────────────────────────────────────────────────────────
-const types = ref<any[]>([])
-const allCategories = ref<any[]>([])
+const types = ref<AdminContentTypeRow[]>([])
+const allCategories = ref<AdminCategoryRow[]>([])
 const loading = ref(true)
 const error = ref('')
 const showTree = ref(true)
@@ -59,8 +60,8 @@ const fetchTypes = async () => {
     } else {
       error.value = 'Không tải được danh sách thể loại.'
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được danh sách thể loại.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được danh sách thể loại.')
   } finally {
     loading.value = false
   }
@@ -70,7 +71,7 @@ const fetchCategories = async () => {
   try {
     const res = await $fetch('/api/admin/categories')
     if (res.ok) allCategories.value = res.items
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Non-blocking: tree preview just shows types without children
   }
 }
@@ -103,7 +104,7 @@ const openCreate = () => {
   showModal.value = true
 }
 
-const openEdit = (ct: any) => {
+const openEdit = (ct: AdminContentTypeRow) => {
   modalMode.value = 'edit'
   editingId.value = ct.id
   editingIsSystem.value = !!ct.isSystem
@@ -120,7 +121,7 @@ const handleSave = async () => {
   if (!form.name.trim()) { toast.warning('Tên thể loại không được để trống'); return }
   saving.value = true
   try {
-    const payload: any = {
+    const payload: Record<string, string | boolean | number | null> = {
       name: form.name.trim(),
       icon: form.icon.trim() || null,
       description: form.description.trim() || null,
@@ -139,8 +140,8 @@ const handleSave = async () => {
     }
     showModal.value = false
     await fetchTypes()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu thể loại')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu thể loại'))
   } finally {
     saving.value = false
   }
@@ -154,7 +155,7 @@ const bulk = useBulkAction(selection)
  * checkbox at all — offering one that always fails would be a worse UI than
  * offering none.
  */
-const visibleIds = computed(() => types.value.filter((ct: any) => !ct.isSystem).map((ct: any) => Number(ct.id)))
+const visibleIds = computed(() => types.value.filter((ct) => !ct.isSystem).map((ct) => Number(ct.id)))
 
 const bulkDelete = () => bulk.run({
   url: '/api/admin/content-types/bulk-delete',
@@ -169,15 +170,15 @@ const bulkDelete = () => bulk.run({
 })
 
 // ─── Delete ───────────────────────────────────────────────────────────────────
-const deleteType = async (ct: any) => {
+const deleteType = async (ct: AdminContentTypeRow) => {
   const ok = await confirm({ title: 'Xóa thể loại', message: `Bạn có chắc muốn xóa thể loại "${ct.name}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
     await $fetch(`/api/admin/content-types/${ct.id}`, { method: 'DELETE' })
     toast.success('Đã xóa thể loại thành công!')
     await fetchTypes()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi xóa thể loại')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi xóa thể loại'))
   }
 }
 

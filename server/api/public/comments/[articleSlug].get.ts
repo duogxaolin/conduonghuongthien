@@ -11,6 +11,7 @@
  * nothing in that case, and a status code that varied by slug would let this
  * endpoint be used to enumerate unpublished articles.
  */
+import { finitePositive } from '../../../utils/query-number'
 import { and, eq } from 'drizzle-orm'
 
 import { getDb } from '../../../utils/db'
@@ -40,11 +41,6 @@ const DEFAULT_PER_PAGE = COMMENT_THREAD_PER_PAGE
  * `?page=1e999` (Infinity) gets through the same hole. This is the bug the
  * /qa-documents work already hit once; the check has to come BEFORE the clamp.
  */
-function finitePositive(raw: unknown, fallback: number, max: number): number {
-  const value = Number(raw)
-  if (!Number.isFinite(value)) return fallback
-  return Math.min(Math.max(1, Math.floor(value)), max)
-}
 
 const EMPTY = { comments: [], total: 0, totalPages: 1 }
 

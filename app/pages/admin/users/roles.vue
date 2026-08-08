@@ -1,11 +1,25 @@
 <script setup lang="ts">
+import type { AdminRoleRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
 })
 
-const roles = ref<any[]>([])
-const selectedRole = ref<any>(null)
+const roles = ref<AdminRoleRow[]>([])
+const selectedRole = ref<AdminRoleRow | null>(null)
+
+/**
+ * `roles.is_system` là cột nullable (`TINYINT(1) DEFAULT 0` — DDL và schema.ts
+ * khớp nhau, đây không phải lệch schema). Nhưng `:disabled` cần một boolean
+ * thật: gán thẳng `boolean | null` thì `null` đọc thành **không khoá**, nên một
+ * hàng có `is_system` chưa đặt sẽ để cán bộ sửa được ma trận quyền của một vai
+ * trò hệ thống. `any` đang che đúng chỗ này — cổng typecheck chỉ nhìn thấy nó
+ * sau khi kiểu thật được khai.
+ *
+ * Máy chủ vẫn là nơi quyết định cuối (`assertRoleAssignable`); cái này chỉ giữ
+ * cho giao diện không mời người ta làm một việc sẽ bị từ chối.
+ */
+const selectedRoleLocked = computed(() => selectedRole.value?.isSystem === true)
 const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
@@ -34,21 +48,22 @@ const fetchRoles = async () => {
     const res = await $fetch('/api/admin/roles')
     if (res.ok) {
       roles.value = res.roles
-      if (roles.value.length > 0 && !selectedRole.value) selectRole(roles.value[0])
+      const first = roles.value[0]
+      if (first && !selectedRole.value) selectRole(first)
     } else {
       error.value = 'Không tải được danh sách vai trò.'
     }
-  } catch (err: any) {
-    error.value = err?.data?.statusMessage || 'Không tải được danh sách vai trò.'
+  } catch (err: unknown) {
+    error.value = errorMessage(err, 'Không tải được danh sách vai trò.')
   } finally {
     loading.value = false
   }
 }
 
-const selectRole = (role: any) => {
+const selectRole = (role: AdminRoleRow) => {
   selectedRole.value = role
   resourcesList.forEach(r => {
-    const existingPerm = role.permissions?.find((p: any) => p.resource === r.key)
+    const existingPerm = role.permissions?.find((p) => p.resource === r.key)
     permissionMatrix[r.key] = {
       canCreate: existingPerm ? Boolean(existingPerm.canCreate) : false,
       canRead:   existingPerm ? Boolean(existingPerm.canRead)   : false,
@@ -76,8 +91,8 @@ const handleSavePermissions = async () => {
       body: { permissions: permsPayload }
     })
     if (res.ok) { toast.success('Đã cập nhật phân quyền thành công!'); await fetchRoles() }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi lưu phân quyền')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi lưu phân quyền'))
   } finally {
     saving.value = false
   }
@@ -168,14 +183,14 @@ onMounted(() => { fetchRoles() })
           <button
             class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
             @click="handleSavePermissions"
-            :disabled="saving || selectedRole.isSystem"
+            :disabled="saving || selectedRoleLocked"
           >
             <i class="fa-solid fa-floppy-disk"></i>
             {{ saving ? 'Đang lưu...' : 'Lưu Phân Quyền' }}
           </button>
         </div>
 
-        <div v-if="selectedRole.isSystem" class="bg-[#eef7ee] border border-[#cce5cd] text-[#1e4620] px-4 py-3 rounded-lg text-[0.85rem] mb-4">
+        <div v-if="selectedRoleLocked" class="bg-[#eef7ee] border border-[#cce5cd] text-[#1e4620] px-4 py-3 rounded-lg text-[0.85rem] mb-4">
           🔒 Vai trò hệ thống <strong>(SuperAdmin)</strong> mặc định có toàn bộ quyền trên website.
         </div>
 
@@ -197,16 +212,16 @@ onMounted(() => { fetchRoles() })
                   <code class="ml-1.5 text-[0.72rem] text-[#888]">({{ res.key }})</code>
                 </td>
                 <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="perm.canCreate" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                  <input type="checkbox" v-model="perm.canCreate" :disabled="selectedRoleLocked" class="w-4 h-4 accent-[#2c6e33]" />
                 </td>
                 <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="perm.canRead" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                  <input type="checkbox" v-model="perm.canRead" :disabled="selectedRoleLocked" class="w-4 h-4 accent-[#2c6e33]" />
                 </td>
                 <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="perm.canUpdate" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                  <input type="checkbox" v-model="perm.canUpdate" :disabled="selectedRoleLocked" class="w-4 h-4 accent-[#2c6e33]" />
                 </td>
                 <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="perm.canDelete" :disabled="selectedRole.isSystem" class="w-4 h-4 accent-[#2c6e33]" />
+                  <input type="checkbox" v-model="perm.canDelete" :disabled="selectedRoleLocked" class="w-4 h-4 accent-[#2c6e33]" />
                 </td>
               </tr>
             </tbody>

@@ -68,7 +68,7 @@ function requestBase(event: H3Event): string {
  * of the two supported deployment shapes (Docker vs. PM2/aaPanel).
  */
 export function configuredBaseUrl(): string {
-  const config = tryRuntimeConfig() as { publicBaseUrl?: unknown } | undefined
+  const config = tryRuntimeConfig()
   const raw = config?.publicBaseUrl ?? process.env.PUBLIC_BASE_URL ?? ''
   return stripTrailingSlashes(String(raw).trim())
 }

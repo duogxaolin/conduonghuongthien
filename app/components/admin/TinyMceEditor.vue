@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AdminMediaUploadResult } from '~/types/admin-api'
+import type { TinyMceEditorInstance, WindowWithTinyMce } from '~/types/tinymce'
 // ─── Reusable TinyMCE rich-text editor (v-model) ─────────────────────────────
 // Single source for TinyMCE in the admin. Used by the page builder's richtext
 // fields (PropertyPanel) so the in-builder editing experience matches the
@@ -16,13 +18,15 @@ const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
 // Unique id per instance so multiple editors can coexist on one page.
 const editorId = `tinymce-${Math.random().toString(36).slice(2, 10)}`
-let editor: any = null
+
+
+let editor: TinyMceEditorInstance | null = null
 let internalUpdate = false
 
 // Load self-hosted first (instant, offline-safe, no external dependency for an
 // auth-gated admin tool); fall back to the CDN only if the local asset is missing.
 const loadScript = () => new Promise<void>((resolve) => {
-  if ((window as any).tinymce) { resolve(); return }
+  if ((window as WindowWithTinyMce).tinymce) { resolve(); return }
   const script = document.createElement('script')
   script.src = '/assets/tinymce/tinymce.min.js'
   script.onload = () => resolve()
@@ -39,7 +43,7 @@ const loadScript = () => new Promise<void>((resolve) => {
 onMounted(async () => {
   if (typeof window === 'undefined') return
   await loadScript()
-  const win = window as any
+  const win = window as WindowWithTinyMce
   if (!win.tinymce) return
   win.tinymce.init({
     selector: `#${editorId}`,
@@ -68,17 +72,17 @@ onMounted(async () => {
     automatic_uploads: true,
     paste_data_images: true,
     file_picker_types: 'image',
-    images_upload_handler: (blobInfo: any) => new Promise<string>((resolve, reject) => {
+    images_upload_handler: (blobInfo: { blob: () => Blob, filename: () => string }) => new Promise<string>((resolve, reject) => {
       const formData = new FormData()
       formData.append('file', blobInfo.blob(), blobInfo.filename())
       $fetch('/api/admin/media/upload', { method: 'POST', body: formData })
-        .then((res: any) => {
+        .then((res: AdminMediaUploadResult) => {
           if (res.ok && res.media?.url) resolve(res.media.url)
           else reject('Upload thất bại')
         })
-        .catch((err: any) => reject(err?.data?.statusMessage || 'Upload thất bại'))
+        .catch((err: unknown) => reject(errorMessage(err, 'Upload thất bại')))
     }),
-    setup: (ed: any) => {
+    setup: (ed: TinyMceEditorInstance) => {
       editor = ed
       ed.on('init', () => { ed.setContent(props.modelValue || '') })
       const push = () => {

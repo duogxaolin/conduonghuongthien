@@ -1,11 +1,13 @@
 <script setup lang="ts">
+import type { AdminArticleAuthorRow, AdminArticleBoost, AdminArticleStats, AdminArticleStatsResult, AdminCategoryRow } from '~/types/admin-api'
+import type { AdminArticleRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
 })
 
 const route = useRoute()
-const articles = ref<any[]>([])
+const articles = ref<AdminArticleRow[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const search = ref('')
@@ -22,10 +24,10 @@ const selectedAuthorId = ref('')
 const pagination = ref({ page: 1, totalPages: 1, total: 0 })
 
 // Category state
-const allCategories = ref<any[]>([])
+const allCategories = ref<AdminCategoryRow[]>([])
 
 // Người đăng bài — chỉ những ai đã thực sự có bài, kèm số bài mất tác giả.
-const authorOptions = ref<any[]>([])
+const authorOptions = ref<AdminArticleAuthorRow[]>([])
 const orphanAuthorCount = ref(0)
 
 const typeLabels: Record<string, string> = {
@@ -49,7 +51,7 @@ const typeIcons: Record<string, string> = {
 }
 
 /** Build display string for category: "Parent > Child" or just "Name" */
-const categoryDisplay = (a: any) => {
+const categoryDisplay = (a: AdminArticleRow) => {
   if (!a.categoryName) return ''
   if (a.parentCategoryName) return `${a.parentCategoryName} › ${a.categoryName}`
   return a.categoryName
@@ -74,7 +76,7 @@ const subCategoryOptions = computed(() => {
 
 const fetchCategories = async () => {
   try {
-    const params: any = {}
+    const params: Record<string, string> = {}
     if (selectedType.value) params.type = selectedType.value
     const res = await $fetch('/api/admin/categories', { params })
     if (res.ok) allCategories.value = res.items
@@ -113,7 +115,7 @@ const fetchArticles = async (page = 1) => {
   loading.value = true
   loadError.value = ''
   try {
-    const params: any = {
+    const params: Record<string, string | number> = {
       page,
       search: search.value,
       type: selectedType.value,
@@ -134,9 +136,9 @@ const fetchArticles = async (page = 1) => {
       // Ids from the previous page/filter no longer refer to anything on screen.
       selection.keepOnly(visibleIds.value)
     }
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi tải danh sách bài viết')
-    loadError.value = err?.data?.statusMessage || 'Lỗi tải danh sách bài viết'
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi tải danh sách bài viết'))
+    loadError.value = errorMessage(err, 'Lỗi tải danh sách bài viết')
   } finally {
     loading.value = false
   }
@@ -145,7 +147,7 @@ const fetchArticles = async (page = 1) => {
 // ─── Bulk selection ───────────────────────────────────────────────────────────
 const selection = useBulkSelection()
 const bulk = useBulkAction(selection)
-const visibleIds = computed(() => articles.value.map((a: any) => Number(a.id)))
+const visibleIds = computed(() => articles.value.map((a) => Number(a.id)))
 
 const bulkDelete = () => bulk.run({
   url: '/api/admin/articles/bulk-delete',
@@ -198,30 +200,30 @@ const bulkComments = (enabled: boolean) => {
  *  "đang mở" trong khi máy chủ vẫn đóng là lời nói dối về trạng thái thật, và
  *  cán bộ sẽ đi tìm xem vì sao trang công khai không có khung bình luận. */
 const togglingComments = ref<number | null>(null)
-const toggleComments = async (art: any) => {
+const toggleComments = async (art: AdminArticleRow) => {
   const next = !art.commentsEnabled
   togglingComments.value = Number(art.id)
   art.commentsEnabled = next
   try {
     await $fetch(`/api/admin/articles/${art.id}`, { method: 'PUT', body: { commentsEnabled: next } })
     toast.success(next ? 'Đã mở bình luận cho bài viết này.' : 'Đã đóng bình luận của bài viết này.')
-  } catch (err: any) {
+  } catch (err: unknown) {
     art.commentsEnabled = !next
-    toast.error(err?.data?.statusMessage || 'Không đổi được trạng thái bình luận.')
+    toast.error(errorMessage(err, 'Không đổi được trạng thái bình luận.'))
   } finally {
     togglingComments.value = null
   }
 }
 
-const deleteArticle = async (art: any) => {
+const deleteArticle = async (art: AdminArticleRow) => {
   const ok = await confirm({ title: 'Xóa bài viết', message: `Bạn có chắc muốn xóa bài viết "${art.title}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
     await $fetch(`/api/admin/articles/${art.id}`, { method: 'DELETE' })
     toast.success('Đã xóa bài viết thành công!')
     await fetchArticles(pagination.value.page)
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Lỗi xóa bài viết')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi xóa bài viết'))
   }
 }
 
@@ -233,11 +235,11 @@ const deleteArticle = async (art: any) => {
  * chính người trong cơ quan cũng không trả lời được câu hỏi "số đó có thật
  * không", và đó là câu hỏi bắt buộc phải trả lời được.
  */
-const statsArticle = ref<any>(null)
+const statsArticle = ref<AdminArticleRow | null>(null)
 const statsLoading = ref(false)
 const statsError = ref('')
-const statsData = ref<any>(null)
-const runningBoost = ref<any>(null)
+const statsData = ref<AdminArticleStats | null>(null)
+const runningBoost = ref<AdminArticleBoost>(null)
 
 const boostMode = ref<'instant' | 'gradual'>('instant')
 const boostAmount = ref<number | null>(null)
@@ -265,7 +267,7 @@ const boostProgress = computed(() => {
 /** Cột cao nhất trong biểu đồ ngày, dùng làm mốc quy đổi chiều cao các cột còn lại. */
 const dailyPeak = computed(() => {
   const rows = statsData.value?.daily || []
-  return rows.reduce((max: number, row: any) => Math.max(max, Number(row.total || 0)), 0)
+  return rows.reduce((max: number, row: { total?: number }) => Math.max(max, Number(row.total || 0)), 0)
 })
 
 const loadStats = async () => {
@@ -273,13 +275,13 @@ const loadStats = async () => {
   statsLoading.value = true
   statsError.value = ''
   try {
-    const res: any = await $fetch(`/api/admin/articles/${statsArticle.value.id}/stats`)
+    const res = await $fetch<AdminArticleStatsResult>(`/api/admin/articles/${statsArticle.value.id}/stats`)
     statsData.value = res.stats
     runningBoost.value = res.boost
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Giữ lại lỗi trên màn hình kèm nút thử lại: một modal trống không nói được
     // là "bài này chưa có lượt xem" hay "không tải được số liệu".
-    statsError.value = err?.data?.statusMessage || 'Không tải được số liệu lượt xem.'
+    statsError.value = errorMessage(err, 'Không tải được số liệu lượt xem.')
     statsData.value = null
     runningBoost.value = null
   } finally {
@@ -287,7 +289,7 @@ const loadStats = async () => {
   }
 }
 
-const openStats = async (art: any) => {
+const openStats = async (art: AdminArticleRow) => {
   statsArticle.value = art
   statsData.value = null
   runningBoost.value = null
@@ -336,8 +338,8 @@ const submitBoost = async () => {
     boostAmount.value = null
     await loadStats()
     await fetchArticles(pagination.value.page)
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không thực hiện được thao tác tăng lượt xem.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thực hiện được thao tác tăng lượt xem.'))
   } finally {
     boostSubmitting.value = false
   }
@@ -358,8 +360,8 @@ const cancelBoost = async () => {
     await $fetch(`/api/admin/articles/${statsArticle.value.id}/boost`, { method: 'DELETE' })
     toast.success('Đã huỷ lượt tăng dần.')
     await loadStats()
-  } catch (err: any) {
-    toast.error(err?.data?.statusMessage || 'Không huỷ được lượt tăng dần.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không huỷ được lượt tăng dần.'))
   }
 }
 
@@ -645,7 +647,7 @@ onMounted(async () => {
                 </button>
               </td>
               <!-- Date -->
-              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] text-[0.82rem] whitespace-nowrap">{{ new Date(a.createdAt).toLocaleDateString('vi-VN') }}</td>
+              <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] text-[0.82rem] whitespace-nowrap">{{ formatDateTimeVN(a.createdAt) }}</td>
               <!-- Actions -->
               <td class="px-4 py-3 border-b border-[#eef2ee]">
                 <div class="flex items-center gap-2">

@@ -82,8 +82,10 @@ const validationError = computed(() => {
 const isEmpty = computed(() => summary.value !== null && summary.value.traffic.length === 0)
 const formatNumber = (value: number) => new Intl.NumberFormat('vi-VN').format(value)
 const formatDay = (day: string | null) => day ? new Intl.DateTimeFormat('vi-VN', { timeZone: 'UTC', day: '2-digit', month: '2-digit', year: 'numeric' }).format(new Date(`${day}T00:00:00Z`)) : 'Chưa có dữ liệu'
-const errorStatus = (error: any) => Number(error?.statusCode || error?.response?.status || error?.data?.statusCode || 0)
-const errorMessage = (error: any, fallback: string) => error?.data?.statusMessage || error?.statusMessage || fallback
+// Dùng helper dùng chung (`app/utils/errorMessage.ts`) thay hai bản sao viết tay:
+// hai bản đọc lỗi khác nhau trên cùng một dự án là hai cách hiển thị khác nhau
+// cho cùng một lỗi máy chủ.
+import { errorMessage, errorStatus } from '~/utils/errorMessage'
 const queryRange = () => ({ start: start.value, end: end.value })
 const replaceQuery = async () => {
   const preservedQuery = { ...route.query }
@@ -114,8 +116,8 @@ const loadSummary = async () => {
   try {
     const response = await $fetch<Summary>('/api/admin/analytics/summary', { query: queryRange(), signal: summaryController.signal })
     if (request === summaryRequest) summary.value = response
-  } catch (error: any) {
-    if (request !== summaryRequest || error?.name === 'AbortError') return
+  } catch (error: unknown) {
+    if (request !== summaryRequest || isAbortError(error)) return
     if (errorStatus(error) === 403) summaryError.value = 'Bạn không có quyền xem dữ liệu phân tích.'
     else summaryError.value = errorMessage(error, 'Không thể tải dữ liệu phân tích. Vui lòng thử lại.')
   } finally {
@@ -135,8 +137,8 @@ const loadDrill = async () => {
   try {
     const response = await $fetch<DrillDown>(endpoint, { query, signal: drillController.signal })
     if (request === drillRequest) drill.value = response
-  } catch (error: any) {
-    if (request !== drillRequest || error?.name === 'AbortError') return
+  } catch (error: unknown) {
+    if (request !== drillRequest || isAbortError(error)) return
     drillError.value = errorMessage(error, 'Không thể tải bảng xếp hạng. Vui lòng thử lại.')
   } finally {
     if (request === drillRequest) drillLoading.value = false
