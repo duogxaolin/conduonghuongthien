@@ -111,6 +111,29 @@ test('the browser suite runs in CI, with a database and a browser to run against
   }
 })
 
+test('the unit suite runs east of UTC, where the local-day bugs live', () => {
+  // Not tidiness — a gate that has already caught a real bug.
+  //
+  // The analytics scheduler decides "has today's pass already run?" by comparing
+  // days. Its first version compared UTC days, which east of UTC skips the nightly
+  // pass every night, forever, silently: at UTC+7 a 03:00 local run still falls on
+  // the previous UTC day, so last night's record reads as today's.
+  //
+  // Measured, not argued: reintroducing that comparison fails 6 tests at UTC+7 and
+  // ZERO at UTC. GitHub runners are UTC, so without this line the pipeline hands a
+  // green tick to a scheduler that never runs on the servers it ships to. Any date
+  // logic reading a local hour or local day shares the blind spot, which is why the
+  // whole suite runs shifted rather than one file.
+  const workflow = read('.github/workflows/ci.yml')
+  const testJob = workflow.slice(workflow.indexOf('\n  test:'), workflow.indexOf('\n  build:'))
+
+  assert.match(
+    testJob,
+    /TZ: Asia\/Ho_Chi_Minh/,
+    'the unit suite runs at the runner default (UTC), so local-day bugs pass CI',
+  )
+})
+
 test('a failing browser run keeps the evidence of what the page showed', () => {
   // A CI-only failure is otherwise a single assertion line. The trace and
   // screenshot are written only on failure, so this uploads nothing when green.
