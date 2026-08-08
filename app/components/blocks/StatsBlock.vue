@@ -23,7 +23,7 @@
   </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 const props = defineProps({ block: { type: Object, required: true } })
 
@@ -53,7 +53,7 @@ const stats = computed(() => {
 // Escaping happens before the marker pass; the escaped text contains no '+' or '/'
 // artifacts of its own except inside entities (&#39;), which are left untouched
 // because the replacement only wraps the bare characters.
-function escapeHtml(value) {
+function escapeHtml(value: unknown) {
   return String(value ?? '')
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -62,7 +62,7 @@ function escapeHtml(value) {
     .replace(/'/g, '&#39;')
 }
 
-function formatValue(v) {
+function formatValue(v: unknown) {
   return escapeHtml(v).replace(/[+/]/g, (m) => `<span class="text-[#6da33e]">${m}</span>`)
 }
 </script>

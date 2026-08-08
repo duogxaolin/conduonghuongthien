@@ -71,13 +71,13 @@
   </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
-const formatDate = (dateStr) => formatDateVN(dateStr)
+const formatDate = (dateStr: string | null | undefined) => formatDateVN(dateStr)
 
 const maxItems = computed(() => Number(d.value.maxItems) || 5)
 const categorySlug = computed(() => d.value.categorySlug || '')

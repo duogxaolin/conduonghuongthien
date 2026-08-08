@@ -70,7 +70,7 @@
   </Teleport>
 </template>
 
-<script setup>
+<script setup lang="ts">
 const { toasts, remove } = useToast()
 </script>
 
