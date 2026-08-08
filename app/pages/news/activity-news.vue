@@ -8,7 +8,7 @@
   />
 </template>
 
-<script setup>
+<script setup lang="ts">
 useSeoMeta({
   title: 'Tin hoạt động | Con Đường Hướng Thiện',
   description: 'Các hoạt động, chỉ đạo nghiệp vụ thi hành án hình sự và tái hòa nhập cộng đồng.',

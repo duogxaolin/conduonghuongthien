@@ -54,7 +54,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 // Renders a page's node tree. Each root node is delegated to the recursive
 // BlockNode, which handles containers (section/row/column) and leaf blocks alike.
 // A legacy flat array is simply a list of childless root nodes — rendered
@@ -68,13 +68,25 @@
 // live here rather than inline in each page because the placeholder is identical
 // across all four — see design.md D3.
 import BlockNode from './blocks/BlockNode.vue'
+import type { RenderableNode } from '~/utils/blocks/types'
 
-defineProps({
-  blocks: { type: Array, default: () => [] },
-  interactive: { type: Boolean, default: false },
-  selectedId: { type: [Number, String, null], default: null },
-  pending: { type: Boolean, default: false },
-  loadError: { type: [Object, String, null], default: null },
-  onRetry: { type: Function, default: null },
-})
+/**
+ * Khai bằng generic thay vì object runtime: `blocks: { type: Array }` suy ra
+ * `unknown[]`, nên `:node="node"` truyền `unknown` vào một prop đòi `BuilderNode`
+ * và mọi phép đọc `node.blockType` trong template mất kiểm kiểu. `BlockNode` con
+ * **đã** dùng lối này (`defineProps<{ node: BuilderNode … }>`), nên trước đây hợp
+ * đồng chỉ được kiểm ở một đầu của đúng chỗ nó cần khớp hai đầu.
+ *
+ * `loadError` là `unknown`, không phải một hình dạng lỗi cụ thể: nó đến từ
+ * `error.value` của `useFetch`/`useAsyncData` và template chỉ dùng nó làm điều
+ * kiện truthy — khai hẹp hơn thực tế là khẳng định một hình dạng chưa ai kiểm.
+ */
+defineProps<{
+  blocks?: RenderableNode[]
+  interactive?: boolean
+  selectedId?: number | string | null
+  pending?: boolean
+  loadError?: unknown
+  onRetry?: (() => void) | null
+}>()
 </script>

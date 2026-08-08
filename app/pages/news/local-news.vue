@@ -8,7 +8,7 @@
   />
 </template>
 
-<script setup>
+<script setup lang="ts">
 useSeoMeta({
   title: 'Tin địa phương | Con Đường Hướng Thiện',
   description: 'Hoạt động thi hành án hình sự và công tác cộng đồng tại địa bàn xã, phường.',

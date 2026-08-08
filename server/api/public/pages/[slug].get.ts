@@ -21,6 +21,45 @@ interface PublicBlockNode {
   children?: PublicBlockNode[]
 }
 
+/** Thông tin trang đi kèm phần block. */
+interface PublicPageMeta {
+  slug: string
+  title: string
+  seoTitle: string | null
+  seoDescription: string | null
+}
+
+/**
+ * Hợp đồng của endpoint này — **một** hình dạng cho cả ba nhánh `return`.
+ *
+ * Trước đây ba nhánh trả ba hình dạng khác nhau (`{ok:false}` /
+ * `{ok,page,blocks:PublicBlockNode[]}` / `{ok,page,blocks:<hàng phẳng>}`), nên
+ * `$fetch` suy ra một **union**. Union đó không thu hẹp được bằng `data.value?.ok`
+ * vì `ok` suy về `boolean` chứ không phải literal, nên `data.value.page` báo
+ * "Property 'page' does not exist" ở **cả bốn** trang dựng bằng block (`/`,
+ * `/about`, `/contact`, `[slug]`) — 9 trong số các lỗi mà lượt bật `lang="ts"`
+ * làm lộ ra.
+ *
+ * Cách sửa là **bỏ union đi**, không phải thêm một literal để thu hẹp nó: `page`
+ * và `blocks` nay có mặt ở **mọi** nhánh (`null` và `[]` khi thất bại, chứ không
+ * vắng mặt). Đó cũng là hình dạng mà bốn trang **vốn đã** giả định — cả bốn đều
+ * viết `data.value?.page || null` và truyền một `default` là
+ * `{ ok:false, page:null, blocks:[] }`, tức **hình dạng thứ tư** không khớp bất
+ * kỳ nhánh nào của máy chủ. Một hình dạng duy nhất làm nhánh dự phòng và nhánh
+ * thật đọc giống nhau: mã chạy đúng với dữ liệu mặc định cũng chạy đúng với dữ
+ * liệu thật.
+ *
+ * `displayOrder` **không** nằm trong `PublicBlockNode`, và nhánh legacy nay cắt
+ * nó bỏ: đã kiểm không nơi nào phía client đọc trường đó (chỉ trình dựng trang
+ * trong `/admin` dùng), còn thứ tự thì đã nằm trong thứ tự mảng — `ORDER BY` vẫn
+ * giữ nguyên.
+ */
+interface PublicPageResponse {
+  ok: boolean
+  page: PublicPageMeta | null
+  blocks: PublicBlockNode[]
+}
+
 // Recursively drop any node with isVisible === false (and its whole subtree),
 // and strip the isVisible flag from the returned tree (public payload = visible
 // nodes only). Preserves colSpan and recurses into container children.
@@ -43,18 +82,29 @@ function pruneHiddenTree(nodes: unknown): PublicBlockNode[] {
   return out
 }
 
+/**
+ * Nhánh thất bại — cùng hình dạng với nhánh thành công, chỉ khác giá trị.
+ *
+ * Là **hàm**, không phải hằng dùng chung: một object hằng sẽ phát đi **cùng một**
+ * mảng `blocks` cho mọi request, nên một lượt `.push()` ở đâu đó làm mọi lượt trả
+ * về sau đó mang theo rác của lượt trước.
+ */
+function notFound(): PublicPageResponse {
+  return { ok: false, page: null, blocks: [] }
+}
+
 // Public, unauthenticated, read-only. Returns only VISIBLE blocks/nodes.
 // Prefers the published node tree (pages.published_blocks) when present; falls
 // back to the flat page_blocks table for legacy pages (published_blocks = null).
 // Unknown slug → { ok: false } with 2xx (never a 500) so the page can degrade gracefully.
-export default defineEventHandler(async (event) => {
+export default defineEventHandler(async (event): Promise<PublicPageResponse> => {
   const slug = String(getRouterParam(event, 'slug') || '').trim()
-  if (!slug) return { ok: false }
+  if (!slug) return notFound()
 
   try {
     const db = getDb()
     const [page] = await db.select().from(pages).where(eq(pages.slug, slug)).limit(1)
-    if (!page) return { ok: false }
+    if (!page) return notFound()
 
     const pageMeta = {
       slug: page.slug,
@@ -70,7 +120,10 @@ export default defineEventHandler(async (event) => {
     }
 
     // Legacy fallback: flat visible rows from page_blocks.
-    const blocks = await db
+    // `displayOrder` is read for the ORDER BY but deliberately NOT returned: no
+    // client code reads it (only the admin builder does), and the order it
+    // encodes is already carried by the array order.
+    const rows = await db
       .select({
         id: pageBlocks.id,
         blockType: pageBlocks.blockType,
@@ -81,9 +134,15 @@ export default defineEventHandler(async (event) => {
       .where(and(eq(pageBlocks.pageId, page.id), eq(pageBlocks.isVisible, true)))
       .orderBy(asc(pageBlocks.displayOrder), asc(pageBlocks.id))
 
+    const blocks: PublicBlockNode[] = rows.map(row => ({
+      id: row.id,
+      blockType: row.blockType,
+      data: row.data ?? {},
+    }))
+
     return { ok: true, page: pageMeta, blocks }
   } catch (err) {
     logError({ event: 'public.page_render_failed', slug, error: err })
-    return { ok: false }
+    return notFound()
   }
 })

@@ -62,6 +62,28 @@ export type BuilderNode = Omit<BlockNode, 'displayOrder' | 'children'> & {
   children?: BuilderNode[]
 }
 
+/**
+ * Một node đủ để **vẽ**, dùng cho `PageRenderer` / `BlockNode`.
+ *
+ * `isVisible` và `displayOrder` đều **tuỳ chọn** ở đây, và đó là điểm chính. Cây
+ * mà trình dựng trang giữ có cả hai; còn phần tải công khai
+ * (`/api/public/pages/[slug]`) **cố ý cắt bỏ** chúng — nó chỉ chứa node đang hiện,
+ * nên gửi kèm một cờ luôn bằng `true` là mời phía client đi kiểm lại một điều đã
+ * quyết ở máy chủ. Hai nơi gọi đó có hình dạng khác nhau **theo thiết kế**.
+ *
+ * Kiểu này diễn đạt đúng thứ mà việc vẽ thật sự cần, và nó khớp với cách
+ * `BlockNode.vue` đã đọc cờ đó từ đầu: `v-if="node.isVisible !== false"` — vắng
+ * mặt thì vẽ, chỉ `false` tường minh mới ẩn. Ép renderer nhận `BuilderNode` (có
+ * `isVisible: boolean` **bắt buộc**) là đòi một trường mà chính đường dữ liệu
+ * công khai đã bỏ đi, nên bốn trang công khai không thể thoả nó — đó là 4 lỗi
+ * `TS2322` mà lượt bật `lang="ts"` làm lộ ra.
+ */
+export type RenderableNode = Omit<BlockNode, 'displayOrder' | 'isVisible' | 'children'> & {
+  displayOrder?: number
+  isVisible?: boolean
+  children?: RenderableNode[]
+}
+
 /** Where a node sits in the tree: its sibling array, its index, its parent. */
 export interface NodeLocation {
   siblings: BuilderNode[]
