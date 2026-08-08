@@ -42,6 +42,7 @@ import { effectiveDisplayName, initialsFrom } from '../utils/display-name'
 import { createReplyNotification } from './notifications'
 import { sendReplyEmail } from './notification-email'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
+import { hasForbiddenControlChars } from '../utils/plain-text'
 
 /** Long enough for a real question, short enough that one row cannot dominate a page. */
 export const COMMENT_MAX_LENGTH = 2000
@@ -58,15 +59,12 @@ const COMMENT_READER_RULE: RateLimitRule = { limit: 5, windowSeconds: 600 }
 const COMMENT_IP_RULE: RateLimitRule = { limit: 15, windowSeconds: 600 }
 
 /**
- * Everything in the C0–C1F/7F range except LF (
-) and TAB (	).
+ * Phep kiem ky tu dieu khien dung chung voi ghi chu xu ly don dang ky.
  *
- * Written with escapes, never as literal bytes: a literal control character in
- * source is invisible in every editor and diff, so the next person to touch this
- * line cannot see what it matches.
+ * Mot danh sach chan ton tai hai ban la hai cho de lam sai, va hai ban chi
+ * duoc doi chieu khi mot trong hai ngung chan - tuc la sau khi viec da xay ra.
+ * Xem server/utils/plain-text.ts.
  */
-// eslint-disable-next-line no-control-regex
-const FORBIDDEN_CONTROL_CHARS = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/
 
 export type BodyValidation =
   | { ok: true, body: string }
@@ -88,7 +86,7 @@ export function validateBody(raw: unknown): BodyValidation {
   const normalized = raw.replace(/\r\n?/g, '\n').trim()
   if (!normalized) return { ok: false, message: 'Vui lòng nhập nội dung bình luận.' }
 
-  if (FORBIDDEN_CONTROL_CHARS.test(normalized)) {
+  if (hasForbiddenControlChars(normalized)) {
     return { ok: false, message: 'Nội dung bình luận chứa ký tự không được phép.' }
   }
 
