@@ -178,7 +178,12 @@ test('multiple entries stay open independently', () => {
   // next. Here a visitor is reading and comparing, so collapsing their previous
   // answer to show another is the wrong trade.
   const source = read(PAGE)
-  assert.match(source, /const openIds = ref\(new Set\(\)\)/, 'open state must hold a set, not one index')
+  // Nhận cả `ref(new Set())` và `ref<Set<number>>(new Set())` — tham số kiểu là
+  // bắt buộc từ khi tệp này bật `lang="ts"` (một `new Set()` trần suy ra
+  // `Set<unknown>`, nên `.has(id)` nhận mọi thứ). Điều test này bảo vệ là **cấu
+  // trúc dữ liệu**: một tập hợp, không phải một `activeIndex` đơn lẻ.
+  assert.match(source, /const openIds = ref(?:<Set<number>>)?\(new Set\(\)\)/,
+    'open state must hold a set, not one index')
 })
 
 // ─── Page: filters live in the URL ───────────────────────────────────────────

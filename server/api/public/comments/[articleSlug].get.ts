@@ -17,7 +17,7 @@ import { and, eq } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
 import { articles } from '../../../db/schema'
 import { optionalReader } from '../../../utils/reader-auth'
-import { COMMENT_MAX_PER_PAGE, loadCommentThread } from '../../../services/comments'
+import { COMMENT_MAX_PER_PAGE, loadCommentThread, type PublicComment } from '../../../services/comments'
 import { COMMENT_THREAD_PER_PAGE } from '../../../services/notifications'
 
 /**
@@ -42,16 +42,49 @@ const DEFAULT_PER_PAGE = COMMENT_THREAD_PER_PAGE
  * /qa-documents work already hit once; the check has to come BEFORE the clamp.
  */
 
-const EMPTY = { comments: [], total: 0, totalPages: 1 }
+/**
+ * Hợp đồng của endpoint này — **một** hình dạng cho cả bốn nhánh `return`.
+ *
+ * Ba nhánh rỗng trước đây không mang `signedIn`, nên `$fetch` suy ra một union và
+ * mọi phép đọc ở component phải tự thu hẹp trước. `enabled` đã đủ để phân biệt
+ * luồng đóng với luồng mở, nên `signedIn` vắng mặt không nói thêm điều gì — nó chỉ
+ * làm kiểu khó dùng hơn ở đúng chỗ cần dùng nó.
+ *
+ * `signedIn` ở nhánh rỗng là `false` **có nghĩa thật**, không phải giá trị lấp
+ * chỗ: khi luồng bị đóng thì không ai đăng được, kể cả người đã đăng nhập.
+ */
+interface CommentThreadResponse {
+  ok: boolean
+  enabled: boolean
+  signedIn: boolean
+  comments: PublicComment[]
+  total: number
+  page: number
+  perPage: number
+  totalPages: number
+}
 
-export default defineEventHandler(async (event) => {
+/**
+ * Là **hàm**, không phải hằng dùng chung.
+ *
+ * `EMPTY` trước đây là một object ở cấp module, nên **cùng một mảng `comments`**
+ * được phát đi cho mọi request có luồng đóng. Trải nó bằng `...EMPTY` copy tham
+ * chiếu chứ không copy mảng, nên một lượt `.push()` ở bất cứ đâu phía sau sẽ rò
+ * bình luận sang mọi phản hồi rỗng tiếp theo — trên đúng endpoint mà nội dung
+ * phụ thuộc vào người đang hỏi.
+ */
+function emptyThread(page: number, perPage: number): CommentThreadResponse {
+  return { ok: true, enabled: false, signedIn: false, comments: [], total: 0, page, perPage, totalPages: 1 }
+}
+
+export default defineEventHandler(async (event): Promise<CommentThreadResponse> => {
   const slug = getRouterParam(event, 'articleSlug')
   const query = getQuery(event)
 
   const page = finitePositive(query.page, 1, 100_000)
   const perPage = finitePositive(query.perPage, DEFAULT_PER_PAGE, COMMENT_MAX_PER_PAGE)
 
-  if (!slug) return { ok: true, enabled: false, page, perPage, ...EMPTY }
+  if (!slug) return emptyThread(page, perPage)
 
   const [article] = await getDb()
     .select({ id: articles.id, commentsEnabled: articles.commentsEnabled })
@@ -59,11 +92,11 @@ export default defineEventHandler(async (event) => {
     .where(and(eq(articles.slug, slug), eq(articles.status, 'published')))
     .limit(1)
 
-  if (!article) return { ok: true, enabled: false, page, perPage, ...EMPTY }
+  if (!article) return emptyThread(page, perPage)
 
   // Turning comments off hides the thread; it never deletes it (design.md D10).
   // The rows are still there and administrators still see them in moderation.
-  if (!article.commentsEnabled) return { ok: true, enabled: false, page, perPage, ...EMPTY }
+  if (!article.commentsEnabled) return emptyThread(page, perPage)
 
   const reader = await optionalReader(event)
   const thread = await loadCommentThread({

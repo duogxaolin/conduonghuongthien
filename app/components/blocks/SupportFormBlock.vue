@@ -49,13 +49,15 @@
   </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { reactive, ref, computed } from 'vue'
+import { errorMessage } from '~/utils/errorMessage'
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
 const form = reactive({ name: '', phone: '', city: '', message: '' })
-const submitStatus = ref(null) // null | 'loading' | 'success' | 'error'
+/** Chú thích cũ đã nói đúng bốn giá trị này; nay trình biên dịch giữ lời đó. */
+const submitStatus = ref<null | 'loading' | 'success' | 'error'>(null)
 const submitMessage = ref('')
 
 const submitForm = async () => {
@@ -69,9 +71,9 @@ const submitForm = async () => {
     submitStatus.value = 'success'
     submitMessage.value = `Cám ơn ${form.name}. Thông tin đăng ký của bạn đã được ghi nhận. Cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ qua số ${form.phone}.`
     form.name = ''; form.phone = ''; form.city = ''; form.message = ''
-  } catch (err) {
+  } catch (err: unknown) {
     submitStatus.value = 'error'
-    submitMessage.value = err?.data?.statusMessage || 'Có lỗi xảy ra, vui lòng thử lại hoặc gọi hotline 0903.480.985.'
+    submitMessage.value = errorMessage(err, 'Có lỗi xảy ra, vui lòng thử lại hoặc gọi hotline 0903.480.985.')
   }
 }
 </script>

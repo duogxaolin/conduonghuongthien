@@ -523,13 +523,14 @@
     </nav>
   </div>
 </template>
-<script setup>
+<script setup lang="ts">
 import {
   DEFAULT_BOTTOM_NAV,
   DEFAULT_NAV,
   parseBottomNavConfig,
   parseNavConfig,
 } from '~/utils/nav-config'
+import type { BottomNavItem, NavItem } from '~/utils/nav-config'
 import { ref, onMounted, onUnmounted, computed, nextTick, watch, resolveComponent } from 'vue'
 
 // Resolve NuxtLink once so runtime `:is` bindings render a real <a> (a string
@@ -542,7 +543,7 @@ const isMobileMenuOpen = ref(false)
 const isSearchActive = ref(false)
 const searchQuery = ref('')
 const { currentLang, locales, t, setLang } = useI18n()
-const searchInputRef = ref(null)
+const searchInputRef = ref<HTMLInputElement | null>(null)
 
 // Trạng thái đăng nhập của người đọc. State ở cấp module trong composable, nên
 // header và khối bình luận trong bài đọc cùng một danh tính — hai lượt fetch
@@ -558,7 +559,8 @@ const {
 
 // Menu nhỏ dưới nút danh tính ở header desktop.
 const isReaderMenuOpen = ref(false)
-const readerMenuRef = ref(null)
+// `HTMLElement`: `handleDocumentPointerDown` gọi `.contains(...)` trên giá trị này.
+const readerMenuRef = ref<HTMLElement | null>(null)
 
 // ─── Thông báo ──────────────────────────────────────────────────────────────
 // Chuông desktop sống trong `ReaderNotificationBell.client.vue` và tự sở hữu
@@ -577,7 +579,8 @@ const {
 } = useReaderNotifications()
 
 // Chỉ để đóng menu trước khi `v-if` tháo component lúc đăng xuất.
-const notifBellRef = ref(null)
+// Chuông tự sở hữu cách đóng của nó và phơi ra qua `defineExpose({ close })`.
+const notifBellRef = ref<{ close?: () => void } | null>(null)
 
 /**
  * Nạp thông báo ngay khi biết được người đọc là ai.
@@ -625,24 +628,28 @@ const { error: toastError } = useToast()
 
 // Dynamic nav menu from admin settings (falls back to DEFAULT_NAV)
 
-const navMenuRaw = ref(null) // null = use DEFAULT_NAV
+// `NavItem[] | null` tường minh: `null` nghĩa là "chưa có cấu hình, dùng bảng mặc
+// định". Đây cũng là chỗ `openNewTab` được đọc, nên khai đúng kiểu ở đây là điều
+// biến cổng typecheck thành thứ **bắt được** một trường nav bị bộ khử độc bỏ rơi —
+// đúng lỗi vừa phải sửa bằng tay vì không có gì canh.
+const navMenuRaw = ref<NavItem[] | null>(null)
 
-const navMenu = computed(() => {
+const navMenu = computed<NavItem[]>(() => {
   if (Array.isArray(navMenuRaw.value) && navMenuRaw.value.length) return navMenuRaw.value
   return DEFAULT_NAV
 })
 
 
-const bottomNavRaw = ref(null) // null = use DEFAULT_BOTTOM_NAV
-const bottomNav = computed(() => {
+const bottomNavRaw = ref<BottomNavItem[] | null>(null)
+const bottomNav = computed<BottomNavItem[]>(() => {
   if (Array.isArray(bottomNavRaw.value) && bottomNavRaw.value.length) return bottomNavRaw.value
   return DEFAULT_BOTTOM_NAV
 })
 
-const navItemLabel = (item) => item.label || (item.labelKey ? t(item.labelKey) : item.url)
+const navItemLabel = (item: NavItem) => item.label || (item.labelKey ? t(item.labelKey) : item.url)
 
-const onBottomNavClick = (item) => {
-  if (item.type === 'chatbot') chatWidget.value?.toggleChatbot()
+const onBottomNavClick = (item: BottomNavItem) => {
+  if (item.type === 'chatbot') chatWidget.value?.toggleChatbot?.()
   else if (item.type === 'drawer') toggleMobileMenu()
 }
 
@@ -703,7 +710,8 @@ const toggleMobileMenu = () => {
 
 // The bottom nav dims itself while the chat is open and highlights its chatbot
 // item; both need to read the widget's state, which the widget owns.
-const chatWidget = ref(null)
+// Widget phơi `isChatbotOpen` + `toggleChatbot` cho thanh nav dưới đọc trạng thái.
+const chatWidget = ref<{ isChatbotOpen?: boolean; toggleChatbot?: () => void } | null>(null)
 const isChatOpen = computed(() => chatWidget.value?.isChatbotOpen ?? false)
 
 // The widget locks scroll for itself while its dialog is open; the layout only
@@ -714,7 +722,7 @@ watch(isMobileMenuOpen, (isMenuOpen) => {
   }
 })
 
-const handleKeydown = (event) => {
+const handleKeydown = (event: KeyboardEvent) => {
   // The chatbot dialog handles its own Escape via a keydown on the dialog; this
   // only needs to catch the mobile menu.
   if (event.key !== 'Escape') return
@@ -733,21 +741,24 @@ const handleKeydown = (event) => {
  * khi Vue đã tháo phần tử — nhưng bắt ở `mousedown` với kiểm tra `contains` thì
  * liên kết vẫn còn trong cây, nên nó vẫn điều hướng bình thường.
  */
-const handleDocumentPointerDown = (event) => {
+const handleDocumentPointerDown = (event: MouseEvent) => {
   if (isReaderMenuOpen.value) {
     const root = readerMenuRef.value
-    if (root && !root.contains(event.target)) isReaderMenuOpen.value = false
+    const target = event.target instanceof Node ? event.target : null
+    if (root && (!target || !root.contains(target))) isReaderMenuOpen.value = false
   }
 }
 
-const mobileOpenSubmenu = ref(null)
+const mobileOpenSubmenu = ref<string | null>(null)
 
-const toggleMobileSubmenu = (menuKey) => {
+const toggleMobileSubmenu = (menuKey: string) => {
   mobileOpenSubmenu.value = mobileOpenSubmenu.value === menuKey ? null : menuKey
 }
 
-const onNavClick = (e) => {
-  if (e.target.closest('a')) {
+const onNavClick = (e: MouseEvent) => {
+  // `closest` là của `Element`; một target không phải Element không có liên kết nào
+  // để bấm vào, nên nó chỉ đơn giản không đóng menu.
+  if (e.target instanceof Element && e.target.closest('a')) {
     isMobileMenuOpen.value = false
   }
 }

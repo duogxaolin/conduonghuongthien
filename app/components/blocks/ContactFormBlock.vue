@@ -82,35 +82,70 @@
   </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { reactive, ref, computed } from 'vue'
+import { errorMessage } from '~/utils/errorMessage'
+
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
+/** Một dòng của bảng thông tin bên phải, như cán bộ cấu hình nó. */
+interface InfoRow {
+  label?: string
+  value?: string
+}
+
+/** Kiểu ô nhập được phép. Template phân nhánh theo giá trị này. */
+type FieldType = 'text' | 'email' | 'tel' | 'number' | 'textarea' | 'select'
+
+/** Một trường của biểu mẫu sau khi đã chuẩn hoá — mọi trường đều có mặt. */
+interface RenderField {
+  id: string
+  label: string
+  type: FieldType
+  required: boolean
+  placeholder: string
+  map: string
+  optionsText: string
+}
+
 // The info panel renders only when the block opts in (showInfo) and has content —
 // keeps old single-column blocks unchanged, enables the two-column contact layout.
-const infoRows = computed(() => Array.isArray(d.value.infoRows) ? d.value.infoRows.filter((r) => r && (r.label || r.value)) : [])
+const infoRows = computed<InfoRow[]>(() => Array.isArray(d.value.infoRows)
+  ? (d.value.infoRows as InfoRow[]).filter((r) => r && (r.label || r.value))
+  : [])
 const hasInfo = computed(() => !!d.value.showInfo && (!!d.value.infoTitle || infoRows.value.length > 0 || !!d.value.noteTitle || !!d.value.noteText))
 
 // Legacy fallback: blocks created before the field builder have no data.fields.
 // Reproduce the original four-field layout so those pages stay pixel-stable.
-const LEGACY_FIELDS = [
+// `Partial<RenderField>[]`, không phải `RenderField[]`: không trường nào ở đây là
+// `select`, nên `optionsText` vắng mặt là đúng — chúng đi qua cùng lượt chuẩn hoá
+// của `renderFields`, nơi mọi khoá thiếu được điền giá trị mặc định.
+const LEGACY_FIELDS: Partial<RenderField>[] = [
   { id: 'f_name', label: 'Họ và tên', type: 'text', required: true, placeholder: 'Nguyễn Văn A', map: 'name' },
   { id: 'f_phone', label: 'Số điện thoại', type: 'tel', required: true, placeholder: '09xx xxx xxx', map: 'phone' },
   { id: 'f_city', label: 'Tỉnh / Thành phố', type: 'text', required: true, placeholder: 'Hà Nội', map: 'address' },
   { id: 'f_message', label: 'Nội dung cần hỗ trợ', type: 'textarea', required: true, placeholder: 'Mô tả ngắn gọn vấn đề bạn cần được tư vấn...', map: 'message' },
 ]
 
-const VALID_TYPES = ['text', 'email', 'tel', 'number', 'textarea', 'select']
+// `as const` + hàm thu hẹp: `VALID_TYPES.includes(f.type)` trên một mảng
+// `string[]` không thu hẹp được kiểu, nên `type` vẫn là `string` và không gán được
+// vào `FieldType`. Một hàm thu hẹp tường minh nói đúng điều phép kiểm kia định nói.
+const VALID_TYPES = ['text', 'email', 'tel', 'number', 'textarea', 'select'] as const
+
+function toFieldType(value: unknown): FieldType {
+  return (VALID_TYPES as readonly string[]).includes(String(value)) ? value as FieldType : 'text'
+}
 
 // Normalize configured fields; assign stable ids for rendering/validation.
-const renderFields = computed(() => {
-  const raw = Array.isArray(d.value.fields) ? d.value.fields.filter((f) => f && f.label) : []
-  const source = raw.length ? raw : LEGACY_FIELDS
+const renderFields = computed<RenderField[]>(() => {
+  const configured = Array.isArray(d.value.fields) ? d.value.fields as Partial<RenderField>[] : []
+  const raw = configured.filter((f) => f && f.label)
+  const source: Partial<RenderField>[] = raw.length ? raw : LEGACY_FIELDS
   return source.map((f, i) => ({
     id: String(f.id || `f_${i}`),
     label: String(f.label || ''),
-    type: VALID_TYPES.includes(f.type) ? f.type : 'text',
+    type: toFieldType(f.type),
     required: !!f.required,
     placeholder: f.placeholder || '',
     map: f.map || 'none',
@@ -118,12 +153,14 @@ const renderFields = computed(() => {
   }))
 })
 
-const selectOptions = (field) => String(field.optionsText || '').split('\n').map((s) => s.trim()).filter(Boolean)
-const inputType = (type) => (type === 'email' ? 'email' : type === 'tel' ? 'tel' : type === 'number' ? 'number' : 'text')
+const selectOptions = (field: RenderField) => String(field.optionsText || '').split('\n').map((s) => s.trim()).filter(Boolean)
+const inputType = (type: FieldType) => (type === 'email' ? 'email' : type === 'tel' ? 'tel' : type === 'number' ? 'number' : 'text')
 
-const values = reactive({})
-const errors = reactive({})
-const submitStatus = ref(null)
+// Khoá là `field.id` do cán bộ cấu hình, nên đây là map động — `reactive({})` trần
+// suy ra `{}` và mọi phép đọc theo khoá thành lỗi `TS7053`.
+const values = reactive<Record<string, string>>({})
+const errors = reactive<Record<string, string>>({})
+const submitStatus = ref<null | 'loading' | 'success' | 'error'>(null)
 const submitMessage = ref('')
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
@@ -180,9 +217,9 @@ const submitForm = async () => {
       ? `Cám ơn ${named}. Thông tin đăng ký của bạn đã được ghi nhận. Cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ.`
       : 'Thông tin đăng ký của bạn đã được ghi nhận. Cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ.'
     for (const field of renderFields.value) values[field.id] = ''
-  } catch (err) {
+  } catch (err: unknown) {
     submitStatus.value = 'error'
-    submitMessage.value = err?.data?.statusMessage || 'Có lỗi xảy ra, vui lòng thử lại hoặc gọi hotline 0903.480.985.'
+    submitMessage.value = errorMessage(err, 'Có lỗi xảy ra, vui lòng thử lại hoặc gọi hotline 0903.480.985.')
   }
 }
 </script>
