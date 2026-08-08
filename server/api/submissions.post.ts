@@ -1,12 +1,13 @@
 import { getDb } from '../utils/db'
-import { submissions, pages, pageBlocks } from '../db/schema'
-import { eq } from 'drizzle-orm'
+import { submissions, pages, pageBlocks, settings } from '../db/schema'
+import { eq, inArray } from 'drizzle-orm'
 import { getSmtpConfig, sendMail } from '../utils/mailer'
 import { escapeHtml } from '../utils/escape-html'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
-import { logError, logWarn, SECURITY_EVENTS } from '../utils/logger'
+import { logError, logWarn, logInfo, SECURITY_EVENTS } from '../utils/logger'
 import { getClientIp } from '../utils/client-ip'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
+import { resolveSubmissionRecipient } from '../utils/submission-recipient'
 
 // Public, unauthenticated endpoint → rate limit by the real peer IP
 // (`x-forwarded-for` is client-controlled and therefore spoofable).
@@ -93,6 +94,11 @@ function collectFromTree(nodes: unknown, out: Set<string>): void {
  * table). The client-supplied recipient is only honored if it appears here —
  * this removes the arbitrary-recipient / open-relay capability while keeping the
  * recipient editable through the page builder (the source of truth).
+ *
+ * ⚠️ Truy vấn bảng phẳng phải nhận **cả hai** loại block. Bản cũ chỉ lọc
+ * `contact_form`, nên một `support_form` (biểu mẫu ở trang chủ) có cấu hình email
+ * nhận vẫn không bao giờ vào được allowlist — và `collectFromTree` ngay bên trên
+ * thì đã nhận cả hai, nên hai đường đọc cùng một thứ nói hai điều khác nhau.
  */
 async function getConfiguredRecipients(db: ReturnType<typeof getDb>): Promise<Set<string>> {
   const out = new Set<string>()
@@ -108,12 +114,22 @@ async function getConfiguredRecipients(db: ReturnType<typeof getDb>): Promise<Se
   const flat = await db
     .select({ blockType: pageBlocks.blockType, data: pageBlocks.data })
     .from(pageBlocks)
-    .where(eq(pageBlocks.blockType, 'contact_form'))
+    .where(inArray(pageBlocks.blockType, ['contact_form', 'support_form']))
   for (const b of flat) {
     const to = String(b.data?.recipientEmail || '').trim().toLowerCase()
     if (to && EMAIL_RE.test(to)) out.add(to)
   }
   return out
+}
+
+/** Email liên hệ của cổng (`settings.email`) — nhánh dự phòng cuối. */
+async function getSiteEmail(db: ReturnType<typeof getDb>): Promise<string> {
+  const [row] = await db
+    .select({ value: settings.value })
+    .from(settings)
+    .where(eq(settings.key, 'email'))
+    .limit(1)
+  return (row?.value || '').trim()
 }
 
 export default defineEventHandler(async (event) => {
@@ -211,36 +227,63 @@ export default defineEventHandler(async (event) => {
   })
 
   // ── 3C step 2: send-if-configured. Never block or fail the response on mail. ──
-  // The client-supplied recipientEmail is UNTRUSTED: it comes from the public,
-  // unauthenticated request body. To prevent an attacker using the site's SMTP
-  // credentials to mail arbitrary addresses (open-relay/spam), we only send when
-  // the requested recipient matches a recipient actually configured on a stored
-  // contact_form/support_form block. If it doesn't match (or none is resolvable),
-  // we silently skip the email — the submission is already persisted above (3C).
-  if (recipientEmail && EMAIL_RE.test(recipientEmail)) {
+  //
+  // Người nhận được giải **phía máy chủ** (`resolveSubmissionRecipient`): địa chỉ
+  // client xin chỉ được nhận khi nó nằm trong tập đã cấu hình trên block, còn lại
+  // lùi về block duy nhất đã cấu hình, rồi về `settings.email`. Vì địa chỉ cuối
+  // cùng không bao giờ đến từ thân request, khả năng open-relay biến mất **hoàn
+  // toàn** — và cấu hình mặc định dùng được ngay, không cần ai đi sửa từng block.
+  //
+  // Nhánh này KHÔNG còn đứng sau `if (recipientEmail)`: chính điều kiện đó là lý
+  // do biểu mẫu trang chủ chưa bao giờ gửi được email nào (nó không gửi trường
+  // đó lên). Xem `server/utils/submission-recipient.ts` cho cả bốn lớp lỗi.
+  let notifiedAt: Date | null = null
+  try {
+    const [configured, siteEmail] = await Promise.all([
+      getConfiguredRecipients(db),
+      getSiteEmail(db),
+    ])
+    const { to, source } = resolveSubmissionRecipient(recipientEmail, configured, siteEmail)
+    const config = to ? await getSmtpConfig() : null
+
+    if (!to) {
+      // Ghi log chứ không im lặng: "không có địa chỉ nhận" là một chỗ **cấu hình
+      // còn thiếu**, và nó vốn đọc ra y hệt "email đã gửi rồi".
+      logInfo({ event: 'public.submission_email_skipped', submissionId: result.insertId, reason: 'no-recipient' })
+    } else if (!config) {
+      logInfo({ event: 'public.submission_email_skipped', submissionId: result.insertId, reason: 'smtp-unconfigured' })
+    } else {
+      const subject = `[CDKT] Đơn đăng ký mới${formTitle ? `: ${formTitle}` : ''}`
+      const lines = emailAnswers.map((a) => `${a.label}: ${a.value}`).join('\n')
+      // Escape: label/value are visitor-supplied and would otherwise inject
+      // arbitrary HTML/links into the notification email read by staff.
+      const rowsHtml = emailAnswers
+        .map((a) => `<tr><td style="padding:6px 12px;font-weight:bold;color:#1E251C;">${escapeHtml(a.label)}</td><td style="padding:6px 12px;color:#4A5545;white-space:pre-wrap;">${escapeHtml(a.value)}</td></tr>`)
+        .join('')
+      await sendMail({
+        to,
+        subject,
+        text: `${formTitle ? formTitle + '\n\n' : ''}${lines}`,
+        html: `<div style="font-family:Arial,sans-serif;"><h2 style="color:#4A6741;">${escapeHtml(formTitle || 'Đơn đăng ký mới')}</h2><table style="border-collapse:collapse;">${rowsHtml}</table></div>`,
+        config,
+      })
+      notifiedAt = new Date()
+      logInfo({ event: 'public.submission_email_sent', submissionId: result.insertId, recipientSource: source })
+    }
+  } catch (err) {
+    // Log only — a mail failure must never surface to the visitor.
+    logError({ event: 'public.submission_email_failed', submissionId: result.insertId, error: err })
+  }
+
+  // Đóng dấu lượt gửi thành công lên chính hàng đơn, để trang quản trị trả lời
+  // được "người dân này đã có ai được báo chưa" mà không phải đi đọc log máy chủ.
+  // Lượt ghi này **cũng** nuốt lỗi của nó: đơn đã lưu xong, và một cột thống kê
+  // không có tư cách làm hỏng phản hồi cho người dân.
+  if (notifiedAt) {
     try {
-      const allowed = await getConfiguredRecipients(db)
-      const to = recipientEmail.toLowerCase()
-      const config = allowed.has(to) ? await getSmtpConfig() : null
-      if (config) {
-        const subject = `[CDKT] Đơn đăng ký mới${formTitle ? `: ${formTitle}` : ''}`
-        const lines = emailAnswers.map((a) => `${a.label}: ${a.value}`).join('\n')
-        // Escape: label/value are visitor-supplied and would otherwise inject
-        // arbitrary HTML/links into the notification email read by staff.
-        const rowsHtml = emailAnswers
-          .map((a) => `<tr><td style="padding:6px 12px;font-weight:bold;color:#1E251C;">${escapeHtml(a.label)}</td><td style="padding:6px 12px;color:#4A5545;white-space:pre-wrap;">${escapeHtml(a.value)}</td></tr>`)
-          .join('')
-        await sendMail({
-          to: recipientEmail,
-          subject,
-          text: `${formTitle ? formTitle + '\n\n' : ''}${lines}`,
-          html: `<div style="font-family:Arial,sans-serif;"><h2 style="color:#4A6741;">${escapeHtml(formTitle || 'Đơn đăng ký mới')}</h2><table style="border-collapse:collapse;">${rowsHtml}</table></div>`,
-          config,
-        })
-      }
+      await db.update(submissions).set({ notifiedAt }).where(eq(submissions.id, result.insertId))
     } catch (err) {
-      // Log only — a mail failure must never surface to the visitor.
-      logError({ event: 'public.submission_email_failed', submissionId: result.insertId, error: err })
+      logError({ event: 'public.submission_notified_stamp_failed', submissionId: result.insertId, error: err })
     }
   }
 

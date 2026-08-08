@@ -358,6 +358,12 @@ const AUDITED_SERVICES: string[] = [
   'server/services/submissions.ts',
   'server/services/chatbot-settings.ts',
   'server/services/chatbot-small-talk.ts',
+  // Vòng đời xử lý đơn: bốn đường ghi (xem lần đầu, đổi trạng thái, ghi chú, ghi
+  // nhận đã liên hệ) và **cả bốn** ghi kèm một dòng `activity_logs`. Đây là hồ sơ
+  // liên hệ của một công dân, nên câu "ai đã đóng hồ sơ này, lúc nào" phải trả lời
+  // được — và một cặp ghi rời sẽ để lại một trạng thái đã đổi mà nhật ký nói là
+  // chưa, hoặc ngược lại.
+  'server/services/submission-workflow.ts',
 ]
 
 describe('service-layer writes commit their mutation and their audit row together', () => {

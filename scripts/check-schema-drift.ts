@@ -162,8 +162,16 @@ function fromInitTs(): Map<string, TableShape> {
     entry.columns.set(column, shape ?? { type: '?', nullable: entry.columns.get(column)?.nullable ?? true })
   }
 
-  const ensureRe = /ensureColumn\(\s*db,\s*database,\s*'([a-z_]+)',\s*'([a-z_]+)',\s*'([^']*)'/g
-  while ((match = ensureRe.exec(source))) addMigrated(match[1], match[2], match[3])
+  // Định nghĩa nhận CẢ HAI kiểu nháy. Phần `"([^"]*)"` không phải để cho đủ bộ:
+  // một định nghĩa chứa giá trị mặc định dạng chuỗi — `VARCHAR(24) NOT NULL DEFAULT
+  // 'new'` — **buộc** phải viết trong nháy kép ở TypeScript, nên bản chỉ đọc nháy
+  // đơn bỏ qua đúng nhóm cột đó. Đo được trên chính repo này: bốn cột dùng nháy kép
+  // (`submissions.status`, `chatbot_settings.mode`, `.out_of_scope_behavior`,
+  // `.lead_capture_enabled`) và **không cột nào** được biểu thức này nhìn thấy.
+  // Ba cột chatbot chỉ thoát báo động nhờ có mặt trong `chatbotColumnMigrations`,
+  // tức là một đường đăng ký khác — không phải nhờ cổng này làm việc.
+  const ensureRe = /ensureColumn\(\s*db,\s*database,\s*'([a-z_]+)',\s*'([a-z_]+)',\s*(?:'([^']*)'|"([^"]*)")/g
+  while ((match = ensureRe.exec(source))) addMigrated(match[1], match[2], match[3] ?? match[4])
   // ensureColumn calls that pass the definition some other way still register the column.
   const ensureBareRe = /ensureColumn\(\s*db,\s*database,\s*'([a-z_]+)',\s*'([a-z_]+)'\s*\)/g
   while ((match = ensureBareRe.exec(source))) addMigrated(match[1], match[2], undefined)

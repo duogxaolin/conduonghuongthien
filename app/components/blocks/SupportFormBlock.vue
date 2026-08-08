@@ -64,9 +64,22 @@ const submitForm = async () => {
   submitStatus.value = 'loading'
   submitMessage.value = ''
   try {
+    // `formTitle` + `recipientEmail` PHẢI được gửi kèm. Thiếu chúng là lý do biểu
+    // mẫu ở trang chủ chưa bao giờ gửi được email thông báo nào: máy chủ vẫn lưu
+    // đơn, người dân vẫn thấy lời cảm ơn, và không cán bộ nào được báo. Máy chủ
+    // nay có nhánh dự phòng (`settings.email`) nhưng vẫn tôn trọng email nhận
+    // cấu hình trên block — nên trường này vẫn phải đi cùng.
     await $fetch('/api/submissions', {
       method: 'POST',
-      body: { type: 'support', name: form.name, phone: form.phone, city: form.city, message: form.message },
+      body: {
+        type: 'support',
+        formTitle: d.value.title || '',
+        recipientEmail: d.value.recipientEmail || '',
+        name: form.name,
+        phone: form.phone,
+        city: form.city,
+        message: form.message,
+      },
     })
     submitStatus.value = 'success'
     submitMessage.value = `Cám ơn ${form.name}. Thông tin đăng ký của bạn đã được ghi nhận. Cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ qua số ${form.phone}.`

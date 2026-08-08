@@ -139,6 +139,10 @@ jobs:
           NOTIFICATION_EMAIL_PORT: 3306
           NOTIFICATION_EMAIL_USER: root
           NOTIFICATION_EMAIL_PASSWORD: test_root_password
+          SUBMISSION_WORKFLOW_INTEGRATION: 1
+          SUBMISSION_WORKFLOW_PORT: 3306
+          SUBMISSION_WORKFLOW_USER: root
+          SUBMISSION_WORKFLOW_PASSWORD: test_root_password
         run: npm test
 
       # A suite that silently stops running is worse than one that fails: the run
@@ -158,6 +162,7 @@ jobs:
             [insert-id-integration]=INSERT_ID_INTEGRATION
             [notification-page-integration]=NOTIFICATION_PAGE_INTEGRATION
             [notification-email-integration]=NOTIFICATION_EMAIL_INTEGRATION
+            [submission-workflow-integration]=SUBMISSION_WORKFLOW_INTEGRATION
           )
           status=0
           for file in tests/*-integration.test.ts; do

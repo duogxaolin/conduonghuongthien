@@ -94,6 +94,10 @@ const VIEWS_WITH_LOADING_BRANCH = [
   // at the bottom of this file, not by reading — which is the point of having it.
   { file: 'components/admin/ProfileActivityHistory.vue', marker: 'v-if="historyLoading"' },
   { file: 'components/admin/MediaLibraryModal.vue', marker: 'v-if="loading"' },
+  // Fetches the processing log when a submission opens. Its placeholder is drawn
+  // inline (see INLINE_PLACEHOLDER_FILES): the shape is a stack of timeline rows
+  // inside a modal, which none of the three shared skeletons describes.
+  { file: 'components/admin/SubmissionDetailModal.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/chatbot/sessions/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/chatbot/sessions/[id].vue', marker: 'v-if="loading"' },
 
@@ -146,6 +150,10 @@ const INLINE_PLACEHOLDER_FILES = [
   'pages/admin/comments/index.vue',
   'pages/admin/settings/google-oauth.vue',
   'pages/admin/settings/ip-bans.vue',
+  // A submission's processing log is a stack of timeline rows inside a modal —
+  // an icon, a sentence, a byline and an optional note per entry. None of the
+  // three shared skeletons describes that shape.
+  'components/admin/SubmissionDetailModal.vue',
 ]
 
 /**

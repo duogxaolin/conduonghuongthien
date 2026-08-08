@@ -154,7 +154,14 @@ test('the public form is rate-limited and cannot pick an arbitrary recipient', (
   // one shared value, so the 5-per-10-minutes quota would be shared too.
   assert.match(submissions, /getClientIp\(event\)/)
   assert.match(submissions, /getConfiguredRecipients/, 'recipient allow-list removed')
-  assert.match(submissions, /allowed\.has\(to\)/)
+  // The decision itself moved into a pure function, so it is now checked by
+  // RUNNING it (tests/submission-recipient.test.ts) rather than by matching the
+  // characters of one expression. This assertion only pins that the handler still
+  // routes through that function — if someone inlines a recipient here again, the
+  // executed tests would no longer be guarding the live path.
+  assert.match(submissions, /resolveSubmissionRecipient\(recipientEmail, configured, siteEmail\)/)
+  // And it must never mail an address the request supplied without that decision.
+  assert.doesNotMatch(submissions, /to:\s*recipientEmail/, 'request-supplied recipient reached sendMail directly')
 })
 
 test('visitor-supplied text is escaped before it reaches the notification email', () => {
