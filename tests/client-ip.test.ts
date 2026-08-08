@@ -10,7 +10,8 @@
  */
 import { describe, it } from 'node:test'
 import assert from 'node:assert/strict'
-import { readFileSync } from 'node:fs'
+import { readFileSync, readdirSync } from 'node:fs'
+import { join } from 'node:path'
 
 import {
   DEFAULT_TRUSTED_PROXIES,
@@ -229,36 +230,59 @@ describe('parseTrustedProxies', () => {
 describe('call sites', () => {
   const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
+  /**
+   * Files allowed to call `getRequestIP`, each with the reason.
+   *
+   * This is an allowlist over a DIRECTORY SCAN, not a list of files to check.
+   * The difference is the whole point: the earlier version named 17 paths and
+   * asked whether each one called `getRequestIP`, which made it permanently
+   * green for any file nobody thought to add. Verified by building a probe
+   * handler that did exactly the forbidden thing — the old guard passed it.
+   *
+   * That is the same failure the service-layer audit guard was rewritten to
+   * escape (see reader-audit-atomicity.test.ts): a list of names cannot fail on
+   * a name it does not contain, and it fails silently, which reads identically
+   * to a guard that is working.
+   */
+  const PEER_ADDRESS_EXEMPTIONS: Record<string, string> = {
+    // Owns the resolution: every other caller goes through getClientIp().
+    'server/utils/client-ip.ts':
+      'the helper itself — this is where the peer address is read and resolved',
+    // Asks "is the peer one of our proxies?", which needs the raw peer and
+    // cannot use getClientIp() without circularity. Its semantics are pinned by
+    // the next test, not just its presence here.
+    'server/utils/google-oauth/config.ts':
+      'uses the peer only to decide proxy trust before honouring forwarded headers',
+  }
+
   it('no handler reads the peer address directly any more', () => {
     // getRequestIP with xForwardedFor:false is exactly the bug: correct with
-    // nothing in front, one shared bucket behind nginx. It belongs in the helper
-    // and nowhere else.
+    // nothing in front, one shared bucket behind nginx — so every visitor hashes
+    // to a single rate-limit key and activity_logs records the proxy address. It
+    // belongs in the helper and nowhere else.
     const offenders: string[] = []
-    for (const file of [
-      'server/utils/chatbot/chat-policy.ts',
-      'server/api/submissions.post.ts',
-      'server/api/admin/auth/login.post.ts',
-      'server/api/admin/auth/logout.post.ts',
-      'server/api/admin/auth/mfa/verify.post.ts',
-      'server/api/admin/auth/mfa/send-code.post.ts',
-      'server/api/public/chatbot/lead.post.ts',
-      'server/api/public/analytics/page-view.post.ts',
-      'server/services/analytics-ingestion.ts',
-      'server/api/admin/activity-logs/index.get.ts',
-      'server/api/admin/profile/history.get.ts',
-      // Reader sign-in and public comments. Both write the caller's address into a
-      // row (reader_accounts.last_ip, article_comments.ip) and both key a rate
-      // limit on it, so the shared-bucket-behind-nginx failure applies to them
-      // exactly as it did to the chat handler.
-      'server/api/auth/google/start.get.ts',
-      'server/api/auth/google/callback.get.ts',
-      'server/api/public/comments/index.post.ts',
-      'server/api/admin/comments/reply.post.ts',
-      'server/utils/reader-auth.ts',
-    ]) {
-      if (/getRequestIP\(/.test(read(file))) offenders.push(file)
+
+    const walk = (dir: string) => {
+      for (const entry of readdirSync(join('server', dir), { withFileTypes: true })) {
+        const relative = dir ? `${dir}/${entry.name}` : entry.name
+        if (entry.isDirectory()) {
+          walk(relative)
+          continue
+        }
+        if (!entry.name.endsWith('.ts')) continue
+        const path = `server/${relative}`
+        if (PEER_ADDRESS_EXEMPTIONS[path]) continue
+        if (/getRequestIP\(/.test(read(path))) offenders.push(path)
+      }
     }
-    assert.deepEqual(offenders, [])
+    walk('')
+
+    assert.deepEqual(
+      offenders,
+      [],
+      'calls getRequestIP directly — use getClientIp(event), or add the file to '
+      + 'PEER_ADDRESS_EXEMPTIONS with the reason it genuinely needs the raw peer.',
+    )
   })
 
   it('the OAuth redirect helper uses the peer address only to decide proxy trust', () => {
