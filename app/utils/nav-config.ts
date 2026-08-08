@@ -26,6 +26,23 @@ export interface NavItem {
   label: string | null
   labelKey?: string
   url: string
+  /**
+   * Mở liên kết ở tab mới. Chỉ có nghĩa với URL ngoài (`http…`) — liên kết nội bộ
+   * đi qua `:to` của `NuxtLink`, nơi thuộc tính này không được đọc.
+   *
+   * Trường này **từng bị rơi trong im lặng**. Cán bộ tick ô "Mở tab mới" ở
+   * `/admin/content/navigation/navbar.vue`, `navigation.put.ts` lưu đúng, nhưng
+   * `normalizeNavItem` dựng lại node từng trường và không copy nó — nên trang công
+   * khai bỏ qua hoàn toàn sau một lượt lưu **thành công**, với ô vẫn còn tick lúc
+   * tải lại. Không có gì chỉ vào nguyên nhân.
+   *
+   * Đây là cái giá của việc đổi một parser passthrough (`JSON.parse`) thành một
+   * bộ khử độc dựng lại từng trường: bộ khử độc đúng hơn về mọi mặt khác, nhưng nó
+   * biến "thêm một trường" thành việc phải sửa **hai** chỗ, và chỗ thứ hai không
+   * báo lỗi khi bị quên. Thêm trường nav mới thì thêm cả ở đây, ở
+   * `normalizeNavItem`, và một khẳng định trong `tests/nav-config-boundary.test.ts`.
+   */
+  openNewTab?: boolean
   children?: NavItem[]
 }
 
@@ -106,6 +123,12 @@ function normalizeNavItem(raw: unknown, depth = 0): NavItem | null {
   }
   const labelKey = usableText(item.labelKey)
   if (labelKey) node.labelKey = labelKey
+
+  // `=== true` chứ không `Boolean(...)`: giá trị đến từ JSON đã lưu, nên một chuỗi
+  // `"false"` là truthy và sẽ bật cờ mà cán bộ vừa tắt. Server ghi đúng boolean
+  // (`navigation.put.ts` dùng `Boolean(m.openNewTab)`), nhưng bộ đọc này là biên
+  // tin cậy — nó không được cho rằng thứ trên đĩa do đường ghi hiện tại tạo ra.
+  if (item.openNewTab === true) node.openNewTab = true
 
   // Đúng MỘT cấp con. Thanh nav chỉ vẽ được một tầng dropdown, nên một cây sâu
   // hơn không phải cấu hình phong phú mà là những mục **không bao giờ hiện ra** —

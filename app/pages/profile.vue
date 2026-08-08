@@ -454,12 +454,15 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { computed, onMounted, ref, resolveComponent, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useReaderAuth } from '~/composables/useReaderAuth'
 import { useReaderNotifications } from '~/composables/useReaderNotifications'
 import { useReadingHistory } from '~/composables/useReadingHistory'
+import { errorMessage, errorStatus } from '~/utils/errorMessage'
+import type { NotificationItem } from '~/composables/useReaderNotifications'
+import type { ReaderChatsPayload, ReaderCommentsPayload } from '~/types/public-api'
 
 // Resolve once so the runtime `:is` binding renders a real <a> — a string name
 // would render a literal <nuxtlink> element that navigates nowhere.
@@ -510,7 +513,7 @@ const { entries: history, load: loadHistory, clear: clearHistory } = useReadingH
  * Không có vấn đề khớp SSR để lo: cả khối này nằm trong `<client-only>` và dữ
  * liệu chỉ tồn tại trong `localStorage` của chính trình duyệt đang xem.
  */
-function formatReadAt(epochMs) {
+function formatReadAt(epochMs: number | null | undefined) {
   if (!epochMs) return ''
   const d = new Date(epochMs)
   if (Number.isNaN(d.getTime())) return ''
@@ -550,8 +553,8 @@ async function saveName() {
      * 403 thì KHÔNG xử lý như vậy: đó là lệnh chặn, người đọc **vẫn** đang đăng
      * nhập, và mời họ đăng nhập lại là mời một lượt sẽ thành công mà không đổi gì.
      */
-    nameError.value = err?.statusMessage || err?.data?.statusMessage || 'Không thể lưu tên hiển thị. Vui lòng thử lại.'
-    if (err?.statusCode === 401) forgetReader()
+    nameError.value = errorMessage(err, 'Không thể lưu tên hiển thị. Vui lòng thử lại.')
+    if (errorStatus(err) === 401) forgetReader()
   } finally {
     savingName.value = false
   }
@@ -585,7 +588,7 @@ const {
 /** Nút thử lại gọi lại CHÍNH lượt fetch đã hỏng, ở đúng trang đang xem. */
 function reloadNotifications() {
   loadNotifications(notifPage.value).catch((err) => {
-    if (err?.statusCode === 401) forgetReader()
+    if (errorStatus(err) === 401) forgetReader()
   })
 }
 
@@ -595,7 +598,7 @@ function reloadNotifications() {
  * Không `preventDefault`: phần tử đã là một liên kết thật khi có đích, nên chuột
  * giữa và "mở tab mới" vẫn hoạt động như người đọc mong đợi.
  */
-function onNotificationClick(item) {
+function onNotificationClick(item: NotificationItem) {
   if (!item.isRead) void markNotificationsRead([item.id])
 }
 
@@ -620,18 +623,20 @@ async function toggleEmailNotifications() {
     // State ở cấp module, nên mọi bề mặt đọc nó đổi theo cùng lúc.
     applyEmailPreference(next)
   } catch (err) {
-    emailPrefError.value = err?.statusMessage || err?.data?.statusMessage || 'Không thể lưu thiết lập. Vui lòng thử lại.'
+    emailPrefError.value = errorMessage(err, 'Không thể lưu thiết lập. Vui lòng thử lại.')
     // 401: vé hết hiệu lực giữa lúc trang mở — bỏ danh tính để trang đổi sang
     // khối mời đăng nhập. 403 thì KHÔNG: đó là lệnh chặn, người đọc vẫn đang
     // đăng nhập và mời họ đăng nhập lại là mời một lượt không đổi được gì.
-    if (err?.statusCode === 401) forgetReader()
+    if (errorStatus(err) === 401) forgetReader()
   } finally {
     savingEmailPref.value = false
   }
 }
 
 // ─── Bình luận của tôi ──────────────────────────────────────────────────────
-const commentsData = ref(null)
+// Kiểu suy từ chính handler: `ref(null)` trần là `Ref<null>`, nên mọi phép đọc
+// `.comments` / `.total` / `.totalPages` trong template thành lỗi.
+const commentsData = ref<ReaderCommentsPayload | null>(null)
 const commentsPending = ref(false)
 const commentsError = ref(false)
 const commentsPage = ref(1)
@@ -648,19 +653,19 @@ async function loadComments() {
     })
   } catch (err) {
     commentsError.value = true
-    if (err?.statusCode === 401) forgetReader()
+    if (errorStatus(err) === 401) forgetReader()
   } finally {
     commentsPending.value = false
   }
 }
 
-function goToCommentPage(page) {
+function goToCommentPage(page: number) {
   commentsPage.value = page
   loadComments()
 }
 
 // ─── Đoạn chat của tôi ──────────────────────────────────────────────────────
-const chatsData = ref(null)
+const chatsData = ref<ReaderChatsPayload | null>(null)
 const chatsPending = ref(false)
 const chatsError = ref(false)
 const claiming = ref(false)
@@ -675,7 +680,7 @@ async function loadChats() {
     chatsData.value = await $fetch('/api/public/reader/chats')
   } catch (err) {
     chatsError.value = true
-    if (err?.statusCode === 401) forgetReader()
+    if (errorStatus(err) === 401) forgetReader()
   } finally {
     chatsPending.value = false
   }
@@ -717,7 +722,7 @@ onMounted(async () => {
     loadComments(),
     loadChats(),
     loadNotifications().catch((err) => {
-      if (err?.statusCode === 401) forgetReader()
+      if (errorStatus(err) === 401) forgetReader()
     }),
   ])
 })

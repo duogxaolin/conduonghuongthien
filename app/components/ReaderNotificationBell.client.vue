@@ -1,4 +1,4 @@
-<script setup>
+<script setup lang="ts">
 /**
  * Chuông thông báo ở header desktop.
  *
@@ -18,6 +18,8 @@
  * sẽ được phát lại cho người kế tiếp ghé vào trong cùng 60 giây. Đây là chính
  * ràng buộc đã ghi trong CLAUDE.md cho mọi thứ liên quan tới người đọc.
  */
+import type { NotificationItem } from '~/composables/useReaderNotifications'
+
 const NuxtLink = resolveComponent('NuxtLink')
 
 const {
@@ -32,7 +34,9 @@ const {
 } = useReaderNotifications()
 
 const isOpen = ref(false)
-const rootRef = ref(null)
+// `HTMLElement`, không `ref(null)` trần: `onPointerDown` gọi `root.contains(...)`,
+// một phương thức của `Node` mà `Ref<null>` không có.
+const rootRef = ref<HTMLElement | null>(null)
 
 /**
  * Danh sách đã được nạp bởi layout ngay khi biết người đọc là ai — huy hiệu ở
@@ -54,7 +58,7 @@ function toggle() {
  * khi có đích, nên chuột giữa và "mở tab mới" vẫn hoạt động. Lượt đánh dấu là
  * lạc quan trong composable nên nó không chặn cú điều hướng.
  */
-function onItemClick(item) {
+function onItemClick(item: NotificationItem) {
   isOpen.value = false
   if (!item.isRead) void markRead([item.id])
 }
@@ -62,7 +66,7 @@ function onItemClick(item) {
 /**
  * Menu mở mà không thoát được bằng bàn phím là một cái bẫy bàn phím.
  */
-function onKeydown(event) {
+function onKeydown(event: KeyboardEvent) {
   if (event.key === 'Escape' && isOpen.value) isOpen.value = false
 }
 
@@ -71,10 +75,14 @@ function onKeydown(event) {
  * hướng, và đóng ở `click` thì handler chạy **sau** khi Vue đã tháo phần tử —
  * cú bấm không bao giờ tới được liên kết.
  */
-function onPointerDown(event) {
+function onPointerDown(event: MouseEvent) {
   if (!isOpen.value) return
   const root = rootRef.value
-  if (root && !root.contains(event.target)) isOpen.value = false
+  // `event.target` là `EventTarget`, còn `contains` đòi `Node`. Cú bấm có thể đến
+  // từ một target không phải Node (rất hiếm, nhưng kiểu cho phép), nên kiểm trước
+  // rồi mới hỏi — coi "không phải Node" là bấm ra ngoài và đóng menu.
+  const target = event.target instanceof Node ? event.target : null
+  if (root && (!target || !root.contains(target))) isOpen.value = false
 }
 
 onMounted(() => {

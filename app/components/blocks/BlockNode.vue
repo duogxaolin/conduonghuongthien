@@ -79,11 +79,15 @@
 import { computed } from 'vue'
 import { isContainerType, clampColSpan } from '~/utils/blocks/registry'
 import { blockText } from '~/utils/blocks/types'
-import type { BuilderNode } from '~/utils/blocks/types'
+import type { RenderableNode } from '~/utils/blocks/types'
 import { resolveBlockComponent } from './blockComponents'
 
+// `RenderableNode`, không phải `BuilderNode`: `isVisible` và `displayOrder` là
+// tuỳ chọn vì phần tải công khai cắt bỏ chúng (chỉ chứa node đang hiện). Khớp
+// đúng cách component này vốn đã đọc cờ đó — `isVisible !== false`, nên vắng mặt
+// nghĩa là vẽ. `BuilderNode` của trình dựng trang vẫn thoả kiểu này.
 const props = defineProps<{
-  node: BuilderNode
+  node: RenderableNode
   interactive?: boolean
   selectedId?: number | string | null
 }>()

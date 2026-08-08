@@ -8,7 +8,7 @@
   />
 </template>
 
-<script setup>
+<script setup lang="ts">
 useSeoMeta({
   title: 'Tin nổi bật | Con Đường Hướng Thiện',
   description: 'Các sự kiện và tin tức nổi bật về công tác tái hòa nhập cộng đồng.',
