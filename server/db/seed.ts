@@ -191,6 +191,19 @@ async function seed() {
     { key: 'facebook_url',     value: 'https://facebook.com',                                  group: 'contact' },
     { key: 'logo_url',         value: '/Logo.png',                                             group: 'general' },
     { key: 'hero_banner_url',  value: '/assets/hero_banner.jpg',                              group: 'general' },
+    // ⚠️ `favicon_url` CỐ Ý KHÔNG có hàng seed, và một hàng trỏ tới
+    // `/favicon-32.png` đã được thử rồi bỏ vì nó gây ra một lỗi ĐO ĐƯỢC.
+    //
+    // `loadFaviconSetting` đã tự lùi về đúng đường dẫn đó khi hàng vắng, nên hàng
+    // seed không mua thêm gì — nhưng nó làm tuyến `/favicon.ico` thấy một "icon
+    // cục bộ đã cấu hình" và phục vụ **PNG** ở đường dẫn mà máy quét, đầu đọc RSS
+    // và trình duyệt cũ gọi để lấy **ICO**. Đo trên máy chủ thật: `/favicon.ico`
+    // trả `content-type: image/png`, 2213 byte.
+    //
+    // Nó còn nói sai một điều nữa: một hàng có mặt khiến `/admin/settings/general`
+    // hiện ra như "đã cấu hình" trong khi cổng đang dùng bộ mặc định — nên nút "Về
+    // mặc định" trông như không làm gì. Vắng mặt là cách diễn đạt đúng cho "chưa
+    // cấu hình", và cũng là trạng thái mà `favicon.delete.ts` trả về.
     { key: 'media_provider',   value: 'local',                                                 group: 'media'   },
     { key: 'r2_account_id',    value: '',                                                       group: 'media'   },
     { key: 'r2_access_key',    value: '',                                                       group: 'media'   },

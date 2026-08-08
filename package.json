@@ -16,6 +16,7 @@
     "test:e2e:install": "playwright install --with-deps chromium",
     "analytics:maintenance": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/analytics-maintenance.ts",
     "check:resources": "bash scripts/check-resources.sh",
+    "make:favicon": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/make-favicon.ts",
     "db:init": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs server/db/init.ts",
     "db:seed": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs server/db/seed.ts",
     "db:generate": "drizzle-kit generate",
