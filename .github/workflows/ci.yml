@@ -91,6 +91,18 @@ jobs:
       # off kept reporting SKIP, which reads identically to "passed" in a summary.
       - name: Unit and contract tests
         env:
+          # Run at the deployment's timezone, not the runner's UTC.
+          #
+          # This is a real gate, not tidiness. The analytics scheduler compares "has
+          # today's pass already run?" against a stored day, and the first version
+          # compared UTC days. East of UTC that skips the nightly pass every night
+          # forever — measured: reintroducing the bug fails 6 tests at UTC+7 and
+          # **zero** at UTC. On a UTC runner the pipeline would have shipped it with
+          # a green tick.
+          #
+          # Any date logic that reads a local hour or a local day has the same blind
+          # spot, so the whole suite runs east of UTC rather than one file.
+          TZ: Asia/Ho_Chi_Minh
           ANALYTICS_DDL_INTEGRATION: 1
           ANALYTICS_DDL_PORT: 3306
           ANALYTICS_DDL_USER: root
