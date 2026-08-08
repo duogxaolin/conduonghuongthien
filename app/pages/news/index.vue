@@ -2,7 +2,10 @@
   <div class="bg-[#F8FAF7]">
     <!-- Hero Header -->
     <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover px-4 py-16 text-center text-white sm:py-[100px]">
-      <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)]"></div>
+      <!-- Lớp phủ dạng gradient thay cho một mảng phẳng rgba(74,103,65,0.9): mảng
+           phẳng gần như xoá hẳn tấm ảnh mà trang vẫn phải tải. Gradient giữ đủ độ
+           tương phản cho chữ ở giữa mà vẫn thấy được ảnh ở hai mép. -->
+      <div class="absolute inset-0 bg-[linear-gradient(180deg,rgba(30,45,26,0.72)_0%,rgba(74,103,65,0.92)_55%,rgba(74,103,65,0.95)_100%)]"></div>
       <div class="container relative z-10">
         <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem]">Bản Tin Hoạt Động</h2>
         <p class="text-[1.1rem] opacity-90">Cập nhật tin tức, chỉ đạo điều hành và sự kiện hỗ trợ hoàn lương trên toàn quốc</p>
@@ -11,30 +14,33 @@
 
     <!-- Main Content Grid -->
     <section class="section">
-      <div class="container grid grid-cols-1 lg:grid-cols-[1fr_3fr] gap-[30px]">
+      <!-- `minmax(0,1fr)` chứ không `1fr`: một tiêu đề dài không có chỗ ngắt sẽ đẩy
+           cột tin rộng hơn khung chứa nó và làm CẢ TRANG cuộn ngang được — `1fr` có
+           sàn là `auto`, tức là kích thước nội dung tối thiểu. -->
+      <div class="container grid grid-cols-1 gap-8 lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-[34px]">
         <!-- Filter Sidebar -->
         <aside>
-          <div class="bg-white p-6 rounded-lg border border-[#E2E8DF] shadow-sm sticky top-[100px]">
+          <div class="bg-white p-6 rounded-lg border border-[#E2E8DF] shadow-sm lg:sticky lg:top-[100px]">
             <h4 class="text-[0.9rem] font-bold text-[#4A6741] mb-4 border-b-2 border-[#E2E8DF] pb-2">DANH MỤC TIN TỨC</h4>
             <ul class="list-none flex flex-col gap-2 p-0 m-0">
               <li>
                 <button
                   :class="activeCategory === 'all' ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
-                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px]"
+                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
                   @click="setCategory('all')"
                 >Tất cả bản tin</button>
               </li>
               <li v-for="cat in rootCategories" :key="cat.id">
                 <button
                   :class="activeCategory === cat.slug ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
-                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px]"
+                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
                   @click="setCategory(cat.slug)"
                 >{{ cat.name }}</button>
                 <ul v-if="childrenOf(cat.id).length" class="list-none flex flex-col gap-1 pl-3 mt-1 mb-1">
                   <li v-for="child in childrenOf(cat.id)" :key="child.id">
                     <button
                       :class="activeCategory === child.slug ? 'text-[#4A6741] font-bold' : 'text-[#7A8675]'"
-                      class="w-full text-left bg-transparent border-0 px-[14px] py-[7px] text-[0.83rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:text-[#4A6741]"
+                      class="w-full text-left bg-transparent border-0 px-[14px] py-[7px] text-[0.83rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
                       @click="setCategory(child.slug)"
                     >— {{ child.name }}</button>
                   </li>
@@ -60,19 +66,35 @@
             >✕ Bỏ tìm kiếm</button>
           </div>
 
-          <!-- Loading state -->
-          <div v-if="pending" class="flex flex-col gap-6">
-            <div
-              v-for="n in 4"
-              :key="n"
-              class="flex flex-col sm:flex-row bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] animate-pulse motion-reduce:animate-none"
-            >
-              <div class="w-full sm:w-[260px] h-[200px] sm:h-[180px] flex-shrink-0 bg-[#EEF2EC]"></div>
-              <div class="p-6 flex flex-col gap-3 flex-1">
-                <div class="h-3 w-32 bg-[#EEF2EC] rounded"></div>
-                <div class="h-4 w-3/4 bg-[#EEF2EC] rounded"></div>
-                <div class="h-3 w-full bg-[#EEF2EC] rounded"></div>
-                <div class="h-3 w-2/3 bg-[#EEF2EC] rounded"></div>
+          <!-- Loading state — hình dạng khớp bố cục thật: một tin chủ đạo, một cột
+               tiêu đề bên cạnh, rồi lưới thẻ bên dưới. -->
+          <div v-if="pending" role="status" aria-busy="true" class="flex flex-col gap-8">
+            <span class="sr-only">Đang tải bản tin hoạt động</span>
+            <div aria-hidden="true" class="grid grid-cols-1 gap-6 lg:grid-cols-[1.55fr_minmax(0,1fr)]">
+              <div class="bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm animate-pulse motion-reduce:animate-none">
+                <div class="h-[240px] sm:h-[340px] bg-[#EEF2EC]"></div>
+                <div class="p-5 flex flex-col gap-3">
+                  <div class="h-3 w-32 bg-[#EEF2EC] rounded"></div>
+                  <div class="h-5 w-4/5 bg-[#EEF2EC] rounded"></div>
+                  <div class="h-3 w-full bg-[#EEF2EC] rounded"></div>
+                </div>
+              </div>
+              <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm p-5 flex flex-col gap-5 animate-pulse motion-reduce:animate-none">
+                <div v-for="n in 4" :key="n" class="flex flex-col gap-2">
+                  <div class="h-3 w-24 bg-[#EEF2EC] rounded"></div>
+                  <div class="h-4 w-full bg-[#EEF2EC] rounded"></div>
+                  <div class="h-4 w-2/3 bg-[#EEF2EC] rounded"></div>
+                </div>
+              </div>
+            </div>
+            <div aria-hidden="true" class="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              <div v-for="n in 3" :key="n" class="bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm animate-pulse motion-reduce:animate-none">
+                <div class="h-[170px] bg-[#EEF2EC]"></div>
+                <div class="p-4 flex flex-col gap-3">
+                  <div class="h-3 w-24 bg-[#EEF2EC] rounded"></div>
+                  <div class="h-4 w-3/4 bg-[#EEF2EC] rounded"></div>
+                  <div class="h-3 w-full bg-[#EEF2EC] rounded"></div>
+                </div>
               </div>
             </div>
           </div>
@@ -80,11 +102,12 @@
           <!-- Error state -->
           <div
             v-else-if="loadError"
+            role="alert"
             class="bg-white border border-dashed border-[#E2A0A0] px-6 py-10 rounded-lg text-center text-[#B04A4A] text-[0.95rem]"
           >
-            <i class="fa-solid fa-triangle-exclamation mr-2"></i>
+            <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
             Không thể tải bản tin. Vui lòng
-            <button class="text-[#4A6741] font-bold underline" @click="refresh()">thử lại</button>.
+            <button type="button" class="text-[#4A6741] font-bold underline" @click="refresh()">thử lại</button>.
           </div>
 
           <!-- Empty state -->
@@ -93,36 +116,103 @@
             class="bg-white border border-dashed border-[#E2E8DF] px-6 py-10 rounded-lg text-center text-[#7A8675] text-[0.95rem]"
           >
             Không tìm thấy bản tin phù hợp. Vui lòng thử từ khóa khác hoặc xem
-            <button class="text-[#4A6741] font-bold underline" @click="setCategory('all')">tất cả bản tin</button>.
+            <button type="button" class="text-[#4A6741] font-bold underline" @click="setCategory('all')">tất cả bản tin</button>.
           </div>
 
-          <!-- News cards -->
-          <div
-            v-for="item in newsList"
-            v-else
-            :key="item.id"
-            class="flex flex-col sm:flex-row bg-white rounded-lg overflow-hidden shadow-sm border border-[#E2E8DF] transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-[#7CB342]"
-          >
-            <div class="w-full sm:w-[260px] h-[200px] sm:h-[180px] flex-shrink-0">
-              <img :src="item.thumbnailUrl || '/assets/hero_banner.jpg'" :alt="item.title" class="w-full h-full object-cover"  loading="lazy" decoding="async" />
+          <template v-else>
+            <!-- Khu tin chủ đạo: một tin lớn + cột tiêu đề bên phải. Đây là hình dạng
+                 mà `NewsBlock.vue` ở trang chủ đã dùng, nên cổng thông tin đọc như một
+                 tờ tin thay vì một danh sách phẳng. -->
+            <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1.55fr_minmax(0,1fr)]">
+              <article v-if="featured" class="group bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm transition-all duration-300 hover:shadow-md hover:border-[#7CB342]">
+                <nuxt-link :to="`/news/${featured.slug}`" class="block no-underline">
+                  <div class="relative h-[240px] sm:h-[340px] overflow-hidden">
+                    <img
+                      :src="featured.thumbnailUrl || '/assets/hero_banner.jpg'"
+                      :alt="featured.title"
+                      class="w-full h-full object-cover transition-transform duration-[0.6s] ease-[cubic-bezier(0.165,0.84,0.44,1)] group-hover:scale-[1.03]"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <div class="absolute inset-x-0 bottom-0 h-[70%] bg-[linear-gradient(to_top,rgba(16,28,16,0.94)_0%,rgba(16,28,16,0.45)_58%,rgba(16,28,16,0)_100%)]"></div>
+                    <div class="absolute inset-x-0 bottom-0 p-5 sm:p-6 text-white">
+                      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
+                        <span class="inline-block bg-[#7CB342] text-white px-2 py-[3px] text-[0.65rem] font-extrabold rounded-sm uppercase tracking-[0.4px]">Tin nổi bật</span>
+                        <span v-if="featured.categoryName" class="text-[0.74rem] font-semibold opacity-90">{{ featured.categoryName }}</span>
+                        <span class="text-[0.74rem] opacity-85">{{ formatDate(featured) }}</span>
+                      </div>
+                      <h3 class="text-[1.2rem] sm:text-[1.45rem] font-extrabold leading-[1.3] mb-2 text-white transition-colors duration-300 group-hover:text-[#c5e1a5]">{{ featured.title }}</h3>
+                      <p v-if="featured.excerpt" class="text-[0.86rem] leading-[1.55] opacity-[0.88] m-0 line-clamp-2">{{ featured.excerpt }}</p>
+                    </div>
+                  </div>
+                </nuxt-link>
+              </article>
+
+              <!-- Cột tiêu đề: không ảnh, chỉ chữ. Đây là phần làm nên nhịp của một
+                   trang tin — mắt đọc một tin lớn rồi quét nhanh các tin kế tiếp. -->
+              <div v-if="headlines.length" class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm px-5 py-2">
+                <h3 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">Tin tiếp theo</h3>
+                <ul class="list-none p-0 m-0">
+                  <li
+                    v-for="item in headlines"
+                    :key="item.id"
+                    class="flex gap-3 py-[14px] border-b border-[#E2E8DF] last:border-b-0"
+                  >
+                    <span class="w-[6px] h-[6px] rounded-full bg-[#7CB342] mt-2 shrink-0" aria-hidden="true"></span>
+                    <div class="min-w-0">
+                      <h4 class="text-[0.9rem] font-bold leading-[1.4] m-0 mb-[6px]">
+                        <nuxt-link
+                          :to="`/news/${item.slug}`"
+                          class="text-[#1E251C] no-underline transition-colors duration-300 hover:text-[#4A6741]"
+                        >{{ item.title }}</nuxt-link>
+                      </h4>
+                      <span class="text-[0.72rem] text-[#7A8675] font-semibold">
+                        {{ formatDate(item) }}<template v-if="item.categoryName"> • {{ item.categoryName }}</template>
+                      </span>
+                    </div>
+                  </li>
+                </ul>
+              </div>
             </div>
-            <div class="p-6 flex flex-col justify-between">
-              <span class="text-[0.8rem] text-[#7A8675] font-semibold mb-1.5 block">
-                {{ formatDate(item) }}<template v-if="item.categoryName"> • {{ item.categoryName }}</template>
-              </span>
-              <h3 class="text-[1.15rem] font-bold leading-[1.4] mb-2">
-                <nuxt-link
-                  :to="`/news/${item.slug}`"
-                  class="no-underline text-[#1E251C] transition-all duration-300 hover:text-[#4A6741]"
-                >{{ item.title }}</nuxt-link>
-              </h3>
-              <p class="text-[0.88rem] text-[#4A5545] leading-[1.5] mb-3">{{ item.excerpt }}</p>
-              <nuxt-link
-                :to="`/news/${item.slug}`"
-                class="text-[#7CB342] font-bold no-underline text-[0.88rem] self-start"
-              >Xem chi tiết &rarr;</nuxt-link>
-            </div>
-          </div>
+
+            <!-- Lưới tin còn lại -->
+            <template v-if="rest.length">
+              <h3 class="text-[0.85rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] border-b-2 border-[#E2E8DF] pb-2 m-0">Các bản tin khác</h3>
+              <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+                <article
+                  v-for="item in rest"
+                  :key="item.id"
+                  class="group bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm flex flex-col transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-[#7CB342]"
+                >
+                  <nuxt-link :to="`/news/${item.slug}`" class="block h-[170px] overflow-hidden">
+                    <img
+                      :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
+                      :alt="item.title"
+                      class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                      loading="lazy"
+                      decoding="async"
+                    />
+                  </nuxt-link>
+                  <div class="p-4 flex flex-col gap-2 flex-1">
+                    <span class="text-[0.75rem] text-[#7A8675] font-semibold">
+                      {{ formatDate(item) }}<template v-if="item.categoryName"> • {{ item.categoryName }}</template>
+                    </span>
+                    <h4 class="text-[1rem] font-bold leading-[1.4] m-0">
+                      <nuxt-link
+                        :to="`/news/${item.slug}`"
+                        class="no-underline text-[#1E251C] transition-colors duration-300 hover:text-[#4A6741]"
+                      >{{ item.title }}</nuxt-link>
+                    </h4>
+                    <p v-if="item.excerpt" class="text-[0.85rem] text-[#4A5545] leading-[1.55] m-0 line-clamp-3">{{ item.excerpt }}</p>
+                    <nuxt-link
+                      :to="`/news/${item.slug}`"
+                      class="text-[#7CB342] font-bold no-underline text-[0.85rem] mt-auto pt-1 self-start"
+                    >Xem chi tiết &rarr;</nuxt-link>
+                  </div>
+                </article>
+              </div>
+            </template>
+          </template>
         </div>
       </div>
     </section>
@@ -174,6 +264,14 @@ const { data: articlesData, pending, error, refresh } = useFetch('/api/public/ar
 })
 const newsList = computed(() => articlesData.value?.articles || [])
 const loadError = computed(() => !!error.value || articlesData.value?.ok === false)
+
+// Ba khu của bố cục tin, cắt từ MỘT danh sách đã tải. Cố ý không gọi thêm lượt
+// fetch nào: `/api/public/articles` đã sắp theo `publishedAt` giảm dần, nên "tin
+// chủ đạo" là tin mới nhất — một truy vấn thứ hai cho cùng dữ liệu là một lượt đi
+// mạng nữa và một cơ hội để hai khu nói hai điều khác nhau.
+const featured = computed(() => newsList.value[0] ?? null)
+const headlines = computed(() => newsList.value.slice(1, 5))
+const rest = computed(() => newsList.value.slice(5))
 
 const formatDate = (item: { publishedAt?: string | null; createdAt?: string | null }) =>
   formatDateVN(item.publishedAt || item.createdAt)
