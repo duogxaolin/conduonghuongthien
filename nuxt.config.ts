@@ -181,7 +181,14 @@ export default defineNuxtConfig({
         { name: 'format-detection', content: 'telephone=no' }
       ],
       link: [
-        { rel: 'icon', type: 'image/x-icon', href: '/favicon.ico' },
+        // ⚠️ Cố ý KHÔNG có thẻ `rel="icon"` ở đây. Favicon do quản trị viên cấu
+        // hình (`favicon_url`, sửa tại `/admin/settings/general`), nên nó được
+        // chèn lúc chạy bởi `server/plugins/favicon.ts` — tệp này chỉ đọc lúc
+        // build, và một favicon nằm ở đây thì đổi được bằng cách deploy lại.
+        //
+        // Thêm lại một thẻ tĩnh ở đây là để **mỗi trang có hai thẻ `rel="icon"`**,
+        // và thẻ nào thắng do trình duyệt quyết định — tức là cán bộ đổi favicon
+        // rồi thấy nó đổi trên Chrome mà không đổi trên Safari. Có test chặn.
         ...fontLinks,
         ...iconLinks,
       ]

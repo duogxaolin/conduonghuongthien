@@ -13,6 +13,7 @@ const settings = reactive({
   facebook_url: 'https://facebook.com',
   logo_url: '/Logo.png',
   hero_banner_url: '/assets/hero_banner.jpg',
+  favicon_url: '/favicon-32.png',
 })
 
 const loading = ref(true)
@@ -51,11 +52,21 @@ const handleSave = async () => {
   }
 }
 
-const pickImage = (field: 'logo_url' | 'hero_banner_url') => {
+/**
+ * Một alias, không phải hai danh sách giống nhau.
+ *
+ * `pickImage` và `uploadImage` đã nhận field làm tham số từ trước, nên thêm ô
+ * favicon chỉ là thêm một tên vào đây. Viết rời ở cả hai chữ ký thì lần thêm ô
+ * thứ tư sẽ sửa đúng một chỗ, và nút còn lại vẫn biên dịch được — nó chỉ đơn giản
+ * là không bao giờ ghi vào đúng khoá.
+ */
+type ImageField = 'logo_url' | 'hero_banner_url' | 'favicon_url'
+
+const pickImage = (field: ImageField) => {
   openPicker({ onSelect: (media) => { settings[field] = media.url } })
 }
 
-const uploadImage = async (event: Event, field: 'logo_url' | 'hero_banner_url') => {
+const uploadImage = async (event: Event, field: ImageField) => {
   const file = (event.target as HTMLInputElement).files?.[0]
   if (!file) return
   const media = await uploadFile(file)
@@ -162,6 +173,42 @@ onMounted(() => { fetchSettings() })
             <div v-if="settings.logo_url" class="mt-2 relative inline-block border border-[#e2ece3] rounded-lg overflow-hidden">
               <img :src="settings.logo_url" alt="Logo preview" class="block max-h-20 max-w-[200px] object-contain" />
               <button type="button" class="absolute top-1 right-1 bg-black/55 text-white border-0 rounded-full w-5 h-5 flex items-center justify-center text-xs cursor-pointer" @click="settings.logo_url = ''"><i class="fa-regular fa-xmark"></i></button>
+            </div>
+          </div>
+
+          <!-- Favicon.
+
+               Nhãn nói rõ ba điều mà không có chúng thì cán bộ sẽ kết luận tính
+               năng bị hỏng: định dạng nhận được, kích thước nên dùng, và **rằng
+               trình duyệt giữ favicon rất lâu trong bộ nhớ đệm**. Điều thứ ba là
+               phần dễ bỏ nhất và cũng là phần sinh ra nhiều báo lỗi giả nhất —
+               đổi xong, tải lại trang, không thấy gì đổi. -->
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Favicon (icon trên tab trình duyệt)</label>
+            <div class="flex gap-2 items-center flex-wrap">
+              <input type="text" v-model="settings.favicon_url" placeholder="URL hoặc chọn từ thư viện" class="flex-1 min-w-0 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-[#c8d6c9] bg-[#f4f7f4] text-[#1e4620] rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-[#2c6e33] transition-colors shrink-0" @click="pickImage('favicon_url')">
+                <i class="fa-regular fa-images"></i> Thư viện
+              </button>
+              <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-[#1e4620] hover:bg-[#2c6e33] text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploading }">
+                <i class="fa-regular" :class="uploading ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i> Upload
+                <input type="file" accept=".png,.ico,image/png,image/x-icon" class="sr-only" :disabled="uploading" @change="(e) => uploadImage(e, 'favicon_url')" />
+              </label>
+            </div>
+            <p class="text-[0.72rem] text-[#8a9a8c] m-0">
+              Nhận tệp <strong>PNG</strong> hoặc <strong>ICO</strong>, nên dùng ảnh vuông (32×32 hoặc 512×512).
+              Để trống để dùng icon mặc định của cổng.
+            </p>
+            <p class="text-[0.72rem] text-[#8a6d3b] m-0">
+              <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
+              Trình duyệt giữ favicon trong bộ nhớ đệm rất lâu. Sau khi lưu, nếu chưa thấy icon mới thì
+              hãy mở tab mới hoặc tải lại trang bỏ qua bộ nhớ đệm (Ctrl/Cmd + Shift + R).
+            </p>
+            <div v-if="settings.favicon_url" class="mt-2 relative inline-block border border-[#e2ece3] rounded-lg overflow-hidden">
+              <!-- `max-h-8`: favicon là ảnh nhỏ, hiện to 80px như logo sẽ vẽ nó
+                   ở kích thước không ai thấy trên thực tế. -->
+              <img :src="settings.favicon_url" alt="Favicon preview" class="block max-h-8 max-w-[64px] object-contain" />
+              <button type="button" class="absolute top-0.5 right-0.5 bg-black/55 text-white border-0 rounded-full w-4 h-4 flex items-center justify-center text-[0.6rem] cursor-pointer" @click="settings.favicon_url = ''"><i class="fa-regular fa-xmark"></i></button>
             </div>
           </div>
 

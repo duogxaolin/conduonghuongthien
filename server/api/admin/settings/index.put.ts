@@ -11,7 +11,11 @@ import { requireResourcePermission } from '../../../utils/permissions'
 const ALLOWED_SETTING_KEYS = new Set([
   // General / contact
   'site_name', 'site_description', 'hotline', 'email', 'address', 'facebook_url',
-  'logo_url', 'hero_banner_url',
+  // `favicon_url` cố ý KHÔNG nằm trong `SUPERADMIN_ONLY_KEYS`: nó đi vào một
+  // thuộc tính `href` đã qua `safeFaviconUrl()` (chỉ nhận đường dẫn tương đối
+  // hoặc `https://`), nên nó không thực thi được gì — khác `tracking_custom_*`
+  // vốn được chèn nguyên văn dưới dạng script.
+  'logo_url', 'hero_banner_url', 'favicon_url',
   // Media storage
   'media_provider', 'r2_account_id', 'r2_access_key', 'r2_secret_key', 'r2_bucket', 'r2_public_url',
   // SMTP
