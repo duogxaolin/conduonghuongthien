@@ -74,6 +74,71 @@ const uploadImage = async (event: Event, field: ImageField) => {
   ;(event.target as HTMLInputElement).value = ''
 }
 
+/**
+ * Favicon đi qua endpoint RIÊNG, không qua `uploadImage`.
+ *
+ * `uploadImage` lưu **nguyên** tệp cán bộ chọn rồi dán URL vào ô. Với favicon thì
+ * đó là lỗi: ảnh cán bộ có trong tay là logo cơ quan, thường 1200×800 và vài trăm
+ * KB, nên nó sẽ tải trên **mọi** trang của cổng và bị trình duyệt bóp méo vì không
+ * vuông. `/api/admin/settings/favicon` **sinh** bộ 32/180/ico đúng cỡ.
+ *
+ * Endpoint đó tự ghi CSDL, nên ô này **có hiệu lực ngay** mà không cần bấm "Lưu Cài
+ * Đặt" — khác mọi ô khác trên trang. Sự bất đối xứng đó là hệ quả của việc nó phải
+ * ghi tệp ra đĩa (không thể hoãn tới lượt lưu chung), nên nút phải nói ra: một thay
+ * đổi đã có hiệu lực mà trông như đang chờ lưu là cách cán bộ bỏ trang đi mà tưởng
+ * mình chưa đổi gì.
+ */
+const uploadingFavicon = ref(false)
+
+const uploadFavicon = async (event: Event) => {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  if (!file) return
+
+  uploadingFavicon.value = true
+  try {
+    const form = new FormData()
+    form.append('file', file)
+    const res = await $fetch('/api/admin/settings/favicon', { method: 'POST', body: form })
+
+    settings.favicon_url = res.faviconUrl
+
+    // Nói ra phần đã âm thầm xảy ra. JPEG không có kênh alpha nên nền trong suốt sẽ
+    // thành nền đen; máy chủ chuyển sang PNG để tránh, và cán bộ cần biết vì tệp họ
+    // chọn không còn là tệp cổng đang dùng.
+    const converted = res.convertedToPng ? ' (đã chuyển sang PNG để giữ nền trong suốt)' : ''
+    toast.success(`Đã đặt favicon mới và áp dụng ngay${converted}.`)
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể đặt favicon'))
+  } finally {
+    uploadingFavicon.value = false
+    input.value = ''
+  }
+}
+
+/**
+ * Trả favicon về bộ mặc định.
+ *
+ * Xoá ô trống rồi bấm "Lưu Cài Đặt" **không** đủ: lượt lưu chung ghi một chuỗi rỗng
+ * vào `favicon_url`, nhưng `favicon_ico_url` — bản `.ico` dẫn xuất — là một khoá
+ * riêng mà biểu mẫu này không biết tới, nên tuyến `/favicon.ico` sẽ còn phục vụ icon
+ * cũ. Endpoint `DELETE` xoá cả hai khoá trong một transaction.
+ */
+const resettingFavicon = ref(false)
+
+const resetFavicon = async () => {
+  resettingFavicon.value = true
+  try {
+    await $fetch('/api/admin/settings/favicon', { method: 'DELETE' })
+    settings.favicon_url = ''
+    toast.success('Đã trả favicon về mặc định của cổng.')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể trả favicon về mặc định'))
+  } finally {
+    resettingFavicon.value = false
+  }
+}
+
 onMounted(() => { fetchSettings() })
 </script>
 
@@ -190,19 +255,32 @@ onMounted(() => { fetchSettings() })
               <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-[#c8d6c9] bg-[#f4f7f4] text-[#1e4620] rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-[#2c6e33] transition-colors shrink-0" @click="pickImage('favicon_url')">
                 <i class="fa-regular fa-images"></i> Thư viện
               </button>
-              <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-[#1e4620] hover:bg-[#2c6e33] text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploading }">
-                <i class="fa-regular" :class="uploading ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i> Upload
-                <input type="file" accept=".png,.ico,image/png,image/x-icon" class="sr-only" :disabled="uploading" @change="(e) => uploadImage(e, 'favicon_url')" />
+              <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-[#1e4620] hover:bg-[#2c6e33] text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploadingFavicon }">
+                <i class="fa-regular" :class="uploadingFavicon ? 'fa-spinner animate-spin' : 'fa-wand-magic-sparkles'"></i>
+                {{ uploadingFavicon ? 'Đang xử lý...' : 'Tải ảnh & tự tạo' }}
+                <input type="file" accept=".png,.jpg,.jpeg,.ico,image/png,image/jpeg,image/x-icon" class="sr-only" :disabled="uploadingFavicon" @change="uploadFavicon" />
               </label>
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-[#c8d6c9] bg-white text-[#667768] rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#f4f7f4] transition-colors shrink-0 disabled:opacity-60 disabled:cursor-not-allowed"
+                :disabled="resettingFavicon"
+                @click="resetFavicon"
+              >
+                <i class="fa-regular" :class="resettingFavicon ? 'fa-spinner animate-spin' : 'fa-rotate-left'"></i> Về mặc định
+              </button>
             </div>
             <p class="text-[0.72rem] text-[#8a9a8c] m-0">
-              Nhận tệp <strong>PNG</strong> hoặc <strong>ICO</strong>, nên dùng ảnh vuông (32×32 hoặc 512×512).
-              Để trống để dùng icon mặc định của cổng.
+              Nhận <strong>PNG</strong>, <strong>JPG</strong> hoặc <strong>ICO</strong>. Nút
+              <strong>Tải ảnh &amp; tự tạo</strong> tự thu nhỏ và tạo đủ bộ icon (32×32 cho tab,
+              180×180 cho iOS, và tệp <code>.ico</code>) — nên chọn ảnh vuông, không cần đúng kích thước sẵn.
+              Ảnh JPG sẽ được chuyển sang PNG để giữ nền trong suốt.
             </p>
             <p class="text-[0.72rem] text-[#8a6d3b] m-0">
               <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
-              Trình duyệt giữ favicon trong bộ nhớ đệm rất lâu. Sau khi lưu, nếu chưa thấy icon mới thì
-              hãy mở tab mới hoặc tải lại trang bỏ qua bộ nhớ đệm (Ctrl/Cmd + Shift + R).
+              Nút <strong>Tải ảnh &amp; tự tạo</strong> và <strong>Về mặc định</strong> có hiệu lực
+              <strong>ngay</strong>, không cần bấm "Lưu Cài Đặt". Trình duyệt giữ favicon trong bộ nhớ đệm
+              rất lâu, nên nếu chưa thấy icon mới thì hãy mở tab mới hoặc tải lại trang bỏ qua bộ nhớ đệm
+              (Ctrl/Cmd + Shift + R).
             </p>
             <div v-if="settings.favicon_url" class="mt-2 relative inline-block border border-[#e2ece3] rounded-lg overflow-hidden">
               <!-- `max-h-8`: favicon là ảnh nhỏ, hiện to 80px như logo sẽ vẽ nó
