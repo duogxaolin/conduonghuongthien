@@ -49,7 +49,7 @@
   </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
@@ -79,21 +79,28 @@ const list = computed(() =>
 )
 
 // ── Carousel (ported from index.vue) ──
-const track = ref(null)
+// `ref(null)` trần suy ra `Ref<null>`, nên `track.value.children` không biên dịch
+// được. `HTMLElement` là kiểu thật của phần tử track trong template.
+const track = ref<HTMLElement | null>(null)
 const activeIndex = ref(0)
-let autoplayTimer = null
+// `ReturnType<typeof setInterval>`, không phải `number`: ở kiểu của Node đây là
+// một `Timeout` object, còn trong trình duyệt là số — viết cứng một trong hai thì
+// sai ở môi trường còn lại, và tệp này chạy ở cả hai (SSR + client).
+let autoplayTimer: ReturnType<typeof setInterval> | null = null
 
-const scrollToSlide = (idx) => {
+const scrollToSlide = (idx: number) => {
   activeIndex.value = idx
   if (track.value) {
-    const card = track.value.children[idx]
+    // `children[idx]` trả `Element`, không có `offsetLeft` — đó là thuộc tính của
+    // `HTMLElement`. Ép hẹp ở đây thay vì ở nơi đọc để chỉ có một chỗ khẳng định.
+    const card = track.value.children[idx] as HTMLElement | undefined
     if (card) {
       const scrollPos = card.offsetLeft - track.value.offsetLeft
       track.value.scrollTo({ left: scrollPos, behavior: 'smooth' })
     }
   }
 }
-const goToSlide = (idx) => scrollToSlide(idx)
+const goToSlide = (idx: number) => scrollToSlide(idx)
 const nextSlide = () => { if (list.value.length) scrollToSlide((activeIndex.value + 1) % list.value.length) }
 const prevSlide = () => { if (list.value.length) scrollToSlide((activeIndex.value - 1 + list.value.length) % list.value.length) }
 

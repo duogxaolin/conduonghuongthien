@@ -76,7 +76,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
@@ -91,7 +91,11 @@ const searchQuery = ref(route.query.q ? String(route.query.q) : '')
 const searchInput = ref(searchQuery.value)
 
 const articlesQuery = computed(() => {
-  const q = { type: 'document', limit: 50 }
+  // Khai kiểu tường minh: một object literal suy ra `{type,limit}` nên phép gán
+  // `q.search` bên dưới không biên dịch được. `search` là tuỳ chọn vì bỏ hẳn khoá
+  // khi không tìm gì khác với gửi khoá rỗng — `?search=` sẽ vào bộ nhớ đệm dưới
+  // một khoá khác cho cùng một danh sách.
+  const q: { type: string; limit: number; search?: string } = { type: 'document', limit: 50 }
   if (searchQuery.value) q.search = searchQuery.value
   return q
 })
@@ -111,5 +115,6 @@ const applySearch = () => {
   navigateTo({ path: '/documents', query: searchQuery.value ? { q: searchQuery.value } : {} })
 }
 
-const formatDate = (item) => formatDateVN(item.publishedAt || item.createdAt)
+const formatDate = (item: { publishedAt?: string | null; createdAt?: string | null }) =>
+  formatDateVN(item.publishedAt || item.createdAt)
 </script>

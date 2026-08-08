@@ -250,15 +250,19 @@
   </section>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
 import { useReaderAuth } from '~/composables/useReaderAuth'
+// Đổi tên khi import: `errorMessage` đã là một `ref` cục bộ trong tệp này (thông
+// báo lỗi của lượt tải luồng), nên nhập trùng tên là xung đột khai báo.
+import { errorMessage as messageFrom, errorStatus } from '~/utils/errorMessage'
+import type { CommentThreadPayload, PublicCommentItem } from '~/types/public-api'
 
-const props = defineProps({
-  slug: { type: String, required: true },
-})
+const props = defineProps<{
+  slug: string
+}>()
 
 /** Mirrors COMMENT_MAX_LENGTH on the server. The server is the authority; this
  *  only stops the reader typing past a limit the write would then refuse. */
@@ -271,7 +275,12 @@ const HIGHLIGHT_MS = 3000
 const { isSignedIn, signIn, load: loadReader, forgetReader } = useReaderAuth()
 const route = useRoute()
 
-const comments = ref([])
+// `ref([])` trần suy ra `Ref<never[]>` trong một tệp typed, nên MỌI phép đọc
+// trường trên phần tử thành lỗi — dấu hiệu hình dạng này chưa từng được khai ở
+// đâu, không phải một bất tiện của trình kiểm kiểu. Kiểu suy từ chính handler
+// (`app/types/public-api.ts`), nên đổi projection ở máy chủ là mọi phép đọc sai
+// ở đây đỏ ngay lượt typecheck kế tiếp.
+const comments = ref<PublicCommentItem[]>([])
 const total = ref(0)
 const page = ref(1)
 const totalPages = ref(1)
@@ -280,16 +289,16 @@ const pending = ref(true)
 const errorMessage = ref('')
 
 const body = ref('')
-const replyTo = ref(null)
+const replyTo = ref<number | null>(null)
 const replyBody = ref('')
 const submitting = ref(false)
 const submitError = ref('')
-const deletingId = ref(null)
+const deletingId = ref<number | null>(null)
 /** Đúng khi máy chủ vừa từ chối một lượt ghi bằng 401 — xem reportFailure. */
 const sessionLapsed = ref(false)
 /** Bình luận đang được tô sáng vì vừa được điều hướng tới. */
-const highlightId = ref(null)
-const copiedId = ref(null)
+const highlightId = ref<number | null>(null)
+const copiedId = ref<number | null>(null)
 
 /**
  * Id bình luận nêu trong `#comment-<id>`.
@@ -337,7 +346,7 @@ async function focusAnchoredComment() {
  * `?page=` của trang đang xem, nếu không thì liên kết tới một bình luận ở
  * trang 3 sẽ mở trang 1 và không tìm thấy gì.
  */
-async function copyLink(id) {
+async function copyLink(id: number) {
   if (typeof window === 'undefined') return
 
   const url = new URL(window.location.href)
@@ -395,9 +404,12 @@ async function loadThread() {
   pending.value = true
   errorMessage.value = ''
   try {
-    const response = await $fetch(`/api/public/comments/${encodeURIComponent(props.slug)}`, {
-      query: { page: page.value },
-    })
+    // Kiểu tường minh: `$fetch` trên một URL dựng bằng template string không suy
+    // được tuyến nào, nên nó trả `{}` và mọi phép đọc trường thành lỗi.
+    const response = await $fetch<CommentThreadPayload>(
+      `/api/public/comments/${encodeURIComponent(props.slug)}`,
+      { query: { page: page.value } },
+    )
     comments.value = response?.comments || []
     total.value = response?.total || 0
     totalPages.value = response?.totalPages || 1
@@ -412,7 +424,7 @@ async function loadThread() {
   }
 }
 
-function goToPage(next) {
+function goToPage(next: number) {
   if (next < 1 || next > totalPages.value) return
   page.value = next
   // Tô sáng thuộc về bình luận ở trang trước; giữ lại thì sau khi đổi trang nó
@@ -421,7 +433,7 @@ function goToPage(next) {
   loadThread()
 }
 
-function toggleReply(id) {
+function toggleReply(id: number) {
   replyTo.value = replyTo.value === id ? null : id
   replyBody.value = ''
   submitError.value = ''
@@ -449,8 +461,10 @@ function cancelReply() {
  * succeeds and changes nothing, reading as a broken portal rather than a decision
  * somebody made.
  */
-function reportFailure(error, fallback) {
-  const status = error?.statusCode ?? error?.response?.status ?? error?.data?.statusCode
+function reportFailure(error: unknown, fallback: string): string {
+  // Qua `errorStatus()` thay vì tự dò bốn đường trên một giá trị `unknown`: đó là
+  // helper dùng chung đã bao cả `statusCode`, `status` và `response.status`.
+  const status = errorStatus(error)
   if (status === 401) {
     sessionLapsed.value = true
     // Lưu nháp TRƯỚC khi bỏ danh tính. `signIn()` là một lượt điều hướng cấp
@@ -462,10 +476,10 @@ function reportFailure(error, fallback) {
     saveDraft()
     forgetReader()
   }
-  return error?.statusMessage || error?.data?.statusMessage || fallback
+  return messageFrom(error, fallback)
 }
 
-async function submit(parentId) {
+async function submit(parentId: number | null) {
   const text = parentId === null ? body.value : replyBody.value
   if (!text.trim() || submitting.value) return
 
@@ -493,7 +507,7 @@ async function submit(parentId) {
   }
 }
 
-async function removeComment(comment) {
+async function removeComment(comment: PublicCommentItem) {
   // A deletion is irreversible, so it asks first. `window.confirm` rather than
   // the admin `useConfirm()` modal: that composable drives a ConfirmDialog which
   // is mounted only in layouts/admin.vue, so calling it from a public page would

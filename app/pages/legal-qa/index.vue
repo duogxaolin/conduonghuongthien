@@ -77,7 +77,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 import { ref, computed } from 'vue'
 
 useSeoMeta({
@@ -85,7 +85,10 @@ useSeoMeta({
   description: 'Giải đáp các câu hỏi pháp lý thường gặp về xóa án tích, vay vốn ưu đãi, học nghề cho người hoàn lương.'
 })
 
-const activeIndex = ref(null)
+// `ref(null)` trần suy ra `Ref<null>`, nên phép gán một chỉ số ở `toggleFaq`
+// không biên dịch được. Chỉ MỘT mục mở tại một thời điểm ở trang này là có chủ
+// đích (khác `/qa-documents` dùng `Set` để mở nhiều) — `null` là "đang đóng hết".
+const activeIndex = ref<number | null>(null)
 
 // Xem ghi chú ở role-models/index.vue: `lazy` chỉ bỏ chặn điều hướng phía client,
 // lượt dựng phía máy chủ vẫn chờ dữ liệu nên SEO không đổi.
@@ -97,7 +100,7 @@ const { data, pending, error, refresh } = useFetch('/api/public/articles', {
 const faqs = computed(() => data.value?.articles || [])
 const loadError = computed(() => !!error.value || data.value?.ok === false)
 
-const toggleFaq = (index) => {
+const toggleFaq = (index: number) => {
   activeIndex.value = activeIndex.value === index ? null : index
 }
 </script>

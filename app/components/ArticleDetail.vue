@@ -266,7 +266,7 @@
   </div>
 </template>
 
-<script setup>
+<script setup lang="ts">
 /**
  * Shared article detail view.
  *
@@ -407,7 +407,7 @@ useSeoMeta({
  */
 const sentSlug = ref('')
 
-function pingView(slug) {
+function pingView(slug: string | null | undefined) {
   if (!slug || sentSlug.value === slug) return
   sentSlug.value = slug
   $fetch(`/api/public/articles/${encodeURIComponent(slug)}/view`, {
