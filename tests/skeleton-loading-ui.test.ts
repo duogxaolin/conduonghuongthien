@@ -14,7 +14,7 @@
  * rendering.
  */
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
+import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
@@ -88,7 +88,43 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/comments/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/google-oauth.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/ip-bans.vue', marker: 'v-if="loading"' },
+
+  // Views that already had a loading branch but sat outside this guard, because
+  // the list above names files and nobody added them. Found by the coverage gate
+  // at the bottom of this file, not by reading — which is the point of having it.
+  { file: 'components/admin/ProfileActivityHistory.vue', marker: 'v-if="historyLoading"' },
+  { file: 'components/admin/MediaLibraryModal.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/chatbot/sessions/index.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/chatbot/sessions/[id].vue', marker: 'v-if="loading"' },
+
+  // Dashboards whose panels load independently. Each tile owns its own branch, so
+  // one slow query must not blank the other three.
+  { file: 'pages/admin/index.vue', marker: 'v-if="liveLoading"' },
+  { file: 'pages/admin/analytics.vue', marker: 'v-if="initialLoading"' },
 ]
+
+/**
+ * Admin views that fetch but deliberately show no skeleton.
+ *
+ * Named rather than skipped, so the coverage gate at the bottom treats anything
+ * unlisted as a gap. Each reason has to answer "what does the operator see while
+ * this request is in flight?".
+ */
+const NO_SKELETON_NEEDED: Record<string, string> = {
+  // Fetches only on submit, and the button itself carries the pending state. A
+  // skeleton would replace a form the user is still looking at.
+  'pages/admin/login.vue': 'submit-time fetch; the button shows pending',
+  // Fills a dropdown in the background. The field is usable throughout — it just
+  // starts with "Tất cả" — so there is nothing to placeholder.
+  'components/admin/builder/PropertyPanel.vue': 'background lookup behind an already-usable field',
+  // Uploads on demand; TinyMCE renders its own progress UI for the transfer.
+  'components/admin/TinyMceEditor.vue': 'upload progress belongs to the editor',
+  // Polls on an interval and keeps the previous reading on screen between ticks,
+  // which is strictly better than a placeholder: replacing live numbers with grey
+  // boxes every few seconds would make a working dashboard look broken. Its
+  // heartbeat dot is already an allowed decorative pulse above.
+  'components/admin/AnalyticsLiveDashboard.client.vue': 'polls and keeps the last reading visible between ticks',
+}
 
 /** Files whose loading branch is drawn inline rather than by a shared component. */
 const INLINE_PLACEHOLDER_FILES = [
@@ -136,11 +172,12 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
     'pages/reintegration-models/index.vue',
     'pages/news/index.vue',
     'pages/documents/index.vue',
-    // The dashboard is BOTH: seven real loading placeholders (metric tiles, the
-    // 7-day chart and its ClientOnly fallback, the two donut panels) plus one
-    // decorative "Live" badge dot. It has to be scanned here or those seven go
-    // unenforced; the per-tag exemption below is what keeps the dot out of it.
-    'pages/admin/index.vue',
+    // NOTE: `pages/admin/index.vue` used to be appended here by hand. It is now in
+    // VIEWS_WITH_LOADING_BRANCH above, so it arrives through the spread and must
+    // NOT be repeated — the dashboard is BOTH seven real placeholders (metric
+    // tiles, the 7-day chart and its ClientOnly fallback, the two donut panels)
+    // AND one decorative "Live" badge dot, and the per-tag exemption below is what
+    // keeps the dot out of the assertion.
   ]
 
   for (const file of files) {
@@ -224,4 +261,71 @@ test('placeholder containers announce themselves as busy', async () => {
       `${file} must give assistive technology a text description of what is loading`,
     )
   }
+})
+
+/**
+ * COVERAGE GATE — same reasoning as the one in tests/admin-error-retry-ui.test.ts.
+ *
+ * Every assertion above runs over `VIEWS_WITH_LOADING_BRANCH`, a hand-written list
+ * of paths, so it is green forever for any file nobody added. Measured, not
+ * assumed: ten admin views that fetch were outside this guard, and six of them
+ * already had a loading branch that simply went unenforced — including both
+ * chat-session views, both dashboards, the media picker and the activity-history
+ * panel. A contract nobody checks is a contract that quietly stops holding.
+ *
+ * So this walks the directories and demands every admin view that fetches is
+ * EITHER pinned above OR named in `NO_SKELETON_NEEDED` with its reason.
+ */
+const FETCH_CALL = /\$fetch|useFetch\(|useAsyncData\(/
+
+async function adminViewsThatFetch(): Promise<string[]> {
+  const found: string[] = []
+
+  const walk = async (relative: string) => {
+    const dir = new URL(`../app/${relative}`, import.meta.url)
+    for (const entry of await readdir(dir, { withFileTypes: true })) {
+      const child = `${relative}/${entry.name}`
+      if (entry.isDirectory()) {
+        await walk(child)
+        continue
+      }
+      if (!entry.name.endsWith('.vue')) continue
+      if (FETCH_CALL.test(await read(child))) found.push(child)
+    }
+  }
+
+  for (const root of ['pages/admin', 'components/admin']) await walk(root)
+  return found.sort()
+}
+
+test('every admin view that fetches is either pinned or exempt with a stated reason', async () => {
+  const pinned = new Set(VIEWS_WITH_LOADING_BRANCH.map(view => view.file))
+  const uncovered: string[] = []
+
+  for (const file of await adminViewsThatFetch()) {
+    if (pinned.has(file)) continue
+    if (NO_SKELETON_NEEDED[file]) continue
+    uncovered.push(file)
+  }
+
+  assert.deepEqual(
+    uncovered,
+    [],
+    'these admin views fetch data but no loading contract covers them — pin them in '
+    + 'VIEWS_WITH_LOADING_BRANCH, or name them in NO_SKELETON_NEEDED with the reason they '
+    + 'need no placeholder. A hand-written list cannot fail on a file it has never heard of.',
+  )
+})
+
+test('the skeleton exemption list has not gone stale', async () => {
+  // The mirror failure: an entry that no longer fetches keeps passing and makes the
+  // list read as wider coverage than it has.
+  const fetching = new Set(await adminViewsThatFetch())
+  const stale = Object.keys(NO_SKELETON_NEEDED).filter(file => !fetching.has(file))
+
+  assert.deepEqual(
+    stale,
+    [],
+    'exempt but no longer fetches — drop it from NO_SKELETON_NEEDED so the list keeps meaning something',
+  )
 })
