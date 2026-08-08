@@ -180,12 +180,18 @@ export const BLOCK_REGISTRY: Record<string, BlockDefinition> = {
       subtitle: 'Điền thông tin để cán bộ chuyên môn liên hệ tư vấn miễn phí trong vòng 24 giờ.',
       hotline: '0903.480.985',
       email: 'contact@conduonghuongthien.com.vn',
+      recipientEmail: '',
     },
     fields: [
       { key: 'title', label: 'Tiêu đề', type: 'text' },
       { key: 'subtitle', label: 'Mô tả', type: 'textarea' },
       { key: 'hotline', label: 'Hotline', type: 'text' },
-      { key: 'email', label: 'Email', type: 'text' },
+      // `email` là địa chỉ HIỆN TRÊN TRANG cho người dân đọc; `recipientEmail` là
+      // địa chỉ NHẬN đơn. Trước đây block này chỉ có trường đầu, trong khi máy chủ
+      // đi tìm trường sau — nên biểu mẫu ở trang chủ không có cách nào cấu hình
+      // được nơi nhận, và email thông báo không bao giờ gửi.
+      { key: 'email', label: 'Email hiển thị trên trang', type: 'text' },
+      { key: 'recipientEmail', label: 'Email nhận thông báo', type: 'text', help: 'Địa chỉ nhận email khi có đơn mới (cần cấu hình SMTP). Để trống = dùng email liên hệ của cổng trong Cài đặt chung.' },
     ],
   },
   links: {
@@ -342,7 +348,7 @@ export const BLOCK_REGISTRY: Record<string, BlockDefinition> = {
     },
     fields: [
       { key: 'title', label: 'Tiêu đề biểu mẫu', type: 'text' },
-      { key: 'recipientEmail', label: 'Email nhận thông báo', type: 'text', help: 'Địa chỉ nhận email khi có đơn mới (cần cấu hình SMTP). Để trống = chỉ lưu vào hệ thống.' },
+      { key: 'recipientEmail', label: 'Email nhận thông báo', type: 'text', help: 'Địa chỉ nhận email khi có đơn mới (cần cấu hình SMTP). Để trống = dùng email liên hệ của cổng trong Cài đặt chung.' },
       { key: 'fields', label: 'Các trường biểu mẫu', type: 'array', itemSchema: [
         { key: 'label', label: 'Nhãn hiển thị', type: 'text' },
         { key: 'type', label: 'Kiểu trường', type: 'select', options: [

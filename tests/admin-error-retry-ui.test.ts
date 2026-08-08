@@ -123,6 +123,12 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   //     told nothing while a sighted user saw amber.
   { file: 'components/admin/MediaLibraryModal.vue', refs: ['loadError'], retries: ['fetchMedia'] },
   { file: 'components/admin/ChatbotSmallTalkPanel.vue', refs: ['error'], retries: ['load'] },
+  // The submission detail modal fetches the processing log on open — the list
+  // table does not carry it (an N+1 query for a column nobody reads on the
+  // table). A failed load here is the worst kind for this resource: the officer
+  // sees a citizen's record with no history and concludes nobody has touched it,
+  // which is precisely the question the log exists to answer.
+  { file: 'components/admin/SubmissionDetailModal.vue', refs: ['error'], retries: ['load'] },
   {
     file: 'components/admin/AnalyticsLiveDashboard.client.vue',
     refs: ['livePanelError', 'breakdownPanelError', 'nocPanelError'],

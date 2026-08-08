@@ -5,6 +5,7 @@ import type { AnyMySqlColumn } from 'drizzle-orm/mysql-core'
 import { sql } from 'drizzle-orm'
 import { ANALYTICS_LIVE_SCOPE_TYPES } from '../utils/analytics-live'
 import type { BlockData, BlockNode } from '../../app/utils/blocks/types'
+import type { ContactChannel, SubmissionEventType, SubmissionStatus } from '../../app/utils/submission-status'
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 export const roles = mysqlTable('roles', {
@@ -386,12 +387,64 @@ export const submissions = mysqlTable('submissions', {
   answers:   json('answers'),
   // Title of the form/block that produced this submission.
   formTitle: varchar('form_title', { length: 255 }),
+  // ─── Vòng đời xử lý ───
+  // Giá trị nằm trong SUBMISSION_STATUSES (app/utils/submission-status.ts) — một
+  // nguồn chân lý dùng chung cho phép kiểm máy chủ và nhãn hiển thị.
+  status:    varchar('status', { length: 24 }).notNull().default('new').$type<SubmissionStatus>(),
+  statusChangedBy: int('status_changed_by').references(() => users.id, { onDelete: 'set null' }),
+  statusChangedAt: datetime('status_changed_at', { mode: 'date' }),
+  // Ai MỞ hồ sơ này lần ĐẦU. Cột này chỉ ghi một lần; mọi lượt xem sau nằm ở
+  // `activity_logs`. Nó trả lời "đơn của người dân này đã có ai nhìn tới chưa" —
+  // câu hỏi mà một trạng thái đang là `new` không phân biệt được với một đơn đã
+  // được đọc nhưng chưa ai bấm đổi gì.
+  firstViewedBy: int('first_viewed_by').references(() => users.id, { onDelete: 'set null' }),
+  firstViewedAt: datetime('first_viewed_at', { mode: 'date' }),
+  // Đóng dấu khi email thông báo gửi THÀNH CÔNG. NULL nghĩa là chưa ai được báo —
+  // và trước thay đổi này thì đó là **mọi** hàng, không có gì trên màn hình nói ra.
+  notifiedAt: datetime('notified_at', { mode: 'date' }),
   // DATETIME (not TIMESTAMP) to match the column created by server/db/init.ts.
   // The distinction matters: MySQL converts TIMESTAMP to/from UTC but stores
   // DATETIME verbatim, and the connection pool runs with timezone '+07:00'.
   createdAt: datetime('created_at', { mode: 'date' }).default(sql`CURRENT_TIMESTAMP`),
 }, (t) => ({
   createdIdx: index('submissions_created_idx').on(t.createdAt),
+  // Trang quản trị lọc theo trạng thái rồi xếp theo ngày gửi. Index tổ hợp để
+  // một bộ lọc trạng thái không phải quét cả bảng.
+  statusCreatedIdx: index('submissions_status_created_idx').on(t.status, t.createdAt),
+}))
+
+/**
+ * Nhật ký xử lý một đơn đăng ký: ai xem lần đầu, ai đổi trạng thái, ai ghi chú,
+ * ai đã liên hệ người dân và bằng cách nào.
+ *
+ * **CỐ Ý KHÔNG phải một scope lưu trữ.** Mọi hàng treo trên `submissions` bằng FK
+ * `ON DELETE CASCADE`, và `submissions` **đã là** một scope (mặc định `0` = không
+ * tự xoá, vì thời hạn lưu hồ sơ công dân do quy định của cơ quan quyết định). Cho
+ * bảng này một cửa sổ tuổi riêng là xoá nhật ký xử lý **trong khi hồ sơ còn sống**
+ * — hồ sơ sẽ hiện ra như chưa ai từng chạm tới, đúng điều bảng này ra đời để phủ
+ * nhận. Cùng lý do `chat_messages`, `article_comments` và `reader_notifications`
+ * không phải scope.
+ */
+export const submissionEvents = mysqlTable('submission_events', {
+  id:           bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
+  submissionId: bigint('submission_id', { mode: 'number', unsigned: true }).notNull()
+                  .references(() => submissions.id, { onDelete: 'cascade' }),
+  // SET NULL, không CASCADE: xoá một tài khoản cán bộ **không** được làm biến mất
+  // dấu vết việc họ đã xử lý hồ sơ của một công dân. Đó đúng là dấu vết cần giữ
+  // nhất. Tên đăng nhập lúc đó lấy qua leftJoin, hàng log vẫn còn.
+  actorId:      int('actor_id').references(() => users.id, { onDelete: 'set null' }),
+  // Ảnh chụp tên đăng nhập lúc xảy ra sự việc, để hàng log của một tài khoản đã
+  // xoá vẫn đọc được là ai. Không phải bản sao dư: `actor_id` trả lời "còn tài
+  // khoản nào không", cột này trả lời "lúc đó là ai".
+  actorName:    varchar('actor_name', { length: 64 }),
+  eventType:    varchar('event_type', { length: 16 }).notNull().$type<SubmissionEventType>(),
+  fromStatus:   varchar('from_status', { length: 24 }).$type<SubmissionStatus>(),
+  toStatus:     varchar('to_status', { length: 24 }).$type<SubmissionStatus>(),
+  channel:      varchar('channel', { length: 16 }).$type<ContactChannel>(),
+  note:         text('note'),
+  createdAt:    datetime('created_at', { mode: 'date' }).default(sql`CURRENT_TIMESTAMP`),
+}, (t) => ({
+  submissionCreatedIdx: index('submission_events_submission_idx').on(t.submissionId, t.createdAt),
 }))
 
 // ─── Governed Chatbot ─────────────────────────────────────────────────────────
