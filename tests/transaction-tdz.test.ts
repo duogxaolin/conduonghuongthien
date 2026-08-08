@@ -69,6 +69,25 @@ function withoutStringLiterals(line: string): string {
     .replace(/`(?:[^`\\]|\\.)*`/g, '``')
 }
 
+/**
+ * Bỏ KHOÁ của object literal trước khi tìm định danh.
+ *
+ * Trong `meta: { deletedCount: count }`, chữ `deletedCount` là **tên trường**
+ * của dòng audit, không phải phép đọc biến `deletedCount` đang trong TDZ. Đây là
+ * dương tính giả thứ ba của cùng cổng này (sau nội dung chuỗi ký tự và
+ * `.property`), và nó xuất hiện ở đúng chỗ quy ước của dự án dẫn tới: một
+ * transaction trả về một con số rồi ghi con số đó vào `meta` dưới cùng cái tên.
+ * Tức là càng viết đúng quy ước thì càng dễ bị cổng này báo oan — và bước tiếp
+ * theo của bài học "cổng này ồn" là tắt nó đi.
+ *
+ * Chỉ bỏ khi định danh đứng ĐẦU DÒNG, ngay sau `{`, hoặc ngay sau `,`. Một phép
+ * đọc thật trong nhánh ternary (`cond ? deletedCount : 0`) đứng sau `? ` nên
+ * không khớp; bỏ mọi `định danh:` sẽ làm guard mù với đúng nhánh đó.
+ */
+function withoutObjectKeys(line: string): string {
+  return line.replace(/(^|[{,])(\s*)[A-Za-z_$][\w$]*\s*:/g, '$1$2_:')
+}
+
 describe('không có tham chiếu TDZ trong khối db.transaction', () => {
   const files = [...walk('server/api'), ...walk('server/services')]
 
@@ -88,6 +107,7 @@ describe('không có tham chiếu TDZ trong khối db.transaction', () => {
         .map(line => line.trim())
         .filter(line => !line.startsWith('//') && !line.startsWith('*'))
         .map(withoutStringLiterals)
+        .map(withoutObjectKeys)
         // `(?<![.\w$])` chặn khớp sau một dấu chấm: `result.id` là một thuộc tính
         // của giá trị khác, không phải biến đang trong TDZ. Không có nó thì mọi
         // transaction gán vào một biến tên `id` đều đỏ ngay khi bên trong có bất
@@ -111,9 +131,9 @@ describe('không có tham chiếu TDZ trong khối db.transaction', () => {
  * Riêng dạng hỏng đó thì im lặng: một guard đã ngừng chặn đọc ra y hệt một guard
  * đang chạy đúng, vì cả hai đều xanh.
  *
- * Nên phần phát hiện được chạy lại ở đây trên bốn mẫu dựng tay: hai mẫu **phải**
- * bị bắt (đúng hình dạng đã làm mọi lượt tạo bài viết trả 500), hai mẫu **không
- * được** bị bắt (đúng hai dương tính giả vừa sửa).
+ * Nên phần phát hiện được chạy lại ở đây trên các mẫu dựng tay: một nhóm **phải**
+ * bị bắt (đúng hình dạng đã làm mọi lượt tạo bài viết trả 500), một nhóm **không
+ * được** bị bắt (đúng ba dương tính giả đã sửa).
  */
 describe('phần phát hiện TDZ vẫn bắt được lỗi thật sau khi nới', () => {
   function detects(body: string, variable: string): boolean {
@@ -122,6 +142,7 @@ describe('phần phát hiện TDZ vẫn bắt được lỗi thật sau khi nớ
       .map(line => line.trim())
       .filter(line => !line.startsWith('//') && !line.startsWith('*'))
       .map(withoutStringLiterals)
+      .map(withoutObjectKeys)
       .some(line => new RegExp(`(?<![.\\w$])${variable}\\b`).test(line))
   }
 
@@ -140,6 +161,25 @@ describe('phần phát hiện TDZ vẫn bắt được lỗi thật sau khi nớ
     assert.ok(
       !detects('const created = Number(result.id)', 'id'),
       '`result.id` là thuộc tính của giá trị khác — bắt nó là làm mọi transaction tên `id` đỏ',
+    )
+  })
+
+  it('KHÔNG bắt một khoá object literal cùng tên', () => {
+    // Đúng dương tính giả vừa gặp: `deletedCount: count` trong
+    // `activityLogs.values({ deletedCount: count, … })` khi biến TDZ tên là
+    // `deletedCount` — khoá đứng bên trái dấu `:` không phải phép đọc biến.
+    assert.ok(
+      !detects('await tx.insert(activityLogs).values({ deletedCount: count })', 'deletedCount'),
+      '`deletedCount:` là khoá object literal, không phải phép đọc biến `deletedCount`',
+    )
+  })
+
+  it('vẫn bắt phép đọc biến đứng ngay sau một khoá object literal', () => {
+    // Khoá và giá trị có thể trùng chữ ở hai bên dấu `:` — bộ lọc phải xoá đúng
+    // phần khoá và để lại phần giá trị cho vòng kiểm định danh còn lại.
+    assert.ok(
+      detects('await tx.insert(activityLogs).values({ resourceId: deletedCount })', 'deletedCount'),
+      'giá trị bên phải dấu `:` vẫn là một phép đọc biến thật, guard không được bỏ qua nó',
     )
   })
 
