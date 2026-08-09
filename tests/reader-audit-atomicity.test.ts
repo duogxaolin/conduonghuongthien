@@ -325,6 +325,10 @@ describe('cookie-writing endpoints are excluded on purpose', () => {
     'server/api/admin/profile/mfa/confirm.post.ts',
     'server/api/admin/profile/mfa/recovery-codes.post.ts',
     'server/api/admin/auth/logout.post.ts',
+    // Re-issues this session's cookie after bumping tokenVersion, so the caller
+    // is not logged out by their own successful password change. Found by the
+    // directory scan below, which is the point of having one.
+    'server/api/admin/profile/password.put.ts',
   ]) {
     it(`${file.replace('server/api/admin/', '')} still writes a cookie mid-request`, () => {
       const source = read(file)
@@ -332,6 +336,142 @@ describe('cookie-writing endpoints are excluded on purpose', () => {
         'the cookie write is gone — re-evaluate whether this endpoint can now be wrapped in a transaction')
     })
   }
+})
+
+/**
+ * Cùng câu hỏi, nhưng QUÉT CẢ THƯ MỤC `server/api/admin/**` thay vì đọc một danh
+ * sách tên tệp.
+ *
+ * `AUDITED_MUTATION_ENDPOINTS` phía trên liệt kê 17 đường dẫn, nên nó **xanh vĩnh
+ * viễn với bất cứ tệp nào không ai nghĩ ra để thêm vào** — đúng lớp hỏng mà cổng
+ * tầng service đã được viết lại để thoát khỏi, và lời giải thích đó đã nằm ngay
+ * trong tệp này suốt thời gian qua trong khi nhóm endpoint vẫn là một danh sách.
+ * Một danh sách không thể đỏ vì một cái tên nó không chứa, và nó im lặng: đọc ra
+ * y hệt một cổng đang chạy đúng.
+ *
+ * Không phải giả thuyết. Lượt quét đầu tiên tìm ra **sáu** endpoint ghi cặp
+ * mutation + audit không bọc mà không danh sách nào nhắc tới, trong đó
+ * `articles/[id]/boost.post.ts` và `boost.delete.ts` là hai lượt ghi thật sự cần
+ * bọc: một lượt tăng lượt xem ảo mà không truy được về người thực hiện đúng là
+ * thứ tính năng đó không được phép sinh ra.
+ *
+ * ⚠️ GIỚI HẠN CÓ CHỦ ĐÍCH: guard chỉ hỏi những tệp **tự tay** ghi (`db.update(`,
+ * `db.delete(`, `db.insert(` vào bảng khác `activityLogs`). Endpoint uỷ quyền
+ * mutation cho một service rồi tự ghi audit — `settings/retention.put.ts`,
+ * `profile/mfa/disable.post.ts` — không có lệnh ghi thô nào ở đây nên không bị
+ * hỏi; chính service đó do cổng quét `server/services/` bên dưới canh. Ghi ra vì
+ * một giới hạn không nêu tên sẽ được đọc thành một bảo đảm không tồn tại.
+ */
+const MUTATION_SCAN_EXEMPTIONS: Record<string, string> = {
+  // Cả bốn ghi một cookie HTTP **giữa** hai lượt ghi CSDL. Cookie là tác dụng phụ
+  // lên phản hồi mà rollback không thu hồi được, nên bọc lại tạo ra trạng thái tệ
+  // hơn: trình duyệt đã cầm cookie cho một thao tác đã bị rollback. Vị trí của
+  // cookie được khẳng định riêng ở nhóm test ngay trên — dời nó đi là test đỏ và
+  // endpoint phải vào diện bọc.
+  'auth/logout.post.ts': 'writes an HTTP cookie between the two database writes',
+  'profile/mfa/confirm.post.ts': 'writes an HTTP cookie between the two database writes',
+  'profile/mfa/recovery-codes.post.ts': 'writes an HTTP cookie between the two database writes',
+  'profile/password.put.ts': 'writes an HTTP cookie between the two database writes',
+}
+
+/**
+ * Bỏ chú thích và nội dung chuỗi, rồi gom khoảng trắng về một dấu cách.
+ *
+ * Đây là phần quyết định guard có thấy được gì hay không, và bản đo đầu tiên đã
+ * sai chính ở đây. `/db\.update\(/` **không** khớp lối viết chiếm đa số trong dự
+ * án này:
+ *
+ *     await db
+ *       .update(users)
+ *
+ * nên một guard tìm theo chuỗi liền sẽ báo an toàn cho gần hết các endpoint nó
+ * đang soi. Bỏ chú thích trước khi tìm cũng cần thiết vì tệp này và nhiều tệp
+ * khác **viết chính những mẫu bị cấm ra trong văn xuôi** để giải thích chúng.
+ */
+function normalizeSource(source: string): string {
+  return source
+    .replace(/\/\*[\s\S]*?\*\//g, ' ')
+    .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ')
+    .replace(/`(?:\\.|[^`\\])*`/g, '``')
+    .replace(/"(?:\\.|[^"\\])*"/g, '""')
+    .replace(/'(?:\\.|[^'\\])*'/g, "''")
+    .replace(/\s+/g, ' ')
+}
+
+/** Ghi một hàng KHÁC dòng audit — tức là có cặp cần bọc. */
+function writesItsOwnRow(normalized: string): boolean {
+  return /\b(?:db|tx)\s*\.\s*(?:update|delete)\(/.test(normalized)
+    || /\b(?:db|tx)\s*\.\s*insert\(\s*(?!activityLogs)/.test(normalized)
+}
+
+describe('no admin endpoint writes a row and its audit row separately', () => {
+  it('every audited mutation is either wrapped or exempt with a stated reason', () => {
+    const root = 'server/api/admin'
+
+    const walk = (dir: string): string[] => {
+      const found: string[] = []
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const path = join(dir, entry.name)
+        if (entry.isDirectory()) found.push(...walk(path))
+        else if (entry.name.endsWith('.ts')) found.push(path)
+      }
+      return found
+    }
+
+    const offenders: string[] = []
+    for (const file of walk(root)) {
+      const normalized = normalizeSource(read(file))
+      if (!/activityLogs/.test(normalized)) continue
+      if (!writesItsOwnRow(normalized)) continue
+      if (/db\.transaction\(/.test(normalized)) continue
+      const key = file.slice(`${root}/`.length)
+      if (MUTATION_SCAN_EXEMPTIONS[key]) continue
+      offenders.push(key)
+    }
+
+    assert.deepEqual(
+      offenders,
+      [],
+      'ghi một hàng và dòng `activity_logs` của nó ngoài transaction — bọc lại, hoặc '
+      + 'khai vào MUTATION_SCAN_EXEMPTIONS kèm lý do. Một danh sách liệt kê tên tệp thì '
+      + 'xanh vĩnh viễn với tệp nó chưa biết; guard này quét cả thư mục chính vì thế.',
+    )
+  })
+
+  /**
+   * Phần phát hiện được kiểm chứng ngược trên mẫu dựng tay, vì một guard quét thư
+   * mục mà không thấy gì thì **cũng xanh y hệt** một guard đang chạy đúng. Hai mẫu
+   * đầu phải bị bắt, hai mẫu sau không được bị bắt.
+   */
+  it('the detector sees the multi-line style, and does not fire on comments', () => {
+    const caught = [
+      // Lối viết nhiều dòng — chiếm đa số trong repo này.
+      'await db\n  .update(users)\n  .set({})\nawait db.insert(activityLogs).values({})',
+      // Xoá rồi ghi log, cùng một dòng.
+      'await db.delete(users); await db.insert(activityLogs).values({})',
+    ]
+    for (const sample of caught) {
+      const n = normalizeSource(sample)
+      assert.ok(
+        /activityLogs/.test(n) && writesItsOwnRow(n) && !/db\.transaction\(/.test(n),
+        `bộ phát hiện bỏ sót một cặp ghi không bọc:\n${sample}`,
+      )
+    }
+
+    const ignored = [
+      // Đã bọc.
+      'await db.transaction(async (tx) => { await tx.update(users).set({}); await tx.insert(activityLogs).values({}) })',
+      // Chỉ ghi audit, không có hàng nào khác — không có gì để làm nguyên tử.
+      'await db.insert(activityLogs).values({})',
+      // Mẫu bị cấm nằm trong CHÚ THÍCH: chính lối viết tệp này dùng để giải thích.
+      '// await db.update(users) then db.insert(activityLogs) would be wrong\nawait db.insert(activityLogs).values({})',
+    ]
+    for (const sample of ignored) {
+      const n = normalizeSource(sample)
+      const flagged = /activityLogs/.test(n) && writesItsOwnRow(n) && !/db\.transaction\(/.test(n)
+      assert.ok(!flagged, `bộ phát hiện báo sai trên mẫu hợp lệ:\n${sample}`)
+    }
+  })
 })
 
 /**

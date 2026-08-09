@@ -114,13 +114,28 @@ export async function recordArticleView(input: { articleId: number; sourceCatego
  * Fabricated views, always into the `boost` row for the day. `fabricatedViews`
  * is the only column this function touches — a fabricated write physically
  * cannot land in `real_views`.
+ *
+ * `executor` lets a caller run this inside a transaction it already opened, so
+ * the count and the audit row describing who authorised it commit together.
+ * Defaults to the pool for callers that own no transaction — the scheduler is
+ * one: it delivers on its own tick with no actor to attribute, and its own
+ * ordering guarantees (claim the counter, then write the views) are documented
+ * where it calls this. Typed structurally rather than importing Drizzle's
+ * transaction type, which is not exported in a usable shape here — same
+ * approach as `deleteReaderComments` in services/comments.ts.
  */
-export async function addFabricatedViews(input: { articleId: number; amount: number; day?: string }): Promise<void> {
+type ViewInsertExecutor = Pick<ReturnType<typeof getDb>, 'insert'>
+
+export async function addFabricatedViews(input: {
+  articleId: number
+  amount: number
+  day?: string
+  executor?: ViewInsertExecutor
+}): Promise<void> {
   if (!Number.isInteger(input.amount) || input.amount < 1) {
     throw new Error('fabricated view amount must be a positive integer')
   }
-  const db = getDb()
-  await db
+  await (input.executor ?? getDb())
     .insert(articleViewDaily)
     .values({
       day: input.day ?? viewDay(),

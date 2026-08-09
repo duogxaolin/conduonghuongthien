@@ -50,5 +50,10 @@
     "drizzle-kit": "^0.31.10",
     "typescript": "^5.9.3",
     "vue-tsc": "^3.3.8"
+  },
+  "overrides": {
+    "@esbuild-kit/core-utils": {
+      "esbuild": "^0.25.12"
+    }
   }
 }

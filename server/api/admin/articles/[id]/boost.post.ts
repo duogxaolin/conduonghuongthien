@@ -39,13 +39,20 @@ export default defineEventHandler(async (event) => {
   if (!input.ok) throw createError({ statusCode: 400, statusMessage: input.message })
 
   if (input.mode === 'instant') {
-    await addFabricatedViews({ articleId: article.id, amount: input.amount })
-    await db.insert(activityLogs).values({
-      userId: actor.id,
-      action: 'boost',
-      resource: 'articles',
-      resourceId: article.id,
-      meta: { mode: input.mode, amount: input.amount, minutes: null, title: article.title },
+    // The fabricated total and its audit row commit together: an inflation
+    // nobody can trace back to a person is the one thing this feature must not
+    // produce, and a fabricated count is not something a rollback can "mostly"
+    // undo — the row either carries the amount someone authorised, or it does
+    // not exist at all.
+    await db.transaction(async (tx) => {
+      await addFabricatedViews({ articleId: article.id, amount: input.amount, executor: tx })
+      await tx.insert(activityLogs).values({
+        userId: actor.id,
+        action: 'boost',
+        resource: 'articles',
+        resourceId: article.id,
+        meta: { mode: input.mode, amount: input.amount, minutes: null, title: article.title },
+      })
     })
     return { ok: true, mode: input.mode, amount: input.amount }
   }
@@ -65,23 +72,35 @@ export default defineEventHandler(async (event) => {
 
   const startedAt = new Date()
   const endsAt = new Date(startedAt.getTime() + input.minutes * 60_000)
-  const [inserted] = await db.insert(articleViewBoost).values({
-    articleId: article.id,
-    totalAmount: input.amount,
-    appliedAmount: 0,
-    durationMinutes: input.minutes,
-    startedAt,
-    endsAt,
-    status: 'running',
-    createdBy: actor.id,
-  })
 
-  await db.insert(activityLogs).values({
-    userId: actor.id,
-    action: 'boost',
-    resource: 'articles',
-    resourceId: article.id,
-    meta: { mode: input.mode, amount: input.amount, minutes: input.minutes, title: article.title },
+  // The scheduled job and its audit row commit together. The id is RETURNED from
+  // the transaction rather than read from a variable declared inside it: `const
+  // boostId = await db.transaction(...)` leaves `boostId` in its temporal dead
+  // zone for the whole callback, so referencing it in there throws at runtime —
+  // the defect that made every article-create call return 500 (see CLAUDE.md).
+  const boostId = await db.transaction(async (tx) => {
+    const [inserted] = await tx.insert(articleViewBoost).values({
+      articleId: article.id,
+      totalAmount: input.amount,
+      appliedAmount: 0,
+      durationMinutes: input.minutes,
+      startedAt,
+      endsAt,
+      status: 'running',
+      createdBy: actor.id,
+    })
+
+    await tx.insert(activityLogs).values({
+      userId: actor.id,
+      action: 'boost',
+      resource: 'articles',
+      resourceId: article.id,
+      meta: { mode: input.mode, amount: input.amount, minutes: input.minutes, title: article.title },
+    })
+
+    // Destructured above, not read off the un-destructured result: `db.insert()`
+    // resolves to an ARRAY, and `result.insertId` on it is silently `undefined`.
+    return Number(inserted.insertId)
   })
 
   return {
@@ -89,6 +108,6 @@ export default defineEventHandler(async (event) => {
     mode: input.mode,
     amount: input.amount,
     minutes: input.minutes,
-    boost: { id: Number(inserted.insertId), totalAmount: input.amount, appliedAmount: 0, startedAt, endsAt },
+    boost: { id: boostId, totalAmount: input.amount, appliedAmount: 0, startedAt, endsAt },
   }
 })
