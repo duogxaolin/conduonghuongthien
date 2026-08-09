@@ -2,6 +2,8 @@
 
 UI/UX work must read `openspec/ui-dna.md` (or the existing DNA doc) before any visual change.
 
+**KHÔNG tự ý commit và push** — chỉ commit/push khi user yêu cầu tường minh.
+
 Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhập cộng đồng — Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.
 
 ---

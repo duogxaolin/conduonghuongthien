@@ -1,21 +1,14 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 
-// Page loading overlay — CSS-driven, shows ONLY on initial SSR hydration (not
-// during client-side navigation, where skeletons + NuxtLoadingIndicator take
-// over). Covers the gap between "blank screen" and "page rendered" that can't
-// be reached by `pending` skeletons (they only work during client navigation).
 const isInitialLoad = ref(true)
 onMounted(() => {
-  // Hydration complete — hide overlay. Client-side navigation from here on will
-  // show NuxtLoadingIndicator + skeleton states, not this overlay.
   isInitialLoad.value = false
 })
 </script>
 
 <template>
   <div>
-    <!-- Initial Load Overlay — disappears after first hydration, never returns -->
     <Transition
       enter-active-class="transition-opacity duration-200"
       leave-active-class="transition-opacity duration-300"
@@ -37,9 +30,23 @@ onMounted(() => {
         </div>
       </div>
     </Transition>
-
     <NuxtLayout>
       <NuxtPage />
     </NuxtLayout>
   </div>
 </template>
+
+<style>
+.page-enter-active,
+.page-leave-active {
+  transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+}
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}
+</style>
