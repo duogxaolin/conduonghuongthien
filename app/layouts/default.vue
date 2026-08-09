@@ -139,15 +139,15 @@
                 </button>
               </div>
             </client-only>
-            <!-- Mobile Toggle -->
+            <!-- Mobile Toggle — opens drawer; drawer's own X closes it -->
             <button
               class="lg:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all z-[10003] hover:bg-[#e4f0e2]"
               @click="toggleMobileMenu"
-              :aria-label="isMobileMenuOpen ? t('menu_close') : t('menu_open')"
-              :aria-expanded="isMobileMenuOpen">
-              <span class="block w-5 h-[2px] rounded-[4px] bg-current transition-transform" :class="{ 'translate-y-[3px] rotate-45': isMobileMenuOpen }"></span>
-              <span class="block w-5 h-[2px] rounded-[4px] bg-current transition-opacity" :class="{ 'opacity-0': isMobileMenuOpen }"></span>
-              <span class="block w-5 h-[2px] rounded-[4px] bg-current transition-transform" :class="{ '-translate-y-[3px] -rotate-45': isMobileMenuOpen }"></span>
+              :aria-label="t('menu_open')"
+              aria-expanded="false">
+              <span class="block w-5 h-[2px] rounded-[4px] bg-current"></span>
+              <span class="block w-5 h-[2px] rounded-[4px] bg-current"></span>
+              <span class="block w-5 h-[2px] rounded-[4px] bg-current"></span>
             </button>
           </div>
         </div>
