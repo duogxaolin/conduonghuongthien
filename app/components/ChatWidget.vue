@@ -4,7 +4,7 @@
     <div
       id="public-chatbot-dialog"
       ref="chatbotDialog"
-      class="fixed inset-0 w-screen h-[100dvh] bg-[#f0f4ef] flex flex-col z-[99999] overflow-hidden opacity-0 pointer-events-none translate-y-[20px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:inset-auto md:fixed md:right-5 md:bottom-5 md:w-[min(460px,calc(100vw-40px))] md:h-[min(680px,calc(100dvh-100px))] lg:w-[520px] lg:h-[min(760px,calc(100dvh-110px))] md:rounded-2xl md:shadow-[0_25px_60px_rgba(0,0,0,0.2)] md:border md:border-black/10 md:translate-y-3 md:scale-[0.96]"
+      class="fixed inset-0 w-screen h-[100dvh] bg-[#f0f4ef] flex flex-col z-[9999] overflow-hidden opacity-0 pointer-events-none translate-y-[20px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:inset-auto md:fixed md:right-5 md:bottom-5 md:w-[min(460px,calc(100vw-40px))] md:h-[min(680px,calc(100dvh-100px))] lg:w-[520px] lg:h-[min(760px,calc(100dvh-110px))] md:rounded-2xl md:shadow-[0_25px_60px_rgba(0,0,0,0.2)] md:border md:border-black/10 md:translate-y-3 md:scale-[0.96]"
       :class="{ '!opacity-100 !pointer-events-auto !translate-y-0 md:!scale-100': isChatbotOpen }"
       role="dialog"
       aria-modal="true"
@@ -246,7 +246,7 @@
     </div>
 
     <!-- Toggle button + teaser bubble -->
-    <div v-if="showLauncher" class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[10050] flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
+    <div v-if="showLauncher" class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[9998] flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
       <div
         v-if="chatTeaserVisible && !isChatbotOpen"
         class="relative max-w-[220px] bg-white text-[#1f2937] text-[0.8rem] leading-snug px-3.5 py-2.5 rounded-[16px_16px_4px_16px] shadow-[0_4px_20px_rgba(0,0,0,0.12)] border border-black/5 animate-fade-slide-up motion-reduce:animate-none cursor-pointer"
