@@ -4,7 +4,8 @@
          của trang đích, và trong khoảng đó trình duyệt không vẽ gì cả — bấm một
          liên kết trông y hệt như bấm hụt. Đây là phản hồi tức thì cho lần bấm. -->
     <!-- Loading bar — màu xanh đậm nổi bật, chiều cao 4px để dễ thấy khi chuyển trang -->
-    <NuxtLoadingIndicator color="#4A6741" :height="4" :duration="2000" :throttle="200" />
+    <!-- Cải thiện: throttle 0ms để hiện ngay lập tức, tăng height lên 5px -->
+    <NuxtLoadingIndicator color="#4A6741" :height="5" :duration="1500" :throttle="0" />
     <ToastContainer />
     <!-- Mobile Menu Overlay -->
     <div

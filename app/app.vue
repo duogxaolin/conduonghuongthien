@@ -37,16 +37,23 @@ onMounted(() => {
 </template>
 
 <style>
+/* Page transitions - tối ưu cho cảm giác mượt mà như mobile app */
 .page-enter-active,
 .page-leave-active {
-  transition: opacity 0.15s ease-out, transform 0.15s ease-out;
+  transition: opacity 0.1s ease-out;
 }
 .page-enter-from {
   opacity: 0;
-  transform: translateY(8px);
 }
 .page-leave-to {
   opacity: 0;
-  transform: translateY(-8px);
+}
+
+/* View Transitions API cho trình duyệt hỗ trợ (Chrome/Edge) */
+@supports (view-transition-name: none) {
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation-duration: 0.15s;
+  }
 }
 </style>
