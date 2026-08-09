@@ -169,9 +169,10 @@ export default defineNuxtConfig({
   },
 
   app: {
-    pageTransition: { name: 'page', mode: 'out-in' },
-    // Enable View Transitions API for supported browsers
-    viewTransition: true,
+    // Tắt page transition - chuyển trang tức thì, skeleton lo phần loading
+    pageTransition: false,
+    // Tắt View Transitions API để tránh flash
+    viewTransition: false,
     head: {
       title: 'Con Đường Hướng Thiện - Cổng thông tin hỗ trợ hòa nhập cộng đồng và phát triển bền vững',
       htmlAttrs: {

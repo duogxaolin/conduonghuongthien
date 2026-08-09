@@ -37,23 +37,20 @@ onMounted(() => {
 </template>
 
 <style>
-/* Page transitions - tối ưu cho cảm giác mượt mà như mobile app */
-.page-enter-active,
-.page-leave-active {
-  transition: opacity 0.1s ease-out;
-}
-.page-enter-from {
-  opacity: 0;
-}
-.page-leave-to {
-  opacity: 0;
+/* Đảm bảo background luôn là màu xanh nhạt, không bao giờ trắng */
+html,
+body {
+  background-color: #F8FAF7;
+  min-height: 100vh;
 }
 
-/* View Transitions API cho trình duyệt hỗ trợ (Chrome/Edge) */
-@supports (view-transition-name: none) {
-  ::view-transition-old(root),
-  ::view-transition-new(root) {
-    animation-duration: 0.15s;
-  }
+/* Page transitions - KHÔNG fade opacity để tránh flash trắng
+   Trang mới sẽ hiện ngay với skeleton, không có khoảng trống trắng */
+.page-enter-active,
+.page-leave-active {
+  transition: none;
 }
+
+/* Tắt View Transitions API mặc định vì nó gây flash
+   Trang chuyển ngay lập tức, skeleton lo phần loading */
 </style>
