@@ -1,7 +1,9 @@
 <template>
   <!-- Hero Banner Section (lifted from index.vue, editable fields from block.data) -->
-  <section class="relative min-h-[520px] overflow-hidden sm:min-h-[580px]" :style="`background: url('${bgImage}') center 65% / cover no-repeat;`">
-    <div class="absolute inset-0" style="background: linear-gradient(120deg, rgba(28,54,28,0.95) 0%, rgba(45,74,45,0.82) 45%, rgba(90,140,60,0.45) 100%);"></div>
+  <section class="relative min-h-[520px] overflow-hidden sm:min-h-[580px]">
+    <!-- Background image với will-change để tối ưu composite layer -->
+    <div class="absolute inset-0 will-change-transform" :style="`background: url('${bgImage}') center 65% / cover no-repeat;`"></div>
+    <div class="absolute inset-0 will-change-transform" style="background: linear-gradient(120deg, rgba(28,54,28,0.95) 0%, rgba(45,74,45,0.82) 45%, rgba(90,140,60,0.45) 100%);"></div>
     <div class="absolute inset-0 opacity-[0.04]" style="background: repeating-linear-gradient(135deg, #fff 0px, #fff 1px, transparent 1px, transparent 40px);"></div>
 
     <div class="container relative z-10 flex items-center px-4 pb-24 pt-16 sm:px-6 sm:pb-32 sm:pt-[90px] lg:px-8">
@@ -57,8 +59,8 @@
       </div>
     </div>
 
-    <div class="absolute bottom-0 left-0 right-0">
-      <svg viewBox="0 0 1440 56" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" style="display:block; width:100%; height:56px;">
+    <div class="absolute bottom-0 left-0 right-0 will-change-transform">
+      <svg viewBox="0 0 1440 56" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="none" class="block w-full h-14">
         <path d="M0,56 C360,0 1080,0 1440,56 L1440,56 L0,56 Z" fill="#ffffff"/>
       </svg>
     </div>
