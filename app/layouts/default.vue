@@ -142,7 +142,7 @@
             </client-only>
             <!-- Mobile Toggle — opens drawer; drawer's own X closes it -->
             <button
-              class="lg:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all z-[10003] hover:bg-[#e4f0e2]"
+              class="lg:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all hover:bg-[#e4f0e2]"
               @click="toggleMobileMenu"
               :aria-label="t('menu_open')"
               aria-expanded="false">
