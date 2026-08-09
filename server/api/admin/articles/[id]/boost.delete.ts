@@ -45,27 +45,33 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 404, statusMessage: 'Bài viết không có lượt tăng dần nào đang chạy.' })
   }
 
-  // Guarded on `status = 'running'` so a scheduler pass landing in the same
-  // moment cannot have its own completion overwritten by this cancellation.
-  await db
-    .update(articleViewBoost)
-    .set({ status: 'cancelled' })
-    .where(and(eq(articleViewBoost.id, running.id), eq(articleViewBoost.status, 'running')))
+  // The cancellation and its audit row commit together. Already-delivered views
+  // are deliberately kept (see the header), so this row is the only record that
+  // the job was stopped early rather than running to completion — an audit trail
+  // that has to stay reconcilable cannot afford to lose exactly that.
+  await db.transaction(async (tx) => {
+    // Guarded on `status = 'running'` so a scheduler pass landing in the same
+    // moment cannot have its own completion overwritten by this cancellation.
+    await tx
+      .update(articleViewBoost)
+      .set({ status: 'cancelled' })
+      .where(and(eq(articleViewBoost.id, running.id), eq(articleViewBoost.status, 'running')))
 
-  await db.insert(activityLogs).values({
-    userId: actor.id,
-    action: 'boost',
-    resource: 'articles',
-    resourceId: article.id,
-    // Same shape as the creation entry, so the two read as one story: the amount
-    // authorised, the amount that actually landed, and the mode it ran in.
-    meta: {
-      mode: 'cancel',
-      amount: running.totalAmount,
-      minutes: running.durationMinutes,
-      appliedAmount: running.appliedAmount,
-      title: article.title,
-    },
+    await tx.insert(activityLogs).values({
+      userId: actor.id,
+      action: 'boost',
+      resource: 'articles',
+      resourceId: article.id,
+      // Same shape as the creation entry, so the two read as one story: the amount
+      // authorised, the amount that actually landed, and the mode it ran in.
+      meta: {
+        mode: 'cancel',
+        amount: running.totalAmount,
+        minutes: running.durationMinutes,
+        appliedAmount: running.appliedAmount,
+        title: article.title,
+      },
+    })
   })
 
   return { ok: true, cancelled: { id: running.id, appliedAmount: running.appliedAmount, totalAmount: running.totalAmount } }

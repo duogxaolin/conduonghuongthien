@@ -118,9 +118,20 @@ export async function deleteFactor(userId: number, factorType: FactorType): Prom
     .where(and(eq(userMfaFactors.userId, userId), eq(userMfaFactors.factorType, factorType)))
 }
 
-export async function deleteAllRecoveryCodes(userId: number): Promise<void> {
-  const db = getDb()
-  await db.delete(userRecoveryCodes).where(eq(userRecoveryCodes.userId, userId))
+/**
+ * `executor` lets a caller run this inside a transaction it already opened, so
+ * the deletion and the audit row describing it commit together. Defaults to the
+ * pool for callers that own no transaction. Typed structurally rather than
+ * importing Drizzle's transaction type, which is not exported in a usable shape
+ * here — same approach as `deleteReaderComments` in services/comments.ts.
+ */
+type RecoveryCodeDeleteExecutor = Pick<ReturnType<typeof getDb>, 'delete'>
+
+export async function deleteAllRecoveryCodes(
+  userId: number,
+  executor?: RecoveryCodeDeleteExecutor,
+): Promise<void> {
+  await (executor ?? getDb()).delete(userRecoveryCodes).where(eq(userRecoveryCodes.userId, userId))
 }
 
 /** Disabling the last factor must not leave recovery codes behind. */
