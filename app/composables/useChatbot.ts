@@ -255,12 +255,15 @@ function clearChatHistory(): void {
   persist()
 }
 
+// Re-export typewriter utilities for external use
 export {
   playTypewriter,
   stopTypewriter,
   TYPEWRITER_WORD_DELAY_MS,
   TYPEWRITER_MAX_MS,
 } from './useChatbotTypewriter'
+
+// Import only what we need internally (same source, but Vite treats re-export separately)
 import { playTypewriter, stopTypewriter } from './useChatbotTypewriter'
 
 async function ensureSessionToken(conversation: StoredConversation): Promise<string | null> {
