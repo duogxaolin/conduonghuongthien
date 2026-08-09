@@ -312,6 +312,39 @@ jobs:
             bash -n "$script" || exit 1
           done
 
+      # Không có cổng này, bốn lỗ hổng mức trung bình đã nằm im trong cây phụ
+      # thuộc mà không có gì nói ra — phát hiện được chỉ vì có người chạy tay.
+      #
+      # `--omit=dev` là phần quyết định cổng này còn được tôn trọng hay không.
+      # Toàn cây có 830 gói, phần lớn là công cụ dev không bao giờ ra production
+      # (`Dockerfile` stage runtime chạy `npm ci --omit=dev`), nên một cổng chặn
+      # theo cả cây sẽ đỏ vì `esbuild serve` — một dev server dự án này không
+      # chạy ở đâu cả. Cổng đỏ vì thứ không thể xảy ra sẽ bị tắt đi, và lúc đó
+      # nó cũng không còn chặn thứ có thể xảy ra.
+      #
+      # `--audit-level=high` cùng lý do: `moderate` gồm nhiều advisory chỉ áp
+      # dụng cho môi trường phát triển.
+      #
+      # Không cần `npm ci` — `npm audit` chỉ đọc `package.json` + lockfile (đã
+      # kiểm trong một thư mục chỉ có hai tệp đó), nên job này vẫn không phải
+      # cài gì.
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+
+      - name: No known vulnerabilities in production dependencies
+        run: |
+          if ! npm audit --omit=dev --audit-level=high; then
+            echo "::error::a production dependency has a high or critical advisory"
+            exit 1
+          fi
+
+      # Không chặn, chỉ ghi lại. Lỗ hổng ở gói dev là thông tin đáng thấy trong
+      # log, nhưng nó không phải lý do để chặn một lượt deploy — xem lý do
+      # `--omit=dev` ở trên. `|| true` là chủ đích, không phải sót.
+      - name: Report dev-dependency advisories (non-blocking)
+        run: npm audit || true
+
       # Third-party action, so pinned to a commit rather than a moving ref:
       # @master would run whatever that branch holds at the time of the build.
       # The trailing comment is the human-readable version of that SHA.
