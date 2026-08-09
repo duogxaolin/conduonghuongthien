@@ -3,7 +3,8 @@
     <!-- Thanh tiến trình chuyển trang. Điều hướng client-side phải chờ dữ liệu
          của trang đích, và trong khoảng đó trình duyệt không vẽ gì cả — bấm một
          liên kết trông y hệt như bấm hụt. Đây là phản hồi tức thì cho lần bấm. -->
-    <NuxtLoadingIndicator color="#2c6e33" :height="3" />
+    <!-- Loading bar — màu xanh đậm nổi bật, chiều cao 4px để dễ thấy khi chuyển trang -->
+    <NuxtLoadingIndicator color="#4A6741" :height="4" :duration="2000" :throttle="200" />
     <ToastContainer />
     <!-- Mobile Menu Overlay -->
     <div
