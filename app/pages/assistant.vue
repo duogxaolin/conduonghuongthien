@@ -86,7 +86,7 @@
           <!-- Transcript -->
           <div ref="chatContainer" class="flex-1 overflow-y-auto overscroll-contain bg-[#f8faf8] px-4 py-6 md:px-8" aria-live="polite" aria-relevant="additions text">
             <div class="mx-auto flex max-w-[760px] flex-col gap-5">
-              <div v-if="chatMessages.length <= 1" class="mx-auto mt-6 max-w-[420px] text-center">
+              <div v-if="chatMessages.filter(m => m.id !== 'welcome').length === 0" class="mx-auto mt-6 max-w-[420px] text-center">
                 <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#1e4620]/10">
                   <i class="fa-solid fa-shield-halved text-[1.6rem] text-[#1e4620]" aria-hidden="true"></i>
                 </div>
