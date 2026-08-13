@@ -3,9 +3,15 @@
     <!-- Thanh tiến trình chuyển trang. Điều hướng client-side phải chờ dữ liệu
          của trang đích, và trong khoảng đó trình duyệt không vẽ gì cả — bấm một
          liên kết trông y hệt như bấm hụt. Đây là phản hồi tức thì cho lần bấm. -->
-    <!-- Loading bar — màu xanh đậm nổi bật, chiều cao 4px để dễ thấy khi chuyển trang -->
-    <!-- Cải thiện: throttle 0ms để hiện ngay lập tức, tăng height lên 5px -->
-    <NuxtLoadingIndicator color="#4A6741" :height="5" :duration="1500" :throttle="0" />
+    <!-- Loading bar — gradient xanh lá sáng chói nổi bật trên mọi nền (kể cả header
+         xanh đậm), chiều cao 3px gọn gàng không chiếm không gian. throttle 0ms để
+         hiện ngay lập tức. color nhận cả gradient CSS nên thanh có cảm giác "chạy". -->
+    <NuxtLoadingIndicator
+      color="repeating-linear-gradient(90deg,#7ED957 0%,#A6F28A 40%,#7ED957 100%)"
+      :height="3"
+      :duration="1500"
+      :throttle="0"
+    />
     <ToastContainer />
     <!-- Mobile Menu Overlay -->
     <div
