@@ -27,7 +27,16 @@ const fetchSettings = async () => {
   try {
     const res = await $fetch('/api/admin/settings')
     if (res.ok && res.settings) {
-      Object.assign(settings, res.settings)
+      // Chỉ nhận các khóa thuộc trang này; endpoint trả về toàn bộ settings (gồm
+      // nav_menu_*, smtp_*, tracking_*...) — gán toàn bộ sẽ làm state settings
+      // lẫn các khóa ngoài phạm vi và sau đó bị gửi ngược lên khi lưu.
+      const s = res.settings
+      settings.media_provider = s.media_provider ?? 'local'
+      settings.r2_account_id = s.r2_account_id ?? ''
+      settings.r2_access_key = s.r2_access_key ?? ''
+      settings.r2_secret_key = s.r2_secret_key ?? ''
+      settings.r2_bucket = s.r2_bucket ?? ''
+      settings.r2_public_url = s.r2_public_url ?? ''
     } else {
       error.value = 'Không tải được cấu hình lưu trữ.'
     }
@@ -41,7 +50,20 @@ const fetchSettings = async () => {
 const handleSave = async () => {
   saving.value = true
   try {
-    const res = await $fetch('/api/admin/settings', { method: 'PUT', body: { settings } })
+    // Chỉ gửi đúng các khóa thuộc nhóm media storage. Trang này dùng chung endpoint
+    // /api/admin/settings với allow-list bảo mật ở server — gửi nguyên object
+    // `settings` (vốn được Object.assign từ toàn bộ settings khi fetch) sẽ kéo theo
+    // các khóa không thuộc trang này (nav_menu_*, smtp_*, tracking_*...) và bị server
+    // từ chối với "Khóa cài đặt không hợp lệ".
+    const mediaSettings = {
+      media_provider: settings.media_provider,
+      r2_account_id: settings.r2_account_id,
+      r2_access_key: settings.r2_access_key,
+      r2_secret_key: settings.r2_secret_key,
+      r2_bucket: settings.r2_bucket,
+      r2_public_url: settings.r2_public_url,
+    }
+    const res = await $fetch('/api/admin/settings', { method: 'PUT', body: { settings: mediaSettings } })
     if (res.ok) toast.success('Đã lưu cấu hình lưu trữ Media thành công!')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu cấu hình'))

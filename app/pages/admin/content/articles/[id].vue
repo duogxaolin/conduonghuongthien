@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { WindowWithTinyMce } from '~/types/tinymce'
 import type { AdminCategoryRow } from '~/types/admin-api'
+import type { MediaItem } from '~/types/media'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -124,19 +125,25 @@ const handleSave = async () => {
 const { openPicker } = useImagePicker()
 const { uploading: uploadingThumb, uploadFile } = useUpload()
 
+const insertMediaIntoEditor = (media: MediaItem) => {
+  const imgHtml = `<p><img src="${media.url}" alt="${media.originalName}" /></p>`
+  if ((window as WindowWithTinyMce).tinymce) {
+    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
+    if (ed) { ed.insertContent(imgHtml); return }
+  }
+  form.content += '\n' + imgHtml
+}
+
 const openMediaPicker = (target: 'thumbnail' | 'content') => {
   if (target === 'thumbnail') {
     openPicker({ onSelect: (media) => { form.thumbnailUrl = media.url } })
   } else {
+    // Multiple-select: chọn nhiều ảnh cùng lúc rồi chèn hết vào editor theo thứ tự.
     openPicker({
-      onSelect: (media) => {
-        const imgHtml = `<p><img src="${media.url}" alt="${media.originalName}" /></p>`
-        if ((window as WindowWithTinyMce).tinymce) {
-          const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
-          if (ed) { ed.insertContent(imgHtml); return }
-        }
-        form.content += '\n' + imgHtml
-      }
+      multiple: true,
+      onSelectMultiple: (items) => {
+        for (const media of items) insertMediaIntoEditor(media)
+      },
     })
   }
 }
