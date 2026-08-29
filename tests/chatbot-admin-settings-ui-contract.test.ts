@@ -35,6 +35,12 @@ const ordinaryPatchFields = [
   'rateLimitRequests',
   'rateLimitWindowSeconds',
 ]
+// Fields the page sends conditionally — present in the PATCH payload builder but
+// not part of the always-sent `ordinaryPatchFields` set. The route allowlist must
+// accept these camelCase keys; the column is snake_case in the DB, and a prior
+// regression left `small_talk_enabled` in the allowlist while everything else
+// (type, validator, schema, page) used the Drizzle field name `smallTalkEnabled`.
+const conditionalPatchFields = ['smallTalkEnabled', 'mode', 'outOfScopeBehavior', 'knowledgeGreeting', 'fallbackMessage', 'leadCaptureEnabled', 'leadCaptureEmail']
 const metadataFields = [
   'id',
   'systemPromptConfigured',
@@ -107,9 +113,14 @@ test('GET metadata is mapped separately and cannot be spread into the editable f
 
   const serverFields = patchRouteSource.match(/const FIELDS = new Set\(\[([^\]]+)\]\)/)?.[1]
   assert.ok(serverFields)
-  for (const field of [...ordinaryPatchFields, 'systemPrompt', 'apiKey']) {
+  for (const field of [...ordinaryPatchFields, ...conditionalPatchFields, 'systemPrompt', 'apiKey']) {
     assert.match(serverFields, new RegExp(`['"]${field}['"]`))
   }
+  // The DB column is `small_talk_enabled` (snake_case); the Drizzle field name —
+  // which is what the validator, the page, and this allowlist must speak — is
+  // camelCase. Regressing back to the snake_case column name here makes every
+  // save of the chatbot settings page return 400 `Invalid settings payload`.
+  assert.doesNotMatch(serverFields, /['"]small_talk_enabled['"]/)
 })
 
 test('system prompt and API key are omitted by default and included only as intentional replacements', () => {
