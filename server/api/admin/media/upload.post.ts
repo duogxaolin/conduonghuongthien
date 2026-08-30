@@ -142,7 +142,26 @@ export default defineEventHandler(async (event) => {
     }
     uploadResult = await uploadR2File(buffer, uniqueFilename, effectiveMime, r2Config)
   } else {
-    uploadResult = await uploadLocalFile(buffer, uniqueFilename)
+    try {
+      uploadResult = await uploadLocalFile(buffer, uniqueFilename)
+    } catch (err) {
+      // Writing to the uploads volume fails as a bare 500 "Server error" when the
+      // container runs as user `node` but the named volume still belongs to root
+      // (a volume created by an older root-built image keeps root ownership). The
+      // real root cause is permissions, not application logic — surface it so the
+      // operator fixes the volume (chown) rather than chasing a phantom code bug.
+      const msg = err instanceof Error ? err.message : String(err)
+      if (/(EACCES|permission|EPERM)/i.test(msg)) {
+        throw createError({
+          statusCode: 500,
+          statusMessage: 'Không ghi được file vào thư mục uploads — kiểm tra quyền thư mục (chown node:node /app/public/uploads).',
+        })
+      }
+      throw createError({
+        statusCode: 500,
+        statusMessage: 'Không lưu được file tải lên. Vui lòng thử lại.',
+      })
+    }
   }
 
   // Save to DB

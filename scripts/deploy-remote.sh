@@ -71,6 +71,25 @@ wait_healthy() {
   return 1
 }
 
+# Volume `uploads_data` được tạo từ image root-cũ thì giữ quyền root, trong khi
+# container app chạy bằng user `node` (USER node trong Dockerfile) → ghi file
+# upload bị từ chối → 500. Chạy lệnh này bằng root MỘT LẦN để chuyển quyền về node.
+# Đặt TẠI ĐÂY trong deploy script chứ không phải hướng dẫn thủ công: CI/CD luồng
+# main tự lo việc này mỗi lượt deploy, nên deploy mới không phải chạy tay `chown`
+# trên VPS. Idempotent: đã là node thì chown-node giữ nguyên, không lỗi.
+# Lệnh KHÔNG nằm trong luồng healthy-check: một lần chown thất bại (volume lạ,
+# partition read-only...) không được phép làm hỏng hoặc lùi lượt deploy — file
+# cũ vẫn phục vụ được, chỉ upload mới tạm nghẽn cho tới khi admin xử lý.
+fix_uploads_ownership() {
+  echo "▸ Chuẩn bị quyền ghi thư mục uploads cho user node"
+  # `|| true` ngoài: lượt chown thất bại không được làm hỏng hay lùi lượt deploy —
+  # file cũ vẫn phục vụ được, chỉ upload mới tạm nghẽn cho tới khi admin xử lý.
+  docker compose run --rm --no-deps --user root --entrypoint sh \
+    app -c 'chown -R node:node /app/public/uploads' >/dev/null 2>&1 \
+    && echo "  ✓ Đã chuyển quyền uploads" \
+    || echo "  ::warning::chown uploads thất bại — upload local có thể bị 500 nếu volume vẫn thuộc root" >&2
+}
+
 # Kéo image TRƯỚC khi đụng vào .env: registry hỏng, tag sai, hay mất mạng thì
 # deployment đang chạy không bị sứt mẻ gì.
 echo "▸ Kéo $IMAGE"
@@ -86,6 +105,10 @@ docker compose up -d app
 
 if wait_healthy; then
   echo "✅ $CONTAINER healthy trên $IMAGE"
+  # Volume uploads_data tạo từ image root-cũ giữ quyền root; container app chạy
+  # bằng node nên ghi upload bị 500. Chạy một lượt chown tự động để không phải
+  # SSH vào máy sửa tay sau mỗi lần kéo image mới.
+  fix_uploads_ownership
   # Giữ lịch sử một tuần để còn lùi được; dọn phần cũ hơn cho khỏi đầy đĩa.
   docker image prune -f --filter 'until=168h' >/dev/null 2>&1 || true
   exit 0
