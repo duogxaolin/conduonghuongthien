@@ -36,12 +36,26 @@ export function usePagePreview() {
     try { window.parent?.postMessage(msg, window.location.origin) } catch { /* ignore */ }
   }
 
+  // When new blocks arrive, the whole tree re-renders; images re-decode and the
+  // document height dips below its final value for a few frames. Reporting that
+  // transient dip makes the iframe shrink then grow back — visible "shake". So
+  // we arm a settle window after each blocks push, during which height dips are
+  // suppressed; only a height that *grows* past the last reported value passes,
+  // because a shrink is almost always the transient (grow-back is the real one).
+  let settleTimer: ReturnType<typeof setTimeout> | null = null
+  const armSettle = () => {
+    if (settleTimer) clearTimeout(settleTimer)
+    settleTimer = setTimeout(() => { settleTimer = null }, 280)
+  }
+
   const onMessage = (e: MessageEvent) => {
     if (e.origin !== window.location.origin) return
     const m = e.data
     if (!m || typeof m !== 'object') return
-    if (m.type === 'cdkt:blocks') previewBlocks.value = Array.isArray(m.blocks) ? m.blocks : []
-    else if (m.type === 'cdkt:select') selectedId.value = normId(m.id)
+    if (m.type === 'cdkt:blocks') {
+      previewBlocks.value = Array.isArray(m.blocks) ? m.blocks : []
+      armSettle()
+    } else if (m.type === 'cdkt:select') selectedId.value = normId(m.id)
   }
 
   // In preview, a click selects the enclosing block instead of navigating.
@@ -73,6 +87,12 @@ export function usePagePreview() {
       raf = 0
       const h = Math.ceil(document.documentElement.scrollHeight || document.body.scrollHeight) + 8
       if (Math.abs(h - lastHeight) < 4) return
+      // During the settle window after a blocks push, the reflow dips short then
+      // grows back. A shrink is almost always that transient — suppress it so the
+      // iframe never visibly shrinks; only a real grow passes. After the window,
+      // both directions report normally (e.g. a deleted block genuinely shrinks).
+      const settling = settleTimer != null
+      if (settling && h < lastHeight) return
       lastHeight = h
       post({ type: 'cdkt:height', height: h })
     })
@@ -92,6 +112,7 @@ export function usePagePreview() {
     window.removeEventListener('message', onMessage)
     document.removeEventListener('click', onClick, true)
     if (raf) cancelAnimationFrame(raf)
+    if (settleTimer) clearTimeout(settleTimer)
     ro?.disconnect(); ro = null
   })
 
