@@ -172,7 +172,8 @@ async function aggregateDay(connection: PoolConnection, day: string, pageLimit: 
       }
     }
     const [[snapshot]] = await connection.query<RowDataPacket[]>('SELECT COUNT(*) AS total_users, COALESCE(SUM(is_active = 1), 0) AS active_users FROM users')
-    await connection.query('INSERT INTO analytics_daily_admin_users (day, total_users, active_users) VALUES (?, ?, ?)', [day, Number(snapshot?.total_users), Number(snapshot?.active_users)])
+    await connection.query(`INSERT INTO analytics_daily_admin_users (day, total_users, active_users) VALUES (?, ?, ?)
+      ON DUPLICATE KEY UPDATE total_users = VALUES(total_users), active_users = VALUES(active_users)`, [day, Number(snapshot?.total_users), Number(snapshot?.active_users)])
     await connection.query(`INSERT INTO analytics_maintenance_runs (day, status, started_at, completed_at, event_count, error_summary, worker_token)
       VALUES (?, 'complete', UTC_TIMESTAMP(), UTC_TIMESTAMP(), ?, NULL, ?)
       ON DUPLICATE KEY UPDATE status = 'complete', completed_at = UTC_TIMESTAMP(), event_count = VALUES(event_count), error_summary = NULL, worker_token = VALUES(worker_token)`, [day, events.length, workerToken])
