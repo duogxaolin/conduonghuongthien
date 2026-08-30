@@ -96,6 +96,26 @@ const plainVisibleBlocks = () =>
 const pushBlocks = () => { if (ready.value) postToFrame({ type: 'cdkt:blocks', blocks: plainVisibleBlocks() }) }
 const pushSelection = () => { if (ready.value) postToFrame({ type: 'cdkt:select', id: props.selectedId }) }
 
+// Coalesce rapid block edits (typing in the property panel fires the deep watch
+// once per keystroke) into a single postMessage per animation frame. Posting on
+// every keystroke makes the iframe re-render its whole block tree constantly,
+// which is what made the preview "shake": re-render → layout shift → height
+// report → iframe resize → image re-decode flicker.
+//
+// `pushRaf` is the gate: a second edit arriving before the scheduled frame is a
+// no-op, and on the frame `plainVisibleBlocks()` reads the *current* reactive
+// `props.blocks`, so the single push always carries the latest state. No flag
+// is needed — one rAF automatically merges an unbounded burst of writes.
+let pushRaf = 0
+const schedulePushBlocks = () => {
+  if (!ready.value) return
+  if (pushRaf) return
+  pushRaf = requestAnimationFrame(() => {
+    pushRaf = 0
+    pushBlocks()
+  })
+}
+
 const onMessage = (e: MessageEvent) => {
   if (e.origin !== origin()) return
   const m = e.data
@@ -130,10 +150,14 @@ onMounted(() => {
 })
 onBeforeUnmount(() => {
   window.removeEventListener('message', onMessage)
+  if (pushRaf) cancelAnimationFrame(pushRaf)
   ro?.disconnect(); ro = null
 })
 
-// Live-sync edits and selection into the running preview.
-watch(() => props.blocks, pushBlocks, { deep: true })
+// Live-sync edits and selection into the running preview. The block watch is
+// coalesced (one push per frame) so typing in the property panel doesn't
+// re-render the whole iframe on every keystroke; selection is cheap so it stays
+// immediate.
+watch(() => props.blocks, schedulePushBlocks, { deep: true })
 watch(() => props.selectedId, pushSelection)
 </script>

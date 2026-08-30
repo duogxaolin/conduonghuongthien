@@ -15,7 +15,7 @@ const isDragOver = ref(false)
 
 const toast = useToast()
 const { confirm } = useConfirm()
-const { uploading, uploadFile } = useUpload()
+const { uploading, uploadBatch, tasks, uploadingBatch } = useUpload()
 
 const fetchMedia = async (page = 1) => {
   loading.value = true
@@ -40,15 +40,9 @@ const fetchMedia = async (page = 1) => {
 
 const handleUpload = async (files: FileList | File[]) => {
   const list = Array.from(files)
-  let ok = 0
-  for (const file of list) {
-    const media = await uploadFile(file)
-    if (media) ok++
-  }
-  if (ok > 0) {
-    toast.success(`Đã tải lên ${ok} file thành công!`)
-    await fetchMedia(1)
-  }
+  if (!list.length) return
+  const uploaded = await uploadBatch(list, 4)
+  if (uploaded.length > 0) await fetchMedia(1)
 }
 
 const onFileInput = (e: Event) => {
@@ -94,6 +88,16 @@ const bulkDelete = () => bulk.run({
   reload: () => fetchMedia(pagination.value.page),
 })
 
+// Aggregate progress over the live task list — used by the zone label and the
+// overall bar. pending counts as 0%, uploading ramps 5→95%, success is 100%.
+const completedCount = computed(() => tasks.value.filter((t) => t.status === 'success' || t.status === 'error').length)
+const totalCount = computed(() => tasks.value.length)
+const batchPercent = computed(() => {
+  if (!tasks.value.length) return 0
+  return Math.round(tasks.value.reduce((sum, t) => sum + (t.status === 'success' ? 100 : t.progress), 0) / tasks.value.length)
+})
+const isBatching = computed(() => uploadingBatch.value && totalCount.value > 0)
+
 onMounted(() => { fetchMedia() })
 </script>
 
@@ -115,9 +119,47 @@ onMounted(() => { fetchMedia() })
     >
       <input type="file" accept="image/*,application/pdf" multiple class="sr-only" :disabled="uploading" @change="onFileInput" />
       <i class="fa-regular text-4xl" :class="uploading ? 'fa-spinner animate-spin text-[#2c6e33]' : 'fa-cloud-arrow-up text-[#2c6e33]'"></i>
-      <strong class="mt-2 text-base text-[#1a2e1c]">{{ uploading ? 'Đang tải lên...' : 'Kéo thả file vào đây hoặc bấm để chọn' }}</strong>
+      <strong class="mt-2 text-base text-[#1a2e1c]">{{ uploading ? (isBatching ? `Đang tải lên ${completedCount}/${totalCount}...` : 'Đang tải lên...') : 'Kéo thả file vào đây hoặc bấm để chọn' }}</strong>
       <span class="text-sm text-[#667768]">Hỗ trợ JPEG, PNG, WebP, GIF, PDF — tối đa 20MB mỗi file</span>
     </label>
+
+    <!-- Per-file upload progress — parallel uploads, one row per file with its own state. -->
+    <div v-if="tasks.length" class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col gap-2.5" role="status" :aria-busy="isBatching">
+      <div class="flex items-center justify-between gap-2">
+        <strong class="text-sm text-[#122815] m-0">
+          Đang tải lên {{ completedCount }}/{{ totalCount }} file{{ isBatching ? '' : ' — xong' }}
+        </strong>
+        <span class="text-[0.72rem] text-[#667768]">{{ batchPercent }}%</span>
+      </div>
+      <!-- Overall bar: aggregate of all rows below it. -->
+      <div class="h-1.5 w-full overflow-hidden rounded-full bg-[#e2ece3]">
+        <div class="h-full rounded-full bg-[#2c6e33] transition-[width] duration-200 motion-reduce:transition-none" :style="{ width: batchPercent + '%' }"></div>
+      </div>
+      <ul class="flex flex-col gap-2 m-0 p-0 list-none">
+        <li
+          v-for="t in tasks"
+          :key="t.id"
+          class="flex items-center gap-2.5 text-[0.8rem]"
+        >
+          <i
+            class="fa-regular w-4 text-center"
+            :class="{
+              'fa-spinner animate-spin text-[#2c6e33]': t.status === 'pending' || t.status === 'uploading',
+              'fa-circle-check text-[#2c6e33]': t.status === 'success',
+              'fa-circle-xmark text-[#d12420]': t.status === 'error',
+            }"
+            :aria-hidden="true"
+          ></i>
+          <span class="flex-1 truncate text-[#122815]" :title="t.file.name">{{ t.file.name }}</span>
+          <span
+            v-if="t.status === 'uploading' || t.status === 'pending'"
+            class="w-9 text-right text-[#667768]"
+          >{{ t.progress }}%</span>
+          <span v-else-if="t.status === 'success'" class="w-9 text-right text-[#2c6e33] font-semibold">OK</span>
+          <span v-else-if="t.status === 'error'" class="w-9 text-right text-[#d12420] font-semibold" :title="t.error">Lỗi</span>
+        </li>
+      </ul>
+    </div>
 
     <!-- Filter Bar -->
     <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col sm:flex-row gap-3">

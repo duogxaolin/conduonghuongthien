@@ -3,7 +3,7 @@ import type { MediaItem } from '~/types/media'
 
 // Driven entirely by the global useImagePicker composable
 const { isOpen, isMultiple, closePicker, handleSelect, handleSelectMultiple } = useImagePicker()
-const { uploading, uploadFile } = useUpload()
+const { uploading, uploadBatch, tasks, uploadingBatch } = useUpload()
 const toast = useToast()
 
 const mediaItems = ref<MediaItem[]>([])
@@ -43,14 +43,21 @@ const fetchMedia = async (pg = 1) => {
   }
 }
 
+// Aggregate progress over the live task list — mirrors the media library page.
+const completedCount = computed(() => tasks.value.filter((t) => t.status === 'success' || t.status === 'error').length)
+const totalCount = computed(() => tasks.value.length)
+const batchPercent = computed(() => {
+  if (!tasks.value.length) return 0
+  return Math.round(tasks.value.reduce((sum, t) => sum + (t.status === 'success' ? 100 : t.progress), 0) / tasks.value.length)
+})
+
 const handleFileUpload = async (event: Event) => {
-  const file = (event.target as HTMLInputElement).files?.[0]
-  if (!file) return
-  const media = await uploadFile(file)
-  if (media) {
-    toast.success('Tải ảnh lên thành công!')
-    await fetchMedia(1)
-  }
+  const files = (event.target as HTMLInputElement).files
+  if (!files?.length) return
+  await uploadBatch(files, 4)
+  if (tasks.value.some((t) => t.media)) await fetchMedia(1)
+  // Clear the progress list once the batch is fully terminal so the grid can breathe.
+  tasks.value = []
   ;(event.target as HTMLInputElement).value = ''
 }
 
@@ -136,12 +143,42 @@ watch(isOpen, (val) => {
             </div>
             <label
               class="inline-flex h-9 cursor-pointer items-center gap-1.5 rounded-lg bg-green-800 px-4 text-sm font-semibold text-white transition hover:bg-green-700"
-              :class="uploading ? 'opacity-60 pointer-events-none' : ''"
+              :class="{ 'opacity-60 pointer-events-none': uploading }"
             >
               <i class="fa-regular" :class="uploading ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i>
-              {{ uploading ? 'Đang tải...' : 'Tải lên' }}
-              <input type="file" accept="image/*,application/pdf" class="sr-only" :disabled="uploading" @change="handleFileUpload" />
+              {{ uploading ? (tasks.length ? `Đang tải ${completedCount}/${totalCount}...` : 'Đang tải...') : 'Tải lên (nhiều)' }}
+              <input type="file" accept="image/*,application/pdf" multiple class="sr-only" :disabled="uploading" @change="handleFileUpload" />
             </label>
+          </div>
+
+          <!-- Per-file upload progress — parallel uploads inside the picker modal. -->
+          <div v-if="tasks.length" class="mb-2 flex flex-col gap-2 rounded-lg border border-gray-200 bg-gray-50 p-3" role="status" :aria-busy="uploadingBatch">
+            <div class="flex items-center justify-between gap-2">
+              <strong class="m-0 text-xs text-gray-700">
+                Đang tải {{ completedCount }}/{{ totalCount }} file{{ uploadingBatch ? '' : ' — xong' }}
+              </strong>
+              <span class="text-[0.7rem] text-gray-500">{{ batchPercent }}%</span>
+            </div>
+            <div class="h-1.5 w-full overflow-hidden rounded-full bg-gray-200">
+              <div class="h-full rounded-full bg-green-700 transition-[width] duration-200 motion-reduce:transition-none" :style="{ width: batchPercent + '%' }"></div>
+            </div>
+            <ul class="m-0 flex max-h-32 flex-col gap-1.5 overflow-y-auto p-0 list-none">
+              <li v-for="t in tasks" :key="t.id" class="flex items-center gap-2 text-[0.75rem]">
+                <i
+                  class="fa-regular w-4 text-center"
+                  :class="{
+                    'fa-spinner animate-spin text-green-700': t.status === 'pending' || t.status === 'uploading',
+                    'fa-circle-check text-green-700': t.status === 'success',
+                    'fa-circle-xmark text-red-500': t.status === 'error',
+                  }"
+                  :aria-hidden="true"
+                ></i>
+                <span class="flex-1 truncate text-gray-700" :title="t.file.name">{{ t.file.name }}</span>
+                <span v-if="t.status === 'pending' || t.status === 'uploading'" class="w-9 text-right text-gray-500">{{ t.progress }}%</span>
+                <span v-else-if="t.status === 'success'" class="w-9 text-right font-semibold text-green-700">OK</span>
+                <span v-else-if="t.status === 'error'" class="w-9 text-right font-semibold text-red-500" :title="t.error">Lỗi</span>
+              </li>
+            </ul>
           </div>
 
           <!-- Body -->
