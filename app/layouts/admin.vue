@@ -1,9 +1,34 @@
 <script setup lang="ts">
+import { errorMessage } from '~/utils/errorMessage'
+
 const { user, logout, hasPermission } = useAdminAuth()
 const route = useRoute()
+const toast = useToast()
 
 const isSidebarCollapsed = ref(false)
 const isMobileMenuOpen = ref(false)
+
+/**
+ * Xoá cache SWR của trang công khai. Cán bộ sửa nội dung xong, khách vẫn thấy
+ * bản cũ tới 60 giây (routeRules `swr: 60`) — đọc ra là "không update được".
+ * Nút này là đường ra tường minh thay vì phải chờ hay tự đoán.
+ */
+const isClearingCache = ref(false)
+async function clearPublicCache() {
+  if (isClearingCache.value) return
+  isClearingCache.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; cleared: number; message: string }>('/api/admin/cache-clear', {
+      method: 'POST',
+      body: { confirm: true },
+    })
+    toast.success(res.message || `Đã xoá ${res.cleared} mục cache.`)
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể xoá cache. Thử lại sau ít phút.'))
+  } finally {
+    isClearingCache.value = false
+  }
+}
 
 const toggleSidebar = () => { isSidebarCollapsed.value = !isSidebarCollapsed.value }
 const toggleMobileMenu = () => { isMobileMenuOpen.value = !isMobileMenuOpen.value }
@@ -186,8 +211,19 @@ const menuGroups = computed(() => [
             <span class="text-[#122815] font-bold">{{ route.name || 'Admin' }}</span>
           </div>
         </div>
-        <!-- Topbar right: user chip with dropdown (desktop) -->
+        <!-- Topbar right: clear-cache button + user chip with dropdown (desktop) -->
         <div class="flex items-center gap-2">
+          <!-- Nút xoá cache SWR: sửa nội dung xong là khách thấy ngay, không chờ 60s -->
+          <button
+            class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#f0f7f1] hover:bg-[#e1f0e2] transition-colors cursor-pointer border-0 text-[#2c6e33]"
+            :disabled="isClearingCache"
+            :class="{ 'opacity-60 cursor-wait': isClearingCache }"
+            :title="isClearingCache ? 'Đang xoá cache…' : 'Xoá cache trang công khai — nội dung vừa sửa hiện ngay, không chờ 60 giây'"
+            @click="clearPublicCache"
+          >
+            <i class="fa-solid" :class="isClearingCache ? 'fa-spinner fa-spin' : 'fa-broom'"></i>
+            <span class="hidden md:inline text-[0.82rem] font-semibold">{{ isClearingCache ? 'Đang xoá…' : 'Xoá cache' }}</span>
+          </button>
           <div v-if="user" class="relative group hidden sm:flex">
             <button class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#f0f7f1] hover:bg-[#e1f0e2] transition-colors cursor-pointer border-0">
               <div class="w-8 h-8 rounded-full bg-[#2c6e33] text-white text-sm font-bold flex items-center justify-center shrink-0">
@@ -219,6 +255,14 @@ const menuGroups = computed(() => [
                   <i class="fa-solid fa-globe w-4 text-center"></i>
                   <span>Xem Website ↗</span>
                 </nuxt-link>
+                <button
+                  class="flex items-center gap-2 px-3 py-2 rounded-md text-[0.85rem] text-[#2c6e33] font-semibold hover:bg-[#f0f7f1] transition-colors cursor-pointer border-0 w-full text-left"
+                  :disabled="isClearingCache"
+                  @click="clearPublicCache"
+                >
+                  <i class="fa-solid fa-broom w-4 text-center" :class="{ 'fa-spinner fa-spin': isClearingCache }"></i>
+                  <span>{{ isClearingCache ? 'Đang xoá cache…' : 'Xoá cache Website' }}</span>
+                </button>
                 <button
                   class="flex items-center gap-2 px-3 py-2 rounded-md text-[0.85rem] text-red-500 font-semibold hover:bg-red-50 transition-colors cursor-pointer border-0 w-full text-left"
                   @click="logout"
