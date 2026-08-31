@@ -852,7 +852,12 @@ export async function initDb() {
   console.log('✅ All MySQL tables exist and ready!')
 }
 
-if (process.argv[1] && process.argv[1].endsWith('/server/db/init.ts')) {
+// Chuẩn hoá dấu gạch: trên Windows argv[1] là `...\server\db\init.ts`, nên một
+// phép so sánh với dấu gạch xuôi duy nhất khiến script thoát 0 mà KHÔNG HỀ chạy
+// initDb() — im lặng, đúng kiểu hỏng mà không lỗi nào báo. Đã gặp thật lúc chạy
+// e2e trên checkout Windows: db:init "xong" và db:seed sau đó chết vì thiếu CSDL.
+const invokedScript = (process.argv[1] || '').replaceAll('\\', '/')
+if (invokedScript.endsWith('server/db/init.ts')) {
   initDb().catch(err => {
     console.error('❌ Init DB failed:', err)
     process.exit(1)

@@ -1,14 +1,24 @@
 /**
- * `useRuntimeConfig` is a Nitro auto-import: present on the global object when
- * the code runs inside the server bundle, absent when the same module is
- * imported by the maintenance scripts or the test suite under plain `node`.
+ * `useRuntimeConfig` is a Nitro auto-import — but auto-imports only materialise
+ * for a BARE identifier. A member access like `globalThis.useRuntimeConfig` is
+ * never transformed by unimport, and across nuxt@4.5.2 / nitropack@2.13.4
+ * nothing assigns that global either. That combination held analytics collection
+ * at `{ accepted: false }` for three weeks while every env var was correct (the
+ * full post-mortem lives on `plugins/runtime-config-global.ts`).
+ *
+ * Inside the server bundle the global IS present — because
+ * `plugins/runtime-config-global.ts` installs Nitro's real function on it before
+ * any request runs. Outside the bundle (maintenance scripts, tests under plain
+ * node) nothing installs it: `tryRuntimeConfig()` returns undefined and callers
+ * keep falling back to process.env. Importing `nitropack/runtime/internal/config`
+ * directly here would crash plain node on the `#nitro-internal-virtual/*`
+ * specifier, which is why the plugin passes the function in rather than this
+ * module importing it.
  *
  * Every caller used to inline `typeof globalThis.useRuntimeConfig === 'function'
  * ? globalThis.useRuntimeConfig() : undefined`, which reads as noise and, more
  * to the point, is untyped — `globalThis` has no such property as far as the
  * compiler is concerned. One helper, cast once, in a file whose name says why.
- *
- * Returns undefined outside Nitro so callers keep falling back to process.env.
  */
 /**
  * Khối `runtimeConfig` như `nuxt.config.ts` khai, phản chiếu từng trường.
@@ -49,6 +59,22 @@ export function tryRuntimeConfig(): AppRuntimeConfig | undefined {
   return typeof candidate === 'function'
     ? (candidate as () => AppRuntimeConfig)()
     : undefined
+}
+
+/**
+ * Install Nitro's own `useRuntimeConfig` on globalThis — the single wiring point
+ * the docstring above describes. Called once by `plugins/runtime-config-global.ts`
+ * at server boot; plain node (scripts, tests) never calls it, preserving the
+ * off-server contract.
+ *
+ * Never overwrites an existing function: if a future Nitro starts providing the
+ * global natively, that version must win — ours is a bridge for the versions
+ * that don't.
+ */
+export function installRuntimeConfigGlobal(useRuntimeConfig: () => AppRuntimeConfig): void {
+  const globals = globalThis as Record<string, unknown>
+  if (typeof globals.useRuntimeConfig === 'function') return
+  globals.useRuntimeConfig = useRuntimeConfig
 }
 
 /**
