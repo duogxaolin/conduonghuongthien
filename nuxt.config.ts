@@ -75,6 +75,20 @@ export default defineNuxtConfig({
 
   modules: ['@nuxtjs/tailwindcss'],
 
+  nitro: {
+    /**
+     * Thứ tự plugin là RÀNG BUỘC, không phải cách sắp cho đẹp. `runtime-config-global`
+     * gắn `globalThis.useRuntimeConfig` — hàm mà `tryRuntimeConfig()` dò — và phải chạy
+     * TRƯỚC mọi plugin đọc config lúc boot. Không khai này thì thứ tự là bảng chữ cái
+     * tên tệp: hôm nay nó xếp sau các scheduler (đều hoãn tick 60–90 giây nên chưa va),
+     * và một plugin mới tên vần "a…r" đọc config lúc boot sẽ âm thầm nhận `undefined`
+     * — đúng lớp hỏng im lặng mà chính plugin này ra đời để dứt điểm.
+     */
+    plugins: [
+      '~~/server/plugins/runtime-config-global',
+    ],
+  },
+
   tailwindcss: {
     cssPath: '~/assets/css/main.css',
     configPath: 'tailwind.config.js',
