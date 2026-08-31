@@ -93,6 +93,11 @@ export default async function globalSetup() {
     // Nitro reads runtime config from the NUXT_-prefixed name; the bare name is
     // for the code paths that read process.env directly.
     NUXT_ANALYTICS_HMAC_SECRET: '',
+    // Bật thu thập analytics đúng hình dạng production (docker-compose đặt biến
+    // này): tests/e2e/analytics-ingestion.spec.ts khẳng định page-view trả
+    // accepted:true — là lượt gọi THẬT duy nhất canh được việc gắn
+    // globalThis.useRuntimeConfig (hồi quy ba tuần `{accepted:false}`).
+    NUXT_ANALYTICS_COLLECTION_ENABLED: 'true',
     ADMIN_PASSWORD: adminPassword,
     ADMIN_EMAIL: 'e2e@example.test',
     // Both schedulers off. A retention pass firing mid-run would delete rows
@@ -101,9 +106,15 @@ export default async function globalSetup() {
     VIEW_BOOST_SCHEDULER: '0',
   }
   env.NUXT_ANALYTICS_HMAC_SECRET = env.ANALYTICS_HMAC_SECRET
+  // Exported for analytics-ingestion.spec.ts to assert its own precondition and
+  // verify the minted token against the same secret.
+  process.env.NUXT_ANALYTICS_HMAC_SECRET = env.NUXT_ANALYTICS_HMAC_SECRET
 
   for (const script of ['db:init', 'db:seed']) {
-    const result = spawnSync('npm', ['run', script], { env, encoding: 'utf8' })
+    // `shell: true` là bắt buộc trên Windows: `npm` chỉ tồn tại dưới dạng
+    // `npm.cmd`, và spawnSync không shell trả ENOENT với `status: null` —
+    // đúng lỗi đã gặp khi chạy suite này trên checkout Windows.
+    const result = spawnSync('npm', ['run', script], { env, encoding: 'utf8', shell: process.platform === 'win32' })
     if (result.status !== 0) {
       throw new Error(`npm run ${script} failed (exit ${result.status})\n${result.stdout}\n${result.stderr}`)
     }

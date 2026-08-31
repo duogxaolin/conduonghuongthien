@@ -13,22 +13,38 @@
  */
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync, statSync } from 'node:fs'
+import { isAbsolute } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { describe, it } from 'node:test'
 
 const ROOT = new URL('../', import.meta.url)
+
+/**
+ * `url.pathname` is not usable here: on Windows it yields `/D:/code/...`, which
+ * silently turned every read on a Windows checkout into ENOENT while CI (Linux)
+ * stayed green. Everything is normalised to forward slashes so the expected
+ * path lists below compare identically on both platforms.
+ */
+const ROOT_PATH = fileURLToPath(ROOT).replaceAll('\\', '/')
 
 function walk(dir: URL, out: string[] = []): string[] {
   for (const entry of readdirSync(dir)) {
     const full = new URL(`${entry}`, `${dir}`.endsWith('/') ? dir : `${dir}/`)
     if (statSync(full).isDirectory()) walk(new URL(`${entry}/`, `${dir}`.endsWith('/') ? dir : `${dir}/`), out)
-    else if (entry.endsWith('.ts')) out.push(full.pathname)
+    else if (entry.endsWith('.ts')) out.push(fileURLToPath(full).replaceAll('\\', '/'))
   }
   return out
 }
 
 const SERVER_FILES = walk(new URL('server/', ROOT))
-const read = (path: string) => readFileSync(path, 'utf8')
-const relative = (path: string) => path.slice(ROOT.pathname.length)
+/** Absolute paths (walk output), URL objects, or relative specifiers against the repo root. */
+const read = (path: string | URL) => readFileSync(
+  typeof path === 'string'
+    ? (isAbsolute(path) ? path : `${ROOT_PATH}${path}`)
+    : fileURLToPath(path),
+  'utf8',
+)
+const relative = (path: string) => path.slice(ROOT_PATH.length)
 
 describe('the rate-limit executor is built in one place', () => {
   /**
@@ -48,7 +64,7 @@ describe('the rate-limit executor is built in one place', () => {
   })
 
   it('the helper keeps the null-pool fallback', () => {
-    const source = read(new URL('server/utils/rate-limit-deps.ts', ROOT).pathname)
+    const source = read(new URL('server/utils/rate-limit-deps.ts', ROOT))
     assert.match(source, /pool\s*\?/, 'rateLimitDeps no longer branches on a null pool')
     assert.match(source, /:\s*null/, 'rateLimitDeps no longer passes null when the pool is unavailable — the limiter would fail open')
   })
@@ -60,7 +76,7 @@ describe('the rate-limit executor is built in one place', () => {
    * database layer into every one of those tests.
    */
   it('rate-limit-store stays free of the database layer', () => {
-    const source = read(new URL('server/utils/rate-limit-store.ts', ROOT).pathname)
+    const source = read(new URL('server/utils/rate-limit-store.ts', ROOT))
     assert.ok(!/from '\.\/db'/.test(source), 'rate-limit-store now imports the database layer — its tests can no longer run without MySQL')
   })
 })
@@ -118,6 +134,61 @@ describe('runtime config is read through typed accessors', () => {
       if (original === undefined) delete globals.useRuntimeConfig
       else globals.useRuntimeConfig = original
     }
+  })
+
+  /**
+   * The regression that cost three weeks of analytics: nothing in
+   * nuxt@4.5.2/nitropack@2.13.4 assigns `globalThis.useRuntimeConfig` — auto-
+   * imports only materialise for bare identifiers — so the probe above read
+   * `undefined` on every production boot and `analyticsConfig()` collapsed to
+   * `{}`, holding page-view collection at `{accepted: false}` with all env vars
+   * correct. The test above used to stub the global with a comment claiming
+   * "the same shape Nitro provides" — a premise the stack never satisfied.
+   *
+   * These tests pin the repair itself: `installRuntimeConfigGlobal` is the one
+   * wiring point (`plugins/runtime-config-global.ts` calls it at boot), it must
+   * install, it must refuse to overwrite (a future Nitro providing the global
+   * natively has to win), and uninstalling it must put the accessor back on the
+   * broken-but-documented off-server path.
+   */
+  it('installRuntimeConfigGlobal wires the probe and never overwrites', async () => {
+    const { installRuntimeConfigGlobal, analyticsConfig, tryRuntimeConfig } = await import('../server/utils/runtime-config.ts')
+    const globals = globalThis as Record<string, unknown>
+    const original = globals.useRuntimeConfig
+
+    try {
+      delete globals.useRuntimeConfig
+
+      const provided = () => ({ analytics: { collectionEnabled: true, hmacSecret: 'installed-secret-32-chars-long!!' } })
+      installRuntimeConfigGlobal(provided)
+
+      assert.equal(typeof globals.useRuntimeConfig, 'function', 'the installer did not wire the global')
+      assert.equal(tryRuntimeConfig()?.analytics?.collectionEnabled, true)
+      assert.equal(analyticsConfig().collectionEnabled, true)
+
+      // A second install (or a future Nitro assigning natively) must not win over
+      // whatever is already there — the guarded writer is the contract.
+      const replacement = () => ({ analytics: { collectionEnabled: false } })
+      installRuntimeConfigGlobal(replacement)
+      assert.equal(analyticsConfig().collectionEnabled, true, 'the installer overwrote an existing global')
+
+      // Uninstall restores the documented off-server shape: empty config, no throw.
+      delete globals.useRuntimeConfig
+      assert.deepEqual(analyticsConfig(), {})
+    } finally {
+      if (original === undefined) delete globals.useRuntimeConfig
+      else globals.useRuntimeConfig = original
+    }
+  })
+
+  /**
+   * The plugin must stay a thin shell over the installer. If it ever grows its
+   * own wiring, the tests above stop covering the path production actually runs.
+   */
+  it('the boot plugin delegates to installRuntimeConfigGlobal', async () => {
+    const source = read(new URL('server/plugins/runtime-config-global.ts', ROOT))
+    assert.match(source, /installRuntimeConfigGlobal\(/, 'the plugin stopped calling the single wiring point')
+    assert.match(source, /from 'nitropack\/runtime\/internal\/config'/, 'the plugin must pass Nitro’s real function, not a hand-rolled one')
   })
 })
 
