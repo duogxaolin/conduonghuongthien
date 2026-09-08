@@ -39,7 +39,10 @@ const { data } = await useAsyncData(
       ...(categorySlug.value ? { categorySlug: categorySlug.value } : {}),
     },
   }),
-  { default: () => ({ articles: [] }) }
+  // `lazy: true`: server vẫn chờ dữ liệu cho HTML đầu + SEO, client không chặn
+  // chuyển trang — khung xương (nhánh empty / default) vẽ ngay, dữ liệu về sau
+  // thì tự cập nhật.
+  { lazy: true, default: () => ({ articles: [] }) }
 )
 
 const docs = computed(() =>

@@ -41,10 +41,11 @@
       </div>
     </div>
 
-    <!-- Main Header -->
+    <!-- Main Header: sticky giữ header trong flow, không gây reflow khi cuộn.
+         isSticky nay chỉ bật/tắt shadow — không đổi position nữa. -->
     <header
-      class="main-header bg-white w-full z-[10001] border-b border-[#E2E8DF] transition-all"
-      :class="isSticky ? 'fixed top-0 shadow-md' : 'relative'"
+      class="main-header bg-white w-full sticky top-0 z-[10001] border-b border-[#E2E8DF] transition-[box-shadow]"
+      :class="isSticky ? 'shadow-md' : 'shadow-none'"
     >
       <!-- Dòng 1: Logo & Các nút hành động nhanh -->
       <div class="border-b border-[#E2E8DF] bg-white">
@@ -419,11 +420,11 @@
       </transition>
     </header>
 
-    <!-- Main Content Area -->
-    <main
-      class="min-h-[calc(100vh-165px)] transition-all pb-24 md:pb-0"
-      :class="{ 'pt-[100px] md:pt-[130px]': isSticky }"
-    >
+    <!-- Main Content Area — không bù padding-top: header đã sticky nên còn
+         trong flow, nếu cộng pt ở đây thì isSticky flip (khi cuộn qua ngưỡng) sẽ
+         bật/tắt 130px đột ngột → layout shift giật toàn trang. Hero của từng trang
+         tự có padding nội bộ đủ lớn để text không bị header sticky che. -->
+    <main class="min-h-[calc(100vh-165px)] pb-24 md:pb-0">
       <slot />
     </main>
 
@@ -481,9 +482,9 @@
     <!-- Chatbot: all state and markup live in the component. -->
     <ChatWidget ref="chatWidget" />
 
-    <!-- Mobile Bottom Nav với Liquid Glass Design -->
+    <!-- Mobile Bottom Nav: nền đặc thay cho backdrop-blur để bớt phí repaint mỗi frame cuộn. -->
     <nav
-      class="fixed bottom-2.5 left-3 right-3 h-16 bg-white/70 backdrop-blur-xl border border-white/40 rounded-[24px] shadow-[0_8px_32px_rgba(30,70,32,0.12),inset_0_1px_0_rgba(255,255,255,0.8)] z-[9900] flex justify-around items-center px-1.5 transition-all md:hidden"
+      class="fixed bottom-2.5 left-3 right-3 h-16 bg-white/95 border border-white/40 rounded-[24px] shadow-[0_8px_32px_rgba(30,70,32,0.12),inset_0_1px_0_rgba(255,255,255,0.8)] z-[9900] flex justify-around items-center px-1.5 transition-all md:hidden"
       :class="{ 'opacity-0 pointer-events-none translate-y-4': isMobileMenuOpen || isChatOpen }"
       aria-label="Điều hướng nhanh"
       style="padding-bottom: env(safe-area-inset-bottom, 0px); box-shadow: 0 8px 32px rgba(30,70,32,0.12), inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.05)"

@@ -22,7 +22,11 @@
             </nuxt-link>
           </div>
 
-          <!-- Sub cards -->
+          <!-- Sub cards — BỐN bài nhỏ dưới tin chủ đạo (2×2). Cố ý không tăng
+               `limit` của lượt fetch: block `news` mặc định `maxItems: 5`, trước
+               đây chỉ 3 bài đầu được dùng (1 chủ đạo + 2 nhỏ) và 2 bài còn lại
+               chỉ xuất hiện ở cột phải — tức dữ liệu đã về đủ mà giao diện bỏ
+               phí. Dùng hết 5 = không thêm một lượt đi mạng nào. -->
           <div class="grid grid-cols-1 gap-[14px] sm:grid-cols-2 sm:gap-5">
             <div v-for="item in subCards" :key="item.id" class="flex gap-4 py-3 border-t border-dashed border-[#E2E8DF] group">
               <nuxt-link :to="`/news/${item.slug}`" class="w-[130px] h-[85px] rounded-lg overflow-hidden flex-shrink-0 shadow-sm">
@@ -91,12 +95,16 @@ const { data } = await useAsyncData(
       ...(categorySlug.value ? { categorySlug: categorySlug.value } : {}),
     },
   }),
-  { default: () => ({ articles: [] }) }
+  // `lazy: true`: server vẫn chờ dữ liệu cho HTML đầu + SEO, nhưng client không
+  // chặn chuyển trang — khung xương (nhánh empty / default) được vẽ ngay, dữ
+  // liệu về sau thì tự cập nhật.
+  { lazy: true, default: () => ({ articles: [] }) }
 )
 
 const articles = computed(() => data.value?.articles || [])
 const featured = computed(() => articles.value[0] || null)
-const subCards = computed(() => articles.value.slice(1, 3))
+// Bốn bài nhỏ (1–4) dưới tin chủ đạo; bài thứ 5 trở đi rơi vào cột phải.
+const subCards = computed(() => articles.value.slice(1, 5))
 // Trending list on the right = the remaining items (or first few if only one column of data).
 const trending = computed(() => articles.value.slice(0, Math.min(articles.value.length, maxItems.value)))
 </script>

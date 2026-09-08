@@ -85,6 +85,10 @@ const props = defineProps({
 })
 
 const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
+  // `lazy: true` để router chuyển trang ngay, khung xương (v-if="pending") được
+  // vẽ thật — thay vì giữ nguyên trang cũ tới khi dữ liệu về (trông như bấm hụt).
+  // SSR vẫn chờ dữ liệu nên HTML đầu tiên và thẻ SEO không đổi.
+  lazy: true,
   key: () => `news-category-${props.categorySlug}`,
   query: { type: 'news', categorySlug: props.categorySlug, limit: props.limit },
   default: () => ({ ok: true, articles: [], pagination: {} }),
