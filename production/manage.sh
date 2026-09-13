@@ -473,4 +473,21 @@ cmd_migrate() {
 }
 
 # ── Entry ──────────────────────────────────────────────────────────────────
-main_menu "$@"
+# Cho phép truyền tham số để bypass menu (chắc ăn với terminal web aaPanel):
+#   ./manage.sh deploy | update | migrate | 1 | 2 | 3
+# Không tham số → vào menu tương tác.
+arg="${1:-}"
+case "$arg" in
+  deploy|1)  cmd_deploy ;;
+  update|2)  cmd_update ;;
+  migrate|3) cmd_migrate ;;
+  ''|menu)  main_menu ;;
+  -h|--help|help)
+    echo "Cách dùng: ./manage.sh [deploy|update|migrate|1|2|3]"
+    echo "  deploy  (1)  thiết lập mới (chạy lần đầu)"
+    echo "  update  (2)  cập nhật VPS (pull + restart)"
+    echo "  migrate (3)  nhập data SQL mới"
+    echo "  (không tham số) vào menu tương tác"
+    exit 0 ;;
+  *) echo "Tham số không hợp lệ: $arg"; echo "Dùng: ./manage.sh [deploy|update|migrate|1|2|3]"; exit 1 ;;
+esac
