@@ -32,7 +32,7 @@ prompt() {
   else
     printf "${C_DIM}%s${C_RESET}: " "$label"
   fi
-  read -r var
+  read -r var || true
   # Strip mọi ký tự trắng thừa (\r, \n, space đầu/cuối) — terminal web (aaPanel)
   # hoặc SSH qua lớp proxy có thể b thêm ký tự, làm case matching fail.
   var="${var//$'\r'/}"
@@ -47,7 +47,7 @@ confirm() {
   local label="$1" default="${2:-y}" ans
   if [ "$default" = "y" ]; then printf "${C_BOLD}%s (Y/n)${C_RESET}: " "$label"
   else printf "${C_BOLD}%s (y/N)${C_RESET}: " "$label"; fi
-  read -r ans
+  read -r ans || true
   ans="${ans//$'\r'/}"
   ans="${ans//$'\n'/}"
   ans="${ans#"${ans%%[![:space:]]*}"}"
