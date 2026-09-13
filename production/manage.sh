@@ -62,10 +62,10 @@ gen_secret() {
   openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p 2>/dev/null || echo "CHANGE_ME_$(date +%s)"
 }
 gen_b64() {
-  # PHẢI giữ nguyên output của `openssl rand -base64 32` (44 ký tự, có padding '=').
-  # Code yêu cầu base64 của ĐÚNG 32 byte — không xoá ký tự, không cắt độ dài.
-  # Trước đây `tr -d '/+=' | head -c 32` làm hỏng → app fail "must be base64 32-byte key".
-  openssl rand -base64 32 2>/dev/null || echo "CHANGE_ME_BASE64_32_BYTES_PADDING="
+  # base64 của 32 byte, BỎ padding '=' ở cuối — docker compose .env cắt giá trị
+  # tại dấu '=' thứ 2, làm secret mất ký tự. Code `secret-envelope.ts` dùng
+  # `replace(/=+$/u,'')` nên bỏ padding vẫn decode đúng 32 byte.
+  openssl rand -base64 32 2>/dev/null | tr -d '=' || echo "CHANGE_ME_BASE64_NO_PADDING"
 }
 gen_password() {
   # 18 ký tự base64, đủ mạnh cho MySQL (đã dùng cho ADMIN_PASSWORD)
