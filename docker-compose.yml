@@ -33,11 +33,10 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
-    deploy:
-      resources:
-        limits:
-          # Autotune reads this limit (cgroup) rather than host RAM.
-          memory: ${MYSQL_MEM_LIMIT:-1g}
+    # KHÔNG giới hạn RAM/CPU — VPS có bao nhiêu, container dùng bấy nhiêu.
+    # Trước đây hardcode `memory: ${MYSQL_MEM_LIMIT:-1g}` cho VPS 1-2GB; giờ
+    # bỏ hẳn để VPS lớn không bị kẹt artficial limit. Nếu lo OOM-killer giết
+    # container khác, set lại: deploy.resources.limits.memory: 4g (v.v.).
 
   app:
     # CI xây image rồi đẩy lên GHCR; VPS chỉ kéo về. `docker compose pull` không
@@ -128,10 +127,7 @@ services:
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
-    deploy:
-      resources:
-        limits:
-          memory: ${APP_MEM_LIMIT:-1g}
+    # KHÔNG giới hạn RAM/CPU — xem chú thích ở service mysql bên trên.
 
 volumes:
   mysql_data:
