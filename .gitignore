@@ -58,4 +58,8 @@ blob-report/
 
 # Migration data — source cổng cũ ASP.NET, chỉ dùng để migrate 1 lần, không deploy
 old-data/
-.migrate/
+# .migrate/ chứa script migrate + data JSON; test legacy-urls cần import-articles.json
+# nên chỉ ignore script/*.mjs, giữ lại các file .json mà test đọc
+.migrate/*.mjs
+.migrate/*.txt
+.migrate/*.log
