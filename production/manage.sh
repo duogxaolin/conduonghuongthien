@@ -33,6 +33,12 @@ prompt() {
     printf "${C_DIM}%s${C_RESET}: " "$label"
   fi
   read -r var
+  # Strip mọi ký tự trắng thừa (\r, \n, space đầu/cuối) — terminal web (aaPanel)
+  # hoặc SSH qua lớp proxy có thể b thêm ký tự, làm case matching fail.
+  var="${var//$'\r'/}"
+  var="${var//$'\n'/}"
+  var="${var#"${var%%[![:space:]]*}"}"
+  var="${var%"${var##*[![:space:]]}"}"
   echo "${var:-$default}"
 }
 
@@ -42,6 +48,10 @@ confirm() {
   if [ "$default" = "y" ]; then printf "${C_BOLD}%s (Y/n)${C_RESET}: " "$label"
   else printf "${C_BOLD}%s (y/N)${C_RESET}: " "$label"; fi
   read -r ans
+  ans="${ans//$'\r'/}"
+  ans="${ans//$'\n'/}"
+  ans="${ans#"${ans%%[![:space:]]*}"}"
+  ans="${ans%"${ans##*[![:space:]]}"}"
   ans="${ans:-$default}"
   [ "$ans" = "y" ] || [ "$ans" = "Y" ] || [ "$ans" = "yes" ] || [ "$ans" = "YES" ]
 }
