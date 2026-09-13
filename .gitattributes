@@ -1,0 +1,23 @@
+# Force LF cho script shell — CRLF làm `read -r` nhận ký tự \r thừa, case
+# matching fail trên Linux (triệu chứng: "lựa chọn không hợp lệ" dù bấm đúng).
+*.sh   text eol=lf
+*.mjs  text eol=lf
+*.ts   text eol=lf
+*.vue  text eol=lf
+*.md   text eol=lf
+*.yml  text eol=lf
+*.yaml text eol=lf
+*.json text eol=lf
+*.sql  text eol=lf
+*.css  text eol=lf
+*.html text eol=lf
+
+# Ảnh/nhị phân — không chạm
+*.png  binary
+*.jpg  binary
+*.jpeg binary
+*.gif  binary
+*.webp binary
+*.ico  binary
+*.woff2 binary
+*.woff binary
