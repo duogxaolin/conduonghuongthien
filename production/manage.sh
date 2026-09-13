@@ -454,11 +454,17 @@ cmd_migrate() {
   for f in "${to_import[@]}"; do
     local name=$(basename "$f")
     echo -e "\n${C_BOLD}Import $name ...${C_RESET}"
-    if docker exec -i cdkt_mysql mysql -uroot -p"$root_pw" cdkt_admin < "$f" 2>&1 | grep -v "Using a password"; then
+    # mysql in warning ra stderr; lỗi SQL cũng ra stderr. Tách stderr, chỉ exit
+    # khi mysql trả khác 0. KHÔNG pipe qua grep vì grep không match warning → trả
+    # exit 1 → if tưởng fail dù import OK.
+    local err_out
+    if err_out=$(docker exec -i cdkt_mysql mysql -uroot -p"$root_pw" cdkt_admin < "$f" 2>&1 1>/dev/null) \
+       && [ -z "$err_out" -o -z "${err_out##*Using a password*}" ]; then
       touch "$MIG_DIR/.imported-$name"
       echo -e "${C_GREEN}✓ $name đã import${C_RESET}"
     else
-      echo -e "${C_RED}✗ $name LỖI — kiểm tra log trên${C_RESET}"
+      echo -e "${C_RED}✗ $name LỖI:${C_RESET}"
+      echo "$err_out" | grep -v "Using a password" | sed 's/^/    /'
       exit 1
     fi
   done
