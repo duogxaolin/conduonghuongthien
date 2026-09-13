@@ -41,10 +41,11 @@
       </div>
     </div>
 
-    <!-- Main Header -->
+    <!-- Main Header: sticky giữ header trong flow, không gây reflow khi cuộn.
+         isSticky nay chỉ bật/tắt shadow — không đổi position nữa. -->
     <header
-      class="main-header bg-white w-full z-[10001] border-b border-[#E2E8DF] transition-all"
-      :class="isSticky ? 'fixed top-0 shadow-md' : 'relative'"
+      class="main-header bg-white w-full sticky top-0 z-[10001] border-b border-[#E2E8DF] transition-[box-shadow]"
+      :class="isSticky ? 'shadow-md' : 'shadow-none'"
     >
       <!-- Dòng 1: Logo & Các nút hành động nhanh -->
       <div class="border-b border-[#E2E8DF] bg-white">
@@ -359,7 +360,7 @@
       -->
       <div class="hidden lg:flex bg-white border-t border-[#edf2ec] border-b border-[#e1e8e0] h-[50px] items-center shadow-[0_4px_12px_rgba(15,35,18,0.04)] transition-all">
         <div class="container w-full overflow-visible">
-          <nav class="flex w-max min-w-full" @click="onNavClick" @keydown.escape="toggleMobileMenu">
+          <nav class="desktop-nav flex w-max min-w-full" @click="onNavClick" @keydown.escape="toggleMobileMenu">
             <ul class="flex list-none w-full justify-between items-center gap-1">
               <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group focus-within:z-[103]' : ''">
                 <!-- With children: dropdown -->
@@ -371,7 +372,7 @@
                     >{{ navItemLabel(item) }}</component>
                     <i class="fa-solid fa-chevron-down text-[0.55rem] ml-0.5 text-[#557757] transition-transform duration-200 group-hover:rotate-180 group-focus-within:rotate-180" aria-hidden="true"></i>
                   </div>
-                  <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-2 min-w-[220px] list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100 group-focus-within:pointer-events-auto">
+                  <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-2 min-w-[220px] list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100 group-focus-within:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:scale-100 group-focus-visible:pointer-events-auto before:absolute before:top-[-4px] before:left-0 before:h-[4px] before:w-full before:content-['']">
                     <li v-for="child in item.children" :key="child.id">
                       <component
                         :is="child.url && child.url.startsWith('http') ? 'a' : NuxtLink"
@@ -419,11 +420,11 @@
       </transition>
     </header>
 
-    <!-- Main Content Area -->
-    <main
-      class="min-h-[calc(100vh-165px)] transition-all pb-24 md:pb-0"
-      :class="{ 'pt-[100px] md:pt-[130px]': isSticky }"
-    >
+    <!-- Main Content Area — không bù padding-top: header đã sticky nên còn
+         trong flow, nếu cộng pt ở đây thì isSticky flip (khi cuộn qua ngưỡng) sẽ
+         bật/tắt 130px đột ngột → layout shift giật toàn trang. Hero của từng trang
+         tự có padding nội bộ đủ lớn để text không bị header sticky che. -->
+    <main class="min-h-[calc(100vh-165px)] pb-24 md:pb-0">
       <slot />
     </main>
 
@@ -436,7 +437,7 @@
             <span class="text-white font-extrabold text-[1.2rem] tracking-[0.5px]">CON ĐƯỜNG HƯỚNG THIỆN</span>
           </div>
           <p class="text-[0.9rem] leading-relaxed">
-            Trang thông tin điện tử dưới sự chỉ đạo sát sao của Bộ Công an, Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11).
+            Trang thông tin điện tử về tái hòa nhập cộng đồng của Bộ Công an, do Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) quản lý và vận hành.
           </p>
         </div>
 
@@ -481,9 +482,9 @@
     <!-- Chatbot: all state and markup live in the component. -->
     <ChatWidget ref="chatWidget" />
 
-    <!-- Mobile Bottom Nav với Liquid Glass Design -->
+    <!-- Mobile Bottom Nav: nền đặc thay cho backdrop-blur để bớt phí repaint mỗi frame cuộn. -->
     <nav
-      class="fixed bottom-2.5 left-3 right-3 h-16 bg-white/70 backdrop-blur-xl border border-white/40 rounded-[24px] shadow-[0_8px_32px_rgba(30,70,32,0.12),inset_0_1px_0_rgba(255,255,255,0.8)] z-[9900] flex justify-around items-center px-1.5 transition-all md:hidden"
+      class="fixed bottom-2.5 left-3 right-3 h-16 bg-white/95 border border-white/40 rounded-[24px] shadow-[0_8px_32px_rgba(30,70,32,0.12),inset_0_1px_0_rgba(255,255,255,0.8)] z-[9900] flex justify-around items-center px-1.5 transition-all md:hidden"
       :class="{ 'opacity-0 pointer-events-none translate-y-4': isMobileMenuOpen || isChatOpen }"
       aria-label="Điều hướng nhanh"
       style="padding-bottom: env(safe-area-inset-bottom, 0px); box-shadow: 0 8px 32px rgba(30,70,32,0.12), inset 0 1px 0 rgba(255,255,255,0.8), 0 1px 2px rgba(0,0,0,0.05)"
@@ -656,6 +657,20 @@ async function onReaderSignOut() {
 const route = useRoute()
 const router = useRouter()
 const { error: toastError } = useToast()
+
+// Đóng dropdown nav desktop khi chuyển trang.
+//
+// Dropdown nav mở bằng `:focus-within`/`:hover` thuần CSS (không có state JS),
+// nên sau khi bấm một mục con, focus vẫn nằm trong `<li>` đó và menu cứ mở
+// regardless route đã đổi. `activeElement.blur()` gỡ focus → `:focus-within`
+// tắt → menu đóng theo chính CSS đã có, không phải thêm(state mới. Chỉ blur khi
+// focus đang nằm trong thanh nav (`.desktop-nav`), không giày vò focus của
+// widget/ô input nào khác trên trang.
+watch(() => route.path, () => {
+  if (typeof document === 'undefined') return
+  const active = document.activeElement
+  if (active instanceof HTMLElement && active.closest('.desktop-nav')) active.blur()
+})
 
 // Dynamic nav menu from admin settings (falls back to DEFAULT_NAV)
 

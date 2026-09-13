@@ -7,7 +7,7 @@
       <div class="absolute inset-0 bg-[linear-gradient(180deg,rgba(30,45,26,0.72)_0%,rgba(74,103,65,0.92)_55%,rgba(74,103,65,0.95)_100%)]"></div>
       <div class="container relative z-[2]">
         <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem]">Văn Bản Quy Phạm Pháp Luật</h2>
-        <p class="text-[1.1rem] opacity-90">Tra cứu các nghị định, chính sách, chỉ thị về công tác quản lý thi hành án hình sự và tái hòa nhập cộng đồng</p>
+        <p class="text-[1.1rem] opacity-90">Tra cứu các chỉ thị, nghị định và chính sách về công tác thi hành án hình sự, hỗ trợ tái hòa nhập cộng đồng</p>
       </div>
     </section>
 
