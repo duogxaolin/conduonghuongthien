@@ -7,7 +7,7 @@
       <div class="absolute inset-0 bg-[linear-gradient(180deg,rgba(30,45,26,0.72)_0%,rgba(74,103,65,0.92)_55%,rgba(74,103,65,0.95)_100%)]"></div>
       <div class="container relative z-[2]">
         <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem]">Giải Đáp Pháp Luật</h2>
-        <p class="text-[1.1rem] opacity-90">Ngân hàng câu hỏi đáp pháp luật, quy trình thủ tục hành chính hỗ trợ xóa án tích, vay vốn</p>
+        <p class="text-[1.1rem] opacity-90">Ngân hàng câu hỏi, giải đáp pháp luật về vay vốn và đào tạo nghề, thủ tục xóa án tích, tái hòa nhập cộng đồng</p>
       </div>
     </section>
 

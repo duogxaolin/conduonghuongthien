@@ -55,3 +55,7 @@ playwright-report/
 test-results/
 blob-report/
 .playwright/
+
+# Migration data — source cổng cũ ASP.NET, chỉ dùng để migrate 1 lần, không deploy
+old-data/
+.migrate/

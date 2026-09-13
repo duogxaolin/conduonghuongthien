@@ -7,13 +7,18 @@
         <nuxt-link :to="d.btnLink || '/documents'" class="btn btn-primary">{{ d.btnText || 'Tra cứu thư viện văn bản' }}</nuxt-link>
       </div>
       <div class="flex flex-col gap-4">
-        <div v-for="doc in docs" :key="doc.id" class="bg-white border border-[#E2E8DF] rounded-lg p-4 flex gap-4 items-start transition hover:border-[#4A6741] hover:shadow-sm">
-          <span class="text-2xl">📄</span>
-          <div>
+        <nuxt-link
+          v-for="doc in docs"
+          :key="doc.id"
+          :to="`/news/${doc.slug}`"
+          class="bg-white border border-[#E2E8DF] rounded-lg p-4 flex gap-4 items-start no-underline transition hover:border-[#4A6741] hover:shadow-sm group"
+        >
+          <span class="text-2xl" aria-hidden="true">📄</span>
+          <div class="min-w-0 flex-1">
             <span class="block text-[0.75rem] font-bold text-[#4A6741] mb-1">{{ doc.number }} • {{ doc.date }}</span>
-            <h4 class="text-[0.88rem] font-bold leading-[1.4] m-0">{{ doc.title }}</h4>
+            <h4 class="text-[0.88rem] font-bold leading-[1.4] m-0 line-clamp-2 group-hover:text-[#4A6741] transition-colors">{{ doc.title }}</h4>
           </div>
-        </div>
+        </nuxt-link>
         <p v-if="!docs.length" class="text-[0.9rem] text-[#7A8675] italic">Chưa có văn bản nào được đăng.</p>
       </div>
     </div>
@@ -48,6 +53,7 @@ const { data } = await useAsyncData(
 const docs = computed(() =>
   (data.value?.articles || []).map(a => ({
     id: a.id,
+    slug: a.slug,
     number: a.title,
     date: formatDate(a.publishedAt || a.createdAt),
     title: a.excerpt || a.title,

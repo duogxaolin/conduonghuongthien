@@ -1,6 +1,6 @@
 <template>
   <div class="bg-[#F8FAF7]">
-    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover py-20 text-center text-white">
+    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover px-4 py-16 text-center text-white sm:py-[100px]">
       <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)]"></div>
       <div class="container relative z-10">
         <h2 class="text-[2.2rem] font-extrabold mb-2">{{ heading }}</h2>
