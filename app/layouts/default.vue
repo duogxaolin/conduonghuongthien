@@ -669,7 +669,7 @@ const { error: toastError } = useToast()
 watch(() => route.path, () => {
   if (typeof document === 'undefined') return
   const active = document.activeElement
-  if (active instanceof Element && active.closest('.desktop-nav')) active.blur()
+  if (active instanceof HTMLElement && active.closest('.desktop-nav')) active.blur()
 })
 
 // Dynamic nav menu from admin settings (falls back to DEFAULT_NAV)
