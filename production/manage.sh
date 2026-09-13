@@ -25,6 +25,8 @@ else
 fi
 
 # Đọc một giá trị có gợi ý:  prompt "Nhập DB name" DEFAULT_VALUE → gõ enter giữ default
+# Dùng biến global PROMPT_RESULT thay vì echo + \$(...) để tránh subshell —
+# subshell + set -e + read có thể ăn input sai trên terminal web aaPanel.
 prompt() {
   local label="$1" default="${2:-}" var
   if [ -n "$default" ]; then
@@ -33,13 +35,12 @@ prompt() {
     printf "${C_DIM}%s${C_RESET}: " "$label"
   fi
   read -r var || true
-  # Strip mọi ký tự trắng thừa (\r, \n, space đầu/cuối) — terminal web (aaPanel)
-  # hoặc SSH qua lớp proxy có thể b thêm ký tự, làm case matching fail.
+  # Strip mọi ký tự trắng thừa (\r, \n, space đầu/cuối)
   var="${var//$'\r'/}"
   var="${var//$'\n'/}"
   var="${var#"${var%%[![:space:]]*}"}"
   var="${var%"${var##*[![:space:]]}"}"
-  echo "${var:-$default}"
+  PROMPT_RESULT="${var:-$default}"
 }
 
 # Yes/No mặc định Yes
@@ -94,8 +95,8 @@ main_menu() {
   echo -e "  ${C_BOLD}3)${C_RESET} Migrate  — nhập data SQL mới"
   echo -e "  ${C_BOLD}q)${C_RESET} Thoát"
   echo
-  local choice
-  choice=$(prompt "Chọn" "")
+  prompt "Chọn" ""
+  local choice="$PROMPT_RESULT"
   case "$choice" in
     1) cmd_deploy ;;
     2) cmd_update ;;
@@ -128,7 +129,7 @@ cmd_deploy() {
   echo -e "  ${C_BOLD}2)${C_RESET} Docker fresh — tạo MySQL mới qua docker compose (Recommended)"
   echo
   local sql_choice
-  sql_choice=$(prompt "Chọn nguồn SQL" "2")
+  prompt "Chọn nguồn SQL" "2"; sql_choice="$PROMPT_RESULT"
   if [ "$sql_choice" != "1" ] && [ "$sql_choice" != "2" ]; then
     echo -e "${C_RED}Chỉ 1 hoặc 2.${C_RESET}"; exit 1
   fi
@@ -141,11 +142,11 @@ cmd_deploy() {
 
   if [ "$sql_choice" = "1" ]; then
     # Existing DB — user cung cấp connection string
-    DB_HOST=$(prompt "  DB host" "127.0.0.1")
-    DB_PORT=$(prompt "  DB port" "3306")
-    DB_NAME=$(prompt "  DB name" "cdkt_admin")
-    DB_USER=$(prompt "  DB user" "root")
-    DB_PASSWORD=$(prompt "  DB password" "")
+    prompt "  DB host" "127.0.0.1"; DB_HOST="$PROMPT_RESULT"
+    prompt "  DB port" "3306"; DB_PORT="$PROMPT_RESULT"
+    prompt "  DB name" "cdkt_admin"; DB_NAME="$PROMPT_RESULT"
+    prompt "  DB user" "root"; DB_USER="$PROMPT_RESULT"
+    prompt "  DB password" ""; DB_PASSWORD="$PROMPT_RESULT"
     MYSQL_ROOT_PASSWORD="$DB_PASSWORD"
     echo -e "${C_YELLOW}⚠  Existing DB: app sẽ nối tới MySQL ngoài docker compose.${C_RESET}"
     echo -e "${C_YELLOW}   MySQL đó phải đang chạy và user có quyền CREATE/INSERT.${C_RESET}"
@@ -154,14 +155,14 @@ cmd_deploy() {
     DB_HOST="cdkt_mysql"   # tên service trong compose
     DB_PORT="3306"          # port nội bộ container
     MYSQL_ROOT_PASSWORD=$(gen_password)
-    DB_NAME=$(prompt "  Tên database" "cdkt_admin")
-    DB_USER=$(prompt "  DB user (app dùng)" "cdkt_user")
-    DB_PASSWORD=$(prompt "  DB password (app)" "$(gen_password)")
-    MYSQL_ROOT_PASSWORD=$(prompt "  MySQL root password" "$MYSQL_ROOT_PASSWORD")
+    prompt "  Tên database" "cdkt_admin"; DB_NAME="$PROMPT_RESULT"
+    prompt "  DB user (app dùng)" "cdkt_user"; DB_USER="$PROMPT_RESULT"
+    prompt "  DB password (app)" "$(gen_password)"; DB_PASSWORD="$PROMPT_RESULT"
+    prompt "  MySQL root password" "$MYSQL_ROOT_PASSWORD"; MYSQL_ROOT_PASSWORD="$PROMPT_RESULT"
 
     # Port publish ra host (tránh đụng 3306 nếu máy có MySQL sẵn)
     local ext_port
-    ext_port=$(prompt "  Port publish ra máy chủ" "33069")
+    prompt "  Port publish ra máy chủ" "33069"; ext_port="$PROMPT_RESULT"
     MYSQL_EXTERNAL_PORT="$ext_port"
   fi
 
@@ -170,13 +171,13 @@ cmd_deploy() {
   echo -e "${C_DIM}Ba bí mật BẮT BUỘC, tự sinh. Gõ enter giữ giá trị ngẫu nhiên, hoặc dán của mình.${C_RESET}\n"
 
   local JWT_SECRET CHATBOT_ENCRYPTION_SECRET ANALYTICS_HMAC_SECRET
-  JWT_SECRET=$(prompt "  JWT_SECRET (hex 64)" "$(gen_secret)")
-  CHATBOT_ENCRYPTION_SECRET=$(prompt "  CHATBOT_ENCRYPTION_SECRET (base64 32)" "$(gen_b64)")
-  ANALYTICS_HMAC_SECRET=$(prompt "  ANALYTICS_HMAC_SECRET (hex 64)" "$(gen_secret)")
+  prompt "  JWT_SECRET (hex 64)" "$(gen_secret)"; JWT_SECRET="$PROMPT_RESULT"
+  prompt "  CHATBOT_ENCRYPTION_SECRET (base64 32)" "$(gen_b64)"; CHATBOT_ENCRYPTION_SECRET="$PROMPT_RESULT"
+  prompt "  ANALYTICS_HMAC_SECRET (hex 64)" "$(gen_secret)"; ANALYTICS_HMAC_SECRET="$PROMPT_RESULT"
 
   echo
   local APP_PORT NODE_ENV
-  APP_PORT=$(prompt "  App port (publish ra host)" "3000")
+  prompt "  App port (publish ra host)" "3000"; APP_PORT="$PROMPT_RESULT"
   NODE_ENV="production"
 
   # ── Bước 4: Tên miền (public URL) ─────────────────────────────────────────
@@ -184,17 +185,17 @@ cmd_deploy() {
   echo -e "${C_DIM}Dùng cho redirect OAuth, email link, canonical URL.${C_RESET}"
   echo -e "${C_DIM}Anh tự cấu hình nginx/aaPanel proxy về 127.0.0.1:\$APP_PORT.${C_RESET}\n"
   local PUBLIC_BASE_URL
-  PUBLIC_BASE_URL=$(prompt "  Domain (https://...)" "https://conduonghuongthien.com.vn")
+  prompt "  Domain (https://...)" "https://conduonghuongthien.com.vn"; PUBLIC_BASE_URL="$PROMPT_RESULT"
 
   # ── Bước 5: ADMIN_PASSWORD + ghi .env ────────────────────────────────────
   echo -e "\n${C_BOLD}Bước 5/6 — Tài khoản SuperAdmin (chỉ lần đầu)${C_RESET}"
   local ADMIN_PASSWORD ADMIN_EMAIL
-  ADMIN_PASSWORD=$(prompt "  ADMIN_PASSWORD (≥12 ký tự, đủ 3/4 nhóm)" "$(gen_password)")
-  ADMIN_EMAIL=$(prompt "  ADMIN_EMAIL" "admin@conduonghuongthien.com.vn")
+  prompt "  ADMIN_PASSWORD (≥12 ký tự, đủ 3/4 nhóm)" "$(gen_password)"; ADMIN_PASSWORD="$PROMPT_RESULT"
+  prompt "  ADMIN_EMAIL" "admin@conduonghuongthien.com.vn"; ADMIN_EMAIL="$PROMPT_RESULT"
 
   # Proxy tin cậy — mặc định docker bridge gateway, anh có thể sửa
   local TRUSTED_PROXY_IPS
-  TRUSTED_PROXY_IPS=$(prompt "  TRUSTED_PROXY_IPS (gateway docker)" "172.17.0.1")
+  prompt "  TRUSTED_PROXY_IPS (gateway docker)" "172.17.0.1"; TRUSTED_PROXY_IPS="$PROMPT_RESULT"
 
   echo -e "\n${C_BOLD}Đang tạo .env ...${C_RESET}"
   cat > "$ROOT/.env" <<EOF
@@ -317,8 +318,8 @@ cmd_update() {
   # ── Cho sửa vài trường quan trọng ─────────────────────────────────────────
   echo -e "\n${C_BOLD}Sửa cấu hình (gõ enter giữ giá trị cũ)${C_RESET}"
   local new_port new_domain
-  new_port=$(prompt "  PORT" "$cur_port")
-  new_domain=$(prompt "  PUBLIC_BASE_URL" "$cur_domain")
+  prompt "  PORT" "$cur_port"; new_port="$PROMPT_RESULT"
+  prompt "  PUBLIC_BASE_URL" "$cur_domain"; new_domain="$PROMPT_RESULT"
   if [ "$new_port" != "$cur_port" ] || [ "$new_domain" != "$cur_domain" ]; then
     if confirm "Cập nhật .env với giá trị mới?" "y"; then
       [ "$new_port" != "$cur_port" ] && sed -i "s|^PORT=.*|PORT=$new_port|" "$ROOT/.env"
@@ -421,7 +422,7 @@ cmd_migrate() {
   # Hỏi chọn file
   echo
   local sel
-  sel=$(prompt "Chọn file để import (số, hoặc 'all' cho tất cả chưa import)" "all")
+  prompt "Chọn file để import (số, hoặc 'all' cho tất cả chưa import)" "all"; sel="$PROMPT_RESULT"
 
   local to_import=()
   if [ "$sel" = "all" ]; then
@@ -454,11 +455,17 @@ cmd_migrate() {
   for f in "${to_import[@]}"; do
     local name=$(basename "$f")
     echo -e "\n${C_BOLD}Import $name ...${C_RESET}"
-    if docker exec -i cdkt_mysql mysql -uroot -p"$root_pw" cdkt_admin < "$f" 2>&1 | grep -v "Using a password"; then
+    # mysql in warning ra stderr; lỗi SQL cũng ra stderr. Tách stderr, chỉ exit
+    # khi mysql trả khác 0. KHÔNG pipe qua grep vì grep không match warning → trả
+    # exit 1 → if tưởng fail dù import OK.
+    local err_out
+    if err_out=$(docker exec -i cdkt_mysql mysql -uroot -p"$root_pw" cdkt_admin < "$f" 2>&1 1>/dev/null) \
+       && [ -z "$err_out" -o -z "${err_out##*Using a password*}" ]; then
       touch "$MIG_DIR/.imported-$name"
       echo -e "${C_GREEN}✓ $name đã import${C_RESET}"
     else
-      echo -e "${C_RED}✗ $name LỖI — kiểm tra log trên${C_RESET}"
+      echo -e "${C_RED}✗ $name LỖI:${C_RESET}"
+      echo "$err_out" | grep -v "Using a password" | sed 's/^/    /'
       exit 1
     fi
   done
