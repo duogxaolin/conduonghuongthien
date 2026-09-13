@@ -53,11 +53,11 @@ const DEFAULT_PAGES = [
 const DEFAULT_CATEGORIES = [
   { name: 'Tin nổi bật',      slug: 'tin-noi-bat',      type: 'news',          displayOrder: 1 },
   { name: 'Tin hoạt động',    slug: 'tin-hoat-dong',    type: 'news',          displayOrder: 2 },
-  { name: 'Tin địa phương',   slug: 'tin-dia-phuong',   type: 'news',          displayOrder: 3 },
+  { name: 'Tin địa phương',   slug: 'tin-dia-phuong',   type: 'news',          displayOrder: 3, description: 'Hoạt động về thi hành án hình sự và tái hòa nhập cộng đồng tại địa bàn xã, phường' },
   { name: 'Tấm gương tiêu biểu', slug: 'tam-guong-tieu-bieu', type: 'role_model',   displayOrder: 1 },
   { name: 'Mô hình tái hòa nhập', slug: 'mo-hinh-tai-hoa-nhap', type: 'reintegration', displayOrder: 1 },
-  { name: 'Văn bản pháp luật', slug: 'van-ban-phap-luat', type: 'document',      displayOrder: 1 },
-  { name: 'Hỏi đáp pháp luật', slug: 'hoi-dap-phap-luat', type: 'faq',           displayOrder: 1 },
+  { name: 'Văn bản pháp luật', slug: 'van-ban-phap-luat', type: 'document',      displayOrder: 1, description: 'Tra cứu các chỉ thị, nghị định và chính sách về công tác thi hành án hình sự, hỗ trợ tái hòa nhập cộng đồng' },
+  { name: 'Hỏi đáp pháp luật', slug: 'hoi-dap-phap-luat', type: 'faq',           displayOrder: 1, description: 'Ngân hàng câu hỏi, giải đáp về vay vốn và đào tạo nghề, thủ tục tái hòa nhập cộng đồng' },
 ]
 
 async function seed() {
@@ -167,9 +167,9 @@ async function seed() {
     { type: 'hero',           displayOrder: 1, isVisible: true, config: { title: 'Đồng hành cùng hành trình hướng thiện', subtitle: 'Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý', bgImage: '/assets/hero_banner.jpg', btnAbout: true, btnHelp: true } },
     { type: 'stats',          displayOrder: 2, isVisible: true, config: { stats: [{ value: '34', label: 'Tỉnh / Thành phố đồng hành' }, { value: '10.000+', label: 'Người hoàn lương được hỗ trợ' }, { value: '500+', label: 'Mô hình kinh tế tiêu biểu' }, { value: '24/7', label: 'Tư vấn pháp lý & Tâm lý miễn phí' }] } },
     { type: 'news',           displayOrder: 3, isVisible: true, config: { title: 'Tin nổi bật', maxItems: 5 } },
-    { type: 'role_models',    displayOrder: 4, isVisible: true, config: { title: 'Tấm Gương Tiêu Biểu', subtitle: 'Nghị lực vươn lên', maxItems: 3 } },
+    { type: 'role_models',    displayOrder: 4, isVisible: true, config: { title: 'Tấm Gương Tiêu Biểu', subtitle: 'Nghị lực vươn lên', maxItems: 8 } },
     { type: 'quote',          displayOrder: 5, isVisible: true, config: { quote: 'Mỗi con người lầm lỡ đều xứng đáng có một cơ hội thứ hai để hướng thiện. Sự chung tay, đồng hành của gia đình và toàn xã hội chính là ánh dương thắp sáng nẻo về lương thiện.', cite: '— Đề án Tái hòa nhập cộng đồng, C11 Bộ Công an', bgImage: '/assets/hero_banner.jpg' } },
-    { type: 'reintegration',  displayOrder: 6, isVisible: true, config: { title: 'Mô Hình Tái Hòa Nhập', subtitle: 'Sinh kế bền vững', maxItems: 3 } },
+    { type: 'reintegration',  displayOrder: 6, isVisible: true, config: { title: 'Mô Hình Tái Hòa Nhập', subtitle: 'Sinh kế bền vững', maxItems: 6 } },
     { type: 'documents',      displayOrder: 7, isVisible: true, config: { title: 'Văn bản Pháp luật Mới ban hành', maxItems: 6 } },
     { type: 'support_form',   displayOrder: 8, isVisible: true, config: { title: 'Đăng Ký Tư Vấn & Hỗ Trợ Tái Hòa Nhập' } },
     { type: 'links',          displayOrder: 9, isVisible: true, config: { title: 'Liên Kết Hữu Ích' } },
@@ -240,6 +240,7 @@ async function seed() {
       slug: c.slug,
       type: c.type,
       parentId: null,
+      description: c.description ?? null,
       displayOrder: c.displayOrder,
     }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
   }

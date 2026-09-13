@@ -1,6 +1,6 @@
 <template>
   <div class="bg-[#F8FAF7]">
-    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover py-20 text-center text-white">
+    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover px-4 py-16 text-center text-white sm:py-[100px]">
       <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)]"></div>
       <div class="container relative z-10">
         <h2 class="text-[2.2rem] font-extrabold mb-2">{{ heading }}</h2>
@@ -85,6 +85,10 @@ const props = defineProps({
 })
 
 const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
+  // `lazy: true` để router chuyển trang ngay, khung xương (v-if="pending") được
+  // vẽ thật — thay vì giữ nguyên trang cũ tới khi dữ liệu về (trông như bấm hụt).
+  // SSR vẫn chờ dữ liệu nên HTML đầu tiên và thẻ SEO không đổi.
+  lazy: true,
   key: () => `news-category-${props.categorySlug}`,
   query: { type: 'news', categorySlug: props.categorySlug, limit: props.limit },
   default: () => ({ ok: true, articles: [], pagination: {} }),

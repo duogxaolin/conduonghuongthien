@@ -1,59 +1,71 @@
 <template>
   <div class="bg-[#F8FAF7]">
-    <!-- Hero Header -->
-    <section class="relative bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover px-4 py-16 text-center text-white sm:py-[100px]">
-      <!-- Lớp phủ dạng gradient thay cho một mảng phẳng rgba(74,103,65,0.9): mảng
-           phẳng gần như xoá hẳn tấm ảnh mà trang vẫn phải tải. Gradient giữ đủ độ
-           tương phản cho chữ ở giữa mà vẫn thấy được ảnh ở hai mép. -->
-      <div class="absolute inset-0 bg-[linear-gradient(180deg,rgba(30,45,26,0.72)_0%,rgba(74,103,65,0.92)_55%,rgba(74,103,65,0.95)_100%)]"></div>
-      <div class="container relative z-10">
-        <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem]">Bản Tin Hoạt Động</h2>
-        <p class="text-[1.1rem] opacity-90">Cập nhật tin tức, chỉ đạo điều hành và sự kiện hỗ trợ hoàn lương trên toàn quốc</p>
+    <!-- Page header — gọn nhẹ trên nền sáng, không khối hero xanh gây lướt giật.
+         Chips danh mục nằm ngay dưới tiêu đề: đây là phần điều hướng chính của
+         trang, nên phải ở vị trí đầu tiên mắt người đọc chạm tới, không bị ảnh
+         hero lấn át. Danh mục con của mục đang chọn hiện thành hàng chips thứ
+         hai, nhỏ hơn. -->
+    <section class="border-b border-[#E2E8DF] bg-white">
+      <div class="container pt-7 sm:pt-9 pb-5">
+        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-[#7CB342] m-0 mb-1">Bản tin</p>
+        <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-[#1E251C] leading-[1.2] m-0">{{ pageTitle }}</h1>
+        <p class="text-[0.95rem] text-[#5A6655] mt-2 mb-5">Cập nhật tin tức, chỉ đạo điều hành và sự kiện hỗ trợ hoàn lương trên toàn quốc</p>
+
+        <nav aria-label="Lọc bản tin theo chuyên mục">
+          <!-- Skeleton chips — chỉ thấy khi điều hướng client (SSR vẫn chờ dữ liệu) -->
+          <div v-if="catPending" role="status" aria-busy="true" class="flex gap-2">
+            <span class="sr-only">Đang tải danh mục bản tin</span>
+            <div
+              v-for="n in 6"
+              :key="n"
+              aria-hidden="true"
+              class="h-[30px] w-24 rounded-full bg-[#EEF2EC] animate-pulse motion-reduce:animate-none"
+            ></div>
+          </div>
+
+          <template v-else>
+            <div class="flex items-center gap-2 overflow-x-auto sm:flex-wrap -mx-6 px-6 sm:mx-0 sm:px-0">
+              <button
+                type="button"
+                :aria-pressed="activeCategory === 'all'"
+                :class="chipClass(activeCategory === 'all')"
+                @click="setCategory('all')"
+              >Tất cả bản tin</button>
+              <button
+                v-for="cat in rootCategories"
+                :key="cat.id"
+                type="button"
+                :aria-pressed="activeCategory === cat.slug"
+                :class="chipClass(activeCategory === cat.slug)"
+                @click="setCategory(cat.slug)"
+              >{{ cat.name }}</button>
+            </div>
+            <div v-if="activeChildren.length" class="flex items-center gap-2 overflow-x-auto sm:flex-wrap pt-3 -mx-6 px-6 sm:mx-0 sm:px-0">
+              <button
+                v-for="child in activeChildren"
+                :key="child.id"
+                type="button"
+                :aria-pressed="activeCategory === child.slug"
+                :class="chipClass(activeCategory === child.slug, true)"
+                @click="setCategory(child.slug)"
+              >{{ child.name }}</button>
+            </div>
+          </template>
+        </nav>
       </div>
     </section>
 
     <!-- Main Content Grid -->
-    <section class="section">
+    <section class="py-8 lg:py-10">
       <!-- `minmax(0,1fr)` chứ không `1fr`: một tiêu đề dài không có chỗ ngắt sẽ đẩy
            cột tin rộng hơn khung chứa nó và làm CẢ TRANG cuộn ngang được — `1fr` có
-           sàn là `auto`, tức là kích thước nội dung tối thiểu. -->
-      <div class="container grid grid-cols-1 gap-8 lg:grid-cols-[250px_minmax(0,1fr)] lg:gap-[34px]">
-        <!-- Filter Sidebar -->
-        <aside>
-          <div class="bg-white p-6 rounded-lg border border-[#E2E8DF] shadow-sm lg:sticky lg:top-[100px]">
-            <h4 class="text-[0.9rem] font-bold text-[#4A6741] mb-4 border-b-2 border-[#E2E8DF] pb-2">DANH MỤC TIN TỨC</h4>
-            <ul class="list-none flex flex-col gap-2 p-0 m-0">
-              <li>
-                <button
-                  :class="activeCategory === 'all' ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
-                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
-                  @click="setCategory('all')"
-                >Tất cả bản tin</button>
-              </li>
-              <li v-for="cat in rootCategories" :key="cat.id">
-                <button
-                  :class="activeCategory === cat.slug ? 'bg-[#F8FAF7] text-[#4A6741] !pl-[18px]' : 'text-[#4A5545]'"
-                  class="w-full text-left bg-transparent border-0 px-[14px] py-[10px] text-[0.9rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:bg-[#F8FAF7] hover:text-[#4A6741] hover:pl-[18px] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
-                  @click="setCategory(cat.slug)"
-                >{{ cat.name }}</button>
-                <ul v-if="childrenOf(cat.id).length" class="list-none flex flex-col gap-1 pl-3 mt-1 mb-1">
-                  <li v-for="child in childrenOf(cat.id)" :key="child.id">
-                    <button
-                      :class="activeCategory === child.slug ? 'text-[#4A6741] font-bold' : 'text-[#7A8675]'"
-                      class="w-full text-left bg-transparent border-0 px-[14px] py-[7px] text-[0.83rem] font-semibold rounded cursor-pointer transition-all duration-300 hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
-                      @click="setCategory(child.slug)"
-                    >— {{ child.name }}</button>
-                  </li>
-                </ul>
-              </li>
-            </ul>
-          </div>
-        </aside>
-
-        <!-- News List -->
-        <div class="flex flex-col gap-6">
-          <SectionBar icon="fa-solid fa-newspaper" title="Bản tin hoạt động" />
-
+           sàn là `auto`, tức là kích thước nội dung tối thiểu. Cột phải 320px khớp
+           cột phải của trang chi tiết bài viết, nên hai trang cùng một nhịp lưới. -->
+      <div class="container grid grid-cols-1 gap-8 lg:grid-cols-[minmax(0,1fr)_320px] lg:gap-[34px] lg:items-start">
+        <!-- News Column -->
+        <div class="flex flex-col gap-6 min-w-0">
+          <!-- Mỏ neo cho "đổi trang cuộn lên đầu danh sách" — `setPage` cuộn tới đây. -->
+          <div id="news-list-top" class="scroll-mt-[100px]"></div>
           <!-- Search result banner -->
           <div
             v-if="searchQuery"
@@ -66,30 +78,23 @@
             >✕ Bỏ tìm kiếm</button>
           </div>
 
-          <!-- Loading state — hình dạng khớp bố cục thật: một tin chủ đạo, một cột
-               tiêu đề bên cạnh, rồi lưới thẻ bên dưới. -->
+          <!-- Loading state — hình dạng khớp bố cục thật: một tin chủ đạo (ảnh trái +
+               nội dung phải), rồi lưới thẻ bên dưới. Cột phải "Đọc nhiều" có
+               skeleton riêng của nó trong aside. -->
           <div v-if="pending" role="status" aria-busy="true" class="flex flex-col gap-8">
             <span class="sr-only">Đang tải bản tin hoạt động</span>
-            <div aria-hidden="true" class="grid grid-cols-1 gap-6 lg:grid-cols-[1.55fr_minmax(0,1fr)]">
-              <div class="bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm animate-pulse motion-reduce:animate-none">
-                <div class="h-[240px] sm:h-[340px] bg-[#EEF2EC]"></div>
-                <div class="p-5 flex flex-col gap-3">
-                  <div class="h-3 w-32 bg-[#EEF2EC] rounded"></div>
-                  <div class="h-5 w-4/5 bg-[#EEF2EC] rounded"></div>
-                  <div class="h-3 w-full bg-[#EEF2EC] rounded"></div>
-                </div>
-              </div>
-              <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm p-5 flex flex-col gap-5 animate-pulse motion-reduce:animate-none">
-                <div v-for="n in 4" :key="n" class="flex flex-col gap-2">
-                  <div class="h-3 w-24 bg-[#EEF2EC] rounded"></div>
-                  <div class="h-4 w-full bg-[#EEF2EC] rounded"></div>
-                  <div class="h-4 w-2/3 bg-[#EEF2EC] rounded"></div>
-                </div>
+            <div aria-hidden="true" class="bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm flex flex-col sm:flex-row animate-pulse motion-reduce:animate-none">
+              <div class="sm:w-[44%] shrink-0 h-[220px] sm:h-[260px] bg-[#EEF2EC]"></div>
+              <div class="p-5 sm:p-6 flex flex-col gap-3 sm:w-[56%]">
+                <div class="h-3 w-32 bg-[#EEF2EC] rounded"></div>
+                <div class="h-5 w-4/5 bg-[#EEF2EC] rounded"></div>
+                <div class="h-3 w-full bg-[#EEF2EC] rounded"></div>
+                <div class="h-3 w-2/3 bg-[#EEF2EC] rounded"></div>
               </div>
             </div>
-            <div aria-hidden="true" class="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
-              <div v-for="n in 3" :key="n" class="bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm animate-pulse motion-reduce:animate-none">
-                <div class="h-[170px] bg-[#EEF2EC]"></div>
+            <div aria-hidden="true" class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+              <div v-for="n in 4" :key="n" class="bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm animate-pulse motion-reduce:animate-none">
+                <div class="aspect-video bg-[#EEF2EC]"></div>
                 <div class="p-4 flex flex-col gap-3">
                   <div class="h-3 w-24 bg-[#EEF2EC] rounded"></div>
                   <div class="h-4 w-3/4 bg-[#EEF2EC] rounded"></div>
@@ -120,100 +125,181 @@
           </div>
 
           <template v-else>
-            <!-- Khu tin chủ đạo: một tin lớn + cột tiêu đề bên phải. Đây là hình dạng
-                 mà `NewsBlock.vue` ở trang chủ đã dùng, nên cổng thông tin đọc như một
-                 tờ tin thay vì một danh sách phẳng. -->
-            <div class="grid grid-cols-1 gap-6 lg:grid-cols-[1.55fr_minmax(0,1fr)]">
-              <article v-if="featured" class="group bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm transition-all duration-300 hover:shadow-md hover:border-[#7CB342]">
-                <nuxt-link :to="`/news/${featured.slug}`" class="block no-underline">
-                  <div class="relative h-[240px] sm:h-[340px] overflow-hidden">
-                    <img
-                      :src="featured.thumbnailUrl || '/assets/hero_banner.jpg'"
-                      :alt="featured.title"
-                      class="w-full h-full object-cover transition-transform duration-[0.6s] ease-[cubic-bezier(0.165,0.84,0.44,1)] group-hover:scale-[1.03]"
-                      loading="lazy"
-                      decoding="async"
-                    />
-                    <div class="absolute inset-x-0 bottom-0 h-[70%] bg-[linear-gradient(to_top,rgba(16,28,16,0.94)_0%,rgba(16,28,16,0.45)_58%,rgba(16,28,16,0)_100%)]"></div>
-                    <div class="absolute inset-x-0 bottom-0 p-5 sm:p-6 text-white">
-                      <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mb-2">
-                        <span class="inline-block bg-[#7CB342] text-white px-2 py-[3px] text-[0.65rem] font-extrabold rounded-sm uppercase tracking-[0.4px]">Tin nổi bật</span>
-                        <span v-if="featured.categoryName" class="text-[0.74rem] font-semibold opacity-90">{{ featured.categoryName }}</span>
-                        <span class="text-[0.74rem] opacity-85">{{ formatDate(featured) }}</span>
-                      </div>
-                      <h3 class="text-[1.2rem] sm:text-[1.45rem] font-extrabold leading-[1.3] mb-2 text-white transition-colors duration-300 group-hover:text-[#c5e1a5]">{{ featured.title }}</h3>
-                      <p v-if="featured.excerpt" class="text-[0.86rem] leading-[1.55] opacity-[0.88] m-0 line-clamp-2">{{ featured.excerpt }}</p>
-                    </div>
-                  </div>
-                </nuxt-link>
-              </article>
-
-              <!-- Cột tiêu đề: không ảnh, chỉ chữ. Đây là phần làm nên nhịp của một
-                   trang tin — mắt đọc một tin lớn rồi quét nhanh các tin kế tiếp. -->
-              <div v-if="headlines.length" class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm px-5 py-2">
-                <h3 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">Tin tiếp theo</h3>
-                <ul class="list-none p-0 m-0">
-                  <li
-                    v-for="item in headlines"
-                    :key="item.id"
-                    class="flex gap-3 py-[14px] border-b border-[#E2E8DF] last:border-b-0"
-                  >
-                    <span class="w-[6px] h-[6px] rounded-full bg-[#7CB342] mt-2 shrink-0" aria-hidden="true"></span>
-                    <div class="min-w-0">
-                      <h4 class="text-[0.9rem] font-bold leading-[1.4] m-0 mb-[6px]">
-                        <nuxt-link
-                          :to="`/news/${item.slug}`"
-                          class="text-[#1E251C] no-underline transition-colors duration-300 hover:text-[#4A6741]"
-                        >{{ item.title }}</nuxt-link>
-                      </h4>
-                      <span class="text-[0.72rem] text-[#7A8675] font-semibold">
-                        {{ formatDate(item) }}<template v-if="item.categoryName"> • {{ item.categoryName }}</template>
-                      </span>
-                    </div>
-                  </li>
-                </ul>
+            <!-- Tin chủ đạo: bài lớn dùng bố cục editorial — ảnh trái, nội dung
+                 phải trên nền trắng — thay vì chữ trắng chèn trên gradient tối.
+                 Cùng hình dạng mà `NewsBlock.vue` ở trang chủ đã dùng. Từng có cột
+                 "Tin tiếp theo" bên cạnh nhưng đã xoá: nhịp quét tiêu đề bị trùng lặp
+                 với cả lưới "Các bản tin khác" bên dưới, và cột phải "Đọc nhiều" đã
+                 đảm nhiệm việc liệt kê tin kế tiếp. -->
+            <article v-if="featured" class="group bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm flex flex-col sm:flex-row transition-all duration-300 hover:shadow-md hover:border-[#7CB342]">
+              <nuxt-link :to="`/news/${featured.slug}`" class="block overflow-hidden sm:w-[44%] shrink-0 no-underline">
+                <img
+                  :src="featured.thumbnailUrl || '/assets/hero_banner.jpg'"
+                  :alt="featured.title"
+                  class="w-full h-[220px] sm:h-full object-cover transition-transform duration-[0.6s] ease-[cubic-bezier(0.165,0.84,0.44,1)] group-hover:scale-[1.04]"
+                  loading="lazy"
+                  decoding="async"
+                />
+              </nuxt-link>
+              <div class="p-5 sm:p-6 flex flex-col justify-center sm:w-[56%] min-w-0">
+                <div class="flex flex-wrap items-center gap-x-3 gap-y-1 mb-3">
+                  <span class="inline-block bg-[#7CB342] text-white px-2 py-[3px] text-[0.65rem] font-extrabold rounded-sm uppercase tracking-[0.4px]">Tin nổi bật</span>
+                  <span v-if="featured.categoryName" class="text-[0.74rem] font-semibold text-[#4A6741]">{{ featured.categoryName }}</span>
+                  <span class="text-[0.74rem] text-[#7A8675]">{{ formatDate(featured) }}</span>
+                </div>
+                <h2 class="text-[1.25rem] sm:text-[1.5rem] font-extrabold leading-[1.3] mb-3 m-0">
+                  <nuxt-link
+                    :to="`/news/${featured.slug}`"
+                    class="text-[#1E251C] no-underline transition-colors duration-300 hover:text-[#4A6741]"
+                  >{{ featured.title }}</nuxt-link>
+                </h2>
+                <p v-if="featured.excerpt" class="text-[0.9rem] text-[#4A5545] leading-[1.6] m-0 line-clamp-3">{{ featured.excerpt }}</p>
+                <nuxt-link
+                  :to="`/news/${featured.slug}`"
+                  class="inline-flex items-center gap-1.5 mt-4 text-[0.84rem] font-bold text-[#4A6741] no-underline transition-colors duration-300 hover:text-[#385130] w-fit"
+                >Đọc tiếp <i class="fa-solid fa-arrow-right text-[0.72rem]" aria-hidden="true"></i></nuxt-link>
               </div>
-            </div>
+            </article>
 
-            <!-- Lưới tin còn lại -->
+            <!-- Lưới tin còn lại — bốn bài trở đi xếp lưới (đường 2→3→4 cột), tham chiếu
+                 bố cục danh mục của cand.vn: ảnh tỉ lệ 16:9 phía trên, tiêu đề,
+                 thời gian, mô tả ngắn phía dưới. `minmax(0,1fr)` (không phải `1fr`
+                 trần) giữ tiêu đề dài không đẩy CẢ TRANG cuộn ngang. -->
             <template v-if="rest.length">
-              <h3 class="text-[0.85rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] border-b-2 border-[#E2E8DF] pb-2 m-0">Các bản tin khác</h3>
-              <div class="grid grid-cols-1 gap-6 sm:grid-cols-2 xl:grid-cols-3">
+              <h2 class="text-[0.85rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] border-b-2 border-[#7CB342] pb-2 m-0">Các bản tin khác</h2>
+              <div class="grid grid-cols-1 gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
                 <article
                   v-for="item in rest"
                   :key="item.id"
                   class="group bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm flex flex-col transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-[#7CB342]"
                 >
-                  <nuxt-link :to="`/news/${item.slug}`" class="block h-[170px] overflow-hidden">
+                  <nuxt-link :to="`/news/${item.slug}`" class="block overflow-hidden">
                     <img
                       :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
                       :alt="item.title"
-                      class="w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+                      class="aspect-video w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
                       loading="lazy"
                       decoding="async"
                     />
                   </nuxt-link>
                   <div class="p-4 flex flex-col gap-2 flex-1">
-                    <span class="text-[0.75rem] text-[#7A8675] font-semibold">
-                      {{ formatDate(item) }}<template v-if="item.categoryName"> • {{ item.categoryName }}</template>
-                    </span>
-                    <h4 class="text-[1rem] font-bold leading-[1.4] m-0">
+                    <span v-if="item.categoryName" class="inline-block self-start bg-[#EDF3EA] text-[#4A6741] text-[0.68rem] font-bold uppercase tracking-[0.3px] px-2 py-[3px] rounded-sm">{{ item.categoryName }}</span>
+                    <span class="text-[0.75rem] text-[#7A8675] font-semibold">{{ formatDate(item) }}</span>
+                    <h3 class="text-[0.95rem] font-bold leading-[1.4] m-0">
                       <nuxt-link
                         :to="`/news/${item.slug}`"
                         class="no-underline text-[#1E251C] transition-colors duration-300 hover:text-[#4A6741]"
                       >{{ item.title }}</nuxt-link>
-                    </h4>
-                    <p v-if="item.excerpt" class="text-[0.85rem] text-[#4A5545] leading-[1.55] m-0 line-clamp-3">{{ item.excerpt }}</p>
-                    <nuxt-link
-                      :to="`/news/${item.slug}`"
-                      class="text-[#7CB342] font-bold no-underline text-[0.85rem] mt-auto pt-1 self-start"
-                    >Xem chi tiết &rarr;</nuxt-link>
+                    </h3>
+                    <p v-if="item.excerpt" class="text-[0.85rem] text-[#4A5545] leading-[1.55] m-0 line-clamp-2">{{ item.excerpt }}</p>
                   </div>
                 </article>
               </div>
             </template>
+
+            <!-- Phân trang — chỉ hiện khi thực sự có nhiều hơn 1 trang. 1,085 bài
+                 news / 20 mỗi trang = ~55 trang, nên đây là điều kiện tiên quyết để
+                 khách tới được bài cũ. Dải số trang dùng `pageRange` (đầu/cuối + ±2)
+                 với dấu "…" giữa các khoảng trống. -->
+            <nav
+              v-if="pagination.totalPages > 1"
+              :aria-label="'Phân trang bản tin'"
+              class="flex items-center justify-center gap-2 mt-8 flex-wrap"
+            >
+              <button
+                type="button"
+                class="inline-flex items-center justify-center w-9 h-9 rounded-md border border-[#E2E8DF] text-[#4A5545] text-[0.82rem] font-bold cursor-pointer transition-all duration-300 hover:border-[#7CB342] hover:text-[#4A6741] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[#E2E8DF] disabled:hover:text-[#4A5545]"
+                :disabled="pagination.page <= 1"
+                @click="setPage(pagination.page - 1)"
+                aria-label="Trang trước"
+              >&larr;</button>
+
+              <template v-for="(p, i) in pageRange" :key="p">
+                <!-- Dấu "…" giữa 1 và dải giữa, hoặc giữa dải giữa và cuối. `i > 0`
+                     để tránh "…" ngay sau 1 khi dải bắt đầu từ 2. -->
+                <span
+                  v-if="i > 0 && p - (pageRange[i - 1] ?? p) > 1"
+                  class="text-[#7A8675] text-[0.85rem] px-1 select-none"
+                  aria-hidden="true"
+                >&hellip;</span>
+                <button
+                  type="button"
+                  :aria-current="pagination.page === p ? 'page' : undefined"
+                  :class="[
+                    'inline-flex items-center justify-center min-w-9 h-9 px-2 rounded-md text-[0.82rem] font-bold cursor-pointer transition-all duration-300',
+                    pagination.page === p
+                      ? 'bg-[#7CB342] text-white border border-[#7CB342]'
+                      : 'border border-[#E2E8DF] text-[#4A5545] hover:border-[#7CB342] hover:text-[#4A6741]'
+                  ]"
+                  @click="setPage(p)"
+                >{{ p }}</button>
+              </template>
+
+              <button
+                type="button"
+                class="inline-flex items-center justify-center w-9 h-9 rounded-md border border-[#E2E8DF] text-[#4A5545] text-[0.82rem] font-bold cursor-pointer transition-all duration-300 hover:border-[#7CB342] hover:text-[#4A6741] disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:border-[#E2E8DF] disabled:hover:text-[#4A5545]"
+                :disabled="pagination.page >= pagination.totalPages"
+                @click="setPage(pagination.page + 1)"
+                aria-label="Trang tiếp"
+              >&rarr;</button>
+            </nav>
           </template>
         </div>
+
+        <!-- Right Rail — kiểu cand.vn: "Đọc nhiều" đánh số + banner hỗ trợ.
+             `lg:items-start` ở lưới cha là điều kiện tiên quyết của `lg:sticky`:
+             mặc định `stretch` kéo ô cao bằng cả cột tin, và sticky trong một ô cao
+             bằng cả vùng cuộn thì không bao giờ dính. -->
+        <aside class="flex flex-col gap-6 min-w-0 lg:sticky lg:top-[100px]">
+          <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm px-5 py-2">
+            <h2 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">Đọc nhiều</h2>
+
+            <div v-if="mostReadPending" role="status" aria-busy="true" class="py-2">
+              <span class="sr-only">Đang tải tin đọc nhiều</span>
+              <div aria-hidden="true" class="flex flex-col">
+                <div v-for="n in 6" :key="n" class="flex gap-3 py-3 border-b border-[#E2E8DF] last:border-b-0">
+                  <div class="h-6 w-6 bg-[#EEF2EC] rounded shrink-0 animate-pulse motion-reduce:animate-none"></div>
+                  <div class="flex-1 flex flex-col gap-1.5 pt-0.5">
+                    <div class="h-3.5 w-full bg-[#EEF2EC] rounded animate-pulse motion-reduce:animate-none"></div>
+                    <div class="h-3.5 w-2/3 bg-[#EEF2EC] rounded animate-pulse motion-reduce:animate-none"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <ul v-else-if="mostRead.length" class="list-none p-0 m-0">
+              <li
+                v-for="(item, i) in mostRead"
+                :key="item.id"
+                class="flex gap-3 py-[13px] border-b border-[#E2E8DF] last:border-b-0"
+              >
+                <span class="w-7 shrink-0 text-right text-[1.45rem] leading-[1.15] font-extrabold" :class="i < 3 ? 'text-[#7CB342]' : 'text-[#C7D2C2]'">{{ i + 1 }}</span>
+                <h3 class="text-[0.9rem] font-bold leading-[1.4] m-0 min-w-0">
+                  <nuxt-link
+                    :to="`/news/${item.slug}`"
+                    class="text-[#1E251C] no-underline transition-colors duration-300 hover:text-[#4A6741] line-clamp-2"
+                  >{{ item.title }}</nuxt-link>
+                </h3>
+              </li>
+            </ul>
+
+            <p v-else class="text-[0.85rem] text-[#7A8675] italic py-4 m-0">Chưa có dữ liệu lượt xem.</p>
+          </div>
+
+          <!-- Banner hotline — cùng hình dạng banner bên phải của `NewsBlock.vue`
+               ở trang chủ, nên hai trang nói cùng một điều về nơi được hỗ trợ. -->
+          <div class="relative rounded-lg overflow-hidden shadow-sm text-white bg-[url('/assets/hero_banner.jpg')] bg-center bg-cover">
+            <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)]" aria-hidden="true"></div>
+            <div class="relative p-6">
+              <h3 class="text-[1rem] font-extrabold uppercase m-0 mb-2">Hotline hỗ trợ</h3>
+              <p class="text-[0.78rem] leading-[1.5] m-0 mb-4 opacity-90">Tư vấn thủ tục và hỗ trợ người hoàn lương — mọi lúc, mọi nơi.</p>
+              <a
+                href="tel:0903480985"
+                class="inline-flex items-center gap-2 bg-[#7CB342] text-white px-[14px] py-[6px] text-[0.9rem] font-extrabold rounded no-underline transition-colors duration-300 hover:bg-[#689F38]"
+              ><i class="fa-solid fa-phone" aria-hidden="true"></i>0903.480.985</a>
+            </div>
+          </div>
+        </aside>
       </div>
     </section>
   </div>
@@ -232,13 +318,17 @@ useSeoMeta({
 const route = useRoute()
 const activeCategory = ref(route.query.cat ? String(route.query.cat) : 'all')
 const searchQuery = ref(route.query.q ? String(route.query.q) : '')
+// Số trang đọc từ URL — chia sẻ được, F5 không mất. `page=abc`/`page=0` lùi về 1
+// qua `finitePositive` phía server; client chỉ hiển thị trang hợp lệ.
+const PER_PAGE = 20
+const currentPage = ref(Math.max(1, Math.floor(Number(route.query.page) || 1)) || 1)
 
-// Category sidebar — DB-driven via /api/public/categories?type=news
-// Không `await`: hai lượt fetch của trang này độc lập với nhau, nên `await` ở đây
-// chỉ có tác dụng bắt lượt fetch bài viết bên dưới xếp hàng đợi danh mục xong
-// mới bắt đầu. Bỏ đi thì cả hai khởi động cùng lúc, thời gian chờ là lượt chậm
-// hơn chứ không phải tổng hai lượt.
-const { data: catData } = useFetch('/api/public/categories', {
+// Category chips — DB-driven via /api/public/categories?type=news
+// Không `await` ở lượt nào: trang này có BA lượt fetch độc lập với nhau (danh mục,
+// danh sách bài, tin đọc nhiều), nên `await` chỉ có tác dụng bắt ba lượt xếp hàng
+// đợi nhau. Bỏ đi thì cả ba khởi động cùng lúc, thời gian chờ là lượt chậm hơn
+// chứ không phải tổng ba lượt.
+const { data: catData, pending: catPending } = useFetch('/api/public/categories', {
   query: { type: 'news' },
   lazy: true,
   default: () => ({ ok: true, items: [] })
@@ -247,12 +337,43 @@ const allCategories = computed(() => catData.value?.items || [])
 const rootCategories = computed(() => allCategories.value.filter((c) => c.parentId === null))
 const childrenOf = (parentId: number) => allCategories.value.filter((c) => c.parentId === parentId)
 
-// Article list — DB-driven, refetches reactively when category/search change
+// Mục đang chọn: trả về chính nó nếu là danh mục gốc, hoặc cha của nó nếu là mục
+// con — để hàng chips thứ hai luôn là các mục con CÙA một gốc, bất kể người dùng
+// đang đứng ở gốc hay ở con.
+const activeRoot = computed(() => {
+  if (activeCategory.value === 'all') return null
+  const direct = allCategories.value.find((c) => c.slug === activeCategory.value)
+  if (!direct) return null
+  if (direct.parentId === null) return direct
+  return allCategories.value.find((c) => c.id === direct.parentId) ?? null
+})
+const activeChildren = computed(() => (activeRoot.value ? childrenOf(activeRoot.value.id) : []))
+
+// Tiêu đề trang đổi theo chuyên mục đang chọn — cùng hành vi trang chuyên đề
+// cand.vn. Slug lạ (liên kết cũ, gõ tay) lùi về tiêu đề mặc định thay vì hiện trống.
+const pageTitle = computed(() => {
+  if (activeCategory.value === 'all') return 'Bản tin hoạt động'
+  return allCategories.value.find((c) => c.slug === activeCategory.value)?.name ?? 'Bản tin hoạt động'
+})
+
+// Chip class dùng chuỗi literal thay vì nội suy `bg-${color}`: Tailwind v3 quét
+// VĂN BẢN mã nguồn lúc build, một class nội suy sẽ không bao giờ được sinh CSS.
+// Chips nằm trên header nền sáng nên inactive dùng viền xám + chữ đậm; active
+// nền accent xanh lá để nổi mà không cần báo hiệu quá gắt.
+const chipClass = (active: boolean, small = false) => [
+  'shrink-0 whitespace-nowrap rounded-full border cursor-pointer transition-all duration-300 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]',
+  small ? 'px-3 py-[5px] text-[0.78rem] font-semibold' : 'px-4 py-[7px] text-[0.82rem] font-semibold',
+  active
+    ? 'bg-[#7CB342] border-[#7CB342] text-white'
+    : 'bg-white border-[#E2E8DF] text-[#4A5545] hover:border-[#7CB342] hover:text-[#4A6741] hover:bg-[#EDF3EA]',
+]
+
+// Article list — DB-driven, refetches reactively when category/search/page change
 const articlesQuery = computed(() => {
   // Khai tường minh: object literal suy ra `{type,limit}` nên hai phép gán bên
   // dưới không biên dịch được. Tuỳ chọn để khoá được bỏ hẳn khi không dùng.
-  const q: { type: string; limit: number; categorySlug?: string; search?: string } =
-    { type: 'news', limit: 20 }
+  const q: { type: string; limit: number; page: number; categorySlug?: string; search?: string } =
+    { type: 'news', limit: PER_PAGE, page: currentPage.value }
   if (activeCategory.value !== 'all') q.categorySlug = activeCategory.value
   if (searchQuery.value) q.search = searchQuery.value
   return q
@@ -260,36 +381,79 @@ const articlesQuery = computed(() => {
 const { data: articlesData, pending, error, refresh } = useFetch('/api/public/articles', {
   query: articlesQuery,
   lazy: true,
-  default: () => ({ ok: true, articles: [], pagination: {} })
+  default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 } })
 })
 const newsList = computed(() => articlesData.value?.articles || [])
 const loadError = computed(() => !!error.value || articlesData.value?.ok === false)
+const pagination = computed(() => articlesData.value?.pagination || { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 })
 
-// Ba khu của bố cục tin, cắt từ MỘT danh sách đã tải. Cố ý không gọi thêm lượt
+// "Đọc nhiều" — xếp theo tổng lượt xem hiển thị (thật + ảo) qua `sort=views`.
+// Cố ý KHÔNG lọc theo `?cat=`: khối này trả lời "cổng đang đọc gì", không phải
+// "chuyên mục này đang đọc gì" — và giữ query tĩnh thì bấm chips không kích thêm
+// một lượt fetch nào, cột phải đứng yên trong khi danh sách chính tải lại.
+const { data: mostReadData, pending: mostReadPending } = useFetch('/api/public/articles', {
+  query: { type: 'news', limit: 6, sort: 'views' },
+  lazy: true,
+  default: () => ({ ok: true, articles: [], pagination: {} })
+})
+const mostRead = computed(() => mostReadData.value?.articles || [])
+
+// Hai khu của bố cục tin, cắt từ MỘT danh sách đã tải. Cố ý không gọi thêm lượt
 // fetch nào: `/api/public/articles` đã sắp theo `publishedAt` giảm dần, nên "tin
 // chủ đạo" là tin mới nhất — một truy vấn thứ hai cho cùng dữ liệu là một lượt đi
-// mạng nữa và một cơ hội để hai khu nói hai điều khác nhau.
+// mạng nữa và một cơ hội để hai khu nói hai điều khác nhau. Từng có ba khu (tin
+// chủ đạo + cột "Tin tiếp theo" + lưới còn lại); cột "Tin tiếp theo" đã xoá nên
+// bốn tin kế tiếp gộp vào lưới "Các bản tin khác" bên dưới.
 const featured = computed(() => newsList.value[0] ?? null)
-const headlines = computed(() => newsList.value.slice(1, 5))
-const rest = computed(() => newsList.value.slice(5))
+const rest = computed(() => newsList.value.slice(1))
 
 const formatDate = (item: { publishedAt?: string | null; createdAt?: string | null }) =>
   formatDateVN(item.publishedAt || item.createdAt)
 
 const syncUrl = () => {
-  const query: { cat?: string; q?: string } = {}
+  const query: { cat?: string; q?: string; page?: number } = {}
   if (activeCategory.value !== 'all') query.cat = activeCategory.value
   if (searchQuery.value) query.q = searchQuery.value
+  if (currentPage.value > 1) query.page = currentPage.value
   navigateTo({ path: '/news', query })
 }
 
 const setCategory = (cat: string) => {
   activeCategory.value = cat
+  // Đổi chuyên mục = đổi tập bài, nên phải về trang 1 — trang 5 của chuyên mục
+  // A không nhất quyết là trang 5 của chuyên mục B.
+  currentPage.value = 1
   syncUrl()
 }
 
 const clearSearch = () => {
   searchQuery.value = ''
+  currentPage.value = 1
   syncUrl()
 }
+
+// Đổi trang: cuộn lên đầu danh sách rồi cập nhật URL. Không gọi navigateTo cấp
+// trang vì cột phải "Đọc nhiều" phải đứng yên — `navigateTo` giữ query còn
+// `pageToTop` cuộn mượt.
+const setPage = (page: number) => {
+  if (page < 1 || page > pagination.value.totalPages) return
+  currentPage.value = page
+  syncUrl()
+  // Cuộn lên đầu khối tin — `featured` là mỏ neo gần nhất.
+  if (import.meta.client) {
+    const el = document.getElementById('news-list-top')
+    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
+}
+
+// Dải số trang hiển thị trên thanh phân trang — giới hạn ±2 quanh trang hiện
+// tại + luôn có đầu/cuối, tránh thanh dài 55 nút khi DB có 1,085 bài.
+const pageRange = computed(() => {
+  const total = pagination.value.totalPages
+  const cur = pagination.value.page
+  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
+  const pages = new Set([1, total, cur, cur - 1, cur + 1])
+  for (const p of pages) if (p < 1 || p > total) pages.delete(p)
+  return [...pages].sort((a, b) => a - b)
+})
 </script>
