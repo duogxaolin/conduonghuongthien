@@ -17,7 +17,7 @@
       <div class="flex-shrink-0 bg-[#1e4620] px-4 pt-[calc(env(safe-area-inset-top,0px)+12px)] pb-3 md:pt-3 md:rounded-t-2xl">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <button class="md:hidden w-8 h-8 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[0.9rem] border-none cursor-pointer transition-all active:scale-90" @click="closeChatbot" aria-label="Quay lại">
+            <button class="md:hidden w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[1rem] border-none cursor-pointer transition-all active:scale-90" @click="closeChatbot" aria-label="Quay lại">
               <i class="fa-solid fa-arrow-left"></i>
             </button>
             <div class="w-10 h-10 rounded-full bg-white/15 border-2 border-white/30 flex items-center justify-center flex-shrink-0">
@@ -31,18 +31,18 @@
               </p>
             </div>
           </div>
-          <div class="flex items-center gap-1.5">
+          <div class="flex items-center gap-2 md:gap-1.5">
             <button
-              class="w-8 h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90"
+              class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90"
               @click="isConversationListOpen = !isConversationListOpen"
               :aria-expanded="isConversationListOpen"
               title="Danh sách cuộc trò chuyện"
               aria-label="Danh sách cuộc trò chuyện"
             >
-              <i class="fa-solid fa-clock-rotate-left text-[0.8rem]"></i>
+              <i class="fa-solid fa-clock-rotate-left text-[0.9rem] md:text-[0.8rem]"></i>
             </button>
-            <button class="w-8 h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="clearChatHistory" title="Xóa lịch sử" aria-label="Xóa lịch sử">
-              <i class="fa-solid fa-broom text-[0.8rem]"></i>
+            <button class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="clearChatHistory" title="Xóa lịch sử" aria-label="Xóa lịch sử">
+              <i class="fa-solid fa-broom text-[0.9rem] md:text-[0.8rem]"></i>
             </button>
             <!-- Expand: desktop/iPad only. The full page is a two-column layout
                  that has no room to be useful on a phone. -->

@@ -120,7 +120,7 @@ function fromInitTs(): Map<string, TableShape> {
   const source = [
     readFileSync(path.join(root, 'server/db/init.ts'), 'utf8'),
     readFileSync(path.join(root, 'server/db/migrations-additive.ts'), 'utf8'),
-  ].join('\n')
+  ].join('\n').replace(/\r\n/g, '\n')
   const out = new Map<string, TableShape>()
 
   /** `\`col\` TYPE ...rest` → the shape, or null if the line is not a column. */

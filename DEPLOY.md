@@ -171,6 +171,19 @@ Cài mới hoàn toàn thì bỏ qua bước này.
 
 ---
 
+## Bước 4c: Đồng bộ ảnh di trú từ cổng cũ (nếu dùng CSDL bài viết migrate)
+
+Nếu triển khai cùng CSDL chứa 1.132 bài viết đã migrate từ cổng cũ ASP.NET, chạy lệnh sau để đồng bộ thư mục ảnh `public/uploads/migrated/` (~638 MB, 3.212 file) vào Docker volume:
+
+```bash
+bash scripts/copy-migrated-uploads-to-docker.sh
+```
+
+*(Chi tiết danh sách các bài viết còn thiếu file ảnh nguồn xem tại `docs/migration-unresolved-images-report.md`)*
+
+
+---
+
 ## Bước 5: Reverse Proxy (HTTPS)
 
 ### Dùng Caddy (đơn giản nhất)
