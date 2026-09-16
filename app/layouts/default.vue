@@ -51,9 +51,23 @@
       <div class="border-b border-[#E2E8DF] bg-white">
         <div class="container flex justify-between items-center h-16 lg:h-20">
           <!-- Logo Area -->
-          <nuxt-link to="/" class="flex items-center gap-[14px] no-underline">
-            <div>
-              <img class="h-9 lg:h-[50px] w-auto object-contain" src="/Logo.png" alt="Logo Con Đường Hướng Thiện" />
+          <nuxt-link to="/" class="flex items-center gap-3 lg:gap-3.5 no-underline">
+            <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-2 lg:gap-2.5 shrink-0">
+              <img
+                v-if="siteMainLogo"
+                class="w-auto object-contain shrink-0"
+                :class="siteLogo ? 'h-10 lg:h-[56px]' : 'h-9 lg:h-[50px]'"
+                :src="siteMainLogo"
+                alt="Logo cơ quan chủ quản"
+              />
+              <span v-if="siteMainLogo && siteLogo" class="h-6 lg:h-8 w-px bg-[#D0DDD1] shrink-0" aria-hidden="true"></span>
+              <img
+                v-if="siteLogo"
+                class="w-auto object-contain shrink-0 transition-all"
+                :class="siteMainLogo ? 'h-7 lg:h-[38px]' : 'h-9 lg:h-[50px]'"
+                :src="siteLogo"
+                alt="Logo Con Đường Hướng Thiện"
+              />
             </div>
             <div>
               <h1 class="text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.5px] leading-[1.2]">CON ĐƯỜNG HƯỚNG THIỆN</h1>
@@ -64,7 +78,7 @@
           <!-- Top Actions -->
           <div class="flex items-center gap-3">
             <button
-              class="bg-[#F8FAF7] border border-[#E2E8DF] w-[38px] h-[38px] rounded-full flex items-center justify-center cursor-pointer text-[0.95rem] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
+              class="bg-[#F8FAF7] border border-[#E2E8DF] w-11 h-11 rounded-full flex items-center justify-center cursor-pointer text-[0.95rem] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
               :class="{ 'bg-[#4A6741] text-white border-[#4A6741]': isSearchActive }"
               @click="toggleSearch"
               :aria-label="isSearchActive ? t('search_close') : t('search_open')"
@@ -170,11 +184,27 @@
       >
         <!-- Drawer Header -->
         <div class="flex items-center justify-between px-5 py-[18px] bg-gradient-to-br from-[#1e4620] to-[#133215] text-white border-b border-white/10 z-[2] flex-shrink-0">
-          <div class="flex items-center gap-3">
-            <img src="/Logo.png" alt="Logo Con Đường Hướng Thiện" class="h-9 w-auto object-contain drop-shadow-md" />
-            <div class="flex flex-col">
-              <span class="text-[0.85rem] font-extrabold tracking-[0.4px] text-white leading-[1.2]">CON ĐƯỜNG HƯỚNG THIỆN</span>
-              <span class="text-[0.65rem] text-white/75 font-medium mt-0.5">Cổng thông tin điện tử C11 - Bộ Công an</span>
+          <div class="flex items-center gap-2.5 min-w-0">
+            <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-2 shrink-0">
+              <img
+                v-if="siteMainLogo"
+                :src="siteMainLogo"
+                alt="Logo cơ quan chủ quản"
+                class="w-auto object-contain drop-shadow-md"
+                :class="siteLogo ? 'h-10' : 'h-9'"
+              />
+              <span v-if="siteMainLogo && siteLogo" class="h-6 w-px bg-white/25" aria-hidden="true"></span>
+              <img
+                v-if="siteLogo"
+                :src="siteLogo"
+                alt="Logo Con Đường Hướng Thiện"
+                class="w-auto object-contain drop-shadow-md"
+                :class="siteMainLogo ? 'h-7' : 'h-9'"
+              />
+            </div>
+            <div class="flex flex-col min-w-0">
+              <span class="text-[0.85rem] font-extrabold tracking-[0.4px] text-white leading-[1.2] truncate">CON ĐƯỜNG HƯỚNG THIỆN</span>
+              <span class="text-[0.65rem] text-white/75 font-medium mt-0.5 truncate">Cổng thông tin điện tử C11 - Bộ Công an</span>
             </div>
           </div>
           <button
@@ -432,9 +462,25 @@
     <footer class="bg-[#385130] text-white/80 pt-20 border-t-4 border-[#7CB342] md:pb-0 pb-20">
       <div class="container grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_2fr] gap-8 lg:gap-10 mb-12 lg:mb-16">
         <div>
-          <div class="flex items-center gap-3 mb-5">
-            <img src="/Logo.png" alt="Logo Con Đường Hướng Thiện" class="h-9 w-auto object-contain" />
-            <span class="text-white font-extrabold text-[1.2rem] tracking-[0.5px]">CON ĐƯỜNG HƯỚNG THIỆN</span>
+          <div class="flex items-center gap-3.5 mb-5 flex-wrap">
+            <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-3 shrink-0">
+              <img
+                v-if="siteMainLogo"
+                :src="siteMainLogo"
+                alt="Logo cơ quan chủ quản"
+                class="w-auto object-contain"
+                :class="siteLogo ? 'h-16 md:h-[72px]' : 'h-14 md:h-16'"
+              />
+              <span v-if="siteMainLogo && siteLogo" class="h-12 md:h-14 w-px bg-white/25" aria-hidden="true"></span>
+              <img
+                v-if="siteLogo"
+                :src="siteLogo"
+                alt="Logo Con Đường Hướng Thiện"
+                class="w-auto object-contain"
+                :class="siteMainLogo ? 'h-12 md:h-[52px]' : 'h-14 md:h-16'"
+              />
+            </div>
+            <span class="text-white font-extrabold text-[1.2rem] md:text-[1.35rem] tracking-[0.5px]">CON ĐƯỜNG HƯỚNG THIỆN</span>
           </div>
           <p class="text-[0.9rem] leading-relaxed">
             Trang thông tin điện tử về tái hòa nhập cộng đồng của Bộ Công an, do Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) quản lý và vận hành.
@@ -711,6 +757,12 @@ const { data: settingsData } = await useFetch('/api/public/settings', {
 // effect on the live site. The literals are only a fallback for the very first
 // render before settings exist.
 const sitePublicSettings = computed(() => settingsData.value?.settings || {})
+const siteLogo = computed(() => {
+  const val = sitePublicSettings.value.logo_url
+  if (val === '') return ''
+  return val?.trim() || '/Logo.png'
+})
+const siteMainLogo = computed(() => sitePublicSettings.value.main_logo_url?.trim() || '')
 const siteHotline = computed(() => sitePublicSettings.value.hotline?.trim() || '0903.480.985')
 const siteEmail = computed(() => sitePublicSettings.value.email?.trim() || 'contact@conduonghuongthien.com.vn')
 const siteAddress = computed(() => sitePublicSettings.value.address?.trim() || 'Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội')

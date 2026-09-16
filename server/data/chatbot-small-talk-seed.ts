@@ -466,7 +466,7 @@ export const CHATBOT_SMALL_TALK_SEED: SmallTalkSeedEntry[] = [
     category: 'navigation',
     question: 'Chỉnh cỡ chữ ở đâu',
     patterns: ['chinh co chu o dau', 'phong to chu the nao', 'tang co chu o dau', 'thay doi co chu cho nao'],
-    answer: 'Dạ, anh/chị dùng các nút A-, A, A+ ở thanh trên cùng của Cổng thông tin để điều chỉnh cỡ chữ cho dễ đọc ạ.',
+    answer: 'Dạ, anh/chị có thể sử dụng tính năng thu phóng của trình duyệt (phím tắt Ctrl + / Ctrl - trên máy tính hoặc cài đặt cỡ chữ trong trình duyệt điện thoại) để điều chỉnh kích thước cho dễ đọc ạ.',
   },
   {
     category: 'navigation',

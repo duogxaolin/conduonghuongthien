@@ -189,6 +189,7 @@ async function seed() {
     { key: 'email',            value: 'contact@conduonghuongthien.com.vn',                     group: 'contact' },
     { key: 'address',          value: 'Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội',       group: 'contact' },
     { key: 'facebook_url',     value: 'https://facebook.com',                                  group: 'contact' },
+    { key: 'main_logo_url',    value: '',                                                      group: 'general' },
     { key: 'logo_url',         value: '/Logo.png',                                             group: 'general' },
     { key: 'hero_banner_url',  value: '/assets/hero_banner.jpg',                              group: 'general' },
     // ⚠️ `favicon_url` CỐ Ý KHÔNG có hàng seed, và một hàng trỏ tới

@@ -11,6 +11,7 @@ const settings = reactive({
   email: 'contact@conduonghuongthien.com.vn',
   address: 'Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội',
   facebook_url: 'https://facebook.com',
+  main_logo_url: '',
   logo_url: '/Logo.png',
   hero_banner_url: '/assets/hero_banner.jpg',
   favicon_url: '/favicon-32.png',
@@ -60,7 +61,7 @@ const handleSave = async () => {
  * thứ tư sẽ sửa đúng một chỗ, và nút còn lại vẫn biên dịch được — nó chỉ đơn giản
  * là không bao giờ ghi vào đúng khoá.
  */
-type ImageField = 'logo_url' | 'hero_banner_url' | 'favicon_url'
+type ImageField = 'logo_url' | 'main_logo_url' | 'hero_banner_url' | 'favicon_url'
 
 const pickImage = (field: ImageField) => {
   openPicker({ onSelect: (media) => { settings[field] = media.url } })
@@ -222,9 +223,30 @@ onMounted(() => { fetchSettings() })
       <div class="bg-white rounded-xl border border-[#e2ece3] p-6 md:col-span-2">
         <h3 class="text-[1.05rem] font-bold text-[#122815] m-0 mb-4">Hình ảnh & Logo</h3>
         <div class="flex flex-col gap-5">
-          <!-- Logo -->
+          <!-- Main Logo (Đơn vị chủ quản) -->
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Logo Website</label>
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Logo Tổng Cục / Đơn Vị Chủ Quản (Main Logo)</label>
+            <p class="text-[0.72rem] text-[#667768] m-0">Hiển thị bên trái logo website tại Header và Footer để biểu thị cơ quan / tập đoàn chủ quản.</p>
+            <div class="flex gap-2 items-center flex-wrap">
+              <input type="text" v-model="settings.main_logo_url" placeholder="URL hoặc chọn từ thư viện" class="flex-1 min-w-0 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-[#c8d6c9] bg-[#f4f7f4] text-[#1e4620] rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-[#2c6e33] transition-colors shrink-0" @click="pickImage('main_logo_url')">
+                <i class="fa-regular fa-images"></i> Thư viện
+              </button>
+              <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-[#1e4620] hover:bg-[#2c6e33] text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploading }">
+                <i class="fa-regular" :class="uploading ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i> Upload
+                <input type="file" accept="image/*" class="sr-only" :disabled="uploading" @change="(e) => uploadImage(e, 'main_logo_url')" />
+              </label>
+            </div>
+            <div v-if="settings.main_logo_url" class="mt-2 relative inline-block border border-[#e2ece3] rounded-lg overflow-hidden">
+              <img :src="settings.main_logo_url" alt="Main logo preview" class="block max-h-20 max-w-[200px] object-contain" />
+              <button type="button" class="absolute top-1 right-1 bg-black/55 text-white border-0 rounded-full w-5 h-5 flex items-center justify-center text-xs cursor-pointer" @click="settings.main_logo_url = ''"><i class="fa-regular fa-xmark"></i></button>
+            </div>
+          </div>
+
+          <!-- Logo Website (Đơn vị trực thuộc / Logo con) -->
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Logo Website (Đơn vị trực thuộc / Logo con)</label>
+            <p class="text-[0.72rem] text-[#667768] m-0">Hiển thị bên phải logo chủ quản với tỷ lệ kích thước 80% để thể hiện đơn vị thành viên.</p>
             <div class="flex gap-2 items-center flex-wrap">
               <input type="text" v-model="settings.logo_url" placeholder="URL hoặc chọn từ thư viện" class="flex-1 min-w-0 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
               <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-[#c8d6c9] bg-[#f4f7f4] text-[#1e4620] rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-[#2c6e33] transition-colors shrink-0" @click="pickImage('logo_url')">
@@ -238,6 +260,36 @@ onMounted(() => { fetchSettings() })
             <div v-if="settings.logo_url" class="mt-2 relative inline-block border border-[#e2ece3] rounded-lg overflow-hidden">
               <img :src="settings.logo_url" alt="Logo preview" class="block max-h-20 max-w-[200px] object-contain" />
               <button type="button" class="absolute top-1 right-1 bg-black/55 text-white border-0 rounded-full w-5 h-5 flex items-center justify-center text-xs cursor-pointer" @click="settings.logo_url = ''"><i class="fa-regular fa-xmark"></i></button>
+            </div>
+          </div>
+
+          <!-- Phối hợp hiển thị thực tế (Header / Footer Preview) -->
+          <div v-if="settings.main_logo_url || settings.logo_url" class="p-4 bg-[#f8faf8] border border-[#d8e6d9] rounded-xl flex flex-col gap-3">
+            <div class="flex items-center justify-between flex-wrap gap-2">
+              <span class="text-[0.82rem] font-bold text-[#1e4620] flex items-center gap-1.5">
+                <i class="fa-regular fa-eye"></i> Xem trước phối hợp Logo (Header &amp; Footer)
+              </span>
+              <span class="text-[0.72rem] text-[#667768]">Main logo (Chủ quản) lớn hơn, Logo con bằng ~70-80%</span>
+            </div>
+            <!-- Header preview bar -->
+            <div class="bg-white border border-[#e2ece3] rounded-lg p-3.5 flex items-center gap-3.5 shadow-sm flex-wrap">
+              <div class="flex items-center gap-2.5 shrink-0">
+                <div v-if="settings.main_logo_url" class="flex flex-col items-center gap-1">
+                  <img :src="settings.main_logo_url" alt="Main logo" class="h-14 max-w-[160px] object-contain" />
+                  <span class="text-[0.62rem] font-bold text-[#1e4620] uppercase bg-[#eaf2ea] px-1.5 py-0.5 rounded border border-[#c6dfc7]">Đơn vị chủ quản</span>
+                </div>
+                <span v-if="settings.main_logo_url && settings.logo_url" class="h-10 w-px bg-[#D0DDD1]" aria-hidden="true"></span>
+                <div v-if="settings.logo_url" class="flex flex-col items-center gap-1">
+                  <img :src="settings.logo_url" alt="Logo con" :class="settings.main_logo_url ? 'h-[38px]' : 'h-12'" class="max-w-[120px] object-contain" />
+                  <span class="text-[0.62rem] font-semibold text-[#667768] uppercase bg-[#f0f0f0] px-1.5 py-0.5 rounded border border-[#e0e0e0]">
+                    {{ settings.main_logo_url ? 'Đơn vị con (~70-80%)' : 'Logo Website' }}
+                  </span>
+                </div>
+              </div>
+              <div class="border-l border-[#e2ece3] pl-3.5 hidden sm:block">
+                <div class="text-[0.92rem] font-extrabold text-[#4A6741] leading-tight">CON ĐƯỜNG HƯỚNG THIỆN</div>
+                <div class="text-[0.68rem] text-[#7A8675] mt-0.5">Cổng thông tin điện tử hỗ trợ tái hòa nhập cộng đồng — Bộ Công an</div>
+              </div>
             </div>
           </div>
 

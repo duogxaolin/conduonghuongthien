@@ -5,6 +5,17 @@ definePageMeta({ layout: false })
 
 const { login, verifyMfa } = useAdminAuth()
 
+const { data: publicSettingsData } = await useFetch('/api/public/settings', {
+  key: 'public-settings-login',
+  default: () => null,
+})
+const siteLogo = computed(() => {
+  const val = publicSettingsData.value?.settings?.logo_url
+  if (val === '') return ''
+  return val?.trim() || '/Logo.png'
+})
+const siteMainLogo = computed(() => publicSettingsData.value?.settings?.main_logo_url?.trim() || '')
+
 const username = ref('')
 const password = ref('')
 const errorMsg = ref('')
@@ -153,7 +164,24 @@ function backToPassword() {
   <div class="min-h-screen flex items-center justify-center bg-gradient-to-br from-[#0d1e10] to-[#1e4620] p-5 font-[Inter,system-ui,sans-serif]">
     <div class="w-full max-w-[420px] bg-white rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden">
       <div class="px-8 pt-8 pb-6 text-center bg-[#f8faf8] border-b border-[#eef2ee]">
-        <div class="w-14 h-14 bg-[#e4f2e5] text-[#2c6e33] text-3xl rounded-full flex items-center justify-center mx-auto mb-4">
+        <div v-if="siteMainLogo || siteLogo" class="flex items-center justify-center gap-3 mb-4 flex-wrap">
+          <img
+            v-if="siteMainLogo"
+            :src="siteMainLogo"
+            alt="Logo cơ quan chủ quản"
+            class="w-auto object-contain"
+            :class="siteLogo ? 'h-12' : 'h-12'"
+          />
+          <span v-if="siteMainLogo && siteLogo" class="h-8 w-px bg-[#c8d6c9]" aria-hidden="true"></span>
+          <img
+            v-if="siteLogo"
+            :src="siteLogo"
+            alt="Logo Con Đường Hướng Thiện"
+            class="w-auto object-contain"
+            :class="siteMainLogo ? 'h-9' : 'h-12'"
+          />
+        </div>
+        <div v-else class="w-14 h-14 bg-[#e4f2e5] text-[#2c6e33] text-3xl rounded-full flex items-center justify-center mx-auto mb-4">
           <i class="fa-solid fa-leaf"></i>
         </div>
         <h2 class="text-[1.15rem] font-extrabold text-[#122815] m-0 mb-1.5 tracking-[0.5px]">CON ĐƯỜNG HƯỚNG THIỆN</h2>
