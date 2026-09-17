@@ -66,3 +66,7 @@ old-data/
 
 # production/migrations/ marker đã import (tự tạo)
 production/migrations/.imported-*
+
+# Runtime uploads (keep migrated legacy media)
+public/uploads/*
+!public/uploads/migrated/
