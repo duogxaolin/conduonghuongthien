@@ -520,19 +520,14 @@
       <div class="border-t border-white/[0.08] py-6 text-[0.85rem]">
         <div class="container flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left md:pr-24">
           <p class="m-0 text-white/80 leading-relaxed">&copy; 2026 Bản quyền thuộc về Cổng thông tin Con Đường Hướng Thiện - C11 Bộ Công an.</p>
-          <div class="flex items-center gap-2 flex-wrap justify-center sm:justify-start shrink-0">
-            <span class="text-white/60 text-[0.82rem]">Thiết kế &amp; Phát triển:</span>
+          <p class="m-0 shrink-0">
             <a
               href="https://www.facebook.com/hi.duogxaolin"
               target="_blank"
               rel="noopener noreferrer"
-              class="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-white/10 hover:bg-[#7CB342]/25 text-[#A3E635] hover:text-[#BEF264] font-bold text-[0.82rem] transition-all border border-[#7CB342]/40 hover:border-[#7CB342] no-underline shadow-sm active:scale-95"
-            >
-              <i class="fa-solid fa-code text-xs"></i>
-              <span>Design by Delify.vn</span>
-              <i class="fa-solid fa-arrow-up-right-from-square text-[0.65rem] opacity-80"></i>
-            </a>
-          </div>
+              class="text-white/70 no-underline font-semibold transition-all hover:text-[#7CB342] hover:underline"
+            >Design by Delify.vn</a>
+          </p>
         </div>
       </div>
     </footer>

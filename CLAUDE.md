@@ -528,6 +528,32 @@ Hợp lại: đơn **lưu thành công**, người dân thấy lời cảm ơn, 
 - **Đăng nhập Google cho người đọc & bình luận công khai**: danh tính người đọc tách hoàn toàn khỏi danh tính quản trị bằng **hai rào độc lập** (claim `stage: 'reader'` + khoá ký dẫn xuất riêng), nội dung bình luận là **văn bản thuần** không bao giờ `v-html`, không ảnh đại diện từ Google, chặn IP áp ở cả hai điểm, và mọi lượt đọc/ghi dữ liệu người đọc đều có audit. Xem mục "Đăng nhập Google & bình luận công khai" ở trên — **đặc biệt là ràng buộc an toàn bộ nhớ đệm** (`swr: 60` nghĩa là mọi thứ liên quan người đọc phải nạp sau khi mount) và **thứ tự sau triển khai** (phải cấp `readers`/`comments` trước, không thì trang không mở được).
 - **Xác thực hai bước tự phục vụ** (`/admin/profile`): ba yếu tố bật tắt độc lập (ứng dụng xác thực / mã về email / mật khẩu cấp 2), mã dự phòng tuỳ chọn, break-glass chỉ SuperAdmin. Xem "Vận hành & an toàn" ở trên, **đặc biệt là runbook xoay `JWT_SECRET`** — xoay khoá này làm mọi secret TOTP đã lưu hết dùng được.
 
+#### Cấu hình Hai Logo phối hợp (`main_logo_url` & `logo_url`)
+- **Nguyên tắc phân cấp thị giác**: Logo cơ quan chủ quản (Bộ Công an / C11) đóng vai trò chính, luôn đứng trước (bên trái) và nổi bật trang trọng. Logo Con Đường Hướng Thiện là logo phụ của cổng thông tin, đứng sau vạch ngăn cách mỏng và có chiều cao tương đương 70–80% logo chính.
+  - **Header Desktop**: Logo chính `h-10 lg:h-[56px]`, Logo phụ `h-7 lg:h-[38px]`. Vạch chia đứng `h-6 lg:h-8 w-px bg-[#D0DDD1]`.
+  - **Mobile Drawer**: Logo chính `h-10`, Logo phụ `h-7`.
+  - **Footer**: Logo chính `h-16 md:h-[72px]`, Logo phụ `h-12 md:h-[52px]`. Vạch chia đứng `h-12 md:h-14 w-px bg-white/25`.
+  - **Admin Login**: Hiển thị logo kép trang trọng phía trên tiêu đề Cổng quản trị.
+- **Khả năng chịu lỗi tự thích ứng (Fault-tolerant Fallback)**:
+  - Nếu thiếu 1 trong 2 logo (chỉ có logo chính hoặc chỉ có logo phụ): vạch phân cách đứng tự động ẩn đi, logo hiện có tự động tăng nhẹ kích thước (`h-9 lg:h-[50px]`) để bố cục luôn cân đối, không có icon ảnh vỡ.
+- **Allowlist hai đầu**: Khoá `main_logo_url` có mặt ở cả `ALLOWED_SETTING_KEYS` (`server/api/admin/settings/index.put.ts`), `allowedKeys` (`server/api/public/settings.get.ts`), và `seed.ts`.
+- **Giao diện quản trị (`/admin/settings/general`)**: Có đầy đủ ô nhập URL, nút chọn từ Thư viện Media, nút tải tệp trực tiếp và khung "Xem trước phối hợp Header thực tế" trực quan.
+
+#### Chân trang (Footer) & Dòng "Design by Delify.vn"
+- **Không bị che trên Mobile & Tablet**:
+  - Footer có `pb-[calc(110px+env(safe-area-inset-bottom,0px))] md:pb-12 lg:pb-10` để chừa khoảng cách an toàn, không bị thanh điều hướng nổi di động (Mobile Bottom Nav) che mất nội dung.
+  - Dòng bản quyền và liên kết "Design by Delify.vn" có `md:pr-24` để không bị nút Chatbot Launcher tròn (`md:right-6 md:bottom-6`) đè lên trên iPad/Desktop.
+  - Định dạng liên kết dạng chữ tinh giản, trang nhã: `class="text-white/70 no-underline font-semibold transition-all hover:text-[#7CB342] hover:underline"`, mở tab mới với `target="_blank" rel="noopener noreferrer"`.
+
+#### Chứng nhận An toàn thông tin, Bản quyền & Pháp lý Cổng thông tin
+- **DMCA (Digital Millennium Copyright Act)**: Cổng thông tin hoàn toàn đăng ký được huy hiệu DMCA (gói Free hoặc Pro). Bảo vệ quyền tác giả đối với toàn bộ bài viết, văn bản hướng dẫn và hình ảnh nghiệp vụ, hỗ trợ gửi yêu cầu gỡ bỏ (Takedown Notice) khi bị sao chép trái phép.
+- **Tín Nhiệm Mạng (tinnhiemmang.vn)**: Chứng chỉ Quốc gia cấp bởi Trung tâm Giám sát an toàn không gian mạng quốc gia (NCSC) - Cục An toàn thông tin (Bộ TT&TT). Rất khuyến khích và phù hợp cho cổng thông tin cơ quan nhà nước như C11 Bộ Công an (miễn phí cho cơ quan nhà nước, gồm Tín nhiệm Danh tính, Tín nhiệm Mạng).
+- **Giấy phép ICP / Trang thông tin điện tử tổng hợp**: Thủ tục cấp phép hoạt động theo Nghị định 72/2013/NĐ-CP và Nghị định 27/2018/NĐ-CP do Cục PTTH&TTĐT hoặc Sở TT&TT cấp.
+
+#### Lưu ý Môi trường Dev & Lỗi Hydration DOM Node
+- Nuxt Dev Server (`npm run dev`) chạy trên cổng 3000, trỏ tới MySQL container (`127.0.0.1:33069`).
+- Thuộc tính `data-allow-mismatch` được gắn trên các thành phần có trạng thái chuyển đổi hoặc unmount ngay sau khi hydrate (như lớp phủ `isInitialLoad` trong `app/app.vue`) để tránh cảnh báo `The deferred DOM Node could not be resolved to a valid node` trong Chrome DevTools.
+
 ### 6. Khởi tạo Cơ sở dữ liệu & Docker
 - **MySQL Database Auto-Init (`server/db/init.ts`)**: Tự động kết nối server MySQL, tạo database `cdkt_admin` và toàn bộ 42 bảng dữ liệu nếu chưa tồn tại (idempotent, tự thêm cột còn thiếu).
 - **Database Seed (`server/db/seed.ts`)**: Tạo tài khoản SuperAdmin (`admin`, mật khẩu lấy từ `ADMIN_PASSWORD`), các vai trò, bảng phân quyền và dữ liệu thiết lập ban đầu. **Insert-only**: chạy lại (kể cả mỗi lần khởi động container) sẽ KHÔNG ghi đè mật khẩu, ma trận quyền hay cấu hình mà quản trị viên đã sửa.

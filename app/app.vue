@@ -44,6 +44,7 @@ if (import.meta.client) {
     >
       <div
         v-if="isInitialLoad"
+        data-allow-mismatch
         class="fixed inset-0 bg-[#F8FAF7] z-[99999] flex items-center justify-center"
         aria-live="polite"
         aria-busy="true"
