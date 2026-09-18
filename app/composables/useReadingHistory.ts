@@ -121,5 +121,18 @@ export function useReadingHistory() {
     }
   }
 
-  return { entries, loaded, load, record, clear }
+  function remove(slug: string): void {
+    const clean = (slug || '').trim()
+    if (!clean) return
+    const next = entries.value.filter(item => item.slug !== clean)
+    entries.value = next
+    if (typeof window === 'undefined') return
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(next))
+    } catch {
+      // Ignored
+    }
+  }
+
+  return { entries, loaded, load, record, clear, remove }
 }
