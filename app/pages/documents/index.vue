@@ -152,58 +152,65 @@
 
           <!-- Document Cards Grid -->
           <template v-else>
-            <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               <article
                 v-for="doc in docs"
                 :key="doc.id"
-                class="group bg-white rounded-2xl border border-[#E2E8DF] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-[#7CB342] p-5 sm:p-6 flex flex-col h-full transition-all duration-300 hover:-translate-y-0.5"
+                class="group bg-white rounded-2xl border border-[#E2E8DF] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-[#7CB342] transition-all duration-300 flex flex-col hover:-translate-y-1 h-full overflow-hidden"
               >
-                <!-- Top Meta Row -->
-                <div class="flex items-center gap-2 mb-2.5 flex-wrap">
-                  <span class="inline-flex items-center gap-1.5 bg-[#EEF4EC] text-[#2D5A27] px-2.5 py-0.5 rounded text-[0.68rem] font-extrabold uppercase tracking-wider">
-                    <i class="fa-solid fa-file-lines text-[0.62rem]" aria-hidden="true"></i>
-                    <span>{{ doc.categoryName || 'Văn bản quy phạm' }}</span>
-                  </span>
-                  <span class="text-xs text-[#889684] font-medium flex items-center gap-1">
-                    <i class="fa-regular fa-calendar-days text-[0.7rem]" aria-hidden="true"></i>
-                    <span>Ban hành: {{ formatDate(doc) }}</span>
-                  </span>
-                </div>
+                <!-- Thumbnail: strictly 16:9 like news cards -->
+                <nuxt-link :to="`/news/${doc.slug}`" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
+                  <img
+                    :src="doc.thumbnailUrl || '/assets/hero_banner.jpg'"
+                    :alt="doc.title"
+                    class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
+                    loading="lazy"
+                    decoding="async"
+                  />
+                  <div class="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+                </nuxt-link>
 
-                <!-- Document Title (line-clamp-2 min-h) -->
-                <h3 class="text-[0.98rem] sm:text-[1.05rem] font-bold leading-snug text-[#172516] group-hover:text-[#2D5A27] transition-colors line-clamp-2 min-h-[2.8rem] mb-2 m-0">
-                  <nuxt-link
-                    :to="`/news/${doc.slug}`"
-                    class="no-underline text-inherit transition-colors"
-                  >
-                    {{ doc.title }}
-                  </nuxt-link>
-                </h3>
+                <!-- Content: flex-1 justify-between -->
+                <div class="p-4 sm:p-5 flex flex-col flex-1">
+                  <div class="flex items-center gap-2 mb-2 flex-wrap text-xs">
+                    <span class="inline-block bg-[#EEF4EC] text-[#2D5A27] text-[0.68rem] font-bold px-2 py-0.5 rounded uppercase tracking-wider">
+                      {{ doc.categoryName || 'Văn bản quy phạm' }}
+                    </span>
+                    <span class="text-[#889684] text-[0.75rem] flex items-center gap-1 font-medium">
+                      <i class="fa-regular fa-calendar-days text-[0.72rem]"></i>
+                      <span>Ban hành: {{ formatDate(doc) }}</span>
+                    </span>
+                  </div>
 
-                <!-- Excerpt (line-clamp-2) -->
-                <p v-if="doc.excerpt" class="text-[0.85rem] text-[#556450] leading-relaxed line-clamp-2 mb-4 m-0">
-                  {{ doc.excerpt }}
-                </p>
+                  <!-- Title (line-clamp-2 min-h) -->
+                  <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-[#172516] group-hover:text-[#2D5A27] transition-colors line-clamp-2 min-h-[2.6rem] mb-2 m-0">
+                    <nuxt-link :to="`/news/${doc.slug}`" class="text-[#172516] hover:text-[#2D5A27] no-underline">
+                      {{ doc.title }}
+                    </nuxt-link>
+                  </h3>
 
-                <!-- Footer Action pinned with mt-auto -->
-                <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs">
-                  <nuxt-link
-                    :to="`/news/${doc.slug}`"
-                    class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
-                  >
-                    <span>Xem toàn văn</span>
-                    <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
-                  </nuxt-link>
-                  <span class="text-[#8E9F8B] font-medium text-[0.72rem] flex items-center gap-1">
-                    <i class="fa-solid fa-shield-halved text-[#7CB342] text-[0.7rem]" aria-hidden="true"></i>
-                    <span>Cục C11</span>
-                  </span>
+                  <!-- Excerpt (line-clamp-2) -->
+                  <p v-if="doc.excerpt" class="text-[0.84rem] text-[#556450] leading-relaxed line-clamp-2 mb-3 m-0">
+                    {{ doc.excerpt }}
+                  </p>
+
+                  <!-- Footer Action pinned with mt-auto -->
+                  <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#7A8A76]">
+                    <nuxt-link
+                      :to="`/news/${doc.slug}`"
+                      class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
+                    >
+                      <span>Chi tiết</span>
+                      <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5"></i>
+                    </nuxt-link>
+                    <span class="text-[#8E9F8B] font-medium text-[0.72rem]">Cục C11</span>
+                  </div>
                 </div>
               </article>
             </div>
 
             <!-- Pagination -->
-            <nav v-if="pagination.totalPages > 1" class="mt-8 pt-6 border-t border-[#DDE6DC] flex flex-col sm:flex-row items-center justify-between gap-4" aria-label="Phân trang văn bản">
+            <nav v-if="pagination.total > 0" class="mt-8 pt-6 border-t border-[#DDE6DC] flex flex-col sm:flex-row items-center justify-between gap-4" aria-label="Phân trang văn bản">
               <div class="text-xs text-[#6F7F6C] font-medium">
                 Trang <strong>{{ currentPage }}</strong> trên tổng số <strong>{{ pagination.totalPages }}</strong> trang
               </div>
@@ -319,7 +326,7 @@ const searchInput = ref(searchQuery.value)
 
 const filterChips = ['Nghị định 49/2020', 'Quyết định 22/2023', 'Vay vốn', 'Học nghề', 'Xóa án tích']
 
-const PER_PAGE = 20
+const PER_PAGE = 3
 const currentPage = ref(Math.max(1, Math.floor(Number(route.query.page) || 1)) || 1)
 
 const quickLinks = [

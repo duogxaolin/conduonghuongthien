@@ -249,12 +249,12 @@
 
               <!-- Pagination -->
               <nav
-                v-if="pagination.totalPages > 1"
+                v-if="entries.length > 0"
                 class="mt-8 pt-6 border-t border-[#DDE6DC] flex flex-col sm:flex-row items-center justify-between gap-4"
                 aria-label="Phân trang tài liệu"
               >
                 <div class="text-xs text-[#6F7F6C] font-medium">
-                  Trang <strong>{{ page }}</strong> trên tổng số <strong>{{ pagination.totalPages }}</strong> trang
+                  Trang <strong>{{ page }}</strong> trên tổng số <strong>{{ pagination.totalPages || 1 }}</strong> trang
                 </div>
 
                 <div class="flex items-center gap-1.5 flex-wrap justify-center">
