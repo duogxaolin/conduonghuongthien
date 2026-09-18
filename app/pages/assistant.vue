@@ -124,10 +124,22 @@
                       : 'bg-[#1e4620] text-white rounded-[18px_4px_18px_18px] shadow-[0_2px_8px_rgba(30,70,32,0.2)]'"
                   >
                     <p class="m-0 whitespace-pre-wrap">{{ msg.text }}</p>
-                    <p v-if="msg.kind && msg.sender === 'bot' && !msg.isStreaming" class="mt-2 mb-0 flex items-center gap-1 text-[0.72rem] font-semibold" :class="messageKindClass(msg.kind)" role="status">
-                      <i class="fa-solid" :class="isProblemKind(msg.kind) ? 'fa-circle-exclamation text-[#9a3412]' : 'fa-circle-check text-[#1e4620]'" aria-hidden="true"></i>
-                      {{ messageKindLabel(msg.kind) }}
-                    </p>
+                    <div v-if="msg.sender === 'bot' && !msg.isStreaming" class="mt-2 flex items-center justify-between gap-2 border-t border-[#e1e8e0] pt-1.5 text-[0.72rem]">
+                      <span v-if="msg.kind" class="flex items-center gap-1 font-semibold" :class="messageKindClass(msg.kind)" role="status">
+                        <i class="fa-solid" :class="isProblemKind(msg.kind) ? 'fa-circle-exclamation text-[#9a3412]' : 'fa-circle-check text-[#1e4620]'" aria-hidden="true"></i>
+                        {{ messageKindLabel(msg.kind) }}
+                      </span>
+                      <span v-else></span>
+                      <button
+                        type="button"
+                        class="inline-flex items-center gap-1 text-[0.72rem] text-[#6b7280] hover:text-[#1e4620] bg-transparent border-none cursor-pointer p-0.5 rounded transition-colors"
+                        @click="copyMessageText(msg.text, msg.id)"
+                        :title="copiedMsgId === msg.id ? 'Đã sao chép' : 'Sao chép câu trả lời'"
+                      >
+                        <i :class="copiedMsgId === msg.id ? 'fa-solid fa-check text-[#7CB342]' : 'fa-regular fa-copy'" aria-hidden="true"></i>
+                        {{ copiedMsgId === msg.id ? 'Đã chép' : 'Sao chép' }}
+                      </button>
+                    </div>
                     <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-2 mb-0 list-none space-y-2 border-t border-[#e1e8e0] pl-0 pt-2" aria-label="Nguồn tham khảo">
                       <li v-for="source in msg.sources" :key="source.id" class="text-[0.74rem] leading-snug text-[#4A5545]">
                         <i class="fa-solid fa-link mr-1 text-[0.58rem] text-[#7CB342]" aria-hidden="true"></i>
@@ -274,6 +286,15 @@ const chatContainer = ref<HTMLElement | null>(null)
 const botInputRef = ref<HTMLTextAreaElement | null>(null)
 /** Bound to the honeypot input. Stays empty for a real visitor. */
 const honeypot = ref('')
+const copiedMsgId = ref<string | null>(null)
+const copyMessageText = async (text: string, id: string | undefined) => {
+  if (!text) return
+  try {
+    await navigator.clipboard.writeText(text)
+    copiedMsgId.value = id || 'copied'
+    setTimeout(() => { copiedMsgId.value = null }, 2000)
+  } catch { /* ignore */ }
+}
 
 /** Newest first, so the conversation just created is at the top of the list. */
 const sortedConversations = computed(() => [...conversations.value].sort((a, b) => b.createdAt - a.createdAt))

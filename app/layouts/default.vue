@@ -227,12 +227,27 @@
         </div>
 
         <!-- Drawer Search -->
-        <div class="px-4 pt-3 pb-1 bg-[#fcfdfe] border-b border-[rgba(30,70,32,0.06)] flex-shrink-0">
-          <div class="flex items-center bg-[rgba(30,70,32,0.05)] border border-[rgba(30,70,32,0.12)] rounded-[10px] px-3 py-2 gap-2">
-            <span class="text-[0.85rem] opacity-60">🔍</span>
-            <input type="text" :placeholder="t('search_placeholder')" v-model="searchQuery" @keyup.enter="handleSearch" class="border-none bg-transparent w-full text-[0.88rem] text-[#1E251C] outline-none" />
-            <button v-if="searchQuery" class="border-none bg-black/10 rounded-full w-[18px] h-[18px] text-[0.65rem] flex items-center justify-center cursor-pointer text-[#555]" @click="searchQuery = ''">✕</button>
-          </div>
+        <div class="px-4 pt-3 pb-2 bg-[#fcfdfe] border-b border-[rgba(30,70,32,0.06)] flex-shrink-0">
+          <form @submit.prevent="handleSearch" class="flex items-center bg-[rgba(30,70,32,0.05)] border border-[rgba(30,70,32,0.12)] rounded-[10px] px-3 py-2 gap-2">
+            <span class="text-[0.85rem] text-[#4A6741]">
+              <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            </span>
+            <input
+              type="text"
+              :placeholder="t('search_placeholder')"
+              v-model="searchQuery"
+              class="border-none bg-transparent w-full text-[0.88rem] text-[#1E251C] outline-none"
+            />
+            <button
+              v-if="searchQuery"
+              type="button"
+              class="border-none bg-black/10 rounded-full w-[20px] h-[20px] text-[0.65rem] flex items-center justify-center cursor-pointer text-[#555] hover:bg-black/20 transition-colors"
+              @click="clearSearch"
+              aria-label="Xóa từ khóa"
+            >
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+            </button>
+          </form>
         </div>
 
         <!-- Drawer Body -->
@@ -428,22 +443,121 @@
 
       <!-- Search Dropdown Bar -->
       <transition name="slide-down">
-        <div class="absolute top-full left-0 w-full bg-[#4A6741] py-4 shadow-md z-[99]" v-if="isSearchActive">
-          <div class="container flex flex-col sm:flex-row gap-4 items-center">
-            <div class="relative flex-1 w-full">
-              <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#7A8675]">🔍</span>
-              <input
-                type="text"
-                placeholder="Nhập nội dung cần tìm kiếm trên website..."
-                v-model="searchQuery"
-                @keyup.enter="handleSearch"
-                ref="searchInputRef"
-                class="w-full py-3 pl-[42px] pr-3.5 rounded-sm border-none font-[inherit] text-[0.95rem] outline-none"
-              />
-            </div>
-            <div class="flex gap-2 w-full sm:w-auto">
-              <button class="flex-1 sm:flex-none bg-[#7CB342] text-white border-none px-6 py-3 rounded-sm font-bold text-[0.9rem] cursor-pointer transition-all hover:opacity-90" @click="handleSearch">Tìm kiếm</button>
-              <button class="flex-1 sm:flex-none bg-transparent text-white border border-white/30 px-4 py-3 rounded-sm text-[0.9rem] cursor-pointer transition-all hover:bg-white/10" @click="toggleSearch">Đóng ×</button>
+        <div ref="searchBarRef" class="absolute top-full left-0 w-full bg-[#385130] py-4 shadow-xl z-[99] border-b border-[#2A3E24]" v-if="isSearchActive">
+          <div class="container relative">
+            <form @submit.prevent="handleSearch" class="flex flex-col sm:flex-row gap-3 items-center">
+              <div class="relative flex-1 w-full">
+                <span class="absolute left-4 top-1/2 -translate-y-1/2 text-[#7A8675] text-sm pointer-events-none">
+                  <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+                </span>
+                <input
+                  type="text"
+                  placeholder="Nhập nội dung cần tìm kiếm trên website..."
+                  v-model="searchQuery"
+                  @input="onSearchInput"
+                  ref="searchInputRef"
+                  class="w-full py-3 pl-11 pr-10 rounded-lg border border-[#4A6741] bg-white font-[inherit] text-[0.95rem] text-[#172516] outline-none focus:ring-2 focus:ring-[#7CB342] shadow-inner"
+                />
+                <button
+                  v-if="searchQuery"
+                  type="button"
+                  @click="clearSearch"
+                  class="absolute right-3 top-1/2 -translate-y-1/2 text-[#8A9A88] hover:text-[#2D5A27] w-6 h-6 rounded-full flex items-center justify-center text-xs cursor-pointer border-none bg-transparent transition-colors"
+                  aria-label="Xóa từ khóa"
+                >
+                  <i class="fa-solid fa-xmark" aria-hidden="true"></i>
+                </button>
+              </div>
+
+              <div class="flex gap-2 w-full sm:w-auto shrink-0">
+                <button
+                  type="submit"
+                  class="flex-1 sm:flex-none bg-[#7CB342] hover:bg-[#689F38] text-white border-none px-6 py-3 rounded-lg font-extrabold text-[0.9rem] cursor-pointer transition-all shadow-sm flex items-center justify-center gap-2"
+                >
+                  <i class="fa-solid fa-magnifying-glass text-xs" aria-hidden="true"></i>
+                  <span>Tìm kiếm</span>
+                </button>
+                <button
+                  type="button"
+                  class="flex-1 sm:flex-none bg-white/10 hover:bg-white/20 text-white border border-white/20 px-4 py-3 rounded-lg text-[0.9rem] font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5"
+                  @click="toggleSearch"
+                >
+                  <i class="fa-solid fa-xmark text-sm" aria-hidden="true"></i>
+                  <span>Đóng</span>
+                </button>
+              </div>
+            </form>
+
+            <!-- Instant Live Preview Dropdown -->
+            <div
+              v-if="showLivePreview && searchQuery.trim().length >= 2"
+              class="absolute left-0 right-0 top-full mt-2 bg-white rounded-xl shadow-[0_12px_40px_rgba(0,0,0,0.25)] border border-[#DDE6DC] overflow-hidden z-[105] max-h-[440px] flex flex-col text-[#172516]"
+            >
+              <!-- Header -->
+              <div class="px-4 py-2.5 bg-[#F7FAF6] border-b border-[#E8EFE6] flex items-center justify-between text-xs font-semibold text-[#556450]">
+                <span v-if="isSearchingLive" class="flex items-center gap-2 text-[#4A6741]">
+                  <i class="fa-solid fa-circle-notch animate-spin text-sm" aria-hidden="true"></i>
+                  <span>Đang tìm kiếm...</span>
+                </span>
+                <span v-else>
+                  Gợi ý kết quả cho: <strong class="text-[#2D5A27]">&laquo;{{ searchQuery }}&raquo;</strong>
+                </span>
+                <span v-if="!isSearchingLive && liveSearchResults.length" class="text-[0.72rem] text-[#7A8A76]">
+                  {{ liveSearchResults.length }} kết quả nổi bật
+                </span>
+              </div>
+
+              <!-- List -->
+              <div v-if="liveSearchResults.length" class="overflow-y-auto divide-y divide-[#F0F5EE] p-1.5">
+                <nuxt-link
+                  v-for="item in liveSearchResults"
+                  :key="item.id"
+                  :to="item.url"
+                  @click="closeSearchAndNavigate"
+                  class="flex items-center gap-3.5 p-2.5 rounded-lg hover:bg-[#F2F7F0] transition-colors no-underline text-inherit group"
+                >
+                  <div v-if="item.thumbnailUrl" class="w-12 h-12 rounded-lg overflow-hidden bg-[#EBF1EA] shrink-0 border border-[#E2E8DF]">
+                    <img :src="item.thumbnailUrl" :alt="item.title" class="w-full h-full object-cover" />
+                  </div>
+                  <div v-else class="w-10 h-10 rounded-lg bg-[#EBF1EA] text-[#4A6741] flex items-center justify-center shrink-0 text-sm">
+                    <i :class="item.typeIcon" aria-hidden="true"></i>
+                  </div>
+
+                  <div class="flex-1 min-w-0">
+                    <div class="flex items-center gap-2 mb-1 flex-wrap">
+                      <span :class="['text-[0.65rem] font-extrabold px-1.5 py-0.2 rounded uppercase tracking-wider', item.typeBadgeClass]">
+                        {{ item.typeLabel }}
+                      </span>
+                      <span v-if="item.categoryName" class="text-[0.7rem] text-[#7A8A76] truncate font-medium">
+                        {{ item.categoryName }}
+                      </span>
+                    </div>
+                    <p class="text-xs sm:text-[0.88rem] font-bold text-[#172516] group-hover:text-[#2D5A27] truncate m-0 leading-snug">
+                      {{ item.title }}
+                    </p>
+                  </div>
+
+                  <i class="fa-solid fa-chevron-right text-[0.65rem] text-[#BAC8B6] group-hover:text-[#2D5A27] group-hover:translate-x-0.5 transition-all mr-1 shrink-0" aria-hidden="true"></i>
+                </nuxt-link>
+              </div>
+
+              <!-- Empty State -->
+              <div v-else-if="!isSearchingLive" class="p-6 text-center text-xs text-[#7A8A76]">
+                <i class="fa-solid fa-magnifying-glass text-lg mb-2 text-[#BAC8B6] block" aria-hidden="true"></i>
+                <span>Không tìm thấy kết quả phù hợp cho &laquo;{{ searchQuery }}&raquo;</span>
+              </div>
+
+              <!-- Footer -->
+              <div class="p-2.5 bg-[#F7FAF6] border-t border-[#E8EFE6] text-center">
+                <button
+                  type="button"
+                  @click="handleSearch"
+                  class="w-full py-2 px-3 rounded-lg text-xs font-extrabold text-[#2D5A27] hover:bg-[#EBF3E8] transition-colors border-none bg-transparent cursor-pointer flex items-center justify-center gap-2"
+                >
+                  <span>Xem toàn bộ kết quả tìm kiếm</span>
+                  <i class="fa-solid fa-arrow-right text-[0.7rem]" aria-hidden="true"></i>
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -518,11 +632,11 @@
       </div>
 
       <div class="border-t border-white/[0.08] py-6 text-[0.85rem]">
-        <div class="container flex flex-col md:flex-row justify-between items-center gap-4 text-center md:text-left md:pr-24">
+        <div class="container flex flex-col items-center md:items-start gap-2 text-center md:text-left md:pr-24">
           <p class="m-0 text-white/80 leading-relaxed">&copy; 2026 Bản quyền thuộc về Cổng thông tin Con Đường Hướng Thiện - C11 Bộ Công an.</p>
-          <p class="m-0 shrink-0">
+          <p class="m-0">
             <a
-              href="https://www.facebook.com/hi.duogxaolin"
+              href="https://delify.vn?ref=conduonghuongthien"
               target="_blank"
               rel="noopener noreferrer"
               class="text-white/70 no-underline font-semibold transition-all hover:text-[#7CB342] hover:underline"
@@ -629,7 +743,67 @@ const isSearchActive = ref(false)
 const searchQuery = ref('')
 const { currentLang, locales, t, setLang } = useI18n()
 const searchInputRef = ref<HTMLInputElement | null>(null)
+const searchBarRef = ref<HTMLElement | null>(null)
 
+interface LiveSearchItem {
+  id: string | number
+  kind: string
+  type: string
+  typeLabel: string
+  typeIcon: string
+  typeBadgeClass: string
+  title: string
+  excerpt: string
+  url: string
+  thumbnailUrl: string | null
+  categoryName: string | null
+}
+
+const liveSearchResults = ref<LiveSearchItem[]>([])
+const isSearchingLive = ref(false)
+const showLivePreview = ref(false)
+let liveSearchTimer: ReturnType<typeof setTimeout> | null = null
+
+const onSearchInput = () => {
+  const q = searchQuery.value.trim()
+  if (q.length < 2) {
+    liveSearchResults.value = []
+    showLivePreview.value = false
+    return
+  }
+  showLivePreview.value = true
+  isSearchingLive.value = true
+  if (liveSearchTimer) clearTimeout(liveSearchTimer)
+  liveSearchTimer = setTimeout(async () => {
+    try {
+      const res = await $fetch<{ ok: boolean; items: LiveSearchItem[] }>('/api/public/search', {
+        params: { q, limit: 6 },
+      })
+      if (res?.ok && Array.isArray(res.items)) {
+        liveSearchResults.value = res.items
+      } else {
+        liveSearchResults.value = []
+      }
+    } catch {
+      liveSearchResults.value = []
+    } finally {
+      isSearchingLive.value = false
+    }
+  }, 250)
+}
+
+const clearSearch = () => {
+  searchQuery.value = ''
+  liveSearchResults.value = []
+  showLivePreview.value = false
+  if (searchInputRef.value) searchInputRef.value.focus()
+}
+
+const closeSearchAndNavigate = () => {
+  showLivePreview.value = false
+  isSearchActive.value = false
+  isMobileMenuOpen.value = false
+}
 // Trạng thái đăng nhập của người đọc. State ở cấp module trong composable, nên
 // header và khối bình luận trong bài đọc cùng một danh tính — hai lượt fetch
 // riêng sẽ có lúc nói hai điều khác nhau trên cùng một trang.
@@ -836,10 +1010,14 @@ const handleKeydown = (event: KeyboardEvent) => {
   // mở nó là một cái bẫy bàn phím — Escape là cách người dùng bàn phím thoát khỏi
   // mọi lớp phủ khác trên trang này.
   if (isReaderMenuOpen.value) isReaderMenuOpen.value = false
+  if (isSearchActive.value) {
+    isSearchActive.value = false
+    showLivePreview.value = false
+  }
 }
 
 /**
- * Bấm ra ngoài thì đóng menu danh tính.
+ * Bấm ra ngoài thì đóng menu danh tính hoặc khung xem trước tìm kiếm.
  *
  * Bắt ở pha `mousedown` chứ không `click`: một cú bấm vào liên kết bên trong menu
  * là `mousedown` rồi `click`, và nếu đóng ở `click` thì handler này chạy **sau**
@@ -847,10 +1025,16 @@ const handleKeydown = (event: KeyboardEvent) => {
  * liên kết vẫn còn trong cây, nên nó vẫn điều hướng bình thường.
  */
 const handleDocumentPointerDown = (event: MouseEvent) => {
+  const target = event.target instanceof Node ? event.target : null
   if (isReaderMenuOpen.value) {
     const root = readerMenuRef.value
-    const target = event.target instanceof Node ? event.target : null
     if (root && (!target || !root.contains(target))) isReaderMenuOpen.value = false
+  }
+  if (showLivePreview.value) {
+    const searchRoot = searchBarRef.value
+    if (searchRoot && (!target || !searchRoot.contains(target))) {
+      showLivePreview.value = false
+    }
   }
 }
 
@@ -875,15 +1059,19 @@ const toggleSearch = async () => {
     if (searchInputRef.value) {
       searchInputRef.value.focus()
     }
+  } else {
+    showLivePreview.value = false
   }
 }
 
 const handleSearch = () => {
   const q = searchQuery.value.trim()
   if (q) {
-    navigateTo({ path: '/news', query: { q } })
+    navigateTo({ path: '/search', query: { q } })
     searchQuery.value = ''
+    showLivePreview.value = false
     isSearchActive.value = false
+    isMobileMenuOpen.value = false
   }
 }
 

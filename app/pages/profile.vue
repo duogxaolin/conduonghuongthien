@@ -369,16 +369,25 @@
               </p>
 
               <ul v-else class="m-0 flex list-none flex-col divide-y divide-[#EEF2EC] p-0">
-                <li v-for="item in history" :key="item.slug" class="py-2.5 first:pt-0 last:pb-0">
+                <li v-for="item in history" :key="item.slug" class="flex items-center justify-between gap-3 py-2.5 first:pt-0 last:pb-0">
                   <nuxt-link
                     :to="`/news/${item.slug}`"
-                    class="flex items-start justify-between gap-3 no-underline"
+                    class="flex min-w-0 flex-1 items-start justify-between gap-3 no-underline"
                   >
                     <span class="min-w-0 flex-1 text-[0.9rem] font-semibold leading-snug text-[#1E251C] transition-colors hover:text-[#4A6741]">
                       {{ item.title || item.slug }}
                     </span>
                     <span v-if="item.readAt" class="shrink-0 text-[0.76rem] text-[#7A8675]">{{ formatReadAt(item.readAt) }}</span>
                   </nuxt-link>
+                  <button
+                    type="button"
+                    class="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-transparent p-0 text-[#9ca3af] transition-colors hover:bg-[#fee2e2] hover:text-[#b42318]"
+                    :aria-label="`Xoá ${item.title || item.slug} khỏi lịch sử`"
+                    title="Xoá khỏi danh sách"
+                    @click="removeHistoryItem(item.slug)"
+                  >
+                    <i class="fa-solid fa-xmark text-[0.8rem]" aria-hidden="true"></i>
+                  </button>
                 </li>
               </ul>
             </section>
@@ -498,7 +507,7 @@ const {
   forgetReader,
 } = useReaderAuth()
 
-const { entries: history, load: loadHistory, clear: clearHistory } = useReadingHistory()
+const { entries: history, load: loadHistory, clear: clearHistory, remove: removeHistoryItem } = useReadingHistory()
 
 /**
  * Ngày đọc, định dạng theo múi giờ CỦA MÁY người đọc — cố ý không dùng
