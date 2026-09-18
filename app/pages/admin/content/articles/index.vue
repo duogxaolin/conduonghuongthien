@@ -11,7 +11,14 @@ const articles = ref<AdminArticleRow[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const search = ref('')
-const selectedType = ref('')
+const typeLabels: Record<string, string> = {
+  news: 'Bản tin', role_model: 'Tấm gương', reintegration: 'Mô hình', document: 'Văn bản', faq: 'Giải đáp',
+}
+
+const initialType = typeof route.query.type === 'string' && route.query.type.trim() in typeLabels
+  ? route.query.type.trim()
+  : ''
+const selectedType = ref(initialType)
 const selectedStatus = ref('')
 const selectedParentCategoryId = ref<number | null>(null)
 const selectedCategoryId = ref<number | null>(null)
@@ -29,11 +36,6 @@ const allCategories = ref<AdminCategoryRow[]>([])
 // Người đăng bài — chỉ những ai đã thực sự có bài, kèm số bài mất tác giả.
 const authorOptions = ref<AdminArticleAuthorRow[]>([])
 const orphanAuthorCount = ref(0)
-
-const typeLabels: Record<string, string> = {
-  news: 'Bản tin', role_model: 'Tấm gương', reintegration: 'Mô hình', document: 'Văn bản', faq: 'Giải đáp',
-}
-
 const typeColors: Record<string, string> = {
   news: 'bg-emerald-50 text-emerald-700',
   role_model: 'bg-purple-50 text-purple-700',

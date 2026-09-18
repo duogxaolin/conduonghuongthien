@@ -23,8 +23,11 @@ const openId = ref<number | null>(null)
 // Hai bộ lọc này đi tới MÁY CHỦ (chúng quyết định tập bản ghi), khác ô tìm kiếm
 // bên dưới vốn chỉ thu hẹp thứ đang hiển thị. Trộn hai cách lọc trên cùng một
 // trang là chủ đích — xem lời giải thích ở endpoint.
-const statusFilter = ref<'' | SubmissionStatus>('')
-const viewedFilter = ref<'' | 'yes' | 'no'>('')
+const route = useRoute()
+const initialStatus = isSubmissionStatus(route.query.status) ? route.query.status : ''
+const initialViewed = route.query.viewed === 'yes' || route.query.viewed === 'no' ? route.query.viewed : ''
+const statusFilter = ref<'' | SubmissionStatus>(initialStatus)
+const viewedFilter = ref<'' | 'yes' | 'no'>(initialViewed)
 
 const fetchSubmissions = async () => {
   loading.value = true
