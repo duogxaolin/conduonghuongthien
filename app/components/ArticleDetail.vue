@@ -125,10 +125,55 @@
         </nav>
 
         <div class="article-body text-[1.05rem] leading-[1.7] text-[#4A5545]">
-          <!-- eslint-disable-next-line vue/no-v-html — sanitised server-side by sanitizeHtml() on write; buildToc only adds anchor ids -->
+          <!-- eslint-disable-next-line vue/no-v-html -- content authored by C11 editors, sanitized on write -->
           <div v-html="toc.html"></div>
         </div>
 
+        <!-- Thanh chia sẻ bài viết & in ấn -->
+        <div class="my-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#E2E8DF] bg-white p-4 shadow-sm print:hidden">
+          <div class="flex items-center gap-2 text-[0.88rem] font-bold text-[#385130]">
+            <i class="fa-solid fa-share-nodes text-[#7CB342]" aria-hidden="true"></i>
+            <span>Chia sẻ bài viết:</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#1877F2] transition hover:bg-[#1877F2]/10 hover:border-[#1877F2]"
+              @click="shareFacebook"
+              title="Chia sẻ lên Facebook"
+            >
+              <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
+                <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
+              </svg>
+              Facebook
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#0068FF] transition hover:bg-[#0068FF]/10 hover:border-[#0068FF]"
+              @click="shareZalo"
+              title="Chia sẻ lên Zalo"
+            >
+              <i class="fa-solid fa-comment-dots" aria-hidden="true"></i> Zalo
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#4A6741] transition hover:bg-[#4A6741]/10 hover:border-[#4A6741]"
+              @click="copyArticleLink"
+              :title="copiedArticleLink ? 'Đã sao chép' : 'Sao chép liên kết'"
+            >
+              <i :class="copiedArticleLink ? 'fa-solid fa-check text-[#7CB342]' : 'fa-solid fa-link'" aria-hidden="true"></i>
+              {{ copiedArticleLink ? 'Đã sao chép' : 'Sao chép link' }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#667768] transition hover:bg-[#667768]/10 hover:border-[#667768]"
+              @click="printArticle"
+              title="In bài viết"
+            >
+              <i class="fa-solid fa-print" aria-hidden="true"></i> In bài
+            </button>
+          </div>
+        </div>
         <!-- Bình luận công khai. Ở trong cột đọc, không ở cột phải: một luồng hội
              thoại dài không đoán được độ dài sẽ phá bố cục của một cột hẹp, và
              bình luận là phần *nội dung* của bài này chứ không phải điều hướng đi
@@ -391,7 +436,50 @@ const showTopics = computed(
 useSeoMeta({
   title: computed(() => (article.value ? `${article.value.title} | Con Đường Hướng Thiện` : props.seoFallbackTitle)),
   description: computed(() => article.value?.excerpt || props.seoFallbackDescription),
+  ogTitle: computed(() => (article.value ? `${article.value.title} | Con Đường Hướng Thiện` : props.seoFallbackTitle)),
+  ogDescription: computed(() => article.value?.excerpt || props.seoFallbackDescription),
+  ogImage: computed(() => article.value?.thumbnailUrl || '/assets/hero_banner.jpg'),
+  ogType: 'article',
 })
+
+const toast = useToast()
+const copiedArticleLink = ref(false)
+
+const getArticleUrl = () => {
+  if (typeof window !== 'undefined') return window.location.href
+  return ''
+}
+
+const shareFacebook = () => {
+  const url = encodeURIComponent(getArticleUrl())
+  if (typeof window !== 'undefined') {
+    window.open(`https://www.facebook.com/sharer/sharer.php?u=${url}`, '_blank', 'noopener,noreferrer,width=600,height=400')
+  }
+}
+
+const shareZalo = () => {
+  const url = encodeURIComponent(getArticleUrl())
+  if (typeof window !== 'undefined') {
+    window.open(`https://sp.zalo.me/share_inline?link=${url}`, '_blank', 'noopener,noreferrer,width=600,height=400')
+  }
+}
+
+const copyArticleLink = async () => {
+  const url = getArticleUrl()
+  if (!url) return
+  try {
+    await navigator.clipboard.writeText(url)
+    copiedArticleLink.value = true
+    toast.success('Đã sao chép liên kết bài viết vào bộ nhớ tạm!')
+    setTimeout(() => { copiedArticleLink.value = false }, 2500)
+  } catch {
+    toast.error('Không thể sao chép liên kết.')
+  }
+}
+
+const printArticle = () => {
+  if (typeof window !== 'undefined') window.print()
+}
 
 /**
  * Ghi nhận lượt xem từ trình duyệt, không phải từ lượt dựng phía máy chủ.

@@ -38,26 +38,61 @@
           </article>
         </div>
 
-        <!-- Nút mũi tên tròn đè hai bên mép, canh giữa vùng ảnh (đúng vị trí như ảnh cand.vn) -->
-        <button class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 left-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]" @click="prevSlide" aria-label="Slide trước">
-          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        <!-- Nút mũi tên tròn đè hai bên mép (Desktop) -->
+        <button
+          type="button"
+          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 left-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
+          @click="prevSlide"
+          aria-label="Slide trước"
+        >
+          <i class="fa-solid fa-chevron-left text-sm" aria-hidden="true"></i>
         </button>
-        <button class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 right-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]" @click="nextSlide" aria-label="Slide tiếp">
-          <svg viewBox="0 0 24 24" width="20" height="20" stroke="currentColor" stroke-width="2.5" fill="none" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+        <button
+          type="button"
+          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 right-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
+          @click="nextSlide"
+          aria-label="Slide tiếp"
+        >
+          <i class="fa-solid fa-chevron-right text-sm" aria-hidden="true"></i>
         </button>
 
-        <!-- Hàng dưới: mũi tên nhỏ + progress bar + hint — đúng `.wrap-function` của cand.vn -->
-        <div class="mt-6 flex items-center gap-3 px-1">
-          <button class="text-[#4A6741] w-7 h-7 flex-shrink-0 rounded-full border border-[rgba(30,70,32,0.15)] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]" @click="prevSlide" aria-label="Trước">
-            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" aria-hidden="true"><polyline points="15 18 9 12 15 6"></polyline></svg>
+        <!-- Thanh bấm chuyển tab / slide trực quan bên dưới -->
+        <div class="mt-7 flex items-center justify-center gap-3">
+          <button
+            type="button"
+            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed"
+            :disabled="currentIndex <= 0"
+            @click="prevSlide"
+            aria-label="Slide trước"
+          >
+            <i class="fa-solid fa-chevron-left text-xs" aria-hidden="true"></i>
           </button>
-          <div class="flex-1 h-[5px] rounded-full bg-[rgba(30,70,32,0.12)] overflow-hidden">
-            <div class="h-full rounded-full bg-[#7CB342] transition-[width] duration-300 ease-out" :style="{ width: progress + '%' }"></div>
+
+          <!-- Clickable indicator tabs / pills -->
+          <div class="flex items-center gap-1.5 px-2.5 py-1.5 bg-white rounded-full border border-[#E2E8DF] shadow-sm">
+            <button
+              v-for="(_, idx) in list"
+              :key="idx"
+              type="button"
+              @click="goToSlide(idx)"
+              :class="[
+                'h-2.5 rounded-full transition-all duration-300 cursor-pointer border-none p-0',
+                currentIndex === idx ? 'w-6 bg-[#4A6741]' : 'w-2.5 bg-[#D5E1D3] hover:bg-[#7CB342]'
+              ]"
+              :aria-label="`Chuyển đến tấm gương số ${idx + 1}`"
+              :aria-current="currentIndex === idx ? 'true' : undefined"
+            ></button>
           </div>
-          <button class="text-[#4A6741] w-7 h-7 flex-shrink-0 rounded-full border border-[rgba(30,70,32,0.15)] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]" @click="nextSlide" aria-label="Tiếp">
-            <svg viewBox="0 0 24 24" width="14" height="14" stroke="currentColor" stroke-width="2.5" fill="none" aria-hidden="true"><polyline points="9 18 15 12 9 6"></polyline></svg>
+
+          <button
+            type="button"
+            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed"
+            :disabled="currentIndex >= totalCards - 1"
+            @click="nextSlide"
+            aria-label="Slide tiếp"
+          >
+            <i class="fa-solid fa-chevron-right text-xs" aria-hidden="true"></i>
           </button>
-          <span class="text-[0.74rem] text-[#7A8675] whitespace-nowrap hidden sm:inline">Kéo sang để xem nhanh hơn</span>
         </div>
       </div>
 
@@ -67,7 +102,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
@@ -108,6 +143,8 @@ const list = computed(() =>
 // `scrollLeft` trên kiểu đó.
 const track = ref<HTMLElement | null>(null)
 const progress = ref(0)
+const currentIndex = ref(0)
+const totalCards = computed(() => list.value.length)
 let autoplayTimer: ReturnType<typeof setInterval> | null = null
 
 const onScroll = () => {
@@ -115,42 +152,68 @@ const onScroll = () => {
   if (!el) return
   const max = el.scrollWidth - el.clientWidth
   progress.value = max > 0 ? Math.min(100, Math.max(0, (el.scrollLeft / max) * 100)) : 0
+  const card = el.children[0] as HTMLElement | undefined
+  const step = card ? card.offsetWidth + 18 : 268
+  currentIndex.value = Math.min(totalCards.value - 1, Math.max(0, Math.round(el.scrollLeft / step)))
 }
 
 const scrollByCard = (dir: 1 | -1) => {
   const el = track.value
   if (!el) return
   const card = el.children[0] as HTMLElement | undefined
-  // +18px là gap-[18px] giữa các slide — bắt buộc tính cả gap, không thì mỗi
-  // bước lệch một nửa card và ảnh bị cắt đôi ở mép.
   const step = card ? card.offsetWidth + 18 : el.clientWidth * 0.8
-  el.scrollBy({ left: dir * step, behavior: 'smooth' })
+  const max = el.scrollWidth - el.clientWidth
+  if (dir === 1 && el.scrollLeft >= max - 8) {
+    el.scrollTo({ left: 0, behavior: 'smooth' })
+  } else if (dir === -1 && el.scrollLeft <= 8) {
+    el.scrollTo({ left: max, behavior: 'smooth' })
+  } else {
+    el.scrollBy({ left: dir * step, behavior: 'smooth' })
+  }
 }
 const nextSlide = () => scrollByCard(1)
 const prevSlide = () => scrollByCard(-1)
 
+const goToSlide = (idx: number) => {
+  const el = track.value
+  if (!el) return
+  const card = el.children[0] as HTMLElement | undefined
+  const step = card ? card.offsetWidth + 18 : 268
+  el.scrollTo({ left: idx * step, behavior: 'smooth' })
+  currentIndex.value = idx
+}
+
 const startAutoplay = () => {
   stopAutoplay()
-  // 5s/slide: đủ để đọc một tiêu đề 2 dòng. cand.vn dùng 10s nhưng dữ liệu của
-  // mình ít slide hơn nên vòng lặp dài hơn sẽ trông như đứng im.
   autoplayTimer = setInterval(() => {
     const el = track.value
     if (!el) return
     const max = el.scrollWidth - el.clientWidth
-    if (max > 0 && el.scrollLeft + el.clientWidth >= max - 2) {
+    if (max > 0 && el.scrollLeft >= max - 8) {
       el.scrollTo({ left: 0, behavior: 'smooth' })
     } else {
       scrollByCard(1)
     }
-  }, 5000)
+  }, 3500)
 }
 const stopAutoplay = () => {
   if (autoplayTimer) { clearInterval(autoplayTimer); autoplayTimer = null }
 }
 
+watch(list, (newList) => {
+  if (newList.length) {
+    nextTick(() => {
+      onScroll()
+      startAutoplay()
+    })
+  }
+}, { immediate: true })
+
 onMounted(() => {
-  onScroll()
-  if (list.value.length) startAutoplay()
+  nextTick(() => {
+    onScroll()
+    if (list.value.length) startAutoplay()
+  })
 })
 onUnmounted(() => stopAutoplay())
 </script>

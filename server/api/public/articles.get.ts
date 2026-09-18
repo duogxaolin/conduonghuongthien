@@ -54,7 +54,11 @@ export default defineEventHandler(async (event) => {
       conditions.push(like(articles.title, `%${search}%`))
     }
     if (type) {
-      conditions.push(eq(articles.type, type))
+      if (type === 'reintegration_model' || type === 'reintegration') {
+        conditions.push(inArray(articles.type, ['reintegration', 'reintegration_model']))
+      } else {
+        conditions.push(eq(articles.type, type))
+      }
     }
     if (categoryIds) {
       const onlyId = categoryIds.length === 1 ? categoryIds[0] : undefined

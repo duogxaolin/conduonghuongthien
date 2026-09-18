@@ -139,8 +139,8 @@ function onSliceClick(scope: 'source' | 'device', row: BreakdownRow) {
 
 const stats = ref([
   { title: 'Bài viết & Tin tức', value: '...', icon: 'fa-solid fa-newspaper', badge: 'Nội dung', accent: '#2c6e33', bg: '#f0f7f1', path: '/admin/content/articles' },
-  { title: 'Tấm gương tiêu biểu', value: '...', icon: 'fa-solid fa-trophy', badge: 'Nhân vật', accent: '#c8832a', bg: '#fdf4e7', path: '/admin/content/articles' },
-  { title: 'Đơn đăng ký hỗ trợ', value: '...', icon: 'fa-solid fa-envelope-open-text', badge: 'Chờ xử lý', accent: '#2e7db8', bg: '#eef5fb', path: '/admin/submissions' },
+  { title: 'Tấm gương tiêu biểu', value: '...', icon: 'fa-solid fa-trophy', badge: 'Nhân vật', accent: '#c8832a', bg: '#fdf4e7', path: '/admin/content/articles?type=role_model' },
+  { title: 'Đơn đăng ký hỗ trợ', value: '...', icon: 'fa-solid fa-envelope-open-text', badge: 'Chờ xử lý', accent: '#2e7db8', bg: '#eef5fb', path: '/admin/submissions?status=new' },
   { title: 'Thư viện Media', value: '...', icon: 'fa-solid fa-images', badge: 'Tệp tin', accent: '#7a5cbf', bg: '#f4f0fb', path: '/admin/media' },
 ])
 
@@ -153,8 +153,9 @@ const quickActions = [
 
 onMounted(async () => {
   try {
-    const [artRes, subRes, mediaRes] = await Promise.all([
+    const [artRes, roleModelRes, subRes, mediaRes] = await Promise.all([
       $fetch('/api/admin/articles').catch(() => null),
+      $fetch('/api/admin/articles', { query: { type: 'role_model' } }).catch(() => null),
       $fetch('/api/admin/submissions').catch(() => null),
       $fetch('/api/admin/media').catch(() => null),
     ])
@@ -163,7 +164,8 @@ onMounted(async () => {
       if (card) card.value = String(value)
     }
     if (artRes?.ok) setStat(0, artRes.pagination?.total || 0)
-    if (subRes?.ok) setStat(2, subRes.submissions?.length || 0)
+    if (roleModelRes?.ok) setStat(1, roleModelRes.pagination?.total || 0)
+    if (subRes?.ok) setStat(2, subRes.counts?.new ?? subRes.submissions?.length ?? 0)
     if (mediaRes?.ok) setStat(3, mediaRes.pagination?.total || 0)
   } catch { /* ignore */ }
   await Promise.all([loadTraffic(), loadLive(), loadBreakdowns()])
