@@ -152,7 +152,7 @@
           <template v-else>
             <div class="flex flex-col gap-3.5">
               <div
-                v-for="(item, index) in filteredFaqs"
+                v-for="(item, index) in paginatedFaqs"
                 :key="item.id"
                 class="bg-white rounded-2xl border transition-all duration-300 overflow-hidden"
                 :class="activeIndex === index
@@ -203,6 +203,55 @@
                 </div>
               </div>
             </div>
+
+              <!-- Pagination -->
+              <nav
+                v-if="filteredFaqs.length > 0"
+                class="mt-8 pt-6 border-t border-[#DDE6DC] flex flex-col sm:flex-row items-center justify-between gap-4"
+                aria-label="Phân trang câu hỏi"
+              >
+                <div class="text-xs text-[#6F7F6C] font-medium">
+                  Trang <strong>{{ currentPage }}</strong> trên tổng số <strong>{{ totalPages }}</strong> trang
+                </div>
+
+                <div class="flex items-center gap-1.5 flex-wrap justify-center">
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-[#4A5545] text-xs font-bold cursor-pointer transition-all hover:border-[#4A6741] hover:text-[#4A6741] disabled:opacity-30 disabled:cursor-not-allowed"
+                    :disabled="currentPage <= 1"
+                    @click="setPage(currentPage - 1)"
+                    aria-label="Trang trước"
+                  >
+                    <i class="fa-solid fa-chevron-left text-[0.7rem]" aria-hidden="true"></i>
+                  </button>
+
+                  <button
+                    v-for="p in totalPages"
+                    :key="p"
+                    type="button"
+                    :class="[
+                      'inline-flex items-center justify-center min-w-9 h-9 px-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all',
+                      currentPage === p
+                        ? 'bg-[#4A6741] text-white border border-[#4A6741] shadow-sm'
+                        : 'bg-white border border-[#D5E1D3] text-[#4A5545] hover:border-[#4A6741] hover:text-[#4A6741]'
+                    ]"
+                    :aria-current="currentPage === p ? 'page' : undefined"
+                    @click="setPage(p)"
+                  >
+                    {{ p }}
+                  </button>
+
+                  <button
+                    type="button"
+                    class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-[#4A5545] text-xs font-bold cursor-pointer transition-all hover:border-[#4A6741] hover:text-[#4A6741] disabled:opacity-30 disabled:cursor-not-allowed"
+                    :disabled="currentPage >= totalPages"
+                    @click="setPage(currentPage + 1)"
+                    aria-label="Trang tiếp"
+                  >
+                    <i class="fa-solid fa-chevron-right text-[0.7rem]" aria-hidden="true"></i>
+                  </button>
+                </div>
+              </nav>
           </template>
         </div>
 
@@ -295,6 +344,19 @@ const filteredFaqs = computed(() => {
     item.excerpt?.toLowerCase().includes(kw)
   )
 })
+
+const perPage = 5
+const currentPage = ref(1)
+const totalPages = computed(() => Math.ceil(filteredFaqs.value.length / perPage) || 1)
+const paginatedFaqs = computed(() => {
+  const start = (currentPage.value - 1) * perPage
+  return filteredFaqs.value.slice(start, start + perPage)
+})
+const setPage = (p: number) => {
+  if (p < 1 || p > totalPages.value) return
+  currentPage.value = p
+  activeIndex.value = null
+}
 
 const toggleFaq = (index: number) => {
   activeIndex.value = activeIndex.value === index ? null : index

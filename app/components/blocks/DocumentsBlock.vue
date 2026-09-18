@@ -24,73 +24,80 @@
         </nuxt-link>
       </div>
 
-      <!-- Loading State (Skeleton) -->
-      <div v-if="pending" role="status" aria-busy="true" class="grid grid-cols-1 md:grid-cols-2 gap-5">
+      <!-- Loading State (Skeleton 3 cards) -->
+      <div v-if="pending" role="status" aria-busy="true" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
         <span class="sr-only">Đang tải danh sách văn bản pháp luật</span>
         <div
-          v-for="n in 4"
+          v-for="n in 3"
           :key="n"
-          class="bg-white rounded-2xl border border-[#E2E8DF] p-5 flex gap-4 animate-pulse motion-reduce:animate-none shadow-sm"
+          class="bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-sm animate-pulse motion-reduce:animate-none flex flex-col"
         >
-          <div class="w-12 h-12 rounded-xl bg-[#EEF2EC] shrink-0"></div>
-          <div class="flex-1 space-y-2.5">
-            <div class="h-3.5 w-28 bg-[#EEF2EC] rounded"></div>
-            <div class="h-4.5 w-3/4 bg-[#EEF2EC] rounded"></div>
-            <div class="h-3 w-full bg-[#EEF2EC] rounded"></div>
+          <div class="aspect-video bg-[#EEF2EC]"></div>
+          <div class="p-4 sm:p-5 flex flex-col gap-3 flex-1">
+            <div class="h-3.5 w-24 bg-[#EEF2EC] rounded"></div>
+            <div class="h-5 w-full bg-[#EEF2EC] rounded"></div>
+            <div class="h-3.5 w-full bg-[#EEF2EC] rounded"></div>
           </div>
         </div>
       </div>
 
-      <!-- Documents Grid (2 Columns, Clean Cards) -->
-      <div v-else-if="docs.length" class="grid grid-cols-1 md:grid-cols-2 gap-5">
-        <nuxt-link
+      <!-- Documents Grid (Giống hệt card bài viết news) -->
+      <div v-else-if="docs.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
+        <article
           v-for="doc in docs"
           :key="doc.id"
-          :to="`/news/${doc.slug}`"
-          class="group bg-white rounded-2xl border border-[#E2E8DF] p-5 sm:p-6 flex gap-4 sm:gap-5 transition-all duration-300 hover:shadow-md hover:border-[#7CB342] hover:-translate-y-0.5 no-underline text-[#172516] relative overflow-hidden"
+          class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-[#7CB342] transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
         >
-          <!-- Left Icon Badge -->
-          <div class="w-12 h-12 rounded-xl bg-[#EBF3E8] text-[#2D5A27] group-hover:bg-[#4A6741] group-hover:text-white flex items-center justify-center shrink-0 transition-colors duration-300 shadow-sm text-lg">
-            <i class="fa-solid fa-file-shield" aria-hidden="true"></i>
-          </div>
+          <!-- Thumbnail: strictly 16:9 với hover zoom -->
+          <nuxt-link :to="`/news/${doc.slug}`" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
+            <img
+              :src="doc.thumbnailUrl || '/assets/hero_banner.jpg'"
+              :alt="doc.title"
+              class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
+              loading="lazy"
+              decoding="async"
+            />
+            <div class="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
+          </nuxt-link>
 
-          <!-- Right Content Details -->
-          <div class="flex-1 min-w-0 flex flex-col justify-between">
-            <div>
-              <div class="flex items-center gap-2 mb-1.5 flex-wrap">
-                <span class="inline-block bg-[#EEF4EC] text-[#2D5A27] text-[0.7rem] font-bold px-2 py-0.5 rounded uppercase tracking-wider">
-                  {{ doc.categoryName }}
-                </span>
-                <span class="text-xs text-[#889684] flex items-center gap-1.5 font-medium">
-                  <i class="fa-regular fa-calendar-days text-[0.72rem]" aria-hidden="true"></i>
-                  <span>{{ doc.date }}</span>
-                </span>
-              </div>
+          <!-- Card Content: flex-1 justify-between -->
+          <div class="p-4 sm:p-5 flex flex-col flex-1">
+            <!-- Meta row -->
+            <div class="flex items-center gap-2 text-xs text-[#7A8A76] font-medium mb-2">
+              <span class="inline-block bg-[#EEF4EC] text-[#2D5A27] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
+                {{ doc.categoryName }}
+              </span>
+              <span class="flex items-center gap-1 text-[#889684] text-[0.75rem]">
+                <i class="fa-regular fa-calendar-days text-[0.72rem]" aria-hidden="true"></i>
+                <span>{{ doc.date }}</span>
+              </span>
+            </div>
 
-              <!-- Title -->
-              <h3 class="text-[0.98rem] sm:text-[1.02rem] font-bold leading-snug text-[#172516] group-hover:text-[#2D5A27] transition-colors line-clamp-2 my-2 m-0">
+            <!-- Title: line-clamp-2 min-h -->
+            <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-[#172516] group-hover:text-[#2D5A27] transition-colors duration-200 line-clamp-2 min-h-[2.6rem] mb-2 m-0">
+              <nuxt-link :to="`/news/${doc.slug}`" class="text-[#172516] hover:text-[#2D5A27] no-underline">
                 {{ doc.title }}
-              </h3>
+              </nuxt-link>
+            </h3>
 
-              <!-- Excerpt -->
-              <p v-if="doc.excerpt" class="text-[0.84rem] text-[#556450] leading-relaxed line-clamp-2 mb-3 m-0">
-                {{ doc.excerpt }}
-              </p>
-            </div>
+            <!-- Excerpt: line-clamp-2 -->
+            <p v-if="doc.excerpt" class="text-[0.84rem] text-[#556450] leading-relaxed line-clamp-2 mb-3 m-0">
+              {{ doc.excerpt }}
+            </p>
 
-            <!-- Bottom Action Link: pinned to bottom -->
-            <div class="mt-auto pt-3 border-t border-[#F5F8F4] flex items-center justify-between text-xs">
-              <span class="text-[#385932] font-bold group-hover:text-[#1B3617] transition-colors flex items-center gap-1.5">
-                <span>Xem toàn văn văn bản</span>
-                <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-1" aria-hidden="true"></i>
-              </span>
-              <span class="text-[#9AABA0] font-medium text-[0.72rem] flex items-center gap-1">
-                <i class="fa-solid fa-shield-halved text-[#7CB342] text-[0.7rem]" aria-hidden="true"></i>
-                <span>Cơ quan ban hành</span>
-              </span>
+            <!-- Footer: pinned with mt-auto -->
+            <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#7A8A76]">
+              <nuxt-link
+                :to="`/news/${doc.slug}`"
+                class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
+              >
+                <span>Chi tiết</span>
+                <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
+              </nuxt-link>
+              <span class="text-[#8E9F8B] font-medium text-[0.72rem]">Văn bản pháp luật</span>
             </div>
           </div>
-        </nuxt-link>
+        </article>
       </div>
 
       <!-- Empty State -->
@@ -121,7 +128,7 @@ const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
 const formatDate = (dateStr: string | null | undefined) => formatDateVN(dateStr)
-const maxItems = computed(() => Number(d.value.maxItems) || 4)
+const maxItems = computed(() => Number(d.value.maxItems) || 3)
 const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, pending } = await useAsyncData(
@@ -141,9 +148,10 @@ const docs = computed(() =>
     id: a.id,
     slug: a.slug,
     title: a.title,
+    thumbnailUrl: a.thumbnailUrl || null,
     date: formatDate(a.publishedAt || a.createdAt),
     excerpt: a.excerpt ? String(a.excerpt).replace(/<[^>]*>/g, ' ').slice(0, 180) : '',
-    categoryName: a.categoryName || 'Văn bản pháp luật',
+    categoryName: a.categoryName || 'Văn bản quy phạm',
   }))
 )
 </script>
