@@ -2,7 +2,7 @@
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
- * Automatic cleanup for the two tables holding personal data.
+ * Automatic cleanup for the tables holding personal data.
  *
  * Deliberate framing: the numbers come first, the switches second. An operator
  * setting a row cap needs to know the table currently holds 812k rows, and an
@@ -15,7 +15,7 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
  */
 
 type Scope = {
-  scope: 'activity_logs' | 'submissions' | 'chat_sessions' | 'reader_accounts'
+  scope: 'activity_logs' | 'submissions' | 'chat_sessions' | 'reader_accounts' | 'livestream_sessions'
   days: number
   daysSource: string
   maxRows: number
@@ -38,12 +38,14 @@ const SCOPE_LABELS: Record<string, string> = {
   submissions: 'Đơn đăng ký hỗ trợ',
   chat_sessions: 'Phiên trò chuyện chatbot',
   reader_accounts: 'Tài khoản người đọc',
+  livestream_sessions: 'Phiên phát trực tiếp',
 }
 const SCOPE_NOTES: Record<string, string> = {
   activity_logs: 'Mỗi lần đăng nhập và mọi thao tác thêm/sửa/xoá đều sinh một dòng, kèm IP và trình duyệt.',
   submissions: 'Chứa họ tên, số điện thoại, email và nội dung công dân tự nhập. Thời hạn lưu do quy định của cơ quan quyết định.',
   chat_sessions: 'Chứa nội dung hội thoại giữa khách và trợ lý AI, kèm IP và có khi cả số điện thoại. Tin nhắn tự xoá theo phiên (ON DELETE CASCADE) — chỉ cần đặt điều kiện dọn cho bảng phiên.',
   reader_accounts: 'Tài khoản đăng nhập Google để bình luận: email, tên hiển thị, IP và trình duyệt lần gần nhất. Tính tuổi theo lần truy cập gần nhất, không theo ngày tạo. Bình luận tự xoá theo tài khoản (ON DELETE CASCADE), kể cả phản hồi của Ban quản trị nằm dưới.',
+  livestream_sessions: 'Một buổi phát trực tiếp cùng phần trò chuyện khách đã gõ. Tính tuổi theo thời điểm KẾT THÚC, không theo lúc bắt đầu — buổi phát mở từ lâu mà vừa kết thúc sáng nay vẫn là một ngày tuổi. Buổi đang phát trực tiếp không bao giờ bị xoá. Tin nhắn tự xoá theo phiên (ON DELETE CASCADE).',
 }
 const SOURCE_LABELS: Record<string, string> = {
   database: 'đang đặt tại đây',
@@ -64,7 +66,25 @@ const running = ref(false)
 const scopes = ref<Scope[]>([])
 const command = ref('npm run analytics:maintenance')
 
-const form = reactive({
+/**
+ * The two numeric inputs each scope owns. Spelled out as a union rather than
+ * `keyof typeof form` so the map below can be typed: indexing `form` by a union
+ * of keys yields `never` for assignment, which is how a "just iterate it"
+ * refactor turns into a compile error instead of a working loop.
+ */
+type ScopeValueField =
+  | 'activityLogDays' | 'activityLogMaxRows'
+  | 'submissionDays' | 'submissionMaxRows'
+  | 'chatSessionDays' | 'chatSessionMaxRows'
+  | 'readerAccountDays' | 'readerAccountMaxRows'
+  | 'livestreamSessionDays' | 'livestreamSessionMaxRows'
+
+type RetentionForm = {
+  autoEnabled: boolean
+  runHour: number
+} & Record<ScopeValueField, number>
+
+const form = reactive<RetentionForm>({
   autoEnabled: true,
   runHour: 3,
   activityLogDays: 365,
@@ -75,7 +95,30 @@ const form = reactive({
   chatSessionMaxRows: 0,
   readerAccountDays: 365,
   readerAccountMaxRows: 0,
+  livestreamSessionDays: 90,
+  livestreamSessionMaxRows: 0,
 })
+
+/**
+ * Which form field holds each scope's two numbers.
+ *
+ * `load()` and `save()` both iterate this instead of the hand-written
+ * `else if (scope.scope === …)` chain that was here before. That chain failed
+ * silently in exactly the way this page exists to make visible: a scope the
+ * chain did not name still got a card and still got inputs, but the inputs
+ * bound to `undefined` and the save body omitted the fields — so the server kept
+ * the old window while the form showed something else, with no error anywhere.
+ *
+ * Keyed by `Scope['scope']`, so a sixth scope is a compile error here rather
+ * than a row of inputs that posts nothing.
+ */
+const SCOPE_FORM_FIELDS: Record<Scope['scope'], { days: ScopeValueField; maxRows: ScopeValueField }> = {
+  activity_logs: { days: 'activityLogDays', maxRows: 'activityLogMaxRows' },
+  submissions: { days: 'submissionDays', maxRows: 'submissionMaxRows' },
+  chat_sessions: { days: 'chatSessionDays', maxRows: 'chatSessionMaxRows' },
+  reader_accounts: { days: 'readerAccountDays', maxRows: 'readerAccountMaxRows' },
+  livestream_sessions: { days: 'livestreamSessionDays', maxRows: 'livestreamSessionMaxRows' },
+}
 const autoEnabledSource = ref('default')
 const runHourSource = ref('default')
 
@@ -83,6 +126,7 @@ const activity = computed(() => scopes.value.find(s => s.scope === 'activity_log
 const submission = computed(() => scopes.value.find(s => s.scope === 'submissions') ?? null)
 const chatSession = computed(() => scopes.value.find(s => s.scope === 'chat_sessions') ?? null)
 const readerAccount = computed(() => scopes.value.find(s => s.scope === 'reader_accounts') ?? null)
+const livestreamSession = computed(() => scopes.value.find(s => s.scope === 'livestream_sessions') ?? null)
 
 /** Nothing configured to delete anything — the switch being on changes nothing. */
 const nothingWillBeDeleted = computed(() =>
@@ -115,19 +159,10 @@ async function load() {
     autoEnabledSource.value = res.autoEnabledSource || 'default'
     runHourSource.value = res.runHourSource || 'default'
     for (const scope of scopes.value) {
-      if (scope.scope === 'activity_logs') {
-        form.activityLogDays = scope.days
-        form.activityLogMaxRows = scope.maxRows
-      } else if (scope.scope === 'submissions') {
-        form.submissionDays = scope.days
-        form.submissionMaxRows = scope.maxRows
-      } else if (scope.scope === 'chat_sessions') {
-        form.chatSessionDays = scope.days
-        form.chatSessionMaxRows = scope.maxRows
-      } else if (scope.scope === 'reader_accounts') {
-        form.readerAccountDays = scope.days
-        form.readerAccountMaxRows = scope.maxRows
-      }
+      const fields = SCOPE_FORM_FIELDS[scope.scope]
+      if (!fields) continue
+      form[fields.days] = scope.days
+      form[fields.maxRows] = scope.maxRows
     }
   } catch (err: unknown) {
     error.value = errorMessage(err, 'Không tải được cấu hình dọn dữ liệu.')
@@ -139,21 +174,17 @@ async function load() {
 async function save() {
   saving.value = true
   try {
-    await $fetch('/api/admin/settings/retention', {
-      method: 'PUT',
-      body: {
-        autoEnabled: form.autoEnabled,
-        runHour: Number(form.runHour),
-        activityLogDays: Number(form.activityLogDays),
-        activityLogMaxRows: Number(form.activityLogMaxRows),
-        submissionDays: Number(form.submissionDays),
-        submissionMaxRows: Number(form.submissionMaxRows),
-        chatSessionDays: Number(form.chatSessionDays),
-        chatSessionMaxRows: Number(form.chatSessionMaxRows),
-        readerAccountDays: Number(form.readerAccountDays),
-        readerAccountMaxRows: Number(form.readerAccountMaxRows),
-      },
-    })
+    const body: Record<string, number | boolean> = {
+      autoEnabled: form.autoEnabled,
+      runHour: Number(form.runHour),
+    }
+    for (const scope of scopes.value) {
+      const fields = SCOPE_FORM_FIELDS[scope.scope]
+      if (!fields) continue
+      body[fields.days] = Number(form[fields.days])
+      body[fields.maxRows] = Number(form[fields.maxRows])
+    }
+    await $fetch('/api/admin/settings/retention', { method: 'PUT', body })
     toast.success('Đã lưu cấu hình dọn dữ liệu.')
     await load()
   } catch (err: unknown) {
@@ -197,7 +228,7 @@ onMounted(load)
       <div>
         <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Tự Động Dọn Dữ Liệu</h1>
         <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">
-          Giới hạn thời gian lưu và số bản ghi của lịch sử hoạt động, đơn đăng ký và phiên trò chuyện chatbot — ba bảng chứa dữ liệu cá nhân
+          Giới hạn thời gian lưu và số bản ghi của lịch sử hoạt động, đơn đăng ký, phiên trò chuyện chatbot, tài khoản người đọc và phiên phát trực tiếp — năm bảng chứa dữ liệu cá nhân
         </p>
       </div>
       <div class="flex gap-2 shrink-0">
@@ -249,7 +280,7 @@ onMounted(load)
         <div class="text-[0.85rem] text-[#6b5418]">
           <p class="font-bold m-0 mb-1">Tự động dọn đang tắt</p>
           <p class="m-0">
-            Không có bản ghi nào bị xoá tự động. Hai bảng sẽ tiếp tục lớn lên đến khi anh/chị bật lại hoặc bấm
+            Không có bản ghi nào bị xoá tự động. Các bảng sẽ tiếp tục lớn lên đến khi anh/chị bật lại hoặc bấm
             <strong>Dọn ngay</strong>.
           </p>
         </div>
@@ -450,6 +481,24 @@ onMounted(load)
                 <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số bản ghi tối đa</label>
                 <input type="number" min="0" v-model.number="form.readerAccountMaxRows" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
                 <p class="text-[0.72rem] text-[#8a9a8c] m-0">Nên để 0: xoá một tài khoản là xoá luôn toàn bộ bình luận công khai của người đó.</p>
+              </div>
+            </div>
+          </div>
+          <div class="rounded-lg border border-[#e2ece3] p-4">
+            <p class="text-[0.88rem] font-bold text-[#122815] m-0 mb-3">Phiên phát trực tiếp</p>
+            <div class="flex flex-col gap-3">
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số ngày lưu</label>
+                <input type="number" min="0" max="3650" v-model.number="form.livestreamSessionDays" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+                <p class="text-[0.72rem] text-[#8a9a8c] m-0">
+                  0 hoặc từ 30 đến 3650. Tính theo thời điểm kết thúc buổi phát, không theo lúc bắt đầu. Buổi đang phát không bao giờ bị xoá.
+                  <span v-if="livestreamSession">Hiện {{ SOURCE_LABELS[livestreamSession.daysSource] }}.</span>
+                </p>
+              </div>
+              <div class="flex flex-col gap-1.5">
+                <label class="text-[0.8rem] font-bold text-[#2c3e2e]">Số bản ghi tối đa</label>
+                <input type="number" min="0" v-model.number="form.livestreamSessionMaxRows" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+                <p class="text-[0.72rem] text-[#8a9a8c] m-0">Nên để 0: xoá một phiên là xoá luôn phần trò chuyện của khách trong buổi phát đó.</p>
               </div>
             </div>
           </div>

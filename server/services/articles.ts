@@ -8,10 +8,11 @@
  * Keeping the check inside the per-row function makes that impossible.
  */
 import { createError } from 'h3'
-import { eq } from 'drizzle-orm'
+import { eq, inArray, notInArray, or, isNull, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { activityLogs, articles } from '../db/schema'
 import { requireResourcePermission, type ActorLike } from '../utils/permissions'
+import { checkPermission } from '../utils/auth'
 
 /** Article type → RBAC resource. Unknown types fall back to the strictest sane default. */
 const TYPE_RESOURCE: Record<string, string> = {
@@ -23,7 +24,23 @@ const TYPE_RESOURCE: Record<string, string> = {
 }
 
 export function articleResource(type: string | null | undefined): string {
-  return TYPE_RESOURCE[type ?? ''] || 'news'
+  return Object.hasOwn(TYPE_RESOURCE, type ?? '') ? TYPE_RESOURCE[type!]! : 'news'
+}
+
+/** Apply the same type boundary to rows, counts and author aggregates before pagination. */
+export function articleReadScope(actor: ActorLike, requestedType?: string) {
+  if (requestedType) {
+    requireResourcePermission(actor, articleResource(requestedType), 'read')
+    return eq(articles.type, requestedType)
+  }
+  if (actor.isSuperAdmin === true) return sql`1 = 1`
+  const allowed = Object.keys(TYPE_RESOURCE).filter(type => checkPermission(actor.permissions ?? [], articleResource(type), 'read'))
+  if (!allowed.length) throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
+  const explicit = inArray(articles.type, allowed)
+  // Dynamic CMS types deliberately inherit news permissions, exactly as writes do.
+  return allowed.includes('news')
+    ? or(explicit, notInArray(articles.type, Object.keys(TYPE_RESOURCE)), isNull(articles.type))!
+    : explicit
 }
 
 export const ARTICLE_STATUSES = ['draft', 'published', 'archived'] as const

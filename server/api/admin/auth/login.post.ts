@@ -4,7 +4,7 @@ import { verifyPassword } from '../../../utils/auth'
 import { eq } from 'drizzle-orm'
 import { logInfo, logWarn, SECURITY_EVENTS } from '../../../utils/logger'
 import { completeLogin, setChallengeCookie } from '../../../utils/mfa/session'
-import { countUnusedRecoveryCodes, usableFactorTypes } from '../../../utils/mfa/factors'
+import { countUnusedRecoveryCodes, factorAvailability } from '../../../utils/mfa/factors'
 import { getClientIp } from '../../../utils/client-ip'
 import {
   clearRateLimit,
@@ -117,10 +117,14 @@ export default defineEventHandler(async (event) => {
   // Thay vào đó phát một vé thử thách sống 5 phút, không mang quyền quản trị nào
   // (`server/middleware/admin-auth.ts` từ chối mọi token không phải stage phiên).
   //
-  // `usableFactorTypes` bỏ qua yếu tố TOTP không giải mã được (ví dụ sau khi xoay
-  // JWT_SECRET), nên tài khoản lùi về yếu tố khác chứ không bị kẹt ngoài cổng.
-  const usable = await usableFactorTypes(user.id)
-  if (usable.length > 0) {
+  // Yếu tố hỏng vẫn là yếu tố đã bật: chỉ mã dự phòng/yếu tố khác được phép
+  // thay thế nó, tuyệt đối không hạ xuống đăng nhập chỉ bằng mật khẩu.
+  const { active, usable } = await factorAvailability(user.id)
+  if (active) {
+    const recoveryCodesAvailable = (await countUnusedRecoveryCodes(user.id)) > 0
+    if (usable.length === 0 && !recoveryCodesAvailable) {
+      throw createError({ statusCode: 503, statusMessage: 'Không sử dụng được phương thức xác thực đã bật. Vui lòng liên hệ quản trị viên để khôi phục tài khoản.' })
+    }
     logInfo({
       event: 'auth.mfa_challenge_issued',
       username: user.username,
@@ -134,7 +138,7 @@ export default defineEventHandler(async (event) => {
       mfaRequired: true,
       // Chỉ tên phương thức — không secret, không mã, không hash.
       methods: usable,
-      recoveryCodesAvailable: (await countUnusedRecoveryCodes(user.id)) > 0,
+      recoveryCodesAvailable,
     }
   }
 

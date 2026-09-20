@@ -143,6 +143,18 @@ jobs:
           SUBMISSION_WORKFLOW_PORT: 3306
           SUBMISSION_WORKFLOW_USER: root
           SUBMISSION_WORKFLOW_PASSWORD: test_root_password
+          MEDIA_QUEUE_INTEGRATION: 1
+          MEDIA_QUEUE_PORT: 3306
+          MEDIA_QUEUE_USER: root
+          MEDIA_QUEUE_PASSWORD: test_root_password
+          MEDIA_UPLOAD_INTEGRATION: 1
+          MEDIA_UPLOAD_PORT: 3306
+          MEDIA_UPLOAD_USER: root
+          MEDIA_UPLOAD_PASSWORD: test_root_password
+          LIVESTREAM_TOGGLE_INTEGRATION: 1
+          LIVESTREAM_TOGGLE_PORT: 3306
+          LIVESTREAM_TOGGLE_USER: root
+          LIVESTREAM_TOGGLE_PASSWORD: test_root_password
         run: npm test
 
       # A suite that silently stops running is worse than one that fails: the run
@@ -163,6 +175,9 @@ jobs:
             [notification-page-integration]=NOTIFICATION_PAGE_INTEGRATION
             [notification-email-integration]=NOTIFICATION_EMAIL_INTEGRATION
             [submission-workflow-integration]=SUBMISSION_WORKFLOW_INTEGRATION
+            [media-queue-integration]=MEDIA_QUEUE_INTEGRATION
+            [upload-concurrency-integration]=MEDIA_UPLOAD_INTEGRATION
+            [livestream-toggle-integration]=LIVESTREAM_TOGGLE_INTEGRATION
           )
           status=0
           for file in tests/*-integration.test.ts; do

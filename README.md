@@ -60,6 +60,43 @@ docker exec -i cdkt_mysql mysql -u root -p<PASSWORD> cdkt_admin < backup.sql
 docker cp uploads_backup/. cdkt_app:/app/public/uploads/
 ```
 
+## Livestream & live chat — one replica only
+
+The live chat keeps its registry of open SSE streams **in process memory**
+(`server/utils/sse-manager.ts`). That is what makes the slow-reader bound and the
+shutdown broadcast cheap, and it is also the constraint: a reader connected to
+instance A never receives a message published on instance B. The only symptom is
+"chat works, sometimes" — no error, no log line, and it only shows up once enough
+people are watching.
+
+The pin is in two places, and both are needed:
+
+- `container_name: cdkt_app` in `docker-compose.yml`. Compose refuses a second
+  container with the same name, so `docker compose up --scale app=2` fails rather
+  than silently starting a second instance.
+- `CDKT_SSE_REPLICA_GUARD=1`, a declaration by the operator that they have checked
+  by whatever other route they deploy with. It does nothing on its own; it only
+  silences the boot-time warning from `server/plugins/livestream-replica-guard.ts`.
+  Leaving it unset in production logs a warning on every start.
+
+Multi-replica needs a pub/sub backplane (Redis) so that a message published on one
+instance reaches the streams held by the others. That is **out of scope** for this
+version.
+
+**Nginx** must disable proxy buffering and caching for the stream location and
+raise the read timeout, or the stream is buffered and readers see messages in
+bursts or not at all:
+
+```nginx
+location /api/public/livestream/chat/stream {
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 86400s;
+    proxy_set_header Connection '';
+    proxy_http_version 1.1;
+}
+```
+
 ## Admin Panel
 
 - URL: `/admin`

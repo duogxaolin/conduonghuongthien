@@ -164,10 +164,15 @@ test('chat history is purged by last_message_at, cascades to messages, and the c
 
     // `chat_messages` must not be reported as a purged table: it is not a
     // retention target, and listing it would invite a future window on it.
+    // `livestream_messages` is excluded the same way, one table down.
     assert.deepEqual(
       aged.tables.map(t => t.table),
-      ['activity_logs', 'submissions', 'chat_sessions', 'reader_accounts'],
+      ['activity_logs', 'submissions', 'chat_sessions', 'reader_accounts', 'livestream_sessions'],
       'chat_messages must not be a retention target — the cascade owns it',
+    )
+    assert.ok(
+      !aged.tables.some(t => (t.table as string).includes('message')),
+      'a message table became a retention target — its parent FK cascade owns it',
     )
 
     // ── The row cap ─────────────────────────────────────────────────────────

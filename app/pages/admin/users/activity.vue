@@ -55,6 +55,17 @@ const RESOURCE_LABELS: Record<string, string> = {
   // kiểm duyệt dữ liệu công dân đều nằm ngoài tầm bộ lọc của trang kiểm toán.
   readers: 'Người đọc', comments: 'Bình luận', article_comments: 'Bình luận bài viết',
   reader_ip_bans: 'Chặn địa chỉ IP', google_oauth_settings: 'Đăng nhập Google',
+  // Cổng media. `media_portal` **không** phải `media`: `media` là Thư viện Media cũ
+  // (`server/services/media.ts`), còn đây là mục video của cổng media mới, do
+  // `chunked-upload.ts` ghi khi một lượt tải lên hoàn tất. Gộp hai nhãn làm một là
+  // để bộ lọc trả về hai loại bản ghi khác nhau dưới cùng một tên, và người đọc
+  // nhật ký kết luận sai về thứ mình đang xem.
+  media_portal: 'Cổng media',
+  // Phát trực tiếp. `livestream.ts` ghi khoá này cho cả ba lượt ghi của nó (bắt
+  // đầu, dừng, lưu thành bản ghi), nên thiếu nhãn ở đây thì bộ lọc hiện một dòng
+  // trống còn `tests/activity-log-labels.test.ts` đỏ ở chiều "khoá được ghi mà
+  // không có nhãn" — chiều dễ bỏ sót nhất khi thêm một resource mới.
+  livestream: 'Phát trực tiếp',
 }
 const MFA_METHOD_LABELS: Record<string, string> = {
   totp: 'ứng dụng xác thực', email_otp: 'mã qua email',

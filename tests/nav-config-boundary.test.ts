@@ -102,6 +102,97 @@ describe('parseNavConfig — mọi đầu vào không dùng được ra null', (
   })
 
   /**
+   * Mục "Media" (`/media`) là mục top-level, cùng cấp với "Bản tin" và đứng
+   * **trước** "Tấm gương tiêu biểu" — nó là một khu vực nội dung riêng (video +
+   * buổi phát trực tiếp), không phải con của "Tin tức".
+   *
+   * Trước đây mục này bị gùi vào dropdown `news` vì thanh nav cũ chiếm ~974px
+   * trong container ~992px ở `lg`; nay container 1240px và label "Media" ngắn,
+   * nên mục thứ 9 vừa. Khẳng định này đọc cấu trúc: `/media` phải là mục ngang
+   * hàng (children rỗng), không bị gùi vào dropdown của mục nào khác.
+   */
+  it('Media là mục top-level, đứng trước Tấm gương tiêu biểu', () => {
+    assert.equal(DEFAULT_NAV.length, 9,
+      'thanh nav có 9 mục top-level — xem nav-config.ts')
+
+    const mediaIdx = DEFAULT_NAV.findIndex(item => item.url === '/media')
+    const roleModelsIdx = DEFAULT_NAV.findIndex(item => item.id === 'role-models')
+    assert.ok(mediaIdx !== -1, 'phải có mục /media')
+    assert.ok(roleModelsIdx !== -1, 'phải có mục role-models')
+    assert.ok(mediaIdx < roleModelsIdx,
+      'Media phải đứng TRƯỚC Tấm gương tiêu biểu trong DEFAULT_NAV')
+
+    const mediaItem = DEFAULT_NAV[mediaIdx]!
+    assert.equal(mediaItem.children?.length ?? 0, 0,
+      'Media là mục phẳng, không có dropdown con')
+
+    const owners = DEFAULT_NAV.filter(item =>
+      (item.children ?? []).some(child => child.url === '/media'))
+    assert.equal(owners.length, 0,
+      '/media không được nằm trong dropdown của mục nào khác — nó là top-level')
+  })
+
+  /**
+   * `labelKey` phải sống sót qua bộ khử độc.
+   *
+   * Cùng cái bẫy như `openNewTab` ngay dưới: `normalizeNavItem` dựng lại node từng
+   * trường, nên một trường không được nêu tên sẽ **biến mất trong im lặng** sau một
+   * lượt lưu thành công. Với `labelKey` hậu quả là mục nav hiện **khoá thô**
+   * (`video_lib`) thay vì nhãn, ở cả hai ngôn ngữ.
+   *
+   * Hôm nay `normalizeNavItem` có copy trường này (nav-config.ts:124-125) — test
+   * này khoá trạng thái đó lại, vì không có gì khác phát hiện được nếu nó bị bỏ.
+   */
+  it('giữ labelKey ở cả mục cha và mục con', () => {
+    const items = parseNavConfig(JSON.stringify([{
+      id: 'news', label: null, labelKey: 'news', url: '/news',
+      children: [{ id: 'media-video', label: null, labelKey: 'video_lib', url: '/media' }],
+    }]))
+    assert.equal(items![0]!.labelKey, 'news',
+      'labelKey của mục cha bị bộ khử độc bỏ qua — mục nav sẽ hiện khoá thô')
+    assert.equal(items![0]!.children![0]!.labelKey, 'video_lib',
+      'mục con đi qua cùng hàm, nên nó phải giữ labelKey y như mục cha')
+  })
+
+  /**
+   * Mọi `labelKey` trong bảng mặc định phải có bản dịch ở **cả hai** ngôn ngữ.
+   *
+   * Thiếu một khoá thì `t()` trả về chính khoá đó, và thanh nav hiện `video_lib`
+   * trên một trang tiếng Việt — trông như dữ liệu chưa nạp chứ không như lỗi dịch.
+   * Test này quét **cả cây** (mục cha lẫn mục con) vì mục con cũng đi qua `t()`.
+   *
+   * Đọc văn bản mã nguồn thay vì gọi `useI18n()`: hàm đó gọi `useCookie` /
+   * `useState` từ `#imports`, nên nó chỉ chạy được bên trong một ứng dụng Nuxt
+   * đang sống. Cùng cách `tests/public-qa-documents-page.test.ts` đang làm, và cùng
+   * giới hạn đã ghi ở đầu tệp: đây là khẳng định về **cấu trúc**, không phải về
+   * hành vi của `t()` lúc chạy.
+   */
+  it('mọi labelKey trong bảng mặc định đều có bản dịch ở cả hai ngôn ngữ', () => {
+    const dictionary = readFileSync(
+      new URL('../app/composables/useI18n.ts', import.meta.url), 'utf8')
+
+    const keys: string[] = []
+    const walk = (items: typeof DEFAULT_NAV) => {
+      for (const item of items) {
+        if (item.labelKey) keys.push(item.labelKey)
+        if (item.children?.length) walk(item.children)
+      }
+    }
+    walk(DEFAULT_NAV)
+    assert.ok(keys.includes('media'), 'mục Media phải có mặt trong cây nav')
+
+    const missing: string[] = []
+    for (const key of keys) {
+      // Hai lần xuất hiện = một bản VN + một bản EN. Một lần = chỉ một ngôn ngữ
+      // có nhãn, và ngôn ngữ kia hiện khoá thô.
+      const count = (dictionary.match(new RegExp(`\\b${key}:`, 'g')) ?? []).length
+      if (count !== 2) missing.push(`${key} (${count} bản)`)
+    }
+    assert.deepEqual(missing, [],
+      `khoá thiếu bản dịch ở một trong hai ngôn ngữ sẽ hiện thô trên thanh nav: ${missing.join(', ')}`)
+  })
+
+  /**
    * `openNewTab` phải sống sót qua bộ khử độc — nó ĐÃ TỪNG không.
    *
    * Cán bộ tick ô "Mở tab mới", `navigation.put.ts` lưu đúng trường đó, rồi

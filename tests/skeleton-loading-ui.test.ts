@@ -32,6 +32,10 @@ const DECORATIVE_PULSE_FILES: Record<string, string> = {
   'layouts/default.vue': 'hotline / support availability indicators (two sites)',
   'components/admin/AnalyticsLiveDashboard.client.vue': 'live-visitor heartbeat dot',
   'pages/admin/index.vue': '"Live" status badge dot on the realtime tile',
+  // Chấm "Đang phát trực tiếp" — chỉ báo trạng thái buổi livestream, không phải
+  // khung chờ. Nhịp đập là tín hiệu duy nhất nó mang; tắt chuyển động đi thì còn
+  // lại một chấm đỏ không nói lên điều gì. Cùng nhóm với bốn nhịp đã ghi ở trên.
+  'components/LiveHero.vue': 'livestream "on air" badge dot',
 }
 
 const SKELETON_COMPONENTS = [
@@ -70,6 +74,13 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/chatbot/knowledge/index.vue', marker: 'v-if="loading"' },
   { file: 'components/admin/ChatbotSmallTalkPanel.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/media/index.vue', marker: 'v-if="loading"' },
+  // Portal Media — kho video (`media_items`).
+  { file: 'pages/admin/media-portal/index.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/media-portal/external.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/media-portal/upload.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/media-portal/[id].vue', marker: 'v-if="loading"' },
+  // Livestream — trạng thái buổi phát trực tiếp.
+  { file: 'pages/admin/livestream/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/general.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/email.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/media-storage.vue', marker: 'v-if="loading"' },
@@ -128,6 +139,13 @@ const NO_SKELETON_NEEDED: Record<string, string> = {
   // boxes every few seconds would make a working dashboard look broken. Its
   // heartbeat dot is already an allowed decorative pulse above.
   'components/admin/AnalyticsLiveDashboard.client.vue': 'polls and keeps the last reading visible between ticks',
+  // Upload progress is a real progress bar (percent of received chunks), not a
+  // placeholder. A skeleton would replace a form the operator has just filled in
+  // and is now watching to completion — the page does not show a shape that
+  // approximates later content; the progress bar IS the content of the uploading
+  // phase, and replacing it with grey boxes removes the one thing the operator
+  // needs to see in that window.
+  'components/admin/ChunkedUploader.vue': 'upload progress bar is the content, not a placeholder for later content',
 }
 
 /** Files whose loading branch is drawn inline rather than by a shared component. */
@@ -154,6 +172,10 @@ const INLINE_PLACEHOLDER_FILES = [
   // an icon, a sentence, a byline and an optional note per entry. None of the
   // three shared skeletons describes that shape.
   'components/admin/SubmissionDetailModal.vue',
+  // Media Portal (kho video) và Livestream — bảng điều khiển và khối trạng
+  // thái, hình dạng không khớp với ba skeleton dùng chung.
+  'pages/admin/media-portal/index.vue',
+  'pages/admin/livestream/index.vue',
 ]
 
 /**

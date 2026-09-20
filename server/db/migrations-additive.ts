@@ -457,6 +457,32 @@ export async function ensureForeignKeyIfMissing(db: Connection, database: string
 
 
 /**
+ * Reshapes an existing column in place — the one operation `ensureColumn` cannot
+ * express, because `ensureColumn` only ever ADDs.
+ *
+ * **Guarded on the column existing, and that guard is the whole point.** A
+ * `MODIFY COLUMN` against a column that is not there fails with
+ * `ER_BAD_FIELD_ERROR`, and on a database that has not been through `initDb()`
+ * yet that is every column — so an unguarded ALTER turns "upgrade an old
+ * database" into "crash on a fresh one". Guarding means the statement is skipped
+ * exactly where the `CREATE TABLE` body has already declared the final shape.
+ *
+ * Idempotent by construction: re-running it re-applies the same definition, which
+ * MySQL reports as "0 rows changed" rather than an error.
+ *
+ * **Invisible to `npm run db:drift`.** The gate extracts columns from four
+ * patterns — `CREATE TABLE` bodies, `ensureColumn`, `addColumn` migrations and
+ * `tupleRe` — and `MODIFY COLUMN` matches none of them. So this call is not what
+ * makes the gate agree; the `CREATE TABLE` body in `init.ts` is. A change that
+ * lands here alone is a change the gate will keep reporting as consistent while
+ * an existing database disagrees with it. Write both.
+ */
+export async function modifyColumn(db: Connection, database: string, table: string, column: string, definition: string) {
+  if (!await hasColumn(db, database, table, column)) return
+  await db.query(`ALTER TABLE \`${table}\` MODIFY COLUMN \`${column}\` ${definition}`)
+}
+
+/**
  * Cột, chỉ mục và khoá ngoại thêm vào SAU khi 41 bảng đã tồn tại.
  *
  * Tách khỏi `initDb()` — hàm đó từng dài 690 dòng — nhưng ranh giới ở đây
@@ -471,6 +497,26 @@ export async function ensureForeignKeyIfMissing(db: Connection, database: string
  * chạy lại trên database đã đầy đủ thì không làm gì cả.
  */
 export async function applyAdditiveMigrations(db: Connection, database: string) {
+  // `CREATE TABLE IF NOT EXISTS` is needed here as well as init.ts: existing
+  // installations do not re-run the original create body after an upgrade.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`media_asset_cleanup\` (
+      \`id\` VARCHAR(36) NOT NULL PRIMARY KEY,
+      \`asset_root\` VARCHAR(1024) NOT NULL,
+      \`attempts\` INT NOT NULL DEFAULT 0,
+      \`next_attempt_at\` TIMESTAMP NULL DEFAULT NULL,
+      \`last_error\` VARCHAR(512) NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY \`media_asset_cleanup_due_idx\` (\`next_attempt_at\`, \`created_at\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  await ensureColumn(db, database, 'media_upload_sessions', 'completion_claim', 'VARCHAR(36) NULL')
+  await ensureColumn(db, database, 'media_upload_sessions', 'completion_heartbeat_at', 'TIMESTAMP NULL DEFAULT NULL')
+  await ensureColumn(db, database, 'media_upload_sessions', 'content_type', 'VARCHAR(64) NULL')
+  await ensureColumn(db, database, 'media_items', 'processing_attempts', 'INT NOT NULL DEFAULT 0')
+  await ensureColumn(db, database, 'media_items', 'processing_next_attempt_at', 'TIMESTAMP NULL DEFAULT NULL')
+  await ensureColumn(db, database, 'media_items', 'processing_heartbeat_at', 'TIMESTAMP NULL DEFAULT NULL')
 
   // design.md D9: existing articles start with comments closed (default 0).
   await ensureColumn(db, database, 'articles', 'comments_enabled', 'TINYINT(1) NOT NULL DEFAULT 0')
@@ -547,5 +593,43 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureIndex(db, database, 'analytics_daily_dimensions', 'analytics_dimensions_day_dimension_views_idx', 'INDEX `analytics_dimensions_day_dimension_views_idx` (`day`, `dimension`, `page_views`)')
   await ensureIndex(db, database, 'analytics_maintenance_runs', 'analytics_maintenance_status_day_idx', 'INDEX `analytics_maintenance_status_day_idx` (`status`, `day`)')
   await ensureIndex(db, database, 'analytics_maintenance_runs', 'analytics_maintenance_completed_at_idx', 'INDEX `analytics_maintenance_completed_at_idx` (`completed_at`)')
+
+  // ── Media portal: one comment table, two kinds of item ────────────────────
+  //
+  // A comment now belongs to an article OR a media item. `media_item_id` is the
+  // new side; `article_id` below is relaxed to match it.
+  //
+  // Both halves are needed and neither is redundant. On a fresh server the
+  // `CREATE TABLE` body in `init.ts` already declares the column, the index and
+  // the FK, so all three calls here are no-ops. On a server that already has
+  // `article_comments` — the one actually serving citizens — that body never runs
+  // again, and these ALTERs are the only thing that can add them.
+  await ensureColumn(db, database, 'article_comments', 'media_item_id', 'INT NULL AFTER `article_id`')
+  await ensureIndex(
+    db, database, 'article_comments', 'article_comments_media_parent_created_idx',
+    'INDEX `article_comments_media_parent_created_idx` (`media_item_id`, `parent_id`, `created_at`)',
+  )
+  await ensureForeignKeyIfMissing(
+    db, database, 'article_comments', 'fk_article_comments_media',
+    'FOREIGN KEY (`media_item_id`) REFERENCES `media_items` (`id`) ON DELETE CASCADE',
+  )
+
+  // `article_id` becomes nullable, and it takes **three** edits, not one:
+  //
+  //   1. the `CREATE TABLE` body in `init.ts` — a fresh server is born correct;
+  //   2. the Drizzle declaration in `schema.ts` — TypeScript must see `number | null`;
+  //   3. this ALTER — an existing database has a `NOT NULL` column that no
+  //      `CREATE TABLE IF NOT EXISTS` will ever revisit.
+  //
+  // Skip (1) and the drift gate fails forever: it reads nullability out of the
+  // body, so a database fixed only by ALTER still reports `LỆCH NULL`. Skip (3)
+  // and every media comment is rejected by the database on production while
+  // passing on a fresh test database. Skip (2) and the compiler keeps insisting
+  // a comment always has an article.
+  //
+  // The full definition is repeated rather than a bare `INT NULL`: `MODIFY
+  // COLUMN` replaces the whole column definition, so omitting a part of it drops
+  // that part.
+  await modifyColumn(db, database, 'article_comments', 'article_id', 'INT NULL')
 
 }

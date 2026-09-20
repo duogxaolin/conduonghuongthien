@@ -61,6 +61,33 @@ test('old backups are rotated rather than accumulating forever', () => {
   assert.match(read('scripts/backup-db.sh'), /-mtime "\+\$KEEP_DAYS"/)
 })
 
+test('a Media Portal archive accompanies the database dump', () => {
+  const script = read('scripts/backup-media.sh')
+  // The directory is a named compose volume.  Reading it through the actual
+  // app container avoids guessing Docker's project-name-prefixed volume name.
+  assert.match(script, /docker cp "\$CONTAINER:\/var\/lib\/cdkt\/media\/\." -/)
+  assert.match(script, /gzip -t "\$TARGET"/)
+  assert.match(script, /tar -tzf "\$TARGET"/)
+  assert.match(script, /cdkt-media-\$STAMP-\$\$\.tar\.gz/)
+  assert.match(script, /-mtime "\+\$KEEP_DAYS"/)
+})
+
+test('the combined backup gives SQL and media one explicit timestamp', () => {
+  const script = read('scripts/backup.sh')
+  assert.match(script, /export BACKUP_STAMP="\$STAMP"/)
+  assert.match(script, /\.\/scripts\/backup-db\.sh/)
+  assert.match(script, /\.\/scripts\/backup-media\.sh/)
+})
+
+test('media restore requires an explicit destructive acknowledgement', () => {
+  const script = read('scripts/restore-media.sh')
+  assert.match(script, /--replace/)
+  assert.match(script, /docker compose stop app/)
+  assert.match(script, /docker compose ps --status running -q app/)
+  assert.match(script, /archive contains an unsafe path/)
+  assert.match(script, /docker compose run --rm -T --no-deps/)
+})
+
 // ─── Restore verification ────────────────────────────────────────────────────
 test('the restore check never touches the live database', () => {
   const script = read('scripts/verify-restore.sh')
@@ -270,4 +297,288 @@ test('compose can pull a prebuilt image and still build locally', () => {
   assert.match(compose, /image: \$\{CDKT_IMAGE:-cdkt\/app:local\}/)
   // The local default keeps `docker compose build` working for development.
   assert.match(compose, /build:\s*\n\s*context: \./)
+})
+
+// ─── Media Portal deployment ─────────────────────────────────────────────────
+
+test('the memory limits default to no limit, and the default is what makes compose readable', () => {
+  // `${VAR:-0}` is not a style choice. `0` means "no limit" to Docker, so an
+  // unset variable resolves to `limits: {}` — which keeps the deliberate
+  // decision of b27be51 ("no RAM/CPU cap — the VPS has however much it has")
+  // intact while still letting an operator set a cap.
+  //
+  // Written bare, `memory: ${APP_MEM_LIMIT}`, an unset variable makes
+  // `docker compose config` EXIT NON-ZERO: `invalid size: ''`. Measured, not
+  // assumed. A compose file that cannot be read is a compose file that cannot
+  // be deployed — and it fails at the worst moment, on the server.
+  const compose = read('docker-compose.yml')
+  // Comments are stripped before the negative assertion, and that is not
+  // tidiness: the comment above each limit explains WHY the `:-0` is required
+  // by naming the broken form. Without this, the explanation would fail the
+  // test it is explaining, and the lesson drawn would be to delete the
+  // explanation rather than to keep the guard. Same rule the QA-documents
+  // guard follows.
+  const config = compose
+    .split('\n')
+    .filter((line) => !line.trim().startsWith('#'))
+    .join('\n')
+  for (const variable of ['APP_MEM_LIMIT', 'MYSQL_MEM_LIMIT']) {
+    assert.match(
+      config,
+      new RegExp(`memory: \\$\\{${variable}:-0\\}`),
+      `${variable} has no ":-0" fallback, so an unset variable breaks \`docker compose config\``,
+    )
+    assert.doesNotMatch(
+      config,
+      new RegExp(`memory: \\$\\{${variable}\\}`),
+      `${variable} is interpolated bare — unset makes compose unreadable`,
+    )
+  }
+  // Both services, not just the app: the neighbour-aware reasoning in
+  // check-resources.sh treats them as a pair.
+  assert.strictEqual(
+    (config.match(/deploy:\n\s+resources:\n\s+limits:\n\s+memory:/g) ?? []).length,
+    2,
+    'the memory limit is not declared on exactly the two services',
+  )
+})
+
+test('the media work directory is a volume of its own, not the media library', () => {
+  // The transcode scratch space holds multi-gigabyte parts of an upload in
+  // flight. Sharing `uploads_data` with the media library would put a
+  // half-processed video next to published files, where a library cleanup
+  // would delete work in progress.
+  const compose = read('docker-compose.yml')
+  assert.match(compose, /media_work:\/var\/lib\/cdkt\/media/)
+  assert.match(compose, /^volumes:\n(?:.*\n)*?\s+media_work:/m, 'the media_work volume is not declared')
+  // The mount point must match the image's own default, or the app writes to
+  // the container filesystem and loses every video on the next restart.
+  assert.match(compose, /CDKT_MEDIA_WORKDIR: \$\{CDKT_MEDIA_WORKDIR:-\/var\/lib\/cdkt\/media\}/)
+  assert.match(read('Dockerfile'), /ENV CDKT_MEDIA_WORKDIR=\/var\/lib\/cdkt\/media/)
+})
+
+test('every variable media-config reads is listed in compose', () => {
+  // compose does not use env_file: a variable set in .env that is not listed
+  // under `environment:` never reaches the container. `./manage.sh
+  // media-tuning` writes MEDIA_UPLOAD_ENABLED into .env — without this the
+  // command is a button that does nothing, and nothing says so.
+  //
+  // The list is derived from the source rather than typed here, so adding a
+  // variable to media-config.ts without wiring it fails this test instead of
+  // producing a setting that silently has no effect.
+  const compose = read('docker-compose.yml')
+  const config = read('server/utils/media-config.ts')
+  const names = [...config.matchAll(/parseMedia(?:Boolean|Integer)\(\s*'([A-Z0-9_]+)'/g)].map((m) => m[1])
+  assert.ok(names.length >= 7, `only ${names.length} media variables found in media-config.ts`)
+  for (const name of [...names, 'CDKT_MEDIA_WORKDIR']) {
+    assert.match(
+      compose,
+      new RegExp(`^\\s+${name}: \\$\\{${name}:-`, 'm'),
+      `${name} is read by the app but not passed through by compose`,
+    )
+  }
+})
+
+test('compose never supplies a second default for a media variable', () => {
+  // `parseMediaBoolean` / `parseMediaInteger` treat an empty string as "use the
+  // default", and those defaults are decisions with reasons written next to
+  // them. Restating a value here would create a second source of truth at the
+  // infrastructure layer, where nobody looks when editing the code.
+  //
+  // MEDIA_UPLOAD_ENABLED is the one that matters: the code defaults it to
+  // FALSE on purpose (a host without FFmpeg, or under the RAM floor, accepts a
+  // video and can never process it). `:-true` here would override a safe
+  // default with a more dangerous value.
+  const compose = read('docker-compose.yml')
+  for (const name of [
+    'MEDIA_UPLOAD_ENABLED', 'MEDIA_UPLOAD_MAX_SIZE', 'MEDIA_UPLOAD_CHUNK_SIZE',
+    'MEDIA_UPLOAD_SESSION_HOURS', 'MEDIA_DISK_FLOOR_BYTES',
+    'MEDIA_PROCESSING_HEARTBEAT_SECONDS', 'MEDIA_PROCESSING_STALE_MINUTES',
+  ]) {
+    assert.match(
+      compose,
+      new RegExp(`^\\s+${name}: \\$\\{${name}:-\\}$`, 'm'),
+      `${name} carries a value in compose instead of deferring to the app's default`,
+    )
+  }
+})
+
+test('the replica guard keeps its unset default, which is the point of the guard', () => {
+  // server/plugins/livestream-replica-guard.ts reads `=== '1'` and its docstring
+  // records why it deliberately does NOT default to '1': a variable with a
+  // correct default never warns anyone, and this warning exists precisely
+  // because the correct default is the thing nobody checks.
+  const compose = read('docker-compose.yml')
+  assert.match(compose, /CDKT_SSE_REPLICA_GUARD: \$\{CDKT_SSE_REPLICA_GUARD:-\}/)
+  assert.doesNotMatch(compose, /CDKT_SSE_REPLICA_GUARD[=:]\s*1\s*$/m, 'the guard is hardcoded on, so it can never warn')
+})
+
+test('ffmpeg is installed in the runtime stage, where it is actually needed', () => {
+  // `nuxi build` never invokes ffmpeg. Installing it in the builder stage would
+  // add ~100 MB to a layer that never reaches the image serving traffic.
+  const dockerfile = read('Dockerfile')
+  const runtimeStage = dockerfile.slice(dockerfile.indexOf('# ─── Stage 2'))
+  assert.match(runtimeStage, /RUN apk add --no-cache ffmpeg/, 'ffmpeg is not installed in the runtime stage')
+  assert.doesNotMatch(
+    dockerfile.slice(0, dockerfile.indexOf('# ─── Stage 2')),
+    /apk add[^\n]*ffmpeg/,
+    'ffmpeg is installed in the builder stage, where it is dead weight',
+  )
+})
+
+test('the media volume is writable by the unprivileged user', () => {
+  // A freshly created named volume inherits the ownership of the directory it
+  // is mounted over. If that directory is created by root at first use, the
+  // `node` user can never write to it — every upload fails with EACCES and
+  // nothing says why.
+  const dockerfile = read('Dockerfile')
+  const runtimeStage = dockerfile.slice(dockerfile.indexOf('# ─── Stage 2'))
+  const chownIndex = runtimeStage.indexOf('chown -R node:node')
+  assert.ok(chownIndex > -1, 'the runtime stage never chowns the app directory')
+
+  // Match the mkdir COMMAND, not the bare path: `ENV CDKT_MEDIA_WORKDIR=...`
+  // also contains `/var/lib/cdkt`, and it sits above the chown — so asserting
+  // on the path alone passes even when the directory is created after the
+  // chown that was supposed to give it away. Verified by swapping the two
+  // commands: the path-only form stayed green.
+  const mkdirMatch = /RUN mkdir[^\n]*\/var\/lib\/cdkt[^\n]*/.exec(runtimeStage)
+  assert.ok(mkdirMatch, 'the runtime stage never creates the media work directory')
+  assert.ok(
+    (mkdirMatch.index ?? -1) < chownIndex,
+    'the media directory is created after the chown, so it stays owned by root',
+  )
+  // And the user must actually be dropped after that, not before.
+  assert.ok(
+    runtimeStage.indexOf('USER node') > chownIndex,
+    'USER node comes before the chown, so the chown runs as the wrong user',
+  )
+})
+
+test('the resource script prints decimals the same way in every locale', () => {
+  // Measured on this project's own development machine, whose LC_NUMERIC is
+  // vi_VN: `printf '%.1f'` fed the output of `awk` exits 1 with "invalid
+  // number", and `set -Eeuo pipefail` turns that into the script's documented
+  // "missing tools" exit code — on a host where docker is installed and
+  // working. The printed value was wrong too (`15,0 GB` for 15.4 GB).
+  //
+  // awk always prints a dot regardless of locale; bash's printf reads according
+  // to LC_NUMERIC. So a float format applied directly to an awk value is the
+  // broken shape, and it lives on the exact line — source text is enough here.
+  const script = read('scripts/check-resources.sh')
+  assert.doesNotMatch(
+    script,
+    /printf[^\n]*%\.\d*f[^\n]*\$\{?\(?awk/,
+    'a float format is applied directly to an awk value, which breaks under a comma-decimal locale',
+  )
+  assert.doesNotMatch(script, /printf[^\n]*%\.\d+f[^\n]*\$\(awk/)
+  // The locale-safe path stays, and stays the only one.
+  assert.match(script, /to_g\(\) \{ awk "BEGIN\{printf \\"%\.10g\\"/)
+  assert.strictEqual((script.match(/^to_g\(\)/gm) ?? []).length, 1, 'to_g is defined more than once')
+})
+
+test('the RAM figure is printed through to_g, not through printf', () => {
+  const script = read('scripts/check-resources.sh')
+  const ramLine = script.split('\n').find((line) => line.includes('RAM:') && line.includes('printf'))
+  assert.ok(ramLine, 'the RAM line no longer prints at all')
+  assert.ok(
+    ramLine.includes('to_g'),
+    `the RAM line formats a float itself: ${ramLine.trim()}`,
+  )
+})
+
+test('to_g is defined before the first line that calls it', () => {
+  // bash resolves a function at call time, so this would still run — but a
+  // definition sitting below its first use reads as though it is in the wrong
+  // place, and the next person to move code will move the wrong one.
+  const script = read('scripts/check-resources.sh')
+  const definition = script.indexOf('\nto_g()')
+  const firstUse = script.indexOf('$(to_g ')
+  assert.ok(definition > -1 && firstUse > -1, 'to_g or its call site is gone')
+  assert.ok(definition < firstUse, 'to_g is defined after the line that calls it')
+})
+
+test('media-tuning asks check-resources for the memory figures instead of recomputing them', () => {
+  // A second copy of the formula is a second place to get it wrong, and it was
+  // wrong: the first version suggested app=6000m/mysql=1000m where
+  // check-resources.sh says mysql=4096m/app=2048m — three times off, and it
+  // gave MySQL the SMALLER share. That inverts the exact bug
+  // check-resources.sh exists to fix: MySQL reads its cgroup limit, not the
+  // host's RAM, to size the InnoDB buffer pool, so too low a cap is slower
+  // forever with nothing to report it.
+  const script = read('production/manage.sh')
+  const command = script.slice(script.indexOf('cmd_media_tuning()'), script.indexOf('# ── Entry ──'))
+  assert.ok(command.length > 0, 'cmd_media_tuning is gone')
+  assert.match(command, /check-resources\.sh/, 'media-tuning does not call check-resources.sh')
+  assert.doesNotMatch(
+    command,
+    /host_ram_mb - \d+/,
+    'media-tuning computes a memory figure from host RAM instead of asking the script',
+  )
+})
+
+test('media-tuning only reads and writes .env', () => {
+  // It must not restart containers: an operator runs it, reads the result, and
+  // decides when to apply it. Restarting a portal that is serving citizens
+  // because a value was just written — before anyone has looked at it — is a
+  // worse failure than the one the command fixes.
+  const script = read('production/manage.sh')
+  const command = script.slice(script.indexOf('cmd_media_tuning()'), script.indexOf('# ── Entry ──'))
+  // Only executable lines: the command legitimately PRINTS the `docker compose
+  // up -d` an operator should run next, and a check that cannot tell an
+  // instruction from an action would fail on that helpful line.
+  const executed = command
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => !line.startsWith('#') && !line.startsWith('echo'))
+  for (const verb of ['up -d', 'restart', 'stop', 'down', 'pull']) {
+    const offender = executed.find((line) => line.includes(`docker compose ${verb}`))
+    assert.strictEqual(
+      offender,
+      undefined,
+      `media-tuning runs \`docker compose ${verb}\`; it must only touch .env`,
+    )
+  }
+  // The floor is real, not rounded: three concurrent FFmpeg renditions on a
+  // small VPS make the OOM-killer take a DIFFERENT container.
+  assert.match(command, /RAM_FLOOR_MB=4000/)
+})
+
+test('set_env is idempotent, so re-running a command cannot duplicate a key', () => {
+  // compose reads .env as a mapping; two lines with the same key make the
+  // effective value depend on parse order rather than on intent.
+  const script = read('production/manage.sh')
+  const helper = script.slice(script.indexOf('set_env()'), script.indexOf('# ── Menu chính'))
+  assert.ok(helper.length > 0, 'set_env is gone')
+  // Replace in place when the key exists, append only when it does not.
+  assert.ok(helper.includes('grep -qE "^${key}="'), 'set_env does not detect an existing key')
+  assert.ok(helper.includes('sed -i "s|^${key}=.*|${key}=${value}|"'), 'set_env does not replace in place')
+  assert.ok(helper.includes('>> "$file"'), 'set_env never appends a key that is absent')
+  assert.ok(helper.includes('${3:-$ROOT/.env}'), 'set_env cannot be pointed at another file')
+})
+
+test('nginx is told about the large uploads and the unbuffered stream', () => {
+  // Two different shapes in two files, and both are needed: DEPLOY.md is a
+  // complete `server { }` block, CI-CD.md is the aaPanel fragment.
+  for (const [path, label] of [['DEPLOY.md', 'DEPLOY.md'], ['CI-CD.md', 'CI-CD.md']] as const) {
+    const doc = read(path)
+    const nginx = doc.slice(doc.indexOf('```nginx'))
+    assert.match(nginx, /location \/api\/admin\/media-portal\//, `${label} has no large-upload location`)
+    assert.match(nginx, /client_max_body_size 12g;/, `${label} caps uploads below the app's own limit`)
+    assert.match(nginx, /location \/api\/public\/livestream\/chat\/stream/, `${label} has no stream location`)
+    const stream = nginx.slice(nginx.indexOf('location /api/public/livestream/chat/stream'))
+    assert.match(stream, /proxy_buffering off;/, `${label} buffers the stream, which delays every message`)
+    assert.match(stream, /proxy_cache off;/, `${label} would serve one reader's conversation from cache`)
+    assert.match(stream, /proxy_read_timeout 86400s;/, `${label} closes a long-lived stream on the default timeout`)
+  }
+})
+
+test('the stream location names a route that exists', () => {
+  // A proxy rule for a path the app does not serve is a rule that silently
+  // does nothing; the feature looks configured and is not.
+  const route = read('server/api/public/livestream/chat/stream.get.ts')
+  assert.ok(route.length > 0)
+  assert.ok(
+    read('DEPLOY.md').includes('/api/public/livestream/chat/stream'),
+    'the documented proxy path does not match the route',
+  )
 })

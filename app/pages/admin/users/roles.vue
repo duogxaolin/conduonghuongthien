@@ -1,5 +1,9 @@
 <script setup lang="ts">
 import type { AdminRoleRow } from '~/types/admin-api'
+// `~~` resolves from the repository root for both Vite's client build and
+// Nitro's server bundle. A relative traversal beyond `app/` stays verbatim in
+// the generated SSR chunk, where it points at the wrong directory.
+import { PERMISSION_RESOURCES, PERMISSION_ACTIONS, rolePermissionMatrix, type PermissionFlags } from '~~/shared/permissions'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -24,21 +28,9 @@ const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
 
-const resourcesList = [
-  { key: 'news', label: 'Bản tin & Tin tức' },
-  { key: 'role_models', label: 'Tấm gương tiêu biểu' },
-  { key: 'reintegration', label: 'Mô hình tái hòa nhập' },
-  { key: 'documents', label: 'Văn bản pháp luật' },
-  { key: 'faq', label: 'Giải đáp pháp luật' },
-  { key: 'home_sections', label: 'Trang chủ (Kéo-thả)' },
-  { key: 'users', label: 'Quản lý Người dùng' },
-  { key: 'roles', label: 'Quản lý Phân quyền Rules' },
-  { key: 'media', label: 'Thư viện Media' },
-  { key: 'settings', label: 'Cài đặt Website' },
-  { key: 'submissions', label: 'Đơn đăng ký hỗ trợ' },
-]
+const resourcesList = PERMISSION_RESOURCES
 
-const permissionMatrix = reactive<Record<string, { canCreate: boolean; canRead: boolean; canUpdate: boolean; canDelete: boolean }>>({})
+const permissionMatrix = ref<Record<string, PermissionFlags>>({})
 const toast = useToast()
 
 const fetchRoles = async () => {
@@ -48,8 +40,8 @@ const fetchRoles = async () => {
     const res = await $fetch('/api/admin/roles')
     if (res.ok) {
       roles.value = res.roles
-      const first = roles.value[0]
-      if (first && !selectedRole.value) selectRole(first)
+      const current = roles.value.find(role => role.id === selectedRole.value?.id) ?? roles.value[0]
+      if (current) selectRole(current)
     } else {
       error.value = 'Không tải được danh sách vai trò.'
     }
@@ -62,29 +54,21 @@ const fetchRoles = async () => {
 
 const selectRole = (role: AdminRoleRow) => {
   selectedRole.value = role
-  resourcesList.forEach(r => {
-    const existingPerm = role.permissions?.find((p) => p.resource === r.key)
-    permissionMatrix[r.key] = {
-      canCreate: existingPerm ? Boolean(existingPerm.canCreate) : false,
-      canRead:   existingPerm ? Boolean(existingPerm.canRead)   : false,
-      canUpdate: existingPerm ? Boolean(existingPerm.canUpdate) : false,
-      canDelete: existingPerm ? Boolean(existingPerm.canDelete) : false,
-    }
-  })
+  permissionMatrix.value = rolePermissionMatrix(role.permissions ?? [])
 }
 
 // One row per resource paired with its (always-present) matrix entry: selectRole
 // seeds every key before the table renders, and pairing here gives v-model a
 // non-optional target.
 const matrixRows = computed(() => resourcesList.flatMap((res) => {
-  const perm = permissionMatrix[res.key]
+  const perm = permissionMatrix.value[res.key]
   return perm ? [{ res, perm }] : []
 }))
 
 const handleSavePermissions = async () => {
   if (!selectedRole.value) return
   saving.value = true
-  const permsPayload = Object.entries(permissionMatrix).map(([resource, perm]) => ({ resource, ...perm }))
+  const permsPayload = Object.entries(permissionMatrix.value).map(([resource, perm]) => ({ resource, ...perm }))
   try {
     const res = await $fetch(`/api/admin/roles/${selectedRole.value.id}`, {
       method: 'PUT',
@@ -106,7 +90,7 @@ onMounted(() => { fetchRoles() })
     <!-- Page Header -->
     <div>
       <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Quản lý Vai trò & Phân quyền Rules</h1>
-      <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Thiết lập chi tiết quyền Xem, Thêm, Sửa, Xóa cho từng vai trò trong hệ thống</p>
+      <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Thiết lập quyền cho từng tài nguyên. Quyền Xuất bản, Lưu trữ và Kiểm thử áp dụng tại các chức năng có hỗ trợ.</p>
     </div>
 
     <!-- Two-column layout: sidebar + matrix -->
@@ -199,10 +183,7 @@ onMounted(() => { fetchRoles() })
             <thead>
               <tr>
                 <th class="bg-[#f8faf8] px-3 py-3 text-left text-[#667768] font-bold border-b border-[#e2ece3]">Tài nguyên / Tính năng</th>
-                <th class="bg-[#f8faf8] px-3 py-3 text-center text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thêm (Create)</th>
-                <th class="bg-[#f8faf8] px-3 py-3 text-center text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Xem (Read)</th>
-                <th class="bg-[#f8faf8] px-3 py-3 text-center text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Sửa (Update)</th>
-                <th class="bg-[#f8faf8] px-3 py-3 text-center text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Xóa (Delete)</th>
+                <th v-for="action in PERMISSION_ACTIONS" :key="action.flag" class="bg-[#f8faf8] px-3 py-3 text-center text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">{{ action.label }}</th>
               </tr>
             </thead>
             <tbody>
@@ -211,17 +192,8 @@ onMounted(() => { fetchRoles() })
                   <strong>{{ res.label }}</strong>
                   <code class="ml-1.5 text-[0.72rem] text-[#888]">({{ res.key }})</code>
                 </td>
-                <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="perm.canCreate" :disabled="selectedRoleLocked" class="w-4 h-4 accent-[#2c6e33]" />
-                </td>
-                <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="perm.canRead" :disabled="selectedRoleLocked" class="w-4 h-4 accent-[#2c6e33]" />
-                </td>
-                <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="perm.canUpdate" :disabled="selectedRoleLocked" class="w-4 h-4 accent-[#2c6e33]" />
-                </td>
-                <td class="px-3 py-3 border-b border-[#eef2ee] text-center">
-                  <input type="checkbox" v-model="perm.canDelete" :disabled="selectedRoleLocked" class="w-4 h-4 accent-[#2c6e33]" />
+                <td v-for="action in PERMISSION_ACTIONS" :key="action.flag" class="px-3 py-3 border-b border-[#eef2ee] text-center">
+                  <input type="checkbox" v-model="perm[action.flag]" :aria-label="`${res.label}: ${action.label}`" :disabled="selectedRoleLocked" class="w-4 h-4 accent-[#2c6e33]" />
                 </td>
               </tr>
             </tbody>

@@ -257,12 +257,45 @@ test('the retention keys stay out of the generic settings form', () => {
 
 test('cron and the scheduler share one lock, so neither can purge twice', () => {
   const scheduler = codeOnly(source('../server/services/retention-scheduler.ts'))
-  assert.match(scheduler, /GET_LOCK/)
-  assert.match(scheduler, /RELEASE_LOCK/)
+  // The lock moved into `server/utils/named-lock.ts` when the three schedulers
+  // were deduplicated, so the assertion follows it: the scheduler still has to
+  // go through the shared helper, and the helper still has to be the only place
+  // that issues GET_LOCK. Asserting `GET_LOCK` against this file would now pin
+  // the copy the refactor existed to delete.
+  assert.match(scheduler, /withNamedLock\(/)
   assert.match(scheduler, /cdkt:data:retention/)
   // A zero timeout means a second runner declines instead of queueing behind the
   // first and then purging again the moment it finishes.
   assert.match(scheduler, /LOCK_TIMEOUT_SECONDS = 0/)
+
+  const helper = codeOnly(source('../server/utils/named-lock.ts'))
+  assert.match(helper, /GET_LOCK/)
+  assert.match(helper, /RELEASE_LOCK/)
+})
+
+test('each scheduler owns its lock name and timeout, and none re-implements the lock', () => {
+  // Three schedulers take three different locks. Sharing the mechanism must not
+  // collapse the names — a shared name would make the view-boost pass skip
+  // whenever a purge is running, which is a behaviour change nobody asked for.
+  const expected = new Map([
+    ['../server/services/retention-scheduler.ts', 'cdkt:data:retention'],
+    ['../server/services/view-boost-scheduler.ts', 'cdkt:articles:view-boost'],
+    ['../server/services/analytics-maintenance.ts', 'cdkt:analytics:maintenance'],
+  ])
+  for (const [file, lockName] of expected) {
+    const code = codeOnly(source(file))
+    assert.match(code, /withNamedLock\(/, `${file} does not use the shared helper`)
+    assert.match(code, new RegExp(lockName), `${file} lost its lock name`)
+    // The copies this refactor removed: a local `GET_LOCK` is a second
+    // implementation of the release/held bookkeeping, and the two are only ever
+    // compared when one of them has already failed to release.
+    assert.doesNotMatch(code, /GET_LOCK/, `${file} still issues its own GET_LOCK`)
+  }
+  // `analytics-maintenance` names its timeout where the others do, so the value
+  // is greppable in every scheduler rather than inlined as a literal.
+  for (const file of expected.keys()) {
+    assert.match(codeOnly(source(file)), /LOCK_TIMEOUT_SECONDS = 0/, `${file} lost its zero timeout`)
+  }
 })
 
 test('the scheduler cannot take the worker down and does not hold it up', () => {

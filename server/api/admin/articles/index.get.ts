@@ -4,11 +4,10 @@ import { articles, users, categories, articleViewDaily } from '../../../db/schem
 import { ArticleFilterValidationError, parseAuthorFilter } from '../../../utils/article-filters'
 import { eq, like, desc, sql, count, isNull } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/mysql-core'
-import { requireResourcePermission } from '../../../utils/permissions'
+import { articleReadScope } from '../../../services/articles'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  requireResourcePermission(adminUser, 'news', 'read')
 
   const query = getQuery(event)
   const page = finitePositive(query.page, 1, MAX_PAGE)
@@ -36,7 +35,7 @@ export default defineEventHandler(async (event) => {
   const db = getDb()
   const parentCategories = alias(categories, 'parentCategories')
 
-  const conditions = []
+  const conditions = [articleReadScope(adminUser, typeFilter)]
   if (search) {
     conditions.push(like(articles.title, `%${search}%`))
   }
