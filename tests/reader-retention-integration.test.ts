@@ -203,7 +203,7 @@ test('reader accounts age by last_seen_at, cascade to comments and admin replies
     // retention target, and listing it would invite a future window on it.
     assert.deepEqual(
       aged.tables.map(t => t.table),
-      ['activity_logs', 'submissions', 'chat_sessions', 'reader_accounts'],
+      ['activity_logs', 'submissions', 'chat_sessions', 'reader_accounts', 'livestream_sessions'],
       'article_comments must not be a retention target — the cascades own it',
     )
 

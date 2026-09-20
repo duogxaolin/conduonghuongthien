@@ -22,7 +22,7 @@
 import { and, desc, eq, like, or, sql } from 'drizzle-orm'
 
 import { getDb } from '../utils/db'
-import { activityLogs, articleComments, articles, readerAccounts, users } from '../db/schema'
+import { activityLogs, articleComments, articles, mediaItems, readerAccounts, users } from '../db/schema'
 import { countReaderCommentImpact, deleteReaderComments, type ReaderCommentImpact } from './comments'
 import { effectiveDisplayName } from '../utils/display-name'
 
@@ -143,9 +143,13 @@ export type ReaderCommentRow = {
   body:         string
   createdAt:    Date | null
   parentId:     number | null
-  articleId:    number
+  /** Null for a comment the reader made on a media item rather than an article. */
+  articleId:    number | null
   articleTitle: string | null
   articleSlug:  string | null
+  mediaItemId:    number | null
+  mediaItemTitle: string | null
+  mediaItemSlug:  string | null
 }
 
 export type ReaderDetail = {
@@ -201,9 +205,13 @@ export async function getReaderDetail(readerId: number): Promise<ReaderDetail | 
       articleId:    articleComments.articleId,
       articleTitle: articles.title,
       articleSlug:  articles.slug,
+      mediaItemId:    articleComments.mediaItemId,
+      mediaItemTitle: mediaItems.title,
+      mediaItemSlug:  mediaItems.slug,
     })
     .from(articleComments)
     .leftJoin(articles, eq(articleComments.articleId, articles.id))
+    .leftJoin(mediaItems, eq(articleComments.mediaItemId, mediaItems.id))
     .where(eq(articleComments.readerId, readerId))
     .orderBy(desc(articleComments.createdAt))
 

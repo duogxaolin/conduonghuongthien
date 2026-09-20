@@ -1,7 +1,7 @@
-import type { Pool, PoolConnection } from 'mysql2/promise'
 import { createAnalyticsPool } from './analytics-maintenance'
 import { runDataRetention, type DataRetentionResult } from './data-retention'
-import { resolveRetentionPolicy, lastRetentionRunAt, type RetentionPolicy } from './retention-policy'
+import { resolveRetentionPolicy, lastRetentionRunAt, RETENTION_SCOPES, SCOPE_SETTINGS, type RetentionDaysField, type RetentionMaxRowsField, type RetentionPolicy } from './retention-policy'
+import { withNamedLock } from '../utils/named-lock'
 import { logInfo, logWarn, logError } from '../utils/logger'
 
 /**
@@ -61,21 +61,6 @@ export function isRunDue(policy: RetentionPolicy, now: Date, lastRunAt: Date | n
   return { due: true, reason: 'hour-match' }
 }
 
-async function withLock<T>(pool: Pool, action: () => Promise<T>): Promise<T | null> {
-  let connection: PoolConnection | null = null
-  let held = false
-  try {
-    connection = await pool.getConnection()
-    const [rows] = await connection.query('SELECT GET_LOCK(?, ?) AS acquired', [LOCK_NAME, LOCK_TIMEOUT_SECONDS])
-    if (Number((rows as Array<{ acquired?: number }>)[0]?.acquired) !== 1) return null
-    held = true
-    return await action()
-  } finally {
-    if (held && connection) await connection.query('SELECT RELEASE_LOCK(?)', [LOCK_NAME]).catch(() => undefined)
-    connection?.release()
-  }
-}
-
 export type RunOutcome =
   | { ran: false; reason: DueDecision['reason'] | 'locked' }
   | { ran: true; result: DataRetentionResult }
@@ -117,27 +102,34 @@ export async function runRetentionPass(options: RunPassOptions = {}): Promise<Ru
   // Omitting one does not disable it — runDataRetention falls back to the
   // environment default for a missing option, so a scope left out here keeps
   // deleting on a window the operator cannot see or change on the settings page.
-  const activity = policy.scopes.find(scope => scope.scope === 'activity_logs')
-  const submissions = policy.scopes.find(scope => scope.scope === 'submissions')
-  const chatSessions = policy.scopes.find(scope => scope.scope === 'chat_sessions')
-  const readerAccounts = policy.scopes.find(scope => scope.scope === 'reader_accounts')
+  //
+  // Built from RETENTION_SCOPES and SCOPE_SETTINGS rather than hand-listed. The
+  // hand-listed version had exactly the failure mode above: `livestream_sessions`
+  // would have been added to the policy and the settings page, appeared to be
+  // configurable, and never reached the purge — with no error anywhere, because
+  // `runDataRetention` reads the environment default for the option nobody
+  // passed. Iterating the scope list closes it by construction.
+  const windows: Partial<Record<RetentionDaysField | RetentionMaxRowsField, number>> = {}
+  for (const scope of RETENTION_SCOPES) {
+    const { inputDaysField, inputMaxRowsField } = SCOPE_SETTINGS[scope]
+    const resolved = policy.scopes.find(entry => entry.scope === scope)
+    windows[inputDaysField] = resolved?.days ?? 0
+    windows[inputMaxRowsField] = resolved?.maxRows ?? 0
+  }
 
   const pool = createAnalyticsPool()
   try {
-    const result = await withLock(pool, () => runDataRetention({
+    // The lock lives in `server/utils/named-lock.ts`, shared with the view-boost
+    // and analytics schedulers. The name and the timeout are the ones this file
+    // always used, so a cron entry running the older path still cannot double-run.
+    const outcome = await withNamedLock(pool, LOCK_NAME, LOCK_TIMEOUT_SECONDS, () => runDataRetention({
       now,
       trigger,
       connection: pool,
-      activityLogDays: activity?.days ?? 0,
-      activityLogMaxRows: activity?.maxRows ?? 0,
-      submissionDays: submissions?.days ?? 0,
-      submissionMaxRows: submissions?.maxRows ?? 0,
-      chatSessionDays: chatSessions?.days ?? 0,
-      chatSessionMaxRows: chatSessions?.maxRows ?? 0,
-      readerAccountDays: readerAccounts?.days ?? 0,
-      readerAccountMaxRows: readerAccounts?.maxRows ?? 0,
+      ...windows,
     }))
-    if (!result) return { ran: false, reason: 'locked' }
+    if (!outcome.acquired) return { ran: false, reason: 'locked' }
+    const result = outcome.value
 
     const deleted = result.tables.reduce((sum, entry) => sum + entry.deleted, 0)
     const fields = {

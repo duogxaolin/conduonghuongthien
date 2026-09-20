@@ -9,11 +9,13 @@ import {
 } from '../server/utils/data-retention-config'
 
 /**
- * activity_logs, submissions, chat_sessions and reader_accounts are the tables
- * that hold personal data: caller IP and User-Agent in the audit log, citizens'
- * names, phones, emails and free text in the submissions, conversation content
- * with IPs (and sometimes phone numbers) in the chat sessions, and a Google
- * identity plus last-seen address in the reader accounts.
+ * activity_logs, submissions, chat_sessions, reader_accounts and
+ * livestream_sessions are the tables that hold personal data: caller IP and
+ * User-Agent in the audit log, citizens' names, phones, emails and free text in
+ * the submissions, conversation content with IPs (and sometimes phone numbers)
+ * in the chat sessions, a Google identity plus last-seen address in the reader
+ * accounts, and a broadcast transcript with the same kind of viewer data in the
+ * livestream sessions.
  * These tests pin the purge that now bounds them.
  */
 
@@ -31,6 +33,7 @@ function fakePool(rowsPerTable: Record<string, number[]> = {}, counts: Record<st
     submissions: [...(rowsPerTable.submissions ?? [0])],
     chat_sessions: [...(rowsPerTable.chat_sessions ?? [0])],
     reader_accounts: [...(rowsPerTable.reader_accounts ?? [0])],
+    livestream_sessions: [...(rowsPerTable.livestream_sessions ?? [0])],
     rate_limit_counters: [...(rowsPerTable.rate_limit_counters ?? [0])],
   }
   let released = 0
@@ -107,7 +110,7 @@ test('rows older than the window are deleted from the cutoff, in batches', async
 
 test('a disabled window issues no DELETE at all', async () => {
   const pool = fakePool()
-  const result = await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, chatSessionDays: 0, connection: pool as never })
+  const result = await runDataRetention({ now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, chatSessionDays: 0, livestreamSessionDays: 0, connection: pool as never })
 
   const tableCalls = pool.calls.filter(c => !c.sql.includes('rate_limit_counters'))
   assert.equal(tableCalls.length, 0, 'a disabled retention window still touched the table')
@@ -116,19 +119,21 @@ test('a disabled window issues no DELETE at all', async () => {
     ['submissions', 0, 0],
     ['chat_sessions', 0, 0],
     ['reader_accounts', 0, 0],
+    ['livestream_sessions', 0, 0],
   ])
 })
 
 test('both tables are purged when both windows are set', async () => {
   const pool = fakePool({ activity_logs: [5], submissions: [3] })
   const result = await runDataRetention({
-    now: NOW, activityLogDays: 90, submissionDays: 730, readerAccountDays: 0, batchSize: 1000, connection: pool as never,
+    now: NOW, activityLogDays: 90, submissionDays: 730, readerAccountDays: 0, livestreamSessionDays: 0, batchSize: 1000, connection: pool as never,
   })
   assert.deepEqual(result.tables.map(t => [t.table, t.deleted]), [
     ['activity_logs', 5],
     ['submissions', 3],
     ['chat_sessions', 0],
     ['reader_accounts', 0],
+    ['livestream_sessions', 0],
   ])
   const subDelete = pool.calls.find(c => c.sql.includes('DELETE FROM submissions'))!
   assert.equal((subDelete.params[0] as Date).toISOString(), '2024-07-26T03:00:00.000Z')
@@ -264,7 +269,7 @@ test('the deleted count is banked before the rows are gone, and accumulates', as
   })
 
   const banked = pool.calls.filter(c => c.sql.includes('INSERT INTO data_retention_state'))
-  assert.equal(banked.length, 4, 'one row per purged table')
+  assert.equal(banked.length, 5, 'one row per purged table')
   // Incremented, not replaced: the lifetime figure is this counter plus the live
   // count, so overwriting it would erase every earlier run.
   assert.match(banked[0].sql, /purged_total = purged_total \+ VALUES\(purged_total\)/)
@@ -273,6 +278,7 @@ test('the deleted count is banked before the rows are gone, and accumulates', as
     ['submissions', 3],
     ['chat_sessions', 0],
     ['reader_accounts', 0],
+    ['livestream_sessions', 0],
   ])
   assert.equal(banked[0].params[4], 'scheduler')
   assert.equal(banked[0].params[5], 'success')
@@ -369,4 +375,87 @@ test('chat sessions row cap also orders by last_message_at', async () => {
   })
   const capDelete = pool.calls.find(c => c.sql.includes('DELETE FROM chat_sessions'))!
   assert.match(capDelete.sql, /^DELETE FROM chat_sessions ORDER BY last_message_at LIMIT \?$/)
+})
+
+// ─── livestream_sessions scope ───────────────────────────────────────────────
+test('livestream sessions purge ages on ended_at, and the age pass skips live ones', async () => {
+  const pool = fakePool({ livestream_sessions: [4] })
+  await runDataRetention({
+    now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, chatSessionDays: 0,
+    livestreamSessionDays: 90, connection: pool as never,
+  })
+  const del = pool.calls.find(c => c.sql.includes('DELETE FROM livestream_sessions'))!
+  // Ended 90+ days ago; a broadcast still running has ended_at NULL and is
+  // excluded by this predicate rather than by a branch that has to remember.
+  assert.match(del.sql, /ended_at IS NOT NULL AND ended_at < \?/)
+  // Not started_at: a session opened 100 days ago and finished this morning is a
+  // day old, and ageing it by the start would delete a broadcast people watched
+  // today.
+  assert.doesNotMatch(del.sql, /started_at/)
+  assert.equal((del.params[0] as Date).toISOString(), '2026-04-27T03:00:00.000Z')
+})
+
+test('livestream sessions order by ended_at, never by the auto-increment id', async () => {
+  // id is insertion order and says nothing about when a broadcast ended, so an
+  // id-ordered cap would evict a long-running session over a recent one.
+  const pool = fakePool({ livestream_sessions: [0] })
+  await runDataRetention({
+    now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, chatSessionDays: 0,
+    livestreamSessionDays: 90, connection: pool as never,
+  })
+  const del = pool.calls.find(c => c.sql.includes('DELETE FROM livestream_sessions'))!
+  assert.match(del.sql, /ORDER BY ended_at LIMIT \?$/)
+  assert.doesNotMatch(del.sql, /ORDER BY id/)
+})
+
+test('the livestream row cap excludes a live broadcast from BOTH the count and the delete', async () => {
+  // ended_at is NULL while a broadcast is on air, and MySQL sorts NULL first
+  // ascending — so `ORDER BY ended_at LIMIT n` would evict the session that is
+  // live right now before touching a single finished one. The COUNT needs the
+  // same predicate or `remaining` counts rows the delete will not take.
+  const pool = fakePool({ livestream_sessions: [100] }, { livestream_sessions: 1_100 })
+  await runDataRetention({
+    now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, chatSessionDays: 0,
+    livestreamSessionDays: 0, livestreamSessionMaxRows: 1_000, batchSize: 1000, connection: pool as never,
+  })
+  const count = pool.calls.find(c => c.sql.includes('COUNT(*)') && c.sql.includes('livestream_sessions'))!
+  assert.match(count.sql, /WHERE ended_at IS NOT NULL$/)
+  const capDelete = pool.calls.find(c => c.sql.includes('DELETE FROM livestream_sessions'))!
+  assert.match(capDelete.sql, /^DELETE FROM livestream_sessions WHERE ended_at IS NOT NULL ORDER BY ended_at LIMIT \?$/)
+})
+
+test('the null-order guard is applied only where the order column can be null', async () => {
+  // Asserted so "add the predicate everywhere" does not creep in: a
+  // `WHERE id IS NOT NULL` is a no-op MySQL still has to plan, and it would
+  // rewrite statements that this feature otherwise leaves untouched.
+  const pool = fakePool({}, { activity_logs: 1_100, chat_sessions: 1_100, reader_accounts: 1_100 })
+  await runDataRetention({
+    now: NOW, activityLogDays: 0, submissionDays: 0, chatSessionDays: 0, readerAccountDays: 0, livestreamSessionDays: 0,
+    activityLogMaxRows: 1_000, chatSessionMaxRows: 1_000, readerAccountMaxRows: 1_000, batchSize: 1000, connection: pool as never,
+  })
+  for (const table of ['activity_logs', 'chat_sessions', 'reader_accounts']) {
+    const count = pool.calls.find(c => c.sql.includes('COUNT(*)') && c.sql.includes(table))!
+    assert.doesNotMatch(count.sql, /IS NOT NULL/, `${table} gained an unnecessary predicate`)
+  }
+  const capDeletes = pool.calls.filter(c => c.sql.includes('DELETE FROM') && !c.sql.includes('livestream'))
+  assert.ok(capDeletes.length > 0)
+  for (const call of capDeletes) {
+    assert.doesNotMatch(call.sql, /IS NOT NULL/, `an unnecessary predicate reached: ${call.sql}`)
+  }
+})
+
+test('the fifth scope is absent from the run only when its window is disabled', async () => {
+  // The scope is declared in the policy, shown on the settings page and saved
+  // through the API. The failure this guards is that it reaches none of them and
+  // stops at the purge, where `runDataRetention` would fall back to the
+  // environment default for an option nobody passed — no error, no symptom.
+  const pool = fakePool({ livestream_sessions: [11] })
+  const result = await runDataRetention({
+    now: NOW, activityLogDays: 0, submissionDays: 0, readerAccountDays: 0, chatSessionDays: 0,
+    livestreamSessionDays: 90, batchSize: 1000, connection: pool as never,
+  })
+  const entry = result.tables.find(t => t.table === 'livestream_sessions')!
+  assert.equal(entry.retentionDays, 90, 'the caller-supplied window was dropped on the way to the table')
+  assert.equal(entry.deleted, 11)
+  assert.equal(result.tables.length, 5, 'the run silently purged fewer tables than the policy declares')
 })

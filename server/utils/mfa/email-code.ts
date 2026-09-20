@@ -5,7 +5,8 @@
  * in a request: an attacker holding a password must not be able to redirect the
  * second factor to their own inbox.
  */
-import { eq } from 'drizzle-orm'
+import { and, eq, isNull } from 'drizzle-orm'
+import { readAffectedRows } from '../affected-rows'
 import { getDb } from '../db'
 import { userMfaFactors } from '../../db/schema'
 import { sendMail } from '../mailer'
@@ -13,7 +14,7 @@ import { EMAIL_CODE_TTL_MS, generateEmailCode, hashOneTimeCode } from './codes'
 
 export type IssueOutcome =
   | { ok: true }
-  | { ok: false; reason: 'no-email' | 'no-factor' | 'smtp' }
+  | { ok: false; reason: 'no-email' | 'no-factor' | 'superseded' | 'smtp' }
 
 /**
  * Generates a fresh code, replaces any outstanding one (so only the newest works),
@@ -29,14 +30,27 @@ export async function issueEmailCode(params: {
 
   const code = generateEmailCode()
   const db = getDb()
-  await db
+  const [factor] = await db.select().from(userMfaFactors)
+    .where(eq(userMfaFactors.id, params.factorId)).limit(1)
+  const state = params.purpose === 'login' ? 'active' : 'pending'
+  if (!factor || factor.factorType !== 'email_otp' || factor.state !== state) return { ok: false, reason: 'no-factor' }
+  const issued = await db
     .update(userMfaFactors)
     .set({
       pendingCodeHash: await hashOneTimeCode(code),
       pendingCodeExpiresAt: new Date(Date.now() + EMAIL_CODE_TTL_MS),
       pendingCodeAttempts: 0,
     })
-    .where(eq(userMfaFactors.id, params.factorId))
+    .where(and(
+      eq(userMfaFactors.id, params.factorId),
+      eq(userMfaFactors.state, state),
+      factor.pendingCodeHash === null
+        ? isNull(userMfaFactors.pendingCodeHash)
+        : eq(userMfaFactors.pendingCodeHash, factor.pendingCodeHash),
+    ))
+  // Concurrent issuers that read the same generation must not both mail a code
+  // while silently overwriting one another. The loser can retry explicitly.
+  if (readAffectedRows(issued) !== 1) return { ok: false, reason: 'superseded' }
 
   const minutes = Math.round(EMAIL_CODE_TTL_MS / 60000)
   const subject = params.purpose === 'enroll'

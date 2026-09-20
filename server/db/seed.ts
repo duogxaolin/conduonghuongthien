@@ -29,6 +29,17 @@ const RESOURCES = [
   // would silently hand citizens' email addresses and posting histories to
   // whoever already held one of those roles.
   'readers', 'comments',
+  // Media portal (add-media-portal, design.md D15). Same reasoning, and it
+  // matters more here: `livestream` controls who can put a broadcast live on a
+  // ministry portal, which is not a capability anyone should acquire by having
+  // been given the news editor role. Comment moderation on media reuses the
+  // existing `comments` resource rather than minting a third.
+  //
+  // Must stay in step with VALID_RESOURCES in server/utils/permissions.ts. Two
+  // lists, and a name in one but not the other is a resource that either cannot
+  // be granted (rejected by the roles endpoint) or is never seeded for
+  // superadmin — both silent.
+  'media_portal', 'livestream',
 ]
 
 // Default categories seeded idempotently (keyed on unique slug).

@@ -31,6 +31,12 @@
  * `chat_messages`, `article_comments` has no window of its own — its FKs cascade
  * from both `reader_accounts` and `articles`, so a comment (and any reply under
  * it) goes with whichever parent is purged.
+ *
+ * `livestream_sessions` holds a broadcast plus the chat its viewers typed, and
+ * is measured against `ended_at`. `livestream_messages` has no window of its
+ * own, for the third time and the same reason: its FK cascades from the session,
+ * so a message window would delete messages out of a session that is still
+ * listed, and a message row cap would cut a live conversation in half.
  */
 
 export const DATA_RETENTION_DEFAULTS = {
@@ -42,6 +48,14 @@ export const DATA_RETENTION_DEFAULTS = {
   chatSessionDays: 90,
   /** Reader accounts, measured against `last_seen_at`. Same window as the audit trail. */
   readerAccountDays: 365,
+  /**
+   * Broadcast sessions, measured against `ended_at`. The same 90 days as chat
+   * sessions, and for the same reason — this is a transcript of what the public
+   * typed, and the live chat rows carry the same kind of data as a chat session.
+   * Measured from the END, never the start: a broadcast that began 100 days ago
+   * and finished this morning is a day old.
+   */
+  livestreamSessionDays: 90,
 } as const
 
 export const DATA_RETENTION_BOUNDS = {
@@ -49,6 +63,7 @@ export const DATA_RETENTION_BOUNDS = {
   submissionDays: { min: 30, max: 3650 },
   chatSessionDays: { min: 30, max: 3650 },
   readerAccountDays: { min: 30, max: 3650 },
+  livestreamSessionDays: { min: 30, max: 3650 },
 } as const
 
 /**
@@ -104,6 +119,13 @@ export function resolveDataRetentionConfig(env: Record<string, unknown> = proces
       DATA_RETENTION_DEFAULTS.readerAccountDays,
       DATA_RETENTION_BOUNDS.readerAccountDays.min,
       DATA_RETENTION_BOUNDS.readerAccountDays.max,
+    ),
+    livestreamSessionDays: parseRetentionDays(
+      'LIVESTREAM_SESSION_RETENTION_DAYS',
+      env.LIVESTREAM_SESSION_RETENTION_DAYS,
+      DATA_RETENTION_DEFAULTS.livestreamSessionDays,
+      DATA_RETENTION_BOUNDS.livestreamSessionDays.min,
+      DATA_RETENTION_BOUNDS.livestreamSessionDays.max,
     ),
   }
 }

@@ -550,6 +550,17 @@ const SERVICE_EXEMPTIONS: Record<string, string> = {
   // lần thứ hai ở đây là lồng transaction chứ không thêm bảo đảm nào.
   'article-views.ts': 'audits inside the caller-provided transaction',
   'view-boost-scheduler.ts': 'audits inside the caller-provided transaction',
+  // Hai tệp dưới đây **không ghi `activity_logs`** — chúng chỉ nhắc tới nó trong
+  // phần đầu tệp, để giải thích vì sao chúng không ghi. Cổng quét khớp theo
+  // chuỗi trên văn bản mã nguồn chứ không bỏ chú thích, nên nó bắt được lời giải
+  // thích và hỏi một câu mà câu trả lời đúng là "không có lượt ghi nào để bọc".
+  //
+  // Hành động đáng ghi kiểm toán là **lượt tải lên**, và cặp hàng + nhật ký đó
+  // nằm trong transaction của `completeUpload` (`server/services/chunked-upload.ts`).
+  // Một lượt chuyển mã chạy hàng chục phút là sự kiện của máy, không phải hành
+  // động của cán bộ, nên nó không có cặp hàng + audit nào để bọc.
+  'video-processing.ts': 'holds no row+audit pair; the upload audit lives in chunked-upload.ts own transaction',
+  'media-processing-reaper.ts': 'holds no row+audit pair; a reclaim is a machine event, not an officer action',
 }
 
 describe('no service writes activity_logs outside a transaction', () => {

@@ -255,15 +255,9 @@ function clearChatHistory(): void {
   persist()
 }
 
-// Re-export typewriter utilities for external use
-export {
-  playTypewriter,
-  stopTypewriter,
-  TYPEWRITER_WORD_DELAY_MS,
-  TYPEWRITER_MAX_MS,
-} from './useChatbotTypewriter'
-
-// Import only what we need internally (same source, but Vite treats re-export separately)
+// The typewriter module owns these exports.  Do not re-export them here: Nuxt
+// auto-imports both composables and otherwise has to choose one silently.
+// Import the two operations this composable actually invokes.
 import { playTypewriter, stopTypewriter } from './useChatbotTypewriter'
 
 async function ensureSessionToken(conversation: StoredConversation): Promise<string | null> {

@@ -90,6 +90,13 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/users/roles.vue', refs: ['error'], retries: ['fetchRoles'] },
   { file: 'pages/admin/users/activity.vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/media/index.vue', refs: ['loadError'], retries: ['fetchMedia'] },
+  // Portal Media — kho video (`media_items`), tách khỏi thư viện ảnh cũ ở trên.
+  { file: 'pages/admin/media-portal/index.vue', refs: ['loadError'], retries: ['fetchMedia'] },
+  { file: 'pages/admin/media-portal/external.vue', refs: ['loadError'], retries: ['load'] },
+  { file: 'pages/admin/media-portal/upload.vue', refs: ['loadError'], retries: ['load'] },
+  { file: 'pages/admin/media-portal/[id].vue', refs: ['loadError', 'progressError'], retries: ['load', 'refreshProcessing'] },
+  // Livestream — trạng thái buổi phát trực tiếp.
+  { file: 'pages/admin/livestream/index.vue', refs: ['loadError'], retries: ['loadActive'] },
   { file: 'pages/admin/submissions/index.vue', refs: ['error'], retries: ['fetchSubmissions'] },
 
   // Views whose panels fail independently. Each ref is its own branch, so a
@@ -134,6 +141,13 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
     refs: ['livePanelError', 'breakdownPanelError', 'nocPanelError'],
     retries: ['retryLivePanel', 'retryBreakdownPanel', 'retryNocPanel'],
   },
+  // The chunked uploader is a four-phase modal — idle/uploading/done/failed — and
+  // the failure path is a whole branch, not a toast: `lastError` holds the reason,
+  // `v-if="lastError"` renders it into a `role="alert"` block (the idle-phase
+  // warning uses the same ref), and `@click="retry"` re-enters the upload through
+  // `retry()` in the same file. The retry resumes the existing session if the
+  // uploadId is still alive — does not silently re-init and lose partial progress.
+  { file: 'components/admin/ChunkedUploader.vue', refs: ['lastError'], retries: ['retry'] },
 ]
 
 /**

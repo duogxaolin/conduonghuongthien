@@ -19,9 +19,13 @@ type Comment = {
   body: string
   createdAt: string | null
   parentId: number | null
-  articleId: number
+  /** Null when the comment was made on a media item rather than an article. */
+  articleId: number | null
   articleTitle: string | null
   articleSlug: string | null
+  mediaItemId: number | null
+  mediaItemTitle: string | null
+  mediaItemSlug: string | null
 }
 
 type Reader = {
@@ -319,7 +323,9 @@ onMounted(load)
               <div class="text-[0.8rem] text-[#667768]">
                 <span v-if="comment.parentId !== null" class="mr-1.5 rounded-full bg-[#eef3ee] px-2 py-0.5 font-bold text-[#3d4f3f]">Phản hồi</span>
                 {{ formatMoment(comment.createdAt) }}
-                <span v-if="comment.articleTitle"> — {{ comment.articleTitle }}</span>
+                <span v-if="comment.articleTitle"> — Bài viết: {{ comment.articleTitle }}</span>
+                <span v-else-if="comment.mediaItemTitle"> — Video: {{ comment.mediaItemTitle }}</span>
+                <span v-else-if="comment.mediaItemId !== null"> — Video đã không còn</span>
               </div>
               <button
                 type="button"

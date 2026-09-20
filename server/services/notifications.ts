@@ -26,7 +26,11 @@
 import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm'
 
 import { getDb } from '../utils/db'
-import { articleComments, articles, readerNotifications } from '../db/schema'
+import { articleComments, articles, mediaItems, readerNotifications } from '../db/schema'
+// Type-only, so it is erased at compile time and creates no runtime cycle with
+// comments.ts — which imports this module's `createReplyNotification` for value.
+// The kind is declared there because the write guard is what enforces it.
+import type { CommentSource } from './comments'
 
 /** The only kind today. Stored in a column so a second kind (a new article in a
  *  followed topic) does not need a migration to exist. */
@@ -74,7 +78,7 @@ export function buildExcerpt(body: string, limit = NOTIFICATION_EXCERPT_LENGTH):
 /**
  * Which page of the thread a top-level comment sits on.
  *
- * `olderCount` is how many top-level comments on the same article sort before it.
+ * `olderCount` is how many top-level comments on the same item sort before it.
  * Pure so the arithmetic can be tested without a database — this is the value
  * that decides whether a notification link works at all.
  */
@@ -186,10 +190,68 @@ export type NotificationPage = {
 }
 
 /**
+ * Where a notification's link points, for either item kind.
+ *
+ * Pure and exported for the same reason `notificationTargetPage` is: this string
+ * is the whole value of the notification. A link that opens page 1, or that
+ * points at `/news/` for a video, reads to the reader as the portal having lost
+ * what they wrote — and there is no error anywhere to find, because a wrong URL
+ * is still a well-formed URL.
+ *
+ * `/news/<slug>` for an article whatever its type is — /news/[id].vue looks up by
+ * slug with no type filter and is the only detail route that renders every type.
+ * `/media/<slug>` for a media item.
+ *
+ * `?comments=` carries the page so the thread opens where the comment actually
+ * is, and is omitted for page 1 so the common case stays a clean path. The hash
+ * names the comment within the page.
+ */
+export function notificationUrl(params: {
+  kind:      CommentSource
+  slug:      string
+  page:      number
+  commentId: number
+}): string {
+  const prefix = params.kind === 'media' ? '/media/' : '/news/'
+  const query = params.page > 1 ? `?comments=${params.page}` : ''
+  return `${prefix}${params.slug}${query}#comment-${params.commentId}`
+}
+
+/**
+ * "Same item as the comment" as one SQL predicate, for either kind.
+ *
+ * Written as a single expression rather than a JS branch because the subquery it
+ * goes into is correlated: two variants of the whole query would be two places
+ * for the paging arithmetic to drift, and the drift would show up as a link that
+ * lands beside a comment rather than on it — with nothing reporting an error.
+ *
+ * Exported because services/notification-email.ts counts the same thing for the
+ * link it puts in an email. Two copies of this predicate would be two chances to
+ * scope by the wrong column, and the email's copy would be the one nobody looks
+ * at — a wrong page in an email is only discovered by a reader who followed it.
+ *
+ * The `IS NOT NULL` guard is not redundant. A media comment has
+ * `article_id = NULL`, and `older.article_id = NULL` is unknown rather than
+ * false, so without the guard the media branch would silently count zero and
+ * every media notification would open page 1.
+ *
+ * Assumes the outer table is `article_comments` (aliased or not) — both callers
+ * query it directly.
+ */
+export function sameItemPredicate() {
+  return sql`(
+    (\`article_comments\`.\`article_id\` IS NOT NULL
+      AND \`older\`.\`article_id\` = \`article_comments\`.\`article_id\`)
+    OR (\`article_comments\`.\`media_item_id\` IS NOT NULL
+      AND \`older\`.\`media_item_id\` = \`article_comments\`.\`media_item_id\`)
+  )`
+}
+
+/**
  * One page of the reader's notifications, newest first.
  *
  * The `olderCount` subquery is what makes the link work: for each notification it
- * counts the top-level comments on the same article that sort BEFORE the thread
+ * counts the top-level comments on the same item that sort BEFORE the thread
  * root, using the very ordering `loadCommentThread` applies — `(created_at, id)`,
  * with `id` breaking ties so two comments written in the same second cannot land
  * a reader on the wrong page.
@@ -232,8 +294,14 @@ export async function listNotifications(params: {
       articleSlug:     articles.slug,
       articleStatus:   articles.status,
       commentsEnabled: articles.commentsEnabled,
+      // The media mirror. Both are read on every row; exactly one pair is
+      // non-null, and the mapping below picks by which one it is.
+      mediaItemTitle:  mediaItems.title,
+      mediaItemSlug:   mediaItems.slug,
+      mediaItemStatus: mediaItems.status,
+      mediaCommentsEnabled: mediaItems.commentsEnabled,
       /**
-       * Position of the thread root among that article's top-level comments.
+       * Position of the thread root among that item's top-level comments.
        *
        * COALESCE(parent_id, id): a notification always points at a reply, but
        * guarding the top-level case here means a future notification kind that
@@ -242,7 +310,7 @@ export async function listNotifications(params: {
        */
       olderCount: sql<number>`(
         SELECT COUNT(*) FROM \`article_comments\` \`older\`
-        WHERE \`older\`.\`article_id\` = \`article_comments\`.\`article_id\`
+        WHERE ${sameItemPredicate()}
           AND \`older\`.\`parent_id\` IS NULL
           AND (
             \`older\`.\`created_at\` < \`root\`.\`created_at\`
@@ -256,6 +324,10 @@ export async function listNotifications(params: {
     .from(readerNotifications)
     .innerJoin(articleComments, eq(readerNotifications.commentId, articleComments.id))
     .leftJoin(articles, eq(articleComments.articleId, articles.id))
+    // leftJoin for the same reason as `articles` above: a media item that was
+    // archived or removed must not make its notifications vanish from the list,
+    // because the reader would read that as the portal deleting the reply.
+    .leftJoin(mediaItems, eq(articleComments.mediaItemId, mediaItems.id))
     // The thread root: the reply's parent, or the comment itself when it has none.
     .leftJoin(
       sql`\`article_comments\` \`root\``,
@@ -273,9 +345,19 @@ export async function listNotifications(params: {
   const items: NotificationItem[] = rows.map((row) => {
     const isAdminReply = row.adminUserId !== null
     const targetPage = notificationTargetPage(Number(row.olderCount ?? 0))
-    const readable = row.articleSlug !== null
-      && row.articleStatus === 'published'
-      && row.commentsEnabled === true
+
+    /**
+     * Which item this reply lives on, and whether it can still be opened.
+     *
+     * A media item answers to the same three conditions an article does —
+     * published, commenting enabled, and a slug to build the path from — so the
+     * two branches are the same rule against different columns rather than two
+     * rules that have to be kept in step by hand.
+     */
+    const isMedia = row.mediaItemSlug !== null || row.mediaItemTitle !== null
+    const readable = isMedia
+      ? row.mediaItemSlug !== null && row.mediaItemStatus === 'published' && row.mediaCommentsEnabled === true
+      : row.articleSlug !== null && row.articleStatus === 'published' && row.commentsEnabled === true
 
     return {
       id:        row.id,
@@ -290,17 +372,26 @@ export async function listNotifications(params: {
       excerpt: buildExcerpt(row.body ?? ''),
       target: readable
         ? {
-            articleTitle: row.articleTitle ?? '',
             /**
-             * `/news/<slug>` whatever the article's type is — /news/[id].vue
-             * looks up by slug with no type filter and is the only detail route
-             * that renders every type. A per-type prefix would 404 exactly the
-             * comments left on a legal document.
+             * The item's title, whichever kind it is.
              *
-             * `?comments=` carries the page so the thread opens where the comment
-             * actually is; the hash names the comment within it.
+             * The key keeps the name `articleTitle` from when articles were the
+             * only item kind. It is deliberately NOT renamed here: the name
+             * reaches three public surfaces (`useReaderNotifications.ts`,
+             * `ReaderNotificationBell.client.vue`, `profile.vue`), and a rename
+             * is a change to a working contract rather than an extension of it.
+             * The value is the media item's title for a media reply.
              */
-            url: `/news/${row.articleSlug}${targetPage > 1 ? `?comments=${targetPage}` : ''}#comment-${row.rootId ?? row.id}`,
+            articleTitle: isMedia ? (row.mediaItemTitle ?? '') : (row.articleTitle ?? ''),
+            url: notificationUrl({
+              kind:      isMedia ? 'media' : 'article',
+              // Narrowed by `readable` above, which required the slug non-null for
+              // whichever branch this is. The `?? ''` is unreachable and exists so
+              // the type checker does not have to be told the branch holds.
+              slug:      (isMedia ? row.mediaItemSlug : row.articleSlug) ?? '',
+              page:      targetPage,
+              commentId: row.rootId ?? row.id,
+            }),
           }
         : null,
     }

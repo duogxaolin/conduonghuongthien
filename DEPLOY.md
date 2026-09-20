@@ -210,6 +210,60 @@ server {
     listen 80;
     server_name yourdomain.com;
 
+    # ── Tải video lên theo phần (Media Portal) ────────────────────────────
+    # `location` dài nhất thắng, nên khối này đứng trước `location /` bên dưới
+    # mà không cần thứ tự đặc biệt — nhưng để nó ở trên cho người đọc thấy ngay.
+    #
+    # 12g chứ không 10g: một phần tải lên là multipart, nên phần thân request
+    # lớn hơn phần dữ liệu thật. Để đúng bằng trần của ứng dụng
+    # (`MEDIA_UPLOAD_MAX_SIZE`, mặc định 10 GB) thì nginx từ chối đúng những
+    # phần mà ứng dụng sẵn sàng nhận — và nó từ chối bằng 413, trước khi ứng
+    # dụng kịp thấy request, nên không có log nào phía cổng giải thích.
+    #
+    # Trần ở đây áp cho TOÀN BỘ khối `location`, không riêng lượt tải video;
+    # `client_max_body_size` trong `location /` vẫn là 20M cho phần còn lại.
+    location /api/admin/media-portal/ {
+        proxy_pass http://127.0.0.1:54432;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        client_max_body_size 12g;
+        # Một phần 10 GB qua đường truyền chậm lâu hơn 60 giây mặc định rất
+        # nhiều; hết hạn giữa lượt ghi làm phần đó hỏng mà client chỉ thấy
+        # "mất kết nối".
+        proxy_read_timeout 600s;
+        proxy_send_timeout 600s;
+    }
+
+    # ── Luồng SSE của chat trực tiếp ──────────────────────────────────────
+    # `X-Accel-Buffering: no` đã do tầng ứng dụng đặt (`setEventStreamHeaders`
+    # của h3), nên ở đây chỉ cần phần của nginx: đệm và cache.
+    #
+    # Đệm là thứ giết SSE: nginx gom bytes lại để nén/nối cho hiệu quả, nghĩa
+    # là một tin nhắn chat nằm trong bộ đệm của proxy cho tới khi đầy hoặc tới
+    # khi stream đóng — khách gõ xong, người kia không thấy gì. `proxy_cache off`
+    # vì cùng lý do: một luồng được phục vụ lại từ cache là một cuộc trò chuyện
+    # của người khác.
+    #
+    # `proxy_read_timeout 86400s` (24 giờ) vì kết nối này sống lâu hơn mọi mặc
+    # định: một phiên chat đang mở là một request chưa kết thúc, và ngắt nó theo
+    # lịch là đóng cuộc trò chuyện của khách mà không ai bấm gì.
+    location /api/public/livestream/chat/stream {
+        proxy_pass http://127.0.0.1:54432;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_buffering off;
+        proxy_cache off;
+        proxy_read_timeout 86400s;
+        proxy_send_timeout 86400s;
+        client_max_body_size 20M;
+    }
+
     location / {
         proxy_pass http://127.0.0.1:54432;
         proxy_http_version 1.1;
@@ -314,22 +368,23 @@ ghcr.io` trên VPS — GHCR để package ở chế độ private kể cả khi 
 
 ### Sao lưu tự động (BẮT BUỘC)
 
-`scripts/backup-db.sh` dump CSDL, nén, **kiểm chứng** rồi xoay vòng. Kiểm chứng là
-phần quan trọng nhất: một bản dump đứt giữa chừng trông y hệt bản tốt cho tới ngày
-anh cần dùng. Script kiểm dấu `Dump completed` ở cuối tệp, đếm số bảng, đo dung
-lượng SQL sau giải nén — thiếu bất kỳ điều kiện nào thì **xoá bản hỏng** và thoát
-với mã lỗi khác 0 để cron báo về.
+`scripts/backup.sh` tạo một cặp cùng mã thời điểm: dump CSDL và archive của
+`media_work` (video gốc, thumbnail và các đoạn HLS). Media Portal lưu các asset
+này ngoài MySQL, nên chỉ dump CSDL sẽ khôi phục metadata mà không phát được video.
+Mỗi file được nén, kiểm chứng và xoay vòng; file lỗi bị xoá để không bị nhầm là
+bản tốt.
 
 ```bash
 # Chạy thử một lần
-./scripts/backup-db.sh
+./scripts/backup.sh
 
 # Thêm vào crontab của host — 2h sáng mỗi ngày
-0 2 * * * cd /path/to/CDKT && ./scripts/backup-db.sh >> /var/log/cdkt-backup.log 2>&1
+0 2 * * * cd /path/to/CDKT && ./scripts/backup.sh >> /var/log/cdkt-backup.log 2>&1
 ```
 
 Tuỳ chọn trong `.env`: `BACKUP_DIR` (mặc định `./backups`), `BACKUP_KEEP_DAYS`
-(mặc định 14).
+(mặc định 14). Giữ cặp SQL và `cdkt-media-<cùng-mã>.tar.gz` cùng nhau khi sao chép
+sang nơi lưu trữ khác.
 
 ### Kiểm chứng khôi phục (nên làm hàng tháng)
 
@@ -347,6 +402,12 @@ tạm** — không đụng tới dữ liệu đang chạy.
 gzip -dc backups/<tệp>.sql.gz | \
   docker exec -i -e MYSQL_PWD="$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2)" \
   cdkt_mysql mysql -u root --default-character-set=utf8mb4 cdkt_admin
+
+# Dừng app trước khi thay volume media; --replace là xác nhận rõ thao tác xoá
+# nội dung media hiện tại. Chọn archive có cùng mã thời điểm với dump ở trên.
+docker compose stop app
+./scripts/restore-media.sh backups/cdkt-media-<cùng-mã>.tar.gz --replace
+docker compose up -d app
 ```
 
 ---
@@ -356,12 +417,15 @@ gzip -dc backups/<tệp>.sql.gz | \
 ```bash
 # ─── Máy cũ ─────────────────────────────────────
 docker exec cdkt_mysql mysqldump -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin > backup.sql
+./scripts/backup.sh ./transfer-backup
 docker cp cdkt_app:/app/public/uploads ./uploads_backup
-scp backup.sql uploads_backup .env root@ip-may-moi:/path/to/cdkt/
+scp -r transfer-backup uploads_backup .env root@ip-may-moi:/path/to/cdkt/
 
 # ─── Máy mới (sau khi clone + docker compose up) ─
-docker exec -i cdkt_mysql mysql -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin < backup.sql
+gzip -dc transfer-backup/cdkt-cdkt_admin-<cùng-mã>-*.sql.gz | docker exec -i cdkt_mysql mysql -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin
 docker cp uploads_backup/. cdkt_app:/app/public/uploads/
+docker compose stop app
+./scripts/restore-media.sh transfer-backup/cdkt-media-<cùng-mã>-*.tar.gz --replace
 docker restart cdkt_app
 ```
 

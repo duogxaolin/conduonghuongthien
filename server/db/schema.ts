@@ -761,9 +761,22 @@ export const readerAccounts = mysqlTable('reader_accounts', {
 // One row per comment or administrator reply. parentId self-references for the
 // single reply level. Every FK cascades except adminUserId (design.md D8): a
 // staff account being deleted must not remove the portal's public replies.
+//
+// **A comment belongs to exactly one item — an article or a media item — and
+// both columns are nullable to express that** (add-media-portal design.md §2).
+// The database cannot state that invariant here: a `CHECK (num_nonnulls(...)=1)`
+// is enforced inconsistently by MySQL 8 alongside `ON DELETE CASCADE`, so the
+// rule lives in `createComment`'s runtime XOR guard plus `checkParentEligibility`
+// requiring the parent to share the child's item and kind. Both are tested.
+//
+// `articleId` is nullable **on both sides of the drift comparison and in the
+// live ALTER** — a migration-only change leaves the gate comparing against a
+// `CREATE TABLE` line that still says NOT NULL, and a `CREATE TABLE`-only change
+// never runs on a database that already has the table.
 export const articleComments = mysqlTable('article_comments', {
   id:          bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
-  articleId:   int('article_id').notNull().references(() => articles.id, { onDelete: 'cascade' }),
+  articleId:   int('article_id').references(() => articles.id, { onDelete: 'cascade' }),
+  mediaItemId: int('media_item_id').references(() => mediaItems.id, { onDelete: 'cascade' }),
   readerId:    int('reader_id').references(() => readerAccounts.id, { onDelete: 'cascade' }),
   adminUserId: int('admin_user_id').references(() => users.id, { onDelete: 'set null' }),
   parentId:    bigint('parent_id', { mode: 'number', unsigned: true }).references((): AnyMySqlColumn => articleComments.id, { onDelete: 'cascade' }),
@@ -773,6 +786,9 @@ export const articleComments = mysqlTable('article_comments', {
   createdAt:   datetime('created_at', { mode: 'date' }).notNull(),
 }, (t) => ({
   articleParentCreatedIdx: index('article_comments_article_parent_created_idx').on(t.articleId, t.parentId, t.createdAt),
+  // The media thread is the same query with a different leading column, so it
+  // gets the mirror index rather than sharing the article one.
+  mediaParentCreatedIdx: index('article_comments_media_parent_created_idx').on(t.mediaItemId, t.parentId, t.createdAt),
   readerIdx: index('article_comments_reader_id_idx').on(t.readerId),
 }))
 
@@ -850,6 +866,173 @@ export const googleOauthSettings = mysqlTable('google_oauth_settings', {
   updatedBy:              int('updated_by').references(() => users.id, { onDelete: 'set null' }),
 })
 
+// ─── Media portal (add-media-portal) ────────────────────────────────────────
+// A published video item — either self-hosted (uploaded, transcoded to HLS
+// renditions by the pipeline) or an external platform reference embedded through
+// the platform's no-cookie domain.
+//
+// **`status` and `processing_status` are two different questions and are
+// deliberately two columns.** `status` is editorial (draft | published |
+// archived); `processing_status` is machine state (pending | processing | ready
+// | failed). Collapsing them would make "published but its transcode failed"
+// unrepresentable, which is exactly the state an operator needs to see.
+export const mediaItems = mysqlTable('media_items', {
+  id:           int('id').autoincrement().primaryKey(),
+  slug:         varchar('slug', { length: 512 }).notNull().unique(),
+  title:        varchar('title', { length: 512 }).notNull(),
+  description:  text('description'),
+  // upload = a file the portal holds and transcodes; youtube = an external
+  // reference. The serializer chooses the player from this value.
+  source:       varchar('source', { length: 16 }).notNull().default('upload'),
+  // Only meaningful when source = 'youtube'. Stored as the bare identifier, never
+  // as a URL: the embed URL is built server-side so a stored value can never
+  // become an arbitrary origin in a reader's browser.
+  youtubeVideoId: varchar('youtube_video_id', { length: 32 }),
+  // Where the renditions live, relative to the media work directory. Never
+  // returned to a reader — the stream endpoint resolves it server-side.
+  storagePath:  varchar('storage_path', { length: 1024 }),
+  thumbnailUrl: varchar('thumbnail_url', { length: 1024 }),
+  durationSeconds: int('duration_seconds'),
+  width:        int('width'),
+  height:       int('height'),
+  categoryId:   int('category_id').references(() => categories.id, { onDelete: 'set null' }),
+  status:       varchar('status', { length: 16 }).notNull().default('draft'), // draft | published | archived
+  processingStatus: varchar('processing_status', { length: 16 }).notNull().default('pending'), // pending | processing | ready | failed
+  // Why a transcode failed, shown on the administration listing. A failed item
+  // that is silently absent from the screen is the failure mode this column
+  // exists to prevent.
+  processingError: varchar('processing_error', { length: 512 }),
+  // Which renditions are already playable, so a partially processed item is
+  // watchable before the last rendition finishes. Nullable in the DDL with an
+  // expression default, matching the Drizzle `.default([])` — a NULL here is
+  // read as "none ready" rather than crashing a player.
+  resolutionsReady: json('resolutions_ready').$type<string[]>().default([]),
+  // The process running the transcode, paired with `updated_at` as its
+  // heartbeat. This pair is what lets the pipeline release its pooled database
+  // connection before spawning FFmpeg (design.md §4) and what the reaper reads
+  // to tell a dead job from a live one.
+  claimedBy:    varchar('claimed_by', { length: 64 }),
+  processingAttempts: int('processing_attempts').notNull().default(0),
+  processingNextAttemptAt: timestamp('processing_next_attempt_at'),
+  processingHeartbeatAt: timestamp('processing_heartbeat_at'),
+  // Off by default, matching articles: the opposite default would open
+  // commenting on the whole library at deploy time, a moderation load nobody
+  // chose.
+  commentsEnabled: boolean('comments_enabled').notNull().default(false),
+  isFeatured:   boolean('is_featured').notNull().default(false),
+  viewCount:    bigint('view_count', { mode: 'number', unsigned: true }).notNull().default(0),
+  publishedAt:  timestamp('published_at'),
+  createdBy:    int('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt:    timestamp('created_at').defaultNow(),
+  updatedAt:    timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  statusPublishedIdx: index('media_items_status_published_idx').on(t.status, t.publishedAt),
+  categoryIdx:        index('media_items_category_id_idx').on(t.categoryId),
+  processingIdx:      index('media_items_processing_status_updated_idx').on(t.processingStatus, t.updatedAt),
+}))
+
+// One row per broadcast. `is_active` carries no unique index on purpose
+// (design.md §3): a unique index would make the single-active invariant depend
+// on catching a duplicate-key error, and MySQL 8 has no partial unique index.
+// The mechanism is `GET_LOCK('cdkt:livestream:active', 0)` in the start path.
+export const livestreamSessions = mysqlTable('livestream_sessions', {
+  id:           int('id').autoincrement().primaryKey(),
+  title:        varchar('title', { length: 512 }).notNull(),
+  description:  text('description'),
+  source:       varchar('source', { length: 16 }).notNull().default('youtube'),
+  youtubeVideoId: varchar('youtube_video_id', { length: 32 }),
+  storagePath:  varchar('storage_path', { length: 1024 }),
+  thumbnailUrl: varchar('thumbnail_url', { length: 1024 }),
+  isActive:     boolean('is_active').notNull().default(false),
+  // DATETIME, not TIMESTAMP: no 2038 horizon and no timezone conversion applied
+  // by the driver. `ended_at` is both the age column and the ordering column of
+  // the retention scope — a session is old when it finished, not when it
+  // started, so a long broadcast is never purged while it is still running.
+  startedAt:    datetime('started_at', { mode: 'date' }),
+  endedAt:      datetime('ended_at', { mode: 'date' }),
+  // SET NULL, so a retention pass over sessions never deletes the recording it
+  // produced: the media item outlives the session it came from.
+  savedMediaId: int('saved_media_id').references(() => mediaItems.id, { onDelete: 'set null' }),
+  createdBy:    int('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt:    timestamp('created_at').defaultNow(),
+  updatedAt:    timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  activeIdx:   index('livestream_sessions_is_active_idx').on(t.isActive),
+  endedAtIdx:  index('livestream_sessions_ended_at_idx').on(t.endedAt),
+  savedMediaIdx: index('livestream_sessions_saved_media_id_idx').on(t.savedMediaId),
+}))
+
+// The live conversation. Deliberately NOT a retention scope: its FK cascades
+// from `livestream_sessions`, which is the scope, so an independent window would
+// delete messages while their session still exists.
+export const livestreamMessages = mysqlTable('livestream_messages', {
+  id:          bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
+  sessionId:   int('session_id').notNull().references(() => livestreamSessions.id, { onDelete: 'cascade' }),
+  readerId:    int('reader_id').notNull().references(() => readerAccounts.id, { onDelete: 'cascade' }),
+  // A snapshot of the sender's name at the moment of sending. The reader's
+  // current name is resolved elsewhere; a rename must not rewrite what was
+  // displayed to the people who were watching.
+  displayName: varchar('display_name', { length: 100 }).notNull(),
+  content:     varchar('content', { length: 200 }).notNull(),
+  // Soft delete: a moderated message leaves the public history but its row
+  // remains, because the moderation action is itself auditable.
+  isDeleted:   boolean('is_deleted').notNull().default(false),
+  // DATETIME(3) — chat ordering needs millisecond resolution, and two messages
+  // in the same second are ordinary.
+  createdAt:   datetime('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (t) => ({
+  sessionCreatedIdx: index('livestream_messages_session_created_idx').on(t.sessionId, t.createdAt),
+  readerIdx:         index('livestream_messages_reader_id_idx').on(t.readerId),
+}))
+
+// One row per chunked upload in progress. This row — not a request field — is
+// what binds an upload to its owner: every chunk, status and completion request
+// re-verifies `WHERE upload_id = ? AND admin_user_id = ?`, so an unknown
+// identifier and another administrator's identifier produce the same not-found
+// response and the endpoint never reveals which uploads exist.
+//
+// `updated_at` is the activity clock the housekeeping pass reads; a session
+// modified within the inactivity window is never touched.
+export const mediaUploadSessions = mysqlTable('media_upload_sessions', {
+  uploadId:     varchar('upload_id', { length: 36 }).primaryKey(),
+  adminUserId:  int('admin_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  filename:     varchar('filename', { length: 255 }).notNull(),
+  declaredSize: bigint('declared_size', { mode: 'number', unsigned: true }).notNull(),
+  chunkSize:    int('chunk_size', { unsigned: true }).notNull(),
+  totalChunks:  int('total_chunks', { unsigned: true }).notNull(),
+  // Chunk indexes already received. Out-of-order arrival is ordinary, so this is
+  // a set rather than a high-water mark; re-sending a received index is a
+  // success with no state change.
+  receivedParts: json('received_parts').$type<number[]>().default([]),
+  status:       varchar('status', { length: 16 }).notNull().default('pending'), // pending | assembling | completed | failed
+  completionClaim: varchar('completion_claim', { length: 36 }),
+  completionHeartbeatAt: timestamp('completion_heartbeat_at'),
+  contentType: varchar('content_type', { length: 64 }),
+  errorMessage: varchar('error_message', { length: 512 }),
+  mediaItemId:  int('media_item_id').references(() => mediaItems.id, { onDelete: 'set null' }),
+  createdAt:    timestamp('created_at').defaultNow(),
+  updatedAt:    timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  adminIdx:   index('media_upload_sessions_admin_user_idx').on(t.adminUserId),
+  updatedIdx: index('media_upload_sessions_updated_at_idx').on(t.updatedAt),
+}))
+
+// A deletion cannot remove files inside the database transaction: the database
+// could still roll back after `rm()` succeeded.  This outbox records the local
+// asset root after the item delete commits, so a crashed worker resumes cleanup
+// later instead of leaving HLS generations and originals forever.
+export const mediaAssetCleanup = mysqlTable('media_asset_cleanup', {
+  id:            varchar('id', { length: 36 }).primaryKey(),
+  assetRoot:     varchar('asset_root', { length: 1024 }).notNull(),
+  attempts:      int('attempts').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at'),
+  lastError:     varchar('last_error', { length: 512 }),
+  createdAt:     timestamp('created_at').defaultNow(),
+  updatedAt:     timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  dueIdx: index('media_asset_cleanup_due_idx').on(t.nextAttemptAt, t.createdAt),
+}))
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 export type Role        = typeof roles.$inferSelect
 export type Permission  = typeof permissions.$inferSelect
@@ -904,3 +1087,11 @@ export type ReaderIpBan = typeof readerIpBans.$inferSelect
 export type NewReaderIpBan = typeof readerIpBans.$inferInsert
 export type GoogleOauthSettings = typeof googleOauthSettings.$inferSelect
 export type NewGoogleOauthSettings = typeof googleOauthSettings.$inferInsert
+export type MediaItem = typeof mediaItems.$inferSelect
+export type NewMediaItem = typeof mediaItems.$inferInsert
+export type LivestreamSession = typeof livestreamSessions.$inferSelect
+export type NewLivestreamSession = typeof livestreamSessions.$inferInsert
+export type LivestreamMessage = typeof livestreamMessages.$inferSelect
+export type NewLivestreamMessage = typeof livestreamMessages.$inferInsert
+export type MediaUploadSession = typeof mediaUploadSessions.$inferSelect
+export type NewMediaUploadSession = typeof mediaUploadSessions.$inferInsert

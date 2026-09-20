@@ -1,5 +1,6 @@
 import { createError, type H3Event } from 'h3'
 import { checkPermission } from './auth'
+import { PERMISSION_ACTIONS, PERMISSION_RESOURCES, type PermissionGrant, type PermissionFlag } from '../../shared/permissions'
 
 export const CHATBOT_RESOURCES = Object.freeze({
   settings: 'chatbot_settings',
@@ -23,22 +24,14 @@ export type ChatbotSmallTalkAction = 'read' | 'create' | 'update' | 'delete'
 // existing role, so an administrator has to hand them out after upgrading;
 // seeding them onto current roles would silently widen access to personal data
 // for whoever already held one.
-export const VALID_RESOURCES = new Set<string>([
-  'news', 'role_models', 'reintegration', 'documents', 'faq', 'categories',
-  'home_sections', 'pages', 'users', 'roles', 'media', 'settings', 'submissions',
-  'analytics', 'chatbot_settings', 'chatbot_knowledge', 'readers', 'comments',
-])
-
-const ACTION_FLAGS = [
-  ['canCreate', 'create'], ['canRead', 'read'], ['canUpdate', 'update'], ['canDelete', 'delete'],
-] as const
+export const VALID_RESOURCES = new Set<string>(PERMISSION_RESOURCES.map(resource => resource.key))
 
 /**
  * The shape every admin handler already has on `event.context.adminUser`.
  * Exported so the delete/update services can take an actor without each one
  * restating this structural type — seven private copies would drift.
  */
-export type ActorLike = { id?: number; isSuperAdmin?: boolean | null; permissions?: Array<{ resource: string; canCreate: boolean | null; canRead: boolean | null; canUpdate: boolean | null; canDelete: boolean | null }> | null }
+export type ActorLike = { id?: number; isSuperAdmin?: boolean | null; permissions?: Array<{ resource: string; canCreate: boolean | null; canRead: boolean | null; canUpdate: boolean | null; canDelete: boolean | null } & Partial<Record<PermissionFlag, boolean | null>>> | null }
 
 /**
  * Throw 403 unless the actor holds `action` on `resource`.
@@ -58,23 +51,36 @@ export function requireResourcePermission(actor: ActorLike, resource: string, ac
  * resource must be valid, and a non-superadmin may not grant a permission they
  * do not themselves hold ("no granting what you don't have").
  */
-export function assertAssignablePermissions(actor: ActorLike, permsInput: unknown): void {
-  if (!Array.isArray(permsInput)) return
+export function assertAssignablePermissions(actor: ActorLike, permsInput: unknown): PermissionGrant[] {
+  if (!Array.isArray(permsInput)) {
+    throw createError({ statusCode: 400, statusMessage: 'Danh sách phân quyền không hợp lệ.' })
+  }
   const isSuper = actor?.isSuperAdmin === true
   const actorPerms = actor?.permissions || []
+  const seen = new Set<string>()
+  const normalized: PermissionGrant[] = []
   for (const raw of permsInput) {
     const p = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>
-    const resource = String(p.resource || '')
+    const resource = typeof p.resource === 'string' ? p.resource : ''
     if (!VALID_RESOURCES.has(resource)) {
       throw createError({ statusCode: 400, statusMessage: `Tài nguyên phân quyền không hợp lệ: ${resource || '(trống)'}` })
     }
-    if (isSuper) continue
-    for (const [flag, action] of ACTION_FLAGS) {
-      if (p[flag] === true && !checkPermission(actorPerms, resource, action, false)) {
+    if (seen.has(resource)) throw createError({ statusCode: 400, statusMessage: `Tài nguyên phân quyền bị lặp: ${resource}` })
+    seen.add(resource)
+    const grant = { resource } as PermissionGrant
+    const held = actorPerms.find(permission => permission.resource === resource)
+    for (const { flag, action } of PERMISSION_ACTIONS) {
+      if (p[flag] !== undefined && typeof p[flag] !== 'boolean') {
+        throw createError({ statusCode: 400, statusMessage: `${resource}:${flag} phải là true hoặc false.` })
+      }
+      grant[flag] = p[flag] === true
+      if (!isSuper && grant[flag] && held?.[flag] !== true) {
         throw createError({ statusCode: 403, statusMessage: `Bạn không thể cấp quyền ${resource}:${action} mà chính bạn chưa có.` })
       }
     }
+    normalized.push(grant)
   }
+  return normalized
 }
 
 /**

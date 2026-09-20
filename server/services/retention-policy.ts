@@ -23,7 +23,7 @@ import {
  * one can be disabled with 0; both disabled means nothing is ever deleted.
  */
 
-export const RETENTION_SCOPES = ['activity_logs', 'submissions', 'chat_sessions', 'reader_accounts'] as const
+export const RETENTION_SCOPES = ['activity_logs', 'submissions', 'chat_sessions', 'reader_accounts', 'livestream_sessions'] as const
 export type RetentionScope = typeof RETENTION_SCOPES[number]
 
 export const RETENTION_TRIGGERS = ['scheduler', 'cron', 'manual'] as const
@@ -44,6 +44,8 @@ export const RETENTION_SETTING_KEYS = {
   chatSessionMaxRows: 'retention_chat_session_max_rows',
   readerAccountDays: 'retention_reader_account_days',
   readerAccountMaxRows: 'retention_reader_account_max_rows',
+  livestreamSessionDays: 'retention_livestream_session_days',
+  livestreamSessionMaxRows: 'retention_livestream_session_max_rows',
 } as const
 
 export const RETENTION_DEFAULTS = {
@@ -56,6 +58,7 @@ export const RETENTION_DEFAULTS = {
   submissionMaxRows: 0,
   chatSessionMaxRows: 0,
   readerAccountMaxRows: 0,
+  livestreamSessionMaxRows: 0,
 } as const
 
 /**
@@ -66,15 +69,23 @@ export const RETENTION_DEFAULTS = {
  * was not the audit log. Adding a third scope to that shape would have given
  * chat history the submissions keys — a purge window silently editing the wrong
  * table. Keyed by `RetentionScope`, the compiler now refuses an incomplete map.
+ *
+ * Exported because `retention-scheduler.ts` uses the two `input*Field` members
+ * to build `DataRetentionOptions` from the policy. Hand-listing the option names
+ * there was the same silent-drop shape one layer up: `runDataRetention` falls
+ * back to the environment default for an option nobody passed, so a scope left
+ * out of that list kept deleting on a window the operator could not see or
+ * change. Driven from this map, a scope added to `RETENTION_SCOPES` reaches the
+ * purge without anyone remembering to add a line.
  */
-const SCOPE_SETTINGS: Record<RetentionScope, {
+export const SCOPE_SETTINGS: Record<RetentionScope, {
   daysKey: string
   maxRowsKey: string
   envKey: string
-  envField: 'activityLogDays' | 'submissionDays' | 'chatSessionDays' | 'readerAccountDays'
+  envField: RetentionDaysField
   /** Field names on RetentionPolicyInput — what the admin form sends. */
-  inputDaysField: 'activityLogDays' | 'submissionDays' | 'chatSessionDays' | 'readerAccountDays'
-  inputMaxRowsField: 'activityLogMaxRows' | 'submissionMaxRows' | 'chatSessionMaxRows' | 'readerAccountMaxRows'
+  inputDaysField: RetentionDaysField
+  inputMaxRowsField: RetentionMaxRowsField
   bounds: { min: number; max: number }
   maxRowsDefault: number
 }> = {
@@ -118,9 +129,33 @@ const SCOPE_SETTINGS: Record<RetentionScope, {
     bounds: DATA_RETENTION_BOUNDS.readerAccountDays,
     maxRowsDefault: RETENTION_DEFAULTS.readerAccountMaxRows,
   },
+  livestream_sessions: {
+    daysKey: RETENTION_SETTING_KEYS.livestreamSessionDays,
+    maxRowsKey: RETENTION_SETTING_KEYS.livestreamSessionMaxRows,
+    envKey: 'LIVESTREAM_SESSION_RETENTION_DAYS',
+    envField: 'livestreamSessionDays',
+    inputDaysField: 'livestreamSessionDays',
+    inputMaxRowsField: 'livestreamSessionMaxRows',
+    bounds: DATA_RETENTION_BOUNDS.livestreamSessionDays,
+    maxRowsDefault: RETENTION_DEFAULTS.livestreamSessionMaxRows,
+  },
 }
 
 export type PolicySource = 'database' | 'environment' | 'default'
+
+/**
+ * The field names the admin form sends, anchored to the two objects that hold
+ * real values rather than written out a third time.
+ *
+ * The field-name unions used to be spelled inline in three places (the map's
+ * two `input*Field` members and `RetentionPolicyInput` below). Three copies of
+ * a union is three chances to add a scope and have the form post a field name
+ * that nothing reads — the request succeeds, the setting is not saved, and the
+ * page shows the old value with no error. Deriving from the defaults means a
+ * new scope's field name is real by construction.
+ */
+export type RetentionDaysField = keyof typeof DATA_RETENTION_DEFAULTS
+export type RetentionMaxRowsField = Exclude<keyof typeof RETENTION_DEFAULTS, 'autoEnabled' | 'runHour'>
 
 export type ScopePolicy = {
   scope: RetentionScope
@@ -260,18 +295,15 @@ export async function resolveRetentionPolicy(): Promise<RetentionPolicy> {
   return buildRetentionPolicy(await loadStoredRetentionSettings())
 }
 
+/**
+ * What the admin form posts. Derived from the two value objects rather than
+ * hand-listed, so a scope added to the defaults is immediately accepted here —
+ * and `SCOPE_SETTINGS` is what forces the code that *reads* it to exist.
+ */
 export type RetentionPolicyInput = {
   autoEnabled?: unknown
   runHour?: unknown
-  activityLogDays?: unknown
-  activityLogMaxRows?: unknown
-  submissionDays?: unknown
-  submissionMaxRows?: unknown
-  chatSessionDays?: unknown
-  chatSessionMaxRows?: unknown
-  readerAccountDays?: unknown
-  readerAccountMaxRows?: unknown
-}
+} & Partial<Record<RetentionDaysField | RetentionMaxRowsField, unknown>>
 
 /**
  * Persist the policy. Every field is validated before anything is written, so a

@@ -290,3 +290,48 @@ test('menu danh tính đóng được bằng Escape và bằng cú bấm ra ngo�
   assert.match(source, /mousedown', handleDocumentPointerDown/, 'bấm ra ngoài không đóng menu')
   assert.match(source, /removeEventListener\('mousedown', handleDocumentPointerDown\)/, 'listener không được dọn khi unmount')
 })
+
+test('mục Media xuất hiện trên cả hai bề mặt điều hướng, và chỉ ở đó', () => {
+  /**
+   * `DEFAULT_NAV` đặt `/media` là mục top-level (cùng cấp "Bản tin", đứng trước
+   * "Tấm gương tiêu biểu"), không lồng vào dropdown `news`. Container 1240px và
+   * label "Media" ngắn nên mục thứ 9 vừa.
+   *
+   * Triệu chứng chỉ hiện trên một trong hai bề mặt: khối header desktop mang
+   * `hidden lg:flex`, nên thiếu mục trong ngăn kéo mobile là một tính năng **biến
+   * mất trên điện thoại** — đúng lỗi đã xảy ra với nút đăng nhập người đọc. Cùng
+   * cách `readerSignIn` / `/profile` / `onReaderSignOut` trên đây đếm theo số lần
+   * xuất hiện: một khối đúng nhưng bị nhân bản ở sai chỗ vẫn khớp một phép tìm
+   * đơn lẻ.
+   *
+   * Hai bề mặt dựng từ **một** nguồn (`navMenu`). URL không đứng thành chuỗi
+   * `to="/media"` trong template — template bind `:to="item.url"` động từ
+   * `DEFAULT_NAV`, và cùng một `v-for` dựng cả hai bề mặt. `item.children` vẫn
+   * được dựng ở hai nơi (dropdown "Bản tin" và "Giải đáp pháp luật"), nên số vòng
+   * lặp `v-for="child in item.children"` vẫn phải là ĐÚNG HAI (desktop + mobile).
+   * Một đợt gộp hai khối nav thành một làm số này tụt về 1.
+   *
+   * Chốt thứ hai: `/media` phải thực sự có trong `DEFAULT_NAV` tại nav-config.ts.
+   * Dời mục đi chỗ khác làm childLoops vẫn đúng (hai vòng lặp con vẫn chạy) trong
+   * khi mục đó đã không còn là `/media` — nên cần thêm một neo cứng vào nguồn.
+   */
+  const source = read('layouts/default.vue')
+
+  const childLoops = (source.match(/v-for="child in item\.children"/g) ?? []).length
+  assert.ok(
+    childLoops === 2,
+    `phải có ĐÚNG hai vòng lặp child (header desktop + ngăn kéo mobile); thấy ${childLoops}. ` +
+      'Một = một bề mặt mất dropdown con — mục /media biến mất khỏi màn hình đó.',
+  )
+
+  const navConfig = readFileSync(
+    new URL('../app/utils/nav-config.ts', import.meta.url),
+    'utf8',
+  )
+  assert.match(
+    navConfig,
+    /url:\s*'\/media'/,
+    "DEFAULT_NAV mất mục /media — childLoops vẫn đúng vì hai vòng lặp còn chạy, " +
+      'nên một test chỉ đếm vòng lặp sẽ không phát hiện ra việc mục bị dời đi.',
+  )
+})

@@ -33,18 +33,14 @@ export default defineEventHandler(async (event) => {
 
   let keys: string[]
   try {
-    keys = await saveRetentionPolicy({
-      autoEnabled: body.autoEnabled,
-      runHour: body.runHour,
-      activityLogDays: body.activityLogDays,
-      activityLogMaxRows: body.activityLogMaxRows,
-      submissionDays: body.submissionDays,
-      submissionMaxRows: body.submissionMaxRows,
-      chatSessionDays: body.chatSessionDays,
-      chatSessionMaxRows: body.chatSessionMaxRows,
-      readerAccountDays: body.readerAccountDays,
-      readerAccountMaxRows: body.readerAccountMaxRows,
-    })
+    // The body is handed over whole rather than copied field by field. The
+    // hand-written copy that used to be here listed ten option names, so a scope
+    // added to `RETENTION_SCOPES` would have been accepted by the service,
+    // described by `RetentionPolicyInput`, shown on the settings page — and
+    // silently dropped by this file, which is the one place nobody would look.
+    // `saveRetentionPolicy` reads only the keys it knows and skips `undefined`,
+    // so an unknown key in the body is inert rather than trusted.
+    keys = await saveRetentionPolicy(body)
   } catch (error) {
     if (error instanceof RetentionPolicyValidationError) {
       throw createError({ statusCode: 400, statusMessage: error.message })

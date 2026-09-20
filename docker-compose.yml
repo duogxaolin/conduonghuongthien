@@ -37,6 +37,19 @@ services:
     # Trước đây hardcode `memory: ${MYSQL_MEM_LIMIT:-1g}` cho VPS 1-2GB; giờ
     # bỏ hẳn để VPS lớn không bị kẹt artficial limit. Nếu lo OOM-killer giết
     # container khác, set lại: deploy.resources.limits.memory: 4g (v.v.).
+    #
+    # `${VAR:-0}` là cách giữ nguyên quyết định đó mà vẫn đặt được trần khi cần:
+    # `0` là "không trần" trong Docker, nên biến vắng mặt cho ra `limits: {}` —
+    # đúng hành vi hiện tại. Trần chỉ có hiệu lực khi `MYSQL_MEM_LIMIT` thực sự
+    # được đặt (tay, hoặc bởi `./manage.sh media-tuning`). Bắt buộc phải có `:-0`:
+    # viết `memory: ${MYSQL_MEM_LIMIT}` trần thì biến vắng mặt làm
+    # `docker compose config` CHẾT (`invalid size: ''`) — một tệp compose không
+    # đọc nổi là một tệp không deploy được. Giá trị phải là số nguyên kèm hậu tố
+    # (`2000m`, `4g`); dấu phẩy thập phân (`2,5g`) cũng làm nó chết.
+    deploy:
+      resources:
+        limits:
+          memory: ${MYSQL_MEM_LIMIT:-0}
 
   app:
     # CI xây image rồi đẩy lên GHCR; VPS chỉ kéo về. `docker compose pull` không
@@ -96,6 +109,13 @@ services:
       # Nitro reads the NUXT_-prefixed one at runtime.
       TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
       NUXT_TRUSTED_PROXY_IPS: ${TRUSTED_PROXY_IPS:-}
+      # Chat trực tiếp giữ sổ luồng SSE trong bộ nhớ tiến trình, nên nó chỉ đúng
+      # khi cổng chạy ĐÚNG MỘT bản sao. `container_name` bên dưới đã chặn
+      # `docker compose up --scale app=2` (Compose từ chối container thứ hai cùng
+      # tên), nhưng nó không thấy được một bản sao dựng bằng cách khác. Biến này
+      # là lời khai rằng người vận hành đã kiểm — đặt 1 để tắt lời cảnh báo lúc
+      # khởi động (server/plugins/livestream-replica-guard.ts).
+      CDKT_SSE_REPLICA_GUARD: ${CDKT_SSE_REPLICA_GUARD:-}
       # Public address of the portal, used to build the Google OAuth redirect URI
       # that Google matches byte for byte. Same two-name treatment as the proxy
       # list above and for the same reason: Nitro reads the NUXT_-prefixed one at
@@ -116,22 +136,66 @@ services:
       # Tài khoản người đọc — scope thứ tư. Tính tuổi theo last_seen_at, không
       # theo created_at: xoá một tài khoản là xoá luôn bình luận công khai của họ.
       READER_ACCOUNT_RETENTION_DAYS: ${READER_ACCOUNT_RETENTION_DAYS:-}
+      # ── Media Portal ──────────────────────────────────────────────────────
+      # Thư mục làm việc của pipeline video (chứa `uploads/` và `media/`). Nằm
+      # trên volume `media_work`, KHÔNG trên `uploads_data`: một video 10 GB đang
+      # được cắt thành HLS không thuộc thư viện media, và trộn hai thứ vào một
+      # volume là để một lượt dọn thư viện xoá mất phần đang xử lý.
+      CDKT_MEDIA_WORKDIR: ${CDKT_MEDIA_WORKDIR:-/var/lib/cdkt/media}
+      # Cùng lý do như bốn cửa sổ lưu trữ ở trên: compose KHÔNG dùng env_file, nên
+      # một biến đặt trong .env mà không được liệt kê ở đây thì không tới được
+      # container — `./manage.sh media-tuning` sẽ là một nút bấm không làm gì.
+      #
+      # Tất cả đều `${VAR:-}` (rỗng = "để code quyết định"), KHÔNG phải một mặc
+      # định thứ hai viết ở đây. `parseMediaBoolean`/`parseMediaInteger` trong
+      # `server/utils/media-config.ts` coi chuỗi rỗng là "dùng mặc định", và
+      # mặc định của chúng là một quyết định đã có lý do — chép lại giá trị đó
+      # vào compose là tạo nguồn chân lý thứ hai, ở tầng hạ tầng, nơi không ai
+      # đọc khi sửa code.
+      #
+      # `MEDIA_UPLOAD_ENABLED` đặc biệt: mặc định của code là TẮT (một máy chủ
+      # chưa cài FFmpeg hoặc dưới trần RAM mà nhận video sẽ nhận rồi không xử lý
+      # được, hàng `media_items` nằm `pending` vĩnh viễn). Đặt `:-true` ở đây là
+      # ghi đè mặc định an toàn bằng một giá trị nguy hiểm hơn. `manage.sh
+      # media-tuning` mới là chỗ bật nó, sau khi đã đo RAM máy chủ.
+      MEDIA_UPLOAD_ENABLED: ${MEDIA_UPLOAD_ENABLED:-}
+      MEDIA_UPLOAD_MAX_SIZE: ${MEDIA_UPLOAD_MAX_SIZE:-}
+      MEDIA_UPLOAD_CHUNK_SIZE: ${MEDIA_UPLOAD_CHUNK_SIZE:-}
+      MEDIA_UPLOAD_SESSION_HOURS: ${MEDIA_UPLOAD_SESSION_HOURS:-}
+      MEDIA_DISK_FLOOR_BYTES: ${MEDIA_DISK_FLOOR_BYTES:-}
+      MEDIA_PROCESSING_HEARTBEAT_SECONDS: ${MEDIA_PROCESSING_HEARTBEAT_SECONDS:-}
+      MEDIA_PROCESSING_STALE_MINUTES: ${MEDIA_PROCESSING_STALE_MINUTES:-}
+      # Worker lấy tối đa bao nhiêu video đồng thời và số lần tự thử lại. Để
+      # trống nghĩa là dùng các mặc định an toàn trong `media-config.ts`.
+      MEDIA_PROCESSING_MAX_JOBS: ${MEDIA_PROCESSING_MAX_JOBS:-}
+      MEDIA_PROCESSING_MAX_ATTEMPTS: ${MEDIA_PROCESSING_MAX_ATTEMPTS:-}
       # Used ONLY when the superadmin account is first created (seed is insert-only).
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}
     volumes:
       - uploads_data:/app/public/uploads
+      - media_work:/var/lib/cdkt/media
     depends_on:
       mysql:
         condition: service_healthy
     logging:
       driver: json-file
       options: { max-size: "10m", max-file: "3" }
-    # KHÔNG giới hạn RAM/CPU — xem chú thích ở service mysql bên trên.
+    # KHÔNG giới hạn RAM/CPU — xem chú thích ở service mysql bên trên, gồm cả lý
+    # do `${VAR:-0}` phải có `:-0`. `./manage.sh media-tuning` là chỗ đề xuất và
+    # ghi hai con số này sau khi đo RAM máy chủ thật.
+    deploy:
+      resources:
+        limits:
+          memory: ${APP_MEM_LIMIT:-0}
 
 volumes:
   mysql_data:
   uploads_data:
+  # Thư mục làm việc của pipeline video (ghép phần, transcode, cắt HLS) — tách
+  # khỏi `uploads_data` vì đây là chỗ chứa tạm của một lượt tải đang chạy, không
+  # phải thư viện media đã duyệt.
+  media_work:
 
 secrets:
   # Sourced from the environment (i.e. the .env next to this file), so the value

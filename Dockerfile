@@ -39,13 +39,32 @@ COPY server ./server
 COPY scripts ./scripts
 COPY public ./public
 
+# FFmpeg/ffprobe transcode uploaded video, so they belong in the RUNTIME stage —
+# `nuxi build` never invokes them, and installing them in the builder stage would
+# add ~100 MB to a layer that never reaches the image serving traffic. Alpine's
+# ffmpeg carries libx264, native aac and the hls muxer (verified by running
+# `apk add --no-cache ffmpeg` on node:22-alpine), so no community repository is
+# needed. `nice`, which video-processing.ts puts in front of every ffmpeg call to
+# keep transcode at the lowest priority, ships with BusyBox — nothing to add.
+RUN apk add --no-cache ffmpeg
+
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
 ENV PORT=3000
 
-# Uploads are written at runtime; give the unprivileged user ownership so a
-# freshly created named volume inherits it.
-RUN mkdir -p /app/public/uploads && chown -R node:node /app
+# Media work directory. Same shape as HOST/PORT above: a default baked into the
+# image, overridden by compose for the real deployment. The volume mount point
+# must exist in the image and be owned by the runtime user, because a freshly
+# created named volume inherits the ownership of the directory it is mounted
+# over — created at first use by root, it would be unwritable by `node` forever.
+# `uploads/` and `media/` are deliberately NOT pre-created here: the code creates
+# them with `{ recursive: true }` on first use, and a second place declaring the
+# layout is a second place to keep in step.
+ENV CDKT_MEDIA_WORKDIR=/var/lib/cdkt/media
+
+# Uploads and media are written at runtime; give the unprivileged user ownership
+# so a freshly created named volume inherits it.
+RUN mkdir -p /app/public/uploads /var/lib/cdkt/media && chown -R node:node /app /var/lib/cdkt
 
 EXPOSE 3000
 
