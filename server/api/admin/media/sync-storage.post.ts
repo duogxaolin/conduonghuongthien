@@ -4,11 +4,19 @@
  * Body: `{ direction: 'to-r2' | 'to-local' }`.
  *
  * Quyền `media.update` — đổi `provider` + `url` + `storagePath` của hàng existing
- * là update, không phải create. Service `media-sync.ts` lo logic; endpoint chỉ
- * nhận request + check quyền + trả kết quả.
+ * là update, không phải create.
+ *
+ * ── Worker nền (không block HTTP) ────────────────────────────────────────────
+ * Trước đây endpoint `await syncMediaStorage(...)` chạy đồng bộ → 3000 file
+ * timeout. Giờ `startSyncJob` chỉ **khởi tạo** job + trả `{ jobId }` ngay (< 100ms).
+ * Worker chạy nền trong tiến trình Nitro, từng batch 20 file, sleep 500ms giữa
+ * batch. UI poll `GET /api/admin/media/sync-status` để xem tiến độ.
+ *
+ * Trước sync, worker tự `runBackup('all', 'pre-sync')` → snapshot recover thủ
+ * công nếu thảm họa (không auto-rollback — restore toàn DB mất dữ liệu unrelated).
  */
 import { requireResourcePermission } from '../../../utils/permissions'
-import { syncMediaStorage, type SyncDirection } from '../../../services/media-sync'
+import { startSyncJob, type SyncDirection } from '../../../services/media-sync'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -24,15 +32,14 @@ export default defineEventHandler(async (event) => {
   }
 
   try {
-    const result = await syncMediaStorage(direction as SyncDirection, adminUser.id ?? null)
-    return { ok: true, ...result }
+    const { jobId } = await startSyncJob(direction as SyncDirection, adminUser.id ?? null)
+    return { ok: true, jobId, message: 'Đã khởi tạo job sync. Theo dõi tiến độ qua /api/admin/media/sync-status.' }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
-    // Lỗi cấu hình R2 hoặc lock busy → 400/409 để UI báo đúng.
     if (msg.includes('Cấu hình Cloudflare R2')) {
       throw createError({ statusCode: 400, statusMessage: msg })
     }
-    if (msg.includes('Một lượt đồng bộ khác')) {
+    if (msg.includes('Một lượt đồng bộ')) {
       throw createError({ statusCode: 409, statusMessage: msg })
     }
     throw createError({ statusCode: 500, statusMessage: msg })
