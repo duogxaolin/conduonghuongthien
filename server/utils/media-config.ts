@@ -70,6 +70,23 @@ export type MediaConfig = {
   processingMaxAttempts?: number
   /** Thư mục làm việc tuyệt đối: chứa `uploads/` và `media/`. */
   workdir: string
+  /**
+   * Lưu trữ cho video đã chuyển mã. Tách khỏi R2 của thư viện ảnh (group
+   * `media`) — bucket riêng, credential riêng, nhãn mã hoá riêng
+   * (`cdkt-video-r2-secret:v1`). `provider='local'` = giữ trên đĩa như cũ;
+   * `provider='r2'` = sync cây rendition lên R2 sau transcode và xoá bản local.
+   * `r2` có thể vắng khi provider=local hoặc khi chưa cấu hình.
+   */
+  videoStorage: {
+    provider: 'local' | 'r2'
+    r2?: {
+      accountId: string
+      accessKeyId: string
+      secretAccessKey: string
+      bucket: string
+      publicUrl: string
+    }
+  }
 }
 
 /**
@@ -146,6 +163,10 @@ export function resolveMediaConfig(env: Record<string, unknown> = process.env): 
     workdir,
     processingMaxJobs: parseMediaInteger('MEDIA_PROCESSING_MAX_JOBS', env.MEDIA_PROCESSING_MAX_JOBS, 1, 1, 4),
     processingMaxAttempts: parseMediaInteger('MEDIA_PROCESSING_MAX_ATTEMPTS', env.MEDIA_PROCESSING_MAX_ATTEMPTS, 3, 1, 10),
+    // R2 cho video mặc định TẮT — tách biệt khỏi R2 của thư viện ảnh. Cấu hình
+    // đi qua CSDL (settings group `media_portal`), không qua biến môi trường,
+    // vì đây là credential nhập trong trang admin như Google OAuth.
+    videoStorage: { provider: 'local' },
   }
 }
 

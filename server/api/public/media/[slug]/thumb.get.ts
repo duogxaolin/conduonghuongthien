@@ -18,9 +18,11 @@ import { createReadStream } from 'node:fs'
 
 import { createError, defineEventHandler, getRouterParam, sendStream, setResponseHeaders } from 'h3'
 
-import { resolveMediaConfig } from '../../../../utils/media-config'
 import { logWarn } from '../../../../utils/logger'
 import { resolveThumbnailTarget } from '../../../../services/media-portal'
+import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
+import { getDb } from '../../../../utils/db'
+import { streamR2Object } from '../../../../services/video-r2-sync'
 
 /** Ảnh thu nhỏ của nền tảng ngoài: vài chục KB là cùng. Trần này chỉ để một phản
  *  hồi bất thường không kéo cả tệp vào RAM của tiến trình. */
@@ -50,7 +52,8 @@ export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug')
   if (!slug) throw createError({ statusCode: 404 })
 
-  const target = await resolveThumbnailTarget(slug, { config: resolveMediaConfig() })
+  const { config } = await resolveMediaConfigWithDb(getDb())
+  const target = await resolveThumbnailTarget(slug, { config })
   if (!target) throw createError({ statusCode: 404 })
 
   if (target.kind === 'local') {
@@ -61,6 +64,25 @@ export default defineEventHandler(async (event) => {
       'X-Content-Type-Options': 'nosniff',
     })
     return sendStream(event, createReadStream(target.filePath))
+  }
+
+  // ── R2: thumbnail nằm cùng cây R2 với rendition. Pipe qua proxy, không redirect ──
+  if (target.kind === 'r2') {
+    const r2Config = config.videoStorage.r2
+    if (!r2Config) throw createError({ statusCode: 503, statusMessage: 'R2 chưa cấu hình.' })
+    try {
+      const obj = await streamR2Object(target.r2Key, r2Config)
+      setResponseHeaders(event, {
+        'Content-Type': obj.contentType,
+        'Content-Length': String(obj.contentLength),
+        'Cache-Control': `public, max-age=${THUMBNAIL_CACHE_SECONDS}`,
+        'X-Content-Type-Options': 'nosniff',
+      })
+      return sendStream(event, obj.stream)
+    } catch {
+      logWarn({ event: 'public.media_thumbnail_r2_miss', slug, key: target.r2Key })
+      throw createError({ statusCode: 404 })
+    }
   }
 
   // ── Nguồn ngoài: máy chủ đi lấy, người đọc không bao giờ chạm tới nền tảng ──

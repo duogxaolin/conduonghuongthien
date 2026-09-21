@@ -44,7 +44,63 @@ const menuGroups = computed(() => [
     ]
   },
   {
-    title: 'Hệ thống & Nhân sự',
+    title: 'Nội dung biên tập',
+    items: [
+      ...(hasPermission('pages', 'read') ? [{ label: 'Quản lý Trang', icon: 'fa-solid fa-file-lines', path: '/admin/content/pages' }] : []),
+      { label: 'Menu chính (Navbar + ☰)', icon: 'fa-solid fa-bars-staggered', path: '/admin/content/navigation/navbar' },
+      { label: 'Thanh nổi dưới (Mobile)', icon: 'fa-solid fa-mobile-screen', path: '/admin/content/navigation/mobile' },
+      { label: 'Thể loại nội dung', icon: 'fa-solid fa-layer-group', path: '/admin/content/content-types' },
+      { label: 'Danh mục', icon: 'fa-solid fa-folder-tree', path: '/admin/content/categories' },
+      { label: 'Bài viết & Bản tin', icon: 'fa-solid fa-newspaper', path: '/admin/content/articles' },
+      // Thư viện ảnh / tệp cũ (table `media`). Kho video (`media_items`) nằm ở
+      // nhóm "Media & Livestream" — hai bảng, hai tài nguyên RBAC, hai đường API.
+      { label: 'Thư viện Media', icon: 'fa-solid fa-images', path: '/admin/media' },
+    ]
+  },
+  {
+    // Media Portal (video, table `media_items`) + Livestream — cùng nhóm tính
+    // năng phát sóng/clip, tách khỏi "Nội dung biên tập" để người vận hành thấy
+    // ngay đây là khu video/phát trực tiếp, khác với bài viết & trang.
+    title: 'Media & Livestream',
+    items: [
+      ...(hasPermission('media_portal', 'read') ? [{ label: 'Thư viện Video', icon: 'fa-solid fa-video', path: '/admin/media-portal' }] : []),
+      // Livestream — bắt đầu/dừng buổi phát, kiểm duyệt chat.
+      ...(hasPermission('livestream', 'read') ? [{ label: 'Livestream', icon: 'fa-solid fa-tower-broadcast', path: '/admin/livestream' }] : []),
+      // Cài đặt Media Portal — nhận video, dung lượng, chuyển mã, R2. Nằm trong
+      // nhóm Media (không phải "Hệ thống & Cài đặt") vì nó là config riêng của
+      // Media Portal, không phải config chung của cổng.
+      ...(hasPermission('settings', 'read') ? [{ label: 'Cài đặt Media Portal', icon: 'fa-solid fa-sliders', path: '/admin/settings/media-portal' }] : []),
+    ]
+  },
+  {
+    // Ba mục cùng hệ thống Chatbot: kho nội dung (chatbot_knowledge) + phiên
+    // trò chuyện + cài đặt (chatbot_settings). Trước đây "Cài đặt Chatbot" bị
+    // tách sang nhóm "Yêu cầu & Cài đặt", đứt gãy khỏi hai mục còn lại.
+    title: 'Trợ lý Chatbot',
+    items: [
+      ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Kho nội dung Chatbot', icon: 'fa-solid fa-book-open', path: '/admin/chatbot/knowledge' }] : []),
+      // Same gate as the knowledge bank: whoever may read the approved answers
+      // may read the questions visitors asked of them.
+      ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Phiên trò chuyện', icon: 'fa-solid fa-comments', path: '/admin/chatbot/sessions' }] : []),
+      ...(hasPermission('chatbot_settings', 'read') ? [{ label: 'Cài đặt Chatbot', icon: 'fa-solid fa-robot', path: '/admin/chatbot/settings' }] : []),
+    ]
+  },
+  {
+    // Dữ liệu công dân (CLAUDE.md D13): đơn đăng ký + người đọc + bình luận.
+    // `readers`/`comments` cố ý KHÔNG gộp vào quyền bài viết — cán bộ được viết
+    // tin không vì thế mà được đọc email & lịch sử phát ngôn của công dân.
+    title: 'Tương tác công dân',
+    items: [
+      { label: 'Đơn đăng ký hỗ trợ', icon: 'fa-solid fa-envelope-open-text', path: '/admin/submissions' },
+      ...(hasPermission('readers', 'read') ? [{ label: 'Người đọc & bình luận', icon: 'fa-solid fa-user-group', path: '/admin/readers' }] : []),
+      // Bình luận công khai. Gác bằng resource `comments` chứ không phải quyền
+      // bài viết: cán bộ được viết tin không vì thế mà được đọc email và lịch sử
+      // phát ngôn của công dân — đó là loại dữ liệu khác.
+      ...(hasPermission('comments', 'read') ? [{ label: 'Kiểm duyệt bình luận', icon: 'fa-solid fa-comment-dots', path: '/admin/comments' }] : []),
+    ]
+  },
+  {
+    title: 'Hệ thống & Cài đặt',
     items: [
       // Không gắn hasPermission: đây là tài khoản của chính người đang đăng nhập,
       // ai cũng phải đổi được mật khẩu và xem được lịch sử truy cập của mình.
@@ -54,39 +110,6 @@ const menuGroups = computed(() => [
       // Lịch sử của MỌI tài khoản — khác 'Tài khoản của tôi' (chỉ của chính mình),
       // nên phải có quyền đọc 'users' mới thấy mục này.
       ...(hasPermission('users', 'read') ? [{ label: 'Lịch sử hoạt động', icon: 'fa-solid fa-clock-rotate-left', path: '/admin/users/activity' }] : []),
-    ]
-  },
-  {
-    title: 'Nội dung Website',
-    items: [
-      ...(hasPermission('pages', 'read') ? [{ label: 'Quản lý Trang', icon: 'fa-solid fa-file-lines', path: '/admin/content/pages' }] : []),
-      { label: 'Menu chính (Navbar + ☰)', icon: 'fa-solid fa-bars-staggered', path: '/admin/content/navigation/navbar' },
-      { label: 'Thanh nổi dưới (Mobile)', icon: 'fa-solid fa-mobile-screen', path: '/admin/content/navigation/mobile' },
-      { label: 'Thể loại nội dung', icon: 'fa-solid fa-layer-group', path: '/admin/content/content-types' },
-      { label: 'Danh mục', icon: 'fa-solid fa-folder-tree', path: '/admin/content/categories' },
-      { label: 'Bài viết & Bản tin', icon: 'fa-solid fa-newspaper', path: '/admin/content/articles' },
-      { label: 'Thư viện Media', icon: 'fa-solid fa-images', path: '/admin/media' },
-      // Portal Media — kho video (`media_items`), tách khỏi thư viện ảnh cũ
-      // (`media` table) ở line ngay trên. Hai bảng, hai tài nguyên RBAC, hai
-      // đường API khác nhau.
-      ...(hasPermission('media_portal', 'read') ? [{ label: 'Thư viện Video', icon: 'fa-solid fa-video', path: '/admin/media-portal' }] : []),
-      // Livestream — bắt đầu/dừng buổi phát, kiểm duyệt chat.
-      ...(hasPermission('livestream', 'read') ? [{ label: 'Livestream', icon: 'fa-solid fa-tower-broadcast', path: '/admin/livestream' }] : []),
-      ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Kho nội dung Chatbot', icon: 'fa-solid fa-book-open', path: '/admin/chatbot/knowledge' }] : []),
-      // Same gate as the knowledge bank: whoever may read the approved answers
-      // may read the questions visitors asked of them.
-      ...(hasPermission('chatbot_knowledge', 'read') ? [{ label: 'Phiên trò chuyện', icon: 'fa-solid fa-comments', path: '/admin/chatbot/sessions' }] : []),
-      // Bình luận công khai. Gác bằng resource `comments` chứ không phải quyền
-      // bài viết: cán bộ được viết tin không vì thế mà được đọc email và lịch sử
-      // phát ngôn của công dân — đó là loại dữ liệu khác.
-      ...(hasPermission('comments', 'read') ? [{ label: 'Kiểm duyệt bình luận', icon: 'fa-solid fa-comment-dots', path: '/admin/comments' }] : []),
-    ]
-  },
-  {
-    title: 'Yêu cầu & Cài đặt',
-    items: [
-      { label: 'Đơn đăng ký hỗ trợ', icon: 'fa-solid fa-envelope-open-text', path: '/admin/submissions' },
-      ...(hasPermission('readers', 'read') ? [{ label: 'Người đọc & bình luận', icon: 'fa-solid fa-user-group', path: '/admin/readers' }] : []),
       { label: 'Cài đặt chung', icon: 'fa-solid fa-gear', path: '/admin/settings/general' },
       ...(hasPermission('settings', 'read') ? [{ label: 'Cấu hình Email (SMTP)', icon: 'fa-solid fa-envelope', path: '/admin/settings/email' }] : []),
       ...(hasPermission('settings', 'read') ? [{ label: 'Tracking & Marketing', icon: 'fa-solid fa-chart-simple', path: '/admin/settings/tracking' }] : []),
@@ -94,7 +117,7 @@ const menuGroups = computed(() => [
       ...(hasPermission('settings', 'read') ? [{ label: 'Đăng nhập Google', icon: 'fa-solid fa-right-to-bracket', path: '/admin/settings/google-oauth' }] : []),
       ...(hasPermission('readers', 'read') ? [{ label: 'Chặn địa chỉ IP', icon: 'fa-solid fa-ban', path: '/admin/settings/ip-bans' }] : []),
       { label: 'Lưu trữ Media (R2)', icon: 'fa-solid fa-cloud-arrow-up', path: '/admin/settings/media-storage' },
-      ...(hasPermission('chatbot_settings', 'read') ? [{ label: 'Cài đặt Chatbot', icon: 'fa-solid fa-robot', path: '/admin/chatbot/settings' }] : []),
+      ...(hasPermission('settings', 'read') ? [{ label: 'Sao lưu & Khôi phục', icon: 'fa-solid fa-floppy-disk', path: '/admin/settings/backup' }] : []),
     ]
   }
 ])

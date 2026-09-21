@@ -729,6 +729,7 @@ const assetMediaSelection = {
   source: mediaItems.source,
   youtubeVideoId: mediaItems.youtubeVideoId,
   storagePath: mediaItems.storagePath,
+  storageProvider: mediaItems.storageProvider,
   status: mediaItems.status,
 } as const
 
@@ -771,15 +772,23 @@ export function normalizeAssetPath(value: unknown): string | null {
   return segments.join('/')
 }
 
-export type StreamTarget = {
-  filePath: string
-  contentType: string
-  size: number
-  cacheSeconds: number
-  /** `true` → kèm `Content-Disposition: attachment`. Đuôi không nhận ra thì tải
-   *  về, không hiển thị. */
-  attachment: boolean
-}
+export type StreamTarget =
+  | {
+      kind: 'local'
+      filePath: string
+      contentType: string
+      size: number
+      cacheSeconds: number
+      attachment: boolean
+    }
+  | {
+      kind: 'r2'
+      r2Key: string
+      contentType: string
+      size: number
+      cacheSeconds: number
+      attachment: boolean
+    }
 
 /**
  * Tệp cần phục vụ cho một yêu cầu phát, hoặc `null`.
@@ -789,6 +798,10 @@ export type StreamTarget = {
  * tệp không tồn tại. Nơi gọi chỉ có một nhánh 404, và không có nhánh nào trong
  * số đó nói ra lý do thật — một phản hồi khác nhau giữa chúng là cách liệt kê ra
  * những slug chưa xuất bản.
+ *
+ * R2: khi `storageProvider='r2'`, trả `{ kind: 'r2', r2Key }` — nơi gọi pipe
+ * stream từ R2 qua proxy (không redirect, giữ design.md dòng 196 "không lộ
+ * storage location"). `r2Key` = `storagePath + '/' + assetPath`.
  */
 export async function resolveStreamTarget(
   slug: string,
@@ -810,6 +823,25 @@ export async function resolveStreamTarget(
   if (!row || row.status !== PUBLISHED_MEDIA_STATUS) return null
   if (row.source !== 'upload') return null
 
+  // R2 stream — `storagePath` là R2 key prefix (cùng hình dạng cây, khác backend).
+  // Không kiểm `startsWith(directory)` vì không có filesystem — chỉ kiểm
+  // `assetPath` đã lọc `..` qua `normalizeAssetPath`.
+  if (row.storageProvider === 'r2') {
+    const stored = typeof row.storagePath === 'string' ? row.storagePath.trim() : ''
+    if (!stored) return null
+    const r2Key = `${stored.replace(/\/+$/g, '')}/${assetPath}`
+    const extension = path.extname(assetPath).toLowerCase()
+    const known = STREAM_CONTENT_TYPES[extension]
+    return {
+      kind: 'r2',
+      r2Key,
+      contentType: known ?? 'application/octet-stream',
+      size: 0, // không biết trước — R2 GetObject trả ContentLength, nơi gọi đọc
+      cacheSeconds: extension === '.m3u8' ? MANIFEST_CACHE_SECONDS : SEGMENT_CACHE_SECONDS,
+      attachment: known === undefined,
+    }
+  }
+
   const directory = resolveMediaDirectory(config, row)
   if (!directory) return null
 
@@ -829,6 +861,7 @@ export async function resolveStreamTarget(
   const known = STREAM_CONTENT_TYPES[extension]
 
   return {
+    kind: 'local',
     filePath,
     contentType: known ?? 'application/octet-stream',
     size,
@@ -844,6 +877,7 @@ export const MEDIA_STREAM_MANIFEST_PATH = MEDIA_MASTER_PLAYLIST
 export type ThumbnailTarget =
   | { kind: 'local', filePath: string, contentType: string, size: number }
   | { kind: 'remote', url: string }
+  | { kind: 'r2', r2Key: string }
 
 /**
  * Ảnh thu nhỏ của một mục đã xuất bản.
@@ -853,6 +887,9 @@ export type ThumbnailTarget =
  * tên — nó không bao giờ đi vào một phản hồi. Tra theo `slug` của mục đã xuất
  * bản, không theo định danh video: khoá theo định danh thì bất kỳ ai cũng biến
  * cổng này thành một proxy ảnh mở cho mọi video trên nền tảng.
+ *
+ * R2: khi `storageProvider='r2'`, thumbnail nằm cùng cây R2 với rendition —
+ * trả `{ kind: 'r2', r2Key }`, endpoint pipe qua proxy như stream.
  */
 export async function resolveThumbnailTarget(
   slug: string,
@@ -872,6 +909,13 @@ export async function resolveThumbnailTarget(
   if (row.source === 'youtube') {
     const url = buildYouTubeThumbnailUpstreamUrl(row.youtubeVideoId)
     return url ? { kind: 'remote', url } : null
+  }
+
+  // R2 thumbnail — cùng key prefix với rendition, tệp `thumb.jpg`.
+  if (row.storageProvider === 'r2') {
+    const stored = typeof row.storagePath === 'string' ? row.storagePath.trim() : ''
+    if (!stored) return null
+    return { kind: 'r2', r2Key: `${stored.replace(/\/+$/g, '')}/${MEDIA_THUMBNAIL_FILE}` }
   }
 
   const directory = resolveMediaDirectory(config, row)
@@ -1144,7 +1188,7 @@ export async function deleteMediaItem(
   const outcome = await db.transaction(async (tx) => {
     const [current] = await tx
       .select({ id: mediaItems.id, slug: mediaItems.slug, source: mediaItems.source, status: mediaItems.status,
-        storagePath: mediaItems.storagePath, claimedBy: mediaItems.claimedBy })
+        storagePath: mediaItems.storagePath, storageProvider: mediaItems.storageProvider, claimedBy: mediaItems.claimedBy })
       .from(mediaItems)
       .where(eq(mediaItems.id, input.id))
       .limit(1)
@@ -1159,6 +1203,9 @@ export async function deleteMediaItem(
     if (assetRoot) {
       await tx.insert(mediaAssetCleanup).values({
         id: randomUUID(), assetRoot,
+        // `assetRoot` là R2 key prefix khi storageProvider='r2', local path khi
+        // 'local' — worker branch theo cột này để xoá đúng backend.
+        storageProvider: current.storageProvider,
         // A worker cannot race a just-aborted encoder; defer one short interval.
         nextAttemptAt: new Date(Date.now() + 30_000),
       })

@@ -56,7 +56,7 @@ const fontLinks = existsSync(selfHostedFontCss)
  * tests/asset-pipeline.test.ts fails if a template starts using a family that
  * is not listed here — otherwise those icons would silently render as blanks.
  */
-const ICON_FAMILIES = ['solid', 'regular']
+const ICON_FAMILIES = ['solid', 'regular', 'brands']
 const iconLinks = ['fontawesome', ...ICON_FAMILIES].map(name => ({
   rel: 'stylesheet' as const,
   href: `/assets/fontawesome/css/${name}.min.css`,

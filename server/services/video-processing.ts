@@ -57,6 +57,7 @@ import { withNamedLock } from '../utils/named-lock'
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import { logInfo, logWarn } from '../utils/logger'
 import { detectVideoMime, VIDEO_SNIFF_BYTES, UNSUPPORTED_VIDEO_MESSAGE } from '../utils/video-mime'
+import { syncDirectoryToR2 } from './video-r2-sync'
 // Dùng lại bản của đường tải lên thay vì viết bản thứ hai: hai bản định dạng
 // dung lượng chỉ được đối chiếu khi một trong hai đọc sai, và lúc đó cán bộ đã
 // đọc hai con số khác nhau cho cùng một tệp.
@@ -678,12 +679,52 @@ export async function processMediaItem(input: ProcessInput, options: ProcessingD
 
     // ── Giai đoạn 6: playlist đã được ghi nguyên tử ở trên, mỗi lượt công bố ─
 
-    // ── Giai đoạn 7: dọn và đóng ───────────────────────────────────────────
+    // ── Giai đoạn 7: đồng bộ R2 (nếu bật) + dọn và đóng ──────────────────────
     if (controller.signal.aborted) throw new ProcessingAborted(abortReason ?? 'Lượt xử lý đã bị hủy.')
+
+    // R2 cho video: nếu `provider='r2'` và đủ credential, sync cây `published`
+    // lên R2 rồi xoá local (R2 là nguồn chính). Sync fail → giữ local + đánh dấu
+    // `storageProvider='local'` (lùi an toàn, video vẫn phát được từ đĩa).
+    // FFmpeg cần filesystem local nên không thể transcode thẳng lên R2.
+    let finalStorageProvider: 'local' | 'r2' = 'local'
+    const r2Config = config.videoStorage.provider === 'r2' ? config.videoStorage.r2 : undefined
+    if (r2Config) {
+      try {
+        const { files, bytes } = await syncDirectoryToR2(published, storagePath, r2Config)
+        finalStorageProvider = 'r2'
+        logInfo({
+          event: 'media.r2_synced',
+          mediaItemId: item.id,
+          slug: item.slug,
+          files,
+          bytes,
+        })
+        // Sync thành công → xoá cây local published (R2 là nguồn chính).
+        await fs.rm(published, { recursive: true, force: true }).catch(() => undefined)
+      } catch (error) {
+        // Sync fail — giữ local, đánh dấu 'local', log cảnh báo. Video vẫn phát
+        // được từ đĩa. Không ném: một lượt R2 hỏng không được làm hỏng cả lượt
+        // transcode đã thành công.
+        logWarn({
+          event: 'media.r2_sync_failed',
+          mediaItemId: item.id,
+          slug: item.slug,
+          message: error instanceof Error ? error.message : String(error),
+        })
+        finalStorageProvider = 'local'
+      }
+    }
+
     await fs.rm(scratch, { recursive: true, force: true }).catch(() => undefined)
     const [finished] = await db
       .update(mediaItems)
-      .set({ processingStatus: 'ready', claimedBy: null, processingError: null, resolutionsReady: [...ready] })
+      .set({
+        processingStatus: 'ready',
+        claimedBy: null,
+        processingError: null,
+        resolutionsReady: [...ready],
+        storageProvider: finalStorageProvider,
+      })
       .where(and(eq(mediaItems.id, item.id), eq(mediaItems.claimedBy, claim)))
     if (affectedRowsOrZero(finished) === 0) throw new ProcessingAborted('Lượt xử lý đã mất quyền sở hữu.')
 

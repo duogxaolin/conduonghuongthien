@@ -42,6 +42,17 @@ const ACTION_LABELS: Record<string, string> = {
   publish: 'Xuất bản',
   boost: 'Tăng lượt xem', reorder: 'Sắp xếp lại',
   version: 'Lưu phiên bản', restore: 'Phục hồi phiên bản',
+  // Media Portal — nút "Dọn ngay" xoá upload bỏ dở. Action `update media_portal_settings`
+  // (có khoảng trắng) vốn không khớp regex quét `[a-z_]+` nên không cần label ở đây;
+  // nó hiện dưới nhãn `update` chung khi `labelKeys` trong template tra fallback.
+  housekeep_uploads: 'Dọn upload bỏ dở',
+  // Thư viện ảnh — nút "Quét thư mục" nhập ảnh mồ côi từ public/uploads/ vào CSDL.
+  scan_uploads: 'Quét thư mục ảnh',
+  // Thư viện ảnh — nút "Đồng bộ storage" chuyển ảnh giữa local ↔ R2 + sửa URL rich-text.
+  sync_storage: 'Đồng bộ storage',
+  // Backup & khôi phục — nút backup / khôi phục trên /admin/settings/backup.
+  backup_run: 'Backup',
+  backup_restore: 'Khôi phục backup',
 }
 const RESOURCE_LABELS: Record<string, string> = {
   auth: 'Xác thực', profile_password: 'Mật khẩu tài khoản', profile_mfa: 'Xác thực hai bước',
@@ -66,6 +77,10 @@ const RESOURCE_LABELS: Record<string, string> = {
   // trống còn `tests/activity-log-labels.test.ts` đỏ ở chiều "khoá được ghi mà
   // không có nhãn" — chiều dễ bỏ sót nhất khi thêm một resource mới.
   livestream: 'Phát trực tiếp',
+  // Backup. `backup_drive_oauth` ghi qua service `backup-drive-oauth.ts`
+  // (liên kết/hủy Google Drive OAuth). Backup/restore thông thường ghi dưới
+  // resource `settings` (cùng nhóm cấu hình), nên không có nhãn riêng.
+  backup_drive_oauth: 'Liên kết Drive',
 }
 const MFA_METHOD_LABELS: Record<string, string> = {
   totp: 'ứng dụng xác thực', email_otp: 'mã qua email',

@@ -175,6 +175,7 @@ services:
     volumes:
       - uploads_data:/app/public/uploads
       - media_work:/var/lib/cdkt/media
+      - ./backups:/app/backups
     depends_on:
       mysql:
         condition: service_healthy

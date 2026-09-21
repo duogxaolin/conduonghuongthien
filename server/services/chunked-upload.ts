@@ -747,11 +747,12 @@ export type HousekeepResult = { sessions: number, orphans: number }
  * sẽ để lại thư mục mà không lượt dọn nào đọc bảng biết tới.
  */
 export async function housekeepUploads(
-  options: UploadDeps & { now?: Date, limit?: number } = {},
+  options: UploadDeps & { now?: Date, limit?: number, adminUserId?: number | null } = {},
 ): Promise<HousekeepResult> {
   const { db, config } = deps(options)
   const now = options.now ?? new Date()
   const limit = options.limit ?? 200
+  const adminUserId = options.adminUserId ?? null
   const cutoff = new Date(now.getTime() - config.sessionInactivityHours * 60 * 60 * 1000)
 
   const stale = await db
@@ -786,7 +787,29 @@ export async function housekeepUploads(
     const [result] = await tx
       .delete(mediaUploadSessions)
       .where(eq(mediaUploadSessions.uploadId, row.uploadId))
-    return affectedRowsOrZero(result) > 0
+    const deleted = affectedRowsOrZero(result) > 0
+    if (deleted) {
+      // Audit từng phiên trong cùng transaction — atomic với lượt xoá. Guard
+      // `media-portal-audit` đòi `tx.insert(activityLogs)` (không `db.insert`)
+      // vì `db.insert` commit độc lập với lượt xoá. Mỗi phiên xoá là một transaction
+      // riêng, nên mỗi phiên có một dòng audit riêng; không có "audit tổng" vì
+      // không có một transaction nào bao bọc cả đống. Số mồ côi (orphans) chỉ xoá
+      // file, không có row DB nên không có cặp để bọc — nó đã có `logInfo` ở dưới.
+      try {
+        await tx.insert(activityLogs).values({
+          userId: adminUserId,
+          action: 'housekeep_uploads',
+          resource: 'media_portal',
+          resourceId: null,
+          meta: { cutoffHours: config.sessionInactivityHours },
+        })
+      } catch {
+        // Audit hỏng không rollback lượt xoá — xoá đã thành công, audit là
+        // bằng chứng thứ yếu. Nuốt lỗi để một dòng log hỏng không phục hồi hàng
+        // đã xoá (rollback transaction sẽ trả lại hàng phiên).
+      }
+    }
+    return deleted
     })
     if (removed) sessions += 1
   }

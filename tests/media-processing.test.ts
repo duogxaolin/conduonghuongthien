@@ -474,6 +474,8 @@ function testConfig(workdir: string): MediaConfig {
     processingStaleMinutes: MEDIA_DEFAULTS.processingStaleMinutes,
     processingMaxAttempts: 1,
     workdir,
+    // R2 mặc định tắt trong test — transcode giữ local như cũ.
+    videoStorage: { provider: 'local' },
   }
 }
 

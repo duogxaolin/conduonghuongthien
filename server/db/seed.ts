@@ -222,6 +222,26 @@ async function seed() {
     { key: 'r2_secret_key',    value: '',                                                       group: 'media'   },
     { key: 'r2_bucket',        value: '',                                                       group: 'media'   },
     { key: 'r2_public_url',    value: '',                                                       group: 'media'   },
+    // ── Media Portal (video upload + chuyển mã). Chín khoá, value rỗng = fallback
+    // về env/default. Cán bộ lưu qua /admin/settings/media-portal mới ghi đè.
+    { key: 'media_upload_enabled',             value: '', group: 'media_portal' },
+    { key: 'media_upload_max_size',             value: '', group: 'media_portal' },
+    { key: 'media_upload_chunk_size',           value: '', group: 'media_portal' },
+    { key: 'media_disk_floor_bytes',            value: '', group: 'media_portal' },
+    { key: 'media_session_inactivity_hours',    value: '', group: 'media_portal' },
+    { key: 'media_processing_heartbeat_seconds', value: '', group: 'media_portal' },
+    { key: 'media_processing_stale_minutes',     value: '', group: 'media_portal' },
+    { key: 'media_processing_max_jobs',          value: '', group: 'media_portal' },
+    { key: 'media_processing_max_attempts',      value: '', group: 'media_portal' },
+    // R2 riêng cho video — 6 khoá. Rỗng = chưa cấu hình (provider mặc định 'local').
+    // Secret key mã hoá AES-256-GCM, nhãn `cdkt-video-r2-secret:v1` — xem
+    // `server/utils/media-r2-secret.ts`.
+    { key: 'media_video_storage_provider',      value: '', group: 'media_portal' },
+    { key: 'media_video_r2_account_id',          value: '', group: 'media_portal' },
+    { key: 'media_video_r2_access_key',          value: '', group: 'media_portal' },
+    { key: 'media_video_r2_secret_key',          value: '', group: 'media_portal' },
+    { key: 'media_video_r2_bucket',             value: '', group: 'media_portal' },
+    { key: 'media_video_r2_public_url',          value: '', group: 'media_portal' },
   ]
 
   // Insert-only: preserve administrator-edited settings (hotline, R2 credentials,

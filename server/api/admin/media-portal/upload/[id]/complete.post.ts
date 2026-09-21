@@ -19,6 +19,8 @@ import { defineEventHandler, setResponseStatus } from 'h3'
 
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { completeUpload } from '../../../../../services/chunked-upload'
+import { resolveMediaConfigWithDb } from '../../../../../services/media-config-service'
+import { getDb } from '../../../../../utils/db'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -26,10 +28,12 @@ export default defineEventHandler(async (event) => {
 
   const uploadId = event.context.params?.id
 
+  const { config } = await resolveMediaConfigWithDb(getDb())
+
   const result = await completeUpload({
     adminUserId: adminUser.id,
     uploadId,
-  })
+  }, { config })
 
   if (!result.ok) {
     throw createError({ statusCode: result.status, statusMessage: result.message })
