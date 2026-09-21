@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { errorMessage } from '~/utils/errorMessage'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -140,6 +141,16 @@ async function load() {
     // Secret key: hiển thị masked từ server, không điền vào form. Ô input để trống
     // — cán bộ chỉ nhập khi muốn đổi. `videoStorage.secretMasked` hiển thị riêng.
     form.videoR2SecretKey = ''
+    // Phát hiện "đang dùng chung R2 với Media Storage" — so khớp 4 field public
+    // với settings `r2_*`. Khớp hết → dùng chung, khác → R2 riêng.
+    try {
+      const msRes = await $fetch<{ ok: boolean, settings: Record<string, string | null> }>('/api/admin/settings')
+      const ms = msRes.settings ?? {}
+      const sameAccount = ms.r2_account_id && form.videoR2AccountId === ms.r2_account_id
+      const sameAccess = ms.r2_access_key && form.videoR2AccessKey === ms.r2_access_key
+      const sameBucket = ms.r2_bucket && form.videoR2Bucket === ms.r2_bucket
+      usingSharedMediaStorageR2.value = Boolean(sameAccount && sameAccess && sameBucket)
+    } catch { /* không chặn load */ }
   } catch (err) {
     error.value = err instanceof Error ? err.message : 'Không tải được cấu hình Media Portal.'
   } finally {
@@ -203,6 +214,65 @@ async function cleanNow() {
   } finally {
     cleaning.value = false
   }
+}
+
+const importingFromMediaStorage = ref(false)
+const usingSharedMediaStorageR2 = ref(false)
+
+/**
+ * "Dùng R2 của Media Storage" — copy cả 5 field + set provider=r2 + báo dùng chung.
+ * Endpoint `/api/admin/settings` mask `r2_secret_key` thành `********` cho non-superadmin,
+ * nên chỉ superadmin mới thấy secret thật để tự điền. Non-superadmin phải nhập tay.
+ * Đây là "sử dụng chung" copy 1 lần, không phải reference động.
+ */
+async function useMediaStorageR2() {
+  importingFromMediaStorage.value = true
+  try {
+    const res = await $fetch<{ ok: boolean, settings: Record<string, string | null> }>('/api/admin/settings')
+    const s = res.settings ?? {}
+    const filled: string[] = []
+    if (s.r2_account_id) { form.videoR2AccountId = s.r2_account_id; filled.push('Account ID') }
+    if (s.r2_access_key) { form.videoR2AccessKey = s.r2_access_key; filled.push('Access Key') }
+    if (s.r2_bucket) { form.videoR2Bucket = s.r2_bucket; filled.push('Bucket') }
+    if (s.r2_public_url) { form.videoR2PublicUrl = s.r2_public_url; filled.push('Public URL') }
+    // Secret chỉ plaintext khi superadmin; `********` = mask, không điền mask giả.
+    if (s.r2_secret_key && s.r2_secret_key !== '********') {
+      form.videoR2SecretKey = s.r2_secret_key
+      filled.push('Secret Key')
+    }
+    if (s.media_provider === 'r2') {
+      form.videoStorageProvider = 'r2'
+    }
+    if (filled.length === 0) {
+      toast.info('Media Storage chưa cấu hình R2. Nhập tay 5 field bên dưới hoặc cấu hình Media Storage trước.')
+      usingSharedMediaStorageR2.value = false
+      return
+    }
+    usingSharedMediaStorageR2.value = true
+    const secretNote = filled.includes('Secret Key')
+      ? ''
+      : '. Secret Key nhập tay bên dưới (chỉ SuperAdmin thấy sẵn)'
+    toast.success(`Đã dùng chung R2 với Media Storage (${filled.join(', ')}). Bấm "Lưu cấu hình" để áp dụng${secretNote}.`)
+  } catch (err) {
+    toast.error(errorMessage(err, 'Không lấy được config từ Media Storage'))
+  } finally {
+    importingFromMediaStorage.value = false
+  }
+}
+
+/**
+ * "Nhập R2 riêng" — xóa 4 field public + set flag dùng R2 riêng.
+ * Cán bộ nhập tay 5 field bên dưới cho video bucket tách biệt ảnh.
+ */
+function useCustomR2() {
+  form.videoR2AccountId = ''
+  form.videoR2AccessKey = ''
+  form.videoR2SecretKey = ''
+  form.videoR2Bucket = ''
+  form.videoR2PublicUrl = ''
+  form.videoStorageProvider = 'r2'
+  usingSharedMediaStorageR2.value = false
+  toast.info('Đã xóa field. Nhập 5 field R2 riêng cho video bên dưới, rồi bấm "Lưu cấu hình".')
 }
 
 onMounted(load)
@@ -423,6 +493,37 @@ onMounted(load)
         <p class="text-[0.8rem] text-[#667768] mt-0 mb-5">
           Bucket + credential R2 <strong>riêng cho video</strong> — tách biệt khỏi thư viện ảnh. Video mới (khi bật R2) sync lên R2 sau khi chuyển mã; video cũ vẫn ở đĩa máy chủ. Stream luôn qua proxy của cổng, không redirect.
         </p>
+
+        <!-- Nút dùng R2 của Media Storage (ảnh) hoặc nhập R2 riêng -->
+        <div class="flex flex-col gap-3 mb-5 rounded-lg border border-[#cce5cd] bg-[#eef7ee] px-4 py-3">
+          <div class="flex flex-wrap items-center gap-3">
+            <button
+              type="button"
+              class="inline-flex items-center gap-2 rounded-lg border border-[#2c6e33] bg-white px-3.5 py-2 text-[0.82rem] font-bold text-[#2c6e33] cursor-pointer transition-colors hover:bg-[#f0f7f1] disabled:cursor-not-allowed disabled:opacity-50"
+              :disabled="importingFromMediaStorage"
+              @click="useMediaStorageR2"
+            >
+              <i class="fa-solid" :class="importingFromMediaStorage ? 'fa-spinner animate-spin' : 'fa-link'" aria-hidden="true"></i>
+              {{ importingFromMediaStorage ? 'Đang lấy...' : 'Dùng R2 của Media Storage' }}
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-2 rounded-lg border border-[#c8d6c9] bg-white px-3.5 py-2 text-[0.82rem] font-bold text-[#667768] cursor-pointer transition-colors hover:bg-[#f0f7f1] disabled:cursor-not-allowed disabled:opacity-50"
+              @click="useCustomR2"
+            >
+              <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+              Nhập R2 riêng
+            </button>
+          </div>
+          <p class="m-0 text-[0.78rem] text-[#667768]">
+            <strong>"Dùng R2 của Media Storage"</strong> — dùng chung R2 với thư viện ảnh (account + bucket + credential từ <NuxtLink to="/admin/settings/media-storage" class="text-[#2c6e33] font-semibold no-underline hover:underline">Media Storage</NuxtLink>). Video + ảnh cùng 1 R2.<br />
+            <strong>"Nhập R2 riêng"</strong> — bucket + credential riêng cho video, tách khỏi ảnh. Nhập tay 5 field bên dưới.
+          </p>
+          <div v-if="usingSharedMediaStorageR2" class="text-[0.78rem] text-[#1e4620] font-semibold">
+            <i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i>
+            Đang dùng chung R2 với Media Storage. Sửa ở <NuxtLink to="/admin/settings/media-storage" class="text-[#2c6e33] underline">Media Storage</NuxtLink> sẽ không tự cập nhật ở đây — cần bấm lại nút này.
+          </div>
+        </div>
 
         <!-- Cảnh báo secret không đọc được (khóa xoay hoặc CSDL copy sai) -->
         <div
