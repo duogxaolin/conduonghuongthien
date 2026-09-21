@@ -99,6 +99,9 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/comments/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/google-oauth.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/ip-bans.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/settings/media-portal.vue', marker: 'v-if="loading"' },
+  // Backup & khôi phục — danh sách bản backup mang SkeletonTable.
+  { file: 'pages/admin/settings/backup.vue', marker: 'v-if="loading"' },
 
   // Views that already had a loading branch but sat outside this guard, because
   // the list above names files and nobody added them. Found by the coverage gate
@@ -146,6 +149,9 @@ const NO_SKELETON_NEEDED: Record<string, string> = {
   // phase, and replacing it with grey boxes removes the one thing the operator
   // needs to see in that window.
   'components/admin/ChunkedUploader.vue': 'upload progress bar is the content, not a placeholder for later content',
+  // Scan + sync trang riêng — fetch chỉ khi bấm nút (submit-time), nút mang pending.
+  // Trang không có danh sách tải để thay thế; cả hai thao tác báo tổng trong toast.
+  'pages/admin/media/scan.vue': 'submit-time fetch; the button shows pending and the result lands in a toast',
 }
 
 /** Files whose loading branch is drawn inline rather than by a shared component. */

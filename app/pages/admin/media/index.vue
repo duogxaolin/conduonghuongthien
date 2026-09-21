@@ -57,6 +57,29 @@ const onDrop = (e: DragEvent) => {
   if (files?.length) handleUpload(files)
 }
 
+const copyLink = async (url: string) => {
+  try {
+    const absolute = new URL(url, window.location.origin).href
+    await navigator.clipboard.writeText(absolute)
+    toast.success('Đã sao chép liên kết!')
+  } catch (err: unknown) {
+    // Fallback cho trình duyệt không hỗ trợ clipboard API (HTTP, cũ).
+    try {
+      const ta = document.createElement('textarea')
+      ta.value = new URL(url, window.location.origin).href
+      ta.style.position = 'fixed'
+      ta.style.opacity = '0'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      toast.success('Đã sao chép liên kết!')
+    } catch {
+      toast.error('Không sao chép được liên kết.')
+    }
+  }
+}
+
 const deleteMedia = async (item: AdminMediaRow) => {
   const ok = await confirm({ title: 'Xóa tệp', message: `Bạn có chắc muốn xóa file ${item.originalName}?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
@@ -98,15 +121,27 @@ const batchPercent = computed(() => {
 })
 const isBatching = computed(() => uploadingBatch.value && totalCount.value > 0)
 
+// ─── Quét & đồng bộ storage chuyển sang trang riêng /admin/media/scan ──────
+// Quét 3212 file mồ côi có thể treo trang grid, nên tách ra trang riêng chạy nền.
+
 onMounted(() => { fetchMedia() })
 </script>
 
 <template>
   <div class="flex flex-col gap-5">
     <!-- Page Header -->
-    <div>
-      <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Thư viện Media & Tải lên</h1>
-      <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Quản lý toàn bộ hình ảnh, tài liệu và video được tải lên website</p>
+    <div class="flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Thư viện Media & Tải lên</h1>
+        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Quản lý toàn bộ hình ảnh, tài liệu và video được tải lên website</p>
+      </div>
+      <NuxtLink
+        to="/admin/media/scan"
+        class="flex items-center gap-2 rounded-lg border border-[#c8d6c9] bg-white px-3.5 py-2 text-sm font-semibold text-[#2c6e33] no-underline transition-colors hover:bg-[#f0f7f1]"
+      >
+        <i class="fa-solid fa-folder-tree" aria-hidden="true"></i>
+        Quét & Đồng bộ
+      </NuxtLink>
     </div>
 
     <!-- Upload Zone -->
@@ -261,11 +296,11 @@ onMounted(() => { fetchMedia() })
           <span class="text-[0.82rem] font-bold text-[#122815] truncate" :title="m.originalName">{{ m.originalName }}</span>
           <span class="text-[0.72rem] text-[#9ca3af]">{{ (m.sizeBytes / 1024).toFixed(1) }} KB</span>
           <div class="flex gap-2 mt-1">
-            <a
-              :href="m.url"
-              target="_blank"
-              class="flex-1 text-center text-[0.75rem] py-1 rounded-md bg-[#f0f7f1] text-[#2c6e33] no-underline hover:bg-[#e4f2e5] transition-colors font-medium"
-            ><i class="fa-regular fa-link"></i> Link</a>
+            <button
+              type="button"
+              class="flex-1 text-center text-[0.75rem] py-1 rounded-md bg-[#f0f7f1] text-[#2c6e33] border-0 cursor-pointer hover:bg-[#e4f2e5] transition-colors font-medium"
+              @click="copyLink(m.url)"
+            ><i class="fa-regular fa-link"></i> Link</button>
             <button
               class="flex-1 text-[0.75rem] py-1 rounded-md bg-[#ffebe9] text-[#d12420] border-0 cursor-pointer hover:bg-red-200 transition-colors font-medium"
               @click="deleteMedia(m)"

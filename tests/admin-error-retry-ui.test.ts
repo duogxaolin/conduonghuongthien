@@ -60,6 +60,9 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/settings/tracking.vue', refs: ['error'], retries: ['fetchSettings'] },
   { file: 'pages/admin/settings/google-oauth.vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/settings/ip-bans.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/settings/media-portal.vue', refs: ['error'], retries: ['load'] },
+  // Backup & khôi phục — danh sách bản backup.
+  { file: 'pages/admin/settings/backup.vue', refs: ['error'], retries: ['loadBackups'] },
 
   // Content.
   { file: 'pages/admin/content/articles/index.vue', refs: ['loadError'], retries: ['fetchArticles'] },
@@ -170,6 +173,9 @@ const NO_CONTRACT_NEEDED: Record<string, string> = {
   // dialog and keeps the file selected so the user can press upload again. Holding
   // a second copy of that state here would let the two disagree.
   'components/admin/TinyMceEditor.vue': 'rejects to the editor, which owns the retry affordance',
+  // Scan + sync: nút là retry. Kết quả báo trong toast — không có danh sách để lỗi
+  // thành "trống" rồi cán bộ đi tạo lại bản ghi đã có.
+  'pages/admin/media/scan.vue': 'submit-time fetch; the button is the retry and the result lands in a toast',
 }
 
 test('every admin view that fetches keeps somewhere for a rejection to land', async () => {

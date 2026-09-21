@@ -23,6 +23,7 @@ import { and, eq, isNull, lt, or, lte, asc } from 'drizzle-orm'
 import { getDb, getPool, type Database } from '../utils/db'
 import { mediaItems } from '../db/schema'
 import { resolveMediaConfig, type MediaConfig } from '../utils/media-config'
+import { resolveMediaConfigWithDb } from './media-config-service'
 import { withNamedLock } from '../utils/named-lock'
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import { logInfo, logWarn } from '../utils/logger'
@@ -193,9 +194,14 @@ export function startMediaProcessingReaper(): void {
   const tick = () => {
     if (ticking || stopping) return
     ticking = true
-    reapStuckJobs().then(() => Promise.all([
-      drainMediaQueue({ waitForJobs: false }),
-      processMediaAssetCleanup(),
+    // Mỗi nhịp nạp config từ DB (override > env > default) rồi truyền xuống cả
+    // ba hàm — reaper chạy nền nên đây là con đường duy nhất để một cán bộ sửa
+    // `processingMaxJobs`/`processingStaleMinutes` qua trang settings có hiệu lực
+    // mà không cần restart container.
+    resolveMediaConfigWithDb(getDb()).then(({ config }) => Promise.all([
+      reapStuckJobs({ config }),
+      drainMediaQueue({ waitForJobs: false, config }),
+      processMediaAssetCleanup({ config }),
     ])).catch((error) => {
       logWarn({
         event: 'media.reaper_failed',

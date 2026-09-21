@@ -517,6 +517,12 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureColumn(db, database, 'media_items', 'processing_attempts', 'INT NOT NULL DEFAULT 0')
   await ensureColumn(db, database, 'media_items', 'processing_next_attempt_at', 'TIMESTAMP NULL DEFAULT NULL')
   await ensureColumn(db, database, 'media_items', 'processing_heartbeat_at', 'TIMESTAMP NULL DEFAULT NULL')
+  // Lưu trữ video: `local` (đĩa máy chủ) hoặc `r2` (Cloudflare R2 bucket riêng).
+  // Video cũ (trước khi có R2) giữ `local`; video mới chọn theo config khi transcode.
+  await ensureColumn(db, database, 'media_items', 'storage_provider', "VARCHAR(16) NOT NULL DEFAULT 'local'")
+  // Bảng dọn tệp cũng cần biết provider để xoá đúng backend: local → `fs.rm`,
+  // r2 → `deleteR2Tree`. Cùng mặc định 'local' — task cũ (trước R2) vẫn xoá local.
+  await ensureColumn(db, database, 'media_asset_cleanup', 'storage_provider', "VARCHAR(16) NOT NULL DEFAULT 'local'")
 
   // design.md D9: existing articles start with comments closed (default 0).
   await ensureColumn(db, database, 'articles', 'comments_enabled', 'TINYINT(1) NOT NULL DEFAULT 0')

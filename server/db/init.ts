@@ -787,6 +787,7 @@ export async function initDb() {
       \`source\` VARCHAR(16) NOT NULL DEFAULT 'upload',
       \`youtube_video_id\` VARCHAR(32) NULL,
       \`storage_path\` VARCHAR(1024) NULL,
+      \`storage_provider\` VARCHAR(16) NOT NULL DEFAULT 'local',
       \`thumbnail_url\` VARCHAR(1024) NULL,
       \`duration_seconds\` INT NULL,
       \`width\` INT NULL,
@@ -902,6 +903,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS \`media_asset_cleanup\` (
       \`id\` VARCHAR(36) NOT NULL PRIMARY KEY,
       \`asset_root\` VARCHAR(1024) NOT NULL,
+      \`storage_provider\` VARCHAR(16) NOT NULL DEFAULT 'local',
       \`attempts\` INT NOT NULL DEFAULT 0,
       \`next_attempt_at\` TIMESTAMP NULL DEFAULT NULL,
       \`last_error\` VARCHAR(512) NULL,
@@ -999,6 +1001,68 @@ export async function initDb() {
       \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       \`updated_by\` INT NULL,
       CONSTRAINT \`fk_google_oauth_settings_updated_by\` FOREIGN KEY (\`updated_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // Sổ ghi các bản backup (SQL dump + file nén). Bảng thứ 43. Không đăng ký
+  // retention — backups tự xoay vòng theo N cấu hình tại /admin/settings/backup.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`backups\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`filename\` VARCHAR(255) NOT NULL,
+      \`type\` VARCHAR(16) NOT NULL,
+      \`bytes\` BIGINT NOT NULL DEFAULT 0,
+      \`stamp\` VARCHAR(16) NOT NULL,
+      \`trigger\` VARCHAR(16) NOT NULL DEFAULT 'manual',
+      \`status\` VARCHAR(16) NOT NULL DEFAULT 'pending',
+      \`drive_uploaded\` TINYINT(1) DEFAULT 0,
+      \`drive_file_id\` VARCHAR(128) NULL,
+      \`error\` TEXT NULL,
+      \`created_by\` INT NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      KEY \`backups_stamp_idx\` (\`stamp\`),
+      KEY \`backups_status_idx\` (\`status\`),
+      CONSTRAINT \`fk_backups_created_by\` FOREIGN KEY (\`created_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // Backup Drive OAuth — single-row table holding the refresh token envelope +
+  // linked email/sub for the "login to connect Drive" UX. Bảng thứ 44.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`backup_drive_oauth\` (
+      \`id\` INT NOT NULL,
+      \`refresh_token_ciphertext\` TEXT NULL,
+      \`refresh_token_nonce\` VARCHAR(64) NULL,
+      \`refresh_token_auth_tag\` VARCHAR(64) NULL,
+      \`refresh_token_version\` INT UNSIGNED NULL,
+      \`refresh_token_key_id\` VARCHAR(64) NULL,
+      \`linked_email\` VARCHAR(255) NULL,
+      \`linked_sub\` VARCHAR(128) NULL,
+      \`linked_at\` TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP,
+      \`updated_by\` INT NULL,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`id\`),
+      CONSTRAINT \`fk_backup_drive_oauth_updated_by\` FOREIGN KEY (\`updated_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // Backup Drive OAuth config — Client ID + Secret riêng cho Drive (bảng thứ 45).
+  // Tách khỏi `google_oauth_settings` của reader: scope/audience/consent khác.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`backup_drive_oauth_config\` (
+      \`id\` INT NOT NULL,
+      \`client_id\` VARCHAR(255) NULL,
+      \`client_secret_ciphertext\` TEXT NULL,
+      \`client_secret_nonce\` VARCHAR(64) NULL,
+      \`client_secret_auth_tag\` VARCHAR(64) NULL,
+      \`client_secret_version\` INT UNSIGNED NULL,
+      \`client_secret_key_id\` VARCHAR(64) NULL,
+      \`client_secret_last_four\` VARCHAR(8) NULL,
+      \`is_enabled\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`updated_by\` INT NULL,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`id\`),
+      CONSTRAINT \`fk_backup_drive_oauth_config_updated_by\` FOREIGN KEY (\`updated_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 

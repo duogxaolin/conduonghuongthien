@@ -1,4 +1,4 @@
-/** Durable, retrying cleanup of a deleted upload's local asset tree. */
+/** Durable, retrying cleanup of a deleted upload's asset tree — local hoặc R2. */
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
@@ -9,6 +9,7 @@ import { getDb, type Database } from '../utils/db'
 import { resolveMediaConfig, type MediaConfig } from '../utils/media-config'
 import { logInfo, logWarn } from '../utils/logger'
 import { mediaAssetRoot } from './video-processing'
+import { deleteR2Tree } from './video-r2-sync'
 
 export const MEDIA_CLEANUP_BATCH_LIMIT = 50
 
@@ -58,6 +59,23 @@ export async function processMediaAssetCleanup(options: {
     }
 
     try {
+      // R2 cleanup: `assetRoot` là R2 key prefix (không phải filesystem path).
+      // Xoá toàn bộ object có prefix qua `deleteR2Tree`. Không kiểm
+      // `startsWith(mediaRoot)` vì không có filesystem — key prefix đã là một
+      // chuỗi do `mediaAssetRoot` dựng, không chứa `..`.
+      if (task.storageProvider === 'r2') {
+        const r2 = config.videoStorage.provider === 'r2' ? config.videoStorage.r2 : undefined
+        if (!r2) {
+          // R2 đã tắt/sai sau khi task tạo — không thể xoá. Giữ task để thử lại
+          // khi R2 được cấu hình lại. Báo lỗi rõ thay vì lặng lẽ bỏ qua.
+          throw new Error('R2 không khả dụng để dọn tệp — kiểm cấu hình R2 video.')
+        }
+        await deleteR2Tree(task.assetRoot, r2)
+        await db.delete(mediaAssetCleanup).where(eq(mediaAssetCleanup.id, task.id))
+        removed += 1
+        continue
+      }
+
       const root = path.resolve(config.workdir, task.assetRoot)
       const mediaRoot = path.resolve(config.workdir, 'media')
       if (!root.startsWith(`${mediaRoot}${path.sep}`)) throw new Error('Đường dẫn dọn dẹp không hợp lệ.')

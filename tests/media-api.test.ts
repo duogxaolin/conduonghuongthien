@@ -101,6 +101,7 @@ type MediaRow = {
   source: 'upload' | 'youtube'
   youtubeVideoId: string | null
   storagePath: string | null
+  storageProvider: 'local' | 'r2'
   thumbnailUrl: string | null
   durationSeconds: number | null
   width: number | null
@@ -125,6 +126,7 @@ function media(overrides: Partial<MediaRow> & { id: number, slug: string }): Med
     source: 'upload',
     youtubeVideoId: null,
     storagePath: null,
+    storageProvider: 'local',
     thumbnailUrl: null,
     durationSeconds: null,
     width: null,
@@ -187,7 +189,7 @@ function publicProjection(row: MediaRow): unknown[] {
 }
 
 function assetProjection(row: MediaRow): unknown[] {
-  return [row.id, row.slug, row.source, row.youtubeVideoId, row.storagePath, row.status]
+  return [row.id, row.slug, row.source, row.youtubeVideoId, row.storagePath, row.storageProvider, row.status]
 }
 
 const statements: Array<{ sql: string, params: unknown[] }> = []
@@ -229,7 +231,7 @@ function respond(sql: string, params: unknown[]): unknown {
   }
 
   // ── Tập cột nội bộ, cho hai endpoint phục vụ tệp ──
-  if (/^select `id`, `slug`, `source`, `youtube_video_id`, `storage_path`, `status`/i.test(sql)) {
+  if (/^select `id`, `slug`, `source`, `youtube_video_id`, `storage_path`, `storage_provider`, `status`/i.test(sql)) {
     const found = table.find(row => row.slug === params[0])
     return found ? [assetProjection(found)] : []
   }
@@ -882,8 +884,9 @@ function makeTransactionalFake(options: { failOn?: RegExp, existingRow?: boolean
         // `[id, slug, status, publishedAt]`, đúng thứ tự cột đã chọn.
         return options.existingRow ? [[[5, 'ten-cu', 'draft', null]], []] : [[], []]
       }
-      if (/^select `id`, `slug`, `source`, `status`, `storage_path`, `claimed_by` from `media_items`/i.test(sql)) {
-        return options.existingRow ? [[[5, 'ten-cu', 'upload', 'published', 'media/ten-cu', null]], []] : [[], []]
+      if (/^select `id`, `slug`, `source`, `status`, `storage_path`, `storage_provider`, `claimed_by` from `media_items`/i.test(sql)) {
+        // `[id, slug, source, status, storagePath, storageProvider, claimedBy]`
+        return options.existingRow ? [[[5, 'ten-cu', 'upload', 'published', 'media/ten-cu', 'local', null]], []] : [[], []]
       }
       // Slug còn trống: không hàng nào trùng tiền tố.
       if (/^select `slug` from `media_items`/i.test(sql)) return [[], []]

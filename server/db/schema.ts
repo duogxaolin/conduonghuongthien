@@ -891,6 +891,12 @@ export const mediaItems = mysqlTable('media_items', {
   // Where the renditions live, relative to the media work directory. Never
   // returned to a reader — the stream endpoint resolves it server-side.
   storagePath:  varchar('storage_path', { length: 1024 }),
+  // 'local' = renditions on disk under the media work directory; 'r2' = the
+  // same tree synced to a dedicated R2 bucket for video (separate from the
+  // image library's R2). `storagePath` is the key in either store — same
+  // tree shape, different backend. Set after transcode: local stays 'local',
+  // R2 flips to 'r2' once the tree is uploaded and the local scratch deleted.
+  storageProvider: varchar('storage_provider', { length: 16 }).notNull().default('local'),
   thumbnailUrl: varchar('thumbnail_url', { length: 1024 }),
   durationSeconds: int('duration_seconds'),
   width:        int('width'),
@@ -1024,6 +1030,9 @@ export const mediaUploadSessions = mysqlTable('media_upload_sessions', {
 export const mediaAssetCleanup = mysqlTable('media_asset_cleanup', {
   id:            varchar('id', { length: 36 }).primaryKey(),
   assetRoot:     varchar('asset_root', { length: 1024 }).notNull(),
+  // 'local' = xoá cây tệp trên đĩa; 'r2' = xoá object có prefix trên R2 bucket
+  // video. Worker `processMediaAssetCleanup` branch theo cột này.
+  storageProvider: varchar('storage_provider', { length: 16 }).notNull().default('local'),
   attempts:      int('attempts').notNull().default(0),
   nextAttemptAt: timestamp('next_attempt_at'),
   lastError:     varchar('last_error', { length: 512 }),
@@ -1095,3 +1104,98 @@ export type LivestreamMessage = typeof livestreamMessages.$inferSelect
 export type NewLivestreamMessage = typeof livestreamMessages.$inferInsert
 export type MediaUploadSession = typeof mediaUploadSessions.$inferSelect
 export type NewMediaUploadSession = typeof mediaUploadSessions.$inferInsert
+
+/**
+ * Sổ ghi các bản backup (SQL dump + file nén) do cán bộ tạo hoặc scheduler
+ * chạy. Bảng này là **nguồn chân lý** cho trang /admin/settings/backup: nó trả
+ * lời câu "đã có những bản nào, bao nhiêu MB, lên Drive chưa" mà không cần list
+ * thư mục đĩa (chậm + không có metadata).
+ *
+ * Không đăng ký với `data-retention.ts` — backups tự xoay vòng theo N cấu hình
+ * (mặc định 14), và đây là file server tự tạo, không chứa dữ liệu cá nhân công
+ * dân thuộc phạm vi các scope lưu trữ.
+ */
+export const backups = mysqlTable('backups', {
+  id:           int('id').autoincrement().primaryKey(),
+  filename:      varchar('filename', { length: 255 }).notNull(),
+  // sql | media | all — "all" = cặp SQL + file tạo cùng timestamp.
+  type:          varchar('type', { length: 16 }).notNull(),
+  bytes:         bigint('bytes', { mode: 'number' }).notNull().default(0),
+  // Timestamp UTC YYYYMMDDTHHMMSSZ — cùng format scripts/backup.sh.
+  stamp:         varchar('stamp', { length: 16 }).notNull(),
+  // manual | scheduled — phân biệt cán bộ bấm vs scheduler chạy.
+  trigger:       varchar('trigger', { length: 16 }).notNull().default('manual'),
+  // pending | done | failed — backup chạy nền, cần trạng thái.
+  status:        varchar('status', { length: 16 }).notNull().default('pending'),
+  driveUploaded: boolean('drive_uploaded').default(false),
+  driveFileId:   varchar('drive_file_id', { length: 128 }),
+  error:         text('error'),
+  createdBy:     int('created_by').references(() => users.id),
+  createdAt:     timestamp('created_at').defaultNow(),
+}, (t) => ({
+  stampIdx:  index('backups_stamp_idx').on(t.stamp),
+  statusIdx: index('backups_status_idx').on(t.status),
+}))
+
+export type Backup = typeof backups.$inferSelect
+export type NewBackup = typeof backups.$inferInsert
+
+// ─── Backup Drive OAuth (drive-oauth-backup) ────────────────────────────────
+// Single-row table holding the Google Drive OAuth refresh token for the portal's
+// backup feature. This is the "login link" connect Drive UX: a cán bộ clicks
+// "Liên kết Google Drive", consents once, and the portal keeps a refresh token
+// (AES-256-GCM, label `cdkt-backup-drive-oauth:v1`) so backup uploads go to
+// their personal Drive without re-consenting.
+//
+// **Dùng chung `google_oauth_settings` (Client ID + Secret)** — không tạo bảng
+// riêng cho OAuth Drive credentials. Cán bộ đã cấu hình đăng nhập người đọc thì
+// Drive dùng luôn; chưa cấu hình → nút liên kết báo "Cần cấu hình Google OAuth
+// trước".
+//
+// **Không lưu access token** — ngắn hạn (1h), sinh lại từ refresh token qua
+// `googleapis` (tự refresh khi hết hạn). Chỉ refresh token là nhạy cảm, lưu
+// envelope. `linkedEmail`/`linkedSub` là metadata hiển thị (không nhạy cảm).
+export const backupDriveOauth = mysqlTable('backup_drive_oauth', {
+  id:                      int('id').primaryKey().default(1),
+  // === Refresh token envelope (AES-256-GCM, label cdkt-backup-drive-oauth:v1) ===
+  refreshTokenCiphertext:  text('refresh_token_ciphertext'),
+  refreshTokenNonce:       varchar('refresh_token_nonce', { length: 64 }),
+  refreshTokenAuthTag:    varchar('refresh_token_auth_tag', { length: 64 }),
+  refreshTokenVersion:    int('refresh_token_version', { unsigned: true }),
+  refreshTokenKeyId:      varchar('refresh_token_key_id', { length: 64 }),
+  // === Token metadata (không nhạy cảm, cho hiển thị) ===
+  linkedEmail:            varchar('linked_email', { length: 255 }),
+  linkedSub:              varchar('linked_sub', { length: 128 }),
+  linkedAt:               timestamp('linked_at').defaultNow(),
+  updatedBy:              int('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt:              timestamp('updated_at').defaultNow().onUpdateNow(),
+})
+
+export type BackupDriveOauth = typeof backupDriveOauth.$inferSelect
+export type NewBackupDriveOauth = typeof backupDriveOauth.$inferInsert
+
+// ─── Backup Drive OAuth config (thứ 45) ─────────────────────────────────────
+// Client ID + Client Secret **riêng cho Drive**, hoàn toàn tách biệt với
+// `google_oauth_settings` của đăng nhập người đọc. Hai lý do (xem plan D2
+// refactor): (1) scope khác — reader dùng `openid email profile`, Drive cần
+// `drive.file`, gộp OAuth Client thì consent screen reader phải khai thêm
+// scope Drive; (2) audience khác — reader cho công dân (public), Drive cho
+// admin (internal). Cùng nhãn envelope `cdkt-backup-drive-oauth:v1` với refresh
+// token (cùng feature, một nhãn đủ).
+export const backupDriveOauthConfig = mysqlTable('backup_drive_oauth_config', {
+  id:                       int('id').primaryKey().default(1),  // single-row
+  clientId:                 varchar('client_id', { length: 255 }),
+  // === Client secret envelope (AES-256-GCM, label cdkt-backup-drive-oauth:v1) ===
+  clientSecretCiphertext:   text('client_secret_ciphertext'),
+  clientSecretNonce:        varchar('client_secret_nonce', { length: 64 }),
+  clientSecretAuthTag:      varchar('client_secret_auth_tag', { length: 64 }),
+  clientSecretVersion:     int('client_secret_version', { unsigned: true }),
+  clientSecretKeyId:       varchar('client_secret_key_id', { length: 64 }),
+  clientSecretLastFour:    varchar('client_secret_last_four', { length: 8 }),
+  isEnabled:               boolean('is_enabled').notNull().default(false),
+  updatedBy:               int('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt:               timestamp('updated_at').defaultNow().onUpdateNow(),
+})
+
+export type BackupDriveOauthConfig = typeof backupDriveOauthConfig.$inferSelect
+export type NewBackupDriveOauthConfig = typeof backupDriveOauthConfig.$inferInsert

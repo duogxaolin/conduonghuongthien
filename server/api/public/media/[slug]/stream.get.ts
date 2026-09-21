@@ -20,9 +20,11 @@ import { createReadStream } from 'node:fs'
 
 import { createError, defineEventHandler, getRouterParam, sendStream, setResponseHeaders } from 'h3'
 
-import { resolveMediaConfig } from '../../../../utils/media-config'
 import { logWarn } from '../../../../utils/logger'
 import { MEDIA_STREAM_MANIFEST_PATH, resolveStreamTarget } from '../../../../services/media-portal'
+import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
+import { getDb } from '../../../../utils/db'
+import { streamR2Object } from '../../../../services/video-r2-sync'
 
 export default defineEventHandler(async (event) => {
   // `nosniff` đi cùng **mọi** phản hồi, kể cả 404, nên nó được đặt trước mọi
@@ -38,7 +40,8 @@ export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug')
   if (!slug) throw createError({ statusCode: 404 })
 
-  const target = await resolveStreamTarget(slug, MEDIA_STREAM_MANIFEST_PATH, { config: resolveMediaConfig() })
+  const { config } = await resolveMediaConfigWithDb(getDb())
+  const target = await resolveStreamTarget(slug, MEDIA_STREAM_MANIFEST_PATH, { config })
 
   // Một nhánh 404 duy nhất cho mọi lý do: slug lạ, mục chưa xuất bản, mục nguồn
   // ngoài (không có gì để phát từ đĩa), và tệp chưa được chuyển mã xong. Tách
@@ -54,6 +57,22 @@ export default defineEventHandler(async (event) => {
     'Content-Length': String(target.size),
     'Cache-Control': `public, max-age=${target.cacheSeconds}`,
   })
+
+  if (target.kind === 'r2') {
+    // R2 stream — pipe byte qua proxy, không redirect (design.md dòng 196).
+    // `size=0` ở target vì chưa biết ContentLength; đọc từ GetObject response.
+    const r2Config = config.videoStorage.r2
+    if (!r2Config) throw createError({ statusCode: 503, statusMessage: 'R2 chưa cấu hình.' })
+    try {
+      const obj = await streamR2Object(target.r2Key, r2Config)
+      // Cập nhật Content-Length thật (GetObject trả contentLength chính xác).
+      setResponseHeaders(event, { 'Content-Length': String(obj.contentLength) })
+      return sendStream(event, obj.stream)
+    } catch {
+      logWarn({ event: 'public.media_stream_r2_miss', slug, key: target.r2Key })
+      throw createError({ statusCode: 404 })
+    }
+  }
 
   return sendStream(event, createReadStream(target.filePath))
 })

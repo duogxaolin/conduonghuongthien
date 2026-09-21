@@ -15,6 +15,8 @@ import { defineEventHandler, readBody, setResponseStatus } from 'h3'
 
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { initUpload } from '../../../../services/chunked-upload'
+import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
+import { getDb } from '../../../../utils/db'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -25,11 +27,13 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Dữ liệu không hợp lệ.' })
   }
 
+  const { config } = await resolveMediaConfigWithDb(getDb())
+
   const result = await initUpload({
     adminUserId:  adminUser.id,
     filename:     (body as Record<string, unknown>).filename,
     declaredSize: (body as Record<string, unknown>).declaredSize,
-  })
+  }, { config })
 
   if (!result.ok) {
     throw createError({ statusCode: result.status, statusMessage: result.message })

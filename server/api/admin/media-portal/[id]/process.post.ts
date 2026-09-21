@@ -16,6 +16,8 @@ import { requireResourcePermission } from '../../../../utils/permissions'
 import { processMediaItem } from '../../../../services/video-processing'
 import { enqueueMediaProcessing } from '../../../../services/media-processing-queue'
 import { logWarn } from '../../../../utils/logger'
+import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
+import { getDb } from '../../../../utils/db'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -40,7 +42,8 @@ export default defineEventHandler(async (event) => {
   // bắt buộc: một promise rời tay không được bắt sẽ ném unhandled rejection và
   // hạ worker. Lỗi đã nằm trong `processingError` trên hàng — `logWarn` đây chỉ
   // cho những throw bất ngờ vượt qua phần xử lý nội bộ.
-  void processMediaItem({ mediaItemId })
+  const { config } = await resolveMediaConfigWithDb(getDb())
+  void processMediaItem({ mediaItemId }, { config })
     .catch((err) => {
       logWarn({
         event:       'media.transcode_failed',
