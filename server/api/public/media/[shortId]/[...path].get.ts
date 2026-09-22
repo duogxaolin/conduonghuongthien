@@ -32,12 +32,17 @@ export default defineEventHandler(async (event) => {
   // trên chính những phản hồi 404 mà đặc tả yêu cầu nó.
   setResponseHeaders(event, { 'X-Content-Type-Options': 'nosniff' })
 
-  const slug = getRouterParam(event, 'slug')
+  const shortId = getRouterParam(event, 'shortId')
   const relativePath = getRouterParam(event, 'path')
-  if (!slug || !relativePath) throw createError({ statusCode: 404 })
+  if (!shortId || !relativePath) throw createError({ statusCode: 404 })
 
   const { config } = await resolveMediaConfigWithDb(getDb())
-  const target = await resolveStreamTarget(slug, relativePath, { config })
+  let target = await resolveStreamTarget(shortId, relativePath, { config })
+
+  // Link cũ dùng slug: thử slug nếu short_id tra không ra. Asset phục vụ thẳng.
+  if (!target) {
+    target = await resolveStreamTarget(shortId, relativePath, { config, lookupSlug: true })
+  }
 
   // Cùng một 404 cho mọi lý do — xem `stream.get.ts`. Ở đây còn thêm một lý do
   // nữa cần giấu: một đường dẫn thoát khỏi cây media phải đọc ra **y hệt** một
@@ -64,7 +69,7 @@ export default defineEventHandler(async (event) => {
       setResponseHeaders(event, { 'Content-Length': String(obj.contentLength) })
       return sendStream(event, obj.stream)
     } catch {
-      logWarn({ event: 'public.media_asset_r2_miss', slug, key: target.r2Key })
+      logWarn({ event: 'public.media_asset_r2_miss', key: target.r2Key })
       throw createError({ statusCode: 404 })
     }
   }

@@ -96,6 +96,7 @@ after(() => {
 type MediaRow = {
   id: number
   slug: string
+  shortId: string
   title: string
   description: string | null
   source: 'upload' | 'youtube'
@@ -121,6 +122,9 @@ type MediaRow = {
 
 function media(overrides: Partial<MediaRow> & { id: number, slug: string }): MediaRow {
   return {
+    // Mock: `shortId` mặc định bằng `slug` để route `/media/<shortId>` tra theo
+    // `short_id` vẫn khớp row. Test không cần 11 ký tự thật — chỉ cần nhất quán.
+    shortId: overrides.slug,
     title: `Tiêu đề ${overrides.slug}`,
     description: null,
     source: 'upload',
@@ -182,18 +186,19 @@ function published() {
 function publicProjection(row: MediaRow): unknown[] {
   const category = CATEGORIES.find(item => item.id === row.categoryId) ?? null
   return [
-    row.id, row.slug, row.title, row.description, row.source, row.youtubeVideoId,
+    row.id, row.slug, row.shortId, row.title, row.description, row.source, row.youtubeVideoId,
     row.durationSeconds, row.width, row.height, row.categoryId,
     category?.name ?? null, category?.slug ?? null,
     row.publishedAt, row.commentsEnabled ? 1 : 0, row.viewCount,
+    row.isFeatured ? 1 : 0,
     row.processingStatus, row.resolutionsReady === null ? null : JSON.stringify(row.resolutionsReady),
   ]
 }
 
 function assetProjection(row: MediaRow): unknown[] {
   // Thứ tự theo SQL thật (đo bằng cách in SQL, không đoán):
-  //   id, slug, source, youtube_video_id, storage_path, storage_provider, status, resolutions_ready
-  return [row.id, row.slug, row.source, row.youtubeVideoId, row.storagePath, row.storageProvider, row.status,
+  //   id, slug, short_id, source, youtube_video_id, storage_path, storage_provider, status, resolutions_ready
+  return [row.id, row.slug, row.shortId, row.source, row.youtubeVideoId, row.storagePath, row.storageProvider, row.status,
     // `resolutions_ready` — JSON, nối như `publicProjection` ở trên. Cột này vào
     // `assetMediaSelection` để `resolveStreamTarget` biết có rendition HLS không;
     // không có → fallback tệp gốc (autoTranscode=false).
@@ -229,17 +234,25 @@ function respond(sql: string, params: unknown[]): unknown {
   }
 
   // ── Chỉ id, cho đường đếm lượt xem ──
+  // `resolvePublishedMediaIdByShortId` tra `short_id`; fallback `lookupSlug` tra
+  // `slug` → cùng query shape, cột WHERE khác. Mock nhận diện cả hai.
   if (/^select `id` from `media_items`/i.test(sql)) {
-    const [slug, status] = params as [string, string]
-    const found = table.find(row => row.slug === slug && row.status === status)
-    return found ? [[found.id]] : []
+    const [key, status] = params as [string, string]
+    const byShort = table.find(row => row.shortId === key && row.status === status)
+    if (byShort) return [[byShort.id]]
+    const bySlug = table.find(row => row.slug === key && row.status === status)
+    return bySlug ? [[bySlug.id]] : []
   }
 
   // ── Tập cột nội bộ, cho hai endpoint phục vụ tệp ──
-  // Thứ tự SQL thật: id, slug, source, youtube_video_id, storage_path, storage_provider, status, resolutions_ready.
-  if (/^select `id`, `slug`, `source`, `youtube_video_id`, `storage_path`, `storage_provider`, `status`, `resolutions_ready`/i.test(sql)) {
-    const found = table.find(row => row.slug === params[0])
-    return found ? [assetProjection(found)] : []
+  // Thứ tự SQL thật: id, slug, short_id, source, youtube_video_id, storage_path, storage_provider, status, resolutions_ready.
+  if (/^select `id`, `slug`, `short_id`, `source`, `youtube_video_id`, `storage_path`, `storage_provider`, `status`, `resolutions_ready`/i.test(sql)) {
+    // `resolveStreamTarget`/`resolveThumbnailTarget` tra `short_id` trước; miss →
+    // `lookupSlug` tra `slug`. Mock thử cả hai.
+    const byShort = table.find(row => row.shortId === params[0])
+    if (byShort) return [assetProjection(byShort)]
+    const bySlug = table.find(row => row.slug === params[0])
+    return bySlug ? [assetProjection(bySlug)] : []
   }
 
   // ── Tập cột công khai (danh sách và chi tiết) ──
@@ -253,9 +266,15 @@ function respond(sql: string, params: unknown[]): unknown {
     const whereEnd = sql.search(/ order by | limit |$/)
     const filters = params.slice(0, (sql.slice(whereStart, whereEnd).match(/\?/g) ?? []).length)
 
+    // Chi tiết: `getPublishedMediaByShortId` tra `short_id`; miss → `lookupSlug`
+    // tra `slug`. Mock thử `short_id` trước rồi `slug`.
+    if (/`media_items`\.`short_id` = \?/i.test(sql)) {
+      const [key, status] = filters as [string, string]
+      return table.filter(row => row.shortId === key && row.status === status).map(publicProjection)
+    }
     if (/`media_items`\.`slug` = \?/i.test(sql)) {
-      const [slug, status] = filters as [string, string]
-      return table.filter(row => row.slug === slug && row.status === status).map(publicProjection)
+      const [key, status] = filters as [string, string]
+      return table.filter(row => row.slug === key && row.status === status).map(publicProjection)
     }
     // `resolveCategoryIds` trả `[id]` (phẳng) hoặc `null`; `null` → không lọc.
     // Khi có categorySlug, `inArray` nhận một mảng id, nên phần còn lại là một
@@ -312,14 +331,14 @@ mock.module(new URL('../server/utils/db.ts', import.meta.url), {
 
 const router = createRouter()
 router.get('/api/public/media', (await import('../server/api/public/media/index.get.ts')).default)
-router.get('/api/public/media/:slug/stream', (await import('../server/api/public/media/[slug]/stream.get.ts')).default)
-router.get('/api/public/media/:slug/thumb', (await import('../server/api/public/media/[slug]/thumb.get.ts')).default)
-router.get('/api/public/media/:slug', (await import('../server/api/public/media/[slug].get.ts')).default)
+router.get('/api/public/media/:shortId/stream', (await import('../server/api/public/media/[shortId]/stream.get.ts')).default)
+router.get('/api/public/media/:shortId/thumb', (await import('../server/api/public/media/[shortId]/thumb.get.ts')).default)
+router.get('/api/public/media/:shortId', (await import('../server/api/public/media/[shortId].get.ts')).default)
 // `**:path` là dạng mà Nitro sinh ra từ tệp `[...path].get.ts`
 // (`nitropack/dist/core/index.mjs`: `\[\.{3}(\w+)]` → `**:$1`). Tên tham số vì thế
 // là `path`, không phải `_` — và đó là điều handler dựa vào.
-router.get('/api/public/media/:slug/**:path', (await import('../server/api/public/media/[slug]/[...path].get.ts')).default)
-router.post('/api/public/media/:slug/view', (await import('../server/api/public/media/[slug]/view.post.ts')).default)
+router.get('/api/public/media/:shortId/**:path', (await import('../server/api/public/media/[shortId]/[...path].get.ts')).default)
+router.post('/api/public/media/:shortId/view', (await import('../server/api/public/media/[shortId]/view.post.ts')).default)
 
 const server = createServer(toNodeListener(createApp().use(router)))
 await new Promise<void>((resolve) => { server.listen(0, '127.0.0.1', () => resolve()) })
@@ -407,13 +426,15 @@ describe('9.2 — hình dạng công khai là một allowlist', () => {
 
     // Danh sách này là *cho vào*: một cột mới mặc định là riêng tư. Khẳng định
     // theo chiều ngược lại ("không có khoá X") sẽ bỏ sót đúng cột vừa được thêm.
+    // `isFeatured` thuộc đường công khai — nó quyết định thứ tự danh sách và công
+    // dân thấy huy hiệu "nổi bật" trên thẻ.
     assert.deepEqual(keys.sort(), [
       'categoryId', 'categoryName', 'categorySlug', 'commentsEnabled', 'description',
-      'durationSeconds', 'embedUrl', 'height', 'id', 'playable', 'publishedAt',
-      'slug', 'source', 'streamKind', 'streamUrl', 'thumbnailUrl', 'title', 'viewCount', 'width',
+      'durationSeconds', 'embedUrl', 'height', 'id', 'isFeatured', 'playable', 'publishedAt',
+      'shortId', 'slug', 'source', 'streamKind', 'streamUrl', 'thumbnailUrl', 'title', 'viewCount', 'width',
     ].sort())
 
-    for (const internal of ['processingError', 'processingStatus', 'resolutionsReady', 'status', 'createdBy', 'claimedBy', 'isFeatured', 'storagePath']) {
+    for (const internal of ['processingError', 'processingStatus', 'resolutionsReady', 'status', 'createdBy', 'claimedBy', 'storagePath']) {
       assert.ok(!(internal in item), `"${internal}" là trường nội bộ và không được có mặt trong phản hồi công khai`)
     }
 
@@ -434,15 +455,27 @@ describe('9.2 — hình dạng công khai là một allowlist', () => {
     assert.ok(select, 'phải có một lượt SELECT cho danh sách')
 
     const selected = select.sql.slice(0, select.sql.indexOf(' from '))
-    for (const internal of ['`processing_error`', '`storage_path`', '`created_by`', '`claimed_by`', '`is_featured`', '`thumbnail_url`']) {
+    for (const internal of ['`processing_error`', '`storage_path`', '`created_by`', '`claimed_by`', '`thumbnail_url`']) {
       assert.ok(
         !selected.includes(internal),
         `danh sách công khai không được chọn ${internal} — đây là cột nội bộ`,
       )
     }
+    // `is_featured` **được chọn** ở danh sách công khai — nó quyết định thứ tự
+    // (featured lên đầu) và được trả ra để công dân thấy huy hiệu "nổi bật".
+    assert.ok(selected.includes('`is_featured`'), 'danh sách công khai phải chọn `is_featured` để sắp xếp featured lên đầu')
     // Hai cột này **được chọn nhưng không được trả**: chúng quyết định `playable`.
     assert.ok(selected.includes('`processing_status`'))
     assert.ok(selected.includes('`resolutions_ready`'))
+
+    // Featured phải là khoá sort **đầu tiên** (trước `published_at`), để video
+    // nổi bật lên đầu danh sách. Kiểm bằng regex: `order by` theo sau là
+    // `is_featured` DESC ở vị trí đầu.
+    const orderMatch = select.sql.match(/order by (`media_items`\.`is_featured`) desc/i)
+    assert.ok(orderMatch, 'danh sách công khai phải order by `is_featured` DESC trước `published_at` — featured lên đầu')
+    // Và `published_at` DESC theo sau — không được featured chiếm mất thứ tự ngày.
+    assert.ok(/`media_items`\.`is_featured` desc, `media_items`\.`published_at` desc/i.test(select.sql),
+      'thứ tự phải là is_featured DESC, publishedAt DESC — featured lên đầu, rồi ngày đăng')
   })
 
   it('chỉ chọn hàng đã xuất bản', async () => {
@@ -633,9 +666,13 @@ describe('9.5 — cách ly tài sản của bên thứ ba', () => {
     assertNoForbiddenHost('header ảnh thu nhỏ', headerDump(response.headers))
   })
 
-  it('slug lạ không có ảnh thu nhỏ', async () => {
+  it('slug lạ trả placeholder, không phải 404', async () => {
+    // Một ô ảnh vỡ trên trang công dân đọc ra "cổng hỏng"; placeholder SVG là đúng
+    // phản hồi cho một video chưa có thumbnail — kể cả slug không tồn tại cũng
+    // được cùng hình thức để không lộ slug nào có thật.
     const response = await get('/api/public/media/khong-bao-gio-ton-tai/thumb')
-    assert.equal(response.status, 404)
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('content-type'), 'image/svg+xml')
   })
 
   it('danh sách trả về đường dẫn ảnh thu nhỏ trên chính cổng này', async () => {
@@ -662,13 +699,15 @@ describe('9.5 — cách ly tài sản của bên thứ ba', () => {
 
   it('ảnh thượng nguồn không phải ảnh thì bị từ chối, không được chuyển tiếp', async () => {
     // Thượng nguồn trả về HTML: chuyển tiếp nó là để một bên thứ ba quyết định
-    // kiểu nội dung trên chính origin này.
+    // kiểu nội dung trên chính origin này. Endpoint lùi về placeholder SVG
+    // (200) thay vì 404 — một ô ảnh vỡ trên trang công dân đọc ra "cổng hỏng".
     const { result: response, forwarded } = await withUpstream(async () => new Response(
       '<html>not an image</html>',
       { status: 200, headers: { 'content-type': 'text/html' } },
     ), () => get('/api/public/media/gamma/thumb'))
 
-    assert.equal(response.status, 404)
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('content-type'), 'image/svg+xml')
     assert.ok(!(await response.text()).includes('<html>'))
     assert.equal(forwarded.length, 1, 'máy chủ phải tự đi lấy ảnh, đúng một lượt')
     // Lượt gọi này đi tới máy chủ ảnh của nền tảng ngoài, và địa chỉ đó không bao
@@ -698,7 +737,9 @@ describe('9.5 — cách ly tài sản của bên thứ ba', () => {
       headers: { 'content-type': 'image/jpeg' },
     }), () => get('/api/public/media/gamma/thumb'))
 
-    assert.equal(response.status, 404)
+    // Placeholder (200 SVG) thay vì 404 — cùng lý do test trên.
+    assert.equal(response.status, 200)
+    assert.equal(response.headers.get('content-type'), 'image/svg+xml')
   })
 })
 
@@ -803,25 +844,45 @@ describe('9.6 — đếm lượt xem không tiết lộ slug nào có thật', (
 // ─── 9.2 (tiếp) — lựa chọn trình phát theo nguồn ────────────────────────────
 
 describe('lựa chọn trình phát theo nguồn và chế độ xem một phần', () => {
-  it('mục tự lưu trữ đã có bản sẵn sàng thì phát được, kèm đường dẫn phát', async () => {
+  it('mục đang xử lý có bản sẵn sàng thì phát được qua tệp gốc, kèm đường dẫn phát', async () => {
     const { serializePublicMedia } = await import('../server/services/media-portal.ts')
     const item = serializePublicMedia(media({
       id: 1, slug: 'alpha', resolutionsReady: ['360p', '720p'], processingStatus: 'processing',
     }) as never)
     assert.equal(item.playable, true)
     assert.equal(item.streamUrl, '/api/public/media/alpha/stream')
-    // Có rendition HLS → player dùng hls.js, không phải `<video src>` thẳng.
+    // Đang `processing` → manifest HLS chỉ publish sau khi **mọi** bản xong
+    // (`publishChain` nối đuôi), nên dù `resolutionsReady` đã liệt kê vài bản,
+    // stream endpoint lùi về tệp gốc `original.<ext>`. `file` báo cho
+    // MediaPlayer dùng `<video src>` gốc thay vì hls.js — hls.js parse mp4 như
+    // m3u8 sẽ không phát được.
+    assert.equal(item.streamKind, 'file')
+    assert.equal(item.embedUrl, null)
+  })
+
+  it('mục sẵn sàng + có rendition thì phát HLS qua hls.js', async () => {
+    const { serializePublicMedia } = await import('../server/services/media-portal.ts')
+    const item = serializePublicMedia(media({
+      id: 9, slug: 'hls-ready', resolutionsReady: ['360p', '720p'], processingStatus: 'ready',
+    }) as never)
+    assert.equal(item.playable, true)
+    assert.equal(item.streamUrl, '/api/public/media/hls-ready/stream')
+    // `ready` + có rendition → manifest HLS đã publish → hls.js.
     assert.equal(item.streamKind, 'hls')
     assert.equal(item.embedUrl, null)
   })
 
-  it('mục đang xử lý chưa có bản nào thì không phát được; ready + không rendition (autoTranscode=false) thì phát được', async () => {
+  it('mục đang xử lý chưa có bản nào vẫn phát được qua tệp gốc; ready + không rendition (autoTranscode=false) cũng vậy', async () => {
     const { serializePublicMedia } = await import('../server/services/media-portal.ts')
-    // `processing` + không rendition: pipeline đang chạy, chưa có gì để phát.
+    // `processing` + không rendition: pipeline đang chạy, manifest chưa publish,
+    // nhưng tệp gốc `original.<ext>` đã có ngay sau upload. Stream endpoint lùi về
+    // tệp gốc qua `isPassthroughManifest`, nên công dân xem được video gốc thay
+    // vì thấy lỗi — "chưa nén xong thì vẫn xem đc bằng video gốc".
     const processing = serializePublicMedia(media({ id: 2, slug: 'beta', resolutionsReady: [], processingStatus: 'processing' }) as never)
-    assert.equal(processing.playable, false, 'processing + không rendition phải ẩn')
-    assert.equal(processing.streamUrl, null)
-    assert.equal(processing.streamKind, null)
+    assert.equal(processing.playable, true, 'processing + không rendition vẫn phát được qua tệp gốc')
+    assert.equal(processing.streamUrl, '/api/public/media/beta/stream')
+    // Passthrough mp4 → `<video src>` gốc, không hls.js.
+    assert.equal(processing.streamKind, 'file')
     // `ready` + không rendition (`MEDIA_AUTO_TRANSCODE=false`): tệp gốc đã được
     // pipeline đặt xong, stream endpoint phục vụ `original.<ext>` qua byte-range.
     const readyPassthrough = serializePublicMedia(media({ id: 7, slug: 'ready-passthrough', resolutionsReady: [], processingStatus: 'ready' }) as never)

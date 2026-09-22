@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" aria-label="Không có ảnh đại diện">
+  <rect width="640" height="360" fill="#E8EFE5"/>
+  <g fill="#9DB39A" transform="translate(280 130)">
+    <rect width="80" height="60" rx="6"/>
+    <circle cx="22" cy="20" r="7" fill="#E8EFE5"/>
+    <path d="M12 52 L34 34 L48 44 L62 28 L68 52 Z" fill="#E8EFE5"/>
+  </g>
+  <text x="320" y="225" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-size="16" font-weight="600" fill="#6B7D68">Không có ảnh đại diện</text>
+</svg>

@@ -296,9 +296,10 @@ export async function listNotifications(params: {
       commentsEnabled: articles.commentsEnabled,
       // The media mirror. Both are read on every row; exactly one pair is
       // non-null, and the mapping below picks by which one it is.
-      mediaItemTitle:  mediaItems.title,
-      mediaItemSlug:   mediaItems.slug,
-      mediaItemStatus: mediaItems.status,
+      mediaItemTitle:   mediaItems.title,
+      mediaItemSlug:    mediaItems.slug,
+      mediaItemShortId: mediaItems.shortId,
+      mediaItemStatus:  mediaItems.status,
       mediaCommentsEnabled: mediaItems.commentsEnabled,
       /**
        * Position of the thread root among that item's top-level comments.
@@ -355,8 +356,12 @@ export async function listNotifications(params: {
      * rules that have to be kept in step by hand.
      */
     const isMedia = row.mediaItemSlug !== null || row.mediaItemTitle !== null
+    // Media URL giờ dùng `short_id`; slug vẫn chọn để nhận diện loại (isMedia),
+    // nhưng link đi theo `short_id`. `mediaItemShortId` cũng non-null khi item
+    // còn — cùng ràng buộc như `mediaItemSlug` ở trên.
+    const mediaPathId = row.mediaItemShortId ?? row.mediaItemSlug
     const readable = isMedia
-      ? row.mediaItemSlug !== null && row.mediaItemStatus === 'published' && row.mediaCommentsEnabled === true
+      ? mediaPathId !== null && row.mediaItemStatus === 'published' && row.mediaCommentsEnabled === true
       : row.articleSlug !== null && row.articleStatus === 'published' && row.commentsEnabled === true
 
     return {
@@ -385,10 +390,10 @@ export async function listNotifications(params: {
             articleTitle: isMedia ? (row.mediaItemTitle ?? '') : (row.articleTitle ?? ''),
             url: notificationUrl({
               kind:      isMedia ? 'media' : 'article',
-              // Narrowed by `readable` above, which required the slug non-null for
-              // whichever branch this is. The `?? ''` is unreachable and exists so
-              // the type checker does not have to be told the branch holds.
-              slug:      (isMedia ? row.mediaItemSlug : row.articleSlug) ?? '',
+              // Article dùng slug, media dùng `short_id` (định danh URL công khai).
+              // `?? ''` là unreachable vì `readable` đã yêu cột non-null — giữ cho
+              // type checker không phải được nói nhánh đó đang giữ.
+              slug:      (isMedia ? mediaPathId : row.articleSlug) ?? '',
               page:      targetPage,
               commentId: row.rootId ?? row.id,
             }),

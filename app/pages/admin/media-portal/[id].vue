@@ -150,7 +150,7 @@ function toggleRendition(name: string) {
 async function submitTranscode() {
   if (!canUpdate.value || transcoding.value) return
   const picked = Array.from(transcodeRenditions.value)
-  if (picked.length === 0) { actionError.value = 'Cần chọn ít nhất một bản chuyển mã.'; return }
+  if (picked.length === 0) { actionError.value = 'Cần chọn ít nhất một bản nén chất lượng.'; return }
   transcoding.value = true
   actionError.value = ''
   try {
@@ -161,16 +161,16 @@ async function submitTranscode() {
     }
     transcodeOpen.value = false
     schedulePoll()
-    toast.success(`Đã yêu cầu chuyển mã: ${picked.join(', ')}.`)
+    toast.success(`Đã yêu cầu nén chất lượng: ${picked.join(', ')}.`)
   } catch (err: unknown) {
     const msg = (err as { statusMessage?: string }).statusMessage
-    actionError.value = msg || 'Không gửi được yêu cầu chuyển mã. Vui lòng thử lại.'
+    actionError.value = msg || 'Không gửi được yêu cầu nén chất lượng. Vui lòng thử lại.'
   }
   finally { transcoding.value = false }
 }
 function onReplaced() {
   replacing.value = false
-  toast.success('Đã thay tệp. Video đang được chuyển mã lại.')
+  toast.success('Đã thay tệp. Video đang được nén chất lượng lại.')
   void refreshProcessing()
 }
 // ─── Thumbnail custom ──────────────────────────────────────────────────────
@@ -185,7 +185,7 @@ const thumbPreviewSrc = computed(() => {
   // Ảnh custom lưu URL ảnh thư viện; vắng → dùng endpoint thumb công khai
   // (serve thumb tự sinh qua resolveThumbnailTarget). Thêm cache-buster khi
   // vừa đổi để trình duyệt không dùng cache ảnh cũ.
-  return item.value.thumbnailUrl || `/api/public/media/${encodeURIComponent(item.value.slug)}/thumb`
+  return item.value.thumbnailUrl || `/api/public/media/${encodeURIComponent(item.value.shortId)}/thumb`
 })
 function pickThumbnail() {
   if (!canUpdate.value || thumbSaving.value) return
@@ -281,7 +281,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
         <p v-if="progressError" role="alert" class="mt-3 text-sm text-red-800">{{ progressError }} <button class="underline font-semibold" @click="refreshProcessing()">Thử lại</button></p>
         <!-- Confirm re-transcode từ ready -->
         <div v-if="confirmReprocess" class="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm">
-          <p class="text-amber-900 font-medium">Video đã sẵn sàng. Xử lý lại sẽ xoá bản hiện tại và chuyển mã từ đầu.</p>
+          <p class="text-amber-900 font-medium">Video đã sẵn sàng. Xử lý lại sẽ xoá bản hiện tại và nén chất lượng từ đầu.</p>
           <div class="mt-2 flex gap-2">
             <button :disabled="processing" class="rounded-lg bg-[#2c6e33] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" @click="reprocess()">{{ processing ? 'Đang gửi…' : 'Xác nhận xử lý lại' }}</button>
             <button class="rounded-lg border border-[#e2ece3] px-3 py-1.5 text-sm" @click="cancelReprocess">Hủy</button>
@@ -297,15 +297,15 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
           >
             <i class="fa-solid fa-rotate-right mr-1" aria-hidden="true"></i>{{ processing ? 'Đang gửi…' : 'Xử lý lại video' }}
           </button>
-          <!-- Nút "Chuyển mã" — mở khu vực chọn bản (360p/720p/1080p) thay vì xoá
-               + transcode toàn bộ. Chỉ hiện khi video upload; đang xử lý thì chặn. -->
+          <!-- Nút "Nén chất lượng" — mở khu vực chọn bản (360p/720p/1080p) thay
+               vì xoá + transcode toàn bộ. Chỉ hiện khi video upload; đang xử lý thì chặn. -->
           <button
             v-if="!transcodeOpen"
             :disabled="transcoding || isPending"
             class="rounded-lg border border-[#2c6e33] px-3 py-1.5 text-sm font-semibold text-[#2c6e33] hover:bg-[#e8f0e8] disabled:opacity-50"
             @click="openTranscode()"
           >
-            <i class="fa-solid fa-film mr-1" aria-hidden="true"></i>Chuyển mã
+            <i class="fa-solid fa-film mr-1" aria-hidden="true"></i>Nén chất lượng
           </button>
           <button
             :disabled="processing || isPending"
@@ -315,9 +315,9 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
             <i class="fa-solid fa-arrows-rotate mr-1" aria-hidden="true"></i>Thay tệp video
           </button>
         </div>
-        <!-- Khu vực chọn bản chuyển mã (360p/720p/1080p) -->
+        <!-- Khu vực chọn bản nén chất lượng (360p/720p/1080p) -->
         <div v-if="transcodeOpen && isUpload && canUpdate" class="mt-3 rounded-lg bg-[#f5f8f5] border border-[#e2ece3] p-3 text-sm">
-          <p class="font-medium text-[#122815] mb-2">Chọn các bản cần chuyển mã:</p>
+          <p class="font-medium text-[#122815] mb-2">Chọn các bản cần nén chất lượng:</p>
           <div class="flex flex-wrap gap-2 mb-3">
             <button
               v-for="name in ALL_RENDITIONS"
@@ -340,7 +340,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
               :disabled="transcoding || transcodeRenditions.size === 0"
               class="rounded-lg bg-[#2c6e33] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50"
               @click="submitTranscode()"
-            >{{ transcoding ? 'Đang gửi…' : 'Bắt đầu chuyển mã' }}</button>
+            >{{ transcoding ? 'Đang gửi…' : 'Bắt đầu nén chất lượng' }}</button>
             <button class="rounded-lg border border-[#e2ece3] px-3 py-1.5 text-sm" @click="cancelTranscode">Hủy</button>
           </div>
         </div>
@@ -391,7 +391,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
             </div>
           </div>
         </div>
-        <NuxtLink v-if="item.status === 'published'" :to="`/media/${item.slug}`" class="mt-3 inline-block text-sm text-[#2c6e33] underline">Xem trang công khai</NuxtLink>
+        <NuxtLink v-if="item.status === 'published'" :to="`/media/${item.shortId}`" class="mt-3 inline-block text-sm text-[#2c6e33] underline">Xem trang công khai</NuxtLink>
       </div>
       <!-- Mode thay tệp: uploader inline -->
       <div v-if="replacing && isUpload && canUpdate && config" class="rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-6">

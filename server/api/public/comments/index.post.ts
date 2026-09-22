@@ -87,10 +87,12 @@ export default defineEventHandler(async (event) => {
   let target: { articleId: number } | { mediaItemId: number }
 
   if (mediaKey) {
+    // Media tra theo `short_id` (định danh URL công khai). `mediaKey` từ body
+    // là short_id mà frontend gửi; link cũ dùng slug đã redirect 301 ở trang chi tiết.
     const [media] = await getDb()
       .select({ id: mediaItems.id })
       .from(mediaItems)
-      .where(and(eq(mediaItems.slug, mediaKey), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
+      .where(and(eq(mediaItems.shortId, mediaKey), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
       .limit(1)
 
     if (!media) throw createError({ statusCode: 404, statusMessage: 'Video không tồn tại.' })

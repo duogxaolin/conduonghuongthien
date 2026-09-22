@@ -106,44 +106,93 @@ function discard() {
 </script>
 
 <template>
-  <section v-if="open" aria-labelledby="chunked-uploader-title" class="rounded-xl border border-[#e2ece3] bg-white p-4 sm:p-6 space-y-5">
-    <h2 id="chunked-uploader-title" class="font-bold text-[#122815]">{{ props.replaceItemId ? 'Thay tệp video' : 'Chọn tệp video' }}</h2>
-    <p class="text-sm text-[#667768]">
-      {{ props.replaceItemId
-        ? 'Tệp mới sẽ thay tệp gốc, giữ tiêu đề và bình luận. Video sẽ được chuyển mã lại từ đầu. '
-        : '' }}
-      Dung lượng tối đa {{ maxSizeLabel }} GB. Nếu tải lại trang, chọn lại đúng tệp để tiếp tục các phần còn thiếu.
-    </p>
-    <p v-if="state?.storageWarning" role="status" class="rounded-lg bg-amber-50 p-3 text-sm">{{ state.storageWarning }}</p>
-    <p v-if="state?.descriptor" class="text-sm text-[#4a5e4d]">Lượt tải đang dở: <strong class="break-words">{{ state.descriptor.filename }}</strong></p>
-    <div>
-      <label for="chunked-file" class="block mb-1 text-sm font-semibold text-[#122815]">{{ state?.descriptor ? 'Chọn lại tệp ban đầu' : 'Tệp video' }}</label>
-      <input id="chunked-file" ref="fileInput" type="file" accept="video/*" :disabled="busy || picking" class="block w-full text-sm file:mr-4 file:rounded-lg file:border-0 file:bg-[#2c6e33] file:px-4 file:py-2 file:text-white focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @change="pickFile" />
-      <p v-if="picking" role="status" class="mt-1 text-sm text-[#667768]">Đang kiểm tra tệp…</p>
+  <section v-if="open" aria-labelledby="chunked-uploader-title" class="rounded-2xl border border-[#e2ece3] bg-white p-6 space-y-5 shadow-sm">
+    <div class="flex items-center gap-3">
+      <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-[#e8f0e8] text-[#2c6e33]">
+        <i class="fa-solid fa-film" aria-hidden="true"></i>
+      </div>
+      <div>
+        <h2 id="chunked-uploader-title" class="font-bold text-[#122815] m-0">{{ props.replaceItemId ? 'Thay tệp video' : 'Chọn tệp video' }}</h2>
+        <p class="text-xs text-[#8aa08c] m-0 mt-0.5">Định dạng MP4, MOV, WebM, MKV — tối đa {{ maxSizeLabel }} GB</p>
+      </div>
     </div>
-    <div v-if="state?.total" class="space-y-2">
+
+    <p v-if="props.replaceItemId" class="text-sm text-[#667768] m-0 rounded-lg bg-[#f8faf7] p-3 border border-[#eef2ee]">
+      <i class="fa-solid fa-circle-info text-[#2c6e33] mr-1.5" aria-hidden="true"></i>
+      Tệp mới sẽ thay tệp gốc, giữ tiêu đề và bình luận. Video sẽ được chuyển mã lại từ đầu.
+    </p>
+    <p v-if="state?.storageWarning" role="status" class="rounded-lg bg-amber-50 p-3 text-sm text-amber-800 border border-amber-100">{{ state.storageWarning }}</p>
+
+    <!-- Dropzone / file picker -->
+    <div
+      class="relative rounded-xl border-2 border-dashed transition-colors"
+      :class="state?.descriptor ? 'border-[#2c6e33] bg-[#f8faf7]' : 'border-[#c8d6c9] bg-[#fbfdfb] hover:border-[#2c6e33] hover:bg-[#f8faf7]'"
+    >
+      <label for="chunked-file" class="block cursor-pointer p-8 text-center">
+        <div class="flex flex-col items-center gap-3">
+          <div class="flex h-14 w-14 items-center justify-center rounded-full bg-[#e8f0e8] text-[#2c6e33]">
+            <i class="fa-solid fa-cloud-arrow-up text-2xl" aria-hidden="true"></i>
+          </div>
+          <div>
+            <p class="text-sm font-semibold text-[#122815] m-0">{{ state?.descriptor ? 'Chọn lại tệp ban đầu' : 'Kéo tệp video vào hoặc bấm để chọn' }}</p>
+            <p class="text-xs text-[#8aa08c] m-0 mt-1">{{ state?.descriptor ? 'Phải đúng tệp ban đầu để tiếp tục các phần còn thiếu' : 'Hỗ trợ MP4, MOV, WebM, MKV' }}</p>
+          </div>
+          <input id="chunked-file" ref="fileInput" type="file" accept="video/*" :disabled="busy || picking" aria-label="Tệp video" class="sr-only" @change="pickFile" />
+        </div>
+      </label>
+    </div>
+    <p v-if="picking" role="status" class="text-sm text-[#667768] -mt-2 flex items-center gap-1.5"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Đang kiểm tra tệp…</p>
+
+    <!-- Lượt tải đang dở -->
+    <div v-if="state?.descriptor" class="rounded-lg bg-[#f8faf7] border border-[#eef2ee] p-3 flex items-center gap-2.5">
+      <i class="fa-solid fa-file-video text-[#2c6e33]" aria-hidden="true"></i>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-semibold text-[#122815] m-0 truncate">{{ state.descriptor.filename }}</p>
+        <p class="text-xs text-[#8aa08c] m-0">Lượt tải đang dở — tiếp tục để hoàn tất</p>
+      </div>
+    </div>
+
+    <!-- Tiến độ tải -->
+    <div v-if="state?.total" class="space-y-2.5">
       <div class="flex items-center justify-between gap-2 flex-wrap">
         <p class="text-sm text-[#667768] m-0" aria-live="polite">
           {{ state.received }} / {{ state.total }} phần đã nhận
         </p>
         <p class="text-sm font-bold text-[#2c6e33] m-0">{{ byteProgress }}%{{ etaLabel }}</p>
       </div>
-      <progress :value="state.uploadedBytes" :max="state.totalBytes" aria-label="Tiến độ tải video" class="h-3 w-full accent-[#2c6e33]">{{ byteProgress }}%</progress>
-      <p v-if="speedLabel && busy && !state?.completing" class="text-xs text-[#8aa08c] m-0">Tốc độ: {{ speedLabel }}</p>
+      <div class="h-2.5 w-full overflow-hidden rounded-full bg-[#eef2ee]">
+        <div class="h-full rounded-full bg-[#2c6e33] transition-all duration-300 motion-reduce:transition-none" :style="{ width: `${byteProgress}%` }"></div>
+      </div>
+      <p v-if="speedLabel && busy && !state?.completing" class="text-xs text-[#8aa08c] m-0 flex items-center gap-1.5"><i class="fa-solid fa-gauge-high" aria-hidden="true"></i>Tốc độ: {{ speedLabel }}</p>
     </div>
-    <p v-if="busy" role="status" class="text-sm text-[#667768]">{{ state?.completing ? 'Đang hoàn tất lượt tải…' : 'Đang tải video…' }}</p>
-    <div v-if="lastError" role="alert" class="rounded-lg bg-red-50 p-3 text-sm text-red-800">
-      <p>{{ lastError }}</p>
+    <p v-if="busy" role="status" class="text-sm text-[#667768] flex items-center gap-1.5"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>{{ state?.completing ? 'Đang hoàn tất lượt tải…' : 'Đang tải video…' }}</p>
+
+    <!-- Lỗi -->
+    <div v-if="lastError" role="alert" class="rounded-lg bg-red-50 p-3 text-sm text-red-800 border border-red-100">
+      <p class="flex items-start gap-2 m-0"><i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i><span>{{ lastError }}</span></p>
       <button type="button" :disabled="busy || picking" class="mt-2 font-semibold underline disabled:opacity-50" @click="retry">Thử lại</button>
     </div>
-    <p v-if="state?.phase === 'done'" role="status" class="rounded-lg bg-green-50 p-3 text-sm text-green-800">
+
+    <!-- Thành công -->
+    <p v-if="state?.phase === 'done'" role="status" class="rounded-lg bg-green-50 p-3 text-sm text-green-800 border border-green-100 flex items-center gap-2 m-0">
+      <i class="fa-solid fa-circle-check" aria-hidden="true"></i>
       {{ props.replaceItemId ? 'Đã thay tệp. Video đang được chuyển mã lại.' : 'Tải lên thành công. Đang mở trang chỉnh sửa video.' }}
     </p>
-    <div class="flex flex-wrap gap-3">
-      <button v-if="!busy" type="button" :disabled="picking || !controller || (!state?.fileName && !state?.descriptor)" class="rounded-lg bg-[#2c6e33] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245b2a] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2 disabled:opacity-50" @click="retry">{{ state?.descriptor ? 'Tiếp tục tải lên' : 'Bắt đầu tải lên' }}</button>
-      <button v-if="busy" type="button" class="rounded-lg border border-[#e2ece3] px-4 py-2 text-sm font-semibold focus:ring-2 focus:ring-[#2c6e33]" @click="pause">Tạm dừng</button>
-      <button v-if="state?.descriptor && !busy" type="button" class="rounded-lg border border-red-200 px-4 py-2 text-sm text-red-800 focus:ring-2 focus:ring-red-500" @click="discard">Bỏ phiên cũ và chọn tệp khác</button>
-      <button type="button" class="rounded-lg border border-[#e2ece3] px-4 py-2 text-sm focus:ring-2 focus:ring-[#2c6e33]" @click="close">{{ props.replaceItemId ? 'Hủy thay tệp' : 'Quay lại thư viện' }}</button>
+
+    <!-- Hành động -->
+    <div class="flex flex-wrap gap-3 pt-1">
+      <button v-if="!busy" type="button" :disabled="picking || !controller || (!state?.fileName && !state?.descriptor)" class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2 text-sm font-semibold text-white hover:bg-[#245b2a] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed transition-colors" @click="retry">
+        <i class="fa-solid fa-play" aria-hidden="true"></i>{{ state?.descriptor ? 'Tiếp tục tải lên' : 'Bắt đầu tải lên' }}
+      </button>
+      <button v-if="busy" type="button" class="inline-flex items-center gap-2 rounded-lg border border-[#e2ece3] px-4 py-2 text-sm font-semibold text-[#2c3e2e] bg-white hover:bg-[#f8faf8] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2 transition-colors" @click="pause">
+        <i class="fa-solid fa-pause" aria-hidden="true"></i>Tạm dừng
+      </button>
+      <button v-if="state?.descriptor && !busy" type="button" class="inline-flex items-center gap-2 rounded-lg border border-red-200 px-4 py-2 text-sm text-red-800 bg-white hover:bg-red-50 focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2 transition-colors" @click="discard">
+        <i class="fa-solid fa-trash-can" aria-hidden="true"></i>Bỏ phiên cũ
+      </button>
+      <button type="button" class="inline-flex items-center gap-2 rounded-lg border border-[#e2ece3] px-4 py-2 text-sm text-[#2c3e2e] bg-white hover:bg-[#f8faf8] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2 transition-colors" @click="close">
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i>{{ props.replaceItemId ? 'Hủy thay tệp' : 'Quay lại thư viện' }}
+      </button>
     </div>
   </section>
 </template>

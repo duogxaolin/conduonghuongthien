@@ -37,11 +37,17 @@ export default defineEventHandler(async (event) => {
   // vì một 404 vẫn là một 404.
   setResponseHeaders(event, { 'X-Content-Type-Options': 'nosniff' })
 
-  const slug = getRouterParam(event, 'slug')
-  if (!slug) throw createError({ statusCode: 404 })
+  const shortId = getRouterParam(event, 'shortId')
+  if (!shortId) throw createError({ statusCode: 404 })
 
   const { config } = await resolveMediaConfigWithDb(getDb())
-  const target = await resolveStreamTarget(slug, MEDIA_STREAM_MANIFEST_PATH, { config })
+  let target = await resolveStreamTarget(shortId, MEDIA_STREAM_MANIFEST_PATH, { config })
+
+  // Link cũ dùng slug: `shortId` tra không ra → thử slug. Asset phục vụ thẳng,
+  // không redirect (redirect manifest/segment gây double-request + hỏng cache).
+  if (!target) {
+    target = await resolveStreamTarget(shortId, MEDIA_STREAM_MANIFEST_PATH, { config, lookupSlug: true })
+  }
 
   // Một nhánh 404 duy nhất cho mọi lý do: slug lạ, mục chưa xuất bản, mục nguồn
   // ngoài (không có gì để phát từ đĩa), và tệp chưa được chuyển mã xong. Tách
@@ -86,7 +92,7 @@ export default defineEventHandler(async (event) => {
       }
       return sendStream(event, obj.stream)
     } catch {
-      logWarn({ event: 'public.media_stream_r2_miss', slug, key: target.r2Key })
+      logWarn({ event: 'public.media_stream_r2_miss', key: target.r2Key })
       throw createError({ statusCode: 404 })
     }
   }
@@ -108,7 +114,7 @@ export default defineEventHandler(async (event) => {
       setResponseHeaders(event, { 'Content-Length': String(obj.contentLength) })
       return sendStream(event, obj.stream)
     } catch {
-      logWarn({ event: 'public.media_stream_r2_miss', slug, key: target.r2Key })
+      logWarn({ event: 'public.media_stream_r2_miss', key: target.r2Key })
       throw createError({ statusCode: 404 })
     }
   }

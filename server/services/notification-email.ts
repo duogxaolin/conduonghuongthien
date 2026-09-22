@@ -231,6 +231,9 @@ async function resolveMailTarget(reply: {
       .select({
         title:           mediaItems.title,
         slug:            mediaItems.slug,
+        // URL công khai của media giờ là `short_id`; `slug` vẫn select để kiểm
+        // item còn (non-null) — nhưng đường dẫn trong email đi theo `short_id`.
+        shortId:         mediaItems.shortId,
         status:          mediaItems.status,
         commentsEnabled: mediaItems.commentsEnabled,
       })
@@ -238,9 +241,9 @@ async function resolveMailTarget(reply: {
       .where(eq(mediaItems.id, reply.mediaItemId))
       .limit(1)
 
-    if (!item?.slug || item.status !== 'published' || !item.commentsEnabled) return null
+    if (!item?.shortId || item.status !== 'published' || !item.commentsEnabled) return null
 
-    return { kind: 'media', slug: item.slug, title: item.title ?? '', noun: 'video' }
+    return { kind: 'media', slug: item.shortId, title: item.title ?? '', noun: 'video' }
   }
 
   // Neither identifier set. The XOR invariant says this cannot happen, but the

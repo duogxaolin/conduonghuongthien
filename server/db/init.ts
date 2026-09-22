@@ -793,6 +793,7 @@ export async function initDb() {
     CREATE TABLE IF NOT EXISTS \`media_items\` (
       \`id\` INT AUTO_INCREMENT PRIMARY KEY,
       \`slug\` VARCHAR(512) NOT NULL UNIQUE,
+      \`short_id\` VARCHAR(16) NOT NULL UNIQUE,
       \`title\` VARCHAR(512) NOT NULL,
       \`description\` TEXT NULL,
       \`source\` VARCHAR(16) NOT NULL DEFAULT 'upload',
@@ -808,6 +809,9 @@ export async function initDb() {
       \`processing_status\` VARCHAR(16) NOT NULL DEFAULT 'pending',
       \`processing_error\` VARCHAR(512) NULL,
       \`resolutions_ready\` JSON NULL DEFAULT (JSON_ARRAY()),
+      \`processing_rendition\` VARCHAR(16) NULL,
+      \`processing_percent\` INT NULL,
+      \`processing_phase\` VARCHAR(16) NULL,
       \`claimed_by\` VARCHAR(64) NULL,
       \`processing_attempts\` INT NOT NULL DEFAULT 0,
       \`processing_next_attempt_at\` TIMESTAMP NULL DEFAULT NULL,

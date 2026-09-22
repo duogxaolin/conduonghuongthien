@@ -47,6 +47,7 @@ import type { Pool } from 'mysql2/promise'
 import { getDb, getPool, type Database } from '../utils/db'
 import { activityLogs, mediaItems, mediaUploadSessions } from '../db/schema'
 import { uniqueMediaSlug } from '../utils/unique-media-slug'
+import { uniqueShortMediaId } from '../utils/short-media-id'
 import { detectVideoMime, EXT_BY_VIDEO_MIME, UNSUPPORTED_VIDEO_MESSAGE, VIDEO_SNIFF_BYTES } from '../utils/video-mime'
 import { logInfo, logWarn } from '../utils/logger'
 import { affectedRowsOrZero } from '../utils/affected-rows'
@@ -574,7 +575,7 @@ export type CompleteUploadInput = {
 }
 
 export type CompleteUploadResult =
-  | { ok: true, mediaItemId: number, slug: string, contentType: string }
+  | { ok: true, mediaItemId: number, slug: string, shortId: string, contentType: string }
   | UploadFailure
 
 /**
@@ -615,8 +616,8 @@ export async function completeUpload(input: CompleteUploadInput, options: Upload
   const view = toView(row)
   if (view.status === 'completed') {
     if (!view.mediaItemId) return NOT_FOUND
-    const [existing] = await db.select({ id: mediaItems.id, slug: mediaItems.slug }).from(mediaItems).where(eq(mediaItems.id, view.mediaItemId)).limit(1)
-    return existing ? { ok: true, mediaItemId: existing.id, slug: existing.slug, contentType: row.contentType || 'video/mp4' } : NOT_FOUND
+    const [existing] = await db.select({ id: mediaItems.id, slug: mediaItems.slug, shortId: mediaItems.shortId }).from(mediaItems).where(eq(mediaItems.id, view.mediaItemId)).limit(1)
+    return existing ? { ok: true, mediaItemId: existing.id, slug: existing.slug, shortId: existing.shortId, contentType: row.contentType || 'video/mp4' } : NOT_FOUND
   }
   const owned = and(eq(mediaUploadSessions.uploadId, uploadId), eq(mediaUploadSessions.adminUserId, input.adminUserId), eq(mediaUploadSessions.completionClaim, claim))
   const controller = new AbortController()
@@ -664,7 +665,7 @@ export async function completeUpload(input: CompleteUploadInput, options: Upload
       // Chỉ reset pipeline: tệp gốc mới đã ghi đè, rendition cũ sẽ bị pipeline
       // ghi đè khi công bố. Audit `action: 'update'` với `operation: 'replace'`.
       if (replaceId !== null) {
-        const [existing] = await tx.select({ id: mediaItems.id, slug: mediaItems.slug, source: mediaItems.source })
+        const [existing] = await tx.select({ id: mediaItems.id, slug: mediaItems.slug, shortId: mediaItems.shortId, source: mediaItems.source })
           .from(mediaItems).where(eq(mediaItems.id, replaceId)).limit(1).for('update')
         if (!existing) throw new Error('Mục media cần thay thế không tồn tại.')
         if (existing.source !== 'upload') throw new Error('Chỉ video tự lưu trữ mới có thể thay tệp.')
@@ -682,19 +683,20 @@ export async function completeUpload(input: CompleteUploadInput, options: Upload
           resourceId: replaceId, meta: { operation: 'replace', source: 'upload', declaredSize: view.declaredSize, filename: view.filename } })
         await tx.update(mediaUploadSessions).set({ status: 'completed', mediaItemId: replaceId, contentType,
           completionClaim: null, completionHeartbeatAt: null, errorMessage: null, updatedAt: new Date() }).where(owned)
-        return { mediaItemId: replaceId, slug: existing.slug }
+        return { mediaItemId: replaceId, slug: existing.slug, shortId: existing.shortId }
       }
       // ── Nhánh tạo mới (mặc định) ──────────────────────────────────────────
       const slug = await uniqueMediaSlug(tx, title)
-      const [inserted] = await tx.insert(mediaItems).values({ slug, title, source: 'upload', storagePath,
+      const shortId = await uniqueShortMediaId(tx)
+      const [inserted] = await tx.insert(mediaItems).values({ slug, shortId, title, source: 'upload', storagePath,
         status: 'draft', processingStatus: 'pending', createdBy: input.adminUserId })
       const mediaItemId = Number(inserted.insertId)
       if (!mediaItemId) throw new Error('media_items insert returned no id')
       await tx.insert(activityLogs).values({ userId: input.adminUserId, action: 'create', resource: 'media_portal',
-        resourceId: mediaItemId, meta: { slug, source: 'upload', declaredSize: view.declaredSize } })
+        resourceId: mediaItemId, meta: { slug, shortId, source: 'upload', declaredSize: view.declaredSize } })
       await tx.update(mediaUploadSessions).set({ status: 'completed', mediaItemId, contentType,
         completionClaim: null, completionHeartbeatAt: null, errorMessage: null, updatedAt: new Date() }).where(owned)
-      return { mediaItemId, slug }
+      return { mediaItemId, slug, shortId }
     })
     await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)
     logInfo({ event: 'media.upload_completed', uploadId, ...created, contentType })

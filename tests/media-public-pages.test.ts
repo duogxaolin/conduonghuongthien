@@ -64,7 +64,7 @@ const code = (path: string) => stripComments(read(path))
 const templateCode = (path: string) => stripComments(templateOf(path))
 
 const LISTING = 'pages/media/index.vue'
-const DETAIL = 'pages/media/[slug].vue'
+const DETAIL = 'pages/media/[shortId].vue'
 const PLAYER = 'components/MediaPlayer.vue'
 const LIVE_HERO = 'components/LiveHero.vue'
 const DEFAULT_HERO = 'components/MediaDefaultHero.vue'
@@ -202,11 +202,14 @@ test('playlist chỉ liệt kê bản đã sẵn sàng; isPlayable phân biệt 
   // gốc, nhưng ẩn.
   assert.equal(isPlayable({ processingStatus: 'ready', resolutionsReady: [] }), true,
     'ready + không rendition (autoTranscode=false) phải phát được qua tệp gốc')
-  // `processing` + không rendition = không phát được: pipeline đang chạy, tệp gốc
-  // đã có nhưng status không phải `ready` nên chưa khai hoàn tất — dựng trình phát
-  // ở đây là dựng một khung sẽ hỏng giây sau.
-  assert.equal(isPlayable({ processingStatus: 'processing', resolutionsReady: [] }), false,
-    'processing + không rendition phải ẩn — chưa có gì để phát')
+  // `processing` + không rendition = phát được qua tệp gốc: pipeline đang transcode
+  // nhưng `original.<ext>` đã có ngay sau upload (probe xong), stream endpoint lùi
+  // về tệp gốc qua `isPassthroughManifest` — công dân xem được video gốc thay vì
+  // thấy lỗi trong khi nền worker nén 360/720/1080p. "Chưa nén xong thì vẫn xem
+  // đc bằng video gốc chứ nó báo lỗi luôn ntn thì khó". `pending` mới ẩn: chưa
+  // probe xong, tệp gốc chưa chắc đã nằm sẵn.
+  assert.equal(isPlayable({ processingStatus: 'processing', resolutionsReady: [] }), true,
+    'processing + không rendition phải phát được qua tệp gốc — đang nén nhưng gốc đã có')
   assert.equal(isPlayable({ processingStatus: 'processing', resolutionsReady: ['360p'] }), true,
     'một bản đã xong là đủ để phát — công bố lũy tiến không được chặn ở đây')
 })

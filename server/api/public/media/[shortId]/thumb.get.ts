@@ -18,7 +18,7 @@ import { createReadStream } from 'node:fs'
 import { readFile, mkdir } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 
-import { createError, defineEventHandler, getRouterParam, sendStream, setResponseHeaders } from 'h3'
+import { createError, defineEventHandler, getRouterParam, sendStream, setResponseHeaders, type H3Event } from 'h3'
 
 import { logWarn } from '../../../../utils/logger'
 import { resolveStreamTarget, resolveThumbnailTarget, MEDIA_STREAM_MANIFEST_PATH } from '../../../../services/media-portal'
@@ -52,11 +52,18 @@ function imageContentTypeOrNull(value: string | null): string | null {
 }
 
 export default defineEventHandler(async (event) => {
-  const slug = getRouterParam(event, 'slug')
-  if (!slug) throw createError({ statusCode: 404 })
+  const shortId = getRouterParam(event, 'shortId')
+  if (!shortId) throw createError({ statusCode: 404 })
 
   const { config } = await resolveMediaConfigWithDb(getDb())
-  const target = await resolveThumbnailTarget(slug, { config })
+  let target = await resolveThumbnailTarget(shortId, { config })
+
+  // Link cũ dùng slug: short_id tra không ra → thử slug. Asset phục vụ thẳng,
+  // không redirect.
+  if (!target) {
+    target = await resolveThumbnailTarget(shortId, { config, lookupSlug: true })
+  }
+
   if (!target) {
     // ── Fallback: không có thumb tĩnh ở R2 hay đĩa → trích một khung hình từ
     // chính tệp gốc lúc phục vụ. Đây là ý "video không có thumbnail thì tự cắt
@@ -68,7 +75,7 @@ export default defineEventHandler(async (event) => {
     //
     // Chỉ hoạt động cho `source='upload'` (video tự lưu trữ). YouTube dùng nhánh
     // `remote` ở trên (đã return nếu có thumb, không đến đây).
-    const frame = await extractFallbackFrame(slug, config)
+    const frame = await extractFallbackFrame(shortId, config)
     if (frame) {
       setResponseHeaders(event, {
         'Content-Type': 'image/jpeg',
@@ -80,7 +87,9 @@ export default defineEventHandler(async (event) => {
       })
       return frame
     }
-    throw createError({ statusCode: 404 })
+    // Fallback frame cũng fail (FFmpeg lỗi, hoặc không phải passthrough local) →
+    // placeholder. Một 404 ở đây vỡ ô ảnh trên trang công dân.
+    return servePlaceholder(event)
   }
 
   if (target.kind === 'local') {
@@ -107,7 +116,7 @@ export default defineEventHandler(async (event) => {
       })
       return sendStream(event, obj.stream)
     } catch {
-      logWarn({ event: 'public.media_thumbnail_r2_miss', slug, key: target.r2Key })
+      logWarn({ event: 'public.media_thumbnail_r2_miss', shortId, key: target.r2Key })
       throw createError({ statusCode: 404 })
     }
   }
@@ -124,20 +133,22 @@ export default defineEventHandler(async (event) => {
     })
 
     if (!upstream.ok) {
+      // Video YouTube bị gỡ/restricted → upstream 404. Trả placeholder thay vì
+      // 404: một ô ảnh vỡ trên trang công dân đọc ra "cổng hỏng".
       logWarn({ event: 'public.media_thumbnail_upstream_failed', status: upstream.status })
-      throw createError({ statusCode: 404 })
+      return servePlaceholder(event)
     }
 
     const contentType = imageContentTypeOrNull(upstream.headers.get('content-type'))
     if (!contentType) {
       logWarn({ event: 'public.media_thumbnail_upstream_failed', reason: 'not_an_image' })
-      throw createError({ statusCode: 404 })
+      return servePlaceholder(event)
     }
 
     const body = Buffer.from(await upstream.arrayBuffer())
     if (body.byteLength === 0 || body.byteLength > UPSTREAM_MAX_BYTES) {
       logWarn({ event: 'public.media_thumbnail_upstream_failed', reason: 'unexpected_size' })
-      throw createError({ statusCode: 404 })
+      return servePlaceholder(event)
     }
 
     setResponseHeaders(event, {
@@ -166,6 +177,34 @@ export default defineEventHandler(async (event) => {
 
 /** Cache ngắn hơn thumb tĩnh — frame dự phòng có thể đổi khi pipeline chạy lại. */
 const FALLBACK_FRAME_CACHE_SECONDS = 300 // 5 phút
+/** Ảnh mặc định khi thượng nguồn trả 404 (video YouTube bị gỡ/restricted). Cache
+ *  dài vì placeholder không đổi, nhưng không vĩnh viễn — video có thể được khôi
+ *  phục trên nền tảng, và lượt nạp lại sẽ thử upstream trước. */
+const PLACEHOLDER_CACHE_SECONDS = 3600 // 1 giờ
+
+/**
+ * Phục vụ ảnh placeholder tĩnh khi thumbnail thật không có — video YouTube bị
+ * gỡ/restricted (upstream 404), hoặc mục upload chưa qua pipeline và fallback
+ * frame cũng fail. Trả SVG nội tuyến thay vì 404: một ô ảnh vỡ trên trang công
+ * dân đọc ra "cổng bị hỏng", trong khi thực tế chỉ là một video không có thumbnail.
+ */
+function servePlaceholder(event: H3Event) {
+  setResponseHeaders(event, {
+    'Content-Type': 'image/svg+xml',
+    'Cache-Control': `public, max-age=${PLACEHOLDER_CACHE_SECONDS}`,
+    'X-Content-Type-Options': 'nosniff',
+  })
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360" role="img" aria-label="Không có ảnh đại diện">
+  <rect width="640" height="360" fill="#E8EFE5"/>
+  <g fill="#9DB39A" transform="translate(280 130)">
+    <rect width="80" height="60" rx="6"/>
+    <circle cx="22" cy="20" r="7" fill="#E8EFE5"/>
+    <path d="M12 52 L34 34 L48 44 L62 28 L68 52 Z" fill="#E8EFE5"/>
+  </g>
+  <text x="320" y="225" text-anchor="middle" font-family="system-ui, sans-serif" font-size="16" font-weight="600" fill="#6B7D68">Không có ảnh đại diện</text>
+</svg>`
+}
 
 /**
  * Trích một khung hình từ tệp gốc làm ảnh đại diện dự phòng.
@@ -180,10 +219,14 @@ const FALLBACK_FRAME_CACHE_SECONDS = 300 // 5 phút
  * Tệp tmp dọn trong `finally` — một lỗi giữa chừng không để lại rác.
  */
 async function extractFallbackFrame(
-  slug: string,
+  shortId: string,
   config: Awaited<ReturnType<typeof resolveMediaConfigWithDb>>['config'],
 ): Promise<Buffer | null> {
-  const streamTarget = await resolveStreamTarget(slug, MEDIA_STREAM_MANIFEST_PATH, { config })
+  let streamTarget = await resolveStreamTarget(shortId, MEDIA_STREAM_MANIFEST_PATH, { config })
+  // Link cũ dùng slug: thử lại với slug nếu short_id tra không ra.
+  if (!streamTarget) {
+    streamTarget = await resolveStreamTarget(shortId, MEDIA_STREAM_MANIFEST_PATH, { config, lookupSlug: true })
+  }
   if (!streamTarget || streamTarget.kind !== 'local' || !streamTarget.passthrough) return null
 
   // Lưu thumb cạnh `original.<ext>` (cấp gốc directory) để lần sau `resolveThumbnailTarget`
@@ -197,7 +240,7 @@ async function extractFallbackFrame(
     await mkdir(targetDir, { recursive: true })
     const ok = await extractThumbnailOnDemand(streamTarget.filePath, outPath)
     if (!ok) {
-      logWarn({ event: 'public.media_thumbnail_fallback_failed', slug })
+      logWarn({ event: 'public.media_thumbnail_fallback_failed', shortId })
       return null
     }
     return await readFile(outPath)

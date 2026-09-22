@@ -58,6 +58,7 @@ export default defineEventHandler(async (event) => {
     ok:          true,
     mediaItemId: result.mediaItemId,
     slug:        result.slug,
+    shortId:     result.shortId,
     contentType: result.contentType,
   }
 })

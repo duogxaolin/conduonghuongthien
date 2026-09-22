@@ -35,7 +35,7 @@ test('library links lead to real create/edit forms and persist publishing, archi
   expect((await saved).status()).toBe(200)
   const published = await (await page.request.get(`/api/admin/media-portal/${id}`)).json()
   expect(published.item).toMatchObject({ title, status: 'published', commentsEnabled: true, isFeatured: true })
-  await expect(page.getByRole('link', { name: 'Xem trang công khai' })).toHaveAttribute('href', `/media/${published.item.slug}`)
+  await expect(page.getByRole('link', { name: 'Xem trang công khai' })).toHaveAttribute('href', `/media/${published.item.shortId}`)
   await page.getByLabel('Trạng thái xuất bản').selectOption('archived')
   const archived = page.waitForResponse(response => response.url().endsWith(`/api/admin/media-portal/${id}`) && response.request().method() === 'PUT')
   await page.getByRole('button', { name: 'Lưu thay đổi' }).click()
@@ -146,7 +146,7 @@ test('real video upload completes, processes, publishes and plays through the pu
     await page.getByRole('button', { name: 'Lưu thay đổi' }).click()
     expect((await saved).status()).toBe(200)
     const item = (await (await page.request.get(`/api/admin/media-portal/${id}`)).json()).item
-    const manifest = await page.request.get(`/api/public/media/${item.slug}/stream`)
+    const manifest = await page.request.get(`/api/public/media/${item.shortId}/stream`)
     expect(manifest.status()).toBe(200)
     expect(await manifest.text()).toContain('#EXTM3U')
     await page.getByRole('link', { name: 'Xem trang công khai' }).click()
@@ -177,7 +177,7 @@ test('reprocess recovers a failed item and polling preserves unsaved form values
     reads++
     if (processCalls && reads >= 3) status = 'ready'
     return route.fulfill({ json: { ok: true, item: {
-      id, title: 'Video cần xử lý', slug: 'video-can-xu-ly', source: 'upload', description: '',
+      id, title: 'Video cần xử lý', slug: 'video-can-xu-ly', shortId: 'vid-xu-ly-01', source: 'upload', description: '',
       categoryId: null, status: publication, processingStatus: status,
       processingError: '/private/server/path/ffmpeg error', commentsEnabled: false, isFeatured: false,
     } } })

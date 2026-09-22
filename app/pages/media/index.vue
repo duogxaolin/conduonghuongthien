@@ -171,7 +171,7 @@
           <ul class="mt-6 list-none m-0 p-0 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
             <li v-for="entry in items" :key="entry.id">
               <nuxt-link
-                :to="`/media/${entry.slug}`"
+                :to="`/media/${entry.shortId}`"
                 class="group flex flex-col h-full bg-white rounded-2xl border border-[#E2E8DF] shadow-sm overflow-hidden no-underline transition-all hover:border-[#4A6741] hover:shadow-md"
               >
                 <span class="relative block w-full aspect-video bg-[#EEF2EC] overflow-hidden">

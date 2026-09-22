@@ -284,7 +284,16 @@ function fakePool(options: FakeOptions = {}) {
 
     // ── media_items ──────────────────────────────────────────────────────────
     if (/^select .+ from `media_items`/i.test(trimmed)) {
-      return [media.map(row => projectRow(row, trimmed)), []]
+      // `uniqueShortMediaId` / `uniqueMediaSlug` kiểm trùng qua `where short_id = ?`
+      // hoặc `where slug = ?`. Mock generic không parse WHERE, nên trả tất cả rows
+      // cho một query kiểm trùng khiến mọi candidate đều "đã có" → throw sau 8 lần.
+      // Lọc theo cột nếu WHERE mang đúng một điều kiện `=` duy nhất.
+      let rows = media
+      const shortMatch = trimmed.match(/`short_id` = \?/)
+      const slugMatch = trimmed.match(/`slug` = \?/)
+      if (shortMatch) rows = media.filter(row => row.shortId === params[0])
+      else if (slugMatch) rows = media.filter(row => row.slug === params[0])
+      return [rows.map(row => projectRow(row, trimmed)), []]
     }
 
     if (trimmed.startsWith('insert into `media_items`')) {

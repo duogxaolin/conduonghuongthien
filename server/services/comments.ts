@@ -795,9 +795,10 @@ export type AdminCommentRow = {
   articleTitle: string | null
   articleSlug:  string | null
   /** The mirror of the three article columns above. Null for an article comment. */
-  mediaItemId:    number | null
-  mediaItemTitle: string | null
-  mediaItemSlug:  string | null
+  mediaItemId:      number | null
+  mediaItemTitle:   string | null
+  mediaItemSlug:    string | null
+  mediaItemShortId: string | null
   readerId:     number | null
   readerName:   string | null
   /** The raw Google column, kept on the row so /admin/readers/[id] can show what
@@ -867,9 +868,10 @@ export async function listCommentsForAdmin(params: {
       articleId:    articleComments.articleId,
       articleTitle: articles.title,
       articleSlug:  articles.slug,
-      mediaItemId:    articleComments.mediaItemId,
-      mediaItemTitle: mediaItems.title,
-      mediaItemSlug:  mediaItems.slug,
+      mediaItemId:      articleComments.mediaItemId,
+      mediaItemTitle:   mediaItems.title,
+      mediaItemSlug:    mediaItems.slug,
+      mediaItemShortId: mediaItems.shortId,
       readerId:     articleComments.readerId,
       readerName:       readerAccounts.displayName,
       readerCustomName: readerAccounts.customDisplayName,

@@ -16,7 +16,7 @@
  * trong toàn bộ thay đổi mà việc "quên" là an toàn theo hướng đúng.
  *
  * Ba đường đọc riêng biệt, không phải một đường tham số hoá:
- *   • `listPublishedMedia` / `getPublishedMediaBySlug` — chọn **tập cột công
+ *   • `listPublishedMedia` / `getPublishedMediaByShortId` — chọn **tập cột công
  *     khai**, không hề chạm tới `storage_path`.
  *   • `resolveStreamTarget` / `resolveThumbnailTarget` — chọn **tập cột nội bộ**
  *     (cần `storage_path`, `source`, `youtube_video_id`) và **không bao giờ** trả
@@ -38,6 +38,7 @@ import { resolveMediaConfig } from '../utils/media-config'
 import { likeContains } from '../utils/like-pattern'
 import type { RateLimitRule } from '../utils/rate-limit-store'
 import { uniqueMediaSlug } from '../utils/unique-media-slug'
+import { uniqueShortMediaId } from '../utils/short-media-id'
 import {
   buildMediaThumbnailPath,
   buildYouTubeEmbedUrl,
@@ -45,7 +46,7 @@ import {
   extractYouTubeVideoId,
 } from '../utils/youtube-parser'
 import { abortProcessingClaim, isPlayable, mediaAssetRoot } from './video-processing'
-import { locateR2Original, listR2Keys, putR2Object } from './video-r2-sync'
+import { locateR2Original, listR2Keys, putR2Object, headR2Object } from './video-r2-sync'
 import { type R2Config } from '../utils/media-r2'
 import sharp from 'sharp'
 
@@ -84,14 +85,17 @@ export const MANIFEST_CACHE_SECONDS = 60
 export const SEGMENT_CACHE_SECONDS = 31_536_000
 
 /**
- * Khung chống đếm trùng: **trọn một ngày**.
+ * Khung chống đếm trùng: **10 phút** — cùng cửa sổ với `article-views.ts`.
  *
- * Khác `article-views.ts` (30 phút, vì ở đó một buổi chiều quay lại là một lượt
- * đọc thật thứ hai). Ở đây đặc tả nói thẳng "một lượt mỗi khách mỗi ngày", nên
- * khung phải phủ hết ngày; token bên dưới cũng sinh theo ngày nên khoá tự đổi
- * lúc nửa đêm UTC.
+ * Cùng một người xem lại video sau 10 phút thì vẫn tính +1 lượt xem. Đủ dài để
+ * hấp thụ một lần F5, đủ ngắn để một lượt quay lại thật (sau 10p01s) được tính
+ * là một lượt xem mới. Trước đây cửa sổ là 24 giờ, nhưng anh yêu muốn đồng bộ
+ * với bài viết: cùng người, cùng cửa sổ 10 phút cho cả hai loại nội dung.
+ *
+ * Token vẫn sinh theo ngày nên khoá tự đổi lúc nửa đêm UTC — điều này chỉ ảnh
+ * hưởng đến ranh giới ngày, không đến cửa sổ khử trùng.
  */
-export const MEDIA_VIEW_DEDUPE_WINDOW_SECONDS = 24 * 60 * 60
+export const MEDIA_VIEW_DEDUPE_WINDOW_SECONDS = 10 * 60
 
 /**
  * Quy tắc khử trùng lặp, khai **cạnh hàm dựng khoá** chứ không trong endpoint.
@@ -218,6 +222,7 @@ export function optionalMediaId(value: unknown, label: string): number | null {
 const publicMediaSelection = {
   id: mediaItems.id,
   slug: mediaItems.slug,
+  shortId: mediaItems.shortId,
   title: mediaItems.title,
   description: mediaItems.description,
   source: mediaItems.source,
@@ -231,6 +236,10 @@ const publicMediaSelection = {
   publishedAt: mediaItems.publishedAt,
   commentsEnabled: mediaItems.commentsEnabled,
   viewCount: mediaItems.viewCount,
+  // `isFeatured` được chọn **và được trả**: nó quyết định thứ tự danh sách (featured
+  // lên đầu) và công dân có thể thấy huy hiệu "nổi bật" trên thẻ — khác với hai cột
+  // dưới đây chọn-nhưng-không-trả.
+  isFeatured: mediaItems.isFeatured,
   // Hai cột dưới đây **được chọn nhưng không được trả**: chúng quyết định
   // `playable`, và `playable` là câu trả lời duy nhất người đọc cần.
   processingStatus: mediaItems.processingStatus,
@@ -240,6 +249,7 @@ const publicMediaSelection = {
 export type PublicMediaRow = {
   id: number
   slug: string
+  shortId: string
   title: string
   description: string | null
   source: string
@@ -253,6 +263,7 @@ export type PublicMediaRow = {
   publishedAt: Date | string | null
   commentsEnabled: boolean | null
   viewCount: number | string | null
+  isFeatured: boolean | null
   processingStatus: string | null
   resolutionsReady: string[] | null
 }
@@ -260,6 +271,8 @@ export type PublicMediaRow = {
 export type PublicMediaItem = {
   id: number
   slug: string
+  /** Định danh URL công khai chính — `/media/<shortId>`. `slug` chỉ còn cho redirect 301. */
+  shortId: string
   title: string
   description: string | null
   source: MediaSource
@@ -286,13 +299,19 @@ export type PublicMediaItem = {
   playable: boolean
   commentsEnabled: boolean
   viewCount: number
+  /** Video nổi bật — được tick bởi cán bộ ở trang quản trị. Quyết định thứ tự danh sách (lên đầu). */
+  isFeatured: boolean
 }
 
 /** Đường dẫn phát, **trên chính cổng này**. Xem `buildMediaThumbnailPath` cho
  *  cùng lý do ở phía ảnh thu nhỏ: một địa chỉ kho ký sẵn đưa cho trình duyệt là
- *  đưa luôn vị trí kho, và nó nằm lại trong lịch sử cùng log của mọi trung gian. */
-export function buildMediaStreamPath(slug: string): string {
-  return `/api/public/media/${encodeURIComponent(slug)}/stream`
+ *  đưa luôn vị trí kho, và nó nằm lại trong lịch sử cùng log của mọi trung gian.
+ *
+ *  Nhận một chuỗi `id` generic (slug hoặc short_id) — người gọi quyết định giá trị
+ *  truyền. URL công khai dùng `short_id`; hàm này chỉ ráp path, không quan tâm nội
+ *  dung chuỗi. */
+export function buildMediaStreamPath(id: string): string {
+  return `/api/public/media/${encodeURIComponent(id)}/stream`
 }
 
 /**
@@ -309,9 +328,10 @@ export function serializePublicMedia(row: PublicMediaRow): PublicMediaItem {
   // bị sửa tay trong CSDL không được phép sinh ra một `src` cho iframe.
   const embedUrl = source === 'youtube' ? buildYouTubeEmbedUrl(row.youtubeVideoId) : null
 
-  // Ảnh thu nhỏ **luôn** dựng từ slug, không bao giờ đọc `thumbnail_url` đã lưu:
-  // cột đó là một chuỗi tự do, và trả thẳng nó cho người đọc là để một giá trị
-  // trong CSDL trở thành một origin tuỳ ý trong trình duyệt của công dân.
+  // Ảnh thu nhỏ **luôn** dựng từ short_id (định danh URL công khai), không bao giờ
+  // đọc `thumbnail_url` đã lưu: cột đó là một chuỗi tự do, và trả thẳng nó cho
+  // người đọc là để một giá trị trong CSDL trở thành một origin tuỳ ý trong trình
+  // duyệt của công dân.
   const hasThumbnail = source === 'youtube' ? embedUrl !== null : true
 
   const playable = source === 'youtube' ? embedUrl !== null : isPlayable(row)
@@ -319,6 +339,7 @@ export function serializePublicMedia(row: PublicMediaRow): PublicMediaItem {
   return {
     id: Number(row.id),
     slug: String(row.slug),
+    shortId: String(row.shortId),
     title: String(row.title),
     description: row.description ?? null,
     source,
@@ -329,20 +350,25 @@ export function serializePublicMedia(row: PublicMediaRow): PublicMediaItem {
     width: row.width ?? null,
     height: row.height ?? null,
     publishedAt: row.publishedAt ?? null,
-    thumbnailUrl: hasThumbnail ? buildMediaThumbnailPath(String(row.slug)) : null,
+    thumbnailUrl: hasThumbnail ? buildMediaThumbnailPath(String(row.shortId)) : null,
     embedUrl,
-    streamUrl: source === 'upload' && playable ? buildMediaStreamPath(String(row.slug)) : null,
+    streamUrl: source === 'upload' && playable ? buildMediaStreamPath(String(row.shortId)) : null,
     // `streamKind` chỉ có ý nghĩa khi `streamUrl` khác null (upload + playable).
-    // Có rendition HLS → `hls`; `ready` mà không có rendition (autoTranscode=false)
-    // → tệp gốc phục vụ trực tiếp → `file`. Youtubeembed (`embedUrl`) không đi qua
-    // nhánh này nên `null`.
+    // `ready` + có rendition → manifest HLS đã publish → `hls`. Còn lại → tệp
+    // gốc phục vụ trực tiếp → `file`: bao gồm cả `ready` không rendition
+    // (autoTranscode=false) **và** `processing`/`pending` — khi đang transcode,
+    // `resolutions_ready` đã liệt kê các bản xong nhưng manifest chỉ publish
+    // sau khi **mọi** bản xong (`publishChain` nối đuôi), nên stream endpoint
+    // lùi về tệp gốc `original.<ext>`, và hls.js parse mp4 như m3u8 sẽ không phát
+    // được. `file` báo cho MediaPlayer dùng `<video src>` gốc.
     streamKind:
       source === 'upload' && playable
-        ? (coerceResolutionsReady(row.resolutionsReady)?.length ? 'hls' : 'file')
+        ? (row.processingStatus === 'ready' && coerceResolutionsReady(row.resolutionsReady)?.length ? 'hls' : 'file')
         : null,
     playable,
     commentsEnabled: row.commentsEnabled === true,
     viewCount: Number(row.viewCount ?? 0),
+    isFeatured: row.isFeatured === true,
   }
 }
 
@@ -409,9 +435,10 @@ export async function listPublishedMedia(
       .from(mediaItems)
       .leftJoin(mediaCategories, eq(mediaItems.categoryId, mediaCategories.id))
       .where(where)
-      // Cùng thứ tự với danh sách bài viết: ngày đăng, rồi ngày tạo. Mục chưa có
-      // `published_at` (dữ liệu cũ) rơi xuống cuối thay vì lên đầu.
-      .orderBy(desc(mediaItems.publishedAt), desc(mediaItems.createdAt))
+      // Featured lên trước, rồi ngày đăng, rồi ngày tạo. Mục chưa có `published_at`
+      // (dữ liệu cũ) rơi xuống cuối thay vì lên đầu. `isFeatured` là boolean: `true`
+      // (1) > `false` (0) nên `desc` đặt featured trước — đúng ý "nổi bật lên đầu".
+      .orderBy(desc(mediaItems.isFeatured), desc(mediaItems.publishedAt), desc(mediaItems.createdAt))
       .limit(query.limit)
       .offset(offset),
     db.select({ total: count() }).from(mediaItems).where(where),
@@ -423,11 +450,13 @@ export async function listPublishedMedia(
 // ─── Danh sách quản trị ─────────────────────────────────────────────────────
 
 /** Tập cột mà **đường quản trị** được phép chọn. Thêm so với đường công khai:
- *  `status`, `processingError`, `storagePath`, `isFeatured`, `createdBy`,
+ *  `status`, `processingError`, `storagePath`, `createdBy`,
  *  `createdAt`, `updatedAt` — tất cả đều là thông tin mà cán bộ vận hành cần để
  *  quyết định xuất bản / gỡ / kiểm tra tiến trình, và **không** là thông tin mà
- *  công dân đọc được. Việc đặt chúng trong một selection tường minh (không
- *  `...mediaItems`) nghĩa là một cột mới thêm sau này phải được **đưa vào** mới
+ *  công dân đọc được. (`isFeatured` giờ đã thuộc đường công khai — nó quyết định
+ *  thứ tự danh sách và công dân thấy huy hiệu.) Việc đặt chúng trong một selection
+ *  tường minh (không `...mediaItems`) nghĩa là một cột mới thêm sau này phải được
+ *  **đưa vào** mới
  *  thoát ra được, thay vì ngược lại.
  */
 const adminMediaSelection = {
@@ -441,15 +470,23 @@ const adminMediaSelection = {
   // `publicMediaSelection` — công dân không cần (và không được) biết video nằm đâu.
   storageProvider:  mediaItems.storageProvider,
   thumbnailUrl:     mediaItems.thumbnailUrl,
-  isFeatured:       mediaItems.isFeatured,
+  // `isFeatured` đã có qua `...publicMediaSelection` (nay thuộc đường công khai).
   createdBy:        mediaItems.createdBy,
   createdAt:        mediaItems.createdAt,
   updatedAt:        mediaItems.updatedAt,
+  // Tiến trình FFmpeg thật — 3 cột để UI vẽ thanh % cho bản đang nén.
+  // `resolutionsReady` đã có ở `publicMediaSelection` (công dân cần biết bản nào
+  // sẵn sàng để chọn chất lượng), còn ba cột này là góc nhìn vận hành: cán bộ
+  // cần biết pipeline đang ở bản nào, bao nhiêu %, giai đoạn gì.
+  processingRendition: mediaItems.processingRendition,
+  processingPercent:   mediaItems.processingPercent,
+  processingPhase:     mediaItems.processingPhase,
 } as const
 
 export type AdminMediaRow = {
   id:              number
   slug:            string
+  shortId:         string
   title:           string
   description:      string | null
   source:          string
@@ -474,11 +511,16 @@ export type AdminMediaRow = {
   createdAt:       Date | null
   updatedAt:       Date | null
   resolutionsReady: string[] | null
+  processingRendition: string | null
+  processingPercent: number | null
+  processingPhase: string | null
 }
 
 export type AdminMediaItem = {
   id:              number
   slug:            string
+  /** Định danh URL công khai — `/media/<shortId>`. Admin cần xem để chia sẻ link. */
+  shortId:         string
   title:           string
   description:      string | null
   source:          MediaSource
@@ -505,6 +547,12 @@ export type AdminMediaItem = {
   updatedAt:       string | null
   /** Các bản đã chuyển mã xong — UI đọc để vẽ timeline + quyết định nút transcode. */
   resolutionsReady: string[] | null
+  /** Bản đang nén ('360p'/'720p'/'1080p') hoặc null — để UI vẽ thanh % cho bản hiện tại. */
+  processingRendition: string | null
+  /** % nén của bản hiện tại (0–100) hoặc null. */
+  processingPercent: number | null
+  /** Giai đoạn pipeline ('probe'|'transcode'|'thumbnail'|'sync') hoặc null. */
+  processingPhase: string | null
 }
 
 /**
@@ -521,6 +569,7 @@ export function serializeAdminMedia(row: AdminMediaRow): AdminMediaItem {
   return {
     id:              Number(row.id),
     slug:            String(row.slug),
+    shortId:         String(row.shortId),
     title:           String(row.title),
     description:     row.description ?? null,
     source,
@@ -552,6 +601,12 @@ export function serializeAdminMedia(row: AdminMediaRow): AdminMediaItem {
     // nào" và "chưa transcode" đọc giống nhau ở UI, và đó là đúng: cả hai đều
     // chưa có bản nào để vẽ).
     resolutionsReady: coerceResolutionsReady(row.resolutionsReady),
+    processingRendition: row.processingRendition ?? null,
+    // Giới hạn 0–100 — FFmpeg thỉnh thoảng báo >100 do rounding; UI không vẽ >100.
+    processingPercent: typeof row.processingPercent === 'number'
+      ? Math.min(100, Math.max(0, row.processingPercent))
+      : null,
+    processingPhase: row.processingPhase ?? null,
   }
 }
 
@@ -654,7 +709,7 @@ export async function listAllMediaForAdmin(
 /**
  * Một mục theo id cho màn hình quản trị, hoặc `null`.
  *
- * Khác `getPublishedMediaBySlug` ở chỗ: không lọc `status`, và trả đủ các trường
+ * Khác `getPublishedMediaByShortId` ở chỗ: không lọc `status`, và trả đủ các trường
  * đường công khai loại ra (`status`, `processingError`, `storagePath`). Đây là
  * hình dạng mà 7.6 cần: một mục `failed` phải hiện ra cùng lý do, không bị ẩn
  * đi chỉ vì nó không thuộc tập "đã xuất bản".
@@ -717,14 +772,14 @@ export async function countPublishedMediaByCategory(
 }
 
 /**
- * Một mục đã xuất bản theo slug, hoặc `null`.
+ * Một mục đã xuất bản theo short_id, hoặc `null`.
  *
- * `null` cho **cả** slug không tồn tại **lẫn** slug của một mục `draft`/`archived`
- * — nơi gọi không được phân biệt hai trường hợp đó, vì một phản hồi khác nhau
- * giữa chúng là cách liệt kê ra những slug chưa xuất bản.
+ * `null` cho **cả** short_id không tồn tại **lẫn** short_id của một mục
+ * `draft`/`archived` — nơi gọi không được phân biệt hai trường hợp đó, vì một
+ * phản hồi khác nhau giữa chúng là cách liệt kê ra những short_id chưa xuất bản.
  */
-export async function getPublishedMediaBySlug(
-  slug: string,
+export async function getPublishedMediaByShortId(
+  shortId: string,
   deps: { db?: Database } = {},
 ): Promise<PublicMediaItem | null> {
   const db = deps.db ?? getDb()
@@ -732,29 +787,29 @@ export async function getPublishedMediaBySlug(
     .select(publicMediaSelection)
     .from(mediaItems)
     .leftJoin(mediaCategories, eq(mediaItems.categoryId, mediaCategories.id))
-    .where(and(eq(mediaItems.slug, slug), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
+    .where(and(eq(mediaItems.shortId, shortId), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
     .limit(1)
 
   return row ? serializePublicMedia(row) : null
 }
 
 /**
- * Id của một mục đã xuất bản theo slug, hoặc `null`.
+ * Id của một mục đã xuất bản theo short_id, hoặc `null`.
  *
- * Một truy vấn **chỉ lấy id**, không phải `getPublishedMediaBySlug`: đường đếm
+ * Một truy vấn **chỉ lấy id**, không phải `getPublishedMediaByShortId`: đường đếm
  * lượt xem chạy một lần mỗi lượt mở trang, và nó không cần tiêu đề, mô tả, tên
  * danh mục hay bất cứ thứ gì khác. Đi qua hàm kia sẽ kéo theo một phép join và
  * mười sáu cột cho một con số.
  */
-export async function resolvePublishedMediaId(
-  slug: string,
+export async function resolvePublishedMediaIdByShortId(
+  shortId: string,
   deps: { db?: Database } = {},
 ): Promise<number | null> {
   const db = deps.db ?? getDb()
   const [row] = await db
     .select({ id: mediaItems.id })
     .from(mediaItems)
-    .where(and(eq(mediaItems.slug, slug), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
+    .where(and(eq(mediaItems.shortId, shortId), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
     .limit(1)
 
   return row ? Number(row.id) : null
@@ -767,6 +822,7 @@ export async function resolvePublishedMediaId(
 const assetMediaSelection = {
   id: mediaItems.id,
   slug: mediaItems.slug,
+  shortId: mediaItems.shortId,
   source: mediaItems.source,
   youtubeVideoId: mediaItems.youtubeVideoId,
   storagePath: mediaItems.storagePath,
@@ -789,7 +845,15 @@ export function resolveMediaDirectory(
 ): string | null {
   const root = path.resolve(config.workdir, MEDIA_SUBDIR)
   const stored = typeof item.storagePath === 'string' ? item.storagePath.trim() : ''
-  const relative = stored || `${MEDIA_SUBDIR}/${item.slug}`
+  // `storagePath` có thể chứa `/generations/<gen-id>` — đường dẫn cây R2 sau khi
+  // transcode ghi `storageProvider='r2'`. Khi R2 **chưa cấu hình** (deploy không có
+  // R2 env, hoặc worker ghi nhầm cột), code lùi về đĩa local, nhưng tệp gốc và
+  // manifest trên đĩa nằm ở **base UUID folder** (`media/<uuid>/original.mp4`,
+  // `media/<uuid>/generations/<gen-id>/master.m3u8`), không phải theo `storagePath`
+  // đầy đủ. Strip phần `/generations/...` về base UUID — cùng phép `mediaAssetRoot`
+  // dùng cho asset cleanup, để nhánh local tìm đúng thư mục.
+  const stripped = stored.split('/generations/')[0] ?? stored
+  const relative = stripped || `${MEDIA_SUBDIR}/${item.slug}`
   const resolved = path.resolve(config.workdir, relative)
   if (resolved === root || !resolved.startsWith(root + path.sep)) return null
   return resolved
@@ -904,9 +968,9 @@ export type StreamTarget =
  * storage location"). `r2Key` = `storagePath + '/' + assetPath`.
  */
 export async function resolveStreamTarget(
-  slug: string,
+  shortId: string,
   relativePath: unknown,
-  deps: { db?: Database, config?: MediaConfig } = {},
+  deps: { db?: Database, config?: MediaConfig, lookupSlug?: boolean } = {},
 ): Promise<StreamTarget | null> {
   const db = deps.db ?? getDb()
   const config = deps.config ?? resolveMediaConfig()
@@ -914,10 +978,14 @@ export async function resolveStreamTarget(
   const assetPath = normalizeAssetPath(relativePath)
   if (!assetPath) return null
 
+  // Mặc định tra theo `short_id` (định danh URL công khai). `lookupSlug: true` cho
+  // fallback link cũ — endpoint stream/thumb tra short_id trước, nếu null thử
+  // slug (asset phục vụ thẳng, không redirect — redirect segment hỏng cache).
+  const lookup = deps.lookupSlug ? mediaItems.slug : mediaItems.shortId
   const [row] = await db
     .select(assetMediaSelection)
     .from(mediaItems)
-    .where(eq(mediaItems.slug, slug))
+    .where(eq(lookup, shortId))
     .limit(1)
 
   if (!row || row.status !== PUBLISHED_MEDIA_STATUS) return null
@@ -1014,6 +1082,62 @@ export async function resolveStreamTarget(
     const r2Key = `${stored.replace(/\/+$/g, '')}/${assetPath}`
     const extension = path.extname(assetPath).toLowerCase()
     const known = STREAM_CONTENT_TYPES[extension]
+
+    // Manifest `master.m3u8` trên R2 có thể chưa tồn tại khi đang transcode —
+    // `resolutions_ready` đã liệt kê các bản xong nhưng manifest chỉ được publish
+    // sau khi **mọi** bản trong plan xong (`publishChain` nối đuôi). HeadObject kiểm
+    // tồn tại; null → lùi về `original.<ext>` trên R2 (đã có ngay sau upload), để
+    // công dân phát được video gốc thay vì thấy 404.
+    //
+    // Chỉ áp dụng cho manifest — segment (`.ts`/`.m4s`) khi manifest chưa publish
+    // là lỗi thật.
+    if (assetPath === MEDIA_MASTER_PLAYLIST) {
+      const head = await headR2Object(r2Key, r2Config)
+      if (!head) {
+        const originalR2 = await locateR2Original(stored, r2Config)
+        if (originalR2) {
+          const ext = path.extname(originalR2.key).toLowerCase()
+          const origKnown = STREAM_CONTENT_TYPES[ext]
+          return {
+            kind: 'r2',
+            r2Key: originalR2.key,
+            contentType: origKnown ?? 'application/octet-stream',
+            size: 0,
+            cacheSeconds: SEGMENT_CACHE_SECONDS,
+            attachment: origKnown === undefined,
+            passthrough: true,
+          }
+        }
+        // R2 không có original → thử local đĩa (upload ghi `original.<ext>` đến
+        // thư mục làm việc trước khi sync; nếu sync R2 chưa thấy, local còn).
+        const directory = resolveMediaDirectory(config, row)
+        if (directory) {
+          const original = await locateOriginalFile(directory)
+          if (original) {
+            let stat
+            try {
+              stat = statSync(original)
+              if (!stat.isFile()) return null
+            } catch {
+              return null
+            }
+            const ext = path.extname(original).toLowerCase()
+            const origKnown = STREAM_CONTENT_TYPES[ext]
+            return {
+              kind: 'local',
+              filePath: original,
+              contentType: origKnown ?? 'application/octet-stream',
+              size: stat.size,
+              cacheSeconds: SEGMENT_CACHE_SECONDS,
+              attachment: origKnown === undefined,
+              passthrough: true,
+            }
+          }
+        }
+        return null
+      }
+    }
+
     return {
       kind: 'r2',
       r2Key,
@@ -1056,24 +1180,52 @@ export async function resolveStreamTarget(
   if (filePath !== directory && !filePath.startsWith(directory + path.sep)) return null
 
   let size: number
+  let resolvedPath = filePath
+  let passthrough = false
   try {
     const stat = statSync(filePath)
     if (!stat.isFile()) return null
     size = stat.size
   } catch {
-    return null
+    // Manifest `master.m3u8` không tồn tại — manifest HLS chỉ được xuất bản **sau
+    // khi mọi bản trong plan transcode xong** (`publishChain` nối đuôi), nên một
+    // mục đang `processing` có `resolutions_ready` đã liệt kê các bản xong nhưng
+    // tệp manifest vẫn chưa có. Lúc này công dân bấm play thấy 404 → "báo lỗi
+    // luôn", trong khi tệp gốc `original.<ext>` đã nằm trên đĩa ngay sau khi
+    // upload xong (probe xong là có). Lùi về tệp gốc: phát được ngay, không đợi
+    // transcode xong.
+    //
+    // Chỉ áp dụng cho đúng manifest — một yêu cầu phân đoạn (`.ts`/`.m4s`) khi
+    // manifest chưa publish thực sự là lỗi, và lùi về tệp gốc ở đó sẽ trả video
+    // gốc dưới dạng `video/mp2t`.
+    if (assetPath !== MEDIA_MASTER_PLAYLIST) return null
+    const original = await locateOriginalFile(directory)
+    if (!original) return null
+    let stat
+    try {
+      stat = statSync(original)
+      if (!stat.isFile()) return null
+    } catch {
+      return null
+    }
+    resolvedPath = original
+    size = stat.size
+    passthrough = true
   }
 
-  const extension = path.extname(filePath).toLowerCase()
+  const extension = path.extname(resolvedPath).toLowerCase()
   const known = STREAM_CONTENT_TYPES[extension]
 
   return {
     kind: 'local',
-    filePath,
+    filePath: resolvedPath,
     contentType: known ?? 'application/octet-stream',
     size,
-    cacheSeconds: extension === '.m3u8' ? MANIFEST_CACHE_SECONDS : SEGMENT_CACHE_SECONDS,
+    // Tệp gốc không đổi sau khi upload xong, nên đệm lâu hơn manifest HLS.
+    cacheSeconds: passthrough ? SEGMENT_CACHE_SECONDS
+      : (extension === '.m3u8' ? MANIFEST_CACHE_SECONDS : SEGMENT_CACHE_SECONDS),
     attachment: known === undefined,
+    passthrough,
   }
 }
 
@@ -1099,16 +1251,17 @@ export type ThumbnailTarget =
  * trả `{ kind: 'r2', r2Key }`, endpoint pipe qua proxy như stream.
  */
 export async function resolveThumbnailTarget(
-  slug: string,
-  deps: { db?: Database, config?: MediaConfig } = {},
+  shortId: string,
+  deps: { db?: Database, config?: MediaConfig, lookupSlug?: boolean } = {},
 ): Promise<ThumbnailTarget | null> {
   const db = deps.db ?? getDb()
   const config = deps.config ?? resolveMediaConfig()
 
+  const lookup = deps.lookupSlug ? mediaItems.slug : mediaItems.shortId
   const [row] = await db
     .select(assetMediaSelection)
     .from(mediaItems)
-    .where(eq(mediaItems.slug, slug))
+    .where(eq(lookup, shortId))
     .limit(1)
 
   if (!row || row.status !== PUBLISHED_MEDIA_STATUS) return null
@@ -1246,7 +1399,7 @@ export type CreateMediaItemInput = {
   createdBy: number
 }
 
-export type CreatedMediaItem = { mediaItemId: number, slug: string }
+export type CreatedMediaItem = { mediaItemId: number, slug: string, shortId: string }
 
 /**
  * Tạo một mục media, cùng dòng audit trong **cùng một transaction**.
@@ -1289,8 +1442,10 @@ export async function createMediaItem(
 
   return db.transaction(async (tx) => {
     const slug = await uniqueMediaSlug(tx, title)
+    const shortId = await uniqueShortMediaId(tx)
     const [inserted] = await tx.insert(mediaItems).values({
       slug,
+      shortId,
       title,
       description,
       source,
@@ -1317,7 +1472,7 @@ export async function createMediaItem(
       meta: { source, hasCategory: categoryId !== null },
     })
 
-    return { mediaItemId, slug }
+    return { mediaItemId, slug, shortId }
   })
 }
 
@@ -1439,6 +1594,11 @@ export async function updateMediaItem(
 
 export type DeleteMediaItemInput = { id: number, actorId: number }
 
+/** Kết quả xoá: `removed=false` khi mục không tồn tại; `fromStatus` cho biết trạng thái trước xoá. */
+export type DeleteMediaItemResult =
+  | { removed: false, fromStatus: null }
+  | { removed: true, fromStatus: string }
+
 /**
  * Xoá một mục media, cùng dòng audit trong một transaction.
  *
@@ -1452,7 +1612,7 @@ export type DeleteMediaItemInput = { id: number, actorId: number }
 export async function deleteMediaItem(
   input: DeleteMediaItemInput,
   deps: { db?: Database } = {},
-): Promise<boolean> {
+): Promise<DeleteMediaItemResult> {
   const db = deps.db ?? getDb()
 
   const outcome = await db.transaction(async (tx) => {
@@ -1463,7 +1623,7 @@ export async function deleteMediaItem(
       .where(eq(mediaItems.id, input.id))
       .limit(1)
 
-    if (!current) return { removed: false as const, claim: null as string | null }
+    if (!current) return { removed: false as const, claim: null as string | null, fromStatus: null as string | null }
 
     let assetRoot: string | null = null
     if (current.source === 'upload') {
@@ -1492,11 +1652,12 @@ export async function deleteMediaItem(
       meta: { source: String(current.source), fromStatus: String(current.status) },
     })
 
-    return { removed: true as const, claim: current.claimedBy }
+    return { removed: true as const, claim: current.claimedBy, fromStatus: String(current.status) }
   })
 
   if (outcome.removed) abortProcessingClaim(outcome.claim)
-  return outcome.removed
+  if (outcome.removed) return { removed: true, fromStatus: outcome.fromStatus ?? '' }
+  return { removed: false, fromStatus: null }
 }
 
 // ─── Thumbnail custom ─────────────────────────────────────────────────────────

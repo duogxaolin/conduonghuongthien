@@ -22,6 +22,18 @@ import type { AdminMediaItem } from '~/types/admin-api'
 
 const props = defineProps<{ item: AdminMediaItem }>()
 
+/** Tiến trình FFmpeg thật — % của bản đang nén, đọc từ 3 cột pipeline ghi. */
+const liveProgress = computed(() => {
+  // Chỉ vẽ thanh khi pipeline đang ở giai đoạn transcode và có rendition + %.
+  // Các giai đoạn khác (probe/thumbnail/sync) không có % thật — vẽ thanh 0% hay
+  // 100% ở đó đều nói sai về trạng thái.
+  if (props.item.processingPhase !== 'transcode') return null
+  const rendition = props.item.processingRendition
+  const percent = props.item.processingPercent
+  if (!rendition || typeof percent !== 'number') return null
+  return { rendition, percent: Math.min(100, Math.max(0, Math.round(percent))) }
+})
+
 // Ba rendition theo `RENDITIONS` ở `server/services/video-processing.ts:99-102`.
 // Hardcode ở UI vì không import được từ `server/`; nếu server đổi, đổi cả hai.
 const ALL_RENDITIONS = [
@@ -73,7 +85,7 @@ const stages = computed<{ label: string, key: string, status: Stage }[]>(() => {
     { label: 'Nhận lượt xử lý', key: 'claim', status: isFailed ? (s1 === 'done' ? 'failed' : 'failed') : s1 },
     { label: 'Kiểm tra tệp gốc', key: 'sniff', status: s2 },
     { label: 'Đọc metadata', key: 'probe', status: s3 },
-    { label: 'Chuyển mã các bản', key: 'transcode', status: s4 },
+    { label: 'Nén chất lượng các bản', key: 'transcode', status: s4 },
     { label: 'Ảnh đại diện', key: 'thumbnail', status: s5 },
     { label: 'Danh sách phát', key: 'playlist', status: s6 },
     { label: 'Đồng bộ & dọn dẹp', key: 'sync', status: s7 },
@@ -132,12 +144,28 @@ const isPending = computed(() => props.item.processingStatus === 'pending' || pr
               class="inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold"
               :class="readySet.has(rendition.name)
                 ? 'bg-[#e8f0e8] text-[#2c6e33]'
-                : isPending ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-500'"
+                : liveProgress?.rendition === rendition.name
+                  ? 'bg-blue-50 text-blue-700 ring-1 ring-blue-200'
+                  : isPending ? 'bg-amber-50 text-amber-700' : 'bg-gray-100 text-gray-500'"
             >
               <i v-if="readySet.has(rendition.name)" class="fa-solid fa-check text-[0.6rem]" aria-hidden="true"></i>
+              <i v-else-if="liveProgress?.rendition === rendition.name" class="fa-solid fa-circle-notch animate-spin motion-reduce:animate-none text-[0.6rem]" aria-hidden="true"></i>
               <i v-else-if="isPending" class="fa-solid fa-circle-notch animate-spin motion-reduce:animate-none text-[0.6rem]" aria-hidden="true"></i>
               {{ rendition.name }}
             </span>
+          </div>
+          <!-- Thanh % FFmpeg thật — chỉ hiện khi pipeline đang nén một bản cụ thể -->
+          <div v-if="stage.key === 'transcode' && liveProgress" class="mt-2" role="status" aria-live="polite">
+            <div class="flex items-center justify-between text-xs font-medium text-[#1e251c]">
+              <span>Đang nén <strong class="font-semibold">{{ liveProgress.rendition }}</strong></span>
+              <span class="tabular-nums">{{ liveProgress.percent }}%</span>
+            </div>
+            <div class="mt-1 h-2 w-full overflow-hidden rounded-full bg-gray-100">
+              <div
+                class="h-full rounded-full bg-[#2c6e33] transition-[width] duration-300 ease-out motion-reduce:transition-none"
+                :style="{ width: `${liveProgress.percent}%` }"
+              ></div>
+            </div>
           </div>
         </div>
       </li>

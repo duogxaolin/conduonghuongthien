@@ -321,6 +321,19 @@ export function isPlayable(item: {
   // Trước đây `ready` + `resolutionsReady=[]` đọc là "chưa phát được" — đúng khi
   // auto-transcode bật, sai khi tắt: video đã lên máy chủ, có tệp gốc, nhưng ẩn.
   if (item.processingStatus === 'ready') return true
+  // `processing` — đang transcode nhưng tệp gốc `original.<ext>` đã có ngay sau
+  // upload (probe xong là có). Stream endpoint lùi về tệp gốc qua
+  // `isPassthroughManifest`, nên công dân xem được video gốc thay vì thấy lỗi
+  // trong khi nền worker nén 360/720/1080p. Trả `false` ở đây ẩn player hoàn toàn
+  // — "báo lỗi luôn ntn thì khó cho t quá" đúng là triệu chứng: chưa nén xong mà
+  // đã không cho xem bản gốc. `streamKind='file'` báo MediaPlayer dùng `<video src>`
+  // gốc, không hls.js.
+  //
+  // **Chỉ `processing`, không `pending`**: `pending` là chưa probe xong, tệp gốc
+  // chưa chắc đã nằm sẵn trên đĩa, và stream endpoint sẽ 404 nếu tìm không thấy —
+  // trình phát dựng lên rồi hỏng giây sau tệ hơn không có gì. `processing` nghĩa
+  // là probe đã xong, `original.<ext>` đã có.
+  if (item.processingStatus === 'processing') return true
   return false
 }
 
@@ -364,10 +377,17 @@ export function isProcessAlive(claim: string | null | undefined, hostname: strin
 
 export type ProcessOutcome = { code: number, stdout: string, stderr: string }
 
+/**
+ * Callback tiến trình — nhận chuỗi stderr FFmpeg theo từng chunk. Dùng để parse
+ * `time=00:01:23` → % của bản đang transcode. Truyền qua `ProcessRunner` options
+ * thay vì trả qua `ProcessOutcome` (vì stderr chỉ có nghĩa khi stream).
+ */
+export type ProcessProgressCb = (stderrLine: string) => void
+
 export type ProcessRunner = (
   command: string,
   args: string[],
-  options: { signal: AbortSignal },
+  options: { signal: AbortSignal, onProgress?: ProcessProgressCb },
 ) => Promise<ProcessOutcome>
 
 /** Trần cho phần thông báo giữ lại của một tiến trình. */
@@ -407,7 +427,14 @@ export const defaultProcessRunner: ProcessRunner = (command, args, options) => {
       if (stdout.length < OUTPUT_CAPTURE_LIMIT) stdout += chunk.toString('utf8')
     })
     child.stderr?.on('data', (chunk: Buffer) => {
-      if (stderr.length < OUTPUT_CAPTURE_LIMIT) stderr += chunk.toString('utf8')
+      const text = chunk.toString('utf8')
+      if (stderr.length < OUTPUT_CAPTURE_LIMIT) stderr += text
+      // Stream dòng cho onProgress — FFmpeg ghi `time=HH:MM:SS` mỗi ~1s trên stderr.
+      if (options.onProgress) {
+        for (const line of text.split(/\r?\n/)) {
+          if (line.includes('time=')) options.onProgress(line)
+        }
+      }
     })
     child.on('error', (error) => finish({ code: -1, stdout, stderr: `${stderr}\n${error.message}` }))
     child.on('close', (code) => finish({ code: code ?? -1, stdout, stderr }))
@@ -667,13 +694,20 @@ export async function processMediaItem(input: ProcessInput, options: ProcessingD
     // cấp, không bao giờ rỗng). Lọc `RENDITIONS` theo tên đã chọn; tên lạ đã bị
     // endpoint chặn nên ở đây chỉ là an toàn lớp hai và giữ `plan` luôn đúng shape.
     const autoPlan = selectRenditions(probe.height)
-    const plan = input.renditions && input.renditions.length > 0
+    const manualRenditions = input.renditions && input.renditions.length > 0
+    const plan = manualRenditions
       ? RENDITIONS.filter((render) => input.renditions!.includes(render.name)).map((render) => ({ ...render }))
       : autoPlan
     // `autoTranscode=false` = chỉ probe + thumbnail, giữ tệp gốc; cán bộ bấm
     // "Xử lý sau" (endpoint `process.post.ts` → `enqueueMediaProcessing`) để
     // transcode khi rảnh. Tránh lag máy chủ lúc upload video lớn.
-    if (!config.autoTranscode) {
+    //
+    // Nhưng một yêu cầu **tường minh** `renditions` (cán bộ bấm "Nén chất lượng"
+    // chọn 360p/720p) phải chạy **bất kể** `autoTranscode` — config đó quyết định
+    // hành vi tự động lúc upload, không phải phủ một thao tác thủ công. Nếu không
+    // có ngoại lệ này thì nút "Nén chất lượng" báo "đã đưa vào hàng chờ" rồi lặng
+    // lẽ skip, và cán bộ không bao giờ thấy bản nào được sinh ra.
+    if (!config.autoTranscode && !manualRenditions) {
       logInfo({ event: 'media.transcode_skipped', mediaItemId: item.id, slug: item.slug, reason: 'autoTranscode disabled' })
     } else {
       // Các bước công bố chạy **nối đuôi nhau**, không song song: chúng cùng ghi
@@ -689,10 +723,36 @@ export async function processMediaItem(input: ProcessInput, options: ProcessingD
       await runBounded(plan.map(rendition => async () => {
         if (controller.signal.aborted) throw new ProcessingAborted(abortReason ?? 'Lượt xử lý đã bị hủy.')
 
+        // Đặt phase + rendition cho bản sắp transcode — UI hiện "đang nén 720p".
+        await db.update(mediaItems)
+          .set({ processingRendition: rendition.name, processingPercent: 0, processingPhase: 'transcode' })
+          .where(eq(mediaItems.id, item.id))
+
+        // Throttle ghi % — FFmpeg stderr ~1/s, nhưng ghi DB mỗi giây là quá nhiều
+        // round-trip. 2s đủ mượt cho UI (poll 3s) mà không úp bảng.
+        let lastProgressWrite = 0
+        const PROGRESS_WRITE_INTERVAL_MS = 2000
+
         await transcodeRendition({
           input: original, rendition, scratch, run, signal: controller.signal,
           cpuLimitPercent: config.processingCpuLimit,
+          durationSeconds: probe.durationSeconds,
+          onProgress: (percent) => {
+            const now = Date.now()
+            if (now - lastProgressWrite < PROGRESS_WRITE_INTERVAL_MS && percent < 100) return
+            lastProgressWrite = now
+            // Best-effort — không await: một lượt ghi hỏng không làm hỏng transcode.
+            void db.update(mediaItems)
+              .set({ processingPercent: percent })
+              .where(eq(mediaItems.id, item.id))
+              .catch(() => {})
+          },
         })
+        // Bản xong → % 100, giữ rendition để UI thấy "vừa xong" cho đến khi sang bản kế.
+        await db.update(mediaItems)
+          .set({ processingPercent: 100 })
+          .where(eq(mediaItems.id, item.id))
+          .catch(() => {})
         if (controller.signal.aborted) throw new ProcessingAborted(abortReason ?? 'Lượt xử lý đã bị hủy.')
 
         publishChain = publishChain.then(async () => {
@@ -781,6 +841,10 @@ export async function processMediaItem(input: ProcessInput, options: ProcessingD
         processingError: null,
         resolutionsReady: [...ready],
         storageProvider: finalStorageProvider,
+        // Reset tiến trình — không giữ lại % của lượt cũ khi đã ready.
+        processingRendition: null,
+        processingPercent: null,
+        processingPhase: 'sync',
       })
       .where(and(eq(mediaItems.id, item.id), eq(mediaItems.claimedBy, claim)))
     if (affectedRowsOrZero(finished) === 0) throw new ProcessingAborted('Lượt xử lý đã mất quyền sở hữu.')
@@ -835,6 +899,9 @@ async function markProcessingFailed(db: Database, mediaItemId: number, claim: st
       processingNextAttemptAt: permanent || attempts >= maximum ? null : retryAt(attempts),
       processingError: reason.slice(0, PROCESSING_ERROR_LIMIT),
       claimedBy: null,
+      processingRendition: null,
+      processingPercent: null,
+      processingPhase: null,
     })
     .where(and(eq(mediaItems.id, mediaItemId), eq(mediaItems.claimedBy, claim)))
     .catch(() => undefined)
@@ -880,8 +947,12 @@ async function transcodeRendition(input: {
   run: ProcessRunner
   signal: AbortSignal
   cpuLimitPercent?: number
+  /** Thời lượng gốc (giây) để parse % từ `time=`. Vắng → không gọi onProgress. */
+  durationSeconds?: number | null
+  /** Callback tiến trình — nhận % (0–100) của bản hiện tại. */
+  onProgress?: (percent: number) => void
 }): Promise<void> {
-  const { input: source, rendition, scratch, run, signal, cpuLimitPercent = 100 } = input
+  const { input: source, rendition, scratch, run, signal, cpuLimitPercent = 100, durationSeconds, onProgress } = input
   const outputDir = path.join(scratch, rendition.name)
   await fs.mkdir(outputDir, { recursive: true })
 
@@ -906,12 +977,37 @@ async function transcodeRendition(input: {
     path.join(outputDir, 'index.m3u8'),
   ], cpuLimitPercent)
 
-  const outcome = await run(command, args, { signal })
+  const outcome = await run(command, args, {
+    signal,
+    onProgress: onProgress && durationSeconds && durationSeconds > 0
+      ? (line) => {
+        const sec = parseFfmpegTime(line)
+        if (sec != null) {
+          const pct = Math.min(100, Math.max(0, Math.round((sec / durationSeconds) * 100)))
+          onProgress(pct)
+        }
+      }
+      : undefined,
+  })
   if (outcome.code !== 0) {
     throw new ProcessingFailure(
       `FFmpeg thất bại ở bản ${rendition.name}: ${lastLine(outcome.stderr) || `mã thoát ${outcome.code}`}`,
     )
   }
+}
+
+/**
+ * Parse `time=HH:MM:SS.mmm` từ dòng stderr FFmpeg → số giây. Trả `null` khi dòng
+ * không có `time=` (vd dòng `frame=`, `Stream mapping`). FFmpeg ghi `time=` mỗi
+ * ~1 giây trên stderr khi transcode, nên callback tiến trình nhận cập nhật định
+ * kỳ mà không cần poll trạng thái.
+ */
+function parseFfmpegTime(line: string): number | null {
+  const m = /time=(\d+):(\d{2}):(\d{2}(?:\.\d+)?)/.exec(line)
+  if (!m) return null
+  const h = Number(m[1]), min = Number(m[2]), s = Number(m[3])
+  if (!Number.isFinite(h) || !Number.isFinite(min) || !Number.isFinite(s)) return null
+  return h * 3600 + min * 60 + s
 }
 
 async function extractThumbnail(input: {

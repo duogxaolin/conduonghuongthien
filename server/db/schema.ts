@@ -892,6 +892,11 @@ export const googleOauthSettings = mysqlTable('google_oauth_settings', {
 export const mediaItems = mysqlTable('media_items', {
   id:           int('id').autoincrement().primaryKey(),
   slug:         varchar('slug', { length: 512 }).notNull().unique(),
+  // Định danh URL công khai chính — 11 ký tự base64url (YouTube-style), sinh lúc
+  // tạo. `slug` vẫn giữ cho redirect 301 (link cũ) + log; `short_id` là gì máy khách
+  // thấy trong `/media/<short_id>`. Cột UNIQUE: trùng cực hiếm (64 bit) nhưng là
+  // thẩm quyền, không phải may rủi.
+  shortId:      varchar('short_id', { length: 16 }).notNull().unique(),
   title:        varchar('title', { length: 512 }).notNull(),
   description:  text('description'),
   // upload = a file the portal holds and transcodes; youtube = an external
@@ -926,6 +931,16 @@ export const mediaItems = mysqlTable('media_items', {
   // expression default, matching the Drizzle `.default([])` — a NULL here is
   // read as "none ready" rather than crashing a player.
   resolutionsReady: json('resolutions_ready').$type<string[]>().default([]),
+  // Tiến trình FFmpeg thật — 3 cột tách biejt để UI vẽ thanh % cho bản đang nén.
+  // `processingRendition` = tên bản đang transcode ('360p'/'720p'/'1080p') hoặc
+  // null khi không ở giai đoạn transcode (probe/thumbnail/sync). `processingPercent`
+  // = 0–100 của bản hiện tại. `processingPhase` = giai đoạn pipeline
+  // ('probe'|'transcode'|'thumbnail'|'sync') để UI biết % thuộc giai đoạn nào.
+  // Cả ba reset về null/0 khi `processingStatus='ready'` — không giữ lại tiến trình
+  // của lượt cũ.
+  processingRendition: varchar('processing_rendition', { length: 16 }),
+  processingPercent: int('processing_percent'),
+  processingPhase: varchar('processing_phase', { length: 16 }),
   // The process running the transcode, paired with `updated_at` as its
   // heartbeat. This pair is what lets the pipeline release its pooled database
   // connection before spawning FFmpeg (design.md §4) and what the reaper reads

@@ -51,7 +51,7 @@ export default defineEventHandler(async (event) => {
     })
 
     setResponseStatus(event, 201)
-    return { ok: true, id: result.mediaItemId, slug: result.slug }
+    return { ok: true, id: result.mediaItemId, slug: result.slug, shortId: result.shortId }
   } catch (error) {
     if (error instanceof MediaValidationError) {
       throw createError({ statusCode: 400, statusMessage: error.message })
