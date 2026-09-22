@@ -64,6 +64,9 @@ const menuGroups = computed(() => [
     title: 'Media & Livestream',
     items: [
       ...(hasPermission('media_portal', 'read') ? [{ label: 'Thư viện Video', icon: 'fa-solid fa-video', path: '/admin/media-portal' }] : []),
+      // Danh mục Media Portal — bảng `media_categories` riêng, tách khỏi danh mục
+      // bài viết (bảng `categories`). Gate `media_portal.read` cùng Thư viện Video.
+      ...(hasPermission('media_portal', 'read') ? [{ label: 'Danh mục Video', icon: 'fa-solid fa-folder-tree', path: '/admin/media-portal/categories' }] : []),
       // Livestream — bắt đầu/dừng buổi phát, kiểm duyệt chat.
       ...(hasPermission('livestream', 'read') ? [{ label: 'Livestream', icon: 'fa-solid fa-tower-broadcast', path: '/admin/livestream' }] : []),
       // Cài đặt Media Portal — nhận video, dung lượng, chuyển mã, R2. Nằm trong

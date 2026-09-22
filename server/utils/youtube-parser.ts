@@ -147,7 +147,12 @@ export function extractYouTubeVideoId(input: unknown): string | null {
  */
 export function buildYouTubeEmbedUrl(videoId: unknown): string | null {
   if (typeof videoId !== 'string' || !VIDEO_ID_PATTERN.test(videoId)) return null
-  return `https://${YOUTUBE_EMBED_HOST}/embed/${videoId}`
+  // `modestbranding=1` — giảm logo YouTube (chuyển logo lớn góc phải thành nút nhỏ).
+  // `rel=0` — không hiện video liên quan từ channel khác khi hết video.
+  // `playsinline=1` — iOS phát inline thay vì fullscreen cưỡng bức.
+  // Không che hoàn toàn logo: ToS YouTube (Section 4.f) cấm "obscure branding",
+  // và cổng Bộ Công an không nên hack giao diện. Đây là mức giảm tối đa YouTube cho phép.
+  return `https://${YOUTUBE_EMBED_HOST}/embed/${videoId}?modestbranding=1&rel=0&playsinline=1`
 }
 
 /**

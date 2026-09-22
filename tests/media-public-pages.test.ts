@@ -127,6 +127,16 @@ test('toàn dự án có ĐÚNG MỘT chuỗi import động tới thư viện p
     if (/import\(\s*['"]hls\.js['"]\s*\)/.test(source)) hits.push(file)
   }
   assert.deepEqual(hits, ['app/composables/useHlsVideo.ts'], 'chuỗi nạp hls.js phải nằm đúng một chỗ')
+
+  // Plyr cũng nạp động (~50KB), cùng ràng buộc: đúng một chuỗi `import('plyr')`
+  // ở `usePlyrPlayer.ts`. Hai bản sao là hai chỗ để một bản lỡ dùng `import`
+  // tĩnh mà không đỏ — cờ rơi khi bản thứ hai mọc.
+  const plyrHits: string[] = []
+  for (const file of [...walkSource('app/'), ...walkSource('server/')]) {
+    const source = stripComments(readFileSync(new URL(file, projectRoot), 'utf8'))
+    if (/import\(\s*['"]plyr['"]\s*\)/.test(source)) plyrHits.push(file)
+  }
+  assert.deepEqual(plyrHits, ['app/composables/usePlyrPlayer.ts'], 'chuỗi nạp plyr phải nằm đúng một chỗ')
 })
 
 test('`MediaPlayer.vue` chọn cơ chế theo `source` và nói ra khi không phát được', () => {
@@ -171,10 +181,13 @@ test('composable HLS không nạp thư viện khi trình duyệt đã phát HLS 
  * tại — nó xanh mãi mãi và không chặn được gì.
  *
  * Thứ kiểm được là **hình dạng dữ liệu**: bản chưa sẵn sàng không được lọt vào
- * playlist, và "không bản nào sẵn sàng" phải ra `playable: false` để giao diện có
- * đường nói ra thay vì dựng một khung đen.
+ * playlist. `isPlayable` có ba nhánh: (1) có rendition HLS → phát được;
+ * (2) `ready` mà không có rendition (`MEDIA_AUTO_TRANSCODE=false`, giữ tệp gốc) →
+ * phát được qua byte-range; (3) `processing`/`failed` mà không có rendition →
+ * không phát được — đúng, vì `processing` chưa có tệp gốc sẵn để phát, còn `ready`
+ * thì pipeline đã đặt tệp gốc xong.
  */
-test('playlist chỉ liệt kê bản đã sẵn sàng, và mục không bản nào là không phát được', () => {
+test('playlist chỉ liệt kê bản đã sẵn sàng; isPlayable phân biệt ready-passthrough và processing-chưa-có', () => {
   const playlist = buildMasterPlaylist([
     { name: '360p', height: 360, width: 640, bandwidth: 896_000 },
   ])
@@ -183,8 +196,17 @@ test('playlist chỉ liệt kê bản đã sẵn sàng, và mục không bản n
 
   // `isPlayable` là **điều kiện duy nhất** sinh ra `playable` trong
   // `serializePublicMedia`, và `streamUrl` chỉ được dựng khi nó đúng.
-  assert.equal(isPlayable({ processingStatus: 'ready', resolutionsReady: [] }), false,
-    'không bản nào sẵn sàng nhưng vẫn khai là phát được')
+  // `ready` + không rendition = phát được: tắt auto-transcode giữ tệp gốc, stream
+  // endpoint phục vụ `original.<ext>` qua byte-range. Trước đây đọc là "chưa phát
+  // được" — đúng khi auto-transcode bật, sai khi tắt: video đã lên máy chủ, có tệp
+  // gốc, nhưng ẩn.
+  assert.equal(isPlayable({ processingStatus: 'ready', resolutionsReady: [] }), true,
+    'ready + không rendition (autoTranscode=false) phải phát được qua tệp gốc')
+  // `processing` + không rendition = không phát được: pipeline đang chạy, tệp gốc
+  // đã có nhưng status không phải `ready` nên chưa khai hoàn tất — dựng trình phát
+  // ở đây là dựng một khung sẽ hỏng giây sau.
+  assert.equal(isPlayable({ processingStatus: 'processing', resolutionsReady: [] }), false,
+    'processing + không rendition phải ẩn — chưa có gì để phát')
   assert.equal(isPlayable({ processingStatus: 'processing', resolutionsReady: ['360p'] }), true,
     'một bản đã xong là đủ để phát — công bố lũy tiến không được chặn ở đây')
 })

@@ -562,7 +562,16 @@ export async function uploadStatus(
 
 // ─── 6.5 — Hoàn tất ──────────────────────────────────────────────────────────
 
-export type CompleteUploadInput = { adminUserId: number, uploadId: unknown }
+export type CompleteUploadInput = {
+  adminUserId: number
+  uploadId: unknown
+  /**
+   * Nếu có, lượt hoàn tất này không tạo hàng `media_items` mới mà **cập nhật** hàng
+   * hiện có — thay tệp gốc của video đó, giữ nguyên slug/tiêu đề/bình luận/danh mục.
+   * Reset `processingStatus='pending'` + `resolutionsReady=[]` để pipeline chạy lại.
+   */
+  replaceMediaItemId?: number
+}
 
 export type CompleteUploadResult =
   | { ok: true, mediaItemId: number, slug: string, contentType: string }
@@ -639,6 +648,8 @@ export async function completeUpload(input: CompleteUploadInput, options: Upload
     const extension = EXT_BY_VIDEO_MIME[contentType]
     const storagePath = `media/${uploadId}`
     const mediaDir = path.resolve(config.workdir, storagePath)
+    const replaceId = input.replaceMediaItemId && Number.isFinite(input.replaceMediaItemId) && input.replaceMediaItemId > 0
+      ? Math.floor(input.replaceMediaItemId) : null
     const created = await db.transaction(async tx => {
       const current = await findOwned(tx, uploadId, input.adminUserId, true)
       if (current?.completionClaim !== claim || current.status !== 'assembling' || controller.signal.aborted) throw new Error('Lượt ghép đã mất quyền sở hữu.')
@@ -648,6 +659,32 @@ export async function completeUpload(input: CompleteUploadInput, options: Upload
       await fs.rename(assembledPath, path.join(mediaDir, `original${extension}`))
       await syncDirectory(mediaDir)
       await syncDirectory(path.dirname(mediaDir))
+      // ── Nhánh thay tệp: cập nhật hàng cũ, không tạo hàng mới ──────────────
+      // Giữ nguyên slug / tiêu đề / bình luận / danh mục / trạng thái xuất bản.
+      // Chỉ reset pipeline: tệp gốc mới đã ghi đè, rendition cũ sẽ bị pipeline
+      // ghi đè khi công bố. Audit `action: 'update'` với `operation: 'replace'`.
+      if (replaceId !== null) {
+        const [existing] = await tx.select({ id: mediaItems.id, slug: mediaItems.slug, source: mediaItems.source })
+          .from(mediaItems).where(eq(mediaItems.id, replaceId)).limit(1).for('update')
+        if (!existing) throw new Error('Mục media cần thay thế không tồn tại.')
+        if (existing.source !== 'upload') throw new Error('Chỉ video tự lưu trữ mới có thể thay tệp.')
+        // Xoá cây rendition cũ (nếu có) — pipeline sẽ tạo lại trong `generations/<claim>` mới.
+        if (existing.slug) {
+          const oldTree = path.resolve(config.workdir, `media/${existing.slug}`)
+          await fs.rm(oldTree, { recursive: true, force: true }).catch(() => undefined)
+        }
+        await tx.update(mediaItems).set({
+          storagePath, processingStatus: 'pending', processingError: null, processingAttempts: 0,
+          processingNextAttemptAt: null, processingHeartbeatAt: null, claimedBy: null,
+          resolutionsReady: [], durationSeconds: null, width: null, height: null,
+        }).where(eq(mediaItems.id, replaceId))
+        await tx.insert(activityLogs).values({ userId: input.adminUserId, action: 'update', resource: 'media_portal',
+          resourceId: replaceId, meta: { operation: 'replace', source: 'upload', declaredSize: view.declaredSize, filename: view.filename } })
+        await tx.update(mediaUploadSessions).set({ status: 'completed', mediaItemId: replaceId, contentType,
+          completionClaim: null, completionHeartbeatAt: null, errorMessage: null, updatedAt: new Date() }).where(owned)
+        return { mediaItemId: replaceId, slug: existing.slug }
+      }
+      // ── Nhánh tạo mới (mặc định) ──────────────────────────────────────────
       const slug = await uniqueMediaSlug(tx, title)
       const [inserted] = await tx.insert(mediaItems).values({ slug, title, source: 'upload', storagePath,
         status: 'draft', processingStatus: 'pending', createdBy: input.adminUserId })

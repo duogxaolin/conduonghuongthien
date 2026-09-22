@@ -18,13 +18,13 @@
  */
 import { createReadStream } from 'node:fs'
 
-import { createError, defineEventHandler, getRouterParam, sendStream, setResponseHeaders } from 'h3'
+import { createError, defineEventHandler, getHeader, getRouterParam, sendStream, setResponseHeaders } from 'h3'
 
 import { logWarn } from '../../../../utils/logger'
 import { MEDIA_STREAM_MANIFEST_PATH, resolveStreamTarget } from '../../../../services/media-portal'
 import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
 import { getDb } from '../../../../utils/db'
-import { streamR2Object } from '../../../../services/video-r2-sync'
+import { streamR2Object, streamR2ObjectRange } from '../../../../services/video-r2-sync'
 
 export default defineEventHandler(async (event) => {
   // `nosniff` đi cùng **mọi** phản hồi, kể cả 404, nên nó được đặt trước mọi
@@ -52,6 +52,45 @@ export default defineEventHandler(async (event) => {
   }
 
   // `X-Content-Type-Options` đã đặt ở đầu handler, dùng chung cho cả nhánh 404.
+  //
+  // Tệp gốc passthrough (`MEDIA_AUTO_TRANSCODE=false`): xử lý byte-range trong
+  // hàm riêng — trình phát `<video>` cần Range để tua. Nhánh này tự đặt Content-Type
+  // / Content-Length / Cache-Control, nên header chung bên dưới chỉ áp dụng cho
+  // nhánh HLS và R2.
+  if (target.kind === 'local' && target.passthrough) {
+    return serveOriginalByteRange(event, target.filePath, target.size, target.contentType, target.cacheSeconds)
+  }
+
+  // R2 passthrough (`MEDIA_AUTO_TRANSCODE=false`, không rendition): phục vụ
+  // `original.<ext>` từ R2 qua byte-range — trình phát `<video>` cần Range để ua.
+  // R2/S3 GetObject hỗ trợ `Range` param trực tiếp, nên chỉ chuyển tiếp header
+  // Range của client sang R2 và dựng lại 206 + Content-Range từ phản hồi R2.
+  if (target.kind === 'r2' && target.passthrough) {
+    const r2Config = config.videoStorage.r2
+    if (!r2Config) throw createError({ statusCode: 503, statusMessage: 'R2 chưa cấu hình.' })
+    const rangeHeader = getHeader(event, 'range')
+    const range = rangeHeader && typeof rangeHeader === 'string' && rangeHeader.startsWith('bytes=')
+      ? rangeHeader
+      : null
+    setResponseHeaders(event, {
+      'Content-Type': target.contentType,
+      'Cache-Control': `public, max-age=${target.cacheSeconds}`,
+      'Accept-Ranges': 'bytes',
+    })
+    try {
+      const obj = await streamR2ObjectRange(target.r2Key, r2Config, range)
+      setResponseHeaders(event, { 'Content-Length': String(obj.contentLength) })
+      if (obj.contentRange) {
+        setResponseHeaders(event, { 'Content-Range': obj.contentRange })
+        event.node.res.statusCode = 206
+      }
+      return sendStream(event, obj.stream)
+    } catch {
+      logWarn({ event: 'public.media_stream_r2_miss', slug, key: target.r2Key })
+      throw createError({ statusCode: 404 })
+    }
+  }
+
   setResponseHeaders(event, {
     'Content-Type': target.contentType,
     'Content-Length': String(target.size),
@@ -76,3 +115,57 @@ export default defineEventHandler(async (event) => {
 
   return sendStream(event, createReadStream(target.filePath))
 })
+
+/**
+ * Phát tệp gốc (mp4/webm/...) qua byte-range khi không có HLS — trình phát
+ * `<video>` cần Range để tua, và `sendStream` trần không tự xử lý nó.
+ *
+ * HTTP Range (`bytes=START-END`): trả `206 Partial Content` với `Content-Range`
+ * và `Accept-Ranges: bytes`. Không có Range → trả toàn bộ tệp (`200`).
+ */
+async function serveOriginalByteRange(
+  event: Parameters<ReturnType<typeof defineEventHandler>>[0],
+  filePath: string,
+  size: number,
+  contentType: string,
+  cacheSeconds: number,
+) {
+  // `Accept-Ranges` báo cho trình phát biết tua được dù yêu cầu đầu tiên không kèm Range.
+  const rangeHeader = getHeader(event, 'range')
+  setResponseHeaders(event, {
+    'Content-Type': contentType,
+    'Cache-Control': `public, max-age=${cacheSeconds}`,
+    'Accept-Ranges': 'bytes',
+  })
+
+  // Không có Range → phát cả tệp. `Content-Length` đúng kích cỡ tệp.
+  if (!rangeHeader || !rangeHeader.startsWith('bytes=')) {
+    setResponseHeaders(event, { 'Content-Length': String(size) })
+    return sendStream(event, createReadStream(filePath))
+  }
+
+  // `bytes=START-END` (END có thể thiếu → tới cuối tệp).
+  const spec = rangeHeader.slice(6).trim()
+  const [startRaw, endRaw] = spec.split('-')
+  const start = Number.parseInt(startRaw || '0', 10)
+  const endRawNumber = Number.parseInt(endRaw || '', 10)
+  const end = Number.isNaN(endRawNumber) ? size - 1 : endRawNumber
+  // Range vượt ranh → 416 (trả 200 một phần sẽ che lỗi cấu hình của trình phát).
+  if (Number.isNaN(start) || start < 0 || start >= size || end >= size || start > end) {
+    setResponseHeaders(event, {
+      'Content-Range': `bytes */${size}`,
+    })
+    throw createError({ statusCode: 416, statusMessage: 'Range Not Satisfiable' })
+  }
+
+  const chunkSize = end - start + 1
+  setResponseHeaders(event, {
+    'Content-Length': String(chunkSize),
+    'Content-Range': `bytes ${start}-${end}/${size}`,
+    // 206, không 200 — trình phát distinguish được "đoạn này" với "toàn tệp".
+    // h3 không có helper 206 tường minh; set status trực tiếp qua Node response.
+  })
+  // h3 `sendStream` thừa kế status code hiện có của response; đặt trước khi stream.
+  event.node.res.statusCode = 206
+  return sendStream(event, createReadStream(filePath, { start, end }))
+}

@@ -20,13 +20,18 @@ export async function mediaFileFingerprint(file: File, active: () => boolean = (
 }
 
 /** This controller is shared by the UI and behavior tests; server status is authoritative. */
-export function useMediaUploadSession(options: { actorId: number, storage: Storage, request: UploadFetch, maxUploadSize: number, waitForAssembly?: (signal: AbortSignal) => Promise<void> }) {
+export function useMediaUploadSession(options: { actorId: number, storage: Storage, request: UploadFetch, maxUploadSize: number, waitForAssembly?: (signal: AbortSignal) => Promise<void>, replaceItemId?: number }) {
   const key = `cdkt:media-upload:${options.actorId}`
   const state = reactive({
     phase: 'idle' as 'idle' | 'working' | 'paused' | 'failed' | 'done',
     descriptor: null as Descriptor | null, received: 0, total: 0,
     fileName: '', error: '', storageWarning: '', completing: false,
     result: null as { mediaItemId: number, slug: string } | null,
+    // ── Tracking cho % byte và ETA ────────────────────────────────────────────
+    // `received`/`total` tính theo số phần (chunk), nhưng phần cuối có thể nhỏ
+    // hơn phần đầu, nên % theo byte chính xác hơn % theo phần. ETA suy từ tốc độ
+    // trung bình (byte / giây) từ lúc bắt đầu upload.
+    uploadedBytes: 0, totalBytes: 0, startedAt: 0,
   })
   let selected: File | null = null
   let fingerprint = ''
@@ -90,6 +95,9 @@ export function useMediaUploadSession(options: { actorId: number, storage: Stora
     state.error = ''
     state.received = 0
     state.total = 0
+    state.uploadedBytes = 0
+    state.totalBytes = 0
+    state.startedAt = 0
     state.phase = 'idle'
     state.result = null
     state.completing = false
@@ -116,8 +124,9 @@ export function useMediaUploadSession(options: { actorId: number, storage: Stora
     }))
     async function complete(base: string): Promise<{ mediaItemId: number, slug: string }> {
       state.completing = true
+      const body = options.replaceItemId ? { replaceMediaItemId: options.replaceItemId } : undefined
       while (true) {
-        try { return await request(`${base}/complete`, { method: 'POST' }) }
+        try { return await request(`${base}/complete`, { method: 'POST', body }) }
         catch (error) {
           const status = (error as { statusCode?: number, status?: number }).statusCode ?? (error as { status?: number }).status
           if (status !== 409) throw error
@@ -147,6 +156,12 @@ export function useMediaUploadSession(options: { actorId: number, storage: Stora
       const session = response.session
       state.received = session.receivedParts.length
       state.total = session.totalChunks
+      // Tổng byte = kích thước tệp; byte đã tải = (số phần đã nhận) × chunkSize,
+      // trừ phần cuối (nhỏ hơn). Khi còn missing thì tính theo receivedParts.
+      state.totalBytes = session.declaredSize
+      if (!state.startedAt) state.startedAt = Date.now()
+      state.uploadedBytes = Math.min(session.declaredSize,
+        session.receivedParts.length * session.chunkSize)
       if (session.status === 'completed' && session.mediaItemId) {
         state.result = { mediaItemId: session.mediaItemId, slug: '' }
       } else if (session.status === 'assembling') {
@@ -168,6 +183,8 @@ export function useMediaUploadSession(options: { actorId: number, storage: Stora
           })
           if (current !== generation) return
           state.received = received.receivedParts.length
+          state.uploadedBytes = Math.min(state.totalBytes,
+            received.receivedParts.length * session.chunkSize)
         }
         if (current !== generation) return
         state.result = await complete(base)

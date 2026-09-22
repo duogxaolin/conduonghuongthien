@@ -1,7 +1,7 @@
 import { getDb } from '../utils/db'
 import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories } from '../db/schema'
 import type { BlockData } from '../../app/utils/blocks/types'
 import { eq, asc, sql } from 'drizzle-orm'
 import { CHATBOT_SMALL_TALK_SEED } from '../data/chatbot-small-talk-seed'
@@ -69,6 +69,15 @@ const DEFAULT_CATEGORIES = [
   { name: 'Mô hình tái hòa nhập', slug: 'mo-hinh-tai-hoa-nhap', type: 'reintegration', displayOrder: 1 },
   { name: 'Văn bản pháp luật', slug: 'van-ban-phap-luat', type: 'document',      displayOrder: 1, description: 'Tra cứu các chỉ thị, nghị định và chính sách về công tác thi hành án hình sự, hỗ trợ tái hòa nhập cộng đồng' },
   { name: 'Hỏi đáp pháp luật', slug: 'hoi-dap-phap-luat', type: 'faq',           displayOrder: 1, description: 'Ngân hàng câu hỏi, giải đáp về vay vốn và đào tạo nghề, thủ tục tái hòa nhập cộng đồng' },
+]
+
+// Danh mục mặc định cho Media Portal (video). Tách khỏi `DEFAULT_CATEGORIES`
+// (bài viết) — bảng `media_categories` riêng, phẳng.
+const DEFAULT_MEDIA_CATEGORIES = [
+  { name: 'Video hoạt động',    slug: 'video-hoat-dong',    displayOrder: 1, description: 'Video về hoạt động nghiệp vụ, sự kiện của Cục C11 và địa phương' },
+  { name: 'Video hướng dẫn',    slug: 'video-huong-dan',    displayOrder: 2, description: 'Video hướng dẫn thủ tục, quy trình tái hòa nhập cộng đồng' },
+  { name: 'Phóng sự - Tư liệu', slug: 'phong-su-tu-lieu',   displayOrder: 3, description: 'Phóng sự, tư liệu về tấm gương hoàn lương và mô hình tái hòa nhập' },
+  { name: 'Video tuyên truyền', slug: 'video-tuyen-truyen', displayOrder: 4, description: 'Video tuyên truyền pháp luật, phổ biến chính sách' },
 ]
 
 async function seed() {
@@ -272,6 +281,19 @@ async function seed() {
       slug: c.slug,
       type: c.type,
       parentId: null,
+      description: c.description ?? null,
+      displayOrder: c.displayOrder,
+    }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
+  }
+
+  // ── Default Media Categories ─────────────────────────────────────────────
+  // Danh mục riêng cho Media Portal (video), tách khỏi `categories` (bài viết).
+  // Insert-only keyed trên unique slug — chạy lại không ghi đè tên/mô tả cán bộ đã sửa.
+  console.log('Creating default media categories...')
+  for (const c of DEFAULT_MEDIA_CATEGORIES) {
+    await db.insert(mediaCategories).values({
+      name: c.name,
+      slug: c.slug,
       description: c.description ?? null,
       displayOrder: c.displayOrder,
     }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })

@@ -17,10 +17,13 @@
  * **Tiêu chí nhận một định dạng là "FFmpeg đọc được nó và nó là thùng chứa
  * video", không phải "định dạng nào quen hơn".** Đây là điểm khác với
  * `image-mime.ts`, nơi tiêu chí là "tài liệu chạy được hay không" (lý do `.svg`
- * bị loại). Tệp gốc ở đây **không bao giờ được phục vụ** — nó chỉ được FFmpeg
- * đọc để đóng gói lại thành HLS, nên câu hỏi "trình duyệt có chạy được nó không"
- * không đặt ra. Matroska nằm trong danh sách vì lý do đó, và nó là ví dụ cho lần
- * nới tiếp theo: thứ cần khớp là **FFmpeg**, không phải một trình duyệt.
+ * bị loại). Khi `MEDIA_AUTO_TRANSCODE=true` (mặc định), tệp gốc chỉ được FFmpeg
+ * đọc để đóng gói lại thành HLS — không bao giờ được phục vụ trực tiếp. Khi
+ * `autoTranscode=false`, tệp gốc **được phục vụ** qua stream endpoint (byte-range),
+ * nên câu hỏi "trình duyệt có chạy được nó không" nay có đặt ra — nhưng FFmpeg
+ * vẫn là tiêu chí nhận ở cổng vào. Matroska nằm trong danh sách vì FFmpeg đọc
+ * được nó; `.mkv` gốc có thể trình duyệt không phát được, nhưng nhận nó vào để
+ * transcode HLS là hợp lệ.
  */
 
 /** Thùng chứa video được nhận. */
@@ -160,11 +163,17 @@ export const EXT_BY_VIDEO_MIME: Record<DetectedVideoMime, string> = {
 /**
  * Nội dung phục vụ cho mỗi thùng chứa — bảng thứ hai của cùng một allowlist.
  *
- * Không phải để phục vụ tệp gốc (nó không bao giờ được phục vụ), mà để **đối
- * chiếu được**: một định dạng nhận ở cổng vào mà không có mặt ở cổng ra là định
- * dạng chưa thật sự được nhận, và đó chính là dạng hỏng đã xảy ra với `.ico`.
- * Ở đây cổng ra là các đoạn HLS do FFmpeg sinh, nên bảng này ghi lại thứ FFmpeg
- * phát ra chứ không phải thứ nó nhận vào.
+ * Hai cổng ra, không phải một:
+ *   • **HLS** (mặc định, `MEDIA_AUTO_TRANSCODE=true`): FFmpeg phát `video/mp2t` +
+ *     `application/vnd.apple.mpegurl`, bảng này đối chiếu được với cổng vào.
+ *   • **Tệp gốc** (`MEDIA_AUTO_TRANSCODE=false`): stream endpoint phục vụ
+ *     `original.<ext>` trực tiếp qua byte-range khi không có rendition. Định dạng
+ *     nhận ở cổng vào mà thiếu loại nội dung ở cổng ra là định dạng chưa thật sự
+ *     được nhận — đúng dạng hỏng đã xảy ra với `.ico` (nhận `.mov`/`.mkv` ở upload
+ *     nhưng `STREAM_CONTENT_TYPES` không có chúng → `octet-stream` + `nosniff` =
+ *     trình duyệt tải về thay vì phát).
+ *
+ * Bảng này ghi lại nội dung phục vụ của **cả hai** cổng ra, không phải chỉ HLS.
  */
 export const STREAM_CONTENT_TYPE = 'application/vnd.apple.mpegurl'
 export const SEGMENT_CONTENT_TYPE = 'video/mp2t'

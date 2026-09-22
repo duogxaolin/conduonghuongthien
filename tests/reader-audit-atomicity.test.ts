@@ -616,6 +616,12 @@ const UNAUDITED_DELETE_EXEMPTIONS: Record<string, string> = {
   // có trạng thái nào tồn tại trước request này để mà mất, và lượt bật yếu tố
   // thành công thì đã có dòng audit riêng của nó.
   'profile/mfa/enroll.post.ts': 'rolls back a half-created pending factor it just wrote itself',
+  // Danh mục Media Portal (`media_categories`) là cấu hình nhỏ — không chở dữ liệu
+  // công dân, không phải phát ngôn công khai. Theo dõi mỗi lượt xoá tên danh mục
+  // video không phải câu hỏi nhật ký kiểm toán phải trả lời; cùng lý do endpoint
+  // tạo/sửa danh mục media không audit (xem `index.post.ts`). Dữ liệu công dân
+  // nằm ở `media_items`/`submissions`/`reader_accounts`, đã được guard canh.
+  'media-portal/categories/[id].delete.ts': 'media category is portal configuration, not citizen data — auditing its deletion is not an audit-log question',
 }
 
 describe('every admin endpoint that deletes rows records that it did', () => {

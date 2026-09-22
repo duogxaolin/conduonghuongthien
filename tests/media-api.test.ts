@@ -147,9 +147,11 @@ function media(overrides: Partial<MediaRow> & { id: number, slug: string }): Med
   }
 }
 
+// `media_categories` — phẳng, không `parentId` (tách khỏi `categories` bài viết).
+// Media Portal chỉ một loại nội dung, không cha-con.
 const CATEGORIES = [
-  { id: 1, name: 'Tin tức', slug: 'tin-tuc', parentId: null, displayOrder: 1 },
-  { id: 2, name: 'Sự kiện', slug: 'su-kien', parentId: 1, displayOrder: 2 },
+  { id: 1, name: 'Tin tức', slug: 'tin-tuc', displayOrder: 1 },
+  { id: 2, name: 'Sự kiện', slug: 'su-kien', displayOrder: 2 },
 ]
 
 const table: MediaRow[] = [
@@ -189,7 +191,13 @@ function publicProjection(row: MediaRow): unknown[] {
 }
 
 function assetProjection(row: MediaRow): unknown[] {
-  return [row.id, row.slug, row.source, row.youtubeVideoId, row.storagePath, row.storageProvider, row.status]
+  // Thứ tự theo SQL thật (đo bằng cách in SQL, không đoán):
+  //   id, slug, source, youtube_video_id, storage_path, storage_provider, status, resolutions_ready
+  return [row.id, row.slug, row.source, row.youtubeVideoId, row.storagePath, row.storageProvider, row.status,
+    // `resolutions_ready` — JSON, nối như `publicProjection` ở trên. Cột này vào
+    // `assetMediaSelection` để `resolveStreamTarget` biết có rendition HLS không;
+    // không có → fallback tệp gốc (autoTranscode=false).
+    row.resolutionsReady === null ? null : JSON.stringify(row.resolutionsReady)]
 }
 
 const statements: Array<{ sql: string, params: unknown[] }> = []
@@ -198,20 +206,17 @@ const viewCounts = new Map<number, number>()
 
 function respond(sql: string, params: unknown[]): unknown {
   // ── Bộ đếm danh mục: inner join, chỉ hàng đã xuất bản ──
-  if (/^select `categories`\.`id`, `categories`\.`name`/i.test(sql)) {
+  if (/^select `media_categories`\.`id`, `media_categories`\.`name`/i.test(sql)) {
     return CATEGORIES.map((category) => {
       const total = published().filter(row => row.categoryId === category.id).length
       return [category.id, category.name, category.slug, total]
     }).filter(row => (row[3] as number) > 0)
   }
 
-  // ── Danh mục của một slug, dùng để mở rộng gốc → con ──
-  if (/^select `id`, `parent_id` from `categories`/i.test(sql)) {
+  // ── Danh mục theo slug — `media_categories` phẳng, không cha-con ──
+  if (/^select `id` from `media_categories`/i.test(sql)) {
     const found = CATEGORIES.find(category => category.slug === params[0])
-    return found ? [[found.id, found.parentId]] : []
-  }
-  if (/^select `id` from `categories`/i.test(sql)) {
-    return CATEGORIES.filter(category => category.parentId === params[0]).map(category => [category.id])
+    return found ? [[found.id]] : []
   }
 
   // ── Đếm tổng: `select count(*) from media_items where …` ──
@@ -231,7 +236,8 @@ function respond(sql: string, params: unknown[]): unknown {
   }
 
   // ── Tập cột nội bộ, cho hai endpoint phục vụ tệp ──
-  if (/^select `id`, `slug`, `source`, `youtube_video_id`, `storage_path`, `storage_provider`, `status`/i.test(sql)) {
+  // Thứ tự SQL thật: id, slug, source, youtube_video_id, storage_path, storage_provider, status, resolutions_ready.
+  if (/^select `id`, `slug`, `source`, `youtube_video_id`, `storage_path`, `storage_provider`, `status`, `resolutions_ready`/i.test(sql)) {
     const found = table.find(row => row.slug === params[0])
     return found ? [assetProjection(found)] : []
   }
@@ -251,10 +257,9 @@ function respond(sql: string, params: unknown[]): unknown {
       const [slug, status] = filters as [string, string]
       return table.filter(row => row.slug === slug && row.status === status).map(publicProjection)
     }
-    // Danh mục gốc mở rộng thành `[id, ...con]` và đi vào `inArray`, nên phần còn
-    // lại là **một danh sách** id. Chỉ đọc một id sẽ lọc đúng danh mục gốc và bỏ
-    // hết mục nằm ở danh mục con — tức là lượt kiểm "gốc bao gồm con" tự nó không
-    // kiểm gì cả.
+    // `resolveCategoryIds` trả `[id]` (phẳng) hoặc `null`; `null` → không lọc.
+    // Khi có categorySlug, `inArray` nhận một mảng id, nên phần còn lại là một
+    // danh sách id (dù thường chỉ có 1 vì `media_categories` phẳng).
     const [status, ...categoryIds] = filters as [string, ...number[]]
     const rows = table.filter(row => row.status === status
       && (categoryIds.length === 0 || (row.categoryId !== null && categoryIds.includes(row.categoryId))))
@@ -405,7 +410,7 @@ describe('9.2 — hình dạng công khai là một allowlist', () => {
     assert.deepEqual(keys.sort(), [
       'categoryId', 'categoryName', 'categorySlug', 'commentsEnabled', 'description',
       'durationSeconds', 'embedUrl', 'height', 'id', 'playable', 'publishedAt',
-      'slug', 'source', 'streamUrl', 'thumbnailUrl', 'title', 'viewCount', 'width',
+      'slug', 'source', 'streamKind', 'streamUrl', 'thumbnailUrl', 'title', 'viewCount', 'width',
     ].sort())
 
     for (const internal of ['processingError', 'processingStatus', 'resolutionsReady', 'status', 'createdBy', 'claimedBy', 'isFeatured', 'storagePath']) {
@@ -495,11 +500,14 @@ describe('danh sách công khai — phân trang và bộ lọc', () => {
     assert.deepEqual(body.items, [])
   })
 
-  it('lọc theo danh mục gốc bao gồm cả danh mục con', async () => {
+  it('lọc theo danh mục trả đúng item của danh mục đó', async () => {
     const { listPublishedMedia } = await import('../server/services/media-portal.ts')
     const result = await listPublishedMedia({ page: 1, limit: 50, categorySlug: 'tin-tuc' }, { db: fakeDb })
-    // `alpha` và `beta` ở chính `tin-tuc`; `gamma` và `broken` ở con của nó.
-    assert.deepEqual(result.items.map(item => item.slug).sort(), ['alpha', 'beta', 'broken', 'gamma'])
+    // `media_categories` phẳng (không cha-con): lọc `tin-tuc` chỉ trả item trực
+    // tiếp thuộc `tin-tuc` — `alpha`, `beta`. `gamma`/`broken` thuộc `su-kien` nên
+    // không lọt. Trước đây `categories` bài viết có `parentId` nên gốc bao gồm con;
+    // giờ tách bảng riêng, phẳng, nên không mở rộng.
+    assert.deepEqual(result.items.map(item => item.slug).sort(), ['alpha', 'beta'])
   })
 
   it('mọi giá trị trang không hợp lệ đều lùi về trang 1 và trả về một số', async () => {
@@ -640,7 +648,7 @@ describe('9.5 — cách ly tài sản của bên thứ ba', () => {
     assertNoForbiddenHost('mục nguồn ngoài', JSON.stringify(item))
     // Khung nhúng dùng miền không cookie: `www.youtube.com` đặt cookie theo dõi
     // trước cả khi người đọc bấm play.
-    assert.equal(item.embedUrl, 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ')
+    assert.equal(item.embedUrl, 'https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?modestbranding=1&rel=0&playsinline=1')
   })
 
   it('không phản hồi công khai nào chứa máy chủ ảnh của nền tảng ngoài', async () => {
@@ -802,14 +810,26 @@ describe('lựa chọn trình phát theo nguồn và chế độ xem một phầ
     }) as never)
     assert.equal(item.playable, true)
     assert.equal(item.streamUrl, '/api/public/media/alpha/stream')
+    // Có rendition HLS → player dùng hls.js, không phải `<video src>` thẳng.
+    assert.equal(item.streamKind, 'hls')
     assert.equal(item.embedUrl, null)
   })
 
-  it('mục chưa có bản nào sẵn sàng thì không phát được', async () => {
+  it('mục đang xử lý chưa có bản nào thì không phát được; ready + không rendition (autoTranscode=false) thì phát được', async () => {
     const { serializePublicMedia } = await import('../server/services/media-portal.ts')
-    const item = serializePublicMedia(media({ id: 2, slug: 'beta', resolutionsReady: [] }) as never)
-    assert.equal(item.playable, false)
-    assert.equal(item.streamUrl, null)
+    // `processing` + không rendition: pipeline đang chạy, chưa có gì để phát.
+    const processing = serializePublicMedia(media({ id: 2, slug: 'beta', resolutionsReady: [], processingStatus: 'processing' }) as never)
+    assert.equal(processing.playable, false, 'processing + không rendition phải ẩn')
+    assert.equal(processing.streamUrl, null)
+    assert.equal(processing.streamKind, null)
+    // `ready` + không rendition (`MEDIA_AUTO_TRANSCODE=false`): tệp gốc đã được
+    // pipeline đặt xong, stream endpoint phục vụ `original.<ext>` qua byte-range.
+    const readyPassthrough = serializePublicMedia(media({ id: 7, slug: 'ready-passthrough', resolutionsReady: [], processingStatus: 'ready' }) as never)
+    assert.equal(readyPassthrough.playable, true, 'ready + không rendition (autoTranscode=false) phải phát được qua tệp gốc')
+    assert.equal(readyPassthrough.streamUrl, '/api/public/media/ready-passthrough/stream')
+    // Passthrough: player phải tránh hls.js và gán `<video src>` thẳng — hls.js đi
+    // parse một URL mp4 như manifest m3u8 sẽ không phát được.
+    assert.equal(readyPassthrough.streamKind, 'file')
   })
 
   it('mục chuyển mã hỏng thì không phát được, kể cả khi vài bản đã nằm trên đĩa', async () => {
@@ -819,6 +839,7 @@ describe('lựa chọn trình phát theo nguồn và chế độ xem một phầ
     }) as never)
     assert.equal(item.playable, false)
     assert.equal(item.streamUrl, null)
+    assert.equal(item.streamKind, null)
   })
 
   it('định danh video đã lưu không hợp lệ thì không sinh ra khung nhúng', async () => {

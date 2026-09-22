@@ -98,6 +98,9 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/media-portal/external.vue', refs: ['loadError'], retries: ['load'] },
   { file: 'pages/admin/media-portal/upload.vue', refs: ['loadError'], retries: ['load'] },
   { file: 'pages/admin/media-portal/[id].vue', refs: ['loadError', 'progressError'], retries: ['load', 'refreshProcessing'] },
+  // Danh mục Media Portal — bảng `media_categories` riêng. Ref/error cùng pattern
+  // `content/categories/index.vue`: `error` + `fetchCategories` khai báo cùng tệp.
+  { file: 'pages/admin/media-portal/categories.vue', refs: ['error'], retries: ['fetchCategories'] },
   // Livestream — trạng thái buổi phát trực tiếp.
   { file: 'pages/admin/livestream/index.vue', refs: ['loadError'], retries: ['loadActive'] },
   { file: 'pages/admin/submissions/index.vue', refs: ['error'], retries: ['fetchSubmissions'] },
@@ -176,6 +179,14 @@ const NO_CONTRACT_NEEDED: Record<string, string> = {
   // Scan + sync: nút là retry. Kết quả báo trong toast — không có danh sách để lỗi
   // thành "trống" rồi cán bộ đi tạo lại bản ghi đã có.
   'pages/admin/media/scan.vue': 'submit-time fetch; the button is the retry and the result lands in a toast',
+  // oEmbed auto-get: nút "Lấy thông tin" chính là retry. Lỗi hiện trong `metaError`
+  // ref (`role="alert"`) ngay dưới ô input, không làm hỏng form — cán bộ vẫn điền
+  // tay tiêu đề/thumbnail nếu YouTube không trả được. Không có danh sách để lỗi
+  // thành "trống"; form chỉ là trợ giúp nhập liệu.
+  'components/admin/MediaPortalForm.vue': 'button is the retry; metaError is the role="alert" branch',
+  // `MediaProcessingTimeline.vue` bị bỏ khỏi exemption list vì nó KHÔNG tự fetch
+  // — chỉ nhận dữ liệu từ parent qua props. Gate "stale exemption" bắt đúng:
+  // một component không fetch thì không cần được miễn error/retry contract.
 }
 
 test('every admin view that fetches keeps somewhere for a rejection to land', async () => {

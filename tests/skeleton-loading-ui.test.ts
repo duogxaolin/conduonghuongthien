@@ -79,6 +79,9 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/media-portal/external.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/media-portal/upload.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/media-portal/[id].vue', marker: 'v-if="loading"' },
+  // Danh mục Media Portal — bảng `media_categories` riêng, tách khỏi danh mục
+  // bài viết. Phẳng (không cha-con), skeleton vẽ inline (lưới ô xám đơn giản).
+  { file: 'pages/admin/media-portal/categories.vue', marker: 'v-if="loading"' },
   // Livestream — trạng thái buổi phát trực tiếp.
   { file: 'pages/admin/livestream/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/general.vue', marker: 'v-if="loading"' },
@@ -152,6 +155,14 @@ const NO_SKELETON_NEEDED: Record<string, string> = {
   // Scan + sync trang riêng — fetch chỉ khi bấm nút (submit-time), nút mang pending.
   // Trang không có danh sách tải để thay thế; cả hai thao tác báo tổng trong toast.
   'pages/admin/media/scan.vue': 'submit-time fetch; the button shows pending and the result lands in a toast',
+  // oEmbed auto-get: fetch chỉ khi bấm nút "Lấy thông tin" (submit-time). Nút mang
+  // pending ("Đang lấy…"), preview metadata hiện jako kết quả bên dưới ô input —
+  // không có khung danh sách nào để thay thế bằng skeleton. Form vẫn dùng được
+  // trong lúc fetch.
+  'components/admin/MediaPortalForm.vue': 'submit-time fetch; the button shows pending and the result is inline preview',
+  // `MediaProcessingTimeline.vue` bị bỏ khỏi exemption list vì nó KHÔNG tự fetch
+  // — chỉ nhận dữ liệu từ parent qua props. Gate "stale exemption" bắt đúng:
+  // một component không fetch thì không cần được miễn skeleton.
 }
 
 /** Files whose loading branch is drawn inline rather than by a shared component. */
@@ -182,6 +193,9 @@ const INLINE_PLACEHOLDER_FILES = [
   // thái, hình dạng không khớp với ba skeleton dùng chung.
   'pages/admin/media-portal/index.vue',
   'pages/admin/livestream/index.vue',
+  // Danh mục Media Portal — bảng phẳng, skeleton là lưới ô xám đơn giản (6×6),
+  // không khớpSkeletonTable (vì không có header/data rows shape) — vẽ inline.
+  'pages/admin/media-portal/categories.vue',
 ]
 
 /**

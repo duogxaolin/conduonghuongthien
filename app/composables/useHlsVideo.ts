@@ -56,6 +56,29 @@ export type HlsOptions = {
   bufferSeconds?: number
   /** Gọi khi một lỗi **fatal** xảy ra. Lỗi không fatal là chuyện thường của ABR. */
   onFatalError?: () => void
+  /**
+   * Gọi khi manifest đã parse xong — hls.js đã biết danh sách bản (levels). Nhận
+   * callback expose các chiều cao bản + cách đổi bản, để nơi gọi (MediaPlayer)
+   * dựng cầu chất lượng cho Plyr.
+   *
+   * Chỉ gọi ở mode `library` (hls.js), không ở `native` (Safari/iOS phát HLS gốc
+   * — không expose levels qua API chung, và trình duyệt tự quản lý ABR).
+   */
+  onManifestParsed?: (bridge: HlsManifestParsed) => void
+}
+
+/**
+ * Ảnh chụp manifest khi parse xong, expose đúng phần Plyr cần: các chiều cao
+ * bản có sẵn và cách đổi bản. Giấu index của `hls.levels` — Plyr chỉ biết height.
+ */
+export type HlsManifestParsed = {
+  /** Chiều cao các bản có sẵn, vd `[360, 720, 1080]`. */
+  levels: number[]
+  /**
+   * Đổi bản: `-1` = tự động (ABR), `n` = cố định bản cao `n` (tìm trong levels
+   * khớp chiều cao). Âm thanh / video index nội bộ của hls.js không lộ ra đây.
+   */
+  setLevel: (height: number) => void
 }
 
 export async function attachHlsStream(
@@ -86,6 +109,35 @@ export async function attachHlsStream(
       // chúng lên là dạy người đọc bỏ qua cảnh báo.
       if (data?.fatal) options.onFatalError?.()
     })
+
+    // `MANIFEST_PARSED` là lúc hls.js đã biết danh sách bản (levels). Plyr không
+    // tự đọc `hls.levels`, nên ở đây expose các chiều cao + cách đổi bản qua
+    // callback để MediaPlayer dựng cầu chất lượng cho Plyr. Chỉ một bản → menu
+    // rỗng → Plyr ẩn (không hiển thị menu một mục).
+    if (options.onManifestParsed) {
+      const hls = instance as unknown as {
+        levels?: Array<{ height?: number }>
+        currentLevel: number
+      }
+      instance.on(Hls.Events.MANIFEST_PARSED, () => {
+        const heights = (hls.levels ?? [])
+          .map(l => l.height)
+          .filter((h): h is number => typeof h === 'number' && h > 0)
+        options.onManifestParsed?.({
+          levels: heights,
+          setLevel: (height: number) => {
+            // -1 = ABR tự động; >0 = tìm level index khớp chiều cao, trễ thì giữ ABR
+            // (tránh `currentLevel = undefined` khiến hls.js ném).
+            if (height === -1) {
+              hls.currentLevel = -1
+              return
+            }
+            const idx = (hls.levels ?? []).findIndex(l => l?.height === height)
+            if (idx >= 0) hls.currentLevel = idx
+          },
+        })
+      })
+    }
 
     instance.loadSource(url)
     instance.attachMedia(video)

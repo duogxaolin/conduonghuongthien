@@ -130,6 +130,7 @@
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
 import { attachHlsStream, detachHlsStream } from '~/composables/useHlsVideo'
+import { attachPlyrPlayer, detachPlyrPlayer, type HlsQualityBridge } from '~/composables/usePlyrPlayer'
 import type { PublicMediaItem } from '~/types/public-api'
 
 const props = defineProps<{
@@ -148,6 +149,14 @@ const videoEl = ref<HTMLVideoElement | null>(null)
 const playerPending = ref(false)
 const playerError = ref('')
 const hlsInstance = ref<{ destroy: () => void } | null>(null)
+// Plyr wrap `<video>` element cho UI đẹp hơn native controls (nút tua ±10s, thanh
+// tua, tốc độ, phím tắt, menu chất lượng khi HLS có nhiều bản). Khởi tạo SAU khi
+// source đã gán (file) hoặc hls.js đã attach + manifest parse (hls), để Plyr
+// đọc media qua element và biết các bản có sẵn. Dọn ở `onBeforeUnmount` cùng hls.
+const plyrInstance = ref<{ destroy: () => void } | null>(null)
+// Cầu chất lượng HLS — populate khi `MANIFEST_PARSED` fire, dùng khi khởi tạo Plyr.
+// `null` cho passthrough mp4 (không có levels) → Plyr ẩn menu chất lượng.
+const hlsQualityBridge = ref<HlsQualityBridge | null>(null)
 
 onMounted(async () => {
   const url = props.item.streamUrl
@@ -156,20 +165,77 @@ onMounted(async () => {
   const video = videoEl.value
   if (!video) return
 
+  // Passthrough (`MEDIA_AUTO_TRANSCODE=false`, không rendition): stream endpoint
+  // phục vụ tệp gốc `original.<ext>` trực tiếp qua byte-range — không phải HLS.
+  // hls.js đi parse URL như một manifest và không phát được mp4; trình duyệt phát
+  // mp4 gốc qua `<video src>` nhanh hơn và tin cậy hơn, nên nhánh này tránh hẳn
+  // thư viện. `streamKind='file'` là tín hiệu từ máy chủ: `resolutionsReady` rỗng.
+  if (props.item.streamKind === 'file') {
+    video.src = url
+    // Plyr wrap element đã có mp4 source — UI đẹp (nút tua ±10s, tốc độ), không
+    // có menu chất lượng vì chỉ một bản (đúng hành vi — không có gì để chọn).
+    await initPlyr()
+    return
+  }
+
   playerPending.value = true
   const result = await attachHlsStream(video, url, {
     instance: hlsInstance,
     onFatalError: () => {
       playerError.value = 'Không phát được video. Vui lòng thử tải lại trang.'
     },
+    // Đợi manifest parse xong rồi mới khởi tạo Plyr — để Plyr nhận ngay danh sách
+    // bản và dựng menu "Chất lượng" đúng (360p/720p/1080p + Tự động). Khởi tạo
+    // Plyr trước rồi populate sau sẽ cần API `setQualityMenu` động phức tạp hơn.
+    onManifestParsed: (parsed) => {
+      // `HlsManifestParsed` (snapshot lúc parse) → `HlsQualityBridge` (getter
+      // dynamic cho Plyr). Hai type gần như cùng shape nhưng tách biệt để
+      // `useHlsVideo` không phải biết contract của `usePlyrPlayer` — bọc ở đây.
+      hlsQualityBridge.value = {
+        getLevels: () => parsed.levels,
+        setLevel: parsed.setLevel,
+      }
+      // Plyr chưa khởi tạo (đang chờ) → khởi tạo ngay bây giờ với bridge sẵn sàng.
+      void initPlyr()
+    },
   })
-  playerPending.value = false
 
-  if (result.ok) return
-  playerError.value = result.reason === 'unsupported'
-    ? 'Trình duyệt của bạn không hỗ trợ phát video này. Vui lòng dùng trình duyệt khác.'
-    : 'Không tải được trình phát. Vui lòng kiểm tra kết nối mạng và thử lại.'
+  if (!result.ok) {
+    playerError.value = result.reason === 'unsupported'
+      ? 'Trình duyệt của bạn không hỗ trợ phát video này. Vui lòng dùng trình duyệt khác.'
+      : 'Không tải được trình phát. Vui lòng kiểm tra kết nối mạng và thử lại.'
+    playerPending.value = false
+  }
+  // Nhánh `result.ok`: `playerPending` tắt sau khi Plyr khởi tạo xong trong
+  // `initPlyr` (gọi từ `onManifestParsed`). Trường hợp native HLS (Safari): không
+  // có callback manifest (chỉ library mode fire) → Plyr khởi tạo ngay bên dưới.
+  if (result.ok && result.mode === 'native') {
+    await initPlyr()
+    playerPending.value = false
+  }
 })
 
-onBeforeUnmount(() => detachHlsStream(hlsInstance))
+/** Khởi tạo Plyr; thất bại ghi lỗi nhưng không chặn phát (native controls dự phòng). */
+async function initPlyr() {
+  const video = videoEl.value
+  if (!video) return
+  // `hlsQualityBridge` null cho: passthrough mp4 (không HLS), native HLS Safari
+  // (không fire `onManifestParsed` — chỉ library mode expose levels). Cả hai
+  // trường hợp Plyr ẩn menu chất lượng vì `getLevels()` trả null.
+  const res = await attachPlyrPlayer(video, {
+    instance: plyrInstance,
+    hlsQuality: hlsQualityBridge.value ?? undefined,
+  })
+  playerPending.value = false
+  if (!res.ok) {
+    // Plyr không tải được vẫn cho phép native `<video controls>` phát — chỉ thiếu
+    // UI đẹp. Đừng để một UI dự phòng đọc ra là "video hỏng".
+    console.warn('Plyr không tải được, dùng native controls.')
+  }
+}
+
+onBeforeUnmount(() => {
+  detachPlyrPlayer(plyrInstance)
+  detachHlsStream(hlsInstance)
+})
 </script>

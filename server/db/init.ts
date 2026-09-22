@@ -779,6 +779,17 @@ export async function initDb() {
   // rejects a literal default outright (`ERROR 1101`), so `DEFAULT (JSON_ARRAY())`
   // is the only shape that both works and reads as the empty list.
   await db.query(`
+    CREATE TABLE IF NOT EXISTS \`media_categories\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`name\` VARCHAR(255) NOT NULL,
+      \`slug\` VARCHAR(255) NOT NULL UNIQUE,
+      \`description\` TEXT NULL,
+      \`display_order\` INT NOT NULL DEFAULT 0,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  await db.query(`
     CREATE TABLE IF NOT EXISTS \`media_items\` (
       \`id\` INT AUTO_INCREMENT PRIMARY KEY,
       \`slug\` VARCHAR(512) NOT NULL UNIQUE,
@@ -811,7 +822,7 @@ export async function initDb() {
       KEY \`media_items_status_published_idx\` (\`status\`, \`published_at\`),
       KEY \`media_items_category_id_idx\` (\`category_id\`),
       KEY \`media_items_processing_status_updated_idx\` (\`processing_status\`, \`updated_at\`),
-      CONSTRAINT \`fk_media_items_category\` FOREIGN KEY (\`category_id\`) REFERENCES \`categories\` (\`id\`) ON DELETE SET NULL,
+      CONSTRAINT \`fk_media_items_category\` FOREIGN KEY (\`category_id\`) REFERENCES \`media_categories\` (\`id\`) ON DELETE SET NULL,
       CONSTRAINT \`fk_media_items_created_by\` FOREIGN KEY (\`created_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)

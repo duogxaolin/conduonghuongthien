@@ -46,7 +46,9 @@ COPY public ./public
 # `apk add --no-cache ffmpeg` on node:22-alpine), so no community repository is
 # needed. `nice`, which video-processing.ts puts in front of every ffmpeg call to
 # keep transcode at the lowest priority, ships with BusyBox — nothing to add.
-RUN apk add --no-cache ffmpeg mysql-client
+# `cpulimit` giới hạn % CPU thật cho ffmpeg (MEDIA_PROCESSING_CPU_LIMIT, mặc định 50),
+# không phải chỉ ưu tiên thấp như `nice` — một lượt transcode không ăn sạch mọi nhân.
+RUN apk add --no-cache ffmpeg mysql-client cpulimit
 
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0

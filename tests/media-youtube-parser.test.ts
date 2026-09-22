@@ -118,7 +118,7 @@ describe('extractYouTubeVideoId — những giá trị phải bị từ chối',
 
 describe('buildYouTubeEmbedUrl — miền nhúng', () => {
   it('dựng địa chỉ nhúng trên miền KHÔNG cookie', () => {
-    assert.equal(buildYouTubeEmbedUrl(ID), `https://${YOUTUBE_EMBED_HOST}/embed/${ID}`)
+    assert.equal(buildYouTubeEmbedUrl(ID), `https://${YOUTUBE_EMBED_HOST}/embed/${ID}?modestbranding=1&rel=0&playsinline=1`)
   })
 
   it('không bao giờ dựng địa chỉ trên miền youtube.com có cookie', () => {
@@ -127,6 +127,16 @@ describe('buildYouTubeEmbedUrl — miền nhúng', () => {
     const url = buildYouTubeEmbedUrl(ID)!
     assert.doesNotMatch(url, /(^|\/\/)(www\.)?youtube\.com\//)
     assert.match(url, /youtube-nocookie\.com/)
+  })
+
+  it('giảm logo YouTube — modestbranding=1 và rel=0', () => {
+    // ToS YouTube (Section 4.f) cấm che hoàn toàn logo, nên đây là mức giảm tối đa
+    // YouTube cho phép. Che hoàn toàn bằng CSS overlay là vi phạm, và cổng Bộ Công
+    // an không nên hack giao diện.
+    const url = buildYouTubeEmbedUrl(ID)!
+    assert.match(url, /modestbranding=1/)
+    assert.match(url, /rel=0/)
+    assert.match(url, /playsinline=1/)
   })
 
   it('từ chối định danh không hợp lệ thay vì ghép bừa', () => {

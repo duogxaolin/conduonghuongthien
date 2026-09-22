@@ -473,6 +473,10 @@ function testConfig(workdir: string): MediaConfig {
     processingHeartbeatSeconds: MEDIA_DEFAULTS.processingHeartbeatSeconds,
     processingStaleMinutes: MEDIA_DEFAULTS.processingStaleMinutes,
     processingMaxAttempts: 1,
+    // Test pipeline mặc định BẬT transcode (giống production cũ) — các test về
+    // cắt HLS cần rendition thật. Test về `autoTranscode=false` dựng config riêng.
+    autoTranscode: true,
+    processingCpuLimit: 100,
     workdir,
     // R2 mặc định tắt trong test — transcode giữ local như cũ.
     videoStorage: { provider: 'local' },
@@ -1459,9 +1463,12 @@ describe('7.6 lượt hỏng được ghi nhận kèm lý do', () => {
     // nhánh mà việc công bố lũy tiến sinh ra để mở.
     assert.equal(isPlayable({ processingStatus: 'processing', resolutionsReady: ['360p'] }), true)
     assert.equal(isPlayable({ processingStatus: 'ready', resolutionsReady: ['360p'] }), true)
-    // Chưa có bản nào thì không đưa cho trình phát: nó sẽ thất bại mà không nói
-    // được vì sao.
-    assert.equal(isPlayable({ processingStatus: 'ready', resolutionsReady: [] }), false)
+    // `ready` mà không có rendition (`MEDIA_AUTO_TRANSCODE=false`): tệp gốc đã
+    // được pipeline đặt xong, stream endpoint phục vụ `original.<ext>` qua
+    // byte-range — nên phát được. `processing` + không rendition thì KHÔNG: pipeline
+    // đang chạy, chưa khai hoàn tất, dựng trình phát ở đây là dựng khung sẽ hỏng.
+    assert.equal(isPlayable({ processingStatus: 'ready', resolutionsReady: [] }), true,
+      'ready + không rendition (autoTranscode=false) phải phát được qua tệp gốc')
     assert.equal(isPlayable({ processingStatus: 'pending', resolutionsReady: null }), false)
     assert.equal(isPlayable({ processingStatus: 'pending', resolutionsReady: undefined }), false)
   })

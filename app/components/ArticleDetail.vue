@@ -557,4 +557,18 @@ watch(article, value => {
 .article-body :deep(p) { font-size: 1.05rem; line-height: 1.7; color: #4A5545; margin-bottom: 20px; }
 .article-body :deep(blockquote) { background-color: #F8FAF7; border-left: 4px solid #4A6741; padding: 20px 24px; margin: 30px 0; font-style: italic; font-size: 1.1rem; color: #385130; }
 .article-body :deep(blockquote span) { display: block; font-size: 0.85rem; color: #7A8675; margin-top: 8px; font-weight: 700; font-style: normal; }
+
+/* iframe YouTube nhúng trong bài viết — responsive 16:9. `src` đã được sanitizer
+   rewrite sang youtube-nocookie.com và chỉ cho phép YouTube embed, nên an toàn
+   cho `v-html`. `max-width: 100%` + `aspect-ratio` giữ video không tràn khung
+   đọc trên mobile. */
+.article-body :deep(iframe) {
+  max-width: 100%;
+  aspect-ratio: 16 / 9;
+  width: 100%;
+  height: auto;
+  border: 0;
+  border-radius: 12px;
+  margin: 1.5rem 0;
+}
 </style>
