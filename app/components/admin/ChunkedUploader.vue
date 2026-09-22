@@ -143,6 +143,18 @@ function discard() {
     </div>
     <p v-if="picking" role="status" class="text-sm text-[#667768] -mt-2 flex items-center gap-1.5"><i class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>Đang kiểm tra tệp…</p>
 
+    <!-- Tệp đã chọn (chưa bấm bắt đầu) — `state.fileName` được đặt ngay trong
+         `select()`, còn `state.descriptor` chỉ có sau `initUpload` trong `run()`.
+         Nếu chỉ dựa vào `descriptor` thì khoảng từ lúc chọn xong tới lúc bấm
+         "Bắt đầu tải lên" không có gì cho biết file đã được chọn. -->
+    <div v-if="state?.fileName && !state?.descriptor && !picking" class="rounded-lg bg-[#f8faf7] border border-[#eef2ee] p-3 flex items-center gap-2.5">
+      <i class="fa-solid fa-file-video text-[#2c6e33]" aria-hidden="true"></i>
+      <div class="min-w-0 flex-1">
+        <p class="text-sm font-semibold text-[#122815] m-0 truncate">{{ state.fileName }}</p>
+        <p class="text-xs text-[#8aa08c] m-0">Đã chọn — bấm "Bắt đầu tải lên" để tiếp tục</p>
+      </div>
+    </div>
+
     <!-- Lượt tải đang dở -->
     <div v-if="state?.descriptor" class="rounded-lg bg-[#f8faf7] border border-[#eef2ee] p-3 flex items-center gap-2.5">
       <i class="fa-solid fa-file-video text-[#2c6e33]" aria-hidden="true"></i>
