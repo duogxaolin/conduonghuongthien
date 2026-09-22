@@ -1,70 +1,69 @@
 <template>
   <div class="min-h-screen bg-[#F7FAF6]">
-    <!-- Page Header & Hero Section: Trang trọng, hiện đại, chuẩn phong cách báo điện tử cơ quan Nhà nước -->
-    <section class="border-b border-[#DDE6DC] bg-gradient-to-b from-[#EEF5EB] via-[#F5FAF3] to-[#F7FAF6]">
-      <div class="container pt-6 sm:pt-8 pb-6 sm:pb-7">
-        <!-- Breadcrumb navigation -->
-        <nav aria-label="Đường dẫn trang" class="mb-4">
-          <ol class="flex items-center gap-1.5 text-xs text-[#6B7967] m-0 p-0 list-none flex-wrap">
-            <li class="flex items-center gap-1.5">
-              <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1">
-                <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
-                <span>Trang chủ</span>
-              </nuxt-link>
-            </li>
-            <li aria-hidden="true" class="text-[#A2B09F]">&rsaquo;</li>
-            <li class="font-bold text-[#2A3B27] flex items-center gap-1">
-              <span>Tấm gương tiêu biểu</span>
-            </li>
-          </ol>
-        </nav>
+    <!-- Page Header & Hero Section — hero text đơn giản trên nền gradient nhạt -->
+    <PageHero>
+      <!-- Breadcrumb navigation -->
+      <nav aria-label="Đường dẫn trang" class="mb-4">
+        <ol class="flex items-center gap-1.5 text-xs text-[#6B7967] m-0 p-0 list-none flex-wrap">
+          <li class="flex items-center gap-1.5">
+            <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1">
+              <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
+              <span>Trang chủ</span>
+            </nuxt-link>
+          </li>
+          <li aria-hidden="true" class="text-[#A2B09F]">&rsaquo;</li>
+          <li class="font-bold text-[#2A3B27] flex items-center gap-1">
+            <span>Tấm gương tiêu biểu</span>
+          </li>
+        </ol>
+      </nav>
 
-        <!-- Top Header Info & Search Row -->
-        <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
-          <div class="max-w-2xl">
-            <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
-              <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
-              <span>Cổng Thông Tin Điện Tử C11 &bull; Bộ Công An</span>
-            </div>
-            <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
-              Tấm Gương Tiêu Biểu
-            </h1>
-            <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed">
-              Những tấm gương hoàn lương vượt khó, vươn lên xây dựng cuộc sống mới và đóng góp tích cực cho cộng đồng.
-            </p>
-          </div>
+      <div class="max-w-2xl">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+          <span>Cổng Thông Tin Điện Tử C11 &bull; Bộ Công An</span>
+        </div>
+        <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
+          Tấm Gương Tiêu Biểu
+        </h1>
+        <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed">
+          Những tấm gương hoàn lương vượt khó, vươn lên xây dựng cuộc sống mới và đóng góp tích cực cho cộng đồng.
+        </p>
+      </div>
+    </PageHero>
 
-          <!-- Integrated Search Box -->
-          <div class="w-full lg:w-80 shrink-0">
-            <form @submit.prevent="applySearch" class="relative flex items-center">
-              <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#7C8D78] pointer-events-none text-xs">
-                <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
-              </span>
-              <input
-                v-model="searchInput"
-                type="text"
-                placeholder="Tìm kiếm tấm gương..."
-                aria-label="Tìm kiếm tấm gương"
-                class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-[#1E251C] placeholder-[#8A9986] focus:border-[#4A6741] focus:ring-2 focus:ring-[#7CB342]/30 focus:outline-none transition-all shadow-sm"
-              />
-              <button
-                v-if="searchInput"
-                type="button"
-                @click="clearSearchInput"
-                class="absolute right-12 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-[#97A593] hover:text-[#4A5545] text-xs transition-colors"
-                title="Xóa chữ"
-                aria-label="Xóa từ khóa tìm kiếm"
-              >
-                ✕
-              </button>
-              <button
-                type="submit"
-                class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-[#4A6741] hover:bg-[#365130] text-white text-xs font-bold transition-all shadow-sm"
-              >
-                Tìm
-              </button>
-            </form>
-          </div>
+    <!-- Search — đẩy ra khỏi hero, nằm ngay đầu nội dung -->
+    <section class="pt-6 lg:pt-8">
+      <div class="container">
+        <div class="w-full lg:w-80 shrink-0">
+          <form @submit.prevent="applySearch" class="relative flex items-center">
+            <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#7C8D78] pointer-events-none text-xs">
+              <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+            </span>
+            <input
+              v-model="searchInput"
+              type="text"
+              placeholder="Tìm kiếm tấm gương..."
+              aria-label="Tìm kiếm tấm gương"
+              class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-[#1E251C] placeholder-[#8A9986] focus:border-[#4A6741] focus:ring-2 focus:ring-[#7CB342]/30 focus:outline-none transition-all shadow-sm"
+            />
+            <button
+              v-if="searchInput"
+              type="button"
+              @click="clearSearchInput"
+              class="absolute right-12 top-1/2 -translate-y-1/2 w-5 h-5 flex items-center justify-center text-[#97A593] hover:text-[#4A5545] text-xs transition-colors"
+              title="Xóa chữ"
+              aria-label="Xóa từ khóa tìm kiếm"
+            >
+              ✕
+            </button>
+            <button
+              type="submit"
+              class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-[#4A6741] hover:bg-[#365130] text-white text-xs font-bold transition-all shadow-sm"
+            >
+              Tìm
+            </button>
+          </form>
         </div>
       </div>
     </section>

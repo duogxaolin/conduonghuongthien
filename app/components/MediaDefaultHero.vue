@@ -11,40 +11,29 @@
   động trên trang này không mang thông tin gì.
 -->
 <template>
-  <section class="relative overflow-hidden border-b border-[#E2E8DF] bg-gradient-to-br from-[#F2F7F0] via-white to-[#EEF4EC]">
-    <!-- Vòng trang trí. `aria-hidden` vì nó không mang thông tin nào — trình đọc
-         màn hình không nên dừng ở một hình tròn. -->
-    <div class="absolute -right-16 -top-16 w-64 h-64 rounded-full bg-[#7CB342]/8" aria-hidden="true"></div>
-    <div class="absolute -right-4 top-24 w-32 h-32 rounded-full bg-[#4A6741]/6" aria-hidden="true"></div>
+  <PageHero>
+    <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#6B7967] mb-4">
+      <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
+        <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
+        <span>Trang chủ</span>
+      </nuxt-link>
+      <span class="text-[#A2B09F]" aria-hidden="true">&rsaquo;</span>
+      <span class="text-[#2A3B27] font-bold">Thư viện Video</span>
+    </nav>
 
-    <div class="container relative pt-8 sm:pt-10 pb-8">
-      <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-4">
-        <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
-          <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
-          <span>Trang chủ</span>
-        </nuxt-link>
-        <span class="text-[#BAC8B6]">&rsaquo;</span>
-        <span class="text-[#2D5A27] font-bold">Thư viện Video</span>
-      </nav>
-
-      <div class="flex items-start gap-4 sm:gap-5">
-        <div class="hidden sm:flex w-14 h-14 rounded-2xl bg-[#4A6741] text-white items-center justify-center text-xl shrink-0 shadow-sm">
-          <i class="fa-solid fa-clapperboard" aria-hidden="true"></i>
-        </div>
-        <div class="min-w-0">
-          <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-[#7CB342] m-0 mb-1">
-            Kênh truyền thông
-          </p>
-          <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-[#1E251C] leading-[1.2] m-0">
-            Thư Viện Video
-          </h1>
-          <p class="text-[0.95rem] text-[#5A6655] mt-2 mb-0 leading-relaxed max-w-3xl">
-            {{ description }}
-          </p>
-        </div>
+    <div class="max-w-2xl">
+      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
+        <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+        <span>Cổng Thông Tin Điện Tử C11 &bull; Bộ Công An</span>
       </div>
+      <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
+        Thư Viện Video
+      </h1>
+      <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed">
+        {{ description }}
+      </p>
     </div>
-  </section>
+  </PageHero>
 </template>
 
 <script setup lang="ts">

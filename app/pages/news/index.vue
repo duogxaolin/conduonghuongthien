@@ -1,43 +1,45 @@
 <template>
   <div class="min-h-screen bg-[#F7FAF6]">
-    <!-- Page Header & Hero Section: Trang trọng, hiện đại, chuẩn phong cách báo điện tử cơ quan Nhà nước -->
-    <section class="border-b border-[#DDE6DC] bg-gradient-to-b from-[#EEF5EB] via-[#F5FAF3] to-[#F7FAF6]">
-      <div class="container pt-6 sm:pt-8 pb-6 sm:pb-7">
-        <!-- Breadcrumb navigation -->
-        <nav aria-label="Đường dẫn trang" class="mb-4">
-          <ol class="flex items-center gap-1.5 text-xs text-[#6B7967] m-0 p-0 list-none flex-wrap">
-            <li class="flex items-center gap-1.5">
-              <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1">
-                <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
-                <span>Trang chủ</span>
-              </nuxt-link>
-            </li>
-            <li aria-hidden="true" class="text-[#A2B09F]">&rsaquo;</li>
-            <li class="font-bold text-[#2A3B27] flex items-center gap-1">
-              <span>Bản tin</span>
-              <span v-if="activeCategory !== 'all' && activeCategoryName" class="font-normal text-[#6B7967]">
-                &rsaquo; <span class="font-bold text-[#2A3B27]">{{ activeCategoryName }}</span>
-              </span>
-            </li>
-          </ol>
-        </nav>
+    <!-- Page Header & Hero Section — hero text đơn giản trên nền gradient nhạt -->
+    <PageHero>
+      <!-- Breadcrumb navigation -->
+      <nav aria-label="Đường dẫn trang" class="mb-4">
+        <ol class="flex items-center gap-1.5 text-xs text-[#6B7967] m-0 p-0 list-none flex-wrap">
+          <li class="flex items-center gap-1.5">
+            <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1">
+              <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
+              <span>Trang chủ</span>
+            </nuxt-link>
+          </li>
+          <li aria-hidden="true" class="text-[#A2B09F]">&rsaquo;</li>
+          <li class="font-bold text-[#2A3B27] flex items-center gap-1">
+            <span>Bản tin</span>
+            <span v-if="activeCategory !== 'all' && activeCategoryName" class="font-normal text-[#6B7967]">
+              &rsaquo; <span class="font-bold text-[#2A3B27]">{{ activeCategoryName }}</span>
+            </span>
+          </li>
+        </ol>
+      </nav>
 
-        <!-- Top Header Info & Search Row -->
-        <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-5 pb-5">
-          <div class="max-w-2xl">
-            <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
-              <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
-              <span>Cổng Thông Tin Điện Tử C11 &bull; Bộ Công An</span>
-            </div>
-            <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
-              {{ pageTitle }}
-            </h1>
-            <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed">
-              Cập nhật thông tin chỉ đạo điều hành, hoạt động cơ sở và công tác hỗ trợ hoàn lương trên toàn quốc.
-            </p>
-          </div>
+      <div class="max-w-2xl">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+          <span>Cổng Thông Tin Điện Tử C11 &bull; Bộ Công An</span>
+        </div>
+        <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
+          {{ pageTitle }}
+        </h1>
+        <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed">
+          Cập nhật thông tin chỉ đạo điều hành, hoạt động cơ sở và công tác hỗ trợ hoàn lương trên toàn quốc.
+        </p>
+      </div>
+    </PageHero>
 
-          <!-- Integrated Search Box right in header -->
+    <!-- Search + Category Pills — đẩy ra khỏi hero, nằm ngay đầu nội dung -->
+    <section class="pt-6 lg:pt-8">
+      <div class="container">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <!-- Search Box -->
           <div class="w-full lg:w-80 shrink-0">
             <form @submit.prevent="applySearch" class="relative flex items-center">
               <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#7C8D78] pointer-events-none text-xs">
@@ -68,65 +70,63 @@
               </button>
             </form>
           </div>
+
+          <!-- Category Pills Filter Bar -->
+          <nav aria-label="Lọc bản tin theo chuyên mục" class="flex-1 min-w-0">
+            <!-- Skeleton chips — khi chuyển chuyên mục trên client -->
+            <div v-if="catPending" role="status" aria-busy="true" class="flex gap-2 py-1">
+              <span class="sr-only">Đang tải danh mục bản tin</span>
+              <div
+                v-for="n in 5"
+                :key="n"
+                aria-hidden="true"
+                class="h-[34px] w-28 rounded-full bg-[#E2EBE0] animate-pulse motion-reduce:animate-none"
+              ></div>
+            </div>
+
+            <template v-else>
+              <div class="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none flex-wrap">
+                <button
+                  type="button"
+                  :aria-pressed="activeCategory === 'all'"
+                  :class="pillClass(activeCategory === 'all')"
+                  @click="setCategory('all')"
+                >
+                  <i class="fa-solid fa-layer-group text-xs" aria-hidden="true"></i>
+                  <span>Tất cả bản tin</span>
+                </button>
+                <button
+                  v-for="cat in rootCategories"
+                  :key="cat.id"
+                  type="button"
+                  :aria-pressed="activeCategory === cat.slug"
+                  :class="pillClass(activeCategory === cat.slug)"
+                  @click="setCategory(cat.slug)"
+                >
+                  <i :class="categoryIcon(cat.slug)" aria-hidden="true"></i>
+                  <span>{{ cat.name }}</span>
+                </button>
+              </div>
+
+              <div v-if="activeChildren.length" class="flex items-center gap-2 overflow-x-auto pt-2.5 pb-1 sm:flex-wrap text-xs">
+                <span class="text-[#7A8A76] font-semibold flex items-center gap-1 shrink-0">
+                  <i class="fa-solid fa-turn-down text-[0.65rem] rotate-[-90deg]" aria-hidden="true"></i>
+                  Chuyên đề:
+                </span>
+                <button
+                  v-for="child in activeChildren"
+                  :key="child.id"
+                  type="button"
+                  :aria-pressed="activeCategory === child.slug"
+                  :class="subPillClass(activeCategory === child.slug)"
+                  @click="setCategory(child.slug)"
+                >
+                  {{ child.name }}
+                </button>
+              </div>
+            </template>
+          </nav>
         </div>
-
-        <!-- Category Pills Filter Bar -->
-        <nav aria-label="Lọc bản tin theo chuyên mục" class="pt-2 border-t border-[#DDE6DC]/80">
-          <!-- Skeleton chips — khi chuyển chuyên mục trên client -->
-          <div v-if="catPending" role="status" aria-busy="true" class="flex gap-2 py-1">
-            <span class="sr-only">Đang tải danh mục bản tin</span>
-            <div
-              v-for="n in 5"
-              :key="n"
-              aria-hidden="true"
-              class="h-[34px] w-28 rounded-full bg-[#E2EBE0] animate-pulse motion-reduce:animate-none"
-            ></div>
-          </div>
-
-          <template v-else>
-            <!-- Primary Category Tabs -->
-            <div class="flex items-center gap-2 overflow-x-auto pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 scrollbar-none sm:flex-wrap">
-              <button
-                type="button"
-                :aria-pressed="activeCategory === 'all'"
-                :class="pillClass(activeCategory === 'all')"
-                @click="setCategory('all')"
-              >
-                <i class="fa-solid fa-layer-group text-xs" aria-hidden="true"></i>
-                <span>Tất cả bản tin</span>
-              </button>
-              <button
-                v-for="cat in rootCategories"
-                :key="cat.id"
-                type="button"
-                :aria-pressed="activeCategory === cat.slug"
-                :class="pillClass(activeCategory === cat.slug)"
-                @click="setCategory(cat.slug)"
-              >
-                <i :class="categoryIcon(cat.slug)" aria-hidden="true"></i>
-                <span>{{ cat.name }}</span>
-              </button>
-            </div>
-
-            <!-- Secondary Subcategory Bar (hiển thị khi danh mục được chọn có danh mục con) -->
-            <div v-if="activeChildren.length" class="flex items-center gap-2 overflow-x-auto pt-2.5 pb-1 -mx-4 px-4 sm:mx-0 sm:px-0 sm:flex-wrap text-xs">
-              <span class="text-[#7A8A76] font-semibold flex items-center gap-1 shrink-0">
-                <i class="fa-solid fa-turn-down text-[0.65rem] rotate-[-90deg]" aria-hidden="true"></i>
-                Chuyên đề:
-              </span>
-              <button
-                v-for="child in activeChildren"
-                :key="child.id"
-                type="button"
-                :aria-pressed="activeCategory === child.slug"
-                :class="subPillClass(activeCategory === child.slug)"
-                @click="setCategory(child.slug)"
-              >
-                {{ child.name }}
-              </button>
-            </div>
-          </template>
-        </nav>
       </div>
     </section>
 

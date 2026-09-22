@@ -40,7 +40,16 @@ const OEMBED_TIMEOUT_MS = 5000
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  requireResourcePermission(adminUser, 'media_portal', 'create')
+  // Cả trang đăng video YouTube (`/admin/media-portal/external`) và trang livestream
+  // (`/admin/livestream` — nguồn YouTube) đều cần lấy metadata oEmbed. Hai quyền
+  // tách biệt: cán bộ sống stream có thể chưa được đăng video thư viện, và ngược lại.
+  // Chấp nhận một trong hai — `requireResourcePermission` ném 403 khi thiếu, nên ta
+  // thử lần lượt, chỉ lỗi khi cả hai đều thiếu.
+  try {
+    requireResourcePermission(adminUser, 'media_portal', 'create')
+  } catch {
+    requireResourcePermission(adminUser, 'livestream', 'create')
+  }
 
   const body = await readBody(event).catch(() => null)
   if (!body || typeof body !== 'object' || Array.isArray(body)) {
