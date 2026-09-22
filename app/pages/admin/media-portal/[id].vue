@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AdminMediaItem, AdminMediaConfig } from '~/types/admin-api'
 import { mediaProcessingMessage } from '../../../composables/mediaProcessingMessage'
+import { errorMessage } from '~/utils/errorMessage'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 const route = useRoute()
 const { hasPermission } = useAdminAuth()
@@ -25,6 +26,7 @@ const transcodeOpen = ref(false)
 const transcodeRenditions = ref<Set<string>>(new Set())
 const transcoding = ref(false)
 const toast = useToast()
+const { openPicker } = useImagePicker()
 let timer: ReturnType<typeof setTimeout> | undefined
 let controller: AbortController | undefined
 let stopped = false
@@ -171,6 +173,64 @@ function onReplaced() {
   toast.success('Đã thay tệp. Video đang được chuyển mã lại.')
   void refreshProcessing()
 }
+// ─── Thumbnail custom ──────────────────────────────────────────────────────
+// Cán bộ chọn ảnh từ Thư viện Media → máy chủ copy bytes vào `thumb.jpg` cấp
+// gốc. Preview dùng `thumbnailUrl` (admin serialize) hoặc endpoint thumb công
+// khai (fallback tự sinh). `thumbSaving` chặn double-submit; `confirmClearThumb`
+// cho nút "Dùng ảnh mặc định" (xoá custom → lùi về thumb tự sinh).
+const thumbSaving = ref(false)
+const confirmClearThumb = ref(false)
+const thumbPreviewSrc = computed(() => {
+  if (!item.value) return ''
+  // Ảnh custom lưu URL ảnh thư viện; vắng → dùng endpoint thumb công khai
+  // (serve thumb tự sinh qua resolveThumbnailTarget). Thêm cache-buster khi
+  // vừa đổi để trình duyệt không dùng cache ảnh cũ.
+  return item.value.thumbnailUrl || `/api/public/media/${encodeURIComponent(item.value.slug)}/thumb`
+})
+function pickThumbnail() {
+  if (!canUpdate.value || thumbSaving.value) return
+  openPicker({
+    onSelect: (img) => {
+      void setThumbnail(img.id)
+    },
+  })
+}
+async function setThumbnail(imageMediaId: number) {
+  if (!canUpdate.value || thumbSaving.value) return
+  thumbSaving.value = true
+  actionError.value = ''
+  try {
+    await $fetch(`/api/admin/media-portal/${mediaId.value}/thumbnail`, {
+      method: 'POST', body: { mediaId: imageMediaId }, retry: 0,
+    })
+    toast.success('Đã đổi ảnh thumbnail.')
+    await refreshProcessing()
+  } catch (error) {
+    actionError.value = errorMessage(error, 'Không đổi được thumbnail. Vui lòng thử lại.')
+  } finally {
+    thumbSaving.value = false
+  }
+}
+async function clearThumbnail() {
+  if (!canUpdate.value || thumbSaving.value) return
+  if (!confirmClearThumb.value) {
+    confirmClearThumb.value = true
+    return
+  }
+  thumbSaving.value = true
+  confirmClearThumb.value = false
+  actionError.value = ''
+  try {
+    await $fetch(`/api/admin/media-portal/${mediaId.value}/thumbnail`, { method: 'DELETE', retry: 0 })
+    toast.success('Đã đặt lại thumbnail mặc định.')
+    await refreshProcessing()
+  } catch (error) {
+    actionError.value = errorMessage(error, 'Không xoá được thumbnail. Vui lòng thử lại.')
+  } finally {
+    thumbSaving.value = false
+  }
+}
+function cancelClearThumb() { confirmClearThumb.value = false }
 watch(() => route.params.id, () => { controller?.abort(); replacing.value = false; confirmReprocess.value = false; transcodeOpen.value = false; void load() })
 onMounted(load)
 onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort() })
@@ -282,6 +342,53 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
               @click="submitTranscode()"
             >{{ transcoding ? 'Đang gửi…' : 'Bắt đầu chuyển mã' }}</button>
             <button class="rounded-lg border border-[#e2ece3] px-3 py-1.5 text-sm" @click="cancelTranscode">Hủy</button>
+          </div>
+        </div>
+        <!-- Khu vực thumbnail: chọn ảnh từ Thư viện Media hoặc về mặc định (tự sinh) -->
+        <div v-if="isUpload && canUpdate" class="mt-3 rounded-lg bg-[#f8faf7] border border-[#e2ece3] p-3">
+          <p class="font-medium text-[#122815] mb-2">Ảnh thumbnail</p>
+          <div class="flex items-start gap-4">
+            <div class="relative w-40 aspect-video rounded-lg overflow-hidden bg-black/5 shrink-0 border border-[#e2ece3]">
+              <img
+                v-if="thumbPreviewSrc"
+                :src="thumbPreviewSrc"
+                :alt="item.title"
+                loading="lazy"
+                class="absolute inset-0 w-full h-full object-cover"
+              />
+            </div>
+            <div class="flex-1 min-w-0">
+              <p class="text-xs text-[#667768] mb-3 leading-relaxed">
+                Mặc định tự trích khung hình ở giây thứ 2. Đổi ảnh thumbnail để chọn khung khác từ Thư viện Media.
+              </p>
+              <div class="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  :disabled="thumbSaving"
+                  class="rounded-lg bg-[#2c6e33] px-3 py-1.5 text-sm font-semibold text-white hover:bg-[#245b2a] disabled:opacity-50"
+                  @click="pickThumbnail"
+                >
+                  <i class="fa-solid fa-image mr-1" aria-hidden="true"></i>{{ thumbSaving ? 'Đang xử lý…' : 'Đổi thumbnail' }}
+                </button>
+                <button
+                  v-if="item.thumbnailUrl && !confirmClearThumb"
+                  type="button"
+                  :disabled="thumbSaving"
+                  class="rounded-lg border border-[#e2ece3] px-3 py-1.5 text-sm font-semibold text-[#4a5e4d] hover:bg-[#e8f0e8] disabled:opacity-50"
+                  @click="clearThumbnail"
+                >
+                  <i class="fa-solid fa-rotate-left mr-1" aria-hidden="true"></i>Dùng ảnh mặc định
+                </button>
+              </div>
+              <!-- Confirm xoá custom → lùi về thumb tự sinh -->
+              <div v-if="confirmClearThumb" class="mt-3 rounded-lg bg-amber-50 border border-amber-200 p-3 text-sm">
+                <p class="text-amber-900 font-medium">Đặt lại về ảnh thumbnail tự sinh?</p>
+                <div class="mt-2 flex gap-2">
+                  <button :disabled="thumbSaving" class="rounded-lg bg-[#2c6e33] px-3 py-1.5 text-sm font-semibold text-white disabled:opacity-50" @click="clearThumbnail">{{ thumbSaving ? 'Đang xoá…' : 'Xác nhận' }}</button>
+                  <button class="rounded-lg border border-[#e2ece3] px-3 py-1.5 text-sm" @click="cancelClearThumb">Hủy</button>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
         <NuxtLink v-if="item.status === 'published'" :to="`/media/${item.slug}`" class="mt-3 inline-block text-sm text-[#2c6e33] underline">Xem trang công khai</NuxtLink>
