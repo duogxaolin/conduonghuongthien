@@ -300,6 +300,36 @@ export async function headR2Object(
   }
 }
 
+/**
+ * Push **một tệp** lên R2 ở key cho trước (cho thumbnail custom — `thumb.jpg`
+ * ở cấp gốc của cây rendition). Khác `syncDirectoryToR2` (sync cả cây): đây chỉ
+ * là một tệp đơn, buffer trong RAM (vì ảnh thumb tối đa vài trăm KB), không
+ * stream. Dùng `createClient` nội bộ — cùng bucket/credential với cây video.
+ *
+ * Trả `true` khi thành công. Thất bại trả `false` (caller quyết định có lùi
+ * local hay không) — thumb R2 là tier dự phòng, `resolveThumbnailTarget` có
+ * fallback local, nên một R2 push hỏng không làm hỏng thumb.
+ */
+export async function putR2Object(
+  key: string,
+  body: Buffer,
+  contentType: string,
+  config: R2Config,
+): Promise<boolean> {
+  const client = createClient(config)
+  try {
+    await client.send(new PutObjectCommand({
+      Bucket: config.bucket,
+      Key: normalizeKey(key),
+      Body: body,
+      ContentType: contentType,
+    }))
+    return true
+  } catch {
+    return false
+  }
+}
+
 /** Suy Content-Type từ extension cho HLS segment/manifest. */
 function contentTypeFor(filename: string): string {
   const lower = filename.toLowerCase()
