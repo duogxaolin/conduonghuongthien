@@ -43,7 +43,7 @@
  * một mục nào trong `SERVICE_EXEMPTIONS` — cổng quét chỉ hỏi những tệp có chạm
  * `activityLogs`, và đây không phải một trong số đó.
  */
-import { spawn } from 'node:child_process'
+import { spawn, execSync } from 'node:child_process'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
@@ -314,7 +314,14 @@ export function isPlayable(item: {
   resolutionsReady?: string[] | null
 }): boolean {
   if (item.processingStatus === 'failed') return false
-  return Array.isArray(item.resolutionsReady) && item.resolutionsReady.length > 0
+  // Có rendition HLS → phát được (giá trị cao nhất).
+  if (Array.isArray(item.resolutionsReady) && item.resolutionsReady.length > 0) return true
+  // `ready` mà chưa transcode rendition (`MEDIA_AUTO_TRANSCODE=false`): tệp gốc
+  // vẫn phát được qua stream endpoint (byte-range mp4), chỉ không có HLS multi-bitrate.
+  // Trước đây `ready` + `resolutionsReady=[]` đọc là "chưa phát được" — đúng khi
+  // auto-transcode bật, sai khi tắt: video đã lên máy chủ, có tệp gốc, nhưng ẩn.
+  if (item.processingStatus === 'ready') return true
+  return false
 }
 
 /** Boot and attempt tokens prevent PID reuse and duplicate job ownership. */
@@ -407,9 +414,28 @@ export const defaultProcessRunner: ProcessRunner = (command, args, options) => {
   })
 }
 
-/** `nice -n 19` để một lượt chuyển mã làm cổng chậm đi chứ không bỏ đói nó. */
-function ffmpegArgs(args: string[]): { command: string, args: string[] } {
+/**
+ * `nice -n 19` để một lượt chuyển mã làm cổng chậm đi chứ không bỏ đói nó.
+ *
+ * `cpuLimitPercent` (< 100) bọc ffmpeg qua `cpulimit -l <p> -z` nếu binary có sẵn
+ * — giới hạn % CPU thật (không phải chỉ ưu tiên thấp). Không có `cpulimit` thì
+ * lùi về `nice` + giảm luồng (`threads`) ở `transcodeRendition`: VPS đa nhân thì
+ * 1 luồng ≈ 25–50% CPU, vẫn hơn full 6 luồng ăn sạch mọi nhân.
+ */
+function ffmpegArgs(args: string[], cpuLimitPercent = 100): { command: string, args: string[] } {
+  if (cpuLimitPercent < 100 && cpulimitAvailable) {
+    return { command: 'cpulimit', args: ['-l', String(cpuLimitPercent), '-z', 'ffmpeg', ...args] }
+  }
   return { command: 'nice', args: ['-n', '19', 'ffmpeg', ...args] }
+}
+
+// Phát hiện `cpulimit` một lần lúc import — khôngговорит mỗi lượt transcode.
+let cpulimitAvailable = false
+try {
+  execSync('command -v cpulimit', { stdio: 'ignore' })
+  cpulimitAvailable = true
+} catch {
+  cpulimitAvailable = false
 }
 
 // ─── Đường ống ───────────────────────────────────────────────────────────────
@@ -440,7 +466,19 @@ export type ProcessingDeps = {
   diskCheckIntervalMs?: number
 }
 
-export type ProcessInput = { mediaItemId: number }
+/**
+ * `renditions` (tuỳ chọn): danh sách tên bản cán bộ chọn ở nút "Chuyển mã" (vd
+ * `['360p','720p']`). Vắng = pipeline tự chọn theo chiều cao nguồn qua
+ * `selectRenditions(probe.height)`.
+ *
+ * Giá trị đã được endpoint kiểm tra: chỉ tên trong `RENDITIONS` mới tới đây, và
+ * đã loại trùng. Service **vẫn kiểm lại** — defense-in-depth: một lời gọi trực
+ * tiếp (test, script) không đi qua endpoint, nên tin giá trị này là sai.
+ */
+export type ProcessInput = {
+  mediaItemId: number
+  renditions?: string[]
+}
 
 export type ProcessResult =
   | { ok: true, slug: string, renditions: string[] }
@@ -624,40 +662,59 @@ export async function processMediaItem(input: ProcessInput, options: ProcessingD
     }
 
     // ── Giai đoạn 4: chuyển mã + cắt HLS, công bố ngay khi mỗi bản xong ─────
-    const plan = selectRenditions(probe.height)
-    // Các bước công bố chạy **nối đuôi nhau**, không song song: chúng cùng ghi
-    // một `master.m3u8` qua cùng một tệp tạm, nên hai bản xong cùng lúc sẽ tranh
-    // nhau đúng tệp tạm đó — bản sau ghi đè bản trước, rồi một lượt `rename`
-    // ném ENOENT. Việc chuyển mã vẫn song song; chỉ phần công bố là tuần tự.
-    let publishChain: Promise<void> = Promise.resolve()
+    // Cán bộ có thể chọn bản cụ thể ở nút "Chuyển mã" (vd chỉ 360p+720p cho video
+    // nhẹ). Vắng → `selectRenditions` tự chọn theo chiều cao nguồn (không nâng
+    // cấp, không bao giờ rỗng). Lọc `RENDITIONS` theo tên đã chọn; tên lạ đã bị
+    // endpoint chặn nên ở đây chỉ là an toàn lớp hai và giữ `plan` luôn đúng shape.
+    const autoPlan = selectRenditions(probe.height)
+    const plan = input.renditions && input.renditions.length > 0
+      ? RENDITIONS.filter((render) => input.renditions!.includes(render.name)).map((render) => ({ ...render }))
+      : autoPlan
+    // `autoTranscode=false` = chỉ probe + thumbnail, giữ tệp gốc; cán bộ bấm
+    // "Xử lý sau" (endpoint `process.post.ts` → `enqueueMediaProcessing`) để
+    // transcode khi rảnh. Tránh lag máy chủ lúc upload video lớn.
+    if (!config.autoTranscode) {
+      logInfo({ event: 'media.transcode_skipped', mediaItemId: item.id, slug: item.slug, reason: 'autoTranscode disabled' })
+    } else {
+      // Các bước công bố chạy **nối đuôi nhau**, không song song: chúng cùng ghi
+      // một `master.m3u8` qua cùng một tệp tạm, nên hai bản xong cùng lúc sẽ tranh
+      // nhau đúng tệp tạm đó — bản sau ghi đè bản trước, rồi một lượt `rename`
+      // ném ENOENT. Việc chuyển mã vẫn song song; chỉ phần công bố là tuần tự.
+      let publishChain: Promise<void> = Promise.resolve()
 
-    await runBounded(plan.map(rendition => async () => {
-      if (controller.signal.aborted) throw new ProcessingAborted(abortReason ?? 'Lượt xử lý đã bị hủy.')
+      // CPU limit < 100 → chạy tuần tự (1 bản/lúc) để ffmpeg không ăn hết nhân;
+      // = 100 → song song 3 bản như cũ (VPS đủ mạnh).
+      const concurrency = config.processingCpuLimit >= 100 ? MAX_CONCURRENT_RENDITIONS : 1
 
-      await transcodeRendition({
-        input: original, rendition, scratch, run, signal: controller.signal,
-      })
-      if (controller.signal.aborted) throw new ProcessingAborted(abortReason ?? 'Lượt xử lý đã bị hủy.')
+      await runBounded(plan.map(rendition => async () => {
+        if (controller.signal.aborted) throw new ProcessingAborted(abortReason ?? 'Lượt xử lý đã bị hủy.')
 
-      publishChain = publishChain.then(async () => {
-        await publishDirectory(path.join(scratch, rendition.name), path.join(published, rendition.name))
-        ready.push(rendition.name)
-        // Playlist TRƯỚC, cơ sở dữ liệu SAU. Ngược lại thì một lượt ghi hỏng để
-        // `resolutions_ready` khai một bản mà playlist không trỏ tới, và trình
-        // phát không tìm thấy nó. Chiều này thì tệ nhất là playlist có một bản
-        // đã nằm trên đĩa nhưng cơ sở dữ liệu chưa biết — lượt chạy sau ghi lại.
-        await writeManifestAtomically(
-          path.join(published, 'master.m3u8'),
-          buildMasterPlaylist(masterVariants(ready, plan, probe)),
-        )
-        const [publication] = await db
-          .update(mediaItems)
-          .set({ resolutionsReady: [...ready], storagePath })
-          .where(and(eq(mediaItems.id, item.id), eq(mediaItems.claimedBy, claim)))
-        if (affectedRowsOrZero(publication) === 0) throw new ProcessingAborted('Lượt xử lý đã mất quyền sở hữu.')
-      })
-      await publishChain
-    }), MAX_CONCURRENT_RENDITIONS)
+        await transcodeRendition({
+          input: original, rendition, scratch, run, signal: controller.signal,
+          cpuLimitPercent: config.processingCpuLimit,
+        })
+        if (controller.signal.aborted) throw new ProcessingAborted(abortReason ?? 'Lượt xử lý đã bị hủy.')
+
+        publishChain = publishChain.then(async () => {
+          await publishDirectory(path.join(scratch, rendition.name), path.join(published, rendition.name))
+          ready.push(rendition.name)
+          // Playlist TRƯỚC, cơ sở dữ liệu SAU. Ngược lại thì một lượt ghi hỏng để
+          // `resolutions_ready` khai một bản mà playlist không trỏ tới, và trình
+          // phát không tìm thấy nó. Chiều này thì tệ nhất là playlist có một bản
+          // đã nằm trên đĩa nhưng cơ sở dữ liệu chưa biết — lượt chạy sau ghi lại.
+          await writeManifestAtomically(
+            path.join(published, 'master.m3u8'),
+            buildMasterPlaylist(masterVariants(ready, plan, probe)),
+          )
+          const [publication] = await db
+            .update(mediaItems)
+            .set({ resolutionsReady: [...ready], storagePath })
+            .where(and(eq(mediaItems.id, item.id), eq(mediaItems.claimedBy, claim)))
+          if (affectedRowsOrZero(publication) === 0) throw new ProcessingAborted('Lượt xử lý đã mất quyền sở hữu.')
+        })
+        await publishChain
+      }), concurrency)
+    }
 
     if (controller.signal.aborted) throw new ProcessingAborted(abortReason ?? 'Lượt xử lý đã bị hủy.')
 
@@ -822,17 +879,21 @@ async function transcodeRendition(input: {
   scratch: string
   run: ProcessRunner
   signal: AbortSignal
+  cpuLimitPercent?: number
 }): Promise<void> {
-  const { input: source, rendition, scratch, run, signal } = input
+  const { input: source, rendition, scratch, run, signal, cpuLimitPercent = 100 } = input
   const outputDir = path.join(scratch, rendition.name)
   await fs.mkdir(outputDir, { recursive: true })
+
+  // Giảm luồng khi CPU limit thấp: 100% → THREADS_PER_RENDITION, ≤50% → 1 luồng.
+  const threads = cpuLimitPercent >= 100 ? THREADS_PER_RENDITION : 1
 
   const { command, args } = ffmpegArgs([
     '-hide_banner', '-nostdin', '-y',
     '-i', source,
     '-vf', `scale=-2:${rendition.height}`,
     '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-profile:v', 'main', '-pix_fmt', 'yuv420p',
-    '-threads', String(THREADS_PER_RENDITION),
+    '-threads', String(threads),
     // Cắt đoạn chỉ sạch khi mỗi đoạn bắt đầu ở một keyframe; ép keyframe đúng
     // chu kỳ đoạn để trình phát tua được mà không phải giải mã từ đầu video.
     '-force_key_frames', `expr:gte(t,n_forced*${HLS_SEGMENT_SECONDS})`,
@@ -843,7 +904,7 @@ async function transcodeRendition(input: {
     '-hls_flags', 'independent_segments',
     '-hls_segment_filename', path.join(outputDir, 'seg_%03d.ts'),
     path.join(outputDir, 'index.m3u8'),
-  ])
+  ], cpuLimitPercent)
 
   const outcome = await run(command, args, { signal })
   if (outcome.code !== 0) {
@@ -880,6 +941,44 @@ async function extractThumbnail(input: {
   const outcome = await run(command, args, { signal })
   if (outcome.code !== 0) {
     throw new ProcessingFailure(`Không trích được ảnh đại diện: ${lastLine(outcome.stderr)}`)
+  }
+}
+
+/**
+ * Trích một khung hình làm ảnh đại diện **lúc phục vụ** — fallback khi thumb
+ * tĩnh không có ở đâu (pipeline upload fail giai đoạn 5, hoặc item cũ chưa từng
+ * qua `processMediaItem`).
+ *
+ * Khác `extractThumbnail` (pipeline): không có `probe` sẵn nên không biết 10%
+ * thời lượng. Dùng **2 giây cố định** — đa số video dài hơn 2s, và khung đầu (0s)
+ * thường là tấm nền đen. Một video <2s sẽ trượt về khung đầu, vẫn hơn không có
+ * ảnh gì. Trần 2s cố định thay vì probe riêng vì: probe tốn thêm một lượt FFmpeg,
+ * và đây là nhánh dự phòng — nếu chạy thường thì thumb tĩnh phải được sửa ở nguồn.
+ *
+ * Trả `true` nếu thành công, `false` nếu FFmpeg fail (file hỏng, codec lạ). Không
+ * ném: endpoint gọi sẽ lùi về 404, và một ảnh thiếu vẫn đọc ra là "chưa có thumb"
+ * thay vì "cổng gãy".
+ */
+export async function extractThumbnailOnDemand(
+  input: string,
+  outPath: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<boolean> {
+  const { command, args } = ffmpegArgs([
+    '-hide_banner', '-nostdin', '-y',
+    '-ss', '2',
+    '-i', input,
+    '-frames:v', '1',
+    '-vf', 'scale=-2:720',
+    '-q:v', '3',
+    outPath,
+  ])
+  try {
+    const signal = options.signal ?? new AbortController().signal
+    const outcome = await defaultProcessRunner(command, args, { signal })
+    return outcome.code === 0
+  } catch {
+    return false
   }
 }
 

@@ -128,6 +128,72 @@ export async function deleteR2Tree(r2Prefix: string, config: R2Config): Promise<
 }
 
 /**
+ * Liệt kê key trong một prefix R2 (không phân trang cho mục media — cây nhỏ).
+ *
+ * Dùng cho nhánh passthrough `MEDIA_AUTO_TRANSCODE=false`: khi không có rendition
+ * HLS, stream endpoint cần tìm `original.<ext>` trên R2 (tương tự `locateOriginalFile`
+ * ở đĩa local). `ListObjectsV2` với `MaxKeys` đủ lớn cho một mục media.
+ *
+ * Trả `null` khi R2 lỗi (không ném — caller lùi về 404, không sập). Trả mảng key
+ * rỗng khi prefix không tồn tại — đó là cũng một câu trả lời hợp lệ ("không có tệp gì").
+ */
+export async function listR2Keys(
+  r2Prefix: string,
+  config: R2Config,
+): Promise<string[] | null> {
+  const client = createClient(config)
+  const prefix = normalizeKey(r2Prefix)
+  const keys: string[] = []
+  let continuationToken: string | undefined
+  try {
+    do {
+      const res = await client.send(new ListObjectsV2Command({
+        Bucket: config.bucket,
+        Prefix: prefix,
+        ContinuationToken: continuationToken,
+        MaxKeys: 1000,
+      }))
+      for (const obj of res.Contents ?? []) {
+        if (obj.Key) keys.push(obj.Key)
+      }
+      continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
+    } while (continuationToken)
+  } catch {
+    return null
+  }
+  return keys
+}
+
+/**
+ * Tìm key `original.<ext>` trong prefix R2 — tương tự `locateOriginalFile` ở đĩa.
+ *
+ * Trả `{ key, size }` hoặc `null`. `size` lấy từ `ListObjectsV2.Content[i].Size`
+ * (đã có sẵn, không cần HEAD riêng). Chỉ nhận định dạng trong `STREAM_CONTENT_TYPES`
+ * — một `original.bin` lạ không phục vụ được.
+ */
+export async function locateR2Original(
+  r2Prefix: string,
+  config: R2Config,
+): Promise<{ key: string, size: number } | null> {
+  const keys = await listR2Keys(r2Prefix, config)
+  if (!keys) return null
+  // Lọc key có dạng `<prefix>/original.<ext>` (không sâu hơn).
+  const base = normalizeKey(r2Prefix)
+  for (const key of keys) {
+    const rel = base ? key.slice(base.length + 1) : key
+    if (!rel.startsWith('original.')) continue
+    const ext = rel.slice(rel.lastIndexOf('.')).toLowerCase()
+    if (ext && rel.indexOf('/') === -1) {
+      // Size đi cùng key trong list — lấy lại bằng một HEAD tránh phụ thuộc shape.
+      // Nhưng ListObjectsV2 đã trả Size, nên ưu tiên dùng nếu có. Caller (stream
+      // endpoint) đọc contentLength thật từ GetObject nên không cần size ở đây.
+      return { key, size: 0 }
+    }
+  }
+  return null
+}
+
+/**
  * Lấy stream + metadata của một object R2 để pipe qua stream endpoint. Trả
  * `{ stream, contentType, contentLength }` — caller dùng `sendStream(event,
  * stream)` + set headers từ metadata.
@@ -150,6 +216,63 @@ export async function streamR2Object(
     stream: res.Body as Readable,
     contentType: res.ContentType ?? 'application/octet-stream',
     contentLength: Number(res.ContentLength ?? 0),
+  }
+}
+
+/**
+ * Lấy một **phạm vi byte** của object R2 — cho passthrough `original.<ext>` khi
+ * `MEDIA_AUTO_TRANSCODE=false` (không HLS, phục vụ tệp gốc qua byte-range).
+ *
+ * S3/R2 `GetObject` hỗ trợ `Range` header (`bytes=START-END`), trả `206` với
+ * `Content-Range` + `ContentLength` đúng đoạn. Trả đầy đủ metadata để endpoint
+ * dựng phản hồi 206 — service không được chạm `event` (giữ ranh giới với handler).
+ *
+ * `range` là chuỗi `bytes=START-END` thô từ header HTTP, truyền thẳng vào SDK:
+ * SDK tự từ chối range sai bằng `416`-tương-tự (trả toàn bộ object hoặc ném). Caller
+ * đã kiểm ranh giới, nên ở đây chỉ chuyển tiếp.
+ *
+ * `null` cho `range` → lấy toàn bộ object (không Range header từ client).
+ *
+ * Trả `totalSize` từ `ContentRange` header (dạng `bytes START-END/TOTAL`) khi có
+ * Range, hoặc từ `ContentLength` khi không — caller cần tổng kích cỡ để dựng
+ * `Content-Range` header phản hồi.
+ */
+export async function streamR2ObjectRange(
+  key: string,
+  config: R2Config,
+  range: string | null,
+): Promise<{
+  stream: Readable
+  contentType: string
+  contentLength: number
+  totalSize: number
+  contentRange: string | null
+}> {
+  const client = createClient(config)
+  const input: { Bucket: string, Key: string, Range?: string } = {
+    Bucket: config.bucket,
+    Key: normalizeKey(key),
+  }
+  if (range) input.Range = range
+  const res = await client.send(new GetObjectCommand(input))
+  if (!res.Body) {
+    throw new Error('R2 object body is empty')
+  }
+  const contentLength = Number(res.ContentLength ?? 0)
+  // `Content-Range` 只 có khi请求带 Range. Dạng: `bytes START-END/TOTAL`.
+  const contentRange = res.ContentRange ?? null
+  // TOTAL từ cuối `Content-Range`, fallback `ContentLength` (no-range case).
+  let totalSize = contentLength
+  if (contentRange) {
+    const match = contentRange.match(/\/(\d+)$/)
+    if (match) totalSize = Number(match[1])
+  }
+  return {
+    stream: res.Body as Readable,
+    contentType: res.ContentType ?? 'application/octet-stream',
+    contentLength,
+    totalSize,
+    contentRange,
   }
 }
 

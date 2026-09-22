@@ -169,6 +169,11 @@ services:
       # trống nghĩa là dùng các mặc định an toàn trong `media-config.ts`.
       MEDIA_PROCESSING_MAX_JOBS: ${MEDIA_PROCESSING_MAX_JOBS:-}
       MEDIA_PROCESSING_MAX_ATTEMPTS: ${MEDIA_PROCESSING_MAX_ATTEMPTS:-}
+      # Tự chuyển mã sau upload (mặc định true). false = chỉ probe+thumbnail, giữ
+      # tệp gốc; cán bộ bấm "Xử lý sau" ở trang chi tiết để transcode khi rảnh.
+      MEDIA_AUTO_TRANSCODE: ${MEDIA_AUTO_TRANSCODE:-}
+      # Trần CPU % cho ffmpeg (mặc định 50). 50 = ~50% CPU, 100 = full.
+      MEDIA_PROCESSING_CPU_LIMIT: ${MEDIA_PROCESSING_CPU_LIMIT:-}
       # Used ONLY when the superadmin account is first created (seed is insert-only).
       ADMIN_PASSWORD: ${ADMIN_PASSWORD:-}
       ADMIN_EMAIL: ${ADMIN_EMAIL:-}

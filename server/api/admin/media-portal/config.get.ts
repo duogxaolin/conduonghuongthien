@@ -3,7 +3,7 @@ import { asc } from 'drizzle-orm'
 import { checkPermission } from '../../../utils/auth'
 import { resolveMediaConfigWithDb } from '../../../services/media-config-service'
 import { getDb } from '../../../utils/db'
-import { categories } from '../../../db/schema'
+import { mediaCategories } from '../../../db/schema'
 
 /** Only capabilities and category labels needed by media forms; never storage configuration. */
 export default defineEventHandler(async (event) => {
@@ -13,7 +13,7 @@ export default defineEventHandler(async (event) => {
   }
   const db = getDb()
   const { config } = await resolveMediaConfigWithDb(db)
-  const options = await db.select({ id: categories.id, name: categories.name })
-    .from(categories).orderBy(asc(categories.displayOrder), asc(categories.name), asc(categories.id))
+  const options = await db.select({ id: mediaCategories.id, name: mediaCategories.name })
+    .from(mediaCategories).orderBy(asc(mediaCategories.displayOrder), asc(mediaCategories.name), asc(mediaCategories.id))
   return { ok: true, uploadEnabled: config.uploadEnabled, maxUploadSize: config.maxUploadSize, categories: options }
 })

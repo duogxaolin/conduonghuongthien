@@ -1,5 +1,5 @@
 import type { getDb } from './db'
-import { categories, contentTypes, pages } from '../db/schema'
+import { categories, contentTypes, mediaCategories, pages } from '../db/schema'
 import { ne, and, like } from 'drizzle-orm'
 
 type Db = ReturnType<typeof getDb>
@@ -34,6 +34,31 @@ export async function uniqueCategorySlug(db: Db, base: string, excludeId?: numbe
       excludeId
         ? and(like(categories.slug, `${baseSlug}%`), ne(categories.id, excludeId))
         : like(categories.slug, `${baseSlug}%`),
+    )
+
+  const taken = new Set(rows.map((r) => r.slug))
+  if (!taken.has(baseSlug)) return baseSlug
+
+  let n = 2
+  while (taken.has(`${baseSlug}-${n}`)) n++
+  return `${baseSlug}-${n}`
+}
+
+/**
+ * Resolve a collision-safe **media category** slug (bảng `media_categories`,
+ * tách khỏi `categories` bài viết). Cùng khuôn `uniqueCategorySlug` nhưng trỏ
+ * bảng khác.
+ */
+export async function uniqueMediaCategorySlug(db: Db, base: string, excludeId?: number): Promise<string> {
+  const baseSlug = slugify(base) || 'danh-muc-video'
+
+  const rows = await db
+    .select({ id: mediaCategories.id, slug: mediaCategories.slug })
+    .from(mediaCategories)
+    .where(
+      excludeId
+        ? and(like(mediaCategories.slug, `${baseSlug}%`), ne(mediaCategories.id, excludeId))
+        : like(mediaCategories.slug, `${baseSlug}%`),
     )
 
   const taken = new Set(rows.map((r) => r.slug))

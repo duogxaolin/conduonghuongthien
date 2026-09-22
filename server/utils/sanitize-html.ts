@@ -19,8 +19,11 @@ import type { BlockData } from '../../app/utils/blocks/types'
  */
 
 // Elements dropped together with everything inside them.
+// `iframe` KHÔNG nằm đây — nó được allowlist riêng với `src` giới hạn YouTube duy
+// nhất (xem `SAFE_IFRAME_SRC`). Mở `iframe` mà không allowlist `src` là XSS: ai có
+// quyền viết bài nhúng `<iframe src="javascript:alert(1)">` hoặc origin tuỳ ý.
 const DROP_TREE = new Set([
-  'script', 'style', 'svg', 'math', 'iframe', 'object', 'embed', 'noscript',
+  'script', 'style', 'svg', 'math', 'object', 'embed', 'noscript',
   'template', 'textarea', 'title', 'head', 'frame', 'frameset', 'applet', 'xmp',
   'noembed', 'noframes', 'link', 'meta', 'base', 'form', 'button', 'input',
   'select', 'option', 'canvas', 'audio', 'video', 'source', 'track', 'portal',
@@ -39,6 +42,10 @@ const ALLOWED_TAGS = new Set([
   'a', 'img', 'figure', 'figcaption',
   'table', 'thead', 'tbody', 'tfoot', 'tr', 'th', 'td', 'caption', 'colgroup', 'col',
   'section', 'article', 'header', 'footer', 'nav', 'aside', 'main',
+  // `iframe` — chỉ cho YouTube embed. `src` được kiểm bởi `isSafeIframeSrc` (chỉ
+  // `youtube.com/embed/` hoặc `youtube-nocookie.com/embed/`), và rewrite sang
+  // `youtube-nocookie.com` khi emit — cùng quy tắc `buildYouTubeEmbedUrl` đã có.
+  'iframe',
 ])
 
 const GLOBAL_ATTRS = new Set(['class', 'title', 'dir', 'lang', 'id', 'style'])
@@ -52,6 +59,7 @@ const TAG_ATTRS: Record<string, Set<string>> = {
   ol: new Set(['start', 'type', 'reversed']),
   table: new Set(['summary']),
   time: new Set(['datetime']),
+  iframe: new Set(['src', 'width', 'height', 'allow', 'allowfullscreen', 'title', 'loading']),
 }
 
 const SAFE_DATA_IMAGE = /^data:image\/(png|jpe?g|gif|webp);/i
@@ -66,6 +74,31 @@ function isSafeUrl(raw: string): boolean {
   if (proto === 'http' || proto === 'https' || proto === 'mailto' || proto === 'tel') return true
   if (proto === 'data') return SAFE_DATA_IMAGE.test(cleaned) // images only, never data:image/svg+xml
   return false
+}
+
+/**
+ * `src` của `<iframe>` — CHỈ nhận nhúng YouTube, không nhận origin nào khác.
+ *
+ * TinyMCE plugin `media` sinh `<iframe src="https://www.youtube.com/embed/<id>?...">`.
+ * Mở `iframe` mà không giới hạn `src` là XSS: `<iframe src="javascript:alert(1)">`
+ * hoặc `<iframe src="https://evil.com">` đều chạy được trên origin của cổng. Đây
+ * là allowlist duy nhất giữ cho việc nhúng video vào bài viết an toàn.
+ *
+ * Nhận cả `youtube.com` lẫn `youtube-nocookie.com` (cổng có thể đã rewrite sẵn);
+ * khi emit, `filterAttributes` luôn rewrite về `youtube-nocookie.com` — cùng
+ * quyết định `buildYouTubeEmbedUrl` đã ghi (miền không cookie là ràng buộc quyền
+ * riêng tư, không phải sở thích).
+ */
+const SAFE_IFRAME_SRC = /^https:\/\/(www\.)?(youtube-nocookie\.com|youtube\.com)\/embed\/[A-Za-z0-9_-]{11}([?].*)?$/
+
+function isSafeIframeSrc(raw: string): boolean {
+  return SAFE_IFRAME_SRC.test(raw.trim())
+}
+
+/** Rewrite `youtube.com` → `youtube-nocookie.com` để người đọc không nhận cookie
+ *  theo dõi từ YouTube trước khi bấm play. Giữ nguyên query string. */
+function rewriteYoutubeNocookie(src: string): string {
+  return src.replace(/\/\/(www\.)?youtube\.com\//, '//www.youtube-nocookie.com/')
 }
 
 /** Scrub an inline style value; drop it entirely if it looks dangerous. */
@@ -103,6 +136,16 @@ function filterAttributes(tag: string, attrString: string): string {
     if (name === 'srcset' || name === 'xlink:href' || name === 'formaction' || name === 'xmlns') continue
     if (!GLOBAL_ATTRS.has(name) && !(allowed && allowed.has(name))) continue
     if (name === 'href' || name === 'src') {
+      // `iframe` `src` đi qua allowlist YouTube riêng — `isSafeUrl` quá rộng cho
+      // iframe (nó nhận mọi http/https), và mở iframe nhận mọi origin là XSS.
+      if (tag === 'iframe' && name === 'src') {
+        const decodedIframe = decodeEntitiesForCheck(value)
+        if (!isSafeIframeSrc(decodedIframe)) continue
+        const rewritten = rewriteYoutubeNocookie(decodedIframe)
+        const escIframe = rewritten.replace(/&/g, '&').replace(/"/g, '"').replace(/</g, '<').replace(/>/g, '>')
+        out.push(`src="${escIframe}"`)
+        continue
+      }
       if (!isSafeUrl(decodeEntitiesForCheck(value))) continue
     }
     if (name === 'style') {

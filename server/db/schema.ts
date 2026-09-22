@@ -141,6 +141,19 @@ export const contentTypes = mysqlTable('content_types', {
   createdAt:    timestamp('created_at').defaultNow(),
 })
 
+// ─── Media categories ────────────────────────────────────────────────────────
+// Tách khỏi `categories` (danh mục bài viết): danh mục của Media Portal là một
+// loại nội dung riêng, phẳng (không cha-con), không có `type` (chỉ một loại).
+// `media_items.category_id` trỏ bảng này, không trỏ `categories`.
+export const mediaCategories = mysqlTable('media_categories', {
+  id:           int('id').autoincrement().primaryKey(),
+  name:         varchar('name', { length: 255 }).notNull(),
+  slug:         varchar('slug', { length: 255 }).notNull().unique(),
+  description:  text('description'),
+  displayOrder: int('display_order').notNull().default(0),
+  createdAt:    timestamp('created_at').defaultNow(),
+})
+
 // ─── Categories ───────────────────────────────────────────────────────────────
 // type: slug of a content_types row (news | role_model | reintegration | document | faq | custom…)
 export const categories = mysqlTable('categories', {
@@ -901,7 +914,7 @@ export const mediaItems = mysqlTable('media_items', {
   durationSeconds: int('duration_seconds'),
   width:        int('width'),
   height:       int('height'),
-  categoryId:   int('category_id').references(() => categories.id, { onDelete: 'set null' }),
+  categoryId:   int('category_id').references(() => mediaCategories.id, { onDelete: 'set null' }),
   status:       varchar('status', { length: 16 }).notNull().default('draft'), // draft | published | archived
   processingStatus: varchar('processing_status', { length: 16 }).notNull().default('pending'), // pending | processing | ready | failed
   // Why a transcode failed, shown on the administration listing. A failed item

@@ -25,12 +25,13 @@
  *     sẽ có nơi gọi thứ hai quên lọc.
  */
 import { randomUUID } from 'node:crypto'
-import { statSync } from 'node:fs'
+import { statSync, readdirSync } from 'node:fs'
+import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
 import { and, asc, count, desc, eq, inArray, like, sql } from 'drizzle-orm'
 
-import { activityLogs, categories, mediaAssetCleanup, mediaItems } from '../db/schema'
+import { activityLogs, mediaCategories, mediaAssetCleanup, mediaItems } from '../db/schema'
 import { getDb, type Database } from '../utils/db'
 import type { MediaConfig } from '../utils/media-config'
 import { resolveMediaConfig } from '../utils/media-config'
@@ -44,6 +45,7 @@ import {
   extractYouTubeVideoId,
 } from '../utils/youtube-parser'
 import { abortProcessingClaim, isPlayable, mediaAssetRoot } from './video-processing'
+import { locateR2Original, listR2Keys } from './video-r2-sync'
 
 // ─── Hằng số ─────────────────────────────────────────────────────────────────
 
@@ -126,6 +128,14 @@ const STREAM_CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.ts': 'video/mp2t',
   '.m4s': 'video/iso.segment',
   '.mp4': 'video/mp4',
+  // Tệp gốc khi `MEDIA_AUTO_TRANSCODE=false` — không có HLS, stream endpoint phục
+  // vụ trực tiếp `original.<ext>` qua byte-range. Bốn thùng chứa nhận ở đường tải
+  // lên (xem `EXT_BY_VIDEO_MIME`); chỉ `.mp4` và `.webm` trình duyệt phát được
+  // gốc, `.mov`/`.mkv` phụ thuộc codec — nhưng phục vụ đúng content-type vẫn đúng
+  // hơn `application/octet-stream` (kèm nosniff trình duyệt tự quyết định).
+  '.mov': 'video/quicktime',
+  '.webm': 'video/webm',
+  '.mkv': 'video/x-matroska',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
@@ -214,8 +224,8 @@ const publicMediaSelection = {
   width: mediaItems.width,
   height: mediaItems.height,
   categoryId: mediaItems.categoryId,
-  categoryName: categories.name,
-  categorySlug: categories.slug,
+  categoryName: mediaCategories.name,
+  categorySlug: mediaCategories.slug,
   publishedAt: mediaItems.publishedAt,
   commentsEnabled: mediaItems.commentsEnabled,
   viewCount: mediaItems.viewCount,
@@ -261,6 +271,16 @@ export type PublicMediaItem = {
   thumbnailUrl: string | null
   embedUrl: string | null
   streamUrl: string | null
+  /**
+   * `hls` khi có rendition (manifest `master.m3u8`), `file` khi phục vụ tệp gốc
+   * trực tiếp qua byte-range (`MEDIA_AUTO_TRANSCODE=false`, không rendition).
+   *
+   * Player dùng trường này để chọn hls.js (cho `hls`) hay native `<video src>`
+   * (cho `file`): hls.js nhận một URL mp4 mà đi parse như m3u8 sẽ không phát được,
+   * và trình duyệt phát mp4 gốc qua `<video>` nhanh hơn nhiều so với đi qua thư viện.
+   * `null` khi chưa phát được (chưa xử lý xong, hoặc nguồn youtube).
+   */
+  streamKind: 'hls' | 'file' | null
   playable: boolean
   commentsEnabled: boolean
   viewCount: number
@@ -310,6 +330,14 @@ export function serializePublicMedia(row: PublicMediaRow): PublicMediaItem {
     thumbnailUrl: hasThumbnail ? buildMediaThumbnailPath(String(row.slug)) : null,
     embedUrl,
     streamUrl: source === 'upload' && playable ? buildMediaStreamPath(String(row.slug)) : null,
+    // `streamKind` chỉ có ý nghĩa khi `streamUrl` khác null (upload + playable).
+    // Có rendition HLS → `hls`; `ready` mà không có rendition (autoTranscode=false)
+    // → tệp gốc phục vụ trực tiếp → `file`. Youtubeembed (`embedUrl`) không đi qua
+    // nhánh này nên `null`.
+    streamKind:
+      source === 'upload' && playable
+        ? (coerceResolutionsReady(row.resolutionsReady)?.length ? 'hls' : 'file')
+        : null,
     playable,
     commentsEnabled: row.commentsEnabled === true,
     viewCount: Number(row.viewCount ?? 0),
@@ -331,30 +359,22 @@ export type PublishedMediaPage = {
 }
 
 /**
- * Danh mục và **các danh mục con của nó** — gốc bao gồm con, đúng như
- * `server/api/public/articles.get.ts`. Một danh mục gốc không có mục nào nhưng
- * con nó có thì bấm vào gốc phải ra kết quả, không phải một trang trống.
+ * Id của danh mục media theo slug, hoặc `null` nếu không có.
  *
- * `null` nghĩa là **không có danh mục nào mang slug đó**. Nơi gọi đọc `null`
- * thành "kết quả rỗng", không phải "lỗi": bộ lọc nằm trong URL mà khách sửa được
- * và chia sẻ được, nên một liên kết cũ phải hiện trang trống chứ không phải một
- * thông báo lỗi — một liên kết hỏng đọc ra là cổng bị hỏng.
+ * `media_categories` phẳng (không cha-con) nên không cần resolves con như
+ * `categories` bài viết. `null` nghĩa là **không có danh mục nào mang slug đó**;
+ * nơi gọi đọc `null` thành "kết quả rỗng", không phải "lỗi": bộ lọc nằm trong URL
+ * mà khách sửa được và chia sẻ được, nên một liên kết cũ phải hiện trang trống
+ * chứ không phải một thông báo lỗi — một liên kết hỏng đọc ra là cổng bị hỏng.
  */
 async function resolveCategoryIds(db: Database, slug: string): Promise<number[] | null> {
   const [target] = await db
-    .select({ id: categories.id, parentId: categories.parentId })
-    .from(categories)
-    .where(eq(categories.slug, slug))
+    .select({ id: mediaCategories.id })
+    .from(mediaCategories)
+    .where(eq(mediaCategories.slug, slug))
     .limit(1)
 
   if (!target) return null
-  if (target.parentId === null) {
-    const children = await db
-      .select({ id: categories.id })
-      .from(categories)
-      .where(eq(categories.parentId, target.id))
-    return [target.id, ...children.map(child => child.id)]
-  }
   return [target.id]
 }
 
@@ -385,7 +405,7 @@ export async function listPublishedMedia(
     db
       .select(publicMediaSelection)
       .from(mediaItems)
-      .leftJoin(categories, eq(mediaItems.categoryId, categories.id))
+      .leftJoin(mediaCategories, eq(mediaItems.categoryId, mediaCategories.id))
       .where(where)
       // Cùng thứ tự với danh sách bài viết: ngày đăng, rồi ngày tạo. Mục chưa có
       // `published_at` (dữ liệu cũ) rơi xuống cuối thay vì lên đầu.
@@ -413,6 +433,11 @@ const adminMediaSelection = {
   status:           mediaItems.status,
   processingError:  mediaItems.processingError,
   storagePath:      mediaItems.storagePath,
+  // Cán bộ vận hành cần biết video nằm trên đĩa local hay R2 — để biết nút "Chuyển
+  // mã" sẽ chạy trên máy này hay đẩy lên nhà cung cấp, và để chẩn đoán một mục đã
+  // xuất bản mà không xem được (target sai tầng lưu trữ). Cột này KHÔNG thuộc
+  // `publicMediaSelection` — công dân không cần (và không được) biết video nằm đâu.
+  storageProvider:  mediaItems.storageProvider,
   thumbnailUrl:     mediaItems.thumbnailUrl,
   isFeatured:       mediaItems.isFeatured,
   createdBy:        mediaItems.createdBy,
@@ -437,6 +462,7 @@ export type AdminMediaRow = {
   processingStatus: string
   processingError:  string | null
   storagePath:      string | null
+  storageProvider:  string | null
   thumbnailUrl:    string | null
   isFeatured:      boolean | null
   commentsEnabled: boolean | null
@@ -465,6 +491,8 @@ export type AdminMediaItem = {
   processingStatus: string
   processingError:  string | null
   storagePath:     string | null
+  /** 'r2' | 'local' | null — nơi video đang nằm, để cán bộ chẩn đoán/khởi động transcode đúng. */
+  storageProvider:  'r2' | 'local' | null
   thumbnailUrl:     string | null
   isFeatured:      boolean
   commentsEnabled: boolean
@@ -473,6 +501,8 @@ export type AdminMediaItem = {
   createdBy:       number | null
   createdAt:       string | null
   updatedAt:       string | null
+  /** Các bản đã chuyển mã xong — UI đọc để vẽ timeline + quyết định nút transcode. */
+  resolutionsReady: string[] | null
 }
 
 /**
@@ -503,6 +533,10 @@ export function serializeAdminMedia(row: AdminMediaRow): AdminMediaItem {
     processingStatus: String(row.processingStatus),
     processingError:  row.processingError ?? null,
     storagePath:     row.storagePath ?? null,
+    // `storage_provider` chỉ nhận 'r2' hoặc 'local' ở tầng ghi; null là mục chưa
+    // transcode (passthrough mới hoàn tất) — đọc thành 'local' ở giao diện gây
+    // hiểu nhầm, nên giữ nguyên null để badge suy diễn.
+    storageProvider:  (row.storageProvider === 'r2' || row.storageProvider === 'local') ? row.storageProvider : null,
     thumbnailUrl:    row.thumbnailUrl ?? null,
     isFeatured:      row.isFeatured === true,
     commentsEnabled: row.commentsEnabled === true,
@@ -511,6 +545,11 @@ export function serializeAdminMedia(row: AdminMediaRow): AdminMediaItem {
     createdBy:       row.createdBy ?? null,
     createdAt:       row.createdAt ? row.createdAt.toISOString() : null,
     updatedAt:       row.updatedAt ? row.updatedAt.toISOString() : null,
+    // `resolutions_ready` là json() — driver thật parse sẵn, pool giả thì chuỗi.
+    // `coerceResolutionsReady` thống nhất cả hai; trả null khi rỗng ("chưa có bản
+    // nào" và "chưa transcode" đọc giống nhau ở UI, và đó là đúng: cả hai đều
+    // chưa có bản nào để vẽ).
+    resolutionsReady: coerceResolutionsReady(row.resolutionsReady),
   }
 }
 
@@ -594,7 +633,7 @@ export async function listAllMediaForAdmin(
     db
       .select(adminMediaSelection)
       .from(mediaItems)
-      .leftJoin(categories, eq(mediaItems.categoryId, categories.id))
+      .leftJoin(mediaCategories, eq(mediaItems.categoryId, mediaCategories.id))
       .where(where)
       .orderBy(sortOrder(orderColumn), desc(mediaItems.id))
       .limit(query.limit)
@@ -626,7 +665,7 @@ export async function getMediaItemForAdmin(
   const [row] = await db
     .select(adminMediaSelection)
     .from(mediaItems)
-    .leftJoin(categories, eq(mediaItems.categoryId, categories.id))
+    .leftJoin(mediaCategories, eq(mediaItems.categoryId, mediaCategories.id))
     .where(eq(mediaItems.id, id))
     .limit(1)
   return row ? serializeAdminMedia(row as unknown as AdminMediaRow) : null
@@ -654,18 +693,18 @@ export async function countPublishedMediaByCategory(
 
   const rows = await db
     .select({
-      id: categories.id,
-      name: categories.name,
-      slug: categories.slug,
+      id: mediaCategories.id,
+      name: mediaCategories.name,
+      slug: mediaCategories.slug,
       total: count(mediaItems.id),
     })
-    .from(categories)
+    .from(mediaCategories)
     .innerJoin(
       mediaItems,
-      and(eq(mediaItems.categoryId, categories.id), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)),
+      and(eq(mediaItems.categoryId, mediaCategories.id), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)),
     )
-    .groupBy(categories.id, categories.name, categories.slug, categories.displayOrder)
-    .orderBy(asc(categories.displayOrder), asc(categories.id))
+    .groupBy(mediaCategories.id, mediaCategories.name, mediaCategories.slug, mediaCategories.displayOrder)
+    .orderBy(asc(mediaCategories.displayOrder), asc(mediaCategories.id))
 
   return rows.map(row => ({
     id: Number(row.id),
@@ -690,7 +729,7 @@ export async function getPublishedMediaBySlug(
   const [row] = await db
     .select(publicMediaSelection)
     .from(mediaItems)
-    .leftJoin(categories, eq(mediaItems.categoryId, categories.id))
+    .leftJoin(mediaCategories, eq(mediaItems.categoryId, mediaCategories.id))
     .where(and(eq(mediaItems.slug, slug), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
     .limit(1)
 
@@ -731,6 +770,7 @@ const assetMediaSelection = {
   storagePath: mediaItems.storagePath,
   storageProvider: mediaItems.storageProvider,
   status: mediaItems.status,
+  resolutionsReady: mediaItems.resolutionsReady,
 } as const
 
 /**
@@ -754,6 +794,37 @@ export function resolveMediaDirectory(
 }
 
 /**
+ * Tìm tệp gốc `original.<ext>` trong thư mục đã công bố.
+ *
+ * Khi `MEDIA_AUTO_TRANSCODE=false`, pipeline chỉ probe + thumbnail rồi đặt
+ * `processingStatus='ready'` mà không cắt HLS, nên không có `master.m3u8`. Stream
+ * endpoint vẫn phải phát được — công dân bấm play trên một video đã xuất bản và
+ * thấy 404 là đúng cái tính năng "tắt transcode để đỡ lag" ra đời để tránh.
+ *
+ * Trả đường dẫn tuyệt đối tới tệp đầu tiên khớp `original.*`, hoặc `null` khi thư
+ * mục không tồn tại / không có tệp gốc. Giống `locateOriginal` trong
+ * `video-processing.ts` nhưng ở đây để **phục vụ** tệp, không để FFmpeg đọc — nên
+ * đặt trong service này tránh phụ thuộc vòng (video-processing import service này).
+ */
+async function locateOriginalFile(directory: string): Promise<string | null> {
+  let entries: string[]
+  try {
+    entries = await fs.readdir(directory)
+  } catch {
+    return null
+  }
+  // Chỉ nhận tệp có đuôi trong `STREAM_CONTENT_TYPES` — một tệp `original.bin` lạ
+  // không nên được phục vụ, và `original.mp4.part` (tải đang dở) thì tuyệt đối
+  // không (nửa tệp đọc ra là nửa video hỏng).
+  const found = entries.find(entry => {
+    if (!entry.startsWith('original.')) return false
+    const ext = path.extname(entry).toLowerCase()
+    return ext in STREAM_CONTENT_TYPES
+  })
+  return found ? path.resolve(directory, found) : null
+}
+
+/**
  * Đường dẫn tài nguyên trong cây đã công bố, đã lọc bỏ mọi đoạn nguy hiểm.
  *
  * `..` bị **bỏ hẳn** (không phải từ chối): `a/../../b` thành `a/b`, đúng như
@@ -772,6 +843,21 @@ export function normalizeAssetPath(value: unknown): string | null {
   return segments.join('/')
 }
 
+/** Parse `resolutions_ready` thành mảng bất kể nó đến từ driver thật (đã parse)
+ *  hay pool giả (chuỗi JSON). `null`/chuỗi rỗng → `null` (không có rendition). */
+function coerceResolutionsReady(value: unknown): string[] | null {
+  if (Array.isArray(value)) return value.length === 0 ? null : value
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (!trimmed || trimmed === 'null') return null
+  try {
+    const parsed: unknown = JSON.parse(trimmed)
+    return Array.isArray(parsed) ? (parsed.length === 0 ? null : parsed) : null
+  } catch {
+    return null
+  }
+}
+
 export type StreamTarget =
   | {
       kind: 'local'
@@ -780,6 +866,12 @@ export type StreamTarget =
       size: number
       cacheSeconds: number
       attachment: boolean
+      /**
+       * `true` khi đây là tệp gốc `original.<ext>` phục vụ trực tiếp (không HLS).
+       * Endpoint cần xử lý byte-range (Range → 206) vì trình phát `<video>` cần
+       * tua được — HLS đã cóRange trong giao thức, tệp gốc thì không.
+       */
+      passthrough?: boolean
     }
   | {
       kind: 'r2'
@@ -788,6 +880,12 @@ export type StreamTarget =
       size: number
       cacheSeconds: number
       attachment: boolean
+      /**
+       * `true` khi phục vụ tệp gốc `original.<ext>` trực tiếp (autoTranscode=false,
+       * không rendition HLS). Endpoint cần byte-range qua R2 (Range header → GetObject
+       * với `Range` param → 206). `r2Key` trỏ tới `original.<ext>`, không phải manifest.
+       */
+      passthrough?: boolean
     }
 
 /**
@@ -823,12 +921,94 @@ export async function resolveStreamTarget(
   if (!row || row.status !== PUBLISHED_MEDIA_STATUS) return null
   if (row.source !== 'upload') return null
 
+  // Cột `resolutions_ready` là `json()` — `MySqlJson` **không** có `mapFromDriverValue`
+  // (xem drizzle-orm/mysql-core/columns/json.cjs), nên việc parse JSON thành mảng
+  // thuộc về **mysql2 driver** (`typeCast` mặc định parse cột JSON). Trên driver thật
+  // `row.resolutionsReady` là mảng; trên một pool giả trong test (bypass driver) nó
+  // đến dưới dạng chuỗi JSON, và `Array.isArray('["360p"]')` là `false` → nhánh fallback
+  // kích hoạt sai cho một mục **có** rendition → 404. Parse ở đây để hai đường ra đồng
+  // nhất: đây là khác biệt thật giữa driver và mock, không phải đoán kiểu.
+  const renditions = coerceResolutionsReady((row as { resolutionsReady?: unknown }).resolutionsReady)
+  // `MEDIA_AUTO_TRANSCODE=false` — không có HLS: `master.m3u8` không tồn tại và
+  // `resolutionsReady` rỗng. Trả về 404 ở đây khiến một video đã xuất bản phát
+  // không được, đúng khi tắt transcode để đỡ lag: công dân bấm play và thấy khung
+  // đen. Fallback: phục vụ tệp gốc `original.<ext>` qua byte-range. Chỉ áp dụng
+  // cho đúng manifest — một yêu cầu phân đoạn (`.ts`/`.m4s`) khi không có rendition
+  // thực sự là lỗi, và lùi về tệp gốc ở đó sẽ trả video gốc dưới dạng `video/mp2t`.
+  const isPassthroughManifest = assetPath === MEDIA_MASTER_PLAYLIST
+    && (renditions === null || renditions.length === 0)
+
   // R2 stream — `storagePath` là R2 key prefix (cùng hình dạng cây, khác backend).
   // Không kiểm `startsWith(directory)` vì không có filesystem — chỉ kiểm
   // `assetPath` đã lọc `..` qua `normalizeAssetPath`.
-  if (row.storageProvider === 'r2') {
+  //
+  // Chỉ đi nhánh R2 khi R2 **thật sự cấu hình**. Một mục có `storageProvider='r2'`
+  // mà `videoStorage.r2` chưa đặt (deploy chưa cấu hình, hoặc worker ghi nhầm cột)
+  // vẫn có tệp gốc trên đĩa local — pipeline upload ghi `original.<ext>` đến thư
+  // mục làm việc trước khi sync, và khi R2 chưa cấu hình thì tệp ở lại đó. Lùi về
+  // local ở nhánh này để video vẫn phát được; trả 404 trên một mục đã xuất bản chỉ
+  // vì cấu hình R2 chưa khớp CSDL là đúng loại hỏng đọc ra "cổng bị gãy".
+  if (row.storageProvider === 'r2' && config.videoStorage.r2) {
     const stored = typeof row.storagePath === 'string' ? row.storagePath.trim() : ''
     if (!stored) return null
+    const r2Config = config.videoStorage.r2
+
+    // Nhánh passthrough R2: không có rendition → phục vụ `original.<ext>` từ R2
+    // qua byte-range (Range → GetObject `Range` → 206). Tương tự nhánh local
+    // `locateOriginalFile` nhưng list R2 prefix.
+    //
+    // **Lùi về local nếu R2 không có original**: pipeline `video-processing.ts`
+    // sync cây `published` lên R2 rồi xoá local (dòng 741), nhưng sync có thể bỏ
+    // sót `original.<ext>` — tệp gốc lớn có thể put fail một phần mà log vẫn ghi
+    // `r2_synced` cho phần đã xong. Khi R2 thiếu original, local thường vẫn còn,
+    // vì xoá `published` chỉ chạy sau sync thành công toàn cây; một original còn
+    // trên đĩa nghĩa là sync đã không thấy nó. Trả 404 trên một video có tệp gốc
+    // trên đĩa chỉ vì R2 liệt kê thiếu là đúng loại hỏng đọc ra "cổng bị gãy".
+    if (isPassthroughManifest) {
+      const originalR2 = await locateR2Original(stored, r2Config)
+      if (originalR2) {
+        const extension = path.extname(originalR2.key).toLowerCase()
+        const known = STREAM_CONTENT_TYPES[extension]
+        return {
+          kind: 'r2',
+          r2Key: originalR2.key,
+          contentType: known ?? 'application/octet-stream',
+          size: 0,
+          cacheSeconds: SEGMENT_CACHE_SECONDS,
+          attachment: known === undefined,
+          passthrough: true,
+        }
+      }
+      // R2 không có original → thử local đĩa (upload ghi `original.<ext>` thẳng
+      // vào `published`, và nếu sync R2 không thấy nó thì xoá local cũng không chạy).
+      const directory = resolveMediaDirectory(config, row)
+      if (directory) {
+        const original = await locateOriginalFile(directory)
+        if (original) {
+          let size: number
+          try {
+            const stat = statSync(original)
+            if (!stat.isFile()) return null
+            size = stat.size
+          } catch {
+            return null
+          }
+          const extension = path.extname(original).toLowerCase()
+          const known = STREAM_CONTENT_TYPES[extension]
+          return {
+            kind: 'local',
+            filePath: original,
+            contentType: known ?? 'application/octet-stream',
+            size,
+            cacheSeconds: SEGMENT_CACHE_SECONDS,
+            attachment: known === undefined,
+            passthrough: true,
+          }
+        }
+      }
+      return null
+    }
+
     const r2Key = `${stored.replace(/\/+$/g, '')}/${assetPath}`
     const extension = path.extname(assetPath).toLowerCase()
     const known = STREAM_CONTENT_TYPES[extension]
@@ -844,6 +1024,31 @@ export async function resolveStreamTarget(
 
   const directory = resolveMediaDirectory(config, row)
   if (!directory) return null
+
+  if (isPassthroughManifest) {
+    const original = await locateOriginalFile(directory)
+    if (!original) return null
+    let size: number
+    try {
+      const stat = statSync(original)
+      if (!stat.isFile()) return null
+      size = stat.size
+    } catch {
+      return null
+    }
+    const extension = path.extname(original).toLowerCase()
+    const known = STREAM_CONTENT_TYPES[extension]
+    return {
+      kind: 'local',
+      filePath: original,
+      contentType: known ?? 'application/octet-stream',
+      size,
+      // Tệp gốc không đổi sau khi upload xong, nên đệm lâu hơn manifest HLS.
+      cacheSeconds: SEGMENT_CACHE_SECONDS,
+      attachment: known === undefined,
+      passthrough: true,
+    }
+  }
 
   const filePath = path.resolve(directory, assetPath)
   if (filePath !== directory && !filePath.startsWith(directory + path.sep)) return null
@@ -911,24 +1116,87 @@ export async function resolveThumbnailTarget(
     return url ? { kind: 'remote', url } : null
   }
 
-  // R2 thumbnail — cùng key prefix với rendition, tệp `thumb.jpg`.
+  // R2 thumbnail — cùng key prefix với rendition, tệp `thumb.jpg`. Pipeline lưu
+  // thumb ở `${stored}/generations/<claim>/thumb.jpg` (dòng 596 của video-processing
+  // đặt `published` sâu hơn `assetRoot`), nên phải **list** keys để tìm nó thay
+  // vì đoán cấp. Ưu tiên `thumb.jpg` ở cấp gốc (cho deployment sửa sau này), rồi
+  // mới tới `generations/<claim>/thumb.jpg` (kiểu present).
   if (row.storageProvider === 'r2') {
     const stored = typeof row.storagePath === 'string' ? row.storagePath.trim() : ''
-    if (!stored) return null
-    return { kind: 'r2', r2Key: `${stored.replace(/\/+$/g, '')}/${MEDIA_THUMBNAIL_FILE}` }
+    if (stored) {
+      const base = stored.replace(/\/+$/g, '')
+      const r2Config = config.videoStorage.r2
+      if (r2Config) {
+        const keys = await listR2Keys(base, r2Config)
+        if (keys) {
+          const rootKey = `${base}/${MEDIA_THUMBNAIL_FILE}`
+          if (keys.includes(rootKey)) {
+            return { kind: 'r2', r2Key: rootKey }
+          }
+          // Tìm `thumb.jpg` ở cấp sâu hơn — `generations/<claim>/thumb.jpg`. Lấy
+          // key ngắn nhất (cấp nông nhất) để khớp layout hiện tại và không ưu tiên
+          // thumb của phiên thử cũ nằm sâu hơn.
+          const deeper = keys
+            .filter(k => k.endsWith(`/${MEDIA_THUMBNAIL_FILE}`) && k !== rootKey)
+            .sort((a, b) => a.length - b.length)
+          const firstDeeper = deeper[0]
+          if (firstDeeper) {
+            return { kind: 'r2', r2Key: firstDeeper }
+          }
+        }
+      }
+    }
+    // R2 không có thumb → thử đĩa local. Cùng lý do `resolveStreamTarget` dòng
+    // 960-1008 lùi local khi R2 thiếu original: pipeline sync R2 có thể bỏ sót
+    // thumb, và khi đó thumb thường vẫn còn trên đĩa (sync xoá `published` chỉ
+    // chạy sau khi sync thành công toàn cây). Trả 404 trên một mục có thumb trên
+    // đĩa chỉ vì R2 liệt kê thiếu là đúng loại hỏng đọc ra "cổng bị gãy".
+    const localThumb = resolveLocalThumbnail(config, row)
+    if (localThumb) return localThumb
+    return null
   }
 
+  return resolveLocalThumbnail(config, row)
+}
+
+/**
+ * Tìm `thumb.jpg` trên đĩa local — cấp gốc rồi `generations/<claim>/`. Tách ra
+ * để nhánh R2 fallback dùng chung (khi R2 list không có thumb).
+ */
+function resolveLocalThumbnail(
+  config: MediaConfig,
+  row: { slug: string, storagePath?: string | null },
+): ThumbnailTarget | null {
   const directory = resolveMediaDirectory(config, row)
   if (!directory) return null
 
-  const filePath = path.join(directory, MEDIA_THUMBNAIL_FILE)
+  // Cấp gốc: `<workdir>/media/<slug>/thumb.jpg` (layout sau khi sửa pipeline).
+  const rootFile = path.join(directory, MEDIA_THUMBNAIL_FILE)
   try {
-    const stat = statSync(filePath)
-    if (!stat.isFile()) return null
-    return { kind: 'local', filePath, contentType: 'image/jpeg', size: stat.size }
-  } catch {
-    return null
-  }
+    const stat = statSync(rootFile)
+    if (stat.isFile()) return { kind: 'local', filePath: rootFile, contentType: 'image/jpeg', size: stat.size }
+  } catch { /* không có ở gốc — thử generations */ }
+
+  // Cấp `generations/<claim>/thumb.jpg` (layout hiện tại — `published` sâu hơn
+  // `assetRoot`). Đọc thư mục `generations`, tìm subdir có `thumb.jpg`, lấy cái
+  // mới nhất. Không đệ quy toàn cây: thumb chỉ ở đúng một cấp đó.
+  const genDir = path.join(directory, 'generations')
+  try {
+    const subs = readdirSync(genDir, { withFileTypes: true })
+    let best: { filePath: string, mtime: number, size: number } | null = null
+    for (const sub of subs) {
+      if (!sub.isDirectory()) continue
+      const thumb = path.join(genDir, sub.name, MEDIA_THUMBNAIL_FILE)
+      try {
+        const stat = statSync(thumb)
+        if (!stat.isFile()) continue
+        if (!best || stat.mtimeMs > best.mtime) best = { filePath: thumb, mtime: stat.mtimeMs, size: stat.size }
+      } catch { /* subdir không có thumb — bỏ qua */ }
+    }
+    if (best) return { kind: 'local', filePath: best.filePath, contentType: 'image/jpeg', size: best.size }
+  } catch { /* generations/ không tồn tại — bình thường cho item chưa transcode */ }
+
+  return null
 }
 
 // ─── Đếm lượt xem ────────────────────────────────────────────────────────────

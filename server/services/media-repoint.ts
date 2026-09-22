@@ -100,26 +100,46 @@ export async function repointR2Urls(
       })
     }
 
-    // ── Phase 2: REPLACE trong media.url (provider='r2', url LIKE oldDomain) ─
-    // Dùng SQL raw với `?` placeholder — Drizzle `sql` helper cũng được nhưng
-    // raw rõ ràng hơn cho REPLACE. `like` Drizzle cho mệnh đề WHERE.
+    // ── Phase 2: REPLACE + audit trong MỘT transaction ───────────────────────
+    // Hai lượt UPDATE (media.url + articles.content) + dòng audit phải cùng
+    // thành công hoặc cùng thất bại — cùng quy tắc `livestream.ts` đã dùng.
     const oldDomainLike = `%${oldDomain}%`
 
-    // media.url
-    const [mediaRes] = await db.execute(
-      `UPDATE media SET url = REPLACE(url, ?, ?) WHERE provider = 'r2' AND url LIKE ?`,
-      [oldDomain, newDomain, oldDomainLike],
-    )
-    const mediaUpdated = affectedRowsOrZero(mediaRes)
+    const result = await db.transaction(async (tx) => {
+      // media.url
+      const [mediaRes] = await tx.execute(
+        `UPDATE media SET url = REPLACE(url, ?, ?) WHERE provider = 'r2' AND url LIKE ?`,
+        [oldDomain, newDomain, oldDomainLike],
+      )
+      const mediaUpdated = affectedRowsOrZero(mediaRes)
 
-    // articles.content
-    const [articlesRes] = await db.execute(
-      `UPDATE articles SET content = REPLACE(content, ?, ?) WHERE content LIKE ?`,
-      [oldDomain, newDomain, oldDomainLike],
-    )
-    const articlesUpdated = affectedRowsOrZero(articlesRes)
+      // articles.content
+      const [articlesRes] = await tx.execute(
+        `UPDATE articles SET content = REPLACE(content, ?, ?) WHERE content LIKE ?`,
+        [oldDomain, newDomain, oldDomainLike],
+      )
+      const articlesUpdated = affectedRowsOrZero(articlesRes)
 
-    return { mediaUpdated, articlesUpdated, backupStamp }
+      // Audit trong cùng transaction — rollback nếu audit lỗi, không để lại
+      // lượt đổi domain không ai ghi.
+      await tx.insert(activityLogs).values({
+        userId: adminUserId,
+        action: 'repoint_urls',
+        resource: 'media',
+        resourceId: null,
+        meta: {
+          oldDomain,
+          newDomain,
+          mediaUpdated,
+          articlesUpdated,
+          backupStamp,
+        },
+      })
+
+      return { mediaUpdated, articlesUpdated, backupStamp }
+    })
+
+    return result
   })
 
   if (!outcome.acquired) {
@@ -127,25 +147,6 @@ export async function repointR2Urls(
   }
 
   const result = outcome.value
-
-  // ── Audit tổng ─────────────────────────────────────────────────────────────
-  try {
-    await db.insert(activityLogs).values({
-      userId: adminUserId,
-      action: 'repoint_r2_urls',
-      resource: 'media',
-      resourceId: null,
-      meta: {
-        oldDomain,
-        newDomain,
-        mediaUpdated: result.mediaUpdated,
-        articlesUpdated: result.articlesUpdated,
-        backupStamp: result.backupStamp,
-      },
-    })
-  } catch {
-    // Audit hỏng không làm hỏng repoint đã thành công.
-  }
 
   logInfo({
     event: 'media.repoint_complete',

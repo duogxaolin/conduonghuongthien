@@ -48,8 +48,12 @@ const ACTION_LABELS: Record<string, string> = {
   housekeep_uploads: 'Dọn upload bỏ dở',
   // Thư viện ảnh — nút "Quét thư mục" nhập ảnh mồ côi từ public/uploads/ vào CSDL.
   scan_uploads: 'Quét thư mục ảnh',
+  scan_uploads_batch: 'Quét thư mục ảnh (lô)',
   // Thư viện ảnh — nút "Đồng bộ storage" chuyển ảnh giữa local ↔ R2 + sửa URL rich-text.
   sync_storage: 'Đồng bộ storage',
+  sync_storage_batch: 'Đồng bộ storage (lô)',
+  // Thư viện ảnh — nút "Đổi domain R2" thay domain CDN trong URL ảnh + rich-text.
+  repoint_urls: 'Đổi domain R2',
   // Backup & khôi phục — nút backup / khôi phục trên /admin/settings/backup.
   backup_run: 'Backup',
   backup_restore: 'Khôi phục backup',

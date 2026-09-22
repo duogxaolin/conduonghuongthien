@@ -511,6 +511,46 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
       KEY \`media_asset_cleanup_due_idx\` (\`next_attempt_at\`, \`created_at\`)
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
+
+  // ── Danh mục Media Portal (tách khỏi `categories` bài viết) ────────────────
+  // Bảng riêng cho danh mục video: phẳng, không cha-con, không `type`. Trước đây
+  // `media_items.category_id` trỏ `categories` (bài viết); nay trỏ bảng này. Đổi
+  // FK trên DB đang có dữ liệu: drop FK cũ (trỏ `categories`) rồi add FK mới (trỏ
+  // `media_categories`). Video cũ `category_id` giữ nguyên giá trị cũ nhưng FK
+  // mới không khớp → MySQL SET NULL trong cùng lượt ALTER (giá trị cũ trỏ id của
+  // `categories` bài viết, không hợp lệ ở FK mới). Thực tế an toàn hơn: set
+  // `category_id = NULL` thủ công **trước** khi đổi FK, để không phụ thuộc hành
+  // vi ALTER. Cán bộ tự gán lại danh mục media mới.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`media_categories\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`name\` VARCHAR(255) NOT NULL,
+      \`slug\` VARCHAR(255) NOT NULL UNIQUE,
+      \`description\` TEXT NULL,
+      \`display_order\` INT NOT NULL DEFAULT 0,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  // Set NULL cho mọi `media_items.category_id` cũ (trỏ `categories` bài viết) —
+  // giá trị đó không còn ý nghĩa sau khi tách. Làm trước khi đổi FK để không phụ
+  // thuộc hành vi ALTER.
+  await db.query(`UPDATE \`media_items\` SET \`category_id\` = NULL WHERE \`category_id\` IS NOT NULL`)
+  // Drop FK cũ (trỏ `categories`) nếu còn tồn tại, rồi add FK mới (trỏ
+  // `media_categories`). Kiểm `INFORMATION_SCHEMA` trước khi drop.
+  const [oldFkRows] = await db.execute<RowDataPacket[]>(
+    `SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+     WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = 'media_items'
+       AND CONSTRAINT_NAME = 'fk_media_items_category' AND CONSTRAINT_TYPE = 'FOREIGN KEY' LIMIT 1`,
+    [database],
+  )
+  if (oldFkRows.length > 0) {
+    await db.query(`ALTER TABLE \`media_items\` DROP FOREIGN KEY \`fk_media_items_category\``)
+  }
+  await ensureForeignKeyIfMissing(
+    db, database, 'media_items', 'fk_media_items_category',
+    'FOREIGN KEY (`category_id`) REFERENCES `media_categories` (`id`) ON DELETE SET NULL',
+  )
+
   await ensureColumn(db, database, 'media_upload_sessions', 'completion_claim', 'VARCHAR(36) NULL')
   await ensureColumn(db, database, 'media_upload_sessions', 'completion_heartbeat_at', 'TIMESTAMP NULL DEFAULT NULL')
   await ensureColumn(db, database, 'media_upload_sessions', 'content_type', 'VARCHAR(64) NULL')

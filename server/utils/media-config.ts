@@ -44,6 +44,18 @@ export const MEDIA_DEFAULTS = {
   /** Nhịp tim 5 phút, tuổi cho phép 10 phút — gấp đôi, để một nhịp trượt không thành án tử. */
   processingHeartbeatSeconds: 5 * 60,
   processingStaleMinutes: 10,
+  /**
+   * Tự chuyển mã sau upload. Bật (mặc định) = upload xong cấp phát 360/720/1080p
+   * ngay. Tắt = chỉ probe metadata + thumbnail, giữ tệp gốc; cán bộ bấm "Xử lý
+   * sau" ở trang chi tiết để transcode khi rảnh — tránh lag máy chủ lúc upload.
+   */
+  autoTranscode: true,
+  /**
+   * Trần CPU (%) cho ffmpeg. 50 = ffmpeg chỉ dùng ~50% CPU (qua `cpulimit` nếu có,
+   * không thì giảm luồng + `nice`). Mặc định 50 để một lượt transcode không làm
+   * cổng chậm hẳn; 100 = full CPU (nhanh nhất).
+   */
+  processingCpuLimit: 50,
 } as const
 
 export const MEDIA_BOUNDS = {
@@ -56,6 +68,8 @@ export const MEDIA_BOUNDS = {
   diskFloorBytes: { min: 0, max: 1024 * 1024 * 1024 * 1024 },
   processingHeartbeatSeconds: { min: 30, max: 3600 },
   processingStaleMinutes: { min: 1, max: 24 * 60 },
+  autoTranscode: { min: 0, max: 1 },
+  processingCpuLimit: { min: 10, max: 100 },
 } as const
 
 export type MediaConfig = {
@@ -68,6 +82,10 @@ export type MediaConfig = {
   processingStaleMinutes: number
   processingMaxJobs?: number
   processingMaxAttempts?: number
+  /** Tự chuyển mã sau upload (mặc định true). Tắt = chỉ probe+thumbnail. */
+  autoTranscode: boolean
+  /** Trần CPU % cho ffmpeg (mặc định 50). */
+  processingCpuLimit: number
   /** Thư mục làm việc tuyệt đối: chứa `uploads/` và `media/`. */
   workdir: string
   /**
@@ -163,6 +181,11 @@ export function resolveMediaConfig(env: Record<string, unknown> = process.env): 
     workdir,
     processingMaxJobs: parseMediaInteger('MEDIA_PROCESSING_MAX_JOBS', env.MEDIA_PROCESSING_MAX_JOBS, 1, 1, 4),
     processingMaxAttempts: parseMediaInteger('MEDIA_PROCESSING_MAX_ATTEMPTS', env.MEDIA_PROCESSING_MAX_ATTEMPTS, 3, 1, 10),
+    autoTranscode: parseMediaBoolean('MEDIA_AUTO_TRANSCODE', env.MEDIA_AUTO_TRANSCODE, true),
+    processingCpuLimit: parseMediaInteger(
+      'MEDIA_PROCESSING_CPU_LIMIT', env.MEDIA_PROCESSING_CPU_LIMIT,
+      MEDIA_DEFAULTS.processingCpuLimit, MEDIA_BOUNDS.processingCpuLimit.min, MEDIA_BOUNDS.processingCpuLimit.max,
+    ),
     // R2 cho video mặc định TẮT — tách biệt khỏi R2 của thư viện ảnh. Cấu hình
     // đi qua CSDL (settings group `media_portal`), không qua biến môi trường,
     // vì đây là credential nhập trong trang admin như Google OAuth.

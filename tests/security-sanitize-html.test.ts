@@ -9,7 +9,10 @@ import { escapeHtml } from '../server/utils/escape-html'
  * A "live tag" below means any element other than the formatting tags we allow.
  */
 
-const EXECUTABLE = /<\s*(script|iframe|object|embed|svg|math|style|form|input|button)\b/i
+// `iframe` không nằm trong `EXECUTABLE` nữa — nó hợp lệ khi `src` là YouTube embed
+// (xem test "iframe YouTube" bên dưới). `isNeutralised` chỉ flag các tag vẫn nguy
+// hiểm kể cả không có handler.
+const EXECUTABLE = /<\s*(script|object|embed|svg|math|style|form|input|button)\b/i
 const EVENT_HANDLER = /\son[a-z]+\s*=/i
 const DANGEROUS_SCHEME = /(javascript|vbscript|data:text\/html)\s*:/i
 
@@ -21,7 +24,10 @@ test('script-bearing elements are dropped together with their content', () => {
   assert.equal(sanitizeHtml('<script>alert(1)</script>Xin chào'), 'Xin chào')
   assert.equal(sanitizeHtml('<style>*{x:expression(alert(1))}</style>ok'), 'ok')
   assert.equal(sanitizeHtml('<svg><script>alert(1)</script></svg>text'), 'text')
-  assert.equal(sanitizeHtml('<iframe src="https://evil.test"></iframe>'), '')
+  // `iframe` với `src` không phải YouTube: `src` bị drop, tag `<iframe>` rỗng
+  // còn lại (không nguy hiểm vì không có origin để tải). Mở `iframe` cho YouTube
+  // là chủ đích — xem test "iframe YouTube" bên dưới.
+  assert.equal(sanitizeHtml('<iframe src="https://evil.test"></iframe>'), '<iframe></iframe>')
   assert.equal(sanitizeHtml('<form action="/x"><input name="y"></form>hi'), 'hi')
 })
 
@@ -118,4 +124,54 @@ test('escapeHtml neutralises the five HTML metacharacters', () => {
   assert.equal(escapeHtml(`<b>"a"&'x'</b>`), '&lt;b&gt;&quot;a&quot;&amp;&#39;x&#39;&lt;/b&gt;')
   assert.equal(escapeHtml(null), '')
   assert.equal(escapeHtml(undefined), '')
+})
+
+// ─── iframe YouTube — nhúng video trong bài viết ──────────────────────────────
+// TinyMCE plugin `media` sinh `<iframe>` cho YouTube. Sanitizer mở `iframe` CHO
+// YOUTUBE DUY NHẤT — `src` phải là `youtube.com/embed/<id>` hoặc
+// `youtube-nocookie.com/embed/<id>`. Mọi origin khác bị strip `src`, và
+// `javascript:`/`data:` bị drop hoàn toàn.
+test('iframe YouTube hợp lệ được giữ, src rewrite sang youtube-nocookie.com', () => {
+  const out = sanitizeHtml('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" width="560" height="315" allowfullscreen title="Video"></iframe>')
+  assert.match(out, /<iframe[^>]*src="https:\/\/www\.youtube-nocookie\.com\/embed\/dQw4w9WgXcQ"/)
+  assert.match(out, /width="560"/)
+  assert.match(out, /height="315"/)
+  assert.match(out, /allowfullscreen/)
+  assert.match(out, /title="Video"/)
+  assert.ok(!/www\.youtube\.com\/embed/.test(out), 'youtube.com chưa rewrite sang nocookie')
+})
+
+test('iframe youtube-nocookie.com giữ nguyên, không rewrite nữa', () => {
+  const out = sanitizeHtml('<iframe src="https://www.youtube-nocookie.com/embed/dQw4w9WgXcQ?modestbranding=1"></iframe>')
+  assert.match(out, /src="https:\/\/www\.youtube-nocookie\.com\/embed\/dQw4w9WgXcQ\?modestbranding=1"/)
+})
+
+test('iframe với src lạ bị strip src, tag rỗng còn lại', () => {
+  assert.equal(sanitizeHtml('<iframe src="https://evil.test/embed/abc"></iframe>'), '<iframe></iframe>')
+  assert.equal(sanitizeHtml('<iframe src="javascript:alert(1)"></iframe>'), '<iframe></iframe>')
+  // `data:text/html` có thể chứa `<script>` làm parser ambiguous; ở đây chỉ kiểm
+  // scheme `data:` không phải ảnh → `isSafeIframeSrc` reject → src bị drop.
+  assert.equal(sanitizeHtml('<iframe src="data:text/html;base64,WFpIP25"></iframe>'), '<iframe></iframe>')
+})
+
+test('iframe với ID sai độ dài (không 11 ký tự) bị strip src', () => {
+  assert.equal(sanitizeHtml('<iframe src="https://www.youtube.com/embed/short"></iframe>'), '<iframe></iframe>')
+  assert.equal(sanitizeHtml('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQextra"></iframe>'), '<iframe></iframe>')
+})
+
+test('iframe với scheme http (không https) bị strip src', () => {
+  assert.equal(sanitizeHtml('<iframe src="http://www.youtube.com/embed/dQw4w9WgXcQ"></iframe>'), '<iframe></iframe>')
+})
+
+test('event handler trên iframe bị strip', () => {
+  const out = sanitizeHtml('<iframe src="https://www.youtube.com/embed/dQw4w9WgXcQ" onload="alert(1)"></iframe>')
+  assert.ok(!/onload/i.test(out), 'onload handler còn')
+  assert.match(out, /youtube-nocookie\.com/)
+})
+
+test('video/audio/object/embed vẫn bị DROP_TREE', () => {
+  assert.equal(sanitizeHtml('<video src="https://evil.test/x.mp4"></video>'), '')
+  assert.equal(sanitizeHtml('<audio src="https://evil.test/x.mp3"></audio>'), '')
+  assert.equal(sanitizeHtml('<object data="https://evil.test"></object>'), '')
+  assert.equal(sanitizeHtml('<embed src="https://evil.test">'), '')
 })
