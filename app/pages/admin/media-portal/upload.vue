@@ -77,25 +77,44 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
 </script>
 
 <template>
-  <div class="mx-auto max-w-3xl space-y-5">
-    <NuxtLink to="/admin/media-portal" class="text-sm text-[#2c6e33] underline">Quay lại thư viện video</NuxtLink>
-    <h1 class="text-xl font-extrabold text-[#122815]">Tải video lên</h1>
+  <div class="mx-auto max-w-3xl space-y-6">
+    <NuxtLink to="/admin/media-portal" class="inline-flex items-center gap-1.5 text-sm font-medium text-[#2c6e33] hover:text-[#245830] transition-colors">
+      <i class="fa-solid fa-arrow-left text-xs" aria-hidden="true"></i>
+      Quay lại thư viện video
+    </NuxtLink>
+
+    <!-- Tiêu đề trang -->
+    <div class="flex items-start gap-4">
+      <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#e8f0e8] text-[#2c6e33]">
+        <i class="fa-solid fa-cloud-arrow-up text-xl" aria-hidden="true"></i>
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold text-[#122815] leading-tight">Tải video lên</h1>
+        <p class="text-sm text-[#667768] mt-1">Tải tệp video lên máy chủ, hệ thống tự nén 360/720/1080p ở nền và xuất bản khi sẵn sàng.</p>
+      </div>
+    </div>
 
     <!-- Phase 1: Kiểm tra khả năng tải + uploader -->
     <template v-if="!uploadedItem">
       <div v-if="loading" role="status" aria-busy="true"><span class="sr-only">Đang kiểm tra khả năng tải lên</span><SkeletonForm label="Đang kiểm tra khả năng tải lên" :fields="1" /></div>
-      <div v-else-if="loadError" role="alert" class="rounded-lg bg-red-50 p-4 text-red-800">{{ loadError }} <button class="font-semibold underline" @click="load()">Thử lại</button></div>
-      <p v-else-if="!canUpload" role="alert" class="rounded-lg bg-amber-50 p-4">Bạn cần quyền tạo và xem video để tải lên và theo dõi tiến độ.</p>
-      <p v-else-if="!config?.uploadEnabled" role="status" class="rounded-lg bg-amber-50 p-4">Máy chủ hiện chưa bật tải video. Bạn vẫn có thể đăng video YouTube.</p>
+      <div v-else-if="loadError" role="alert" class="rounded-xl bg-red-50 p-4 text-red-800 border border-red-100">
+        <p class="flex items-start gap-2 m-0"><i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i><span>{{ loadError }} <button class="font-semibold underline ml-1" @click="load()">Thử lại</button></span></p>
+      </div>
+      <div v-else-if="!canUpload" role="alert" class="rounded-xl bg-amber-50 p-4 border border-amber-100">
+        <p class="flex items-start gap-2 m-0 text-amber-800"><i class="fa-solid fa-lock mt-0.5" aria-hidden="true"></i><span>Bạn cần quyền tạo và xem video để tải lên và theo dõi tiến độ.</span></p>
+      </div>
+      <div v-else-if="!config?.uploadEnabled" role="status" class="rounded-xl bg-amber-50 p-4 border border-amber-100">
+        <p class="flex items-start gap-2 m-0 text-amber-800"><i class="fa-solid fa-circle-info mt-0.5" aria-hidden="true"></i><span>Máy chủ hiện chưa bật tải video. Bạn vẫn có thể đăng video YouTube.</span></p>
+      </div>
       <AdminChunkedUploader v-else :open="true" :max-upload-size="config.maxUploadSize" @uploaded="onUploaded" @close="close" />
     </template>
 
     <!-- Phase 2: Timeline xử lý sau khi upload xong -->
     <template v-else>
-      <div class="rounded-xl border border-[#e2ece3] bg-white p-5 space-y-4">
+      <div class="rounded-2xl border border-[#e2ece3] bg-white p-6 space-y-5 shadow-sm">
         <div class="flex items-center justify-between gap-3 flex-wrap">
-          <h2 class="text-lg font-extrabold text-[#122815] m-0">
-            <i class="fa-solid fa-circle-check text-[#2c6e33] mr-1.5" aria-hidden="true"></i>
+          <h2 class="text-lg font-bold text-[#122815] m-0 flex items-center gap-2">
+            <i class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
             Đã tải lên xong
           </h2>
           <span
@@ -120,7 +139,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
         <div class="flex flex-wrap items-center gap-3 border-t border-[#eef2ee] pt-4">
           <button
             type="button"
-            class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2 text-sm font-bold text-white cursor-pointer border-0 hover:bg-[#2c6e33] transition-colors"
+            class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2 text-sm font-bold text-white cursor-pointer border-0 hover:bg-[#2c6e33] transition-colors focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
             @click="openDetail()"
           >
             <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
@@ -129,7 +148,7 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
           <button
             v-if="uploadedItem.processingStatus === 'ready'"
             type="button"
-            class="inline-flex items-center gap-2 rounded-lg border border-[#c8d6c9] px-4 py-2 text-sm font-semibold text-[#2c3e2e] cursor-pointer bg-white hover:bg-[#f8faf8] transition-colors"
+            class="inline-flex items-center gap-2 rounded-lg border border-[#c8d6c9] px-4 py-2 text-sm font-semibold text-[#2c3e2e] cursor-pointer bg-white hover:bg-[#f8faf8] transition-colors focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
             @click="uploadAnother()"
           >
             <i class="fa-solid fa-upload" aria-hidden="true"></i>
@@ -137,8 +156,8 @@ onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort()
           </button>
         </div>
 
-        <p class="text-xs text-[#8aa08c] m-0">
-          <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
+        <p class="text-xs text-[#8aa08c] m-0 flex items-center gap-1.5">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
           Trạng thái cập nhật tự động. Bạn có thể rời trang — xử lý tiếp tục ở máy chủ.
         </p>
       </div>

@@ -40,8 +40,10 @@ if ((SOURCE_CATEGORIES as readonly string[]).includes(BOOST_SOURCE_CATEGORY)) {
   throw new Error('BOOST_SOURCE_CATEGORY must not be a member of the public SOURCE_CATEGORIES allowlist')
 }
 
-/** The dedupe window. See design D4 — long enough to absorb a reload sitting, short enough that an afternoon return visit is a second genuine read. */
-export const VIEW_DEDUPE_WINDOW_SECONDS = 30 * 60
+/** The dedupe window. Cùng một người xem lại sau 10 phút thì vẫn tính +1 — đủ dài
+ *  để hấp thụ một lần F5, đủ ngắn để một lượt quay lại thật được tính là một lượt
+ *  xem mới. Cùng cửa sổ cho cả bài viết và video (xem `MEDIA_VIEW_DEDUPE_WINDOW_SECONDS`). */
+export const VIEW_DEDUPE_WINDOW_SECONDS = 10 * 60
 
 /** `bucket_key` in `rate_limit_counters` is VARCHAR(191) and is the primary key. */
 export const VIEW_DEDUPE_KEY_MAX_LENGTH = 191

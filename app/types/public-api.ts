@@ -78,7 +78,7 @@ type MediaListHandler = typeof import('~~/server/api/public/media/index.get').de
 export type MediaListPayload = Payload<MediaListHandler>
 export type PublicMediaListItem = MediaListPayload['items'][number]
 
-type MediaDetailHandler = typeof import('~~/server/api/public/media/[slug].get').default
+type MediaDetailHandler = typeof import('~~/server/api/public/media/[shortId].get').default
 export type MediaDetailPayload = Payload<MediaDetailHandler>
 
 /**

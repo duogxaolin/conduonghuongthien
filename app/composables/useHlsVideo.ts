@@ -86,8 +86,26 @@ export async function attachHlsStream(
   url: string,
   options: HlsOptions,
 ): Promise<HlsAttachResult> {
-  // Safari/iOS: gán thẳng nguồn, không tải thư viện nào.
-  if (video.canPlayType('application/vnd.apple.mpegurl')) {
+  // **Ưu tiên hls.js (library mode) khi có MSE**, kể cả khi trình duyệt khai hỗ
+  // trợ HLS gốc. Chrome/Edge/Firefox báo `canPlayType('...mpegurl')` trả
+  // `'maybe'` (truthy) nhưng **không** phát HLS thật — không có native demuxer.
+  // Tin `canPlayType` trên Chromium là gán `.m3u8` thẳng vào `<video src>`, và
+  // Chrome ngồi đó với native controls trống không phát được gì: không có lỗi,
+  // không có manifest parse, không có menu chất lượng. Mãi trên Safari/iOS mới
+  // `canPlayType` thực sự phát được, và ở đó `Hls.isSupported()` là `false`
+  // (Safari cũ) hoặc ta **chọn** không dùng thư viện vì native đã đủ.
+  //
+  // Thứ tự:
+  //   1. `canPlayType('application/vnd.apple.mpegurl')` === 'probably' (Safari/iOS)
+  //      → native. **Phải kiểm TRƯỚC khi tải thư viện**: Safari/iOS không có MSE
+  //      nên `Hls.isSupported()` là false, nhưng nếu tải hls.js trước rồi mới phát
+  //      hiện điều đó thì khách đã trả 150KB vô dụng — đúng cái test này tồn tại để bắt.
+  //      Chỉ chấp nhận `'probably'`: Chromium báo `'maybe'` (truthy) nhưng **không**
+  //      phát HLS thật — tin `'maybe'` là gán `.m3u8` vào `<video src>` rồi ngồi với
+  //      native controls trống. Safari/iOS trả `'probably'` và ở đó native đủ tốt.
+  //   2. `Hls.isSupported()` (MSE) → library mode (Chrome/FF/Edge), có levels.
+  //   3. Còn lại → không hỗ trợ.
+  if (video.canPlayType('application/vnd.apple.mpegurl') === 'probably') {
     video.src = url
     return { ok: true, mode: 'native' }
   }
@@ -95,58 +113,60 @@ export async function attachHlsStream(
   try {
     const { default: Hls } = await import('hls.js')
 
-    // `isSupported()` là false trên trình duyệt không có MSE. Nói ra thay vì để
-    // một khung đen: người đọc không có cách nào đoán được vì sao không có gì.
-    if (!Hls.isSupported()) return { ok: false, reason: 'unsupported' }
+    if (Hls.isSupported()) {
+      const buffer = options.bufferSeconds ?? 30
+      const instance = new Hls({ backBufferLength: buffer, maxBufferLength: buffer })
+      options.instance.value = instance
 
-    const buffer = options.bufferSeconds ?? 30
-    const instance = new Hls({ backBufferLength: buffer, maxBufferLength: buffer })
-    options.instance.value = instance
-
-    instance.on(Hls.Events.ERROR, (_event: unknown, data: { fatal?: boolean }) => {
-      // Chỉ báo lỗi khi lỗi là `fatal`. Lỗi không fatal là chuyện bình thường của
-      // ABR (một phân đoạn chậm, một lần đổi bản) và hls.js tự phục hồi — hiện
-      // chúng lên là dạy người đọc bỏ qua cảnh báo.
-      if (data?.fatal) options.onFatalError?.()
-    })
-
-    // `MANIFEST_PARSED` là lúc hls.js đã biết danh sách bản (levels). Plyr không
-    // tự đọc `hls.levels`, nên ở đây expose các chiều cao + cách đổi bản qua
-    // callback để MediaPlayer dựng cầu chất lượng cho Plyr. Chỉ một bản → menu
-    // rỗng → Plyr ẩn (không hiển thị menu một mục).
-    if (options.onManifestParsed) {
-      const hls = instance as unknown as {
-        levels?: Array<{ height?: number }>
-        currentLevel: number
-      }
-      instance.on(Hls.Events.MANIFEST_PARSED, () => {
-        const heights = (hls.levels ?? [])
-          .map(l => l.height)
-          .filter((h): h is number => typeof h === 'number' && h > 0)
-        options.onManifestParsed?.({
-          levels: heights,
-          setLevel: (height: number) => {
-            // -1 = ABR tự động; >0 = tìm level index khớp chiều cao, trễ thì giữ ABR
-            // (tránh `currentLevel = undefined` khiến hls.js ném).
-            if (height === -1) {
-              hls.currentLevel = -1
-              return
-            }
-            const idx = (hls.levels ?? []).findIndex(l => l?.height === height)
-            if (idx >= 0) hls.currentLevel = idx
-          },
-        })
+      instance.on(Hls.Events.ERROR, (_event: unknown, data: { fatal?: boolean }) => {
+        // Chỉ báo lỗi khi lỗi là `fatal`. Lỗi không fatal là chuyện bình thường của
+        // ABR (một phân đoạn chậm, một lần đổi bản) và hls.js tự phục hồi — hiện
+        // chúng lên là dạy người đọc bỏ qua cảnh báo.
+        if (data?.fatal) options.onFatalError?.()
       })
-    }
 
-    instance.loadSource(url)
-    instance.attachMedia(video)
-    return { ok: true, mode: 'library' }
+      // `MANIFEST_PARSED` là lúc hls.js đã biết danh sách bản (levels). Plyr không
+      // tự đọc `hls.levels`, nên ở đây expose các chiều cao + cách đổi bản qua
+      // callback để MediaPlayer dựng cầu chất lượng cho Plyr. Chỉ một bản → menu
+      // rỗng → Plyr ẩn (không hiển thị menu một mục).
+      if (options.onManifestParsed) {
+        const hls = instance as unknown as {
+          levels?: Array<{ height?: number }>
+          currentLevel: number
+        }
+        instance.on(Hls.Events.MANIFEST_PARSED, () => {
+          const heights = (hls.levels ?? [])
+            .map(l => l.height)
+            .filter((h): h is number => typeof h === 'number' && h > 0)
+          options.onManifestParsed?.({
+            levels: heights,
+            setLevel: (height: number) => {
+              // -1 = ABR tự động; >0 = tìm level index khớp chiều cao, trễ thì giữ ABR
+              // (tránh `currentLevel = undefined` khiến hls.js ném).
+              if (height === -1) {
+                hls.currentLevel = -1
+                return
+              }
+              const idx = (hls.levels ?? []).findIndex(l => l?.height === height)
+              if (idx >= 0) hls.currentLevel = idx
+            },
+          })
+        })
+      }
+
+      instance.loadSource(url)
+      instance.attachMedia(video)
+      return { ok: true, mode: 'library' }
+    }
   } catch {
     // Gói không tải được: mạng chập chờn, hoặc một proxy chặn chunk. Nơi gọi
     // phải nói ra thành một câu giải thích, không để lại một khung đen im lặng.
     return { ok: false, reason: 'load_failed' }
   }
+
+  // Không MSE, không native HLS → trình duyệt không phát được video này.
+  // `canPlayType` đã kiểm ở đầu hàm; đến đây là trình duyệt không hỗ trợ cả hai.
+  return { ok: false, reason: 'unsupported' }
 }
 
 /** Dọn thực thể đang chạy. Không dọn thì nó giữ timer và kết nối phân đoạn sống

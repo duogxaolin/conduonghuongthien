@@ -1465,10 +1465,16 @@ describe('7.6 lượt hỏng được ghi nhận kèm lý do', () => {
     assert.equal(isPlayable({ processingStatus: 'ready', resolutionsReady: ['360p'] }), true)
     // `ready` mà không có rendition (`MEDIA_AUTO_TRANSCODE=false`): tệp gốc đã
     // được pipeline đặt xong, stream endpoint phục vụ `original.<ext>` qua
-    // byte-range — nên phát được. `processing` + không rendition thì KHÔNG: pipeline
-    // đang chạy, chưa khai hoàn tất, dựng trình phát ở đây là dựng khung sẽ hỏng.
+    // byte-range — nên phát được. `processing` + không rendition cũng phát được:
+    // pipeline đang transcode nhưng tệp gốc `original.<ext>` đã có ngay sau upload
+    // (probe xong), stream endpoint lùi về tệp gốc qua `isPassthroughManifest`,
+    // nên công dân xem được video gốc thay vì thấy lỗi — "chưa nén xong thì vẫn
+    // xem đc bằng video gốc". `pending` thì KHÔNG: chưa probe xong, tệp gốc chưa
+    // chắc đã nằm sẵn trên đĩa, stream endpoint sẽ 404 nếu tìm không thấy.
     assert.equal(isPlayable({ processingStatus: 'ready', resolutionsReady: [] }), true,
       'ready + không rendition (autoTranscode=false) phải phát được qua tệp gốc')
+    assert.equal(isPlayable({ processingStatus: 'processing', resolutionsReady: [] }), true,
+      'processing + không rendition phải phát được qua tệp gốc (đang nén nhưng gốc đã có)')
     assert.equal(isPlayable({ processingStatus: 'pending', resolutionsReady: null }), false)
     assert.equal(isPlayable({ processingStatus: 'pending', resolutionsReady: undefined }), false)
   })

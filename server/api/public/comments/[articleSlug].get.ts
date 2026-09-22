@@ -125,10 +125,12 @@ export default defineEventHandler(async (event): Promise<CommentThreadResponse> 
   let commentsEnabled: boolean
 
   if (isMedia) {
+    // Media giờ tra theo `short_id` (định danh URL công khai). Route param vẫn tên
+    // `articleSlug` vì endpoint phục vụ cả hai loại; nhánh media dùng `short_id`.
     const [row] = await getDb()
       .select({ id: mediaItems.id, commentsEnabled: mediaItems.commentsEnabled })
       .from(mediaItems)
-      .where(and(eq(mediaItems.slug, slug), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
+      .where(and(eq(mediaItems.shortId, slug), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
       .limit(1)
     if (!row) return emptyThread(page, perPage)
     itemId = row.id

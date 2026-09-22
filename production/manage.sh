@@ -260,6 +260,31 @@ ADMIN_EMAIL=$ADMIN_EMAIL
 
 # CI ghi đè dòng này mỗi lần deploy; có thể đặt tay
 CDKT_IMAGE=ghcr.io/duogxaolin/conduonghuongthien:latest
+
+# ─── Media Portal ───────────────────────────────
+# Tải video lên máy chủ (cần đủ RAM — xem manage.sh media-tuning).
+MEDIA_UPLOAD_ENABLED=true
+MEDIA_UPLOAD_MAX_SIZE=10737418240
+MEDIA_UPLOAD_CHUNK_SIZE=10485760
+MEDIA_DISK_FLOOR_BYTES=1073741824
+MEDIA_PROCESSING_MAX_JOBS=1
+MEDIA_PROCESSING_MAX_ATTEMPTS=3
+MEDIA_PROCESSING_HEARTBEAT_SECONDS=300
+MEDIA_PROCESSING_STALE_MINUTES=10
+MEDIA_UPLOAD_SESSION_HOURS=24
+# Bật auto-transcode: upload xong tự nén 360/720/1080p dưới nền worker, không cần
+# cán bộ bấm nút. Đổi sang false để tắt (chỉ probe+thumbnail, bấm "Chuyển mã" thủ công).
+MEDIA_AUTO_TRANSCODE=true
+# Giới hạn ffmpeg 50% CPU — không ăn sạch mọi nhân khi transcode.
+MEDIA_PROCESSING_CPU_LIMIT=50
+
+# ─── Chat trực tiếp: 1 bản sao ──────────────────
+# Đặt 1 để tắt cảnh báo replica SSE lúc khởi động (đang chạy 1 container).
+CDKT_SSE_REPLICA_GUARD=1
+
+# ─── Backup ─────────────────────────────────────
+BACKUP_DIR=./backups
+BACKUP_KEEP_DAYS=14
 EOF
 
   echo -e "${C_GREEN}✓ Đã tạo $ROOT/.env${C_RESET}"
@@ -605,6 +630,22 @@ cmd_media_tuning() {
       fi
     fi
     echo -e "  ${C_DIM}CPU: không đặt trần (tiền lệ check-resources.sh). FFmpeg tự nice -n 19.${C_RESET}"
+  fi
+
+  # ── Auto-transcode: tự nén 360/720/1080p sau upload ─────────────────────
+  echo -e "\n${C_BOLD}Tự nén video sau upload${C_RESET}"
+  local cur_auto
+  cur_auto=$(env_get MEDIA_AUTO_TRANSCODE || true)
+  # Cho hiển thị: rỗng đọc thành true (mặc định code).
+  echo -e "  ${C_DIM}Đang đặt: MEDIA_AUTO_TRANSCODE=${cur_auto:-true (mặc định)}${C_RESET}"
+  echo -e "  ${C_DIM}true = upload xong tự nén dưới nền worker.${C_RESET}"
+  echo -e "  ${C_DIM}false = chỉ probe+thumbnail; cán bộ bấm \"Chuyển mã\" thủ công.${C_RESET}"
+  if confirm "Bật tự nén video sau upload?" "y"; then
+    set_env MEDIA_AUTO_TRANSCODE true
+    echo -e "  ${C_GREEN}→ Tự nén BẬT.${C_RESET}"
+  else
+    set_env MEDIA_AUTO_TRANSCODE false
+    echo -e "  ${C_DIM}→ Tự nén TẮT (thủ công).${C_RESET}"
   fi
 
   # ── Kết thúc: nói rõ bước tiếp theo, KHÔNG tự làm ─────────────────────────

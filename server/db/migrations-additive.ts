@@ -20,6 +20,8 @@
  */
 import mysql, { type Connection, type RowDataPacket } from 'mysql2/promise'
 
+import { encodeShortId } from '../utils/short-media-id'
+
 export type ChatbotColumnMigration = {
   table: string
   column: string
@@ -557,6 +559,10 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureColumn(db, database, 'media_items', 'processing_attempts', 'INT NOT NULL DEFAULT 0')
   await ensureColumn(db, database, 'media_items', 'processing_next_attempt_at', 'TIMESTAMP NULL DEFAULT NULL')
   await ensureColumn(db, database, 'media_items', 'processing_heartbeat_at', 'TIMESTAMP NULL DEFAULT NULL')
+  // Tiến trình FFmpeg thật — 3 cột tách biệt để UI vẽ thanh % cho bản đang nén.
+  await ensureColumn(db, database, 'media_items', 'processing_rendition', 'VARCHAR(16) NULL')
+  await ensureColumn(db, database, 'media_items', 'processing_percent', 'INT NULL')
+  await ensureColumn(db, database, 'media_items', 'processing_phase', 'VARCHAR(16) NULL')
   // Lưu trữ video: `local` (đĩa máy chủ) hoặc `r2` (Cloudflare R2 bucket riêng).
   // Video cũ (trước khi có R2) giữ `local`; video mới chọn theo config khi transcode.
   await ensureColumn(db, database, 'media_items', 'storage_provider', "VARCHAR(16) NOT NULL DEFAULT 'local'")
@@ -678,4 +684,55 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // that part.
   await modifyColumn(db, database, 'article_comments', 'article_id', 'INT NULL')
 
+  // ── Short ID YouTube-style cho URL công khai media ──────────────────────────
+  //
+  // URL trang chi tiết video từng dùng slug dài. Short ID 11 ký tự base64url làm
+  // định danh URL chính (`/media/<short_id>`); `slug` vẫn giữ cho redirect 301.
+  //
+  // Ba bước, đúng khuôn "nullable add → backfill → NOT NULL":
+  //   1. Thêm cột nullable (hàng cũ chưa có giá trị).
+  //   2. Backfill: sinh short_id cho mỗi hàng `short_id IS NULL`. Dùng raw SQL
+  //      loop vì `applyAdditiveMigrations` chỉ có raw mysql2 connection, không
+  //      Drizzle. `encodeShortId()` là hàm thuần (không I/O) nên dùng được ở đây.
+  //      Kiểm trùng ngay trong loop (SELECT ... WHERE short_id = ?) — 64 bit nên
+  //      trùng cực hiếm nhưng cột UNIQUE là thẩm quyền.
+  //   3. Đặt NOT NULL + unique index.
+  await ensureColumn(db, database, 'media_items', 'short_id', 'VARCHAR(16) NULL')
+  await backfillShortIds(db)
+  await modifyColumn(db, database, 'media_items', 'short_id', 'VARCHAR(16) NOT NULL')
+  await ensureIndex(db, database, 'media_items', 'media_items_short_id_uq', 'UNIQUE INDEX `media_items_short_id_uq` (`short_id`)')
+
+}
+
+/**
+ * Backfill `short_id` cho hàng cũ chưa có — sinh 11 ký tự base64url mỗi hàng.
+ *
+ * Dùng raw `Connection` (không Drizzle) vì `applyAdditiveMigrations` chỉ có
+ * mysql2 connection. Sinh bằng `encodeShortId()` (hàm thuần, export từ
+ * `short-media-id.ts`), kiểm trùng bằng `SELECT ... WHERE short_id = ?` — cột
+ * UNIQUE là thẩm quyền, không phải may rủi.
+ *
+ * Chạy một lần lúc upgrade; 11 hàng hiện có → 11 vòng loop, không đáng kể. Nếu
+ * mọi hàng đã có `short_id` (chạy rồi) thì thoát ngay.
+ */
+async function backfillShortIds(db: Connection) {
+  const [rows] = await db.execute<RowDataPacket[]>(
+    'SELECT `id` FROM `media_items` WHERE `short_id` IS NULL ORDER BY `id`',
+  )
+  for (const row of rows) {
+    // Sinh + kiểm trùng trong cùng lượt. Tối đa 8 thử — trùng liên tiếp 8 lần với
+    // 64 bit là cực hiếm; nếu tới đó, throw (có gì đó sai, không phải loop nữa).
+    let candidate = ''
+    for (let attempt = 0; attempt < 8; attempt++) {
+      candidate = encodeShortId()
+      const [existing] = await db.execute<RowDataPacket[]>(
+        'SELECT 1 FROM `media_items` WHERE `short_id` = ? LIMIT 1',
+        [candidate],
+      )
+      if (existing.length === 0) break
+      candidate = ''
+    }
+    if (!candidate) throw new Error('Không sinh được short_id duy nhất khi backfill.')
+    await db.query('UPDATE `media_items` SET `short_id` = ? WHERE `id` = ?', [candidate, row.id])
+  }
 }

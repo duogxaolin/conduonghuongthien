@@ -169,6 +169,8 @@ function makeFake(options: FakeOptions = {}) {
     }
     // ── media_items (lượt lưu thành bản ghi) ──
     if (/^select `slug` from `media_items` where `media_items`\.`slug` like \?/i.test(sql)) return [[], []]
+    // `uniqueShortMediaId` kiểm trùng `short_id` — candidate ngẫu nhiên không ai trùng.
+    if (/^select `id` from `media_items` where `media_items`\.`short_id` = \?/i.test(sql)) return [[], []]
     if (/^insert into `media_items`/i.test(sql)) return [{ insertId: 4242, affectedRows: 1 }, []]
     // ── audit ──
     if (/^insert into `activity_logs`/i.test(sql)) return [{ insertId: 1, affectedRows: 1 }, []]

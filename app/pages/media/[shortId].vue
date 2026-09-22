@@ -171,7 +171,7 @@
               truyền một cờ boolean: component cần đúng con số đó để đối chiếu
               với bình luận trả về, và một cờ sẽ buộc nó phải suy lại từ slug.
             -->
-            <ArticleComments :slug="item.slug" :media-item-id="item.id" />
+            <ArticleComments :slug="item.shortId" :media-item-id="item.id" />
           </template>
         </div>
 
@@ -224,7 +224,7 @@
             <ul v-else class="list-none m-0 p-0 flex flex-col gap-3">
               <li v-for="entry in related" :key="entry.id">
                 <nuxt-link
-                  :to="`/media/${entry.slug}`"
+                  :to="`/media/${entry.shortId}`"
                   class="flex gap-3 no-underline group"
                 >
                   <span class="w-24 h-14 rounded-lg bg-[#EEF2EC] shrink-0 overflow-hidden">
@@ -262,16 +262,16 @@ import { formatMediaDuration } from '~/utils/media-duration'
 import type { PublicMediaItem, PublicMediaListItem } from '~/types/public-api'
 
 const route = useRoute()
-const slug = computed(() => String(route.params.slug || ''))
+const shortId = computed(() => String(route.params.shortId || ''))
 
 /**
  * Chi tiết video. Chỉ đọc nội dung **công khai** — xem đầu tệp về ràng buộc
  * `swr: 60`. Không có trường nào phụ thuộc người đọc trong lượt gọi này.
  */
 const { data, pending, error, refresh } = useFetch(
-  () => `/api/public/media/${encodeURIComponent(slug.value)}`,
+  () => `/api/public/media/${encodeURIComponent(shortId.value)}`,
   {
-    key: () => `media-detail-${slug.value}`,
+    key: () => `media-detail-${shortId.value}`,
     lazy: true,
     default: () => ({ ok: false, item: null }),
   },
@@ -390,7 +390,7 @@ function pingView(target: string) {
 watch(item, value => {
   if (!value) return
   if (!import.meta.client) return
-  pingView(value.slug)
+  pingView(value.shortId)
   loadRelated()
 }, { immediate: true })
 </script>

@@ -39,7 +39,7 @@ import {
   MEDIA_VIEW_DEDUPE_RULE,
   buildMediaViewDedupeKey,
   recordMediaView,
-  resolvePublishedMediaId,
+  resolvePublishedMediaIdByShortId,
 } from '../../../../services/media-portal'
 
 /** Một dòng log cho mỗi nguyên nhân, không phải mỗi request — nếu không, một máy
@@ -50,8 +50,8 @@ export default defineEventHandler(async (event) => {
   setResponseStatus(event, 202)
 
   try {
-    const slug = getRouterParam(event, 'slug')
-    if (!slug) return { accepted: false }
+    const shortId = getRouterParam(event, 'shortId')
+    if (!shortId) return { accepted: false }
 
     // Thân request không mang trường nào được dùng. Nó vẫn được đọc và bỏ qua một
     // cách tường minh: một `readBody` không gọi thì h3 để lại luồng request chưa
@@ -59,7 +59,7 @@ export default defineEventHandler(async (event) => {
     // đều là lý do để đọc rồi quên.
     await readBody(event).catch(() => null)
 
-    const mediaItemId = await resolvePublishedMediaId(slug)
+    const mediaItemId = await resolvePublishedMediaIdByShortId(shortId)
     // Cùng mã, cùng hình dạng: slug lạ và slug chưa xuất bản không phân biệt được.
     if (mediaItemId === null) return { accepted: false }
 

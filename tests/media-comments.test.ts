@@ -242,7 +242,7 @@ describe('10.4 — the moderation list carries both kinds, and neither join may 
   })
 
   it('selects the media columns the screen has to name the item by', () => {
-    for (const column of ['mediaItemTitle', 'mediaItemSlug', 'mediaItemId']) {
+    for (const column of ['mediaItemTitle', 'mediaItemSlug', 'mediaItemShortId', 'mediaItemId']) {
       assert.match(body, new RegExp(`${column}:`), `the list no longer selects ${column}`)
     }
   })
@@ -467,7 +467,7 @@ describe('10.8 — email for a media reply, and never inside the transaction', (
 
   it('resolves the item kind rather than assuming an article', () => {
     assert.match(send, /resolveMailTarget\(reply\)/, 'the email no longer resolves which item the reply is on')
-    assert.match(email, /mediaItems\.slug/, 'the email never reads a media slug')
+    assert.match(email, /mediaItems\.shortId/, 'the email never reads a media short_id')
     assert.match(email, /mediaItems\.commentsEnabled/, 'the email does not check whether media commenting is on')
   })
 
@@ -476,7 +476,7 @@ describe('10.8 — email for a media reply, and never inside the transaction', (
     const mediaBranch = resolver.slice(resolver.indexOf('reply.mediaItemId !== null'))
     assert.match(mediaBranch, /item\.status !== 'published'/, 'an unpublished media item would still be emailed')
     assert.match(mediaBranch, /item\.commentsEnabled/, 'a media item with commenting off would still be emailed')
-    assert.match(mediaBranch, /item\?\.slug/, 'a media item with no slug would still be emailed')
+    assert.match(mediaBranch, /item\?\.shortId/, 'a media item with no short_id would still be emailed')
   })
 
   it('sends after the transaction commits, never inside it', () => {

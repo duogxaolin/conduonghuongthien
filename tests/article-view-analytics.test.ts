@@ -100,8 +100,8 @@ describe('buildViewDedupeKey', () => {
     assert.equal(buildViewDedupeKey(1, 'x'), 'av:1:x')
   })
 
-  it('holds a 30-minute dedupe window', () => {
-    assert.equal(VIEW_DEDUPE_WINDOW_SECONDS, 1800)
+  it('holds a 10-minute dedupe window — cùng người xem lại sau 10p01s thì +1', () => {
+    assert.equal(VIEW_DEDUPE_WINDOW_SECONDS, 600)
   })
 })
 
