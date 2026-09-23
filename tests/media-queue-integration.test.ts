@@ -12,6 +12,7 @@ import { resolveMediaConfig } from '../server/utils/media-config.ts'
 import { processMediaItem, type ProcessRunner } from '../server/services/video-processing.ts'
 import { reapStuckJobs, drainMediaQueue } from '../server/services/media-processing-reaper.ts'
 import { enqueueMediaProcessing } from '../server/services/media-processing-queue.ts'
+import { encodeShortId } from '../server/utils/short-media-id.ts'
 
 test('MySQL queue admission, retries, heartbeat leases and generation fencing', {
   skip: process.env.MEDIA_QUEUE_INTEGRATION !== '1', timeout: 120_000,
@@ -35,7 +36,8 @@ test('MySQL queue admission, retries, heartbeat leases and generation fencing', 
     const options = { db, pool, config }
     const row = async (id: number) => (await db.select().from(mediaItems).where(eq(mediaItems.id, id)))[0]!
     async function seed(slug: string) {
-      const [inserted] = await db.insert(mediaItems).values({ slug, title: slug, source: 'upload', storagePath: `media/${slug}` })
+      const shortId = encodeShortId()
+      const [inserted] = await db.insert(mediaItems).values({ slug, shortId, title: slug, source: 'upload', storagePath: `media/${slug}` })
       const dir = path.join(workdir, 'media', slug)
       await fs.mkdir(dir, { recursive: true })
       await fs.writeFile(path.join(dir, 'original.mp4'), Buffer.concat([Buffer.from([0, 0, 0, 24]), Buffer.from('ftypisom'), Buffer.alloc(64)]))
@@ -117,7 +119,7 @@ test('MySQL queue admission, retries, heartbeat leases and generation fencing', 
     assert.equal(await fs.readFile(path.join(workdir, newPath, 'master.m3u8'), 'utf8'), manifest)
 
     // A persisted pending row is visited without an upload request; missing original fails permanently.
-    const [orphan] = await db.insert(mediaItems).values({ slug: 'pending-after-restart', title: 'pending', source: 'upload' })
+    const [orphan] = await db.insert(mediaItems).values({ slug: 'pending-after-restart', shortId: encodeShortId(), title: 'pending', source: 'upload' })
     await drainMediaQueue(options)
     assert.equal((await row(orphan.insertId)).processingStatus, 'failed')
     assert.equal((await row(orphan.insertId)).processingAttempts, 1)
