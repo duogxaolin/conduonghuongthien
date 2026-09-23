@@ -83,6 +83,9 @@ jobs:
 
       # `nuxt prepare` (postinstall) needs no network beyond the registry.
       - run: npm ci
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
 
       # All six integration suites are switched on here. Each one creates and
       # drops its own single-use database, so they cannot collide with each other
@@ -246,6 +249,9 @@ jobs:
           cache: npm
 
       - run: npm ci
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
 
       - name: Build
         run: npm run build
@@ -270,8 +276,9 @@ jobs:
           E2E_DB_PORT: 3306
           E2E_DB_USER: root
           E2E_DB_PASSWORD: test_root_password
+          MEDIA_UPLOAD_ENABLED: 'true'
+          NUXT_MEDIA_UPLOAD_ENABLED: 'true'
         run: npm run test:e2e
-
       # Traces and screenshots are written only for failures, so this uploads
       # nothing on a green run. Without it a CI-only failure is a one-line
       # assertion message with no way to see what the page actually showed.

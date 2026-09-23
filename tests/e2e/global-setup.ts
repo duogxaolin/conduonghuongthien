@@ -104,6 +104,8 @@ export default async function globalSetup() {
     // underneath an assertion, and the failure would look like a UI bug.
     RETENTION_SCHEDULER: '0',
     VIEW_BOOST_SCHEDULER: '0',
+    MEDIA_UPLOAD_ENABLED: process.env.MEDIA_UPLOAD_ENABLED || 'true',
+    NUXT_MEDIA_UPLOAD_ENABLED: process.env.NUXT_MEDIA_UPLOAD_ENABLED || 'true',
   }
   env.NUXT_ANALYTICS_HMAC_SECRET = env.ANALYTICS_HMAC_SECRET
   // Exported for analytics-ingestion.spec.ts to assert its own precondition and

@@ -108,15 +108,13 @@ export async function repointR2Urls(
     const result = await db.transaction(async (tx) => {
       // media.url
       const [mediaRes] = await tx.execute(
-        `UPDATE media SET url = REPLACE(url, ?, ?) WHERE provider = 'r2' AND url LIKE ?`,
-        [oldDomain, newDomain, oldDomainLike],
+        sql`UPDATE media SET url = REPLACE(url, ${oldDomain}, ${newDomain}) WHERE provider = 'r2' AND url LIKE ${oldDomainLike}`,
       )
       const mediaUpdated = affectedRowsOrZero(mediaRes)
 
       // articles.content
       const [articlesRes] = await tx.execute(
-        `UPDATE articles SET content = REPLACE(content, ?, ?) WHERE content LIKE ?`,
-        [oldDomain, newDomain, oldDomainLike],
+        sql`UPDATE articles SET content = REPLACE(content, ${oldDomain}, ${newDomain}) WHERE content LIKE ${oldDomainLike}`,
       )
       const articlesUpdated = affectedRowsOrZero(articlesRes)
 

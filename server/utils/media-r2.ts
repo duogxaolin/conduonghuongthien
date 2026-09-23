@@ -66,10 +66,10 @@ export async function getR2Object(key: string, config: R2Config): Promise<Buffer
     Bucket: config.bucket,
     Key: key,
   }))
-  if (!response.body) throw new Error(`R2 object "${key}" không có body.`)
+  if (!response.Body) throw new Error(`R2 object "${key}" không có body.`)
   // @aws-sdk/client-s3 trả stream Node Readable — gom thành Buffer.
   const chunks: Buffer[] = []
-  for await (const chunk of response.body as AsyncIterable<Buffer>) {
+  for await (const chunk of response.Body as AsyncIterable<Buffer>) {
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
   }
   return Buffer.concat(chunks)
