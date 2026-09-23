@@ -549,7 +549,7 @@ export async function initDb() {
       \`knowledge_id\` BIGINT UNSIGNED NOT NULL,
       \`kind\` ENUM('alias','keyword') NOT NULL,
       \`value\` VARCHAR(1000) NOT NULL,
-      \`normalized_value\` VARCHAR(191) NOT NULL,
+      \`normalized_value\` VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL,
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       UNIQUE KEY \`chatbot_terms_knowledge_kind_normalized_idx\` (\`knowledge_id\`, \`kind\`, \`normalized_value\`),
       KEY \`chatbot_terms_kind_normalized_knowledge_idx\` (\`kind\`, \`normalized_value\`, \`knowledge_id\`),
@@ -1078,6 +1078,94 @@ export async function initDb() {
       \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (\`id\`),
       CONSTRAINT \`fk_backup_drive_oauth_config_updated_by\` FOREIGN KEY (\`updated_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // ─── AI Panel (add-ai-panel) ──────────────────────────────────────────────
+  // Five new tables: ai_providers, ai_service_configs, ai_usage_logs,
+  // ai_model_pricing, ai_budget_settings. Column types and nullability MUST
+  // match the Drizzle definitions in server/db/schema.ts exactly.
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`ai_providers\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`provider\` VARCHAR(32) NOT NULL UNIQUE,
+      \`label\` VARCHAR(128) NOT NULL,
+      \`base_url\` VARCHAR(1024) NULL,
+      \`is_active\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`api_key_ciphertext\` TEXT NULL,
+      \`api_key_nonce\` VARCHAR(64) NULL,
+      \`api_key_version\` INT UNSIGNED NULL,
+      \`api_key_auth_tag\` VARCHAR(64) NULL,
+      \`api_key_key_id\` VARCHAR(64) NULL,
+      \`api_key_last_four\` VARCHAR(4) NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`ai_service_configs\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`service_key\` VARCHAR(64) NOT NULL UNIQUE,
+      \`service_name\` VARCHAR(128) NOT NULL,
+      \`provider\` VARCHAR(32) NOT NULL,
+      \`model\` VARCHAR(64) NULL,
+      \`system_prompt\` TEXT NULL,
+      \`temperature\` DECIMAL(3,2) NOT NULL DEFAULT 0.30,
+      \`max_tokens\` INT NOT NULL DEFAULT 4096,
+      \`is_active\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`updated_by\` INT NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT \`fk_ai_service_configs_updated_by\` FOREIGN KEY (\`updated_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`ai_usage_logs\` (
+      \`id\` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      \`service_key\` VARCHAR(64) NOT NULL,
+      \`provider\` VARCHAR(32) NOT NULL,
+      \`model\` VARCHAR(64) NULL,
+      \`prompt_tokens\` INT NOT NULL DEFAULT 0,
+      \`completion_tokens\` INT NOT NULL DEFAULT 0,
+      \`total_tokens\` INT NOT NULL DEFAULT 0,
+      \`cost_usd\` DECIMAL(10,6) NOT NULL DEFAULT 0,
+      \`cost_vnd\` DECIMAL(12,2) NOT NULL DEFAULT 0,
+      \`execution_ms\` INT NOT NULL DEFAULT 0,
+      \`user_id\` INT NULL,
+      \`success\` TINYINT(1) NOT NULL DEFAULT 1,
+      \`error_message\` TEXT NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      INDEX \`ai_usage_logs_created_idx\` (\`created_at\`),
+      INDEX \`ai_usage_logs_service_created_idx\` (\`service_key\`, \`created_at\`),
+      CONSTRAINT \`fk_ai_usage_logs_user_id\` FOREIGN KEY (\`user_id\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`ai_model_pricing\` (
+      \`model\` VARCHAR(64) NOT NULL,
+      \`provider\` VARCHAR(32) NOT NULL,
+      \`label\` VARCHAR(128) NULL,
+      \`is_active\` TINYINT(1) NOT NULL DEFAULT 1,
+      \`prompt_cost_per_million\` DECIMAL(8,4) NOT NULL DEFAULT 0,
+      \`completion_cost_per_million\` DECIMAL(8,4) NOT NULL DEFAULT 0,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`model\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`ai_budget_settings\` (
+      \`id\` INT NOT NULL,
+      \`monthly_budget_vnd\` BIGINT UNSIGNED NOT NULL DEFAULT 0,
+      \`warning_threshold_pct\` INT NOT NULL DEFAULT 80,
+      \`updated_by\` INT NULL,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      PRIMARY KEY (\`id\`),
+      CONSTRAINT \`fk_ai_budget_settings_updated_by\` FOREIGN KEY (\`updated_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 

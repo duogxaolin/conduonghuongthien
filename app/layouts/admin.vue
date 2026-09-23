@@ -122,6 +122,12 @@ const menuGroups = computed(() => [
       { label: 'Lưu trữ Media (R2)', icon: 'fa-solid fa-cloud-arrow-up', path: '/admin/settings/media-storage' },
       ...(hasPermission('settings', 'read') ? [{ label: 'Sao lưu & Khôi phục', icon: 'fa-solid fa-floppy-disk', path: '/admin/settings/backup' }] : []),
     ]
+  },
+  {
+    title: 'AI & Tự động hóa',
+    items: [
+      ...(hasPermission('ai', 'read') ? [{ label: 'AI Panel', icon: 'fa-solid fa-microchip', path: '/admin/ai' }] : []),
+    ]
   }
 ])
 </script>

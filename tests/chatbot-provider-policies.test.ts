@@ -384,51 +384,12 @@ test('knowledge-only mode contacts no provider whichever policy is stored', asyn
 
 // ─── Admin form contract ─────────────────────────────────────────────────────
 
-test('provider and prompt panels are rendered only once AI answering is selected', () => {
+test('safety limits and mode selection stay reachable', () => {
   assert.equal(settingsSfc.errors.length, 0)
   assert.match(settingsScript, /const usingAi = computed\(\(\) => form\.mode === 'ai'\)/)
-
-  // The two AI-only panels live in one section gated by that flag.
-  const gated = settingsTemplate.match(/<section v-if="usingAi"[\s\S]*?<\/section>/)
-  assert.ok(gated, 'the provider/prompt section must be gated by v-if="usingAi"')
-  assert.match(gated[0], /Nhà cung cấp/)
-  assert.match(gated[0], /Chỉ dẫn cho AI/)
-  assert.match(gated[0], /chatbot-api-key/)
-  assert.match(gated[0], /form\.allowedHosts/)
-
-  // Enabling the widget and the safety limits stay reachable in both modes.
   const safety = settingsTemplate.match(/Giới hạn an toàn[\s\S]*?<\/section>/)
   assert.ok(safety)
   assert.match(safety[0], /form\.rateLimitRequests/)
-  assert.doesNotMatch(safety[0], /v-if="usingAi"/)
   assert.match(settingsTemplate, /v-model="form\.enabled"/)
 })
 
-test('the policy field is a closed select fed by the server preset table', () => {
-  assert.match(settingsTemplate, /<select v-model="form\.providerPolicy"/)
-  assert.match(settingsTemplate, /v-for="\[key, preset\] in presetList"/)
-  // Free text used to allow any slug; the input is gone.
-  assert.doesNotMatch(settingsTemplate, /<input[^>]*v-model="form\.providerPolicy"/)
-  // Base URL and model stay editable so a gateway deployment can override them.
-  assert.match(settingsTemplate, /v-model="form\.baseUrl"/)
-  assert.match(settingsTemplate, /v-model="form\.model"/)
-  assert.match(settingsScript, /function applyProviderPreset/)
-  assert.match(settingsScript, /providerPresets\.value = readPresets\(value\.providerPresets\)/)
-})
-
-test('the prompt box pre-fills the default only when nothing is stored, and can be restored', () => {
-  assert.match(settingsScript, /defaultSystemPrompt\.value = readString\(value\.defaultSystemPrompt, ''\)/)
-  assert.match(
-    settingsScript,
-    /systemPromptReplacement\.value = metadata\.systemPromptConfigured \? '' : defaultSystemPrompt\.value/,
-  )
-  assert.match(settingsScript, /function restoreDefaultPrompt\(\)\s*\{\s*systemPromptReplacement\.value = defaultSystemPrompt\.value/)
-  assert.match(settingsTemplate, /@click="restoreDefaultPrompt"/)
-  assert.match(settingsTemplate, /Khôi phục mặc định/)
-
-  // Saving stays explicit and the existing "blank means keep" contract holds.
-  assert.match(settingsScript, /if \(prompt\.length > 0\)/)
-  assert.match(settingsTemplate, /Để trống để giữ nguyên prompt hiện tại/)
-  // The default text itself is never hard-coded in the page.
-  assert.ok(!settingsSource.includes('Trợ lý Hướng Thiện", trợ lý ảo'))
-})

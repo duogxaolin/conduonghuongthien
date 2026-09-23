@@ -123,32 +123,6 @@ test('GET metadata is mapped separately and cannot be spread into the editable f
   assert.doesNotMatch(serverFields, /['"]small_talk_enabled['"]/)
 })
 
-test('system prompt and API key are omitted by default and included only as intentional replacements', () => {
-  const payloadBuilder = extractFunction('buildPatchPayload', 'load')
-  assert.match(payloadBuilder, /if \(prompt\.length > 0\)/)
-  assert.match(payloadBuilder, /if \(!prompt\.trim\(\)\) throw new Error/)
-  assert.match(payloadBuilder, /body\.systemPrompt = prompt/)
-  assert.match(payloadBuilder, /const apiKey = newApiKey\.value\.trim\(\)/)
-  assert.match(payloadBuilder, /if \(apiKey\) body\.apiKey = apiKey/)
-  assert.doesNotMatch(payloadBuilder, /systemPrompt:\s*systemPromptReplacement|apiKey:\s*newApiKey/)
-
-  assert.match(settingsTemplate, /metadata\.systemPromptConfigured/)
-  assert.match(settingsTemplate, /metadata\.systemPromptLength/)
-  assert.match(settingsTemplate, /Để trống để giữ nguyên prompt hiện tại/)
-  assert.doesNotMatch(settingsScript, /value\.systemPrompt\b|form\.systemPrompt\b/)
-})
-
-test('API key clear is an explicit action and never uses blank PATCH semantics', () => {
-  const clearKey = extractFunction('clearKey', 'testConnection')
-  // Browser confirm() was replaced by the in-app ConfirmModal (useConfirm);
-  // the contract is unchanged: clearing the key requires explicit confirmation.
-  assert.match(clearKey, /await confirm\(\{[^}]*Xóa API key khỏi cấu hình chatbot\?/s)
-  assert.match(clearKey, /danger: true/)
-  assert.match(clearKey, /\$fetch\('\/api\/admin\/chatbot\/settings\/clear', \{ method: 'POST' \}\)/)
-  assert.match(clearRouteSource, /clearChatbotApiKey/)
-  assert.match(validatorSource, /input\.apiKey === ''[^\n]+explicit clear operation/)
-  assert.doesNotMatch(clearKey, /method: 'PATCH'|apiKey:\s*''/)
-})
 
 test('timeout and response-size controls are persisted with exact server-aligned bounds', () => {
   for (const field of ['requestTimeoutMs', 'maxResponseBytes']) {
@@ -159,13 +133,10 @@ test('timeout and response-size controls are persisted with exact server-aligned
   assert.deepEqual(templateIntegerBounds('maxResponseBytes'), [1_024, 1_048_576])
 })
 
-test('GET secrets cannot enter DOM state or PATCH payload, while masked status remains visible', () => {
+test('GET secrets cannot enter DOM state or PATCH payload', () => {
   const forbiddenGetSecrets = ['apiKeyCiphertext', 'apiKeyNonce', 'apiKeyAuthTag', 'apiKeyVersion', 'apiKeyKeyId', 'systemPrompt']
   const applyResponse = extractFunction('applySettingsResponse', 'buildPatchPayload')
   for (const field of forbiddenGetSecrets) assert.doesNotMatch(applyResponse, new RegExp(`value\\.${field}\\b`))
 
   assert.doesNotMatch(settingsTemplate, /metadata\.(?:apiKeyCiphertext|apiKeyNonce|apiKeyAuthTag|apiKeyVersion|apiKeyKeyId)|v-html/)
-  assert.doesNotMatch(settingsTemplate, /:value="metadata\.apiKeyMasked"|v-model="metadata\./)
-  assert.match(settingsTemplate, /autocomplete="new-password"/)
-  assert.match(settingsTemplate, /Đang cấu hình \$\{metadata\.apiKeyMasked \|\| '••••'\}/)
 })

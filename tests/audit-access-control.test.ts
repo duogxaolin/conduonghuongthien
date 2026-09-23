@@ -92,7 +92,7 @@ test('role matrix roundtrip retains every canonical resource and all seven flags
   assert.equal(response.status, 200)
   assert.deepEqual(writes.find(write => write.table === permissions && Array.isArray(write.values))?.values,
     payload.map(row => ({ ...row, roleId: 42 })))
-  assert.equal(payload.length, 20)
+  assert.equal(payload.length, PERMISSION_RESOURCES.length)
   assert.equal(payload.find(row => row.resource === 'livestream')?.canTest, true)
   writes.length = 0
   assert.equal((await request('/roles', { name: 'New role', permissions: payload }, 'POST')).status, 200)

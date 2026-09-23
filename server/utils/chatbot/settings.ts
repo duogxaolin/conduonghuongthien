@@ -30,7 +30,7 @@ export type ChatbotSettingsUpdate = Partial<Pick<ChatbotSettings,
   | 'leadCaptureEnabled' | 'leadCaptureEmail' | 'smallTalkEnabled'
   | 'requestTimeoutMs' | 'maxResponseBytes' | 'maxInputChars' | 'maxHistoryMessages'
   | 'retrievalTopK' | 'referenceCharBudget' | 'rateLimitRequests' | 'rateLimitWindowSeconds'
->> & { apiKey?: string }
+>> & { apiKey?: string; provider?: string }
 
 const INTEGER_LIMITS = {
   requestTimeoutMs: [1_000, 30_000],
@@ -54,6 +54,7 @@ export function validateChatbotSettingsUpdate(input: ChatbotSettingsUpdate): Cha
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new ChatbotSettingsValidationError('Invalid settings payload')
   if ('apiKey' in input && typeof input.apiKey !== 'string') throw new ChatbotSettingsValidationError('API key must be a string')
   if (input.apiKey === '') throw new ChatbotSettingsValidationError('Use the explicit clear operation to remove the API key')
+  if (input.provider != null && (typeof input.provider !== 'string' || !/^[A-Za-z0-9._:-]{1,64}$/u.test(input.provider.trim()))) throw new ChatbotSettingsValidationError('Invalid provider')
   if (input.enabled !== undefined && typeof input.enabled !== 'boolean') throw new ChatbotSettingsValidationError('enabled must be boolean')
   if (input.baseUrl != null && (typeof input.baseUrl !== 'string' || input.baseUrl.length > 1024)) throw new ChatbotSettingsValidationError('Invalid base URL')
   if (input.model != null && (typeof input.model !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/u.test(input.model.trim()))) throw new ChatbotSettingsValidationError('Invalid model')

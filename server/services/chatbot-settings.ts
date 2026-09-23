@@ -1,5 +1,5 @@
 import { eq } from 'drizzle-orm'
-import { activityLogs, chatbotSettings, type ChatbotSettings } from '../db/schema'
+import { activityLogs, chatbotSettings, type ChatbotSettings, aiServiceConfigs } from '../db/schema'
 import { getDb } from '../utils/db'
 import { buildChatbotSettingsAudit } from '../utils/chatbot/audit'
 import { decryptChatbotSecret } from '../utils/chatbot/crypto'
@@ -33,6 +33,20 @@ export async function updateChatbotSettings(actorId: number, input: ChatbotSetti
   await db.transaction(async (tx) => {
     await tx.update(chatbotSettings).set(patch).where(eq(chatbotSettings.id, CHATBOT_SETTINGS_ID))
     await tx.insert(activityLogs).values(buildChatbotSettingsAudit({ actorId, operation: input.apiKey !== undefined ? 'rotate_key' : 'update', changedFields: Object.keys(input), configured: input.apiKey !== undefined, outcome: 'success', requestId }))
+
+    // 2-way sync to ai_service_configs for service_key = 'chatbot'
+    const servicePatch: Partial<typeof aiServiceConfigs.$inferInsert> = {}
+    if (patch.systemPrompt !== undefined) servicePatch.systemPrompt = patch.systemPrompt
+    if (patch.model !== undefined) servicePatch.model = patch.model
+    if (input.mode !== undefined) servicePatch.isActive = input.mode === 'ai'
+    if (input.providerPolicy !== undefined) {
+      servicePatch.provider = input.providerPolicy === 'anthropic' ? 'anthropic' : 'delify'
+    }
+
+    if (Object.keys(servicePatch).length > 0) {
+      servicePatch.updatedBy = actorId
+      await tx.update(aiServiceConfigs).set(servicePatch).where(eq(aiServiceConfigs.serviceKey, 'chatbot'))
+    }
   })
   return getChatbotSettings()
 }

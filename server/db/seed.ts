@@ -1,11 +1,14 @@
 import { getDb } from '../utils/db'
 import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories, aiProviders, aiServiceConfigs, aiModelPricing, aiBudgetSettings } from '../db/schema'
 import type { BlockData } from '../../app/utils/blocks/types'
 import { eq, asc, sql } from 'drizzle-orm'
 import { CHATBOT_SMALL_TALK_SEED } from '../data/chatbot-small-talk-seed'
 import { normalizeQuestion } from '../utils/chatbot/small-talk'
+import { decryptChatbotSecret } from '../utils/chatbot/crypto'
+import { encryptAiSecret, type EncryptedAiSecret } from '../utils/ai/crypto'
+import { DEFAULT_CHATBOT_SYSTEM_PROMPT } from '../utils/chatbot/prompt-defaults'
 
 /**
  * `SET col = col` on duplicate key: MySQL has no "do nothing on conflict", so
@@ -39,7 +42,7 @@ const RESOURCES = [
   // lists, and a name in one but not the other is a resource that either cannot
   // be granted (rejected by the roles endpoint) or is never seeded for
   // superadmin — both silent.
-  'media_portal', 'livestream',
+  'media_portal', 'livestream', 'ai',
 ]
 
 // Default categories seeded idempotently (keyed on unique slug).
@@ -410,6 +413,124 @@ async function seed() {
   for (let i = 0; i < smallTalkRows.length; i += 50) {
     await db.insert(chatbotSmallTalk).values(smallTalkRows.slice(i, i + 50))
       .onDuplicateKeyUpdate({ set: { normalizedQuestion: keepExisting('normalized_question') } })
+  }
+
+  // ── AI Panel: pricing, service configs, budget, backfill ──────────────────
+  // All insert-only / idempotent: running seed twice does NOT overwrite rows
+  // an administrator has since edited (pricing, prompts, budget cap).
+
+  // 1. Model pricing — 8 default entries (spec R7.2)
+  console.log('Seeding AI model pricing...')
+  const defaultPricing: Array<{
+    model: string; provider: string
+    promptCostPerMillion: string; completionCostPerMillion: string
+  }> = [
+    { model: 'delify-5.5', provider: 'delify', promptCostPerMillion: '2.0000', completionCostPerMillion: '10.0000' },
+  ]
+  for (const p of defaultPricing) {
+    await db.insert(aiModelPricing).values(p)
+      .onDuplicateKeyUpdate({ set: { model: keepExisting('model') } })
+  }
+
+  // 2. Service configs — 5 default services, inactive (spec R5.2)
+  console.log('Seeding AI service configs...')
+  const defaultServices: Array<{
+    serviceKey: string; serviceName: string; provider: string
+    systemPrompt: string; temperature: string; maxTokens: number; isActive: boolean
+  }> = [
+    { serviceKey: 'chatbot', serviceName: 'Trợ lý Chatbot', provider: 'delify', model: 'delify-5.5', systemPrompt: DEFAULT_CHATBOT_SYSTEM_PROMPT, temperature: '0.30', maxTokens: 4096, isActive: true },
+    { serviceKey: 'translation_article', serviceName: 'Dịch bài viết', provider: 'delify', model: 'delify-5.5', systemPrompt: 'Dịch văn bản sau sang ngôn ngữ mục tiêu, giữ nguyên ý nghĩa và văn phong pháp lý.', temperature: '0.20', maxTokens: 8192, isActive: false },
+    { serviceKey: 'translation_ui', serviceName: 'Dịch giao diện', provider: 'delify', model: 'delify-5.5', systemPrompt: 'Dịch các chuỗi giao diện sang ngôn ngữ mục tiêu, giữ ngắn gọn phù hợp UI.', temperature: '0.10', maxTokens: 2048, isActive: false },
+    { serviceKey: 'editorial_assistant', serviceName: 'Trợ lý biên tập', provider: 'delify', model: 'delify-5.5', systemPrompt: 'Bạn là trợ lý biên tập viên cho cổng thông tin điện tử. Hỗ trợ kiểm tra chính tả, đề xuất tiêu đề, và tóm tắt nội dung.', temperature: '0.40', maxTokens: 4096, isActive: false },
+    { serviceKey: 'moderation', serviceName: 'Kiểm duyệt nội dung', provider: 'delify', model: 'delify-5.5', systemPrompt: 'Kiểm duyệt nội dung bài viết: phát hiện ngôn từ thù ghét, spam, hoặc nội dung không phù hợp. Phân loại: an toàn / cần xem lại / vi phạm.', temperature: '0.00', maxTokens: 2048, isActive: false },
+  ]
+  for (const s of defaultServices) {
+    await db.insert(aiServiceConfigs).values(s)
+      .onDuplicateKeyUpdate({ set: { serviceKey: keepExisting('service_key') } })
+  }
+
+  // 3. Budget settings — single row, default 0 = unlimited (spec R9.1)
+  console.log('Seeding AI budget settings...')
+  await db.insert(aiBudgetSettings).values({ id: 1, monthlyBudgetVnd: 0, warningThresholdPct: 80 })
+    .onDuplicateKeyUpdate({ set: { id: keepExisting('id') } })
+
+  // 4. Provider default rows — empty keys (spec R4.1)
+  //    Insert 4 provider rows with empty keys so the admin UI has them ready.
+  //    Admin activates and fills the API key via /admin/ai/providers.
+  console.log('Seeding AI providers (empty keys)...')
+  const defaultProviders: Array<{ provider: string; label: string; baseUrl: string | null }> = [
+    { provider: 'delify', label: 'Delify Router', baseUrl: 'https://router.delify.vn/v1' },
+  ]
+  for (const p of defaultProviders) {
+    await db.insert(aiProviders).values({ provider: p.provider, label: p.label, baseUrl: p.baseUrl, isActive: false })
+      .onDuplicateKeyUpdate({ set: { provider: keepExisting('provider') } })
+  }
+
+  // 5. Backfill from chatbot_settings (spec R11.2, R11.3)
+  //    Only runs if ai_providers is empty (no provider rows with keys) AND
+  //    chatbot_settings has a configured provider.
+  console.log('Checking for chatbot backfill...')
+  const [existingChatbotSettings] = await db.select().from(chatbotSettings).where(eq(chatbotSettings.id, 1)).limit(1)
+
+  if (existingChatbotSettings && existingChatbotSettings.providerPolicy && existingChatbotSettings.baseUrl) {
+    // Map the chatbot providerPolicy to an ai_providers.provider name
+    const chatbotPolicies: Record<string, string> = {
+      'openai-compatible': 'openai',
+      'anthropic': 'anthropic',
+    }
+    const chatbotProvider = chatbotPolicies[existingChatbotSettings.providerPolicy] ?? 'openai'
+
+    // Backfill ai_providers: set base_url and re-encrypt the API key from
+    // chatbot_settings. The chatbot key is encrypted under label
+    // `cdkt-chatbot-provider-key:v1` while the AI gateway decrypts under
+    // `cdkt-ai-provider-key:v1` — copying ciphertext directly fails. Decrypt
+    // with the chatbot label, then re-encrypt with the AI label.
+    const [providerRow] = await db.select().from(aiProviders).where(eq(aiProviders.provider, chatbotProvider)).limit(1)
+
+    if (providerRow && !providerRow.apiKeyCiphertext && existingChatbotSettings.apiKeyCiphertext) {
+      console.log(`  Backfilling AI provider '${chatbotProvider}' from chatbot_settings...`)
+
+      let aiEnvelope: EncryptedAiSecret | null = null
+      try {
+        const plaintextKey = decryptChatbotSecret({
+          ciphertext: existingChatbotSettings.apiKeyCiphertext,
+          nonce: existingChatbotSettings.apiKeyNonce!,
+          authTag: existingChatbotSettings.apiKeyAuthTag!,
+          version: existingChatbotSettings.apiKeyVersion!,
+          keyId: existingChatbotSettings.apiKeyKeyId!,
+          lastFour: existingChatbotSettings.apiKeyLastFour ?? '',
+        })
+        aiEnvelope = encryptAiSecret(plaintextKey)
+      } catch (err) {
+        console.warn(`  Could not decrypt chatbot API key for backfill — skipping key copy. Provider row created without key. (${err instanceof Error ? err.message : 'unknown error'})`)
+      }
+
+      await db.update(aiProviders).set({
+        baseUrl: existingChatbotSettings.baseUrl,
+        ...(aiEnvelope ? {
+          apiKeyCiphertext: aiEnvelope.ciphertext,
+          apiKeyNonce: aiEnvelope.nonce,
+          apiKeyVersion: aiEnvelope.version,
+          apiKeyKeyId: aiEnvelope.keyId,
+          apiKeyAuthTag: aiEnvelope.authTag,
+          apiKeyLastFour: aiEnvelope.lastFour,
+        } : {}),
+        isActive: Boolean(existingChatbotSettings.enabled),
+      }).where(eq(aiProviders.provider, chatbotProvider))
+    }
+
+    // Backfill ai_service_configs 'chatbot' row from chatbot_settings
+    const [chatbotConfig] = await db.select().from(aiServiceConfigs).where(eq(aiServiceConfigs.serviceKey, 'chatbot')).limit(1)
+
+    if (chatbotConfig && !chatbotConfig.systemPrompt && existingChatbotSettings.systemPrompt) {
+      console.log('  Backfilling AI chatbot service config from chatbot_settings...')
+      await db.update(aiServiceConfigs).set({
+        provider: chatbotProvider,
+        model: existingChatbotSettings.model,
+        systemPrompt: existingChatbotSettings.systemPrompt,
+        isActive: Boolean(existingChatbotSettings.enabled),
+      }).where(eq(aiServiceConfigs.serviceKey, 'chatbot'))
+    }
   }
 
   console.log('✅ Seed complete!')

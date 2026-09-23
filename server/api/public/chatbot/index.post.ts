@@ -62,6 +62,57 @@ export default defineEventHandler(async (event) => {
   if (sessionId) event.context.chatSessionId = sessionId
 
   const messages = (body as { messages?: unknown } | null)?.messages
+  setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
+  setHeader(event, 'Cache-Control', 'no-cache, no-transform')
+  setHeader(event, 'Connection', 'keep-alive')
+
+  const res = event.node?.res
+  if (res && typeof res.write === 'function') {
+    let streamed = false
+    let result
+    try {
+      result = await answerChat(event, settings, messages, (delta: string) => {
+        streamed = true
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: delta } }] })}\n\n`)
+      })
+    } catch (error) {
+      if ((error as Error).message === 'INVALID_MESSAGES') throw createError({ statusCode: 400, statusMessage: 'Invalid chat messages' })
+      throw error
+    }
+
+    if (!streamed) {
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: result.answer } }] })}\n\n`)
+    }
+
+    res.write(`data: ${JSON.stringify({
+      choices: [{ delta: { content: '' } }],
+      chatbot: {
+        kind: result.kind,
+        sources: result.sources,
+        retryAfter: result.retryAfter || null,
+        askContact: result.askContact || false,
+      },
+    })}\n\n`)
+    res.write('data: [DONE]\n\n')
+
+    if (sessionId) {
+      const userText = lastUserText(messages)
+      if (userText) {
+        await persistChatTurn({
+          sessionId,
+          ip: getClientIp(event) || null,
+          userAgent: getRequestHeader(event, 'user-agent') ?? null,
+          userText,
+          botText: result.answer,
+          kind: result.kind,
+        })
+      }
+    }
+
+    res.end()
+    return
+  }
+
   let result
   try { result = await answerChat(event, settings, messages) }
   catch (error) {
@@ -69,10 +120,6 @@ export default defineEventHandler(async (event) => {
     throw error
   }
 
-  // Transcript write. Awaited rather than fired-and-forgotten: Nitro may tear
-  // the request context down as soon as the handler returns, which can cut a
-  // detached promise off mid-query. `persistChatTurn` swallows its own errors,
-  // so awaiting it cannot fail the reply.
   if (sessionId) {
     const userText = lastUserText(messages)
     if (userText) {
@@ -87,8 +134,5 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
-  setHeader(event, 'Cache-Control', 'no-cache, no-transform')
-  setHeader(event, 'Connection', 'keep-alive')
   return sseEnvelope(result.answer, result.kind, result.sources, result.retryAfter || null, result.askContact || false)
 })

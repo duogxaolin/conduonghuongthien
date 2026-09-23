@@ -573,12 +573,12 @@
          trong flow, nếu cộng pt ở đây thì isSticky flip (khi cuộn qua ngưỡng) sẽ
          bật/tắt 130px đột ngột → layout shift giật toàn trang. Hero của từng trang
          tự có padding nội bộ đủ lớn để text không bị header sticky che. -->
-    <main class="min-h-[calc(100vh-165px)] pb-24 md:pb-0">
+    <main :class="isAssistant ? 'overflow-hidden p-0' : 'min-h-[calc(100vh-165px)] pb-24 md:pb-0'">
       <slot />
     </main>
 
     <!-- Footer Area -->
-    <footer class="bg-[#385130] text-white/80 pt-16 lg:pt-20 border-t-4 border-[#7CB342] pb-[calc(110px+env(safe-area-inset-bottom,0px))] md:pb-12 lg:pb-10">
+    <footer v-if="!isAssistant" class="bg-[#385130] text-white/80 pt-16 lg:pt-20 border-t-4 border-[#7CB342] pb-[calc(110px+env(safe-area-inset-bottom,0px))] md:pb-12 lg:pb-10">
       <div class="container grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[2fr_1fr_1fr_2fr] gap-8 lg:gap-10 mb-12 lg:mb-16">
         <div>
           <div class="flex items-center gap-3.5 mb-5 flex-wrap">
@@ -656,6 +656,7 @@
 
     <!-- Mobile Bottom Nav: nền đặc thay cho backdrop-blur để bớt phí repaint mỗi frame cuộn. -->
     <nav
+      v-if="!isAssistant"
       class="fixed bottom-2.5 left-3 right-3 h-16 bg-white/95 border border-white/40 rounded-[24px] shadow-[0_8px_32px_rgba(30,70,32,0.12),inset_0_1px_0_rgba(255,255,255,0.8)] z-[9900] flex justify-around items-center px-1.5 transition-all md:hidden"
       :class="{ 'opacity-0 pointer-events-none translate-y-4': isMobileMenuOpen || isChatOpen }"
       aria-label="Điều hướng nhanh"
@@ -887,6 +888,7 @@ async function onReaderSignOut() {
 }
 
 const route = useRoute()
+const isAssistant = computed(() => route.path === '/assistant' || route.path.startsWith('/assistant/'))
 const router = useRouter()
 const { error: toastError } = useToast()
 

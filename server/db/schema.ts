@@ -1,5 +1,5 @@
 import {
-  mysqlTable, int, bigint, varchar, text, longtext, boolean,
+  mysqlTable, int, bigint, varchar, text, longtext, boolean, decimal,
   timestamp, datetime, date, json, mysqlEnum, uniqueIndex, index} from 'drizzle-orm/mysql-core'
 import type { AnyMySqlColumn } from 'drizzle-orm/mysql-core'
 import { sql } from 'drizzle-orm'
@@ -1227,3 +1227,102 @@ export const backupDriveOauthConfig = mysqlTable('backup_drive_oauth_config', {
 
 export type BackupDriveOauthConfig = typeof backupDriveOauthConfig.$inferSelect
 export type NewBackupDriveOauthConfig = typeof backupDriveOauthConfig.$inferInsert
+
+// ─── AI Panel (add-ai-panel) ───────────────────────────────────────────────
+// Centralized AI management: providers (encrypted API keys), per-service
+// prompts/models, usage logs (per-call cost), model pricing tables, and a
+// monthly budget guard. Five new tables created via CREATE TABLE IF NOT EXISTS
+// in init.ts. See openspec/changes/add-ai-panel/ for the full spec.
+
+/** AI provider configuration — one row per provider name. API keys encrypted
+ *  with label `cdkt-ai-provider-key:v1` (distinct from chatbot/Google OAuth).
+ *  The `provider` column is unique: one row per provider name. */
+export const aiProviders = mysqlTable('ai_providers', {
+  id:                   int('id').autoincrement().primaryKey(),
+  provider:             varchar('provider', { length: 32 }).notNull().unique(),
+  label:                varchar('label', { length: 128 }).notNull(),
+  baseUrl:              varchar('base_url', { length: 1024 }),
+  isActive:             boolean('is_active').notNull().default(false),
+  apiKeyCiphertext:     text('api_key_ciphertext'),
+  apiKeyNonce:          varchar('api_key_nonce', { length: 64 }),
+  apiKeyVersion:        int('api_key_version', { unsigned: true }),
+  apiKeyAuthTag:        varchar('api_key_auth_tag', { length: 64 }),
+  apiKeyKeyId:          varchar('api_key_key_id', { length: 64 }),
+  apiKeyLastFour:       varchar('api_key_last_four', { length: 4 }),
+  createdAt:            timestamp('created_at').defaultNow(),
+  updatedAt:            timestamp('updated_at').defaultNow().onUpdateNow(),
+})
+
+/** Per-service AI configuration — system prompts, model, temperature, max
+ *  tokens for each AI service (chatbot, translation, editorial, moderation).
+ *  `service_key` is unique: one row per service. */
+export const aiServiceConfigs = mysqlTable('ai_service_configs', {
+  id:               int('id').autoincrement().primaryKey(),
+  serviceKey:       varchar('service_key', { length: 64 }).notNull().unique(),
+  serviceName:      varchar('service_name', { length: 128 }).notNull(),
+  provider:         varchar('provider', { length: 32 }).notNull(),
+  model:            varchar('model', { length: 64 }),
+  systemPrompt:     text('system_prompt'),
+  temperature:      decimal('temperature', { precision: 3, scale: 2 }).notNull().default('0.30'),
+  maxTokens:        int('max_tokens').notNull().default(4096),
+  isActive:        boolean('is_active').notNull().default(false),
+  updatedBy:       int('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt:       timestamp('created_at').defaultNow(),
+  updatedAt:       timestamp('updated_at').defaultNow().onUpdateNow(),
+})
+
+/** AI usage log — one row per AI API call. Records token consumption and cost
+ *  for billing analysis and budget enforcement. */
+export const aiUsageLogs = mysqlTable('ai_usage_logs', {
+  id:               bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
+  serviceKey:       varchar('service_key', { length: 64 }).notNull(),
+  provider:         varchar('provider', { length: 32 }).notNull(),
+  model:            varchar('model', { length: 64 }),
+  promptTokens:     int('prompt_tokens').notNull().default(0),
+  completionTokens: int('completion_tokens').notNull().default(0),
+  totalTokens:      int('total_tokens').notNull().default(0),
+  costUsd:          decimal('cost_usd', { precision: 10, scale: 6 }).notNull().default('0'),
+  costVnd:          decimal('cost_vnd', { precision: 12, scale: 2 }).notNull().default('0'),
+  executionMs:      int('execution_ms').notNull().default(0),
+  userId:           int('user_id').references(() => users.id, { onDelete: 'set null' }),
+  success:          boolean('success').notNull().default(true),
+  errorMessage:     text('error_message'),
+  createdAt:        timestamp('created_at').defaultNow(),
+}, (t) => ({
+  createdIdx:      index('ai_usage_logs_created_idx').on(t.createdAt),
+  serviceCreatedIdx: index('ai_usage_logs_service_created_idx').on(t.serviceKey, t.createdAt),
+}))
+
+/** AI model pricing — price per million tokens (prompt + completion) for cost
+ *  calculation. `model` is the primary key. Editable via admin UI. */
+export const aiModelPricing = mysqlTable('ai_model_pricing', {
+  model:                       varchar('model', { length: 64 }).primaryKey(),
+  provider:                    varchar('provider', { length: 32 }).notNull(),
+  label:                       varchar('label', { length: 128 }),
+  isActive:                    boolean('is_active').notNull().default(true),
+  promptCostPerMillion:        decimal('prompt_cost_per_million', { precision: 8, scale: 4 }).notNull().default('0'),
+  completionCostPerMillion:   decimal('completion_cost_per_million', { precision: 8, scale: 4 }).notNull().default('0'),
+  updatedAt:                   timestamp('updated_at').defaultNow().onUpdateNow(),
+})
+
+/** AI budget settings — single-row table (id=1). Monthly budget cap in VND.
+ *  0 = unlimited. Warning threshold triggers a daily log at `pct%` of budget. */
+export const aiBudgetSettings = mysqlTable('ai_budget_settings', {
+  id:                     int('id').primaryKey().default(1),
+  monthlyBudgetVnd:       bigint('monthly_budget_vnd', { mode: 'number', unsigned: true }).notNull().default(0),
+  warningThresholdPct:    int('warning_threshold_pct').notNull().default(80),
+  updatedBy:             int('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt:             timestamp('updated_at').defaultNow().onUpdateNow(),
+})
+
+// ─── AI Panel Types ────────────────────────────────────────────────────────
+export type AiProvider = typeof aiProviders.$inferSelect
+export type NewAiProvider = typeof aiProviders.$inferInsert
+export type AiServiceConfig = typeof aiServiceConfigs.$inferSelect
+export type NewAiServiceConfig = typeof aiServiceConfigs.$inferInsert
+export type AiUsageLog = typeof aiUsageLogs.$inferSelect
+export type NewAiUsageLog = typeof aiUsageLogs.$inferInsert
+export type AiModelPricing = typeof aiModelPricing.$inferSelect
+export type NewAiModelPricing = typeof aiModelPricing.$inferInsert
+export type AiBudgetSettings = typeof aiBudgetSettings.$inferSelect
+export type NewAiBudgetSettings = typeof aiBudgetSettings.$inferInsert

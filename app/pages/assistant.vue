@@ -1,54 +1,73 @@
 <template>
-  <div class="bg-[#f0f4ef]">
-    <div class="mx-auto max-w-[1400px] px-0 md:px-4 md:py-6">
-      <div class="md:grid md:grid-cols-[280px_1fr] md:gap-4">
+  <div class="bg-[#f0f4ef] py-2 md:py-2.5">
+    <div class="mx-auto w-full max-w-[1440px] px-2 sm:px-3 md:px-4">
+      <div class="md:grid md:grid-cols-[280px_1fr] lg:grid-cols-[300px_1fr] md:gap-3 lg:gap-3.5 h-[calc(100dvh-235px)] min-h-[440px]">
         <!-- Sidebar: hidden below md. The two-column layout has no room to be
              useful on a phone, and the floating widget already serves that case. -->
-        <aside class="hidden md:flex md:flex-col md:h-[calc(100dvh-160px)] rounded-2xl border border-[#e1e8e0] bg-white overflow-hidden">
-          <div class="flex-shrink-0 border-b border-[#e1e8e0] p-3">
+        <aside class="hidden md:flex md:flex-col h-full rounded-2xl border border-[#e1e8e0] bg-white overflow-hidden shadow-sm">
+          <div class="flex-shrink-0 p-3 border-b border-[#e8efe8] bg-[#fcfdfc]">
             <button
               type="button"
-              class="flex w-full items-center justify-center gap-2 rounded-xl bg-[#1e4620] px-3 py-2.5 text-[0.85rem] font-bold text-white border-none cursor-pointer transition-all hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+              class="w-full flex items-center justify-between gap-2 rounded-xl bg-[#1e4620] hover:bg-[#153317] text-white px-3.5 py-2.5 text-[0.84rem] font-bold shadow-sm transition-all active:scale-[0.98] border-none cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
               @click="onCreateConversation"
             >
-              <i class="fa-solid fa-plus text-[0.75rem]" aria-hidden="true"></i>
-              Cuộc trò chuyện mới
+              <span class="flex items-center gap-2">
+                <i class="fa-regular fa-pen-to-square text-xs" aria-hidden="true"></i>
+                <span>Đoạn chat mới</span>
+              </span>
+              <span class="w-5 h-5 rounded-md bg-white/15 flex items-center justify-center text-[0.7rem] font-bold">+</span>
             </button>
           </div>
 
-          <nav class="flex-1 overflow-y-auto overscroll-contain p-2" aria-label="Danh sách cuộc trò chuyện">
-            <p v-if="!conversations.length" class="m-0 px-2 py-3 text-[0.78rem] text-[#9ca3af]">Chưa có cuộc trò chuyện nào.</p>
+          <nav class="flex-1 overflow-y-auto overscroll-contain p-2 space-y-1" aria-label="Danh sách cuộc trò chuyện">
+            <p v-if="!conversations.length" class="m-0 px-3 py-6 text-center text-xs text-[#9ca3af]">Chưa có cuộc trò chuyện nào.</p>
             <ul class="list-none m-0 p-0 space-y-1">
               <li v-for="conversation in sortedConversations" :key="conversation.id">
                 <div
-                  class="group flex items-center gap-1 rounded-xl px-2 py-2 transition-colors"
-                  :class="conversation.id === activeId ? 'bg-[#e4f0e2]' : 'hover:bg-[#f6f8f6]'"
+                  class="group relative flex items-center gap-2.5 rounded-xl px-3 py-2.5 transition-all cursor-pointer border"
+                  :class="conversation.id === activeId
+                    ? 'bg-[#f0f7f1] border-[#c8dcc9] shadow-xs'
+                    : 'bg-white hover:bg-[#f8faf8] border-transparent hover:border-[#e2ece3]'"
+                  @click="onSwitchConversation(conversation.id)"
                 >
-                  <button
-                    type="button"
-                    class="flex-1 min-w-0 bg-transparent border-none text-left cursor-pointer p-0"
-                    :aria-current="conversation.id === activeId ? 'true' : undefined"
-                    @click="onSwitchConversation(conversation.id)"
+                  <!-- Chat icon -->
+                  <div
+                    class="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-colors"
+                    :class="conversation.id === activeId ? 'bg-[#1e4620] text-white' : 'bg-[#f0f4ef] text-[#557757] group-hover:bg-[#e4ece4]'"
+                    aria-hidden="true"
                   >
-                    <span class="block truncate text-[0.82rem] font-semibold" :class="conversation.id === activeId ? 'text-[#1e4620]' : 'text-[#374151]'">
+                    <i class="fa-regular fa-message text-[0.7rem]"></i>
+                  </div>
+
+                  <!-- Text info -->
+                  <div class="flex-1 min-w-0">
+                    <span
+                      class="block truncate text-[0.82rem] font-bold leading-tight"
+                      :class="conversation.id === activeId ? 'text-[#1e4620]' : 'text-[#2d3748] group-hover:text-[#122815]'"
+                    >
                       {{ conversation.title }}
                     </span>
-                    <span class="block text-[0.68rem] text-[#9ca3af]">{{ conversationMeta(conversation) }}</span>
-                  </button>
+                    <span class="block text-[0.68rem] text-[#8c9b8d] mt-0.5 truncate">
+                      {{ conversationMeta(conversation) }}
+                    </span>
+                  </div>
+
+                  <!-- Delete button (sleek on hover) -->
                   <button
                     type="button"
-                    class="w-7 h-7 flex-shrink-0 rounded-lg bg-transparent border-none text-[#9ca3af] cursor-pointer transition-colors hover:bg-[#fee2e2] hover:text-[#b42318] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#b42318]"
-                    @click="deleteConversation(conversation.id)"
+                    class="w-6 h-6 flex-shrink-0 rounded-md bg-transparent border-none text-[#9ca3af] hover:text-[#b42318] hover:bg-[#fee2e2] flex items-center justify-center cursor-pointer transition-all opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
+                    @click.stop="deleteConversation(conversation.id)"
                     :aria-label="`Xóa cuộc trò chuyện ${conversation.title}`"
+                    title="Xóa cuộc trò chuyện"
                   >
-                    <i class="fa-solid fa-trash-can text-[0.7rem]" aria-hidden="true"></i>
+                    <i class="fa-regular fa-trash-can text-[0.68rem]" aria-hidden="true"></i>
                   </button>
                 </div>
               </li>
             </ul>
           </nav>
 
-          <div class="flex-shrink-0 border-t border-[#e1e8e0] px-3 py-2.5">
+          <div class="flex-shrink-0 border-t border-[#e1e8e0] px-3 py-2 bg-[#fcfdfc]">
             <p class="m-0 text-[0.68rem] leading-snug text-[#6b7280]">
               Tối đa {{ limits.maxConversations }} cuộc trò chuyện được lưu trên thiết bị này.
             </p>
@@ -56,7 +75,7 @@
         </aside>
 
         <!-- Main chat column -->
-        <section class="flex flex-col h-[calc(100dvh-136px)] md:h-[calc(100dvh-160px)] md:rounded-2xl md:border md:border-[#e1e8e0] bg-white overflow-hidden">
+        <section class="flex flex-col h-full rounded-xl md:rounded-2xl border border-[#e1e8e0] bg-white overflow-hidden shadow-sm">
           <!-- Header -->
           <header class="flex-shrink-0 flex items-center justify-between gap-3 border-b border-[#e1e8e0] bg-[#1e4620] px-4 py-3">
             <div class="flex min-w-0 items-center gap-3">
@@ -123,7 +142,7 @@
                       ? 'bg-white text-[#1f2937] rounded-[4px_18px_18px_18px] shadow-[0_1px_3px_rgba(0,0,0,0.06)]'
                       : 'bg-[#1e4620] text-white rounded-[18px_4px_18px_18px] shadow-[0_2px_8px_rgba(30,70,32,0.2)]'"
                   >
-                    <p class="m-0 whitespace-pre-wrap">{{ msg.text }}</p>
+                    <ChatMessageContent :text="msg.text" :is-bot="msg.sender === 'bot'" />
                     <div v-if="msg.sender === 'bot' && !msg.isStreaming" class="mt-2 flex items-center justify-between gap-2 border-t border-[#e1e8e0] pt-1.5 text-[0.72rem]">
                       <span v-if="msg.kind" class="flex items-center gap-1 font-semibold" :class="messageKindClass(msg.kind)" role="status">
                         <i class="fa-solid" :class="isProblemKind(msg.kind) ? 'fa-circle-exclamation text-[#9a3412]' : 'fa-circle-check text-[#1e4620]'" aria-hidden="true"></i>
@@ -219,7 +238,7 @@
 
           <!-- Input bar: pinned to the bottom of the column so a long transcript
                never scrolls it out of reach. -->
-          <div class="flex-shrink-0 border-t border-[#e1e8e0] bg-white px-4 pt-3 pb-[calc(12px+env(safe-area-inset-bottom,0px))] md:px-8 md:pb-4">
+          <div class="flex-shrink-0 border-t border-[#e1e8e0] bg-white px-3 py-2.5 sm:px-4 sm:py-3 md:px-6 md:py-3.5">
             <form class="mx-auto flex max-w-[760px] items-end gap-2" @submit.prevent="sendBotMessage">
               <input v-model="honeypot" type="text" name="_h" tabindex="-1" autocomplete="off" aria-hidden="true" class="absolute left-[-9999px] h-px w-px opacity-0 pointer-events-none" />
               <div class="min-w-0 flex-1">

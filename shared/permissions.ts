@@ -20,6 +20,7 @@ export const PERMISSION_RESOURCES = [
   { key: 'comments', label: 'Bình luận' },
   { key: 'media_portal', label: 'Cổng video & âm thanh' },
   { key: 'livestream', label: 'Phát trực tiếp' },
+  { key: 'ai', label: 'AI Panel' },
 ] as const
 
 export const PERMISSION_ACTIONS = [
