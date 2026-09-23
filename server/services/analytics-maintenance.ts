@@ -1,6 +1,7 @@
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import mysql, { type Pool, type PoolConnection, type RowDataPacket } from 'mysql2/promise'
 import { randomUUID } from 'node:crypto'
+import { withNamedLock } from '../utils/named-lock'
 import {
   ANALYTICS_RETENTION_BOUNDS,
   ANALYTICS_RETENTION_DEFAULTS,
@@ -62,6 +63,12 @@ type NocOutcome = {
 }
 
 const LOCK_NAME = 'cdkt:analytics:maintenance'
+/**
+ * `0` is "do not wait" — a second replica skips the pass instead of queueing on
+ * a pooled connection. Unchanged from when this file issued `GET_LOCK` itself,
+ * so a cron entry running the older path still cannot overlap.
+ */
+const LOCK_TIMEOUT_SECONDS = 0
 const MAX_CATCH_UP_DAYS = 14
 const MAX_PURGE_BATCHES = 1_000
 const DIMENSIONS = ['source_category', 'device_class', 'country_code', 'region_code'] as const
@@ -300,9 +307,7 @@ export async function runAnalyticsMaintenance(options: MaintenanceOptions = {}):
     ANALYTICS_RETENTION_BOUNDS.nocRetentionDays.min, ANALYTICS_RETENTION_BOUNDS.nocRetentionDays.max,
   )
   const pool = options.connection || createAnalyticsPool()
-  const connection = await pool.getConnection()
   const workerToken = randomUUID()
-  let lockAcquired = false
 
   const emptyResult = (status: MaintenanceResult['status'], message?: string): MaintenanceResult => ({
     status, processedDays: [], purgedRaw: 0, purgedAggregates: 0,
@@ -310,133 +315,176 @@ export async function runAnalyticsMaintenance(options: MaintenanceOptions = {}):
     lastAggregatedDay: null, stale: status !== 'locked', message,
   })
 
-  try {
-    const [[lock]] = await connection.query<RowDataPacket[]>('SELECT GET_LOCK(?, 0) AS acquired', [LOCK_NAME])
-    if (Number(lock?.acquired) !== 1) {
-      await emitNocBestEffort(connection, now, {
-        eventType: 'maintenance_lock_contention', severity: 'warning', status: 'locked', errorCode: 'lock_unavailable',
-        details: { reasonCode: 'lock_unavailable' },
-      })
-      return emptyResult('locked', 'maintenance lock unavailable')
-    }
-    lockAcquired = true
-
-    const processedDays: string[] = []
-    let aggregationFailed = false
-    let retentionFailed = false
-    let retentionBounded = false
-    let purgedRaw = 0
-    let purgedAggregates = 0
-    let purgedLiveBuckets = 0
-    let purgedDedupRows = 0
-    let purgedNocRows = 0
-
-    const yesterday = shiftUtcDay(utcDay(now), -1)
+  /**
+   * Everything that runs while the lock is held. The connection is a parameter
+   * rather than something read from the pool inside, because every NOC emit below
+   * has to land on the same connection that holds the lock — and the lock is held
+   * by a connection, not by the pool.
+   *
+   * The try/catch is INSIDE this function on purpose. `withNamedLock` releases the
+   * connection in its own `finally`, so a catch outside it would be holding a
+   * released connection when it tries to write the failure row.
+   */
+  const runMaintenance = async (connection: PoolConnection): Promise<MaintenanceResult> => {
     try {
-      for (let offset = catchUpDays - 1; offset >= 0; offset -= 1) {
-        const day = shiftUtcDay(yesterday, -offset)
-        await aggregateDay(connection, day, pageLimit, dimensionLimit, workerToken)
-        processedDays.push(day)
-      }
-    } catch {
-      // Raw events and daily rows stay untouched by retention when aggregation fails.
-      aggregationFailed = true
-    }
+      const processedDays: string[] = []
+      let aggregationFailed = false
+      let retentionFailed = false
+      let retentionBounded = false
+      let purgedRaw = 0
+      let purgedAggregates = 0
+      let purgedLiveBuckets = 0
+      let purgedDedupRows = 0
+      let purgedNocRows = 0
 
-    if (!aggregationFailed) {
+      const yesterday = shiftUtcDay(utcDay(now), -1)
       try {
-        const rawCutoff = retentionCutoff(now, rawRetentionDays * 24 * 60 * 60 * 1000)
-        const raw = await purgeInBatches(connection,
-          `DELETE e FROM analytics_page_view_events e INNER JOIN analytics_maintenance_runs m
-           ON m.day = e.event_day AND m.status = 'complete' WHERE e.occurred_at < ? LIMIT ?`, [rawCutoff], rawBatchSize, maxPurgeBatches)
-        purgedRaw = raw.count
-        retentionBounded ||= raw.bounded
-
-        const aggregateCutoff = shiftUtcDay(utcDay(now), -aggregateRetentionDays)
-        for (const table of ['analytics_daily_dimensions', 'analytics_daily_pages', 'analytics_daily_traffic', 'analytics_daily_admin_users', 'analytics_maintenance_runs']) {
-          const result = await purgeInBatches(connection, `DELETE FROM ${table} WHERE day < ? LIMIT ?`, [aggregateCutoff], aggregateBatchSize, maxPurgeBatches)
-          purgedAggregates += result.count
-          retentionBounded ||= result.bounded
+        for (let offset = catchUpDays - 1; offset >= 0; offset -= 1) {
+          const day = shiftUtcDay(yesterday, -offset)
+          await aggregateDay(connection, day, pageLimit, dimensionLimit, workerToken)
+          processedDays.push(day)
         }
       } catch {
-        retentionFailed = true
+        // Raw events and daily rows stay untouched by retention when aggregation fails.
+        aggregationFailed = true
       }
-    }
 
-    if (!aggregationFailed) {
+      if (!aggregationFailed) {
+        try {
+          const rawCutoff = retentionCutoff(now, rawRetentionDays * 24 * 60 * 60 * 1000)
+          const raw = await purgeInBatches(connection,
+            `DELETE e FROM analytics_page_view_events e INNER JOIN analytics_maintenance_runs m
+             ON m.day = e.event_day AND m.status = 'complete' WHERE e.occurred_at < ? LIMIT ?`, [rawCutoff], rawBatchSize, maxPurgeBatches)
+          purgedRaw = raw.count
+          retentionBounded ||= raw.bounded
+
+          const aggregateCutoff = shiftUtcDay(utcDay(now), -aggregateRetentionDays)
+          for (const table of ['analytics_daily_dimensions', 'analytics_daily_pages', 'analytics_daily_traffic', 'analytics_daily_admin_users', 'analytics_maintenance_runs']) {
+            const result = await purgeInBatches(connection, `DELETE FROM ${table} WHERE day < ? LIMIT ?`, [aggregateCutoff], aggregateBatchSize, maxPurgeBatches)
+            purgedAggregates += result.count
+            retentionBounded ||= result.bounded
+          }
+        } catch {
+          retentionFailed = true
+        }
+      }
+
+      if (!aggregationFailed) {
+        try {
+          const purged = await purgeExpiredLiveBuckets(connection, now, { liveRetentionHours, liveBatchSize, maxPurgeBatches })
+          purgedLiveBuckets = purged.count
+          retentionBounded ||= purged.bounded
+        } catch {
+          retentionFailed = true
+        }
+
+        try {
+          const purged = await purgeExpiredDedupRows(connection, now, { liveRetentionHours, dedupBatchSize, maxPurgeBatches })
+          purgedDedupRows = purged.count
+          retentionBounded ||= purged.bounded
+        } catch {
+          retentionFailed = true
+        }
+      }
+
+      // NOC retention is intentionally independent: operational telemetry remains
+      // purgeable even when aggregation, raw, daily, or live retention fails.
       try {
-        const purged = await purgeExpiredLiveBuckets(connection, now, { liveRetentionHours, liveBatchSize, maxPurgeBatches })
-        purgedLiveBuckets = purged.count
+        const purged = await purgeExpiredNocRows(connection, now, { nocRetentionDays, nocBatchSize, maxPurgeBatches })
+        purgedNocRows = purged.count
         retentionBounded ||= purged.bounded
       } catch {
         retentionFailed = true
       }
 
+      let lastAggregatedDay: string | null = null
+      let stale = true
       try {
-        const purged = await purgeExpiredDedupRows(connection, now, { liveRetentionHours, dedupBatchSize, maxPurgeBatches })
-        purgedDedupRows = purged.count
-        retentionBounded ||= purged.bounded
+        const [[fresh]] = await connection.query<RowDataPacket[]>('SELECT MAX(day) AS last_day FROM analytics_maintenance_runs WHERE status = \'complete\'')
+        lastAggregatedDay = fresh?.last_day ? utcDay(new Date(fresh.last_day)) : null
+        stale = !lastAggregatedDay || now.getTime() - new Date(`${lastAggregatedDay}T23:59:59Z`).getTime() > config.freshnessThresholdHours * 3600000
       } catch {
         retentionFailed = true
       }
-    }
 
-    // NOC retention is intentionally independent: operational telemetry remains
-    // purgeable even when aggregation, raw, daily, or live retention fails.
-    try {
-      const purged = await purgeExpiredNocRows(connection, now, { nocRetentionDays, nocBatchSize, maxPurgeBatches })
-      purgedNocRows = purged.count
-      retentionBounded ||= purged.bounded
+      const status: MaintenanceResult['status'] = aggregationFailed
+        ? 'failed'
+        : retentionFailed || retentionBounded || stale ? 'warning' : 'success'
+      await emitNocBestEffort(connection, now, {
+        eventType: aggregationFailed ? 'maintenance_failure' : status === 'warning' ? 'maintenance_warning' : 'maintenance_complete',
+        severity: aggregationFailed ? 'error' : status === 'warning' ? 'warning' : 'info',
+        status: aggregationFailed ? 'failure' : status === 'warning' ? 'warning' : 'complete',
+        errorCode: aggregationFailed ? 'maintenance_failed' : retentionFailed || retentionBounded ? 'retention_warning' : 'none',
+        durationMs: Date.now() - startedAt,
+        details: aggregationFailed
+          ? { processedDays: processedDays.length, reasonCode: 'maintenance_failed' }
+          : { processedDays: processedDays.length, stale },
+      })
+      await emitNocBestEffort(connection, now, {
+        eventType: 'retention_cleanup', severity: retentionBounded || retentionFailed ? 'warning' : 'info',
+        durationMs: Date.now() - startedAt,
+        status: retentionBounded || retentionFailed ? 'warning' : 'complete',
+        errorCode: retentionBounded || retentionFailed ? 'retention_warning' : 'none',
+        details: { purgedLiveBuckets, purgedDedupRows, purgedNocRows, liveRetentionHours, nocRetentionDays },
+      })
+
+      return {
+        status, processedDays, purgedRaw, purgedAggregates, purgedLiveBuckets,
+        purgedDedupRows, purgedNocRows, lastAggregatedDay, stale,
+        ...(aggregationFailed ? { message: 'maintenance failed' } : {}),
+      }
     } catch {
-      retentionFailed = true
+      await emitNocBestEffort(connection, now, {
+        eventType: 'maintenance_failure', severity: 'error', status: 'failure', errorCode: 'maintenance_failed',
+        durationMs: Date.now() - startedAt,
+        details: { processedDays: 0, reasonCode: 'maintenance_failed' },
+      })
+      return emptyResult('failed', 'maintenance failed')
     }
+  }
 
-    let lastAggregatedDay: string | null = null
-    let stale = true
-    try {
-      const [[fresh]] = await connection.query<RowDataPacket[]>('SELECT MAX(day) AS last_day FROM analytics_maintenance_runs WHERE status = \'complete\'')
-      lastAggregatedDay = fresh?.last_day ? utcDay(new Date(fresh.last_day)) : null
-      stale = !lastAggregatedDay || now.getTime() - new Date(`${lastAggregatedDay}T23:59:59Z`).getTime() > config.freshnessThresholdHours * 3600000
-    } catch {
-      retentionFailed = true
-    }
-
-    const status: MaintenanceResult['status'] = aggregationFailed
-      ? 'failed'
-      : retentionFailed || retentionBounded || stale ? 'warning' : 'success'
-    await emitNocBestEffort(connection, now, {
-      eventType: aggregationFailed ? 'maintenance_failure' : status === 'warning' ? 'maintenance_warning' : 'maintenance_complete',
-      severity: aggregationFailed ? 'error' : status === 'warning' ? 'warning' : 'info',
-      status: aggregationFailed ? 'failure' : status === 'warning' ? 'warning' : 'complete',
-      errorCode: aggregationFailed ? 'maintenance_failed' : retentionFailed || retentionBounded ? 'retention_warning' : 'none',
-      durationMs: Date.now() - startedAt,
-      details: aggregationFailed
-        ? { processedDays: processedDays.length, reasonCode: 'maintenance_failed' }
-        : { processedDays: processedDays.length, stale },
-    })
-    await emitNocBestEffort(connection, now, {
-      eventType: 'retention_cleanup', severity: retentionBounded || retentionFailed ? 'warning' : 'info',
-      durationMs: Date.now() - startedAt,
-      status: retentionBounded || retentionFailed ? 'warning' : 'complete',
-      errorCode: retentionBounded || retentionFailed ? 'retention_warning' : 'none',
-      details: { purgedLiveBuckets, purgedDedupRows, purgedNocRows, liveRetentionHours, nocRetentionDays },
-    })
-
-    return {
-      status, processedDays, purgedRaw, purgedAggregates, purgedLiveBuckets,
-      purgedDedupRows, purgedNocRows, lastAggregatedDay, stale,
-      ...(aggregationFailed ? { message: 'maintenance failed' } : {}),
-    }
+  try {
+    const outcome = await withNamedLock(
+      pool,
+      LOCK_NAME,
+      LOCK_TIMEOUT_SECONDS,
+      runMaintenance,
+      // The lock-busy branch still writes. This emit is the only signal that
+      // maintenance runs at all, and it fires on the branch where the pass never
+      // does — which is why the helper hands the connection to a busy hook rather
+      // than swallowing it.
+      async (connection) => {
+        await emitNocBestEffort(connection, now, {
+          eventType: 'maintenance_lock_contention', severity: 'warning', status: 'locked', errorCode: 'lock_unavailable',
+          details: { reasonCode: 'lock_unavailable' },
+        })
+      },
+    )
+    if (!outcome.acquired) return emptyResult('locked', 'maintenance lock unavailable')
+    return outcome.value
   } catch {
-    await emitNocBestEffort(connection, now, {
-      eventType: 'maintenance_failure', severity: 'error', status: 'failure', errorCode: 'maintenance_failed',
-      durationMs: Date.now() - startedAt,
-      details: { processedDays: 0, reasonCode: 'maintenance_failed' },
-    })
+    /**
+     * Reachable only before a lock exists — `GET_LOCK` itself threw, or the pool
+     * refused a connection. Both mean the database is already unreachable, so
+     * there is no lock-holding connection to report on and a fresh lease is the
+     * only thing left to try. Its failure is ignored for the same reason: this is
+     * the branch where the database is known to be broken, and the NOC row is
+     * best-effort by construction.
+     */
+    const fallback = await pool.getConnection().catch(() => null)
+    if (fallback) {
+      try {
+        await emitNocBestEffort(fallback, now, {
+          eventType: 'maintenance_failure', severity: 'error', status: 'failure', errorCode: 'maintenance_failed',
+          durationMs: Date.now() - startedAt,
+          details: { processedDays: 0, reasonCode: 'maintenance_failed' },
+        })
+      } finally {
+        fallback.release()
+      }
+    }
     return emptyResult('failed', 'maintenance failed')
   } finally {
-    if (lockAcquired) await connection.query('SELECT RELEASE_LOCK(?)', [LOCK_NAME]).catch(() => undefined)
-    connection.release()
     if (!options.connection) await pool.end()
   }
 }

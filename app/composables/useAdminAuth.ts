@@ -10,6 +10,9 @@ export interface AdminUser {
     canRead: boolean
     canUpdate: boolean
     canDelete: boolean
+    canPublish?: boolean
+    canArchive?: boolean
+    canTest?: boolean
   }>
 }
 

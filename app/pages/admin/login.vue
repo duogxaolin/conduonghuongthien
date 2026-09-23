@@ -93,7 +93,7 @@ const handleLogin = async () => {
     if (res.ok && res.mfaRequired) {
       methods.value = res.methods ?? []
       recoveryAvailable.value = res.recoveryCodesAvailable === true
-      selectedMethod.value = methods.value[0] ?? 'totp'
+      selectedMethod.value = methods.value[0] ?? 'recovery_code'
       step.value = 'challenge'
       // Mật khẩu đã dùng xong: không giữ lại trong bộ nhớ trang.
       password.value = ''

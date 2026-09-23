@@ -7,10 +7,10 @@
  * một `message` và một chuỗi, nên nó kiểm được **mà không cần dựng cả trợ lý**
  * — đúng điều `tests/chatbot-typing-playback.test.ts` đang làm.
  *
- * `useChatbot.ts` re-export lại `playTypewriter` và hai hằng số để mọi nơi gọi
- * cũ (và bộ test) giữ nguyên một đường import.
+ * Module này là bề mặt duy nhất cho các utility typewriter. `useChatbot.ts`
+ * dùng nội bộ nhưng không re-export, để Nuxt không đăng ký trùng auto-import.
  */
-import type { ChatMessage } from './useChatbot'
+import type { ChatMessage } from '../utils/chatbot-storage'
 
 /**
  * Playback pacing — a reading pace, not a progress bar.

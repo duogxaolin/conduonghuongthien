@@ -1,40 +1,41 @@
 <template>
   <div class="min-h-screen bg-[#F7FAF6]">
     <!-- Page Header & Hero Section: Trang trọng, hiện đại, chuẩn phong cách báo điện tử cơ quan Nhà nước -->
-    <section class="border-b border-[#DDE6DC] bg-gradient-to-b from-[#EEF5EB] via-[#F5FAF3] to-[#F7FAF6]">
-      <div class="container pt-6 sm:pt-8 pb-6 sm:pb-7">
-        <!-- Breadcrumb navigation -->
-        <nav aria-label="Đường dẫn trang" class="mb-4">
-          <ol class="flex items-center gap-1.5 text-xs text-[#6B7967] m-0 p-0 list-none flex-wrap">
-            <li class="flex items-center gap-1.5">
-              <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1">
-                <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
-                <span>Trang chủ</span>
-              </nuxt-link>
-            </li>
-            <li aria-hidden="true" class="text-[#A2B09F]">&rsaquo;</li>
-            <li class="font-bold text-[#2A3B27] flex items-center gap-1">
-              <span>Mô hình tái hòa nhập</span>
-            </li>
-          </ol>
-        </nav>
+    <PageHero>
+      <!-- Breadcrumb navigation -->
+      <nav aria-label="Đường dẫn trang" class="mb-4">
+        <ol class="flex items-center gap-1.5 text-xs text-[#6B7967] m-0 p-0 list-none flex-wrap">
+          <li class="flex items-center gap-1.5">
+            <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1">
+              <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
+              <span>Trang chủ</span>
+            </nuxt-link>
+          </li>
+          <li aria-hidden="true" class="text-[#A2B09F]">&rsaquo;</li>
+          <li class="font-bold text-[#2A3B27] flex items-center gap-1">
+            <span>Mô hình tái hòa nhập</span>
+          </li>
+        </ol>
+      </nav>
 
-        <!-- Top Header Info & Search Row -->
-        <div class="flex flex-col lg:flex-row lg:items-end justify-between gap-5">
-          <div class="max-w-2xl">
-            <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
-              <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
-              <span>Cổng Thông Tin Điện Tử C11 &bull; Bộ Công An</span>
-            </div>
-            <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
-              Mô Hình Tái Hòa Nhập Cộng Đồng
-            </h1>
-            <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed">
-              Các mô hình sản xuất kinh doanh, câu lạc bộ và quỹ nhân ái hỗ trợ người chấp hành xong án phạt tù ổn định đời sống.
-            </p>
-          </div>
+      <div class="max-w-2xl">
+        <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
+          <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+          <span>Cổng Thông Tin Điện Tử C11 &bull; Bộ Công An</span>
+        </div>
+        <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
+          Mô Hình Tái Hòa Nhập Cộng Đồng
+        </h1>
+        <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed">
+          Các mô hình sản xuất kinh doanh, câu lạc bộ và quỹ nhân ái hỗ trợ người chấp hành xong án phạt tù ổn định đời sống.
+        </p>
+      </div>
+    </PageHero>
 
-          <!-- Integrated Search Box -->
+    <!-- Search Section: tách khỏi hero, đặt vào phần nội dung bên dưới -->
+    <section class="pt-6 lg:pt-8">
+      <div class="container">
+        <div class="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
           <div class="w-full lg:w-80 shrink-0">
             <form @submit.prevent="applySearch" class="relative flex items-center">
               <span class="absolute left-3.5 top-1/2 -translate-y-1/2 text-[#7C8D78] pointer-events-none text-xs">

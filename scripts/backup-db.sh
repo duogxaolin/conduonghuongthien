@@ -16,6 +16,7 @@
 #   MYSQL_CONTAINER       default: cdkt_mysql
 #   BACKUP_DIR            default: ./backups   (overridden by the argument)
 #   BACKUP_KEEP_DAYS      default: 14
+#   BACKUP_STAMP          optional shared timestamp set by backup.sh
 #
 # Exit codes: 0 success, 1 configuration error, 2 dump failed, 3 verification failed.
 
@@ -36,7 +37,11 @@ CONTAINER="${MYSQL_CONTAINER:-cdkt_mysql}"
 DATABASE="${MYSQL_DATABASE:-cdkt_admin}"
 DEST="${1:-${BACKUP_DIR:-$REPO_ROOT/backups}}"
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
-STAMP="$(date -u +%Y%m%dT%H%M%SZ)"
+STAMP="${BACKUP_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
+# The timestamp becomes part of a host-side filename.  `backup.sh` supplies it
+# to pair the SQL dump with the media archive, but never let an arbitrary
+# environment value turn this script into a path writer.
+[[ "$STAMP" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || { printf '%s\n' 'BACKUP_STAMP must use YYYYMMDDTHHMMSSZ' >&2; exit 1; }
 # The PID suffix keeps a manual run from colliding with the cron run in the same
 # second — a collision would have one overwrite or delete the other's file.
 TARGET="$DEST/cdkt-$DATABASE-$STAMP-$$.sql.gz"

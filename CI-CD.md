@@ -217,7 +217,49 @@ proxy_set_header X-Real-IP         $remote_addr;
 proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
 client_max_body_size 20M;
+
+# ── Tải video lên theo phần (Media Portal) ────────────────────────────────
+# 12g chứ không 10g: phần tải lên là multipart, nên thân request lớn hơn dữ
+# liệu thật. Để đúng bằng trần ứng dụng (`MEDIA_UPLOAD_MAX_SIZE`) thì nginx
+# từ chối bằng 413 đúng những phần mà ứng dụng sẵn sàng nhận — và nó từ chối
+# trước khi ứng dụng thấy request, nên không có log nào phía cổng giải thích.
+location /api/admin/media-portal/ {
+    proxy_pass http://127.0.0.1:54432;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    client_max_body_size 12g;
+    proxy_read_timeout 600s;
+    proxy_send_timeout 600s;
+}
+
+# ── Luồng SSE của chat trực tiếp ──────────────────────────────────────────
+# `X-Accel-Buffering: no` đã do tầng ứng dụng đặt, nên ở đây chỉ cần phần của
+# nginx: đệm và cache. Đệm là thứ giết SSE — nginx gom bytes lại, nên một tin
+# nhắn chat nằm trong bộ đệm proxy tới khi đầy hoặc tới khi stream đóng; khách
+# gõ xong mà người kia không thấy gì. `proxy_cache off` cùng lý do: một luồng
+# phục vụ lại từ cache là cuộc trò chuyện của người khác.
+# `proxy_read_timeout 86400s` vì một phiên chat đang mở là một request chưa
+# kết thúc — ngắt nó theo lịch là đóng cuộc trò chuyện mà không ai bấm gì.
+location /api/public/livestream/chat/stream {
+    proxy_pass http://127.0.0.1:54432;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 86400s;
+    proxy_send_timeout 86400s;
+}
 ```
+
+Hai khối `location` trên phải nằm trong **cùng** khối `server { }` với các dòng
+`proxy_set_header` ở trên — dán rời ra ngoài thì nginx báo lỗi cú pháp, hoặc tệ
+hơn là nhận mà không có hiệu lực. Nhớ đổi `54432` cho khớp `PORT` trong `.env`.
 
 Thiếu `X-Forwarded-For` thì mọi khách trông như cùng một địa chỉ, và giới hạn tần
 suất theo IP gộp thành một bucket chung cho cả internet.

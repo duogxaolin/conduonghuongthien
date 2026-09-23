@@ -28,7 +28,7 @@ import {
   attemptRecoveryCode,
   attemptSecondPassword,
   attemptTotp,
-  usableFactorTypes,
+  factorAvailability,
   type FactorType,
 } from '../../../../utils/mfa/factors'
 import { rateLimitDeps } from '../../../../utils/rate-limit-deps'
@@ -90,12 +90,12 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 401, statusMessage: 'Phiên xác thực đã hết hạn. Vui lòng đăng nhập lại.' })
   }
 
-  const usable = await usableFactorTypes(user.id)
-  if (usable.length === 0) {
-    // Every factor was disabled mid-challenge; the password alone is now enough.
+  const { active, usable } = await factorAvailability(user.id)
+  if (!active) {
+    // Factor removal invalidates the challenge. Start a fresh login instead of
+    // exchanging an arbitrary submitted code for a password-only session.
     clearChallengeCookie(event)
-    logInfo({ event: SECURITY_EVENTS.loginSucceeded, username: user.username, userId: user.id, ip, mfa: 'none_remaining' })
-    return completeLogin(event, user, { ip })
+    throw createError({ statusCode: 401, statusMessage: 'Phương thức xác thực đã thay đổi. Vui lòng đăng nhập lại.' })
   }
 
   // One satisfied factor is enough — several enabled factors are alternatives,

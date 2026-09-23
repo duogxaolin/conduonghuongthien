@@ -125,9 +125,29 @@ export type AdminReaderCommentsDeleteResult = Payload<ReaderCommentsDeleteHandle
 type ActivityRetentionHandler = typeof import('~~/server/api/admin/activity-logs/retention.get').default
 export type ActivityRetentionStatus = Payload<ActivityRetentionHandler>
 
-// ─── Thư viện ảnh ────────────────────────────────────────────────────────────
+// ─── Thư viện ảnh (bảng `media`, ảnh cũ) ────────────────────────────────────
 type MediaUploadHandler = typeof import('~~/server/api/admin/media/upload.post').default
 export type AdminMediaUploadResult = Payload<MediaUploadHandler>
 
 type MediaListHandler = typeof import('~~/server/api/admin/media/index.get').default
 export type AdminMediaRow = ItemOf<Payload<MediaListHandler>['items']>
+
+// ─── Thư viện Video (bảng `media_items`, Portal Media) ──────────────────────────
+// Tách khỏi `AdminMediaRow` ở trên: hai bảng khác nhau, hai đường API khác nhau,
+// hai tài nguyên RBAC khác nhau (`media` vs `media_portal`). Trộn chúng là đọc
+// ảnh cũ lẫn video mới trên cùng một kiểu mà không có cách phân biệt.
+type MediaPortalListHandler = typeof import('~~/server/api/admin/media-portal/index.get').default
+export type AdminMediaPage = Payload<MediaPortalListHandler>
+export type AdminMediaItem = ItemOf<AdminMediaPage['items']>
+type MediaPortalConfigHandler = typeof import('~~/server/api/admin/media-portal/config.get').default
+export type AdminMediaConfig = Payload<MediaPortalConfigHandler>
+
+// ─── Livestream ────────────────────────────────────────────────────────────────
+type LivestreamActiveHandler = typeof import('~~/server/api/public/livestream/active.get').default
+export type AdminLivestreamActive = Payload<LivestreamActiveHandler>
+
+type LivestreamStartHandler = typeof import('~~/server/api/admin/livestream/start.post').default
+export type AdminLivestreamStartResult = Payload<LivestreamStartHandler>
+
+type LivestreamStopHandler = typeof import('~~/server/api/admin/livestream/stop.post').default
+export type AdminLivestreamStopResult = Payload<LivestreamStopHandler>

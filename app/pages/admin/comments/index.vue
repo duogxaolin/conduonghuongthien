@@ -2,7 +2,7 @@
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
- * Comment moderation: newest first, optionally filtered to one article, with
+ * Comment moderation: newest first, optionally filtered to article or video, with
  * delete and an inline reply.
  *
  * A reply posted here appears publicly under the fixed "Ban quản trị" label, not
@@ -17,9 +17,13 @@ type Comment = {
   body: string
   createdAt: string | null
   parentId: number | null
-  articleId: number
+  /** Null when the comment was made on a media item rather than an article. */
+  articleId: number | null
   articleTitle: string | null
   articleSlug: string | null
+  mediaItemId: number | null
+  mediaItemTitle: string | null
+  mediaItemSlug: string | null
   readerId: number | null
   readerName: string | null
   readerEmail: string | null
@@ -40,6 +44,7 @@ const page = ref(1)
 const totalPages = ref(1)
 
 const articleFilter = ref(route.query.articleId ? String(route.query.articleId) : '')
+const sourceFilter = ref(route.query.source === 'article' || route.query.source === 'media' ? route.query.source : '')
 
 const replyTo = ref<number | null>(null)
 const replyBody = ref('')
@@ -56,7 +61,11 @@ async function load() {
   error.value = ''
   try {
     const res = await $fetch('/api/admin/comments', {
-      query: { articleId: articleFilter.value || undefined, page: page.value },
+      query: {
+        articleId: articleFilter.value || undefined,
+        source: sourceFilter.value || undefined,
+        page: page.value,
+      },
     })
     if (!res?.ok) {
       error.value = 'Không tải được danh sách bình luận.'
@@ -140,7 +149,7 @@ onMounted(load)
     <div>
       <h1 class="m-0 text-[1.35rem] font-extrabold text-[#122815]">Kiểm duyệt bình luận</h1>
       <p class="m-0 mt-1 text-sm text-[#667768]">
-        Bình luận công khai trên các bài viết, mới nhất trước. Mỗi lượt xem được ghi vào lịch sử hoạt động.
+        Bình luận công khai trên bài viết và video, mới nhất trước. Mỗi lượt xem được ghi vào lịch sử hoạt động.
       </p>
     </div>
 
@@ -154,6 +163,17 @@ onMounted(load)
           placeholder="Để trống để xem tất cả"
           class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
         />
+      </label>
+      <label class="flex flex-col gap-1.5 text-sm font-bold">
+        Nguồn bình luận
+        <select
+          v-model="sourceFilter"
+          class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
+        >
+          <option value="">Tất cả</option>
+          <option value="article">Bài viết</option>
+          <option value="media">Video</option>
+        </select>
       </label>
       <button
         type="submit"
@@ -207,7 +227,9 @@ onMounted(load)
               </div>
               <p class="m-0 mt-1 text-[0.8rem] text-[#667768]">
                 {{ formatMoment(comment.createdAt) }}
-                <span v-if="comment.articleTitle"> — {{ comment.articleTitle }}</span>
+                <span v-if="comment.articleTitle"> — Bài viết: {{ comment.articleTitle }}</span>
+                <span v-else-if="comment.mediaItemTitle"> — Video: {{ comment.mediaItemTitle }}</span>
+                <span v-else-if="comment.mediaItemId !== null"> — Video đã không còn</span>
                 <span v-if="comment.ip"> — {{ comment.ip }}</span>
               </p>
             </div>

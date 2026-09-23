@@ -209,8 +209,9 @@ test('the email factor refuses to enable when SMTP is unconfigured, and ignores 
   // The stored address is the only one used.
   assert.match(src, /email: admin\.email/)
   assert.ok(!/body\?\.email/.test(src), 'an address from the request must never be honoured')
-  // A send failure leaves nothing half-enabled.
-  assert.match(src, /delete\(userMfaFactors\)\.where\(eq\(userMfaFactors\.id, factorId!\)\)/)
+  // A late send failure must not remove a factor confirmed by another request.
+  // The expiring pending row remains inactive until ownership is proved.
+  assert.ok(!src.includes('db.delete(userMfaFactors)'))
 })
 
 test('the emailed destination is masked in the response', () => {

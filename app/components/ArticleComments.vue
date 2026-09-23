@@ -1,5 +1,13 @@
 <!--
-  Public comment thread for one article.
+  Public comment thread for one item — an article or a media item.
+
+  Which item is the `mediaItemId` prop: absent means an article addressed by
+  `slug`, present means a media item addressed by the same `slug`. That is the
+  ONLY axis this component is parameterized on, because it is the only axis the
+  engine itself is parameterized on (`resolveCommentTarget`). Duplicating the
+  component for videos would have produced two threads that drift — one of them
+  keeping notifications, or the draft-recovery path, and the other not, with
+  nothing reporting the difference.
 
   Everything here is fetched AFTER MOUNT. The article routes are served with
   `swr: 60` (nuxt.config.ts), so a thread rendered on the server would be handed
@@ -251,7 +259,7 @@
 </template>
 
 <script setup lang="ts">
-import { nextTick, onMounted, ref } from 'vue'
+import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
 import { useReaderAuth } from '~/composables/useReaderAuth'
@@ -261,8 +269,58 @@ import { errorMessage as messageFrom, errorStatus } from '~/utils/errorMessage'
 import type { CommentThreadPayload, PublicCommentItem } from '~/types/public-api'
 
 const props = defineProps<{
+  /** The article's or the media item's slug — whichever `mediaItemId` says. */
   slug: string
+  /**
+   * Set for a media item, absent for an article.
+   *
+   * This is the switch, not the slug: article slugs and media slugs are unique
+   * within their own table and nothing stops the same string existing in both, so
+   * a slug alone cannot say which item a thread belongs to. The two namespaces
+   * are also served by different endpoints, so guessing here would read the wrong
+   * thread rather than fail.
+   */
+  mediaItemId?: number | null
 }>()
+
+/** True when this thread belongs to a media item rather than an article. */
+const isMedia = computed(() => typeof props.mediaItemId === 'number' && props.mediaItemId > 0)
+
+/**
+ * Where this thread lives, as one place.
+ *
+ * The SAME path for both kinds — `/api/public/comments/<slug>` — with `source`
+ * naming which table the slug is looked up in. Not a separate media path: the
+ * two endpoints already exist and are already tested, and the item kind is the
+ * one thing that differs, so a second route file would be a second place for the
+ * paging, the reader-identity check, and the "comments are off" branch to be
+ * written slightly differently.
+ *
+ * `source` is omitted for an article rather than sent as `source=article`. An
+ * absent parameter reads as the old behaviour, so the request an existing article
+ * page sends is unchanged byte for byte — and the server side parses this with
+ * the same `parseCommentSource` the moderation filter uses, which refuses an
+ * unknown value instead of quietly falling back to articles.
+ */
+const threadPath = `/api/public/comments/${encodeURIComponent(props.slug)}`
+
+const threadQuery = computed(() => isMedia.value
+  ? { page: page.value, source: 'media' }
+  : { page: page.value })
+
+/**
+ * The identifier the write endpoint reads, named as that endpoint already names
+ * it.
+ *
+ * `articleSlug` is untouched; media adds `mediaSlug` beside it. Renaming the
+ * existing field to a neutral `slug` would be a change to a contract that is
+ * already serving production comments, and the engine's XOR guard means the
+ * server can tell the two apart without a discriminator — exactly one of the two
+ * fields may be present.
+ */
+const writeBody = computed(() => isMedia.value
+  ? { mediaSlug: props.slug }
+  : { articleSlug: props.slug })
 
 /** Mirrors COMMENT_MAX_LENGTH on the server. The server is the authority; this
  *  only stops the reader typing past a limit the write would then refuse. */
@@ -407,8 +465,8 @@ async function loadThread() {
     // Kiểu tường minh: `$fetch` trên một URL dựng bằng template string không suy
     // được tuyến nào, nên nó trả `{}` và mọi phép đọc trường thành lỗi.
     const response = await $fetch<CommentThreadPayload>(
-      `/api/public/comments/${encodeURIComponent(props.slug)}`,
-      { query: { page: page.value } },
+      threadPath,
+      { query: threadQuery.value },
     )
     comments.value = response?.comments || []
     total.value = response?.total || 0
@@ -488,7 +546,7 @@ async function submit(parentId: number | null) {
   try {
     await $fetch('/api/public/comments', {
       method: 'POST',
-      body: { articleSlug: props.slug, parentId, body: text },
+      body: { ...writeBody.value, parentId, body: text },
     })
     // Cleared only after the write is known to have landed. On failure the typed
     // text stays in the box: a citizen who wrote three paragraphs and hit a rate

@@ -64,7 +64,7 @@ onMounted(async () => {
     ],
     toolbar: 'undo redo | blocks | bold italic underline | forecolor backcolor | ' +
       'alignleft aligncenter alignright | bullist numlist outdent indent | ' +
-      'link image table | removeformat | code fullscreen',
+      'link image media table | removeformat | code fullscreen',
     toolbar_mode: 'sliding',
     quickbars_selection_toolbar: 'bold italic | quicklink h2 h3 blockquote',
     quickbars_insert_toolbar: 'quickimage quicktable',

@@ -10,14 +10,16 @@
  * follows the same boundary as the other settings pages.
  */
 import { sql } from 'drizzle-orm'
+import type { AnyMySqlColumn, AnyMySqlTable } from 'drizzle-orm/mysql-core'
 import { getDb } from '../../../utils/db'
-import { activityLogs, submissions, chatSessions, readerAccounts } from '../../../db/schema'
+import { activityLogs, submissions, chatSessions, readerAccounts, livestreamSessions } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import {
   resolveRetentionPolicy,
   loadRetentionState,
   RETENTION_DEFAULTS,
   MAX_ROWS_BOUNDS,
+  type RetentionScope,
 } from '../../../services/retention-policy'
 import { DATA_RETENTION_BOUNDS } from '../../../utils/data-retention-config'
 
@@ -36,13 +38,21 @@ export default defineEventHandler(async (event) => {
    * the purge measured `last_message_at`, the page would report a number of
    * overdue rows that the next run does not delete, and the discrepancy would
    * read as a broken purge rather than as two different questions.
+   *
+   * Keyed by `RetentionScope`, so a scope added to `RETENTION_SCOPES` fails to
+   * compile until its table is named here. A plain object literal would instead
+   * fail at the point of use — and only once somebody opened the page.
    */
-  const scopeTable = {
+  const scopeTable: Record<RetentionScope, { target: AnyMySqlTable; timestamp: AnyMySqlColumn }> = {
     activity_logs: { target: activityLogs, timestamp: activityLogs.createdAt },
     submissions: { target: submissions, timestamp: submissions.createdAt },
     chat_sessions: { target: chatSessions, timestamp: chatSessions.lastMessageAt },
     reader_accounts: { target: readerAccounts, timestamp: readerAccounts.lastSeenAt },
-  } as const
+    // Aged from the END of the broadcast, matching the purge in data-retention.ts.
+    // `started_at` would report a session that began long ago and finished this
+    // morning as overdue while the purge — correctly — leaves it alone.
+    livestream_sessions: { target: livestreamSessions, timestamp: livestreamSessions.endedAt },
+  }
 
   const scopes = await Promise.all(policy.scopes.map(async (scope) => {
     const { target, timestamp } = scopeTable[scope.scope]

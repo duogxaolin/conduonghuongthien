@@ -60,6 +60,9 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/settings/tracking.vue', refs: ['error'], retries: ['fetchSettings'] },
   { file: 'pages/admin/settings/google-oauth.vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/settings/ip-bans.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/settings/media-portal.vue', refs: ['error'], retries: ['load'] },
+  // Backup & khôi phục — danh sách bản backup.
+  { file: 'pages/admin/settings/backup.vue', refs: ['error'], retries: ['loadBackups'] },
 
   // Content.
   { file: 'pages/admin/content/articles/index.vue', refs: ['loadError'], retries: ['fetchArticles'] },
@@ -90,6 +93,16 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/users/roles.vue', refs: ['error'], retries: ['fetchRoles'] },
   { file: 'pages/admin/users/activity.vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/media/index.vue', refs: ['loadError'], retries: ['fetchMedia'] },
+  // Portal Media — kho video (`media_items`), tách khỏi thư viện ảnh cũ ở trên.
+  { file: 'pages/admin/media-portal/index.vue', refs: ['loadError'], retries: ['fetchMedia'] },
+  { file: 'pages/admin/media-portal/external.vue', refs: ['loadError'], retries: ['load'] },
+  { file: 'pages/admin/media-portal/upload.vue', refs: ['loadError'], retries: ['load'] },
+  { file: 'pages/admin/media-portal/[id].vue', refs: ['loadError', 'progressError'], retries: ['load', 'refreshProcessing'] },
+  // Danh mục Media Portal — bảng `media_categories` riêng. Ref/error cùng pattern
+  // `content/categories/index.vue`: `error` + `fetchCategories` khai báo cùng tệp.
+  { file: 'pages/admin/media-portal/categories.vue', refs: ['error'], retries: ['fetchCategories'] },
+  // Livestream — trạng thái buổi phát trực tiếp.
+  { file: 'pages/admin/livestream/index.vue', refs: ['loadError'], retries: ['loadActive'] },
   { file: 'pages/admin/submissions/index.vue', refs: ['error'], retries: ['fetchSubmissions'] },
 
   // Views whose panels fail independently. Each ref is its own branch, so a
@@ -134,6 +147,13 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
     refs: ['livePanelError', 'breakdownPanelError', 'nocPanelError'],
     retries: ['retryLivePanel', 'retryBreakdownPanel', 'retryNocPanel'],
   },
+  // The chunked uploader is a four-phase modal — idle/uploading/done/failed — and
+  // the failure path is a whole branch, not a toast: `lastError` holds the reason,
+  // `v-if="lastError"` renders it into a `role="alert"` block (the idle-phase
+  // warning uses the same ref), and `@click="retry"` re-enters the upload through
+  // `retry()` in the same file. The retry resumes the existing session if the
+  // uploadId is still alive — does not silently re-init and lose partial progress.
+  { file: 'components/admin/ChunkedUploader.vue', refs: ['lastError'], retries: ['retry'] },
 ]
 
 /**
@@ -156,6 +176,17 @@ const NO_CONTRACT_NEEDED: Record<string, string> = {
   // dialog and keeps the file selected so the user can press upload again. Holding
   // a second copy of that state here would let the two disagree.
   'components/admin/TinyMceEditor.vue': 'rejects to the editor, which owns the retry affordance',
+  // Scan + sync: nút là retry. Kết quả báo trong toast — không có danh sách để lỗi
+  // thành "trống" rồi cán bộ đi tạo lại bản ghi đã có.
+  'pages/admin/media/scan.vue': 'submit-time fetch; the button is the retry and the result lands in a toast',
+  // oEmbed auto-get: nút "Lấy thông tin" chính là retry. Lỗi hiện trong `metaError`
+  // ref (`role="alert"`) ngay dưới ô input, không làm hỏng form — cán bộ vẫn điền
+  // tay tiêu đề/thumbnail nếu YouTube không trả được. Không có danh sách để lỗi
+  // thành "trống"; form chỉ là trợ giúp nhập liệu.
+  'components/admin/MediaPortalForm.vue': 'button is the retry; metaError is the role="alert" branch',
+  // `MediaProcessingTimeline.vue` bị bỏ khỏi exemption list vì nó KHÔNG tự fetch
+  // — chỉ nhận dữ liệu từ parent qua props. Gate "stale exemption" bắt đúng:
+  // một component không fetch thì không cần được miễn error/retry contract.
 }
 
 test('every admin view that fetches keeps somewhere for a rejection to land', async () => {

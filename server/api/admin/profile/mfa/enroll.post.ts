@@ -4,7 +4,8 @@
  * the caller can actually satisfy it. Enrolling a factor nobody can satisfy is
  * how an administrator locks themselves out.
  */
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
+import { readAffectedRows } from '../../../../utils/affected-rows'
 import { getDb } from '../../../../utils/db'
 import { userMfaFactors } from '../../../../db/schema'
 import { hashPassword, verifyPassword } from '../../../../utils/auth'
@@ -38,6 +39,20 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
   const pendingExpiresAt = new Date(Date.now() + ENROLLMENT_TTL_MS)
+  const storePending = async (values: typeof userMfaFactors.$inferInsert) => {
+    if (!existing) {
+      await db.insert(userMfaFactors).values(values)
+      return
+    }
+    // A concurrent confirmation may have activated the row since our read.
+    // Re-enrollment must never downgrade that active protection to pending.
+    const replaced = await db.update(userMfaFactors).set(values).where(and(
+      eq(userMfaFactors.id, existing.id), eq(userMfaFactors.state, 'pending'),
+    ))
+    if (readAffectedRows(replaced) !== 1) {
+      throw createError({ statusCode: 409, statusMessage: 'Phương thức xác thực đã thay đổi. Vui lòng tải lại trang.' })
+    }
+  }
 
   // ── Authenticator app ──────────────────────────────────────────────────────
   if (factorType === 'totp') {
@@ -56,8 +71,7 @@ export default defineEventHandler(async (event) => {
       // A re-enrollment starts a fresh replay window.
       lastAcceptedStep: null,
     }
-    if (existing) await db.update(userMfaFactors).set(values).where(eq(userMfaFactors.id, existing.id))
-    else await db.insert(userMfaFactors).values(values)
+    await storePending(values)
 
     // The only time the secret is ever returned.
     return {
@@ -84,12 +98,8 @@ export default defineEventHandler(async (event) => {
     }
 
     const values = { userId: admin.id, factorType, state: 'pending' as const, pendingExpiresAt }
-    let factorId = existing?.id
-    if (existing) await db.update(userMfaFactors).set(values).where(eq(userMfaFactors.id, existing.id))
-    else {
-      await db.insert(userMfaFactors).values(values)
-      factorId = (await getFactor(admin.id, factorType))!.id
-    }
+    await storePending(values)
+    const factorId = existing?.id ?? (await getFactor(admin.id, factorType))!.id
 
     const issued = await issueEmailCode({
       factorId: factorId!,
@@ -99,8 +109,9 @@ export default defineEventHandler(async (event) => {
       purpose: 'enroll',
     })
     if (!issued.ok) {
-      // Nothing half-enabled is left behind.
-      await db.delete(userMfaFactors).where(eq(userMfaFactors.id, factorId!))
+      // Keep the expiring pending row: SMTP can fail after delivery, and another
+      // request may already have confirmed or replaced it. Only proof activates
+      // it; deleting by id here could remove another request's active factor.
       throw createError({ statusCode: 503, statusMessage: 'Không gửi được mã tới email của tài khoản. Vui lòng kiểm tra cấu hình SMTP.' })
     }
     return { ok: true, factorType, sentTo: maskEmail(admin.email), expiresAt: pendingExpiresAt }
@@ -122,8 +133,7 @@ export default defineEventHandler(async (event) => {
     passwordHash: await hashPassword(secondPassword),
     pendingExpiresAt,
   }
-  if (existing) await db.update(userMfaFactors).set(values).where(eq(userMfaFactors.id, existing.id))
-  else await db.insert(userMfaFactors).values(values)
+  await storePending(values)
 
   return { ok: true, factorType, expiresAt: pendingExpiresAt }
 })

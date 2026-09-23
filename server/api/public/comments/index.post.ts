@@ -1,8 +1,8 @@
 /**
- * Posts one comment or one reply.
+ * Posts one comment or one reply, on an article or on a media item.
  *
  * Everything that decides whether the write may happen lives in
- * `createComment` — article published, comments open, reader not banned, address
+ * `createComment` — item published, comments open, reader not banned, address
  * not banned, parent eligible, then both rate limits charged immediately before
  * the insert. Keeping it there rather than here is what lets the ordering be
  * tested, and what stops a second write path from being added later with three
@@ -13,13 +13,24 @@
  * nothing to strip. Sanitising would rewrite what a citizen wrote — angle
  * brackets in a quoted regulation, an ampersand in an office name — and show them
  * words they did not type.
+ *
+ * ## Which table the slug is looked up in comes from WHICH FIELD IS PRESENT
+ *
+ * `articleSlug` is untouched and keeps its name — it is serving production
+ * comments, and renaming it would be a change to a working contract. Media adds
+ * `mediaSlug` **beside** it. There is no discriminator parameter: exactly one of
+ * the two may be present, and the engine's `resolveCommentTarget` XOR guard
+ * refuses both-at-once rather than resolving it by precedence — picking one would
+ * store the comment on an item the caller may not have meant, and the row would
+ * then be a permanent record of a decision nobody made.
  */
 import { and, eq } from 'drizzle-orm'
 
 import { getDb } from '../../../utils/db'
-import { articles } from '../../../db/schema'
+import { articles, mediaItems } from '../../../db/schema'
 import { requireReader, touchReader } from '../../../utils/reader-auth'
 import { createComment, validateBody } from '../../../services/comments'
+import { PUBLISHED_MEDIA_STATUS } from '../../../services/media-portal'
 import { getClientIp } from '../../../utils/client-ip'
 
 export default defineEventHandler(async (event) => {
@@ -33,10 +44,25 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Dữ liệu không hợp lệ.' })
   }
 
-  const { articleSlug, parentId, body: rawBody } = body as Record<string, unknown>
+  const { articleSlug, mediaSlug, parentId, body: rawBody } = body as Record<string, unknown>
 
-  const slug = typeof articleSlug === 'string' ? articleSlug.trim() : ''
-  if (!slug) throw createError({ statusCode: 400, statusMessage: 'Thiếu bài viết.' })
+  const articleKey = typeof articleSlug === 'string' ? articleSlug.trim() : ''
+  const mediaKey = typeof mediaSlug === 'string' ? mediaSlug.trim() : ''
+
+  /**
+   * Both slugs at once is a 400 rather than a precedence rule.
+   *
+   * The engine would refuse it anyway, but refusing it here means the caller is
+   * told which field is wrong instead of getting "Bình luận chỉ thuộc một đối
+   * tượng" from three layers down — and it keeps the lookup below from running a
+   * query whose result is thrown away.
+   */
+  if (articleKey && mediaKey) {
+    throw createError({ statusCode: 400, statusMessage: 'Bình luận chỉ thuộc một đối tượng: bài viết hoặc video.' })
+  }
+  if (!articleKey && !mediaKey) {
+    throw createError({ statusCode: 400, statusMessage: 'Thiếu đối tượng để bình luận.' })
+  }
 
   const validation = validateBody(rawBody)
   if (!validation.ok) throw createError({ statusCode: 400, statusMessage: validation.message })
@@ -50,19 +76,41 @@ export default defineEventHandler(async (event) => {
     parent = Math.floor(value)
   }
 
-  // The slug → id lookup is here rather than in the service so the service takes
-  // an article id and stays independent of how the caller identified it.
-  const [article] = await getDb()
-    .select({ id: articles.id })
-    .from(articles)
-    .where(and(eq(articles.slug, slug), eq(articles.status, 'published')))
-    .limit(1)
+  /**
+   * The slug → id lookup is here rather than in the service so the service takes
+   * an identifier and stays independent of how the caller identified it.
+   *
+   * Both branches check the item is publicly visible before writing; the service
+   * re-checks it inside `createComment` and owns the refusal messages, because
+   * that is the layer a second caller would also have to go through.
+   */
+  let target: { articleId: number } | { mediaItemId: number }
 
-  if (!article) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
+  if (mediaKey) {
+    // Media tra theo `short_id` (định danh URL công khai). `mediaKey` từ body
+    // là short_id mà frontend gửi; link cũ dùng slug đã redirect 301 ở trang chi tiết.
+    const [media] = await getDb()
+      .select({ id: mediaItems.id })
+      .from(mediaItems)
+      .where(and(eq(mediaItems.shortId, mediaKey), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
+      .limit(1)
+
+    if (!media) throw createError({ statusCode: 404, statusMessage: 'Video không tồn tại.' })
+    target = { mediaItemId: media.id }
+  } else {
+    const [article] = await getDb()
+      .select({ id: articles.id })
+      .from(articles)
+      .where(and(eq(articles.slug, articleKey), eq(articles.status, 'published')))
+      .limit(1)
+
+    if (!article) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
+    target = { articleId: article.id }
+  }
 
   const result = await createComment({
     readerId:  reader.id,
-    articleId: article.id,
+    ...target,
     parentId:  parent,
     body:      validation.body,
     ip:        getClientIp(event),

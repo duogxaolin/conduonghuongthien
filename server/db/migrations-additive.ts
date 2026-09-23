@@ -20,6 +20,8 @@
  */
 import mysql, { type Connection, type RowDataPacket } from 'mysql2/promise'
 
+import { encodeShortId } from '../utils/short-media-id'
+
 export type ChatbotColumnMigration = {
   table: string
   column: string
@@ -457,6 +459,32 @@ export async function ensureForeignKeyIfMissing(db: Connection, database: string
 
 
 /**
+ * Reshapes an existing column in place — the one operation `ensureColumn` cannot
+ * express, because `ensureColumn` only ever ADDs.
+ *
+ * **Guarded on the column existing, and that guard is the whole point.** A
+ * `MODIFY COLUMN` against a column that is not there fails with
+ * `ER_BAD_FIELD_ERROR`, and on a database that has not been through `initDb()`
+ * yet that is every column — so an unguarded ALTER turns "upgrade an old
+ * database" into "crash on a fresh one". Guarding means the statement is skipped
+ * exactly where the `CREATE TABLE` body has already declared the final shape.
+ *
+ * Idempotent by construction: re-running it re-applies the same definition, which
+ * MySQL reports as "0 rows changed" rather than an error.
+ *
+ * **Invisible to `npm run db:drift`.** The gate extracts columns from four
+ * patterns — `CREATE TABLE` bodies, `ensureColumn`, `addColumn` migrations and
+ * `tupleRe` — and `MODIFY COLUMN` matches none of them. So this call is not what
+ * makes the gate agree; the `CREATE TABLE` body in `init.ts` is. A change that
+ * lands here alone is a change the gate will keep reporting as consistent while
+ * an existing database disagrees with it. Write both.
+ */
+export async function modifyColumn(db: Connection, database: string, table: string, column: string, definition: string) {
+  if (!await hasColumn(db, database, table, column)) return
+  await db.query(`ALTER TABLE \`${table}\` MODIFY COLUMN \`${column}\` ${definition}`)
+}
+
+/**
  * Cột, chỉ mục và khoá ngoại thêm vào SAU khi 41 bảng đã tồn tại.
  *
  * Tách khỏi `initDb()` — hàm đó từng dài 690 dòng — nhưng ranh giới ở đây
@@ -471,6 +499,76 @@ export async function ensureForeignKeyIfMissing(db: Connection, database: string
  * chạy lại trên database đã đầy đủ thì không làm gì cả.
  */
 export async function applyAdditiveMigrations(db: Connection, database: string) {
+  // `CREATE TABLE IF NOT EXISTS` is needed here as well as init.ts: existing
+  // installations do not re-run the original create body after an upgrade.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`media_asset_cleanup\` (
+      \`id\` VARCHAR(36) NOT NULL PRIMARY KEY,
+      \`asset_root\` VARCHAR(1024) NOT NULL,
+      \`attempts\` INT NOT NULL DEFAULT 0,
+      \`next_attempt_at\` TIMESTAMP NULL DEFAULT NULL,
+      \`last_error\` VARCHAR(512) NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY \`media_asset_cleanup_due_idx\` (\`next_attempt_at\`, \`created_at\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // ── Danh mục Media Portal (tách khỏi `categories` bài viết) ────────────────
+  // Bảng riêng cho danh mục video: phẳng, không cha-con, không `type`. Trước đây
+  // `media_items.category_id` trỏ `categories` (bài viết); nay trỏ bảng này. Đổi
+  // FK trên DB đang có dữ liệu: drop FK cũ (trỏ `categories`) rồi add FK mới (trỏ
+  // `media_categories`). Video cũ `category_id` giữ nguyên giá trị cũ nhưng FK
+  // mới không khớp → MySQL SET NULL trong cùng lượt ALTER (giá trị cũ trỏ id của
+  // `categories` bài viết, không hợp lệ ở FK mới). Thực tế an toàn hơn: set
+  // `category_id = NULL` thủ công **trước** khi đổi FK, để không phụ thuộc hành
+  // vi ALTER. Cán bộ tự gán lại danh mục media mới.
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`media_categories\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`name\` VARCHAR(255) NOT NULL,
+      \`slug\` VARCHAR(255) NOT NULL UNIQUE,
+      \`description\` TEXT NULL,
+      \`display_order\` INT NOT NULL DEFAULT 0,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+  // Set NULL cho mọi `media_items.category_id` cũ (trỏ `categories` bài viết) —
+  // giá trị đó không còn ý nghĩa sau khi tách. Làm trước khi đổi FK để không phụ
+  // thuộc hành vi ALTER.
+  await db.query(`UPDATE \`media_items\` SET \`category_id\` = NULL WHERE \`category_id\` IS NOT NULL`)
+  // Drop FK cũ (trỏ `categories`) nếu còn tồn tại, rồi add FK mới (trỏ
+  // `media_categories`). Kiểm `INFORMATION_SCHEMA` trước khi drop.
+  const [oldFkRows] = await db.execute<RowDataPacket[]>(
+    `SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
+     WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = 'media_items'
+       AND CONSTRAINT_NAME = 'fk_media_items_category' AND CONSTRAINT_TYPE = 'FOREIGN KEY' LIMIT 1`,
+    [database],
+  )
+  if (oldFkRows.length > 0) {
+    await db.query(`ALTER TABLE \`media_items\` DROP FOREIGN KEY \`fk_media_items_category\``)
+  }
+  await ensureForeignKeyIfMissing(
+    db, database, 'media_items', 'fk_media_items_category',
+    'FOREIGN KEY (`category_id`) REFERENCES `media_categories` (`id`) ON DELETE SET NULL',
+  )
+
+  await ensureColumn(db, database, 'media_upload_sessions', 'completion_claim', 'VARCHAR(36) NULL')
+  await ensureColumn(db, database, 'media_upload_sessions', 'completion_heartbeat_at', 'TIMESTAMP NULL DEFAULT NULL')
+  await ensureColumn(db, database, 'media_upload_sessions', 'content_type', 'VARCHAR(64) NULL')
+  await ensureColumn(db, database, 'media_items', 'processing_attempts', 'INT NOT NULL DEFAULT 0')
+  await ensureColumn(db, database, 'media_items', 'processing_next_attempt_at', 'TIMESTAMP NULL DEFAULT NULL')
+  await ensureColumn(db, database, 'media_items', 'processing_heartbeat_at', 'TIMESTAMP NULL DEFAULT NULL')
+  // Tiến trình FFmpeg thật — 3 cột tách biệt để UI vẽ thanh % cho bản đang nén.
+  await ensureColumn(db, database, 'media_items', 'processing_rendition', 'VARCHAR(16) NULL')
+  await ensureColumn(db, database, 'media_items', 'processing_percent', 'INT NULL')
+  await ensureColumn(db, database, 'media_items', 'processing_phase', 'VARCHAR(16) NULL')
+  // Lưu trữ video: `local` (đĩa máy chủ) hoặc `r2` (Cloudflare R2 bucket riêng).
+  // Video cũ (trước khi có R2) giữ `local`; video mới chọn theo config khi transcode.
+  await ensureColumn(db, database, 'media_items', 'storage_provider', "VARCHAR(16) NOT NULL DEFAULT 'local'")
+  // Bảng dọn tệp cũng cần biết provider để xoá đúng backend: local → `fs.rm`,
+  // r2 → `deleteR2Tree`. Cùng mặc định 'local' — task cũ (trước R2) vẫn xoá local.
+  await ensureColumn(db, database, 'media_asset_cleanup', 'storage_provider', "VARCHAR(16) NOT NULL DEFAULT 'local'")
 
   // design.md D9: existing articles start with comments closed (default 0).
   await ensureColumn(db, database, 'articles', 'comments_enabled', 'TINYINT(1) NOT NULL DEFAULT 0')
@@ -548,4 +646,93 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureIndex(db, database, 'analytics_maintenance_runs', 'analytics_maintenance_status_day_idx', 'INDEX `analytics_maintenance_status_day_idx` (`status`, `day`)')
   await ensureIndex(db, database, 'analytics_maintenance_runs', 'analytics_maintenance_completed_at_idx', 'INDEX `analytics_maintenance_completed_at_idx` (`completed_at`)')
 
+  // ── Media portal: one comment table, two kinds of item ────────────────────
+  //
+  // A comment now belongs to an article OR a media item. `media_item_id` is the
+  // new side; `article_id` below is relaxed to match it.
+  //
+  // Both halves are needed and neither is redundant. On a fresh server the
+  // `CREATE TABLE` body in `init.ts` already declares the column, the index and
+  // the FK, so all three calls here are no-ops. On a server that already has
+  // `article_comments` — the one actually serving citizens — that body never runs
+  // again, and these ALTERs are the only thing that can add them.
+  await ensureColumn(db, database, 'article_comments', 'media_item_id', 'INT NULL AFTER `article_id`')
+  await ensureIndex(
+    db, database, 'article_comments', 'article_comments_media_parent_created_idx',
+    'INDEX `article_comments_media_parent_created_idx` (`media_item_id`, `parent_id`, `created_at`)',
+  )
+  await ensureForeignKeyIfMissing(
+    db, database, 'article_comments', 'fk_article_comments_media',
+    'FOREIGN KEY (`media_item_id`) REFERENCES `media_items` (`id`) ON DELETE CASCADE',
+  )
+
+  // `article_id` becomes nullable, and it takes **three** edits, not one:
+  //
+  //   1. the `CREATE TABLE` body in `init.ts` — a fresh server is born correct;
+  //   2. the Drizzle declaration in `schema.ts` — TypeScript must see `number | null`;
+  //   3. this ALTER — an existing database has a `NOT NULL` column that no
+  //      `CREATE TABLE IF NOT EXISTS` will ever revisit.
+  //
+  // Skip (1) and the drift gate fails forever: it reads nullability out of the
+  // body, so a database fixed only by ALTER still reports `LỆCH NULL`. Skip (3)
+  // and every media comment is rejected by the database on production while
+  // passing on a fresh test database. Skip (2) and the compiler keeps insisting
+  // a comment always has an article.
+  //
+  // The full definition is repeated rather than a bare `INT NULL`: `MODIFY
+  // COLUMN` replaces the whole column definition, so omitting a part of it drops
+  // that part.
+  await modifyColumn(db, database, 'article_comments', 'article_id', 'INT NULL')
+
+  // ── Short ID YouTube-style cho URL công khai media ──────────────────────────
+  //
+  // URL trang chi tiết video từng dùng slug dài. Short ID 11 ký tự base64url làm
+  // định danh URL chính (`/media/<short_id>`); `slug` vẫn giữ cho redirect 301.
+  //
+  // Ba bước, đúng khuôn "nullable add → backfill → NOT NULL":
+  //   1. Thêm cột nullable (hàng cũ chưa có giá trị).
+  //   2. Backfill: sinh short_id cho mỗi hàng `short_id IS NULL`. Dùng raw SQL
+  //      loop vì `applyAdditiveMigrations` chỉ có raw mysql2 connection, không
+  //      Drizzle. `encodeShortId()` là hàm thuần (không I/O) nên dùng được ở đây.
+  //      Kiểm trùng ngay trong loop (SELECT ... WHERE short_id = ?) — 64 bit nên
+  //      trùng cực hiếm nhưng cột UNIQUE là thẩm quyền.
+  //   3. Đặt NOT NULL + unique index.
+  await ensureColumn(db, database, 'media_items', 'short_id', 'VARCHAR(16) NULL')
+  await backfillShortIds(db)
+  await modifyColumn(db, database, 'media_items', 'short_id', 'VARCHAR(16) NOT NULL')
+  await ensureIndex(db, database, 'media_items', 'media_items_short_id_uq', 'UNIQUE INDEX `media_items_short_id_uq` (`short_id`)')
+
+}
+
+/**
+ * Backfill `short_id` cho hàng cũ chưa có — sinh 11 ký tự base64url mỗi hàng.
+ *
+ * Dùng raw `Connection` (không Drizzle) vì `applyAdditiveMigrations` chỉ có
+ * mysql2 connection. Sinh bằng `encodeShortId()` (hàm thuần, export từ
+ * `short-media-id.ts`), kiểm trùng bằng `SELECT ... WHERE short_id = ?` — cột
+ * UNIQUE là thẩm quyền, không phải may rủi.
+ *
+ * Chạy một lần lúc upgrade; 11 hàng hiện có → 11 vòng loop, không đáng kể. Nếu
+ * mọi hàng đã có `short_id` (chạy rồi) thì thoát ngay.
+ */
+async function backfillShortIds(db: Connection) {
+  const [rows] = await db.execute<RowDataPacket[]>(
+    'SELECT `id` FROM `media_items` WHERE `short_id` IS NULL ORDER BY `id`',
+  )
+  for (const row of rows) {
+    // Sinh + kiểm trùng trong cùng lượt. Tối đa 8 thử — trùng liên tiếp 8 lần với
+    // 64 bit là cực hiếm; nếu tới đó, throw (có gì đó sai, không phải loop nữa).
+    let candidate = ''
+    for (let attempt = 0; attempt < 8; attempt++) {
+      candidate = encodeShortId()
+      const [existing] = await db.execute<RowDataPacket[]>(
+        'SELECT 1 FROM `media_items` WHERE `short_id` = ? LIMIT 1',
+        [candidate],
+      )
+      if (existing.length === 0) break
+      candidate = ''
+    }
+    if (!candidate) throw new Error('Không sinh được short_id duy nhất khi backfill.')
+    await db.query('UPDATE `media_items` SET `short_id` = ? WHERE `id` = ?', [candidate, row.id])
+  }
 }

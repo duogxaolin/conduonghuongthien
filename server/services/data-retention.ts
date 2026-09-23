@@ -22,7 +22,8 @@ import { purgeExpiredRateLimits } from '../utils/rate-limit-store'
  * the next run continues where this one stopped.
  */
 
-export type RetentionTarget = 'activity_logs' | 'submissions' | 'chat_sessions' | 'reader_accounts'
+export const RETENTION_TARGETS = ['activity_logs', 'submissions', 'chat_sessions', 'reader_accounts', 'livestream_sessions'] as const
+export type RetentionTarget = typeof RETENTION_TARGETS[number]
 
 /**
  * Per-table column names. Not every table calls its timestamp `created_at`, and
@@ -42,7 +43,21 @@ export type RetentionTarget = 'activity_logs' | 'submissions' | 'chat_sessions' 
  *     by `last_seen_at`, because id order is *signup* order: ordering by id would
  *     evict the portal's earliest-registered readers even when they commented
  *     this morning, which is the same mistake as ageing them by `created_at`.
+ *     `livestream_sessions` orders by its age column too, for the same reason
+ *     once more: an auto-increment id is insertion order and says nothing about
+ *     when a broadcast ended, so ordering by id would evict a session started
+ *     early and run for months before one started yesterday and stopped last
+ *     night.
  *     Both non-id `order` columns below are indexed.
+ *
+ * `orderMayBeNull` marks the one table whose ordering column is NULL for a row
+ * that must never be evicted: `livestream_sessions.ended_at` is NULL while a
+ * broadcast is on air, and MySQL sorts NULL first ascending, so the row cap's
+ * `ORDER BY ended_at LIMIT n` would delete the live broadcast before touching a
+ * single finished one. The predicate is applied only where it is needed rather
+ * than to every table: `WHERE id IS NOT NULL` is a no-op MySQL still has to
+ * plan, and it would rewrite three statements that are currently provably
+ * unchanged by this feature.
  *
  * `chat_messages` is deliberately absent. Its FK to `chat_sessions` is
  * ON DELETE CASCADE, so purging a conversation removes its transcript in the
@@ -50,6 +65,11 @@ export type RetentionTarget = 'activity_logs' | 'submissions' | 'chat_sessions' 
  * deleted while its session row survives, leaving a record that claims N
  * messages and can show none — and a row cap on messages would truncate
  * conversations mid-thread. One window, on the conversation, cannot do either.
+ *
+ * `livestream_messages` is absent for the fourth time and the same reason: its
+ * FK cascades from `livestream_sessions`. A message window would delete the chat
+ * out of a broadcast that is still listed and still playable, and a message row
+ * cap would cut a live conversation in half.
  *
  * `article_comments` is absent for exactly the same reason (design.md D16,
  * reader-google-login-comments). Its FKs cascade from BOTH `reader_accounts` and
@@ -59,11 +79,17 @@ export type RetentionTarget = 'activity_logs' | 'submissions' | 'chat_sessions' 
  * cap would cut a public exchange between a citizen and an officer in half — the
  * remaining half reading as something the whole never said.
  */
-const TABLE_COLUMNS: Record<RetentionTarget, { timestamp: string; order: string }> = {
+const TABLE_COLUMNS: Record<RetentionTarget, { timestamp: string; order: string; orderMayBeNull?: boolean }> = {
   activity_logs: { timestamp: 'created_at', order: 'id' },
   submissions: { timestamp: 'created_at', order: 'id' },
   chat_sessions: { timestamp: 'last_message_at', order: 'last_message_at' },
   reader_accounts: { timestamp: 'last_seen_at', order: 'last_seen_at' },
+  // `ended_at` is both the age column and the ordering column, and it is NULL
+  // for a session that is still live. `purgeOlderThan` already carries
+  // `WHERE <timestamp> IS NOT NULL`, so a broadcast in progress is excluded from
+  // the age pass by construction rather than by a branch that has to remember to
+  // exclude it — and `orderMayBeNull` gives the row cap the same guarantee.
+  livestream_sessions: { timestamp: 'ended_at', order: 'ended_at', orderMayBeNull: true },
 }
 
 export type DataRetentionOptions = {
@@ -72,11 +98,13 @@ export type DataRetentionOptions = {
   submissionDays?: number
   chatSessionDays?: number
   readerAccountDays?: number
+  livestreamSessionDays?: number
   /** 0 = no cap. Rows beyond this are deleted oldest-first. */
   activityLogMaxRows?: number
   submissionMaxRows?: number
   chatSessionMaxRows?: number
   readerAccountMaxRows?: number
+  livestreamSessionMaxRows?: number
   batchSize?: number
   maxBatches?: number
   connection?: Pool
@@ -153,6 +181,16 @@ async function purgeOlderThan(
  * The excess is measured once, up front, and only that many rows are deleted.
  * Re-counting between batches would let rows arriving during the run extend the
  * deletion into records that were inside the cap when the run started.
+ *
+ * Both the count and the delete carry `WHERE <order> IS NOT NULL` when the
+ * ordering column can be NULL — that is `livestream_sessions` alone, whose
+ * `ended_at` is NULL while a broadcast is live. MySQL sorts NULL first
+ * ascending, so without the predicate `ORDER BY ended_at LIMIT n` would evict
+ * the broadcast that is on air right now, before touching a single finished one.
+ * Counting those rows as excess would be wrong too: it would report `remaining`
+ * rows to delete and then delete fewer, leaving the run claiming a cap it never
+ * applied. Tables whose order column is NOT NULL skip the predicate, so their
+ * statements stay byte-for-byte what they were.
  */
 async function purgeBeyondRowCap(
   connection: PoolConnection,
@@ -161,12 +199,14 @@ async function purgeBeyondRowCap(
   batchSize: number,
   maxBatches: number,
 ): Promise<{ deleted: number; bounded: boolean }> {
-  const [countRows] = await connection.query(`SELECT COUNT(*) AS total FROM ${table}`)
+  const { order, orderMayBeNull } = TABLE_COLUMNS[table]
+  const guard = orderMayBeNull ? ` WHERE ${order} IS NOT NULL` : ''
+  const [countRows] = await connection.query(`SELECT COUNT(*) AS total FROM ${table}${guard}`)
   const total = Number((countRows as Array<{ total?: number }>)[0]?.total || 0)
   let remaining = total - maxRows
   if (remaining <= 0) return { deleted: 0, bounded: false }
 
-  const statement = `DELETE FROM ${table} ORDER BY ${TABLE_COLUMNS[table].order} LIMIT ?`
+  const statement = `DELETE FROM ${table}${guard} ORDER BY ${order} LIMIT ?`
   let deleted = 0
   for (let batch = 0; batch < maxBatches && remaining > 0; batch += 1) {
     const limit = Math.min(batchSize, remaining)
@@ -234,6 +274,11 @@ export async function runDataRetention(options: DataRetentionOptions = {}): Prom
       table: 'reader_accounts',
       days: boundedInteger(options.readerAccountDays, configured.readerAccountDays, 0, 3650),
       maxRows: boundedInteger(options.readerAccountMaxRows, 0, 0, 100_000_000),
+    },
+    {
+      table: 'livestream_sessions',
+      days: boundedInteger(options.livestreamSessionDays, configured.livestreamSessionDays, 0, 3650),
+      maxRows: boundedInteger(options.livestreamSessionMaxRows, 0, 0, 100_000_000),
     },
   ]
 
