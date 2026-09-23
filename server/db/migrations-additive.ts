@@ -88,7 +88,7 @@ const termColumns: ChatbotColumnMigration[] = [
   { table: 'chatbot_knowledge_terms', column: 'knowledge_id', nullableDefinition: 'BIGINT UNSIGNED NULL', finalDefinition: 'BIGINT UNSIGNED NOT NULL', backfillExpression: '`id`', columnTypes: ['bigint unsigned'], nullable: false, defaultValue: null },
   { table: 'chatbot_knowledge_terms', column: 'kind', nullableDefinition: "ENUM('alias','keyword') NULL", finalDefinition: "ENUM('alias','keyword') NOT NULL", backfillExpression: "'alias'", columnTypes: ["enum('alias','keyword')"], nullable: false, defaultValue: null },
   { table: 'chatbot_knowledge_terms', column: 'value', nullableDefinition: 'VARCHAR(1000) NULL', finalDefinition: 'VARCHAR(1000) NOT NULL', backfillExpression: "CONCAT('Legacy term ', `id`)", columnTypes: ['varchar(1000)'], nullable: false, defaultValue: null },
-  { table: 'chatbot_knowledge_terms', column: 'normalized_value', nullableDefinition: 'VARCHAR(191) NULL', finalDefinition: 'VARCHAR(191) NOT NULL', backfillExpression: "LOWER(CONCAT('legacy term ', `id`))", columnTypes: ['varchar(191)'], nullable: false, defaultValue: null },
+  { table: 'chatbot_knowledge_terms', column: 'normalized_value', nullableDefinition: 'VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NULL', finalDefinition: 'VARCHAR(191) CHARACTER SET utf8mb4 COLLATE utf8mb4_bin NOT NULL', backfillExpression: "LOWER(CONCAT('legacy term ', `id`))", columnTypes: ['varchar(191)'], nullable: false, defaultValue: null },
   { table: 'chatbot_knowledge_terms', column: 'created_at', nullableDefinition: 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP', finalDefinition: 'TIMESTAMP NULL DEFAULT CURRENT_TIMESTAMP', columnTypes: ['timestamp'], nullable: true, defaultValue: 'current_timestamp' },
 ]
 
@@ -701,6 +701,9 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await backfillShortIds(db)
   await modifyColumn(db, database, 'media_items', 'short_id', 'VARCHAR(16) NOT NULL')
   await ensureIndex(db, database, 'media_items', 'media_items_short_id_uq', 'UNIQUE INDEX `media_items_short_id_uq` (`short_id`)')
+  // ── AI Panel Model Management (9Router style) ──────────────────────────────
+  await ensureColumn(db, database, 'ai_model_pricing', 'label', 'VARCHAR(128) NULL')
+  await ensureColumn(db, database, 'ai_model_pricing', 'is_active', 'TINYINT(1) NOT NULL DEFAULT 1')
 
 }
 

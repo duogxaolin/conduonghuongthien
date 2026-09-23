@@ -65,7 +65,7 @@ async function loadSmallTalkEntries(): Promise<SmallTalkEntry[]> {
   return rows.map(row => ({ ...row, patterns: row.patterns ?? [] }))
 }
 
-export async function answerChat(event: Parameters<typeof answerGroundedChat>[0], settings: ChatbotSettings, messages: unknown) {
+export async function answerChat(event: Parameters<typeof answerGroundedChat>[0], settings: ChatbotSettings, messages: unknown, onChunk?: (chunk: string) => void | Promise<void>) {
   return answerGroundedChat(event, settings, messages, {
     loadPublishedEntries: publishedEntries,
     loadSmallTalkEntries,
@@ -73,5 +73,5 @@ export async function answerChat(event: Parameters<typeof answerGroundedChat>[0]
     providerRequest: safeProviderRequest,
     semanticSmallTalkProvider: getSmallTalkSemanticProvider(),
     semanticSmallTalkConfig: readSmallTalkSemanticConfig(),
-  })
+  }, onChunk)
 }

@@ -85,6 +85,7 @@ const RESOURCE_LABELS: Record<string, string> = {
   // (liên kết/hủy Google Drive OAuth). Backup/restore thông thường ghi dưới
   // resource `settings` (cùng nhóm cấu hình), nên không có nhãn riêng.
   backup_drive_oauth: 'Liên kết Drive',
+  ai: 'AI Panel',
 }
 const MFA_METHOD_LABELS: Record<string, string> = {
   totp: 'ứng dụng xác thực', email_otp: 'mã qua email',

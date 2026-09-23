@@ -137,7 +137,24 @@ export async function listKnowledge(params: { page?: number; perPage?: number; s
 }
 
 function validatePublish(answer: string | undefined | null, label: string | null | undefined, reference: string | null | undefined, url: string | null | undefined) { if (!answer?.trim()) throw new ChatbotKnowledgeValidationError('published knowledge requires approvedAnswer'); if (!label && !reference && !url) throw new ChatbotKnowledgeValidationError('published knowledge requires source metadata') }
-async function replaceTermsWithTx(tx: KnowledgeStore, id: number, aliases: string[], keywords: string[]) { await tx.delete(chatbotKnowledgeTerms).where(eq(chatbotKnowledgeTerms.knowledgeId, id)); const values = [...aliases.map(value => ({ knowledgeId: id, kind: 'alias' as const, value, normalizedValue: normalize(value) })), ...keywords.map(value => ({ knowledgeId: id, kind: 'keyword' as const, value, normalizedValue: normalize(value) }))]; if (values.length) await tx.insert(chatbotKnowledgeTerms).values(values) }
+async function replaceTermsWithTx(tx: KnowledgeStore, id: number, aliases: string[], keywords: string[]) {
+  await tx.delete(chatbotKnowledgeTerms).where(eq(chatbotKnowledgeTerms.knowledgeId, id))
+  const aliasMap = new Map<string, string>()
+  for (const a of aliases) {
+    const n = normalize(a)
+    if (n && !aliasMap.has(n)) aliasMap.set(n, a)
+  }
+  const keywordMap = new Map<string, string>()
+  for (const k of keywords) {
+    const n = normalize(k)
+    if (n && !keywordMap.has(n)) keywordMap.set(n, k)
+  }
+  const values = [
+    ...[...aliasMap.entries()].map(([normalizedValue, value]) => ({ knowledgeId: id, kind: 'alias' as const, value, normalizedValue })),
+    ...[...keywordMap.entries()].map(([normalizedValue, value]) => ({ knowledgeId: id, kind: 'keyword' as const, value, normalizedValue }))
+  ]
+  if (values.length) await tx.insert(chatbotKnowledgeTerms).values(values)
+}
 
 export async function createKnowledge(actorId: number, input: KnowledgeInput) {
   const value = validateKnowledgeInput(input)

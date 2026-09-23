@@ -373,6 +373,8 @@ async function fetchStreamBotReply(onScroll?: () => void): Promise<boolean> {
     const decoder = new TextDecoder('utf-8')
     let buffer = ''
     let doneEvent = false
+    let isStreamPushed = false
+
     while (!doneEvent) {
       const { done, value } = await reader.read()
       buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
@@ -381,6 +383,18 @@ async function fetchStreamBotReply(onScroll?: () => void): Promise<boolean> {
       for (const line of lines) {
         if (line.trim() === 'data: [DONE]') { doneEvent = true; break }
         parseSseLine(line, accumulator)
+        if (accumulator.text && !isStreamPushed) {
+          isStreamPushed = true
+          botMessage.isStreaming = true
+          conversation.messages.push(botMessage)
+          const liveTracked = conversation.messages[conversation.messages.length - 1]!
+          liveTracked.text = accumulator.text
+          onScroll?.()
+        } else if (isStreamPushed) {
+          const liveTracked = conversation.messages[conversation.messages.length - 1]!
+          liveTracked.text = accumulator.text
+          onScroll?.()
+        }
       }
       if (done) break
     }
@@ -388,27 +402,16 @@ async function fetchStreamBotReply(onScroll?: () => void): Promise<boolean> {
     if (!accumulator.text.trim()) throw new Error('EMPTY_CHATBOT_RESPONSE')
     if (!botMessage.kind) botMessage.kind = 'unavailable'
 
-    // The reply joins the transcript only now that it has content. Until this
-    // point the typing indicator stood in for it, so the two never coexist.
-    conversation.messages.push(botMessage)
+    // The reply joins the transcript only now that it has content if not pushed during stream
+    if (!isStreamPushed) {
+      conversation.messages.push(botMessage)
+    }
 
-    // Playback must mutate the message through the array, not through the local
-    // `botMessage` literal. `conversations` is a `ref`, so Vue hands out a proxy
-    // per element and only writes made *through that proxy* schedule a re-render.
-    // Typing into the raw object updated the data and told no one: the bubble
-    // stayed frozen on whatever the first paint caught, then filled in all at
-    // once the next time anything else touched the array — which is why the
-    // answer appeared only after the visitor sent their next message.
     const tracked = conversation.messages[conversation.messages.length - 1]!
 
-    // Playback is a presentation effect, so nothing waits on it. Awaiting it here
-    // held the send back for the whole animation: the caller could not clear the
-    // input box, and the question sat there looking unsent until the last word
-    // had been typed. `persist()` runs when playback ends, because a message
-    // still mid-playback is deliberately not written to storage.
     isSubmitting.value = false
     chatRequestController = null
-    void playTypewriter(tracked, accumulator.text, { onTick: onScroll }).then(persist)
+    void playTypewriter(tracked, accumulator.text, { onTick: onScroll, delayMs: isStreamPushed ? 0 : undefined }).then(persist)
     return true
   } catch (error) {
     // The bot message is only in the transcript if the reply arrived, so a failure

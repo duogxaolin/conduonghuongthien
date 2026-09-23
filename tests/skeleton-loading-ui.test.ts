@@ -121,6 +121,7 @@ const VIEWS_WITH_LOADING_BRANCH = [
   // Dashboards whose panels load independently. Each tile owns its own branch, so
   // one slow query must not blank the other three.
   { file: 'pages/admin/index.vue', marker: 'v-if="liveLoading"' },
+  { file: 'pages/admin/ai/index.vue', marker: 'v-if="usageLoading"' },
   { file: 'pages/admin/analytics.vue', marker: 'v-if="initialLoading"' },
 ]
 

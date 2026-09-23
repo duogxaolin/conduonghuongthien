@@ -35,9 +35,6 @@
       class="bg-[#0c140d] border-b border-[#1b2b1d] py-2 sm:py-2.5 lg:py-3"
     >
       <div class="w-full px-2 sm:px-4 lg:px-6">
-        <!-- Khung phát trực tiếp chuẩn Rạp chiếu phim (Theater Mode):
-             Tràn rộng toàn màn hình, khống chế chiều cao theo viewport để vừa vặn trong tầm mắt,
-             không bị trống 2 bên hông và không bao giờ phải cuộn chuột. -->
         <div class="bg-[#080d08] border border-[#1e3020] rounded-xl lg:rounded-2xl overflow-hidden shadow-2xl shadow-black/60 flex flex-col lg:h-[calc(100dvh-185px)]">
           <!-- Thanh metadata: badge Trực tiếp + Tiêu đề + Thời gian bắt đầu -->
           <div class="px-3.5 sm:px-4 lg:px-5 py-2 sm:py-2.5 bg-[#111c12] border-b border-[#1c2d1e] flex items-center gap-3 shrink-0">

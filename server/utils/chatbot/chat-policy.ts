@@ -7,6 +7,7 @@ import type { SafeProviderRequestOptions, SafeProviderResponse } from './outboun
 import { retrieveKnowledge, type PublicKnowledgeReference, type RetrievalEntry } from './retrieval'
 import { CHATBOT_HOTLINE, DEFAULT_CHATBOT_SYSTEM_PROMPT } from './prompt-defaults'
 import { buildProviderChatCall, extractProviderAnswer } from './providers'
+import { callAi } from '../../services/ai-gateway'
 import { selectSmallTalk, type SemanticSmallTalkProvider, type SmallTalkSemanticConfig } from './small-talk-semantic'
 import { classifySmallTalk, type SmallTalkContext, type SmallTalkEntry } from './small-talk'
 import { logWarn, logError } from '../logger'
@@ -184,7 +185,41 @@ function aiProviderReady(settings: ChatbotSettings): boolean {
   return Boolean(settings.enabled && settings.baseUrl && settings.model && settings.allowedHosts?.length)
 }
 
-async function callProvider(settings: ChatbotSettings, dependencies: ChatDependencies, references: PublicKnowledgeReference[], history: ChatMessage[]): Promise<string | null> {
+async function callProvider(settings: ChatbotSettings, dependencies: ChatDependencies, references: PublicKnowledgeReference[], history: ChatMessage[], onChunk?: (chunk: string) => void | Promise<void>): Promise<string | null> {
+  // Route through the AI gateway (spec R11.5, design.md D4 step 3) so usage is
+  // logged and budget guard runs. The gateway reads from `ai_service_configs`
+  // + `ai_providers`, which are backfilled from `chatbot_settings` on first
+  // seed (spec R11.2–R11.3). If the gateway fails (service inactive, no key,
+  // or budget exceeded), fall back to the legacy direct path so existing
+  // deployments that haven't migrated to /admin/ai settings still work.
+  const basePrompt = settings.systemPrompt?.trim() ? settings.systemPrompt : DEFAULT_CHATBOT_SYSTEM_PROMPT
+  const groundedPrompt = buildGroundedSystemPrompt(basePrompt, references)
+  const userTurn = history[history.length - 1]
+  const queryText = text(userTurn?.content ?? userTurn?.text)
+  const historyMessages = buildChatHistory(history)
+
+  try {
+    const result = await callAi('chatbot', {
+      prompt: queryText,
+      systemPrompt: groundedPrompt,
+      variables: { question: queryText, references: references.map(r => r.question).join('; '), fallback_message: settings.fallbackMessage ?? '' },
+      userId: null,
+      history: historyMessages,
+      onChunk,
+    })
+    if (result.ok && result.text) {
+      return result.text.slice(0, CHAT_LIMITS.maxOutputChars) || null
+    }
+    // budget_exceeded = fall back to knowledge-only (handled by caller)
+    if (result.error === 'budget_exceeded') return null
+    // service_inactive or no_api_key = fall through to legacy direct path
+  } catch {
+    // Gateway threw unexpectedly — fall through to legacy path
+  }
+
+  // Legacy direct provider call (pre-AI-gateway path). Kept as fallback so
+  // deployments that have configured chatbot directly still function while
+  // the admin migrates to /admin/ai settings.
   const secret = dependencies.configuredSecret(settings)
   if (!secret) return null
   const call = buildProviderChatCall({
@@ -192,8 +227,8 @@ async function callProvider(settings: ChatbotSettings, dependencies: ChatDepende
     baseUrl: settings.baseUrl!,
     model: settings.model!,
     secret,
-    systemPrompt: buildGroundedSystemPrompt(settings.systemPrompt || '', references),
-    history: buildChatHistory(history),
+    systemPrompt: groundedPrompt,
+    history: historyMessages,
   })
   const response = await dependencies.providerRequest({
     url: call.url,
@@ -209,7 +244,7 @@ async function callProvider(settings: ChatbotSettings, dependencies: ChatDepende
   return text(extractProviderAnswer(settings.providerPolicy, payload)).slice(0, CHAT_LIMITS.maxOutputChars) || null
 }
 
-export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSettings, messages: unknown, dependencies: ChatDependencies): Promise<ChatResult> {
+export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSettings, messages: unknown, dependencies: ChatDependencies, onChunk?: (chunk: string) => void | Promise<void>): Promise<ChatResult & { streamed?: boolean }> {
   validateChatRequestBody({ messages })
   const history = validateChatMessages(messages, settings)
   const retryAfter = await enforceChatRateLimit(clientKey(event), settings.rateLimitRequests, settings.rateLimitWindowSeconds)
@@ -250,8 +285,8 @@ export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSett
       const quotaRetryAfter = await enforceAiQuota(event, sessionId)
       if (quotaRetryAfter) return { answer: AI_QUOTA_MESSAGE, sources: [], kind: 'rate_limited', retryAfter: quotaRetryAfter }
       try {
-        const freeform = await callProvider(settings, dependencies, [], history)
-        if (freeform) return { answer: freeform, sources: [], kind: 'provider' }
+        const freeform = await callProvider(settings, dependencies, [], history, onChunk)
+        if (freeform) return { answer: freeform, sources: [], kind: 'provider', streamed: Boolean(onChunk) }
       } catch (error) {
         logWarn({
           event: 'chatbot.freeform_provider_failed',
@@ -272,8 +307,8 @@ export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSett
   if (groundedQuotaRetryAfter) return friendlyKnowledgeAnswer(settings, references)
 
   try {
-    const grounded = await callProvider(settings, dependencies, references, history)
-    return grounded ? { answer: grounded, sources: references.filter(ref => ref.source), kind: 'provider' } : friendlyKnowledgeAnswer(settings, references)
+    const grounded = await callProvider(settings, dependencies, references, history, onChunk)
+    return grounded ? { answer: grounded, sources: references.filter(ref => ref.source), kind: 'provider', streamed: Boolean(onChunk) } : friendlyKnowledgeAnswer(settings, references)
   } catch (error) {
     logWarn({
       event: 'chatbot.grounded_provider_failed',
