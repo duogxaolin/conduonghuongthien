@@ -443,6 +443,10 @@ onMounted(() => { void loadActive() })
             </button>
           </div>
           <p class="text-xs text-[#8aa08c]">Dán liên kết YouTube Live (hoặc video thường) — máy chủ tự bóc ID. Bấm "Lấy thông tin" để tự điền tiêu đề + xem ảnh thu nhỏ.</p>
+          <p class="text-xs text-[#b8860b] bg-[#fffbe6] border border-[#f5e6a8] rounded-md px-2.5 py-1.5 inline-flex items-start gap-1.5">
+            <i class="fa-solid fa-circle-info mt-0.5 shrink-0" aria-hidden="true"></i>
+            <span>Hệ thống <strong>không phân biệt</strong> live và video thường qua URL. Dán link video thường sẽ vẫn hiện badge "Đang phát trực tiếp" — chỉ dùng link <strong>YouTube Live</strong> (đang phát thật) để tránh hiện sai trạng thái.</span>
+          </p>
           <p v-if="metaError" role="alert" class="text-sm text-[#a32924]">
             <i class="fa-solid fa-circle-exclamation mr-1" aria-hidden="true"></i>{{ metaError }}
           </p>

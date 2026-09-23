@@ -562,6 +562,11 @@
           </div>
         </div>
       </transition>
+      <!-- Thanh thông báo phát trực tiếp — trong header sticky để dính theo khi cuộn.
+           Client-only: `/media` phục vụ qua `swr: 60` nên không mang state này ra SSR. -->
+      <ClientOnly>
+        <LiveTickerBar />
+      </ClientOnly>
     </header>
 
     <!-- Main Content Area — không bù padding-top: header đã sticky nên còn
