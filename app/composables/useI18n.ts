@@ -1,13 +1,17 @@
 import { computed, watch } from 'vue'
 import { useCookie, useHead, useState } from '#imports'
+import { extraDictionaries } from './i18n-extra'
 
-type LocaleCode = 'vi' | 'en'
+type LocaleCode = 'vi' | 'en' | 'zh' | 'fr' | 'ru' | 'lo'
 
 export const localeOptions = [
   { code: 'vi' as const, label: 'VN', name: 'Tiếng Việt', htmlLang: 'vi' },
   { code: 'en' as const, label: 'EN', name: 'English', htmlLang: 'en' },
+  { code: 'zh' as const, label: 'ZH', name: '中文', htmlLang: 'zh' },
+  { code: 'fr' as const, label: 'FR', name: 'Français', htmlLang: 'fr' },
+  { code: 'ru' as const, label: 'RU', name: 'Русский', htmlLang: 'ru' },
+  { code: 'lo' as const, label: 'LAO', name: 'ພາສາລາວ', htmlLang: 'lo' },
 ] satisfies ReadonlyArray<{ code: LocaleCode, label: string, name: string, htmlLang: string }>
-
 const DEFAULT_LOCALE: LocaleCode = 'vi'
 // The locale every "no match" path falls back to. Spelled out rather than taken
 // as localeOptions[0], which an index read can only type as possibly undefined.
@@ -308,7 +312,7 @@ export const useI18n = () => {
       doc_table_action: 'Download / Actions',
     }
   }
-
+  Object.assign(dictionary, extraDictionaries)
   const t = (key: string): string => {
     return dictionary[currentLang.value]?.[key] || key
   }

@@ -32,6 +32,109 @@ const saving = ref(false)
 const errorMsg = ref('')
 const tinymceReady = ref(false)
 
+const aiLoading = ref(false)
+const aiLoadingText = ref('')
+const showTranslateMenu = ref(false)
+const suggestedTitles = ref<string[]>([])
+
+const SUPPORTED_TRANSLATE_LANGUAGES = [
+  { code: 'en', label: 'Tiếng Anh (English)', flag: '🇬🇧' },
+  { code: 'zh', label: 'Tiếng Trung (中文)', flag: '🇨🇳' },
+  { code: 'fr', label: 'Tiếng Pháp (Français)', flag: '🇫🇷' },
+  { code: 'ru', label: 'Tiếng Nga (Русский)', flag: '🇷🇺' },
+  { code: 'ja', label: 'Tiếng Nhật (日本語)', flag: '🇯🇵' },
+  { code: 'ko', label: 'Tiếng Hàn (한국어)', flag: '🇰🇷' },
+  { code: 'lo', label: 'Tiếng Lào', flag: '🇱🇦' },
+  { code: 'km', label: 'Tiếng Campuchia', flag: '🇰🇭' },
+]
+
+
+function setEditorContent(html: string): void {
+  form.content = html
+  if (tinymceReady.value && (window as WindowWithTinyMce).tinymce) {
+    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
+    if (ed) ed.setContent(html)
+  }
+}
+
+async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') {
+  const content = getEditorContent()
+  if (!content && !form.title) {
+    toast.error('Vui lòng nhập tiêu đề hoặc nội dung bài viết trước khi dùng Trợ lý AI.')
+    return
+  }
+
+  aiLoading.value = true
+  if (action === 'summary') aiLoadingText.value = 'Trợ lý AI đang tóm tắt nội dung bài viết...'
+  else if (action === 'suggest_titles') aiLoadingText.value = 'Trợ lý AI đang sáng tạo các tiêu đề hay...'
+  else aiLoadingText.value = 'Trợ lý AI đang rà soát chính tả và văn phong...'
+
+  try {
+    const res = await $fetch<{ ok: boolean; action: string; result: string }>('/api/admin/ai/editorial', {
+      method: 'POST',
+      body: { action, title: form.title, content },
+    })
+
+    if (action === 'summary') {
+      form.excerpt = res.result
+      toast.success('Đã tự động tạo tóm tắt bài viết!')
+    } else if (action === 'suggest_titles') {
+      const titles = res.result
+        .split('\n')
+        .map(l => l.replace(/^\d+[\.\-\)]\s*/, '').trim())
+        .filter(Boolean)
+      suggestedTitles.value = titles
+      toast.success('Đã có đề xuất tiêu đề, bạn bấm chọn bên dưới nhé!')
+    } else if (action === 'polish') {
+      setEditorContent(res.result)
+      toast.success('Đã rà soát và chuẩn hóa nội dung bài viết!')
+    }
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi khi gọi Trợ lý AI.'))
+  } finally {
+    aiLoading.value = false
+  }
+}
+
+async function translateArticleTo(targetLang: string) {
+  showTranslateMenu.value = false
+  const content = getEditorContent()
+  if (!form.title && !content) {
+    toast.error('Vui lòng nhập nội dung bài viết trước khi dịch.')
+    return
+  }
+
+  aiLoading.value = true
+  const langObj = SUPPORTED_TRANSLATE_LANGUAGES.find(l => l.code === targetLang)
+  aiLoadingText.value = `Trợ lý AI đang dịch bài viết sang ${langObj?.label ?? targetLang}...`
+
+  try {
+    const res = await $fetch<{
+      ok: boolean
+      translatedTitle?: string
+      translatedExcerpt?: string
+      translatedContent?: string
+    }>('/api/admin/ai/translate', {
+      method: 'POST',
+      body: {
+        targetLanguage: targetLang,
+        title: form.title,
+        excerpt: form.excerpt,
+        content,
+      },
+    })
+
+    if (res.translatedTitle) form.title = res.translatedTitle
+    if (res.translatedExcerpt) form.excerpt = res.translatedExcerpt
+    if (res.translatedContent) setEditorContent(res.translatedContent)
+
+    toast.success(`Đã dịch bài viết sang ${langObj?.label ?? targetLang}!`)
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể dịch bài viết.'))
+  } finally {
+    aiLoading.value = false
+  }
+}
 // Dynamic categories for the selected article type
 const availableCategories = ref<AdminCategoryRow[]>([])
 
@@ -344,6 +447,100 @@ onUnmounted(() => {
     <div v-else class="grid grid-cols-1 xl:grid-cols-[1fr_300px] gap-5">
       <!-- Main Form -->
       <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-5">
+        <!-- AI Editorial & Translation Toolbar -->
+        <div class="rounded-xl border border-[#c8dcc9] bg-[#f0f7f1] p-3.5 flex flex-col gap-2.5">
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="flex items-center gap-2">
+              <span class="w-6 h-6 rounded-md bg-[#1e4620] text-white flex items-center justify-center text-xs shadow-xs">
+                <i class="fa-solid fa-wand-magic-sparkles"></i>
+              </span>
+              <span class="text-xs font-bold text-[#1e4620] uppercase tracking-wide">Trợ lý AI Biên tập & Dịch thuật</span>
+            </div>
+            <div class="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-[#1e4620] hover:bg-[#e4ece4] transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
+                :disabled="aiLoading"
+                @click="callAiEditorial('suggest_titles')"
+              >
+                <i class="fa-regular fa-lightbulb text-[0.7rem]"></i>
+                Gợi ý tiêu đề
+              </button>
+              <button
+                type="button"
+                class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-[#1e4620] hover:bg-[#e4ece4] transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
+                :disabled="aiLoading"
+                @click="callAiEditorial('summary')"
+              >
+                <i class="fa-regular fa-file-lines text-[0.7rem]"></i>
+                Tự động viết tóm tắt
+              </button>
+              <button
+                type="button"
+                class="px-2.5 py-1 rounded-lg border border-[#a2cca4] bg-white text-xs font-semibold text-[#1e4620] hover:bg-[#e4ece4] transition-all flex items-center gap-1 shadow-2xs disabled:opacity-50 cursor-pointer"
+                :disabled="aiLoading"
+                @click="callAiEditorial('polish')"
+              >
+                <i class="fa-solid fa-spell-check text-[0.7rem]"></i>
+                Soát lỗi & Văn phong
+              </button>
+              <!-- Multi-language Translate Dropdown Button -->
+              <div class="relative">
+                <button
+                  type="button"
+                  class="px-2.5 py-1 rounded-lg border border-[#2c6e33] bg-[#1e4620] text-white text-xs font-bold hover:bg-[#153317] transition-all flex items-center gap-1 shadow-xs disabled:opacity-50 cursor-pointer"
+                  :disabled="aiLoading"
+                  @click="showTranslateMenu = !showTranslateMenu"
+                >
+                  <i class="fa-solid fa-language text-[0.75rem]"></i>
+                  <span>Dịch bài viết</span>
+                  <i class="fa-solid fa-chevron-down text-[0.55rem]"></i>
+                </button>
+                <div
+                  v-if="showTranslateMenu"
+                  class="absolute right-0 top-full mt-1 w-52 rounded-xl bg-white border border-[#c8d6c9] shadow-lg p-1.5 z-20 flex flex-col gap-0.5"
+                >
+                  <div class="px-2 py-1 text-[0.68rem] font-bold text-[#667768] uppercase">Chọn ngôn ngữ dịch</div>
+                  <button
+                    v-for="l in SUPPORTED_TRANSLATE_LANGUAGES"
+                    :key="l.code"
+                    type="button"
+                    class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] transition-colors border-none bg-transparent cursor-pointer flex items-center gap-2"
+                    @click="translateArticleTo(l.code)"
+                  >
+                    <span>{{ l.flag }}</span>
+                    <span>{{ l.label }}</span>
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Loading state -->
+          <div v-if="aiLoading" class="flex items-center gap-2 py-1 text-xs text-[#2c6e33] font-semibold animate-pulse motion-reduce:animate-none">
+            <i class="fa-solid fa-circle-notch fa-spin"></i>
+            <span>{{ aiLoadingText }}</span>
+          </div>
+
+          <!-- Suggested Titles Drawer -->
+          <div v-if="suggestedTitles.length > 0" class="rounded-lg bg-white border border-[#c8d6c9] p-3 flex flex-col gap-2">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-[#1e4620]">💡 Đề xuất tiêu đề từ AI (Bấm vào tiêu đề để chọn):</span>
+              <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer" @click="suggestedTitles = []">Đóng</button>
+            </div>
+            <div class="flex flex-col gap-1.5">
+              <button
+                v-for="(t, idx) in suggestedTitles"
+                :key="idx"
+                type="button"
+                class="w-full text-left p-2 rounded-lg border border-[#e2ece3] hover:border-[#2c6e33] hover:bg-[#f0f7f1] text-xs font-semibold text-[#122815] transition-colors cursor-pointer"
+                @click="form.title = t; suggestedTitles = []"
+              >
+                {{ t }}
+              </button>
+            </div>
+          </div>
+        </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Tiêu đề bài viết (*)</label>
           <input

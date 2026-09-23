@@ -38,6 +38,28 @@ const toast = useToast()
 const loading = ref(true)
 const error = ref('')
 const busy = ref(false)
+const moderating = ref(false)
+const moderationMap = ref<Record<number, { verdict: 'safe' | 'spam' | 'violation'; riskLevel: string; flags: string[]; reason: string }>>({})
+
+async function runAiModerationScan() {
+  if (!comments.value.length) return
+  moderating.value = true
+  try {
+    const ids = comments.value.map(c => c.id).slice(0, 10)
+    const res = await $fetch<{ ok: boolean; results: Array<{ id: number; verdict: 'safe' | 'spam' | 'violation'; riskLevel: string; flags: string[]; reason: string }> }>('/api/admin/comments/ai-moderate', {
+      method: 'POST',
+      body: { commentIds: ids },
+    })
+    for (const r of res.results) {
+      if (r.id) moderationMap.value[r.id] = r
+    }
+    toast.success(`Đã quét AI kiểm duyệt ${res.results.length} bình luận!`)
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể kiểm duyệt bằng AI.'))
+  } finally {
+    moderating.value = false
+  }
+}
 const comments = ref<Comment[]>([])
 const total = ref(0)
 const page = ref(1)
@@ -183,6 +205,15 @@ onMounted(load)
         to="/admin/readers"
         class="rounded-lg border border-[#c8d6c9] bg-white px-4 py-2.5 font-semibold text-[#2c3e2e] no-underline hover:bg-[#f0f7f1]"
       >Danh sách người đọc</nuxt-link>
+      <button
+        type="button"
+        class="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-[#a2cca4] bg-[#f0f7f1] px-4 py-2.5 font-bold text-[#1e4620] hover:bg-[#e4ece4] transition-all disabled:opacity-50 cursor-pointer shadow-2xs"
+        :disabled="moderating || !comments.length"
+        @click="runAiModerationScan"
+      >
+        <i class="fa-solid" :class="moderating ? 'fa-circle-notch fa-spin text-xs' : 'fa-shield-halved text-xs text-[#2c6e33]'"></i>
+        <span>{{ moderating ? 'AI đang quét...' : '🛡️ AI Quét kiểm duyệt' }}</span>
+      </button>
     </form>
 
     <!-- Đang tải -->
@@ -256,6 +287,33 @@ onMounted(load)
           </div>
 
           <p class="m-0 mt-2.5 whitespace-pre-line break-words text-sm text-[#2c3529]">{{ comment.body }}</p>
+
+          <!-- AI Moderation Badge if scanned -->
+          <div
+            v-if="moderationMap[comment.id]"
+            class="mt-2.5 flex items-center gap-2 rounded-lg p-2.5 text-xs"
+            :class="{
+              'bg-[#f0fdf4] text-[#166534] border border-[#bbf7d0]': moderationMap[comment.id].verdict === 'safe',
+              'bg-[#fefce8] text-[#854d0e] border border-[#fef08a]': moderationMap[comment.id].verdict === 'spam',
+              'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]': moderationMap[comment.id].verdict === 'violation',
+            }"
+          >
+            <i
+              class="fa-solid text-xs shrink-0"
+              :class="{
+                'fa-shield-check text-[#16a34a]': moderationMap[comment.id].verdict === 'safe',
+                'fa-triangle-exclamation text-[#ca8a04]': moderationMap[comment.id].verdict === 'spam',
+                'fa-circle-xmark text-[#dc2626]': moderationMap[comment.id].verdict === 'violation',
+              }"
+            ></i>
+            <span class="font-bold">
+              AI: {{ moderationMap[comment.id].verdict === 'safe' ? 'An toàn' : moderationMap[comment.id].verdict === 'spam' ? 'Nghi vấn Spam' : 'Vi phạm tiêu chuẩn' }}
+            </span>
+            <span class="text-[#64748b]">• {{ moderationMap[comment.id].reason }}</span>
+            <span v-if="moderationMap[comment.id].flags?.length" class="ml-auto font-semibold">
+              {{ moderationMap[comment.id].flags.join(', ') }}
+            </span>
+          </div>
 
           <form v-if="replyTo === comment.id" class="mt-3 border-t border-[#eef3ee] pt-3" @submit.prevent="submitReply(comment)">
             <label :for="`reply-${comment.id}`" class="mb-1.5 block text-sm font-bold text-[#2c3e2e]">Phản hồi của Ban quản trị</label>
