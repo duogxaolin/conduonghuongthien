@@ -32,35 +32,37 @@
   <div>
     <section
       v-if="session"
-      class="bg-[#0e160f] py-3 sm:py-4 lg:py-5 border-b border-[#1c2c1e]"
+      class="bg-[#0c140d] border-b border-[#1b2b1d] py-2 sm:py-2.5 lg:py-3"
     >
-      <div class="container">
-        <!-- Khung phát trực tiếp: Card liền khối, có viền tinh tế, bo góc mềm mại -->
-        <div class="bg-[#0b120c] border border-[#203322] rounded-xl lg:rounded-2xl overflow-hidden shadow-2xl shadow-black/50 flex flex-col">
-          <!-- Thanh metadata: badge + tiêu đề + thời gian -->
-          <div class="px-3.5 sm:px-4 lg:px-5 py-2.5 sm:py-3 bg-[#132014] border-b border-[#1f3120] flex items-center gap-3 flex-wrap">
-            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] bg-[#D32F2F] text-white text-[0.7rem] font-extrabold uppercase tracking-wide shrink-0 shadow-sm">
+      <div class="w-full px-2 sm:px-4 lg:px-6">
+        <!-- Khung phát trực tiếp chuẩn Rạp chiếu phim (Theater Mode):
+             Tràn rộng toàn màn hình, khống chế chiều cao theo viewport để vừa vặn trong tầm mắt,
+             không bị trống 2 bên hông và không bao giờ phải cuộn chuột. -->
+        <div class="bg-[#080d08] border border-[#1e3020] rounded-xl lg:rounded-2xl overflow-hidden shadow-2xl shadow-black/60 flex flex-col lg:h-[calc(100dvh-185px)]">
+          <!-- Thanh metadata: badge Trực tiếp + Tiêu đề + Thời gian bắt đầu -->
+          <div class="px-3.5 sm:px-4 lg:px-5 py-2 sm:py-2.5 bg-[#111c12] border-b border-[#1c2d1e] flex items-center gap-3 shrink-0">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[4px] bg-[#D32F2F] text-white text-[0.68rem] sm:text-[0.7rem] font-black uppercase tracking-wider shrink-0 shadow-sm">
               <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
               Trực tiếp
             </span>
             <h1 class="text-sm sm:text-base font-extrabold text-white leading-tight tracking-tight m-0 min-w-0 truncate flex-1">
               {{ session.title }}
             </h1>
-            <span v-if="startedLabel" class="text-[0.72rem] text-white/70 font-medium inline-flex items-center gap-1.5 shrink-0 bg-white/5 px-2.5 py-1 rounded-md border border-white/10">
+            <span v-if="startedLabel" class="text-[0.72rem] text-white/70 font-medium inline-flex items-center gap-1.5 shrink-0 bg-white/5 px-2.5 py-0.5 rounded-md border border-white/10">
               <i class="fa-regular fa-clock text-[0.68rem] text-white/50" aria-hidden="true"></i>
               {{ startedLabel }}
             </span>
           </div>
 
-          <!-- Player + chat grid: PC: player | chat dock phải. Mobile: stack dọc.
-               Chiều cao được giới hạn theo container và viewport để vừa khít màn hình,
-               không cần cuộn chuột mới xem hết được video và khung chat. -->
-          <div class="flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:max-h-[calc(100dvh-230px)] gap-0">
-            <!-- Cột player — nền đen, căn giữa video theo tỉ lệ 16:9, không tràn chiều cao -->
-            <div class="min-w-0 min-h-0 bg-black flex items-center justify-center relative overflow-hidden">
+          <!-- Player + chat grid: PC: player chiếm trọn không gian bên trái, chat dock phải (340px).
+               Mobile: stack dọc.
+               Chiều cao grid co giãn flex-1 để khớp chính xác card height. -->
+          <div class="flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_340px] flex-1 min-h-0 gap-0">
+            <!-- Cột player — nền đen, căn giữa video 16:9, tự động co giãn tối đa mà không tràn -->
+            <div class="min-w-0 min-h-0 bg-black flex items-center justify-center relative overflow-hidden h-[56.25vw] max-h-[500px] lg:h-full lg:max-h-none">
               <div
                 v-if="session.embedUrl"
-                class="relative w-full aspect-video max-w-full max-h-full"
+                class="relative w-full aspect-video max-w-full max-h-full flex items-center justify-center"
               >
                 <iframe
                   :src="autoplayEmbedUrl"
@@ -74,7 +76,7 @@
 
               <div
                 v-else
-                class="relative w-full aspect-video max-w-full max-h-full"
+                class="relative w-full aspect-video max-w-full max-h-full flex items-center justify-center"
               >
                 <video
                   ref="videoEl"
@@ -106,9 +108,7 @@
               </p>
             </div>
 
-            <!-- Cột chat — dark panel dock phải, inline. Mobile: stack dưới player.
-                 lg:h-full + lg:min-h-0 + lg:overflow-hidden để chat khớp chính xác chiều cao player;
-                 Mobile: min-h-[280px] cho chat có không gian khi stack dọc. -->
+            <!-- Cột chat — dark panel dock phải, inline. Mobile: stack dưới player. -->
             <aside class="bg-[#111a11] border-t lg:border-t-0 lg:border-l border-[#1f2a1c] flex flex-col min-h-[280px] lg:h-full lg:min-h-0 lg:overflow-hidden">
               <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-[#1f2a1c] shrink-0 bg-[#0e170e]">
                 <div class="flex items-center gap-2 text-white/90">
