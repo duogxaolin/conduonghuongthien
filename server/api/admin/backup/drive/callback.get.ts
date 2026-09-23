@@ -101,6 +101,11 @@ export default defineEventHandler(async (event) => {
   }
 
   const claims = decodeIdTokenClaims(idToken)
+  if (!claims) {
+    logWarn({ event: 'drive_oauth.id_token_invalid' })
+    return sendRedirect(event, '/admin/settings/backup?drive_error=failed', 302)
+  }
+
   // `aud` must match our client id — a token genuinely from Google but minted
   // for a different application would otherwise be accepted as an identity.
   if (claims.aud !== config.clientId) {
@@ -108,7 +113,7 @@ export default defineEventHandler(async (event) => {
     return sendRedirect(event, '/admin/settings/backup?drive_error=aud_mismatch', 302)
   }
 
-  if (!claims.sub) {
+  if (!claims.sub || typeof claims.sub !== 'string') {
     logWarn({ event: 'drive_oauth.id_token_no_sub' })
     return sendRedirect(event, '/admin/settings/backup?drive_error=failed', 302)
   }
@@ -116,7 +121,7 @@ export default defineEventHandler(async (event) => {
   try {
     await storeDriveLink(adminUser.id, {
       refreshToken,
-      linkedEmail: claims.email ?? '',
+      linkedEmail: typeof claims.email === 'string' ? claims.email : '',
       linkedSub:   claims.sub,
     })
   } catch (error) {

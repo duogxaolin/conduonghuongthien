@@ -1175,9 +1175,11 @@ export async function resolveStreamTarget(
       passthrough: true,
     }
   }
-
-  const filePath = path.resolve(directory, assetPath)
-  if (filePath !== directory && !filePath.startsWith(directory + path.sep)) return null
+  const generationPath = typeof row.storagePath === 'string' && row.storagePath.includes('/generations/')
+    ? path.resolve(config.workdir, row.storagePath.trim())
+    : directory
+  const filePath = path.resolve(generationPath, assetPath)
+  if (filePath !== generationPath && !filePath.startsWith(generationPath + path.sep)) return null
 
   let size: number
   let resolvedPath = filePath

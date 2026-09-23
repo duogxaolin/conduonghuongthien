@@ -20,7 +20,8 @@
 import { promises as fs, type Dirent, type Stats } from 'node:fs'
 import path from 'node:path'
 import sharp from 'sharp'
-import { getDb, getPool, type Pool } from '../utils/db'
+import type { RowDataPacket } from 'mysql2/promise'
+import { getDb, getPool } from '../utils/db'
 import { media, activityLogs } from '../db/schema'
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import {
@@ -138,7 +139,7 @@ async function runScanWorker(
   }
   const conn = await pool.getConnection()
   try {
-    const [rows] = await conn.query('SELECT GET_LOCK(?, 0) AS acquired', [LOCK_NAME])
+    const [rows] = await conn.query<RowDataPacket[]>('SELECT GET_LOCK(?, 0) AS acquired', [LOCK_NAME])
     if (Number(rows[0]?.acquired) !== 1) {
       finishJob('failed', 'Một lượt quét khác đang chạy.')
       return

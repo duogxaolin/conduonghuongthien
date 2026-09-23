@@ -2,8 +2,13 @@
 import type { AdminMediaItem, AdminMediaConfig } from '~/types/admin-api'
 import { mediaProcessingMessage } from '../../../composables/mediaProcessingMessage'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
-const { hasPermission } = useAdminAuth()
-const canUpload = computed(() => hasPermission('media_portal', 'create') && hasPermission('media_portal', 'read'))
+const { hasPermission, user } = useAdminAuth()
+const canUploadDenied = ref(false)
+const canUpload = computed(() => {
+  if (canUploadDenied.value) return false
+  if (!user.value) return true
+  return hasPermission('media_portal', 'create') && hasPermission('media_portal', 'read')
+})
 const config = ref<AdminMediaConfig | null>(null)
 const loading = ref(true)
 const loadError = ref('')
@@ -51,17 +56,23 @@ async function refreshProcessing() {
 async function load() {
   loading.value = true
   loadError.value = ''
-  try { if (canUpload.value) config.value = await $fetch('/api/admin/media-portal/config') }
-  catch { loadError.value = 'Không kiểm tra được khả năng tải video của máy chủ.' }
-  finally { loading.value = false }
+  canUploadDenied.value = false
+  try {
+    config.value = await $fetch('/api/admin/media-portal/config')
+  } catch (err: unknown) {
+    const status = (err as { status?: number, statusCode?: number })?.statusCode || (err as { status?: number })?.status
+    if (status === 403) {
+      canUploadDenied.value = true
+    } else {
+      loadError.value = 'Không kiểm tra được khả năng tải video của máy chủ.'
+    }
+  } finally {
+    loading.value = false
+  }
 }
 
-/** ChunkedUploader báo xong → chuyển sang phase timeline thay vì redirect. */
 function onUploaded(result: { mediaItemId: number }) {
-  uploadedItem.value = { id: result.mediaItemId, processingStatus: 'pending', slug: '', title: '',
-    createdAt: null, source: 'upload', thumbnailUrl: null, categoryName: null, categorySlug: null,
-    durationSeconds: null, width: null, height: null, resolutionsReady: null, processingError: null } as AdminMediaItem
-  void refreshProcessing()
+  return navigateTo(`/admin/media-portal/${result.mediaItemId}`)
 }
 
 function openDetail() { return navigateTo(`/admin/media-portal/${uploadedItem.value?.id}`) }

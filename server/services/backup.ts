@@ -118,10 +118,11 @@ async function dumpSql(target: string): Promise<number> {
       lines.push(createSql + ';')
       // Đếm dòng.
       const [cntRows] = await conn.query<RowDataPacket[]>(`SELECT COUNT(*) AS cnt FROM \`${table}\``)
-      const cnt = (cntRows[0] as Record<string, number>).cnt
+      const cnt = Number((cntRows[0] as Record<string, unknown> | undefined)?.cnt ?? 0)
       if (cnt > 0) {
         const [rows] = await conn.query<RowDataPacket[]>(`SELECT * FROM \`${table}\``)
-        const cols = rows.length ? Object.keys(rows[0]) : []
+        const firstRow = rows[0]
+        const cols = firstRow ? Object.keys(firstRow) : []
         if (cols.length) {
           lines.push(`INSERT INTO \`${table}\` (\`${cols.join('`, `')}\`) VALUES`)
           const valuesChunks: string[] = []

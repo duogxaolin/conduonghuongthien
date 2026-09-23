@@ -63,8 +63,8 @@ const speedLabel = computed(() => {
   return `${(bytesPerSec / 1024 / 1024).toFixed(1)} MB/s`
 })
 
-onMounted(() => {
-  if (!user.value) return
+function initController() {
+  if (!user.value || controller.value) return
   // sessionStorage is per browser tab and the key is scoped to the authenticated admin.
   // The server independently checks the session owner on every request.
   let storage: Pick<Storage, 'getItem' | 'setItem' | 'removeItem'>
@@ -77,7 +77,12 @@ onMounted(() => {
     ...(props.replaceItemId ? { replaceItemId: props.replaceItemId } : {}),
     request: (url, options) => $fetch(url, options as Parameters<typeof $fetch>[1]),
   })
+}
+
+onMounted(() => {
+  initController()
 })
+watch(user, u => { if (u) initController() })
 onBeforeUnmount(() => controller.value?.pause())
 watch(() => props.open, open => { if (!open) controller.value?.pause() })
 
@@ -160,7 +165,7 @@ function discard() {
       <i class="fa-solid fa-file-video text-[#2c6e33]" aria-hidden="true"></i>
       <div class="min-w-0 flex-1">
         <p class="text-sm font-semibold text-[#122815] m-0 truncate">{{ state.descriptor.filename }}</p>
-        <p class="text-xs text-[#8aa08c] m-0">Lượt tải đang dở — tiếp tục để hoàn tất</p>
+        <p class="text-xs text-[#8aa08c] m-0">Lượt tải đang dở: tiếp tục để hoàn tất</p>
       </div>
     </div>
 

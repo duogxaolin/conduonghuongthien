@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { mediaProcessingMessage } from '~/composables/mediaProcessingMessage'
 /**
  * Timeline 7 bước xử lý video + tiến độ rendition.
  *
@@ -94,7 +95,7 @@ const stages = computed<{ label: string, key: string, status: Stage }[]>(() => {
 
 const failedMessage = computed(() => {
   if (props.item.processingStatus !== 'failed') return ''
-  return props.item.processingError || 'Lượt xử lý đã lỗi.'
+  return 'Lượt xử lý đã gặp lỗi.'
 })
 
 const isPending = computed(() => props.item.processingStatus === 'pending' || props.item.processingStatus === 'processing')

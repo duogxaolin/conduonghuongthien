@@ -35,7 +35,7 @@
  */
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
-import { eq } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 
 import { getDb, getPool } from '../utils/db'
 import { media, activityLogs, articles } from '../db/schema'
@@ -324,11 +324,9 @@ async function rewriteArticleImageUrls(
   for (const { oldUrl, newUrl } of rewrites) {
     if (!oldUrl || !newUrl || oldUrl === newUrl) continue
     try {
+      const oldUrlLike = `%${oldUrl}%`
       const [updateRes] = await db.execute(
-        // `REPLACE` trong MySQL an toàn với chuỗi: thay mọi occurrence của oldUrl.
-        // `LIKE` khớp bài chứa oldUrl, `REPLACE` đổi tất cả occurrence trong bài đó.
-        `UPDATE articles SET content = REPLACE(content, ?, ?) WHERE content LIKE ?`,
-        [oldUrl, newUrl, `%${oldUrl}%`],
+        sql`UPDATE articles SET content = REPLACE(content, ${oldUrl}, ${newUrl}) WHERE content LIKE ${oldUrlLike}`,
       )
       const affected = affectedRowsOrZero(updateRes)
       if (affected > 0) {
