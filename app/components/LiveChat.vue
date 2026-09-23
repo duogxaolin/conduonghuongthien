@@ -126,7 +126,7 @@ const handleKeydown = (ev: KeyboardEvent) => {
     <!-- Dòng tin nhắn -->
     <div
       ref="chatBox"
-      class="flex-1 overflow-y-auto px-3 py-3 space-y-2 text-sm"
+      class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2 text-sm"
       @scroll="handleScroll"
     >
       <p v-if="messages.length === 0 && connection === 'open'" class="text-center text-gray-400 py-4">

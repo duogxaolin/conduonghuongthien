@@ -23,7 +23,7 @@
 
     <div class="max-w-2xl">
       <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
-        <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+        <span class="w-2 h-2 rounded-full bg-[#4A6741]" aria-hidden="true"></span>
         <span>Cổng Thông Tin Điện Tử C11 &bull; Bộ Công An</span>
       </div>
       <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">

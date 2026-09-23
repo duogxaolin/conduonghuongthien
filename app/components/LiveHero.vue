@@ -32,89 +32,98 @@
   <div>
     <section
       v-if="session"
-      class="relative overflow-hidden border-b border-[#F0C8C8] bg-gradient-to-br from-[#FDF2F2] via-white to-[#F8FAF7]"
+      class="bg-[#0e160f] py-3 sm:py-4 lg:py-5 border-b border-[#1c2c1e]"
     >
-      <div class="container relative pt-8 sm:pt-10 pb-8">
-        <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-4">
-          <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
-            <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
-            <span>Trang chủ</span>
-          </nuxt-link>
-          <span class="text-[#BAC8B6]">&rsaquo;</span>
-          <span class="text-[#2D5A27] font-bold">Thư viện Video</span>
-        </nav>
-
-        <div class="flex flex-wrap items-center gap-3 mb-3">
-          <!--
-            Chấm "TRỰC TIẾP" — đây là một **chỉ báo trạng thái**, không phải khung
-            chờ. Nhịp đập là tín hiệu duy nhất nó mang: tắt chuyển động đi thì còn
-            lại một chấm đỏ không nói lên điều gì. Cùng nhóm được miễn trừ đã ghi
-            trong `tests/skeleton-loading-ui.test.ts` (bốn nhịp đập chỉ báo trạng
-            thái). `motion-reduce:animate-none` **không** gắn ở đây là chủ đích,
-            nhưng nhịp này phải được ghi danh — xem báo cáo.
-          -->
-          <span class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg bg-[#D32F2F] text-white text-[0.72rem] font-extrabold uppercase tracking-wide">
-            <span class="w-2 h-2 rounded-full bg-white animate-pulse" aria-hidden="true"></span>
-            Đang phát trực tiếp
-          </span>
-          <span v-if="startedLabel" class="text-xs text-[#7A8A76] font-medium inline-flex items-center gap-1.5">
-            <i class="fa-regular fa-clock" aria-hidden="true"></i>
-            Bắt đầu {{ startedLabel }}
-          </span>
-        </div>
-
-        <h1 class="text-[1.5rem] sm:text-[1.9rem] font-extrabold text-[#1E251C] leading-[1.25] m-0 max-w-3xl">
-          {{ session.title }}
-        </h1>
-        <p
-          v-if="session.description"
-          class="text-[0.95rem] text-[#5A6655] mt-2 mb-0 leading-relaxed max-w-3xl whitespace-pre-line break-words"
-        >{{ session.description }}</p>
-
-        <div class="mt-5">
-          <!-- Nguồn ngoài: nhúng thẳng miền không cookie do máy chủ dựng sẵn.
-               Không nạp thư viện nào — xem `MediaPlayer.vue` cho lý do đầy đủ. -->
-          <div v-if="session.embedUrl" class="relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-sm max-w-4xl">
-            <iframe
-              :src="session.embedUrl"
-              :title="session.title"
-              class="absolute inset-0 w-full h-full border-0"
-              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-              referrerpolicy="strict-origin-when-cross-origin"
-              allowfullscreen
-            ></iframe>
+      <div class="container">
+        <!-- Khung phát trực tiếp: Card liền khối, có viền tinh tế, bo góc mềm mại -->
+        <div class="bg-[#0b120c] border border-[#203322] rounded-xl lg:rounded-2xl overflow-hidden shadow-2xl shadow-black/50 flex flex-col">
+          <!-- Thanh metadata: badge + tiêu đề + thời gian -->
+          <div class="px-3.5 sm:px-4 lg:px-5 py-2.5 sm:py-3 bg-[#132014] border-b border-[#1f3120] flex items-center gap-3 flex-wrap">
+            <span class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-[4px] bg-[#D32F2F] text-white text-[0.7rem] font-extrabold uppercase tracking-wide shrink-0 shadow-sm">
+              <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+              Trực tiếp
+            </span>
+            <h1 class="text-sm sm:text-base font-extrabold text-white leading-tight tracking-tight m-0 min-w-0 truncate flex-1">
+              {{ session.title }}
+            </h1>
+            <span v-if="startedLabel" class="text-[0.72rem] text-white/70 font-medium inline-flex items-center gap-1.5 shrink-0 bg-white/5 px-2.5 py-1 rounded-md border border-white/10">
+              <i class="fa-regular fa-clock text-[0.68rem] text-white/50" aria-hidden="true"></i>
+              {{ startedLabel }}
+            </span>
           </div>
 
-          <!-- Buổi phát tự lưu trữ: HLS qua chính composable mà `MediaPlayer.vue`
-               dùng. Hai bản sao của phép nạp `hls.js` là hai chỗ để lệch nhau về
-               đúng thứ quan trọng nhất — thư viện chỉ được nạp sau khi mount. -->
-          <div v-else class="relative w-full aspect-video bg-black rounded-xl overflow-hidden shadow-sm max-w-4xl">
-            <video
-              ref="videoEl"
-              class="absolute inset-0 w-full h-full"
-              controls
-              playsinline
-              preload="metadata"
-            ></video>
-            <div
-              v-if="playerPending"
-              role="status"
-              aria-busy="true"
-              class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 text-white"
-            >
-              <span class="sr-only">Đang chuẩn bị trình phát trực tiếp</span>
-              <i class="fa-solid fa-circle-notch fa-spin text-2xl" aria-hidden="true"></i>
-              <span class="text-sm font-semibold">Đang kết nối buổi phát…</span>
+          <!-- Player + chat grid: PC: player | chat dock phải. Mobile: stack dọc.
+               Chiều cao được giới hạn theo container và viewport để vừa khít màn hình,
+               không cần cuộn chuột mới xem hết được video và khung chat. -->
+          <div class="flex flex-col lg:grid lg:grid-cols-[minmax(0,1fr)_320px] lg:max-h-[calc(100dvh-230px)] gap-0">
+            <!-- Cột player — nền đen, căn giữa video theo tỉ lệ 16:9, không tràn chiều cao -->
+            <div class="min-w-0 min-h-0 bg-black flex items-center justify-center relative overflow-hidden">
+              <div
+                v-if="session.embedUrl"
+                class="relative w-full aspect-video max-w-full max-h-full"
+              >
+                <iframe
+                  :src="autoplayEmbedUrl"
+                  :title="session.title"
+                  class="absolute inset-0 w-full h-full border-0"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+                  referrerpolicy="strict-origin-when-cross-origin"
+                  allowfullscreen
+                ></iframe>
+              </div>
+
+              <div
+                v-else
+                class="relative w-full aspect-video max-w-full max-h-full"
+              >
+                <video
+                  ref="videoEl"
+                  class="absolute inset-0 w-full h-full"
+                  controls
+                  playsinline
+                  autoplay
+                  preload="metadata"
+                ></video>
+                <div
+                  v-if="playerPending"
+                  role="status"
+                  aria-busy="true"
+                  class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 text-white"
+                >
+                  <span class="sr-only">Đang chuẩn bị trình phát trực tiếp</span>
+                  <i class="fa-solid fa-circle-notch fa-spin text-2xl" aria-hidden="true"></i>
+                  <span class="text-sm font-semibold">Đang kết nối buổi phát…</span>
+                </div>
+              </div>
+
+              <p
+                v-if="playerError"
+                role="alert"
+                class="px-4 py-3 mb-0 text-sm text-[#ff6b6b] font-semibold inline-flex items-center gap-2 bg-[#1a0d0d] absolute bottom-4 left-4 right-4 z-10 rounded-lg border border-[#ff6b6b]/30"
+              >
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                {{ playerError }}
+              </p>
             </div>
-          </div>
 
-          <p v-if="playerError" role="alert" class="mt-3 mb-0 text-sm text-[#B04A4A] font-semibold inline-flex items-center gap-2">
-            <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
-            {{ playerError }}
-          </p>
-
-          <div class="mt-6 h-[28rem] max-w-4xl overflow-hidden rounded-xl border border-[#DDE6DE] bg-white shadow-sm">
-            <LiveChat :active="Boolean(session)" />
+            <!-- Cột chat — dark panel dock phải, inline. Mobile: stack dưới player.
+                 lg:h-full + lg:min-h-0 + lg:overflow-hidden để chat khớp chính xác chiều cao player;
+                 Mobile: min-h-[280px] cho chat có không gian khi stack dọc. -->
+            <aside class="bg-[#111a11] border-t lg:border-t-0 lg:border-l border-[#1f2a1c] flex flex-col min-h-[280px] lg:h-full lg:min-h-0 lg:overflow-hidden">
+              <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-[#1f2a1c] shrink-0 bg-[#0e170e]">
+                <div class="flex items-center gap-2 text-white/90">
+                  <i class="fa-solid fa-comments text-sm text-[#7CB342]" aria-hidden="true"></i>
+                  <span class="text-xs sm:text-sm font-bold">Trò chuyện trực tiếp</span>
+                </div>
+                <span class="inline-flex items-center gap-1.5 text-[0.7rem] text-[#7CB342] font-semibold bg-[#7CB342]/10 px-2.5 py-0.5 rounded-full border border-[#7CB342]/20">
+                  <span class="w-1.5 h-1.5 rounded-full bg-[#7CB342] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+                  Live
+                </span>
+              </div>
+              <div class="flex-1 min-h-0">
+                <LiveChat :active="Boolean(session)" />
+              </div>
+            </aside>
           </div>
         </div>
       </div>
@@ -163,6 +172,22 @@ const playerError = ref('')
 const hlsInstance = ref<{ destroy: () => void } | null>(null)
 
 const startedLabel = computed(() => (session.value?.startedAt ? formatDateVN(session.value.startedAt) : ''))
+
+/**
+ * URL embed YouTube với `autoplay=1` — full tiếng.
+ *
+ * Trình duyệt có thể chặn autoplay có tiếng nếu người dùng chưa tương tác trang.
+ * Nếu bị chặn, player dừng ở frame đầu; khách bấm play là có tiếng ngay. Không
+ * mute: anh yêu muốn livestream vào là nghe, đây là sự kiện đang diễn ra.
+ *
+ * Chỉ áp cho LiveHero (livestream), không áp cho VOD trong thư viện video.
+ */
+const autoplayEmbedUrl = computed(() => {
+  const url = session.value?.embedUrl
+  if (!url) return undefined
+  const sep = url.includes('?') ? '&' : '?'
+  return `${url}${sep}autoplay=1`
+})
 
 /**
  * Hỏi trạng thái sau mount và theo chu kỳ vừa phải.  Một lượt dừng phải gỡ hero
@@ -226,13 +251,19 @@ watch(session, async value => {
   })
   playerPending.value = false
 
-  if (result.ok) return
+  if (result.ok) {
+    // Autoplay muted — `<video muted autoplay>` đã khai ở template, nhưng hls.js
+    // attach sau khi thẻ mounted nên cần `.play()` rõ. Nuốt lỗi: Chrome đôi khi vẫn
+    // từ chối nếu user chưa tương tác trang, và đó không phải lỗi của buổi phát.
+    video.play().catch(() => {})
+    return
+  }
   playerError.value = result.reason === 'unsupported'
     ? 'Trình duyệt của bạn không hỗ trợ xem trực tiếp. Vui lòng dùng trình duyệt khác.'
     : 'Không kết nối được buổi phát. Vui lòng tải lại trang.'
 }, { flush: 'post' })
 
-const ACTIVE_POLL_MS = 15_000
+const ACTIVE_POLL_MS = 8_000
 let activePollTimer: number | undefined
 
 onMounted(() => {

@@ -55,7 +55,17 @@ export function usePagePreview() {
     if (m.type === 'cdkt:blocks') {
       previewBlocks.value = Array.isArray(m.blocks) ? m.blocks : []
       armSettle()
-    } else if (m.type === 'cdkt:select') selectedId.value = normId(m.id)
+    } else if (m.type === 'cdkt:select') {
+      selectedId.value = normId(m.id)
+      // Cuộn trang trong iframe tới khối được chọn — để người dựng thấy ngay khối
+      // mình vừa bấm trong cây bên trái, thay vì phải tự tìm. `scrollIntoView` chờ
+      // đến frame kế để DOM khớp `selectedId` (v-if highlight gắn sau khi prop đổi).
+      const id = normId(m.id)
+      requestAnimationFrame(() => {
+        const sel = id == null ? null : document.querySelector(`[data-block-id="${id}"]`)
+        if (sel) sel.scrollIntoView({ behavior: 'smooth', block: 'center', inline: 'center' })
+      })
+    }
   }
 
   // In preview, a click selects the enclosing block instead of navigating.

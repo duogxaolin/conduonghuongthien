@@ -31,6 +31,13 @@ module.exports = {
           from: { opacity: '0', transform: 'translateY(8px) scale(0.95)' },
           to: { opacity: '1', transform: 'translateY(0) scale(1)' },
         },
+        // Marquee chạy ngang cho tiêu đề dài trên mobile (LiveTickerBar).
+        // Text lặp 2 lần trong span; `-50%` đưa bản thứ hai vào đúng chỗ bản đầu,
+        // tạo vòng lặp liền mạch không khoảng trống.
+        ticker: {
+          '0%':   { transform: 'translateX(0)' },
+          '100%': { transform: 'translateX(-50%)' },
+        },
       },
       animation: {
         'typing-dot': 'typingDot 1.2s ease-in-out infinite',
