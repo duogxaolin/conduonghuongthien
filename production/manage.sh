@@ -79,6 +79,21 @@ env_get() {
   echo "$val"
 }
 
+# Ghi một khoá vào .env: sửa tại chỗ nếu đã có, thêm dòng mới nếu chưa.
+# Cùng khuôn `sed -i` mà cmd_update đã dùng cho PORT / PUBLIC_BASE_URL.
+# Idempotent: chạy hai lần cho ra đúng một dòng.
+# `sed` không có cờ `g` vẫn thay **mọi** dòng khớp, nên nếu .env lỡ mang hai dòng
+# cùng khoá thì cả hai nhận cùng một giá trị — không có chuyện "dòng nào thắng"
+# phụ thuộc thứ tự đọc của compose.
+set_env() {
+  local key="$1" value="$2" file="${3:-$ROOT/.env}"
+  if grep -qE "^${key}=" "$file" 2>/dev/null; then
+    sed -i "s|^${key}=.*|${key}=${value}|" "$file"
+  else
+    printf '%s=%s\n' "$key" "$value" >> "$file"
+  fi
+}
+
 # ── Menu chính ─────────────────────────────────────────────────────────────
 banner() {
   echo -e "${C_BOLD}${C_GREEN}"
@@ -96,6 +111,7 @@ main_menu() {
   echo -e "  ${C_BOLD}1)${C_RESET} Deploy   — thiết lập mới (chạy lần đầu)"
   echo -e "  ${C_BOLD}2)${C_RESET} Update   — cập nhật VPS (pull + restart)"
   echo -e "  ${C_BOLD}3)${C_RESET} Migrate  — nhập data SQL mới"
+  echo -e "  ${C_BOLD}4)${C_RESET} Media    — bật/tắt tải video, đặt trần RAM"
   echo -e "  ${C_BOLD}q)${C_RESET} Thoát"
   echo
   prompt "Chọn" ""
@@ -104,6 +120,7 @@ main_menu() {
     1) cmd_deploy ;;
     2) cmd_update ;;
     3) cmd_migrate ;;
+    4) cmd_media_tuning ;;
     q|Q|quit|exit) echo "Tạm biệt."; exit 0 ;;
     *) echo -e "${C_RED}Lựa chọn không hợp lệ.${C_RESET}"; main_menu ;;
   esac
@@ -243,6 +260,31 @@ ADMIN_EMAIL=$ADMIN_EMAIL
 
 # CI ghi đè dòng này mỗi lần deploy; có thể đặt tay
 CDKT_IMAGE=ghcr.io/duogxaolin/conduonghuongthien:latest
+
+# ─── Media Portal ───────────────────────────────
+# Tải video lên máy chủ (cần đủ RAM — xem manage.sh media-tuning).
+MEDIA_UPLOAD_ENABLED=true
+MEDIA_UPLOAD_MAX_SIZE=10737418240
+MEDIA_UPLOAD_CHUNK_SIZE=10485760
+MEDIA_DISK_FLOOR_BYTES=1073741824
+MEDIA_PROCESSING_MAX_JOBS=1
+MEDIA_PROCESSING_MAX_ATTEMPTS=3
+MEDIA_PROCESSING_HEARTBEAT_SECONDS=300
+MEDIA_PROCESSING_STALE_MINUTES=10
+MEDIA_UPLOAD_SESSION_HOURS=24
+# Bật auto-transcode: upload xong tự nén 360/720/1080p dưới nền worker, không cần
+# cán bộ bấm nút. Đổi sang false để tắt (chỉ probe+thumbnail, bấm "Chuyển mã" thủ công).
+MEDIA_AUTO_TRANSCODE=true
+# Giới hạn ffmpeg 50% CPU — không ăn sạch mọi nhân khi transcode.
+MEDIA_PROCESSING_CPU_LIMIT=50
+
+# ─── Chat trực tiếp: 1 bản sao ──────────────────
+# Đặt 1 để tắt cảnh báo replica SSE lúc khởi động (đang chạy 1 container).
+CDKT_SSE_REPLICA_GUARD=1
+
+# ─── Backup ─────────────────────────────────────
+BACKUP_DIR=./backups
+BACKUP_KEEP_DAYS=14
 EOF
 
   echo -e "${C_GREEN}✓ Đã tạo $ROOT/.env${C_RESET}"
@@ -482,22 +524,156 @@ cmd_migrate() {
   echo -e "  Đánh dấu đã import trong production/migrations/.imported-*"
 }
 
+# ════════════════════════════════════════════════════════════════════════════
+# 4. MEDIA TUNING — bật/tắt tải video và đặt trần RAM cho hai container
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Lệnh này **chỉ đọc và ghi `.env`**. Nó không khởi động lại container, không sửa
+# gì khác, không đụng CSDL — cán bộ chạy nó, đọc kết quả, rồi tự quyết định lúc
+# nào `docker compose up -d`. Một lệnh "tiện tay restart luôn" sẽ khởi động lại
+# cổng đang phục vụ công dân vì một thay đổi chưa được xem qua.
+#
+# Ngưỡng RAM 4000 MB là ngưỡng **thật**, không phải con số cho tròn: pipeline
+# transcode chạy tới `MAX_CONCURRENT_RENDITIONS = 3` tiến trình FFmpeg song song
+# (`server/services/video-processing.ts`), mỗi tiến trình giữ nguyên khung hình
+# trong RAM. Trên VPS nhỏ, lượt transcode đầu tiên sẽ khiến OOM-killer hạ **một
+# container khác** — nạn nhân không phải thủ phạm. Nên dưới ngưỡng thì từ chối
+# bật, và nói rõ vì sao, thay vì để cán bộ tự phát hiện qua một lần sập.
+cmd_media_tuning() {
+  echo -e "\n${C_BOLD}${C_CYAN}═══ MEDIA TUNING — Tải video & trần RAM ═══${C_RESET}\n"
+  cd "$ROOT"
+
+  if [ ! -f "$ROOT/.env" ]; then
+    echo -e "${C_RED}Không có .env — chạy 'Deploy' (1) trước.${C_RESET}"
+    exit 1
+  fi
+
+  # ── RAM máy chủ ───────────────────────────────────────────────────────────
+  # Đọc /proc/meminfo như scripts/check-resources.sh, không `free`: nhãn cột của
+  # `free` khác nhau giữa các bản procps, còn /proc/meminfo thì không.
+  local host_ram_mb
+  if [ -r /proc/meminfo ]; then
+    host_ram_mb=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 ))
+  elif [ "$(uname -s)" = "Darwin" ]; then
+    host_ram_mb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 ))
+  else
+    echo -e "${C_RED}Không đọc được dung lượng RAM máy chủ.${C_RESET}"
+    exit 1
+  fi
+  local host_cpus
+  host_cpus="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
+
+  echo -e "  Máy chủ: ${C_CYAN}${host_ram_mb}MB${C_RESET} RAM, ${C_CYAN}${host_cpus}${C_RESET} nhân"
+  echo -e "  ${C_DIM}Đang đặt: MEDIA_UPLOAD_ENABLED=$(env_get MEDIA_UPLOAD_ENABLED || true)${C_RESET}"
+  echo
+
+  # ── Công tắc nhận video ───────────────────────────────────────────────────
+  local RAM_FLOOR_MB=4000
+  if [ "$host_ram_mb" -lt "$RAM_FLOOR_MB" ]; then
+    echo -e "  ${C_RED}⚠  Tải video cần ≥${RAM_FLOOR_MB}MB RAM (đang có ${host_ram_mb}MB).${C_RESET}"
+    echo -e "  ${C_YELLOW}   FFmpeg chạy 3 bản transcode song song; trên VPS nhỏ, lượt${C_RESET}"
+    echo -e "  ${C_YELLOW}   xử lý đầu tiên sẽ khiến OOM-killer hạ một container khác.${C_RESET}"
+    echo -e "  ${C_DIM}   Cổng vẫn chạy bình thường với video YouTube/CDN.${C_RESET}"
+    if confirm "Vẫn bật tải video (không khuyến nghị)?" "n"; then
+      set_env MEDIA_UPLOAD_ENABLED true
+      echo -e "  ${C_YELLOW}→ Đã bật (vượt ngưỡng khuyến nghị).${C_RESET}"
+    else
+      set_env MEDIA_UPLOAD_ENABLED false
+      echo -e "  ${C_GREEN}→ Tải video TẮT.${C_RESET} ${C_DIM}Chỉ YouTube/CDN.${C_RESET}"
+    fi
+  else
+    if confirm "Bật tải video lên máy chủ này?" "y"; then
+      set_env MEDIA_UPLOAD_ENABLED true
+      echo -e "  ${C_GREEN}→ Tải video BẬT.${C_RESET}"
+    else
+      set_env MEDIA_UPLOAD_ENABLED false
+      echo -e "  ${C_DIM}→ Tải video TẮT.${C_RESET}"
+    fi
+  fi
+  echo -e "  ${C_DIM}Lưu ý: giá trị này chỉ tới được container nếu docker-compose.yml${C_RESET}"
+  echo -e "  ${C_DIM}liệt kê MEDIA_UPLOAD_ENABLED trong environment: — hiện đã liệt kê.${C_RESET}"
+
+  # ── Trần RAM: hỏi chính scripts/check-resources.sh, KHÔNG tự tính ─────────
+  # Công thức ở đây từng được định nghĩa lại một lần, và nó cho ra kết quả **khác**
+  # script kia gấp ba lần — trong đó phần MySQL nhỏ hơn, tức đảo ngược đúng cái
+  # bug mà check-resources.sh ra đời để sửa (MySQL đọc giới hạn cgroup chứ không
+  # đọc RAM máy chủ để tính InnoDB buffer pool, nên trần quá thấp là chậm vĩnh
+  # viễn mà không có gì báo). Script đó đã đếm container của dự án khác, đã đọc
+  # trần đang đặt và mức đang dùng thật, và đã là nguồn chân lý mà .env.example
+  # trỏ tới. Gọi nó thay vì chép công thức: bản sao thứ hai là chỗ thứ hai để sai.
+  echo -e "\n${C_BOLD}Trần RAM container${C_RESET}"
+  local resources_sh="$ROOT/scripts/check-resources.sh"
+  if [ ! -x "$resources_sh" ]; then
+    echo -e "  ${C_YELLOW}Không chạy được $resources_sh — bỏ qua phần trần RAM.${C_RESET}"
+    echo -e "  ${C_DIM}Đặt tay trong .env: MYSQL_MEM_LIMIT=4g và APP_MEM_LIMIT=2g.${C_RESET}"
+  else
+    local out rc=0
+    # `set -e` ở đầu tệp sẽ giết lượt chạy này khi script trả 2 — mà 2 nghĩa là
+    # "nên chỉnh trần", tức đúng ca ta đang muốn xử lý. Nên phải bắt mã trả về.
+    out="$("$resources_sh" 2>&1)" || rc=$?
+    echo "$out"
+    if [ "$rc" = "1" ]; then
+      echo -e "  ${C_YELLOW}Script báo thiếu công cụ — bỏ qua phần trần RAM.${C_RESET}"
+    else
+      local sug_mysql sug_app
+      sug_mysql="$(printf '%s\n' "$out" | sed -n 's/^ *MYSQL_MEM_LIMIT=//p' | tail -n1)"
+      sug_app="$(printf '%s\n' "$out" | sed -n 's/^ *APP_MEM_LIMIT=//p' | tail -n1)"
+      if [ -z "$sug_mysql" ] || [ -z "$sug_app" ]; then
+        # rc=0 nghĩa là trần hiện tại đã hợp lý, nên script không in dòng nào.
+        echo -e "  ${C_DIM}Trần hiện tại đã hợp lý — không có gì để ghi.${C_RESET}"
+      elif confirm "Ghi hai giá trị này vào .env (MYSQL_MEM_LIMIT=$sug_mysql, APP_MEM_LIMIT=$sug_app)?" "y"; then
+        set_env MYSQL_MEM_LIMIT "$sug_mysql"
+        set_env APP_MEM_LIMIT "$sug_app"
+        echo -e "  ${C_GREEN}→ Đã ghi vào .env.${C_RESET}"
+      else
+        echo -e "  ${C_DIM}Giữ nguyên trần hiện tại.${C_RESET}"
+      fi
+    fi
+    echo -e "  ${C_DIM}CPU: không đặt trần (tiền lệ check-resources.sh). FFmpeg tự nice -n 19.${C_RESET}"
+  fi
+
+  # ── Auto-transcode: tự nén 360/720/1080p sau upload ─────────────────────
+  echo -e "\n${C_BOLD}Tự nén video sau upload${C_RESET}"
+  local cur_auto
+  cur_auto=$(env_get MEDIA_AUTO_TRANSCODE || true)
+  # Cho hiển thị: rỗng đọc thành true (mặc định code).
+  echo -e "  ${C_DIM}Đang đặt: MEDIA_AUTO_TRANSCODE=${cur_auto:-true (mặc định)}${C_RESET}"
+  echo -e "  ${C_DIM}true = upload xong tự nén dưới nền worker.${C_RESET}"
+  echo -e "  ${C_DIM}false = chỉ probe+thumbnail; cán bộ bấm \"Chuyển mã\" thủ công.${C_RESET}"
+  if confirm "Bật tự nén video sau upload?" "y"; then
+    set_env MEDIA_AUTO_TRANSCODE true
+    echo -e "  ${C_GREEN}→ Tự nén BẬT.${C_RESET}"
+  else
+    set_env MEDIA_AUTO_TRANSCODE false
+    echo -e "  ${C_DIM}→ Tự nén TẮT (thủ công).${C_RESET}"
+  fi
+
+  # ── Kết thúc: nói rõ bước tiếp theo, KHÔNG tự làm ─────────────────────────
+  echo -e "\n${C_GREEN}${C_BOLD}═══ XONG ═══${C_RESET}"
+  echo -e "  .env: $ROOT/.env"
+  echo -e "  ${C_YELLOW}Chưa có gì được khởi động lại.${C_RESET} Áp dụng bằng:"
+  echo -e "  ${C_BOLD}  cd $ROOT && docker compose up -d${C_RESET}"
+  echo -e "  ${C_DIM}(đổi trần RAM cần 'up -d' để container được tạo lại; đổi MEDIA_UPLOAD_ENABLED thì đủ)${C_RESET}"
+}
+
 # ── Entry ──────────────────────────────────────────────────────────────────
 # Cho phép truyền tham số để bypass menu (chắc ăn với terminal web aaPanel):
-#   ./manage.sh deploy | update | migrate | 1 | 2 | 3
+#   ./manage.sh deploy | update | migrate | media-tuning | 1 | 2 | 3 | 4
 # Không tham số → vào menu tương tác.
 arg="${1:-}"
 case "$arg" in
   deploy|1)  cmd_deploy ;;
   update|2)  cmd_update ;;
   migrate|3) cmd_migrate ;;
+  media-tuning|media|4) cmd_media_tuning ;;
   ''|menu)  main_menu ;;
   -h|--help|help)
-    echo "Cách dùng: ./manage.sh [deploy|update|migrate|1|2|3]"
-    echo "  deploy  (1)  thiết lập mới (chạy lần đầu)"
-    echo "  update  (2)  cập nhật VPS (pull + restart)"
-    echo "  migrate (3)  nhập data SQL mới"
+    echo "Cách dùng: ./manage.sh [deploy|update|migrate|media-tuning|1|2|3|4]"
+    echo "  deploy       (1)  thiết lập mới (chạy lần đầu)"
+    echo "  update       (2)  cập nhật VPS (pull + restart)"
+    echo "  migrate      (3)  nhập data SQL mới"
+    echo "  media-tuning (4)  bật/tắt tải video, đặt trần RAM (chỉ sửa .env)"
     echo "  (không tham số) vào menu tương tác"
     exit 0 ;;
-  *) echo "Tham số không hợp lệ: $arg"; echo "Dùng: ./manage.sh [deploy|update|migrate|1|2|3]"; exit 1 ;;
+  *) echo "Tham số không hợp lệ: $arg"; echo "Dùng: ./manage.sh [deploy|update|migrate|media-tuning|1|2|3|4]"; exit 1 ;;
 esac

@@ -55,9 +55,19 @@ fi
 
 HOST_CPUS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 1)"
 
+# MB → GB ở dạng đọc được, tính **bên trong awk**. Không dùng `printf '%.1f'` của
+# bash: nó đọc số theo `LC_NUMERIC`, nên dưới locale dùng dấu phẩy thập phân
+# (`vi_VN`, mặc định của máy phát triển dự án này) nó từ chối giá trị `awk` vừa in
+# ra — "số không hợp lệ" — và `set -Eeuo pipefail` biến lượt in đó thành **exit
+# 1**, tức script báo "thiếu công cụ" trong khi docker có đủ. Định nghĩa ở đây,
+# TRƯỚC nơi dùng đầu tiên: bash phân giải hàm lúc gọi, nhưng một định nghĩa nằm
+# dưới lượt gọi thì đọc ra như thể nó ở sai chỗ.
+to_g() { awk "BEGIN{printf \"%.10g\", $1/1024}"; }
+
 printf '\n═══ Máy chủ ═══\n'
 printf '  CPU:  %s nhân\n' "$HOST_CPUS"
-printf '  RAM:  %s MB (%.1f GB)\n' "$HOST_MEM_MB" "$(awk "BEGIN{print $HOST_MEM_MB/1024}")"
+# MB → GB qua `to_g`, không `printf` trực tiếp — xem lý do ở định nghĩa hàm trên.
+printf '  RAM:  %s MB (%s GB)\n' "$HOST_MEM_MB" "$(to_g "$HOST_MEM_MB")"
 
 # ── Container của dự án khác trên cùng máy ──────────────────────────────────
 # `docker stats` không tính container đang dừng, nhưng chúng vẫn giữ chỗ khi
@@ -142,8 +152,6 @@ SUGGEST_APP_MB=$(( AVAILABLE_MB / 3 ))
 [[ "$SUGGEST_MYSQL_MB" -gt 4096 ]] && SUGGEST_MYSQL_MB=4096
 [[ "$SUGGEST_APP_MB" -lt 512 ]] && SUGGEST_APP_MB=512
 [[ "$SUGGEST_APP_MB" -gt 2048 ]] && SUGGEST_APP_MB=2048
-
-to_g() { awk "BEGIN{printf \"%.10g\", $1/1024}"; }
 
 printf '\n═══ Đề xuất ═══\n'
 printf '  RAM chừa cho hệ điều hành và %s container khác: %s MB\n' "$OTHERS" "$RESERVE_MB"

@@ -32,6 +32,10 @@ const DECORATIVE_PULSE_FILES: Record<string, string> = {
   'layouts/default.vue': 'hotline / support availability indicators (two sites)',
   'components/admin/AnalyticsLiveDashboard.client.vue': 'live-visitor heartbeat dot',
   'pages/admin/index.vue': '"Live" status badge dot on the realtime tile',
+  // Chấm "Đang phát trực tiếp" — chỉ báo trạng thái buổi livestream, không phải
+  // khung chờ. Nhịp đập là tín hiệu duy nhất nó mang; tắt chuyển động đi thì còn
+  // lại một chấm đỏ không nói lên điều gì. Cùng nhóm với bốn nhịp đã ghi ở trên.
+  'components/LiveHero.vue': 'livestream "on air" badge dot',
 }
 
 const SKELETON_COMPONENTS = [
@@ -70,6 +74,16 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/chatbot/knowledge/index.vue', marker: 'v-if="loading"' },
   { file: 'components/admin/ChatbotSmallTalkPanel.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/media/index.vue', marker: 'v-if="loading"' },
+  // Portal Media — kho video (`media_items`).
+  { file: 'pages/admin/media-portal/index.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/media-portal/external.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/media-portal/upload.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/media-portal/[id].vue', marker: 'v-if="loading"' },
+  // Danh mục Media Portal — bảng `media_categories` riêng, tách khỏi danh mục
+  // bài viết. Phẳng (không cha-con), skeleton vẽ inline (lưới ô xám đơn giản).
+  { file: 'pages/admin/media-portal/categories.vue', marker: 'v-if="loading"' },
+  // Livestream — trạng thái buổi phát trực tiếp.
+  { file: 'pages/admin/livestream/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/general.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/email.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/media-storage.vue', marker: 'v-if="loading"' },
@@ -88,6 +102,9 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/comments/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/google-oauth.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/ip-bans.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/settings/media-portal.vue', marker: 'v-if="loading"' },
+  // Backup & khôi phục — danh sách bản backup mang SkeletonTable.
+  { file: 'pages/admin/settings/backup.vue', marker: 'v-if="loading"' },
 
   // Views that already had a loading branch but sat outside this guard, because
   // the list above names files and nobody added them. Found by the coverage gate
@@ -128,6 +145,24 @@ const NO_SKELETON_NEEDED: Record<string, string> = {
   // boxes every few seconds would make a working dashboard look broken. Its
   // heartbeat dot is already an allowed decorative pulse above.
   'components/admin/AnalyticsLiveDashboard.client.vue': 'polls and keeps the last reading visible between ticks',
+  // Upload progress is a real progress bar (percent of received chunks), not a
+  // placeholder. A skeleton would replace a form the operator has just filled in
+  // and is now watching to completion — the page does not show a shape that
+  // approximates later content; the progress bar IS the content of the uploading
+  // phase, and replacing it with grey boxes removes the one thing the operator
+  // needs to see in that window.
+  'components/admin/ChunkedUploader.vue': 'upload progress bar is the content, not a placeholder for later content',
+  // Scan + sync trang riêng — fetch chỉ khi bấm nút (submit-time), nút mang pending.
+  // Trang không có danh sách tải để thay thế; cả hai thao tác báo tổng trong toast.
+  'pages/admin/media/scan.vue': 'submit-time fetch; the button shows pending and the result lands in a toast',
+  // oEmbed auto-get: fetch chỉ khi bấm nút "Lấy thông tin" (submit-time). Nút mang
+  // pending ("Đang lấy…"), preview metadata hiện jako kết quả bên dưới ô input —
+  // không có khung danh sách nào để thay thế bằng skeleton. Form vẫn dùng được
+  // trong lúc fetch.
+  'components/admin/MediaPortalForm.vue': 'submit-time fetch; the button shows pending and the result is inline preview',
+  // `MediaProcessingTimeline.vue` bị bỏ khỏi exemption list vì nó KHÔNG tự fetch
+  // — chỉ nhận dữ liệu từ parent qua props. Gate "stale exemption" bắt đúng:
+  // một component không fetch thì không cần được miễn skeleton.
 }
 
 /** Files whose loading branch is drawn inline rather than by a shared component. */
@@ -154,6 +189,13 @@ const INLINE_PLACEHOLDER_FILES = [
   // an icon, a sentence, a byline and an optional note per entry. None of the
   // three shared skeletons describes that shape.
   'components/admin/SubmissionDetailModal.vue',
+  // Media Portal (kho video) và Livestream — bảng điều khiển và khối trạng
+  // thái, hình dạng không khớp với ba skeleton dùng chung.
+  'pages/admin/media-portal/index.vue',
+  'pages/admin/livestream/index.vue',
+  // Danh mục Media Portal — bảng phẳng, skeleton là lưới ô xám đơn giản (6×6),
+  // không khớpSkeletonTable (vì không có header/data rows shape) — vẽ inline.
+  'pages/admin/media-portal/categories.vue',
 ]
 
 /**

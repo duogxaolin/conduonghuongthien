@@ -20,6 +20,18 @@ export const GOOGLE_SCOPE = 'openid email profile'
 
 export const GOOGLE_CALLBACK_PATH = '/api/auth/google/callback'
 
+/** Separate callback path for the admin Drive-OAuth flow — must not collide
+ *  with the reader sign-in callback, since the state cookie is scoped by path. */
+export const DRIVE_CALLBACK_PATH = '/api/admin/backup/drive/callback'
+
+/**
+ * Drive scope — `drive.file` (chỉ đọc/ghi file app tạo) + `openid email` (để Google
+ * trả `id_token` chứa email liên kết). Không thêm `profile` (không cần tên/ảnh).
+ * `openid email` là tối thiểu để nhận `id_token`; thiếu nó thì token response
+ * không có `id_token` → không biết email nào đã liên kết.
+ */
+export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file openid email'
+
 function stripTrailingSlashes(value: string): string {
   return value.replace(/\/+$/, '')
 }
@@ -76,4 +88,16 @@ export function configuredBaseUrl(): string {
 export function resolveRedirectUri(event: H3Event): string {
   const base = configuredBaseUrl() || stripTrailingSlashes(requestBase(event))
   return `${base}${GOOGLE_CALLBACK_PATH}`
+}
+
+/**
+ * Redirect URI for the admin Drive-OAuth flow. Same derivation as the reader
+ * flow but a different path — Google compares redirect URIs byte for byte, so
+ * the Drive consent request and the token exchange must agree, and must both
+ * differ from the reader callback. Registered in Google Cloud Console as a
+ * separate Authorized redirect URI.
+ */
+export function resolveDriveRedirectUri(event: H3Event): string {
+  const base = configuredBaseUrl() || stripTrailingSlashes(requestBase(event))
+  return `${base}${DRIVE_CALLBACK_PATH}`
 }

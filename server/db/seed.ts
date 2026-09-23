@@ -1,7 +1,7 @@
 import { getDb } from '../utils/db'
 import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories } from '../db/schema'
 import type { BlockData } from '../../app/utils/blocks/types'
 import { eq, asc, sql } from 'drizzle-orm'
 import { CHATBOT_SMALL_TALK_SEED } from '../data/chatbot-small-talk-seed'
@@ -29,6 +29,17 @@ const RESOURCES = [
   // would silently hand citizens' email addresses and posting histories to
   // whoever already held one of those roles.
   'readers', 'comments',
+  // Media portal (add-media-portal, design.md D15). Same reasoning, and it
+  // matters more here: `livestream` controls who can put a broadcast live on a
+  // ministry portal, which is not a capability anyone should acquire by having
+  // been given the news editor role. Comment moderation on media reuses the
+  // existing `comments` resource rather than minting a third.
+  //
+  // Must stay in step with VALID_RESOURCES in server/utils/permissions.ts. Two
+  // lists, and a name in one but not the other is a resource that either cannot
+  // be granted (rejected by the roles endpoint) or is never seeded for
+  // superadmin — both silent.
+  'media_portal', 'livestream',
 ]
 
 // Default categories seeded idempotently (keyed on unique slug).
@@ -58,6 +69,15 @@ const DEFAULT_CATEGORIES = [
   { name: 'Mô hình tái hòa nhập', slug: 'mo-hinh-tai-hoa-nhap', type: 'reintegration', displayOrder: 1 },
   { name: 'Văn bản pháp luật', slug: 'van-ban-phap-luat', type: 'document',      displayOrder: 1, description: 'Tra cứu các chỉ thị, nghị định và chính sách về công tác thi hành án hình sự, hỗ trợ tái hòa nhập cộng đồng' },
   { name: 'Hỏi đáp pháp luật', slug: 'hoi-dap-phap-luat', type: 'faq',           displayOrder: 1, description: 'Ngân hàng câu hỏi, giải đáp về vay vốn và đào tạo nghề, thủ tục tái hòa nhập cộng đồng' },
+]
+
+// Danh mục mặc định cho Media Portal (video). Tách khỏi `DEFAULT_CATEGORIES`
+// (bài viết) — bảng `media_categories` riêng, phẳng.
+const DEFAULT_MEDIA_CATEGORIES = [
+  { name: 'Video hoạt động',    slug: 'video-hoat-dong',    displayOrder: 1, description: 'Video về hoạt động nghiệp vụ, sự kiện của Cục C11 và địa phương' },
+  { name: 'Video hướng dẫn',    slug: 'video-huong-dan',    displayOrder: 2, description: 'Video hướng dẫn thủ tục, quy trình tái hòa nhập cộng đồng' },
+  { name: 'Phóng sự - Tư liệu', slug: 'phong-su-tu-lieu',   displayOrder: 3, description: 'Phóng sự, tư liệu về tấm gương hoàn lương và mô hình tái hòa nhập' },
+  { name: 'Video tuyên truyền', slug: 'video-tuyen-truyen', displayOrder: 4, description: 'Video tuyên truyền pháp luật, phổ biến chính sách' },
 ]
 
 async function seed() {
@@ -211,6 +231,26 @@ async function seed() {
     { key: 'r2_secret_key',    value: '',                                                       group: 'media'   },
     { key: 'r2_bucket',        value: '',                                                       group: 'media'   },
     { key: 'r2_public_url',    value: '',                                                       group: 'media'   },
+    // ── Media Portal (video upload + chuyển mã). Chín khoá, value rỗng = fallback
+    // về env/default. Cán bộ lưu qua /admin/settings/media-portal mới ghi đè.
+    { key: 'media_upload_enabled',             value: '', group: 'media_portal' },
+    { key: 'media_upload_max_size',             value: '', group: 'media_portal' },
+    { key: 'media_upload_chunk_size',           value: '', group: 'media_portal' },
+    { key: 'media_disk_floor_bytes',            value: '', group: 'media_portal' },
+    { key: 'media_session_inactivity_hours',    value: '', group: 'media_portal' },
+    { key: 'media_processing_heartbeat_seconds', value: '', group: 'media_portal' },
+    { key: 'media_processing_stale_minutes',     value: '', group: 'media_portal' },
+    { key: 'media_processing_max_jobs',          value: '', group: 'media_portal' },
+    { key: 'media_processing_max_attempts',      value: '', group: 'media_portal' },
+    // R2 riêng cho video — 6 khoá. Rỗng = chưa cấu hình (provider mặc định 'local').
+    // Secret key mã hoá AES-256-GCM, nhãn `cdkt-video-r2-secret:v1` — xem
+    // `server/utils/media-r2-secret.ts`.
+    { key: 'media_video_storage_provider',      value: '', group: 'media_portal' },
+    { key: 'media_video_r2_account_id',          value: '', group: 'media_portal' },
+    { key: 'media_video_r2_access_key',          value: '', group: 'media_portal' },
+    { key: 'media_video_r2_secret_key',          value: '', group: 'media_portal' },
+    { key: 'media_video_r2_bucket',             value: '', group: 'media_portal' },
+    { key: 'media_video_r2_public_url',          value: '', group: 'media_portal' },
   ]
 
   // Insert-only: preserve administrator-edited settings (hotline, R2 credentials,
@@ -241,6 +281,19 @@ async function seed() {
       slug: c.slug,
       type: c.type,
       parentId: null,
+      description: c.description ?? null,
+      displayOrder: c.displayOrder,
+    }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })
+  }
+
+  // ── Default Media Categories ─────────────────────────────────────────────
+  // Danh mục riêng cho Media Portal (video), tách khỏi `categories` (bài viết).
+  // Insert-only keyed trên unique slug — chạy lại không ghi đè tên/mô tả cán bộ đã sửa.
+  console.log('Creating default media categories...')
+  for (const c of DEFAULT_MEDIA_CATEGORIES) {
+    await db.insert(mediaCategories).values({
+      name: c.name,
+      slug: c.slug,
       description: c.description ?? null,
       displayOrder: c.displayOrder,
     }).onDuplicateKeyUpdate({ set: { slug: keepExisting('slug') } })

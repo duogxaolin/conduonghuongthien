@@ -26,11 +26,11 @@
  * held by a connection rather than a pool, so they need a raw pooled connection
  * — and neither statement touches a date.
  */
-import type { Pool, PoolConnection } from 'mysql2/promise'
 import { and, eq, sql } from 'drizzle-orm'
 import { getDb, getPool } from '../utils/db'
 import { articleViewBoost } from '../db/schema'
 import { addFabricatedViews } from './article-views'
+import { withNamedLock } from '../utils/named-lock'
 import { logError, logInfo } from '../utils/logger'
 
 const LOCK_NAME = 'cdkt:articles:view-boost'
@@ -86,21 +86,6 @@ export function computeBoostDue(job: BoostJob, now: Date): BoostDue {
   return { deliver, done: false }
 }
 
-async function withLock<T>(pool: Pool, action: () => Promise<T>): Promise<T | null> {
-  let connection: PoolConnection | null = null
-  let held = false
-  try {
-    connection = await pool.getConnection()
-    const [rows] = await connection.query('SELECT GET_LOCK(?, ?) AS acquired', [LOCK_NAME, LOCK_TIMEOUT_SECONDS])
-    if (Number((rows as Array<{ acquired?: number }>)[0]?.acquired) !== 1) return null
-    held = true
-    return await action()
-  } finally {
-    if (held && connection) await connection.query('SELECT RELEASE_LOCK(?)', [LOCK_NAME]).catch(() => undefined)
-    connection?.release()
-  }
-}
-
 /** Drizzle maps `datetime({ mode: 'date' })` to a Date, but a driver-level change to string mode must not silently break the schedule. */
 function toDate(value: unknown): Date {
   return value instanceof Date ? value : new Date(String(value))
@@ -124,7 +109,10 @@ export async function runBoostPass(options: RunBoostPassOptions = {}): Promise<B
   if (!pool) return null
   const db = getDb()
 
-  return withLock(pool, async () => {
+  // The lock lives in `server/utils/named-lock.ts`, shared with the two other
+  // schedulers. The name and the timeout are the ones this file always used, so
+  // a cron entry on the older path still cannot deliver a second time.
+  const outcome = await withNamedLock(pool, LOCK_NAME, LOCK_TIMEOUT_SECONDS, async () => {
     const rows = await db
       .select({
         id:            articleViewBoost.id,
@@ -182,6 +170,8 @@ export async function runBoostPass(options: RunBoostPassOptions = {}): Promise<B
     }
     return result
   })
+
+  return outcome.acquired ? outcome.value : null
 }
 
 let timer: ReturnType<typeof setInterval> | null = null

@@ -5,7 +5,8 @@
  * "enabled" means the same thing on both sides: an `active` row exists. Nothing
  * in this module returns secret material to a caller.
  */
-import { and, eq, isNull, sql } from 'drizzle-orm'
+import { and, eq, gt, isNull, lt, or, sql } from 'drizzle-orm'
+import { readAffectedRows } from '../affected-rows'
 import { getDb } from '../db'
 import { userMfaFactors, userRecoveryCodes, users } from '../../db/schema'
 import { verifyPassword } from '../auth'
@@ -51,8 +52,10 @@ export async function getFactor(userId: number, factorType: FactorType): Promise
  * A TOTP row whose secret will not decrypt is excluded here rather than at
  * verification time: after a JWT_SECRET rotation the account must fall back to
  * its other factors instead of being offered one that cannot possibly work.
+ * `active` comes from the same snapshot and remains true for unreadable factors;
+ * callers deciding whether MFA is required must use it, never usable.length.
  */
-export async function usableFactorTypes(userId: number): Promise<FactorType[]> {
+export async function factorAvailability(userId: number): Promise<{ active: boolean; usable: FactorType[] }> {
   const rows = await listFactors(userId)
   const usable: FactorType[] = []
   for (const row of rows) {
@@ -79,7 +82,11 @@ export async function usableFactorTypes(userId: number): Promise<FactorType[]> {
     }
     usable.push(row.factorType as FactorType)
   }
-  return usable
+  return { active: rows.some(row => row.state === 'active'), usable }
+}
+
+export async function usableFactorTypes(userId: number): Promise<FactorType[]> {
+  return (await factorAvailability(userId)).usable
 }
 
 export async function hasAnyActiveFactor(userId: number): Promise<boolean> {
@@ -164,10 +171,16 @@ export async function attemptTotp(userId: number, submitted: string): Promise<Fa
   }
 
   const db = getDb()
-  await db
+  const consumed = await db
     .update(userMfaFactors)
     .set({ lastAcceptedStep: result.step, lastUsedAt: new Date() })
-    .where(eq(userMfaFactors.id, row.id))
+    .where(and(
+      eq(userMfaFactors.id, row.id),
+      eq(userMfaFactors.state, 'active'),
+      eq(userMfaFactors.secretCiphertext, row.secretCiphertext!),
+      or(isNull(userMfaFactors.lastAcceptedStep), lt(userMfaFactors.lastAcceptedStep, result.step)),
+    ))
+  if (readAffectedRows(consumed) !== 1) return { ok: false, reason: 'mismatch' }
   return { ok: true, method: 'totp' }
 }
 
@@ -182,10 +195,17 @@ export async function attemptEmailCode(userId: number, submitted: string): Promi
   if (!row.pendingCodeHash) return { ok: false, reason: 'expired' }
 
   const db = getDb()
+  // Every write is fenced to this issuance. A slow verifier must never consume
+  // or clear a replacement code, or spend a code already used by another request.
+  const sameCode = and(
+    eq(userMfaFactors.id, row.id),
+    eq(userMfaFactors.state, 'active'),
+    eq(userMfaFactors.pendingCodeHash, row.pendingCodeHash),
+  )
   const clearCode = () => db
     .update(userMfaFactors)
     .set({ pendingCodeHash: null, pendingCodeExpiresAt: null, pendingCodeAttempts: 0 })
-    .where(eq(userMfaFactors.id, row.id))
+    .where(sameCode)
 
   if (isExpired(row.pendingCodeExpiresAt)) {
     await clearCode()
@@ -201,14 +221,19 @@ export async function attemptEmailCode(userId: number, submitted: string): Promi
     await db
       .update(userMfaFactors)
       .set({ pendingCodeAttempts: sql`${userMfaFactors.pendingCodeAttempts} + 1` })
-      .where(eq(userMfaFactors.id, row.id))
+      .where(and(sameCode, lt(userMfaFactors.pendingCodeAttempts, EMAIL_CODE_MAX_ATTEMPTS)))
     return { ok: false, reason: 'mismatch' }
   }
 
-  await db
+  const consumed = await db
     .update(userMfaFactors)
     .set({ pendingCodeHash: null, pendingCodeExpiresAt: null, pendingCodeAttempts: 0, lastUsedAt: new Date() })
-    .where(eq(userMfaFactors.id, row.id))
+    .where(and(
+      sameCode,
+      gt(userMfaFactors.pendingCodeExpiresAt, new Date()),
+      lt(userMfaFactors.pendingCodeAttempts, EMAIL_CODE_MAX_ATTEMPTS),
+    ))
+  if (readAffectedRows(consumed) !== 1) return { ok: false, reason: 'mismatch' }
   return { ok: true, method: 'email_otp' }
 }
 
@@ -242,10 +267,11 @@ export async function attemptRecoveryCode(userId: number, submitted: string): Pr
   for (const row of rows) {
     if (!(await verifyOneTimeCode(normalized, row.codeHash))) continue
     // Guarded on usedAt so two concurrent submissions cannot both spend it.
-    await db
+    const consumed = await db
       .update(userRecoveryCodes)
       .set({ usedAt: new Date() })
       .where(and(eq(userRecoveryCodes.id, row.id), isNull(userRecoveryCodes.usedAt)))
+    if (readAffectedRows(consumed) !== 1) return { ok: false, reason: 'mismatch' }
     return { ok: true, method: 'recovery_code' }
   }
   return { ok: false, reason: 'mismatch' }

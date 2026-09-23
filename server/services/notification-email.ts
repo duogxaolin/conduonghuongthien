@@ -17,12 +17,12 @@
 import { eq, sql } from 'drizzle-orm'
 
 import { getDb } from '../utils/db'
-import { articleComments, articles, readerAccounts } from '../db/schema'
+import { articleComments, articles, mediaItems, readerAccounts } from '../db/schema'
 import { getSmtpConfig, sendMail } from '../utils/mailer'
 import { escapeHtml } from '../utils/escape-html'
 import { logError } from '../utils/logger'
 import { configuredBaseUrl } from '../utils/google-oauth/config'
-import { buildExcerpt, notificationTargetPage } from './notifications'
+import { buildExcerpt, notificationTargetPage, notificationUrl, sameItemPredicate } from './notifications'
 
 /** Longer than the dropdown excerpt: an email is read once, away from the portal,
  *  and a two-line teaser makes the reader open the site to find out what was
@@ -82,6 +82,7 @@ export async function sendReplyEmail(input: ReplyEmailInput): Promise<boolean> {
         body:        articleComments.body,
         adminUserId: articleComments.adminUserId,
         articleId:   articleComments.articleId,
+        mediaItemId: articleComments.mediaItemId,
         readerName:       readerAccounts.displayName,
         readerCustomName: readerAccounts.customDisplayName,
       })
@@ -92,19 +93,22 @@ export async function sendReplyEmail(input: ReplyEmailInput): Promise<boolean> {
 
     if (!reply) return false
 
-    const [article] = await db
-      .select({
-        title:           articles.title,
-        slug:            articles.slug,
-        status:          articles.status,
-        commentsEnabled: articles.commentsEnabled,
-      })
-      .from(articles)
-      .where(eq(articles.id, reply.articleId))
-      .limit(1)
-
-    // No point mailing a link to a thread the reader cannot open.
-    if (!article?.slug || article.status !== 'published' || !article.commentsEnabled) return false
+    /**
+     * Which item the reply lives on, and whether it can still be opened.
+     *
+     * NOT `if (reply.articleId === null) return false`. A media comment has
+     * `article_id = NULL`, so that guard — which was correct while articles were
+     * the only kind — silently returns false for every media reply, and the
+     * feature reads as "email notifications just do not work for videos" with
+     * nothing logged anywhere. The test is "no item at all", not "no article".
+     *
+     * `resolveMailTarget` also enforces the three readability conditions the
+     * article path always had: a slug to build the path from, a published item,
+     * and commenting still enabled. Mailing a link to a thread the reader cannot
+     * open is worse than sending nothing.
+     */
+    const target = await resolveMailTarget(reply)
+    if (!target) return false
 
     // Same ordering loadCommentThread uses, so the page in the link is the page
     // the comment is actually on. Returns null when the parent is gone.
@@ -122,7 +126,12 @@ export async function sendReplyEmail(input: ReplyEmailInput): Promise<boolean> {
      * everyone.
      */
     const base = configuredBaseUrl()
-    const path = `/news/${article.slug}${page > 1 ? `?comments=${page}` : ''}#comment-${input.parentId}`
+    const path = notificationUrl({
+      kind:      target.kind,
+      slug:      target.slug,
+      page,
+      commentId: input.parentId,
+    })
     const url = base ? `${base}${path}` : ''
 
     const isAdminReply = reply.adminUserId !== null
@@ -137,7 +146,7 @@ export async function sendReplyEmail(input: ReplyEmailInput): Promise<boolean> {
       : `[Con Đường Hướng Thiện] ${authorName} đã trả lời bình luận của bạn`
 
     const lines = [
-      `${authorName} đã trả lời bình luận của bạn trong bài viết "${article.title}".`,
+      `${authorName} đã trả lời bình luận của bạn trong ${target.noun} "${target.title}".`,
       '',
       excerpt,
       '',
@@ -154,8 +163,8 @@ export async function sendReplyEmail(input: ReplyEmailInput): Promise<boolean> {
       <div style="font-family:Arial,sans-serif;max-width:600px;color:#1E251C;">
         <h2 style="color:#4A6741;font-size:18px;margin:0 0 16px;">Có người trả lời bình luận của bạn</h2>
         <p style="margin:0 0 12px;font-size:14px;color:#4A5545;">
-          <strong>${escapeHtml(authorName)}</strong> đã trả lời bình luận của bạn trong bài viết
-          &ldquo;${escapeHtml(article.title ?? '')}&rdquo;.
+          <strong>${escapeHtml(authorName)}</strong> đã trả lời bình luận của bạn trong ${escapeHtml(target.noun)}
+          &ldquo;${escapeHtml(target.title)}&rdquo;.
         </p>
         <blockquote style="margin:0 0 16px;padding:12px 16px;border-left:3px solid #7CB342;background:#F4F9F0;font-size:14px;color:#2C3529;white-space:pre-wrap;">${escapeHtml(excerpt)}</blockquote>
         ${url
@@ -179,8 +188,78 @@ export async function sendReplyEmail(input: ReplyEmailInput): Promise<boolean> {
 }
 
 /**
- * Top-level comments on the same article that sort before `parentId`, using the
- * same `(created_at, id)` ordering the thread pages by.
+ * The item a reply lives on, resolved to what the email needs: where to point,
+ * what to call it, and what to name it in a sentence.
+ *
+ * Null means "do not mail about this" — no item at all, the item is gone, it is
+ * not published, or its commenting has since been turned off. Every one of those
+ * is a normal outcome rather than an error, which is why this returns null and
+ * not a thrown failure: the reply is already committed, and the in-portal
+ * notification already recorded it.
+ *
+ * The article branch reads exactly the three columns the old inline check read,
+ * so the article path keeps its behaviour. The media branch applies the SAME
+ * three conditions to `media_items` — published, commenting enabled, a slug to
+ * build the path from — because the reason a link is worth mailing does not
+ * depend on which table the item lives in.
+ */
+async function resolveMailTarget(reply: {
+  articleId:   number | null
+  mediaItemId: number | null
+}): Promise<{ kind: 'article' | 'media', slug: string, title: string, noun: string } | null> {
+  const db = getDb()
+
+  if (reply.articleId !== null) {
+    const [article] = await db
+      .select({
+        title:           articles.title,
+        slug:            articles.slug,
+        status:          articles.status,
+        commentsEnabled: articles.commentsEnabled,
+      })
+      .from(articles)
+      .where(eq(articles.id, reply.articleId))
+      .limit(1)
+
+    if (!article?.slug || article.status !== 'published' || !article.commentsEnabled) return null
+
+    return { kind: 'article', slug: article.slug, title: article.title ?? '', noun: 'bài viết' }
+  }
+
+  if (reply.mediaItemId !== null) {
+    const [item] = await db
+      .select({
+        title:           mediaItems.title,
+        slug:            mediaItems.slug,
+        // URL công khai của media giờ là `short_id`; `slug` vẫn select để kiểm
+        // item còn (non-null) — nhưng đường dẫn trong email đi theo `short_id`.
+        shortId:         mediaItems.shortId,
+        status:          mediaItems.status,
+        commentsEnabled: mediaItems.commentsEnabled,
+      })
+      .from(mediaItems)
+      .where(eq(mediaItems.id, reply.mediaItemId))
+      .limit(1)
+
+    if (!item?.shortId || item.status !== 'published' || !item.commentsEnabled) return null
+
+    return { kind: 'media', slug: item.shortId, title: item.title ?? '', noun: 'video' }
+  }
+
+  // Neither identifier set. The XOR invariant says this cannot happen, but the
+  // shape that would result from assuming it — `articleId as number` — is a query
+  // for article 0 that finds nothing and reads as "the article was deleted".
+  return null
+}
+
+/**
+ * Top-level comments on the same item that sort before `parentId`, using the same
+ * `(created_at, id)` ordering the thread pages by.
+ *
+ * "Same item" is the shared `sameItemPredicate()` — the identical SQL the
+ * notification list counts with. Two copies would be two chances to scope by the
+ * wrong column, and this copy is the one nobody looks at: a wrong page number in
+ * an email is only ever discovered by a reader who followed it.
  *
  * Null when the parent row is gone — distinct from 0, which means "it is the
  * first comment". Collapsing the two would send a link to page 1 of a thread the
@@ -191,7 +270,7 @@ async function countOlderTopLevel(parentId: number): Promise<number | null> {
     .select({
       olderCount: sql<number>`(
         SELECT COUNT(*) FROM \`article_comments\` \`older\`
-        WHERE \`older\`.\`article_id\` = \`article_comments\`.\`article_id\`
+        WHERE ${sameItemPredicate()}
           AND \`older\`.\`parent_id\` IS NULL
           AND (
             \`older\`.\`created_at\` < \`article_comments\`.\`created_at\`

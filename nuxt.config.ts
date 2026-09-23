@@ -56,7 +56,7 @@ const fontLinks = existsSync(selfHostedFontCss)
  * tests/asset-pipeline.test.ts fails if a template starts using a family that
  * is not listed here — otherwise those icons would silently render as blanks.
  */
-const ICON_FAMILIES = ['solid', 'regular']
+const ICON_FAMILIES = ['solid', 'regular', 'brands']
 const iconLinks = ['fontawesome', ...ICON_FAMILIES].map(name => ({
   rel: 'stylesheet' as const,
   href: `/assets/fontawesome/css/${name}.min.css`,
@@ -136,6 +136,18 @@ export default defineNuxtConfig({
     // mục mới, và mọi khách thấy cùng một danh sách nên không có gì riêng tư để
     // rò rỉ qua bộ nhớ đệm.
     '/qa-documents': { swr: 60 },
+    // Thư viện video công khai. Cùng lý do như `/qa-documents`: mọi khách thấy
+    // cùng một danh sách, và nội dung chỉ đổi khi cán bộ xuất bản một mục mới.
+    //
+    // **Đây là ràng buộc an toàn, không phải một lựa chọn hiệu năng.** Cửa sổ 60
+    // giây này là lý do mọi thứ mang danh tính người đọc trên `/media/**` phải
+    // nạp **sau khi mount** từ trình duyệt — luồng bình luận, và cờ `canDelete`
+    // nói bình luận nào là của người đang xem. Một khối dựng phía máy chủ sẽ được
+    // phát lại cho người kế tiếp ghé vào trong cùng cửa sổ đó, kèm nút xoá của
+    // người này trên bình luận của người khác. Trạng thái "đang phát trực tiếp"
+    // cũng đi cùng đường: nó do trình duyệt hỏi sau mount.
+    '/media': { swr: 60 },
+    '/media/**': { swr: 60 },
     // `/assistant` is deliberately absent. Its server-rendered output is an empty
     // shell — the conversation list, transcript and quick questions are all
     // fetched or read from localStorage on the client — so an SWR window would

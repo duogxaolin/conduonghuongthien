@@ -1,0 +1,177 @@
+<script setup lang="ts">
+import type { AdminMediaItem, AdminMediaConfig } from '~/types/admin-api'
+import { mediaProcessingMessage } from '../../../composables/mediaProcessingMessage'
+definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
+const { hasPermission, user } = useAdminAuth()
+const canUploadDenied = ref(false)
+const canUpload = computed(() => {
+  if (canUploadDenied.value) return false
+  if (!user.value) return true
+  return hasPermission('media_portal', 'create') && hasPermission('media_portal', 'read')
+})
+const config = ref<AdminMediaConfig | null>(null)
+const loading = ref(true)
+const loadError = ref('')
+
+// ─── Post-upload: timeline xử lý hiện ngay trên trang ─────────────────────────
+// Trước đây upload xong redirect thẳng tới `/admin/media-portal/{id}`. Anh muốn
+// thấy tiến trình xử lý (7 bước) ngay tại đây thay vì phải bấm vào trang chi tiết.
+// Cùng pattern poll như `[id].vue`: fetch item mỗi 3 giây khi pending/processing.
+const uploadedItem = ref<AdminMediaItem | null>(null)
+const progressError = ref('')
+let timer: ReturnType<typeof setTimeout> | undefined
+let controller: AbortController | undefined
+let stopped = false
+
+const isPending = computed(() => uploadedItem.value?.processingStatus === 'pending' || uploadedItem.value?.processingStatus === 'processing')
+const progressLabel = computed(() => {
+  const s = uploadedItem.value?.processingStatus
+  if (s === 'ready') return 'Video đã sẵn sàng.'
+  if (s === 'processing') return 'Đang xử lý video. Bạn có thể chỉnh sửa thông tin ở trang chi tiết.'
+  if (s === 'failed') return mediaProcessingMessage(uploadedItem.value?.processingError)
+  return 'Video đang chờ xử lý.'
+})
+
+function schedulePoll() {
+  clearTimeout(timer)
+  if (!stopped && isPending.value) timer = setTimeout(refreshProcessing, 3000)
+}
+async function refreshProcessing() {
+  clearTimeout(timer)
+  progressError.value = ''
+  controller?.abort()
+  controller = new AbortController()
+  const signal = controller.signal
+  if (!uploadedItem.value) return
+  try {
+    const response = await $fetch(`/api/admin/media-portal/${uploadedItem.value.id}`, { signal })
+    if (stopped || signal.aborted) return
+    uploadedItem.value = response.item
+    schedulePoll()
+  } catch {
+    if (!stopped && !signal.aborted) progressError.value = 'Không cập nhật được trạng thái xử lý.'
+  }
+}
+
+async function load() {
+  loading.value = true
+  loadError.value = ''
+  canUploadDenied.value = false
+  try {
+    config.value = await $fetch('/api/admin/media-portal/config')
+  } catch (err: unknown) {
+    const status = (err as { status?: number, statusCode?: number })?.statusCode || (err as { status?: number })?.status
+    if (status === 403) {
+      canUploadDenied.value = true
+    } else {
+      loadError.value = 'Không kiểm tra được khả năng tải video của máy chủ.'
+    }
+  } finally {
+    loading.value = false
+  }
+}
+
+function onUploaded(result: { mediaItemId: number }) {
+  return navigateTo(`/admin/media-portal/${result.mediaItemId}`)
+}
+
+function openDetail() { return navigateTo(`/admin/media-portal/${uploadedItem.value?.id}`) }
+function uploadAnother() {
+  uploadedItem.value = null
+  progressError.value = ''
+  clearTimeout(timer)
+}
+function close() { return navigateTo('/admin/media-portal') }
+
+onMounted(load)
+onBeforeUnmount(() => { stopped = true; clearTimeout(timer); controller?.abort() })
+</script>
+
+<template>
+  <div class="mx-auto max-w-3xl space-y-6">
+    <NuxtLink to="/admin/media-portal" class="inline-flex items-center gap-1.5 text-sm font-medium text-[#2c6e33] hover:text-[#245830] transition-colors">
+      <i class="fa-solid fa-arrow-left text-xs" aria-hidden="true"></i>
+      Quay lại thư viện video
+    </NuxtLink>
+
+    <!-- Tiêu đề trang -->
+    <div class="flex items-start gap-4">
+      <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl bg-[#e8f0e8] text-[#2c6e33]">
+        <i class="fa-solid fa-cloud-arrow-up text-xl" aria-hidden="true"></i>
+      </div>
+      <div>
+        <h1 class="text-2xl font-bold text-[#122815] leading-tight">Tải video lên</h1>
+        <p class="text-sm text-[#667768] mt-1">Tải tệp video lên máy chủ, hệ thống tự nén 360/720/1080p ở nền và xuất bản khi sẵn sàng.</p>
+      </div>
+    </div>
+
+    <!-- Phase 1: Kiểm tra khả năng tải + uploader -->
+    <template v-if="!uploadedItem">
+      <div v-if="loading" role="status" aria-busy="true"><span class="sr-only">Đang kiểm tra khả năng tải lên</span><SkeletonForm label="Đang kiểm tra khả năng tải lên" :fields="1" /></div>
+      <div v-else-if="loadError" role="alert" class="rounded-xl bg-red-50 p-4 text-red-800 border border-red-100">
+        <p class="flex items-start gap-2 m-0"><i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i><span>{{ loadError }} <button class="font-semibold underline ml-1" @click="load()">Thử lại</button></span></p>
+      </div>
+      <div v-else-if="!canUpload" role="alert" class="rounded-xl bg-amber-50 p-4 border border-amber-100">
+        <p class="flex items-start gap-2 m-0 text-amber-800"><i class="fa-solid fa-lock mt-0.5" aria-hidden="true"></i><span>Bạn cần quyền tạo và xem video để tải lên và theo dõi tiến độ.</span></p>
+      </div>
+      <div v-else-if="!config?.uploadEnabled" role="status" class="rounded-xl bg-amber-50 p-4 border border-amber-100">
+        <p class="flex items-start gap-2 m-0 text-amber-800"><i class="fa-solid fa-circle-info mt-0.5" aria-hidden="true"></i><span>Máy chủ hiện chưa bật tải video. Bạn vẫn có thể đăng video YouTube.</span></p>
+      </div>
+      <AdminChunkedUploader v-else :open="true" :max-upload-size="config.maxUploadSize" @uploaded="onUploaded" @close="close" />
+    </template>
+
+    <!-- Phase 2: Timeline xử lý sau khi upload xong -->
+    <template v-else>
+      <div class="rounded-2xl border border-[#e2ece3] bg-white p-6 space-y-5 shadow-sm">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
+          <h2 class="text-lg font-bold text-[#122815] m-0 flex items-center gap-2">
+            <i class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
+            Đã tải lên xong
+          </h2>
+          <span
+            class="inline-flex items-center gap-1.5 rounded-full px-3 py-1 text-xs font-bold"
+            :class="{
+              'bg-[#e8f0e8] text-[#2c6e33]': uploadedItem.processingStatus === 'ready',
+              'bg-amber-100 text-amber-700': isPending,
+              'bg-red-100 text-red-700': uploadedItem.processingStatus === 'failed',
+              'bg-gray-100 text-gray-600': uploadedItem.processingStatus === 'pending' && !isPending,
+            }"
+          >
+            <span v-if="isPending" class="h-1.5 w-1.5 rounded-full bg-amber-500 animate-pulse motion-reduce:animate-none"></span>
+            {{ progressLabel }}
+          </span>
+        </div>
+
+        <AdminMediaProcessingTimeline :item="uploadedItem" />
+
+        <p v-if="progressError" role="alert" class="rounded-lg bg-red-50 p-3 text-sm text-red-800">{{ progressError }} <button class="underline font-semibold" @click="refreshProcessing()">Thử lại</button></p>
+
+        <!-- Hành động -->
+        <div class="flex flex-wrap items-center gap-3 border-t border-[#eef2ee] pt-4">
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2 text-sm font-bold text-white cursor-pointer border-0 hover:bg-[#2c6e33] transition-colors focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
+            @click="openDetail()"
+          >
+            <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i>
+            Mở trang chỉnh sửa
+          </button>
+          <button
+            v-if="uploadedItem.processingStatus === 'ready'"
+            type="button"
+            class="inline-flex items-center gap-2 rounded-lg border border-[#c8d6c9] px-4 py-2 text-sm font-semibold text-[#2c3e2e] cursor-pointer bg-white hover:bg-[#f8faf8] transition-colors focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:ring-offset-2"
+            @click="uploadAnother()"
+          >
+            <i class="fa-solid fa-upload" aria-hidden="true"></i>
+            Tải video khác
+          </button>
+        </div>
+
+        <p class="text-xs text-[#8aa08c] m-0 flex items-center gap-1.5">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          Trạng thái cập nhật tự động. Bạn có thể rời trang — xử lý tiếp tục ở máy chủ.
+        </p>
+      </div>
+    </template>
+  </div>
+</template>

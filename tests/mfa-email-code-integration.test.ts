@@ -47,6 +47,7 @@ test('an emailed code is single-use, expiring, attempt-capped, and replaced on r
     DB_USER: user,
     DB_PASSWORD: password,
     DB_NAME: database,
+    JWT_SECRET: 'mfa-integration-only-key-that-never-leaves-this-process',
   })
 
   try {
@@ -54,9 +55,9 @@ test('an emailed code is single-use, expiring, attempt-capped, and replaced on r
     await initDb()
 
     const { getDb } = await import('../server/utils/db')
-    const { userMfaFactors, users } = await import('../server/db/schema')
+    const { userMfaFactors, userRecoveryCodes, users } = await import('../server/db/schema')
     const { eq } = await import('drizzle-orm')
-    const { attemptEmailCode } = await import('../server/utils/mfa/factors')
+    const { attemptEmailCode, attemptTotp, attemptRecoveryCode } = await import('../server/utils/mfa/factors')
     const { issueEmailCode } = await import('../server/utils/mfa/email-code')
     const {
       EMAIL_CODE_MAX_ATTEMPTS,
@@ -197,12 +198,37 @@ test('an emailed code is single-use, expiring, attempt-capped, and replaced on r
       await issueEmailCode({ factorId, email: null, username: account!.username, purpose: 'login' }),
       { ok: false, reason: 'no-email' },
     )
+
+    // Real concurrent database clients must have exactly one successful spender.
+    // The deterministic unit suite additionally forces identical read snapshots.
+    await plant('888888', live())
+    const emailRace = await Promise.all(Array.from({ length: 8 }, () => attemptEmailCode(userId, '888888')))
+    assert.equal(emailRace.filter(result => result.ok).length, 1, 'email race has one winner')
+
+    await db.insert(userRecoveryCodes).values({
+      userId, codeHash: await hashOneTimeCode('ABCDE23456'), batchId: 'concurrent-test',
+    })
+    const recoveryRace = await Promise.all(Array.from({ length: 8 }, () => attemptRecoveryCode(userId, 'ABCDE-23456')))
+    assert.equal(recoveryRace.filter(result => result.ok).length, 1, 'recovery race has one winner')
+
+    const { generateTotpSecret, totpCode } = await import('../server/utils/mfa/totp')
+    const { sealTotpSecret } = await import('../server/utils/mfa/crypto')
+    const secret = generateTotpSecret()
+    const sealed = sealTotpSecret(secret)
+    await db.insert(userMfaFactors).values({
+      userId, factorType: 'totp', state: 'active',
+      secretCiphertext: sealed.ciphertext, secretNonce: sealed.nonce,
+      secretAuthTag: sealed.authTag, secretVersion: sealed.version, secretKeyId: sealed.keyId,
+    })
+    const code = totpCode(secret)
+    const totpRace = await Promise.all(Array.from({ length: 8 }, () => attemptTotp(userId, code)))
+    assert.equal(totpRace.filter(result => result.ok).length, 1, 'TOTP race has one winner')
   } finally {
     // getDb() caches a pool with no exported teardown; left open it holds the
     // test runner's event loop past the last assertion.
     const { getPool } = await import('../server/utils/db')
     await getPool()?.end()
-    for (const key of ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME']) {
+    for (const key of ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME', 'JWT_SECRET']) {
       if (previous[key] === undefined) delete process.env[key]
       else process.env[key] = previous[key]
     }

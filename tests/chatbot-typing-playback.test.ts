@@ -4,7 +4,8 @@ import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 import { nextTick, ref, watchEffect } from 'vue'
 
-import { playTypewriter, normalizeSource, TYPEWRITER_MAX_MS, TYPEWRITER_WORD_DELAY_MS, type ChatMessage } from '../app/composables/useChatbot'
+import { normalizeSource, type ChatMessage } from '../app/composables/useChatbot'
+import { playTypewriter, TYPEWRITER_MAX_MS, TYPEWRITER_WORD_DELAY_MS } from '../app/composables/useChatbotTypewriter'
 
 /**
  * The waiting/typing indicator and the reveal animation, tested by *running*

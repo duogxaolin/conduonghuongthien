@@ -61,3 +61,33 @@ export type ReaderCommentsPayload = Payload<ReaderCommentsHandler>
 
 type ReaderChatsHandler = typeof import('~~/server/api/public/reader/chats.get').default
 export type ReaderChatsPayload = Payload<ReaderChatsHandler>
+
+// ─── Thư viện video công khai ────────────────────────────────────────────────
+// Suy từ handler như mọi thứ khác ở tệp này. Điều đáng nói ở đây là **hai** lượt
+// suy cho **hai** endpoint, và chúng không được trộn: danh sách trả `items` còn
+// chi tiết trả `item`, nên một kiểu dùng chung sẽ buộc một trong hai phải có một
+// trường nó không bao giờ có.
+//
+// Trường đáng chú ý nhất là `playable`. Nó **không** suy được ở phía giao diện:
+// điều kiện là `resolutions_ready` có phần tử và trạng thái không phải `failed`,
+// mà `resolutions_ready` bị `serializePublicMedia` cố ý loại khỏi projection công
+// khai. Trình phát vì thế đọc `playable` chứ không tự đoán từ `streamUrl` — hai
+// trường đó được máy chủ đặt cạnh nhau và phải được đọc cạnh nhau.
+
+type MediaListHandler = typeof import('~~/server/api/public/media/index.get').default
+export type MediaListPayload = Payload<MediaListHandler>
+export type PublicMediaListItem = MediaListPayload['items'][number]
+
+type MediaDetailHandler = typeof import('~~/server/api/public/media/[shortId].get').default
+export type MediaDetailPayload = Payload<MediaDetailHandler>
+
+/**
+ * Một mục media như trang chi tiết nhận được.
+ *
+ * Lấy từ `item` của payload chi tiết, không import `PublicMediaItem` từ
+ * `server/services/media-portal`: kiểu bên đó là hình dạng **trước** khi qua
+ * JSON. Hôm nay hai hình dạng trùng nhau (mọi trường đều đã là kiểu nguyên thuỷ
+ * hoặc `null`), nhưng `Serialize` là thứ đang giữ chúng trùng — bỏ nó đi thì một
+ * trường `Date` thêm sau này sẽ được khai đúng ở đây và sai ở đó.
+ */
+export type PublicMediaItem = NonNullable<MediaDetailPayload['item']>

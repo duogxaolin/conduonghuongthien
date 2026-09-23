@@ -9,7 +9,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event).catch(() => ({}))
   const name = String(body?.name || '').trim()
   const description = String(body?.description || '').trim() || null
-  const permsInput = Array.isArray(body?.permissions) ? body.permissions : []
+  const permsInput = assertAssignablePermissions(adminUser, body?.permissions === undefined ? [] : body.permissions)
 
   if (!name || name.length < 2) {
     throw createError({ statusCode: 400, statusMessage: 'Tên vai trò phải từ 2 ký tự trở lên.' })
@@ -37,15 +37,7 @@ export default defineEventHandler(async (event) => {
 
     if (permsInput.length > 0) {
       // Reject invalid resources and block granting permissions the actor lacks.
-      assertAssignablePermissions(adminUser, permsInput)
-      const permValues = (permsInput as Array<Record<string, unknown>>).map(p => ({
-        roleId: created,
-        resource: String(p.resource),
-        canCreate: Boolean(p.canCreate),
-        canRead: Boolean(p.canRead),
-        canUpdate: Boolean(p.canUpdate),
-        canDelete: Boolean(p.canDelete),
-      }))
+      const permValues = permsInput.map(p => ({ ...p, roleId: created }))
       await tx.insert(permissions).values(permValues)
     }
 

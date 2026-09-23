@@ -6,7 +6,7 @@
  */
 import { finitePositive } from '../../../utils/query-number'
 import { requireResourcePermission } from '../../../utils/permissions'
-import { auditCommentRead, listCommentsForAdmin, COMMENT_MAX_PER_PAGE } from '../../../services/comments'
+import { auditCommentRead, listCommentsForAdmin, COMMENT_MAX_PER_PAGE, parseCommentSource } from '../../../services/comments'
 
 
 export default defineEventHandler(async (event) => {
@@ -26,12 +26,16 @@ export default defineEventHandler(async (event) => {
 
   const page = finitePositive(query.page, 1, 100_000)
   const perPage = finitePositive(query.perPage, 25, COMMENT_MAX_PER_PAGE)
+  const source = parseCommentSource(query.source)
+  if (!source.ok) {
+    throw createError({ statusCode: 400, statusMessage: 'Nguồn bình luận không hợp lệ.' })
+  }
 
-  const result = await listCommentsForAdmin({ articleId, page, perPage })
+  const result = await listCommentsForAdmin({ articleId, source: source.source, page, perPage })
 
   await auditCommentRead({
     actorId: actor.id,
-    meta:    { operation: 'list', articleId, page, perPage, returned: result.comments.length },
+    meta:    { operation: 'list', articleId, source: source.source, page, perPage, returned: result.comments.length },
   })
 
   return { ok: true, ...result }

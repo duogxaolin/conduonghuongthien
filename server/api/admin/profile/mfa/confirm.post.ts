@@ -6,7 +6,8 @@
  * for it to catch a typo before it becomes a login requirement.
  */
 
-import { eq, sql } from 'drizzle-orm'
+import { and, eq, gt, lt, sql } from 'drizzle-orm'
+import { readAffectedRows } from '../../../../utils/affected-rows'
 import { getDb } from '../../../../utils/db'
 import { userMfaFactors, users, activityLogs } from '../../../../db/schema'
 import { verifyPassword } from '../../../../utils/auth'
@@ -35,10 +36,18 @@ export default defineEventHandler(async (event) => {
   }
 
   const db = getDb()
+  const pendingSnapshot = and(
+    eq(userMfaFactors.id, row.id),
+    eq(userMfaFactors.state, 'pending'),
+    row.pendingExpiresAt ? eq(userMfaFactors.pendingExpiresAt, row.pendingExpiresAt) : undefined,
+    row.secretCiphertext ? eq(userMfaFactors.secretCiphertext, row.secretCiphertext) : undefined,
+    row.passwordHash ? eq(userMfaFactors.passwordHash, row.passwordHash) : undefined,
+    row.pendingCodeHash ? eq(userMfaFactors.pendingCodeHash, row.pendingCodeHash) : undefined,
+  )
   // The enrollment window has lapsed: drop the pending row rather than letting a
   // stale secret sit in the database indefinitely.
   if (isExpired(row.pendingExpiresAt)) {
-    await db.delete(userMfaFactors).where(eq(userMfaFactors.id, row.id))
+    await db.delete(userMfaFactors).where(pendingSnapshot)
     throw createError({ statusCode: 400, statusMessage: 'Yêu cầu đã hết hiệu lực. Vui lòng bật lại phương thức này.' })
   }
 
@@ -55,7 +64,7 @@ export default defineEventHandler(async (event) => {
       keyId: row.secretKeyId ?? undefined,
     })
     if (!opened.ok) {
-      await db.delete(userMfaFactors).where(eq(userMfaFactors.id, row.id))
+      await db.delete(userMfaFactors).where(pendingSnapshot)
       throw createError({ statusCode: 500, statusMessage: 'Không đọc được secret đã lưu. Vui lòng bật lại phương thức này.' })
     }
     const result = verifyTotp(opened.secret, code)
@@ -67,14 +76,14 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 400, statusMessage: 'Mã đã hết hiệu lực. Vui lòng bật lại phương thức này để nhận mã mới.' })
     }
     if ((row.pendingCodeAttempts ?? 0) >= EMAIL_CODE_MAX_ATTEMPTS) {
-      await db.delete(userMfaFactors).where(eq(userMfaFactors.id, row.id))
+      await db.delete(userMfaFactors).where(pendingSnapshot)
       throw createError({ statusCode: 400, statusMessage: 'Nhập sai quá nhiều lần. Vui lòng bật lại phương thức này.' })
     }
     if (!(await verifyOneTimeCode(code, row.pendingCodeHash))) {
       await db
         .update(userMfaFactors)
         .set({ pendingCodeAttempts: sql`${userMfaFactors.pendingCodeAttempts} + 1` })
-        .where(eq(userMfaFactors.id, row.id))
+        .where(and(pendingSnapshot, lt(userMfaFactors.pendingCodeAttempts, EMAIL_CODE_MAX_ATTEMPTS)))
       throw createError({ statusCode: 400, statusMessage: 'Mã xác thực không đúng. Vui lòng thử lại.' })
     }
   } else {
@@ -83,7 +92,7 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  await db
+  const activated = await db
     .update(userMfaFactors)
     .set({
       state: 'active',
@@ -94,7 +103,15 @@ export default defineEventHandler(async (event) => {
       lastAcceptedStep: acceptedStep,
       lastUsedAt: new Date(),
     })
-    .where(eq(userMfaFactors.id, row.id))
+    .where(and(
+      pendingSnapshot,
+      gt(userMfaFactors.pendingExpiresAt, new Date()),
+      factorType === 'email_otp' ? gt(userMfaFactors.pendingCodeExpiresAt, new Date()) : undefined,
+      factorType === 'email_otp' ? lt(userMfaFactors.pendingCodeAttempts, EMAIL_CODE_MAX_ATTEMPTS) : undefined,
+    ))
+  if (readAffectedRows(activated) !== 1) {
+    throw createError({ statusCode: 409, statusMessage: 'Yêu cầu xác thực đã thay đổi hoặc hết hạn. Vui lòng thử lại.' })
+  }
 
   // Enabling a factor revokes other live sessions, then re-issues this one.
   const tokenVersion = await revokeSessions(admin.id)

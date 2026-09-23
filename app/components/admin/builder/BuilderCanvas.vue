@@ -96,6 +96,36 @@ const plainVisibleBlocks = () =>
 const pushBlocks = () => { if (ready.value) postToFrame({ type: 'cdkt:blocks', blocks: plainVisibleBlocks() }) }
 const pushSelection = () => { if (ready.value) postToFrame({ type: 'cdkt:select', id: props.selectedId }) }
 
+/**
+ * Cuộn **stage** (container cha của iframe, đang scale) để khối được chọn nằm trong
+ * tầm nhìn. `scrollIntoView` bên trong iframe chỉ cuộn nội dung iframe, không cuộn
+ * stage bên ngoài — nên một khối ở đáy trang vẫn nằm ngoài viewport của stage.
+ *
+ * Đo vị trí thực của khối trong `contentDocument` (same-origin nên truy cập được),
+ * nhân với `scale` để ra toạ độ trong không gian stage, rồi cuộn stage tới đó.
+ */
+const scrollStageToSelected = () => {
+  const frame = frameRef.value
+  const stage = stageRef.value
+  if (!frame || !stage) return
+  const doc = frame.contentDocument
+  if (!doc) return
+  const id = props.selectedId
+  if (id == null) return
+  const block = doc.querySelector(`[data-block-id="${id}"]`) as HTMLElement | null
+  if (!block) return
+  // Vị trí khối trong hệ toạ độ iframe (chưa scale).
+  const blockTop = block.offsetTop
+  const blockBottom = blockTop + block.offsetHeight
+  // Chuyển sang hệ stage (đã scale) — iframe đặt tại top-0 của wrapper scaled.
+  const scaledTop = blockTop * scale.value
+  const scaledBottom = blockBottom * scale.value
+  // Đpadding p-4 của stage = 16px. Cuộn để khối nằm giữa stage viewport.
+  const stageH = stage.clientHeight
+  const target = scaledTop - (stageH - (scaledBottom - scaledTop)) / 2 - 16
+  stage.scrollTo({ top: Math.max(0, target), behavior: 'smooth' })
+}
+
 // Coalesce rapid block edits (typing in the property panel fires the deep watch
 // once per keystroke) into a single postMessage per animation frame. Posting on
 // every keystroke makes the iframe re-render its whole block tree constantly,
@@ -159,5 +189,10 @@ onBeforeUnmount(() => {
 // re-render the whole iframe on every keystroke; selection is cheap so it stays
 // immediate.
 watch(() => props.blocks, schedulePushBlocks, { deep: true })
-watch(() => props.selectedId, pushSelection)
+watch(() => props.selectedId, () => {
+  pushSelection()
+  // Cuộn stage tới khối sau khi iframe xử lý select + scroll nội dung. Trì hoãn
+  // một frame để `scrollIntoView` trong iframe chạy xong rồi mới cuộn stage wrapper.
+  requestAnimationFrame(() => scrollStageToSelected())
+})
 </script>

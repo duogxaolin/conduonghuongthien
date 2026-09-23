@@ -176,6 +176,15 @@ function fromInitTs(): Map<string, TableShape> {
   const ensureBareRe = /ensureColumn\(\s*db,\s*database,\s*'([a-z_]+)',\s*'([a-z_]+)'\s*\)/g
   while ((match = ensureBareRe.exec(source))) addMigrated(match[1], match[2], undefined)
 
+  // `modifyColumn` chạy **sau** `ensureColumn` + backfill trong cùng một lượt migrate:
+  // thêm cột nullable, điền giá trị cho hàng cũ, rồi đặt NOT NULL. Nó cùng hình dạng
+  // lời gọi như `ensureColumn` nên cùng regex, nhưng phải đọc **sau** để định nghĩa
+  // cuối cùng (NOT NULL) thắng — nếu không, một cột `ensureColumn(... 'NULL')` rồi
+  // `modifyColumn(... 'NOT NULL')` mãi mãi đọc là nullable, và cổng báo lệch đúng
+  // khuôn mà nó đang mô tả. Tiền lệ: `media_items.short_id`.
+  const modifyRe = /modifyColumn\(\s*db,\s*database,\s*'([a-z_]+)',\s*'([a-z_]+)',\s*(?:'([^']*)'|"([^"]*)")/g
+  while ((match = modifyRe.exec(source))) addMigrated(match[1], match[2], match[3] ?? match[4])
+
   const migrationRe = /\{\s*table:\s*'([a-z_]+)',\s*column:\s*'([a-z_]+)',\s*definition:\s*'([^']*)'/g
   while ((match = migrationRe.exec(source))) addMigrated(match[1], match[2], match[3])
   const migrationBareRe = /\{\s*table:\s*'([a-z_]+)',\s*column:\s*'([a-z_]+)'(?![^}]*definition)/g

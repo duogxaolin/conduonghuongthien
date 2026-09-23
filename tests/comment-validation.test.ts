@@ -95,27 +95,56 @@ describe('validateBody', () => {
 })
 
 describe('checkParentEligibility — exactly one reply level', () => {
-  const parent = { id: 10, articleId: 3, parentId: null }
+  const parent = { id: 10, articleId: 3, mediaItemId: null, parentId: null }
+  const article = { kind: 'article', articleId: 3 }
+  const otherArticle = { kind: 'article', articleId: 4 }
+  const media = { kind: 'media', mediaItemId: 9 }
 
   it('accepts a top-level comment on the same article', () => {
-    assert.equal(checkParentEligibility(parent, 3).ok, true)
+    assert.equal(checkParentEligibility(parent, article).ok, true)
   })
 
   it('refuses a missing parent', () => {
-    assert.equal(checkParentEligibility(null, 3).ok, false)
-    assert.equal(checkParentEligibility(undefined, 3).ok, false)
+    assert.equal(checkParentEligibility(null, article).ok, false)
+    assert.equal(checkParentEligibility(undefined, article).ok, false)
   })
 
   it('refuses a parent belonging to a different article', () => {
     // Without this a reply could be attached to a thread it does not belong to,
     // and would render on an article whose author never saw the question.
-    assert.equal(checkParentEligibility(parent, 4).ok, false)
+    assert.equal(checkParentEligibility(parent, otherArticle).ok, false)
   })
 
   it('refuses replying to a reply', () => {
     // The depth limit is what keeps the thread renderable on a phone and the read
     // query a fixed two passes rather than a recursion.
-    assert.equal(checkParentEligibility({ id: 11, articleId: 3, parentId: 10 }, 3).ok, false)
+    assert.equal(checkParentEligibility({ ...parent, id: 11, parentId: 10 }, article).ok, false)
+  })
+
+  it('accepts a top-level comment on the same media item', () => {
+    assert.equal(checkParentEligibility({ id: 20, articleId: null, mediaItemId: 9, parentId: null }, media).ok, true)
+  })
+
+  it('refuses a parent belonging to a different media item', () => {
+    // The case the old `itemId: number | null` signature could not express:
+    // article ids and media item ids are independent sequences, so id 9 means
+    // two different things depending on which table it came from. The kind has
+    // to travel with the id, or a reply lands on a video its author never saw.
+    assert.equal(checkParentEligibility({ id: 20, articleId: null, mediaItemId: 9, parentId: null }, { kind: 'media', mediaItemId: 10 }).ok, false)
+  })
+
+  it('refuses an article comment as the parent of a media reply, and the reverse', () => {
+    // Same identifier, different kind. This is the collision the XOR guard exists
+    // for: comparing ids alone would accept both of these.
+    assert.equal(checkParentEligibility({ id: 10, articleId: 9, mediaItemId: null, parentId: null }, media).ok, false)
+    assert.equal(checkParentEligibility({ id: 20, articleId: null, mediaItemId: 3, parentId: null }, article).ok, false)
+  })
+
+  it('refuses a parent that carries both identifiers', () => {
+    // The write guard prevents this row existing; the read should not depend on
+    // it, because a row carrying both would otherwise match every thread.
+    assert.equal(checkParentEligibility({ id: 30, articleId: 3, mediaItemId: 9, parentId: null }, article).ok, false)
+    assert.equal(checkParentEligibility({ id: 30, articleId: 3, mediaItemId: 9, parentId: null }, media).ok, false)
   })
 })
 

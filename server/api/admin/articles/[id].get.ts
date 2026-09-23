@@ -2,10 +2,10 @@ import { getDb } from '../../../utils/db'
 import { articles, users } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { articleResource } from '../../../services/articles'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
-  requireResourcePermission(adminUser, 'news', 'read')
 
   const id = Number(getRouterParam(event, 'id'))
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid article ID' })
@@ -36,6 +36,8 @@ export default defineEventHandler(async (event) => {
   if (!article) {
     throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
   }
+
+  requireResourcePermission(adminUser, articleResource(article.type), 'read')
 
   return { ok: true, article }
 })

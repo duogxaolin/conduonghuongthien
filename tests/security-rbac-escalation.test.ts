@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
+import { readFileSync } from 'node:fs'
 import {
   assertAssignablePermissions,
   assertRoleAssignable,
@@ -27,6 +28,11 @@ function actor(overrides: Partial<Actor> = {}): Actor {
     ...overrides,
   } as Actor
 }
+
+test('role editor imports the shared permission catalogue through the Nuxt root alias', () => {
+  const page = readFileSync(new URL('../app/pages/admin/users/roles.vue', import.meta.url), 'utf8')
+  assert.match(page, /from ['\"]~~\/shared\/permissions['\"]/, 'a relative import outside app/ breaks Nitro production bundling')
+})
 
 const superadmin = actor({ isSuperAdmin: true, permissions: [] })
 
@@ -73,9 +79,33 @@ test('setting a permission flag to false never requires holding it', () => {
   ])), null)
 })
 
-test('non-array permission payloads are ignored rather than throwing', () => {
-  assert.equal(statusOf(() => assertAssignablePermissions(actor(), undefined)), null)
-  assert.equal(statusOf(() => assertAssignablePermissions(actor(), null)), null)
+test('non-array permission payloads are rejected', () => {
+  for (const input of [undefined, null, {}, 'all', true]) {
+    assert.equal(statusOf(() => assertAssignablePermissions(actor(), input)), 400)
+  }
+})
+
+test('typed flags cannot exploit coercion, even as superadmin', () => {
+  for (const flag of ['canCreate', 'canRead', 'canUpdate', 'canDelete', 'canPublish', 'canArchive', 'canTest']) {
+    for (const value of ['true', 'false', 1, 0, null, [], {}]) {
+      assert.equal(statusOf(() => assertAssignablePermissions(superadmin, [{ resource: 'news', [flag]: value }])), 400)
+    }
+  }
+})
+
+test('publish, archive and test grants cannot escalate privileges', () => {
+  for (const flag of ['canPublish', 'canArchive', 'canTest']) {
+    assert.equal(statusOf(() => assertAssignablePermissions(actor(), [{ resource: 'chatbot_knowledge', [flag]: true }])), 403)
+    const owner = actor({ permissions: [{ resource: 'chatbot_knowledge', canCreate: false, canRead: false, canUpdate: false, canDelete: false, [flag]: true }] })
+    assert.equal(statusOf(() => assertAssignablePermissions(owner, [{ resource: 'chatbot_knowledge', [flag]: true }])), null)
+  }
+})
+
+test('duplicate resources are rejected and omissions normalize to denied', () => {
+  assert.equal(statusOf(() => assertAssignablePermissions(superadmin, [{ resource: 'news' }, { resource: 'news', canDelete: true }])), 400)
+  assert.deepEqual(assertAssignablePermissions(actor(), [{ resource: 'news', canRead: true }]), [{
+    resource: 'news', canRead: true, canCreate: false, canUpdate: false, canDelete: false, canPublish: false, canArchive: false, canTest: false,
+  }])
 })
 
 test('only a superadmin may place a user into a system role', () => {
@@ -90,6 +120,11 @@ test('the resource allow-list covers every resource the admin UI manages', () =>
     'news', 'role_models', 'reintegration', 'documents', 'faq', 'categories',
     'home_sections', 'pages', 'users', 'roles', 'media', 'settings',
     'submissions', 'analytics', 'chatbot_settings', 'chatbot_knowledge',
+    // Reader moderation and the media portal both ship granted to no role, so a
+    // missing entry here is not "a permission nobody uses" — it is a resource an
+    // administrator cannot grant at all, because the roles endpoint refuses
+    // names outside this set.
+    'readers', 'comments', 'media_portal', 'livestream',
   ]) {
     assert.ok(VALID_RESOURCES.has(resource), `missing resource: ${resource}`)
   }

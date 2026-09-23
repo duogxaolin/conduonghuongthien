@@ -1,24 +1,28 @@
 <template>
   <div class="bg-[#F8FAF7]">
-    <!-- Page Header (Đồng bộ chuẩn phong cách mới) -->
-    <section class="border-b border-[#E2E8DF] bg-white">
-      <div class="container pt-7 sm:pt-9 pb-5">
-        <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-3">
-          <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
-            <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
-            <span>Trang chủ</span>
-          </nuxt-link>
-          <span class="text-[#BAC8B6]">&rsaquo;</span>
-          <span class="text-[#2D5A27] font-bold">Văn bản quy phạm pháp luật</span>
-        </nav>
+    <PageHero>
+      <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#6B7967] mb-3">
+        <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
+          <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
+          <span>Trang chủ</span>
+        </nuxt-link>
+        <span class="text-[#A2B09F]" aria-hidden="true">&rsaquo;</span>
+        <span class="text-[#2A3B27] font-bold">Văn bản quy phạm pháp luật</span>
+      </nav>
 
-        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-[#7CB342] m-0 mb-1">Thư viện pháp luật</p>
-        <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-[#1E251C] leading-[1.2] m-0">Văn Bản Quy Phạm Pháp Luật</h1>
-        <p class="text-[0.95rem] text-[#5A6655] mt-2 mb-5 leading-relaxed max-w-3xl">
-          Tra cứu các chỉ thị, nghị định của Chính phủ và thông tư của Bộ Công an về công tác thi hành án hình sự, hỗ trợ tái hòa nhập cộng đồng.
-        </p>
+      <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
+        <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
+        <span>Thư viện pháp luật</span>
+      </div>
+      <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">Văn Bản Quy Phạm Pháp Luật</h1>
+      <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed max-w-3xl">
+        Tra cứu các chỉ thị, nghị định của Chính phủ và thông tư của Bộ Công an về công tác thi hành án hình sự, hỗ trợ tái hòa nhập cộng đồng.
+      </p>
+    </PageHero>
 
-        <!-- Quick filter chips -->
+    <!-- Filter chips: tách khỏi hero, nằm trong phần nội dung bên dưới -->
+    <section class="pt-6 lg:pt-8">
+      <div class="container">
         <div class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
           <span class="text-xs text-[#7A8A76] font-medium shrink-0 mr-1">Tra cứu nhanh:</span>
           <button

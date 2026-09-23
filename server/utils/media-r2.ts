@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
 
 export interface R2Config {
   accountId: string
@@ -53,4 +53,24 @@ export async function deleteR2File(key: string, config: R2Config): Promise<boole
   } catch {
     return false
   }
+}
+
+/**
+ * Tải một object R2 về Buffer. Dùng cho sync R2 → local: đọc bytes file R2
+ * (storagePath trong `media` khi provider='r2' chính là R2 key) rồi ghi vào
+ * `public/uploads/YYYY/MM/filename` qua `uploadLocalFile`.
+ */
+export async function getR2Object(key: string, config: R2Config): Promise<Buffer> {
+  const client = createR2Client(config)
+  const response = await client.send(new GetObjectCommand({
+    Bucket: config.bucket,
+    Key: key,
+  }))
+  if (!response.Body) throw new Error(`R2 object "${key}" không có body.`)
+  // @aws-sdk/client-s3 trả stream Node Readable — gom thành Buffer.
+  const chunks: Buffer[] = []
+  for await (const chunk of response.Body as AsyncIterable<Buffer>) {
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
+  }
+  return Buffer.concat(chunks)
 }

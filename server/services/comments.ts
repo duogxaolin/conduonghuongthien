@@ -32,9 +32,8 @@
  */
 
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
-
 import { getDb } from '../utils/db'
-import { activityLogs, articleComments, articles, readerAccounts, users } from '../db/schema'
+import { activityLogs, articleComments, articles, mediaItems, readerAccounts, users } from '../db/schema'
 import { isIpBanned } from '../utils/ip-ban'
 import { loadIpBanValues } from './ip-bans'
 import { recordRateLimitHit, type RateLimitRule } from '../utils/rate-limit-store'
@@ -98,9 +97,65 @@ export function validateBody(raw: unknown): BodyValidation {
 }
 
 export type ParentCandidate = {
-  id:        number
-  articleId: number
-  parentId:  number | null
+  id:          number
+  /** Null for a media comment — a comment belongs to an article OR a media item. */
+  articleId:   number | null
+  /** The mirror of `articleId`. Exactly one of the two is non-null. */
+  mediaItemId: number | null
+  parentId:    number | null
+}
+
+/**
+ * Which item a comment is being written on, as a **kind plus an identity**.
+ *
+ * The kind is not decoration. `articleId` and `mediaItemId` are separate
+ * auto-increment sequences, so article 7 and media item 7 are different things
+ * that share a number — an identifier alone cannot say which thread a comment
+ * belongs to, and a comparison on the number alone would happily attach a reply
+ * to the wrong kind of item whenever the numbers happened to coincide.
+ *
+ * The alternative considered and rejected (design.md §1) was a
+ * `comment_threads` parent table with polymorphic children: it gets the same
+ * guarantee at the cost of migrating every existing article comment into a new
+ * shape. The XOR below gets it for the price of one runtime check.
+ */
+export type CommentTarget =
+  | { kind: 'article', articleId:   number }
+  | { kind: 'media',   mediaItemId: number }
+
+export type CommentTargetResolution =
+  | { ok: true, target: CommentTarget }
+  | { ok: false, message: string }
+
+/**
+ * The runtime XOR guard: exactly one of the two identifiers, never both and
+ * never neither.
+ *
+ * Pure, and separated from `createComment`, because this is the invariant the
+ * whole media-comment design rests on and a rule that can only be exercised
+ * against a live MySQL server is a rule nobody exercises. Every caller that
+ * accepts an item identifier from outside runs through here.
+ *
+ * Both-set is rejected rather than resolved by precedence: picking one would
+ * store the comment on an item the caller may not have meant, and the row would
+ * then be a permanent record of a decision nobody made.
+ */
+export function resolveCommentTarget(
+  articleId: number | null | undefined,
+  mediaItemId: number | null | undefined,
+): CommentTargetResolution {
+  const hasArticle = typeof articleId === 'number' && Number.isFinite(articleId) && articleId > 0
+  const hasMedia   = typeof mediaItemId === 'number' && Number.isFinite(mediaItemId) && mediaItemId > 0
+
+  if (hasArticle && hasMedia) {
+    return { ok: false, message: 'Bình luận chỉ thuộc một đối tượng: bài viết hoặc video.' }
+  }
+  if (!hasArticle && !hasMedia) {
+    return { ok: false, message: 'Thiếu đối tượng để bình luận.' }
+  }
+  return hasArticle
+    ? { ok: true, target: { kind: 'article', articleId: articleId as number } }
+    : { ok: true, target: { kind: 'media', mediaItemId: mediaItemId as number } }
 }
 
 export type ParentCheck =
@@ -113,12 +168,47 @@ export type ParentCheck =
  * Kept free of database access on purpose: this is the rule most likely to be
  * "simplified" during a later refactor, and a rule that can only be exercised
  * against a live MySQL server is a rule nobody exercises.
+ *
+ * `target` is the item the new comment is being written on. The parent must
+ * match it on **both** axes — same kind and same identifier. Comparing only the
+ * identifier is the bug this signature exists to prevent: `articleId` and
+ * `mediaItemId` are independent sequences, so a check that reduced the target to
+ * a bare number would let a reply cross between an article and a video that
+ * happen to share an id.
+ *
+ * Before the media engine, `itemId` was a `number | null` and two nulls were the
+ * article-shaped way of saying "both are media comments" — which never proved
+ * they were on the *same* media item. That gap is closed here.
  */
-export function checkParentEligibility(parent: ParentCandidate | null | undefined, articleId: number): ParentCheck {
+export function checkParentEligibility(parent: ParentCandidate | null | undefined, target: CommentTarget): ParentCheck {
   if (!parent) return { ok: false, message: 'Bình luận gốc không tồn tại.' }
-  if (parent.articleId !== articleId) return { ok: false, message: 'Bình luận gốc không thuộc bài viết này.' }
+
+  const sameItem = target.kind === 'article'
+    ? parent.articleId === target.articleId && parent.mediaItemId === null
+    : parent.mediaItemId === target.mediaItemId && parent.articleId === null
+
+  if (!sameItem) return { ok: false, message: 'Bình luận gốc không thuộc nội dung này.' }
   if (parent.parentId !== null) return { ok: false, message: 'Chỉ có thể trả lời bình luận gốc, không trả lời một phản hồi.' }
   return { ok: true }
+}
+
+/**
+ * The `?source=` filter of the moderation screen, parsed rather than guessed.
+ *
+ * Returns `null` for "no filter" and `{ ok: false }` for a value that is neither
+ * empty nor one of the two known kinds. Collapsing those two into `null` — the
+ * shape a bare `=== 'media' ? … : …` ternary produces — means `?source=1`
+ * silently returns everything while the screen still shows "Video" in the
+ * filter, and the officer concludes there are no article comments left.
+ */
+export type CommentSource = 'article' | 'media'
+
+export function parseCommentSource(raw: unknown): { ok: true, source: CommentSource | null } | { ok: false } {
+  if (raw === undefined || raw === null) return { ok: true, source: null }
+  const value = String(raw).trim()
+  if (value === '') return { ok: true, source: null }
+  if (value === 'article' || value === 'media') return { ok: true, source: value }
+  return { ok: false }
 }
 
 /** Re-exported from utils/display-name.ts, which owns every decision about how a
@@ -128,7 +218,9 @@ export { initialsFrom }
 
 export type CommentRow = {
   id:           number
-  articleId:    number
+  /** Null for a media comment. `serializePublicComment` never reads it — the
+   *  public projection must not disclose which article a comment belongs to. */
+  articleId:    number | null
   readerId:     number | null
   adminUserId:  number | null
   parentId:     number | null
@@ -193,7 +285,12 @@ async function loadIpBans(): Promise<string[]> {
 
 export type CreateCommentInput = {
   readerId:  number
-  articleId: number
+  /** Exactly one of `articleId` / `mediaItemId` is set. Enforced by
+   *  `resolveCommentTarget` at the top of `createComment`, not by the type —
+   *  both are optional so a caller that reads them from a request body does not
+   *  have to cast, and the runtime check is what actually holds. */
+  articleId?:    number
+  mediaItemId?:  number
   parentId:  number | null
   body:      string
   ip:        string | null
@@ -215,25 +312,55 @@ export type CreateCommentResult =
  * locked out for ten minutes without a single comment existing. Worse, it hands
  * an attacker a way to exhaust someone else's allowance using requests that were
  * always going to fail. Allowance is spent on writes, not on refusals.
+ *
+ * The item may be an article or a media item; `resolveCommentTarget` decides
+ * which, and the two branches below are the same four checks against the table
+ * that holds that kind. The article branch is byte-for-byte the behaviour it had
+ * before media comments existed — same status codes, same messages — because it
+ * is serving production rows and a change there would be a change to a working
+ * feature rather than an extension of it.
  */
 export async function createComment(input: CreateCommentInput): Promise<CreateCommentResult> {
   const db = getDb()
 
-  const [article] = await db
-    .select({
-      id:              articles.id,
-      status:          articles.status,
-      commentsEnabled: articles.commentsEnabled,
-    })
-    .from(articles)
-    .where(eq(articles.id, input.articleId))
-    .limit(1)
+  const resolved = resolveCommentTarget(input.articleId, input.mediaItemId)
+  if (!resolved.ok) return { ok: false, statusCode: 400, message: resolved.message }
+  const target = resolved.target
 
-  if (!article || article.status !== 'published') {
-    return { ok: false, statusCode: 404, message: 'Bài viết không tồn tại.' }
-  }
-  if (!article.commentsEnabled) {
-    return { ok: false, statusCode: 403, message: 'Bài viết này hiện không mở bình luận.' }
+  if (target.kind === 'article') {
+    const [article] = await db
+      .select({
+        id:              articles.id,
+        status:          articles.status,
+        commentsEnabled: articles.commentsEnabled,
+      })
+      .from(articles)
+      .where(eq(articles.id, target.articleId))
+      .limit(1)
+
+    if (!article || article.status !== 'published') {
+      return { ok: false, statusCode: 404, message: 'Bài viết không tồn tại.' }
+    }
+    if (!article.commentsEnabled) {
+      return { ok: false, statusCode: 403, message: 'Bài viết này hiện không mở bình luận.' }
+    }
+  } else {
+    const [item] = await db
+      .select({
+        id:              mediaItems.id,
+        status:          mediaItems.status,
+        commentsEnabled: mediaItems.commentsEnabled,
+      })
+      .from(mediaItems)
+      .where(eq(mediaItems.id, target.mediaItemId))
+      .limit(1)
+
+    if (!item || item.status !== 'published') {
+      return { ok: false, statusCode: 404, message: 'Video không tồn tại.' }
+    }
+    if (!item.commentsEnabled) {
+      return { ok: false, statusCode: 403, message: 'Video này hiện không mở bình luận.' }
+    }
   }
 
   const [reader] = await db
@@ -254,15 +381,16 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
   if (input.parentId !== null) {
     const [parent] = await db
       .select({
-        id:        articleComments.id,
-        articleId: articleComments.articleId,
-        parentId:  articleComments.parentId,
+        id:          articleComments.id,
+        articleId:   articleComments.articleId,
+        mediaItemId: articleComments.mediaItemId,
+        parentId:    articleComments.parentId,
       })
       .from(articleComments)
       .where(eq(articleComments.id, input.parentId))
       .limit(1)
 
-    const verdict = checkParentEligibility(parent ?? null, input.articleId)
+    const verdict = checkParentEligibility(parent ?? null, target)
     if (!verdict.ok) return { ok: false, statusCode: 400, message: verdict.message }
   }
 
@@ -302,7 +430,8 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
   let notifiedReaderId: number | null = null
   await db.transaction(async (tx) => {
     const inserted = await tx.insert(articleComments).values({
-      articleId: input.articleId,
+      articleId:   target.kind === 'article' ? target.articleId : null,
+      mediaItemId: target.kind === 'media' ? target.mediaItemId : null,
       readerId:  input.readerId,
       parentId:  input.parentId,
       body:      input.body,
@@ -375,6 +504,7 @@ export async function deleteComment(params: { id: number, actor: DeleteActor }):
     .select({
       id:          articleComments.id,
       articleId:   articleComments.articleId,
+      mediaItemId: articleComments.mediaItemId,
       readerId:    articleComments.readerId,
       adminUserId: articleComments.adminUserId,
       parentId:    articleComments.parentId,
@@ -417,7 +547,14 @@ export async function deleteComment(params: { id: number, actor: DeleteActor }):
         action:     'delete',
         resource:   'article_comments',
         resourceId: params.id,
-        meta:       { articleId: row.articleId, wasReply: row.parentId !== null },
+        // Both identifiers, so a removal is traceable to the item it was made on
+        // whichever kind that was. `articleId` is null for a media comment and
+        // vice versa — one of the two is always present, because a comment
+        // cannot exist without a target.
+        //
+        // Ids only, never a slug or a URL: this row is an audit record, and the
+        // audit `meta` never carries anything that could be pasted into a browser.
+        meta:       { articleId: row.articleId, mediaItemId: row.mediaItemId, wasReply: row.parentId !== null },
       })
     }
   })
@@ -534,20 +671,64 @@ export const COMMENT_MAX_PER_PAGE = 50
  * Two passes, never a recursion: the one-level rule means the reply set is
  * exactly "rows whose parent is on this page", so a second query finishes the
  * job with a bounded cost regardless of thread size.
+ *
+ * Takes `articleId` / `mediaItemId` — the same two optional identifiers
+ * `CreateCommentInput` takes — and resolves them with the same
+ * `resolveCommentTarget` guard. One shape for the whole engine means a caller
+ * that can write to a thread can read it with the argument it already has, and
+ * there is no second vocabulary for the same idea.
+ *
+ * The item is branched in **both** passes below. Branching only the count query
+ * would page an article's comments by a total computed from videos, and
+ * branching only the reply query would attach replies from a different item to
+ * this page's parents — either way the thread renders and the numbers look
+ * plausible, which is what makes a half-branched read so easy to ship.
  */
 export async function loadCommentThread(params: {
-  articleId:       number
+  articleId?:      number | null
+  mediaItemId?:    number | null
   page:            number
   perPage:         number
   viewerReaderId:  number | null
 }): Promise<ThreadPage> {
   const db = getDb()
-  const { articleId, perPage, viewerReaderId } = params
+  const { perPage, viewerReaderId } = params
+
+  const resolved = resolveCommentTarget(params.articleId, params.mediaItemId)
+
+  /**
+   * No item, or both. Unreachable from either caller — both endpoints resolve a
+   * slug to a row and check its status before asking for its thread — so this
+   * branch is a read of nothing rather than a hidden refusal. It returns the
+   * same empty page the callers already return for an unknown slug, which is the
+   * established contract of this read path; throwing here would be a new way for
+   * a page to fail, and no existing caller can reach it.
+   */
+  if (!resolved.ok) {
+    return { comments: [], total: 0, page: 1, perPage, totalPages: 1 }
+  }
+  const target = resolved.target
+
+  /**
+   * `eq(column, null)` never matches — Drizzle renders it as `= NULL`, which is
+   * unknown in SQL rather than true, so a media thread would silently come back
+   * empty instead of erroring. The null branch has to be `isNull`.
+   *
+   * The other column is pinned to NULL as well, not left unconstrained: the
+   * schema allows both to be set at once only because a CHECK constraint is not
+   * available here, so the read enforces the XOR the write guard promises. A row
+   * that somehow carried both would otherwise appear in two threads at once.
+   */
+  const scoped = target.kind === 'article'
+    ? and(eq(articleComments.articleId, target.articleId), isNull(articleComments.mediaItemId))
+    : and(eq(articleComments.mediaItemId, target.mediaItemId), isNull(articleComments.articleId))
+
+  const topLevel = and(scoped, isNull(articleComments.parentId))
 
   const [countRow] = await db
     .select({ total: sql<number>`COUNT(*)` })
     .from(articleComments)
-    .where(and(eq(articleComments.articleId, articleId), isNull(articleComments.parentId)))
+    .where(topLevel)
 
   const total = Number(countRow?.total ?? 0)
   const totalPages = Math.max(1, Math.ceil(total / perPage))
@@ -569,7 +750,7 @@ export async function loadCommentThread(params: {
     .select(selection)
     .from(articleComments)
     .leftJoin(readerAccounts, eq(articleComments.readerId, readerAccounts.id))
-    .where(and(eq(articleComments.articleId, articleId), isNull(articleComments.parentId)))
+    .where(topLevel)
     .orderBy(articleComments.createdAt, articleComments.id)
     .limit(perPage)
     .offset((page - 1) * perPage)
@@ -582,11 +763,14 @@ export async function loadCommentThread(params: {
   }
 
   if (parents.length) {
+    // The parent ids already come from this item, so scoping by them is enough
+    // on its own — the item clause is kept anyway so the two passes read as the
+    // same query rather than two that happen to agree today.
     const replyRows = await db
       .select(selection)
       .from(articleComments)
       .leftJoin(readerAccounts, eq(articleComments.readerId, readerAccounts.id))
-      .where(inArray(articleComments.parentId, parents.map(parent => parent.id)))
+      .where(and(scoped, inArray(articleComments.parentId, parents.map(parent => parent.id))))
       .orderBy(articleComments.createdAt, articleComments.id)
 
     for (const row of replyRows) {
@@ -605,9 +789,16 @@ export type AdminCommentRow = {
   body:         string
   createdAt:    Date | null
   parentId:     number | null
-  articleId:    number
+  /** Null for a media comment. Exactly one of `articleId` / `mediaItemId` is
+   *  set, so the moderation screen always has something to name the item by. */
+  articleId:    number | null
   articleTitle: string | null
   articleSlug:  string | null
+  /** The mirror of the three article columns above. Null for an article comment. */
+  mediaItemId:      number | null
+  mediaItemTitle:   string | null
+  mediaItemSlug:    string | null
+  mediaItemShortId: string | null
   readerId:     number | null
   readerName:   string | null
   /** The raw Google column, kept on the row so /admin/readers/[id] can show what
@@ -633,14 +824,30 @@ export type AdminCommentList = {
  * is why the endpoint above it demands `comments.read` and writes an audit row.
  *
  * Newest first: an officer opening this page is looking for what just arrived.
+ *
+ * `articleId` and `source` are two ways of narrowing the same list, and they
+ * compose: `articleId` alone is "this article's comments", `source` alone is
+ * "every comment on a video" or "every comment on an article", and both together
+ * are still a coherent question. `source` is parsed by `parseCommentSource`
+ * rather than compared here, so an unknown value is refused by the caller
+ * instead of quietly widening the result.
  */
 export async function listCommentsForAdmin(params: {
   articleId: number | null
+  source?:   CommentSource | null
   page:      number
   perPage:   number
 }): Promise<AdminCommentList> {
   const db = getDb()
-  const where = params.articleId === null ? undefined : eq(articleComments.articleId, params.articleId)
+
+  const conditions = []
+  if (params.articleId !== null) conditions.push(eq(articleComments.articleId, params.articleId))
+  // `source=media` means "on a media item", which is the media column being set
+  // — not the article column being null. Those differ for a row that carries
+  // neither, which the write guard prevents but the read should not depend on.
+  if (params.source === 'media') conditions.push(isNotNull(articleComments.mediaItemId))
+  if (params.source === 'article') conditions.push(isNotNull(articleComments.articleId))
+  const where = conditions.length ? and(...conditions) : undefined
 
   const [countRow] = await db
     .select({ total: sql<number>`COUNT(*)` })
@@ -661,6 +868,10 @@ export async function listCommentsForAdmin(params: {
       articleId:    articleComments.articleId,
       articleTitle: articles.title,
       articleSlug:  articles.slug,
+      mediaItemId:      articleComments.mediaItemId,
+      mediaItemTitle:   mediaItems.title,
+      mediaItemSlug:    mediaItems.slug,
+      mediaItemShortId: mediaItems.shortId,
       readerId:     articleComments.readerId,
       readerName:       readerAccounts.displayName,
       readerCustomName: readerAccounts.customDisplayName,
@@ -670,7 +881,26 @@ export async function listCommentsForAdmin(params: {
       ip:           articleComments.ip,
     })
     .from(articleComments)
+    /**
+     * leftJoin on BOTH item tables, and neither is decoration.
+     *
+     * The `articles` join is load-bearing for media comments: a media comment has
+     * `article_id = NULL`, so an inner join there would drop every video comment
+     * from the moderation screen while the screen still rendered, still paged, and
+     * still reported a plausible total. The officer's only clue would be that the
+     * comments they can see on the video are missing from the list meant to
+     * moderate them.
+     *
+     * The `media_items` join is the mirror. The FK is ON DELETE CASCADE, so a
+     * deleted item normally takes its comments with it — but the row that survives
+     * anyway (an item archived rather than deleted, a bulk operation with foreign
+     * key checks off, an identifier left pointing at nothing) is exactly the row an
+     * officer most needs to see: it is unattributable from every other screen, and
+     * an inner join would answer that by hiding it. Same precedent as the `users`
+     * join below, which keeps rows for deleted accounts.
+     */
     .leftJoin(articles, eq(articleComments.articleId, articles.id))
+    .leftJoin(mediaItems, eq(articleComments.mediaItemId, mediaItems.id))
     .leftJoin(readerAccounts, eq(articleComments.readerId, readerAccounts.id))
     // leftJoin, and adminUserId is SET NULL on user deletion: a portal reply
     // survives the officer who wrote it, showing no author rather than vanishing.
@@ -729,9 +959,10 @@ export async function createAdminReply(params: {
 
   const [parent] = await db
     .select({
-      id:        articleComments.id,
-      articleId: articleComments.articleId,
-      parentId:  articleComments.parentId,
+      id:          articleComments.id,
+      articleId:   articleComments.articleId,
+      mediaItemId: articleComments.mediaItemId,
+      parentId:    articleComments.parentId,
     })
     .from(articleComments)
     .where(eq(articleComments.id, params.parentId))
@@ -739,7 +970,21 @@ export async function createAdminReply(params: {
 
   if (!parent) return { ok: false, statusCode: 404, message: 'Bình luận gốc không tồn tại.' }
 
-  const verdict = checkParentEligibility(parent, parent.articleId)
+  /**
+   * The reply inherits the parent's item, resolved through the same XOR guard the
+   * reader path uses rather than by reading `parent.articleId` directly.
+   *
+   * Reading the column directly would be the bug: a media comment has
+   * `articleId === null`, so an officer replying under a video would insert a
+   * row with neither identifier — a comment in no thread at all, invisible on
+   * every page and reachable only from the moderation list. The guard turns that
+   * into a refusal instead of a silent orphan.
+   */
+  const resolved = resolveCommentTarget(parent.articleId, parent.mediaItemId)
+  if (!resolved.ok) return { ok: false, statusCode: 409, message: 'Bình luận gốc không thuộc nội dung nào.' }
+  const target = resolved.target
+
+  const verdict = checkParentEligibility(parent, target)
   if (!verdict.ok) return { ok: false, statusCode: 400, message: verdict.message }
 
   // Reply and audit row commit together: a reply that exists with no logged
@@ -749,7 +994,8 @@ export async function createAdminReply(params: {
   let notifiedReaderId: number | null = null
   await db.transaction(async (tx) => {
     const inserted = await tx.insert(articleComments).values({
-      articleId:   parent.articleId,
+      articleId:   target.kind === 'article' ? target.articleId : null,
+      mediaItemId: target.kind === 'media' ? target.mediaItemId : null,
       readerId:    null,
       adminUserId: params.actorId,
       parentId:    parent.id,
@@ -772,7 +1018,16 @@ export async function createAdminReply(params: {
       action:     'create',
       resource:   'comments',
       resourceId: id,
-      meta:       { operation: 'admin_reply', articleId: parent.articleId, parentId: parent.id },
+      // Both identifiers, mirroring deleteComment's audit row: the removal and the
+      // creation of an official reply are the same fact seen twice, and a trace
+      // that names the item on one side but not the other is a trace an officer
+      // cannot follow end to end.
+      meta:       {
+        operation:   'admin_reply',
+        articleId:   target.kind === 'article' ? target.articleId : null,
+        mediaItemId: target.kind === 'media' ? target.mediaItemId : null,
+        parentId:    parent.id,
+      },
     })
 
     // The portal answering is the notification that matters most: it is the

@@ -141,6 +141,19 @@ export const contentTypes = mysqlTable('content_types', {
   createdAt:    timestamp('created_at').defaultNow(),
 })
 
+// ─── Media categories ────────────────────────────────────────────────────────
+// Tách khỏi `categories` (danh mục bài viết): danh mục của Media Portal là một
+// loại nội dung riêng, phẳng (không cha-con), không có `type` (chỉ một loại).
+// `media_items.category_id` trỏ bảng này, không trỏ `categories`.
+export const mediaCategories = mysqlTable('media_categories', {
+  id:           int('id').autoincrement().primaryKey(),
+  name:         varchar('name', { length: 255 }).notNull(),
+  slug:         varchar('slug', { length: 255 }).notNull().unique(),
+  description:  text('description'),
+  displayOrder: int('display_order').notNull().default(0),
+  createdAt:    timestamp('created_at').defaultNow(),
+})
+
 // ─── Categories ───────────────────────────────────────────────────────────────
 // type: slug of a content_types row (news | role_model | reintegration | document | faq | custom…)
 export const categories = mysqlTable('categories', {
@@ -761,9 +774,22 @@ export const readerAccounts = mysqlTable('reader_accounts', {
 // One row per comment or administrator reply. parentId self-references for the
 // single reply level. Every FK cascades except adminUserId (design.md D8): a
 // staff account being deleted must not remove the portal's public replies.
+//
+// **A comment belongs to exactly one item — an article or a media item — and
+// both columns are nullable to express that** (add-media-portal design.md §2).
+// The database cannot state that invariant here: a `CHECK (num_nonnulls(...)=1)`
+// is enforced inconsistently by MySQL 8 alongside `ON DELETE CASCADE`, so the
+// rule lives in `createComment`'s runtime XOR guard plus `checkParentEligibility`
+// requiring the parent to share the child's item and kind. Both are tested.
+//
+// `articleId` is nullable **on both sides of the drift comparison and in the
+// live ALTER** — a migration-only change leaves the gate comparing against a
+// `CREATE TABLE` line that still says NOT NULL, and a `CREATE TABLE`-only change
+// never runs on a database that already has the table.
 export const articleComments = mysqlTable('article_comments', {
   id:          bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
-  articleId:   int('article_id').notNull().references(() => articles.id, { onDelete: 'cascade' }),
+  articleId:   int('article_id').references(() => articles.id, { onDelete: 'cascade' }),
+  mediaItemId: int('media_item_id').references(() => mediaItems.id, { onDelete: 'cascade' }),
   readerId:    int('reader_id').references(() => readerAccounts.id, { onDelete: 'cascade' }),
   adminUserId: int('admin_user_id').references(() => users.id, { onDelete: 'set null' }),
   parentId:    bigint('parent_id', { mode: 'number', unsigned: true }).references((): AnyMySqlColumn => articleComments.id, { onDelete: 'cascade' }),
@@ -773,6 +799,9 @@ export const articleComments = mysqlTable('article_comments', {
   createdAt:   datetime('created_at', { mode: 'date' }).notNull(),
 }, (t) => ({
   articleParentCreatedIdx: index('article_comments_article_parent_created_idx').on(t.articleId, t.parentId, t.createdAt),
+  // The media thread is the same query with a different leading column, so it
+  // gets the mirror index rather than sharing the article one.
+  mediaParentCreatedIdx: index('article_comments_media_parent_created_idx').on(t.mediaItemId, t.parentId, t.createdAt),
   readerIdx: index('article_comments_reader_id_idx').on(t.readerId),
 }))
 
@@ -850,6 +879,197 @@ export const googleOauthSettings = mysqlTable('google_oauth_settings', {
   updatedBy:              int('updated_by').references(() => users.id, { onDelete: 'set null' }),
 })
 
+// ─── Media portal (add-media-portal) ────────────────────────────────────────
+// A published video item — either self-hosted (uploaded, transcoded to HLS
+// renditions by the pipeline) or an external platform reference embedded through
+// the platform's no-cookie domain.
+//
+// **`status` and `processing_status` are two different questions and are
+// deliberately two columns.** `status` is editorial (draft | published |
+// archived); `processing_status` is machine state (pending | processing | ready
+// | failed). Collapsing them would make "published but its transcode failed"
+// unrepresentable, which is exactly the state an operator needs to see.
+export const mediaItems = mysqlTable('media_items', {
+  id:           int('id').autoincrement().primaryKey(),
+  slug:         varchar('slug', { length: 512 }).notNull().unique(),
+  // Định danh URL công khai chính — 11 ký tự base64url (YouTube-style), sinh lúc
+  // tạo. `slug` vẫn giữ cho redirect 301 (link cũ) + log; `short_id` là gì máy khách
+  // thấy trong `/media/<short_id>`. Cột UNIQUE: trùng cực hiếm (64 bit) nhưng là
+  // thẩm quyền, không phải may rủi.
+  shortId:      varchar('short_id', { length: 16 }).notNull().unique(),
+  title:        varchar('title', { length: 512 }).notNull(),
+  description:  text('description'),
+  // upload = a file the portal holds and transcodes; youtube = an external
+  // reference. The serializer chooses the player from this value.
+  source:       varchar('source', { length: 16 }).notNull().default('upload'),
+  // Only meaningful when source = 'youtube'. Stored as the bare identifier, never
+  // as a URL: the embed URL is built server-side so a stored value can never
+  // become an arbitrary origin in a reader's browser.
+  youtubeVideoId: varchar('youtube_video_id', { length: 32 }),
+  // Where the renditions live, relative to the media work directory. Never
+  // returned to a reader — the stream endpoint resolves it server-side.
+  storagePath:  varchar('storage_path', { length: 1024 }),
+  // 'local' = renditions on disk under the media work directory; 'r2' = the
+  // same tree synced to a dedicated R2 bucket for video (separate from the
+  // image library's R2). `storagePath` is the key in either store — same
+  // tree shape, different backend. Set after transcode: local stays 'local',
+  // R2 flips to 'r2' once the tree is uploaded and the local scratch deleted.
+  storageProvider: varchar('storage_provider', { length: 16 }).notNull().default('local'),
+  thumbnailUrl: varchar('thumbnail_url', { length: 1024 }),
+  durationSeconds: int('duration_seconds'),
+  width:        int('width'),
+  height:       int('height'),
+  categoryId:   int('category_id').references(() => mediaCategories.id, { onDelete: 'set null' }),
+  status:       varchar('status', { length: 16 }).notNull().default('draft'), // draft | published | archived
+  processingStatus: varchar('processing_status', { length: 16 }).notNull().default('pending'), // pending | processing | ready | failed
+  // Why a transcode failed, shown on the administration listing. A failed item
+  // that is silently absent from the screen is the failure mode this column
+  // exists to prevent.
+  processingError: varchar('processing_error', { length: 512 }),
+  // Which renditions are already playable, so a partially processed item is
+  // watchable before the last rendition finishes. Nullable in the DDL with an
+  // expression default, matching the Drizzle `.default([])` — a NULL here is
+  // read as "none ready" rather than crashing a player.
+  resolutionsReady: json('resolutions_ready').$type<string[]>().default([]),
+  // Tiến trình FFmpeg thật — 3 cột tách biejt để UI vẽ thanh % cho bản đang nén.
+  // `processingRendition` = tên bản đang transcode ('360p'/'720p'/'1080p') hoặc
+  // null khi không ở giai đoạn transcode (probe/thumbnail/sync). `processingPercent`
+  // = 0–100 của bản hiện tại. `processingPhase` = giai đoạn pipeline
+  // ('probe'|'transcode'|'thumbnail'|'sync') để UI biết % thuộc giai đoạn nào.
+  // Cả ba reset về null/0 khi `processingStatus='ready'` — không giữ lại tiến trình
+  // của lượt cũ.
+  processingRendition: varchar('processing_rendition', { length: 16 }),
+  processingPercent: int('processing_percent'),
+  processingPhase: varchar('processing_phase', { length: 16 }),
+  // The process running the transcode, paired with `updated_at` as its
+  // heartbeat. This pair is what lets the pipeline release its pooled database
+  // connection before spawning FFmpeg (design.md §4) and what the reaper reads
+  // to tell a dead job from a live one.
+  claimedBy:    varchar('claimed_by', { length: 64 }),
+  processingAttempts: int('processing_attempts').notNull().default(0),
+  processingNextAttemptAt: timestamp('processing_next_attempt_at'),
+  processingHeartbeatAt: timestamp('processing_heartbeat_at'),
+  // Off by default, matching articles: the opposite default would open
+  // commenting on the whole library at deploy time, a moderation load nobody
+  // chose.
+  commentsEnabled: boolean('comments_enabled').notNull().default(false),
+  isFeatured:   boolean('is_featured').notNull().default(false),
+  viewCount:    bigint('view_count', { mode: 'number', unsigned: true }).notNull().default(0),
+  publishedAt:  timestamp('published_at'),
+  createdBy:    int('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt:    timestamp('created_at').defaultNow(),
+  updatedAt:    timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  statusPublishedIdx: index('media_items_status_published_idx').on(t.status, t.publishedAt),
+  categoryIdx:        index('media_items_category_id_idx').on(t.categoryId),
+  processingIdx:      index('media_items_processing_status_updated_idx').on(t.processingStatus, t.updatedAt),
+}))
+
+// One row per broadcast. `is_active` carries no unique index on purpose
+// (design.md §3): a unique index would make the single-active invariant depend
+// on catching a duplicate-key error, and MySQL 8 has no partial unique index.
+// The mechanism is `GET_LOCK('cdkt:livestream:active', 0)` in the start path.
+export const livestreamSessions = mysqlTable('livestream_sessions', {
+  id:           int('id').autoincrement().primaryKey(),
+  title:        varchar('title', { length: 512 }).notNull(),
+  description:  text('description'),
+  source:       varchar('source', { length: 16 }).notNull().default('youtube'),
+  youtubeVideoId: varchar('youtube_video_id', { length: 32 }),
+  storagePath:  varchar('storage_path', { length: 1024 }),
+  thumbnailUrl: varchar('thumbnail_url', { length: 1024 }),
+  isActive:     boolean('is_active').notNull().default(false),
+  // DATETIME, not TIMESTAMP: no 2038 horizon and no timezone conversion applied
+  // by the driver. `ended_at` is both the age column and the ordering column of
+  // the retention scope — a session is old when it finished, not when it
+  // started, so a long broadcast is never purged while it is still running.
+  startedAt:    datetime('started_at', { mode: 'date' }),
+  endedAt:      datetime('ended_at', { mode: 'date' }),
+  // SET NULL, so a retention pass over sessions never deletes the recording it
+  // produced: the media item outlives the session it came from.
+  savedMediaId: int('saved_media_id').references(() => mediaItems.id, { onDelete: 'set null' }),
+  createdBy:    int('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt:    timestamp('created_at').defaultNow(),
+  updatedAt:    timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  activeIdx:   index('livestream_sessions_is_active_idx').on(t.isActive),
+  endedAtIdx:  index('livestream_sessions_ended_at_idx').on(t.endedAt),
+  savedMediaIdx: index('livestream_sessions_saved_media_id_idx').on(t.savedMediaId),
+}))
+
+// The live conversation. Deliberately NOT a retention scope: its FK cascades
+// from `livestream_sessions`, which is the scope, so an independent window would
+// delete messages while their session still exists.
+export const livestreamMessages = mysqlTable('livestream_messages', {
+  id:          bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
+  sessionId:   int('session_id').notNull().references(() => livestreamSessions.id, { onDelete: 'cascade' }),
+  readerId:    int('reader_id').notNull().references(() => readerAccounts.id, { onDelete: 'cascade' }),
+  // A snapshot of the sender's name at the moment of sending. The reader's
+  // current name is resolved elsewhere; a rename must not rewrite what was
+  // displayed to the people who were watching.
+  displayName: varchar('display_name', { length: 100 }).notNull(),
+  content:     varchar('content', { length: 200 }).notNull(),
+  // Soft delete: a moderated message leaves the public history but its row
+  // remains, because the moderation action is itself auditable.
+  isDeleted:   boolean('is_deleted').notNull().default(false),
+  // DATETIME(3) — chat ordering needs millisecond resolution, and two messages
+  // in the same second are ordinary.
+  createdAt:   datetime('created_at', { mode: 'date', fsp: 3 }).notNull(),
+}, (t) => ({
+  sessionCreatedIdx: index('livestream_messages_session_created_idx').on(t.sessionId, t.createdAt),
+  readerIdx:         index('livestream_messages_reader_id_idx').on(t.readerId),
+}))
+
+// One row per chunked upload in progress. This row — not a request field — is
+// what binds an upload to its owner: every chunk, status and completion request
+// re-verifies `WHERE upload_id = ? AND admin_user_id = ?`, so an unknown
+// identifier and another administrator's identifier produce the same not-found
+// response and the endpoint never reveals which uploads exist.
+//
+// `updated_at` is the activity clock the housekeeping pass reads; a session
+// modified within the inactivity window is never touched.
+export const mediaUploadSessions = mysqlTable('media_upload_sessions', {
+  uploadId:     varchar('upload_id', { length: 36 }).primaryKey(),
+  adminUserId:  int('admin_user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  filename:     varchar('filename', { length: 255 }).notNull(),
+  declaredSize: bigint('declared_size', { mode: 'number', unsigned: true }).notNull(),
+  chunkSize:    int('chunk_size', { unsigned: true }).notNull(),
+  totalChunks:  int('total_chunks', { unsigned: true }).notNull(),
+  // Chunk indexes already received. Out-of-order arrival is ordinary, so this is
+  // a set rather than a high-water mark; re-sending a received index is a
+  // success with no state change.
+  receivedParts: json('received_parts').$type<number[]>().default([]),
+  status:       varchar('status', { length: 16 }).notNull().default('pending'), // pending | assembling | completed | failed
+  completionClaim: varchar('completion_claim', { length: 36 }),
+  completionHeartbeatAt: timestamp('completion_heartbeat_at'),
+  contentType: varchar('content_type', { length: 64 }),
+  errorMessage: varchar('error_message', { length: 512 }),
+  mediaItemId:  int('media_item_id').references(() => mediaItems.id, { onDelete: 'set null' }),
+  createdAt:    timestamp('created_at').defaultNow(),
+  updatedAt:    timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  adminIdx:   index('media_upload_sessions_admin_user_idx').on(t.adminUserId),
+  updatedIdx: index('media_upload_sessions_updated_at_idx').on(t.updatedAt),
+}))
+
+// A deletion cannot remove files inside the database transaction: the database
+// could still roll back after `rm()` succeeded.  This outbox records the local
+// asset root after the item delete commits, so a crashed worker resumes cleanup
+// later instead of leaving HLS generations and originals forever.
+export const mediaAssetCleanup = mysqlTable('media_asset_cleanup', {
+  id:            varchar('id', { length: 36 }).primaryKey(),
+  assetRoot:     varchar('asset_root', { length: 1024 }).notNull(),
+  // 'local' = xoá cây tệp trên đĩa; 'r2' = xoá object có prefix trên R2 bucket
+  // video. Worker `processMediaAssetCleanup` branch theo cột này.
+  storageProvider: varchar('storage_provider', { length: 16 }).notNull().default('local'),
+  attempts:      int('attempts').notNull().default(0),
+  nextAttemptAt: timestamp('next_attempt_at'),
+  lastError:     varchar('last_error', { length: 512 }),
+  createdAt:     timestamp('created_at').defaultNow(),
+  updatedAt:     timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  dueIdx: index('media_asset_cleanup_due_idx').on(t.nextAttemptAt, t.createdAt),
+}))
+
 // ─── Types ───────────────────────────────────────────────────────────────────
 export type Role        = typeof roles.$inferSelect
 export type Permission  = typeof permissions.$inferSelect
@@ -904,3 +1124,106 @@ export type ReaderIpBan = typeof readerIpBans.$inferSelect
 export type NewReaderIpBan = typeof readerIpBans.$inferInsert
 export type GoogleOauthSettings = typeof googleOauthSettings.$inferSelect
 export type NewGoogleOauthSettings = typeof googleOauthSettings.$inferInsert
+export type MediaItem = typeof mediaItems.$inferSelect
+export type NewMediaItem = typeof mediaItems.$inferInsert
+export type LivestreamSession = typeof livestreamSessions.$inferSelect
+export type NewLivestreamSession = typeof livestreamSessions.$inferInsert
+export type LivestreamMessage = typeof livestreamMessages.$inferSelect
+export type NewLivestreamMessage = typeof livestreamMessages.$inferInsert
+export type MediaUploadSession = typeof mediaUploadSessions.$inferSelect
+export type NewMediaUploadSession = typeof mediaUploadSessions.$inferInsert
+
+/**
+ * Sổ ghi các bản backup (SQL dump + file nén) do cán bộ tạo hoặc scheduler
+ * chạy. Bảng này là **nguồn chân lý** cho trang /admin/settings/backup: nó trả
+ * lời câu "đã có những bản nào, bao nhiêu MB, lên Drive chưa" mà không cần list
+ * thư mục đĩa (chậm + không có metadata).
+ *
+ * Không đăng ký với `data-retention.ts` — backups tự xoay vòng theo N cấu hình
+ * (mặc định 14), và đây là file server tự tạo, không chứa dữ liệu cá nhân công
+ * dân thuộc phạm vi các scope lưu trữ.
+ */
+export const backups = mysqlTable('backups', {
+  id:           int('id').autoincrement().primaryKey(),
+  filename:      varchar('filename', { length: 255 }).notNull(),
+  // sql | media | all — "all" = cặp SQL + file tạo cùng timestamp.
+  type:          varchar('type', { length: 16 }).notNull(),
+  bytes:         bigint('bytes', { mode: 'number' }).notNull().default(0),
+  // Timestamp UTC YYYYMMDDTHHMMSSZ — cùng format scripts/backup.sh.
+  stamp:         varchar('stamp', { length: 16 }).notNull(),
+  // manual | scheduled — phân biệt cán bộ bấm vs scheduler chạy.
+  trigger:       varchar('trigger', { length: 16 }).notNull().default('manual'),
+  // pending | done | failed — backup chạy nền, cần trạng thái.
+  status:        varchar('status', { length: 16 }).notNull().default('pending'),
+  driveUploaded: boolean('drive_uploaded').default(false),
+  driveFileId:   varchar('drive_file_id', { length: 128 }),
+  error:         text('error'),
+  createdBy:     int('created_by').references(() => users.id),
+  createdAt:     timestamp('created_at').defaultNow(),
+}, (t) => ({
+  stampIdx:  index('backups_stamp_idx').on(t.stamp),
+  statusIdx: index('backups_status_idx').on(t.status),
+}))
+
+export type Backup = typeof backups.$inferSelect
+export type NewBackup = typeof backups.$inferInsert
+
+// ─── Backup Drive OAuth (drive-oauth-backup) ────────────────────────────────
+// Single-row table holding the Google Drive OAuth refresh token for the portal's
+// backup feature. This is the "login link" connect Drive UX: a cán bộ clicks
+// "Liên kết Google Drive", consents once, and the portal keeps a refresh token
+// (AES-256-GCM, label `cdkt-backup-drive-oauth:v1`) so backup uploads go to
+// their personal Drive without re-consenting.
+//
+// **Dùng chung `google_oauth_settings` (Client ID + Secret)** — không tạo bảng
+// riêng cho OAuth Drive credentials. Cán bộ đã cấu hình đăng nhập người đọc thì
+// Drive dùng luôn; chưa cấu hình → nút liên kết báo "Cần cấu hình Google OAuth
+// trước".
+//
+// **Không lưu access token** — ngắn hạn (1h), sinh lại từ refresh token qua
+// `googleapis` (tự refresh khi hết hạn). Chỉ refresh token là nhạy cảm, lưu
+// envelope. `linkedEmail`/`linkedSub` là metadata hiển thị (không nhạy cảm).
+export const backupDriveOauth = mysqlTable('backup_drive_oauth', {
+  id:                      int('id').primaryKey().default(1),
+  // === Refresh token envelope (AES-256-GCM, label cdkt-backup-drive-oauth:v1) ===
+  refreshTokenCiphertext:  text('refresh_token_ciphertext'),
+  refreshTokenNonce:       varchar('refresh_token_nonce', { length: 64 }),
+  refreshTokenAuthTag:    varchar('refresh_token_auth_tag', { length: 64 }),
+  refreshTokenVersion:    int('refresh_token_version', { unsigned: true }),
+  refreshTokenKeyId:      varchar('refresh_token_key_id', { length: 64 }),
+  // === Token metadata (không nhạy cảm, cho hiển thị) ===
+  linkedEmail:            varchar('linked_email', { length: 255 }),
+  linkedSub:              varchar('linked_sub', { length: 128 }),
+  linkedAt:               timestamp('linked_at').defaultNow(),
+  updatedBy:              int('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt:              timestamp('updated_at').defaultNow().onUpdateNow(),
+})
+
+export type BackupDriveOauth = typeof backupDriveOauth.$inferSelect
+export type NewBackupDriveOauth = typeof backupDriveOauth.$inferInsert
+
+// ─── Backup Drive OAuth config (thứ 45) ─────────────────────────────────────
+// Client ID + Client Secret **riêng cho Drive**, hoàn toàn tách biệt với
+// `google_oauth_settings` của đăng nhập người đọc. Hai lý do (xem plan D2
+// refactor): (1) scope khác — reader dùng `openid email profile`, Drive cần
+// `drive.file`, gộp OAuth Client thì consent screen reader phải khai thêm
+// scope Drive; (2) audience khác — reader cho công dân (public), Drive cho
+// admin (internal). Cùng nhãn envelope `cdkt-backup-drive-oauth:v1` với refresh
+// token (cùng feature, một nhãn đủ).
+export const backupDriveOauthConfig = mysqlTable('backup_drive_oauth_config', {
+  id:                       int('id').primaryKey().default(1),  // single-row
+  clientId:                 varchar('client_id', { length: 255 }),
+  // === Client secret envelope (AES-256-GCM, label cdkt-backup-drive-oauth:v1) ===
+  clientSecretCiphertext:   text('client_secret_ciphertext'),
+  clientSecretNonce:        varchar('client_secret_nonce', { length: 64 }),
+  clientSecretAuthTag:      varchar('client_secret_auth_tag', { length: 64 }),
+  clientSecretVersion:     int('client_secret_version', { unsigned: true }),
+  clientSecretKeyId:       varchar('client_secret_key_id', { length: 64 }),
+  clientSecretLastFour:    varchar('client_secret_last_four', { length: 8 }),
+  isEnabled:               boolean('is_enabled').notNull().default(false),
+  updatedBy:               int('updated_by').references(() => users.id, { onDelete: 'set null' }),
+  updatedAt:               timestamp('updated_at').defaultNow().onUpdateNow(),
+})
+
+export type BackupDriveOauthConfig = typeof backupDriveOauthConfig.$inferSelect
+export type NewBackupDriveOauthConfig = typeof backupDriveOauthConfig.$inferInsert
