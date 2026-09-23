@@ -20,6 +20,7 @@ class ProbeResponse extends Writable {
   peakBytes = 0
   chunks: string[] = []
   hold: boolean
+  private pendingCallback?: (error?: Error) => void
   constructor(hold = true) { super({ highWaterMark: 1 }); this.hold = hold }
   setHeader(name: string, value: unknown) { this.headers.set(name.toLowerCase(), value); return this }
   getHeader(name: string) { return this.headers.get(name.toLowerCase()) }
@@ -30,6 +31,14 @@ class ProbeResponse extends Writable {
     this.writes++
     this.chunks.push(chunk.toString())
     if (!this.hold) callback()
+    else this.pendingCallback = callback
+  }
+  _destroy(err: Error | null, callback: (error?: Error | null) => void) {
+    if (this.pendingCallback) {
+      this.pendingCallback()
+      this.pendingCallback = undefined
+    }
+    callback(err)
   }
   write(...args: any[]): boolean {
     const result = (super.write as any)(...args)
