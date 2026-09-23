@@ -96,7 +96,6 @@ export function createNodeSseStream(event: H3Event, options: Options = {}) {
     writeFinished = false
     writing = true
     writeDeadline = setTimeout(abort, options.writeTimeoutMs ?? SSE_WRITE_TIMEOUT_MS)
-    writeDeadline.unref()
     try {
       needsDrain = !response.write(frame.data, (error?: Error | null) => {
         if (error) { abort(); return }
