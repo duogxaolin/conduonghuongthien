@@ -710,6 +710,9 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureColumn(db, database, 'article_comments', 'flag_reason', 'VARCHAR(255) NULL')
   await ensureColumn(db, database, 'chat_messages', 'is_flagged', 'TINYINT(1) NOT NULL DEFAULT 0')
   await ensureColumn(db, database, 'chat_messages', 'flag_reason', 'VARCHAR(255) NULL')
+  await ensureColumn(db, database, 'ai_moderation_queue', 'context_title', 'VARCHAR(512) NULL')
+  await ensureColumn(db, database, 'ai_moderation_queue', 'context_url', 'VARCHAR(512) NULL')
+  await ensureColumn(db, database, 'ai_moderation_queue', 'session_id', 'VARCHAR(64) NULL')
 }
 
 /**

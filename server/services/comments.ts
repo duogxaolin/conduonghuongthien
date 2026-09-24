@@ -327,10 +327,15 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
   if (!resolved.ok) return { ok: false, statusCode: 400, message: resolved.message }
   const target = resolved.target
 
+  let contextTitle: string | null = null
+  let contextUrl: string | null = null
+
   if (target.kind === 'article') {
     const [article] = await db
       .select({
         id:              articles.id,
+        title:           articles.title,
+        slug:            articles.slug,
         status:          articles.status,
         commentsEnabled: articles.commentsEnabled,
       })
@@ -344,10 +349,15 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     if (!article.commentsEnabled) {
       return { ok: false, statusCode: 403, message: 'Bài viết này hiện không mở bình luận.' }
     }
+    contextTitle = `Bài viết: ${article.title}`
+    contextUrl = `/news/${article.slug}`
   } else {
     const [item] = await db
       .select({
         id:              mediaItems.id,
+        title:           mediaItems.title,
+        slug:            mediaItems.slug,
+        shortId:         mediaItems.shortId,
         status:          mediaItems.status,
         commentsEnabled: mediaItems.commentsEnabled,
       })
@@ -361,6 +371,8 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     if (!item.commentsEnabled) {
       return { ok: false, statusCode: 403, message: 'Video này hiện không mở bình luận.' }
     }
+    contextTitle = `Video: ${item.title}`
+    contextUrl = `/media/${item.shortId || item.slug}`
   }
 
   const [reader] = await db
@@ -477,6 +489,8 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
       targetId: id,
       authorName: reader.displayName || 'Người đọc',
       authorIp: input.ip,
+      contextTitle: contextTitle || undefined,
+      contextUrl: contextUrl || undefined,
     })
   }
 

@@ -80,12 +80,12 @@ export default defineEventHandler(async (event) => {
         const [existingBan] = await tx
           .select()
           .from(readerIpBans)
-          .where(eq(readerIpBans.ipOrSubnet, queueItem.authorIp))
+          .where(eq(readerIpBans.value, queueItem.authorIp))
           .limit(1)
 
         if (!existingBan) {
           await tx.insert(readerIpBans).values({
-            ipOrSubnet: queueItem.authorIp,
+            value: queueItem.authorIp,
             reason: `AI An ninh phát hiện vi phạm: ${queueItem.flaggedReason.slice(0, 200)}`,
             createdBy: adminUser.id ?? null,
           })

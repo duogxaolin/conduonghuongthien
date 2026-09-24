@@ -17,6 +17,9 @@ export interface ModerationCheckInput {
   targetId?: number
   authorName?: string
   authorIp?: string
+  contextTitle?: string
+  contextUrl?: string
+  sessionId?: string
 }
 
 export interface ModerationCheckOutput {
@@ -201,6 +204,9 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
         targetId: input.targetId ? Number(input.targetId) : null,
         authorName: input.authorName || 'Khách',
         authorIp: input.authorIp || null,
+        contextTitle: input.contextTitle || null,
+        contextUrl: input.contextUrl || null,
+        sessionId: input.sessionId || null,
         contentSnippet: content.slice(0, 1000),
         flaggedReason: reasons.join('; '),
         matchedRules,

@@ -110,6 +110,10 @@ export default defineEventHandler(async (event) => {
         void checkAndModerateContent({
           content: userText,
           targetType: 'chat',
+          targetId: undefined,
+          sessionId,
+          contextTitle: `Phiên Chatbot #${sessionId.slice(0, 8)}`,
+          contextUrl: `/admin/chatbot/sessions?search=${encodeURIComponent(sessionId)}`,
           authorIp: getClientIp(event) || undefined,
         })
       }

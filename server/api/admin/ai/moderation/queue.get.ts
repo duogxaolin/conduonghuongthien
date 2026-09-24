@@ -1,6 +1,6 @@
 import { desc, eq } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
-import { aiModerationQueue } from '../../../../db/schema'
+import { aiModerationQueue, readerIpBans } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {
@@ -17,10 +17,17 @@ export default defineEventHandler(async (event) => {
     .where(statusFilter === 'all' ? undefined : eq(aiModerationQueue.status, statusFilter))
     .orderBy(desc(aiModerationQueue.createdAt))
     .limit(50)
+  const bans = await db.select({ value: readerIpBans.value }).from(readerIpBans)
+  const bannedSet = new Set(bans.map(b => b.value))
+
+  const items = rows.map(r => ({
+    ...r,
+    isIpBanned: Boolean(r.authorIp && bannedSet.has(r.authorIp)),
+  }))
 
   return {
     ok: true,
-    count: rows.length,
-    items: rows,
+    count: items.length,
+    items,
   }
 })
