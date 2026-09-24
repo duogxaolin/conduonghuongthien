@@ -67,16 +67,10 @@ export async function checkAndModerateContent(input: ModerationCheckInput): Prom
   const db = getDb()
   const rules = await getActiveModerationRules()
 
-  const matchedRules: string[] = []
-  const reasons: string[] = []
-  let highestSeverity: 'low' | 'medium' | 'high' | 'critical' = 'low'
-  let finalAction: "allow" | "auto_hide" | "flag_only" | "block" = "allow"
-
-  const severityWeight = { low: 1, medium: 2, high: 3, critical: 4 }
-
+  const matchedKeywords: Array<{ pattern: string; category: string; severity: string; action: string }> = []
   const lowerContent = content.toLowerCase()
 
-  // 1. Fast-path: Keyword & Pattern matching
+  // 1. Scan for sensitive keywords and rules in content
   for (const rule of rules) {
     const pattern = rule.pattern.toLowerCase().trim()
     let isMatch = false
@@ -93,39 +87,50 @@ export async function checkAndModerateContent(input: ModerationCheckInput): Prom
     }
 
     if (isMatch) {
-      matchedRules.push(`[${rule.category}] ${rule.pattern}`)
-      reasons.push(`Khớp từ khóa/quy tắc: "${rule.pattern}" (Nhóm: ${rule.category})`)
-
-      const s = (rule.severity || 'high') as keyof typeof severityWeight
-      if (severityWeight[s] > severityWeight[highestSeverity]) {
-        highestSeverity = s
-      }
-
-      if (rule.action === 'auto_hide' || rule.action === 'block') {
-        finalAction = 'auto_hide'
-      } else if (finalAction !== 'auto_hide' && rule.action === 'flag_only') {
-        finalAction = 'flag_only'
-      }
+      matchedKeywords.push({
+        pattern: rule.pattern,
+        category: rule.category,
+        severity: rule.severity,
+        action: rule.action,
+      })
     }
   }
 
-  // 2. Deep-path: AI Semantic Analysis if not matched by keywords but content is substantial
-  if (matchedRules.length === 0 && content.length >= 20) {
-    try {
-      const aiPrompt = `Phân tích kiểm duyệt an ninh nội dung sau trên Cổng thông tin Cục C11 - Bộ Công an:
-"${content.slice(0, 1000)}"
+  // 2. Intelligent Context-Aware AI Moderation
+  // When sensitive keywords appear OR content has substantial length (>= 20 chars),
+  // the AI reads the FULL context to distinguish between:
+  // - Positive / vigilance / educational (safe -> DO NOT hide)
+  // - Negative / hostile / propaganda / scam (violation -> auto-hide)
+  let isFlagged = false
+  let finalAction: "allow" | "auto_hide" | "flag_only" | "block" = "allow"
+  let highestSeverity: 'low' | 'medium' | 'high' | 'critical' = 'low'
+  const reasons: string[] = []
+  const matchedRules: string[] = []
 
-Yêu cầu nhận diện:
-- Tư tưởng thù địch, chống phá Đảng/Nhà nước, bạo loạn, lật đổ
-- Xuyên tạc chính sách nhân đạo tái hòa nhập cộng đồng
-- Lừa đảo, cờ bạc, nội dung xấu độc hại
-Trả về JSON thuần (không kèm markdown):
+  const severityWeight = { low: 1, medium: 2, high: 3, critical: 4 }
+
+  if (matchedKeywords.length > 0 || content.length >= 20) {
+    const detectedStr = matchedKeywords.length > 0
+      ? `\nTừ khóa / chuyên đề nhạy cảm phát hiện trong câu: ${matchedKeywords.map(k => `"${k.pattern}" (${k.category})`).join(', ')}`
+      : ''
+
+    const aiPrompt = `Bạn là sĩ quan an ninh mạng phụ trách kiểm duyệt nội dung trên Cổng thông tin Cục C11 - Bộ Công an.
+Hãy đọc hiểu ngữ cảnh toàn bộ nội dung sau đây:
+"${content.slice(0, 1000)}"${detectedStr}
+
+YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
+1. Phân biệt rõ ràng giữa:
+   - TÍCH CỰC / CẢNH GIÁC: Người dân/cán bộ nhắc đến từ khóa nhằm mục đích cảnh giác, lên án, phản bác luận điệu thù địch, giải thích pháp luật hoặc chia sẻ thông tin đúng đắn -> Đánh giá: "safe" (An toàn, KHÔNG ẩn).
+   - TIÊU CỰC / VI PHẠM: Tuyên truyền cho tổ chức phản động, kích động bạo loạn, lôi kéo lật đổ chính quyền, bôi nhọ lãnh đạo Đảng/Nhà nước, xuyên tạc chính sách, phát tán link cờ bạc, lừa đảo, dùng từ ngữ thô tục xúc phạm -> Đánh giá: "violation" hoặc "spam" (Vi phạm, CẦN ẨN).
+2. Trả về đúng định dạng JSON thuần túy (không kèm markdown):
 {
   "verdict": "safe" | "spam" | "violation",
-  "riskLevel": "low" | "medium" | "high",
-  "reason": "Giải thích ngắn 1 câu nếu vi phạm"
+  "intent": "propaganda" | "denunciation" | "educational" | "spam" | "neutral",
+  "riskLevel": "low" | "medium" | "high" | "critical",
+  "reason": "Giải thích ngắn gọn 1 câu phân tích ngữ cảnh và ý đồ của người viết"
 }`
 
+    try {
       const aiResult = await callAi('moderation', {
         prompt: aiPrompt,
         variables: { content: content.slice(0, 500), author: input.authorName || 'User' },
@@ -133,21 +138,50 @@ Trả về JSON thuần (không kèm markdown):
 
       if (aiResult.ok && aiResult.text) {
         const clean = aiResult.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
-        const parsed = JSON.parse(clean) as { verdict?: string; riskLevel?: string; reason?: string }
+        const parsed = JSON.parse(clean) as {
+          verdict?: string
+          intent?: string
+          riskLevel?: string
+          reason?: string
+        }
+
         if (parsed.verdict === 'violation' || parsed.verdict === 'spam') {
-          matchedRules.push(`[AI Semantic] ${parsed.verdict}`)
-          reasons.push(parsed.reason || 'AI phát hiện nội dung có dấu hiệu vi phạm tiêu chuẩn an ninh.')
-          highestSeverity = parsed.riskLevel === 'high' ? 'high' : 'medium'
-          finalAction = 'auto_hide'
+          isFlagged = true
+          finalAction = "auto_hide"
+          const s = (parsed.riskLevel || 'high') as keyof typeof severityWeight
+          if (severityWeight[s] > severityWeight[highestSeverity]) {
+            highestSeverity = s
+          }
+          matchedRules.push(`[AI Ngữ cảnh] ${parsed.intent || parsed.verdict}`)
+          for (const k of matchedKeywords) {
+            matchedRules.push(`[${k.category}] ${k.pattern}`)
+          }
+          reasons.push(parsed.reason || 'AI phân tích ngữ cảnh: Phát hiện ý đồ vi phạm tiêu chuẩn an ninh.')
+        } else {
+          // Safe intent: allow even if keyword was present
+          isFlagged = false
+          finalAction = "allow"
+        }
+      } else {
+        // Fallback on AI error: auto-hide if critical hostile keyword is present
+        if (matchedKeywords.some(k => k.severity === 'critical')) {
+          isFlagged = true
+          finalAction = "auto_hide"
+          highestSeverity = 'critical'
+          matchedRules.push(...matchedKeywords.map(k => `[${k.category}] ${k.pattern}`))
+          reasons.push(`Khớp từ khóa an ninh: ${matchedKeywords.map(k => `"${k.pattern}"`).join(', ')} (Dự phòng lỗi AI)`)
         }
       }
     } catch {
-      // Ignore AI failure in background worker
+      if (matchedKeywords.some(k => k.severity === 'critical')) {
+        isFlagged = true
+        finalAction = "auto_hide"
+        highestSeverity = 'critical'
+        matchedRules.push(...matchedKeywords.map(k => `[${k.category}] ${k.pattern}`))
+        reasons.push(`Khớp từ khóa an ninh: ${matchedKeywords.map(k => `"${k.pattern}"`).join(', ')} (Dự phòng lỗi AI)`)
+      }
     }
   }
-
-  const isFlagged = matchedRules.length > 0
-
   // 3. Automated Action: Record to queue & hide content
   if (isFlagged) {
     logWarn({
