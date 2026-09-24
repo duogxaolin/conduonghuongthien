@@ -397,9 +397,10 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
         errorMessage = 'empty_response'
         return { ok: false, error: 'parse_error' }
       }
-
-      // "k tính systemprompt đâu": chỉ tính token từ nội dung prompt thực tế của người dùng
-      promptTokens = Math.max(1, Math.ceil(input.prompt.length / 3.5))
+      if (config.provider === 'delify' && promptTokens >= 2000) {
+        promptTokens -= 2000
+      }
+      if (!promptTokens) promptTokens = Math.max(1, Math.ceil(input.prompt.length / 3.5))
       if (!completionTokens) completionTokens = Math.max(1, Math.ceil(answerText.length / 3.5))
       totalTokens = promptTokens + completionTokens
     } catch (error) {
@@ -436,12 +437,12 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
       promptTokens = parsed.promptTokens
       completionTokens = parsed.completionTokens
       totalTokens = parsed.totalTokens
-
-      // "k tính systemprompt đâu": chỉ tính token từ nội dung prompt thực tế của người dùng
-      promptTokens = Math.max(1, Math.ceil(input.prompt.length / 3.5))
+      if (config.provider === 'delify' && promptTokens >= 2000) {
+        promptTokens -= 2000
+      }
+      if (!promptTokens) promptTokens = Math.max(1, Math.ceil(input.prompt.length / 3.5))
       if (!completionTokens) completionTokens = Math.max(1, Math.ceil(answerText.length / 3.5))
       totalTokens = promptTokens + completionTokens
-
       if (!answerText) {
         success = false
         errorMessage = 'empty_response'
