@@ -224,9 +224,16 @@
                 <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#1e4620] shadow-sm" aria-hidden="true">
                   <i class="fa-solid fa-robot text-[0.7rem] text-white"></i>
                 </div>
-                <div class="rounded-[4px_18px_18px_18px] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)]" role="status" aria-live="polite">
+                <div class="rounded-[4px_18px_18px_18px] bg-white px-4 py-3 shadow-[0_1px_3px_rgba(0,0,0,0.06)] border border-[#e8efe8] max-w-sm" role="status" aria-live="polite">
                   <span class="sr-only">Trợ lý đang soạn câu trả lời</span>
-                  <div class="flex items-center gap-1" aria-hidden="true">
+                  <div class="flex items-center gap-2 text-xs font-semibold text-[#2c6e33]">
+                    <span class="relative flex h-2 w-2">
+                      <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#7CB342] opacity-75"></span>
+                      <span class="relative inline-flex rounded-full h-2 w-2 bg-[#2c6e33]"></span>
+                    </span>
+                    <span>Trợ lý đang suy nghĩ &amp; tra cứu dữ liệu...</span>
+                  </div>
+                  <div class="flex items-center gap-1.5 mt-2" aria-hidden="true">
                     <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-[#1e4620] motion-reduce:animate-none motion-reduce:opacity-60"></span>
                     <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-[#1e4620] [animation-delay:200ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
                     <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-[#1e4620] [animation-delay:400ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
