@@ -1122,7 +1122,7 @@ onMounted(() => {
           </div>
           <div class="rounded-xl border border-[#e2ece3] bg-white p-4">
             <p class="m-0 text-xs font-bold text-[#667768] uppercase tracking-wide">Tổng Tokens</p>
-            <p class="m-0 mt-2 text-2xl font-extrabold text-[#122815]">{{ formatNum(usageSummary?.totalPromptTokens ?? 0) }}</p>
+            <p class="m-0 mt-2 text-2xl font-extrabold text-[#122815]">{{ formatNum(usageSummary?.totalTokens ?? 0) }}</p>
             <p class="m-0 mt-1 text-xs text-[#667768]">Input: {{ formatNum(usageSummary?.totalPromptTokens ?? 0) }} / Output: {{ formatNum(usageSummary?.totalCompletionTokens ?? 0) }}</p>
           </div>
           <div class="rounded-xl border border-[#e2ece3] bg-white p-4">
