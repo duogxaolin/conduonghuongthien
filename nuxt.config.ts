@@ -71,9 +71,13 @@ if (analyticsDefaultRangeDays > analyticsMaxRangeDays) {
 
 export default defineNuxtConfig({
   compatibilityDate: '2026-07-20',
-  devtools: { enabled: true },
+   devtools: { enabled: true },
+ 
+  experimental: {
+    payloadExtraction: false,
+  },
 
-  modules: ['@nuxtjs/tailwindcss'],
+   modules: ['@nuxtjs/tailwindcss'],
 
   nitro: {
     /**

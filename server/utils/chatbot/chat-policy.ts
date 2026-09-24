@@ -112,15 +112,18 @@ export function buildGroundedSystemPrompt(systemPrompt: string, references: Publ
 HƯỚNG DẪN TRẢ LỜI ĐA PHƯƠNG TIỆN VÀ SỬ DỤNG CÔNG CỤ (TOOLS):
 1. Bạn có các công cụ tra cứu dữ liệu Cổng thông tin Cục C11:
    - search_c11_knowledge: Tra cứu tri thức nghiệp vụ, thủ tục xóa án tích, điều kiện vay vốn, cư trú.
-   - search_c11_articles: Tra cứu bài viết, tin tức, tấm gương hoàn lương (type=role_model), mô hình tái hòa nhập (type=reintegration).
+   - search_c11_articles: Tra cứu bài viết, tin tức, tấm gương hoàn lương (type=role_model), mô hình tái hòa nhập (type=reintegration), văn bản và quy định quản lý phạm nhân.
    - search_c11_videos: Tra cứu video, phóng sự truyền hình, tài liệu hướng dẫn.
    - search_c11_photos: Tra cứu ảnh trong Thư viện Media.
    - get_c11_hotline_and_support: Lấy hotline 24/7 và thông tin hỗ trợ C11.
-2. Hiển thị sinh động trong tin nhắn:
+2. Giải đáp thấu đáo về pháp luật và chế độ thi hành án:
+   - Khi công dân hỏi về quyền, chế độ thăm gặp thân nhân của phạm nhân, gửi quà, thủ tục tư pháp: Hãy chủ động dùng tool search_c11_articles để tìm bài viết quy định.
+   - Đồng thời vận dụng chuẩn mực các quy định của pháp luật Việt Nam (Luật Thi hành án hình sự năm 2019 Điều 52 quy định chế độ gặp thân nhân: phạm nhân được gặp thân nhân 1 lần/tháng, thời gian gặp không quá 1 giờ hoặc tối đa 4 giờ...) để giải đáp tường minh, ấm áp và hướng dẫn liên hệ Công an địa phương hoặc Hotline 0903.480.985 khi cần giúp đỡ. Tuyệt đối không từ chối một cách cứng nhắc nếu câu hỏi thuộc phạm trù pháp luật phổ thông.
+3. Hiển thị sinh động trong tin nhắn:
    - Khi giới thiệu bài viết: chèn link [Tên bài viết](/news/slug) kèm ảnh bìa nếu có: ![Tên bài viết](coverImageUrl).
    - Khi giới thiệu video: chèn link [Xem Video: Tên video](/media/shortId) kèm ảnh poster nếu có: ![Xem Video](posterUrl).
    - Khi chia sẻ ảnh: chèn cú pháp ảnh Markdown ![Mô tả ảnh](url_ảnh) để hiển thị trực tiếp ảnh trong tin nhắn.
-3. Xưng em, gọi anh/chị, lịch sự, thấu cảm và tuân thủ quy định pháp luật.
+4. Xưng em, gọi anh/chị, lịch sự, thấu cảm và tuân thủ quy định pháp luật.
 <UNTRUSTED_KNOWLEDGE_REFERENCES>
 ${refs}
 </UNTRUSTED_KNOWLEDGE_REFERENCES>`
@@ -260,35 +263,58 @@ async function callProvider(settings: ChatbotSettings, dependencies: ChatDepende
       execute: async (args: Record<string, unknown>) => {
         try {
           const db = getDb()
-          const q = String(args.query || '').trim()
+          const rawQ = String(args.query || '').trim()
           const type = typeof args.type === 'string' ? args.type.trim() : null
           const whereConds = [eq(articles.status, 'published')]
           if (type) whereConds.push(eq(articles.type, type))
-          if (q) {
+
+          const stopWords = new Set(['cho', 'tôi', 'hỏi', 'với', 'được', 'không', 'nào', 'các', 'của', 'là', 'gì', 'thế', 'ở', 'đó', 'có', 'thì', 'xin'])
+          const keywords = rawQ
+            .toLowerCase()
+            .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+            .split(/\s+/)
+            .filter(w => w.length >= 2 && !stopWords.has(w))
+
+          if (keywords.length > 0) {
+            const orLikes = keywords.map(kw => or(
+              like(articles.title, `%${kw}%`),
+              like(articles.summary, `%${kw}%`),
+              like(articles.content, `%${kw}%`)
+            )!)
+            whereConds.push(or(...orLikes)!)
+          } else if (rawQ) {
             whereConds.push(or(
-              like(articles.title, `%${q}%`),
-              like(articles.summary, `%${q}%`)
+              like(articles.title, `%${rawQ}%`),
+              like(articles.summary, `%${rawQ}%`),
+              like(articles.content, `%${rawQ}%`)
             )!)
           }
+
           const rows = await db.select({
             id: articles.id,
             title: articles.title,
             type: articles.type,
             slug: articles.slug,
             summary: articles.summary,
+            content: articles.content,
             coverImage: articles.coverImage,
           }).from(articles)
           .where(and(...whereConds))
           .orderBy(desc(articles.publishedAt), desc(articles.id))
           .limit(3)
 
-          return rows.map(r => ({
-            title: r.title,
-            type: r.type,
-            url: `/news/${r.slug}`,
-            summary: r.summary,
-            coverImage: r.coverImage || null,
-          }))
+          return rows.map(r => {
+            const plainContent = (r.content || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+            const snippet = plainContent ? plainContent.slice(0, 350) + (plainContent.length > 350 ? '...' : '') : (r.summary || '')
+            return {
+              title: r.title,
+              type: r.type,
+              url: `/news/${r.slug}`,
+              summary: r.summary,
+              snippet,
+              coverImage: r.coverImage || null,
+            }
+          })
         } catch {
           return []
         }

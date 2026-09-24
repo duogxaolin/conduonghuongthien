@@ -44,8 +44,9 @@
     <!-- Main Header: sticky giữ header trong flow, không gây reflow khi cuộn.
          isSticky nay chỉ bật/tắt shadow — không đổi position nữa. -->
     <header
-      class="main-header bg-white w-full sticky top-0 z-[10001] border-b border-[#E2E8DF] transition-[box-shadow]"
+      class="main-header notranslate bg-white w-full sticky top-0 z-[10001] border-b border-[#E2E8DF] transition-[box-shadow]"
       :class="isSticky ? 'shadow-md' : 'shadow-none'"
+      translate="no"
     >
       <!-- Dòng 1: Logo & Các nút hành động nhanh -->
       <div class="border-b border-[#E2E8DF] bg-white">
