@@ -93,11 +93,11 @@ export function validateChatRequestBody(body: unknown): void {
 }
 
 export function validateChatMessages(messages: unknown, settings: ChatbotSettings): ChatMessage[] {
-  if (!Array.isArray(messages) || messages.length < 1 || messages.length > Math.min(20, settings.maxHistoryMessages + 1)) throw new Error('INVALID_MESSAGES')
+  if (!Array.isArray(messages) || messages.length < 1 || messages.length > Math.min(30, (settings.maxHistoryMessages + 1) * 2)) throw new Error('INVALID_MESSAGES')
   const accepted = messages.filter(message => {
     if (!message || typeof message !== 'object') return false
     const item = message as ChatMessage
-    return item.role === 'user' || item.sender === 'user'
+    return item.role === 'user' || item.sender === 'user' || item.role === 'assistant' || item.sender === 'bot'
   }).map(message => message as ChatMessage)
   if (!accepted.length) throw new Error('INVALID_MESSAGES')
   const total = accepted.reduce((sum, item) => sum + text(item.content ?? item.text).length, 0)
@@ -116,13 +116,11 @@ HƯỚNG DẪN TRẢ LỜI ĐA PHƯƠNG TIỆN VÀ SỬ DỤNG CÔNG CỤ (TOOLS
    - search_c11_videos: Tra cứu video, phóng sự truyền hình, tài liệu hướng dẫn.
    - search_c11_photos: Tra cứu ảnh trong Thư viện Media.
    - get_c11_hotline_and_support: Lấy hotline 24/7 và thông tin hỗ trợ C11.
-2. Cung cấp dẫn chứng thực tế khi người dùng hỏi hoặc hoài nghi:
-   - Khi người dùng hỏi "thật không?", "có dẫn chứng không?", "ở đâu?", "ví dụ?", hoặc bày tỏ băn khoăn về sự giúp đỡ của Nhà nước/địa phương:
-     BẮT BUỘC gọi ngay công cụ search_c11_articles (kết hợp chủ đề của các tin nhắn trước trong hội thoại, ví dụ: mô hình tái hòa nhập, việc làm, vay vốn) và search_c11_photos để lấy các câu chuyện, bài viết và hình ảnh người thật việc thật làm dẫn chứng xác thực.
-     Tuyệt đối KHÔNG ĐƯỢC trả lời suông "chính sách có thật" mà không đưa ra các bài viết, mô hình cụ thể kèm link [Tên bài viết](/news/slug) và hình ảnh ![Tên bài viết](coverImageUrl) để người dân tin tưởng.
+2. Dẫn chứng thực tế và liên kết ngữ cảnh (Rất quan trọng):
+   - Khi trả lời câu hỏi của công dân: Nếu có bài viết, tấm gương, mô hình hay hình ảnh liên quan thì hãy chủ động tra cứu công cụ để đưa thêm dẫn chứng vào câu trả lời, giúp nội dung xác thực và sinh động.
+   - Khi người dùng hỏi tiếp nối, hỏi ngắn hoặc bày tỏ hoài nghi (ví dụ: "thật không?", "có dẫn chứng không?", "ở đâu?", "ví dụ?"): BẮT BUỘC phải dựa vào chủ đề đã trao đổi ở các tin nhắn trước trong hội thoại để đặt từ khóa tra cứu chính xác, đưa ra đúng các bài viết và hình ảnh có thật làm bằng chứng, tuyệt đối không đưa thông tin lung tung hoặc trả lời suông.
 3. Giải đáp thấu đáo về pháp luật và chế độ thi hành án:
-   - Khi công dân hỏi về quyền, chế độ thăm gặp thân nhân của phạm nhân, gửi quà, thủ tục tư pháp: Hãy chủ động dùng tool search_c11_articles để tìm bài viết quy định.
-   - Đồng thời vận dụng chuẩn mực các quy định của pháp luật Việt Nam (Luật Thi hành án hình sự năm 2019 Điều 52 quy định chế độ gặp thân nhân: phạm nhân được gặp thân nhân 1 lần/tháng, thời gian gặp không quá 1 giờ hoặc tối đa 4 giờ...) để giải đáp tường minh, ấm áp và hướng dẫn liên hệ Công an địa phương hoặc Hotline 0903.480.985 khi cần giúp đỡ. Tuyệt đối không từ chối một cách cứng nhắc nếu câu hỏi thuộc phạm trù pháp luật phổ thông.
+   - Vận dụng chuẩn mực các quy định của pháp luật Việt Nam (Luật Thi hành án hình sự, Bộ luật Hình sự, các văn bản của Bộ Công an...) để giải đáp rõ ràng, tận tình cho người dân và gia đình, kèm hướng dẫn liên hệ Công an địa phương hoặc Hotline 0903.480.985 khi cần giúp đỡ.
 4. Hiển thị sinh động trong tin nhắn:
    - Khi giới thiệu bài viết: chèn link [Tên bài viết](/news/slug) kèm ảnh bìa nếu có: ![Tên bài viết](coverImageUrl).
    - Khi giới thiệu video: chèn link [Xem Video: Tên video](/media/shortId) kèm ảnh poster nếu có: ![Xem Video](posterUrl).
@@ -134,7 +132,10 @@ ${refs}
 }
 
 export function buildChatHistory(history: ChatMessage[], answerLimit = CHAT_LIMITS.maxOutputChars) {
-  return history.map(item => ({ role: 'user', content: text(item.content ?? item.text).slice(0, answerLimit) }))
+  return history.map(item => {
+    const role = (item.role === 'assistant' || item.sender === 'bot') ? 'assistant' : 'user'
+    return { role, content: text(item.content ?? item.text).slice(0, answerLimit) }
+  })
 }
 
 export function buildChatMessages(systemPrompt: string, references: PublicKnowledgeReference[], history: ChatMessage[], answerLimit = CHAT_LIMITS.maxOutputChars) {

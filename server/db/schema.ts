@@ -1371,3 +1371,59 @@ export type AiModerationRule = typeof aiModerationRules.$inferSelect
 export type NewAiModerationRule = typeof aiModerationRules.$inferInsert
 export type AiModerationQueueItem = typeof aiModerationQueue.$inferSelect
 export type NewAiModerationQueueItem = typeof aiModerationQueue.$inferInsert
+// ─── Languages & UI translations ─────────────────────────────────────────────
+export const languages = mysqlTable('languages', {
+  id:           int('id').autoincrement().primaryKey(),
+  code:         varchar('code', { length: 10 }).notNull().unique(),
+  name:         varchar('name', { length: 100 }).notNull(),
+  nativeName:   varchar('native_name', { length: 100 }).notNull(),
+  isActive:     boolean('is_active').notNull().default(true),
+  isDefault:    boolean('is_default').notNull().default(false),
+  displayOrder: int('display_order').notNull().default(0),
+  createdAt:    timestamp('created_at').defaultNow(),
+  updatedAt:    timestamp('updated_at').defaultNow().onUpdateNow(),
+})
+
+export const langTranslations = mysqlTable('lang_translations', {
+  id:            int('id').autoincrement().primaryKey(),
+  langCode:      varchar('lang_code', { length: 10 }).notNull(),
+  group:         varchar('group', { length: 50 }).notNull().default('general'),
+  key:           varchar('key', { length: 200 }).notNull(),
+  value:         text('value'),
+  isAiTranslated: boolean('is_ai_translated').notNull().default(false),
+  createdAt:     timestamp('created_at').defaultNow(),
+  updatedAt:     timestamp('updated_at').defaultNow().onUpdateNow(),
+}, (t) => ({
+  ukLangGroupKey: uniqueIndex('uk_lang_group_key').on(t.langCode, t.group, t.key),
+  langCodeIdx: index('idx_lang_code').on(t.langCode),
+}))
+
+// ─── Article translations ───────────────────────────────────────────────────
+export const articleTranslations = mysqlTable('article_translations', {
+  id:            int('id').autoincrement().primaryKey(),
+  articleId:     int('article_id').notNull().references(() => articles.id, { onDelete: 'cascade' }),
+  langCode:      varchar('lang_code', { length: 10 }).notNull(),
+  title:         varchar('title', { length: 512 }),
+  excerpt:       text('excerpt'),
+  content:       longtext('content'),
+  status:        varchar('status', { length: 16 }).notNull().default('translating'),
+  translatedBy:  varchar('translated_by', { length: 32 }).notNull().default('ai'),
+  translatorId:  int('translator_id').references(() => users.id, { onDelete: 'set null' }),
+  progress:      int('progress').notNull().default(0),
+  totalChunks:   int('total_chunks').notNull().default(0),
+  currentChunk:  int('current_chunk').notNull().default(0),
+  errorMessage:  varchar('error_message', { length: 512 }),
+  createdAt:     timestamp('created_at').defaultNow(),
+  updatedAt:     timestamp('updated_at').defaultNow().onUpdateNow(),
+  completedAt:   timestamp('completed_at'),
+}, (t) => ({
+  ukArticleLang: uniqueIndex('uk_article_lang').on(t.articleId, t.langCode),
+  langStatusIdx: index('article_translations_lang_status_idx').on(t.langCode, t.status),
+}))
+
+export type Language = typeof languages.$inferSelect
+export type NewLanguage = typeof languages.$inferInsert
+export type LangTranslation = typeof langTranslations.$inferSelect
+export type NewLangTranslation = typeof langTranslations.$inferInsert
+export type ArticleTranslation = typeof articleTranslations.$inferSelect
+export type NewArticleTranslation = typeof articleTranslations.$inferInsert

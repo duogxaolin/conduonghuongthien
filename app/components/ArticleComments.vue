@@ -189,6 +189,39 @@
         </li>
       </ul>
 
+      <!-- Pending (optimistic) comments — only the sender sees these.
+           Dimmed while sending, red on failure with retry/dismiss. -->
+      <ul v-if="pendingComments.length" class="list-none p-0 m-0 mb-6 flex flex-col gap-3" aria-label="Bình luận đang gửi">
+        <li v-for="p in pendingComments" :key="p.tempId" class="transition-opacity">
+          <div
+            class="rounded-lg p-4 border"
+            :class="p.status === 'error'
+              ? 'border-[#f0c0c0] bg-[#fff5f4]'
+              : 'border-[#E2E8DF] bg-[#F8FAF7] opacity-60'"
+          >
+            <div class="flex items-center gap-2 mb-1.5">
+              <span v-if="p.status === 'sending'" class="inline-flex items-center gap-1.5 text-[0.78rem] text-[#7A8675] font-medium">
+                <i class="fa-solid fa-circle-notch fa-spin text-[0.7rem]" aria-hidden="true"></i>
+                Đang gửi…
+              </span>
+              <span v-else class="inline-flex items-center gap-1.5 text-[0.78rem] text-[#B04A4A] font-medium" role="alert">
+                <i class="fa-solid fa-circle-exclamation text-[0.75rem]" aria-hidden="true"></i>
+                {{ p.error }}
+              </span>
+            </div>
+            <p class="m-0 text-[0.95rem] leading-[1.6] text-[#2C3529] whitespace-pre-line break-words">{{ p.body }}</p>
+            <div v-if="p.status === 'error'" class="mt-2 flex gap-3">
+              <button type="button" class="text-[0.82rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded" @click="retryPendingComment(p.tempId)">
+                <i class="fa-solid fa-rotate-right mr-1" aria-hidden="true"></i>Thử lại
+              </button>
+              <button type="button" class="text-[0.82rem] font-semibold text-[#7A8675] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded" @click="dismissPendingComment(p.tempId)">
+                <i class="fa-solid fa-xmark mr-1" aria-hidden="true"></i>Bỏ qua
+              </button>
+            </div>
+          </div>
+        </li>
+      </ul>
+
       <div v-if="totalPages > 1" class="mb-6 flex flex-wrap items-center justify-center gap-2">
         <button
           type="button"
@@ -345,16 +378,20 @@ const totalPages = ref(1)
 const enabled = ref(false)
 const pending = ref(true)
 const errorMessage = ref('')
-
+const pendingComments = ref<Array<{
+  tempId: number
+  parentId: number | null
+  body: string
+  status: 'sending' | 'error'
+  error: string
+}>>([])
 const body = ref('')
 const replyTo = ref<number | null>(null)
 const replyBody = ref('')
 const submitting = ref(false)
 const submitError = ref('')
 const deletingId = ref<number | null>(null)
-/** Đúng khi máy chủ vừa từ chối một lượt ghi bằng 401 — xem reportFailure. */
 const sessionLapsed = ref(false)
-/** Bình luận đang được tô sáng vì vừa được điều hướng tới. */
 const highlightId = ref<number | null>(null)
 const copiedId = ref<number | null>(null)
 
@@ -540,29 +577,51 @@ function reportFailure(error: unknown, fallback: string): string {
 async function submit(parentId: number | null) {
   const text = parentId === null ? body.value : replyBody.value
   if (!text.trim() || submitting.value) return
-
   submitting.value = true
   submitError.value = ''
+  const tempId = -Date.now()
+  pendingComments.value.push({ tempId, parentId, body: text.trim(), status: 'sending', error: '' })
   try {
     await $fetch('/api/public/comments', {
       method: 'POST',
       body: { ...writeBody.value, parentId, body: text },
     })
-    // Cleared only after the write is known to have landed. On failure the typed
-    // text stays in the box: a citizen who wrote three paragraphs and hit a rate
-    // limit must not lose them to a form reset.
+    pendingComments.value = pendingComments.value.filter(p => p.tempId !== tempId)
     if (parentId === null) body.value = ''
     else { replyBody.value = ''; replyTo.value = null }
-    // Nháp đã hoàn thành nhiệm vụ. Không xoá thì lượt tải trang sau sẽ điền lại
-    // đúng bình luận vừa gửi, và người đọc tưởng nó chưa đi.
     clearDraft()
     sessionLapsed.value = false
     await loadThread()
   } catch (error) {
+    const failed = pendingComments.value.find(p => p.tempId === tempId)
+    if (failed) { failed.status = 'error'; failed.error = reportFailure(error, 'Không thể gửi bình luận.') }
     submitError.value = reportFailure(error, 'Không thể gửi bình luận. Vui lòng thử lại.')
   } finally {
     submitting.value = false
   }
+}
+
+/** Retry a failed optimistic comment by removing it and re-submitting. */
+function retryPendingComment(tempId: number) {
+  const pending = pendingComments.value.find(p => p.tempId === tempId)
+  if (!pending) return
+  const text = pending.body
+  const parentId = pending.parentId
+  pendingComments.value = pendingComments.value.filter(p => p.tempId !== tempId)
+  // Re-submit using the same text
+  if (parentId === null) {
+    body.value = text
+    submit(null)
+  } else {
+    replyTo.value = parentId
+    replyBody.value = text
+    submit(parentId)
+  }
+}
+
+/** Dismiss a failed optimistic comment. */
+function dismissPendingComment(tempId: number) {
+  pendingComments.value = pendingComments.value.filter(p => p.tempId !== tempId)
 }
 
 async function removeComment(comment: PublicCommentItem) {

@@ -73,15 +73,24 @@ YÊU CẦU BẮT BUỘC:
   ]
 }`
   } else if (action === 'polish') {
-    taskPrompt = `Bạn là trợ lý biên tập của Cổng thông tin Cục C11 - Bộ Công an.
-Hãy rà soát toàn bộ bài viết, sửa các lỗi chính tả, ngữ pháp, chuẩn hóa câu từ hành chính pháp lý.
-YÊU CẦU BẮT BUỘC:
-1. TUYỆT ĐỐI KHÔNG chào hỏi, không thêm lời dẫn hay ghi chú giải thích.
-2. Giữ nguyên 100% các thẻ HTML (<p>, <strong>, <em>, <a>, <img>...) và ý nghĩa bài viết.
-3. Trả về đúng định dạng JSON thuần túy (không bọc trong markdown code block):
+    taskPrompt = `Bạn là chuyên gia biên tập và soát lỗi văn bản chính luận của Cổng thông tin Cục C11 - Bộ Công an.
+Hãy đọc kỹ bài viết, rà soát từng câu từng từ để tìm:
+1. Lỗi chính tả, đánh máy, danh xưng địa danh hành chính (ví dụ: huyện Mèo Vạc).
+2. Lỗi ngữ pháp, dùng từ chưa chuẩn văn phong báo chí chính luận.
+3. Sai số hiệu văn bản pháp luật, sai tên cơ quan hành chính (ví dụ: Nghị định về tái hòa nhập cộng đồng là Nghị định số 49/2020/NĐ-CP; Chi nhánh Ngân hàng Chính sách xã hội).
+
+YÊU CẦU BẮT BUỘC VỀ ĐẦU RA:
+Trả về đúng định dạng JSON thuần túy (không bọc trong markdown code block, không thêm lời dẫn giải thích):
 {
-  "polishedContent": "Toàn bộ nội dung bài viết hoàn chỉnh đã sửa lỗi",
-  "notes": ["Tóm tắt ngắn 1 câu những điểm đã sửa hoặc cải thiện"]
+  "summaryNotes": "Tóm tắt ngắn gọn 1-2 câu về tình trạng bài viết và những điểm chính đã sửa",
+  "changes": [
+    {
+      "original": "Đoạn văn bản gốc có lỗi hoặc chưa chuẩn (chuỗi ngắn, chính xác để tìm và thay thế)",
+      "suggested": "Đoạn văn bản đã sửa đổi, chuẩn hóa tương ứng",
+      "reason": "Giải thích ngắn gọn 1 câu lỗi gì (chính tả / pháp lý / danh xưng)"
+    }
+  ],
+  "polishedContent": "Toàn bộ nội dung bài viết hoàn chỉnh sau khi đã sửa toàn bộ lỗi (giữ nguyên cấu trúc HTML nếu có các thẻ <img>, <a>, <p>...)"
 }`
   }
 
@@ -108,17 +117,46 @@ YÊU CẦU BẮT BUỘC:
     titles?: string[]
     summary?: string
     polishedContent?: string
+    changes?: Array<{ original: string; suggested: string; reason: string }>
+    summaryNotes?: string
     notes?: string[]
   } = {}
 
   try {
-    const clean = aiResult.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
+    let clean = aiResult.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
+    const firstBrace = clean.indexOf('{')
+    const lastBrace = clean.lastIndexOf('}')
+    if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+      clean = clean.slice(firstBrace, lastBrace + 1)
+    }
     parsed = JSON.parse(clean) as typeof parsed
   } catch {
-    // If not JSON, split by lines or use raw text
-    const lines = aiResult.text.split('\n').map(l => l.trim()).filter(l => l.length > 10)
-    parsed = {
-      options: lines.length > 0 ? lines : [aiResult.text.trim()],
+    // Cố gắng phục hồi nếu JSON bị cắt cuối (do bài viết dài chạm trần token)
+    try {
+      const text = aiResult.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
+      const changesMatch = text.match(/"changes"\s*:\s*\[([\s\S]*?)\](?:\s*,\s*"polishedContent"|\s*\})/)
+      let recoveredChanges: Array<{ original: string; suggested: string; reason: string }> = []
+      if (changesMatch) {
+        try {
+          recoveredChanges = JSON.parse(`[${changesMatch[1]}]`)
+        } catch {
+          const itemRegex = /\{\s*"original"\s*:\s*"([^"]*)"\s*,\s*"suggested"\s*:\s*"([^"]*)"\s*,\s*"reason"\s*:\s*"([^"]*)"\s*\}/g
+          let m
+          while ((m = itemRegex.exec(text)) !== null) {
+            recoveredChanges.push({ original: m[1], suggested: m[2], reason: m[3] })
+          }
+        }
+      }
+      const summaryMatch = text.match(/"summaryNotes"\s*:\s*"([^"]*)"/)
+      parsed = {
+        summaryNotes: summaryMatch ? summaryMatch[1] : undefined,
+        changes: recoveredChanges,
+      }
+    } catch {
+      const lines = aiResult.text.split('\n').map(l => l.trim()).filter(l => l.length > 10)
+      parsed = {
+        options: lines.length > 0 ? lines : [aiResult.text.trim()],
+      }
     }
   }
 
@@ -128,6 +166,8 @@ YÊU CẦU BẮT BUỘC:
     options: parsed.options || (parsed.summary ? [parsed.summary] : []),
     titles: parsed.titles || [],
     polishedContent: parsed.polishedContent || '',
+    changes: Array.isArray(parsed.changes) ? parsed.changes : [],
+    summaryNotes: parsed.summaryNotes || (parsed.notes?.join(' • ') || ''),
     notes: parsed.notes || [],
     rawText: aiResult.text.trim(),
     usage: {

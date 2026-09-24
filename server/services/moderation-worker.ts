@@ -30,6 +30,14 @@ export interface ModerationCheckOutput {
   matchedRules: string[]
 }
 
+export interface FastPreModerateResult {
+  blocked: boolean
+  action: "allow" | "block"
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  reason: string
+  matchedRule: string
+}
+
 // ── In-memory Rule Cache (TTL 60s for sub-millisecond matching) ────────────
 let cachedRules: AiModerationRule[] | null = null
 let cacheExpiresAt = 0
@@ -56,16 +64,251 @@ export function invalidateModerationRulesCache(): void {
   cacheExpiresAt = 0
 }
 
+// ── Worker Realtime Metrics & Health Tracker ──────────────────────────────
+interface WorkerStatsState {
+  startedAt: string
+  totalScanned: number
+  blockedInstant: number
+  blockedAi: number
+  allowedCount: number
+  errorCount: number
+  lastScannedAt: string | null
+  lastError: string | null
+  lastErrorAt: string | null
+  lastAiLatencyMs: number
+}
+
+const workerStats: WorkerStatsState = {
+  startedAt: new Date().toISOString(),
+  totalScanned: 0,
+  blockedInstant: 0,
+  blockedAi: 0,
+  allowedCount: 0,
+  errorCount: 0,
+  lastScannedAt: null,
+  lastError: null,
+  lastErrorAt: null,
+  lastAiLatencyMs: 0,
+}
+
+export function getWorkerStats() {
+  const uptimeSeconds = Math.round((Date.now() - new Date(workerStats.startedAt).getTime()) / 1000)
+  const mem = process.memoryUsage()
+  return {
+    ...workerStats,
+    uptimeSeconds,
+    status: workerStats.errorCount > 10 ? ('degraded' as const) : ('active' as const),
+    cachedRulesCount: cachedRules ? cachedRules.length : 0,
+    memoryUsageMb: {
+      heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
+      rss: Math.round(mem.rss / 1024 / 1024),
+    },
+  }
+}
+
+export function resetWorkerStats() {
+  workerStats.errorCount = 0
+  workerStats.lastError = null
+  workerStats.lastErrorAt = null
+  invalidateModerationRulesCache()
+}
+
+// ── Built-in Instant Reject Patterns (< 1ms, zero latency) ────────────────
+const INSTANT_PROFANITY: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /\b(f+u+c+k+|s+h+i+t+|b+i+t+c+h+|a+s+s+h+o+l+e*|d+i+c+k+|c+u+n+t+)\b/i, label: 'Tiếng Anh thô tục tục tĩu' },
+  { pattern: /\b(địt|djt|dcm|đcm|đm|đmm|dmm|đyt|dyt|đệt|đẹt)\b/i, label: 'Chửi thề thô tục' },
+  { pattern: /\b(lồn|cặc|buồi|đụ|đù|đĩ|đỹ|ỉa|đái|dái|hãm lồn)\b/i, label: 'Từ ngữ khiêu dâm / thô tục' },
+  { pattern: /\b(liếm đít|bú cu|bú cặc|thủ dâm|súc vật|chó đẻ|óc chó|chó dại)\b/i, label: 'Xúc phạm nhân phẩm thô bạo' },
+]
+
+const INSTANT_HOSTILE: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /(việt tân|viet tan|triều đại việt|chính phủ quốc gia việt nam lâm thời)/i, label: 'Tổ chức phản động / khủng bố' },
+  { pattern: /(lật đổ chính quyền|lật đổ chế độ|biểu tình bạo loạn|chống phá đảng|đả đảo đảng|đả đảo chính quyền)/i, label: 'Tuyên truyền chống phá Nhà nước' },
+  { pattern: /(phản thanh phục minh.*thề giết|thề giết.*ngô tam quế|tiêu diệt cộng sản|diệt cộng)/i, label: 'Kích động bạo lực / lật đổ' },
+  { pattern: /(liếm đít trung cộng|bò đỏ.*liếm|cộng phỉ|bọn việt cộng)/i, label: 'Xúc phạm chính trị / ngôn từ thù địch' },
+]
+
+const INSTANT_SPAM_GAMBLING: Array<{ pattern: RegExp; label: string }> = [
+  { pattern: /(tài xỉu|cá độ bóng đá|cờ bạc online|ku bet|thabet|kubet|nổ hũ|game đổi thưởng)/i, label: 'Cờ bạc / Đánh bạc trực tuyến' },
+  { pattern: /(vay tiền nóng|vay lãi ngày|bốc bát họ|vay không cần thế chấp.*zalo)/i, label: 'Tín dụng đen / Vay nặng lãi' },
+]
+
+async function recordInstantBlock(
+  content: string,
+  category: string,
+  severity: 'low' | 'medium' | 'high' | 'critical',
+  reason: string,
+  context?: {
+    authorName?: string
+    authorIp?: string
+    targetType?: 'comment' | 'chat' | 'livestream_chat' | 'article'
+    sessionId?: string
+    contextTitle?: string
+    contextUrl?: string
+  },
+): Promise<FastPreModerateResult> {
+  workerStats.blockedInstant++
+
+  // Record asynchronously into queue for administrative review
+  try {
+    const db = getDb()
+    await db.insert(aiModerationQueue).values({
+      targetType: context?.targetType || 'chat',
+      targetId: null,
+      authorName: context?.authorName || 'Khách',
+      authorIp: context?.authorIp || null,
+      contextTitle: context?.contextTitle || null,
+      contextUrl: context?.contextUrl || null,
+      sessionId: context?.sessionId || null,
+      contentSnippet: content.slice(0, 1000),
+      flaggedReason: reason,
+      matchedRules: [`[Chặn tức thì - ${category}] ${reason}`],
+      severity,
+      status: 'pending',
+    })
+  } catch {
+    // Queue logging is non-blocking
+  }
+
+  return {
+    blocked: true,
+    action: "block",
+    severity,
+    reason: `Nội dung vi phạm tiêu chuẩn an ninh và quy định cộng đồng (${reason}).`,
+    matchedRule: reason,
+  }
+}
+
+/**
+ * Fast synchronous pre-moderator: scans built-in dictionaries + active database rules.
+ * Runs in < 1ms without external network or AI delay.
+ */
+export async function fastPreModerate(
+  content: string,
+  context?: {
+    authorName?: string
+    authorIp?: string
+    targetType?: 'comment' | 'chat' | 'livestream_chat' | 'article'
+    sessionId?: string
+    contextTitle?: string
+    contextUrl?: string
+  },
+): Promise<FastPreModerateResult> {
+  const trimmed = (content || '').trim()
+  if (!trimmed) {
+    return { blocked: false, action: "allow", severity: 'low', reason: '', matchedRule: '' }
+  }
+
+  workerStats.totalScanned++
+  workerStats.lastScannedAt = new Date().toISOString()
+
+  // 1. Built-in high-confidence rules
+  for (const item of INSTANT_PROFANITY) {
+    if (item.pattern.test(trimmed)) {
+      return recordInstantBlock(trimmed, 'profanity', 'high', item.label, context)
+    }
+  }
+
+  for (const item of INSTANT_HOSTILE) {
+    if (item.pattern.test(trimmed)) {
+      return recordInstantBlock(trimmed, 'anti_state', 'critical', item.label, context)
+    }
+  }
+
+  for (const item of INSTANT_SPAM_GAMBLING) {
+    if (item.pattern.test(trimmed)) {
+      return recordInstantBlock(trimmed, 'spam_fraud', 'high', item.label, context)
+    }
+  }
+
+  // 2. Active custom rules from database
+  try {
+    const rules = await getActiveModerationRules()
+    const lower = trimmed.toLowerCase()
+    for (const rule of rules) {
+      if (rule.ruleType === 'keyword') {
+        if (lower.includes(rule.pattern.toLowerCase().trim())) {
+          return recordInstantBlock(
+            trimmed,
+            rule.category,
+            (rule.severity as 'low' | 'medium' | 'high' | 'critical') || 'high',
+            `Từ khóa: ${rule.pattern}`,
+            context,
+          )
+        }
+      } else {
+        try {
+          const regex = new RegExp(rule.pattern, 'iu')
+          if (regex.test(trimmed)) {
+            return recordInstantBlock(
+              trimmed,
+              rule.category,
+              (rule.severity as 'low' | 'medium' | 'high' | 'critical') || 'high',
+              `Mẫu regex: ${rule.pattern}`,
+              context,
+            )
+          }
+        } catch {
+          // Skip invalid regex
+        }
+      }
+    }
+  } catch {
+    // If DB read fails, built-in instant rules still secure the entrance
+  }
+
+  workerStats.allowedCount++
+  return { blocked: false, action: "allow", severity: 'low', reason: '', matchedRule: '' }
+}
+
 /**
  * Scan content against active security rules & AI moderation model.
  * If flagged:
  * - Automatically records to `ai_moderation_queue`
- * - Automatically marks `is_hidden = true` or `is_flagged = true`
+ * - Automatically marks `is_hidden = true` or `is_deleted = true`
  */
 export async function checkAndModerateContent(input: ModerationCheckInput): Promise<ModerationCheckOutput> {
   const content = (input.content || '').trim()
   if (!content) {
     return { flagged: false, action: "allow", severity: 'low', reasons: [], matchedRules: [] }
+  }
+
+  // First check fast pre-moderator
+  const fast = await fastPreModerate(content, input)
+  if (fast.blocked) {
+    // Already flagged by pre-moderator, auto-hide database target row if targetId provided
+    if (input.targetId) {
+      const db = getDb()
+      try {
+        if (input.targetType === 'comment') {
+          await db
+            .update(articleComments)
+            .set({ isHidden: true, flagReason: fast.reason.slice(0, 255) })
+            .where(eq(articleComments.id, input.targetId))
+        } else if (input.targetType === 'chat') {
+          await db
+            .update(chatMessages)
+            .set({ isFlagged: true, flagReason: fast.reason.slice(0, 255) })
+            .where(eq(chatMessages.id, input.targetId))
+        } else if (input.targetType === 'livestream_chat') {
+          await db
+            .update(livestreamMessages)
+            .set({ isDeleted: true })
+            .where(eq(livestreamMessages.id, input.targetId))
+        }
+      } catch {
+        // Non-blocking
+      }
+    }
+
+    return {
+      flagged: true,
+      action: "auto_hide",
+      severity: fast.severity,
+      reasons: [fast.reason],
+      matchedRules: [fast.matchedRule],
+    }
   }
 
   const db = getDb()
@@ -74,7 +317,6 @@ export async function checkAndModerateContent(input: ModerationCheckInput): Prom
   const matchedKeywords: Array<{ pattern: string; category: string; severity: string; action: string }> = []
   const lowerContent = content.toLowerCase()
 
-  // 1. Scan for sensitive keywords and rules in content
   for (const rule of rules) {
     const pattern = rule.pattern.toLowerCase().trim()
     let isMatch = false
@@ -100,13 +342,9 @@ export async function checkAndModerateContent(input: ModerationCheckInput): Prom
     }
   }
 
-  // 2. Intelligent Context-Aware AI Moderation
-  // When sensitive keywords appear OR content has substantial length (>= 20 chars),
-  // the AI reads the FULL context to distinguish between:
-  // - Positive / vigilance / educational (safe -> DO NOT hide)
-  // - Negative / hostile / propaganda / scam (violation -> auto-hide)
+  // Context-Aware AI Moderation for substantial content
   let isFlagged = false
-  let finalAction: "allow" | "auto_hide" | "flag_only" | "block" = "allow"
+  let finalAction: 'allow' | 'auto_hide' | 'flag_only' | 'block' = 'allow'
   let highestSeverity: 'low' | 'medium' | 'high' | 'critical' = 'low'
   const reasons: string[] = []
   const matchedRules: string[] = []
@@ -134,11 +372,13 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
   "reason": "Giải thích ngắn gọn 1 câu phân tích ngữ cảnh và ý đồ của người viết"
 }`
 
+    const startAi = Date.now()
     try {
       const aiResult = await callAi('moderation', {
         prompt: aiPrompt,
         variables: { content: content.slice(0, 500), author: input.authorName || 'User' },
       })
+      workerStats.lastAiLatencyMs = Date.now() - startAi
 
       if (aiResult.ok && aiResult.text) {
         const clean = aiResult.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
@@ -151,7 +391,7 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
 
         if (parsed.verdict === 'violation' || parsed.verdict === 'spam') {
           isFlagged = true
-          finalAction = "auto_hide"
+          finalAction = 'auto_hide'
           const s = (parsed.riskLevel || 'high') as keyof typeof severityWeight
           if (severityWeight[s] > severityWeight[highestSeverity]) {
             highestSeverity = s
@@ -161,31 +401,36 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
             matchedRules.push(`[${k.category}] ${k.pattern}`)
           }
           reasons.push(parsed.reason || 'AI phân tích ngữ cảnh: Phát hiện ý đồ vi phạm tiêu chuẩn an ninh.')
+          workerStats.blockedAi++
         } else {
-          // Safe intent: allow even if keyword was present
           isFlagged = false
-          finalAction = "allow"
+          finalAction = 'allow'
+          workerStats.allowedCount++
         }
       } else {
-        // Fallback on AI error: auto-hide if critical hostile keyword is present
+        // Fallback on AI error
         if (matchedKeywords.some(k => k.severity === 'critical')) {
           isFlagged = true
-          finalAction = "auto_hide"
+          finalAction = 'auto_hide'
           highestSeverity = 'critical'
           matchedRules.push(...matchedKeywords.map(k => `[${k.category}] ${k.pattern}`))
           reasons.push(`Khớp từ khóa an ninh: ${matchedKeywords.map(k => `"${k.pattern}"`).join(', ')} (Dự phòng lỗi AI)`)
         }
       }
-    } catch {
+    } catch (err) {
+      workerStats.errorCount++
+      workerStats.lastError = err instanceof Error ? err.message : String(err)
+      workerStats.lastErrorAt = new Date().toISOString()
       if (matchedKeywords.some(k => k.severity === 'critical')) {
         isFlagged = true
-        finalAction = "auto_hide"
+        finalAction = 'auto_hide'
         highestSeverity = 'critical'
         matchedRules.push(...matchedKeywords.map(k => `[${k.category}] ${k.pattern}`))
         reasons.push(`Khớp từ khóa an ninh: ${matchedKeywords.map(k => `"${k.pattern}"`).join(', ')} (Dự phòng lỗi AI)`)
       }
     }
   }
+
   // 3. Automated Action: Record to queue & hide content
   if (isFlagged) {
     logWarn({
@@ -197,7 +442,6 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
       reasons,
     })
 
-    // Insert into moderation queue for administrative review
     try {
       await db.insert(aiModerationQueue).values({
         targetType: input.targetType,
@@ -213,27 +457,30 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
         severity: highestSeverity,
         status: 'pending',
       })
-    } catch (e) {
-      // Don't crash caller if queue insert fails
+    } catch {
+      // Non-blocking queue insert
     }
 
-    // Auto-hide target row in database if action is auto_hide
     if (finalAction === 'auto_hide' && input.targetId) {
-      if (input.targetType === 'comment') {
-        await db
-          .update(articleComments)
-          .set({ isHidden: true, flagReason: reasons.join('; ').slice(0, 255) })
-          .where(eq(articleComments.id, input.targetId))
-      } else if (input.targetType === 'chat') {
-        await db
-          .update(chatMessages)
-          .set({ isFlagged: true, flagReason: reasons.join('; ').slice(0, 255) })
-          .where(eq(chatMessages.id, input.targetId))
-      } else if (input.targetType === 'livestream_chat') {
-        await db
-          .update(livestreamMessages)
-          .set({ isDeleted: true })
-          .where(eq(livestreamMessages.id, input.targetId))
+      try {
+        if (input.targetType === 'comment') {
+          await db
+            .update(articleComments)
+            .set({ isHidden: true, flagReason: reasons.join('; ').slice(0, 255) })
+            .where(eq(articleComments.id, input.targetId))
+        } else if (input.targetType === 'chat') {
+          await db
+            .update(chatMessages)
+            .set({ isFlagged: true, flagReason: reasons.join('; ').slice(0, 255) })
+            .where(eq(chatMessages.id, input.targetId))
+        } else if (input.targetType === 'livestream_chat') {
+          await db
+            .update(livestreamMessages)
+            .set({ isDeleted: true })
+            .where(eq(livestreamMessages.id, input.targetId))
+        }
+      } catch {
+        // Non-blocking update
       }
     }
   }
@@ -244,5 +491,75 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
     severity: highestSeverity,
     reasons,
     matchedRules,
+  }
+}
+
+/**
+ * Retroactive cleaner: scans all existing non-hidden comments & non-deleted livestream messages.
+ * Immediately hides/deletes any matching vulgar, hostile, or prohibited content.
+ */
+export async function rescanExistingContent(): Promise<{
+  scannedComments: number
+  hiddenComments: number
+  scannedMessages: number
+  deletedMessages: number
+}> {
+  const db = getDb()
+  let hiddenComments = 0
+  let deletedMessages = 0
+
+  // 1. Scan article_comments
+  const comments = await db
+    .select({ id: articleComments.id, body: articleComments.body })
+    .from(articleComments)
+    .where(eq(articleComments.isHidden, false))
+
+  for (const c of comments) {
+    const check = await fastPreModerate(c.body, {
+      targetType: 'comment',
+      contextTitle: `Quét lại bình luận #${c.id}`,
+    })
+    if (check.blocked) {
+      await db
+        .update(articleComments)
+        .set({ isHidden: true, flagReason: check.reason })
+        .where(eq(articleComments.id, c.id))
+      hiddenComments++
+    }
+  }
+
+  // 2. Scan livestream_messages
+  const liveMsgs = await db
+    .select({ id: livestreamMessages.id, content: livestreamMessages.content })
+    .from(livestreamMessages)
+    .where(eq(livestreamMessages.isDeleted, false))
+
+  for (const m of liveMsgs) {
+    const check = await fastPreModerate(m.content, {
+      targetType: 'livestream_chat',
+      contextTitle: `Quét lại tin chat trực tiếp #${m.id}`,
+    })
+    if (check.blocked) {
+      await db
+        .update(livestreamMessages)
+        .set({ isDeleted: true })
+        .where(eq(livestreamMessages.id, m.id))
+      deletedMessages++
+    }
+  }
+
+  logInfo({
+    event: 'ai_moderation.rescan_completed',
+    scannedComments: comments.length,
+    hiddenComments,
+    scannedMessages: liveMsgs.length,
+    deletedMessages,
+  })
+
+  return {
+    scannedComments: comments.length,
+    hiddenComments,
+    scannedMessages: liveMsgs.length,
+    deletedMessages,
   }
 }

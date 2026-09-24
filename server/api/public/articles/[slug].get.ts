@@ -1,10 +1,13 @@
 import { getDb } from '../../../utils/db'
-import { articles, users, categories, articleViewDaily } from '../../../db/schema'
+import { articles, users, categories, articleViewDaily, articleTranslations } from '../../../db/schema'
 import { eq, and, sql } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug')
   if (!slug) throw createError({ statusCode: 400, statusMessage: 'Invalid slug' })
+
+  const query = getQuery(event)
+  const lang = typeof query.lang === 'string' ? query.lang.trim().toLowerCase() : ''
 
   try {
     const db = getDb()
@@ -24,22 +27,6 @@ export default defineEventHandler(async (event) => {
         publishedAt:  articles.publishedAt,
         createdAt:    articles.createdAt,
         authorName:   users.username,
-        /**
-         * Tổng lượt xem hiển thị (thật + ảo) — cùng con số `totalDisplayed` mà
-         * trang quản trị báo, nên hai nơi không bao giờ nói hai điều khác nhau.
-         * Correlated subquery chứ không join: `article_view_daily` có một hàng
-         * mỗi ngày mỗi nguồn, join vào sẽ nhân bài viết lên nhiều hàng.
-         *
-         * ⚠️ Tên bảng viết THẲNG RA, không nội suy `${articleViewDaily.articleId}`.
-         * Drizzle chỉ gắn tiền tố tên bảng khi truy vấn bao ngoài CÓ JOIN; không có
-         * join thì nó phát ra tên cột trần, và trong một truy vấn con trên
-         * `article_view_daily` thì `` \`id\` `` trần trỏ vào khoá chính của chính
-         * bảng đó chứ không phải bài viết ở ngoài — tương quan lặng lẽ ngừng tương
-         * quan, MySQL không báo gì, và mọi bài đều trả về 0. Ở đây hiện có join nên
-         * dạng nội suy vẫn đúng; nó chỉ đúng NHỜ một phần khác của truy vấn, và xoá
-         * join đi là hỏng bộ đếm mà không có gì đỏ. Xem
-         * tests/correlated-subquery-qualification.test.ts.
-         */
         viewTotal: sql<number>`(
           SELECT COALESCE(SUM(\`v\`.\`real_views\` + \`v\`.\`fabricated_views\`), 0)
           FROM \`article_view_daily\` \`v\`
@@ -54,6 +41,52 @@ export default defineEventHandler(async (event) => {
 
     if (!article) {
       throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại hoặc chưa xuất bản.' })
+    }
+
+    // If a language is requested, check for a published translation
+    if (lang && lang !== 'vi') {
+      const [translation] = await db
+        .select({
+          title:   articleTranslations.title,
+          excerpt: articleTranslations.excerpt,
+          content: articleTranslations.content,
+          status:  articleTranslations.status,
+        })
+        .from(articleTranslations)
+        .where(and(
+          eq(articleTranslations.articleId, article.id),
+          eq(articleTranslations.langCode, lang),
+          eq(articleTranslations.status, 'published'),
+        ))
+        .limit(1)
+
+      if (translation && translation.title !== null) {
+        return {
+          ok: true,
+          article: {
+            ...article,
+            title:    translation.title,
+            excerpt:  translation.excerpt ?? article.excerpt,
+            content:  translation.content ?? article.content,
+            translatedFrom: 'vi',
+          },
+        }
+      }
+
+      // No published translation — list available languages
+      const availableRows = await db
+        .select({ langCode: articleTranslations.langCode })
+        .from(articleTranslations)
+        .where(and(
+          eq(articleTranslations.articleId, article.id),
+          eq(articleTranslations.status, 'published'),
+        ))
+
+      return {
+        ok: true,
+        article,
+        availableTranslations: availableRows.map((r) => r.langCode),
+      }
     }
 
     return { ok: true, article }
