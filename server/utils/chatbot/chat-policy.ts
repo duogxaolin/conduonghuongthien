@@ -427,6 +427,29 @@ async function callProvider(settings: ChatbotSettings, dependencies: ChatDepende
       tools: chatbotTools,
     })
     if (result.ok && result.text) {
+      if (result.toolCallsExecuted && Array.isArray(result.toolCallsExecuted)) {
+        for (const te of result.toolCallsExecuted) {
+          if (Array.isArray(te.data)) {
+            for (const item of te.data) {
+              if (item && typeof item === 'object') {
+                const it = item as Record<string, unknown>
+                if (typeof it.title === 'string' && typeof it.url === 'string') {
+                  const typeLabel = it.type === 'role_model' ? 'Tấm gương' : it.type === 'reintegration' ? 'Mô hình' : it.url.includes('/media/') ? 'Video' : 'Bài viết'
+                  references.push({
+                    id: Number(it.id) || 0,
+                    question: it.title,
+                    answer: String(it.snippet || it.summary || ''),
+                    source: {
+                      label: `${typeLabel}: ${it.title}`,
+                      url: String(it.url),
+                    },
+                  })
+                }
+              }
+            }
+          }
+        }
+      }
       return result.text.slice(0, CHAT_LIMITS.maxOutputChars) || null
     }
     // budget_exceeded = fall back to knowledge-only (handled by caller)
