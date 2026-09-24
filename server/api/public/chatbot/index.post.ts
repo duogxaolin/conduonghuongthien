@@ -63,6 +63,71 @@ export default defineEventHandler(async (event) => {
   if (sessionId) event.context.chatSessionId = sessionId
 
   const messages = (body as { messages?: unknown } | null)?.messages
+  const userText = lastUserText(messages)
+
+  // Tiền kiểm duyệt an ninh (Pre-moderation):
+  // Nếu phát hiện nội dung độc hại/chống phá/nguy hiểm: TỪ CHỐI GỬI SANG AI & TỪ CHỐI TRẢ LỜI
+  if (userText) {
+    const moderation = await checkAndModerateContent({
+      content: userText,
+      targetType: 'chat',
+      targetId: undefined,
+      sessionId: sessionId || undefined,
+      contextTitle: sessionId ? `Phiên Chatbot #${sessionId.slice(0, 8)}` : 'Chatbot trực tuyến',
+      contextUrl: sessionId ? `/admin/chatbot/sessions?search=${encodeURIComponent(sessionId)}` : '/admin/chatbot/sessions',
+      authorIp: getClientIp(event) || undefined,
+    }).catch(() => null)
+
+    if (moderation?.flagged && (moderation.action === 'auto_hide' || moderation.action === 'block' || moderation.severity === 'critical' || moderation.severity === 'high')) {
+      const refusalMessage = 'Nội dung câu hỏi của bạn có dấu hiệu vi phạm chính sách an toàn thông tin và quy định pháp luật (Luật An ninh mạng). Cổng thông tin Cục C11 từ chối tiếp nhận và xử lý yêu cầu này.'
+
+      setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
+      setHeader(event, 'Cache-Control', 'no-cache, no-transform')
+      setHeader(event, 'Connection', 'keep-alive')
+
+      const res = event.node?.res
+      if (res && typeof res.write === 'function') {
+        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: refusalMessage } }] })}\n\n`)
+        res.write(`data: ${JSON.stringify({
+          choices: [{ delta: { content: '' } }],
+          chatbot: {
+            kind: 'moderation_blocked',
+            sources: [],
+            retryAfter: null,
+            askContact: false,
+          },
+        })}\n\n`)
+        res.write('data: [DONE]\n\n')
+
+        if (sessionId) {
+          await persistChatTurn({
+            sessionId,
+            ip: getClientIp(event) || null,
+            userAgent: getRequestHeader(event, 'user-agent') ?? null,
+            userText,
+            botText: refusalMessage,
+            kind: 'moderation_blocked',
+          }).catch(() => null)
+        }
+        res.end()
+        return
+      }
+
+      if (sessionId) {
+        await persistChatTurn({
+          sessionId,
+          ip: getClientIp(event) || null,
+          userAgent: getRequestHeader(event, 'user-agent') ?? null,
+          userText,
+          botText: refusalMessage,
+          kind: 'moderation_blocked',
+        }).catch(() => null)
+      }
+
+      return sseEnvelope(refusalMessage, 'moderation_blocked', [], null, false)
+    }
+  }
+
   setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
   setHeader(event, 'Cache-Control', 'no-cache, no-transform')
   setHeader(event, 'Connection', 'keep-alive')
@@ -107,15 +172,7 @@ export default defineEventHandler(async (event) => {
           botText: result.answer,
           kind: result.kind,
         })
-        void checkAndModerateContent({
-          content: userText,
-          targetType: 'chat',
-          targetId: undefined,
-          sessionId,
-          contextTitle: `Phiên Chatbot #${sessionId.slice(0, 8)}`,
-          contextUrl: `/admin/chatbot/sessions?search=${encodeURIComponent(sessionId)}`,
-          authorIp: getClientIp(event) || undefined,
-        })
+        // Đã được kiểm duyệt và ghi nhận trong pre-moderation ở đầu luồng
       }
     }
 
