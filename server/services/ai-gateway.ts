@@ -36,6 +36,13 @@ import {
 
 // ─── Types ──────────────────────────────────────────────────────────────
 
+export interface AiToolDefinition {
+  name: string
+  description: string
+  parameters: Record<string, unknown>
+  execute: (args: Record<string, unknown>) => Promise<unknown> | unknown
+}
+
 export interface AiCallInput {
   /** The user's prompt text. */
   prompt: string
@@ -50,8 +57,9 @@ export interface AiCallInput {
   history?: Array<{ role: string; content: string }>
   /** Optional callback for real-time token streaming */
   onChunk?: (chunk: string) => void | Promise<void>
+  /** Optional tool calling / function calling definitions */
+  tools?: AiToolDefinition[]
 }
-
 export interface AiCallResult {
   ok: boolean
   text?: string
@@ -339,7 +347,162 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
   let completionTokens = 0
   let totalTokens = 0
 
-  if (input.onChunk) {
+  if (Array.isArray(input.tools) && input.tools.length > 0) {
+    // ── Tool Calling Execution Loop ──────────────────────────────────
+    try {
+      const toolDefs = input.tools
+      const reqBodyObj = JSON.parse(providerCall.body ?? '{}') as Record<string, unknown>
+      reqBodyObj.tools = toolDefs.map(t => ({
+        type: 'function',
+        function: {
+          name: t.name,
+          description: t.description,
+          parameters: t.parameters,
+        },
+      }))
+      reqBodyObj.tool_choice = 'auto'
+      reqBodyObj.stream = false
+
+      // Step 1: Initial call to evaluate tool choice
+      const resp1 = await fetch(providerCall.url, {
+        method: 'POST',
+        headers: providerCall.headers,
+        body: JSON.stringify(reqBodyObj),
+      })
+      if (!resp1.ok) {
+        success = false
+        errorMessage = `HTTP ${resp1.status}`
+        return { ok: false, error: 'provider_error' }
+      }
+      let raw1 = await resp1.text()
+      const last1 = raw1.lastIndexOf('}')
+      if (last1 !== -1) raw1 = raw1.slice(0, last1 + 1)
+      const json1 = JSON.parse(raw1) as Record<string, unknown>
+      const choice1 = (json1.choices as Array<{ message?: Record<string, unknown>; finish_reason?: string }>)?.[0]
+      const msg1 = choice1?.message
+
+      let step1Prompt = Number((json1.usage as { prompt_tokens?: number })?.prompt_tokens) || 0
+      let step1Comp = Number((json1.usage as { completion_tokens?: number })?.completion_tokens) || 0
+      if (config.provider === 'delify' && step1Prompt >= 2000) step1Prompt -= 2000
+      promptTokens += step1Prompt
+      completionTokens += step1Comp
+
+      const toolCalls = msg1?.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }> | undefined
+
+      if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+        // Execute tool calls and append to conversation
+        const messages = (reqBodyObj.messages as Array<unknown>) || []
+        messages.push(msg1)
+
+        for (const tc of toolCalls) {
+          const fn = toolDefs.find(t => t.name === tc.function?.name)
+          let args = {}
+          try { args = JSON.parse(tc.function?.arguments || '{}') } catch {}
+          let toolResult: unknown = null
+          if (fn) {
+            try {
+              toolResult = await fn.execute(args)
+            } catch (err: unknown) {
+              toolResult = { error: err instanceof Error ? err.message : 'Tool execution error' }
+            }
+          } else {
+            toolResult = { error: `Tool ${tc.function?.name} not found` }
+          }
+          messages.push({
+            role: 'tool',
+            tool_call_id: tc.id,
+            content: typeof toolResult === 'string' ? toolResult : JSON.stringify(toolResult),
+          })
+        }
+
+        // Step 2: Final response with tool results
+        if (input.onChunk) {
+          reqBodyObj.stream = true
+          const resp2 = await fetch(providerCall.url, {
+            method: 'POST',
+            headers: providerCall.headers,
+            body: JSON.stringify(reqBodyObj),
+          })
+          if (!resp2.ok || !resp2.body) {
+            success = false
+            errorMessage = `HTTP ${resp2.status}`
+            return { ok: false, error: 'provider_error' }
+          }
+          const reader = resp2.body.getReader()
+          const decoder = new TextDecoder()
+          let streamBuffer = ''
+          while (true) {
+            const { done, value } = await reader.read()
+            if (done) break
+            streamBuffer += decoder.decode(value, { stream: true })
+            const lines = streamBuffer.split('\n')
+            streamBuffer = lines.pop() || ''
+            for (const line of lines) {
+              const trimmed = line.trim()
+              if (!trimmed.startsWith('data:') || trimmed === 'data: [DONE]') continue
+              try {
+                const parsed = JSON.parse(trimmed.slice(5).trim())
+                const delta = parsed?.choices?.[0]?.delta?.content
+                if (typeof delta === 'string' && delta) {
+                  answerText += delta
+                  await input.onChunk(delta)
+                }
+                if (parsed?.usage) {
+                  const isEst = Boolean(parsed.usage.estimated)
+                  let p2 = Number(parsed.usage.prompt_tokens) || 0
+                  let c2 = Number(parsed.usage.completion_tokens) || 0
+                  if (config.provider === 'delify' && p2 >= 2000) p2 -= 2000
+                  if (p2 > 0 && !isEst) promptTokens += p2
+                  if (c2 > 0 && !isEst) completionTokens += c2
+                }
+              } catch {}
+            }
+          }
+        } else {
+          // Non-streaming final call
+          reqBodyObj.stream = false
+          const resp2 = await fetch(providerCall.url, {
+            method: 'POST',
+            headers: providerCall.headers,
+            body: JSON.stringify(reqBodyObj),
+          })
+          if (!resp2.ok) {
+            success = false
+            errorMessage = `HTTP ${resp2.status}`
+            return { ok: false, error: 'provider_error' }
+          }
+          let raw2 = await resp2.text()
+          const last2 = raw2.lastIndexOf('}')
+          if (last2 !== -1) raw2 = raw2.slice(0, last2 + 1)
+          const json2 = JSON.parse(raw2) as Record<string, unknown>
+          const choice2 = (json2.choices as Array<{ message?: { content?: string } }>)?.[0]
+          answerText = choice2?.message?.content || ''
+          let p2 = Number((json2.usage as { prompt_tokens?: number })?.prompt_tokens) || 0
+          let c2 = Number((json2.usage as { completion_tokens?: number })?.completion_tokens) || 0
+          if (config.provider === 'delify' && p2 >= 2000) p2 -= 2000
+          promptTokens += p2
+          completionTokens += c2
+        }
+      } else {
+        // Model answered directly without tool calls
+        answerText = (msg1?.content as string) || ''
+        if (input.onChunk && answerText) {
+          await input.onChunk(answerText)
+        }
+      }
+
+      totalTokens = promptTokens + completionTokens
+      if (!answerText) {
+        success = false
+        errorMessage = 'empty_response'
+        return { ok: false, error: 'parse_error' }
+      }
+    } catch (error) {
+      success = false
+      errorMessage = error instanceof Error ? error.message : 'unknown_error'
+      return { ok: false, error: 'provider_error' }
+    }
+  } else if (input.onChunk) {
     // Real-time streaming from provider via SSE
     try {
       const streamBody = JSON.parse(providerCall.body ?? '{}')
