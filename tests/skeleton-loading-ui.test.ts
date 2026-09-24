@@ -124,6 +124,7 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/ai/index.vue', marker: 'v-if="usageLoading"' },
   { file: 'pages/admin/ai/moderation.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/analytics.vue', marker: 'v-if="initialLoading"' },
+  { file: 'pages/admin/languages/index.vue', marker: 'v-if="loading && activeTab' },
 ]
 
 /**

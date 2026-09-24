@@ -1,7 +1,7 @@
 import { getDb } from '../utils/db'
 import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories, aiProviders, aiServiceConfigs, aiModelPricing, aiBudgetSettings, aiModerationRules, aiModerationQueue } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories, aiProviders, aiServiceConfigs, aiModelPricing, aiBudgetSettings, aiModerationRules, aiModerationQueue, languages } from '../db/schema'
 import type { BlockData } from '../../app/utils/blocks/types'
 import { eq, asc, sql } from 'drizzle-orm'
 import { CHATBOT_SMALL_TALK_SEED } from '../data/chatbot-small-talk-seed'
@@ -557,7 +557,11 @@ async function seed() {
       await db.insert(aiModerationRules).values(r)
     }
   }
-
+  // ─── Languages & UI translations seed (insert-only, idempotent) ────────
+  console.log('Seeding languages & default UI translations...')
+  const { seedDefaultLanguagesAndTranslations } = await import('../services/languages')
+  const langSeedResult = await seedDefaultLanguagesAndTranslations(db)
+  console.log(`Seeded ${langSeedResult.languagesSeeded} languages, ${langSeedResult.translationsSeeded} UI translations.`)
   console.log('✅ Seed complete!')
   console.log('📋 Login username: admin (mật khẩu lấy từ ADMIN_PASSWORD — không in ra log).')
   process.exit(0)

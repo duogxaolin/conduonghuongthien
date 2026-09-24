@@ -36,8 +36,19 @@ const aiLoading = ref(false)
 const aiLoadingText = ref('')
 const showTranslateMenu = ref(false)
 const suggestedTitles = ref<string[]>([])
+interface PolishChangeItem {
+  original: string
+  suggested: string
+  reason: string
+  applied?: boolean
+}
+
 const suggestedSummaries = ref<string[]>([])
-const polishedPreview = ref<{ content: string; highlights?: string } | null>(null)
+const polishedPreview = ref<{
+  content: string
+  summaryNotes?: string
+  changes: PolishChangeItem[]
+} | null>(null)
 const translatedPreview = ref<{ title?: string; excerpt?: string; content?: string; langName: string } | null>(null)
 
 const SUPPORTED_TRANSLATE_LANGUAGES = [
@@ -60,6 +71,17 @@ function setEditorContent(html: string): void {
   }
 }
 
+function getEditorContent(): string {
+  if (typeof window !== 'undefined' && (window as WindowWithTinyMce).tinymce) {
+    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
+    if (ed) {
+      const c = ed.getContent()
+      if (c && c.trim()) return c
+    }
+  }
+  return form.content || ''
+}
+
 function applyTitle(title: string) {
   form.title = title
   suggestedTitles.value = []
@@ -74,21 +96,45 @@ function applySummary(summary: string) {
   toast.success('Đã áp dụng tóm tắt bài viết!')
 }
 
-function applyPolishedContent() {
-  if (!polishedPreview.value) return
-  setEditorContent(polishedPreview.value.content)
-  polishedPreview.value = null
-  toast.success('Đã áp dụng nội dung trau chuốt vào trình soạn thảo!')
+function applySingleChange(change: PolishChangeItem) {
+  const current = getEditorContent()
+  if (!change.original) return
+  if (!current.includes(change.original)) {
+    const plainOrig = change.original.replace(/<[^>]*>/g, '').trim()
+    if (!current.includes(plainOrig)) {
+      toast.error(`Không tìm thấy đoạn "${change.original.slice(0, 35)}..." trong bài viết hiện tại.`)
+      return
+    }
+    const cleanSug = change.suggested.replace(/<[^>]*>/g, '').trim()
+    setEditorContent(current.replace(plainOrig, cleanSug))
+  } else {
+    setEditorContent(current.replace(change.original, change.suggested))
+  }
+  change.applied = true
+  toast.success(`Đã sửa: "${change.suggested.slice(0, 30)}..."`)
 }
 
-function applyTranslation() {
-  if (!translatedPreview.value) return
-  if (translatedPreview.value.title) form.title = translatedPreview.value.title
-  if (translatedPreview.value.excerpt) form.excerpt = translatedPreview.value.excerpt
-  if (translatedPreview.value.content) setEditorContent(translatedPreview.value.content)
-  translatedPreview.value = null
-  toast.success('Đã áp dụng bản dịch vào bài viết!')
+function applyAllPolishedChanges() {
+  if (!polishedPreview.value) return
+  if (polishedPreview.value.content) {
+    setEditorContent(polishedPreview.value.content)
+  } else {
+    let html = getEditorContent()
+    for (const c of polishedPreview.value.changes) {
+      if (html.includes(c.original)) {
+        html = html.replace(c.original, c.suggested)
+        c.applied = true
+      }
+    }
+    setEditorContent(html)
+  }
+  if (polishedPreview.value.changes) {
+    polishedPreview.value.changes.forEach(c => { c.applied = true })
+  }
+  toast.success('Đã áp dụng toàn bộ sửa đổi vào bài viết!')
 }
+
+// (applyTranslation removed — translations are managed independently in article_translations)
 
 async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') {
   const content = getEditorContent()
@@ -125,9 +171,12 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
     } else if (action === 'polish') {
       polishedPreview.value = {
         content: res.polishedContent || res.rawText || '',
-        highlights: res.notes?.join(' • ') || 'Đã chuẩn hóa chính tả và ngữ pháp.',
+        summaryNotes: (res as { summaryNotes?: string }).summaryNotes || (res.notes?.join(' • ')) || 'Đã rà soát chính tả, ngữ pháp và thuật ngữ pháp lý.',
+        changes: Array.isArray((res as { changes?: PolishChangeItem[] }).changes)
+          ? (res as { changes: PolishChangeItem[] }).changes.map(c => ({ ...c, applied: false }))
+          : [],
       }
-      toast.success('Đã rà soát xong, mời bạn xem bản xem trước bên dưới!')
+      toast.success('Đã rà soát xong, mời bạn xem các điểm sửa đổi bên dưới!')
     }
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi khi gọi Trợ lý AI.'))
@@ -138,43 +187,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
 
 async function translateArticleTo(targetLang: string) {
   showTranslateMenu.value = false
-  const content = getEditorContent()
-  if (!form.title && !content) {
-    toast.error('Vui lòng nhập nội dung bài viết trước khi dịch.')
-    return
-  }
-
-  aiLoading.value = true
-  const langObj = SUPPORTED_TRANSLATE_LANGUAGES.find(l => l.code === targetLang)
-  aiLoadingText.value = `Trợ lý AI đang dịch bài viết sang ${langObj?.label ?? targetLang}...`
-
-  try {
-    const res = await $fetch<{
-      ok: boolean
-      translatedTitle?: string
-      translatedExcerpt?: string
-      translatedContent?: string
-    }>('/api/admin/ai/translate', {
-      method: 'POST',
-      body: {
-        targetLanguage: targetLang,
-        title: form.title,
-        excerpt: form.excerpt,
-        content,
-      },
-    })
-    translatedPreview.value = {
-      title: res.translatedTitle,
-      excerpt: res.translatedExcerpt,
-      content: res.translatedContent,
-      langName: langObj?.label ?? targetLang,
-    }
-    toast.success(`Đã dịch xong sang ${langObj?.label ?? targetLang}, mời bạn xem trước bên dưới!`)
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể dịch bài viết.'))
-  } finally {
-    aiLoading.value = false
-  }
+  await triggerTranslation(targetLang)
 }
 // Dynamic categories for the selected article type
 const availableCategories = ref<AdminCategoryRow[]>([])
@@ -235,13 +248,6 @@ const fetchArticle = async () => {
 
 const toast = useToast()
 
-const getEditorContent = (): string => {
-  if ((window as WindowWithTinyMce).tinymce) {
-    const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
-    if (ed) return ed.getContent()
-  }
-  return form.content
-}
 
 const handleSave = async () => {
   if (!form.title.trim()) {
@@ -402,6 +408,7 @@ onMounted(async () => {
   const scriptReady = loadTinyMCEScript()
   await fetchCategories(form.type)
   await fetchArticle()
+  await fetchArticleTranslations()
   await scriptReady
   await nextTick()
   initTinyMCE()
@@ -413,7 +420,157 @@ onUnmounted(() => {
     if (ed) ed.destroy()
   }
 })
+
+// ─── Article translations ────────────────────────────────────────────────
+const articleTranslations = ref<Array<{
+  id: number; langCode: string; status: string; title: string | null
+  progress: number; currentChunk: number; totalChunks: number
+  errorMessage: string | null; translatedBy: string; completedAt: string | null
+}>>([])
+const showTranslationsPanel = ref(true)
+const translatingLang = ref<string | null>(null)
+const translationProgress = ref(0)
+const editingTranslation = ref<{ lang: string; title: string; excerpt: string; content: string } | null>(null)
+const showEditTranslationDrawer = ref(false)
+let translationPollTimer: number | undefined
+
+const TRANSLATION_LANGS = [
+  { code: 'en', label: 'Tiếng Anh', flag: '🇬🇧' },
+  { code: 'zh', label: 'Tiếng Trung', flag: '🇨🇳' },
+  { code: 'fr', label: 'Tiếng Pháp', flag: '🇫🇷' },
+  { code: 'ru', label: 'Tiếng Nga', flag: '🇷🇺' },
+  { code: 'ja', label: 'Tiếng Nhật', flag: '🇯🇵' },
+  { code: 'ko', label: 'Tiếng Hàn', flag: '🇰🇷' },
+  { code: 'lo', label: 'Tiếng Lào', flag: '🇱🇦' },
+  { code: 'km', label: 'Tiếng Campuchia', flag: '🇰🇭' },
+]
+
+async function fetchArticleTranslations() {
+  if (isNew.value || !articleId.value) return
+  try {
+    const res = await $fetch<{ ok: boolean; items: typeof articleTranslations.value }>(
+      `/api/admin/articles/${articleId.value}/translations`,
+    )
+    if (res.ok) articleTranslations.value = res.items
+  } catch {
+    // Non-critical
+  }
+}
+
+async function triggerTranslation(langCode: string) {
+  if (isNew.value) {
+    toast.error('Vui lòng lưu bài viết trước khi dịch.')
+    return
+  }
+  translatingLang.value = langCode
+  translationProgress.value = 0
+  try {
+    await $fetch(`/api/admin/articles/${articleId.value}/translations/translate`, {
+      method: 'POST',
+      body: { langCode },
+    })
+    toast.success(`Đã bắt đầu dịch sang ${TRANSLATION_LANGS.find(l => l.code === langCode)?.label ?? langCode}.`)
+    await fetchArticleTranslations()
+    startTranslationPolling()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể bắt đầu dịch.'))
+    translatingLang.value = null
+  }
+}
+
+function startTranslationPolling() {
+  if (translationPollTimer) window.clearInterval(translationPollTimer)
+  translationPollTimer = window.setInterval(async () => {
+    if (!translatingLang.value) return
+    try {
+      const res = await $fetch<{
+        ok: boolean; status: string; progress: number
+        currentChunk: number; totalChunks: number; errorMessage: string | null
+      }>(`/api/admin/articles/${articleId.value}/translations/${translatingLang.value}/progress`)
+      if (res.ok) {
+        translationProgress.value = res.progress
+        if (res.status !== 'translating') {
+          stopTranslationPolling()
+          translatingLang.value = null
+          await fetchArticleTranslations()
+          if (res.status === 'ai_draft') {
+            toast.success('Dịch xong! Vui lòng duyệt trước khi xuất bản.')
+          } else if (res.status === 'failed') {
+            toast.error(`Lỗi dịch: ${res.errorMessage ?? 'không xác định'}`)
+          }
+        }
+      }
+    } catch {
+      // Non-critical poll failure
+    }
+  }, 2000)
+}
+
+function stopTranslationPolling() {
+  if (translationPollTimer) {
+    window.clearInterval(translationPollTimer)
+    translationPollTimer = undefined
+  }
+}
+
+function openEditTranslation(row: typeof articleTranslations.value[0]) {
+  editingTranslation.value = {
+    lang: row.langCode,
+    title: row.title ?? '',
+    excerpt: (row as unknown as { excerpt?: string }).excerpt ?? '',
+    content: (row as unknown as { content?: string }).content ?? '',
+  }
+  showEditTranslationDrawer.value = true
+}
+
+async function saveTranslationEdit() {
+  if (!editingTranslation.value) return
+  try {
+    await $fetch(
+      `/api/admin/articles/${articleId.value}/translations/${editingTranslation.value.lang}`,
+      { method: 'PUT', body: editingTranslation.value },
+    )
+    toast.success('Đã lưu bản dịch.')
+    showEditTranslationDrawer.value = false
+    editingTranslation.value = null
+    await fetchArticleTranslations()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể lưu bản dịch.'))
+  }
+}
+
+async function toggleTranslationStatus(row: typeof articleTranslations.value[0]) {
+  const newStatus = row.status === 'published' ? 'reviewed' : 'published'
+  try {
+    await $fetch(
+      `/api/admin/articles/${articleId.value}/translations/${row.langCode}/status`,
+      { method: 'PATCH', body: { status: newStatus } },
+    )
+    toast.success(newStatus === 'published' ? 'Đã xuất bản bản dịch.' : 'Đã bỏ xuất bản.')
+    await fetchArticleTranslations()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể đổi trạng thái.'))
+  }
+}
+
+async function deleteTranslation(row: typeof articleTranslations.value[0]) {
+  if (!confirm(`Xoá bản dịch ${TRANSLATION_LANGS.find(l => l.code === row.langCode)?.label ?? row.langCode}?`)) return
+  try {
+    await $fetch(
+      `/api/admin/articles/${articleId.value}/translations/${row.langCode}`,
+      { method: 'DELETE' },
+    )
+    toast.success('Đã xoá bản dịch.')
+    await fetchArticleTranslations()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể xoá.'))
+  }
+}
 </script>
+
+function getTranslationRow(langCode: string): typeof articleTranslations.value[0] | undefined {
+  return articleTranslations.value.find((t) => t.langCode === langCode)
+}
 
 <template>
   <div class="flex flex-col gap-5">
@@ -607,68 +764,95 @@ onUnmounted(() => {
           </div>
 
           <!-- Polished Content Preview Drawer -->
-          <div v-if="polishedPreview" class="rounded-lg bg-white border border-[#c8d6c9] p-3.5 flex flex-col gap-2.5">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-[#1e4620]">🔍 Kết quả soát lỗi & trau chuốt văn phong:</span>
-              <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer" @click="polishedPreview = null">Đóng</button>
+          <div v-if="polishedPreview" class="rounded-xl bg-white border border-[#c8d6c9] p-4 flex flex-col gap-3 shadow-md">
+            <div class="flex items-center justify-between border-b border-[#e2ece3] pb-2.5">
+              <div class="flex items-center gap-2">
+                <span class="w-7 h-7 rounded-lg bg-[#f0f7f1] text-[#2c6e33] flex items-center justify-center text-xs">
+                  <i class="fa-solid fa-spell-check"></i>
+                </span>
+                <span class="text-sm font-extrabold text-[#122815]">Kết quả rà soát &amp; đề xuất sửa lỗi:</span>
+                <span v-if="polishedPreview.changes?.length" class="text-xs font-bold px-2 py-0.5 rounded-full bg-[#f0f7f1] text-[#2c6e33]">
+                  {{ polishedPreview.changes.length }} điểm cần sửa
+                </span>
+              </div>
+              <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer p-1" @click="polishedPreview = null">
+                <i class="fa-solid fa-xmark text-sm"></i>
+              </button>
             </div>
-            <div v-if="polishedPreview.highlights" class="text-xs font-medium text-[#2c6e33] bg-[#f0f7f1] p-2 rounded-md">
-              💡 {{ polishedPreview.highlights }}
+
+            <!-- Summary note -->
+            <div v-if="polishedPreview.summaryNotes" class="text-xs font-medium text-[#2c6e33] bg-[#f0f7f1] p-2.5 rounded-lg border border-[#c8d6c9] flex items-start gap-2">
+              <i class="fa-solid fa-lightbulb text-sm mt-0.5 shrink-0 text-[#7CB342]"></i>
+              <span>{{ polishedPreview.summaryNotes }}</span>
             </div>
-            <div class="max-h-60 overflow-y-auto p-3 rounded-lg border border-[#e2ece3] bg-[#fcfdfc] text-xs leading-relaxed text-[#2d3748]">
-              {{ polishedPreview.content }}
+
+            <!-- List of specific changes (Cái nào sai đổi thành cái nào) -->
+            <div v-if="polishedPreview.changes && polishedPreview.changes.length > 0" class="flex flex-col gap-2.5 max-h-96 overflow-y-auto pr-1">
+              <div
+                v-for="(change, idx) in polishedPreview.changes"
+                :key="idx"
+                class="rounded-xl border p-3 flex flex-col gap-2 transition-all text-xs"
+                :class="change.applied ? 'border-green-300 bg-green-50/50 opacity-75' : 'border-[#e2ece3] bg-white hover:border-[#2c6e33]/40 shadow-xs'"
+              >
+                <div class="flex items-center justify-between gap-2 flex-wrap">
+                  <span class="font-bold text-[#667768] text-[0.72rem]">Lỗi #{{ idx + 1 }}: {{ change.reason || 'Chuẩn hóa câu từ' }}</span>
+                  <span v-if="change.applied" class="text-[0.7rem] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <i class="fa-solid fa-check"></i> Đã áp dụng
+                  </span>
+                  <button
+                    v-else
+                    type="button"
+                    class="px-2.5 py-1 rounded-md bg-[#2c6e33] hover:bg-[#1e4620] text-white text-[0.72rem] font-bold cursor-pointer border-none flex items-center gap-1 transition-all active:scale-95"
+                    @click="applySingleChange(change)"
+                  >
+                    <i class="fa-solid fa-check"></i> Áp dụng sửa đổi này
+                  </button>
+                </div>
+
+                <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                  <!-- Đoạn sai / cũ -->
+                  <div class="p-2 rounded-lg bg-red-50 border border-red-200 text-red-900 flex flex-col gap-0.5">
+                    <span class="text-[0.65rem] font-extrabold uppercase tracking-wide text-red-700 flex items-center gap-1">
+                      <i class="fa-solid fa-xmark"></i> Đoạn văn bản gốc:
+                    </span>
+                    <span class="line-through decoration-red-400 font-medium break-words leading-relaxed">{{ change.original }}</span>
+                  </div>
+
+                  <!-- Đoạn sửa / mới -->
+                  <div class="p-2 rounded-lg bg-green-50 border border-green-200 text-green-900 flex flex-col gap-0.5">
+                    <span class="text-[0.65rem] font-extrabold uppercase tracking-wide text-green-700 flex items-center gap-1">
+                      <i class="fa-solid fa-check"></i> Đề xuất chuẩn hóa:
+                    </span>
+                    <span class="font-bold break-words leading-relaxed">{{ change.suggested }}</span>
+                  </div>
+                </div>
+              </div>
             </div>
-            <div class="flex items-center justify-end gap-2 pt-1">
+
+            <!-- Nếu không có danh sách chi tiết mà chỉ có nội dung đã sửa -->
+            <div v-else class="max-h-60 overflow-y-auto p-3 rounded-lg border border-[#e2ece3] bg-[#fcfdfc] text-xs leading-relaxed text-[#2d3748]">
+              <div v-html="polishedPreview.content"></div>
+            </div>
+
+            <!-- Footer actions -->
+            <div class="flex items-center justify-between pt-2 border-t border-[#e2ece3] flex-wrap gap-2">
               <button
                 type="button"
                 class="px-3 py-1.5 rounded-md border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-[#f8faf8] cursor-pointer"
                 @click="polishedPreview = null"
               >
-                Bỏ qua
+                Đóng
               </button>
               <button
                 type="button"
-                class="px-3.5 py-1.5 rounded-md bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs"
-                @click="applyPolishedContent"
+                class="px-4 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer border-none flex items-center gap-2 shadow-xs transition-all active:scale-95"
+                @click="applyAllPolishedChanges"
               >
-                <i class="fa-solid fa-check"></i>
-                Áp dụng vào Nội dung chi tiết
+                <i class="fa-solid fa-check-double"></i> Áp dụng tất cả sửa đổi vào bài viết
               </button>
             </div>
           </div>
 
-          <!-- Translated Article Preview Drawer -->
-          <div v-if="translatedPreview" class="rounded-lg bg-white border border-[#c8d6c9] p-3.5 flex flex-col gap-2.5">
-            <div class="flex items-center justify-between">
-              <span class="text-xs font-bold text-[#1e4620]">🌐 Bản xem trước dịch sang {{ translatedPreview.langName }}:</span>
-              <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer" @click="translatedPreview = null">Đóng</button>
-            </div>
-            <div v-if="translatedPreview.title" class="flex flex-col gap-1 text-xs">
-              <strong class="text-[#122815]">Tiêu đề dịch:</strong>
-              <div class="p-2 rounded border border-[#e2ece3] bg-[#fcfdfc] font-semibold text-[#1e4620]">{{ translatedPreview.title }}</div>
-            </div>
-            <div v-if="translatedPreview.excerpt" class="flex flex-col gap-1 text-xs">
-              <strong class="text-[#122815]">Tóm tắt dịch:</strong>
-              <div class="p-2 rounded border border-[#e2ece3] bg-[#fcfdfc] text-[#2d3748]">{{ translatedPreview.excerpt }}</div>
-            </div>
-            <div class="flex items-center justify-end gap-2 pt-1">
-              <button
-                type="button"
-                class="px-3 py-1.5 rounded-md border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-[#f8faf8] cursor-pointer"
-                @click="translatedPreview = null"
-              >
-                Bỏ qua
-              </button>
-              <button
-                type="button"
-                class="px-3.5 py-1.5 rounded-md bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs"
-                @click="applyTranslation"
-              >
-                <i class="fa-solid fa-check"></i>
-                Áp dụng bản dịch vào bài viết
-              </button>
-            </div>
-          </div>
         </div>
         <div class="flex flex-col gap-1.5">
           <label class="text-[0.84rem] font-bold text-[#2c3e2e]">Tiêu đề bài viết (*)</label>
@@ -765,6 +949,97 @@ onUnmounted(() => {
             {{ uploadingThumb ? 'Đang tải...' : 'Upload ảnh' }}
             <input type="file" accept="image/*" class="sr-only" :disabled="uploadingThumb" @change="uploadThumbnailFromInput" />
           </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- Article Translations Section -->
+    <div v-if="!isNew" id="article-translations-section" class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-4">
+      <div class="flex items-center justify-between">
+        <h3 class="text-[1rem] font-bold text-[#122815] m-0 flex items-center gap-2">
+          <i class="fa-solid fa-language text-[#2c6e33]"></i> Bản dịch bài viết
+        </h3>
+        <button
+          class="text-xs font-semibold text-[#2c6e33] bg-transparent border-0 cursor-pointer hover:underline"
+          @click="showTranslationsPanel = !showTranslationsPanel; if (showTranslationsPanel) fetchArticleTranslations()"
+        >
+          {{ showTranslationsPanel ? 'Ẩn' : 'Hiện' }}
+        </button>
+      </div>
+
+      <div v-if="showTranslationsPanel" class="flex flex-col gap-3">
+        <!-- Language list -->
+        <div class="flex flex-wrap gap-2">
+          <div
+            v-for="lang in TRANSLATION_LANGS"
+            :key="lang.code"
+            class="flex items-center gap-2 px-3 py-1.5 rounded-lg border text-sm"
+            :class="getTranslationRow(lang.code) ? 'border-[#c8d6c9] bg-[#f8faf7]' : 'border-[#e2ece3] bg-white'"
+          >
+            <span>{{ lang.flag }}</span>
+            <span class="font-semibold text-[#122815]">{{ lang.label }}</span>
+
+            <!-- Status badge -->
+            <template v-if="getTranslationRow(lang.code)">
+              <span v-if="getTranslationRow(lang.code)?.status === 'translating'" class="text-xs text-[#2c6e33] font-bold">
+                {{ translationProgress }}% ({{ getTranslationRow(lang.code)?.currentChunk }}/{{ getTranslationRow(lang.code)?.totalChunks }})
+              </span>
+              <span v-else-if="getTranslationRow(lang.code)?.status === 'ai_draft'" class="text-xs font-bold text-[#b78103]">Bản nháp AI</span>
+              <span v-else-if="getTranslationRow(lang.code)?.status === 'reviewed'" class="text-xs font-bold text-[#667768]">Đã duyệt</span>
+              <span v-else-if="getTranslationRow(lang.code)?.status === 'published'" class="text-xs font-bold text-[#1e4620]">Đã xuất bản</span>
+              <span v-else-if="getTranslationRow(lang.code)?.status === 'failed'" class="text-xs font-bold text-[#d12420]" :title="getTranslationRow(lang.code)?.errorMessage ?? ''">Lỗi</span>
+            </template>
+
+            <!-- Actions -->
+            <template v-if="translatingLang === lang.code">
+              <!-- Progress bar -->
+              <div class="w-16 h-1.5 rounded-full bg-[#e2ece3] overflow-hidden">
+                <div class="h-full bg-[#2c6e33] transition-all" :style="{ width: `${translationProgress}%` }"></div>
+              </div>
+            </template>
+            <template v-else-if="!getTranslationRow(lang.code)">
+              <button class="text-xs font-bold text-[#2c6e33] bg-[#e4f2e5] px-2 py-0.5 rounded border border-[#c8dcc9] cursor-pointer hover:bg-[#d4ebd6]" @click="triggerTranslation(lang.code)">Dịch</button>
+            </template>
+            <template v-else>
+              <button class="text-xs font-semibold text-[#2c6e33] bg-transparent border-0 cursor-pointer hover:underline" @click="getTranslationRow(lang.code) && openEditTranslation(getTranslationRow(lang.code)!)">Sửa</button>
+              <button
+                class="text-xs font-semibold bg-transparent border-0 cursor-pointer hover:underline"
+                :class="getTranslationRow(lang.code)?.status === 'published' ? 'text-[#d12420]' : 'text-[#1e4620]'"
+                @click="getTranslationRow(lang.code) && toggleTranslationStatus(getTranslationRow(lang.code)!)"
+              >
+                {{ getTranslationRow(lang.code)?.status === 'published' ? 'Bỏ XB' : 'Xuất bản' }}
+              </button>
+              <button class="text-xs font-semibold text-[#d12420] bg-transparent border-0 cursor-pointer hover:underline" @click="getTranslationRow(lang.code) && deleteTranslation(getTranslationRow(lang.code)!)">Xoá</button>
+            </template>
+          </div>
+        </div>
+
+        <!-- Failed translation retry -->
+        <div v-for="row in articleTranslations.filter(r => r.status === 'failed')" :key="row.id" class="text-xs text-[#d12420] flex items-center gap-2">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+          Lỗi dịch {{ TRANSLATION_LANGS.find(l => l.code === row.langCode)?.label ?? row.langCode }}: {{ row.errorMessage }}
+          <button class="text-[#2c6e33] font-bold underline bg-transparent border-0 cursor-pointer p-0" @click="triggerTranslation(row.langCode)">Thử lại</button>
+        </div>
+
+        <!-- Edit Translation Drawer -->
+        <div v-if="showEditTranslationDrawer && editingTranslation" class="bg-[#f8faf7] rounded-xl border border-[#e2ece3] p-4 flex flex-col gap-3">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-bold text-[#122815]">Sửa bản dịch {{ TRANSLATION_LANGS.find(l => l.code === editingTranslation.lang)?.label ?? editingTranslation.lang }}</span>
+            <button class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer" @click="showEditTranslationDrawer = false; editingTranslation = null">Đóng</button>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tiêu đề dịch</label>
+            <input v-model="editingTranslation.title" type="text" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]" />
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Tóm tắt dịch</label>
+            <textarea v-model="editingTranslation.excerpt" rows="2" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] resize-none font-[inherit]"></textarea>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Nội dung dịch (HTML)</label>
+            <textarea v-model="editingTranslation.content" rows="8" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] resize-y font-mono"></textarea>
+          </div>
+          <button class="self-end px-4 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-sm font-bold border-none cursor-pointer" @click="saveTranslationEdit">Lưu bản dịch</button>
         </div>
       </div>
     </div>

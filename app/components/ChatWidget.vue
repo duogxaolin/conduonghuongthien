@@ -99,12 +99,27 @@
               <i class="fa-solid fa-robot text-white text-[0.65rem]"></i>
             </div>
             <div
-              class="max-w-[80%] break-words px-4 py-3 text-[0.875rem] leading-[1.55] lg:text-[0.92rem]"
-              :class="msg.sender === 'bot'
-                ? 'bg-white text-[#1f2937] rounded-[4px_18px_18px_18px] shadow-[0_1px_3px_rgba(0,0,0,0.06)]'
-                : 'bg-[#1e4620] text-white rounded-[18px_4px_18px_18px] shadow-[0_2px_8px_rgba(30,70,32,0.2)]'"
+              class="max-w-[80%] break-words px-4 py-3 text-[0.875rem] leading-[1.55] lg:text-[0.92rem] transition-opacity"
+              :class="[
+                msg.sender === 'bot'
+                  ? 'bg-white text-[#1f2937] rounded-[4px_18px_18px_18px] shadow-[0_1px_3px_rgba(0,0,0,0.06)]'
+                  : msg.status === 'error'
+                    ? 'bg-[#fff0ef] text-[#b42318] border border-[#f0c0c0] rounded-[18px_4px_18px_18px]'
+                    : 'bg-[#1e4620] text-white rounded-[18px_4px_18px_18px] shadow-[0_2px_8px_rgba(30,70,32,0.2)]',
+                msg.status === 'pending' ? 'opacity-60' : ''
+              ]"
+              role="alert"
             >
               <ChatMessageContent :text="msg.text" :is-bot="msg.sender === 'bot'" :tool-calls="msg.toolCalls" />
+              <span v-if="msg.status === 'pending'" class="inline-flex items-center gap-1 mt-1 text-[0.72rem] opacity-70">
+                <i class="fa-solid fa-circle-notch fa-spin text-[0.6rem]" aria-hidden="true"></i>
+                Đang gửi…
+              </span>
+              <div v-if="msg.status === 'error' && msg.error" class="mt-1 flex items-center gap-2 text-[0.72rem]" role="alert">
+                <i class="fa-solid fa-circle-exclamation text-[0.65rem]" aria-hidden="true"></i>
+                {{ msg.error }}
+                <button type="button" class="underline font-semibold text-[#1e4620] bg-transparent border-0 cursor-pointer p-0" @click="retryMessage(msg)">Thử lại</button>
+              </div>
               <div v-if="msg.sender === 'bot' && !msg.isStreaming" class="mt-2 flex items-center justify-between gap-2 border-t border-[#e1e8e0] pt-1.5 text-[0.7rem]">
                 <span v-if="msg.kind" class="flex items-center gap-1 font-semibold" :class="messageKindClass(msg.kind)" role="status">
                   <i class="fa-solid" :class="isProblemKind(msg.kind) ? 'fa-circle-exclamation text-[#9a3412]' : 'fa-circle-check text-[#1e4620]'" aria-hidden="true"></i>
@@ -296,7 +311,7 @@
 
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
-import { useChatbot, type StoredConversation } from '~/composables/useChatbot'
+import { useChatbot, type StoredConversation, type ChatMessage } from '~/composables/useChatbot'
 
 const {
   conversations, activeId, chatMessages, isSubmitting, botInput, botInputError,
@@ -497,6 +512,16 @@ const askBot = (question: string) => {
   if (isSubmitting.value) return
   botInput.value = question
   submitBotQuestion(question, followChatBottom)
+}
+
+/** Retry a failed user message by putting the text back in the input and re-submitting. */
+function retryMessage(msg: ChatMessage) {
+  if (isSubmitting.value) return
+  // Remove the failed message — a new one will be pushed optimistically
+  const conv = activeConversation.value
+  const idx = conv.messages.findIndex(m => m.id === msg.id)
+  if (idx !== -1) conv.messages.splice(idx, 1)
+  submitBotQuestion(msg.text, followChatBottom)
 }
 
 onMounted(() => {

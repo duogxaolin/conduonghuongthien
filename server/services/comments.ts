@@ -42,7 +42,7 @@ import { createReplyNotification } from './notifications'
 import { sendReplyEmail } from './notification-email'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { hasForbiddenControlChars } from '../utils/plain-text'
-import { checkAndModerateContent } from './moderation-worker'
+import { checkAndModerateContent, fastPreModerate } from './moderation-worker'
 /** Long enough for a real question, short enough that one row cannot dominate a page. */
 export const COMMENT_MAX_LENGTH = 2000
 
@@ -411,6 +411,17 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     if (!verdict.ok) return { ok: false, statusCode: 400, message: verdict.message }
   }
 
+  // ── Kiểm duyệt tức thì (< 1ms): chặn ngay từ ngữ thô tục, chống phá, cờ bạc ──
+  const preCheck = await fastPreModerate(input.body, {
+    authorName: (reader ? effectiveDisplayName(reader) : null) || 'Người đọc',
+    authorIp: input.ip ?? undefined,
+    targetType: 'comment',
+    contextTitle: contextTitle || undefined,
+    contextUrl: contextUrl || undefined,
+  })
+  if (preCheck.blocked) {
+    return { ok: false, statusCode: 400, message: preCheck.reason }
+  }
   // ── Everything above was a reason to refuse. Only now is allowance spent. ──
   const deps = rateLimitDeps()
   const readerState = await recordRateLimitHit(`comment:reader:${input.readerId}`, COMMENT_READER_RULE, deps)

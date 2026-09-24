@@ -119,6 +119,7 @@ const menuGroups = computed(() => [
       ...(hasPermission('settings', 'read') ? [{ label: 'Tự động dọn dữ liệu', icon: 'fa-solid fa-broom', path: '/admin/settings/data-retention' }] : []),
       ...(hasPermission('settings', 'read') ? [{ label: 'Đăng nhập Google', icon: 'fa-solid fa-right-to-bracket', path: '/admin/settings/google-oauth' }] : []),
       ...(hasPermission('readers', 'read') ? [{ label: 'Chặn địa chỉ IP', icon: 'fa-solid fa-ban', path: '/admin/settings/ip-bans' }] : []),
+      ...(hasPermission('settings', 'read') ? [{ label: 'Ngôn ngữ & Bản dịch', icon: 'fa-solid fa-language', path: '/admin/languages' }] : []),
       { label: 'Lưu trữ Media (R2)', icon: 'fa-solid fa-cloud-arrow-up', path: '/admin/settings/media-storage' },
       ...(hasPermission('settings', 'read') ? [{ label: 'Sao lưu & Khôi phục', icon: 'fa-solid fa-floppy-disk', path: '/admin/settings/backup' }] : []),
     ]

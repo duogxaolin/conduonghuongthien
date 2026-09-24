@@ -1212,6 +1212,59 @@ export async function initDb() {
       CONSTRAINT \`fk_ai_mod_queue_reviewer\` FOREIGN KEY (\`reviewed_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`languages\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`code\` VARCHAR(10) NOT NULL UNIQUE,
+      \`name\` VARCHAR(100) NOT NULL,
+      \`native_name\` VARCHAR(100) NOT NULL,
+      \`is_active\` BOOLEAN NOT NULL DEFAULT TRUE,
+      \`is_default\` BOOLEAN NOT NULL DEFAULT FALSE,
+      \`display_order\` INT NOT NULL DEFAULT 0,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`lang_translations\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`lang_code\` VARCHAR(10) NOT NULL,
+      \`group\` VARCHAR(50) NOT NULL DEFAULT 'general',
+      \`key\` VARCHAR(200) NOT NULL,
+      \`value\` TEXT NULL,
+      \`is_ai_translated\` BOOLEAN NOT NULL DEFAULT FALSE,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      UNIQUE KEY \`uk_lang_group_key\` (\`lang_code\`, \`group\`, \`key\`),
+      KEY \`idx_lang_code\` (\`lang_code\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`article_translations\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`article_id\` INT NOT NULL,
+      \`lang_code\` VARCHAR(10) NOT NULL,
+      \`title\` VARCHAR(512) NULL,
+      \`excerpt\` TEXT NULL,
+      \`content\` LONGTEXT NULL,
+      \`status\` VARCHAR(16) NOT NULL DEFAULT 'translating',
+      \`translated_by\` VARCHAR(32) NOT NULL DEFAULT 'ai',
+      \`translator_id\` INT NULL,
+      \`progress\` INT NOT NULL DEFAULT 0,
+      \`total_chunks\` INT NOT NULL DEFAULT 0,
+      \`current_chunk\` INT NOT NULL DEFAULT 0,
+      \`error_message\` VARCHAR(512) NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      \`completed_at\` TIMESTAMP NULL,
+      UNIQUE KEY \`uk_article_lang\` (\`article_id\`, \`lang_code\`),
+      KEY \`article_translations_lang_status_idx\` (\`lang_code\`, \`status\`),
+      CONSTRAINT \`fk_article_translations_article\` FOREIGN KEY (\`article_id\`) REFERENCES \`articles\` (\`id\`) ON DELETE CASCADE,
+      CONSTRAINT \`fk_article_translations_translator\` FOREIGN KEY (\`translator_id\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
 
   await applyAdditiveMigrations(db, database)
 

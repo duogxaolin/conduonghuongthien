@@ -25,6 +25,7 @@
           { key: 'settings', label: '⚙️ Cài đặt Kiểm duyệt AI', icon: 'fa-solid fa-sliders' },
           { key: 'queue', label: '📥 Sổ đối soát nội dung bị ẩn', icon: 'fa-solid fa-inbox', badge: pendingQueueCount },
           { key: 'rules', label: '📋 Quy tắc & Từ khóa an ninh', icon: 'fa-solid fa-list-check', count: rules.length },
+          { key: 'worker', label: '⚡ Trạng thái Worker & Hệ thống', icon: 'fa-solid fa-server' },
         ]"
         :key="t.key"
         type="button"
@@ -313,7 +314,7 @@
       </div>
 
       <!-- ─── TAB 3: QUY TẮC & TỪ KHÓA AN NINH (RULES ENGINE) ─── -->
-      <div v-else class="flex flex-col gap-5">
+      <div v-else-if="activeTab === 'rules'" class="flex flex-col gap-5">
         <!-- Add Rule Form -->
         <div class="rounded-xl border border-[#c8d6c9] bg-[#f0f7f1] p-4 flex flex-col gap-3 shadow-xs">
           <h3 class="m-0 text-sm font-extrabold text-[#122815] flex items-center gap-2">
@@ -416,6 +417,203 @@
           </table>
         </div>
       </div>
+
+      <!-- ─── TAB 4: TRẠNG THÁI WORKER & HỆ THỐNG (WORKER STATUS & RESTART) ─── -->
+      <div v-else-if="activeTab === 'worker'" class="flex flex-col gap-5">
+        <!-- Worker Status Banner -->
+        <div
+          class="rounded-xl border p-4 sm:p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all"
+          :class="workerData?.status === 'active'
+            ? 'border-[#8ed694] bg-[#f0f7f1]'
+            : 'border-[#f1b8b5] bg-[#fff4f3]'"
+        >
+          <div class="flex items-center gap-3">
+            <span
+              class="w-10 h-10 rounded-full flex items-center justify-center text-white text-base shadow-xs"
+              :class="workerData?.status === 'active' ? 'bg-[#2c6e33]' : 'bg-[#d12420]'"
+            >
+              <i :class="workerData?.status === 'active' ? 'fa-solid fa-shield-check' : 'fa-solid fa-triangle-exclamation'"></i>
+            </span>
+            <div>
+              <div class="flex items-center gap-2">
+                <h2 class="m-0 text-base font-extrabold text-[#122815]">Moderation Worker: {{ workerData?.status === 'active' ? 'Đang hoạt động bình thường' : 'Có lỗi phát sinh' }}</h2>
+                <span
+                  class="px-2 py-0.5 rounded-full text-[0.68rem] font-bold uppercase tracking-wider"
+                  :class="workerData?.status === 'active' ? 'bg-[#2c6e33] text-white' : 'bg-[#d12420] text-white'"
+                >
+                  {{ workerData?.status === 'active' ? 'HEALTHY' : 'DEGRADED' }}
+                </span>
+              </div>
+              <p class="m-0 mt-0.5 text-xs text-[#667768]">
+                Thời gian hoạt động liên tục: <strong class="text-[#122815]">{{ formatUptime(workerData?.uptimeSeconds || 0) }}</strong>
+                • Khởi động lúc: {{ formatTime(workerData?.startedAt || null) }}
+              </p>
+            </div>
+          </div>
+
+          <button
+            type="button"
+            class="px-3 py-1.5 rounded-lg border border-[#c8d6c9] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#f0f7f1] transition-all cursor-pointer flex items-center gap-1.5 shadow-2xs"
+            :disabled="workerLoading"
+            @click="loadWorkerStatus"
+          >
+            <i class="fa-solid fa-rotate text-xs" :class="workerLoading ? 'animate-spin' : ''"></i>
+            <span>Cập nhật số liệu</span>
+          </button>
+        </div>
+
+        <!-- Metrics Grid -->
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div class="rounded-xl border border-[#e2ece3] bg-white p-4 flex flex-col gap-1 shadow-xs">
+            <span class="text-xs font-semibold text-[#667768]">Tổng lượt quét an ninh</span>
+            <span class="text-2xl font-extrabold text-[#122815]">{{ workerData?.totalScanned ?? 0 }}</span>
+            <span class="text-[0.7rem] text-[#2c6e33] font-medium">Bình luận, chat, livestream</span>
+          </div>
+
+          <div class="rounded-xl border border-[#e2ece3] bg-white p-4 flex flex-col gap-1 shadow-xs">
+            <span class="text-xs font-semibold text-[#667768]">Chặn tức thì (0ms)</span>
+            <span class="text-2xl font-extrabold text-[#d12420]">{{ workerData?.blockedInstant ?? 0 }}</span>
+            <span class="text-[0.7rem] text-[#667768]">Từ khóa thô tục, chống phá</span>
+          </div>
+
+          <div class="rounded-xl border border-[#e2ece3] bg-white p-4 flex flex-col gap-1 shadow-xs">
+            <span class="text-xs font-semibold text-[#667768]">Chặn bởi AI ngữ cảnh</span>
+            <span class="text-2xl font-extrabold text-[#b78103]">{{ workerData?.blockedAi ?? 0 }}</span>
+            <span class="text-[0.7rem] text-[#667768]">Độ trễ AI: ~{{ workerData?.lastAiLatencyMs ?? 0 }}ms</span>
+          </div>
+
+          <div class="rounded-xl border border-[#e2ece3] bg-white p-4 flex flex-col gap-1 shadow-xs">
+            <span class="text-xs font-semibold text-[#667768]">Nội dung an toàn</span>
+            <span class="text-2xl font-extrabold text-[#2c6e33]">{{ workerData?.allowedCount ?? 0 }}</span>
+            <span class="text-[0.7rem] text-[#667768]">Cho phép hiển thị công khai</span>
+          </div>
+        </div>
+
+        <!-- System Resources & Diagnostics -->
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-3 shadow-xs">
+            <h3 class="m-0 text-sm font-extrabold text-[#122815] flex items-center gap-2">
+              <i class="fa-solid fa-microchip text-[#2c6e33]"></i>
+              Bộ nhớ & Hạ tầng Worker
+            </h3>
+            <div class="flex flex-col gap-2 text-xs">
+              <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
+                <span class="text-[#667768]">Bộ nhớ RAM Heap (Đang dùng / Cấp phát):</span>
+                <span class="font-bold text-[#122815]">{{ workerData?.memoryUsageMb?.heapUsed ?? 0 }} MB / {{ workerData?.memoryUsageMb?.heapTotal ?? 0 }} MB</span>
+              </div>
+              <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
+                <span class="text-[#667768]">Bộ nhớ RAM tiến trình (RSS):</span>
+                <span class="font-bold text-[#122815]">{{ workerData?.memoryUsageMb?.rss ?? 0 }} MB</span>
+              </div>
+              <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
+                <span class="text-[#667768]">Mô hình AI kiểm duyệt:</span>
+                <span class="font-bold text-[#2c6e33]">{{ workerData?.aiProvider }} / {{ workerData?.aiModel }} ({{ workerData?.aiServiceActive ? 'Đang hoạt động' : 'Tắt' }})</span>
+              </div>
+              <div class="flex items-center justify-between py-1">
+                <span class="text-[#667768]">Quy tắc trong bộ nhớ đệm:</span>
+                <span class="font-bold text-[#122815]">{{ workerData?.cachedRulesCount ?? 0 }} quy tắc</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-3 shadow-xs">
+            <h3 class="m-0 text-sm font-extrabold text-[#122815] flex items-center gap-2">
+              <i class="fa-solid fa-heart-pulse text-[#d12420]"></i>
+              Nhật ký chẩn đoán & Sức khỏe
+            </h3>
+            <div class="flex flex-col gap-2 text-xs">
+              <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
+                <span class="text-[#667768]">Số lỗi kiểm duyệt phát sinh:</span>
+                <span class="font-bold" :class="workerData?.errorCount ? 'text-[#d12420]' : 'text-[#2c6e33]'">{{ workerData?.errorCount ?? 0 }} lần</span>
+              </div>
+              <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
+                <span class="text-[#667768]">Lần quét gần nhất:</span>
+                <span class="font-bold text-[#122815]">{{ formatTime(workerData?.lastScannedAt || null) }}</span>
+              </div>
+              <div class="flex items-center justify-between py-1">
+                <span class="text-[#667768]">Lỗi gần nhất:</span>
+                <span class="font-medium text-[#667768] truncate max-w-[240px]">{{ workerData?.lastError || 'Không có lỗi' }}</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Emergency Actions Card -->
+        <div class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-4 shadow-xs">
+          <div>
+            <h3 class="m-0 text-sm font-extrabold text-[#122815] flex items-center gap-2">
+              <i class="fa-solid fa-wrench text-[#2c6e33]"></i>
+              Thao tác Khẩn cấp & Khởi động lại
+            </h3>
+            <p class="m-0 mt-1 text-xs text-[#667768]">Các công cụ quản trị giúp phục hồi hệ thống khi phát hiện lỗi hoặc dọn dẹp nội dung xấu độc còn sót.</p>
+          </div>
+
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <!-- Rescan All -->
+            <div class="rounded-lg border border-[#c8d6c9] bg-[#f8faf8] p-4 flex flex-col justify-between gap-3">
+              <div>
+                <h4 class="m-0 text-xs font-bold text-[#1e4620] flex items-center gap-1.5">
+                  <i class="fa-solid fa-broom"></i> Quét & Dọn sạch nội dung cũ
+                </h4>
+                <p class="m-0 mt-1 text-[0.72rem] text-[#667768]">
+                  Rà soát lại toàn bộ bình luận bài viết, video và tin chat trực tiếp trong CSDL. Tự động ẩn hoặc xóa mọi nội dung vi phạm.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="w-full px-3 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 border-none"
+                :disabled="rescanning"
+                @click="triggerRescanAll"
+              >
+                <i class="fa-solid fa-play text-xs" :class="rescanning ? 'animate-spin' : ''"></i>
+                <span>{{ rescanning ? 'Đang quét...' : 'Quét & Dọn ngay' }}</span>
+              </button>
+            </div>
+
+            <!-- Restart Worker -->
+            <div class="rounded-lg border border-[#e2ece3] bg-[#fcfdfc] p-4 flex flex-col justify-between gap-3">
+              <div>
+                <h4 class="m-0 text-xs font-bold text-[#122815] flex items-center gap-1.5">
+                  <i class="fa-solid fa-arrows-rotate"></i> Khởi động lại Worker
+                </h4>
+                <p class="m-0 mt-1 text-[0.72rem] text-[#667768]">
+                  Làm mới bộ đệm quy tắc trong RAM, đặt lại bộ đếm lỗi và kết nối lại AI Gateway mà không làm gián đoạn website.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="w-full px-3 py-2 rounded-lg border border-[#2c6e33] bg-white text-[#2c6e33] hover:bg-[#f0f7f1] text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-50"
+                :disabled="restartingWorker"
+                @click="triggerRestartWorker"
+              >
+                <i class="fa-solid fa-rotate text-xs" :class="restartingWorker ? 'animate-spin' : ''"></i>
+                <span>{{ restartingWorker ? 'Đang khởi động...' : 'Khởi động lại Worker' }}</span>
+              </button>
+            </div>
+
+            <!-- Restart Server Process -->
+            <div class="rounded-lg border border-[#f1b8b5] bg-[#fff5f4] p-4 flex flex-col justify-between gap-3">
+              <div>
+                <h4 class="m-0 text-xs font-bold text-[#d12420] flex items-center gap-1.5">
+                  <i class="fa-solid fa-power-off"></i> Khởi động lại Website
+                </h4>
+                <p class="m-0 mt-1 text-[0.72rem] text-[#8c231f]">
+                  Khởi động lại toàn bộ tiến trình máy chủ website (process exit / supervisor restart). Website gián đoạn 3-5 giây.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="w-full px-3 py-2 rounded-lg bg-[#d12420] hover:bg-[#a81c19] text-white text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 border-none"
+                :disabled="restartingServer"
+                @click="triggerRestartServer"
+              >
+                <i class="fa-solid fa-power-off text-xs" :class="restartingServer ? 'animate-spin' : ''"></i>
+                <span>{{ restartingServer ? 'Đang khởi động lại...' : 'Khởi động lại Website' }}</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
     </template>
   </div>
 </template>
@@ -428,7 +626,7 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 const toast = useToast()
 const { confirm } = useConfirm()
 
-type TabKey = 'settings' | 'queue' | 'rules'
+type TabKey = 'settings' | 'queue' | 'rules' | 'worker'
 const activeTab = ref<TabKey>('settings')
 
 const loading = ref(true)
@@ -562,7 +760,7 @@ async function loadData() {
   loading.value = true
   error.value = ''
   try {
-    await Promise.all([loadSettings(), loadQueue(), loadRules()])
+    await Promise.all([loadSettings(), loadQueue(), loadRules(), loadWorkerStatus()])
   } catch (err: unknown) {
     error.value = errorMessage(err, 'Không thể tải cấu hình kiểm duyệt an ninh.')
   } finally {
@@ -664,6 +862,124 @@ async function resolveItem(item: ModerationQueueItem, action: 'approve' | 'rejec
     await loadQueue()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể xử lý đối soát.'))
+  }
+}
+
+// ─── TAB 4: WORKER STATUS & EMERGENCY ACTIONS ───────────────────────────
+interface WorkerStatusData {
+  status: 'active' | 'degraded' | 'idle'
+  startedAt: string
+  uptimeSeconds: number
+  totalScanned: number
+  blockedInstant: number
+  blockedAi: number
+  allowedCount: number
+  errorCount: number
+  lastScannedAt: string | null
+  lastError: string | null
+  lastErrorAt: string | null
+  lastAiLatencyMs: number
+  pendingQueueCount: number
+  cachedRulesCount: number
+  aiServiceActive: boolean
+  aiProvider: string
+  aiModel: string
+  memoryUsageMb: {
+    heapUsed: number
+    heapTotal: number
+    rss: number
+  }
+}
+
+const workerData = ref<WorkerStatusData | null>(null)
+const workerLoading = ref(false)
+const rescanning = ref(false)
+const restartingWorker = ref(false)
+const restartingServer = ref(false)
+
+function formatUptime(seconds: number): string {
+  if (!seconds || seconds < 60) return `${seconds || 0} giây`
+  const mins = Math.floor(seconds / 60)
+  if (mins < 60) return `${mins} phút ${seconds % 60} giây`
+  const hours = Math.floor(mins / 60)
+  return `${hours} giờ ${mins % 60} phút`
+}
+
+async function loadWorkerStatus() {
+  workerLoading.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; worker: WorkerStatusData }>('/api/admin/ai/moderation/worker-status')
+    if (res.ok) {
+      workerData.value = res.worker
+    }
+  } catch {
+    // Non-blocking status lookup
+  } finally {
+    workerLoading.value = false
+  }
+}
+
+async function triggerRestartWorker() {
+  const ok = await confirm({
+    title: 'Khởi động lại Moderation Worker',
+    message: 'Khởi động lại worker sẽ làm mới bộ đệm quy tắc trong RAM và đặt lại bộ đếm lỗi. Tiếp tục?',
+    confirmText: 'Khởi động lại Worker',
+    tone: 'primary',
+  })
+  if (!ok) return
+
+  restartingWorker.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/ai/moderation/restart-worker', { method: 'POST' })
+    toast.success(res.message || 'Đã khởi động lại Moderation Worker.')
+    await loadWorkerStatus()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể khởi động lại worker.'))
+  } finally {
+    restartingWorker.value = false
+  }
+}
+
+async function triggerRescanAll() {
+  const ok = await confirm({
+    title: 'Quét & dọn sạch nội dung bẩn cũ',
+    message: 'Hệ thống sẽ quét lại toàn bộ bình luận bài viết, video và tin chat trực tiếp hiện có trong CSDL bằng bộ lọc tức thì. Mọi nội dung vi phạm sẽ được tự động ẩn hoặc xóa ngay lập tức. Tiếp tục?',
+    confirmText: 'Bắt đầu quét & dọn dẹp',
+    tone: 'danger',
+  })
+  if (!ok) return
+
+  rescanning.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/ai/moderation/rescan-all', { method: 'POST' })
+    toast.success(res.message)
+    await Promise.all([loadWorkerStatus(), loadQueue()])
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể quét lại nội dung.'))
+  } finally {
+    rescanning.value = false
+  }
+}
+
+async function triggerRestartServer() {
+  const ok = await confirm({
+    title: 'Khởi động lại máy chủ Website',
+    message: 'CẢNH BÁO: Thao tác này sẽ gửi tín hiệu khởi động lại tiến trình máy chủ website (process restart). Website có thể gián đoạn trong 3-5 giây. Bạn có chắc chắn?',
+    confirmText: 'Khởi động lại Website',
+    tone: 'danger',
+  })
+  if (!ok) return
+
+  restartingServer.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/ai/moderation/restart-server', { method: 'POST' })
+    toast.success(res.message)
+    setTimeout(() => {
+      window.location.replace('/admin/ai/moderation')
+    }, 4000)
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể gửi lệnh khởi động lại.'))
+    restartingServer.value = false
   }
 }
 

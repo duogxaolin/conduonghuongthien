@@ -1,9 +1,16 @@
 <script setup lang="ts">
 import type { MfaMethod } from '~/composables/useAdminAuth'
 
-definePageMeta({ layout: false })
+definePageMeta({ layout: false, middleware: 'admin-auth' })
 
-const { login, verifyMfa } = useAdminAuth()
+const { login, verifyMfa, user, fetchUser } = useAdminAuth()
+
+onMounted(async () => {
+  if (!user.value) await fetchUser()
+  if (user.value) {
+    navigateTo('/admin')
+  }
+})
 
 const { data: publicSettingsData } = await useFetch('/api/public/settings', {
   key: 'public-settings-login',
