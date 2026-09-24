@@ -5,6 +5,7 @@ import {
   aiModerationQueue,
   articleComments,
   chatMessages,
+  livestreamMessages,
   type AiModerationRule,
 } from '../db/schema'
 import { callAi } from './ai-gateway'
@@ -12,7 +13,7 @@ import { logWarn, logInfo } from '../utils/logger'
 
 export interface ModerationCheckInput {
   content: string
-  targetType: 'comment' | 'chat' | 'article'
+  targetType: 'comment' | 'chat' | 'article' | 'livestream_chat'
   targetId?: number
   authorName?: string
   authorIp?: string
@@ -222,6 +223,11 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
           .update(chatMessages)
           .set({ isFlagged: true, flagReason: reasons.join('; ').slice(0, 255) })
           .where(eq(chatMessages.id, input.targetId))
+      } else if (input.targetType === 'livestream_chat') {
+        await db
+          .update(livestreamMessages)
+          .set({ isDeleted: true })
+          .where(eq(livestreamMessages.id, input.targetId))
       }
     }
   }

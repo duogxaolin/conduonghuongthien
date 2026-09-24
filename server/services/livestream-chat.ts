@@ -49,6 +49,7 @@ import { finitePositive } from '../utils/query-number'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { recordRateLimitHit, type RateLimitDeps, type RateLimitRule } from '../utils/rate-limit-store'
 import { broadcastToSession, SSE_EVENT_MESSAGE, SSE_EVENT_REMOVAL } from '../utils/sse-manager'
+import { checkAndModerateContent } from './moderation-worker'
 
 /**
  * Độ dài tối đa của một tin nhắn — và nó **phải** khớp `varchar(200)` của cột
@@ -94,6 +95,8 @@ export type LivestreamChatDeps = {
   db?: Database
   /** Điểm tiêm cho test; production đi qua `rateLimitDeps()`. */
   rateLimit?: RateLimitDeps
+  /** Điểm tiêm cho kiểm duyệt an ninh. */
+  moderate?: typeof checkAndModerateContent
 }
 
 /**
@@ -304,7 +307,25 @@ export async function sendChatMessage(
     // không có hàng nào tồn tại.
     throw new Error('livestream_messages insert returned no id')
   }
+  // ── AI Security & Moderation Worker scan ──
+  const moderate = deps.moderate ?? (deps.db ? undefined : checkAndModerateContent)
+  if (moderate) {
+    const modResult = await moderate({
+      content: verdict.content,
+      targetType: 'livestream_chat',
+      targetId: id,
+      authorName: displayName,
+      authorIp: input.ip,
+    })
 
+    if (modResult.flagged && modResult.action === 'auto_hide') {
+      return {
+        ok: false,
+        statusCode: 400,
+        message: 'Tin nhắn chứa nội dung vi phạm tiêu chuẩn an ninh cộng đồng.',
+      }
+    }
+  }
   const message: ChatMessage = {
     id,
     displayName,
