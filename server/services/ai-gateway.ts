@@ -171,9 +171,23 @@ function parseProviderResponse(provider: string, payload: unknown, policy: strin
   }
 }
 
-function extractAnswer(policy: string, payload: unknown): string {
-  if (!payload || typeof payload !== 'object') return ''
+function cleanAiContent(text: string): string {
+  if (!text) return ''
+  return text
+    .replace(/<\|channel>thought[\s\S]*?<channel\|>/gi, '')
+    .replace(/<\|channel\|>thought[\s\S]*?<\|channel\|>/gi, '')
+    .replace(/<\|thought\|>[\s\S]*?<\|\/thought\|>/gi, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\|channel>[\s\S]*?<channel\|>/gi, '')
+    .trim()
+}
 
+function extractAnswer(policy: string, payload: unknown): string {
+  return cleanAiContent(rawExtractAnswer(policy, payload))
+}
+
+function rawExtractAnswer(policy: string, payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return ''
   if (policy === 'anthropic') {
     const blocks = (payload as { content?: unknown }).content
     if (!Array.isArray(blocks)) return ''

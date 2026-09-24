@@ -7,6 +7,20 @@
  * 3. Links only accept safe http://, https://, or relative / URLs with target="_blank" rel="noopener noreferrer".
  */
 
+export function cleanAiText(raw: string): string {
+  if (!raw) return ''
+  return raw
+    .replace(/<\|channel>thought[\s\S]*?<channel\|>/gi, '')
+    .replace(/<\|channel\|>thought[\s\S]*?<\|channel\|>/gi, '')
+    .replace(/<\|thought\|>[\s\S]*?<\|\/thought\|>/gi, '')
+    .replace(/<think>[\s\S]*?<\/think>/gi, '')
+    .replace(/<\|channel>[\s\S]*?<channel\|>/gi, '')
+    .replace(/thought\s*<channel\|>/gi, '')
+    .replace(/<\|channel>|channel\|>|<channel\|>|<\|channel\|>/gi, '')
+    .replace(/^thought\s*$/gim, '')
+    .trim()
+}
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, '&amp;')
@@ -19,8 +33,8 @@ function escapeHtml(str: string): string {
 export function renderChatMarkdown(md: string): string {
   if (!md) return ''
 
-  // 1. Escape all raw HTML entities first (strict anti-XSS)
-  let text = escapeHtml(md)
+  // 1. Clean thinking tokens & escape all raw HTML entities first (strict anti-XSS)
+  let text = escapeHtml(cleanAiText(md))
 
   // 2. Code blocks (```lang ... ```)
   text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, _lang, code: string) => {
@@ -39,7 +53,20 @@ export function renderChatMarkdown(md: string): string {
   // 6. Italic (*text* or _text_)
   text = text.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<em>$1</em>')
 
-  // 7. Links [text](url) — must be safe https://, http:// or /
+  // 7a. Media / Images ![alt](url) — must be safe https://, http:// or /
+  text = text.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)"']+|\/[^\s)"']*)\)/g, (_, alt, rawUrl) => {
+    const safeUrl = rawUrl.trim()
+    const safeAlt = (alt || '').trim()
+    const isVideo = safeUrl.includes('/media/') || safeAlt.toLowerCase().includes('video')
+
+    if (isVideo) {
+      return `<div class="chat-media-card chat-video-card my-2.5 overflow-hidden rounded-xl border border-[#c8d6c9] bg-[#f0f7f1] shadow-xs max-w-sm"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="relative block group overflow-hidden"><img src="${safeUrl}" alt="${safeAlt || 'Video thumbnail'}" class="w-full aspect-video object-cover block bg-[#122815]" loading="lazy" onerror="this.style.display='none'" /><div class="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/40 transition-colors"><span class="w-10 h-10 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><i class="fa-solid fa-play text-sm ml-0.5" aria-hidden="true"></i></span></div></a><div class="p-2.5 flex items-center justify-between gap-2 bg-white"><span class="text-xs font-bold text-[#122815] truncate">${safeAlt || 'Xem Video'}</span><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-[0.72rem] font-bold text-[#2c6e33] underline hover:text-[#1e4620] shrink-0">Xem ngay &rarr;</a></div></div>`
+    }
+
+    return `<div class="chat-media-card chat-image-card my-2.5 overflow-hidden rounded-xl border border-[#e2ece3] bg-white shadow-xs max-w-sm"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="block group overflow-hidden"><img src="${safeUrl}" alt="${safeAlt || 'Hình ảnh'}" class="w-full max-h-56 object-cover block group-hover:scale-[1.02] transition-transform duration-300" loading="lazy" /></a>${safeAlt ? `<div class="p-2 text-center text-[0.72rem] font-medium text-[#667768] bg-[#fcfdfc] border-t border-[#f0f4f0]">${safeAlt}</div>` : ''}</div>`
+  })
+
+  // 7b. Links [text](url) — must be safe https://, http:// or /
   text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)"']+|\/[^\s)"']*)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline hover:text-[#2c6e33]">$1</a>')
 
   // 8. Headers (###, ##, #)
