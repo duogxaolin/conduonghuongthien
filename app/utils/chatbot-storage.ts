@@ -40,6 +40,14 @@ export const CHATBOT_WELCOME_MESSAGE = Object.freeze({
   text: 'Xin chào! Tôi là Trợ lý ảo Hướng Thiện. Tôi chỉ hỗ trợ theo thông tin công khai trong kho dữ liệu đã được Cục C11 phê duyệt.',
 })
 
+export type ToolCallExecution = {
+  name: string
+  label: string
+  query?: string
+  status: 'calling' | 'done'
+  count?: number
+}
+
 export type ChatSource = { id: string, label: string, reference: string, url: string | null, entryId: number | null }
 export type ChatLead = { name: string, phone: string, email: string, question: string, status: 'idle' | 'sending' | 'done', error: string }
 
@@ -52,6 +60,7 @@ export type ChatMessage = {
   text: string
   kind?: string | undefined
   sources?: ChatSource[]
+  toolCalls?: ToolCallExecution[]
   askContact?: boolean
   lead?: ChatLead | null
   isStreaming?: boolean
@@ -84,6 +93,17 @@ export function safeHttpsUrl(value: unknown): string | null {
   }
 }
 
+export function safeSourceUrl(value: unknown): string | null {
+  const https = safeHttpsUrl(value)
+  if (https) return https
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  if (trimmed.startsWith('/') && !trimmed.startsWith('//') && !trimmed.includes('\\') && /^[\w\-./?&=#%]+$/.test(trimmed)) {
+    return trimmed
+  }
+  return null
+}
+
 /** The knowledge-bank row id, when the payload carries a usable one. */
 export function knowledgeEntryId(raw: Record<string, unknown>): number | null {
   // Fresh replies carry the numeric row id at the top level of the reference.
@@ -102,7 +122,7 @@ export function normalizeSource(item: unknown, index: number): ChatSource | null
   const rawSource = (raw.source && typeof raw.source === 'object' ? raw.source : raw) as Record<string, unknown>
   const label = typeof rawSource.label === 'string' ? rawSource.label.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxSourceLabelChars) : ''
   const reference = typeof rawSource.reference === 'string' ? rawSource.reference.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxSourceReferenceChars) : ''
-  const url = safeHttpsUrl(rawSource.url)
+  const url = safeSourceUrl(rawSource.url)
   if (!label && !reference) return null
   const idPart = typeof raw.id === 'number' || typeof raw.id === 'string' ? raw.id : index
   return { id: `${idPart}-${label}-${reference}`, label: label || 'Tài liệu công khai', reference, url, entryId: knowledgeEntryId(raw) }
@@ -120,7 +140,8 @@ export function normalizeStoredMessage(item: unknown, index: number): ChatMessag
   const sources = Array.isArray(raw.sources)
     ? raw.sources.slice(0, CHATBOT_CLIENT_LIMITS.maxSources).map(normalizeSource).filter((value): value is ChatSource => value !== null)
     : []
-  return { id: `stored-${index}`, sender: 'bot', text, kind, sources }
+  const toolCalls = Array.isArray(raw.toolCalls) ? (raw.toolCalls as ToolCallExecution[]) : undefined
+  return { id: `stored-${index}`, sender: 'bot', text, kind, sources, toolCalls }
 }
 
 /**

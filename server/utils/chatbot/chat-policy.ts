@@ -206,8 +206,14 @@ function aiProviderReady(settings: ChatbotSettings): boolean {
   return Boolean(settings.enabled && settings.baseUrl && settings.model && settings.allowedHosts?.length)
 }
 
-async function callProvider(settings: ChatbotSettings, dependencies: ChatDependencies, references: PublicKnowledgeReference[], history: ChatMessage[], onChunk?: (chunk: string) => void | Promise<void>): Promise<string | null> {
-  // Route through the AI gateway (spec R11.5, design.md D4 step 3) so usage is
+async function callProvider(
+  settings: ChatbotSettings,
+  dependencies: ChatDependencies,
+  references: PublicKnowledgeReference[],
+  history: ChatMessage[],
+  onChunk?: (chunk: string) => void | Promise<void>,
+  onToolCall?: (event: { name: string; query?: string; status: 'calling' | 'done'; count?: number }) => void | Promise<void>,
+): Promise<{ text: string; toolCalls?: Array<{ name: string; query?: string; count?: number }> } | null> {
   // logged and budget guard runs. The gateway reads from `ai_service_configs`
   // + `ai_providers`, which are backfilled from `chatbot_settings` on first
   // seed (spec R11.2–R11.3). If the gateway fails (service inactive, no key,
@@ -278,14 +284,14 @@ async function callProvider(settings: ChatbotSettings, dependencies: ChatDepende
           if (keywords.length > 0) {
             const orLikes = keywords.map(kw => or(
               like(articles.title, `%${kw}%`),
-              like(articles.summary, `%${kw}%`),
+              like(articles.excerpt, `%${kw}%`),
               like(articles.content, `%${kw}%`)
             )!)
             whereConds.push(or(...orLikes)!)
           } else if (rawQ) {
             whereConds.push(or(
               like(articles.title, `%${rawQ}%`),
-              like(articles.summary, `%${rawQ}%`),
+              like(articles.excerpt, `%${rawQ}%`),
               like(articles.content, `%${rawQ}%`)
             )!)
           }
@@ -295,9 +301,9 @@ async function callProvider(settings: ChatbotSettings, dependencies: ChatDepende
             title: articles.title,
             type: articles.type,
             slug: articles.slug,
-            summary: articles.summary,
+            excerpt: articles.excerpt,
             content: articles.content,
-            coverImage: articles.coverImage,
+            thumbnailUrl: articles.thumbnailUrl,
           }).from(articles)
           .where(and(...whereConds))
           .orderBy(desc(articles.publishedAt), desc(articles.id))
@@ -305,14 +311,14 @@ async function callProvider(settings: ChatbotSettings, dependencies: ChatDepende
 
           return rows.map(r => {
             const plainContent = (r.content || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-            const snippet = plainContent ? plainContent.slice(0, 350) + (plainContent.length > 350 ? '...' : '') : (r.summary || '')
+            const snippet = plainContent ? plainContent.slice(0, 350) + (plainContent.length > 350 ? '...' : '') : (r.excerpt || '')
             return {
               title: r.title,
               type: r.type,
               url: `/news/${r.slug}`,
-              summary: r.summary,
+              summary: r.excerpt,
               snippet,
-              coverImage: r.coverImage || null,
+              coverImage: r.thumbnailUrl || null,
             }
           })
         } catch {
@@ -424,6 +430,7 @@ async function callProvider(settings: ChatbotSettings, dependencies: ChatDepende
       userId: null,
       history: historyMessages,
       onChunk,
+      onToolCall,
       tools: chatbotTools,
     })
     if (result.ok && result.text) {
@@ -450,9 +457,11 @@ async function callProvider(settings: ChatbotSettings, dependencies: ChatDepende
           }
         }
       }
-      return result.text.slice(0, CHAT_LIMITS.maxOutputChars) || null
+      return {
+        text: result.text.slice(0, CHAT_LIMITS.maxOutputChars),
+        toolCalls: result.toolCallsExecuted?.map(t => ({ name: t.name, query: t.query, count: t.count })),
+      }
     }
-    // budget_exceeded = fall back to knowledge-only (handled by caller)
     if (result.error === 'budget_exceeded') return null
     // service_inactive or no_api_key = fall through to legacy direct path
   } catch {
@@ -483,10 +492,18 @@ async function callProvider(settings: ChatbotSettings, dependencies: ChatDepende
   })
   if (response.status < 200 || response.status >= 300) return null
   const payload = JSON.parse(Buffer.from(response.body).toString('utf8')) as unknown
-  return text(extractProviderAnswer(settings.providerPolicy, payload)).slice(0, CHAT_LIMITS.maxOutputChars) || null
+  const rawAnswer = text(extractProviderAnswer(settings.providerPolicy, payload)).slice(0, CHAT_LIMITS.maxOutputChars)
+  return rawAnswer ? { text: rawAnswer } : null
 }
 
-export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSettings, messages: unknown, dependencies: ChatDependencies, onChunk?: (chunk: string) => void | Promise<void>): Promise<ChatResult & { streamed?: boolean }> {
+export async function answerGroundedChat(
+  event: ChatEvent,
+  settings: ChatbotSettings,
+  messages: unknown,
+  dependencies: ChatDependencies,
+  onChunk?: (chunk: string) => void | Promise<void>,
+  onToolCall?: (event: { name: string; query?: string; status: 'calling' | 'done'; count?: number }) => void | Promise<void>,
+): Promise<ChatResult & { streamed?: boolean }> {
   validateChatRequestBody({ messages })
   const history = validateChatMessages(messages, settings)
   const retryAfter = await enforceChatRateLimit(clientKey(event), settings.rateLimitRequests, settings.rateLimitWindowSeconds)
@@ -527,8 +544,8 @@ export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSett
       const quotaRetryAfter = await enforceAiQuota(event, sessionId)
       if (quotaRetryAfter) return { answer: AI_QUOTA_MESSAGE, sources: [], kind: 'rate_limited', retryAfter: quotaRetryAfter }
       try {
-        const freeform = await callProvider(settings, dependencies, [], history, onChunk)
-        if (freeform) return { answer: freeform, sources: [], kind: 'provider', streamed: Boolean(onChunk) }
+        const freeform = await callProvider(settings, dependencies, [], history, onChunk, onToolCall)
+        if (freeform) return { answer: freeform.text, sources: [], toolCalls: freeform.toolCalls, kind: 'provider', streamed: Boolean(onChunk) }
       } catch (error) {
         logWarn({
           event: 'chatbot.freeform_provider_failed',
@@ -549,8 +566,14 @@ export async function answerGroundedChat(event: ChatEvent, settings: ChatbotSett
   if (groundedQuotaRetryAfter) return friendlyKnowledgeAnswer(settings, references)
 
   try {
-    const grounded = await callProvider(settings, dependencies, references, history, onChunk)
-    return grounded ? { answer: grounded, sources: references.filter(ref => ref.source), kind: 'provider', streamed: Boolean(onChunk) } : friendlyKnowledgeAnswer(settings, references)
+    const grounded = await callProvider(settings, dependencies, references, history, onChunk, onToolCall)
+    return grounded ? {
+      answer: grounded.text,
+      sources: references.filter(ref => ref.source),
+      toolCalls: grounded.toolCalls,
+      kind: 'provider',
+      streamed: Boolean(onChunk),
+    } : friendlyKnowledgeAnswer(settings, references)
   } catch (error) {
     logWarn({
       event: 'chatbot.grounded_provider_failed',

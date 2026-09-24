@@ -137,10 +137,18 @@ export default defineEventHandler(async (event) => {
     let streamed = false
     let result
     try {
-      result = await answerChat(event, settings, messages, (delta: string) => {
-        streamed = true
-        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: delta } }] })}\n\n`)
-      })
+      result = await answerChat(
+        event,
+        settings,
+        messages,
+        (delta: string) => {
+          streamed = true
+          res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: delta } }] })}\n\n`)
+        },
+        (toolEvt: unknown) => {
+          res.write(`data: ${JSON.stringify({ chatbot: { toolEvent: toolEvt } })}\n\n`)
+        }
+      )
     } catch (error) {
       if ((error as Error).message === 'INVALID_MESSAGES') throw createError({ statusCode: 400, statusMessage: 'Invalid chat messages' })
       throw error
@@ -155,6 +163,7 @@ export default defineEventHandler(async (event) => {
       chatbot: {
         kind: result.kind,
         sources: result.sources,
+        toolCalls: result.toolCalls,
         retryAfter: result.retryAfter || null,
         askContact: result.askContact || false,
       },
