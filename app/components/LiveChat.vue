@@ -71,21 +71,31 @@ const handleScroll = () => {
 const submit = async () => {
   const text = input.value
   if (!text.trim()) return
-  const result = await sendMessage(text)
-  if (!result.ok) {
-    // Tin nhắn hệ thống hiện trong dòng chat — không toast, vì toast biến mất
-    // sau vài giây trong khi người dùng có thể đang nhìn chỗ khác. Dòng chat
-    // là chỗ họ đang đọc, nên đây là chỗ tin đi tới.
-    messages.value.push({
-      id:        -Date.now(), // id âm để phân biệt với id máy chủ (số dương)
-      displayName: 'Hệ thống',
-      content:    result.reason,
-      createdAt:  new Date().toISOString(),
-    } as LiveChatMessage)
-    return
-  }
+
+  // Clear input optimistically — the message appears immediately in the
+  // chat list as a dimmed "pending" bubble. If it fails, the text is
+  // already in the failed message bubble, so no data is lost.
   input.value = ''
   followChatBottom.value = true
+
+  const result = await sendMessage(text)
+  if (!result.ok) {
+    // The optimistic message is already marked as failed (red, with error
+    // text) inside the messages list. No need to push a separate system
+    // message — that would duplicate the error in two places.
+    // But if the error was a pre-send validation (empty, too long, not
+    // connected), no optimistic message was pushed, so we DO need to
+    // show it. Check: if the message isn't in the list, push system msg.
+    const hasFailedMsg = messages.value.some(m => m.error === result.reason)
+    if (!hasFailedMsg) {
+      messages.value.push({
+        id:        -Date.now(),
+        displayName: 'Hệ thống',
+        content:    result.reason,
+        createdAt:  new Date().toISOString(),
+      } as LiveChatMessage)
+    }
+  }
 }
 
 const handleKeydown = (ev: KeyboardEvent) => {
@@ -144,11 +154,22 @@ const handleKeydown = (ev: KeyboardEvent) => {
       <div
         v-for="msg in messages"
         :key="msg.id"
-        class="rounded-md px-3 py-1.5 whitespace-pre-line break-words"
-        :class="msg.id < 0 ? 'bg-amber-50 text-amber-800 italic' : 'bg-white text-gray-800 shadow-sm'"
+        class="rounded-md px-3 py-1.5 whitespace-pre-line break-words transition-opacity"
+        :class="msg.status === 'pending'
+          ? 'bg-blue-50 text-gray-600 shadow-sm border border-blue-200 opacity-75'
+          : msg.error
+            ? 'bg-red-50 text-red-800 shadow-sm border border-red-200'
+            : 'bg-white text-gray-800 shadow-sm'"
       >
         <span class="font-semibold text-[#3a5a40]">{{ msg.displayName }}</span>
         <span class="ml-1.5 text-gray-800">{{ msg.content }}</span>
+        <span v-if="msg.status === 'pending'" class="inline-flex items-center gap-1 ml-1.5 text-xs text-blue-500 font-medium">
+          <i class="fa-solid fa-circle-notch fa-spin text-[0.6rem]" aria-hidden="true"></i>
+          Đang gửi…
+        </span>
+        <span v-if="msg.error" class="block mt-0.5 text-xs text-red-600 font-medium" role="alert">
+          <i class="fa-solid fa-circle-exclamation mr-1 text-[0.6rem]" aria-hidden="true"></i>{{ msg.error }}
+        </span>
       </div>
     </div>
 

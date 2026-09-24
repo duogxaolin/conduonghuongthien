@@ -157,6 +157,7 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   // `retry()` in the same file. The retry resumes the existing session if the
   // uploadId is still alive — does not silently re-init and lose partial progress.
   { file: 'components/admin/ChunkedUploader.vue', refs: ['lastError'], retries: ['retry'] },
+  { file: 'pages/admin/languages/index.vue', refs: ['loadError', 'translationsError'], retries: ['fetchLanguages', 'fetchTranslations'] },
 ]
 
 /**

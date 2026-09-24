@@ -135,7 +135,7 @@ function persist(): void {
         title: conversation.title,
         createdAt: conversation.createdAt,
         messages: conversation.messages
-          .filter(item => item.id !== 'welcome' && !item.isStreaming && typeof item.text === 'string' && item.text.trim())
+          .filter(item => item.id !== 'welcome' && !item.isStreaming && !item.status && typeof item.text === 'string' && item.text.trim())
           .slice(-(CHATBOT_CLIENT_LIMITS.maxHistoryMessages * 2))
           // `sources` is rewritten rather than copied: the render key in `id` is
           // derived, while `entryId` is the only field that can reopen the full
@@ -281,11 +281,14 @@ async function ensureSessionToken(conversation: StoredConversation): Promise<str
 
 // ─── Sending ─────────────────────────────────────────────────────────────────
 
-function boundedUserHistory(): { sender: 'user', text: string }[] {
+function boundedUserHistory(): { sender: 'user' | 'bot', text: string }[] {
   const messages = activeConversation.value.messages
-    .filter(item => item.sender === 'user' && typeof item.text === 'string')
-    .map(item => ({ sender: 'user' as const, text: item.text.normalize('NFKC').trim().slice(0, CHATBOT_CLIENT_LIMITS.maxMessageChars) }))
-    .filter(item => item.text)
+    .filter(item => (item.sender === 'user' || item.sender === 'bot') && !item.isStreaming && typeof item.text === 'string')
+    .map(item => ({
+      sender: item.sender as 'user' | 'bot',
+      text: item.text.normalize('NFKC').trim().slice(0, item.sender === 'bot' ? 1200 : CHATBOT_CLIENT_LIMITS.maxMessageChars),
+    }))
+    .filter(item => item.text && item.text !== CHATBOT_WELCOME_MESSAGE.text)
     .slice(-CHATBOT_CLIENT_LIMITS.maxHistoryMessages)
   let total = 0
   return messages.reverse().filter((item) => {
@@ -501,15 +504,21 @@ async function submitBotQuestion(rawText: string, onScroll?: () => void): Promis
   conversation.messages.push(userMessage)
   onScroll?.()
 
+  // Mark the user message as pending — dimmed while awaiting server response
+  userMessage.status = 'pending'
+
   const requestSequence = botRequestSequence + 1
   const succeeded = await fetchStreamBotReply(onScroll)
   if (requestSequence !== botRequestSequence) return
   if (succeeded) {
     botInput.value = ''
+    userMessage.status = undefined
     persist()
   } else {
-    const index = conversation.messages.findIndex(item => item.id === userMessage.id)
-    if (index !== -1) conversation.messages.splice(index, 1)
+    // Don't pop the message — mark as error and allow retry.
+    // Restore the text to the input so the user can edit and resubmit.
+    userMessage.status = 'error'
+    userMessage.error = 'Không thể gửi câu hỏi. Vui lòng thử lại.'
     botInput.value = text
   }
 }

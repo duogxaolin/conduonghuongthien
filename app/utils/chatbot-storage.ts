@@ -64,6 +64,12 @@ export type ChatMessage = {
   askContact?: boolean
   lead?: ChatLead | null
   isStreaming?: boolean
+  /** 'pending' when the user message is awaiting server response.
+   *  'error' when the request failed — sender sees it red with retry.
+   *  Absent/undefined = normal confirmed message. */
+  status?: 'pending' | 'error'
+  /** Error message shown when status is 'error'. */
+  error?: string
 }
 
 export type StoredConversation = {

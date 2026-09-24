@@ -1,7 +1,7 @@
 import { setHeader, createError } from 'h3'
 import { getChatbotSettings } from '../services/chatbot-settings'
 import { answerChat } from '../utils/chatbot/chat'
-import { checkAndModerateContent } from '../services/moderation-worker'
+import { fastPreModerate } from '../services/moderation-worker'
 import { getClientIp } from '../utils/client-ip'
 
 function extractLastUserText(messages: unknown): string {
@@ -23,15 +23,14 @@ export default defineEventHandler(async (event) => {
   const rawMessages = (body as { messages?: unknown } | null)?.messages
   const userText = extractLastUserText(rawMessages)
   if (userText) {
-    const moderation = await checkAndModerateContent({
-      content: userText,
+    const fastCheck = await fastPreModerate(userText, {
       targetType: 'chat',
       authorIp: getClientIp(event) || undefined,
       contextTitle: 'Chatbot trực tuyến',
       contextUrl: '/admin/chatbot/sessions',
     }).catch(() => null)
 
-    if (moderation?.flagged && (moderation.action === 'auto_hide' || moderation.action === 'block' || moderation.severity === 'critical' || moderation.severity === 'high')) {
+    if (fastCheck?.blocked) {
       const refusalMessage = 'Nội dung câu hỏi của bạn có dấu hiệu vi phạm chính sách an toàn thông tin và quy định pháp luật (Luật An ninh mạng). Cổng thông tin Cục C11 từ chối tiếp nhận và xử lý yêu cầu này.'
       setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
       setHeader(event, 'Cache-Control', 'no-cache, no-transform')
