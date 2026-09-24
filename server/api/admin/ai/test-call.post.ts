@@ -225,15 +225,17 @@ export default defineEventHandler(async (event) => {
       reply = '(Model đã phản hồi thành công nhưng không có nội dung chữ)'
     }
 
-    // 8. Extract token usage
-    let promptTokens = 0
+    // 8. Extract token usage ("k tính systemprompt đâu": chỉ tính token thực tế từ câu hỏi người dùng)
+    const userPromptTokens = Math.max(1, Math.ceil(prompt.length / 3.5))
+    let promptTokens = userPromptTokens
     let completionTokens = 0
     if ('usage' in json && typeof json.usage === 'object' && json.usage !== null) {
       const u = json.usage
-      if ('prompt_tokens' in u && typeof u.prompt_tokens === 'number') promptTokens = u.prompt_tokens
-      else if ('input_tokens' in u && typeof u.input_tokens === 'number') promptTokens = u.input_tokens
       if ('completion_tokens' in u && typeof u.completion_tokens === 'number') completionTokens = u.completion_tokens
       else if ('output_tokens' in u && typeof u.output_tokens === 'number') completionTokens = u.output_tokens
+    }
+    if (!completionTokens) {
+      completionTokens = Math.max(1, Math.ceil(reply.length / 3.5))
     }
     // 9. Estimate cost if pricing exists
     let costUsd = 0

@@ -378,8 +378,15 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
               await input.onChunk(delta)
             }
             if (parsed?.usage) {
-              promptTokens = Number(parsed.usage.prompt_tokens) || promptTokens
-              completionTokens = Number(parsed.usage.completion_tokens) || completionTokens
+              const isEst = Boolean(parsed.usage.estimated)
+              const p = Number(parsed.usage.prompt_tokens) || 0
+              const c = Number(parsed.usage.completion_tokens) || 0
+              if (p > 0 && (!promptTokens || !isEst)) {
+                promptTokens = p
+              }
+              if (c > 0 && (!completionTokens || !isEst)) {
+                completionTokens = c
+              }
             }
           } catch {
             // Ignore unparseable partial chunk
@@ -393,8 +400,9 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
         return { ok: false, error: 'parse_error' }
       }
 
-      if (!promptTokens) promptTokens = Math.ceil((rawSystemPrompt.length + input.prompt.length) / 4)
-      if (!completionTokens) completionTokens = Math.ceil(answerText.length / 4)
+      // "k tính systemprompt đâu": chỉ tính token từ nội dung prompt thực tế của người dùng
+      promptTokens = Math.max(1, Math.ceil(input.prompt.length / 3.5))
+      if (!completionTokens) completionTokens = Math.max(1, Math.ceil(answerText.length / 3.5))
       totalTokens = promptTokens + completionTokens
     } catch (error) {
       success = false
@@ -419,12 +427,22 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
         return { ok: false, error: 'provider_error' }
       }
 
-      const payload = JSON.parse(Buffer.from(response.body).toString('utf8')) as unknown
+      let rawText = Buffer.from(response.body).toString('utf8').trim()
+      const lastBrace = rawText.lastIndexOf('}')
+      if (lastBrace !== -1) {
+        rawText = rawText.slice(0, lastBrace + 1)
+      }
+      const payload = JSON.parse(rawText) as unknown
       const parsed = parseProviderResponse(config.provider, payload, resolveProviderPolicy(policy))
       answerText = parsed.answerText
       promptTokens = parsed.promptTokens
       completionTokens = parsed.completionTokens
       totalTokens = parsed.totalTokens
+
+      // "k tính systemprompt đâu": chỉ tính token từ nội dung prompt thực tế của người dùng
+      promptTokens = Math.max(1, Math.ceil(input.prompt.length / 3.5))
+      if (!completionTokens) completionTokens = Math.max(1, Math.ceil(answerText.length / 3.5))
+      totalTokens = promptTokens + completionTokens
 
       if (!answerText) {
         success = false
