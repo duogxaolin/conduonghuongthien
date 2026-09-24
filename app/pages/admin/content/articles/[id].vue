@@ -566,12 +566,10 @@ async function deleteTranslation(row: typeof articleTranslations.value[0]) {
     toast.error(errorMessage(err, 'Không thể xoá.'))
   }
 }
-</script>
-
 function getTranslationRow(langCode: string): typeof articleTranslations.value[0] | undefined {
   return articleTranslations.value.find((t) => t.langCode === langCode)
 }
-
+</script>
 <template>
   <div class="flex flex-col gap-5">
     <!-- Page Header -->
