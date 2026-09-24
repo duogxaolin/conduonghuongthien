@@ -106,6 +106,7 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/submissions/index.vue', refs: ['error'], retries: ['fetchSubmissions'] },
   // AI Panel — 5 tabs, each with its own fetch and error branch.
   { file: 'pages/admin/ai/index.vue', refs: ['usageError', 'providersError', 'servicesError', 'logsError', 'moderationError'], retries: ['loadUsage', 'loadProviders', 'loadServices', 'loadLogs', 'loadModeration'] },
+  { file: 'pages/admin/ai/moderation.vue', refs: ['error'], retries: ['loadData'] },
 
   // Views whose panels fail independently. Each ref is its own branch, so a
   // failed history load still leaves the password form usable.

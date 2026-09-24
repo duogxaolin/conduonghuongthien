@@ -127,6 +127,7 @@ const menuGroups = computed(() => [
     title: 'AI & Tự động hóa',
     items: [
       ...(hasPermission('ai', 'read') ? [{ label: 'AI Panel', icon: 'fa-solid fa-microchip', path: '/admin/ai' }] : []),
+      ...(hasPermission('ai', 'read') ? [{ label: 'Kiểm duyệt An ninh', icon: 'fa-solid fa-shield-halved', path: '/admin/ai/moderation' }] : []),
     ]
   }
 ])
