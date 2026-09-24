@@ -90,3 +90,30 @@ Dùng chung quyền `chatbot_knowledge.read` — ai được đọc kho câu tr�
 ### Đã đăng ký với `data-retention.ts`
 
 `chat_sessions` là scope thứ ba, mặc định 90 ngày, cấu hình tại `/admin/settings/data-retention`. Hai bảng này chứa IP, user agent và có khi cả số điện thoại — đúng loại dữ liệu cần thời hạn lưu. Bảng già theo **`last_message_at`** chứ không phải `started_at` (bảng không có `created_at`), và cap sắp xếp theo cùng cột đó vì `id` là UUID. `chat_messages` **không** có cửa sổ riêng: FK `ON DELETE CASCADE` đã dọn nó theo phiên, còn một cửa sổ độc lập sẽ để lại tin nhắn mồ côi hoặc cắt ngang hội thoại. Chi tiết ở `CLAUDE.md` mục "Tự động dọn dữ liệu".
+
+### Ngữ cảnh hội thoại đa lượt (Multi-turn Context Memory)
+
+Trợ lý AI cần khả năng tiếp nhận câu hỏi nối tiếp của người dân (ví dụ: "cho tôi ví dụ", "ở đâu?", "thủ tục thế nào?"). Trước đây `useChatbot.ts` chỉ gửi tin nhắn user gần nhất, khiến câu hỏi nối tiếp bị tách rời khỏi ngữ cảnh và AI trả lời chung chung hoặc từ chối.
+
+- **`boundedUserHistory` gói cả lượt hỏi của user lẫn phản hồi trước đó của bot:** Giới hạn theo cặp `maxHistoryMessages * 2` để đảm bảo chuỗi hội thoại có đầy đủ cặp câu hỏi - câu trả lời, không bao gồm tin nhắn hệ thống (`isWelcome`, `isStreaming`, small talk thuần).
+- **Server policy (`chat-policy.ts`):** Cho phép role `assistant` song song với `user` trong `validateChatMessages` và `buildChatHistory` để AI giữ được ngữ cảnh đàm thoại, không cắt bỏ câu trả lời trước đó.
+- **System prompt (`prompt-defaults.ts`):** Hướng dẫn model nhận biết đại từ thay thế ("nó", "đó", "ở đâu") trong câu hỏi tiếp nối và tự động gọi các công cụ tra cứu cơ sở dữ liệu C11 (`search_c11_knowledge`, `search_c11_articles`, `search_c11_photos`, `search_c11_videos`) với từ khóa đầy đủ từ ngữ cảnh.
+
+---
+
+## Trợ lý AI Biên tập & Soát lỗi bài viết (`editorial_assistant`)
+
+Nằm tại `/admin/content/articles/[id]` và `POST /api/admin/ai/editorial`.
+
+### Giới hạn token & vị trí mảng `changes`
+
+- **Vấn đề đã trả giá:** `buildProviderChatCall` ban đầu gán cứng `max_tokens: 1200` (`MAX_ANSWER_TOKENS`), bỏ qua cấu hình `maxTokens: 4096` của `ai_service_configs`. Khi bài viết HTML dài (trên 3.000 ký tự), việc AI lặp lại toàn bộ mã HTML ở trường `polishedContent` rồi mới đến mảng `changes` khiến JSON bị cắt cụt giữa chừng ngay cuối mảng, ném `SyntaxError` lúc parse và rơi vào nhánh fallback in chuỗi JSON thô ra màn hình.
+- **Giải pháp:**
+  1. Cho phép `ChatCallInput` và `buildProviderChatCall` nhận `maxTokens` từ config dịch vụ (`ai_service_configs.maxTokens` = 4096).
+  2. Đảo schema JSON: đưa `changes` và `summaryNotes` lên trước `polishedContent`. Dù bài viết có dài thì danh sách lỗi và đề xuất sửa đổi vẫn luôn được hoàn thành trước.
+  3. Bổ sung bộ phân tích phục hồi (recovery parser) dùng regex bóc tách từng thẻ `{ original, suggested, reason }` trong trường hợp token phản hồi bị dở dang.
+
+### Giao diện Diff trực quan & Cầu nối TinyMCE
+
+- **Diff theo từng thẻ:** Thay vì đè toàn bài không kiểm soát, chia thành từng lỗi cụ thể: đoạn gốc (gạch ngang đỏ), đề xuất (xanh đậm), lý do pháp lý/chính tả, nút áp dụng lẻ `✓ Áp dụng sửa đổi này` và nút áp dụng toàn bộ `✓ Áp dụng tất cả sửa đổi vào bài viết`.
+- **Hàm lấy nội dung TinyMCE phải hoisted:** `getEditorContent()` phải được khai báo dạng `function getEditorContent(): string` ở đầu script setup, tránh lỗi Temporal Dead Zone (TDZ) do khai báo `const` sau hàm `callAiEditorial` khiến nội dung gửi lên máy chủ bị rỗng (`undefined`).

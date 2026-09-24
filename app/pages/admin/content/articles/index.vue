@@ -28,6 +28,28 @@ const selectedCategoryId = ref<number | null>(null)
  * cùng nằm trong một `<select>` mà không phải trộn kiểu trong `:value`.
  */
 const selectedAuthorId = ref('')
+const selectedTranslationFilter = ref('')
+const showBulkTranslateDropdown = ref(false)
+const bulkTranslating = ref(false)
+
+const BULK_LANGS = [
+  { code: 'en', label: 'Tiếng Anh (EN)', flag: '🇬🇧' },
+  { code: 'zh', label: 'Tiếng Trung (ZH)', flag: '🇨🇳' },
+  { code: 'fr', label: 'Tiếng Pháp (FR)', flag: '🇫🇷' },
+  { code: 'ru', label: 'Tiếng Nga (RU)', flag: '🇷🇺' },
+  { code: 'lo', label: 'Tiếng Lào (LO)', flag: '🇱🇦' },
+]
+
+function parseTranslations(raw?: string): Array<{ lang: string; status: string }> {
+  if (!raw) return []
+  return raw
+    .split(',')
+    .map((item) => {
+      const [lang, status] = item.trim().split(':')
+      return lang && status ? { lang, status } : null
+    })
+    .filter((t): t is { lang: string; status: string } => t !== null)
+}
 const pagination = ref({ page: 1, totalPages: 1, total: 0 })
 
 // Category state
@@ -130,6 +152,7 @@ const fetchArticles = async (page = 1) => {
     // Chuỗi rỗng nghĩa là không lọc — gửi lên thì máy chủ cũng đọc thành không
     // lọc, nhưng để URL và params sạch thì chỉ gửi khi có chọn.
     if (selectedAuthorId.value) params.authorId = selectedAuthorId.value
+    if (selectedTranslationFilter.value) params.translation = selectedTranslationFilter.value
 
     const res = await $fetch('/api/admin/articles', { params })
     if (res.ok) {
@@ -196,6 +219,39 @@ const bulkComments = (enabled: boolean) => {
     },
     reload: () => fetchArticles(pagination.value.page),
   })
+}
+
+const triggerBulkTranslate = async (langCode: string) => {
+  showBulkTranslateDropdown.value = false
+  const ids = selection.ids.value
+  if (ids.length === 0) {
+    toast.error('Chưa chọn bài viết nào.')
+    return
+  }
+  const langObj = BULK_LANGS.find(l => l.code === langCode)
+  const langLabel = langObj ? `${langObj.flag} ${langObj.label}` : langCode
+  const ok = await confirm({
+    title: 'Dịch hàng loạt bài viết',
+    message: `Hệ thống sẽ tiến hành dịch ${ids.length} bài viết đã chọn sang ${langLabel} bằng AI. Các bản dịch sẽ được lưu ở trạng thái "Bản nháp AI" để bạn rà soát trước khi xuất bản. Tiếp tục?`,
+    confirmText: 'Bắt đầu dịch',
+    tone: 'primary',
+  })
+  if (!ok) return
+
+  bulkTranslating.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; count: number }>('/api/admin/articles/bulk-translate', {
+      method: 'POST',
+      body: { ids, langCode },
+    })
+    toast.success(`Đã xếp lịch dịch ${res.count} bài viết sang ${langLabel}. Hệ thống đang xử lý trong nền!`)
+    selection.clear()
+    await fetchArticles(pagination.value.page)
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể dịch hàng loạt.'))
+  } finally {
+    bulkTranslating.value = false
+  }
 }
 
 /** Bật/tắt tại chỗ. Lỗi thì trả công tắc về giá trị đã lưu: một công tắc hiện
@@ -465,6 +521,21 @@ onMounted(async () => {
         </option>
         <option v-if="orphanAuthorCount > 0" value="none">Không rõ tác giả ({{ orphanAuthorCount }})</option>
       </select>
+      <!-- Translation filter -->
+      <select
+        v-model="selectedTranslationFilter"
+        aria-label="Lọc theo bản dịch"
+        @change="fetchArticles(1)"
+        class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
+      >
+        <option value="">Tất cả Bản dịch</option>
+        <option value="missing_en">Chưa dịch Tiếng Anh (EN)</option>
+        <option value="has_en">Đã có Tiếng Anh (EN)</option>
+        <option value="missing_zh">Chưa dịch Tiếng Trung (ZH)</option>
+        <option value="has_zh">Đã có Tiếng Trung (ZH)</option>
+        <option value="missing_fr">Chưa dịch Tiếng Pháp (FR)</option>
+        <option value="missing_lo">Chưa dịch Tiếng Lào (LO)</option>
+      </select>
       <button
         class="inline-flex items-center gap-2 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors"
         @click="fetchArticles(1)"
@@ -485,6 +556,35 @@ onMounted(async () => {
       <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="bulkComments(true)">Mở bình luận</button>
       <button type="button" class="rounded-lg border border-[#c8d6c9] bg-white px-3 py-2 text-sm font-bold text-[#3d4f3f] hover:bg-white/70" @click="bulkComments(false)">Đóng bình luận</button>
       <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+      <!-- Bulk translate action -->
+      <div class="relative inline-block">
+        <button
+          type="button"
+          class="rounded-lg border border-[#1e4620] bg-[#1e4620] px-3 py-2 text-sm font-bold text-white hover:bg-[#153317] flex items-center gap-1.5 transition-colors disabled:opacity-50"
+          :disabled="bulkTranslating"
+          @click="showBulkTranslateDropdown = !showBulkTranslateDropdown"
+        >
+          <i class="fa-solid fa-language text-xs"></i>
+          <span>{{ bulkTranslating ? 'Đang xếp lịch...' : 'Dịch sang...' }}</span>
+          <i class="fa-solid fa-chevron-down text-[0.6rem]"></i>
+        </button>
+        <div
+          v-if="showBulkTranslateDropdown"
+          class="absolute left-0 top-full mt-1 w-48 rounded-xl bg-white border border-[#c8d6c9] shadow-lg p-1.5 z-30 flex flex-col gap-0.5"
+        >
+          <div class="px-2 py-1 text-[0.68rem] font-bold text-[#667768] uppercase">Chọn ngôn ngữ dịch</div>
+          <button
+            v-for="lang in BULK_LANGS"
+            :key="lang.code"
+            type="button"
+            class="w-full text-left px-2.5 py-1.5 rounded-lg text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] transition-colors border-none bg-transparent cursor-pointer flex items-center gap-2"
+            @click="triggerBulkTranslate(lang.code)"
+          >
+            <span>{{ lang.flag }}</span>
+            <span>{{ lang.label }}</span>
+          </button>
+        </div>
+      </div>
     </AdminBulkActionBar>
 
     <!-- Table Card -->
@@ -521,6 +621,17 @@ onMounted(async () => {
                 {{ a.status === 'published' ? 'Đã đăng' : (a.status === 'draft' ? 'Nháp' : 'Lưu trữ') }}
               </span>
               <span v-if="categoryDisplay(a)" class="text-[0.7rem] text-[#667768]">{{ categoryDisplay(a) }}</span>
+            <div v-if="parseTranslations(a.translatedLangs).length > 0" class="flex items-center gap-1 mt-1.5 flex-wrap">
+              <span class="text-[0.68rem] text-[#667768]">Dịch:</span>
+              <span
+                v-for="t in parseTranslations(a.translatedLangs)"
+                :key="t.lang"
+                class="inline-flex items-center px-1.5 py-0.5 rounded text-[0.62rem] font-bold uppercase"
+                :class="t.status === 'published' ? 'bg-[#e4f2e5] text-[#1e4620]' : 'bg-[#fff8e1] text-[#b78103]'"
+              >
+                {{ t.lang }}
+              </span>
+            </div>
             </div>
             <div class="flex items-center gap-3 mt-2">
               <nuxt-link :to="`/admin/content/articles/${a.id}`" class="text-[#2c6e33] font-bold text-[0.8rem] no-underline"><i class="fa-solid fa-pen-to-square"></i> Sửa</nuxt-link>
@@ -558,6 +669,7 @@ onMounted(async () => {
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Trạng thái</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Lượt xem</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Bình luận</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap text-center">Bản dịch</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Ngày tạo</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thao tác</th>
             </tr>
@@ -647,6 +759,33 @@ onMounted(async () => {
                   <i :class="a.commentsEnabled ? 'fa-solid fa-comments' : 'fa-solid fa-comment-slash'" class="text-[0.7rem]" aria-hidden="true"></i>
                   {{ a.commentsEnabled ? 'Đang mở' : 'Đang đóng' }}
                 </button>
+              </td>
+              <!-- Translation badges -->
+              <td class="px-4 py-3 border-b border-[#eef2ee] text-center whitespace-nowrap">
+                <div class="flex items-center justify-center gap-1 flex-wrap">
+                  <template v-if="parseTranslations(a.translatedLangs).length > 0">
+                    <span
+                      v-for="t in parseTranslations(a.translatedLangs)"
+                      :key="t.lang"
+                      class="inline-flex items-center px-1.5 py-0.5 rounded text-[0.65rem] font-bold uppercase cursor-pointer"
+                      :class="t.status === 'published'
+                        ? 'bg-[#e4f2e5] text-[#1e4620] border border-[#c8dcc9]'
+                        : 'bg-[#fff8e1] text-[#b78103] border border-[#ffe082]'"
+                      :title="`${t.lang.toUpperCase()}: ${t.status === 'published' ? 'Đã xuất bản' : 'Bản nháp AI'}`"
+                      @click="navigateTo(`/admin/content/articles/${a.id}`)"
+                    >
+                      {{ t.lang }}
+                    </span>
+                  </template>
+                  <nuxt-link
+                    v-else
+                    :to="`/admin/content/articles/${a.id}`"
+                    class="text-[0.72rem] text-[#667768] hover:text-[#2c6e33] no-underline inline-flex items-center gap-1"
+                    title="Bấm để dịch bài viết"
+                  >
+                    <i class="fa-solid fa-plus text-[0.6rem]"></i> Dịch
+                  </nuxt-link>
+                </div>
               </td>
               <!-- Date -->
               <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] text-[0.82rem] whitespace-nowrap">{{ formatDateTimeVN(a.createdAt) }}</td>

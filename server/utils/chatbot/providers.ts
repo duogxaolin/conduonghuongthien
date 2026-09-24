@@ -77,6 +77,8 @@ export type ChatCallInput = {
   systemPrompt: string
   /** Already-rendered user turns, oldest first. */
   history: Array<{ role: string; content: string }>
+  /** Maximum response tokens requested. Falls back to MAX_ANSWER_TOKENS if not specified. */
+  maxTokens?: number
 }
 
 /**
@@ -100,7 +102,7 @@ export function buildProviderChatCall(input: ChatCallInput): ProviderCall {
       },
       body: JSON.stringify({
         model: input.model,
-        max_tokens: MAX_ANSWER_TOKENS,
+        max_tokens: input.maxTokens || MAX_ANSWER_TOKENS,
         system: input.systemPrompt,
         messages: input.history,
       }),
@@ -118,7 +120,7 @@ export function buildProviderChatCall(input: ChatCallInput): ProviderCall {
       model: input.model,
       messages: [{ role: 'system', content: input.systemPrompt }, ...input.history],
       stream: false,
-      max_tokens: MAX_ANSWER_TOKENS,
+      max_tokens: input.maxTokens || MAX_ANSWER_TOKENS,
     }),
   }
 }

@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
   const typeFilter = String(query.type || '').trim()
   const statusFilter = String(query.status || '').trim()
   const categoryIdFilter = query.categoryId ? Number(query.categoryId) : null
+  const translationFilter = String(query.translation || '').trim()
 
   /**
    * Bộ lọc theo người đăng bài. Giá trị lạ bị từ chối chứ không suy diễn — xem
@@ -58,6 +59,13 @@ export default defineEventHandler(async (event) => {
     conditions.push(eq(articles.authorId, authorFilter.userId))
   } else if (authorFilter.kind === 'none') {
     conditions.push(isNull(articles.authorId))
+  }
+  if (translationFilter.startsWith('missing_')) {
+    const lang = translationFilter.slice(8)
+    conditions.push(sql`NOT EXISTS (SELECT 1 FROM \`article_translations\` \`t\` WHERE \`t\`.\`article_id\` = \`articles\`.\`id\` AND \`t\`.\`lang_code\` = ${lang})`)
+  } else if (translationFilter.startsWith('has_')) {
+    const lang = translationFilter.slice(4)
+    conditions.push(sql`EXISTS (SELECT 1 FROM \`article_translations\` \`t\` WHERE \`t\`.\`article_id\` = \`articles\`.\`id\` AND \`t\`.\`lang_code\` = ${lang})`)
   }
 
   const whereClause = conditions.length > 0 ? sql`${sql.join(conditions, sql` AND `)}` : undefined
@@ -105,6 +113,11 @@ export default defineEventHandler(async (event) => {
         SELECT COALESCE(SUM(\`v\`.\`real_views\` + \`v\`.\`fabricated_views\`), 0)
         FROM \`article_view_daily\` \`v\`
         WHERE \`v\`.\`article_id\` = \`articles\`.\`id\`
+      )`,
+      translatedLangs: sql<string>`(
+        SELECT COALESCE(GROUP_CONCAT(DISTINCT CONCAT(\`t\`.\`lang_code\`, ':', \`t\`.\`status\`) SEPARATOR ','), '')
+        FROM \`article_translations\` \`t\`
+        WHERE \`t\`.\`article_id\` = \`articles\`.\`id\`
       )`,
     })
     .from(articles)

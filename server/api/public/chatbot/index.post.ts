@@ -6,7 +6,7 @@ import { verifySessionToken } from '../../../utils/chatbot/session-token'
 import { persistChatTurn } from '../../../utils/chatbot/session-db'
 import { getClientIp } from '../../../utils/client-ip'
 import { analyticsHmacSecret } from '../../../utils/runtime-config'
-import { checkAndModerateContent } from '../../../services/moderation-worker'
+import { checkAndModerateContent, fastPreModerate } from '../../../services/moderation-worker'
 
 /** Serialises a result into the single-event SSE envelope the widget parses. */
 function sseEnvelope(answer: string, kind: string, sources: unknown, retryAfter: number | null, askContact: boolean): string {
@@ -65,20 +65,18 @@ export default defineEventHandler(async (event) => {
   const messages = (body as { messages?: unknown } | null)?.messages
   const userText = lastUserText(messages)
 
-  // Tiền kiểm duyệt an ninh (Pre-moderation):
-  // Nếu phát hiện nội dung độc hại/chống phá/nguy hiểm: TỪ CHỐI GỬI SANG AI & TỪ CHỐI TRẢ LỜI
+  // Tiền kiểm duyệt an ninh tức thì (< 1ms):
+  // Nếu phát hiện nội dung độc hại/chống phá/nguy hiểm: TỪ CHỐI NGAY LẬP TỨC (0ms)
   if (userText) {
-    const moderation = await checkAndModerateContent({
-      content: userText,
+    const fastCheck = await fastPreModerate(userText, {
       targetType: 'chat',
-      targetId: undefined,
       sessionId: sessionId || undefined,
       contextTitle: sessionId ? `Phiên Chatbot #${sessionId.slice(0, 8)}` : 'Chatbot trực tuyến',
       contextUrl: sessionId ? `/admin/chatbot/sessions?search=${encodeURIComponent(sessionId)}` : '/admin/chatbot/sessions',
       authorIp: getClientIp(event) || undefined,
     }).catch(() => null)
 
-    if (moderation?.flagged && (moderation.action === 'auto_hide' || moderation.action === 'block' || moderation.severity === 'critical' || moderation.severity === 'high')) {
+    if (fastCheck?.blocked) {
       const refusalMessage = 'Nội dung câu hỏi của bạn có dấu hiệu vi phạm chính sách an toàn thông tin và quy định pháp luật (Luật An ninh mạng). Cổng thông tin Cục C11 từ chối tiếp nhận và xử lý yêu cầu này.'
 
       setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')

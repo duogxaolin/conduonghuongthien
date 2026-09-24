@@ -712,7 +712,13 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureColumn(db, database, 'chat_messages', 'flag_reason', 'VARCHAR(255) NULL')
   await ensureColumn(db, database, 'ai_moderation_queue', 'context_title', 'VARCHAR(512) NULL')
   await ensureColumn(db, database, 'ai_moderation_queue', 'context_url', 'VARCHAR(512) NULL')
-  await ensureColumn(db, database, 'ai_moderation_queue', 'session_id', 'VARCHAR(64) NULL')
+  // ── Multilingual: languages + lang_translations + article_translations ──
+  // Three new tables are created by initDb() CREATE TABLE IF NOT EXISTS, so on
+  // an existing deployment they appear after the next restart. No ensureColumn
+  // needed — the tables are new. But if for some reason tables exist from a
+  // partial deploy, ensure their FK constraints are in place.
+  await ensureIndex(db, database, 'article_translations', 'article_translations_lang_status_idx', 'INDEX `article_translations_lang_status_idx` (`lang_code`, `status`)')
+  await ensureIndex(db, database, 'article_translations', 'uk_article_lang', 'UNIQUE INDEX `uk_article_lang` (`article_id`, `lang_code`)')
 }
 
 /**

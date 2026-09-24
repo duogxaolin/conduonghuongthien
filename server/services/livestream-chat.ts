@@ -49,7 +49,7 @@ import { finitePositive } from '../utils/query-number'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { recordRateLimitHit, type RateLimitDeps, type RateLimitRule } from '../utils/rate-limit-store'
 import { broadcastToSession, SSE_EVENT_MESSAGE, SSE_EVENT_REMOVAL } from '../utils/sse-manager'
-import { checkAndModerateContent } from './moderation-worker'
+import { checkAndModerateContent, fastPreModerate } from './moderation-worker'
 
 /**
  * Độ dài tối đa của một tin nhắn — và nó **phải** khớp `varchar(200)` của cột
@@ -242,6 +242,18 @@ export async function sendChatMessage(
   const verdict = validateChatContent(input.content)
   if (!verdict.ok) return { ok: false, statusCode: 400, message: verdict.message }
 
+  // ── Kiểm duyệt tức thì (< 1ms): chặn từ ngữ thô tục, chống phá, cờ bạc ──
+  const preCheck = await fastPreModerate(verdict.content, {
+    authorName: snapshotDisplayName(input.sender),
+    authorIp: input.ip,
+    targetType: 'livestream_chat',
+    sessionId: input.sessionId ? String(input.sessionId) : undefined,
+    contextTitle: `Livestream #${input.sessionId}`,
+    contextUrl: '/media',
+  })
+  if (preCheck.blocked) {
+    return { ok: false, statusCode: 400, message: preCheck.reason }
+  }
   // ── Lý do từ chối #2: không có buổi phát nào đang chạy. ──
   const session = await activeSession(db)
   if (!session) {
@@ -307,28 +319,11 @@ export async function sendChatMessage(
     // không có hàng nào tồn tại.
     throw new Error('livestream_messages insert returned no id')
   }
-  // ── AI Security & Moderation Worker scan ──
-  const moderate = deps.moderate ?? (deps.db ? undefined : checkAndModerateContent)
-  if (moderate) {
-    const modResult = await moderate({
-      content: verdict.content,
-      targetType: 'livestream_chat',
-      targetId: id,
-      authorName: displayName,
-      authorIp: input.ip,
-      sessionId: String(session.id),
-      contextTitle: `Livestream: ${session.title}`,
-      contextUrl: '/media',
-    })
-
-    if (modResult.flagged && modResult.action === 'auto_hide') {
-      return {
-        ok: false,
-        statusCode: 400,
-        message: 'Tin nhắn chứa nội dung vi phạm tiêu chuẩn an ninh cộng đồng.',
-      }
-    }
-  }
+  // ── Broadcast ngay, kiểm duyệt nền ──
+  // Tin nhắn hiện ngay cho mọi người xem qua SSE. AI kiểm duyệt chạy nền
+  // (không block response): nếu AI flag vi phạm, broadcast removal event
+  // rồi xoá hàng trong DB. Người xem thấy tin biến mất thay vì chờ 11 giây
+  // cho AI trả lời trước khi tin hiện.
   const message: ChatMessage = {
     id,
     displayName,
@@ -339,6 +334,34 @@ export async function sendChatMessage(
     event: SSE_EVENT_MESSAGE,
     data:  JSON.stringify(message),
   })
+
+  // Kiểm duyệt AI nền — fire and forget, không block response
+  const moderate = deps.moderate ?? (deps.db ? undefined : checkAndModerateContent)
+  if (moderate) {
+    void moderate({
+      content: verdict.content,
+      targetType: 'livestream_chat',
+      targetId: id,
+      authorName: displayName,
+      authorIp: input.ip,
+      sessionId: String(session.id),
+      contextTitle: `Livestream: ${session.title}`,
+      contextUrl: '/media',
+    }).then((modResult) => {
+      if (modResult.flagged && modResult.action === 'auto_hide') {
+        // AI flag vi phạm — broadcast removal rồi xoá hàng
+        broadcastToSession(session.id, {
+          event: SSE_EVENT_REMOVAL,
+          data:  JSON.stringify({ id }),
+        })
+        // Xoá trong DB — fire and forget, tự nuốt lỗi
+        db.delete(livestreamMessages).where(eq(livestreamMessages.id, id))
+          .catch(() => {})
+      }
+    }).catch(() => {
+      // Lỗi AI không được làm hỏng tin đã gửi — chỉ log
+    })
+  }
 
   return { ok: true, id, delivered }
 }

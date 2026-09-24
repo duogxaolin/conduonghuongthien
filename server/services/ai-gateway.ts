@@ -420,6 +420,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
     secret,
     systemPrompt,
     history: input.history ?? [{ role: 'user', content: input.prompt }],
+    maxTokens: config.maxTokens ? Number(config.maxTokens) : undefined,
   })
 
   // 6. Resolve allowed hosts from the base URL (for SSRF protection).
