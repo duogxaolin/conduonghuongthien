@@ -140,11 +140,12 @@ function persist(): void {
           // `sources` is rewritten rather than copied: the render key in `id` is
           // derived, while `entryId` is the only field that can reopen the full
           // approved answer after a reload.
-          .map(({ sender, text, kind, sources }) => ({
+          .map(({ sender, text, kind, sources, toolCalls }) => ({
             sender,
             text,
             kind,
             sources: (sources ?? []).map(({ label, reference, url, entryId }) => ({ label, reference, url, entryId })),
+            toolCalls: toolCalls ?? [],
           })),
       })),
     }
@@ -316,10 +317,53 @@ function parseSseLine(line: string, target: { text: string, message: ChatMessage
 
   const chatbot = data?.chatbot as Record<string, unknown> | undefined
   if (chatbot && typeof chatbot === 'object') {
-    target.message.kind = typeof chatbot.kind === 'string' && CHATBOT_RESPONSE_KINDS.has(chatbot.kind) ? chatbot.kind : 'unavailable'
-    target.message.sources = Array.isArray(chatbot.sources)
-      ? chatbot.sources.slice(0, CHATBOT_CLIENT_LIMITS.maxSources).map(normalizeSource).filter((value): value is ChatSource => value !== null)
-      : []
+    if (chatbot.toolEvent && typeof chatbot.toolEvent === 'object') {
+      const te = chatbot.toolEvent as { name: string; query?: string; status: 'calling' | 'done'; count?: number }
+      if (!Array.isArray(target.message.toolCalls)) target.message.toolCalls = []
+      const labelMap: Record<string, string> = {
+        search_c11_knowledge: 'Tra cứu tri thức C11',
+        search_c11_articles: 'Tìm bài viết & mô hình C11',
+        search_c11_videos: 'Tìm video phóng sự C11',
+        search_c11_photos: 'Tìm ảnh thư viện Media',
+        get_c11_hotline_and_support: 'Lấy thông tin hỗ trợ C11',
+      }
+      const item: ToolCallExecution = {
+        name: te.name,
+        label: labelMap[te.name] || te.name,
+        query: te.query,
+        status: te.status,
+        count: te.count,
+      }
+      const existingIdx = target.message.toolCalls.findIndex(t => t.name === te.name)
+      if (existingIdx !== -1) {
+        target.message.toolCalls[existingIdx] = item
+      } else {
+        target.message.toolCalls.push(item)
+      }
+    }
+    if (Array.isArray(chatbot.toolCalls) && chatbot.toolCalls.length > 0) {
+      const labelMap: Record<string, string> = {
+        search_c11_knowledge: 'Tra cứu tri thức C11',
+        search_c11_articles: 'Tìm bài viết & mô hình C11',
+        search_c11_videos: 'Tìm video phóng sự C11',
+        search_c11_photos: 'Tìm ảnh thư viện Media',
+        get_c11_hotline_and_support: 'Lấy thông tin hỗ trợ C11',
+      }
+      target.message.toolCalls = chatbot.toolCalls.map(tc => {
+        const item = tc as { name: string; query?: string; count?: number }
+        return {
+          name: item.name,
+          label: labelMap[item.name] || item.name,
+          query: item.query,
+          status: 'done' as const,
+          count: item.count,
+        }
+      })
+    }
+    target.message.kind = typeof chatbot.kind === 'string' && CHATBOT_RESPONSE_KINDS.has(chatbot.kind) ? chatbot.kind : target.message.kind
+    if (Array.isArray(chatbot.sources)) {
+      target.message.sources = chatbot.sources.slice(0, 8).map(normalizeSource).filter((value): value is ChatSource => value !== null)
+    }
     target.message.askContact = chatbot.askContact === true
     if (target.message.askContact && !target.message.lead) {
       target.message.lead = { name: '', phone: '', email: '', question: '', status: 'idle', error: '' }
@@ -342,9 +386,9 @@ async function fetchStreamBotReply(onScroll?: () => void): Promise<boolean> {
     text: '',
     kind: undefined,
     sources: [],
+    toolCalls: [],
     askContact: false,
     lead: null,
-    isStreaming: true,
   }
   // Deliberately not pushed yet. Pushing it here rendered an empty bubble holding
   // nothing but the streaming cursor *alongside* the typing indicator, for the
@@ -383,16 +427,19 @@ async function fetchStreamBotReply(onScroll?: () => void): Promise<boolean> {
       for (const line of lines) {
         if (line.trim() === 'data: [DONE]') { doneEvent = true; break }
         parseSseLine(line, accumulator)
-        if (accumulator.text && !isStreamPushed) {
+        const hasContentOrTools = Boolean(accumulator.text || (botMessage.toolCalls && botMessage.toolCalls.length > 0))
+        if (hasContentOrTools && !isStreamPushed) {
           isStreamPushed = true
           botMessage.isStreaming = true
           conversation.messages.push(botMessage)
           const liveTracked = conversation.messages[conversation.messages.length - 1]!
           liveTracked.text = accumulator.text
+          liveTracked.toolCalls = botMessage.toolCalls
           onScroll?.()
         } else if (isStreamPushed) {
           const liveTracked = conversation.messages[conversation.messages.length - 1]!
           liveTracked.text = accumulator.text
+          liveTracked.toolCalls = botMessage.toolCalls
           onScroll?.()
         }
       }
