@@ -42,7 +42,7 @@ import { createReplyNotification } from './notifications'
 import { sendReplyEmail } from './notification-email'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { hasForbiddenControlChars } from '../utils/plain-text'
-
+import { checkAndModerateContent } from './moderation-worker'
 /** Long enough for a real question, short enough that one row cannot dominate a page. */
 export const COMMENT_MAX_LENGTH = 2000
 
@@ -470,6 +470,15 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
   if (notifiedReaderId !== null && input.parentId !== null) {
     await sendReplyEmail({ commentId: id, parentId: input.parentId, recipientId: notifiedReaderId })
   }
+  if (id > 0) {
+    void checkAndModerateContent({
+      content: input.body,
+      targetType: 'comment',
+      targetId: id,
+      authorName: reader.displayName || 'Người đọc',
+      authorIp: input.ip,
+    })
+  }
 
   return { ok: true, id }
 }
@@ -723,7 +732,7 @@ export async function loadCommentThread(params: {
     ? and(eq(articleComments.articleId, target.articleId), isNull(articleComments.mediaItemId))
     : and(eq(articleComments.mediaItemId, target.mediaItemId), isNull(articleComments.articleId))
 
-  const topLevel = and(scoped, isNull(articleComments.parentId))
+  const topLevel = and(scoped, isNull(articleComments.parentId), eq(articleComments.isHidden, false))
 
   const [countRow] = await db
     .select({ total: sql<number>`COUNT(*)` })
@@ -770,7 +779,7 @@ export async function loadCommentThread(params: {
       .select(selection)
       .from(articleComments)
       .leftJoin(readerAccounts, eq(articleComments.readerId, readerAccounts.id))
-      .where(and(scoped, inArray(articleComments.parentId, parents.map(parent => parent.id))))
+      .where(and(scoped, inArray(articleComments.parentId, parents.map(parent => parent.id)), eq(articleComments.isHidden, false)))
       .orderBy(articleComments.createdAt, articleComments.id)
 
     for (const row of replyRows) {
@@ -808,6 +817,8 @@ export type AdminCommentRow = {
   adminUserId:  number | null
   adminName:    string | null
   ip:           string | null
+  isHidden:     boolean
+  flagReason:   string | null
 }
 
 export type AdminCommentList = {
@@ -879,6 +890,8 @@ export async function listCommentsForAdmin(params: {
       adminUserId:  articleComments.adminUserId,
       adminName:    users.username,
       ip:           articleComments.ip,
+      isHidden:     articleComments.isHidden,
+      flagReason:   articleComments.flagReason,
     })
     .from(articleComments)
     /**

@@ -6,6 +6,7 @@ import { verifySessionToken } from '../../../utils/chatbot/session-token'
 import { persistChatTurn } from '../../../utils/chatbot/session-db'
 import { getClientIp } from '../../../utils/client-ip'
 import { analyticsHmacSecret } from '../../../utils/runtime-config'
+import { checkAndModerateContent } from '../../../services/moderation-worker'
 
 /** Serialises a result into the single-event SSE envelope the widget parses. */
 function sseEnvelope(answer: string, kind: string, sources: unknown, retryAfter: number | null, askContact: boolean): string {
@@ -105,6 +106,11 @@ export default defineEventHandler(async (event) => {
           userText,
           botText: result.answer,
           kind: result.kind,
+        })
+        void checkAndModerateContent({
+          content: userText,
+          targetType: 'chat',
+          authorIp: getClientIp(event) || undefined,
         })
       }
     }

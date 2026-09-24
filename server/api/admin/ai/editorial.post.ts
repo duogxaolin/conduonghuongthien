@@ -43,19 +43,51 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  // 2. Build task-specific prompt
+  // 2. Build task-specific prompt with strict JSON output
   let taskPrompt = ''
   if (action === 'summary') {
-    taskPrompt = `Hãy viết một đoạn tóm tắt bài viết (sapo) khoảng 2 đến 3 câu ngắn gọn, súc tích (dưới 80 từ), nêu bật thông điệp chính và ý nghĩa của bài viết. Không mở đầu bằng "Bài viết nói về..." hay "Đoạn văn này...", hãy viết trực diện và trang trọng theo văn phong báo chí chính luận.`
+    taskPrompt = `Bạn là trợ lý biên tập của Cổng thông tin Cục C11 - Bộ Công an.
+Hãy đọc bài viết và đề xuất 3 phương án viết đoạn Tóm tắt bài viết (sapo).
+YÊU CẦU BẮT BUỘC:
+1. TUYỆT ĐỐI KHÔNG chào hỏi (không "Chào bạn..."), không thưa gửi, không thêm ghi chú hay lời bình ở cuối.
+2. Mỗi phương án là 1 đoạn văn hoàn chỉnh (2-3 câu, dưới 80 từ), viết trực diện, trang trọng theo văn phong báo chí chính luận.
+3. Trả về đúng định dạng JSON thuần túy (không bọc trong markdown code block):
+{
+  "options": [
+    "Đoạn tóm tắt theo phương án 1 (Trực diện, thời sự)...",
+    "Đoạn tóm tắt theo phương án 2 (Nhân văn, sâu sắc)...",
+    "Đoạn tóm tắt theo phương án 3 (Ngắn gọn, súc tích)..."
+  ]
+}`
   } else if (action === 'suggest_titles') {
-    taskPrompt = `Hãy đọc nội dung bài viết và đề xuất 3 phương án tiêu đề bài viết hấp dẫn, trang trọng, chuẩn mực theo tôn chỉ mục đích của Cổng thông tin Cục C11 - Bộ Công an. Trình bày mỗi tiêu đề trên một dòng riêng biệt, đánh số 1., 2., 3.`
+    taskPrompt = `Bạn là trợ lý biên tập của Cổng thông tin Cục C11 - Bộ Công an.
+Hãy đọc bài viết và đề xuất 3 phương án tiêu đề bài viết hấp dẫn, trang trọng, chuẩn mực chính luận.
+YÊU CẦU BẮT BUỘC:
+1. TUYỆT ĐỐI KHÔNG chào hỏi, không thêm lời dẫn hay giải thích.
+2. Trả về đúng định dạng JSON thuần túy (không bọc trong markdown code block):
+{
+  "titles": [
+    "Tiêu đề phương án 1",
+    "Tiêu đề phương án 2",
+    "Tiêu đề phương án 3"
+  ]
+}`
   } else if (action === 'polish') {
-    taskPrompt = `Hãy rà soát toàn bộ bài viết, sửa các lỗi chính tả, ngữ pháp, lỗi dùng từ, và diễn đạt lại các câu văn sao cho mạch lạc, trong sáng, trang trọng và giàu tính nhân văn. Giữ nguyên ý chính và các số liệu, trích dẫn văn bản quy phạm pháp luật nếu có.`
+    taskPrompt = `Bạn là trợ lý biên tập của Cổng thông tin Cục C11 - Bộ Công an.
+Hãy rà soát toàn bộ bài viết, sửa các lỗi chính tả, ngữ pháp, chuẩn hóa câu từ hành chính pháp lý.
+YÊU CẦU BẮT BUỘC:
+1. TUYỆT ĐỐI KHÔNG chào hỏi, không thêm lời dẫn hay ghi chú giải thích.
+2. Giữ nguyên 100% các thẻ HTML (<p>, <strong>, <em>, <a>, <img>...) và ý nghĩa bài viết.
+3. Trả về đúng định dạng JSON thuần túy (không bọc trong markdown code block):
+{
+  "polishedContent": "Toàn bộ nội dung bài viết hoàn chỉnh đã sửa lỗi",
+  "notes": ["Tóm tắt ngắn 1 câu những điểm đã sửa hoặc cải thiện"]
+}`
   }
 
   // 3. Invoke AI Gateway
   const aiResult = await callAi('editorial_assistant', {
-    prompt: `${taskPrompt}\n\nTiêu đề bài viết: ${title || '(Chưa có tiêu đề)'}\n\nNội dung bài viết:\n${content.slice(0, 10000)}`,
+    prompt: `${taskPrompt}\n\nTiêu đề bài viết: ${title || '(Chưa có tiêu đề)'}\n\nNội dung bài viết:\n${rawContent.slice(0, 10000)}`,
     variables: {
       article_title: title || '(Chưa có tiêu đề)',
       article_content: content.slice(0, 8000),
@@ -70,10 +102,34 @@ export default defineEventHandler(async (event) => {
     })
   }
 
+  // Parse structured JSON
+  let parsed: {
+    options?: string[]
+    titles?: string[]
+    summary?: string
+    polishedContent?: string
+    notes?: string[]
+  } = {}
+
+  try {
+    const clean = aiResult.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
+    parsed = JSON.parse(clean) as typeof parsed
+  } catch {
+    // If not JSON, split by lines or use raw text
+    const lines = aiResult.text.split('\n').map(l => l.trim()).filter(l => l.length > 10)
+    parsed = {
+      options: lines.length > 0 ? lines : [aiResult.text.trim()],
+    }
+  }
+
   return {
     ok: true,
     action,
-    result: aiResult.text.trim(),
+    options: parsed.options || (parsed.summary ? [parsed.summary] : []),
+    titles: parsed.titles || [],
+    polishedContent: parsed.polishedContent || '',
+    notes: parsed.notes || [],
+    rawText: aiResult.text.trim(),
     usage: {
       promptTokens: aiResult.promptTokens ?? 0,
       completionTokens: aiResult.completionTokens ?? 0,

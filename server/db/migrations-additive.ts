@@ -705,6 +705,11 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureColumn(db, database, 'ai_model_pricing', 'label', 'VARCHAR(128) NULL')
   await ensureColumn(db, database, 'ai_model_pricing', 'is_active', 'TINYINT(1) NOT NULL DEFAULT 1')
 
+  // ── AI Automated Security & Content Moderation ──────────────────────────
+  await ensureColumn(db, database, 'article_comments', 'is_hidden', 'TINYINT(1) NOT NULL DEFAULT 0')
+  await ensureColumn(db, database, 'article_comments', 'flag_reason', 'VARCHAR(255) NULL')
+  await ensureColumn(db, database, 'chat_messages', 'is_flagged', 'TINYINT(1) NOT NULL DEFAULT 0')
+  await ensureColumn(db, database, 'chat_messages', 'flag_reason', 'VARCHAR(255) NULL')
 }
 
 /**
