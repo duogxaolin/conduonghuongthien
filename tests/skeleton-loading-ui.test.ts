@@ -122,6 +122,7 @@ const VIEWS_WITH_LOADING_BRANCH = [
   // one slow query must not blank the other three.
   { file: 'pages/admin/index.vue', marker: 'v-if="liveLoading"' },
   { file: 'pages/admin/ai/index.vue', marker: 'v-if="usageLoading"' },
+  { file: 'pages/admin/ai/moderation.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/analytics.vue', marker: 'v-if="initialLoading"' },
 ]
 
@@ -197,6 +198,7 @@ const INLINE_PLACEHOLDER_FILES = [
   // Danh mục Media Portal — bảng phẳng, skeleton là lưới ô xám đơn giản (6×6),
   // không khớpSkeletonTable (vì không có header/data rows shape) — vẽ inline.
   'pages/admin/media-portal/categories.vue',
+  'pages/admin/ai/moderation.vue',
 ]
 
 /**
