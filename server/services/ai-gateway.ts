@@ -44,8 +44,7 @@ export interface AiCallInput {
   /** Template variables to substitute into `system_prompt` `{{key}}` placeholders. */
   variables?: Record<string, string>
   /** The admin user ID triggering the call (for usage logging), or null. */
-  userId: number | null
-  /** Override the database instance (defaults to getDb()). */
+  userId?: number | null
   db?: Database
   /** Chat history: prior user turns, oldest first. */
   history?: Array<{ role: string; content: string }>
@@ -343,8 +342,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
   if (input.onChunk) {
     // Real-time streaming from provider via SSE
     try {
-      const streamBody = JSON.parse(providerCall.body)
-      streamBody.stream = true
+      const streamBody = JSON.parse(providerCall.body ?? '{}')
       const response = await fetch(providerCall.url, {
         method: 'POST',
         headers: providerCall.headers,

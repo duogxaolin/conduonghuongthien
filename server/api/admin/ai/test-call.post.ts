@@ -226,7 +226,7 @@ export default defineEventHandler(async (event) => {
     }
 
     // 8. Extract token usage ("k tính systemprompt đâu": chỉ tính token thực tế từ câu hỏi người dùng)
-    const userPromptTokens = Math.max(1, Math.ceil(prompt.length / 3.5))
+    const userPromptTokens = Math.max(1, Math.ceil(message.length / 3.5))
     let promptTokens = userPromptTokens
     let completionTokens = 0
     if ('usage' in json && typeof json.usage === 'object' && json.usage !== null) {

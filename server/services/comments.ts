@@ -376,7 +376,12 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
   }
 
   const [reader] = await db
-    .select({ id: readerAccounts.id, isBanned: readerAccounts.isBanned })
+    .select({
+      id: readerAccounts.id,
+      isBanned: readerAccounts.isBanned,
+      displayName: readerAccounts.displayName,
+      customDisplayName: readerAccounts.customDisplayName,
+    })
     .from(readerAccounts)
     .where(eq(readerAccounts.id, input.readerId))
     .limit(1)
@@ -487,8 +492,8 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
       content: input.body,
       targetType: 'comment',
       targetId: id,
-      authorName: reader.displayName || 'Người đọc',
-      authorIp: input.ip,
+      authorName: (reader ? effectiveDisplayName(reader) : null) || 'Người đọc',
+      authorIp: input.ip ?? undefined,
       contextTitle: contextTitle || undefined,
       contextUrl: contextUrl || undefined,
     })
