@@ -71,6 +71,8 @@ export interface AiCallResult {
   totalTokens?: number
   costUsd?: number
   costVnd?: number
+  /** Tools executed during this call */
+  toolCallsExecuted?: Array<{ name: string; query?: string; count?: number; data?: unknown }>
 }
 
 interface CachedConfig {
@@ -360,6 +362,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
   let promptTokens = 0
   let completionTokens = 0
   let totalTokens = 0
+  const toolCallsExecuted: Array<{ name: string; query?: string; count?: number; data?: unknown }> = []
 
   if (Array.isArray(input.tools) && input.tools.length > 0) {
     // ── Tool Calling Execution Loop ──────────────────────────────────
@@ -422,6 +425,19 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
           } else {
             toolResult = { error: `Tool ${tc.function?.name} not found` }
           }
+
+          let qStr = ''
+          if (args && typeof args === 'object') {
+            qStr = String((args as Record<string, unknown>).query || (args as Record<string, unknown>).keyword || '')
+          }
+          const itemCount = Array.isArray(toolResult) ? toolResult.length : (toolResult ? 1 : 0)
+          toolCallsExecuted.push({
+            name: tc.function?.name,
+            query: qStr || undefined,
+            count: itemCount,
+            data: toolResult,
+          })
+
           messages.push({
             role: 'tool',
             tool_call_id: tc.id,
@@ -693,5 +709,6 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
     totalTokens,
     costUsd,
     costVnd,
+    toolCallsExecuted: toolCallsExecuted.length > 0 ? toolCallsExecuted : undefined,
   }
 }
