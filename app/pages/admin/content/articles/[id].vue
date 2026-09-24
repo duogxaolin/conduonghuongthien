@@ -36,6 +36,9 @@ const aiLoading = ref(false)
 const aiLoadingText = ref('')
 const showTranslateMenu = ref(false)
 const suggestedTitles = ref<string[]>([])
+const suggestedSummaries = ref<string[]>([])
+const polishedPreview = ref<{ content: string; highlights?: string } | null>(null)
+const translatedPreview = ref<{ title?: string; excerpt?: string; content?: string; langName: string } | null>(null)
 
 const SUPPORTED_TRANSLATE_LANGUAGES = [
   { code: 'en', label: 'Tiếng Anh (English)', flag: '🇬🇧' },
@@ -57,6 +60,36 @@ function setEditorContent(html: string): void {
   }
 }
 
+function applyTitle(title: string) {
+  form.title = title
+  suggestedTitles.value = []
+  toast.success('Đã áp dụng tiêu đề!')
+}
+
+function applySummary(summary: string) {
+  // Clean any "Phương án 1:" prefix if present
+  const cleanSummary = summary.replace(/^Phương án\s*\d+[^:]*:\s*/i, '').replace(/^Option\s*\d+[^:]*:\s*/i, '').trim()
+  form.excerpt = cleanSummary
+  suggestedSummaries.value = []
+  toast.success('Đã áp dụng tóm tắt bài viết!')
+}
+
+function applyPolishedContent() {
+  if (!polishedPreview.value) return
+  setEditorContent(polishedPreview.value.content)
+  polishedPreview.value = null
+  toast.success('Đã áp dụng nội dung trau chuốt vào trình soạn thảo!')
+}
+
+function applyTranslation() {
+  if (!translatedPreview.value) return
+  if (translatedPreview.value.title) form.title = translatedPreview.value.title
+  if (translatedPreview.value.excerpt) form.excerpt = translatedPreview.value.excerpt
+  if (translatedPreview.value.content) setEditorContent(translatedPreview.value.content)
+  translatedPreview.value = null
+  toast.success('Đã áp dụng bản dịch vào bài viết!')
+}
+
 async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') {
   const content = getEditorContent()
   if (!content && !form.title) {
@@ -65,29 +98,36 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
   }
 
   aiLoading.value = true
-  if (action === 'summary') aiLoadingText.value = 'Trợ lý AI đang tóm tắt nội dung bài viết...'
+  if (action === 'summary') aiLoadingText.value = 'Trợ lý AI đang đề xuất các phương án tóm tắt...'
   else if (action === 'suggest_titles') aiLoadingText.value = 'Trợ lý AI đang sáng tạo các tiêu đề hay...'
   else aiLoadingText.value = 'Trợ lý AI đang rà soát chính tả và văn phong...'
 
   try {
-    const res = await $fetch<{ ok: boolean; action: string; result: string }>('/api/admin/ai/editorial', {
+    const res = await $fetch<{
+      ok: boolean
+      action: string
+      options?: string[]
+      titles?: string[]
+      polishedContent?: string
+      notes?: string[]
+      rawText?: string
+    }>('/api/admin/ai/editorial', {
       method: 'POST',
       body: { action, title: form.title, content },
     })
 
     if (action === 'summary') {
-      form.excerpt = res.result
-      toast.success('Đã tự động tạo tóm tắt bài viết!')
+      suggestedSummaries.value = res.options && res.options.length > 0 ? res.options : [res.rawText || '']
+      toast.success('Đã có đề xuất tóm tắt, mời bạn xem và chọn bên dưới!')
     } else if (action === 'suggest_titles') {
-      const titles = res.result
-        .split('\n')
-        .map(l => l.replace(/^\d+[\.\-\)]\s*/, '').trim())
-        .filter(Boolean)
-      suggestedTitles.value = titles
-      toast.success('Đã có đề xuất tiêu đề, bạn bấm chọn bên dưới nhé!')
+      suggestedTitles.value = res.titles && res.titles.length > 0 ? res.titles : (res.rawText || '').split('\n').filter(Boolean)
+      toast.success('Đã có đề xuất tiêu đề, mời bạn bấm chọn bên dưới!')
     } else if (action === 'polish') {
-      setEditorContent(res.result)
-      toast.success('Đã rà soát và chuẩn hóa nội dung bài viết!')
+      polishedPreview.value = {
+        content: res.polishedContent || res.rawText || '',
+        highlights: res.notes?.join(' • ') || 'Đã chuẩn hóa chính tả và ngữ pháp.',
+      }
+      toast.success('Đã rà soát xong, mời bạn xem bản xem trước bên dưới!')
     }
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi khi gọi Trợ lý AI.'))
@@ -123,12 +163,13 @@ async function translateArticleTo(targetLang: string) {
         content,
       },
     })
-
-    if (res.translatedTitle) form.title = res.translatedTitle
-    if (res.translatedExcerpt) form.excerpt = res.translatedExcerpt
-    if (res.translatedContent) setEditorContent(res.translatedContent)
-
-    toast.success(`Đã dịch bài viết sang ${langObj?.label ?? targetLang}!`)
+    translatedPreview.value = {
+      title: res.translatedTitle,
+      excerpt: res.translatedExcerpt,
+      content: res.translatedContent,
+      langName: langObj?.label ?? targetLang,
+    }
+    toast.success(`Đã dịch xong sang ${langObj?.label ?? targetLang}, mời bạn xem trước bên dưới!`)
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể dịch bài viết.'))
   } finally {
@@ -537,6 +578,94 @@ onUnmounted(() => {
                 @click="form.title = t; suggestedTitles = []"
               >
                 {{ t }}
+              </button>
+            </div>
+          </div>
+
+          <!-- Suggested Summaries Drawer -->
+          <div v-if="suggestedSummaries.length > 0" class="rounded-lg bg-white border border-[#c8d6c9] p-3.5 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-[#1e4620]">📝 Đề xuất tóm tắt từ AI (Chọn phương án bạn ưng ý nhất):</span>
+              <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer" @click="suggestedSummaries = []">Đóng</button>
+            </div>
+            <div class="flex flex-col gap-2">
+              <div
+                v-for="(s, idx) in suggestedSummaries"
+                :key="idx"
+                class="p-3 rounded-lg border border-[#e2ece3] hover:border-[#2c6e33] bg-[#fcfdfc] hover:bg-[#f0f7f1] transition-all flex flex-col sm:flex-row sm:items-center justify-between gap-3"
+              >
+                <p class="m-0 text-xs text-[#2d3748] leading-relaxed flex-1">{{ s }}</p>
+                <button
+                  type="button"
+                  class="px-3 py-1.5 rounded-md bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold shrink-0 transition-colors border-none cursor-pointer self-start sm:self-auto"
+                  @click="applySummary(s)"
+                >
+                  <i class="fa-solid fa-check mr-1"></i> Áp dụng vào Tóm tắt
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Polished Content Preview Drawer -->
+          <div v-if="polishedPreview" class="rounded-lg bg-white border border-[#c8d6c9] p-3.5 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-[#1e4620]">🔍 Kết quả soát lỗi & trau chuốt văn phong:</span>
+              <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer" @click="polishedPreview = null">Đóng</button>
+            </div>
+            <div v-if="polishedPreview.highlights" class="text-xs font-medium text-[#2c6e33] bg-[#f0f7f1] p-2 rounded-md">
+              💡 {{ polishedPreview.highlights }}
+            </div>
+            <div class="max-h-60 overflow-y-auto p-3 rounded-lg border border-[#e2ece3] bg-[#fcfdfc] text-xs leading-relaxed text-[#2d3748]">
+              {{ polishedPreview.content }}
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded-md border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-[#f8faf8] cursor-pointer"
+                @click="polishedPreview = null"
+              >
+                Bỏ qua
+              </button>
+              <button
+                type="button"
+                class="px-3.5 py-1.5 rounded-md bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs"
+                @click="applyPolishedContent"
+              >
+                <i class="fa-solid fa-check"></i>
+                Áp dụng vào Nội dung chi tiết
+              </button>
+            </div>
+          </div>
+
+          <!-- Translated Article Preview Drawer -->
+          <div v-if="translatedPreview" class="rounded-lg bg-white border border-[#c8d6c9] p-3.5 flex flex-col gap-2.5">
+            <div class="flex items-center justify-between">
+              <span class="text-xs font-bold text-[#1e4620]">🌐 Bản xem trước dịch sang {{ translatedPreview.langName }}:</span>
+              <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer" @click="translatedPreview = null">Đóng</button>
+            </div>
+            <div v-if="translatedPreview.title" class="flex flex-col gap-1 text-xs">
+              <strong class="text-[#122815]">Tiêu đề dịch:</strong>
+              <div class="p-2 rounded border border-[#e2ece3] bg-[#fcfdfc] font-semibold text-[#1e4620]">{{ translatedPreview.title }}</div>
+            </div>
+            <div v-if="translatedPreview.excerpt" class="flex flex-col gap-1 text-xs">
+              <strong class="text-[#122815]">Tóm tắt dịch:</strong>
+              <div class="p-2 rounded border border-[#e2ece3] bg-[#fcfdfc] text-[#2d3748]">{{ translatedPreview.excerpt }}</div>
+            </div>
+            <div class="flex items-center justify-end gap-2 pt-1">
+              <button
+                type="button"
+                class="px-3 py-1.5 rounded-md border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-[#f8faf8] cursor-pointer"
+                @click="translatedPreview = null"
+              >
+                Bỏ qua
+              </button>
+              <button
+                type="button"
+                class="px-3.5 py-1.5 rounded-md bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer transition-colors border-none flex items-center gap-1.5 shadow-xs"
+                @click="applyTranslation"
+              >
+                <i class="fa-solid fa-check"></i>
+                Áp dụng bản dịch vào bài viết
               </button>
             </div>
           </div>

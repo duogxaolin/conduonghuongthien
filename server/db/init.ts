@@ -601,6 +601,8 @@ export async function initDb() {
       \`role\` ENUM('user','assistant') NOT NULL,
       \`content\` TEXT NOT NULL,
       \`kind\` VARCHAR(32) NULL,
+      \`is_flagged\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`flag_reason\` VARCHAR(255) NULL,
       \`created_at\` DATETIME NOT NULL,
       KEY \`chat_messages_session_created_idx\` (\`session_id\`, \`created_at\`),
       CONSTRAINT \`fk_chat_messages_session\` FOREIGN KEY (\`session_id\`) REFERENCES \`chat_sessions\` (\`id\`) ON DELETE CASCADE
@@ -947,6 +949,8 @@ export async function initDb() {
       \`body\` TEXT NOT NULL,
       \`ip\` VARCHAR(45) NULL,
       \`user_agent\` VARCHAR(512) NULL,
+      \`is_hidden\` TINYINT(1) NOT NULL DEFAULT 0,
+      \`flag_reason\` VARCHAR(255) NULL,
       \`created_at\` DATETIME NOT NULL,
       KEY \`article_comments_article_parent_created_idx\` (\`article_id\`, \`parent_id\`, \`created_at\`),
       KEY \`article_comments_media_parent_created_idx\` (\`media_item_id\`, \`parent_id\`, \`created_at\`),
@@ -1166,6 +1170,43 @@ export async function initDb() {
       \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       PRIMARY KEY (\`id\`),
       CONSTRAINT \`fk_ai_budget_settings_updated_by\` FOREIGN KEY (\`updated_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`ai_moderation_rules\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`category\` VARCHAR(64) NOT NULL,
+      \`rule_type\` VARCHAR(32) NOT NULL DEFAULT 'keyword',
+      \`pattern\` TEXT NOT NULL,
+      \`action\` VARCHAR(32) NOT NULL DEFAULT 'auto_hide',
+      \`severity\` VARCHAR(16) NOT NULL DEFAULT 'high',
+      \`is_enabled\` TINYINT(1) NOT NULL DEFAULT 1,
+      \`created_by\` INT NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      CONSTRAINT \`fk_ai_mod_rules_user\` FOREIGN KEY (\`created_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`ai_moderation_queue\` (
+      \`id\` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+      \`target_type\` VARCHAR(32) NOT NULL,
+      \`target_id\` BIGINT UNSIGNED NULL,
+      \`author_name\` VARCHAR(255) NULL,
+      \`author_ip\` VARCHAR(45) NULL,
+      \`content_snippet\` TEXT NOT NULL,
+      \`flagged_reason\` TEXT NOT NULL,
+      \`matched_rules\` JSON NULL,
+      \`severity\` VARCHAR(16) NOT NULL DEFAULT 'high',
+      \`status\` VARCHAR(32) NOT NULL DEFAULT 'pending',
+      \`reviewed_by\` INT NULL,
+      \`reviewed_at\` DATETIME NULL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      KEY \`ai_moderation_queue_status_created_idx\` (\`status\`, \`created_at\`),
+      KEY \`ai_moderation_queue_target_idx\` (\`target_type\`, \`target_id\`),
+      CONSTRAINT \`fk_ai_mod_queue_reviewer\` FOREIGN KEY (\`reviewed_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 

@@ -409,7 +409,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
         method: 'POST',
         headers: providerCall.headers,
         body: providerCall.body,
-        timeoutMs: 10_000,
+        timeoutMs: 35_000,
         maxResponseBytes: 262_144,
       })
 

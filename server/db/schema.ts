@@ -605,6 +605,8 @@ export const chatMessages = mysqlTable('chat_messages', {
   // rate_limited | error) so the admin transcript can show *why* a reply looked
   // the way it did without re-running retrieval.
   kind:      varchar('kind', { length: 32 }),
+  isFlagged: boolean('is_flagged').notNull().default(false),
+  flagReason: varchar('flag_reason', { length: 255 }),
   createdAt: datetime('created_at', { mode: 'date' }).notNull(),
 }, (t) => ({
   transcriptIdx: index('chat_messages_session_created_idx').on(t.sessionId, t.createdAt),
@@ -796,6 +798,8 @@ export const articleComments = mysqlTable('article_comments', {
   body:        text('body').notNull(),
   ip:          varchar('ip', { length: 45 }),
   userAgent:   varchar('user_agent', { length: 512 }),
+  isHidden:    boolean('is_hidden').notNull().default(false),
+  flagReason:  varchar('flag_reason', { length: 255 }),
   createdAt:   datetime('created_at', { mode: 'date' }).notNull(),
 }, (t) => ({
   articleParentCreatedIdx: index('article_comments_article_parent_created_idx').on(t.articleId, t.parentId, t.createdAt),
@@ -1326,3 +1330,41 @@ export type AiModelPricing = typeof aiModelPricing.$inferSelect
 export type NewAiModelPricing = typeof aiModelPricing.$inferInsert
 export type AiBudgetSettings = typeof aiBudgetSettings.$inferSelect
 export type NewAiBudgetSettings = typeof aiBudgetSettings.$inferInsert
+
+// ─── AI Moderation Rules & Audit Queue ─────────────────────────────────────
+export const aiModerationRules = mysqlTable('ai_moderation_rules', {
+  id:          int('id').autoincrement().primaryKey(),
+  category:    varchar('category', { length: 64 }).notNull(),
+  ruleType:    varchar('rule_type', { length: 32 }).notNull().default('keyword'),
+  pattern:     text('pattern').notNull(),
+  action:      varchar('action', { length: 32 }).notNull().default('auto_hide'),
+  severity:    varchar('severity', { length: 16 }).notNull().default('high'),
+  isEnabled:   boolean('is_enabled').notNull().default(true),
+  createdBy:   int('created_by').references(() => users.id, { onDelete: 'set null' }),
+  createdAt:   timestamp('created_at').defaultNow(),
+  updatedAt:   timestamp('updated_at').defaultNow().onUpdateNow(),
+})
+
+export const aiModerationQueue = mysqlTable('ai_moderation_queue', {
+  id:             bigint('id', { mode: 'number', unsigned: true }).autoincrement().primaryKey(),
+  targetType:     varchar('target_type', { length: 32 }).notNull(),
+  targetId:       bigint('target_id', { mode: 'number', unsigned: true }),
+  authorName:     varchar('author_name', { length: 255 }),
+  authorIp:       varchar('author_ip', { length: 45 }),
+  contentSnippet: text('content_snippet').notNull(),
+  flaggedReason:  text('flagged_reason').notNull(),
+  matchedRules:   json('matched_rules').$type<string[]>(),
+  severity:       varchar('severity', { length: 16 }).notNull().default('high'),
+  status:         varchar('status', { length: 32 }).notNull().default('pending'),
+  reviewedBy:     int('reviewed_by').references(() => users.id, { onDelete: 'set null' }),
+  reviewedAt:     datetime('reviewed_at', { mode: 'date' }),
+  createdAt:      timestamp('created_at').defaultNow(),
+}, (t) => ({
+  statusCreatedIdx: index('ai_moderation_queue_status_created_idx').on(t.status, t.createdAt),
+  targetIdx: index('ai_moderation_queue_target_idx').on(t.targetType, t.targetId),
+}))
+
+export type AiModerationRule = typeof aiModerationRules.$inferSelect
+export type NewAiModerationRule = typeof aiModerationRules.$inferInsert
+export type AiModerationQueueItem = typeof aiModerationQueue.$inferSelect
+export type NewAiModerationQueueItem = typeof aiModerationQueue.$inferInsert

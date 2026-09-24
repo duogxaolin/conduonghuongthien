@@ -1,7 +1,7 @@
 import { getDb } from '../utils/db'
 import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories, aiProviders, aiServiceConfigs, aiModelPricing, aiBudgetSettings } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories, aiProviders, aiServiceConfigs, aiModelPricing, aiBudgetSettings, aiModerationRules, aiModerationQueue } from '../db/schema'
 import type { BlockData } from '../../app/utils/blocks/types'
 import { eq, asc, sql } from 'drizzle-orm'
 import { CHATBOT_SMALL_TALK_SEED } from '../data/chatbot-small-talk-seed'
@@ -530,6 +530,31 @@ async function seed() {
         systemPrompt: existingChatbotSettings.systemPrompt,
         isActive: Boolean(existingChatbotSettings.enabled),
       }).where(eq(aiServiceConfigs.serviceKey, 'chatbot'))
+    }
+  }
+
+  // 6. Default AI Security & Moderation Rules
+  console.log('Seeding AI security & moderation rules...')
+  const defaultRules: Array<{ category: string; ruleType: string; pattern: string; action: string; severity: string }> = [
+    { category: 'hostile_forces', ruleType: 'keyword', pattern: 'việt tân', action: "auto_hide", severity: 'critical' },
+    { category: 'hostile_forces', ruleType: 'keyword', pattern: 'triều đại việt', action: "auto_hide", severity: 'critical' },
+    { category: 'hostile_forces', ruleType: 'keyword', pattern: 'chính phủ quốc gia việt nam lâm thời', action: "auto_hide", severity: 'critical' },
+    { category: 'hostile_forces', ruleType: 'keyword', pattern: 'khủng bố', action: "auto_hide", severity: 'critical' },
+    { category: 'anti_state', ruleType: 'keyword', pattern: 'lật đổ chính quyền', action: "auto_hide", severity: 'critical' },
+    { category: 'anti_state', ruleType: 'keyword', pattern: 'xuyên tạc chính sách', action: "auto_hide", severity: 'high' },
+    { category: 'anti_state', ruleType: 'keyword', pattern: 'biểu tình bạo loạn', action: "auto_hide", severity: 'critical' },
+    { category: 'anti_state', ruleType: 'keyword', pattern: 'chống phá đảng', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'xúc phạm danh dự công an', action: "auto_hide", severity: 'high' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'bôi nhọ lãnh đạo', action: "auto_hide", severity: 'high' },
+    { category: 'spam_fraud', ruleType: 'keyword', pattern: 'cờ bạc online', action: "auto_hide", severity: 'high' },
+    { category: 'spam_fraud', ruleType: 'keyword', pattern: 'tài xỉu', action: "auto_hide", severity: 'high' },
+    { category: 'spam_fraud', ruleType: 'keyword', pattern: 'vay tiền nóng', action: "auto_hide", severity: 'medium' },
+    { category: 'spam_fraud', ruleType: 'keyword', pattern: 'lừa đảo', action: "auto_hide", severity: 'medium' },
+  ]
+  for (const r of defaultRules) {
+    const [existing] = await db.select().from(aiModerationRules).where(eq(aiModerationRules.pattern, r.pattern)).limit(1)
+    if (!existing) {
+      await db.insert(aiModerationRules).values(r)
     }
   }
 
