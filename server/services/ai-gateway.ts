@@ -233,7 +233,8 @@ function rawExtractAnswer(policy: string, payload: unknown): string {
 
 export function parseToolArguments(raw: unknown): Record<string, unknown> {
   if (typeof raw === 'object' && raw !== null) return raw as Record<string, unknown>
-  const str = String(raw || '').trim()
+  let str = String(raw || '').trim()
+  str = str.replace(/<\|"\|>/g, '"').replace(/<\|/g, '').replace(/\|>/g, '')
   try {
     return JSON.parse(str) as Record<string, unknown>
   } catch {
@@ -259,7 +260,7 @@ export function extractToolCallsFromMessage(
   const list: Array<{ id: string; function: { name: string; arguments: string } }> = []
 
   // Pattern A: <|tool_call>call:funcName{...}
-  const patA = /<\|tool_call>call:(\w+)([\{][\s\S]*?[\}])(?:<tool_call\|>|<\/tool_call>)?/g
+  const patA = /<\|tool_call>call:(\w+)([\{][\s\S]*?[\}])(?:<\|?\/?tool_call\|?>)?/g
   let mA
   while ((mA = patA.exec(content)) !== null) {
     list.push({
@@ -270,7 +271,6 @@ export function extractToolCallsFromMessage(
       },
     })
   }
-
   // Pattern B: Pythonic function calls: funcName(param="value")
   if (list.length === 0 && Array.isArray(availableTools) && availableTools.length > 0) {
     for (const t of availableTools) {
@@ -485,7 +485,19 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
       const toolCalls = extractToolCallsFromMessage(msg1, toolDefs)
 
       if (toolCalls.length > 0) {
-        messages.push(msg1)
+        const cleanAssistantMsg = {
+          role: 'assistant',
+          content: null,
+          tool_calls: toolCalls.map(tc => ({
+            id: tc.id,
+            type: 'function',
+            function: {
+              name: tc.function.name,
+              arguments: typeof tc.function.arguments === 'string' ? tc.function.arguments : JSON.stringify(tc.function.arguments),
+            },
+          })),
+        }
+        messages.push(cleanAssistantMsg)
         for (const tc of toolCalls) {
           const fn = toolDefs.find(t => t.name === tc.function?.name)
           const args = parseToolArguments(tc.function?.arguments)
@@ -542,7 +554,6 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
         delete reqBodyObj.tools
         delete reqBodyObj.tool_choice
         reqBodyObj.max_tokens = originalMaxTokens
-
         if (input.onChunk) {
           reqBodyObj.stream = true
           const resp2 = await fetch(providerCall.url, {
@@ -558,6 +569,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
           const reader = resp2.body.getReader()
           const decoder = new TextDecoder()
           let streamBuffer = ''
+          let streamText = ''
           while (true) {
             const { done, value } = await reader.read()
             if (done) break
@@ -571,8 +583,13 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
                 const parsed = JSON.parse(trimmed.slice(5).trim())
                 const delta = parsed?.choices?.[0]?.delta?.content
                 if (typeof delta === 'string' && delta) {
-                  answerText += delta
-                  await input.onChunk(delta)
+                  streamText += delta
+                  const cleanTotal = cleanAiContent(streamText)
+                  const newChunk = cleanTotal.slice(answerText.length)
+                  if (newChunk) {
+                    answerText += newChunk
+                    await input.onChunk(newChunk)
+                  }
                 }
                 if (parsed?.usage) {
                   const isEst = Boolean(parsed.usage.estimated)
@@ -584,6 +601,10 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
                 }
               } catch {}
             }
+          }
+          answerText = cleanAiContent(streamText).trim()
+          if (!answerText) {
+            answerText = streamText.replace(/<\|channel>[\s\S]*?<channel\|>/gi, '').trim()
           }
         } else {
           reqBodyObj.stream = false
@@ -602,18 +623,69 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
           if (last2 !== -1) raw2 = raw2.slice(0, last2 + 1)
           const json2 = JSON.parse(raw2) as Record<string, unknown>
           const choice2 = (json2.choices as Array<{ message?: { content?: string } }>)?.[0]
-          answerText = choice2?.message?.content || ''
+          const raw2Content = choice2?.message?.content || ''
+          answerText = cleanAiContent(raw2Content).trim()
+          if (!answerText) {
+            answerText = raw2Content.replace(/<\|channel>[\s\S]*?<channel\|>/gi, '').trim()
+          }
           let p2 = Number((json2.usage as { prompt_tokens?: number })?.prompt_tokens) || 0
-          let c2 = Number((json2.usage as { completion_tokens?: number })?.completion_tokens) || 0
           if (config.provider === 'delify' && p2 >= 2000) p2 -= 2000
           promptTokens += p2
           completionTokens += c2
         }
       } else {
         // Model answered directly without tool calls
-        answerText = cleanAiContent((msg1?.content as string) || '')
-        if (input.onChunk && answerText) {
-          await input.onChunk(answerText)
+        delete reqBodyObj.tools
+        delete reqBodyObj.tool_choice
+        reqBodyObj.max_tokens = originalMaxTokens
+        if (input.onChunk) {
+          reqBodyObj.stream = true
+          const respDirect = await fetch(providerCall.url, {
+            method: 'POST',
+            headers: providerCall.headers,
+            body: JSON.stringify(reqBodyObj),
+          })
+          if (respDirect.ok && respDirect.body) {
+            const reader = respDirect.body.getReader()
+            const decoder = new TextDecoder()
+            let streamBuffer = ''
+            let streamText = ''
+            while (true) {
+              const { done, value } = await reader.read()
+              if (done) break
+              streamBuffer += decoder.decode(value, { stream: true })
+              const lines = streamBuffer.split('\n')
+              streamBuffer = lines.pop() || ''
+              for (const line of lines) {
+                const trimmed = line.trim()
+                if (!trimmed.startsWith('data:') || trimmed === 'data: [DONE]') continue
+                try {
+                  const parsed = JSON.parse(trimmed.slice(5).trim())
+                  const delta = parsed?.choices?.[0]?.delta?.content
+                  if (typeof delta === 'string' && delta) {
+                    streamText += delta
+                    const cleanTotal = cleanAiContent(streamText)
+                    const newChunk = cleanTotal.slice(answerText.length)
+                    if (newChunk) {
+                      answerText += newChunk
+                      await input.onChunk(newChunk)
+                    }
+                  }
+                  if (parsed?.usage) {
+                    let p2 = Number(parsed.usage.prompt_tokens) || 0
+                    let c2 = Number(parsed.usage.completion_tokens) || 0
+                    if (config.provider === 'delify' && p2 >= 2000) p2 -= 2000
+                    if (p2 > 0 && !parsed.usage.estimated) promptTokens += p2
+                    if (c2 > 0 && !parsed.usage.estimated) completionTokens += c2
+                  }
+                } catch {}
+              }
+            }
+            answerText = cleanAiContent(streamText).trim()
+          }
+        }
+        if (!answerText) {
+          answerText = cleanAiContent((msg1?.content as string) || '')
         }
       }
       totalTokens = promptTokens + completionTokens
