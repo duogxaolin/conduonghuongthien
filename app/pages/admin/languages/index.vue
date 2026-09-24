@@ -104,12 +104,59 @@ const translationGroups = ref<string[]>([])
 const selectedGroup = ref('all')
 const searchQuery = ref('')
 const selectedLangCode = ref('en')
+const statusFilter = ref<'all' | 'untranslated' | 'translated' | 'ai'>('all')
+
+const FLAG_MAP: Record<string, string> = {
+  vi: '🇻🇳',
+  en: '🇬🇧',
+  zh: '🇨🇳',
+  fr: '🇫🇷',
+  ru: '🇷🇺',
+  lo: '🇱🇦',
+  ja: '🇯🇵',
+  ko: '🇰🇷',
+  es: '🇪🇸',
+  de: '🇩🇪',
+}
+
+const getFlagEmoji = (code: string) => FLAG_MAP[code] || '🌐'
+
+const viTranslationsMap = ref<Map<string, string>>(new Map())
+
+async function loadViSourceMap() {
+  try {
+    const res = await $fetch<{ ok: boolean; items: Array<{ group: string; key: string; value: string }> }>('/api/admin/languages/vi/translations?limit=500')
+    if (res.ok) {
+      const map = new Map<string, string>()
+      for (const item of res.items) {
+        map.set(`${item.group}::${item.key}`, item.value || '')
+      }
+      viTranslationsMap.value = map
+    }
+  } catch {
+    // Non-critical
+  }
+}
+
+function openTranslationTabFor(code: string) {
+  selectedLangCode.value = code
+  activeTab.value = 'translations'
+  fetchTranslations()
+}
 
 const filteredTranslations = computed(() => {
-  if (!searchQuery.value) return translations.value
+  let list = translations.value
+  if (statusFilter.value === 'untranslated') {
+    list = list.filter((t) => !t.value || !t.value.trim())
+  } else if (statusFilter.value === 'translated') {
+    list = list.filter((t) => t.value && t.value.trim())
+  } else if (statusFilter.value === 'ai') {
+    list = list.filter((t) => t.isAiTranslated)
+  }
+  if (!searchQuery.value) return list
   const s = searchQuery.value.toLowerCase()
-  return translations.value.filter(
-    (t) => t.key.toLowerCase().includes(s) || t.value.toLowerCase().includes(s),
+  return list.filter(
+    (t) => t.key.toLowerCase().includes(s) || (t.value || '').toLowerCase().includes(s),
   )
 })
 
@@ -191,13 +238,16 @@ async function seedDefaultTranslations() {
   }
 }
 
+async function loadData() {
+  await Promise.all([fetchLanguages(), fetchTranslations(), loadViSourceMap()])
+}
+
 onMounted(() => {
-  fetchLanguages().then(() => {
+  loadData().then(() => {
     if (languages.value.length > 0) {
       const nonDefault = languages.value.find((l) => l.code !== 'vi' && l.isActive)
       if (nonDefault) selectedLangCode.value = nonDefault.code
     }
-    fetchTranslations()
   })
 })
 </script>
@@ -228,6 +278,22 @@ onMounted(() => {
           <i class="fa-solid fa-plus"></i> Thêm ngôn ngữ
         </button>
       </div>
+    </div>
+
+    <!-- Info Banner (Forum-style clear explanation) -->
+    <div class="rounded-xl border border-[#c8dcc9] bg-[#f0f7f1] p-3.5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[#1e4620]">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-circle-info text-base text-[#2c6e33] shrink-0"></i>
+        <span><strong>Lưu ý:</strong> Sửa hoặc nạp bản dịch xong sẽ lưu ngay vào CSDL. Phía trang công khai sẽ tự động cập nhật khi người đọc tải lại trang hoặc chuyển ngôn ngữ.</span>
+      </div>
+      <button
+        type="button"
+        class="px-3 py-1.5 rounded-lg border border-[#a2cca4] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#e4ece4] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
+        @click="loadData"
+      >
+        <i class="fa-solid fa-arrows-rotate text-[0.7rem]" :class="loading ? 'animate-spin' : ''"></i>
+        <span>Làm mới CSDL</span>
+      </button>
     </div>
 
     <!-- Tab Switcher -->
@@ -273,46 +339,92 @@ onMounted(() => {
     </div>
 
     <!-- Languages Tab -->
-    <div v-else-if="activeTab === 'languages'" class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
-      <table class="w-full text-sm">
-        <thead class="bg-[#f8faf7] border-b border-[#e2ece3]">
-          <tr>
-            <th class="px-4 py-3 text-left font-bold text-[#122815]">Ngôn ngữ</th>
-            <th class="px-4 py-3 text-left font-bold text-[#122815]">Mã</th>
-            <th class="px-4 py-3 text-left font-bold text-[#122815]">Tên bản địa</th>
-            <th class="px-4 py-3 text-center font-bold text-[#122815]">Trạng thái</th>
-            <th class="px-4 py-3 text-center font-bold text-[#122815]">Thao tác</th>
-          </tr>
-        </thead>
-        <tbody class="divide-y divide-[#eef2ee]">
-          <tr v-for="lang in languages" :key="lang.id" class="hover:bg-[#f0f7f1]">
-            <td class="px-4 py-3 font-semibold text-[#122815]">
-              {{ lang.name }}
-              <span v-if="lang.isDefault" class="ml-1.5 inline-flex items-center px-1.5 py-0.5 rounded-sm bg-[#e4f2e5] text-[#1e4620] text-[0.65rem] font-bold uppercase">Mặc định</span>
-            </td>
-            <td class="px-4 py-3 text-[#667768] font-mono">{{ lang.code }}</td>
-            <td class="px-4 py-3 text-[#667768]">{{ lang.nativeName }}</td>
-            <td class="px-4 py-3 text-center">
+    <!-- Languages Tab: Forum-style Card Grid -->
+    <div v-else-if="activeTab === 'languages'" class="flex flex-col gap-4">
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        <div
+          v-for="(lang, index) in languages"
+          :key="lang.id"
+          class="rounded-xl border bg-white p-4 flex flex-col justify-between gap-3 shadow-xs hover:shadow-md transition-all relative overflow-hidden"
+          :class="lang.isDefault ? 'border-[#2c6e33] border-l-4' : 'border-[#e2ece3]'"
+        >
+          <!-- Top row: Order badge + Default / Active badge -->
+          <div class="flex items-center justify-between">
+            <span class="inline-flex items-center justify-center w-6 h-6 rounded-md bg-[#f0f4f0] text-[#1e4620] font-bold text-xs">
+              {{ index + 1 }}
+            </span>
+            <div class="flex items-center gap-1.5">
+              <span v-if="lang.isDefault" class="px-2 py-0.5 rounded-full bg-[#e4f2e5] text-[#1e4620] text-[0.65rem] font-bold uppercase tracking-wider">
+                Mặc định
+              </span>
               <button
-                class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer border transition-colors"
+                type="button"
+                class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[0.68rem] font-bold cursor-pointer border transition-colors"
                 :class="lang.isActive ? 'bg-[#e4f2e5] text-[#1e4620] border-[#c8dcc9]' : 'bg-[#f5f5f5] text-[#999] border-[#e0e0e0]'"
                 @click="toggleActive(lang)"
               >
                 <span class="w-1.5 h-1.5 rounded-full" :class="lang.isActive ? 'bg-[#2c6e33]' : 'bg-[#ccc]'"></span>
-                {{ lang.isActive ? 'Bật' : 'Tắt' }}
+                {{ lang.isActive ? 'Hoạt động' : 'Tắt' }}
               </button>
-            </td>
-            <td class="px-4 py-3 text-center">
-              <div class="flex items-center justify-center gap-1.5">
-                <button v-if="!lang.isDefault" class="px-2 py-1 rounded-md text-xs font-semibold bg-white border border-[#c8d6c9] text-[#2c6e33] hover:bg-[#f0f7f1] cursor-pointer" @click="setDefault(lang)">Đặt mặc định</button>
-                <button v-if="!lang.isDefault" class="px-2 py-1 rounded-md text-xs font-semibold bg-white border border-[#e2c8c8] text-[#d12420] hover:bg-[#fff5f4] cursor-pointer" @click="deleteLanguage(lang)">
-                  <i class="fa-solid fa-trash text-[0.7rem]"></i>
-                </button>
+            </div>
+          </div>
+
+          <!-- Language Info -->
+          <div>
+            <div class="flex items-center gap-3">
+              <span class="text-3xl leading-none">{{ getFlagEmoji(lang.code) }}</span>
+              <div>
+                <h4 class="m-0 text-base font-bold text-[#122815] flex items-center gap-1.5">
+                  <span>{{ lang.nativeName }}</span>
+                  <span class="text-xs font-mono font-normal text-[#667768]">({{ lang.code }})</span>
+                </h4>
+                <p class="m-0 text-xs text-[#667768]">{{ lang.name }}</p>
               </div>
-            </td>
-          </tr>
-        </tbody>
-      </table>
+            </div>
+          </div>
+
+          <!-- Action buttons -->
+          <div class="flex items-center gap-1.5 pt-2 border-t border-[#eef2ee] flex-wrap">
+            <button
+              type="button"
+              class="px-2.5 py-1 rounded-md bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-1 transition-colors"
+              @click="openTranslationTabFor(lang.code)"
+            >
+              <i class="fa-solid fa-language text-[0.7rem]"></i> Sửa bản dịch
+            </button>
+            <button
+              v-if="!lang.isDefault"
+              type="button"
+              class="px-2 py-1 rounded-md border border-[#c8d6c9] bg-white text-[#2c6e33] hover:bg-[#f0f7f1] text-xs font-semibold cursor-pointer"
+              title="Đặt làm mặc định"
+              @click="setDefault(lang)"
+            >
+              <i class="fa-regular fa-star mr-1"></i> Mặc định
+            </button>
+            <button
+              v-if="!lang.isDefault"
+              type="button"
+              class="px-2 py-1 rounded-md border border-[#e2c8c8] bg-white text-[#d12420] hover:bg-[#fff5f4] text-xs font-semibold cursor-pointer"
+              title="Xoá ngôn ngữ"
+              @click="deleteLanguage(lang)"
+            >
+              <i class="fa-solid fa-trash text-[0.7rem]"></i>
+            </button>
+          </div>
+        </div>
+
+        <!-- Add new language dashed card -->
+        <div
+          class="rounded-xl border-2 border-dashed border-[#c8d6c9] hover:border-[#2c6e33] bg-[#fafcfa] hover:bg-[#f0f7f1] p-6 flex flex-col items-center justify-center gap-2 cursor-pointer transition-all min-h-[140px] text-center"
+          @click="showAddForm = !showAddForm"
+        >
+          <div class="w-10 h-10 rounded-full bg-white border border-[#c8d6c9] flex items-center justify-center text-[#2c6e33] text-lg shadow-2xs">
+            <i class="fa-solid fa-plus"></i>
+          </div>
+          <span class="text-sm font-bold text-[#1e4620]">Thêm ngôn ngữ mới</span>
+          <span class="text-xs text-[#667768]">Bấm để thêm ngôn ngữ quốc tế khác</span>
+        </div>
+      </div>
     </div>
 
     <!-- Translations Tab -->
@@ -325,6 +437,12 @@ onMounted(() => {
         <select v-model="selectedGroup" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]" @change="fetchTranslations">
           <option value="all">Tất cả nhóm</option>
           <option v-for="g in translationGroups" :key="g" :value="g">{{ g }}</option>
+        </select>
+        <select v-model="statusFilter" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
+          <option value="all">Tất cả trạng thái</option>
+          <option value="untranslated">Chưa dịch (trống)</option>
+          <option value="translated">Đã có bản dịch</option>
+          <option value="ai">Do AI dịch</option>
         </select>
         <input v-model="searchQuery" type="text" placeholder="Tìm kiếm key hoặc giá trị..." class="flex-1 min-w-[200px] px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]" @input="fetchTranslations" />
         <button
@@ -350,17 +468,21 @@ onMounted(() => {
         <table class="w-full text-sm">
           <thead class="bg-[#f8faf7] border-b border-[#e2ece3]">
             <tr>
-              <th class="px-4 py-3 text-left font-bold text-[#122815] w-[25%]">Key</th>
-              <th class="px-4 py-3 text-left font-bold text-[#122815] w-[15%]">Nhóm</th>
-              <th class="px-4 py-3 text-left font-bold text-[#122815]">Giá trị</th>
-              <th class="px-4 py-3 text-center font-bold text-[#122815] w-[80px]">AI</th>
-              <th class="px-4 py-3 text-center font-bold text-[#122815] w-[80px]">Sửa</th>
+              <th class="px-4 py-3 text-left font-bold text-[#122815] w-[20%]">Khóa (Key)</th>
+              <th class="px-4 py-3 text-left font-bold text-[#122815] w-[12%]">Nhóm</th>
+              <th class="px-4 py-3 text-left font-bold text-[#122815] w-[30%]">Bản gốc (Tiếng Việt)</th>
+              <th class="px-4 py-3 text-left font-bold text-[#122815]">Bản dịch</th>
+              <th class="px-4 py-3 text-center font-bold text-[#122815] w-[60px]">AI</th>
+              <th class="px-4 py-3 text-center font-bold text-[#122815] w-[60px]">Sửa</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-[#eef2ee]">
             <tr v-for="t in filteredTranslations" :key="t.id" class="hover:bg-[#f0f7f1]">
-              <td class="px-4 py-2.5 font-mono text-[0.8rem] text-[#667768]">{{ t.key }}</td>
-              <td class="px-4 py-2.5 text-[0.8rem] text-[#667768]">{{ t.group }}</td>
+              <td class="px-4 py-2.5 font-mono text-[0.78rem] text-[#667768]">{{ t.key }}</td>
+              <td class="px-4 py-2.5 text-[0.78rem] text-[#667768]">{{ t.group }}</td>
+              <td class="px-4 py-2.5 text-xs text-[#4A5545] bg-[#fafcfa]">
+                {{ viTranslationsMap.get(`${t.group}::${t.key}`) || '—' }}
+              </td>
               <td class="px-4 py-2.5 text-[#1E251C]">
                 <div v-if="editingKey === `${t.group}::${t.key}`" class="flex flex-col gap-1">
                   <textarea v-model="editingValue" rows="2" class="w-full px-2.5 py-1.5 border border-[#c8d6c9] rounded-md text-sm outline-none focus:border-[#2c6e33] font-[inherit]"></textarea>
@@ -369,7 +491,7 @@ onMounted(() => {
                     <button class="px-2.5 py-1 rounded-md border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] cursor-pointer" @click="editingKey = null">Hủy</button>
                   </div>
                 </div>
-                <span v-else>{{ t.value || '(trống)' }}</span>
+                <span v-else :class="!t.value ? 'italic text-[#999]' : ''">{{ t.value || '(chưa dịch)' }}</span>
               </td>
               <td class="px-4 py-2.5 text-center">
                 <span v-if="t.isAiTranslated" class="inline-flex items-center px-1.5 py-0.5 rounded-sm bg-[#e4f2e5] text-[#1e4620] text-[0.65rem] font-bold">AI</span>

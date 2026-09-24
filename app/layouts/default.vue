@@ -27,15 +27,46 @@
           <span><i class="fa-solid fa-phone" aria-hidden="true"></i> {{ t('hotline_lbl') }}: {{ siteHotline }}</span>
         </div>
         <div class="flex items-center gap-4">
-          <div class="flex items-center">
+          <!-- Polished Language Switcher Dropdown (Scalable for many languages) -->
+          <div class="relative" ref="langDropdownRef">
             <button
-              v-for="locale in locales"
-              :key="`top-${locale.code}`"
-              :class="currentLang === locale.code ? 'text-white bg-[#4A6741] rounded' : 'text-white/70'"
-              class="bg-transparent border-none font-semibold cursor-pointer text-[0.78rem] px-1.5 py-0.5 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#9CCC65]"
-              :aria-label="locale.name"
-              :aria-pressed="currentLang === locale.code"
-              @click="setLang(locale.code)">{{ locale.label }}</button>
+              type="button"
+              class="flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-white/10 hover:bg-white/20 text-white text-[0.76rem] font-bold transition-all border border-white/15 cursor-pointer focus-visible:outline focus-visible:outline-2 focus-visible:outline-[#9CCC65]"
+              :aria-expanded="isLangMenuOpen"
+              aria-haspopup="true"
+              :aria-label="t('language_switcher')"
+              @click="isLangMenuOpen = !isLangMenuOpen"
+            >
+              <span class="text-sm leading-none">{{ currentLocaleFlag }}</span>
+              <span>{{ currentLocale.name }}</span>
+              <i class="fa-solid fa-chevron-down text-[0.55rem] transition-transform opacity-75" :class="isLangMenuOpen ? 'rotate-180' : ''"></i>
+            </button>
+
+            <!-- Dropdown Popover -->
+            <div
+              v-if="isLangMenuOpen"
+              class="absolute right-0 top-full mt-1.5 w-44 rounded-xl bg-white text-[#1E251C] shadow-xl border border-[#c8d6c9] py-1.5 z-[102] flex flex-col gap-0.5 animate-fadeIn"
+              role="menu"
+            >
+              <div class="px-3 py-1 text-[0.65rem] font-bold text-[#667768] uppercase tracking-wider border-b border-[#e2ece3] mb-1">
+                {{ t('language_switcher') }}
+              </div>
+              <button
+                v-for="locale in locales"
+                :key="`dropdown-${locale.code}`"
+                type="button"
+                role="menuitem"
+                class="w-full text-left px-3 py-1.5 text-xs font-semibold hover:bg-[#f0f7f1] transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between"
+                :class="currentLang === locale.code ? 'text-[#2c6e33] font-bold bg-[#f0f7f1]' : 'text-[#333]'"
+                @click="setLang(locale.code); isLangMenuOpen = false"
+              >
+                <span class="flex items-center gap-2">
+                  <span class="text-sm leading-none">{{ getFlagEmoji(locale.code) }}</span>
+                  <span>{{ locale.name }}</span>
+                </span>
+                <i v-if="currentLang === locale.code" class="fa-solid fa-check text-[0.7rem] text-[#2c6e33]"></i>
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -213,17 +244,24 @@
             @click.stop="toggleMobileMenu" :aria-label="t('menu_close')">✕</button>
         </div>
 
-        <!-- Drawer Locale Switcher -->
-        <div class="flex justify-end items-center px-[18px] py-2.5 bg-[#f0f6ef] border-b border-[#e1e8e0] flex-shrink-0">
-          <div class="flex items-center" role="group" :aria-label="t('language_switcher')">
+        <!-- Drawer Locale Switcher (Grid layout for many languages) -->
+        <div class="px-4 py-2.5 bg-[#f0f6ef] border-b border-[#e1e8e0] flex-shrink-0">
+          <div class="text-[0.68rem] font-bold text-[#667768] uppercase mb-1.5">{{ t('language_switcher') }}</div>
+          <div class="grid grid-cols-2 gap-1.5" role="group" :aria-label="t('language_switcher')">
             <button
               v-for="locale in locales"
               :key="`drawer-${locale.code}`"
-              :class="currentLang === locale.code ? 'text-white bg-[#4A6741] rounded' : 'text-[#1e4620]/70'"
-              class="bg-transparent border-none font-semibold cursor-pointer text-[0.78rem] px-1.5 py-0.5 transition-all focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#4A6741]"
+              :class="currentLang === locale.code ? 'text-white bg-[#2c6e33] shadow-xs' : 'text-[#1e4620] bg-white border border-[#c8d6c9] hover:bg-[#e4ece4]'"
+              class="border-none font-bold cursor-pointer text-xs px-2.5 py-1.5 rounded-lg transition-all flex items-center justify-between"
               :aria-label="locale.name"
               :aria-pressed="currentLang === locale.code"
-              @click="setLang(locale.code)">{{ locale.label }}</button>
+              @click="setLang(locale.code)">
+              <span class="flex items-center gap-1.5 truncate">
+                <span class="text-sm leading-none">{{ getFlagEmoji(locale.code) }}</span>
+                <span class="truncate">{{ locale.name }}</span>
+              </span>
+              <i v-if="currentLang === locale.code" class="fa-solid fa-check text-[0.65rem] shrink-0"></i>
+            </button>
           </div>
         </div>
 
@@ -749,6 +787,23 @@ const isMobileMenuOpen = ref(false)
 const isSearchActive = ref(false)
 const searchQuery = ref('')
 const { currentLang, locales, t, setLang } = useI18n()
+const isLangMenuOpen = ref(false)
+const langDropdownRef = ref<HTMLElement | null>(null)
+
+const FLAG_MAP: Record<string, string> = {
+  vi: '🇻🇳',
+  en: '🇬🇧',
+  zh: '🇨🇳',
+  fr: '🇫🇷',
+  ru: '🇷🇺',
+  lo: '🇱🇦',
+  ja: '🇯🇵',
+  ko: '🇰🇷',
+}
+
+const getFlagEmoji = (code: string) => FLAG_MAP[code] || '🌐'
+const currentLocale = computed(() => locales.find(l => l.code === currentLang.value) || locales[0]!)
+const currentLocaleFlag = computed(() => getFlagEmoji(currentLang.value))
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const searchBarRef = ref<HTMLElement | null>(null)
 
@@ -1018,6 +1073,7 @@ const handleKeydown = (event: KeyboardEvent) => {
   // mở nó là một cái bẫy bàn phím — Escape là cách người dùng bàn phím thoát khỏi
   // mọi lớp phủ khác trên trang này.
   if (isReaderMenuOpen.value) isReaderMenuOpen.value = false
+  if (isLangMenuOpen.value) isLangMenuOpen.value = false
   if (isSearchActive.value) {
     isSearchActive.value = false
     showLivePreview.value = false
@@ -1037,6 +1093,10 @@ const handleDocumentPointerDown = (event: MouseEvent) => {
   if (isReaderMenuOpen.value) {
     const root = readerMenuRef.value
     if (root && (!target || !root.contains(target))) isReaderMenuOpen.value = false
+  }
+  if (isLangMenuOpen.value) {
+    const langRoot = langDropdownRef.value
+    if (langRoot && (!target || !langRoot.contains(target))) isLangMenuOpen.value = false
   }
   if (showLivePreview.value) {
     const searchRoot = searchBarRef.value
