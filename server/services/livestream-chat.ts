@@ -316,6 +316,9 @@ export async function sendChatMessage(
       targetId: id,
       authorName: displayName,
       authorIp: input.ip,
+      sessionId: String(session.id),
+      contextTitle: `Livestream: ${session.title}`,
+      contextUrl: '/media',
     })
 
     if (modResult.flagged && modResult.action === 'auto_hide') {

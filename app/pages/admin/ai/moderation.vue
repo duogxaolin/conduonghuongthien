@@ -211,7 +211,7 @@
             <thead class="bg-[#f7faf7] text-left">
               <tr>
                 <th class="px-3.5 py-3 font-bold text-[#122815]">Thời gian</th>
-                <th class="px-3.5 py-3 font-bold text-[#122815]">Nguồn</th>
+                <th class="px-3.5 py-3 font-bold text-[#122815]">Nguồn & Vị trí ẩn</th>
                 <th class="px-3.5 py-3 font-bold text-[#122815]">Người gửi / IP</th>
                 <th class="px-3.5 py-3 font-bold text-[#122815]">Nội dung vi phạm</th>
                 <th class="px-3.5 py-3 font-bold text-[#122815]">Lý do phân tích</th>
@@ -223,14 +223,34 @@
             <tbody>
               <tr v-for="item in queue" :key="item.id" class="border-t border-[#e2ece3] hover:bg-[#fcfdfc]">
                 <td class="px-3.5 py-2.5 whitespace-nowrap text-[#667768]">{{ formatTime(item.createdAt) }}</td>
-                <td class="px-3.5 py-2.5 whitespace-nowrap">
-                  <span class="px-2 py-0.5 rounded font-bold uppercase text-[0.65rem]" :class="item.targetType === 'comment' ? 'bg-blue-100 text-blue-800' : item.targetType === 'chat' ? 'bg-purple-100 text-purple-800' : 'bg-gray-100 text-gray-800'">
-                    {{ item.targetType === 'comment' ? 'Bình luận' : item.targetType === 'chat' ? 'Chat AI' : 'Bài viết' }}
+                <td class="px-3.5 py-2.5">
+                  <span class="inline-block px-2 py-0.5 rounded font-bold uppercase text-[0.65rem]" :class="item.targetType === 'comment' ? 'bg-blue-100 text-blue-800' : item.targetType === 'chat' ? 'bg-purple-100 text-purple-800' : item.targetType === 'livestream_chat' ? 'bg-orange-100 text-orange-800' : 'bg-gray-100 text-gray-800'">
+                    {{ item.targetType === 'comment' ? 'Bình luận' : item.targetType === 'chat' ? 'Chat AI' : item.targetType === 'livestream_chat' ? 'Livestream' : 'Bài viết' }}
                   </span>
+                  <!-- Vị trí cụ thể: bài viết / video / phiên chat -->
+                  <div v-if="item.contextTitle" class="mt-1 max-w-[220px]">
+                    <a v-if="item.contextUrl" :href="item.contextUrl" target="_blank" class="block font-bold text-[#1e4620] hover:underline truncate text-xs" :title="item.contextTitle">
+                      {{ item.contextTitle }}
+                    </a>
+                    <span v-else class="block font-bold text-[#1e4620] truncate text-xs" :title="item.contextTitle">
+                      {{ item.contextTitle }}
+                    </span>
+                  </div>
+                  <!-- Session ID nếu có -->
+                  <div v-if="item.sessionId" class="mt-0.5">
+                    <nuxt-link :to="`/admin/chatbot/sessions?search=${encodeURIComponent(item.sessionId)}`" class="text-[0.68rem] font-mono text-[#6b7280] hover:text-[#1e4620] underline">
+                      Session: {{ item.sessionId.slice(0, 8) }}...
+                    </nuxt-link>
+                  </div>
                 </td>
                 <td class="px-3.5 py-2.5 whitespace-nowrap">
                   <strong class="text-[#122815]">{{ item.authorName || 'Khách' }}</strong>
-                  <span v-if="item.authorIp" class="block text-[0.68rem] text-[#667768] font-mono">{{ item.authorIp }}</span>
+                  <div v-if="item.authorIp" class="flex items-center gap-1.5 mt-0.5">
+                    <span class="text-[0.68rem] text-[#667768] font-mono">{{ item.authorIp }}</span>
+                    <span v-if="item.isIpBanned" class="px-1.5 py-0.2 rounded text-[0.62rem] font-bold bg-red-100 text-red-700 border border-red-200">
+                      Đã cấm
+                    </span>
+                  </div>
                 </td>
                 <td class="px-3.5 py-2.5 max-w-xs break-words">
                   <p class="m-0 text-red-900 bg-red-50 p-2.5 rounded border border-red-200 text-xs leading-relaxed font-medium">
@@ -251,18 +271,20 @@
                   </span>
                 </td>
                 <td class="px-3.5 py-2.5 whitespace-nowrap text-right">
-                  <div v-if="item.status === 'pending'" class="flex items-center justify-end gap-1.5">
+                  <div class="flex items-center justify-end gap-1.5 flex-wrap">
                     <button
+                      v-if="item.status === 'pending'"
                       type="button"
-                      class="px-2 py-1 rounded bg-[#2c6e33] hover:bg-[#1e4620] text-white text-[0.7rem] font-bold cursor-pointer border-none"
-                      title="Duyệt an toàn và cho phép hiển thị lại"
+                      class="px-2.5 py-1 rounded bg-[#2c6e33] hover:bg-[#1e4620] text-white text-[0.7rem] font-bold cursor-pointer border-none shadow-2xs"
+                      title="Duyệt nội dung an toàn và cho phép hiển thị lại"
                       @click="resolveItem(item, 'approve')"
                     >
                       <i class="fa-solid fa-check mr-1"></i> Bỏ ẩn
                     </button>
                     <button
+                      v-if="item.status !== 'rejected'"
                       type="button"
-                      class="px-2 py-1 rounded bg-[#fee2e2] hover:bg-[#fca5a5] text-[#b42318] text-[0.7rem] font-bold cursor-pointer border-none"
+                      class="px-2.5 py-1 rounded bg-[#fee2e2] hover:bg-[#fca5a5] text-[#b42318] text-[0.7rem] font-bold cursor-pointer border-none shadow-2xs"
                       title="Xóa vĩnh viễn nội dung vi phạm"
                       @click="resolveItem(item, 'reject_delete')"
                     >
@@ -271,14 +293,18 @@
                     <button
                       v-if="item.authorIp"
                       type="button"
-                      class="px-2 py-1 rounded bg-black hover:bg-gray-800 text-white text-[0.7rem] font-bold cursor-pointer border-none"
-                      title="Cấm địa chỉ IP này vĩnh viễn"
+                      class="px-2.5 py-1 rounded text-[0.7rem] font-bold cursor-pointer border flex items-center gap-1 shadow-2xs transition-colors"
+                      :class="item.isIpBanned
+                        ? 'bg-gray-100 text-gray-400 border-gray-300 cursor-not-allowed'
+                        : 'bg-[#991b1b] hover:bg-[#7f1d1d] text-white border-transparent'"
+                      :disabled="item.isIpBanned"
+                      :title="item.isIpBanned ? 'Địa chỉ IP này đã bị cấm' : `Cấm địa chỉ IP ${item.authorIp}`"
                       @click="resolveItem(item, 'ban_ip')"
                     >
-                      <i class="fa-solid fa-ban mr-1"></i> Cấm IP
+                      <i class="fa-solid fa-ban"></i>
+                      <span>{{ item.isIpBanned ? 'Đã cấm IP' : 'Cấm IP' }}</span>
                     </button>
                   </div>
-                  <span v-else class="text-[#9ca3af] text-xs">Đã xử lý</span>
                 </td>
               </tr>
             </tbody>
@@ -461,6 +487,10 @@ interface ModerationQueueItem {
   matchedRules: string[] | null
   severity: string
   status: string
+  contextTitle?: string | null
+  contextUrl?: string | null
+  sessionId?: string | null
+  isIpBanned?: boolean
   createdAt: string
 }
 
