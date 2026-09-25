@@ -108,6 +108,26 @@ const cancelScan = async () => {
   }
 }
 
+const scanStalled = computed(() => {
+  if (!scanJob.value?.running) return false
+  // Treo > 90s ở cùng phase mà chưa tăng `done` → coi là kẹt.
+  return Date.now() - scanJob.value.startedAt > 90_000 && scanJob.value.done === 0
+})
+const forceResettingScan = ref(false)
+const forceResetScan = async () => {
+  if (!confirm('Buộc gỡ kẹt job quét đang treo? Job sẽ dừng ngay và có thể chạy lại. Worker cũ (nếu còn) sẽ tự hết.')) return
+  forceResettingScan.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/media/scan-force-reset', { method: 'POST' })
+    toast.success(res.message)
+    await pollScanStatus()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi gỡ kẹt quét'))
+  } finally {
+    forceResettingScan.value = false
+  }
+}
+
 // ─── Đồng bộ storage (local ↔ R2) ────────────────────────────────────────────
 // Chuyển toàn bộ ảnh sang storage bên kia: tải sang, xoá bản cũ, cập nhật URL
 // trong SQL + rich-text bài viết. Chỉ ảnh (bảng `media`), không video.
@@ -226,6 +246,25 @@ const cancelSync = async () => {
   }
 }
 
+const syncStalled = computed(() => {
+  if (!jobStatus.value?.running) return false
+  return Date.now() - jobStatus.value.startedAt > 90_000 && jobStatus.value.done === 0
+})
+const forceResettingSync = ref(false)
+const forceResetSync = async () => {
+  if (!confirm('Buộc gỡ kẹt job sync đang treo? Job sẽ dừng ngay và có thể chạy lại. Worker cũ (nếu còn) sẽ tự hết — lần chạy mới có timeout 90s cho pre-backup.')) return
+  forceResettingSync.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/media/sync-force-reset', { method: 'POST' })
+    toast.success(res.message)
+    await pollStatus()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi gỡ kẹt sync'))
+  } finally {
+    forceResettingSync.value = false
+  }
+}
+
 onMounted(() => {
   loadCounts()
   // Kiểm tra job đang chạy từ session trước (restart container giữa sync/scan).
@@ -313,6 +352,17 @@ const repointUrls = async () => {
         >
           <i class="fa-solid fa-stop" aria-hidden="true"></i>
           {{ scanJob?.cancelling ? 'Đang dừng...' : 'Hủy quét' }}
+        </button>
+        <button
+          v-if="scanStalled"
+          type="button"
+          class="inline-flex items-center gap-2 rounded-lg bg-[#a32924] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#7a1e1c] disabled:opacity-50"
+          :disabled="forceResettingScan"
+          :aria-busy="forceResettingScan"
+          @click="forceResetScan"
+        >
+          <i class="fa-solid" :class="forceResettingScan ? 'fa-spinner animate-spin' : 'fa-bolt'" aria-hidden="true"></i>
+          {{ forceResettingScan ? 'Đang gỡ...' : 'Buộc gỡ kẹt' }}
         </button>
         <span v-if="scanning" class="text-sm text-[#667768]">Đang chạy nền. Có thể đóng trang — worker tiếp tục.</span>
       </div>
@@ -437,8 +487,22 @@ const repointUrls = async () => {
           <i class="fa-solid fa-stop" aria-hidden="true"></i>
           {{ jobStatus?.cancelling ? 'Đang dừng...' : 'Hủy sync' }}
         </button>
+        <button
+          v-if="syncStalled"
+          type="button"
+          class="inline-flex items-center gap-2 rounded-lg bg-[#a32924] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#7a1e1c] disabled:opacity-50"
+          :disabled="forceResettingSync"
+          :aria-busy="forceResettingSync"
+          @click="forceResetSync"
+        >
+          <i class="fa-solid" :class="forceResettingSync ? 'fa-spinner animate-spin' : 'fa-bolt'" aria-hidden="true"></i>
+          {{ forceResettingSync ? 'Đang gỡ...' : 'Buộc gỡ kẹt' }}
+        </button>
       </div>
-      <p v-if="syncing" class="m-0 text-sm text-[#667768]">Đang chạy nền. Có thể đóng trang — worker tiếp tục. Mở lại sẽ thấy tiến độ.</p>
+      <p v-if="syncing" class="m-0 text-sm text-[#667768]">
+        Đang chạy nền. Có thể đóng trang — worker tiếp tục. Mở lại sẽ thấy tiến độ.
+        <span v-if="syncStalled" class="font-bold text-[#a32924]"> — Treo quá 90s ở backup, bấm "Buộc gỡ kẹt" để chạy lại ngay (không cần restart server).</span>
+      </p>
 
       <!-- Tiến độ job nền -->
       <div v-if="jobStatus" class="rounded-lg border border-[#cce5cd] bg-[#f0f7f1] p-4 flex flex-col gap-2" role="status" :aria-busy="jobStatus.running">
