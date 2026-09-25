@@ -32,14 +32,26 @@ export const useI18n = () => {
   const currentLang = useState<LocaleCode>('currentLang', () => normalizeLocale(localeCookie.value))
   const currentLocale = computed(() => localeOptions.find(locale => locale.code === currentLang.value) ?? FALLBACK_LOCALE)
 
-  if (localeCookie.value !== currentLang.value) {
-    localeCookie.value = currentLang.value
+  // On client, prioritize persisted user choice from localStorage/cookie and never overwrite with SSR default
+  if (import.meta.client) {
+    const stored = localStorage.getItem('cdkt_lang') || localeCookie.value
+    if (stored) {
+      const preferred = normalizeLocale(stored)
+      if (currentLang.value !== preferred) {
+        currentLang.value = preferred
+      }
+      if (localeCookie.value !== preferred) {
+        localeCookie.value = preferred
+      }
+    }
   }
 
   watch(currentLang, (locale) => {
     localeCookie.value = locale
+    if (import.meta.client) {
+      localStorage.setItem('cdkt_lang', locale)
+    }
   })
-
   useHead(() => ({
     htmlAttrs: {
       lang: currentLocale.value.htmlLang,
@@ -164,8 +176,11 @@ export const useI18n = () => {
       dbTranslationsLang.value = null
     }
     currentLang.value = newLocale
+    localeCookie.value = newLocale
+    if (import.meta.client) {
+      localStorage.setItem('cdkt_lang', newLocale)
+    }
   }
-
   return {
     currentLang,
     currentLocale,

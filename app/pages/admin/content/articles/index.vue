@@ -355,7 +355,7 @@ const globalStats = ref<{
   totalArticles: number
   languages: Array<{ code: string; name: string; nativeName: string; translated: number; missing: number }>
 } | null>(null)
-const selectedGlobalTargetLang = ref('en')
+const selectedGlobalTargetLangs = ref<string[]>(['en'])
 const globalTranslating = ref(false)
 
 async function openGlobalTranslateModal() {
@@ -366,7 +366,9 @@ async function openGlobalTranslateModal() {
     if (res.ok) {
       globalStats.value = res
       if (res.languages.length > 0) {
-        selectedGlobalTargetLang.value = res.languages[0]!.code
+        // Mặc định chọn các ngôn ngữ còn bài chưa dịch
+        const missingLangs = res.languages.filter(l => l.missing > 0).map(l => l.code)
+        selectedGlobalTargetLangs.value = missingLangs.length > 0 ? missingLangs : [res.languages[0]!.code]
       }
     }
   } catch (err: unknown) {
@@ -377,32 +379,39 @@ async function openGlobalTranslateModal() {
 }
 
 async function startGlobalTranslation() {
-  const langCode = selectedGlobalTargetLang.value
-  const langObj = globalStats.value?.languages.find(l => l.code === langCode)
-  const langLabel = langObj ? `${langObj.name} (${langObj.code})` : langCode
+  if (selectedGlobalTargetLangs.value.length === 0) {
+    toast.warning('Vui lòng chọn ít nhất một ngôn ngữ.')
+    return
+  }
 
   globalTranslating.value = true
+  let totalQueuedLangs = 0
+  let totalQueuedArticles = 0
+
   try {
-    const listRes = await $fetch<{ ok: boolean; items: AdminArticleRow[] }>('/api/admin/articles', {
-      params: { translation: `missing_${langCode}`, perPage: 100, status: 'published' },
-    })
-    const targetArticles = listRes.items || []
-    if (targetArticles.length === 0) {
-      toast.info(`Tất cả bài viết đã có bản dịch ${langLabel}!`)
-      globalTranslating.value = false
-      return
+    for (const langCode of selectedGlobalTargetLangs.value) {
+      const listRes = await $fetch<{ ok: boolean; items: AdminArticleRow[] }>('/api/admin/articles', {
+        params: { translation: `missing_${langCode}`, perPage: 100, status: 'published' },
+      })
+      const targetArticles = listRes.items || []
+      if (targetArticles.length > 0) {
+        const ids = targetArticles.map(a => Number(a.id))
+        await $fetch('/api/admin/articles/bulk-translate', {
+          method: 'POST',
+          body: { ids, langCode },
+        })
+        totalQueuedLangs++
+        totalQueuedArticles += ids.length
+      }
     }
 
-    const ids = targetArticles.map(a => Number(a.id))
-
-    await $fetch('/api/admin/articles/bulk-translate', {
-      method: 'POST',
-      body: { ids, langCode },
-    })
-
-    toast.success(`Đã xếp lịch dịch ${ids.length} bài viết sang ${langLabel} thành công! Hệ thống đang xử lý trong nền.`)
-    showGlobalTranslateModal.value = false
-    await fetchArticles(pagination.value.page)
+    if (totalQueuedArticles === 0) {
+      toast.info('Tất cả các bài viết đã có bản dịch cho các ngôn ngữ đã chọn!')
+    } else {
+      toast.success(`Đã xếp lịch dịch ${totalQueuedArticles} lượt bài viết sang ${totalQueuedLangs} ngôn ngữ! Hệ thống đang xử lý trong nền.`)
+      showGlobalTranslateModal.value = false
+      await fetchArticles(pagination.value.page)
+    }
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể bắt đầu dịch toàn bộ.'))
   } finally {
@@ -1329,17 +1338,38 @@ onMounted(async () => {
             </div>
 
             <div class="flex flex-col gap-2">
-              <label class="text-xs font-bold text-[#122815]">Chọn ngôn ngữ muốn dịch toàn bộ:</label>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div class="flex items-center justify-between">
+                <label class="text-xs font-bold text-[#122815]">Chọn các ngôn ngữ muốn dịch toàn bộ:</label>
+                <div class="flex items-center gap-2 text-xs">
+                  <button
+                    type="button"
+                    class="text-[#2c6e33] hover:underline bg-transparent border-0 cursor-pointer p-0 font-bold"
+                    @click="selectedGlobalTargetLangs = globalStats.languages.map(l => l.code)"
+                  >Chọn tất cả</button>
+                  <span class="text-[#c8d6c9]">|</span>
+                  <button
+                    type="button"
+                    class="text-[#667768] hover:underline bg-transparent border-0 cursor-pointer p-0"
+                    @click="selectedGlobalTargetLangs = []"
+                  >Bỏ chọn</button>
+                </div>
+              </div>
+
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
                 <label
                   v-for="l in globalStats.languages"
                   :key="l.code"
                   class="flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all"
-                  :class="selectedGlobalTargetLang === l.code ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50'"
+                  :class="selectedGlobalTargetLangs.includes(l.code) ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50'"
                 >
-                  <div class="flex items-center gap-2">
-                    <input type="radio" :value="l.code" v-model="selectedGlobalTargetLang" class="accent-[#2c6e33]" />
-                    <span class="text-base leading-none">{{ BULK_LANGS.find(b => b.code === l.code)?.flag }}</span>
+                  <div class="flex items-center gap-2.5">
+                    <input
+                      type="checkbox"
+                      :value="l.code"
+                      v-model="selectedGlobalTargetLangs"
+                      class="h-4 w-4 accent-[#2c6e33] rounded cursor-pointer"
+                    />
+                    <span class="text-base leading-none">{{ BULK_LANGS.find(b => b.code === l.code)?.flag || '🌐' }}</span>
                     <span class="text-xs font-bold text-[#122815]">{{ l.name }}</span>
                   </div>
                   <span
@@ -1351,7 +1381,6 @@ onMounted(async () => {
                 </label>
               </div>
             </div>
-
             <p class="m-0 text-xs text-[#667768] bg-[#fcfdfc] p-3 rounded-lg border border-[#eef2ee]">
               <i class="fa-solid fa-circle-info text-[#2c6e33] mr-1"></i>
               Hệ thống sẽ xếp lịch dịch các bài chưa có bản dịch sang ngôn ngữ đã chọn. Tiến trình dịch phân đoạn (chunked) xử lý tuần tự trong nền và tự lưu ở trạng thái "Bản nháp AI".

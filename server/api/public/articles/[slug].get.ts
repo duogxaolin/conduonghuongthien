@@ -1,13 +1,14 @@
 import { getDb } from '../../../utils/db'
 import { articles, users, categories, articleViewDaily, articleTranslations } from '../../../db/schema'
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, sql, inArray } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug')
   if (!slug) throw createError({ statusCode: 400, statusMessage: 'Invalid slug' })
 
   const query = getQuery(event)
-  const lang = typeof query.lang === 'string' ? query.lang.trim().toLowerCase() : ''
+  const cookieLang = getCookie(event, 'cdkt_lang')?.trim().toLowerCase() || ''
+  const lang = (typeof query.lang === 'string' ? query.lang.trim().toLowerCase() : '') || cookieLang
 
   try {
     const db = getDb()
@@ -56,11 +57,11 @@ export default defineEventHandler(async (event) => {
         .where(and(
           eq(articleTranslations.articleId, article.id),
           eq(articleTranslations.langCode, lang),
-          eq(articleTranslations.status, 'published'),
+          inArray(articleTranslations.status, ['published', 'ai_draft', 'reviewed']),
         ))
         .limit(1)
 
-      if (translation && translation.title !== null) {
+      if (translation && translation.title && translation.title.trim()) {
         return {
           ok: true,
           article: {
