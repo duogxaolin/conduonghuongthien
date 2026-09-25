@@ -300,7 +300,7 @@ export async function triggerTranslateAllLanguages(
 
 // ─── Translation worker ──────────────────────────────────────────────────
 
-async function runTranslationWorker(
+export async function runTranslationWorker(
   articleId: number,
   langCode: string,
   langName: string,
