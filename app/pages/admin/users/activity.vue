@@ -57,6 +57,7 @@ const ACTION_LABELS: Record<string, string> = {
   // Backup & khôi phục — nút backup / khôi phục trên /admin/settings/backup.
   backup_run: 'Backup',
   backup_restore: 'Khôi phục backup',
+  repair_urls: 'Vá URL ảnh',
 }
 const RESOURCE_LABELS: Record<string, string> = {
   auth: 'Xác thực', profile_password: 'Mật khẩu tài khoản', profile_mfa: 'Xác thực hai bước',
