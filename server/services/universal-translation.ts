@@ -94,9 +94,14 @@ async function translateSinglePageBlock(
   actorId: number | null,
   db: Database,
 ): Promise<boolean> {
-  const rawData = (b.data as Record<string, unknown>) || {}
+  // Always query fresh row from DB to avoid stale data race conditions
+  const [fresh] = await db.select().from(pageBlocks).where(eq(pageBlocks.id, b.id)).limit(1)
+  const rawData = (fresh?.data as Record<string, unknown>) || (b.data as Record<string, unknown>) || {}
   const translations = (rawData.translations as Record<string, Record<string, unknown>> | undefined) || {}
 
+  if (translations[lang.code] && Object.keys(translations[lang.code]!).length > 0) {
+    return true
+  }
   const fieldsToTranslate: Record<string, string> = {}
   for (const k of BLOCK_STRING_KEYS) {
     if (typeof rawData[k] === 'string' && (rawData[k] as string).trim()) {
@@ -201,17 +206,23 @@ ${rawData.bodyHtml}`
   }
 
   if (Object.keys(resultTranslated).length > 0) {
+    // Re-fetch right before update to guarantee atomicity of translations map
+    const [latest] = await db.select().from(pageBlocks).where(eq(pageBlocks.id, b.id)).limit(1)
+    const latestRaw = (latest?.data as Record<string, unknown>) || rawData
+    const latestTrans = (latestRaw.translations as Record<string, Record<string, unknown>> | undefined) || {}
+
     const updatedData = {
-      ...rawData,
+      ...latestRaw,
       translations: {
-        ...translations,
+        ...latestTrans,
         [lang.code]: {
-          ...(translations[lang.code] || {}),
+          ...(latestTrans[lang.code] || {}),
           ...resultTranslated,
         },
       },
     }
     await db.update(pageBlocks).set({ data: updatedData }).where(eq(pageBlocks.id, b.id))
+    ;(b as Record<string, unknown>).data = updatedData
     return true
   }
 
