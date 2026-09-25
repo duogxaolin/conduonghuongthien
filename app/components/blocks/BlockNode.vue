@@ -84,7 +84,33 @@ import { resolveBlockComponent } from './blockComponents'
 import { useI18n } from '~/composables/useI18n'
 
 const { currentLang, t } = useI18n()
-// `RenderableNode`, không phải `BuilderNode`: `isVisible` và `displayOrder` là
+
+const VIETNAMESE_TEXT_TO_I18N_KEY: Record<string, string> = {
+  'Tấm Gương Tiêu Biểu': 'role_models_title',
+  'Tấm Gương Sáng Điển Hình': 'role_models_title',
+  'Nghị lực vươn lên': 'role_models_subtitle',
+  'Mô Hình Tái Hòa Nhập': 'reintegration_models_title',
+  'Sinh kế bền vững': 'reintegration_models_subtitle',
+  'Văn bản Pháp luật Mới ban hành': 'latest_docs_title',
+  'Tin nổi bật': 'news_featured',
+  'Bản tin hoạt động': 'news',
+  'Đăng Ký Tư Vấn & Hỗ Trợ Tái Hòa Nhập': 'support_form_title',
+  'Điền thông tin để cán bộ chuyên môn liên hệ tư vấn miễn phí trong vòng 24 giờ.': 'support_form_subtitle',
+  'Hotline hỗ trợ:': 'hotline_support_lbl',
+  'Họ và tên': 'form_name',
+  'Số điện thoại': 'form_phone',
+  'Tỉnh / Thành phố': 'form_city',
+  'Nội dung cần hỗ trợ': 'form_message',
+  'Gửi đăng ký tư vấn': 'form_submit',
+  'Đang gửi...': 'form_sending',
+  'Tất cả văn bản': 'view_all_docs',
+  'Tất cả văn bản →': 'view_all_docs',
+  'Xem chi tiết': 'view_detail',
+  'Xem tất cả': 'view_all',
+  'Hỗ trợ 24/7 miễn phí': 'hero_support_free',
+  'Bảo mật thông tin': 'hero_security',
+  'Kết nối trực tiếp cán bộ': 'hero_connect_officer',
+}
 // tuỳ chọn vì phần tải công khai cắt bỏ chúng (chỉ chứa node đang hiện). Khớp
 // đúng cách component này vốn đã đọc cờ đó — `isVisible !== false`, nên vắng mặt
 // nghĩa là vẽ. `BuilderNode` của trình dựng trang vẫn thoả kiểu này.
@@ -115,7 +141,15 @@ const localizedNode = computed(() => {
 
   for (const key of ['title', 'subtitle', 'heading', 'badge', 'btnText', 'buttonText', 'description']) {
     if (typeof rawData[key] === 'string' && !langOverrides[key]) {
-      const val = rawData[key] as string
+      const val = (rawData[key] as string).trim()
+      const i18nKey = VIETNAMESE_TEXT_TO_I18N_KEY[val]
+      if (i18nKey) {
+        const translated = t(i18nKey)
+        if (translated && translated !== i18nKey) {
+          mergedData[key] = translated
+          continue
+        }
+      }
       const dictVal = t(val)
       if (dictVal && dictVal !== val) {
         mergedData[key] = dictVal

@@ -49,36 +49,45 @@
         <nuxt-link
           to="/reintegration-models"
           class="inline-flex items-center gap-2 bg-[#4A6741] text-white px-6 py-3 rounded-lg text-[0.9rem] font-bold no-underline transition-colors duration-300 hover:bg-[#385130]"
-        >Xem tất cả mô hình <i class="fa-solid fa-arrow-right text-[0.78rem]" aria-hidden="true"></i></nuxt-link>
+        >{{ t('view_all_models') || 'Xem tất cả mô hình' }} <i class="fa-solid fa-arrow-right text-[0.78rem]" aria-hidden="true"></i></nuxt-link>
       </div>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+
+const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
-// maxItems mặc định 6 (lưới 3 cột × 2 hàng) thay vì 4 như carousel cũ — lưới
-// nhìn cân đối hơn với số chẵn. maxItems vẫn cấu hình được ở Page Builder.
 const maxItems = computed(() => Number(d.value.maxItems) || 6)
 const categorySlug = computed(() => d.value.categorySlug || '')
 
-const { data } = await useAsyncData(
-  `block-reintegration-${props.block.id}-${categorySlug.value}`,
+const { data, refresh } = await useAsyncData(
+  `block-reintegration-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
   () => $fetch('/api/public/articles', {
     params: {
       type: 'reintegration',
       limit: maxItems.value,
+      lang: currentLang.value,
       ...(categorySlug.value ? { categorySlug: categorySlug.value } : {}),
     },
   }),
-  // `lazy: true`: server vẫn chờ dữ liệu cho HTML đầu + SEO, client không chặn
-  // chuyển trang — khung xương (nhánh empty / default) vẽ ngay, dữ liệu về sau
-  // thì tự cập nhật.
   { lazy: true, default: () => ({ articles: [] }) }
 )
+
+watch(currentLang, () => {
+  void refresh()
+})
+
+onMounted(() => {
+  if (currentLang.value !== 'vi') {
+    void refresh()
+  }
+})
 
 const list = computed(() =>
   (data.value?.articles || []).map(a => ({
