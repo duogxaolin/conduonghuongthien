@@ -68,6 +68,7 @@ const DRIZZLE_TO_SQL: Record<string, string> = {
 function normaliseSqlType(raw: string): string {
   const base = raw.trim().toLowerCase().replace(/\(.*$/, '').split(/\s+/)[0]
   if (base === 'tinytext' || base === 'mediumtext' || base === 'longtext') return 'text'
+  if (base === 'boolean') return 'tinyint'
   return base
 }
 
