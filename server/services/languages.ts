@@ -8,7 +8,7 @@
 import { createError } from 'h3'
 import { eq, and, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
-import { languages, langTranslations, activityLogs } from '../db/schema'
+import { languages, langTranslations, articleTranslations, pageBlocks, activityLogs } from '../db/schema'
 import type { ActorLike } from '../utils/permissions'
 
 // ─── Language CRUD ───────────────────────────────────────────────────────
@@ -147,8 +147,23 @@ export async function deleteLanguage(actor: ActorLike, code: string, db: Databas
       throw createError({ statusCode: 400, statusMessage: 'Không thể xoá ngôn ngữ mặc định.' })
     }
 
-    // Cascade: delete all translations for this language
+    // Cascade: delete all translations for this language across all pillars
     await tx.delete(langTranslations).where(eq(langTranslations.langCode, code))
+    await tx.delete(articleTranslations).where(eq(articleTranslations.langCode, code))
+
+    // Clean up translations[code] from page_blocks
+    const blocks = await tx.select().from(pageBlocks)
+    for (const b of blocks) {
+      const rawData = (b.data as Record<string, unknown>) || {}
+      const translations = (rawData.translations as Record<string, unknown>) || {}
+      if (translations[code]) {
+        delete translations[code]
+        await tx.update(pageBlocks).set({
+          data: { ...rawData, translations },
+        }).where(eq(pageBlocks.id, b.id))
+      }
+    }
+
     await tx.delete(languages).where(eq(languages.id, lang.id))
     await tx.insert(activityLogs).values({
       userId: actor.id ?? null,
