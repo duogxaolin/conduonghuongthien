@@ -160,6 +160,27 @@ export async function deleteLanguage(actor: ActorLike, code: string, db: Databas
   })
 }
 
+export async function reorderLanguages(
+  actor: ActorLike,
+  orders: Array<{ code: string; displayOrder: number }>,
+  db: Database = getDb(),
+) {
+  return db.transaction(async (tx) => {
+    for (const o of orders) {
+      await tx
+        .update(languages)
+        .set({ displayOrder: o.displayOrder })
+        .where(eq(languages.code, o.code))
+    }
+    await tx.insert(activityLogs).values({
+      userId: actor.id ?? null,
+      action: 'update',
+      resource: 'settings',
+      meta: { operation: 'reorder_languages', count: orders.length },
+    })
+  })
+}
+
 // ─── UI Translations ─────────────────────────────────────────────────────
 
 export async function listTranslations(
