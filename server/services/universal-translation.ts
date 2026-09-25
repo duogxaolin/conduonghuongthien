@@ -58,6 +58,165 @@ export function cancelUniversalAutoTranslate() {
   }
   return { ok: false, message: 'Không có tác vụ nào đang chạy.' }
 }
+function extractJsonFromAi(text: string): Record<string, unknown> | null {
+  if (!text) return null
+  const cleaned = text
+    .replace(/```json\s*/gi, '')
+    .replace(/```\s*$/g, '')
+    .trim()
+  try {
+    return JSON.parse(cleaned)
+  } catch {}
+
+  const match = cleaned.match(/\{[\s\S]*\}/)
+  if (match) {
+    try {
+      return JSON.parse(match[0])
+    } catch {}
+    try {
+      const noTrailing = match[0].replace(/,\s*([\}\]])/g, '$1')
+      return JSON.parse(noTrailing)
+    } catch {}
+  }
+  return null
+}
+
+const BLOCK_STRING_KEYS = [
+  'title', 'subtitle', 'heading', 'text', 'description',
+  'asideTitle', 'asideSubtitle', 'asideNote', 'asideLabel',
+  'badge', 'btnText', 'buttonText', 'quote', 'cite',
+  'infoTitle', 'noteTitle', 'noteText', 'highlightLabel', 'highlightValue'
+]
+
+async function translateSinglePageBlock(
+  b: { id: number; blockType: string; data: unknown },
+  lang: { code: string; name: string },
+  actorId: number | null,
+  db: Database,
+): Promise<boolean> {
+  const rawData = (b.data as Record<string, unknown>) || {}
+  const translations = (rawData.translations as Record<string, Record<string, unknown>> | undefined) || {}
+
+  const fieldsToTranslate: Record<string, string> = {}
+  for (const k of BLOCK_STRING_KEYS) {
+    if (typeof rawData[k] === 'string' && (rawData[k] as string).trim()) {
+      fieldsToTranslate[k] = (rawData[k] as string).trim()
+    }
+  }
+
+  // Handle stats array
+  if (Array.isArray(rawData.stats)) {
+    rawData.stats.forEach((st: { label?: unknown }, idx: number) => {
+      if (typeof st?.label === 'string' && st.label.trim()) {
+        fieldsToTranslate['__stat_label_' + idx] = st.label.trim()
+      }
+    })
+  }
+
+  // Handle infoRows array
+  if (Array.isArray(rawData.infoRows)) {
+    rawData.infoRows.forEach((row: { label?: unknown; value?: unknown }, idx: number) => {
+      if (typeof row?.label === 'string' && row.label.trim()) {
+        fieldsToTranslate['__inforow_label_' + idx] = row.label.trim()
+      }
+      if (typeof row?.value === 'string' && row.value.trim() && !row.value.includes('@') && !/^[0-9.+ -]+$/.test(row.value.trim())) {
+        fieldsToTranslate['__inforow_value_' + idx] = row.value.trim()
+      }
+    })
+  }
+
+  if (Object.keys(fieldsToTranslate).length === 0 && !rawData.bodyHtml) {
+    return true
+  }
+
+  const resultTranslated: Record<string, unknown> = {}
+
+  // 1. Translate string & structured fields via JSON
+  if (Object.keys(fieldsToTranslate).length > 0) {
+    const prompt = `You are a professional translator. Translate the following UI/CMS texts from Vietnamese into ${lang.name}.
+Return ONLY a valid JSON object with the exact same keys and translated text values (no markdown formatting, no codeblock, no explanation):
+${JSON.stringify(fieldsToTranslate)}`
+
+    let parsed: Record<string, unknown> | null = null
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await callAi('translation_article', { prompt, userId: actorId })
+      if (res.ok && res.text) {
+        parsed = extractJsonFromAi(res.text)
+        if (parsed && typeof parsed === 'object') break
+      }
+    }
+
+    if (parsed) {
+      // Reconstruct regular keys
+      for (const k of BLOCK_STRING_KEYS) {
+        if (parsed[k] !== undefined) {
+          resultTranslated[k] = parsed[k]
+        }
+      }
+
+      // Reconstruct stats array
+      if (Array.isArray(rawData.stats)) {
+        resultTranslated.stats = rawData.stats.map((st: { label?: unknown; value?: unknown }, idx: number) => ({
+          ...st,
+          label: parsed!['__stat_label_' + idx] ? String(parsed!['__stat_label_' + idx]) : st.label,
+        }))
+      }
+
+      // Reconstruct infoRows array
+      if (Array.isArray(rawData.infoRows)) {
+        resultTranslated.infoRows = rawData.infoRows.map((row: { label?: unknown; value?: unknown }, idx: number) => ({
+          ...row,
+          label: parsed!['__inforow_label_' + idx] ? String(parsed!['__inforow_label_' + idx]) : row.label,
+          value: parsed!['__inforow_value_' + idx] ? String(parsed!['__inforow_value_' + idx]) : row.value,
+        }))
+      }
+    } else {
+      logWarn({ event: 'universal_translate.block_json_parse_failed', blockId: b.id, langCode: lang.code })
+    }
+  }
+
+  // 2. Translate bodyHtml separately as clean HTML (avoiding JSON escape issues)
+  if (typeof rawData.bodyHtml === 'string' && (rawData.bodyHtml as string).trim()) {
+    const htmlPrompt = `You are a professional translator. Translate the following HTML content from Vietnamese into ${lang.name}.
+CRITICAL RULES:
+1. Preserve 100% of HTML tags (<h3>, <p>, <strong>, <em>, <a>, <img>, <ul>, <ol>, <li>...) exactly as they are.
+2. Only translate the human-readable text inside the tags.
+3. Return ONLY the translated HTML content without markdown formatting:
+
+${rawData.bodyHtml}`
+
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const res = await callAi('translation_article', { prompt: htmlPrompt, userId: actorId })
+      if (res.ok && res.text) {
+        const cleanHtml = res.text
+          .replace(/```html\s*/gi, '')
+          .replace(/```\s*$/g, '')
+          .trim()
+        if (cleanHtml) {
+          resultTranslated.bodyHtml = cleanHtml
+          break
+        }
+      }
+    }
+  }
+
+  if (Object.keys(resultTranslated).length > 0) {
+    const updatedData = {
+      ...rawData,
+      translations: {
+        ...translations,
+        [lang.code]: {
+          ...(translations[lang.code] || {}),
+          ...resultTranslated,
+        },
+      },
+    }
+    await db.update(pageBlocks).set({ data: updatedData }).where(eq(pageBlocks.id, b.id))
+    return true
+  }
+
+  return false
+}
 
 export function getUniversalTaskState(): UniversalTaskState {
   return { ...universalTaskState }
@@ -80,7 +239,10 @@ export async function scanUniversalCoverage(db: Database = getDb()): Promise<Uni
   const allBlocks = await db.select({ id: pageBlocks.id, data: pageBlocks.data, blockType: pageBlocks.blockType }).from(pageBlocks).where(eq(pageBlocks.isVisible, true))
   const translatableBlocks = allBlocks.filter((b) => {
     const d = (b.data as Record<string, unknown>) || {}
-    return Boolean(d.text || d.title || d.heading || d.subtitle || d.bodyHtml || d.description)
+    return Boolean(
+      d.text || d.title || d.heading || d.subtitle || d.bodyHtml || d.description ||
+      d.quote || d.cite || (Array.isArray(d.stats) && d.stats.length > 0) || (Array.isArray(d.infoRows) && d.infoRows.length > 0)
+    )
   })
   const totalBlocks = translatableBlocks.length
 
@@ -307,40 +469,14 @@ export async function startUniversalAutoTranslate(
               continue // Already translated
             }
 
-            // Extract translatable text fields
-            const fieldsToTranslate: Record<string, string> = {}
-            for (const key of ['title', 'subtitle', 'heading', 'text', 'description', 'asideTitle', 'asideSubtitle', 'asideNote', 'asideLabel', 'badge', 'btnText', 'buttonText']) {
-              if (typeof rawData[key] === 'string' && (rawData[key] as string).trim()) {
-                fieldsToTranslate[key] = (rawData[key] as string).trim()
-              }
-            }
-
-            if (Object.keys(fieldsToTranslate).length === 0 && !rawData.bodyHtml) continue
-
             universalTaskState.currentItem = `Dịch khối ${b.blockType} (#${b.id}) sang ${lang.name}...`
 
-            const prompt = `Translate the following CMS page block into ${lang.name}.
-Keep HTML structure intact if present.
-Return ONLY valid JSON with the same keys and translated text values:
-${JSON.stringify({ ...fieldsToTranslate, ...(rawData.bodyHtml ? { bodyHtml: rawData.bodyHtml } : {}) })}`
-
-            const res = await callAi('translation_article', { prompt, userId: actor.id ?? null })
-            if (res.ok && res.text) {
-              try {
-                const raw = res.text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '').trim()
-                const parsed = JSON.parse(raw) as Record<string, unknown>
-                if (parsed && typeof parsed === 'object') {
-                  const updatedData = {
-                    ...rawData,
-                    translations: {
-                      ...translations,
-                      [lang.code]: parsed,
-                    },
-                  }
-                  await db.update(pageBlocks).set({ data: updatedData }).where(eq(pageBlocks.id, b.id))
-                }
-              } catch {}
+            try {
+              await translateSinglePageBlock(b, lang, actor.id ?? null, db)
+            } catch (err) {
+              logWarn({ event: 'universal_translate.block_failed', blockId: b.id, langCode: lang.code, error: String(err) })
             }
+
             universalTaskState.processedItems++
             universalTaskState.percent = Math.min(99, Math.round((universalTaskState.processedItems / universalTaskState.totalItems) * 100))
           }
