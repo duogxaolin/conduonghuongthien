@@ -2,6 +2,7 @@
 import type { WindowWithTinyMce } from '~/types/tinymce'
 import type { AdminCategoryRow } from '~/types/admin-api'
 import type { MediaItem } from '~/types/media'
+import TinyMceEditor from '~/components/admin/TinyMceEditor.vue'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -453,8 +454,7 @@ onMounted(async () => {
   // the loading placeholder has been replaced by the real editor grid.
   const scriptReady = loadTinyMCEScript()
   await fetchCategories(form.type)
-  await fetchArticle()
-  await fetchArticleTranslations()
+  await Promise.all([fetchArticle(), fetchArticleTranslations(), fetchDbLanguages()])
   await scriptReady
   await nextTick()
   initTinyMCE()
@@ -480,7 +480,20 @@ const editingTranslation = ref<{ lang: string; title: string; excerpt: string; c
 const showEditTranslationDrawer = ref(false)
 let translationPollTimer: number | undefined
 
-const TRANSLATION_LANGS = [
+const LANG_TO_FLAG: Record<string, string> = {
+  en: '🇬🇧', zh: '🇨🇳', fr: '🇫🇷', ru: '🇷🇺', ja: '🇯🇵',
+  ko: '🇰🇷', lo: '🇱🇦', km: '🇰🇭', th: '🇹🇭', de: '🇩🇪',
+  es: '🇪🇸', it: '🇮🇹', us: '🇺🇸', my: '🇲🇲', id: '🇮🇩',
+  pt: '🇵🇹', ar: '🇸🇦',
+}
+
+function getFlagEmoji(code: string): string {
+  if (!code) return '🌐'
+  const c = code.toLowerCase()
+  return LANG_TO_FLAG[c] || '🌐'
+}
+
+const DEFAULT_TRANSLATION_LANGS = [
   { code: 'en', label: 'Tiếng Anh', flag: '🇬🇧' },
   { code: 'zh', label: 'Tiếng Trung', flag: '🇨🇳' },
   { code: 'fr', label: 'Tiếng Pháp', flag: '🇫🇷' },
@@ -490,6 +503,49 @@ const TRANSLATION_LANGS = [
   { code: 'lo', label: 'Tiếng Lào', flag: '🇱🇦' },
   { code: 'km', label: 'Tiếng Campuchia', flag: '🇰🇭' },
 ]
+
+const activeDbLanguages = ref<Array<{ code: string; label: string; flag: string }>>([])
+
+const availableLanguages = computed(() => {
+  if (activeDbLanguages.value.length > 0) return activeDbLanguages.value
+  return DEFAULT_TRANSLATION_LANGS
+})
+
+async function fetchDbLanguages() {
+  try {
+    const res = await $fetch<{ ok: boolean; items: Array<{ code: string; name: string; nativeName: string; isActive: boolean; isDefault: boolean }> }>('/api/admin/languages')
+    if (res.ok && Array.isArray(res.items)) {
+      const nonDefault = res.items.filter(l => l.isActive && l.code !== 'vi')
+      if (nonDefault.length > 0) {
+        activeDbLanguages.value = nonDefault.map(l => ({
+          code: l.code,
+          label: l.name,
+          flag: getFlagEmoji(l.code),
+        }))
+      }
+    }
+  } catch {
+    // Non-critical: fallback to DEFAULT_TRANSLATION_LANGS
+  }
+}
+
+const failedTranslations = computed(() =>
+  articleTranslations.value.filter(t => t.status === 'failed')
+)
+
+const retryingAllFailed = ref(false)
+async function retryAllFailedTranslations() {
+  if (failedTranslations.value.length === 0) return
+  retryingAllFailed.value = true
+  try {
+    for (const t of failedTranslations.value) {
+      await triggerTranslation(t.langCode)
+    }
+    toast.success(`Đã kích hoạt thử lại cho ${failedTranslations.value.length} bản dịch lỗi.`)
+  } finally {
+    retryingAllFailed.value = false
+  }
+}
 
 async function fetchArticleTranslations() {
   if (isNew.value || !articleId.value) return
@@ -515,7 +571,7 @@ async function triggerTranslation(langCode: string) {
       method: 'POST',
       body: { langCode },
     })
-    toast.success(`Đã bắt đầu dịch sang ${TRANSLATION_LANGS.find(l => l.code === langCode)?.label ?? langCode}.`)
+    toast.success(`Đã bắt đầu dịch sang ${availableLanguages.value.find(l => l.code === langCode)?.label ?? langCode}.`)
     await fetchArticleTranslations()
     startTranslationPolling()
   } catch (err: unknown) {
@@ -600,7 +656,7 @@ async function toggleTranslationStatus(row: typeof articleTranslations.value[0])
 }
 
 async function deleteTranslation(row: typeof articleTranslations.value[0]) {
-  if (!confirm(`Xoá bản dịch ${TRANSLATION_LANGS.find(l => l.code === row.langCode)?.label ?? row.langCode}?`)) return
+  if (!confirm(`Xoá bản dịch ${availableLanguages.value.find(l => l.code === row.langCode)?.label ?? row.langCode}?`)) return
   try {
     await $fetch(
       `/api/admin/articles/${articleId.value}/translations/${row.langCode}`,
@@ -652,14 +708,14 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
               <button
                 type="button"
                 class="text-[0.68rem] text-[#2c6e33] hover:underline bg-transparent border-0 cursor-pointer p-0"
-                @click="autoTranslateLangs = autoTranslateLangs.length === TRANSLATION_LANGS.length ? [] : TRANSLATION_LANGS.map(l => l.code)"
+                @click="autoTranslateLangs = autoTranslateLangs.length === availableLanguages.length ? [] : availableLanguages.map(l => l.code)"
               >
-                {{ autoTranslateLangs.length === TRANSLATION_LANGS.length ? 'Bỏ chọn' : 'Tất cả' }}
+                {{ autoTranslateLangs.length === availableLanguages.length ? 'Bỏ chọn' : 'Tất cả' }}
               </button>
             </div>
             <div class="flex flex-col gap-1.5 max-h-48 overflow-y-auto">
               <label
-                v-for="l in TRANSLATION_LANGS"
+                v-for="l in availableLanguages"
                 :key="l.code"
                 class="flex items-center gap-2 px-2 py-1 rounded-md hover:bg-[#f0f7f1] cursor-pointer text-xs font-semibold text-[#122815]"
               >
@@ -687,9 +743,8 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
           @click="scrollToTranslations"
         >
           <i class="fa-solid fa-language text-sm"></i>
-          <span>Bản dịch ({{ articleTranslations.filter(t => t.status === 'published').length }}/{{ TRANSLATION_LANGS.length }})</span>
+          <span>Bản dịch ({{ articleTranslations.filter(t => t.status === 'published').length }}/{{ availableLanguages.length }})</span>
         </button>
-
         <nuxt-link
           to="/admin/content/articles"
           class="inline-flex items-center bg-white border border-[#c8d6c9] text-[#667768] no-underline px-4 py-2.5 rounded-lg font-semibold hover:bg-[#f8faf8] transition-colors"
@@ -1043,13 +1098,26 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
             </span>
             <h3 class="text-base font-extrabold text-[#122815] m-0">Quản lý Bản dịch Đa ngôn ngữ</h3>
             <span class="px-2 py-0.5 rounded-full bg-[#e4f2e5] text-[#1e4620] text-xs font-bold">
-              {{ articleTranslations.filter(t => t.status === 'published').length }}/{{ TRANSLATION_LANGS.length }} đã xuất bản
+              {{ articleTranslations.filter(t => t.status === 'published').length }}/{{ availableLanguages.length }} đã xuất bản
             </span>
           </div>
           <p class="text-xs text-[#667768] m-0 mt-1">Quản lý, dịch tự động bằng AI và xuất bản các phiên bản ngôn ngữ quốc tế cho bài viết này.</p>
         </div>
 
         <div class="flex items-center gap-2 flex-wrap">
+          <!-- Nút thử lại các bản dịch lỗi nếu có -->
+          <button
+            v-if="failedTranslations.length > 0"
+            type="button"
+            class="px-3.5 py-2 rounded-lg bg-[#d12420] hover:bg-[#b71c1c] text-white text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 border-none"
+            :disabled="retryingAllFailed"
+            title="Kích hoạt thử lại cho tất cả các bản dịch đang bị lỗi"
+            @click="retryAllFailedTranslations"
+          >
+            <i class="fa-solid fa-rotate-right text-xs" :class="retryingAllFailed ? 'animate-spin' : ''"></i>
+            <span>{{ retryingAllFailed ? 'Đang thử lại...' : `🔄 Thử lại lỗi (${failedTranslations.length})` }}</span>
+          </button>
+
           <!-- Nút dịch toàn bộ còn thiếu -->
           <button
             type="button"
@@ -1077,7 +1145,7 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
       <!-- Modern Language Cards Grid (4 columns) -->
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
         <div
-          v-for="lang in TRANSLATION_LANGS"
+          v-for="lang in availableLanguages"
           :key="lang.code"
           class="rounded-xl border p-4 flex flex-col justify-between gap-3 transition-all relative"
           :class="[
@@ -1163,15 +1231,17 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
           <!-- Card Action Buttons -->
           <div class="flex items-center justify-between pt-2 border-t border-[#eef2ee] gap-1">
             <!-- Untranslated: Direct AI Translate Button -->
+            <!-- Untranslated or Failed: Direct AI Translate Button -->
             <template v-if="!getTranslationRow(lang.code) || getTranslationRow(lang.code)?.status === 'failed'">
               <button
                 type="button"
-                class="w-full py-1.5 px-3 rounded-lg bg-[#2c6e33] hover:bg-[#1e4620] text-white text-xs font-bold border-none cursor-pointer flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                class="w-full py-1.5 px-3 rounded-lg text-white text-xs font-bold border-none cursor-pointer flex items-center justify-center gap-1.5 transition-colors disabled:opacity-50"
+                :class="getTranslationRow(lang.code)?.status === 'failed' ? 'bg-[#d12420] hover:bg-[#b71c1c]' : 'bg-[#2c6e33] hover:bg-[#1e4620]'"
                 :disabled="translatingLang === lang.code"
                 @click="triggerTranslation(lang.code)"
               >
-                <i class="fa-solid fa-wand-magic-sparkles text-[0.7rem]" :class="translatingLang === lang.code ? 'animate-spin' : ''"></i>
-                <span>{{ translatingLang === lang.code ? 'Đang dịch...' : '⚡ Dịch bằng AI' }}</span>
+                <i class="fa-solid text-[0.7rem]" :class="translatingLang === lang.code ? 'fa-spinner animate-spin' : (getTranslationRow(lang.code)?.status === 'failed' ? 'fa-rotate-right' : 'fa-wand-magic-sparkles')"></i>
+                <span>{{ translatingLang === lang.code ? 'Đang dịch...' : (getTranslationRow(lang.code)?.status === 'failed' ? '🔄 Thử lại bản dịch' : '⚡ Dịch bằng AI') }}</span>
               </button>
             </template>
 
@@ -1209,12 +1279,12 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
         </div>
       </div>
 
-      <!-- Edit Translation Drawer (Rich side-by-side editing) -->
+      <!-- Edit Translation Drawer (Rich side-by-side editing with TinyMCE) -->
       <div v-if="showEditTranslationDrawer && editingTranslation" class="bg-[#f8faf7] rounded-xl border border-[#c8d6c9] p-4 sm:p-5 flex flex-col gap-3 shadow-md">
         <div class="flex items-center justify-between border-b border-[#e2ece3] pb-2.5">
           <div class="flex items-center gap-2">
-            <span class="text-xl">{{ TRANSLATION_LANGS.find(l => l.code === editingTranslation.lang)?.flag }}</span>
-            <span class="text-sm font-extrabold text-[#122815]">Chỉnh sửa bản dịch: {{ TRANSLATION_LANGS.find(l => l.code === editingTranslation.lang)?.label }}</span>
+            <span class="text-xl">{{ availableLanguages.find(l => l.code === editingTranslation.lang)?.flag }}</span>
+            <span class="text-sm font-extrabold text-[#122815]">Chỉnh sửa bản dịch: {{ availableLanguages.find(l => l.code === editingTranslation.lang)?.label }}</span>
           </div>
           <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer font-bold" @click="showEditTranslationDrawer = false; editingTranslation = null">✕ Đóng</button>
         </div>
@@ -1236,10 +1306,18 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
         </div>
 
         <div class="flex flex-col gap-1.5">
-          <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Nội dung dịch (HTML)</label>
-          <textarea v-model="editingTranslation.content" rows="10" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] resize-y font-mono bg-white"></textarea>
+          <div class="flex items-center justify-between">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Nội dung dịch (Trình soạn thảo TinyMCE)</label>
+            <span class="text-xs text-[#667768]">Hỗ trợ đầy đủ định dạng rich-text, bảng biểu, ảnh</span>
+          </div>
+          <div class="bg-white rounded-lg border border-[#c8d6c9] overflow-hidden">
+            <TinyMceEditor
+              v-model="editingTranslation.content"
+              :height="450"
+              placeholder="Nhập hoặc chỉnh sửa nội dung bản dịch..."
+            />
+          </div>
         </div>
-
         <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#e2ece3]">
           <button type="button" class="px-3.5 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-50 cursor-pointer" @click="showEditTranslationDrawer = false; editingTranslation = null">Hủy</button>
           <button type="button" class="px-5 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-1.5" @click="saveTranslationEdit">
