@@ -260,7 +260,7 @@ function scrollToTranslations() {
   })
 }
 
-async function translateAllForThisArticle() {
+async function translateAllForThisArticle(targetStatus: 'ai_draft' | 'published' = 'ai_draft') {
   if (isNew.value || !articleId.value) return
   translatingAll.value = true
 
@@ -292,7 +292,7 @@ async function translateAllForThisArticle() {
   try {
     const res = await $fetch<{ ok: boolean; queued: number; message: string }>(
       `/api/admin/articles/${articleId.value}/translations/translate-all`,
-      { method: 'POST' },
+      { method: 'POST', body: { targetStatus } },
     )
     toast.success(res.message || 'Đã xếp lịch dịch tất cả ngôn ngữ còn thiếu!')
     await fetchArticleTranslations()
@@ -588,7 +588,7 @@ async function fetchArticleTranslations() {
   }
 }
 
-async function triggerTranslation(langCode: string) {
+async function triggerTranslation(langCode: string, targetStatus: 'ai_draft' | 'published' = 'ai_draft') {
   if (isNew.value || !articleId.value) {
     toast.error('Vui lòng lưu bài viết trước khi dịch.')
     return
@@ -621,7 +621,7 @@ async function triggerTranslation(langCode: string) {
   try {
     await $fetch(`/api/admin/articles/${articleId.value}/translations/translate`, {
       method: 'POST',
-      body: { langCode },
+      body: { langCode, targetStatus },
     })
     toast.success(`Đã bắt đầu dịch sang ${availableLanguages.value.find((l) => l.code === langCode)?.label ?? langCode}.`)
     await fetchArticleTranslations()
@@ -1148,6 +1148,10 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
             </span>
           </div>
           <p class="text-xs text-[#667768] m-0 mt-1">Quản lý, dịch tự động bằng AI và xuất bản các phiên bản ngôn ngữ quốc tế cho bài viết này.</p>
+          <div class="mt-2 p-2.5 rounded-lg bg-[#fff8e1] border border-[#ffe082] text-xs text-[#735100] flex items-center gap-2">
+            <i class="fa-solid fa-triangle-exclamation text-sm shrink-0 text-[#b78103]"></i>
+            <span><strong>Lưu ý kiểm duyệt:</strong> Bài viết dịch AI xong cần rà soát lại trước khi bấm "Xuất bản" ra trang công khai (trừ khi đã chọn Xuất bản luôn).</span>
+          </div>
         </div>
 
         <div class="flex items-center gap-2 flex-wrap">
@@ -1164,18 +1168,29 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
             <span>{{ retryingAllFailed ? 'Đang thử lại...' : `🔄 Thử lại lỗi (${failedTranslations.length})` }}</span>
           </button>
 
-          <!-- Nút dịch toàn bộ còn thiếu -->
+          <!-- Nút dịch toàn bộ còn thiếu (Lưu bản nháp AI để rà soát) -->
           <button
             type="button"
             class="px-3.5 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 border-none"
             :disabled="translatingAll"
-            title="Kích hoạt dịch AI cho tất cả các ngôn ngữ chưa có bản dịch"
-            @click="translateAllForThisArticle"
+            title="Dịch AI tất cả ngôn ngữ còn thiếu và lưu ở trạng thái Bản nháp AI để rà soát"
+            @click="translateAllForThisArticle('ai_draft')"
           >
             <i class="fa-solid fa-wand-magic-sparkles text-xs" :class="translatingAll ? 'animate-spin' : ''"></i>
-            <span>{{ translatingAll ? 'Đang kích hoạt...' : '⚡ Dịch toàn bộ còn thiếu' }}</span>
+            <span>{{ translatingAll ? 'Đang kích hoạt...' : '⚡ Dịch & Lưu nháp' }}</span>
           </button>
 
+          <!-- Nút dịch và xuất bản luôn -->
+          <button
+            type="button"
+            class="px-3.5 py-2 rounded-lg bg-[#2c6e33] hover:bg-[#1e4620] text-white text-xs font-bold cursor-pointer transition-all flex items-center gap-1.5 shadow-xs disabled:opacity-50 border-none"
+            :disabled="translatingAll"
+            title="Dịch AI và tự động xuất bản ngay ra trang công khai khi hoàn tất"
+            @click="translateAllForThisArticle('published')"
+          >
+            <i class="fa-solid fa-paper-plane text-xs"></i>
+            <span>🚀 Dịch & Xuất bản luôn</span>
+          </button>
           <button
             type="button"
             class="px-3 py-2 rounded-lg border border-[#c8d6c9] bg-white text-[#1e4620] hover:bg-[#f0f7f1] text-xs font-semibold cursor-pointer flex items-center gap-1.5 transition-colors"

@@ -17,6 +17,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Mã ngôn ngữ bắt buộc.' })
   }
 
-  await triggerTranslation(adminUser, id, langCode)
+  const targetStatus = body?.targetStatus === 'published' ? 'published' : 'ai_draft'
+  await triggerTranslation(adminUser, id, langCode, targetStatus)
   return { ok: true, message: 'Đã bắt đầu dịch. Vui lòng đợi.' }
 })
