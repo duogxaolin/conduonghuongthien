@@ -730,52 +730,105 @@ export async function bulkTriggerTranslation(
 
   return { ok: true, count: articleIds.length }
 }
+export interface BulkTranslationTaskState {
+  active: boolean
+  total: number
+  processed: number
+  currentArticleId: number | null
+  currentArticleTitle: string | null
+  langCode: string
+  langName: string
+  startedAt: string | null
+  completedAt: string | null
+}
+
+const bulkTaskState: BulkTranslationTaskState = {
+  active: false,
+  total: 0,
+  processed: 0,
+  currentArticleId: null,
+  currentArticleTitle: null,
+  langCode: '',
+  langName: '',
+  startedAt: null,
+  completedAt: null,
+}
+
+export function getBulkTranslationTaskState(): BulkTranslationTaskState {
+  return { ...bulkTaskState }
+}
 
 async function runBulkTranslation(articleIds: number[], langCode: string, langName: string) {
-  for (const articleId of articleIds) {
-    try {
-      const db = getDb()
-      // Skip if already translating or has a completed translation
-      const [existing] = await db
-        .select()
-        .from(articleTranslations)
-        .where(
-          and(
-            eq(articleTranslations.articleId, articleId),
-            eq(articleTranslations.langCode, langCode),
-          ),
-        )
-        .limit(1)
+  bulkTaskState.active = true
+  bulkTaskState.total = articleIds.length
+  bulkTaskState.processed = 0
+  bulkTaskState.langCode = langCode
+  bulkTaskState.langName = langName
+  bulkTaskState.startedAt = new Date().toISOString()
+  bulkTaskState.completedAt = null
 
-      if (existing && (existing.status === 'translating' || existing.status === 'published')) {
-        continue
-      }
+  try {
+    for (let idx = 0; idx < articleIds.length; idx++) {
+      const articleId = articleIds[idx]!
+      try {
+        const db = getDb()
+        const [article] = await db
+          .select({ title: articles.title })
+          .from(articles)
+          .where(eq(articles.id, articleId))
+          .limit(1)
 
-      // Upsert to translating
-      if (existing) {
-        await db
-          .update(articleTranslations)
-          .set({
+        bulkTaskState.currentArticleId = articleId
+        bulkTaskState.currentArticleTitle = article?.title || null
+        bulkTaskState.processed = idx + 1
+
+        // Skip if already translating or has a completed translation
+        const [existing] = await db
+          .select()
+          .from(articleTranslations)
+          .where(
+            and(
+              eq(articleTranslations.articleId, articleId),
+              eq(articleTranslations.langCode, langCode),
+            ),
+          )
+          .limit(1)
+
+        if (existing && (existing.status === 'translating' || existing.status === 'published')) {
+          continue
+        }
+
+        // Upsert to translating
+        if (existing) {
+          await db
+            .update(articleTranslations)
+            .set({
+              status: 'translating',
+              progress: 0,
+              currentChunk: 0,
+              totalChunks: 0,
+              errorMessage: null,
+              completedAt: null,
+            })
+            .where(eq(articleTranslations.id, existing.id))
+        } else {
+          await db.insert(articleTranslations).values({
+            articleId,
+            langCode,
             status: 'translating',
-            progress: 0,
-            currentChunk: 0,
-            totalChunks: 0,
-            errorMessage: null,
-            completedAt: null,
+            translatedBy: 'ai',
           })
-          .where(eq(articleTranslations.id, existing.id))
-      } else {
-        await db.insert(articleTranslations).values({
-          articleId,
-          langCode,
-          status: 'translating',
-          translatedBy: 'ai',
-        })
-      }
+        }
 
-      await runTranslationWorker(articleId, langCode, langName)
-    } catch (err) {
-      logWarn({ event: 'translation.bulk_item_failed', articleId, langCode, error: String(err) })
+        await runTranslationWorker(articleId, langCode, langName)
+      } catch (err) {
+        logWarn({ event: 'translation.bulk_item_failed', articleId, langCode, error: String(err) })
+      }
     }
+  } finally {
+    bulkTaskState.active = false
+    bulkTaskState.completedAt = new Date().toISOString()
+    bulkTaskState.currentArticleId = null
+    bulkTaskState.currentArticleTitle = null
   }
 }
