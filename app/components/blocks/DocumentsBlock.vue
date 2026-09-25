@@ -112,7 +112,7 @@
           :to="d.btnLink || '/documents'"
           class="inline-flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-[#4A6741] text-white text-xs font-extrabold no-underline shadow-sm"
         >
-          <span>{{ d.btnText || 'Tra cứu thư viện văn bản' }}</span>
+          <span>{{ (currentLang !== 'vi' ? t('view_all_docs') : '') || d.btnText || 'Tra cứu thư viện văn bản' }}</span>
           <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
         </nuxt-link>
       </div>
@@ -121,9 +121,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
+import { useI18n } from '~/composables/useI18n'
 
+const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
@@ -131,18 +133,28 @@ const formatDate = (dateStr: string | null | undefined) => formatDateVN(dateStr)
 const maxItems = computed(() => Number(d.value.maxItems) || 3)
 const categorySlug = computed(() => d.value.categorySlug || '')
 
-const { data, pending } = await useAsyncData(
-  `block-documents-${props.block.id}-${categorySlug.value}`,
+const { data, pending, refresh } = await useAsyncData(
+  `block-documents-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
   () => $fetch('/api/public/articles', {
     params: {
       type: 'document',
       limit: maxItems.value,
+      lang: currentLang.value,
       ...(categorySlug.value ? { categorySlug: categorySlug.value } : {}),
     },
   }),
   { lazy: true, default: () => ({ articles: [] }) }
 )
 
+watch(currentLang, () => {
+  void refresh()
+})
+
+onMounted(() => {
+  if (currentLang.value !== 'vi') {
+    void refresh()
+  }
+})
 const docs = computed(() =>
   ((data.value as { articles?: any[] })?.articles || []).map(a => ({
     id: a.id,

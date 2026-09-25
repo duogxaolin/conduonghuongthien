@@ -76,8 +76,11 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
+import { useI18n } from '~/composables/useI18n'
+
+const { currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
@@ -86,20 +89,28 @@ const formatDate = (dateStr: string | null | undefined) => formatDateVN(dateStr)
 const maxItems = computed(() => Number(d.value.maxItems) || 5)
 const categorySlug = computed(() => d.value.categorySlug || '')
 
-const { data } = await useAsyncData(
-  `block-news-${props.block.id}`,
+const { data, refresh } = await useAsyncData(
+  `block-news-${props.block.id}-${currentLang.value}`,
   () => $fetch('/api/public/articles', {
     params: {
       type: 'news',
       limit: maxItems.value,
+      lang: currentLang.value,
       ...(categorySlug.value ? { categorySlug: categorySlug.value } : {}),
     },
   }),
-  // `lazy: true`: server vẫn chờ dữ liệu cho HTML đầu + SEO, nhưng client không
-  // chặn chuyển trang — khung xương (nhánh empty / default) được vẽ ngay, dữ
-  // liệu về sau thì tự cập nhật.
   { lazy: true, default: () => ({ articles: [] }) }
 )
+
+watch(currentLang, () => {
+  void refresh()
+})
+
+onMounted(() => {
+  if (currentLang.value !== 'vi') {
+    void refresh()
+  }
+})
 
 const articles = computed(() => data.value?.articles || [])
 const featured = computed(() => articles.value[0] || null)

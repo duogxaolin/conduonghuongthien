@@ -103,29 +103,33 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+
+const { currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
-
 // 8 mặc định thay vì 4: carousel kiểu cand.vn chỉ hiện ~3.5 slide cùng lúc, cần
 // dư ảnh dự phòng bên phải để autoplay và "kéo sang" có ý nghĩa. maxItems vẫn
 // cấu hình được ở Page Builder.
 const maxItems = computed(() => Number(d.value.maxItems) || 8)
 const categorySlug = computed(() => d.value.categorySlug || '')
 
-const { data } = await useAsyncData(
-  `block-role-models-${props.block.id}-${categorySlug.value}`,
+const { data, refresh } = await useAsyncData(
+  `block-role-models-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
   () => $fetch('/api/public/articles', {
     params: {
       type: 'role_model',
       limit: maxItems.value,
+      lang: currentLang.value,
       ...(categorySlug.value ? { categorySlug: categorySlug.value } : {}),
     },
   }),
-  // `lazy: true`: server vẫn chờ dữ liệu cho HTML đầu + SEO, client không chặn
-  // chuyển trang — khung xương (nhánh empty / default) vẽ ngay, dữ liệu về sau
-  // thì tự cập nhật.
   { lazy: true, default: () => ({ articles: [] }) }
 )
+
+watch(currentLang, () => {
+  void refresh()
+})
 
 const list = computed(() =>
   (data.value?.articles || []).map(a => ({
@@ -210,6 +214,9 @@ watch(list, (newList) => {
 }, { immediate: true })
 
 onMounted(() => {
+  if (currentLang.value !== 'vi') {
+    void refresh()
+  }
   nextTick(() => {
     onScroll()
     if (list.value.length) startAutoplay()

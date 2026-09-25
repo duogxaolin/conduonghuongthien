@@ -21,18 +21,30 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+
+const { currentLang } = useI18n()
 
 // `lazy` chỉ bỏ chặn điều hướng phía client — lượt dựng phía máy chủ vẫn chờ dữ
 // liệu, nên HTML đầu tiên và thẻ SEO không đổi (design.md D2). Không có nó thì
 // bấm một liên kết về trang chủ giữ nguyên trang cũ trên màn hình cho tới khi
 // dữ liệu về, trông y hệt bấm hụt.
 const { data, pending, error, refresh } = useAsyncData(
-  'page-home',
-  () => $fetch('/api/public/pages/home'),
+  `page-home-${currentLang.value}`,
+  () => $fetch(`/api/public/pages/home?lang=${currentLang.value}`),
   { lazy: true, default: () => ({ ok: false, page: null, blocks: [] }) }
 )
 
+watch(currentLang, () => {
+  void refresh()
+})
+
+onMounted(() => {
+  if (currentLang.value !== 'vi') {
+    void refresh()
+  }
+})
 const loadError = computed(() => error.value || null)
 const page = computed(() => data.value?.page || null)
 
