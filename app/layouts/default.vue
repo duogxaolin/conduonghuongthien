@@ -21,7 +21,11 @@
     ></div>
 
     <!-- Top Bar -->
-    <div class="bg-[#385130] text-white py-2 text-[0.82rem] border-b border-white/10 relative z-[101]">
+    <!-- Top Bar: z-index cao hơn Header (z-[10001]) khi menu mở để dropdown không bị Header che khuất -->
+    <div
+      class="bg-[#385130] text-white py-2 text-[0.82rem] border-b border-white/10 relative transition-[z-index]"
+      :class="isLangMenuOpen ? 'z-[10005]' : 'z-[101]'"
+    >
       <div class="container flex justify-between items-center">
         <div class="flex items-center gap-4">
           <span><i class="fa-solid fa-phone" aria-hidden="true"></i> {{ t('hotline_lbl') }}: {{ siteHotline }}</span>
@@ -45,7 +49,7 @@
             <!-- Dropdown Popover -->
             <div
               v-if="isLangMenuOpen"
-              class="absolute right-0 top-full mt-1.5 w-44 rounded-xl bg-white text-[#1E251C] shadow-xl border border-[#c8d6c9] py-1.5 z-[102] flex flex-col gap-0.5 animate-fadeIn"
+              class="absolute right-0 top-full mt-1.5 w-44 rounded-xl bg-white text-[#1E251C] shadow-2xl border border-[#c8d6c9] py-1.5 z-[10006] flex flex-col gap-0.5 animate-fadeIn"
               role="menu"
             >
               <div class="px-3 py-1 text-[0.65rem] font-bold text-[#667768] uppercase tracking-wider border-b border-[#e2ece3] mb-1">
@@ -1041,6 +1045,7 @@ const applyStickyState = () => {
   if (next !== isSticky.value) isSticky.value = next
 }
 const handleScroll = () => {
+  if (isLangMenuOpen.value) isLangMenuOpen.value = false
   if (scrollTicking) return
   scrollTicking = true
   requestAnimationFrame(applyStickyState)
