@@ -14,7 +14,42 @@ import type { ActorLike } from '../utils/permissions'
 // ─── Language CRUD ───────────────────────────────────────────────────────
 
 export async function listLanguages(db: Database = getDb()) {
-  return db.select().from(languages).orderBy(languages.displayOrder, languages.id)
+  const langRows = await db.select().from(languages).orderBy(languages.displayOrder, languages.id)
+
+  const counts = await db
+    .select({
+      langCode: langTranslations.langCode,
+      totalCount: sql<number>`count(*)`,
+      translatedCount: sql<number>`sum(case when \`value\` is not null and trim(\`value\`) != '' then 1 else 0 end)`,
+      aiCount: sql<number>`sum(case when \`is_ai_translated\` = true then 1 else 0 end)`,
+    })
+    .from(langTranslations)
+    .groupBy(langTranslations.langCode)
+
+  const countMap = new Map(counts.map(c => [c.langCode, {
+    total: Number(c.totalCount) || 0,
+    translated: Number(c.translatedCount) || 0,
+    ai: Number(c.aiCount) || 0,
+  }]))
+
+  const viTotal = countMap.get('vi')?.total || 0
+
+  return langRows.map(l => {
+    const c = countMap.get(l.code) || { total: 0, translated: 0, ai: 0 }
+    const totalRef = l.code === 'vi' ? c.total : Math.max(viTotal, c.total)
+    const missing = Math.max(0, totalRef - c.translated)
+    const percent = totalRef > 0 ? Math.round((c.translated / totalRef) * 100) : 0
+    return {
+      ...l,
+      stats: {
+        totalKeys: totalRef,
+        translatedKeys: c.translated,
+        missingKeys: missing,
+        aiKeys: c.ai,
+        percent,
+      },
+    }
+  })
 }
 
 export async function createLanguage(
@@ -264,4 +299,39 @@ export async function seedDefaultLanguagesAndTranslations(db: Database = getDb()
   }
 
   return { languagesSeeded, translationsSeeded }
+}
+
+export async function syncLanguageKeys(db: Database = getDb()) {
+  const viKeys = await db
+    .select({ group: langTranslations.group, key: langTranslations.key, value: langTranslations.value })
+    .from(langTranslations)
+    .where(eq(langTranslations.langCode, 'vi'))
+
+  const allLangs = await db.select().from(languages)
+  const nonViLangs = allLangs.filter(l => l.code !== 'vi')
+
+  let synced = 0
+  for (const lang of nonViLangs) {
+    const existing = await db
+      .select({ group: langTranslations.group, key: langTranslations.key })
+      .from(langTranslations)
+      .where(eq(langTranslations.langCode, lang.code))
+
+    const existingSet = new Set(existing.map(e => `${e.group}::${e.key}`))
+
+    for (const vi of viKeys) {
+      if (!existingSet.has(`${vi.group}::${vi.key}`)) {
+        await db.insert(langTranslations).values({
+          langCode: lang.code,
+          group: vi.group,
+          key: vi.key,
+          value: null,
+          isAiTranslated: false,
+        })
+        synced++
+      }
+    }
+  }
+
+  return { synced, totalViKeys: viKeys.length }
 }
