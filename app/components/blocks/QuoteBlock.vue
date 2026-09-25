@@ -23,9 +23,23 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+
+const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
-const quote = computed(() => d.value.quote || '')
-const cite = computed(() => d.value.cite || '')
+
+const quote = computed(() => {
+  const q = d.value.quote || ''
+  if (currentLang.value === 'vi') return q
+  return d.value['quote_' + currentLang.value] || t('quote_content') || q
+})
+
+const cite = computed(() => {
+  const c = d.value.cite || ''
+  if (currentLang.value === 'vi') return c
+  return d.value['cite_' + currentLang.value] || t('quote_cite') || c
+})
+
 const bgImage = computed(() => d.value.bgImage || '/assets/hero_banner.jpg')
 </script>

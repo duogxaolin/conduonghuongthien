@@ -6,25 +6,25 @@
         <!-- Left: contact info panel (only when configured) -->
         <div v-if="hasInfo" class="flex flex-col gap-8">
           <div v-if="d.infoTitle || infoRows.length">
-            <h3 class="text-[1.4rem] font-bold text-[#4A6741] mb-5 border-b-2 border-[#E2E8DF] pb-2">{{ d.infoTitle || 'Thông tin liên hệ' }}</h3>
+            <h3 class="text-[1.4rem] font-bold text-[#4A6741] mb-5 border-b-2 border-[#E2E8DF] pb-2">{{ (currentLang !== 'vi' ? t('contact_info') : '') || d.infoTitle || 'Thông tin liên hệ' }}</h3>
             <p v-for="(row, i) in infoRows" :key="i" class="text-[0.95rem] text-[#4A5545] mb-3 leading-relaxed">
               <strong v-if="row.label" class="text-[#1E251C]">{{ row.label }}</strong>
               <template v-if="row.label"> </template>{{ row.value }}
             </p>
           </div>
           <div v-if="d.noteTitle || d.noteText">
-            <h3 v-if="d.noteTitle" class="text-[1.4rem] font-bold text-[#4A6741] mb-5 border-b-2 border-[#E2E8DF] pb-2">{{ d.noteTitle }}</h3>
-            <p v-if="d.noteText" class="text-[0.95rem] text-[#4A5545] leading-relaxed text-justify">{{ d.noteText }}</p>
+            <h3 v-if="d.noteTitle" class="text-[1.4rem] font-bold text-[#4A6741] mb-5 border-b-2 border-[#E2E8DF] pb-2">{{ (currentLang !== 'vi' ? t('support_mechanism_title') : '') || d.noteTitle }}</h3>
+            <p v-if="d.noteText" class="text-[0.95rem] text-[#4A5545] leading-relaxed text-justify">{{ (currentLang !== 'vi' ? t('support_mechanism_desc') : '') || d.noteText }}</p>
           </div>
         </div>
 
         <!-- Right: the form -->
         <div>
           <div v-if="!hasInfo" class="text-center mb-8">
-            <h2 class="text-[2rem] md:text-[1.5rem] font-extrabold text-[#1E251C]">{{ d.title || 'Đăng ký nhận trợ giúp' }}</h2>
+            <h2 class="text-[2rem] md:text-[1.5rem] font-extrabold text-[#1E251C]">{{ (currentLang !== 'vi' ? t('register_help') : '') || d.title || 'Đăng ký nhận trợ giúp' }}</h2>
           </div>
           <form @submit.prevent="submitForm" class="bg-white p-10 sm:p-6 rounded-lg shadow-md border border-[#E2E8DF]">
-            <h3 v-if="hasInfo" class="text-[1.3rem] font-bold text-[#4A6741] mb-6">{{ d.title || 'Đăng ký nhận trợ giúp' }}</h3>
+            <h3 v-if="hasInfo" class="text-[1.3rem] font-bold text-[#4A6741] mb-6">{{ (currentLang !== 'vi' ? t('register_help') : '') || d.title || 'Đăng ký nhận trợ giúp' }}</h3>
 
             <!-- Dynamic fields -->
             <div v-for="field in renderFields" :key="field.id" class="mb-5">
@@ -64,7 +64,7 @@
             </div>
 
             <button type="submit" class="btn btn-primary w-full text-lg" :disabled="submitStatus === 'loading'">
-              {{ submitStatus === 'loading' ? 'Đang gửi...' : 'Gửi đăng ký' }}
+              {{ submitStatus === 'loading' ? (t('form_sending') || 'Đang gửi...') : (t('form_submit') || 'Gửi đăng ký') }}
             </button>
             <div
               v-if="submitMessage"
@@ -85,7 +85,9 @@
 <script setup lang="ts">
 import { reactive, ref, computed } from 'vue'
 import { errorMessage } from '~/utils/errorMessage'
+import { useI18n } from '~/composables/useI18n'
 
+const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
@@ -111,9 +113,22 @@ interface RenderField {
 
 // The info panel renders only when the block opts in (showInfo) and has content —
 // keeps old single-column blocks unchanged, enables the two-column contact layout.
-const infoRows = computed<InfoRow[]>(() => Array.isArray(d.value.infoRows)
-  ? (d.value.infoRows as InfoRow[]).filter((r) => r && (r.label || r.value))
-  : [])
+const infoRows = computed<InfoRow[]>(() => {
+  const rows = Array.isArray(d.value.infoRows)
+    ? (d.value.infoRows as InfoRow[]).filter((r) => r && (r.label || r.value))
+    : []
+  if (currentLang.value === 'vi') return rows
+  const labelMap: Record<string, string> = {
+    'Đơn vị chủ quản:': t('footer_agency') || 'Supervisory Authority:',
+    'Địa chỉ:': t('address') || 'Address:',
+    'Hotline:': t('phone') || 'Hotline:',
+    'Email:': t('email') || 'Email:',
+  }
+  return rows.map((r) => ({
+    label: labelMap[r.label?.trim() || ''] || r.label,
+    value: r.value,
+  }))
+})
 const hasInfo = computed(() => !!d.value.showInfo && (!!d.value.infoTitle || infoRows.value.length > 0 || !!d.value.noteTitle || !!d.value.noteText))
 
 // Legacy fallback: blocks created before the field builder have no data.fields.
@@ -137,20 +152,39 @@ function toFieldType(value: unknown): FieldType {
   return (VALID_TYPES as readonly string[]).includes(String(value)) ? value as FieldType : 'text'
 }
 
+const FIELD_LABEL_MAP: Record<string, string> = {
+  'Họ và tên': 'form_name',
+  'Số điện thoại': 'form_phone',
+  'Tỉnh / Thành phố': 'form_city',
+  'Nội dung cần hỗ trợ': 'form_message',
+}
+
 // Normalize configured fields; assign stable ids for rendering/validation.
 const renderFields = computed<RenderField[]>(() => {
   const configured = Array.isArray(d.value.fields) ? d.value.fields as Partial<RenderField>[] : []
   const raw = configured.filter((f) => f && f.label)
   const source: Partial<RenderField>[] = raw.length ? raw : LEGACY_FIELDS
-  return source.map((f, i) => ({
-    id: String(f.id || `f_${i}`),
-    label: String(f.label || ''),
-    type: toFieldType(f.type),
-    required: !!f.required,
-    placeholder: f.placeholder || '',
-    map: f.map || 'none',
-    optionsText: f.optionsText || '',
-  }))
+  return source.map((f, i) => {
+    const rawLabel = String(f.label || '')
+    let localizedLabel = rawLabel
+    if (currentLang.value !== 'vi') {
+      const key = FIELD_LABEL_MAP[rawLabel.trim()]
+      if (key) {
+        localizedLabel = t(key) || rawLabel
+      } else {
+        localizedLabel = t(rawLabel) || rawLabel
+      }
+    }
+    return {
+      id: String(f.id || `f_${i}`),
+      label: localizedLabel,
+      type: toFieldType(f.type),
+      required: !!f.required,
+      placeholder: f.placeholder || '',
+      map: f.map || 'none',
+      optionsText: f.optionsText || '',
+    }
+  })
 })
 
 const selectOptions = (field: RenderField) => String(field.optionsText || '').split('\n').map((s) => s.trim()).filter(Boolean)
