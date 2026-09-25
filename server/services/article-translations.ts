@@ -5,9 +5,9 @@
  * Uses `articleResource(type)` + `update` for RBAC — no new resource.
  */
 import { createError } from 'h3'
-import { eq, and } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
-import { articleTranslations, articles, activityLogs } from '../db/schema'
+import { articleTranslations, articles, activityLogs, languages } from '../db/schema'
 import { type ActorLike } from '../utils/permissions'
 import { articleResource } from './articles'
 import { chunkHtml } from '../utils/html-chunker'
@@ -141,6 +141,39 @@ export async function triggerTranslation(
   }, 0)
 
   return { ok: true }
+}
+
+export async function triggerTranslateAllLanguages(
+  actor: ActorLike,
+  articleId: number,
+  db: Database = getDb(),
+) {
+  const [article] = await db.select().from(articles).where(eq(articles.id, articleId)).limit(1)
+  if (!article) {
+    throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
+  }
+
+  const activeLangs = await db
+    .select({ code: languages.code, name: languages.name })
+    .from(languages)
+    .where(and(eq(languages.isActive, true), sql`${languages.code} != 'vi'`))
+
+  const existing = await db
+    .select({ langCode: articleTranslations.langCode, status: articleTranslations.status })
+    .from(articleTranslations)
+    .where(eq(articleTranslations.articleId, articleId))
+
+  const existingMap = new Map(existing.map((e) => [e.langCode, e.status]))
+  const toTranslate = activeLangs.filter((l) => {
+    const status = existingMap.get(l.code)
+    return !status || status === 'failed'
+  })
+
+  for (const l of toTranslate) {
+    await triggerTranslation(actor, articleId, l.code, db)
+  }
+
+  return { queued: toTranslate.length, languages: toTranslate.map((l) => l.code) }
 }
 
 // ─── Translation worker ──────────────────────────────────────────────────

@@ -254,6 +254,163 @@ const triggerBulkTranslate = async (langCode: string) => {
   }
 }
 
+// ─── Quick View Translation Modal ───────────────────────────────────────
+const showQuickViewModal = ref(false)
+const quickViewLoading = ref(false)
+const quickViewData = ref<{
+  articleId: number
+  articleTitle: string
+  langCode: string
+  title: string
+  excerpt: string | null
+  content: string | null
+  status: string
+  translatedBy: string
+} | null>(null)
+
+async function openQuickView(article: AdminArticleRow, langCode: string) {
+  quickViewData.value = {
+    articleId: Number(article.id),
+    articleTitle: article.title,
+    langCode,
+    title: 'Đang tải...',
+    excerpt: null,
+    content: null,
+    status: 'loading',
+    translatedBy: 'ai',
+  }
+  showQuickViewModal.value = true
+  quickViewLoading.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; translation: typeof quickViewData.value }>(
+      `/api/admin/articles/${article.id}/translations/${langCode}`,
+    )
+    if (res.ok && res.translation) {
+      quickViewData.value = {
+        articleId: Number(article.id),
+        articleTitle: article.title,
+        langCode: res.translation.langCode,
+        title: res.translation.title,
+        excerpt: res.translation.excerpt,
+        content: res.translation.content,
+        status: res.translation.status,
+        translatedBy: res.translation.translatedBy,
+      }
+    }
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể tải bản dịch.'))
+    showQuickViewModal.value = false
+  } finally {
+    quickViewLoading.value = false
+  }
+}
+
+async function toggleQuickViewStatus() {
+  if (!quickViewData.value) return
+  const current = quickViewData.value.status
+  const next = current === 'published' ? 'reviewed' : 'published'
+  try {
+    await $fetch(
+      `/api/admin/articles/${quickViewData.value.articleId}/translations/${quickViewData.value.langCode}/status`,
+      { method: 'PATCH', body: { status: next } },
+    )
+    quickViewData.value.status = next
+    toast.success(next === 'published' ? 'Đã xuất bản bản dịch!' : 'Đã gỡ xuất bản.')
+    await fetchArticles(pagination.value.page)
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể đổi trạng thái.'))
+  }
+}
+
+// ─── Row-level Translation Action ────────────────────────────────────────
+const rowTranslateMenuId = ref<number | null>(null)
+function toggleRowTranslateMenu(id: number) {
+  rowTranslateMenuId.value = rowTranslateMenuId.value === id ? null : id
+}
+
+function hasTranslation(rawLangs: string | undefined, langCode: string) {
+  return parseTranslations(rawLangs).some(t => t.lang === langCode)
+}
+
+async function translateSingleArticle(articleId: number, langCode: string) {
+  rowTranslateMenuId.value = null
+  const langObj = BULK_LANGS.find(l => l.code === langCode)
+  const langLabel = langObj ? `${langObj.flag} ${langObj.label}` : langCode
+  try {
+    await $fetch(`/api/admin/articles/${articleId}/translations/translate`, {
+      method: 'POST',
+      body: { langCode },
+    })
+    toast.success(`Đã bắt đầu dịch bài viết sang ${langLabel} trong nền!`)
+    await fetchArticles(pagination.value.page)
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể kích hoạt dịch.'))
+  }
+}
+
+// ─── Global Translation Modal (Dịch toàn bộ bài viết) ───────────────────
+const showGlobalTranslateModal = ref(false)
+const globalStatsLoading = ref(false)
+const globalStats = ref<{
+  totalArticles: number
+  languages: Array<{ code: string; name: string; nativeName: string; translated: number; missing: number }>
+} | null>(null)
+const selectedGlobalTargetLang = ref('en')
+const globalTranslating = ref(false)
+
+async function openGlobalTranslateModal() {
+  showGlobalTranslateModal.value = true
+  globalStatsLoading.value = true
+  try {
+    const res = await $fetch<{ ok: boolean } & typeof globalStats.value>('/api/admin/articles/translation-stats')
+    if (res.ok) {
+      globalStats.value = res
+      if (res.languages.length > 0) {
+        selectedGlobalTargetLang.value = res.languages[0]!.code
+      }
+    }
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể tải thống kê bản dịch.'))
+  } finally {
+    globalStatsLoading.value = false
+  }
+}
+
+async function startGlobalTranslation() {
+  const langCode = selectedGlobalTargetLang.value
+  const langObj = globalStats.value?.languages.find(l => l.code === langCode)
+  const langLabel = langObj ? `${langObj.name} (${langObj.code})` : langCode
+
+  globalTranslating.value = true
+  try {
+    const listRes = await $fetch<{ ok: boolean; items: AdminArticleRow[] }>('/api/admin/articles', {
+      params: { translation: `missing_${langCode}`, perPage: 100, status: 'published' },
+    })
+    const targetArticles = listRes.items || []
+    if (targetArticles.length === 0) {
+      toast.info(`Tất cả bài viết đã có bản dịch ${langLabel}!`)
+      globalTranslating.value = false
+      return
+    }
+
+    const ids = targetArticles.map(a => Number(a.id))
+
+    await $fetch('/api/admin/articles/bulk-translate', {
+      method: 'POST',
+      body: { ids, langCode },
+    })
+
+    toast.success(`Đã xếp lịch dịch ${ids.length} bài viết sang ${langLabel} thành công! Hệ thống đang xử lý trong nền.`)
+    showGlobalTranslateModal.value = false
+    await fetchArticles(pagination.value.page)
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể bắt đầu dịch toàn bộ.'))
+  } finally {
+    globalTranslating.value = false
+  }
+}
+
+
 /** Bật/tắt tại chỗ. Lỗi thì trả công tắc về giá trị đã lưu: một công tắc hiện
  *  "đang mở" trong khi máy chủ vẫn đóng là lời nói dối về trạng thái thật, và
  *  cán bộ sẽ đi tìm xem vì sao trang công khai không có khung bình luận. */
@@ -456,12 +613,22 @@ onMounted(async () => {
         <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Quản lý Bài viết & Nội dung</h1>
         <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Danh sách bài viết tin tức, tấm gương tiêu biểu, mô hình kinh tế và văn bản</p>
       </div>
-      <nuxt-link
-        to="/admin/content/articles/new"
-        class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg no-underline transition-colors shrink-0"
-      >
-        <i class="fa-solid fa-pen-to-square"></i> Viết Bài Mới
-      </nuxt-link>
+      <div class="flex items-center gap-2 flex-wrap">
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 bg-white border border-[#2c6e33] text-[#2c6e33] hover:bg-[#f0f7f1] font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors shrink-0 text-sm shadow-2xs"
+          @click="openGlobalTranslateModal"
+        >
+          <i class="fa-solid fa-globe"></i>
+          <span>Dịch toàn bộ bài viết</span>
+        </button>
+        <nuxt-link
+          to="/admin/content/articles/new"
+          class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg no-underline transition-colors shrink-0"
+        >
+          <i class="fa-solid fa-pen-to-square"></i> Viết Bài Mới
+        </nuxt-link>
+      </div>
     </div>
 
     <!-- Filters -->
@@ -772,7 +939,7 @@ onMounted(async () => {
                         ? 'bg-[#e4f2e5] text-[#1e4620] border border-[#c8dcc9]'
                         : 'bg-[#fff8e1] text-[#b78103] border border-[#ffe082]'"
                       :title="`${t.lang.toUpperCase()}: ${t.status === 'published' ? 'Đã xuất bản' : 'Bản nháp AI'}`"
-                      @click="navigateTo(`/admin/content/articles/${a.id}`)"
+                      @click="openQuickView(a, t.lang)"
                     >
                       {{ t.lang }}
                     </span>
@@ -791,11 +958,44 @@ onMounted(async () => {
               <td class="px-4 py-3 border-b border-[#eef2ee] text-[#667768] text-[0.82rem] whitespace-nowrap">{{ formatDateTimeVN(a.createdAt) }}</td>
               <!-- Actions -->
               <td class="px-4 py-3 border-b border-[#eef2ee]">
-                <div class="flex items-center gap-2">
+                <div class="flex items-center gap-2 flex-wrap">
                   <nuxt-link
                     :to="`/admin/content/articles/${a.id}`"
                     class="inline-flex items-center gap-1 text-[#2c6e33] no-underline font-bold text-[0.82rem] hover:underline"
                   ><i class="fa-solid fa-pen-to-square"></i> Sửa</nuxt-link>
+
+                  <!-- Nút dịch riêng cho bài này -->
+                  <div class="relative inline-block">
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 bg-none border-0 text-[#1e4620] cursor-pointer font-bold text-[0.82rem] hover:underline p-0"
+                      title="Dịch bài viết này sang ngôn ngữ khác"
+                      @click="toggleRowTranslateMenu(Number(a.id))"
+                    >
+                      <i class="fa-solid fa-language text-xs"></i> Dịch
+                    </button>
+                    <!-- Dropdown chọn ngôn ngữ để dịch bài này -->
+                    <div
+                      v-if="rowTranslateMenuId === Number(a.id)"
+                      class="absolute right-0 top-full mt-1 w-44 rounded-xl bg-white border border-[#c8d6c9] shadow-xl p-1.5 z-30 flex flex-col gap-0.5"
+                    >
+                      <div class="px-2 py-1 text-[0.65rem] font-bold text-[#667768] uppercase">Dịch sang:</div>
+                      <button
+                        v-for="lang in BULK_LANGS"
+                        :key="lang.code"
+                        type="button"
+                        class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] transition-colors border-none bg-transparent cursor-pointer flex items-center justify-between"
+                        @click="translateSingleArticle(Number(a.id), lang.code)"
+                      >
+                        <span class="flex items-center gap-1.5">
+                          <span>{{ lang.flag }}</span>
+                          <span>{{ lang.label }}</span>
+                        </span>
+                        <span v-if="hasTranslation(a.translatedLangs, lang.code)" class="text-[0.6rem] text-[#2c6e33] font-bold">Đã có</span>
+                      </button>
+                    </div>
+                  </div>
+
                   <button
                     class="inline-flex items-center gap-1 bg-none border-0 text-[#d12420] cursor-pointer font-bold text-[0.82rem] hover:underline"
                     @click="deleteArticle(a)"
@@ -994,6 +1194,187 @@ onMounted(async () => {
               </div>
             </div>
           </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 1: Xem nhanh bản dịch -->
+    <div
+      v-if="showQuickViewModal && quickViewData"
+      class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      @click.self="showQuickViewModal = false"
+    >
+      <div class="w-full max-w-3xl rounded-xl border border-[#e2ece3] bg-white shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
+        <!-- Header -->
+        <div class="flex items-center justify-between gap-3 border-b border-[#eef2ee] px-5 py-4 bg-[#f8faf8]">
+          <div class="flex items-center gap-2">
+            <span class="text-xl leading-none">{{ BULK_LANGS.find(l => l.code === quickViewData.langCode)?.flag }}</span>
+            <div>
+              <h2 class="m-0 text-base font-extrabold text-[#122815]">
+                Bản dịch {{ BULK_LANGS.find(l => l.code === quickViewData.langCode)?.label || quickViewData.langCode }}
+              </h2>
+              <p class="m-0 text-xs text-[#667768]">Bài viết gốc: {{ quickViewData.articleTitle }}</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-2">
+            <span
+              class="px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider"
+              :class="quickViewData.status === 'published' ? 'bg-[#e4f2e5] text-[#1e4620]' : 'bg-[#fff8e1] text-[#b78103]'"
+            >
+              {{ quickViewData.status === 'published' ? 'Đã xuất bản' : 'Bản nháp AI' }}
+            </span>
+            <button
+              type="button"
+              class="rounded-lg border-0 bg-none p-1.5 text-[#667768] hover:text-[#122815] cursor-pointer"
+              @click="showQuickViewModal = false"
+            ><i class="fa-solid fa-xmark text-sm"></i></button>
+          </div>
+        </div>
+
+        <!-- Body -->
+        <div class="px-6 py-4 overflow-y-auto flex-1 flex flex-col gap-4">
+          <div v-if="quickViewLoading" class="py-12 text-center text-xs text-[#667768] flex items-center justify-center gap-2">
+            <i class="fa-solid fa-circle-notch fa-spin text-sm text-[#2c6e33]"></i> Đang tải bản dịch...
+          </div>
+
+          <template v-else>
+            <!-- Title -->
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-bold text-[#667768] uppercase tracking-wide">Tiêu đề dịch:</span>
+              <h3 class="m-0 text-base font-bold text-[#1e4620]">{{ quickViewData.title }}</h3>
+            </div>
+
+            <!-- Excerpt -->
+            <div v-if="quickViewData.excerpt" class="flex flex-col gap-1 bg-[#fcfdfc] p-3 rounded-lg border border-[#eef2ee]">
+              <span class="text-xs font-bold text-[#667768] uppercase tracking-wide">Tóm tắt:</span>
+              <p class="m-0 text-xs leading-relaxed text-[#4a5545]">{{ quickViewData.excerpt }}</p>
+            </div>
+
+            <!-- Content HTML -->
+            <div class="flex flex-col gap-1">
+              <span class="text-xs font-bold text-[#667768] uppercase tracking-wide">Nội dung chi tiết (HTML):</span>
+              <div class="p-4 rounded-lg border border-[#e2ece3] bg-[#fafcfa] text-xs leading-relaxed text-[#1f2937] max-h-80 overflow-y-auto font-sans" v-html="quickViewData.content || '(Chưa có nội dung)'"></div>
+            </div>
+          </template>
+        </div>
+
+        <!-- Footer Actions -->
+        <div class="flex items-center justify-between border-t border-[#eef2ee] px-6 py-3.5 bg-[#f8faf8]">
+          <nuxt-link
+            :to="`/admin/content/articles/${quickViewData.articleId}`"
+            class="text-xs font-bold text-[#2c6e33] hover:underline flex items-center gap-1.5 no-underline"
+          >
+            <i class="fa-solid fa-pen-to-square"></i> Mở trong trang soạn thảo
+          </nuxt-link>
+
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="px-4 py-2 rounded-lg text-xs font-bold cursor-pointer border transition-colors"
+              :class="quickViewData.status === 'published'
+                ? 'border-[#c8d6c9] bg-white text-[#d12420] hover:bg-[#fff5f4]'
+                : 'border-[#2c6e33] bg-[#e4f2e5] text-[#1e4620] hover:bg-[#d4ebd6]'"
+              @click="toggleQuickViewStatus"
+            >
+              {{ quickViewData.status === 'published' ? 'Gỡ xuất bản' : 'Xuất bản ngay' }}
+            </button>
+            <button
+              type="button"
+              class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-100 cursor-pointer"
+              @click="showQuickViewModal = false"
+            >Đóng</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal 2: Dịch toàn bộ bài viết chưa có bản dịch -->
+    <div
+      v-if="showGlobalTranslateModal"
+      class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center"
+      role="dialog"
+      aria-modal="true"
+      @click.self="showGlobalTranslateModal = false"
+    >
+      <div class="w-full max-w-xl rounded-xl border border-[#e2ece3] bg-white shadow-xl overflow-hidden flex flex-col">
+        <!-- Header -->
+        <div class="flex items-center justify-between gap-3 border-b border-[#eef2ee] px-5 py-4 bg-[#f8faf8]">
+          <div class="flex items-center gap-2">
+            <span class="w-8 h-8 rounded-lg bg-[#1e4620] text-white flex items-center justify-center text-sm shadow-xs">
+              <i class="fa-solid fa-globe"></i>
+            </span>
+            <div>
+              <h2 class="m-0 text-base font-extrabold text-[#122815]">Dịch toàn bộ bài viết bằng AI</h2>
+              <p class="m-0 text-xs text-[#667768]">Tự động quét và xếp lịch dịch cho các bài viết đã xuất bản chưa có bản dịch</p>
+            </div>
+          </div>
+          <button
+            type="button"
+            class="rounded-lg border-0 bg-none p-1.5 text-[#667768] hover:text-[#122815] cursor-pointer"
+            @click="showGlobalTranslateModal = false"
+          ><i class="fa-solid fa-xmark text-sm"></i></button>
+        </div>
+
+        <!-- Body -->
+        <div class="px-6 py-5 flex flex-col gap-4">
+          <div v-if="globalStatsLoading" class="py-8 text-center text-xs text-[#667768] flex items-center justify-center gap-2">
+            <i class="fa-solid fa-circle-notch fa-spin text-sm text-[#2c6e33]"></i> Đang thống kê bài viết...
+          </div>
+
+          <template v-else-if="globalStats">
+            <div class="p-3 bg-[#f0f7f1] border border-[#c8dcc9] rounded-lg text-xs text-[#1e4620]">
+              Tổng số bài viết đã xuất bản trên cổng: <strong class="text-sm font-extrabold">{{ globalStats.totalArticles }}</strong> bài viết.
+            </div>
+
+            <div class="flex flex-col gap-2">
+              <label class="text-xs font-bold text-[#122815]">Chọn ngôn ngữ muốn dịch toàn bộ:</label>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label
+                  v-for="l in globalStats.languages"
+                  :key="l.code"
+                  class="flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all"
+                  :class="selectedGlobalTargetLang === l.code ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50'"
+                >
+                  <div class="flex items-center gap-2">
+                    <input type="radio" :value="l.code" v-model="selectedGlobalTargetLang" class="accent-[#2c6e33]" />
+                    <span class="text-base leading-none">{{ BULK_LANGS.find(b => b.code === l.code)?.flag }}</span>
+                    <span class="text-xs font-bold text-[#122815]">{{ l.name }}</span>
+                  </div>
+                  <span
+                    class="px-2 py-0.5 rounded-full text-[0.65rem] font-bold"
+                    :class="l.missing === 0 ? 'bg-[#e4f2e5] text-[#1e4620]' : 'bg-[#fff8e1] text-[#b78103]'"
+                  >
+                    {{ l.missing === 0 ? 'Đã đủ' : `Thiếu ${l.missing} bài` }}
+                  </span>
+                </label>
+              </div>
+            </div>
+
+            <p class="m-0 text-xs text-[#667768] bg-[#fcfdfc] p-3 rounded-lg border border-[#eef2ee]">
+              <i class="fa-solid fa-circle-info text-[#2c6e33] mr-1"></i>
+              Hệ thống sẽ xếp lịch dịch các bài chưa có bản dịch sang ngôn ngữ đã chọn. Tiến trình dịch phân đoạn (chunked) xử lý tuần tự trong nền và tự lưu ở trạng thái "Bản nháp AI".
+            </p>
+          </template>
+        </div>
+
+        <!-- Footer -->
+        <div class="flex items-center justify-end gap-2 border-t border-[#eef2ee] px-6 py-4 bg-[#f8faf8]">
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-100 cursor-pointer"
+            @click="showGlobalTranslateModal = false"
+          >Hủy</button>
+          <button
+            type="button"
+            class="px-5 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-2 shadow-xs disabled:opacity-50"
+            :disabled="globalTranslating || !globalStats"
+            @click="startGlobalTranslation"
+          >
+            <i class="fa-solid fa-wand-magic-sparkles text-xs" :class="globalTranslating ? 'animate-spin' : ''"></i>
+            <span>{{ globalTranslating ? 'Đang kích hoạt...' : 'Bắt đầu dịch hàng loạt' }}</span>
+          </button>
         </div>
       </div>
     </div>
