@@ -3,6 +3,12 @@ import { getDb } from '../../../utils/db'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { checkBudget } from '../../../utils/ai-budget'
 import { callAi } from '../../../services/ai-gateway'
+import { escapeHtml } from '../../../utils/escape-html'
+
+function fenced(label: string, value: string, max: number): string {
+  // Delimit untrusted content so a closing fence inside the article cannot be mistaken for instruction.
+  return `[${label}]:\n<<<USER_CONTENT\n${escapeHtml(value.slice(0, max))}\nUSER_CONTENT>>>`
+}
 
 const LANGUAGE_NAMES: Record<string, string> = {
   en: 'Tiếng Anh (English)',
@@ -53,7 +59,7 @@ export default defineEventHandler(async (event) => {
   // If translating individual text:
   if (rawText) {
     const aiResult = await callAi('translation_article', {
-      prompt: `Dịch văn bản sau sang ${targetLangName}. Giữ nguyên ý nghĩa, tính trang trọng, chuẩn xác về thuật ngữ pháp lý và hành chính. Không thêm lời bình luận hay giải thích:\n\n${rawText}`,
+      prompt: `Dịch văn bản sau sang ${targetLangName}. Giữ nguyên ý nghĩa, tính trang trọng, chuẩn xác về thuật ngữ pháp lý và hành chính. Không thêm lời bình luận hay giải thích:\n\n${fenced('VĂN BẢN CẦN DỊCH', rawText, 12000)}`,
       variables: {
         source_text: rawText,
         target_language: targetLangName,
@@ -87,9 +93,9 @@ Yêu cầu bắt buộc:
   "translatedContent": "..."
 }`)
 
-  if (title) promptParts.push(`[TIÊU ĐỀ GỐC]:\n${title}`)
-  if (excerpt) promptParts.push(`[TÓM TẮT GỐC]:\n${excerpt}`)
-  if (content) promptParts.push(`[NỘI DUNG GỐC]:\n${content.slice(0, 12000)}`)
+  if (title) promptParts.push(fenced('TIÊU ĐỀ GỐC', title, 500))
+  if (excerpt) promptParts.push(fenced('TÓM TẮT GỐC', excerpt, 2000))
+  if (content) promptParts.push(fenced('NỘI DUNG GỐC', content, 12000))
 
   const aiResult = await callAi('translation_article', {
     prompt: promptParts.join('\n\n'),

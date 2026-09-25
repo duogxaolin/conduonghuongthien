@@ -1,5 +1,6 @@
 import { listSmallTalk, ChatbotSmallTalkValidationError } from '../../../../services/chatbot-small-talk'
 import { requireChatbotSmallTalkPermission } from '../../../../utils/permissions'
+import { finitePositive, MAX_PAGE } from '../../../../utils/query-number'
 
 export default defineEventHandler(async (event) => {
   requireChatbotSmallTalkPermission(event, 'read')
@@ -8,8 +9,8 @@ export default defineEventHandler(async (event) => {
   const enabled = enabledRaw === undefined || enabledRaw === '' ? undefined : enabledRaw === 'true' || enabledRaw === '1'
   try {
     const result = await listSmallTalk({
-      page: Number(query.page || 1),
-      perPage: Number(query.perPage || 20),
+      page: finitePositive(query.page, 1, MAX_PAGE),
+      perPage: finitePositive(query.perPage, 20, 100),
       search: String(query.search || ''),
       category: String(query.category || ''),
       enabled,

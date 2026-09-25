@@ -8,17 +8,26 @@ import { safeProviderRequest } from './outbound'
 import { answerGroundedChat } from './chat-policy'
 import { getSmallTalkSemanticProvider, readSmallTalkSemanticConfig } from './small-talk-semantic'
 
+let publishedCache: { data: RetrievalEntry[]; at: number } | null = null
+const PUBLISHED_TTL_MS = 60_000
+
 /**
  * Load every published knowledge entry together with its alias/keyword terms.
  *
  * Terms are fetched in ONE query and grouped in memory. The previous version
  * issued a separate query per entry (an N+1), so a bank of 200 published
  * questions cost 201 round-trips on every single chat message.
+ * Result is cached 60s — a chat burst would otherwise full-scan both tables
+ * on every message even though the knowledge bank rarely changes.
  */
 async function publishedEntries(): Promise<RetrievalEntry[]> {
+  if (publishedCache && Date.now() - publishedCache.at < PUBLISHED_TTL_MS) return publishedCache.data
   const db = getDb()
   const entries = await db.select().from(chatbotKnowledge).where(eq(chatbotKnowledge.status, 'published'))
-  if (entries.length === 0) return []
+  if (entries.length === 0) {
+    publishedCache = { data: [], at: Date.now() }
+    return []
+  }
 
   const termRows = await db
     .select({
@@ -38,7 +47,9 @@ async function publishedEntries(): Promise<RetrievalEntry[]> {
     else termsByKnowledge.set(row.knowledgeId, [term])
   }
 
-  return entries.map(entry => ({ ...entry, terms: termsByKnowledge.get(entry.id) || [] }))
+  const data = entries.map(entry => ({ ...entry, terms: termsByKnowledge.get(entry.id) || [] }))
+  publishedCache = { data, at: Date.now() }
+  return data
 }
 
 /**

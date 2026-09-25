@@ -3,6 +3,7 @@ import { getDb } from '../../../utils/db'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { checkBudget } from '../../../utils/ai-budget'
 import { callAi } from '../../../services/ai-gateway'
+import { escapeHtml } from '../../../utils/escape-html'
 
 const VALID_ACTIONS = new Set(['summary', 'suggest_titles', 'polish'])
 
@@ -94,9 +95,11 @@ Trả về đúng định dạng JSON thuần túy (không bọc trong markdown 
 }`
   }
 
-  // 3. Invoke AI Gateway
+  // 3. Invoke AI Gateway — escape user content so a closing fence inside the article cannot be mistaken for instruction.
+  const safeTitle = escapeHtml(title || '(Chưa có tiêu đề)')
+  const safeRaw = escapeHtml(rawContent.slice(0, 10000))
   const aiResult = await callAi('editorial_assistant', {
-    prompt: `${taskPrompt}\n\nTiêu đề bài viết: ${title || '(Chưa có tiêu đề)'}\n\nNội dung bài viết:\n${rawContent.slice(0, 10000)}`,
+    prompt: `${taskPrompt}\n\nTiêu đề bài viết: ${safeTitle}\n\nNội dung bài viết:\n${safeRaw}`,
     variables: {
       article_title: title || '(Chưa có tiêu đề)',
       article_content: content.slice(0, 8000),
