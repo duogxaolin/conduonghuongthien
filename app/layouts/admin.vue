@@ -35,6 +35,17 @@ const toggleMobileMenu = () => { isMobileMenuOpen.value = !isMobileMenuOpen.valu
 
 watch(() => route.fullPath, () => { isMobileMenuOpen.value = false })
 
+// Accordion cho sidebar: nhóm "Hệ thống & Cài đặt" tách thành sub-tab đóng mặc định,
+// bấm vào title mới mở ra các item con — gọn sidebar khi không dùng.
+// Key = index nhóm trong menuGroups. Mặc định toàn bộ đóng.
+const openAccordions = ref<Set<number>>(new Set())
+const toggleAccordion = (idx: number) => {
+  const next = new Set(openAccordions.value)
+  if (next.has(idx)) next.delete(idx)
+  else next.add(idx)
+  openAccordions.value = next
+}
+
 const menuGroups = computed(() => [
   {
     title: 'Tổng quan',
@@ -104,25 +115,41 @@ const menuGroups = computed(() => [
   },
   {
     title: 'Hệ thống & Cài đặt',
-    items: [
-      // Không gắn hasPermission: đây là tài khoản của chính người đang đăng nhập,
-      // ai cũng phải đổi được mật khẩu và xem được lịch sử truy cập của mình.
-      { label: 'Tài khoản của tôi', icon: 'fa-solid fa-user-gear', path: '/admin/profile' },
-      { label: 'Người dùng', icon: 'fa-solid fa-users', path: '/admin/users' },
-      { label: 'Vai trò & Phân quyền', icon: 'fa-solid fa-user-shield', path: '/admin/users/roles' },
-      // Lịch sử của MỌI tài khoản — khác 'Tài khoản của tôi' (chỉ của chính mình),
-      // nên phải có quyền đọc 'users' mới thấy mục này.
-      ...(hasPermission('users', 'read') ? [{ label: 'Lịch sử hoạt động', icon: 'fa-solid fa-clock-rotate-left', path: '/admin/users/activity' }] : []),
-      { label: 'Cài đặt chung', icon: 'fa-solid fa-gear', path: '/admin/settings/general' },
-      ...(hasPermission('settings', 'read') ? [{ label: 'Cấu hình Email (SMTP)', icon: 'fa-solid fa-envelope', path: '/admin/settings/email' }] : []),
-      ...(hasPermission('settings', 'read') ? [{ label: 'Tracking & Marketing', icon: 'fa-solid fa-chart-simple', path: '/admin/settings/tracking' }] : []),
-      ...(hasPermission('settings', 'read') ? [{ label: 'Tự động dọn dữ liệu', icon: 'fa-solid fa-broom', path: '/admin/settings/data-retention' }] : []),
-      ...(hasPermission('settings', 'read') ? [{ label: 'Đăng nhập Google', icon: 'fa-solid fa-right-to-bracket', path: '/admin/settings/google-oauth' }] : []),
-      ...(hasPermission('readers', 'read') ? [{ label: 'Chặn địa chỉ IP', icon: 'fa-solid fa-ban', path: '/admin/settings/ip-bans' }] : []),
-      ...(hasPermission('settings', 'read') ? [{ label: 'Ngôn ngữ & Bản dịch', icon: 'fa-solid fa-language', path: '/admin/languages' }] : []),
-      { label: 'Lưu trữ Media (R2)', icon: 'fa-solid fa-cloud-arrow-up', path: '/admin/settings/media-storage' },
-      ...(hasPermission('settings', 'read') ? [{ label: 'Sao lưu & Khôi phục', icon: 'fa-solid fa-floppy-disk', path: '/admin/settings/backup' }] : []),
-    ]
+    collapsible: true,
+    subGroups: [
+      {
+        title: 'Tài khoản',
+        items: [
+          // Không gắn hasPermission: đây là tài khoản của chính người đang đăng nhập,
+          // ai cũng phải đổi được mật khẩu và xem được lịch sử truy cập của mình.
+          { label: 'Tài khoản của tôi', icon: 'fa-solid fa-user-gear', path: '/admin/profile' },
+        ],
+      },
+      {
+        title: 'Người dùng & Phân quyền',
+        items: [
+          { label: 'Người dùng', icon: 'fa-solid fa-users', path: '/admin/users' },
+          { label: 'Vai trò & Phân quyền', icon: 'fa-solid fa-user-shield', path: '/admin/users/roles' },
+          // Lịch sử của MỌI tài khoản — khác 'Tài khoản của tôi' (chỉ của chính mình),
+          // nên phải có quyền đọc 'users' mới thấy mục này.
+          ...(hasPermission('users', 'read') ? [{ label: 'Lịch sử hoạt động', icon: 'fa-solid fa-clock-rotate-left', path: '/admin/users/activity' }] : []),
+        ],
+      },
+      {
+        title: 'Cài đặt',
+        items: [
+          { label: 'Cài đặt chung', icon: 'fa-solid fa-gear', path: '/admin/settings/general' },
+          ...(hasPermission('settings', 'read') ? [{ label: 'Cấu hình Email (SMTP)', icon: 'fa-solid fa-envelope', path: '/admin/settings/email' }] : []),
+          ...(hasPermission('settings', 'read') ? [{ label: 'Tracking & Marketing', icon: 'fa-solid fa-chart-simple', path: '/admin/settings/tracking' }] : []),
+          ...(hasPermission('settings', 'read') ? [{ label: 'Tự động dọn dữ liệu', icon: 'fa-solid fa-broom', path: '/admin/settings/data-retention' }] : []),
+          ...(hasPermission('settings', 'read') ? [{ label: 'Đăng nhập Google', icon: 'fa-solid fa-right-to-bracket', path: '/admin/settings/google-oauth' }] : []),
+          ...(hasPermission('readers', 'read') ? [{ label: 'Chặn địa chỉ IP', icon: 'fa-solid fa-ban', path: '/admin/settings/ip-bans' }] : []),
+          ...(hasPermission('settings', 'read') ? [{ label: 'Ngôn ngữ & Bản dịch', icon: 'fa-solid fa-language', path: '/admin/languages' }] : []),
+          { label: 'Lưu trữ Media (R2)', icon: 'fa-solid fa-cloud-arrow-up', path: '/admin/settings/media-storage' },
+          ...(hasPermission('settings', 'read') ? [{ label: 'Sao lưu & Khôi phục', icon: 'fa-solid fa-floppy-disk', path: '/admin/settings/backup' }] : []),
+        ],
+      },
+    ],
   },
   {
     title: 'AI & Tự động hóa',
@@ -190,25 +217,67 @@ const menuGroups = computed(() => [
       <!-- Nav -->
       <nav class="flex-1 overflow-y-auto py-4 px-2.5">
         <div v-for="(group, gIdx) in menuGroups" :key="gIdx" class="mb-5">
-          <div
-            v-if="!isSidebarCollapsed"
-            class="text-[0.7rem] uppercase tracking-[0.8px] text-white/40 font-bold px-2.5 pb-2"
-          >
-            {{ group.title }}
-          </div>
-          <ul class="list-none p-0 m-0 flex flex-col gap-0.5">
-            <li v-for="item in group.items" :key="item.path">
-              <nuxt-link
-                :to="item.path"
-                class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/75 no-underline text-[0.88rem] font-medium transition-all duration-200 hover:bg-white/10 hover:text-white"
-                active-class="!bg-[#2c6e33] !text-white !font-bold shadow-[0_4px_12px_rgba(44,110,51,0.4)]"
-                :title="isSidebarCollapsed ? item.label : ''"
-              >
-                <i :class="item.icon" class="text-[1.1rem] shrink-0 w-5 text-center"></i>
-                <span v-if="!isSidebarCollapsed" class="truncate">{{ item.label }}</span>
-              </nuxt-link>
-            </li>
-          </ul>
+          <!-- Nhóm accordion (collapsible): đóng mặc định, bấm title mở ra sub-group -->
+          <template v-if="group.collapsible && group.subGroups">
+            <button
+              v-if="!isSidebarCollapsed"
+              type="button"
+              class="w-full flex items-center justify-between gap-2 text-[0.7rem] uppercase tracking-[0.8px] text-white/40 font-bold px-2.5 pb-2 hover:text-white/70 transition-colors bg-transparent border-0 cursor-pointer"
+              :aria-expanded="openAccordions.has(gIdx)"
+              @click="toggleAccordion(gIdx)"
+            >
+              <span>{{ group.title }}</span>
+              <i
+                class="fa-solid fa-chevron-right text-[0.6rem] transition-transform duration-200"
+                :class="{ 'rotate-90': openAccordions.has(gIdx) }"
+              ></i>
+            </button>
+            <div v-show="isSidebarCollapsed || openAccordions.has(gIdx)">
+              <div v-for="(sub, sIdx) in group.subGroups" :key="sIdx" class="mb-2">
+                <div
+                  v-if="!isSidebarCollapsed"
+                  class="text-[0.68rem] uppercase tracking-[0.6px] text-white/30 font-semibold px-2.5 pt-1.5 pb-1"
+                >
+                  {{ sub.title }}
+                </div>
+                <ul class="list-none p-0 m-0 flex flex-col gap-0.5">
+                  <li v-for="item in sub.items" :key="item.path">
+                    <nuxt-link
+                      :to="item.path"
+                      class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/75 no-underline text-[0.88rem] font-medium transition-all duration-200 hover:bg-white/10 hover:text-white"
+                      active-class="!bg-[#2c6e33] !text-white !font-bold shadow-[0_4px_12px_rgba(44,110,51,0.4)]"
+                      :title="isSidebarCollapsed ? item.label : ''"
+                    >
+                      <i :class="item.icon" class="text-[1.1rem] shrink-0 w-5 text-center"></i>
+                      <span v-if="!isSidebarCollapsed" class="truncate">{{ item.label }}</span>
+                    </nuxt-link>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </template>
+          <!-- Nhóm thường: render phẳng như cũ -->
+          <template v-else>
+            <div
+              v-if="!isSidebarCollapsed"
+              class="text-[0.7rem] uppercase tracking-[0.8px] text-white/40 font-bold px-2.5 pb-2"
+            >
+              {{ group.title }}
+            </div>
+            <ul class="list-none p-0 m-0 flex flex-col gap-0.5">
+              <li v-for="item in group.items" :key="item.path">
+                <nuxt-link
+                  :to="item.path"
+                  class="flex items-center gap-3 px-3 py-2.5 rounded-lg text-white/75 no-underline text-[0.88rem] font-medium transition-all duration-200 hover:bg-white/10 hover:text-white"
+                  active-class="!bg-[#2c6e33] !text-white !font-bold shadow-[0_4px_12px_rgba(44,110,51,0.4)]"
+                  :title="isSidebarCollapsed ? item.label : ''"
+                >
+                  <i :class="item.icon" class="text-[1.1rem] shrink-0 w-5 text-center"></i>
+                  <span v-if="!isSidebarCollapsed" class="truncate">{{ item.label }}</span>
+                </nuxt-link>
+              </li>
+            </ul>
+          </template>
         </div>
       </nav>
 

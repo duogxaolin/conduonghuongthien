@@ -100,7 +100,7 @@ export const DEFAULT_BOTTOM_NAV: BottomNavItem[] = [
   { id: 'news', label: null, labelKey: 'news', icon: 'fa-solid fa-newspaper', type: 'link', url: '/news', featured: false },
   { id: 'chatbot', label: null, labelKey: 'ask_ai', icon: 'fa-solid fa-comment-dots', type: 'chatbot', url: '', featured: true },
   { id: 'documents', label: null, labelKey: 'documents', icon: 'fa-solid fa-file-lines', type: 'link', url: '/documents', featured: false },
-  { id: 'drawer', label: null, labelKey: 'categories', icon: 'fa-solid fa-bars', type: 'drawer', url: '', featured: false },
+  { id: 'media', label: null, labelKey: 'media', icon: 'fa-solid fa-photo-film', type: 'link', url: '/media', featured: false },
 ]
 
 const BOTTOM_NAV_TYPES = new Set(['link', 'chatbot', 'drawer'])

@@ -283,7 +283,7 @@ test('khung chờ của khối liên quan được thông báo và tôn trọng 
   const container = source.match(/<div\s+v-if="relatedPending"[\s\S]{0,300}?>/)?.[0] ?? ''
   assert.match(container, /role="status"/)
   assert.match(container, /aria-busy="true"/)
-  assert.match(source, /sr-only">Đang tải bài viết khác/, 'khung chờ cần một nhãn tiếng Việt')
+  assert.match(source, /sr-only">\{\{ t\('a_related_loading'\) \}\}/, 'khung chờ cần một nhãn tiếng Việt (qua i18n key a_related_loading)')
 
   // Kiểm theo **từng thẻ**: một tệp có hai khung chờ mà chỉ một cái được gắn
   // guard vẫn phải trượt. Đây là cùng luật mà skeleton-loading-ui.test.ts áp.
