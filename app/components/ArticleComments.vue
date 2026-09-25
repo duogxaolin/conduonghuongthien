@@ -62,6 +62,24 @@
     </div>
 
     <template v-else>
+      <!-- Banner thông báo thu hồi bình luận sau kiểm duyệt AI mà không cần reload trang -->
+      <div
+        v-if="revokedNotice"
+        role="alert"
+        class="mb-5 rounded-lg border border-[#f0c0c0] bg-[#fff5f4] p-3.5 text-xs text-[#a32924] flex items-center justify-between gap-3 animate-fadeIn"
+      >
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-triangle-exclamation text-base shrink-0 text-[#d12420]" aria-hidden="true"></i>
+          <span><strong>Thông báo thu hồi:</strong> {{ revokedNotice }}</span>
+        </div>
+        <button
+          type="button"
+          class="text-[#a32924] hover:text-black font-bold text-sm p-1 border-none bg-transparent cursor-pointer shrink-0"
+          title="Đóng thông báo"
+          @click="revokedNotice = ''"
+        >✕</button>
+      </div>
+
       <!-- 3. Chưa có bình luận -->
       <p v-if="!comments.length" class="bg-[#F7FAF6] border border-[#E2E8DF] rounded-lg px-6 py-8 text-center text-[0.95rem] text-[#4A5545] m-0 mb-6">
         Chưa có bình luận nào. Hãy là người đầu tiên đặt câu hỏi hoặc chia sẻ ý kiến về nội dung này.
@@ -375,6 +393,47 @@ const comments = ref<PublicCommentItem[]>([])
 const total = ref(0)
 const page = ref(1)
 const totalPages = ref(1)
+const revokedNotice = ref('')
+
+/** Checkpoint theo dõi kết quả kiểm duyệt AI ngầm: tự động thu hồi và gỡ bình luận nếu AI phát hiện vi phạm mà KHÔNG CẦN TẢI LẠI TRANG. */
+function startModerationCheckpoint(commentId: number) {
+  const intervals = [2500, 6000, 11000, 18000]
+  for (const delay of intervals) {
+    window.setTimeout(async () => {
+      const existsTop = comments.value.some(c => c.id === commentId)
+      const existsReply = comments.value.some(c => c.replies?.some(r => r.id === commentId))
+      if (!existsTop && !existsReply) return
+
+      try {
+        const res = await $fetch<{ ok: boolean; items: Array<{ id: number; isHidden: boolean; flagReason: string | null }> }>(
+          '/api/public/comments/checkpoint',
+          { query: { ids: String(commentId) } },
+        )
+        const match = res?.items?.find(i => i.id === commentId)
+        if (match && match.isHidden) {
+          const topIdx = comments.value.findIndex(c => c.id === commentId)
+          if (topIdx !== -1) {
+            comments.value.splice(topIdx, 1)
+            total.value = Math.max(0, total.value - 1)
+          } else {
+            for (const c of comments.value) {
+              if (c.replies) {
+                const rIdx = c.replies.findIndex(r => r.id === commentId)
+                if (rIdx !== -1) {
+                  c.replies.splice(rIdx, 1)
+                  break
+                }
+              }
+            }
+          }
+          revokedNotice.value = `Bình luận của bạn vừa bị thu hồi do phát hiện vi phạm sau kiểm duyệt: ${match.flagReason || 'Nội dung không phù hợp quy định.'}`
+        }
+      } catch {
+        // Non-blocking checkpoint lookup
+      }
+    }, delay)
+  }
+}
 const enabled = ref(false)
 const pending = ref(true)
 const errorMessage = ref('')
@@ -582,7 +641,7 @@ async function submit(parentId: number | null) {
   const tempId = -Date.now()
   pendingComments.value.push({ tempId, parentId, body: text.trim(), status: 'sending', error: '' })
   try {
-    await $fetch('/api/public/comments', {
+    const res = await $fetch<{ ok: boolean; id?: number }>('/api/public/comments', {
       method: 'POST',
       body: { ...writeBody.value, parentId, body: text },
     })
@@ -592,6 +651,7 @@ async function submit(parentId: number | null) {
     clearDraft()
     sessionLapsed.value = false
     await loadThread()
+    if (res?.id) startModerationCheckpoint(res.id)
   } catch (error) {
     const failed = pendingComments.value.find(p => p.tempId === tempId)
     if (failed) { failed.status = 'error'; failed.error = reportFailure(error, 'Không thể gửi bình luận.') }

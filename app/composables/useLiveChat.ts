@@ -58,6 +58,8 @@ export function useLiveChat() {
   const sessionId  = ref<number | null>(null)
   const sessionTitle = ref('')
   const liveError = ref<string>('')
+  const mySentIds = new Set<number>()
+
 
   let eventSource: EventSource | null = null
   let connectionAttempt = 0
@@ -141,8 +143,18 @@ export function useLiveChat() {
       if (attempt !== connectionAttempt) return
       try {
         const { id } = JSON.parse(ev.data) as { id: number }
+        const wasMine = mySentIds.has(id)
         const idx = messages.value.findIndex(m => m.id === id)
         if (idx >= 0) messages.value.splice(idx, 1)
+        if (wasMine) {
+          messages.value.push({
+            id: -Date.now(),
+            displayName: 'Hệ thống',
+            content: 'Tin nhắn của bạn đã bị thu hồi do vi phạm tiêu chuẩn an ninh cộng đồng.',
+            createdAt: new Date().toISOString(),
+            error: 'Đã thu hồi tin nhắn',
+          })
+        }
       } catch { /* nuốt */ }
     })
 
@@ -231,6 +243,9 @@ export function useLiveChat() {
         const msg = messages.value.find(m => m.id === tempId)
         if (msg) { msg.status = 'confirmed'; msg.error = 'Không gửi được tin nhắn.' }
         return { ok: false, reason: 'Không gửi được tin nhắn.' }
+      }
+      if (res.ok && res.id) {
+        mySentIds.add(res.id)
       }
       // Server accepted — the real message will arrive via SSE stream.
       // Remove the optimistic placeholder; the confirmed one replaces it.
