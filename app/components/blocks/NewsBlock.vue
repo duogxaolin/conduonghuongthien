@@ -80,7 +80,7 @@ import { computed, onMounted, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
 
-const { currentLang } = useI18n()
+const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
