@@ -1,16 +1,20 @@
 <template>
   <NewsCategoryList
-    heading="Tin Hoạt Động"
-    subheading="Các hoạt động, chỉ đạo nghiệp vụ thi hành án hình sự và tái hòa nhập"
+    :heading="t('n_activity_heading')"
+    :subheading="t('n_activity_sub')"
     category-slug="tin-hoat-dong"
-    category-label="Tin hoạt động"
-    empty-text="Chưa có tin hoạt động nào."
+    :category-label="t('n_activity_label')"
+    :empty-text="t('n_activity_empty')"
   />
 </template>
 
 <script setup lang="ts">
+import { useI18n } from '~/composables/useI18n'
+
+const { t } = useI18n()
+
 useSeoMeta({
-  title: 'Tin hoạt động | Con Đường Hướng Thiện',
-  description: 'Các hoạt động, chỉ đạo nghiệp vụ thi hành án hình sự và tái hòa nhập cộng đồng.',
+  title: () => `${t('n_activity_heading')} | Con Đường Hướng Thiện`,
+  description: () => t('n_activity_sub'),
 })
 </script>

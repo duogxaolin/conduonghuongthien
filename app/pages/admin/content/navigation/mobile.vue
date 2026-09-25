@@ -20,7 +20,7 @@ const DEFAULT_MENU: BottomNavItem[] = [
   { id: 'news', label: 'Bản tin', icon: 'fa-solid fa-newspaper', type: 'link', url: '/news', featured: false },
   { id: 'chatbot', label: 'Hỏi trợ lý', icon: 'fa-solid fa-comment-dots', type: 'chatbot', url: '', featured: true },
   { id: 'documents', label: 'Văn bản', icon: 'fa-solid fa-file-lines', type: 'link', url: '/documents', featured: false },
-  { id: 'drawer', label: 'Danh mục', icon: 'fa-solid fa-bars', type: 'drawer', url: '', featured: false },
+  { id: 'media', label: 'Media', icon: 'fa-solid fa-photo-film', type: 'link', url: '/media', featured: false },
 ]
 
 const TYPE_OPTIONS: { value: NavType; label: string; hint: string }[] = [

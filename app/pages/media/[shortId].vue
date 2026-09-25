@@ -33,17 +33,17 @@
   <div class="bg-[#F8FAF7]">
     <section class="border-b border-[#E2E8DF] bg-white">
       <div class="container pt-7 sm:pt-9 pb-5">
-        <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-3">
+        <nav :aria-label="t('breadcrumb_aria')" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-3">
           <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
-            <span>Trang chủ</span>
+            <span>{{ t('home') }}</span>
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
           <nuxt-link to="/media" class="hover:text-[#4A6741] transition-colors no-underline text-[#556450]">
-            Thư viện Video
+            {{ t('m_video_library') }}
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
-          <span class="text-[#2D5A27] font-bold">Chi tiết video</span>
+          <span class="text-[#2D5A27] font-bold">{{ t('m_detail_breadcrumb') }}</span>
         </nav>
       </div>
     </section>
@@ -53,7 +53,7 @@
         <div class="flex flex-col gap-6 min-w-0">
           <!-- 1. Đang tải -->
           <div v-if="pending" role="status" aria-busy="true" class="flex flex-col gap-4">
-            <span class="sr-only">Đang tải video</span>
+            <span class="sr-only">{{ t('m_detail_loading') }}</span>
             <div aria-hidden="true" class="w-full aspect-video bg-[#EEF2EC] rounded-xl animate-pulse motion-reduce:animate-none"></div>
             <div aria-hidden="true" class="flex flex-col gap-2.5 animate-pulse motion-reduce:animate-none">
               <div class="h-5 w-3/4 bg-[#EEF2EC] rounded"></div>
@@ -74,15 +74,15 @@
             <div class="w-12 h-12 rounded-full bg-[#FCE8E8] text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
-            <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">Không thể tải video</h3>
-            <p class="text-sm text-[#667768] m-0 mb-4">Đã xảy ra lỗi khi kết nối dữ liệu. Vui lòng kiểm tra lại kết nối mạng.</p>
+            <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ t('m_detail_error_title') }}</h3>
+            <p class="text-sm text-[#667768] m-0 mb-4">{{ t('m_detail_error_desc') }}</p>
             <button
               type="button"
               class="bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none inline-flex items-center gap-2"
               @click="reload"
             >
               <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-              <span>Thử lại</span>
+              <span>{{ t('m_retry') }}</span>
             </button>
           </div>
 
@@ -92,14 +92,14 @@
             <div class="w-14 h-14 rounded-full bg-[#EEF4EC] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-xl">
               <i class="fa-solid fa-video-slash" aria-hidden="true"></i>
             </div>
-            <h3 class="text-base font-extrabold text-[#1E251C] m-0 mb-1">Không tìm thấy video</h3>
-            <p class="text-sm text-[#5A6655] m-0 mb-5">Video không tồn tại hoặc chưa được đăng.</p>
+            <h3 class="text-base font-extrabold text-[#1E251C] m-0 mb-1">{{ t('m_not_found_title') }}</h3>
+            <p class="text-sm text-[#5A6655] m-0 mb-5">{{ t('m_not_found_desc') }}</p>
             <nuxt-link
               to="/media"
               class="inline-flex items-center gap-2 bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold no-underline transition-all"
             >
               <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
-              <span>Về thư viện video</span>
+              <span>{{ t('m_back_to_library') }}</span>
             </nuxt-link>
           </div>
 
@@ -132,7 +132,7 @@
                   class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#FDECEC] text-[#B03A3A] text-[0.72rem] font-extrabold uppercase tracking-wide"
                 >
                   <i class="fa-solid fa-arrow-up-right-from-square text-[0.65rem]" aria-hidden="true"></i>
-                  Nguồn ngoài
+                  {{ t('m_external_source') }}
                 </span>
               </div>
 
@@ -151,7 +151,7 @@
                 </span>
                 <span class="inline-flex items-center gap-1.5">
                   <i class="fa-regular fa-eye" aria-hidden="true"></i>
-                  {{ item.viewCount }} lượt xem
+                  {{ t('m_views_count_short').replace('{n}', String(item.viewCount)) }}
                 </span>
               </div>
 
@@ -180,11 +180,11 @@
           <div class="bg-white border border-[#E2E8DF] rounded-2xl p-5 shadow-sm">
             <h2 class="text-sm font-black text-[#1A2A17] uppercase tracking-tight m-0 mb-4 flex items-center gap-2">
               <i class="fa-solid fa-film text-[#7CB342]" aria-hidden="true"></i>
-              Video cùng chuyên mục
+              {{ t('m_related') }}
             </h2>
 
             <div v-if="relatedPending" role="status" aria-busy="true" class="flex flex-col gap-3">
-              <span class="sr-only">Đang tải video liên quan</span>
+              <span class="sr-only">{{ t('m_related_loading') }}</span>
               <div
                 v-for="n in 4"
                 :key="n"
@@ -206,19 +206,19 @@
               là dạy người đọc bỏ đi khi video họ muốn vẫn đang ở đó.
             -->
             <div v-else-if="relatedError" role="alert" class="text-center py-3">
-              <p class="text-xs text-[#B04A4A] m-0 mb-2">Không tải được danh sách gợi ý.</p>
+              <p class="text-xs text-[#B04A4A] m-0 mb-2">{{ t('m_related_error') }}</p>
               <button
                 type="button"
                 class="text-xs font-extrabold text-[#4A6741] hover:text-[#385132] bg-transparent border-none cursor-pointer inline-flex items-center gap-1.5"
                 @click="loadRelated"
               >
                 <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-                <span>Thử lại</span>
+                <span>{{ t('m_retry') }}</span>
               </button>
             </div>
 
             <p v-else-if="!related.length" class="text-xs text-[#8A9A88] m-0">
-              Chưa có video khác trong chuyên mục này.
+              {{ t('m_related_empty') }}
             </p>
 
             <ul v-else class="list-none m-0 p-0 flex flex-col gap-3">
@@ -259,7 +259,10 @@ import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
 import { formatMediaDuration } from '~/utils/media-duration'
+import { useI18n } from '~/composables/useI18n'
 import type { PublicMediaItem, PublicMediaListItem } from '~/types/public-api'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const shortId = computed(() => String(route.params.shortId || ''))

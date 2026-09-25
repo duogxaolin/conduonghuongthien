@@ -8,11 +8,11 @@
     -->
     <div class="max-w-[1200px] mx-auto px-4">
       <!-- Breadcrumb -->
-      <nav class="text-[0.85rem] text-[#7A8675] mb-6" aria-label="Đường dẫn">
-        <nuxt-link to="/" class="text-[#4A6741] no-underline hover:underline">Trang chủ</nuxt-link> &raquo;
+      <nav class="text-[0.85rem] text-[#7A8675] mb-6" :aria-label="t('a_breadcrumb_aria')">
+        <nuxt-link to="/" class="text-[#4A6741] no-underline hover:underline">{{ t('a_home') }}</nuxt-link> &raquo;
         <nuxt-link :to="backTo" class="text-[#4A6741] no-underline hover:underline">{{ backLabel }}</nuxt-link> &raquo;
         <slot name="crumb" :category-label="categoryLabel" />
-        <span>{{ currentCrumb }}</span>
+        <span>{{ currentCrumbText }}</span>
       </nav>
 
       <!-- Loading. Giới hạn theo bề rộng cột đọc, không theo container: một khung
@@ -133,44 +133,44 @@
         <div class="my-8 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-[#E2E8DF] bg-white p-4 shadow-sm print:hidden">
           <div class="flex items-center gap-2 text-[0.88rem] font-bold text-[#385130]">
             <i class="fa-solid fa-share-nodes text-[#7CB342]" aria-hidden="true"></i>
-            <span>Chia sẻ bài viết:</span>
+            <span>{{ t('a_share_label') }}</span>
           </div>
           <div class="flex flex-wrap items-center gap-2">
             <button
               type="button"
               class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#1877F2] transition hover:bg-[#1877F2]/10 hover:border-[#1877F2]"
               @click="shareFacebook"
-              title="Chia sẻ lên Facebook"
+              :title="t('a_share_facebook')"
             >
               <svg class="w-3.5 h-3.5 fill-current" viewBox="0 0 24 24" aria-hidden="true">
                 <path d="M24 12.073c0-6.627-5.373-12-12-12s-12 5.373-12 12c0 5.99 4.388 10.954 10.125 11.854v-8.385H7.078v-3.47h3.047V9.43c0-3.007 1.792-4.669 4.533-4.669 1.312 0 2.686.235 2.686.235v2.953H15.83c-1.491 0-1.956.925-1.956 1.874v2.25h3.328l-.532 3.47h-2.796v8.385C19.612 23.027 24 18.062 24 12.073z"/>
               </svg>
-              Facebook
+              {{ t('a_share_facebook') }}
             </button>
             <button
               type="button"
               class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#0068FF] transition hover:bg-[#0068FF]/10 hover:border-[#0068FF]"
               @click="shareZalo"
-              title="Chia sẻ lên Zalo"
+              :title="t('a_share_zalo')"
             >
-              <i class="fa-solid fa-comment-dots" aria-hidden="true"></i> Zalo
+              <i class="fa-solid fa-comment-dots" aria-hidden="true"></i> {{ t('a_share_zalo') }}
             </button>
             <button
               type="button"
               class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#4A6741] transition hover:bg-[#4A6741]/10 hover:border-[#4A6741]"
               @click="copyArticleLink"
-              :title="copiedArticleLink ? 'Đã sao chép' : 'Sao chép liên kết'"
+              :title="copiedArticleLink ? t('a_copied') : t('a_copy_link_btn')"
             >
               <i :class="copiedArticleLink ? 'fa-solid fa-check text-[#7CB342]' : 'fa-solid fa-link'" aria-hidden="true"></i>
-              {{ copiedArticleLink ? 'Đã sao chép' : 'Sao chép link' }}
+              {{ copiedArticleLink ? t('a_copied') : t('a_copy_link_btn') }}
             </button>
             <button
               type="button"
               class="inline-flex items-center gap-1.5 rounded-lg border border-[#E2E8DF] bg-[#F8FAF7] px-3 py-1.5 text-[0.82rem] font-semibold text-[#667768] transition hover:bg-[#667768]/10 hover:border-[#667768]"
               @click="printArticle"
-              title="In bài viết"
+              :title="t('a_print_title')"
             >
-              <i class="fa-solid fa-print" aria-hidden="true"></i> In bài
+              <i class="fa-solid fa-print" aria-hidden="true"></i> {{ t('a_print') }}
             </button>
           </div>
         </div>
@@ -183,7 +183,7 @@
 
         <!-- Back link -->
         <div class="mt-10 border-t border-[#E2E8DF] pt-8">
-          <nuxt-link :to="backTo" class="btn btn-primary">&larr; {{ backCtaLabel }}</nuxt-link>
+          <nuxt-link :to="backTo" class="btn btn-primary">&larr; {{ backCtaText }}</nuxt-link>
         </div>
         </div>
         <!-- ↑ hết cột đọc -->
@@ -214,14 +214,14 @@
           aria-labelledby="noi-dung-lien-quan-heading"
         >
           <h2 id="noi-dung-lien-quan-heading" class="m-0 mb-4 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
-            <i class="fa-solid fa-layer-group mr-2 text-[#7CB342]" aria-hidden="true"></i>Bài viết khác
+            <i class="fa-solid fa-layer-group mr-2 text-[#7CB342]" aria-hidden="true"></i>{{ t('a_related_title') }}
           </h2>
 
           <!-- Đang tải. Cùng hình dạng hàng ngang với nội dung thật bên dưới:
                một khung chờ có kích thước khác thứ nó thay thế sẽ làm trang nhảy
                đúng lúc nội dung về. -->
           <div v-if="relatedPending" role="status" aria-busy="true" class="flex flex-col divide-y divide-[#E2E8DF]">
-            <span class="sr-only">Đang tải bài viết khác</span>
+            <span class="sr-only">{{ t('a_related_loading') }}</span>
             <div
               v-for="n in 5"
               :key="n"
@@ -244,8 +244,8 @@
             class="bg-white border border-dashed border-[#E2A0A0] px-6 py-8 rounded-lg text-center text-[#B04A4A] text-[0.95rem]"
           >
             <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
-            Không thể tải bài viết khác. Vui lòng
-            <button type="button" class="text-[#4A6741] font-bold underline" @click="refreshRelated()">thử lại</button>.
+            {{ t('a_related_error') }}
+            <button type="button" class="text-[#4A6741] font-bold underline" @click="refreshRelated()">{{ t('a_retry') }}</button>.
           </div>
 
           <template v-else>
@@ -284,7 +284,7 @@
                  chip ở đó sẽ mở ra đúng trang chưa lọc và trông như bấm hụt. -->
             <div v-if="showTopics" class="mt-7">
               <h3 class="m-0 mb-3 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
-                <i class="fa-solid fa-tags mr-2 text-[#7CB342]" aria-hidden="true"></i>Chủ đề liên quan
+                <i class="fa-solid fa-tags mr-2 text-[#7CB342]" aria-hidden="true"></i>{{ t('a_topics') }}
               </h3>
               <div class="flex flex-wrap gap-2">
                 <nuxt-link
@@ -304,8 +304,8 @@
 
       <!-- Not found -->
       <div v-else class="py-10 text-center">
-        <p class="text-[#4A5545] mb-4">{{ notFoundText }}</p>
-        <nuxt-link :to="backTo" class="btn btn-primary">{{ backCtaLabel }}</nuxt-link>
+        <p class="text-[#4A5545] mb-4">{{ notFoundTextValue }}</p>
+        <nuxt-link :to="backTo" class="btn btn-primary">{{ backCtaText }}</nuxt-link>
       </div>
     </div>
   </div>
@@ -342,25 +342,31 @@ const props = defineProps({
   /** Breadcrumb label for the listing. */
   backLabel: { type: String, required: true },
   /** Call-to-action label on the back links. */
-  backCtaLabel: { type: String, default: 'Quay lại danh sách' },
+  backCtaLabel: { type: String, default: null },
   /** Final, non-linked breadcrumb. */
-  currentCrumb: { type: String, default: 'Chi tiết' },
+  currentCrumb: { type: String, default: null },
   /** Decorative glyph in front of the category badge. */
   metaIcon: { type: String, default: '📰' },
   /** Category shown when the article carries no category of its own. */
   categoryFallback: { type: String, default: 'Thông tin' },
   /** Optional article-type → label map, consulted before categoryFallback. */
   typeLabels: { type: Object, default: () => ({}) },
-  notFoundText: { type: String, default: 'Không tìm thấy bài viết yêu cầu hoặc bài viết đang được cập nhật.' },
+  notFoundText: { type: String, default: null },
   seoFallbackTitle: { type: String, required: true },
   seoFallbackDescription: { type: String, required: true },
 })
+
+// `backLabel` is required and always passed by parents (already translated).
+// `backCtaLabel` / `currentCrumb` / `notFoundText` fall back to i18n when null.
+const backCtaText = computed(() => props.backCtaLabel ?? t('a_back_cta'))
+const currentCrumbText = computed(() => props.currentCrumb ?? t('a_detail_crumb'))
+const notFoundTextValue = computed(() => props.notFoundText ?? t('a_not_found'))
 
 // `lazy` chỉ bỏ chặn điều hướng phía client — lượt dựng phía máy chủ vẫn chờ dữ
 // liệu, nên HTML đầu tiên, thẻ SEO và mục lục không đổi. Đi từ danh sách sang
 // chi tiết là lúc thấy rõ nhất: không có nó thì bấm vào một bài trông như bấm
 // hụt cho tới khi bài về.
-const { currentLang } = useI18n()
+const { currentLang, t } = useI18n()
 
 const { data, pending, error, refresh } = useFetch(() => `/api/public/articles/${props.slug}?lang=${currentLang.value}`, {
   key: () => `article-detail-${props.slug}-${currentLang.value}`,
