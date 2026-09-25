@@ -803,10 +803,21 @@ const FLAG_MAP: Record<string, string> = {
   lo: '🇱🇦',
   ja: '🇯🇵',
   ko: '🇰🇷',
+  th: '🇹🇭',
+  ms: '🇲🇾',
+  de: '🇩🇪',
+  es: '🇪🇸',
+  it: '🇮🇹',
+  pt: '🇵🇹',
+  ar: '🇸🇦',
+  km: '🇰🇭',
+  my: '🇲🇲',
+  id: '🇮🇩',
+  us: '🇺🇸',
 }
 
-const getFlagEmoji = (code: string) => FLAG_MAP[code] || '🌐'
-const currentLocale = computed(() => locales.find(l => l.code === currentLang.value) || locales[0]!)
+const getFlagEmoji = (code: string) => FLAG_MAP[code?.toLowerCase()] || '🌐'
+const currentLocale = computed(() => locales.value.find(l => l.code === currentLang.value) || locales.value[0]!)
 const currentLocaleFlag = computed(() => getFlagEmoji(currentLang.value))
 const searchInputRef = ref<HTMLInputElement | null>(null)
 const searchBarRef = ref<HTMLElement | null>(null)

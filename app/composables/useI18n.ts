@@ -2,25 +2,30 @@ import { computed, watch } from 'vue'
 import { useCookie, useHead, useState } from '#imports'
 import { extraDictionaries } from './i18n-extra'
 
-type LocaleCode = 'vi' | 'en' | 'zh' | 'fr' | 'ru' | 'lo'
+export interface LocaleOption {
+  code: string
+  label: string
+  name: string
+  htmlLang: string
+}
 
-export const localeOptions = [
-  { code: 'vi' as const, label: 'VN', name: 'Tiếng Việt', htmlLang: 'vi' },
-  { code: 'en' as const, label: 'EN', name: 'English', htmlLang: 'en' },
-  { code: 'zh' as const, label: 'ZH', name: '中文', htmlLang: 'zh' },
-  { code: 'fr' as const, label: 'FR', name: 'Français', htmlLang: 'fr' },
-  { code: 'ru' as const, label: 'RU', name: 'Русский', htmlLang: 'ru' },
-  { code: 'lo' as const, label: 'LAO', name: 'ພາສາລາວ', htmlLang: 'lo' },
-] satisfies ReadonlyArray<{ code: LocaleCode, label: string, name: string, htmlLang: string }>
-const DEFAULT_LOCALE: LocaleCode = 'vi'
-const FALLBACK_LOCALE = localeOptions.find(locale => locale.code === DEFAULT_LOCALE)
-  ?? { code: DEFAULT_LOCALE, label: 'VN', name: 'Tiếng Việt', htmlLang: 'vi' }
-const LOCALE_CODES = new Set<LocaleCode>(localeOptions.map(locale => locale.code))
+export const DEFAULT_LOCALE_OPTIONS: LocaleOption[] = [
+  { code: 'vi', label: 'VN', name: 'Tiếng Việt', htmlLang: 'vi' },
+  { code: 'en', label: 'EN', name: 'English', htmlLang: 'en' },
+  { code: 'zh', label: 'ZH', name: '中文', htmlLang: 'zh' },
+  { code: 'fr', label: 'FR', name: 'Français', htmlLang: 'fr' },
+  { code: 'ru', label: 'RU', name: 'Русский', htmlLang: 'ru' },
+  { code: 'lo', label: 'LAO', name: 'ພາສາລາວ', htmlLang: 'lo' },
+]
 
-const normalizeLocale = (value: unknown): LocaleCode => {
-  return typeof value === 'string' && LOCALE_CODES.has(value as LocaleCode)
-    ? value as LocaleCode
-    : DEFAULT_LOCALE
+export const localeOptions = DEFAULT_LOCALE_OPTIONS
+const DEFAULT_LOCALE = 'vi'
+
+const normalizeLocale = (value: unknown): string => {
+  if (typeof value === 'string' && value.trim()) {
+    return value.trim().toLowerCase()
+  }
+  return DEFAULT_LOCALE
 }
 
 export const useI18n = () => {
@@ -29,8 +34,35 @@ export const useI18n = () => {
     maxAge: 60 * 60 * 24 * 365,
     sameSite: 'lax',
   })
-  const currentLang = useState<LocaleCode>('currentLang', () => normalizeLocale(localeCookie.value))
-  const currentLocale = computed(() => localeOptions.find(locale => locale.code === currentLang.value) ?? FALLBACK_LOCALE)
+  const dbLanguages = useState<LocaleOption[]>('dbLanguages', () => [])
+
+  const locales = computed(() => {
+    if (dbLanguages.value.length > 0) return dbLanguages.value
+    return DEFAULT_LOCALE_OPTIONS
+  })
+
+  const currentLang = useState<string>('currentLang', () => normalizeLocale(localeCookie.value))
+  const currentLocale = computed(() => locales.value.find(locale => locale.code === currentLang.value) ?? DEFAULT_LOCALE_OPTIONS[0]!)
+
+  async function loadLanguagesFromDb() {
+    try {
+      const res = await $fetch<{ ok: boolean; items: Array<{ code: string; name: string; nativeName: string; isDefault: boolean }> }>('/api/public/languages')
+      if (res.ok && Array.isArray(res.items) && res.items.length > 0) {
+        dbLanguages.value = res.items.map(l => ({
+          code: l.code,
+          label: l.code.toUpperCase(),
+          name: l.nativeName || l.name,
+          htmlLang: l.code,
+        }))
+      }
+    } catch {
+      // Non-critical fallback
+    }
+  }
+
+  if (import.meta.client && dbLanguages.value.length === 0) {
+    void loadLanguagesFromDb()
+  }
 
   // On client, prioritize persisted user choice from localStorage/cookie and never overwrite with SSR default
   if (import.meta.client) {
@@ -279,8 +311,9 @@ export const useI18n = () => {
   return {
     currentLang,
     currentLocale,
-    locales: localeOptions,
+    locales,
     t,
     setLang,
+    loadLanguagesFromDb,
   }
 }
