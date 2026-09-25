@@ -99,7 +99,7 @@ export function renderChatMarkdown(md: string): string {
       if (inUl) { out.push('</ul>'); inUl = false }
       if (inOl) { out.push('</ol>'); inOl = false }
       if (line.trim()) {
-        out.push(`<p class="m-0 my-1 leading-relaxed">${line}</p>`)
+        out.push(`<p class="m-0 my-1 leading-relaxed break-words [overflow-wrap:anywhere] whitespace-pre-wrap">${line}</p>`)
       } else {
         out.push('<div class="h-1"></div>')
       }
