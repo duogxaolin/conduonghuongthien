@@ -335,6 +335,17 @@ jobs:
             bash -n "$script" || exit 1
           done
 
+      - name: No accidental UTC date usage outside analytics
+        run: |
+          # scheduler/retention must use localDay, not getUTC*/utcDay — UTC bug skips nightly pass at UTC+7.
+          # analytics/* intentionally uses UTC (events stored in UTC).
+          offenders=$(grep -rn "getUTC\|utcDay" --include="*.ts" server/services/ server/utils/ server/plugins/ server/db/ 2>/dev/null | grep -v "analytics" | grep -v "node_modules" || true)
+          if [ -n "$offenders" ]; then
+            echo "::error::UTC date API outside analytics/: $offenders"
+            echo "$offenders"
+            exit 1
+          fi
+
       # Không có cổng này, bốn lỗ hổng mức trung bình đã nằm im trong cây phụ
       # thuộc mà không có gì nói ra — phát hiện được chỉ vì có người chạy tay.
       #

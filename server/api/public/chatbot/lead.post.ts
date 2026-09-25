@@ -6,22 +6,13 @@ import { getSmtpConfig, sendMail } from '../../../utils/mailer'
 import { getChatbotSettings } from '../../../services/chatbot-settings'
 import { escapeHtml } from '../../../utils/escape-html'
 import { getClientIp } from '../../../utils/client-ip'
+import { rateLimitDeps } from '../../../utils/rate-limit-deps'
+import { recordRateLimitHit } from '../../../utils/rate-limit-store'
 
 const PHONE_RE = /^[0-9+()\-\s.]{7,20}$/
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
 
-// Simple in-memory rate limit by peer IP (spoof-resistant: xForwardedFor off).
-const buckets = new Map<string, number[]>()
-const LIMIT = 5
-const WINDOW_MS = 10 * 60 * 1000
-function rateLimited(ip: string): boolean {
-  const now = Date.now()
-  const recent = (buckets.get(ip) || []).filter(t => t > now - WINDOW_MS)
-  if (recent.length >= LIMIT) { buckets.set(ip, recent); return true }
-  recent.push(now); buckets.set(ip, recent)
-  if (buckets.size > 5000) buckets.delete(buckets.keys().next().value as string)
-  return false
-}
+const LEAD_RATE_LIMIT = { limit: 5, windowSeconds: 600 }
 
 /**
  * Chatbot lead capture: when the bot has no answer it invites the visitor to
@@ -32,7 +23,8 @@ function rateLimited(ip: string): boolean {
  */
 export default defineEventHandler(async (event) => {
   const ip = getClientIp(event)
-  if (rateLimited(ip)) throw createError({ statusCode: 429, statusMessage: 'Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.' })
+  const rl = await recordRateLimitHit(`lead:${ip}`, LEAD_RATE_LIMIT, rateLimitDeps())
+  if (rl.blocked) throw createError({ statusCode: 429, statusMessage: 'Bạn gửi quá nhiều yêu cầu. Vui lòng thử lại sau.' })
 
   const body = await readBody(event).catch(() => ({}))
   const name = String(body?.name || '').trim().slice(0, 150)

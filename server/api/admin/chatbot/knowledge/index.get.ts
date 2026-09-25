@@ -1,11 +1,12 @@
 import { listKnowledge, adminKnowledge, ChatbotKnowledgeValidationError } from '../../../../services/chatbot-knowledge'
 import { requireChatbotKnowledgePermission } from '../../../../utils/permissions'
+import { finitePositive, MAX_PAGE } from '../../../../utils/query-number'
 
 export default defineEventHandler(async (event) => {
   requireChatbotKnowledgePermission(event, 'read')
   const query = getQuery(event)
   try {
-    const result = await listKnowledge({ page: Number(query.page || 1), perPage: Number(query.perPage || 20), search: String(query.search || ''), topic: String(query.topic || ''), status: String(query.status || ''), quick: String(query.quick || '') })
+    const result = await listKnowledge({ page: finitePositive(query.page, 1, MAX_PAGE), perPage: finitePositive(query.perPage, 20, 100), search: String(query.search || ''), topic: String(query.topic || ''), status: String(query.status || ''), quick: String(query.quick || '') })
     /**
      * `.filter(...)` lọc null với một type guard, không phải để phòng thân.
      *

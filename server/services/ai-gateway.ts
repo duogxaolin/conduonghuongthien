@@ -189,6 +189,53 @@ function cleanAiContent(text: string): string {
     .trim()
 }
 
+/** Incremental cleaner for streaming: avoids re-running 8 regexes on the full
+ *  `streamText` for every chunk (O(n²)). Holds an incomplete trailing tag in
+ *  `carry` so a split like `<thi` + `nk>` does not leak. */
+export function createStreamingCleaner() {
+  let carry = ''
+  let emittedLen = 0
+  let rawBuffer = ''
+  return {
+    push(delta: string): string {
+      rawBuffer += delta
+      const input = carry + delta
+      // Hold incomplete trailing "<...": don't emit tail that hasn't closed yet
+      const lastOpen = input.lastIndexOf('<')
+      const lastClose = input.lastIndexOf('>')
+      let toClean: string
+      let nextCarry = ''
+      if (lastOpen !== -1 && lastOpen > lastClose) {
+        toClean = input.slice(0, lastOpen)
+        nextCarry = input.slice(lastOpen)
+      } else {
+        toClean = input
+      }
+      const cleaned = cleanAiContent(toClean)
+      carry = nextCarry
+      // Only emit newly cleaned suffix
+      const newChunk = cleaned.slice(emittedLen)
+      emittedLen = cleaned.length
+      // If we held a carry, its cleaned form will be emitted next push
+      if (nextCarry) return newChunk
+      return newChunk
+    },
+    flush(): string {
+      if (!carry) return ''
+      const finalInput = carry
+      carry = ''
+      const cleaned = cleanAiContent(finalInput)
+      const tail = cleaned.slice(emittedLen)
+      emittedLen = cleaned.length
+      rawBuffer += ''
+      return tail
+    },
+    finalText(raw: string): string {
+      return cleanAiContent(raw).trim()
+    },
+  }
+}
+
 function extractAnswer(policy: string, payload: unknown): string {
   return cleanAiContent(rawExtractAnswer(policy, payload))
 }
@@ -567,6 +614,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
             errorMessage = `HTTP ${resp2.status}`
             return { ok: false, error: 'provider_error' }
           }
+          const cleaner = createStreamingCleaner()
           const reader = resp2.body.getReader()
           const decoder = new TextDecoder()
           let streamBuffer = ''
@@ -585,8 +633,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
                 const delta = parsed?.choices?.[0]?.delta?.content
                 if (typeof delta === 'string' && delta) {
                   streamText += delta
-                  const cleanTotal = cleanAiContent(streamText)
-                  const newChunk = cleanTotal.slice(answerText.length)
+                  const newChunk = cleaner.push(delta)
                   if (newChunk) {
                     answerText += newChunk
                     await input.onChunk(newChunk)
@@ -603,7 +650,9 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
               } catch {}
             }
           }
-          answerText = cleanAiContent(streamText).trim()
+          const tail = cleaner.flush()
+          if (tail) { answerText += tail; await input.onChunk(tail) }
+          if (!answerText.trim()) answerText = cleaner.finalText(streamText).trim()
           if (!answerText) {
             answerText = streamText.replace(/<\|channel>[\s\S]*?<channel\|>/gi, '').trim()
           }
@@ -630,6 +679,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
             answerText = raw2Content.replace(/<\|channel>[\s\S]*?<channel\|>/gi, '').trim()
           }
           let p2 = Number((json2.usage as { prompt_tokens?: number })?.prompt_tokens) || 0
+          let c2 = Number((json2.usage as { completion_tokens?: number })?.completion_tokens) || 0
           if (config.provider === 'delify' && p2 >= 2000) p2 -= 2000
           promptTokens += p2
           completionTokens += c2
@@ -647,6 +697,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
             body: JSON.stringify(reqBodyObj),
           })
           if (respDirect.ok && respDirect.body) {
+            const cleaner2 = createStreamingCleaner()
             const reader = respDirect.body.getReader()
             const decoder = new TextDecoder()
             let streamBuffer = ''
@@ -665,8 +716,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
                   const delta = parsed?.choices?.[0]?.delta?.content
                   if (typeof delta === 'string' && delta) {
                     streamText += delta
-                    const cleanTotal = cleanAiContent(streamText)
-                    const newChunk = cleanTotal.slice(answerText.length)
+                    const newChunk = cleaner2.push(delta)
                     if (newChunk) {
                       answerText += newChunk
                       await input.onChunk(newChunk)
@@ -682,7 +732,9 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
                 } catch {}
               }
             }
-            answerText = cleanAiContent(streamText).trim()
+            const tail2 = cleaner2.flush()
+            if (tail2) { answerText += tail2; await input.onChunk(tail2) }
+            if (!answerText.trim()) answerText = cleaner2.finalText(streamText).trim()
           }
         }
         if (!answerText) {
