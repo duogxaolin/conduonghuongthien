@@ -30,15 +30,13 @@ const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
 const quote = computed(() => {
-  const q = d.value.quote || ''
-  if (currentLang.value === 'vi') return q
-  return d.value['quote_' + currentLang.value] || t('quote_content') || q
+  if (currentLang.value === 'vi') return d.value.quote || ''
+  return d.value['quote_' + currentLang.value] || d.value.quote || t('quote_content') || ''
 })
 
 const cite = computed(() => {
-  const c = d.value.cite || ''
-  if (currentLang.value === 'vi') return c
-  return d.value['cite_' + currentLang.value] || t('quote_cite') || c
+  if (currentLang.value === 'vi') return d.value.cite || ''
+  return d.value['cite_' + currentLang.value] || d.value.cite || t('quote_cite') || ''
 })
 
 const bgImage = computed(() => d.value.bgImage || '/assets/hero_banner.jpg')
