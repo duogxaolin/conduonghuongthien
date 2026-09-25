@@ -169,6 +169,29 @@ const fetchArticles = async (page = 1) => {
   }
 }
 
+const fetchArticlesSilent = async () => {
+  try {
+    const params: Record<string, string | number> = {
+      page: pagination.value.page || 1,
+      search: search.value,
+      type: selectedType.value,
+      status: selectedStatus.value,
+      perPage: 15,
+    }
+    const effectiveCategoryId = selectedCategoryId.value ?? selectedParentCategoryId.value
+    if (effectiveCategoryId) params.categoryId = effectiveCategoryId
+    if (selectedAuthorId.value) params.authorId = selectedAuthorId.value
+    if (selectedTranslationFilter.value) params.translation = selectedTranslationFilter.value
+
+    const res = await $fetch<{ ok: boolean; items: AdminArticleRow[]; pagination: typeof pagination.value }>('/api/admin/articles', { params })
+    if (res.ok) {
+      articles.value = res.items
+      pagination.value = res.pagination
+    }
+  } catch {
+    // Non-critical
+  }
+}
 // ─── Bulk selection ───────────────────────────────────────────────────────────
 const selection = useBulkSelection()
 const bulk = useBulkAction(selection)
@@ -238,15 +261,30 @@ const triggerBulkTranslate = async (langCode: string) => {
   })
   if (!ok) return
 
+  // Cập nhật lạc quan (Optimistic update) trên giao diện ngay lập tức
+  for (const id of ids) {
+    const art = articles.value.find(a => Number(a.id) === id)
+    if (art) {
+      const parsed = parseTranslations(art.translatedLangs).filter(t => t.lang !== langCode)
+      parsed.push({ lang: langCode, status: 'translating' })
+      art.translatedLangs = parsed.map(t => `${t.lang}:${t.status}`).join(',')
+    }
+  }
+
+  void fetchBulkTranslateStatus()
+  startBulkStatusPolling()
+
   bulkTranslating.value = true
   try {
     const res = await $fetch<{ ok: boolean; count: number }>('/api/admin/articles/bulk-translate', {
       method: 'POST',
-      body: { ids, langCode },
+      body: { ids, langCode, targetStatus: 'ai_draft' },
     })
     toast.success(`Đã xếp lịch dịch ${res.count} bài viết sang ${langLabel}. Hệ thống đang xử lý trong nền!`)
     selection.clear()
-    await fetchArticles(pagination.value.page)
+    await fetchArticlesSilent()
+    void fetchBulkTranslateStatus()
+    startBulkStatusPolling()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể dịch hàng loạt.'))
   } finally {
@@ -336,15 +374,30 @@ async function translateSingleArticle(articleId: number, langCode: string) {
   rowTranslateMenuId.value = null
   const langObj = BULK_LANGS.find(l => l.code === langCode)
   const langLabel = langObj ? `${langObj.flag} ${langObj.label}` : langCode
+
+  // Cập nhật lạc quan (Optimistic update) trên dòng đó ngay lập tức
+  const art = articles.value.find(a => Number(a.id) === articleId)
+  if (art) {
+    const parsed = parseTranslations(art.translatedLangs).filter(t => t.lang !== langCode)
+    parsed.push({ lang: langCode, status: 'translating' })
+    art.translatedLangs = parsed.map(t => `${t.lang}:${t.status}`).join(',')
+  }
+
+  void fetchBulkTranslateStatus()
+  startBulkStatusPolling()
+
   try {
     await $fetch(`/api/admin/articles/${articleId}/translations/translate`, {
       method: 'POST',
-      body: { langCode },
+      body: { langCode, targetStatus: 'ai_draft' },
     })
     toast.success(`Đã bắt đầu dịch bài viết sang ${langLabel} trong nền!`)
-    await fetchArticles(pagination.value.page)
+    await fetchArticlesSilent()
+    void fetchBulkTranslateStatus()
+    startBulkStatusPolling()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể kích hoạt dịch.'))
+    await fetchArticlesSilent()
   }
 }
 
@@ -388,6 +441,20 @@ async function startGlobalTranslation() {
   let totalQueuedLangs = 0
   let totalQueuedArticles = 0
 
+  // Cập nhật lạc quan (Optimistic update) cho các bài viết đang hiển thị trên bảng
+  for (const art of articles.value) {
+    const parsed = parseTranslations(art.translatedLangs)
+    for (const langCode of selectedGlobalTargetLangs.value) {
+      if (!parsed.some(t => t.lang === langCode)) {
+        parsed.push({ lang: langCode, status: 'translating' })
+      }
+    }
+    art.translatedLangs = parsed.map(t => `${t.lang}:${t.status}`).join(',')
+  }
+
+  void fetchBulkTranslateStatus()
+  startBulkStatusPolling()
+
   try {
     for (const langCode of selectedGlobalTargetLangs.value) {
       const listRes = await $fetch<{ ok: boolean; items: AdminArticleRow[] }>('/api/admin/articles', {
@@ -410,7 +477,7 @@ async function startGlobalTranslation() {
     } else {
       toast.success(`Đã xếp lịch dịch ${totalQueuedArticles} lượt bài viết sang ${totalQueuedLangs} ngôn ngữ! Hệ thống đang xử lý trong nền.`)
       showGlobalTranslateModal.value = false
-      await fetchArticles(pagination.value.page)
+      await fetchArticlesSilent()
       void fetchBulkTranslateStatus()
       startBulkStatusPolling()
     }
@@ -449,14 +516,16 @@ async function fetchBulkTranslateStatus() {
     if (res.ok) {
       const wasActive = bulkTranslateTask.value?.active
       bulkTranslateTask.value = res
+
       if (res.active) {
         startBulkStatusPolling()
+        void fetchArticlesSilent()
       } else {
         stopBulkStatusPolling()
         if (wasActive && res.task.completedAt) {
           completedBannerMsg.value = `Đã hoàn tất dịch tự động ${res.task.total} bài viết sang ${res.task.langName || res.task.langCode}!`
           toast.success(completedBannerMsg.value)
-          await fetchArticles(pagination.value.page)
+          await fetchArticlesSilent()
           setTimeout(() => {
             completedBannerMsg.value = ''
           }, 10000)
@@ -779,7 +848,32 @@ onUnmounted(() => {
         @click="completedBannerMsg = ''"
       >✕</button>
     </div>
-    <!-- Filters -->
+
+    <!-- Alert thông báo kiểm duyệt & xuất bản bản dịch (Luôn hiển thị khi không có tiến trình chạy ngầm) -->
+    <div
+      v-else
+      class="rounded-xl border border-[#ffe082] bg-[#fffdf7] p-3.5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[#735100]"
+    >
+      <div class="flex items-start sm:items-center gap-3">
+        <div class="w-8 h-8 rounded-lg bg-[#fff8e1] border border-[#ffe082] flex items-center justify-center shrink-0 text-[#b78103] text-sm mt-0.5 sm:mt-0">
+          <i class="fa-solid fa-triangle-exclamation"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          <span class="font-extrabold text-[#735100] text-sm">Lưu ý kiểm duyệt & Xuất bản bản dịch AI:</span>
+          <span class="text-[#8a6500]">
+            Các bài viết dịch bằng AI được lưu ở trạng thái <strong>Bản nháp AI</strong> (huy hiệu vàng <span class="px-1.5 py-0.2 rounded bg-[#fff8e1] text-[#b78103] border border-[#ffe082] font-bold text-[0.68rem]">EN</span>, <span class="px-1.5 py-0.2 rounded bg-[#fff8e1] text-[#b78103] border border-[#ffe082] font-bold text-[0.68rem]">ZH</span>...). Cán bộ bấm vào huy hiệu để <strong>Xem nhanh</strong> và rà soát trước khi bấm <strong>Xuất bản</strong> ra trang công khai.
+          </span>
+        </div>
+      </div>
+      <button
+        type="button"
+        class="px-3.5 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#f0f7f1] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shrink-0 shadow-2xs"
+        @click="openGlobalTranslateModal"
+      >
+        <i class="fa-solid fa-wand-magic-sparkles text-[0.7rem]"></i>
+        <span>Dịch toàn bộ bài viết</span>
+      </button>
+    </div>
     <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col sm:flex-row flex-wrap gap-3">
       <input
         type="text"
