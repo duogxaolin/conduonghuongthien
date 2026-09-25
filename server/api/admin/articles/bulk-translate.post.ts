@@ -19,6 +19,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Chưa chọn bài viết hợp lệ nào.' })
   }
 
-  const result = await bulkTriggerTranslation(adminUser, articleIds, String(body.langCode))
+  const targetStatus = body?.targetStatus === 'published' ? 'published' : 'ai_draft'
+  const result = await bulkTriggerTranslation(adminUser, articleIds, langCode, targetStatus)
   return { ok: true, count: result.count }
 })

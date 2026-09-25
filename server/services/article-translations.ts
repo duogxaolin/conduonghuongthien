@@ -190,6 +190,7 @@ export async function triggerTranslation(
   actor: ActorLike,
   articleId: number,
   langCode: string,
+  targetStatus: 'ai_draft' | 'published' = 'ai_draft',
   db: Database = getDb(),
 ) {
   // Check article exists and get type for RBAC
@@ -258,7 +259,7 @@ export async function triggerTranslation(
   const langName = langRecord?.name || LANGUAGE_NAMES[langCode] || langCode
 
   setTimeout(() => {
-    runTranslationWorker(articleId, langCode, langName).catch((err) => {
+    runTranslationWorker(articleId, langCode, langName, targetStatus).catch((err) => {
       logWarn({ event: 'translation.worker_unhandled_error', articleId, langCode, error: String(err) })
     })
   }, 0)
@@ -268,9 +269,9 @@ export async function triggerTranslation(
 export async function triggerTranslateAllLanguages(
   actor: ActorLike,
   articleId: number,
+  targetStatus: 'ai_draft' | 'published' = 'ai_draft',
   db: Database = getDb(),
 ) {
-  const [article] = await db.select().from(articles).where(eq(articles.id, articleId)).limit(1)
   if (!article) {
     throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
   }
@@ -292,16 +293,19 @@ export async function triggerTranslateAllLanguages(
   })
 
   for (const l of toTranslate) {
-    await triggerTranslation(actor, articleId, l.code, db)
+    await triggerTranslation(actor, articleId, l.code, targetStatus, db)
   }
-
   return { queued: toTranslate.length, languages: toTranslate.map((l) => l.code) }
 }
 
 // ─── Translation worker ──────────────────────────────────────────────────
 
-async function runTranslationWorker(articleId: number, langCode: string, langName: string) {
-  const db = getDb()
+async function runTranslationWorker(
+  articleId: number,
+  langCode: string,
+  langName: string,
+  targetStatus: 'ai_draft' | 'published' = 'ai_draft',
+) {
 
   logInfo({ event: 'translation.job_started', articleId, langCode })
 
@@ -407,7 +411,7 @@ ${article.excerpt ?? ''}`
     if (!content.trim()) {
       // No content — just save title + excerpt
       await updateTranslationStatus(db, articleId, langCode, {
-        status: 'ai_draft',
+        status: targetStatus,
         progress: 100,
         totalChunks: 0,
         currentChunk: 0,
@@ -485,7 +489,7 @@ ${chunk.html}`
       .update(articleTranslations)
       .set({
         content: translatedChunks.join(''),
-        status: 'ai_draft',
+        status: targetStatus,
         progress: 100,
         currentChunk: totalChunks,
         completedAt: new Date(),
@@ -702,9 +706,9 @@ export async function bulkTriggerTranslation(
   actor: ActorLike,
   articleIds: number[],
   langCode: string,
+  targetStatus: 'ai_draft' | 'published' = 'ai_draft',
   db: Database = getDb(),
 ) {
-  // Verify all articles exist and actor has permission
   for (const id of articleIds) {
     const [article] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
     if (!article) continue
@@ -723,7 +727,7 @@ export async function bulkTriggerTranslation(
   // Trigger translations sequentially in background
   const langName = LANGUAGE_NAMES[langCode] || langCode
   setTimeout(() => {
-    runBulkTranslation(articleIds, langCode, langName).catch((err) => {
+    runBulkTranslation(articleIds, langCode, langName, targetStatus).catch((err) => {
       logWarn({ event: 'translation.bulk_worker_unhandled_error', error: String(err) })
     })
   }, 0)
@@ -758,8 +762,12 @@ export function getBulkTranslationTaskState(): BulkTranslationTaskState {
   return { ...bulkTaskState }
 }
 
-async function runBulkTranslation(articleIds: number[], langCode: string, langName: string) {
-  bulkTaskState.active = true
+async function runBulkTranslation(
+  articleIds: number[],
+  langCode: string,
+  langName: string,
+  targetStatus: 'ai_draft' | 'published' = 'ai_draft',
+) {
   bulkTaskState.total = articleIds.length
   bulkTaskState.processed = 0
   bulkTaskState.langCode = langCode
@@ -819,8 +827,7 @@ async function runBulkTranslation(articleIds: number[], langCode: string, langNa
             translatedBy: 'ai',
           })
         }
-
-        await runTranslationWorker(articleId, langCode, langName)
+        await runTranslationWorker(articleId, langCode, langName, targetStatus)
       } catch (err) {
         logWarn({ event: 'translation.bulk_item_failed', articleId, langCode, error: String(err) })
       }

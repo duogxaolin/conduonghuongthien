@@ -10,8 +10,9 @@ export default defineEventHandler(async (event) => {
   if (!id || !Number.isFinite(id)) {
     throw createError({ statusCode: 400, statusMessage: 'ID bài viết không hợp lệ.' })
   }
-
-  const result = await triggerTranslateAllLanguages(adminUser, id)
+  const body = await readBody(event).catch(() => ({}))
+  const targetStatus = body?.targetStatus === 'published' ? 'published' : 'ai_draft'
+  const result = await triggerTranslateAllLanguages(adminUser, id, targetStatus)
   return {
     ok: true,
     queued: result.queued,

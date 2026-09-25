@@ -356,8 +356,8 @@ const globalStats = ref<{
   languages: Array<{ code: string; name: string; nativeName: string; translated: number; missing: number }>
 } | null>(null)
 const selectedGlobalTargetLangs = ref<string[]>(['en'])
+const globalTargetStatus = ref<'ai_draft' | 'published'>('ai_draft')
 const globalTranslating = ref(false)
-
 async function openGlobalTranslateModal() {
   showGlobalTranslateModal.value = true
   globalStatsLoading.value = true
@@ -398,7 +398,7 @@ async function startGlobalTranslation() {
         const ids = targetArticles.map(a => Number(a.id))
         await $fetch('/api/admin/articles/bulk-translate', {
           method: 'POST',
-          body: { ids, langCode },
+          body: { ids, langCode, targetStatus: globalTargetStatus.value },
         })
         totalQueuedLangs++
         totalQueuedArticles += ids.length
@@ -743,6 +743,12 @@ onUnmounted(() => {
           <p v-if="bulkTranslateTask?.task.currentArticleTitle" class="m-0 text-xs text-[#4A5545] truncate" :title="bulkTranslateTask.task.currentArticleTitle">
             Đang xử lý: <strong>{{ bulkTranslateTask.task.currentArticleTitle }}</strong>
           </p>
+
+          <!-- Alert nhắc nhở kiểm duyệt -->
+          <div class="mt-1 p-2 rounded-lg bg-[#fff8e1]/95 border border-[#ffe082] text-[0.7rem] text-[#735100] flex items-center gap-1.5 leading-tight">
+            <i class="fa-solid fa-triangle-exclamation text-xs shrink-0 text-[#b78103]"></i>
+            <span><strong>Lưu ý kiểm duyệt:</strong> Bài viết sau khi dịch AI xong cần rà soát lại trước khi bấm xuất bản (trừ khi đã chọn Xuất bản luôn).</span>
+          </div>
         </div>
       </div>
 
@@ -1522,10 +1528,44 @@ onUnmounted(() => {
                 </label>
               </div>
             </div>
-            <p class="m-0 text-xs text-[#667768] bg-[#fcfdfc] p-3 rounded-lg border border-[#eef2ee]">
-              <i class="fa-solid fa-circle-info text-[#2c6e33] mr-1"></i>
-              Hệ thống sẽ xếp lịch dịch các bài chưa có bản dịch sang ngôn ngữ đã chọn. Tiến trình dịch phân đoạn (chunked) xử lý tuần tự trong nền và tự lưu ở trạng thái "Bản nháp AI".
-            </p>
+            <!-- Trạng thái sau khi dịch -->
+            <div class="flex flex-col gap-1.5">
+              <label class="text-xs font-bold text-[#122815]">Trạng thái bản dịch sau khi AI dịch xong:</label>
+              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                <label
+                  class="flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-all"
+                  :class="globalTargetStatus === 'ai_draft' ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50'"
+                >
+                  <input type="radio" value="ai_draft" v-model="globalTargetStatus" class="accent-[#2c6e33] mt-0.5" />
+                  <div class="flex flex-col">
+                    <span class="text-xs font-bold text-[#122815]">📝 Lưu làm Bản nháp AI</span>
+                    <span class="text-[0.68rem] text-[#667768] mt-0.5">Rà soát, kiểm tra lại rồi mới xuất bản (Khuyên dùng)</span>
+                  </div>
+                </label>
+
+                <label
+                  class="flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-all"
+                  :class="globalTargetStatus === 'published' ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50'"
+                >
+                  <input type="radio" value="published" v-model="globalTargetStatus" class="accent-[#2c6e33] mt-0.5" />
+                  <div class="flex flex-col">
+                    <span class="text-xs font-bold text-[#122815]">🚀 Xuất bản luôn</span>
+                    <span class="text-[0.68rem] text-[#667768] mt-0.5">Hiển thị ngay lập tức ra trang công khai</span>
+                  </div>
+                </label>
+              </div>
+            </div>
+
+            <!-- Alert nhắc nhở kiểm duyệt -->
+            <div class="p-3 bg-[#fff8e1] border border-[#ffe082] rounded-lg text-xs text-[#8a6500] flex items-start gap-2.5">
+              <i class="fa-solid fa-triangle-exclamation text-base shrink-0 text-[#b78103] mt-0.5"></i>
+              <div>
+                <strong class="font-extrabold text-[#735100]">Lưu ý kiểm duyệt:</strong> 
+                {{ globalTargetStatus === 'ai_draft'
+                  ? 'Bản dịch AI sẽ được lưu ở trạng thái Bản nháp AI. Ban biên tập nên kiểm tra lại độ chuẩn xác của thuật ngữ trước khi bấm xuất bản.'
+                  : 'Bản dịch AI sẽ được tự động xuất bản công khai ngay khi hoàn tất. Bạn có thể vào chỉnh sửa thủ công bất kỳ lúc nào.' }}
+              </div>
+            </div>
           </template>
         </div>
 
