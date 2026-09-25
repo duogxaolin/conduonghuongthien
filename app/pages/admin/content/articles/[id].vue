@@ -235,6 +235,7 @@ const fetchArticle = async () => {
         const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
         if (ed) ed.setContent(form.content)
       }
+      recordInitialSnapshot()
     }
   } catch (err: unknown) {
     errorMsg.value = errorMessage(err, 'Lỗi tải bài viết')
@@ -246,8 +247,49 @@ const fetchArticle = async () => {
     suppressTypeReset = false
   }
 }
-
 const toast = useToast()
+
+// ─── Initial Content Snapshot & Re-translation Prompt ─────────────────
+const initialContentSnapshot = ref<{ title: string; excerpt: string; content: string } | null>(null)
+const showReTranslateModal = ref(false)
+const reTranslatePublishImmediately = ref(false)
+const reTranslateRunning = ref(false)
+
+function recordInitialSnapshot() {
+  initialContentSnapshot.value = {
+    title: form.title.trim(),
+    excerpt: form.excerpt.trim(),
+    content: form.content.trim(),
+  }
+}
+
+function checkAndPromptReTranslation() {
+  if (!initialContentSnapshot.value) return
+  const currentTitle = form.title.trim()
+  const currentExcerpt = form.excerpt.trim()
+  const currentContent = form.content.trim()
+
+  const hasContentChanged =
+    currentTitle !== initialContentSnapshot.value.title ||
+    currentExcerpt !== initialContentSnapshot.value.excerpt ||
+    currentContent !== initialContentSnapshot.value.content
+
+  if (hasContentChanged) {
+    recordInitialSnapshot()
+    showReTranslateModal.value = true
+  }
+}
+
+async function confirmReTranslation() {
+  reTranslateRunning.value = true
+  try {
+    const targetStatus = reTranslatePublishImmediately.value ? 'published' : 'ai_draft'
+    await translateAllForThisArticle(targetStatus)
+    showReTranslateModal.value = false
+  } finally {
+    reTranslateRunning.value = false
+  }
+}
 
 const autoTranslateLangs = ref<string[]>(['en'])
 const showAutoTranslateMenu = ref(false)
@@ -335,7 +377,10 @@ const handleSave = async () => {
       }
     } else {
       const res = await $fetch(`/api/admin/articles/${articleId.value}`, { method: 'PUT', body: form })
-      if (res.ok) toast.success('Đã cập nhật bài viết thành công!')
+      if (res.ok) {
+        toast.success('Đã cập nhật bài viết thành công!')
+        checkAndPromptReTranslation()
+      }
     }
   } catch (err: unknown) {
     errorMsg.value = errorMessage(err, 'Lỗi lưu bài viết')
@@ -1394,6 +1439,83 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
           <button type="button" class="px-5 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-1.5" @click="saveTranslationEdit">
             <i class="fa-solid fa-floppy-disk"></i>
             <span>Lưu bản dịch</span>
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Modal: Nhắc nhở cập nhật bản dịch khi nội dung Tiếng Việt thay đổi -->
+    <div
+      v-if="showReTranslateModal"
+      class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
+      role="dialog"
+      aria-modal="true"
+      @click.self="showReTranslateModal = false"
+    >
+      <div class="w-full max-w-lg rounded-2xl border border-[#c8d6c9] bg-white p-6 shadow-2xl flex flex-col gap-4 animate-fadeIn">
+        <!-- Header -->
+        <div class="flex items-start gap-3 border-b border-[#eef2ee] pb-4">
+          <div class="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-xl shrink-0">
+            <i class="fa-solid fa-lightbulb"></i>
+          </div>
+          <div class="flex-1 min-w-0">
+            <h3 class="m-0 text-base font-black text-[#122815]">Phát hiện nội dung Tiếng Việt vừa thay đổi!</h3>
+            <p class="m-0 text-xs text-[#667768] mt-1">
+              Bài viết gốc Tiếng Việt vừa được cập nhật nội dung mới. Bạn có muốn AI tự động cập nhật và dịch lại toàn bộ các ngôn ngữ quốc tế khác không?
+            </p>
+          </div>
+          <button
+            type="button"
+            class="text-[#667768] hover:text-[#122815] border-0 bg-transparent cursor-pointer p-1 text-base shrink-0"
+            @click="showReTranslateModal = false"
+          ><i class="fa-solid fa-xmark"></i></button>
+        </div>
+
+        <!-- Target languages preview -->
+        <div class="flex flex-col gap-1.5">
+          <label class="text-xs font-bold text-[#122815]">Các ngôn ngữ sẽ được đồng bộ hóa lại:</label>
+          <div class="flex flex-wrap gap-1.5">
+            <span
+              v-for="l in availableLanguages"
+              :key="l.code"
+              class="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-[#f0f7f1] border border-[#c8dcc9] text-xs font-bold text-[#1e4620]"
+            >
+              <span>{{ l.flag }}</span>
+              <span>{{ l.label }}</span>
+            </span>
+          </div>
+        </div>
+
+        <!-- Publish Option -->
+        <label class="flex items-center gap-2.5 p-3 rounded-xl bg-[#fcfdfc] border border-[#eef2ee] cursor-pointer text-xs text-[#1E251C]">
+          <input
+            type="checkbox"
+            v-model="reTranslatePublishImmediately"
+            class="h-4 w-4 accent-[#2c6e33] rounded"
+          />
+          <div class="flex flex-col">
+            <span class="font-bold">Tự động xuất bản luôn các bản dịch mới</span>
+            <span class="text-[0.68rem] text-[#667768]">Nếu không chọn, bản dịch sẽ lưu ở dạng Bản nháp AI để rà soát trước.</span>
+          </div>
+        </label>
+
+        <!-- Actions -->
+        <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-[#eef2ee]">
+          <button
+            type="button"
+            class="px-4 py-2.5 rounded-xl border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-50 cursor-pointer"
+            @click="showReTranslateModal = false"
+          >
+            Để sau / Giữ bản dịch hiện tại
+          </button>
+          <button
+            type="button"
+            class="px-5 py-2.5 rounded-xl bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-extrabold cursor-pointer border-none flex items-center gap-2 shadow-sm transition-all hover:-translate-y-0.5 disabled:opacity-50"
+            :disabled="reTranslateRunning"
+            @click="confirmReTranslation"
+          >
+            <i class="fa-solid fa-wand-magic-sparkles text-xs" :class="reTranslateRunning ? 'animate-spin' : ''"></i>
+            <span>{{ reTranslateRunning ? 'Đang kích hoạt...' : '⚡ Dịch lại tất cả ngay' }}</span>
           </button>
         </div>
       </div>
