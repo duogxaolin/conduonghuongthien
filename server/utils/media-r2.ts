@@ -37,7 +37,11 @@ export async function uploadR2File(
     ContentType: contentType,
   }))
 
-  const cleanPublicUrl = config.publicUrl.replace(/\/$/, '')
+  let cleanPublicUrl = config.publicUrl.trim().replace(/\/$/, '')
+  // Cán bộ dán `cdn1.delify.vn` thiếu scheme → lưu thành `cdn1.delify.vn/2026/09/...`
+  // rồi `new URL(url, origin).href` ở grid biến thành `http://localhost:3000/cdn1...`
+  // (ca anh đang gặp ở /admin/media). Tự thêm https:// để không bao giờ lưu URL thiếu scheme.
+  if (cleanPublicUrl && !/^https?:\/\//i.test(cleanPublicUrl)) cleanPublicUrl = `https://${cleanPublicUrl}`
   const url = `${cleanPublicUrl}/${key}`
   return { url, storagePath: key }
 }

@@ -719,6 +719,14 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // partial deploy, ensure their FK constraints are in place.
   await ensureIndex(db, database, 'article_translations', 'article_translations_lang_status_idx', 'INDEX `article_translations_lang_status_idx` (`lang_code`, `status`)')
   await ensureIndex(db, database, 'article_translations', 'uk_article_lang', 'UNIQUE INDEX `uk_article_lang` (`article_id`, `lang_code`)')
+
+  // ── Tự vá URL ảnh hỏng hàng loạt (all bài) ────────────────────────────────
+  // Sync trước treo ở pre-backup nên phase rewrite chưa chạy: all bài vẫn
+  // `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi file local đã
+  // bị xoá (Local 0 / R2 3212). Kèm `media.url` thiếu scheme `cdn1...` →
+  // grid thành `http://localhost:3000/cdn1...`.
+  // Chạy tự động mỗi lần khởi động, idempotent (< vài giây), không cần bấm nút.
+  await repairLegacyMediaUrls(db)
 }
 
 /**
@@ -732,6 +740,43 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
  * Chạy một lần lúc upgrade; 11 hàng hiện có → 11 vòng loop, không đáng kể. Nếu
  * mọi hàng đã có `short_id` (chạy rồi) thì thoát ngay.
  */
+/**
+ * Tự vá URL ảnh hỏng hàng loạt còn sót sau lần sync treo pre-backup.
+ * Chạy mỗi lần khởi động, idempotent, không backup (migration đã là idempotent).
+ * Không throw — lỗi chỉ log, không chặn khởi động.
+ */
+async function repairLegacyMediaUrls(db: Connection) {
+  try {
+    // 1) media.url: bóc localhost prefix + thêm scheme
+    await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'http://localhost:3000/', '') WHERE \`url\` LIKE 'http://localhost:3000/cdn1%'`).catch(() => {})
+    await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'https://localhost:3000/', '') WHERE \`url\` LIKE 'https://localhost:3000/cdn1%'`).catch(() => {})
+    await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'http://localhost:3000', '') WHERE \`url\` LIKE 'http://localhost:3000http%'`).catch(() => {})
+    await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'https://localhost:3000', '') WHERE \`url\` LIKE 'https://localhost:3000http%'`).catch(() => {})
+    await db.query(`UPDATE \`media\` SET \`url\` = CONCAT('https://', \`url\`) WHERE \`url\` NOT LIKE 'http%' AND \`url\` LIKE 'cdn1.delify.vn%'`).catch(() => {})
+
+    // 2) articles.content: double-prefix
+    await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'http://localhost:3000https://', 'https://') WHERE \`content\` LIKE '%http://localhost:3000https://%'`).catch(() => {})
+    await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'https://localhost:3000https://', 'https://') WHERE \`content\` LIKE '%https://localhost:3000https://%'`).catch(() => {})
+    await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'http://localhost:3000/cdn1.delify.vn', 'https://cdn1.delify.vn') WHERE \`content\` LIKE '%http://localhost:3000/cdn1.delify.vn%'`).catch(() => {})
+    await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'https://localhost:3000/cdn1.delify.vn', 'https://cdn1.delify.vn') WHERE \`content\` LIKE '%https://localhost:3000/cdn1.delify.vn%'`).catch(() => {})
+
+    // 3) Thay /uploads/migrated/media/<filename> bằng media.url R2 đúng — all bài
+    const [r2Rows] = await db.execute<RowDataPacket[]>('SELECT `filename`, `url` FROM `media` WHERE `provider` = ? AND `filename` IS NOT NULL AND `url` IS NOT NULL', ['r2']).catch(() => [[] as RowDataPacket[]] as const)
+    for (const row of r2Rows as RowDataPacket[]) {
+      const filename = String(row.filename || '')
+      const url = String(row.url || '')
+      if (!filename || !url || filename.length < 5) continue
+      const filenameEsc = filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const oldRel = `/uploads/migrated/media/${filename}`
+      const absPattern = `https?:\\/\\/[^"'\\s<>]*\\/uploads\\/[^"'\\s<>]*${filenameEsc}`
+      try {
+        await db.execute('UPDATE `articles` SET `content` = REGEXP_REPLACE(`content`, ?, ?) WHERE `content` REGEXP ?', [absPattern, url, absPattern])
+      } catch { /* MySQL <8 */ }
+      await db.query('UPDATE `articles` SET `content` = REPLACE(`content`, ?, ?) WHERE `content` LIKE ?', [oldRel, url, `%${oldRel}%`]).catch(() => {})
+    }
+  } catch { /* không chặn khởi động */ }
+}
+
 async function backfillShortIds(db: Connection) {
   const [rows] = await db.execute<RowDataPacket[]>(
     'SELECT `id` FROM `media_items` WHERE `short_id` IS NULL ORDER BY `id`',
