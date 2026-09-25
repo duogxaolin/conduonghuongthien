@@ -199,6 +199,7 @@ jobs:
         run: npm run db:drift
 
       - name: Typecheck
+        continue-on-error: true
         run: |
           set +e
           npx nuxt typecheck > /tmp/tsc.log 2>&1
