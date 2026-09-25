@@ -1,6 +1,6 @@
 import { finitePositive, MAX_PAGE } from '../../utils/query-number'
 import { getDb } from '../../utils/db'
-import { articles, users, categories } from '../../db/schema'
+import { articles, users, categories, articleTranslations } from '../../db/schema'
 import { eq, like, desc, count, inArray, and, sql } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -16,7 +16,8 @@ export default defineEventHandler(async (event) => {
     // `sort=views` — xếp theo tổng lượt xem hiển thị (thật + ảo), cho khối "Đọc
     // nhiều" của trang danh mục. Giá trị lạ đọc thành "mới nhất" thay vì đoán hộ.
     const sortByViews = String(query.sort || '').trim() === 'views'
-
+    const cookieLang = getCookie(event, 'cdkt_lang')?.trim().toLowerCase() || ''
+    const lang = (typeof query.lang === 'string' ? query.lang.trim().toLowerCase() : '') || cookieLang
     const db = getDb()
 
     // Resolve category filter → set of category IDs (root includes its children).
@@ -89,7 +90,7 @@ export default defineEventHandler(async (event) => {
       )`.as('view_total'),
     }
 
-    const items = await db
+    const itemsQuery = db
       .select({
         id:           articles.id,
         type:         articles.type,
@@ -97,9 +98,13 @@ export default defineEventHandler(async (event) => {
         categoryId:   articles.categoryId,
         categoryName: categories.name,
         categorySlug: categories.slug,
-        title:        articles.title,
+        title:        lang && lang !== 'vi'
+          ? sql<string>`COALESCE(NULLIF(${articleTranslations.title}, ''), ${articles.title})`
+          : articles.title,
         slug:         articles.slug,
-        excerpt:      articles.excerpt,
+        excerpt:      lang && lang !== 'vi'
+          ? sql<string>`COALESCE(NULLIF(${articleTranslations.excerpt}, ''), ${articles.excerpt})`
+          : articles.excerpt,
         thumbnailUrl: articles.thumbnailUrl,
         publishedAt:  articles.publishedAt,
         createdAt:    articles.createdAt,
@@ -109,6 +114,19 @@ export default defineEventHandler(async (event) => {
       .from(articles)
       .leftJoin(users, eq(articles.authorId, users.id))
       .leftJoin(categories, eq(articles.categoryId, categories.id))
+
+    if (lang && lang !== 'vi') {
+      itemsQuery.leftJoin(
+        articleTranslations,
+        and(
+          eq(articleTranslations.articleId, articles.id),
+          eq(articleTranslations.langCode, lang),
+          inArray(articleTranslations.status, ['published', 'ai_draft', 'reviewed']),
+        ),
+      )
+    }
+
+    const items = await itemsQuery
       .where(whereClause)
       .orderBy(...(sortByViews
         ? // Sắp theo tổng lượt xem rồi mới đến ngày đăng — đề phòng một bài cùng

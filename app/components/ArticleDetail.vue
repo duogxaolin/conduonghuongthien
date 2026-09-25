@@ -360,10 +360,16 @@ const props = defineProps({
 // liệu, nên HTML đầu tiên, thẻ SEO và mục lục không đổi. Đi từ danh sách sang
 // chi tiết là lúc thấy rõ nhất: không có nó thì bấm vào một bài trông như bấm
 // hụt cho tới khi bài về.
-const { data, pending, error, refresh } = useFetch(() => `/api/public/articles/${props.slug}`, {
-  key: () => `article-detail-${props.slug}`,
+const { currentLang } = useI18n()
+
+const { data, pending, error, refresh } = useFetch(() => `/api/public/articles/${props.slug}?lang=${currentLang.value}`, {
+  key: () => `article-detail-${props.slug}-${currentLang.value}`,
   lazy: true,
   default: () => ({ ok: false, article: null }),
+})
+
+watch(currentLang, () => {
+  void refresh()
 })
 
 const article = computed(() => data.value?.article || null)
