@@ -82,6 +82,7 @@ function totpRow(page: Page) {
 
 /** Điền bước mật khẩu và bấm gửi. KHÔNG chờ điều hướng — đó là thứ cần kiểm. */
 async function submitPassword(page: Page) {
+  await page.context().clearCookies()
   await page.goto('/admin/login')
   await page.fill('input[autocomplete="username"]', E2E_ADMIN_USERNAME)
   await page.fill('input[autocomplete="current-password"]', adminPassword())
