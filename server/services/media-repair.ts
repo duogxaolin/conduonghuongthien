@@ -75,27 +75,40 @@ export async function repairMediaUrls(adminUserId: number | null): Promise<Repai
         articlesFixed += affectedRowsOrZero(r4)
       }
 
-      // 2b. Thay `/uploads/migrated/media/<filename>` (cả absolute lẫn relative)
-      //     bằng `media.url` R2 đúng — đây là nhóm all bài đang hỏng.
-      //     Lấy danh sách R2 trong transaction để đảm bảo url đã vá ở bước 1.
+      // 2b. Thay `*/uploads/migrated/media/<file>` (cả absolute lẫn relative) bằng
+      //     `media.url` R2 đúng — in-memory: đọc mỗi article một lần, thay bằng regex
+      //     JS, ghi lại 1 câu UPDATE per article. Trước đây lặp từng filename ×
+      //     (REGEXP_REPLACE scan cả cột LONGTEXT + REPLACE scan lại) = ~1920 quét full
+      //     bảng, treo >95s với 960 file; migration khởi động phải < vài giây.
       const r2Media = await tx.select({ filename: media.filename, url: media.url }).from(media).where(eq(media.provider, 'r2'))
+      const urlByFilename = new Map<string, string>()
+      const safeEncode = (s: string) => { try { return encodeURIComponent(s) } catch { return s } }
       for (const m of r2Media) {
-        if (!m.filename || !m.url || m.filename.length < 5) continue
-        const filenameEsc = m.filename.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-        const oldRel = `/uploads/migrated/media/${m.filename}`
-        const absPattern = `https?:\\/\\/[^"'\\s<>]*\\/uploads\\/[^"'\\s<>]*${filenameEsc}`
-        try {
-          const [absRes] = await tx.execute(
-            sql`UPDATE articles SET content = REGEXP_REPLACE(content, ${absPattern}, ${m.url}) WHERE content REGEXP ${absPattern}`,
+        if (!m.filename || !m.url) continue
+        urlByFilename.set(m.filename, m.url)
+        const enc = safeEncode(m.filename)
+        if (enc !== m.filename) urlByFilename.set(enc, m.url)
+      }
+      if (urlByFilename.size > 0) {
+        const rows = await tx.select({ id: articles.id, content: articles.content })
+          .from(articles)
+          .where(sql`content LIKE ${'%/uploads/migrated/media/%'}`)
+        for (const row of rows) {
+          if (row.content === null) continue
+          const original = String(row.content)
+          const replacement = original.replace(
+            /https?:\/\/[^\s"'<>]*\/uploads\/[^\s"'<>]*migrated\/media\/([^\s"'<>\]?#]+)/g,
+            (_match, filename: string) => urlByFilename.get(filename) ?? _match,
+          ).replace(
+            /\/uploads\/migrated\/media\/([^\s"'<>\]?#]+)/g,
+            (_match, filename: string) => urlByFilename.get(filename) ?? _match,
           )
-          articlesFixed += affectedRowsOrZero(absRes)
-        } catch {
-          // MySQL < 8 → bỏ qua, sẽ thử REPLACE thường bên dưới
+          if (replacement === original) continue
+          const [r] = await tx.execute(
+            sql`UPDATE articles SET content = ${replacement} WHERE id = ${row.id}`,
+          )
+          articlesFixed += affectedRowsOrZero(r)
         }
-        const [relRes] = await tx.execute(
-          sql`UPDATE articles SET content = REPLACE(content, ${oldRel}, ${m.url}) WHERE content LIKE ${'%' + oldRel + '%'}`,
-        )
-        articlesFixed += affectedRowsOrZero(relRes)
       }
 
       await tx.insert(activityLogs).values({
