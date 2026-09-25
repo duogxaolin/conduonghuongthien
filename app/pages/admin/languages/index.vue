@@ -558,9 +558,11 @@ const universalOptions = reactive({
   includeUi: true,
   includeBlocks: true,
   includeArticles: true,
+  articlesLimit: 20,
   publishImmediately: false,
 })
 const universalRunning = ref(false)
+const universalCancelling = ref(false)
 let universalPollTimer: number | undefined
 
 async function loadCoverage() {
@@ -616,6 +618,21 @@ function stopUniversalPolling() {
   }
 }
 
+async function cancelUniversalTranslate() {
+  universalCancelling.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/system/universal-translate-cancel', {
+      method: 'POST',
+    })
+    toast.info(res.message || 'Đã gửi yêu cầu dừng tác vụ.')
+    await checkUniversalTaskStatus()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi khi dừng tác vụ.'))
+  } finally {
+    universalCancelling.value = false
+  }
+}
+
 async function runUniversalTranslate() {
   if (universalSelectedLangs.value.length === 0) {
     toast.warning('Vui lòng chọn ít nhất một ngôn ngữ.')
@@ -631,6 +648,7 @@ async function runUniversalTranslate() {
         includeUi: universalOptions.includeUi,
         includeBlocks: universalOptions.includeBlocks,
         includeArticles: universalOptions.includeArticles,
+        articlesLimit: universalOptions.articlesLimit,
         publishImmediately: universalOptions.publishImmediately,
       },
     })
@@ -643,7 +661,6 @@ async function runUniversalTranslate() {
     universalRunning.value = false
   }
 }
-
 async function loadData() {
   await Promise.all([fetchLanguages(), fetchTranslations(), loadViSourceMap()])
 }
@@ -1235,19 +1252,47 @@ onUnmounted(() => {
         </div>
 
         <!-- Scope & Options -->
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-[#fcfdfc] p-4 rounded-xl border border-[#eef2ee]">
-          <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#122815]">
-            <input type="checkbox" v-model="universalOptions.includeUi" class="h-4 w-4 accent-[#2c6e33] rounded" />
-            <span>(1) Dịch chuỗi từ điển UI</span>
-          </label>
-          <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#122815]">
-            <input type="checkbox" v-model="universalOptions.includeBlocks" class="h-4 w-4 accent-[#2c6e33] rounded" />
-            <span>(2) Dịch khối trang tĩnh (Blocks)</span>
-          </label>
-          <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#122815]">
-            <input type="checkbox" v-model="universalOptions.includeArticles" class="h-4 w-4 accent-[#2c6e33] rounded" />
-            <span>(3) Dịch bài viết mới xuất bản</span>
-          </label>
+        <div class="flex flex-col gap-2.5 bg-[#fcfdfc] p-4 rounded-xl border border-[#eef2ee]">
+          <div class="grid grid-cols-1 sm:grid-cols-3 gap-3">
+            <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#122815]">
+              <input type="checkbox" v-model="universalOptions.includeUi" class="h-4 w-4 accent-[#2c6e33] rounded" />
+              <span>(1) Dịch chuỗi từ điển UI</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#122815]">
+              <input type="checkbox" v-model="universalOptions.includeBlocks" class="h-4 w-4 accent-[#2c6e33] rounded" />
+              <span>(2) Dịch khối trang tĩnh (Blocks)</span>
+            </label>
+            <label class="flex items-center gap-2 cursor-pointer text-xs font-bold text-[#122815]">
+              <input type="checkbox" v-model="universalOptions.includeArticles" class="h-4 w-4 accent-[#2c6e33] rounded" />
+              <span>(3) Dịch bài viết</span>
+            </label>
+          </div>
+
+          <!-- Article Limit Selector if includeArticles -->
+          <div v-if="universalOptions.includeArticles" class="pt-2.5 border-t border-[#e2ece3] flex flex-col gap-1.5 animate-fadeIn">
+            <div class="flex items-center justify-between">
+              <label class="text-[0.75rem] font-bold text-[#122815]">Phạm vi số lượng bài viết dịch:</label>
+              <span class="text-[0.68rem] text-[#667768]">Kho CSDL có {{ universalStats?.totalArticles || 1121 }} bài viết</span>
+            </div>
+            <div class="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              <button
+                type="button"
+                v-for="opt in [
+                  { val: 20, label: '20 bài mới nhất', desc: '~5-7 phút (Khuyên dùng)' },
+                  { val: 50, label: '50 bài mới nhất', desc: '~12-15 phút' },
+                  { val: 100, label: '100 bài mới nhất', desc: '~25-30 phút' },
+                  { val: 0, label: 'Tất cả bài viết', desc: 'Chạy ngầm dài hạn' },
+                ]"
+                :key="opt.val"
+                class="p-2.5 rounded-lg border text-left cursor-pointer transition-all flex flex-col gap-0.5"
+                :class="universalOptions.articlesLimit === opt.val ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50 bg-white'"
+                @click="universalOptions.articlesLimit = opt.val"
+              >
+                <span class="text-xs font-bold text-[#122815]">{{ opt.label }}</span>
+                <span class="text-[0.65rem] text-[#667768]">{{ opt.desc }}</span>
+              </button>
+            </div>
+          </div>
         </div>
 
         <!-- Publish Option -->
@@ -1283,16 +1328,39 @@ onUnmounted(() => {
           <!-- Active Task Panel -->
           <div
             v-if="universalTask?.active"
-            class="bg-gradient-to-r from-[#f0f7f1] to-[#e4f2e5] border border-[#a2cca4] rounded-xl p-4 flex flex-col gap-2.5 animate-fadeIn"
+            class="bg-gradient-to-r from-[#f0f7f1] to-[#e4f2e5] border border-[#a2cca4] rounded-xl p-4 flex flex-col gap-2.5 animate-fadeIn shadow-sm"
           >
             <div class="flex items-center justify-between text-xs font-bold text-[#1e4620]">
               <span class="flex items-center gap-2">
-                <i class="fa-solid fa-spinner animate-spin text-sm"></i>
+                <i class="fa-solid fa-spinner animate-spin text-sm text-[#2c6e33]"></i>
                 <span>{{ universalTask.phase }}</span>
               </span>
-              <span>Đang xử lý trong nền...</span>
+              <div class="flex items-center gap-3">
+                <span class="font-extrabold text-[#2c6e33] text-sm">
+                  {{ universalTask.percent }}%
+                  <span v-if="universalTask.totalItems > 0" class="text-xs font-normal text-[#667768]">
+                    ({{ universalTask.processedItems }}/{{ universalTask.totalItems }})
+                  </span>
+                </span>
+                <button
+                  type="button"
+                  class="px-2.5 py-1 rounded-md bg-[#d32f2f] hover:bg-[#b71c1c] text-white text-[0.7rem] font-bold border-none cursor-pointer flex items-center gap-1 transition-all"
+                  :disabled="universalCancelling"
+                  @click="cancelUniversalTranslate"
+                >
+                  <i class="fa-solid fa-hand text-[0.65rem]"></i>
+                  <span>{{ universalCancelling ? 'Đang dừng...' : 'Dừng tác vụ' }}</span>
+                </button>
+              </div>
             </div>
-            <p v-if="universalTask.currentItem" class="m-0 text-xs text-[#4A5545] font-mono truncate" :title="universalTask.currentItem">
+            <!-- Real-time Animated Progress Bar -->
+            <div class="w-full bg-[#c8d6c9] rounded-full h-2 overflow-hidden">
+              <div
+                class="bg-[#2c6e33] h-full transition-all duration-300 rounded-full"
+                :style="{ width: `${Math.max(2, universalTask.percent)}%` }"
+              ></div>
+            </div>
+            <p v-if="universalTask.currentItem" class="m-0 text-xs text-[#385130] font-mono truncate" :title="universalTask.currentItem">
               &gt; {{ universalTask.currentItem }}
             </p>
           </div>

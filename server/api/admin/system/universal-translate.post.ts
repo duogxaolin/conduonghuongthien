@@ -19,6 +19,7 @@ export default defineEventHandler(async (event) => {
     includeUi: body?.includeUi !== false,
     includeBlocks: body?.includeBlocks !== false,
     includeArticles: body?.includeArticles !== false,
+    articlesLimit: body?.articlesLimit !== undefined ? Number(body.articlesLimit) : 20,
     publishImmediately: Boolean(body?.publishImmediately),
   })
 

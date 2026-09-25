@@ -1,12 +1,11 @@
-import { and, asc, count, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
 import { articles, articleTranslations, languages, langTranslations, pageBlocks, pages } from '../db/schema'
 import { callAi } from './ai-gateway'
 import { upsertTranslations } from './languages'
-import { bulkTriggerTranslation } from './article-translations'
+import { runTranslationWorker } from './article-translations'
 import type { ActorLike } from '../utils/permissions'
 import { logInfo, logWarn } from '../utils/logger'
-
 export interface UniversalCoverageStats {
   totalArticles: number
   totalBlocks: number
@@ -47,6 +46,17 @@ const universalTaskState: UniversalTaskState = {
   startedAt: null,
   completedAt: null,
   error: null,
+}
+let cancelRequested = false
+
+export function cancelUniversalAutoTranslate() {
+  if (universalTaskState.active) {
+    cancelRequested = true
+    universalTaskState.phase = 'Đang dừng...'
+    universalTaskState.currentItem = 'Người dùng đã yêu cầu dừng tác vụ...'
+    return { ok: true, message: 'Đã yêu cầu dừng tác vụ dịch toàn cục.' }
+  }
+  return { ok: false, message: 'Không có tác vụ nào đang chạy.' }
 }
 
 export function getUniversalTaskState(): UniversalTaskState {
@@ -139,6 +149,7 @@ export async function startUniversalAutoTranslate(
     includeUi?: boolean
     includeBlocks?: boolean
     includeArticles?: boolean
+    articlesLimit?: number
     publishImmediately?: boolean
   } = {},
   db: Database = getDb(),
@@ -150,7 +161,9 @@ export async function startUniversalAutoTranslate(
   const includeUi = options.includeUi !== false
   const includeBlocks = options.includeBlocks !== false
   const includeArticles = options.includeArticles !== false
+  const articlesLimit = options.articlesLimit !== undefined ? Number(options.articlesLimit) : 20
   const targetStatus = options.publishImmediately ? 'published' : 'ai_draft'
+  cancelRequested = false
 
   universalTaskState.active = true
   universalTaskState.phase = 'Khởi động...'
@@ -168,11 +181,79 @@ export async function startUniversalAutoTranslate(
     try {
       const allLangs = await db.select().from(languages).where(inArray(languages.code, targetLangs))
 
+      // ── Step 0: Pre-calculate total items ──────────────────────────────
+      let totalUiWork = 0
+      let totalBlocksWork = 0
+      let totalArticlesWork = 0
+
+      if (includeUi) {
+        const viRows = await db.select().from(langTranslations).where(eq(langTranslations.langCode, 'vi'))
+        for (const lang of allLangs) {
+          const targetRows = await db.select().from(langTranslations).where(eq(langTranslations.langCode, lang.code))
+          const targetMap = new Map(targetRows.map((r) => [`${r.group}::${r.key}`, r.value]))
+          const missingCount = viRows.filter((vi) => {
+            const v = targetMap.get(`${vi.group}::${vi.key}`)
+            return !v || !v.trim()
+          }).length
+          totalUiWork += Math.ceil(missingCount / 10)
+        }
+      }
+
+      const blocks = includeBlocks
+        ? await db.select().from(pageBlocks).where(eq(pageBlocks.isVisible, true))
+        : []
+      if (includeBlocks) {
+        for (const lang of allLangs) {
+          for (const b of blocks) {
+            const rawData = (b.data as Record<string, unknown>) || {}
+            const translations = (rawData.translations as Record<string, Record<string, unknown>> | undefined) || {}
+            if (!translations[lang.code] || Object.keys(translations[lang.code]!).length === 0) {
+              totalBlocksWork++
+            }
+          }
+        }
+      }
+
+      // Collect missing articles per language up to articlesLimit
+      const missingArticlesByLang: Map<string, Array<{ id: number; title: string }>> = new Map()
+      if (includeArticles) {
+        for (const lang of allLangs) {
+          let query = db
+            .select({ id: articles.id, title: articles.title })
+            .from(articles)
+            .where(eq(articles.status, 'published'))
+            .orderBy(desc(articles.id))
+          if (articlesLimit > 0) {
+            query = query.limit(articlesLimit)
+          }
+          const publishedCandidates = await query
+
+          const existingTranslations = await db
+            .select({ articleId: articleTranslations.articleId })
+            .from(articleTranslations)
+            .where(
+              and(
+                eq(articleTranslations.langCode, lang.code),
+                sql`${articleTranslations.status} != 'failed'`,
+              ),
+            )
+          const existingSet = new Set(existingTranslations.map(e => e.articleId))
+          const missing = publishedCandidates.filter(a => !existingSet.has(a.id))
+          missingArticlesByLang.set(lang.code, missing)
+          totalArticlesWork += missing.length
+        }
+      }
+
+      const totalWork = totalUiWork + totalBlocksWork + totalArticlesWork
+      universalTaskState.totalItems = Math.max(1, totalWork)
+      universalTaskState.processedItems = 0
+      universalTaskState.percent = 0
+
       // ── Step 1: Translate missing UI keys ──────────────────────────────
       if (includeUi) {
         universalTaskState.phase = 'Dịch các chuỗi giao diện (UI)...'
         for (const lang of allLangs) {
-          universalTaskState.currentItem = `Đang quét từ điển UI cho ${lang.name}...`
+          if (cancelRequested) break
 
           const viRows = await db.select().from(langTranslations).where(eq(langTranslations.langCode, 'vi'))
           const targetRows = await db.select().from(langTranslations).where(eq(langTranslations.langCode, lang.code))
@@ -185,6 +266,7 @@ export async function startUniversalAutoTranslate(
 
           const CHUNK = 10
           for (let i = 0; i < missingVi.length; i += CHUNK) {
+            if (cancelRequested) break
             const chunk = missingVi.slice(i, i + CHUNK)
             universalTaskState.currentItem = `Dịch UI ${lang.name}: ${chunk.map(c => c.key).slice(0, 3).join(', ')}...`
 
@@ -205,18 +287,20 @@ export async function startUniversalAutoTranslate(
                 }
               } catch {}
             }
+            universalTaskState.processedItems++
+            universalTaskState.percent = Math.min(99, Math.round((universalTaskState.processedItems / universalTaskState.totalItems) * 100))
           }
         }
       }
 
       // ── Step 2: Translate Page Builder blocks ──────────────────────────
-      if (includeBlocks) {
+      if (includeBlocks && !cancelRequested) {
         universalTaskState.phase = 'Dịch các khối trang tĩnh (Trang chủ, Giới thiệu, Liên hệ...)...'
 
-        const blocks = await db.select().from(pageBlocks).where(eq(pageBlocks.isVisible, true))
-
         for (const lang of allLangs) {
+          if (cancelRequested) break
           for (const b of blocks) {
+            if (cancelRequested) break
             const rawData = (b.data as Record<string, unknown>) || {}
             const translations = (rawData.translations as Record<string, Record<string, unknown>> | undefined) || {}
             if (translations[lang.code] && Object.keys(translations[lang.code]!).length > 0) {
@@ -257,28 +341,49 @@ ${JSON.stringify({ ...fieldsToTranslate, ...(rawData.bodyHtml ? { bodyHtml: rawD
                 }
               } catch {}
             }
+            universalTaskState.processedItems++
+            universalTaskState.percent = Math.min(99, Math.round((universalTaskState.processedItems / universalTaskState.totalItems) * 100))
           }
         }
       }
 
       // ── Step 3: Translate missing published articles ───────────────────
-      if (includeArticles) {
-        universalTaskState.phase = 'Xếp lịch dịch bài viết mới...'
-        for (const lang of allLangs) {
-          const published = await db.select({ id: articles.id }).from(articles).where(eq(articles.status, 'published'))
-          const existingTranslations = await db.select({ articleId: articleTranslations.articleId }).from(articleTranslations).where(and(eq(articleTranslations.langCode, lang.code), sql`${articleTranslations.status} != 'failed'`))
-          const existingSet = new Set(existingTranslations.map(e => e.articleId))
+      if (includeArticles && !cancelRequested) {
+        universalTaskState.phase = 'Dịch các bài viết...'
 
-          const missingIds = published.map(a => a.id).filter(id => !existingSet.has(id))
-          if (missingIds.length > 0) {
-            universalTaskState.currentItem = `Xếp lịch dịch ${missingIds.length} bài viết sang ${lang.name}...`
-            await bulkTriggerTranslation(actor, missingIds, lang.code, targetStatus, db)
+        for (const lang of allLangs) {
+          if (cancelRequested) break
+          const missing = missingArticlesByLang.get(lang.code) || []
+
+          for (let idx = 0; idx < missing.length; idx++) {
+            if (cancelRequested) break
+            const art = missing[idx]!
+
+            universalTaskState.currentItem = `Dịch bài viết (${idx + 1}/${missing.length}) "${art.title.slice(0, 32)}..." sang ${lang.name}`
+
+            try {
+              await runTranslationWorker(art.id, lang.code, lang.name, targetStatus)
+            } catch (err) {
+              logWarn({ event: 'universal_translate.article_failed', articleId: art.id, langCode: lang.code, error: String(err) })
+            }
+
+            universalTaskState.processedItems++
+            universalTaskState.percent = Math.min(99, Math.round((universalTaskState.processedItems / universalTaskState.totalItems) * 100))
           }
         }
       }
 
+      if (cancelRequested) {
+        universalTaskState.phase = 'Đã dừng'
+        universalTaskState.currentItem = 'Tác vụ đã được dừng theo yêu cầu của quản trị viên.'
+        universalTaskState.active = false
+        cancelRequested = false
+        logInfo({ event: 'universal_translate.cancelled' })
+        return
+      }
+
       universalTaskState.phase = 'Hoàn tất'
-      universalTaskState.currentItem = 'Đã hoàn tất toàn bộ quá trình dịch tự động!'
+      universalTaskState.currentItem = `Đã hoàn tất dịch thành công ${universalTaskState.processedItems} mục sang ${targetLangs.length} ngôn ngữ!`
       universalTaskState.percent = 100
       universalTaskState.completedAt = new Date().toISOString()
       logInfo({ event: 'universal_translate.completed', targetLangs })
@@ -287,6 +392,7 @@ ${JSON.stringify({ ...fieldsToTranslate, ...(rawData.bodyHtml ? { bodyHtml: rawD
       logWarn({ event: 'universal_translate.failed', error: universalTaskState.error })
     } finally {
       universalTaskState.active = false
+      cancelRequested = false
     }
   }, 0)
 
