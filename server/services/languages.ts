@@ -74,6 +74,23 @@ export async function createLanguage(
       nativeName: data.nativeName.trim(),
       displayOrder: data.displayOrder ?? 0,
     })
+
+    // Seed blank rows from default vi language so all keys are immediately visible
+    const viKeys = await tx
+      .select({ group: langTranslations.group, key: langTranslations.key })
+      .from(langTranslations)
+      .where(eq(langTranslations.langCode, 'vi'))
+
+    for (const vi of viKeys) {
+      await tx.insert(langTranslations).values({
+        langCode: code,
+        group: vi.group,
+        key: vi.key,
+        value: null,
+        isAiTranslated: false,
+      })
+    }
+
     await tx.insert(activityLogs).values({
       userId: actor.id ?? null,
       action: 'create',

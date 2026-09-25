@@ -145,11 +145,6 @@ async function loadViSourceMap() {
   }
 }
 
-function openTranslationTabFor(code: string) {
-  selectedLangCode.value = code
-  activeTab.value = 'translations'
-  fetchTranslations()
-}
 
 const filteredTranslations = computed(() => {
   let list = translations.value
@@ -264,12 +259,28 @@ async function oneTimeTranslate(lang: typeof languages.value[0]) {
     translatingCards[lang.code] = false
   }
 }
+function openTranslationTabFor(code: string) {
+  selectedLangCode.value = code
+  statusFilter.value = 'all'
+  searchQuery.value = ''
+  selectedGroup.value = 'all'
+  activeTab.value = 'translations'
+  fetchTranslations()
+  nextTick(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  })
+}
 
 function inspectMissingKeys(code: string) {
   selectedLangCode.value = code
   statusFilter.value = 'untranslated'
+  searchQuery.value = ''
+  selectedGroup.value = 'all'
   activeTab.value = 'translations'
   fetchTranslations()
+  nextTick(() => {
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  })
 }
 
 async function syncAllLanguages() {
@@ -599,6 +610,9 @@ onMounted(() => {
           <option value="ai">Do AI dịch</option>
         </select>
         <input v-model="searchQuery" type="text" placeholder="Tìm kiếm key hoặc giá trị..." class="flex-1 min-w-[200px] px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]" @input="fetchTranslations" />
+        <span class="text-xs font-bold text-[#667768] self-center px-1 whitespace-nowrap">
+          {{ filteredTranslations.length }} / {{ translations.length }} key
+        </span>
         <button
           class="px-4 py-2.5 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-sm font-bold cursor-pointer border-none flex items-center gap-2 disabled:opacity-50"
           :disabled="aiTranslating"
