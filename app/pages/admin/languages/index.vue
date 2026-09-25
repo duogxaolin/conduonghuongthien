@@ -16,6 +16,13 @@ const loadError = ref('')
 const languages = ref<Array<{
   id: number; code: string; name: string; nativeName: string
   isActive: boolean; isDefault: boolean; displayOrder: number
+  stats?: {
+    totalKeys: number
+    translatedKeys: number
+    missingKeys: number
+    aiKeys: number
+    percent: number
+  }
 }>>([])
 
 const activeTab = ref<'languages' | 'translations'>('languages')
@@ -238,6 +245,73 @@ async function seedDefaultTranslations() {
   }
 }
 
+const translatingCards = reactive<Record<string, boolean>>({})
+const syncing = ref(false)
+const translatingAll = ref(false)
+
+async function oneTimeTranslate(lang: typeof languages.value[0]) {
+  translatingCards[lang.code] = true
+  try {
+    const res = await $fetch<{ ok: boolean; translated: number; total: number }>('/api/admin/languages/ai-translate', {
+      method: 'POST',
+      body: { langCode: lang.code, langName: lang.name },
+    })
+    toast.success(`Đã dịch ${res.translated}/${res.total} key cho ${lang.name}!`)
+    await loadData()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, `Không thể dịch ${lang.name}.`))
+  } finally {
+    translatingCards[lang.code] = false
+  }
+}
+
+function inspectMissingKeys(code: string) {
+  selectedLangCode.value = code
+  statusFilter.value = 'untranslated'
+  activeTab.value = 'translations'
+  fetchTranslations()
+}
+
+async function syncAllLanguages() {
+  syncing.value = true
+  try {
+    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/languages/sync', { method: 'POST' })
+    toast.success(res.message)
+    await loadData()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không thể đồng bộ ngôn ngữ.'))
+  } finally {
+    syncing.value = false
+  }
+}
+
+async function translateAllLanguagesMissing() {
+  const targets = languages.value.filter(l => l.isActive && !l.isDefault && (l.stats?.missingKeys || 0) > 0)
+  if (targets.length === 0) {
+    toast.info('Tất cả ngôn ngữ đang hoạt động đã được dịch đầy đủ 100%!')
+    return
+  }
+  const names = targets.map(l => l.name).join(', ')
+  if (!confirm(`Dịch AI tất cả các key còn thiếu cho ${targets.length} ngôn ngữ (${names})?`)) return
+
+  translatingAll.value = true
+  let totalDone = 0
+  for (const lang of targets) {
+    try {
+      const res = await $fetch<{ ok: boolean; translated: number }>('/api/admin/languages/ai-translate', {
+        method: 'POST',
+        body: { langCode: lang.code, langName: lang.name },
+      })
+      totalDone += res.translated || 0
+    } catch {
+      // Continue next lang
+    }
+  }
+  toast.success(`Đã hoàn tất dịch tất cả ngôn ngữ (tổng cộng ${totalDone} key)!`)
+  translatingAll.value = false
+  await loadData()
+}
+
 async function loadData() {
   await Promise.all([fetchLanguages(), fetchTranslations(), loadViSourceMap()])
 }
@@ -261,21 +335,48 @@ onMounted(() => {
         <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Quản lý ngôn ngữ và bản dịch giao diện</p>
       </div>
       <div class="flex items-center gap-2 flex-wrap">
+        <!-- Nút đồng bộ ngôn ngữ (Forum-style) -->
         <button
           type="button"
-          class="px-3.5 py-2.5 rounded-lg border border-[#c8d6c9] bg-white text-[#1e4620] hover:bg-[#f0f7f1] text-sm font-bold cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
+          class="px-3 py-2 rounded-lg border border-[#c8d6c9] bg-white text-[#1e4620] hover:bg-[#f0f7f1] text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
+          :disabled="syncing"
+          title="Đồng bộ tất cả các key từ ngôn ngữ mặc định sang các ngôn ngữ khác"
+          @click="syncAllLanguages"
+        >
+          <i class="fa-solid fa-arrows-rotate text-xs" :class="syncing ? 'animate-spin' : ''"></i>
+          <span>{{ syncing ? 'Đang đồng bộ...' : 'Đồng bộ key' }}</span>
+        </button>
+
+        <!-- Nút dịch tất cả ngôn ngữ còn thiếu (Forum-style) -->
+        <button
+          type="button"
+          class="px-3 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors border-none disabled:opacity-50 shadow-xs"
+          :disabled="translatingAll"
+          title="Dịch AI tất cả các key còn thiếu cho mọi ngôn ngữ đang hoạt động"
+          @click="translateAllLanguagesMissing"
+        >
+          <i class="fa-solid fa-globe text-xs" :class="translatingAll ? 'animate-spin' : ''"></i>
+          <span>{{ translatingAll ? 'Đang dịch tất cả...' : 'Dịch tất cả còn thiếu' }}</span>
+        </button>
+
+        <!-- Nút nạp bản dịch mặc định -->
+        <button
+          type="button"
+          class="px-3 py-2 rounded-lg border border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f0f7f1] text-xs font-bold cursor-pointer flex items-center gap-1.5 transition-colors disabled:opacity-50"
           :disabled="seedingDefault"
+          title="Khôi phục hoặc nạp lại bản dịch mặc định ban đầu"
           @click="seedDefaultTranslations"
         >
-          <i class="fa-solid fa-cloud-arrow-down" :class="seedingDefault ? 'animate-spin' : ''"></i>
-          <span>{{ seedingDefault ? 'Đang nạp...' : 'Nạp bản dịch mặc định' }}</span>
+          <i class="fa-solid fa-cloud-arrow-down text-xs" :class="seedingDefault ? 'animate-spin' : ''"></i>
+          <span>{{ seedingDefault ? 'Đang nạp...' : 'Nạp mặc định' }}</span>
         </button>
+
         <button
           type="button"
-          class="px-4 py-2.5 rounded-lg bg-[#2c6e33] hover:bg-[#1e4620] text-white text-sm font-bold cursor-pointer border-none flex items-center gap-2 transition-colors"
+          class="px-3.5 py-2 rounded-lg bg-[#2c6e33] hover:bg-[#1e4620] text-white text-xs font-bold cursor-pointer border-none flex items-center gap-1.5 transition-colors shadow-xs"
           @click="showAddForm = !showAddForm"
         >
-          <i class="fa-solid fa-plus"></i> Thêm ngôn ngữ
+          <i class="fa-solid fa-plus text-xs"></i> Thêm ngôn ngữ
         </button>
       </div>
     </div>
@@ -382,25 +483,78 @@ onMounted(() => {
               </div>
             </div>
           </div>
+          <!-- Translation Progress & Missing Keys (Forum-style on-card check) -->
+          <div class="flex flex-col gap-1.5 bg-[#fcfdfc] p-2.5 rounded-lg border border-[#eef2ee]">
+            <div class="flex items-center justify-between text-xs">
+              <span class="text-[#667768] font-medium text-[0.75rem]">Tiến độ:</span>
+              <span
+                class="font-bold text-[0.72rem]"
+                :class="(lang.stats?.missingKeys || 0) === 0 ? 'text-[#2c6e33]' : 'text-[#b78103]'"
+              >
+                {{ (lang.stats?.missingKeys || 0) === 0 ? '✓ Đã hoàn tất 100%' : `Còn thiếu ${lang.stats?.missingKeys} key (${lang.stats?.percent || 0}%)` }}
+              </span>
+            </div>
 
-          <!-- Action buttons -->
+            <!-- Progress bar -->
+            <div class="w-full h-1.5 bg-[#e2ece3] rounded-full overflow-hidden">
+              <div
+                class="h-full transition-all duration-500 rounded-full"
+                :class="(lang.stats?.missingKeys || 0) === 0 ? 'bg-[#2c6e33]' : 'bg-[#b78103]'"
+                :style="{ width: `${lang.stats?.percent || 0}%` }"
+              ></div>
+            </div>
+
+            <div class="flex items-center justify-between text-[0.68rem] text-[#667768] mt-0.5">
+              <span>Đã dịch: <strong class="text-[#122815]">{{ lang.stats?.translatedKeys || 0 }}/{{ lang.stats?.totalKeys || 0 }}</strong></span>
+              <span v-if="(lang.stats?.aiKeys || 0) > 0" class="text-[#2c6e33] font-medium">AI: {{ lang.stats?.aiKeys }}</span>
+            </div>
+          </div>
+
+          <!-- Action buttons (Forum-style with one-time translate and missing key inspection) -->
           <div class="flex items-center gap-1.5 pt-2 border-t border-[#eef2ee] flex-wrap">
+            <!-- Nút dịch One-time ngay trên card nếu còn key thiếu -->
+            <button
+              v-if="lang.code !== 'vi' && (lang.stats?.missingKeys || 0) > 0"
+              type="button"
+              class="px-2.5 py-1 rounded-md bg-[#2c6e33] hover:bg-[#1e4620] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-1 transition-colors disabled:opacity-50 shadow-2xs"
+              :disabled="translatingCards[lang.code]"
+              title="Dịch AI một lần (One-time) tất cả các key còn thiếu của ngôn ngữ này"
+              @click="oneTimeTranslate(lang)"
+            >
+              <i class="fa-solid fa-wand-magic-sparkles text-[0.68rem]" :class="translatingCards[lang.code] ? 'animate-spin' : ''"></i>
+              <span>{{ translatingCards[lang.code] ? 'Đang dịch...' : `Dịch AI (${lang.stats?.missingKeys})` }}</span>
+            </button>
+
+            <!-- Nút kiểm tra xem còn bao nhiêu key chưa dịch (nhảy sang tab bản dịch lọc untranslated) -->
+            <button
+              v-if="(lang.stats?.missingKeys || 0) > 0"
+              type="button"
+              class="px-2 py-1 rounded-md border border-[#ffe082] bg-[#fff8e1] text-[#b78103] hover:bg-[#ffecb3] text-xs font-bold cursor-pointer flex items-center gap-1"
+              title="Xem danh sách các key chưa dịch"
+              @click="inspectMissingKeys(lang.code)"
+            >
+              <i class="fa-solid fa-list-check text-[0.65rem]"></i> Xem thiếu
+            </button>
+
+            <!-- Sửa bản dịch -->
             <button
               type="button"
-              class="px-2.5 py-1 rounded-md bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-1 transition-colors"
+              class="px-2 py-1 rounded-md border border-[#c8d6c9] bg-white text-[#1e4620] hover:bg-[#f0f7f1] text-xs font-semibold cursor-pointer flex items-center gap-1"
               @click="openTranslationTabFor(lang.code)"
             >
-              <i class="fa-solid fa-language text-[0.7rem]"></i> Sửa bản dịch
+              <i class="fa-solid fa-table-list text-[0.68rem]"></i> Bảng dịch
             </button>
+
             <button
               v-if="!lang.isDefault"
               type="button"
-              class="px-2 py-1 rounded-md border border-[#c8d6c9] bg-white text-[#2c6e33] hover:bg-[#f0f7f1] text-xs font-semibold cursor-pointer"
+              class="px-2 py-1 rounded-md border border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f0f7f1] text-xs font-semibold cursor-pointer"
               title="Đặt làm mặc định"
               @click="setDefault(lang)"
             >
-              <i class="fa-regular fa-star mr-1"></i> Mặc định
+              <i class="fa-regular fa-star text-[0.68rem]"></i>
             </button>
+
             <button
               v-if="!lang.isDefault"
               type="button"
@@ -408,7 +562,7 @@ onMounted(() => {
               title="Xoá ngôn ngữ"
               @click="deleteLanguage(lang)"
             >
-              <i class="fa-solid fa-trash text-[0.7rem]"></i>
+              <i class="fa-solid fa-trash text-[0.68rem]"></i>
             </button>
           </div>
         </div>
