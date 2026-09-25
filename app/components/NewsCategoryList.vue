@@ -6,17 +6,17 @@
         <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-3">
           <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
-            <span>Trang chủ</span>
+            <span>{{ t('home') }}</span>
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
           <nuxt-link to="/news" class="hover:text-[#4A6741] transition-colors no-underline text-[#556450]">
-            <span>Bản tin</span>
+            <span>{{ t('news') }}</span>
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
           <span class="text-[#2D5A27] font-bold">{{ heading }}</span>
         </nav>
 
-        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-[#7CB342] m-0 mb-1">Chuyên mục bản tin</p>
+        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-[#7CB342] m-0 mb-1">{{ t('news_category_title') }}</p>
         <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-[#1E251C] leading-[1.2] m-0">{{ heading }}</h1>
         <p v-if="subheading" class="text-[0.95rem] text-[#5A6655] mt-2 mb-5 leading-relaxed">{{ subheading }}</p>
 
@@ -27,7 +27,7 @@
             class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 no-underline bg-white text-[#4A5545] border-[#DCE5DB] hover:border-[#4A6741] hover:bg-[#F2F7F0]"
           >
             <i class="fa-solid fa-layer-group text-[0.7rem]" aria-hidden="true"></i>
-            <span>Tất cả bản tin</span>
+            <span>{{ t('all_news') }}</span>
           </nuxt-link>
           <nuxt-link
             v-for="cat in categoryNavList"
@@ -171,10 +171,10 @@
                     :to="'/news/' + item.slug"
                     class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
                   >
-                    <span>Chi tiết</span>
+                    <span>{{ t('view_details') }}</span>
                     <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
                   </nuxt-link>
-                  <span class="text-[#8E9F8B] font-medium text-[0.72rem]">Bản tin C11</span>
+                  <span class="text-[#8E9F8B] font-medium text-[0.72rem]">{{ t('c11_news_badge') }}</span>
                 </div>
               </div>
             </article>
@@ -185,7 +185,7 @@
         <aside class="flex flex-col gap-6 min-w-0 lg:sticky lg:top-[90px]">
           <!-- Widget 1: Đọc nhiều (thiết kế nguyên bản tinh tế) -->
           <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm px-5 py-2">
-            <h2 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">Đọc nhiều</h2>
+            <h2 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">{{ t('most_read') }}</h2>
 
             <div v-if="mostReadPending" role="status" aria-busy="true" class="py-2">
               <span class="sr-only">Đang tải tin đọc nhiều</span>
@@ -262,6 +262,9 @@
  */
 import { computed } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
+import { useI18n } from '~/composables/useI18n'
+
+const { t, currentLang } = useI18n()
 
 const props = defineProps({
   heading: { type: String, required: true },
@@ -272,16 +275,16 @@ const props = defineProps({
   limit: { type: Number, default: 24 },
 })
 
-const categoryNavList = [
-  { slug: 'tin-noi-bat', label: 'Tin nổi bật', url: '/news/featured-news', icon: 'fa-solid fa-fire' },
-  { slug: 'tin-hoat-dong', label: 'Tin hoạt động', url: '/news/activity-news', icon: 'fa-solid fa-bolt' },
-  { slug: 'tin-dia-phuong', label: 'Tin địa phương', url: '/news/local-news', icon: 'fa-solid fa-map-location-dot' },
-]
+const categoryNavList = computed(() => [
+  { slug: 'tin-noi-bat', label: t('news_featured') || 'Tin nổi bật', url: '/news/featured-news', icon: 'fa-solid fa-fire' },
+  { slug: 'tin-hoat-dong', label: t('news_activities') || 'Tin hoạt động', url: '/news/activity-news', icon: 'fa-solid fa-bolt' },
+  { slug: 'tin-dia-phuong', label: t('news_local') || 'Tin địa phương', url: '/news/local-news', icon: 'fa-solid fa-map-location-dot' },
+])
 
 const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
   lazy: true,
-  key: () => `news-category-${props.categorySlug}`,
-  query: { type: 'news', categorySlug: props.categorySlug, limit: props.limit },
+  key: () => `news-category-${props.categorySlug}-${currentLang.value}`,
+  query: computed(() => ({ type: 'news', categorySlug: props.categorySlug, limit: props.limit, lang: currentLang.value })),
   default: () => ({ ok: true, articles: [], pagination: {} }),
 })
 

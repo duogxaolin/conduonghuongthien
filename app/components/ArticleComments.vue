@@ -27,7 +27,7 @@
     aria-labelledby="comments-heading"
   >
     <h2 id="comments-heading" class="m-0 mb-5 text-[1.15rem] font-extrabold text-[#1E251C]">
-      <i class="fa-solid fa-comments mr-2 text-[#7CB342]" aria-hidden="true"></i>Bình luận
+      <i class="fa-solid fa-comments mr-2 text-[#7CB342]" aria-hidden="true"></i>{{ t('comments') }}
       <span v-if="total" class="ml-1 text-[0.95rem] font-semibold text-[#7A8675]">({{ total }})</span>
     </h2>
 
@@ -82,7 +82,7 @@
 
       <!-- 3. Chưa có bình luận -->
       <p v-if="!comments.length" class="bg-[#F7FAF6] border border-[#E2E8DF] rounded-lg px-6 py-8 text-center text-[0.95rem] text-[#4A5545] m-0 mb-6">
-        Chưa có bình luận nào. Hãy là người đầu tiên đặt câu hỏi hoặc chia sẻ ý kiến về nội dung này.
+        {{ t('no_comments_yet') || 'Chưa có bình luận nào. Hãy là người đầu tiên đặt câu hỏi hoặc chia sẻ ý kiến về nội dung này.' }}
       </p>
 
       <ul v-else class="list-none p-0 m-0 mb-6 flex flex-col gap-5">
@@ -102,7 +102,7 @@
                   <span
                     v-if="comment.isAdminReply"
                     class="px-2 py-0.5 rounded-full bg-[#4A6741] text-white text-[0.7rem] font-bold uppercase tracking-wide"
-                  >Ban quản trị</span>
+                  >{{ t('admin_badge') || 'Ban quản trị' }}</span>
                   <span class="text-[0.78rem] text-[#7A8675]">{{ formatDateVN(comment.createdAt) }}</span>
                 </div>
                 <p class="m-0 text-[0.95rem] leading-[1.6] text-[#2C3529] whitespace-pre-line break-words">{{ comment.body }}</p>
@@ -114,7 +114,7 @@
                     class="text-[0.82rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
                     @click="toggleReply(comment.id)"
                   >
-                    <i class="fa-solid fa-reply mr-1" aria-hidden="true"></i>Trả lời
+                    <i class="fa-solid fa-reply mr-1" aria-hidden="true"></i>{{ t('reply') || 'Trả lời' }}
                   </button>
                   <!-- Mỗi bình luận có địa chỉ riêng, chia sẻ được — cùng ý với
                        neo `#qa-<id>` của /qa-documents. -->
@@ -124,7 +124,7 @@
                     @click="copyLink(comment.id)"
                   >
                     <i class="fa-solid fa-link mr-1" aria-hidden="true"></i>
-                    {{ copiedId === comment.id ? 'Đã chép liên kết' : 'Chép liên kết' }}
+                    {{ copiedId === comment.id ? (t('link_copied') || 'Đã chép liên kết') : (t('copy_link') || 'Chép liên kết') }}
                   </button>
                   <button
                     v-if="comment.canDelete"
@@ -134,7 +134,7 @@
                     @click="removeComment(comment)"
                   >
                     <i class="fa-solid fa-trash-can mr-1" aria-hidden="true"></i>
-                    {{ deletingId === comment.id ? 'Đang xoá…' : 'Xoá' }}
+                    {{ deletingId === comment.id ? (t('deleting') || 'Đang xoá…') : (t('delete') || 'Xoá') }}
                   </button>
                 </div>
 
@@ -220,7 +220,7 @@
             <div class="flex items-center gap-2 mb-1.5">
               <span v-if="p.status === 'sending'" class="inline-flex items-center gap-1.5 text-[0.78rem] text-[#7A8675] font-medium">
                 <i class="fa-solid fa-circle-notch fa-spin text-[0.7rem]" aria-hidden="true"></i>
-                Đang gửi…
+                {{ t('sending') || 'Đang gửi…' }}
               </span>
               <span v-else class="inline-flex items-center gap-1.5 text-[0.78rem] text-[#B04A4A] font-medium" role="alert">
                 <i class="fa-solid fa-circle-exclamation text-[0.75rem]" aria-hidden="true"></i>
@@ -230,10 +230,10 @@
             <p class="m-0 text-[0.95rem] leading-[1.6] text-[#2C3529] whitespace-pre-line break-words">{{ p.body }}</p>
             <div v-if="p.status === 'error'" class="mt-2 flex gap-3">
               <button type="button" class="text-[0.82rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded" @click="retryPendingComment(p.tempId)">
-                <i class="fa-solid fa-rotate-right mr-1" aria-hidden="true"></i>Thử lại
+                <i class="fa-solid fa-rotate-right mr-1" aria-hidden="true"></i>{{ t('retry') || 'Thử lại' }}
               </button>
               <button type="button" class="text-[0.82rem] font-semibold text-[#7A8675] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded" @click="dismissPendingComment(p.tempId)">
-                <i class="fa-solid fa-xmark mr-1" aria-hidden="true"></i>Bỏ qua
+                <i class="fa-solid fa-xmark mr-1" aria-hidden="true"></i>{{ t('dismiss') || 'Bỏ qua' }}
               </button>
             </div>
           </div>
@@ -246,14 +246,14 @@
           class="px-3 py-1.5 rounded-lg border border-[#E2E8DF] bg-white text-[0.85rem] font-semibold text-[#4A5545] disabled:opacity-50"
           :disabled="page <= 1 || pending"
           @click="goToPage(page - 1)"
-        >Trang trước</button>
-        <span class="text-[0.85rem] text-[#4A5545]">Trang {{ page }} / {{ totalPages }}</span>
+        >{{ t('page_prev') || 'Trang trước' }}</button>
+        <span class="text-[0.85rem] text-[#4A5545]">{{ t('page_of') || 'Trang' }} {{ page }} / {{ totalPages }}</span>
         <button
           type="button"
           class="px-3 py-1.5 rounded-lg border border-[#E2E8DF] bg-white text-[0.85rem] font-semibold text-[#4A5545] disabled:opacity-50"
           :disabled="page >= totalPages || pending"
           @click="goToPage(page + 1)"
-        >Trang sau</button>
+        >{{ t('page_next') || 'Trang sau' }}</button>
       </div>
 
       <!-- 4. Chưa đăng nhập -->
@@ -314,6 +314,9 @@ import { computed, nextTick, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
 import { useReaderAuth } from '~/composables/useReaderAuth'
+import { useI18n } from '~/composables/useI18n'
+
+const { t } = useI18n()
 // Đổi tên khi import: `errorMessage` đã là một `ref` cục bộ trong tệp này (thông
 // báo lỗi của lượt tải luồng), nên nhập trùng tên là xung đột khai báo.
 import { errorMessage as messageFrom, errorStatus } from '~/utils/errorMessage'

@@ -175,7 +175,7 @@
                       class="mt-1 flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[0.85rem] font-semibold text-[#1E251C] no-underline transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
                       @click="isReaderMenuOpen = false"
                     >
-                      <i class="fa-solid fa-user w-4 text-center text-[#7CB342]" aria-hidden="true"></i> Trang cá nhân
+                      <i class="fa-solid fa-user w-4 text-center text-[#7CB342]" aria-hidden="true"></i> {{ t('profile') }}
                     </nuxt-link>
                     <button
                       type="button"
@@ -183,7 +183,7 @@
                       class="mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[0.85rem] font-semibold text-[#1E251C] transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
                       @click="onReaderSignOut"
                     >
-                      <i class="fa-solid fa-right-from-bracket w-4 text-center text-[#7A8675]" aria-hidden="true"></i> Đăng xuất
+                      <i class="fa-solid fa-right-from-bracket w-4 text-center text-[#7A8675]" aria-hidden="true"></i> {{ t('logout') }}
                     </button>
                   </div>
                 </div>
@@ -194,7 +194,7 @@
                   class="inline-flex items-center gap-2 bg-[#F8FAF7] border border-[#E2E8DF] px-3.5 py-2 rounded-sm text-[0.82rem] font-semibold text-[#385130] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
                   @click="readerSignIn()"
                 >
-                  <i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i> Đăng nhập
+                  <i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i> {{ t('login') }}
                 </button>
               </div>
             </client-only>
@@ -392,7 +392,7 @@
                     @click="isMobileMenuOpen = false"
                   >
                     <span class="flex items-center gap-2">
-                      <i class="fa-solid fa-bell text-[#7CB342]" aria-hidden="true"></i> Thông báo
+                      <i class="fa-solid fa-bell text-[#7CB342]" aria-hidden="true"></i> {{ t('notifications') }}
                     </span>
                     <span
                       v-if="unreadCount > 0"
@@ -407,7 +407,7 @@
                   class="w-full flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-4 py-3 text-[0.88rem] font-bold text-[#385130] shadow-sm transition-colors active:bg-[#EEF2EC]"
                   @click="readerSignIn()"
                 >
-                  <i class="fa-solid fa-right-to-bracket text-[#7CB342]" aria-hidden="true"></i> Đăng nhập để bình luận
+                  <i class="fa-solid fa-right-to-bracket text-[#7CB342]" aria-hidden="true"></i> {{ t('login_to_comment') }}
                 </button>
               </div>
             </client-only>
@@ -420,7 +420,7 @@
               </div>
             </a>
             <nuxt-link to="/contact" class="btn btn-primary w-full flex items-center justify-center gap-2 px-4 py-3 text-[0.88rem] font-bold rounded-xl" @click="isMobileMenuOpen = false">
-              <span class="w-1.5 h-1.5 bg-[#7CB342] rounded-full inline-block animate-pulse"></span> Đăng ký tư vấn ngay
+              <span class="w-1.5 h-1.5 bg-[#7CB342] rounded-full inline-block animate-pulse"></span> {{ t('register_help') }}
             </nuxt-link>
           </div>
         </div>
@@ -495,7 +495,7 @@
                 </span>
                 <input
                   type="text"
-                  placeholder="Nhập nội dung cần tìm kiếm trên website..."
+                  :placeholder="t('search_placeholder')"
                   v-model="searchQuery"
                   @input="onSearchInput"
                   ref="searchInputRef"
@@ -597,7 +597,7 @@
                   @click="handleSearch"
                   class="w-full py-2 px-3 rounded-lg text-xs font-extrabold text-[#2D5A27] hover:bg-[#EBF3E8] transition-colors border-none bg-transparent cursor-pointer flex items-center justify-center gap-2"
                 >
-                  <span>Xem toàn bộ kết quả tìm kiếm</span>
+                  <span>{{ t('search_view_all') }}</span>
                   <i class="fa-solid fa-arrow-right text-[0.7rem]" aria-hidden="true"></i>
                 </button>
               </div>
@@ -642,46 +642,46 @@
                 :class="siteMainLogo ? 'h-12 md:h-[52px]' : 'h-14 md:h-16'"
               />
             </div>
-            <span class="text-white font-extrabold text-[1.2rem] md:text-[1.35rem] tracking-[0.5px]">CON ĐƯỜNG HƯỚNG THIỆN</span>
+            <span class="text-white font-extrabold text-[1.2rem] md:text-[1.35rem] tracking-[0.5px]">{{ t('portal_title') }}</span>
           </div>
           <p class="text-[0.9rem] leading-relaxed">
-            Trang thông tin điện tử về tái hòa nhập cộng đồng của Bộ Công an, do Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) quản lý và vận hành.
+            {{ t('footer_desc') }}
           </p>
         </div>
 
         <div>
-          <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">Liên kết chính</h3>
+          <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">{{ t('footer_links_main') }}</h3>
           <ul class="list-none space-y-3">
-            <li><nuxt-link to="/" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Trang chủ</nuxt-link></li>
-            <li><nuxt-link to="/about" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Giới thiệu ban biên tập</nuxt-link></li>
-            <li><nuxt-link to="/news" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Bản tin hoạt động</nuxt-link></li>
-            <li><nuxt-link to="/documents" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Văn bản pháp luật mới</nuxt-link></li>
+            <li><nuxt-link to="/" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('home') }}</nuxt-link></li>
+            <li><nuxt-link to="/about" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('about') }}</nuxt-link></li>
+            <li><nuxt-link to="/news" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('news') }}</nuxt-link></li>
+            <li><nuxt-link to="/documents" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('documents') }}</nuxt-link></li>
           </ul>
         </div>
 
         <div>
-          <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">Tái hòa nhập</h3>
+          <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">{{ t('reintegration') }}</h3>
           <ul class="list-none space-y-3">
-            <li><nuxt-link to="/role-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Tấm gương tiêu biểu hoàn lương</nuxt-link></li>
-            <li><nuxt-link to="/reintegration-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Các mô hình kinh tế hỗ trợ</nuxt-link></li>
-            <li><nuxt-link to="/legal-qa" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Giải đáp pháp luật trực tuyến</nuxt-link></li>
-            <li><nuxt-link to="/qa-documents" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Tài liệu Hỏi – Đáp đã phê duyệt</nuxt-link></li>
-            <li><nuxt-link to="/contact" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">Thông tin đường dây nóng</nuxt-link></li>
+            <li><nuxt-link to="/role-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('role_models') }}</nuxt-link></li>
+            <li><nuxt-link to="/reintegration-models" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('reintegration') }}</nuxt-link></li>
+            <li><nuxt-link to="/legal-qa" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('legal_qa') }}</nuxt-link></li>
+            <li><nuxt-link to="/qa-documents" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('qa_documents') }}</nuxt-link></li>
+            <li><nuxt-link to="/contact" class="text-white/70 no-underline text-[0.9rem] transition-all hover:text-[#7CB342] hover:pl-1.5">{{ t('contact') }}</nuxt-link></li>
           </ul>
         </div>
 
         <div>
-          <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">Thông tin liên hệ</h3>
-          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Cơ quan chủ quản:</strong> C11 - Bộ Công an</p>
-          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Địa chỉ:</strong> {{ siteAddress }}</p>
-          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Điện thoại:</strong> {{ siteHotline }}</p>
-          <p class="mb-3 text-[0.9rem]"><strong class="text-white">Email:</strong> {{ siteEmail }}</p>
+          <h3 class="text-white text-[1.1rem] font-bold mb-6 relative pb-2 after:content-[''] after:absolute after:bottom-0 after:left-0 after:w-[30px] after:h-[3px] after:bg-[#7CB342]">{{ t('contact_info') }}</h3>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('footer_agency') }}</strong> C11 - Bộ Công an</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('address') }}</strong> {{ siteAddress }}</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('phone') }}</strong> {{ siteHotline }}</p>
+          <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('email') || 'Email:' }}</strong> {{ siteEmail }}</p>
         </div>
       </div>
 
       <div class="border-t border-white/[0.08] py-6 text-[0.85rem]">
         <div class="container flex flex-col items-center md:items-start gap-2 text-center md:text-left md:pr-24">
-          <p class="m-0 text-white/80 leading-relaxed">&copy; 2026 Bản quyền thuộc về Cổng thông tin Con Đường Hướng Thiện - C11 Bộ Công an.</p>
+          <p class="m-0 text-white/80 leading-relaxed">&copy; 2026 {{ t('footer_copyright') }}</p>
           <p class="m-0">
             <a
               href="https://delify.vn?ref=conduonghuongthien"
@@ -985,9 +985,49 @@ const bottomNav = computed<BottomNavItem[]>(() => {
   if (Array.isArray(bottomNavRaw.value) && bottomNavRaw.value.length) return bottomNavRaw.value
   return DEFAULT_BOTTOM_NAV
 })
+const NAV_LABEL_TO_KEY: Record<string, string> = {
+  'Trang chủ': 'home',
+  'Giới thiệu': 'about',
+  'Bản tin': 'news',
+  'Tin tức': 'news',
+  'Tin nổi bật': 'news_featured',
+  'Tin hoạt động': 'news_activities',
+  'Tin địa phương': 'news_local',
+  'Tấm gương tiêu biểu': 'role_models',
+  'Tấm gương': 'role_models',
+  'Mô hình tái hòa nhập': 'reintegration',
+  'Mô hình': 'reintegration',
+  'Văn bản': 'documents',
+  'Văn bản pháp luật': 'documents',
+  'Hỏi đáp pháp luật': 'legal_qa',
+  'Hỏi - Đáp': 'legal_qa',
+  'Tài liệu Hỏi-Đáp': 'qa_documents',
+  'Tài liệu Hỏi – Đáp': 'qa_documents',
+  'Thư viện Video': 'video_lib',
+  'Thư viện Ảnh': 'photo_lib',
+  'Media': 'media',
+  'Liên hệ': 'contact',
+  'Hỗ trợ 24/7': 'support_247',
+  'Đăng ký tư vấn': 'register_help',
+  'Trợ lý AI': 'assistant',
+  'Trợ lý ảo': 'assistant',
+}
 
-const navItemLabel = (item: NavItem) => item.label || (item.labelKey ? t(item.labelKey) : item.url)
-
+const navItemLabel = (item: NavItem) => {
+  if (currentLang.value !== 'vi') {
+    if (item.labelKey) {
+      const translated = t(item.labelKey)
+      if (translated && translated !== item.labelKey) return translated
+    }
+    const cleanLabel = item.label?.trim() || ''
+    const fallbackKey = NAV_LABEL_TO_KEY[cleanLabel]
+    if (fallbackKey) {
+      const translated = t(fallbackKey)
+      if (translated && translated !== fallbackKey) return translated
+    }
+  }
+  return item.label || (item.labelKey ? t(item.labelKey) : item.url)
+}
 const onBottomNavClick = (item: BottomNavItem) => {
   if (item.type === 'chatbot') chatWidget.value?.toggleChatbot?.()
   else if (item.type === 'drawer') toggleMobileMenu()

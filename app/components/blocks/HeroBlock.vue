@@ -52,9 +52,9 @@
         </div>
 
         <div class="flex flex-wrap items-center gap-x-6 gap-y-2 mt-9 text-[0.8rem] font-semibold text-white/60">
-          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-[#7CB342]"></i> Hỗ trợ 24/7 miễn phí</span>
-          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-[#7CB342]"></i> Bảo mật thông tin</span>
-          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-[#7CB342]"></i> Kết nối trực tiếp cán bộ</span>
+          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-[#7CB342]"></i> {{ t('hero_support_free') || 'Hỗ trợ 24/7 miễn phí' }}</span>
+          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-[#7CB342]"></i> {{ t('hero_security') || 'Bảo mật thông tin' }}</span>
+          <span class="flex items-center gap-1.5"><i class="fa-solid fa-check-circle text-[#7CB342]"></i> {{ t('hero_connect_officer') || 'Kết nối trực tiếp cán bộ' }}</span>
         </div>
       </div>
     </div>
@@ -69,18 +69,24 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+
+const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
-// Merge with defaults so migrated blocks (which may lack the newer keys) still render.
-const d = computed(() => ({
-  badge: 'Cổng thông tin chính thống',
-  titleLine1: 'Đồng hành cùng',
-  titleLine2: 'hành trình hướng thiện',
-  subtitle: 'Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý',
-  btnAboutText: 'Về chúng tôi',
-  btnAboutLink: '/about',
-  btnHelpText: 'Nhận hỗ trợ 24/7',
-  btnHelpLink: '#tro-giup',
-  ...(props.block?.data || {}),
-}))
+
+const d = computed(() => {
+  const isEn = currentLang.value !== 'vi'
+  return {
+    badge: isEn ? (t('hero_badge') || 'Official Portal') : 'Cổng thông tin chính thống',
+    titleLine1: isEn ? (t('hero_title_line1') || 'Accompanying') : 'Đồng hành cùng',
+    titleLine2: isEn ? (t('hero_title_line2') || 'the path of redemption') : 'hành trình hướng thiện',
+    subtitle: isEn ? (t('hero_subtitle') || 'Comprehensive platform supporting employment, legal aid, and psychological counseling') : 'Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý',
+    btnAboutText: isEn ? (t('about') || 'About Us') : 'Về chúng tôi',
+    btnAboutLink: '/about',
+    btnHelpText: isEn ? (t('register_help') || 'Get 24/7 Support') : 'Nhận hỗ trợ 24/7',
+    btnHelpLink: '#tro-giup',
+    ...(props.block?.data || {}),
+  }
+})
 const bgImage = computed(() => d.value.bgImage || '/assets/hero_banner.jpg')
 </script>
