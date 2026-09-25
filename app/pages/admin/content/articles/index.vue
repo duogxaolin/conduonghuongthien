@@ -411,11 +411,74 @@ async function startGlobalTranslation() {
       toast.success(`Đã xếp lịch dịch ${totalQueuedArticles} lượt bài viết sang ${totalQueuedLangs} ngôn ngữ! Hệ thống đang xử lý trong nền.`)
       showGlobalTranslateModal.value = false
       await fetchArticles(pagination.value.page)
+      void fetchBulkTranslateStatus()
+      startBulkStatusPolling()
     }
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể bắt đầu dịch toàn bộ.'))
   } finally {
     globalTranslating.value = false
+  }
+}
+
+// ─── Active Bulk Translation Banner ──────────────────────────────────
+type BulkStatusResponse = {
+  ok: boolean
+  active: boolean
+  task: {
+    active: boolean
+    total: number
+    processed: number
+    currentArticleId: number | null
+    currentArticleTitle: string | null
+    langCode: string
+    langName: string
+    startedAt: string | null
+    completedAt: string | null
+  }
+  dbTranslatingCount: number
+}
+
+const bulkTranslateTask = ref<BulkStatusResponse | null>(null)
+const completedBannerMsg = ref('')
+let bulkStatusTimer: number | undefined
+
+async function fetchBulkTranslateStatus() {
+  try {
+    const res = await $fetch<BulkStatusResponse>('/api/admin/articles/bulk-translate-status')
+    if (res.ok) {
+      const wasActive = bulkTranslateTask.value?.active
+      bulkTranslateTask.value = res
+      if (res.active) {
+        startBulkStatusPolling()
+      } else {
+        stopBulkStatusPolling()
+        if (wasActive && res.task.completedAt) {
+          completedBannerMsg.value = `Đã hoàn tất dịch tự động ${res.task.total} bài viết sang ${res.task.langName || res.task.langCode}!`
+          toast.success(completedBannerMsg.value)
+          await fetchArticles(pagination.value.page)
+          setTimeout(() => {
+            completedBannerMsg.value = ''
+          }, 10000)
+        }
+      }
+    }
+  } catch {
+    // Non-critical
+  }
+}
+
+function startBulkStatusPolling() {
+  if (bulkStatusTimer) return
+  bulkStatusTimer = window.setInterval(() => {
+    void fetchBulkTranslateStatus()
+  }, 2500)
+}
+
+function stopBulkStatusPolling() {
+  if (bulkStatusTimer) {
+    window.clearInterval(bulkStatusTimer)
+    bulkStatusTimer = undefined
   }
 }
 
@@ -611,6 +674,11 @@ onMounted(async () => {
     }
   }
   await fetchArticles()
+  void fetchBulkTranslateStatus()
+})
+
+onUnmounted(() => {
+  stopBulkStatusPolling()
 })
 </script>
 
@@ -640,6 +708,71 @@ onMounted(async () => {
       </div>
     </div>
 
+    <!-- Background Translation Task Banner (Live Real-time Progress) -->
+    <div
+      v-if="bulkTranslateTask?.active"
+      class="bg-gradient-to-r from-[#f0f7f1] to-[#e4f2e5] border border-[#a2cca4] rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all"
+    >
+      <div class="flex items-start sm:items-center gap-3 flex-1 min-w-0">
+        <div class="w-10 h-10 rounded-xl bg-[#2c6e33] text-white flex items-center justify-center shrink-0 shadow-xs">
+          <i class="fa-solid fa-wand-magic-sparkles text-base animate-spin motion-reduce:animate-none"></i>
+        </div>
+        <div class="flex flex-col gap-1 flex-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <span class="px-2 py-0.5 rounded-full bg-[#2c6e33] text-white text-[0.68rem] font-bold uppercase tracking-wider">
+              Đang dịch ngầm
+            </span>
+            <span class="text-xs font-extrabold text-[#122815]">
+              {{ BULK_LANGS.find(b => b.code === bulkTranslateTask?.task.langCode)?.flag || '🌐' }}
+              {{ bulkTranslateTask?.task.langName || bulkTranslateTask?.task.langCode }}
+            </span>
+            <span class="text-xs text-[#667768] font-semibold">
+              — Tiến độ: {{ bulkTranslateTask?.task.processed || 0 }} / {{ bulkTranslateTask?.task.total || bulkTranslateTask?.dbTranslatingCount }} bài viết
+              ({{ Math.round(((bulkTranslateTask?.task.processed || 0) / (bulkTranslateTask?.task.total || 1)) * 100) }}%)
+            </span>
+          </div>
+
+          <!-- Animated progress bar -->
+          <div class="w-full max-w-lg h-2 rounded-full bg-[#c8dcc9] overflow-hidden">
+            <div
+              class="h-full bg-[#2c6e33] transition-all duration-500 rounded-full"
+              :style="{ width: `${Math.max(5, Math.round(((bulkTranslateTask?.task.processed || 0) / (bulkTranslateTask?.task.total || 1)) * 100))}%` }"
+            ></div>
+          </div>
+
+          <p v-if="bulkTranslateTask?.task.currentArticleTitle" class="m-0 text-xs text-[#4A5545] truncate" :title="bulkTranslateTask.task.currentArticleTitle">
+            Đang xử lý: <strong>{{ bulkTranslateTask.task.currentArticleTitle }}</strong>
+          </p>
+        </div>
+      </div>
+
+      <div class="flex items-center gap-2 shrink-0">
+        <button
+          type="button"
+          class="px-3 py-1.5 rounded-lg border border-[#a2cca4] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#e4ece4] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
+          @click="fetchArticles(pagination.page); fetchBulkTranslateStatus()"
+        >
+          <i class="fa-solid fa-arrows-rotate text-[0.7rem]" :class="loading ? 'animate-spin' : ''"></i>
+          <span>Cập nhật bảng</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Completed Notice Banner -->
+    <div
+      v-else-if="completedBannerMsg"
+      class="bg-[#e4f2e5] border border-[#a2cca4] rounded-xl p-3.5 shadow-sm flex items-center justify-between gap-3 text-xs text-[#1e4620]"
+    >
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-circle-check text-base text-[#2c6e33]"></i>
+        <span class="font-bold">{{ completedBannerMsg }}</span>
+      </div>
+      <button
+        type="button"
+        class="border-0 bg-transparent text-[#667768] hover:text-[#122815] cursor-pointer text-xs"
+        @click="completedBannerMsg = ''"
+      >✕</button>
+    </div>
     <!-- Filters -->
     <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col sm:flex-row flex-wrap gap-3">
       <input
@@ -803,8 +936,13 @@ onMounted(async () => {
                 v-for="t in parseTranslations(a.translatedLangs)"
                 :key="t.lang"
                 class="inline-flex items-center px-1.5 py-0.5 rounded text-[0.62rem] font-bold uppercase"
-                :class="t.status === 'published' ? 'bg-[#e4f2e5] text-[#1e4620]' : 'bg-[#fff8e1] text-[#b78103]'"
+                :class="t.status === 'published'
+                  ? 'bg-[#e4f2e5] text-[#1e4620]'
+                  : t.status === 'translating'
+                    ? 'bg-[#e3f2fd] text-[#1565c0] animate-pulse motion-reduce:animate-none'
+                    : 'bg-[#fff8e1] text-[#b78103]'"
               >
+                <i v-if="t.status === 'translating'" class="fa-solid fa-spinner animate-spin mr-1 text-[0.55rem]"></i>
                 {{ t.lang }}
               </span>
             </div>
@@ -946,10 +1084,13 @@ onMounted(async () => {
                       class="inline-flex items-center px-1.5 py-0.5 rounded text-[0.65rem] font-bold uppercase cursor-pointer"
                       :class="t.status === 'published'
                         ? 'bg-[#e4f2e5] text-[#1e4620] border border-[#c8dcc9]'
-                        : 'bg-[#fff8e1] text-[#b78103] border border-[#ffe082]'"
-                      :title="`${t.lang.toUpperCase()}: ${t.status === 'published' ? 'Đã xuất bản' : 'Bản nháp AI'}`"
+                        : t.status === 'translating'
+                          ? 'bg-[#e3f2fd] text-[#1565c0] border border-[#90caf9] animate-pulse motion-reduce:animate-none'
+                          : 'bg-[#fff8e1] text-[#b78103] border border-[#ffe082]'"
+                      :title="`${t.lang.toUpperCase()}: ${t.status === 'published' ? 'Đã xuất bản' : t.status === 'translating' ? 'Đang dịch AI...' : 'Bản nháp AI'}`"
                       @click="openQuickView(a, t.lang)"
                     >
+                      <i v-if="t.status === 'translating'" class="fa-solid fa-spinner animate-spin mr-1 text-[0.55rem]"></i>
                       {{ t.lang }}
                     </span>
                   </template>
