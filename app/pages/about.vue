@@ -44,6 +44,9 @@ onMounted(() => {
   }
 })
 
+const loadError = computed(() => error.value || null)
+const page = computed(() => data.value?.page || null)
+
 // Builder preview: when embedded in the editor iframe, live-edited blocks
 // pushed via postMessage override the fetched ones (see usePagePreview).
 const { isPreview, previewBlocks, selectedId } = usePagePreview()

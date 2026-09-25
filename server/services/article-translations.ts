@@ -306,9 +306,8 @@ async function runTranslationWorker(
   langName: string,
   targetStatus: 'ai_draft' | 'published' = 'ai_draft',
 ) {
-
+  const db = getDb()
   logInfo({ event: 'translation.job_started', articleId, langCode })
-
   try {
     // Fetch article content
     const [article] = await db.select().from(articles).where(eq(articles.id, articleId)).limit(1)
