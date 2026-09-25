@@ -63,20 +63,25 @@ interface PublicPageResponse {
 // Recursively drop any node with isVisible === false (and its whole subtree),
 // and strip the isVisible flag from the returned tree (public payload = visible
 // nodes only). Preserves colSpan and recurses into container children.
-function pruneHiddenTree(nodes: unknown): PublicBlockNode[] {
+function pruneHiddenTree(nodes: unknown, lang?: string): PublicBlockNode[] {
   if (!Array.isArray(nodes)) return []
   const out: PublicBlockNode[] = []
   for (const item of nodes) {
     if (!item || typeof item !== 'object') continue
     const n = item as Partial<BlockNode>
     if (n.isVisible === false) continue
+
+    const rawData = (n.data as Record<string, unknown>) || {}
+    const translations = rawData.translations as Record<string, Record<string, unknown>> | undefined
+    const langOverrides = lang && lang !== 'vi' ? translations?.[lang] || {} : {}
+
     const node: PublicBlockNode = {
       id: n.id,
       blockType: String(n.blockType ?? ''),
-      data: n.data || {},
+      data: { ...rawData, ...langOverrides } as BlockData,
     }
     if (typeof n.colSpan === 'number') node.colSpan = n.colSpan
-    if (Array.isArray(n.children)) node.children = pruneHiddenTree(n.children)
+    if (Array.isArray(n.children)) node.children = pruneHiddenTree(n.children, lang)
     out.push(node)
   }
   return out
@@ -101,6 +106,9 @@ export default defineEventHandler(async (event): Promise<PublicPageResponse> => 
   const slug = String(getRouterParam(event, 'slug') || '').trim()
   if (!slug) return notFound()
 
+  const query = getQuery(event)
+  const cookieLang = getCookie(event, 'cdkt_lang')?.trim().toLowerCase() || ''
+  const lang = (typeof query.lang === 'string' ? query.lang.trim().toLowerCase() : '') || cookieLang
   try {
     const db = getDb()
     const [page] = await db.select().from(pages).where(eq(pages.slug, slug)).limit(1)
@@ -116,7 +124,7 @@ export default defineEventHandler(async (event): Promise<PublicPageResponse> => 
     // Prefer the published tree when it is a non-empty array.
     const tree = page.publishedBlocks
     if (Array.isArray(tree) && tree.length) {
-      return { ok: true, page: pageMeta, blocks: pruneHiddenTree(tree) }
+      return { ok: true, page: pageMeta, blocks: pruneHiddenTree(tree, lang) }
     }
 
     // Legacy fallback: flat visible rows from page_blocks.
@@ -134,12 +142,16 @@ export default defineEventHandler(async (event): Promise<PublicPageResponse> => 
       .where(and(eq(pageBlocks.pageId, page.id), eq(pageBlocks.isVisible, true)))
       .orderBy(asc(pageBlocks.displayOrder), asc(pageBlocks.id))
 
-    const blocks: PublicBlockNode[] = rows.map(row => ({
-      id: row.id,
-      blockType: row.blockType,
-      data: row.data ?? {},
-    }))
-
+    const blocks: PublicBlockNode[] = rows.map((row) => {
+      const rawData = (row.data as Record<string, unknown>) ?? {}
+      const translations = rawData.translations as Record<string, Record<string, unknown>> | undefined
+      const langOverrides = lang && lang !== 'vi' ? translations?.[lang] || {} : {}
+      return {
+        id: row.id,
+        blockType: row.blockType,
+        data: { ...rawData, ...langOverrides } as BlockData,
+      }
+    })
     return { ok: true, page: pageMeta, blocks }
   } catch (err) {
     logError({ event: 'public.page_render_failed', slug, error: err })

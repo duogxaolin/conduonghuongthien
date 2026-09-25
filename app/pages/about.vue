@@ -21,18 +21,28 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, watch } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+
+const { currentLang, t } = useI18n()
 
 // `lazy`: bỏ chặn điều hướng phía client, lượt dựng phía máy chủ vẫn chờ dữ
 // liệu nên HTML đầu tiên và thẻ SEO không đổi (design.md D2).
 const { data, pending, error, refresh } = useAsyncData(
-  'page-about',
-  () => $fetch('/api/public/pages/about'),
+  `page-about-${currentLang.value}`,
+  () => $fetch(`/api/public/pages/about?lang=${currentLang.value}`),
   { lazy: true, default: () => ({ ok: false, page: null, blocks: [] }) }
 )
 
-const loadError = computed(() => error.value || null)
-const page = computed(() => data.value?.page || null)
+watch(currentLang, () => {
+  void refresh()
+})
+
+onMounted(() => {
+  if (currentLang.value !== 'vi') {
+    void refresh()
+  }
+})
 
 // Builder preview: when embedded in the editor iframe, live-edited blocks
 // pushed via postMessage override the fetched ones (see usePagePreview).
