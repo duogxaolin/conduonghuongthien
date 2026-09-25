@@ -5,7 +5,7 @@
       <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 sm:mb-10 pb-4 border-b border-[#E2E8DF]">
         <div>
           <span class="block text-[0.78rem] font-extrabold text-[#7CB342] uppercase tracking-[1.2px] mb-1.5">
-            Chỉ đạo & Điều hành
+            {{ t('guidance_and_direction') || 'Chỉ đạo & Điều hành' }}
           </span>
           <h2 class="text-2xl sm:text-3xl font-black text-[#172516] tracking-tight m-0 mb-2">
             {{ d.title || 'Văn Bản Pháp Luật Mới Ban Hành' }}
@@ -91,10 +91,10 @@
                 :to="`/news/${doc.slug}`"
                 class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
               >
-                <span>Chi tiết</span>
+                <span>{{ t('view_details') || 'Chi tiết' }}</span>
                 <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
               </nuxt-link>
-              <span class="text-[#8E9F8B] font-medium text-[0.72rem]">Văn bản pháp luật</span>
+              <span class="text-[#8E9F8B] font-medium text-[0.72rem]">{{ t('documents') || 'Văn bản pháp luật' }}</span>
             </div>
           </div>
         </article>

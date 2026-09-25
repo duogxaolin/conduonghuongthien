@@ -303,7 +303,7 @@
             <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
           </svg>
         </div>
-        <span class="bot-label">Hỏi trợ lý</span>
+        <span class="bot-label">{{ t('ask_ai') || 'Hỏi trợ lý' }}</span>
       </button>
     </div>
   </div>
@@ -312,6 +312,9 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useChatbot, type StoredConversation, type ChatMessage } from '~/composables/useChatbot'
+import { useI18n } from '~/composables/useI18n'
+
+const { t } = useI18n()
 
 const {
   conversations, activeId, chatMessages, isSubmitting, botInput, botInputError,

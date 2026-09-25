@@ -32,8 +32,17 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+
+const { currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
-const d = computed(() => props.block?.data || {})
+const d = computed(() => {
+  const raw = props.block?.data || {}
+  const lang = currentLang.value
+  if (lang === 'vi') return raw
+  const langOverrides = raw.translations?.[lang] || {}
+  return { ...raw, ...langOverrides }
+})
 const bodyHtml = computed(() => d.value.bodyHtml || '')
 </script>
 

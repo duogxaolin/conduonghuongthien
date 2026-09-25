@@ -3,7 +3,7 @@
     <div class="container grid grid-cols-1 gap-8 lg:grid-cols-[2.1fr_0.9fr]">
       <!-- Left column -->
       <div>
-        <SectionBar :title="d.title || 'Tin nổi bật'" icon="★" to="/news" viewall-text="Tất cả tin tức →" />
+        <SectionBar :title="d.title || t('news_featured') || 'Tin nổi bật'" icon="★" to="/news" :viewall-text="t('all_news_arrow') || 'Tất cả tin tức →'" />
 
         <template v-if="featured">
           <!-- Main featured -->
@@ -13,7 +13,7 @@
                 <img :src="featured.thumbnailUrl || '/assets/news_danang.jpg'" :alt="featured.title" class="w-full h-full object-cover transition-transform duration-[0.6s] ease-[cubic-bezier(0.165,0.84,0.44,1)] group-hover:scale-[1.03]"  loading="lazy" decoding="async" />
                 <div class="absolute bottom-0 left-0 right-0 h-[60%] z-[1]" style="background: linear-gradient(to top, rgba(16,28,16,0.95) 0%, rgba(16,28,16,0.4) 60%, rgba(16,28,16,0) 100%);"></div>
                 <div class="absolute bottom-0 left-0 right-0 p-6 text-white z-[2]">
-                  <span class="inline-block bg-[#7CB342] text-white px-2 py-[3px] text-[0.65rem] font-extrabold rounded-sm mb-2">TIN NỔI BẬT</span>
+                  <span class="inline-block bg-[#7CB342] text-white px-2 py-[3px] text-[0.65rem] font-extrabold rounded-sm mb-2 uppercase">{{ t('news_featured') || 'TIN NỔI BẬT' }}</span>
                   <span class="text-[0.75rem] opacity-85 ml-3">📅 {{ formatDate(featured.publishedAt || featured.createdAt) }}</span>
                   <h3 class="text-[1.45rem] sm:text-[1.12rem] font-extrabold leading-[1.3] my-[6px_0_10px] text-white transition-colors group-hover:text-[#c5e1a5]">{{ featured.title }}</h3>
                   <p class="text-[0.88rem] sm:text-[0.82rem] leading-[1.5] opacity-[0.88] m-0 line-clamp-2">{{ featured.excerpt }}</p>

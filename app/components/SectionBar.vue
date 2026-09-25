@@ -11,7 +11,7 @@
     >
       <i v-if="icon && icon.includes('fa-')" :class="[icon]" aria-hidden="true"></i>
       <span v-else-if="icon" aria-hidden="true">{{ icon }}</span>
-      <slot name="title">{{ title }}</slot>
+      <slot name="title">{{ localizedTitle }}</slot>
     </div>
     <nuxt-link
       v-if="to"
@@ -21,17 +21,48 @@
         ? 'text-[#4A6741] hover:text-[#385130]'
         : 'text-white/80 hover:text-white'"
     >
-      {{ viewallText || 'Xem tất cả →' }}
+      {{ localizedViewall }}
     </nuxt-link>
   </div>
 </template>
 
 <script setup lang="ts">
-defineProps({
+import { computed } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+
+const { t, currentLang } = useI18n()
+
+const props = defineProps({
   title: { type: String, default: '' },
   icon: { type: String, default: '' },
   to: { type: String, default: '' },
   viewallText: { type: String, default: '' },
   variant: { type: String, default: '' }
+})
+
+const SECTION_TITLE_MAP: Record<string, string> = {
+  'Chỉ đạo & Hoạt động': 'news_activities',
+  'Tin nổi bật': 'news_featured',
+  'Bản tin hoạt động': 'news_activities',
+  'Tấm Gương Tiêu Biểu': 'role_models_title',
+  'Tấm Gương Sáng Điển Hình': 'role_models_title',
+  'Mô Hình Tái Hòa Nhập': 'reintegration_models_title',
+  'Văn Bản Pháp Luật Mới Ban Hành': 'latest_docs_title',
+  'Tin tức': 'news',
+}
+
+const localizedTitle = computed(() => {
+  if (currentLang.value === 'vi') return props.title
+  const key = SECTION_TITLE_MAP[props.title?.trim() || '']
+  if (key) {
+    const trans = t(key)
+    if (trans && trans !== key) return trans
+  }
+  return t(props.title) || props.title
+})
+
+const localizedViewall = computed(() => {
+  if (currentLang.value === 'vi') return props.viewallText || 'Xem tất cả →'
+  return t('all_news_arrow') || t('view_all_arrow') || 'View all →'
 })
 </script>

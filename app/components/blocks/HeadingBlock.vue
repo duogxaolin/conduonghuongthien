@@ -14,7 +14,7 @@
       <div class="max-w-2xl">
         <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-3 shadow-sm">
           <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
-          <span>Cổng Thông Tin Điện Tử C11 &bull; Bộ Công An</span>
+          <span>{{ t('portal_agency_badge') || 'Cổng Thông Tin Điện Tử C11 • Bộ Công An' }}</span>
         </div>
         <h2 class="text-[1.9rem] font-extrabold mb-3 sm:text-[2.5rem] text-[#172516] tracking-tight leading-tight">{{ d.text || 'Tiêu đề mục' }}</h2>
         <p v-if="d.subtitle" class="text-[1.05rem] text-[#576653] leading-relaxed">{{ d.subtitle }}</p>
@@ -35,9 +35,11 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+
+const { t } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
-const bgImage = computed(() => d.value.bgImage || '/assets/hero_banner.jpg')
 const alignClass = computed(() => {
   const a = d.value.align || 'center'
   return a === 'left' ? 'text-left' : a === 'right' ? 'text-right ml-auto' : 'text-center mx-auto'
