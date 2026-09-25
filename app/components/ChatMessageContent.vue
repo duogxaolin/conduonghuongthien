@@ -9,8 +9,8 @@
       <span>Đang tra cứu dữ liệu thực tế từ hệ thống...</span>
     </div>
 
-    <!-- Main Message Content -->
-    <div class="chat-markdown" v-html="renderChatMarkdown(text)"></div>
+    <!-- Main Message Content — break-words + pre-wrap bắt buộc: bubble max-w-[80%] nếu thiếu là chữ tràn/đè lên nhau (ca "Chàochị, tôi cóợc…") -->
+    <div class="chat-markdown whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed" v-html="renderChatMarkdown(text)"></div>
 
     <!-- Tool Calls (Dev Tracking & Transparency) below message -->
     <details
