@@ -30,6 +30,11 @@ const LANGUAGE_NAMES: Record<string, string> = {
   lo: 'Lao',
   km: 'Khmer',
 }
+function delay(ms: number): Promise<void> {
+  const { promise, resolve } = Promise.withResolvers<void>()
+  setTimeout(resolve, ms)
+  return promise
+}
 
 // ─── Read ────────────────────────────────────────────────────────────────
 
@@ -133,13 +138,18 @@ export async function triggerTranslation(
   })
 
   // Spawn background worker (non-blocking)
-  const langName = LANGUAGE_NAMES[langCode] || langCode
+  const [langRecord] = await db
+    .select({ name: languages.name })
+    .from(languages)
+    .where(eq(languages.code, langCode))
+    .limit(1)
+  const langName = langRecord?.name || LANGUAGE_NAMES[langCode] || langCode
+
   setTimeout(() => {
     runTranslationWorker(articleId, langCode, langName).catch((err) => {
       logWarn({ event: 'translation.worker_unhandled_error', articleId, langCode, error: String(err) })
     })
   }, 0)
-
   return { ok: true }
 }
 
@@ -218,14 +228,22 @@ Trả về JSON:
 [TIÊU ĐỀ]: ${article.title ?? ''}
 [TÓM TẮT]: ${article.excerpt ?? ''}`
 
-      const titleResult = await callAi('translation_article', {
-        prompt: titleExcerptPrompt,
-        userId: null,
-      })
+      let titleResult = null
+      for (let attempt = 1; attempt <= 3; attempt++) {
+        titleResult = await callAi('translation_article', {
+          prompt: titleExcerptPrompt,
+          userId: null,
+        })
+        if (titleResult.ok && titleResult.text) break
+        if (attempt < 3) {
+          logWarn({ event: 'translation.title_retry', articleId, langCode, attempt })
+          await delay(attempt * 1500)
+        }
+      }
 
-      if (titleResult.ok && titleResult.text) {
+      if (titleResult?.ok && titleResult?.text) {
         try {
-          const raw = titleResult.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
+          const raw = titleResult.text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '').trim()
           const parsed = JSON.parse(raw) as { translatedTitle?: string; translatedExcerpt?: string }
           translatedTitle = parsed.translatedTitle || ''
           translatedExcerpt = parsed.translatedExcerpt || ''
@@ -234,7 +252,6 @@ Trả về JSON:
         }
       }
     }
-
     await updateTranslationStatus(db, articleId, langCode, {
       progress: 10,
       title: translatedTitle,
@@ -278,21 +295,33 @@ Yêu cầu:
 [NỘI DUNG GỐC]:
 ${chunk.html}`
 
-      const chunkResult = await callAi('translation_article', {
-        prompt: chunkPrompt,
-        userId: null,
-      })
+      let chunkResult = null
+      let attempts = 0
+      const MAX_RETRIES = 3
+      while (attempts < MAX_RETRIES) {
+        attempts++
+        chunkResult = await callAi('translation_article', {
+          prompt: chunkPrompt,
+          userId: null,
+        })
+        if (chunkResult.ok && chunkResult.text) break
 
-      if (!chunkResult.ok || !chunkResult.text) {
-        // Save partial and mark failed
+        if (attempts < MAX_RETRIES) {
+          logWarn({ event: 'translation.chunk_retry', articleId, langCode, chunk: i + 1, attempt: attempts })
+          await delay(attempts * 2000)
+        }
+      }
+
+      if (!chunkResult?.ok || !chunkResult?.text) {
+        // Save partial and mark failed after 3 retries
         await updateTranslationStatus(db, articleId, langCode, {
           status: 'failed',
-          errorMessage: `Lỗi dịch đoạn ${i + 1}/${totalChunks}: ${chunkResult.errorMessage || 'AI không phản hồi.'}`,
+          errorMessage: `Lỗi dịch đoạn ${i + 1}/${totalChunks} (đã thử lại ${MAX_RETRIES} lần): ${chunkResult?.errorMessage || 'AI không phản hồi.'}`,
           currentChunk: i,
           progress: 10 + Math.round((i / totalChunks) * 90),
           content: translatedChunks.join(''),
         })
-        logWarn({ event: 'translation.chunk_failed', articleId, langCode, chunk: i + 1, total: totalChunks })
+        logWarn({ event: 'translation.chunk_failed_after_retries', articleId, langCode, chunk: i + 1, total: totalChunks })
         return
       }
 
