@@ -25,6 +25,9 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+
+const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 
 const fallbackIcons = [
@@ -41,10 +44,49 @@ const defaultStats = [
   { icon: 'fa-solid fa-headset', value: '24/7', label: 'Tư vấn pháp lý & Tâm lý miễn phí' },
 ]
 
+const STAT_LABELS_MAP: Record<string, Record<string, string>> = {
+  'Tỉnh / Thành phố đồng hành': {
+    en: 'Accompanying Provinces & Cities',
+    zh: '同行省市',
+    fr: 'Provinces partenaires',
+    ru: 'Провинции и города',
+    lo: 'ແຂວງ/ນະຄອນຮ່ວມມື',
+  },
+  'Người hoàn lương được hỗ trợ': {
+    en: 'Reintegrated Citizens Supported',
+    zh: '获助回归人员',
+    fr: 'Personnes réinsérées aidées',
+    ru: 'Лиц, получивших помощь',
+    lo: 'ຜູ້ກັບຄືນສູ່ສັງຄົມໄດ້ຮັບການຊ່ວຍເຫຼືອ',
+  },
+  'Mô hình kinh tế tiêu biểu': {
+    en: 'Exemplary Economic Models',
+    zh: '典型经济模式',
+    fr: 'Modèles économiques exemplaires',
+    ru: 'Экономических моделей',
+    lo: 'ຮູບແບບເສດຖະກິດດີເດັ່ນ',
+  },
+  'Tư vấn pháp lý & Tâm lý miễn phí': {
+    en: 'Free Legal & Psychological Counseling',
+    zh: '免费法律与心理咨询',
+    fr: 'Conseils juridiques & psychologiques gratuits',
+    ru: 'Бесплатные консультации',
+    lo: 'ໃຫ້ຄຳປຶກສາທາງກົດໝາຍ ແລະ ຈິດວິທະຍາຟຣີ',
+  },
+}
+
 const stats = computed(() => {
   const raw = props.block?.data?.stats
   const arr = Array.isArray(raw) && raw.length ? raw : defaultStats
-  return arr
+  const lang = currentLang.value
+  if (lang === 'vi') return arr
+  return arr.map((s: { icon: string; value: string; label: string }) => {
+    const mapped = STAT_LABELS_MAP[s.label]?.[lang]
+    return {
+      ...s,
+      label: mapped || t(s.label) || s.label,
+    }
+  })
 })
 
 // Wrap +, / markers in the accent color, matching the original design.

@@ -4,17 +4,17 @@
       <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#6B7967] mb-3">
         <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
           <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
-          <span>Trang chủ</span>
+          <span>{{ t('home') }}</span>
         </nuxt-link>
         <span class="text-[#A2B09F]" aria-hidden="true">&rsaquo;</span>
-        <span class="text-[#2A3B27] font-bold">Giải đáp pháp luật</span>
+        <span class="text-[#2A3B27] font-bold">{{ t('legal_qa') }}</span>
       </nav>
 
       <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
         <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
-        <span>Hỏi đáp pháp lý</span>
+        <span>{{ t('legal_qa') }}</span>
       </div>
-      <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">Giải Đáp Pháp Luật</h1>
+      <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">{{ t('legal_qa') }}</h1>
       <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed max-w-3xl">
         Ngân hàng câu hỏi, giải đáp pháp luật về chính sách vay vốn ưu đãi, đào tạo nghề, thủ tục xóa án tích và tái hòa nhập cộng đồng.
       </p>
@@ -314,6 +314,9 @@
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+
+const { t, currentLang } = useI18n()
 
 useSeoMeta({
   title: 'Giải đáp pháp luật | Con Đường Hướng Thiện',
@@ -332,7 +335,8 @@ const quickLinks = [
 const activeIndex = ref<number | null>(null)
 
 const { data, pending, error, refresh } = useFetch('/api/public/articles', {
-  query: { type: 'faq', limit: 50 },
+  key: () => `public-faq-articles-${currentLang.value}`,
+  query: computed(() => ({ type: 'faq', limit: 50, lang: currentLang.value })),
   lazy: true,
   default: () => ({ ok: true, articles: [], pagination: {} }),
 })

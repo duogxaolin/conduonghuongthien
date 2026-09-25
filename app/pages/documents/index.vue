@@ -4,17 +4,17 @@
       <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#6B7967] mb-3">
         <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
           <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
-          <span>Trang chủ</span>
+          <span>{{ t('home') }}</span>
         </nuxt-link>
         <span class="text-[#A2B09F]" aria-hidden="true">&rsaquo;</span>
-        <span class="text-[#2A3B27] font-bold">Văn bản quy phạm pháp luật</span>
+        <span class="text-[#2A3B27] font-bold">{{ t('documents') }}</span>
       </nav>
 
       <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
         <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
-        <span>Thư viện pháp luật</span>
+        <span>{{ t('documents_library') }}</span>
       </div>
-      <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">Văn Bản Quy Phạm Pháp Luật</h1>
+      <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">{{ t('documents_title') }}</h1>
       <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed max-w-3xl">
         Tra cứu các chỉ thị, nghị định của Chính phủ và thông tư của Bộ Công an về công tác thi hành án hình sự, hỗ trợ tái hòa nhập cộng đồng.
       </p>
@@ -24,7 +24,7 @@
     <section class="pt-6 lg:pt-8">
       <div class="container">
         <div class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-          <span class="text-xs text-[#7A8A76] font-medium shrink-0 mr-1">Tra cứu nhanh:</span>
+          <span class="text-xs text-[#7A8A76] font-medium shrink-0 mr-1">{{ t('quick_search') }}</span>
           <button
             v-for="chip in filterChips"
             :key="chip"
@@ -57,7 +57,7 @@
                 id="doc-search"
                 v-model="searchInput"
                 type="search"
-                placeholder="Nhập từ khóa tìm kiếm (Ví dụ: 49/2020, vay vốn, xóa án tích...)"
+                :placeholder="t('doc_search_placeholder')"
                 class="flex-1 py-2 text-[0.95rem] text-[#172516] outline-none border-none bg-transparent font-medium placeholder:text-[#9AABA0]"
               />
               <button
@@ -74,7 +74,7 @@
               type="submit"
               class="bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none flex items-center justify-center gap-1.5 shadow-sm shrink-0"
             >
-              <span>Tìm kiếm</span>
+              <span>{{ t('search_btn') }}</span>
               <i class="fa-solid fa-arrow-right text-[0.7rem]" aria-hidden="true"></i>
             </button>
           </form>
@@ -140,7 +140,7 @@
             <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-2xl">
               <i class="fa-solid fa-file-circle-question" aria-hidden="true"></i>
             </div>
-            <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">Không tìm thấy văn bản phù hợp</h3>
+            <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">{{ t('no_docs_found') }}</h3>
             <p class="text-sm text-[#556450] m-0 mb-5">
               Không có văn bản nào khớp với từ khóa &laquo;<strong>{{ searchQuery }}</strong>&raquo;.
             </p>
@@ -150,7 +150,7 @@
               class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
             >
               <i class="fa-solid fa-rotate-left text-xs" aria-hidden="true"></i>
-              <span>Xem tất cả văn bản</span>
+              <span>{{ t('view_all_docs') }}</span>
             </button>
           </div>
 
@@ -204,7 +204,7 @@
                       :to="`/news/${doc.slug}`"
                       class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
                     >
-                      <span>Chi tiết</span>
+                      <span>{{ t('view_details') }}</span>
                       <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5"></i>
                     </nuxt-link>
                     <span class="text-[#8E9F8B] font-medium text-[0.72rem]">Cục C11</span>
@@ -318,7 +318,9 @@
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
+import { useI18n } from '~/composables/useI18n'
 
+const { t, currentLang } = useI18n()
 useSeoMeta({
   title: 'Văn bản pháp luật | Con Đường Hướng Thiện',
   description: 'Tra cứu văn bản quy phạm pháp luật về thi hành án hình sự, chính sách tín dụng và tái hòa nhập cộng đồng.',
@@ -341,10 +343,11 @@ const quickLinks = [
 ]
 
 const articlesQuery = computed(() => {
-  const q: { type: string; limit: number; page: number; search?: string } = {
+  const q: { type: string; limit: number; page: number; search?: string; lang?: string } = {
     type: 'document',
     limit: PER_PAGE,
     page: currentPage.value,
+    lang: currentLang.value,
   }
   if (searchQuery.value) q.search = searchQuery.value
   return q

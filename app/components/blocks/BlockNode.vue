@@ -55,14 +55,14 @@
       :data-block-id="node.id"
       :class="interactiveClass"
     >
-      <component :is="leafComponent" :block="node" />
+      <component :is="leafComponent" :block="localizedNode" />
     </div>
 
     <!-- ─── Leaf: existing block component (public render) ─── -->
     <component
       :is="leafComponent"
       v-else-if="leafComponent"
-      :block="node"
+      :block="localizedNode"
     />
     <!-- Unknown node types are skipped silently. -->
   </template>
@@ -81,7 +81,9 @@ import { isContainerType, clampColSpan } from '~/utils/blocks/registry'
 import { blockText } from '~/utils/blocks/types'
 import type { RenderableNode } from '~/utils/blocks/types'
 import { resolveBlockComponent } from './blockComponents'
+import { useI18n } from '~/composables/useI18n'
 
+const { currentLang, t } = useI18n()
 // `RenderableNode`, không phải `BuilderNode`: `isVisible` và `displayOrder` là
 // tuỳ chọn vì phần tải công khai cắt bỏ chúng (chỉ chứa node đang hiện). Khớp
 // đúng cách component này vốn đã đọc cờ đó — `isVisible !== false`, nên vắng mặt
@@ -99,6 +101,33 @@ const nodeType = computed(() => (isContainerType(props.node?.blockType) ? props.
 const visibleChildren = computed(() => (Array.isArray(props.node?.children) ? props.node.children : []))
 
 const leafComponent = computed(() => resolveBlockComponent(props.node?.blockType))
+
+const localizedNode = computed(() => {
+  if (!props.node) return props.node
+  const lang = currentLang.value
+  if (lang === 'vi' || !props.node.data) return props.node
+
+  const rawData = props.node.data as Record<string, unknown>
+  const translations = rawData.translations as Record<string, Record<string, unknown>> | undefined
+  const langOverrides = translations?.[lang] || {}
+
+  const mergedData: Record<string, unknown> = { ...rawData, ...langOverrides }
+
+  for (const key of ['title', 'subtitle', 'heading', 'badge', 'btnText', 'buttonText', 'description']) {
+    if (typeof rawData[key] === 'string' && !langOverrides[key]) {
+      const val = rawData[key] as string
+      const dictVal = t(val)
+      if (dictVal && dictVal !== val) {
+        mergedData[key] = dictVal
+      }
+    }
+  }
+
+  return {
+    ...props.node,
+    data: mergedData,
+  }
+})
 
 const span = computed(() => clampColSpan(props.node?.colSpan))
 

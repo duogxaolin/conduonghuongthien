@@ -6,14 +6,14 @@
         <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-3">
           <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
-            <span>Trang chủ</span>
+            <span>{{ t('home') }}</span>
           </nuxt-link>
           <span class="text-[#BAC8B6]">&rsaquo;</span>
-          <span class="text-[#2D5A27] font-bold">Tài liệu Hỏi – Đáp</span>
+          <span class="text-[#2D5A27] font-bold">{{ t('qa_documents') }}</span>
         </nav>
 
         <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-[#7CB342] m-0 mb-1">Kho tri thức nghiệp vụ C11</p>
-        <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-[#1E251C] leading-[1.2] m-0">Tài Liệu Hỏi – Đáp</h1>
+        <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-[#1E251C] leading-[1.2] m-0">{{ t('qa_documents') }}</h1>
         <p class="text-[0.95rem] text-[#5A6655] mt-2 mb-5 leading-relaxed max-w-3xl">
           Toàn bộ nội dung hỏi – đáp nghiệp vụ đã được Cục C11 phê duyệt. Đây cũng chính là kho dữ liệu chuẩn mà Trợ lý ảo Hướng Thiện dùng để trả lời cho công dân.
         </p>
@@ -397,7 +397,9 @@
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
+import { useI18n } from '~/composables/useI18n'
 
+const { t } = useI18n()
 useSeoMeta({
   title: 'Tài liệu Hỏi – Đáp | Con Đường Hướng Thiện',
   description: 'Toàn bộ nội dung hỏi – đáp đã được Cục C11 phê duyệt về xóa án tích, vay vốn, học nghề và tái hòa nhập cộng đồng.',
