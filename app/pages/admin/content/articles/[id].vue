@@ -263,6 +263,32 @@ function scrollToTranslations() {
 async function translateAllForThisArticle() {
   if (isNew.value || !articleId.value) return
   translatingAll.value = true
+
+  // Cập nhật lạc quan (Optimistic update): đánh dấu ngay các ngôn ngữ chưa có hoặc lỗi thành 'translating'
+  for (const lang of availableLanguages.value) {
+    const existing = articleTranslations.value.find(t => t.langCode === lang.code)
+    if (!existing) {
+      articleTranslations.value.push({
+        id: 0,
+        langCode: lang.code,
+        status: 'translating',
+        progress: 10,
+        currentChunk: 0,
+        totalChunks: 1,
+        title: null,
+        errorMessage: null,
+        translatedBy: 'ai',
+        completedAt: null,
+      })
+    } else if (existing.status === 'failed') {
+      existing.status = 'translating'
+      existing.progress = 10
+      existing.errorMessage = null
+    }
+  }
+
+  startTranslationPolling()
+
   try {
     const res = await $fetch<{ ok: boolean; queued: number; message: string }>(
       `/api/admin/articles/${articleId.value}/translations/translate-all`,
@@ -270,9 +296,9 @@ async function translateAllForThisArticle() {
     )
     toast.success(res.message || 'Đã xếp lịch dịch tất cả ngôn ngữ còn thiếu!')
     await fetchArticleTranslations()
-    startTranslationPolling()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể dịch tất cả ngôn ngữ.'))
+    await fetchArticleTranslations()
   } finally {
     translatingAll.value = false
   }
@@ -455,18 +481,21 @@ onMounted(async () => {
   const scriptReady = loadTinyMCEScript()
   await fetchCategories(form.type)
   await Promise.all([fetchArticle(), fetchArticleTranslations(), fetchDbLanguages()])
+  if (articleTranslations.value.some((t) => t.status === 'translating')) {
+    startTranslationPolling()
+  }
   await scriptReady
   await nextTick()
   initTinyMCE()
 })
 
 onUnmounted(() => {
+  stopTranslationPolling()
   if ((window as WindowWithTinyMce).tinymce) {
     const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
     if (ed) ed.destroy()
   }
 })
-
 // ─── Article translations ────────────────────────────────────────────────
 const articleTranslations = ref<Array<{
   id: number; langCode: string; status: string; title: string | null
@@ -560,50 +589,67 @@ async function fetchArticleTranslations() {
 }
 
 async function triggerTranslation(langCode: string) {
-  if (isNew.value) {
+  if (isNew.value || !articleId.value) {
     toast.error('Vui lòng lưu bài viết trước khi dịch.')
     return
   }
+
+  // Cập nhật lạc quan (Optimistic update) để thẻ hiển thị ngay trạng thái đang dịch
+  const existing = articleTranslations.value.find((t) => t.langCode === langCode)
+  if (existing) {
+    existing.status = 'translating'
+    existing.progress = 10
+    existing.errorMessage = null
+  } else {
+    articleTranslations.value.push({
+      id: 0,
+      langCode,
+      status: 'translating',
+      progress: 10,
+      currentChunk: 0,
+      totalChunks: 1,
+      title: null,
+      errorMessage: null,
+      translatedBy: 'ai',
+      completedAt: null,
+    })
+  }
+
   translatingLang.value = langCode
-  translationProgress.value = 0
+  startTranslationPolling()
+
   try {
     await $fetch(`/api/admin/articles/${articleId.value}/translations/translate`, {
       method: 'POST',
       body: { langCode },
     })
-    toast.success(`Đã bắt đầu dịch sang ${availableLanguages.value.find(l => l.code === langCode)?.label ?? langCode}.`)
+    toast.success(`Đã bắt đầu dịch sang ${availableLanguages.value.find((l) => l.code === langCode)?.label ?? langCode}.`)
     await fetchArticleTranslations()
-    startTranslationPolling()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể bắt đầu dịch.'))
-    translatingLang.value = null
+    if (existing) existing.status = 'failed'
+    await fetchArticleTranslations()
   }
 }
 
+let isPollingTranslations = false
 function startTranslationPolling() {
-  if (translationPollTimer) window.clearInterval(translationPollTimer)
+  if (translationPollTimer) return
   translationPollTimer = window.setInterval(async () => {
-    if (!translatingLang.value) return
+    if (isPollingTranslations || isNew.value || !articleId.value) return
+    isPollingTranslations = true
     try {
-      const res = await $fetch<{
-        ok: boolean; status: string; progress: number
-        currentChunk: number; totalChunks: number; errorMessage: string | null
-      }>(`/api/admin/articles/${articleId.value}/translations/${translatingLang.value}/progress`)
-      if (res.ok) {
-        translationProgress.value = res.progress
-        if (res.status !== 'translating') {
-          stopTranslationPolling()
-          translatingLang.value = null
-          await fetchArticleTranslations()
-          if (res.status === 'ai_draft') {
-            toast.success('Dịch xong! Vui lòng duyệt trước khi xuất bản.')
-          } else if (res.status === 'failed') {
-            toast.error(`Lỗi dịch: ${res.errorMessage ?? 'không xác định'}`)
-          }
-        }
+      await fetchArticleTranslations()
+      const stillTranslating = articleTranslations.value.some((t) => t.status === 'translating')
+      if (!stillTranslating) {
+        stopTranslationPolling()
+        translatingLang.value = null
+        toast.success('Bản dịch AI đã hoàn tất!')
       }
     } catch {
       // Non-critical poll failure
+    } finally {
+      isPollingTranslations = false
     }
   }, 2000)
 }
@@ -1200,16 +1246,26 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
           </div>
 
           <!-- Translating progress bar -->
-          <div v-if="translatingLang === lang.code || getTranslationRow(lang.code)?.status === 'translating'" class="flex flex-col gap-1 py-1">
+          <div v-if="getTranslationRow(lang.code)?.status === 'translating'" class="flex flex-col gap-1.5 py-1">
             <div class="flex items-center justify-between text-[0.7rem] text-[#1565c0] font-bold">
-              <span>Đang dịch AI...</span>
-              <span>{{ translationProgress }}% ({{ getTranslationRow(lang.code)?.currentChunk || 0 }}/{{ getTranslationRow(lang.code)?.totalChunks || 1 }} đoạn)</span>
+              <span class="flex items-center gap-1.5">
+                <i class="fa-solid fa-spinner animate-spin"></i>
+                <span>Đang dịch bằng AI...</span>
+              </span>
+              <span>
+                {{ getTranslationRow(lang.code)?.progress || 10 }}%
+                <span v-if="(getTranslationRow(lang.code)?.totalChunks || 0) > 1" class="font-normal text-[0.65rem] opacity-75">
+                  ({{ getTranslationRow(lang.code)?.currentChunk || 0 }}/{{ getTranslationRow(lang.code)?.totalChunks }} đoạn)
+                </span>
+              </span>
             </div>
-            <div class="w-full h-1.5 rounded-full bg-[#bbdefb] overflow-hidden">
-              <div class="h-full bg-[#1976d2] transition-all duration-300 rounded-full" :style="{ width: `${translationProgress}%` }"></div>
+            <div class="w-full h-2 rounded-full bg-[#bbdefb] overflow-hidden">
+              <div
+                class="h-full bg-[#1976d2] transition-all duration-500 rounded-full"
+                :style="{ width: `${getTranslationRow(lang.code)?.progress || 10}%` }"
+              ></div>
             </div>
           </div>
-
           <!-- Failed error text -->
           <div v-else-if="getTranslationRow(lang.code)?.status === 'failed'" class="text-[0.7rem] text-[#d12420] flex flex-col gap-1 bg-white p-2 rounded-lg border border-red-200">
             <div class="flex items-center gap-1 font-bold">
