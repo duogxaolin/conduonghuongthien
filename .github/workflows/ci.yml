@@ -59,7 +59,13 @@ jobs:
   test:
     name: Tests and schema drift
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    # 15 phút từng đủ khi chỉ có unit tests, nhưng nay job này chạy cả 9
+    # integration suites (mỗi suite dựng + drop một DB throwaway) cộng e2e
+    # setup, và runner GitHub chậm hơn local một bậc. Đo lần cuối: bước
+    # "Unit and contract tests" chạy đến `ok 894` rồi bị GitHub cancel đúng
+    # 15m — chưa kịp tới integration suites. Tăng lên 25 để dư port: job
+    # build đã dùng 25, đây là job nặng tương đương.
+    timeout-minutes: 25
     services:
       mysql:
         image: mysql:8.0
