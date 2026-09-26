@@ -190,7 +190,11 @@ function cleanAiContentCore(text: string): string {
     .replace(/<\|channel>[\s\S]*?<channel\|>/gi, '')
     .replace(/thought\s*<channel\|>/gi, '')
     .replace(/<\|channel>|channel\|>|<channel\|>|<\|channel\|>/gi, '')
-    .replace(/(?:Actually|Wait),\s*I'll\s*try[\s\S]*?(?=(?:Dạ|Chào|Theo|Hiện|Về|\d+\.|\n\n|$))/gi, '')
+    // "Actually, I'll try…" / "Actually, I will try…" leak. Both contractions
+    // ("I'll") and full forms ("I will") appear across providers; the earlier
+    // pattern only matched "I'll", so a "I will try" leak passed through raw
+    // and showed on screen. Match up to the next Vietnamese sentence boundary.
+    .replace(/(?:Actually|Wait),\s*I'?\s*(?:will|ll)\s*try[\s\S]*?(?=(?:Dạ|Chào|Theo|Hiện|Về|\d+\.|\n\n|$))/gi, '')
 }
 
 function cleanAiContent(text: string): string {
@@ -253,7 +257,7 @@ function unclosedReasoningStart(text: string): number {
   // boundaries have arrived yet, hold from the opening so the visible answer
   // is not corrupted by reasoning text that the regex *will* delete once the
   // boundary lands.
-  const leakRe = /(?:Actually|Wait),\s*I'?\s*ll\s*try/i
+  const leakRe = /(?:Actually|Wait),\s*I'?\s*(?:will|ll)\s*try/i
   const leakMatch = leakRe.exec(text)
   if (leakMatch) {
     const after = text.slice(leakMatch.index + leakMatch[0].length)
@@ -269,6 +273,30 @@ export function createStreamingCleaner() {
   return {
     push(delta: string): string {
       rawBuffer += delta
+      // Fast path: if the buffer contains NO reasoning markers that the
+      // cleaner would delete, emit it verbatim. This is the common case — a
+      // well-behaved provider sends plain Vietnamese with no think-tags,
+      // `<|channel>` or "Actually, I'll try" leaks, and the prefix-diff
+      // machinery only needs to engage when there is something to clean.
+      // "AI trả sao thì giữ nguyên": when there is nothing to strip, return
+      // the input untouched, byte for byte — no regex pass, no prefix-diff,
+      // no hold-back. The earlier implementation re-ran 8 regexes + a
+      // prefix-diff on every chunk even when they could never match; that is
+      // complexity with no benefit, and any bug in the prefix-diff branch
+      // (e.g. emittedText tracking off-by-one after a partial tag hold)
+      // corrupts plain text that should never have entered that path.
+      const hasMarker =
+        rawBuffer.includes('<') ||
+        rawBuffer.includes('|channel') ||
+        rawBuffer.includes('channel') ||
+        rawBuffer.includes('think') ||
+        /\b(?:Actually|Wait),\s*I'?\s*(?:will|ll)\s*try/i.test(rawBuffer)
+      if (!hasMarker) {
+        const newChunk = rawBuffer.slice(emittedText.length)
+        emittedText = rawBuffer
+        carry = ''
+        return newChunk
+      }
       // Hold incomplete trailing "<...": don't emit tail that hasn't closed yet.
       // We compute the hold on the *full* raw buffer so a tag that opens in
       // chunk N and is still open here is held back regardless of how many
@@ -332,6 +360,21 @@ export function createStreamingCleaner() {
       return newChunk
     },
     flush(): string {
+      // Fast path: if we never saw a reasoning marker, there is nothing to
+      // clean and `emittedText` already equals `rawBuffer`. Any tailBeyond
+      // `emittedText` was already returned by `push`. Return '' so we don't
+      // re-emit anything or run regexes on plain Vietnamese.
+      const hasMarker =
+        rawBuffer.includes('<') ||
+        rawBuffer.includes('|channel') ||
+        rawBuffer.includes('channel') ||
+        rawBuffer.includes('think') ||
+        /\b(?:Actually|Wait),\s*I'?\s*(?:will|ll)\s*try/i.test(rawBuffer)
+      if (!hasMarker) {
+        const tail = rawBuffer.slice(emittedText.length)
+        carry = ''
+        return tail
+      }
       // Final pass: clean the whole raw buffer. Any held-back trailing span
       // is now part of `rawBuffer`; if it never closed, the regexes leave it
       // and it emits as-is (the caller's `finalText(streamText)` fallback is
@@ -621,12 +664,25 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
       }))
       const messages = (reqBodyObj.messages as Array<unknown>) || []
 
-      // Step 1: Fast non-streaming call to evaluate tool choice
+      // Step 1: Non-streaming call to evaluate tool choice.
+      // `tool_choice: 'auto'` lets the model reason and decide for itself
+      // whether a tool call is warranted — this is the right default for a
+      // reasoning-capable model. Previously 'required' forced a tool call on
+      // every question including openers ("tôi vừa đi tù về") where the model
+      // should answer directly from the knowledge bank. With 'auto', the
+      // model can think ("câu này cần dẫn chứng bài viết → gọi
+      // search_c11_articles") or answer straight. The grounded system prompt
+      // (chat-policy.ts buildGroundedSystemPrompt) strongly instructs tool
+      // use for evidence, and `prefetchEvidence` backstops the case where the
+      // model answers without a tool so the citizen still gets links/photos.
+      // `max_tokens` matches the service config (default 4096): 300 was too
+      // tight — the model spent its budget on the reasoning prefix and never
+      // reached the tool_call block.
       reqBodyObj.messages = messages
       reqBodyObj.tools = formattedTools
       reqBodyObj.tool_choice = 'auto'
       reqBodyObj.stream = false
-      reqBodyObj.max_tokens = 300
+      reqBodyObj.max_tokens = originalMaxTokens
 
       const resp1 = await fetch(providerCall.url, {
         method: 'POST',
@@ -889,9 +945,21 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
         return { ok: false, error: 'provider_error' }
       }
 
+      // `createStreamingCleaner` is required here for the SAME reason the
+      // tool-call streaming branch (above) requires it: the provider leaks
+      // reasoning markers (``, `<|channel>…`, "Actually, I'll try…") into the
+      // SSE delta stream, and those spans straddle chunk boundaries. Pushing
+      // raw `delta` to `onChunk` emits the raw markers to the visitor and, once
+      // the closer arrives, the held-back region drops — but the client has
+      // already rendered the leak. This branch is the no-tools path (provider
+      // answers directly), and skipping the cleaner here was the regression:
+      // garbled/cut text reappeared whenever the model answered without tool
+      // calls. The fix mirrors the tool-call branch exactly.
+      const cleaner = createStreamingCleaner()
       const reader = response.body.getReader()
       const decoder = new TextDecoder()
       let streamBuffer = ''
+      let streamText = ''
 
       while (true) {
         const { done, value } = await reader.read()
@@ -906,8 +974,12 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
             const parsed = JSON.parse(trimmed.slice(5).trim())
             const delta = parsed?.choices?.[0]?.delta?.content
             if (typeof delta === 'string' && delta) {
-              answerText += delta
-              await input.onChunk(delta)
+              streamText += delta
+              const newChunk = cleaner.push(delta)
+              if (newChunk) {
+                answerText += newChunk
+                await input.onChunk(newChunk)
+              }
             }
             if (parsed?.usage) {
               const isEst = Boolean(parsed.usage.estimated)
@@ -925,6 +997,10 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
           }
         }
       }
+
+      const tail = cleaner.flush()
+      if (tail) { answerText += tail; await input.onChunk(tail) }
+      if (!answerText.trim()) answerText = cleaner.finalText(streamText).trim()
 
       if (!answerText) {
         success = false

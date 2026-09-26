@@ -80,6 +80,24 @@ test('"Actually, I will try" leak straddling chunks is stripped without shifting
   assert.ok(emitted.includes('Chào anh/chị, tôi có thể giúp'), 'the real greeting must survive intact')
 })
 
+test('"Actually, I will try" (no contraction) leak is also stripped', () => {
+  // Some providers emit the full form "I will" instead of "I'll". The earlier
+  // pattern only matched "I'll", so this leak passed through raw. Both forms
+  // must be stripped.
+  const deltas = [
+    'Actually, I will try to think about this. ',
+    'Let me reconsider. ',
+    'Dạ, chào anh/chị, tôi là trợ lý ảo của Bộ Công An.',
+  ]
+  const emitted = replay(deltas)
+  assert.ok(!emitted.includes('Actually'), 'full-form leak must be stripped')
+  assert.ok(!emitted.includes('Let me reconsider'), 'continuation must be stripped')
+  assert.ok(
+    emitted.includes('Dạ, chào anh/chị, tôi là trợ lý ảo của Bộ Công An.'),
+    'the real greeting must survive intact',
+  )
+})
+
 test('flush emits nothing when no trailing carry is held', () => {
   const cleaner = createStreamingCleaner()
   let emitted = ''
@@ -156,4 +174,24 @@ test('channel-tag streams are stripped without garbling the visible answer', () 
   const emitted = replay(deltas)
   assert.ok(!emitted.includes('internal'), 'channel-tag content must not leak')
   assert.ok(emitted.includes('visible answer text'), 'visible answer must survive')
+})
+
+test('plain Vietnamese with no reasoning markers passes through byte-identical (fast path)', () => {
+  // "AI trả sao thì giữ nguyên": when the stream contains no think-tag,
+  // channel-tag or "Actually, I'll try" leak, the cleaner must return the
+  // input unchanged — no regex pass, no prefix-diff, no hold-back. The
+  // earlier implementation re-ran 8 regexes + a prefix-diff on every chunk
+  // even when they could never match; any off-by-one in `emittedText`
+  // tracking (e.g. after a partial `<` hold that turned out to be a
+  // less-than sign) corrupted plain Vietnamese that should never have
+  // entered the cleaning path. This test guards that regression: the
+  // emitted text equals the input byte for byte across three chunking
+  // strategies.
+  const full =
+    'Dạ, chào anh/chị, tôi rất hỗ trợ anh/chị về lý Hướng Thiện sẽ đồng hành cùng anh/chị trong các chính sách quy định. Anh/chị hoàn lương và muốn hỗ trợ, tôi sẽ cố đáp tận tình.'
+  assert.equal(replay(full.match(/\S+\s*/g) ?? [full]), full, 'word-stream preserves text')
+  const charDeltas: string[] = []
+  for (let i = 0; i < full.length; i += 3) charDeltas.push(full.slice(i, i + 3))
+  assert.equal(replay(charDeltas), full, 'char-stream preserves text')
+  assert.equal(replay([full]), full, 'single-delta preserves text')
 })

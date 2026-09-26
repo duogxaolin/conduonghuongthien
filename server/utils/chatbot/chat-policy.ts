@@ -172,8 +172,55 @@ export function approvedFallback(references: PublicKnowledgeReference[]): ChatRe
 function friendlyKnowledgeAnswer(settings: ChatbotSettings, references: PublicKnowledgeReference[]): ChatResult {
   const top = references[0]!
   const greeting = settings.knowledgeGreeting?.trim()
-  const answer = greeting ? `${greeting}\n\n${top.answer}` : top.answer
+  // Evidence prefetched by `prefetchEvidence` (articles/photos/videos) rides
+  // after the knowledge-bank matches in `references`. In knowledge mode we
+  // surface them as a "related evidence" block under the curated answer so
+  // the citizen still gets links/photos/videos even when no provider is
+  // called. Without this, a knowledge-mode answer to "đi tù về vay vốn thế
+  // nào?" would be bare text with no link to the reintegration model article
+  // or the loan-support photo, even though that evidence was fetched.
+  const evidence = references.slice(1).filter(r => r.source?.url && r.topic !== '')
+  const evidenceBlock = evidence.length
+    ? '\n\n' + renderEvidenceBlock(evidence)
+    : ''
+  const answer = (greeting ? `${greeting}\n\n${top.answer}` : top.answer) + evidenceBlock
   return { answer, sources: top.source ? references.slice(0, 1) : [], kind: 'curated' }
+}
+
+/**
+ * Render prefetched evidence (articles, videos, photos) as a Markdown block
+ * surfaced to the citizen. Articles get a cover-image when `reference`
+ * (thumbnailUrl) is present; videos get a poster; photos render inline. This
+ * is the same display shape the AI is instructed (in the grounded system
+ * prompt) to produce when it calls tools itself — so knowledge-mode and
+ * AI-mode answers look the same to the citizen.
+ */
+function renderEvidenceBlock(evidence: PublicKnowledgeReference[]): string {
+  const articles = evidence.filter(r => r.topic === 'role_model' || r.topic === 'reintegration' || r.topic === 'news' || r.topic === 'document' || r.topic === 'faq' || (r.topic !== 'video' && r.topic !== 'photo' && r.source?.url?.startsWith('/news/')))
+  const videos = evidence.filter(r => r.topic === 'video' || r.source?.url?.startsWith('/media/'))
+  const photos = evidence.filter(r => r.topic === 'photo')
+  const lines: string[] = []
+  if (articles.length) {
+    lines.push('📖 **Bài viết liên quan:**')
+    for (const a of articles.slice(0, 5)) {
+      const cover = a.source?.reference ? ` ![${a.question}](${a.source.reference})` : ''
+      lines.push(`- [${a.question}](${a.source?.url})${cover}`)
+    }
+  }
+  if (videos.length) {
+    lines.push('🎥 **Video liên quan:**')
+    for (const v of videos.slice(0, 3)) {
+      const poster = v.source?.reference ? ` ![${v.question}](${v.source.reference})` : ''
+      lines.push(`- [Xem video: ${v.question.replace(/^Video:\s*/, '')}](${v.source?.url})${poster}`)
+    }
+  }
+  if (photos.length) {
+    lines.push('🖼️ **Hình ảnh hoạt động:**')
+    for (const p of photos.slice(0, 4)) {
+      lines.push(`- ![${p.question.replace(/^Ảnh:\s*/, '')}](${p.source?.url})`)
+    }
+  }
+  return lines.join('\n')
 }
 
 /**
@@ -540,6 +587,140 @@ async function callProvider(
   return rawAnswer ? { text: rawAnswer } : null
 }
 
+/**
+ * Prefetch concrete evidence (articles, photos, videos) for a citizen's
+ * question and shape them as `PublicKnowledgeReference` so the grounded
+ * system prompt already carries the proof — independent of whether the model
+ * chooses to call a tool.
+ *
+ * Why this exists: the model is instructed to call `search_c11_articles` etc.
+ * proactively, but for openers like "tôi vừa đi tù về" or "đi tù về có việc gì
+ * không?" it often answers directly from the knowledge bank references and
+ * never reaches for a tool. The citizen then receives a text answer with
+ * zero links, photos, or videos — exactly the evidence that would make the
+ * answer trustworthy. By prefetching articles/photos/videos from the same DB
+ * queries the tools use, the proof is already in the prompt; the model can
+ * weave it into its answer without a tool round-trip, and tool calls remain
+ * for follow-up drilling.
+ *
+ * Caps: at most 5 articles + 3 videos + 4 photos. Each item is a
+ * `PublicKnowledgeReference` whose `question` is the title and `answer` is
+ * the snippet, so `buildGroundedSystemPrompt` renders it in the same
+ * `<UNTRUSTED_KNOWLEDGE_REFERENCES>` block as knowledge-bank matches.
+ */
+async function prefetchEvidence(query: string): Promise<PublicKnowledgeReference[]> {
+  const rawQ = (query || '').trim()
+  if (!rawQ) return []
+  const stopWords = new Set(['cho', 'tôi', 'hỏi', 'với', 'được', 'không', 'nào', 'các', 'của', 'là', 'gì', 'thế', 'ở', 'đó', 'có', 'thì', 'xin', 'vừa', 'về', 'đi', 'and', 'the', 'a', 'an'])
+  const keywords = rawQ
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}\s]/gu, ' ')
+    .split(/\s+/)
+    .filter(w => w.length >= 2 && !stopWords.has(w))
+
+  const evidence: PublicKnowledgeReference[] = []
+  const db = getDb()
+
+  // ── Articles (role models, reintegration models, news, faq) ──
+  try {
+    const whereConds: ReturnType<typeof and>[] = [eq(articles.status, 'published')]
+    let orderByClause = desc(articles.publishedAt)
+    if (keywords.length > 0) {
+      const orLikes = keywords.map(kw => or(
+        like(articles.title, `%${kw}%`),
+        like(articles.excerpt, `%${kw}%`),
+        like(articles.content, `%${kw}%`),
+      )!)
+      whereConds.push(or(...orLikes)!)
+      const safeWords = keywords.map(w => w.replace(/["\\]/g, ''))
+      const titleScore = safeWords.map(w => `(CASE WHEN LOWER(title) LIKE '%${w}%' THEN 10 ELSE 0 END)`).join(' + ')
+      const excerptScore = safeWords.map(w => `(CASE WHEN LOWER(excerpt) LIKE '%${w}%' THEN 3 ELSE 0 END)`).join(' + ')
+      const cleanQ = rawQ.toLowerCase().replace(/["\\]/g, '')
+      const exactScore = `(CASE WHEN LOWER(title) LIKE '%${cleanQ}%' THEN 30 ELSE 0 END)`
+      orderByClause = sql.raw(`(${titleScore} + ${excerptScore} + ${exactScore}) DESC, published_at DESC`)
+    } else {
+      whereConds.push(or(
+        like(articles.title, `%${rawQ}%`),
+        like(articles.excerpt, `%${rawQ}%`),
+        like(articles.content, `%${rawQ}%`),
+      )!)
+    }
+    const articleRows = await db.select({
+      id: articles.id, title: articles.title, type: articles.type, slug: articles.slug,
+      excerpt: articles.excerpt, content: articles.content, thumbnailUrl: articles.thumbnailUrl,
+    }).from(articles).where(and(...whereConds)).orderBy(orderByClause).limit(5)
+
+    const categoryMap: Record<string, string> = {
+      reintegration: '/news/reintegration-models',
+      role_model: '/news/role-models',
+      news: '/news', document: '/documents', faq: '/legal-qa',
+    }
+    for (const r of articleRows) {
+      const plainContent = (r.content || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+      const snippet = plainContent ? plainContent.slice(0, 350) + (plainContent.length > 350 ? '...' : '') : (r.excerpt || '')
+      const typeLabel = r.type === 'role_model' ? 'Tấm gương hoàn lương' : r.type === 'reintegration' ? 'Mô hình tái hòa nhập' : r.type === 'faq' ? 'Hỏi đáp pháp luật' : 'Bài viết'
+      evidence.push({
+        id: r.id, question: r.title, answer: snippet, topic: String(r.type || ''),
+        source: { label: `${typeLabel}: ${r.title}`, reference: r.thumbnailUrl ?? null, url: `/news/${r.slug}` },
+      })
+      void categoryMap
+    }
+  } catch (error) {
+    logWarn({ event: 'chatbot.prefetch_articles_failed', error, consequence: 'article evidence omitted from prompt' })
+  }
+
+  // ── Videos (media_items, published) ──
+  try {
+    if (keywords.length > 0) {
+      const videoOr = keywords.map(kw => or(
+        like(mediaItems.title, `%${kw}%`),
+        like(mediaItems.description, `%${kw}%`),
+      )!)
+      const videoRows = await db.select({
+        id: mediaItems.id, title: mediaItems.title, slug: mediaItems.slug,
+        shortId: mediaItems.shortId, description: mediaItems.description, thumbnailUrl: mediaItems.thumbnailUrl,
+      }).from(mediaItems)
+        .where(and(eq(mediaItems.status, 'published'), or(...videoOr)!))
+        .orderBy(desc(mediaItems.createdAt)).limit(3)
+      for (const r of videoRows) {
+        evidence.push({
+          id: r.id, question: `Video: ${r.title}`,
+          answer: (r.description || '').slice(0, 300), topic: 'video',
+          source: { label: `Video: ${r.title}`, reference: r.thumbnailUrl ?? null, url: `/media/${r.shortId || r.slug}` },
+        })
+      }
+    }
+  } catch (error) {
+    logWarn({ event: 'chatbot.prefetch_videos_failed', error, consequence: 'video evidence omitted from prompt' })
+  }
+
+  // ── Photos (media, image/*) ──
+  try {
+    if (keywords.length > 0) {
+      const photoOr = keywords.map(kw => or(
+        like(media.originalName, `%${kw}%`),
+        like(media.filename, `%${kw}%`),
+      )!)
+      const photoRows = await db.select({
+        id: media.id, originalName: media.originalName, url: media.url,
+      }).from(media)
+        .where(and(like(media.mimeType, 'image/%'), or(...photoOr)!))
+        .orderBy(desc(media.createdAt)).limit(4)
+      for (const r of photoRows) {
+        evidence.push({
+          id: r.id, question: `Ảnh: ${r.originalName.replace(/\.[^/.]+$/, '')}`,
+          answer: 'Hình ảnh hoạt động thực tế từ Thư viện Media Cục C11.', topic: 'photo',
+          source: { label: `Ảnh: ${r.originalName}`, reference: null, url: r.url },
+        })
+      }
+    }
+  } catch (error) {
+    logWarn({ event: 'chatbot.prefetch_photos_failed', error, consequence: 'photo evidence omitted from prompt' })
+  }
+
+  return evidence
+}
+
 export async function answerGroundedChat(
   event: ChatEvent,
   settings: ChatbotSettings,
@@ -564,6 +745,24 @@ export async function answerGroundedChat(
       consequence: 'knowledge bank unavailable, falling back to small-talk or out-of-scope',
     })
     references = []
+  }
+
+  // Prefetch concrete evidence (articles, photos, videos) so the model — and
+  // the knowledge-mode answer — already carry proof links without depending on
+  // the model choosing to call a tool. For openers like "tôi vừa đi tù về" the
+  // model often answers straight from the knowledge bank and never reaches for
+  // a tool; the citizen would get a bare text answer with no links/photos/
+  // videos. This runs for both knowledge and AI modes: knowledge-mode renders
+  // these references the same way (links + snippets), and AI-mode injects them
+  // into the grounded system prompt so the model can weave them in. Errors are
+  // swallowed per-section so a failed articles query still yields videos.
+  if (references.length < 12) {
+    try {
+      const evidence = await prefetchEvidence(query)
+      if (evidence.length) references = references.concat(evidence)
+    } catch (error) {
+      logWarn({ event: 'chatbot.prefetch_evidence_failed', error, consequence: 'answer proceeds without prefetched evidence' })
+    }
   }
 
   // The business knowledge bank is the first routing decision and always wins.
@@ -611,13 +810,49 @@ export async function answerGroundedChat(
 
   try {
     const grounded = await callProvider(settings, dependencies, references, history, onChunk, onToolCall)
-    return grounded ? {
-      answer: grounded.text,
-      sources: references.filter(ref => ref.source),
-      toolCalls: grounded.toolCalls,
-      kind: 'provider',
-      streamed: Boolean(onChunk),
-    } : friendlyKnowledgeAnswer(settings, references)
+    if (grounded) {
+      // Backstop: if the model answered without weaving the prefetched
+      // evidence into its text (no /news/ or /media/ link present), append
+      // the evidence block so the citizen still receives links/photos/
+      // videos. This is the exact gap the user asked to close — the model
+      // reasoning-decides whether to call a tool, but when it answers
+      // directly from the knowledge bank and skips the links, the
+      // prefetched articles/videos/photos should not be wasted. We only
+      // append when the answer itself carries no link, so we never
+      // duplicate evidence the model already surfaced.
+      //
+      // Streaming note: when `onChunk` is active the model's text has already
+      // been streamed to the client. We must stream the evidence block
+      // through `onChunk` too — appending it only to `answer` would put it
+      // in the return value but never on the wire, so the visitor's chat
+      // bubble would end at the model's last token. We stream before
+      // returning so the SSE channel carries it, then return the full
+      // assembled text for persistence.
+      const answerText = grounded.text
+      const hasLink = /\/(news|media)\//.test(answerText)
+      const evidenceRefs = references.filter(r => r.source?.url && r.topic !== '' && (r.source.url.startsWith('/news/') || r.source.url.startsWith('/media/')))
+      let finalAnswer = answerText
+      if (!hasLink && evidenceRefs.length) {
+        const block = '\n\n' + renderEvidenceBlock(evidenceRefs)
+        finalAnswer = answerText + block
+        if (onChunk) {
+          try {
+            await onChunk(block)
+          } catch {
+            // Streaming already closed or errored — the return value still
+            // carries the block for persistence, so this is best-effort.
+          }
+        }
+      }
+      return {
+        answer: finalAnswer,
+        sources: references.filter(ref => ref.source),
+        toolCalls: grounded.toolCalls,
+        kind: 'provider',
+        streamed: Boolean(onChunk),
+      }
+    }
+    return friendlyKnowledgeAnswer(settings, references)
   } catch (error) {
     logWarn({
       event: 'chatbot.grounded_provider_failed',
