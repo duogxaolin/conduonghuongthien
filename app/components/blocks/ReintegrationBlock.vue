@@ -3,7 +3,7 @@
     <div class="container">
       <div class="text-center max-w-[600px] mx-auto mb-[40px]">
         <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-[#7CB342] uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
-        <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] mb-3">{{ d.title || 'Mô Hình Tái Hòa Nhập Cộng Đồng' }}</h2>
+        <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] mb-3">{{ d.title || t('block_reintegration_title') }}</h2>
         <p v-if="d.description" class="text-[0.95rem] text-[#4A5545] leading-[1.5]">{{ d.description }}</p>
       </div>
 
@@ -40,7 +40,7 @@
         </article>
       </div>
 
-      <p v-else class="text-center text-[0.9rem] text-[#7A8675] italic">Chưa có mô hình nào được đăng.</p>
+      <p v-else class="text-center text-[0.9rem] text-[#7A8675] italic">{{ t('block_reintegration_empty') }}</p>
 
       <!-- Nút xem tất cả — chỉ hiện khi có dữ liệu và trang danh mục tồn tại.
            Carousel "Tấm Gương" không có nút này, nên đây thêm một điểm khác biệt
@@ -68,7 +68,7 @@ const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, refresh } = await useAsyncData(
   `block-reintegration-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
-  () => $fetch('/api/public/articles', {
+  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
     params: {
       type: 'reintegration',
       limit: maxItems.value,
@@ -93,7 +93,7 @@ const list = computed(() =>
   (data.value?.articles || []).map(a => ({
     id: a.slug,
     name: a.title,
-    location: a.categoryName || '',
+    location: a.category?.name || '',
     desc: a.excerpt || '',
     image: a.thumbnailUrl || '/assets/hero_banner.jpg',
   }))

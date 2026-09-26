@@ -435,7 +435,7 @@ async function seed() {
   // 2. Service configs — 5 default services, inactive (spec R5.2)
   console.log('Seeding AI service configs...')
   const defaultServices: Array<{
-    serviceKey: string; serviceName: string; provider: string
+    serviceKey: string; serviceName: string; provider: string; model: string
     systemPrompt: string; temperature: string; maxTokens: number; isActive: boolean
   }> = [
     { serviceKey: 'chatbot', serviceName: 'Trợ lý Chatbot', provider: 'delify', model: 'delify-5.5', systemPrompt: DEFAULT_CHATBOT_SYSTEM_PROMPT, temperature: '0.30', maxTokens: 4096, isActive: true },
@@ -546,6 +546,26 @@ async function seed() {
     { category: 'anti_state', ruleType: 'keyword', pattern: 'chống phá đảng', action: "auto_hide", severity: 'critical' },
     { category: 'defamation', ruleType: 'keyword', pattern: 'xúc phạm danh dự công an', action: "auto_hide", severity: 'high' },
     { category: 'defamation', ruleType: 'keyword', pattern: 'bôi nhọ lãnh đạo', action: "auto_hide", severity: 'high' },
+    // ── Xúc phạm cố lãnh đạo được tôn kính (Bác Hồ, Bác Giáp, Chủ tịch Hồ Chí Minh) ──
+    // Ranh giới đi cùng từ động từ xúc phạm: chỉ chặn phát ngôn lăng mạ cá nhân lãnh tụ,
+    // KHÔNG chặn quan điểm chính trị đối lập (Việt Nam Cộng Hòa / VNCH muôn năm / "tay
+    // sai Mỹ" đều ĐƯỢC PHÉP — đó là quan điểm, không phải xúc phạm cá nhân).
+    // Pattern kết hợp "động từ xúc phạm + tên lãnh tụ" để keyword matching không chặn
+    // ca cảnh giác/giải pháp pháp luật/dẫn chứng lịch sử.
+    { category: 'defamation', ruleType: 'keyword', pattern: 'lăng mạ bác hồ', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'xúc phạm bác hồ', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'bôi nhọ bác hồ', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'mạ lị bác hồ', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'nhục mạ bác hồ', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'lăng mạ chủ tịch hồ chí minh', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'xúc phạm chủ tịch hồ chí minh', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'bôi nhọ chủ tịch hồ chí minh', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'lăng mạ bác giáp', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'xúc phạm bác giáp', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'bôi nhọ đại tướng võ nguyên giáp', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'lăng mạ lãnh tụ', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'xúc phạm lãnh tụ', action: "auto_hide", severity: 'critical' },
+    { category: 'defamation', ruleType: 'keyword', pattern: 'mạ lị lãnh tụ', action: "auto_hide", severity: 'critical' },
     { category: 'spam_fraud', ruleType: 'keyword', pattern: 'cờ bạc online', action: "auto_hide", severity: 'high' },
     { category: 'spam_fraud', ruleType: 'keyword', pattern: 'tài xỉu', action: "auto_hide", severity: 'high' },
     { category: 'spam_fraud', ruleType: 'keyword', pattern: 'vay tiền nóng', action: "auto_hide", severity: 'medium' },

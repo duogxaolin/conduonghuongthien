@@ -40,7 +40,7 @@ async function fetchMeta() {
   fetchingMeta.value = true
   metaError.value = ''
   try {
-    const res = await $fetch<{ ok: boolean, reason?: string, title?: string, authorName?: string, thumbnailUrl?: string, videoId?: string }>(
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, reason?: string, title?: string, authorName?: string, thumbnailUrl?: string, videoId?: string }>)(
       '/api/admin/media-portal/youtube-meta',
       { method: 'POST', body: { url: youtubeVideoId.value.trim() } },
     )

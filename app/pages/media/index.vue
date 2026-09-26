@@ -41,35 +41,35 @@
           class="flex flex-col lg:flex-row gap-3 bg-white p-2 rounded-xl border border-[#D5E1D3] shadow-sm focus-within:border-[#4A6741] transition-all"
           @submit.prevent="applySearch"
         >
-          <label class="sr-only" for="media-search">Tìm kiếm video</label>
+          <label class="sr-only" for="media-search">{{ t('m_search_aria') }}</label>
           <div class="relative flex-1 flex items-center pl-3">
             <i class="fa-solid fa-magnifying-glass text-[#7A8A76] text-sm mr-2.5" aria-hidden="true"></i>
             <input
               id="media-search"
               v-model="searchInput"
               type="search"
-              placeholder="Nhập từ khóa tìm kiếm video…"
+              :placeholder="t('m_search_placeholder')"
               class="flex-1 py-2 text-[0.95rem] text-[#172516] outline-none border-none bg-transparent font-medium placeholder:text-[#9AABA0]"
             />
             <button
               v-if="searchInput"
               type="button"
               class="text-[#8A9A88] hover:text-[#2D5A27] w-7 h-7 rounded-lg flex items-center justify-center text-xs cursor-pointer border-none bg-transparent mr-1"
-              aria-label="Xóa từ khóa"
+              :aria-label="t('m_clear_search')"
               @click="clearSearch"
             >
               <i class="fa-solid fa-xmark" aria-hidden="true"></i>
             </button>
           </div>
 
-          <label class="sr-only" for="media-category">Chuyên mục</label>
+          <label class="sr-only" for="media-category">{{ t('m_category_aria') }}</label>
           <select
             id="media-category"
             :value="categoryFilter"
             class="lg:w-56 px-3 py-2 rounded-lg border border-[#DCE5DB] bg-white text-[0.9rem] font-semibold text-[#3A4638] cursor-pointer outline-none focus:border-[#4A6741]"
             @change="applyCategory(($event.target as HTMLSelectElement).value)"
           >
-            <option value="">Tất cả chuyên mục</option>
+            <option value="">{{ t('m_all_categories') }}</option>
             <option v-for="entry in categories" :key="entry.slug" :value="entry.slug">
               {{ entry.name }} ({{ entry.count }})
             </option>
@@ -79,7 +79,7 @@
             type="submit"
             class="bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none flex items-center justify-center gap-1.5 shadow-sm shrink-0"
           >
-            <span>Tìm kiếm</span>
+            <span>{{ t('m_search_btn') }}</span>
             <i class="fa-solid fa-arrow-right text-[0.7rem]" aria-hidden="true"></i>
           </button>
         </form>
@@ -88,14 +88,14 @@
           <div class="flex items-center gap-2.5">
             <span class="w-2.5 h-6 rounded-sm bg-[#4A6741]" aria-hidden="true"></span>
             <h2 class="text-base sm:text-lg font-black text-[#1A2A17] tracking-tight uppercase m-0">
-              Danh sách video
+              {{ t('m_list_title') }}
             </h2>
             <span v-if="!pending && !loadError" class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-[#EBF3E8] text-[#385932]">
-              {{ pagination.total }} video
+              {{ t('m_count_suffix').replace('{n}', String(pagination.total)) }}
             </span>
           </div>
           <span v-if="pagination.totalPages > 1" class="text-xs text-[#7A8A76] font-medium hidden sm:inline">
-            Trang {{ pagination.page }} / {{ pagination.totalPages }}
+            {{ t('m_page_of').replace('{current}', String(pagination.page)).replace('{total}', String(pagination.totalPages)) }}
           </span>
         </div>
 
@@ -106,7 +106,7 @@
           aria-busy="true"
           class="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5"
         >
-          <span class="sr-only">Đang tải danh sách video</span>
+          <span class="sr-only">{{ t('m_loading') }}</span>
           <div
             v-for="n in 6"
             :key="n"
@@ -130,15 +130,15 @@
           <div class="w-12 h-12 rounded-full bg-[#FCE8E8] text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
             <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
           </div>
-          <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">Không thể tải thư viện video</h3>
-          <p class="text-sm text-[#667768] m-0 mb-4">Đã xảy ra lỗi khi kết nối dữ liệu. Vui lòng kiểm tra lại kết nối mạng.</p>
+          <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ t('m_error_title') }}</h3>
+          <p class="text-sm text-[#667768] m-0 mb-4">{{ t('m_error_desc') }}</p>
           <button
             type="button"
             class="bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none inline-flex items-center gap-2"
             @click="reload"
           >
             <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-            <span>Thử lại</span>
+            <span>{{ t('m_retry') }}</span>
           </button>
         </div>
 
@@ -148,12 +148,10 @@
             <i class="fa-solid fa-clapperboard" aria-hidden="true"></i>
           </div>
           <h3 class="text-base font-extrabold text-[#1E251C] m-0 mb-1">
-            {{ hasFilters ? 'Không tìm thấy video phù hợp' : 'Thư viện video đang được cập nhật' }}
+            {{ hasFilters ? t('m_empty_filtered_title') : t('m_empty_updating') }}
           </h3>
           <p class="text-sm text-[#5A6655] m-0 mb-5 max-w-md mx-auto">
-            {{ hasFilters
-              ? 'Thử một từ khóa khác hoặc bỏ bộ lọc chuyên mục.'
-              : 'Các video về công tác hỗ trợ tái hòa nhập cộng đồng sẽ sớm được đăng tải.' }}
+            {{ hasFilters ? t('m_empty_filtered_desc') : t('m_empty_nofilter_desc') }}
           </p>
           <button
             v-if="hasFilters"
@@ -162,7 +160,7 @@
             @click="clearSearch"
           >
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-            <span>Bỏ bộ lọc</span>
+            <span>{{ t('m_clear_filter') }}</span>
           </button>
         </div>
 
@@ -213,7 +211,7 @@
                   </span>
                   <span class="mt-auto text-[0.7rem] text-[#8A9A88] inline-flex items-center gap-1.5">
                     <i class="fa-regular fa-eye" aria-hidden="true"></i>
-                    {{ entry.viewCount }} lượt xem
+                    {{ t('m_views_count').replace('{n}', String(entry.viewCount)) }}
                   </span>
                 </span>
               </nuxt-link>
@@ -224,10 +222,10 @@
           <nav
             v-if="pagination.totalPages > 1"
             class="mt-8 pt-6 border-t border-[#DDE6DC] flex flex-col sm:flex-row items-center justify-between gap-4"
-            aria-label="Phân trang thư viện video"
+            aria-label="pagination"
           >
             <span class="text-xs text-[#7A8A76]">
-              Trang <strong>{{ pagination.page }}</strong> trên tổng số <strong>{{ pagination.totalPages }}</strong> trang
+              {{ t('m_pagination_summary').replace('{current}', String(pagination.page)).replace('{total}', String(pagination.totalPages)) }}
             </span>
 
             <div class="flex items-center gap-1.5">
@@ -235,7 +233,7 @@
                 type="button"
                 class="w-9 h-9 rounded-lg border border-[#DCE5DB] bg-white text-[#4A5545] flex items-center justify-center cursor-pointer transition-all hover:border-[#4A6741] hover:bg-[#F2F7F0] disabled:opacity-40 disabled:cursor-not-allowed"
                 :disabled="pagination.page <= 1 || pending"
-                aria-label="Trang trước"
+                :aria-label="t('page_prev')"
                 @click="setPage(pagination.page - 1)"
               >
                 <i class="fa-solid fa-chevron-left text-xs" aria-hidden="true"></i>
@@ -252,7 +250,7 @@
                     : 'bg-white text-[#4A5545] border-[#DCE5DB] hover:border-[#4A6741] hover:bg-[#F2F7F0]',
                 ]"
                 :aria-current="page === pagination.page ? 'page' : undefined"
-                :aria-label="`Trang ${page}`"
+                :aria-label="t('m_page_aria').replace('{n}', String(page))"
                 @click="setPage(page)"
               >
                 {{ page }}
@@ -262,7 +260,7 @@
                 type="button"
                 class="w-9 h-9 rounded-lg border border-[#DCE5DB] bg-white text-[#4A5545] flex items-center justify-center cursor-pointer transition-all hover:border-[#4A6741] hover:bg-[#F2F7F0] disabled:opacity-40 disabled:cursor-not-allowed"
                 :disabled="pagination.page >= pagination.totalPages || pending"
-                aria-label="Trang tiếp"
+                :aria-label="t('page_next')"
                 @click="setPage(pagination.page + 1)"
               >
                 <i class="fa-solid fa-chevron-right text-xs" aria-hidden="true"></i>
@@ -279,7 +277,10 @@
 import { computed, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatMediaDuration } from '~/utils/media-duration'
+import { useI18n } from '~/composables/useI18n'
 import type { MediaListPayload, PublicMediaListItem } from '~/types/public-api'
+
+const { t } = useI18n()
 
 const PER_PAGE = 12
 
@@ -313,19 +314,21 @@ const listQuery = computed(() => {
   return query
 })
 
-const { data, pending, error, refresh } = useFetch('/api/public/media', {
-  query: listQuery,
-  // `lazy` chỉ bỏ chặn điều hướng phía client; lượt dựng phía máy chủ vẫn chờ dữ
-  // liệu, nên HTML đầu tiên và thẻ SEO không đổi. Không có nó thì khung xương bên
-  // trên **không bao giờ được vẽ** — bấm một liên kết trông như bấm hụt.
-  lazy: true,
-  default: () => ({
-    ok: true,
-    items: [] as PublicMediaListItem[],
-    categories: [] as MediaListPayload['categories'],
-    pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 0 },
-  }),
-})
+const { data, pending, error, refresh } = useAsyncData('public-media-list', () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicMediaListItem[]; categories: MediaListPayload['categories']; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/media`, { query: listQuery.value }),
+  {
+    // `lazy` chỉ bỏ chặn điều hướng phía client; lượt dựng phía máy chủ vẫn chờ dữ
+    // liệu, nên HTML đầu tiên và thẻ SEO không đổi. Không có nó thì khung xương bên
+    // trên **không bao giờ được vẽ** — bấm một liên kết trông như bấm hụt.
+    lazy: true,
+    default: () => ({
+      ok: true,
+      items: [] as PublicMediaListItem[],
+      categories: [] as MediaListPayload['categories'],
+      pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 0 },
+    }),
+  }
+)
 
 const items = computed<PublicMediaListItem[]>(() => data.value?.items ?? [])
 const categories = computed(() => data.value?.categories ?? [])
@@ -422,10 +425,10 @@ watch(() => route.query, query => {
 }, { deep: true })
 
 useSeoMeta({
-  title: 'Thư viện Video | Con Đường Hướng Thiện',
-  description: 'Xem các phóng sự, phim tài liệu ngắn và buổi phát trực tiếp về công tác hỗ trợ tái hòa nhập cộng đồng.',
-  ogTitle: 'Thư viện Video | Con Đường Hướng Thiện',
-  ogDescription: 'Kênh video của Cổng thông tin hỗ trợ người hoàn lương tái hòa nhập cộng đồng.',
+  title: () => `${t('m_list_title')} | Con Đường Hướng Thiện`,
+  description: () => t('m_seo_desc'),
+  ogTitle: () => `${t('m_list_title')} | Con Đường Hướng Thiện`,
+  ogDescription: () => t('m_seo_og_desc'),
   ogType: 'website',
 })
 </script>

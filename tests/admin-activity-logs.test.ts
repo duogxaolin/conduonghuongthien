@@ -106,7 +106,9 @@ test('the page renders the log, its filters, and the retention warning', () => {
   const template = descriptor.descriptor.template?.content ?? ''
   const script = descriptor.descriptor.scriptSetup?.content ?? ''
 
-  assert.match(script, /\$fetch\('\/api\/admin\/activity-logs\/retention'\)/)
+  // `$fetch` ép kiểu hàm (`($fetch as ...)('...')`) thay vì generic để tránh
+  // TS2589 "Type instantiation is excessively deep". URL vẫn ở nháy đơn.
+  assert.match(script, /\/api\/admin\/activity-logs\/retention'/)
   /**
    * KHÔNG `$fetch<any>` ở đâu trong trang này.
    *
@@ -116,10 +118,14 @@ test('the page renders the log, its filters, and the retention warning', () => {
    * `retention.command`, `retention.lifetimeTotal` — một tên gõ sai hoặc một
    * trường endpoint ngừng trả về sẽ hiện ra là một ô trống trên trang cảnh báo
    * lưu trữ, tức là báo "không có gì quá hạn" cho một bảng đang quá hạn.
+   *
+   * `$fetch<any>` nay đổi sang `($fetch as (u, o?) => Promise<Type>)` — cùng ý
+   * "không `any`", chỉ khác cú pháp. Pattern dưới bắt cả hai dạng.
    */
   assert.doesNotMatch(script, /\$fetch<any>/)
   assert.match(script, /ref<ActivityRetentionStatus \| null>/)
-  assert.match(script, /'\/api\/admin\/activity-logs'/)
+  // Endpoint list — URL có thể ở nháy đơn `'...'` hoặc backtick `...`.
+  assert.match(script, /\/api\/admin\/activity-logs[`']/)
   for (const filter of ['filterUserId', 'filterAction', 'filterResource', 'filterFrom', 'filterTo']) {
     assert.match(script, new RegExp(`${filter}`))
   }

@@ -23,8 +23,8 @@ const fetchUsers = async () => {
   loadError.value = ''
   try {
     const [uRes, rRes] = await Promise.all([
-      $fetch('/api/admin/users'),
-      $fetch('/api/admin/roles'),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; users: AdminUserRow[] }>)(`/api/admin/users`),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; roles: AdminRoleRow[] }>)(`/api/admin/roles`),
     ])
     if (uRes.ok) users.value = uRes.users
     if (rRes.ok) roles.value = rRes.roles
@@ -41,7 +41,7 @@ const fetchUsers = async () => {
 const handleCreateUser = async () => {
   errorMsg.value = ''
   try {
-    const res = await $fetch('/api/admin/users', { method: 'POST', body: form })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/users`, { method: 'POST', body: form })
     if (res.ok) {
       toast.success(`Đã tạo tài khoản ${form.username} thành công!`)
       showModal.value = false
@@ -70,7 +70,7 @@ const handleUpdateUser = async () => {
       }
       body.password = editForm.password.trim()
     }
-    const res = await $fetch(`/api/admin/users/${editForm.id}`, { method: 'PUT', body })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/users/${editForm.id}`, { method: 'PUT', body })
     if (res.ok) {
       toast.success(`Đã cập nhật tài khoản ${editForm.username} thành công!`)
       showEditModal.value = false; await fetchUsers()
@@ -83,7 +83,7 @@ const handleUpdateUser = async () => {
 
 const toggleActive = async (user: AdminUserRow) => {
   try {
-    await $fetch(`/api/admin/users/${user.id}`, { method: 'PUT', body: { isActive: !user.isActive } })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/users/${user.id}`, { method: 'PUT', body: { isActive: !user.isActive } })
     user.isActive = !user.isActive
     toast.success(`Đã ${user.isActive ? 'kích hoạt' : 'khóa'} tài khoản ${user.username}!`)
   } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể đổi trạng thái')) }
@@ -93,7 +93,7 @@ const deleteUser = async (user: AdminUserRow) => {
   const ok = await confirm({ title: 'Xóa tài khoản', message: `Bạn có chắc muốn xóa tài khoản ${user.username}?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await $fetch(`/api/admin/users/${user.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/users/${user.id}`, { method: 'DELETE' })
     toast.success('Đã xóa người dùng thành công!'); await fetchUsers()
   } catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa người dùng')) }
 }

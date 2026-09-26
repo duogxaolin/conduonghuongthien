@@ -8,10 +8,10 @@
             {{ t('guidance_and_direction') || 'Chỉ đạo & Điều hành' }}
           </span>
           <h2 class="text-2xl sm:text-3xl font-black text-[#172516] tracking-tight m-0 mb-2">
-            {{ d.title || 'Văn Bản Pháp Luật Mới Ban Hành' }}
+            {{ d.title || t('block_docs_title') }}
           </h2>
           <p class="text-sm text-[#556450] max-w-2xl m-0 leading-relaxed">
-            {{ d.description || 'Cập nhật các chỉ thị, nghị định của Chính phủ và thông tư của Bộ Công an về công tác thi hành án hình sự, hỗ trợ tái hòa nhập cộng đồng.' }}
+            {{ d.description || t('block_docs_desc') }}
           </p>
         </div>
 
@@ -19,14 +19,14 @@
           :to="d.btnLink || '/documents'"
           class="hidden sm:inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-white border border-[#D5E1D3] hover:border-[#4A6741] hover:bg-[#F2F7F0] text-[#385932] text-xs font-extrabold transition-all no-underline shrink-0 shadow-sm group/btn"
         >
-          <span>{{ d.btnText || 'Tra cứu thư viện văn bản' }}</span>
+          <span>{{ d.btnText || t('block_docs_btn') }}</span>
           <i class="fa-solid fa-arrow-right text-[0.7rem] transition-transform duration-200 group-hover/btn:translate-x-1" aria-hidden="true"></i>
         </nuxt-link>
       </div>
 
       <!-- Loading State (Skeleton 3 cards) -->
       <div v-if="pending" role="status" aria-busy="true" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5 sm:gap-6">
-        <span class="sr-only">Đang tải danh sách văn bản pháp luật</span>
+        <span class="sr-only">{{ t('block_docs_loading') }}</span>
         <div
           v-for="n in 3"
           :key="n"
@@ -103,7 +103,7 @@
       <!-- Empty State -->
       <div v-else class="bg-white rounded-2xl border border-[#E2E8DF] p-8 text-center text-sm text-[#7A8675] italic shadow-sm">
         <i class="fa-regular fa-folder-open text-2xl mb-2 text-[#BAC8B6] block" aria-hidden="true"></i>
-        <span>Hiện tại chưa có văn bản quy phạm pháp luật mới được đăng.</span>
+        <span>{{ t('block_docs_empty') }}</span>
       </div>
 
       <!-- Mobile Action Button -->
@@ -112,7 +112,7 @@
           :to="d.btnLink || '/documents'"
           class="inline-flex items-center justify-center gap-2 w-full py-3 px-4 rounded-xl bg-[#4A6741] text-white text-xs font-extrabold no-underline shadow-sm"
         >
-          <span>{{ (currentLang !== 'vi' ? t('view_all_docs') : '') || d.btnText || 'Tra cứu thư viện văn bản' }}</span>
+          <span>{{ d.btnText || t('block_docs_btn') }}</span>
           <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
         </nuxt-link>
       </div>
@@ -135,7 +135,7 @@ const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, pending, refresh } = await useAsyncData(
   `block-documents-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
-  () => $fetch('/api/public/articles', {
+  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
     params: {
       type: 'document',
       limit: maxItems.value,
@@ -163,7 +163,7 @@ const docs = computed(() =>
     thumbnailUrl: a.thumbnailUrl || null,
     date: formatDate(a.publishedAt || a.createdAt),
     excerpt: a.excerpt ? String(a.excerpt).replace(/<[^>]*>/g, ' ').slice(0, 180) : '',
-    categoryName: a.categoryName || 'Văn bản quy phạm',
+    categoryName: a.categoryName || t('block_docs_default_category'),
   }))
 )
 </script>

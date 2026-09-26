@@ -48,7 +48,7 @@ COPY public ./public
 # keep transcode at the lowest priority, ships with BusyBox — nothing to add.
 # `cpulimit` giới hạn % CPU thật cho ffmpeg (MEDIA_PROCESSING_CPU_LIMIT, mặc định 50),
 # không phải chỉ ưu tiên thấp như `nice` — một lượt transcode không ăn sạch mọi nhân.
-RUN apk add --no-cache ffmpeg mysql-client cpulimit
+RUN apk add --no-cache ffmpeg mysql-client cpulimit su-exec
 
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0
@@ -66,15 +66,16 @@ ENV CDKT_MEDIA_WORKDIR=/var/lib/cdkt/media
 
 # Uploads and media are written at runtime; give the unprivileged user ownership
 # so a freshly created named volume inherits it.
-RUN mkdir -p /app/public/uploads /var/lib/cdkt/media && chown -R node:node /app /var/lib/cdkt
+RUN mkdir -p /app/public/uploads /app/backups /var/lib/cdkt/media && chown -R node:node /app /var/lib/cdkt
 
 EXPOSE 3000
 
-# Drop root privileges.
-# NOTE for EXISTING deployments: a volume created by an older (root) image keeps
-# root ownership. Run once after upgrading, otherwise uploads will fail:
-#   docker compose run --rm --user root app chown -R node:node /app/public/uploads
-USER node
+# Drop privileges via entrypoint so bind mounts (./backups) owned by root on the host
+# are chowned to node on startup. The entrypoint runs as root, fixes ownership,
+# then execs as node via su-exec.
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+ENTRYPOINT ["docker-entrypoint.sh"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/public/settings').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"

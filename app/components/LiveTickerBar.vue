@@ -85,7 +85,7 @@ const startedLabel = computed(() => {
 
 async function loadActive() {
   try {
-    const response = await $fetch<{ ok: boolean, active: boolean, session: ActiveSession | null }>(
+    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, active: boolean, session: ActiveSession | null }>)(
       '/api/public/livestream/active',
       { retry: 0, timeout: 4000 },
     )

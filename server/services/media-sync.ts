@@ -154,6 +154,30 @@ export function cancelSyncJob(): void {
   }
 }
 
+/**
+ * Buộc gỡ kẹt khi worker treo (vd: `tar`/`mysqldump` treo trong pre-backup).
+ * `cancelSyncJob()` chỉ đặt cờ `cancelling` — worker phải tự check giữa các
+ * batch, nên nếu treo ở `await runBackup()` thì không bao giờ tới điểm check.
+ * Hàm này đặt `running=false` ngay để Prod bấm là mở lại được, không cần SSH
+ * restart container. Worker cũ vẫn treo trong nền nhưng không chặn job mới
+ * (pre-backup fail sẽ được catch + bỏ qua, phase sync vẫn chạy).
+ *
+ * Chỉ SuperAdmin / người có `media.update` mới gọi được (do endpoint gác).
+ */
+export function forceResetSyncJob(): { ok: boolean; message: string } {
+  if (!currentJob) return { ok: false, message: 'Không có job sync nào.' }
+  if (!currentJob.running) return { ok: false, message: 'Job sync đã dừng rồi.' }
+  const prevPhase = currentJob.phase
+  const elapsed = Math.round((Date.now() - currentJob.startedAt) / 1000)
+  currentJob.running = false
+  currentJob.cancelling = false
+  currentJob.phase = 'cancelled'
+  currentJob.message = `Đã buộc dừng (treo ở ${prevPhase} ${elapsed}s) — có thể chạy lại ngay. Worker cũ sẽ tự hết khi pre-backup xong.`
+  currentJob.finishedAt = Date.now()
+  logWarn({ event: 'media.sync_force_reset', prevPhase, elapsed })
+  return { ok: true, message: currentJob.message }
+}
+
 const BATCH_SIZE = 20
 const BATCH_SLEEP_MS = 500
 
@@ -191,12 +215,19 @@ async function runSyncWorker(
     if (!pool) throw new Error('Cơ sở dữ liệu chưa sẵn sàng.')
 
     // ── Phase 1: Pre-backup (snapshot recover thủ công) ─────────────────────
+    // 3212 file → tar + dump có thể treo phút dài. Bọc timeout 90s: quá hạn
+    // thì bỏ qua snapshot và tiến thẳng vào phase sync — treo ở "Đang backup
+    // trước sync 0/3212 0%" chính là ca này.
     try {
-      const backupRes = await runBackup('all', 'pre-sync', adminUserId)
+      const backupPromise = runBackup('all', 'pre-sync', adminUserId)
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Pre-backup timeout sau 90s — bỏ qua snapshot, tiếp tục sync.')), 90_000),
+      )
+      const backupRes = await Promise.race([backupPromise, timeoutPromise])
       if (currentJob) currentJob.preBackupStamp = backupRes.stamp
       logInfo({ event: 'media.sync_pre_backup_done', stamp: backupRes.stamp })
     } catch (err) {
-      // Pre-backup fail → cảnh báo nhưng vẫn tiếp sync. Snapshot là bonus,
+      // Pre-backup fail/timeout → cảnh báo nhưng vẫn tiếp sync. Snapshot là bonus,
       // không phải điều kiện tiên quyết — sync vẫn idempotent.
       logWarn({
         event: 'media.sync_pre_backup_failed',
@@ -324,12 +355,32 @@ async function rewriteArticleImageUrls(
   for (const { oldUrl, newUrl } of rewrites) {
     if (!oldUrl || !newUrl || oldUrl === newUrl) continue
     try {
+      // oldUrl luôn dạng /uploads/... (relative). Bài viết có thể chứa cả hai dạng:
+      //   /uploads/migrated/media/foo.jpeg  (relative)
+      //   http://localhost:3000/uploads/migrated/media/foo.jpeg (absolute)
+      // Nếu chỉ REPLACE relative thì dạng absolute thành
+      //   http://localhost:3000https://r2.../foo.jpeg  (hỏng).
+      // Nên xử lý absolute TRƯỚC bằng REGEXP_REPLACE (MySQL 8+), rồi mới REPLACE relative.
+      const escapedOldUrl = oldUrl.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+      const absPattern = `https?:\\/\\/[^"'\\s<>]*${escapedOldUrl}`
+      let affected = 0
+      try {
+        const [absRes] = await db.execute(
+          sql`UPDATE articles SET content = REGEXP_REPLACE(content, ${absPattern}, ${newUrl}) WHERE content REGEXP ${absPattern}`,
+        )
+        affected += affectedRowsOrZero(absRes)
+      } catch {
+        // REGEXP_REPLACE fail (MySQL < 8) → bỏ qua, sẽ thử REPLACE thường bên dưới.
+      }
       const oldUrlLike = `%${oldUrl}%`
-      const [updateRes] = await db.execute(
+      const [relRes] = await db.execute(
         sql`UPDATE articles SET content = REPLACE(content, ${oldUrl}, ${newUrl}) WHERE content LIKE ${oldUrlLike}`,
       )
-      const affected = affectedRowsOrZero(updateRes)
+      affected += affectedRowsOrZero(relRes)
       if (affected > 0) {
+        // Mỗi bài có thể bị đếm 2 lần nếu chứa cả hai dạng → unique count trong
+        // totalRewritten sẽ dư, nhưng không sao: đây là số "lượt sửa" hiển thị, không
+        // phải số bài unique nghiêm ngặt.
         totalRewritten += affected
         try {
           await db.insert(activityLogs).values({

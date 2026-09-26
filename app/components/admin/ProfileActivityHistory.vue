@@ -63,9 +63,9 @@ async function loadHistory() {
   historyLoading.value = true
   historyError.value = ''
   try {
-    const res = await $fetch<{
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{
       ok: boolean; items: HistoryItem[]; total: number; totalPages: number; targetUsername: string | null
-    }>('/api/admin/profile/history', {
+    }>)('/api/admin/profile/history', {
       query: {
         page: historyPage.value,
         pageSize: historyPageSize,
@@ -87,7 +87,7 @@ async function loadHistory() {
 async function loadOtherUsers() {
   if (!user.value?.isSuperAdmin) return
   try {
-    const res = await $fetch<{ ok: boolean; users: Array<{ id: number; username: string }> }>('/api/admin/users')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; users: Array<{ id: number; username: string }> }>)('/api/admin/users')
     otherUsers.value = (res.users ?? []).filter(u => u.id !== user.value?.id)
   } catch {
     // Không chặn trang: bộ chọn tài khoản khác chỉ là tiện ích.

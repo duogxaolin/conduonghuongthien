@@ -129,7 +129,7 @@ export function useBulkAction(selection: ReturnType<typeof useBulkSelection>) {
 
     busy.value = true
     try {
-      const result = await $fetch<BulkResult>(options.url, {
+      const result = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<BulkResult>)(options.url, {
         method: 'POST',
         body: { ...options.body, ids },
       })

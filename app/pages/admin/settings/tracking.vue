@@ -61,7 +61,7 @@ const fetchSettings = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch('/api/admin/settings')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null> }>)(`/api/admin/settings`)
     if (res.ok && res.settings) {
       for (const k of Object.keys(settings) as Array<keyof typeof settings>) {
         if (res.settings[k] != null) settings[k] = String(res.settings[k])
@@ -83,7 +83,7 @@ const handleSave = async () => {
   }
   saving.value = true
   try {
-    const res = await $fetch('/api/admin/settings', { method: 'PUT', body: { settings } })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/settings`, { method: 'PUT', body: { settings } })
     if (res.ok) toast.success('Đã lưu cấu hình Tracking & Marketing!')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu cài đặt'))

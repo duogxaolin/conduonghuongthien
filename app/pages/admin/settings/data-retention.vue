@@ -147,7 +147,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch('/api/admin/settings/retention')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; scopes: Scope[]; command: string | null; autoEnabled: boolean; runHour: number; autoEnabledSource: string; runHourSource: string }>)(`/api/admin/settings/retention`)
     if (!res?.ok) {
       error.value = 'Không tải được cấu hình dọn dữ liệu.'
       return
@@ -184,7 +184,7 @@ async function save() {
       body[fields.days] = Number(form[fields.days])
       body[fields.maxRows] = Number(form[fields.maxRows])
     }
-    await $fetch('/api/admin/settings/retention', { method: 'PUT', body })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/retention`, { method: 'PUT', body })
     toast.success('Đã lưu cấu hình dọn dữ liệu.')
     await load()
   } catch (err: unknown) {
@@ -207,7 +207,7 @@ async function runNow() {
 
   running.value = true
   try {
-    const res = await $fetch('/api/admin/settings/retention-run', { method: 'POST', body: { confirm: true } })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; status: string; tables: Array<{ deleted?: number }> }>)(`/api/admin/settings/retention-run`, { method: 'POST', body: { confirm: true } })
     const deleted = (res?.tables || []).reduce((sum: number, t: { deleted?: number }) => sum + Number(t.deleted || 0), 0)
     if (res?.status === 'warning') toast.info(`Đã xoá ${formatNumber(deleted)} bản ghi. Còn bản ghi chờ lượt sau.`)
     else toast.success(deleted > 0 ? `Đã xoá ${formatNumber(deleted)} bản ghi.` : 'Không có bản ghi nào cần xoá.')

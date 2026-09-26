@@ -2,18 +2,19 @@
   <ArticleDetail
     :slug="slug"
     back-to="/role-models"
-    back-label="Tấm gương tiêu biểu"
-    back-cta-label="Quay lại danh sách tấm gương"
-    current-crumb="Chi tiết câu chuyện"
+    variant="role"
+    :back-label="t('a_back_role')"
     meta-icon="📍"
-    category-fallback="Tấm gương tiêu biểu"
-    seo-fallback-title="Tấm gương tiêu biểu | Con Đường Hướng Thiện"
-    seo-fallback-description="Câu chuyện hoàn lương lập nghiệp tiêu biểu."
+    :seo-fallback-title="t('a_role_seo_title')"
+    :seo-fallback-description="t('a_role_seo_desc')"
   />
 </template>
 
 <script setup lang="ts">
 import { useRoute } from 'vue-router'
+import { useI18n } from '~/composables/useI18n'
+
+const { t } = useI18n()
 
 const route = useRoute()
 const slug = String(route.params.id || '')

@@ -65,7 +65,7 @@ async function refreshProcessing() {
   controller = new AbortController()
   const signal = controller.signal
   try {
-    const response = await $fetch(`/api/admin/media-portal/${mediaId.value}`, { signal })
+    const response = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ item: AdminMediaItem }>)(`/api/admin/media-portal/${mediaId.value}`, { signal })
     if (stopped || signal.aborted) return
     item.value = response.item
     schedulePoll()
@@ -84,7 +84,8 @@ async function load() {
     if (!canRead.value) return
     if (!Number.isSafeInteger(mediaId.value) || mediaId.value < 1) throw new Error('invalid')
     const [response, options] = await Promise.all([
-      $fetch(`/api/admin/media-portal/${mediaId.value}`, { signal }), $fetch('/api/admin/media-portal/config', { signal }),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ item: AdminMediaItem }>)(`/api/admin/media-portal/${mediaId.value}`, { signal }),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaConfig>)(`/api/admin/media-portal/config`, { signal }),
     ])
     if (stopped || signal.aborted) return
     item.value = response.item
@@ -99,7 +100,7 @@ async function save(fields: Record<string, unknown>) {
   saving.value = true
   actionError.value = ''
   try {
-    await $fetch(`/api/admin/media-portal/${mediaId.value}`, { method: 'PUT', body: fields, retry: 0 })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${mediaId.value}`, { method: 'PUT', body: fields, retry: 0 })
     toast.success('Đã lưu thay đổi.')
     await refreshProcessing()
   } catch (error) { actionError.value = errorMessage(error, 'Không lưu được thay đổi. Vui lòng thử lại.') }
@@ -116,7 +117,7 @@ async function reprocess() {
   actionError.value = ''
   confirmReprocess.value = false
   try {
-    await $fetch(`/api/admin/media-portal/${mediaId.value}/process`, { method: 'POST', retry: 0 })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${mediaId.value}/process`, { method: 'POST', retry: 0 })
     if (item.value) {
       item.value.processingStatus = 'pending'
       item.value.processingError = null
@@ -154,7 +155,7 @@ async function submitTranscode() {
   transcoding.value = true
   actionError.value = ''
   try {
-    await $fetch(`/api/admin/media-portal/${mediaId.value}/process`, { method: 'POST', body: { renditions: picked }, retry: 0 })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${mediaId.value}/process`, { method: 'POST', body: { renditions: picked }, retry: 0 })
     if (item.value) {
       item.value.processingStatus = 'pending'
       item.value.processingError = null
@@ -200,7 +201,7 @@ async function setThumbnail(imageMediaId: number) {
   thumbSaving.value = true
   actionError.value = ''
   try {
-    await $fetch(`/api/admin/media-portal/${mediaId.value}/thumbnail`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${mediaId.value}/thumbnail`, {
       method: 'POST', body: { mediaId: imageMediaId }, retry: 0,
     })
     toast.success('Đã đổi ảnh thumbnail.')
@@ -221,7 +222,7 @@ async function clearThumbnail() {
   confirmClearThumb.value = false
   actionError.value = ''
   try {
-    await $fetch(`/api/admin/media-portal/${mediaId.value}/thumbnail`, { method: 'DELETE', retry: 0 })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${mediaId.value}/thumbnail`, { method: 'DELETE', retry: 0 })
     toast.success('Đã đặt lại thumbnail mặc định.')
     await refreshProcessing()
   } catch (error) {

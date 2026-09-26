@@ -1,16 +1,20 @@
 <template>
   <NewsCategoryList
-    heading="Tin Địa Phương"
-    subheading="Hoạt động thi hành án hình sự và công tác cộng đồng tại địa bàn xã, phường"
+    :heading="t('n_local_heading')"
+    :subheading="t('n_local_sub')"
     category-slug="tin-dia-phuong"
-    category-label="Tin địa phương"
-    empty-text="Chưa có tin địa phương nào."
+    :category-label="t('n_local_label')"
+    :empty-text="t('n_local_empty')"
   />
 </template>
 
 <script setup lang="ts">
+import { useI18n } from '~/composables/useI18n'
+
+const { t } = useI18n()
+
 useSeoMeta({
-  title: 'Tin địa phương | Con Đường Hướng Thiện',
-  description: 'Hoạt động thi hành án hình sự và công tác cộng đồng tại địa bàn xã, phường.',
+  title: () => `${t('n_local_heading')} | Con Đường Hướng Thiện`,
+  description: () => t('n_local_sub'),
 })
 </script>

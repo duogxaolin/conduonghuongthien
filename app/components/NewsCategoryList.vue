@@ -3,7 +3,7 @@
     <!-- Page Header (đồng bộ 100% với /news) -->
     <section class="border-b border-[#E2E8DF] bg-white">
       <div class="container pt-7 sm:pt-9 pb-5">
-        <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-3">
+        <nav :aria-label="t('breadcrumb_aria')" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-3">
           <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
             <span>{{ t('home') }}</span>
@@ -21,7 +21,7 @@
         <p v-if="subheading" class="text-[0.95rem] text-[#5A6655] mt-2 mb-5 leading-relaxed">{{ subheading }}</p>
 
         <!-- Category Nav Chips -->
-        <nav aria-label="Điều hướng chuyên mục bản tin" class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+        <nav :aria-label="t('news_nav_aria')" class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
           <nuxt-link
             to="/news"
             class="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 no-underline bg-white text-[#4A5545] border-[#DCE5DB] hover:border-[#4A6741] hover:bg-[#F2F7F0]"
@@ -60,18 +60,18 @@
                 {{ heading }}
               </h2>
               <span v-if="!pending" class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-[#EBF3E8] text-[#385932]">
-                {{ newsList.length }} tin
+                {{ t('n_count_suffix').replace('{n}', String(newsList.length)) }}
               </span>
             </div>
             <nuxt-link to="/news" class="text-xs text-[#4A6741] font-bold hover:underline flex items-center gap-1 no-underline">
-              <span>Xem tất cả</span>
+              <span>{{ t('n_view_all') }}</span>
               <i class="fa-solid fa-arrow-right text-[0.65rem]" aria-hidden="true"></i>
             </nuxt-link>
           </div>
 
           <!-- Loading (Skeleton) -->
           <div v-if="pending" role="status" aria-busy="true" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-            <span class="sr-only">Đang tải danh sách bản tin</span>
+            <span class="sr-only">{{ t('n_list_loading') }}</span>
             <div v-for="n in 6" :key="n" class="bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-sm animate-pulse motion-reduce:animate-none flex flex-col">
               <div class="aspect-video bg-[#EEF2EC]"></div>
               <div class="p-4 sm:p-5 flex flex-col gap-3 flex-1">
@@ -91,15 +91,15 @@
             <div class="w-12 h-12 rounded-full bg-[#FCE8E8] text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
-            <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">Không thể tải danh sách bản tin</h3>
-            <p class="text-sm text-[#667768] m-0 mb-4">Đã xảy ra lỗi khi kết nối dữ liệu máy chủ.</p>
+            <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ t('n_load_error_title') }}</h3>
+            <p class="text-sm text-[#667768] m-0 mb-4">{{ t('n_load_error_desc') }}</p>
             <button
               type="button"
               class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
               @click="() => refresh()"
             >
               <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
-              <span>Thử lại</span>
+              <span>{{ t('retry') }}</span>
             </button>
           </div>
 
@@ -112,12 +112,12 @@
               <i class="fa-regular fa-newspaper" aria-hidden="true"></i>
             </div>
             <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">{{ emptyText }}</h3>
-            <p class="text-sm text-[#556450] m-0 mb-5">Hiện tại chuyên mục này chưa có bài viết mới cập nhật.</p>
+            <p class="text-sm text-[#556450] m-0 mb-5">{{ t('n_empty_desc') }}</p>
             <nuxt-link
               to="/news"
               class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all no-underline"
             >
-              <span>Xem tất cả bản tin</span>
+              <span>{{ t('n_view_all_list') }}</span>
               <i class="fa-solid fa-arrow-right text-xs" aria-hidden="true"></i>
             </nuxt-link>
           </div>
@@ -188,7 +188,7 @@
             <h2 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">{{ t('most_read') }}</h2>
 
             <div v-if="mostReadPending" role="status" aria-busy="true" class="py-2">
-              <span class="sr-only">Đang tải tin đọc nhiều</span>
+              <span class="sr-only">{{ t('n_loading_most_read') }}</span>
               <div aria-hidden="true" class="flex flex-col">
                 <div v-for="n in 6" :key="n" class="flex gap-3 py-3 border-b border-[#E2E8DF] last:border-b-0">
                   <div class="w-7 h-6 bg-[#EEF2EC] rounded shrink-0 animate-pulse motion-reduce:animate-none"></div>
@@ -216,7 +216,7 @@
               </li>
             </ul>
 
-            <p v-else class="text-[0.85rem] text-[#7A8675] italic py-4 m-0">Chưa có dữ liệu lượt xem.</p>
+            <p v-else class="text-[0.85rem] text-[#7A8675] italic py-4 m-0">{{ t('n_no_views') }}</p>
           </div>
 
           <!-- Widget 2: Hotline & Hỗ Trợ 24/7 -->
@@ -226,20 +226,20 @@
             </div>
             <div class="relative z-10">
               <span class="inline-block px-2.5 py-0.5 rounded-full bg-white/15 text-[#A5D6A7] text-[0.68rem] font-extrabold uppercase tracking-wider mb-3">
-                Tư vấn tái hòa nhập
+                {{ t('consult_badge') }}
               </span>
               <h3 class="text-lg font-black leading-tight mb-2 m-0 text-white">
-                Cần hỗ trợ thông tin hoặc giải đáp pháp lý?
+                {{ t('hotline_q') }}
               </h3>
               <p class="text-xs text-white/80 leading-relaxed mb-4 m-0">
-                Đội ngũ cán bộ và chuyên gia tư vấn sẵn sàng đồng hành, hỗ trợ thủ tục tái hòa nhập cộng đồng.
+                {{ t('hotline_team') }}
               </p>
               <a
                 href="tel:0903480985"
                 class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#7CB342] hover:bg-[#689F38] text-white font-extrabold text-xs transition-all no-underline shadow-sm"
               >
                 <i class="fa-solid fa-phone" aria-hidden="true"></i>
-                <span>Hotline: 0903.480.985</span>
+                <span>{{ t('hotline_btn') }}</span>
               </a>
             </div>
           </div>
@@ -281,22 +281,31 @@ const categoryNavList = computed(() => [
   { slug: 'tin-dia-phuong', label: t('news_local') || 'Tin địa phương', url: '/news/local-news', icon: 'fa-solid fa-map-location-dot' },
 ])
 
-const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
-  lazy: true,
-  key: () => `news-category-${props.categorySlug}-${currentLang.value}`,
-  query: computed(() => ({ type: 'news', categorySlug: props.categorySlug, limit: props.limit, lang: currentLang.value })),
-  default: () => ({ ok: true, articles: [], pagination: {} }),
-})
+const { data, pending, error, refresh } = await useAsyncData(
+  () => `news-category-${props.categorySlug}-${currentLang.value}`,
+  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }>; pagination: Record<string, unknown> }>)('/api/public/articles', {
+    query: { type: 'news', categorySlug: props.categorySlug, limit: props.limit, lang: currentLang.value },
+  }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: {} }),
+    watch: [() => props.categorySlug, () => props.limit, currentLang],
+  },
+)
 
 const newsList = computed(() => (data.value as { articles?: any[] })?.articles || [])
 const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
 
-const { data: mostReadData, pending: mostReadPending } = await useFetch('/api/public/articles', {
-  lazy: true,
-  key: () => 'news-category-most-read',
-  query: { type: 'news', sort: 'views', limit: 6 },
-  default: () => ({ ok: true, articles: [], pagination: {} }),
-})
+const { data: mostReadData, pending: mostReadPending } = await useAsyncData(
+  () => 'news-category-most-read',
+  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null }> }>)(`/api/public/articles`, {
+    query: { type: 'news', sort: 'views', limit: 6 },
+  }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: {} }),
+  },
+)
 
 const mostRead = computed(() => (mostReadData.value as { articles?: any[] })?.articles || [])
 </script>

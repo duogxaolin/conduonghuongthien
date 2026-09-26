@@ -21,12 +21,12 @@
     <!-- Tab navigation -->
     <nav class="flex flex-wrap gap-2 bg-white p-2 rounded-xl border border-[#e2ece3]">
       <button
-        v-for="t in [
-          { key: 'settings', label: '⚙️ Cài đặt Kiểm duyệt AI', icon: 'fa-solid fa-sliders' },
-          { key: 'queue', label: '📥 Sổ đối soát nội dung bị ẩn', icon: 'fa-solid fa-inbox', badge: pendingQueueCount },
-          { key: 'rules', label: '📋 Quy tắc & Từ khóa an ninh', icon: 'fa-solid fa-list-check', count: rules.length },
-          { key: 'worker', label: '⚡ Trạng thái Worker & Hệ thống', icon: 'fa-solid fa-server' },
-        ]"
+        v-for="t in ([
+          { key: 'settings', label: '⚙️ Cài đặt Kiểm duyệt AI', icon: 'fa-solid fa-sliders', badge: 0, count: undefined as number | undefined },
+          { key: 'queue', label: '📥 Sổ đối soát nội dung bị ẩn', icon: 'fa-solid fa-inbox', badge: pendingQueueCount, count: undefined as number | undefined },
+          { key: 'rules', label: '📋 Quy tắc & Từ khóa an ninh', icon: 'fa-solid fa-list-check', badge: 0, count: rules.length },
+          { key: 'worker', label: '⚡ Trạng thái Worker & Hệ thống', icon: 'fa-solid fa-server', badge: 0, count: undefined as number | undefined },
+        ] as const)"
         :key="t.key"
         type="button"
         class="flex items-center gap-2 px-4 py-2 text-xs font-bold rounded-lg transition-all cursor-pointer border"
@@ -36,7 +36,7 @@
         @click="activeTab = t.key as any"
       >
         <span>{{ t.label }}</span>
-        <span v-if="t.badge" class="px-1.5 py-0.2 rounded-full bg-red-500 text-white text-[0.65rem] font-black">
+        <span v-if="t.badge > 0" class="px-1.5 py-0.2 rounded-full bg-red-500 text-white text-[0.65rem] font-black">
           {{ t.badge }}
         </span>
         <span v-else-if="t.count !== undefined" class="text-[0.7rem] opacity-70">
@@ -194,7 +194,7 @@
             type="button"
             class="px-2.5 py-1 rounded-md text-xs font-semibold cursor-pointer border"
             :class="queueStatusFilter === s.key ? 'bg-[#2c6e33] text-white border-[#2c6e33]' : 'bg-white text-[#667768] border-[#d0ddd1] hover:bg-[#f0f7f1]'"
-            @click="queueStatusFilter = s.key; loadQueue()"
+            @click="queueStatusFilter = s.key; queuePage = 1; loadQueue()"
           >
             {{ s.label }}
           </button>
@@ -310,6 +310,22 @@
               </tr>
             </tbody>
           </table>
+        </div>
+
+        <!-- Phân trang queue — server trả page/total/totalPages, không viết tay.
+             Trang 1/1 không có gì để chuyển nên ẩn luôn. -->
+        <div v-if="queueTotalPages > 1" class="flex items-center justify-between gap-3 px-1">
+          <p class="text-xs text-[#667768]">
+            Trang {{ queuePage }} / {{ queueTotalPages }} · {{ queueTotal }} mục
+          </p>
+          <div class="flex items-center gap-1">
+            <button type="button" class="px-2.5 py-1 rounded-md text-xs font-semibold border border-[#d0ddd1] bg-white text-[#667768] hover:bg-[#f0f7f1] disabled:opacity-40 disabled:cursor-not-allowed" :disabled="queuePage <= 1" @click="changeQueuePage(queuePage - 1)">
+              <i class="fa-solid fa-angle-left mr-1"></i>Trang trước
+            </button>
+            <button type="button" class="px-2.5 py-1 rounded-md text-xs font-semibold border border-[#d0ddd1] bg-white text-[#667768] hover:bg-[#f0f7f1] disabled:opacity-40 disabled:cursor-not-allowed" :disabled="queuePage >= queueTotalPages" @click="changeQueuePage(queuePage + 1)">
+              Trang sau<i class="fa-solid fa-angle-right ml-1"></i>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -497,9 +513,23 @@
               Bộ nhớ & Hạ tầng Worker
             </h3>
             <div class="flex flex-col gap-2 text-xs">
+              <div class="flex flex-col gap-1.5 py-1 border-b border-[#e2ece3]">
+                <div class="flex items-center justify-between">
+                  <span class="text-[#667768]">Bộ nhớ RAM Heap (Đang dùng / Giới hạn thật):</span>
+                  <span class="font-bold text-[#122815]">{{ workerData?.memoryUsageMb?.heapUsed ?? 0 }} MB / {{ workerData?.memoryUsageMb?.heapLimit ? workerData.memoryUsageMb.heapLimit + ' MB' : '—' }}</span>
+                </div>
+                <div class="h-1.5 w-full rounded-full bg-[#e2ece3] overflow-hidden" role="progressbar" :aria-valuenow="workerData?.memoryUsageMb?.heapUsedPercent ?? 0" aria-valuemin="0" aria-valuemax="100">
+                  <div
+                    class="h-full rounded-full transition-all"
+                    :class="(workerData?.memoryUsageMb?.heapUsedPercent ?? 0) >= 85 ? 'bg-[#d12420]' : (workerData?.memoryUsageMb?.heapUsedPercent ?? 0) >= 60 ? 'bg-[#e0a800]' : 'bg-[#2c6e33]'"
+                    :style="{ width: `${Math.min(100, Math.max(0, workerData?.memoryUsageMb?.heapUsedPercent ?? 0))}%` }"
+                  ></div>
+                </div>
+                <span class="text-[0.66rem] text-[#8a9a8b]">Đang dùng {{ workerData?.memoryUsageMb?.heapUsedPercent ?? 0 }}% giới hạn V8 (heap ceil do <code class="text-[0.64rem]">--max-old-space-size</code>).</span>
+              </div>
               <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
-                <span class="text-[#667768]">Bộ nhớ RAM Heap (Đang dùng / Cấp phát):</span>
-                <span class="font-bold text-[#122815]">{{ workerData?.memoryUsageMb?.heapUsed ?? 0 }} MB / {{ workerData?.memoryUsageMb?.heapTotal ?? 0 }} MB</span>
+                <span class="text-[#667768]">Cấp phát Heap V8 (tự kéo theo nhu cầu):</span>
+                <span class="font-medium text-[#667768]">{{ workerData?.memoryUsageMb?.heapTotal ?? 0 }} MB</span>
               </div>
               <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
                 <span class="text-[#667768]">Bộ nhớ RAM tiến trình (RSS):</span>
@@ -695,6 +725,11 @@ interface ModerationQueueItem {
 const rules = ref<ModerationRule[]>([])
 const queue = ref<ModerationQueueItem[]>([])
 const queueStatusFilter = ref('pending')
+// Phân trang queue — trang 1/perPage 20 mặc định. Server nay trả page/total/totalPages.
+const queuePage = ref(1)
+const queuePerPage = ref(20)
+const queueTotalPages = ref(1)
+const queueTotal = ref(0)
 
 const pendingQueueCount = computed(() => queue.value.filter(q => q.status === 'pending').length)
 
@@ -726,12 +761,12 @@ function formatTime(dateStr: string | null): string {
 }
 
 async function loadSettings() {
-  const res = await $fetch<{
+  const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
     ok: boolean
     settings: typeof form
     activeProviders: ProviderOption[]
     activeModels: ModelPricingOption[]
-  }>('/api/admin/ai/moderation/settings')
+  }>)('/api/admin/ai/moderation/settings')
 
   form.enabled = res.settings.enabled
   form.mode = res.settings.mode
@@ -745,14 +780,24 @@ async function loadSettings() {
 }
 
 async function loadQueue() {
-  const res = await $fetch<{ ok: boolean; items: ModerationQueueItem[] }>('/api/admin/ai/moderation/queue', {
-    params: { status: queueStatusFilter.value },
+  const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: ModerationQueueItem[]; page: number; perPage: number; total: number; totalPages: number }>)('/api/admin/ai/moderation/queue', {
+    params: { status: queueStatusFilter.value, page: queuePage.value, perPage: queuePerPage.value },
   })
   queue.value = res.items
+  queuePage.value = res.page
+  queuePerPage.value = res.perPage
+  queueTotal.value = res.total
+  queueTotalPages.value = res.totalPages
+}
+
+async function changeQueuePage(p: number) {
+  if (p < 1 || p > queueTotalPages.value || p === queuePage.value) return
+  queuePage.value = p
+  await loadQueue()
 }
 
 async function loadRules() {
-  const res = await $fetch<{ ok: boolean; rules: ModerationRule[] }>('/api/admin/ai/moderation/rules')
+  const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; rules: ModerationRule[] }>)(`/api/admin/ai/moderation/rules`)
   rules.value = res.rules
 }
 
@@ -771,7 +816,7 @@ async function loadData() {
 async function saveSettings() {
   saving.value = true
   try {
-    await $fetch('/api/admin/ai/moderation/settings', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/ai/moderation/settings', {
       method: 'PUT',
       body: {
         enabled: form.enabled,
@@ -796,7 +841,7 @@ async function addRule() {
     return
   }
   try {
-    await $fetch('/api/admin/ai/moderation/rules', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/ai/moderation/rules', {
       method: 'POST',
       body: newRuleForm,
     })
@@ -810,7 +855,7 @@ async function addRule() {
 
 async function toggleRule(rule: ModerationRule) {
   try {
-    await $fetch(`/api/admin/ai/moderation/rules/${rule.id}`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/moderation/rules/${rule.id}`, {
       method: 'PUT',
       body: { isEnabled: !rule.isEnabled },
     })
@@ -831,7 +876,7 @@ async function deleteRule(rule: ModerationRule) {
   if (!ok) return
 
   try {
-    await $fetch(`/api/admin/ai/moderation/rules/${rule.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/moderation/rules/${rule.id}`, { method: 'DELETE' })
     toast.success('Đã xóa quy tắc.')
     await loadRules()
   } catch (err: unknown) {
@@ -854,7 +899,7 @@ async function resolveItem(item: ModerationQueueItem, action: 'approve' | 'rejec
   if (!ok) return
 
   try {
-    await $fetch(`/api/admin/ai/moderation/queue/${item.id}/resolve`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/moderation/queue/${item.id}/resolve`, {
       method: 'POST',
       body: { action },
     })
@@ -888,6 +933,8 @@ interface WorkerStatusData {
     heapUsed: number
     heapTotal: number
     rss: number
+    heapLimit: number
+    heapUsedPercent: number
   }
 }
 
@@ -908,7 +955,7 @@ function formatUptime(seconds: number): string {
 async function loadWorkerStatus() {
   workerLoading.value = true
   try {
-    const res = await $fetch<{ ok: boolean; worker: WorkerStatusData }>('/api/admin/ai/moderation/worker-status')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; worker: WorkerStatusData }>)(`/api/admin/ai/moderation/worker-status`)
     if (res.ok) {
       workerData.value = res.worker
     }
@@ -930,7 +977,7 @@ async function triggerRestartWorker() {
 
   restartingWorker.value = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/ai/moderation/restart-worker', { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/ai/moderation/restart-worker`, { method: "POST" })
     toast.success(res.message || 'Đã khởi động lại Moderation Worker.')
     await loadWorkerStatus()
   } catch (err: unknown) {
@@ -951,7 +998,7 @@ async function triggerRescanAll() {
 
   rescanning.value = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/ai/moderation/rescan-all', { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/ai/moderation/rescan-all`, { method: "POST" })
     toast.success(res.message)
     await Promise.all([loadWorkerStatus(), loadQueue()])
   } catch (err: unknown) {
@@ -972,7 +1019,7 @@ async function triggerRestartServer() {
 
   restartingServer.value = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/ai/moderation/restart-server', { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/ai/moderation/restart-server`, { method: "POST" })
     toast.success(res.message)
     setTimeout(() => {
       window.location.replace('/admin/ai/moderation')

@@ -150,7 +150,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
   else aiLoadingText.value = 'Trợ lý AI đang rà soát chính tả và văn phong...'
 
   try {
-    const res = await $fetch<{
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
       ok: boolean
       action: string
       options?: string[]
@@ -158,7 +158,9 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
       polishedContent?: string
       notes?: string[]
       rawText?: string
-    }>('/api/admin/ai/editorial', {
+      changes?: PolishChangeItem[]
+      summaryNotes?: string
+    }>)('/api/admin/ai/editorial', {
       method: 'POST',
       body: { action, title: form.title, content },
     })
@@ -172,9 +174,9 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
     } else if (action === 'polish') {
       polishedPreview.value = {
         content: res.polishedContent || res.rawText || '',
-        summaryNotes: (res as { summaryNotes?: string }).summaryNotes || (res.notes?.join(' • ')) || 'Đã rà soát chính tả, ngữ pháp và thuật ngữ pháp lý.',
-        changes: Array.isArray((res as { changes?: PolishChangeItem[] }).changes)
-          ? (res as { changes: PolishChangeItem[] }).changes.map(c => ({ ...c, applied: false }))
+        summaryNotes: res.summaryNotes || (res.notes?.join(' • ')) || 'Đã rà soát chính tả, ngữ pháp và thuật ngữ pháp lý.',
+        changes: Array.isArray(res.changes)
+          ? res.changes.map(c => ({ ...c, applied: false }))
           : [],
       }
       toast.success('Đã rà soát xong, mời bạn xem các điểm sửa đổi bên dưới!')
@@ -218,7 +220,7 @@ const fetchArticle = async () => {
   suppressTypeReset = true  // block watcher resets during form population
   loading.value = true
   try {
-    const res = await $fetch(`/api/admin/articles/${articleId.value}`)
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; article: { title: string; type: string; category: string; categoryId: number | null; excerpt: string; content: string; thumbnailUrl: string; status: string } }>)(`/api/admin/articles/${articleId.value}`)
     if (res.ok && res.article) {
       form.title = res.article.title || ''
       form.type = res.article.type || 'news'
@@ -332,7 +334,7 @@ async function translateAllForThisArticle(targetStatus: 'ai_draft' | 'published'
   startTranslationPolling()
 
   try {
-    const res = await $fetch<{ ok: boolean; queued: number; message: string }>(
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; queued: number; message: string }>)(
       `/api/admin/articles/${articleId.value}/translations/translate-all`,
       { method: 'POST', body: { targetStatus } },
     )
@@ -356,14 +358,14 @@ const handleSave = async () => {
   saving.value = true
   try {
     if (isNew.value) {
-      const res = await $fetch<{ ok: boolean; id: number }>('/api/admin/articles', { method: 'POST', body: form })
+      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; id: number }>)('/api/admin/articles', { method: 'POST', body: form })
       if (res.ok) {
         toast.success('Tạo bài viết mới thành công!')
         const newId = res.id
         if (autoTranslateLangs.value.length > 0 && newId) {
           try {
             for (const langCode of autoTranslateLangs.value) {
-              await $fetch(`/api/admin/articles/${newId}/translations/translate`, {
+              await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${newId}/translations/translate`, {
                 method: 'POST',
                 body: { langCode },
               })
@@ -376,7 +378,7 @@ const handleSave = async () => {
         navigateTo(`/admin/content/articles/${newId}`)
       }
     } else {
-      const res = await $fetch(`/api/admin/articles/${articleId.value}`, { method: 'PUT', body: form })
+      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/articles/${articleId.value}`, { method: 'PUT', body: form })
       if (res.ok) {
         toast.success('Đã cập nhật bài viết thành công!')
         checkAndPromptReTranslation()
@@ -474,7 +476,7 @@ const initTinyMCE = () => {
     images_upload_handler: (blobInfo: { blob: () => Blob, filename: () => string }) => new Promise<string>((resolve, reject) => {
       const formData = new FormData()
       formData.append('file', blobInfo.blob(), blobInfo.filename())
-      $fetch('/api/admin/media/upload', { method: 'POST', body: formData })
+      void ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; media?: { url: string } }>)(`/api/admin/media/upload`, { method: 'POST', body: formData })
         .then((res) => {
           if (res.ok && res.media?.url) resolve(res.media.url)
           else reject('Upload thất bại')
@@ -587,7 +589,7 @@ const availableLanguages = computed(() => {
 
 async function fetchDbLanguages() {
   try {
-    const res = await $fetch<{ ok: boolean; items: Array<{ code: string; name: string; nativeName: string; isActive: boolean; isDefault: boolean }> }>('/api/admin/languages')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ code: string; name: string; nativeName: string; isActive: boolean; isDefault: boolean }> }>)('/api/admin/languages')
     if (res.ok && Array.isArray(res.items)) {
       const nonDefault = res.items.filter(l => l.isActive && l.code !== 'vi')
       if (nonDefault.length > 0) {
@@ -624,7 +626,7 @@ async function retryAllFailedTranslations() {
 async function fetchArticleTranslations() {
   if (isNew.value || !articleId.value) return
   try {
-    const res = await $fetch<{ ok: boolean; items: typeof articleTranslations.value }>(
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: typeof articleTranslations.value }>)(
       `/api/admin/articles/${articleId.value}/translations`,
     )
     if (res.ok) articleTranslations.value = res.items
@@ -664,7 +666,7 @@ async function triggerTranslation(langCode: string, targetStatus: 'ai_draft' | '
   startTranslationPolling()
 
   try {
-    await $fetch(`/api/admin/articles/${articleId.value}/translations/translate`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${articleId.value}/translations/translate`, {
       method: 'POST',
       body: { langCode, targetStatus },
     })
@@ -719,7 +721,7 @@ function openEditTranslation(row: typeof articleTranslations.value[0]) {
 async function saveTranslationEdit() {
   if (!editingTranslation.value) return
   try {
-    await $fetch(
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(
       `/api/admin/articles/${articleId.value}/translations/${editingTranslation.value.lang}`,
       { method: 'PUT', body: editingTranslation.value },
     )
@@ -735,7 +737,7 @@ async function saveTranslationEdit() {
 async function toggleTranslationStatus(row: typeof articleTranslations.value[0]) {
   const newStatus = row.status === 'published' ? 'reviewed' : 'published'
   try {
-    await $fetch(
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(
       `/api/admin/articles/${articleId.value}/translations/${row.langCode}/status`,
       { method: 'PATCH', body: { status: newStatus } },
     )
@@ -749,7 +751,7 @@ async function toggleTranslationStatus(row: typeof articleTranslations.value[0])
 async function deleteTranslation(row: typeof articleTranslations.value[0]) {
   if (!confirm(`Xoá bản dịch ${availableLanguages.value.find(l => l.code === row.langCode)?.label ?? row.langCode}?`)) return
   try {
-    await $fetch(
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(
       `/api/admin/articles/${articleId.value}/translations/${row.langCode}`,
       { method: 'DELETE' },
     )
@@ -1399,8 +1401,8 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
       <div v-if="showEditTranslationDrawer && editingTranslation" class="bg-[#f8faf7] rounded-xl border border-[#c8d6c9] p-4 sm:p-5 flex flex-col gap-3 shadow-md">
         <div class="flex items-center justify-between border-b border-[#e2ece3] pb-2.5">
           <div class="flex items-center gap-2">
-            <span class="text-xl">{{ availableLanguages.find(l => l.code === editingTranslation.lang)?.flag }}</span>
-            <span class="text-sm font-extrabold text-[#122815]">Chỉnh sửa bản dịch: {{ availableLanguages.find(l => l.code === editingTranslation.lang)?.label }}</span>
+            <span class="text-xl">{{ availableLanguages.find(l => l.code === editingTranslation?.lang)?.flag }}</span>
+            <span class="text-sm font-extrabold text-[#122815]">Chỉnh sửa bản dịch: {{ availableLanguages.find(l => l.code === editingTranslation?.lang)?.label }}</span>
           </div>
           <button type="button" class="text-xs text-[#667768] hover:text-[#d12420] border-none bg-transparent cursor-pointer font-bold" @click="showEditTranslationDrawer = false; editingTranslation = null">✕ Đóng</button>
         </div>

@@ -73,7 +73,12 @@ test('the shared detail component keeps loading, error, found and not-found stat
 
 test('the shared detail component resolves the category label by precedence', () => {
   const source = read('components/ArticleDetail.vue')
-  assert.match(source, /a\.categoryName \|\| props\.typeLabels\[a\.type\] \|\| props\.categoryFallback/)
+  // Precedence: categoryName → typeLabels[type] → categoryFallback → i18n fallback.
+  // `a.type` wrapped in a ternary because `typeLabels[undefined]` is `undefined`,
+  // which would otherwise short-circuit past `categoryFallback`. The precedence
+  // chain itself is what this test guards — the ternary is a refinement, not a
+  // different order.
+  assert.match(source, /a\.categoryName \|\| \(a\.type \? props\.typeLabels\[a\.type\] : ''\) \|\| props\.categoryFallback/)
 })
 
 // ─── The timezone bug the consolidation removed ──────────────────────────────

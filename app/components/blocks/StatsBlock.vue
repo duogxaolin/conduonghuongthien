@@ -1,5 +1,5 @@
 <template>
-  <section class="relative z-10 -mt-10 px-4 sm:-mt-7 sm:px-0" aria-label="Những con số nổi bật">
+  <section class="relative z-10 -mt-10 px-4 sm:-mt-7 sm:px-0" :aria-label="t('block_stats_aria')">
     <div class="container">
       <div class="relative overflow-hidden rounded-2xl border border-[#dce7d9] bg-white shadow-[0_18px_50px_rgba(35,67,31,0.12)]">
         <div class="absolute inset-x-0 top-0 h-1 bg-gradient-to-r from-[#315c35] via-[#7CB342] to-[#315c35]"></div>
@@ -37,56 +37,17 @@ const fallbackIcons = [
   'fa-solid fa-headset',
 ]
 
-const defaultStats = [
-  { icon: 'fa-solid fa-map-location-dot', value: '34', label: 'Tỉnh / Thành phố đồng hành' },
-  { icon: 'fa-solid fa-hands-holding-circle', value: '10.000+', label: 'Người hoàn lương được hỗ trợ' },
-  { icon: 'fa-solid fa-seedling', value: '500+', label: 'Mô hình kinh tế tiêu biểu' },
-  { icon: 'fa-solid fa-headset', value: '24/7', label: 'Tư vấn pháp lý & Tâm lý miễn phí' },
-]
-
-const STAT_LABELS_MAP: Record<string, Record<string, string>> = {
-  'Tỉnh / Thành phố đồng hành': {
-    en: 'Accompanying Provinces & Cities',
-    zh: '同行省市',
-    fr: 'Provinces partenaires',
-    ru: 'Провинции и города',
-    lo: 'ແຂວງ/ນະຄອນຮ່ວມມື',
-  },
-  'Người hoàn lương được hỗ trợ': {
-    en: 'Reintegrated Citizens Supported',
-    zh: '获助回归人员',
-    fr: 'Personnes réinsérées aidées',
-    ru: 'Лиц, получивших помощь',
-    lo: 'ຜູ້ກັບຄືນສູ່ສັງຄົມໄດ້ຮັບການຊ່ວຍເຫຼືອ',
-  },
-  'Mô hình kinh tế tiêu biểu': {
-    en: 'Exemplary Economic Models',
-    zh: '典型经济模式',
-    fr: 'Modèles économiques exemplaires',
-    ru: 'Экономических моделей',
-    lo: 'ຮູບແບບເສດຖະກິດດີເດັ່ນ',
-  },
-  'Tư vấn pháp lý & Tâm lý miễn phí': {
-    en: 'Free Legal & Psychological Counseling',
-    zh: '免费法律与心理咨询',
-    fr: 'Conseils juridiques & psychologiques gratuits',
-    ru: 'Бесплатные консультации',
-    lo: 'ໃຫ້ຄຳປຶກສາທາງກົດໝາຍ ແລະ ຈິດວິທະຍາຟຣີ',
-  },
-}
+const defaultStats = computed(() => [
+  { icon: 'fa-solid fa-map-location-dot', value: '34', label: t('block_stats_label_provinces') },
+  { icon: 'fa-solid fa-hands-holding-circle', value: '10.000+', label: t('block_stats_label_supported') },
+  { icon: 'fa-solid fa-seedling', value: '500+', label: t('block_stats_label_models') },
+  { icon: 'fa-solid fa-headset', value: '24/7', label: t('block_stats_label_consult') },
+])
 
 const stats = computed(() => {
   const raw = props.block?.data?.stats
-  const arr = Array.isArray(raw) && raw.length ? raw : defaultStats
-  const lang = currentLang.value
-  if (lang === 'vi') return arr
-  return arr.map((s: { icon: string; value: string; label: string }) => {
-    const mapped = STAT_LABELS_MAP[s.label]?.[lang]
-    return {
-      ...s,
-      label: mapped || t(s.label) || s.label,
-    }
-  })
+  const arr = Array.isArray(raw) && raw.length ? raw : defaultStats.value
+  return arr
 })
 
 // Wrap +, / markers in the accent color, matching the original design.

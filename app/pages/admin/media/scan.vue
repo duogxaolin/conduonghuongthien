@@ -47,7 +47,7 @@ const scanProgressPercent = computed(() => {
 
 const pollScanStatus = async () => {
   try {
-    const res = await $fetch<{ ok: boolean, status: ScanJobStatus | null }>('/api/admin/media/scan-status')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, status: ScanJobStatus | null }>)(`/api/admin/media/scan-status`)
     scanJob.value = res.status
     if (res.status?.running) {
       scanning.value = true
@@ -89,7 +89,7 @@ const scanFolder = async () => {
   scanning.value = true
   scanResult.value = null
   try {
-    await $fetch('/api/admin/media/scan', { method: 'POST' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/scan`, { method: 'POST' })
     toast.info('Đã khởi tạo job quét. Đang chạy nền...')
     startScanPolling()
     await pollScanStatus()
@@ -101,10 +101,30 @@ const scanFolder = async () => {
 
 const cancelScan = async () => {
   try {
-    await $fetch('/api/admin/media/scan-cancel', { method: 'POST' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/scan-cancel`, { method: 'POST' })
     toast.info('Đã yêu cầu hủy. Worker dừng ở batch tiếp theo.')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi hủy quét'))
+  }
+}
+
+const scanStalled = computed(() => {
+  if (!scanJob.value?.running) return false
+  // Treo > 90s ở cùng phase mà chưa tăng `done` → coi là kẹt.
+  return Date.now() - scanJob.value.startedAt > 90_000 && scanJob.value.done === 0
+})
+const forceResettingScan = ref(false)
+const forceResetScan = async () => {
+  if (!confirm('Buộc gỡ kẹt job quét đang treo? Job sẽ dừng ngay và có thể chạy lại. Worker cũ (nếu còn) sẽ tự hết.')) return
+  forceResettingScan.value = true
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/media/scan-force-reset`, { method: 'POST' })
+    toast.success(res.message)
+    await pollScanStatus()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi gỡ kẹt quét'))
+  } finally {
+    forceResettingScan.value = false
   }
 }
 
@@ -157,14 +177,14 @@ const progressPercent = computed(() => {
 
 const loadCounts = async () => {
   try {
-    const res = await $fetch<{ local: number; r2: number }>('/api/admin/media/counts')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ local: number; r2: number }>)(`/api/admin/media/counts`)
     counts.value = { local: res.local ?? 0, r2: res.r2 ?? 0 }
   } catch { /* không chặn trang */ }
 }
 
 const pollStatus = async () => {
   try {
-    const res = await $fetch<{ ok: boolean, status: SyncJobStatus | null }>('/api/admin/media/sync-status')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, status: SyncJobStatus | null }>)(`/api/admin/media/sync-status`)
     jobStatus.value = res.status
     if (res.status?.running) {
       syncing.value = true
@@ -203,7 +223,7 @@ const syncStorage = async (direction: 'to-r2' | 'to-local') => {
   syncDirection.value = direction
   syncResult.value = null
   try {
-    await $fetch('/api/admin/media/sync-storage', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/sync-storage`, {
       method: 'POST',
       body: { direction },
     })
@@ -219,10 +239,29 @@ const syncStorage = async (direction: 'to-r2' | 'to-local') => {
 
 const cancelSync = async () => {
   try {
-    await $fetch('/api/admin/media/sync-cancel', { method: 'POST' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/sync-cancel`, { method: 'POST' })
     toast.info('Đã yêu cầu hủy. Worker sẽ dừng ở batch tiếp theo.')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi hủy sync'))
+  }
+}
+
+const syncStalled = computed(() => {
+  if (!jobStatus.value?.running) return false
+  return Date.now() - jobStatus.value.startedAt > 90_000 && jobStatus.value.done === 0
+})
+const forceResettingSync = ref(false)
+const forceResetSync = async () => {
+  if (!confirm('Buộc gỡ kẹt job sync đang treo? Job sẽ dừng ngay và có thể chạy lại. Worker cũ (nếu còn) sẽ tự hết — lần chạy mới có timeout 90s cho pre-backup.')) return
+  forceResettingSync.value = true
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/media/sync-force-reset`, { method: 'POST' })
+    toast.success(res.message)
+    await pollStatus()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi gỡ kẹt sync'))
+  } finally {
+    forceResettingSync.value = false
   }
 }
 
@@ -256,7 +295,7 @@ const repointUrls = async () => {
   repointing.value = true
   repointResult.value = null
   try {
-    const res = await $fetch<{ ok: boolean, mediaUpdated: number, articlesUpdated: number, backupStamp: string | null, message: string }>('/api/admin/media/repoint-r2-urls', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, mediaUpdated: number, articlesUpdated: number, backupStamp: string | null, message: string }>)(`/api/admin/media/repoint-r2-urls`, {
       method: 'POST',
       body: { oldDomain: oldDomain.value.trim(), newDomain: newDomain.value.trim() },
     })
@@ -266,6 +305,31 @@ const repointUrls = async () => {
     toast.error(errorMessage(err, 'Lỗi đổi domain URL'))
   } finally {
     repointing.value = false
+  }
+}
+
+// ─── Vá URL ảnh hỏng hàng loạt (all bài) ─────────────────────────────────
+// Sync trước đó treo ở backup nên phase rewrite chưa chạy: all bài vẫn
+// `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi file local đã
+// bị xoá (Local 0 / R2 3212). Kèm `media.url` thiếu scheme `cdn1...` → grid
+// thành `http://localhost:3000/cdn1...`. Nút này vá cả hai trong 1 transaction,
+// tự backup SQL trước, idempotent (< vài giây).
+const repairing = ref(false)
+const repairResult = ref<{ mediaFixed: number; articlesFixed: number; backupStamp: string | null } | null>(null)
+
+const repairUrls = async () => {
+  if (!confirm('Vá URL ảnh hỏng hàng loạt?\n\nSẽ:\n• Bóc prefix localhost khỏi media.url + thêm https:// nếu thiếu scheme\n• Thay /uploads/migrated/media/<filename> trong ALL bài viết bằng URL R2 đúng\n\nTự backup SQL trước (snapshot recover thủ công). Chạy < vài giây, bấm lại an toàn.')) return
+  repairing.value = true
+  repairResult.value = null
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; mediaFixed: number; articlesFixed: number; backupStamp: string | null; message: string }>)(`/api/admin/media/repair-urls`, { method: 'POST' })
+    repairResult.value = { mediaFixed: res.mediaFixed, articlesFixed: res.articlesFixed, backupStamp: res.backupStamp }
+    toast.success(res.message)
+    await loadCounts()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi vá URL'))
+  } finally {
+    repairing.value = false
   }
 }
 </script>
@@ -313,6 +377,17 @@ const repointUrls = async () => {
         >
           <i class="fa-solid fa-stop" aria-hidden="true"></i>
           {{ scanJob?.cancelling ? 'Đang dừng...' : 'Hủy quét' }}
+        </button>
+        <button
+          v-if="scanStalled"
+          type="button"
+          class="inline-flex items-center gap-2 rounded-lg bg-[#a32924] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#7a1e1c] disabled:opacity-50"
+          :disabled="forceResettingScan"
+          :aria-busy="forceResettingScan"
+          @click="forceResetScan"
+        >
+          <i class="fa-solid" :class="forceResettingScan ? 'fa-spinner animate-spin' : 'fa-bolt'" aria-hidden="true"></i>
+          {{ forceResettingScan ? 'Đang gỡ...' : 'Buộc gỡ kẹt' }}
         </button>
         <span v-if="scanning" class="text-sm text-[#667768]">Đang chạy nền. Có thể đóng trang — worker tiếp tục.</span>
       </div>
@@ -437,8 +512,22 @@ const repointUrls = async () => {
           <i class="fa-solid fa-stop" aria-hidden="true"></i>
           {{ jobStatus?.cancelling ? 'Đang dừng...' : 'Hủy sync' }}
         </button>
+        <button
+          v-if="syncStalled"
+          type="button"
+          class="inline-flex items-center gap-2 rounded-lg bg-[#a32924] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#7a1e1c] disabled:opacity-50"
+          :disabled="forceResettingSync"
+          :aria-busy="forceResettingSync"
+          @click="forceResetSync"
+        >
+          <i class="fa-solid" :class="forceResettingSync ? 'fa-spinner animate-spin' : 'fa-bolt'" aria-hidden="true"></i>
+          {{ forceResettingSync ? 'Đang gỡ...' : 'Buộc gỡ kẹt' }}
+        </button>
       </div>
-      <p v-if="syncing" class="m-0 text-sm text-[#667768]">Đang chạy nền. Có thể đóng trang — worker tiếp tục. Mở lại sẽ thấy tiến độ.</p>
+      <p v-if="syncing" class="m-0 text-sm text-[#667768]">
+        Đang chạy nền. Có thể đóng trang — worker tiếp tục. Mở lại sẽ thấy tiến độ.
+        <span v-if="syncStalled" class="font-bold text-[#a32924]"> — Treo quá 90s ở backup, bấm "Buộc gỡ kẹt" để chạy lại ngay (không cần restart server).</span>
+      </p>
 
       <!-- Tiến độ job nền -->
       <div v-if="jobStatus" class="rounded-lg border border-[#cce5cd] bg-[#f0f7f1] p-4 flex flex-col gap-2" role="status" :aria-busy="jobStatus.running">
@@ -513,6 +602,42 @@ const repointUrls = async () => {
         <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
           <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Bài viết sửa URL</p>
           <p class="m-0 mt-1 text-xl font-extrabold text-[#1e4620]">{{ syncResult.articlesRewritten }}</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Section 0: Vá URL ảnh hỏng hàng loạt (all bài) ──────────────────── -->
+    <section class="rounded-xl border border-[#f0dcae] bg-[#fdf6e7] p-5 flex flex-col gap-3">
+      <header class="flex items-start gap-3">
+        <i class="fa-solid fa-screwdriver-wrench text-2xl text-[#8a6412] mt-0.5" aria-hidden="true"></i>
+        <div>
+          <h2 class="m-0 text-base font-bold text-[#122815]">Vá URL ảnh hỏng hàng loạt</h2>
+          <p class="m-0 mt-1 text-[0.82rem] text-[#667768]">Sync trước treo ở backup nên <strong>all bài</strong> vẫn <code class="font-mono">http://localhost:3000/uploads/migrated/media/*.jpeg</code> trong khi file local đã bị xoá (Local 0 / R2 3212). Kèm <code class="font-mono">media.url</code> thiếu scheme → grid thành <code class="font-mono">http://localhost:3000/cdn1...</code>. Nút này vá cả <code class="font-mono">media.url</code> + <code class="font-mono">articles.content</code> trong 1 transaction, tự backup SQL trước. Bấm lại an toàn.</p>
+        </div>
+      </header>
+      <button
+        type="button"
+        class="inline-flex w-fit items-center gap-2 rounded-lg bg-[#8a6412] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer transition-colors hover:bg-[#6b4d0e] disabled:cursor-not-allowed disabled:opacity-50"
+        :disabled="repairing"
+        :aria-busy="repairing"
+        @click="repairUrls"
+      >
+        <i class="fa-solid" :class="repairing ? 'fa-spinner animate-spin' : 'fa-wand-magic-sparkles'" aria-hidden="true"></i>
+        {{ repairing ? 'Đang vá...' : 'Vá URL all bài viết' }}
+      </button>
+      <p v-if="repairing" class="m-0 text-sm text-[#667768]">Đang backup SQL + UPDATE... (< vài giây)</p>
+      <div v-if="repairResult" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
+        <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
+          <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Media vá</p>
+          <p class="m-0 mt-1 text-xl font-extrabold text-[#1e4620]">{{ repairResult.mediaFixed }}</p>
+        </div>
+        <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
+          <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Bài viết vá</p>
+          <p class="m-0 mt-1 text-xl font-extrabold text-[#1e4620]">{{ repairResult.articlesFixed }}</p>
+        </div>
+        <div v-if="repairResult.backupStamp" class="rounded-lg border border-[#f0dcae] bg-white p-3">
+          <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#8a6412]">Snapshot</p>
+          <p class="m-0 mt-1 text-sm font-bold text-[#8a6412] break-all">{{ repairResult.backupStamp }}</p>
         </div>
       </div>
     </section>

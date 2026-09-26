@@ -334,11 +334,11 @@ const quickLinks = [
 
 const activeIndex = ref<number | null>(null)
 
-const { data, pending, error, refresh } = useFetch('/api/public/articles', {
-  key: () => `public-faq-articles-${currentLang.value}`,
-  query: computed(() => ({ type: 'faq', limit: 50, lang: currentLang.value })),
-  lazy: true,
-  default: () => ({ ok: true, articles: [], pagination: {} }),
+const { data, pending, error, refresh } = useAsyncData(`public-faq-articles-${currentLang.value}`, () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: { type: 'faq', limit: 50, lang: currentLang.value } }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: {} }),
 })
 const faqs = computed(() => (data.value as { articles?: any[] })?.articles || [])
 const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)

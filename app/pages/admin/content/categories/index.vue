@@ -85,7 +85,7 @@ const fetchCategories = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch('/api/admin/categories')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminCategoryRow[] }>)(`/api/admin/categories`)
     if (res.ok) {
       categories.value = res.items
       selection.keepOnly(visibleIds.value)
@@ -101,7 +101,7 @@ const fetchCategories = async () => {
 
 const fetchContentTypes = async () => {
   try {
-    const res = await $fetch('/api/admin/content-types')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminContentTypeRow[] }>)(`/api/admin/content-types`)
     if (res.ok) contentTypes.value = res.items
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi tải thể loại'))
@@ -147,10 +147,10 @@ const handleSave = async () => {
       displayOrder: form.displayOrder,
     }
     if (modalMode.value === 'create') {
-      await $fetch('/api/admin/categories', { method: 'POST', body: payload })
+      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/categories`, { method: 'POST', body: payload })
       toast.success('Đã tạo danh mục thành công!')
     } else {
-      await $fetch(`/api/admin/categories/${editingId.value}`, { method: 'PUT', body: payload })
+      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/categories/${editingId.value}`, { method: 'PUT', body: payload })
       toast.success('Đã cập nhật danh mục thành công!')
     }
     showModal.value = false
@@ -195,7 +195,7 @@ const deleteCategory = async (cat: AdminCategoryRow) => {
   const ok = await confirm({ title: 'Xóa danh mục', message: `Bạn có chắc muốn xóa danh mục "${cat.name}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await $fetch(`/api/admin/categories/${cat.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/categories/${cat.id}`, { method: 'DELETE' })
     toast.success('Đã xóa danh mục thành công!')
     await fetchCategories()
   } catch (err: unknown) {
