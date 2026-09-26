@@ -720,6 +720,25 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureIndex(db, database, 'article_translations', 'article_translations_lang_status_idx', 'INDEX `article_translations_lang_status_idx` (`lang_code`, `status`)')
   await ensureIndex(db, database, 'article_translations', 'uk_article_lang', 'UNIQUE INDEX `uk_article_lang` (`article_id`, `lang_code`)')
 
+  // ── Rút gọn nhãn hotline: "Hotline Tư Vấn 24/7" → "Hotline" ──────────────
+  // Seed là insert-only nên đổi seed không cập nhật hàng đã có. Nay UPDATE
+  // idempotent theo giá trị cũ — chỉ đè hàng nào còn mang text dài, không chạm
+  // hàng admin đã tự sửa. Chạy mỗi lần khởi động, an toàn khi lặp.
+  try {
+    await db.query(
+      `UPDATE lang_translations
+        SET value = CASE lang_code
+          WHEN 'vi' THEN 'Hotline'
+          WHEN 'en' THEN 'Hotline'
+          ELSE value
+        END
+        WHERE \`group\` = 'nav' AND \`key\` = 'hotline_lbl'
+          AND value IN ('Hotline Tư Vấn 24/7', '24/7 Hotline')`,
+    )
+  } catch {
+    // Bảng có thể chưa tồn tại trên deployment chưa multilingual — không chặn boot.
+  }
+
   // ── Tự vá URL ảnh hỏng hàng loạt (all bài) ────────────────────────────────
   // Sync trước treo ở pre-backup nên phase rewrite chưa chạy: all bài vẫn
   // `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi file local đã
