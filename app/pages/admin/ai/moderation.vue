@@ -513,9 +513,23 @@
               Bộ nhớ & Hạ tầng Worker
             </h3>
             <div class="flex flex-col gap-2 text-xs">
+              <div class="flex flex-col gap-1.5 py-1 border-b border-[#e2ece3]">
+                <div class="flex items-center justify-between">
+                  <span class="text-[#667768]">Bộ nhớ RAM Heap (Đang dùng / Giới hạn thật):</span>
+                  <span class="font-bold text-[#122815]">{{ workerData?.memoryUsageMb?.heapUsed ?? 0 }} MB / {{ workerData?.memoryUsageMb?.heapLimit ? workerData.memoryUsageMb.heapLimit + ' MB' : '—' }}</span>
+                </div>
+                <div class="h-1.5 w-full rounded-full bg-[#e2ece3] overflow-hidden" role="progressbar" :aria-valuenow="workerData?.memoryUsageMb?.heapUsedPercent ?? 0" aria-valuemin="0" aria-valuemax="100">
+                  <div
+                    class="h-full rounded-full transition-all"
+                    :class="(workerData?.memoryUsageMb?.heapUsedPercent ?? 0) >= 85 ? 'bg-[#d12420]' : (workerData?.memoryUsageMb?.heapUsedPercent ?? 0) >= 60 ? 'bg-[#e0a800]' : 'bg-[#2c6e33]'"
+                    :style="{ width: `${Math.min(100, Math.max(0, workerData?.memoryUsageMb?.heapUsedPercent ?? 0))}%` }"
+                  ></div>
+                </div>
+                <span class="text-[0.66rem] text-[#8a9a8b]">Đang dùng {{ workerData?.memoryUsageMb?.heapUsedPercent ?? 0 }}% giới hạn V8 (heap ceil do <code class="text-[0.64rem]">--max-old-space-size</code>).</span>
+              </div>
               <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
-                <span class="text-[#667768]">Bộ nhớ RAM Heap (Đang dùng / Cấp phát):</span>
-                <span class="font-bold text-[#122815]">{{ workerData?.memoryUsageMb?.heapUsed ?? 0 }} MB / {{ workerData?.memoryUsageMb?.heapTotal ?? 0 }} MB</span>
+                <span class="text-[#667768]">Cấp phát Heap V8 (tự kéo theo nhu cầu):</span>
+                <span class="font-medium text-[#667768]">{{ workerData?.memoryUsageMb?.heapTotal ?? 0 }} MB</span>
               </div>
               <div class="flex items-center justify-between py-1 border-b border-[#e2ece3]">
                 <span class="text-[#667768]">Bộ nhớ RAM tiến trình (RSS):</span>
@@ -919,6 +933,8 @@ interface WorkerStatusData {
     heapUsed: number
     heapTotal: number
     rss: number
+    heapLimit: number
+    heapUsedPercent: number
   }
 }
 
