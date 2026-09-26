@@ -1,10 +1,10 @@
 # Decisions — diễn giải vì-sao & tiền sử bug
 
-Bộ tệp này giữ phần **diễn giải chi tiết** đã được rút khỏi `CLAUDE.md` để tệp đó nằm dưới trần 150k ký tự.
+Bộ tệp này giữ phần **diễn giải chi tiết** đã được rút khỏi `CLAUDE.md` để tệp đó nằm dưới trần 40k ký tự (cảnh báo `over the 40.0k-char limit`).
 `CLAUDE.md` giữ **quy tắc hành động** (MAI PHẢI/ KHÔNG ĐƯỢC, cờ chặn, vị trí test, thứ tự triển khai);
 tệp ở đây giữ **lý do và lịch sử** — vì sao từng quy tắc tồn tại, bug nào đã trả giá để biết, và kiểm chứng âm tính đã chạy ra sao.
 
-Dành cho người mới tiếp nhận muốn hiểu **tại sao**, không phải để tra cứu khi sửa mã. Khi sửa mã, đọc `CLAUDE.md`.
+Dành cho người mới tiếp nhận muốn hiểu **tại sao**, không phải để tra cứu khi sửa mã. Khi sửa mã, đọc `CLAUDE.md`. Lịch sử tính năng đã chuyển sang `docs/CHANGELOG.md`.
 
 | Tệp | Phạm vi |
 |-----|---------|
