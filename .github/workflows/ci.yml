@@ -596,11 +596,9 @@ jobs:
   deploy:
     name: Deploy to VPS
     needs: image
-    # TẮT auto-deploy: push main giờ chỉ build + test + push image lên GHCR,
-    # KHÔNG tự SSH deploy. Muốn deploy, SSH vào VPS chạy:
-    #   docker compose pull && docker compose up -d
-    # Bật lại: đổi `if: false` thành `if: true` (hoặc xoá dòng if này).
-    if: false
+    # Auto-deploy: push main build + test + push image lên GHCR, RỒI tự SSH deploy
+    # lên VPS. Muốn tắt: đổi `if: true` thành `if: false`.
+    if: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
     # Nhóm riêng và KHÔNG huỷ giữa chừng: nhóm `ci-${{ github.ref }}` ở đầu tệp
