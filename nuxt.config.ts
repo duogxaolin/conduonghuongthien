@@ -197,6 +197,7 @@ export default defineNuxtConfig({
           "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://www.youtube.com https://www.youtube-nocookie.com",
           "style-src 'self' 'unsafe-inline'",
           "img-src 'self' data: https://*.delify.vn https://*.conduonghuongthien.vn",
+          "media-src 'self' blob:",
           "font-src 'self'",
           "frame-src https://www.youtube-nocookie.com",
           "connect-src 'self' https://static.cloudflareinsights.com",
