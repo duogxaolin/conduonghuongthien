@@ -533,6 +533,7 @@ async function callProvider(
                   const typeLabel = it.type === 'role_model' ? 'Tấm gương' : it.type === 'reintegration' ? 'Mô hình' : it.url.includes('/media/') ? 'Video' : 'Bài viết'
                   references.push({
                     id: Number(it.id) || 0,
+                    kind: 'evidence',
                     question: it.title,
                     answer: String(it.snippet || it.summary || ''),
                     topic: String(it.type || ''),
@@ -660,7 +661,7 @@ async function prefetchEvidence(query: string): Promise<PublicKnowledgeReference
       const snippet = plainContent ? plainContent.slice(0, 350) + (plainContent.length > 350 ? '...' : '') : (r.excerpt || '')
       const typeLabel = r.type === 'role_model' ? 'Tấm gương hoàn lương' : r.type === 'reintegration' ? 'Mô hình tái hòa nhập' : r.type === 'faq' ? 'Hỏi đáp pháp luật' : 'Bài viết'
       evidence.push({
-        id: r.id, question: r.title, answer: snippet, topic: String(r.type || ''),
+        id: r.id, kind: 'evidence', question: r.title, answer: snippet, topic: String(r.type || ''),
         source: { label: `${typeLabel}: ${r.title}`, reference: r.thumbnailUrl ?? null, url: `/news/${r.slug}` },
       })
       void categoryMap
@@ -684,7 +685,7 @@ async function prefetchEvidence(query: string): Promise<PublicKnowledgeReference
         .orderBy(desc(mediaItems.createdAt)).limit(3)
       for (const r of videoRows) {
         evidence.push({
-          id: r.id, question: `Video: ${r.title}`,
+          id: r.id, kind: 'evidence', question: `Video: ${r.title}`,
           answer: (r.description || '').slice(0, 300), topic: 'video',
           source: { label: `Video: ${r.title}`, reference: r.thumbnailUrl ?? null, url: `/media/${r.shortId || r.slug}` },
         })
@@ -708,7 +709,7 @@ async function prefetchEvidence(query: string): Promise<PublicKnowledgeReference
         .orderBy(desc(media.createdAt)).limit(4)
       for (const r of photoRows) {
         evidence.push({
-          id: r.id, question: `Ảnh: ${r.originalName.replace(/\.[^/.]+$/, '')}`,
+          id: r.id, kind: 'evidence', question: `Ảnh: ${r.originalName.replace(/\.[^/.]+$/, '')}`,
           answer: 'Hình ảnh hoạt động thực tế từ Thư viện Media Cục C11.', topic: 'photo',
           source: { label: `Ảnh: ${r.originalName}`, reference: null, url: r.url },
         })
@@ -846,7 +847,11 @@ export async function answerGroundedChat(
       }
       return {
         answer: finalAnswer,
-        sources: references.filter(ref => ref.source),
+        // "Nguồn tham khảo" chỉ liệt kê trích dẫn kho kiến thức (chatbot_knowledge).
+        // Bài viết / ảnh / video (kind: 'evidence') đã được render ở trong thân câu
+        // trả lời qua `renderEvidenceBlock` ở trên — liệt kê lại ở đây là trùng lặp
+        // và là nguồn của khoảng trống dư thừa mà người dùng muốn bỏ.
+        sources: references.filter(ref => ref.source && ref.kind !== 'evidence'),
         toolCalls: grounded.toolCalls,
         kind: 'provider',
         streamed: Boolean(onChunk),

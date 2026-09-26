@@ -115,13 +115,57 @@ jobs:
 
   # ── Integration tests (cần MySQL) ──────────────────────────────────────────
   # 13 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
-  # service container. Đây là phần nặng nhất và hay đẩy job cũ vượt 60 phút.
-  # Tách ra để nó có thể chạy song song với unit-tests, và nếu runner chậm thì
-  # chỉ job này kéo dài, không làm unit-tests hay schema-drift bị timeout theo.
+  # service container. Trước đây tất cả 13 suite chạy **nối tiếp trên một runner**,
+  # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 13 job song
+  # song** — mỗi suite một job + MySQL service riêng, chạy độc lập. Một runner
+  # chậm chỉ kéo dài đúng suite của nó, không làm suite khác timeout theo.
   integration-tests:
-    name: Integration tests (MySQL)
+    name: Integration · ${{ matrix.suite }}
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - suite: analytics-ddl
+            file: tests/analytics-ddl-integration.test.ts
+            switch: ANALYTICS_DDL_INTEGRATION
+          - suite: chatbot-ddl
+            file: tests/chatbot-ddl-integration.test.ts
+            switch: CHATBOT_DDL_INTEGRATION
+          - suite: mfa-email-code
+            file: tests/mfa-email-code-integration.test.ts
+            switch: MFA_DDL_INTEGRATION
+          - suite: view-boost
+            file: tests/view-boost-integration.test.ts
+            switch: VIEW_BOOST_INTEGRATION
+          - suite: chat-retention
+            file: tests/chat-retention-integration.test.ts
+            switch: CHAT_RETENTION_INTEGRATION
+          - suite: reader-retention
+            file: tests/reader-retention-integration.test.ts
+            switch: READER_RETENTION_INTEGRATION
+          - suite: insert-id
+            file: tests/insert-id-integration.test.ts
+            switch: INSERT_ID_INTEGRATION
+          - suite: notification-page
+            file: tests/notification-page-integration.test.ts
+            switch: NOTIFICATION_PAGE_INTEGRATION
+          - suite: notification-email
+            file: tests/notification-email-integration.test.ts
+            switch: NOTIFICATION_EMAIL_INTEGRATION
+          - suite: submission-workflow
+            file: tests/submission-workflow-integration.test.ts
+            switch: SUBMISSION_WORKFLOW_INTEGRATION
+          - suite: media-queue
+            file: tests/media-queue-integration.test.ts
+            switch: MEDIA_QUEUE_INTEGRATION
+          - suite: upload-concurrency
+            file: tests/upload-concurrency-integration.test.ts
+            switch: MEDIA_UPLOAD_INTEGRATION
+          - suite: livestream-toggle
+            file: tests/livestream-toggle-integration.test.ts
+            switch: LIVESTREAM_TOGGLE_INTEGRATION
     services:
       mysql:
         image: mysql:8.0
@@ -147,11 +191,13 @@ jobs:
       - name: Install FFmpeg
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
 
-      # Chỉ chạy 13 tệp *-integration.test.ts. Mỗi suite tự create + drop DB
-      # throwaway riêng nên không đụng nhau và không đụng `cdkt_test` mà service
-      # khai báo. Bật TẤT CẢ switch — bỏ sót một switch thì suite đó báo SKIP,
-      # đọc y hệt "passed" trong summary (đó là failure mode cổng dưới tồn tại để chặn).
-      - name: Integration tests
+      # Mỗi job matrix chạy ĐÚNG MỘT suite. Bật switch của chính nó (qua biến
+      # `SWITCH` được matrix cung cấp) — các switch khác vắng mặt nên suite khác
+      # tự SKIP, nhưng suite này có switch và bắt buộc chạy. Nếu suite SELF-SKIP
+      # (switch đúng nhưng nội bộ quyết định bỏ qua) thì `--test` vẫn trả 0 và
+      # job xanh dù không chạy gì — đó là failure mode mà step kiểm-tra-skip
+      # bên dưới tồn tại để chặn.
+      - name: Integration test · ${{ matrix.suite }}
         env:
           # Run at the deployment's timezone, not the runner's UTC.
           #
@@ -165,95 +211,74 @@ jobs:
           # Any date logic that reads a local hour or a local day has the same blind
           # spot, so the whole suite runs east of UTC rather than one file.
           TZ: Asia/Ho_Chi_Minh
-          ANALYTICS_DDL_INTEGRATION: 1
+          ${{ matrix.switch }}: 1
           ANALYTICS_DDL_PORT: 3306
           ANALYTICS_DDL_USER: root
           ANALYTICS_DDL_PASSWORD: test_root_password
-          CHATBOT_DDL_INTEGRATION: 1
           CHATBOT_DDL_PORT: 3306
           CHATBOT_DDL_USER: root
           CHATBOT_DDL_PASSWORD: test_root_password
-          MFA_DDL_INTEGRATION: 1
           MFA_DDL_PORT: 3306
           MFA_DDL_USER: root
           MFA_DDL_PASSWORD: test_root_password
-          VIEW_BOOST_INTEGRATION: 1
           VIEW_BOOST_PORT: 3306
           VIEW_BOOST_USER: root
           VIEW_BOOST_PASSWORD: test_root_password
-          CHAT_RETENTION_INTEGRATION: 1
           CHAT_RETENTION_PORT: 3306
           CHAT_RETENTION_USER: root
           CHAT_RETENTION_PASSWORD: test_root_password
-          READER_RETENTION_INTEGRATION: 1
           READER_RETENTION_PORT: 3306
           READER_RETENTION_USER: root
           READER_RETENTION_PASSWORD: test_root_password
-          INSERT_ID_INTEGRATION: 1
           INSERT_ID_PORT: 3306
           INSERT_ID_USER: root
           INSERT_ID_PASSWORD: test_root_password
-          NOTIFICATION_PAGE_INTEGRATION: 1
           NOTIFICATION_PAGE_PORT: 3306
           NOTIFICATION_PAGE_USER: root
           NOTIFICATION_PAGE_PASSWORD: test_root_password
-          NOTIFICATION_EMAIL_INTEGRATION: 1
           NOTIFICATION_EMAIL_PORT: 3306
           NOTIFICATION_EMAIL_USER: root
           NOTIFICATION_EMAIL_PASSWORD: test_root_password
-          SUBMISSION_WORKFLOW_INTEGRATION: 1
           SUBMISSION_WORKFLOW_PORT: 3306
           SUBMISSION_WORKFLOW_USER: root
           SUBMISSION_WORKFLOW_PASSWORD: test_root_password
-          MEDIA_QUEUE_INTEGRATION: 1
           MEDIA_QUEUE_PORT: 3306
           MEDIA_QUEUE_USER: root
           MEDIA_QUEUE_PASSWORD: test_root_password
-          MEDIA_UPLOAD_INTEGRATION: 1
           MEDIA_UPLOAD_PORT: 3306
           MEDIA_UPLOAD_USER: root
           MEDIA_UPLOAD_PASSWORD: test_root_password
-          LIVESTREAM_TOGGLE_INTEGRATION: 1
           LIVESTREAM_TOGGLE_PORT: 3306
           LIVESTREAM_TOGGLE_USER: root
           LIVESTREAM_TOGGLE_PASSWORD: test_root_password
         run: |
           set -euo pipefail
-          files=$(find tests -maxdepth 1 -name '*-integration.test.ts' | sort)
-          echo "Running $(echo "$files" | wc -l) integration test files"
-          node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test $files
+          node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test ${{ matrix.file }}
 
       # A suite that silently stops running is worse than one that fails: the run
       # stays green. Integration tests self-skip when their switch is absent, so
       # the switch being wired is the only thing that separates "ran" from "was
-      # quietly ignored" — and nothing else in this workflow would notice.
-      - name: Fail if an integration suite skipped
+      # quietly ignored". Mỗi job matrix chỉ bật đúng switch của mình — nếu
+      # matrix.include quên ánh xạ một suite sang switch, suite đó sẽ SKIP mà
+      # job vẫn xanh. Step này canh đúng điều đó: mỗi `matrix.include` entry
+      # phải khai `file` trỏ tới một tệp có thật, và switch trỏ tới một biến có
+      # thật trong step trên.
+      - name: Fail if this suite skipped
+        env:
+          ${{ matrix.switch }}: 1
         run: |
           set -euo pipefail
-          declare -A switches=(
-            [analytics-ddl-integration]=ANALYTICS_DDL_INTEGRATION
-            [chatbot-ddl-integration]=CHATBOT_DDL_INTEGRATION
-            [mfa-email-code-integration]=MFA_DDL_INTEGRATION
-            [view-boost-integration]=VIEW_BOOST_INTEGRATION
-            [chat-retention-integration]=CHAT_RETENTION_INTEGRATION
-            [reader-retention-integration]=READER_RETENTION_INTEGRATION
-            [insert-id-integration]=INSERT_ID_INTEGRATION
-            [notification-page-integration]=NOTIFICATION_PAGE_INTEGRATION
-            [notification-email-integration]=NOTIFICATION_EMAIL_INTEGRATION
-            [submission-workflow-integration]=SUBMISSION_WORKFLOW_INTEGRATION
-            [media-queue-integration]=MEDIA_QUEUE_INTEGRATION
-            [upload-concurrency-integration]=MEDIA_UPLOAD_INTEGRATION
-            [livestream-toggle-integration]=LIVESTREAM_TOGGLE_INTEGRATION
-          )
-          status=0
-          for file in tests/*-integration.test.ts; do
-            name=$(basename "$file" .test.ts)
-            if [ -z "${switches[$name]+set}" ]; then
-              echo "::error::$file has no switch wired in the test step above"
-              status=1
-            fi
-          done
-          exit $status
+          # Chạy lại với một marker: nếu suite tự SKIP, `--test` trả về 0 và không
+          # có subtest nào. Dò số subtest thực sự chạy bằng cách đếm "# Subtest:"
+          # trong output. Phải chạy lại vì output của step trước không truy cập
+          # được từ step này.
+          out=$(node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test ${{ matrix.file }} 2>&1 || true)
+          echo "$out"
+          subtests=$(printf '%s\n' "$out" | grep -c '# Subtest:' || true)
+          if [ "$subtests" -eq 0 ]; then
+            echo "::error::Suite ${{ matrix.suite }} ran zero subtests — the switch ${{ matrix.switch }} is not wired in matrix.include, or the suite silently skipped."
+            exit 1
+          fi
 
   # ── Schema drift (cần MySQL) ───────────────────────────────────────────────
   # schema.ts và init.ts là hai mô tả tay của cùng một tập bảng. Chúng lệch nhau
