@@ -141,10 +141,13 @@ export default defineNuxtConfig({
     // rò rỉ qua bộ nhớ đệm.
     '/qa-documents': { swr: 60 },
 
-    // Sitemap + robots — route động (server/routes/*.ts), có thể đệm 60 giây
-    // vì nội dung chỉ đổi khi admin lưu lại qua /admin/settings/sitemap.
-    '/sitemap.xml': { swr: 60 },
-    '/robots.txt': { swr: 60 },
+    // Sitemap + robots — route động (server/routes/*.ts). Không đệm ở CDN:
+    // nội dung chỉ đổi khi admin lưu lại qua /admin/settings/sitemap, nhưng khi
+    // đã đổi thì khách phải thấy ngay (Cloudflare cache hit che bản mới và không
+    // revalidate theo s-maxage của Nitro). `no-cache, must-revalidate` bắt CDN
+    // hỏi origin mỗi lần; origin tự đệm trong bộ nhớ tiến trình.
+    '/sitemap.xml': { headers: { 'Cache-Control': 'no-cache, must-revalidate' } },
+    '/robots.txt': { headers: { 'Cache-Control': 'no-cache, must-revalidate' } },
     // Thư viện video công khai. Cùng lý do như `/qa-documents`: mọi khách thấy
     // cùng một danh sách, và nội dung chỉ đổi khi cán bộ xuất bản một mục mới.
     //

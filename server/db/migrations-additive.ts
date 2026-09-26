@@ -739,6 +739,11 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
     // Bảng có thể chưa tồn tại trên deployment chưa multilingual — không chặn boot.
   }
 
+  // ── settings.value: TEXT → MEDIUMTEXT ─────────────────────────────────────
+  // Sitemap XML lưu tại `settings.value` vượt TEXT (64KB) khi vài trăm bài viết
+  // (mỗi URL dài cả trăm ký tự). Lên MEDIUMTEXT (16MB) — đủ cho sitemap lớn.
+  await modifyColumn(db, database, 'settings', 'value', 'MEDIUMTEXT NULL')
+
   // ── Tự vá URL ảnh hỏng hàng loạt (all bài) ────────────────────────────────
   // Sync trước treo ở pre-backup nên phase rewrite chưa chạy: all bài vẫn
   // `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi file local đã

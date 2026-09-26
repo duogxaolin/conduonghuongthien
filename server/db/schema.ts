@@ -1,5 +1,5 @@
 import {
-  mysqlTable, int, bigint, varchar, text, longtext, boolean, decimal,
+  mysqlTable, int, bigint, varchar, text, longtext, mediumtext, boolean, decimal,
   timestamp, datetime, date, json, mysqlEnum, uniqueIndex, index} from 'drizzle-orm/mysql-core'
 import type { AnyMySqlColumn } from 'drizzle-orm/mysql-core'
 import { sql } from 'drizzle-orm'
@@ -338,7 +338,8 @@ export const pageVersions = mysqlTable('page_versions', {
 // ─── Settings ────────────────────────────────────────────────────────────────
 export const settings = mysqlTable('settings', {
   key:   varchar('key', { length: 128 }).primaryKey(),
-  value: text('value'),
+  // MEDIUMTEXT (16MB) — sitemap XML có thể vượt TEXT (64KB) khi vài trăm bài.
+  value: mediumtext('value'),
   type:  varchar('type', { length: 16 }).default('string'), // string | json | boolean
   group: varchar('group', { length: 32 }).default('general'), // general | media | chatbot | contact
 })

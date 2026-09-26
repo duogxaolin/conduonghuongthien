@@ -327,7 +327,7 @@ export async function initDb() {
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`settings\` (
       \`key\` VARCHAR(128) PRIMARY KEY,
-      \`value\` TEXT NULL,
+      \`value\` MEDIUMTEXT NULL,
       \`type\` VARCHAR(16) DEFAULT 'string',
       \`group\` VARCHAR(32) DEFAULT 'general'
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
