@@ -90,20 +90,21 @@ export default defineEventHandler(async (event) => {
 
   let idToken: string
   try {
-    const response = await $fetch<{ id_token?: string }>(GOOGLE_TOKEN_ENDPOINT, {
-      method: 'POST',
-      timeout: TOKEN_EXCHANGE_TIMEOUT_MS,
-      body: new URLSearchParams({
-        code,
-        client_id:     config.clientId,
-        client_secret: config.clientSecret,
-        // The same function that produced the value in the authorization request.
-        // One call site each, so the two cannot drift (design.md D4).
-        redirect_uri:  resolveRedirectUri(event),
-        grant_type:    'authorization_code',
-      }).toString(),
-      headers: { 'content-type': 'application/x-www-form-urlencoded' },
-    })
+    const response = await ($fetch as (u: string, o: Record<string, unknown>) => Promise<{ id_token?: string }>)(
+      GOOGLE_TOKEN_ENDPOINT,
+      {
+        method: 'POST',
+        timeout: TOKEN_EXCHANGE_TIMEOUT_MS,
+        body: new URLSearchParams({
+          code,
+          client_id:     config.clientId,
+          client_secret: config.clientSecret,
+          redirect_uri:  resolveRedirectUri(event),
+          grant_type:    'authorization_code',
+        }).toString(),
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      },
+    )
 
     if (!response?.id_token) throw new Error('id_token missing from token response')
     idToken = response.id_token

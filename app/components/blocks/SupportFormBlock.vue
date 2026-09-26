@@ -72,7 +72,7 @@ const submitForm = async () => {
     // đơn, người dân vẫn thấy lời cảm ơn, và không cán bộ nào được báo. Máy chủ
     // nay có nhánh dự phòng (`settings.email`) nhưng vẫn tôn trọng email nhận
     // cấu hình trên block — nên trường này vẫn phải đi cùng.
-    await $fetch('/api/submissions', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/submissions', {
       method: 'POST',
       body: {
         type: 'support',

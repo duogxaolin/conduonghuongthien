@@ -78,7 +78,7 @@ export function useLiveChat() {
     // flight stay buffered in `messages`; merge-by-id closes the old history →
     // stream race instead of creating a gap or duplicate message.
     try {
-      const history = await $fetch<{ ok: boolean, sessionId: number | null, messages: LiveChatMessage[] }>(HISTORY_URL, {
+      const history = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, sessionId: number | null, messages: LiveChatMessage[] }>)(HISTORY_URL, {
         params: { limit: HISTORY_LIMIT },
       })
       if (attempt !== connectionAttempt) return
@@ -234,7 +234,7 @@ export function useLiveChat() {
     })
 
     try {
-      const res = await $fetch<{ ok: boolean, id: number }>(SEND_URL, {
+      const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, id: number }>)(SEND_URL, {
         method: 'POST',
         body: { content: trimmed, sessionId: sessionId.value },
       })

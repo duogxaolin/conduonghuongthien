@@ -31,7 +31,7 @@ async function fetchLanguages() {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await $fetch<{ ok: boolean; items: typeof languages.value }>('/api/admin/languages')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: typeof languages.value }>)(`/api/admin/languages`)
     if (res.ok) languages.value = res.items
   } catch (err: unknown) {
     loadError.value = errorMessage(err, 'Không thể tải danh sách ngôn ngữ.')
@@ -60,7 +60,7 @@ async function addLanguage() {
     return
   }
   try {
-    await $fetch('/api/admin/languages', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages`, {
       method: 'POST',
       body: {
         code: newLang.value.code.trim().toLowerCase(),
@@ -79,7 +79,7 @@ async function addLanguage() {
 }
 async function toggleActive(lang: typeof languages.value[0]) {
   try {
-    await $fetch(`/api/admin/languages/${lang.code}`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages/${lang.code}`, {
       method: 'PUT',
       body: { isActive: !lang.isActive },
     })
@@ -93,7 +93,7 @@ async function toggleActive(lang: typeof languages.value[0]) {
 async function setDefault(lang: typeof languages.value[0]) {
   if (lang.isDefault) return
   try {
-    await $fetch(`/api/admin/languages/${lang.code}`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages/${lang.code}`, {
       method: 'PUT',
       body: { isDefault: true },
     })
@@ -107,7 +107,7 @@ async function setDefault(lang: typeof languages.value[0]) {
 async function deleteLanguage(lang: typeof languages.value[0]) {
   if (!confirm(`Xoá ngôn ngữ "${lang.name}"? Tất cả bản dịch cho ngôn ngữ này cũng sẽ bị xoá.`)) return
   try {
-    await $fetch(`/api/admin/languages/${lang.code}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages/${lang.code}`, { method: 'DELETE' })
     toast.success('Đã xoá ngôn ngữ.')
     await fetchLanguages()
   } catch (err: unknown) {
@@ -173,7 +173,7 @@ const viTranslationsMap = ref<Map<string, string>>(new Map())
 
 async function loadViSourceMap() {
   try {
-    const res = await $fetch<{ ok: boolean; items: Array<{ group: string; key: string; value: string }> }>('/api/admin/languages/vi/translations?limit=500')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ group: string; key: string; value: string }> }>)(`/api/admin/languages/vi/translations?limit=500`)
     if (res.ok) {
       const map = new Map<string, string>()
       for (const item of res.items) {
@@ -210,9 +210,9 @@ async function fetchTranslations() {
     const params: Record<string, string> = {}
     if (selectedGroup.value !== 'all') params.group = selectedGroup.value
     if (searchQuery.value) params.search = searchQuery.value
-    const res = await $fetch<{
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
       ok: boolean; items: typeof translations.value; groups: string[]
-    }>(`/api/admin/languages/${selectedLangCode.value}/translations`, { params })
+    }>)(`/api/admin/languages/${selectedLangCode.value}/translations`, { params })
     if (res.ok) {
       translations.value = res.items
       translationGroups.value = res.groups
@@ -234,7 +234,7 @@ function startEdit(t: typeof translations.value[0]) {
 
 async function saveEdit(t: typeof translations.value[0]) {
   try {
-    await $fetch(`/api/admin/languages/${selectedLangCode.value}/translations`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages/${selectedLangCode.value}/translations`, {
       method: 'PUT',
       body: { items: [{ group: t.group, key: t.key, value: editingValue.value }] },
     })
@@ -289,7 +289,7 @@ async function persistOrder(list: typeof languages.value) {
   reordering.value = true
   const orders = list.map((l, idx) => ({ code: l.code, displayOrder: idx }))
   try {
-    await $fetch('/api/admin/languages/reorder', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages/reorder`, {
       method: 'POST',
       body: { orders },
     })
@@ -310,7 +310,7 @@ async function translateSingleKey(t: typeof translations.value[0]) {
   const sourceText = viTranslationsMap.value.get(`${t.group}::${t.key}`) || t.key
   const currentLangObj = languages.value.find(l => l.code === selectedLangCode.value)
   try {
-    const res = await $fetch<{ ok: boolean; value: string }>('/api/admin/languages/ai-translate-key', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; value: string }>)(`/api/admin/languages/ai-translate-key`, {
       method: 'POST',
       body: {
         langCode: selectedLangCode.value,
@@ -367,7 +367,7 @@ async function startBatchTranslateWithProgress(langCode: string, langName: strin
   showTranslateProgressModal.value = true
 
   try {
-    const res = await $fetch<{ ok: boolean; items: typeof translations.value }>(`/api/admin/languages/${langCode}/translations?limit=500`)
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: typeof translations.value }>)(`/api/admin/languages/${langCode}/translations?limit=500`)
     const missing = (res.items || []).filter(item => !item.value || !item.value.trim())
 
     if (missing.length === 0) {
@@ -399,7 +399,7 @@ async function startBatchTranslateWithProgress(langCode: string, langName: strin
       }))
 
       try {
-        const chunkRes = await $fetch<{ ok: boolean; translated: Array<{ group: string; key: string; value: string }> }>('/api/admin/languages/ai-translate-chunk', {
+        const chunkRes = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; translated: Array<{ group: string; key: string; value: string }> }>)(`/api/admin/languages/ai-translate-chunk`, {
           method: 'POST',
           body: {
             langCode,
@@ -447,7 +447,7 @@ async function seedDefaultTranslations() {
   if (!confirm('Hệ thống sẽ nạp lại 6 ngôn ngữ và toàn bộ các bản dịch mặc định (insert-only, không ghi đè dữ liệu bạn đã sửa). Tiếp tục?')) return
   seedingDefault.value = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/languages/seed-default', { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/languages/seed-default`, { method: 'POST' })
     toast.success(res.message || 'Đã nạp bản dịch mặc định thành công!')
     await Promise.all([fetchLanguages(), fetchTranslations()])
   } catch (err: unknown) {
@@ -492,7 +492,7 @@ function inspectMissingKeys(code: string) {
 async function syncAllLanguages() {
   syncing.value = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/languages/sync', { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/languages/sync`, { method: 'POST' })
     toast.success(res.message)
     await loadData()
   } catch (err: unknown) {
@@ -568,7 +568,7 @@ let universalPollTimer: number | undefined
 async function loadCoverage() {
   universalLoading.value = true
   try {
-    const res = await $fetch<{ ok: boolean; stats: UniversalStats }>('/api/admin/system/translation-coverage')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; stats: UniversalStats }>)(`/api/admin/system/translation-coverage`)
     if (res.ok && res.stats) {
       universalStats.value = res.stats
       if (universalSelectedLangs.value.length === 0) {
@@ -585,7 +585,7 @@ async function loadCoverage() {
 
 async function checkUniversalTaskStatus() {
   try {
-    const res = await $fetch<{ ok: boolean; task: UniversalTask }>('/api/admin/system/universal-translate-status')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; task: UniversalTask }>)(`/api/admin/system/universal-translate-status`)
     if (res.ok && res.task) {
       universalTask.value = res.task
       if (res.task.active) {
@@ -621,7 +621,7 @@ function stopUniversalPolling() {
 async function cancelUniversalTranslate() {
   universalCancelling.value = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/system/universal-translate-cancel', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/system/universal-translate-cancel`, {
       method: 'POST',
     })
     toast.info(res.message || 'Đã gửi yêu cầu dừng tác vụ.')
@@ -641,7 +641,7 @@ async function runUniversalTranslate() {
 
   universalRunning.value = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/system/universal-translate', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/system/universal-translate`, {
       method: 'POST',
       body: {
         targetLangs: universalSelectedLangs.value,
@@ -1034,10 +1034,10 @@ onUnmounted(() => {
         </span>
         <button
           class="px-4 py-2.5 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-sm font-bold cursor-pointer border-none flex items-center gap-2 disabled:opacity-50"
-          :disabled="aiTranslating"
+          :disabled="translatingAll"
           @click="aiTranslateAll"
         >
-          <i class="fa-solid fa-wand-magic-sparkles"></i> {{ aiTranslating ? 'Đang dịch...' : 'Dịch AI' }}
+          <i class="fa-solid fa-wand-magic-sparkles"></i> {{ translatingAll ? 'Đang dịch...' : 'Dịch AI' }}
         </button>
       </div>
 

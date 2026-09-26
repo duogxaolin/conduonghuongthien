@@ -5,6 +5,7 @@ import { callAi } from './ai-gateway'
 import { upsertTranslations } from './languages'
 import { runTranslationWorker } from './article-translations'
 import type { ActorLike } from '../utils/permissions'
+import type { BlockData } from '../../app/utils/blocks/types'
 import { logInfo, logWarn } from '../utils/logger'
 export interface UniversalCoverageStats {
   totalArticles: number
@@ -221,7 +222,7 @@ ${rawData.bodyHtml}`
         },
       },
     }
-    await db.update(pageBlocks).set({ data: updatedData }).where(eq(pageBlocks.id, b.id))
+    await db.update(pageBlocks).set({ data: updatedData as BlockData }).where(eq(pageBlocks.id, b.id))
     ;(b as Record<string, unknown>).data = updatedData
     return true
   }
@@ -391,14 +392,12 @@ export async function startUniversalAutoTranslate(
       const missingArticlesByLang: Map<string, Array<{ id: number; title: string }>> = new Map()
       if (includeArticles) {
         for (const lang of allLangs) {
-          let query = db
+          const query = db
             .select({ id: articles.id, title: articles.title })
             .from(articles)
             .where(eq(articles.status, 'published'))
             .orderBy(desc(articles.id))
-          if (articlesLimit > 0) {
-            query = query.limit(articlesLimit)
-          }
+            .limit(articlesLimit > 0 ? articlesLimit : Number.MAX_SAFE_INTEGER)
           const publishedCandidates = await query
 
           const existingTranslations = await db

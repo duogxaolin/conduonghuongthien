@@ -408,7 +408,7 @@ function startModerationCheckpoint(commentId: number) {
       if (!existsTop && !existsReply) return
 
       try {
-        const res = await $fetch<{ ok: boolean; items: Array<{ id: number; isHidden: boolean; flagReason: string | null }> }>(
+        const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; items: Array<{ id: number; isHidden: boolean; flagReason: string | null }> }>)(
           '/api/public/comments/checkpoint',
           { query: { ids: String(commentId) } },
         )
@@ -563,7 +563,7 @@ async function loadThread() {
   try {
     // Kiểu tường minh: `$fetch` trên một URL dựng bằng template string không suy
     // được tuyến nào, nên nó trả `{}` và mọi phép đọc trường thành lỗi.
-    const response = await $fetch<CommentThreadPayload>(
+    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<CommentThreadPayload>)(
       threadPath,
       { query: threadQuery.value },
     )
@@ -644,7 +644,7 @@ async function submit(parentId: number | null) {
   const tempId = -Date.now()
   pendingComments.value.push({ tempId, parentId, body: text.trim(), status: 'sending', error: '' })
   try {
-    const res = await $fetch<{ ok: boolean; id?: number }>('/api/public/comments', {
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; id?: number }>)('/api/public/comments', {
       method: 'POST',
       body: { ...writeBody.value, parentId, body: text },
     })
@@ -697,7 +697,7 @@ async function removeComment(comment: PublicCommentItem) {
 
   deletingId.value = comment.id
   try {
-    await $fetch(`/api/public/comments/${comment.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/public/comments/${comment.id}`, { method: 'DELETE' })
     await loadThread()
   } catch (error) {
     submitError.value = reportFailure(error, t('c_delete_error'))

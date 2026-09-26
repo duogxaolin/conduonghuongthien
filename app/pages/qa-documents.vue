@@ -430,11 +430,15 @@ const listQuery = computed(() => {
   return query
 })
 
-const { data, pending, error, refresh } = useFetch('/api/public/chatbot/knowledge', {
-  query: listQuery,
-  lazy: true,
-  default: () => ({ ok: true, items: [], topics: [], pagination: { page: 1, perPage: 20, total: 0, totalPages: 0 } }),
-})
+const { data, pending, error, refresh } = useAsyncData(
+  () => `qa-documents-${JSON.stringify(listQuery.value)}`,
+  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; items: Array<{ id: number; question: string; answer: string; topic?: string | null }>; topics: Array<{ slug: string; name: string; count?: number }>; pagination: { page: number; perPage: number; total: number; totalPages: number } }>)('/api/public/chatbot/knowledge', { query: listQuery.value }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, items: [], topics: [], pagination: { page: 1, perPage: 20, total: 0, totalPages: 0 } }),
+    watch: [listQuery],
+  },
+)
 
 const entries = computed(() => (data.value as { items?: any[] })?.items || [])
 const topics = computed(() => (data.value as { topics?: any[] })?.topics || [])

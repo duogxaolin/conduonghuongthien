@@ -478,10 +478,19 @@ test('id tiêu đề khối không đụng vào anchor do buildToc sinh', () => 
 test('lượt fetch liên quan có key riêng và lazy', () => {
   // Thiếu `lazy` thì router giữ nguyên trang cũ tới khi khối phụ này về — bấm một
   // liên kết trông y hệt bấm hụt. Key riêng để hai lượt fetch không ghi đè nhau.
+  //
+  // Lưu ý: trước đây dùng `useFetch`, nay đổi sang `useAsyncData` + `$fetch` ép
+  // kiểu hàm để tránh TS2589 "Type instantiation is excessively deep" khi Nitro
+  // route type quá sâu. Hình dạng khác (useAsyncData thay useFetch, url nằm ở
+  // tham số handler thứ hai) nhưng cùng ba điều kiện phải giữ: key riêng theo
+  // slug, lazy: true, default trả {ok,articles,topics}.
   const source = read(COMPONENT)
-  assert.match(source, /key: \(\) => `article-related-\$\{props\.slug\}`/)
-  const relatedFetch = source.match(/useFetch\(\(\) => `\/api\/public\/articles\/\$\{props\.slug\}\/related`[\s\S]*?\}\)/)?.[0]
-  assert.ok(relatedFetch, 'lượt fetch liên quan đã đổi hình dạng')
+  assert.match(source, /useAsyncData\(\s*\(\) => `article-related-\$\{props\.slug}`,/)
+  assert.match(source, /\/api\/public\/articles\/\$\{props\.slug\}\/related/)
+  // Lấy khối useAsyncData liên quan (từ khoá `article-related-` tới đóng `}`)
+  const relatedFetch = source.match(/useAsyncData\(\s*\(\) => `article-related-\$\{props\.slug}`,?[\s\S]*?\n\}\)?,?\s*\{[\s\S]*?\}\)?,?\s*\n\)/)?.[0]
+    ?? source.match(/useAsyncData\([\s\S]*?article-related-[\s\S]*?\}\)/)?.[0]
+  assert.ok(relatedFetch, 'lượt fetch liên quan đã đổi hình dạng — dùng useAsyncData')
   assert.match(relatedFetch, /lazy: true/)
   assert.match(relatedFetch, /default: \(\) => \(\{ ok: true, articles: \[\], topics: \[\] \}\)/)
 })

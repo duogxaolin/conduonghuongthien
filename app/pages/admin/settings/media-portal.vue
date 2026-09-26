@@ -121,7 +121,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    data.value = await $fetch<SettingsResponse>('/api/admin/settings/media-portal')
+    data.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<SettingsResponse>)(`/api/admin/settings/media-portal`)
     const c = data.value.config
     form.uploadEnabled = c.uploadEnabled
     form.maxUploadSizeGb = bytesToGb(c.maxUploadSize)
@@ -144,7 +144,7 @@ async function load() {
     // Phát hiện "đang dùng chung R2 với Media Storage" — so khớp 4 field public
     // với settings `r2_*`. Khớp hết → dùng chung, khác → R2 riêng.
     try {
-      const msRes = await $fetch<{ ok: boolean, settings: Record<string, string | null> }>('/api/admin/settings')
+      const msRes = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, settings: Record<string, string | null> }>)(`/api/admin/settings`)
       const ms = msRes.settings ?? {}
       const sameAccount = ms.r2_account_id && form.videoR2AccountId === ms.r2_account_id
       const sameAccess = ms.r2_access_key && form.videoR2AccessKey === ms.r2_access_key
@@ -161,7 +161,7 @@ async function load() {
 async function save() {
   saving.value = true
   try {
-    await $fetch('/api/admin/settings/media-portal', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/media-portal`, {
       method: 'PUT',
       body: {
         fields: {
@@ -199,7 +199,7 @@ async function save() {
 async function cleanNow() {
   cleaning.value = true
   try {
-    const result = await $fetch<{ ok: true, sessions: number, orphans: number }>(
+    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: true, sessions: number, orphans: number }>)(
       '/api/admin/media-portal/upload/housekeep',
       { method: 'POST', body: { confirm: true } },
     )
@@ -228,7 +228,7 @@ const usingSharedMediaStorageR2 = ref(false)
 async function useMediaStorageR2() {
   importingFromMediaStorage.value = true
   try {
-    const res = await $fetch<{ ok: boolean, settings: Record<string, string | null> }>('/api/admin/settings')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, settings: Record<string, string | null> }>)(`/api/admin/settings`)
     const s = res.settings ?? {}
     const filled: string[] = []
     if (s.r2_account_id) { form.videoR2AccountId = s.r2_account_id; filled.push('Account ID') }

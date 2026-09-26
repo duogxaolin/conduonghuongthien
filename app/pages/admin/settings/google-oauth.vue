@@ -62,7 +62,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<{ ok: boolean, settings: Settings }>('/api/admin/settings/google-oauth')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, settings: Settings }>)(`/api/admin/settings/google-oauth`)
     if (!res?.ok) {
       error.value = 'Không tải được cấu hình đăng nhập Google.'
       return
@@ -91,7 +91,7 @@ async function save() {
     const secret = newSecret.value.trim()
     if (secret) body.clientSecret = secret
 
-    const res = await $fetch<{ ok: boolean, settings: Settings }>('/api/admin/settings/google-oauth', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, settings: Settings }>)(`/api/admin/settings/google-oauth`, {
       method: 'PATCH',
       body,
     })
@@ -110,7 +110,7 @@ async function clearSecret() {
   if (!confirm('Xoá Client secret đã lưu? Đăng nhập Google sẽ tắt cho tới khi bạn nhập lại secret mới.')) return
   clearing.value = true
   try {
-    const res = await $fetch<{ ok: boolean, settings: Settings }>('/api/admin/settings/google-oauth/clear-secret', { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, settings: Settings }>)(`/api/admin/settings/google-oauth/clear-secret`, { method: 'POST' })
     settings.value = res.settings
     form.isEnabled = res.settings.isEnabled
     toast.success('Đã xoá Client secret.')

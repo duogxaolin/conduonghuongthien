@@ -281,22 +281,31 @@ const categoryNavList = computed(() => [
   { slug: 'tin-dia-phuong', label: t('news_local') || 'Tin địa phương', url: '/news/local-news', icon: 'fa-solid fa-map-location-dot' },
 ])
 
-const { data, pending, error, refresh } = await useFetch('/api/public/articles', {
-  lazy: true,
-  key: () => `news-category-${props.categorySlug}-${currentLang.value}`,
-  query: computed(() => ({ type: 'news', categorySlug: props.categorySlug, limit: props.limit, lang: currentLang.value })),
-  default: () => ({ ok: true, articles: [], pagination: {} }),
-})
+const { data, pending, error, refresh } = await useAsyncData(
+  () => `news-category-${props.categorySlug}-${currentLang.value}`,
+  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }>; pagination: Record<string, unknown> }>)('/api/public/articles', {
+    query: { type: 'news', categorySlug: props.categorySlug, limit: props.limit, lang: currentLang.value },
+  }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: {} }),
+    watch: [() => props.categorySlug, () => props.limit, currentLang],
+  },
+)
 
 const newsList = computed(() => (data.value as { articles?: any[] })?.articles || [])
 const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
 
-const { data: mostReadData, pending: mostReadPending } = await useFetch('/api/public/articles', {
-  lazy: true,
-  key: () => 'news-category-most-read',
-  query: { type: 'news', sort: 'views', limit: 6 },
-  default: () => ({ ok: true, articles: [], pagination: {} }),
-})
+const { data: mostReadData, pending: mostReadPending } = await useAsyncData(
+  () => 'news-category-most-read',
+  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null }> }>)(`/api/public/articles`, {
+    query: { type: 'news', sort: 'views', limit: 6 },
+  }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: {} }),
+  },
+)
 
 const mostRead = computed(() => (mostReadData.value as { articles?: any[] })?.articles || [])
 </script>

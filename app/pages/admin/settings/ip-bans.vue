@@ -45,7 +45,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch('/api/admin/ip-bans')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; bans: Ban[] }>)(`/api/admin/ip-bans`)
     if (!res?.ok) {
       error.value = 'Không tải được danh sách chặn.'
       return
@@ -63,7 +63,7 @@ async function addBan() {
   busy.value = true
   formError.value = ''
   try {
-    await $fetch('/api/admin/ip-bans', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ip-bans`, {
       method: 'POST',
       body: { value: newValue.value, reason: newReason.value },
     })
@@ -82,7 +82,7 @@ async function liftBan(ban: Ban) {
   if (!confirm(`Bỏ chặn ${ban.value}? Địa chỉ này sẽ đăng nhập và bình luận được ngay.`)) return
   busy.value = true
   try {
-    await $fetch(`/api/admin/ip-bans/${ban.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ip-bans/${ban.id}`, { method: 'DELETE' })
     toast.success('Đã bỏ chặn địa chỉ.')
     await load()
   } catch (err: unknown) {

@@ -42,7 +42,7 @@ const load = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch(`/api/admin/submissions/${props.id}`)
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ submission: typeof submission.value; events: AdminSubmissionEvent[] }>)(`/api/admin/submissions/${props.id}`)
     submission.value = res.submission
     events.value = res.events
   } catch (err: unknown) {
@@ -121,7 +121,7 @@ const changeStatus = async (next: SubmissionStatus) => {
   if (!props.id || busy.value) return
   busy.value = 'status'
   try {
-    await $fetch(`/api/admin/submissions/${props.id}/status`, { method: 'PUT', body: { status: next } })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/submissions/${props.id}/status`, { method: 'PUT', body: { status: next } })
     toast.success(`Đã chuyển sang "${SUBMISSION_STATUS_META[next].label}".`)
     await afterAction()
   } catch (err: unknown) {
@@ -140,7 +140,7 @@ const saveNote = async () => {
   }
   busy.value = 'note'
   try {
-    await $fetch(`/api/admin/submissions/${props.id}/notes`, { method: 'POST', body: { note } })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/submissions/${props.id}/notes`, { method: 'POST', body: { note } })
     noteDraft.value = ''
     toast.success('Đã lưu ghi chú.')
     await afterAction()
@@ -155,7 +155,7 @@ const logContact = async () => {
   if (!props.id || busy.value) return
   busy.value = 'contact'
   try {
-    await $fetch(`/api/admin/submissions/${props.id}/contact`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/submissions/${props.id}/contact`, {
       method: 'POST',
       body: { channel: contactChannel.value, note: contactNote.value.trim() || undefined },
     })

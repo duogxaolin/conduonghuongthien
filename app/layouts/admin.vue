@@ -18,7 +18,7 @@ async function clearPublicCache() {
   if (isClearingCache.value) return
   isClearingCache.value = true
   try {
-    const res = await $fetch<{ ok: boolean; cleared: number; message: string }>('/api/admin/cache-clear', {
+    const res = await ($fetch as (u: string, o: Record<string, unknown>) => Promise<{ ok: boolean; cleared: number; message: string }>)('/api/admin/cache-clear', {
       method: 'POST',
       body: { confirm: true },
     })
@@ -35,10 +35,11 @@ const toggleMobileMenu = () => { isMobileMenuOpen.value = !isMobileMenuOpen.valu
 
 watch(() => route.fullPath, () => { isMobileMenuOpen.value = false })
 
-// Accordion cho sidebar: nhóm "Hệ thống & Cài đặt" tách thành sub-tab đóng mặc định,
-// bấm vào title mới mở ra các item con — gọn sidebar khi không dùng.
-// Lưu trữ theo tiêu đề nhóm (Set<string>) để không bị lệch khi lọc tìm kiếm.
-const openAccordions = ref<Set<string>>(new Set())
+// Accordion cho sidebar: nhóm "Hệ thống & Cài đặt" mở rộng mặc định để hiện
+// hết ~13 mục con (Tài khoản, Người dùng & Phân quyền, Cài đặt...), không thu gọn
+// gây tưởng thiếu mục. Bấm vào title để thu lại nếu muốn. Lưu trữ theo tiêu đề
+// nhóm (Set<string>) để không bị lệch khi lọc tìm kiếm.
+const openAccordions = ref<Set<string>>(new Set(['Hệ thống & Cài đặt']))
 const toggleAccordion = (title: string) => {
   const next = new Set(openAccordions.value)
   if (next.has(title)) next.delete(title)

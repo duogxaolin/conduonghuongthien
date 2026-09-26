@@ -568,7 +568,7 @@ async function submitLead(msg: ChatMessage): Promise<void> {
   lead.status = 'sending'
   lead.error = ''
   try {
-    await $fetch('/api/public/chatbot/lead', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/public/chatbot/lead', {
       method: 'POST',
       body: { name: lead.name, phone: lead.phone, email: lead.email, question: lead.question },
     })

@@ -46,7 +46,7 @@ async function runAiModerationScan() {
   moderating.value = true
   try {
     const ids = comments.value.map(c => c.id).slice(0, 10)
-    const res = await $fetch<{ ok: boolean; results: Array<{ id: number; verdict: 'safe' | 'spam' | 'violation'; riskLevel: string; flags: string[]; reason: string }> }>('/api/admin/comments/ai-moderate', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; results: Array<{ id: number; verdict: 'safe' | 'spam' | 'violation'; riskLevel: string; flags: string[]; reason: string }> }>)('/api/admin/comments/ai-moderate', {
       method: 'POST',
       body: { commentIds: ids },
     })
@@ -82,7 +82,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch('/api/admin/comments', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; comments: Comment[]; total: number; totalPages: number; page: number }>)('/api/admin/comments', {
       query: {
         articleId: articleFilter.value || undefined,
         source: sourceFilter.value || undefined,
@@ -127,7 +127,7 @@ async function submitReply(comment: Comment) {
   if (!replyBody.value.trim() || replying.value) return
   replying.value = true
   try {
-    await $fetch('/api/admin/comments/reply', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/comments/reply', {
       method: 'POST',
       body: { parentId: comment.id, body: replyBody.value },
     })
@@ -153,7 +153,7 @@ async function deleteOne(comment: Comment) {
 
   busy.value = true
   try {
-    await $fetch(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
     toast.success('Đã xoá bình luận.')
     await load()
   } catch (err: unknown) {
@@ -293,25 +293,25 @@ onMounted(load)
             v-if="moderationMap[comment.id]"
             class="mt-2.5 flex items-center gap-2 rounded-lg p-2.5 text-xs"
             :class="{
-              'bg-[#f0fdf4] text-[#166534] border border-[#bbf7d0]': moderationMap[comment.id].verdict === 'safe',
-              'bg-[#fefce8] text-[#854d0e] border border-[#fef08a]': moderationMap[comment.id].verdict === 'spam',
-              'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]': moderationMap[comment.id].verdict === 'violation',
+              'bg-[#f0fdf4] text-[#166534] border border-[#bbf7d0]': moderationMap[comment.id]!.verdict === 'safe',
+              'bg-[#fefce8] text-[#854d0e] border border-[#fef08a]': moderationMap[comment.id]!.verdict === 'spam',
+              'bg-[#fef2f2] text-[#991b1b] border border-[#fecaca]': moderationMap[comment.id]!.verdict === 'violation',
             }"
           >
             <i
               class="fa-solid text-xs shrink-0"
               :class="{
-                'fa-shield-check text-[#16a34a]': moderationMap[comment.id].verdict === 'safe',
-                'fa-triangle-exclamation text-[#ca8a04]': moderationMap[comment.id].verdict === 'spam',
-                'fa-circle-xmark text-[#dc2626]': moderationMap[comment.id].verdict === 'violation',
+                'fa-shield-check text-[#16a34a]': moderationMap[comment.id]!.verdict === 'safe',
+                'fa-triangle-exclamation text-[#ca8a04]': moderationMap[comment.id]!.verdict === 'spam',
+                'fa-circle-xmark text-[#dc2626]': moderationMap[comment.id]!.verdict === 'violation',
               }"
             ></i>
             <span class="font-bold">
-              AI: {{ moderationMap[comment.id].verdict === 'safe' ? 'An toàn' : moderationMap[comment.id].verdict === 'spam' ? 'Nghi vấn Spam' : 'Vi phạm tiêu chuẩn' }}
+              AI: {{ moderationMap[comment.id]!.verdict === 'safe' ? 'An toàn' : moderationMap[comment.id]!.verdict === 'spam' ? 'Nghi vấn Spam' : 'Vi phạm tiêu chuẩn' }}
             </span>
-            <span class="text-[#64748b]">• {{ moderationMap[comment.id].reason }}</span>
-            <span v-if="moderationMap[comment.id].flags?.length" class="ml-auto font-semibold">
-              {{ moderationMap[comment.id].flags.join(', ') }}
+            <span class="text-[#64748b]">• {{ moderationMap[comment.id]!.reason }}</span>
+            <span v-if="moderationMap[comment.id]!.flags?.length" class="ml-auto font-semibold">
+              {{ moderationMap[comment.id]!.flags.join(', ') }}
             </span>
           </div>
 

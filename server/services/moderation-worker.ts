@@ -351,7 +351,10 @@ export async function checkAndModerateContent(input: ModerationCheckInput): Prom
 
   const severityWeight = { low: 1, medium: 2, high: 3, critical: 4 }
 
-  if (matchedKeywords.length > 0 || content.length >= 20) {
+  // Ngưỡng AI hạ từ 20 xuống 5 ký tự: bình luận ngắn ("chodjt", "ls", "wow")
+  // cũng đi qua AI, không chỉ câu dài. Comment 1-4 ký tự gần như là nhiễu hoặc
+  // thử nghiệm, không đủ ngữ cảnh cho AI; 5 là sàn hợp lý cho tiếng Việt.
+  if (matchedKeywords.length > 0 || content.length >= 5) {
     const detectedStr = matchedKeywords.length > 0
       ? `\nTừ khóa / chuyên đề nhạy cảm phát hiện trong câu: ${matchedKeywords.map(k => `"${k.pattern}" (${k.category})`).join(', ')}`
       : ''
@@ -408,8 +411,36 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
           workerStats.allowedCount++
         }
       } else {
-        // Fallback on AI error
-        if (matchedKeywords.some(k => k.severity === 'critical')) {
+        // Fallback on AI error. Phân biệt hai nhóm lý do:
+        //  - AI CHƯA CẤU HÌNH (service_not_found / service_inactive / no_api_key):
+        //    admin chưa bật nhà cung cấp cho service 'moderation'. Không có AI
+        //    domestically đối soát → đưa vào hàng đợi `pending` để con người duyệt.
+        //    KHÔNG tự ẩn nội dung (chỉ `flag_only`) — ẩn khi chưa ai xem là buộc
+        //    công dân phải tự chứng minh mình trong sáng.
+        //  - Lỗi tạm thời (provider_error / parse_error / budget_exceeded): chỉ
+        //    flag khi có critical keyword, không flood queue bằng lỗi tạm thời.
+        const aiUnavailable =
+          aiResult.error === 'service_not_found' ||
+          aiResult.error === 'service_inactive' ||
+          aiResult.error === 'no_api_key'
+
+        if (aiUnavailable) {
+          isFlagged = true
+          finalAction = 'flag_only'
+          highestSeverity = 'medium'
+          for (const k of matchedKeywords) {
+            matchedRules.push(`[${k.category}] ${k.pattern}`)
+            const s = k.severity as keyof typeof severityWeight
+            if (severityWeight[s] > severityWeight[highestSeverity]) {
+              highestSeverity = s
+            }
+          }
+          reasons.push(
+            matchedKeywords.length > 0
+              ? `AI kiểm duyệt chưa cấu hình; khớp từ khóa nhạy cảm: ${matchedKeywords.map(k => `"${k.pattern}"`).join(', ')} — cần con người đối soát`
+              : 'AI kiểm duyệt chưa cấu hình — cần con người đối soát nội dung',
+          )
+        } else if (matchedKeywords.some(k => k.severity === 'critical')) {
           isFlagged = true
           finalAction = 'auto_hide'
           highestSeverity = 'critical'
@@ -433,15 +464,6 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
 
   // 3. Automated Action: Record to queue & hide content
   if (isFlagged) {
-    logWarn({
-      event: 'ai_moderation.flagged',
-      targetType: input.targetType,
-      targetId: input.targetId,
-      action: finalAction,
-      severity: highestSeverity,
-      reasons,
-    })
-
     try {
       await db.insert(aiModerationQueue).values({
         targetType: input.targetType,
@@ -483,6 +505,29 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
         // Non-blocking update
       }
     }
+  }
+
+  // Ghi log mỗi lần check — kể cả khi safe — để traces được "moderation đã chạy
+  // cho bình luận id X". Trước đây chỉ log khi flagged, nên một bình luận không bị
+  // ẩn đọc ra y hệt "chưa ai check". Audit dùng logInfo (không phải logWarn) khi
+  // safe — đây là hoạt động bình thường, không phải cảnh báo.
+  if (isFlagged) {
+    logWarn({
+      event: 'ai_moderation.flagged',
+      targetType: input.targetType,
+      targetId: input.targetId,
+      action: finalAction,
+      severity: highestSeverity,
+      reasons,
+    })
+  } else {
+    logInfo({
+      event: 'ai_moderation.checked_safe',
+      targetType: input.targetType,
+      targetId: input.targetId,
+      contentLength: content.length,
+      matchedKeywordsCount: matchedKeywords.length,
+    })
   }
 
   return {

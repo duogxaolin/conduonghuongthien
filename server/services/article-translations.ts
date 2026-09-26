@@ -272,6 +272,7 @@ export async function triggerTranslateAllLanguages(
   targetStatus: 'ai_draft' | 'published' = 'ai_draft',
   db: Database = getDb(),
 ) {
+  const [article] = await db.select({ id: articles.id }).from(articles).where(eq(articles.id, articleId)).limit(1)
   if (!article) {
     throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
   }
@@ -432,7 +433,7 @@ ${article.excerpt ?? ''}`
     const translatedChunks: string[] = []
 
     for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i]
+      const chunk = chunks[i]!
       const chunkPrompt = `Dịch đoạn ${i + 1}/${totalChunks} của một bài viết sang ${langName}.
 Yêu cầu:
 1. Chuẩn xác thuật ngữ pháp lý và hành chính.

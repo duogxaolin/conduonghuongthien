@@ -99,7 +99,7 @@ async function fetchMeta() {
   fetchingMeta.value = true
   metaError.value = ''
   try {
-    const res = await $fetch<{ ok: boolean, reason?: string, title?: string, authorName?: string, thumbnailUrl?: string, videoId?: string }>(
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, reason?: string, title?: string, authorName?: string, thumbnailUrl?: string, videoId?: string }>)(
       '/api/admin/media-portal/youtube-meta',
       { method: 'POST', body: { url: startForm.value.youtubeVideoId.trim() } },
     )
@@ -136,7 +136,7 @@ async function loadActive() {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await $fetch<AdminLivestreamActive>('/api/public/livestream/active')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminLivestreamActive>)(`/api/public/livestream/active`)
     if (res.ok === false) {
       loadError.value = 'Không tải được trạng thái buổi phát.'
       return
@@ -168,7 +168,7 @@ async function loadChatMessages(expectedSessionId?: number) {
 
   chatLoading.value = true
   try {
-    const res = await $fetch<{ ok: boolean, sessionId: number | null, messages: LiveChatMessage[] }>('/api/public/livestream/chat/history', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, sessionId: number | null, messages: LiveChatMessage[] }>)(`/api/public/livestream/chat/history`, {
       query: { limit: 100 },
     })
     // A stop/start can happen between the two requests.  Never show the old
@@ -190,7 +190,7 @@ async function removeChatMessage(message: LiveChatMessage) {
 
   removingMessageId.value = message.id
   try {
-    await $fetch(`/api/admin/livestream/chat/${message.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/livestream/chat/${message.id}`, { method: 'DELETE' })
     chatMessages.value = chatMessages.value.filter(item => item.id !== message.id)
     toast.success('Đã gỡ tin nhắn khỏi buổi phát.')
   } catch (err: unknown) {
@@ -215,7 +215,7 @@ async function startLivestream() {
   }
   isStarting.value = true
   try {
-    const res = await $fetch<{ ok: boolean; sessionId?: number }>('/api/admin/livestream/start', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; sessionId?: number }>)(`/api/admin/livestream/start`, {
       method: 'POST',
       body: {
         title:          startForm.value.title.trim(),
@@ -242,7 +242,7 @@ async function stopLivestream() {
   if (!confirm('Dừng buổi phát trực tiếp này?')) return
   isStopping.value = true
   try {
-    const res = await $fetch<{ ok: boolean; sessionId?: number }>('/api/admin/livestream/stop', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; sessionId?: number }>)(`/api/admin/livestream/stop`, {
       method: 'POST',
       body: { sessionId: activeSession.value.id },
     })

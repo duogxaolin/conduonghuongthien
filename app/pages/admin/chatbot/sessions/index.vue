@@ -32,9 +32,9 @@ const fetchSessions = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await $fetch<{
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
       ok: boolean; total: number; totalPages: number; items: SessionRow[]
-    }>('/api/admin/chatbot/sessions', {
+    }>)('/api/admin/chatbot/sessions', {
       query: {
         page: page.value,
         pageSize,

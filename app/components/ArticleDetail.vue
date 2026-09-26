@@ -10,7 +10,7 @@
       <!-- Breadcrumb -->
       <nav class="text-[0.85rem] text-[#7A8675] mb-6" :aria-label="t('a_breadcrumb_aria')">
         <nuxt-link to="/" class="text-[#4A6741] no-underline hover:underline">{{ t('a_home') }}</nuxt-link> &raquo;
-        <nuxt-link :to="backTo" class="text-[#4A6741] no-underline hover:underline">{{ backLabel }}</nuxt-link> &raquo;
+        <nuxt-link :to="backTo" class="text-[#4A6741] no-underline hover:underline">{{ backLabelText }}</nuxt-link> &raquo;
         <slot name="crumb" :category-label="categoryLabel" />
         <span>{{ currentCrumbText }}</span>
       </nav>
@@ -339,8 +339,10 @@ const props = defineProps({
   slug: { type: String, required: true },
   /** Listing route used by the breadcrumb and both back links. */
   backTo: { type: String, required: true },
-  /** Breadcrumb label for the listing. */
-  backLabel: { type: String, required: true },
+  /** Pick which i18n key family to fall back to for the labels below. */
+  variant: { type: String as () => 'news' | 'role' | 'reintegration', default: 'news' },
+  /** Breadcrumb label for the listing. Falls back to t('a_back_<variant>'). */
+  backLabel: { type: String, default: null },
   /** Call-to-action label on the back links. */
   backCtaLabel: { type: String, default: null },
   /** Final, non-linked breadcrumb. */
@@ -348,19 +350,30 @@ const props = defineProps({
   /** Decorative glyph in front of the category badge. */
   metaIcon: { type: String, default: '📰' },
   /** Category shown when the article carries no category of its own. */
-  categoryFallback: { type: String, default: 'Thông tin' },
+  categoryFallback: { type: String, default: null },
   /** Optional article-type → label map, consulted before categoryFallback. */
   typeLabels: { type: Object, default: () => ({}) },
   notFoundText: { type: String, default: null },
-  seoFallbackTitle: { type: String, required: true },
-  seoFallbackDescription: { type: String, required: true },
+  seoFallbackTitle: { type: String, default: null },
+  seoFallbackDescription: { type: String, default: null },
 })
 
-// `backLabel` is required and always passed by parents (already translated).
-// `backCtaLabel` / `currentCrumb` / `notFoundText` fall back to i18n when null.
+// Variant → i18n key map. Props win when set; otherwise the variant picks the key.
+const VARIANT_KEYS = {
+  news: { back: 'a_back_news', crumb: 'a_news_crumb', notFound: 'a_news_not_found', cat: 'a_category_news', seoTitle: 'a_news_seo_title', seoDesc: 'a_news_seo_desc' },
+  role: { back: 'a_back_role', crumb: 'a_role_crumb', notFound: 'a_role_not_found', cat: 'a_category_role', seoTitle: 'a_role_seo_title', seoDesc: 'a_role_seo_desc' },
+  reintegration: { back: 'a_back_reintegration', crumb: 'a_reintegration_crumb', notFound: 'a_reintegration_not_found', cat: 'a_category_reintegration', seoTitle: 'a_reintegration_seo_title', seoDesc: 'a_reintegration_seo_desc' },
+} as const
+
+const vkeys = computed(() => VARIANT_KEYS[props.variant as keyof typeof VARIANT_KEYS] ?? VARIANT_KEYS.news)
+
+const backLabelText = computed(() => props.backLabel ?? t(vkeys.value.back))
 const backCtaText = computed(() => props.backCtaLabel ?? t('a_back_cta'))
-const currentCrumbText = computed(() => props.currentCrumb ?? t('a_detail_crumb'))
-const notFoundTextValue = computed(() => props.notFoundText ?? t('a_not_found'))
+const currentCrumbText = computed(() => props.currentCrumb ?? t(vkeys.value.crumb))
+const notFoundTextValue = computed(() => props.notFoundText ?? t(vkeys.value.notFound))
+const categoryFallbackValue = computed(() => props.categoryFallback ?? t(vkeys.value.cat))
+const seoFallbackTitleValue = computed(() => props.seoFallbackTitle ?? t(vkeys.value.seoTitle))
+const seoFallbackDescriptionValue = computed(() => props.seoFallbackDescription ?? t(vkeys.value.seoDesc))
 
 // `lazy` chỉ bỏ chặn điều hướng phía client — lượt dựng phía máy chủ vẫn chờ dữ
 // liệu, nên HTML đầu tiên, thẻ SEO và mục lục không đổi. Đi từ danh sách sang
@@ -368,11 +381,36 @@ const notFoundTextValue = computed(() => props.notFoundText ?? t('a_not_found'))
 // hụt cho tới khi bài về.
 const { currentLang, t } = useI18n()
 
-const { data, pending, error, refresh } = useFetch(() => `/api/public/articles/${props.slug}?lang=${currentLang.value}`, {
-  key: () => `article-detail-${props.slug}-${currentLang.value}`,
-  lazy: true,
-  default: () => ({ ok: false, article: null }),
-})
+type ArticleDetailResponse = {
+  ok: boolean
+  article: {
+    id: number
+    title: string
+    slug: string
+    excerpt: string | null
+    content: string
+    featuredImage: string | null
+    thumbnailUrl?: string | null
+    publishedAt: string | null
+    createdAt?: string | null
+    type?: string
+    categoryName?: string | null
+    authorName?: string | null
+    viewTotal?: number
+    category?: { name: string; slug: string } | null
+    [key: string]: unknown
+  } | null
+}
+
+const { data, pending, error, refresh } = useAsyncData(
+  () => `article-detail-${props.slug}-${currentLang.value}`,
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ArticleDetailResponse>)(`/api/public/articles/${props.slug}?lang=${currentLang.value}`),
+  {
+    lazy: true,
+    default: () => ({ ok: false, article: null }),
+    watch: [() => props.slug, currentLang],
+  },
+)
 
 watch(currentLang, () => {
   void refresh()
@@ -385,7 +423,7 @@ const loadError = computed(() => !!error.value)
 const categoryLabel = computed(() => {
   const a = article.value
   if (!a) return ''
-  return a.categoryName || props.typeLabels[a.type] || props.categoryFallback
+  return a.categoryName || (a.type ? props.typeLabels[a.type] : '') || props.categoryFallback || categoryFallbackValue.value
 })
 
 const formattedDate = computed(() => formatDateVN(article.value?.publishedAt || article.value?.createdAt))
@@ -418,11 +456,15 @@ const {
   pending: relatedPending,
   error: relatedFetchError,
   refresh: refreshRelated,
-} = useFetch(() => `/api/public/articles/${props.slug}/related`, {
-  key: () => `article-related-${props.slug}`,
-  lazy: true,
-  default: () => ({ ok: true, articles: [], topics: [] }),
-})
+} = useAsyncData(
+  () => `article-related-${props.slug}`,
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null }>; topics: Array<{ slug: string; name: string; isCurrent?: boolean; total?: number }> }>)(`/api/public/articles/${props.slug}/related`),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], topics: [] }),
+    watch: [() => props.slug],
+  },
+)
 
 const relatedArticles = computed(() => relatedData.value?.articles || [])
 const relatedTopics = computed(() => relatedData.value?.topics || [])
@@ -446,10 +488,10 @@ const showTopics = computed(
 )
 
 useSeoMeta({
-  title: computed(() => (article.value ? `${article.value.title} | Con Đường Hướng Thiện` : props.seoFallbackTitle)),
-  description: computed(() => article.value?.excerpt || props.seoFallbackDescription),
-  ogTitle: computed(() => (article.value ? `${article.value.title} | Con Đường Hướng Thiện` : props.seoFallbackTitle)),
-  ogDescription: computed(() => article.value?.excerpt || props.seoFallbackDescription),
+  title: computed(() => (article.value ? `${article.value.title} | Con Đường Hướng Thiện` : seoFallbackTitleValue.value)),
+  description: computed(() => article.value?.excerpt || seoFallbackDescriptionValue.value),
+  ogTitle: computed(() => (article.value ? `${article.value.title} | Con Đường Hướng Thiện` : seoFallbackTitleValue.value)),
+  ogDescription: computed(() => article.value?.excerpt || seoFallbackDescriptionValue.value),
   ogImage: computed(() => article.value?.thumbnailUrl || '/assets/hero_banner.jpg'),
   ogType: 'article',
 })
@@ -510,7 +552,7 @@ const sentSlug = ref('')
 function pingView(slug: string | null | undefined) {
   if (!slug || sentSlug.value === slug) return
   sentSlug.value = slug
-  $fetch(`/api/public/articles/${encodeURIComponent(slug)}/view`, {
+  void ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/public/articles/${encodeURIComponent(slug)}/view`, {
     method: 'POST',
     body: { sourceCategory: classifySource(document.referrer, window.location.hostname) },
     keepalive: true,

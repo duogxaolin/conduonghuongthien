@@ -37,7 +37,7 @@ const fetchRoles = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch('/api/admin/roles')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; roles: AdminRoleRow[] }>)(`/api/admin/roles`)
     if (res.ok) {
       roles.value = res.roles
       const current = roles.value.find(role => role.id === selectedRole.value?.id) ?? roles.value[0]
@@ -70,7 +70,7 @@ const handleSavePermissions = async () => {
   saving.value = true
   const permsPayload = Object.entries(permissionMatrix.value).map(([resource, perm]) => ({ resource, ...perm }))
   try {
-    const res = await $fetch(`/api/admin/roles/${selectedRole.value.id}`, {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/roles/${selectedRole.value.id}`, {
       method: 'PUT',
       body: { permissions: permsPayload }
     })

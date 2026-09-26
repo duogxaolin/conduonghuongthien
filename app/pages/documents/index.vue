@@ -353,11 +353,13 @@ const articlesQuery = computed(() => {
   return q
 })
 
-const { data, pending, error, refresh } = useFetch('/api/public/articles', {
-  query: articlesQuery,
-  lazy: true,
-  default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 } }),
-})
+const { data, pending, error, refresh } = useAsyncData('public-articles-documents', () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: articlesQuery.value }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 } }),
+  }
+)
 
 const docs = computed(() => (data.value as { articles?: any[] })?.articles || [])
 const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)

@@ -122,7 +122,7 @@ function createBreakdownPoller() {
   const scope = selectedScope.value
   const filter = selectedFilter.value
   return createAnalyticsPanelPoller<BreakdownResponse>({
-    request: signal => $fetch('/api/admin/analytics/live/breakdown', {
+    request: signal => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<BreakdownResponse>)('/api/admin/analytics/live/breakdown', {
       signal,
       query: { scope, window: 60, limit: 10, value: filter || undefined },
     }),
@@ -134,7 +134,7 @@ function createBreakdownPoller() {
 }
 
 const livePoller = createAnalyticsPanelPoller<LiveResponse>({
-  request: signal => $fetch('/api/admin/analytics/live', { signal, query: { window: 60 } }),
+  request: signal => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<LiveResponse>)('/api/admin/analytics/live', { signal, query: { window: 60 } }),
   onSuccess: response => { liveData.value = response },
   isStale: response => response.stale,
   onStateChange: state => { livePollingSnapshot.value = state },
@@ -142,7 +142,7 @@ const livePoller = createAnalyticsPanelPoller<LiveResponse>({
 })
 let breakdownPoller: AnalyticsPanelPoller = createBreakdownPoller()
 const nocPoller = createAnalyticsPanelPoller<NocResponse>({
-  request: signal => $fetch('/api/admin/analytics/noc', { signal, query: { limit: 50 } }),
+  request: signal => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<NocResponse>)('/api/admin/analytics/noc', { signal, query: { limit: 50 } }),
   onSuccess: response => { nocData.value = response },
   isStale: response => response.stale,
   onStateChange: state => { nocPollingSnapshot.value = state },

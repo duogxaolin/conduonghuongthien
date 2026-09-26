@@ -34,7 +34,7 @@ export const useAdminAuth = () => {
     loading.value = true
     try {
       const headers = useRequestHeaders(['cookie']) as Record<string, string>
-      const res = await $fetch<{ ok: boolean; user: AdminUser }>('/api/admin/auth/me', { headers })
+      const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; user: AdminUser }>)(`/api/admin/auth/me`, { headers })
       if (res.ok && res.user) {
         user.value = res.user
       } else {
@@ -53,7 +53,7 @@ export const useAdminAuth = () => {
    * the response type — an account with a factor enabled never gets one here.
    */
   const login = async (username: string, password: string) => {
-    const res = await $fetch<LoginResponse>('/api/admin/auth/login', {
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<LoginResponse>)('/api/admin/auth/login', {
       method: 'POST',
       body: { username, password }
     })
@@ -65,7 +65,7 @@ export const useAdminAuth = () => {
 
   /** Second step of a challenged login: the ticket travels in the `cdkt_mfa` cookie. */
   const verifyMfa = async (method: MfaMethod, code: string) => {
-    const res = await $fetch<LoginResponse>('/api/admin/auth/mfa/verify', {
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<LoginResponse>)('/api/admin/auth/mfa/verify', {
       method: 'POST',
       body: { method, code }
     })
@@ -77,7 +77,7 @@ export const useAdminAuth = () => {
 
   const logout = async () => {
     try {
-      await $fetch('/api/admin/auth/logout', { method: 'POST' })
+      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/auth/logout', { method: 'POST' })
     } finally {
       user.value = null
       navigateTo('/admin/login')

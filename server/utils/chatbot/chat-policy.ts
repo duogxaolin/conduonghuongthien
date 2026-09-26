@@ -19,7 +19,16 @@ export const HOTLINE = CHATBOT_HOTLINE
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
 
 export type ChatMessage = { role?: unknown; sender?: unknown; content?: unknown; text?: unknown }
-export type ChatResult = { answer: string; sources: PublicKnowledgeReference[]; kind: 'curated' | 'provider' | 'small_talk' | 'not_found' | 'unavailable' | 'rate_limited'; retryAfter?: number; askContact?: boolean }
+export type ChatToolCall = { id: string; name: string; arguments?: string }
+
+export type ChatResult = {
+  answer: string
+  sources: PublicKnowledgeReference[]
+  kind: 'curated' | 'provider' | 'small_talk' | 'not_found' | 'unavailable' | 'rate_limited'
+  retryAfter?: number
+  askContact?: boolean
+  toolCalls?: ChatToolCall[]
+}
 export type ChatEvent = H3Event
 export type ChatDependencies = {
   loadPublishedEntries: () => Promise<RetrievalEntry[]>
@@ -228,7 +237,7 @@ async function callProvider(
   history: ChatMessage[],
   onChunk?: (chunk: string) => void | Promise<void>,
   onToolCall?: (event: { name: string; query?: string; status: 'calling' | 'done'; count?: number }) => void | Promise<void>,
-): Promise<{ text: string; toolCalls?: Array<{ name: string; query?: string; count?: number }> } | null> {
+): Promise<{ text: string; toolCalls?: ChatToolCall[] } | null> {
   // logged and budget guard runs. The gateway reads from `ai_service_configs`
   // + `ai_providers`, which are backfilled from `chatbot_settings` on first
   // seed (spec R11.2–R11.3). If the gateway fails (service inactive, no key,
@@ -379,7 +388,7 @@ async function callProvider(
             slug: mediaItems.slug,
             shortId: mediaItems.shortId,
             description: mediaItems.description,
-            posterUrl: mediaItems.posterUrl,
+            thumbnailUrl: mediaItems.thumbnailUrl,
           }).from(mediaItems)
           .where(and(
             eq(mediaItems.status, 'published'),
@@ -394,7 +403,7 @@ async function callProvider(
           return rows.map(r => ({
             title: r.title,
             url: `/media/${r.shortId || r.slug}`,
-            posterUrl: r.posterUrl || null,
+            posterUrl: r.thumbnailUrl || null,
             description: r.description,
           }))
         } catch {
@@ -479,8 +488,10 @@ async function callProvider(
                     id: Number(it.id) || 0,
                     question: it.title,
                     answer: String(it.snippet || it.summary || ''),
+                    topic: String(it.type || ''),
                     source: {
                       label: `${typeLabel}: ${it.title}`,
+                      reference: null,
                       url: String(it.url),
                     },
                   })
@@ -492,7 +503,7 @@ async function callProvider(
       }
       return {
         text: result.text.slice(0, CHAT_LIMITS.maxOutputChars),
-        toolCalls: result.toolCallsExecuted?.map(t => ({ name: t.name, query: t.query, count: t.count })),
+        toolCalls: result.toolCallsExecuted?.map(t => ({ id: `call_${t.name}_${Date.now()}`, name: t.name, arguments: t.query })),
       }
     }
     if (result.error === 'budget_exceeded') return null

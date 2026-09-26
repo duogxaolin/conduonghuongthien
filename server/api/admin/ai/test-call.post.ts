@@ -256,6 +256,7 @@ export default defineEventHandler(async (event) => {
 
     if (pricing) {
       const costResult = calculateAiCost(model, promptTokens, completionTokens, {
+        model,
         promptCostPerMillion: Number(pricing.promptCostPerMillion),
         completionCostPerMillion: Number(pricing.completionCostPerMillion),
       })

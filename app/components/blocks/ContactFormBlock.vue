@@ -236,7 +236,7 @@ const submitForm = async () => {
       type: field.type,
       required: field.required,
     }))
-    await $fetch('/api/submissions', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/submissions', {
       method: 'POST',
       body: {
         type: 'support',

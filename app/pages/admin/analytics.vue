@@ -114,7 +114,7 @@ const loadSummary = async () => {
   initialLoading.value = summary.value === null
   summaryError.value = ''
   try {
-    const response = await $fetch<Summary>('/api/admin/analytics/summary', { query: queryRange(), signal: summaryController.signal })
+    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<Summary>)('/api/admin/analytics/summary', { query: queryRange(), signal: summaryController.signal })
     if (request === summaryRequest) summary.value = response
   } catch (error: unknown) {
     if (request !== summaryRequest || isAbortError(error)) return
@@ -135,7 +135,7 @@ const loadDrill = async () => {
   const query: Record<string, string | number> = { ...queryRange(), perPage: 10 }
   if (selectedValue.value) query[selectedDrill.value === 'pages' ? 'path' : 'filter'] = selectedValue.value
   try {
-    const response = await $fetch<DrillDown>(endpoint, { query, signal: drillController.signal })
+    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<DrillDown>)(endpoint, { query, signal: drillController.signal })
     if (request === drillRequest) drill.value = response
   } catch (error: unknown) {
     if (request !== drillRequest || isAbortError(error)) return

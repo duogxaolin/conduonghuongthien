@@ -10,6 +10,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
 import { languages, langTranslations, articleTranslations, pageBlocks, activityLogs } from '../db/schema'
 import type { ActorLike } from '../utils/permissions'
+import type { BlockData, BlockFieldValue } from '../../app/utils/blocks/types'
 
 // ─── Language CRUD ───────────────────────────────────────────────────────
 
@@ -154,12 +155,12 @@ export async function deleteLanguage(actor: ActorLike, code: string, db: Databas
     // Clean up translations[code] from page_blocks
     const blocks = await tx.select().from(pageBlocks)
     for (const b of blocks) {
-      const rawData = (b.data as Record<string, unknown>) || {}
-      const translations = (rawData.translations as Record<string, unknown>) || {}
+      const rawData = (b.data as BlockData) || {}
+      const translations = (rawData.translations as Record<string, unknown> | undefined) || {}
       if (translations[code]) {
         delete translations[code]
         await tx.update(pageBlocks).set({
-          data: { ...rawData, translations },
+          data: { ...rawData, translations: translations as BlockFieldValue },
         }).where(eq(pageBlocks.id, b.id))
       }
     }
@@ -285,8 +286,9 @@ export async function getTranslationsForPublic(code: string, db: Database = getD
 
   const grouped: Record<string, Record<string, string>> = {}
   for (const row of rows) {
-    if (!grouped[row.group]) grouped[row.group] = {}
-    grouped[row.group][row.key] = row.value ?? ''
+    const g = row.group ?? ''
+    if (!grouped[g]) grouped[g] = {}
+    grouped[g][row.key] = row.value ?? ''
   }
   return grouped
 }

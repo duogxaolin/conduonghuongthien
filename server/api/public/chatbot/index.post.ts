@@ -143,7 +143,7 @@ export default defineEventHandler(async (event) => {
           streamed = true
           res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: delta } }] })}\n\n`)
         },
-        (toolEvt: unknown) => {
+        (toolEvt: { name: string; query?: string; status: 'calling' | 'done'; count?: number }) => {
           res.write(`data: ${JSON.stringify({ chatbot: { toolEvent: toolEvt } })}\n\n`)
         }
       )
