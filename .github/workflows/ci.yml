@@ -264,8 +264,56 @@ jobs:
       # phải khai `file` trỏ tới một tệp có thật, và switch trỏ tới một biến có
       # thật trong step trên.
       - name: Fail if this suite skipped
+        timeout-minutes: 3
         env:
+          # Same DB env as the integration step above. This step re-runs the
+          # suite to count subtests, and without these vars the suite's DB
+          # connect uses the fallback password (`rootpassword`) which the
+          # service container rejects — the connect then hangs/retries and
+          # the step holds the job open until `timeout-minutes` cancels the
+          # whole run. That made `Integration · notification-email` look like
+          # it "kept failing" when its actual test had passed in ~1.7s.
+          TZ: Asia/Ho_Chi_Minh
           ${{ matrix.switch }}: 1
+          ANALYTICS_DDL_PORT: 3306
+          ANALYTICS_DDL_USER: root
+          ANALYTICS_DDL_PASSWORD: test_root_password
+          CHATBOT_DDL_PORT: 3306
+          CHATBOT_DDL_USER: root
+          CHATBOT_DDL_PASSWORD: test_root_password
+          MFA_DDL_PORT: 3306
+          MFA_DDL_USER: root
+          MFA_DDL_PASSWORD: test_root_password
+          VIEW_BOOST_PORT: 3306
+          VIEW_BOOST_USER: root
+          VIEW_BOOST_PASSWORD: test_root_password
+          CHAT_RETENTION_PORT: 3306
+          CHAT_RETENTION_USER: root
+          CHAT_RETENTION_PASSWORD: test_root_password
+          READER_RETENTION_PORT: 3306
+          READER_RETENTION_USER: root
+          READER_RETENTION_PASSWORD: test_root_password
+          INSERT_ID_PORT: 3306
+          INSERT_ID_USER: root
+          INSERT_ID_PASSWORD: test_root_password
+          NOTIFICATION_PAGE_PORT: 3306
+          NOTIFICATION_PAGE_USER: root
+          NOTIFICATION_PAGE_PASSWORD: test_root_password
+          NOTIFICATION_EMAIL_PORT: 3306
+          NOTIFICATION_EMAIL_USER: root
+          NOTIFICATION_EMAIL_PASSWORD: test_root_password
+          SUBMISSION_WORKFLOW_PORT: 3306
+          SUBMISSION_WORKFLOW_USER: root
+          SUBMISSION_WORKFLOW_PASSWORD: test_root_password
+          MEDIA_QUEUE_PORT: 3306
+          MEDIA_QUEUE_USER: root
+          MEDIA_QUEUE_PASSWORD: test_root_password
+          MEDIA_UPLOAD_PORT: 3306
+          MEDIA_UPLOAD_USER: root
+          MEDIA_UPLOAD_PASSWORD: test_root_password
+          LIVESTREAM_TOGGLE_PORT: 3306
+          LIVESTREAM_TOGGLE_USER: root
+          LIVESTREAM_TOGGLE_PASSWORD: test_root_password
         run: |
           set -euo pipefail
           # Chạy lại với một marker: nếu suite tự SKIP, `--test` trả về 0 và không
