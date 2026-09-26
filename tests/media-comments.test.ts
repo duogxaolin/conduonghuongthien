@@ -536,10 +536,11 @@ describe('10.8 — email for a media reply, and never inside the transaction', (
     assert.match(html, /escapeHtml\(url\)/, 'the link is unescaped')
   })
 
-  it('omits the link rather than emitting a relative one', () => {
+  it('builds the link from the request host so one codebase serves many domains', () => {
     // A relative path in an email is a dead string — no page to resolve it
-    // against. The message still goes out; it just says what happened.
-    assert.match(send, /const base = configuredBaseUrl\(\)/, 'the email no longer checks for a base address')
+    // against. The base is always the request's own host (per-domain), not a
+    // fixed PUBLIC_BASE_URL, so a link always points where the reader is.
+    assert.match(send, /const base = requestBase\(input\.event\)/, 'the email no longer derives the base from the request')
     assert.match(send, /url = base \? `\$\{base\}\$\{path\}` : ''/, 'the email builds a link without a base address')
     assert.match(send, /url \? `Xem toàn bộ trao đổi/, 'the plain-text body does not fall back when there is no link')
   })

@@ -15,13 +15,14 @@
  */
 
 import { eq, sql } from 'drizzle-orm'
+import type { H3Event } from 'h3'
 
 import { getDb } from '../utils/db'
 import { articleComments, articles, mediaItems, readerAccounts } from '../db/schema'
 import { getSmtpConfig, sendMail } from '../utils/mailer'
 import { escapeHtml } from '../utils/escape-html'
 import { logError } from '../utils/logger'
-import { configuredBaseUrl } from '../utils/google-oauth/config'
+import { requestBase } from '../utils/google-oauth/config'
 import { buildExcerpt, notificationTargetPage, notificationUrl, sameItemPredicate } from './notifications'
 
 /** Longer than the dropdown excerpt: an email is read once, away from the portal,
@@ -37,6 +38,10 @@ export type ReplyEmailInput = {
   /** Who to tell — resolved by createReplyNotification, so this is already
    *  guaranteed not to be the author of the reply. */
   recipientId: number
+  /** The request the reply was posted from — one codebase may serve several
+   *  domains, and the link in the email must point at the domain the reader
+   *  is actually using, not a fixed `PUBLIC_BASE_URL`. */
+  event: H3Event
 }
 
 /**
@@ -117,15 +122,14 @@ export async function sendReplyEmail(input: ReplyEmailInput): Promise<boolean> {
     const page = notificationTargetPage(olderCount)
 
     /**
-     * An absolute URL, or no link at all.
-     *
-     * A relative path in an email is a dead string — there is no page for the
-     * mail client to resolve it against. When PUBLIC_BASE_URL is unset the
-     * message still goes out, saying what happened, and the reader can reach the
-     * portal themselves; inventing a hostname would produce links that 404 for
-     * everyone.
+     * An absolute URL built from the request's own host, so a link in an email
+     * points at the domain the reader is actually using. One codebase may serve
+     * several domains; a fixed `PUBLIC_BASE_URL` would send every reader from
+     * every domain to the same one. A relative path in an email is a dead
+     * string — there is no page for the mail client to resolve it against — so
+     * the request base is always used here.
      */
-    const base = configuredBaseUrl()
+    const base = requestBase(input.event)
     const path = notificationUrl({
       kind:      target.kind,
       slug:      target.slug,

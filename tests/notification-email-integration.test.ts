@@ -31,6 +31,14 @@ import assert from 'node:assert/strict'
 import net from 'node:net'
 import test from 'node:test'
 import mysql from 'mysql2/promise'
+import type { H3Event } from 'h3'
+
+function mockEvent(host: string): H3Event {
+  return {
+    node: { req: { headers: { host }, socket: { encrypted: true } as unknown as never, url: '/' } },
+    context: {},
+  } as unknown as H3Event
+}
 
 const enabled = process.env.NOTIFICATION_EMAIL_INTEGRATION === '1'
 const host = process.env.NOTIFICATION_EMAIL_HOST || '127.0.0.1'
@@ -145,10 +153,12 @@ test('a reply email reaches SMTP, and a dead mail server costs nothing', {
       username: 'canbo', email: 'canbo@example.com', passwordHash: 'x', roleId: Number(role.insertId),
     })
 
+    const evt = mockEvent('cdht.example.vn')
+
     // ── A top-level comment notifies nobody ────────────────────────────────────
     const top = await createComment({
       readerId: alice, articleId, parentId: null,
-      body: 'Tôi muốn hỏi về thủ tục xoá án tích.', ip: '1.2.3.4', userAgent: 'x',
+      body: 'Tôi muốn hỏi về thủ tục xoá án tích.', ip: '1.2.3.4', userAgent: 'x', event: evt,
     })
     assert.equal(top.ok, true)
     await settle()
@@ -157,7 +167,7 @@ test('a reply email reaches SMTP, and a dead mail server costs nothing', {
     // ── A reader reply emails the parent author ────────────────────────────────
     await createComment({
       readerId: bob, articleId, parentId: (top as { id: number }).id,
-      body: 'Bạn cần mang theo CCCD và đơn xin xác nhận.', ip: '5.6.7.8', userAgent: 'x',
+      body: 'Bạn cần mang theo CCCD và đơn xin xác nhận.', ip: '5.6.7.8', userAgent: 'x', event: evt,
     })
     await settle()
     assert.equal(captured.length, 1, `expected exactly one email, got ${captured.length}`)
@@ -174,7 +184,7 @@ test('a reply email reaches SMTP, and a dead mail server costs nothing', {
     captured.length = 0
     await createComment({
       readerId: alice, articleId, parentId: (top as { id: number }).id,
-      body: 'Cảm ơn.', ip: '1.2.3.4', userAgent: 'x',
+      body: 'Cảm ơn.', ip: '1.2.3.4', userAgent: 'x', event: evt,
     })
     await settle()
     assert.equal(captured.length, 0, 'a reader was emailed about their own reply')
@@ -184,7 +194,7 @@ test('a reply email reaches SMTP, and a dead mail server costs nothing', {
     await createAdminReply({
       parentId: (top as { id: number }).id,
       body: 'Ban quản trị xin trả lời: hồ sơ nộp tại Công an xã nơi cư trú.',
-      actorId: Number(officer.insertId), ip: '9.9.9.9', userAgent: 'x',
+      actorId: Number(officer.insertId), ip: '9.9.9.9', userAgent: 'x', event: evt,
     })
     await settle()
     assert.equal(captured.length, 1, 'the official reply did not reach the citizen')
@@ -196,7 +206,7 @@ test('a reply email reaches SMTP, and a dead mail server costs nothing', {
     await db.update(readerAccounts).set({ emailNotifications: false }).where(eq(readerAccounts.id, alice))
     await createComment({
       readerId: bob, articleId, parentId: (top as { id: number }).id,
-      body: 'Thêm một ý nữa.', ip: '5.6.7.8', userAgent: 'x',
+      body: 'Thêm một ý nữa.', ip: '5.6.7.8', userAgent: 'x', event: evt,
     })
     await settle()
     assert.equal(captured.length, 0, 'a reader who opted out was emailed anyway')
@@ -215,7 +225,7 @@ test('a reply email reaches SMTP, and a dead mail server costs nothing', {
 
     const survived = await createComment({
       readerId: bob, articleId, parentId: (top as { id: number }).id,
-      body: 'Gửi khi máy chủ mail đã tắt.', ip: '5.6.7.8', userAgent: 'x',
+      body: 'Gửi khi máy chủ mail đã tắt.', ip: '5.6.7.8', userAgent: 'x', event: evt,
     })
     assert.equal(survived.ok, true, 'an unreachable SMTP host broke the comment write')
 
