@@ -54,6 +54,7 @@ const read = (relative: string) => readFile(new URL(`../app/${relative}`, import
 const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: string[] }> = [
   // Settings — the group the user asked to start from.
   { file: 'pages/admin/settings/data-retention.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/settings/sitemap.vue', refs: ['error'], retries: ['fetchSitemap'] },
   { file: 'pages/admin/settings/general.vue', refs: ['error'], retries: ['fetchSettings'] },
   { file: 'pages/admin/settings/email.vue', refs: ['error'], retries: ['fetchSettings'] },
   { file: 'pages/admin/settings/media-storage.vue', refs: ['error'], retries: ['fetchSettings'] },

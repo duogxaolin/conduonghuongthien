@@ -89,6 +89,7 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/settings/media-storage.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/tracking.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/data-retention.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/settings/sitemap.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/chatbot/settings.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/chatbot/knowledge/[id].vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/content/pages/index.vue', marker: 'v-if="loading"' },
