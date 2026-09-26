@@ -24,13 +24,20 @@ const toast = useToast()
 const { openPicker } = useImagePicker()
 const { uploading, uploadFile } = useUpload()
 
+const GENERAL_KEYS = [
+  'site_name', 'site_description', 'hotline', 'email', 'address', 'facebook_url',
+  'main_logo_url', 'logo_url', 'hero_banner_url', 'favicon_url',
+] as const
+
 const fetchSettings = async () => {
   loading.value = true
   error.value = ''
   try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null> }>)(`/api/admin/settings`)
     if (res.ok && res.settings) {
-      Object.assign(settings, res.settings)
+      for (const k of GENERAL_KEYS) {
+        if (res.settings[k] != null) (settings as Record<string, string>)[k] = String(res.settings[k])
+      }
     } else {
       error.value = 'Không tải được cài đặt website.'
     }
@@ -44,7 +51,9 @@ const fetchSettings = async () => {
 const handleSave = async () => {
   saving.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/settings`, { method: 'PUT', body: { settings } })
+    const payload: Record<string, string> = {}
+    for (const k of GENERAL_KEYS) payload[k] = (settings as Record<string, string>)[k] ?? ''
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/settings`, { method: 'PUT', body: { settings: payload } })
     if (res.ok) toast.success('Đã lưu cài đặt website thành công!')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu cài đặt'))
