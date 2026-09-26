@@ -197,7 +197,7 @@ export default defineNuxtConfig({
         'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
         'Content-Security-Policy': [
           "default-src 'self'",
-          "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://www.youtube.com https://www.youtube-nocookie.com",
+          "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://cdnjs.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com",
           "style-src 'self' 'unsafe-inline' https://*.delify.vn https://*.conduonghuongthien.vn",
           "img-src 'self' data: https://*.delify.vn https://*.conduonghuongthien.vn",
           "media-src 'self' blob: https://*.delify.vn https://*.conduonghuongthien.vn",
