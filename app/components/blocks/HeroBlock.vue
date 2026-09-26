@@ -74,18 +74,39 @@ import { useI18n } from '~/composables/useI18n'
 const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 
+// Block data (từ Page Builder / DB) là nguồn gốc tiếng Việt. Khi chuyển ngữ,
+// ưu tiên theo thứ tự: (1) bản dịch trong `block.data.translations[lang]` (cán bộ
+// tự dịch trong Page Builder), (2) i18n dictionary (`lang_translations` / hardcode),
+// (3) fallback tiếng Việt gốc. Trước đây `...(props.block?.data || {})` ở cuối
+// **đè** mọi giá trị i18n bằng tiếng Việt cứng → hero không bao giờ dịch.
 const d = computed(() => {
-  const isEn = currentLang.value !== 'vi'
+  const lang = currentLang.value
+  const isVi = lang === 'vi'
+  const data = (props.block?.data || {}) as Record<string, unknown>
+  type Dict = Record<string, string>
+  const translations = (data.translations || {}) as Record<string, Dict>
+  const tr = !isVi ? (translations[lang] || {}) : ({} as Dict)
+  const pick = (field: string, i18nKey: string, fbEn: string, fbVi: string): string => {
+    if (isVi) return String(data[field] ?? fbVi)
+    if (tr[field]) return tr[field]
+    const dict = t(i18nKey)
+    if (dict && dict !== i18nKey) return dict
+    return fbEn
+  }
   return {
-    badge: isEn ? (t('hero_badge') || 'C11 PORTAL - MINISTRY OF PUBLIC SAFETY') : 'CỔNG THÔNG TIN C11 - BỘ CÔNG AN',
-    titleLine1: isEn ? (t('hero_title_line1') || 'Accompanying the') : 'Đồng hành cùng',
-    titleLine2: isEn ? (t('hero_title_line2') || 'Journey of Rehabilitation') : 'hành trình hướng thiện',
-    subtitle: isEn ? (t('hero_subtitle') || 'A comprehensive platform offering vocational, legal, and psychological support to help former inmates reintegrate into society and build sustainable lives.') : 'Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý giúp người chấp hành xong án phạt tù vững vàng tái hòa nhập cộng đồng, xây dựng cuộc sống mới bền vững.',
-    btnAboutText: isEn ? (t('hero_btn_about') || 'About Us') : 'Về chúng tôi',
+    badge: data.badge
+      ? (isVi ? String(data.badge) : (tr.badge || t('hero_badge') || 'C11 PORTAL - MINISTRY OF PUBLIC SAFETY'))
+      : (isVi ? 'CỔNG THÔNG TIN C11 - BỘ CÔNG AN' : (t('hero_badge') || 'C11 PORTAL - MINISTRY OF PUBLIC SAFETY')),
+    titleLine1: pick('titleLine1', 'hero_title_line1', 'Accompanying the', 'Đồng hành cùng'),
+    titleLine2: pick('titleLine2', 'hero_title_line2', 'Journey of Rehabilitation', 'hành trình hướng thiện'),
+    subtitle: pick('subtitle', 'hero_subtitle', 'A comprehensive platform offering vocational, legal, and psychological support to help former inmates reintegrate into society and build sustainable lives.', 'Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý giúp người chấp hành xong án phạt tù vững vàng tái hòa nhập cộng đồng, xây dựng cuộc sống mới bền vững.'),
+    btnAboutText: isVi ? 'Về chúng tôi' : (t('hero_btn_about') || 'About Us'),
     btnAboutLink: '/about',
-    btnHelpText: isEn ? (t('hero_btn_help') || 'Request Support') : 'Gửi yêu cầu trợ giúp',
+    btnHelpText: isVi ? 'Gửi yêu cầu trợ giúp' : (t('hero_btn_help') || 'Request Support'),
     btnHelpLink: '#tro-giup',
-    ...(props.block?.data || {}),
+    bgImage: data.bgImage,
+    btnAbout: data.btnAbout,
+    btnHelp: data.btnHelp,
   }
 })
 const bgImage = computed(() => d.value.bgImage || '/assets/hero_banner.jpg')
