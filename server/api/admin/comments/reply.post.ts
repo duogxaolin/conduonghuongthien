@@ -38,6 +38,7 @@ export default defineEventHandler(async (event) => {
     actorId:   actor.id,
     ip:        getClientIp(event),
     userAgent: getRequestHeader(event, 'user-agent') || null,
+    event,
   })
 
   if (!result.ok) throw createError({ statusCode: result.statusCode, statusMessage: result.message })

@@ -2,11 +2,13 @@
  * Google OAuth endpoints and the redirect URI.
  *
  * The redirect URI is the one string in this flow that has to match, byte for
- * byte, a value registered in the Google Cloud console. That is why it is
- * DERIVED — from PUBLIC_BASE_URL, or failing that from the request itself — and
- * never accepted from an operator field or stored in the database: an
- * operator-entered value that differs by a trailing slash or a `www.` produces
- * `redirect_uri_mismatch` at Google, a failure whose cause is invisible from
+ * byte, a value registered in the Google Cloud console. It is always DERIVED
+ * from the request itself — scheme + host as the browser sees it — so one
+ * codebase can serve several domains and each domain needs its own Authorized
+ * redirect URI registered in Google Console. `PUBLIC_BASE_URL` is kept only as
+ * a reference value shown on the settings page; it never overrides the request
+ * host. An operator-entered value would differ by a trailing slash or `www.`
+ * and produce `redirect_uri_mismatch` at Google, a failure invisible from
  * inside the app.
  */
 
@@ -47,8 +49,11 @@ function forwardedTrusted(event: H3Event): boolean {
   return isTrustedProxy(peer ?? null, trustedProxies())
 }
 
-/** Scheme + host of this deployment, as the browser sees it. */
-function requestBase(event: H3Event): string {
+/** Scheme + host of this deployment, as the browser sees it. Exported so the
+ *  email notification service can derive the same per-request base URL — one
+ *  codebase may serve several domains, and a link in an email must point at the
+ *  domain the reply was posted from, not a fixed `PUBLIC_BASE_URL`. */
+export function requestBase(event: H3Event): string {
   const trusted = forwardedTrusted(event)
 
   const forwardedProto = trusted ? getRequestHeader(event, 'x-forwarded-proto') : null
@@ -86,8 +91,7 @@ export function configuredBaseUrl(): string {
 }
 
 export function resolveRedirectUri(event: H3Event): string {
-  const base = configuredBaseUrl() || stripTrailingSlashes(requestBase(event))
-  return `${base}${GOOGLE_CALLBACK_PATH}`
+  return `${stripTrailingSlashes(requestBase(event))}${GOOGLE_CALLBACK_PATH}`
 }
 
 /**
@@ -98,6 +102,5 @@ export function resolveRedirectUri(event: H3Event): string {
  * separate Authorized redirect URI.
  */
 export function resolveDriveRedirectUri(event: H3Event): string {
-  const base = configuredBaseUrl() || stripTrailingSlashes(requestBase(event))
-  return `${base}${DRIVE_CALLBACK_PATH}`
+  return `${stripTrailingSlashes(requestBase(event))}${DRIVE_CALLBACK_PATH}`
 }

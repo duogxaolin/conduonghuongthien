@@ -130,6 +130,9 @@ export type SerializedDriveOauthConfig = {
   isEnabled:           boolean
   redirectUri:         string
   redirectUriSource:   'config' | 'request'
+  /** Configured `PUBLIC_BASE_URL`, or empty — reference only; the redirect URI
+   *  is always built from the request host so one codebase serves many domains. */
+  publicBaseUrl:       string
   missing:             string[]
   updatedAt:           Date | null
 }
@@ -153,6 +156,7 @@ export function serializeDriveOauthConfig(row: BackupDriveOauthConfig, event: H3
     // Derived, never stored — cán bộ copy sang Google Console, phải khớp byte-byte.
     redirectUri:        resolveDriveRedirectUri(event),
     redirectUriSource:  configuredBaseUrl() ? 'config' : 'request',
+    publicBaseUrl:      configuredBaseUrl(),
     missing,
     updatedAt:          row.updatedAt ?? null,
   }
