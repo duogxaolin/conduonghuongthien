@@ -81,13 +81,31 @@ export async function sendMail(args: SendMailArgs): Promise<void> {
     port: config.port,
     secure: config.secure,
     auth: config.pass ? { user: config.user, pass: config.pass } : undefined,
+    // Short, explicit timeouts so an unreachable/dead SMTP host fails fast
+    // instead of holding the socket (and the Node event loop) open for the
+    // default ~minutes-long TCP timeout. The "3C" policy means a mail outage
+    // must never block the comment/request that triggered the send, and a
+    // hung transport is exactly the shape that turns a mail outage into a
+    // request outage. 5s is well under any plausible SMTP round-trip.
+    connectionTimeout: 5_000,
+    greetingTimeout: 5_000,
+    socketTimeout: 5_000,
   })
 
-  await transport.sendMail({
-    from: config.from,
-    to: args.to,
-    subject: args.subject,
-    text: args.text,
-    html: args.html,
-  })
+  try {
+    await transport.sendMail({
+      from: config.from,
+      to: args.to,
+      subject: args.subject,
+      text: args.text,
+      html: args.html,
+    })
+  } finally {
+    // Close releases the pooled sockets nodemailer keeps idle for reuse.
+    // Without this the transport pins the event loop open — the Node test
+    // runner waits for a natural exit that never comes, and the suite times
+    // out minutes after its single assertion already passed. In production
+    // each request makes its own transport, so closing here leaks nothing.
+    transport.close()
+  }
 }

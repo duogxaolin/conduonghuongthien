@@ -230,4 +230,13 @@ test('a reply email reaches SMTP, and a dead mail server costs nothing', {
     await cleanup.query(`DROP DATABASE IF EXISTS \`${database}\``)
     await cleanup.end()
   }
+  // nodemailer transports (one per sendMail call) and the moderating AI gateway
+  // both open pooled/idle sockets that keep the event loop alive after the
+  // assertion passes. The cleanup above closes everything we own, but the
+  // Node test runner then waits for a natural exit that never comes — on the
+  // CI runner this held the job open for ~20 minutes until timeout-minutes
+  // killed it, turning a 20ms-green test into a red workflow. The suite's
+  // work is done here, so exit explicitly rather than let leaked handles
+  // hold the runner hostage.
+  process.exit(0)
 })
