@@ -140,6 +140,11 @@ export default defineNuxtConfig({
     // mục mới, và mọi khách thấy cùng một danh sách nên không có gì riêng tư để
     // rò rỉ qua bộ nhớ đệm.
     '/qa-documents': { swr: 60 },
+
+    // Sitemap + robots — route động (server/routes/*.ts), có thể đệm 60 giây
+    // vì nội dung chỉ đổi khi admin lưu lại qua /admin/settings/sitemap.
+    '/sitemap.xml': { swr: 60 },
+    '/robots.txt': { swr: 60 },
     // Thư viện video công khai. Cùng lý do như `/qa-documents`: mọi khách thấy
     // cùng một danh sách, và nội dung chỉ đổi khi cán bộ xuất bản một mục mới.
     //
@@ -164,6 +169,44 @@ export default defineNuxtConfig({
     // không bao giờ bị phục vụ nhầm.
     '/assets/fonts/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
     '/assets/fontawesome/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
+
+    /**
+     * Security headers cho mọi response 200 (trang HTML SSR + tài nguyên).
+     *
+     * Trước đây chỉ `/api/**` và trang lỗi 404/4xx có CSP/XFO/nosniff (do Nitro
+     * error handler tự gắn), còn trang công khai `/`, `/news`, `/admin/login` —
+     * đúng những trang người dùng thật truy cập — lại không có. Bốn báo cáo
+     * OWASP black-box đều hội tụ về điểm này: không có `frame-ancestors`/XFO
+     * → clickjacking khả thi trên trang login; không có CSP → mất lớp phòng
+     * cuối nếu XSS lọt qua Vue auto-escape hay sanitizeHtml.
+     *
+     * CSP cho `*.delify.vn` + `*.conduonghuongthien.vn` (R2 CDN + domain cổng
+     * + subdomain sau này) thay cho `https:` rộng — đổi `r2_public_url` sang
+     * domain ngoài hai nhánh này thì **phải** cập nhật CSP, đó là ràng buộc cố
+     * ý: CSP tồn tại để chặn domain lạ. `'unsafe-inline'` cho script/style vì
+     * Nuxt hydration + Tailwind dùng inline; `'unsafe-eval'` không có.
+     */
+    '/**': {
+      headers: {
+        'X-Frame-Options': 'DENY',
+        'X-Content-Type-Options': 'nosniff',
+        'Referrer-Policy': 'strict-origin-when-cross-origin',
+        'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+        'Content-Security-Policy': [
+          "default-src 'self'",
+          "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://www.youtube.com https://www.youtube-nocookie.com",
+          "style-src 'self' 'unsafe-inline'",
+          "img-src 'self' data: https://*.delify.vn https://*.conduonghuongthien.vn",
+          "font-src 'self'",
+          "frame-src https://www.youtube-nocookie.com",
+          "connect-src 'self' https://static.cloudflareinsights.com",
+          "frame-ancestors 'none'",
+          "base-uri 'self'",
+          "form-action 'self'",
+          "object-src 'none'",
+        ].join('; '),
+      },
+    },
   },
 
   runtimeConfig: {

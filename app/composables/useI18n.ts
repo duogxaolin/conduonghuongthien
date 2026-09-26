@@ -33,6 +33,10 @@ export const useI18n = () => {
     default: () => DEFAULT_LOCALE,
     maxAge: 60 * 60 * 24 * 365,
     sameSite: 'lax',
+    // Secure trong production: trang phục vụ qua HTTPS (Cloudflare kết thúc TLS),
+    // nên cookie ngôn ngữ không có lý do đi qua HTTP trần. SameSite=Lax một mình
+    // không đủ — một lược downgrade/MITM vẫn đọc được nó nếu thiếu Secure.
+    secure: process.env.NODE_ENV === 'production',
   })
   const dbLanguages = useState<LocaleOption[]>('dbLanguages', () => [])
 
