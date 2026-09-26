@@ -174,39 +174,33 @@
                         {{ copiedMsgId === msg.id ? 'Đã chép' : 'Sao chép' }}
                       </button>
                     </div>
-                    <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-2 mb-0 list-none space-y-2 border-t border-[#e1e8e0] pl-0 pt-2" aria-label="Nguồn tham khảo">
-                      <li v-for="source in msg.sources" :key="source.id" class="text-[0.74rem] leading-snug text-[#4A5545]">
-                        <i class="fa-solid fa-link mr-1 text-[0.58rem] text-[#7CB342]" aria-hidden="true"></i>
+                    <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-1.5 mb-0 list-none space-y-1 border-t border-[#e1e8e0] pl-0 pt-1.5" aria-label="Nguồn tham khảo">
+                      <li v-for="source in msg.sources" :key="source.id" class="text-[0.7rem] leading-snug text-[#4A5545]">
+                        <i class="fa-solid fa-link mr-1 text-[0.54rem] text-[#7CB342]" aria-hidden="true"></i>
                         <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2">{{ source.label }}</a>
                         <span v-else class="font-semibold">{{ source.label }}</span>
-                        <span v-if="source.reference" class="text-[#6b7280]"> — {{ source.reference }}</span>
 
-                        <!-- Most imported rows have a label and no URL, so this is
-                             the only way to read the text behind the citation. -->
                         <button
                           v-if="source.entryId !== null"
                           type="button"
-                          class="mt-1 flex cursor-pointer items-center gap-1 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-2.5 py-0.5 text-[0.72rem] font-semibold text-[#1e4620] transition-colors hover:bg-[#1e4620] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                          class="ml-1 inline-flex cursor-pointer items-center gap-0.5 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-2 py-px text-[0.66rem] font-semibold text-[#1e4620] transition-colors hover:bg-[#1e4620] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
                           :aria-expanded="isSourceExpanded(source.entryId)"
                           @click="toggleSourceDetail(source.entryId)"
                         >
-                          <i class="fa-solid fa-book-open text-[0.62rem]" aria-hidden="true"></i>
+                          <i class="fa-solid fa-book-open text-[0.56rem]" aria-hidden="true"></i>
                           {{ isSourceExpanded(source.entryId) ? 'Thu gọn' : 'Xem đầy đủ' }}
                         </button>
 
-                        <div v-if="isSourceExpanded(source.entryId)" class="mt-2 rounded-xl border border-[#e1e8e0] bg-[#f8faf8] px-3 py-2.5">
-                          <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.72rem] text-[#667768]" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
+                        <div v-if="isSourceExpanded(source.entryId)" class="mt-1 rounded-lg border border-[#e1e8e0] bg-[#f8faf8] px-2.5 py-1.5">
+                          <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.68rem] text-[#667768]" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
                           <div v-else-if="sourceDetailOf(source.entryId)?.status === 'error'" role="alert">
-                            <p class="m-0 text-[0.72rem] text-[#b42318]">Không tải được nội dung đầy đủ.</p>
-                            <button type="button" class="mt-1.5 cursor-pointer rounded-full border-none bg-[#1e4620] px-3 py-1 text-[0.7rem] font-bold text-white hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]" @click="retrySourceDetail(source.entryId)">Thử lại</button>
+                            <p class="m-0 text-[0.68rem] text-[#b42318]">Không tải được nội dung đầy đủ.</p>
+                            <button type="button" class="mt-1 cursor-pointer rounded-full border-none bg-[#1e4620] px-2.5 py-0.5 text-[0.66rem] font-bold text-white hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]" @click="retrySourceDetail(source.entryId)">Thử lại</button>
                           </div>
                           <template v-else-if="sourceDetailOf(source.entryId)?.status === 'ready'">
-                            <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1.5 text-[0.76rem] font-bold text-[#1e4620]">{{ sourceDetailOf(source.entryId)?.question }}</p>
-                            <p class="m-0 whitespace-pre-wrap text-[0.76rem] leading-[1.65] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
-                            <!-- Expanding in place keeps the visitor in their
-                                 conversation; this is the way out to the surrounding
-                                 topic. -->
-                            <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-2 inline-block text-[0.72rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
+                            <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.72rem] font-bold text-[#1e4620]">{{ sourceDetailOf(source.entryId)?.question }}</p>
+                            <p class="m-0 whitespace-pre-wrap text-[0.72rem] leading-[1.55] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
+                            <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1 inline-block text-[0.68rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
                           </template>
                         </div>
                       </li>
