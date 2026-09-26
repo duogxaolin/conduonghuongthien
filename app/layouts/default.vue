@@ -38,7 +38,7 @@
               @click="isLangMenuOpen = !isLangMenuOpen"
             >
               <span class="text-sm leading-none">{{ currentLocaleFlag }}</span>
-              <span class="font-bold text-xs">{{ currentLocale.name }}</span>
+              <span class="font-bold text-xs whitespace-nowrap">{{ currentLocale.name }}</span>
               <i class="fa-solid fa-chevron-down text-[0.6rem] transition-transform opacity-80" :class="isLangMenuOpen ? 'rotate-180' : ''"></i>
             </button>
 
@@ -89,7 +89,7 @@
          isSticky nay chỉ bật/tắt shadow — không đổi position nữa. -->
     <header
       class="main-header notranslate bg-white w-full sticky top-0 z-[10001] border-b border-[#E2E8DF] transition-[box-shadow]"
-      :class="isSticky ? 'shadow-md' : 'shadow-none'"
+      :class="[isSticky ? 'shadow-md' : 'shadow-none', isMobileMenuOpen ? '!z-[10008]' : '']"
       translate="no"
     >
       <!-- Dòng 1: Logo & Các nút hành động nhanh -->
