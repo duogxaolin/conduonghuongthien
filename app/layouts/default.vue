@@ -15,7 +15,7 @@
     <ToastContainer />
     <!-- Mobile Menu Overlay -->
     <div
-      class="fixed inset-0 w-screen h-screen bg-[rgba(20,43,23,0.58)] backdrop-blur-[2px] z-[10000] opacity-0 pointer-events-none transition-opacity duration-300"
+      class="fixed inset-0 w-screen h-screen bg-[rgba(20,43,23,0.58)] backdrop-blur-[2px] z-[10006] opacity-0 pointer-events-none transition-opacity duration-300"
       :class="{ 'opacity-100 pointer-events-auto': isMobileMenuOpen }"
       @click="toggleMobileMenu"
     ></div>
@@ -223,7 +223,7 @@
 
       <!-- Mobile Drawer Nav -->
       <nav
-        class="fixed top-0 w-[min(88vw,380px)] max-w-full h-[100dvh] flex flex-col bg-white shadow-[-12px_0_40px_rgba(15,35,18,0.24)] z-[10002] transition-[right] duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden lg:hidden"
+        class="fixed top-0 w-[min(88vw,380px)] max-w-full h-[100dvh] flex flex-col bg-white shadow-[-12px_0_40px_rgba(15,35,18,0.24)] z-[10007] transition-[right] duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden lg:hidden"
         :class="isMobileMenuOpen ? 'right-0' : '-right-full'"
         @click="onNavClick" @keydown.escape="toggleMobileMenu"
       >
