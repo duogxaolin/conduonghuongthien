@@ -198,10 +198,10 @@ export default defineNuxtConfig({
         'Content-Security-Policy': [
           "default-src 'self'",
           "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://cdnjs.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com",
-          "style-src 'self' 'unsafe-inline' https://*.delify.vn https://*.conduonghuongthien.vn",
+          "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn",
           "img-src 'self' data: https://*.delify.vn https://*.conduonghuongthien.vn",
           "media-src 'self' blob: https://*.delify.vn https://*.conduonghuongthien.vn",
-          "font-src 'self' https://*.delify.vn https://*.conduonghuongthien.vn",
+          "font-src 'self' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn",
           "frame-src https://www.youtube-nocookie.com https://*.delify.vn https://*.conduonghuongthien.vn",
           "connect-src 'self' https://static.cloudflareinsights.com https://*.delify.vn https://*.conduonghuongthien.vn",
           "frame-ancestors 'none'",
