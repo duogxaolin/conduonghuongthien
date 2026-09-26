@@ -32,6 +32,7 @@
  */
 
 import { and, desc, eq, inArray, isNotNull, isNull, sql } from 'drizzle-orm'
+import type { H3Event } from 'h3'
 import { getDb } from '../utils/db'
 import { activityLogs, articleComments, articles, mediaItems, readerAccounts, users } from '../db/schema'
 import { isIpBanned } from '../utils/ip-ban'
@@ -295,6 +296,10 @@ export type CreateCommentInput = {
   body:      string
   ip:        string | null
   userAgent: string | null
+  /** The request the comment was posted from — forwarded to sendReplyEmail so
+   *  the link in the notification points at the domain the reader is using, not
+   *  a fixed `PUBLIC_BASE_URL`. One codebase may serve several domains. */
+  event:     H3Event
 }
 
 export type CreateCommentResult =
@@ -496,7 +501,7 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
    * request context when a handler returns, cutting a loose promise mid-flight.
    */
   if (notifiedReaderId !== null && input.parentId !== null) {
-    await sendReplyEmail({ commentId: id, parentId: input.parentId, recipientId: notifiedReaderId })
+    await sendReplyEmail({ commentId: id, parentId: input.parentId, recipientId: notifiedReaderId, event: input.event })
   }
   if (id > 0) {
     void checkAndModerateContent({
@@ -997,6 +1002,7 @@ export async function createAdminReply(params: {
   actorId:  number
   ip:       string | null
   userAgent: string | null
+  event:    H3Event
 }): Promise<AdminReplyResult> {
   const db = getDb()
 
@@ -1088,7 +1094,7 @@ export async function createAdminReply(params: {
   // After the commit, never inside it — an unreachable SMTP host must not hold
   // this reply's row locks open for a network timeout. See createComment.
   if (notifiedReaderId !== null) {
-    await sendReplyEmail({ commentId: id, parentId: parent.id, recipientId: notifiedReaderId })
+    await sendReplyEmail({ commentId: id, parentId: parent.id, recipientId: notifiedReaderId, event: params.event })
   }
 
   return { ok: true, id }

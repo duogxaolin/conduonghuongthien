@@ -115,6 +115,7 @@ export default defineEventHandler(async (event) => {
     body:      validation.body,
     ip:        getClientIp(event),
     userAgent: getRequestHeader(event, 'user-agent') || null,
+    event,
   })
 
   if (!result.ok) {

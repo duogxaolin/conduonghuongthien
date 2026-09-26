@@ -25,6 +25,8 @@ type Settings = {
   defaultCommentsEnabled: boolean
   redirectUri: string
   redirectUriSource: 'config' | 'request'
+  /** Configured PUBLIC_BASE_URL — reference only, never overrides the request host. */
+  publicBaseUrl: string
   missing: string[]
   updatedAt: string | null
 }
@@ -199,9 +201,17 @@ onMounted(load)
             @click="copyRedirectUri"
           >{{ copied ? 'Đã sao chép' : 'Sao chép' }}</button>
         </div>
-        <p v-if="settings.redirectUriSource === 'request'" class="m-0 mt-2 text-xs text-[#8a7320]">
+        <div v-if="settings.publicBaseUrl" class="mt-3 rounded-lg border border-[#e6d9a8] bg-[#fdfaf0] px-3.5 py-2.5 text-xs text-[#7a6420]">
+          <p class="m-0">
+            <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
+            <code class="rounded bg-[#f8faf8] px-1">PUBLIC_BASE_URL</code> đang đặt là
+            <code class="rounded bg-[#f8faf8] px-1 break-all">{{ settings.publicBaseUrl }}</code> (chỉ tham khảo).
+          </p>
+          <p class="m-0 mt-1">Đăng nhập luôn dùng tên miền của yêu cầu hiện tại — một codebase phục vụ nhiều tên miền, mỗi tên miền cần đăng ký riêng trong Google Console.</p>
+        </div>
+        <p v-else class="m-0 mt-2 text-xs text-[#667768]">
           <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
-          Chưa đặt <code class="rounded bg-[#f8faf8] px-1">PUBLIC_BASE_URL</code>, nên giá trị trên lấy theo tên miền của chính yêu cầu này. Sau reverse proxy hoặc khi đổi tên miền, chuỗi có thể khác đi và Google sẽ từ chối. Hãy đặt biến đó ở môi trường sản xuất.
+          Redirect URI lấy theo tên miền của yêu cầu hiện tại. Một codebase phục vụ nhiều tên miền, mỗi tên miền cần đăng ký riêng trong Google Console.
         </p>
       </section>
 

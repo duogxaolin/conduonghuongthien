@@ -133,6 +133,10 @@ export type SerializedGoogleOAuthSettings = {
   defaultCommentsEnabled: boolean
   redirectUri:            string
   redirectUriSource:      'config' | 'request'
+  /** The configured `PUBLIC_BASE_URL`, or empty. Shown on the settings page as
+   *  a reference only — the redirect URI above is always built from the request
+   *  host, so one codebase can serve several domains. */
+  publicBaseUrl:          string
   missing:                string[]
   updatedAt:              Date | null
 }
@@ -172,6 +176,7 @@ export function serializeGoogleOAuthSettings(settings: GoogleOauthSettings, even
     // deployment that set only NUXT_PUBLIC_BASE_URL — the page would print a
     // warning about a fallback it is not actually using.
     redirectUriSource:      configuredBaseUrl() ? 'config' : 'request',
+    publicBaseUrl:          configuredBaseUrl(),
     missing,
     updatedAt:              settings.updatedAt ?? null,
   }
