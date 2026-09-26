@@ -104,7 +104,11 @@ test('backups are not committed to the repository', () => {
 // ─── CI ──────────────────────────────────────────────────────────────────────
 test('CI runs the tests, the drift check and a real build', () => {
   const workflow = read('.github/workflows/ci.yml')
-  assert.match(workflow, /run: npm test/)
+  // CI tách thành unit-tests + integration-tests + schema-drift. Cả hai job
+  // test đều gọi Node test runner trực tiếp (không qua `npm test`) để có thể
+  // lọc tệp. Assertion này canh Biblical: test runner phải được gọi, và phải
+  // gọi cho cả hai nhóm (unit và integration).
+  assert.match(workflow, /--import \.\/scripts\/ts-resolver\.mjs --test/, 'CI must invoke the Node test runner')
   assert.match(workflow, /run: npm run db:drift/)
   assert.match(workflow, /run: npm run build/)
   assert.match(workflow, /on:\s*\n\s*push:/)
@@ -151,13 +155,23 @@ test('the unit suite runs east of UTC, where the local-day bugs live', () => {
   // green tick to a scheduler that never runs on the servers it ships to. Any date
   // logic reading a local hour or local day shares the blind spot, which is why the
   // whole suite runs shifted rather than one file.
+  //
+  // Cả hai job (unit-tests và integration-tests) đều phải chạy ở UTC+7 — không
+  // chỉ một. Scheduler bug sống trong integration suite (analytics-ddl), nhưng
+  // bất kỳ tệp unit nào đọc ngày địa phương cũng cùng điểm mù.
   const workflow = read('.github/workflows/ci.yml')
-  const testJob = workflow.slice(workflow.indexOf('\n  test:'), workflow.indexOf('\n  build:'))
+  const unitJob = workflow.slice(workflow.indexOf('\n  unit-tests:'), workflow.indexOf('\n  integration-tests:'))
+  const integrationJob = workflow.slice(workflow.indexOf('\n  integration-tests:'), workflow.indexOf('\n  schema-drift:'))
 
   assert.match(
-    testJob,
+    unitJob,
     /TZ: Asia\/Ho_Chi_Minh/,
     'the unit suite runs at the runner default (UTC), so local-day bugs pass CI',
+  )
+  assert.match(
+    integrationJob,
+    /TZ: Asia\/Ho_Chi_Minh/,
+    'the integration suite runs at the runner default (UTC), so local-day bugs pass CI',
   )
 })
 
@@ -184,12 +198,12 @@ test('nothing reaches the VPS without passing every gate first', () => {
   // The image job depends on every gate job, and deploy depends on the image
   // job. Drop one name here and a commit that fails a gate ships anyway.
   const imageNeeds = /image:\s*\n[\s\S]*?needs: \[([^\]]+)\]/.exec(workflow)?.[1] ?? ''
-  for (const gate of ['test', 'build', 'hygiene']) {
+  for (const gate of ['unit-tests', 'integration-tests', 'schema-drift', 'build', 'hygiene']) {
     assert.ok(imageNeeds.includes(gate), `the image job does not wait for the ${gate} job`)
   }
 
   /**
-   * Typecheck KHÔNG còn là một job riêng — nó là một bước trong job `test`.
+   * Typecheck KHÔNG còn là một job riêng — nó là một bước trong job `unit-tests`.
    *
    * Gộp vào vì mỗi job là một runner phải xin cấp riêng, và trên tài khoản này
    * hai job nhẹ nhất liên tục bị huỷ sau ~15 phút xếp hàng mà **chưa bao giờ
@@ -197,15 +211,15 @@ test('nothing reaches the VPS without passing every gate first', () => {
    * chưa từng chạy.
    *
    * Nhưng nó vẫn phải là cổng **chặn**, và đó là điều hai khẳng định dưới đây
-   * canh: bước tồn tại trong job `test` (job mà `image` đã chờ), và nó `exit`
-   * theo mã trạng thái thật thay vì nuốt lỗi. Bỏ `exit $status` đi là biến một
-   * cổng chặn thành một dòng nhật ký, mà nhìn từ bảng CI thì hai thứ đó giống
-   * hệt nhau — cùng một dấu tích xanh.
+   * canh: bước tồn tại trong job `unit-tests` (job mà `image` đã chờ), và nó
+   * `exit` theo mã trạng thái thật thay vì nuốt lỗi. Bỏ `exit $status` đi là
+   * biến một cổng chặn thành một dòng nhật ký, mà nhìn từ bảng CI thì hai thứ
+   * đó giống hệt nhau — cùng một dấu tích xanh.
    */
-  const testJob = /\n  test:\n([\s\S]*?)(?=\n  [a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
-  assert.match(testJob, /- name: Typecheck/,
-    'bước Typecheck không còn trong job `test` — cổng kiểu đã biến mất khỏi CI')
-  assert.match(testJob, /exit \$status/,
+  const unitJob = /\n  unit-tests:\n([\s\S]*?)(?=\n  [a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
+  assert.match(unitJob, /- name: Typecheck/,
+    'bước Typecheck không còn trong job `unit-tests` — cổng kiểu đã biến mất khỏi CI')
+  assert.match(unitJob, /exit \$status/,
     'Typecheck không thoát theo mã trạng thái thật — một lỗi kiểu sẽ hiện ra là màu xanh')
   assert.match(workflow, /deploy:\s*\n[\s\S]*?needs: image/, 'deploy does not wait for the image')
   // Deploying a pull request would push a fork's code onto the server.

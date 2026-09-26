@@ -46,26 +46,82 @@ env:
   ANALYTICS_HMAC_SECRET: ci-placeholder-not-a-real-secret-000000
 
 jobs:
-  # Typecheck chạy TRONG job này, không phải một job riêng.
-  #
-  # Nó từng là job thứ tư chạy song song, và mỗi job là một runner phải xin cấp
-  # riêng. Trên tài khoản này, hai job nhẹ nhất **liên tục bị huỷ sau ~15 phút
-  # xếp hàng mà chưa bao giờ được cấp máy** (`runner: ""`, `steps_run: 0`) —
-  # tức là bảng CI báo đỏ cho một thứ chưa từng chạy. Gộp vào đây cũng bỏ được
-  # một lượt `npm ci` trùng lặp.
-  #
-  # Vẫn là cổng CHẶN: bước typecheck `exit $status`, nên một lỗi kiểu vẫn làm
-  # job này đỏ. Cái đổi là số runner phải xin, không phải mức nghiêm ngặt.
-  test:
-    name: Tests and schema drift
+  # ── Unit tests (không cần MySQL) ───────────────────────────────────────────
+  # Tách khỏi integration để hai nhóm chạy song song trên hai runner. Trước đây
+  # `npm test` chạy 140 tệp trong một job, trong đó 13 integration suite mỗi
+  # cái dựng + drop một DB throwaway — đo lần cuối bước test chạy đến `ok 900`
+  # trong 25 phút rồi bị GitHub cancel ở 60 phút. Tách ra:
+  #   - job này: 127 tệp non-integration, không cần MySQL, ~30 phút trên runner
+  #     chậm. Typecheck gộp vào đây (giữ nguyên triết lý cũ: không phải job riêng
+  #     để khỏi phải xin thêm runner mà hay bị queue).
+  #   - job integration-tests: 13 tệp *-integration, cần MySQL service.
+  #   - job schema-drift: `npm run db:drift`, cần MySQL, chạy nhanh.
+  unit-tests:
+    name: Unit and typecheck
     runs-on: ubuntu-latest
-    # Job này chạy `npm test` — 2043 test bao gồm 9 integration suites, mỗi
-    # suite dựng + drop một DB throwaway qua MySQL service container. GitHub
-    # runner chậm hơn local một bậc: đo lần cuối bước "Unit and contract
-    # tests" chạy đến `ok 900` trong 25 phút rồi bị GitHub cancel — tỉ lệ
-    # ~36 test/phút, cần ~57 phút cho hết. 60 phút là trần cho phép của job
-    # kế tiếp (deploy) nên đây là mức an toàn không lấn chiếm kênh deploy.
-    timeout-minutes: 60
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+      - name: Install FFmpeg
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+
+      # Unit + contract tests — mọi tệp trừ *-integration (chúng cần MySQL và
+      # chạy ở job integration-tests bên dưới). Lọc bằng find để không phụ thuộc
+      # shell glob của runner. Bỏ qua 13 tệp integration để job này không cần
+      # service container và chạy nhanh hơn.
+      - name: Unit and contract tests (no DB)
+        env:
+          # Run at the deployment's timezone, not the runner's UTC. Xem lý do
+          # đầy đủ ở job integration-tests bên dưới — tóm lại: scheduler ngày
+          # địa phương đọc UTC sẽ bỏ lượt nightly mỗi đêm mãi mãi ở UTC+7.
+          TZ: Asia/Ho_Chi_Minh
+        run: |
+          set -euo pipefail
+          # Liệt kê mọi tệp *.test.ts KHÔNG kết thúc bằng -integration.test.ts
+          files=$(find tests -maxdepth 1 -name '*.test.ts' ! -name '*-integration.test.ts' | sort)
+          echo "Running $(echo "$files" | wc -l) unit test files"
+          node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test $files
+
+      - name: Typecheck
+        continue-on-error: true
+        run: |
+          set +e
+          npx nuxt typecheck > /tmp/tsc.log 2>&1
+          status=$?
+          set -e
+          errors=$(grep -cE 'error TS[0-9]+' /tmp/tsc.log || true)
+          {
+            echo "### Typecheck"
+            echo
+            echo "**$errors** type error(s) reported."
+            echo
+            echo '<details><summary>Last 200 lines</summary>'
+            echo
+            echo '```'
+            tail -200 /tmp/tsc.log
+            echo '```'
+            echo
+            echo '</details>'
+          } >> "$GITHUB_STEP_SUMMARY"
+          tail -80 /tmp/tsc.log
+          exit $status
+
+  # ── Integration tests (cần MySQL) ──────────────────────────────────────────
+  # 13 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
+  # service container. Đây là phần nặng nhất và hay đẩy job cũ vượt 60 phút.
+  # Tách ra để nó có thể chạy song song với unit-tests, và nếu runner chậm thì
+  # chỉ job này kéo dài, không làm unit-tests hay schema-drift bị timeout theo.
+  integration-tests:
+    name: Integration tests (MySQL)
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
     services:
       mysql:
         image: mysql:8.0
@@ -87,18 +143,15 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
 
-      # `nuxt prepare` (postinstall) needs no network beyond the registry.
       - run: npm ci
       - name: Install FFmpeg
         run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
 
-
-      # All six integration suites are switched on here. Each one creates and
-      # drops its own single-use database, so they cannot collide with each other
-      # or with the `cdkt_test` database the service declares. Enabling only some
-      # of them is the failure mode this block replaced: the suites that stayed
-      # off kept reporting SKIP, which reads identically to "passed" in a summary.
-      - name: Unit and contract tests
+      # Chỉ chạy 13 tệp *-integration.test.ts. Mỗi suite tự create + drop DB
+      # throwaway riêng nên không đụng nhau và không đụng `cdkt_test` mà service
+      # khai báo. Bật TẤT CẢ switch — bỏ sót một switch thì suite đó báo SKIP,
+      # đọc y hệt "passed" trong summary (đó là failure mode cổng dưới tồn tại để chặn).
+      - name: Integration tests
         env:
           # Run at the deployment's timezone, not the runner's UTC.
           #
@@ -164,7 +217,11 @@ jobs:
           LIVESTREAM_TOGGLE_PORT: 3306
           LIVESTREAM_TOGGLE_USER: root
           LIVESTREAM_TOGGLE_PASSWORD: test_root_password
-        run: npm test
+        run: |
+          set -euo pipefail
+          files=$(find tests -maxdepth 1 -name '*-integration.test.ts' | sort)
+          echo "Running $(echo "$files" | wc -l) integration test files"
+          node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test $files
 
       # A suite that silently stops running is worse than one that fails: the run
       # stays green. Integration tests self-skip when their switch is absent, so
@@ -198,35 +255,43 @@ jobs:
           done
           exit $status
 
+  # ── Schema drift (cần MySQL) ───────────────────────────────────────────────
+  # schema.ts và init.ts là hai mô tả tay của cùng một tập bảng. Chúng lệch nhau
+  # âm thầm; đây là thứ duy nhất nhận ra. Tách riêng để nó chạy song song với
+  # integration-tests, và nếu unit-tests/typecheck kéo dài thì schema-drift vẫn
+  # kết thúc đúng giờ (nó chạy trong < 2 phút).
+  schema-drift:
+    name: Schema drift
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: test_root_password
+          MYSQL_DATABASE: cdkt_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=3
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+
+      - run: npm ci
+
       # schema.ts and init.ts are two hand-maintained descriptions of the same
       # set of tables. They drift silently; this is the only thing that notices.
       # (Deliberately not quoting a table count here — it went stale twice.)
       - name: Schema drift
         run: npm run db:drift
-
-      - name: Typecheck
-        continue-on-error: true
-        run: |
-          set +e
-          npx nuxt typecheck > /tmp/tsc.log 2>&1
-          status=$?
-          set -e
-          errors=$(grep -cE 'error TS[0-9]+' /tmp/tsc.log || true)
-          {
-            echo "### Typecheck"
-            echo
-            echo "**$errors** type error(s) reported."
-            echo
-            echo '<details><summary>Last 200 lines</summary>'
-            echo
-            echo '```'
-            tail -200 /tmp/tsc.log
-            echo '```'
-            echo
-            echo '</details>'
-          } >> "$GITHUB_STEP_SUMMARY"
-          tail -80 /tmp/tsc.log
-          exit $status
 
   build:
     name: Production build
@@ -394,14 +459,15 @@ jobs:
           severity: warning
 
   # ── Triển khai ──────────────────────────────────────────────────────────────
-  # Hai job dưới đây chỉ chạy trên `main`, và chỉ SAU khi cả bốn cổng trên đã
+  # Hai job dưới đây chỉ chạy trên `main`, và chỉ SAU khi cả năm cổng trên đã
   # xanh. Chúng nằm trong cùng một workflow (thay vì `workflow_run` riêng) để
   # điều đó là một ràng buộc của đồ thị phụ thuộc chứ không phải một lời hứa:
-  # không có commit nào đi ra VPS mà chưa qua test, typecheck, build và hygiene.
+  # không có commit nào đi ra VPS mà chưa qua unit-tests, integration-tests,
+  # schema-drift, build và hygiene.
 
   image:
     name: Build and push image
-    needs: [test, build, hygiene]
+    needs: [unit-tests, integration-tests, schema-drift, build, hygiene]
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 30
