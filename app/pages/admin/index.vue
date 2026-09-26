@@ -43,9 +43,7 @@ async function loadTraffic() {
   trafficLoading.value = true
   trafficError.value = false
   try {
-    const res = await $fetch<{ ok: boolean; traffic: TrafficPoint[] }>(
-      `/api/admin/analytics/summary?start=${daysAgo(6)}&end=${today()}`
-    )
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; traffic: TrafficPoint[] }>)(`/api/admin/analytics/summary?start=${daysAgo(6)}&end=${today()}`)
     if (res?.ok) trafficPoints.value = res.traffic ?? []
   } catch {
     trafficError.value = true
@@ -59,7 +57,7 @@ async function loadLive() {
   liveLoading.value = true
   liveError.value = false
   try {
-    const res = await $fetch<LiveData & { ok?: boolean }>('/api/admin/analytics/live')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<LiveData & { ok?: boolean }>)('/api/admin/analytics/live')
     if (res) liveData.value = res
   } catch {
     liveError.value = true
@@ -75,19 +73,15 @@ async function loadBreakdowns() {
   sourceError.value = false
   deviceError.value = false
   try {
-    const res = await $fetch<{ ok: boolean; rows: BreakdownRow[]; totalPageViews: number }>(
-      '/api/admin/analytics/live/breakdown?scope=source_category&window=60'
-    )
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; rows: BreakdownRow[]; totalPageViews: number }>)(`/api/admin/analytics/live/breakdown?scope=source_category&window=60`)
     if (res?.ok) sourceData.value = { rows: res.rows ?? [], totalPageViews: res.totalPageViews ?? 0 }
   } catch {
     sourceError.value = true
   } finally {
-    sourceLoading.value = false
+   sourceLoading.value = false
   }
   try {
-    const res = await $fetch<{ ok: boolean; rows: BreakdownRow[]; totalPageViews: number }>(
-      '/api/admin/analytics/live/breakdown?scope=device_class&window=60'
-    )
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; rows: BreakdownRow[]; totalPageViews: number }>)(`/api/admin/analytics/live/breakdown?scope=device_class&window=60`)
     if (res?.ok) deviceData.value = { rows: res.rows ?? [], totalPageViews: res.totalPageViews ?? 0 }
   } catch {
     deviceError.value = true
@@ -154,10 +148,10 @@ const quickActions = [
 onMounted(async () => {
   try {
     const [artRes, roleModelRes, subRes, mediaRes] = await Promise.all([
-      $fetch('/api/admin/articles').catch(() => null),
-      $fetch('/api/admin/articles', { query: { type: 'role_model' } }).catch(() => null),
-      $fetch('/api/admin/submissions').catch(() => null),
-      $fetch('/api/admin/media').catch(() => null),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; pagination?: { total?: number } }>)(`/api/admin/articles`).catch(() => null),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; pagination?: { total?: number } }>)(`/api/admin/articles`, { query: { type: 'role_model' } }).catch(() => null),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; counts?: { new?: number }; submissions?: Array<unknown> }>)(`/api/admin/submissions`).catch(() => null),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok?: boolean; pagination?: { total?: number } }>)(`/api/admin/media`).catch(() => null),
     ])
     const setStat = (index: number, value: number) => {
       const card = stats.value[index]

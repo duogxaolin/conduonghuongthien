@@ -14,7 +14,9 @@ export default defineEventHandler(async (event) => {
 
   const langCode = String(body.langCode || '').trim().toLowerCase()
   const langName = String(body.langName || langCode)
-  const items = Array.isArray(body.items) ? body.items : []
+  const items: Array<{ key: string; group: string; sourceText?: string }> = Array.isArray(body.items)
+    ? (body.items as Array<{ key: string; group: string; sourceText?: string }>)
+    : []
 
   if (!langCode) {
     throw createError({ statusCode: 400, statusMessage: 'Mã ngôn ngữ bắt buộc.' })

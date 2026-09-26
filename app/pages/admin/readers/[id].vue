@@ -65,7 +65,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<AdminReaderDetail>(`/api/admin/readers/${readerId.value}`)
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderDetail>)(`/api/admin/readers/${readerId.value}`)
     if (!res?.ok) {
       error.value = 'Không tải được thông tin người đọc.'
       return
@@ -84,7 +84,7 @@ async function load() {
  *  may have arrived while the officer was reading. */
 async function currentImpact() {
   try {
-    const res = await $fetch<AdminReaderImpact>(`/api/admin/readers/${readerId.value}/impact`)
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderImpact>)(`/api/admin/readers/${readerId.value}/impact`)
     return res?.impact || impact.value
   } catch {
     return impact.value
@@ -130,7 +130,7 @@ async function banReader() {
 
   busy.value = true
   try {
-    const res = await $fetch<AdminReaderBanResult>(`/api/admin/readers/${readerId.value}/ban`, { method: 'POST', body: { reason } })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderBanResult>)(`/api/admin/readers/${readerId.value}/ban`, { method: 'POST', body: { reason } })
     toast.success(`Đã chặn tài khoản và xoá ${res?.impact?.comments ?? 0} bình luận.`)
     await load()
   } catch (err: unknown) {
@@ -144,7 +144,7 @@ async function unbanReader() {
   if (!confirm('Bỏ chặn tài khoản này? Bình luận đã bị xoá lúc chặn sẽ KHÔNG được phục hồi, và người đọc phải đăng nhập lại.')) return
   busy.value = true
   try {
-    await $fetch(`/api/admin/readers/${readerId.value}/unban`, { method: 'POST' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/readers/${readerId.value}/unban`, { method: 'POST' })
     toast.success('Đã bỏ chặn tài khoản.')
     await load()
   } catch (err: unknown) {
@@ -167,7 +167,7 @@ async function purgeComments() {
 
   busy.value = true
   try {
-    const res = await $fetch<AdminReaderCommentsDeleteResult>(`/api/admin/readers/${readerId.value}/comments`, { method: 'DELETE' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminReaderCommentsDeleteResult>)(`/api/admin/readers/${readerId.value}/comments`, { method: 'DELETE' })
     toast.success(`Đã xoá ${res?.impact?.comments ?? 0} bình luận.`)
     await load()
   } catch (err: unknown) {
@@ -186,7 +186,7 @@ async function deleteAccount() {
 
   busy.value = true
   try {
-    await $fetch(`/api/admin/readers/${readerId.value}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/readers/${readerId.value}`, { method: 'DELETE' })
     toast.success('Đã xoá tài khoản người đọc.')
     router.push('/admin/readers')
   } catch (err: unknown) {
@@ -204,7 +204,7 @@ async function deleteOneComment(comment: Comment) {
 
   busy.value = true
   try {
-    await $fetch(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
     toast.success('Đã xoá bình luận.')
     await load()
   } catch (err: unknown) {

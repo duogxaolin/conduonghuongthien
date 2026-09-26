@@ -58,7 +58,7 @@ async function load() {
   loadError.value = ''
   canUploadDenied.value = false
   try {
-    config.value = await $fetch('/api/admin/media-portal/config')
+    config.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaConfig>)('/api/admin/media-portal/config')
   } catch (err: unknown) {
     const status = (err as { status?: number, statusCode?: number })?.statusCode || (err as { status?: number })?.status
     if (status === 403) {

@@ -109,7 +109,7 @@ export function useReaderAuth() {
       sessionStorage.setItem(CLAIM_FLAG_KEY, '1')
       if (!sessions.length) return
 
-      await $fetch('/api/public/reader/claim-chats', { method: 'POST', body: { sessions } })
+      await ($fetch as (u: string, o: Record<string, unknown>) => Promise<unknown>)('/api/public/reader/claim-chats', { method: 'POST', body: { sessions } })
     } catch {
       // Deliberately silent — see above.
     }
@@ -122,7 +122,7 @@ export function useReaderAuth() {
     loading.value = true
     failed.value = false
     try {
-      const response = await $fetch<{ ok: boolean, reader: ReaderProfile | null }>('/api/public/reader/me')
+      const response = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, reader: ReaderProfile | null }>)('/api/public/reader/me')
       reader.value = response?.reader ?? null
       loaded.value = true
       // Only once identity is confirmed: an anonymous visitor has no account to
@@ -152,7 +152,7 @@ export function useReaderAuth() {
 
   async function signOut(): Promise<void> {
     try {
-      await $fetch('/api/public/reader/logout', { method: 'POST' })
+      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/public/reader/logout', { method: 'POST' })
     } catch {
       // Ignored on purpose: the cookie is HTTP-only, so if the request did not
       // land there is nothing the client can do about it, and showing an error

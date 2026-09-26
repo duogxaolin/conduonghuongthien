@@ -81,7 +81,7 @@ async function fetchMedia() {
   loading.value = true
   loadError.value = ''
   try {
-    const [res, capabilities] = await Promise.all([$fetch<AdminMediaPage>('/api/admin/media-portal', {
+    const [res, capabilities] = await Promise.all([($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaPage>)(`/api/admin/media-portal`, {
       params: {
         page:   currentPage.value,
         limit:  PER_PAGE,
@@ -89,7 +89,7 @@ async function fetchMedia() {
         status: statusFilter.value || undefined,
         source: sourceFilter.value || undefined,
       },
-    }), $fetch<AdminMediaConfig>('/api/admin/media-portal/config')])
+    }), ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaConfig>)(`/api/admin/media-portal/config`)])
     mediaConfig.value = capabilities
     items.value = res.items
     total.value = res.total
@@ -123,7 +123,7 @@ function changePage(page: number) {
 async function deleteItem(id: number, title: string) {
   if (!confirm(`Xoá video "${title}"? Hành động này không thể hoàn tác.`)) return
   try {
-    await $fetch(`/api/admin/media-portal/${id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${id}`, { method: 'DELETE' })
     toast.success('Đã xoá video.')
     await fetchMedia()
   } catch (err: unknown) {

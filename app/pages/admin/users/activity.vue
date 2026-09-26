@@ -112,13 +112,13 @@ const retention = ref<ActivityRetentionStatus | null>(null)
 
 async function loadAccounts() {
   try {
-    const res = await $fetch<{ users?: Array<{ id: number; username: string }> }>('/api/admin/users')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ users?: Array<{ id: number; username: string }> }>)('/api/admin/users')
     accounts.value = (res.users ?? []).map(item => ({ id: item.id, username: item.username }))
   } catch { accounts.value = [] }
 }
 
 async function loadRetention() {
-  try { retention.value = await $fetch('/api/admin/activity-logs/retention') } catch { retention.value = null }
+  try { retention.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ActivityRetentionStatus>)('/api/admin/activity-logs/retention') } catch { retention.value = null }
 }
 
 async function load(next = page.value) {
@@ -126,7 +126,7 @@ async function load(next = page.value) {
   error.value = ''
   page.value = next
   try {
-    const res = await $fetch<{ items?: LogItem[]; total?: number; totalPages?: number }>('/api/admin/activity-logs', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ items?: LogItem[]; total?: number; totalPages?: number }>)(`/api/admin/activity-logs`, {
       params: {
         page: next,
         pageSize,

@@ -75,7 +75,7 @@ onMounted(async () => {
     images_upload_handler: (blobInfo: { blob: () => Blob, filename: () => string }) => new Promise<string>((resolve, reject) => {
       const formData = new FormData()
       formData.append('file', blobInfo.blob(), blobInfo.filename())
-      $fetch('/api/admin/media/upload', { method: 'POST', body: formData })
+      void ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminMediaUploadResult>)('/api/admin/media/upload', { method: 'POST', body: formData })
         .then((res: AdminMediaUploadResult) => {
           if (res.ok && res.media?.url) resolve(res.media.url)
           else reject('Upload thất bại')

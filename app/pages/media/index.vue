@@ -314,19 +314,21 @@ const listQuery = computed(() => {
   return query
 })
 
-const { data, pending, error, refresh } = useFetch('/api/public/media', {
-  query: listQuery,
-  // `lazy` chỉ bỏ chặn điều hướng phía client; lượt dựng phía máy chủ vẫn chờ dữ
-  // liệu, nên HTML đầu tiên và thẻ SEO không đổi. Không có nó thì khung xương bên
-  // trên **không bao giờ được vẽ** — bấm một liên kết trông như bấm hụt.
-  lazy: true,
-  default: () => ({
-    ok: true,
-    items: [] as PublicMediaListItem[],
-    categories: [] as MediaListPayload['categories'],
-    pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 0 },
-  }),
-})
+const { data, pending, error, refresh } = useAsyncData('public-media-list', () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicMediaListItem[]; categories: MediaListPayload['categories']; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/media`, { query: listQuery.value }),
+  {
+    // `lazy` chỉ bỏ chặn điều hướng phía client; lượt dựng phía máy chủ vẫn chờ dữ
+    // liệu, nên HTML đầu tiên và thẻ SEO không đổi. Không có nó thì khung xương bên
+    // trên **không bao giờ được vẽ** — bấm một liên kết trông như bấm hụt.
+    lazy: true,
+    default: () => ({
+      ok: true,
+      items: [] as PublicMediaListItem[],
+      categories: [] as MediaListPayload['categories'],
+      pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 0 },
+    }),
+  }
+)
 
 const items = computed<PublicMediaListItem[]>(() => data.value?.items ?? [])
 const categories = computed(() => data.value?.categories ?? [])

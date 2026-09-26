@@ -271,10 +271,11 @@ const shortId = computed(() => String(route.params.shortId || ''))
  * Chi tiết video. Chỉ đọc nội dung **công khai** — xem đầu tệp về ràng buộc
  * `swr: 60`. Không có trường nào phụ thuộc người đọc trong lượt gọi này.
  */
-const { data, pending, error, refresh } = useFetch(
-  () => `/api/public/media/${encodeURIComponent(shortId.value)}`,
+const { data, pending, error, refresh } = useAsyncData(
+  () => `media-detail-${shortId.value}`,
+  () =>
+    ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; item: PublicMediaItem | null }>)(`/api/public/media/${encodeURIComponent(shortId.value)}`),
   {
-    key: () => `media-detail-${shortId.value}`,
     lazy: true,
     default: () => ({ ok: false, item: null }),
   },
@@ -335,7 +336,7 @@ async function loadRelated() {
   relatedError.value = false
   try {
     const query = current.categorySlug ? { category: current.categorySlug, limit: 6 } : { limit: 6 }
-    const response = await $fetch<{ ok: boolean, items: PublicMediaListItem[] }>(
+    const response = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicMediaListItem[] }>)(
       '/api/public/media',
       { query, retry: 0 },
     )
@@ -365,7 +366,7 @@ const countedSlug = ref('')
 function pingView(target: string) {
   if (!target || countedSlug.value === target) return
   countedSlug.value = target
-  $fetch(`/api/public/media/${encodeURIComponent(target)}/view`, {
+  void ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/public/media/${encodeURIComponent(target)}/view`, {
     method: 'POST',
     keepalive: true,
     retry: 0,

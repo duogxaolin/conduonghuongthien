@@ -28,7 +28,7 @@ const slug = computed(() => String(route.params.slug || ''))
 
 const asyncData = useAsyncData(
   () => `page-${slug.value}`,
-  () => $fetch(`/api/public/pages/${slug.value}`),
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; page: { title?: string; slug?: string; seoTitle?: string | null; seoDescription?: string | null } | null; blocks: import('~/utils/blocks/types').RenderableNode[] }>)(`/api/public/pages/${slug.value}`),
   {
     lazy: true,
     default: () => ({ ok: false, page: null, blocks: [] }),

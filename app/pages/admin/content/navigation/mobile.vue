@@ -51,7 +51,7 @@ async function loadMenu() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<{ ok: boolean; menu: BottomNavItem[] | null }>('/api/admin/settings/navigation/mobile')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; menu: BottomNavItem[] | null }>)(`/api/admin/settings/navigation/mobile`)
     if (res.ok && Array.isArray(res.menu) && res.menu.length) {
       menu.value = res.menu.map(normalize)
     } else {
@@ -74,7 +74,7 @@ async function saveMenu() {
   }
   saving.value = true
   try {
-    await $fetch('/api/admin/settings/navigation/mobile', { method: 'PUT', body: { menu: menu.value } })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/navigation/mobile`, { method: 'PUT', body: { menu: menu.value } })
     toast.success('Đã lưu thanh điều hướng mobile thành công!')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu menu'))

@@ -1,5 +1,5 @@
 import { createError } from 'h3'
-import { inArray } from 'drizzle-orm'
+import { eq, inArray } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
 import { articleComments, readerAccounts } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
@@ -26,7 +26,7 @@ export default defineEventHandler(async (event) => {
   }
 
   const commentIds = Array.isArray(body.commentIds)
-    ? body.commentIds.map(Number).filter((n): n is number => Number.isFinite(n) && n > 0).slice(0, 10)
+    ? (body.commentIds as unknown[]).map(Number).filter((n: number): n is number => Number.isFinite(n) && n > 0).slice(0, 10)
     : []
 
   const rawContent = typeof body.content === 'string' ? body.content.trim() : ''
@@ -59,7 +59,7 @@ export default defineEventHandler(async (event) => {
         customDisplayName: readerAccounts.customDisplayName,
       })
       .from(articleComments)
-      .leftJoin(readerAccounts, inArray(articleComments.readerId, [readerAccounts.id]))
+      .leftJoin(readerAccounts, eq(articleComments.readerId, readerAccounts.id))
       .where(inArray(articleComments.id, commentIds))
 
     for (const r of rows) {

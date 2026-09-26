@@ -37,7 +37,7 @@ async function loadMenu() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<{ ok: boolean; menu: MenuItem[] | null }>('/api/admin/settings/navigation/navbar')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; menu: MenuItem[] | null }>)(`/api/admin/settings/navigation/navbar`)
     if (res.ok && Array.isArray(res.menu) && res.menu.length) {
       menu.value = res.menu.map(item => ({ ...item, children: Array.isArray(item.children) ? item.children : [] }))
     } else {
@@ -54,7 +54,7 @@ async function loadMenu() {
 async function saveMenu() {
   saving.value = true
   try {
-    await $fetch('/api/admin/settings/navigation/navbar', { method: 'PUT', body: { menu: menu.value } })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/navigation/navbar`, { method: 'PUT', body: { menu: menu.value } })
     toast.success('Đã lưu cấu hình navbar thành công!')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu menu'))

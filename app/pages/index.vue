@@ -13,8 +13,8 @@
     <!-- Graceful fallback if the page has no blocks. -->
     <section v-else class="section bg-white">
       <div class="container text-center py-20">
-        <h1 class="text-[1.8rem] font-extrabold text-[#1E251C] mb-3">Con Đường Hướng Thiện</h1>
-        <p class="text-[#4A5545]">Nội dung trang chủ đang được cập nhật. Vui lòng quay lại sau.</p>
+        <h1 class="text-[1.8rem] font-extrabold text-[#1E251C] mb-3">{{ t('home_fallback_title') }}</h1>
+        <p class="text-[#4A5545]">{{ t('home_fallback_desc') }}</p>
       </div>
     </section>
   </div>
@@ -24,7 +24,7 @@
 import { computed, onMounted, watch } from 'vue'
 import { useI18n } from '~/composables/useI18n'
 
-const { currentLang } = useI18n()
+const { currentLang, t } = useI18n()
 
 // `lazy` chỉ bỏ chặn điều hướng phía client — lượt dựng phía máy chủ vẫn chờ dữ
 // liệu, nên HTML đầu tiên và thẻ SEO không đổi (design.md D2). Không có nó thì
@@ -32,7 +32,7 @@ const { currentLang } = useI18n()
 // dữ liệu về, trông y hệt bấm hụt.
 const { data, pending, error, refresh } = useAsyncData(
   `page-home-${currentLang.value}`,
-  () => $fetch(`/api/public/pages/home?lang=${currentLang.value}`),
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; page: { title?: string; slug?: string; seoTitle?: string | null; seoDescription?: string | null } | null; blocks: import('~/utils/blocks/types').RenderableNode[] }>)(`/api/public/pages/home?lang=${currentLang.value}`),
   { lazy: true, default: () => ({ ok: false, page: null, blocks: [] }) }
 )
 

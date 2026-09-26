@@ -317,7 +317,7 @@ import { useI18n } from '~/composables/useI18n'
 const { t } = useI18n()
 
 const {
-  conversations, activeId, chatMessages, isSubmitting, botInput, botInputError,
+  conversations, activeId, activeConversation, chatMessages, isSubmitting, botInput, botInputError,
   quickQuestions, quickQuestionState, quickQuestionStatusText, limits,
   hydrate, loadQuickQuestions,
   createConversation, switchConversation, deleteConversation, clearChatHistory,
@@ -522,7 +522,7 @@ function retryMessage(msg: ChatMessage) {
   if (isSubmitting.value) return
   // Remove the failed message — a new one will be pushed optimistically
   const conv = activeConversation.value
-  const idx = conv.messages.findIndex(m => m.id === msg.id)
+  const idx = conv.messages.findIndex((m: ChatMessage) => m.id === msg.id)
   if (idx !== -1) conv.messages.splice(idx, 1)
   submitBotQuestion(msg.text, followChatBottom)
 }

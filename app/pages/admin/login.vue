@@ -12,10 +12,12 @@ onMounted(async () => {
   }
 })
 
-const { data: publicSettingsData } = await useFetch('/api/public/settings', {
-  key: 'public-settings-login',
-  default: () => null,
-})
+type PublicSettingsResponse = { settings?: Record<string, string | null>; faviconUrl?: string | null }
+const { data: publicSettingsData } = await useAsyncData<PublicSettingsResponse | null>(
+  'public-settings-login',
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  { default: () => null },
+)
 const siteLogo = computed(() => {
   const val = publicSettingsData.value?.settings?.logo_url
   if (val === '') return ''
@@ -147,7 +149,7 @@ const handleSendCode = async () => {
   errorMsg.value = ''
   infoMsg.value = ''
   try {
-    const res = await $fetch<{ ok: boolean; sentTo?: string }>('/api/admin/auth/mfa/send-code', { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; sentTo?: string }>)(`/api/admin/auth/mfa/send-code`, { method: 'POST' })
     if (res.ok) infoMsg.value = `Đã gửi mã tới ${res.sentTo || 'email của bạn'}. Mã có hiệu lực 10 phút.`
     nextTick(() => codeInput.value?.focus())
   } catch (err: unknown) {

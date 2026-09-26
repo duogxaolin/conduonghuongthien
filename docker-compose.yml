@@ -84,6 +84,12 @@ services:
     environment:
       PORT: ${PORT:-3000}
       NODE_ENV: production
+      # Giới hạn heap V8 — moderation worker chạy in-process nên chia chung heap
+      # với app. Mặc định 2048MB: trên VPS 1–2GB thì nên hạ lại 1024MB qua
+      # NODE_OPTIONS, trên VPS 16GB như anh yêu thì AI moderation thoải mái
+      # xử lý nhiều nội dung dài cùng lúc mà không bị OOM-killer. Cài qua
+      # NODE_OPTIONS đúng cách Nitro nhận.
+      NODE_OPTIONS: ${NODE_OPTIONS:---max-old-space-size=2048}
       DB_HOST: mysql
       DB_PORT: 3306
       # Defaults to root for backwards compatibility. To run with least

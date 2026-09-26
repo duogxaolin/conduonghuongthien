@@ -114,7 +114,7 @@ const fetchCategories = async () => {
  */
 const fetchAuthors = async () => {
   try {
-    const res = await $fetch('/api/admin/articles/authors')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: typeof authorOptions.value; orphanCount: number }>)(`/api/admin/articles/authors`)
     if (res.ok) {
       authorOptions.value = res.items
       orphanAuthorCount.value = res.orphanCount
@@ -183,7 +183,7 @@ const fetchArticlesSilent = async () => {
     if (selectedAuthorId.value) params.authorId = selectedAuthorId.value
     if (selectedTranslationFilter.value) params.translation = selectedTranslationFilter.value
 
-    const res = await $fetch<{ ok: boolean; items: AdminArticleRow[]; pagination: typeof pagination.value }>('/api/admin/articles', { params })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminArticleRow[]; pagination: typeof pagination.value }>)(`/api/admin/articles`, { params })
     if (res.ok) {
       articles.value = res.items
       pagination.value = res.pagination
@@ -276,7 +276,7 @@ const triggerBulkTranslate = async (langCode: string) => {
 
   bulkTranslating.value = true
   try {
-    const res = await $fetch<{ ok: boolean; count: number }>('/api/admin/articles/bulk-translate', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; count: number }>)('/api/admin/articles/bulk-translate', {
       method: 'POST',
       body: { ids, langCode, targetStatus: 'ai_draft' },
     })
@@ -320,7 +320,7 @@ async function openQuickView(article: AdminArticleRow, langCode: string) {
   showQuickViewModal.value = true
   quickViewLoading.value = true
   try {
-    const res = await $fetch<{ ok: boolean; translation: typeof quickViewData.value }>(
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; translation: typeof quickViewData.value }>)(
       `/api/admin/articles/${article.id}/translations/${langCode}`,
     )
     if (res.ok && res.translation) {
@@ -348,7 +348,7 @@ async function toggleQuickViewStatus() {
   const current = quickViewData.value.status
   const next = current === 'published' ? 'reviewed' : 'published'
   try {
-    await $fetch(
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(
       `/api/admin/articles/${quickViewData.value.articleId}/translations/${quickViewData.value.langCode}/status`,
       { method: 'PATCH', body: { status: next } },
     )
@@ -387,7 +387,7 @@ async function translateSingleArticle(articleId: number, langCode: string) {
   startBulkStatusPolling()
 
   try {
-    await $fetch(`/api/admin/articles/${articleId}/translations/translate`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${articleId}/translations/translate`, {
       method: 'POST',
       body: { langCode, targetStatus: 'ai_draft' },
     })
@@ -415,7 +415,7 @@ async function openGlobalTranslateModal() {
   showGlobalTranslateModal.value = true
   globalStatsLoading.value = true
   try {
-    const res = await $fetch<{ ok: boolean } & typeof globalStats.value>('/api/admin/articles/translation-stats')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean } & typeof globalStats.value>)('/api/admin/articles/translation-stats')
     if (res.ok) {
       globalStats.value = res
       if (res.languages.length > 0) {
@@ -457,13 +457,13 @@ async function startGlobalTranslation() {
 
   try {
     for (const langCode of selectedGlobalTargetLangs.value) {
-      const listRes = await $fetch<{ ok: boolean; items: AdminArticleRow[] }>('/api/admin/articles', {
+      const listRes = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminArticleRow[] }>)('/api/admin/articles', {
         params: { translation: `missing_${langCode}`, perPage: 100, status: 'published' },
       })
       const targetArticles = listRes.items || []
       if (targetArticles.length > 0) {
         const ids = targetArticles.map(a => Number(a.id))
-        await $fetch('/api/admin/articles/bulk-translate', {
+        await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/articles/bulk-translate', {
           method: 'POST',
           body: { ids, langCode, targetStatus: globalTargetStatus.value },
         })
@@ -512,7 +512,7 @@ let bulkStatusTimer: number | undefined
 
 async function fetchBulkTranslateStatus() {
   try {
-    const res = await $fetch<BulkStatusResponse>('/api/admin/articles/bulk-translate-status')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<BulkStatusResponse>)('/api/admin/articles/bulk-translate-status')
     if (res.ok) {
       const wasActive = bulkTranslateTask.value?.active
       bulkTranslateTask.value = res
@@ -561,7 +561,7 @@ const toggleComments = async (art: AdminArticleRow) => {
   togglingComments.value = Number(art.id)
   art.commentsEnabled = next
   try {
-    await $fetch(`/api/admin/articles/${art.id}`, { method: 'PUT', body: { commentsEnabled: next } })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${art.id}`, { method: 'PUT', body: { commentsEnabled: next } })
     toast.success(next ? 'Đã mở bình luận cho bài viết này.' : 'Đã đóng bình luận của bài viết này.')
   } catch (err: unknown) {
     art.commentsEnabled = !next
@@ -575,7 +575,7 @@ const deleteArticle = async (art: AdminArticleRow) => {
   const ok = await confirm({ title: 'Xóa bài viết', message: `Bạn có chắc muốn xóa bài viết "${art.title}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await $fetch(`/api/admin/articles/${art.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${art.id}`, { method: 'DELETE' })
     toast.success('Đã xóa bài viết thành công!')
     await fetchArticles(pagination.value.page)
   } catch (err: unknown) {
@@ -631,7 +631,7 @@ const loadStats = async () => {
   statsLoading.value = true
   statsError.value = ''
   try {
-    const res = await $fetch<AdminArticleStatsResult>(`/api/admin/articles/${statsArticle.value.id}/stats`)
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminArticleStatsResult>)(`/api/admin/articles/${statsArticle.value.id}/stats`)
     statsData.value = res.stats
     runningBoost.value = res.boost
   } catch (err: unknown) {
@@ -689,7 +689,7 @@ const submitBoost = async () => {
   try {
     const body: Record<string, unknown> = { mode: boostMode.value, amount }
     if (boostMode.value === 'gradual') body.minutes = minutes
-    await $fetch(`/api/admin/articles/${statsArticle.value.id}/boost`, { method: 'POST', body })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${statsArticle.value.id}/boost`, { method: 'POST', body })
     toast.success(boostMode.value === 'instant' ? 'Đã cộng lượt xem ảo.' : 'Đã tạo lượt tăng dần.')
     boostAmount.value = null
     await loadStats()
@@ -713,7 +713,7 @@ const cancelBoost = async () => {
   })
   if (!ok) return
   try {
-    await $fetch(`/api/admin/articles/${statsArticle.value.id}/boost`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${statsArticle.value.id}/boost`, { method: 'DELETE' })
     toast.success('Đã huỷ lượt tăng dần.')
     await loadStats()
   } catch (err: unknown) {
@@ -1460,10 +1460,10 @@ onUnmounted(() => {
         <!-- Header -->
         <div class="flex items-center justify-between gap-3 border-b border-[#eef2ee] px-5 py-4 bg-[#f8faf8]">
           <div class="flex items-center gap-2">
-            <span class="text-xl leading-none">{{ BULK_LANGS.find(l => l.code === quickViewData.langCode)?.flag }}</span>
+            <span class="text-xl leading-none">{{ BULK_LANGS.find(l => l.code === quickViewData!.langCode)?.flag }}</span>
             <div>
               <h2 class="m-0 text-base font-extrabold text-[#122815]">
-                Bản dịch {{ BULK_LANGS.find(l => l.code === quickViewData.langCode)?.label || quickViewData.langCode }}
+                Bản dịch {{ BULK_LANGS.find(l => l.code === quickViewData!.langCode)?.label || quickViewData!.langCode }}
               </h2>
               <p class="m-0 text-xs text-[#667768]">Bài viết gốc: {{ quickViewData.articleTitle }}</p>
             </div>

@@ -45,7 +45,7 @@ const typeLabel = (t: string) => ({ sql: 'CSDL', media: 'File', all: 'Cả hai' 
 
 async function loadStatus() {
   try {
-    const res = await $fetch<{ ok: boolean; backup: RunStatus; restore: RunStatus }>('/api/admin/backup/status')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; backup: RunStatus; restore: RunStatus }>)(`/api/admin/backup/status`)
     backupStatus.value = res.backup
     restoreStatus.value = res.restore
     running.value = res.backup.running
@@ -57,7 +57,7 @@ async function loadBackups() {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch<{ ok: boolean; items: BackupItem[]; total: number; totalPages: number }>('/api/admin/backup', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: BackupItem[]; total: number; totalPages: number }>)(`/api/admin/backup`, {
       params: { page: page.value, pageSize: 20, ...(filterType.value ? { type: filterType.value } : {}) },
     })
     items.value = res.items || []
@@ -91,7 +91,7 @@ function stopPolling() {
 const runBackup = async (type: 'sql' | 'files' | 'all') => {
   running.value = true
   try {
-    const res = await $fetch<{ ok: boolean; files: Array<{ name: string }>; driveUploaded: boolean; driveError?: string }>('/api/admin/backup/run', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; files: Array<{ name: string }>; driveUploaded: boolean; driveError?: string }>)(`/api/admin/backup/run`, {
       method: 'POST', body: { type },
     })
     toast.success(`Đã tạo ${res.files.length} file backup${res.driveUploaded ? ' + upload Drive' : ''}.${res.driveError ? ` (Drive lỗi: ${res.driveError})` : ''}`)
@@ -116,7 +116,7 @@ const restoreBackup = async (filename: string) => {
   restoring.value = true
   startPolling()
   try {
-    await $fetch('/api/admin/backup/restore', { method: 'POST', body: { filename } })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/backup/restore`, { method: 'POST', body: { filename } })
     toast.success('Đã khôi phục backup thành công.')
     await loadBackups()
   } catch (err: unknown) {
@@ -149,7 +149,7 @@ const onRestoreUpload = async (e: Event) => {
   try {
     const formData = new FormData()
     formData.append('file', file)
-    await $fetch('/api/admin/backup/restore-upload', { method: 'POST', body: formData })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/backup/restore-upload`, { method: 'POST', body: formData })
     toast.success('Đã khôi phục từ file upload.')
     await loadBackups()
   } catch (err: unknown) {
@@ -172,7 +172,7 @@ const deleteBackup = async (item: BackupItem) => {
   const ok = await confirm({ title: 'Xoá backup', message: `Xoá file "${item.filename}"?`, danger: true, confirmLabel: 'Xoá' })
   if (!ok) return
   try {
-    await $fetch(`/api/admin/backup/${encodeURIComponent(item.filename)}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/backup/${encodeURIComponent(item.filename)}`, { method: 'DELETE' })
     toast.success('Đã xoá backup.')
     await loadBackups()
   } catch (err: unknown) {
@@ -209,7 +209,7 @@ const driveToast = ref('')
 async function loadDriveStatus() {
   driveLinkLoading.value = true
   try {
-    const res = await $fetch<{ ok: boolean; link: DriveLink; redirectUri: string }>('/api/admin/backup/drive/status')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; link: DriveLink; redirectUri: string }>)(`/api/admin/backup/drive/status`)
     driveLink.value = res.link
     driveRedirectUri.value = res.redirectUri
   } catch (err: unknown) {
@@ -228,7 +228,7 @@ async function disconnectDrive() {
   if (!ok) return
   disconnecting.value = true
   try {
-    await $fetch('/api/admin/backup/drive/disconnect', { method: 'POST' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/backup/drive/disconnect`, { method: 'POST' })
     toast.success('Đã hủy liên kết Google Drive.')
     await loadDriveStatus()
   } catch (err: unknown) {
@@ -267,7 +267,7 @@ const driveEnabled = ref(false)
 async function loadDriveConfig() {
   driveConfigLoading.value = true
   try {
-    const res = await $fetch<{ ok: boolean; config: DriveConfig }>('/api/admin/backup/drive/config')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: DriveConfig }>)(`/api/admin/backup/drive/config`)
     driveConfig.value = res.config
     driveClientId.value = res.config.clientId
     driveEnabled.value = res.config.isEnabled
@@ -290,7 +290,7 @@ async function saveDriveConfig() {
     }
     // Chỉ gửi clientSecret khi cán bộ nhập mới — bỏ trống = giữ cũ.
     if (driveClientSecret.value.trim()) body.clientSecret = driveClientSecret.value.trim()
-    const res = await $fetch<{ ok: boolean; config: DriveConfig }>('/api/admin/backup/drive/config', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: DriveConfig }>)(`/api/admin/backup/drive/config`, {
       method: 'PUT',
       body,
     })
@@ -315,7 +315,7 @@ async function clearDriveSecret() {
   if (!ok) return
   clearingDriveSecret.value = true
   try {
-    const res = await $fetch<{ ok: boolean; config: DriveConfig }>('/api/admin/backup/drive/clear-secret', { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: DriveConfig }>)(`/api/admin/backup/drive/clear-secret`, { method: 'POST' })
     driveConfig.value = res.config
     driveEnabled.value = res.config.isEnabled
     driveClientSecret.value = ''
@@ -334,7 +334,7 @@ const selectedDays = ref<number[]>([])
 
 async function loadSettings() {
   try {
-    const res = await $fetch<{ ok: boolean; settings: Record<string, string | null> }>('/api/admin/settings/backup')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null> }>)(`/api/admin/settings/backup`)
     const s = res.settings || {}
     backupSettings.value = {
       backup_auto_enabled: s.backup_auto_enabled || 'false',
@@ -353,7 +353,7 @@ async function saveSettings() {
   savingSettings.value = true
   try {
     backupSettings.value.backup_auto_days = JSON.stringify(selectedDays.value)
-    await $fetch('/api/admin/settings/backup', { method: 'PUT', body: backupSettings.value })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/backup`, { method: 'PUT', body: backupSettings.value })
     toast.success('Đã lưu cấu hình backup.')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu cấu hình'))

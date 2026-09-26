@@ -545,12 +545,12 @@ async function saveName() {
   nameError.value = ''
   nameSaved.value = false
   try {
-    const response = await $fetch('/api/public/reader/profile', {
+    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; reader?: { displayName?: string | null; customDisplayName?: string | null } }>)(`/api/public/reader/profile`, {
       method: 'PUT',
       body: { displayName: value },
     })
     // State ở cấp module, nên header đổi tên ngay — không đợi tải lại trang.
-    if (response?.reader) applyDisplayName(response.reader)
+    if (response?.reader) applyDisplayName(response.reader as { displayName: string; initials: string })
     nameSaved.value = true
   } catch (err) {
     /**
@@ -625,7 +625,7 @@ async function toggleEmailNotifications() {
   savingEmailPref.value = true
   emailPrefError.value = ''
   try {
-    await $fetch('/api/public/reader/profile/email-notifications', {
+    await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<unknown>)('/api/public/reader/profile/email-notifications', {
       method: 'PUT',
       body: { enabled: next },
     })
@@ -657,7 +657,7 @@ async function loadComments() {
   commentsPending.value = true
   commentsError.value = false
   try {
-    commentsData.value = await $fetch('/api/public/reader/comments', {
+    commentsData.value = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<ReaderCommentsPayload>)('/api/public/reader/comments', {
       query: { page: commentsPage.value },
     })
   } catch (err) {
@@ -686,7 +686,7 @@ async function loadChats() {
   chatsPending.value = true
   chatsError.value = false
   try {
-    chatsData.value = await $fetch('/api/public/reader/chats')
+    chatsData.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ReaderChatsPayload>)('/api/public/reader/chats')
   } catch (err) {
     chatsError.value = true
     if (errorStatus(err) === 401) forgetReader()

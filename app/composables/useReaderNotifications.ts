@@ -90,7 +90,7 @@ export function useReaderNotifications() {
       pending.value = true
       failed.value = false
       try {
-        const response = await $fetch<NotificationResponse>('/api/public/reader/notifications', {
+        const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<NotificationResponse>)('/api/public/reader/notifications', {
           query: { page: targetPage },
         })
         items.value = response?.items ?? []
@@ -140,7 +140,7 @@ export function useReaderNotifications() {
     unreadCount.value = Math.max(0, unreadCount.value - changed)
 
     try {
-      await $fetch('/api/public/reader/notifications/read', {
+      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/public/reader/notifications/read', {
         method: 'POST',
         body: { ids: wanted },
       })
@@ -156,7 +156,7 @@ export function useReaderNotifications() {
     unreadCount.value = 0
 
     try {
-      await $fetch('/api/public/reader/notifications/read', {
+      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/public/reader/notifications/read', {
         method: 'POST',
         body: { all: true },
       })

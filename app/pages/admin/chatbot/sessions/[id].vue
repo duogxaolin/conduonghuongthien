@@ -44,13 +44,13 @@ const fetchSession = async () => {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await $fetch<{
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
       ok: boolean
       session: SessionDetail
       messages: TranscriptMessage[]
       relatedSubmissions: RelatedSubmission[]
       truncated: boolean
-    }>(`/api/admin/chatbot/sessions/${sessionId.value}`)
+    }>)(`/api/admin/chatbot/sessions/${sessionId.value}`)
     if (res.ok) {
       session.value = res.session
       messages.value = res.messages

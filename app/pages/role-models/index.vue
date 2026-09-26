@@ -522,21 +522,25 @@ const articlesQuery = computed(() => {
   return q
 })
 
-const { data: articlesData, pending, error, refresh } = useFetch('/api/public/articles', {
-  query: articlesQuery,
-  lazy: true,
-  default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 } })
-})
+const { data: articlesData, pending, error, refresh } = useAsyncData('role-models-articles', () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string; categoryName?: string | null; categorySlug?: string | null }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: articlesQuery.value }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 } })
+  }
+)
 const roleModels = computed(() => articlesData.value?.articles || [])
 const loadError = computed(() => !!error.value || articlesData.value?.ok === false)
 const pagination = computed(() => articlesData.value?.pagination || { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 })
 
 // Most Read
-const { data: mostReadData, pending: mostReadPending } = useFetch('/api/public/articles', {
-  query: { type: 'role_model', limit: 6, sort: 'views' },
-  lazy: true,
-  default: () => ({ ok: true, articles: [], pagination: {} })
-})
+const { data: mostReadData, pending: mostReadPending } = useAsyncData('role-models-most-read', () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string; categoryName?: string | null; categorySlug?: string | null }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: { type: 'role_model', limit: 6, sort: 'views' } }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: {} })
+  }
+)
 const mostRead = computed(() => mostReadData.value?.articles || [])
 
 // Featured & Rest — chỉ hiện bài tiêu điểm ở Trang 1 khi không tìm kiếm

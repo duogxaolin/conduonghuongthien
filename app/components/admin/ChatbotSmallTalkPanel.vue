@@ -14,7 +14,7 @@ const CATEGORY_OPTIONS = Object.entries(CATEGORY_LABELS).map(([value, label]) =>
 async function load(next = 1) {
   loading.value = true; error.value = ''; page.value = next
   try {
-    const res = await $fetch('/api/admin/chatbot/small-talk', { params: { page: next, perPage: 15, search: search.value, category: category.value, enabled: enabled.value } })
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ items: typeof items.value; pagination: typeof pagination.value }>)('/api/admin/chatbot/small-talk', { params: { page: next, perPage: 15, search: search.value, category: category.value, enabled: enabled.value } })
     items.value = res.items || []; pagination.value = res.pagination; selection.keepOnly(visibleIds.value)
   } catch (err: unknown) { error.value = errorMessage(err, 'Không thể tải kho trả lời thường nhật.') } finally { loading.value = false }
 }
@@ -28,12 +28,12 @@ function bulkEnabled(isEnabled: boolean) {
   return bulk.run({ url: '/api/admin/chatbot/small-talk/bulk-enabled', body: { isEnabled }, noun: 'mục trả lời', confirm: { message: `${isEnabled ? 'Bật' : 'Tắt'} ${selection.count.value} mục đã chọn?`, confirmLabel: isEnabled ? 'Bật' : 'Tắt' }, reload: () => load(page.value) })
 }
 async function toggle(item: AdminSmallTalkRow) {
-  try { await $fetch(`/api/admin/chatbot/small-talk/${item.id}/toggle`, { method: 'PATCH' }); toast.success(item.isEnabled ? 'Đã tắt mục.' : 'Đã bật mục.'); await load(page.value) }
+  try { await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/chatbot/small-talk/${item.id}/toggle`, { method: 'PATCH' }); toast.success(item.isEnabled ? 'Đã tắt mục.' : 'Đã bật mục.'); await load(page.value) }
   catch (err: unknown) { toast.error(errorMessage(err, 'Không thể đổi trạng thái mục.')) }
 }
 async function remove(item: AdminSmallTalkRow) {
   const ok = await confirm({ title: 'Xóa mục trả lời', message: 'Xóa mục này? Thao tác không thể hoàn tác.', danger: true, confirmLabel: 'Xóa' }); if (!ok) return
-  try { await $fetch(`/api/admin/chatbot/small-talk/${item.id}`, { method: 'DELETE' }); toast.success('Đã xóa mục.'); await load(page.value) }
+  try { await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/chatbot/small-talk/${item.id}`, { method: 'DELETE' }); toast.success('Đã xóa mục.'); await load(page.value) }
   catch (err: unknown) { toast.error(errorMessage(err, 'Không thể xóa mục.')) }
 }
 
@@ -46,8 +46,8 @@ async function saveEditor() {
   saving.value = true; editorError.value = ''; const patterns = form.patternsText.split('\n').map(line => line.trim()).filter(Boolean)
   const body = { category: form.category, question: form.question.trim(), answer: form.answer.trim(), patterns }
   try {
-    if (editing.value) await $fetch(`/api/admin/chatbot/small-talk/${editing.value.id}`, { method: 'PUT', body })
-    else await $fetch('/api/admin/chatbot/small-talk', { method: 'POST', body })
+    if (editing.value) await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/chatbot/small-talk/${editing.value.id}`, { method: 'PUT', body })
+    else await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/chatbot/small-talk', { method: 'POST', body })
     toast.success(editing.value ? 'Đã cập nhật mục.' : 'Đã thêm mục mới.'); closeEditor(); await load(editing.value ? page.value : 1)
   } catch (err: unknown) { editorError.value = errorMessage(err, 'Không thể lưu mục.') } finally { saving.value = false }
 }

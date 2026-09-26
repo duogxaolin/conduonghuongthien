@@ -91,7 +91,7 @@ const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, refresh } = await useAsyncData(
   `block-news-${props.block.id}-${currentLang.value}`,
-  () => $fetch('/api/public/articles', {
+  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
     params: {
       type: 'news',
       limit: maxItems.value,

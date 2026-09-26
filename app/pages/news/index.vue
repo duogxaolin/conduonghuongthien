@@ -624,11 +624,13 @@ const PER_PAGE = 19
 const currentPage = ref(Math.max(1, Math.floor(Number(route.query.page) || 1)) || 1)
 
 // Category chips — DB-driven via /api/public/categories?type=news
-const { data: catData, pending: catPending } = useFetch('/api/public/categories', {
-  query: { type: 'news' },
-  lazy: true,
-  default: () => ({ ok: true, items: [] })
-})
+const { data: catData, pending: catPending } = useAsyncData('news-categories', () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ id: number; name: string; slug: string; parentId: number | null }> }>)('/api/public/categories', { query: { type: 'news' } }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, items: [] })
+  }
+)
 const allCategories = computed(() => catData.value?.items || [])
 const rootCategories = computed(() => allCategories.value.filter((c) => c.parentId === null))
 const childrenOf = (parentId: number) => allCategories.value.filter((c) => c.parentId === parentId)
@@ -724,21 +726,25 @@ const articlesQuery = computed(() => {
   return q
 })
 
-const { data: articlesData, pending, error, refresh } = useFetch('/api/public/articles', {
-  query: articlesQuery,
-  lazy: true,
-  default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 } })
-})
+const { data: articlesData, pending, error, refresh } = useAsyncData('news-articles-list', () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string; categoryName?: string | null; categorySlug?: string | null }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: articlesQuery.value }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 } })
+  }
+)
 const newsList = computed(() => articlesData.value?.articles || [])
 const loadError = computed(() => !!error.value || articlesData.value?.ok === false)
 const pagination = computed(() => articlesData.value?.pagination || { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 })
 
 // Most Read
-const { data: mostReadData, pending: mostReadPending } = useFetch('/api/public/articles', {
-  query: { type: 'news', limit: 6, sort: 'views' },
-  lazy: true,
-  default: () => ({ ok: true, articles: [], pagination: {} })
-})
+const { data: mostReadData, pending: mostReadPending } = useAsyncData('news-most-read', () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string; categoryName?: string | null; categorySlug?: string | null }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: { type: 'news', limit: 6, sort: 'views' } }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: {} })
+  }
+)
 const mostRead = computed(() => mostReadData.value?.articles || [])
 
 // Featured & Rest — chỉ hiện bài tiêu điểm ở Trang 1 khi không tìm kiếm

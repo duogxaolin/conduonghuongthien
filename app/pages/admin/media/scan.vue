@@ -47,7 +47,7 @@ const scanProgressPercent = computed(() => {
 
 const pollScanStatus = async () => {
   try {
-    const res = await $fetch<{ ok: boolean, status: ScanJobStatus | null }>('/api/admin/media/scan-status')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, status: ScanJobStatus | null }>)(`/api/admin/media/scan-status`)
     scanJob.value = res.status
     if (res.status?.running) {
       scanning.value = true
@@ -89,7 +89,7 @@ const scanFolder = async () => {
   scanning.value = true
   scanResult.value = null
   try {
-    await $fetch('/api/admin/media/scan', { method: 'POST' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/scan`, { method: 'POST' })
     toast.info('Đã khởi tạo job quét. Đang chạy nền...')
     startScanPolling()
     await pollScanStatus()
@@ -101,7 +101,7 @@ const scanFolder = async () => {
 
 const cancelScan = async () => {
   try {
-    await $fetch('/api/admin/media/scan-cancel', { method: 'POST' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/scan-cancel`, { method: 'POST' })
     toast.info('Đã yêu cầu hủy. Worker dừng ở batch tiếp theo.')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi hủy quét'))
@@ -118,7 +118,7 @@ const forceResetScan = async () => {
   if (!confirm('Buộc gỡ kẹt job quét đang treo? Job sẽ dừng ngay và có thể chạy lại. Worker cũ (nếu còn) sẽ tự hết.')) return
   forceResettingScan.value = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/media/scan-force-reset', { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/media/scan-force-reset`, { method: 'POST' })
     toast.success(res.message)
     await pollScanStatus()
   } catch (err: unknown) {
@@ -177,14 +177,14 @@ const progressPercent = computed(() => {
 
 const loadCounts = async () => {
   try {
-    const res = await $fetch<{ local: number; r2: number }>('/api/admin/media/counts')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ local: number; r2: number }>)(`/api/admin/media/counts`)
     counts.value = { local: res.local ?? 0, r2: res.r2 ?? 0 }
   } catch { /* không chặn trang */ }
 }
 
 const pollStatus = async () => {
   try {
-    const res = await $fetch<{ ok: boolean, status: SyncJobStatus | null }>('/api/admin/media/sync-status')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, status: SyncJobStatus | null }>)(`/api/admin/media/sync-status`)
     jobStatus.value = res.status
     if (res.status?.running) {
       syncing.value = true
@@ -223,7 +223,7 @@ const syncStorage = async (direction: 'to-r2' | 'to-local') => {
   syncDirection.value = direction
   syncResult.value = null
   try {
-    await $fetch('/api/admin/media/sync-storage', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/sync-storage`, {
       method: 'POST',
       body: { direction },
     })
@@ -239,7 +239,7 @@ const syncStorage = async (direction: 'to-r2' | 'to-local') => {
 
 const cancelSync = async () => {
   try {
-    await $fetch('/api/admin/media/sync-cancel', { method: 'POST' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/sync-cancel`, { method: 'POST' })
     toast.info('Đã yêu cầu hủy. Worker sẽ dừng ở batch tiếp theo.')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi hủy sync'))
@@ -255,7 +255,7 @@ const forceResetSync = async () => {
   if (!confirm('Buộc gỡ kẹt job sync đang treo? Job sẽ dừng ngay và có thể chạy lại. Worker cũ (nếu còn) sẽ tự hết — lần chạy mới có timeout 90s cho pre-backup.')) return
   forceResettingSync.value = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/media/sync-force-reset', { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/media/sync-force-reset`, { method: 'POST' })
     toast.success(res.message)
     await pollStatus()
   } catch (err: unknown) {
@@ -295,7 +295,7 @@ const repointUrls = async () => {
   repointing.value = true
   repointResult.value = null
   try {
-    const res = await $fetch<{ ok: boolean, mediaUpdated: number, articlesUpdated: number, backupStamp: string | null, message: string }>('/api/admin/media/repoint-r2-urls', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, mediaUpdated: number, articlesUpdated: number, backupStamp: string | null, message: string }>)(`/api/admin/media/repoint-r2-urls`, {
       method: 'POST',
       body: { oldDomain: oldDomain.value.trim(), newDomain: newDomain.value.trim() },
     })
@@ -322,7 +322,7 @@ const repairUrls = async () => {
   repairing.value = true
   repairResult.value = null
   try {
-    const res = await $fetch<{ ok: boolean; mediaFixed: number; articlesFixed: number; backupStamp: string | null; message: string }>('/api/admin/media/repair-urls', { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; mediaFixed: number; articlesFixed: number; backupStamp: string | null; message: string }>)(`/api/admin/media/repair-urls`, { method: 'POST' })
     repairResult.value = { mediaFixed: res.mediaFixed, articlesFixed: res.articlesFixed, backupStamp: res.backupStamp }
     toast.success(res.message)
     await loadCounts()
