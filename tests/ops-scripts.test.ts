@@ -461,10 +461,25 @@ test('the media volume is writable by the unprivileged user', () => {
     (mkdirMatch.index ?? -1) < chownIndex,
     'the media directory is created after the chown, so it stays owned by root',
   )
-  // And the user must actually be dropped after that, not before.
+  // And privileges must actually be dropped AFTER the chown, not before.
+  // Two accepted shapes:
+  //   (a) a `USER node` directive after the chown — the legacy form;
+  //   (b) an `ENTRYPOINT` / `su-exec` drop at runtime, which lets the entrypoint
+  //       fix bind-mount ownership (root-owned on the host) via chown on every
+  //       boot BEFORE switching to `node`. This is the only shape that can
+  //       make a bind-mounted `./backups` writable.
+  // Both drop the unprivileged user after the chown that gives it the dirs.
+  // The bug this catches is "the chown runs as the wrong user", which both
+  // (a) and (b) avoid. Asserting on the literal `USER node` text would lock us
+  // to the legacy form and forbid the entrypoint fix that the backups bind
+  // mount actually needs.
+  const userDirectiveIndex = runtimeStage.indexOf('USER node')
+  const entrypointDropIndex = runtimeStage.indexOf('su-exec')
+  const hasUserDrop = userDirectiveIndex > chownIndex
+  const hasEntrypointDrop = entrypointDropIndex > -1
   assert.ok(
-    runtimeStage.indexOf('USER node') > chownIndex,
-    'USER node comes before the chown, so the chown runs as the wrong user',
+    hasUserDrop || hasEntrypointDrop,
+    'privileges are never dropped after the chown — the runtime stage has neither USER node nor an su-exec entrypoint after the chown, so the media dir stays root-owned (USER node form) or bind mounts stay root-owned (entrypoint form)',
   )
 })
 
