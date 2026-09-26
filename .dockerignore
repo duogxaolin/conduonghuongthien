@@ -22,6 +22,12 @@ TMP
 openspec
 .claude
 .mcp.json
+.migrate
+old-data
+
+# Ảnh/uploads runtime — không nướng vào image (volume mount lo)
+public/uploads
+backups
 
 # FontAwesome Pro ships 113MB of SVG-JS bundles the site never loads (it uses
 # the webfont CSS). Same list as .gitignore — keep them out of the image too.

@@ -28,14 +28,7 @@ tự động deploy mỗi lần merge vào `main` (GitHub Actions → GHCR → V
 
 - **Auto Init**: `server/db/init.ts` tạo toàn bộ bảng nếu chưa tồn tại
 - **Auto Seed**: `server/db/seed.ts` tạo data mặc định (idempotent, không ghi đè data đã có)
-- **Full Dump**: `migrations/full_dump.sql` — dump đầy đủ schema + data để import nhanh trên server mới
-
-### Import dump thay vì auto-init
-
-```bash
-docker exec -i cdkt_mysql mysql -u root -p<PASSWORD> cdkt_admin < migrations/full_dump.sql
-docker restart cdkt_app
-```
+- **Schema snapshot**: `migrations/001_full_schema.sql` + `002_seed_data.sql` (cho cài mới)
 
 ### Backup & Restore
 

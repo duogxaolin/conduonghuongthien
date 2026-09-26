@@ -80,8 +80,7 @@ Chạy khi có file `.sql` mới (bài viết, dump data). Luồng:
 production/
 ├─ manage.sh           # script chính (menu 1/2/3)
 ├─ README.md           # tệp này
-├─ migrations/          # thả file .sql vào đây
-│  ├─ full_dump.sql    # snapshot data (đã có sẵn)
+├─ migrations/          # thả file .sql vào đây (INSERT-only, không DROP)
 │  └─ .imported-*       # đánh dấu đã import (tự tạo)
 └─ .env.template       # mẫu .env (tham khảo, không dùng trực tiếp)
 ```
@@ -117,10 +116,10 @@ cd /www/wwwroot/conduonghuongthien/production
 
 ### Có data bài viết mới
 
-Anh xuất dump SQL (hoặc em commit `full_dump.sql` mới), thả vào `production/migrations/`:
+Anh xuất dump SQL (chỉ `INSERT`, không `DROP`), thả vào `production/migrations/`:
 
 ```bash
-# Trên máy dev: commit full_dump.sql mới
+# Trên máy dev: commit file .sql mới
 # Trên VPS:
 cd /www/wwwroot/conduonghuongthien
 git pull origin main
@@ -152,10 +151,10 @@ A: Vào `$PUBLIC_BASE_URL/admin/profile` sau đăng nhập. Mật khẩu đầu 
 A: Auto-deploy đã tắt. Chạy `./manage.sh` → 2 (Update) để pull + restart bằng tay.
 
 **Q: File SQL nào nên thả vào `migrations/`?**
-A: `full_dump.sql` (snapshot đầy đủ, có `DROP TABLE` — ghi đè toàn bộ). Hoặc file `.sql` chỉ `INSERT` (thêm data). Script tự detect, không ghi đè file đã import trừ khi xoá marker.
+A: File `.sql` chỉ `INSERT` (thêm data, không `DROP TABLE`). Script tự detect, không ghi đè file đã import trừ khi xoá marker.
 
 **Q: Lỗi `Access denied for user 'root'@'localhost'`?**
 A: `.env` dùng `MYSQL_ROOT_PASSWORD` (không phải `DB_PASSWORD`). `manage.sh` đọc đúng biến — chạy qua script, đừng gõ tay.
 
 **Q: Muốn dựng lại sạch từ đầu?**
-A: `docker compose down -v` (xoá volume = mất data) → `./manage.sh` → 1 (Deploy) → import lại `full_dump.sql` qua 3 (Migrate).
+A: `docker compose down -v` (xoá volume = mất data) → `./manage.sh` → 1 (Deploy). App tự `init.ts` + `seed.ts`, không cần dump.

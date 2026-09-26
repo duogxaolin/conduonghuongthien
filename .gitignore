@@ -56,17 +56,12 @@ test-results/
 blob-report/
 .playwright/
 
-# Migration data — source cổng cũ ASP.NET, chỉ dùng để migrate 1 lần, không deploy
+# Migration data — source cổng cũ ASP.NET, đã migrate xong, không cần nữa
 old-data/
-# .migrate/ chứa script migrate + data JSON; test legacy-urls cần import-articles.json
-# nên chỉ ignore script/*.mjs, giữ lại các file .json mà test đọc
-.migrate/*.mjs
-.migrate/*.txt
-.migrate/*.log
+.migrate/
 
 # production/migrations/ marker đã import (tự tạo)
 production/migrations/.imported-*
 
-# Runtime uploads (keep migrated legacy media)
-public/uploads/*
-!public/uploads/migrated/
+# Runtime uploads — không track ảnh/uploads vào git
+public/uploads/

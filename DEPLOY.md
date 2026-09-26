@@ -132,23 +132,7 @@ Khi thấy `Listening on http://0.0.0.0:54432` → app sẵn sàng.
 
 **Không cần làm gì.** App tự chạy `init.ts` (tạo/hội tụ 27 bảng) + `seed.ts` (tài khoản, vai trò, trang hệ thống) mỗi lần khởi động. Cả hai **idempotent**: chạy lại không ghi đè mật khẩu, phân quyền hay cấu hình bạn đã sửa.
 
-### Cách B: Import dump có sẵn dữ liệu mẫu
-
-```bash
-# Chờ MySQL healthy
-docker compose ps mysql
-
-# Dump có guard chống chạy nhầm — phải bật cờ mới thực thi
-docker exec -i cdkt_mysql mysql -u root -p"$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2)" \
-  --init-command="SET @CDKT_ALLOW_DESTRUCTIVE_RESTORE=1" \
-  "$(grep MYSQL_DATABASE .env | cut -d= -f2)" < migrations/full_dump.sql
-
-docker restart cdkt_app
-```
-
-> ⚠️ Dump chứa lệnh `DROP TABLE` cho **toàn bộ** bảng — chỉ dùng cho cài mới hoặc khi cố ý ghi đè. Không có cờ `CDKT_ALLOW_DESTRUCTIVE_RESTORE=1`, script sẽ tự dừng.
-
-### Cách C: Khôi phục từ bản sao lưu của bạn
+### Cách B: Khôi phục từ bản sao lưu của bạn
 
 ```bash
 docker exec -i cdkt_mysql mysql -u root -p"$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2)" \
@@ -168,19 +152,6 @@ docker compose up -d
 ```
 
 Cài mới hoàn toàn thì bỏ qua bước này.
-
----
-
-## Bước 4c: Đồng bộ ảnh di trú từ cổng cũ (nếu dùng CSDL bài viết migrate)
-
-Nếu triển khai cùng CSDL chứa 1.132 bài viết đã migrate từ cổng cũ ASP.NET, chạy lệnh sau để đồng bộ thư mục ảnh `public/uploads/migrated/` (~638 MB, 3.212 file) vào Docker volume:
-
-```bash
-bash scripts/copy-migrated-uploads-to-docker.sh
-```
-
-*(Chi tiết danh sách các bài viết còn thiếu file ảnh nguồn xem tại `docs/migration-unresolved-images-report.md`)*
-
 
 ---
 
