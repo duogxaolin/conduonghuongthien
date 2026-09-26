@@ -116,7 +116,7 @@
             </div>
             <div>
               <h1 class="text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.5px] leading-[1.2]">CON ĐƯỜNG HƯỚNG THIỆN</h1>
-              <p class="hidden lg:block text-[0.72rem] font-semibold text-[#7A8675] uppercase mt-0.5">Cổng thông tin điện tử hỗ trợ tái hòa nhập cộng đồng — Bộ Công an</p>
+              <p class="hidden lg:block text-[0.72rem] font-semibold text-[#7A8675] uppercase mt-0.5">{{ t('portal_subtitle') }}</p>
             </div>
           </nuxt-link>
 
@@ -249,7 +249,7 @@
             </div>
             <div class="flex flex-col min-w-0">
               <span class="text-[0.85rem] font-extrabold tracking-[0.4px] text-white leading-[1.2] truncate">CON ĐƯỜNG HƯỚNG THIỆN</span>
-              <span class="text-[0.65rem] text-white/75 font-medium mt-0.5 truncate">Cổng thông tin điện tử C11 - Bộ Công an</span>
+              <span class="text-[0.65rem] text-white/75 font-medium mt-0.5 truncate">{{ t('portal_tagline_short') }}</span>
             </div>
           </div>
           <button
@@ -697,7 +697,7 @@
               target="_blank"
               rel="noopener noreferrer"
               class="text-white/70 no-underline font-semibold transition-all hover:text-[#7CB342] hover:underline"
-            >Design by Delify.vn</a>
+            >{{ t('design_by').replace('{brand}', 'Delify.vn') }}</a>
           </p>
         </div>
       </div>
@@ -862,7 +862,7 @@ const onSearchInput = () => {
   if (liveSearchTimer) clearTimeout(liveSearchTimer)
   liveSearchTimer = setTimeout(async () => {
     try {
-      const res = await $fetch<{ ok: boolean; items: LiveSearchItem[] }>('/api/public/search', {
+      const res = await ($fetch as (u: string, o: Record<string, unknown>) => Promise<{ ok: boolean; items: LiveSearchItem[] }>)('/api/public/search', {
         params: { q, limit: 6 },
       })
       if (res?.ok && Array.isArray(res.items)) {
@@ -1053,13 +1053,15 @@ const onBottomNavClick = (item: BottomNavItem) => {
   else if (item.type === 'drawer') toggleMobileMenu()
 }
 
-// Use useFetch so the payload is serialized from SSR and reused on client
-// hydration without a second network request — eliminates nav data mismatch.
-const { data: settingsData } = await useFetch('/api/public/settings', {
-  key: 'public-settings-nav',
-  default: () => null,
-  lazy: false,
-})
+// Use useAsyncData + $fetch so the payload is serialized from SSR and reused
+// on client hydration without a second network request — eliminates nav data
+// mismatch. (useFetch's route-generic inference overloads TS here — TS2589.)
+type PublicSettingsResponse = { settings?: Record<string, string | null>; faviconUrl?: string | null }
+const { data: settingsData } = await useAsyncData<PublicSettingsResponse | null>(
+  'public-settings-nav',
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  { default: () => null },
+)
 
 // Site-wide contact details come from Cài đặt chung so an editor's change takes
 // effect on the live site. The literals are only a fallback for the very first

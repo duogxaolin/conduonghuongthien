@@ -28,7 +28,7 @@ const fetchSettings = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch('/api/admin/settings')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null> }>)(`/api/admin/settings`)
     if (res.ok && res.settings) {
       Object.assign(settings, res.settings)
     } else {
@@ -44,7 +44,7 @@ const fetchSettings = async () => {
 const handleSave = async () => {
   saving.value = true
   try {
-    const res = await $fetch('/api/admin/settings', { method: 'PUT', body: { settings } })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/settings`, { method: 'PUT', body: { settings } })
     if (res.ok) toast.success('Đã lưu cài đặt website thành công!')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu cài đặt'))
@@ -100,7 +100,7 @@ const uploadFavicon = async (event: Event) => {
   try {
     const form = new FormData()
     form.append('file', file)
-    const res = await $fetch('/api/admin/settings/favicon', { method: 'POST', body: form })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; faviconUrl: string; convertedToPng?: boolean }>)(`/api/admin/settings/favicon`, { method: 'POST', body: form })
 
     settings.favicon_url = res.faviconUrl
 
@@ -130,7 +130,7 @@ const resettingFavicon = ref(false)
 const resetFavicon = async () => {
   resettingFavicon.value = true
   try {
-    await $fetch('/api/admin/settings/favicon', { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/favicon`, { method: 'DELETE' })
     settings.favicon_url = ''
     toast.success('Đã trả favicon về mặc định của cổng.')
   } catch (err: unknown) {

@@ -75,6 +75,20 @@ export function cancelScanJob(): void {
   }
 }
 
+export function forceResetScanJob(): { ok: boolean; message: string } {
+  if (!currentScanJob) return { ok: false, message: 'Không có job quét nào.' }
+  if (!currentScanJob.running) return { ok: false, message: 'Job quét đã dừng rồi.' }
+  const prevPhase = currentScanJob.phase
+  const elapsed = Math.round((Date.now() - currentScanJob.startedAt) / 1000)
+  currentScanJob.running = false
+  currentScanJob.cancelling = false
+  currentScanJob.phase = 'cancelled'
+  currentScanJob.message = `Đã buộc dừng (treo ở ${prevPhase} ${elapsed}s) — có thể chạy lại ngay.`
+  currentScanJob.finishedAt = Date.now()
+  logWarn({ event: 'media.scan_force_reset', prevPhase, elapsed })
+  return { ok: true, message: currentScanJob.message }
+}
+
 /**
  * Khởi tạo job scan nền. Trả `{ jobId }` ngay — worker chạy tiếp trong nền.
  * Nếu đã có job đang chạy → throw.

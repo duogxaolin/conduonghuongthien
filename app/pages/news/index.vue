@@ -8,12 +8,12 @@
           <li class="flex items-center gap-1.5">
             <nuxt-link to="/" class="hover:text-[#385932] transition-colors flex items-center gap-1">
               <i class="fa-solid fa-house text-[0.7rem] text-[#4A6741]" aria-hidden="true"></i>
-              <span>Trang chủ</span>
+              <span>{{ t('home') }}</span>
             </nuxt-link>
           </li>
           <li aria-hidden="true" class="text-[#A2B09F]">&rsaquo;</li>
           <li class="font-bold text-[#2A3B27] flex items-center gap-1">
-            <span>Bản tin</span>
+            <span>{{ t('news') }}</span>
             <span v-if="activeCategory !== 'all' && activeCategoryName" class="font-normal text-[#6B7967]">
               &rsaquo; <span class="font-bold text-[#2A3B27]">{{ activeCategoryName }}</span>
             </span>
@@ -24,13 +24,13 @@
       <div class="max-w-2xl">
         <div class="inline-flex items-center gap-2 px-2.5 py-1 rounded-full bg-[#E4EEE2] border border-[#D0DFCE] text-[#365730] text-[0.72rem] font-extrabold uppercase tracking-wider mb-2.5 shadow-sm">
           <span class="w-2 h-2 rounded-full bg-[#4A6741] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
-          <span>Cổng Thông Tin Điện Tử C11 &bull; Bộ Công An</span>
+          <span>{{ t('n_portal_badge') }}</span>
         </div>
         <h1 class="text-2xl sm:text-3xl lg:text-[2.2rem] font-black text-[#172516] tracking-tight leading-[1.2] m-0">
           {{ pageTitle }}
         </h1>
         <p class="text-[0.92rem] sm:text-base text-[#576653] mt-2 mb-0 leading-relaxed">
-          Cập nhật thông tin chỉ đạo điều hành, hoạt động cơ sở và công tác hỗ trợ hoàn lương trên toàn quốc.
+          {{ t('n_index_desc') }}
         </p>
       </div>
     </PageHero>
@@ -48,8 +48,8 @@
               <input
                 v-model="searchInput"
                 type="text"
-                placeholder="Tìm kiếm bản tin..."
-                aria-label="Tìm kiếm bản tin"
+                :placeholder="t('n_search_placeholder')"
+                :aria-label="t('n_search_placeholder')"
                 class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-[#1E251C] placeholder-[#8A9986] focus:border-[#4A6741] focus:ring-2 focus:ring-[#7CB342]/30 focus:outline-none transition-all shadow-sm"
               />
               <button
@@ -66,7 +66,7 @@
                 type="submit"
                 class="absolute right-1.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-[#4A6741] hover:bg-[#365130] text-white text-xs font-bold transition-all shadow-sm"
               >
-                Tìm
+                {{ t('n_search_btn_short') }}
               </button>
             </form>
           </div>
@@ -75,7 +75,7 @@
           <nav aria-label="Lọc bản tin theo chuyên mục" class="flex-1 min-w-0">
             <!-- Skeleton chips — khi chuyển chuyên mục trên client -->
             <div v-if="catPending" role="status" aria-busy="true" class="flex gap-2 py-1">
-              <span class="sr-only">Đang tải danh mục bản tin</span>
+              <span class="sr-only">{{ t('n_loading_categories') }}</span>
               <div
                 v-for="n in 5"
                 :key="n"
@@ -93,7 +93,7 @@
                   @click="setCategory('all')"
                 >
                   <i class="fa-solid fa-layer-group text-xs" aria-hidden="true"></i>
-                  <span>Tất cả bản tin</span>
+                  <span>{{ t('n_all_news') }}</span>
                 </button>
                 <button
                   v-for="cat in rootCategories"
@@ -111,7 +111,7 @@
               <div v-if="activeChildren.length" class="flex items-center gap-2 overflow-x-auto pt-2.5 pb-1 sm:flex-wrap text-xs">
                 <span class="text-[#7A8A76] font-semibold flex items-center gap-1 shrink-0">
                   <i class="fa-solid fa-turn-down text-[0.65rem] rotate-[-90deg]" aria-hidden="true"></i>
-                  Chuyên đề:
+                  {{ t('n_subtopic') }}
                 </span>
                 <button
                   v-for="child in activeChildren"
@@ -148,8 +148,8 @@
                 <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
               </span>
               <span class="text-sm text-[#3E4D3C]">
-                Kết quả tìm kiếm cho: <strong>&laquo;{{ searchQuery }}&raquo;</strong>
-                <span v-if="!pending" class="text-[#7A8A76] ml-1.5">({{ pagination.total }} bài viết)</span>
+                {{ t('n_search_result') }} <strong>&laquo;{{ searchQuery }}&raquo;</strong>
+                <span v-if="!pending" class="text-[#7A8A76] ml-1.5">({{ t('n_articles_count').replace('{n}', String(pagination.total)) }})</span>
               </span>
             </div>
             <button
@@ -158,13 +158,13 @@
               @click="clearSearch"
             >
               <i class="fa-solid fa-xmark text-[0.7rem]" aria-hidden="true"></i>
-              <span>Xóa bộ lọc</span>
+              <span>{{ t('n_clear_filter') }}</span>
             </button>
           </div>
 
           <!-- Loading State (Skeleton) -->
           <div v-if="pending" role="status" aria-busy="true" class="flex flex-col gap-8">
-            <span class="sr-only">Đang tải danh sách bản tin</span>
+            <span class="sr-only">{{ t('n_list_loading') }}</span>
             <!-- Hero skeleton -->
             <div aria-hidden="true" class="bg-white overflow-hidden border border-[#DDE6DC] shadow-sm flex flex-col md:flex-row animate-pulse motion-reduce:animate-none">
               <div class="md:w-[48%] aspect-video bg-[#E5EDE3] shrink-0 rounded-none"></div>
@@ -209,15 +209,15 @@
             <div class="w-12 h-12 rounded-full bg-[#FCE8E8] text-[#C62828] flex items-center justify-center mx-auto mb-3 text-lg">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
             </div>
-            <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">Không thể tải danh sách bản tin</h3>
-            <p class="text-sm text-[#667768] m-0 mb-4">Đã xảy ra lỗi khi kết nối dữ liệu. Vui lòng kiểm tra lại kết nối mạng.</p>
+            <h3 class="text-base font-extrabold text-[#992222] m-0 mb-1">{{ t('n_load_error_title') }}</h3>
+            <p class="text-sm text-[#667768] m-0 mb-4">{{ t('n_load_error_desc') }}</p>
             <button
               type="button"
               class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4A6741] hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm"
               @click="refresh()"
             >
               <i class="fa-solid fa-rotate-right text-xs" aria-hidden="true"></i>
-              <span>Thử lại ngay</span>
+              <span>{{ t('n_retry_now') }}</span>
             </button>
           </div>
 
@@ -229,9 +229,9 @@
             <div class="w-14 h-14 rounded-full bg-[#EEF4EC] text-[#4A6741] flex items-center justify-center mx-auto mb-3.5 text-xl">
               <i class="fa-regular fa-newspaper" aria-hidden="true"></i>
             </div>
-            <h3 class="text-base font-extrabold text-[#233520] m-0 mb-1">Chưa có bản tin phù hợp</h3>
+            <h3 class="text-base font-extrabold text-[#233520] m-0 mb-1">{{ t('n_empty_title') }}</h3>
             <p class="text-sm text-[#6E7D6B] max-w-md mx-auto m-0 mb-5">
-              Không tìm thấy bài viết nào theo tiêu chí lựa chọn hiện tại. Anh/Chị có thể thử từ khóa khác hoặc quay lại tất cả bản tin.
+              {{ t('n_empty_desc2') }}
             </p>
             <button
               type="button"
@@ -239,7 +239,7 @@
               @click="resetFilter"
             >
               <i class="fa-solid fa-arrow-rotate-left text-xs" aria-hidden="true"></i>
-              <span>Xem tất cả bản tin</span>
+              <span>{{ t('n_view_all_list') }}</span>
             </button>
           </div>
 
@@ -268,7 +268,7 @@
                 <div>
                   <div class="flex items-center gap-2.5 mb-2.5 text-xs flex-wrap">
                     <span class="inline-block bg-[#689F38] text-white font-extrabold px-2.5 py-0.5 rounded text-[0.7rem] uppercase tracking-wider shadow-sm">
-                      Nổi bật
+                      {{ t('n_featured_badge') }}
                     </span>
                     <span
                       v-if="featured.categoryName"
@@ -300,7 +300,7 @@
                     :to="`/news/${featured.slug}`"
                     class="inline-flex items-center gap-1.5 text-[#385932] hover:text-[#1B3617] font-bold text-[0.88rem] transition-all no-underline group/link"
                   >
-                    <span>Đọc tiếp</span>
+                    <span>{{ t('n_read_more') }}</span>
                     <i class="fa-solid fa-arrow-right text-[0.72rem] transition-transform duration-200 group-hover/link:translate-x-1" aria-hidden="true"></i>
                   </nuxt-link>
                 </div>
@@ -312,14 +312,14 @@
               <div class="flex items-center gap-2.5">
                 <span class="w-2.5 h-6 rounded-sm bg-[#4A6741]" aria-hidden="true"></span>
                 <h2 class="text-base sm:text-lg font-black text-[#1A2A17] tracking-tight uppercase m-0">
-                  Danh sách bản tin
+                  {{ t('n_list_title') }}
                 </h2>
                 <span class="text-xs font-extrabold px-2.5 py-0.5 rounded-full bg-[#EBF3E8] text-[#385932]">
-                  {{ pagination.total }} tin
+                  {{ t('n_count_suffix').replace('{n}', String(pagination.total)) }}
                 </span>
               </div>
               <span v-if="pagination.totalPages > 1" class="text-xs text-[#7A8A76] font-medium hidden sm:inline">
-                Trang {{ pagination.page }} / {{ pagination.totalPages }}
+                {{ t('page_of').replace('{current}', String(pagination.page)).replace('{total}', String(pagination.totalPages)) }}
               </span>
             </div>
 
@@ -373,10 +373,10 @@
                       :to="`/news/${item.slug}`"
                       class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
                     >
-                      <span>Chi tiết</span>
+                      <span>{{ t('n_view_details') }}</span>
                       <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
                     </nuxt-link>
-                    <span class="text-[#8E9F8B] font-medium text-[0.72rem]">Bản tin C11</span>
+                    <span class="text-[#8E9F8B] font-medium text-[0.72rem]">{{ t('n_c11_badge') }}</span>
                   </div>
                 </div>
               </article>
@@ -388,7 +388,7 @@
               class="flex flex-col sm:flex-row items-center justify-between gap-4 mt-8 pt-6 border-t border-[#DDE6DC]"
             >
               <div class="text-xs text-[#6F7F6C] font-medium order-2 sm:order-1">
-                Hiển thị trang <strong>{{ pagination.page }}</strong> trên tổng số <strong>{{ pagination.totalPages }}</strong> trang
+                {{ t('n_pagination_summary').replace('{current}', String(pagination.page)).replace('{total}', String(pagination.totalPages)) }}
               </div>
 
               <div class="flex items-center gap-1.5 flex-wrap justify-center order-1 sm:order-2">
@@ -397,7 +397,7 @@
                   class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-[#4A5545] text-xs font-bold cursor-pointer transition-all duration-200 hover:border-[#4A6741] hover:text-[#4A6741] hover:bg-[#F2F7F0] disabled:opacity-30 disabled:cursor-not-allowed"
                   :disabled="pagination.page <= 1"
                   @click="setPage(pagination.page - 1)"
-                  aria-label="Trang trước"
+                  :aria-label="t('page_prev')"
                 >
                   <i class="fa-solid fa-chevron-left text-[0.7rem]" aria-hidden="true"></i>
                 </button>
@@ -426,7 +426,7 @@
                   class="inline-flex items-center justify-center w-9 h-9 rounded-lg border border-[#D5E1D3] bg-white text-[#4A5545] text-xs font-bold cursor-pointer transition-all duration-200 hover:border-[#4A6741] hover:text-[#4A6741] hover:bg-[#F2F7F0] disabled:opacity-30 disabled:cursor-not-allowed"
                   :disabled="pagination.page >= pagination.totalPages"
                   @click="setPage(pagination.page + 1)"
-                  aria-label="Trang tiếp"
+                  :aria-label="t('page_next')"
                 >
                   <i class="fa-solid fa-chevron-right text-[0.7rem]" aria-hidden="true"></i>
                 </button>
@@ -439,10 +439,10 @@
         <aside class="flex flex-col gap-6 min-w-0 lg:sticky lg:top-[90px]">
           <!-- Widget 1: Đọc nhiều (thiết kế nguyên bản tinh tế) -->
           <div class="bg-white rounded-lg border border-[#E2E8DF] shadow-sm px-5 py-2">
-            <h2 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">Đọc nhiều</h2>
+            <h2 class="text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[0.6px] pt-3 pb-2 border-b-2 border-[#E2E8DF] m-0">{{ t('n_most_read_short') }}</h2>
 
             <div v-if="mostReadPending" role="status" aria-busy="true" class="py-2">
-              <span class="sr-only">Đang tải tin đọc nhiều</span>
+              <span class="sr-only">{{ t('n_loading_most_read') }}</span>
               <div aria-hidden="true" class="flex flex-col">
                 <div v-for="n in 6" :key="n" class="flex gap-3 py-3 border-b border-[#E2E8DF] last:border-b-0">
                   <div class="h-6 w-6 bg-[#EEF2EC] rounded shrink-0 animate-pulse motion-reduce:animate-none"></div>
@@ -470,7 +470,7 @@
               </li>
             </ul>
 
-            <p v-else class="text-[0.85rem] text-[#7A8675] italic py-4 m-0">Chưa có dữ liệu lượt xem.</p>
+            <p v-else class="text-[0.85rem] text-[#7A8675] italic py-4 m-0">{{ t('n_no_views') }}</p>
           </div>
 
           <!-- Widget 2: Chuyên mục bản tin -->
@@ -480,7 +480,7 @@
                 <i class="fa-solid fa-folder-open" aria-hidden="true"></i>
               </span>
               <h2 class="text-[0.92rem] font-black text-[#172516] uppercase tracking-wide m-0">
-                Chuyên mục
+                {{ t('n_category_widget') }}
               </h2>
             </div>
             <div class="flex flex-col divide-y divide-[#F2F6F0]">
@@ -492,7 +492,7 @@
               >
                 <span class="flex items-center gap-2">
                   <i class="fa-solid fa-layer-group text-[0.7rem] text-[#8CA088]" aria-hidden="true"></i>
-                  <span>Tất cả bản tin</span>
+                  <span>{{ t('n_all_news') }}</span>
                 </span>
                 <i class="fa-solid fa-chevron-right text-[0.65rem] text-[#A0B09C]" aria-hidden="true"></i>
               </button>
@@ -519,11 +519,11 @@
               <span class="w-6 h-6 rounded-full bg-white/15 flex items-center justify-center text-xs">
                 <i class="fa-solid fa-shield-halved text-[#A8D59D]" aria-hidden="true"></i>
               </span>
-              <span class="text-[0.7rem] font-black uppercase tracking-wider text-[#A8D59D]">Hỗ trợ 24/7</span>
+              <span class="text-[0.7rem] font-black uppercase tracking-wider text-[#A8D59D]">{{ t('support_24_7') }}</span>
             </div>
-            <h3 class="text-[1.05rem] font-black m-0 mb-1.5 leading-snug">Đường Dây Nóng Tư Vấn</h3>
+            <h3 class="text-[1.05rem] font-black m-0 mb-1.5 leading-snug">{{ t('hotline_title') }}</h3>
             <p class="text-xs leading-relaxed m-0 mb-4 text-white/80">
-              Tư vấn pháp lý, thủ tục cư trú và việc làm tái hòa nhập cộng đồng cho người hoàn lương.
+              {{ t('hotline_desc') }}
             </p>
 
             <a
@@ -539,7 +539,7 @@
               class="flex items-center justify-center gap-2 w-full bg-white/10 hover:bg-white/20 text-white text-xs font-bold py-2 px-3 rounded-xl no-underline transition-all border border-white/15"
             >
               <i class="fa-solid fa-robot text-[0.8rem]" aria-hidden="true"></i>
-              <span>Hỏi Trợ Lý AI 24/7</span>
+              <span>{{ t('ask_ai_24_7') }}</span>
             </nuxt-link>
           </div>
 
@@ -550,7 +550,7 @@
                 <i class="fa-solid fa-bookmark" aria-hidden="true"></i>
               </span>
               <h2 class="text-[0.92rem] font-black text-[#172516] uppercase tracking-wide m-0">
-                Tiện ích tra cứu
+                {{ t('quick_tools') }}
               </h2>
             </div>
             <div class="flex flex-col gap-2 text-xs">
@@ -560,7 +560,7 @@
               >
                 <span class="flex items-center gap-2">
                   <i class="fa-solid fa-scale-balanced text-[#4A6741]" aria-hidden="true"></i>
-                  <span>Văn bản pháp luật</span>
+                  <span>{{ t('documents_title') }}</span>
                 </span>
                 <i class="fa-solid fa-arrow-right text-[0.65rem] text-[#8CA088]" aria-hidden="true"></i>
               </nuxt-link>
@@ -570,7 +570,7 @@
               >
                 <span class="flex items-center gap-2">
                   <i class="fa-solid fa-circle-question text-[#4A6741]" aria-hidden="true"></i>
-                  <span>Hỏi đáp pháp luật</span>
+                  <span>{{ t('legal_qa') }}</span>
                 </span>
                 <i class="fa-solid fa-arrow-right text-[0.65rem] text-[#8CA088]" aria-hidden="true"></i>
               </nuxt-link>
@@ -580,7 +580,7 @@
               >
                 <span class="flex items-center gap-2">
                   <i class="fa-solid fa-award text-[#4A6741]" aria-hidden="true"></i>
-                  <span>Tấm gương hoàn lương</span>
+                  <span>{{ t('role_models') }}</span>
                 </span>
                 <i class="fa-solid fa-arrow-right text-[0.65rem] text-[#8CA088]" aria-hidden="true"></i>
               </nuxt-link>
@@ -590,7 +590,7 @@
               >
                 <span class="flex items-center gap-2">
                   <i class="fa-solid fa-people-group text-[#4A6741]" aria-hidden="true"></i>
-                  <span>Mô hình tái hòa nhập</span>
+                  <span>{{ t('reintegration') }}</span>
                 </span>
                 <i class="fa-solid fa-arrow-right text-[0.65rem] text-[#8CA088]" aria-hidden="true"></i>
               </nuxt-link>
@@ -606,10 +606,13 @@
 import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
+import { useI18n } from '~/composables/useI18n'
+
+const { t } = useI18n()
 
 useSeoMeta({
-  title: 'Bản tin hoạt động | Con Đường Hướng Thiện',
-  description: 'Tin tức, chỉ đạo điều hành và sự kiện hỗ trợ hoàn lương, tái hòa nhập cộng đồng trên toàn quốc.'
+  title: () => `${t('n_activity_heading')} | Con Đường Hướng Thiện`,
+  description: () => t('n_index_desc')
 })
 
 const route = useRoute()
@@ -621,11 +624,13 @@ const PER_PAGE = 19
 const currentPage = ref(Math.max(1, Math.floor(Number(route.query.page) || 1)) || 1)
 
 // Category chips — DB-driven via /api/public/categories?type=news
-const { data: catData, pending: catPending } = useFetch('/api/public/categories', {
-  query: { type: 'news' },
-  lazy: true,
-  default: () => ({ ok: true, items: [] })
-})
+const { data: catData, pending: catPending } = useAsyncData('news-categories', () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ id: number; name: string; slug: string; parentId: number | null }> }>)('/api/public/categories', { query: { type: 'news' } }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, items: [] })
+  }
+)
 const allCategories = computed(() => catData.value?.items || [])
 const rootCategories = computed(() => allCategories.value.filter((c) => c.parentId === null))
 const childrenOf = (parentId: number) => allCategories.value.filter((c) => c.parentId === parentId)
@@ -645,8 +650,8 @@ const activeCategoryName = computed(() => {
 })
 
 const pageTitle = computed(() => {
-  if (activeCategory.value === 'all') return 'Bản tin hoạt động'
-  return activeCategoryName.value || 'Bản tin hoạt động'
+  if (activeCategory.value === 'all') return t('n_activity_heading')
+  return activeCategoryName.value || t('n_activity_heading')
 })
 
 // Visual pill classes
@@ -672,9 +677,9 @@ const categoryIcon = (slug: string) => {
 
 // Huy hiệu danh mục tự động khớp theo dữ liệu thực tế của từng bài viết (không bao giờ gán bừa "Tin nổi bật")
 const categoryBadge = (item: { categorySlug?: string | null; categoryName?: string | null } | null | undefined) => {
-  if (!item) return { label: 'Bản tin', bg: 'bg-[#4A6741]', icon: 'fa-solid fa-newspaper' }
+  if (!item) return { label: t('news'), bg: 'bg-[#4A6741]', icon: 'fa-solid fa-newspaper' }
   const slug = item.categorySlug || ''
-  const label = item.categoryName || 'Bản tin'
+  const label = item.categoryName || t('news')
   if (slug === 'tin-noi-bat') {
     return { label, bg: 'bg-[#C62828]', icon: 'fa-solid fa-star' }
   }
@@ -721,21 +726,25 @@ const articlesQuery = computed(() => {
   return q
 })
 
-const { data: articlesData, pending, error, refresh } = useFetch('/api/public/articles', {
-  query: articlesQuery,
-  lazy: true,
-  default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 } })
-})
+const { data: articlesData, pending, error, refresh } = useAsyncData('news-articles-list', () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string; categoryName?: string | null; categorySlug?: string | null }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: articlesQuery.value }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 } })
+  }
+)
 const newsList = computed(() => articlesData.value?.articles || [])
 const loadError = computed(() => !!error.value || articlesData.value?.ok === false)
 const pagination = computed(() => articlesData.value?.pagination || { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 })
 
 // Most Read
-const { data: mostReadData, pending: mostReadPending } = useFetch('/api/public/articles', {
-  query: { type: 'news', limit: 6, sort: 'views' },
-  lazy: true,
-  default: () => ({ ok: true, articles: [], pagination: {} })
-})
+const { data: mostReadData, pending: mostReadPending } = useAsyncData('news-most-read', () =>
+  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string; categoryName?: string | null; categorySlug?: string | null }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: { type: 'news', limit: 6, sort: 'views' } }),
+  {
+    lazy: true,
+    default: () => ({ ok: true, articles: [], pagination: {} })
+  }
+)
 const mostRead = computed(() => mostReadData.value?.articles || [])
 
 // Featured & Rest — chỉ hiện bài tiêu điểm ở Trang 1 khi không tìm kiếm

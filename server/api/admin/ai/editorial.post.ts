@@ -144,9 +144,11 @@ Trả về đúng định dạng JSON thuần túy (không bọc trong markdown 
           recoveredChanges = JSON.parse(`[${changesMatch[1]}]`)
         } catch {
           const itemRegex = /\{\s*"original"\s*:\s*"([^"]*)"\s*,\s*"suggested"\s*:\s*"([^"]*)"\s*,\s*"reason"\s*:\s*"([^"]*)"\s*\}/g
-          let m
+          let m: RegExpExecArray | null
           while ((m = itemRegex.exec(text)) !== null) {
-            recoveredChanges.push({ original: m[1], suggested: m[2], reason: m[3] })
+            if (m[1] !== undefined && m[2] !== undefined && m[3] !== undefined) {
+              recoveredChanges.push({ original: m[1], suggested: m[2], reason: m[3] })
+            }
           }
         }
       }

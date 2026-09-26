@@ -1,4 +1,5 @@
 import { eq, desc } from 'drizzle-orm'
+import { getHeapStatistics } from 'node:v8'
 import { getDb } from '../utils/db'
 import {
   aiModerationRules,
@@ -94,6 +95,15 @@ const workerStats: WorkerStatsState = {
 export function getWorkerStats() {
   const uptimeSeconds = Math.round((Date.now() - new Date(workerStats.startedAt).getTime()) / 1000)
   const mem = process.memoryUsage()
+  // `heapTotal` là mức V8 tự kéo theo nhu cầu, không phải trần cứng — admin nhìn
+  // "46/64 MB" mà tưởng worker bị kìm 100 MB, trong khi `--max-old-space-size`
+  // thực sự cho tới 2048 MB. `heap_size_limit` từ v8 là con số cap thật, và %
+  // heapUsed/cap nói rõ worker còn bao nhiêu room.
+  const stats = getHeapStatistics()
+  const heapLimitMb = Math.round((stats.heap_size_limit ?? 0) / 1024 / 1024)
+  const heapUsedPercent = heapLimitMb > 0
+    ? Math.round((mem.heapUsed / (stats.heap_size_limit ?? 1)) * 1000) / 10
+    : 0
   return {
     ...workerStats,
     uptimeSeconds,
@@ -103,6 +113,8 @@ export function getWorkerStats() {
       heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
       heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
       rss: Math.round(mem.rss / 1024 / 1024),
+      heapLimit: heapLimitMb,
+      heapUsedPercent,
     },
   }
 }
@@ -342,7 +354,12 @@ export async function checkAndModerateContent(input: ModerationCheckInput): Prom
     }
   }
 
-  // Context-Aware AI Moderation for substantial content
+  // Context-Aware AI Moderation — every non-empty comment is scanned.
+  // Người dùng yêu cầu MỌI bình luận đều qua AI một lược, kể cả bình luận
+  // ngắn 1-4 ký tự: "ls", "wow", "đjt"... Comment ngắn từng bị bỏ qua vì "không
+  // đủ ngữ cảnh", nhưng đúng loại đó là nơi từ lóng/tục tĩu rút gọn lọt qua
+  // sàn 5 ký tự. AI trả verdict trên bất kỳ độ dài nào; nếu quá ngắn để phân
+  // tích, AI sẽ trả "safe" và không ẩn gì.
   let isFlagged = false
   let finalAction: 'allow' | 'auto_hide' | 'flag_only' | 'block' = 'allow'
   let highestSeverity: 'low' | 'medium' | 'high' | 'critical' = 'low'
@@ -351,7 +368,9 @@ export async function checkAndModerateContent(input: ModerationCheckInput): Prom
 
   const severityWeight = { low: 1, medium: 2, high: 3, critical: 4 }
 
-  if (matchedKeywords.length > 0 || content.length >= 20) {
+  // Luôn chạy AI cho mọi content không rỗng (bỏ ngưỡng độ dài cũ).
+  // `content.length > 0` đã được đảm bảo ở đầu hàm, giữ lại làm bảo vệ.
+  if (content.length > 0) {
     const detectedStr = matchedKeywords.length > 0
       ? `\nTừ khóa / chuyên đề nhạy cảm phát hiện trong câu: ${matchedKeywords.map(k => `"${k.pattern}" (${k.category})`).join(', ')}`
       : ''
@@ -408,8 +427,36 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
           workerStats.allowedCount++
         }
       } else {
-        // Fallback on AI error
-        if (matchedKeywords.some(k => k.severity === 'critical')) {
+        // Fallback on AI error. Phân biệt hai nhóm lý do:
+        //  - AI CHƯA CẤU HÌNH (service_not_found / service_inactive / no_api_key):
+        //    admin chưa bật nhà cung cấp cho service 'moderation'. Không có AI
+        //    domestically đối soát → đưa vào hàng đợi `pending` để con người duyệt.
+        //    KHÔNG tự ẩn nội dung (chỉ `flag_only`) — ẩn khi chưa ai xem là buộc
+        //    công dân phải tự chứng minh mình trong sáng.
+        //  - Lỗi tạm thời (provider_error / parse_error / budget_exceeded): chỉ
+        //    flag khi có critical keyword, không flood queue bằng lỗi tạm thời.
+        const aiUnavailable =
+          aiResult.error === 'service_not_found' ||
+          aiResult.error === 'service_inactive' ||
+          aiResult.error === 'no_api_key'
+
+        if (aiUnavailable) {
+          isFlagged = true
+          finalAction = 'flag_only'
+          highestSeverity = 'medium'
+          for (const k of matchedKeywords) {
+            matchedRules.push(`[${k.category}] ${k.pattern}`)
+            const s = k.severity as keyof typeof severityWeight
+            if (severityWeight[s] > severityWeight[highestSeverity]) {
+              highestSeverity = s
+            }
+          }
+          reasons.push(
+            matchedKeywords.length > 0
+              ? `AI kiểm duyệt chưa cấu hình; khớp từ khóa nhạy cảm: ${matchedKeywords.map(k => `"${k.pattern}"`).join(', ')} — cần con người đối soát`
+              : 'AI kiểm duyệt chưa cấu hình — cần con người đối soát nội dung',
+          )
+        } else if (matchedKeywords.some(k => k.severity === 'critical')) {
           isFlagged = true
           finalAction = 'auto_hide'
           highestSeverity = 'critical'
@@ -433,15 +480,6 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
 
   // 3. Automated Action: Record to queue & hide content
   if (isFlagged) {
-    logWarn({
-      event: 'ai_moderation.flagged',
-      targetType: input.targetType,
-      targetId: input.targetId,
-      action: finalAction,
-      severity: highestSeverity,
-      reasons,
-    })
-
     try {
       await db.insert(aiModerationQueue).values({
         targetType: input.targetType,
@@ -485,6 +523,29 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
     }
   }
 
+  // Ghi log mỗi lần check — kể cả khi safe — để traces được "moderation đã chạy
+  // cho bình luận id X". Trước đây chỉ log khi flagged, nên một bình luận không bị
+  // ẩn đọc ra y hệt "chưa ai check". Audit dùng logInfo (không phải logWarn) khi
+  // safe — đây là hoạt động bình thường, không phải cảnh báo.
+  if (isFlagged) {
+    logWarn({
+      event: 'ai_moderation.flagged',
+      targetType: input.targetType,
+      targetId: input.targetId,
+      action: finalAction,
+      severity: highestSeverity,
+      reasons,
+    })
+  } else {
+    logInfo({
+      event: 'ai_moderation.checked_safe',
+      targetType: input.targetType,
+      targetId: input.targetId,
+      contentLength: content.length,
+      matchedKeywordsCount: matchedKeywords.length,
+    })
+  }
+
   return {
     flagged: isFlagged,
     action: finalAction,
@@ -496,7 +557,12 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
 
 /**
  * Retroactive cleaner: scans all existing non-hidden comments & non-deleted livestream messages.
- * Immediately hides/deletes any matching vulgar, hostile, or prohibited content.
+ * Uses `checkAndModerateContent` for article comments so the AI context pass also
+ * runs — `fastPreModerate` alone only catches built-in regex/keyword matches and
+ * lets subtle defamation or distortion through, which read as "moderation stopped
+ * filtering". Livestream chat stays on `fastPreModerate` because it is a live
+ * stream: sub-second latency matters more than a context pass, and the entry
+ * path already moderates each message in real time.
  */
 export async function rescanExistingContent(): Promise<{
   scannedComments: number
@@ -508,27 +574,25 @@ export async function rescanExistingContent(): Promise<{
   let hiddenComments = 0
   let deletedMessages = 0
 
-  // 1. Scan article_comments
+  // 1. Scan article_comments — full context pass (fast pre-moderator + AI)
   const comments = await db
     .select({ id: articleComments.id, body: articleComments.body })
     .from(articleComments)
     .where(eq(articleComments.isHidden, false))
 
   for (const c of comments) {
-    const check = await fastPreModerate(c.body, {
+    const result = await checkAndModerateContent({
+      content: c.body,
       targetType: 'comment',
+      targetId: c.id,
       contextTitle: `Quét lại bình luận #${c.id}`,
     })
-    if (check.blocked) {
-      await db
-        .update(articleComments)
-        .set({ isHidden: true, flagReason: check.reason })
-        .where(eq(articleComments.id, c.id))
+    if (result.flagged && result.action === 'auto_hide') {
       hiddenComments++
     }
   }
 
-  // 2. Scan livestream_messages
+  // 2. Scan livestream_messages — fast path only (live stream, latency-sensitive)
   const liveMsgs = await db
     .select({ id: livestreamMessages.id, content: livestreamMessages.content })
     .from(livestreamMessages)

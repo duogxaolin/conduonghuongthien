@@ -13,8 +13,8 @@
     <!-- Fallback if the page has no blocks yet. -->
     <section v-else class="section">
       <div class="container text-center py-20">
-        <h1 class="text-[1.8rem] font-extrabold text-[#1E251C] mb-3">Giới thiệu</h1>
-        <p class="text-[#4A5545]">Nội dung đang được cập nhật.</p>
+        <h1 class="text-[1.8rem] font-extrabold text-[#1E251C] mb-3">{{ t('about_fallback_title') }}</h1>
+        <p class="text-[#4A5545]">{{ t('about_fallback_desc') }}</p>
       </div>
     </section>
   </div>
@@ -30,7 +30,7 @@ const { currentLang, t } = useI18n()
 // liệu nên HTML đầu tiên và thẻ SEO không đổi (design.md D2).
 const { data, pending, error, refresh } = useAsyncData(
   `page-about-${currentLang.value}`,
-  () => $fetch(`/api/public/pages/about?lang=${currentLang.value}`),
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; page: { title?: string; slug?: string; seoTitle?: string | null; seoDescription?: string | null } | null; blocks: import('~/utils/blocks/types').RenderableNode[] }>)(`/api/public/pages/about?lang=${currentLang.value}`),
   { lazy: true, default: () => ({ ok: false, page: null, blocks: [] }) }
 )
 

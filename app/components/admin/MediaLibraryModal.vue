@@ -27,7 +27,7 @@ const fetchMedia = async (pg = 1) => {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await $fetch<{ ok: boolean; items: MediaItem[]; totalPages: number }>('/api/admin/media', {
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; items: MediaItem[]; totalPages: number }>)('/api/admin/media', {
       params: { search: searchQuery.value, perPage: 20, page: pg }
     })
     if (res.ok) {

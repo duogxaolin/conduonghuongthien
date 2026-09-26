@@ -71,12 +71,12 @@ async function loadUsage() {
   usageError.value = null
   usageLoading.value = true
   try {
-    const data = await $fetch<{
+    const data = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
       usage: UsageSummary
       byService: ByServiceRow[]
       daily: DailyRow[]
       budget: BudgetInfo
-    }>('/api/admin/ai/usage')
+    }>)('/api/admin/ai/usage')
     usageSummary.value = data.usage
     byService.value = data.byService
     dailyData.value = data.daily
@@ -160,7 +160,7 @@ async function loadDelifyStatus(period: '1h' | '24h' | '7d' | '30d' | 'all' = de
   delifyStatusLoading.value = true
   delifyStatusError.value = null
   try {
-    const data = await $fetch<DelifyStatusResponse>('/api/admin/ai/delify/status', {
+    const data = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<DelifyStatusResponse>)('/api/admin/ai/delify/status', {
       params: { period },
     })
     delifyStatus.value = data
@@ -306,7 +306,7 @@ async function bulkDeleteProviders() {
 
   deletingBulkProviders.value = true
   try {
-    const res = await $fetch<{ ok: boolean; deleted: number }>('/api/admin/ai/providers/bulk-delete', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; deleted: number }>)(`/api/admin/ai/providers/bulk-delete`, {
       method: 'POST',
       body: { ids },
     })
@@ -361,7 +361,7 @@ async function bulkDeleteModels() {
 
   deletingBulkModels.value = true
   try {
-    const res = await $fetch<{ ok: boolean; deleted: number }>('/api/admin/ai/pricing/bulk-delete', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; deleted: number }>)(`/api/admin/ai/pricing/bulk-delete`, {
       method: 'POST',
       body: { models },
     })
@@ -380,8 +380,8 @@ async function loadProviders() {
   providersLoading.value = true
   try {
     const [pData, prData] = await Promise.all([
-      $fetch<{ providers: ProviderRow[] }>('/api/admin/ai/providers'),
-      $fetch<{ pricing: PricingRow[] }>('/api/admin/ai/pricing'),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ providers: ProviderRow[] }>)('/api/admin/ai/providers'),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ pricing: PricingRow[] }>)('/api/admin/ai/pricing'),
     ])
     providers.value = pData.providers
     pricingRows.value = prData.pricing
@@ -394,7 +394,7 @@ async function loadProviders() {
 
 async function loadPricing() {
   try {
-    const data = await $fetch<{ pricing: PricingRow[] }>('/api/admin/ai/pricing')
+    const data = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ pricing: PricingRow[] }>)('/api/admin/ai/pricing')
     pricingRows.value = data.pricing
   } catch { /* optional */ }
 }
@@ -409,7 +409,7 @@ async function saveProvider() {
   if (!editingProvider.value) return
   savingProvider.value = true
   try {
-    await $fetch(`/api/admin/ai/providers/${editingProvider.value.id}`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/providers/${editingProvider.value.id}`, {
       method: 'PUT',
       body: {
         label: providerForm.value.label,
@@ -432,7 +432,7 @@ async function testProvider(id: number) {
   testingProvider.value = id
   testResult.value = null
   try {
-    const result = await $fetch<{ ok: boolean; model?: string; error?: string }>(`/api/admin/ai/providers/${id}/test`, {
+    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; model?: string; error?: string }>)(`/api/admin/ai/providers/${id}/test`, {
       method: 'POST',
     })
     if (result.ok) {
@@ -469,7 +469,7 @@ async function createProvider() {
   savingNewProvider.value = true
   newProviderError.value = ''
   try {
-    await $fetch('/api/admin/ai/providers', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/ai/providers', {
       method: 'POST',
       body: {
         provider: newProviderForm.value.provider,
@@ -493,7 +493,7 @@ async function deleteProvider(p: ProviderRow) {
   if (!await confirm({ title: 'Xoá nhà cung cấp', message: `Xoá "${p.label}"? Dịch vụ đang dùng nhà cung cấp này sẽ cần gán lại.`, danger: true, confirmLabel: 'Xoá' })) return
   deletingProviderId.value = p.id
   try {
-    await $fetch(`/api/admin/ai/providers/${p.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/providers/${p.id}`, { method: 'DELETE' })
     toast.success('Đã xoá nhà cung cấp.')
     await loadProviders()
   } catch (err: unknown) {
@@ -510,7 +510,7 @@ async function toggleModelActive(m: PricingRow) {
   const original = m.isActive
   m.isActive = !original
   try {
-    await $fetch(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, {
       method: 'PUT',
       body: { isActive: m.isActive },
     })
@@ -536,7 +536,7 @@ async function addModelToProvider() {
   savingNewModel.value = true
   newModelError.value = ''
   try {
-    await $fetch('/api/admin/ai/pricing', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/ai/pricing', {
       method: 'POST',
       body: {
         model: newModelForm.value.model.trim(),
@@ -571,7 +571,7 @@ async function saveEditModel() {
   if (!editingModel.value) return
   savingModelEdit.value = true
   try {
-    await $fetch(`/api/admin/ai/pricing/${encodeURIComponent(editingModel.value.model)}`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/pricing/${encodeURIComponent(editingModel.value.model)}`, {
       method: 'PUT',
       body: {
         label: editModelForm.value.label.trim() || null,
@@ -593,7 +593,7 @@ async function saveEditModel() {
 async function deleteModel(m: PricingRow) {
   if (!await confirm({ title: 'Xoá Model', message: `Xoá model "${m.model}" khỏi ${m.provider}?`, danger: true, confirmLabel: 'Xoá' })) return
   try {
-    await $fetch(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/pricing/${encodeURIComponent(m.model)}`, { method: 'DELETE' })
     toast.success(`Đã xoá model "${m.model}".`)
     await loadProviders()
   } catch (err: unknown) {
@@ -616,7 +616,7 @@ const modelTestModal = ref<{
 async function testCallModel(provider: string, model: string) {
   testingModelKey.value = model
   try {
-    const result = await $fetch<{
+    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
       ok: boolean
       model?: string
       reply?: string
@@ -624,7 +624,7 @@ async function testCallModel(provider: string, model: string) {
       usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
       costVnd?: number
       error?: string
-    }>('/api/admin/ai/test-call', {
+    }>)(`/api/admin/ai/test-call`, {
       method: 'POST',
       body: {
         provider,
@@ -675,13 +675,13 @@ async function testCallModel(provider: string, model: string) {
 async function syncDelifyPricing() {
   syncingDelify.value = true
   try {
-    const result = await $fetch<{
+    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
       ok: boolean
       upserted: number
       syncedLogs: number
       totalFromApi: number
       delifyUsage: { windowCostUsd: number | null; windowRequests: number | null; allowedModels: string[] | null } | null
-    }>('/api/admin/ai/delify/sync', {
+    }>)(`/api/admin/ai/delify/sync`, {
       method: 'POST',
     })
     if (result.delifyUsage) {
@@ -750,8 +750,8 @@ async function loadServices() {
   servicesLoading.value = true
   try {
     const [sData, prData] = await Promise.all([
-      $fetch<{ services: ServiceRow[] }>('/api/admin/ai/services'),
-      $fetch<{ pricing: PricingRow[] }>('/api/admin/ai/pricing'),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ services: ServiceRow[] }>)('/api/admin/ai/services'),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ pricing: PricingRow[] }>)('/api/admin/ai/pricing'),
     ])
     services.value = sData.services
     pricingRows.value = prData.pricing
@@ -779,7 +779,7 @@ async function saveService() {
   if (!editingService.value) return
   savingService.value = true
   try {
-    await $fetch(`/api/admin/ai/services/${editingService.value.id}`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/services/${editingService.value.id}`, {
       method: 'PUT',
       body: {
         model: serviceForm.value.model || null,
@@ -809,7 +809,7 @@ async function testService() {
   testingService.value = true
   serviceTestResult.value = null
   try {
-    const result = await $fetch<{
+    const result = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
       ok: boolean
       model?: string
       reply?: string
@@ -817,7 +817,7 @@ async function testService() {
       usage?: { promptTokens: number; completionTokens: number; totalTokens: number }
       costVnd?: number
       error?: string
-    }>('/api/admin/ai/test-call', {
+    }>)(`/api/admin/ai/test-call`, {
       method: 'POST',
       body: {
         provider: serviceForm.value.provider,
@@ -886,7 +886,7 @@ async function loadLogs() {
     if (logsFilters.value.endDate) params.endDate = logsFilters.value.endDate
     if (logsFilters.value.success) params.success = logsFilters.value.success
 
-    const data = await $fetch<{ logs: LogRow[]; pagination: { page: number; perPage: number; total: number; totalPages: number } }>('/api/admin/ai/logs', { params })
+    const data = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ logs: LogRow[]; pagination: { page: number; perPage: number; total: number; totalPages: number } }>)('/api/admin/ai/logs', { params })
     logs.value = data.logs
     logsPagination.value = data.pagination
   } catch (err: unknown) {
@@ -971,8 +971,8 @@ async function loadModeration() {
   moderationError.value = ''
   try {
     const [rulesData, queueData] = await Promise.all([
-      $fetch<{ ok: boolean; rules: ModerationRule[] }>('/api/admin/ai/moderation/rules'),
-      $fetch<{ ok: boolean; items: ModerationQueueItem[] }>('/api/admin/ai/moderation/queue', {
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; rules: ModerationRule[] }>)('/api/admin/ai/moderation/rules'),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: ModerationQueueItem[] }>)('/api/admin/ai/moderation/queue', {
         params: { status: queueStatusFilter.value },
       }),
     ])
@@ -991,7 +991,7 @@ async function addModerationRule() {
     return
   }
   try {
-    await $fetch('/api/admin/ai/moderation/rules', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/ai/moderation/rules', {
       method: 'POST',
       body: newRuleForm,
     })
@@ -1005,7 +1005,7 @@ async function addModerationRule() {
 
 async function toggleModerationRule(rule: ModerationRule) {
   try {
-    await $fetch(`/api/admin/ai/moderation/rules/${rule.id}`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/moderation/rules/${rule.id}`, {
       method: 'PUT',
       body: { isEnabled: !rule.isEnabled },
     })
@@ -1025,7 +1025,7 @@ async function deleteModerationRule(rule: ModerationRule) {
   })
   if (!ok) return
   try {
-    await $fetch(`/api/admin/ai/moderation/rules/${rule.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/moderation/rules/${rule.id}`, { method: 'DELETE' })
     toast.success('Đã xóa quy tắc.')
     await loadModeration()
   } catch (err: unknown) {
@@ -1048,7 +1048,7 @@ async function resolveQueueItem(item: ModerationQueueItem, action: 'approve' | '
   if (!ok) return
 
   try {
-    await $fetch(`/api/admin/ai/moderation/queue/${item.id}/resolve`, {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ai/moderation/queue/${item.id}/resolve`, {
       method: 'POST',
       body: { action },
     })
@@ -1122,7 +1122,7 @@ onMounted(() => {
           </div>
           <div class="rounded-xl border border-[#e2ece3] bg-white p-4">
             <p class="m-0 text-xs font-bold text-[#667768] uppercase tracking-wide">Tổng Tokens</p>
-            <p class="m-0 mt-2 text-2xl font-extrabold text-[#122815]">{{ formatNum(usageSummary?.totalTokens ?? 0) }}</p>
+            <p class="m-0 mt-2 text-2xl font-extrabold text-[#122815]">{{ formatNum((usageSummary?.totalPromptTokens ?? 0) + (usageSummary?.totalCompletionTokens ?? 0)) }}</p>
             <p class="m-0 mt-1 text-xs text-[#667768]">Input: {{ formatNum(usageSummary?.totalPromptTokens ?? 0) }} / Output: {{ formatNum(usageSummary?.totalCompletionTokens ?? 0) }}</p>
           </div>
           <div class="rounded-xl border border-[#e2ece3] bg-white p-4">

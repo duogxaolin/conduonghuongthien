@@ -67,7 +67,7 @@ async function changePassword() {
   }
   pwSaving.value = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/profile/password', {
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; message: string }>)(`/api/admin/profile/password`, {
       method: 'PUT',
       body: { currentPassword: pw.current, newPassword: pw.next },
     })
@@ -89,7 +89,7 @@ async function loadMfa() {
   mfaLoading.value = true
   mfaError.value = ''
   try {
-    mfa.value = await $fetch<MfaStatus>('/api/admin/profile/mfa')
+    mfa.value = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<MfaStatus>)(`/api/admin/profile/mfa`)
   } catch (err: unknown) {
     mfaError.value = errorMessage(err, 'Không tải được trạng thái xác thực hai bước.')
   } finally {
@@ -170,8 +170,8 @@ async function submitEnroll() {
   }
   enrollDialog.busy = true
   try {
-    const res = await $fetch<{ ok: boolean; secret?: string; otpauthUri?: string; sentTo?: string }>(
-      '/api/admin/profile/mfa/enroll',
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; secret?: string; otpauthUri?: string; sentTo?: string }>)(
+      `/api/admin/profile/mfa/enroll`,
       {
         method: 'POST',
         body: {
@@ -204,7 +204,7 @@ async function submitConfirm() {
   }
   enrollDialog.busy = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/profile/mfa/confirm', {
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; message: string }>)(`/api/admin/profile/mfa/confirm`, {
       method: 'POST',
       body: { factorType: enrollDialog.factorType, code: value },
     })
@@ -224,7 +224,7 @@ async function resendEnrollCode() {
   enrollDialog.busy = true
   try {
     // Gửi lại bằng cách chạy lại bước enroll: server thay mã cũ bằng mã mới.
-    const res = await $fetch<{ ok: boolean; sentTo?: string }>('/api/admin/profile/mfa/enroll', {
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; sentTo?: string }>)(`/api/admin/profile/mfa/enroll`, {
       method: 'POST',
       body: { factorType: 'email_otp', currentPassword: enrollDialog.currentPassword },
     })
@@ -264,7 +264,7 @@ async function submitDisable() {
   }
   disableDialog.busy = true
   try {
-    const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/profile/mfa/disable', {
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; message: string }>)(`/api/admin/profile/mfa/disable`, {
       method: 'POST',
       body: { factorType: disableDialog.factorType, currentPassword: disableDialog.currentPassword },
     })
@@ -309,14 +309,14 @@ async function submitRecovery() {
   recoveryDialog.busy = true
   try {
     if (recoveryDialog.mode === 'create') {
-      const res = await $fetch<{ ok: boolean; codes: string[]; message?: string }>('/api/admin/profile/mfa/recovery-codes', {
+      const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; codes: string[]; message?: string }>)(`/api/admin/profile/mfa/recovery-codes`, {
         method: 'POST',
         body: { currentPassword: recoveryDialog.currentPassword },
       })
       revealedCodes.value = res.codes ?? []
       toast.success('Đã tạo mã dự phòng mới. Lưu lại ngay — sẽ không hiện lại.')
     } else {
-      const res = await $fetch<{ ok: boolean; message: string }>('/api/admin/profile/mfa/recovery-codes', {
+      const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; message: string }>)(`/api/admin/profile/mfa/recovery-codes`, {
         method: 'DELETE',
         body: { currentPassword: recoveryDialog.currentPassword },
       })

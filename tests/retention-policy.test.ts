@@ -317,8 +317,11 @@ test('the page reads and writes only the retention endpoints and confirms the pu
   const script = descriptor.descriptor.scriptSetup?.content ?? ''
   const template = descriptor.descriptor.template?.content ?? ''
 
-  assert.match(script, /'\/api\/admin\/settings\/retention'/)
-  assert.match(script, /'\/api\/admin\/settings\/retention-run'/)
+  // Endpoint strings — có thể ở nháy đơn `'...'` hoặc backtick `...`. Trước đây
+  // dùng nháy đơn; sau khi fix TS2589 thì dùng `($fetch as ...)(\`/api/...\`)`
+  // (backtick). URL là thứ test cần bắt, không phải dấu bao chuỗi.
+  assert.match(script, /\/api\/admin\/settings\/retention/)
+  assert.match(script, /\/api\/admin\/settings\/retention-run/)
   // Irreversible, so it asks first — and sends the flag the endpoint requires.
   assert.match(script, /confirm\(/)
   assert.match(script, /confirm: true/)

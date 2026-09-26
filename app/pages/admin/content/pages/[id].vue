@@ -376,7 +376,7 @@ const fetchPage = async () => {
      * `res.draft` không tồn tại trong khi endpoint có trả. Suy từ chính handler
      * thì kiểu bám vào mã máy chủ chứ không bám vào cách viết URL.
      */
-    const res = await $fetch<AdminPageDetail>(`/api/admin/pages/${pageId.value}`)
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminPageDetail>)(`/api/admin/pages/${pageId.value}`)
     if (res.ok) {
       page.value = res.page
       // Published blocks are the live baseline for the dirty check.
@@ -559,7 +559,7 @@ const draftPayload = () => serializeNodes(blocks.value)
 const saveDraft = async () => {
   draftStatus.value = 'saving'
   try {
-    await $fetch(`/api/admin/pages/${pageId.value}/draft`, { method: 'PUT', body: { blocks: draftPayload() } })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/pages/${pageId.value}/draft`, { method: 'PUT', body: { blocks: draftPayload() } })
     draftStatus.value = 'saved'
   } catch (err: unknown) {
     draftStatus.value = 'error'
@@ -576,7 +576,7 @@ const publish = async () => {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
   publishing.value = true
   try {
-    const res = await $fetch(`/api/admin/pages/${pageId.value}/publish`, { method: 'POST', body: { blocks: draftPayload() } })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; blocks?: typeof blocks.value }>)(`/api/admin/pages/${pageId.value}/publish`, { method: 'POST', body: { blocks: draftPayload() } })
     if (res.ok) {
       const prevSelected = selectedId.value
       hydrating = true
@@ -603,7 +603,7 @@ const discardDraft = async () => {
   if (saveTimer) { clearTimeout(saveTimer); saveTimer = null }
   hydrating = true
   try {
-    await $fetch(`/api/admin/pages/${pageId.value}/draft`, { method: 'PUT', body: {} }) // clears draft → null
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/pages/${pageId.value}/draft`, { method: 'PUT', body: {} }) // clears draft → null
     await fetchPage() // reloads published (no draft present) and resets hydration flag
     toast.success('Đã quay lại bản đang chạy.')
   } catch (err: unknown) {
@@ -669,7 +669,7 @@ const saveMeta = async () => {
   try {
     const body: Record<string, unknown> = { title: metaForm.title, seoTitle: metaForm.seoTitle, seoDescription: metaForm.seoDescription }
     if (!page.value?.isSystem) body.slug = metaForm.slug
-    const res = await $fetch<AdminPageUpdateResult>(`/api/admin/pages/${pageId.value}`, { method: 'PUT', body })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminPageUpdateResult>)(`/api/admin/pages/${pageId.value}`, { method: 'PUT', body })
     // `page.value` đọc lại sau `await`: điều hướng khỏi trang giữa lúc lưu sẽ
     // gỡ nó về null, và gán vào null là một lỗi thật chứ không phải giả định.
     if (res.ok && page.value) {
@@ -709,7 +709,7 @@ const openVersions = async () => {
 const loadVersions = async () => {
   versionsLoading.value = true
   try {
-    const res = await $fetch(`/api/admin/pages/${pageId.value}/versions`)
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; versions?: PageVersionRow[] }>)(`/api/admin/pages/${pageId.value}/versions`)
     if (res.ok) versions.value = res.versions || []
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không tải được danh sách phiên bản.'))
@@ -723,7 +723,7 @@ const restoreVersion = async (v: PageVersionRow) => {
   const ok = await confirm({ title: 'Khôi phục phiên bản', message: `Nạp "${v.label || kindMeta[v.kind]?.label}" vào bản nháp? Bản đang chạy trên site không đổi cho tới khi bạn Xuất bản.`, confirmLabel: 'Khôi phục' })
   if (!ok) return
   try {
-    const res = await $fetch(`/api/admin/pages/${pageId.value}/versions/${v.id}/restore`, { method: 'POST' })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; blocks?: typeof blocks.value }>)(`/api/admin/pages/${pageId.value}/versions/${v.id}/restore`, { method: 'POST' })
     if (res.ok) {
       hydrating = true
       blocks.value = hydrateNodes(res.blocks || [])
@@ -742,7 +742,7 @@ const deleteVersion = async (v: PageVersionRow) => {
   const ok = await confirm({ title: 'Xóa phiên bản', message: `Xóa "${v.label || kindMeta[v.kind]?.label}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await $fetch(`/api/admin/pages/${pageId.value}/versions/${v.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/pages/${pageId.value}/versions/${v.id}`, { method: 'DELETE' })
     await loadVersions()
     toast.success('Đã xóa phiên bản.')
   } catch (err: unknown) {
@@ -754,7 +754,7 @@ const deleteVersion = async (v: PageVersionRow) => {
 const saveBackup = async () => {
   savingBackup.value = true
   try {
-    const res = await $fetch(`/api/admin/pages/${pageId.value}/versions`, { method: 'POST', body: { kind: 'manual', label: backupLabel.value, blocks: draftPayload() } })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/pages/${pageId.value}/versions`, { method: 'POST', body: { kind: 'manual', label: backupLabel.value, blocks: draftPayload() } })
     if (res.ok) {
       backupLabel.value = ''
       await loadVersions()
@@ -772,7 +772,7 @@ const setOrigin = async () => {
   const ok = await confirm({ title: 'Chỉ định bản gốc', message: hasOrigin.value ? 'Ghi đè bản gốc hiện tại bằng nội dung đang dựng?' : 'Đặt nội dung đang dựng làm bản gốc (khóa, dùng để khôi phục sau này)?', confirmLabel: 'Chỉ định' })
   if (!ok) return
   try {
-    const res = await $fetch(`/api/admin/pages/${pageId.value}/versions`, { method: 'POST', body: { kind: 'origin', blocks: draftPayload() } })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/pages/${pageId.value}/versions`, { method: 'POST', body: { kind: 'origin', blocks: draftPayload() } })
     if (res.ok) {
       await loadVersions()
       toast.success('Đã chỉ định bản gốc.')

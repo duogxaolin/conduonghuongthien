@@ -77,13 +77,13 @@ const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => {
   const isEn = currentLang.value !== 'vi'
   return {
-    badge: isEn ? (t('hero_badge') || 'Official Portal') : 'Cổng thông tin chính thống',
-    titleLine1: isEn ? (t('hero_title_line1') || 'Accompanying') : 'Đồng hành cùng',
-    titleLine2: isEn ? (t('hero_title_line2') || 'the path of redemption') : 'hành trình hướng thiện',
-    subtitle: isEn ? (t('hero_subtitle') || 'Comprehensive platform supporting employment, legal aid, and psychological counseling') : 'Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý',
-    btnAboutText: isEn ? (t('about') || 'About Us') : 'Về chúng tôi',
+    badge: isEn ? (t('hero_badge') || 'C11 PORTAL - MINISTRY OF PUBLIC SAFETY') : 'CỔNG THÔNG TIN C11 - BỘ CÔNG AN',
+    titleLine1: isEn ? (t('hero_title_line1') || 'Accompanying the') : 'Đồng hành cùng',
+    titleLine2: isEn ? (t('hero_title_line2') || 'Journey of Rehabilitation') : 'hành trình hướng thiện',
+    subtitle: isEn ? (t('hero_subtitle') || 'A comprehensive platform offering vocational, legal, and psychological support to help former inmates reintegrate into society and build sustainable lives.') : 'Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý giúp người chấp hành xong án phạt tù vững vàng tái hòa nhập cộng đồng, xây dựng cuộc sống mới bền vững.',
+    btnAboutText: isEn ? (t('hero_btn_about') || 'About Us') : 'Về chúng tôi',
     btnAboutLink: '/about',
-    btnHelpText: isEn ? (t('register_help') || 'Get 24/7 Support') : 'Nhận hỗ trợ 24/7',
+    btnHelpText: isEn ? (t('hero_btn_help') || 'Request Support') : 'Gửi yêu cầu trợ giúp',
     btnHelpLink: '#tro-giup',
     ...(props.block?.data || {}),
   }

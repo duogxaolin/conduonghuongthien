@@ -53,7 +53,7 @@ const fetchTypes = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await $fetch('/api/admin/content-types')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminContentTypeRow[] }>)('/api/admin/content-types')
     if (res.ok) {
       types.value = res.items
       selection.keepOnly(visibleIds.value)
@@ -69,7 +69,7 @@ const fetchTypes = async () => {
 
 const fetchCategories = async () => {
   try {
-    const res = await $fetch('/api/admin/categories')
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminCategoryRow[] }>)('/api/admin/categories')
     if (res.ok) allCategories.value = res.items
   } catch (err: unknown) {
     // Non-blocking: tree preview just shows types without children
@@ -132,10 +132,10 @@ const handleSave = async () => {
       payload.slug = form.slug.trim()
     }
     if (modalMode.value === 'create') {
-      await $fetch('/api/admin/content-types', { method: 'POST', body: payload })
+      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)("/api/admin/content-types", { method: "POST", body: payload })
       toast.success('Đã tạo thể loại thành công!')
     } else {
-      await $fetch(`/api/admin/content-types/${editingId.value}`, { method: 'PUT', body: payload })
+      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/content-types/${editingId.value}`, { method: "PUT", body: payload })
       toast.success('Đã cập nhật thể loại thành công!')
     }
     showModal.value = false
@@ -174,7 +174,7 @@ const deleteType = async (ct: AdminContentTypeRow) => {
   const ok = await confirm({ title: 'Xóa thể loại', message: `Bạn có chắc muốn xóa thể loại "${ct.name}"?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await $fetch(`/api/admin/content-types/${ct.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/content-types/${ct.id}`, { method: "DELETE" })
     toast.success('Đã xóa thể loại thành công!')
     await fetchTypes()
   } catch (err: unknown) {

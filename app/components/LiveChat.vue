@@ -23,6 +23,7 @@
 import { ref, watch, nextTick, onUnmounted } from 'vue'
 
 import { useLiveChat, type LiveChatMessage } from '~/composables/useLiveChat'
+import { useI18n } from '~/composables/useI18n'
 
 interface Props {
   /** Có buổi phát nào đang chạy không — do component cha quyết định từ `active.get.ts`. */
@@ -31,6 +32,7 @@ interface Props {
 const props = defineProps<Props>()
 
 const { messages, connection, liveError, connect, disconnect, sendMessage } = useLiveChat()
+const { t } = useI18n()
 
 const input = ref('')
 const followChatBottom = ref(true)
@@ -90,7 +92,7 @@ const submit = async () => {
     if (!hasFailedMsg) {
       messages.value.push({
         id:        -Date.now(),
-        displayName: 'Hệ thống',
+        displayName: t('m_chat_system'),
         content:    result.reason,
         createdAt:  new Date().toISOString(),
       } as LiveChatMessage)
@@ -110,7 +112,7 @@ const handleKeydown = (ev: KeyboardEvent) => {
 <template>
   <section
     class="flex h-full flex-col bg-[#f7f9f6]"
-    aria-label="Phòng chat trực tiếp"
+    :aria-label="t('m_chat_room_aria')"
   >
     <!-- Thanh đầu: trạng thái kết nối -->
     <div class="flex items-center justify-between border-b border-black/10 px-4 py-2.5">
@@ -120,7 +122,7 @@ const handleKeydown = (ev: KeyboardEvent) => {
           :class="connection === 'open' ? 'bg-green-500 animate-pulse' : connection === 'connecting' ? 'bg-amber-400 animate-pulse' : 'bg-gray-300'"
           aria-hidden="true"
         />
-        <span>{{ connection === 'open' ? 'Đang theo dõi' : connection === 'connecting' ? 'Đang kết nối…' : 'Đã đóng' }}</span>
+        <span>{{ connection === 'open' ? t('m_chat_watching') : connection === 'connecting' ? t('m_chat_connecting') : t('m_chat_closed') }}</span>
       </div>
       <button
         type="button"
@@ -129,7 +131,7 @@ const handleKeydown = (ev: KeyboardEvent) => {
         @click="disconnect"
       >
         <i class="fa-solid fa-circle-stop mr-1" aria-hidden="true" />
-        Dừng
+        {{ t('m_chat_stop') }}
       </button>
     </div>
 
@@ -140,7 +142,7 @@ const handleKeydown = (ev: KeyboardEvent) => {
       @scroll="handleScroll"
     >
       <p v-if="messages.length === 0 && connection === 'open'" class="text-center text-gray-400 py-4">
-        Chưa có tin nhắn. Hãy gửi câu đầu tiên!
+        {{ t('m_chat_empty') }}
       </p>
 
       <p
@@ -165,7 +167,7 @@ const handleKeydown = (ev: KeyboardEvent) => {
         <span class="ml-1.5 text-gray-800">{{ msg.content }}</span>
         <span v-if="msg.status === 'pending'" class="inline-flex items-center gap-1 ml-1.5 text-xs text-blue-500 font-medium">
           <i class="fa-solid fa-circle-notch fa-spin text-[0.6rem]" aria-hidden="true"></i>
-          Đang gửi…
+          {{ t('m_chat_pending') }}
         </span>
         <span v-if="msg.error" class="block mt-0.5 text-xs text-red-600 font-medium" role="alert">
           <i class="fa-solid fa-circle-exclamation mr-1 text-[0.6rem]" aria-hidden="true"></i>{{ msg.error }}
@@ -179,12 +181,12 @@ const handleKeydown = (ev: KeyboardEvent) => {
         <input
           v-model="input"
           type="text"
-          maxlength="200"
-          placeholder="Nhập tin nhắn…"
+          :maxlength="200"
+          :placeholder="t('m_chat_input_placeholder')"
           class="flex-1 rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-[#3a5a40] focus:outline-none focus:ring-1 focus:ring-[#3a5a40] disabled:bg-gray-100 disabled:text-gray-400"
           :disabled="connection !== 'open'"
           @keydown="handleKeydown"
-          aria-label="Tin nhắn"
+          :aria-label="t('m_chat_input_aria')"
         >
         <button
           type="submit"
@@ -192,10 +194,10 @@ const handleKeydown = (ev: KeyboardEvent) => {
           :disabled="connection !== 'open' || !input.trim()"
         >
           <i class="fa-solid fa-paper-plane" aria-hidden="true" />
-          <span class="sr-only">Gửi</span>
+          <span class="sr-only">{{ t('m_chat_send_aria') }}</span>
         </button>
       </form>
-      <p class="mt-1 text-xs text-gray-400">Enter để gửi, Shift+Enter để xuống dòng.</p>
+      <p class="mt-1 text-xs text-gray-400">{{ t('m_chat_hint') }}</p>
     </div>
   </section>
 </template>

@@ -34,6 +34,15 @@ const DRIVE_OAUTH_STATE_COOKIE_PATH = '/api/admin/backup/drive'
 
 const TOKEN_EXCHANGE_TIMEOUT_MS = 10_000
 
+// Isolate the token exchange call from the generic inference so TS doesn't
+// instantiate the full $fetch generic chain (TS2589 + fetch overload mismatch).
+async function fetchTokenExchange(
+  url: string,
+  opts: { method: 'POST'; timeout: number; body: string; headers: Record<string, string> },
+): Promise<{ id_token?: string; refresh_token?: string }> {
+  return ($fetch as (u: string, o: Record<string, unknown>) => Promise<{ id_token?: string; refresh_token?: string }>)(url, opts)
+}
+
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'update')
@@ -75,7 +84,7 @@ export default defineEventHandler(async (event) => {
   let refreshToken: string
   let idToken: string
   try {
-    const response = await $fetch<{ id_token?: string, refresh_token?: string }>(GOOGLE_TOKEN_ENDPOINT, {
+    const response = await fetchTokenExchange(GOOGLE_TOKEN_ENDPOINT, {
       method: 'POST',
       timeout: TOKEN_EXCHANGE_TIMEOUT_MS,
       body: new URLSearchParams({

@@ -21,7 +21,7 @@ const fetchMedia = async (page = 1) => {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await $fetch('/api/admin/media', {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminMediaRow[]; pagination: typeof pagination.value }>)(`/api/admin/media`, {
       params: { page, search: search.value, type: filterType.value, perPage: 24 }
     })
     if (res.ok) {
@@ -84,7 +84,7 @@ const deleteMedia = async (item: AdminMediaRow) => {
   const ok = await confirm({ title: 'Xóa tệp', message: `Bạn có chắc muốn xóa file ${item.originalName}?`, danger: true, confirmLabel: 'Xóa' })
   if (!ok) return
   try {
-    await $fetch(`/api/admin/media/${item.id}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/${item.id}`, { method: 'DELETE' })
     toast.success('Đã xóa tệp media thành công!')
     await fetchMedia(pagination.value.page)
   } catch (err: unknown) {

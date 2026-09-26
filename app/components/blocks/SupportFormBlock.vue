@@ -14,21 +14,21 @@
           <form @submit.prevent="submitForm" class="bg-white p-10 sm:p-6 rounded-lg shadow-md border border-[#E2E8DF]">
             <div class="mb-5">
               <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_name') || 'Họ và tên' }}</label>
-              <input type="text" v-model="form.name" required placeholder="Nguyễn Văn A" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+              <input type="text" v-model="form.name" required :placeholder="t('form_name_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
             </div>
             <div class="grid grid-cols-1 gap-5 mb-5 sm:grid-cols-2">
               <div>
                 <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_phone') || 'Số điện thoại' }}</label>
-                <input type="tel" v-model="form.phone" required placeholder="09xx xxx xxx" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+                <input type="tel" v-model="form.phone" required :placeholder="t('form_phone_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
               </div>
               <div>
                 <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_city') || 'Tỉnh / Thành phố' }}</label>
-                <input type="text" v-model="form.city" required placeholder="Hà Nội" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+                <input type="text" v-model="form.city" required :placeholder="t('form_city_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
               </div>
             </div>
             <div class="mb-5">
               <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_message') || 'Nội dung cần hỗ trợ' }}</label>
-              <textarea rows="4" v-model="form.message" required placeholder="Mô tả ngắn gọn vấn đề bạn cần được tư vấn..." class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"></textarea>
+              <textarea rows="4" v-model="form.message" required :placeholder="t('form_message_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"></textarea>
             </div>
             <button type="submit" class="btn btn-primary w-full text-lg" :disabled="submitStatus === 'loading'">
               {{ submitStatus === 'loading' ? (t('form_sending') || 'Đang gửi...') : (t('form_submit') || 'Gửi đăng ký tư vấn') }}
@@ -72,7 +72,7 @@ const submitForm = async () => {
     // đơn, người dân vẫn thấy lời cảm ơn, và không cán bộ nào được báo. Máy chủ
     // nay có nhánh dự phòng (`settings.email`) nhưng vẫn tôn trọng email nhận
     // cấu hình trên block — nên trường này vẫn phải đi cùng.
-    await $fetch('/api/submissions', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/submissions', {
       method: 'POST',
       body: {
         type: 'support',
@@ -85,11 +85,11 @@ const submitForm = async () => {
       },
     })
     submitStatus.value = 'success'
-    submitMessage.value = `Cám ơn ${form.name}. Thông tin đăng ký của bạn đã được ghi nhận. Cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ qua số ${form.phone}.`
+    submitMessage.value = t('form_success').replace('{name}', form.name).replace('{phone}', form.phone)
     form.name = ''; form.phone = ''; form.city = ''; form.message = ''
   } catch (err: unknown) {
     submitStatus.value = 'error'
-    submitMessage.value = errorMessage(err, 'Có lỗi xảy ra, vui lòng thử lại hoặc gọi hotline 0903.480.985.')
+    submitMessage.value = errorMessage(err, t('form_error'))
   }
 }
 </script>

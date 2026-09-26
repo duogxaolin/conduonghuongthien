@@ -3,7 +3,7 @@
     <div class="container">
       <div class="text-center max-w-[600px] mx-auto mb-[40px]">
         <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-[#7CB342] uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
-        <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] mb-3">{{ d.title || 'Tấm Gương Sáng Điển Hình' }}</h2>
+        <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] mb-3">{{ d.title || t('block_role_title') }}</h2>
         <p v-if="d.description" class="text-[0.95rem] text-[#4A5545] leading-[1.5]">{{ d.description }}</p>
       </div>
 
@@ -43,7 +43,7 @@
           type="button"
           class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 left-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
           @click="prevSlide"
-          aria-label="Slide trước"
+          :aria-label="t('carousel_prev')"
         >
           <i class="fa-solid fa-chevron-left text-sm" aria-hidden="true"></i>
         </button>
@@ -51,7 +51,7 @@
           type="button"
           class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 right-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
           @click="nextSlide"
-          aria-label="Slide tiếp"
+          :aria-label="t('carousel_next')"
         >
           <i class="fa-solid fa-chevron-right text-sm" aria-hidden="true"></i>
         </button>
@@ -63,7 +63,7 @@
             class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed"
             :disabled="currentIndex <= 0"
             @click="prevSlide"
-            aria-label="Slide trước"
+            :aria-label="t('carousel_prev')"
           >
             <i class="fa-solid fa-chevron-left text-xs" aria-hidden="true"></i>
           </button>
@@ -79,7 +79,7 @@
                 'h-2.5 rounded-full transition-all duration-300 cursor-pointer border-none p-0',
                 currentIndex === idx ? 'w-6 bg-[#4A6741]' : 'w-2.5 bg-[#D5E1D3] hover:bg-[#7CB342]'
               ]"
-              :aria-label="`Chuyển đến tấm gương số ${idx + 1}`"
+              :aria-label="t('carousel_goto').replace('{n}', String(idx + 1))"
               :aria-current="currentIndex === idx ? 'true' : undefined"
             ></button>
           </div>
@@ -89,14 +89,14 @@
             class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed"
             :disabled="currentIndex >= totalCards - 1"
             @click="nextSlide"
-            aria-label="Slide tiếp"
+            :aria-label="t('carousel_next')"
           >
             <i class="fa-solid fa-chevron-right text-xs" aria-hidden="true"></i>
           </button>
         </div>
       </div>
 
-      <p v-else class="text-center text-[0.9rem] text-[#7A8675] italic">Chưa có tấm gương nào được đăng.</p>
+      <p v-else class="text-center text-[0.9rem] text-[#7A8675] italic">{{ t('block_role_empty') }}</p>
     </div>
   </section>
 </template>
@@ -105,7 +105,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from '~/composables/useI18n'
 
-const { currentLang } = useI18n()
+const { currentLang, t } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 // 8 mặc định thay vì 4: carousel kiểu cand.vn chỉ hiện ~3.5 slide cùng lúc, cần
@@ -116,7 +116,7 @@ const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, refresh } = await useAsyncData(
   `block-role-models-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
-  () => $fetch('/api/public/articles', {
+  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
     params: {
       type: 'role_model',
       limit: maxItems.value,
@@ -135,7 +135,7 @@ const list = computed(() =>
   (data.value?.articles || []).map(a => ({
     id: a.slug,
     name: a.title,
-    location: a.categoryName || '',
+    location: a.category?.name || '',
     image: a.thumbnailUrl || '/assets/guong_sang_1.jpg',
   }))
 )

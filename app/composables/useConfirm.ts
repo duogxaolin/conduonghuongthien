@@ -3,6 +3,10 @@ export interface ConfirmOptions {
   message: string
   confirmLabel?: string
   cancelLabel?: string
+  /** Nhãn nút xác nhận — alias cũ của `confirmLabel`, nhiều trang vẫn dùng. */
+  confirmText?: string
+  /** Tông màu nút xác nhận — alias cũ của `danger`, nhiều trang vẫn dùng. */
+  tone?: 'primary' | 'danger'
   danger?: boolean
 }
 

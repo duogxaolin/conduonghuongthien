@@ -3,7 +3,25 @@ import { safePublicSourceUrl } from './serializers'
 
 export type RetrievalEntry = ChatbotKnowledge & { terms?: Pick<ChatbotKnowledgeTerm, 'kind' | 'value' | 'normalizedValue'>[] }
 
-export type PublicKnowledgeReference = ReturnType<typeof toPublicReference>
+/**
+ * A reference surfaced to the citizen. `kind` distinguishes where it came from
+ * so the chat can decide how to display it:
+ *   - `'knowledge'` — an approved entry from the `chatbot_knowledge` bank. These
+ *     are the only references that belong in the "Nguồn tham khảo" citation
+ *     list, because they point at curated, sourced legal/administrative text.
+ *   - `'evidence'` — prefetched articles / videos / photos from `prefetchEvidence`.
+ *     These are already woven into the answer body via `renderEvidenceBlock`
+ *     (article links, video posters, inline photos), so listing them again
+ *     under "Nguồn tham khảo" would duplicate what the citizen already sees above.
+ */
+export type PublicKnowledgeReference = {
+  id: number
+  kind: 'knowledge' | 'evidence'
+  question: string
+  answer: string
+  topic: string
+  source: { label: string | null, reference: string | null, url: string | null } | null
+}
 export type RetrievalOptions = {
   topK?: number
   charBudget?: number
@@ -25,9 +43,10 @@ function tokens(value: string): string[] {
   return [...new Set(searchForm(normalizeKnowledgeText(value)).split(/[^\p{L}\p{N}]+/u).filter(token => token.length > 0))]
 }
 
-function toPublicReference(entry: RetrievalEntry) {
+function toPublicReference(entry: RetrievalEntry): PublicKnowledgeReference {
   return {
     id: entry.id,
+    kind: 'knowledge',
     question: entry.canonicalQuestion,
     answer: entry.approvedAnswer,
     topic: entry.topic,

@@ -42,12 +42,12 @@
           </div>
         </template>
 
-        <p v-else class="text-[0.9rem] text-[#7A8675] italic py-6">Chưa có tin tức nào được đăng.</p>
+        <p v-else class="text-[0.9rem] text-[#7A8675] italic py-6">{{ t('block_news_empty') }}</p>
       </div>
 
       <!-- Right column -->
       <div>
-        <SectionBar title="Chỉ đạo &amp; Hoạt động" icon="⚑" />
+        <SectionBar :title="t('block_news_side_title')" icon="⚑" />
 
         <div class="flex flex-col">
           <div v-for="item in trending" :key="item.id" class="flex gap-3 py-[14px] border-b border-[#E2E8DF] last:border-b-0">
@@ -65,8 +65,8 @@
         <div class="relative rounded-lg p-6 text-white mt-6 overflow-hidden shadow-sm" style="background: url('/assets/hero_banner.jpg') center/cover no-repeat;">
           <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)] z-[1]"></div>
           <div class="relative z-[2]">
-            <h3 class="text-[1rem] font-extrabold mt-0 mb-2 uppercase">Hotline Cảnh Sát QLHC</h3>
-            <p class="text-[0.78rem] leading-[1.4] m-0 mb-4 opacity-90">Hỗ trợ giải đáp thủ tục cấp CCCD &amp; Lý lịch tư pháp cho người hoàn lương</p>
+            <h3 class="text-[1rem] font-extrabold mt-0 mb-2 uppercase">{{ t('block_news_hotline_title') }}</h3>
+            <p class="text-[0.78rem] leading-[1.4] m-0 mb-4 opacity-90">{{ t('block_news_hotline_desc') }}</p>
             <span class="inline-block bg-[#7CB342] text-white px-[14px] py-[6px] text-[0.9rem] font-extrabold rounded">📞 1900.0368</span>
           </div>
         </div>
@@ -91,7 +91,7 @@ const categorySlug = computed(() => d.value.categorySlug || '')
 
 const { data, refresh } = await useAsyncData(
   `block-news-${props.block.id}-${currentLang.value}`,
-  () => $fetch('/api/public/articles', {
+  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
     params: {
       type: 'news',
       limit: maxItems.value,

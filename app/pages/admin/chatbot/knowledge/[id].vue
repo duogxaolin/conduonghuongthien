@@ -69,7 +69,7 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const response = await $fetch<AdminKnowledgeDetail>(`/api/admin/chatbot/knowledge/${route.params.id}`)
+    const response = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminKnowledgeDetail>)(`/api/admin/chatbot/knowledge/${route.params.id}`)
     if (!response?.item) throw createError({ statusCode: 404, statusMessage: 'Mục kiến thức không tồn tại.' })
     applyItem(response.item)
   } catch (err: unknown) {
@@ -87,7 +87,7 @@ async function save() {
   }
   saving.value = true
   try {
-    const response = await $fetch<AdminKnowledgeDetail>(isNew.value ? '/api/admin/chatbot/knowledge' : `/api/admin/chatbot/knowledge/${route.params.id}`, {
+    const response = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminKnowledgeDetail>)(isNew.value ? '/api/admin/chatbot/knowledge' : `/api/admin/chatbot/knowledge/${route.params.id}`, {
       method: isNew.value ? 'POST' : 'PUT',
       body: contentPayload(),
     })
@@ -123,7 +123,7 @@ async function transition(action: 'publish' | 'archive') {
   error.value = ''
   transitioning.value = action
   try {
-    await $fetch(`/api/admin/chatbot/knowledge/${route.params.id}/${action}`, { method: 'POST' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/chatbot/knowledge/${route.params.id}/${action}`, { method: 'POST' })
     toast.success(publishing ? 'Đã xuất bản mục kiến thức.' : 'Đã lưu trữ mục kiến thức.')
     await load()
   } catch (err: unknown) {

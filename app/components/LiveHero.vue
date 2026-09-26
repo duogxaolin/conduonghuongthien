@@ -40,7 +40,7 @@
           <div class="px-3.5 sm:px-4 lg:px-5 py-2 sm:py-2.5 bg-[#111c12] border-b border-[#1c2d1e] flex items-center gap-3 shrink-0">
             <span class="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-[4px] bg-[#D32F2F] text-white text-[0.68rem] sm:text-[0.7rem] font-black uppercase tracking-wider shrink-0 shadow-sm">
               <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
-              Trực tiếp
+              {{ t('m_live_badge') }}
             </span>
             <h1 class="text-sm sm:text-base font-extrabold text-white leading-tight tracking-tight m-0 min-w-0 truncate flex-1">
               {{ session.title }}
@@ -89,9 +89,9 @@
                   aria-busy="true"
                   class="absolute inset-0 flex flex-col items-center justify-center gap-3 bg-black/70 text-white"
                 >
-                  <span class="sr-only">Đang chuẩn bị trình phát trực tiếp</span>
+                  <span class="sr-only">{{ t('m_live_connect_aria') }}</span>
                   <i class="fa-solid fa-circle-notch fa-spin text-2xl" aria-hidden="true"></i>
-                  <span class="text-sm font-semibold">Đang kết nối buổi phát…</span>
+                  <span class="text-sm font-semibold">{{ t('m_live_connecting') }}</span>
                 </div>
               </div>
 
@@ -110,11 +110,11 @@
               <div class="flex items-center justify-between px-3.5 py-2.5 border-b border-[#1f2a1c] shrink-0 bg-[#0e170e]">
                 <div class="flex items-center gap-2 text-white/90">
                   <i class="fa-solid fa-comments text-sm text-[#7CB342]" aria-hidden="true"></i>
-                  <span class="text-xs sm:text-sm font-bold">Trò chuyện trực tiếp</span>
+                  <span class="text-xs sm:text-sm font-bold">{{ t('m_chat_title') }}</span>
                 </div>
                 <span class="inline-flex items-center gap-1.5 text-[0.7rem] text-[#7CB342] font-semibold bg-[#7CB342]/10 px-2.5 py-0.5 rounded-full border border-[#7CB342]/20">
                   <span class="w-1.5 h-1.5 rounded-full bg-[#7CB342] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
-                  Live
+                  {{ t('m_live_label') }}
                 </span>
               </div>
               <div class="flex-1 min-h-0">
@@ -143,6 +143,9 @@
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import { attachHlsStream, detachHlsStream } from '~/composables/useHlsVideo'
 import { formatDateVN } from '~/utils/formatDate'
+import { useI18n } from '~/composables/useI18n'
+
+const { t } = useI18n()
 
 withDefaults(defineProps<{
   /** Chuyển tiếp xuống hero mặc định khi không có buổi phát. */
@@ -198,7 +201,7 @@ const autoplayEmbedUrl = computed(() => {
  */
 async function loadActive() {
   try {
-    const response = await $fetch<{ ok: boolean, active: boolean, session: ActiveSession | null }>(
+    const response = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, active: boolean, session: ActiveSession | null }>)(
       '/api/public/livestream/active',
       { retry: 0, timeout: 4000 },
     )
@@ -243,7 +246,7 @@ watch(session, async value => {
   const result = await attachHlsStream(video, value.streamUrl, {
     instance: hlsInstance,
     onFatalError: () => {
-      playerError.value = 'Buổi phát bị gián đoạn. Vui lòng tải lại trang.'
+      playerError.value = t('m_live_interrupted')
     },
   })
   playerPending.value = false
@@ -256,8 +259,8 @@ watch(session, async value => {
     return
   }
   playerError.value = result.reason === 'unsupported'
-    ? 'Trình duyệt của bạn không hỗ trợ xem trực tiếp. Vui lòng dùng trình duyệt khác.'
-    : 'Không kết nối được buổi phát. Vui lòng tải lại trang.'
+    ? t('m_live_unsupported')
+    : t('m_live_connect_fail')
 }, { flush: 'post' })
 
 const ACTIVE_POLL_MS = 8_000

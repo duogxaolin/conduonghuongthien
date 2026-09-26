@@ -75,7 +75,7 @@ function initController() {
   controller.value = useMediaUploadSession({
     actorId: user.value.id, storage, maxUploadSize: props.maxUploadSize,
     ...(props.replaceItemId ? { replaceItemId: props.replaceItemId } : {}),
-    request: (url, options) => $fetch(url, options as Parameters<typeof $fetch>[1]),
+    request: (url, options) => ($fetch as <T>(u: string, o?: Record<string, unknown>) => Promise<T>)(url as string, options as Record<string, unknown> | undefined),
   })
 }
 

@@ -29,7 +29,7 @@ const LOCK_RESTORE = 'cdkt:backup:restore'
 const LOCK_TIMEOUT = 0
 
 export type BackupType = 'sql' | 'files' | 'all'
-export type BackupTrigger = 'manual' | 'scheduled' | 'pre-sync' | 'pre-repoint'
+export type BackupTrigger = 'manual' | 'scheduled' | 'pre-sync' | 'pre-repoint' | 'pre-repair-urls'
 
 export interface BackupResult {
   stamp: string

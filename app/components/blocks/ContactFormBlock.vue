@@ -47,7 +47,7 @@
                 class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741] bg-white"
                 :class="errors[field.id] ? 'border-[#f5c6cb]' : 'border-[#E2E8DF]'"
               >
-                <option value="">-- Chọn --</option>
+                <option value="">{{ t('form_select_placeholder') }}</option>
                 <option v-for="(opt, oi) in selectOptions(field)" :key="oi" :value="opt">{{ opt }}</option>
               </select>
 
@@ -136,12 +136,12 @@ const hasInfo = computed(() => !!d.value.showInfo && (!!d.value.infoTitle || inf
 // `Partial<RenderField>[]`, không phải `RenderField[]`: không trường nào ở đây là
 // `select`, nên `optionsText` vắng mặt là đúng — chúng đi qua cùng lượt chuẩn hoá
 // của `renderFields`, nơi mọi khoá thiếu được điền giá trị mặc định.
-const LEGACY_FIELDS: Partial<RenderField>[] = [
-  { id: 'f_name', label: 'Họ và tên', type: 'text', required: true, placeholder: 'Nguyễn Văn A', map: 'name' },
-  { id: 'f_phone', label: 'Số điện thoại', type: 'tel', required: true, placeholder: '09xx xxx xxx', map: 'phone' },
-  { id: 'f_city', label: 'Tỉnh / Thành phố', type: 'text', required: true, placeholder: 'Hà Nội', map: 'address' },
-  { id: 'f_message', label: 'Nội dung cần hỗ trợ', type: 'textarea', required: true, placeholder: 'Mô tả ngắn gọn vấn đề bạn cần được tư vấn...', map: 'message' },
-]
+const LEGACY_FIELDS = computed<Partial<RenderField>[]>(() => [
+  { id: 'f_name', label: t('form_name'), type: 'text', required: true, placeholder: t('form_name_ph'), map: 'name' },
+  { id: 'f_phone', label: t('form_phone'), type: 'tel', required: true, placeholder: t('form_phone_ph'), map: 'phone' },
+  { id: 'f_city', label: t('form_city'), type: 'text', required: true, placeholder: t('form_city_ph'), map: 'address' },
+  { id: 'f_message', label: t('form_message'), type: 'textarea', required: true, placeholder: t('form_message_ph'), map: 'message' },
+])
 
 // `as const` + hàm thu hẹp: `VALID_TYPES.includes(f.type)` trên một mảng
 // `string[]` không thu hẹp được kiểu, nên `type` vẫn là `string` và không gán được
@@ -163,7 +163,7 @@ const FIELD_LABEL_MAP: Record<string, string> = {
 const renderFields = computed<RenderField[]>(() => {
   const configured = Array.isArray(d.value.fields) ? d.value.fields as Partial<RenderField>[] : []
   const raw = configured.filter((f) => f && f.label)
-  const source: Partial<RenderField>[] = raw.length ? raw : LEGACY_FIELDS
+  const source: Partial<RenderField>[] = raw.length ? raw : LEGACY_FIELDS.value
   return source.map((f, i) => {
     const rawLabel = String(f.label || '')
     let localizedLabel = rawLabel
@@ -207,14 +207,14 @@ const validate = () => {
   for (const field of renderFields.value) {
     const val = String(values[field.id] ?? '').trim()
     if (field.required && !val) {
-      errors[field.id] = 'Trường này là bắt buộc.'
+      errors[field.id] = t('form_validation_required')
       ok = false
       continue
     }
     if (!val) continue
-    if (field.type === 'email' && !EMAIL_RE.test(val)) { errors[field.id] = 'Email không hợp lệ.'; ok = false }
-    else if (field.type === 'tel' && !PHONE_RE.test(val)) { errors[field.id] = 'Số điện thoại không hợp lệ.'; ok = false }
-    else if (field.type === 'number' && !NUMBER_RE.test(val)) { errors[field.id] = 'Vui lòng nhập một số hợp lệ.'; ok = false }
+    if (field.type === 'email' && !EMAIL_RE.test(val)) { errors[field.id] = t('form_validation_email'); ok = false }
+    else if (field.type === 'tel' && !PHONE_RE.test(val)) { errors[field.id] = t('form_validation_phone'); ok = false }
+    else if (field.type === 'number' && !NUMBER_RE.test(val)) { errors[field.id] = t('form_validation_number'); ok = false }
   }
   return ok
 }
@@ -223,7 +223,7 @@ const submitForm = async () => {
   submitMessage.value = ''
   if (!validate()) {
     submitStatus.value = 'error'
-    submitMessage.value = 'Vui lòng kiểm tra lại các trường được đánh dấu.'
+    submitMessage.value = t('form_validation_check')
     return
   }
   submitStatus.value = 'loading'
@@ -236,7 +236,7 @@ const submitForm = async () => {
       type: field.type,
       required: field.required,
     }))
-    await $fetch('/api/submissions', {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/submissions', {
       method: 'POST',
       body: {
         type: 'support',
@@ -248,12 +248,12 @@ const submitForm = async () => {
     submitStatus.value = 'success'
     const named = answers.find((a) => a.map === 'name')?.value
     submitMessage.value = named
-      ? `Cám ơn ${named}. Thông tin đăng ký của bạn đã được ghi nhận. Cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ.`
-      : 'Thông tin đăng ký của bạn đã được ghi nhận. Cán bộ chuyên môn sẽ liên hệ tư vấn trong vòng 24 giờ.'
+      ? t('form_success_named').replace('{name}', named)
+      : t('form_success_generic')
     for (const field of renderFields.value) values[field.id] = ''
   } catch (err: unknown) {
     submitStatus.value = 'error'
-    submitMessage.value = errorMessage(err, 'Có lỗi xảy ra, vui lòng thử lại hoặc gọi hotline 0903.480.985.')
+    submitMessage.value = errorMessage(err, t('form_error'))
   }
 }
 </script>

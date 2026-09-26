@@ -3,7 +3,7 @@
     <div class="container">
       <div class="text-center max-w-[600px] mx-auto mb-[50px]">
         <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-[#7CB342] uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
-        <h2 class="text-[2.2rem] md:text-[1.6rem] font-extrabold text-[#1E251C] mb-3">{{ d.title || 'Liên Kết Hữu Ích' }}</h2>
+        <h2 class="text-[2.2rem] md:text-[1.6rem] font-extrabold text-[#1E251C] mb-3">{{ d.title || t('block_links_title') }}</h2>
       </div>
 
       <div class="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5">
@@ -25,6 +25,8 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useI18n } from '~/composables/useI18n'
+const { t } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 

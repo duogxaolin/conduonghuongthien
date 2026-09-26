@@ -46,6 +46,7 @@ type SettingsPatch = Omit<EditableSettings, 'allowedHosts'> & {
   apiKey?: string
   baseUrl?: string
   model?: string
+  provider?: string
   providerPolicy?: string
   allowedHosts?: string[]
 }
@@ -194,9 +195,9 @@ async function load() {
   errorMessage.value = ''
   try {
     const [response, provData, priceData] = await Promise.all([
-      $fetch<{ settings?: SettingsResponse; currentSystemPrompt?: string; currentProvider?: string; currentModel?: string }>('/api/admin/chatbot/settings'),
-      $fetch<{ providers: Array<{ provider: string; label: string; isActive: boolean }> }>('/api/admin/ai/providers').catch(() => ({ providers: [] })),
-      $fetch<{ pricing: Array<{ model: string; provider: string; label: string | null; promptCostPerMillion: number; completionCostPerMillion: number; isActive: boolean }> }>('/api/admin/ai/pricing').catch(() => ({ pricing: [] })),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ settings?: SettingsResponse; currentSystemPrompt?: string; currentProvider?: string; currentModel?: string }>)('/api/admin/chatbot/settings'),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ providers: Array<{ provider: string; label: string; isActive: boolean }> }>)('/api/admin/ai/providers').catch(() => ({ providers: [] })),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ pricing: Array<{ model: string; provider: string; label: string | null; promptCostPerMillion: number; completionCostPerMillion: number; isActive: boolean }> }>)('/api/admin/ai/pricing').catch(() => ({ pricing: [] })),
     ])
     activeProviders.value = provData.providers.filter(p => p.isActive)
     activeModels.value = priceData.pricing
@@ -226,7 +227,7 @@ async function save() {
 
   saving.value = true
   try {
-    await $fetch('/api/admin/chatbot/settings', { method: 'PATCH', body })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/chatbot/settings', { method: 'PATCH', body })
     await load()
     toast.success('Đã lưu cấu hình chatbot.')
   } catch (error) {

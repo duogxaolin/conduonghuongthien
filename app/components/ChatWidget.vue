@@ -136,9 +136,9 @@
                   {{ copiedMsgId === msg.id ? 'Đã chép' : 'Sao chép' }}
                 </button>
               </div>
-              <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-2 mb-0 space-y-1.5 border-t border-[#e1e8e0] pt-2 list-none pl-0" aria-label="Nguồn tham khảo">
-                <li v-for="source in msg.sources" :key="source.id" class="text-[0.7rem] leading-snug text-[#4A5545]">
-                  <i class="fa-solid fa-link text-[0.55rem] text-[#7CB342] mr-1" aria-hidden="true"></i>
+              <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-1.5 mb-0 space-y-1 border-t border-[#e1e8e0] pt-1.5 list-none pl-0" aria-label="Nguồn tham khảo">
+                <li v-for="source in msg.sources" :key="source.id" class="text-[0.68rem] leading-snug text-[#4A5545]">
+                  <i class="fa-solid fa-link text-[0.5rem] text-[#7CB342] mr-1" aria-hidden="true"></i>
                   <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2">{{ source.label }}</a>
                   <span v-else class="font-semibold">{{ source.label }}</span>
                   <span v-if="source.reference" class="text-[#6b7280]"> — {{ source.reference }}</span>
@@ -148,28 +148,24 @@
                   <button
                     v-if="source.entryId !== null"
                     type="button"
-                    class="mt-1 flex items-center gap-1 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-2 py-0.5 text-[0.68rem] font-semibold text-[#1e4620] cursor-pointer transition-colors hover:bg-[#1e4620] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                    class="ml-1 inline-flex items-center gap-0.5 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-1.5 py-px text-[0.62rem] font-semibold text-[#1e4620] cursor-pointer transition-colors hover:bg-[#1e4620] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
                     :aria-expanded="isSourceExpanded(source.entryId)"
                     @click="toggleSourceDetail(source.entryId)"
                   >
-                    <i class="fa-solid fa-book-open text-[0.6rem]" aria-hidden="true"></i>
+                    <i class="fa-solid fa-book-open text-[0.55rem]" aria-hidden="true"></i>
                     {{ isSourceExpanded(source.entryId) ? 'Thu gọn' : 'Xem đầy đủ' }}
                   </button>
 
-                  <div v-if="isSourceExpanded(source.entryId)" class="mt-1.5 rounded-lg border border-[#e1e8e0] bg-[#f8faf8] px-2.5 py-2">
-                    <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.68rem] text-[#667768]" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
+                  <div v-if="isSourceExpanded(source.entryId)" class="mt-1 rounded-lg border border-[#e1e8e0] bg-[#f8faf8] px-2 py-1.5">
+                    <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.64rem] text-[#667768]" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
                     <div v-else-if="sourceDetailOf(source.entryId)?.status === 'error'" role="alert">
-                      <p class="m-0 text-[0.68rem] text-[#b42318]">Không tải được nội dung đầy đủ.</p>
-                      <button type="button" class="mt-1 rounded-full bg-[#1e4620] px-2.5 py-0.5 text-[0.66rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]" @click="retrySourceDetail(source.entryId)">Thử lại</button>
+                      <p class="m-0 text-[0.64rem] text-[#b42318]">Không tải được nội dung đầy đủ.</p>
+                      <button type="button" class="mt-1 rounded-full bg-[#1e4620] px-2 py-0.5 text-[0.62rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]" @click="retrySourceDetail(source.entryId)">Thử lại</button>
                     </div>
                     <template v-else-if="sourceDetailOf(source.entryId)?.status === 'ready'">
-                      <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.7rem] font-bold text-[#1e4620]">{{ sourceDetailOf(source.entryId)?.question }}</p>
-                      <p class="m-0 whitespace-pre-wrap text-[0.7rem] leading-[1.6] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
-                      <!-- Expanding in place keeps the visitor in their conversation;
-                           this is the way out to the surrounding topic, and it is a
-                           link rather than a second panel because the full document
-                           page is a different question from "what did you just cite". -->
-                      <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1.5 inline-block text-[0.66rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
+                      <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.66rem] font-bold text-[#1e4620]">{{ sourceDetailOf(source.entryId)?.question }}</p>
+                      <p class="m-0 whitespace-pre-wrap text-[0.66rem] leading-[1.55] text-[#1f2937]">{{ sourceDetailOf(source.entryId)?.answer }}</p>
+                      <nuxt-link :to="`/qa-documents#qa-${source.entryId}`" class="mt-1 inline-block text-[0.6rem] font-bold text-[#1e4620] underline underline-offset-2">Mở trong Tài liệu Hỏi – Đáp →</nuxt-link>
                     </template>
                   </div>
                 </li>
@@ -317,7 +313,7 @@ import { useI18n } from '~/composables/useI18n'
 const { t } = useI18n()
 
 const {
-  conversations, activeId, chatMessages, isSubmitting, botInput, botInputError,
+  conversations, activeId, activeConversation, chatMessages, isSubmitting, botInput, botInputError,
   quickQuestions, quickQuestionState, quickQuestionStatusText, limits,
   hydrate, loadQuickQuestions,
   createConversation, switchConversation, deleteConversation, clearChatHistory,
@@ -522,7 +518,7 @@ function retryMessage(msg: ChatMessage) {
   if (isSubmitting.value) return
   // Remove the failed message — a new one will be pushed optimistically
   const conv = activeConversation.value
-  const idx = conv.messages.findIndex(m => m.id === msg.id)
+  const idx = conv.messages.findIndex((m: ChatMessage) => m.id === msg.id)
   if (idx !== -1) conv.messages.splice(idx, 1)
   submitBotQuestion(msg.text, followChatBottom)
 }
