@@ -74,11 +74,24 @@ export function renderChatMarkdown(md: string): string {
   text = text.replace(/^## (.*$)/gim, '<h3 class="m-0 mt-2.5 mb-1 text-base font-extrabold text-inherit">$1</h3>')
   text = text.replace(/^# (.*$)/gim, '<h2 class="m-0 mt-3 mb-1 text-lg font-extrabold text-inherit">$1</h2>')
 
-  // 9. Process line-by-line for ordered and unordered lists
+  // 9. Process line-by-line for ordered and unordered lists.
+  //    Consecutive non-empty, non-list lines are grouped into a single <p> so
+  //    soft line breaks don't each get their own vertical margin — that was the
+  //    source of the "khoảng cách rộng" the user reported. Blank lines separate
+  //    paragraphs; we don't emit extra spacer divs because the paragraph margin
+  //    already gives breathing room.
   const lines = text.split('\n')
   const out: string[] = []
   let inUl = false
   let inOl = false
+  let paraBuffer: string[] = []
+
+  const flushPara = () => {
+    if (paraBuffer.length) {
+      out.push(`<p class="m-0 my-1 leading-relaxed break-words [overflow-wrap:anywhere] whitespace-pre-wrap">${paraBuffer.join('\n')}</p>`)
+      paraBuffer = []
+    }
+  }
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i]!
@@ -86,12 +99,14 @@ export function renderChatMarkdown(md: string): string {
     const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)/)
 
     if (ulMatch) {
+      flushPara()
       if (inOl) { out.push('</ol>'); inOl = false }
       if (!inUl) { out.push('<ul class="m-0 my-1 space-y-1 pl-5 list-disc text-inherit">'); inUl = true }
       const isSubItem = ulMatch[1] && ulMatch[1].length >= 2
       const indentClass = isSubItem ? 'pl-2 ' : ''
       out.push(`<li class="${indentClass}leading-relaxed">${ulMatch[3]}</li>`)
     } else if (olMatch) {
+      flushPara()
       if (inUl) { out.push('</ul>'); inUl = false }
       if (!inOl) { out.push('<ol class="m-0 my-1 space-y-1 pl-5 list-decimal text-inherit">'); inOl = true }
       out.push(`<li class="leading-relaxed">${olMatch[3]}</li>`)
@@ -99,12 +114,13 @@ export function renderChatMarkdown(md: string): string {
       if (inUl) { out.push('</ul>'); inUl = false }
       if (inOl) { out.push('</ol>'); inOl = false }
       if (line.trim()) {
-        out.push(`<p class="m-0 my-1 leading-relaxed break-words [overflow-wrap:anywhere] whitespace-pre-wrap">${line}</p>`)
+        paraBuffer.push(line)
       } else {
-        out.push('<div class="h-1"></div>')
+        flushPara()
       }
     }
   }
+  flushPara()
   if (inUl) out.push('</ul>')
   if (inOl) out.push('</ol>')
 
