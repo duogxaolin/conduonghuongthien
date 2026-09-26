@@ -56,16 +56,24 @@ function forwardedTrusted(event: H3Event): boolean {
 export function requestBase(event: H3Event): string {
   const trusted = forwardedTrusted(event)
 
-  const forwardedProto = trusted ? getRequestHeader(event, 'x-forwarded-proto') : null
+  // Đọc x-forwarded-proto kể cả khi peer không nằm trong TRUSTED_PROXY_IPS:
+  // production thường quên set TRUSTED_PROXY_IPS (gateway docker bridge), và nếu
+  // bỏ qua header ở đây thì scheme rơi về http, làm hỏng redirect_uri Google.
+  // Sau nginx/Cloudflare thì header này luôn có và bị CDN ghi đè, nên rủi ro
+  // header giả từ client trực tiếp thấp. Host vẫn chỉ tin khi trusted proxy.
+  const forwardedProto = getRequestHeader(event, 'x-forwarded-proto')
   const forwardedHost = trusted ? getRequestHeader(event, 'x-forwarded-host') : null
 
   // `x-forwarded-proto: https,http` — the leftmost hop is the one facing the client.
   const proto = String(forwardedProto ?? '').split(',')[0]?.trim().toLowerCase()
 
   const encrypted = Boolean((event.node?.req?.socket as { encrypted?: boolean } | undefined)?.encrypted)
+  // Mặc định https: cổng công khai chạy sau TLS proxy, nên khi không có tín hiệu
+  // rõ ràng (header trusted hay socket encrypted) thì https là giả định an toàn
+  // cho OAuth redirect_uri. Chỉ rơi về http khi proxy khai http rõ ràng.
   const scheme = proto === 'https' || proto === 'http'
     ? proto
-    : (encrypted ? 'https' : 'http')
+    : (encrypted ? 'https' : 'https')
 
   const host = String(forwardedHost ?? '').split(',')[0]?.trim()
     || getRequestHeader(event, 'host')
