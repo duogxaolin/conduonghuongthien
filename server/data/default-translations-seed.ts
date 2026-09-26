@@ -343,7 +343,7 @@ export const DEFAULT_TRANSLATIONS_SEED = [
   { group: "nav", key: "hotline", values: { vi: "0903.480.985", en: "0903.480.985", zh: "", fr: "", ru: "", lo: "0903.480.985" } },
   { group: "nav", key: "hotline_btn", values: { vi: "Hotline: 0903.480.985", en: "Hotline: 0903.480.985", zh: "", fr: "", ru: "", lo: "ສາຍດຽງ: 0903.480.985" } },
   { group: "nav", key: "hotline_desc", values: { vi: "Tư vấn pháp lý, thủ tục cư trú và việc làm tái hòa nhập cộng đồng cho người hoàn lương.", en: "Legal, residency and reintegration counseling for reformed individuals.", zh: "", fr: "", ru: "", lo: "ການໃຫ້ຄຳປຶກສາດ້ານກົດໝາຍ, ທີ່ຢູ່ ແລະ ວຽກເຮັດງານທຳສຳລັບຜູ້ກັບຄືນສູ່ສັງຄົມ." } },
-  { group: "nav", key: "hotline_lbl", values: { vi: "Hotline Tư Vấn 24/7", en: "24/7 Hotline", zh: "24/7 热线电话", fr: "Ligne directe 24/7", ru: "Горячая линия 24/7", lo: "ສາຍດ່ວນໃຫ້ຄໍາປຶກສາ 24/7" } },
+  { group: "nav", key: "hotline_lbl", values: { vi: "Hotline", en: "Hotline", zh: "24/7 热线电话", fr: "Ligne directe 24/7", ru: "Горячая линия 24/7", lo: "ສາຍດ່ວນໃຫ້ຄໍາປຶກສາ 24/7" } },
   { group: "nav", key: "hotline_q", values: { vi: "Cần hỗ trợ thông tin hoặc giải đáp pháp lý?", en: "Need info or legal guidance?", zh: "", fr: "", ru: "", lo: "ຕ້ອງການຂໍ້ມູນ ຫຼື ຄຳແນະນຳດ້ານກົດໝາຍ?" } },
   { group: "nav", key: "hotline_team", values: { vi: "Đội ngũ cán bộ sẵn sàng hỗ trợ bạn.", en: "Our staff is ready to help.", zh: "", fr: "", ru: "", lo: "ພະນັກງານພ້ອມຊ່ວຍເຫຼືອເຈົ້າ." } },
   { group: "nav", key: "hotline_title", values: { vi: "Đường Dây Nóng Tư Vấn", en: "Hotline", zh: "", fr: "", ru: "", lo: "ສາຍດ່ຽວ" } },
