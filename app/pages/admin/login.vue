@@ -153,11 +153,19 @@ const handleLogin = async () => {
     }
   } catch (err: unknown) {
     // Server báo cần captcha (sau 3 lần sai): hiện UI captcha, giữ username/password.
-    const data = (err as { data?: { captchaRequired?: boolean; captchaInvalid?: boolean } })?.data
-    if (data?.captchaRequired) {
+    // `$fetch` đặt body JSON của lỗi H3 vào `err.data`, nên field `data` do
+    // `createError({ data: { captchaRequired } })` sinh ra nằm ở `err.data.data`,
+    // không phải `err.data`. Code cũ đọc `err.data.captchaRequired` = undefined →
+    // rơi nhánh else → hiện statusMessage "Yêu cầu captcha." nhưng không mở UI
+    // captcha. Giờ thử cả hai đường (err.data.data.X ?? err.data.X) để chống
+    // lệch shape giữa các phiên bản H3/$fetch.
+    const errData = (err as { data?: { captchaRequired?: boolean; captchaInvalid?: boolean; data?: { captchaRequired?: boolean; captchaInvalid?: boolean } } })?.data
+    const captchaFlag = errData?.data?.captchaRequired ?? errData?.captchaRequired
+    if (captchaFlag) {
+      const captchaInvalid = errData?.data?.captchaInvalid ?? errData?.captchaInvalid
       captchaRequired.value = true
       sessionStorage.setItem(CAPTCHA_FLAG, '1')
-      errorMsg.value = data.captchaInvalid
+      errorMsg.value = captchaInvalid
         ? 'Mã captcha không đúng. Vui lòng nhập lại.'
         : 'Bạn đã sai nhiều lần. Vui lòng nhập mã captcha.'
       await loadCaptcha()
