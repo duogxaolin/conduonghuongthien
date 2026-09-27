@@ -88,7 +88,7 @@ export function renderChatMarkdown(md: string): string {
 
   const flushPara = () => {
     if (paraBuffer.length) {
-      out.push(`<p class="m-0 my-1 leading-relaxed break-words [overflow-wrap:anywhere] whitespace-pre-wrap">${paraBuffer.join('\n')}</p>`)
+      out.push(`<p class="m-0 my-0.5 leading-relaxed break-words [overflow-wrap:anywhere] whitespace-pre-wrap">${paraBuffer.join('\n')}</p>`)
       paraBuffer = []
     }
   }

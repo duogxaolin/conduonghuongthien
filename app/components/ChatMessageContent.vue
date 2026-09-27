@@ -9,8 +9,10 @@
       <span>Đang tra cứu dữ liệu thực tế từ hệ thống...</span>
     </div>
 
-    <!-- Main Message Content — break-words + pre-wrap bắt buộc: bubble max-w-[80%] nếu thiếu là chữ tràn/đè lên nhau (ca "Chàochị, tôi cóợc…") -->
-    <div class="chat-markdown whitespace-pre-wrap break-words [overflow-wrap:anywhere] leading-relaxed" v-html="renderChatMarkdown(text)"></div>
+    <!-- Main Message Content — markdown tự bọc <p> với whitespace-pre-wrap ở trong; div ngoài
+         chỉ break-words + leading-relaxed. Nếu thêm whitespace-pre-wrap ở ngoài, các \n giữa
+         các <p> (do join('\n')) bị tôn trọng thành dòng trống → khoảng cách đôi giữa các câu. -->
+    <div class="chat-markdown break-words [overflow-wrap:anywhere] leading-relaxed" v-html="renderChatMarkdown(text)"></div>
 
     <!-- Tool Calls (Dev Tracking & Transparency) below message -->
     <details
