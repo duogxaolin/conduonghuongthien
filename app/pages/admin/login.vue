@@ -5,10 +5,21 @@ definePageMeta({ layout: false, middleware: 'admin-auth' })
 
 const { login, fetchCaptcha, verifyMfa, user, fetchUser } = useAdminAuth()
 
+// Ghi nhớ trạng thái "IP/account đã quá ngưỡng captcha" qua sessionStorage, để
+// khi user tải lại trang /admin/login sau khi đã sai nhiều lần, UI vẫn hiện ô
+// captcha ngay — không cần user gửi form trước rồi mới biết. Key không mang theo
+// tab mới (sessionStorage) và tự xoá khi login thành công.
+const CAPTCHA_FLAG = 'cdkt_login_captcha_needed'
+
 onMounted(async () => {
   if (!user.value) await fetchUser()
   if (user.value) {
     navigateTo('/admin')
+    return
+  }
+  if (sessionStorage.getItem(CAPTCHA_FLAG) === '1') {
+    captchaRequired.value = true
+    await loadCaptcha()
   }
 })
 
@@ -136,12 +147,16 @@ const handleLogin = async () => {
       nextTick(() => codeInput.value?.focus())
       return
     }
-    if (res.ok) navigateTo('/admin')
+    if (res.ok) {
+      sessionStorage.removeItem(CAPTCHA_FLAG)
+      navigateTo('/admin')
+    }
   } catch (err: unknown) {
     // Server báo cần captcha (sau 3 lần sai): hiện UI captcha, giữ username/password.
     const data = (err as { data?: { captchaRequired?: boolean; captchaInvalid?: boolean } })?.data
     if (data?.captchaRequired) {
       captchaRequired.value = true
+      sessionStorage.setItem(CAPTCHA_FLAG, '1')
       errorMsg.value = data.captchaInvalid
         ? 'Mã captcha không đúng. Vui lòng nhập lại.'
         : 'Bạn đã sai nhiều lần. Vui lòng nhập mã captcha.'
@@ -164,7 +179,10 @@ const handleVerify = async () => {
   loading.value = true
   try {
     const res = await verifyMfa(selectedMethod.value, code.value.trim())
-    if (res.ok) navigateTo('/admin')
+    if (res.ok) {
+      sessionStorage.removeItem(CAPTCHA_FLAG)
+      navigateTo('/admin')
+    }
   } catch (err: unknown) {
     const status = errorStatus(err)
     errorMsg.value = errorMessage(err, 'Xác thực thất bại')
