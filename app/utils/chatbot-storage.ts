@@ -32,6 +32,10 @@ export const CHATBOT_CLIENT_LIMITS = Object.freeze({
 
 export const CHATBOT_RESPONSE_KINDS = new Set([
   'curated', 'provider', 'small_talk', 'not_found', 'unavailable', 'rate_limited',
+  // Server refused the user turn before sending anything to AI (moderation gate).
+  // The client uses this kind to drop the offending user message from the
+  // transcript so it never reaches the model in the next request's history.
+  'moderation_blocked',
 ])
 
 export const CHATBOT_WELCOME_MESSAGE = Object.freeze({

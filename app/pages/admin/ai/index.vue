@@ -717,6 +717,7 @@ interface ServiceRow {
   provider: string
   model: string | null
   systemPrompt: string | null
+  defaultSystemPrompt: string
   temperature: string
   maxTokens: number
   isActive: boolean
@@ -773,6 +774,12 @@ function openServiceEdit(s: ServiceRow) {
     provider: s.provider,
   }
   serviceTestResult.value = null
+}
+
+function restoreDefaultServicePrompt() {
+  if (!editingService.value?.defaultSystemPrompt) return
+  serviceForm.value.systemPrompt = editingService.value.defaultSystemPrompt
+  toast.info('Đã khôi phục prompt mặc định — nhớ bấm Lưu để áp dụng')
 }
 
 async function saveService() {
@@ -1924,10 +1931,20 @@ onMounted(() => {
             </div>
 
             <!-- 3. System Prompt -->
-            <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">System Prompt</span>
+            <div class="flex flex-col gap-1.5 text-sm font-bold">
+              <div class="flex items-center justify-between">
+                <span class="text-[#122815]">System Prompt</span>
+                <button
+                  v-if="editingService.defaultSystemPrompt"
+                  type="button"
+                  class="px-3 py-1.5 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#122815] hover:bg-[#f0f7f1] transition-colors cursor-pointer"
+                  @click="restoreDefaultServicePrompt"
+                >
+                  <i class="fa-solid fa-rotate-left mr-1" aria-hidden="true"></i> Khôi phục mặc định
+                </button>
+              </div>
               <textarea v-model="serviceForm.systemPrompt" rows="7" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm font-mono resize-y" placeholder="Nhập system prompt..."></textarea>
-            </label>
+            </div>
             <div v-if="TEMPLATE_HINTS[editingService.serviceKey]" class="flex flex-col gap-1 text-xs text-[#667768]">
               <span class="font-bold">Biến template có sẵn:</span>
               <div class="flex flex-wrap gap-1">

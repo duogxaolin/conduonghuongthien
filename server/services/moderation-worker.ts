@@ -383,6 +383,13 @@ YÊU CẦU PHÂN TÍCH NGỮ CẢNH:
 1. Phân biệt rõ ràng giữa:
    - TÍCH CỰC / CẢNH GIÁC: Người dân/cán bộ nhắc đến từ khóa nhằm mục đích cảnh giác, lên án, phản bác luận điệu thù địch, giải thích pháp luật hoặc chia sẻ thông tin đúng đắn -> Đánh giá: "safe" (An toàn, KHÔNG ẩn).
    - TIÊU CỰC / VI PHẠM: Tuyên truyền cho tổ chức phản động, kích động bạo loạn, lôi kéo lật đổ chính quyền, bôi nhọ lãnh đạo Đảng/Nhà nước, xuyên tạc chính sách, phát tán link cờ bạc, lừa đảo, dùng từ ngữ thô tục xúc phạm -> Đánh giá: "violation" hoặc "spam" (Vi phạm, CẦN ẨN).
+
+CÁC TRƯỜNG HỢP ĐẶC BIỆT PHẢI NHẬN DIỆN ĐÚNG BÊN TÍCH CỰC (KHÔNG ẨN):
+- Ca ngợi Đảng Cộng sản Việt Nam, Nhà nước XHCN Việt Nam, Bác Hồ, lãnh đạo, chính quyền, lực lượng công an, quân đội -> "safe". Từ viết tắt hợp lệ cho Đảng Cộng sản: "đcs", "dcs", "đảng", "DCS", "ĐCS".
+- Câu phản biện, mỉa mai, bất bình với những kẻ tôn vinh chế độ cũ (VNCH, "việt nam cộng hòa"), chống đối, bôi nhọ -> "safe" (vì đang bênh vực chế độ hiện tại, không phải tuyên truyền phản động).
+- Nhắc đến "xã hội chủ nghĩa", "cộng hòa", "việt nam cộng hòa" trong ngữ cảnh ca ngợi, giải thích, phản bác luận điệu thù địch -> "safe".
+- Chỉ ẩn khi câu ĐỐI LẬP/công khai tôn vinh khẩu hiệu chế độ cũ ("việt nam cộng hòa muôn năm", "đả đảo", "lật đổ", "chống phá đảng") với chủ đích chống phá, không phải khi nhắc đến để phản bác.
+
 2. Trả về đúng định dạng JSON thuần túy (không kèm markdown):
 {
   "verdict": "safe" | "spam" | "violation",

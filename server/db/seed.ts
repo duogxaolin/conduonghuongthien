@@ -9,6 +9,7 @@ import { normalizeQuestion } from '../utils/chatbot/small-talk'
 import { decryptChatbotSecret } from '../utils/chatbot/crypto'
 import { encryptAiSecret, type EncryptedAiSecret } from '../utils/ai/crypto'
 import { DEFAULT_CHATBOT_SYSTEM_PROMPT } from '../utils/chatbot/prompt-defaults'
+import { DEFAULT_TRANSLATION_ARTICLE_SYSTEM_PROMPT, DEFAULT_TRANSLATION_UI_SYSTEM_PROMPT, DEFAULT_EDITORIAL_ASSISTANT_SYSTEM_PROMPT, DEFAULT_MODERATION_SYSTEM_PROMPT } from '../utils/ai/prompt-defaults'
 
 /**
  * `SET col = col` on duplicate key: MySQL has no "do nothing on conflict", so
@@ -439,10 +440,10 @@ async function seed() {
     systemPrompt: string; temperature: string; maxTokens: number; isActive: boolean
   }> = [
     { serviceKey: 'chatbot', serviceName: 'Trợ lý Chatbot', provider: 'delify', model: 'delify-5.5', systemPrompt: DEFAULT_CHATBOT_SYSTEM_PROMPT, temperature: '0.30', maxTokens: 4096, isActive: true },
-    { serviceKey: 'translation_article', serviceName: 'Dịch bài viết', provider: 'delify', model: 'delify-5.5', systemPrompt: 'Dịch văn bản sau sang ngôn ngữ mục tiêu, giữ nguyên ý nghĩa và văn phong pháp lý.', temperature: '0.20', maxTokens: 8192, isActive: false },
-    { serviceKey: 'translation_ui', serviceName: 'Dịch giao diện', provider: 'delify', model: 'delify-5.5', systemPrompt: 'Dịch các chuỗi giao diện sang ngôn ngữ mục tiêu, giữ ngắn gọn phù hợp UI.', temperature: '0.10', maxTokens: 2048, isActive: false },
-    { serviceKey: 'editorial_assistant', serviceName: 'Trợ lý biên tập', provider: 'delify', model: 'delify-5.5', systemPrompt: 'Bạn là trợ lý biên tập viên cho cổng thông tin điện tử. Hỗ trợ kiểm tra chính tả, đề xuất tiêu đề, và tóm tắt nội dung.', temperature: '0.40', maxTokens: 4096, isActive: false },
-    { serviceKey: 'moderation', serviceName: 'Kiểm duyệt nội dung', provider: 'delify', model: 'delify-5.5', systemPrompt: 'Kiểm duyệt nội dung bài viết: phát hiện ngôn từ thù ghét, spam, hoặc nội dung không phù hợp. Phân loại: an toàn / cần xem lại / vi phạm.', temperature: '0.00', maxTokens: 2048, isActive: false },
+    { serviceKey: 'translation_article', serviceName: 'Dịch bài viết', provider: 'delify', model: 'delify-5.5', systemPrompt: DEFAULT_TRANSLATION_ARTICLE_SYSTEM_PROMPT, temperature: '0.20', maxTokens: 8192, isActive: false },
+    { serviceKey: 'translation_ui', serviceName: 'Dịch giao diện', provider: 'delify', model: 'delify-5.5', systemPrompt: DEFAULT_TRANSLATION_UI_SYSTEM_PROMPT, temperature: '0.10', maxTokens: 2048, isActive: false },
+    { serviceKey: 'editorial_assistant', serviceName: 'Trợ lý biên tập', provider: 'delify', model: 'delify-5.5', systemPrompt: DEFAULT_EDITORIAL_ASSISTANT_SYSTEM_PROMPT, temperature: '0.40', maxTokens: 4096, isActive: false },
+    { serviceKey: 'moderation', serviceName: 'Kiểm duyệt nội dung', provider: 'delify', model: 'delify-5.5', systemPrompt: DEFAULT_MODERATION_SYSTEM_PROMPT, temperature: '0.00', maxTokens: 2048, isActive: false },
   ]
   for (const s of defaultServices) {
     await db.insert(aiServiceConfigs).values(s)
