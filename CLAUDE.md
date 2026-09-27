@@ -126,6 +126,7 @@ Chi tiết & kiểm chứng âm tính → `docs/decisions/data-layer.md`.
 - **Typecheck sạch**, ghim TS ^5 (7.x thiếu `lib/tsc.js`). `globalThis.useRuntimeConfig` cần `server/plugins/runtime-config-global.ts`.
 - **`as unknown as` không dùng để đọc hình dạng** — khai báo phản chiếu, không ép kiểu tại nơi gọi.
 - **Test**: 13 suite `*-integration` + E2E (`E2E_DB_PORT` etc.), MFA spec dọn ở `afterEach`, LLM guard là lớp duy nhất bắt TDZ/insertId/DATETIME. Kiểm văn bản mã nguồn chứng minh cấu trúc, không chứng minh hành vi. Tổng 2051 test, 0 fail khi CI sạch (13 skip = 13 integration cần MySQL).
+- **Lint/Format**: `npm run lint` (ESLint v9 flat config, 0 error / 272 warning — cố ý warn không đỏ CI) + `npm run format` (Prettier). KHÔNG auto-format toàn codebase — sẽ đè diff lớn, chỉ format file chạm. Không sink vào `build`/`test` (test runner Node thuần không cài thêm).
 
 ---
 

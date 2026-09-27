@@ -1,0 +1,15 @@
+# Dependency dirs
+node_modules/
+.nuxt/
+.output/
+dist/
+
+# Build artifacts
+public/assets/fonts/
+*.log
+.cache/
+
+# Generated
+migrations/
+tests/e2e/test-results/
+playwright-report/
