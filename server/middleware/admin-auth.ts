@@ -13,6 +13,7 @@ export default defineEventHandler(async (event) => {
   // chúng tự xác thực bằng vé thử thách (cookie `cdkt_mfa`).
   if (!url.startsWith('/api/admin/')) return
   if (url === '/api/admin/auth/login') return
+  if (url === '/api/admin/auth/captcha') return
   if (url === '/api/admin/auth/mfa/verify' || url === '/api/admin/auth/mfa/send-code') return
 
   // Đọc JWT từ httpOnly cookie

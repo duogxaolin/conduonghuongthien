@@ -26,6 +26,12 @@ export interface LoginResponse {
   recoveryCodesAvailable?: boolean
 }
 
+/** Dữ liệu lỗi trả về khi login yêu captcha (sau 3 lần sai). */
+export interface CaptchaRequiredError {
+  captchaRequired?: boolean
+  captchaInvalid?: boolean
+}
+
 export const useAdminAuth = () => {
   const user = useState<AdminUser | null>('admin_user', () => null)
   const loading = useState<boolean>('admin_auth_loading', () => false)
@@ -52,15 +58,20 @@ export const useAdminAuth = () => {
    * challenge (`mfaRequired`). The caller must branch, so `user` is optional in
    * the response type — an account with a factor enabled never gets one here.
    */
-  const login = async (username: string, password: string) => {
+  const login = async (username: string, password: string, captcha?: { captchaId: string; captchaCode: string }) => {
     const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<LoginResponse>)('/api/admin/auth/login', {
       method: 'POST',
-      body: { username, password }
+      body: { username, password, ...(captcha ? { captchaId: captcha.captchaId, captchaCode: captcha.captchaCode } : {}) }
     })
     if (res.ok && res.user) {
       user.value = res.user
     }
     return res
+  }
+
+  /** Lấy captcha image mới (SVG) sau khi server yêu cầu. */
+  const fetchCaptcha = async () => {
+    return await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ captchaId: string; svg: string }>)(`/api/admin/auth/captcha`)
   }
 
   /** Second step of a challenged login: the ticket travels in the `cdkt_mfa` cookie. */
@@ -98,6 +109,7 @@ export const useAdminAuth = () => {
     loading,
     fetchUser,
     login,
+    fetchCaptcha,
     verifyMfa,
     logout,
     hasPermission,

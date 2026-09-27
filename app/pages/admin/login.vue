@@ -3,7 +3,7 @@ import type { MfaMethod } from '~/composables/useAdminAuth'
 
 definePageMeta({ layout: false, middleware: 'admin-auth' })
 
-const { login, verifyMfa, user, fetchUser } = useAdminAuth()
+const { login, fetchCaptcha, verifyMfa, user, fetchUser } = useAdminAuth()
 
 onMounted(async () => {
   if (!user.value) await fetchUser()
@@ -29,6 +29,13 @@ const username = ref('')
 const password = ref('')
 const errorMsg = ref('')
 const loading = ref(false)
+
+// Captcha: hiện sau 3 lần sai, client-side detect qua error data.
+const captchaRequired = ref(false)
+const captchaId = ref('')
+const captchaSvg = ref('')
+const captchaCode = ref('')
+const captchaLoading = ref(false)
 
 // Bước 2: chỉ hiện khi tài khoản đã bật ít nhất một yếu tố thứ hai.
 const step = ref<'password' | 'challenge'>('password')
@@ -90,6 +97,23 @@ function selectMethod(method: MfaMethod) {
   nextTick(() => codeInput.value?.focus())
 }
 
+const loadCaptcha = async () => {
+  captchaLoading.value = true
+  try {
+    const res = await fetchCaptcha()
+    captchaId.value = res.captchaId
+    captchaSvg.value = res.svg
+    captchaCode.value = ''
+  } catch {
+    // Captcha endpoint fail (rate limit chính nó, hoặc mạng) — giữ UI cũ,
+    // hiển thị lỗi chung. Không chặn login attempt.
+    captchaId.value = ''
+    captchaSvg.value = ''
+  } finally {
+    captchaLoading.value = false
+  }
+}
+
 const handleLogin = async () => {
   if (!username.value || !password.value) {
     errorMsg.value = 'Vui lòng nhập tài khoản và mật khẩu.'
@@ -98,7 +122,10 @@ const handleLogin = async () => {
   errorMsg.value = ''
   loading.value = true
   try {
-    const res = await login(username.value, password.value)
+    const captcha = captchaRequired.value && captchaId.value
+      ? { captchaId: captchaId.value, captchaCode: captchaCode.value }
+      : undefined
+    const res = await login(username.value, password.value, captcha)
     if (res.ok && res.mfaRequired) {
       methods.value = res.methods ?? []
       recoveryAvailable.value = res.recoveryCodesAvailable === true
@@ -111,7 +138,17 @@ const handleLogin = async () => {
     }
     if (res.ok) navigateTo('/admin')
   } catch (err: unknown) {
-    errorMsg.value = errorMessage(err, 'Đăng nhập thất bại')
+    // Server báo cần captcha (sau 3 lần sai): hiện UI captcha, giữ username/password.
+    const data = (err as { data?: { captchaRequired?: boolean; captchaInvalid?: boolean } })?.data
+    if (data?.captchaRequired) {
+      captchaRequired.value = true
+      errorMsg.value = data.captchaInvalid
+        ? 'Mã captcha không đúng. Vui lòng nhập lại.'
+        : 'Bạn đã sai nhiều lần. Vui lòng nhập mã captcha.'
+      await loadCaptcha()
+    } else {
+      errorMsg.value = errorMessage(err, 'Đăng nhập thất bại')
+    }
   } finally {
     loading.value = false
   }
@@ -224,6 +261,36 @@ function backToPassword() {
             required
             autocomplete="current-password"
             class="w-full px-3.5 py-3 border border-[#c8d6c9] rounded-lg text-[0.92rem] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border"
+          />
+        </div>
+
+        <div v-if="captchaRequired" class="mb-5">
+          <label class="block text-[0.82rem] font-bold text-[#2c3e2e] mb-2">Mã captcha</label>
+          <div class="flex items-center gap-3">
+            <div
+              v-if="captchaSvg"
+              v-html="captchaSvg"
+              class="shrink-0 rounded-lg border border-[#c8d6c9] bg-[#f0f9ff] overflow-hidden"
+              aria-label="Hình captcha"
+            />
+            <button
+              type="button"
+              @click="loadCaptcha"
+              :disabled="captchaLoading"
+              class="shrink-0 flex items-center gap-1.5 px-3 py-2 text-[0.82rem] font-bold text-[#2c6e33] border border-[#c8d6c9] rounded-lg hover:bg-[#e4f2e5] disabled:opacity-60"
+              :title="captchaLoading ? 'Đang tải...' : 'Tải ảnh captcha khác'"
+            >
+              <i class="fa-solid fa-rotate-right" :class="captchaLoading ? 'animate-spin' : ''" aria-hidden="true" />
+              <span class="sr-only">Tải ảnh captcha khác</span>
+            </button>
+          </div>
+          <input
+            type="text"
+            v-model="captchaCode"
+            placeholder="Nhập mã trong hình"
+            required
+            autocomplete="off"
+            class="mt-2 w-full px-3.5 py-3 border border-[#c8d6c9] rounded-lg text-[0.92rem] outline-none transition-[border-color,box-shadow] duration-200 focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border"
           />
         </div>
 

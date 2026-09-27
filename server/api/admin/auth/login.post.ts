@@ -13,6 +13,7 @@ import {
   type RateLimitRule,
 } from '../../../utils/rate-limit-store'
 import { rateLimitDeps } from '../../../utils/rate-limit-deps'
+import { verifyCaptcha } from '../../../utils/captcha-store'
 
 // Rate limiting: 5 lần sai / 15 phút theo IP thật + username, và 15 lần / 15 phút
 // theo riêng username (chặn đoán phân tán từ nhiều IP).
@@ -22,6 +23,11 @@ import { rateLimitDeps } from '../../../utils/rate-limit-deps'
 // thì tự lùi về bộ nhớ tiến trình — đúng bằng hành vi cũ, không mở toang.
 const IP_RULE: RateLimitRule = { limit: 5, windowSeconds: 15 * 60 }
 const USER_RULE: RateLimitRule = { limit: 15, windowSeconds: 15 * 60 }
+
+// Sau 3 lần sai liên tiếp → yêu captcha. Trước 3 lần sai → đăng nhập tự do,
+// không làm khó người gõ nhầm 1-2 lần. Captcha gate dùng cùng bộ đếm rate limit
+// (peek count, không record) nên refresh trang không reset count.
+const CAPTCHA_AFTER_ATTEMPTS = 3
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event).catch(() => ({}))
@@ -55,6 +61,21 @@ export default defineEventHandler(async (event) => {
     })
     setResponseHeader(event, 'Retry-After', Math.max(ipState.retryAfterSeconds, userState.retryAfterSeconds))
     throw createError({ statusCode: 429, statusMessage: 'Quá nhiều lần đăng nhập sai. Vui lòng thử lại sau 15 phút.' })
+  }
+
+  // Captcha gate: sau 3 lần sai, yêu captcha trước khi chạm tới logic password.
+  // `count` là số lần đã ghi từ trước (peek không ghi), nên refresh trang không
+  // reset — attacker không tránh được bằng reload.
+  const attempts = Math.max(ipState.count, userState.count)
+  if (attempts >= CAPTCHA_AFTER_ATTEMPTS) {
+    const captchaId = typeof body?.captchaId === 'string' ? body.captchaId : ''
+    const captchaCode = typeof body?.captchaCode === 'string' ? body.captchaCode : ''
+    if (!captchaId || !captchaCode) {
+      throw createError({ statusCode: 403, statusMessage: 'Yêu cầu captcha.', data: { captchaRequired: true } })
+    }
+    if (!verifyCaptcha(captchaId, captchaCode)) {
+      throw createError({ statusCode: 403, statusMessage: 'Captcha không đúng.', data: { captchaRequired: true, captchaInvalid: true } })
+    }
   }
 
   const db = getDb()
