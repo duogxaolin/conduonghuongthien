@@ -30,6 +30,8 @@ type Comment = {
   adminUserId: number | null
   adminName: string | null
   ip: string | null
+  isHidden: boolean | null
+  flagReason: string | null
 }
 
 const route = useRoute()
@@ -67,6 +69,9 @@ const totalPages = ref(1)
 
 const articleFilter = ref(route.query.articleId ? String(route.query.articleId) : '')
 const sourceFilter = ref(route.query.source === 'article' || route.query.source === 'media' ? route.query.source : '')
+// Tab hiển thị: 'visible' = comment bình thường (mặc định), 'hidden' = bị ẩn.
+const visibilityFilter = ref<'visible' | 'hidden'>(route.query.visibility === 'hidden' ? 'hidden' : 'visible')
+const hiddenCount = ref(0)
 
 const replyTo = ref<number | null>(null)
 const replyBody = ref('')
@@ -82,13 +87,19 @@ async function load() {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; comments: Comment[]; total: number; totalPages: number; page: number }>)('/api/admin/comments', {
-      query: {
-        articleId: articleFilter.value || undefined,
-        source: sourceFilter.value || undefined,
-        page: page.value,
-      },
-    })
+    const [res, hiddenRes] = await Promise.all([
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; comments: Comment[]; total: number; totalPages: number; page: number }>)('/api/admin/comments', {
+        query: {
+          articleId: articleFilter.value || undefined,
+          source: sourceFilter.value || undefined,
+          visibility: visibilityFilter.value,
+          page: page.value,
+        },
+      }),
+      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; total: number }>)('/api/admin/comments', {
+        query: { visibility: 'hidden', perPage: 1 },
+      }),
+    ])
     if (!res?.ok) {
       error.value = 'Không tải được danh sách bình luận.'
       return
@@ -97,11 +108,37 @@ async function load() {
     total.value = res.total || 0
     totalPages.value = res.totalPages || 1
     page.value = res.page || 1
+    hiddenCount.value = hiddenRes?.total ?? 0
   } catch (err: unknown) {
     error.value = errorMessage(err, 'Không tải được danh sách bình luận.')
   } finally {
     loading.value = false
   }
+}
+
+async function toggleVisibility(comment: Comment) {
+  if (busy.value) return
+  const next = !Boolean(comment.isHidden)
+  busy.value = true
+  try {
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/comments/${comment.id}/visibility`, {
+      method: 'PATCH',
+      body: { hidden: next },
+    })
+    toast.success(next ? 'Đã ẩn bình luận.' : 'Đã hiện lại bình luận.')
+    await load()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Không đổi được trạng thái bình luận.'))
+  } finally {
+    busy.value = false
+  }
+}
+
+function switchVisibility(tab: 'visible' | 'hidden') {
+  if (visibilityFilter.value === tab) return
+  visibilityFilter.value = tab
+  page.value = 1
+  load()
 }
 
 function applyFilters() {
@@ -173,6 +210,30 @@ onMounted(load)
       <p class="m-0 mt-1 text-sm text-[#667768]">
         Bình luận công khai trên bài viết và video, mới nhất trước. Mỗi lượt xem được ghi vào lịch sử hoạt động.
       </p>
+    </div>
+
+    <div class="flex flex-wrap items-center gap-2" role="tablist" aria-label="Lọc theo trạng thái bình luận">
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="visibilityFilter === 'visible'"
+        class="rounded-lg px-4 py-2 text-sm font-semibold transition-colors cursor-pointer"
+        :class="visibilityFilter === 'visible' ? 'bg-[#1e4620] text-white' : 'bg-white border border-[#c8d6c9] text-[#2c3e2e] hover:bg-[#f0f7f1]'"
+        @click="switchVisibility('visible')"
+      >
+        Bình luận hiện
+      </button>
+      <button
+        type="button"
+        role="tab"
+        :aria-selected="visibilityFilter === 'hidden'"
+        class="rounded-lg px-4 py-2 text-sm font-semibold transition-colors cursor-pointer"
+        :class="visibilityFilter === 'hidden' ? 'bg-[#7a3520] text-white' : 'bg-white border border-[#c8d6c9] text-[#2c3e2e] hover:bg-[#f0f7f1]'"
+        @click="switchVisibility('hidden')"
+      >
+        Đã ẩn
+        <span v-if="hiddenCount > 0" class="ml-1.5 rounded-full bg-[#fef2f2] px-1.5 py-0.5 text-[0.7rem] font-bold text-[#991b1b]">{{ hiddenCount }}</span>
+      </button>
     </div>
 
     <form class="flex flex-wrap items-end gap-3 rounded-xl border border-[#e2ece3] bg-white p-4" @submit.prevent="applyFilters">
@@ -280,13 +341,27 @@ onMounted(load)
               <button
                 type="button"
                 :disabled="busy"
+                class="text-[0.82rem] font-semibold hover:underline disabled:opacity-60"
+                :class="comment.isHidden ? 'text-[#2c6e33]' : 'text-[#7a3520]'"
+                :title="comment.isHidden ? 'Hiện lại bình luận này' : 'Ẩn bình luận khỏi trang công khai'"
+                @click="toggleVisibility(comment)"
+              >{{ comment.isHidden ? 'Hiện lại' : 'Ẩn' }}</button>
+              <button
+                type="button"
+                :disabled="busy"
                 class="text-[0.82rem] font-semibold text-[#b0403c] hover:underline disabled:opacity-60"
                 @click="deleteOne(comment)"
               >Xoá</button>
             </div>
           </div>
 
-          <p class="m-0 mt-2.5 whitespace-pre-line break-words text-sm text-[#2c3529]">{{ comment.body }}</p>
+          <div v-if="comment.isHidden" class="mt-1.5 flex items-center gap-1.5 text-[0.75rem] text-[#7a3520]">
+            <i class="fa-solid fa-eye-slash" aria-hidden="true"></i>
+            <span class="font-semibold">Đã ẩn</span>
+            <span v-if="comment.flagReason" class="text-[#667768] font-normal">— {{ comment.flagReason }}</span>
+          </div>
+
+          <p class="m-0 mt-2.5 whitespace-pre-line break-words text-sm" :class="comment.isHidden ? 'text-[#9a9a9a] line-through' : 'text-[#2c3529]'">{{ comment.body }}</p>
 
           <!-- AI Moderation Badge if scanned -->
           <div
