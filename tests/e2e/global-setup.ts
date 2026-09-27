@@ -104,6 +104,10 @@ export default async function globalSetup() {
     // underneath an assertion, and the failure would look like a UI bug.
     RETENTION_SCHEDULER: '0',
     VIEW_BOOST_SCHEDULER: '0',
+    // Captcha gate off: serial workers re-login dozens of times in 15 min, past
+    // the 3-fail threshold. The gate would 403 specs that don't send captcha.
+    // Rate limit (429 after 5 fails) stays on — that's the layer E2E exercises.
+    LOGIN_CAPTCHA_ENABLED: '0',
     MEDIA_UPLOAD_ENABLED: process.env.MEDIA_UPLOAD_ENABLED || 'true',
     NUXT_MEDIA_UPLOAD_ENABLED: process.env.NUXT_MEDIA_UPLOAD_ENABLED || 'true',
   }

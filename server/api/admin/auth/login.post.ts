@@ -28,6 +28,11 @@ const USER_RULE: RateLimitRule = { limit: 15, windowSeconds: 15 * 60 }
 // không làm khó người gõ nhầm 1-2 lần. Captcha gate dùng cùng bộ đếm rate limit
 // (peek count, không record) nên refresh trang không reset count.
 const CAPTCHA_AFTER_ATTEMPTS = 3
+// Tắt được qua env cho hệ thống test tự động (E2E): một worker chạy tuần tự hàng
+// chục lượt đăng nhập trong 15 phút, vượt ngưỡng captcha → các spec sau hỏng vì
+// không gửi captcha. Production không đặt biến này → gate bật. Rate limit (429
+// sau 5 lần) vẫn chạy cả khi captcha tắt — đúng lớp bảo mật cần giữ ở E2E.
+const CAPTCHA_ENABLED = process.env.LOGIN_CAPTCHA_ENABLED !== '0' && process.env.NUXT_LOGIN_CAPTCHA_ENABLED !== '0'
 
 export default defineEventHandler(async (event) => {
   const body = await readBody(event).catch(() => ({}))
@@ -67,7 +72,7 @@ export default defineEventHandler(async (event) => {
   // `count` là số lần đã ghi từ trước (peek không ghi), nên refresh trang không
   // reset — attacker không tránh được bằng reload.
   const attempts = Math.max(ipState.count, userState.count)
-  if (attempts >= CAPTCHA_AFTER_ATTEMPTS) {
+  if (CAPTCHA_ENABLED && attempts >= CAPTCHA_AFTER_ATTEMPTS) {
     const captchaId = typeof body?.captchaId === 'string' ? body.captchaId : ''
     const captchaCode = typeof body?.captchaCode === 'string' ? body.captchaCode : ''
     if (!captchaId || !captchaCode) {

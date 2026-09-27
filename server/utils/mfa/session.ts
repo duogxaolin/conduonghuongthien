@@ -42,7 +42,7 @@ export function setSessionCookie(event: H3Event, user: SessionUser): string {
   })
   setCookie(event, SESSION_COOKIE, token, {
     httpOnly: true,
-    secure:   true,
+    secure:   requestIsHttps(event),
     sameSite: 'lax',
     maxAge:   SESSION_MAX_AGE,
     path:     '/',
@@ -58,7 +58,7 @@ export function setChallengeCookie(event: H3Event, user: SessionUser): void {
   })
   setCookie(event, CHALLENGE_COOKIE, token, {
     httpOnly: true,
-    secure:   true,
+    secure:   requestIsHttps(event),
     sameSite: 'lax',
     maxAge:   MFA_CHALLENGE_TTL_SECONDS,
     path:     '/',

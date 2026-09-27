@@ -64,7 +64,7 @@ function requestIsHttps(event: H3Event): boolean {
 export function setReaderCookie(event: H3Event, token: string): void {
   setCookie(event, READER_COOKIE, token, {
     httpOnly: true,
-    secure:   true,
+    secure:   requestIsHttps(event),
     // MANDATORY 'lax', never 'strict': the Google OAuth callback arrives as a
     // top-level navigation from accounts.google.com, so it is cross-site. Under
     // 'strict' the browser withholds the cookie on exactly that hop — the reader
