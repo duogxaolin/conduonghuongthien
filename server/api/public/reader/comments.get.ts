@@ -18,7 +18,7 @@
  * reader-specific response.
  */
 import { finitePositive } from '../../../utils/query-number'
-import { desc, eq, sql } from 'drizzle-orm'
+import { and, desc, eq, sql } from 'drizzle-orm'
 
 import { getDb } from '../../../utils/db'
 import { articleComments, articles } from '../../../db/schema'
@@ -35,7 +35,9 @@ export default defineEventHandler(async (event) => {
   const perPage = finitePositive(query.perPage, DEFAULT_PER_PAGE, MAX_PER_PAGE)
   const db = getDb()
 
-  const where = eq(articleComments.readerId, reader.id)
+  // Chỉ hiện comment chưa ẩn — comment bị ẩn khỏi trang công khai thì cũng
+  // không thuộc về "các bình luận công khai của tôi" mà reader xem ở profile.
+  const where = and(eq(articleComments.readerId, reader.id), eq(articleComments.isHidden, false))
 
   const [countRow] = await db
     .select({ total: sql<number>`COUNT(*)` })

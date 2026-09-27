@@ -30,12 +30,16 @@ export default defineEventHandler(async (event) => {
   if (!source.ok) {
     throw createError({ statusCode: 400, statusMessage: 'Nguồn bình luận không hợp lệ.' })
   }
+  // `visibility` control tab: 'visible' (mặc định, comment bình thường), 'hidden'
+  // (comment bị ẩn), 'all' (cả hai — dành cho officer muốn xem toàn bộ).
+  const visibilityRaw = String(query.visibility ?? 'visible')
+  const visibility = visibilityRaw === 'hidden' || visibilityRaw === 'all' ? visibilityRaw : 'visible'
 
-  const result = await listCommentsForAdmin({ articleId, source: source.source, page, perPage })
+  const result = await listCommentsForAdmin({ articleId, source: source.source, visibility, page, perPage })
 
   await auditCommentRead({
     actorId: actor.id,
-    meta:    { operation: 'list', articleId, source: source.source, page, perPage, returned: result.comments.length },
+    meta:    { operation: 'list', articleId, source: source.source, visibility, page, perPage, returned: result.comments.length },
   })
 
   return { ok: true, ...result }

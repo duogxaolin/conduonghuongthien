@@ -50,13 +50,11 @@ export const COMMENT_MAX_LENGTH = 2000
 /** Display name shown for every administrator reply — see serializePublicComment. */
 export const ADMIN_REPLY_DISPLAY_NAME = 'Ban quản trị'
 
-/** Per reader. Deliberately tighter than the address rule: one person writing
- *  five comments in ten minutes is already at the edge of a conversation. */
-const COMMENT_READER_RULE: RateLimitRule = { limit: 5, windowSeconds: 600 }
+/** Per reader. Window 1 phút — chặn spam nhanh thay vì khoá dài. */
+const COMMENT_READER_RULE: RateLimitRule = { limit: 10, windowSeconds: 60 }
 
-/** Per address. Looser because a household, an office or a mobile carrier NAT
- *  puts many unrelated readers behind one address. */
-const COMMENT_IP_RULE: RateLimitRule = { limit: 15, windowSeconds: 600 }
+/** Per address. Lỏng hơn reader vì NAT/share IP. */
+const COMMENT_IP_RULE: RateLimitRule = { limit: 25, windowSeconds: 60 }
 
 /**
  * Phep kiem ky tu dieu khien dung chung voi ghi chu xu ly don dang ky.
@@ -879,10 +877,11 @@ export type AdminCommentList = {
  * instead of quietly widening the result.
  */
 export async function listCommentsForAdmin(params: {
-  articleId: number | null
-  source?:   CommentSource | null
-  page:      number
-  perPage:   number
+  articleId:  number | null
+  source?:    CommentSource | null
+  visibility?: 'visible' | 'hidden' | 'all'
+  page:       number
+  perPage:    number
 }): Promise<AdminCommentList> {
   const db = getDb()
 
@@ -893,6 +892,12 @@ export async function listCommentsForAdmin(params: {
   // neither, which the write guard prevents but the read should not depend on.
   if (params.source === 'media') conditions.push(isNotNull(articleComments.mediaItemId))
   if (params.source === 'article') conditions.push(isNotNull(articleComments.articleId))
+  // Mặc định `visible`: comment ẩn chỉ hiện ở tab "Đã ẩn". `all` chỉ dành cho
+  // trường hợp officer muốn xem toàn bộ —但目前 UI không expose, giữ phòng sau.
+  if (params.visibility !== 'all') {
+    const wantHidden = params.visibility === 'hidden'
+    conditions.push(eq(articleComments.isHidden, wantHidden))
+  }
   const where = conditions.length ? and(...conditions) : undefined
 
   const [countRow] = await db
