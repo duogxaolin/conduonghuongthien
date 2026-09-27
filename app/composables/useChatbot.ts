@@ -374,7 +374,7 @@ function parseSseLine(line: string, target: { text: string, message: ChatMessage
   }
 }
 
-async function fetchStreamBotReply(onScroll?: () => void): Promise<boolean> {
+async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => void): Promise<boolean> {
   if (isSubmitting.value) return false
   const requestSequence = ++botRequestSequence
   const conversation = activeConversation.value
@@ -462,6 +462,17 @@ async function fetchStreamBotReply(onScroll?: () => void): Promise<boolean> {
     isSubmitting.value = false
     chatRequestController = null
     void playTypewriter(tracked, accumulator.text, { onTick: onScroll, delayMs: isStreamPushed ? 0 : undefined }).then(persist)
+
+    // Moderation gate rejected the user turn before any AI call. Drop the
+    // offending user message from the transcript so boundedUserHistory() never
+    // sends it to the model on the next request — otherwise a user could smuggle
+    // disallowed content past the gate by relying on conversation history. The
+    // bot's refusal bubble stays so the user sees why their turn was rejected.
+    if (botMessage.kind === 'moderation_blocked') {
+      const userIdx = conversation.messages.findIndex(item => item.id === userMessage.id)
+      if (userIdx !== -1) conversation.messages.splice(userIdx, 1)
+      persist()
+    }
     return true
   } catch (error) {
     // The bot message is only in the transcript if the reply arrived, so a failure
@@ -508,7 +519,7 @@ async function submitBotQuestion(rawText: string, onScroll?: () => void): Promis
   userMessage.status = 'pending'
 
   const requestSequence = botRequestSequence + 1
-  const succeeded = await fetchStreamBotReply(onScroll)
+  const succeeded = await fetchStreamBotReply(userMessage, onScroll)
   if (requestSequence !== botRequestSequence) return
   if (succeeded) {
     botInput.value = ''
