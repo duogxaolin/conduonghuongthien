@@ -51,6 +51,21 @@
   padding: 0 24px;
 }
 
+/* Màn hình lớn (Desktop 1536px+): mở rộng lên 1400px chống lọt thỏm */
+@media (min-width: 1536px) {
+  .container {
+    max-width: 1400px;
+    padding: 0 28px;
+  }
+}
+
+/* Màn hình siêu lớn (1920px+ / 2K / 4K / UltraWide): trần tối đa 1536px */
+@media (min-width: 1920px) {
+  .container {
+    max-width: 1536px;
+    padding: 0 32px;
+  }
+}
 .section {
   padding: 48px 0;
 }
