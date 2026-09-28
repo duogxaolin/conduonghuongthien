@@ -114,9 +114,11 @@
                 alt="Logo Con Đường Hướng Thiện"
               />
             </div>
-            <div>
-              <h1 class="text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.5px] leading-[1.2]">CON ĐƯỜNG HƯỚNG THIỆN</h1>
-              <p class="hidden lg:block text-[0.72rem] font-semibold text-[#7A8675] uppercase mt-0.5">{{ t('portal_subtitle') }}</p>
+            <div class="min-w-0">
+              <h1 class="text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.5px] leading-[1.2] whitespace-nowrap">CON ĐƯỜNG HƯỚNG THIỆN</h1>
+              <p class="hidden lg:block text-[0.68rem] xl:text-[0.72rem] font-semibold text-[#7A8675] uppercase mt-0.5 max-w-[280px] xl:max-w-[440px] 2xl:max-w-none leading-tight line-clamp-2">
+                {{ t('portal_subtitle') }}
+              </p>
             </div>
           </nuxt-link>
 
@@ -130,7 +132,7 @@
               :aria-expanded="isSearchActive">
               <i :class="isSearchActive ? 'fa-solid fa-xmark' : 'fa-solid fa-magnifying-glass'"></i>
             </button>
-            <nuxt-link to="/contact" class="hidden lg:inline-flex items-center gap-2 btn btn-primary px-5 py-2.5 text-[0.85rem] rounded-sm">
+            <nuxt-link to="/contact" class="hidden xl:inline-flex items-center gap-2 btn btn-primary px-4 py-2 lg:px-5 lg:py-2.5 text-[0.85rem] rounded-sm shrink-0">
               <i class="fa-solid fa-headset"></i> {{ t('support_247') }}
             </nuxt-link>
 
@@ -207,9 +209,9 @@
                 </button>
               </div>
             </client-only>
-            <!-- Mobile Toggle — opens drawer; drawer's own X closes it -->
+            <!-- Mobile/iPad Toggle — opens drawer on screens < xl (including tablets/iPad) -->
             <button
-              class="lg:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all hover:bg-[#e4f0e2]"
+              class="xl:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all hover:bg-[#e4f0e2]"
               @click="toggleMobileMenu"
               :aria-label="t('menu_open')"
               aria-expanded="false">
@@ -221,9 +223,9 @@
         </div>
       </div>
 
-      <!-- Mobile Drawer Nav -->
+      <!-- Mobile Drawer Nav — available on mobile & iPad (< xl) -->
       <nav
-        class="fixed top-0 w-[min(88vw,380px)] max-w-full h-[100dvh] flex flex-col bg-white shadow-[-12px_0_40px_rgba(15,35,18,0.24)] z-[10007] transition-[right] duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden lg:hidden"
+        class="fixed top-0 w-[min(88vw,380px)] max-w-full h-[100dvh] flex flex-col bg-white shadow-[-12px_0_40px_rgba(15,35,18,0.24)] z-[10007] transition-[right] duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden xl:hidden"
         :class="isMobileMenuOpen ? 'right-0' : '-right-full'"
         @click="onNavClick" @keydown.escape="toggleMobileMenu"
       >
@@ -456,9 +458,9 @@
         một thanh ngang cao cố định, không phải thứ breakpoint này hứa sẽ chặn.
       -->
       <div class="hidden lg:flex bg-white border-t border-[#edf2ec] border-b border-[#e1e8e0] h-[50px] items-center shadow-[0_4px_12px_rgba(15,35,18,0.04)] transition-all">
-        <div class="container w-full overflow-visible">
+        <div class="container w-full overflow-x-auto xl:overflow-visible [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           <nav class="desktop-nav flex w-max min-w-full" @click="onNavClick" @keydown.escape="toggleMobileMenu">
-            <ul class="flex list-none w-full justify-between items-center gap-1">
+            <ul class="flex list-none w-full justify-start lg:justify-between items-center gap-2 lg:gap-1 flex-nowrap">
               <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group focus-within:z-[103]' : ''">
                 <!-- With children: dropdown -->
                 <template v-if="item.children && item.children.length">
