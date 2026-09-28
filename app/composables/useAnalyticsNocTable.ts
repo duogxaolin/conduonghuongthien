@@ -36,12 +36,42 @@ export interface NocRow {
 }
 
 export const NOC_PAGE_SIZE = 10
+export const NOC_DISMISSED_KEY = 'cdkt_noc_dismissed_ids_v1'
+
+export function loadDismissedIds(): Set<number> {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return new Set<number>()
+  }
+  try {
+    const raw = localStorage.getItem(NOC_DISMISSED_KEY)
+    if (!raw) return new Set<number>()
+    const parsed = JSON.parse(raw)
+    if (Array.isArray(parsed)) {
+      return new Set<number>(parsed.filter((n): n is number => typeof n === 'number' && Number.isFinite(n)))
+    }
+  } catch {
+    // Nuốt lỗi nếu storage bị hỏng
+  }
+  return new Set<number>()
+}
+
+export function saveDismissedIds(ids: Set<number>) {
+  if (typeof window === 'undefined' || typeof localStorage === 'undefined') {
+    return
+  }
+  try {
+    const list = Array.from(ids).slice(-500)
+    localStorage.setItem(NOC_DISMISSED_KEY, JSON.stringify(list))
+  } catch {
+    // Quota or private browsing
+  }
+}
 
 export function useAnalyticsNocTable(rows: Ref<NocRow[] | undefined>) {
   const page = ref(1)
   /** `true` = chỉ hiện hàng cảnh báo/lỗi. */
   const severityOnly = ref(false)
-  const dismissedIds = ref(new Set<number>())
+  const dismissedIds = ref(loadDismissedIds())
   const expandedId = ref<number | null>(null)
 
   /**
@@ -73,11 +103,17 @@ export function useAnalyticsNocTable(rows: Ref<NocRow[] | undefined>) {
    */
   const summary = computed(() => {
     const list = newest.value
+    const totalWarnings = list
+      .filter(row => isWarningOrError(row.severity))
+      .reduce((sum, row) => sum + row.eventCount, 0)
+    const unhandledWarnings = list
+      .filter(row => isWarningOrError(row.severity) && !dismissedIds.value.has(row.id))
+      .reduce((sum, row) => sum + row.eventCount, 0)
     return {
       totalEvents: list.reduce((sum, row) => sum + row.eventCount, 0),
-      warningErrorEvents: list
-        .filter(row => isWarningOrError(row.severity))
-        .reduce((sum, row) => sum + row.eventCount, 0),
+      warningErrorEvents: totalWarnings,
+      unhandledWarningEvents: unhandledWarnings,
+      dismissedCount: dismissedIds.value.size,
       maxDuration: Math.max(0, ...list.map(row => row.duration.maxMs)),
       latestStatus: list.length ? list[0]!.status : 'Không có sự kiện',
     }
@@ -91,12 +127,21 @@ export function useAnalyticsNocTable(rows: Ref<NocRow[] | undefined>) {
   }
 
   function dismissRow(id: number) {
-    dismissedIds.value = new Set([...dismissedIds.value, id])
+    const next = new Set([...dismissedIds.value, id])
+    dismissedIds.value = next
+    saveDismissedIds(next)
     if (expandedId.value === id) expandedId.value = null
   }
 
   function undismissAll() {
     dismissedIds.value = new Set()
+    if (typeof window !== 'undefined' && typeof localStorage !== 'undefined') {
+      try {
+        localStorage.removeItem(NOC_DISMISSED_KEY)
+      } catch {
+        // Ignored
+      }
+    }
   }
 
   function toggleRow(id: number) {

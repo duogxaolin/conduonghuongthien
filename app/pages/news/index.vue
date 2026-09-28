@@ -281,10 +281,11 @@
                     </span>
                   </div>
 
-                  <h2 class="text-[1.15rem] sm:text-[1.28rem] lg:text-[1.32rem] font-black leading-[1.35] mb-2 m-0 text-[#172516]">
+                  <h2 class="text-[1.15rem] sm:text-[1.28rem] lg:text-[1.32rem] font-black leading-[1.35] mb-2 m-0 text-[#172516] line-clamp-2">
                     <nuxt-link
                       :to="`/news/${featured.slug}`"
                       class="text-[#172516] no-underline transition-colors duration-200 hover:text-[#2D5A27]"
+                      :title="featured.title"
                     >
                       {{ featured.title }}
                     </nuxt-link>

@@ -903,6 +903,7 @@ export const useI18n = () => {
 
   const setLang = (locale: string) => {
     const newLocale = normalizeLocale(locale)
+    const changed = currentLang.value !== newLocale
     // Invalidate DB cache when switching languages
     if (newLocale !== dbTranslationsLang.value) {
       dbTranslations.value = null
@@ -912,6 +913,9 @@ export const useI18n = () => {
     localeCookie.value = newLocale
     if (import.meta.client) {
       localStorage.setItem('cdkt_lang', newLocale)
+      if (changed && typeof window !== 'undefined') {
+        window.location.reload()
+      }
     }
   }
   return {
