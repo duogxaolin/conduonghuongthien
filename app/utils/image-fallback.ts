@@ -1,7 +1,7 @@
 /**
  * Tiện ích xử lý thay thế ảnh mặc định khi ảnh ở local (/uploads/...) hoặc CDN/R2 bị chết link, lỗi 404.
  */
-export const DEFAULT_FALLBACK_IMAGE = '/assets/hero_banner.jpg'
+export const DEFAULT_FALLBACK_IMAGE = '/assets/default_cover_light.png'
 
 export interface ImageFallbackTarget {
   tagName?: string
