@@ -16,7 +16,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 - **Backend**: Nitro/H3, Drizzle ORM, MySQL 8.0/MariaDB, JWT (`cdkt_admin` HTTP-only Cookie).
 - **DB — 61 bảng**: nguồn chân lý `server/db/schema.ts`; DDL khởi động `server/db/init.ts` (CREATE TABLE cho DB trống) + `server/db/migrations-additive.ts` (ensureColumn/ensureIndex/FK cho DB đã có dữ liệu). `seed.ts` insert-only. → chi tiết `docs/decisions/data-layer.md`.
 - **Test**: `npm test` (Node runner, `scripts/ts-resolver.mjs`, không cài thêm). Node `^22.19.0 || ^24.11.0 || >=26.0.0`. Chín suite `*-integration` nối MySQL thật (chạy trong CI). E2E: `npm run test:e2e` (cần build + MySQL, `E2E_DB_PORT=33069` cho dev docker).
-- **Schema tooling**: `npm run db:drift` so `schema.ts` ↔ `init.ts + migrations-additive.ts` (tên + kiểu + NULL, ~464 cột). `npm run db:generate` sinh diff SQL. `migrations/*.sql` là snapshot mysqldump — có guard chặn chạy nhầm.
+- **Schema tooling**: `npm run db:drift` so `schema.ts` ↔ `init.ts + migrations-additive.ts` (tên + kiểu + NULL, 624 cột/61 bảng). `npm run db:generate` sinh diff SQL. `migrations/*.sql` là snapshot mysqldump — có guard chặn chạy nhầm.
 - **Webfont & Icon**: Inter tự chủ (`public/assets/fonts/`, `nuxt.config.ts` tự phát hiện, không còn `fonts.googleapis.com` trong `.output/`). FontAwesome chỉ `solid` + `regular` (`ICON_FAMILIES` trong `nuxt.config.ts`).
 - **Hiệu năng trang công khai** — 3 thứ đi cùng nhau: `routeRules` `swr: 60` (SWR 60s) cho `/`, `/about`, `/contact` + 4 nhánh list (`/admin/**` và `/api/**` `cache:false` tường minh), `lazy:true` ở 6 fetch, `<NuxtLoadingIndicator>` ở `default.vue`.
 - **Skeleton** (`app/components/skeleton/*.vue`, `tests/skeleton-loading-ui.test.ts`): `SkeletonTable`/`SkeletonCards`/`SkeletonForm` dùng chung; inline chỉ khi hình dạng duy nhất. `motion-reduce:animate-none` kèm mọi `animate-pulse` (4 nhịp trạng thái được miễn, ghi trong test). Container `role="status"` + `aria-busy="true"` + `sr-only`; ô xám `aria-hidden="true"`; nhánh lỗi mang `role="alert"` + nút thử lại gọi hàm cùng file (không `location.reload()`). Lớp cột viết thẳng chữ, không nội suy `grid-cols-${n}`. Tải/lỗi/rỗng là một hợp đồng (mẫu `NewsCategoryList.vue:14-34`, `tests/admin-error-retry-ui.test.ts` chặn 31/33 trang, 2 trang miễn nêu tên).
@@ -44,7 +44,7 @@ app/
 │   ├── useI18n.ts (107 keys, chỉ default.vue dùng) / useReaderAuth.ts
 │   ├── useReaderNotifications.ts / useReadingHistory.ts (localStorage only) / useToast.ts
 │   └── useAnalyticsNocTable.ts
-├── layouts/default.vue (991→866) / admin.vue
+├── layouts/default.vue (991→866, đã phình lại 1282 — nợ kỹ thuật) / admin.vue
 └── pages/
     ├── index.vue / about.vue / contact.vue
     ├── news/ / reintegration-models/ / role-models/ / documents/ / legal-qa/
@@ -78,9 +78,9 @@ Chi tiết Page Builder → § Kiến trúc Page Builder bên dưới. Lịch s�
 
 ---
 
-### Quy ước tầng dữ liệu (áp cho mã MỚI, không sửa 92 endpoint cũ)
+### Quy ước tầng dữ liệu (áp cho mã MỚI, không sửa 167 endpoint cũ)
 
-Hiện 171 endpoint: 92 `getDb()` thẳng, 85 qua `services/**`, 14 cả hai.
+Hiện 315 endpoint: 167 `getDb()` thẳng, ~85 qua `services/**`, 14 cả hai.
 
 **Bắt buộc viết trong `server/services/**` khi:** (1) ghi hàng + `activity_logs` (phải 1 transaction), (2) nhiều lệnh ghi phải cùng thành công, (3) ≥2 nơi gọi, (4) quy tắc nghiệp vụ không diễn đạt bằng query.
 
@@ -93,6 +93,7 @@ Hiện 171 endpoint: 92 `getDb()` thẳng, 85 qua `services/**`, 14 cả hai.
 2. Xoá-rồi-log không bọc là sai phổ biến nhất (FK + JSON) — đã kiểm bằng driver thật.
 3. Ngoại lệ phải nêu tên trong test: `profile/mfa/confirm.post.ts` (và `recovery-codes`, `auth/logout`, `boost.post.ts`) cố ý không bọc vì `setSessionCookie()` giữa 2 ghi — rollback không thu hồi cookie. `tests/reader-audit-atomicity.test.ts` khoá.
 4. `tests/reader-audit-atomicity.test.ts` chặn 22 endpoint (5 xoá + 17 tạo/sửa) + 12 hàm reader; guard quét **cả thư mục** `server/services/` (không liệt kê đường dẫn). `deleteMediaById` chỉ bọc 2 ghi DB, không bọc xoá tệp.
+5. `deleteArticleById`/`setArticleStatus` (`services/articles.ts`) **chủ đích KHÔNG bọc** — guard `known exclusions are named` ở cùng test trên khoá trạng thái này, bọc lại sẽ fail test. Đó là known-exclusion được guard, **không phải gap chưa đóng**.
 
 **TDZ:** `const id = await db.transaction(…)` — không đọc `id` trong chính callback (ReferenceError lúc chạy). Đã trả giá 4 endpoint 500. Chặn bằng `tests/transaction-tdz.test.ts` + `tests/e2e/admin-write-paths.spec.ts`.
 
@@ -110,10 +111,10 @@ Chi tiết & kiểm chứng âm tính → `docs/decisions/data-layer.md`.
 
 ### Tệp lớn đã tách (và 1 tệp cố ý KHÔNG tách)
 
-- `server/db/init.ts` (690 dòng) → `applyAdditiveMigrations()` (~45 ensureColumn/FK sau 61 CREATE TABLE). Thứ tự là ràng buộc thật; `init.ts` re-export.
-- `app/composables/useChatbot.ts` (939→759) → `useChatbotTypewriter.ts`.
+- `server/db/init.ts` (1285 dòng, từng hứa 690 — phình theo thời gian) → `applyAdditiveMigrations()` (~45 ensureColumn/FK sau 61 CREATE TABLE). Thứ tự là ràng buộc thật; `init.ts` re-export.
+- `app/composables/useChatbot.ts` (939→740) → `useChatbotTypewriter.ts`.
 - `app/pages/admin/profile.vue` (1076→875) → `ProfileActivityHistory.vue`.
-- `app/layouts/default.vue` (991→866) → `ReaderNotificationBell.client.vue` (.client là ràng buộc cache, không chỉ tối ưu).
+- `app/layouts/default.vue` (991→866, sau đó phình lại 1282) → `ReaderNotificationBell.client.vue` (.client là ràng buộc cache, không chỉ tối ưu). Caveat: 1282 dòng là hồi quy cấu trúc, điểm merge-conflict nóng.
 - `AnalyticsLiveDashboard.client.vue` cố ý chỉ tách 2 hàm thuần (`analytics-noc.ts` — `safeDetails` là bộ lọc PII). NOC template giữ nguyên (22 định danh cha).
 
 ### Hạn chế đã biết
@@ -121,10 +122,11 @@ Chi tiết & kiểm chứng âm tính → `docs/decisions/data-layer.md`.
 > Chi tiết → `docs/decisions/README.md`.
 
 - **i18n** mới xong khung (107 keys, chỉ `default.vue` dùng).
-- **`any` đã xong** (0 trong `app/`/`server/`/`scripts/`, 43 `.vue` đã `lang="ts"`). Kiểu API suy từ handler, không viết tay.
+- **`any` còn ~20 vết** (1 trong `app/`/`server/`/`scripts/` — comment `errorMessage.ts`, không phải code), 17 trong `.vue` SFC, 2 `as any` rải rác. 43 `.vue` đã `lang="ts"`. Kiểu API suy từ handler, không viết tay.
 - **Typecheck sạch**, ghim TS ^5 (7.x thiếu `lib/tsc.js`). `globalThis.useRuntimeConfig` cần `server/plugins/runtime-config-global.ts`.
 - **`as unknown as` không dùng để đọc hình dạng** — khai báo phản chiếu, không ép kiểu tại nơi gọi.
-- **Test**: 9 suite `*-integration` + E2E (`E2E_DB_PORT` etc.), MFA spec dọn ở `afterEach`, LLM guard là lớp duy nhất bắt TDZ/insertId/DATETIME. Kiểm văn bản mã nguồn chứng minh cấu trúc, không chứng minh hành vi.
+- **Test**: 13 suite `*-integration` + E2E (`E2E_DB_PORT` etc.), MFA spec dọn ở `afterEach`, LLM guard là lớp duy nhất bắt TDZ/insertId/DATETIME. Kiểm văn bản mã nguồn chứng minh cấu trúc, không chứng minh hành vi. Tổng 2051 test, 0 fail khi CI sạch (13 skip = 13 integration cần MySQL).
+- **Lint/Format**: `npm run lint` (ESLint v9 flat config, 0 error / 272 warning — cố ý warn không đỏ CI) + `npm run format` (Prettier). KHÔNG auto-format toàn codebase — sẽ đè diff lớn, chỉ format file chạm. Không sink vào `build`/`test` (test runner Node thuần không cài thêm).
 
 ---
 

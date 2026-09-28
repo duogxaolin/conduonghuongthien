@@ -200,21 +200,13 @@ onMounted(load)
         </table>
       </div>
 
-      <div v-if="totalPages > 1" class="flex flex-wrap items-center justify-center gap-3">
-        <button
-          type="button"
-          class="rounded-lg border border-[#c8d6c9] bg-white px-3 py-2 text-sm font-semibold disabled:opacity-50"
-          :disabled="page <= 1"
-          @click="goToPage(page - 1)"
-        >Trang trước</button>
-        <span class="text-sm text-[#3d4f3f]">Trang {{ page }} / {{ totalPages }} — {{ total }} tài khoản</span>
-        <button
-          type="button"
-          class="rounded-lg border border-[#c8d6c9] bg-white px-3 py-2 text-sm font-semibold disabled:opacity-50"
-          :disabled="page >= totalPages"
-          @click="goToPage(page + 1)"
-        >Trang sau</button>
-      </div>
+      <AdminPagination
+        :page="page"
+        :total-pages="totalPages"
+        :total="total"
+        item-label="tài khoản"
+        @update:page="goToPage"
+      />
     </template>
   </div>
 </template>

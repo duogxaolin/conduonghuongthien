@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 
 export interface R2Config {
   accountId: string
@@ -77,4 +77,28 @@ export async function getR2Object(key: string, config: R2Config): Promise<Buffer
     chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)
   }
   return Buffer.concat(chunks)
+}
+
+/**
+ * Tổng số object + tổng bytes trong bucket R2. Phân trang ListObjectsV2 (mỗi
+ * trang 1000 key) để chống bucket lớn — R2 trả tối đa 1000/trang.
+ */
+export async function getR2BucketSize(config: R2Config): Promise<{ count: number; totalBytes: number }> {
+  const client = createR2Client(config)
+  let count = 0
+  let totalBytes = 0
+  let continuationToken: string | undefined
+  do {
+    const res = await client.send(new ListObjectsV2Command({
+      Bucket: config.bucket,
+      ContinuationToken: continuationToken,
+      MaxKeys: 1000,
+    }))
+    for (const obj of res.Contents ?? []) {
+      count++
+      totalBytes += Number(obj.Size ?? 0)
+    }
+    continuationToken = res.IsTruncated ? res.NextContinuationToken : undefined
+  } while (continuationToken)
+  return { count, totalBytes }
 }

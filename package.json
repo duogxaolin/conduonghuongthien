@@ -5,6 +5,9 @@
   "scripts": {
     "build": "npm run check:admin-password && nuxt build",
     "check:admin-password": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/check-admin-password.ts",
+    "lint": "eslint . --max-warnings=9999",
+    "lint:fix": "eslint . --fix --max-warnings=9999",
+    "format": "prettier --write \"**/*.{ts,tsx,vue,json,css,md}\" --ignore-path .prettierignore",
     "dev": "nuxt dev",
     "generate": "nuxt generate",
     "preview": "nuxt preview",
@@ -51,8 +54,16 @@
     "@types/jsonwebtoken": "^9.0.10",
     "@types/nodemailer": "^8.0.1",
     "@types/sharp": "^0.31.1",
+    "@typescript-eslint/eslint-plugin": "^8.70.1",
+    "@typescript-eslint/parser": "^8.70.1",
     "drizzle-kit": "^0.31.10",
+    "eslint": "^9.39.5",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-vue": "^10.11.1",
+    "globals": "^17.12.0",
+    "prettier": "^3.9.9",
     "typescript": "^5.9.3",
+    "typescript-eslint": "^8.70.1",
     "vue-tsc": "^3.3.8"
   },
   "overrides": {

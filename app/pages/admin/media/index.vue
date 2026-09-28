@@ -124,7 +124,39 @@ const isBatching = computed(() => uploadingBatch.value && totalCount.value > 0)
 // ─── Quét & đồng bộ storage chuyển sang trang riêng /admin/media/scan ──────
 // Quét 3212 file mồ côi có thể treo trang grid, nên tách ra trang riêng chạy nền.
 
-onMounted(() => { fetchMedia() })
+// ─── Dung lượng storage (local + R2) ────────────────────────────────────────
+interface StorageSize {
+  local: { dbCount: number; dbBytes: number; diskCount: number; diskBytes: number }
+  r2: { configured: boolean; dbCount: number; dbBytes: number; bucketCount: number | null; bucketBytes: number | null }
+}
+const storageSize = ref<StorageSize | null>(null)
+const storageLoading = ref(false)
+const storageError = ref('')
+
+function formatBytes(bytes: number): string {
+  if (bytes === 0) return '0 B'
+  const units = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.min(units.length - 1, Math.floor(Math.log(bytes) / Math.log(1024)))
+  return `${(bytes / Math.pow(1024, i)).toFixed(i === 0 ? 0 : 1)} ${units[i]}`
+}
+
+async function fetchStorageSize() {
+  storageLoading.value = true
+  storageError.value = ''
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean } & StorageSize>)('/api/admin/media/storage-size')
+    if (res.ok) storageSize.value = res
+  } catch (err: unknown) {
+    storageError.value = errorMessage(err, 'Không thể lấy dung lượng storage.')
+  } finally {
+    storageLoading.value = false
+  }
+}
+
+onMounted(() => {
+  fetchMedia()
+  void fetchStorageSize()
+})
 </script>
 
 <template>
@@ -142,6 +174,108 @@ onMounted(() => { fetchMedia() })
         <i class="fa-solid fa-folder-tree" aria-hidden="true"></i>
         Quét & Đồng bộ
       </NuxtLink>
+    </div>
+
+    <!-- Storage Usage Card -->
+    <div class="bg-white rounded-xl border border-[#e2ece3] p-4">
+      <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-3">
+        <div class="flex items-center gap-2">
+          <i class="fa-solid fa-database text-[#2c6e33]" aria-hidden="true"></i>
+          <h2 class="m-0 text-sm font-extrabold text-[#122815]">Dung lượng đã sử dụng</h2>
+        </div>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-[#c8d6c9] bg-white px-3 py-1.5 text-xs font-semibold text-[#2c6e33] hover:bg-[#f0f7f1] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="storageLoading"
+          @click="fetchStorageSize"
+        >
+          <i class="fa-solid fa-rotate-right text-[0.7rem]" :class="storageLoading ? 'animate-spin motion-reduce:animate-none' : ''" aria-hidden="true"></i>
+          <span>{{ storageLoading ? 'Đang quét...' : 'Quét lại dung lượng' }}</span>
+        </button>
+      </div>
+
+      <div v-if="storageError" role="alert" class="flex items-center gap-2 text-xs text-[#b04a4a] py-2">
+        <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+        <span>{{ storageError }}</span>
+      </div>
+
+      <div v-else-if="storageLoading && !storageSize" class="flex items-center gap-2 text-xs text-[#667768] py-3" role="status" aria-busy="true">
+        <i class="fa-solid fa-spinner animate-spin motion-reduce:animate-none" aria-hidden="true"></i>
+        <span>Đang quét thư mục uploads và bucket R2...</span>
+      </div>
+
+      <div v-else-if="storageSize" class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        <!-- Local -->
+        <div class="rounded-lg border border-[#e2ece3] bg-[#f8fbf8] p-3.5">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-[#2c6e33] text-white text-xs">
+                <i class="fa-solid fa-hard-drive" aria-hidden="true"></i>
+              </span>
+              <span class="text-sm font-bold text-[#122815]">Local /uploads</span>
+            </div>
+            <span class="text-base font-extrabold text-[#2c6e33]">{{ formatBytes(storageSize.local.diskBytes) }}</span>
+          </div>
+          <ul class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem] text-[#667768]">
+            <li class="flex justify-between gap-2">
+              <span>File trên đĩa</span>
+              <span class="font-semibold text-[#3d4f3f]">{{ storageSize.local.diskCount.toLocaleString('vi-VN') }} tệp</span>
+            </li>
+            <li class="flex justify-between gap-2">
+              <span>Đã ghi DB (local)</span>
+              <span class="font-semibold text-[#3d4f3f]">{{ storageSize.local.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatBytes(storageSize.local.dbBytes) }}</span>
+            </li>
+            <li v-if="storageSize.local.diskCount > storageSize.local.dbCount" class="flex justify-between gap-2 text-[#765b00]">
+              <span>Mồ côi (chưa có DB)</span>
+              <span class="font-semibold">{{ (storageSize.local.diskCount - storageSize.local.dbCount).toLocaleString('vi-VN') }} tệp</span>
+            </li>
+          </ul>
+          <NuxtLink
+            v-if="storageSize.local.diskCount > storageSize.local.dbCount"
+            to="/admin/media/scan"
+            class="mt-2 inline-flex items-center gap-1.5 text-[0.72rem] font-semibold text-[#2c6e33] no-underline hover:underline"
+          >
+            <i class="fa-solid fa-arrow-right text-[0.6rem]" aria-hidden="true"></i>
+            Quét & nhập tệp mồ côi
+          </NuxtLink>
+        </div>
+
+        <!-- R2 -->
+        <div class="rounded-lg border border-[#e2ece3] bg-[#fffdf7] p-3.5">
+          <div class="flex items-center justify-between gap-2 mb-2">
+            <div class="flex items-center gap-2">
+              <span class="inline-flex items-center justify-center w-7 h-7 rounded-md bg-orange-500 text-white text-xs">
+                <i class="fa-solid fa-cloud" aria-hidden="true"></i>
+              </span>
+              <span class="text-sm font-bold text-[#122815]">R2 Bucket</span>
+            </div>
+            <span v-if="storageSize.r2.bucketBytes != null" class="text-base font-extrabold text-[#7c4a00]">{{ formatBytes(storageSize.r2.bucketBytes) }}</span>
+            <span v-else class="text-base font-extrabold text-[#9ca3af]">—</span>
+          </div>
+          <ul class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem] text-[#667768]">
+            <li v-if="!storageSize.r2.configured" class="text-[#9ca3af]">
+              R2 chưa cấu hình — nhập credential ở Cài đặt.
+            </li>
+            <li v-else-if="storageSize.r2.bucketBytes == null" class="text-[#b04a4a]">
+              Không đọc được bucket R2 (credential hỏng hoặc lỗi mạng).
+            </li>
+            <template v-else>
+              <li class="flex justify-between gap-2">
+                <span>Object trong bucket</span>
+                <span class="font-semibold text-[#3d4f3f]">{{ storageSize.r2.bucketCount!.toLocaleString('vi-VN') }} tệp</span>
+              </li>
+              <li class="flex justify-between gap-2">
+                <span>Đã ghi DB (r2)</span>
+                <span class="font-semibold text-[#3d4f3f]">{{ storageSize.r2.dbCount.toLocaleString('vi-VN') }} tệp · {{ formatBytes(storageSize.r2.dbBytes) }}</span>
+              </li>
+            </template>
+          </ul>
+        </div>
+      </div>
+
+      <p v-else class="m-0 text-xs text-[#667768] py-3">
+        Chưa có thông tin dung lượng. Bấm “Quét lại dung lượng” để quét thư mục uploads và bucket R2.
+      </p>
     </div>
 
     <!-- Upload Zone -->
@@ -311,18 +445,12 @@ onMounted(() => { fetchMedia() })
     </div>
 
     <!-- Pagination -->
-    <div v-if="!loadError && pagination.totalPages > 1" class="flex justify-center items-center gap-4 mt-2">
-      <button
-        :disabled="pagination.page <= 1"
-        @click="fetchMedia(pagination.page - 1)"
-        class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#f0f7f1] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      ><i class="fa-regular fa-chevron-left"></i> Trang trước</button>
-      <span class="text-sm text-[#667768] font-medium">Trang {{ pagination.page }} / {{ pagination.totalPages }}</span>
-      <button
-        :disabled="pagination.page >= pagination.totalPages"
-        @click="fetchMedia(pagination.page + 1)"
-        class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#f0f7f1] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      >Trang sau <i class="fa-regular fa-chevron-right"></i></button>
+    <div v-if="!loadError && pagination.totalPages > 1" class="mt-2">
+      <AdminPagination
+        :page="pagination.page"
+        :total-pages="pagination.totalPages"
+        @update:page="fetchMedia"
+      />
     </div>
   </div>
 </template>

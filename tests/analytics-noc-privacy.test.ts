@@ -14,7 +14,7 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
 
-import { isWarningOrError, safeDetails } from '../app/utils/analytics-noc.ts'
+import { isWarningOrError, safeDetails, explainNocEvent } from '../app/utils/analytics-noc.ts'
 
 describe('isWarningOrError', () => {
   it('nhận cả hai cách viết mà các nguồn sự kiện dùng', () => {
@@ -79,5 +79,71 @@ describe('safeDetails lọc được trường định danh', () => {
     assert.equal(safeDetails({}), '—')
     assert.equal(safeDetails({ clientIp: '1.2.3.4' }), '—',
       'lọc hết thì phải ra dấu gạch, không phải một object rỗng')
+  })
+})
+
+describe('explainNocEvent giải thích sự kiện vận hành rõ ràng', () => {
+  it('giải thích đúng cảnh báo ingestion_rejected với invalid_payload', () => {
+    const res = explainNocEvent({
+      eventType: 'ingestion_rejected',
+      errorCode: 'invalid_payload',
+      status: 'rejected',
+      severity: 'warning',
+    })
+    assert.equal(res.tone, 'warning')
+    assert.ok(res.title.includes('Từ chối'))
+    assert.ok(res.cause.includes('không hợp lệ'))
+    assert.ok(res.impact.includes('An toàn'))
+    assert.ok(res.action.includes('Đánh dấu đã xử lý'))
+  })
+
+  it('giải thích đúng cảnh báo retention_cleanup với retention_warning', () => {
+    const res = explainNocEvent({
+      eventType: 'retention_cleanup',
+      errorCode: 'retention_warning',
+      status: 'warning',
+      severity: 'warning',
+    })
+    assert.equal(res.tone, 'warning')
+    assert.ok(res.title.includes('trần mẻ an toàn') || res.title.includes('Retention'))
+    assert.ok(res.cause.includes('không khóa bảng MySQL'))
+    assert.ok(res.impact.includes('an toàn'))
+    assert.ok(res.action.includes('Đánh dấu đã xử lý'))
+  })
+
+  it('giải thích đúng cảnh báo maintenance_warning với retention_warning', () => {
+    const res = explainNocEvent({
+      eventType: 'maintenance_warning',
+      errorCode: 'retention_warning',
+      status: 'warning',
+      severity: 'warning',
+      details: { processedDays: 3, stale: false },
+    })
+    assert.equal(res.tone, 'warning')
+    assert.ok(res.title.includes('Bảo trì dữ liệu định kỳ') || res.title.includes('Chạm trần'))
+    assert.ok(res.cause.includes('3 ngày'))
+    assert.ok(res.impact.includes('An toàn'))
+    assert.ok(res.action.includes('Đánh dấu đã xử lý'))
+  })
+
+  it('phân biệt lỗi nghiêm trọng maintenance_failure', () => {
+    const res = explainNocEvent({
+      eventType: 'maintenance_failure',
+      errorCode: 'maintenance_failed',
+      status: 'failure',
+      severity: 'error',
+    })
+    assert.equal(res.tone, 'danger')
+    assert.ok(res.cause.includes('thất bại'))
+    assert.ok(res.action.includes('npm run analytics:maintenance'))
+  })
+
+  it('an toàn khi thiếu trường hoặc sự kiện không xác định', () => {
+    const res = explainNocEvent({})
+    assert.ok(res.title)
+    assert.ok(res.cause)
+    assert.ok(res.impact)
+    assert.ok(res.action)
+    assert.ok(['info', 'warning', 'danger'].includes(res.tone))
   })
 })

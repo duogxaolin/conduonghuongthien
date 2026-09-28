@@ -514,6 +514,32 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  // ── Social links (popup MXH góc trái) ───────────────────────────────────────
+  // Bảng mới cho admin quản lý mạng xã hội. CREATE TABLE IF NOT EXISTS đủ cho
+  // DB đã có dữ liệu — không cần ensureColumn (chưa có cột nào thêm sau này).
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`social_links\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`platform\` VARCHAR(64) NOT NULL,
+      \`label\` VARCHAR(128) NOT NULL,
+      \`url\` VARCHAR(1024) NOT NULL,
+      \`icon\` VARCHAR(255) NOT NULL DEFAULT 'fa-brands fa-link',
+      \`icon_type\` VARCHAR(16) NOT NULL DEFAULT 'fontawesome',
+      \`color\` VARCHAR(16) NOT NULL DEFAULT '#1877f2',
+      \`sort_order\` INT NOT NULL DEFAULT 0,
+      \`is_visible\` TINYINT(1) NOT NULL DEFAULT 1,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY \`social_links_sort_idx\` (\`sort_order\`, \`id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
+  // ── social_links: thêm cột icon_type (DB đã có social_links từ trước) ─────
+  await ensureColumn(db, database, 'social_links', 'icon_type', "VARCHAR(16) NOT NULL DEFAULT 'fontawesome'")
+  // Tăng `icon` 128 → 255 (URL ảnh có thể dài hơn class FA). modifyColumn vì
+  // ensureColumn chỉ ADD, không resize.
+  await modifyColumn(db, database, 'social_links', 'icon', "VARCHAR(255) NOT NULL DEFAULT 'fa-brands fa-link'")
+
   // ── Danh mục Media Portal (tách khỏi `categories` bài viết) ────────────────
   // Bảng riêng cho danh mục video: phẳng, không cha-con, không `type`. Trước đây
   // `media_items.category_id` trỏ `categories` (bài viết); nay trỏ bảng này. Đổi

@@ -183,25 +183,13 @@ onMounted(() => { fetchSessions() })
       </div>
 
       <!-- Pagination -->
-      <div class="flex flex-col items-center justify-between gap-3 sm:flex-row">
-        <p class="m-0 text-[0.8rem] text-[#667768]">
-          Tổng {{ total }} phiên · Trang {{ page }}/{{ totalPages }}
-        </p>
-        <div class="flex gap-2">
-          <button
-            type="button"
-            class="rounded-lg border border-[#c8d6c9] px-3 py-1.5 text-sm font-bold text-[#445546] hover:bg-[#f4f7f4] disabled:opacity-40 disabled:hover:bg-transparent"
-            :disabled="page <= 1"
-            @click="goPage(page - 1)"
-          >Trước</button>
-          <button
-            type="button"
-            class="rounded-lg border border-[#c8d6c9] px-3 py-1.5 text-sm font-bold text-[#445546] hover:bg-[#f4f7f4] disabled:opacity-40 disabled:hover:bg-transparent"
-            :disabled="page >= totalPages"
-            @click="goPage(page + 1)"
-          >Sau</button>
-        </div>
-      </div>
+      <AdminPagination
+        :page="page"
+        :total-pages="totalPages"
+        :total="total"
+        item-label="phiên"
+        @update:page="goPage"
+      />
     </template>
   </div>
 </template>

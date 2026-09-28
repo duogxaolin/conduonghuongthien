@@ -656,6 +656,98 @@ export async function setTranslationStatus(
 
 // ─── Delete ───────────────────────────────────────────────────────────────
 
+/**
+ * Xuất bản toàn bộ bản dịch AI chưa xuất bản. Chuyển `ai_draft`/`reviewed` sang
+ * `published`; bỏ qua `translating` (chưa xong) và `failed` (không covert得起)
+ * để không phá dòng đang chạy. Tuỳ chọn lọc theo `langCode`.
+ *
+ * Mỗi bản cập nhật state trong transaction với activity_logs (design.md D6).
+ * Trả về số bản đã xuất bản + số bị bỏ qua kèm lý do để UI hiển thị.
+ */
+export async function bulkPublishAiTranslations(
+  actor: ActorLike,
+  langCode: string | null,
+  db: Database = getDb(),
+): Promise<{ published: number; skipped: number; skippedTranslating: number; skippedFailed: number }> {
+  const where = and(
+    eq(articleTranslations.translatedBy, 'ai'),
+    sql`${articleTranslations.status} IN ('ai_draft','reviewed')`,
+    langCode ? eq(articleTranslations.langCode, langCode.toLowerCase()) : sql`1=1`,
+  )
+
+  const rows = await db
+    .select({
+      id: articleTranslations.id,
+      articleId: articleTranslations.articleId,
+      langCode: articleTranslations.langCode,
+      status: articleTranslations.status,
+    })
+    .from(articleTranslations)
+    .where(where)
+
+  if (rows.length === 0) {
+    return { published: 0, skipped: 0, skippedTranslating: 0, skippedFailed: 0 }
+  }
+
+  // Kiểm tra quyền trên từng article type — không publish nếu admin thiếu update
+  // trên resource đó. Gom theo type để check 1 lần/type.
+  const articleIds = Array.from(new Set(rows.map((r) => r.articleId)))
+  const articleRows = await db
+    .select({ id: articles.id, type: articles.type })
+    .from(articles)
+    .where(sql`${articles.id} IN (${articleIds.join(',')})`)
+  const typeById = new Map(articleRows.map((a) => [a.id, a.type]))
+
+  const { requireResourcePermission } = await import('../utils/permissions')
+  const allowed = new Set<string>()
+  for (const art of articleRows) {
+    const key = `${art.type}`
+    if (allowed.has(key)) continue
+    requireResourcePermission(actor, articleResource(art.type), 'update')
+    allowed.add(key)
+  }
+
+  // Lọc ra những row hợp lệ để publish (article còn tồn tại + status không phải
+  // translating/failed — đã lọc ở WHERE, nhưng check lại phòng race).
+  const toPublish = rows.filter((r) => {
+    const type = typeById.get(r.articleId)
+    return !!type && (r.status === 'ai_draft' || r.status === 'reviewed')
+  })
+
+  const skippedTranslating = rows.filter((r) => r.status === 'translating').length
+  const skippedFailed = rows.filter((r) => r.status === 'failed').length
+
+  if (toPublish.length === 0) {
+    return { published: 0, skipped: rows.length, skippedTranslating, skippedFailed }
+  }
+
+  let published = 0
+  for (const r of toPublish) {
+    await db.transaction(async (tx) => {
+      await tx
+        .update(articleTranslations)
+        .set({ status: 'published' })
+        .where(eq(articleTranslations.id, r.id))
+
+      await tx.insert(activityLogs).values({
+        userId: actor.id ?? null,
+        action: 'update',
+        resource: 'settings',
+        resourceId: r.articleId,
+        meta: { operation: 'bulk_publish_ai_translation', articleId: r.articleId, langCode: r.langCode, newStatus: 'published' },
+      })
+    })
+    published++
+  }
+
+  return {
+    published,
+    skipped: rows.length - published,
+    skippedTranslating,
+    skippedFailed,
+  }
+}
+
 export async function deleteTranslation(
   actor: ActorLike,
   articleId: number,

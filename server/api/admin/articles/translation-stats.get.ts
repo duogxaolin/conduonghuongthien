@@ -47,9 +47,21 @@ export default defineEventHandler(async (event) => {
     }
   })
 
+  // Đếm bản dịch AI chưa xuất bản (ai_draft/reviewed) — để UI hiện badge trên
+  // nút "Xuất bản toàn bộ". Bỏ qua translating/failed.
+  const [aiPendingRow] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(articleTranslations)
+    .where(and(
+      eq(articleTranslations.translatedBy, 'ai'),
+      sql`${articleTranslations.status} IN ('ai_draft','reviewed')`,
+    ))
+  const aiPendingTranslations = Number(aiPendingRow?.count) || 0
+
   return {
     ok: true,
     totalArticles: total,
     languages: items,
+    aiPendingTranslations,
   }
 })

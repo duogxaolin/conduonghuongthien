@@ -488,10 +488,12 @@ watch([running, restoring], ([r, rr]) => {
         </table>
       </div>
 
-      <div v-if="totalPages > 1" class="flex items-center justify-center gap-3 pt-2">
-        <button type="button" :disabled="page <= 1" class="rounded border border-[#c8d6c9] px-3 py-1.5 text-sm font-semibold disabled:opacity-40" @click="page--; loadBackups()">Trước</button>
-        <span class="text-sm text-[#667768]">Trang {{ page }} / {{ totalPages }}</span>
-        <button type="button" :disabled="page >= totalPages" class="rounded border border-[#c8d6c9] px-3 py-1.5 text-sm font-semibold disabled:opacity-40" @click="page++; loadBackups()">Sau</button>
+      <div v-if="totalPages > 1" class="pt-2">
+        <AdminPagination
+          :page="page"
+          :total-pages="totalPages"
+          @update:page="(p) => { page = p; loadBackups() }"
+        />
       </div>
     </section>
 

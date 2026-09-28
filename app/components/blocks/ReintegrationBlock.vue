@@ -21,7 +21,7 @@
           <nuxt-link :to="`/reintegration-models/${item.id}`" class="block overflow-hidden no-underline">
             <img
               :src="item.image"
-              :alt="item.name"
+              :alt="truncateTitle(item.name, 40)"
               class="aspect-video w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
               loading="lazy"
               decoding="async"
@@ -29,11 +29,12 @@
           </nuxt-link>
           <div class="p-4 flex flex-col gap-2 flex-1">
             <span v-if="item.location" class="inline-block self-start bg-[#EDF3EA] text-[#4A6741] text-[0.68rem] font-bold uppercase tracking-[0.3px] px-2 py-[3px] rounded-sm">{{ item.location }}</span>
-            <h3 class="text-[0.95rem] font-extrabold leading-[1.4] m-0">
+            <h3 class="text-[0.95rem] font-extrabold leading-[1.4] m-0 line-clamp-2 min-h-[2.65rem]">
               <nuxt-link
                 :to="`/reintegration-models/${item.id}`"
                 class="no-underline text-[#1E251C] transition-colors duration-300 hover:text-[#4A6741]"
-              >{{ item.name }}</nuxt-link>
+                :title="item.name"
+              >{{ truncateTitle(item.name, 65) }}</nuxt-link>
             </h3>
             <p v-if="item.desc" class="text-[0.85rem] text-[#4A5545] leading-[1.55] m-0 line-clamp-2">{{ item.desc }}</p>
           </div>

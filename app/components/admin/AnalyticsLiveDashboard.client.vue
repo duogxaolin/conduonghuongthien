@@ -783,7 +783,16 @@ onBeforeUnmount(() => {
         <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-4 mb-5">
           <div v-for="card in [
             { label: 'Tổng sự kiện', value: nocSummary.totalEvents, icon: 'fa-list-check', color: 'text-[#2c6e33]', bg: 'bg-[#f0f7f1]', clickable: false },
-            { label: 'Cảnh báo / Lỗi', value: nocSummary.warningErrorEvents, icon: 'fa-triangle-exclamation', color: nocSummary.warningErrorEvents > 0 ? 'text-amber-700' : 'text-[#8ea98f]', bg: nocSummary.warningErrorEvents > 0 ? 'bg-amber-50' : 'bg-[#f0f7f1]', clickable: true },
+            {
+              label: 'Cảnh báo / Lỗi',
+              value: nocSummary.unhandledWarningEvents !== undefined && nocSummary.dismissedCount > 0
+                ? `${nocSummary.unhandledWarningEvents} (${nocSummary.warningErrorEvents - nocSummary.unhandledWarningEvents} đã xử lý)`
+                : nocSummary.warningErrorEvents,
+              icon: 'fa-triangle-exclamation',
+              color: (nocSummary.unhandledWarningEvents ?? nocSummary.warningErrorEvents) > 0 ? 'text-amber-700' : 'text-[#2c6e33]',
+              bg: (nocSummary.unhandledWarningEvents ?? nocSummary.warningErrorEvents) > 0 ? 'bg-amber-50' : 'bg-[#f0f7f1]',
+              clickable: true,
+            },
             { label: 'Thời lượng tối đa', value: nocSummary.maxDuration + ' ms', icon: 'fa-stopwatch', color: 'text-[#667768]', bg: 'bg-[#f7f9f7]', clickable: false },
             { label: 'Trạng thái mới nhất', value: nocSummary.latestStatus, icon: 'fa-circle-info', color: 'text-[#5b8fce]', bg: 'bg-[#f0f6ff]', clickable: false },
           ]" :key="card.label"
@@ -884,6 +893,88 @@ onBeforeUnmount(() => {
                 <!-- Expandable detail row -->
                 <tr v-if="expandedNocId === row.id" :id="`noc-detail-${row.id}`" role="region" :aria-label="`Chi tiết sự kiện ${row.eventType}`">
                   <td colspan="9" class="px-6 py-4 bg-[#f7fbf7] border-b border-[#e2ece3]">
+                    <!-- Khung giải thích chi tiết & hướng dẫn xử lý NOC -->
+                    <div
+                      class="mb-4 rounded-xl border p-4 transition-all"
+                      :class="{
+                        'bg-amber-50/80 border-amber-200 text-amber-950': explainNocEvent(row).tone === 'warning',
+                        'bg-red-50/80 border-red-200 text-red-950': explainNocEvent(row).tone === 'danger',
+                        'bg-emerald-50/80 border-emerald-200 text-emerald-950': explainNocEvent(row).tone === 'info',
+                      }"
+                    >
+                      <div class="flex items-start gap-3">
+                        <span
+                          class="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5 text-sm"
+                          :class="{
+                            'bg-amber-100 text-amber-800': explainNocEvent(row).tone === 'warning',
+                            'bg-red-100 text-red-800': explainNocEvent(row).tone === 'danger',
+                            'bg-emerald-100 text-emerald-800': explainNocEvent(row).tone === 'info',
+                          }"
+                        >
+                          <i
+                            :class="{
+                              'fa-solid fa-triangle-exclamation': explainNocEvent(row).tone === 'warning',
+                              'fa-solid fa-circle-xmark': explainNocEvent(row).tone === 'danger',
+                              'fa-solid fa-circle-check': explainNocEvent(row).tone === 'info',
+                            }"
+                            aria-hidden="true"
+                          ></i>
+                        </span>
+                        <div class="flex-1 min-w-0">
+                          <div class="flex flex-wrap items-center justify-between gap-2">
+                            <h4 class="text-sm font-bold text-[#122815] m-0">
+                              {{ explainNocEvent(row).title }}
+                            </h4>
+                            <span
+                              class="px-2 py-0.5 rounded-full text-[0.68rem] font-bold uppercase tracking-wider"
+                              :class="{
+                                'bg-amber-200/70 text-amber-900': explainNocEvent(row).tone === 'warning',
+                                'bg-red-200/70 text-red-900': explainNocEvent(row).tone === 'danger',
+                                'bg-emerald-200/70 text-emerald-900': explainNocEvent(row).tone === 'info',
+                              }"
+                            >
+                              {{ explainNocEvent(row).tone === 'danger' ? 'Lỗi cần xử lý' : explainNocEvent(row).tone === 'warning' ? 'Cảnh báo thông tin' : 'Bình thường' }}
+                            </span>
+                          </div>
+
+                          <div class="mt-3 grid gap-3 text-xs sm:grid-cols-3">
+                            <!-- Khối 1: Nguyên nhân -->
+                            <div class="bg-white/90 rounded-lg p-3 border border-black/5 shadow-2xs flex flex-col">
+                              <p class="font-bold text-[#1e4620] mb-1.5 flex items-center gap-1.5 text-[0.75rem] uppercase tracking-wide">
+                                <i class="fa-solid fa-magnifying-glass text-[0.7rem] text-[#2c6e33]" aria-hidden="true"></i>
+                                Nguyên nhân
+                              </p>
+                              <p class="m-0 leading-relaxed text-[#2c3e2d] flex-1">
+                                {{ explainNocEvent(row).cause }}
+                              </p>
+                            </div>
+
+                            <!-- Khối 2: Đánh giá ảnh hưởng -->
+                            <div class="bg-white/90 rounded-lg p-3 border border-black/5 shadow-2xs flex flex-col">
+                              <p class="font-bold text-[#1e4620] mb-1.5 flex items-center gap-1.5 text-[0.75rem] uppercase tracking-wide">
+                                <i class="fa-solid fa-shield-halved text-[0.7rem] text-[#2c6e33]" aria-hidden="true"></i>
+                                Đánh giá mức độ
+                              </p>
+                              <p class="m-0 leading-relaxed text-[#2c3e2d] flex-1">
+                                {{ explainNocEvent(row).impact }}
+                              </p>
+                            </div>
+
+                            <!-- Khối 3: Khuyến nghị hành động -->
+                            <div class="bg-white/90 rounded-lg p-3 border border-black/5 shadow-2xs flex flex-col">
+                              <p class="font-bold text-[#1e4620] mb-1.5 flex items-center gap-1.5 text-[0.75rem] uppercase tracking-wide">
+                                <i class="fa-solid fa-hand-holding-hand text-[0.7rem] text-[#2c6e33]" aria-hidden="true"></i>
+                                Khuyến nghị xử lý
+                              </p>
+                              <p class="m-0 leading-relaxed text-[#2c3e2d] flex-1">
+                                {{ explainNocEvent(row).action }}
+                              </p>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+
                     <div class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
                       <div>
                         <p class="text-[0.68rem] font-bold uppercase tracking-wide text-[#667768] mb-1">Thời gian</p>

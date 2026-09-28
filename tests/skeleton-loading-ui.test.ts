@@ -106,6 +106,7 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/settings/media-portal.vue', marker: 'v-if="loading"' },
   // Backup & khôi phục — danh sách bản backup mang SkeletonTable.
   { file: 'pages/admin/settings/backup.vue', marker: 'v-if="loading"' },
+  { file: 'pages/admin/settings/social-links.vue', marker: 'v-if="loading"' },
 
   // Views that already had a loading branch but sat outside this guard, because
   // the list above names files and nobody added them. Found by the coverage gate

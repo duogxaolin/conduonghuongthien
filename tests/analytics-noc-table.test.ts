@@ -58,6 +58,9 @@ describe('useAnalyticsNocTable', () => {
       'ô tổng đọc toàn bộ sự kiện — bỏ qua một hàng là lựa chọn hiển thị, không phải sự cố đã hết')
     assert.equal(table.summary.value.warningErrorEvents, 4,
       'ẩn một dòng lỗi khỏi mắt mình không được làm con số lỗi tụt xuống')
+    assert.equal(table.summary.value.unhandledWarningEvents, 0,
+      'nhưng unhandledWarningEvents phải phản ánh đúng số lỗi chưa xử lý')
+    assert.equal(table.summary.value.dismissedCount, 1)
   })
 
   it('lọc theo mức độ cũng không đổi ô tổng', () => {
@@ -165,5 +168,20 @@ describe('useAnalyticsNocTable', () => {
     const table = useAnalyticsNocTable(source)
     assert.deepEqual(table.pageRows.value, [])
     assert.equal(table.summary.value.totalEvents, 0)
+  })
+
+  it('hỗ trợ lưu bền vững danh sách ID đã xử lý', () => {
+    const rows = ref<NocRow[]>([row(10, 'warning'), row(20, 'error')])
+    const table = useAnalyticsNocTable(rows)
+
+    table.dismissRow(10)
+    assert.equal(table.summary.value.unhandledWarningEvents, 1)
+    assert.equal(table.summary.value.dismissedCount, 1)
+    assert.deepEqual(table.filtered.value.map(r => r.id), [20])
+
+    table.undismissAll()
+    assert.equal(table.summary.value.unhandledWarningEvents, 2)
+    assert.equal(table.summary.value.dismissedCount, 0)
+    assert.deepEqual(table.filtered.value.map(r => r.id), [10, 20])
   })
 })
