@@ -2398,13 +2398,14 @@ onMounted(() => {
         </div>
 
         <!-- Pagination -->
-        <div v-if="logsPagination.totalPages > 1" class="flex items-center justify-between">
-          <p class="text-sm text-[#667768]">Tổng {{ logsPagination.total }} bản ghi — Trang {{ logsPagination.page }}/{{ logsPagination.totalPages }}</p>
-          <div class="flex gap-2">
-            <button type="button" class="px-3 py-1.5 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" :disabled="logsPagination.page <= 1" @click="goToPage(logsPagination.page - 1)">Trước</button>
-            <button type="button" class="px-3 py-1.5 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" :disabled="logsPagination.page >= logsPagination.totalPages" @click="goToPage(logsPagination.page + 1)">Sau</button>
-          </div>
-        </div>
+        <AdminPagination
+          v-if="logsPagination.totalPages > 1"
+          :page="logsPagination.page"
+          :total-pages="logsPagination.totalPages"
+          :total="logsPagination.total"
+          item-label="bản ghi"
+          @update:page="goToPage"
+        />
       </template>
     </div>
   </div>

@@ -1266,6 +1266,23 @@ export async function initDb() {
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS \`social_links\` (
+      \`id\` INT AUTO_INCREMENT PRIMARY KEY,
+      \`platform\` VARCHAR(64) NOT NULL,
+      \`label\` VARCHAR(128) NOT NULL,
+      \`url\` VARCHAR(1024) NOT NULL,
+      \`icon\` VARCHAR(255) NOT NULL DEFAULT 'fa-brands fa-link',
+      \`icon_type\` VARCHAR(16) NOT NULL DEFAULT 'fontawesome',
+      \`color\` VARCHAR(16) NOT NULL DEFAULT '#1877f2',
+      \`sort_order\` INT NOT NULL DEFAULT 0,
+      \`is_visible\` TINYINT(1) NOT NULL DEFAULT 1,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      KEY \`social_links_sort_idx\` (\`sort_order\`, \`id\`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+  `)
+
   await applyAdditiveMigrations(db, database)
 
   await db.end()

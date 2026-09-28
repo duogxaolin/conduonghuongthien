@@ -171,6 +171,10 @@ const handleLogin = async () => {
       await loadCaptcha()
     } else {
       errorMsg.value = errorMessage(err, 'Đăng nhập thất bại')
+      // Khi cửa captcha đang bật, captcha just-verify đã bị server xoá (single-use).
+      // Phải load captcha mới để user không nhìn captcha SVG cũ đã无效 — nếu không
+      // reload, user nhập lại mã cũ sẽ fail vòng sau với "captcha không đúng".
+      if (captchaRequired.value) await loadCaptcha()
     }
   } finally {
     loading.value = false

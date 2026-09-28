@@ -168,6 +168,7 @@ export default defineNuxtConfig({
     // that must never become true here.
     '/admin/**': { cache: false },
     '/api/**': { cache: false },
+    '/api/public/social-links': { swr: 60 },
     // Tài nguyên có vân tay trong tên tệp: đổi nội dung là đổi tên, nên bản cũ
     // không bao giờ bị phục vụ nhầm.
     '/assets/fonts/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },

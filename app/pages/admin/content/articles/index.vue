@@ -406,6 +406,7 @@ const showGlobalTranslateModal = ref(false)
 const globalStatsLoading = ref(false)
 const globalStats = ref<{
   totalArticles: number
+  aiPendingTranslations: number
   languages: Array<{ code: string; name: string; nativeName: string; translated: number; missing: number }>
 } | null>(null)
 const selectedGlobalTargetLangs = ref<string[]>(['en'])
@@ -428,6 +429,37 @@ async function openGlobalTranslateModal() {
     toast.error(errorMessage(err, 'Không thể tải thống kê bản dịch.'))
   } finally {
     globalStatsLoading.value = false
+  }
+}
+
+// Xuất bản toàn bộ bản dịch AI đã xong (ai_draft/reviewed) — không phụ thuộc chọn.
+const aiPublishing = ref(false)
+async function bulkPublishAi() {
+  const count = globalStats.value?.aiPendingTranslations ?? 0
+  if (count === 0) {
+    toast.info('Không có bản dịch AI nào sẵn sàng xuất bản.')
+    return
+  }
+  const ok = await confirm({
+    title: 'Xuất bản toàn bộ bản dịch AI',
+    message: `Xuất bản ${count} bản dịch AI đang ở trạng thái "Bản nháp AI" / "Đã rà soát" ra trang công khai? Các bản đang dịch hoặc lỗi sẽ tự bỏ qua. Thao tác không thể hoàn tác.`,
+    confirmText: 'Xuất bản toàn bộ',
+    danger: false,
+  })
+  if (!ok) return
+  aiPublishing.value = true
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; published: number; skipped: number; skippedTranslating: number; skippedFailed: number }>)(
+      '/api/admin/articles/bulk-publish-translations',
+      { method: 'POST', body: {} },
+    )
+    toast.success(`Đã xuất bản ${res.published} bản dịch AI${res.skipped > 0 ? ` (bỏ qua ${res.skipped}: ${res.skippedTranslating} đang dịch, ${res.skippedFailed} lỗi)` : ''}.`)
+    await fetchArticlesSilent()
+    void fetchAiPending()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Xuất bản hàng loạt thất bại.'))
+  } finally {
+    aiPublishing.value = false
   }
 }
 
@@ -744,7 +776,30 @@ onMounted(async () => {
   }
   await fetchArticles()
   void fetchBulkTranslateStatus()
+  void fetchAiPending()
 })
+
+// Lấy số bản dịch AI chưa xuất bản cho badge trên nút "Xuất bản toàn bộ".
+// Nhẹ — chỉ cần field aiPendingTranslations, không phụ thuộc mở modal.
+async function fetchAiPending() {
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; aiPendingTranslations?: number }>)('/api/admin/articles/translation-stats')
+    if (res.ok) {
+      if (globalStats.value) {
+        globalStats.value.aiPendingTranslations = res.aiPendingTranslations ?? 0
+      } else {
+        // Chưa mở modal lần nào — khởi stats tối thiểu để badge có số ngay.
+        globalStats.value = {
+          totalArticles: 0,
+          aiPendingTranslations: res.aiPendingTranslations ?? 0,
+          languages: [],
+        }
+      }
+    }
+  } catch {
+    // Nuốt lỗi — badge không quan trọng đến mức nướng toast.
+  }
+}
 
 onUnmounted(() => {
   stopBulkStatusPolling()
@@ -865,14 +920,30 @@ onUnmounted(() => {
           </span>
         </div>
       </div>
-      <button
-        type="button"
-        class="px-3.5 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#f0f7f1] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shrink-0 shadow-2xs"
-        @click="openGlobalTranslateModal"
-      >
-        <i class="fa-solid fa-wand-magic-sparkles text-[0.7rem]"></i>
-        <span>Dịch toàn bộ bài viết</span>
-      </button>
+      <div class="flex flex-wrap items-center gap-2 shrink-0">
+        <button
+          type="button"
+          class="px-3.5 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#f0f7f1] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
+          @click="openGlobalTranslateModal"
+        >
+          <i class="fa-solid fa-wand-magic-sparkles text-[0.7rem]"></i>
+          <span>Dịch toàn bộ bài viết</span>
+        </button>
+        <button
+          type="button"
+          class="px-3.5 py-2 rounded-lg bg-[#2c6e33] text-white text-xs font-bold hover:bg-[#245928] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+          :disabled="aiPublishing || (globalStats?.aiPendingTranslations ?? 0) === 0"
+          :title="(globalStats?.aiPendingTranslations ?? 0) === 0 ? 'Không có bản dịch AI nào sẵn sàng xuất bản' : `Xuất bản ${globalStats?.aiPendingTranslations ?? 0} bản dịch AI đang chờ`"
+          @click="bulkPublishAi"
+        >
+          <i class="fa-solid fa-rocket text-[0.7rem]"></i>
+          <span>Xuất bản toàn bộ bản dịch AI</span>
+          <span
+            v-if="(globalStats?.aiPendingTranslations ?? 0) > 0"
+            class="ml-0.5 inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-white text-[#2c6e33] text-[0.65rem] font-extrabold leading-none"
+          >{{ globalStats?.aiPendingTranslations }}</span>
+        </button>
+      </div>
     </div>
     <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col sm:flex-row flex-wrap gap-3">
       <input
@@ -1259,19 +1330,11 @@ onUnmounted(() => {
     </div>
 
     <!-- Pagination -->
-    <div v-if="pagination.totalPages > 1" class="flex justify-center items-center gap-4">
-      <button
-        :disabled="pagination.page <= 1"
-        @click="fetchArticles(pagination.page - 1)"
-        class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#f0f7f1] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      ><i class="fa-regular fa-chevron-left"></i> Trang trước</button>
-      <span class="text-sm text-[#667768] font-medium">Trang {{ pagination.page }} / {{ pagination.totalPages }}</span>
-      <button
-        :disabled="pagination.page >= pagination.totalPages"
-        @click="fetchArticles(pagination.page + 1)"
-        class="inline-flex items-center gap-2 bg-white border border-[#c8d6c9] px-4 py-2 rounded-lg cursor-pointer text-sm font-medium hover:bg-[#f0f7f1] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
-      >Trang sau <i class="fa-regular fa-chevron-right"></i></button>
-    </div>
+    <AdminPagination
+      :page="pagination.page"
+      :total-pages="pagination.totalPages"
+      @update:page="fetchArticles"
+    />
 
     <!-- Modal: thống kê lượt xem & tăng lượt xem ảo -->
     <div

@@ -706,6 +706,9 @@
     <!-- Chatbot: all state and markup live in the component. -->
     <ChatWidget ref="chatWidget" />
 
+    <!-- Social bubble: popup MXH đối xứng chatbot ở góc trái. -->
+    <SocialBubble v-if="!isAssistant" />
+
     <!-- Mobile Bottom Nav: nền đặc thay cho backdrop-blur để bớt phí repaint mỗi frame cuộn. -->
     <nav
       v-if="!isAssistant"

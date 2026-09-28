@@ -1,7 +1,7 @@
 import { getDb } from '../utils/db'
 import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
-import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories, aiProviders, aiServiceConfigs, aiModelPricing, aiBudgetSettings, aiModerationRules, aiModerationQueue, languages } from '../db/schema'
+import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories, aiProviders, aiServiceConfigs, aiModelPricing, aiBudgetSettings, aiModerationRules, aiModerationQueue, languages, socialLinks } from '../db/schema'
 import type { BlockData } from '../../app/utils/blocks/types'
 import { eq, asc, sql } from 'drizzle-orm'
 import { CHATBOT_SMALL_TALK_SEED } from '../data/chatbot-small-talk-seed'
@@ -578,6 +578,27 @@ async function seed() {
       await db.insert(aiModerationRules).values(r)
     }
   }
+  // ─── Social links seed (insert-only, idempotent) ────────────────────────
+  // MXH nổi tiếng + màu brand chính thức. Admin có thể sửa/xóa/thêm sau.
+  // Phương án `icon` dùng Font Awesome brands (đã self-host) cho logo sắc nét,
+  // vector và nhất với codebase. `color` là mã hex brand chính thức.
+  console.log('Seeding social links...')
+  const defaultSocialLinks = [
+    { platform: 'Facebook',  label: 'Fanpage C11',           url: 'https://facebook.com/conduonghuongthien', icon: 'fa-brands fa-facebook-f', iconType: 'fontawesome', color: '#1877f2' },
+    { platform: 'YouTube',   label: 'Kênh YouTube C11',      url: 'https://youtube.com/@conduonghuongthien',  icon: 'fa-brands fa-youtube',    iconType: 'fontawesome', color: '#ff0000' },
+    { platform: 'Zalo',      label: 'Zalo Official Account', url: 'https://zalo.me/conduonghuongthien',      icon: '/assets/social/zalo.svg', iconType: 'svg',        color: '#0068ff' },
+    { platform: 'TikTok',    label: 'TikTok C11',            url: 'https://tiktok.com/@conduonghuongthien',  icon: 'fa-brands fa-tiktok',     iconType: 'fontawesome', color: '#000000' },
+    { platform: 'Telegram',  label: 'Kênh Telegram C11',    url: 'https://t.me/conduonghuongthien',          icon: 'fa-brands fa-telegram',   iconType: 'fontawesome', color: '#0088cc' },
+    { platform: 'Instagram', label: 'Instagram C11',         url: 'https://instagram.com/conduonghuongthien', icon: 'fa-brands fa-instagram', iconType: 'fontawesome', color: '#e4405f' },
+  ]
+  for (const sl of defaultSocialLinks) {
+    const [existing] = await db.select().from(socialLinks).where(eq(socialLinks.platform, sl.platform)).limit(1)
+    if (!existing) {
+      await db.insert(socialLinks).values({ ...sl, sortOrder: defaultSocialLinks.indexOf(sl), isVisible: true })
+    }
+  }
+  console.log(`Seeded ${defaultSocialLinks.length} social links (skip existing).`)
+
   // ─── Languages & UI translations seed (insert-only, idempotent) ────────
   console.log('Seeding languages & default UI translations...')
   const { seedDefaultLanguagesAndTranslations } = await import('../services/languages')

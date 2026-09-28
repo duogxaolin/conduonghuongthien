@@ -72,7 +72,13 @@ export default defineEventHandler(async (event) => {
   // `count` là số lần đã ghi từ trước (peek không ghi), nên refresh trang không
   // reset — attacker không tránh được bằng reload.
   const attempts = Math.max(ipState.count, userState.count)
-  if (CAPTCHA_ENABLED && attempts >= CAPTCHA_AFTER_ATTEMPTS) {
+  // `captchaModeOn` = cửa captcha đang bật. Khi đó mọi thất bại (kể cả sai mật khẩu)
+  // phải kèm `captchaRequired: true` để client biết phải load captcha mới — vì
+  // `verifyCaptcha` xoá captcha ngay sau khi verify (single-use), nên captcha cũ
+  // đã tiêu thêu không dùng lại được. Không kèm cờ → client giữ captcha SVG cũ
+  // đã无效, user nhập lại mã cũ → fail vòng sau mới báo "captcha không đúng".
+  const captchaModeOn = CAPTCHA_ENABLED && attempts >= CAPTCHA_AFTER_ATTEMPTS
+  if (captchaModeOn) {
     const captchaId = typeof body?.captchaId === 'string' ? body.captchaId : ''
     const captchaCode = typeof body?.captchaCode === 'string' ? body.captchaCode : ''
     if (!captchaId || !captchaCode) {
@@ -110,7 +116,7 @@ export default defineEventHandler(async (event) => {
     ])
     // `reason` is for the operator only; all three branches answer identically.
     logWarn({ event: SECURITY_EVENTS.loginFailed, username: userKey, ip, reason: 'unknown_user' })
-    throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.' })
+    throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.', data: captchaModeOn ? { captchaRequired: true } : undefined })
   }
 
   // Tài khoản bị khóa: đếm như một lần thất bại để tránh dò trạng thái tài khoản.
@@ -121,7 +127,7 @@ export default defineEventHandler(async (event) => {
     ])
     // `reason` is for the operator only; all three branches answer identically.
     logWarn({ event: SECURITY_EVENTS.loginFailed, username: userKey, ip, reason: 'account_disabled' })
-    throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.' })
+    throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.', data: captchaModeOn ? { captchaRequired: true } : undefined })
   }
 
   const valid = await verifyPassword(password, user.passwordHash)
@@ -132,7 +138,7 @@ export default defineEventHandler(async (event) => {
     ])
     // `reason` is for the operator only; all three branches answer identically.
     logWarn({ event: SECURITY_EVENTS.loginFailed, username: userKey, ip, reason: 'bad_password' })
-    throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.' })
+    throw createError({ statusCode: 401, statusMessage: 'Tài khoản hoặc mật khẩu không đúng.', data: captchaModeOn ? { captchaRequired: true } : undefined })
   }
 
   // Reset rate limit khi đăng nhập thành công

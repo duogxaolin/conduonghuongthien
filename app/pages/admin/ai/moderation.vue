@@ -314,18 +314,14 @@
 
         <!-- Phân trang queue — server trả page/total/totalPages, không viết tay.
              Trang 1/1 không có gì để chuyển nên ẩn luôn. -->
-        <div v-if="queueTotalPages > 1" class="flex items-center justify-between gap-3 px-1">
-          <p class="text-xs text-[#667768]">
-            Trang {{ queuePage }} / {{ queueTotalPages }} · {{ queueTotal }} mục
-          </p>
-          <div class="flex items-center gap-1">
-            <button type="button" class="px-2.5 py-1 rounded-md text-xs font-semibold border border-[#d0ddd1] bg-white text-[#667768] hover:bg-[#f0f7f1] disabled:opacity-40 disabled:cursor-not-allowed" :disabled="queuePage <= 1" @click="changeQueuePage(queuePage - 1)">
-              <i class="fa-solid fa-angle-left mr-1"></i>Trang trước
-            </button>
-            <button type="button" class="px-2.5 py-1 rounded-md text-xs font-semibold border border-[#d0ddd1] bg-white text-[#667768] hover:bg-[#f0f7f1] disabled:opacity-40 disabled:cursor-not-allowed" :disabled="queuePage >= queueTotalPages" @click="changeQueuePage(queuePage + 1)">
-              Trang sau<i class="fa-solid fa-angle-right ml-1"></i>
-            </button>
-          </div>
+        <div v-if="queueTotalPages > 1" class="px-1">
+          <AdminPagination
+            :page="queuePage"
+            :total-pages="queueTotalPages"
+            :total="queueTotal"
+            item-label="mục"
+            @update:page="changeQueuePage"
+          />
         </div>
       </div>
 

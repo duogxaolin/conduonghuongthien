@@ -301,13 +301,14 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
         </table>
       </div>
 
-      <nav class="flex flex-wrap items-center justify-between gap-3 border-t border-[#eef2ee] p-4" aria-label="Phân trang">
-        <span class="text-sm text-[#667768]">{{ total.toLocaleString('vi-VN') }} bản ghi</span>
-        <div class="flex items-center gap-2">
-          <button type="button" :disabled="page <= 1" class="rounded border border-[#c8d6c9] px-3 py-1.5 font-semibold disabled:opacity-40" @click="goPage(page - 1)">Trước</button>
-          <span class="px-2 py-1.5 text-sm font-bold">Trang {{ page }} / {{ totalPages }}</span>
-          <button type="button" :disabled="page >= totalPages" class="rounded border border-[#c8d6c9] px-3 py-1.5 font-semibold disabled:opacity-40" @click="goPage(page + 1)">Sau</button>
-        </div>
+      <nav class="border-t border-[#eef2ee] p-4" aria-label="Phân trang">
+        <AdminPagination
+          :page="page"
+          :total-pages="totalPages"
+          :total="total"
+          item-label="bản ghi"
+          @update:page="goPage"
+        />
       </nav>
     </div>
   </div>

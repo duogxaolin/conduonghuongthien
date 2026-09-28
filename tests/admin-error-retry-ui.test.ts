@@ -64,6 +64,7 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/settings/media-portal.vue', refs: ['error'], retries: ['load'] },
   // Backup & khôi phục — danh sách bản backup.
   { file: 'pages/admin/settings/backup.vue', refs: ['error'], retries: ['loadBackups'] },
+  { file: 'pages/admin/settings/social-links.vue', refs: ['loadError'], retries: ['load'] },
 
   // Content.
   { file: 'pages/admin/content/articles/index.vue', refs: ['loadError'], retries: ['fetchArticles'] },

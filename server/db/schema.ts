@@ -1422,9 +1422,28 @@ export const articleTranslations = mysqlTable('article_translations', {
   langStatusIdx: index('article_translations_lang_status_idx').on(t.langCode, t.status),
 }))
 
+// ─── Social links ───────────────────────────────────────────────────────────
+// Mạng xã hội hiển thị ở popup góc trái (đối xứng ChatWidget góc phải). Admin
+// thêm/sửa/xóa, sort, bật/tắt. `platform` là key hiển thị (facebook, youtube...),
+// `icon` là class FontAwesome (fa-brands fa-facebook-f), `color` là mã hex cho nút.
+export const socialLinks = mysqlTable('social_links', {
+  id:        int('id').autoincrement().primaryKey(),
+  platform:  varchar('platform', { length: 64 }).notNull(),
+  label:     varchar('label', { length: 128 }).notNull(),
+  url:       varchar('url', { length: 1024 }).notNull(),
+  icon:      varchar('icon', { length: 255 }).notNull().default('fa-brands fa-link'),
+  // Loại glyph: 'fontawesome' (class fa-*), 'image' (URL ảnh raster), 'svg' (URL SVG).
+  iconType:  varchar('icon_type', { length: 16 }).notNull().default('fontawesome'),
+  color:     varchar('color', { length: 16 }).notNull().default('#1877f2'),
+  sortOrder: int('sort_order').notNull().default(0),
+  isVisible: boolean('is_visible').notNull().default(true),
+  createdAt: timestamp('created_at').defaultNow(),
+  updatedAt: timestamp('updated_at').onUpdateNow(),
+}, (t) => ({
+  sortIdx: index('social_links_sort_idx').on(t.sortOrder, t.id),
+}))
+
+export type SocialLink = typeof socialLinks.$inferSelect
+export type NewSocialLink = typeof socialLinks.$inferInsert
+
 export type Language = typeof languages.$inferSelect
-export type NewLanguage = typeof languages.$inferInsert
-export type LangTranslation = typeof langTranslations.$inferSelect
-export type NewLangTranslation = typeof langTranslations.$inferInsert
-export type ArticleTranslation = typeof articleTranslations.$inferSelect
-export type NewArticleTranslation = typeof articleTranslations.$inferInsert
