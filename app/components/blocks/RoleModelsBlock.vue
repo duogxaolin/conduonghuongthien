@@ -26,14 +26,14 @@
               <figure class="relative aspect-[16/10] rounded-lg overflow-hidden bg-[#EEF2EC]">
                 <img
                   :src="model.image"
-                  :alt="truncateTitle(model.name, 40)"
+                  :alt="model.name"
                   class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]"
                   loading="lazy"
                   decoding="async"
                 />
               </figure>
               <span v-if="model.location" class="block text-[0.7rem] font-extrabold text-[#7CB342] uppercase tracking-[0.5px] mt-3 mb-1 truncate">{{ model.location }}</span>
-              <h3 class="text-[0.95rem] font-extrabold text-[#1E251C] leading-[1.35] line-clamp-2 transition-colors group-hover:text-[#4A6741]" :title="model.name">{{ truncateTitle(model.name, 65) }}</h3>
+              <h3 class="text-[0.95rem] font-extrabold text-[#1E251C] leading-[1.35] line-clamp-2 transition-colors group-hover:text-[#4A6741]">{{ model.name }}</h3>
             </nuxt-link>
           </article>
         </div>

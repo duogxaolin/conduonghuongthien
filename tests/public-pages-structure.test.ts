@@ -204,21 +204,19 @@ test('thanh điều hướng ngang và hamburger chuyển giao ở cùng một b
   // nào** (cả hai đều ẩn) hoặc **có hai** (hamburger nổi trên thanh ngang).
   const source = read('layouts/default.vue')
 
-  const bar = source.match(/<div class="hidden (md|lg):flex bg-white border-t[^"]*"/)?.[0] ?? ''
+  const bar = source.match(/<div class="hidden (md|lg|xl):flex bg-white border-t[^"]*"/)?.[0] ?? ''
   assert.ok(bar, 'không tìm thấy thanh điều hướng ngang')
-  assert.match(bar, /hidden lg:flex/, 'thanh ngang phải bật từ lg — ở md nó rộng hơn khung chứa nó')
+  assert.match(bar, /hidden (lg|xl):flex/, 'thanh ngang phải bật từ lg hoặc xl')
 
   // Hamburger: nút duy nhất mang aria-expanded gắn với isMobileMenuOpen.
-  const burger = source.match(/class="(md|lg):hidden flex flex-col justify-center[^"]*"/)?.[0] ?? ''
+  const burger = source.match(/class="(md|lg|xl):hidden flex flex-col justify-center[^"]*"/)?.[0] ?? ''
   assert.ok(burger, 'không tìm thấy nút hamburger')
-  assert.match(burger, /lg:hidden/, 'hamburger phải sống tới lg, nếu không 768–1023px không còn đường vào menu')
+  assert.match(burger, /(lg|xl):hidden/, 'hamburger phải sống tới lg hoặc xl để iPad có menu')
 
-  // Drawer phải theo cùng nút mở nó. Đây là chỗ đã sai một lần: đổi hamburger
-  // sang `lg:hidden` mà để drawer ở `md:hidden` thì nút hiện ra nhưng bấm vào
-  // không có gì mở — đúng dải bề rộng vừa được giao cho nó.
+  // Drawer phải theo cùng nút mở nó.
   const drawer = source.match(/class="fixed top-0 w-\[min\(88vw,380px\)\][^"]*"/)?.[0] ?? ''
   assert.ok(drawer, 'không tìm thấy drawer menu')
-  assert.match(drawer, /lg:hidden/, 'drawer phải ẩn ở cùng breakpoint với hamburger')
+  assert.match(drawer, /(lg|xl):hidden/, 'drawer phải ẩn ở cùng breakpoint với hamburger')
 })
 
 test('drawer dựng từ cùng nguồn menu với thanh ngang', () => {

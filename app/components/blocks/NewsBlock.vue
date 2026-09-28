@@ -15,7 +15,7 @@
                 <div class="absolute bottom-0 left-0 right-0 p-6 text-white z-[2]">
                   <span class="inline-block bg-[#7CB342] text-white px-2 py-[3px] text-[0.65rem] font-extrabold rounded-sm mb-2 uppercase">{{ t('news_featured') || 'TIN NỔI BẬT' }}</span>
                   <span class="text-[0.75rem] opacity-85 ml-3">📅 {{ formatDate(featured.publishedAt || featured.createdAt) }}</span>
-                  <h3 class="text-[1.45rem] sm:text-[1.12rem] font-extrabold leading-[1.3] my-[6px_0_10px] text-white transition-colors group-hover:text-[#c5e1a5] line-clamp-2" :title="featured.title">{{ truncateTitle(featured.title, 95) }}</h3>
+                  <h3 class="text-[1.45rem] sm:text-[1.12rem] font-extrabold leading-[1.3] my-[6px_0_10px] text-white transition-colors group-hover:text-[#c5e1a5] line-clamp-2" :title="featured.title">{{ featured.title }}</h3>
                   <p class="text-[0.88rem] sm:text-[0.82rem] leading-[1.5] opacity-[0.88] m-0 line-clamp-2">{{ featured.excerpt }}</p>
                 </div>
               </div>
@@ -29,14 +29,16 @@
                phí. Dùng hết 5 = không thêm một lượt đi mạng nào. -->
           <div class="grid grid-cols-1 gap-[14px] sm:grid-cols-2 sm:gap-5">
             <div v-for="item in subCards" :key="item.id" class="flex gap-4 py-3 border-t border-dashed border-[#E2E8DF] group">
-              <nuxt-link :to="`/news/${item.slug}`" class="w-[130px] h-[85px] rounded-lg overflow-hidden flex-shrink-0 shadow-sm">
-                <img :src="item.thumbnailUrl || '/assets/news_quangninh.jpg'" :alt="truncateTitle(item.title, 40)" class="w-full h-full object-cover transition group-hover:scale-[1.05]" loading="lazy" decoding="async" />
+              <nuxt-link :to="`/news/${item.slug}`" class="w-[130px] h-[85px] rounded-lg overflow-hidden flex-shrink-0 shadow-sm" :title="item.title">
+                <img :src="item.thumbnailUrl || '/assets/news_quangninh.jpg'" :alt="item.title" class="w-full h-full object-cover transition group-hover:scale-[1.05]" loading="lazy" decoding="async" />
               </nuxt-link>
-              <div class="flex flex-col flex-1 min-w-0">
-                <span class="text-[0.72rem] text-[#7A8675] font-bold mb-1">{{ formatDate(item.publishedAt || item.createdAt) }}</span>
-                <h4 class="text-[0.88rem] font-bold leading-[1.35] m-0 line-clamp-2 min-h-[2.4rem]">
-                  <nuxt-link :to="`/news/${item.slug}`" class="text-[#1E251C] no-underline transition hover:text-[#4A6741]" :title="item.title">{{ truncateTitle(item.title, 65) }}</nuxt-link>
-                </h4>
+              <div class="flex flex-col flex-1 min-w-0 justify-between py-0.5">
+                <div>
+                  <span class="text-[0.72rem] text-[#7A8675] font-bold block mb-1">{{ formatDate(item.publishedAt || item.createdAt) }}</span>
+                  <h4 class="text-[0.88rem] font-bold leading-[1.35] m-0 line-clamp-3">
+                    <nuxt-link :to="`/news/${item.slug}`" class="text-[#1E251C] no-underline transition hover:text-[#4A6741]" :title="item.title">{{ item.title }}</nuxt-link>
+                  </h4>
+                </div>
               </div>
             </div>
           </div>
@@ -54,7 +56,7 @@
             <div class="w-[6px] h-[6px] rounded-full bg-[#4A6741] mt-2 flex-shrink-0"></div>
             <div class="flex-1 min-w-0">
               <h4 class="text-[0.88rem] font-bold leading-[1.4] m-0 mb-[6px] line-clamp-2">
-                <nuxt-link :to="`/news/${item.slug}`" class="text-[#1E251C] no-underline transition hover:text-[#4A6741]" :title="item.title">{{ truncateTitle(item.title, 75) }}</nuxt-link>
+                <nuxt-link :to="`/news/${item.slug}`" class="text-[#1E251C] no-underline transition hover:text-[#4A6741]" :title="item.title">{{ item.title }}</nuxt-link>
               </h4>
               <span class="text-[0.72rem] text-[#7A8675] font-semibold">📅 {{ formatDate(item.publishedAt || item.createdAt) }}</span>
             </div>

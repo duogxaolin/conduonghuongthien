@@ -52,7 +52,7 @@
           <nuxt-link :to="`/news/${doc.slug}`" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
             <img
               :src="doc.thumbnailUrl || '/assets/hero_banner.jpg'"
-              :alt="truncateTitle(doc.title, 40)"
+              :alt="doc.title"
               class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
               loading="lazy"
               decoding="async"
@@ -75,8 +75,8 @@
 
             <!-- Title: line-clamp-2 min-h -->
             <h3 class="text-[0.95rem] sm:text-[0.98rem] font-bold leading-snug text-[#172516] group-hover:text-[#2D5A27] transition-colors duration-200 line-clamp-2 min-h-[2.6rem] mb-2 m-0">
-              <nuxt-link :to="`/news/${doc.slug}`" class="text-[#172516] hover:text-[#2D5A27] no-underline" :title="doc.title">
-                {{ truncateTitle(doc.title, 70) }}
+              <nuxt-link :to="`/news/${doc.slug}`" class="text-[#172516] hover:text-[#2D5A27] no-underline">
+                {{ doc.title }}
               </nuxt-link>
             </h3>
 
