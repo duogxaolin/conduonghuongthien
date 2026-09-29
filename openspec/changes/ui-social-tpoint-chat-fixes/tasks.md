@@ -30,3 +30,19 @@
 ## 5. Media Self-Heal
 - [x] 5.1 Xây dựng service `media-self-heal.ts` và endpoint `self-heal.post.ts` check chéo và tự vá liên kết Cloudflare R2
 - [x] 5.2 Bổ sung unit test và integration test cho tính năng tự vá ảnh R2
+
+## 6. Thiết Kế Lại Bảng Dữ Liệu Admin Thành Dạng Thẻ Trên Mobile
+- [x] 6.1 `admin/readers`: Thẻ người đọc (avatar, tên, email, trạng thái hoạt động/chặn, số bình luận, nút xem chi tiết)
+- [x] 6.2 `admin/chatbot/knowledge`: Thẻ kho kiến thức (câu hỏi, chủ đề, trạng thái xuất bản, bật/tắt câu hỏi nhanh, nút sửa/xóa)
+- [x] 6.3 `admin/content/pages`: Thẻ trang tĩnh (tiêu đề, đường dẫn slug, số block nội dung, nhãn hệ thống, nút sửa/xóa)
+- [x] 6.4 `admin/content/content-types`: Thẻ thể loại bài viết (icon, tên, slug, số danh mục/bài viết, nút sửa/xóa)
+- [x] 6.5 `admin/settings/ip-bans`: Thẻ chặn IP (địa chỉ IP/CIDR, lý do, người thêm, nút bỏ chặn)
+- [x] 6.6 `admin/settings/backup`: Thẻ sao lưu (tên tệp, dung lượng, trạng thái Drive, nút tải về/khôi phục/xóa)
+- [x] 6.7 `admin/users/activity`: Thẻ nhật ký hoạt động (tài khoản, hoạt động, thời điểm, địa chỉ IP, thiết bị, xác thực MFA)
+- [x] 6.8 `admin/languages`: Thẻ từ điển dịch UI và thẻ thống kê tỷ lệ hoàn thiện theo ngôn ngữ
+- [x] 6.9 `admin/analytics`: Thẻ bảng xếp hạng drill-down chi tiết
+
+## 7. Khắc Phục Lỗi i18n Bài Viết & Dịch Bài Liên Quan
+- [x] 7.1 Gỡ bỏ `default: () => ({ ok: false, article: null })` gây nghẽn hydration của Nuxt trong `ArticleDetail.vue`
+- [x] 7.2 Bổ sung `getCachedData` và `onMounted` tự động tải lại bài viết khi cache lệch ngôn ngữ
+- [x] 7.3 Hỗ trợ tham số `lang` và dịch bài viết liên quan trong `server/api/public/articles/[slug]/related.get.ts`

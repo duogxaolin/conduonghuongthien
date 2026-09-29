@@ -155,7 +155,54 @@ onMounted(load)
         Chưa có tài khoản người đọc nào khớp bộ lọc hiện tại.
       </p>
 
-      <div v-else class="overflow-x-auto rounded-xl border border-[#e2ece3] bg-white">
+      <!-- Mobile Card View: Tối ưu cho màn hình điện thoại, dễ thao tác ngón cái -->
+      <div class="md:hidden divide-y divide-[#eef3ee] rounded-xl border border-[#e2ece3] bg-white overflow-hidden shadow-xs">
+        <div
+          v-for="reader in readers"
+          :key="'m-'+reader.id"
+          class="p-4 flex flex-col gap-2.5 transition-colors active:bg-[#f8faf8]"
+        >
+          <div class="flex items-start justify-between gap-2.5">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <ReaderAvatar :initials="(reader.displayName || '?').slice(0, 1)" size="sm" />
+              <div class="min-w-0">
+                <p class="m-0 truncate font-bold text-[#122815] text-[0.9rem]">{{ reader.displayName || 'Chưa có tên' }}</p>
+                <p class="m-0 truncate text-[0.78rem] text-[#667768]">{{ reader.email || '—' }}</p>
+              </div>
+            </div>
+            <span
+              v-if="reader.isBanned"
+              class="inline-block rounded-full bg-[#fdecec] px-2.5 py-0.5 text-[0.7rem] font-bold text-[#b0403c] shrink-0"
+            >Đã chặn</span>
+            <span v-else class="inline-block rounded-full bg-[#eef7ef] px-2.5 py-0.5 text-[0.7rem] font-bold text-[#2c6e33] shrink-0">Hoạt động</span>
+          </div>
+
+          <div class="flex items-center justify-between text-xs text-[#667768] pt-2 border-t border-[#f4f7f4]">
+            <span class="flex items-center gap-1.5">
+              <i class="fa-regular fa-comment text-[0.75rem] text-[#2c6e33]" aria-hidden="true"></i>
+              <span>{{ reader.commentCount }} bình luận</span>
+            </span>
+            <span class="text-[0.72rem] text-[#8a9a8c]">
+              {{ formatMoment(reader.lastSeenAt) }}
+            </span>
+          </div>
+
+          <div class="flex items-center justify-between pt-1">
+            <code v-if="reader.lastIp" class="text-[0.72rem] bg-[#f4f7f4] px-1.5 py-0.5 rounded text-[#667768]">{{ reader.lastIp }}</code>
+            <span v-else></span>
+            <nuxt-link
+              :to="`/admin/readers/${reader.id}`"
+              class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-[#f0f7f1] hover:bg-[#e4f2e5] px-3 py-1.5 rounded-lg no-underline transition-colors"
+            >
+              <span>Xem chi tiết</span>
+              <i class="fa-solid fa-chevron-right text-[0.65rem]" aria-hidden="true"></i>
+            </nuxt-link>
+          </div>
+        </div>
+      </div>
+
+      <!-- Desktop Table View: Giữ nguyên bảng đầy đủ cho màn hình lớn -->
+      <div class="hidden md:block overflow-x-auto rounded-xl border border-[#e2ece3] bg-white">
         <table class="w-full min-w-[760px] border-collapse text-sm">
           <thead>
             <tr class="bg-[#f8faf8] text-left text-[0.78rem] uppercase tracking-wide text-[#667768]">

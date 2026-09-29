@@ -21,6 +21,8 @@ const props = withDefaults(defineProps<{
 const items = ref<SocialLink[]>([])
 const { config } = useLayoutConfig()
 const isFloating = computed(() => config.value.socialDisplayMode === 'floating')
+const { t } = useI18n()
+const openLinkAria = (item: SocialLink) => t('social_open_link_aria').replace('{name}', item.label || item.platform)
 
 const open = ref(false)
 const loaded = ref(false)
@@ -165,7 +167,7 @@ function getIconStyle(item: SocialLink) {
             class="zalo-pulse-btn w-10 h-10 sm:w-11 sm:h-11 md:w-12 md:h-12 border border-white/40 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#0068FF]"
             :class="{ 'zalo-pulse-active': item.platform.toLowerCase() === 'zalo' }"
             :style="getIconStyle(item)"
-            :aria-label="`Mở ${item.label || item.platform} (mở tab mới)`"
+            :aria-label="openLinkAria(item)"
           >
             <!-- Logo Zalo chính thức sắc nét -->
             <img
@@ -211,14 +213,14 @@ function getIconStyle(item: SocialLink) {
           <button
             type="button"
             class="w-12 h-12 rounded-full bg-white/95 text-[#4a5545] hover:text-[#b42318] hover:bg-[#fee4e2] border border-[#dce6dc] shadow-[0_4px_10px_rgba(0,0,0,0.15)] flex items-center justify-center transition-all duration-200 cursor-pointer active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2c6e33]"
-            title="Thu gọn"
-            aria-label="Thu gọn mạng xã hội"
+            :title="t('social_collapse')"
+            :aria-label="t('social_collapse_aria')"
             @click.stop="toggleExpand"
           >
             <i class="fa-solid fa-xmark text-lg transition-transform duration-200 group-hover:rotate-90" aria-hidden="true"></i>
           </button>
           <div class="zalo-text-label text-[#667768] opacity-0 group-hover:opacity-100 transition-opacity duration-200">
-            Thu gọn
+            {{ t('social_collapse') }}
           </div>
         </div>
 
@@ -228,7 +230,7 @@ function getIconStyle(item: SocialLink) {
           @click.stop="toggleExpand"
         >
           <i class="fa-solid fa-xmark text-xs text-[#b42318]" aria-hidden="true"></i>
-          <span class="text-[0.74rem] font-bold">Thu gọn</span>
+          <span class="text-[0.74rem] font-bold">{{ t('social_collapse') }}</span>
         </div>
       </div>
     </TransitionGroup>
@@ -247,13 +249,13 @@ function getIconStyle(item: SocialLink) {
         type="button"
         class="zalo-pulse-btn zalo-pulse-active w-12 h-12 bg-gradient-to-br from-[#2c6e33] to-[#153317] text-white border border-white/30 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#2c6e33]"
         style="--pulse-color: rgba(44, 110, 51, 0.75)"
-        aria-label="Mở kết nối mạng xã hội và liên hệ hỗ trợ"
+        :aria-label="t('social_expand_aria')"
       >
         <i class="fa-solid fa-headset text-lg text-white" aria-hidden="true"></i>
       </button>
 
       <div class="zalo-text-label group-hover:shadow-[0_6px_14px_rgba(44,110,51,0.25)] transition-shadow">
-        Hỗ trợ 24/7
+        {{ t('social_support') }}
       </div>
     </div>
 
@@ -265,7 +267,7 @@ function getIconStyle(item: SocialLink) {
     >
       <div class="flex items-center gap-1.5">
         <span class="w-2 h-2 rounded-full bg-[#2c6e33] animate-pulse"></span>
-        <span class="text-[0.76rem] font-bold text-[#153317] tracking-tight">Hỗ trợ 24/7</span>
+        <span class="text-[0.76rem] font-bold text-[#153317] tracking-tight">{{ t('social_support') }}</span>
       </div>
       <div
         class="w-7 h-7 rounded-full bg-gradient-to-br from-[#2c6e33] to-[#153317] text-white flex items-center justify-center zalo-pulse-btn zalo-pulse-active shrink-0 shadow-xs"
@@ -296,7 +298,7 @@ function getIconStyle(item: SocialLink) {
         v-if="open"
         class="w-[285px] sm:w-[315px] max-h-[350px] sm:max-h-[410px] bg-white rounded-2xl border border-[#dce6dc] shadow-[0_20px_50px_-12px_rgba(20,50,25,0.25),0_4px_16px_rgba(0,0,0,0.08)] overflow-hidden flex flex-col motion-reduce:transition-none"
         role="dialog"
-        aria-label="Kênh mạng xã hội chính thức C11"
+        :aria-label="t('social_panel_aria')"
       >
         <!-- Header: Gradient xanh C11 uy tín + thông tin nhận diện (shrink-0 không bao giờ bị bóp méo) -->
         <div class="shrink-0 bg-gradient-to-r from-[#1e4620] via-[#245328] to-[#1e4620] px-3.5 py-3 flex items-center justify-between text-white border-b border-white/10">
@@ -306,10 +308,10 @@ function getIconStyle(item: SocialLink) {
             </div>
             <div class="min-w-0">
               <h4 class="text-[0.82rem] font-bold text-white tracking-wide leading-tight m-0 truncate">
-                Kênh mạng xã hội
+                {{ t('social_panel_title') }}
               </h4>
               <p class="text-[0.66rem] text-white/80 font-normal leading-tight mt-0.5 m-0 truncate">
-                Cục C11 — Bộ Công an
+                {{ t('social_panel_subtitle') }}
               </p>
             </div>
           </div>
@@ -317,7 +319,7 @@ function getIconStyle(item: SocialLink) {
           <button
             type="button"
             class="w-7 h-7 rounded-full bg-white/15 hover:bg-white/25 active:scale-90 text-white flex items-center justify-center border-none cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50 shrink-0 ml-2"
-            aria-label="Đóng bảng mạng xã hội"
+            :aria-label="t('social_close_aria')"
             @click.stop="close"
           >
             <i class="fa-solid fa-xmark text-xs" aria-hidden="true"></i>
@@ -333,7 +335,7 @@ function getIconStyle(item: SocialLink) {
             target="_blank"
             rel="noopener noreferrer"
             class="group flex items-center gap-3 px-2.5 py-2 rounded-xl hover:bg-[#f2f7f2] border border-transparent hover:border-[#dce6dc] transition-all duration-150 no-underline"
-            :aria-label="`Mở ${item.label || item.platform} (mở tab mới)`"
+            :aria-label="openLinkAria(item)"
           >
             <!-- Khung icon squircle chuẩn hóa 36x36px -->
             <span
@@ -397,13 +399,13 @@ function getIconStyle(item: SocialLink) {
       :class="{ 'ring-2 ring-[#7CB342] shadow-[0_12px_28px_rgba(30,70,32,0.45)]': open }"
       :aria-expanded="open"
       aria-haspopup="dialog"
-      aria-label="Kênh mạng xã hội C11"
+      :aria-label="t('social_launcher_aria')"
       @click.stop="toggle"
     >
       <span class="w-6 h-6 rounded-full bg-white/15 flex items-center justify-center text-[0.82rem] transition-transform duration-200 group-hover:rotate-12">
         <i class="fa-solid fa-share-nodes text-white" aria-hidden="true"></i>
       </span>
-      <span class="text-[0.8rem] sm:text-[0.84rem] font-bold tracking-wide text-white">Mạng xã hội</span>
+      <span class="text-[0.8rem] sm:text-[0.84rem] font-bold tracking-wide text-white">{{ t('social_launcher') }}</span>
       <span
         v-if="items.length"
         class="inline-flex items-center justify-center min-w-[1.2rem] h-4.5 sm:h-5 px-1.5 text-[0.62rem] sm:text-[0.65rem] font-extrabold rounded-full bg-white/20 text-white"
