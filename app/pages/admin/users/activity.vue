@@ -58,6 +58,8 @@ const ACTION_LABELS: Record<string, string> = {
   backup_run: 'Backup',
   backup_restore: 'Khôi phục backup',
   repair_urls: 'Vá URL ảnh',
+  // Thư viện ảnh — nút "Check chéo + tự vá" upload lại R2 object missing + repoint thumbnail.
+  self_heal: 'Tự vá ảnh R2',
 }
 const RESOURCE_LABELS: Record<string, string> = {
   auth: 'Xác thực', profile_password: 'Mật khẩu tài khoản', profile_mfa: 'Xác thực hai bước',

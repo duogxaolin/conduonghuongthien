@@ -164,6 +164,9 @@ jobs:
           - suite: media-queue
             file: tests/media-queue-integration.test.ts
             switch: MEDIA_QUEUE_INTEGRATION
+          - suite: media-self-heal
+            file: tests/media-self-heal-integration.test.ts
+            switch: MEDIA_SELF_HEAL_INTEGRATION
           - suite: upload-concurrency
             file: tests/upload-concurrency-integration.test.ts
             switch: MEDIA_UPLOAD_INTEGRATION
@@ -255,6 +258,10 @@ jobs:
           LIVESTREAM_TOGGLE_PORT: 3306
           LIVESTREAM_TOGGLE_USER: root
           LIVESTREAM_TOGGLE_PASSWORD: test_root_password
+          MEDIA_SELF_HEAL_HOST: 127.0.0.1
+          MEDIA_SELF_HEAL_PORT: 3306
+          MEDIA_SELF_HEAL_USER: root
+          MEDIA_SELF_HEAL_PASSWORD: test_root_password
         run: |
           set -euo pipefail
           node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test ${{ matrix.file }}
@@ -318,6 +325,10 @@ jobs:
           LIVESTREAM_TOGGLE_PORT: 3306
           LIVESTREAM_TOGGLE_USER: root
           LIVESTREAM_TOGGLE_PASSWORD: test_root_password
+          MEDIA_SELF_HEAL_HOST: 127.0.0.1
+          MEDIA_SELF_HEAL_PORT: 3306
+          MEDIA_SELF_HEAL_USER: root
+          MEDIA_SELF_HEAL_PASSWORD: test_root_password
         run: |
           set -euo pipefail
           # Chạy lại với một marker: nếu suite tự SKIP, `--test` trả về 0 và không

@@ -14,6 +14,7 @@ const toast = useToast()
 // batch 50 file, sleep 200ms. UI poll /scan-status mỗi 3s.
 const scanning = ref(false)
 const scanResult = ref<{ imported: number; skipped: number; truncated: boolean } | null>(null)
+const autoRepointToR2 = ref(false)
 
 interface ScanJobStatus {
   jobId: string
@@ -89,8 +90,13 @@ const scanFolder = async () => {
   scanning.value = true
   scanResult.value = null
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/scan`, { method: 'POST' })
-    toast.info('Đã khởi tạo job quét. Đang chạy nền...')
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media/scan`, {
+      method: 'POST',
+      body: { autoRepointToR2: autoRepointToR2.value },
+    })
+    toast.info(autoRepointToR2.value
+      ? 'Đã khởi tạo job quét + tự đẩy R2. Đang chạy nền...'
+      : 'Đã khởi tạo job quét. Đang chạy nền...')
     startScanPolling()
     await pollScanStatus()
   } catch (err: unknown) {
@@ -332,6 +338,55 @@ const repairUrls = async () => {
     repairing.value = false
   }
 }
+
+// ─── Check chéo local↔R2 + tự vá (self-heal) ───────────────────────────────
+// Phát hiện hàng `media` (provider='r2') mà R2 thực sự không có object
+// (HeadObject 404) — upload lại từ file local gốc. Sau đó repoint
+// `articles.thumbnail_url` /uploads/migrated/... sang R2 URL khớp qua basename.
+// Hai nút: "Xem trước" (dryRun, không đổi gì) + "Chạy sửa" (thực sự).
+const selfHealing = ref(false)
+const selfHealPreviewing = ref(false)
+interface SelfHealReport {
+  r2Checked: number
+  r2Ok: number
+  r2Missing: number
+  r2Reuploaded: number
+  r2Lost: number
+  thumbnailsRepointed: number
+  missingSamples: string[]
+  backupStamp: string | null
+}
+const selfHealReport = ref<SelfHealReport | null>(null)
+
+const runSelfHeal = async (dryRun: boolean) => {
+  if (!dryRun && !confirm('Tự vá ảnh R2 thiếu + repoint thumbnail?\n\nSẽ:\n• Tìm media R2 mà object thực sự không tồn tại → upload lại từ file local\n• Repoint articles.thumbnail_url /uploads/migrated/... sang R2 URL khớp\n\nTự backup SQL trước. Bấm lại an toàn (idempotent).')) return
+  if (dryRun) selfHealPreviewing.value = true
+  else selfHealing.value = true
+  selfHealReport.value = null
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string } & SelfHealReport>)(`/api/admin/media/self-heal`, {
+      method: 'POST',
+      body: { dryRun },
+    })
+    selfHealReport.value = {
+      r2Checked: res.r2Checked,
+      r2Ok: res.r2Ok,
+      r2Missing: res.r2Missing,
+      r2Reuploaded: res.r2Reuploaded,
+      r2Lost: res.r2Lost,
+      thumbnailsRepointed: res.thumbnailsRepointed,
+      missingSamples: res.missingSamples ?? [],
+      backupStamp: res.backupStamp,
+    }
+    toast.success(res.message)
+    if (!dryRun) await loadCounts()
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi tự vá ảnh'))
+  } finally {
+    selfHealing.value = false
+    selfHealPreviewing.value = false
+  }
+}
 </script>
 
 <template>
@@ -353,7 +408,7 @@ const repairUrls = async () => {
         <i class="fa-solid fa-folder-tree text-2xl text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
         <div>
           <h2 class="m-0 text-base font-bold text-[#122815]">Quét thư mục ảnh mồ côi</h2>
-          <p class="m-0 mt-1 text-[0.82rem] text-[#667768]">Duyệt đệ quy <code class="rounded bg-[#f0f7f1] px-1.5 py-0.5 font-mono text-[0.78rem]">public/uploads/</code> và tự động nhập ảnh chưa có hàng CSDL. Hữu ích khi copy ảnh thẳng vào thư mục (SCP, rsync, backup).</p>
+          <p class="m-0 mt-1 text-[0.82rem] text-[#667768]">Duyệt đệ quy <code class="rounded bg-[#f0f7f1] px-1.5 py-0.5 font-mono text-[0.78rem]">public/uploads/</code> và tự động nhập ảnh chưa có hàng CSDL. Hữu ích khi copy ảnh thẳng vào thư mục (SCP, rsync, backup). Tích "Tự đẩy lên R2" để upload R2 ngay khi nhập (giữ file local làm fallback).</p>
         </div>
       </header>
 
@@ -368,6 +423,15 @@ const repairUrls = async () => {
           <i class="fa-solid fa-folder-tree" :class="scanning ? 'fa-spinner animate-spin' : ''" aria-hidden="true"></i>
           {{ scanning ? 'Đang quét...' : 'Bắt đầu quét' }}
         </button>
+        <label class="inline-flex items-center gap-2 text-sm font-semibold text-[#122815] cursor-pointer select-none">
+          <input
+            v-model="autoRepointToR2"
+            type="checkbox"
+            class="h-4 w-4 accent-[#2c6e33] cursor-pointer"
+            :disabled="scanning"
+          />
+          Tự đẩy lên R2 khi nhập
+        </label>
         <button
           v-if="scanning"
           type="button"
@@ -705,6 +769,88 @@ const repairUrls = async () => {
             <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#8a6412]">Snapshot</p>
             <p class="m-0 mt-1 text-sm font-bold text-[#8a6412] break-all">{{ repointResult.backupStamp }}</p>
           </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ─── Section 6: Check chéo local ↔ R2 + tự vá (self-heal) ─────────────── -->
+    <section class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-3">
+      <header class="flex items-start gap-3">
+        <i class="fa-solid fa-stethoscope text-2xl text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
+        <div>
+          <h2 class="m-0 text-base font-bold text-[#122815]">Check chéo local ↔ R2 + tự vá</h2>
+          <p class="m-0 mt-1 text-[0.82rem] text-[#667768]">Kiểm tra từng hàng <code class="font-mono">media</code> (provider=<code class="font-mono">r2</code>) bằng HeadObject: nếu R2 object thực sự không tồn tại → upload lại từ file local gốc. Sau đó repoint <code class="font-mono">articles.thumbnail_url</code> <code class="font-mono">/uploads/migrated/...</code> sang R2 URL khớp. Bấm <strong>"Xem trước"</strong> để xem số lượng không đổi gì, <strong>"Chạy sửa"</strong> để thực sự vá. Idempotent — bấm lại an toàn.</p>
+        </div>
+      </header>
+
+      <div class="flex flex-wrap items-center gap-3">
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-lg border border-[#c8d6c9] bg-white px-4 py-2.5 text-sm font-bold text-[#2c6e33] cursor-pointer transition-colors hover:bg-[#f0f7f1] disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="selfHealPreviewing || selfHealing"
+          :aria-busy="selfHealPreviewing"
+          @click="runSelfHeal(true)"
+        >
+          <i class="fa-solid fa-eye" :class="selfHealPreviewing ? 'fa-spinner animate-spin' : ''" aria-hidden="true"></i>
+          {{ selfHealPreviewing ? 'Đang xem trước...' : 'Xem trước' }}
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer transition-colors hover:bg-[#1e4620] disabled:cursor-not-allowed disabled:opacity-50"
+          :disabled="selfHealPreviewing || selfHealing"
+          :aria-busy="selfHealing"
+          @click="runSelfHeal(false)"
+        >
+          <i class="fa-solid fa-wand-magic-sparkles" :class="selfHealing ? 'fa-spinner animate-spin' : ''" aria-hidden="true"></i>
+          {{ selfHealing ? 'Đang vá...' : 'Chạy sửa' }}
+        </button>
+      </div>
+
+      <p v-if="selfHealPreviewing || selfHealing" class="m-0 text-sm text-[#667768]">
+        {{ selfHealPreviewing ? 'Đang HeadObject từng ảnh R2...' : 'Đang upload lại + repoint...' }}
+      </p>
+
+      <!-- Báo cáo self-heal (xem trước hoặc kết quả) -->
+      <div v-if="selfHealReport" class="rounded-lg border border-[#cce5cd] bg-[#f0f7f1] p-4 flex flex-col gap-3" role="status">
+        <div class="text-sm font-bold text-[#122815]">
+          <i class="fa-solid mr-1.5" :class="selfHealReport.r2Missing === 0 ? 'fa-circle-check text-[#2c6e33]' : 'fa-circle-info text-[#8a6412]'" aria-hidden="true"></i>
+          Đã kiểm tra {{ selfHealReport.r2Checked }} ảnh R2
+        </div>
+        <div class="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs">
+          <div class="rounded-lg border border-[#cce5cd] bg-white p-2.5">
+            <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#667768]">R2 OK</p>
+            <p class="m-0 mt-0.5 text-lg font-extrabold text-[#1e4620]">{{ selfHealReport.r2Ok }}</p>
+          </div>
+          <div class="rounded-lg border border-[#f0dcae] bg-[#fdf6e7] p-2.5">
+            <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#8a6412]">R2 thiếu</p>
+            <p class="m-0 mt-0.5 text-lg font-extrabold text-[#8a6412]">{{ selfHealReport.r2Missing }}</p>
+          </div>
+          <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-2.5">
+            <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#667768]">Đã upload lại</p>
+            <p class="m-0 mt-0.5 text-lg font-extrabold text-[#1e4620]">{{ selfHealReport.r2Reuploaded }}</p>
+          </div>
+          <div class="rounded-lg border border-[#a32924] bg-[#fdf0f0] p-2.5">
+            <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#a32924]">Mất gốc</p>
+            <p class="m-0 mt-0.5 text-lg font-extrabold text-[#a32924]">{{ selfHealReport.r2Lost }}</p>
+          </div>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+          <div class="rounded-lg border border-[#cce5cd] bg-white p-2.5">
+            <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#667768]">Thumbnail bài viết repoint</p>
+            <p class="m-0 mt-0.5 text-lg font-extrabold text-[#1e4620]">{{ selfHealReport.thumbnailsRepointed }}</p>
+          </div>
+          <div v-if="selfHealReport.backupStamp" class="rounded-lg border border-[#f0dcae] bg-white p-2.5">
+            <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#8a6412]">Snapshot</p>
+            <p class="m-0 mt-0.5 text-sm font-bold text-[#8a6412] break-all">{{ selfHealReport.backupStamp }}</p>
+          </div>
+        </div>
+        <div v-if="selfHealReport.missingSamples.length > 0" class="text-xs text-[#8a6412]">
+          <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
+          Mẫu thiếu ({{ selfHealReport.missingSamples.length }}): {{ selfHealReport.missingSamples.slice(0, 8).join(', ') }}{{ selfHealReport.missingSamples.length > 8 ? '...' : '' }}
+        </div>
+        <div v-if="selfHealReport.r2Lost > 0" class="text-xs text-[#a32924]" role="alert">
+          <i class="fa-solid fa-circle-exclamation mr-1" aria-hidden="true"></i>
+          {{ selfHealReport.r2Lost }} ảnh R2 thiếu object VÀ file local cũng không còn — không thể tự vá. Cần upload file gốc qua /admin/settings/backup (tar.gz) hoặc copy vào public/uploads/ rồi chạy lại.
         </div>
       </div>
     </section>

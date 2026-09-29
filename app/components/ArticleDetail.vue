@@ -63,11 +63,11 @@
           <span aria-hidden="true">•</span>
           <span><i class="fa-regular fa-eye" aria-hidden="true"></i> {{ formattedViews }} lượt xem</span>
         </span>
-        <h1 class="text-[2.2rem] font-extrabold leading-[1.3] text-[#1E251C] mb-5">{{ article.title }}</h1>
+        <h1 class="text-[1.35rem] sm:text-[1.75rem] lg:text-[2.2rem] font-extrabold leading-[1.3] text-[#1E251C] mb-4 sm:mb-5">{{ article.title }}</h1>
 
         <div
           v-if="article.excerpt"
-          class="text-[1.12rem] font-semibold text-[#4A5545] leading-[1.6] border-l-4 border-[#7CB342] pl-5 mb-8"
+          class="text-[0.95rem] sm:text-[1.12rem] font-semibold text-[#4A5545] leading-[1.6] border-l-4 border-[#7CB342] pl-4 sm:pl-5 mb-6 sm:mb-8"
         >
           <p>{{ article.excerpt }}</p>
         </div>
@@ -407,15 +407,31 @@ const { data, pending, error, refresh } = useAsyncData(
   () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ArticleDetailResponse>)(`/api/public/articles/${props.slug}?lang=${currentLang.value}`),
   {
     lazy: true,
-    default: () => ({ ok: false, article: null }),
     watch: [() => props.slug, currentLang],
+    getCachedData: (key, nuxtApp) => {
+      const cached = nuxtApp.payload.data[key] || nuxtApp.static.data[key]
+      if (cached && (cached as ArticleDetailResponse).article) {
+        return cached as ArticleDetailResponse
+      }
+      return undefined
+    },
   },
 )
 
 watch(currentLang, () => {
   void refresh()
+  void refreshRelated()
 })
 
+onMounted(() => {
+  // Nếu hydrate từ SSR mà chưa có bài viết (hoặc lệch cache), fetch ngay lập tức
+  if (!article.value) {
+    void refresh()
+  }
+  if (!relatedArticles.value.length) {
+    void refreshRelated()
+  }
+})
 const article = computed(() => data.value?.article || null)
 // `ok: false` with no article is a legitimate 404 from the API, not a failure.
 const loadError = computed(() => !!error.value)
@@ -458,14 +474,20 @@ const {
   refresh: refreshRelated,
 } = useAsyncData(
   () => `article-related-${props.slug}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null }>; topics: Array<{ slug: string; name: string; isCurrent?: boolean; total?: number }> }>)(`/api/public/articles/${props.slug}/related`),
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null }>; topics: Array<{ slug: string; name: string; isCurrent?: boolean; total?: number }> }>)(`/api/public/articles/${props.slug}/related?lang=${currentLang.value}`),
   {
     lazy: true,
     default: () => ({ ok: true, articles: [], topics: [] }),
-    watch: [() => props.slug],
+    watch: [() => props.slug, currentLang],
+    getCachedData: (key, nuxtApp) => {
+      const cached = nuxtApp.payload.data[key] || nuxtApp.static.data[key]
+      if (cached && (cached as { ok: boolean }).ok) {
+        return cached as { ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null }>; topics: Array<{ slug: string; name: string; isCurrent?: boolean; total?: number }> }
+      }
+      return undefined
+    },
   },
 )
-
 const relatedArticles = computed(() => relatedData.value?.articles || [])
 const relatedTopics = computed(() => relatedData.value?.topics || [])
 // `ok: false` là lượt truy vấn hỏng phía máy chủ — phải đọc ra như một lỗi, chứ

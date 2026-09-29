@@ -1,5 +1,5 @@
 <template>
-  <div class="app-layout">
+  <div class="app-layout" :style="containerStyleVar">
     <!-- Thanh tiến trình chuyển trang. Điều hướng client-side phải chờ dữ liệu
          của trang đích, và trong khoảng đó trình duyệt không vẽ gì cả — bấm một
          liên kết trông y hệt như bấm hụt. Đây là phản hồi tức thì cho lần bấm. -->
@@ -18,6 +18,7 @@
       class="fixed inset-0 w-screen h-screen bg-[rgba(20,43,23,0.58)] backdrop-blur-[2px] z-[10006] opacity-0 pointer-events-none transition-opacity duration-300"
       :class="{ 'opacity-100 pointer-events-auto': isMobileMenuOpen }"
       @click="toggleMobileMenu"
+      @touchmove.prevent
     ></div>
 
     <!-- Top Bar: z-[10005] thường trực cao hơn Header (z-[10001]) để dropdown không bao giờ bị Header che lấp dù cuộn hay đứng yên -->
@@ -115,7 +116,7 @@
               />
             </div>
             <div class="min-w-0">
-              <h1 class="text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.5px] leading-[1.2] whitespace-nowrap">CON ĐƯỜNG HƯỚNG THIỆN</h1>
+              <h1 class="text-[0.82rem] sm:text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.2px] sm:tracking-[0.5px] leading-[1.2] whitespace-nowrap">CON ĐƯỜNG HƯỚNG THIỆN</h1>
               <p class="hidden lg:block text-[0.68rem] xl:text-[0.72rem] font-semibold text-[#7A8675] uppercase mt-0.5 max-w-[280px] xl:max-w-[440px] 2xl:max-w-none leading-tight line-clamp-2">
                 {{ t('portal_subtitle') }}
               </p>
@@ -123,9 +124,9 @@
           </nuxt-link>
 
           <!-- Top Actions -->
-          <div class="flex items-center gap-3">
+          <div class="flex items-center gap-2 sm:gap-3">
             <button
-              class="bg-[#F8FAF7] border border-[#E2E8DF] w-11 h-11 rounded-full flex items-center justify-center cursor-pointer text-[0.95rem] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
+              class="bg-[#F8FAF7] border border-[#E2E8DF] w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center cursor-pointer text-xs sm:text-[0.95rem] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
               :class="{ 'bg-[#4A6741] text-white border-[#4A6741]': isSearchActive }"
               @click="toggleSearch"
               :aria-label="isSearchActive ? t('search_close') : t('search_open')"
@@ -211,13 +212,13 @@
             </client-only>
             <!-- Mobile/iPad Toggle — opens drawer on screens < xl (including tablets/iPad) -->
             <button
-              class="xl:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all hover:bg-[#e4f0e2]"
+              class="xl:hidden flex flex-col justify-center items-center gap-1 w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all hover:bg-[#e4f0e2]"
               @click="toggleMobileMenu"
               :aria-label="t('menu_open')"
               aria-expanded="false">
-              <span class="block w-5 h-[2px] rounded-[4px] bg-current"></span>
-              <span class="block w-5 h-[2px] rounded-[4px] bg-current"></span>
-              <span class="block w-5 h-[2px] rounded-[4px] bg-current"></span>
+              <span class="block w-4 sm:w-5 h-[2px] rounded-[4px] bg-current"></span>
+              <span class="block w-4 sm:w-5 h-[2px] rounded-[4px] bg-current"></span>
+              <span class="block w-4 sm:w-5 h-[2px] rounded-[4px] bg-current"></span>
             </button>
           </div>
         </div>
@@ -305,7 +306,7 @@
         </div>
 
         <!-- Drawer Body -->
-        <div class="flex-1 flex flex-col justify-between overflow-y-auto [-webkit-overflow-scrolling:touch]">
+        <div class="flex-1 flex flex-col justify-between overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
           <ul class="list-none flex flex-col px-3.5 pt-3.5 pb-5 gap-1">
             <li v-for="item in navMenu" :key="item.id">
               <!-- Has children: accordion -->
@@ -708,8 +709,8 @@
     <!-- Chatbot: all state and markup live in the component. -->
     <ChatWidget ref="chatWidget" />
 
-    <!-- Social bubble: popup MXH đối xứng chatbot ở góc trái. -->
-    <SocialBubble v-if="!isAssistant" />
+    <!-- Social bubble: popup/floating MXH đối xứng chatbot ở góc trái (PC) / góc phải (Mobile). -->
+    <SocialBubble v-if="!isAssistant" :is-hidden="isMobileMenuOpen || isChatOpen" />
 
     <!-- Mobile Bottom Nav: nền đặc thay cho backdrop-blur để bớt phí repaint mỗi frame cuộn. -->
     <nav
@@ -793,7 +794,14 @@ import {
   parseNavConfig,
 } from '~/utils/nav-config'
 import type { BottomNavItem, NavItem } from '~/utils/nav-config'
+import { parseLayoutSetting, useLayoutConfig } from '~/composables/useLayoutConfig'
 import { ref, onMounted, onUnmounted, computed, nextTick, watch, resolveComponent } from 'vue'
+
+// `setConfig` ghi vào `useState('layout-config')` chia sẻ với useLayoutConfig
+// ở mọi consumer (admin, list pages, SocialBubble). Đăng ký một lần ở layout.
+// `containerPx` → set `--container-max` trên root để .container (main.css) nắm theo.
+const { setConfig: setLayoutConfigState, containerPx } = useLayoutConfig()
+const containerStyleVar = computed(() => ({ '--container-max': `${containerPx.value}px` }))
 
 // Resolve NuxtLink once so runtime `:is` bindings render a real <a> (a string
 // `:is="'nuxt-link'"` renders an inert custom element that never navigates).
@@ -1098,6 +1106,10 @@ watch(settingsData, (res) => {
   if (navbarRaw) navMenuRaw.value = parseNavConfig(navbarRaw)
   const mobileRaw = res.settings.nav_menu_mobile
   if (mobileRaw) bottomNavRaw.value = parseBottomNavConfig(mobileRaw)
+  // Bố cục site (container width / grid bài / MXH) cũng đi qua `/api/public/settings`
+  // dưới key `layout_config` (JSON string). useState chia sẻ với composable useLayoutConfig
+  // và với admin.vue — fallback default khi key chưa có hoặc JSON sai hình dạng.
+  setLayoutConfigState(parseLayoutSetting(res.settings.layout_config))
 }, { immediate: true })
 
 // rAF-throttled scroll handler: coalesces bursts of scroll events into one write
@@ -1133,6 +1145,8 @@ const isChatOpen = computed(() => chatWidget.value?.isChatbotOpen ?? false)
 watch(isMobileMenuOpen, (isMenuOpen) => {
   if (typeof document !== 'undefined') {
     document.body.style.overflow = isMenuOpen ? 'hidden' : ''
+    document.documentElement.style.overflow = isMenuOpen ? 'hidden' : ''
+    document.body.style.touchAction = isMenuOpen ? 'none' : ''
   }
 })
 

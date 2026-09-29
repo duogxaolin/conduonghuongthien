@@ -316,7 +316,7 @@ onMounted(async () => {
       </div>
 
       <!-- 7-day traffic chart -->
-      <div class="bg-white rounded-2xl border border-[#e2ece3] p-5 md:p-6">
+      <div class="bg-white rounded-2xl border border-[#e2ece3] p-5 md:p-6 overflow-hidden min-w-0">
         <div class="flex items-center justify-between mb-5">
           <div class="flex items-center gap-2">
             <i class="fa-solid fa-chart-area text-[#2c6e33]" aria-hidden="true"></i>

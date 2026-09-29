@@ -15,12 +15,14 @@ interface SocialLink {
   updatedAt: string | null
 }
 
+import { useLayoutConfig, type LayoutConfig, DEFAULT_LAYOUT_CONFIG } from '~/composables/useLayoutConfig'
+
 const toast = useToast()
 const { confirm } = useConfirm()
 const { openPicker } = useImagePicker()
-
-const loading = ref(true)
+const { setConfig } = useLayoutConfig()
 const loadError = ref('')
+const loading = ref(false)
 const busy = ref(false)
 const items = ref<SocialLink[]>([])
 
@@ -37,22 +39,65 @@ const form = ref({
 const formError = ref('')
 
 // Gợi ý platform phổ biến — điền nhanh form.
-const PRESETS = [
-  { platform: 'Facebook', icon: 'fa-brands fa-facebook-f', color: '#1877f2' },
-  { platform: 'YouTube', icon: 'fa-brands fa-youtube', color: '#ff0000' },
-  { platform: 'Zalo', icon: 'fa-solid fa-message', color: '#0068ff' },
-  { platform: 'TikTok', icon: 'fa-brands fa-tiktok', color: '#000000' },
-  { platform: 'X (Twitter)', icon: 'fa-brands fa-x-twitter', color: '#000000' },
-  { platform: 'Instagram', icon: 'fa-brands fa-instagram', color: '#e4405f' },
-  { platform: 'LinkedIn', icon: 'fa-brands fa-linkedin-in', color: '#0a66c2' },
-  { platform: 'Telegram', icon: 'fa-brands fa-telegram', color: '#0088cc' },
+interface Preset {
+  platform: string
+  label?: string
+  icon: string
+  iconType?: 'fontawesome' | 'image' | 'svg'
+  color: string
+}
+
+const PRESETS: Preset[] = [
+  { platform: 'Facebook', label: 'Fanpage C11', icon: 'fa-brands fa-facebook-f', iconType: 'fontawesome', color: '#1877f2' },
+  { platform: 'YouTube', label: 'Kênh YouTube C11', icon: 'fa-brands fa-youtube', iconType: 'fontawesome', color: '#ff0000' },
+  { platform: 'Zalo', label: 'Zalo Official Account', icon: '/assets/social/zalo.svg', iconType: 'svg', color: '#0068ff' },
+  { platform: 'TikTok', label: 'TikTok C11', icon: 'fa-brands fa-tiktok', iconType: 'fontawesome', color: '#000000' },
+  { platform: 'X (Twitter)', label: 'X C11', icon: 'fa-brands fa-x-twitter', iconType: 'fontawesome', color: '#000000' },
+  { platform: 'Instagram', label: 'Instagram C11', icon: 'fa-brands fa-instagram', iconType: 'fontawesome', color: '#e4405f' },
+  { platform: 'LinkedIn', label: 'LinkedIn C11', icon: 'fa-brands fa-linkedin-in', iconType: 'fontawesome', color: '#0a66c2' },
+  { platform: 'Telegram', label: 'Kênh Telegram C11', icon: 'fa-brands fa-telegram', iconType: 'fontawesome', color: '#0088cc' },
 ]
 
-function applyPreset(p: { platform: string; icon: string; color: string }) {
+function applyPreset(p: Preset) {
   form.value.platform = p.platform
-  form.value.iconType = 'fontawesome'
+  if (p.label && !form.value.label) form.value.label = p.label
+  form.value.iconType = p.iconType || 'fontawesome'
   form.value.icon = p.icon
   form.value.color = p.color
+}
+
+const layoutLoading = ref(true)
+const layoutBusy = ref(false)
+const layoutDraft = ref<LayoutConfig>({ ...DEFAULT_LAYOUT_CONFIG })
+
+async function loadLayout() {
+  layoutLoading.value = true
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: LayoutConfig }>)('/api/admin/settings/layout')
+    if (res?.ok && res.config) layoutDraft.value = { ...res.config }
+  } catch {
+    // layout chưa cấu hình → giữ default
+  } finally {
+    layoutLoading.value = false
+  }
+}
+
+async function saveLayout() {
+  layoutBusy.value = true
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: LayoutConfig }>)('/api/admin/settings/layout', {
+      method: 'PUT',
+      body: { ...layoutDraft.value },
+    })
+    if (res?.ok && res.config) {
+      setConfig(res.config)
+      toast.success('Đã lưu cấu hình hiển thị mạng xã hội thành công!')
+    }
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lưu cấu hình thất bại.'))
+  } finally {
+    layoutBusy.value = false
+  }
 }
 
 async function load() {
@@ -186,16 +231,92 @@ async function move(item: SocialLink, dir: -1 | 1) {
   }
 }
 
-onMounted(() => { load() })
+onMounted(() => {
+  void load()
+  void loadLayout()
+})
 </script>
 
 <template>
   <div class="flex flex-col gap-5">
-    <div>
-      <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Mạng xã hội</h1>
-      <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Quản lý popup MXH nổi ở góc trái trang công khai (đối xứng chatbot góc phải).</p>
+    <div class="flex items-center justify-between flex-wrap gap-2">
+      <div>
+        <h1 class="text-[1.3rem] font-extrabold text-[#122815] m-0">Mạng xã hội</h1>
+        <p class="text-[0.85rem] text-[#667768] mt-1 mb-0">Quản lý kênh và kiểu hiển thị mạng xã hội trên trang công khai.</p>
+      </div>
     </div>
 
+    <!-- Cấu hình kiểu hiển thị trên trang công khai -->
+    <section class="bg-white rounded-xl border border-[#e2ece3] p-5 flex flex-col gap-4">
+      <div class="flex items-center justify-between flex-wrap gap-2">
+        <div>
+          <h2 class="text-sm font-extrabold text-[#122815] m-0">Kiểu hiển thị mạng xã hội</h2>
+          <p class="m-0 text-xs text-[#667768] mt-0.5">Chọn kiểu nổi trên trang công khai (đối xứng chatbot góc phải).</p>
+        </div>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-3.5 py-1.5 rounded-lg cursor-pointer border-0 text-xs transition-colors disabled:opacity-50"
+          :disabled="layoutBusy"
+          @click="saveLayout"
+        >
+          <i v-if="layoutBusy" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
+          <i v-else class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
+          <span>{{ layoutBusy ? 'Đang lưu...' : 'Lưu kiểu hiển thị' }}</span>
+        </button>
+      </div>
+
+      <div v-if="layoutLoading" class="text-xs text-[#667768] py-2">Đang tải cấu hình...</div>
+      <div v-else class="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+        <!-- popup -->
+        <button
+          type="button"
+          class="flex flex-col gap-2 p-3 rounded-lg border text-left transition-colors cursor-pointer"
+          :class="layoutDraft.socialDisplayMode === 'popup' ? 'border-[#2c6e33] bg-[#f0f7f1]' : 'border-[#c8d6c9] bg-white hover:bg-[#f4f7f4]'"
+          @click="layoutDraft.socialDisplayMode = 'popup'"
+        >
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-[#245328]">Bảng nổi đang mở</span>
+            <i v-if="layoutDraft.socialDisplayMode === 'popup'" class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
+          </div>
+          <!-- mini preview -->
+          <div class="relative h-16 rounded-md bg-[#f4f7f4] border border-[#e2ece3] overflow-hidden">
+            <div class="absolute bottom-2 left-2 w-8 h-10 rounded-lg bg-white shadow flex flex-col items-center justify-center gap-0.5">
+              <div class="w-4 h-1 rounded bg-[#1877f2]"></div>
+              <div class="w-4 h-1 rounded bg-[#ff0000]"></div>
+              <div class="w-4 h-1 rounded bg-[#0068ff]"></div>
+            </div>
+          </div>
+          <span class="text-[0.7rem] text-[#667768]">Bảng đứng góc trái, nút thu nhỏ khi đóng.</span>
+        </button>
+
+        <!-- floating -->
+        <button
+          type="button"
+          class="flex flex-col gap-2 p-3 rounded-lg border text-left transition-colors cursor-pointer"
+          :class="layoutDraft.socialDisplayMode === 'floating' ? 'border-[#2c6e33] bg-[#f0f7f1]' : 'border-[#c8d6c9] bg-white hover:bg-[#f4f7f4]'"
+          @click="layoutDraft.socialDisplayMode = 'floating'"
+        >
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-bold text-[#245328]">Nút tròn rời</span>
+            <i v-if="layoutDraft.socialDisplayMode === 'floating'" class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
+          </div>
+          <!-- mini preview -->
+          <div class="relative h-16 rounded-md bg-[#f4f7f4] border border-[#e2ece3] overflow-hidden">
+            <div class="absolute bottom-2 left-2 flex flex-col gap-1">
+              <div class="w-5 h-5 rounded-full bg-[#1877f2]"></div>
+              <div class="w-5 h-5 rounded-full bg-[#ff0000]"></div>
+              <div class="w-5 h-5 rounded-full bg-[#0068ff]"></div>
+            </div>
+          </div>
+          <span class="text-[0.7rem] text-[#667768]">Mỗi nền tảng một nút tròn riêng, xếp dọc có hiệu ứng pulse.</span>
+        </button>
+      </div>
+
+      <label class="flex items-center gap-2 text-xs font-semibold text-[#3d4f3f] select-none cursor-pointer pt-1 border-t border-[#f0f4f0]">
+        <input v-model="layoutDraft.socialAutoOpen" type="checkbox" class="w-4 h-4 accent-[#2c6e33]" />
+        <span>Tự mở bảng/nút nổi (chỉ áp dụng trên PC; mobile luôn đóng để tránh che nội dung).</span>
+      </label>
+    </section>
     <!-- Form thêm/sửa -->
     <div id="social-form-top" class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col gap-3">
       <div class="flex items-center justify-between gap-2">
@@ -209,10 +330,11 @@ onMounted(() => { load() })
           v-for="p in PRESETS"
           :key="p.platform"
           type="button"
-          class="inline-flex items-center gap-1.5 rounded-lg border border-[#e2ece3] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#3d4f3f] hover:bg-[#f0f7f1] transition-colors"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-[#e2ece3] bg-white px-2.5 py-1.5 text-xs font-semibold text-[#3d4f3f] hover:bg-[#f0f7f1] transition-colors cursor-pointer"
           @click="applyPreset(p)"
         >
-          <i :class="p.icon" :style="{ color: p.color }" aria-hidden="true"></i>
+          <img v-if="p.iconType === 'svg'" :src="p.icon" alt="Zalo" class="w-3.5 h-3.5 object-contain" />
+          <i v-else :class="p.icon" :style="{ color: p.color }" aria-hidden="true"></i>
           <span>{{ p.platform }}</span>
         </button>
       </div>

@@ -12,12 +12,11 @@
  * đọc được thành một trang lỗi. `ok: false` chỉ dành cho lượt truy vấn hỏng —
  * bề mặt phải phân biệt được "hỏng" với "không có gì liên quan".
  */
-import { and, asc, count, desc, eq, ne, sql } from 'drizzle-orm'
-import { defineEventHandler, getRouterParam } from 'h3'
-import { articles, categories } from '../../../../db/schema'
+import { and, asc, count, desc, eq, ne, inArray, sql } from 'drizzle-orm'
+import { defineEventHandler, getRouterParam, getQuery, getCookie } from 'h3'
+import { articles, categories, articleTranslations } from '../../../../db/schema'
 import { getDb } from '../../../../utils/db'
 import { rollUpRelatedTopics } from '../../../../utils/related-topics'
-
 /**
  * Bốn thẻ khớp đúng lưới 2 cột của khung xương phía client (2 hàng chẵn). Là
  * hằng số chứ không phải tham số truy vấn: không nơi gọi nào cần một con số
@@ -38,6 +37,9 @@ export default defineEventHandler(async (event) => {
   const slug = getRouterParam(event, 'slug')
   if (!slug) return empty()
 
+  const query = getQuery(event)
+  const cookieLang = getCookie(event, 'cdkt_lang')?.trim().toLowerCase() || ''
+  const lang = (typeof query.lang === 'string' ? query.lang.trim().toLowerCase() : '') || cookieLang
   try {
     const db = getDb()
 
@@ -66,12 +68,16 @@ export default defineEventHandler(async (event) => {
       : [sql`CASE WHEN ${articles.categoryId} = ${current.categoryId} THEN 0 ELSE 1 END`]
     const order = [...sameCategoryFirst, desc(articles.publishedAt), desc(articles.createdAt)]
 
-    const relatedRows = await db
+    const relatedQuery = db
       .select({
         id:           articles.id,
-        title:        articles.title,
+        title:        lang && lang !== 'vi'
+          ? sql<string>`COALESCE(NULLIF(${articleTranslations.title}, ''), ${articles.title})`
+          : articles.title,
         slug:         articles.slug,
-        excerpt:      articles.excerpt,
+        excerpt:      lang && lang !== 'vi'
+          ? sql<string>`COALESCE(NULLIF(${articleTranslations.excerpt}, ''), ${articles.excerpt})`
+          : articles.excerpt,
         thumbnailUrl: articles.thumbnailUrl,
         publishedAt:  articles.publishedAt,
         createdAt:    articles.createdAt,
@@ -80,19 +86,28 @@ export default defineEventHandler(async (event) => {
       })
       .from(articles)
       .leftJoin(categories, eq(articles.categoryId, categories.id))
+
+    if (lang && lang !== 'vi') {
+      relatedQuery.leftJoin(
+        articleTranslations,
+        and(
+          eq(articleTranslations.articleId, articles.id),
+          eq(articleTranslations.langCode, lang),
+          inArray(articleTranslations.status, ['published', 'ai_draft', 'reviewed']),
+        ),
+      )
+    }
+
+    const relatedRows = await relatedQuery
       .where(
         and(
           eq(articles.status, 'published'),
-          // Cùng thể loại: một câu chuyện tấm gương nằm dưới nhãn "bài viết liên
-          // quan" của một bản tin là nói sai về thứ nó là.
           eq(articles.type, current.type),
-          // Bài đang đọc không bao giờ là bài liên quan của chính nó.
           ne(articles.id, current.id),
         ),
       )
       .orderBy(...order)
       .limit(RELATED_ARTICLE_LIMIT)
-
     /**
      * Chủ đề liên quan, đếm bằng **đúng phép đếm mà cú bấm sẽ hiện ra**.
      *

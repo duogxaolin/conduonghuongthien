@@ -1135,7 +1135,7 @@ onUnmounted(() => {
 
       <!-- Desktop Table View -->
       <div v-if="!loading && !loadError" class="hidden md:block overflow-x-auto">
-        <table class="w-full border-collapse text-[0.88rem] text-left">
+        <table class="w-full min-w-[960px] border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>
               <th class="bg-[#f8faf8] w-10 px-4 py-3 border-b border-[#e2ece3]">
@@ -1148,7 +1148,7 @@ onUnmounted(() => {
                   @change="selection.toggleAll(visibleIds)"
                 />
               </th>
-              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3]">Bài viết</th>
+              <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] min-w-[280px]">Bài viết</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Thể loại</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Danh mục</th>
               <th class="bg-[#f8faf8] px-4 py-3 text-[#667768] font-bold border-b border-[#e2ece3] whitespace-nowrap">Trạng thái</th>
@@ -1184,8 +1184,8 @@ onUnmounted(() => {
                       <i class="fa-regular fa-image text-lg text-[#c8d6c9]"></i>
                     </div>
                   </div>
-                  <div class="min-w-0">
-                    <p class="text-[#122815] font-semibold line-clamp-1 m-0 text-[0.85rem]">{{ a.title }}</p>
+                  <div class="min-w-0 flex-1">
+                    <p class="text-[#122815] font-semibold line-clamp-2 m-0 text-[0.85rem] leading-snug" :title="a.title">{{ a.title }}</p>
                     <p class="text-[#8a9f8c] text-[0.75rem] m-0 mt-0.5">{{ a.authorName || 'Admin' }}</p>
                   </div>
                 </div>

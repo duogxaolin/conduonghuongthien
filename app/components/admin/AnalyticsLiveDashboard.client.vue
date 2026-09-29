@@ -492,7 +492,7 @@ onBeforeUnmount(() => {
         </div>
 
         <!-- Bar chart -->
-        <div class="overflow-x-auto pb-2">
+        <div class="relative overflow-x-auto pb-2">
           <div class="flex h-48 min-w-[700px] items-end gap-px border-b border-l border-[#dbe7dc] bg-[#fafcfa] px-2 pt-4" role="img" :aria-label="`Biểu đồ ${liveData?.points.length || 0} mốc phút: lượt xem và khách ước tính`">
             <template v-if="liveData?.points.length">
               <div
@@ -513,26 +513,28 @@ onBeforeUnmount(() => {
           </div>
         </div>
 
-        <!-- Screen-reader parity table: the full text alternative for the chart above (role="img"). -->
-        <table class="sr-only">
-          <caption>Dữ liệu đầy đủ tương ứng biểu đồ trực tiếp</caption>
-          <thead>
-            <tr>
-              <th class="px-3 py-2">Mốc UTC</th>
-              <th class="px-3 py-2">Lượt xem</th>
-              <th class="px-3 py-2">Khách ước tính</th>
-              <th class="px-3 py-2">Ngữ nghĩa khách</th>
-            </tr>
-          </thead>
-          <tbody>
-            <tr v-for="point in (liveData?.points || [])" :key="`parity-${point.bucketStart}`">
-              <td class="px-3 py-2">{{ formatUtc(point.bucketStart) }}</td>
-              <td class="px-3 py-2">{{ point.pageViews }}</td>
-              <td class="px-3 py-2">{{ point.approximateUniqueVisitors }}</td>
-              <td class="px-3 py-2">{{ point.uniqueVisitorSemantics }}</td>
-            </tr>
-          </tbody>
-        </table>
+        <!-- Screen-reader parity table: wrapped in div.sr-only with left-0 top-0 so table layout algorithm does not cause horizontal scrollbar on mobile -->
+        <div class="sr-only absolute left-0 top-0 w-px h-px overflow-hidden">
+          <table>
+            <caption>Dữ liệu đầy đủ tương ứng biểu đồ trực tiếp</caption>
+            <thead>
+              <tr>
+                <th class="px-3 py-2">Mốc UTC</th>
+                <th class="px-3 py-2">Lượt xem</th>
+                <th class="px-3 py-2">Khách ước tính</th>
+                <th class="px-3 py-2">Ngữ nghĩa khách</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-for="point in (liveData?.points || [])" :key="`parity-${point.bucketStart}`">
+                <td class="px-3 py-2">{{ formatUtc(point.bucketStart) }}</td>
+                <td class="px-3 py-2">{{ point.pageViews }}</td>
+                <td class="px-3 py-2">{{ point.approximateUniqueVisitors }}</td>
+                <td class="px-3 py-2">{{ point.uniqueVisitorSemantics }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
 
         <!-- Table -->
         <div class="mt-5">

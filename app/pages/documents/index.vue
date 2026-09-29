@@ -156,7 +156,7 @@
 
           <!-- Document Cards Grid -->
           <template v-else>
-            <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div :class="articleGridClass">
               <article
                 v-for="doc in docs"
                 :key="doc.id"
@@ -319,8 +319,10 @@ import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
+import { useLayoutConfig } from '~/composables/useLayoutConfig'
 
 const { t, currentLang } = useI18n()
+const { articleGridClass } = useLayoutConfig()
 useSeoMeta({
   title: 'Văn bản pháp luật | Con Đường Hướng Thiện',
   description: 'Tra cứu văn bản quy phạm pháp luật về thi hành án hình sự, chính sách tín dụng và tái hòa nhập cộng đồng.',

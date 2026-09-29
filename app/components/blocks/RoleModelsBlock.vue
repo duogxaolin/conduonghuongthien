@@ -41,7 +41,7 @@
         <!-- Nút mũi tên tròn đè hai bên mép (Desktop) -->
         <button
           type="button"
-          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 left-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
+          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 left-1 sm:left-[-10px] xl:left-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
           @click="prevSlide"
           :aria-label="t('carousel_prev')"
         >
@@ -49,7 +49,7 @@
         </button>
         <button
           type="button"
-          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 right-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
+          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 right-1 sm:right-[-10px] xl:right-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
           @click="nextSlide"
           :aria-label="t('carousel_next')"
         >

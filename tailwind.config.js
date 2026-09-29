@@ -4,6 +4,11 @@ module.exports = {
     './app/**/*.{vue,ts,js}',
     './server/**/*.{ts,js}',
   ],
+  // `useLayoutConfig` dựng `grid-cols-${n}` theo cấu hình trong DB — Tailwind
+  // tĩnh quét không thấy chuỗi nguyên bản nên phải liệt kê for đúng các giá
+  // trị hợp lệ (2|3|4). Đổi giới hạn ở validateLayoutConfig mà quên chỗ này thì
+  // class sẽ bị purge và trang lọt về một cột.
+  safelist: ['grid-cols-2', 'grid-cols-3', 'grid-cols-4'],
   theme: {
     extend: {
       colors: {
