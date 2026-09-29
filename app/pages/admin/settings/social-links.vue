@@ -22,6 +22,7 @@ const { confirm } = useConfirm()
 const { openPicker } = useImagePicker()
 const { setConfig } = useLayoutConfig()
 const loadError = ref('')
+const loading = ref(false)
 const busy = ref(false)
 const items = ref<SocialLink[]>([])
 

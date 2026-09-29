@@ -33,10 +33,7 @@ export const useI18n = () => {
     default: () => DEFAULT_LOCALE,
     maxAge: 60 * 60 * 24 * 365,
     sameSite: 'lax',
-    // Secure trong production: trang phục vụ qua HTTPS (Cloudflare kết thúc TLS),
-    // nên cookie ngôn ngữ không có lý do đi qua HTTP trần. SameSite=Lax một mình
-    // không đủ — một lược downgrade/MITM vẫn đọc được nó nếu thiếu Secure.
-    secure: process.env.NODE_ENV === 'production',
+    secure: false, // Cookie ngôn ngữ công khai không chứa bí mật; secure=false để tương thích reverse proxy HTTP loopback
   })
   const dbLanguages = useState<LocaleOption[]>('dbLanguages', () => [])
 
@@ -913,6 +910,8 @@ export const useI18n = () => {
     localeCookie.value = newLocale
     if (import.meta.client) {
       localStorage.setItem('cdkt_lang', newLocale)
+      // Đặt cookie trực tiếp để trình duyệt chắc chắn gửi header Cookie trong lượt reload tiếp theo
+      document.cookie = `cdkt_lang=${newLocale}; path=/; max-age=31536000; SameSite=Lax`
       if (changed && typeof window !== 'undefined') {
         window.location.reload()
       }
