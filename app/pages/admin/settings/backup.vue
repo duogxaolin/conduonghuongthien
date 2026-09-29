@@ -31,16 +31,42 @@ const restoring = ref(false)
 // Upload progress (XMLHttpRequest progress event) — 0-100. -1 = không đang upload.
 const uploadProgress = ref(-1)
 const uploadFilename = ref('')
+const uploadBytesTotal = ref(0)
+const uploadBytesLoaded = ref(0)
+const uploadStartedAt = ref(0)
+// Lịch sử các phase đã đi qua — để hiển thị dòng log chi tiết cho cán bộ.
+const restoreLog = ref<Array<{ phase: string; message: string; at: number; percent?: number }>>([])
 
 // % hiển thị trên thanh tiến trình:
-//  - upload đang chạy (0-99%) → dùng uploadProgress; 100% → chuyển sang extract phase
-//  - extract phase → dùng progress từ backend qua polling
-//  - phase 'audit'/'done' → 100%; phase 'failed' → 0 (đỏ)
+//  - upload đang chạy (0-99%) → dùng uploadProgress; 100% → chuyển sang xử lý server
+//  - phase 'save' (ghi file) → 100% upload nhưng server đang ghi → giữ 100, không rụt về 0
+//  - phase 'extract' → dùng progress từ backend (0→100)
+//  - phase 'sql'/'audit'/'done' → 100%; phase 'failed' → 0 (đỏ)
 const currentRestorePercent = computed(() => {
   if (restoreStatus.value?.phase === 'failed') return 0
   if (restoreStatus.value?.phase === 'done' || restoreStatus.value?.phase === 'audit') return 100
   if (uploadProgress.value >= 0 && uploadProgress.value < 100) return uploadProgress.value
+  if (restoreStatus.value?.phase === 'save') return 100
+  if (restoreStatus.value?.phase === 'extract') return restoreStatus.value?.progress ?? 0
+  if (uploadProgress.value === 100 && (!restoreStatus.value?.phase || restoreStatus.value.phase === 'start')) return 100
   return restoreStatus.value?.progress ?? 0
+})
+
+// Dung lượng đã upload + tốc độ ước tính.
+const uploadSpeed = computed(() => {
+  if (!uploadStartedAt.value || uploadBytesLoaded.value === 0) return ''
+  const elapsed = (Date.now() - uploadStartedAt.value) / 1000
+  if (elapsed < 0.5) return ''
+  const bps = uploadBytesLoaded.value / elapsed
+  return bps < 1024 ? `${Math.round(bps)} B/s` : bps < 1048576 ? `${(bps / 1024).toFixed(1)} KB/s` : `${(bps / 1048576).toFixed(2)} MB/s`
+})
+
+// Thời gian đã trôi qua kể từ lúc bắt đầu restore (upload hoặc gọi API).
+const restoreElapsed = computed(() => {
+  if (!uploadStartedAt.value) return ''
+  const s = Math.round((Date.now() - uploadStartedAt.value) / 1000)
+  if (s < 60) return `${s}s`
+  return `${Math.floor(s / 60)}p${s % 60}s`
 })
 
 const formatBytes = (b: number) => {
@@ -64,6 +90,17 @@ async function loadStatus() {
     restoreStatus.value = res.restore
     running.value = res.backup.running
     restoring.value = res.restore.running
+    // Ghi lại log phase khi restore đang chạy — chỉ thêm khi phase thay đổi.
+    const rs = res.restore
+    if (rs && rs.running && rs.phase) {
+      const last = restoreLog.value[restoreLog.value.length - 1]
+      if (!last || last.phase !== rs.phase) {
+        restoreLog.value.push({ phase: rs.phase, message: rs.message, at: Date.now(), percent: rs.progress })
+      } else if (rs.message && last.message !== rs.message) {
+        last.message = rs.message
+        if (rs.progress !== undefined) last.percent = rs.progress
+      }
+    }
   } catch { /* ignore */ }
 }
 
@@ -128,6 +165,8 @@ const restoreBackup = async (filename: string) => {
   })
   if (!ok) return
   restoring.value = true
+  uploadStartedAt.value = Date.now()
+  restoreLog.value = [{ phase: 'start', message: `Bắt đầu khôi phục ${filename}`, at: Date.now(), percent: 0 }]
   startPolling()
   try {
     await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/backup/restore`, { method: 'POST', body: { filename } })
@@ -137,6 +176,7 @@ const restoreBackup = async (filename: string) => {
     toast.error(errorMessage(err, 'Lỗi khôi phục'))
   } finally {
     restoring.value = false
+    uploadStartedAt.value = 0
     await loadStatus()
     stopPolling()
   }
@@ -146,6 +186,7 @@ const restoreBackup = async (filename: string) => {
 // Dùng XMLHttpRequest thay $fetch để có upload progress event — fetch API không
 // báo tiến độ upload. 69MB tar.gz qua $fetch chỉ thấy "pending" vài phút.
 const RESTORE_PHASE_LABEL: Record<string, string> = {
+  upload: 'Đang upload',
   save: 'Đang ghi file',
   start: 'Bắt đầu',
   sql: 'Đang phục hồi CSDL',
@@ -174,6 +215,10 @@ const onRestoreUpload = async (e: Event) => {
   restoring.value = true
   uploadProgress.value = 0
   uploadFilename.value = file.name
+  uploadBytesTotal.value = file.size
+  uploadBytesLoaded.value = 0
+  uploadStartedAt.value = Date.now()
+  restoreLog.value = [{ phase: 'upload', message: `Đang upload ${file.name} (${formatBytes(file.size)})`, at: Date.now(), percent: 0 }]
   startPolling()
   try {
     await new Promise<void>((resolve, reject) => {
@@ -182,6 +227,8 @@ const onRestoreUpload = async (e: Event) => {
       // Upload progress — chỉ fire khi upload > 0. Tar.gz 69MB sẽ thấy 0→100.
       xhr.upload.onprogress = (ev) => {
         if (ev.lengthComputable) {
+          uploadBytesLoaded.value = ev.loaded
+          uploadBytesTotal.value = ev.total
           uploadProgress.value = Math.min(100, Math.round((ev.loaded / ev.total) * 100))
         }
       }
@@ -207,6 +254,9 @@ const onRestoreUpload = async (e: Event) => {
     restoring.value = false
     uploadProgress.value = -1
     uploadFilename.value = ''
+    uploadBytesTotal.value = 0
+    uploadBytesLoaded.value = 0
+    uploadStartedAt.value = 0
     input.value = ''
     await loadStatus()
     stopPolling()
@@ -454,56 +504,103 @@ watch([running, restoring], ([r, rr]) => {
       <p class="m-0 mt-1 text-sm text-[#667768]">Backup CSDL + file, tải về hoặc upload Google Drive, khôi phục khi cần.</p>
     </header>
 
-    <!-- Banner trạng thái khôi phục -->
-    <div v-if="restoring" class="rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-4 py-3 text-sm text-[#8a6412] flex flex-col gap-2" role="status" :aria-busy="restoring">
-      <div class="flex items-center gap-2">
-        <i class="fa-solid fa-spinner animate-spin" aria-hidden="true"></i>
-        <span>
-          <strong>{{ uploadProgress >= 0 && uploadProgress < 100 ? `Đang upload ${uploadFilename}` : RESTORE_PHASE_LABEL[restoreStatus?.phase ?? ''] ?? 'Đang khôi phục' }}</strong>
-          <span class="text-[#667768]"> — {{ restoreStatus?.message || 'đang xử lý...' }}</span>
-        </span>
+    <!-- Banner trạng thái khôi phục — luôn hiển thị khi restoring, không rụt về 0 -->
+    <div v-if="restoring" class="rounded-xl border border-[#f0dcae] bg-[#fdf6e7] p-4 text-sm text-[#8a6412] flex flex-col gap-3" role="status" :aria-busy="restoring">
+      <div class="flex items-start gap-2">
+        <i class="fa-solid fa-spinner animate-spin mt-0.5 motion-reduce:animate-none" aria-hidden="true"></i>
+        <div class="flex-1 min-w-0">
+          <strong class="block">
+            {{ uploadProgress >= 0 && uploadProgress < 100 ? `Đang upload ${uploadFilename}` : RESTORE_PHASE_LABEL[restoreStatus?.phase ?? ''] ?? 'Đang khôi phục' }}
+          </strong>
+          <span class="text-[#667768] break-words">{{ restoreStatus?.message || 'đang xử lý...' }}</span>
+        </div>
+        <span v-if="restoreElapsed" class="text-xs font-bold tabular-nums text-[#8a6412] shrink-0">{{ restoreElapsed }}</span>
       </div>
       <!-- Progress bar: upload phase (0-100 từ XHR) hoặc extract phase (từ backend) -->
       <div class="flex items-center gap-2">
-        <div class="h-2 flex-1 overflow-hidden rounded-full bg-[#f0e0c0]" role="progressbar" :aria-valuenow="currentRestorePercent" aria-valuemin="0" aria-valuemax="100">
-          <div class="h-full rounded-full bg-[#8a6412] transition-all duration-300" :style="{ width: `${currentRestorePercent}%` }"></div>
+        <div class="h-2.5 flex-1 overflow-hidden rounded-full bg-[#f0e0c0]" role="progressbar" :aria-valuenow="currentRestorePercent" aria-valuemin="0" aria-valuemax="100" :aria-label="`Tiến độ khôi phục ${currentRestorePercent}%`">
+          <div class="h-full rounded-full bg-[#8a6412] transition-all duration-300 motion-reduce:transition-none" :style="{ width: `${currentRestorePercent}%` }"></div>
         </div>
         <span class="text-xs font-bold tabular-nums text-[#8a6412] min-w-[3rem] text-right">{{ currentRestorePercent }}%</span>
       </div>
-      <p class="m-0 text-[0.78rem] text-[#667768]">Cổng có thể chậm trong giây lát. Có thể đóng trang — worker tiếp tục trong nền.</p>
+      <!-- Thông tin thêm: dung lượng + tốc độ khi đang upload -->
+      <div v-if="uploadProgress >= 0 && uploadProgress < 100 && uploadBytesTotal > 0" class="flex items-center gap-3 text-[0.78rem] text-[#667768]">
+        <span><i class="fa-solid fa-file-arrow-up mr-1" aria-hidden="true"></i>{{ formatBytes(uploadBytesLoaded) }} / {{ formatBytes(uploadBytesTotal) }}</span>
+        <span v-if="uploadSpeed" class="text-[#8a6412] font-semibold"><i class="fa-solid fa-gauge-high mr-1" aria-hidden="true"></i>{{ uploadSpeed }}</span>
+      </div>
+      <!-- Log các phase đã đi qua -->
+      <ol v-if="restoreLog.length > 1" class="m-0 p-0 list-none flex flex-col gap-1 text-[0.78rem]">
+        <li v-for="(log, i) in restoreLog" :key="i" class="flex items-start gap-2">
+          <i class="fa-solid fa-check text-[#2c6e33] mt-0.5 text-[0.7rem]" aria-hidden="true" v-if="i < restoreLog.length - 1 || currentRestorePercent === 100"></i>
+          <i class="fa-solid fa-circle-notch fa-spin text-[#8a6412] mt-0.5 text-[0.7rem] motion-reduce:animate-none" aria-hidden="true" v-else></i>
+          <span class="text-[#3d4a3e]"><strong>{{ RESTORE_PHASE_LABEL[log.phase] ?? log.phase }}:</strong> {{ log.message }}<span v-if="log.percent !== undefined" class="text-[#667768]"> ({{ log.percent }}%)</span></span>
+        </li>
+      </ol>
+      <p class="m-0 text-[0.78rem] text-[#667768]"><i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>Cổng có thể chậm trong giây lát. Có thể đóng trang — worker tiếp tục trong nền.</p>
     </div>
-    <div v-else-if="running" class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] px-4 py-3 text-sm text-[#1e4620] flex items-center gap-2" role="status">
-      <i class="fa-solid fa-spinner animate-spin" aria-hidden="true"></i>
+    <div v-else-if="running" class="rounded-xl border border-[#cce5cd] bg-[#eef7ee] px-4 py-3 text-sm text-[#1e4620] flex items-center gap-2" role="status">
+      <i class="fa-solid fa-spinner animate-spin motion-reduce:animate-none" aria-hidden="true"></i>
       <span>Đang backup — {{ backupStatus?.message }}</span>
     </div>
 
     <!-- ─── Section 1: Backup mới ──────────────────────────────────────────── -->
     <section class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-3">
-      <h2 class="m-0 text-base font-bold text-[#122815]">Tạo backup mới</h2>
+      <div class="flex items-start gap-2">
+        <i class="fa-solid fa-floppy-disk text-lg text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
+        <div>
+          <h2 class="m-0 text-base font-bold text-[#122815]">Tạo backup mới</h2>
+          <p class="m-0 mt-0.5 text-[0.82rem] text-[#667768]">Tạo bản sao lưu ngay — CSDL, file tải lên, hoặc cả hai.</p>
+        </div>
+      </div>
       <div class="flex flex-wrap gap-3">
-        <button type="button" class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#1e4620] disabled:opacity-50" :disabled="running || restoring" @click="runBackup('sql')">
-          <i class="fa-solid fa-database" :class="running ? 'fa-spinner animate-spin' : ''" aria-hidden="true"></i> Sao lưu CSDL
+        <button type="button" class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#1e4620] disabled:opacity-50 disabled:cursor-not-allowed" :disabled="running || restoring" @click="runBackup('sql')">
+          <i class="fa-solid fa-database" :class="running ? 'fa-spinner animate-spin motion-reduce:animate-none' : ''" aria-hidden="true"></i> Sao lưu CSDL
         </button>
-        <button type="button" class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#1e4620] disabled:opacity-50" :disabled="running || restoring" @click="runBackup('files')">
-          <i class="fa-solid fa-file-zipper" :class="running ? 'fa-spinner animate-spin' : ''" aria-hidden="true"></i> Sao lưu File
+        <button type="button" class="inline-flex items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#1e4620] disabled:opacity-50 disabled:cursor-not-allowed" :disabled="running || restoring" @click="runBackup('files')">
+          <i class="fa-solid fa-file-zipper" :class="running ? 'fa-spinner animate-spin motion-reduce:animate-none' : ''" aria-hidden="true"></i> Sao lưu File
         </button>
-        <button type="button" class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#122815] disabled:opacity-50" :disabled="running || restoring" @click="runBackup('all')">
-          <i class="fa-solid fa-floppy-disk" :class="running ? 'fa-spinner animate-spin' : ''" aria-hidden="true"></i> Sao lưu cả hai
+        <button type="button" class="inline-flex items-center gap-2 rounded-lg bg-[#1e4620] px-4 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#122815] disabled:opacity-50 disabled:cursor-not-allowed" :disabled="running || restoring" @click="runBackup('all')">
+          <i class="fa-solid fa-floppy-disk" :class="running ? 'fa-spinner animate-spin motion-reduce:animate-none' : ''" aria-hidden="true"></i> Sao lưu cả hai
         </button>
       </div>
     </section>
 
-    <!-- ─── Section 2: Danh sách backup ────────────────────────────────────── -->
+    <!-- ─── Section 2: Khôi phục từ file upload ────────────────────────────── -->
     <section class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-3">
-      <div class="flex items-center justify-between gap-3">
-        <h2 class="m-0 text-base font-bold text-[#122815]">Danh sách backup</h2>
+      <div class="flex items-start gap-2">
+        <i class="fa-solid fa-upload text-lg text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
+        <div>
+          <h2 class="m-0 text-base font-bold text-[#122815]">Khôi phục từ file upload</h2>
+          <p class="m-0 mt-0.5 text-[0.82rem] text-[#667768]">Chọn file backup (.sql.gz hoặc .tar.gz) tải lên để khôi phục. File sẽ ghi đè dữ liệu hiện tại.</p>
+        </div>
+      </div>
+      <div class="rounded-lg border border-dashed border-[#b8cdba] bg-[#f8faf8] p-4 flex flex-col gap-2">
+        <label class="inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2.5 text-sm font-bold text-white border-0 hover:bg-[#1e4620] disabled:opacity-50 disabled:cursor-not-allowed" :class="{ 'pointer-events-none opacity-50': restoring || running }">
+          <i class="fa-solid fa-upload" aria-hidden="true"></i> Chọn file backup
+          <input type="file" accept=".sql.gz,.tar.gz,application/gzip" class="sr-only" :disabled="restoring || running" @change="onRestoreUpload" />
+        </label>
+        <p class="m-0 text-[0.78rem] text-[#667768]"><i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>Hỗ trợ .sql.gz (CSDL) và .tar.gz (file). Hành động này không thể hoàn tác.</p>
+      </div>
+    </section>
+
+    <!-- ─── Section 3: Danh sách backup ────────────────────────────────────── -->
+    <section class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-3">
+      <div class="flex items-center justify-between gap-3 flex-wrap">
+        <div class="flex items-start gap-2">
+          <i class="fa-solid fa-list text-lg text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
+          <div>
+            <h2 class="m-0 text-base font-bold text-[#122815]">Danh sách backup</h2>
+            <p class="m-0 mt-0.5 text-[0.82rem] text-[#667768]">Tải về, khôi phục hoặc xoá các bản sao lưu đã tạo.</p>
+          </div>
+        </div>
         <div class="flex gap-2">
-          <select v-model="filterType" class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33]" @change="page = 1; loadBackups()">
+          <label for="backup-filter-type" class="sr-only">Lọc theo loại</label>
+          <select id="backup-filter-type" v-model="filterType" class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33]" @change="page = 1; loadBackups()">
             <option value="">Tất cả</option>
             <option value="sql">CSDL</option>
             <option value="media">File</option>
           </select>
-          <button type="button" class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm font-semibold text-[#2c6e33] hover:bg-[#f0f7f1]" @click="loadBackups()"><i class="fa-solid fa-rotate-right" :class="loading ? 'fa-spinner animate-spin' : ''" aria-hidden="true"></i></button>
+          <button type="button" class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm font-semibold text-[#2c6e33] hover:bg-[#f0f7f1]" aria-label="Tải lại danh sách" @click="loadBackups()"><i class="fa-solid fa-rotate-right" :class="loading ? 'fa-spinner animate-spin motion-reduce:animate-none' : ''" aria-hidden="true"></i></button>
         </div>
       </div>
 
@@ -618,19 +715,15 @@ watch([running, restoring], ([r, rr]) => {
       </div>
     </section>
 
-    <!-- ─── Section 3: Khôi phục từ file upload ────────────────────────────── -->
-    <section class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-3">
-      <h2 class="m-0 text-base font-bold text-[#122815]">Khôi phục từ file upload</h2>
-      <p class="m-0 text-[0.82rem] text-[#667768]">Chọn file backup (.sql.gz hoặc .tar.gz) tải lên để khôi phục. File sẽ ghi đè dữ liệu hiện tại.</p>
-      <label class="inline-flex w-fit cursor-pointer items-center gap-2 rounded-lg border border-[#c8d6c9] bg-white px-4 py-2.5 text-sm font-bold text-[#2c6e33] hover:bg-[#f0f7f1] disabled:opacity-50" :class="{ 'pointer-events-none opacity-50': restoring || running }">
-        <i class="fa-solid fa-upload" aria-hidden="true"></i> Chọn file backup
-        <input type="file" accept=".sql.gz,.tar.gz,application/gzip" class="sr-only" :disabled="restoring || running" @change="onRestoreUpload" />
-      </label>
-    </section>
-
     <!-- ─── Section 4: Cài đặt backup ───────────────────────────────────────── -->
     <section class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-4">
-      <h2 class="m-0 text-base font-bold text-[#122815]">Cài đặt backup</h2>
+      <div class="flex items-start gap-2">
+        <i class="fa-solid fa-gear text-lg text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
+        <div>
+          <h2 class="m-0 text-base font-bold text-[#122815]">Cài đặt backup</h2>
+          <p class="m-0 mt-0.5 text-[0.82rem] text-[#667768]">Lịch backup tự động và cấu hình Google Drive.</p>
+        </div>
+      </div>
 
       <!-- Tự động -->
       <div class="flex flex-col gap-3 rounded-lg border border-[#e2ece3] bg-[#f8faf8] p-4">
