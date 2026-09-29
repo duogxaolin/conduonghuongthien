@@ -5,7 +5,7 @@ const toast = useToast()
 const { confirm } = useConfirm()
 
 // ─── Backup status (poll khi đang chạy) ──────────────────────────────────────
-interface RunStatus { running: boolean; phase: string; message: string }
+interface RunStatus { running: boolean; phase: string; message: string; progress?: number }
 interface BackupItem {
   id: number
   filename: string
@@ -28,6 +28,20 @@ const total = ref(0)
 const filterType = ref('')
 const running = ref(false)
 const restoring = ref(false)
+// Upload progress (XMLHttpRequest progress event) — 0-100. -1 = không đang upload.
+const uploadProgress = ref(-1)
+const uploadFilename = ref('')
+
+// % hiển thị trên thanh tiến trình:
+//  - upload đang chạy (0-99%) → dùng uploadProgress; 100% → chuyển sang extract phase
+//  - extract phase → dùng progress từ backend qua polling
+//  - phase 'audit'/'done' → 100%; phase 'failed' → 0 (đỏ)
+const currentRestorePercent = computed(() => {
+  if (restoreStatus.value?.phase === 'failed') return 0
+  if (restoreStatus.value?.phase === 'done' || restoreStatus.value?.phase === 'audit') return 100
+  if (uploadProgress.value >= 0 && uploadProgress.value < 100) return uploadProgress.value
+  return restoreStatus.value?.progress ?? 0
+})
 
 const formatBytes = (b: number) => {
   if (b < 1024) return `${b} B`
@@ -129,6 +143,19 @@ const restoreBackup = async (filename: string) => {
 }
 
 // ─── Upload khôi phục ─────────────────────────────────────────────────────────
+// Dùng XMLHttpRequest thay $fetch để có upload progress event — fetch API không
+// báo tiến độ upload. 69MB tar.gz qua $fetch chỉ thấy "pending" vài phút.
+const RESTORE_PHASE_LABEL: Record<string, string> = {
+  save: 'Đang ghi file',
+  start: 'Bắt đầu',
+  sql: 'Đang phục hồi CSDL',
+  extract: 'Đang giải nén',
+  audit: 'Đang ghi audit',
+  done: 'Xong',
+  failed: 'Lỗi',
+  '': '—',
+}
+
 const onRestoreUpload = async (e: Event) => {
   const input = e.target as HTMLInputElement
   const file = input.files?.[0]
@@ -145,17 +172,41 @@ const onRestoreUpload = async (e: Event) => {
   })
   if (!ok) { input.value = ''; return }
   restoring.value = true
+  uploadProgress.value = 0
+  uploadFilename.value = file.name
   startPolling()
   try {
-    const formData = new FormData()
-    formData.append('file', file)
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/backup/restore-upload`, { method: 'POST', body: formData })
+    await new Promise<void>((resolve, reject) => {
+      const xhr = new XMLHttpRequest()
+      xhr.open('POST', '/api/admin/backup/restore-upload')
+      // Upload progress — chỉ fire khi upload > 0. Tar.gz 69MB sẽ thấy 0→100.
+      xhr.upload.onprogress = (ev) => {
+        if (ev.lengthComputable) {
+          uploadProgress.value = Math.min(100, Math.round((ev.loaded / ev.total) * 100))
+        }
+      }
+      xhr.onload = () => {
+        uploadProgress.value = 100
+        if (xhr.status >= 200 && xhr.status < 300) resolve()
+        else {
+          let msg = `Lỗi khôi phục (HTTP ${xhr.status})`
+          try { const j = JSON.parse(xhr.responseText); if (j?.statusMessage) msg = j.statusMessage } catch { /* noop */ }
+          reject(new Error(msg))
+        }
+      }
+      xhr.onerror = () => reject(new Error('Lỗi mạng khi upload'))
+      const formData = new FormData()
+      formData.append('file', file)
+      xhr.send(formData)
+    })
     toast.success('Đã khôi phục từ file upload.')
     await loadBackups()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi khôi phục'))
   } finally {
     restoring.value = false
+    uploadProgress.value = -1
+    uploadFilename.value = ''
     input.value = ''
     await loadStatus()
     stopPolling()
@@ -403,10 +454,23 @@ watch([running, restoring], ([r, rr]) => {
       <p class="m-0 mt-1 text-sm text-[#667768]">Backup CSDL + file, tải về hoặc upload Google Drive, khôi phục khi cần.</p>
     </header>
 
-    <!-- Banner trạng thái -->
-    <div v-if="restoring" class="rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-4 py-3 text-sm text-[#8a6412] flex items-center gap-2" role="alert">
-      <i class="fa-solid fa-spinner animate-spin" aria-hidden="true"></i>
-      <span>Đang khôi phục — cổng có thể chậm trong giây lát. {{ restoreStatus?.message }}</span>
+    <!-- Banner trạng thái khôi phục -->
+    <div v-if="restoring" class="rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-4 py-3 text-sm text-[#8a6412] flex flex-col gap-2" role="status" :aria-busy="restoring">
+      <div class="flex items-center gap-2">
+        <i class="fa-solid fa-spinner animate-spin" aria-hidden="true"></i>
+        <span>
+          <strong>{{ uploadProgress >= 0 && uploadProgress < 100 ? `Đang upload ${uploadFilename}` : RESTORE_PHASE_LABEL[restoreStatus?.phase ?? ''] ?? 'Đang khôi phục' }}</strong>
+          <span class="text-[#667768]"> — {{ restoreStatus?.message || 'đang xử lý...' }}</span>
+        </span>
+      </div>
+      <!-- Progress bar: upload phase (0-100 từ XHR) hoặc extract phase (từ backend) -->
+      <div class="flex items-center gap-2">
+        <div class="h-2 flex-1 overflow-hidden rounded-full bg-[#f0e0c0]" role="progressbar" :aria-valuenow="currentRestorePercent" aria-valuemin="0" aria-valuemax="100">
+          <div class="h-full rounded-full bg-[#8a6412] transition-all duration-300" :style="{ width: `${currentRestorePercent}%` }"></div>
+        </div>
+        <span class="text-xs font-bold tabular-nums text-[#8a6412] min-w-[3rem] text-right">{{ currentRestorePercent }}%</span>
+      </div>
+      <p class="m-0 text-[0.78rem] text-[#667768]">Cổng có thể chậm trong giây lát. Có thể đóng trang — worker tiếp tục trong nền.</p>
     </div>
     <div v-else-if="running" class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] px-4 py-3 text-sm text-[#1e4620] flex items-center gap-2" role="status">
       <i class="fa-solid fa-spinner animate-spin" aria-hidden="true"></i>

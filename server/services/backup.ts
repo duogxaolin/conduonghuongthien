@@ -44,9 +44,11 @@ interface RunStatus {
   phase: string
   message: string
   startedAt: number | null
+  /** Tiến độ 0-100 (cho extract tar). */
+  progress?: number
 }
-let currentBackupStatus: RunStatus = { running: false, phase: '', message: '', startedAt: null }
-let currentRestoreStatus: RunStatus = { running: false, phase: '', message: '', startedAt: null }
+let currentBackupStatus: RunStatus = { running: false, phase: '', message: '', startedAt: null, progress: undefined }
+let currentRestoreStatus: RunStatus = { running: false, phase: '', message: '', startedAt: null, progress: undefined }
 
 export function getBackupStatus(): RunStatus { return { ...currentBackupStatus } }
 export function getRestoreStatus(): RunStatus { return { ...currentRestoreStatus } }
@@ -351,29 +353,37 @@ export async function runRestore(filename: string, adminUserId: number | null): 
   try { await fs.stat(filePath) } catch { throw new Error(`File backup "${filename}" không tồn tại.`) }
 
   const outcome = await withNamedLock(pool, LOCK_RESTORE, LOCK_TIMEOUT, async () => {
-    currentRestoreStatus = { running: true, phase: 'start', message: `Đang khôi phục ${filename}`, startedAt: Date.now() }
+    currentRestoreStatus = { running: true, phase: 'start', message: `Đang khôi phục ${filename}`, startedAt: Date.now(), progress: undefined }
 
-    if (filename.endsWith('.sql.gz')) {
-      currentRestoreStatus = { running: true, phase: 'sql', message: 'Đang phục hồi CSDL', startedAt: Date.now() }
-      await restoreSql(filePath)
-    } else if (filename.endsWith('.tar.gz')) {
-      currentRestoreStatus = { running: true, phase: 'files', message: 'Đang giải nén file', startedAt: Date.now() }
-      await restoreFiles(filePath)
-    } else {
-      throw new Error(`Định dạng file không hỗ trợ: ${filename}`)
-    }
+    try {
+      if (filename.endsWith('.sql.gz')) {
+        currentRestoreStatus = { running: true, phase: 'sql', message: 'Đang phục hồi CSDL', startedAt: Date.now(), progress: undefined }
+        await restoreSql(filePath)
+      } else if (filename.endsWith('.tar.gz')) {
+        currentRestoreStatus = { running: true, phase: 'extract', message: 'Đang giải nén file', startedAt: Date.now(), progress: 0 }
+        await restoreFiles(filePath)
+      } else {
+        throw new Error(`Định dạng file không hỗ trợ: ${filename}`)
+      }
 
-    await db.transaction(async (tx) => {
-      await tx.insert(activityLogs).values({
-        userId: adminUserId, action: 'backup_restore', resource: 'settings', resourceId: null,
-        meta: { filename },
+      currentRestoreStatus = { running: true, phase: 'audit', message: 'Đang ghi audit log', startedAt: Date.now(), progress: undefined }
+      await db.transaction(async (tx) => {
+        await tx.insert(activityLogs).values({
+          userId: adminUserId, action: 'backup_restore', resource: 'settings', resourceId: null,
+          meta: { filename },
+        })
       })
-    })
-    currentRestoreStatus = { running: false, phase: 'done', message: 'Khôi phục xong', startedAt: Date.now() }
-    logInfo({ event: 'backup.restored', filename })
+      currentRestoreStatus = { running: false, phase: 'done', message: 'Khôi phục xong', startedAt: Date.now(), progress: 100 }
+      logInfo({ event: 'backup.restored', filename })
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err)
+      currentRestoreStatus = { running: false, phase: 'failed', message: `Khôi phục lỗi: ${msg}`, startedAt: Date.now(), progress: undefined }
+      throw err
+    }
   })
 
   if (!outcome.acquired) {
+    currentRestoreStatus = { running: false, phase: 'failed', message: 'Một lượt khôi phục khác đang chạy. Thử lại sau.', startedAt: Date.now(), progress: undefined }
     throw new Error('Một lượt khôi phục khác đang chạy. Thử lại sau.')
   }
 }
@@ -412,7 +422,29 @@ async function restoreFiles(filePath: string): Promise<void> {
   const target = isMedia ? '/var/lib/cdkt' : path.resolve(process.cwd(), 'public')
   await fs.mkdir(target, { recursive: true }).catch(() => {})
   const treeName = isMedia ? 'media' : 'uploads'
+
+  // List headers trước (nhanh — không extract) để đếm tổng entries, báo cho UI.
+  let totalEntries = 0
+  try {
+    const { stdout } = await execFileAsync('tar', ['-tzf', filePath], { maxBuffer: 16 * 1024 * 1024 })
+    totalEntries = stdout.split('\n').filter(Boolean).length
+  } catch { /* list fail — vẫn extract, không có total */ }
+
+  currentRestoreStatus = {
+    running: true,
+    phase: 'extract',
+    message: totalEntries > 0 ? `Đang giải nén ${totalEntries} mục...` : 'Đang giải nén file...',
+    startedAt: Date.now(),
+    progress: 0,
+  }
   await execFileAsync('tar', ['-xzf', filePath, '-C', target, treeName])
+  currentRestoreStatus = {
+    running: true,
+    phase: 'extract',
+    message: totalEntries > 0 ? `Đã giải nén ${totalEntries} mục` : 'Đã giải nén xong',
+    startedAt: Date.now(),
+    progress: 100,
+  }
 }
 
 /** Liệt kê backup cho trang admin. */
@@ -451,6 +483,8 @@ export async function restoreUploaded(filename: string, fileBuffer: Buffer, admi
   const safeName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_')
   const target = path.resolve(dir, safeName)
   if (!target.startsWith(dir + path.sep)) throw new Error('Tên file không hợp lệ.')
+  // Báo running ngay từ lúc bắt đầu ghi file — UI poll thấy không còn pending.
+  currentRestoreStatus = { running: true, phase: 'save', message: `Đang ghi file ${safeName} (${Math.round(fileBuffer.length / 1024 / 1024)}MB)...`, startedAt: Date.now(), progress: undefined }
   await fs.writeFile(target, fileBuffer)
   // Ghi hàng backups (trigger=manual) để công khai
   const db = getDb()
