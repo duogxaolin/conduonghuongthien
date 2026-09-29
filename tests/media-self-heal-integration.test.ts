@@ -108,11 +108,12 @@ test('self-heal repoint thumbnail_url /uploads/migrated/... → R2 URL khớp ba
     const again = await selfHealMedia(null, { dryRun: false })
     assert.equal(again.thumbnailsRepointed, 0, 'chạy lại không sửa gì — idempotent')
 
-    // Audit log có 1 hàng action='self_heal' (chỉ run thực sự, dry-run không audit).
+    // Audit log: mỗi run thực sự (không dry-run) insert 1 hàng action='self_heal'.
+    // dry-run không audit. Em chạy 2 run thực sự (real + again) → 2 hàng.
     const [auditRows] = await pool.query<RowDataPacket[]>(
       "SELECT COUNT(*) AS n FROM activity_logs WHERE action = 'self_heal'",
     )
-    assert.equal(Number(auditRows[0]?.n), 1, 'phải có đúng 1 hàng audit self_heal (dry-run không audit)')
+    assert.equal(Number(auditRows[0]?.n), 2, 'phải có 2 hàng audit self_heal (2 run thực sự, dry-run không audit)')
 
     // Snapshot backup phải có (run thực sự).
     assert.ok(real.backupStamp, 'run thực sự phải có backupStamp')
