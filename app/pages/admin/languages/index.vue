@@ -1051,8 +1051,69 @@ onUnmounted(() => {
       </div>
 
       <!-- Translation table -->
-      <div v-else class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
-        <table class="w-full text-sm">
+      <div v-else class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden shadow-xs">
+        <!-- Mobile Card View: Thẻ từ điển dịch thuật trên điện thoại -->
+        <div class="md:hidden divide-y divide-[#eef2ee]">
+          <div
+            v-for="t in filteredTranslations"
+            :key="'m-'+t.id"
+            class="p-3.5 flex flex-col gap-2"
+          >
+            <div class="flex items-center justify-between gap-2">
+              <code class="font-mono text-xs text-[#2c6e33] bg-[#f0f7f1] px-1.5 py-0.5 rounded break-all">{{ t.key }}</code>
+              <div class="flex items-center gap-1.5 shrink-0">
+                <span class="text-[0.65rem] font-bold bg-[#f4f7f4] text-[#667768] px-1.5 py-0.5 rounded">{{ t.group }}</span>
+                <span v-if="t.isAiTranslated" class="px-1.5 py-0.5 rounded bg-[#e4f2e5] text-[#1e4620] text-[0.65rem] font-bold">AI</span>
+              </div>
+            </div>
+
+            <!-- Bản gốc tiếng Việt -->
+            <div class="bg-[#fafcfa] border border-[#eef2ee] rounded-lg p-2 text-xs text-[#4A5545]">
+              <span class="font-bold text-[#667768] block text-[0.68rem] mb-0.5">Tiếng Việt (Gốc):</span>
+              {{ viTranslationsMap.get(`${t.group}::${t.key}`) || '—' }}
+            </div>
+
+            <!-- Bản dịch -->
+            <div class="text-xs">
+              <span class="font-bold text-[#667768] block text-[0.68rem] mb-0.5">Bản dịch ({{ selectedLangCode.toUpperCase() }}):</span>
+              <div v-if="editingKey === `${t.group}::${t.key}`" class="flex flex-col gap-1.5 mt-1">
+                <textarea v-model="editingValue" rows="2" class="w-full px-2.5 py-1.5 border border-[#c8d6c9] rounded-md text-sm outline-none focus:border-[#2c6e33] font-[inherit]"></textarea>
+                <div class="flex gap-1.5">
+                  <button class="px-3 py-1 rounded-md bg-[#1e4620] text-white text-xs font-bold border-none cursor-pointer" @click="saveEdit(t)">Lưu</button>
+                  <button class="px-3 py-1 rounded-md border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] cursor-pointer" @click="editingKey = null">Hủy</button>
+                </div>
+              </div>
+              <div v-else class="text-[#1E251C] font-medium" :class="!t.value ? 'italic text-[#9ca3af]' : ''">
+                {{ t.value || '(chưa có bản dịch)' }}
+              </div>
+            </div>
+
+            <!-- Thao tác -->
+            <div class="flex items-center justify-end gap-2 pt-1.5 border-t border-[#f4f7f4]">
+              <button
+                type="button"
+                class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-[#e4f2e5] border border-[#c8dcc9] text-[#1e4620] hover:bg-[#d6ecd8] cursor-pointer flex items-center gap-1 disabled:opacity-50"
+                :disabled="translatingSingleKey === t.key"
+                @click="translateSingleKey(t)"
+              >
+                <i class="fa-solid fa-wand-magic-sparkles text-[0.68rem]" :class="translatingSingleKey === t.key ? 'animate-spin' : ''"></i>
+                <span>Dịch AI</span>
+              </button>
+              <button
+                type="button"
+                class="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-white border border-[#c8d6c9] text-[#2c6e33] hover:bg-[#f0f7f1] cursor-pointer flex items-center gap-1"
+                @click="startEdit(t)"
+              >
+                <i class="fa-solid fa-pen text-[0.68rem]"></i>
+                <span>Sửa</span>
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Desktop Table View -->
+        <div class="hidden md:block overflow-x-auto">
+          <table class="w-full text-sm">
           <thead class="bg-[#f8faf7] border-b border-[#e2ece3]">
             <tr>
               <th class="px-4 py-3 text-left font-bold text-[#122815] w-[20%]">Khóa (Key)</th>
@@ -1111,7 +1172,8 @@ onUnmounted(() => {
               </td>
             </tr>
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
     </div>
 
@@ -1384,11 +1446,65 @@ onUnmounted(() => {
 
       <!-- Coverage Breakdown Table by Language -->
       <div class="bg-white rounded-2xl border border-[#e2ece3] overflow-hidden shadow-xs">
-        <div class="px-6 py-4 border-b border-[#eef2ee] bg-[#f8faf8] flex items-center justify-between">
+        <div class="px-5 py-4 border-b border-[#eef2ee] bg-[#f8faf8] flex items-center justify-between flex-wrap gap-2">
           <h4 class="m-0 text-sm font-bold text-[#122815]">Bảng thống kê tỷ lệ hoàn thiện theo ngôn ngữ</h4>
           <span class="text-xs text-[#667768]">Cập nhật theo dữ liệu thực tế trong CSDL</span>
         </div>
-        <table class="w-full text-sm">
+
+        <!-- Mobile Card View: Thống kê tỷ lệ trên điện thoại -->
+        <div class="md:hidden divide-y divide-[#eef2ee]">
+          <div
+            v-for="l in universalStats?.languages || []"
+            :key="'m-l-'+l.code"
+            class="p-4 flex flex-col gap-2.5"
+          >
+            <div class="flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <span class="text-2xl leading-none">{{ getFlagEmoji(l.code) }}</span>
+                <div>
+                  <p class="m-0 font-bold text-[#122815] text-sm">{{ l.nativeName }}</p>
+                  <span class="text-xs text-[#667768]">{{ l.name }} ({{ l.code }})</span>
+                </div>
+              </div>
+              <span class="text-sm font-bold" :class="l.percent === 100 ? 'text-[#2c6e33]' : 'text-[#b78103]'">
+                {{ l.percent }}%
+              </span>
+            </div>
+
+            <div class="w-full h-2 bg-[#e2ece3] rounded-full overflow-hidden">
+              <div
+                class="h-full rounded-full transition-all duration-500"
+                :class="l.percent === 100 ? 'bg-[#2c6e33]' : 'bg-[#b78103]'"
+                :style="{ width: `${l.percent}%` }"
+              ></div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-1.5 text-center text-xs pt-1">
+              <div class="bg-[#f8faf8] p-1.5 rounded-lg border border-[#eef2ee]">
+                <span class="block text-[0.65rem] text-[#667768]">UI</span>
+                <span class="font-bold text-[0.72rem]" :class="l.uiMissing === 0 ? 'text-[#2c6e33]' : 'text-[#b78103]'">
+                  {{ l.uiMissing === 0 ? 'Đủ' : `-${l.uiMissing}` }}
+                </span>
+              </div>
+              <div class="bg-[#f8faf8] p-1.5 rounded-lg border border-[#eef2ee]">
+                <span class="block text-[0.65rem] text-[#667768]">Khối</span>
+                <span class="font-bold text-[0.72rem]" :class="l.blocksMissing === 0 ? 'text-[#2c6e33]' : 'text-[#b78103]'">
+                  {{ l.blocksMissing === 0 ? 'Đủ' : `-${l.blocksMissing}` }}
+                </span>
+              </div>
+              <div class="bg-[#f8faf8] p-1.5 rounded-lg border border-[#eef2ee]">
+                <span class="block text-[0.65rem] text-[#667768]">Bài viết</span>
+                <span class="font-bold text-[0.72rem]" :class="l.articlesMissing === 0 ? 'text-[#2c6e33]' : 'text-[#b78103]'">
+                  {{ l.articlesMissing === 0 ? 'Đủ' : `-${l.articlesMissing}` }}
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Desktop Table View -->
+        <div class="hidden md:block overflow-x-auto">
+          <table class="w-full text-sm">
           <thead class="bg-[#fcfdfc] border-b border-[#e2ece3] text-xs text-[#667768]">
             <tr>
               <th class="px-5 py-3 text-left font-bold text-[#122815]">Ngôn ngữ</th>
@@ -1438,7 +1554,8 @@ onUnmounted(() => {
               </td>
             </tr>
           </tbody>
-        </table>
+          </table>
+        </div>
       </div>
     </div>
     <!-- Modal 1: Đổi vị trí thứ tự ngôn ngữ -->

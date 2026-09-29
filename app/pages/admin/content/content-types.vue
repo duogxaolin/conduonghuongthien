@@ -306,8 +306,73 @@ onMounted(() => {
     </div>
 
     <!-- Table -->
-    <div v-else class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden">
-      <div class="overflow-x-auto">
+    <div v-else class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden shadow-xs">
+      <!-- Mobile Card View: Thẻ thể loại tiện thao tác ngón cái trên điện thoại -->
+      <div class="md:hidden divide-y divide-[#eef2ee]">
+        <div
+          v-for="ct in types"
+          :key="'m-'+ct.id"
+          class="p-4 flex flex-col gap-2.5"
+          :class="selection.isSelected(Number(ct.id)) ? 'bg-[#f0f7f1]' : ''"
+        >
+          <div class="flex items-start justify-between gap-2.5">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <input
+                v-if="!ct.isSystem"
+                type="checkbox"
+                class="h-4 w-4 shrink-0 accent-[#2c6e33]"
+                :checked="selection.isSelected(Number(ct.id))"
+                :aria-label="`Chọn thể loại ${ct.name}`"
+                @change="selection.toggle(Number(ct.id))"
+              />
+              <div class="flex items-center gap-2 min-w-0">
+                <i :class="ct.icon || 'fa-solid fa-folder'" class="text-[#2c6e33] text-base shrink-0"></i>
+                <span class="font-bold text-[#122815] text-[0.92rem] truncate">{{ ct.name }}</span>
+              </div>
+            </div>
+            <span v-if="ct.isSystem" class="text-[0.68rem] bg-[#eef2ff] text-[#3050b0] px-2 py-0.5 rounded font-bold shrink-0">Hệ thống</span>
+            <span v-else class="text-[0.68rem] bg-gray-100 text-gray-600 px-2 py-0.5 rounded font-bold shrink-0">Thứ tự: {{ ct.displayOrder }}</span>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2 text-xs text-[#667768]">
+            <code class="text-[0.75rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded font-mono">{{ ct.slug }}</code>
+            <span>•</span>
+            <span>{{ ct.categoryCount }} danh mục</span>
+            <span>•</span>
+            <span>{{ ct.articleCount }} bài viết</span>
+          </div>
+
+          <p v-if="ct.description" class="m-0 text-xs text-[#8a9a8c] line-clamp-2">{{ ct.description }}</p>
+
+          <!-- Thao tác -->
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#f4f7f4]">
+            <nuxt-link
+              :to="`/admin/content/categories?type=${ct.slug}`"
+              class="inline-flex items-center gap-1 text-xs font-bold text-[#667768] bg-[#f4f7f4] hover:bg-[#eef2ee] px-2.5 py-1.5 rounded-lg no-underline transition-colors"
+            >
+              <i class="fa-regular fa-folder-open text-[0.7rem]"></i> Danh mục
+            </nuxt-link>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-[#f0f7f1] hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg border-0 cursor-pointer transition-colors"
+              @click="openEdit(ct)"
+            >
+              <i class="fa-solid fa-pen text-[0.65rem]"></i> Sửa
+            </button>
+            <button
+              v-if="!ct.isSystem"
+              type="button"
+              class="inline-flex items-center gap-1 text-xs font-bold text-[#d12420] bg-[#fff4f3] hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg border-0 cursor-pointer transition-colors"
+              @click="deleteType(ct)"
+            >
+              <i class="fa-regular fa-trash text-[0.65rem]"></i> Xóa
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Desktop Table View: Bảng đầy đủ trên máy tính -->
+      <div class="hidden md:block overflow-x-auto">
         <table class="w-full border-collapse text-[0.88rem] text-left">
           <thead>
             <tr>

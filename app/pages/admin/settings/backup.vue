@@ -518,7 +518,64 @@ watch([running, restoring], ([r, rr]) => {
         <p class="m-0 mt-3 text-sm">Chưa có bản backup nào.</p>
       </div>
 
-      <div v-else class="overflow-x-auto">
+      <!-- Mobile Card View: Hiển thị dạng thẻ trên điện thoại -->
+      <div class="md:hidden divide-y divide-[#eef2ee] rounded-xl border border-[#e2ece3] overflow-hidden">
+        <div
+          v-for="item in items"
+          :key="'m-'+item.id"
+          class="p-4 flex flex-col gap-2.5"
+        >
+          <div class="flex items-start justify-between gap-2">
+            <div class="min-w-0 flex-1">
+              <p class="m-0 font-mono font-bold text-xs text-[#122815] truncate" :title="item.filename">{{ item.filename }}</p>
+              <span class="inline-block mt-1 rounded-full border border-[#cce5cd] bg-[#eef7ee] px-2 py-0.5 text-[0.7rem] font-bold text-[#1e4620]">
+                {{ typeLabel(item.type) }}
+              </span>
+            </div>
+            <span class="text-xs font-semibold text-[#667768] shrink-0">{{ formatBytes(item.bytes) }}</span>
+          </div>
+
+          <div class="flex items-center justify-between text-[0.75rem] text-[#667768] pt-1">
+            <span>{{ formatWhen(item.createdAt) }}</span>
+            <span class="flex items-center gap-1">
+              <span class="text-[0.7rem] text-[#8a9a8c]">Drive:</span>
+              <i v-if="item.driveUploaded" class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
+              <i v-else class="fa-regular fa-circle text-[#d1d5db]" aria-hidden="true"></i>
+            </span>
+          </div>
+
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#f4f7f4]">
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg bg-[#f0f7f1] px-3 py-1.5 text-xs font-bold text-[#2c6e33] border-0 cursor-pointer hover:bg-[#e4f2e5]"
+              title="Tải về"
+              @click="downloadBackup(item.filename)"
+            >
+              <i class="fa-solid fa-download" aria-hidden="true"></i> Tải về
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg bg-[#fdf6e7] px-3 py-1.5 text-xs font-bold text-[#8a6412] border-0 cursor-pointer hover:bg-[#f5e8c8] disabled:opacity-60"
+              title="Khôi phục"
+              :disabled="restoring || running"
+              @click="restoreBackup(item.filename)"
+            >
+              <i class="fa-solid fa-rotate-left" aria-hidden="true"></i> Khôi phục
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 rounded-lg bg-[#ffebe9] px-3 py-1.5 text-xs font-bold text-[#d12420] border-0 cursor-pointer hover:bg-red-200"
+              title="Xoá"
+              @click="deleteBackup(item)"
+            >
+              <i class="fa-regular fa-trash" aria-hidden="true"></i> Xóa
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Desktop Table View: Bảng đầy đủ trên máy tính -->
+      <div class="hidden md:block overflow-x-auto">
         <table class="w-full border-collapse text-left text-[0.84rem]">
           <thead class="bg-[#f4f7f4] text-xs uppercase tracking-wide text-[#667768]">
             <tr>

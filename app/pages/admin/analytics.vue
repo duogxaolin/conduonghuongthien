@@ -265,7 +265,69 @@ onBeforeUnmount(() => { summaryController?.abort(); drillController?.abort() })
               <div v-if="drillLoading" class="mt-5 rounded-lg bg-[#f4f7f4] p-6 text-center text-sm text-[#667768]" role="status" aria-live="polite"><i class="fa-solid fa-spinner fa-spin mr-2 motion-reduce:animate-none" aria-hidden="true"></i>Đang tải chi tiết…</div>
               <div v-else-if="drillError" class="mt-5 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800" role="alert">{{ drillError }} <button type="button" class="ml-2 font-bold underline focus:outline-none focus:ring-2 focus:ring-red-700" @click="loadDrill">Thử lại</button></div>
               <div v-else-if="drill && drill.items.length === 0" class="mt-5 rounded-lg border border-dashed border-[#afc8b1] bg-[#f7fbf7] p-6 text-center text-sm text-[#667768]">Không có dữ liệu xếp hạng phù hợp với bộ lọc hiện tại.</div>
-              <div v-else-if="drill" class="mt-5 overflow-x-auto"><table class="w-full min-w-[620px] border-collapse text-left text-sm"><caption class="sr-only">Bảng xếp hạng {{ dimensions.find(item => item.value === selectedDrill)?.label }}</caption><thead><tr class="border-b border-[#dbe7dc] text-xs uppercase tracking-wide text-[#667768]"><th class="px-3 py-3" scope="col">Hạng</th><th class="px-3 py-3" scope="col">Giá trị</th><th class="px-3 py-3 text-right" scope="col">Lượt xem</th><th class="px-3 py-3 text-right" scope="col">Tổng khách/ngày</th><th class="px-3 py-3" scope="col">Chi tiết</th></tr></thead><tbody><tr v-for="(item, index) in drill.items" :key="item.value" class="border-b border-[#edf3ed] hover:bg-[#f7faf7]"><td class="px-3 py-3 font-bold text-[#527a56]">{{ index + 1 }}</td><th class="max-w-[380px] break-all px-3 py-3 font-semibold text-[#233c26]" scope="row">{{ item.value === 'other' ? 'Khác (đã gộp)' : item.value }}</th><td class="px-3 py-3 text-right tabular-nums">{{ formatNumber(item.pageViews) }}</td><td class="px-3 py-3 text-right tabular-nums">{{ formatNumber(item.summedDailyUniqueVisitors) }}</td><td class="px-3 py-3"><button type="button" class="rounded-md px-3 py-2 font-bold text-[#2c6e33] underline decoration-dotted underline-offset-4 focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="selectValue(item.value)">Lọc giá trị</button></td></tr></tbody></table></div>
+              <div v-else-if="drill" class="mt-5">
+                <!-- Mobile Card View: Thẻ xếp hạng dễ đọc trên điện thoại -->
+                <div class="md:hidden divide-y divide-[#edf3ed] rounded-xl border border-[#dbe7dc] bg-white overflow-hidden shadow-xs">
+                  <div
+                    v-for="(item, index) in drill.items"
+                    :key="'m-'+item.value"
+                    class="p-3.5 flex flex-col gap-2"
+                  >
+                    <div class="flex items-start gap-2.5">
+                      <span class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-[#f0f7f1] text-xs font-bold text-[#2c6e33]">
+                        {{ index + 1 }}
+                      </span>
+                      <div class="min-w-0 flex-1">
+                        <p class="m-0 break-all font-bold text-[#233c26] text-sm leading-snug">
+                          {{ item.value === 'other' ? 'Khác (đã gộp)' : item.value }}
+                        </p>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center justify-between text-xs text-[#667768] pt-1">
+                      <span>Lượt xem: <strong class="text-[#122815] tabular-nums">{{ formatNumber(item.pageViews) }}</strong></span>
+                      <span>Khách: <strong class="text-[#122815] tabular-nums">{{ formatNumber(item.summedDailyUniqueVisitors) }}</strong></span>
+                    </div>
+
+                    <div class="flex justify-end pt-1 border-t border-[#f4f7f4]">
+                      <button
+                        type="button"
+                        class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-[#f0f7f1] hover:bg-[#e4f2e5] px-3 py-1.5 rounded-lg border-0 cursor-pointer"
+                        @click="selectValue(item.value)"
+                      >
+                        <i class="fa-solid fa-filter text-[0.65rem]"></i> Lọc giá trị này
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Desktop Table View: Bảng đầy đủ trên máy tính -->
+                <div class="hidden md:block overflow-x-auto">
+                  <table class="w-full min-w-[620px] border-collapse text-left text-sm">
+                    <caption class="sr-only">Bảng xếp hạng {{ dimensions.find(item => item.value === selectedDrill)?.label }}</caption>
+                    <thead>
+                      <tr class="border-b border-[#dbe7dc] text-xs uppercase tracking-wide text-[#667768]">
+                        <th class="px-3 py-3" scope="col">Hạng</th>
+                        <th class="px-3 py-3" scope="col">Giá trị</th>
+                        <th class="px-3 py-3 text-right" scope="col">Lượt xem</th>
+                        <th class="px-3 py-3 text-right" scope="col">Tổng khách/ngày</th>
+                        <th class="px-3 py-3" scope="col">Chi tiết</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="(item, index) in drill.items" :key="item.value" class="border-b border-[#edf3ed] hover:bg-[#f7faf7]">
+                        <td class="px-3 py-3 font-bold text-[#527a56]">{{ index + 1 }}</td>
+                        <th class="max-w-[380px] break-all px-3 py-3 font-semibold text-[#233c26]" scope="row">{{ item.value === 'other' ? 'Khác (đã gộp)' : item.value }}</th>
+                        <td class="px-3 py-3 text-right tabular-nums">{{ formatNumber(item.pageViews) }}</td>
+                        <td class="px-3 py-3 text-right tabular-nums">{{ formatNumber(item.summedDailyUniqueVisitors) }}</td>
+                        <td class="px-3 py-3">
+                          <button type="button" class="rounded-md px-3 py-2 font-bold text-[#2c6e33] underline decoration-dotted underline-offset-4 focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="selectValue(item.value)">Lọc giá trị</button>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
             </section>
           </template>
         </template>

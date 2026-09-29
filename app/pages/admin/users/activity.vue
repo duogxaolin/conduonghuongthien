@@ -264,8 +264,45 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
       <p class="m-0 font-semibold text-[#667768]">Không có bản ghi nào khớp điều kiện lọc.</p>
     </div>
 
-    <div v-else class="overflow-hidden rounded-xl border border-[#e2ece3] bg-white">
-      <div class="overflow-x-auto">
+    <div v-else class="overflow-hidden rounded-xl border border-[#e2ece3] bg-white shadow-xs">
+      <!-- Mobile Card View: Thẻ hoạt động dễ đọc trên điện thoại -->
+      <div class="md:hidden divide-y divide-[#eef2ee]">
+        <div
+          v-for="item in items"
+          :key="'m-'+item.id"
+          class="p-3.5 flex flex-col gap-2"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-1.5 min-w-0">
+              <i class="fa-solid fa-user-clock text-[#2c6e33] text-xs" aria-hidden="true"></i>
+              <span class="font-bold text-[#122815] text-[0.88rem] truncate">
+                {{ item.username || (item.userId ? `#${item.userId}` : 'Hệ thống') }}
+              </span>
+              <span v-if="item.userId && !item.username" class="rounded border border-[#c8d6c9] px-1 py-0.2 text-[0.65rem] text-[#667768]">đã xoá</span>
+            </div>
+            <span class="text-[0.72rem] text-[#667768] shrink-0">{{ formatWhen(item.createdAt) }}</span>
+          </div>
+
+          <div class="flex flex-wrap items-center justify-between gap-2">
+            <div class="text-[0.82rem] text-[#3d4a3e]">
+              <span class="font-semibold text-[#1e4620]">{{ actionLabel(item) }}</span>
+              <span v-if="item.resourceId" class="text-[#667768] text-xs"> #{{ item.resourceId }}</span>
+            </div>
+            <span v-if="item.mfaMethod" class="inline-flex items-center gap-1 rounded-full border border-[#cce5cd] bg-[#eef7ee] px-2 py-0.5 text-[0.7rem] font-bold text-[#1e4620]">
+              <i class="fa-solid fa-shield-halved text-[0.65rem]" aria-hidden="true"></i>
+              {{ MFA_METHOD_LABELS[item.mfaMethod] ?? item.mfaMethod }}
+            </span>
+          </div>
+
+          <div class="flex items-center justify-between text-[0.72rem] text-[#8a9a8c] pt-1.5 border-t border-[#f4f7f4]">
+            <code class="font-mono bg-[#f4f7f4] px-1.5 py-0.5 rounded text-[#445546]">{{ item.ip || '—' }}</code>
+            <span class="truncate max-w-[180px]">{{ shortAgent(item.userAgent) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Desktop Table View: Bảng đầy đủ trên máy tính -->
+      <div class="hidden md:block overflow-x-auto">
         <table class="w-full min-w-[860px] border-collapse text-left text-[0.84rem]">
           <caption class="sr-only">Lịch sử truy cập và hoạt động của mọi tài khoản, mới nhất trước</caption>
           <thead class="bg-[#f4f7f4] text-xs uppercase tracking-wide text-[#667768]">

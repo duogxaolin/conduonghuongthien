@@ -40,7 +40,8 @@ const pages: Page[] = [
   {
     file: 'chatbot/knowledge/index.vue',
     endpoints: ['/api/admin/chatbot/knowledge/bulk-delete', '/api/admin/chatbot/knowledge/bulk-status', '/api/admin/chatbot/knowledge/bulk-quick-question'],
-    rowCheckboxSites: 1,
+    // Desktop table + mobile cards.
+    rowCheckboxSites: 2,
   },
   {
     file: 'content/categories/index.vue',
@@ -51,12 +52,14 @@ const pages: Page[] = [
   {
     file: 'content/content-types.vue',
     endpoints: ['/api/admin/content-types/bulk-delete'],
-    rowCheckboxSites: 1,
+    // Desktop table + mobile cards.
+    rowCheckboxSites: 2,
   },
   {
     file: 'content/pages/index.vue',
     endpoints: ['/api/admin/pages/bulk-delete'],
-    rowCheckboxSites: 1,
+    // Desktop table + mobile cards.
+    rowCheckboxSites: 2,
   },
   {
     file: 'users/index.vue',

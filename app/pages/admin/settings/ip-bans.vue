@@ -163,7 +163,38 @@ onMounted(load)
         Chưa chặn địa chỉ nào.
       </p>
 
-      <div v-else class="overflow-x-auto rounded-xl border border-[#e2ece3] bg-white">
+      <!-- Mobile Card View: Tối ưu dạng thẻ cho điện thoại -->
+      <div class="md:hidden divide-y divide-[#eef3ee] rounded-xl border border-[#e2ece3] bg-white overflow-hidden shadow-xs">
+        <div
+          v-for="ban in bans"
+          :key="'m-'+ban.id"
+          class="p-4 flex flex-col gap-2.5"
+        >
+          <div class="flex items-center justify-between gap-2">
+            <code class="font-mono font-bold text-[#122815] bg-[#f4f7f4] px-2 py-1 rounded text-sm">{{ ban.value }}</code>
+            <button
+              type="button"
+              :disabled="busy"
+              class="inline-flex items-center gap-1 text-xs font-bold text-[#b0403c] bg-[#fff4f3] hover:bg-[#fde2e0] px-3 py-1.5 rounded-lg border-0 cursor-pointer disabled:opacity-60 transition-colors"
+              @click="liftBan(ban)"
+            >
+              <i class="fa-solid fa-lock-open text-[0.65rem]"></i> Bỏ chặn
+            </button>
+          </div>
+
+          <p class="m-0 text-xs text-[#3d4f3f]">
+            <span class="font-semibold text-[#667768]">Lý do:</span> {{ ban.reason || '—' }}
+          </p>
+
+          <div class="flex items-center justify-between text-[0.75rem] text-[#8a9a8c] pt-2 border-t border-[#f4f7f4]">
+            <span><i class="fa-regular fa-user mr-1"></i>{{ ban.createdByName || 'Tài khoản đã xoá' }}</span>
+            <span>{{ formatMoment(ban.createdAt) }}</span>
+          </div>
+        </div>
+      </div>
+
+      <!-- Desktop Table View: Bảng đầy đủ trên máy tính -->
+      <div class="hidden md:block overflow-x-auto rounded-xl border border-[#e2ece3] bg-white">
         <table class="w-full min-w-[640px] border-collapse text-sm">
           <thead>
             <tr class="bg-[#f8faf8] text-left text-[0.78rem] uppercase tracking-wide text-[#667768]">
@@ -184,7 +215,7 @@ onMounted(load)
                 <button
                   type="button"
                   :disabled="busy"
-                  class="font-semibold text-[#b0403c] hover:underline disabled:opacity-60"
+                  class="font-semibold text-[#b0403c] hover:underline disabled:opacity-60 cursor-pointer border-0 bg-transparent"
                   @click="liftBan(ban)"
                 >Bỏ chặn</button>
               </td>

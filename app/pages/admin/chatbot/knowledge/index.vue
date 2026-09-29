@@ -138,7 +138,166 @@ watch([topic, status, quick], () => load(1)); onMounted(() => load())
       <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
     </AdminBulkActionBar>
     <div v-if="error" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ error }} Vui lòng <button type="button" class="font-bold underline text-[#4A6741]" @click="load(1)">thử lại</button>.</div><SkeletonTable v-if="loading" label="Đang tải kho kiến thức" :rows="6" :cols="7" /><div v-else-if="!items.length" class="rounded-xl border border-[#e2ece3] bg-white p-12 text-center"><i class="fa-solid fa-book-open mb-3 text-3xl text-[#c8d6c9]" aria-hidden="true"></i><p class="m-0 font-semibold text-[#667768]">{{ search || topic || status || quick ? 'Không có kết quả phù hợp.' : 'Chưa có mục kiến thức nào.' }}</p></div>
-    <div v-else class="overflow-hidden rounded-xl border border-[#e2ece3] bg-white"><div class="overflow-x-auto"><table class="w-full min-w-[820px] border-collapse text-left text-sm"><caption class="sr-only">Danh sách kho kiến thức chatbot</caption><thead class="bg-[#f4f7f4] text-xs uppercase tracking-wide text-[#667768]"><tr><th class="w-10 px-4 py-3"><input type="checkbox" class="h-4 w-4 accent-[#2c6e33]" :checked="selection.allSelected(visibleIds)" :indeterminate="selection.someSelected(visibleIds)" aria-label="Chọn tất cả mục trên trang" @change="selection.toggleAll(visibleIds)" /></th><th class="px-4 py-3">Câu hỏi</th><th class="px-4 py-3">Chủ đề</th><th class="px-4 py-3">Trạng thái</th><th class="px-4 py-3">Câu hỏi nhanh</th><th class="px-4 py-3">Cập nhật</th><th class="px-4 py-3">Thao tác</th></tr></thead><tbody><tr v-for="item in items" :key="item.id" class="border-t border-[#eef2ee] align-top" :class="selection.isSelected(Number(item.id)) ? 'bg-[#f0f7f1]' : ''"><td class="px-4 py-3"><input type="checkbox" class="h-4 w-4 accent-[#2c6e33]" :checked="selection.isSelected(Number(item.id))" :aria-label="`Chọn mục: ${item.canonicalQuestion}`" @change="selection.toggle(Number(item.id))" /></td><td class="max-w-[360px] px-4 py-3 font-semibold text-[#2c3e2e]">{{ item.canonicalQuestion }}</td><td class="px-4 py-3 text-[#667768]">{{ item.topic }}</td><td class="px-4 py-3"><span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-bold" :class="statusTone[item.status]"><span aria-hidden="true">{{ item.status === 'published' ? '●' : item.status === 'draft' ? '◐' : '○' }}</span>{{ statusLabel[item.status] || item.status }}</span></td><td class="px-4 py-3"><label class="inline-flex items-center gap-2 text-xs font-semibold text-[#2c3e2e]"><input type="checkbox" class="h-4 w-4 accent-[#2c6e33]" :checked="item.isQuickQuestion === true" :aria-label="`Bật/tắt câu hỏi nhanh: ${item.canonicalQuestion}`" @change="toggleQuickQuestion(item)" />{{ item.isQuickQuestion ? 'Đang hiển thị' : 'Chưa hiển thị' }}</label></td><td class="whitespace-nowrap px-4 py-3 text-[#667768]">{{ item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('vi-VN') : '—' }}</td><td class="px-4 py-3"><div class="flex flex-wrap gap-3"><nuxt-link :to="`/admin/chatbot/knowledge/${item.id}`" class="font-bold text-[#2c6e33]">Sửa</nuxt-link><button v-if="item.status === 'draft'" type="button" class="font-bold text-[#2c6e33]" @click="transition(item, 'publish')">Xuất bản</button><button v-if="item.status === 'published'" type="button" class="font-bold text-[#765b00]" @click="transition(item, 'archive')">Lưu trữ</button><button type="button" class="font-bold text-[#d12420]" @click="remove(item)">Xóa</button></div></td></tr></tbody></table></div><nav v-if="pagination.totalPages > 1" class="border-t border-[#eef2ee] p-4"><AdminPagination :page="page" :total-pages="pagination.totalPages" :total="pagination.total" item-label="mục" @update:page="load" /></nav></div>
+    <div v-else class="overflow-hidden rounded-xl border border-[#e2ece3] bg-white shadow-xs">
+      <!-- Mobile Card View: Tối ưu hiển thị dạng thẻ trên điện thoại -->
+      <div class="md:hidden divide-y divide-[#eef2ee]">
+        <div
+          v-for="item in items"
+          :key="'m-'+item.id"
+          class="p-4 flex flex-col gap-2.5 transition-colors"
+          :class="selection.isSelected(Number(item.id)) ? 'bg-[#f0f7f1]' : ''"
+        >
+          <div class="flex items-start gap-2.5">
+            <input
+              type="checkbox"
+              class="mt-1 h-4 w-4 shrink-0 accent-[#2c6e33]"
+              :checked="selection.isSelected(Number(item.id))"
+              :aria-label="`Chọn mục: ${item.canonicalQuestion}`"
+              @change="selection.toggle(Number(item.id))"
+            />
+            <div class="min-w-0 flex-1">
+              <p class="m-0 font-bold text-[#122815] text-[0.92rem] leading-snug">{{ item.canonicalQuestion }}</p>
+              <div class="flex flex-wrap items-center gap-2 mt-2">
+                <span class="inline-flex items-center gap-1 rounded-md bg-[#f4f7f4] px-2 py-0.5 text-xs text-[#445546]">
+                  <i class="fa-solid fa-tag text-[0.65rem] text-[#667768]" aria-hidden="true"></i>
+                  {{ item.topic }}
+                </span>
+                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-0.5 text-[0.7rem] font-bold" :class="statusTone[item.status]">
+                  <span aria-hidden="true">{{ item.status === 'published' ? '●' : item.status === 'draft' ? '◐' : '○' }}</span>
+                  {{ statusLabel[item.status] || item.status }}
+                </span>
+              </div>
+            </div>
+          </div>
+
+          <div class="flex items-center justify-between text-xs text-[#667768] pt-2 border-t border-[#f4f7f4]">
+            <label class="inline-flex items-center gap-1.5 font-semibold text-[#2c3e2e] cursor-pointer">
+              <input
+                type="checkbox"
+                class="h-3.5 w-3.5 accent-[#2c6e33]"
+                :checked="item.isQuickQuestion === true"
+                :aria-label="`Bật/tắt câu hỏi nhanh: ${item.canonicalQuestion}`"
+                @change="toggleQuickQuestion(item)"
+              />
+              <span>{{ item.isQuickQuestion ? 'Câu hỏi nhanh' : 'Bình thường' }}</span>
+            </label>
+            <span class="text-[0.72rem] text-[#8a9a8c]">
+              {{ item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('vi-VN') : '—' }}
+            </span>
+          </div>
+
+          <!-- Thao tác nhanh -->
+          <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#f4f7f4]">
+            <nuxt-link
+              :to="`/admin/chatbot/knowledge/${item.id}`"
+              class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-[#f0f7f1] hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg no-underline"
+            >
+              <i class="fa-solid fa-pen text-[0.65rem]" aria-hidden="true"></i> Sửa
+            </nuxt-link>
+            <button
+              v-if="item.status === 'draft'"
+              type="button"
+              class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-[#f0f7f1] hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg cursor-pointer border-0"
+              @click="transition(item, 'publish')"
+            >
+              <i class="fa-solid fa-check text-[0.65rem]" aria-hidden="true"></i> Xuất bản
+            </button>
+            <button
+              v-if="item.status === 'published'"
+              type="button"
+              class="inline-flex items-center gap-1 text-xs font-bold text-[#765b00] bg-[#fffaf0] hover:bg-[#fef3d6] px-2.5 py-1.5 rounded-lg cursor-pointer border-0"
+              @click="transition(item, 'archive')"
+            >
+              <i class="fa-solid fa-box-archive text-[0.65rem]" aria-hidden="true"></i> Lưu trữ
+            </button>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1 text-xs font-bold text-[#d12420] bg-[#fff4f3] hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg cursor-pointer border-0"
+              @click="remove(item)"
+            >
+              <i class="fa-solid fa-trash text-[0.65rem]" aria-hidden="true"></i> Xóa
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Desktop Table View: Bảng đầy đủ trên máy tính -->
+      <div class="hidden md:block overflow-x-auto">
+        <table class="w-full min-w-[820px] border-collapse text-left text-sm">
+          <caption class="sr-only">Danh sách kho kiến thức chatbot</caption>
+          <thead class="bg-[#f4f7f4] text-xs uppercase tracking-wide text-[#667768]">
+            <tr>
+              <th class="w-10 px-4 py-3">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-[#2c6e33]"
+                  :checked="selection.allSelected(visibleIds)"
+                  :indeterminate="selection.someSelected(visibleIds)"
+                  aria-label="Chọn tất cả mục trên trang"
+                  @change="selection.toggleAll(visibleIds)"
+                />
+              </th>
+              <th class="px-4 py-3">Câu hỏi</th>
+              <th class="px-4 py-3">Chủ đề</th>
+              <th class="px-4 py-3">Trạng thái</th>
+              <th class="px-4 py-3">Câu hỏi nhanh</th>
+              <th class="px-4 py-3">Cập nhật</th>
+              <th class="px-4 py-3">Thao tác</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr
+              v-for="item in items"
+              :key="item.id"
+              class="border-t border-[#eef2ee] align-top"
+              :class="selection.isSelected(Number(item.id)) ? 'bg-[#f0f7f1]' : ''"
+            >
+              <td class="px-4 py-3">
+                <input
+                  type="checkbox"
+                  class="h-4 w-4 accent-[#2c6e33]"
+                  :checked="selection.isSelected(Number(item.id))"
+                  :aria-label="`Chọn mục: ${item.canonicalQuestion}`"
+                  @change="selection.toggle(Number(item.id))"
+                />
+              </td>
+              <td class="max-w-[360px] px-4 py-3 font-semibold text-[#2c3e2e]">{{ item.canonicalQuestion }}</td>
+              <td class="px-4 py-3 text-[#667768]">{{ item.topic }}</td>
+              <td class="px-4 py-3">
+                <span class="inline-flex items-center gap-1 rounded-full border px-2 py-1 text-xs font-bold" :class="statusTone[item.status]">
+                  <span aria-hidden="true">{{ item.status === 'published' ? '●' : item.status === 'draft' ? '◐' : '○' }}</span>
+                  {{ statusLabel[item.status] || item.status }}
+                </span>
+              </td>
+              <td class="px-4 py-3">
+                <label class="inline-flex items-center gap-2 text-xs font-semibold text-[#2c3e2e]">
+                  <input
+                    type="checkbox"
+                    class="h-4 w-4 accent-[#2c6e33]"
+                    :checked="item.isQuickQuestion === true"
+                    :aria-label="`Bật/tắt câu hỏi nhanh: ${item.canonicalQuestion}`"
+                    @change="toggleQuickQuestion(item)"
+                  />
+                  {{ item.isQuickQuestion ? 'Đang hiển thị' : 'Chưa hiển thị' }}
+                </label>
+              </td>
+              <td class="whitespace-nowrap px-4 py-3 text-[#667768]">{{ item.updatedAt ? new Date(item.updatedAt).toLocaleDateString('vi-VN') : '—' }}</td>
+              <td class="px-4 py-3">
+                <div class="flex flex-wrap gap-3">
+                  <nuxt-link :to="`/admin/chatbot/knowledge/${item.id}`" class="font-bold text-[#2c6e33]">Sửa</nuxt-link>
+                  <button v-if="item.status === 'draft'" type="button" class="font-bold text-[#2c6e33]" @click="transition(item, 'publish')">Xuất bản</button>
+                  <button v-if="item.status === 'published'" type="button" class="font-bold text-[#765b00]" @click="transition(item, 'archive')">Lưu trữ</button>
+                  <button type="button" class="font-bold text-[#d12420]" @click="remove(item)">Xóa</button>
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+      <nav v-if="pagination.totalPages > 1" class="border-t border-[#eef2ee] p-4">
+        <AdminPagination :page="page" :total-pages="pagination.totalPages" :total="pagination.total" item-label="mục" @update:page="load" />
+      </nav>
+    </div>
 
     <!-- Import Excel modal -->
     <div v-if="showImport" class="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 p-4" @click.self="closeImport">
