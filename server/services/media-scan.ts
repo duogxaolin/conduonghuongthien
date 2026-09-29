@@ -30,6 +30,8 @@ import {
   type DetectedImageMime,
 } from '../utils/image-mime'
 import { logInfo, logWarn } from '../utils/logger'
+import { uploadR2File, type R2Config } from '../utils/media-r2'
+import { loadR2Config } from './media'
 
 const LOCK_NAME = 'cdkt:media:scan'
 
@@ -92,8 +94,14 @@ export function forceResetScanJob(): { ok: boolean; message: string } {
 /**
  * Khởi tạo job scan nền. Trả `{ jobId }` ngay — worker chạy tiếp trong nền.
  * Nếu đã có job đang chạy → throw.
+ *
+ * `autoRepointToR2`: upload R2 ngay khi nhập hàng `media` (provider='r2'), giữ
+ * file local làm fallback. Mặc định false (giữ hành vi cũ: chỉ nhập local).
  */
-export async function startScanJob(adminUserId: number | null): Promise<{ jobId: string }> {
+export async function startScanJob(
+  adminUserId: number | null,
+  opts?: { autoRepointToR2?: boolean },
+): Promise<{ jobId: string }> {
   if (currentScanJob?.running) {
     throw new Error('Một lượt quét khác đang chạy. Thử lại sau.')
   }
@@ -101,6 +109,15 @@ export async function startScanJob(adminUserId: number | null): Promise<{ jobId:
   const uploadsRoot = path.resolve(process.cwd(), 'public', 'uploads')
   // Walk trước để đếm total (đồng bộ — walk chỉ stat, nhanh).
   const candidates = await walkUploadDir(uploadsRoot)
+
+  // Load R2 config trước nếu autoRepoint — fail nhanh nếu cấu hình thiếu.
+  let r2Config: R2Config | null = null
+  if (opts?.autoRepointToR2) {
+    r2Config = await loadR2Config()
+    if (!r2Config.accountId || !r2Config.accessKeyId || !r2Config.secretAccessKey || !r2Config.bucket) {
+      throw new Error('Cấu hình Cloudflare R2 chưa đầy đủ để tự đẩy lên R2.')
+    }
+  }
 
   const jobId = `scan_${Date.now()}`
   currentScanJob = {
@@ -119,7 +136,7 @@ export async function startScanJob(adminUserId: number | null): Promise<{ jobId:
     truncated: false,
   }
 
-  void runScanWorker(candidates, uploadsRoot, adminUserId)
+  void runScanWorker(candidates, uploadsRoot, adminUserId, r2Config)
   return { jobId }
 }
 
@@ -127,6 +144,7 @@ async function runScanWorker(
   candidates: string[],
   uploadsRoot: string,
   adminUserId: number | null,
+  r2Config: R2Config | null = null,
 ): Promise<void> {
   const db = getDb()
   const pool = getPool()
@@ -197,7 +215,10 @@ async function runScanWorker(
           continue
         }
         try {
-          const ok = await importOne(db, fileAbs, uploadsRoot, adminUserId)
+          const ok = await importOne(db, fileAbs, uploadsRoot, adminUserId, {
+            autoRepointToR2: r2Config != null,
+            r2Config: r2Config ?? undefined,
+          })
           if (currentScanJob) {
             if (ok) currentScanJob.imported += 1
             else currentScanJob.skipped += 1
@@ -289,6 +310,7 @@ async function importOne(
   absolutePath: string,
   uploadsRoot: string,
   adminUserId: number | null,
+  opts?: { autoRepointToR2?: boolean; r2Config?: R2Config },
 ): Promise<boolean> {
   let stat: Stats
   try { stat = await fs.lstat(absolutePath) } catch { return false }
@@ -314,7 +336,38 @@ async function importOne(
 
     const filename = path.basename(absolutePath)
     const rel = path.relative(uploadsRoot, absolutePath).replace(/\\/g, '/')
-    const url = `/uploads/${rel}`
+    const localUrl = `/uploads/${rel}`
+
+    // Nếu autoRepointToR2 và có R2 config: upload R2, set provider='r2', URL=R2 URL.
+    // Giữ file local (KHÔNG xoá) để làm fallback khi R2 fail — khác hẳn `syncOneToR2`
+    // xoá local sau upload. Scan chỉ nhập mồ côi: local là chân lý gốc, R2 là cache.
+    // Nếu R2 upload fail → vẫn INSERT provider='local', không sập batch.
+    let provider: 'local' | 'r2' = 'local'
+    let url = localUrl
+    let storagePath: string = absolutePath
+    const r2Config = opts?.autoRepointToR2 ? opts?.r2Config : null
+    if (r2Config) {
+      try {
+        const buffer = await fs.readFile(absolutePath)
+        const { url: r2Url, storagePath: r2Key } = await uploadR2File(
+          buffer,
+          filename,
+          detected,
+          r2Config,
+        )
+        provider = 'r2'
+        url = r2Url
+        storagePath = r2Key
+      } catch (err) {
+        // R2 fail — lùi về local, vẫn nhập hàng. Log warn, không ném.
+        logWarn({
+          event: 'media.scan_r2_upload_failed',
+          filename,
+          path: absolutePath,
+          error: err instanceof Error ? err.message : String(err),
+        })
+      }
+    }
 
     await db.transaction(async (tx) => {
       const [insertRes] = await tx.insert(media).values({
@@ -322,9 +375,9 @@ async function importOne(
         originalName: filename,
         mimeType: detected,
         sizeBytes: stat.size,
-        provider: 'local',
+        provider,
         url,
-        storagePath: absolutePath,
+        storagePath,
         width,
         height,
         uploadedBy: adminUserId,
@@ -337,7 +390,7 @@ async function importOne(
         action: 'create',
         resource: 'media',
         resourceId: createdId,
-        meta: { originalName: filename, url, provider: 'local', scanned: true },
+        meta: { originalName: filename, url, provider, scanned: true, autoR2: provider === 'r2' },
       })
     })
     return true

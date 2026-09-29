@@ -164,6 +164,9 @@ jobs:
           - suite: media-queue
             file: tests/media-queue-integration.test.ts
             switch: MEDIA_QUEUE_INTEGRATION
+          - suite: media-self-heal
+            file: tests/media-self-heal-integration.test.ts
+            switch: MEDIA_SELF_HEAL_INTEGRATION
           - suite: upload-concurrency
             file: tests/upload-concurrency-integration.test.ts
             switch: MEDIA_UPLOAD_INTEGRATION

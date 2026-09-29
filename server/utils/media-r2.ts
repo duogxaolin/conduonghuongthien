@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
+import { S3Client, PutObjectCommand, DeleteObjectCommand, GetObjectCommand, HeadObjectCommand, ListObjectsV2Command } from '@aws-sdk/client-s3'
 
 export interface R2Config {
   accountId: string
@@ -55,6 +55,35 @@ export async function deleteR2File(key: string, config: R2Config): Promise<boole
     }))
     return true
   } catch {
+    return false
+  }
+}
+
+/**
+ * Kiểm tra object R2 có tồn tại không — dùng `HeadObjectCommand`. Trả `true/false`
+ * thay vì throw. Bắt 404 (NoSuchKey / NotFound) → false, các lỗi khác → false +
+ * log (không throw để caller không phải wrap try/catch).
+ *
+ * Self-heal và sync `to-r2` gọi trước khi xoá file local: nếu R2 không có object
+ * mà vẫn xoá local → mất ảnh vĩnh viễn. Hàm này là chốt chặn đó.
+ */
+export async function headR2Object(key: string, config: R2Config): Promise<boolean> {
+  try {
+    const client = createR2Client(config)
+    await client.send(new HeadObjectCommand({
+      Bucket: config.bucket,
+      Key: key,
+    }))
+    return true
+  } catch (err: unknown) {
+    // 404 / NoSuchKey → object không tồn tại → false (không log, flow bình thường).
+    // Lỗi khác (network, auth, 5xx) → false + log để admin biết R2 có vấn đề.
+    const msg = err instanceof Error ? err.message : String(err)
+    const httpStatus = (err as { $metadata?: { httpStatusCode?: number } })?.$metadata?.httpStatusCode
+    if (httpStatus === 404 || msg.includes('NoSuchKey') || msg.includes('NotFound')) {
+      return false
+    }
+    console.warn('[media-r2] headR2Object error:', msg)
     return false
   }
 }

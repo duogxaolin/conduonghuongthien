@@ -40,7 +40,7 @@ import { eq, sql } from 'drizzle-orm'
 import { getDb, getPool } from '../utils/db'
 import { media, activityLogs, articles } from '../db/schema'
 import { uploadLocalFile, deleteLocalFile } from '../utils/media-local'
-import { uploadR2File, deleteR2File, getR2Object, type R2Config } from '../utils/media-r2'
+import { uploadR2File, deleteR2File, getR2Object, headR2Object, type R2Config } from '../utils/media-r2'
 import { loadR2Config } from './media'
 import { withNamedLock } from '../utils/named-lock'
 import { affectedRowsOrZero } from '../utils/affected-rows'
@@ -313,14 +313,18 @@ async function runSyncWorker(
       await new Promise((r) => setTimeout(r, BATCH_SLEEP_MS))
     }
 
-    // ── Phase 3: Rewrite articles.content (SAU sync commit) ────────────────
+    // ── Phase 3: Rewrite articles.content + articles.thumbnail_url (SAU sync commit) ─
     if (rewrites.length > 0 && !currentJob?.cancelling) {
       if (currentJob) {
         currentJob.phase = 'rewrite'
         currentJob.message = `Đang thay URL trong ${rewrites.length} bài viết`
       }
       const rewritten = await rewriteArticleImageUrls(db, rewrites, adminUserId)
-      if (currentJob) currentJob.articlesRewritten = rewritten
+      // Gap fixed: thumbnail_url cũng phải repoint (trước đây chỉ content).
+      // Cùng rewrites → cách JOIN không khớp vì thumbnail_url là 1 URL duy nhất
+      // không phải text rich. Dùng UPDATE WHERE thumbnail_url = oldUrl OR LIKE.
+      const thumbRewritten = await repointArticleThumbnails(db, rewrites, adminUserId)
+      if (currentJob) currentJob.articlesRewritten = rewritten + thumbRewritten
     }
 
     // ── Done ─────────────────────────────────────────────────────────────────
@@ -407,6 +411,59 @@ async function rewriteArticleImageUrls(
 }
 
 /**
+ * Repoint `articles.thumbnail_url` từ URL sang URL mới. Khác `content` (rich-text
+ * có thể chứa nhiều URL), `thumbnail_url` chỉ chứa 1 URL duy nhất — không cần
+ * REGEXP_REPLACE/REPLACE; UPDATE WHERE match chính xác hoặc LIKE (cho cả absolute
+ * lẫn relative). Trả số bài đã sửa.
+ *
+ * Trước đây sync chỉ repoint `content`, bỏ sót `thumbnail_url` → 1132 bài có
+ * thumbnail vẫn trỏ `/uploads/migrated/...` sau khi media đã chuyển sang R2:
+ * ảnh không tải được ở prod. Hàm này đóng gap đó.
+ */
+async function repointArticleThumbnails(
+  db: ReturnType<typeof getDb>,
+  rewrites: UrlRewrite[],
+  adminUserId: number | null,
+): Promise<number> {
+  let totalRewritten = 0
+  for (const { oldUrl, newUrl } of rewrites) {
+    if (!oldUrl || !newUrl || oldUrl === newUrl) continue
+    try {
+      // Match cả exact và absolute-prefix. oldUrl dạng /uploads/... (relative);
+      // article có thể chứa http://host/uploads/... (absolute) — nếu chỉ UPDATE
+      // WHERE thumbnail_url = oldUrl thì bỏ sót dạng absolute.
+      const oldUrlLike = `%${oldUrl}%`
+      const [res] = await db.execute(
+        sql`UPDATE articles SET thumbnail_url = ${newUrl} WHERE thumbnail_url = ${oldUrl} OR thumbnail_url LIKE ${oldUrlLike}`,
+      )
+      const affected = affectedRowsOrZero(res)
+      if (affected > 0) {
+        totalRewritten += affected
+        try {
+          await db.insert(activityLogs).values({
+            userId: adminUserId,
+            action: 'update',
+            resource: 'articles',
+            resourceId: null,
+            meta: { syncRepointThumbnail: true, oldUrl, newUrl, articlesAffected: affected },
+          })
+        } catch {
+          // Audit hỏng không làm hỏng lượt repoint.
+        }
+      }
+    } catch (err) {
+      logWarn({
+        event: 'media.sync_repoint_thumbnail_failed',
+        oldUrl,
+        newUrl,
+        error: err instanceof Error ? err.message : String(err),
+      })
+    }
+  }
+  return totalRewritten
+}
+
+/**
  * Sync một hàng `media` từ local lên R2. Trả `{ newUrl, newStoragePath, rewrite }`
  * hoặc ném lỗi (caller bắt + bỏ qua).
  */
@@ -447,7 +504,23 @@ async function syncOneToR2(
   })
 
   // Xoá file local SAU khi SQL commit — rollback không lấy lại file đã xoá.
-  await deleteLocalFile(oldStoragePath)
+  // NHƯNG trước khi xoá, verify object R2 đã thực sự tồn tại (HeadObject). Nếu
+  // upload im lặng fail (R2 trả 200 nhưng object không thực sự write, hoặc race
+  // với ai đó xoá) thì KHÔNG xoá local — giữ file làm fallback, log warn. Self-heal
+  // lần sau sẽ upload lại. Trước đây xoá local vô điều kiện → URL R2 + file local
+  // gone = mất ảnh vĩnh viễn.
+  const r2Exists = await headR2Object(r2Key, r2Config)
+  if (r2Exists) {
+    await deleteLocalFile(oldStoragePath)
+  } else {
+    logWarn({
+      event: 'media.sync_to_r2_local_kept',
+      mediaId: item.id,
+      filename: item.filename,
+      r2Key,
+      reason: 'R2 HeadObject 404 sau upload — giữ file local làm fallback',
+    })
+  }
 
   return { rewrite: { oldUrl, newUrl: r2Url } }
 }

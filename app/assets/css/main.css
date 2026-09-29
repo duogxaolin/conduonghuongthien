@@ -46,23 +46,32 @@
 @layer components {
 .container {
   width: 100%;
-  max-width: 1240px;
+  /* --container-max do useLayoutConfig set theo settings.layout_config.
+   * Fallback 1240px khớp default khi chưa hydrate hoặc admin chưa cấu hình. */
+  max-width: var(--container-max, 1240px);
   margin: 0 auto;
-  padding: 0 24px;
+  padding: 0 16px;
 }
 
-/* Màn hình lớn (Desktop 1536px+): mở rộng lên 1400px chống lọt thỏm */
+@media (min-width: 640px) {
+  .container {
+    padding: 0 24px;
+  }
+}
+
+/* Màn hình lớn (Desktop 1536px+): mở rộng lên 1400px chống lọt thỏm.
+ * Chỉ áp dụng khi --container-max chưa bị override (dùng default). */
 @media (min-width: 1536px) {
   .container {
-    max-width: 1400px;
+    max-width: var(--container-max, 1400px);
     padding: 0 28px;
   }
 }
 
-/* Màn hình siêu lớn (1920px+ / 2K / 4K / UltraWide): trần tối đa 1536px */
+/* Màn hình siêu lớn (1920px+ / 2K / 4K / UltraWide): trần tối đa 1536px. */
 @media (min-width: 1920px) {
   .container {
-    max-width: 1536px;
+    max-width: var(--container-max, 1536px);
     padding: 0 32px;
   }
 }

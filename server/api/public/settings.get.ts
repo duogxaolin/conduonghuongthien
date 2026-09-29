@@ -10,7 +10,8 @@ export default defineEventHandler(async () => {
     const allowedKeys = [
       'site_name', 'site_description', 'hotline', 'email',
       'address', 'facebook_url', 'logo_url', 'main_logo_url', 'hero_banner_url', 'favicon_url',
-      'nav_menu', 'nav_menu_navbar', 'nav_menu_mobile'
+      'nav_menu', 'nav_menu_navbar', 'nav_menu_mobile',
+      'layout_config'
     ]
 
     for (const s of allSettings) {

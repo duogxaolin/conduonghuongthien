@@ -1,5 +1,28 @@
 <script setup lang="ts">
 import { errorMessage } from '~/utils/errorMessage'
+import { useLayoutConfig, parseLayoutSetting } from '~/composables/useLayoutConfig'
+
+// Container width áp cho mọi trang admin — admin chỉnh ở /admin/settings/social-links
+// (bố cục site). Default 1240 khớp với chuẩn cũ, fallback an toàn.
+// Admin.vue không share useAsyncData('public-settings-nav') với default.vue
+// (khác layout, khác cây component) nên tự fetch key `layout_config` một lần.
+// Dùng `--container-max` CSS var (cùng cơ chế với default.vue) thay vì max-width
+// trực tiếp — nhất quán khi sau này admin dùng class `.container`.
+const { containerPx, setConfig } = useLayoutConfig()
+const containerStyleVar = computed(() => ({ '--container-max': `${containerPx.value}px` }))
+
+type PublicSettingsResponse = { settings?: Record<string, string | null> }
+await useAsyncData<PublicSettingsResponse | null>(
+  'admin-layout-config',
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  { default: () => null },
+).then(({ data }) => {
+  if (data.value?.settings?.layout_config) {
+    try {
+      setConfig(parseLayoutSetting(data.value.settings.layout_config))
+    } catch { /* fallback default */ }
+  }
+})
 
 const { user, logout, hasPermission } = useAdminAuth()
 const route = useRoute()
@@ -34,6 +57,51 @@ const toggleSidebar = () => { isSidebarCollapsed.value = !isSidebarCollapsed.val
 const toggleMobileMenu = () => { isMobileMenuOpen.value = !isMobileMenuOpen.value }
 
 watch(() => route.fullPath, () => { isMobileMenuOpen.value = false })
+
+const ADMIN_PAGE_TITLES: Record<string, string> = {
+  admin: 'Dashboard',
+  'admin-analytics': 'Thống kê truy cập',
+  'admin-content-articles': 'Bài viết & Tin tức',
+  'admin-content-articles-new': 'Viết bài mới',
+  'admin-content-articles-id': 'Chỉnh sửa bài viết',
+  'admin-content-pages': 'Quản lý Trang',
+  'admin-content-categories': 'Danh mục bài viết',
+  'admin-content-content-types': 'Thể loại nội dung',
+  'admin-content-navigation-navbar': 'Menu chính',
+  'admin-content-navigation-mobile': 'Thanh nổi Mobile',
+  'admin-media': 'Thư viện Media',
+  'admin-media-portal': 'Thư viện Video',
+  'admin-media-portal-categories': 'Danh mục Video',
+  'admin-livestream': 'Quản lý Livestream',
+  'admin-chatbot-knowledge': 'Kho nội dung Chatbot',
+  'admin-chatbot-sessions': 'Phiên trò chuyện Chatbot',
+  'admin-chatbot-settings': 'Cài đặt Chatbot',
+  'admin-readers': 'Quản lý Người đọc',
+  'admin-comments': 'Kiểm duyệt Bình luận',
+  'admin-submissions': 'Đơn đăng ký hỗ trợ',
+  'admin-users': 'Tài khoản & Phân quyền',
+  'admin-users-roles': 'Quản lý Vai trò',
+  'admin-users-activity': 'Nhật ký hoạt động',
+  'admin-settings-general': 'Cài đặt chung',
+  'admin-settings-social-links': 'Mạng xã hội & Bố cục',
+  'admin-settings-data-retention': 'Lưu trữ dữ liệu',
+  'admin-settings-backup': 'Sao lưu & Phục hồi',
+  'admin-profile': 'Tài khoản của tôi',
+  'admin-ai': 'Kiểm duyệt an ninh AI',
+}
+
+const currentAdminPageTitle = computed(() => {
+  const name = String(route.name || '')
+  return ADMIN_PAGE_TITLES[name] || name.replace(/^admin-?/, '').replace(/-/g, ' ') || 'Admin'
+})
+
+watch(isMobileMenuOpen, (isMenuOpen) => {
+  if (typeof document !== 'undefined') {
+    document.body.style.overflow = isMenuOpen ? 'hidden' : ''
+    document.documentElement.style.overflow = isMenuOpen ? 'hidden' : ''
+    document.body.style.touchAction = isMenuOpen ? 'none' : ''
+  }
+})
 
 // Accordion cho sidebar: nhóm "Hệ thống & Cài đặt" mở rộng mặc định để hiện
 // hết ~13 mục con (Tài khoản, Người dùng & Phân quyền, Cài đặt...), không thu gọn
@@ -269,9 +337,9 @@ const filteredMenuGroups = computed(() => {
         v-if="isMobileMenuOpen"
         class="fixed inset-0 bg-black/50 z-40 lg:hidden"
         @click="isMobileMenuOpen = false"
+        @touchmove.prevent
       />
     </Transition>
-
     <!-- Sidebar -->
     <aside
       class="sidebar fixed top-0 bottom-0 left-0 z-50 flex flex-col bg-[#0d1f11] text-[#e2ede3] border-r border-white/[0.08] shadow-[4px_0_24px_rgba(0,0,0,0.25)] overflow-hidden select-none"
@@ -377,7 +445,7 @@ const filteredMenuGroups = computed(() => {
       </div>
 
       <!-- Nav Items -->
-      <nav class="flex-1 overflow-y-auto px-2.5 py-2 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.15)_transparent]">
+      <nav class="flex-1 overflow-y-auto overscroll-contain px-2.5 py-2 [scrollbar-width:thin] [scrollbar-color:rgba(255,255,255,0.15)_transparent]">
         <!-- Search Empty State -->
         <div v-if="isSearching && filteredMenuGroups.length === 0" class="py-8 px-3 text-center flex flex-col items-center gap-2 text-white/50">
           <i class="fa-solid fa-magnifying-glass text-xl text-white/20"></i>
@@ -539,7 +607,7 @@ const filteredMenuGroups = computed(() => {
     </aside>
 
     <!-- Main Content Area -->
-    <div class="main-content flex flex-col min-h-screen" :class="{ 'sidebar-collapsed': isSidebarCollapsed }">
+    <div class="main-content flex flex-col min-h-screen min-w-0 max-w-full overflow-x-hidden" :class="{ 'sidebar-collapsed': isSidebarCollapsed }">
       <!-- Topbar -->
       <header class="h-16 bg-white border-b border-[#e2ece3] flex items-center justify-between px-4 md:px-6 sticky top-0 z-30">
         <div class="flex items-center gap-3">
@@ -552,22 +620,41 @@ const filteredMenuGroups = computed(() => {
           <div class="flex items-center gap-2 text-[0.88rem] text-[#667768]">
             <span class="hidden sm:inline">Con Đường Hướng Thiện</span>
             <span class="hidden sm:inline">/</span>
-            <span class="text-[#122815] font-bold">{{ route.name || 'Admin' }}</span>
+            <span class="text-[#122815] font-bold">{{ currentAdminPageTitle }}</span>
           </div>
         </div>
         <!-- Topbar right: clear-cache button + user chip with dropdown (desktop) -->
         <div class="flex items-center gap-2">
           <!-- Nút xoá cache SWR: sửa nội dung xong là khách thấy ngay, không chờ 60s -->
           <button
-            class="flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-[#f0f7f1] hover:bg-[#e1f0e2] transition-colors cursor-pointer border-0 text-[#2c6e33]"
+            class="flex items-center gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-md bg-[#f0f7f1] hover:bg-[#e1f0e2] transition-colors cursor-pointer border-0 text-[#2c6e33]"
             :disabled="isClearingCache"
             :class="{ 'opacity-60 cursor-wait': isClearingCache }"
             :title="isClearingCache ? 'Đang xoá cache…' : 'Xoá cache trang công khai — nội dung vừa sửa hiện ngay, không chờ 60 giây'"
             @click="clearPublicCache"
           >
-            <i class="fa-solid" :class="isClearingCache ? 'fa-spinner fa-spin' : 'fa-broom'"></i>
+            <i class="fa-solid text-xs sm:text-sm" :class="isClearingCache ? 'fa-spinner fa-spin' : 'fa-broom'"></i>
             <span class="hidden md:inline text-[0.82rem] font-semibold">{{ isClearingCache ? 'Đang xoá…' : 'Xoá cache' }}</span>
           </button>
+
+          <!-- Mobile user shortcut: avatar profile + logout button -->
+          <div v-if="user" class="flex sm:hidden items-center gap-1.5">
+            <nuxt-link
+              to="/admin/profile"
+              class="w-8 h-8 rounded-full bg-[#2c6e33] text-white text-xs font-bold flex items-center justify-center no-underline"
+              :title="`${user.username} - Tài khoản`"
+            >
+              {{ user.username.charAt(0).toUpperCase() }}
+            </nuxt-link>
+            <button
+              type="button"
+              class="w-8 h-8 rounded-lg flex items-center justify-center text-red-500 hover:text-red-700 bg-red-50 hover:bg-red-100 border border-red-100 transition-all cursor-pointer p-0"
+              @click="logout"
+              title="Đăng xuất"
+            >
+              <i class="fa-solid fa-right-from-bracket text-xs"></i>
+            </button>
+          </div>
           <div v-if="user" class="relative group hidden sm:flex">
             <button class="flex items-center gap-2 px-3 py-1.5 rounded-md bg-[#f0f7f1] hover:bg-[#e1f0e2] transition-colors cursor-pointer border-0">
               <div class="w-8 h-8 rounded-full bg-[#2c6e33] text-white text-sm font-bold flex items-center justify-center shrink-0">
@@ -621,8 +708,8 @@ const filteredMenuGroups = computed(() => {
       </header>
 
       <!-- Page Content -->
-      <main class="p-4 md:p-6 flex-1">
-        <div class="mx-auto w-full max-w-[1920px]">
+      <main class="p-4 md:p-6 flex-1 min-w-0 max-w-full">
+        <div class="mx-auto w-full min-w-0 max-w-full" :style="containerStyleVar">
           <slot />
         </div>
       </main>

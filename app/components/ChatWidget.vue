@@ -276,10 +276,10 @@
     </div>
 
     <!-- Toggle button + teaser bubble -->
-    <div v-if="showLauncher" class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[10001] flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
+    <div v-if="showLauncher" class="fixed right-4 bottom-[88px] md:right-6 md:bottom-6 z-[10001] hidden md:flex flex-col items-end gap-2 transition-all" :class="{ 'opacity-0 pointer-events-none scale-90': isChatbotOpen }">
       <div
         v-if="chatTeaserVisible && !isChatbotOpen"
-        class="relative max-w-[220px] bg-white text-[#1f2937] text-[0.8rem] leading-snug px-3.5 py-2.5 rounded-[16px_16px_4px_16px] shadow-[0_4px_20px_rgba(0,0,0,0.12)] border border-black/5 animate-fade-slide-up motion-reduce:animate-none cursor-pointer"
+        class="hidden xl:block relative max-w-[220px] bg-white text-[#1f2937] text-[0.8rem] leading-snug px-3.5 py-2.5 rounded-[16px_16px_4px_16px] shadow-[0_4px_20px_rgba(0,0,0,0.12)] border border-black/5 animate-fade-slide-up motion-reduce:animate-none cursor-pointer"
         @click="toggleChatbot"
       >
         <p class="m-0">{{ chatTeaserText }}</p>
@@ -412,16 +412,24 @@ const startTeaserCycle = () => {
  * spot rather than somewhere the visitor chose to be.
  */
 const scrollChatBottom = async (force = false) => {
+  await nextTick()
   const el = chatContainer.value
   if (!el) return
-  const wasAtBottom = force || el.scrollHeight - el.scrollTop - el.clientHeight < 48
-  await nextTick()
-  if (wasAtBottom && chatContainer.value) {
-    chatContainer.value.scrollTop = chatContainer.value.scrollHeight
+  const wasAtBottom = force || el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  if (wasAtBottom) {
+    el.scrollTop = el.scrollHeight
   }
 }
 /** Playback passes this as `onTick`, which would otherwise forward its own args. */
 const followChatBottom = () => { void scrollChatBottom() }
+
+// Tự động cuộn xuống dưới khi có tin nhắn mới hoặc bot bắt đầu suy nghĩ/trả lời
+watch(() => activeConversation.value?.messages.length, () => {
+  void scrollChatBottom(true)
+})
+watch(isSubmitting, (submitting) => {
+  if (submitting) void scrollChatBottom(true)
+})
 
 const openChatbot = async () => {
   isChatbotOpen.value = true
@@ -504,12 +512,14 @@ const sendBotMessage = () => {
   // round-trip; the server checks again because a client-side check protects
   // nothing on its own.
   if (honeypot.value.trim() !== '') return
+  void scrollChatBottom(true)
   submitBotQuestion(botInput.value, followChatBottom).then(() => nextTick(() => botInputRef.value?.focus()))
 }
 
 const askBot = (question: string) => {
   if (isSubmitting.value) return
   botInput.value = question
+  void scrollChatBottom(true)
   submitBotQuestion(question, followChatBottom)
 }
 

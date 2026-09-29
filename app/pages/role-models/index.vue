@@ -261,7 +261,7 @@
             </div>
 
             <!-- Responsive 3-Column Magazine Grid -->
-            <div v-if="rest.length" class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
+            <div v-if="rest.length" :class="articleGridClass">
               <article
                 v-for="item in rest"
                 :key="item.id"
@@ -499,8 +499,10 @@ import { ref, computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
+import { useLayoutConfig } from '~/composables/useLayoutConfig'
 
 const { t } = useI18n()
+const { articleGridClass } = useLayoutConfig()
 
 useSeoMeta({
   title: () => `${t('rm_title')} | Con Đường Hướng Thiện`,

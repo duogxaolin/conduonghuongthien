@@ -63,11 +63,11 @@
           <span aria-hidden="true">•</span>
           <span><i class="fa-regular fa-eye" aria-hidden="true"></i> {{ formattedViews }} lượt xem</span>
         </span>
-        <h1 class="text-[2.2rem] font-extrabold leading-[1.3] text-[#1E251C] mb-5">{{ article.title }}</h1>
+        <h1 class="text-[1.35rem] sm:text-[1.75rem] lg:text-[2.2rem] font-extrabold leading-[1.3] text-[#1E251C] mb-4 sm:mb-5">{{ article.title }}</h1>
 
         <div
           v-if="article.excerpt"
-          class="text-[1.12rem] font-semibold text-[#4A5545] leading-[1.6] border-l-4 border-[#7CB342] pl-5 mb-8"
+          class="text-[0.95rem] sm:text-[1.12rem] font-semibold text-[#4A5545] leading-[1.6] border-l-4 border-[#7CB342] pl-4 sm:pl-5 mb-6 sm:mb-8"
         >
           <p>{{ article.excerpt }}</p>
         </div>

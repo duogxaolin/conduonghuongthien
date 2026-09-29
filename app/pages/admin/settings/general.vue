@@ -150,6 +150,60 @@ const resetFavicon = async () => {
 }
 
 onMounted(() => { fetchSettings() })
+
+// ── Cấu hình bố cục site (settings.layout_config) ───────────────────
+// Riêng biệt với settings chung: lưu bằng PUT /api/admin/settings/layout,
+// audit trong transaction với activityLogs. useState('layout-config') chia sẻ
+// với default.vue / admin.vue nên thay đổi áp dụng ngay cho trang công khai sau
+// khi SWR hết hạn.
+import type { LayoutConfig } from '~/composables/useLayoutConfig'
+
+const layoutLoading = ref(true)
+const layoutBusy = ref(false)
+// Bản nháp tách khỏi state chung — chỉ ghi vào useState khi save thành công,
+// tránh vuốt tay làm grid trang công khai đổi trong khi admin chưa bấm Lưu.
+const draft = ref<LayoutConfig>({ ...DEFAULT_LAYOUT_CONFIG })
+
+const PRESET_OPTIONS = [
+  { value: 'compact',  label: 'Hẹp (1152px)' },
+  { value: 'standard', label: 'Chuẩn (1240px)' },
+  { value: 'wide',     label: 'Rộng (1440px)' },
+  { value: 'custom',   label: 'Tự nhập' },
+] as const
+const GRID_COLS_OPTIONS = [2, 3, 4] as const
+
+async function loadLayout() {
+  layoutLoading.value = true
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: LayoutConfig }>)('/api/admin/settings/layout')
+    if (res?.ok && res.config) draft.value = { ...res.config }
+  } catch {
+    // layout chưa cấu hình → giữ default
+  } finally {
+    layoutLoading.value = false
+  }
+}
+
+async function saveLayout() {
+  layoutBusy.value = true
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; config: LayoutConfig }>)('/api/admin/settings/layout', {
+      method: 'PUT', body: { ...draft.value },
+    })
+    if (res?.ok && res.config) {
+      setConfig(res.config)
+      toast.success('Đã lưu cấu hình bố cục.')
+    }
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lưu cấu hình thất bại.'))
+  } finally {
+    layoutBusy.value = false
+  }
+}
+
+const { setConfig } = useLayoutConfig()
+
+onMounted(() => { loadLayout() })
 </script>
 
 <template>
@@ -371,6 +425,85 @@ onMounted(() => { fetchSettings() })
           </div>
         </div>
       </div>
+
+      <!-- Bố cục site: container width + grid bài viết -->
+      <section class="bg-white rounded-xl border border-[#e2ece3] p-6 md:col-span-2 flex flex-col gap-4">
+        <div class="flex items-center justify-between gap-2 flex-wrap">
+          <div>
+            <h3 class="text-[1.05rem] font-bold text-[#122815] m-0">Bố cục site</h3>
+            <p class="m-0 text-xs text-[#667768] mt-1">Độ rộng khung nội dung trang công khai và cách xếp bài viết.</p>
+          </div>
+          <button
+            type="button"
+            class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-xs font-bold hover:bg-[#245328] disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+            :disabled="layoutBusy || layoutLoading"
+            @click="saveLayout"
+          >
+            {{ layoutBusy ? 'Đang lưu…' : 'Lưu bố cục' }}
+          </button>
+        </div>
+
+        <div v-if="layoutLoading" class="text-xs text-[#667768] py-2">Đang tải cấu hình…</div>
+        <div v-else class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          <!-- Container width -->
+          <div class="flex flex-col gap-1.5">
+            <span class="text-[0.82rem] font-bold text-[#2c3e2e]">Độ rộng khung nội dung</span>
+            <select
+              v-model="draft.containerWidth"
+              class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 bg-white"
+            >
+              <option v-for="o in PRESET_OPTIONS" :key="o.value" :value="o.value">{{ o.label }}</option>
+            </select>
+            <label v-if="draft.containerWidth === 'custom'" class="flex flex-col gap-1">
+              <span class="text-xs font-semibold text-[#667768]">Số px (320–1920)</span>
+              <input
+                v-model.number="draft.containerCustom"
+                type="number" min="320" max="1920" step="10"
+                class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+              />
+            </label>
+          </div>
+
+          <!-- Kiểu hiển thị bài viết -->
+          <div class="flex flex-col gap-1.5">
+            <span class="text-[0.82rem] font-bold text-[#2c3e2e]">Hiển thị bài viết</span>
+            <div class="flex gap-1.5">
+              <button
+                type="button"
+                class="flex-1 px-3 py-2.5 rounded-lg border text-xs font-semibold transition-colors"
+                :class="draft.articleGrid === 'grid' ? 'border-[#2c6e33] bg-[#f0f7f1] text-[#245328]' : 'border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f4f7f4]'"
+                @click="draft.articleGrid = 'grid'"
+              >
+                <i class="fa-solid fa-grip mr-1.5" aria-hidden="true"></i>Lưới
+              </button>
+              <button
+                type="button"
+                class="flex-1 px-3 py-2.5 rounded-lg border text-xs font-semibold transition-colors"
+                :class="draft.articleGrid === 'list' ? 'border-[#2c6e33] bg-[#f0f7f1] text-[#245328]' : 'border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f4f7f4]'"
+                @click="draft.articleGrid = 'list'"
+              >
+                <i class="fa-solid fa-list mr-1.5" aria-hidden="true"></i>Danh sách
+              </button>
+            </div>
+          </div>
+
+          <!-- Số cột lưới -->
+          <div class="flex flex-col gap-1.5">
+            <span class="text-[0.82rem] font-bold text-[#2c3e2e]" :class="{ 'opacity-50': draft.articleGrid === 'list' }">Số cột lưới</span>
+            <div class="flex gap-1.5" :class="{ 'pointer-events-none opacity-50': draft.articleGrid === 'list' }">
+              <button
+                v-for="n in GRID_COLS_OPTIONS"
+                :key="n"
+                type="button"
+                class="flex-1 px-3 py-2.5 rounded-lg border text-xs font-bold transition-colors"
+                :class="draft.articleGridCols === n ? 'border-[#2c6e33] bg-[#2c6e33] text-white' : 'border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f4f7f4]'"
+                @click="draft.articleGridCols = n"
+              >{{ n }} cột</button>
+            </div>
+          </div>
+        </div>
+      </section>
+
     </div>
   </div>
 </template>

@@ -23,7 +23,7 @@
           <div v-if="!hasInfo" class="text-center mb-8">
             <h2 class="text-[2rem] md:text-[1.5rem] font-extrabold text-[#1E251C]">{{ (currentLang !== 'vi' ? t('register_help') : '') || d.title || 'Đăng ký nhận trợ giúp' }}</h2>
           </div>
-          <form @submit.prevent="submitForm" class="bg-white p-10 sm:p-6 rounded-lg shadow-md border border-[#E2E8DF]">
+          <form @submit.prevent="submitForm" class="bg-white p-5 sm:p-8 lg:p-10 rounded-lg shadow-md border border-[#E2E8DF]">
             <h3 v-if="hasInfo" class="text-[1.3rem] font-bold text-[#4A6741] mb-6">{{ (currentLang !== 'vi' ? t('register_help') : '') || d.title || 'Đăng ký nhận trợ giúp' }}</h3>
 
             <!-- Dynamic fields -->

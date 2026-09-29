@@ -346,16 +346,24 @@ const sortedConversations = computed(() => [...conversations.value].sort((a, b) 
  * than somewhere the visitor chose to be.
  */
 const scrollChatBottom = async (force = false) => {
+  await nextTick()
   const el = chatContainer.value
   if (!el) return
-  const wasAtBottom = force || el.scrollHeight - el.scrollTop - el.clientHeight < 48
-  await nextTick()
-  if (wasAtBottom && chatContainer.value) {
-    chatContainer.value.scrollTop = chatContainer.value.scrollHeight
+  const wasAtBottom = force || el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  if (wasAtBottom) {
+    el.scrollTop = el.scrollHeight
   }
 }
 /** Playback passes this as `onTick`, which would otherwise forward its own args. */
 const followChatBottom = () => { void scrollChatBottom() }
+
+// Tự động cuộn xuống dưới khi có tin nhắn mới hoặc bot bắt đầu suy nghĩ/trả lời
+watch(() => activeConversation.value?.messages.length, () => {
+  void scrollChatBottom(true)
+})
+watch(isSubmitting, (submitting) => {
+  if (submitting) void scrollChatBottom(true)
+})
 
 const conversationMeta = (conversation: StoredConversation) => {
   const count = conversation.messages.filter(item => item.id !== 'welcome').length
@@ -389,6 +397,7 @@ const resetInputHeight = () => {
 
 const sendBotMessage = () => {
   if (honeypot.value.trim() !== '') return
+  void scrollChatBottom(true)
   submitBotQuestion(botInput.value, followChatBottom).then(() => {
     resetInputHeight()
     nextTick(() => botInputRef.value?.focus())
@@ -398,6 +407,7 @@ const sendBotMessage = () => {
 const askBot = (question: string) => {
   if (isSubmitting.value) return
   botInput.value = question
+  void scrollChatBottom(true)
   submitBotQuestion(question, followChatBottom)
 }
 

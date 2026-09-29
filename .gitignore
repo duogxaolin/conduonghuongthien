@@ -65,3 +65,8 @@ production/migrations/.imported-*
 
 # Runtime uploads — không track ảnh/uploads vào git
 public/uploads/
+cdkt-uploads-missing492-manual.tar.gz
+# Dữ liệu bản sao và clone tạm thời
+CDKT/
+*.sql.gz
+scripts/pack-missing-media.mjs
