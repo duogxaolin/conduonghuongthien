@@ -53,6 +53,16 @@ let currentRestoreStatus: RunStatus = { running: false, phase: '', message: '', 
 export function getBackupStatus(): RunStatus { return { ...currentBackupStatus } }
 export function getRestoreStatus(): RunStatus { return { ...currentRestoreStatus } }
 
+/** Báo running ngay khi endpoint nhận request — trước khi đọc multipart body. */
+export function setRestoreStatusReceiving(): void {
+  currentRestoreStatus = { running: true, phase: 'upload', message: 'Đang nhận file upload...', startedAt: Date.now(), progress: 0 }
+}
+
+/** Đánh dấu failed khi endpoint trả lỗi sớm (sai định dạng, thiếu file). */
+export function setRestoreStatusFailed(message: string): void {
+  currentRestoreStatus = { running: false, phase: 'failed', message, startedAt: Date.now(), progress: undefined }
+}
+
 function timestampStamp(): string {
   return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')
 }

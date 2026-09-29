@@ -39,16 +39,20 @@ const restoreLog = ref<Array<{ phase: string; message: string; at: number; perce
 
 // % hiển thị trên thanh tiến trình:
 //  - upload đang chạy (0-99%) → dùng uploadProgress; 100% → chuyển sang xử lý server
-//  - phase 'save' (ghi file) → 100% upload nhưng server đang ghi → giữ 100, không rụt về 0
+//  - phase 'upload' (server đang nhận body) → dùng uploadProgress (vẫn 0→99)
+//  - phase 'save' (ghi file) → 100% (đã nhận xong, đang ghi)
+//  - phase 'sql'/'start' (chạy SQL) → 100% (giữ, không có sub-progress)
 //  - phase 'extract' → dùng progress từ backend (0→100)
-//  - phase 'sql'/'audit'/'done' → 100%; phase 'failed' → 0 (đỏ)
+//  - phase 'audit'/'done' → 100%; phase 'failed' → 0 (đỏ)
 const currentRestorePercent = computed(() => {
   if (restoreStatus.value?.phase === 'failed') return 0
   if (restoreStatus.value?.phase === 'done' || restoreStatus.value?.phase === 'audit') return 100
   if (uploadProgress.value >= 0 && uploadProgress.value < 100) return uploadProgress.value
   if (restoreStatus.value?.phase === 'save') return 100
+  if (restoreStatus.value?.phase === 'sql') return 100
+  if (restoreStatus.value?.phase === 'start') return 100
+  if (uploadProgress.value === 100 && (!restoreStatus.value?.phase || restoreStatus.value.phase === 'upload')) return uploadProgress.value
   if (restoreStatus.value?.phase === 'extract') return restoreStatus.value?.progress ?? 0
-  if (uploadProgress.value === 100 && (!restoreStatus.value?.phase || restoreStatus.value.phase === 'start')) return 100
   return restoreStatus.value?.progress ?? 0
 })
 
