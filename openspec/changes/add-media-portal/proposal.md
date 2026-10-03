@@ -19,7 +19,7 @@ This change adds a media channel with three parts that depend on each other: a p
 
 **Video upload + transcode (admin)**
 - Chunked, resumable upload up to 10 GB (`MEDIA_UPLOAD_MAX_SIZE`), 10 MB chunks, resume after a dropped connection.
-- FFmpeg pipeline: probe → progressive transcode to the configured renditions → HLS segmentation → thumbnail → local asset tree under `CDKT_MEDIA_WORKDIR`. Each rendition is published as it finishes (`resolutions_ready`), so a video becomes watchable before the last rendition completes. The source plan proposed R2, but this change has not implemented R2 storage.
+- FFmpeg pipeline: probe → progressive transcode to the configured renditions → HLS segmentation → thumbnail → local asset tree under `CDKT_MEDIA_WORKDIR`. Each rendition is published as it finishes (`resolutions_ready`), so a video becomes watchable before the last rendition completes. The source plan proposed R2; **this change implements it** (off by default, admin toggles in `/admin/settings/media-portal`); local remains the fallback when R2 sync fails or is unconfigured.
 - A **reaper** tick (15 min) reclaims items stuck in `processing`, because a transcode that dies mid-flight has no other way back.
 - Runtime disk guard: the pipeline aborts if free space drops below 1 GB rather than filling the volume.
 - Upload is **gated by `MEDIA_UPLOAD_ENABLED`** — a deployment under 4 GB RAM refuses uploads instead of thrashing.
@@ -67,4 +67,4 @@ None — `openspec/specs/` is empty; this is the project's first spec set. Exist
 - SSE is **single-replica only** in this change. The guard is `container_name` plus a boot check — multi-replica needs a pub/sub backplane, which is out of scope.
 - FFmpeg transcode needs **≥4 GB RAM**; below that, uploads stay off.
 - Renditions and HLS are produced by FFmpeg; a deployment without FFmpeg on `PATH` cannot transcode and must not accept uploads.
-- The R2 requirement from the source plan remains an operational acceptance gap. This change must not be archived as production-ready until R2 is implemented or an approved local-storage decision, including backup/restore ownership and a fresh-host restore drill, replaces it.
+- The R2 requirement from the source plan is **implemented** (`server/services/video-r2-sync.ts`); the remaining acceptance item is the fresh-host restore drill (task 18.6), recorded as a procedure in `docs/decisions/media-storage.md`. Local storage remains an approved fallback when R2 is unconfigured or sync fails.

@@ -260,7 +260,7 @@ export async function withNamedLock<T>(pool: Pool, name: string, timeoutSec: num
 3. Transcode lũy tiến (libx264 CRF 23, AAC, `nice -n 19`, 2 thread/bản, 3 bản song song ≤ 6 core). Bản xong → cắt HLS, ghi vào asset root local và thêm `resolutions_ready`.
 4. Cắt HLS `-c copy`, segments 4s. **Atomic master.m3u8 rewrite:** `writeFileSync(dir/master.m3u8.tmp)` + `renameSync`.
 5. Thumbnail 3 frame.
-6. Giữ `original`, `master.m3u8`, rendition/segment và `thumb.jpg` trong asset root local của item. **Yêu cầu upload R2 ở v4 chưa được triển khai.**
+6. Giữ `original`, `master.m3u8`, rendition/segment và `thumb.jpg` trong asset root local của item. **R2 sync đã triển khai** (`server/services/video-r2-sync.ts`), tắt mặc định, bật qua `media_video_storage_provider='r2'` ở `/admin/settings/media-portal`; local là fallback khi R2 chưa cấu hình hoặc sync fail.
 7. Dọn, `processing_status='ready'`, audit (cuối pipeline — sau transcode, trong chunked-upload complete tx, không trong long-running async).
 
 ### G. Ops — Dockerfile + docker-compose + manage.sh cmd_media_tuning (fix major v3) + nginx
