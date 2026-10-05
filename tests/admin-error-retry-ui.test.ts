@@ -71,6 +71,9 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/content/articles/[id].vue', refs: ['errorMsg'], retries: ['fetchArticle'] },
   { file: 'pages/admin/content/categories/index.vue', refs: ['error'], retries: ['fetchCategories'] },
   { file: 'pages/admin/content/content-types.vue', refs: ['error'], retries: ['fetchTypes'] },
+  // Picker trong dialog navbar/mobile — chọn Thể loại để auto-fill URL. Failure
+  // rendered trong `role="alert"` + nút "Thử lại" gọi lại `fetchTypes` (cùng file).
+  { file: 'components/admin/ContentTypePicker.vue', refs: ['error'], retries: ['fetchTypes'] },
   { file: 'pages/admin/content/pages/index.vue', refs: ['loadError'], retries: ['fetchPages'] },
   { file: 'pages/admin/content/pages/[id].vue', refs: ['loadError'], retries: ['fetchPage'] },
   { file: 'pages/admin/content/navigation/navbar.vue', refs: ['error'], retries: ['loadMenu'] },

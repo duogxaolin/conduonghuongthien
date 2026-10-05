@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import type { AdminArticleAuthorRow, AdminArticleBoost, AdminArticleStats, AdminArticleStatsResult, AdminCategoryRow } from '~/types/admin-api'
+import type { AdminArticleAuthorRow, AdminArticleBoost, AdminArticleStats, AdminArticleStatsResult, AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
 import type { AdminArticleRow } from '~/types/admin-api'
 definePageMeta({
   layout: 'admin',
@@ -11,11 +11,21 @@ const articles = ref<AdminArticleRow[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const search = ref('')
+// Static fallback labels for the 5 system types — tương ứng với `typeIcons`/`typeColors`
+// bên dưới. Type custom lấy từ `contentTypes` (fetch từ DB), ghi đè qua `typeNameMap`.
 const typeLabels: Record<string, string> = {
   news: 'Bản tin', role_model: 'Tấm gương', reintegration: 'Mô hình', document: 'Văn bản', faq: 'Giải đáp',
 }
 
-const initialType = typeof route.query.type === 'string' && route.query.type.trim() in typeLabels
+// Content types từ DB — để select Type + table badge hiển thị cả type custom.
+const contentTypes = ref<AdminContentTypeRow[]>([])
+const typeNameMap = computed<Record<string, string>>(() => {
+  const m: Record<string, string> = { ...typeLabels }
+  for (const ct of contentTypes.value) m[ct.slug] = ct.name
+  return m
+})
+
+const initialType = typeof route.query.type === 'string' && route.query.type.trim()
   ? route.query.type.trim()
   : ''
 const selectedType = ref(initialType)
@@ -142,6 +152,14 @@ const fetchAuthors = async () => {
       orphanAuthorCount.value = res.orphanCount
     }
   } catch { /* non-critical */ }
+}
+
+// Fetch content-types để render select Type + badge tên type trong bảng.
+const fetchContentTypes = async () => {
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminContentTypeRow[] }>)('/api/admin/content-types')
+    if (res.ok) contentTypes.value = res.items
+  } catch { /* non-critical, select falls back to 5 system types in typeLabels */ }
 }
 
 // When type filter changes: reload categories, reset category filters
@@ -781,7 +799,7 @@ onMounted(async () => {
   const qCategoryId = route.query.categoryId ? Number(route.query.categoryId) : null
   // Hai lượt này độc lập nhau — danh sách người đăng không phụ thuộc thể loại —
   // nên chạy song song thay vì nối đuôi.
-  await Promise.all([fetchCategories(), fetchAuthors()])
+  await Promise.all([fetchCategories(), fetchAuthors(), fetchContentTypes()])
   if (qCategoryId) {
     // Find the category to set up parent/child properly
     const cat = allCategories.value.find((c) => c.id === qCategoryId)
@@ -978,11 +996,7 @@ onUnmounted(() => {
       />
       <select v-model="selectedType" aria-label="Lọc theo thể loại bài viết" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
         <option value="">Tất cả Thể loại</option>
-        <option value="news">Bản tin & Tin tức</option>
-        <option value="role_model">Tấm gương tiêu biểu</option>
-        <option value="reintegration">Mô hình tái hòa nhập</option>
-        <option value="document">Văn bản pháp luật</option>
-        <option value="faq">Giải đáp pháp luật</option>
+        <option v-for="ct in contentTypes" :key="ct.id" :value="ct.slug">{{ ct.name }}</option>
       </select>
       <!-- Parent category filter -->
       <select
@@ -1131,7 +1145,7 @@ onUnmounted(() => {
             <p class="text-[0.85rem] font-semibold text-[#122815] line-clamp-2 m-0">{{ a.title }}</p>
             <div class="flex flex-wrap items-center gap-2 mt-1.5">
               <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.68rem] font-bold" :class="typeColors[a.type] || 'bg-gray-100 text-gray-600'">
-                <i :class="typeIcons[a.type]" class="text-[0.6rem]"></i>{{ typeLabels[a.type] || a.type }}
+                <i :class="typeIcons[a.type]" class="text-[0.6rem]"></i>{{ typeNameMap[a.type] || a.type }}
               </span>
               <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.68rem] font-bold" :class="a.status === 'published' ? 'bg-[#e4f2e5] text-[#2c6e33]' : a.status === 'draft' ? 'bg-[#fff8e1] text-[#b78103]' : 'bg-[#f5f5f5] text-[#888]'">
                 {{ a.status === 'published' ? 'Đã đăng' : (a.status === 'draft' ? 'Nháp' : 'Lưu trữ') }}
@@ -1233,7 +1247,7 @@ onUnmounted(() => {
                   :class="typeColors[a.type] || 'bg-gray-100 text-gray-600'"
                 >
                   <i :class="typeIcons[a.type] || 'fa-solid fa-file'" class="text-[0.65rem]"></i>
-                  {{ typeLabels[a.type] || a.type }}
+                  {{ typeNameMap[a.type] || a.type }}
                 </span>
               </td>
               <!-- Category with hierarchy -->

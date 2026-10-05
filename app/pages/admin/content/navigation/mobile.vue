@@ -95,6 +95,18 @@ function addItem() {
   }
   menu.value.push({ id: uid(), label: 'Mục mới', icon: 'fa-solid fa-circle', type: 'link', url: '/', featured: false })
 }
+
+// Picker — chọn Thể loại từ DB để auto-fill label + URL. Vẫn cho sửa tay sau.
+const showPicker = ref(false)
+function onPickType(picked: { slug: string; name: string; url: string; icon: string | null }) {
+  if (menu.value.length >= 5) {
+    toast.error('Thanh điều hướng tối đa 5 mục')
+    showPicker.value = false
+    return
+  }
+  menu.value.push({ id: uid(), label: picked.name, icon: picked.icon || 'fa-solid fa-circle', type: 'link', url: picked.url, featured: false })
+  showPicker.value = false
+}
 function removeItem(idx: number) { menu.value.splice(idx, 1) }
 function moveItem(idx: number, dir: -1 | 1) {
   const to = idx + dir
@@ -247,10 +259,16 @@ onMounted(loadMenu)
             </div>
           </div>
 
-          <button v-if="canEdit && menu.length < 5" type="button" class="flex items-center gap-2 rounded-xl border-2 border-dashed border-[#afc8b1] bg-white px-5 py-3.5 text-sm font-bold text-[#2c6e33] hover:border-[#2c6e33] hover:bg-[#f0f7f1] transition focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="addItem">
-            <i class="fa-solid fa-plus" aria-hidden="true"></i>
-            Thêm mục ({{ menu.length }}/5)
-          </button>
+          <div v-if="canEdit && menu.length < 5" class="flex flex-wrap items-center gap-2">
+            <button type="button" class="flex items-center gap-2 rounded-xl border-2 border-dashed border-[#afc8b1] bg-white px-5 py-3.5 text-sm font-bold text-[#2c6e33] hover:border-[#2c6e33] hover:bg-[#f0f7f1] transition focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="addItem">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i>
+              Thêm mục ({{ menu.length }}/5)
+            </button>
+            <button type="button" class="flex items-center gap-2 rounded-xl border-2 border-dashed border-[#7fa8c0] bg-white px-5 py-3.5 text-sm font-bold text-[#2c6e33] hover:border-[#2c6e33] hover:bg-[#f0f7f1] transition focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="showPicker = true">
+              <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
+              Chọn Thể loại
+            </button>
+          </div>
 
           <div class="rounded-lg bg-[#f7fbf7] border border-[#e2ece3] px-3.5 py-2.5 text-[0.72rem] text-[#8ea98f] flex items-start gap-2">
             <i class="fa-solid fa-lightbulb text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
@@ -345,5 +363,8 @@ onMounted(loadMenu)
 
       </div>
     </template>
+
+    <!-- Picker chọn Thể loại để thêm nhanh vào menu -->
+    <ContentTypePicker v-if="showPicker" @pick="onPickType" @close="showPicker = false" />
   </div>
 </template>

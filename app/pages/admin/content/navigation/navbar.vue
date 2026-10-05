@@ -71,6 +71,13 @@ function resetToDefault() {
 function addItem() {
   menu.value.push({ id: uid(), label: 'Mục mới', url: '/', openNewTab: false, children: [] })
 }
+
+// Picker — chọn Thể loại từ DB để auto-fill label + URL. Vẫn cho sửa tay sau.
+const showPicker = ref(false)
+function onPickType(picked: { slug: string; name: string; url: string; icon: string | null }) {
+  menu.value.push({ id: uid(), label: picked.name, url: picked.url, openNewTab: false, children: [] })
+  showPicker.value = false
+}
 function removeItem(idx: number) { menu.value.splice(idx, 1) }
 function swap<T>(arr: T[], a: number, b: number) {
   const left = arr[a]
@@ -244,10 +251,16 @@ onMounted(loadMenu)
             </div>
           </div>
 
-          <button v-if="canEdit" type="button" class="flex items-center gap-2 rounded-xl border-2 border-dashed border-[#afc8b1] bg-white px-5 py-3.5 text-sm font-bold text-[#2c6e33] hover:border-[#2c6e33] hover:bg-[#f0f7f1] transition focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="addItem">
-            <i class="fa-solid fa-plus" aria-hidden="true"></i>
-            Thêm mục menu
-          </button>
+          <div v-if="canEdit" class="flex flex-wrap items-center gap-2">
+            <button type="button" class="flex items-center gap-2 rounded-xl border-2 border-dashed border-[#afc8b1] bg-white px-5 py-3.5 text-sm font-bold text-[#2c6e33] hover:border-[#2c6e33] hover:bg-[#f0f7f1] transition focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="addItem">
+              <i class="fa-solid fa-plus" aria-hidden="true"></i>
+              Thêm mục menu
+            </button>
+            <button type="button" class="flex items-center gap-2 rounded-xl border-2 border-dashed border-[#7fa8c0] bg-white px-5 py-3.5 text-sm font-bold text-[#2c6e33] hover:border-[#2c6e33] hover:bg-[#f0f7f1] transition focus:outline-none focus:ring-2 focus:ring-[#2c6e33]" @click="showPicker = true">
+              <i class="fa-solid fa-sitemap" aria-hidden="true"></i>
+              Chọn Thể loại
+            </button>
+          </div>
         </div>
 
         <!-- ============ RIGHT: live website preview ============ -->
@@ -361,5 +374,8 @@ onMounted(loadMenu)
 
       </div>
     </template>
+
+    <!-- Picker chọn Thể loại để thêm nhanh vào menu -->
+    <ContentTypePicker v-if="showPicker" @pick="onPickType" @close="showPicker = false" />
   </div>
 </template>

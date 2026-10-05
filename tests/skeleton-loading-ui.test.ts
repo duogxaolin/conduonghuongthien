@@ -119,6 +119,9 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'components/admin/SubmissionDetailModal.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/chatbot/sessions/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/chatbot/sessions/[id].vue', marker: 'v-if="loading"' },
+  // Picker trong dialog navbar/mobile — chọn Thể loại. Skeleton vẽ inline
+  // (4 ô xám) trong when fetchTypes đang chạy.
+  { file: 'components/admin/ContentTypePicker.vue', marker: 'v-if="loading"' },
 
   // Dashboards whose panels load independently. Each tile owns its own branch, so
   // one slow query must not blank the other three.

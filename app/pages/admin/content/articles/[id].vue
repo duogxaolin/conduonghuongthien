@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import type { WindowWithTinyMce } from '~/types/tinymce'
-import type { AdminCategoryRow } from '~/types/admin-api'
+import type { AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
 import type { MediaItem } from '~/types/media'
 import TinyMceEditor from '~/components/admin/TinyMceEditor.vue'
 definePageMeta({
@@ -194,6 +194,17 @@ async function translateArticleTo(targetLang: string) {
 }
 // Dynamic categories for the selected article type
 const availableCategories = ref<AdminCategoryRow[]>([])
+
+// Content types from DB — drives the Type <select> so a type created in
+// /admin/content/content-types shows up here too (not just the 5 hardcoded ones).
+const contentTypes = ref<AdminContentTypeRow[]>([])
+
+const fetchContentTypes = async () => {
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminContentTypeRow[] }>)('/api/admin/content-types')
+    if (res.ok) contentTypes.value = res.items
+  } catch { /* keep empty — select falls back to nothing */ }
+}
 
 const fetchCategories = async (type: string) => {
   try {
@@ -530,6 +541,9 @@ onMounted(async () => {
   // the loading placeholder has been replaced by the real editor grid.
   const scriptReady = loadTinyMCEScript()
   await fetchCategories(form.type)
+  // Fetch content-types in parallel — non-blocking, the select just renders
+  // empty until it lands (typical admin pattern, no SSR here).
+  void fetchContentTypes()
   await Promise.all([fetchArticle(), fetchArticleTranslations(), fetchDbLanguages()])
   if (articleTranslations.value.some((t) => t.status === 'translating')) {
     startTranslationPolling()
@@ -1131,11 +1145,9 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
         <div class="flex flex-col gap-1.5">
           <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Thể loại bài viết (*)</label>
           <select v-model="form.type" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border">
-            <option value="news">📰 Bản tin & Tin tức</option>
-            <option value="role_model">🏆 Tấm gương tiêu biểu</option>
-            <option value="reintegration">🏭 Mô hình tái hòa nhập</option>
-            <option value="document">📄 Văn bản pháp luật</option>
-            <option value="faq">❓ Giải đáp pháp luật</option>
+            <option v-for="ct in contentTypes" :key="ct.id" :value="ct.slug">
+              {{ ct.icon ? ct.icon.replace('fa-solid ', '').replace('fa-regular ', '') : '' }} {{ ct.name }}
+            </option>
           </select>
         </div>
 
