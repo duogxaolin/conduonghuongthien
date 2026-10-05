@@ -21,7 +21,8 @@ const html = computed(() => props.block?.data?.html || '')
 .article-body :deep(ul) { list-style: disc; }
 .article-body :deep(ol) { list-style: decimal; }
 .article-body :deep(a) { color: #4A6741; text-decoration: underline; }
-.article-body :deep(img) { max-width: 100%; border-radius: 0.5rem; margin: 1rem 0; }
+.article-body :deep(img),
+.article-body :deep(video) { max-width: 100%; height: auto; border-radius: 0.5rem; margin: 1rem 0; }
 .article-body :deep(blockquote) { border-left: 3px solid #7CB342; padding-left: 1rem; color: #4A5545; font-style: italic; margin: 1rem 0; }
 .article-body :deep(strong) { font-weight: 700; }
 </style>

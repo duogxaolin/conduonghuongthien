@@ -436,7 +436,7 @@ const initTinyMCE = () => {
     win.tinymce?.get(TINYMCE_EDITOR_ID)?.remove()
   win.tinymce.init({
     selector: `#${TINYMCE_EDITOR_ID}`,
-    height: 480,
+    height: 700,
     menubar: true,
     promotion: false,
     branding: false,
@@ -497,6 +497,7 @@ const initTinyMCE = () => {
     content_style: `
       body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; padding: 12px; color: #1a1a1a; }
       img { max-width: 100%; height: auto; border-radius: 8px; }
+      iframe, video { max-width: 100%; height: auto; }
       pre[class*="language-"] { background: #2d2d2d; border-radius: 6px; padding: 1em; overflow-x: auto; }
       code { background: #f4f4f4; padding: 2px 6px; border-radius: 4px; font-family: 'Fira Code', monospace; }
       blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
@@ -878,7 +879,7 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
         </div>
         <div class="flex flex-col gap-2">
           <div class="h-3 w-56 rounded bg-[#dfe9e0] animate-pulse motion-reduce:animate-none"></div>
-          <div class="min-h-[480px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
+          <div class="min-h-[700px] w-full rounded-lg bg-[#edf3ed] animate-pulse motion-reduce:animate-none"></div>
         </div>
       </div>
       <div class="bg-white rounded-xl border border-[#e2ece3] p-6 flex flex-col gap-4 self-start" aria-hidden="true">
@@ -1111,7 +1112,7 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
               <i class="fa-regular fa-images"></i> Chèn Ảnh Từ Thư Viện
             </button>
           </div>
-          <div :id="TINYMCE_EDITOR_ID" class="min-h-[480px]"></div>
+          <div :id="TINYMCE_EDITOR_ID" class="min-h-[700px]"></div>
         </div>
       </div>
 
@@ -1158,8 +1159,8 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
           <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Ảnh đại diện (Thumbnail)</label>
           <div v-if="form.thumbnailUrl" class="relative w-full h-40 rounded-lg overflow-hidden border border-[#e2ece3]">
             <img :src="form.thumbnailUrl" class="w-full h-full object-cover" />
-            <button class="absolute top-2 right-2 bg-black/70 text-white border-0 w-6 h-6 rounded-full cursor-pointer flex items-center justify-center text-xs" @click="form.thumbnailUrl = ''">
-              <i class="fa-solid fa-xmark"></i>
+            <button type="button" aria-label="Xóa ảnh đại diện" class="absolute top-2 right-2 bg-black/70 text-white border-0 w-6 h-6 rounded-full cursor-pointer flex items-center justify-center text-xs" @click="form.thumbnailUrl = ''">
+              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
             </button>
           </div>
           <button
@@ -1454,7 +1455,7 @@ function getTranslationRow(langCode: string): typeof articleTranslations.value[0
       aria-modal="true"
       @click.self="showReTranslateModal = false"
     >
-      <div class="w-full max-w-lg rounded-2xl border border-[#c8d6c9] bg-white p-6 shadow-2xl flex flex-col gap-4 animate-fadeIn">
+      <div class="w-full max-w-lg rounded-2xl border border-[#c8d6c9] bg-white p-6 shadow-2xl flex flex-col gap-4 animate-fade-slide-up">
         <!-- Header -->
         <div class="flex items-start gap-3 border-b border-[#eef2ee] pb-4">
           <div class="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-xl shrink-0">

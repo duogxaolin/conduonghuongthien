@@ -644,6 +644,19 @@ watch(article, value => {
 .article-body :deep(blockquote) { background-color: #F8FAF7; border-left: 4px solid #4A6741; padding: 20px 24px; margin: 30px 0; font-style: italic; font-size: 1.1rem; color: #385130; }
 .article-body :deep(blockquote span) { display: block; font-size: 0.85rem; color: #7A8675; margin-top: 8px; font-weight: 700; font-style: normal; }
 
+/* Ảnh và video chèn trong nội dung bài viết — không tràn vùng đọc. Admin editor
+   cho phép chèn ảnh/video kích thước nguyên bản; nếu không có max-width chúng
+   sẽ tràn mép container (1240px) trên desktop. `max-width: 100%` ép co về khít
+   vùng chữ, `height: auto` giữ tỷ lệ khung. Đây là phần render công khai (không
+   phải admin editor — editor giữ full section để thao tác). */
+.article-body :deep(img),
+.article-body :deep(video) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 1.5rem 0;
+}
+
 /* iframe YouTube nhúng trong bài viết — responsive 16:9. `src` đã được sanitizer
    rewrite sang youtube-nocookie.com và chỉ cho phép YouTube embed, nên an toàn
    cho `v-html`. `max-width: 100%` + `aspect-ratio` giữ video không tràn khung

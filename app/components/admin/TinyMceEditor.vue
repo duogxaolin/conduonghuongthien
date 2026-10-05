@@ -12,7 +12,7 @@ const props = withDefaults(defineProps<{
   modelValue: string
   height?: number
   placeholder?: string
-}>(), { modelValue: '', height: 320, placeholder: '' })
+}>(), { modelValue: '', height: 480, placeholder: '' })
 
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
@@ -94,6 +94,7 @@ onMounted(async () => {
     content_style: `
       body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; padding: 12px; color: #1a1a1a; }
       img { max-width: 100%; height: auto; border-radius: 8px; }
+      iframe, video { max-width: 100%; height: auto; }
       blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
       table { border-collapse: collapse; width: 100%; }
       table td, table th { border: 1px solid #ddd; padding: 8px; }
@@ -114,6 +115,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- Editor full container — không giới hạn chiều ngang. Ảnh/video chèn vào
+       bị giới hạn trong content_style (max-width:100%) để preview khớp render
+       công khai, còn editor chiếm trọn vẹn section để thao tác thoải mái. -->
   <div class="overflow-hidden rounded-lg border border-gray-300">
     <textarea :id="editorId"></textarea>
   </div>
