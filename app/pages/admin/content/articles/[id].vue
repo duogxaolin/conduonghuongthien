@@ -511,15 +511,15 @@ const initTinyMCE = () => {
 
 const loadTinyMCEScript = () => new Promise<void>((resolve) => {
   if ((window as WindowWithTinyMce).tinymce) { resolve(); return }
+  // Self-host only — TinyMCE đã có đủ 28 file trong public/assets/tinymce/.
+  // Không fallback ra cdnjs.cloudflare.com: cổng Bộ Công an không nên tải JS
+  // từ bên thứ ba, và file local luôn có (đã commit vào repo).
   const script = document.createElement('script')
-  script.src = 'https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.6/tinymce.min.js'
-  script.referrerPolicy = 'no-referrer'
+  script.src = '/assets/tinymce/tinymce.min.js'
   script.onload = () => resolve()
   script.onerror = () => {
-    const fallback = document.createElement('script')
-    fallback.src = '/assets/tinymce/tinymce.min.js'
-    fallback.onload = () => resolve()
-    document.head.appendChild(fallback)
+    console.error('TinyMCE local assets missing — chạy npm run build lại, hoặc kiểm public/assets/tinymce/')
+    resolve()
   }
   document.head.appendChild(script)
 })
