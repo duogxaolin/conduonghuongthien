@@ -299,3 +299,25 @@ Hợp lại: đơn **lưu thành công**, người dân thấy lời cảm ơn, 
 - **Docker Compose**: Đóng gói môi trường containerized hoàn chỉnh gồm 2 service `cdkt_mysql` (MySQL 8.0) và `cdkt_app` (Nuxt 4 app) chạy trên cổng `3000`.
 
 ---
+
+### 7. Tái cấu trúc & a11y 2026-10 (5 commit未push)
+
+#### Tách file lớn — đóng 3 nợ kỹ thuật audit 2026-09
+- **`server/db/init.ts` 1302 → 73 dòng** (`61fff49`): tách 7 file `schema-tables/*.ts` theo domain (`core`/`content`/`governance`/`chatbot`/`analytics`/`readers-media`/`ai-i18n`). `init.ts` chỉ giữ thứ tự gọi (ràng buộc FK thật), re-export `migrations-additive` cho 4 suite test không đổi import path. `db:drift` đọc 9 tệp như một nguồn DDL — xanh 635 cột/62 bảng (trước 624/61).
+- **`app/layouts/default.vue` 1301 → 382 dòng** (`f125e09`): tách 7 component `app/components/layout/Default*.vue` (TopBar/Header/MobileDrawer/DesktopNav/SearchDropdown/Footer/BottomNav) + 5 composable (`useLayoutNav`/`useSiteSettings`/`useLiveSearch`/`useReaderMenu`/`useMobileMenu`). 10 test guard đọc source text được viết lại cross-file qua `tests/_layout-parts.ts` (ghép 8 file). Khắc phục hydration crash từ việc tách. Đóng caveat "1282 dòng hồi quy".
+- **`any` 20 vết → 0** (`ca4f52e`): 4 kiểu dùng chung `UnknownError`/`CaughtError`/`Nullable<T>`/`HttpEventLike` thay thế. 0 vết trong `.vue` SFC (trước 17). ESLint ignore `CDKT` cho trưởng hợp ngoại lệ có tên.
+
+#### TinyMCE admin editor + render blog công khai (`cb2e9cb`)
+- **Editor full section width** — gỡ `max-w-[794px]` wrapper khỏi `TinyMceEditor.vue` và `[id].vue`. Editor chiếm trọn vẹn section để soạn thoải mái, không bị hẹp tệ. Giới hạn chiều ngang KHÔNG áp admin editor.
+- **Height 700** (main editor `[id].vue`, trước 480) + **480** (component default `TinyMceEditor.vue`, trước 320) — rộng hơn cho bài dài. Skeleton khớp `min-h-[700px]`.
+- **`content_style` thêm `iframe, video { max-width:100% }`** — preview editor khớp render công khai.
+- **Render blog công khai giới hạn ảnh/video**: `ArticleDetail.vue` thêm `.article-body :deep(img), :deep(video) { max-width:100%; height:auto }` — ảnh/video chèn trong bài không tràn vùng đọc 1240px (trước chỉ `iframe` có max-width). `RichTextBlock.vue` thêm `video` vào rule `img` hiện có — đồng bộ Page Builder render path.
+
+#### a11y admin article (`4885c09`)
+- **Filter bar `/admin/content/articles`**: thêm `aria-label` cho 4 select (thể loại, danh mục cha, danh mục con, trạng thái) + search input — trước chỉ 2 select có aria-label, trình đọc màn hình không biết các filter còn lại lọc gì.
+- **Nút "Xóa bộ lọc"**: chỉ hiện khi `hasActiveFilters` (bất kỳ filter ≠ mặc định) — 1 click reset tất cả + `fetchArticles(1)`, thay vì mở từng select đặt lại. Nút hover đỏ phân biệt action reset.
+- **Nút "X" xóa thumbnail** (`[id].vue`): thêm `type="button"` + `aria-label="Xóa ảnh đại diện"` + `aria-hidden="true"` cho icon.
+- **Bug `animate-fadeIn` vô hiệu** (`[id].vue:1458`): class không tồn tại trong `tailwind.config.js` (chỉ có `fade-slide-up`) → modal re-translate không có animation. Đổi sang `animate-fade-slide-up`. Lưu ý: 4 chỗ khác ngoài scope admin article vẫn dùng `animate-fadeIn` dead class (`ArticleComments.vue:69`, `DefaultTopBar.vue:27`, `languages/index.vue:1334+1393`) — chưa sửa.
+
+#### Thống kê sau tái cấu trúc
+- Typecheck sạch, `npm test` 2078 total / 2064 pass / 14 skip (integration cần MySQL), `npm run lint` 0 error / 12 warning (trước 272), `db:drift` xanh 635 cột/62 bảng.
