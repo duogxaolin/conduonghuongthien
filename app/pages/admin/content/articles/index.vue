@@ -98,6 +98,28 @@ const subCategoryOptions = computed(() => {
   return allCategories.value.filter((c) => c.parentId === selectedParentCategoryId.value)
 })
 
+// Bộ lọc đang活跃 — hiển thị nút "Xóa bộ lọc" để reset nhanh thay vì mở từng select.
+const hasActiveFilters = computed(() =>
+  search.value.trim() !== ''
+  || selectedType.value !== ''
+  || selectedStatus.value !== ''
+  || selectedParentCategoryId.value !== null
+  || selectedCategoryId.value !== null
+  || selectedAuthorId.value !== ''
+  || selectedTranslationFilter.value !== '',
+)
+
+const resetFilters = () => {
+  search.value = ''
+  selectedType.value = ''
+  selectedStatus.value = ''
+  selectedParentCategoryId.value = null
+  selectedCategoryId.value = null
+  selectedAuthorId.value = ''
+  selectedTranslationFilter.value = ''
+  fetchArticles(1)
+}
+
 const fetchCategories = async () => {
   try {
     const params: Record<string, string> = {}
@@ -950,10 +972,11 @@ onUnmounted(() => {
         type="text"
         v-model="search"
         placeholder="Tìm theo tiêu đề bài viết..."
+        aria-label="Tìm theo tiêu đề bài viết"
         @keyup.enter="fetchArticles(1)"
         class="flex-1 min-w-[180px] px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
       />
-      <select v-model="selectedType" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
+      <select v-model="selectedType" aria-label="Lọc theo thể loại bài viết" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
         <option value="">Tất cả Thể loại</option>
         <option value="news">Bản tin & Tin tức</option>
         <option value="role_model">Tấm gương tiêu biểu</option>
@@ -964,6 +987,7 @@ onUnmounted(() => {
       <!-- Parent category filter -->
       <select
         v-model="selectedParentCategoryId"
+        aria-label="Lọc theo danh mục cha"
         @change="fetchArticles(1)"
         class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
       >
@@ -974,13 +998,14 @@ onUnmounted(() => {
       <select
         v-if="selectedParentCategoryId && subCategoryOptions.length > 0"
         v-model="selectedCategoryId"
+        aria-label="Lọc theo danh mục con"
         @change="fetchArticles(1)"
         class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
       >
         <option :value="null">Tất cả danh mục con</option>
         <option v-for="sub in subCategoryOptions" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
       </select>
-      <select v-model="selectedStatus" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
+      <select v-model="selectedStatus" aria-label="Lọc theo trạng thái bài viết" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
         <option value="">Tất cả Trạng thái</option>
         <option value="published">Đã Xuất Bản</option>
         <option value="draft">Bản Nháp (Draft)</option>
@@ -1017,10 +1042,21 @@ onUnmounted(() => {
         <option value="missing_lo">Chưa dịch Tiếng Lào (LO)</option>
       </select>
       <button
+        type="button"
+        aria-label="Tìm kiếm bài viết theo bộ lọc"
         class="inline-flex items-center gap-2 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors"
         @click="fetchArticles(1)"
       >
-        <i class="fa-regular fa-magnifying-glass"></i> Tìm kiếm
+        <i class="fa-regular fa-magnifying-glass" aria-hidden="true"></i> Tìm kiếm
+      </button>
+      <button
+        v-if="hasActiveFilters"
+        type="button"
+        aria-label="Xóa toàn bộ bộ lọc"
+        class="inline-flex items-center gap-1.5 bg-white border border-[#c8d6c9] text-[#667768] hover:text-[#d12420] hover:border-[#e2b3b3] font-bold px-3.5 py-2.5 rounded-lg cursor-pointer transition-colors"
+        @click="resetFilters"
+      >
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i> Xóa bộ lọc
       </button>
     </div>
 
