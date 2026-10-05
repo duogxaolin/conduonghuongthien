@@ -5,7 +5,7 @@
 - **OS**: Ubuntu 22.04+ / Debian 12+ / CentOS 9
 - **RAM**: tối thiểu 1 GB (khuyến nghị 2 GB)
 - **Docker**: Docker Engine 24+ & Docker Compose v2+
-- **Node.js**: KHÔNG cần cài — Docker multi-stage build dùng Node 22 bên trong
+- **Node.js**: KHÔNG cần cài — Docker multi-stage build dùng Node 24 LTS bên trong
 
 ---
 

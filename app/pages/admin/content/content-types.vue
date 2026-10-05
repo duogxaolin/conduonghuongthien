@@ -30,7 +30,8 @@ const form = reactive({
   displayOrder: 0,
 })
 
-// Auto-fill slug from name (underscore-separated to match system type keys)
+// Auto-fill slug from name — gạch ngang chuẩn (giống category). System types
+// (isSystem) giữ `_` do seed built-in, nhưng type custom tạo qua UI luôn `-`.
 const slugifyLocal = (text: string): string =>
   text.toString().toLowerCase()
     .normalize('NFD')
@@ -40,10 +41,30 @@ const slugifyLocal = (text: string): string =>
     .trim()
     .replace(/\s+/g, '-')
     .replace(/-+/g, '-')
-    .replace(/-/g, '_')
 
 watch(() => form.name, (val) => {
   if (modalMode.value === 'create') {
+    form.slug = slugifyLocal(val)
+  }
+})
+
+/**
+ * Validate slug real-time: nếu admin nhập tay ký tự không hợp lệ (dấu, space,
+ * ký tự lạ) → slug sau slugify khác input → báo lỗi + auto-clean để admin thấy
+ * slug tự đổi. Nút Lưu disabled khi slugError truthy.
+ */
+const slugError = computed(() => {
+  if (!form.slug) return ''
+  const cleaned = slugifyLocal(form.slug)
+  if (cleaned !== form.slug) {
+    return 'Định danh chỉ chứa chữ thường, số, gạch ngang. Không dấu, không khoảng trắng, không ký tự lạ.'
+  }
+  return ''
+})
+
+// Auto-clean slug khi admin paste/thủ công ký tự sai — slug tự đổi + lỗi biến mất.
+watch(() => form.slug, (val) => {
+  if (val && slugifyLocal(val) !== val) {
     form.slug = slugifyLocal(val)
   }
 })
@@ -260,13 +281,32 @@ onMounted(() => {
             <span class="w-9 h-9 shrink-0 flex items-center justify-center rounded-lg bg-[#1e4620] text-white">
               <i :class="ct.icon || 'fa-solid fa-folder'"></i>
             </span>
-            <div class="flex flex-col min-w-0">
+            <div class="flex flex-col min-w-0 flex-1">
               <span class="font-extrabold text-[#122815] flex items-center gap-2 flex-wrap">
                 {{ ct.name }}
                 <span v-if="ct.isSystem" class="text-[0.68rem] bg-[#eef2ff] text-[#3050b0] px-1.5 py-0.5 rounded font-semibold">Hệ thống</span>
                 <code class="text-[0.72rem] text-[#667768] bg-white/70 px-1.5 py-0.5 rounded font-normal">{{ ct.slug }}</code>
               </span>
               <span class="text-[0.75rem] text-[#667768]">{{ ct.categoryCount }} danh mục · {{ ct.articleCount }} bài viết</span>
+            </div>
+            <div class="flex items-center gap-1.5 shrink-0">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-white hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg border border-[#e2ece3] cursor-pointer transition-colors"
+                @click="openEdit(ct)"
+                :aria-label="`Sửa thể loại ${ct.name}`"
+              >
+                <i class="fa-solid fa-pen text-[0.65rem]"></i> Sửa
+              </button>
+              <button
+                v-if="!ct.isSystem"
+                type="button"
+                class="inline-flex items-center gap-1 text-xs font-bold text-[#d12420] bg-white hover:bg-[#fde2e0] px-2.5 py-1.5 rounded-lg border border-[#e2ece3] cursor-pointer transition-colors"
+                @click="deleteType(ct)"
+                :aria-label="`Xóa thể loại ${ct.name}`"
+              >
+                <i class="fa-regular fa-trash text-[0.65rem]"></i> Xóa
+              </button>
             </div>
           </div>
 
@@ -493,10 +533,16 @@ onMounted(() => {
                 v-model="form.slug"
                 type="text"
                 :disabled="editingIsSystem"
-                placeholder="video_tuyen_truyen"
-                class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 font-mono disabled:bg-[#f4f7f4] disabled:text-[#8a9a8c] disabled:cursor-not-allowed"
+                placeholder="video-tuyen-truyen"
+                class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2c6e33]/15 font-mono disabled:bg-[#f4f7f4] disabled:text-[#8a9a8c] disabled:cursor-not-allowed"
+                :class="slugError ? 'border-[#d12420] focus:border-[#d12420]' : 'border-[#c8d6c9] focus:border-[#2c6e33]'"
+                :aria-invalid="!!slugError"
               />
               <p v-if="editingIsSystem" class="text-[0.73rem] text-[#b06a20] m-0">Thể loại hệ thống — không thể đổi định danh.</p>
+              <p v-else-if="slugError" role="alert" class="text-[0.73rem] text-[#d12420] m-0 font-semibold flex items-center gap-1.5">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                {{ slugError }}
+              </p>
               <p v-else class="text-[0.73rem] text-[#667768] m-0">Tự động điền từ tên. Đây là mã định danh dùng để liên kết danh mục và bài viết.</p>
             </div>
             <!-- Icon -->
@@ -544,7 +590,7 @@ onMounted(() => {
             >Hủy</button>
             <button
               class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-5 py-2 rounded-lg cursor-pointer border-0 transition-colors disabled:opacity-60 disabled:cursor-not-allowed text-sm"
-              :disabled="saving"
+              :disabled="saving || !!slugError"
               @click="handleSave"
             >
               <i class="fa-solid fa-floppy-disk"></i>

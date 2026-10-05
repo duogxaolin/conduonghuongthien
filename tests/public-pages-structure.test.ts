@@ -21,7 +21,6 @@ const appRoot = new URL('../app/', import.meta.url)
 const read = (path: string) => readFileSync(new URL(path, appRoot), 'utf8')
 
 const DETAIL_PAGES = [
-  'pages/news/[id].vue',
   'pages/news/[category]/[slug].vue',
   'pages/role-models/[id].vue',
   'pages/reintegration-models/[id].vue',
@@ -70,6 +69,18 @@ test('the shared detail component keeps loading, error, found and not-found stat
   // A 404 from the API must stay distinguishable from a transport failure,
   // otherwise an unpublished article offers the visitor a pointless retry.
   assert.match(source, /const loadError = computed\(\(\) => !!error\.value\)/)
+})
+
+// `news/[category]/index.vue` là route dishwasher: 1 segment `/news/<X>` phải
+// phân biệt category (list) vs article (detail) trong cùng 1 file — không thể
+// tách `[category]/index.vue` (list) vs `[id].vue` (detail) vì cả hai match
+// cùng 1 dynamic segment. Guard này chặn ai cố tách lại thành 2 file (contest).
+test('news category list + article detail share one dishwasher route', () => {
+  const source = read('pages/news/[category]/index.vue')
+  assert.match(source, /<ContentTypeListSection/, 'list branch lost')
+  assert.match(source, /<ArticleDetail/, 'detail branch lost')
+  assert.match(source, /isCategoryView/, 'dishwasher logic lost')
+  assert.match(source, /:category-slug="categoryParam"/, 'path segment mode lost')
 })
 
 test('the shared detail component resolves the category label by precedence', () => {

@@ -344,8 +344,9 @@ test('mỗi mục bài viết khác là MỘT điểm dừng tab, không phải 
 
 test('chip chủ đề chỉ hiện ở nơi cú bấm thật sự lọc được', () => {
   // Hai điều kiện, phải đúng cả hai:
-  //  1. `/news` là danh sách DUY NHẤT đọc `?cat=` (news/index.vue) — ba danh sách
-  //     còn lại bỏ qua tham số đó và trả về đúng trang chưa lọc.
+  //  1. `/news` là danh sách DUY NHẤT có category filter (path segment
+  //     `/news/<cat>` qua route dishwasher `news/[id].vue`) — ba danh sách hệ
+  //     thống còn lại không có category filter nên chip bấm hụt.
   //  2. `/news` cũng ghim cứng `type: 'news'`, nên chủ đề của một bài `document`
   //     hay `faq` sẽ mở ra một danh sách rỗng.
   const source = code(COMPONENT)
@@ -353,7 +354,7 @@ test('chip chủ đề chỉ hiện ở nơi cú bấm thật sự lọc đượ
   assert.match(source, /article\.value\?\.type === 'news'/)
   assert.match(source, /relatedTopics\.value\.length > 0/)
   assert.match(template(COMPONENT), /v-if="showTopics"/)
-  assert.match(template(COMPONENT), /:to="`\$\{backTo\}\?cat=\$\{topic\.slug\}`"/)
+  assert.match(template(COMPONENT), /:to="`\$\{backTo\}\/\$\{topic\.slug\}`"/)
 })
 
 test('cả khối ẩn đi khi không có gì để hiện', () => {

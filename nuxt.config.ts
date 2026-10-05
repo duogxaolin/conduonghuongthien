@@ -196,6 +196,10 @@ export default defineNuxtConfig({
     // that some visitor state is being served from cache, which is the one thing
     // that must never become true here.
     '/admin/**': { cache: false },
+    // Trang in bài — bản báo giấy, mở từ nút "In bài" của ArticleDetail. Không
+    // cache: nội dung bài có thể vừa được biên tập sửa, và trang in phải phản ánh
+    // bản mới nhất ngay (SWR 60s sẽ phát bản cũ trong cửa sổ đó).
+    '/in-bai/**': { cache: false },
     '/api/**': { cache: false },
     '/api/public/social-links': { swr: 60 },
     // Tài nguyên có vân tay trong tên tệp: đổi nội dung là đổi tên, nên bản cũ

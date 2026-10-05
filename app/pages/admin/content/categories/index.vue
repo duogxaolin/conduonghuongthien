@@ -61,6 +61,26 @@ watch(() => form.name, (val) => {
   }
 })
 
+/**
+ * Validate slug real-time: nếu admin nhập tay ký tự không hợp lệ → slug sau slugify
+ * khác input → báo lỗi + auto-clean. Nút Lưu disabled khi slugError truthy.
+ */
+const slugError = computed(() => {
+  if (!form.slug) return ''
+  const cleaned = slugifyLocal(form.slug)
+  if (cleaned !== form.slug) {
+    return 'Định danh chỉ chứa chữ thường, số, gạch ngang. Không dấu, không khoảng trắng, không ký tự lạ.'
+  }
+  return ''
+})
+
+// Auto-clean slug khi admin paste ký tự sai — slug tự đổi + lỗi biến mất.
+watch(() => form.slug, (val) => {
+  if (val && slugifyLocal(val) !== val) {
+    form.slug = slugifyLocal(val)
+  }
+})
+
 // ─── Computed tree ────────────────────────────────────────────────────────────
 const tree = computed(() => {
   const scoped = typeFilter.value
@@ -478,9 +498,15 @@ onMounted(() => {
                 v-model="form.slug"
                 type="text"
                 placeholder="tin-hoat-dong-c11"
-                class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 font-mono"
+                class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2c6e33]/15 font-mono"
+                :class="slugError ? 'border-[#d12420] focus:border-[#d12420]' : 'border-[#c8d6c9] focus:border-[#2c6e33]'"
+                :aria-invalid="!!slugError"
               />
-              <p class="text-[0.73rem] text-[#667768] m-0">Tự động điền từ tên. Có thể chỉnh lại thủ công.</p>
+              <p v-if="slugError" role="alert" class="text-[0.73rem] text-[#d12420] m-0 font-semibold flex items-center gap-1.5">
+                <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
+                {{ slugError }}
+              </p>
+              <p v-else class="text-[0.73rem] text-[#667768] m-0">Tự động điền từ tên. Có thể chỉnh lại thủ công.</p>
             </div>
             <!-- Loại -->
             <div class="flex flex-col gap-1.5">
@@ -527,7 +553,7 @@ onMounted(() => {
             >Hủy</button>
             <button
               class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-5 py-2 rounded-lg cursor-pointer border-0 transition-colors disabled:opacity-60 disabled:cursor-not-allowed text-sm"
-              :disabled="saving"
+              :disabled="saving || !!slugError"
               @click="handleSave"
             >
               <i class="fa-solid fa-floppy-disk"></i>

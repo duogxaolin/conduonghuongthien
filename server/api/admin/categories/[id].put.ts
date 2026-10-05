@@ -3,6 +3,7 @@ import { categories } from '../../../db/schema'
 import { uniqueCategorySlug } from '../../../utils/slug'
 import { eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { autoTranslateCategoryUpdate } from '../../../services/i18n-auto-translate'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -22,7 +23,7 @@ export default defineEventHandler(async (event) => {
 
   if (body.name !== undefined) updateFields.name = String(body.name).trim()
   if (body.type !== undefined) updateFields.type = String(body.type).trim()
-  if (body.description !== undefined) updateFields.description = String(body.description).trim() || null
+  if (body.description !== undefined) { const d = String(body.description).trim(); updateFields.description = (!d || d.toLowerCase() === 'null') ? null : d }
   if (body.displayOrder !== undefined) updateFields.displayOrder = Number(body.displayOrder)
 
   // Slug: regenerate/validate on name or slug change, excluding the current row from collision check
@@ -60,5 +61,15 @@ export default defineEventHandler(async (event) => {
   }
 
   await db.update(categories).set(updateFields).where(eq(categories.id, id))
-  return { ok: true, slug: updateFields.slug ?? existing.slug }
+
+  // Non-blocking i18n auto-translate update khi name/description đổi.
+  if (updateFields.name !== undefined || updateFields.description !== undefined) {
+    const trSlug = updateFields.slug ?? existing.slug
+    const trName = (updateFields.name ?? existing.name) as string
+    const trDesc = (updateFields.description !== undefined ? updateFields.description : existing.description) as string | null
+    void autoTranslateCategoryUpdate(adminUser, trSlug, trName, trDesc).catch(() => {})
+  }
+
+  const resultSlug = updateFields.slug ?? existing.slug
+  return { ok: true, slug: resultSlug }
 })

@@ -1,8 +1,30 @@
 <template>
   <div class="bg-[#F8FAF7]">
+    <!-- Branch 4 (2-segment /<type>/<X>): dishwasher — category list | article detail -->
+    <template v-if="idParam">
+      <ContentTypeListSection
+        v-if="isCategoryView"
+        :type-slug="slug"
+        :type-name="typeName"
+        :type-icon="metaIcon"
+        :type-description="currentType?.description || ''"
+        :category-slug="idParam"
+      />
+      <ArticleDetail
+        v-else
+        :slug="idParam"
+        :back-to="`/${slug}`"
+        :back-label="typeName"
+        :meta-icon="metaIcon"
+        :type-labels="typeLabels"
+        :seo-fallback-title="seoTitle"
+        :seo-fallback-description="seoDescription"
+      />
+    </template>
+
     <!-- Branch 1: Page Builder page (existing behavior) — render blocks khi có -->
     <PageRenderer
-      v-if="isPageBranch && (pending || loadError || blocks.length)"
+      v-else-if="isPageBranch && (pending || loadError || blocks.length)"
       :blocks="blocks"
       :interactive="isPreview"
       :selected-id="selectedId"
@@ -38,6 +60,11 @@ import { computed, watch } from 'vue'
 
 const route = useRoute()
 const slug = computed(() => String(route.params.slug || ''))
+// 2-segment route `/<type>/<X>`: vì `[slug].vue` là parent route của
+// `[slug]/[id].vue` theo nested-routing Nuxt 4, và parent không có `<NuxtPage />`
+// nên child không bao giờ render. Ta gộp dishwasher 2-segment vào chính
+// `[slug].vue` này — `idParam` tồn tại ⇔ route `/api/public/articles`.
+const idParam = computed(() => (route.params.id ? String(route.params.id) : ''))
 
 const asyncData = useAsyncData(
   () => `page-${slug.value}`,
@@ -71,7 +98,31 @@ const contentTypeMatch = computed(() => {
   return items.find((ct) => ct.slug === slug.value) || null
 })
 
+const currentType = computed(() => contentTypeMatch.value)
+const typeName = computed(() => currentType.value?.name || slug.value)
+const metaIcon = computed(() => currentType.value?.icon || 'fa-solid fa-folder')
+const seoTitle = computed(() => `${typeName.value} | Con Đường Hướng Thiện`)
+const seoDescription = computed(() => currentType.value?.description || 'Con Đường Hướng Thiện - Cục C11 Bộ Công an.')
+const typeLabels = computed(() => ({ [slug.value]: typeName.value }))
+
+// Branch 4: 2-segment `/<type>/<X>` — kiểm `X` trùng category slug trong type.
+interface PublicCategory { id: number; name: string; slug: string; parentId: number | null }
+const catAsync = useAsyncData(
+  () => `cat-check-${slug.value}-${idParam.value}`,
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicCategory[] }>)('/api/public/categories', { query: { type: slug.value } }),
+  { lazy: true, default: () => ({ ok: true, items: [] as PublicCategory[] }), watch: [slug, idParam] },
+)
+const { data: catData, status: catStatus } = catAsync
+
+const isCategoryView = computed(() => {
+  if (!idParam.value) return false
+  if (catStatus.value !== 'success' && catStatus.value !== 'error') return false
+  const items = catData.value?.items || []
+  return items.some((c) => c.slug === idParam.value)
+})
+
 const isPageBranch = computed(() => {
+  if (idParam.value) return false // 2-segment → DishwasherRoute, không PageBuilder
   // Branch 1 thẳng khi page block tồn tại (data.ok + data.page), OR khi đang
   // pending/error ở lượt fetch đầu tiên để PageRenderer tự lo skeleton/error.
   // Khi data đã settle mà không có page → nhường sang Branch 2.
@@ -89,6 +140,8 @@ const { isPreview, previewBlocks, selectedId } = usePagePreview()
 // Nay cũng áp cho content-type miss: page miss + type miss → 404.
 const isMissing = () => {
   if (isPreview.value) return false
+  // 2-segment: ArticleDetail/categoryList tự throw 404 khi không có bài/cat.
+  if (idParam.value) return false
   const pageMiss = !data.value?.ok || !data.value?.page
   if (!pageMiss) return false
   // Page miss → kiểm content-type
@@ -109,12 +162,16 @@ const isMissing = () => {
 // the client bundle never contains this branch and client navigation stays
 // unblocked. Server-rendered HTML and the SEO tags are therefore unchanged.
 //
-// Nay phải awaited CẢ hai asyncData (page + types) để sure 404 trước khi SSR ghi.
+// 2-segment: awaited thêm catAsync để chắc CategoryView trước khi SSR ghi.
 if (import.meta.server) {
   await asyncData
-  // Chỉ fetch content-types nếu page miss (tiết kiệm truy vấn khi page hit).
-  if (!data.value?.ok || !data.value?.page) {
-    await typesAsync
+  if (idParam.value) {
+    await catAsync
+  } else {
+    // Chỉ fetch content-types nếu page miss (tiết kiệm truy vấn khi page hit).
+    if (!data.value?.ok || !data.value?.page) {
+      await typesAsync
+    }
   }
   if (isMissing()) throw createError({ statusCode: 404, statusMessage: 'Không tìm thấy trang.' })
 }
@@ -124,8 +181,10 @@ if (import.meta.server) {
 // navigating between two custom slugs (the fetch re-runs via `watch: [slug]`).
 if (import.meta.client) {
   watch(
-    [status, data, typesStatus, typesData],
+    [status, data, typesStatus, typesData, catStatus, catData],
     () => {
+      // 2-segment → không kết luận 404 ở đây (ArticleDetail/categoryList tự lo)
+      if (idParam.value) return
       // Chưa settle cả hai → chờ
       const anyPending = status.value !== 'success' && status.value !== 'error'
       const pageMiss = status.value === 'success' || status.value === 'error'
@@ -150,7 +209,14 @@ const page = computed(() => data.value?.page || null)
 const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
 
 useSeoMeta({
-  title: () => page.value?.seoTitle || (contentTypeMatch.value ? `${contentTypeMatch.value.name} | Con Đường Hướng Thiện` : `${page.value?.title || 'Trang'} | Con Đường Hướng Thiện`),
+  title: () => {
+    // 2-segment category view → tên category; article detail → ArticleDetail tự set
+    if (idParam.value && isCategoryView.value) {
+      const cat = (catData.value?.items || []).find((c) => c.slug === idParam.value)
+      return cat ? `${cat.name} | Con Đường Hướng Thiện` : seoTitle.value
+    }
+    return page.value?.seoTitle || (contentTypeMatch.value ? `${contentTypeMatch.value.name} | Con Đường Hướng Thiện` : `${page.value?.title || 'Trang'} | Con Đường Hướng Thiện`)
+  },
   description: () => page.value?.seoDescription || contentTypeMatch.value?.description || 'Con Đường Hướng Thiện - Cục C11 Bộ Công an.',
 })
 </script>

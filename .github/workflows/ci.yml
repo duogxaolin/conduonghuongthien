@@ -40,7 +40,15 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: '22'
+  # Node 22 has a test-runner IPC bug under `--experimental-test-module-mocks`:
+  # `Unable to deserialize cloned data due to invalid or unsupported version` at
+  # `processRawBuffer` (node:internal/test_runner/runner). It crashes integration
+  # suites whose import graph touches native modules (media-queue,
+  # upload-concurrency) even when those suites use no mocks themselves — the
+  # flag clones the whole module graph for every test file. Reproduced locally
+  # in node:22-slim (v22.23.3) and gone in node:24-slim + node:26. `engines`
+  # already permits ^24.11.0, so CI runs on 24 LTS.
+  NODE_VERSION: '24'
   # Every job needs this, including plain `npm ci`: postinstall runs
   # `nuxt prepare`, which evaluates nuxt.config in production mode, and the
   # config refuses to evaluate without an analytics HMAC secret (>= 32 chars).

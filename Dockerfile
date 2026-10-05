@@ -1,5 +1,8 @@
 # ─── Stage 1: Build ───────────────────────────────
-FROM node:22-alpine AS builder
+# Node 24 LTS — Node 22 has a test-runner IPC bug under
+# `--experimental-test-module-mocks` (processRawBuffer deserialize), and 24 is
+# the LTS `engines` permits (^24.11.0). Runtime behaves identically for Nitro.
+FROM node:24-alpine AS builder
 
 WORKDIR /app
 
@@ -26,7 +29,7 @@ RUN --mount=type=secret,id=admin_password,required=false \
 RUN npx nuxi build
 
 # ─── Stage 2: Runtime ─────────────────────────────
-FROM node:22-alpine
+FROM node:24-alpine
 
 WORKDIR /app
 
@@ -43,7 +46,7 @@ COPY public ./public
 # `nuxi build` never invokes them, and installing them in the builder stage would
 # add ~100 MB to a layer that never reaches the image serving traffic. Alpine's
 # ffmpeg carries libx264, native aac and the hls muxer (verified by running
-# `apk add --no-cache ffmpeg` on node:22-alpine), so no community repository is
+# `apk add --no-cache ffmpeg` on node:24-alpine), so no community repository is
 # needed. `nice`, which video-processing.ts puts in front of every ffmpeg call to
 # keep transcode at the lowest priority, ships with BusyBox — nothing to add.
 # `cpulimit` giới hạn % CPU thật cho ffmpeg (MEDIA_PROCESSING_CPU_LIMIT, mặc định 50),

@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import ContentTypePicker from '~/components/admin/ContentTypePicker.vue'
+
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const toast = useToast()

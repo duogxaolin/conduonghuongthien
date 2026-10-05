@@ -1,7 +1,35 @@
-import { eq } from 'drizzle-orm'
+import { eq, isNull } from 'drizzle-orm'
 
 import { getDb } from './db'
-import { pages, articles, chatbotKnowledge } from '../db/schema'
+import { pages, articles, categories, contentTypes, chatbotKnowledge } from '../db/schema'
+
+/**
+ * Ánh xạ `articles.type` / `categories.type` (slug content-type) → đường dẫn list
+ * công khai. 5 type hệ thống có route tĩnh riêng (hardcode ở `nuxt.config.ts`
+ * `routeRules` + `app/pages/`); type custom (do admin tạo ở
+ * `/admin/content/content-types`) dùng path segment `/<slug>`.
+ *
+ * Đồng bộ với `typeLabels` ở `app/pages/news/[category]/index.vue` +
+ * `app/pages/[slug]/[id].vue` và `LIST_PAGES` ở dưới.
+ */
+const SYSTEM_TYPE_TO_PATH: Record<string, string> = {
+  news: '/news',
+  role_model: '/role-models',
+  reintegration: '/reintegration-models',
+  document: '/documents',
+  faq: '/legal-qa',
+}
+
+/**
+ * Trả path list cho một type. Nếu type có route hệ thống → trả path đó; nếu là
+ * type custom → trả `/<slug>` (slug từ contentTypes). Trả `null` nếu type không
+ * nhận diện — caller bỏ qua.
+ */
+function typeToListPath(type: string, customSlugs: Set<string>): string | null {
+  if (SYSTEM_TYPE_TO_PATH[type]) return SYSTEM_TYPE_TO_PATH[type]
+  if (customSlugs.has(type)) return `/${type}`
+  return null
+}
 
 /**
  * Sitemap builder — thuần để kiểm được không cần mount (tiền lệ `nav-config.ts`,
@@ -76,19 +104,58 @@ export async function collectSitemapUrls(db = getDb()): Promise<SitemapUrl[]> {
     ...LIST_PAGES.map((p) => ({ loc: p.loc, changefreq: p.changefreq, priority: p.priority })),
   ]
 
+  // Content-type custom (isSystem=false) — mỗi type có trang list `/<slug>`.
+  // Type hệ thống (news/role_model/...) đã có ở LIST_PAGES, không lặp lại ở đây.
+  const ctRows = await db
+    .select({ slug: contentTypes.slug, isSystem: contentTypes.isSystem, updatedAt: contentTypes.createdAt })
+    .from(contentTypes)
+  const customSlugs = new Set<string>()
+  for (const ct of ctRows) {
+    if (ct.isSystem) continue
+    customSlugs.add(ct.slug)
+    urls.push({ loc: `/${ct.slug}`, lastmod: isoDate(ct.updatedAt), changefreq: 'daily', priority: 0.7 })
+  }
+
   const pageRows = await db.select({ slug: pages.slug, updatedAt: pages.updatedAt }).from(pages)
+  // Slug trang cố định trùng path list (news/role-models/...) hoặc custom type →
+  // ưu tiên LIST_PAGES + custom type ở trên, không lặp lại ở đây.
+  const reservedSlugs = new Set<string>([
+    ...Object.values(SYSTEM_TYPE_TO_PATH).map((p) => p.slice(1)),
+    ...customSlugs,
+  ])
   for (const p of pageRows) {
-    if (p.slug === 'home') continue
+    if (p.slug === 'home' || reservedSlugs.has(p.slug)) continue
     urls.push({ loc: `/${p.slug}`, lastmod: isoDate(p.updatedAt), changefreq: 'monthly', priority: 0.6 })
   }
 
+  // Category root (parentId=null) — mỗi category có trang list theo path
+  // segment `/<type-path>/<cat-slug>` (xem `app/pages/news/[category]/index.vue`
+  // + `app/pages/[slug]/[id].vue`). Sub-category (parentId !== null) không có
+  // trang list riêng — chỉ là filter con, không sinh URL.
+  const catRows = await db
+    .select({ slug: categories.slug, type: categories.type, name: categories.name, updatedAt: categories.createdAt })
+    .from(categories)
+    .where(isNull(categories.parentId))
+  for (const c of catRows) {
+    const basePath = typeToListPath(c.type, customSlugs)
+    if (!basePath) continue
+    urls.push({
+      loc: `${basePath}/${c.slug}`,
+      lastmod: isoDate(c.updatedAt),
+      changefreq: 'weekly',
+      priority: 0.6,
+    })
+  }
+
   const articleRows = await db
-    .select({ slug: articles.slug, updatedAt: articles.updatedAt, publishedAt: articles.publishedAt })
+    .select({ slug: articles.slug, type: articles.type, updatedAt: articles.updatedAt, publishedAt: articles.publishedAt })
     .from(articles)
     .where(eq(articles.status, 'published'))
   for (const a of articleRows) {
+    const basePath = typeToListPath(a.type, customSlugs)
+    if (!basePath) continue // type không nhận diện — không có trang công khai
     urls.push({
-      loc: `/news/${a.slug}`,
+      loc: `${basePath}/${a.slug}`,
       lastmod: isoDate(a.publishedAt) ?? isoDate(a.updatedAt),
       changefreq: 'weekly',
       priority: 0.8,

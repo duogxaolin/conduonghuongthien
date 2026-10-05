@@ -6,7 +6,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 
 - **Frontend**: Nuxt 4 (Vue 3, TypeScript, Composition API), Tailwind CSS v3, FontAwesome 6 Pro
 - **Backend**: Nitro / H3, Drizzle ORM, MySQL 8.0, JWT Auth
-- **Deploy**: Docker Compose (multi-stage build, Node 22)
+- **Deploy**: Docker Compose (multi-stage build, Node 24 LTS)
 
 ## Quick Start (Development)
 
@@ -22,7 +22,7 @@ Yêu cầu: Node.js ≥ 22.19, MySQL 8.0 running locally.
 Xem [DEPLOY.md](./DEPLOY.md) để triển khai VPS với Docker, và [CI-CD.md](./CI-CD.md) để
 tự động deploy mỗi lần merge vào `main` (GitHub Actions → GHCR → VPS).
 
-**Không cần cài Node.js trên VPS** — Docker multi-stage build tự dùng Node 22 bên trong container.
+**Không cần cài Node.js trên VPS** — Docker multi-stage build tự dùng Node 24 LTS bên trong container.
 
 ## Database
 

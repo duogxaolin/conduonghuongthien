@@ -757,8 +757,18 @@ const formatDate = (item: { publishedAt?: string | null; createdAt?: string | nu
   formatDateVN(item.publishedAt || item.createdAt)
 
 const syncUrl = () => {
-  const query: { cat?: string; q?: string; page?: number } = {}
-  if (activeCategory.value !== 'all') query.cat = activeCategory.value
+  // Category filter pindah sang path segment `/news/<cat>` (route dishwasher
+  // `news/[category]/index.vue`). Trang `/news` này chỉ còn list "all" + search + page.
+  // Nếu activeCategory !== 'all' (link cũ ?cat= trước redirect 301, hoặc test)
+  // → navigate sang /news/<cat>; else giữ /news với search + page query.
+  if (activeCategory.value !== 'all') {
+    const query: { q?: string; page?: number } = {}
+    if (searchQuery.value) query.q = searchQuery.value
+    if (currentPage.value > 1) query.page = currentPage.value
+    navigateTo({ path: `/news/${activeCategory.value}`, query })
+    return
+  }
+  const query: { q?: string; page?: number } = {}
   if (searchQuery.value) query.q = searchQuery.value
   if (currentPage.value > 1) query.page = currentPage.value
   navigateTo({ path: '/news', query })
