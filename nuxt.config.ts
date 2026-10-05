@@ -79,6 +79,19 @@ export default defineNuxtConfig({
 
    modules: ['@nuxtjs/tailwindcss'],
 
+  /**
+   * Component auto-import. Mặc định Nuxt thêm prefix là tên thư mục cha: một
+   * component ở `app/components/layout/DefaultHeader.vue` được đăng ký thành
+   * `LayoutDefaultHeader`, không phải `DefaultHeader`. Template `default.vue`
+   * dùng tên CÓ prefix (`<LayoutDefaultHeader>`) theo quy ước mặc định — không
+   * cần `pathPrefix: false`, giữ lazy-loading optimization của Nuxt untouched.
+   */
+  components: {
+    dirs: [
+      { path: '~/components' },
+    ],
+  },
+
   nitro: {
     /**
      * Thứ tự plugin là RÀNG BUỘC, không phải cách sắp cho đẹp. `runtime-config-global`
@@ -91,6 +104,22 @@ export default defineNuxtConfig({
     plugins: [
       '~~/server/plugins/runtime-config-global',
     ],
+    /**
+     * Esbuild target cho server bundle. Mặc định Nitro hardcode `es2019`, nhưng
+     * code CIDR/IPv6 check (`server/utils/chatbot/outbound.ts`, `short-media-id.ts`)
+     * dùng `bigint` literal (`0n`, `32n`, `0xffffffffn`) — ES2020. Node 22+
+     * (yêu cầu repo) hỗ trợ sẵn; `es2020` tắt warning "Big integer literals are
+     * not available in the configured target environment".
+     *
+     * Nitro spread `nitro.options.esbuild.options` SAU `target: "es2019"` mặc
+     * định (xem `nitropack/dist/rollup/index.mjs`), nên phải đặt trong `options`,
+     * không phải `esbuild` trực tiếp.
+     */
+    esbuild: {
+      options: {
+        target: 'es2020',
+      },
+    },
   },
 
   tailwindcss: {

@@ -154,7 +154,8 @@ describe('nothing reader-specific can enter a cached page', () => {
   })
 
   it('the header renders reader state inside client-only', async () => {
-    const { template } = await sfcOf('layouts/default.vue')
+    // Sau tách template, khối danh tính người đọc nằm ở DefaultHeader.vue.
+    const { template } = await sfcOf('components/layout/DefaultHeader.vue')
     assert.match(template, /<client-only>/)
     assert.match(template, /readerLoaded/)
   })

@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
+import { layoutSource, readPart } from './_layout-parts'
 
 /**
  * The public pages were built by copy-and-paste: four article-detail pages and
@@ -202,33 +203,40 @@ test('thanh điều hướng ngang và hamburger chuyển giao ở cùng một b
   // Hai lớp phải chuyển giao ở CÙNG một breakpoint, và đó là điều kiện then
   // chốt: lệch nhau một bậc thì có một dải bề rộng **không có đường vào menu
   // nào** (cả hai đều ẩn) hoặc **có hai** (hamburger nổi trên thanh ngang).
-  const source = read('layouts/default.vue')
+  //
+  // Sau tách template: thanh ngang ở DefaultDesktopNav, hamburger ở
+  // DefaultHeader, drawer ở DefaultMobileDrawer.
+  const desktop = readPart('DefaultDesktopNav.vue')
+  const header = readPart('DefaultHeader.vue')
+  const drawer = readPart('DefaultMobileDrawer.vue')
 
-  const bar = source.match(/<div class="hidden (md|lg|xl):flex bg-white border-t[^"]*"/)?.[0] ?? ''
+  const bar = desktop.match(/<div class="hidden (md|lg|xl):flex bg-white border-t[^"]*"/)?.[0] ?? ''
   assert.ok(bar, 'không tìm thấy thanh điều hướng ngang')
   assert.match(bar, /hidden (lg|xl):flex/, 'thanh ngang phải bật từ lg hoặc xl')
 
   // Hamburger: nút duy nhất mang aria-expanded gắn với isMobileMenuOpen.
-  const burger = source.match(/class="(md|lg|xl):hidden flex flex-col justify-center[^"]*"/)?.[0] ?? ''
+  const burger = header.match(/class="(md|lg|xl):hidden flex flex-col justify-center[^"]*"/)?.[0] ?? ''
   assert.ok(burger, 'không tìm thấy nút hamburger')
   assert.match(burger, /(lg|xl):hidden/, 'hamburger phải sống tới lg hoặc xl để iPad có menu')
 
   // Drawer phải theo cùng nút mở nó.
-  const drawer = source.match(/class="fixed top-0 w-\[min\(88vw,380px\)\][^"]*"/)?.[0] ?? ''
-  assert.ok(drawer, 'không tìm thấy drawer menu')
-  assert.match(drawer, /(lg|xl):hidden/, 'drawer phải ẩn ở cùng breakpoint với hamburger')
+  const drawerClass = drawer.match(/class="fixed top-0 w-\[min\(88vw,380px\)\][^"]*"/)?.[0] ?? ''
+  assert.ok(drawerClass, 'không tìm thấy drawer menu')
+  assert.match(drawerClass, /(lg|xl):hidden/, 'drawer phải ẩn ở cùng breakpoint với hamburger')
 })
 
 test('drawer dựng từ cùng nguồn menu với thanh ngang', () => {
   // Chuyển 768–1023px sang hamburger chỉ không mất gì NẾU drawer hiện đủ những
   // mục mà thanh ngang hiện — kể cả mục con. Cả hai lặp trên `navMenu`, và
   // drawer có accordion riêng cho `item.children`.
-  const source = read('layouts/default.vue')
+  //
+  // Sau tách: navMenu lặp ở DefaultDesktopNav (desktop) + DefaultMobileDrawer
+  // (mobile) — đếm gộp `layoutSource`.
   assert.ok(
-    (source.match(/v-for="item in navMenu"/g) ?? []).length >= 2,
+    (layoutSource.match(/v-for="item in navMenu"/g) ?? []).length >= 2,
     'thanh ngang và drawer phải đọc cùng một navMenu, không phải hai danh sách rời',
   )
-  assert.match(source, /toggleMobileSubmenu\(item\.id\)/, 'drawer cần accordion cho mục có con')
+  assert.match(readPart('DefaultMobileDrawer.vue'), /toggleMobileSubmenu\(item\.id\)/, 'drawer cần accordion cho mục có con')
 })
 
 // ─── Khối danh tính người đọc: phải có ở CẢ HAI bề mặt ───────────────────────
@@ -245,19 +253,20 @@ test('khối danh tính người đọc có mặt ở cả header desktop và ng
    *
    * Đếm theo số lần xuất hiện thay vì chỉ tìm một chuỗi: một khối đúng nhưng bị
    * nhân bản ở sai chỗ vẫn khớp một phép tìm đơn lẻ.
+   *
+   * Sau tách template: khối danh tính ở DefaultHeader (desktop) + DefaultMobileDrawer
+   * (mobile) — đếm gộp `layoutSource`.
    */
-  const source = read('layouts/default.vue')
-
   assert.ok(
-    (source.match(/@click="readerSignIn\(\)"/g) ?? []).length >= 2,
+    (layoutSource.match(/@click="readerSignIn\(\)"/g) ?? []).length >= 2,
     'chỉ còn một nút đăng nhập — một trong hai bề mặt (header desktop / ngăn kéo mobile) đã mất khối danh tính',
   )
   assert.ok(
-    (source.match(/to="\/profile"/g) ?? []).length >= 2,
+    (layoutSource.match(/to="\/profile"/g) ?? []).length >= 2,
     'thiếu đường vào trang cá nhân ở một trong hai bề mặt',
   )
   assert.ok(
-    (source.match(/@click="onReaderSignOut"/g) ?? []).length >= 2,
+    (layoutSource.match(/@click="onReaderSignOut"/g) ?? []).length >= 2,
     'thiếu nút đăng xuất ở một trong hai bề mặt',
   )
 })
@@ -270,15 +279,15 @@ test('cả hai khối danh tính đều dựng phía client và không có fallb
    *
    * Và không `fallback`: một nút "Đăng nhập" nhấp nháy rồi đổi thành tên là câu trả
    * lời sai hiện ra trước câu trả lời đúng.
+   *
+   * Sau tách: khối danh tính ở DefaultHeader + DefaultMobileDrawer — đếm gộp.
    */
-  const source = read('layouts/default.vue')
-
   assert.ok(
-    (source.match(/v-if="readerLoaded"/g) ?? []).length >= 2,
+    (layoutSource.match(/v-if="readerLoaded"/g) ?? []).length >= 2,
     'một khối danh tính vẽ trước khi biết người đọc là ai',
   )
   assert.doesNotMatch(
-    source,
+    layoutSource,
     /<client-only[^>]*>[\s\S]*?<template #fallback>/,
     'fallback làm nhấp nháy trạng thái đăng nhập',
   )
@@ -318,9 +327,9 @@ test('mục Media xuất hiện trên cả hai bề mặt điều hướng, và 
    * Dời mục đi chỗ khác làm childLoops vẫn đúng (hai vòng lặp con vẫn chạy) trong
    * khi mục đó đã không còn là `/media` — nên cần thêm một neo cứng vào nguồn.
    */
-  const source = read('layouts/default.vue')
-
-  const childLoops = (source.match(/v-for="child in item\.children"/g) ?? []).length
+  // Đếm `v-for="child in item.children" :key="child.id"` (kèm `:key` để không khớp
+  // vào comment mô tả trong script của component con).
+  const childLoops = (layoutSource.match(/v-for="child in item\.children" :key="child\.id"/g) ?? []).length
   assert.ok(
     childLoops === 2,
     `phải có ĐÚNG hai vòng lặp child (header desktop + ngăn kéo mobile); thấy ${childLoops}. ` +

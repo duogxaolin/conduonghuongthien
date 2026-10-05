@@ -19,6 +19,7 @@ import assert from 'node:assert/strict'
 import { existsSync, readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
+import { layoutSource, readPart } from './_layout-parts'
 import {
   buildExcerpt,
   notificationTargetPage,
@@ -238,17 +239,22 @@ describe('notifications never enter server-rendered HTML', () => {
      * server carrying one reader's unread count would be replayed to the next
      * visitor inside that window.
      */
-    const layout = read('app/layouts/default.vue')
+    const header = readPart('DefaultHeader.vue')
     /**
      * Matched on the dropdown, not on `fa-bell`: the mobile drawer entry
      * legitimately uses that same icon next to `unreadCount`, so a proximity
      * match cannot tell the two surfaces apart. `aria-haspopup="menu"` is the
      * part only the desktop bell has, and it is what would come back if someone
      * inlined the component again.
+     *
+     * Sau tách template: `aria-haspopup="menu"` ở DefaultHeader (reader menu),
+     * `fa-bell` ở DefaultMobileDrawer (mobile drawer). `layoutSource` ghép 8 file
+     * không gồm ReaderNotificationBell.client.vue nên `fa-bell` chỉ từ drawer —
+     * khoảng cách tới `aria-haspopup="menu"` lớn hơn 600 ký tự → regex không khớp.
      */
-    assert.ok(!/aria-haspopup="menu"[\s\S]{0,600}fa-bell/.test(layout),
+    assert.ok(!/aria-haspopup="menu"[\s\S]{0,600}fa-bell/.test(layoutSource),
       'the desktop bell dropdown came back into the layout — it belongs in the .client component')
-    assert.match(layout, /<ReaderNotificationBell/, 'the layout no longer renders the bell at all')
+    assert.match(header, /<ReaderNotificationBell/, 'the header no longer renders the bell at all')
 
     const clientOnly = existsSync(new URL('../app/components/ReaderNotificationBell.client.vue', import.meta.url))
     assert.ok(clientOnly,
@@ -258,6 +264,10 @@ describe('notifications never enter server-rendered HTML', () => {
 })
 
 describe('the bell exists on BOTH surfaces', () => {
+  // Sau tách template: mobile drawer entry ở DefaultMobileDrawer.vue; layout
+  // script (default.vue) vẫn sở hữu `watch(reader)` + `loadNotifications(` (eager
+  // load cho huy hiệu mobile — không có cú mở nào để bám).
+  const drawer = readPart('DefaultMobileDrawer.vue')
   const layout = read('app/layouts/default.vue')
   const bell = read('app/components/ReaderNotificationBell.client.vue')
 
@@ -272,7 +282,7 @@ describe('the bell exists on BOTH surfaces', () => {
    */
   it('renders a bell on desktop and a notifications entry in the mobile drawer', () => {
     const desktop = (bell.match(/fa-bell/g) ?? []).length
-    const mobile = (layout.match(/fa-bell/g) ?? []).length
+    const mobile = (drawer.match(/fa-bell/g) ?? []).length
     assert.ok(desktop >= 1, 'the desktop bell is gone from ReaderNotificationBell.client.vue')
     assert.ok(mobile >= 1, 'the mobile drawer lost its bell — the symptom would only show on phones')
   })
@@ -280,7 +290,7 @@ describe('the bell exists on BOTH surfaces', () => {
   it('shows the unread badge on both surfaces', () => {
     const badge = /unreadCount > 9 \? '9\+' : unreadCount/g
     assert.ok((bell.match(badge) ?? []).length >= 1, 'the desktop badge is gone')
-    assert.ok((layout.match(badge) ?? []).length >= 1, 'the mobile drawer badge is gone')
+    assert.ok((drawer.match(badge) ?? []).length >= 1, 'the mobile drawer badge is gone')
   })
 
   /**
@@ -295,7 +305,7 @@ describe('the bell exists on BOTH surfaces', () => {
   })
 
   it('the mobile entry links to the notifications block on the profile page', () => {
-    assert.match(layout, /\/profile#notifications/, 'the mobile drawer no longer reaches notifications')
+    assert.match(drawer, /\/profile#notifications/, 'the mobile drawer no longer reaches notifications')
   })
 
   /**

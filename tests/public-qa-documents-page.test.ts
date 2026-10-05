@@ -231,8 +231,8 @@ test('the page is reachable without going through the assistant', () => {
   // the assertion that matters: the header nav is built from admin settings and
   // `DEFAULT_NAV` is only the fallback, so a deployment whose officers have saved
   // a custom menu would not show the header entry at all.
-  const layout = read('../app/layouts/default.vue')
-  assert.match(layout, /to="\/qa-documents"/, 'the footer must link the page')
+  const footer = read('../app/components/layout/DefaultFooter.vue')
+  assert.match(footer, /to="\/qa-documents"/, 'the footer must link the page')
   // `DEFAULT_NAV` moved to `app/utils/nav-config.ts`, where the shape checks that
   // guard admin-supplied nav config are testable without mounting the layout
   // (`tests/nav-config-boundary.test.ts`). The claim is about reachability, not

@@ -5,6 +5,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { test } from 'node:test'
+import { layoutSource } from './_layout-parts'
 
 const read = (relPath: string) => readFileSync(new URL(`../${relPath}`, import.meta.url), 'utf8')
 
@@ -40,27 +41,31 @@ test('admin general settings quản lý ô nhập main_logo_url và xem trước
 })
 
 test('layout default hiển thị main logo bên trái và logo con tỉ lệ nhỏ hơn khi có main logo', () => {
-  const code = read('app/layouts/default.vue')
-  // Script có computed
-  assert.match(code, /siteMainLogo = computed\(/, 'thiếu computed siteMainLogo trong default.vue')
-  assert.match(code, /siteLogo = computed\(/, 'thiếu computed siteLogo trong default.vue')
+  // `siteMainLogo`/`siteLogo` computed vẫn ở script default.vue (test grep khai báo).
+  const layout = read('app/layouts/default.vue')
+  assert.match(layout, /siteMainLogo = computed\(/, 'thiếu computed siteMainLogo trong default.vue')
+  assert.match(layout, /siteLogo = computed\(/, 'thiếu computed siteLogo trong default.vue')
 
+  // Header markup giờ ở DefaultHeader.vue; footer markup ở DefaultFooter.vue.
+  const headerSrc = read('app/components/layout/DefaultHeader.vue')
   // Header: Main logo to hơn (56px) và logo con nhỏ hơn (38px ~ 70-80%)
-  assert.match(code, /:src="siteMainLogo"/, 'header thiếu binding :src="siteMainLogo"')
-  assert.match(code, /h-10 lg:h-\[56px\]/, 'main logo header phải to nổi bật')
-  assert.match(code, /siteMainLogo \? 'h-7 lg:h-\[38px\]' : 'h-9 lg:h-\[50px\]'/, 'logo con chưa hạ tỷ lệ khi có main logo')
+  assert.match(headerSrc, /:src="siteMainLogo"/, 'header thiếu binding :src="siteMainLogo"')
+  assert.match(headerSrc, /h-10 lg:h-\[56px\]/, 'main logo header phải to nổi bật')
+  assert.match(headerSrc, /siteMainLogo \? 'h-7 lg:h-\[38px\]' : 'h-9 lg:h-\[50px\]'/, 'logo con chưa hạ tỷ lệ khi có main logo')
 
   // Footer: 2 logo ở footer to hơn nổi bật (h-16 md:h-[72px] cho main, h-12 md:h-[52px] cho logo con)
-  assert.match(code, /h-16 md:h-\[72px\]/, 'main logo footer phải to nổi bật')
-  assert.match(code, /siteMainLogo \? 'h-12 md:h-\[52px\]' : 'h-14 md:h-16'/, 'logo con footer to rõ và tương xứng tỷ lệ')
+  const footerSrc = read('app/components/layout/DefaultFooter.vue')
+  assert.match(footerSrc, /h-16 md:h-\[72px\]/, 'main logo footer phải to nổi bật')
+  assert.match(footerSrc, /siteMainLogo \? 'h-12 md:h-\[52px\]' : 'h-14 md:h-16'/, 'logo con footer to rõ và tương xứng tỷ lệ')
 })
 
 test('layout default và login vẫn hiển thị đúng nếu thiếu 1 trong 2 logo', () => {
-  const layout = read('app/layouts/default.vue')
+  // Logo markup nằm ở 3 component (Header, MobileDrawer, Footer); đọc gộp để
+  // chắc chắn một trong các bề mặt không mất khối an toàn.
   // Vẫn bao bọc v-if và chỉ hiện divider khi CẢ HAI cùng tồn tại
-  assert.match(layout, /v-if="siteMainLogo \|\| siteLogo"/, 'thiếu bọc an toàn v-if khi thiếu cả 2 logo')
-  assert.match(layout, /v-if="siteMainLogo && siteLogo"/, 'divider chỉ được hiển thị khi cả 2 logo đều có mặt')
-  assert.match(layout, /v-if="siteLogo"/, 'logo con phải có v-if riêng để không bị vỡ ảnh khi không có logo con')
+  assert.match(layoutSource, /v-if="siteMainLogo \|\| siteLogo"/, 'thiếu bọc an toàn v-if khi thiếu cả 2 logo')
+  assert.match(layoutSource, /v-if="siteMainLogo && siteLogo"/, 'divider chỉ được hiển thị khi cả 2 logo đều có mặt')
+  assert.match(layoutSource, /v-if="siteLogo"/, 'logo con phải có v-if riêng để không bị vỡ ảnh khi không có logo con')
 
   // Admin login page cũng hỗ trợ logo kép và fallback an toàn
   const login = read('app/pages/admin/login.vue')

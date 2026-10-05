@@ -55,7 +55,10 @@ export function getRestoreStatus(): RunStatus { return { ...currentRestoreStatus
 
 /** Báo running ngay khi endpoint nhận request — trước khi đọc multipart body. */
 export function setRestoreStatusReceiving(): void {
-  currentRestoreStatus = { running: true, phase: 'upload', message: 'Đang nhận file upload...', startedAt: Date.now(), progress: 0 }
+  const pid = process.pid
+  const now = Date.now()
+  logInfo({ event: 'backup.restore_receiving', pid, at: now })
+  currentRestoreStatus = { running: true, phase: 'upload', message: 'Đang nhận file upload...', startedAt: now, progress: 0 }
 }
 
 /** Đánh dấu failed khi endpoint trả lỗi sớm (sai định dạng, thiếu file). */

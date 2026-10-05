@@ -29,7 +29,7 @@ const read = (relative: string) => readFile(new URL(`../app/${relative}`, import
  * list has to be argued for rather than slipped in.
  */
 const DECORATIVE_PULSE_FILES: Record<string, string> = {
-  'layouts/default.vue': 'hotline / support availability indicators (two sites)',
+  'components/layout/DefaultMobileDrawer.vue': 'hotline / support availability indicators (two sites)',
   'components/admin/AnalyticsLiveDashboard.client.vue': 'live-visitor heartbeat dot',
   'pages/admin/index.vue': '"Live" status badge dot on the realtime tile',
   // Chấm "Đang phát trực tiếp" — chỉ báo trạng thái buổi livestream, không phải

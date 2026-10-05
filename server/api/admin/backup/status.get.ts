@@ -7,6 +7,8 @@ export default defineEventHandler(async (event) => {
 
   return {
     ok: true,
+    pid: process.pid,
+    uptime: Math.round(process.uptime()),
     backup: getBackupStatus(),
     restore: getRestoreStatus(),
   }
