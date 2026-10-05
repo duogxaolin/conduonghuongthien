@@ -80,10 +80,11 @@ Chạy khi có file `.sql` mới (bài viết, dump data). Luồng:
 production/
 ├─ manage.sh           # script chính (menu 1/2/3)
 ├─ README.md           # tệp này
-├─ migrations/          # thả file .sql vào đây (INSERT-only, không DROP)
-│  └─ .imported-*       # đánh dấu đã import (tự tạo)
-└─ .env.template       # mẫu .env (tham khảo, không dùng trực tiếp)
+└─ migrations/          # thả file .sql vào đây (INSERT-only, không DROP)
+   └─ .imported-*       # đánh dấu đã import (tự tạo)
 ```
+
+Mẫu `.env` thật ở **root repo** (`.env.example`) — không có `.env.template` trong folder này. Trên VPS, `.env` do `manage.sh` sinh ra.
 
 ---
 

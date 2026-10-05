@@ -321,3 +321,58 @@ Hợp lại: đơn **lưu thành công**, người dân thấy lời cảm ơn, 
 
 #### Thống kê sau tái cấu trúc
 - Typecheck sạch, `npm test` 2078 total / 2064 pass / 14 skip (integration cần MySQL), `npm run lint` 0 error / 12 warning (trước 272), `db:drift` xanh 635 cột/62 bảng.
+
+### 8. Sửa vi phạm `as unknown as` + dọn dead class (2026-10-05)
+
+#### Vi phạm CLAUDE.md `as unknown as không dùng để đọc hình dạng`
+- **V1a Plyr** (`usePlyrPlayer.ts` + `MediaPlayer.vue`): mở rộng `PlyrInstance` type có `quality` (options/forced/onChange), bỏ cast `as unknown as` tại `MediaPlayer.vue:240`. Giữ 1 cast tại `usePlyrPlayer.ts:163` có lý do kỹ thuật rõ (Plyr full type có `quality` shape khác — number-ish, narrowed declaration là object; comment type-boundary).
+- **V1b Hls** (`useHlsVideo.ts` + `MediaPlayer.vue` + `LiveHero.vue`): export `HlsInstance`, đơn giản hóa chỉ `{ destroy }` (consumer chỉ dùng destroy). **0 cast hoàn toàn** — type đầy đủ hls.js tự khớp. Bỏ cast `hls = instance as unknown as {...}` nội bộ, dùng thẳng `instance.levels`/`instance.currentLevel`.
+- **V1c article translations** (`[id].vue`): mở rộng type `articleTranslations` ref thêm `excerpt`/`content` (phản chiếu schema.ts:1403), bỏ 2 cast `as unknown as { excerpt?: string }` tại `openEditTranslation`, thêm 2 field vào 2 optimistic push.
+- **V1d media-portal** (`media-portal.ts`): bỏ 2 cast `as unknown as AdminMediaRow` — Drizzle type tự khớp.
+- **V1e video-processing** (`video-processing.ts`): bỏ cast `as unknown as StatfsFn` — `fs.promises.statfs` tự khớp `StatfsFn`.
+- **V1f check-schema-drift** GIỮ — reflect Drizzle internals qua symbol, không có type công khai, có comment giải thích (legitimate reflection).
+
+#### Bug dead class `animate-fadeIn` (B1)
+- 4 chỗ còn lại (`ArticleComments.vue:69`, `DefaultTopBar.vue:27`, `languages/index.vue:1334+1393`) → `animate-fade-slide-up`. Class `animate-fadeIn` không tồn tại trong `tailwind.config.js` (chỉ có `fade-slide-up`).
+
+#### Bug parsing error `vue/no-parsing-error` (B3)
+- 5 chỗ ở `media/scan.vue` raw `<` trong text → `<` (HTML entity).
+
+#### Không fix (có guard/lý do)
+- **B2 prop mutation `BuilderArrayEditor`**: intentional legacy — `PropertyPanel.vue:130-135` binds `:items` không `@update:items`, mutate shared reference là cơ chế hoạt động. Refactor emit sẽ gãy feature.
+- **V2 audit non-tx `deleteArticleById`/`setArticleStatus`**: known-exclusion guarded bởi `tests/reader-audit-atomicity.test.ts` — bọc transaction sẽ fail test.
+
+#### Cảnh báo cho agent sau — stale info đừng báo lại
+Báo cáo audit rà codebase có thể mang lại 2 mục stale (đã đóng):
+- "default.vue phình 1200+" — **SAI**, đã đóng `f125e09`, giờ 382 dòng.
+- "any ~20 vết ở SFC .vue cũ" — **SAI**, đã đóng `ca4f52e`, SFC sạch. 142 vết `any` còn lại ở `tests/` là mock/stub cố ý, không phải production code.
+
+Hai hạn chế **có chủ đích, không phải nợ**:
+- i18n — 50+ file public đã dùng `t()`, tất cả lang kể cả `vi` fetch DB (hardcoded chỉ fallback). Mở rộng thêm trang là feature work (xem mục 9).
+- 168 endpoint cũ `getDb()` thẳng — quy ước "áp cho mã MỚI", refactor diện rộng rủi ro > lợi.
+
+#### Thống kê
+- 11 file chạm, +75/-47 dòng. Typecheck sạch, `npm test` 2064 pass / 14 skip / 0 fail, `npm run lint` 0 error / 268 warning (142 `any` ở tests/ + 126 khác), `db:drift` xanh 635 cột/62 bảng.
+
+### 9. i18n full DB-driven — bỏ hardcoded `vi` (2026-10-05)
+
+#### Bối cảnh
+`t()` trong `useI18n.ts` có 4 bước fallback (DB → hardcoded lang → hardcoded vi → key). Nhưng `vi` **không bao giờ fetch DB** — dòng 894 `if (currentLang.value !== 'vi' && ...)` chỉ fetch cho ngôn ngữ ≠ `vi`. `vi` dùng `hardcodedDictionary` (766 dòng) làm nguồn chân lý. Trong khi seed `default-translations-seed.ts` đã có 531 keys `vi` trong DB, và admin UI `/admin/languages` **đã cho sửa `vi`** (nút "Bảng dịch" mở cho `isDefault`). Mismatch: admin sửa `vi` → ghi DB, nhưng frontend `vi` không đọc DB → sửa vô tác dụng.
+
+#### Thay đổi
+- **`useI18n.ts`**: bỏ check `!== 'vi'` ở dòng 894 — **mọi ngôn ngữ kể cả `vi` đều fetch DB**. `hardcodedDictionary` chỉ còn fallback khi DB chưa seed / API hỏng / SSR chưa fetch xong. Thứ tự `t()` giữ nguyên (DB → hardcoded lang → hardcoded vi → key). Caching `useState` per-locale không đổi.
+- **`ChatWidget.vue`** (11 chuỗi cứng → `t()`): `cw_back`, `cw_history`, `cw_clear`, `cw_expand`, `cw_sources`, `cw_lead_name/phone/email/question`, `cw_input_placeholder`, `cw_input_label`, `cw_send_aria`.
+- **`assistant.vue`** (11 chuỗi cứng → `t()`): `asst_conversation_list`, `asst_delete_conv`, `asst_delete_conv_aria`, `asst_new_conv`, `asst_clear_conv`, `asst_home`, + tái dùng `cw_sources`/`cw_lead_*`/`cw_input_*`/`cw_send_aria`.
+- **`profile.vue`** (8 chuỗi cứng → `t()`): `home`, `profile_title`, `profile_subtitle`, `profile_display_name_ph`, `profile_next`, `profile_clear_history`, `profile_remove_aria`, `profile_remove_title`.
+- **`default-translations-seed.ts`**: append 25 keys mới (12 `chat/cw_*`, 6 `assistant/asst_*`, 7 `profile_*`) — `vi`+`en` có giá trị, `zh`/`fr`/`ru`/`lo` rỗng (admin AI-dịch sau). Seed insert-only, không ghi đè existing.
+- **`hardcodedDictionary.vi`** trong `useI18n.ts`: thêm 25 fallback keys (cw_*, asst_*, profile_*).
+- **Test guard** `tests/chatbot-public-widget.test.ts:64`: cập nhật regex từ `aria-label="Nguồn tham khảo"` → `:aria-label="t('cw_sources')"` (test đọc source text).
+
+#### KHÔNG đổi
+- **Admin** giữ nguyên (anh yêu rõ "admin giữ nguyên") — admin hardcoded, không i18n.
+- **`server/api/admin/languages/**`** — đã hỗ trợ PUT `vi` từ trước.
+- **Schema** — bảng `lang_translations` đã có, không thêm cột.
+- **SSR fetch** — giữ client-only fetch (scope nhỏ, không block SSR). Hardcoded fallback render trước, DB fetch xong re-render.
+
+#### Kiểm chứng
+- Typecheck sạch (exit 0). `npm test` 2064 pass / 14 skip / 0 fail. `npm run lint` 0 error / 268 warning. 7 file chạm (useI18n, ChatWidget, assistant, profile, default-translations-seed, chatbot-public-widget test, CLAUDE.md).
