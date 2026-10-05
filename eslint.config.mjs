@@ -108,6 +108,7 @@ export default tseslint.config(
       'public/**',
       'tests/e2e/test-results/**',
       'migrations/**',
+      'CDKT/**',
     ],
   },
 )

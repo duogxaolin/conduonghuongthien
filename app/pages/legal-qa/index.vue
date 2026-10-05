@@ -315,6 +315,7 @@
 <script setup lang="ts">
 import { ref, computed } from 'vue'
 import { useI18n } from '~/composables/useI18n'
+import type { PublicArticleListItem } from '~/utils/public-types'
 
 const { t, currentLang } = useI18n()
 
@@ -340,14 +341,14 @@ const { data, pending, error, refresh } = useAsyncData(`public-faq-articles-${cu
     lazy: true,
     default: () => ({ ok: true, articles: [], pagination: {} }),
 })
-const faqs = computed(() => (data.value as { articles?: any[] })?.articles || [])
+const faqs = computed(() => (data.value as { articles?: PublicArticleListItem[] })?.articles || [])
 const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
 
 const searchKeyword = ref('')
 const filteredFaqs = computed(() => {
   const kw = searchKeyword.value.trim().toLowerCase()
   if (!kw) return faqs.value
-  return faqs.value.filter((item: any) =>
+  return faqs.value.filter((item) =>
     item.title?.toLowerCase().includes(kw) ||
     item.excerpt?.toLowerCase().includes(kw)
   )

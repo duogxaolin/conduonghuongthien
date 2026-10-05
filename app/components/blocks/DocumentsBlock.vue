@@ -124,6 +124,7 @@
 import { computed, onMounted, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
+import type { PublicArticleListItem } from '~/utils/public-types'
 
 const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
@@ -156,7 +157,7 @@ onMounted(() => {
   }
 })
 const docs = computed(() =>
-  ((data.value as { articles?: any[] })?.articles || []).map(a => ({
+  ((data.value as { articles?: PublicArticleListItem[] })?.articles || []).map(a => ({
     id: a.id,
     slug: a.slug,
     title: a.title,

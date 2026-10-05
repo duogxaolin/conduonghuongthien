@@ -138,7 +138,22 @@ function normalizeVi(str: string): string {
 
 const isSearching = computed(() => searchQuery.value.trim().length > 0)
 
-const menuGroups = computed(() => [
+/** Một mục menu admin — label + icon + path. */
+interface AdminMenuItem {
+  label: string
+  icon: string
+  path: string
+}
+
+/** Group menu admin — hoặc có `items` trực tiếp, hoặc `collapsible` + `subGroups`. */
+interface AdminMenuGroup {
+  title: string
+  collapsible?: true
+  items?: AdminMenuItem[]
+  subGroups?: { title: string; items: AdminMenuItem[] }[]
+}
+
+const menuGroups = computed<AdminMenuGroup[]>(() => [
   {
     title: 'Tổng quan',
     items: [
@@ -252,21 +267,21 @@ const menuGroups = computed(() => [
   },
 ])
 
-const countSubGroupItems = (group: any) => {
+const countSubGroupItems = (group: AdminMenuGroup) => {
   if (!group.subGroups) return 0
-  return group.subGroups.reduce((acc: number, sub: any) => acc + (sub.items?.length || 0), 0)
+  return group.subGroups.reduce((acc: number, sub) => acc + (sub.items?.length || 0), 0)
 }
 
-function isGroupActive(group: any): boolean {
+function isGroupActive(group: AdminMenuGroup): boolean {
   if (group.items) {
-    return group.items.some((i: any) => {
+    return group.items.some((i) => {
       if (i.path === '/admin') return route.path === '/admin'
       return route.path === i.path || route.path.startsWith(i.path + '/')
     })
   }
   if (group.subGroups) {
-    return group.subGroups.some((sub: any) => {
-      return sub.items.some((i: any) => {
+    return group.subGroups.some((sub) => {
+      return sub.items.some((i) => {
         if (i.path === '/admin') return route.path === '/admin'
         return route.path === i.path || route.path.startsWith(i.path + '/')
       })
@@ -295,7 +310,7 @@ const filteredMenuGroups = computed(() => {
   const query = normalizeVi(searchQuery.value)
   if (!query) return menuGroups.value
 
-  const result: any[] = []
+  const result: AdminMenuGroup[] = []
 
   for (const group of menuGroups.value) {
     if (group.collapsible && group.subGroups) {

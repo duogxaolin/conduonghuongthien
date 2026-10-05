@@ -320,6 +320,7 @@ import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
 import { useLayoutConfig } from '~/composables/useLayoutConfig'
+import type { PublicArticleListItem, PublicPagination } from '~/utils/public-types'
 
 const { t, currentLang } = useI18n()
 const { articleGridClass } = useLayoutConfig()
@@ -363,9 +364,9 @@ const { data, pending, error, refresh } = useAsyncData('public-articles-document
   }
 )
 
-const docs = computed(() => (data.value as { articles?: any[] })?.articles || [])
+const docs = computed(() => (data.value as { articles?: PublicArticleListItem[] })?.articles || [])
 const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
-const pagination = computed(() => (data.value as { pagination?: any })?.pagination || { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 })
+const pagination = computed(() => (data.value as { pagination?: PublicPagination })?.pagination || { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 })
 
 const syncUrl = () => {
   const query: { q?: string; page?: number } = {}
