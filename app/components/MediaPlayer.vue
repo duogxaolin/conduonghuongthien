@@ -129,8 +129,8 @@
 
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue'
-import { attachHlsStream, detachHlsStream } from '~/composables/useHlsVideo'
-import { attachPlyrPlayer, detachPlyrPlayer, type HlsQualityBridge } from '~/composables/usePlyrPlayer'
+import { attachHlsStream, detachHlsStream, type HlsInstance } from '~/composables/useHlsVideo'
+import { attachPlyrPlayer, detachPlyrPlayer, type HlsQualityBridge, type PlyrInstance } from '~/composables/usePlyrPlayer'
 import type { PublicMediaItem } from '~/types/public-api'
 
 const props = defineProps<{
@@ -148,12 +148,12 @@ const props = defineProps<{
 const videoEl = ref<HTMLVideoElement | null>(null)
 const playerPending = ref(false)
 const playerError = ref('')
-const hlsInstance = ref<{ destroy: () => void } | null>(null)
+const hlsInstance = ref<HlsInstance | null>(null)
 // Plyr wrap `<video>` element cho UI đẹp hơn native controls (nút tua ±10s, thanh
 // tua, tốc độ, phím tắt, menu chất lượng khi HLS có nhiều bản). Khởi tạo SAU khi
 // source đã gán (file) hoặc hls.js đã attach + manifest parse (hls), để Plyr
 // đọc media qua element và biết các bản có sẵn. Dọn ở `onBeforeUnmount` cùng hls.
-const plyrInstance = ref<{ destroy: () => void } | null>(null)
+const plyrInstance = ref<PlyrInstance | null>(null)
 // Cầu chất lượng HLS — populate khi `MANIFEST_PARSED` fire, dùng khi khởi tạo Plyr.
 // `null` cho passthrough mp4 (không có levels) → Plyr ẩn menu chất lượng.
 const hlsQualityBridge = ref<HlsQualityBridge | null>(null)
@@ -237,13 +237,7 @@ async function initPlyr() {
  * Plyr đã init với menu rỗng (bridge null), giờ có levels → xây lại menu.
  */
 function updatePlyrQualityMenu() {
-  const inst = plyrInstance.value as unknown as {
-    quality?: {
-      options?: number[]
-      forced?: boolean
-      onChange?: (selected: number) => void
-    }
-  } | null
+  const inst = plyrInstance.value
   if (!inst?.quality) return
   const levels = hlsQualityBridge.value?.getLevels() ?? null
   inst.quality.options = levels && levels.length > 1

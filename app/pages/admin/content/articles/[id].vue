@@ -320,6 +320,8 @@ async function translateAllForThisArticle(targetStatus: 'ai_draft' | 'published'
         currentChunk: 0,
         totalChunks: 1,
         title: null,
+        excerpt: null,
+        content: null,
         errorMessage: null,
         translatedBy: 'ai',
         completedAt: null,
@@ -545,8 +547,12 @@ onUnmounted(() => {
   }
 })
 // ─── Article translations ────────────────────────────────────────────────
+// Phản chiếu các cột thật sự dùng từ bảng `article_translations` (schema.ts:1403).
+// `excerpt`/`content` có ở schema và API trả về (listTranslationsForArticle.select *),
+// khai báo ở đây để khỏi `as unknown as` đọc hình dạng tại nơi gọi.
 const articleTranslations = ref<Array<{
   id: number; langCode: string; status: string; title: string | null
+  excerpt: string | null; content: string | null
   progress: number; currentChunk: number; totalChunks: number
   errorMessage: string | null; translatedBy: string; completedAt: string | null
 }>>([])
@@ -657,6 +663,8 @@ async function triggerTranslation(langCode: string, targetStatus: 'ai_draft' | '
       currentChunk: 0,
       totalChunks: 1,
       title: null,
+      excerpt: null,
+      content: null,
       errorMessage: null,
       translatedBy: 'ai',
       completedAt: null,
@@ -713,8 +721,8 @@ function openEditTranslation(row: typeof articleTranslations.value[0]) {
   editingTranslation.value = {
     lang: row.langCode,
     title: row.title ?? '',
-    excerpt: (row as unknown as { excerpt?: string }).excerpt ?? '',
-    content: (row as unknown as { content?: string }).content ?? '',
+    excerpt: row.excerpt ?? '',
+    content: row.content ?? '',
   }
   showEditTranslationDrawer.value = true
 }

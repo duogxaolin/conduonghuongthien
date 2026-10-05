@@ -24,7 +24,7 @@
           <!-- Dropdown Popover: Premium, spacious card with crystal-clear contrast and flags -->
           <div
             v-if="isLangMenuOpen"
-            class="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-white text-[#1E251C] shadow-[0_20px_50px_rgba(15,35,18,0.22),0_4px_12px_rgba(0,0,0,0.06)] border border-[#c8d6c9] p-2 z-[10006] flex flex-col gap-1 animate-fadeIn"
+            class="absolute right-0 top-full mt-2 w-64 rounded-2xl bg-white text-[#1E251C] shadow-[0_20px_50px_rgba(15,35,18,0.22),0_4px_12px_rgba(0,0,0,0.06)] border border-[#c8d6c9] p-2 z-[10006] flex flex-col gap-1 animate-fade-slide-up"
             role="menu"
           >
             <!-- Popover Header -->

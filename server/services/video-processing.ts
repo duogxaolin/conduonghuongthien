@@ -230,7 +230,7 @@ export type DiskCheck =
 export async function checkDiskSpace(
   target: string,
   floorBytes: number,
-  statfs: StatfsFn = fs.statfs as unknown as StatfsFn,
+  statfs: StatfsFn = fs.statfs,
 ): Promise<DiskCheck> {
   if (!Number.isFinite(floorBytes) || floorBytes <= 0) return { ok: true, freeBytes: Number.POSITIVE_INFINITY }
 

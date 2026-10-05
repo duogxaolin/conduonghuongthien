@@ -17,7 +17,7 @@
       <div class="flex-shrink-0 bg-[#1e4620] px-4 pt-[calc(env(safe-area-inset-top,0px)+12px)] pb-3 md:pt-3 md:rounded-t-2xl">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <button class="md:hidden w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[1rem] border-none cursor-pointer transition-all active:scale-90" @click="closeChatbot" aria-label="Quay lại">
+            <button class="md:hidden w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[1rem] border-none cursor-pointer transition-all active:scale-90" @click="closeChatbot" :aria-label="t('cw_back')">
               <i class="fa-solid fa-arrow-left"></i>
             </button>
             <div class="w-10 h-10 rounded-full bg-white/15 border-2 border-white/30 flex items-center justify-center flex-shrink-0">
@@ -36,17 +36,17 @@
               class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90"
               @click="isConversationListOpen = !isConversationListOpen"
               :aria-expanded="isConversationListOpen"
-              title="Danh sách cuộc trò chuyện"
-              aria-label="Danh sách cuộc trò chuyện"
+              :title="t('cw_history')"
+              :aria-label="t('cw_history')"
             >
               <i class="fa-solid fa-clock-rotate-left text-[0.9rem] md:text-[0.8rem]"></i>
             </button>
-            <button class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="clearChatHistory" title="Xóa lịch sử" aria-label="Xóa lịch sử">
+            <button class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="clearChatHistory" :title="t('cw_clear')" :aria-label="t('cw_clear')">
               <i class="fa-solid fa-broom text-[0.9rem] md:text-[0.8rem]"></i>
             </button>
             <!-- Expand: desktop/iPad only. The full page is a two-column layout
                  that has no room to be useful on a phone. -->
-            <button class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="openFullPage" title="Mở rộng toàn trang" aria-label="Mở rộng toàn trang">
+            <button class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="openFullPage" :title="t('cw_expand')" :aria-label="t('cw_expand')">
               <i class="fa-solid fa-up-right-and-down-left-from-center text-[0.75rem]"></i>
             </button>
             <button ref="chatCloseButton" class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50" @click="closeChatbot" aria-label="Đóng">
@@ -136,7 +136,7 @@
                   {{ copiedMsgId === msg.id ? 'Đã chép' : 'Sao chép' }}
                 </button>
               </div>
-              <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-1.5 mb-0 space-y-1 border-t border-[#e1e8e0] pt-1.5 list-none pl-0" aria-label="Nguồn tham khảo">
+              <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-1.5 mb-0 space-y-1 border-t border-[#e1e8e0] pt-1.5 list-none pl-0" :aria-label="t('cw_sources')">
                 <li v-for="source in msg.sources" :key="source.id" class="text-[0.68rem] leading-snug text-[#4A5545]">
                   <i class="fa-solid fa-link text-[0.5rem] text-[#7CB342] mr-1" aria-hidden="true"></i>
                   <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2">{{ source.label }}</a>
@@ -174,10 +174,10 @@
                 <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.78rem] font-semibold text-[#1e4620]"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i> Đã gửi thông tin. Cán bộ sẽ liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn ạ!</p>
                 <form v-else class="flex flex-col gap-2" @submit.prevent="submitLead(msg)">
                   <p class="m-0 text-[0.75rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
-                  <input v-model="msg.lead.name" type="text" placeholder="Họ và tên" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                  <input v-model="msg.lead.phone" type="tel" placeholder="Số điện thoại" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                  <input v-model="msg.lead.email" type="email" placeholder="Email (nếu có)" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                  <textarea v-model="msg.lead.question" rows="2" placeholder="Nội dung cần hỗ trợ" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]"></textarea>
+                  <input v-model="msg.lead.name" type="text" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                  <input v-model="msg.lead.phone" type="tel" :placeholder="t('cw_lead_phone')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                  <input v-model="msg.lead.email" type="email" :placeholder="t('cw_lead_email')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                  <textarea v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]"></textarea>
                   <p v-if="msg.lead.error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
                   <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-[#1e4620] px-4 py-1.5 text-[0.78rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">{{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}</button>
                 </form>
@@ -250,12 +250,12 @@
                script that fills every field it finds will write to it. -->
           <input v-model="honeypot" type="text" name="_h" tabindex="-1" autocomplete="off" aria-hidden="true" class="absolute left-[-9999px] w-px h-px opacity-0 pointer-events-none" />
           <div class="flex-1 min-w-0">
-            <label for="public-chatbot-input" class="sr-only">Nhập câu hỏi cho trợ lý</label>
+            <label for="public-chatbot-input" class="sr-only">{{ t('cw_input_label') }}</label>
             <input
               id="public-chatbot-input"
               ref="botInputRef"
               type="text"
-              placeholder="Hỏi tôi bất cứ điều gì..."
+              :placeholder="t('cw_input_placeholder')"
               v-model="botInput"
               :maxlength="limits.maxMessageChars"
               :aria-describedby="botInputError ? 'public-chatbot-error public-chatbot-counter' : 'public-chatbot-counter'"
@@ -267,7 +267,7 @@
               <p id="public-chatbot-error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ botInputError }}</p>
             </div>
           </div>
-          <button type="submit" :disabled="isSubmitting || !botInput.trim()" class="w-11 h-11 rounded-full bg-[#1e4620] text-white border-none flex flex-shrink-0 items-center justify-center cursor-pointer transition-all hover:bg-[#153317] hover:shadow-[0_4px_12px_rgba(30,70,32,0.3)] active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:bg-[#a0b89e]" aria-label="Gửi tin nhắn">
+          <button type="submit" :disabled="isSubmitting || !botInput.trim()" class="w-11 h-11 rounded-full bg-[#1e4620] text-white border-none flex flex-shrink-0 items-center justify-center cursor-pointer transition-all hover:bg-[#153317] hover:shadow-[0_4px_12px_rgba(30,70,32,0.3)] active:scale-90 disabled:cursor-not-allowed disabled:opacity-40 disabled:bg-[#a0b89e]" :aria-label="t('cw_send_aria')">
             <i class="fa-solid fa-paper-plane text-[0.85rem]"></i>
           </button>
         </form>

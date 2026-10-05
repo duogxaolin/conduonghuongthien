@@ -66,7 +66,7 @@
       <div
         v-if="revokedNotice"
         role="alert"
-        class="mb-5 rounded-lg border border-[#f0c0c0] bg-[#fff5f4] p-3.5 text-xs text-[#a32924] flex items-center justify-between gap-3 animate-fadeIn"
+        class="mb-5 rounded-lg border border-[#f0c0c0] bg-[#fff5f4] p-3.5 text-xs text-[#a32924] flex items-center justify-between gap-3 animate-fade-slide-up"
       >
         <div class="flex items-center gap-2">
           <i class="fa-solid fa-triangle-exclamation text-base shrink-0 text-[#d12420]" aria-hidden="true"></i>

@@ -1331,7 +1331,7 @@ onUnmounted(() => {
           </div>
 
           <!-- Article Limit Selector if includeArticles -->
-          <div v-if="universalOptions.includeArticles" class="pt-2.5 border-t border-[#e2ece3] flex flex-col gap-1.5 animate-fadeIn">
+          <div v-if="universalOptions.includeArticles" class="pt-2.5 border-t border-[#e2ece3] flex flex-col gap-1.5 animate-fade-slide-up">
             <div class="flex items-center justify-between">
               <label class="text-[0.75rem] font-bold text-[#122815]">Phạm vi số lượng bài viết dịch:</label>
               <span class="text-[0.68rem] text-[#667768]">Kho CSDL có {{ universalStats?.totalArticles || 1121 }} bài viết</span>
@@ -1390,7 +1390,7 @@ onUnmounted(() => {
           <!-- Active Task Panel -->
           <div
             v-if="universalTask?.active"
-            class="bg-gradient-to-r from-[#f0f7f1] to-[#e4f2e5] border border-[#a2cca4] rounded-xl p-4 flex flex-col gap-2.5 animate-fadeIn shadow-sm"
+            class="bg-gradient-to-r from-[#f0f7f1] to-[#e4f2e5] border border-[#a2cca4] rounded-xl p-4 flex flex-col gap-2.5 animate-fade-slide-up shadow-sm"
           >
             <div class="flex items-center justify-between text-xs font-bold text-[#1e4620]">
               <span class="flex items-center gap-2">

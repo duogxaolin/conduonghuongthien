@@ -19,7 +19,7 @@
             </button>
           </div>
 
-          <nav class="flex-1 overflow-y-auto overscroll-contain p-2 space-y-1" aria-label="Danh sách cuộc trò chuyện">
+          <nav class="flex-1 overflow-y-auto overscroll-contain p-2 space-y-1" :aria-label="t('asst_conversation_list')">
             <p v-if="!conversations.length" class="m-0 px-3 py-6 text-center text-xs text-[#9ca3af]">Chưa có cuộc trò chuyện nào.</p>
             <ul class="list-none m-0 p-0 space-y-1">
               <li v-for="conversation in sortedConversations" :key="conversation.id">
@@ -57,8 +57,8 @@
                     type="button"
                     class="w-6 h-6 flex-shrink-0 rounded-md bg-transparent border-none text-[#9ca3af] hover:text-[#b42318] hover:bg-[#fee2e2] flex items-center justify-center cursor-pointer transition-all opacity-0 group-hover:opacity-100 focus-visible:opacity-100 focus-visible:outline-none"
                     @click.stop="deleteConversation(conversation.id)"
-                    :aria-label="`Xóa cuộc trò chuyện ${conversation.title}`"
-                    title="Xóa cuộc trò chuyện"
+                    :aria-label="`${t('asst_delete_conv_aria')} ${conversation.title}`"
+                    :title="t('asst_delete_conv')"
                   >
                     <i class="fa-regular fa-trash-can text-[0.68rem]" aria-hidden="true"></i>
                   </button>
@@ -90,13 +90,13 @@
             <div class="flex flex-shrink-0 items-center gap-1.5">
               <!-- Mobile-only: the sidebar is hidden here, so this is the only
                    way to start a new conversation on a phone. -->
-              <button type="button" class="md:hidden w-9 h-9 rounded-full bg-white/10 border-none text-white/85 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="onCreateConversation" aria-label="Cuộc trò chuyện mới">
+              <button type="button" class="md:hidden w-9 h-9 rounded-full bg-white/10 border-none text-white/85 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="onCreateConversation" :aria-label="t('asst_new_conv')">
                 <i class="fa-solid fa-plus text-[0.8rem]" aria-hidden="true"></i>
               </button>
-              <button type="button" class="w-9 h-9 rounded-full bg-white/10 border-none text-white/85 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="clearChatHistory" title="Xóa nội dung cuộc trò chuyện" aria-label="Xóa nội dung cuộc trò chuyện">
+              <button type="button" class="w-9 h-9 rounded-full bg-white/10 border-none text-white/85 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="clearChatHistory" :title="t('asst_clear_conv')" :aria-label="t('asst_clear_conv')">
                 <i class="fa-solid fa-broom text-[0.8rem]" aria-hidden="true"></i>
               </button>
-              <NuxtLink to="/" class="w-9 h-9 rounded-full bg-white/10 text-white/85 flex items-center justify-center no-underline transition-all hover:bg-white/20" title="Về trang chủ" aria-label="Về trang chủ">
+              <NuxtLink to="/" class="w-9 h-9 rounded-full bg-white/10 text-white/85 flex items-center justify-center no-underline transition-all hover:bg-white/20" :title="t('asst_home')" :aria-label="t('asst_home')">
                 <i class="fa-solid fa-house text-[0.8rem]" aria-hidden="true"></i>
               </NuxtLink>
             </div>
@@ -174,7 +174,7 @@
                         {{ copiedMsgId === msg.id ? 'Đã chép' : 'Sao chép' }}
                       </button>
                     </div>
-                    <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-1.5 mb-0 list-none space-y-1 border-t border-[#e1e8e0] pl-0 pt-1.5" aria-label="Nguồn tham khảo">
+                    <ul v-if="msg.sources?.length && !msg.isStreaming" class="mt-1.5 mb-0 list-none space-y-1 border-t border-[#e1e8e0] pl-0 pt-1.5" :aria-label="t('cw_sources')">
                       <li v-for="source in msg.sources" :key="source.id" class="text-[0.7rem] leading-snug text-[#4A5545]">
                         <i class="fa-solid fa-link mr-1 text-[0.54rem] text-[#7CB342]" aria-hidden="true"></i>
                         <a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline underline-offset-2">{{ source.label }}</a>
@@ -212,10 +212,10 @@
                       </p>
                       <form v-else class="flex flex-col gap-2" @submit.prevent="submitLead(msg)">
                         <p class="m-0 text-[0.8rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
-                        <input v-model="msg.lead.name" type="text" placeholder="Họ và tên" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]" />
-                        <input v-model="msg.lead.phone" type="tel" placeholder="Số điện thoại" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]" />
-                        <input v-model="msg.lead.email" type="email" placeholder="Email (nếu có)" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]" />
-                        <textarea v-model="msg.lead.question" rows="2" placeholder="Nội dung cần hỗ trợ" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]"></textarea>
+                        <input v-model="msg.lead.name" type="text" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]" />
+                        <input v-model="msg.lead.phone" type="tel" :placeholder="t('cw_lead_phone')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]" />
+                        <input v-model="msg.lead.email" type="email" :placeholder="t('cw_lead_email')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]" />
+                        <textarea v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]"></textarea>
                         <p v-if="msg.lead.error" class="m-0 text-[0.74rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
                         <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-[#1e4620] px-4 py-1.5 text-[0.82rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">
                           {{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}
@@ -264,7 +264,7 @@
                   ref="botInputRef"
                   v-model="botInput"
                   rows="1"
-                  placeholder="Hỏi tôi bất cứ điều gì..."
+                  :placeholder="t('cw_input_placeholder')"
                   :maxlength="limits.maxMessageChars"
                   :aria-describedby="botInputError ? 'tro-ly-error tro-ly-counter' : 'tro-ly-counter'"
                   :aria-invalid="Boolean(botInputError)"
@@ -279,7 +279,7 @@
                 type="submit"
                 :disabled="isSubmitting || !botInput.trim()"
                 class="flex h-12 w-12 flex-shrink-0 cursor-pointer items-center justify-center rounded-2xl border-none bg-[#1e4620] text-white transition-all hover:bg-[#153317] hover:shadow-[0_4px_12px_rgba(30,70,32,0.3)] active:scale-90 disabled:cursor-not-allowed disabled:bg-[#a0b89e] disabled:opacity-40"
-                aria-label="Gửi tin nhắn"
+                :aria-label="t('cw_send_aria')"
               >
                 <i class="fa-solid fa-paper-plane text-[0.9rem]" aria-hidden="true"></i>
               </button>
@@ -297,7 +297,9 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useChatbot, type StoredConversation, type ChatMessage } from '~/composables/useChatbot'
+import { useI18n } from '~/composables/useI18n'
 
+const { t } = useI18n()
 const {
   conversations, activeId, activeConversation, chatMessages,
   isSubmitting, botInput, botInputError,

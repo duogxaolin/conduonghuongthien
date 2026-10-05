@@ -699,7 +699,7 @@ export async function listAllMediaForAdmin(
   ])
 
   return {
-    items: rows.map(row => serializeAdminMedia(row as unknown as AdminMediaRow)),
+    items: rows.map(row => serializeAdminMedia(row)),
     total: Number(totals[0]?.total ?? 0),
     page:  query.page,
     limit: query.limit,
@@ -725,7 +725,7 @@ export async function getMediaItemForAdmin(
     .leftJoin(mediaCategories, eq(mediaItems.categoryId, mediaCategories.id))
     .where(eq(mediaItems.id, id))
     .limit(1)
-  return row ? serializeAdminMedia(row as unknown as AdminMediaRow) : null
+  return row ? serializeAdminMedia(row) : null
 }
 
 export type PublicMediaCategory = {
