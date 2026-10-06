@@ -10,7 +10,7 @@
           <div class="mb-6">
             <nuxt-link :to="`/news/${featured.slug}`" class="block no-underline group">
               <div class="relative h-[300px] rounded-lg overflow-hidden sm:h-[420px] shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-                <img :src="featured.thumbnailUrl || '/assets/news_danang.jpg'" :alt="featured.title" class="w-full h-full object-cover transition-transform duration-[0.6s] ease-[cubic-bezier(0.165,0.84,0.44,1)] group-hover:scale-[1.03]"  loading="lazy" decoding="async" />
+                <NuxtImg :src="featured.thumbnailUrl || '/assets/news_danang.jpg'" :alt="featured.title" class="w-full h-full object-cover transition-transform duration-[0.6s] ease-[cubic-bezier(0.165,0.84,0.44,1)] group-hover:scale-[1.03]" format="webp" loading="lazy" decoding="async" />
                 <div class="absolute bottom-0 left-0 right-0 h-[60%] z-[1]" style="background: linear-gradient(to top, rgba(16,28,16,0.95) 0%, rgba(16,28,16,0.4) 60%, rgba(16,28,16,0) 100%);"></div>
                 <div class="absolute bottom-0 left-0 right-0 p-6 text-white z-[2]">
                   <span class="inline-block bg-[#7CB342] text-white px-2 py-[3px] text-[0.65rem] font-extrabold rounded-sm mb-2 uppercase">{{ t('news_featured') || 'TIN NỔI BẬT' }}</span>
@@ -28,9 +28,9 @@
                chỉ xuất hiện ở cột phải — tức dữ liệu đã về đủ mà giao diện bỏ
                phí. Dùng hết 5 = không thêm một lượt đi mạng nào. -->
           <div class="grid grid-cols-1 gap-[14px] sm:grid-cols-2 sm:gap-5" role="list">
-            <div v-for="item in subCards" :key="item.id" class="flex gap-4 py-3 border-t border-dashed border-[#E2E8DF] group">
+            <div v-for="item in subCards" :key="item.id" role="listitem" class="flex gap-4 py-3 border-t border-dashed border-[#E2E8DF] group">
               <nuxt-link :to="`/news/${item.slug}`" class="w-[130px] h-[85px] rounded-lg overflow-hidden flex-shrink-0 shadow-sm" :title="item.title">
-                <img :src="item.thumbnailUrl || '/assets/news_quangninh.jpg'" :alt="item.title" class="w-full h-full object-cover transition group-hover:scale-[1.05]" loading="lazy" decoding="async" />
+                <NuxtImg :src="item.thumbnailUrl || '/assets/news_quangninh.jpg'" :alt="item.title" class="w-full h-full object-cover transition group-hover:scale-[1.05]" format="webp" loading="lazy" decoding="async" />
               </nuxt-link>
               <div class="flex flex-col flex-1 min-w-0 justify-between py-0.5">
                 <div>
@@ -52,7 +52,7 @@
         <SectionBar :title="t('block_news_side_title')" icon="⚑" />
 
         <div class="flex flex-col" role="list">
-          <div v-for="item in trending" :key="item.id" class="flex gap-3 py-[14px] border-b border-[#E2E8DF] last:border-b-0">
+          <div v-for="item in trending" :key="item.id" role="listitem" class="flex gap-3 py-[14px] border-b border-[#E2E8DF] last:border-b-0">
             <div class="w-[6px] h-[6px] rounded-full bg-[#4A6741] mt-2 flex-shrink-0"></div>
             <div class="flex-1 min-w-0">
               <h4 class="text-[0.88rem] font-bold leading-[1.4] m-0 mb-[6px] line-clamp-2">

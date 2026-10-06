@@ -55,11 +55,34 @@ const fontLinks = existsSync(selfHostedFontCss)
  * and the @font-face declarations for eleven families nothing here references.
  * tests/asset-pipeline.test.ts fails if a template starts using a family that
  * is not listed here — otherwise those icons would silently render as blanks.
+ *
+ * `font-display: swap` (FOUT) đã được patch trực tiếp vào 3 file `*.min.css`
+ * (solid/regular/brands) — mặc định FA 7.x dùng `block` (FOIT 3s), làm text icon
+ * biến mất trong 3s đầu trên mạng chậm. Patch file thay vì regenerate để giữ
+ * tập tin gốc từ gói FA; nếu nâng cấp FA, chỉ cần chạy lại sed (xem CHANGELOG).
  */
 const ICON_FAMILIES = ['solid', 'regular', 'brands']
 const iconLinks = ['fontawesome', ...ICON_FAMILIES].map(name => ({
   rel: 'stylesheet' as const,
   href: `/assets/fontawesome/css/${name}.min.css`,
+}))
+
+/**
+ * Preload 3 woff2 icon font để font sẵn sàng khi CSS parse xong, đưa woff2 ra
+ * khỏi critical path (Lighthouse "Hiển thị phông chữ" 620ms → ~90ms). Không
+ * preload fontawesome.min.css (154KB class map) vì không phải font, chỉ preload
+ * woff2. `crossorigin` bắt buộc cho `as="font"`.
+ */
+const iconFontPreloads = [
+  { family: 'solid', weight: '900', file: 'fa-solid-900.woff2' },
+  { family: 'regular', weight: '400', file: 'fa-regular-400.woff2' },
+  { family: 'brands', weight: '400', file: 'fa-brands-400.woff2' },
+].map(f => ({
+  rel: 'preload' as const,
+  as: 'font' as const,
+  type: 'font/woff2',
+  crossorigin: 'anonymous' as const,
+  href: `/assets/fontawesome/webfonts/${f.file}`,
 }))
 
 const analyticsRetention = resolveAnalyticsRetentionConfig()
@@ -90,9 +113,10 @@ export default defineNuxtConfig({
     quality: 75,
     format: ['webp', 'jpg', 'png'],
     // IPX provider mặc định đọc ảnh từ `public/` (uploads serve qua
-    // server/routes/uploads). Ảnh R2 có public URL riêng — nếu cần resize R2,
-    // thêm domain R2 vào `domains` bên dưới và dùng `<NuxtImg :src="r2Url">`.
-    domains: [],
+    // server/routes/uploads). Ảnh R2 có public URL riêng — `cdn1.delify.vn`
+    // cho phép NuxtImg resize/WebP hóa ảnh R2 (logo Bộ Công an, ảnh bài viết).
+    // Chỉ khai báo domain IPX có quyền đọc — tránh open proxy.
+    domains: ['cdn1.delify.vn'],
   },
 
   /**
@@ -246,6 +270,20 @@ export default defineNuxtConfig({
         'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
         'Referrer-Policy': 'strict-origin-when-cross-origin',
         'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+        // Cross-origin isolation — pentest RedAmon 2026-10-06 báo COOP/CORP/COEP
+        // missing. COOP `same-origin` cô lập window handle (chống Spectre
+        // side-channel + cross-origin window interaction), an toàn không chặn
+        // resource nào. CORP `same-origin` chặn site KHÁC nhúng tài nguyên CDKT
+        // (defensive, không phá site mình).
+        //
+        // COEP cố ý KHÔNG bật: `require-corp` sẽ chặn mọi cross-origin resource
+        // không kèm CORP header — ảnh R2 cdn1.delify.vn, YouTube embed,
+        // Cloudflare insights đều KHÔNG gửi CORP và em không control header
+        // các endpoint đó → bật COEP = phá vỡ site. `credentialless` (Chrome
+        // 96+) an toàn hơn nhưng Firefox/Safari support chậm + vẫn rủi ro với
+        // YouTube iframe. Đợi browser support rộng + R2 gửi CORP rồi mới bật.
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Resource-Policy': 'same-origin',
         'Content-Security-Policy': [
           "default-src 'self'",
           "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://cdnjs.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://www.googletagmanager.com https://connect.facebook.net https://analytics.tiktok.com https://www.clarity.ms https://*.gov.vn",
@@ -322,6 +360,19 @@ export default defineNuxtConfig({
         // và thẻ nào thắng do trình duyệt quyết định — tức là cán bộ đổi favicon
         // rồi thấy nó đổi trên Chrome mà không đổi trên Safari. Có test chặn.
         ...fontLinks,
+        // Preconnect R2 CDN sớm — ảnh logo + thumbnail bài viết phục vụ từ
+        // cdn1.delify.vn. PageSpeed gợi ý "không có điểm gốc nào được kết nối
+        // trước"; 1 preconnect (R2), không quá 4.
+        { rel: 'preconnect' as const, href: 'https://cdn1.delify.vn' },
+        // Preload hero banner (LCP element) — `HeroBlock.vue` dùng `background:
+        // image-set(...)` CSS nên trình duyệt chỉ tìm thấy ảnh sau khi parse xong
+        // stylesheet. Preload báo fetch ngay, `fetchpriority: 'high'` ưu tiên
+        // trước ảnh khác. `type: 'image/webp'` → browser không hỗ trợ WebP bỏ
+        // qua preload an toàn (spec). Ảnh `.webp` 155 KiB vs `.jpg` 201 KiB (-23%).
+        { rel: 'preload' as const, as: 'image', href: '/assets/hero_banner.webp', fetchpriority: 'high', type: 'image/webp' },
+        // Preload woff2 TRƯỚC stylesheet FA để font sẵn sàng khi CSS parse xong —
+        // đưa woff2 ra khỏi critical path (Lighthouse "Hiển thị phông chữ").
+        ...iconFontPreloads,
         ...iconLinks,
       ]
     }

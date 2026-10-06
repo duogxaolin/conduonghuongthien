@@ -2,7 +2,7 @@
   <section
     v-if="quote || cite"
     class="relative w-full overflow-hidden bg-cover bg-center py-[90px] md:py-[120px]"
-    :style="bgImage ? `background-image: url('${bgImage}');` : ''"
+    :style="quoteBg ? `background-image: ${quoteBg};` : ''"
   >
     <!-- Green overlay (replaces original background-attachment: fixed parallax) -->
     <div class="absolute inset-0 bg-[rgba(45,74,45,0.85)]"></div>
@@ -40,4 +40,17 @@ const cite = computed(() => {
 })
 
 const bgImage = computed(() => d.value.bgImage || '/assets/hero_banner.jpg')
+
+/**
+ * `image-set()` cho ảnh default `hero_banner` — giống `HeroBlock.vue`: trình duyệt
+ * hiện đại chọn `.webp` (155 KiB vs `.jpg` 201 KiB), cũ lùi `.jpg`. Ảnh admin upload
+ * giữ `url()` gốc (xem lý do trong `HeroBlock.vue`).
+ */
+const quoteBg = computed(() => {
+  const bg = bgImage.value
+  if (bg === '/assets/hero_banner.jpg') {
+    return `image-set(url('/assets/hero_banner.webp') type('image/webp'), url('${bg}') type('image/jpeg'))`
+  }
+  return bg ? `url('${bg}')` : ''
+})
 </script>

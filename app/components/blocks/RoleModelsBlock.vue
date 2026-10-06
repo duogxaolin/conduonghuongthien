@@ -24,10 +24,11 @@
           >
             <nuxt-link :to="`/role-models/${model.id}`" class="group block no-underline">
               <figure class="relative aspect-[16/10] rounded-lg overflow-hidden bg-[#EEF2EC]">
-                <img
+                <NuxtImg
                   :src="model.image"
                   :alt="model.name"
                   class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]"
+                  format="webp"
                   loading="lazy"
                   decoding="async"
                 />

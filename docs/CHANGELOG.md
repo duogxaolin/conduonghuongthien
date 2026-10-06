@@ -425,3 +425,85 @@ Plugin `render:html` chèn tag vào `html.head` **trước** Vue head (`@unhead`
 
 #### Kiểm chứng
 Typecheck 0 lỗi, eslint 0 error, npm test 2065 pass/0 fail/14 skip, build exit 0, db:drift 62 bảng/635 cột không lệch.
+
+### 12. NuxtImg IPX CDN WebP — logo + thumbnail công khai (2026-10-06)
+
+#### Bối cảnh
+Ảnh công khai (logo, thumbnail bài viết, block Page Builder) dùng `<img>` thường → serve định dạng gốc (PNG/JPG). CDN R2 (`cdn1.delify.vn`) không tự convert WebP (test `Accept: image/webp` vẫn trả `image/png`). Hero banner đã qua sharp, related-article thumbnail giữ `<img>` vì test guard `article-related-content.test.ts:341` chặn `/<img/`.
+
+#### Thay đổi
+- **`nuxt.config.ts`**: thêm `domains: ['cdn1.delify.vn']` vào `image` config — IPX provider (sharp 0.35.4) fetch ảnh R2 + local → convert WebP + cache server.
+- **Logo (4 component)**: `<img>` → `<NuxtImg format="webp">` + `width`/`height`:
+  - `DefaultHeader.vue` (112×56/100×50 + 76×38/100×50)
+  - `DefaultFooter.vue` (144×72/128×64 + 104×52/128×64)
+  - `DefaultMobileDrawer.vue` (80×40/72×36 + 56×28/72×36)
+  - `admin/login.vue` — giữ `:src`, `v-if`, class tỷ lệ (test guard `main-logo-settings.test.ts`)
+- **Thumbnail công khai**: `ArticleDetail.vue` (thumbnail chính), `NewsCategoryList.vue`, `ContentTypeListSection.vue`, `news/index.vue`, `role-models/index.vue`, `documents/index.vue`, `reintegration-models/index.vue`, `search.vue`
+- **Page Builder blocks**: `NewsBlock.vue`, `RoleModelsBlock.vue`, `ReintegrationBlock.vue`, `DocumentsBlock.vue`, `ImageBlock.vue`, `GalleryBlock.vue`
+
+#### Giữ `<img>` cố ý
+- `ArticleDetail` related-article thumbnail — test guard `article-related-content.test.ts:341` `/<img/`
+- `SocialBubble` — icon SVG social (vector không WebP)
+- `media/index` + `media/[shortId]` — thumbnail đã qua sharp server-side (quy tắc CLAUDE.md)
+- `in-bai/[slug]` — logo trang in báo giấy
+- `StatsBlock` + `image-fallback.ts` + `markdown.ts` — comment/string code
+
+#### Kiểm chứng
+Typecheck 0 lỗi, eslint 0 error, npm test 2065 pass/0 fail/14 skip, build exit 0. CSP `img-src 'self' https://*.delify.vn` cover IPX proxy (cùng origin) + R2 CDN.
+
+### 13. Convert ảnh upload PNG/JPG/JPEG → WebP tại Media Library (2026-10-06)
+
+#### Bối cảnh
+`/api/admin/media/upload` lưu ảnh PNG/JPG nguyên gốc → client tải full size (2-5MB). Dù NuxtImg IPX (entry 12) convert WebP lúc serve, ảnh trên R2 vẫn gốc lớn, và không phải ảnh nào cũng qua NuxtImg (ArticleDetail related-article giữ `<img>` do test guard, ảnh rich-text TinyMCE dùng `<img>` thường).
+
+#### Thay đổi
+- **`server/api/admin/media/upload.post.ts`**: chèn logic convert WebP q80 sau khối resize>2400px, trước khi derive extension. PNG/JPG/JPEG → `sharp(buffer).webp({ quality: 80 })`, cập nhật `effectiveMime = 'image/webp'` → đuôi `.webp` + DB `mimeType` + R2 Content-Type đồng bộ.
+
+#### Giữ nguyên định dạng
+- **GIF** — sharp flatten animated GIF → frame đầu, loại trừ
+- **WebP** — không re-encode (tránh giảm chất lượng 2 lần)
+- **ICO** — sharp không decode
+- **Video/PDF** — không phải ảnh
+- **Ảnh >2400px** — resize về 2400 RỒI convert WebP (không resize 2 lần)
+- **sharp fail** — try/catch fallback giữ format gốc (không chặn upload)
+
+#### 2 endpoint loại (giải thích trong plan)
+- Media-portal thumbnail video — test guard `media-api.test.ts:664` chặn `image/jpeg` + `MEDIA_THUMBNAIL_FILE='thumb.jpg'` hardcode
+- Favicon — không lưu ảnh gốc, render PNG 32/180 + ICO (iOS không hỗ trợ WebP cho touch icon, ICO container bắt buộc)
+
+#### Kiểm chứng
+Typecheck 0 lỗi, eslint 0 error, npm test 2065 pass/0 fail/14 skip, build exit 0. Test guard `favicon-settings.test.ts:639` (`EXT_BY_MIME[effectiveMime]`) + `cms-core-auth-media.test.ts:129-130` (`EXT_BY_MIME` + `effectiveMime`) pass.
+
+### 14. Preload hero banner WebP + preconnect R2 (2026-10-06)
+
+#### Bối cảnh
+PageSpeed Insights mobile báo LCP hero banner chậm + "không có điểm gốc nào được kết nối trước". `HeroBlock.vue` dùng `background: url('/assets/hero_banner.jpg')` 201 KiB — CSS background không preload tự động, browser chỉ tìm thấy ảnh sau khi parse xong stylesheet.
+
+#### Thay đổi
+- **`public/assets/hero_banner.webp`** (MỚI, 155 KiB, -23% từ 201 KiB JPG): sharp q80 convert 1 lần, commit binary cùng `.jpg` (giữ `.jpg` fallback).
+- **`nuxt.config.ts` `app.head.link`**: thêm 2 thẻ sau `fontLinks`, trước `iconFontPreloads`:
+  - `{ rel: 'preconnect', href: 'https://cdn1.delify.vn' }` — thiết lập TCP/TLS sớm cho R2 CDN (logo + thumbnail bài viết). 1 preconnect, không quá 4.
+  - `{ rel: 'preload', as: 'image', href: '/assets/hero_banner.webp', fetchpriority: 'high', type: 'image/webp' }` — LCP element, `type: 'image/webp'` → browser không hỗ trợ WebP bỏ qua preload an toàn (spec).
+- **`HeroBlock.vue`**: `heroBg` computed — nếu `bgImage` là `/assets/hero_banner.jpg` (default), dùng CSS `image-set(url('...webp') type('image/webp'), url('...jpg') type('image/jpeg'))`; ảnh admin upload khác giữ `url(bgImage)`. `image-set()` hỗ trợ Chrome 113+/Safari 17+/Firefox 89+ (>95% browser 2026-10).
+- **`QuoteBlock.vue`**: cùng pattern `quoteBg` computed image-set.
+
+#### Kiểm chứng
+Typecheck 0 lỗi, eslint 0 error.
+
+### 15. FontAwesome font-display swap + preload woff2 (2026-10-06)
+
+#### Bối cảnh
+PageSpeed Insights mobile báo 2 vấn đề:
+- **"Hiển thị phông chữ" 620ms** — FontAwesome CSS dùng `font-display:block` (FOIT 3s): icon biến mất trong 3s đầu trên mạng chậm.
+- **"Yêu cầu đang chặn kết xuất ban đầu" 4.5s** — 8 file CSS chặn first paint, trong đó 3 file FA woff2 (fa-regular 357KB, fa-solid 276KB, fa-brands 115KB) nằm trong critical path.
+
+#### Thay đổi
+- **`font-display: block → swap`** trong 3 file `public/assets/fontawesome/css/{solid,regular,brands}.min.css` (patch trực tiếp, không regenerate). FOUT thay FOIT — icon hiện ngay bằng font fallback, tải xong đổi sang FA icon. Inter font đã có `swap` từ trước.
+- **Preload 3 woff2** qua `nuxt.config.ts` `app.head.link`: `<link rel="preload" as="font" type="font/woff2" crossorigin="anonymous" href="...fa-{solid-900,regular-400,brands-400}.woff2">`. Đặt TRƯỚC `iconLinks` (stylesheet) để font sẵn sàng khi CSS parse xong — woff2 ra khỏi critical path.
+
+#### KHÔNG đổi
+- Không động `fontawesome.min.css` (154KB class map, không có `@font-face`).
+- Không async-load CSS (FOUC icon không đáng giá).
+
+#### Kiểm chứng
+Build exit 0, typecheck 0 lỗi, eslint 0 error.

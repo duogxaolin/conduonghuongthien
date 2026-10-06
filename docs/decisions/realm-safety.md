@@ -134,3 +134,88 @@ Hai allowlist nằm ở hai tệp khác nhau — `detectMime()`/`EXT_BY_MIME` �
 `isMaintenanceDue` hỏi "hôm nay chạy chưa?", và bản đầu so `lastCompletedDay` với `utcDay(now)`. Ở **UTC+7 thì mọi giờ địa phương trước 07:00 vẫn thuộc ngày UTC hôm trước**: 03:00 ngày 8 có `utcDay` là `2026-08-07` — đúng ngày lượt chạy đêm trước đã ghi. Nó đọc thành "hôm nay xong rồi" và **bỏ lượt mỗi đêm, mãi mãi, không một dòng log nào nói ra** — tức là tái tạo đúng cách hỏng mà scheduler này ra đời để chấm dứt, ở dòng ngay bên dưới. Nay ưu tiên `completed_at` (là một mốc thời gian nên đổi sang ngày địa phương chính xác), và khi hàng cũ không có nó thì so ngày đã lưu với **cả** ngày địa phương **lẫn** ngày UTC — lệch về phía "đã xong" thì tệ nhất là mất một đêm mà nhánh `stale` (36 giờ) sẽ vớt, còn lệch về phía kia là **gộp lại mỗi lần boot**.
 
 - **CI nay chạy `npm test` với `TZ=Asia/Ho_Chi_Minh`** (`.github/workflows/ci.yml`, có test canh dòng đó ở `tests/ops-scripts.test.ts`). Đây là **cổng chặn thật, không phải chuyện sạch sẽ**: đưa phép so UTC quay lại thì **6 test đỏ ở UTC+7 và 0 test đỏ ở UTC**. Runner của GitHub chạy UTC, nên thiếu dòng này là pipeline phát dấu tích xanh cho một scheduler **không bao giờ chạy** trên chính máy chủ nó được triển khai tới. Mọi logic ngày tháng đọc giờ/ngày địa phương đều chung điểm mù này, nên dịch **cả suite** thay vì một tệp.
+
+---
+
+## Pentest RedAmon 2026-10-06 — 12 findings, 0 CVE, risk 65/100 High
+
+Báo cáo external pentest `cdht.delify.vn` (RedAmon, 6/10/2026). Mọi finding đều là **misconfig deployment/DNS**, không phải soft vuln — 0 CVE, 0 confirmed exploit. Đối chiếu với codebase:
+
+### Đã có trong code (scanner không thấy — do Cloudflare edge hay scanner cur thấu)
+
+- `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload` — `nuxt.config.ts` routeRules `/**`.
+- `X-Frame-Options: DENY` + CSP `frame-ancestors 'none'` — chống clickjacking.
+- `X-Content-Type-Options: nosniff`, `Referrer-Policy: strict-origin-when-cross-origin`, `Permissions-Policy: camera=(), microphone=(), geolocation=(), interest-cohort=()`.
+- CSP đầy đủ (script-src/style-src/img-src/connect-src/frame-src/media-src/font-src allowlist).
+- **Rate limiting login** — `server/utils/rate-limit-store.ts` + login bước 2 giới hạn 10/15ph theo tài khoản. Scanner báo "No Rate Limiting on Login" ×3 có thể vì test qua CDN edge không thấy response 429 origin trả, hoặc test tới endpoint khác ngoài `/api/auth/login`.
+
+Scanner báo "Sec Headers 0%" là **sai về CDN edge**, không phải code thiếu — origin Nitro gửi đủ. Verify bằng `curl -sI https://cdht.delify.vn/ | grep -i "x-frame\|strict-transport\|content-security"` (sau khi qua Cloudflare).
+
+### Đã fix trong code sau báo cáo (info tier)
+
+- **COOP `same-origin`** + **CORP `same-origin`** — thêm vào `nuxt.config.ts` routeRules `/**` headers. COOP cô lập window handle (chống Spectre side-channel + cross-origin window interaction). CORP chặn site khác nhúng tài nguyên CDKT.
+- **COEP cố ý KHÔNG bật**: `require-corp` sẽ chặn cross-origin resource không kèm CORP header — ảnh R2 `cdn1.delify.vn`, YouTube embed, Cloudflare insights đều không gửi CORP và em không control header các endpoint đó → bật COEP = phá vỡ site. `credentialless` (Chrome 96+) an toàn hơn nhưng Firefox/Safari support ch慢 + rủi ro với YouTube iframe. Đợi browser support rộng + R2 gửi CORP rồi mới bật.
+
+### KHÔNG fix trong code (giải thích tại sao)
+
+- **CSP `'unsafe-inline'` script-src** — cố ý Nuxt 4 hydration + Tailwind dùng inline. Bỏ = vỡ site. Đợi Nuxt 5 hash CSP. Ghi rõ trong `nuxt.config.ts` comment + CLAUDE.md.
+- **Login Form over HTTP (high)** — không phải code, là **Cloudflare edge** phải redirect HTTP→HTTPS. Code đã có HSTS nhưng nếu Cloudflare forward HTTP tới origin thì browser vẫn thấy HTTP trước redirect. Fix ở Cloudflare dashboard, không phải repo.
+
+### Phần deployment/DNS (không phải code CDKT — anh xử lý ngoài repo)
+
+#### A. Cloudflare edge (fix High "Login Form over HTTP")
+
+Vào Cloudflare dashboard → domain `delify.vn` (hoặc `cdht.delify.vn` nếu zone riêng):
+
+1. **SSL/TLS → Edge Certificates → Always Use HTTPS**: ON. Tự redirect 80→443 tại edge, client không bao giờ thấy HTTP.
+2. **SSL/TLS → Edge Certificates → HSTS**: ON, `max-age: 31536000` (1 năm), `includeSubDomains: true`, `preload: true`. Edge gửi HSTS cho mọi response.
+3. **SSL/TLS → Edge Certificates → Minimum TLS Version**: 1.2.
+4. **SSL/TLS → Edge Certificates → Automatic HTTPS Rewrites**: ON.
+5. **Rules → Page Rules** (nếu cần): `http://cdht.delify.vn/*` → "Always Use HTTPS".
+
+Verify sau bật: `curl -I http://cdht.delify.vn/admin/login` → phải ra `301` về `https://` + `Strict-Transport-Security` header.
+
+Lý do scanner thấy "Login Form over HTTP": scan `http://cdht.delify.vn/admin/login` → Cloudflare proxy trả 200 (forward tới origin) thay vì 301→HTTPS. Bật "Always Use HTTPS" edge chặn triệt để.
+
+#### B. DNS SPF/DMARC/DKIM (fix 2 Medium)
+
+Thêm 3 record DNS ở zone `delify.vn` (DNS provider — Cloudflare hoặc registrar):
+
+**SPF** (TXT `delify.vn`):
+```
+v=spf1 include:_spf.google.com include:_spf.mailchimp.com ~all
+```
+Thay `include:` bằng mail provider thật anh dùng. `~all` (softfail) để test, sau chuyển `-all` (hardfail). Đảm bảo MX record chỉ指向 authorized mail server.
+
+**DKIM** (TXT `_default._domainkey.delify.vn` — hoặc record provider cấp):
+```
+v=DKIM1; k=rsa; p=MIGfMA0GCSqGSIb3DQEB...
+```
+Lấy public key từ mail provider (Google Workspace, Mailchimp, Brevo...). DKIM ký email header, receiver verify.
+
+**DMARC** (TXT `_dmarc.delify.vn`):
+```
+v=DMARC1; p=none; rua=mailto:dmarc@delify.vn; ruf=mailto:dmarc@delify.vn; fo=1
+```
+Bắt đầu `p=none` (monitor), xem report 1-2 tuần, rồi `p=quarantine` (spam folder), cuối `p=reject` (drop). `rua` nhận report tổng hợp, `ruf` nhận report forensic.
+
+Verify: `dig TXT delify.vn` + `dig TXT _dmarc.delify.vn` + https://mxtoolbox.com/dmarcheck.
+
+#### C. DNSSEC (fix Low — optional cho portal nhà nước)
+
+Cloudflare: DNS → DNS settings → Enable DNSSEC → copy DS record → dán vào registrar. Cloudflare tự ký zone. Verify: `dig +dnssec delify.vn`.
+
+DNSSEC chống DNS spoofing/cache poisoning — low severity vì khó exploit nhưng portal nhà nước nên bật cho đủ.
+
+### Tóm tắt phân công
+
+| Finding | Fix chỗ | Ai làm |
+|---|---|---|
+| Login HTTP (high) | Cloudflare edge | Anh (dashboard) |
+| SPF/DMARC/DKIM (medium) | DNS zone delify.vn | Anh (DNS provider) |
+| DNSSEC (low) | DNS zone + registrar | Anh |
+| CSP unsafe-inline (medium) | Code — KHÔNG fix (Nuxt 4) | Đợi Nuxt 5 |
+| Rate limiting (medium) | Code — ĐÃ CÓ | — |
+| COOP/CORP (info) | Code — ĐÃ FIX | Em |
+| COEP (info) | Code — KHÔNG fix (rủi ro) | Đợi browser+R2 |
+| Các header khác (info) | Code — ĐÃ CÓ | — |

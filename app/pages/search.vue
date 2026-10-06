@@ -198,10 +198,11 @@
             :to="item.url"
             class="block w-full sm:w-40 md:w-48 aspect-video bg-[#EEF4EC] rounded-lg overflow-hidden shrink-0 no-underline"
           >
-            <img
+            <NuxtImg
               :src="item.thumbnailUrl"
               :alt="item.title"
               class="w-full h-full object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
+              format="webp"
               loading="lazy"
               decoding="async"
             />
