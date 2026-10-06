@@ -164,11 +164,10 @@
               >
                 <!-- Thumbnail: strictly 16:9 like news cards -->
                 <nuxt-link :to="`/news/${doc.slug}`" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
-                  <NuxtImg
+                  <img
                     :src="doc.thumbnailUrl || '/assets/hero_banner.jpg'"
                     :alt="doc.title"
                     class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
-                    format="webp"
                     loading="lazy"
                     decoding="async"
                   />

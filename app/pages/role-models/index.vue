@@ -194,11 +194,10 @@
                 :to="`/role-models/${featured.slug}`"
                 class="block overflow-hidden lg:w-[42%] xl:w-[40%] shrink-0 relative bg-[#EBF1EA] no-underline"
               >
-                <NuxtImg
+                <img
                   :src="featured.thumbnailUrl || '/assets/hero_banner.jpg'"
                   :alt="featured.title"
                   class="w-full h-[220px] sm:h-[250px] lg:h-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-105"
-                  format="webp"
                   loading="lazy"
                   decoding="async"
                 />
@@ -269,11 +268,10 @@
                 class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-[#7CB342] transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
               >
                 <nuxt-link :to="`/role-models/${item.slug}`" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
-                  <NuxtImg
+                  <img
                     :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
                     :alt="item.title"
                     class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
-                    format="webp"
                     loading="lazy"
                     decoding="async"
                   />

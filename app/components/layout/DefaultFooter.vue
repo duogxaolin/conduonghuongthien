@@ -5,26 +5,20 @@
       <div>
         <div class="flex items-center gap-3.5 mb-5 flex-wrap">
           <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-3 shrink-0">
-            <NuxtImg
+            <img
               v-if="siteMainLogo"
               :src="siteMainLogo"
               alt="Logo cơ quan chủ quản"
               class="w-auto object-contain"
               :class="siteLogo ? 'h-16 md:h-[72px]' : 'h-14 md:h-16'"
-              format="webp"
-              :width="siteLogo ? 144 : 128"
-              :height="siteLogo ? 72 : 64"
             />
             <span v-if="siteMainLogo && siteLogo" class="h-12 md:h-14 w-px bg-white/25" aria-hidden="true"></span>
-            <NuxtImg
+            <img
               v-if="siteLogo"
               :src="siteLogo"
               alt="Logo Con Đường Hướng Thiện"
               class="w-auto object-contain"
               :class="siteMainLogo ? 'h-12 md:h-[52px]' : 'h-14 md:h-16'"
-              format="webp"
-              :width="siteMainLogo ? 104 : 128"
-              :height="siteMainLogo ? 52 : 64"
             />
           </div>
           <span class="text-white font-extrabold text-[1.2rem] md:text-[1.35rem] tracking-[0.5px]">{{ t('portal_title') }}</span>

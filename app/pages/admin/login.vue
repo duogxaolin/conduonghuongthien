@@ -241,21 +241,19 @@ function backToPassword() {
     <div class="w-full max-w-[420px] bg-white rounded-2xl shadow-[0_20px_50px_rgba(0,0,0,0.3)] overflow-hidden">
       <div class="px-8 pt-8 pb-6 text-center bg-[#f8faf8] border-b border-[#eef2ee]">
         <div v-if="siteMainLogo || siteLogo" class="flex items-center justify-center gap-3 mb-4 flex-wrap">
-          <NuxtImg
+          <img
             v-if="siteMainLogo"
             :src="siteMainLogo"
             alt="Logo cơ quan chủ quản"
             class="w-auto object-contain"
-            format="webp"
             :class="siteLogo ? 'h-12' : 'h-12'"
           />
           <span v-if="siteMainLogo && siteLogo" class="h-8 w-px bg-[#c8d6c9]" aria-hidden="true"></span>
-          <NuxtImg
+          <img
             v-if="siteLogo"
             :src="siteLogo"
             alt="Logo Con Đường Hướng Thiện"
             class="w-auto object-contain"
-            format="webp"
             :class="siteMainLogo ? 'h-9' : 'h-12'"
           />
         </div>

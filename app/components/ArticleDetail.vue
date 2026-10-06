@@ -73,11 +73,10 @@
         </div>
 
         <div v-if="article.thumbnailUrl" class="my-8 text-center">
-          <NuxtImg
+          <img
             :src="article.thumbnailUrl"
             :alt="article.title"
             class="w-full max-h-[450px] object-cover rounded-lg shadow-sm"
-            format="webp"
             loading="lazy"
             decoding="async"
           />
@@ -263,9 +262,6 @@
                   :to="`${backTo}/${item.slug}`"
                   class="group flex items-start gap-3 no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
                 >
-                  <!-- Test `article-related-content.test.ts:341` guard chặn `/<img/`
-                       trong mỗi <li> — ảnh nhỏ trang trí nhận biết bài đã đọc.
-                       Giữ <img> ( KHÔNG đổi sang NuxtImg) để pass guard. -->
                   <img
                     :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
                     alt=""

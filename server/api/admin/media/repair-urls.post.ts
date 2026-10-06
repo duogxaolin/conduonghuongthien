@@ -1,11 +1,11 @@
 /**
  * POST /api/admin/media/repair-urls — vá URL ảnh hỏng hàng loạt.
  *
- * All bài đang `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi
+ * All bài đang `http://localhost:3000/uploads/migrated/YYYY/MM/*.jpeg` trong khi
  * file local đã bị xoá sau sync + `media.url` thiếu scheme
  * (`cdn1.delify.vn/...` → `http://localhost:3000/cdn1...`).
- * Endpoint này vá cả `media.url` + `articles.content` trong 1 transaction,
- * tự backup SQL trước (snapshot recover thủ công), idempotent.
+ * Endpoint này vá cả `media.url` + `articles.content` + `articles.thumbnail_url`
+ * trong 1 transaction, tự backup SQL trước (snapshot recover thủ công), idempotent.
  *
  * Quyền `media.update` (cùng sync/repoint).
  */
@@ -21,7 +21,7 @@ export default defineEventHandler(async (event) => {
     return {
       ok: true,
       ...result,
-      message: `Đã vá: ${result.mediaFixed} URL media + ${result.articlesFixed} lượt thay trong bài viết.${result.backupStamp ? ` Snapshot: ${result.backupStamp}.` : ''}`,
+      message: `Đã vá: ${result.mediaFixed} URL media + ${result.articlesFixed} lượt thay trong bài viết + ${result.thumbnailsFixed} thumbnail bài.${result.backupStamp ? ` Snapshot: ${result.backupStamp}.` : ''}`,
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)
