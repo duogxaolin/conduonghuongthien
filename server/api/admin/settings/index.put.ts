@@ -4,6 +4,7 @@ import { getDb } from '../../../utils/db'
 import { settings, activityLogs } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { FAVICON_ICO_SETTING_KEY, clearFaviconSettingCache } from '../../../utils/favicon-setting'
+import { clearOgImageSettingCache } from '../../../utils/og-image-setting'
 
 /**
  * Allow-list of settings keys writable through this endpoint. Previously ANY key
@@ -18,7 +19,7 @@ const ALLOWED_SETTING_KEYS = new Set([
   // thuộc tính `href` đã qua `safeFaviconUrl()` (chỉ nhận đường dẫn tương đối
   // hoặc `https://`), nên nó không thực thi được gì — khác `tracking_custom_*`
   // vốn được chèn nguyên văn dưới dạng script.
-  'logo_url', 'main_logo_url', 'hero_banner_url', 'favicon_url',
+  'logo_url', 'main_logo_url', 'hero_banner_url', 'favicon_url', 'og_image_url',
   // Media storage
   'media_provider', 'r2_account_id', 'r2_access_key', 'r2_secret_key', 'r2_bucket', 'r2_public_url',
   // SMTP
@@ -143,6 +144,10 @@ export default defineEventHandler(async (event) => {
    * "không lưu được".
    */
   if (applied.includes('favicon_url')) clearFaviconSettingCache()
+
+  // Cùng lý do `clearFaviconSettingCache`: plugin `og-image.ts` đệm 30s, không
+  // xoá thì admin lưu xong vẫn thấy og:image cũ tới nửa phút.
+  if (applied.includes('og_image_url')) clearOgImageSettingCache()
 
   return { ok: true }
 })

@@ -216,6 +216,10 @@ async function seed() {
     { key: 'main_logo_url',    value: '',                                                      group: 'general' },
     { key: 'logo_url',         value: '/Logo.png',                                             group: 'general' },
     { key: 'hero_banner_url',  value: '/assets/hero_banner.jpg',                              group: 'general' },
+    // OG image mặc định rỗng lúc seed — admin tự upload ảnh 1200×630 tại
+    // /admin/settings/general. Vắng thì plugin `og-image.ts` không chèn thẻ
+    // nào (không có ảnh preview khi chia sẻ link, không break).
+    { key: 'og_image_url',     value: '',                                                       group: 'general' },
     // ⚠️ `favicon_url` CỐ Ý KHÔNG có hàng seed, và một hàng trỏ tới
     // `/favicon-32.png` đã được thử rồi bỏ vì nó gây ra một lỗi ĐO ĐƯỢC.
     //

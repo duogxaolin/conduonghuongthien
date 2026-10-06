@@ -73,9 +73,13 @@
         </div>
 
         <div v-if="article.thumbnailUrl" class="my-8 text-center">
-          <img
+          <NuxtImg
             :src="article.thumbnailUrl"
             :alt="article.title"
+            format="webp"
+            width="760"
+            height="450"
+            sizes="(min-width:1024px) 800px, 100vw"
             class="w-full max-h-[450px] object-cover rounded-lg shadow-sm"
             loading="lazy"
             decoding="async"
@@ -262,11 +266,15 @@
                   :to="`${backTo}/${item.slug}`"
                   class="group flex items-start gap-3 no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
                 >
-                  <img
+                  <NuxtImg
                     :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
                     alt=""
                     loading="lazy"
                     decoding="async"
+                    format="webp"
+                    width="72"
+                    height="54"
+                    sizes="72px"
                     class="w-[72px] h-[54px] shrink-0 object-cover rounded bg-[#EEF2EC]"
                   />
                   <span class="min-w-0 flex-grow">
@@ -332,6 +340,7 @@ import { formatDateVN } from '~/utils/formatDate'
 import { classifySource } from '~/utils/analytics-collector'
 import { buildToc, TOC_MIN_HEADINGS } from '~/utils/toc'
 import { useReadingHistory } from '~/composables/useReadingHistory'
+import { useSiteSettings } from '~/composables/useSiteSettings'
 
 const { record: recordRead } = useReadingHistory()
 
@@ -528,12 +537,21 @@ const showTopics = computed(
   () => props.backTo === '/news' && article.value?.type === 'news' && relatedTopics.value.length > 0,
 )
 
+// Ảnh chia sẻ: thumbnail bài viết > ảnh OG mặc định từ settings > hero_banner cứng.
+// `server/plugins/og-image.ts` đã chèn `og:image` mặc định cho mọi route, nhưng
+// `useSeoMeta` (`@unhead`) dedup theo `property="og:image"` và thay thế tag plugin
+// — nên thumbnail bài viết thắng ảnh mặc định khi có. Dưới đây chỉ khai báo lại
+// để Vue head biết tag của trang này là `og:image` (đúng hơn là để dedup), và lùi
+// về ảnh mặc định nếu bài viết không có thumbnail.
+const { sitePublicSettings } = useSiteSettings()
+const ogImageFallback = computed(() => sitePublicSettings.value.og_image_url?.trim() || '/assets/hero_banner.jpg')
+
 useSeoMeta({
   title: computed(() => (article.value ? `${article.value.title} | Con Đường Hướng Thiện` : seoFallbackTitleValue.value)),
   description: computed(() => article.value?.excerpt || seoFallbackDescriptionValue.value),
   ogTitle: computed(() => (article.value ? `${article.value.title} | Con Đường Hướng Thiện` : seoFallbackTitleValue.value)),
   ogDescription: computed(() => article.value?.excerpt || seoFallbackDescriptionValue.value),
-  ogImage: computed(() => article.value?.thumbnailUrl || '/assets/hero_banner.jpg'),
+  ogImage: computed(() => article.value?.thumbnailUrl || ogImageFallback.value),
   ogType: 'article',
 })
 

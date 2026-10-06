@@ -10,12 +10,13 @@
         <a
           v-for="(link, i) in links"
           :key="i"
-          :href="link.url"
+          :href="link.url || '#'"
           target="_blank"
           rel="noopener"
+          :aria-label="link.label"
           class="flex flex-col items-center justify-center bg-white border border-[#E2E8DF] rounded-lg p-5 text-center no-underline text-[#1E251C] shadow-sm transition hover:-translate-y-1 hover:border-[#4A6741] hover:shadow-md group"
         >
-          <div class="w-[46px] h-[46px] rounded-full bg-[rgba(74,103,65,0.05)] flex items-center justify-center text-[1.45rem] mb-3 transition group-hover:bg-[#4A6741] group-hover:text-white">{{ link.icon }}</div>
+          <div class="w-[46px] h-[46px] rounded-full bg-[rgba(74,103,65,0.05)] flex items-center justify-center text-[1.45rem] mb-3 transition group-hover:bg-[#4A6741] group-hover:text-white" aria-hidden="true">{{ link.icon }}</div>
           <span class="text-[0.82rem] font-bold leading-[1.3]">{{ link.label }}</span>
         </a>
       </nav>

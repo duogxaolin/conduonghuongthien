@@ -338,7 +338,7 @@ test('mỗi mục bài viết khác là MỘT điểm dừng tab, không phải 
     1,
     'mỗi mục phải có đúng một link bọc cả ảnh và tiêu đề',
   )
-  assert.match(item, /<img/, 'ảnh nhỏ vẫn ở lại — nó giúp nhận ra bài đã đọc trong nháy mắt')
+  assert.match(item, /<(img|NuxtImg)\b/, 'ảnh nhỏ vẫn ở lại — nó giúp nhận ra bài đã đọc trong nháy mắt')
   assert.match(item, /alt=""/, 'ảnh trang trí phải có alt rỗng, không lặp lại tiêu đề ngay cạnh nó')
 })
 

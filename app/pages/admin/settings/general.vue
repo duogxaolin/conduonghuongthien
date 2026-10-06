@@ -15,6 +15,7 @@ const settings = reactive({
   logo_url: '/Logo.png',
   hero_banner_url: '/assets/hero_banner.jpg',
   favicon_url: '/favicon-32.png',
+  og_image_url: '',
 })
 
 const loading = ref(true)
@@ -26,7 +27,7 @@ const { uploading, uploadFile } = useUpload()
 
 const GENERAL_KEYS = [
   'site_name', 'site_description', 'hotline', 'email', 'address', 'facebook_url',
-  'main_logo_url', 'logo_url', 'hero_banner_url', 'favicon_url',
+  'main_logo_url', 'logo_url', 'hero_banner_url', 'favicon_url', 'og_image_url',
 ] as const
 
 const fetchSettings = async () => {
@@ -70,7 +71,7 @@ const handleSave = async () => {
  * thứ tư sẽ sửa đúng một chỗ, và nút còn lại vẫn biên dịch được — nó chỉ đơn giản
  * là không bao giờ ghi vào đúng khoá.
  */
-type ImageField = 'logo_url' | 'main_logo_url' | 'hero_banner_url' | 'favicon_url'
+type ImageField = 'logo_url' | 'main_logo_url' | 'hero_banner_url' | 'favicon_url' | 'og_image_url'
 
 const pickImage = (field: ImageField) => {
   openPicker({ onSelect: (media) => { settings[field] = media.url } })
@@ -421,6 +422,35 @@ onMounted(() => { loadLayout() })
             <div v-if="settings.hero_banner_url" class="mt-2 relative inline-block border border-[#e2ece3] rounded-lg overflow-hidden">
               <img :src="settings.hero_banner_url" alt="Banner preview" class="block max-h-[120px] max-w-[400px] object-contain" />
               <button type="button" class="absolute top-1 right-1 bg-black/55 text-white border-0 rounded-full w-5 h-5 flex items-center justify-center text-xs cursor-pointer" @click="settings.hero_banner_url = ''"><i class="fa-regular fa-xmark"></i></button>
+            </div>
+          </div>
+
+          <!-- Ảnh chia sẻ mặc định (Open Graph / Twitter Card).
+
+               Dùng cho `og:image` + `twitter:image` trên MỌI trang công khai —
+               khi share link lên Facebook/Twitter/Zalo sẽ hiện ảnh preview này.
+               Trang bài viết có ảnh bìa (thumbnail) thì ảnh bìa đó thắng —
+               `server/plugins/og-image.ts` chỉ là lưới an toàn cho route không
+               gọi `useSeoMeta`. Khuyến Nghị 1200×630px (tỉ lệ Facebook/Twitter). -->
+          <div class="flex flex-col gap-1.5">
+            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Ảnh Chia Sẻ Mặc Định (Open Graph / Twitter)</label>
+            <p class="text-[0.72rem] text-[#667768] m-0">Hiện khi chia sẻ link lên Facebook/Twitter/Zalo. Khuyến nghị 1200×630px. Trang bài viết có ảnh bìa sẽ dùng ảnh bìa đó.</p>
+            <div class="flex gap-2 items-center flex-wrap">
+              <input type="text" v-model="settings.og_image_url" placeholder="URL hoặc chọn từ thư viện" class="flex-1 min-w-0 px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+              <button type="button" class="inline-flex items-center gap-1.5 h-[38px] px-3 border border-[#c8d6c9] bg-[#f4f7f4] text-[#1e4620] rounded-lg text-[0.8rem] font-semibold cursor-pointer hover:bg-[#e6f2e6] hover:border-[#2c6e33] transition-colors shrink-0" @click="pickImage('og_image_url')">
+                <i class="fa-regular fa-images"></i> Thư viện
+              </button>
+              <label class="inline-flex items-center gap-1.5 h-[38px] px-3 bg-[#1e4620] hover:bg-[#2c6e33] text-white rounded-lg text-[0.8rem] font-semibold cursor-pointer transition-colors shrink-0" :class="{ 'opacity-60 cursor-not-allowed pointer-events-none': uploading }">
+                <i class="fa-regular" :class="uploading ? 'fa-spinner animate-spin' : 'fa-cloud-arrow-up'"></i> Upload
+                <input type="file" accept="image/*" class="sr-only" :disabled="uploading" @change="(e) => uploadImage(e, 'og_image_url')" />
+              </label>
+            </div>
+            <!-- Preview theo tỉ lệ 1200×630 để admin thấy đúng khung preview của
+                 Facebook/Twitter (2:1). object-cover để ảnh crop kín khung, khớp
+                 cách mạng xã hội crop — trái với object-contain của logo/hero. -->
+            <div v-if="settings.og_image_url" class="mt-2 relative inline-block border border-[#e2ece3] rounded-lg overflow-hidden" style="max-width: 360px;">
+              <img :src="settings.og_image_url" alt="OG image preview" class="block w-full" style="aspect-ratio: 1200 / 630; object-fit: cover;" />
+              <button type="button" class="absolute top-1 right-1 bg-black/55 text-white border-0 rounded-full w-5 h-5 flex items-center justify-center text-xs cursor-pointer" @click="settings.og_image_url = ''"><i class="fa-regular fa-xmark"></i></button>
             </div>
           </div>
         </div>

@@ -12,7 +12,7 @@
   font-family: "Font Awesome 7 Brands";
   font-style: normal;
   font-weight: 400;
-  font-display: block;
+  font-display: swap;
   src: url("../webfonts/fa-brands-400.woff2");
 }
 .fab,
