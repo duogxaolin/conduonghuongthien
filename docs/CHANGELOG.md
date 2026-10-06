@@ -458,3 +458,29 @@ Tab "Kiểm duyệt An ninh" (`AiModerationTab.vue`) trong `/admin/ai/moderation
 
 #### Kiểm chứng
 - `vue-tsc --noEmit`: 0 lỗi. `eslint`: 0 error. `admin-error-retry-ui.test.ts` + `skeleton-loading-ui.test.ts`: 14/14 pass. `npm test`: 2065 pass / 0 fail / 14 skip. `npm run build`: exit 0.
+
+### 13. OG image mặc định toàn site + Twitter Card (2026-10-06)
+
+#### Bối cảnh
+Codebase gần như không có meta tags Open Graph / Twitter Card: homepage `index.vue` set `ogTitle/ogDescription/ogType` nhưng **KHÔNG có `ogImage`**; `about.vue`/`contact.vue` không có `og:*` gì; news list/role-models/documents/legal-qa không có `og:image`; chỉ `ArticleDetail.vue:544` set `ogImage` (fallback cứng `/assets/hero_banner.jpg`). Twitter Card: 0 nơi. Hậu quả: share link lên Facebook/Twitter/Zalo không hiện ảnh preview.
+
+#### Thay đổi
+- **`server/utils/og-image-setting.ts`** (MỚI, 55 dòng): helper `loadOgImageSetting()` + `clearOgImageSettingCache()` — cache 30s, mô phỏng `favicon-setting.ts`. DB fail → rỗng (không break render).
+- **`server/plugins/og-image.ts`** (MỚI, 42 dòng): Nitro `render:html` hook inject 5 meta tag (`og:image`, `og:image:width` 1200, `og:image:height` 630, `twitter:card` summary_large_image, `twitter:image`) vào mọi trang công khai. Bỏ qua `/api/**` + `/admin/**`. Chỉ inject khi `og_image_url` có giá trị.
+- **`server/api/admin/settings/index.put.ts`**: thêm `'og_image_url'` vào `ALLOWED_SETTING_KEYS` + `clearOgImageSettingCache()` sau commit (cùng pattern `clearFaviconSettingCache`).
+- **`server/api/public/settings.get.ts`**: thêm `'og_image_url'` vào `allowedKeys` — frontend (ArticleDetail fallback) nhận được.
+- **`app/pages/admin/settings/general.vue`**: thêm ô "Ảnh Chia Sẻ Mặc Định (Open Graph / Twitter)" sau Hero Banner — text input + nút Thư viện + nút Upload + preview tỉ lệ 1200×630 (`object-cover` crop kín khung như mạng xã hội). Thêm `og_image_url` vào reactive `settings` + `GENERAL_KEYS` + `ImageField` union.
+- **`app/components/ArticleDetail.vue:544`**: `ogImage` fallback từ `/assets/hero_banner.jpg` cứng → đọc `sitePublicSettings.value.og_image_url` (qua `useSiteSettings`), lùi về `/assets/hero_banner.jpg` nếu rỗng. Thứ tự ưu tiên: thumbnail bài viết > ảnh OG mặc định > hero_banner cứng.
+- **`server/db/seed.ts`**: thêm seed row `og_image_url` rỗng (admin tự upload).
+- **Twitter Card**: thêm `twitter:card` + `twitter:image` (dùng chung ảnh OG) — share Twitter/Zalo cũng hiện preview.
+
+#### Kiến trúc — dedup
+Plugin `render:html` chèn tag vào `html.head` **trước** khi Vue head (`@unhead` từ `useSeoMeta`) chèn tag page. `@unhead` dedup theo `property="og:image"` → tag page thay thế tag plugin. Kết quả: trang bài viết có thumbnail → thumbnail thắng; route không gọi `useSeoMeta` → ảnh mặc định. Test bằng tay xác nhận.
+
+#### KHÔNG đổi
+- `schema.ts` / `schema-tables/governance.ts` — bảng `settings` key-value, không ALTER TABLE.
+- `migrations-additive.ts` — key mới tự upsert qua `onDuplicateKeyUpdate`.
+- Favicon (đã có sẵn, không đụng): `favicon-setting.ts` + `favicon.ts` + endpoint riêng + ô form 3 nút.
+
+#### Kiểm chứng
+- Typecheck 0 lỗi, eslint 0 error, npm test 2065 pass / 14 skip. Build Docker OK. Test bằng tay: `/admin/settings/general` upload ảnh 1200×630 → homepage View Source có `og:image` + `twitter:card`; `/about`/`/contact`/`/news`/`/legal-qa` đều có; bài viết có thumbnail → thumbnail thắng; `/admin/**` không có `og:image`.
