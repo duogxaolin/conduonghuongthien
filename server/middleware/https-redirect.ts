@@ -1,15 +1,22 @@
 /**
- * Redirect HTTP → HTTPS ở tầng app.
+ * Redirect HTTP → HTTPS ở tầng app — chỉ production.
  *
  * Sau proxy/nginx: request tới app luôn là HTTP nội bộ (loopback), nên app không
  * thể đoán scheme từ socket. Tin `x-forwarded-proto` (do nginx/CF set) để biết
  * client thấy http hay https. Chỉ redirect khi client thực sự dùng http — tránh
- * redirect lặp với dev local (không có header) và request nội bộ.
+ * redirect lặp với request nội bộ.
  *
- * Không dùng `sendRedirect` cho asset/API: chỉ redirect HTML page (text/html).
- * API client (curl,fetch) nên nhận lỗi rõ ràng hơn là redirect âm thầm.
+ * `NODE_ENV=production` gate: dev local không có header `x-forwarded-proto` nên
+ * middleware return sớm an toàn; production qua proxy/nginx/CF có header → redirect.
+ * Gate tường minh để dev Test agent không bị redirect khi `x-forwarded-proto`
+ * gửi nhầm, và để đọc code biết ngay middleware này không chạy ở dev.
+ *
+ * Không `sendRedirect` cho asset/API: chỉ redirect HTML page (text/html). API
+ * client (curl, fetch) nên nhận lỗi rõ ràng hơn là redirect âm thầm.
  */
 export default defineEventHandler((event) => {
+  if (process.env.NODE_ENV !== 'production') return
+
   const proto = getRequestHeader(event, 'x-forwarded-proto')
   if (proto !== 'http') return
 
