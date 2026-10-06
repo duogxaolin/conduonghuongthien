@@ -77,7 +77,23 @@ export default defineNuxtConfig({
     payloadExtraction: false,
   },
 
-   modules: ['@nuxtjs/tailwindcss'],
+   modules: ['@nuxtjs/tailwindcss', '@nuxt/image'],
+
+  /**
+   * @nuxt/image — resize/WebP server-side qua IPX (provider mặc định, tái dùng
+   * `sharp` 0.35.4 đã có trong deps). Chỉ áp cho ảnh Page Builder block + thumbnail
+   * tìm kiếm; ảnh rich-text TinyMCE render HTML thô nên giữ <img> thường.
+   * `quality:75` cân bằng giữa size và nhìn; `format:['webp','jpg','png']` cho
+   * browser hiện đại WebP, fallback jpg/png tự động cho client cũ.
+   */
+  image: {
+    quality: 75,
+    format: ['webp', 'jpg', 'png'],
+    // IPX provider mặc định đọc ảnh từ `public/` (uploads serve qua
+    // server/routes/uploads). Ảnh R2 có public URL riêng — nếu cần resize R2,
+    // thêm domain R2 vào `domains` bên dưới và dùng `<NuxtImg :src="r2Url">`.
+    domains: [],
+  },
 
   /**
    * Component auto-import. Mặc định Nuxt thêm prefix là tên thư mục cha: một

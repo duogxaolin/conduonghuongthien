@@ -54,7 +54,7 @@
         </div>
 
         <div v-if="article.thumbnailUrl" class="print-figure">
-          <img :src="article.thumbnailUrl" :alt="article.title" loading="lazy" />
+          <NuxtImg :src="article.thumbnailUrl" :alt="article.title" loading="lazy" sizes="256px sm:384px" class="print-figure-img" />
         </div>
 
         <!-- eslint-disable-next-line vue/no-v-html -- nội dung do biên tập viên C11 soạn, đã sanitize lúc ghi -->
