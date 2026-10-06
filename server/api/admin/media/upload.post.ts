@@ -95,6 +95,28 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  // Convert PNG/JPG/JPEG → WebP q80 (GIF/WebP/ICO giữ nguyên).
+  //
+  // Chạy SAU khối resize>2400px ở trên để convert bản đã resize (không resize 2
+  // lần). GIF bị loại trừ vì sharp flatten animated GIF về frame đầu; WebP gốc
+  // giữ nguyên để tránh re-encode giảm chất lượng 2 lần; ICO vì sharp không decode.
+  //
+  // Cập nhật `effectiveMime` sang `image/webp` sau khi convert — đây là MIME thật
+  // của buffer trên đĩa, dùng cho cả đuôi tệp (`EXT_BY_MIME[effectiveMime]`), DB
+  // `mimeType`, và Content-Type R2. `effectiveMime` là biến "MIME lưu", tách biệt
+  // với `mimeType` (MIME client khai, chỉ cho nhánh isImage/video/pdf ở trên).
+  if (detectedImageMime && isSharpDecodable(detectedImageMime)
+      && detectedImageMime !== 'image/gif'
+      && detectedImageMime !== 'image/webp') {
+    try {
+      buffer = await sharp(buffer).webp({ quality: 80 }).toBuffer()
+      effectiveMime = 'image/webp'
+    } catch {
+      // sharp fail → fallback giữ format gốc (không chặn upload). Lỗi hiếm:
+      // magic-byte đã valid + sharp đã decode được ở khối resize trên.
+    }
+  }
+
   // Derive the stored extension from the VALIDATED MIME type, never from the
   // client-supplied filename. Otherwise a request declaring `application/pdf`
   // with the name `x.svg` would be stored as .svg and later served as
