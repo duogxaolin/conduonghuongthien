@@ -76,12 +76,20 @@
               type="button"
               @click="goToSlide(idx)"
               :class="[
-                'h-2.5 rounded-full transition-all duration-300 cursor-pointer border-none p-0',
-                currentIndex === idx ? 'w-6 bg-[#4A6741]' : 'w-2.5 bg-[#D5E1D3] hover:bg-[#7CB342]'
+                'rounded-full transition-all duration-300 cursor-pointer border-none p-1.5 flex items-center justify-center',
+                currentIndex === idx ? 'w-9 h-9' : 'w-9 h-9'
               ]"
               :aria-label="t('carousel_goto').replace('{n}', String(idx + 1))"
               :aria-current="currentIndex === idx ? 'true' : undefined"
-            ></button>
+            >
+              <span
+                :class="[
+                  'rounded-full block',
+                  currentIndex === idx ? 'w-3 h-3 bg-[#4A6741]' : 'w-2 h-2 bg-[#D5E1D3] group-hover:bg-[#7CB342]'
+                ]"
+                aria-hidden="true"
+              ></span>
+            </button>
           </div>
 
           <button

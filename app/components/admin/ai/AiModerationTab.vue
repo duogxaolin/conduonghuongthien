@@ -6,7 +6,13 @@
  * Self-contained: fetch rules + queue, add/toggle/delete rule, resolve queue item
  * (approve / reject_delete / ban_ip). Phụ thuộc duy nhất: `toast`/`confirm` qua
  * Nuxt auto-import (module-scoped, gọi trực tiếp trong con). Không emit, không
- * prop — tabdır tự scope.
+ * prop — tab tự scope.
+ *
+ * NOTE — ngoại lệ quy tắc "file ~400 dòng phải tách": file 585 dòng, trong đó
+ * ~425 dòng là template duplicate cố ý (desktop table + mobile card cho cùng 1
+ * dataset — queue + rules). Script logic chỉ ~160 dòng. Tách 4 block ra sub-component
+ * sẽ sinh boilerplate props/emit nhiều hơn lợi (resolveQueueItem/toggleModerationRule/
+ * deleteModerationRule cần truyền item/rule + emit event trở về). Giữ nguyên có chủ đích.
  */
 import { errorMessage } from '~/utils/errorMessage'
 import { RULE_CATEGORY_LABELS, formatTime } from '~/utils/ai-service-labels'
@@ -174,7 +180,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
           :class="moderationSubTab === 'queue' ? 'bg-[#1e4620] text-white border-[#1e4620] shadow-xs' : 'bg-white text-[#667768] border-[#c8d6c9] hover:bg-[#f0f7f1]'"
           @click="moderationSubTab = 'queue'"
         >
-          <i class="fa-solid fa-inbox"></i>
+          <i class="fa-solid fa-inbox" aria-hidden="true"></i>
           <span>Sổ đối soát nội dung bị ẩn</span>
           <span v-if="moderationQueue.filter(q => q.status === 'pending').length" class="px-1.5 py-0.2 rounded-full bg-red-500 text-white text-[0.65rem]">
             {{ moderationQueue.filter(q => q.status === 'pending').length }}
@@ -186,7 +192,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
           :class="moderationSubTab === 'rules' ? 'bg-[#1e4620] text-white border-[#1e4620] shadow-xs' : 'bg-white text-[#667768] border-[#c8d6c9] hover:bg-[#f0f7f1]'"
           @click="moderationSubTab = 'rules'"
         >
-          <i class="fa-solid fa-list-check"></i>
+          <i class="fa-solid fa-list-check" aria-hidden="true"></i>
           <span>Quy tắc kiểm duyệt an ninh ({{ moderationRules.length }})</span>
         </button>
       </div>
@@ -197,7 +203,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
         :disabled="moderationLoading"
         @click="loadModeration()"
       >
-        <i class="fa-solid fa-rotate text-xs" :class="moderationLoading ? 'animate-spin' : ''"></i>
+        <i class="fa-solid fa-rotate text-xs" :class="moderationLoading ? 'animate-spin' : ''" aria-hidden="true"></i>
         <span>Làm mới</span>
       </button>
     </div>
@@ -231,7 +237,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
 
         <!-- Empty queue -->
         <div v-if="moderationQueue.length === 0" class="rounded-xl border border-[#e2ece3] bg-white p-8 text-center text-sm text-[#667768]">
-          <i class="fa-solid fa-shield-check text-3xl text-[#2c6e33] mb-2 block"></i>
+          <i class="fa-solid fa-shield-check text-3xl text-[#2c6e33] mb-2 block" aria-hidden="true"></i>
           Không có mục nào trong danh sách đối soát. Hệ thống an ninh đang hoạt động tốt.
         </div>
 
@@ -307,7 +313,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
                       title="Duyệt nội dung an toàn và hiển thị công khai lại"
                       @click="resolveQueueItem(item, 'approve')"
                     >
-                      <i class="fa-solid fa-check mr-1"></i> Bỏ ẩn
+                      <i class="fa-solid fa-check mr-1" aria-hidden="true"></i> Bỏ ẩn
                     </button>
                     <button
                       v-if="item.status !== 'rejected'"
@@ -316,7 +322,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
                       title="Xóa vĩnh viễn nội dung vi phạm"
                       @click="resolveQueueItem(item, 'reject_delete')"
                     >
-                      <i class="fa-solid fa-trash-can mr-1"></i> Xóa
+                      <i class="fa-solid fa-trash-can mr-1" aria-hidden="true"></i> Xóa
                     </button>
                     <button
                       v-if="item.authorIp"
@@ -329,7 +335,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
                       :title="item.isIpBanned ? 'Địa chỉ IP này đã bị cấm' : `Cấm địa chỉ IP ${item.authorIp}`"
                       @click="resolveQueueItem(item, 'ban_ip')"
                     >
-                      <i class="fa-solid fa-ban mr-1"></i>
+                      <i class="fa-solid fa-ban mr-1" aria-hidden="true"></i>
                       <span>{{ item.isIpBanned ? 'Đã cấm IP' : 'Cấm IP' }}</span>
                     </button>
                   </div>
@@ -435,7 +441,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
         <!-- Add Rule Form -->
         <div class="rounded-xl border border-[#c8d6c9] bg-[#f0f7f1] p-4 flex flex-col gap-3 shadow-xs">
           <h3 class="m-0 text-sm font-extrabold text-[#122815] flex items-center gap-2">
-            <i class="fa-solid fa-plus-circle text-[#2c6e33]"></i>
+            <i class="fa-solid fa-plus-circle text-[#2c6e33]" aria-hidden="true"></i>
             Thêm quy tắc / Từ khóa kiểm duyệt an ninh mới
           </h3>
           <form class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-5 items-end" @submit.prevent="addModerationRule">

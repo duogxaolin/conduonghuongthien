@@ -131,11 +131,15 @@
             >
               <!-- Thumbnail: strictly 16:9 -->
               <nuxt-link :to="'/news/' + item.slug" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
-                <img
+                <NuxtImg
                   :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
                   :alt="item.title"
                   loading="lazy"
                   decoding="async"
+                  format="webp"
+                  width="320"
+                  height="180"
+                  sizes="(min-width:1024px) 400px, (min-width:640px) 50vw, 100vw"
                   class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
                 />
                 <div class="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>

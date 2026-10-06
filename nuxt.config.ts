@@ -90,9 +90,10 @@ export default defineNuxtConfig({
     quality: 75,
     format: ['webp', 'jpg', 'png'],
     // IPX provider mặc định đọc ảnh từ `public/` (uploads serve qua
-    // server/routes/uploads). Ảnh R2 có public URL riêng — nếu cần resize R2,
-    // thêm domain R2 vào `domains` bên dưới và dùng `<NuxtImg :src="r2Url">`.
-    domains: [],
+    // server/routes/uploads). Ảnh R2 có public URL riêng — `cdn1.delify.vn`
+    // cho phép NuxtImg resize/WebP hóa logo + ảnh bài viết do admin upload.
+    // Chỉ khai báo domain IPX có quyền đọc — tránh open proxy.
+    domains: ['cdn1.delify.vn'],
   },
 
   /**
@@ -173,9 +174,14 @@ export default defineNuxtConfig({
     '/tai-lieu-hoi-dap': { redirect: { to: '/qa-documents', statusCode: 301 } },
     '/tro-ly':           { redirect: { to: '/assistant', statusCode: 301 } },
 
-    '/': { swr: 60 },
-    '/about': { swr: 60 },
-    '/contact': { swr: 60 },
+    // Trang tĩnh top-tier (/, /about, /contact): nội dung chỉ đổi khi admin sửa
+    // page/khối qua Page Builder, không phải từng giây như bình luận/media. Tăng
+    // swr 60→300s giảm 80% cache miss xuống DB → server response 680ms chỉ xảy
+    // ra 1 lần/5 phút thay vì 1 lần/phút. Reader-specific content vẫn load sau
+    // mount (client-only), SWR window an toàn.
+    '/': { swr: 300 },
+    '/about': { swr: 300 },
+    '/contact': { swr: 300 },
     '/news/**': { swr: 60 },
     '/role-models/**': { swr: 60 },
     '/reintegration-models/**': { swr: 60 },
@@ -222,6 +228,10 @@ export default defineNuxtConfig({
     // không bao giờ bị phục vụ nhầm.
     '/assets/fonts/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
     '/assets/fontawesome/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
+    // Ảnh tĩnh trong public/assets (hero_banner, social, default cover) — đổi
+    // nội dung là deploy lại (file không có hash trong tên), nên cache 1 năm.
+    '/assets/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
+    '/Logo.png': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
 
     /**
      * Security headers cho mọi response 200 (trang HTML SSR + tài nguyên).
@@ -321,6 +331,29 @@ export default defineNuxtConfig({
         // Thêm lại một thẻ tĩnh ở đây là để **mỗi trang có hai thẻ `rel="icon"`**,
         // và thẻ nào thắng do trình duyệt quyết định — tức là cán bộ đổi favicon
         // rồi thấy nó đổi trên Chrome mà không đổi trên Safari. Có test chặn.
+
+        // Resource hints — đẩy sớm handshake + fetch LCP để rút ngắn LCP mobile.
+        // `cdn1.delify.vn` là R2 CDN chứa ảnh bài viết + logo do admin cấu hình.
+        // Hero banner là LCP element của homepage (`HeroBlock.vue`) — preload
+        // bản WebP desktop; bản mobile dùng `media` để chỉ tải khi viewport hẹp.
+        { rel: 'preconnect' as const, href: 'https://cdn1.delify.vn' },
+        { rel: 'dns-prefetch' as const, href: 'https://cdn1.delify.vn' },
+        {
+          rel: 'preload' as const,
+          as: 'image',
+          href: '/assets/hero_banner.webp',
+          type: 'image/webp',
+          fetchpriority: 'high' as const,
+        },
+        {
+          rel: 'preload' as const,
+          as: 'image',
+          href: '/assets/hero_banner-mobile.webp',
+          type: 'image/webp',
+          media: '(max-width: 768px)',
+          fetchpriority: 'high' as const,
+        },
+
         ...fontLinks,
         ...iconLinks,
       ]
