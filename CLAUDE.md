@@ -5,7 +5,7 @@ UI/UX work must read `openspec/ui-dna.md` (or the existing DNA doc) before any v
 **KHÔNG tự ý commit và push** — chỉ commit/push khi user yêu cầu tường minh.
 
 **Quy tắc giữ file nhỏ (đừng làm phình lại):**
-- `app/layouts/default.vue` (hiện 382) và `server/db/init.ts` (hiện 73) đã được tách cố ý từ 1301/1302 dòng — **KHÔNG thêm logic mới vào 2 file này**. Đặt component vào `app/components/layout/`, composable vào `app/composables/`, DDL bảng mới vào `server/db/schema-tables/<domain>.ts`. File vượt ~400 dòng → review tách ngay, đừng đợi ai báo.
+- `app/layouts/default.vue` (hiện 385 — skip-link a11y + `id="main-content"`) và `server/db/init.ts` (hiện 73) đã được tách cố ý từ 1301/1302 dòng — **KHÔNG thêm logic mới vào 2 file này**. Đặt component vào `app/components/layout/`, composable vào `app/composables/`, DDL bảng mới vào `server/db/schema-tables/<domain>.ts`. File vượt ~400 dòng → review tách ngay, đừng đợi ai báo.
 - Khi sửa code có ảnh hưởng đến deploy (đổi `.env`, đổi port, đổi lệnh build, thêm seed/migration, đổi container, đổi healthcheck, đổi `PUBLIC_BASE_URL`/domain, thêm biến môi trường) → **phải kiểm tra + update `production/`** (toolkit `manage.sh`/`README.md`/`migrations/`) để VPS deploy/update không bị lạc. Đừng chỉ sửa code rồi push — anh deploy bằng tay qua `manage.sh`, nếu toolkit không khớp code mới sẽ hỏng lúc deploy.
 
 Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhập cộng đồng — Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.
@@ -16,7 +16,7 @@ Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhậ
 
 ## 🛠️ Tech Stack
 
-- **Frontend**: Nuxt 4 (Vue 3 SFC, TS, Composition API), **Tailwind CSS v3** (`@nuxtjs/tailwindcss`), FontAwesome 6 Pro (self-hosted). **Tất cả code mới dùng Tailwind utility** — không `<style scoped>` trừ `::before`/keyframes/`:deep()` rich-text. CSS cũ giữ nguyên.
+- **Frontend**: Nuxt 4 (Vue 3 SFC, TS, Composition API), **Tailwind CSS v3** (`@nuxtjs/tailwindcss`), FontAwesome 6 Pro (self-hosted), **`@nuxt/image` 2.1** (IPX provider tái dùng `sharp` đã có — `<NuxtImg>` sinh WebP + responsive srcset; **chỉ áp cho ảnh public-side chưa qua sharp** — ảnh rich-text TinyMCE + ảnh đã qua `media/upload` sharp+R2 giữ `<img>` thường). **Tất cả code mới dùng Tailwind utility** — không `<style scoped>` trừ `::before`/keyframes/`:deep()` rich-text. CSS cũ giữ nguyên.
 - **Backend**: Nitro/H3, Drizzle ORM, MySQL 8.0/MariaDB, JWT (`cdkt_admin` HTTP-only Cookie).
 - **DB — 62 bảng**: nguồn chân lý `server/db/schema.ts`; DDL khởi động `server/db/init.ts` (73 dòng, chỉ giữ thứ tự gọi — 7 file `schema-tables/*.ts` theo domain: `core`/`content`/`governance`/`chatbot`/`analytics`/`readers-media`/`ai-i18n`) + `server/db/migrations-additive.ts` (ensureColumn/ensureIndex/FK cho DB đã có dữ liệu). `init.ts` re-export `migrations-additive` để 4 suite test không đổi import path. `seed.ts` insert-only. → chi tiết `docs/decisions/data-layer.md`.
 - **Test**: `npm test` (Node runner, `scripts/ts-resolver.mjs`, không cài thêm). Node `^22.19.0 || ^24.11.0 || >=26.0.0`. Mười bốn suite `*-integration` nối MySQL thật (chạy trong CI). E2E: `npm run test:e2e` (cần build + MySQL, `E2E_DB_PORT=33069` cho dev docker).
@@ -50,7 +50,7 @@ app/
 │   ├── useI18n.ts (567 keys trong seed, 405 fallback hardcoded vi; mọi lang kể cả vi fetch DB) / useReaderAuth.ts
 │   ├── useReaderNotifications.ts / useReadingHistory.ts (localStorage only) / useToast.ts
 │   └── useAnalyticsNocTable.ts
-├── layouts/default.vue (1301→382, tách 7 component layout/ + 5 composable) / admin.vue
+├── layouts/default.vue (1301→385, tách 7 component layout/ + 5 composable + skip-link a11y) / admin.vue
 └── pages/
     ├── index.vue / about.vue / contact.vue
     ├── news/ / reintegration-models/ / role-models/ / documents/ / legal-qa/
@@ -118,7 +118,7 @@ Chi tiết & kiểm chứng âm tính → `docs/decisions/data-layer.md`.
 ### Tệp lớn đã tách (và 1 tệp cố ý KHÔNG tách)
 
 - `server/db/init.ts` (1302 → 73 dòng): 7 file `schema-tables/*.ts` theo domain giữ 62 `CREATE TABLE`; `init.ts` chỉ còn thứ tự gọi (ràng buộc FK thật). `init.ts` re-export `migrations-additive` cho 4 suite test không đổi import path. `db:drift` đọc cả 9 tệp như một nguồn DDL duy nhất (635 cột/62 bảng).
-- `app/layouts/default.vue` (1301 → 382): tách 7 component `app/components/layout/Default*.vue` + 5 composable (`useLayoutNav`/`useSiteSettings`/`useLiveSearch`/`useReaderMenu`/`useMobileMenu`). 10 test guard đọc source text được viết lại cross-file (`tests/_layout-parts.ts` ghép 8 file). Khắc phục hydration crash từ việc tách. Caveat cũ "1282 dòng hồi quy" đã đóng.
+- `app/layouts/default.vue` (1301 → 385): tách 7 component `app/components/layout/Default*.vue` + 5 composable (`useLayoutNav`/`useSiteSettings`/`useLiveSearch`/`useReaderMenu`/`useMobileMenu`) + skip-link a11y + `id="main-content"`. 10 test guard đọc source text được viết lại cross-file (`tests/_layout-parts.ts` ghép 8 file). Khắc phục hydration crash từ việc tách. Caveat cũ "1282 dòng hồi quy" đã đóng.
 - `app/composables/useChatbot.ts` (939→740) → `useChatbotTypewriter.ts`.
 - `app/pages/admin/profile.vue` (1076→875) → `ProfileActivityHistory.vue`.
 - `AnalyticsLiveDashboard.client.vue` cố ý chỉ tách 2 hàm thuần (`analytics-noc.ts` — `safeDetails` là bộ lọc PII). NOC template giữ nguyên (22 định danh cha).
@@ -131,7 +131,7 @@ Chi tiết & kiểm chứng âm tính → `docs/decisions/data-layer.md`.
 - **`any` đã xoá sạch trong production** — 0 vết trong `.vue` SFC (trước đây 17), 0 trong `app/`/`server/`/`scripts/` code (comment `errorMessage.ts` không tính). **142 vết `any` còn lại trong `tests/`** (~22 file) là mock/stub cố ý — test runner không biên dịch type, `any` ở đó không rò rỉ ra production. Đừng báo "còn ~20 vết any ở SFC" — đã đóng commit `ca4f52e` 2026-10. `as unknown as` không dùng để đọc hình dạng — khai báo phản chiếu.
 - **Typecheck sạch**, ghim TS ^5 (7.x thiếu `lib/tsc.js`). `globalThis.useRuntimeConfig` cần `server/plugins/runtime-config-global.ts`.
 - **Test**: 14 suite `*-integration` + E2E (`E2E_DB_PORT` etc.), MFA spec dọn ở `afterEach`, LLM guard là lớp duy nhất bắt TDZ/insertId/DATETIME. Kiểm văn bản mã nguồn chứng minh cấu trúc, không chứng minh hành vi. Tổng 2078 test, 0 fail khi CI sạch (14 skip = 14 integration cần MySQL).
-- **Lint/Format**: `npm run lint` (ESLint v9 flat config, 0 error / 268 warning — cố ý warn không đỏ CI) + `npm run format` (Prettier). KHÔNG auto-format toàn codebase — sẽ đè diff lớn, chỉ format file chạm. Không sink vào `build`/`test` (test runner Node thuần không cài thêm).
+- **Lint/Format**: `npm run lint` (ESLint v9 flat config, 0 error / 81 warning — cố ý warn không đỏ CI) + `npm run format` (Prettier). KHÔNG auto-format toàn codebase — sẽ đè diff lớn, chỉ format file chạm. Không sink vào `build`/`test` (test runner Node thuần không cài thêm).
 
 ### Nợ kỹ thuật đã đóng (đừng báo lại)
 
