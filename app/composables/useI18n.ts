@@ -447,6 +447,18 @@ export const useI18n = () => {
       about_fallback_desc: 'Nội dung đang được cập nhật.',
       contact_fallback_title: 'Liên hệ & Trợ giúp',
       contact_fallback_desc: 'Nội dung đang được cập nhật. Hotline 0903.480.985.',
+      // SEO meta cho 3 trang top-tier (index/about/contact) — fallback SSR khi
+      // DB chưa fetch xong. Không có fallback này, <title>/og:title SSR render
+      // key raw ('home_seo_title') → social crawler (Facebook/Zalo/Telegram
+      // không render JS) thấy key thay text. DB vẫn là nguồn chân lý.
+      home_seo_title: 'Con Đường Hướng Thiện - Hỗ trợ tái hòa nhập cộng đồng',
+      home_seo_desc: 'Cổng thông tin điện tử C11 Bộ Công an hỗ trợ người hoàn lương tái hòa nhập cộng đồng: vay vốn QĐ 22/2023, đào tạo nghề, xóa án tích, tư vấn tâm lý, kết nối doanh nghiệp.',
+      home_og_title: 'Con Đường Hướng Thiện - Hỗ trợ tái hòa nhập cộng đồng',
+      home_og_desc: 'Hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý giúp người chấp hành xong án phạt tái hòa nhập cộng đồng.',
+      about_seo_title: 'Giới thiệu | Con Đường Hướng Thiện',
+      about_seo_desc: 'Giới thiệu Ban Biên tập Cổng thông tin Con Đường Hướng Thiện - Cục C11 Bộ Công an.',
+      contact_seo_title: 'Liên hệ & Trợ giúp | Con Đường Hướng Thiện',
+      contact_seo_desc: 'Liên hệ Ban Biên tập và gửi yêu cầu trợ giúp tái hòa nhập cộng đồng. Hotline 0903.480.985.',
       a_topics: 'Chủ đề liên quan',
       a_breadcrumb_aria: 'Đường dẫn',
       a_published_on: 'Ngày đăng:',
@@ -865,6 +877,15 @@ export const useI18n = () => {
       about_fallback_desc: 'Content is being updated.',
       contact_fallback_title: 'Contact & Support',
       contact_fallback_desc: 'Content is being updated. Hotline 0903.480.985.',
+      // SEO meta fallback (SSR) — see vi block for rationale.
+      home_seo_title: 'Con Đường Hướng Thiện - Reintegration Support Portal',
+      home_seo_desc: 'C11 Public Security portal supporting reformed individuals reintegration — vocational training, legal aid, criminal record clearing, counselling, business connections.',
+      home_og_title: 'Con Đường Hướng Thiện - Reintegration Support Portal',
+      home_og_desc: 'Comprehensive vocational, legal and counselling support for individuals who have completed sentences to reintegrate into the community.',
+      about_seo_title: 'About | Con Đường Hướng Thiện',
+      about_seo_desc: 'About the editorial team of the Con Đường Hướng Thiện portal - C11, Ministry of Public Security.',
+      contact_seo_title: 'Contact & Support | Con Đường Hướng Thiện',
+      contact_seo_desc: 'Contact the editorial team and request reintegration support. Hotline 0903.480.985.',
       a_topics: 'Related topics',
       a_breadcrumb_aria: 'Breadcrumb',
       a_published_on: 'Posted:',
