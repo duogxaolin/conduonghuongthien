@@ -11,15 +11,14 @@ import { requestBase } from '../utils/google-oauth/config'
  * Giữ nguyên logic Disallow cũ: chặn `/admin` và `/api/admin` (không mang lại gì
  * cho công dân, bộc lộ cấu trúc admin). Phần công khai (`/news`, `/role-models`,
  * `/qa-documents`, ...) không Disallow.
- *
- * Format chuẩn RFC: `User-agent` viết thường, không comment inline giữa các
- * directive — parser nghiêm (Lighthouse `robots-txt` audit) phàn nàn comment
- * xen vào. Comment Only ở cuối file hoặc đầu khối.
  */
 export default defineEventHandler((event) => {
   const base = requestBase(event).replace(/\/+$/, '')
   const body = [
-    'User-agent: *',
+    'User-Agent: *',
+    '# Không cho các bot lập chỉ mục phần quản trị và API nội bộ — chúng không',
+    '# mang lại gì cho công dân và chỉ bộc lộ cấu trúc admin cho người quét.',
+    '# Phần công khai (/news, /role-models, /qa-documents, ...) không Disallow.',
     'Disallow: /admin',
     'Disallow: /api/admin',
     '',

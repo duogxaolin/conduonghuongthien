@@ -14,7 +14,7 @@
   font-family: "Font Awesome 7 Pro";
   font-style: normal;
   font-weight: 400;
-  font-display: swap;
+  font-display: block;
   src: url("../webfonts/fa-regular-400.woff2");
 }
 .far {

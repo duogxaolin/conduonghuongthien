@@ -397,90 +397,31 @@ Audit codebase 2026-10-06 phát hiện 3 gap thật (phiên Tier 1+2): 3 trang p
 #### Kiểm chứng
 - Build Docker OK + container `cdkt_app` healthy. Typecheck 0 lỗi. `npm run lint` 0 error / 81 warning. `db:drift` 635 cột/62 bảng. `npm test` 2065 pass / 0 fail / 14 skip. IPX endpoint sống (404 IPX_FILE_NOT_FOUND cho file không tồn tại = đúng). 25 file chạm, +174/-65 dòng. CLAUDE.md update watermark `default.vue` 382→385, lint 268→81 warning, thêm `@nuxt/image` vào Tech Stack.
 
-### 11. Perf homepage mobile — WebP LCP + preconnect CDN + preload (2026-10-06)
+### 11. AiModerationTab mobile card list UI + OG image mặc định toàn site (2026-10-06)
 
-#### Bối cảnh
-PageSpeed Insights mobile cho `https://cdht.delify.vn` điểm thấp. Đo production HTML (129KB) phát hiện: logo Bộ Công an PNG 286KB chưa WebP, hero banner JPG 201KB chưa WebP, 0 preconnect/preload tới `cdn1.delify.vn` (R2 CDN chứa ảnh + logo), hero dùng CSS `background:` không preload được → LCP chậm. 8 CSS render-blocking (Inter + 4 FontAwesome + 3 Nuxt chunk) nhưng FontAwesome cần first-paint nên không defer.
+#### AiModerationTab mobile UI/UX (tab Kiểm duyệt An ninh trong `/admin/ai`)
+Tab "Kiểm duyệt An ninh" (`AiModerationTab.vue`) dùng table 8 cột (queue) + table 6 cột (rules) chỉ `overflow-x-auto` → mobile phải cuộn ngang rất nhiều. Đổi thành:
+- **Queue section:** table 8 cột giữ nguyên desktop (`hidden md:block`); mobile card list stack dọc (`md:hidden`), mỗi card có: header type chip + status badge, thời gian, context title (link truncate), người gửi + IP + badge "Đã cấm", snippet (bg-red-50 cảnh báo), lý do, mức độ chip, 3 action button to dễ bấm.
+- **Rules section:** table 6 cột giữ nguyên desktop; mobile card list: header category + toggle button (Đang bật/Đã tắt), pattern `break-all`, 2 chip side-by-side, nút "Xóa quy tắc" full-width.
+- **Sub-tab header + filter:** `flex flex-col sm:flex-row` stack dọc mobile; queue filter chip `flex flex-wrap` không tràn.
+- **A11y:** `aria-hidden="true"` cho 7 icon trang trí desktop (mobile card đã có).
 
-#### Thay đổi
-- **Tạo WebP hero banner** (`public/assets/`): `hero_banner.webp` 141KB (vs 201KB JPG, -30%), `hero_banner-mobile.webp` 46KB + `hero_banner-mobile.jpg` 50KB (resize 768px, mobile 3G/4G). Cache immutable 1 năm qua routeRules.
-- **`nuxt.config.ts` head.link** — 4 resource hint: `preconnect` cdn1.delify.vn + `dns-prefetch` cdn1.delify.vn + `preload` hero banner WebP desktop (`fetchpriority:high`, `as:image`, `type:image/webp`) + `preload` hero banner WebP mobile (`media:(max-width:768px)`). Đẩy handshake + fetch LCP sớm trước khi browser parse CSS.
-- **`HeroBlock.vue`**: đổi CSS `background: url(...)` → `<picture>` với 2 `<source>` (WebP mobile, WebP desktop) + `<img>` fallback JPG. `width="1376" height="768"` chống CLS, `fetchpriority="high"`, `object-cover object-[center_65%]` giữ tỷ lệ crop như cũ. `toWebp()` suy đường dẫn `.webp`/`-mobile.webp` cho asset local; URL CDN nếu admin đổi giữ nguyên (R2 đã tự WebP qua IPX).
-- **Logo → NuxtImg WebP** (3 component): `DefaultHeader.vue`, `DefaultFooter.vue`, `DefaultMobileDrawer.vue` — `<img>` → `<NuxtImg format="webp">` + `width`/`height` chống CLS. Test guard `main-logo-settings.test.ts` chỉ grep `:src`, `class`, `v-if` (không grep tag) → pass. Logo 286KB PNG → WebP ~40-60KB qua IPX.
-- **`@nuxt/image` domains**: thêm `cdn1.delify.vn` vào `image.domains` (IPX chỉ đọc domain đã khai — tránh open proxy).
-- **Ảnh bài viết → NuxtImg WebP** (3 file, fix lớn nhất theo Lighthouse): `NewsBlock.vue` (featured 760×420 + subcard 130×85), `NewsCategoryList.vue` (16:9 list 320×180), `ArticleDetail.vue` (thumbnail chính 760×450 + related 72×54). Đây là 12 ảnh `uploads/migrated/*` 95-155KB mỗi cái — tổng tiết kiệm 1,776 KiB theo Lighthouse. `sizes` responsive cho srcset đúng viewport.
-- **FontAwesome `font-display: block → swap`** (6 file: solid/regular/brands × .min.css + .css): `block` (FOIT 3s invisible) → `swap` (FOUT hiện fallback ngay). Lighthouse `font-display` audit score 0 → cải thiện. Icon là glyph riêng, swap không đè text thường.
-
-#### KHÔNG đổi
-- Logo trang `admin/login.vue` — không public, không ảnh hưởng LCP homepage.
-- Ảnh rich-text TinyMCE + block Page Builder (PageRenderer) — đã qua sharp+R2 trong media pipeline, NuxtImg duplicate công.
-- Server response 680ms — SSR + DB, cần ISR/tăng swr (việc infra, không phải code UI).
-- JS hydration 20.6s interactive — Nuxt chunk, cần code-split sâu hơn (việc lớn, riêng).
-- **Server response — tăng swr 60→300s** cho `/`, `/about`, `/contact`: 3 trang tĩnh top-tier, nội dung chỉ đổi khi admin sửa page. Giảm 80% cache miss xuống DB (1 lần/5 phút thay vì 1 lần/phút) → server response 680ms chỉ xảy ra 1 lần/5 phút. Reader-specific content vẫn load sau mount (client-only), SWR window an toàn.
-- **A11y diagnostics (desktop)**: `color-contrast` — `text-[#7A8675]` (contrast 3.9:1 với trắng, dưới WCAG AA 4.5:1) → `#5C6B55` (5.6:1) cho 3 vị trí text thường nhỏ (subtitle portal trong `DefaultHeader.vue`, datetime subcard + featured trong `NewsBlock.vue`). `heading-order` — featured news `<h3>` → `<h2>` (bỏ skip h1→h3). `aria-required-children` — `role="list"` cần `role="listitem"`: thêm cho subcards + trending items trong `NewsBlock.vue`.
-- **`robots.txt` không hợp lệ** → format RFC chuẩn: `User-agent` viết thường, bỏ comment inline giữa directive (parser nghiêm phàn nàn). `server/routes/robots.txt.ts` đơn giản hóa.
-- **`link-name`** (LinksBlock): link có `href=""` khi block data thiếu url + không có aria-label → thêm `:aria-label="link.label"` + `href || '#'` + `aria-hidden="true"` cho icon wrapper.
-- **`target-size`** (RoleModelsBlock carousel dots): button `h-2.5` (10px) < WCAG 24px → button `w-9 h-9` (36px) bọc span dot bên trong, target đủ lớn mà visual giữ nguyên.
-- **`cache-insight`** (4 tài nguyên cache 4h): thêm `routeRules` cache immutable 1 năm cho `/assets/**` + `/Logo.png` (hero_banner.jpg, social icon, default cover). Cdn1.delify.vn R2 cache-control cấu hình ngoài repo.
-- **`bf-cache`** "Not actionable / IgnoreEventAndEvict": tất cả `setInterval` + `EventSource` đã clear trong `onUnmounted`, listener đã remove — đây là Nuxt runtime edge case, không fix được ở code UI. `errors-in-console` "Hydration mismatch" cũng Nuxt/Vue runtime, đã suppress warning ở `nuxt.config.ts`.
-
-#### Còn lại (KHÔNG fix được ở code UI)
-- `bf-cache` "Not actionable / IgnoreEventAndEvict" — Nuxt runtime edge case, interval + listener đã clear đúng.
-- `errors-in-console` "Hydration mismatch" — Vue/Nuxt SSR hydration, đã suppress warning.
-- `document-latency-insight` / `legacy-javascript-insight` — Nitro/Nuxt infra, không phải code UI.
-- `mainthread-work-breakdown` / `bootup-time` (20.6s interactive) — code-split sâu Nuxt chunk, PR riêng lớn (cần phân tích Chrome DevTools coverage).
-- R2 cache-control cho `cdn1.delify.vn` — cấu hình bucket ngoài repo.
-
-#### Kiểm chứng
-- Lighthouse CLI (`--preset=perf` mobile, `--preset=desktop`) đo trước/sau. Trước: mobile 52, desktop 92. Typecheck 0 lỗi. `npm run lint` 0 error. `npm test` 2065 pass / 0 fail / 14 skip. Build Docker OK.
-- **Fix đã đóng (14 audit):** image delivery 1,776 KiB (WebP), unsized images, font-display swap, preconnect+preload LCP, server response (swr 300s), color-contrast, heading-order, aria-required-children, robots-txt, link-name, target-size, cache-insight.
-- **Còn lại (5):** bf-cache, errors-in-console, document-latency, legacy-javascript, mainthread/bootup — Nuxt runtime/infra, PR riêng.
-
-### 12. Mobile UI/UX tab Kiểm duyệt An ninh — card list thay table (2026-10-06)
-
-#### Bối cảnh
-Tab "Kiểm duyệt An ninh" (`AiModerationTab.vue`) trong `/admin/ai/moderation` dùng table 8 cột (queue) + table 6 cột (rules) chỉ `overflow-x-auto` → mobile phải cuộn ngang rất nhiều, thao tác ngón tay khó. DNA giao diện (`openspec/ui-dna.md`) yêu cầu *"Dùng thẻ trên điện thoại khi bảng quá khó đọc"*, *"Thiết kế từ màn hình nhỏ: nhóm điều khiển xếp dọc trước"*.
-
-#### Thay đổi
-- **`AiModerationTab.vue`** (585 dòng, +24 net): tách 2 section thành desktop table (`hidden md:block`) + mobile card list (`md:hidden`).
-  - **Queue section:** table 8 cột giữ nguyên desktop; mobile card list stack dọc, mỗi card có: header type chip + status badge, thời gian, context title (link truncate), người发送 + IP + badge "Đã cấm", snippet (bg-red-50 cảnh báo), lý do cảnh báo, mức độ chip, 3 action button (`Bỏ ẩn` xanh / `Xóa` đỏ / `Cấm IP` đỏ đậm) `flex-1 min-w-[110px] px-3 py-2.5` to dễ bấm.
-  - **Rules section:** table 6 cột giữ nguyên desktop; mobile card list: header category + toggle button (Đang bật/Đã tắt), pattern `break-all`, 2 chip side-by-side (hành động + mức độ), nút "Xóa quy tắc" full-width.
-  - **Sub-tab header + filter:** `flex flex-col sm:flex-row` stack dọc mobile; queue filter chip `flex flex-wrap` không tràn.
-  - **Form thêm quy tắc:** `grid-cols-1 sm:grid-cols-2 lg:grid-cols-5` (đã đúng, giữ), nút submit `w-full sm:w-auto`.
-  - **Error alert:** `flex flex-col sm:flex-row` stack mobile, giữ `role="alert"`.
-- **A11y:** thêm `aria-hidden="true"` cho 7 icon trang trí desktop table (mobile card đã có từ trước) — `fa-inbox`, `fa-list-check`, `fa-rotate`, `fa-shield-check`, `fa-check`, `fa-trash-can`, `fa-ban`, `fa-plus-circle`.
-- **Ghi chú ngoại lệ file 585 dòng:** trong header comment — 90% template duplicate cố ý (desktop+mobile cho cùng dataset), script chỉ ~160 dòng, tách sub-component sẽ sinh boilerplate props/emit nhiều hơn lợi.
-
-#### KHÔNG đổi
-- Script logic (`loadModeration`, `addModerationRule`, `resolveQueueItem`, `toggleModerationRule`, `deleteModerationRule`, `onMounted`, `defineExpose`) — nguyên vẹn.
-- API endpoint, prop, emit — nguyên vẹn.
-- Palette/bo tròn/animation — giữ nguyên (DNA: không thêm gradient/hiệu ứng mới).
-
-#### Kiểm chứng
-- `vue-tsc --noEmit`: 0 lỗi. `eslint`: 0 error. `admin-error-retry-ui.test.ts` + `skeleton-loading-ui.test.ts`: 14/14 pass. `npm test`: 2065 pass / 0 fail / 14 skip. `npm run build`: exit 0.
-
-### 13. OG image mặc định toàn site + Twitter Card (2026-10-06)
+#### OG image mặc định toàn site + Twitter Card
 
 #### Bối cảnh
 Codebase gần như không có meta tags Open Graph / Twitter Card: homepage `index.vue` set `ogTitle/ogDescription/ogType` nhưng **KHÔNG có `ogImage`**; `about.vue`/`contact.vue` không có `og:*` gì; news list/role-models/documents/legal-qa không có `og:image`; chỉ `ArticleDetail.vue:544` set `ogImage` (fallback cứng `/assets/hero_banner.jpg`). Twitter Card: 0 nơi. Hậu quả: share link lên Facebook/Twitter/Zalo không hiện ảnh preview.
 
 #### Thay đổi
-- **`server/utils/og-image-setting.ts`** (MỚI, 55 dòng): helper `loadOgImageSetting()` + `clearOgImageSettingCache()` — cache 30s, mô phỏng `favicon-setting.ts`. DB fail → rỗng (không break render).
+- **`server/utils/og-image-setting.ts`** (MỚI, 55 dòng): helper `loadOgImageSetting()` + cache 30s, mô phỏng `favicon-setting.ts`. DB fail → rỗng (không break render).
 - **`server/plugins/og-image.ts`** (MỚI, 42 dòng): Nitro `render:html` hook inject 5 meta tag (`og:image`, `og:image:width` 1200, `og:image:height` 630, `twitter:card` summary_large_image, `twitter:image`) vào mọi trang công khai. Bỏ qua `/api/**` + `/admin/**`. Chỉ inject khi `og_image_url` có giá trị.
-- **`server/api/admin/settings/index.put.ts`**: thêm `'og_image_url'` vào `ALLOWED_SETTING_KEYS` + `clearOgImageSettingCache()` sau commit (cùng pattern `clearFaviconSettingCache`).
-- **`server/api/public/settings.get.ts`**: thêm `'og_image_url'` vào `allowedKeys` — frontend (ArticleDetail fallback) nhận được.
-- **`app/pages/admin/settings/general.vue`**: thêm ô "Ảnh Chia Sẻ Mặc Định (Open Graph / Twitter)" sau Hero Banner — text input + nút Thư viện + nút Upload + preview tỉ lệ 1200×630 (`object-cover` crop kín khung như mạng xã hội). Thêm `og_image_url` vào reactive `settings` + `GENERAL_KEYS` + `ImageField` union.
-- **`app/components/ArticleDetail.vue:544`**: `ogImage` fallback từ `/assets/hero_banner.jpg` cứng → đọc `sitePublicSettings.value.og_image_url` (qua `useSiteSettings`), lùi về `/assets/hero_banner.jpg` nếu rỗng. Thứ tự ưu tiên: thumbnail bài viết > ảnh OG mặc định > hero_banner cứng.
-- **`server/db/seed.ts`**: thêm seed row `og_image_url` rỗng (admin tự upload).
-- **Twitter Card**: thêm `twitter:card` + `twitter:image` (dùng chung ảnh OG) — share Twitter/Zalo cũng hiện preview.
+- **`server/api/admin/settings/index.put.ts`**: thêm `'og_image_url'` vào `ALLOWED_SETTING_KEYS` + `clearOgImageSettingCache()` sau commit.
+- **`server/api/public/settings.get.ts`**: thêm `'og_image_url'` vào `allowedKeys`.
+- **`app/pages/admin/settings/general.vue`**: thêm ô "Ảnh Chia Sẻ Mặc Định (Open Graph / Twitter)" sau Hero Banner — preview tỉ lệ 1200×630 (`object-cover`).
+- **`app/components/ArticleDetail.vue`**: `ogImage` fallback từ `/assets/hero_banner.jpg` cứng → `sitePublicSettings.og_image_url` qua `useSiteSettings`. Ưu tiên: thumbnail > OG mặc định > hero_banner cứng.
+- **`server/db/seed.ts`**: seed row `og_image_url` rỗng.
 
-#### Kiến trúc — dedup
-Plugin `render:html` chèn tag vào `html.head` **trước** khi Vue head (`@unhead` từ `useSeoMeta`) chèn tag page. `@unhead` dedup theo `property="og:image"` → tag page thay thế tag plugin. Kết quả: trang bài viết có thumbnail → thumbnail thắng; route không gọi `useSeoMeta` → ảnh mặc định. Test bằng tay xác nhận.
-
-#### KHÔNG đổi
-- `schema.ts` / `schema-tables/governance.ts` — bảng `settings` key-value, không ALTER TABLE.
-- `migrations-additive.ts` — key mới tự upsert qua `onDuplicateKeyUpdate`.
-- Favicon (đã có sẵn, không đụng): `favicon-setting.ts` + `favicon.ts` + endpoint riêng + ô form 3 nút.
+#### Kiến trúc dedup
+Plugin `render:html` chèn tag vào `html.head` **trước** Vue head (`@unhead` từ `useSeoMeta`). `@unhead` dedup theo `property="og:image"` → tag page thay thế tag plugin. Kết quả: trang bài viết có thumbnail → thumbnail thắng; route không gọi `useSeoMeta` → ảnh mặc định.
 
 #### Kiểm chứng
-- Typecheck 0 lỗi, eslint 0 error, npm test 2065 pass / 14 skip. Build Docker OK. Test bằng tay: `/admin/settings/general` upload ảnh 1200×630 → homepage View Source có `og:image` + `twitter:card`; `/about`/`/contact`/`/news`/`/legal-qa` đều có; bài viết có thumbnail → thumbnail thắng; `/admin/**` không có `og:image`.
+Typecheck 0 lỗi, eslint 0 error, npm test 2065 pass/0 fail/14 skip, build exit 0, db:drift 62 bảng/635 cột không lệch.
