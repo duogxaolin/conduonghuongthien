@@ -1,10 +1,13 @@
 <template>
   <!--
-    SafeImg — NuxtImg với fallback khi ảnh IPX/R2 404.
+    SafeImg — NuxtImg với fallback khi ảnh IPX/R2 404 + default format=webp.
     `@error` native (bubbling từ <img> NuxtImg sinh ra) chuyển sang `fallbackSrc`.
     Lý do: IPX fetch R2 URL có thể 404 (ảnh bị xoá/chưa upload) → NuxtImg vỡ.
     Fallback `/assets/default_cover_light.png` (93KB, IPX đọc được từ public/).
-    Chỉ Mark khi lỗi thật — không xoá src gốc nếu ảnh đã load OK.
+    `format="webp"` — IPX convert sang WebP (giảm ~24% so với JPEG cùng quality).
+    NuxtImg config `format:['webp','jpg','png']` không tự thêm `f=webp` vào URL,
+    phải set prop `format` explicit. Chỉ Mark khi lỗi thật — không xoá src gốc
+    nếu ảnh đã load OK.
   -->
   <NuxtImg
     :src="currentSrc"
@@ -13,6 +16,7 @@
     :loading="loading"
     :decoding="decoding"
     :sizes="sizes"
+    format="webp"
     @error="onError"
   />
 </template>

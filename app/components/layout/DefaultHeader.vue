@@ -12,23 +12,9 @@
         <!-- Logo Area -->
         <nuxt-link to="/" class="flex items-center gap-3 lg:gap-3.5 no-underline">
           <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-2 lg:gap-2.5 shrink-0">
-            <NuxtImg
-              v-if="siteMainLogo"
-              class="w-auto object-contain shrink-0"
-              :class="siteLogo ? 'h-10 lg:h-[56px]' : 'h-9 lg:h-[50px]'"
-              :src="siteMainLogo"
-              alt="Logo cơ quan chủ quản"
-              sizes="64px sm:96px"
-            />
+            <NuxtImg               v-if="siteMainLogo"               class="w-auto object-contain shrink-0"               :class="siteLogo ? 'h-10 lg:h-[56px]' : 'h-9 lg:h-[50px]'"               :src="siteMainLogo"               alt="Logo cơ quan chủ quản"               sizes="64px sm:96px"              format="webp" />
             <span v-if="siteMainLogo && siteLogo" class="h-6 lg:h-8 w-px bg-[#D0DDD1] shrink-0" aria-hidden="true"></span>
-            <NuxtImg
-              v-if="siteLogo"
-              class="w-auto object-contain shrink-0 transition-all"
-              :class="siteMainLogo ? 'h-7 lg:h-[38px]' : 'h-9 lg:h-[50px]'"
-              :src="siteLogo"
-              alt="Logo Con Đường Hướng Thiện"
-              sizes="64px sm:96px"
-            />
+            <NuxtImg               v-if="siteLogo"               class="w-auto object-contain shrink-0 transition-all"               :class="siteMainLogo ? 'h-7 lg:h-[38px]' : 'h-9 lg:h-[50px]'"               :src="siteLogo"               alt="Logo Con Đường Hướng Thiện"               sizes="64px sm:96px"              format="webp" />
           </div>
           <div class="min-w-0">
             <h1 class="text-[0.82rem] sm:text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.2px] sm:tracking-[0.5px] leading-[1.2] whitespace-nowrap">CON ĐƯỜNG HƯỚNG THIỆN</h1>

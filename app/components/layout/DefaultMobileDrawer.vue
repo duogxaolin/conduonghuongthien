@@ -10,23 +10,9 @@
     <div class="flex items-center justify-between px-5 py-[18px] bg-gradient-to-br from-[#1e4620] to-[#133215] text-white border-b border-white/10 z-[2] flex-shrink-0">
       <div class="flex items-center gap-2.5 min-w-0">
         <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-2 shrink-0">
-          <NuxtImg
-            v-if="siteMainLogo"
-            :src="siteMainLogo"
-            alt="Logo cơ quan chủ quản"
-            class="w-auto object-contain drop-shadow-md"
-            :class="siteLogo ? 'h-10' : 'h-9'"
-            sizes="64px sm:96px"
-          />
+          <NuxtImg             v-if="siteMainLogo"             :src="siteMainLogo"             alt="Logo cơ quan chủ quản"             class="w-auto object-contain drop-shadow-md"             :class="siteLogo ? 'h-10' : 'h-9'"             sizes="64px sm:96px"            format="webp" />
           <span v-if="siteMainLogo && siteLogo" class="h-6 w-px bg-white/25" aria-hidden="true"></span>
-          <NuxtImg
-            v-if="siteLogo"
-            :src="siteLogo"
-            alt="Logo Con Đường Hướng Thiện"
-            class="w-auto object-contain drop-shadow-md"
-            :class="siteMainLogo ? 'h-7' : 'h-9'"
-            sizes="64px sm:96px"
-          />
+          <NuxtImg             v-if="siteLogo"             :src="siteLogo"             alt="Logo Con Đường Hướng Thiện"             class="w-auto object-contain drop-shadow-md"             :class="siteMainLogo ? 'h-7' : 'h-9'"             sizes="64px sm:96px"            format="webp" />
         </div>
         <div class="flex flex-col min-w-0">
           <span class="text-[0.85rem] font-extrabold tracking-[0.4px] text-white leading-[1.2] truncate">CON ĐƯỜNG HƯỚNG THIỆN</span>
