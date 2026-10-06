@@ -185,7 +185,7 @@
                       {{ item.title }}
                     </span>
                   </div>
-                  <span class="text-[1.4rem] text-[#7A8675] shrink-0 select-none" aria-hidden="true">{{ activeIndex === index ? '−' : '+' }}</span>
+                  <span class="text-[1.4rem] text-[#5A6C58] shrink-0 select-none" aria-hidden="true">{{ activeIndex === index ? '−' : '+' }}</span>
                 </button>
 
                 <div
@@ -202,7 +202,7 @@
                       <span>Xem toàn bộ bài giải đáp</span>
                       <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover/link:translate-x-1" aria-hidden="true"></i>
                     </nuxt-link>
-                    <span class="text-[#8E9F8B] font-medium">Ban tư vấn C11</span>
+                    <span class="text-[#6B7B68] font-medium">Ban tư vấn C11</span>
                   </div>
                 </div>
               </div>

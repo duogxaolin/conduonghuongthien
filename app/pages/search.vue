@@ -251,7 +251,7 @@
                 <span>Xem chi tiết</span>
                 <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover/link:translate-x-1" aria-hidden="true"></i>
               </nuxt-link>
-              <span class="text-[#8E9F8B] font-medium text-[0.75rem]">Cổng thông tin C11</span>
+              <span class="text-[#6B7B68] font-medium text-[0.75rem]">Cổng thông tin C11</span>
             </div>
           </div>
         </article>

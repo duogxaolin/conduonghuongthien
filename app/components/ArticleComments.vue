@@ -28,7 +28,7 @@
   >
     <h2 id="comments-heading" class="m-0 mb-5 text-[1.15rem] font-extrabold text-[#1E251C]">
       <i class="fa-solid fa-comments mr-2 text-[#7CB342]" aria-hidden="true"></i>{{ t('comments') }}
-      <span v-if="total" class="ml-1 text-[0.95rem] font-semibold text-[#7A8675]">({{ total }})</span>
+      <span v-if="total" class="ml-1 text-[0.95rem] font-semibold text-[#5A6C58]">({{ total }})</span>
     </h2>
 
     <!-- 1. Đang tải -->
@@ -103,7 +103,7 @@
                     v-if="comment.isAdminReply"
                     class="px-2 py-0.5 rounded-full bg-[#4A6741] text-white text-[0.7rem] font-bold uppercase tracking-wide"
                   >{{ t('admin_badge') || 'Ban quản trị' }}</span>
-                  <span class="text-[0.78rem] text-[#7A8675]">{{ formatDateVN(comment.createdAt) }}</span>
+                  <span class="text-[0.78rem] text-[#5A6C58]">{{ formatDateVN(comment.createdAt) }}</span>
                 </div>
                 <p class="m-0 text-[0.95rem] leading-[1.6] text-[#2C3529] whitespace-pre-line break-words">{{ comment.body }}</p>
 
@@ -120,7 +120,7 @@
                        neo `#qa-<id>` của /qa-documents. -->
                   <button
                     type="button"
-                    class="text-[0.82rem] font-semibold text-[#7A8675] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+                    class="text-[0.82rem] font-semibold text-[#5A6C58] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
                     @click="copyLink(comment.id)"
                   >
                     <i class="fa-solid fa-link mr-1" aria-hidden="true"></i>
@@ -156,13 +156,13 @@
                             v-if="reply.isAdminReply"
                             class="px-2 py-0.5 rounded-full bg-[#4A6741] text-white text-[0.68rem] font-bold uppercase tracking-wide"
                           >{{ t('admin_badge') }}</span>
-                          <span class="text-[0.75rem] text-[#7A8675]">{{ formatDateVN(reply.createdAt) }}</span>
+                          <span class="text-[0.75rem] text-[#5A6C58]">{{ formatDateVN(reply.createdAt) }}</span>
                         </div>
                         <p class="m-0 text-[0.9rem] leading-[1.55] text-[#2C3529] whitespace-pre-line break-words">{{ reply.body }}</p>
                         <div class="mt-1.5 flex flex-wrap items-center gap-3">
                           <button
                             type="button"
-                            class="text-[0.8rem] font-semibold text-[#7A8675] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+                            class="text-[0.8rem] font-semibold text-[#5A6C58] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
                             @click="copyLink(reply.id)"
                           >
                             <i class="fa-solid fa-link mr-1" aria-hidden="true"></i>
@@ -218,7 +218,7 @@
               : 'border-[#E2E8DF] bg-[#F8FAF7] opacity-60'"
           >
             <div class="flex items-center gap-2 mb-1.5">
-              <span v-if="p.status === 'sending'" class="inline-flex items-center gap-1.5 text-[0.78rem] text-[#7A8675] font-medium">
+              <span v-if="p.status === 'sending'" class="inline-flex items-center gap-1.5 text-[0.78rem] text-[#5A6C58] font-medium">
                 <i class="fa-solid fa-circle-notch fa-spin text-[0.7rem]" aria-hidden="true"></i>
                 {{ t('sending') || 'Đang gửi…' }}
               </span>
@@ -232,7 +232,7 @@
               <button type="button" class="text-[0.82rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded" @click="retryPendingComment(p.tempId)">
                 <i class="fa-solid fa-rotate-right mr-1" aria-hidden="true"></i>{{ t('retry') || 'Thử lại' }}
               </button>
-              <button type="button" class="text-[0.82rem] font-semibold text-[#7A8675] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded" @click="dismissPendingComment(p.tempId)">
+              <button type="button" class="text-[0.82rem] font-semibold text-[#5A6C58] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded" @click="dismissPendingComment(p.tempId)">
                 <i class="fa-solid fa-xmark mr-1" aria-hidden="true"></i>{{ t('dismiss') || 'Bỏ qua' }}
               </button>
             </div>
@@ -299,7 +299,7 @@
         </p>
 
         <div class="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <span class="text-[0.8rem] text-[#7A8675]">{{ body.length }} / {{ MAX_LENGTH }} {{ t('c_chars') }}</span>
+          <span class="text-[0.8rem] text-[#5A6C58]">{{ body.length }} / {{ MAX_LENGTH }} {{ t('c_chars') }}</span>
           <button type="submit" class="btn btn-primary" :disabled="submitting || !body.trim()">
             {{ submitting ? t('sending') : t('c_send') }}
           </button>

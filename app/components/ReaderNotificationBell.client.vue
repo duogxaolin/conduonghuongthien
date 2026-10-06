@@ -157,7 +157,7 @@ defineExpose({ close: () => { isOpen.value = false } })
           <button type="button" class="font-bold text-[#4A6741] underline" @click="load()">Thử lại</button>.
         </p>
 
-        <p v-else-if="!notifications.length" class="m-0 px-3.5 py-8 text-center text-[0.85rem] text-[#7A8675]">
+        <p v-else-if="!notifications.length" class="m-0 px-3.5 py-8 text-center text-[0.85rem] text-[#5A6C58]">
           Chưa có thông báo nào. Khi có người trả lời bình luận của bạn, thông báo sẽ hiện ở đây.
         </p>
 
@@ -184,8 +184,8 @@ defineExpose({ close: () => { isOpen.value = false } })
                   đã trả lời bình luận của bạn
                 </span>
                 <span class="mt-0.5 block line-clamp-2 break-words text-[0.8rem] leading-snug text-[#4A5545]">{{ item.excerpt }}</span>
-                <span v-if="item.target" class="mt-1 block truncate text-[0.74rem] text-[#7A8675]">{{ item.target.articleTitle }}</span>
-                <span v-else class="mt-1 block text-[0.74rem] italic text-[#7A8675]">Bài viết hiện không mở bình luận</span>
+                <span v-if="item.target" class="mt-1 block truncate text-[0.74rem] text-[#5A6C58]">{{ item.target.articleTitle }}</span>
+                <span v-else class="mt-1 block text-[0.74rem] italic text-[#5A6C58]">Bài viết hiện không mở bình luận</span>
               </span>
             </component>
           </li>

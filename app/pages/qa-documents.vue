@@ -207,7 +207,7 @@
                         </span>
                       </div>
                       <div class="w-7 h-7 rounded-lg flex items-center justify-center text-xs shrink-0 bg-[#F5F8F4]">
-                        <span class="text-[1.4rem] leading-none text-[#7A8675] shrink-0" aria-hidden="true">{{ isOpen(item.id) ? '−' : '+' }}</span>
+                        <span class="text-[1.4rem] leading-none text-[#5A6C58] shrink-0" aria-hidden="true">{{ isOpen(item.id) ? '−' : '+' }}</span>
                       </div>
                     </button>
                   </h3>

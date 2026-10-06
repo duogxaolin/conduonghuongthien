@@ -12,25 +12,13 @@
         <!-- Logo Area -->
         <nuxt-link to="/" class="flex items-center gap-3 lg:gap-3.5 no-underline">
           <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-2 lg:gap-2.5 shrink-0">
-            <img
-              v-if="siteMainLogo"
-              class="w-auto object-contain shrink-0"
-              :class="siteLogo ? 'h-10 lg:h-[56px]' : 'h-9 lg:h-[50px]'"
-              :src="siteMainLogo"
-              alt="Logo cơ quan chủ quản"
-            />
+            <NuxtImg               v-if="siteMainLogo"               class="w-auto object-contain shrink-0"               :class="siteLogo ? 'h-10 lg:h-[56px]' : 'h-9 lg:h-[50px]'"               :src="siteMainLogo"               alt="Logo cơ quan chủ quản"               sizes="64px sm:96px"              format="webp" />
             <span v-if="siteMainLogo && siteLogo" class="h-6 lg:h-8 w-px bg-[#D0DDD1] shrink-0" aria-hidden="true"></span>
-            <img
-              v-if="siteLogo"
-              class="w-auto object-contain shrink-0 transition-all"
-              :class="siteMainLogo ? 'h-7 lg:h-[38px]' : 'h-9 lg:h-[50px]'"
-              :src="siteLogo"
-              alt="Logo Con Đường Hướng Thiện"
-            />
+            <NuxtImg               v-if="siteLogo"               class="w-auto object-contain shrink-0 transition-all"               :class="siteMainLogo ? 'h-7 lg:h-[38px]' : 'h-9 lg:h-[50px]'"               :src="siteLogo"               alt="Logo Con Đường Hướng Thiện"               sizes="64px sm:96px"              format="webp" />
           </div>
           <div class="min-w-0">
             <h1 class="text-[0.82rem] sm:text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.2px] sm:tracking-[0.5px] leading-[1.2] whitespace-nowrap">CON ĐƯỜNG HƯỚNG THIỆN</h1>
-            <p class="hidden lg:block text-[0.68rem] xl:text-[0.72rem] font-semibold text-[#7A8675] uppercase mt-0.5 max-w-[280px] xl:max-w-[440px] 2xl:max-w-none leading-tight line-clamp-2">
+            <p class="hidden lg:block text-[0.68rem] xl:text-[0.72rem] font-semibold text-[#5A6C58] uppercase mt-0.5 max-w-[280px] xl:max-w-[440px] 2xl:max-w-none leading-tight line-clamp-2">
               {{ t('portal_subtitle') }}
             </p>
           </div>
@@ -82,7 +70,7 @@
                 >
                   <ReaderAvatar :initials="reader.initials" size="sm" />
                   <span class="max-w-[132px] truncate text-[0.82rem] font-bold text-[#385130]">{{ reader.displayName }}</span>
-                  <i class="fa-solid fa-chevron-down text-[0.6rem] text-[#7A8675] transition-transform duration-200" :class="{ 'rotate-180': isReaderMenuOpen }" aria-hidden="true"></i>
+                  <i class="fa-solid fa-chevron-down text-[0.6rem] text-[#5A6C58] transition-transform duration-200" :class="{ 'rotate-180': isReaderMenuOpen }" aria-hidden="true"></i>
                 </button>
 
                 <div
@@ -93,7 +81,7 @@
                   <!-- Địa chỉ email chỉ hiện trong menu đã mở, không hiện trên
                        thanh header: nó là dữ liệu cá nhân của người đọc, và một
                        màn hình đang chia sẻ thì cả phòng đọc được. -->
-                  <p v-if="reader.email" class="m-0 px-3 pt-1.5 pb-2 text-[0.72rem] text-[#7A8675] truncate border-b border-[#EEF2EC]">{{ reader.email }}</p>
+                  <p v-if="reader.email" class="m-0 px-3 pt-1.5 pb-2 text-[0.72rem] text-[#5A6C58] truncate border-b border-[#EEF2EC]">{{ reader.email }}</p>
                   <nuxt-link
                     to="/profile"
                     role="menuitem"
@@ -108,7 +96,7 @@
                     class="mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[0.85rem] font-semibold text-[#1E251C] transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
                     @click="onReaderSignOut"
                   >
-                    <i class="fa-solid fa-right-from-bracket w-4 text-center text-[#7A8675]" aria-hidden="true"></i> {{ t('logout') }}
+                    <i class="fa-solid fa-right-from-bracket w-4 text-center text-[#5A6C58]" aria-hidden="true"></i> {{ t('logout') }}
                   </button>
                 </div>
               </div>

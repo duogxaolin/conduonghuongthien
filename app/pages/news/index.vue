@@ -254,12 +254,12 @@
                 :to="`/news/${featured.slug}`"
                 class="block overflow-hidden lg:w-[42%] xl:w-[40%] shrink-0 relative bg-[#EBF1EA] no-underline"
               >
-                <img
+                <SafeImg
                   :src="featured.thumbnailUrl || '/assets/hero_banner.jpg'"
-                  :alt="featured.title"
-                  class="w-full h-[220px] sm:h-[250px] lg:h-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-105"
+                  :alt="featured.title" img-class="w-full h-[220px] sm:h-[250px] lg:h-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-105"
                   loading="lazy"
                   decoding="async"
+                  sizes="384px sm:512px lg:768px"
                 />
                 <div class="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
               </nuxt-link>
@@ -332,12 +332,12 @@
               >
                 <!-- Thumbnail: strictly 16:9 -->
                 <nuxt-link :to="`/news/${item.slug}`" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
-                  <img
+                  <SafeImg
                     :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
-                    :alt="item.title"
-                    class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
+                    :alt="item.title" img-class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
                     loading="lazy"
                     decoding="async"
+                    sizes="256px sm:384px lg:512px"
                   />
                   <div class="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
                 </nuxt-link>
@@ -376,7 +376,7 @@
                       <span>{{ t('n_view_details') }}</span>
                       <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
                     </nuxt-link>
-                    <span class="text-[#8E9F8B] font-medium text-[0.72rem]">{{ t('n_c11_badge') }}</span>
+                    <span class="text-[#6B7B68] font-medium text-[0.72rem]">{{ t('n_c11_badge') }}</span>
                   </div>
                 </div>
               </article>
@@ -470,7 +470,7 @@
               </li>
             </ul>
 
-            <p v-else class="text-[0.85rem] text-[#7A8675] italic py-4 m-0">{{ t('n_no_views') }}</p>
+            <p v-else class="text-[0.85rem] text-[#5A6C58] italic py-4 m-0">{{ t('n_no_views') }}</p>
           </div>
 
           <!-- Widget 2: Chuyên mục bản tin -->

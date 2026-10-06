@@ -8,7 +8,7 @@
     -->
     <div class="max-w-[1200px] mx-auto px-4">
       <!-- Breadcrumb -->
-      <nav class="text-[0.85rem] text-[#7A8675] mb-6" :aria-label="t('a_breadcrumb_aria')">
+      <nav class="text-[0.85rem] text-[#5A6C58] mb-6" :aria-label="t('a_breadcrumb_aria')">
         <nuxt-link to="/" class="text-[#4A6741] no-underline hover:underline">{{ t('a_home') }}</nuxt-link> &raquo;
         <nuxt-link :to="backTo" class="text-[#4A6741] no-underline hover:underline">{{ backLabelText }}</nuxt-link> &raquo;
         <slot name="crumb" :category-label="categoryLabel" />
@@ -73,12 +73,12 @@
         </div>
 
         <div v-if="article.thumbnailUrl" class="my-8 text-center">
-          <img
+          <SafeImg
             :src="article.thumbnailUrl"
-            :alt="article.title"
-            class="w-full max-h-[450px] object-cover rounded-lg shadow-sm"
+            :alt="article.title" img-class="w-full max-h-[450px] object-cover rounded-lg shadow-sm"
             loading="lazy"
             decoding="async"
+            sizes="512px sm:768px lg:1024px"
           />
         </div>
 
@@ -271,7 +271,7 @@
                   />
                   <span class="min-w-0 flex-grow">
                     <span class="block text-[0.9rem] font-bold leading-[1.4] text-[#1E251C] transition-colors duration-200 group-hover:text-[#4A6741] line-clamp-3">{{ item.title }}</span>
-                    <span class="block mt-1 text-[0.75rem] text-[#7A8675] font-semibold">
+                    <span class="block mt-1 text-[0.75rem] text-[#5A6C58] font-semibold">
                       {{ formatDateVN(item.publishedAt || item.createdAt) }}
                     </span>
                   </span>

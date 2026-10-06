@@ -5,7 +5,7 @@
       <div class="container relative">
         <form @submit.prevent="$emit('handle-search')" class="flex flex-col sm:flex-row gap-3 items-center">
           <div class="relative flex-1 w-full">
-            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-[#7A8675] text-sm pointer-events-none">
+            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-[#5A6C58] text-sm pointer-events-none">
               <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             </span>
             <input
@@ -75,7 +75,7 @@
               class="flex items-center gap-3.5 p-2.5 rounded-lg hover:bg-[#F2F7F0] transition-colors no-underline text-inherit group"
             >
               <div v-if="item.thumbnailUrl" class="w-12 h-12 rounded-lg overflow-hidden bg-[#EBF1EA] shrink-0 border border-[#E2E8DF]">
-                <NuxtImg :src="item.thumbnailUrl" :alt="item.title" width="48" height="48" sizes="48px" class="w-full h-full object-cover" />
+                <NuxtImg :src="item.thumbnailUrl" :alt="item.title" width="48" height="48" sizes="48px" format="webp" class="w-full h-full object-cover" />
               </div>
               <div v-else class="w-10 h-10 rounded-lg bg-[#EBF1EA] text-[#4A6741] flex items-center justify-center shrink-0 text-sm">
                 <i :class="item.typeIcon" aria-hidden="true"></i>

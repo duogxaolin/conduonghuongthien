@@ -50,12 +50,12 @@
         >
           <!-- Thumbnail: strictly 16:9 với hover zoom -->
           <nuxt-link :to="`/news/${doc.slug}`" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
-            <img
+            <SafeImg
               :src="doc.thumbnailUrl || '/assets/hero_banner.jpg'"
-              :alt="doc.title"
-              class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
+              :alt="doc.title" img-class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
               loading="lazy"
               decoding="async"
+              sizes="256px sm:384px lg:512px"
             />
             <div class="absolute inset-0 bg-gradient-to-t from-black/20 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
           </nuxt-link>
@@ -94,14 +94,14 @@
                 <span>{{ t('view_details') || 'Chi tiết' }}</span>
                 <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
               </nuxt-link>
-              <span class="text-[#8E9F8B] font-medium text-[0.72rem]">{{ t('documents') || 'Văn bản pháp luật' }}</span>
+              <span class="text-[#6B7B68] font-medium text-[0.72rem]">{{ t('documents') || 'Văn bản pháp luật' }}</span>
             </div>
           </div>
         </article>
       </div>
 
       <!-- Empty State -->
-      <div v-else class="bg-white rounded-2xl border border-[#E2E8DF] p-8 text-center text-sm text-[#7A8675] italic shadow-sm">
+      <div v-else class="bg-white rounded-2xl border border-[#E2E8DF] p-8 text-center text-sm text-[#5A6C58] italic shadow-sm">
         <i class="fa-regular fa-folder-open text-2xl mb-2 text-[#BAC8B6] block" aria-hidden="true"></i>
         <span>{{ t('block_docs_empty') }}</span>
       </div>

@@ -19,12 +19,12 @@
           class="group bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm flex flex-col transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-[#7CB342]"
         >
           <nuxt-link :to="`/reintegration-models/${item.id}`" class="block overflow-hidden no-underline">
-            <img
+            <SafeImg
               :src="item.image"
-              :alt="item.name"
-              class="aspect-video w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
+              :alt="item.name" img-class="aspect-video w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
               loading="lazy"
               decoding="async"
+              sizes="256px sm:384px lg:512px"
             />
           </nuxt-link>
           <div class="p-4 flex flex-col gap-2 flex-1">
@@ -40,7 +40,7 @@
         </article>
       </div>
 
-      <p v-else class="text-center text-[0.9rem] text-[#7A8675] italic">{{ t('block_reintegration_empty') }}</p>
+      <p v-else class="text-center text-[0.9rem] text-[#5A6C58] italic">{{ t('block_reintegration_empty') }}</p>
 
       <!-- Nút xem tất cả — chỉ hiện khi có dữ liệu và trang danh mục tồn tại.
            Carousel "Tấm Gương" không có nút này, nên đây thêm một điểm khác biệt

@@ -24,12 +24,12 @@
           >
             <nuxt-link :to="`/role-models/${model.id}`" class="group block no-underline">
               <figure class="relative aspect-[16/10] rounded-lg overflow-hidden bg-[#EEF2EC]">
-                <img
+                <SafeImg
                   :src="model.image"
-                  :alt="model.name"
-                  class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]"
+                  :alt="model.name" img-class="absolute inset-0 w-full h-full object-cover transition-transform duration-500 group-hover:scale-[1.06]"
                   loading="lazy"
                   decoding="async"
+                  sizes="256px sm:384px lg:512px"
                 />
               </figure>
               <span v-if="model.location" class="block text-[0.7rem] font-extrabold text-[#7CB342] uppercase tracking-[0.5px] mt-3 mb-1 truncate">{{ model.location }}</span>
@@ -68,20 +68,28 @@
             <i class="fa-solid fa-chevron-left text-xs" aria-hidden="true"></i>
           </button>
 
-          <!-- Clickable indicator tabs / pills -->
-          <div class="flex items-center gap-1.5 px-2.5 py-1.5 bg-white rounded-full border border-[#E2E8DF] shadow-sm">
+          <!-- Clickable indicator tabs / pills — pill nhỏ nhưng vùng tap ≥24px
+               (p-1.5 = 6px mỗi bên → 24px) để đạt WCAG 2.5.5 tap-target. -->
+          <div class="flex items-center gap-1 px-2 py-1 bg-white rounded-full border border-[#E2E8DF] shadow-sm">
             <button
               v-for="(_, idx) in list"
               :key="idx"
               type="button"
               @click="goToSlide(idx)"
               :class="[
-                'h-2.5 rounded-full transition-all duration-300 cursor-pointer border-none p-0',
-                currentIndex === idx ? 'w-6 bg-[#4A6741]' : 'w-2.5 bg-[#D5E1D3] hover:bg-[#7CB342]'
+                'p-1.5 rounded-full transition-colors duration-300 cursor-pointer border-none',
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]'
               ]"
               :aria-label="t('carousel_goto').replace('{n}', String(idx + 1))"
               :aria-current="currentIndex === idx ? 'true' : undefined"
-            ></button>
+            >
+              <span
+                :class="[
+                  'block rounded-full transition-all duration-300 h-2.5',
+                  currentIndex === idx ? 'w-6 bg-[#4A6741]' : 'w-2.5 bg-[#D5E1D3] group-hover:bg-[#7CB342]'
+                ]"
+              ></span>
+            </button>
           </div>
 
           <button
@@ -96,7 +104,7 @@
         </div>
       </div>
 
-      <p v-else class="text-center text-[0.9rem] text-[#7A8675] italic">{{ t('block_role_empty') }}</p>
+      <p v-else class="text-center text-[0.9rem] text-[#5A6C58] italic">{{ t('block_role_empty') }}</p>
     </div>
   </section>
 </template>

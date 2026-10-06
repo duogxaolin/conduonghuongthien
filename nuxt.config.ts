@@ -265,7 +265,11 @@ export default defineNuxtConfig({
      */
     '/**': {
       headers: {
-        'X-Frame-Options': 'DENY',
+        // SAMEORIGIN thay DENY: Page Builder `/admin/content/pages/[id]` nhúng
+        // iframe preview trang con cùng origin — DENY/`frame-ancestors 'none'`
+        // chặn luôn. SAMEORIGIN + `frame-ancestors 'self'` vẫn chống clickjacking
+        // cross-site (OWASP khuyến nghị), chỉ cho phép chính CDKT nhúng CDKT.
+        'X-Frame-Options': 'SAMEORIGIN',
         'X-Content-Type-Options': 'nosniff',
         'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
         'Referrer-Policy': 'strict-origin-when-cross-origin',
@@ -293,7 +297,7 @@ export default defineNuxtConfig({
           "font-src 'self' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
           "frame-src https://www.youtube-nocookie.com https://*.delify.vn https://*.conduonghuongthien.vn https://www.googletagmanager.com https://*.gov.vn",
           "connect-src 'self' https://static.cloudflareinsights.com https://*.delify.vn https://*.conduonghuongthien.vn https://www.google-analytics.com https://*.facebook.com https://analytics.tiktok.com https://www.clarity.ms https://*.gov.vn",
-          "frame-ancestors 'none'",
+          "frame-ancestors 'self'",
           "base-uri 'self'",
           "form-action 'self'",
           "object-src 'none'",
@@ -364,12 +368,10 @@ export default defineNuxtConfig({
         // cdn1.delify.vn. PageSpeed gợi ý "không có điểm gốc nào được kết nối
         // trước"; 1 preconnect (R2), không quá 4.
         { rel: 'preconnect' as const, href: 'https://cdn1.delify.vn' },
-        // Preload hero banner (LCP element) — `HeroBlock.vue` dùng `background:
-        // image-set(...)` CSS nên trình duyệt chỉ tìm thấy ảnh sau khi parse xong
-        // stylesheet. Preload báo fetch ngay, `fetchpriority: 'high'` ưu tiên
-        // trước ảnh khác. `type: 'image/webp'` → browser không hỗ trợ WebP bỏ
-        // qua preload an toàn (spec). Ảnh `.webp` 155 KiB vs `.jpg` 201 KiB (-23%).
-        { rel: 'preload' as const, as: 'image', href: '/assets/hero_banner.webp', fetchpriority: 'high', type: 'image/webp' },
+        // Preload hero banner đã chuyển vào `HeroBlock.vue` (useHead) — chỉ preload
+        // khi HeroBlock render (trang chủ недорог). Ở `app.head` toàn cục, preload
+        // `/assets/hero_banner.webp` lãng phí 155 KiB trên mọi trang admin/không
+        // có hero. Lighthouse flag "preloaded but not used" trên trang /admin/*.
         // Preload woff2 TRƯỚC stylesheet FA để font sẵn sàng khi CSS parse xong —
         // đưa woff2 ra khỏi critical path (Lighthouse "Hiển thị phông chữ").
         ...iconFontPreloads,

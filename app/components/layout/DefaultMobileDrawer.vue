@@ -10,21 +10,9 @@
     <div class="flex items-center justify-between px-5 py-[18px] bg-gradient-to-br from-[#1e4620] to-[#133215] text-white border-b border-white/10 z-[2] flex-shrink-0">
       <div class="flex items-center gap-2.5 min-w-0">
         <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-2 shrink-0">
-          <img
-            v-if="siteMainLogo"
-            :src="siteMainLogo"
-            alt="Logo cơ quan chủ quản"
-            class="w-auto object-contain drop-shadow-md"
-            :class="siteLogo ? 'h-10' : 'h-9'"
-          />
+          <NuxtImg             v-if="siteMainLogo"             :src="siteMainLogo"             alt="Logo cơ quan chủ quản"             class="w-auto object-contain drop-shadow-md"             :class="siteLogo ? 'h-10' : 'h-9'"             sizes="64px sm:96px"            format="webp" />
           <span v-if="siteMainLogo && siteLogo" class="h-6 w-px bg-white/25" aria-hidden="true"></span>
-          <img
-            v-if="siteLogo"
-            :src="siteLogo"
-            alt="Logo Con Đường Hướng Thiện"
-            class="w-auto object-contain drop-shadow-md"
-            :class="siteMainLogo ? 'h-7' : 'h-9'"
-          />
+          <NuxtImg             v-if="siteLogo"             :src="siteLogo"             alt="Logo Con Đường Hướng Thiện"             class="w-auto object-contain drop-shadow-md"             :class="siteMainLogo ? 'h-7' : 'h-9'"             sizes="64px sm:96px"            format="webp" />
         </div>
         <div class="flex flex-col min-w-0">
           <span class="text-[0.85rem] font-extrabold tracking-[0.4px] text-white leading-[1.2] truncate">CON ĐƯỜNG HƯỚNG THIỆN</span>
@@ -144,7 +132,7 @@
                 <ReaderAvatar :initials="reader.initials" />
                 <div class="flex flex-col min-w-0">
                   <span class="text-[0.9rem] font-extrabold text-[#1E251C] truncate">{{ reader.displayName }}</span>
-                  <span v-if="reader.email" class="text-[0.72rem] text-[#7A8675] truncate">{{ reader.email }}</span>
+                  <span v-if="reader.email" class="text-[0.72rem] text-[#5A6C58] truncate">{{ reader.email }}</span>
                 </div>
               </div>
               <div class="flex gap-2">
@@ -157,7 +145,7 @@
                 </nuxt-link>
                 <button
                   type="button"
-                  class="flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-[#7A8675] transition-colors active:bg-[#EEF2EC]"
+                  class="flex items-center justify-center gap-2 bg-white border border-[rgba(30,70,32,0.12)] rounded-xl px-3.5 py-2.5 text-[0.85rem] font-bold text-[#5A6C58] transition-colors active:bg-[#EEF2EC]"
                   @click="onReaderSignOut"
                 >
                   <i class="fa-solid fa-right-from-bracket" aria-hidden="true"></i> Đăng xuất
@@ -204,7 +192,7 @@
         <a :href="siteHotlineTel" class="flex items-center gap-3 bg-white px-3.5 py-3 rounded-[14px] border border-[rgba(30,70,32,0.12)] no-underline shadow-sm">
           <span class="text-xl">📞</span>
           <div class="flex flex-col">
-            <span class="text-[0.72rem] text-[#7A8675] font-semibold">{{ t('hotline_lbl') }}</span>
+            <span class="text-[0.72rem] text-[#5A6C58] font-semibold">{{ t('hotline_lbl') }}</span>
             <span class="text-[0.95rem] font-extrabold text-[#4A6741]">{{ siteHotline }}</span>
           </div>
         </a>
