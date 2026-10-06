@@ -1,24 +1,8 @@
 <template>
   <!-- Hero Banner Section (lifted from index.vue, editable fields from block.data) -->
   <section class="relative min-h-[520px] overflow-hidden sm:min-h-[580px]" role="region" aria-label="Nội dung nổi bật">
-    <!-- Background image: <picture> thay CSS background để trình duyệt preload
-         LCP + chọn WebP (nhẹ hơn 30%) + responsive (mobile 768px chỉ 46KB).
-         width/height cố định để chặn CLS; object-cover thay `background-size:cover`.
-         `fetchpriority="high"` đồng bộ với `<link rel="preload">` ở nuxt.config. -->
-    <picture class="absolute inset-0 will-change-transform">
-      <source :srcset="bgImageMobile || bgImage + '-mobile.webp'" media="(max-width: 768px)" type="image/webp" />
-      <source :srcset="bgImageWebp" type="image/webp" />
-      <img
-        :src="bgImage"
-        alt=""
-        aria-hidden="true"
-        decoding="async"
-        fetchpriority="high"
-        class="absolute inset-0 w-full h-full object-cover object-[center_65%]"
-        width="1376"
-        height="768"
-      />
-    </picture>
+    <!-- Background image với will-change để tối ưu composite layer -->
+    <div class="absolute inset-0 will-change-transform" :style="`background: url('${bgImage}') center 65% / cover no-repeat;`"></div>
     <div class="absolute inset-0 will-change-transform" style="background: linear-gradient(120deg, rgba(28,54,28,0.95) 0%, rgba(45,74,45,0.82) 45%, rgba(90,140,60,0.45) 100%);"></div>
     <div class="absolute inset-0 opacity-[0.04]" style="background: repeating-linear-gradient(135deg, #fff 0px, #fff 1px, transparent 1px, transparent 40px);"></div>
 
@@ -125,16 +109,5 @@ const d = computed(() => {
     btnHelp: data.btnHelp,
   }
 })
-const bgImage = computed(() => String(d.value.bgImage || '/assets/hero_banner.jpg'))
-
-// Suy đường dẫn WebP/mobile từ bgImage: `/assets/hero_banner.jpg` → `.webp` /
-// `-mobile.webp`. Chỉ áp cho asset local (`/assets/...`); URL CDN (http*://) dùng
-// nguyên值 — CDN R2 đã tự WebP qua IPX nếu cấu hình. Fallback về bgImage gốc
-// khi admin đặt URL tùy chỉnh không có bản WebP tương ứng.
-function toWebp(url: string, mobile = false): string {
-  if (!url.startsWith('/assets/')) return url
-  return url.replace(/\.(jpg|jpeg|png)$/i, mobile ? '-mobile.webp' : '.webp')
-}
-const bgImageWebp = computed(() => toWebp(bgImage.value))
-const bgImageMobile = computed(() => toWebp(bgImage.value, true))
+const bgImage = computed(() => d.value.bgImage || '/assets/hero_banner.jpg')
 </script>
