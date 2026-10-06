@@ -78,7 +78,7 @@
                 <ReaderAvatar :initials="reader.initials" size="lg" />
                 <div class="min-w-0 flex-1">
                   <p class="m-0 truncate text-[1.15rem] font-extrabold text-[#122815]">{{ reader.displayName }}</p>
-                  <p v-if="reader.email" class="m-0 mt-0.5 truncate text-[0.85rem] text-[#7A8675]">{{ reader.email }}</p>
+                  <p v-if="reader.email" class="m-0 mt-0.5 truncate text-[0.85rem] text-[#5A6C58]">{{ reader.email }}</p>
                 </div>
               </div>
 
@@ -86,7 +86,7 @@
                 <label for="reader-display-name" class="mb-2 block text-[0.85rem] font-bold text-[#385130]">
                   Tên hiển thị
                 </label>
-                <p class="mb-2.5 mt-0 text-[0.8rem] leading-relaxed text-[#7A8675]">
+                <p class="mb-2.5 mt-0 text-[0.8rem] leading-relaxed text-[#5A6C58]">
                   Tên này hiện cùng mọi bình luận của bạn trên cổng thông tin. Từ
                   {{ DISPLAY_NAME_MIN_LENGTH }} đến {{ DISPLAY_NAME_MAX_LENGTH }} ký tự.
                   Địa chỉ email của bạn không bao giờ hiện công khai.
@@ -160,7 +160,7 @@
                   <!-- Tài khoản Google không có email thì không có gì để gửi tới;
                        hiện một công tắc bật được ở đây là hứa một việc sẽ không
                        bao giờ xảy ra. -->
-                  <p v-else class="m-0 mt-1 text-[0.78rem] italic leading-relaxed text-[#7A8675]">
+                  <p v-else class="m-0 mt-1 text-[0.78rem] italic leading-relaxed text-[#5A6C58]">
                     Tài khoản của bạn không có địa chỉ email nên cổng thông tin không gửi được.
                   </p>
                 </div>
@@ -199,7 +199,7 @@
                 <button type="button" class="font-bold text-[#4A6741] underline" @click="reloadNotifications">Thử lại</button>.
               </p>
 
-              <p v-else-if="!notifications.length" class="m-0 rounded-lg border border-dashed border-[#E2E8DF] px-4 py-8 text-center text-[0.9rem] text-[#7A8675]">
+              <p v-else-if="!notifications.length" class="m-0 rounded-lg border border-dashed border-[#E2E8DF] px-4 py-8 text-center text-[0.9rem] text-[#5A6C58]">
                 Chưa có thông báo nào. Khi có người trả lời bình luận của bạn, thông báo sẽ hiện ở đây.
               </p>
 
@@ -224,7 +224,7 @@
                       <span class="block text-[0.88rem] leading-snug text-[#1E251C]">
                         <strong class="font-bold">{{ item.authorName }}</strong>
                         đã trả lời bình luận của bạn
-                        <span v-if="item.createdAt" class="ml-1 text-[0.78rem] font-normal text-[#7A8675]">
+                        <span v-if="item.createdAt" class="ml-1 text-[0.78rem] font-normal text-[#5A6C58]">
                           • {{ formatDateVN(item.createdAt) }}
                         </span>
                       </span>
@@ -234,7 +234,7 @@
                       </span>
                       <!-- Bài đã ẩn hoặc đã đóng bình luận: nói ra thay vì đưa một
                            liên kết dẫn tới trang không có luồng bình luận nào. -->
-                      <span v-else class="mt-1.5 block text-[0.78rem] italic text-[#7A8675]">
+                      <span v-else class="mt-1.5 block text-[0.78rem] italic text-[#5A6C58]">
                         Bài viết hiện không mở bình luận
                       </span>
                     </span>
@@ -249,7 +249,7 @@
                   :disabled="notifPage <= 1 || notifPending"
                   @click="loadNotifications(notifPage - 1)"
                 >Trước</button>
-                <span class="text-[0.82rem] text-[#7A8675]">Trang {{ notifPage }} / {{ notifTotalPages }}</span>
+                <span class="text-[0.82rem] text-[#5A6C58]">Trang {{ notifPage }} / {{ notifTotalPages }}</span>
                 <button
                   type="button"
                   class="rounded-lg border border-[#E2E8DF] px-3 py-2 text-[0.82rem] font-semibold text-[#385130] disabled:opacity-50"
@@ -285,13 +285,13 @@
                 <button type="button" class="font-bold text-[#4A6741] underline" @click="loadComments">Thử lại</button>.
               </p>
 
-              <p v-else-if="!myComments.length" class="m-0 rounded-lg border border-dashed border-[#E2E8DF] px-4 py-8 text-center text-[0.9rem] text-[#7A8675]">
+              <p v-else-if="!myComments.length" class="m-0 rounded-lg border border-dashed border-[#E2E8DF] px-4 py-8 text-center text-[0.9rem] text-[#5A6C58]">
                 Bạn chưa gửi bình luận nào. Hãy mở một bài viết và đặt câu hỏi ở phần bình luận.
               </p>
 
               <ul v-else class="m-0 flex list-none flex-col gap-3 p-0">
                 <li v-for="item in myComments" :key="item.id" class="rounded-lg border border-[#EEF2EC] bg-[#FCFDFC] p-4">
-                  <div class="mb-2 flex flex-wrap items-center gap-2 text-[0.78rem] text-[#7A8675]">
+                  <div class="mb-2 flex flex-wrap items-center gap-2 text-[0.78rem] text-[#5A6C58]">
                     <span class="font-semibold">{{ formatDateVN(item.createdAt) }}</span>
                     <span v-if="item.isReply" class="rounded bg-[#EEF2EC] px-1.5 py-0.5 font-semibold text-[#385130]">Phản hồi</span>
                     <span v-if="item.replyCount > 0" class="rounded bg-[#4A6741] px-1.5 py-0.5 font-semibold text-white">
@@ -308,7 +308,7 @@
                     <!-- Bài đã ẩn hoặc đã đóng bình luận: nói ra thay vì đưa một
                          liên kết dẫn tới một trang không có luồng bình luận nào —
                          người đọc sẽ hiểu là bình luận của họ đã bị xoá. -->
-                    <span v-else class="text-[#7A8675]">
+                    <span v-else class="text-[#5A6C58]">
                       {{ item.article.title }}
                       <span class="italic">(bài viết hiện không mở bình luận)</span>
                     </span>
@@ -323,7 +323,7 @@
                   :disabled="commentsPage <= 1 || commentsPending"
                   @click="goToCommentPage(commentsPage - 1)"
                 >Trước</button>
-                <span class="text-[0.82rem] text-[#7A8675]">Trang {{ commentsData.page }} / {{ commentsData.totalPages }}</span>
+                <span class="text-[0.82rem] text-[#5A6C58]">Trang {{ commentsData.page }} / {{ commentsData.totalPages }}</span>
                 <button
                   type="button"
                   class="rounded-lg border border-[#E2E8DF] px-3 py-2 text-[0.82rem] font-semibold text-[#385130] disabled:opacity-50"
@@ -342,7 +342,7 @@
                 <button
                   v-if="history.length"
                   type="button"
-                  class="shrink-0 text-[0.8rem] font-semibold text-[#7A8675] underline transition-colors hover:text-[#B04A4A]"
+                  class="shrink-0 text-[0.8rem] font-semibold text-[#5A6C58] underline transition-colors hover:text-[#B04A4A]"
                   @click="clearHistory"
                 >{{ t('profile_clear_history') }}</button>
               </header>
@@ -364,7 +364,7 @@
                 </span>
               </p>
 
-              <p v-if="!history.length" class="m-0 rounded-lg border border-dashed border-[#E2E8DF] px-4 py-8 text-center text-[0.9rem] text-[#7A8675]">
+              <p v-if="!history.length" class="m-0 rounded-lg border border-dashed border-[#E2E8DF] px-4 py-8 text-center text-[0.9rem] text-[#5A6C58]">
                 Chưa có bài viết nào được đọc trên thiết bị này.
               </p>
 
@@ -377,7 +377,7 @@
                     <span class="min-w-0 flex-1 text-[0.9rem] font-semibold leading-snug text-[#1E251C] transition-colors hover:text-[#4A6741]">
                       {{ item.title || item.slug }}
                     </span>
-                    <span v-if="item.readAt" class="shrink-0 text-[0.76rem] text-[#7A8675]">{{ formatReadAt(item.readAt) }}</span>
+                    <span v-if="item.readAt" class="shrink-0 text-[0.76rem] text-[#5A6C58]">{{ formatReadAt(item.readAt) }}</span>
                   </nuxt-link>
                   <button
                     type="button"
@@ -418,14 +418,14 @@
               </p>
 
               <template v-else>
-                <p v-if="!myChats.length" class="m-0 rounded-lg border border-dashed border-[#E2E8DF] px-4 py-8 text-center text-[0.9rem] text-[#7A8675]">
+                <p v-if="!myChats.length" class="m-0 rounded-lg border border-dashed border-[#E2E8DF] px-4 py-8 text-center text-[0.9rem] text-[#5A6C58]">
                   Chưa có đoạn trò chuyện nào gắn với tài khoản của bạn.
                 </p>
 
                 <ul v-else class="m-0 flex list-none flex-col gap-3 p-0">
                   <li v-for="item in myChats" :key="item.id" class="rounded-lg border border-[#EEF2EC] bg-[#FCFDFC] p-4">
                     <p class="m-0 line-clamp-2 break-words text-[0.9rem] font-semibold leading-snug text-[#1E251C]">{{ item.title }}</p>
-                    <p class="mt-1.5 mb-0 text-[0.78rem] text-[#7A8675]">
+                    <p class="mt-1.5 mb-0 text-[0.78rem] text-[#5A6C58]">
                       {{ formatDateVN(item.lastMessageAt) }} • {{ item.messageCount }} tin nhắn
                     </p>
                   </li>
@@ -440,7 +440,7 @@
                   trước, không thì lượt bấm thứ hai sẽ trả về ngay mà không làm gì.
                 -->
                 <div class="mt-4 border-t border-[#EEF2EC] pt-4">
-                  <p class="mb-2.5 mt-0 text-[0.8rem] leading-relaxed text-[#7A8675]">
+                  <p class="mb-2.5 mt-0 text-[0.8rem] leading-relaxed text-[#5A6C58]">
                     Nếu bạn đã trò chuyện với trợ lý trên thiết bị này trước khi đăng nhập, hãy gắn các đoạn đó vào tài khoản.
                   </p>
                   <button

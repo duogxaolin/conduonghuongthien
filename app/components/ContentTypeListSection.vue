@@ -437,11 +437,12 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
               class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_3px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_10px_28px_rgba(74,103,65,0.14)] transition-all duration-300 flex flex-col sm:flex-row"
             >
               <nuxt-link :to="typeLink(featured.slug)" class="block relative sm:w-[45%] aspect-video sm:aspect-auto overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
-                <img
-                  :src="featured.thumbnailUrl || '/assets/hero_banner.jpg'"
+                <SafeImg
+                  :src="featured.thumbnailUrl"
                   :alt="featured.title"
                   loading="eager"
-                  class="w-full h-full object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
+                  img-class="w-full h-full object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
+                  fallback="/assets/hero_banner.jpg"
                 />
               </nuxt-link>
               <div class="p-5 sm:p-6 flex flex-col flex-1 justify-center">
@@ -495,12 +496,13 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                 class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-[#7CB342] transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
               >
                 <nuxt-link :to="typeLink(item.slug)" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
-                  <img
-                    :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
+                  <SafeImg
+                    :src="item.thumbnailUrl"
                     :alt="item.title"
                     loading="lazy"
                     decoding="async"
-                    class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
+                    img-class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
+                    fallback="/assets/hero_banner.jpg"
                   />
                 </nuxt-link>
                 <div class="p-4 sm:p-5 flex flex-col flex-1">
@@ -529,7 +531,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                       <span>{{ t('view_details') }}</span>
                       <i class="fa-solid fa-arrow-right text-[0.68rem] transition-transform duration-200 group-hover:translate-x-0.5" aria-hidden="true"></i>
                     </nuxt-link>
-                    <span class="text-[#8E9F8B] font-medium text-[0.72rem]">{{ t('n_c11_badge') }}</span>
+                    <span class="text-[#6B7B68] font-medium text-[0.72rem]">{{ t('n_c11_badge') }}</span>
                   </div>
                 </div>
               </article>
@@ -593,7 +595,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                 </h3>
               </li>
             </ul>
-            <p v-else class="text-[0.85rem] text-[#7A8675] italic py-4 m-0">{{ t('n_no_views') }}</p>
+            <p v-else class="text-[0.85rem] text-[#5A6C58] italic py-4 m-0">{{ t('n_no_views') }}</p>
           </div>
 
           <!-- Widget 2: Chuyên mục -->

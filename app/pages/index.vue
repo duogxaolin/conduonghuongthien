@@ -1,5 +1,9 @@
 <template>
   <div>
+    <!-- h1 sr-only cho trang chủ khi render Page blocks — block mở bằng <h2>
+         (SectionBar/section header), nên cần <h1> cha để trình tự tiêu đề hợp
+         lệ. Visually hidden, chỉ trình đọc màn hình + SEO nhìn thấy. -->
+    <h1 v-if="blocks.length" class="sr-only">{{ page?.seoTitle || t('home_seo_title') }}</h1>
     <PageRenderer
       v-if="pending || loadError || blocks.length"
       :blocks="blocks"

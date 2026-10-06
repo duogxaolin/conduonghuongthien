@@ -5,14 +5,14 @@
       ? 'bg-white border-b border-[#E2E8DF]'
       : 'bg-[#4A6741]'"
   >
-    <div
-      class="flex items-center gap-2 font-semibold text-base uppercase tracking-wide"
+    <h2
+      class="flex items-center gap-2 font-semibold text-base uppercase tracking-wide m-0"
       :class="variant === 'light' ? 'text-[#4A6741]' : 'text-white'"
     >
       <i v-if="icon && icon.includes('fa-')" :class="[icon]" aria-hidden="true"></i>
       <span v-else-if="icon" aria-hidden="true">{{ icon }}</span>
       <slot name="title">{{ localizedTitle }}</slot>
-    </div>
+    </h2>
     <nuxt-link
       v-if="to"
       :to="to"

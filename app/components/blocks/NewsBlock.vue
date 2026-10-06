@@ -10,7 +10,7 @@
           <div class="mb-6">
             <nuxt-link :to="`/news/${featured.slug}`" class="block no-underline group">
               <div class="relative h-[300px] rounded-lg overflow-hidden sm:h-[420px] shadow-[0_4px_16px_rgba(0,0,0,0.08)]">
-                <img :src="featured.thumbnailUrl || '/assets/news_danang.jpg'" :alt="featured.title" class="w-full h-full object-cover transition-transform duration-[0.6s] ease-[cubic-bezier(0.165,0.84,0.44,1)] group-hover:scale-[1.03]"  loading="lazy" decoding="async" />
+                <SafeImg :src="featured.thumbnailUrl || '/assets/news_danang.jpg'" :alt="featured.title" img-class="w-full h-full object-cover transition-transform duration-[0.6s] ease-[cubic-bezier(0.165,0.84,0.44,1)] group-hover:scale-[1.03]"  loading="lazy" decoding="async" sizes="384px sm:768px" />
                 <div class="absolute bottom-0 left-0 right-0 h-[60%] z-[1]" style="background: linear-gradient(to top, rgba(16,28,16,0.95) 0%, rgba(16,28,16,0.4) 60%, rgba(16,28,16,0) 100%);"></div>
                 <div class="absolute bottom-0 left-0 right-0 p-6 text-white z-[2]">
                   <span class="inline-block bg-[#7CB342] text-white px-2 py-[3px] text-[0.65rem] font-extrabold rounded-sm mb-2 uppercase">{{ t('news_featured') || 'TIN NỔI BẬT' }}</span>
@@ -30,11 +30,11 @@
           <div class="grid grid-cols-1 gap-[14px] sm:grid-cols-2 sm:gap-5" role="list">
             <div v-for="item in subCards" :key="item.id" role="listitem" class="flex gap-4 py-3 border-t border-dashed border-[#E2E8DF] group">
               <nuxt-link :to="`/news/${item.slug}`" class="w-[130px] h-[85px] rounded-lg overflow-hidden flex-shrink-0 shadow-sm" :title="item.title">
-                <img :src="item.thumbnailUrl || '/assets/news_quangninh.jpg'" :alt="item.title" class="w-full h-full object-cover transition group-hover:scale-[1.05]" loading="lazy" decoding="async" />
+                <SafeImg :src="item.thumbnailUrl || '/assets/news_quangninh.jpg'" :alt="item.title" img-class="w-full h-full object-cover transition group-hover:scale-[1.05]" loading="lazy" decoding="async" sizes="130px" />
               </nuxt-link>
               <div class="flex flex-col flex-1 min-w-0 justify-between py-0.5">
                 <div>
-                  <span class="text-[0.72rem] text-[#7A8675] font-bold block mb-1">{{ formatDate(item.publishedAt || item.createdAt) }}</span>
+                  <span class="text-[0.72rem] text-[#5A6C58] font-bold block mb-1">{{ formatDate(item.publishedAt || item.createdAt) }}</span>
                   <h4 class="text-[0.88rem] font-bold leading-[1.35] m-0 line-clamp-3">
                     <nuxt-link :to="`/news/${item.slug}`" class="text-[#1E251C] no-underline transition hover:text-[#4A6741]" :title="item.title">{{ item.title }}</nuxt-link>
                   </h4>
@@ -44,7 +44,7 @@
           </div>
         </template>
 
-        <p v-else class="text-[0.9rem] text-[#7A8675] italic py-6">{{ t('block_news_empty') }}</p>
+        <p v-else class="text-[0.9rem] text-[#5A6C58] italic py-6">{{ t('block_news_empty') }}</p>
       </div>
 
       <!-- Right column -->
@@ -58,7 +58,7 @@
               <h4 class="text-[0.88rem] font-bold leading-[1.4] m-0 mb-[6px] line-clamp-2">
                 <nuxt-link :to="`/news/${item.slug}`" class="text-[#1E251C] no-underline transition hover:text-[#4A6741]" :title="item.title">{{ item.title }}</nuxt-link>
               </h4>
-              <span class="text-[0.72rem] text-[#7A8675] font-semibold"><span aria-hidden="true">📅</span> {{ formatDate(item.publishedAt || item.createdAt) }}</span>
+              <span class="text-[0.72rem] text-[#5A6C58] font-semibold"><span aria-hidden="true">📅</span> {{ formatDate(item.publishedAt || item.createdAt) }}</span>
             </div>
           </div>
         </div>

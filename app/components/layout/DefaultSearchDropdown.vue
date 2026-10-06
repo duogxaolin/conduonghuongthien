@@ -5,7 +5,7 @@
       <div class="container relative">
         <form @submit.prevent="$emit('handle-search')" class="flex flex-col sm:flex-row gap-3 items-center">
           <div class="relative flex-1 w-full">
-            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-[#7A8675] text-sm pointer-events-none">
+            <span class="absolute left-4 top-1/2 -translate-y-1/2 text-[#5A6C58] text-sm pointer-events-none">
               <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             </span>
             <input
