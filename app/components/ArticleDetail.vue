@@ -55,7 +55,7 @@
              theo cột thay vì nong cột ra và đẩy cột phải tràn khỏi container. -->
         <div class="min-w-0">
         <span class="text-[0.85rem] font-bold text-[#4A6741] bg-[#F8FAF7] px-3 py-1.5 rounded inline-flex flex-wrap items-center gap-x-2 mb-4">
-          <span><span aria-hidden="true">{{ metaIcon }}</span> {{ categoryLabel }}</span>
+          <span><i v-if="metaIconIsFa" :class="metaIcon" aria-hidden="true"></i><span v-else aria-hidden="true">{{ metaIcon }}</span> {{ categoryLabel }}</span>
           <span aria-hidden="true">•</span>
           <span><i class="fa-regular fa-calendar" aria-hidden="true"></i> {{ t('a_published_on') }} {{ formattedDate }}</span>
           <span aria-hidden="true">•</span>
@@ -280,8 +280,9 @@
             </ul>
 
             <!-- Chủ đề liên quan. Chỉ hiện cho /news vì đó là danh sách duy nhất
-                 đọc được `?cat=`; ba danh sách còn lại bỏ qua tham số đó, nên một
-                 chip ở đó sẽ mở ra đúng trang chưa lọc và trông như bấm hụt. -->
+                 có category filter (path segment `/news/<cat>`); các list hệ thống
+                 khác (/role-models, /documents, /legal-qa) không có category
+                 filter nên chip ở đó sẽ mở ra danh sách chưa lọc — trông như bấm hụt. -->
             <div v-if="showTopics" class="mt-7">
               <h3 class="m-0 mb-3 text-[0.95rem] font-extrabold uppercase tracking-wide text-[#385130]">
                 <i class="fa-solid fa-tags mr-2 text-[#7CB342]" aria-hidden="true"></i>{{ t('a_topics') }}
@@ -290,7 +291,7 @@
                 <nuxt-link
                   v-for="topic in relatedTopics"
                   :key="topic.slug"
-                  :to="`${backTo}?cat=${topic.slug}`"
+                  :to="`${backTo}/${topic.slug}`"
                   class="px-3 py-1.5 rounded-full text-[0.85rem] font-semibold border no-underline transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
                   :class="topic.isCurrent
                     ? 'bg-[#4A6741] border-[#4A6741] text-white'
@@ -366,6 +367,14 @@ const VARIANT_KEYS = {
 } as const
 
 const vkeys = computed(() => VARIANT_KEYS[props.variant as keyof typeof VARIANT_KEYS] ?? VARIANT_KEYS.news)
+
+/**
+ * `metaIcon` có 2 dạng: emoji (huyến "📰" / "📍" — varian news/role/reintegration)
+ * hoặc class FontAwesome ("fa-solid fa-folder" — custom type từ content-types DB).
+ * Phân biệt để render đúng: class FA → `<i :class>`, emoji → text. Sai số cũ:
+ * custom type hiện literal "fa-solid fa-folder" thay vì icon.
+ */
+const metaIconIsFa = computed(() => /^fa-(solid|regular|brands|duotone)(\s|$)/.test(String(props.metaIcon).trim()))
 
 const backLabelText = computed(() => props.backLabel ?? t(vkeys.value.back))
 const backCtaText = computed(() => props.backCtaLabel ?? t('a_back_cta'))
@@ -505,15 +514,15 @@ const relatedTopics = computed(() => relatedData.value?.topics || [])
 const relatedError = computed(() => !!relatedFetchError.value || relatedData.value?.ok === false)
 
 /**
- * Chip chủ đề trỏ vào `${backTo}?cat=<slug>`, và hai điều kiện dưới đây phải
- * đúng **cả hai** mới có cú bấm thật:
+ * Chip chủ đề trỏ vào `${backTo}/${slug}` (path segment `/news/<cat>`). Hai điều
+ * kiện phải đúng **cả hai**:
  *
- * 1. `/news` là danh sách **duy nhất** đọc `?cat=` — `/role-models`,
- *    `/reintegration-models` và `/documents` bỏ qua tham số đó và trả về đúng
- *    danh sách chưa lọc, nên ở đó chip là một cú bấm không thay đổi gì.
- * 2. `/news` cũng **ghim cứng** `type: 'news'` trong truy vấn của nó, nên chủ đề
- *    của một bài `document` hay `faq` (cả hai cũng render tại `/news/<slug>`) sẽ
- *    mở ra một danh sách rỗng — chip vẫn bấm được, chỉ là không có gì phía sau.
+ * 1. `/news` là danh sách **duy nhất** có category filter (path segment) —
+ *    `/role-models`, `/reintegration-models`, `/documents`, `/legal-qa` không
+ *    có category filter nên chip ở đó mở ra danh sách chưa lọc (bấm hụt).
+ * 2. `/news` **ghim cứng** `type: 'news'` trong truy vấn, nên chủ đề của một bài
+ *    `document`/`faq` (cả hai cũng render tại `/news/<slug>`) sẽ mở ra danh sách
+ *    rỗng — chip vẫn bấm được, chỉ không có gì phía sau.
  */
 const showTopics = computed(
   () => props.backTo === '/news' && article.value?.type === 'news' && relatedTopics.value.length > 0,
@@ -563,8 +572,19 @@ const copyArticleLink = async () => {
   }
 }
 
+/**
+ * In bài — mở trang in riêng (layout báo giấy, không nav/sidebar/chat) tại
+ * `/in-bai/<slug>?back=<backTo>` trong tab mới, tự kích hoạt window.print()
+ * sau khi tải xong. Trả về trải nghiệm in báo giấy thay vì in trang web apa
+ * adanya (xấu, đầy menu/quảng cáo/bình luận).
+ *
+ * `noopener` không dùng ở đây — cửa sổ in cần truy cập window.opener để quay
+ * lại bài gốc; nhưng route `/in-bai` không đọc opener nên an toàn.
+ */
 const printArticle = () => {
-  if (typeof window !== 'undefined') window.print()
+  if (typeof window === 'undefined') return
+  const url = `/in-bai/${props.slug}?back=${encodeURIComponent(props.backTo)}`
+  window.open(url, '_blank', 'noopener,noreferrer,width=900,height=700')
 }
 
 /**
@@ -643,6 +663,19 @@ watch(article, value => {
 .article-body :deep(p) { font-size: 1.05rem; line-height: 1.7; color: #4A5545; margin-bottom: 20px; }
 .article-body :deep(blockquote) { background-color: #F8FAF7; border-left: 4px solid #4A6741; padding: 20px 24px; margin: 30px 0; font-style: italic; font-size: 1.1rem; color: #385130; }
 .article-body :deep(blockquote span) { display: block; font-size: 0.85rem; color: #7A8675; margin-top: 8px; font-weight: 700; font-style: normal; }
+
+/* Ảnh và video chèn trong nội dung bài viết — không tràn vùng đọc. Admin editor
+   cho phép chèn ảnh/video kích thước nguyên bản; nếu không có max-width chúng
+   sẽ tràn mép container (1240px) trên desktop. `max-width: 100%` ép co về khít
+   vùng chữ, `height: auto` giữ tỷ lệ khung. Đây là phần render công khai (không
+   phải admin editor — editor giữ full section để thao tác). */
+.article-body :deep(img),
+.article-body :deep(video) {
+  max-width: 100%;
+  height: auto;
+  border-radius: 8px;
+  margin: 1.5rem 0;
+}
 
 /* iframe YouTube nhúng trong bài viết — responsive 16:9. `src` đã được sanitizer
    rewrite sang youtube-nocookie.com và chỉ cho phép YouTube embed, nên an toàn

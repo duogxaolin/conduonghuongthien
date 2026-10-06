@@ -77,7 +77,36 @@ export default defineNuxtConfig({
     payloadExtraction: false,
   },
 
-   modules: ['@nuxtjs/tailwindcss'],
+   modules: ['@nuxtjs/tailwindcss', '@nuxt/image'],
+
+  /**
+   * @nuxt/image — resize/WebP server-side qua IPX (provider mặc định, tái dùng
+   * `sharp` 0.35.4 đã có trong deps). Chỉ áp cho ảnh Page Builder block + thumbnail
+   * tìm kiếm; ảnh rich-text TinyMCE render HTML thô nên giữ <img> thường.
+   * `quality:75` cân bằng giữa size và nhìn; `format:['webp','jpg','png']` cho
+   * browser hiện đại WebP, fallback jpg/png tự động cho client cũ.
+   */
+  image: {
+    quality: 75,
+    format: ['webp', 'jpg', 'png'],
+    // IPX provider mặc định đọc ảnh từ `public/` (uploads serve qua
+    // server/routes/uploads). Ảnh R2 có public URL riêng — nếu cần resize R2,
+    // thêm domain R2 vào `domains` bên dưới và dùng `<NuxtImg :src="r2Url">`.
+    domains: [],
+  },
+
+  /**
+   * Component auto-import. Mặc định Nuxt thêm prefix là tên thư mục cha: một
+   * component ở `app/components/layout/DefaultHeader.vue` được đăng ký thành
+   * `LayoutDefaultHeader`, không phải `DefaultHeader`. Template `default.vue`
+   * dùng tên CÓ prefix (`<LayoutDefaultHeader>`) theo quy ước mặc định — không
+   * cần `pathPrefix: false`, giữ lazy-loading optimization của Nuxt untouched.
+   */
+  components: {
+    dirs: [
+      { path: '~/components' },
+    ],
+  },
 
   nitro: {
     /**
@@ -91,6 +120,22 @@ export default defineNuxtConfig({
     plugins: [
       '~~/server/plugins/runtime-config-global',
     ],
+    /**
+     * Esbuild target cho server bundle. Mặc định Nitro hardcode `es2019`, nhưng
+     * code CIDR/IPv6 check (`server/utils/chatbot/outbound.ts`, `short-media-id.ts`)
+     * dùng `bigint` literal (`0n`, `32n`, `0xffffffffn`) — ES2020. Node 22+
+     * (yêu cầu repo) hỗ trợ sẵn; `es2020` tắt warning "Big integer literals are
+     * not available in the configured target environment".
+     *
+     * Nitro spread `nitro.options.esbuild.options` SAU `target: "es2019"` mặc
+     * định (xem `nitropack/dist/rollup/index.mjs`), nên phải đặt trong `options`,
+     * không phải `esbuild` trực tiếp.
+     */
+    esbuild: {
+      options: {
+        target: 'es2020',
+      },
+    },
   },
 
   tailwindcss: {
@@ -167,6 +212,10 @@ export default defineNuxtConfig({
     // that some visitor state is being served from cache, which is the one thing
     // that must never become true here.
     '/admin/**': { cache: false },
+    // Trang in bài — bản báo giấy, mở từ nút "In bài" của ArticleDetail. Không
+    // cache: nội dung bài có thể vừa được biên tập sửa, và trang in phải phản ánh
+    // bản mới nhất ngay (SWR 60s sẽ phát bản cũ trong cửa sổ đó).
+    '/in-bai/**': { cache: false },
     '/api/**': { cache: false },
     '/api/public/social-links': { swr: 60 },
     // Tài nguyên có vân tay trong tên tệp: đổi nội dung là đổi tên, nên bản cũ
@@ -199,13 +248,13 @@ export default defineNuxtConfig({
         'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
         'Content-Security-Policy': [
           "default-src 'self'",
-          "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://cdnjs.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com",
-          "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn",
-          "img-src 'self' data: https://*.delify.vn https://*.conduonghuongthien.vn",
-          "media-src 'self' blob: https://*.delify.vn https://*.conduonghuongthien.vn",
-          "font-src 'self' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn",
-          "frame-src https://www.youtube-nocookie.com https://*.delify.vn https://*.conduonghuongthien.vn",
-          "connect-src 'self' https://static.cloudflareinsights.com https://*.delify.vn https://*.conduonghuongthien.vn",
+          "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://cdnjs.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://www.googletagmanager.com https://connect.facebook.net https://analytics.tiktok.com https://www.clarity.ms https://*.gov.vn",
+          "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
+          "img-src 'self' data: https://*.delify.vn https://*.conduonghuongthien.vn https://www.facebook.com https://www.googletagmanager.com https://*.gov.vn",
+          "media-src 'self' blob: https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
+          "font-src 'self' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
+          "frame-src https://www.youtube-nocookie.com https://*.delify.vn https://*.conduonghuongthien.vn https://www.googletagmanager.com https://*.gov.vn",
+          "connect-src 'self' https://static.cloudflareinsights.com https://*.delify.vn https://*.conduonghuongthien.vn https://www.google-analytics.com https://*.facebook.com https://analytics.tiktok.com https://www.clarity.ms https://*.gov.vn",
           "frame-ancestors 'none'",
           "base-uri 'self'",
           "form-action 'self'",

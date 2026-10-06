@@ -45,7 +45,7 @@ export function detectPhone(text: string): string | null {
   if (typeof text !== 'string' || !text) return null
 
   // Candidate runs: optional +84/84 prefix, then digits with optional separators.
-  const candidates = text.match(/(?:\+?84|0)[\d\s.\-]{8,15}\d/g)
+  const candidates = text.match(/(?:\+?84|0)[\d\s.-]{8,15}\d/g)
   if (!candidates) return null
 
   for (const candidate of candidates) {
@@ -64,7 +64,7 @@ export function detectPhone(text: string): string | null {
  * Vietnamese, where sentence-initial words and proper nouns look alike, and a
  * wrong name attached to a session is actively misleading.
  */
-const NAME_PATTERN = /(?:tôi|toi|em|mình|minh|anh|chị|chi|cháu|chau|con)\s+(?:tên|ten)\s*(?:là|la)?\s*[:\-]?\s*([\p{L}][\p{L}\s]{1,60})/iu
+const NAME_PATTERN = /(?:tôi|toi|em|mình|minh|anh|chị|chi|cháu|chau|con)\s+(?:tên|ten)\s*(?:là|la)?\s*[:-]?\s*([\p{L}][\p{L}\s]{1,60})/iu
 
 const NAME_ALT_PATTERN = /(?:tôi|toi|em|mình|minh|cháu|chau)\s+(?:là|la)\s+([\p{L}][\p{L}\s]{1,60})/iu
 
@@ -91,7 +91,7 @@ export function detectName(text: string): string | null {
   // corrupt more names than it cleans. Likewise "nha"/"Nhã" is a real given
   // name. Losing a trailing particle is cosmetic; losing a name syllable is not.
   const TRAILING_PARTICLES = new Set(['ạ', 'nhé', 'nhe', 'ơi', 'đó', 'đấy', 'thôi', 'với'])
-  let words = cleaned.split(' ')
+  const words = cleaned.split(' ')
   while (words.length > 1 && TRAILING_PARTICLES.has(words[words.length - 1]!.toLowerCase())) {
     words.pop()
   }

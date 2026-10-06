@@ -3,6 +3,7 @@ import { contentTypes, categories, articles } from '../../../db/schema'
 import { uniqueContentTypeSlug } from '../../../utils/slug'
 import { eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { autoTranslateContentTypeUpdate } from '../../../services/i18n-auto-translate'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -22,7 +23,7 @@ export default defineEventHandler(async (event) => {
 
   if (body.name !== undefined) updateFields.name = String(body.name).trim()
   if (body.icon !== undefined) updateFields.icon = String(body.icon).trim() || null
-  if (body.description !== undefined) updateFields.description = String(body.description).trim() || null
+  if (body.description !== undefined) { const d = String(body.description).trim(); updateFields.description = (!d || d.toLowerCase() === 'null') ? null : d }
   if (body.displayOrder !== undefined) updateFields.displayOrder = Number(body.displayOrder)
 
   // Slug change: only when an explicit slug is provided. System types keep a
@@ -32,7 +33,7 @@ export default defineEventHandler(async (event) => {
     if (existing.isSystem) {
       throw createError({ statusCode: 400, statusMessage: 'Không thể đổi định danh (slug) của thể loại hệ thống.' })
     }
-    const candidate = await uniqueContentTypeSlug(db, String(body.slug).trim(), id)
+    const candidate = await uniqueContentTypeSlug(db, String(body.slug).trim(), id, !!existing.isSystem)
     if (candidate !== existing.slug) {
       newSlug = candidate
       updateFields.slug = candidate
@@ -51,5 +52,13 @@ export default defineEventHandler(async (event) => {
     await db.update(articles).set({ type: newSlug }).where(eq(articles.type, existing.slug))
   }
 
-  return { ok: true, slug: newSlug ?? existing.slug }
+  // Non-blocking i18n auto-translate update (re-upsert vi + re-dịch non-vi).
+  const finalSlug = newSlug ?? existing.slug
+  const finalName = (updateFields.name ?? existing.name) as string
+  const finalDesc = (updateFields.description !== undefined ? updateFields.description : existing.description) as string | null
+  if (updateFields.name !== undefined || updateFields.description !== undefined) {
+    void autoTranslateContentTypeUpdate(adminUser, finalSlug, finalName, finalDesc).catch(() => {})
+  }
+
+  return { ok: true, slug: finalSlug }
 })

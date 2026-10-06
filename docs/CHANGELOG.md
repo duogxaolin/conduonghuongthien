@@ -299,3 +299,100 @@ Hợp lại: đơn **lưu thành công**, người dân thấy lời cảm ơn, 
 - **Docker Compose**: Đóng gói môi trường containerized hoàn chỉnh gồm 2 service `cdkt_mysql` (MySQL 8.0) và `cdkt_app` (Nuxt 4 app) chạy trên cổng `3000`.
 
 ---
+
+### 7. Tái cấu trúc & a11y 2026-10 (5 commit未push)
+
+#### Tách file lớn — đóng 3 nợ kỹ thuật audit 2026-09
+- **`server/db/init.ts` 1302 → 73 dòng** (`61fff49`): tách 7 file `schema-tables/*.ts` theo domain (`core`/`content`/`governance`/`chatbot`/`analytics`/`readers-media`/`ai-i18n`). `init.ts` chỉ giữ thứ tự gọi (ràng buộc FK thật), re-export `migrations-additive` cho 4 suite test không đổi import path. `db:drift` đọc 9 tệp như một nguồn DDL — xanh 635 cột/62 bảng (trước 624/61).
+- **`app/layouts/default.vue` 1301 → 382 dòng** (`f125e09`): tách 7 component `app/components/layout/Default*.vue` (TopBar/Header/MobileDrawer/DesktopNav/SearchDropdown/Footer/BottomNav) + 5 composable (`useLayoutNav`/`useSiteSettings`/`useLiveSearch`/`useReaderMenu`/`useMobileMenu`). 10 test guard đọc source text được viết lại cross-file qua `tests/_layout-parts.ts` (ghép 8 file). Khắc phục hydration crash từ việc tách. Đóng caveat "1282 dòng hồi quy".
+- **`any` 20 vết → 0** (`ca4f52e`): 4 kiểu dùng chung `UnknownError`/`CaughtError`/`Nullable<T>`/`HttpEventLike` thay thế. 0 vết trong `.vue` SFC (trước 17). ESLint ignore `CDKT` cho trưởng hợp ngoại lệ có tên.
+
+#### TinyMCE admin editor + render blog công khai (`cb2e9cb`)
+- **Editor full section width** — gỡ `max-w-[794px]` wrapper khỏi `TinyMceEditor.vue` và `[id].vue`. Editor chiếm trọn vẹn section để soạn thoải mái, không bị hẹp tệ. Giới hạn chiều ngang KHÔNG áp admin editor.
+- **Height 700** (main editor `[id].vue`, trước 480) + **480** (component default `TinyMceEditor.vue`, trước 320) — rộng hơn cho bài dài. Skeleton khớp `min-h-[700px]`.
+- **`content_style` thêm `iframe, video { max-width:100% }`** — preview editor khớp render công khai.
+- **Render blog công khai giới hạn ảnh/video**: `ArticleDetail.vue` thêm `.article-body :deep(img), :deep(video) { max-width:100%; height:auto }` — ảnh/video chèn trong bài không tràn vùng đọc 1240px (trước chỉ `iframe` có max-width). `RichTextBlock.vue` thêm `video` vào rule `img` hiện có — đồng bộ Page Builder render path.
+
+#### a11y admin article (`4885c09`)
+- **Filter bar `/admin/content/articles`**: thêm `aria-label` cho 4 select (thể loại, danh mục cha, danh mục con, trạng thái) + search input — trước chỉ 2 select có aria-label, trình đọc màn hình không biết các filter còn lại lọc gì.
+- **Nút "Xóa bộ lọc"**: chỉ hiện khi `hasActiveFilters` (bất kỳ filter ≠ mặc định) — 1 click reset tất cả + `fetchArticles(1)`, thay vì mở từng select đặt lại. Nút hover đỏ phân biệt action reset.
+- **Nút "X" xóa thumbnail** (`[id].vue`): thêm `type="button"` + `aria-label="Xóa ảnh đại diện"` + `aria-hidden="true"` cho icon.
+- **Bug `animate-fadeIn` vô hiệu** (`[id].vue:1458`): class không tồn tại trong `tailwind.config.js` (chỉ có `fade-slide-up`) → modal re-translate không có animation. Đổi sang `animate-fade-slide-up`. Lưu ý: 4 chỗ khác ngoài scope admin article vẫn dùng `animate-fadeIn` dead class (`ArticleComments.vue:69`, `DefaultTopBar.vue:27`, `languages/index.vue:1334+1393`) — chưa sửa.
+
+#### Thống kê sau tái cấu trúc
+- Typecheck sạch, `npm test` 2078 total / 2064 pass / 14 skip (integration cần MySQL), `npm run lint` 0 error / 12 warning (trước 272), `db:drift` xanh 635 cột/62 bảng.
+
+### 8. Sửa vi phạm `as unknown as` + dọn dead class (2026-10-05)
+
+#### Vi phạm CLAUDE.md `as unknown as không dùng để đọc hình dạng`
+- **V1a Plyr** (`usePlyrPlayer.ts` + `MediaPlayer.vue`): mở rộng `PlyrInstance` type có `quality` (options/forced/onChange), bỏ cast `as unknown as` tại `MediaPlayer.vue:240`. Giữ 1 cast tại `usePlyrPlayer.ts:163` có lý do kỹ thuật rõ (Plyr full type có `quality` shape khác — number-ish, narrowed declaration là object; comment type-boundary).
+- **V1b Hls** (`useHlsVideo.ts` + `MediaPlayer.vue` + `LiveHero.vue`): export `HlsInstance`, đơn giản hóa chỉ `{ destroy }` (consumer chỉ dùng destroy). **0 cast hoàn toàn** — type đầy đủ hls.js tự khớp. Bỏ cast `hls = instance as unknown as {...}` nội bộ, dùng thẳng `instance.levels`/`instance.currentLevel`.
+- **V1c article translations** (`[id].vue`): mở rộng type `articleTranslations` ref thêm `excerpt`/`content` (phản chiếu schema.ts:1403), bỏ 2 cast `as unknown as { excerpt?: string }` tại `openEditTranslation`, thêm 2 field vào 2 optimistic push.
+- **V1d media-portal** (`media-portal.ts`): bỏ 2 cast `as unknown as AdminMediaRow` — Drizzle type tự khớp.
+- **V1e video-processing** (`video-processing.ts`): bỏ cast `as unknown as StatfsFn` — `fs.promises.statfs` tự khớp `StatfsFn`.
+- **V1f check-schema-drift** GIỮ — reflect Drizzle internals qua symbol, không có type công khai, có comment giải thích (legitimate reflection).
+
+#### Bug dead class `animate-fadeIn` (B1)
+- 4 chỗ còn lại (`ArticleComments.vue:69`, `DefaultTopBar.vue:27`, `languages/index.vue:1334+1393`) → `animate-fade-slide-up`. Class `animate-fadeIn` không tồn tại trong `tailwind.config.js` (chỉ có `fade-slide-up`).
+
+#### Bug parsing error `vue/no-parsing-error` (B3)
+- 5 chỗ ở `media/scan.vue` raw `<` trong text → `<` (HTML entity).
+
+#### Không fix (có guard/lý do)
+- **B2 prop mutation `BuilderArrayEditor`**: intentional legacy — `PropertyPanel.vue:130-135` binds `:items` không `@update:items`, mutate shared reference là cơ chế hoạt động. Refactor emit sẽ gãy feature.
+- **V2 audit non-tx `deleteArticleById`/`setArticleStatus`**: known-exclusion guarded bởi `tests/reader-audit-atomicity.test.ts` — bọc transaction sẽ fail test.
+
+#### Cảnh báo cho agent sau — stale info đừng báo lại
+Báo cáo audit rà codebase có thể mang lại 2 mục stale (đã đóng):
+- "default.vue phình 1200+" — **SAI**, đã đóng `f125e09`, giờ 382 dòng.
+- "any ~20 vết ở SFC .vue cũ" — **SAI**, đã đóng `ca4f52e`, SFC sạch. 142 vết `any` còn lại ở `tests/` là mock/stub cố ý, không phải production code.
+
+Hai hạn chế **có chủ đích, không phải nợ**:
+- i18n — 50+ file public đã dùng `t()`, tất cả lang kể cả `vi` fetch DB (hardcoded chỉ fallback). Mở rộng thêm trang là feature work (xem mục 9).
+- 168 endpoint cũ `getDb()` thẳng — quy ước "áp cho mã MỚI", refactor diện rộng rủi ro > lợi.
+
+#### Thống kê
+- 11 file chạm, +75/-47 dòng. Typecheck sạch, `npm test` 2064 pass / 14 skip / 0 fail, `npm run lint` 0 error / 268 warning (142 `any` ở tests/ + 126 khác), `db:drift` xanh 635 cột/62 bảng.
+
+### 9. i18n full DB-driven — bỏ hardcoded `vi` (2026-10-05)
+
+#### Bối cảnh
+`t()` trong `useI18n.ts` có 4 bước fallback (DB → hardcoded lang → hardcoded vi → key). Nhưng `vi` **không bao giờ fetch DB** — dòng 894 `if (currentLang.value !== 'vi' && ...)` chỉ fetch cho ngôn ngữ ≠ `vi`. `vi` dùng `hardcodedDictionary` (766 dòng) làm nguồn chân lý. Trong khi seed `default-translations-seed.ts` đã có 531 keys `vi` trong DB, và admin UI `/admin/languages` **đã cho sửa `vi`** (nút "Bảng dịch" mở cho `isDefault`). Mismatch: admin sửa `vi` → ghi DB, nhưng frontend `vi` không đọc DB → sửa vô tác dụng.
+
+#### Thay đổi
+- **`useI18n.ts`**: bỏ check `!== 'vi'` ở dòng 894 — **mọi ngôn ngữ kể cả `vi` đều fetch DB**. `hardcodedDictionary` chỉ còn fallback khi DB chưa seed / API hỏng / SSR chưa fetch xong. Thứ tự `t()` giữ nguyên (DB → hardcoded lang → hardcoded vi → key). Caching `useState` per-locale không đổi.
+- **`ChatWidget.vue`** (11 chuỗi cứng → `t()`): `cw_back`, `cw_history`, `cw_clear`, `cw_expand`, `cw_sources`, `cw_lead_name/phone/email/question`, `cw_input_placeholder`, `cw_input_label`, `cw_send_aria`.
+- **`assistant.vue`** (11 chuỗi cứng → `t()`): `asst_conversation_list`, `asst_delete_conv`, `asst_delete_conv_aria`, `asst_new_conv`, `asst_clear_conv`, `asst_home`, + tái dùng `cw_sources`/`cw_lead_*`/`cw_input_*`/`cw_send_aria`.
+- **`profile.vue`** (8 chuỗi cứng → `t()`): `home`, `profile_title`, `profile_subtitle`, `profile_display_name_ph`, `profile_next`, `profile_clear_history`, `profile_remove_aria`, `profile_remove_title`.
+- **`default-translations-seed.ts`**: append 25 keys mới (12 `chat/cw_*`, 6 `assistant/asst_*`, 7 `profile_*`) — `vi`+`en` có giá trị, `zh`/`fr`/`ru`/`lo` rỗng (admin AI-dịch sau). Seed insert-only, không ghi đè existing.
+- **`hardcodedDictionary.vi`** trong `useI18n.ts`: thêm 25 fallback keys (cw_*, asst_*, profile_*).
+- **Test guard** `tests/chatbot-public-widget.test.ts:64`: cập nhật regex từ `aria-label="Nguồn tham khảo"` → `:aria-label="t('cw_sources')"` (test đọc source text).
+
+#### KHÔNG đổi
+- **Admin** giữ nguyên (anh yêu rõ "admin giữ nguyên") — admin hardcoded, không i18n.
+- **`server/api/admin/languages/**`** — đã hỗ trợ PUT `vi` từ trước.
+- **Schema** — bảng `lang_translations` đã có, không thêm cột.
+- **SSR fetch** — giữ client-only fetch (scope nhỏ, không block SSR). Hardcoded fallback render trước, DB fetch xong re-render.
+
+#### Kiểm chứng
+- Typecheck sạch (exit 0). `npm test` 2064 pass / 14 skip / 0 fail. `npm run lint` 0 error / 268 warning. 7 file chạm (useI18n, ChatWidget, assistant, profile, default-translations-seed, chatbot-public-widget test, CLAUDE.md).
+
+### 10. Accessibility + @nuxt/image + dọn lint (2026-10-06)
+
+#### Bối cảnh
+Audit codebase 2026-10-06 phát hiện 3 gap thật (phiên Tier 1+2): 3 trang public top-tier (index/about/contact) thiếu aria, `<img>` raw chậm LCP mobile, lint warning còn cao. Đây không phải nợ kỹ thuật cũ mà là lớp phòng thủ a11y + perf chưa đóng — portal nhà nước cần tuân thủ Luật Người khuyết tật 2010 / Nghị định 28/2012.
+
+#### Thay đổi
+- **A11y (12 file)**: `default.vue` thêm skip-link "Bỏ qua tới nội dung" + `id="main-content"` vào `<main>`; `DefaultDesktopNav`/`MobileDrawer` thêm `aria-current="page"` trên NuxtLink active + `aria-label` nav; `DefaultBottomNav` thêm `:aria-current` + `:aria-pressed` + `:aria-label`. 8 block public (`Hero`/`Image`/`Gallery`/`News`/`Cta`/`Links`/`ContentAside`/`RichText`) thêm `role="region" aria-label`, `role="list"`, `role="group" figure`, `aria-hidden="true"` icon trang trí, fallback `alt` ảnh. Giữ `BlockNode` (vùng ngữ nghĩa sẵn) + 9 block đã có aria tốt.
+- **`@nuxt/image` 2.1** (17→18 prod dep): IPX provider mặc định tái dùng `sharp` 0.35.4 đã có — không thêm sub-dep nặng. Cấu hình `quality:75`, `format:['webp','jpg','png']` (WebP cho browser hiện đại, fallback jpg/png). `<NuxtImg>` áp cho `DefaultSearchDropdown.vue` (thumbnail search 48px) + `in-bai/[slug].vue` (ảnh thumbnail bài, responsive `256px sm:384px`). **Giữ `<img>`** cho: ảnh rich-text TinyMCE (HTML thô từ DB), 2 logo masthead in-bai (canvas in giấy), block Page Builder (ảnh đã qua sharp+R2 trong media pipeline — NuxtImg duplicate công).
+- **i18n SEO 3 trang**: `index`/`about`/`contact` `useSeoMeta` fallback từ hardcoded tiếng Việt sang `t()`. 8 key mới trong `default-translations-seed.ts` (`home_seo_*`, `home_og_*`, `about_seo_*`, `contact_seo_*`).
+- **Lint (99 → 81 warning, giảm 18)**: bỏ escape regex thừa (ai-gateway, article-translations, universal-translation, contact-detect), `let` → `const` khi không tái gán, bỏ `Boolean()` wrapper (comments, livestream-chat). Giữ `v-html` (sanitize-html đã xử lý) + 1 `prefer-const` (let deadline tái gán ở dòng khác — eslint báo sai).
+
+#### KHÔNG đổi
+- 168 endpoint cũ `getDb()` thẳng — hạn chế có chủ đích (CLAUDE.md).
+- File >400 dòng ~30 file — đa số nguồn chân lý hoặc service nghiệp vụ phức tạp, tách tiếp sinh abstraction rác.
+- CSP `'unsafe-inline'` cho script-src — Nuxt 4 hydration cần inline, đợi Nuxt 5 hash CSP.
+- `pool.query` raw 1 site (`analytics-scheduler.ts:141`) — read-only 1 hàng hợp lệ.
+
+#### Kiểm chứng
+- Build Docker OK + container `cdkt_app` healthy. Typecheck 0 lỗi. `npm run lint` 0 error / 81 warning. `db:drift` 635 cột/62 bảng. `npm test` 2065 pass / 0 fail / 14 skip. IPX endpoint sống (404 IPX_FILE_NOT_FOUND cho file không tồn tại = đúng). 25 file chạm, +174/-65 dòng. CLAUDE.md update watermark `default.vue` 382→385, lint 268→81 warning, thêm `@nuxt/image` vào Tech Stack.

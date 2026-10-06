@@ -1,7 +1,30 @@
 <template>
   <div class="bg-[#F8FAF7]">
+    <!-- Branch 4 (2-segment /<type>/<X>): dishwasher — category list | article detail -->
+    <template v-if="idParam">
+      <ContentTypeListSection
+        v-if="isCategoryView"
+        :type-slug="slug"
+        :type-name="typeName"
+        :type-icon="metaIcon"
+        :type-description="currentType?.description || ''"
+        :category-slug="idParam"
+      />
+      <ArticleDetail
+        v-else
+        :slug="idParam"
+        :back-to="`/${slug}`"
+        :back-label="typeName"
+        :meta-icon="metaIcon"
+        :type-labels="typeLabels"
+        :seo-fallback-title="seoTitle"
+        :seo-fallback-description="seoDescription"
+      />
+    </template>
+
+    <!-- Branch 1: Page Builder page (existing behavior) — render blocks khi có -->
     <PageRenderer
-      v-if="pending || loadError || blocks.length"
+      v-else-if="isPageBranch && (pending || loadError || blocks.length)"
       :blocks="blocks"
       :interactive="isPreview"
       :selected-id="selectedId"
@@ -11,12 +34,24 @@
     />
 
     <!-- Page exists but has no visible blocks yet. -->
-    <section v-else class="section">
+    <section v-else-if="isPageBranch && page" class="section">
       <div class="container text-center py-20">
         <h1 class="text-[1.8rem] font-extrabold text-[#1E251C] mb-3">{{ page?.title }}</h1>
         <p class="text-[#4A5545]">Nội dung đang được cập nhật.</p>
       </div>
     </section>
+
+    <!-- Branch 2: Content-Type list (type custom không có route tĩnh) -->
+    <ContentTypeListSection
+      v-else-if="contentTypeMatch"
+      :type-slug="slug"
+      :type-name="contentTypeMatch.name"
+      :type-icon="contentTypeMatch.icon || ''"
+      :type-description="contentTypeMatch.description || ''"
+    />
+
+    <!-- Branch 3: neither — 404 handled by createError below, render empty to avoid flash -->
+    <div v-else></div>
   </div>
 </template>
 
@@ -25,6 +60,11 @@ import { computed, watch } from 'vue'
 
 const route = useRoute()
 const slug = computed(() => String(route.params.slug || ''))
+// 2-segment route `/<type>/<X>`: vì `[slug].vue` là parent route của
+// `[slug]/[id].vue` theo nested-routing Nuxt 4, và parent không có `<NuxtPage />`
+// nên child không bao giờ render. Ta gộp dishwasher 2-segment vào chính
+// `[slug].vue` này — `idParam` tồn tại ⇔ route `/api/public/articles`.
+const idParam = computed(() => (route.params.id ? String(route.params.id) : ''))
 
 const asyncData = useAsyncData(
   () => `page-${slug.value}`,
@@ -37,13 +77,78 @@ const asyncData = useAsyncData(
 )
 const { data, pending, error, refresh, status } = asyncData
 
+// Branch 2: Content-Type list. Khi `/api/public/pages/<slug>` trả không có page
+// block, slug có thể là `slug` của một content-type custom (vd /video_tuyen_truyen).
+// Fetch danh sách content-types công khai để khớp. useAsyncData riêng để không
+// phụ thuộc vào cache key của page fetch — chỉ thực sự fetch khi page miss.
+interface PublicContentType { slug: string; name: string; icon: string | null; description: string | null }
+const typesAsync = useAsyncData(
+  () => `content-types-catchall-${slug.value}`,
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicContentType[] }>)(`/api/public/content-types`),
+  {
+    lazy: true,
+    default: () => ({ ok: false, items: [] }),
+    watch: [slug],
+  }
+)
+const { data: typesData, status: typesStatus } = typesAsync
+
+const contentTypeMatch = computed(() => {
+  const items = typesData.value?.items || []
+  return items.find((ct) => ct.slug === slug.value) || null
+})
+
+const currentType = computed(() => contentTypeMatch.value)
+const typeName = computed(() => currentType.value?.name || slug.value)
+const metaIcon = computed(() => currentType.value?.icon || 'fa-solid fa-folder')
+const seoTitle = computed(() => `${typeName.value} | Con Đường Hướng Thiện`)
+const seoDescription = computed(() => currentType.value?.description || 'Con Đường Hướng Thiện - Cục C11 Bộ Công an.')
+const typeLabels = computed(() => ({ [slug.value]: typeName.value }))
+
+// Branch 4: 2-segment `/<type>/<X>` — kiểm `X` trùng category slug trong type.
+interface PublicCategory { id: number; name: string; slug: string; parentId: number | null }
+const catAsync = useAsyncData(
+  () => `cat-check-${slug.value}-${idParam.value}`,
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicCategory[] }>)('/api/public/categories', { query: { type: slug.value } }),
+  { lazy: true, default: () => ({ ok: true, items: [] as PublicCategory[] }), watch: [slug, idParam] },
+)
+const { data: catData, status: catStatus } = catAsync
+
+const isCategoryView = computed(() => {
+  if (!idParam.value) return false
+  if (catStatus.value !== 'success' && catStatus.value !== 'error') return false
+  const items = catData.value?.items || []
+  return items.some((c) => c.slug === idParam.value)
+})
+
+const isPageBranch = computed(() => {
+  if (idParam.value) return false // 2-segment → DishwasherRoute, không PageBuilder
+  // Branch 1 thẳng khi page block tồn tại (data.ok + data.page), OR khi đang
+  // pending/error ở lượt fetch đầu tiên để PageRenderer tự lo skeleton/error.
+  // Khi data đã settle mà không có page → nhường sang Branch 2.
+  const settled = status.value === 'success' || status.value === 'error'
+  if (!settled) return true
+  return !!(data.value?.ok && data.value?.page)
+})
+
 // Builder preview: live-edited blocks pushed via postMessage override the
 // fetched ones when this page is embedded in the editor iframe.
 const { isPreview, previewBlocks, selectedId } = usePagePreview()
 
 // Unknown slug → real 404 so this catch-all never masks genuine not-found
 // routes. Skipped in preview so an in-progress page can still be edited.
-const isMissing = () => !isPreview.value && (!data.value?.ok || !data.value?.page)
+// Nay cũng áp cho content-type miss: page miss + type miss → 404.
+const isMissing = () => {
+  if (isPreview.value) return false
+  // 2-segment: ArticleDetail/categoryList tự throw 404 khi không có bài/cat.
+  if (idParam.value) return false
+  const pageMiss = !data.value?.ok || !data.value?.page
+  if (!pageMiss) return false
+  // Page miss → kiểm content-type
+  const typesSettled = typesStatus.value === 'success' || typesStatus.value === 'error'
+  if (!typesSettled) return false // đang fetch type, chưa kết luận 404
+  return !contentTypeMatch.value
+}
 
 // The 404 has to be decided on BOTH sides, and the two sides need different
 // mechanics — which is why this is not the plain `lazy: true` swap the other
@@ -56,8 +161,18 @@ const isMissing = () => !isPreview.value && (!data.value?.ok || !data.value?.pag
 // server, awaits the payload. `import.meta.server` is replaced at build time, so
 // the client bundle never contains this branch and client navigation stays
 // unblocked. Server-rendered HTML and the SEO tags are therefore unchanged.
+//
+// 2-segment: awaited thêm catAsync để chắc CategoryView trước khi SSR ghi.
 if (import.meta.server) {
   await asyncData
+  if (idParam.value) {
+    await catAsync
+  } else {
+    // Chỉ fetch content-types nếu page miss (tiết kiệm truy vấn khi page hit).
+    if (!data.value?.ok || !data.value?.page) {
+      await typesAsync
+    }
+  }
   if (isMissing()) throw createError({ statusCode: 404, statusMessage: 'Không tìm thấy trang.' })
 }
 
@@ -66,9 +181,23 @@ if (import.meta.server) {
 // navigating between two custom slugs (the fetch re-runs via `watch: [slug]`).
 if (import.meta.client) {
   watch(
-    [status, data],
+    [status, data, typesStatus, typesData, catStatus, catData],
     () => {
-      if (status.value !== 'success' && status.value !== 'error') return
+      // 2-segment → không kết luận 404 ở đây (ArticleDetail/categoryList tự lo)
+      if (idParam.value) return
+      // Chưa settle cả hai → chờ
+      const anyPending = status.value !== 'success' && status.value !== 'error'
+      const pageMiss = status.value === 'success' || status.value === 'error'
+        ? (!data.value?.ok || !data.value?.page)
+        : false
+      // Nếu page hit → không cần types để kết luận (không 404)
+      if (!pageMiss) {
+        if (anyPending) return
+        if (isMissing()) showError(createError({ statusCode: 404, statusMessage: 'Không tìm thấy trang.' }))
+        return
+      }
+      // Page miss → cần types settle để kết luận
+      if (typesStatus.value !== 'success' && typesStatus.value !== 'error') return
       if (isMissing()) showError(createError({ statusCode: 404, statusMessage: 'Không tìm thấy trang.' }))
     },
     { immediate: true }
@@ -80,7 +209,14 @@ const page = computed(() => data.value?.page || null)
 const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
 
 useSeoMeta({
-  title: () => page.value?.seoTitle || `${page.value?.title || 'Trang'} | Con Đường Hướng Thiện`,
-  description: () => page.value?.seoDescription || 'Con Đường Hướng Thiện - Cục C11 Bộ Công an.',
+  title: () => {
+    // 2-segment category view → tên category; article detail → ArticleDetail tự set
+    if (idParam.value && isCategoryView.value) {
+      const cat = (catData.value?.items || []).find((c) => c.slug === idParam.value)
+      return cat ? `${cat.name} | Con Đường Hướng Thiện` : seoTitle.value
+    }
+    return page.value?.seoTitle || (contentTypeMatch.value ? `${contentTypeMatch.value.name} | Con Đường Hướng Thiện` : `${page.value?.title || 'Trang'} | Con Đường Hướng Thiện`)
+  },
+  description: () => page.value?.seoDescription || contentTypeMatch.value?.description || 'Con Đường Hướng Thiện - Cục C11 Bộ Công an.',
 })
 </script>

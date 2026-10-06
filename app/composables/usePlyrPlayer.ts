@@ -34,8 +34,19 @@ import type { Ref } from 'vue'
  * Không `import type Plyr from 'plyr'`: một `import type` là import tĩnh ở tầng
  * kiểu, kéo phụ thuộc biên dịch vào gói cố ý chỉ chạm lúc chạy. Cũng không
  * `any` — dự án đã xoá sạch `any`.
+ *
+ * `quality` chỉ tồn tại khi khởi tạo với `quality: {…}` option — menu chất lượng
+ * HLS. MediaPlayer.vue cập nhật menu đó sau khi hls.js parse manifest, nên cần
+ * truy cập `quality.options`/`forced`/`onChange` từ type này thay vì cast.
  */
-export type PlyrInstance = { destroy: () => void }
+export type PlyrInstance = {
+  destroy: () => void
+  quality?: {
+    options?: number[]
+    forced?: boolean
+    onChange?: (selected: number) => void
+  }
+}
 
 export type PlyrOptions = {
   /** Thực thể đang chạy, để nơi gọi `destroy()` lúc unmount. */
@@ -144,6 +155,11 @@ export async function attachPlyrPlayer(
       tooltips: { seek: true },
       seekTime: 10,
     })
+    // Plyr's own type has `quality` as a different shape (number-ish) than our
+    // narrowed declaration (object with options/forced/onChange) — the dynamic
+    // import returns the full `Plyr` type, and we only ever read `.quality` as
+    // the object shape through our narrowed interface. This cast is a deliberate
+    // type boundary, not a shape-reading escape hatch.
     options.instance.value = instance as unknown as PlyrInstance
     return { ok: true }
   } catch {

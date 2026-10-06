@@ -14,7 +14,7 @@
         <div class="content-card bg-white p-10 rounded-lg shadow-sm border border-[#E2E8DF] max-md:p-6" v-html="bodyHtml"></div>
 
         <!-- Right: green organisation sidebar -->
-        <div class="flex flex-col">
+        <aside class="flex flex-col" role="complementary" aria-label="Thông tin thêm">
           <div class="bg-[#4A6741] text-white p-[30px] rounded-lg shadow-md">
             <h4 v-if="d.asideLabel" class="text-[0.85rem] font-bold tracking-[1px] opacity-80 mb-2">{{ d.asideLabel }}</h4>
             <p v-if="d.asideTitle" class="text-[1.2rem] font-extrabold leading-snug mb-1">{{ d.asideTitle }}</p>
@@ -24,7 +24,7 @@
             <p v-if="d.highlightLabel"><strong>{{ d.highlightLabel }}</strong></p>
             <p v-if="d.highlightValue" class="text-[1.8rem] font-extrabold text-[#A5D66A] mt-2">{{ d.highlightValue }}</p>
           </div>
-        </div>
+        </aside>
       </div>
     </div>
   </section>

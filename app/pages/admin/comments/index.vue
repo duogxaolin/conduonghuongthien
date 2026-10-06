@@ -118,7 +118,7 @@ async function load() {
 
 async function toggleVisibility(comment: Comment) {
   if (busy.value) return
-  const next = !Boolean(comment.isHidden)
+  const next = !comment.isHidden
   busy.value = true
   try {
     await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/comments/${comment.id}/visibility`, {

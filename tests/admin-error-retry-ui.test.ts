@@ -71,6 +71,9 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/content/articles/[id].vue', refs: ['errorMsg'], retries: ['fetchArticle'] },
   { file: 'pages/admin/content/categories/index.vue', refs: ['error'], retries: ['fetchCategories'] },
   { file: 'pages/admin/content/content-types.vue', refs: ['error'], retries: ['fetchTypes'] },
+  // Picker trong dialog navbar/mobile — chọn Thể loại để auto-fill URL. Failure
+  // rendered trong `role="alert"` + nút "Thử lại" gọi lại `fetchTypes` (cùng file).
+  { file: 'components/admin/ContentTypePicker.vue', refs: ['error'], retries: ['fetchTypes'] },
   { file: 'pages/admin/content/pages/index.vue', refs: ['loadError'], retries: ['fetchPages'] },
   { file: 'pages/admin/content/pages/[id].vue', refs: ['loadError'], retries: ['fetchPage'] },
   { file: 'pages/admin/content/navigation/navbar.vue', refs: ['error'], retries: ['loadMenu'] },
@@ -106,8 +109,13 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   // Livestream — trạng thái buổi phát trực tiếp.
   { file: 'pages/admin/livestream/index.vue', refs: ['loadError'], retries: ['loadActive'] },
   { file: 'pages/admin/submissions/index.vue', refs: ['error'], retries: ['fetchSubmissions'] },
-  // AI Panel — 5 tabs, each with its own fetch and error branch.
-  { file: 'pages/admin/ai/index.vue', refs: ['usageError', 'providersError', 'servicesError', 'logsError', 'moderationError'], retries: ['loadUsage', 'loadProviders', 'loadServices', 'loadLogs', 'loadModeration'] },
+  // AI Panel — 5 tabs tách thành 5 component con (pattern ProfileActivityHistory).
+  // Mỗi tab tự持有 fetch lỗi/thử-lại riêng; cha chỉ điều phối activeTab + invalidate.
+  { file: 'components/admin/ai/AiDashboardTab.vue', refs: ['usageError'], retries: ['loadUsage'] },
+  { file: 'components/admin/ai/AiProvidersTab.vue', refs: ['providersError'], retries: ['loadProviders'] },
+  { file: 'components/admin/ai/AiServicesTab.vue', refs: ['servicesError'], retries: ['loadServices'] },
+  { file: 'components/admin/ai/AiModerationTab.vue', refs: ['moderationError'], retries: ['loadModeration'] },
+  { file: 'components/admin/ai/AiLogsTab.vue', refs: ['logsError'], retries: ['loadLogs'] },
   { file: 'pages/admin/ai/moderation.vue', refs: ['error'], retries: ['loadData'] },
 
   // Views whose panels fail independently. Each ref is its own branch, so a
@@ -159,7 +167,20 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   // `retry()` in the same file. The retry resumes the existing session if the
   // uploadId is still alive — does not silently re-init and lose partial progress.
   { file: 'components/admin/ChunkedUploader.vue', refs: ['lastError'], retries: ['retry'] },
+  // `loadError`/`fetchLanguages` + `translationsError`/`fetchTranslations` đều giữ
+  // ở orchestrator `pages/admin/languages/index.vue` (plan rule #4 — guard ghim
+  // ở file gốc). Cả 2 tab có skeleton + error render ở cha, trước khi mount
+  // component con. Component con chỉ nhận prop + emit action.
   { file: 'pages/admin/languages/index.vue', refs: ['loadError', 'translationsError'], retries: ['fetchLanguages', 'fetchTranslations'] },
+  // Article list — orchestrator `pages/admin/content/articles/index.vue` giữ
+  // `loadError`/`fetchArticles` (test guard ghim ở file gốc, plan rule #4). 4
+  // component con tách ra: 3 modal/banner tự fetch.
+  //   - BoostStatsPanel: CÓ error branch `statsError` (`role="alert"` + nút
+  //     "Thử lại" gọi `loadStats`) — modal trống không nói được "chưa có lượt
+  //     xem" hay "không tải được số liệu", nên giữ lỗi trên màn hình.
+  //   - QuickViewModal/GlobalTranslateModal: lỗi fetch → toast + đóng (KHÔNG
+  //     render empty-state), exempt ở `NO_CONTRACT_NEEDED`.
+  { file: 'components/admin/articles/ArticleBoostStatsPanel.vue', refs: ['statsError'], retries: ['loadStats'] },
 ]
 
 /**
@@ -193,6 +214,37 @@ const NO_CONTRACT_NEEDED: Record<string, string> = {
   // `MediaProcessingTimeline.vue` bị bỏ khỏi exemption list vì nó KHÔNG tự fetch
   // — chỉ nhận dữ liệu từ parent qua props. Gate "stale exemption" bắt đúng:
   // một component không fetch thì không cần được miễn error/retry contract.
+  // Orchestrator sau tách 5 tab. Fetch duy nhất là `ensureProvidersLoaded()` —
+  // fallback populate `providers`/`pricingRows` cho filter dropdown của Services +
+  // Logs khi Providers tab chưa mount. Lỗi nuốt im lặng (Providers tab sẽ thử lại
+  // khi user sang đó); dropdown "Tất cả" vẫn dùng được. Không có UI để render lỗi.
+  'pages/admin/ai/index.vue': 'background fallback fill of a filter dropdown; failure is silent and the field stays usable',
+  // Universal Translation Hub tab (tách khỏi languages/index.vue). Self-contained
+  // fetch `loadCoverage`/`runUniversalTranslate`/`cancelUniversalTranslate` — tất cả
+  // là tác vụ nền triggered bằng nút. Lỗi chỉ toast (không có danh sách tải để
+  // lỗi thành "trống"); progress banner + spinner trong card "Trạng thái quét"
+  // đã là feedback đủ. Cán bộ bấm lại nút "Quét lại hệ thống" để retry — nút chính
+  // là retry affordance.
+  'components/admin/languages/UniversalTab.vue': 'submit-time fetch; the button shows pending, the spinner in the scan card carries the in-flight state, and errors land in a toast',
+  // Quick-view modal bản dịch AI (tách khỏi articles/index.vue). Lỗi fetch detail
+  // → toast + đóng modal (về table list) — KHÔNG render empty-state trong modal,
+  // nên không có "bản dịch rỗng" để cán bộ đi tạo lại. Retry = mở lại badge đó.
+  'components/admin/articles/ArticleQuickViewModal.vue': 'error closes the modal back to the list with a toast; retry is reopening the badge, not a branch in this file',
+  // Modal "Dịch toàn bộ bài viết". Lỗi fetch translation-stats → toast, modal
+  // vẫn mở nhưng `globalStats` null → body hiện nothing (không có list rỗng để
+  // hiểu lầm là "không có bài"). Cán bộ bấm lại nút header để retry.
+  'components/admin/articles/ArticleGlobalTranslateModal.vue': 'error lands in a toast; the modal stays open with no stats section rendered, so there is no empty state to misread',
+  // AI editorial panel (gợi ý tiêu đề / tóm tắt / soát lỗi — tách khỏi [id].vue).
+  // Fetch `/api/admin/ai/editorial`. Lỗi → toast (AI là best-effort, lỗi không
+  // blank form đang soạn). Toolbar luôn render; 3 drawer preview chỉ hiện khi có
+  // kết quả. Không có empty-state để misread — không có error branch.
+  'components/admin/articles/ArticleAIPanel.vue': 'AI is best-effort; errors land in a toast and the toolbar stays — no form state to blank',
+  // Quản lý Bản dịch đa ngôn ngữ (tách khỏi [id].vue). Fetch translations + poll.
+  // Lỗi fetch → nuốt im (best-effort, lỗi 1 bản không blank cả panel). Cards luôn
+  // render với status cũ/giá trị mặc định; không có "list rỗng" để hiểu lầm là
+  // "chưa có bản dịch nào" — `availableLanguages` luôn hiển thị tất cả lang cards.
+  // Retry = nút "Làm mới" trong panel header.
+  'components/admin/articles/ArticleTranslationPanel.vue': 'best-effort fill; cards render with last-known status, and the Làm mới button is the retry affordance',
 }
 
 test('every admin view that fetches keeps somewhere for a rejection to land', async () => {

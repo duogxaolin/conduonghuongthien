@@ -21,12 +21,12 @@
     <section class="bg-gradient-to-br from-[#1e4620] to-[#133215] py-10 text-white">
       <div class="container">
         <nav aria-label="Đường dẫn" class="mb-3 text-[0.82rem] text-white/70">
-          <nuxt-link to="/" class="text-white/80 no-underline hover:underline">Trang chủ</nuxt-link> &raquo;
-          <span class="text-white/95 font-semibold">Trang cá nhân</span>
+          <nuxt-link to="/" class="text-white/80 no-underline hover:underline">{{ t('home') }}</nuxt-link> &raquo;
+          <span class="text-white/95 font-semibold">{{ t('profile_title') }}</span>
         </nav>
-        <h1 class="m-0 text-[1.7rem] font-extrabold">Trang cá nhân</h1>
+        <h1 class="m-0 text-[1.7rem] font-extrabold">{{ t('profile_title') }}</h1>
         <p class="mt-2 mb-0 text-[0.92rem] text-white/80">
-          Tên hiển thị, bình luận đã gửi, bài đã đọc và các đoạn trò chuyện của bạn.
+          {{ t('profile_subtitle') }}
         </p>
       </div>
     </section>
@@ -99,7 +99,7 @@
                     :maxlength="DISPLAY_NAME_MAX_LENGTH"
                     autocomplete="nickname"
                     class="min-w-0 flex-1 rounded-lg border border-[#E2E8DF] bg-white px-3.5 py-2.5 text-[0.9rem] text-[#1E251C] outline-none transition-colors focus:border-[#7CB342] focus:ring-2 focus:ring-[#7CB342]/30"
-                    placeholder="Ví dụ: Nguyễn Văn A"
+                    :placeholder="t('profile_display_name_ph')"
                   />
                   <button
                     type="submit"
@@ -255,7 +255,7 @@
                   class="rounded-lg border border-[#E2E8DF] px-3 py-2 text-[0.82rem] font-semibold text-[#385130] disabled:opacity-50"
                   :disabled="notifPage >= notifTotalPages || notifPending"
                   @click="loadNotifications(notifPage + 1)"
-                >Sau</button>
+                >{{ t('profile_next') }}</button>
               </div>
             </section>
 
@@ -329,7 +329,7 @@
                   class="rounded-lg border border-[#E2E8DF] px-3 py-2 text-[0.82rem] font-semibold text-[#385130] disabled:opacity-50"
                   :disabled="commentsPage >= commentsData.totalPages || commentsPending"
                   @click="goToCommentPage(commentsPage + 1)"
-                >Sau</button>
+                >{{ t('profile_next') }}</button>
               </div>
             </section>
 
@@ -344,7 +344,7 @@
                   type="button"
                   class="shrink-0 text-[0.8rem] font-semibold text-[#7A8675] underline transition-colors hover:text-[#B04A4A]"
                   @click="clearHistory"
-                >Xoá danh sách</button>
+                >{{ t('profile_clear_history') }}</button>
               </header>
 
               <!--
@@ -382,8 +382,8 @@
                   <button
                     type="button"
                     class="flex h-7 w-7 shrink-0 cursor-pointer items-center justify-center rounded-full border-none bg-transparent p-0 text-[#9ca3af] transition-colors hover:bg-[#fee2e2] hover:text-[#b42318]"
-                    :aria-label="`Xoá ${item.title || item.slug} khỏi lịch sử`"
-                    title="Xoá khỏi danh sách"
+                    :aria-label="`${t('profile_remove_aria')} ${item.title || item.slug}`"
+                    :title="t('profile_remove_title')"
                     @click="removeHistoryItem(item.slug)"
                   >
                     <i class="fa-solid fa-xmark text-[0.8rem]" aria-hidden="true"></i>
@@ -469,9 +469,12 @@ import { formatDateVN } from '~/utils/formatDate'
 import { useReaderAuth } from '~/composables/useReaderAuth'
 import { useReaderNotifications } from '~/composables/useReaderNotifications'
 import { useReadingHistory } from '~/composables/useReadingHistory'
+import { useI18n } from '~/composables/useI18n'
 import { errorMessage, errorStatus } from '~/utils/errorMessage'
 import type { NotificationItem } from '~/composables/useReaderNotifications'
 import type { ReaderChatsPayload, ReaderCommentsPayload } from '~/types/public-api'
+
+const { t } = useI18n()
 
 // Resolve once so the runtime `:is` binding renders a real <a> — a string name
 // would render a literal <nuxtlink> element that navigates nowhere.

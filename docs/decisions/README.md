@@ -12,5 +12,6 @@ Dành cho người mới tiếp nhận muốn hiểu **tại sao**, không phả
 | `reader-features.md` | Đăng nhập Google & bình luận công khai, trang `/profile`, thông báo trả lời, xoá bình luận cascade, chặn IP, hai rào vé người đọc, `last_seen_at` |
 | `chatbot.md` | Hai kho (nghiệp vụ + thường nhật), matcher thường nhật, typewriter (sàn/trần, proxy Vue), vé phiên HMAC, phát hiện liên hệ, `qa-documents`, phiên trò chuyện |
 | `realm-safety.md` | Favicon (byte-sai, `.ico` vũ trụ, hai allowlist), upload magic-byte, allowlist MIME hai đầu, drift `ensureColumn` nháy kép, `as unknown as` khẳng-dekhông-kiểm, `globalThis.useRuntimeConfig` |
+| `media-storage.md` | R2 cho Media Portal video (đã triển khai, không phải kế hoạch), ba tầng lùi an toàn local, envelope secret `cdkt-video-r2-secret:v1`, procedure backup/restore đóng AUD-16 |
 
 Quy ước: mỗi mục ghi **điều kiện tiên quyết** (những tiền đề phải còn đúng mới giữ nguyên quy tắc), **kiểm chứng âm tính** đã chạy, và **triệu chứng production** đọc ra thế nào — để người đọc thấy bug đó không phải tưởng tượng.

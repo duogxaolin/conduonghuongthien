@@ -33,12 +33,13 @@ Yêu cầu trên VPS:
 
 ### 1. Deploy — thiết lập mới (lần đầu)
 
-Chạy khi mới dựng VPS, chưa có `.env` và container. Sáu bước:
+Chạy khi mới dựng VPS, chưa có `.env` và container. Sáu bước (+ 2b tự chủ webfont):
 
 | Bước | Việc | Gợi ý | Có thể sửa? |
 |------|------|-------|-------------|
 | 1 | Chọn nguồn SQL: **1=existing DB** hay **2=docker fresh** | 2 (docker) | ✓ |
 | 2 | DB name / user / password / port | Tự sinh password ngẫu nhiên | ✓ (gõ enter giữ default) |
+| 2b | Tự chủ webfont Inter (nếu chưa có `public/assets/fonts/inter.css`) | `node scripts/fetch-fonts.mjs` | ✓ (bỏ qua nếu không có Internet) |
 | 3 | Bí mật app (JWT/Chatbot/Analytics) | Tự sinh hex/base64 32 | ✓ |
 | 4 | Tên miền `PUBLIC_BASE_URL` | `https://conduonghuongthien.com.vn` | ✓ |
 | 5 | Tạo `.env` chuẩn | — | tự động |
@@ -80,10 +81,11 @@ Chạy khi có file `.sql` mới (bài viết, dump data). Luồng:
 production/
 ├─ manage.sh           # script chính (menu 1/2/3)
 ├─ README.md           # tệp này
-├─ migrations/          # thả file .sql vào đây (INSERT-only, không DROP)
-│  └─ .imported-*       # đánh dấu đã import (tự tạo)
-└─ .env.template       # mẫu .env (tham khảo, không dùng trực tiếp)
+└─ migrations/          # thả file .sql vào đây (INSERT-only, không DROP)
+   └─ .imported-*       # đánh dấu đã import (tự tạo)
 ```
+
+Mẫu `.env` thật ở **root repo** (`.env.example`) — không có `.env.template` trong folder này. Trên VPS, `.env` do `manage.sh` sinh ra.
 
 ---
 

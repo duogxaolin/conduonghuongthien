@@ -32,8 +32,12 @@ import type { Ref } from 'vue'
  * Không `import type Hls from 'hls.js'`: một `import type` là **import tĩnh** ở
  * tầng kiểu, và nó kéo theo một phụ thuộc thời gian biên dịch vào gói mà tệp này
  * cố ý chỉ chạm tới lúc chạy. Cũng không `any` — dự án đã xoá sạch `any`.
+ *
+ * Chỉ cần `destroy()` — mọi truy cập `levels`/`currentLevel`/`on` đều nằm trong
+ * tệp này, nơi `instance` đã mang type đầy đủ của hls.js (chưa thu hẹp), nên không
+ * cần đưa chúng vào interface hẹp.
  */
-type HlsInstance = { destroy: () => void }
+export type HlsInstance = { destroy: () => void }
 
 export type HlsAttachResult =
   | { ok: true, mode: 'native' | 'library' }
@@ -130,12 +134,8 @@ export async function attachHlsStream(
       // callback để MediaPlayer dựng cầu chất lượng cho Plyr. Chỉ một bản → menu
       // rỗng → Plyr ẩn (không hiển thị menu một mục).
       if (options.onManifestParsed) {
-        const hls = instance as unknown as {
-          levels?: Array<{ height?: number }>
-          currentLevel: number
-        }
         instance.on(Hls.Events.MANIFEST_PARSED, () => {
-          const heights = (hls.levels ?? [])
+          const heights = (instance.levels ?? [])
             .map(l => l.height)
             .filter((h): h is number => typeof h === 'number' && h > 0)
           options.onManifestParsed?.({
@@ -144,11 +144,11 @@ export async function attachHlsStream(
               // -1 = ABR tự động; >0 = tìm level index khớp chiều cao, trễ thì giữ ABR
               // (tránh `currentLevel = undefined` khiến hls.js ném).
               if (height === -1) {
-                hls.currentLevel = -1
+                instance.currentLevel = -1
                 return
               }
-              const idx = (hls.levels ?? []).findIndex(l => l?.height === height)
-              if (idx >= 0) hls.currentLevel = idx
+              const idx = (instance.levels ?? []).findIndex(l => l?.height === height)
+              if (idx >= 0) instance.currentLevel = idx
             },
           })
         })

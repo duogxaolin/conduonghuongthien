@@ -9,7 +9,8 @@
  *    cán bộ bấm backup thủ công. `googleapis` tự refresh access token khi hết
  *    hạn — refresh token không hết hạn (trừ khi bị revoke).
  *
- * Cả hai dùng `googleapis` (npm) — lazy import để không nặng bundle nếu tắt Drive.
+ * Cả hai dùng `@googleapis/drive` + `google-auth-library` (scoped, ~3MB) thay vì
+ * `googleapis` nguyên khối (209MB) — chỉ load khi service backup thực sự gọi.
  *
  * Cấu trúc folder trên Drive (tự tạo):
  *   <root hoặc folder cán bộ chọn>/
@@ -22,7 +23,8 @@
  * `backup_drive_folder_id` (lúc đó `cdht_backup` nằm trong folder đó thay vì root).
  */
 import { createReadStream } from 'node:fs'
-import type { drive_v3 } from 'googleapis'
+import { drive as createDriveClient, type drive_v3 } from '@googleapis/drive'
+import { GoogleAuth, OAuth2Client } from 'google-auth-library'
 
 /** Cache folder ID theo (tên, parentId) trong một lượt backup — tránh query lại. */
 type FolderCache = Map<string, string>
@@ -161,13 +163,11 @@ export async function uploadBackupToDrive(
   stamp: string,
   rootFolderId?: string,
 ): Promise<string> {
-  const { google } = await import('googleapis')
-
-  const auth = new google.auth.GoogleAuth({
+  const auth = new GoogleAuth({
     credentials: JSON.parse(serviceAccountJson),
     scopes: ['https://www.googleapis.com/auth/drive.file'],
   })
-  const drive = google.drive({ version: 'v3', auth })
+  const drive = createDriveClient({ version: 'v3', auth })
   const cache: FolderCache = new Map()
 
   const parentId = await ensureBackupFolderStructure(drive, backupType, stamp, rootFolderId, cache)
@@ -197,11 +197,9 @@ export async function uploadBackupToDriveOAuth(
   stamp: string,
   rootFolderId?: string,
 ): Promise<string> {
-  const { google } = await import('googleapis')
-
-  const oauth2Client = new google.auth.OAuth2(clientId, clientSecret)
+  const oauth2Client = new OAuth2Client(clientId, clientSecret)
   oauth2Client.setCredentials({ refresh_token: refreshToken })
-  const drive = google.drive({ version: 'v3', auth: oauth2Client })
+  const drive = createDriveClient({ version: 'v3', auth: oauth2Client })
   const cache: FolderCache = new Map()
 
   const parentId = await ensureBackupFolderStructure(drive, backupType, stamp, rootFolderId, cache)

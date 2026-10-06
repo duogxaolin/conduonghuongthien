@@ -186,6 +186,36 @@ cmd_deploy() {
     MYSQL_EXTERNAL_PORT="$ext_port"
   fi
 
+  # ── Bước 2b: Tự chủ webfont (khuyến nghị, làm 1 lần) ───────────────────────
+  # Mặc định trang tải font Inter từ fonts.googleapis.com. Với cổng thông tin
+  # của Bộ Công an, điều đó có nghĩa là IP của mọi người truy cập đều đi qua một
+  # bên thứ ba, và chữ sẽ vỡ bố cục khi mạng chặn hoặc chậm tới CDN đó.
+  #
+  # Chạy một lần trên máy có Internet (trước khi build):
+  #   node scripts/fetch-fonts.mjs
+  # Script tải các tệp .woff2 về public/assets/fonts/ và sinh inter.css.
+  # nuxt.config.ts tự phát hiện tệp này lúc build và ngừng phát ra thẻ <link>
+  # tới Google — không cần sửa cấu hình. Muốn quay lại CDN thì xóa thư mục
+  # public/assets/fonts/ rồi build lại.
+  if [ ! -f "$ROOT/public/assets/fonts/inter.css" ]; then
+    echo -e "\n${C_BOLD}Bước 2b — Tự chủ webfont (Inter)${C_RESET}"
+    echo -e "${C_DIM}Font Inter chưa self-host — build sẽ tải từ Google CDN.${C_RESET}"
+    echo -e "${C_DIM}Ảnh hưởng quyền riêng tư (IP visitor qua bên thứ 3) + vỡ layout khi CDN chậm/chặn.${C_RESET}"
+    if command -v node >/dev/null 2>&1 && confirm "Tự host font Inter ngay (node scripts/fetch-fonts.mjs)?" "y"; then
+      echo -e "${C_BOLD}Đang tải Inter về public/assets/fonts/ ...${C_RESET}"
+      if (cd "$ROOT" && node scripts/fetch-fonts.mjs); then
+        echo -e "${C_GREEN}✓ Font Inter đã self-host. Lần build tới Google <link> sẽ biến mất.${C_RESET}"
+      else
+        echo -e "${C_YELLOW}⚠  Tải font thất bại (không có Internet?). Build tiếp tục với Google CDN.${C_RESET}"
+        echo -e "${C_DIM}    Anh có thể chạy lại sau: node scripts/fetch-fonts.mjs${C_RESET}"
+      fi
+    else
+      echo -e "${C_YELLOW}⚠  Bỏ qua — font sẽ tải từ Google CDN. Chạy 'node scripts/fetch-fonts.mjs' khi có Internet.${C_RESET}"
+    fi
+  else
+    echo -e "${C_GREEN}✓ Font Inter đã self-host (public/assets/fonts/inter.css)${C_RESET}"
+  fi
+
   # ── Bước 3: Các trường app .env cần thiết ─────────────────────────────────
   echo -e "\n${C_BOLD}Bước 3/6 — Cấu hình ứng dụng${C_RESET}"
   echo -e "${C_DIM}Ba bí mật BẮT BUỘC, tự sinh. Gõ enter giữ giá trị ngẫu nhiên, hoặc dán của mình.${C_RESET}\n"
@@ -358,6 +388,21 @@ cmd_update() {
   # ── Pull code ─────────────────────────────────────────────────────────────
   if confirm "Pull code mới từ git (git pull)?" "y"; then
     git pull origin main
+  fi
+
+  # ── Tự chủ webfont (kiểm tra lại sau pull) ────────────────────────────────
+  # Font Inter nên self-host để tránh IP visitor qua Google CDN. Sau git pull,
+  # thư mục public/assets/fonts/ có thể mới (chưa self-host) hoặc cũ (refresh).
+  if [ ! -f "$ROOT/public/assets/fonts/inter.css" ]; then
+    echo
+    echo -e "${C_YELLOW}⚠  Font Inter chưa self-host — trang đang tải từ Google CDN.${C_RESET}"
+    if command -v node >/dev/null 2>&1 && confirm "Tự host font Inter (node scripts/fetch-fonts.mjs)?" "y"; then
+      if (cd "$ROOT" && node scripts/fetch-fonts.mjs); then
+        echo -e "${C_GREEN}✓ Font Inter đã self-host. Rebuild để áp dụng.${C_RESET}"
+      else
+        echo -e "${C_YELLOW}⚠  Tải font thất bại (không có Internet?). Build tiếp tục với Google CDN.${C_RESET}"
+      fi
+    fi
   fi
 
   # ── Cho sửa vài trường quan trọng ─────────────────────────────────────────

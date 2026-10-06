@@ -69,7 +69,7 @@ export function parseTitleAndExcerpt(
   // Strategy 2: Extract from tags like [TITLE] / [EXCERPT]
   if (!title) {
     const titleMatch = rawText.match(
-      /(?:\[TITLE\]|\[TIÊU ĐỀ\]|Title:)\s*([^\n\r]+(?:\n[^\n\r\[]+)*?)(?=\s*\[(?:EXCERPT|TÓM TẮT)\]|\s*Excerpt:|$)/i,
+      /(?:\[TITLE\]|\[TIÊU ĐỀ\]|Title:)\s*([^\n\r]+(?:\n[^\n\r[]+)*?)(?=\s*\[(?:EXCERPT|TÓM TẮT)\]|\s*Excerpt:|$)/i,
     )
     if (titleMatch && titleMatch[1]) {
       title = titleMatch[1].trim()
@@ -90,7 +90,7 @@ export function parseTitleAndExcerpt(
       .replace(/^Keep HTML if present\.\s*/gi, '')
       .replace(/^Return JSON:[\s\S]*?\{[\s\S]*?\}\s*/gi, '')
       .replace(/\[(?:EXCERPT|TÓM TẮT)\]:[\s\S]*$/i, '')
-      .replace(/^[:\s\-]+/, '')
+      .replace(/^[:\s-]+/, '')
       .replace(/^["']|["']$/g, '')
       .trim()
   }
@@ -98,7 +98,7 @@ export function parseTitleAndExcerpt(
   if (excerpt) {
     excerpt = excerpt
       .replace(/^[\s\S]*?\[(?:EXCERPT|TÓM TẮT)\]:\s*/i, '')
-      .replace(/^[:\s\-]+/, '')
+      .replace(/^[:\s-]+/, '')
       .replace(/^["']|["']$/g, '')
       .trim()
   }
@@ -117,7 +117,7 @@ export function parseTitleAndExcerpt(
           !l.includes('Keep HTML') &&
           !l.includes('translatedTitle'),
       )
-    title = cleanLines[0]?.replace(/^[:\s\-]+/, '') || ''
+    title = cleanLines[0]?.replace(/^[:\s-]+/, '') || ''
   }
 
   return { title, excerpt }

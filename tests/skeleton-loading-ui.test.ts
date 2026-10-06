@@ -29,7 +29,7 @@ const read = (relative: string) => readFile(new URL(`../app/${relative}`, import
  * list has to be argued for rather than slipped in.
  */
 const DECORATIVE_PULSE_FILES: Record<string, string> = {
-  'layouts/default.vue': 'hotline / support availability indicators (two sites)',
+  'components/layout/DefaultMobileDrawer.vue': 'hotline / support availability indicators (two sites)',
   'components/admin/AnalyticsLiveDashboard.client.vue': 'live-visitor heartbeat dot',
   'pages/admin/index.vue': '"Live" status badge dot on the realtime tile',
   // Chấm "Đang phát trực tiếp" — chỉ báo trạng thái buổi livestream, không phải
@@ -119,14 +119,27 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'components/admin/SubmissionDetailModal.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/chatbot/sessions/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/chatbot/sessions/[id].vue', marker: 'v-if="loading"' },
+  // Picker trong dialog navbar/mobile — chọn Thể loại. Skeleton vẽ inline
+  // (4 ô xám) trong when fetchTypes đang chạy.
+  { file: 'components/admin/ContentTypePicker.vue', marker: 'v-if="loading"' },
 
   // Dashboards whose panels load independently. Each tile owns its own branch, so
   // one slow query must not blank the other three.
   { file: 'pages/admin/index.vue', marker: 'v-if="liveLoading"' },
-  { file: 'pages/admin/ai/index.vue', marker: 'v-if="usageLoading"' },
+  { file: 'components/admin/ai/AiDashboardTab.vue', marker: 'v-if="usageLoading"' },
+  { file: 'components/admin/ai/AiProvidersTab.vue', marker: 'v-if="providersLoading"' },
+  { file: 'components/admin/ai/AiServicesTab.vue', marker: 'v-if="servicesLoading"' },
+  { file: 'components/admin/ai/AiModerationTab.vue', marker: 'v-if="moderationLoading"' },
+  { file: 'components/admin/ai/AiLogsTab.vue', marker: 'v-if="logsLoading"' },
   { file: 'pages/admin/ai/moderation.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/analytics.vue', marker: 'v-if="initialLoading"' },
   { file: 'pages/admin/languages/index.vue', marker: 'v-if="loading && activeTab' },
+  // Article list — orchestrator `articles/index.vue` giữ `v-if="loading"` cho
+  // SkeletonTable (test guard ghim ở file gốc, plan rule #4). 3 modal/panel con
+  // tự fetch: BoostStatsPanel có loading branch `statsLoading` ghim dưới đây;
+  // QuickViewModal/GlobalTranslateModal chỉ spinner center (không thay list) →
+  // exempt ở NO_SKELETON_NEEDED.
+  { file: 'components/admin/articles/ArticleBoostStatsPanel.vue', marker: 'v-if="statsLoading"' },
 ]
 
 /**
@@ -160,6 +173,40 @@ const NO_SKELETON_NEEDED: Record<string, string> = {
   // Scan + sync trang riêng — fetch chỉ khi bấm nút (submit-time), nút mang pending.
   // Trang không có danh sách tải để thay thế; cả hai thao tác báo tổng trong toast.
   'pages/admin/media/scan.vue': 'submit-time fetch; the button shows pending and the result lands in a toast',
+  // Orchestrator sau tách 5 tab. Fetch duy nhất là `ensureProvidersLoaded()` —
+  // fallback populate `providers`/`pricingRows` cho filter dropdown của Services +
+  // Logs khi Providers tab chưa mount. Không có UI loading riêng: dropdown "Tất
+  // cả" dùng được ngay, dữ liệu fill nền sau. Mỗi tab con có skeleton riêng đã pin
+  // ở VIEWS_WITH_LOADING_BRANCH.
+  'pages/admin/ai/index.vue': 'background fallback fill of a filter dropdown; field is usable empty',
+  // Universal Translation Hub tab (tách khỏi languages/index.vue). Tác vụ nền
+  // triggered bằng nút: "Quét lại hệ thống" mang spinner trong card "Trạng thái
+  // quét", "Bắt đầu Dịch Toàn Cục" chuyển thành "Đang dịch toàn cục..." + progress
+  // banner gradient. Không có danh sách tải để placeholder — 4 stat card +
+  // bảng coverage luôn hiển thị giá trị cũ (hoặc "Đang quét..." text) giữa các
+  // lần quét. Thay live numbers bằng grey boxes mỗi 2s poll sẽ làm dashboard
+  // trông hỏng.
+  'components/admin/languages/UniversalTab.vue': 'polls and keeps the last reading visible between ticks; the scan button + progress banner carry the in-flight state',
+  // Quick-view modal bản dịch AI (tách khỏi articles/index.vue). Fetch detail
+  // khi mở: chỉ spinner center "Đang tải bản dịch..." trong body modal — modal
+  // đã có header (lang flag + title gốc) vẽ đầy, thay cả modal bằng skeleton
+  // sẽ xóa header đang hiển thị. Spinner trong body là feedback đủ.
+  'components/admin/articles/ArticleQuickViewModal.vue': 'modal body spinner; the header (lang flag + original title) stays visible while the translated body loads',
+  // Modal "Dịch toàn bộ bài viết". Fetch translation-stats khi mở: spinner
+  // center "Đang thống kê bài viết..." trong body modal, header + footer vẫn
+  // hiển thị. KHONG có list tải để thay bằng skeleton — chỉ là form chọn ngôn
+  // ngữ + radio trạng thái, hiện sau khi stats load xong.
+  'components/admin/articles/ArticleGlobalTranslateModal.vue': 'modal body spinner; the header + footer stay visible while the stats form populates',
+  // AI editorial panel (tách khỏi [id].vue). Fetch `/api/admin/ai/editorial` khi
+  // bấm nút (submit-time). Toolbar luôn render; 3 drawer preview hiện khi có kết
+  // quả. Loading = spinner + text trong toolbar (`animate-pulse` trạng thái đã
+  // miễn), không có khung nội dung để thay bằng skeleton.
+  'components/admin/articles/ArticleAIPanel.vue': 'submit-time fetch; the toolbar buttons show pending and previews land in drawers when ready',
+  // Quản lý Bản dịch đa ngôn ngữ (tách khỏi [id].vue). Fetch translations + poll
+  // tiến trình. Loading = optimistic update (`status: 'translating'` + progress
+  // bar trong card) — cards luôn render với status cũ/giá trị mặc định, không có
+  // "list rỗng" để placeholder. `availableLanguages` luôn hiển thị tất cả lang cards.
+  'components/admin/articles/ArticleTranslationPanel.vue': 'optimistic update via status flags; cards always render with last-known status, no empty list to placeholder',
   // oEmbed auto-get: fetch chỉ khi bấm nút "Lấy thông tin" (submit-time). Nút mang
   // pending ("Đang lấy…"), preview metadata hiện jako kết quả bên dưới ô input —
   // không có khung danh sách nào để thay thế bằng skeleton. Form vẫn dùng được

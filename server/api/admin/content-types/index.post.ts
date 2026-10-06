@@ -2,6 +2,7 @@ import { getDb } from '../../../utils/db'
 import { contentTypes } from '../../../db/schema'
 import { uniqueContentTypeSlug } from '../../../utils/slug'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { autoTranslateContentType } from '../../../services/i18n-auto-translate'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -10,7 +11,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event).catch(() => ({}))
   const name = String(body?.name || '').trim()
   const icon = String(body?.icon || '').trim() || null
-  const description = String(body?.description || '').trim() || null
+  const description = (() => { const d = String(body?.description || '').trim(); return (!d || d.toLowerCase() === 'null') ? null : d })()
   const displayOrder = Number(body?.displayOrder ?? 0)
 
   if (!name) {
@@ -19,9 +20,9 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
 
-  // Clean, collision-safe slug (underscore-separated to match system type keys)
+  // Clean, collision-safe slug — custom type dùng gạch ngang (isSystem=false).
   const rawSlug = String(body?.slug || '').trim()
-  const uniqueSlug = await uniqueContentTypeSlug(db, rawSlug || name)
+  const uniqueSlug = await uniqueContentTypeSlug(db, rawSlug || name, undefined, false)
 
   const [res] = await db.insert(contentTypes).values({
     name,
@@ -31,6 +32,9 @@ export default defineEventHandler(async (event) => {
     displayOrder,
     isSystem: false,
   })
+
+  // Non-blocking i18n auto-translate (vi gốc + AI dịch 5 lang).
+  void autoTranslateContentType(adminUser, uniqueSlug, name, description).catch(() => {})
 
   return { ok: true, id: res.insertId, slug: uniqueSlug }
 })

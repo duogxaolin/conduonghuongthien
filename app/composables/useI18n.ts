@@ -412,6 +412,7 @@ export const useI18n = () => {
       a_copy_link_btn: 'Sao chép link',
       a_print: 'In bài',
       a_print_title: 'In bài viết',
+      a_print_source_url: 'Nguồn',
       a_related_title: 'Bài viết khác',
       a_related_loading: 'Đang tải bài viết khác',
       a_related_error: 'Không thể tải bài viết khác. Vui lòng',
@@ -488,6 +489,32 @@ export const useI18n = () => {
       social_expand_aria: 'Mở kết nối mạng xã hội và liên hệ hỗ trợ',
       social_support: 'Hỗ trợ 24/7',
       social_open_link_aria: 'Mở {name} (mở tab mới)',
+      // ── ChatWidget (cw_*) + assistant (asst_*) + profile: fallback khi DB hỏng ──
+      cw_back: 'Quay lại',
+      cw_history: 'Danh sách cuộc trò chuyện',
+      cw_clear: 'Xóa lịch sử',
+      cw_expand: 'Mở rộng toàn trang',
+      cw_sources: 'Nguồn tham khảo',
+      cw_lead_name: 'Họ và tên',
+      cw_lead_phone: 'Số điện thoại',
+      cw_lead_email: 'Email (nếu có)',
+      cw_lead_question: 'Nội dung cần hỗ trợ',
+      cw_input_label: 'Nhập câu hỏi cho trợ lý',
+      cw_input_placeholder: 'Hỏi tôi bất cứ điều gì...',
+      cw_send_aria: 'Gửi tin nhắn',
+      asst_conversation_list: 'Danh sách cuộc trò chuyện',
+      asst_delete_conv: 'Xóa cuộc trò chuyện',
+      asst_delete_conv_aria: 'Xóa cuộc trò chuyện',
+      asst_new_conv: 'Cuộc trò chuyện mới',
+      asst_clear_conv: 'Xóa nội dung cuộc trò chuyện',
+      asst_home: 'Về trang chủ',
+      profile_title: 'Trang cá nhân',
+      profile_subtitle: 'Tên hiển thị, bình luận đã gửi, bài đã đọc và các đoạn trò chuyện của bạn.',
+      profile_display_name_ph: 'Ví dụ: Nguyễn Văn A',
+      profile_next: 'Sau',
+      profile_clear_history: 'Xoá danh sách',
+      profile_remove_aria: 'Xoá',
+      profile_remove_title: 'Xoá khỏi danh sách',
     },
     en: {
       home: 'Home',
@@ -803,6 +830,7 @@ export const useI18n = () => {
       a_copy_link_btn: 'Copy link',
       a_print: 'Print',
       a_print_title: 'Print article',
+      a_print_source_url: 'Source',
       a_related_title: 'Related articles',
       a_related_loading: 'Loading related articles',
       a_related_error: 'Could not load related articles. Please',
@@ -890,8 +918,10 @@ export const useI18n = () => {
   )
   const dbTranslationsLang = useState<string | null>('dbTranslationsLang', () => null)
 
-  // Fetch translations for current locale (only non-Vietnamese — vi uses hardcoded)
-  if (currentLang.value !== 'vi' && dbTranslations.value === null) {
+  // Fetch translations for current locale — kể cả `vi`. Nguồn chân lý là DB
+  // (admin sửa ở /admin/languages → frontend hiển thị theo DB). Hardcoded
+  // dictionary chỉ còn fallback khi DB chưa seed / API hỏng / SSR chưa fetch xong.
+  if (dbTranslations.value === null) {
     // Client-side fetch only — public pages are all lazy/SWR, so this runs
     // after mount. On server, falls back to hardcoded dictionary.
     if (import.meta.client) {

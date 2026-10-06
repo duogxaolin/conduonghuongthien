@@ -20,6 +20,7 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
+import { layoutSource } from './_layout-parts'
 
 import {
   DEFAULT_BOTTOM_NAV,
@@ -257,9 +258,9 @@ describe('parseNavConfig — mọi đầu vào không dùng được ra null', (
  */
 describe('template nav — target="_blank" không bao giờ đứng một mình', () => {
   it('mọi chỗ đặt target _blank đều đặt kèm rel noopener', () => {
-    const layout = readFileSync(
-      new URL('../app/layouts/default.vue', import.meta.url), 'utf8')
-    const bindings = layout.match(/openNewTab \? '_blank'[^"]*/g) ?? []
+    // Sau tách template: openNewTab binding ở DefaultDesktopNav (cha/con × 2) +
+    // DefaultMobileDrawer (cha/con × 2) = 4. Đọc gộp `layoutSource`.
+    const bindings = layoutSource.match(/openNewTab \? '_blank'[^"]*/g) ?? []
     assert.ok(bindings.length >= 4,
       `tìm thấy ${bindings.length} chỗ dùng openNewTab để đặt target; nav có 4 (cha/con × desktop/mobile) — ` +
       'ít hơn nghĩa là một bề mặt đã ngừng đọc cờ này')
@@ -267,7 +268,7 @@ describe('template nav — target="_blank" không bao giờ đứng một mình'
       assert.match(binding, /rel:/,
         `một chỗ đặt target="_blank" mà không có rel kèm theo: ${binding}`)
     }
-    for (const match of layout.matchAll(/rel: [^,}]*openNewTab[^,}]*/g)) {
+    for (const match of layoutSource.matchAll(/rel: [^,}]*openNewTab[^,}]*/g)) {
       assert.match(match[0], /noopener/,
         `rel thiếu noopener — trang đích ghi được vào location của cổng: ${match[0]}`)
     }

@@ -230,12 +230,20 @@ export type DiskCheck =
 export async function checkDiskSpace(
   target: string,
   floorBytes: number,
-  statfs: StatfsFn = fs.statfs as unknown as StatfsFn,
+  /**
+   * Truyền vào để test thay thế. Mặc định `undefined` chứ không phải `fs.statfs`
+   * trực tiếp: `--experimental-test-module-mocks` clone default params để mock
+   * module, và `structuredClone(fs.statfs)` ném "could not be cloned" với function
+   * native — làm 2 suite integration (media-queue, upload-concurrency) fail toàn
+   * job thay vì chỉ fail bài test. Mọi caller thật đều truyền `options.statfs`,
+   * nên nhánh fallback resolve lúc gọi, tránh giữ reference native trong signature.
+   */
+  statfs?: StatfsFn,
 ): Promise<DiskCheck> {
   if (!Number.isFinite(floorBytes) || floorBytes <= 0) return { ok: true, freeBytes: Number.POSITIVE_INFINITY }
 
   try {
-    const stats = await statfs(target)
+    const stats = await (statfs ?? fs.statfs.bind(fs))(target)
     const freeBytes = Number(stats.bavail) * Number(stats.bsize)
     if (!Number.isFinite(freeBytes)) {
       return { ok: false, kind: 'error', reason: 'Không đọc được dung lượng trống của thư mục media.' }

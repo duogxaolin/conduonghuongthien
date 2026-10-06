@@ -61,7 +61,7 @@ test('governed SSE endpoint and response metadata drive public status rendering'
   }
   assert.match(template, /messageKindLabel\(msg\.kind\)/)
   assert.match(template, /msg\.sources\?\.length/)
-  assert.match(template, /aria-label="Nguồn tham khảo"/)
+  assert.match(template, /:aria-label="t\('cw_sources'\)"/)
 })
 
 test('public source rendering is allowlisted and only permits HTTPS links', () => {

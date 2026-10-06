@@ -33,7 +33,7 @@
         :class="activeTab === t.key
           ? 'bg-[#1e4620] text-white border-[#1e4620] shadow-xs'
           : 'bg-white text-[#667768] border-transparent hover:bg-[#f0f7f1] hover:text-[#1e4620]'"
-        @click="activeTab = t.key as any"
+        @click="activeTab = t.key"
       >
         <span>{{ t.label }}</span>
         <span v-if="t.badge > 0" class="px-1.5 py-0.2 rounded-full bg-red-500 text-white text-[0.65rem] font-black">

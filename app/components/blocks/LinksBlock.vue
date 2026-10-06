@@ -6,7 +6,7 @@
         <h2 class="text-[2.2rem] md:text-[1.6rem] font-extrabold text-[#1E251C] mb-3">{{ d.title || t('block_links_title') }}</h2>
       </div>
 
-      <div class="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5">
+      <nav class="grid grid-cols-2 gap-5 sm:grid-cols-3 lg:grid-cols-5" aria-label="Liên kết nhanh">
         <a
           v-for="(link, i) in links"
           :key="i"
@@ -18,7 +18,7 @@
           <div class="w-[46px] h-[46px] rounded-full bg-[rgba(74,103,65,0.05)] flex items-center justify-center text-[1.45rem] mb-3 transition group-hover:bg-[#4A6741] group-hover:text-white">{{ link.icon }}</div>
           <span class="text-[0.82rem] font-bold leading-[1.3]">{{ link.label }}</span>
         </a>
-      </div>
+      </nav>
     </div>
   </section>
 </template>

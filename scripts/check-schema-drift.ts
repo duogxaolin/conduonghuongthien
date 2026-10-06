@@ -108,18 +108,24 @@ function fromSchemaTs(unmapped: Set<string>): Map<string, TableShape> {
 /**
  * Cột do DDL khởi động tạo ra: thân `CREATE TABLE` + các lượt di trú bổ sung.
  *
- * Đọc **hai** tệp, và đó là điều kiện tiên quyết chứ không phải sự tiện lợi:
- * `init.ts` giữ các câu `CREATE TABLE` còn `migrations-additive.ts` giữ các lượt
+ * Đọc **chín** tệp, và đó là điều kiện tiên quyết chứ không phải sự tiện lợi:
+ * `init.ts` giữ thứ tự gọi còn các câu `CREATE TABLE` được tách theo domain vào
+ * `schema-tables/*.ts` (7 tệp), và `migrations-additive.ts` giữ các lượt
  * `ensureColumn`. Đọc mỗi `init.ts` là bỏ qua đúng nhóm cột **mới nhất** — những
  * cột chỉ tồn tại dưới dạng một lượt `ALTER` vì bảng đã có dữ liệu của cơ quan
  * trên đó (`articles.comments_enabled`, `chat_sessions.reader_id` là hai ví dụ).
  * Và đó là nhóm dễ lệch nhất, nên miễn trừ chúng là làm cổng này vô nghĩa ở đúng
- * chỗ nó cần chặt nhất. Ghép nối chuỗi trước khi phân tích: hai tệp là một nguồn
+ * chỗ nó cần chặt nhất. Ghép nối chuỗi trước khi phân tích: chín tệp là một nguồn
  * DDL, và một biểu thức chính quy chạy trên chuỗi ghép không cần biết ranh giới.
  */
 function fromInitTs(): Map<string, TableShape> {
+  const schemaTables = [
+    'core', 'content', 'governance', 'chatbot',
+    'analytics', 'readers-media', 'ai-i18n',
+  ].map(f => readFileSync(path.join(root, `server/db/schema-tables/${f}.ts`), 'utf8'))
   const source = [
     readFileSync(path.join(root, 'server/db/init.ts'), 'utf8'),
+    ...schemaTables,
     readFileSync(path.join(root, 'server/db/migrations-additive.ts'), 'utf8'),
   ].join('\n').replace(/\r\n/g, '\n')
   const out = new Map<string, TableShape>()

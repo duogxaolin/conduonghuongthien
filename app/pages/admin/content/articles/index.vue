@@ -1,6 +1,9 @@
 <script setup lang="ts">
-import type { AdminArticleAuthorRow, AdminArticleBoost, AdminArticleStats, AdminArticleStatsResult, AdminCategoryRow } from '~/types/admin-api'
-import type { AdminArticleRow } from '~/types/admin-api'
+import type { AdminArticleAuthorRow, AdminArticleRow, AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
+import ArticleQuickViewModal from '~/components/admin/articles/ArticleQuickViewModal.vue'
+import ArticleGlobalTranslateModal from '~/components/admin/articles/ArticleGlobalTranslateModal.vue'
+import ArticleBoostStatsPanel from '~/components/admin/articles/ArticleBoostStatsPanel.vue'
+import ArticleBulkTranslateBanner from '~/components/admin/articles/ArticleBulkTranslateBanner.vue'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -11,11 +14,21 @@ const articles = ref<AdminArticleRow[]>([])
 const loading = ref(true)
 const loadError = ref('')
 const search = ref('')
+// Static fallback labels for the 5 system types — tương ứng với `typeIcons`/`typeColors`
+// bên dưới. Type custom lấy từ `contentTypes` (fetch từ DB), ghi đè qua `typeNameMap`.
 const typeLabels: Record<string, string> = {
   news: 'Bản tin', role_model: 'Tấm gương', reintegration: 'Mô hình', document: 'Văn bản', faq: 'Giải đáp',
 }
 
-const initialType = typeof route.query.type === 'string' && route.query.type.trim() in typeLabels
+// Content types từ DB — để select Type + table badge hiển thị cả type custom.
+const contentTypes = ref<AdminContentTypeRow[]>([])
+const typeNameMap = computed<Record<string, string>>(() => {
+  const m: Record<string, string> = { ...typeLabels }
+  for (const ct of contentTypes.value) m[ct.slug] = ct.name
+  return m
+})
+
+const initialType = typeof route.query.type === 'string' && route.query.type.trim()
   ? route.query.type.trim()
   : ''
 const selectedType = ref(initialType)
@@ -81,6 +94,8 @@ const categoryDisplay = (a: AdminArticleRow) => {
   return a.categoryName
 }
 
+const formatViews = (value: unknown) => Number(value || 0).toLocaleString('vi-VN')
+
 const toast = useToast()
 const { confirm } = useConfirm()
 
@@ -97,6 +112,28 @@ const subCategoryOptions = computed(() => {
   if (!selectedParentCategoryId.value) return []
   return allCategories.value.filter((c) => c.parentId === selectedParentCategoryId.value)
 })
+
+// Bộ lọc đang活跃 — hiển thị nút "Xóa bộ lọc" để reset nhanh thay vì mở từng select.
+const hasActiveFilters = computed(() =>
+  search.value.trim() !== ''
+  || selectedType.value !== ''
+  || selectedStatus.value !== ''
+  || selectedParentCategoryId.value !== null
+  || selectedCategoryId.value !== null
+  || selectedAuthorId.value !== ''
+  || selectedTranslationFilter.value !== '',
+)
+
+const resetFilters = () => {
+  search.value = ''
+  selectedType.value = ''
+  selectedStatus.value = ''
+  selectedParentCategoryId.value = null
+  selectedCategoryId.value = null
+  selectedAuthorId.value = ''
+  selectedTranslationFilter.value = ''
+  fetchArticles(1)
+}
 
 const fetchCategories = async () => {
   try {
@@ -120,6 +157,14 @@ const fetchAuthors = async () => {
       orphanAuthorCount.value = res.orphanCount
     }
   } catch { /* non-critical */ }
+}
+
+// Fetch content-types để render select Type + badge tên type trong bảng.
+const fetchContentTypes = async () => {
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminContentTypeRow[] }>)('/api/admin/content-types')
+    if (res.ok) contentTypes.value = res.items
+  } catch { /* non-critical, select falls back to 5 system types in typeLabels */ }
 }
 
 // When type filter changes: reload categories, reset category filters
@@ -293,71 +338,20 @@ const triggerBulkTranslate = async (langCode: string) => {
 }
 
 // ─── Quick View Translation Modal ───────────────────────────────────────
+// Cha chỉ giữ `showQuickView` + bài/lang đang xem. Component con tự fetch
+// detail + quản lý loading/error nội bộ (lỗi → toast + đóng).
 const showQuickViewModal = ref(false)
-const quickViewLoading = ref(false)
-const quickViewData = ref<{
-  articleId: number
-  articleTitle: string
-  langCode: string
-  title: string
-  excerpt: string | null
-  content: string | null
-  status: string
-  translatedBy: string
-} | null>(null)
+const quickViewArticle = ref<AdminArticleRow | null>(null)
+const quickViewLang = ref('')
 
-async function openQuickView(article: AdminArticleRow, langCode: string) {
-  quickViewData.value = {
-    articleId: Number(article.id),
-    articleTitle: article.title,
-    langCode,
-    title: 'Đang tải...',
-    excerpt: null,
-    content: null,
-    status: 'loading',
-    translatedBy: 'ai',
-  }
+function openQuickView(article: AdminArticleRow, langCode: string) {
+  quickViewArticle.value = article
+  quickViewLang.value = langCode
   showQuickViewModal.value = true
-  quickViewLoading.value = true
-  try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; translation: typeof quickViewData.value }>)(
-      `/api/admin/articles/${article.id}/translations/${langCode}`,
-    )
-    if (res.ok && res.translation) {
-      quickViewData.value = {
-        articleId: Number(article.id),
-        articleTitle: article.title,
-        langCode: res.translation.langCode,
-        title: res.translation.title,
-        excerpt: res.translation.excerpt,
-        content: res.translation.content,
-        status: res.translation.status,
-        translatedBy: res.translation.translatedBy,
-      }
-    }
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể tải bản dịch.'))
-    showQuickViewModal.value = false
-  } finally {
-    quickViewLoading.value = false
-  }
 }
 
-async function toggleQuickViewStatus() {
-  if (!quickViewData.value) return
-  const current = quickViewData.value.status
-  const next = current === 'published' ? 'reviewed' : 'published'
-  try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(
-      `/api/admin/articles/${quickViewData.value.articleId}/translations/${quickViewData.value.langCode}/status`,
-      { method: 'PATCH', body: { status: next } },
-    )
-    quickViewData.value.status = next
-    toast.success(next === 'published' ? 'Đã xuất bản bản dịch!' : 'Đã gỡ xuất bản.')
-    await fetchArticles(pagination.value.page)
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể đổi trạng thái.'))
-  }
+function closeQuickView() {
+  showQuickViewModal.value = false
 }
 
 // ─── Row-level Translation Action ────────────────────────────────────────
@@ -402,34 +396,12 @@ async function translateSingleArticle(articleId: number, langCode: string) {
 }
 
 // ─── Global Translation Modal (Dịch toàn bộ bài viết) ───────────────────
+// Cha chỉ giữ `showGlobalTranslateModal` + `openGlobalTranslateModal`. Component
+// con tự fetch translation-stats + quản lý state chọn ngôn ngữ + startGlobalTranslation.
 const showGlobalTranslateModal = ref(false)
-const globalStatsLoading = ref(false)
-const globalStats = ref<{
-  totalArticles: number
-  aiPendingTranslations: number
-  languages: Array<{ code: string; name: string; nativeName: string; translated: number; missing: number }>
-} | null>(null)
-const selectedGlobalTargetLangs = ref<string[]>(['en'])
-const globalTargetStatus = ref<'ai_draft' | 'published'>('ai_draft')
-const globalTranslating = ref(false)
-async function openGlobalTranslateModal() {
+
+function openGlobalTranslateModal() {
   showGlobalTranslateModal.value = true
-  globalStatsLoading.value = true
-  try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean } & typeof globalStats.value>)('/api/admin/articles/translation-stats')
-    if (res.ok) {
-      globalStats.value = res
-      if (res.languages.length > 0) {
-        // Mặc định chọn các ngôn ngữ còn bài chưa dịch
-        const missingLangs = res.languages.filter(l => l.missing > 0).map(l => l.code)
-        selectedGlobalTargetLangs.value = missingLangs.length > 0 ? missingLangs : [res.languages[0]!.code]
-      }
-    }
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể tải thống kê bản dịch.'))
-  } finally {
-    globalStatsLoading.value = false
-  }
 }
 
 // Xuất bản toàn bộ bản dịch AI đã xong (ai_draft/reviewed) — không phụ thuộc chọn.
@@ -463,61 +435,11 @@ async function bulkPublishAi() {
   }
 }
 
-async function startGlobalTranslation() {
-  if (selectedGlobalTargetLangs.value.length === 0) {
-    toast.warning('Vui lòng chọn ít nhất một ngôn ngữ.')
-    return
-  }
-
-  globalTranslating.value = true
-  let totalQueuedLangs = 0
-  let totalQueuedArticles = 0
-
-  // Cập nhật lạc quan (Optimistic update) cho các bài viết đang hiển thị trên bảng
-  for (const art of articles.value) {
-    const parsed = parseTranslations(art.translatedLangs)
-    for (const langCode of selectedGlobalTargetLangs.value) {
-      if (!parsed.some(t => t.lang === langCode)) {
-        parsed.push({ lang: langCode, status: 'translating' })
-      }
-    }
-    art.translatedLangs = parsed.map(t => `${t.lang}:${t.status}`).join(',')
-  }
-
+function onGlobalTranslateStarted() {
+  showGlobalTranslateModal.value = false
+  void fetchArticlesSilent()
   void fetchBulkTranslateStatus()
   startBulkStatusPolling()
-
-  try {
-    for (const langCode of selectedGlobalTargetLangs.value) {
-      const listRes = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: AdminArticleRow[] }>)('/api/admin/articles', {
-        params: { translation: `missing_${langCode}`, perPage: 100, status: 'published' },
-      })
-      const targetArticles = listRes.items || []
-      if (targetArticles.length > 0) {
-        const ids = targetArticles.map(a => Number(a.id))
-        await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/articles/bulk-translate', {
-          method: 'POST',
-          body: { ids, langCode, targetStatus: globalTargetStatus.value },
-        })
-        totalQueuedLangs++
-        totalQueuedArticles += ids.length
-      }
-    }
-
-    if (totalQueuedArticles === 0) {
-      toast.info('Tất cả các bài viết đã có bản dịch cho các ngôn ngữ đã chọn!')
-    } else {
-      toast.success(`Đã xếp lịch dịch ${totalQueuedArticles} lượt bài viết sang ${totalQueuedLangs} ngôn ngữ! Hệ thống đang xử lý trong nền.`)
-      showGlobalTranslateModal.value = false
-      await fetchArticlesSilent()
-      void fetchBulkTranslateStatus()
-      startBulkStatusPolling()
-    }
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể bắt đầu dịch toàn bộ.'))
-  } finally {
-    globalTranslating.value = false
-  }
 }
 
 // ─── Active Bulk Translation Banner ──────────────────────────────────
@@ -615,151 +537,38 @@ const deleteArticle = async (art: AdminArticleRow) => {
   }
 }
 
-// ─── Thống kê lượt xem ────────────────────────────────────────────────────────
+// ─── Thống kê lượt xem — chỉ giữ `statsArticle` điều khiển modal ─────────────
 /**
  * Con số hiển thị công khai là tổng của lượt xem thật và lượt xem ảo, nhưng
  * trong trang quản trị hai phần đó không bao giờ được gộp lại thành một số duy
  * nhất. Cán bộ mở modal này phải luôn đọc được bao nhiêu là thật — nếu không,
  * chính người trong cơ quan cũng không trả lời được câu hỏi "số đó có thật
  * không", và đó là câu hỏi bắt buộc phải trả lời được.
+ *
+ * Component con `ArticleBoostStatsPanel` giữ stats loading/error/boost state
+ * nội bộ (tự fetch khi `article` prop thay đổi). Cha chỉ truyền `statsArticle`
+ * (null = đóng, non-null = mở) + nhận 'boost-applied' để refresh bảng.
  */
 const statsArticle = ref<AdminArticleRow | null>(null)
-const statsLoading = ref(false)
-const statsError = ref('')
-const statsData = ref<AdminArticleStats | null>(null)
-const runningBoost = ref<AdminArticleBoost>(null)
 
-const boostMode = ref<'instant' | 'gradual'>('instant')
-const boostAmount = ref<number | null>(null)
-const boostMinutes = ref<number | null>(60)
-const boostSubmitting = ref(false)
-
-const formatViews = (value: unknown) => Number(value || 0).toLocaleString('vi-VN')
-
-const sourceLabels: Record<string, string> = {
-  direct: 'Truy cập trực tiếp',
-  search: 'Từ công cụ tìm kiếm',
-  social: 'Từ mạng xã hội',
-  referral: 'Từ trang khác dẫn sang',
-  email: 'Từ thư điện tử',
-  other: 'Nguồn khác',
-}
-
-/** Phần trăm đã giao của lượt tăng dần đang chạy, để thanh tiến độ có ý nghĩa. */
-const boostProgress = computed(() => {
-  const job = runningBoost.value
-  if (!job || !Number(job.totalAmount)) return 0
-  return Math.min(100, Math.round((Number(job.appliedAmount) / Number(job.totalAmount)) * 100))
-})
-
-/** Cột cao nhất trong biểu đồ ngày, dùng làm mốc quy đổi chiều cao các cột còn lại. */
-const dailyPeak = computed(() => {
-  const rows = statsData.value?.daily || []
-  return rows.reduce((max: number, row: { total?: number }) => Math.max(max, Number(row.total || 0)), 0)
-})
-
-const loadStats = async () => {
-  if (!statsArticle.value) return
-  statsLoading.value = true
-  statsError.value = ''
-  try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<AdminArticleStatsResult>)(`/api/admin/articles/${statsArticle.value.id}/stats`)
-    statsData.value = res.stats
-    runningBoost.value = res.boost
-  } catch (err: unknown) {
-    // Giữ lại lỗi trên màn hình kèm nút thử lại: một modal trống không nói được
-    // là "bài này chưa có lượt xem" hay "không tải được số liệu".
-    statsError.value = errorMessage(err, 'Không tải được số liệu lượt xem.')
-    statsData.value = null
-    runningBoost.value = null
-  } finally {
-    statsLoading.value = false
-  }
-}
-
-const openStats = async (art: AdminArticleRow) => {
+function openStats(art: AdminArticleRow) {
   statsArticle.value = art
-  statsData.value = null
-  runningBoost.value = null
-  statsError.value = ''
-  boostMode.value = 'instant'
-  boostAmount.value = null
-  boostMinutes.value = 60
-  await loadStats()
 }
 
-const closeStats = () => {
+function closeStats() {
   statsArticle.value = null
-  statsData.value = null
-  runningBoost.value = null
-  statsError.value = ''
 }
 
-const submitBoost = async () => {
-  if (!statsArticle.value || boostSubmitting.value) return
-  const amount = Number(boostAmount.value)
-  if (!Number.isInteger(amount) || amount < 1) {
-    toast.error('Vui lòng nhập số lượt xem là số nguyên lớn hơn 0.')
-    return
-  }
-  const minutes = Number(boostMinutes.value)
-  if (boostMode.value === 'gradual' && (!Number.isInteger(minutes) || minutes < 1)) {
-    toast.error('Vui lòng nhập thời lượng là số nguyên phút lớn hơn 0.')
-    return
-  }
-
-  const ok = await confirm({
-    title: 'Tăng lượt xem ảo',
-    message: boostMode.value === 'instant'
-      ? `Cộng ngay ${amount.toLocaleString('vi-VN')} lượt xem ảo cho bài "${statsArticle.value.title}"? Thao tác này được ghi vào nhật ký hoạt động kèm tên tài khoản của bạn.`
-      : `Cộng dần ${amount.toLocaleString('vi-VN')} lượt xem ảo trong ${minutes.toLocaleString('vi-VN')} phút cho bài "${statsArticle.value.title}"? Thao tác này được ghi vào nhật ký hoạt động kèm tên tài khoản của bạn.`,
-    confirmLabel: 'Xác nhận',
-  })
-  if (!ok) return
-
-  boostSubmitting.value = true
-  try {
-    const body: Record<string, unknown> = { mode: boostMode.value, amount }
-    if (boostMode.value === 'gradual') body.minutes = minutes
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${statsArticle.value.id}/boost`, { method: 'POST', body })
-    toast.success(boostMode.value === 'instant' ? 'Đã cộng lượt xem ảo.' : 'Đã tạo lượt tăng dần.')
-    boostAmount.value = null
-    await loadStats()
-    await fetchArticles(pagination.value.page)
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thực hiện được thao tác tăng lượt xem.'))
-  } finally {
-    boostSubmitting.value = false
-  }
+function onBoostApplied() {
+  void fetchArticles(pagination.value.page)
 }
-
-const cancelBoost = async () => {
-  if (!statsArticle.value || !runningBoost.value) return
-  const ok = await confirm({
-    title: 'Huỷ lượt tăng dần',
-    // Nói rõ phần đã cộng vẫn giữ: người vận hành cần biết huỷ là dừng phần còn
-    // lại, không phải hoàn tác phần đã chạy.
-    message: `Dừng lượt tăng dần đang chạy? Phần đã cộng (${formatViews(runningBoost.value.appliedAmount)} lượt) vẫn được giữ nguyên.`,
-    danger: true,
-    confirmLabel: 'Huỷ lượt tăng',
-  })
-  if (!ok) return
-  try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/articles/${statsArticle.value.id}/boost`, { method: 'DELETE' })
-    toast.success('Đã huỷ lượt tăng dần.')
-    await loadStats()
-  } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không huỷ được lượt tăng dần.'))
-  }
-}
-
 
 onMounted(async () => {
   // Pre-select categoryId from query param (coming from categories page "Xem bài")
   const qCategoryId = route.query.categoryId ? Number(route.query.categoryId) : null
   // Hai lượt này độc lập nhau — danh sách người đăng không phụ thuộc thể loại —
   // nên chạy song song thay vì nối đuôi.
-  await Promise.all([fetchCategories(), fetchAuthors()])
+  await Promise.all([fetchCategories(), fetchAuthors(), fetchContentTypes()])
   if (qCategoryId) {
     // Find the category to set up parent/child properly
     const cat = allCategories.value.find((c) => c.id === qCategoryId)
@@ -781,6 +590,8 @@ onMounted(async () => {
 
 // Lấy số bản dịch AI chưa xuất bản cho badge trên nút "Xuất bản toàn bộ".
 // Nhẹ — chỉ cần field aiPendingTranslations, không phụ thuộc mở modal.
+// `globalStats` chỉ là badge counter ở cha; modal con có state stats riêng.
+const globalStats = ref<{ totalArticles: number; aiPendingTranslations: number; languages: Array<{ code: string; name: string; nativeName: string; translated: number; missing: number }> } | null>(null)
 async function fetchAiPending() {
   try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; aiPendingTranslations?: number }>)('/api/admin/articles/translation-stats')
@@ -832,138 +643,40 @@ onUnmounted(() => {
       </div>
     </div>
 
-    <!-- Background Translation Task Banner (Live Real-time Progress) -->
-    <div
-      v-if="bulkTranslateTask?.active"
-      class="bg-gradient-to-r from-[#f0f7f1] to-[#e4f2e5] border border-[#a2cca4] rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all"
-    >
-      <div class="flex items-start sm:items-center gap-3 flex-1 min-w-0">
-        <div class="w-10 h-10 rounded-xl bg-[#2c6e33] text-white flex items-center justify-center shrink-0 shadow-xs">
-          <i class="fa-solid fa-wand-magic-sparkles text-base animate-spin motion-reduce:animate-none"></i>
-        </div>
-        <div class="flex flex-col gap-1 flex-1 min-w-0">
-          <div class="flex items-center gap-2 flex-wrap">
-            <span class="px-2 py-0.5 rounded-full bg-[#2c6e33] text-white text-[0.68rem] font-bold uppercase tracking-wider">
-              Đang dịch ngầm
-            </span>
-            <span class="text-xs font-extrabold text-[#122815]">
-              {{ BULK_LANGS.find(b => b.code === bulkTranslateTask?.task.langCode)?.flag || '🌐' }}
-              {{ bulkTranslateTask?.task.langName || bulkTranslateTask?.task.langCode }}
-            </span>
-            <span class="text-xs text-[#667768] font-semibold">
-              — Tiến độ: {{ bulkTranslateTask?.task.processed || 0 }} / {{ bulkTranslateTask?.task.total || bulkTranslateTask?.dbTranslatingCount }} bài viết
-              ({{ Math.round(((bulkTranslateTask?.task.processed || 0) / (bulkTranslateTask?.task.total || 1)) * 100) }}%)
-            </span>
-          </div>
+    <!-- Banner: tiến trình dịch ngầm / hoàn tất / nhắc kiểm duyệt + nút xuất bản toàn bộ -->
+    <ArticleBulkTranslateBanner
+      :bulk-translate-task="bulkTranslateTask"
+      :completed-banner-msg="completedBannerMsg"
+      :loading="loading"
+      :current-page="pagination.page"
+      :bulk-langs="BULK_LANGS"
+      :ai-pending-translations="globalStats?.aiPendingTranslations ?? 0"
+      :ai-publishing="aiPublishing"
+      @refresh-table="fetchArticles"
+      @fetch-bulk-status="fetchBulkTranslateStatus"
+      @open-global-translate="openGlobalTranslateModal"
+      @dismiss-completed="completedBannerMsg = ''"
+      @bulk-publish-ai="bulkPublishAi"
+    />
 
-          <!-- Animated progress bar -->
-          <div class="w-full max-w-lg h-2 rounded-full bg-[#c8dcc9] overflow-hidden">
-            <div
-              class="h-full bg-[#2c6e33] transition-all duration-500 rounded-full"
-              :style="{ width: `${Math.max(5, Math.round(((bulkTranslateTask?.task.processed || 0) / (bulkTranslateTask?.task.total || 1)) * 100))}%` }"
-            ></div>
-          </div>
-
-          <p v-if="bulkTranslateTask?.task.currentArticleTitle" class="m-0 text-xs text-[#4A5545] truncate" :title="bulkTranslateTask.task.currentArticleTitle">
-            Đang xử lý: <strong>{{ bulkTranslateTask.task.currentArticleTitle }}</strong>
-          </p>
-
-          <!-- Alert nhắc nhở kiểm duyệt -->
-          <div class="mt-1 p-2 rounded-lg bg-[#fff8e1]/95 border border-[#ffe082] text-[0.7rem] text-[#735100] flex items-center gap-1.5 leading-tight">
-            <i class="fa-solid fa-triangle-exclamation text-xs shrink-0 text-[#b78103]"></i>
-            <span><strong>Lưu ý kiểm duyệt:</strong> Bài viết sau khi dịch AI xong cần rà soát lại trước khi bấm xuất bản (trừ khi đã chọn Xuất bản luôn).</span>
-          </div>
-        </div>
-      </div>
-
-      <div class="flex items-center gap-2 shrink-0">
-        <button
-          type="button"
-          class="px-3 py-1.5 rounded-lg border border-[#a2cca4] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#e4ece4] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
-          @click="fetchArticles(pagination.page); fetchBulkTranslateStatus()"
-        >
-          <i class="fa-solid fa-arrows-rotate text-[0.7rem]" :class="loading ? 'animate-spin' : ''"></i>
-          <span>Cập nhật bảng</span>
-        </button>
-      </div>
-    </div>
-
-    <!-- Completed Notice Banner -->
-    <div
-      v-else-if="completedBannerMsg"
-      class="bg-[#e4f2e5] border border-[#a2cca4] rounded-xl p-3.5 shadow-sm flex items-center justify-between gap-3 text-xs text-[#1e4620]"
-    >
-      <div class="flex items-center gap-2">
-        <i class="fa-solid fa-circle-check text-base text-[#2c6e33]"></i>
-        <span class="font-bold">{{ completedBannerMsg }}</span>
-      </div>
-      <button
-        type="button"
-        class="border-0 bg-transparent text-[#667768] hover:text-[#122815] cursor-pointer text-xs"
-        @click="completedBannerMsg = ''"
-      >✕</button>
-    </div>
-
-    <!-- Alert thông báo kiểm duyệt & xuất bản bản dịch (Luôn hiển thị khi không có tiến trình chạy ngầm) -->
-    <div
-      v-else
-      class="rounded-xl border border-[#ffe082] bg-[#fffdf7] p-3.5 shadow-2xs flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-[#735100]"
-    >
-      <div class="flex items-start sm:items-center gap-3">
-        <div class="w-8 h-8 rounded-lg bg-[#fff8e1] border border-[#ffe082] flex items-center justify-center shrink-0 text-[#b78103] text-sm mt-0.5 sm:mt-0">
-          <i class="fa-solid fa-triangle-exclamation"></i>
-        </div>
-        <div class="flex flex-col gap-0.5">
-          <span class="font-extrabold text-[#735100] text-sm">Lưu ý kiểm duyệt & Xuất bản bản dịch AI:</span>
-          <span class="text-[#8a6500]">
-            Các bài viết dịch bằng AI được lưu ở trạng thái <strong>Bản nháp AI</strong> (huy hiệu vàng <span class="px-1.5 py-0.2 rounded bg-[#fff8e1] text-[#b78103] border border-[#ffe082] font-bold text-[0.68rem]">EN</span>, <span class="px-1.5 py-0.2 rounded bg-[#fff8e1] text-[#b78103] border border-[#ffe082] font-bold text-[0.68rem]">ZH</span>...). Cán bộ bấm vào huy hiệu để <strong>Xem nhanh</strong> và rà soát trước khi bấm <strong>Xuất bản</strong> ra trang công khai.
-          </span>
-        </div>
-      </div>
-      <div class="flex flex-wrap items-center gap-2 shrink-0">
-        <button
-          type="button"
-          class="px-3.5 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#f0f7f1] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
-          @click="openGlobalTranslateModal"
-        >
-          <i class="fa-solid fa-wand-magic-sparkles text-[0.7rem]"></i>
-          <span>Dịch toàn bộ bài viết</span>
-        </button>
-        <button
-          type="button"
-          class="px-3.5 py-2 rounded-lg bg-[#2c6e33] text-white text-xs font-bold hover:bg-[#245928] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
-          :disabled="aiPublishing || (globalStats?.aiPendingTranslations ?? 0) === 0"
-          :title="(globalStats?.aiPendingTranslations ?? 0) === 0 ? 'Không có bản dịch AI nào sẵn sàng xuất bản' : `Xuất bản ${globalStats?.aiPendingTranslations ?? 0} bản dịch AI đang chờ`"
-          @click="bulkPublishAi"
-        >
-          <i class="fa-solid fa-rocket text-[0.7rem]"></i>
-          <span>Xuất bản toàn bộ bản dịch AI</span>
-          <span
-            v-if="(globalStats?.aiPendingTranslations ?? 0) > 0"
-            class="ml-0.5 inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-white text-[#2c6e33] text-[0.65rem] font-extrabold leading-none"
-          >{{ globalStats?.aiPendingTranslations }}</span>
-        </button>
-      </div>
-    </div>
+    <!-- Filter bar -->
     <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col sm:flex-row flex-wrap gap-3">
       <input
         type="text"
         v-model="search"
         placeholder="Tìm theo tiêu đề bài viết..."
+        aria-label="Tìm theo tiêu đề bài viết"
         @keyup.enter="fetchArticles(1)"
         class="flex-1 min-w-[180px] px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
       />
-      <select v-model="selectedType" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
+      <select v-model="selectedType" aria-label="Lọc theo thể loại bài viết" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
         <option value="">Tất cả Thể loại</option>
-        <option value="news">Bản tin & Tin tức</option>
-        <option value="role_model">Tấm gương tiêu biểu</option>
-        <option value="reintegration">Mô hình tái hòa nhập</option>
-        <option value="document">Văn bản pháp luật</option>
-        <option value="faq">Giải đáp pháp luật</option>
+        <option v-for="ct in contentTypes" :key="ct.id" :value="ct.slug">{{ ct.name }}</option>
       </select>
       <!-- Parent category filter -->
       <select
         v-model="selectedParentCategoryId"
+        aria-label="Lọc theo danh mục cha"
         @change="fetchArticles(1)"
         class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
       >
@@ -974,13 +687,14 @@ onUnmounted(() => {
       <select
         v-if="selectedParentCategoryId && subCategoryOptions.length > 0"
         v-model="selectedCategoryId"
+        aria-label="Lọc theo danh mục con"
         @change="fetchArticles(1)"
         class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
       >
         <option :value="null">Tất cả danh mục con</option>
         <option v-for="sub in subCategoryOptions" :key="sub.id" :value="sub.id">{{ sub.name }}</option>
       </select>
-      <select v-model="selectedStatus" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
+      <select v-model="selectedStatus" aria-label="Lọc theo trạng thái bài viết" @change="fetchArticles(1)" class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]">
         <option value="">Tất cả Trạng thái</option>
         <option value="published">Đã Xuất Bản</option>
         <option value="draft">Bản Nháp (Draft)</option>
@@ -1017,10 +731,21 @@ onUnmounted(() => {
         <option value="missing_lo">Chưa dịch Tiếng Lào (LO)</option>
       </select>
       <button
+        type="button"
+        aria-label="Tìm kiếm bài viết theo bộ lọc"
         class="inline-flex items-center gap-2 bg-[#2c6e33] hover:bg-[#1e4620] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer border-0 transition-colors"
         @click="fetchArticles(1)"
       >
-        <i class="fa-regular fa-magnifying-glass"></i> Tìm kiếm
+        <i class="fa-regular fa-magnifying-glass" aria-hidden="true"></i> Tìm kiếm
+      </button>
+      <button
+        v-if="hasActiveFilters"
+        type="button"
+        aria-label="Xóa toàn bộ bộ lọc"
+        class="inline-flex items-center gap-1.5 bg-white border border-[#c8d6c9] text-[#667768] hover:text-[#d12420] hover:border-[#e2b3b3] font-bold px-3.5 py-2.5 rounded-lg cursor-pointer transition-colors"
+        @click="resetFilters"
+      >
+        <i class="fa-solid fa-xmark" aria-hidden="true"></i> Xóa bộ lọc
       </button>
     </div>
 
@@ -1095,7 +820,7 @@ onUnmounted(() => {
             <p class="text-[0.85rem] font-semibold text-[#122815] line-clamp-2 m-0">{{ a.title }}</p>
             <div class="flex flex-wrap items-center gap-2 mt-1.5">
               <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[0.68rem] font-bold" :class="typeColors[a.type] || 'bg-gray-100 text-gray-600'">
-                <i :class="typeIcons[a.type]" class="text-[0.6rem]"></i>{{ typeLabels[a.type] || a.type }}
+                <i :class="typeIcons[a.type]" class="text-[0.6rem]"></i>{{ typeNameMap[a.type] || a.type }}
               </span>
               <span class="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[0.68rem] font-bold" :class="a.status === 'published' ? 'bg-[#e4f2e5] text-[#2c6e33]' : a.status === 'draft' ? 'bg-[#fff8e1] text-[#b78103]' : 'bg-[#f5f5f5] text-[#888]'">
                 {{ a.status === 'published' ? 'Đã đăng' : (a.status === 'draft' ? 'Nháp' : 'Lưu trữ') }}
@@ -1197,7 +922,7 @@ onUnmounted(() => {
                   :class="typeColors[a.type] || 'bg-gray-100 text-gray-600'"
                 >
                   <i :class="typeIcons[a.type] || 'fa-solid fa-file'" class="text-[0.65rem]"></i>
-                  {{ typeLabels[a.type] || a.type }}
+                  {{ typeNameMap[a.type] || a.type }}
                 </span>
               </td>
               <!-- Category with hierarchy -->
@@ -1337,413 +1062,29 @@ onUnmounted(() => {
     />
 
     <!-- Modal: thống kê lượt xem & tăng lượt xem ảo -->
-    <div
-      v-if="statsArticle"
-      class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="stats-modal-title"
-      @click.self="closeStats"
-    >
-      <div class="w-full max-w-2xl rounded-xl border border-[#e2ece3] bg-white shadow-lg">
-        <div class="flex items-start justify-between gap-3 border-b border-[#eef2ee] px-5 py-4">
-          <div class="min-w-0">
-            <h2 id="stats-modal-title" class="m-0 text-[1.05rem] font-extrabold text-[#122815]">Thống kê lượt xem</h2>
-            <p class="m-0 mt-1 line-clamp-2 text-[0.82rem] text-[#667768]">{{ statsArticle.title }}</p>
-          </div>
-          <button
-            type="button"
-            class="shrink-0 rounded-lg border-0 bg-none p-1.5 text-[#667768] hover:text-[#122815] cursor-pointer"
-            aria-label="Đóng"
-            @click="closeStats"
-          ><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
-        </div>
+    <ArticleBoostStatsPanel
+      :article="statsArticle"
+      @close="closeStats"
+      @boost-applied="onBoostApplied"
+    />
 
-        <div class="px-5 py-4">
-          <div v-if="statsLoading" class="py-10 text-center text-[0.85rem] text-[#667768]">Đang tải số liệu lượt xem...</div>
+    <!-- Modal: Xem nhanh bản dịch -->
+    <ArticleQuickViewModal
+      :show="showQuickViewModal"
+      :article-id="quickViewArticle ? Number(quickViewArticle.id) : null"
+      :article-title="quickViewArticle?.title ?? ''"
+      :lang-code="quickViewLang"
+      :bulk-langs="BULK_LANGS"
+      @close="closeQuickView"
+      @status-toggled="fetchArticles(pagination.page)"
+    />
 
-          <div v-else-if="statsError" class="rounded-lg border border-dashed border-[#e2b3b3] bg-[#fdf6f6] px-4 py-6 text-center">
-            <p class="m-0 text-[0.85rem] font-semibold text-[#b01f1b]">{{ statsError }}</p>
-            <button
-              type="button"
-              class="mt-3 rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] cursor-pointer hover:bg-[#f0f7f1]"
-              @click="loadStats"
-            >Thử lại</button>
-          </div>
-
-          <div v-else-if="statsData" class="flex flex-col gap-5">
-            <!--
-              Ba ô, không bao giờ chỉ một. Con số công khai là tổng, nhưng cán bộ
-              phải đọc được ngay phần nào là thật và phần nào do quản trị viên
-              cộng vào.
-            -->
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-              <div class="rounded-lg border border-[#e2ece3] bg-[#f8faf8] px-4 py-3">
-                <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-[#667768]">Tổng hiển thị</p>
-                <p class="m-0 mt-1 text-[1.35rem] font-extrabold text-[#122815]">{{ formatViews(statsData.totalDisplayed) }}</p>
-              </div>
-              <div class="rounded-lg border border-[#cfe4d1] bg-[#f0f7f1] px-4 py-3">
-                <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-[#2c6e33]">Lượt xem thật</p>
-                <p class="m-0 mt-1 text-[1.35rem] font-extrabold text-[#1e4620]">{{ formatViews(statsData.totalReal) }}</p>
-              </div>
-              <div class="rounded-lg border border-[#f0dcae] bg-[#fff8e1] px-4 py-3">
-                <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-[#b78103]">Lượt xem ảo</p>
-                <p class="m-0 mt-1 text-[1.35rem] font-extrabold text-[#765b00]">{{ formatViews(statsData.totalFabricated) }}</p>
-              </div>
-            </div>
-
-            <!-- Lượt tăng dần đang chạy -->
-            <div v-if="runningBoost" class="rounded-lg border border-[#f0dcae] bg-[#fffdf6] px-4 py-3">
-              <div class="flex flex-wrap items-center justify-between gap-2">
-                <p class="m-0 text-[0.82rem] font-bold text-[#765b00]">
-                  Đang cộng dần: {{ formatViews(runningBoost.appliedAmount) }} / {{ formatViews(runningBoost.totalAmount) }} lượt
-                  ({{ formatViews(runningBoost.durationMinutes) }} phút)
-                </p>
-                <button
-                  type="button"
-                  class="rounded-lg border border-[#d12420] bg-white px-3 py-1.5 text-[0.8rem] font-bold text-[#d12420] cursor-pointer hover:bg-[#fdf6f6]"
-                  @click="cancelBoost"
-                >Huỷ lượt tăng</button>
-              </div>
-              <div class="mt-2 h-2 w-full overflow-hidden rounded-full bg-[#f0e6c8]">
-                <div class="h-full rounded-full bg-[#b78103] transition-all" :style="{ width: `${boostProgress}%` }"></div>
-              </div>
-              <p class="m-0 mt-1.5 text-[0.75rem] text-[#8a7a4a]">Kết thúc lúc {{ new Date(runningBoost.endsAt).toLocaleString('vi-VN') }}</p>
-            </div>
-
-            <!-- Nguồn truy cập (chỉ lượt xem thật) -->
-            <div>
-              <h3 class="m-0 mb-2 text-[0.85rem] font-extrabold text-[#122815]">
-                Nguồn truy cập <span class="font-medium text-[#667768]">— {{ statsData.days }} ngày gần nhất, chỉ tính lượt xem thật</span>
-              </h3>
-              <table v-if="statsData.bySource.length" class="w-full border-collapse text-left text-[0.82rem]">
-                <thead>
-                  <tr>
-                    <th class="border-b border-[#e2ece3] bg-[#f8faf8] px-3 py-2 font-bold text-[#667768]">Nguồn</th>
-                    <th class="border-b border-[#e2ece3] bg-[#f8faf8] px-3 py-2 text-right font-bold text-[#667768]">Lượt xem</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="row in statsData.bySource" :key="row.sourceCategory">
-                    <td class="border-b border-[#eef2ee] px-3 py-2 text-[#445546]">{{ sourceLabels[row.sourceCategory] || row.sourceCategory }}</td>
-                    <td class="border-b border-[#eef2ee] px-3 py-2 text-right font-bold text-[#122815]">{{ formatViews(row.views) }}</td>
-                  </tr>
-                </tbody>
-              </table>
-              <p v-else class="m-0 rounded-lg border border-dashed border-[#e2ece3] px-3 py-4 text-center text-[0.82rem] text-[#8a9f8c]">
-                Chưa ghi nhận lượt xem thật nào trong khoảng thời gian này.
-              </p>
-            </div>
-
-            <!-- Diễn biến theo ngày -->
-            <div>
-              <h3 class="m-0 mb-2 text-[0.85rem] font-extrabold text-[#122815]">Diễn biến theo ngày</h3>
-              <ul v-if="statsData.daily.length" class="m-0 flex list-none flex-col gap-1.5 p-0">
-                <li v-for="row in statsData.daily" :key="row.day" class="flex items-center gap-3">
-                  <span class="w-20 shrink-0 text-[0.78rem] text-[#667768]">{{ new Date(row.day).toLocaleDateString('vi-VN') }}</span>
-                  <span class="h-2 flex-1 overflow-hidden rounded-full bg-[#eef2ee]">
-                    <span class="block h-full rounded-full bg-[#2c6e33]" :style="{ width: dailyPeak ? `${(row.total / dailyPeak) * 100}%` : '0%' }"></span>
-                  </span>
-                  <span class="w-32 shrink-0 text-right text-[0.78rem] text-[#445546]">
-                    <strong class="text-[#122815]">{{ formatViews(row.total) }}</strong>
-                    <span class="text-[#8a9f8c]"> ({{ formatViews(row.real) }} thật / {{ formatViews(row.fabricated) }} ảo)</span>
-                  </span>
-                </li>
-              </ul>
-              <p v-else class="m-0 rounded-lg border border-dashed border-[#e2ece3] px-3 py-4 text-center text-[0.82rem] text-[#8a9f8c]">
-                Bài viết chưa có lượt xem nào được ghi nhận.
-              </p>
-            </div>
-
-            <!-- Tăng lượt xem ảo -->
-            <div class="rounded-lg border border-[#e2ece3] bg-[#f8faf8] px-4 py-4">
-              <h3 class="m-0 text-[0.85rem] font-extrabold text-[#122815]">Tăng lượt xem ảo</h3>
-              <p class="m-0 mt-1 text-[0.78rem] text-[#667768]">
-                Lượt xem ảo được lưu tách khỏi lượt xem thật và mọi thao tác đều ghi vào nhật ký hoạt động kèm tên tài khoản thực hiện.
-              </p>
-              <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
-                <label class="flex flex-col gap-1">
-                  <span class="text-[0.75rem] font-bold text-[#667768]">Chế độ</span>
-                  <select
-                    v-model="boostMode"
-                    class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
-                  >
-                    <option value="instant">Cộng ngay</option>
-                    <option value="gradual">Cộng dần theo thời gian</option>
-                  </select>
-                </label>
-                <label class="flex flex-col gap-1">
-                  <span class="text-[0.75rem] font-bold text-[#667768]">Số lượt xem</span>
-                  <input
-                    v-model.number="boostAmount"
-                    type="number"
-                    min="1"
-                    max="1000000"
-                    step="1"
-                    placeholder="Ví dụ: 500"
-                    class="w-40 rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
-                  />
-                </label>
-                <label v-if="boostMode === 'gradual'" class="flex flex-col gap-1">
-                  <span class="text-[0.75rem] font-bold text-[#667768]">Thời lượng (phút)</span>
-                  <input
-                    v-model.number="boostMinutes"
-                    type="number"
-                    min="1"
-                    max="10080"
-                    step="1"
-                    class="w-40 rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
-                  />
-                </label>
-                <button
-                  type="button"
-                  class="inline-flex items-center gap-2 rounded-lg border-0 bg-[#2c6e33] px-4 py-2.5 font-bold text-white transition-colors hover:bg-[#1e4620] disabled:cursor-not-allowed disabled:opacity-50"
-                  :disabled="boostSubmitting"
-                  @click="submitBoost"
-                >
-                  <i class="fa-solid fa-arrow-up-right-dots" aria-hidden="true"></i>
-                  {{ boostSubmitting ? 'Đang thực hiện...' : 'Thực hiện' }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal 1: Xem nhanh bản dịch -->
-    <div
-      v-if="showQuickViewModal && quickViewData"
-      class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      @click.self="showQuickViewModal = false"
-    >
-      <div class="w-full max-w-3xl rounded-xl border border-[#e2ece3] bg-white shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-        <!-- Header -->
-        <div class="flex items-center justify-between gap-3 border-b border-[#eef2ee] px-5 py-4 bg-[#f8faf8]">
-          <div class="flex items-center gap-2">
-            <span class="text-xl leading-none">{{ BULK_LANGS.find(l => l.code === quickViewData!.langCode)?.flag }}</span>
-            <div>
-              <h2 class="m-0 text-base font-extrabold text-[#122815]">
-                Bản dịch {{ BULK_LANGS.find(l => l.code === quickViewData!.langCode)?.label || quickViewData!.langCode }}
-              </h2>
-              <p class="m-0 text-xs text-[#667768]">Bài viết gốc: {{ quickViewData.articleTitle }}</p>
-            </div>
-          </div>
-          <div class="flex items-center gap-2">
-            <span
-              class="px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider"
-              :class="quickViewData.status === 'published' ? 'bg-[#e4f2e5] text-[#1e4620]' : 'bg-[#fff8e1] text-[#b78103]'"
-            >
-              {{ quickViewData.status === 'published' ? 'Đã xuất bản' : 'Bản nháp AI' }}
-            </span>
-            <button
-              type="button"
-              class="rounded-lg border-0 bg-none p-1.5 text-[#667768] hover:text-[#122815] cursor-pointer"
-              @click="showQuickViewModal = false"
-            ><i class="fa-solid fa-xmark text-sm"></i></button>
-          </div>
-        </div>
-
-        <!-- Body -->
-        <div class="px-6 py-4 overflow-y-auto flex-1 flex flex-col gap-4">
-          <div v-if="quickViewLoading" class="py-12 text-center text-xs text-[#667768] flex items-center justify-center gap-2">
-            <i class="fa-solid fa-circle-notch fa-spin text-sm text-[#2c6e33]"></i> Đang tải bản dịch...
-          </div>
-
-          <template v-else>
-            <!-- Title -->
-            <div class="flex flex-col gap-1">
-              <span class="text-xs font-bold text-[#667768] uppercase tracking-wide">Tiêu đề dịch:</span>
-              <h3 class="m-0 text-base font-bold text-[#1e4620]">{{ quickViewData.title }}</h3>
-            </div>
-
-            <!-- Excerpt -->
-            <div v-if="quickViewData.excerpt" class="flex flex-col gap-1 bg-[#fcfdfc] p-3 rounded-lg border border-[#eef2ee]">
-              <span class="text-xs font-bold text-[#667768] uppercase tracking-wide">Tóm tắt:</span>
-              <p class="m-0 text-xs leading-relaxed text-[#4a5545]">{{ quickViewData.excerpt }}</p>
-            </div>
-
-            <!-- Content HTML -->
-            <div class="flex flex-col gap-1">
-              <span class="text-xs font-bold text-[#667768] uppercase tracking-wide">Nội dung chi tiết (HTML):</span>
-              <div class="p-4 rounded-lg border border-[#e2ece3] bg-[#fafcfa] text-xs leading-relaxed text-[#1f2937] max-h-80 overflow-y-auto font-sans" v-html="quickViewData.content || '(Chưa có nội dung)'"></div>
-            </div>
-          </template>
-        </div>
-
-        <!-- Footer Actions -->
-        <div class="flex items-center justify-between border-t border-[#eef2ee] px-6 py-3.5 bg-[#f8faf8]">
-          <nuxt-link
-            :to="`/admin/content/articles/${quickViewData.articleId}`"
-            class="text-xs font-bold text-[#2c6e33] hover:underline flex items-center gap-1.5 no-underline"
-          >
-            <i class="fa-solid fa-pen-to-square"></i> Mở trong trang soạn thảo
-          </nuxt-link>
-
-          <div class="flex items-center gap-2">
-            <button
-              type="button"
-              class="px-4 py-2 rounded-lg text-xs font-bold cursor-pointer border transition-colors"
-              :class="quickViewData.status === 'published'
-                ? 'border-[#c8d6c9] bg-white text-[#d12420] hover:bg-[#fff5f4]'
-                : 'border-[#2c6e33] bg-[#e4f2e5] text-[#1e4620] hover:bg-[#d4ebd6]'"
-              @click="toggleQuickViewStatus"
-            >
-              {{ quickViewData.status === 'published' ? 'Gỡ xuất bản' : 'Xuất bản ngay' }}
-            </button>
-            <button
-              type="button"
-              class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-100 cursor-pointer"
-              @click="showQuickViewModal = false"
-            >Đóng</button>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Modal 2: Dịch toàn bộ bài viết chưa có bản dịch -->
-    <div
-      v-if="showGlobalTranslateModal"
-      class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center"
-      role="dialog"
-      aria-modal="true"
-      @click.self="showGlobalTranslateModal = false"
-    >
-      <div class="w-full max-w-xl rounded-xl border border-[#e2ece3] bg-white shadow-xl overflow-hidden flex flex-col">
-        <!-- Header -->
-        <div class="flex items-center justify-between gap-3 border-b border-[#eef2ee] px-5 py-4 bg-[#f8faf8]">
-          <div class="flex items-center gap-2">
-            <span class="w-8 h-8 rounded-lg bg-[#1e4620] text-white flex items-center justify-center text-sm shadow-xs">
-              <i class="fa-solid fa-globe"></i>
-            </span>
-            <div>
-              <h2 class="m-0 text-base font-extrabold text-[#122815]">Dịch toàn bộ bài viết bằng AI</h2>
-              <p class="m-0 text-xs text-[#667768]">Tự động quét và xếp lịch dịch cho các bài viết đã xuất bản chưa có bản dịch</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            class="rounded-lg border-0 bg-none p-1.5 text-[#667768] hover:text-[#122815] cursor-pointer"
-            @click="showGlobalTranslateModal = false"
-          ><i class="fa-solid fa-xmark text-sm"></i></button>
-        </div>
-
-        <!-- Body -->
-        <div class="px-6 py-5 flex flex-col gap-4">
-          <div v-if="globalStatsLoading" class="py-8 text-center text-xs text-[#667768] flex items-center justify-center gap-2">
-            <i class="fa-solid fa-circle-notch fa-spin text-sm text-[#2c6e33]"></i> Đang thống kê bài viết...
-          </div>
-
-          <template v-else-if="globalStats">
-            <div class="p-3 bg-[#f0f7f1] border border-[#c8dcc9] rounded-lg text-xs text-[#1e4620]">
-              Tổng số bài viết đã xuất bản trên cổng: <strong class="text-sm font-extrabold">{{ globalStats.totalArticles }}</strong> bài viết.
-            </div>
-
-            <div class="flex flex-col gap-2">
-              <div class="flex items-center justify-between">
-                <label class="text-xs font-bold text-[#122815]">Chọn các ngôn ngữ muốn dịch toàn bộ:</label>
-                <div class="flex items-center gap-2 text-xs">
-                  <button
-                    type="button"
-                    class="text-[#2c6e33] hover:underline bg-transparent border-0 cursor-pointer p-0 font-bold"
-                    @click="selectedGlobalTargetLangs = globalStats.languages.map(l => l.code)"
-                  >Chọn tất cả</button>
-                  <span class="text-[#c8d6c9]">|</span>
-                  <button
-                    type="button"
-                    class="text-[#667768] hover:underline bg-transparent border-0 cursor-pointer p-0"
-                    @click="selectedGlobalTargetLangs = []"
-                  >Bỏ chọn</button>
-                </div>
-              </div>
-
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2 max-h-64 overflow-y-auto pr-1">
-                <label
-                  v-for="l in globalStats.languages"
-                  :key="l.code"
-                  class="flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all"
-                  :class="selectedGlobalTargetLangs.includes(l.code) ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50'"
-                >
-                  <div class="flex items-center gap-2.5">
-                    <input
-                      type="checkbox"
-                      :value="l.code"
-                      v-model="selectedGlobalTargetLangs"
-                      class="h-4 w-4 accent-[#2c6e33] rounded cursor-pointer"
-                    />
-                    <span class="text-base leading-none">{{ BULK_LANGS.find(b => b.code === l.code)?.flag || '🌐' }}</span>
-                    <span class="text-xs font-bold text-[#122815]">{{ l.name }}</span>
-                  </div>
-                  <span
-                    class="px-2 py-0.5 rounded-full text-[0.65rem] font-bold"
-                    :class="l.missing === 0 ? 'bg-[#e4f2e5] text-[#1e4620]' : 'bg-[#fff8e1] text-[#b78103]'"
-                  >
-                    {{ l.missing === 0 ? 'Đã đủ' : `Thiếu ${l.missing} bài` }}
-                  </span>
-                </label>
-              </div>
-            </div>
-            <!-- Trạng thái sau khi dịch -->
-            <div class="flex flex-col gap-1.5">
-              <label class="text-xs font-bold text-[#122815]">Trạng thái bản dịch sau khi AI dịch xong:</label>
-              <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                <label
-                  class="flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-all"
-                  :class="globalTargetStatus === 'ai_draft' ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50'"
-                >
-                  <input type="radio" value="ai_draft" v-model="globalTargetStatus" class="accent-[#2c6e33] mt-0.5" />
-                  <div class="flex flex-col">
-                    <span class="text-xs font-bold text-[#122815]">📝 Lưu làm Bản nháp AI</span>
-                    <span class="text-[0.68rem] text-[#667768] mt-0.5">Rà soát, kiểm tra lại rồi mới xuất bản (Khuyên dùng)</span>
-                  </div>
-                </label>
-
-                <label
-                  class="flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-all"
-                  :class="globalTargetStatus === 'published' ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50'"
-                >
-                  <input type="radio" value="published" v-model="globalTargetStatus" class="accent-[#2c6e33] mt-0.5" />
-                  <div class="flex flex-col">
-                    <span class="text-xs font-bold text-[#122815]">🚀 Xuất bản luôn</span>
-                    <span class="text-[0.68rem] text-[#667768] mt-0.5">Hiển thị ngay lập tức ra trang công khai</span>
-                  </div>
-                </label>
-              </div>
-            </div>
-
-            <!-- Alert nhắc nhở kiểm duyệt -->
-            <div class="p-3 bg-[#fff8e1] border border-[#ffe082] rounded-lg text-xs text-[#8a6500] flex items-start gap-2.5">
-              <i class="fa-solid fa-triangle-exclamation text-base shrink-0 text-[#b78103] mt-0.5"></i>
-              <div>
-                <strong class="font-extrabold text-[#735100]">Lưu ý kiểm duyệt:</strong> 
-                {{ globalTargetStatus === 'ai_draft'
-                  ? 'Bản dịch AI sẽ được lưu ở trạng thái Bản nháp AI. Ban biên tập nên kiểm tra lại độ chuẩn xác của thuật ngữ trước khi bấm xuất bản.'
-                  : 'Bản dịch AI sẽ được tự động xuất bản công khai ngay khi hoàn tất. Bạn có thể vào chỉnh sửa thủ công bất kỳ lúc nào.' }}
-              </div>
-            </div>
-          </template>
-        </div>
-
-        <!-- Footer -->
-        <div class="flex items-center justify-end gap-2 border-t border-[#eef2ee] px-6 py-4 bg-[#f8faf8]">
-          <button
-            type="button"
-            class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-100 cursor-pointer"
-            @click="showGlobalTranslateModal = false"
-          >Hủy</button>
-          <button
-            type="button"
-            class="px-5 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-2 shadow-xs disabled:opacity-50"
-            :disabled="globalTranslating || !globalStats"
-            @click="startGlobalTranslation"
-          >
-            <i class="fa-solid fa-wand-magic-sparkles text-xs" :class="globalTranslating ? 'animate-spin' : ''"></i>
-            <span>{{ globalTranslating ? 'Đang kích hoạt...' : 'Bắt đầu dịch hàng loạt' }}</span>
-          </button>
-        </div>
-      </div>
-    </div>
+    <!-- Modal: Dịch toàn bộ bài viết chưa có bản dịch -->
+    <ArticleGlobalTranslateModal
+      :show="showGlobalTranslateModal"
+      :bulk-langs="BULK_LANGS"
+      @close="showGlobalTranslateModal = false"
+      @started="onGlobalTranslateStarted"
+    />
   </div>
 </template>

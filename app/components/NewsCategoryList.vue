@@ -263,6 +263,7 @@
 import { computed } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
+import type { PublicArticleListItem } from '~/utils/public-types'
 
 const { t, currentLang } = useI18n()
 
@@ -293,7 +294,7 @@ const { data, pending, error, refresh } = await useAsyncData(
   },
 )
 
-const newsList = computed(() => (data.value as { articles?: any[] })?.articles || [])
+const newsList = computed(() => (data.value as { articles?: PublicArticleListItem[] })?.articles || [])
 const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
 
 const { data: mostReadData, pending: mostReadPending } = await useAsyncData(
@@ -307,5 +308,5 @@ const { data: mostReadData, pending: mostReadPending } = await useAsyncData(
   },
 )
 
-const mostRead = computed(() => (mostReadData.value as { articles?: any[] })?.articles || [])
+const mostRead = computed(() => (mostReadData.value as { articles?: PublicArticleListItem[] })?.articles || [])
 </script>

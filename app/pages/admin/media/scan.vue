@@ -282,7 +282,7 @@ onUnmounted(() => { stopPolling(); stopScanPolling() })
 
 // ─── Đổi domain URL R2 ─────────────────────────────────────────────────────────
 // Đổi domain CDN R2 (cùng account + bucket) — chỉ update URL trong DB, không
-// tải file. Chạy < 2 giây. Tự backup SQL trước (snapshot recover thủ công).
+// tải file. Chạy &lt; 2 giây. Tự backup SQL trước (snapshot recover thủ công).
 const repointing = ref(false)
 const oldDomain = ref('')
 const newDomain = ref('')
@@ -319,7 +319,7 @@ const repointUrls = async () => {
 // `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi file local đã
 // bị xoá (Local 0 / R2 3212). Kèm `media.url` thiếu scheme `cdn1...` → grid
 // thành `http://localhost:3000/cdn1...`. Nút này vá cả hai trong 1 transaction,
-// tự backup SQL trước, idempotent (< vài giây).
+// tự backup SQL trước, idempotent (&lt; vài giây).
 const repairing = ref(false)
 const repairResult = ref<{ mediaFixed: number; articlesFixed: number; backupStamp: string | null } | null>(null)
 
@@ -689,7 +689,7 @@ const runSelfHeal = async (dryRun: boolean) => {
         <i class="fa-solid" :class="repairing ? 'fa-spinner animate-spin' : 'fa-wand-magic-sparkles'" aria-hidden="true"></i>
         {{ repairing ? 'Đang vá...' : 'Vá URL all bài viết' }}
       </button>
-      <p v-if="repairing" class="m-0 text-sm text-[#667768]">Đang backup SQL + UPDATE... (< vài giây)</p>
+      <p v-if="repairing" class="m-0 text-sm text-[#667768]">Đang backup SQL + UPDATE... (&lt; vài giây)</p>
       <div v-if="repairResult" class="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
           <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Media vá</p>
@@ -712,7 +712,7 @@ const runSelfHeal = async (dryRun: boolean) => {
         <i class="fa-solid fa-arrow-right-arrow-left text-2xl text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
         <div>
           <h2 class="m-0 text-base font-bold text-[#122815]">Đổi domain URL R2</h2>
-          <p class="m-0 mt-1 text-[0.82rem] text-[#667768]">Đổi domain CDN R2 (cùng account + bucket) — tự cập nhật URL trong <code class="font-mono">media.url</code> + <code class="font-mono">articles.content</code>. File không tải lại (đã ở R2). Chạy < 2 giây. Tự backup SQL trước.</p>
+          <p class="m-0 mt-1 text-[0.82rem] text-[#667768]">Đổi domain CDN R2 (cùng account + bucket) — tự cập nhật URL trong <code class="font-mono">media.url</code> + <code class="font-mono">articles.content</code>. File không tải lại (đã ở R2). Chạy &lt; 2 giây. Tự backup SQL trước.</p>
         </div>
       </header>
 
@@ -754,7 +754,7 @@ const runSelfHeal = async (dryRun: boolean) => {
           {{ repointing ? 'Đang đổi...' : 'Đổi URL R2' }}
         </button>
 
-        <p v-if="repointing" class="m-0 text-sm text-[#667768]">Đang backup SQL + REPLACE URL... (< 2 giây)</p>
+        <p v-if="repointing" class="m-0 text-sm text-[#667768]">Đang backup SQL + REPLACE URL... (&lt; 2 giây)</p>
 
         <div v-if="repointResult" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
           <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">

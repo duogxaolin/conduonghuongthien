@@ -40,7 +40,15 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: '22'
+  # Node 22 has a test-runner IPC bug under `--experimental-test-module-mocks`:
+  # `Unable to deserialize cloned data due to invalid or unsupported version` at
+  # `processRawBuffer` (node:internal/test_runner/runner). It crashes integration
+  # suites whose import graph touches native modules (media-queue,
+  # upload-concurrency) even when those suites use no mocks themselves — the
+  # flag clones the whole module graph for every test file. Reproduced locally
+  # in node:22-slim (v22.23.3) and gone in node:24-slim + node:26. `engines`
+  # already permits ^24.11.0, so CI runs on 24 LTS.
+  NODE_VERSION: '24'
   # Every job needs this, including plain `npm ci`: postinstall runs
   # `nuxt prepare`, which evaluates nuxt.config in production mode, and the
   # config refuses to evaluate without an analytics HMAC secret (>= 32 chars).
@@ -331,15 +339,23 @@ jobs:
           MEDIA_SELF_HEAL_PASSWORD: test_root_password
         run: |
           set -euo pipefail
-          # Chạy lại với một marker: nếu suite tự SKIP, `--test` trả về 0 và không
-          # có subtest nào. Dò số subtest thực sự chạy bằng cách đếm "# Subtest:"
-          # trong output. Phải chạy lại vì output của step trước không truy cập
-          # được từ step này.
+          # Chạy lại để dò số subtest thực sự chạy. Nếu suite tự SKIP (switch env
+          # không set), `--test` trả 0 nhưng không có test nào chạy. Node 24+ đổi
+          # format output — không còn marker `# Subtest:`, thay vào đó có dòng
+          # summary `ℹ tests N` + `ℹ skipped M`. Guard lỗi khi tổng số test = 0
+          # hoặc khi TẤT CẢ test bị skip (N == M), vì hai trạng thái đó đều nghĩa
+          # là suite không thật sự chạy. Phải chạy lại vì output step trước không
+          # truy cập được từ step này. (Node 22 dùng `# Subtest:`; guard cũ dựa
+          # vào marker đófail trên Node 24+ — đã trả giá 1 PR đỏ.)
           out=$(node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test ${{ matrix.file }} 2>&1 || true)
           echo "$out"
-          subtests=$(printf '%s\n' "$out" | grep -c '# Subtest:' || true)
-          if [ "$subtests" -eq 0 ]; then
-            echo "::error::Suite ${{ matrix.suite }} ran zero subtests — the switch ${{ matrix.switch }} is not wired in matrix.include, or the suite silently skipped."
+          tests_total=$(printf '%s\n' "$out" | grep -oE 'tests [0-9]+' | head -1 | grep -oE '[0-9]+')
+          tests_skipped=$(printf '%s\n' "$out" | grep -oE 'skipped [0-9]+' | head -1 | grep -oE '[0-9]+')
+          tests_total=${tests_total:-0}
+          tests_skipped=${tests_skipped:-0}
+          ran=$((tests_total - tests_skipped))
+          if [ "$tests_total" -eq 0 ] || [ "$ran" -le 0 ]; then
+            echo "::error::Suite ${{ matrix.suite }} ran zero subtests (total=$tests_total skipped=$tests_skipped) — the switch ${{ matrix.switch }} is not wired in matrix.include, or the suite silently skipped."
             exit 1
           fi
 

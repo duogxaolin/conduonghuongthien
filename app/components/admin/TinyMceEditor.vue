@@ -12,7 +12,7 @@ const props = withDefaults(defineProps<{
   modelValue: string
   height?: number
   placeholder?: string
-}>(), { modelValue: '', height: 320, placeholder: '' })
+}>(), { modelValue: '', height: 480, placeholder: '' })
 
 const emit = defineEmits<{ (e: 'update:modelValue', value: string): void }>()
 
@@ -27,15 +27,15 @@ let internalUpdate = false
 // auth-gated admin tool); fall back to the CDN only if the local asset is missing.
 const loadScript = () => new Promise<void>((resolve) => {
   if ((window as WindowWithTinyMce).tinymce) { resolve(); return }
+  // Self-host only — TinyMCE đã có đủ 28 file trong public/assets/tinymce/.
+  // Không fallback ra cdnjs.cloudflare.com: cổng Bộ Công an không nên tải JS
+  // từ bên thứ ba, và file local luôn có (đã commit vào repo).
   const script = document.createElement('script')
   script.src = '/assets/tinymce/tinymce.min.js'
   script.onload = () => resolve()
   script.onerror = () => {
-    const fallback = document.createElement('script')
-    fallback.src = 'https://cdnjs.cloudflare.com/ajax/libs/tinymce/6.8.6/tinymce.min.js'
-    fallback.referrerPolicy = 'no-referrer'
-    fallback.onload = () => resolve()
-    document.head.appendChild(fallback)
+    console.error('TinyMCE local assets missing — chạy npm run build lại, hoặc kiểm public/assets/tinymce/')
+    resolve()
   }
   document.head.appendChild(script)
 })
@@ -94,6 +94,7 @@ onMounted(async () => {
     content_style: `
       body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; font-size: 14px; line-height: 1.6; padding: 12px; color: #1a1a1a; }
       img { max-width: 100%; height: auto; border-radius: 8px; }
+      iframe, video { max-width: 100%; height: auto; }
       blockquote { border-left: 4px solid #2c6e33; margin: 1em 0; padding-left: 1em; color: #555; }
       table { border-collapse: collapse; width: 100%; }
       table td, table th { border: 1px solid #ddd; padding: 8px; }
@@ -114,6 +115,9 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
+  <!-- Editor full container — không giới hạn chiều ngang. Ảnh/video chèn vào
+       bị giới hạn trong content_style (max-width:100%) để preview khớp render
+       công khai, còn editor chiếm trọn vẹn section để thao tác thoải mái. -->
   <div class="overflow-hidden rounded-lg border border-gray-300">
     <textarea :id="editorId"></textarea>
   </div>

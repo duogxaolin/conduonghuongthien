@@ -55,10 +55,10 @@ const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
 
 // SEO: prefer page meta, fall back to the original homepage defaults.
 useSeoMeta({
-  title: () => page.value?.seoTitle || 'Con Đường Hướng Thiện - Hỗ trợ tái hòa nhập cộng đồng',
-  description: () => page.value?.seoDescription || 'Cổng thông tin điện tử C11 Bộ Công an hỗ trợ người hoàn lương tái hòa nhập cộng đồng: vay vốn QĐ 22/2023, đào tạo nghề, xóa án tích, tư vấn tâm lý, kết nối doanh nghiệp.',
-  ogTitle: () => page.value?.seoTitle || 'Con Đường Hướng Thiện - Hỗ trợ tái hòa nhập cộng đồng',
-  ogDescription: () => page.value?.seoDescription || 'Hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý giúp người chấp hành xong án phạt tái hòa nhập cộng đồng.',
+  title: () => page.value?.seoTitle || t('home_seo_title'),
+  description: () => page.value?.seoDescription || t('home_seo_desc'),
+  ogTitle: () => page.value?.seoTitle || t('home_og_title'),
+  ogDescription: () => page.value?.seoDescription || t('home_og_desc'),
   ogType: 'website',
 })
 </script>

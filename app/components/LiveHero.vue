@@ -141,7 +141,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { attachHlsStream, detachHlsStream } from '~/composables/useHlsVideo'
+import { attachHlsStream, detachHlsStream, type HlsInstance } from '~/composables/useHlsVideo'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
 
@@ -169,7 +169,7 @@ const session = ref<ActiveSession | null>(null)
 const videoEl = ref<HTMLVideoElement | null>(null)
 const playerPending = ref(false)
 const playerError = ref('')
-const hlsInstance = ref<{ destroy: () => void } | null>(null)
+const hlsInstance = ref<HlsInstance | null>(null)
 
 const startedLabel = computed(() => (session.value?.startedAt ? formatDateVN(session.value.startedAt) : ''))
 

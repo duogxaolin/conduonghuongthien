@@ -70,29 +70,37 @@ export async function uniqueMediaCategorySlug(db: Db, base: string, excludeId?: 
 }
 
 /**
- * Resolve a collision-safe content-type slug. Content-type slugs are the `type`
- * key referenced by categories/articles, so they use `_` instead of `-` between
- * words to stay consistent with the built-in system slugs (role_model, etc.).
+ * Resolve a collision-safe content-type slug.
+ *
+ * - **System** types (`isSystem: true`) dùng `_` để khớp seed built-in
+ *   (`role_model`, `reintegration_model`) — không đổi, vì các route tĩnh
+ *   (`/role-models`, `/reintegration-models`) + query `type=` đã cọc vào.
+ * - **Custom** types (`isSystem: false`, mặc định) dùng `-` (gạch ngang chuẩn,
+ *   giống category) để nhất quán với URL công khai (`/video-tuyen-truyen`).
+ *
  * `excludeId` skips the current row when editing.
  */
-export async function uniqueContentTypeSlug(db: Db, base: string, excludeId?: number): Promise<string> {
-  const baseSlug = (slugify(base) || 'the-loai').replace(/-/g, '_')
+export async function uniqueContentTypeSlug(db: Db, base: string, excludeId?: number, isSystem = false): Promise<string> {
+  const baseSlug = slugify(base) || (isSystem ? 'the_loai' : 'the-loai')
+  // System seed dùng `_`; custom giữ `-` như slugify trả về.
+  const normalized = isSystem ? baseSlug.replace(/-/g, '_') : baseSlug
 
   const rows = await db
     .select({ id: contentTypes.id, slug: contentTypes.slug })
     .from(contentTypes)
     .where(
       excludeId
-        ? and(like(contentTypes.slug, `${baseSlug}%`), ne(contentTypes.id, excludeId))
-        : like(contentTypes.slug, `${baseSlug}%`),
+        ? and(like(contentTypes.slug, `${normalized}%`), ne(contentTypes.id, excludeId))
+        : like(contentTypes.slug, `${normalized}%`),
     )
 
   const taken = new Set(rows.map((r) => r.slug))
-  if (!taken.has(baseSlug)) return baseSlug
+  if (!taken.has(normalized)) return normalized
 
+  const sep = isSystem ? '_' : '-'
   let n = 2
-  while (taken.has(`${baseSlug}_${n}`)) n++
-  return `${baseSlug}_${n}`
+  while (taken.has(`${normalized}${sep}${n}`)) n++
+  return `${normalized}${sep}${n}`
 }
 
 /**

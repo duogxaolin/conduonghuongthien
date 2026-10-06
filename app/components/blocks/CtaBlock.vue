@@ -1,5 +1,5 @@
 <template>
-  <section class="section" :class="bgClass">
+  <section class="section" :class="bgClass" role="region" :aria-label="d.title || 'Kêu gọi hành động'">
     <div class="container">
       <div class="text-center max-w-[680px] mx-auto">
         <h2 class="text-[2.2rem] md:text-[1.6rem] font-extrabold mb-4" :class="isGreen ? 'text-white' : 'text-[#1E251C]'">{{ d.title || 'Tiêu đề kêu gọi' }}</h2>

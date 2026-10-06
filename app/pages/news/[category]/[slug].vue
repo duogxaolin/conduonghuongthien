@@ -10,7 +10,7 @@
     :seo-fallback-description="t('a_news_seo_desc')"
   >
     <template #crumb="{ categoryLabel }">
-      <nuxt-link :to="`/news?cat=${categorySlug}`" class="text-[#4A6741] no-underline hover:underline">{{ categoryLabel }}</nuxt-link> &raquo;
+      <nuxt-link :to="`/news/${categorySlug}`" class="text-[#4A6741] no-underline hover:underline">{{ categoryLabel }}</nuxt-link> &raquo;
     </template>
   </ArticleDetail>
 </template>
