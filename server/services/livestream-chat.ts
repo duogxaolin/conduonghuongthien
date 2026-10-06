@@ -476,7 +476,7 @@ export async function removeChatMessage(
     if (!row) return
 
     sessionId = row.sessionId
-    if (Boolean(row.isDeleted)) {
+    if (row.isDeleted) {
       alreadyRemoved = true
       return
     }

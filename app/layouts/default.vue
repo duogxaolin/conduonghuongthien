@@ -1,5 +1,8 @@
 <template>
   <div class="app-layout" :style="containerStyleVar">
+    <!-- Skip link: bàn phím/tab qua header tới nội dung chính — yêu cầu a11y
+         cho cổng thông tin nhà nước (Luật Người khuyết tật 2010 / NĐ 28/2012). -->
+    <a href="#main-content" class="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-[100] focus:px-4 focus:py-2 focus:bg-[#2c6e33] focus:text-white focus:rounded-lg">Bỏ qua tới nội dung</a>
     <!-- Thanh tiến trình chuyển trang. Điều hướng client-side phải chờ dữ liệu
          của trang đích, và trong khoảng đó trình duyệt không vẽ gì cả — bấm một
          liên kết trông y hệt như bấm hụt. Đây là phản hồi tức thì cho lần bấm. -->
@@ -96,7 +99,7 @@
          trong flow, nếu cộng pt ở đây thì isSticky flip (khi cuộn qua ngưỡng) sẽ
          bật/tắt 130px đột ngột → layout shift giật toàn trang. Hero của từng trang
          tự có padding nội bộ đủ lớn để text không bị header sticky che. -->
-    <main :class="isAssistant ? 'overflow-hidden p-0' : 'min-h-[calc(100vh-165px)] pb-24 md:pb-0'">
+    <main id="main-content" :class="isAssistant ? 'overflow-hidden p-0' : 'min-h-[calc(100vh-165px)] pb-24 md:pb-0'">
       <slot />
     </main>
 

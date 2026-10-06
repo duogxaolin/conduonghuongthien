@@ -621,4 +621,12 @@ export const DEFAULT_TRANSLATIONS_SEED = [
   { group: "profile", key: "profile_clear_history", values: { vi: "Xoá danh sách", en: "Clear list", zh: "", fr: "", ru: "", lo: "" } },
   { group: "profile", key: "profile_remove_aria", values: { vi: "Xoá", en: "Remove", zh: "", fr: "", ru: "", lo: "" } },
   { group: "profile", key: "profile_remove_title", values: { vi: "Xoá khỏi danh sách", en: "Remove from list", zh: "", fr: "", ru: "", lo: "" } },
+  { group: "page", key: "home_seo_title", values: { vi: "Con Đường Hướng Thiện - Hỗ trợ tái hòa nhập cộng đồng", en: "", zh: "", fr: "", ru: "", lo: "" } },
+  { group: "page", key: "home_seo_desc", values: { vi: "Cổng thông tin điện tử C11 Bộ Công an hỗ trợ người hoàn lương tái hòa nhập cộng đồng: vay vốn QĐ 22/2023, đào tạo nghề, xóa án tích, tư vấn tâm lý, kết nối doanh nghiệp.", en: "", zh: "", fr: "", ru: "", lo: "" } },
+  { group: "page", key: "home_og_title", values: { vi: "Con Đường Hướng Thiện - Hỗ trợ tái hòa nhập cộng đồng", en: "", zh: "", fr: "", ru: "", lo: "" } },
+  { group: "page", key: "home_og_desc", values: { vi: "Hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý giúp người chấp hành xong án phạt tái hòa nhập cộng đồng.", en: "", zh: "", fr: "", ru: "", lo: "" } },
+  { group: "page", key: "about_seo_title", values: { vi: "Giới thiệu | Con Đường Hướng Thiện", en: "", zh: "", fr: "", ru: "", lo: "" } },
+  { group: "page", key: "about_seo_desc", values: { vi: "Giới thiệu Ban Biên tập Cổng thông tin Con Đường Hướng Thiện - Cục C11 Bộ Công an.", en: "", zh: "", fr: "", ru: "", lo: "" } },
+  { group: "page", key: "contact_seo_title", values: { vi: "Liên hệ & Trợ giúp | Con Đường Hướng Thiện", en: "", zh: "", fr: "", ru: "", lo: "" } },
+  { group: "page", key: "contact_seo_desc", values: { vi: "Liên hệ Ban Biên tập và gửi yêu cầu trợ giúp tái hòa nhập cộng đồng. Hotline 0903.480.985.", en: "", zh: "", fr: "", ru: "", lo: "" } },
 ]

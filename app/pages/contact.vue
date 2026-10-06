@@ -53,7 +53,7 @@ const { isPreview, previewBlocks, selectedId } = usePagePreview()
 const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
 
 useSeoMeta({
-  title: () => page.value?.seoTitle || 'Liên hệ & Trợ giúp | Con Đường Hướng Thiện',
-  description: () => page.value?.seoDescription || 'Liên hệ Ban Biên tập và gửi yêu cầu trợ giúp tái hòa nhập cộng đồng. Hotline 0903.480.985.',
+  title: () => page.value?.seoTitle || t('contact_seo_title'),
+  description: () => page.value?.seoDescription || t('contact_seo_desc'),
 })
 </script>

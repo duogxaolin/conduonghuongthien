@@ -54,7 +54,7 @@
         </div>
 
         <div v-if="article.thumbnailUrl" class="print-figure">
-          <img :src="article.thumbnailUrl" :alt="article.title" />
+          <img :src="article.thumbnailUrl" :alt="article.title" loading="lazy" />
         </div>
 
         <!-- eslint-disable-next-line vue/no-v-html -- nội dung do biên tập viên C11 soạn, đã sanitize lúc ghi -->

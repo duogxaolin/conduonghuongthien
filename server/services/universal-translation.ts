@@ -75,7 +75,7 @@ function extractJsonFromAi(text: string): Record<string, unknown> | null {
       return JSON.parse(match[0])
     } catch {}
     try {
-      const noTrailing = match[0].replace(/,\s*([\}\]])/g, '$1')
+      const noTrailing = match[0].replace(/,\s*([}\]])/g, '$1')
       return JSON.parse(noTrailing)
     } catch {}
   }

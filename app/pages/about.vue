@@ -53,7 +53,7 @@ const { isPreview, previewBlocks, selectedId } = usePagePreview()
 const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
 
 useSeoMeta({
-  title: () => page.value?.seoTitle || 'Giới thiệu | Con Đường Hướng Thiện',
-  description: () => page.value?.seoDescription || 'Giới thiệu Ban Biên tập Cổng thông tin Con Đường Hướng Thiện - Cục C11 Bộ Công an.',
+  title: () => page.value?.seoTitle || t('about_seo_title'),
+  description: () => page.value?.seoDescription || t('about_seo_desc'),
 })
 </script>

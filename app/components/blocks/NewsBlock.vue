@@ -1,5 +1,5 @@
 <template>
-  <section class="section bg-white py-[60px]">
+  <section class="section bg-white py-[60px]" role="region" :aria-label="d.title || t('news_featured') || 'Tin nổi bật'">
     <div class="container grid grid-cols-1 gap-8 lg:grid-cols-[2.1fr_0.9fr]">
       <!-- Left column -->
       <div>
@@ -14,7 +14,7 @@
                 <div class="absolute bottom-0 left-0 right-0 h-[60%] z-[1]" style="background: linear-gradient(to top, rgba(16,28,16,0.95) 0%, rgba(16,28,16,0.4) 60%, rgba(16,28,16,0) 100%);"></div>
                 <div class="absolute bottom-0 left-0 right-0 p-6 text-white z-[2]">
                   <span class="inline-block bg-[#7CB342] text-white px-2 py-[3px] text-[0.65rem] font-extrabold rounded-sm mb-2 uppercase">{{ t('news_featured') || 'TIN NỔI BẬT' }}</span>
-                  <span class="text-[0.75rem] opacity-85 ml-3">📅 {{ formatDate(featured.publishedAt || featured.createdAt) }}</span>
+                  <span class="text-[0.75rem] opacity-85 ml-3"><span aria-hidden="true">📅</span> {{ formatDate(featured.publishedAt || featured.createdAt) }}</span>
                   <h3 class="text-[1.45rem] sm:text-[1.12rem] font-extrabold leading-[1.3] my-[6px_0_10px] text-white transition-colors group-hover:text-[#c5e1a5] line-clamp-2" :title="featured.title">{{ featured.title }}</h3>
                   <p class="text-[0.88rem] sm:text-[0.82rem] leading-[1.5] opacity-[0.88] m-0 line-clamp-2">{{ featured.excerpt }}</p>
                 </div>
@@ -27,7 +27,7 @@
                đây chỉ 3 bài đầu được dùng (1 chủ đạo + 2 nhỏ) và 2 bài còn lại
                chỉ xuất hiện ở cột phải — tức dữ liệu đã về đủ mà giao diện bỏ
                phí. Dùng hết 5 = không thêm một lượt đi mạng nào. -->
-          <div class="grid grid-cols-1 gap-[14px] sm:grid-cols-2 sm:gap-5">
+          <div class="grid grid-cols-1 gap-[14px] sm:grid-cols-2 sm:gap-5" role="list">
             <div v-for="item in subCards" :key="item.id" class="flex gap-4 py-3 border-t border-dashed border-[#E2E8DF] group">
               <nuxt-link :to="`/news/${item.slug}`" class="w-[130px] h-[85px] rounded-lg overflow-hidden flex-shrink-0 shadow-sm" :title="item.title">
                 <img :src="item.thumbnailUrl || '/assets/news_quangninh.jpg'" :alt="item.title" class="w-full h-full object-cover transition group-hover:scale-[1.05]" loading="lazy" decoding="async" />
@@ -51,14 +51,14 @@
       <div>
         <SectionBar :title="t('block_news_side_title')" icon="⚑" />
 
-        <div class="flex flex-col">
+        <div class="flex flex-col" role="list">
           <div v-for="item in trending" :key="item.id" class="flex gap-3 py-[14px] border-b border-[#E2E8DF] last:border-b-0">
             <div class="w-[6px] h-[6px] rounded-full bg-[#4A6741] mt-2 flex-shrink-0"></div>
             <div class="flex-1 min-w-0">
               <h4 class="text-[0.88rem] font-bold leading-[1.4] m-0 mb-[6px] line-clamp-2">
                 <nuxt-link :to="`/news/${item.slug}`" class="text-[#1E251C] no-underline transition hover:text-[#4A6741]" :title="item.title">{{ item.title }}</nuxt-link>
               </h4>
-              <span class="text-[0.72rem] text-[#7A8675] font-semibold">📅 {{ formatDate(item.publishedAt || item.createdAt) }}</span>
+              <span class="text-[0.72rem] text-[#7A8675] font-semibold"><span aria-hidden="true">📅</span> {{ formatDate(item.publishedAt || item.createdAt) }}</span>
             </div>
           </div>
         </div>
@@ -69,7 +69,7 @@
           <div class="relative z-[2]">
             <h3 class="text-[1rem] font-extrabold mt-0 mb-2 uppercase">{{ t('block_news_hotline_title') }}</h3>
             <p class="text-[0.78rem] leading-[1.4] m-0 mb-4 opacity-90">{{ t('block_news_hotline_desc') }}</p>
-            <span class="inline-block bg-[#7CB342] text-white px-[14px] py-[6px] text-[0.9rem] font-extrabold rounded">📞 1900.0368</span>
+            <span class="inline-block bg-[#7CB342] text-white px-[14px] py-[6px] text-[0.9rem] font-extrabold rounded"><span aria-hidden="true">📞</span> 1900.0368</span>
           </div>
         </div>
       </div>

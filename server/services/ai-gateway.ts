@@ -471,7 +471,7 @@ export function extractToolCallsFromMessage(
   const list: Array<{ id: string; function: { name: string; arguments: string } }> = []
 
   // Pattern A: <|tool_call>call:funcName{...}
-  const patA = /<\|tool_call>call:(\w+)([\{][\s\S]*?[\}])(?:<\|?\/?tool_call\|?>)?/g
+  const patA = /<\|tool_call>call:(\w+)([{][\s\S]*?[}])(?:<\|?\/?tool_call\|?>)?/g
   let mA: RegExpExecArray | null
   while ((mA = patA.exec(content)) !== null) {
     list.push({
@@ -489,7 +489,7 @@ export function extractToolCallsFromMessage(
       let mB: RegExpExecArray | null
       while ((mB = regex.exec(content)) !== null) {
         const rawArgs = (mB[1] ?? '').trim()
-        let args: Record<string, unknown> = {}
+        const args: Record<string, unknown> = {}
         const argRegex = /(\w+)\s*=\s*["']([^"']*)["']/g
         let am: RegExpExecArray | null
         while ((am = argRegex.exec(rawArgs)) !== null) {
@@ -702,7 +702,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
       const msg1 = choice1?.message
 
       let step1Prompt = Number((json1.usage as { prompt_tokens?: number })?.prompt_tokens) || 0
-      let step1Comp = Number((json1.usage as { completion_tokens?: number })?.completion_tokens) || 0
+      const step1Comp = Number((json1.usage as { completion_tokens?: number })?.completion_tokens) || 0
       if (config.provider === 'delify' && step1Prompt >= 2000) step1Prompt -= 2000
       promptTokens += step1Prompt
       completionTokens += step1Comp
@@ -819,7 +819,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
                 if (parsed?.usage) {
                   const isEst = Boolean(parsed.usage.estimated)
                   let p2 = Number(parsed.usage.prompt_tokens) || 0
-                  let c2 = Number(parsed.usage.completion_tokens) || 0
+                  const c2 = Number(parsed.usage.completion_tokens) || 0
                   if (config.provider === 'delify' && p2 >= 2000) p2 -= 2000
                   if (p2 > 0 && !isEst) promptTokens += p2
                   if (c2 > 0 && !isEst) completionTokens += c2
@@ -856,7 +856,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
             answerText = raw2Content.replace(/<\|channel>[\s\S]*?<channel\|>/gi, '').trim()
           }
           let p2 = Number((json2.usage as { prompt_tokens?: number })?.prompt_tokens) || 0
-          let c2 = Number((json2.usage as { completion_tokens?: number })?.completion_tokens) || 0
+          const c2 = Number((json2.usage as { completion_tokens?: number })?.completion_tokens) || 0
           if (config.provider === 'delify' && p2 >= 2000) p2 -= 2000
           promptTokens += p2
           completionTokens += c2
@@ -901,7 +901,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
                   }
                   if (parsed?.usage) {
                     let p2 = Number(parsed.usage.prompt_tokens) || 0
-                    let c2 = Number(parsed.usage.completion_tokens) || 0
+                    const c2 = Number(parsed.usage.completion_tokens) || 0
                     if (config.provider === 'delify' && p2 >= 2000) p2 -= 2000
                     if (p2 > 0 && !parsed.usage.estimated) promptTokens += p2
                     if (c2 > 0 && !parsed.usage.estimated) completionTokens += c2

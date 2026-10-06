@@ -17,7 +17,7 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
 
-  let conditions = []
+  const conditions = []
   if (search) {
     conditions.push(like(media.originalName, `%${search}%`))
   }
