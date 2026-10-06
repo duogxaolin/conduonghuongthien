@@ -270,6 +270,20 @@ export default defineNuxtConfig({
         'Strict-Transport-Security': 'max-age=31536000; includeSubDomains; preload',
         'Referrer-Policy': 'strict-origin-when-cross-origin',
         'Permissions-Policy': 'camera=(), microphone=(), geolocation=(), interest-cohort=()',
+        // Cross-origin isolation — pentest RedAmon 2026-10-06 báo COOP/CORP/COEP
+        // missing. COOP `same-origin` cô lập window handle (chống Spectre
+        // side-channel + cross-origin window interaction), an toàn không chặn
+        // resource nào. CORP `same-origin` chặn site KHÁC nhúng tài nguyên CDKT
+        // (defensive, không phá site mình).
+        //
+        // COEP cố ý KHÔNG bật: `require-corp` sẽ chặn mọi cross-origin resource
+        // không kèm CORP header — ảnh R2 cdn1.delify.vn, YouTube embed,
+        // Cloudflare insights đều KHÔNG gửi CORP và em không control header
+        // các endpoint đó → bật COEP = phá vỡ site. `credentialless` (Chrome
+        // 96+) an toàn hơn nhưng Firefox/Safari support chậm + vẫn rủi ro với
+        // YouTube iframe. Đợi browser support rộng + R2 gửi CORP rồi mới bật.
+        'Cross-Origin-Opener-Policy': 'same-origin',
+        'Cross-Origin-Resource-Policy': 'same-origin',
         'Content-Security-Policy': [
           "default-src 'self'",
           "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://cdnjs.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://www.googletagmanager.com https://connect.facebook.net https://analytics.tiktok.com https://www.clarity.ms https://*.gov.vn",
