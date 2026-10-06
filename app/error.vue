@@ -75,8 +75,8 @@ useSeoMeta({
 
         <!-- Mã lỗi + tiêu đề -->
         <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.5px] text-[#7A8A76] m-0 mb-2">
-          <span v-if="is4xx">Lỗi {{ code.value }}</span>
-          <span v-else>Lỗi máy chủ {{ code.value }}</span>
+          <span v-if="is4xx">Lỗi {{ code }}</span>
+          <span v-else>Lỗi máy chủ {{ code }}</span>
         </p>
         <h1 class="text-[1.6rem] sm:text-[2rem] font-extrabold text-[#1E251C] leading-[1.25] m-0 mb-4">
           {{ headline }}

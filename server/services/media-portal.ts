@@ -2,6 +2,18 @@
  * Cổng media — hai nửa của cùng một bảng `media_items`: đường ĐỌC công khai và
  * đường GHI của quản trị.
  *
+ * File này là **barrel + phần còn lại** sau khi tách 4 cluster ra file con:
+ *   • `media-validation.ts` — các `require*`/`optional*` + `MediaValidationError`
+ *   • `media-views.ts` — `recordMediaView` + `buildMediaViewDedupeKey`
+ *   • `media-portal-public.ts` — serialize + read công khai
+ *   • `media-portal-admin-read.ts` — serialize + read quản trị
+ *   • `media-portal-constants.ts` — hằng số + type chia sẻ
+ *
+ * Ở lại file này: cluster E (stream/thumbnail resolution — gắn chính, nhiều
+ * helper nội bộ), cluster G (admin write — `createMediaItem`/`updateMediaItem`/
+ * `deleteMediaItem`), cluster H (thumbnail override). 168 endpoint import qua
+ * barrel re-export cuối file, không cần đổi import path.
+ *
  * Hai nửa nằm chung một tệp vì chúng chia sẻ đúng một thứ dễ sai nhất: **tập cột
  * nào được ra khỏi máy chủ**. `media_items` mang theo `processing_status`,
  * `resolutions_ready`, `is_featured`, `status`, `created_by`, `claimed_by` và
@@ -29,90 +41,77 @@ import { statSync, readdirSync } from 'node:fs'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
-import { and, asc, count, desc, eq, inArray, like, sql } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 
-import { activityLogs, media, mediaCategories, mediaAssetCleanup, mediaItems } from '../db/schema'
+import { activityLogs, media, mediaAssetCleanup, mediaItems } from '../db/schema'
 import { getDb, type Database } from '../utils/db'
 import type { MediaConfig } from '../utils/media-config'
 import { resolveMediaConfig } from '../utils/media-config'
-import { likeContains } from '../utils/like-pattern'
-import type { RateLimitRule } from '../utils/rate-limit-store'
 import { uniqueMediaSlug } from '../utils/unique-media-slug'
 import { uniqueShortMediaId } from '../utils/short-media-id'
 import {
-  buildMediaThumbnailPath,
-  buildYouTubeEmbedUrl,
   buildYouTubeThumbnailUpstreamUrl,
-  extractYouTubeVideoId,
 } from '../utils/youtube-parser'
-import { abortProcessingClaim, isPlayable, mediaAssetRoot } from './video-processing'
+import { abortProcessingClaim, mediaAssetRoot } from './video-processing'
 import { locateR2Original, listR2Keys, putR2Object, headR2Object } from './video-r2-sync'
 import { type R2Config } from '../utils/media-r2'
 import sharp from 'sharp'
 
-// ─── Hằng số ─────────────────────────────────────────────────────────────────
+// Hằng số chia sẻ từ file con — re-export để 168 endpoint import từ đây không đổi.
+export {
+  MEDIA_ITEM_STATUSES, MEDIA_SOURCES, PUBLISHED_MEDIA_STATUS,
+  MEDIA_TITLE_MAX_LENGTH, MEDIA_DESCRIPTION_MAX_LENGTH, MEDIA_SEARCH_MAX_LENGTH,
+  MEDIA_LIST_MAX_LIMIT, MANIFEST_CACHE_SECONDS, SEGMENT_CACHE_SECONDS,
+  MEDIA_VIEW_DEDUPE_WINDOW_SECONDS, MEDIA_VIEW_DEDUPE_RULE,
+  MEDIA_VIEW_DEDUPE_KEY_MAX_LENGTH, MEDIA_VIEW_DEDUPE_TOKEN_LENGTH,
+  type MediaItemStatus, type MediaSource,
+} from './media-portal-constants'
 
-/**
- * Trạng thái biên tập. `processing_status` **không** nằm ở đây: một cái là quyết
- * định của cán bộ, cái kia là trạng thái của máy, và gộp chúng làm "đã xuất bản
- * nhưng chuyển mã hỏng" trở thành một trạng thái không diễn đạt được.
- */
-export const MEDIA_ITEM_STATUSES = ['draft', 'published', 'archived'] as const
-export type MediaItemStatus = typeof MEDIA_ITEM_STATUSES[number]
+// Các hàm validation từ file con — re-export.
+export {
+  MediaValidationError, requireMediaTitle, optionalMediaText,
+  requireMediaSource, requireMediaStatus, requireMediaBoolean,
+  optionalMediaId, requireMediaSourceId,
+} from './media-validation'
 
-/** Nguồn: tệp cổng tự giữ và chuyển mã, hoặc một tham chiếu ra nền tảng ngoài. */
-export const MEDIA_SOURCES = ['upload', 'youtube'] as const
-export type MediaSource = typeof MEDIA_SOURCES[number]
+// Đếm lượt xem từ file con — re-export.
+export { buildMediaViewDedupeKey, recordMediaView } from './media-views'
 
-/** Chỉ mục ở trạng thái này mới ra tới người đọc. Một chỗ, không rải rác. */
-export const PUBLISHED_MEDIA_STATUS: MediaItemStatus = 'published'
+// Đường đọc công khai từ file con — re-export.
+export {
+  serializePublicMedia, buildMediaStreamPath, coerceResolutionsReady,
+  listPublishedMedia, countPublishedMediaByCategory,
+  getPublishedMediaByShortId, resolvePublishedMediaIdByShortId,
+  type PublicMediaRow, type PublicMediaItem, type PublishedMediaQuery,
+  type PublishedMediaPage, type PublicMediaCategory,
+} from './media-portal-public'
 
-export const MEDIA_TITLE_MAX_LENGTH = 512
-export const MEDIA_DESCRIPTION_MAX_LENGTH = 5000
-export const MEDIA_SEARCH_MAX_LENGTH = 200
-/** Trần số bản ghi một trang. Giữ ở đây để endpoint và bộ đếm dùng chung một số. */
-export const MEDIA_LIST_MAX_LIMIT = 50
+// Đường đọc quản trị từ file con — re-export.
+export {
+  serializeAdminMedia, listAllMediaForAdmin, getMediaItemForAdmin,
+  type AdminMediaRow, type AdminMediaItem, type AdminMediaQuery,
+  type AdminMediaPage,
+} from './media-portal-admin-read'
 
-/**
- * Đệm cho manifest ngắn, cho phân đoạn thì gần như vĩnh viễn.
- *
- * `master.m3u8` **đổi** trong lúc một mục đang được chuyển mã: mỗi bản xong lại
- * được ghi vào đó. Đệm nó một năm như đệm phân đoạn sẽ khoá trình phát vào bản
- * đầu tiên và một bản mới công bố xong sẽ không bao giờ tới được người đọc —
- * triệu chứng là "video chỉ chạy ở 360p", không có lỗi ở đâu cả.
- */
-export const MANIFEST_CACHE_SECONDS = 60
-export const SEGMENT_CACHE_SECONDS = 31_536_000
+// Import nội bộ để cluster E/G/H dùng (không re-export).
+import {
+  PUBLISHED_MEDIA_STATUS,
+  MEDIA_DESCRIPTION_MAX_LENGTH,
+  MANIFEST_CACHE_SECONDS,
+  SEGMENT_CACHE_SECONDS,
+  type MediaItemStatus,
+} from './media-portal-constants'
+import {
+  requireMediaTitle, optionalMediaText,
+  requireMediaSource, requireMediaStatus, requireMediaBoolean,
+  optionalMediaId, requireMediaSourceId,
+} from './media-validation'
+import { coerceResolutionsReady } from './media-portal-public'
 
-/**
- * Khung chống đếm trùng: **10 phút** — cùng cửa sổ với `article-views.ts`.
- *
- * Cùng một người xem lại video sau 10 phút thì vẫn tính +1 lượt xem. Đủ dài để
- * hấp thụ một lần F5, đủ ngắn để một lượt quay lại thật (sau 10p01s) được tính
- * là một lượt xem mới. Trước đây cửa sổ là 24 giờ, nhưng anh yêu muốn đồng bộ
- * với bài viết: cùng người, cùng cửa sổ 10 phút cho cả hai loại nội dung.
- *
- * Token vẫn sinh theo ngày nên khoá tự đổi lúc nửa đêm UTC — điều này chỉ ảnh
- * hưởng đến ranh giới ngày, không đến cửa sổ khử trùng.
- */
-export const MEDIA_VIEW_DEDUPE_WINDOW_SECONDS = 10 * 60
-
-/**
- * Quy tắc khử trùng lặp, khai **cạnh hàm dựng khoá** chứ không trong endpoint.
- *
- * `limit: 1` để `count === 1` là quyết định "lần đầu" — và để nó kiểm được: một
- * hằng số nằm trong thân handler thì không nơi nào import được, nên "một lượt mỗi
- * khách mỗi ngày" chỉ còn được bảo vệ bằng chính dòng văn mô tả nó.
- */
-export const MEDIA_VIEW_DEDUPE_RULE: RateLimitRule = {
-  limit: 1,
-  windowSeconds: MEDIA_VIEW_DEDUPE_WINDOW_SECONDS,
-}
-/** `bucket_key` là VARCHAR(191) và là khoá chính — xem `article-views.ts`. */
-export const MEDIA_VIEW_DEDUPE_KEY_MAX_LENGTH = 191
-/** 128 bit của một HMAC. Hai khách trùng nhau trên một video trong một ngày là
- *  chuyện không đáng lo; một khoá dài hơn thì chỉ tốn chỗ. */
-export const MEDIA_VIEW_DEDUPE_TOKEN_LENGTH = 32
+// ─── Hằng số nội bộ (chỉ dùng trong file này, không re-export) ──────────────
+// Hằng số chia sẻ (manifest cache, dedup view, độ dài tiêu đề...) đã chuyển
+// sang `media-portal-constants.ts` và re-export ở đầu file. Bốn hằng số dưới đây
+// là internal — chỉ cluster E/G/H dùng, không có endpoint nào import trực tiếp.
 
 const MEDIA_THUMBNAIL_FILE = 'thumb.jpg'
 const MEDIA_MASTER_PLAYLIST = 'master.m3u8'
@@ -146,673 +145,6 @@ const STREAM_CONTENT_TYPES: Readonly<Record<string, string>> = {
   '.jpeg': 'image/jpeg',
   '.png': 'image/png',
   '.vtt': 'text/vtt',
-}
-
-// ─── Kiểm dữ liệu vào ────────────────────────────────────────────────────────
-
-/** Lỗi dữ liệu vào, tách khỏi lỗi hệ thống để endpoint trả 400 thay vì 500. */
-export class MediaValidationError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'MediaValidationError'
-  }
-}
-
-export function requireMediaTitle(value: unknown): string {
-  const title = typeof value === 'string' ? value.trim() : ''
-  if (!title) throw new MediaValidationError('Tiêu đề không được để trống.')
-  if (title.length > MEDIA_TITLE_MAX_LENGTH) {
-    throw new MediaValidationError(`Tiêu đề tối đa ${MEDIA_TITLE_MAX_LENGTH} ký tự.`)
-  }
-  return title
-}
-
-/** Văn bản tuỳ chọn. Quá dài thì **từ chối**, không cắt ngầm — người gõ không có
- *  cách nào biết mình vừa mất đoạn cuối. */
-export function optionalMediaText(value: unknown, max: number, label: string): string | null {
-  if (value === undefined || value === null) return null
-  if (typeof value !== 'string') throw new MediaValidationError(`${label} không hợp lệ.`)
-  const text = value.trim()
-  if (!text) return null
-  if (text.length > max) throw new MediaValidationError(`${label} tối đa ${max} ký tự.`)
-  return text
-}
-
-export function requireMediaSource(value: unknown): MediaSource {
-  const source = typeof value === 'string' ? value.trim().toLowerCase() : ''
-  if (!(MEDIA_SOURCES as readonly string[]).includes(source)) {
-    throw new MediaValidationError(`Nguồn phải là một trong: ${MEDIA_SOURCES.join(', ')}.`)
-  }
-  return source as MediaSource
-}
-
-export function requireMediaStatus(value: unknown): MediaItemStatus {
-  const status = typeof value === 'string' ? value.trim().toLowerCase() : ''
-  if (!(MEDIA_ITEM_STATUSES as readonly string[]).includes(status)) {
-    throw new MediaValidationError(`Trạng thái phải là một trong: ${MEDIA_ITEM_STATUSES.join(', ')}.`)
-  }
-  return status as MediaItemStatus
-}
-
-/**
- * `Boolean('false')` là `true`.
- *
- * Giá trị này đến từ thân request, nên một chuỗi `"false"` sẽ **bật** đúng cờ mà
- * cán bộ vừa tắt — cùng lớp lỗi đã làm rơi `openNewTab` của cấu hình điều hướng.
- * Chỉ nhận boolean thật, hoặc `1`/`0`.
- */
-export function requireMediaBoolean(value: unknown, label: string): boolean {
-  if (value === true || value === 1 || value === '1') return true
-  if (value === false || value === 0 || value === '0') return false
-  throw new MediaValidationError(`${label} phải là true hoặc false.`)
-}
-
-export function optionalMediaId(value: unknown, label: string): number | null {
-  if (value === undefined || value === null || value === '') return null
-  const id = Number(value)
-  if (!Number.isSafeInteger(id) || id <= 0) throw new MediaValidationError(`${label} không hợp lệ.`)
-  return id
-}
-
-// ─── Hình dạng công khai ─────────────────────────────────────────────────────
-
-/** Tập cột mà đường đọc công khai **được phép** chọn. `storage_path`,
- *  `processing_error`, `status`, `created_by` và `claimed_by` không có mặt ở đây,
- *  nên chúng không thể rò ra qua một lượt `select` bị sửa sau này. */
-const publicMediaSelection = {
-  id: mediaItems.id,
-  slug: mediaItems.slug,
-  shortId: mediaItems.shortId,
-  title: mediaItems.title,
-  description: mediaItems.description,
-  source: mediaItems.source,
-  youtubeVideoId: mediaItems.youtubeVideoId,
-  durationSeconds: mediaItems.durationSeconds,
-  width: mediaItems.width,
-  height: mediaItems.height,
-  categoryId: mediaItems.categoryId,
-  categoryName: mediaCategories.name,
-  categorySlug: mediaCategories.slug,
-  publishedAt: mediaItems.publishedAt,
-  commentsEnabled: mediaItems.commentsEnabled,
-  viewCount: mediaItems.viewCount,
-  // `isFeatured` được chọn **và được trả**: nó quyết định thứ tự danh sách (featured
-  // lên đầu) và công dân có thể thấy huy hiệu "nổi bật" trên thẻ — khác với hai cột
-  // dưới đây chọn-nhưng-không-trả.
-  isFeatured: mediaItems.isFeatured,
-  // Hai cột dưới đây **được chọn nhưng không được trả**: chúng quyết định
-  // `playable`, và `playable` là câu trả lời duy nhất người đọc cần.
-  processingStatus: mediaItems.processingStatus,
-  resolutionsReady: mediaItems.resolutionsReady,
-} as const
-
-export type PublicMediaRow = {
-  id: number
-  slug: string
-  shortId: string
-  title: string
-  description: string | null
-  source: string
-  youtubeVideoId: string | null
-  durationSeconds: number | null
-  width: number | null
-  height: number | null
-  categoryId: number | null
-  categoryName: string | null
-  categorySlug: string | null
-  publishedAt: Date | string | null
-  commentsEnabled: boolean | null
-  viewCount: number | string | null
-  isFeatured: boolean | null
-  processingStatus: string | null
-  resolutionsReady: string[] | null
-}
-
-export type PublicMediaItem = {
-  id: number
-  slug: string
-  /** Định danh URL công khai chính — `/media/<shortId>`. `slug` chỉ còn cho redirect 301. */
-  shortId: string
-  title: string
-  description: string | null
-  source: MediaSource
-  categoryId: number | null
-  categoryName: string | null
-  categorySlug: string | null
-  durationSeconds: number | null
-  width: number | null
-  height: number | null
-  publishedAt: Date | string | null
-  thumbnailUrl: string | null
-  embedUrl: string | null
-  streamUrl: string | null
-  /**
-   * `hls` khi có rendition (manifest `master.m3u8`), `file` khi phục vụ tệp gốc
-   * trực tiếp qua byte-range (`MEDIA_AUTO_TRANSCODE=false`, không rendition).
-   *
-   * Player dùng trường này để chọn hls.js (cho `hls`) hay native `<video src>`
-   * (cho `file`): hls.js nhận một URL mp4 mà đi parse như m3u8 sẽ không phát được,
-   * và trình duyệt phát mp4 gốc qua `<video>` nhanh hơn nhiều so với đi qua thư viện.
-   * `null` khi chưa phát được (chưa xử lý xong, hoặc nguồn youtube).
-   */
-  streamKind: 'hls' | 'file' | null
-  playable: boolean
-  commentsEnabled: boolean
-  viewCount: number
-  /** Video nổi bật — được tick bởi cán bộ ở trang quản trị. Quyết định thứ tự danh sách (lên đầu). */
-  isFeatured: boolean
-}
-
-/** Đường dẫn phát, **trên chính cổng này**. Xem `buildMediaThumbnailPath` cho
- *  cùng lý do ở phía ảnh thu nhỏ: một địa chỉ kho ký sẵn đưa cho trình duyệt là
- *  đưa luôn vị trí kho, và nó nằm lại trong lịch sử cùng log của mọi trung gian.
- *
- *  Nhận một chuỗi `id` generic (slug hoặc short_id) — người gọi quyết định giá trị
- *  truyền. URL công khai dùng `short_id`; hàm này chỉ ráp path, không quan tâm nội
- *  dung chuỗi. */
-export function buildMediaStreamPath(id: string): string {
-  return `/api/public/media/${encodeURIComponent(id)}/stream`
-}
-
-/**
- * Chép **từng trường** từ hàng nội bộ sang hình dạng công khai.
- *
- * Không dùng `...row` và không trả `row` đã bỏ vài khoá: cả hai đều là dạng
- * "cho qua rồi trừ đi", và dạng đó chỉ đúng cho tới khi có người thêm một cột.
- * Ở đây danh sách là **cho vào**, nên một cột mới mặc định là riêng tư.
- */
-export function serializePublicMedia(row: PublicMediaRow): PublicMediaItem {
-  const source: MediaSource = row.source === 'youtube' ? 'youtube' : 'upload'
-
-  // `embedUrl` là `null` khi định danh đã lưu không qua được phép kiểm: một hàng
-  // bị sửa tay trong CSDL không được phép sinh ra một `src` cho iframe.
-  const embedUrl = source === 'youtube' ? buildYouTubeEmbedUrl(row.youtubeVideoId) : null
-
-  // Ảnh thu nhỏ **luôn** dựng từ short_id (định danh URL công khai), không bao giờ
-  // đọc `thumbnail_url` đã lưu: cột đó là một chuỗi tự do, và trả thẳng nó cho
-  // người đọc là để một giá trị trong CSDL trở thành một origin tuỳ ý trong trình
-  // duyệt của công dân.
-  const hasThumbnail = source === 'youtube' ? embedUrl !== null : true
-
-  const playable = source === 'youtube' ? embedUrl !== null : isPlayable(row)
-
-  return {
-    id: Number(row.id),
-    slug: String(row.slug),
-    shortId: String(row.shortId),
-    title: String(row.title),
-    description: row.description ?? null,
-    source,
-    categoryId: row.categoryId ?? null,
-    categoryName: row.categoryName ?? null,
-    categorySlug: row.categorySlug ?? null,
-    durationSeconds: row.durationSeconds ?? null,
-    width: row.width ?? null,
-    height: row.height ?? null,
-    publishedAt: row.publishedAt ?? null,
-    thumbnailUrl: hasThumbnail ? buildMediaThumbnailPath(String(row.shortId)) : null,
-    embedUrl,
-    streamUrl: source === 'upload' && playable ? buildMediaStreamPath(String(row.shortId)) : null,
-    // `streamKind` chỉ có ý nghĩa khi `streamUrl` khác null (upload + playable).
-    // `ready` + có rendition → manifest HLS đã publish → `hls`. Còn lại → tệp
-    // gốc phục vụ trực tiếp → `file`: bao gồm cả `ready` không rendition
-    // (autoTranscode=false) **và** `processing`/`pending` — khi đang transcode,
-    // `resolutions_ready` đã liệt kê các bản xong nhưng manifest chỉ publish
-    // sau khi **mọi** bản xong (`publishChain` nối đuôi), nên stream endpoint
-    // lùi về tệp gốc `original.<ext>`, và hls.js parse mp4 như m3u8 sẽ không phát
-    // được. `file` báo cho MediaPlayer dùng `<video src>` gốc.
-    streamKind:
-      source === 'upload' && playable
-        ? (row.processingStatus === 'ready' && coerceResolutionsReady(row.resolutionsReady)?.length ? 'hls' : 'file')
-        : null,
-    playable,
-    commentsEnabled: row.commentsEnabled === true,
-    viewCount: Number(row.viewCount ?? 0),
-    isFeatured: row.isFeatured === true,
-  }
-}
-
-// ─── Đọc công khai ───────────────────────────────────────────────────────────
-
-export type PublishedMediaQuery = {
-  page: number
-  limit: number
-  search?: string
-  categorySlug?: string
-}
-
-export type PublishedMediaPage = {
-  items: PublicMediaItem[]
-  total: number
-}
-
-/**
- * Id của danh mục media theo slug, hoặc `null` nếu không có.
- *
- * `media_categories` phẳng (không cha-con) nên không cần resolves con như
- * `categories` bài viết. `null` nghĩa là **không có danh mục nào mang slug đó**;
- * nơi gọi đọc `null` thành "kết quả rỗng", không phải "lỗi": bộ lọc nằm trong URL
- * mà khách sửa được và chia sẻ được, nên một liên kết cũ phải hiện trang trống
- * chứ không phải một thông báo lỗi — một liên kết hỏng đọc ra là cổng bị hỏng.
- */
-async function resolveCategoryIds(db: Database, slug: string): Promise<number[] | null> {
-  const [target] = await db
-    .select({ id: mediaCategories.id })
-    .from(mediaCategories)
-    .where(eq(mediaCategories.slug, slug))
-    .limit(1)
-
-  if (!target) return null
-  return [target.id]
-}
-
-export async function listPublishedMedia(
-  query: PublishedMediaQuery,
-  deps: { db?: Database } = {},
-): Promise<PublishedMediaPage> {
-  const db = deps.db ?? getDb()
-
-  const conditions = [eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)]
-
-  const search = typeof query.search === 'string' ? query.search.trim().slice(0, MEDIA_SEARCH_MAX_LENGTH) : ''
-  if (search) conditions.push(like(mediaItems.title, likeContains(search)))
-
-  const categorySlug = typeof query.categorySlug === 'string' ? query.categorySlug.trim() : ''
-  if (categorySlug) {
-    const ids = await resolveCategoryIds(db, categorySlug)
-    if (ids === null) return { items: [], total: 0 }
-    conditions.push(ids.length === 1 ? eq(mediaItems.categoryId, ids[0]!) : inArray(mediaItems.categoryId, ids))
-  }
-
-  const where = and(...conditions)
-  const offset = Math.max(0, (query.page - 1) * query.limit)
-
-  // Đếm và đọc chạy **cùng lúc**, không nối đuôi: hai truy vấn độc lập trên cùng
-  // một `where`, nên thời gian chờ là lượt chậm hơn chứ không phải tổng hai lượt.
-  const [rows, totals] = await Promise.all([
-    db
-      .select(publicMediaSelection)
-      .from(mediaItems)
-      .leftJoin(mediaCategories, eq(mediaItems.categoryId, mediaCategories.id))
-      .where(where)
-      // Featured lên trước, rồi ngày đăng, rồi ngày tạo. Mục chưa có `published_at`
-      // (dữ liệu cũ) rơi xuống cuối thay vì lên đầu. `isFeatured` là boolean: `true`
-      // (1) > `false` (0) nên `desc` đặt featured trước — đúng ý "nổi bật lên đầu".
-      .orderBy(desc(mediaItems.isFeatured), desc(mediaItems.publishedAt), desc(mediaItems.createdAt))
-      .limit(query.limit)
-      .offset(offset),
-    db.select({ total: count() }).from(mediaItems).where(where),
-  ])
-
-  return { items: rows.map(serializePublicMedia), total: Number(totals[0]?.total ?? 0) }
-}
-
-// ─── Danh sách quản trị ─────────────────────────────────────────────────────
-
-/** Tập cột mà **đường quản trị** được phép chọn. Thêm so với đường công khai:
- *  `status`, `processingError`, `storagePath`, `createdBy`,
- *  `createdAt`, `updatedAt` — tất cả đều là thông tin mà cán bộ vận hành cần để
- *  quyết định xuất bản / gỡ / kiểm tra tiến trình, và **không** là thông tin mà
- *  công dân đọc được. (`isFeatured` giờ đã thuộc đường công khai — nó quyết định
- *  thứ tự danh sách và công dân thấy huy hiệu.) Việc đặt chúng trong một selection
- *  tường minh (không `...mediaItems`) nghĩa là một cột mới thêm sau này phải được
- *  **đưa vào** mới
- *  thoát ra được, thay vì ngược lại.
- */
-const adminMediaSelection = {
-  ...publicMediaSelection,
-  status:           mediaItems.status,
-  processingError:  mediaItems.processingError,
-  storagePath:      mediaItems.storagePath,
-  // Cán bộ vận hành cần biết video nằm trên đĩa local hay R2 — để biết nút "Chuyển
-  // mã" sẽ chạy trên máy này hay đẩy lên nhà cung cấp, và để chẩn đoán một mục đã
-  // xuất bản mà không xem được (target sai tầng lưu trữ). Cột này KHÔNG thuộc
-  // `publicMediaSelection` — công dân không cần (và không được) biết video nằm đâu.
-  storageProvider:  mediaItems.storageProvider,
-  thumbnailUrl:     mediaItems.thumbnailUrl,
-  // `isFeatured` đã có qua `...publicMediaSelection` (nay thuộc đường công khai).
-  createdBy:        mediaItems.createdBy,
-  createdAt:        mediaItems.createdAt,
-  updatedAt:        mediaItems.updatedAt,
-  // Tiến trình FFmpeg thật — 3 cột để UI vẽ thanh % cho bản đang nén.
-  // `resolutionsReady` đã có ở `publicMediaSelection` (công dân cần biết bản nào
-  // sẵn sàng để chọn chất lượng), còn ba cột này là góc nhìn vận hành: cán bộ
-  // cần biết pipeline đang ở bản nào, bao nhiêu %, giai đoạn gì.
-  processingRendition: mediaItems.processingRendition,
-  processingPercent:   mediaItems.processingPercent,
-  processingPhase:     mediaItems.processingPhase,
-} as const
-
-export type AdminMediaRow = {
-  id:              number
-  slug:            string
-  shortId:         string
-  title:           string
-  description:      string | null
-  source:          string
-  youtubeVideoId:  string | null
-  durationSeconds: number | null
-  width:           number | null
-  height:          number | null
-  categoryId:      number | null
-  categoryName:    string | null
-  categorySlug:   string | null
-  status:          string
-  processingStatus: string
-  processingError:  string | null
-  storagePath:      string | null
-  storageProvider:  string | null
-  thumbnailUrl:    string | null
-  isFeatured:      boolean | null
-  commentsEnabled: boolean | null
-  viewCount:       number | string | null
-  publishedAt:     Date | null
-  createdBy:       number | null
-  createdAt:       Date | null
-  updatedAt:       Date | null
-  resolutionsReady: string[] | null
-  processingRendition: string | null
-  processingPercent: number | null
-  processingPhase: string | null
-}
-
-export type AdminMediaItem = {
-  id:              number
-  slug:            string
-  /** Định danh URL công khai — `/media/<shortId>`. Admin cần xem để chia sẻ link. */
-  shortId:         string
-  title:           string
-  description:      string | null
-  source:          MediaSource
-  youtubeVideoId:  string | null
-  durationSeconds: number | null
-  width:           number | null
-  height:          number | null
-  categoryId:      number | null
-  categoryName:    string | null
-  categorySlug:   string | null
-  status:          MediaItemStatus
-  processingStatus: string
-  processingError:  string | null
-  storagePath:     string | null
-  /** 'r2' | 'local' | null — nơi video đang nằm, để cán bộ chẩn đoán/khởi động transcode đúng. */
-  storageProvider:  'r2' | 'local' | null
-  thumbnailUrl:     string | null
-  isFeatured:      boolean
-  commentsEnabled: boolean
-  viewCount:       number
-  publishedAt:     string | null
-  createdBy:       number | null
-  createdAt:       string | null
-  updatedAt:       string | null
-  /** Các bản đã chuyển mã xong — UI đọc để vẽ timeline + quyết định nút transcode. */
-  resolutionsReady: string[] | null
-  /** Bản đang nén ('360p'/'720p'/'1080p') hoặc null — để UI vẽ thanh % cho bản hiện tại. */
-  processingRendition: string | null
-  /** % nén của bản hiện tại (0–100) hoặc null. */
-  processingPercent: number | null
-  /** Giai đoạn pipeline ('probe'|'transcode'|'thumbnail'|'sync') hoặc null. */
-  processingPhase: string | null
-}
-
-/**
- * Chuyển hàng nội bộ sang hình dạng dành cho quản trị viên.
- *
- * Tách khỏi `serializePublicMedia` vì hai hình dạng phục vụ hai câu hỏi khác nhau:
- *  đường công khai hỏi "công dân được thấy gì", đường quản trị hỏi "cán bộ vận
- *  hành cần biết gì để xuất bản/gỡ/kiểm tra". Trộn chúng là một trường `status`
- *  hoặc `processingError` rò ra đường công khai, và không có gì đỏ cho tới khi
- *  ai đó soi payload của một API công khai.
- */
-export function serializeAdminMedia(row: AdminMediaRow): AdminMediaItem {
-  const source: MediaSource = row.source === 'youtube' ? 'youtube' : 'upload'
-  return {
-    id:              Number(row.id),
-    slug:            String(row.slug),
-    shortId:         String(row.shortId),
-    title:           String(row.title),
-    description:     row.description ?? null,
-    source,
-    youtubeVideoId:  row.youtubeVideoId ?? null,
-    durationSeconds: row.durationSeconds ?? null,
-    width:           row.width ?? null,
-    height:          row.height ?? null,
-    categoryId:      row.categoryId ?? null,
-    categoryName:    row.categoryName ?? null,
-    categorySlug:    row.categorySlug ?? null,
-    status:          (row.status === 'published' || row.status === 'archived' ? row.status : 'draft') as MediaItemStatus,
-    processingStatus: String(row.processingStatus),
-    processingError:  row.processingError ?? null,
-    storagePath:     row.storagePath ?? null,
-    // `storage_provider` chỉ nhận 'r2' hoặc 'local' ở tầng ghi; null là mục chưa
-    // transcode (passthrough mới hoàn tất) — đọc thành 'local' ở giao diện gây
-    // hiểu nhầm, nên giữ nguyên null để badge suy diễn.
-    storageProvider:  (row.storageProvider === 'r2' || row.storageProvider === 'local') ? row.storageProvider : null,
-    thumbnailUrl:    row.thumbnailUrl ?? null,
-    isFeatured:      row.isFeatured === true,
-    commentsEnabled: row.commentsEnabled === true,
-    viewCount:       Number(row.viewCount ?? 0),
-    publishedAt:     row.publishedAt ? row.publishedAt.toISOString() : null,
-    createdBy:       row.createdBy ?? null,
-    createdAt:       row.createdAt ? row.createdAt.toISOString() : null,
-    updatedAt:       row.updatedAt ? row.updatedAt.toISOString() : null,
-    // `resolutions_ready` là json() — driver thật parse sẵn, pool giả thì chuỗi.
-    // `coerceResolutionsReady` thống nhất cả hai; trả null khi rỗng ("chưa có bản
-    // nào" và "chưa transcode" đọc giống nhau ở UI, và đó là đúng: cả hai đều
-    // chưa có bản nào để vẽ).
-    resolutionsReady: coerceResolutionsReady(row.resolutionsReady),
-    processingRendition: row.processingRendition ?? null,
-    // Giới hạn 0–100 — FFmpeg thỉnh thoảng báo >100 do rounding; UI không vẽ >100.
-    processingPercent: typeof row.processingPercent === 'number'
-      ? Math.min(100, Math.max(0, row.processingPercent))
-      : null,
-    processingPhase: row.processingPhase ?? null,
-  }
-}
-
-/** Khoá sắp xếp hợp lệ cho danh sách quản trị. */
-const ADMIN_SORT_KEYS = new Set(['updatedAt', 'createdAt', 'publishedAt', 'title', 'viewCount'])
-
-export type AdminMediaQuery = {
-  page:            number
-  limit:           number
-  search?:         string
-  status?:         MediaItemStatus
-  source?:         MediaSource
-  categoryId?:    number | null
-  processingStatus?: string
-  sort?:           string
-  order?:          'asc' | 'desc'
-}
-
-export type AdminMediaPage = {
-  items: AdminMediaItem[]
-  total: number
-  page:  number
-  limit: number
-}
-
-/**
- * Danh sách **mọi** mục media cho màn hình quản trị — bao gồm `draft`,
- * `published`, `archived`, và mục đang xử lý.
- *
- * khác `listPublishedMedia` ở ba điểm có chủ đích:
- *  1. **Không lọc `status`** — cán bộ vận hành cần thấy draft, đang xử lý, đã
- *     gỡ, và đã xuất bản cùng lúc trên cùng một màn hình. Lọc theo `status` là
- *     một tuỳ chọn (tham số `status`), không phải mặc định.
- *  2. **Trả `processingError`, `storagePath`, `status`** — đúng ba thứ đường
- *     công khai cố ý loại ra. Một mục `failed` mà danh sách quản trị không cho
- *     thấy lý do là mục mà cán bộ không có cách nào biết vì sao nó hỏng.
- *  3. **Sắp xếp mặc định theo `updatedAt`** — một mục vừa được sửa hoặc vừa nhận
- *     heartbeat từ pipeline là mục cán bộ cần thấy đầu tiên, khác với đường
- *     công khai sắp theo `publishedAt` vì ở đó "mới đăng" mới là thông tin hữu ích
- *     nhất cho công dân.
- *
- * `categoryId` nhận **một số** (không phải slug): màn hình quản trị đã có id của
- * danh mục trong tay và không cần đường dẫn công khai. Hàm `resolveCategoryIds`
- * của đường công khai giải slug → ids để công dân có thể chia sẻ liên kết theo
- * tên danh mục; ở đây đó là một truy vấn phụ không cần thiết.
- */
-export async function listAllMediaForAdmin(
-  query: AdminMediaQuery,
-  deps: { db?: Database } = {},
-): Promise<AdminMediaPage> {
-  const db = deps.db ?? getDb()
-
-  const conditions = []
-
-  const search = typeof query.search === 'string' ? query.search.trim().slice(0, MEDIA_SEARCH_MAX_LENGTH) : ''
-  if (search) conditions.push(like(mediaItems.title, likeContains(search)))
-
-  if (query.status) conditions.push(eq(mediaItems.status, query.status))
-  if (query.source) conditions.push(eq(mediaItems.source, query.source))
-  if (query.processingStatus) conditions.push(eq(mediaItems.processingStatus, query.processingStatus))
-  if (typeof query.categoryId === 'number' && query.categoryId > 0) {
-    conditions.push(eq(mediaItems.categoryId, query.categoryId))
-  }
-
-  const where = conditions.length ? and(...conditions) : undefined
-  const offset = Math.max(0, (query.page - 1) * query.limit)
-
-  const sortKey = query.sort && ADMIN_SORT_KEYS.has(query.sort) ? query.sort : 'updatedAt'
-  const sortOrder = query.order === 'asc' ? asc : desc
-  const orderColumn = sortKey === 'title'
-    ? mediaItems.title
-    : sortKey === 'createdAt'
-      ? mediaItems.createdAt
-      : sortKey === 'publishedAt'
-        ? mediaItems.publishedAt
-        : sortKey === 'viewCount'
-          ? mediaItems.viewCount
-          : mediaItems.updatedAt
-
-  const [rows, totals] = await Promise.all([
-    db
-      .select(adminMediaSelection)
-      .from(mediaItems)
-      .leftJoin(mediaCategories, eq(mediaItems.categoryId, mediaCategories.id))
-      .where(where)
-      .orderBy(sortOrder(orderColumn), desc(mediaItems.id))
-      .limit(query.limit)
-      .offset(offset),
-    db.select({ total: count() }).from(mediaItems).where(where),
-  ])
-
-  return {
-    items: rows.map(row => serializeAdminMedia(row)),
-    total: Number(totals[0]?.total ?? 0),
-    page:  query.page,
-    limit: query.limit,
-  }
-}
-
-/**
- * Một mục theo id cho màn hình quản trị, hoặc `null`.
- *
- * Khác `getPublishedMediaByShortId` ở chỗ: không lọc `status`, và trả đủ các trường
- * đường công khai loại ra (`status`, `processingError`, `storagePath`). Đây là
- * hình dạng mà 7.6 cần: một mục `failed` phải hiện ra cùng lý do, không bị ẩn
- * đi chỉ vì nó không thuộc tập "đã xuất bản".
- */
-export async function getMediaItemForAdmin(
-  id: number,
-  deps: { db?: Database } = {},
-): Promise<AdminMediaItem | null> {
-  const db = deps.db ?? getDb()
-  const [row] = await db
-    .select(adminMediaSelection)
-    .from(mediaItems)
-    .leftJoin(mediaCategories, eq(mediaItems.categoryId, mediaCategories.id))
-    .where(eq(mediaItems.id, id))
-    .limit(1)
-  return row ? serializeAdminMedia(row) : null
-}
-
-export type PublicMediaCategory = {
-  id: number
-  name: string
-  slug: string
-  count: number
-}
-
-/**
- * Số mục **đã xuất bản** theo từng danh mục.
- *
- * `innerJoin` chứ không `leftJoin`, và điều kiện `status = 'published'` nằm ngay
- * trong mệnh đề join: một danh mục hiện ra với số 0 là một danh mục bấm vào thấy
- * trống, mà không có gì trên màn hình giải thích vì sao. Bộ đếm và bộ lọc phải
- * đếm cùng một tập, nếu không con số tự nó nói dối.
- */
-export async function countPublishedMediaByCategory(
-  deps: { db?: Database } = {},
-): Promise<PublicMediaCategory[]> {
-  const db = deps.db ?? getDb()
-
-  const rows = await db
-    .select({
-      id: mediaCategories.id,
-      name: mediaCategories.name,
-      slug: mediaCategories.slug,
-      total: count(mediaItems.id),
-    })
-    .from(mediaCategories)
-    .innerJoin(
-      mediaItems,
-      and(eq(mediaItems.categoryId, mediaCategories.id), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)),
-    )
-    .groupBy(mediaCategories.id, mediaCategories.name, mediaCategories.slug, mediaCategories.displayOrder)
-    .orderBy(asc(mediaCategories.displayOrder), asc(mediaCategories.id))
-
-  return rows.map(row => ({
-    id: Number(row.id),
-    name: String(row.name),
-    slug: String(row.slug),
-    count: Number(row.total),
-  }))
-}
-
-/**
- * Một mục đã xuất bản theo short_id, hoặc `null`.
- *
- * `null` cho **cả** short_id không tồn tại **lẫn** short_id của một mục
- * `draft`/`archived` — nơi gọi không được phân biệt hai trường hợp đó, vì một
- * phản hồi khác nhau giữa chúng là cách liệt kê ra những short_id chưa xuất bản.
- */
-export async function getPublishedMediaByShortId(
-  shortId: string,
-  deps: { db?: Database } = {},
-): Promise<PublicMediaItem | null> {
-  const db = deps.db ?? getDb()
-  const [row] = await db
-    .select(publicMediaSelection)
-    .from(mediaItems)
-    .leftJoin(mediaCategories, eq(mediaItems.categoryId, mediaCategories.id))
-    .where(and(eq(mediaItems.shortId, shortId), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
-    .limit(1)
-
-  return row ? serializePublicMedia(row) : null
-}
-
-/**
- * Id của một mục đã xuất bản theo short_id, hoặc `null`.
- *
- * Một truy vấn **chỉ lấy id**, không phải `getPublishedMediaByShortId`: đường đếm
- * lượt xem chạy một lần mỗi lượt mở trang, và nó không cần tiêu đề, mô tả, tên
- * danh mục hay bất cứ thứ gì khác. Đi qua hàm kia sẽ kéo theo một phép join và
- * mười sáu cột cho một con số.
- */
-export async function resolvePublishedMediaIdByShortId(
-  shortId: string,
-  deps: { db?: Database } = {},
-): Promise<number | null> {
-  const db = deps.db ?? getDb()
-  const [row] = await db
-    .select({ id: mediaItems.id })
-    .from(mediaItems)
-    .where(and(eq(mediaItems.shortId, shortId), eq(mediaItems.status, PUBLISHED_MEDIA_STATUS)))
-    .limit(1)
-
-  return row ? Number(row.id) : null
 }
 
 // ─── Đích phục vụ tệp (đường dẫn nội bộ) ─────────────────────────────────────
@@ -907,21 +239,6 @@ export function normalizeAssetPath(value: unknown): string | null {
     .filter(segment => segment && segment !== '.' && segment !== '..')
   if (segments.length === 0) return null
   return segments.join('/')
-}
-
-/** Parse `resolutions_ready` thành mảng bất kể nó đến từ driver thật (đã parse)
- *  hay pool giả (chuỗi JSON). `null`/chuỗi rỗng → `null` (không có rendition). */
-function coerceResolutionsReady(value: unknown): string[] | null {
-  if (Array.isArray(value)) return value.length === 0 ? null : value
-  if (typeof value !== 'string') return null
-  const trimmed = value.trim()
-  if (!trimmed || trimmed === 'null') return null
-  try {
-    const parsed: unknown = JSON.parse(trimmed)
-    return Array.isArray(parsed) ? (parsed.length === 0 ? null : parsed) : null
-  } catch {
-    return null
-  }
 }
 
 export type StreamTarget =
@@ -1356,39 +673,6 @@ function resolveLocalThumbnail(
   return null
 }
 
-// ─── Đếm lượt xem ────────────────────────────────────────────────────────────
-
-/**
- * `mv:<mediaItemId>:<32 hex đầu của token khách>`.
- *
- * Cùng khuôn `buildViewDedupeKey` của bài viết, tiền tố khác để hai bộ đếm không
- * bao giờ dùng chung một khoá: một id bài viết và một id mục media là hai dãy số
- * độc lập, nên trùng số là chuyện bình thường — và khi đó một lượt xem bài viết
- * sẽ chặn một lượt xem video.
- */
-export function buildMediaViewDedupeKey(mediaItemId: number, visitorToken: string): string {
-  const key = `mv:${mediaItemId}:${visitorToken.slice(0, MEDIA_VIEW_DEDUPE_TOKEN_LENGTH)}`
-  if (key.length > MEDIA_VIEW_DEDUPE_KEY_MAX_LENGTH) {
-    throw new Error(`media view dedupe key exceeds ${MEDIA_VIEW_DEDUPE_KEY_MAX_LENGTH} characters`)
-  }
-  return key
-}
-
-/**
- * Một lượt xem. Một câu lệnh, không transaction: đây là bộ đếm của cổng về nội
- * dung của chính nó, không kèm dòng audit nào (người xem là khách công khai, và
- * `activity_logs.user_id` là FK tới `users` — không có hàng nào để trỏ vào).
- */
-export async function recordMediaView(
-  mediaItemId: number,
-  executor?: Pick<Database, 'update'>,
-): Promise<void> {
-  await (executor ?? getDb())
-    .update(mediaItems)
-    .set({ viewCount: sql`${mediaItems.viewCount} + 1` })
-    .where(eq(mediaItems.id, mediaItemId))
-}
-
 // ─── Ghi quản trị ────────────────────────────────────────────────────────────
 
 export type CreateMediaItemInput = {
@@ -1476,13 +760,6 @@ export async function createMediaItem(
 
     return { mediaItemId, slug, shortId }
   })
-}
-
-/** Định danh video của nền tảng ngoài, bắt buộc bóc ra được từ giá trị đã lưu. */
-function requireMediaSourceId(value: unknown): string {
-  const id = extractYouTubeVideoId(value)
-  if (!id) throw new MediaValidationError('Địa chỉ video không hợp lệ hoặc không được hỗ trợ.')
-  return id
 }
 
 export type UpdateMediaItemInput = {
@@ -1733,16 +1010,10 @@ export async function setMediaThumbnail(
   // 2. Đọc bytes ảnh nguồn.
   let sourceBuffer: Buffer
   if (img.provider === 'r2') {
-    const r2Config = input.config.videoStorage.r2
     // Ảnh thư viện R2 dùng R2 của **thư viện ảnh** (group `media`), không phải R2
-    // video (group `media_portal`). Hai bucket/credential khác nhau. Lấy config
-    // thư viện ảnh từ settings — nhưng `input.config` là config media-portal.
-    // Thư viện ảnh R2 có thể đọc qua `getR2Object` với config riêng; ở đây ta chỉ
-    // có thể đọc ảnh local hoặc ảnh R2 thư viện.
-    // — Thư viện ảnh provider xác định qua `media.provider`; R2 của thư viện dùng
-    // credentials khác (group `media`). Hiện `input.config` không mang chúng.
-    // Nên: nếu ảnh thư viện R2, đọc qua public URL (fetch) — ảnh thư viện R2 có
-    // public URL trực tiếp (không proxy như video).
+    // video (group `media_portal`). Hai bucket/credential khác nhau — `input.config`
+    // là config media-portal nên không mang credentials thư viện ảnh. Vì ảnh thư
+    // viện R2 có public URL trực tiếp (không proxy như video), đọc qua fetch URL.
     if (!img.url) throw new Error('Ảnh thư viện R2 không có URL.')
     const res = await fetch(img.url).catch(() => null)
     if (!res || !res.ok) throw new Error('Không tải được ảnh thumbnail từ thư viện R2.')

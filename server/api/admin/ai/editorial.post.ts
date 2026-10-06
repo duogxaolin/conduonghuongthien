@@ -3,7 +3,7 @@ import { getDb } from '../../../utils/db'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { checkBudget } from '../../../utils/ai-budget'
 import { callAi } from '../../../services/ai-gateway'
-import { escapeHtml } from '../../../utils/escape-html'
+import { decodeHtmlEntities } from '../../../utils/decode-html-entities'
 
 const VALID_ACTIONS = new Set(['summary', 'suggest_titles', 'polish'])
 
@@ -27,7 +27,11 @@ export default defineEventHandler(async (event) => {
 
   const title = String(body.title || '').trim()
   const rawContent = String(body.content || '').trim()
-  const content = stripHtml(rawContent)
+  // stripHtml removes tags but leaves HTML entities (`&acirc;` etc.). TinyMCE emits
+  // Vietnamese diacritics as named entities; decode them so the AI sees real characters
+  // and echoes them back identically (otherwise Vue text interpolation renders `&acirc;`).
+  const content = decodeHtmlEntities(stripHtml(rawContent))
+  const decodedTitle = decodeHtmlEntities(title)
 
   if (!content && !title) {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng cung cấp nội dung hoặc tiêu đề bài viết.' })
@@ -76,9 +80,13 @@ YÊU CẦU BẮT BUỘC:
   } else if (action === 'polish') {
     taskPrompt = `Bạn là chuyên gia biên tập và soát lỗi văn bản chính luận của Cổng thông tin Cục C11 - Bộ Công an.
 Hãy đọc kỹ bài viết, rà soát từng câu từng từ để tìm:
-1. Lỗi chính tả, đánh máy, danh xưng địa danh hành chính (ví dụ: huyện Mèo Vạc).
+1. Lỗi chính tả, đánh máy, viết hoa/sai thông thường.
 2. Lỗi ngữ pháp, dùng từ chưa chuẩn văn phong báo chí chính luận.
-3. Sai số hiệu văn bản pháp luật, sai tên cơ quan hành chính (ví dụ: Nghị định về tái hòa nhập cộng đồng là Nghị định số 49/2020/NĐ-CP; Chi nhánh Ngân hàng Chính sách xã hội).
+
+KHÔNG ĐƯỢC soi các lỗi sau (vì bạn KHÔNG có thông tin chính xác để kết luận):
+- Địa danh hành chính (tỉnh/huyện/xã, trực thuộc tỉnh nào). Địa danh Việt Nam thay đổi liên tục, bài viết có thể đã dùng tên mới — KHÔNG báo lỗi địa danh.
+- Thời gian, ngày tháng, năm (kể cả năm tương lai). Bạn không biết ngày biên tập hay ngày sự kiện thật — KHÔNG báo lỗi "năm ở tương lai".
+- Tên cơ quan, số hiệu văn bản pháp luật, điều khoản luật. Bạn không có cơ sở dữ liệu pháp luật cập nhật — KHÔNG báo lỗi "điều không tồn tại" hoặc "luật chưa ban hành".
 
 YÊU CẦU BẮT BUỘC VỀ ĐẦU RA:
 Trả về đúng định dạng JSON thuần túy (không bọc trong markdown code block, không thêm lời dẫn giải thích):
@@ -88,20 +96,25 @@ Trả về đúng định dạng JSON thuần túy (không bọc trong markdown 
     {
       "original": "Đoạn văn bản gốc có lỗi hoặc chưa chuẩn (chuỗi ngắn, chính xác để tìm và thay thế)",
       "suggested": "Đoạn văn bản đã sửa đổi, chuẩn hóa tương ứng",
-      "reason": "Giải thích ngắn gọn 1 câu lỗi gì (chính tả / pháp lý / danh xưng)"
+      "reason": "Giải thích ngắn gọn 1 câu lỗi gì (chính tả / ngữ pháp / văn phong)"
     }
   ],
   "polishedContent": "Toàn bộ nội dung bài viết hoàn chỉnh sau khi đã sửa toàn bộ lỗi (giữ nguyên cấu trúc HTML nếu có các thẻ <img>, <a>, <p>...)"
 }`
   }
 
-  // 3. Invoke AI Gateway — escape user content so a closing fence inside the article cannot be mistaken for instruction.
-  const safeTitle = escapeHtml(title || '(Chưa có tiêu đề)')
-  const safeRaw = escapeHtml(rawContent.slice(0, 10000))
+  // 3. Invoke AI Gateway. `content` has had HTML tags stripped and named entities
+  //    decoded so Vietnamese diacritics reach the model as real Unicode characters
+  //    (TinyMCE emits `ấ` as `&acirc;`; decoding prevents the model from echoing the
+  //    literal entity into `original`/`suggested`, which Vue text interpolation would
+  //    render as `&acirc;`). We deliberately do NOT escapeHtml here — it would re-mangle
+  //    the diacritics, and it does not guard against markdown-fence prompt injection
+  //    (backtick is not an HTML metacharacter). The gateway template wraps `variables`
+  //    in its own fenced block; the inline prompt is context-only.
   const aiResult = await callAi('editorial_assistant', {
-    prompt: `${taskPrompt}\n\nTiêu đề bài viết: ${safeTitle}\n\nNội dung bài viết:\n${safeRaw}`,
+    prompt: `${taskPrompt}\n\nTiêu đề bài viết: ${decodedTitle || '(Chưa có tiêu đề)'}\n\nNội dung bài viết:\n${content.slice(0, 10000)}`,
     variables: {
-      article_title: title || '(Chưa có tiêu đề)',
+      article_title: decodedTitle || '(Chưa có tiêu đề)',
       article_content: content.slice(0, 8000),
     },
     userId: adminUser?.id ?? null,
