@@ -316,20 +316,21 @@ const repointUrls = async () => {
 
 // ─── Vá URL ảnh hỏng hàng loạt (all bài) ─────────────────────────────────
 // Sync trước đó treo ở backup nên phase rewrite chưa chạy: all bài vẫn
-// `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi file local đã
+// `http://localhost:3000/uploads/migrated/YYYY/MM/*.jpeg` trong khi file local đã
 // bị xoá (Local 0 / R2 3212). Kèm `media.url` thiếu scheme `cdn1...` → grid
-// thành `http://localhost:3000/cdn1...`. Nút này vá cả hai trong 1 transaction,
-// tự backup SQL trước, idempotent (&lt; vài giây).
+// thành `http://localhost:3000/cdn1...`. Nút này vá cả `media.url` +
+// `articles.content` + `articles.thumbnail_url` trong 1 transaction,
+// tự backup SQL trước, idempotent (< vài giây).
 const repairing = ref(false)
-const repairResult = ref<{ mediaFixed: number; articlesFixed: number; backupStamp: string | null } | null>(null)
+const repairResult = ref<{ mediaFixed: number; articlesFixed: number; thumbnailsFixed: number; backupStamp: string | null } | null>(null)
 
 const repairUrls = async () => {
-  if (!confirm('Vá URL ảnh hỏng hàng loạt?\n\nSẽ:\n• Bóc prefix localhost khỏi media.url + thêm https:// nếu thiếu scheme\n• Thay /uploads/migrated/media/<filename> trong ALL bài viết bằng URL R2 đúng\n\nTự backup SQL trước (snapshot recover thủ công). Chạy < vài giây, bấm lại an toàn.')) return
+  if (!confirm('Vá URL ảnh hỏng hàng loạt?\n\nSẽ:\n• Bóc prefix localhost khỏi media.url + thêm https:// nếu thiếu scheme\n• Thay /uploads/migrated/YYYY/MM/<filename> trong ALL bài viết (content + thumbnail_url) bằng URL R2 đúng\n\nTự backup SQL trước (snapshot recover thủ công). Chạy < vài giây, bấm lại an toàn.')) return
   repairing.value = true
   repairResult.value = null
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; mediaFixed: number; articlesFixed: number; backupStamp: string | null; message: string }>)(`/api/admin/media/repair-urls`, { method: 'POST' })
-    repairResult.value = { mediaFixed: res.mediaFixed, articlesFixed: res.articlesFixed, backupStamp: res.backupStamp }
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; mediaFixed: number; articlesFixed: number; thumbnailsFixed: number; backupStamp: string | null; message: string }>)(`/api/admin/media/repair-urls`, { method: 'POST' })
+    repairResult.value = { mediaFixed: res.mediaFixed, articlesFixed: res.articlesFixed, thumbnailsFixed: res.thumbnailsFixed, backupStamp: res.backupStamp }
     toast.success(res.message)
     await loadCounts()
   } catch (err: unknown) {
@@ -676,7 +677,7 @@ const runSelfHeal = async (dryRun: boolean) => {
         <i class="fa-solid fa-screwdriver-wrench text-2xl text-[#8a6412] mt-0.5" aria-hidden="true"></i>
         <div>
           <h2 class="m-0 text-base font-bold text-[#122815]">Vá URL ảnh hỏng hàng loạt</h2>
-          <p class="m-0 mt-1 text-[0.82rem] text-[#667768]">Sync trước treo ở backup nên <strong>all bài</strong> vẫn <code class="font-mono">http://localhost:3000/uploads/migrated/media/*.jpeg</code> trong khi file local đã bị xoá (Local 0 / R2 3212). Kèm <code class="font-mono">media.url</code> thiếu scheme → grid thành <code class="font-mono">http://localhost:3000/cdn1...</code>. Nút này vá cả <code class="font-mono">media.url</code> + <code class="font-mono">articles.content</code> trong 1 transaction, tự backup SQL trước. Bấm lại an toàn.</p>
+          <p class="m-0 mt-1 text-[0.82rem] text-[#667768]">Sync trước treo ở backup nên <strong>all bài</strong> vẫn <code class="font-mono">http://localhost:3000/uploads/migrated/YYYY/MM/*.jpeg</code> trong khi file local đã bị xoá (Local 0 / R2 3212). Kèm <code class="font-mono">media.url</code> thiếu scheme → grid thành <code class="font-mono">http://localhost:3000/cdn1...</code>. Nút này vá cả <code class="font-mono">media.url</code> + <code class="font-mono">articles.content</code> + <code class="font-mono">articles.thumbnail_url</code> trong 1 transaction, tự backup SQL trước. Bấm lại an toàn.</p>
         </div>
       </header>
       <button
@@ -698,6 +699,10 @@ const runSelfHeal = async (dryRun: boolean) => {
         <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
           <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Bài viết vá</p>
           <p class="m-0 mt-1 text-xl font-extrabold text-[#1e4620]">{{ repairResult.articlesFixed }}</p>
+        </div>
+        <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
+          <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Thumbnail vá</p>
+          <p class="m-0 mt-1 text-xl font-extrabold text-[#1e4620]">{{ repairResult.thumbnailsFixed }}</p>
         </div>
         <div v-if="repairResult.backupStamp" class="rounded-lg border border-[#f0dcae] bg-white p-3">
           <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#8a6412]">Snapshot</p>
