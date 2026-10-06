@@ -474,3 +474,36 @@ Typecheck 0 lỗi, eslint 0 error, npm test 2065 pass/0 fail/14 skip, build exit
 #### Kiểm chứng
 Typecheck 0 lỗi, eslint 0 error, npm test 2065 pass/0 fail/14 skip, build exit 0. Test guard `favicon-settings.test.ts:639` (`EXT_BY_MIME[effectiveMime]`) + `cms-core-auth-media.test.ts:129-130` (`EXT_BY_MIME` + `effectiveMime`) pass.
 
+### 14. Preload hero banner WebP + preconnect R2 (2026-10-06)
+
+#### Bối cảnh
+PageSpeed Insights mobile báo LCP hero banner chậm + "không có điểm gốc nào được kết nối trước". `HeroBlock.vue` dùng `background: url('/assets/hero_banner.jpg')` 201 KiB — CSS background không preload tự động, browser chỉ tìm thấy ảnh sau khi parse xong stylesheet.
+
+#### Thay đổi
+- **`public/assets/hero_banner.webp`** (MỚI, 155 KiB, -23% từ 201 KiB JPG): sharp q80 convert 1 lần, commit binary cùng `.jpg` (giữ `.jpg` fallback).
+- **`nuxt.config.ts` `app.head.link`**: thêm 2 thẻ sau `fontLinks`, trước `iconFontPreloads`:
+  - `{ rel: 'preconnect', href: 'https://cdn1.delify.vn' }` — thiết lập TCP/TLS sớm cho R2 CDN (logo + thumbnail bài viết). 1 preconnect, không quá 4.
+  - `{ rel: 'preload', as: 'image', href: '/assets/hero_banner.webp', fetchpriority: 'high', type: 'image/webp' }` — LCP element, `type: 'image/webp'` → browser không hỗ trợ WebP bỏ qua preload an toàn (spec).
+- **`HeroBlock.vue`**: `heroBg` computed — nếu `bgImage` là `/assets/hero_banner.jpg` (default), dùng CSS `image-set(url('...webp') type('image/webp'), url('...jpg') type('image/jpeg'))`; ảnh admin upload khác giữ `url(bgImage)`. `image-set()` hỗ trợ Chrome 113+/Safari 17+/Firefox 89+ (>95% browser 2026-10).
+- **`QuoteBlock.vue`**: cùng pattern `quoteBg` computed image-set.
+
+#### Kiểm chứng
+Typecheck 0 lỗi, eslint 0 error.
+
+### 15. FontAwesome font-display swap + preload woff2 (2026-10-06)
+
+#### Bối cảnh
+PageSpeed Insights mobile báo 2 vấn đề:
+- **"Hiển thị phông chữ" 620ms** — FontAwesome CSS dùng `font-display:block` (FOIT 3s): icon biến mất trong 3s đầu trên mạng chậm.
+- **"Yêu cầu đang chặn kết xuất ban đầu" 4.5s** — 8 file CSS chặn first paint, trong đó 3 file FA woff2 (fa-regular 357KB, fa-solid 276KB, fa-brands 115KB) nằm trong critical path.
+
+#### Thay đổi
+- **`font-display: block → swap`** trong 3 file `public/assets/fontawesome/css/{solid,regular,brands}.min.css` (patch trực tiếp, không regenerate). FOUT thay FOIT — icon hiện ngay bằng font fallback, tải xong đổi sang FA icon. Inter font đã có `swap` từ trước.
+- **Preload 3 woff2** qua `nuxt.config.ts` `app.head.link`: `<link rel="preload" as="font" type="font/woff2" crossorigin="anonymous" href="...fa-{solid-900,regular-400,brands-400}.woff2">`. Đặt TRƯỚC `iconLinks` (stylesheet) để font sẵn sàng khi CSS parse xong — woff2 ra khỏi critical path.
+
+#### KHÔNG đổi
+- Không động `fontawesome.min.css` (154KB class map, không có `@font-face`).
+- Không async-load CSS (FOUC icon không đáng giá).
+
+#### Kiểm chứng
+Build exit 0, typecheck 0 lỗi, eslint 0 error.
