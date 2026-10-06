@@ -437,10 +437,9 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
               class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_3px_12px_rgba(0,0,0,0.04)] hover:shadow-[0_10px_28px_rgba(74,103,65,0.14)] transition-all duration-300 flex flex-col sm:flex-row"
             >
               <nuxt-link :to="typeLink(featured.slug)" class="block relative sm:w-[45%] aspect-video sm:aspect-auto overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
-                <NuxtImg
+                <img
                   :src="featured.thumbnailUrl || '/assets/hero_banner.jpg'"
                   :alt="featured.title"
-                  format="webp"
                   loading="eager"
                   class="w-full h-full object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
                 />
@@ -496,10 +495,9 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                 class="group bg-white rounded-2xl overflow-hidden border border-[#E2E8DF] shadow-[0_2px_8px_rgba(0,0,0,0.03)] hover:shadow-[0_10px_24px_rgba(74,103,65,0.12)] hover:border-[#7CB342] transition-all duration-300 flex flex-col hover:-translate-y-1 h-full"
               >
                 <nuxt-link :to="typeLink(item.slug)" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
-                  <NuxtImg
+                  <img
                     :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
                     :alt="item.title"
-                    format="webp"
                     loading="lazy"
                     decoding="async"
                     class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"

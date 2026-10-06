@@ -19,11 +19,10 @@
           class="group bg-white rounded-lg overflow-hidden border border-[#E2E8DF] shadow-sm flex flex-col transition-all duration-300 hover:-translate-y-0.5 hover:shadow-md hover:border-[#7CB342]"
         >
           <nuxt-link :to="`/reintegration-models/${item.id}`" class="block overflow-hidden no-underline">
-            <NuxtImg
+            <img
               :src="item.image"
               :alt="item.name"
               class="aspect-video w-full object-cover transition-transform duration-500 group-hover:scale-[1.04]"
-              format="webp"
               loading="lazy"
               decoding="async"
             />

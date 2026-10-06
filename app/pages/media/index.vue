@@ -175,9 +175,6 @@
                 <span class="relative block w-full aspect-video bg-[#EEF2EC] overflow-hidden">
                   <!-- Ảnh thu nhỏ luôn đến từ **chính cổng này** (`/api/public/media/<slug>/thumb`),
                        kể cả với video nguồn ngoài — không hot-link `i.ytimg.com`. -->
-                  <!-- Ảnh thu nhỏ luôn đến từ **chính cổng này** (`/api/public/media/<slug>/thumb`),
-                       đã qua sharp server-side nên giữ <img> (theo CLAUDE.md quy tắc ảnh đã
-                       qua sharp+R2) — không cần IPX convert lại. -->
                   <img
                     v-if="entry.thumbnailUrl"
                     :src="entry.thumbnailUrl"
