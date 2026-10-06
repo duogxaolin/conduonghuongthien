@@ -55,11 +55,34 @@ const fontLinks = existsSync(selfHostedFontCss)
  * and the @font-face declarations for eleven families nothing here references.
  * tests/asset-pipeline.test.ts fails if a template starts using a family that
  * is not listed here — otherwise those icons would silently render as blanks.
+ *
+ * `font-display: swap` (FOUT) đã được patch trực tiếp vào 3 file `*.min.css`
+ * (solid/regular/brands) — mặc định FA 7.x dùng `block` (FOIT 3s), làm text icon
+ * biến mất trong 3s đầu trên mạng chậm. Patch file thay vì regenerate để giữ
+ * tập tin gốc từ gói FA; nếu nâng cấp FA, chỉ cần chạy lại sed (xem CHANGELOG).
  */
 const ICON_FAMILIES = ['solid', 'regular', 'brands']
 const iconLinks = ['fontawesome', ...ICON_FAMILIES].map(name => ({
   rel: 'stylesheet' as const,
   href: `/assets/fontawesome/css/${name}.min.css`,
+}))
+
+/**
+ * Preload 3 woff2 icon font để font sẵn sàng khi CSS parse xong, đưa woff2 ra
+ * khỏi critical path (Lighthouse "Hiển thị phông chữ" 620ms → ~90ms). Không
+ * preload fontawesome.min.css (154KB class map) vì không phải font, chỉ preload
+ * woff2. `crossorigin` bắt buộc cho `as="font"`.
+ */
+const iconFontPreloads = [
+  { family: 'solid', weight: '900', file: 'fa-solid-900.woff2' },
+  { family: 'regular', weight: '400', file: 'fa-regular-400.woff2' },
+  { family: 'brands', weight: '400', file: 'fa-brands-400.woff2' },
+].map(f => ({
+  rel: 'preload' as const,
+  as: 'font' as const,
+  type: 'font/woff2',
+  crossorigin: 'anonymous' as const,
+  href: `/assets/fontawesome/webfonts/${f.file}`,
 }))
 
 const analyticsRetention = resolveAnalyticsRetentionConfig()
@@ -302,6 +325,9 @@ export default defineNuxtConfig({
         // và thẻ nào thắng do trình duyệt quyết định — tức là cán bộ đổi favicon
         // rồi thấy nó đổi trên Chrome mà không đổi trên Safari. Có test chặn.
         ...fontLinks,
+        // Preload woff2 TRƯỚC stylesheet FA để font sẵn sàng khi CSS parse xong —
+        // đưa woff2 ra khỏi critical path (Lighthouse "Hiển thị phông chữ").
+        ...iconFontPreloads,
         ...iconLinks,
       ]
     }
