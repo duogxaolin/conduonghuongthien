@@ -254,11 +254,10 @@
                 :to="`/news/${featured.slug}`"
                 class="block overflow-hidden lg:w-[42%] xl:w-[40%] shrink-0 relative bg-[#EBF1EA] no-underline"
               >
-                <NuxtImg
+                <img
                   :src="featured.thumbnailUrl || '/assets/hero_banner.jpg'"
                   :alt="featured.title"
                   class="w-full h-[220px] sm:h-[250px] lg:h-full object-cover object-center transition-transform duration-700 ease-out group-hover:scale-105"
-                  format="webp"
                   loading="lazy"
                   decoding="async"
                 />
@@ -333,11 +332,10 @@
               >
                 <!-- Thumbnail: strictly 16:9 -->
                 <nuxt-link :to="`/news/${item.slug}`" class="block relative w-full aspect-video overflow-hidden bg-[#EEF4EC] no-underline shrink-0">
-                  <NuxtImg
+                  <img
                     :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
                     :alt="item.title"
                     class="w-full h-full aspect-video object-cover object-center transition-transform duration-500 ease-out group-hover:scale-105"
-                    format="webp"
                     loading="lazy"
                     decoding="async"
                   />

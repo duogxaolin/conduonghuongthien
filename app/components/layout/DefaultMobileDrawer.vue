@@ -10,26 +10,20 @@
     <div class="flex items-center justify-between px-5 py-[18px] bg-gradient-to-br from-[#1e4620] to-[#133215] text-white border-b border-white/10 z-[2] flex-shrink-0">
       <div class="flex items-center gap-2.5 min-w-0">
         <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-2 shrink-0">
-          <NuxtImg
+          <img
             v-if="siteMainLogo"
             :src="siteMainLogo"
             alt="Logo cơ quan chủ quản"
             class="w-auto object-contain drop-shadow-md"
             :class="siteLogo ? 'h-10' : 'h-9'"
-            format="webp"
-            :width="siteLogo ? 80 : 72"
-            :height="siteLogo ? 40 : 36"
           />
           <span v-if="siteMainLogo && siteLogo" class="h-6 w-px bg-white/25" aria-hidden="true"></span>
-          <NuxtImg
+          <img
             v-if="siteLogo"
             :src="siteLogo"
             alt="Logo Con Đường Hướng Thiện"
             class="w-auto object-contain drop-shadow-md"
             :class="siteMainLogo ? 'h-7' : 'h-9'"
-            format="webp"
-            :width="siteMainLogo ? 56 : 72"
-            :height="siteMainLogo ? 28 : 36"
           />
         </div>
         <div class="flex flex-col min-w-0">
