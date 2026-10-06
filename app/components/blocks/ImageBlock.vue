@@ -2,7 +2,7 @@
   <section class="section bg-white">
     <div class="container">
       <figure v-if="d.url" class="max-w-[900px] mx-auto text-center" role="group">
-        <img :src="d.url" :alt="d.alt || 'Hình ảnh minh hoạ'" class="w-full rounded-lg shadow-sm"  loading="lazy" decoding="async" />
+        <NuxtImg :src="d.url" :alt="d.alt || 'Hình ảnh minh hoạ'" class="w-full rounded-lg shadow-sm" format="webp" loading="lazy" decoding="async" />
         <figcaption v-if="d.caption" class="mt-3 text-[0.85rem] text-[#7A8675] italic">{{ d.caption }}</figcaption>
       </figure>
     </div>

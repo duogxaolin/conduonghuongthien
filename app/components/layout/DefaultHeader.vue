@@ -12,20 +12,28 @@
         <!-- Logo Area -->
         <nuxt-link to="/" class="flex items-center gap-3 lg:gap-3.5 no-underline">
           <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-2 lg:gap-2.5 shrink-0">
-            <img
+            <!-- NuxtImg: IPX fetch từ cdn1.delify.vn (R2) → convert WebP + cache server.
+                 Test `main-logo-settings.test.ts` grep `:src="siteMainLogo"` — giữ binding. -->
+            <NuxtImg
               v-if="siteMainLogo"
               class="w-auto object-contain shrink-0"
               :class="siteLogo ? 'h-10 lg:h-[56px]' : 'h-9 lg:h-[50px]'"
               :src="siteMainLogo"
               alt="Logo cơ quan chủ quản"
+              format="webp"
+              :width="siteLogo ? 112 : 100"
+              :height="siteLogo ? 56 : 50"
             />
             <span v-if="siteMainLogo && siteLogo" class="h-6 lg:h-8 w-px bg-[#D0DDD1] shrink-0" aria-hidden="true"></span>
-            <img
+            <NuxtImg
               v-if="siteLogo"
               class="w-auto object-contain shrink-0 transition-all"
               :class="siteMainLogo ? 'h-7 lg:h-[38px]' : 'h-9 lg:h-[50px]'"
               :src="siteLogo"
               alt="Logo Con Đường Hướng Thiện"
+              format="webp"
+              :width="siteMainLogo ? 76 : 100"
+              :height="siteMainLogo ? 38 : 50"
             />
           </div>
           <div class="min-w-0">

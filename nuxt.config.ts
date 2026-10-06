@@ -90,9 +90,10 @@ export default defineNuxtConfig({
     quality: 75,
     format: ['webp', 'jpg', 'png'],
     // IPX provider mặc định đọc ảnh từ `public/` (uploads serve qua
-    // server/routes/uploads). Ảnh R2 có public URL riêng — nếu cần resize R2,
-    // thêm domain R2 vào `domains` bên dưới và dùng `<NuxtImg :src="r2Url">`.
-    domains: [],
+    // server/routes/uploads). Ảnh R2 có public URL riêng — `cdn1.delify.vn`
+    // cho phép NuxtImg resize/WebP hóa ảnh R2 (logo Bộ Công an, ảnh bài viết).
+    // Chỉ khai báo domain IPX có quyền đọc — tránh open proxy.
+    domains: ['cdn1.delify.vn'],
   },
 
   /**

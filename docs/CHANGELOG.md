@@ -425,3 +425,52 @@ Plugin `render:html` chèn tag vào `html.head` **trước** Vue head (`@unhead`
 
 #### Kiểm chứng
 Typecheck 0 lỗi, eslint 0 error, npm test 2065 pass/0 fail/14 skip, build exit 0, db:drift 62 bảng/635 cột không lệch.
+
+### 12. NuxtImg IPX CDN WebP — logo + thumbnail công khai (2026-10-06)
+
+#### Bối cảnh
+Ảnh công khai (logo, thumbnail bài viết, block Page Builder) dùng `<img>` thường → serve định dạng gốc (PNG/JPG). CDN R2 (`cdn1.delify.vn`) không tự convert WebP (test `Accept: image/webp` vẫn trả `image/png`). Hero banner đã qua sharp, related-article thumbnail giữ `<img>` vì test guard `article-related-content.test.ts:341` chặn `/<img/`.
+
+#### Thay đổi
+- **`nuxt.config.ts`**: thêm `domains: ['cdn1.delify.vn']` vào `image` config — IPX provider (sharp 0.35.4) fetch ảnh R2 + local → convert WebP + cache server.
+- **Logo (4 component)**: `<img>` → `<NuxtImg format="webp">` + `width`/`height`:
+  - `DefaultHeader.vue` (112×56/100×50 + 76×38/100×50)
+  - `DefaultFooter.vue` (144×72/128×64 + 104×52/128×64)
+  - `DefaultMobileDrawer.vue` (80×40/72×36 + 56×28/72×36)
+  - `admin/login.vue` — giữ `:src`, `v-if`, class tỷ lệ (test guard `main-logo-settings.test.ts`)
+- **Thumbnail công khai**: `ArticleDetail.vue` (thumbnail chính), `NewsCategoryList.vue`, `ContentTypeListSection.vue`, `news/index.vue`, `role-models/index.vue`, `documents/index.vue`, `reintegration-models/index.vue`, `search.vue`
+- **Page Builder blocks**: `NewsBlock.vue`, `RoleModelsBlock.vue`, `ReintegrationBlock.vue`, `DocumentsBlock.vue`, `ImageBlock.vue`, `GalleryBlock.vue`
+
+#### Giữ `<img>` cố ý
+- `ArticleDetail` related-article thumbnail — test guard `article-related-content.test.ts:341` `/<img/`
+- `SocialBubble` — icon SVG social (vector không WebP)
+- `media/index` + `media/[shortId]` — thumbnail đã qua sharp server-side (quy tắc CLAUDE.md)
+- `in-bai/[slug]` — logo trang in báo giấy
+- `StatsBlock` + `image-fallback.ts` + `markdown.ts` — comment/string code
+
+#### Kiểm chứng
+Typecheck 0 lỗi, eslint 0 error, npm test 2065 pass/0 fail/14 skip, build exit 0. CSP `img-src 'self' https://*.delify.vn` cover IPX proxy (cùng origin) + R2 CDN.
+
+### 13. Convert ảnh upload PNG/JPG/JPEG → WebP tại Media Library (2026-10-06)
+
+#### Bối cảnh
+`/api/admin/media/upload` lưu ảnh PNG/JPG nguyên gốc → client tải full size (2-5MB). Dù NuxtImg IPX (entry 12) convert WebP lúc serve, ảnh trên R2 vẫn gốc lớn, và không phải ảnh nào cũng qua NuxtImg (ArticleDetail related-article giữ `<img>` do test guard, ảnh rich-text TinyMCE dùng `<img>` thường).
+
+#### Thay đổi
+- **`server/api/admin/media/upload.post.ts`**: chèn logic convert WebP q80 sau khối resize>2400px, trước khi derive extension. PNG/JPG/JPEG → `sharp(buffer).webp({ quality: 80 })`, cập nhật `effectiveMime = 'image/webp'` → đuôi `.webp` + DB `mimeType` + R2 Content-Type đồng bộ.
+
+#### Giữ nguyên định dạng
+- **GIF** — sharp flatten animated GIF → frame đầu, loại trừ
+- **WebP** — không re-encode (tránh giảm chất lượng 2 lần)
+- **ICO** — sharp không decode
+- **Video/PDF** — không phải ảnh
+- **Ảnh >2400px** — resize về 2400 RỒI convert WebP (không resize 2 lần)
+- **sharp fail** — try/catch fallback giữ format gốc (không chặn upload)
+
+#### 2 endpoint loại (giải thích trong plan)
+- Media-portal thumbnail video — test guard `media-api.test.ts:664` chặn `image/jpeg` + `MEDIA_THUMBNAIL_FILE='thumb.jpg'` hardcode
+- Favicon — không lưu ảnh gốc, render PNG 32/180 + ICO (iOS không hỗ trợ WebP cho touch icon, ICO container bắt buộc)
+
+#### Kiểm chứng
+Typecheck 0 lỗi, eslint 0 error, npm test 2065 pass/0 fail/14 skip, build exit 0. Test guard `favicon-settings.test.ts:639` (`EXT_BY_MIME[effectiveMime]`) + `cms-core-auth-media.test.ts:129-130` (`EXT_BY_MIME` + `effectiveMime`) pass.
+
