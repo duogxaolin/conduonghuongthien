@@ -1,8 +1,40 @@
 <template>
   <!-- Hero Banner Section (lifted from index.vue, editable fields from block.data) -->
   <section class="relative min-h-[520px] overflow-hidden sm:min-h-[580px]" role="region" aria-label="Nội dung nổi bật">
-    <!-- Background image với will-change để tối ưu composite layer -->
-    <div class="absolute inset-0 will-change-transform" :style="`background: ${heroBg} center 65% / cover no-repeat;`"></div>
+    <!--
+      Background image là LCP element trang chủ — dùng `<img>` (KHÔNG phải CSS
+      background) để browser discover URL ngay khi parse HTML (không đợi CSS),
+      + `fetchpriority="high"` + `loading="eager"` ưu tiên tải. CSS background
+      không nhận fetchpriority/loading và chỉ bị phát hiện sau khi parse CSS →
+      LCP cao (PageSpeed audit báo "Tài nguyên LCP không tìm thấy trong tài liệu
+      ban đầu").
+
+      Default `/assets/hero_banner` có `.webp` (155 KiB) + `.jpg` (201 KiB) →
+      `<picture>` chọn WebP, fallback jpg. Ảnh admin upload (R2 URL) chỉ 1 URL
+      (đã convert WebP lúc upload) → `<img src>` trực tiếp, không picture.
+    -->
+    <picture v-if="isDefaultHero">
+      <source srcset="/assets/hero_banner.webp" type="image/webp" />
+      <img
+        src="/assets/hero_banner.jpg"
+        alt=""
+        fetchpriority="high"
+        loading="eager"
+        decoding="async"
+        class="absolute inset-0 w-full h-full object-cover will-change-transform"
+        style="object-position: center 65%;"
+      />
+    </picture>
+    <img
+      v-else
+      :src="bgImage"
+      alt=""
+      fetchpriority="high"
+      loading="eager"
+      decoding="async"
+      class="absolute inset-0 w-full h-full object-cover will-change-transform"
+      style="object-position: center 65%;"
+    />
     <div class="absolute inset-0 will-change-transform" style="background: linear-gradient(120deg, rgba(28,54,28,0.95) 0%, rgba(45,74,45,0.82) 45%, rgba(90,140,60,0.45) 100%);"></div>
     <div class="absolute inset-0 opacity-[0.04]" style="background: repeating-linear-gradient(135deg, #fff 0px, #fff 1px, transparent 1px, transparent 40px);"></div>
 
@@ -112,22 +144,19 @@ const d = computed(() => {
 const bgImage = computed(() => d.value.bgImage || '/assets/hero_banner.jpg')
 
 /**
- * Background dùng `image-set()` khi ảnh default `hero_banner` — trình duyệt hiện
- * đại (Chrome 113+/Safari 17+/Firefox 89+, >95% 2026-10) chọn `.webp` (155 KiB vs
- * `.jpg` 201 KiB, -23%); trình duyệt cũ lùi `.jpg` qua CSS cascade. Background CSS
- * không tự chọn WebP theo `Accept` (khác `<img>` + IPX), nên `image-set` là cách duy
- * nhất cho background.
- *
- * Ảnh admin upload (R2 URL `cdn1.delify.vn/...`) giữ `url()` gốc — đã convert WebP
- * lúc upload (PR #78), nhưng background CSS không image-set được URL R2 (cần 2 URL
- * tồn tại `.webp` + `.jpg`; admin upload chỉ có 1). Hero admin upload hiếm, chấp
- * nhận JPG/origin.
+ * Default hero `/assets/hero_banner` có cả `.webp` + `.jpg` → dùng `<picture>`
+ * chọn WebP (155 KiB vs 201 KiB, -23%). Ảnh admin upload (R2 URL) chỉ 1 URL →
+ * `<img src>` trực tiếp (R2 đã convert WebP lúc upload, PR #78).
  */
-const heroBg = computed(() => {
-  const bg = bgImage.value
-  if (bg === '/assets/hero_banner.jpg') {
-    return `image-set(url('/assets/hero_banner.webp') type('image/webp'), url('${bg}') type('image/jpeg'))`
-  }
-  return `url('${bg}')`
-})
+const isDefaultHero = computed(() => bgImage.value === '/assets/hero_banner.jpg')
+
+/**
+ * Preload LCP image — báo browser fetch ngay khi parse `<head>`, trước khi parse
+ * body thấy `<img>`. `fetchpriority="high"` trên preload + `<img>` → ảnh hero tải
+ * đầu tiên, LCP thấp nhất. Chỉ preload default hero (URL cố định); admin upload
+ * (R2 URL) hiếm + không biết before render.
+ */
+useHead(() => isDefaultHero.value ? {
+  link: [{ rel: 'preload', as: 'image', href: '/assets/hero_banner.webp', fetchpriority: 'high' }],
+} : {})
 </script>
