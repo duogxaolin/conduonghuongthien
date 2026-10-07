@@ -2,7 +2,7 @@
   <section class="section bg-white">
     <div class="container">
       <div class="text-center max-w-[600px] mx-auto mb-[40px]">
-        <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-[#7CB342] uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
+        <span v-if="d.subtitle" class="block text-[0.8rem] font-extrabold text-[#4A6741] uppercase tracking-[1.5px] mb-2">{{ d.subtitle }}</span>
         <h2 class="text-[2.2rem] sm:text-[1.6rem] font-extrabold text-[#1E251C] mb-3">{{ d.title || t('block_reintegration_title') }}</h2>
         <p v-if="d.description" class="text-[0.95rem] text-[#4A5545] leading-[1.5]">{{ d.description }}</p>
       </div>

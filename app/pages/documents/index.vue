@@ -180,7 +180,7 @@
                     <span class="inline-block bg-[#EEF4EC] text-[#2D5A27] text-[0.68rem] font-bold px-2 py-0.5 rounded uppercase tracking-wider">
                       {{ doc.categoryName || 'Văn bản quy phạm' }}
                     </span>
-                    <span class="text-[#889684] text-[0.75rem] flex items-center gap-1 font-medium">
+                    <span class="text-[#5a6c58] text-[0.75rem] flex items-center gap-1 font-medium">
                       <i class="fa-regular fa-calendar-days text-[0.72rem]"></i>
                       <span>Ban hành: {{ formatDate(doc) }}</span>
                     </span>
@@ -301,7 +301,7 @@
               </p>
               <nuxt-link
                 to="/assistant"
-                class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#7CB342] hover:bg-[#689F38] text-white font-extrabold text-xs transition-all no-underline shadow-sm"
+                class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#4a7c1e] hover:bg-[#3d6b15] text-white font-extrabold text-xs transition-all no-underline shadow-sm"
               >
                 <i class="fa-solid fa-comments" aria-hidden="true"></i>
                 <span>Hỏi Trợ lý ảo ngay</span>

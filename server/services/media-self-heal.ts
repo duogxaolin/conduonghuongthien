@@ -30,6 +30,13 @@ import { logInfo, logWarn } from '../utils/logger'
 
 const LOCK_NAME = 'cdkt:media:self-heal'
 
+/**
+ * Ảnh mặc định thay thế khi R2 object bị mất vĩnh viễn (file local cũng không còn).
+ * Đặt trong `public/assets/` → IPX đọc được (local, không cần R2). SafeImg dùng
+ * cùng fallback này → khớp tỉ lệ, không lệch layout.
+ */
+const DEFAULT_COVER = '/assets/default_cover_light.png'
+
 export interface SelfHealReport {
   /** Số hàng `media` (provider='r2') được kiểm tra HeadObject. */
   r2Checked: number
@@ -43,6 +50,14 @@ export interface SelfHealReport {
   r2Lost: number
   /** Số hàng `articles.thumbnail_url` sẽ/đã được repoint sang R2 URL. */
   thumbnailsRepointed: number
+  /**
+   * Số hàng `articles.thumbnail_url` (và `media.url`) đã trỏ tới R2 URL hỏng
+   * (r2Lost) → đổi sang ảnh mặc định `/assets/default_cover_light.png` để IPX
+   * không còn fetch R2 404 (Triệt 404 console tận gốc — prov hàng lost).
+   */
+  thumbnailsDefaulted: number
+  /** Số hàng `media.url` bị lost đã đổi sang ảnh mặc định (grid admin không vỡ). */
+  mediaUrlsDefaulted: number
   /** Sampel filename missing (max 20) để hiển thị. */
   missingSamples: string[]
   backupStamp: string | null
@@ -79,9 +94,15 @@ export async function selfHealMedia(
       r2Reuploaded: 0,
       r2Lost: 0,
       thumbnailsRepointed: 0,
+      thumbnailsDefaulted: 0,
+      mediaUrlsDefaulted: 0,
       missingSamples: [],
       backupStamp,
     }
+
+    // R2 URL của các hàng media bị lost (file R2 + local đều mất) — dùng ở Step 3
+    // để sửa articles.thumbnail_url + media.url sang default cover.
+    const lostR2Urls: string[] = []
 
     // ── Step 1: Kiểm tra + upload lại R2 object missing ─────────────────────
     // Chỉ xử lý provider='r2' (URL đã trỏ R2). Lấy tất cả — không phân trang — vì
@@ -118,6 +139,7 @@ export async function selfHealMedia(
       }
       if (!buffer) {
         report.r2Lost += 1
+        if (row.url) lostR2Urls.push(row.url)
         logWarn({
           event: 'media.self_heal_r2_lost',
           mediaId: row.id,
@@ -144,6 +166,7 @@ export async function selfHealMedia(
           error: err instanceof Error ? err.message : String(err),
         })
         report.r2Lost += 1
+        if (row.url) lostR2Urls.push(row.url)
       }
     }
 
@@ -203,6 +226,71 @@ export async function selfHealMedia(
     }
     report.thumbnailsRepointed = repointed
 
+    // ── Step 3: Triệt 404 tận gốc — đổi thumbnail_url + media.url của hàng lost ─
+    // `r2Lost` cases: R2 object missing VÀ file local cũng mất → không upload lại
+    // được. Trước đây service chỉ log warn rồi bỏ → `thumbnail_url` vẫn trỏ R2 URL
+    // hỏng → IPX fetch R2 404 → console đỏ + ảnh vỡ trên cổng (SafeImg chỉ fallback
+    // client-side, 404 vẫn hiện Network). Giờ đổi sang `DEFAULT_COVER` (local, IPX
+    // đọc từ public/ luôn 200) → IPX không bao giờ fetch R2 404 nữa.
+    //
+    // Match CHÍNH XÁC URL (WHERE thumbnail_url = R2Url), không LIKE substring —
+    // tránh sửa nhầm bài có thumbnail R2 khác chia đoạn prefix chung.
+    let thumbsDefaulted = 0
+    let mediaDefaulted = 0
+    // Dedupe lostR2Urls — 2 media row khác id rất hiếm chia cùng URL, nhưng nếu
+    // có thì UPDATE đôi cùng kết quả không hại, chỉ thừa affectedRows đếm sai.
+    const uniqueLostUrls = [...new Set(lostR2Urls)]
+    if (uniqueLostUrls.length === 0) {
+      report.thumbnailsDefaulted = 0
+      report.mediaUrlsDefaulted = 0
+    } else if (!opts.dryRun) {
+      await db.transaction(async (tx) => {
+        // 3a. articles.thumbnail_url = <lost R2 url> → DEFAULT_COVER
+        for (const lostUrl of uniqueLostUrls) {
+          const [r] = await tx.execute(
+            sql`UPDATE articles SET thumbnail_url = ${DEFAULT_COVER} WHERE thumbnail_url = ${lostUrl}`,
+          )
+          thumbsDefaulted += affectedRowsOrZero(r)
+        }
+        // 3b. media.url = <lost R2 url> → DEFAULT_COVER (grid admin không vỡ).
+        //     Giữ provider='r2' + storagePath nguyên — đây vẫn là hàng R2 "lost",
+        //     chỉ thay URL hiển thị. Nếu admin upload lại gốc sau này, URL sẽ đè.
+        for (const lostUrl of uniqueLostUrls) {
+          const [r] = await tx.execute(
+            sql`UPDATE media SET url = ${DEFAULT_COVER} WHERE url = ${lostUrl}`,
+          )
+          mediaDefaulted += affectedRowsOrZero(r)
+        }
+        await tx.insert(activityLogs).values({
+          userId: adminUserId,
+          action: 'self_heal_default_lost',
+          resource: 'media',
+          resourceId: null,
+          meta: {
+            lostCount: uniqueLostUrls.length,
+            thumbnailsDefaulted: thumbsDefaulted,
+            mediaUrlsDefaulted: mediaDefaulted,
+            defaultCover: DEFAULT_COVER,
+            backupStamp,
+          },
+        })
+      })
+    } else {
+      // Dry-run — đếm số bài + media SẼ sửa mà không UPDATE.
+      for (const lostUrl of uniqueLostUrls) {
+        const articleRows = await db.select({ id: articles.id })
+          .from(articles)
+          .where(eq(articles.thumbnailUrl, lostUrl))
+        thumbsDefaulted += articleRows.length
+        const mediaRows = await db.select({ id: media.id })
+          .from(media)
+          .where(eq(media.url, lostUrl))
+        mediaDefaulted += mediaRows.length
+      }
+    }
+    report.thumbnailsDefaulted = thumbsDefaulted
+    report.mediaUrlsDefaulted = mediaDefaulted
+
     return report
   })
 
@@ -216,6 +304,8 @@ export async function selfHealMedia(
     r2Missing: r.r2Missing,
     r2Reuploaded: r.r2Reuploaded,
     thumbnailsRepointed: r.thumbnailsRepointed,
+    thumbnailsDefaulted: r.thumbnailsDefaulted,
+    mediaUrlsDefaulted: r.mediaUrlsDefaulted,
   })
   return r
 }

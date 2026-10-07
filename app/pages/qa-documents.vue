@@ -359,7 +359,7 @@
                 </p>
                 <nuxt-link
                   to="/assistant"
-                  class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#7CB342] hover:bg-[#689F38] text-white font-extrabold text-xs transition-all no-underline shadow-sm"
+                  class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#4a7c1e] hover:bg-[#3d6b15] text-white font-extrabold text-xs transition-all no-underline shadow-sm"
                 >
                   <i class="fa-solid fa-comments" aria-hidden="true"></i>
                   <span>Hỏi Trợ lý ảo ngay</span>

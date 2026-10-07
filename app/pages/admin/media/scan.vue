@@ -354,13 +354,15 @@ interface SelfHealReport {
   r2Reuploaded: number
   r2Lost: number
   thumbnailsRepointed: number
+  thumbnailsDefaulted: number
+  mediaUrlsDefaulted: number
   missingSamples: string[]
   backupStamp: string | null
 }
 const selfHealReport = ref<SelfHealReport | null>(null)
 
 const runSelfHeal = async (dryRun: boolean) => {
-  if (!dryRun && !confirm('Tự vá ảnh R2 thiếu + repoint thumbnail?\n\nSẽ:\n• Tìm media R2 mà object thực sự không tồn tại → upload lại từ file local\n• Repoint articles.thumbnail_url /uploads/migrated/... sang R2 URL khớp\n\nTự backup SQL trước. Bấm lại an toàn (idempotent).')) return
+  if (!dryRun && !confirm('Tự vá ảnh R2 thiếu + repoint thumbnail?\n\nSẽ:\n• Tìm media R2 mà object thực sự không tồn tại → upload lại từ file local\n• Repoint articles.thumbnail_url /uploads/migrated/... sang R2 URL khớp\n• Với ảnh R2 mất gốc (file local cũng không còn) → đổi thumbnail + URL media sang ảnh mặc định để IPX hết 404\n\nTự backup SQL trước. Bấm lại an toàn (idempotent).')) return
   if (dryRun) selfHealPreviewing.value = true
   else selfHealing.value = true
   selfHealReport.value = null
@@ -376,6 +378,8 @@ const runSelfHeal = async (dryRun: boolean) => {
       r2Reuploaded: res.r2Reuploaded,
       r2Lost: res.r2Lost,
       thumbnailsRepointed: res.thumbnailsRepointed,
+      thumbnailsDefaulted: res.thumbnailsDefaulted ?? 0,
+      mediaUrlsDefaulted: res.mediaUrlsDefaulted ?? 0,
       missingSamples: res.missingSamples ?? [],
       backupStamp: res.backupStamp,
     }
@@ -844,7 +848,13 @@ const runSelfHeal = async (dryRun: boolean) => {
             <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#667768]">Thumbnail bài viết repoint</p>
             <p class="m-0 mt-0.5 text-lg font-extrabold text-[#1e4620]">{{ selfHealReport.thumbnailsRepointed }}</p>
           </div>
-          <div v-if="selfHealReport.backupStamp" class="rounded-lg border border-[#f0dcae] bg-white p-2.5">
+          <div class="rounded-lg border border-[#cfe8d0] bg-[#eef7ee] p-2.5">
+            <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#1e4620]">Thumbnail đổi sang ảnh mặc định</p>
+            <p class="m-0 mt-0.5 text-lg font-extrabold text-[#1e4620]">{{ selfHealReport.thumbnailsDefaulted }}</p>
+          </div>
+        </div>
+        <div v-if="selfHealReport.backupStamp" class="text-xs">
+          <div class="rounded-lg border border-[#f0dcae] bg-white p-2.5 inline-block">
             <p class="m-0 text-[0.7rem] font-bold uppercase tracking-wide text-[#8a6412]">Snapshot</p>
             <p class="m-0 mt-0.5 text-sm font-bold text-[#8a6412] break-all">{{ selfHealReport.backupStamp }}</p>
           </div>
@@ -853,9 +863,9 @@ const runSelfHeal = async (dryRun: boolean) => {
           <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
           Mẫu thiếu ({{ selfHealReport.missingSamples.length }}): {{ selfHealReport.missingSamples.slice(0, 8).join(', ') }}{{ selfHealReport.missingSamples.length > 8 ? '...' : '' }}
         </div>
-        <div v-if="selfHealReport.r2Lost > 0" class="text-xs text-[#a32924]" role="alert">
-          <i class="fa-solid fa-circle-exclamation mr-1" aria-hidden="true"></i>
-          {{ selfHealReport.r2Lost }} ảnh R2 thiếu object VÀ file local cũng không còn — không thể tự vá. Cần upload file gốc qua /admin/settings/backup (tar.gz) hoặc copy vào public/uploads/ rồi chạy lại.
+        <div v-if="selfHealReport.r2Lost > 0" class="text-xs text-[#2c6e33]" role="status">
+          <i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i>
+          {{ selfHealReport.r2Lost }} ảnh R2 thiếu object VÀ file local cũng không còn. Đã đổi <strong>{{ selfHealReport.thumbnailsDefaulted }}</strong> thumbnail bài viết + <strong>{{ selfHealReport.mediaUrlsDefaulted }}</strong> URL media sang ảnh mặc định — IPX không còn fetch R2 404. Nếu có file gốc, upload qua /admin/settings/backup (tar.gz) hoặc copy vào public/uploads/ rồi chạy lại (URL sẽ khôi phục).
         </div>
       </div>
     </section>

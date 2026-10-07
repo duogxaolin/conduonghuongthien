@@ -16,7 +16,7 @@
           <span class="text-[#2D5A27] font-bold">{{ heading }}</span>
         </nav>
 
-        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-[#7CB342] m-0 mb-1">{{ t('news_category_title') }}</p>
+        <p class="text-[0.78rem] font-extrabold uppercase tracking-[1.2px] text-[#4A6741] m-0 mb-1">{{ t('news_category_title') }}</p>
         <h1 class="text-[1.65rem] sm:text-[2.05rem] font-extrabold text-[#1E251C] leading-[1.2] m-0">{{ heading }}</h1>
         <p v-if="subheading" class="text-[0.95rem] text-[#5A6655] mt-2 mb-5 leading-relaxed">{{ subheading }}</p>
 
@@ -147,7 +147,7 @@
                   <span class="inline-block bg-[#EEF4EC] text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
                     {{ item.categoryName || categoryLabel }}
                   </span>
-                  <span class="flex items-center gap-1 text-[#889684] text-[0.75rem]">
+                  <span class="flex items-center gap-1 text-[#5a6c58] text-[0.75rem]">
                     <i class="fa-regular fa-calendar-days text-[0.72rem]" aria-hidden="true"></i>
                     <span>{{ formatDateVN(item.publishedAt || item.createdAt) }}</span>
                   </span>
@@ -236,7 +236,7 @@
               </p>
               <a
                 href="tel:0903480985"
-                class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#7CB342] hover:bg-[#689F38] text-white font-extrabold text-xs transition-all no-underline shadow-sm"
+                class="inline-flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#4a7c1e] hover:bg-[#3d6b15] text-white font-extrabold text-xs transition-all no-underline shadow-sm"
               >
                 <i class="fa-solid fa-phone" aria-hidden="true"></i>
                 <span>{{ t('hotline_btn') }}</span>
