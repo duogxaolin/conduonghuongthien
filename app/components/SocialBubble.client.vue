@@ -29,8 +29,11 @@ const loaded = ref(false)
 const root = ref<HTMLElement | null>(null)
 
 // Trạng thái mở rộng cho chế độ Nút tròn rời (Floating):
-// Trên PC: Mặc định mở ("ở pc mặc định mở ntn, và vẫn có nút x để thu gọn")
-// Trên Mobile: Mặc định thu gọn thành cụm [ Liên hệ hỗ trợ ] ( Zalo ) để không che mobile menu
+// - Floating: Mặc định mở trên cả PC lẫn Mobile (nút tròn rời không che nội
+//   dung như bảng popup — chỉ là các viên thuốc nhỏ xếp dọc).
+// - Popup: PC mặc định mở, Mobile mặc định thu gọn (bảng popup che nội dung
+//   trên điện thoại).
+// `socialAutoOpen` (từ admin settings) cho phép admin tắt tự mở hoàn toàn.
 const isExpanded = ref(true)
 
 function toggleExpand() {
@@ -74,11 +77,19 @@ onMounted(() => {
   document.addEventListener('click', onClickOutside)
   document.addEventListener('keydown', onKeydown)
 
-  // Trên PC (≥768px): Mặc định mở cho cả floating mode và popup mode
-  if (typeof window !== 'undefined') {
+  // Tự mở theo chế độ hiển thị + kích thước màn hình:
+  // - Floating: mở trên cả PC và mobile (nút tròn rời không che nội dung).
+  // - Popup: chỉ mở trên PC (≥768px); mobile thu gọn để bảng không che nội dung.
+  // `socialAutoOpen` tắt → không tự mở ở đâu (admin chủ ý).
+  if (typeof window !== 'undefined' && config.value.socialAutoOpen !== false) {
     const isDesktop = window.innerWidth >= 768
-    isExpanded.value = isDesktop
-    open.value = isDesktop
+    if (isFloating.value) {
+      isExpanded.value = true
+      open.value = true
+    } else {
+      isExpanded.value = isDesktop
+      open.value = isDesktop
+    }
   }
 })
 
@@ -139,7 +150,7 @@ function getIconStyle(item: SocialLink) {
     class="fixed right-3.5 bottom-[calc(84px+env(safe-area-inset-bottom,0px))] md:right-auto md:left-6 md:bottom-6 z-[9950] flex flex-col items-end md:items-start gap-2.5 select-none transition-all duration-300"
     :class="{ 'opacity-0 pointer-events-none translate-y-3': isHidden }"
   >
-    <!-- Khi đang mở rộng (Mặc định trên PC): hiển thị các nút tròn rời kèm nhãn chữ chuẩn tpoint và nút X thu gọn -->
+    <!-- Khi đang mở rộng (Mặc định trên cả PC lẫn Mobile ở floating mode): hiển thị các nút tròn rời kèm nhãn chữ và nút X thu gọn -->
     <TransitionGroup
       enter-active-class="transition duration-250 ease-out"
       enter-from-class="opacity-0 translate-y-3 scale-90"
