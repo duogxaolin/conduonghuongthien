@@ -63,6 +63,9 @@ const ACTION_LABELS: Record<string, string> = {
   // Thư viện ảnh — self-heal step 3: đổi thumbnail + URL media của hàng R2 mất gốc
   // sang ảnh mặc định (triệt IPX 404 tận gốc).
   self_heal_default_lost: 'Tự vá — đổi ảnh mất gốc',
+  // Bài viết — nút "Quét ảnh hỏng" ở /admin/content/articles: quét thumbnail hỏng,
+  // admin chọn bài + ảnh mặc định → UPDATE thumbnail_url trong SQL (triệt 404).
+  articles_fix_thumbnails: 'Vá ảnh bìa bài viết',
 }
 const RESOURCE_LABELS: Record<string, string> = {
   auth: 'Xác thực', profile_password: 'Mật khẩu tài khoản', profile_mfa: 'Xác thực hai bước',

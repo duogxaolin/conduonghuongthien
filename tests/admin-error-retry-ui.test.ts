@@ -239,6 +239,10 @@ const NO_CONTRACT_NEEDED: Record<string, string> = {
   // blank form đang soạn). Toolbar luôn render; 3 drawer preview chỉ hiện khi có
   // kết quả. Không có empty-state để misread — không có error branch.
   'components/admin/articles/ArticleAIPanel.vue': 'AI is best-effort; errors land in a toast and the toolbar stays — no form state to blank',
+  // Modal "Quét ảnh thumbnail hỏng" (tách khỏi articles/index.vue). Lỗi scan →
+  // alert branch với nút "Thử lại" trong body modal (`runScan` lại). Header luôn
+  // hiển thị. Danh sách bài hỏng concat, lỗi không tạo empty-state để misread.
+  'components/admin/articles/ScanThumbnailsModal.vue': 'error shows an alert branch with a retry button; the modal stays open and the broken-list has not populated yet, so no empty state to misread',
   // Quản lý Bản dịch đa ngôn ngữ (tách khỏi [id].vue). Fetch translations + poll.
   // Lỗi fetch → nuốt im (best-effort, lỗi 1 bản không blank cả panel). Cards luôn
   // render với status cũ/giá trị mặc định; không có "list rỗng" để hiểu lầm là

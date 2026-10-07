@@ -61,6 +61,20 @@ const handleFileUpload = async (event: Event) => {
   ;(event.target as HTMLInputElement).value = ''
 }
 
+/**
+ * Ảnh mặc định thay thế — hiển thị đầu grid để admin chọn nhanh khi sửa thumbnail
+ * hỏng hoặc gán ảnh cho bài viết mới. Đặt trong `public/assets/` (IPX đọc được,
+ * không cần R2). Id âm để không trùng với `media.id` (số dương từ DB).
+ *
+ * Khớp với `DEFAULT_COVER` trong `server/services/articles-thumbnail-scan.ts`
+ * + `DEFAULT_IMAGES` dùng ở `ScanThumbnailsModal`. Đổi ở cả ba chỗ cùng lúc.
+ */
+const DEFAULT_IMAGES: MediaItem[] = [
+  { id: -1, filename: 'default_cover_light.png', originalName: 'Ảnh bìa mặc định', mimeType: 'image/png', sizeBytes: 0, provider: 'local', url: '/assets/default_cover_light.png' },
+  { id: -2, filename: 'hero_banner.jpg', originalName: 'Banner trang chủ', mimeType: 'image/jpeg', sizeBytes: 0, provider: 'local', url: '/assets/hero_banner.jpg' },
+  { id: -3, filename: 'placeholder_c11.png', originalName: 'Placeholder C11', mimeType: 'image/png', sizeBytes: 0, provider: 'local', url: '/assets/placeholder_c11.png' },
+]
+
 const isSelected = (id: number) => selectedMultiple.value.some(i => i.id === id)
 
 const selectImage = (item: MediaItem) => {
@@ -209,35 +223,84 @@ watch(isOpen, (val) => {
             </div>
 
             <!-- Grid — 4 cột, h-32, border + ring on select -->
-            <div v-else class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
-              <div
-                v-for="item in mediaItems"
-                :key="item.id"
-                class="group relative cursor-pointer overflow-hidden rounded-lg border-2 transition"
-                :class="isSelected(item.id)
-                  ? 'border-green-600 ring-2 ring-green-600/30'
-                  : 'border-transparent hover:border-green-600'"
-                @click="selectImage(item)"
-              >
-                <img
-                  :src="item.url"
-                  :alt="item.originalName"
-                  class="h-32 w-full object-cover transition group-hover:scale-105"
-                  loading="lazy"
-                />
-                <!-- Overlay check -->
-                <div
-                  class="absolute inset-0 flex items-center justify-center transition"
-                  :class="isSelected(item.id) ? 'bg-black/40' : 'bg-black/0 group-hover:bg-black/40'"
-                >
-                  <i
-                    class="fa-regular fa-circle-check text-3xl text-white transition"
-                    :class="isSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
-                  ></i>
+            <div v-else class="flex flex-col gap-4">
+              <!-- Nhóm ảnh mặc định — luôn đầu grid, chọn nhanh khi gán thumbnail. -->
+              <div>
+                <div class="mb-2 flex items-center gap-2 text-[0.78rem] font-semibold text-gray-500 uppercase tracking-wide">
+                  <i class="fa-regular fa-image text-green-700" aria-hidden="true"></i>
+                  Ảnh mặc định
                 </div>
-                <!-- Filename -->
-                <div class="absolute bottom-0 left-0 right-0 truncate bg-gradient-to-t from-black/60 to-transparent p-2 text-xs text-white">
-                  {{ item.originalName }}
+                <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+                  <div
+                    v-for="item in DEFAULT_IMAGES"
+                    :key="`default-${item.id}`"
+                    class="group relative cursor-pointer overflow-hidden rounded-lg border-2 transition"
+                    :class="isSelected(item.id)
+                      ? 'border-green-600 ring-2 ring-green-600/30'
+                      : 'border-emerald-200 hover:border-green-600'"
+                    @click="selectImage(item)"
+                  >
+                    <img
+                      :src="item.url"
+                      :alt="item.originalName"
+                      class="h-32 w-full object-cover transition group-hover:scale-105"
+                      loading="lazy"
+                    />
+                    <!-- Overlay check -->
+                    <div
+                      class="absolute inset-0 flex items-center justify-center transition"
+                      :class="isSelected(item.id) ? 'bg-black/40' : 'bg-black/0 group-hover:bg-black/40'"
+                    >
+                      <i
+                        class="fa-regular fa-circle-check text-3xl text-white transition"
+                        :class="isSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+                      ></i>
+                    </div>
+                    <!-- Filename -->
+                    <div class="absolute bottom-0 left-0 right-0 truncate bg-gradient-to-t from-black/60 to-transparent p-2 text-xs text-white">
+                      {{ item.originalName }}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Ảnh đã upload -->
+              <div>
+                <div class="mb-2 flex items-center gap-2 text-[0.78rem] font-semibold text-gray-500 uppercase tracking-wide">
+                  <i class="fa-regular fa-folder-open text-gray-400" aria-hidden="true"></i>
+                  Thư viện
+                </div>
+                <div class="grid grid-cols-2 gap-4 sm:grid-cols-3 md:grid-cols-4">
+                  <div
+                    v-for="item in mediaItems"
+                    :key="item.id"
+                    class="group relative cursor-pointer overflow-hidden rounded-lg border-2 transition"
+                    :class="isSelected(item.id)
+                      ? 'border-green-600 ring-2 ring-green-600/30'
+                      : 'border-transparent hover:border-green-600'"
+                    @click="selectImage(item)"
+                  >
+                    <img
+                      :src="item.url"
+                      :alt="item.originalName"
+                      class="h-32 w-full object-cover transition group-hover:scale-105"
+                      loading="lazy"
+                    />
+                    <!-- Overlay check -->
+                    <div
+                      class="absolute inset-0 flex items-center justify-center transition"
+                      :class="isSelected(item.id) ? 'bg-black/40' : 'bg-black/0 group-hover:bg-black/40'"
+                    >
+                      <i
+                        class="fa-regular fa-circle-check text-3xl text-white transition"
+                        :class="isSelected(item.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+                      ></i>
+                    </div>
+                    <!-- Filename -->
+                    <div class="absolute bottom-0 left-0 right-0 truncate bg-gradient-to-t from-black/60 to-transparent p-2 text-xs text-white">
+                      {{ item.originalName }}
+                    </div>
+                  </div>
                 </div>
               </div>
             </div>
