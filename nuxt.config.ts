@@ -246,6 +246,15 @@ export default defineNuxtConfig({
     // không bao giờ bị phục vụ nhầm.
     '/assets/fonts/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
     '/assets/fontawesome/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
+    // Ảnh tĩnh trong `public/assets/` (hero_banner.webp, default_cover_light.png,
+    // news_danang.jpg…) — cố định, đổi nội dung là đổi tên file. Cache 1 năm immutable
+    // để khách quay lại không re-fetch 155 KiB hero banner mỗi lần (giảm LCP + băng thông).
+    '/assets/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
+    // IPX sinh ảnh WebP/resize có query param chứa hash nội dung (width, format,
+    // filename) — cùng URL = cùng nội dung. Cache 1 năm immutable an toàn + giảm
+    // tải origin (mỗi kích thước chỉ xử lý sharp 1 lần rồi CDN/browser giữ).
+    // Nitro tự gán `Vary: Accept` cho IPX nên browser chọn đúng variant.
+    '/_ipx/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
 
     /**
      * Security headers cho mọi response 200 (trang HTML SSR + tài nguyên).

@@ -4,6 +4,7 @@ import ArticleQuickViewModal from '~/components/admin/articles/ArticleQuickViewM
 import ArticleGlobalTranslateModal from '~/components/admin/articles/ArticleGlobalTranslateModal.vue'
 import ArticleBoostStatsPanel from '~/components/admin/articles/ArticleBoostStatsPanel.vue'
 import ArticleBulkTranslateBanner from '~/components/admin/articles/ArticleBulkTranslateBanner.vue'
+import ScanThumbnailsModal from '~/components/admin/articles/ScanThumbnailsModal.vue'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -44,6 +45,7 @@ const selectedAuthorId = ref('')
 const selectedTranslationFilter = ref('')
 const showBulkTranslateDropdown = ref(false)
 const bulkTranslating = ref(false)
+const scanThumbnailsOpen = ref(false)
 
 const BULK_LANGS = [
   { code: 'en', label: 'Tiếng Anh (EN)', flag: '🇬🇧' },
@@ -628,6 +630,15 @@ onUnmounted(() => {
       <div class="flex items-center gap-2 flex-wrap">
         <button
           type="button"
+          class="inline-flex items-center gap-2 bg-white border border-[#9a6a00] text-[#765b00] hover:bg-[#fbf6e8] font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors shrink-0 text-sm shadow-2xs"
+          title="Quét bài viết có ảnh thumbnail hỏng (R2 404 hoặc file thiếu) và thay bằng ảnh mặc định"
+          @click="scanThumbnailsOpen = true"
+        >
+          <i class="fa-solid fa-wand-magic-sparkles"></i>
+          <span>Quét ảnh hỏng</span>
+        </button>
+        <button
+          type="button"
           class="inline-flex items-center gap-2 bg-white border border-[#2c6e33] text-[#2c6e33] hover:bg-[#f0f7f1] font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors shrink-0 text-sm shadow-2xs"
           @click="openGlobalTranslateModal"
         >
@@ -1085,6 +1096,13 @@ onUnmounted(() => {
       :bulk-langs="BULK_LANGS"
       @close="showGlobalTranslateModal = false"
       @started="onGlobalTranslateStarted"
+    />
+
+    <!-- Modal: Quét + sửa ảnh thumbnail hỏng bằng ảnh mặc định -->
+    <ScanThumbnailsModal
+      :open="scanThumbnailsOpen"
+      @close="scanThumbnailsOpen = false"
+      @fixed="fetchArticles(pagination.page)"
     />
   </div>
 </template>

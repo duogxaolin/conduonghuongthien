@@ -63,8 +63,9 @@
           </div>
         </div>
 
-        <!-- Side banner -->
-        <div class="relative rounded-lg p-6 text-white mt-6 overflow-hidden shadow-sm" style="background: url('/assets/hero_banner.jpg') center/cover no-repeat;">
+        <!-- Side banner — `image-set` chọn `.webp` (155 KiB) trên trình duyệt hiện đại,
+             lùi `.jpg` (201 KiB) cho browser cũ. Giống `HeroBlock.vue` pattern. -->
+        <div class="relative rounded-lg p-6 text-white mt-6 overflow-hidden shadow-sm" :style="`background: ${sideBannerBg} center/cover no-repeat;`">
           <div class="absolute inset-0 bg-[rgba(74,103,65,0.9)] z-[1]"></div>
           <div class="relative z-[2]">
             <h3 class="text-[1rem] font-extrabold mt-0 mb-2 uppercase">{{ t('block_news_hotline_title') }}</h3>
@@ -116,6 +117,13 @@ onMounted(() => {
 
 const articles = computed(() => data.value?.articles || [])
 const featured = computed(() => articles.value[0] || null)
+// Side banner background — `image-set` cho ảnh default `hero_banner`: trình duyệt
+// hiện đại chọn `.webp` (155 KiB vs `.jpg` 201 KiB, -23%); cũ lùi `.jpg`. Giống
+// `HeroBlock.vue` + `QuoteBlock.vue` — CSS `background` không tự chọn WebP theo
+// `Accept`, nên `image-set` là cách duy nhất cho background.
+const sideBannerBg = computed(() =>
+  `image-set(url('/assets/hero_banner.webp') type('image/webp'), url('/assets/hero_banner.jpg') type('image/jpeg'))`
+)
 // Bốn bài nhỏ (1–4) dưới tin chủ đạo; bài thứ 5 trở đi rơi vào cột phải.
 const subCards = computed(() => articles.value.slice(1, 5))
 // Trending list on the right = the remaining items (or first few if only one column of data).

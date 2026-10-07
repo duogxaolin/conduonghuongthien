@@ -202,6 +202,11 @@ const NO_SKELETON_NEEDED: Record<string, string> = {
   // quả. Loading = spinner + text trong toolbar (`animate-pulse` trạng thái đã
   // miễn), không có khung nội dung để thay bằng skeleton.
   'components/admin/articles/ArticleAIPanel.vue': 'submit-time fetch; the toolbar buttons show pending and previews land in drawers when ready',
+  // Modal "Quét ảnh thumbnail hỏng" (tách khỏi articles/index.vue). Fetch scan khi
+  // mở: spinner center "Đang quét tất cả bài viết..." trong body modal, header +
+  // footer luôn hiển thị. KHÔNG có list tải để thay bằng skeleton — danh sách bài
+  // hỏng (concat, không phân trang) hiện sau khi scan xong.
+  'components/admin/articles/ScanThumbnailsModal.vue': 'modal body spinner; the header stays visible while the broken-list populates',
   // Quản lý Bản dịch đa ngôn ngữ (tách khỏi [id].vue). Fetch translations + poll
   // tiến trình. Loading = optimistic update (`status: 'translating'` + progress
   // bar trong card) — cards luôn render với status cũ/giá trị mặc định, không có
