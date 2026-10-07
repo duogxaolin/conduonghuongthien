@@ -1,16 +1,27 @@
 /**
- * Guard cho `server/plugins/ipx-cache-control.ts`.
+ * Guard cho IPX cache-control trên error response.
  *
- * Bối cảnh: routeRules `nuxt.config.ts` `'/_ipx/**'` set
- * `cache-control: public, max-age=31536000, immutable` cho mọi response IPX —
- * Nitro `route-rules.mjs` set header TRƯỚC handler, không phân biệt status code
- * → IPX 500 (R2 fetch tạm lỗi lúc cold-start) inherits `immutable` → Cloudflare
- * cache 500 đúng 1 năm → ảnh vỡ vĩnh viễn trên prod (cdht.delify.vn 2026-10-07).
+ * Bối cảnh (prod cdht.delify.vn 2026-10-07): IPX `/_ipx/...` trả 500 tạm lúc
+ * deploy/cold-start (R2 fetch chậm). Trước đây routeRules `'/_ipx/**'` set
+ * `cache-control: public, max-age=31536000, immutable` — áp dụng cho MỌI status.
+ * IPX 200 tự set `max-age=300` (srvx API, ghi đè routeRules), NHƯNG error 404/500
+ * qua Nitro errorHandler kế thừa routeRules → `immutable` → Cloudflare cache
+ * error đúng 1 năm → ảnh vỡ vĩnh viễn (`cf-cache-status: HIT`, `age: 1100`
+ * trên response 500 immutable).
  *
- * Plugin hook `beforeResponse` (`nitropack/.../app.mjs`) chạy SAU handler,
- * TRƯỚC khi gửi response, cho cả success path (h3 index.mjs:2021) lẫn error
- * path (h3 index.mjs:2332 — `event.handled` vẫn `false` sau `send()` nên hook
- * KHÔNG bị skip). Plugin override `cache-control` → `no-store` khi status >= 400.
+ * Fix: routeRules `/_ipx/**` đổi sang `no-store`. IPX 200 vẫn cache 300s do IPX
+ * tự set header (routeRules không ghi đè IPX 200 qua srvx). Error 404/500 nhận
+ * `no-store` từ routeRules → CF không cache error → request lại IPX thử lại.
+ *
+ * Tại sao KHÔNG dùng plugin hook:
+ * - `beforeResponse` hook KHÔNG chạy cho error path (`event.handled=true` sau
+ *   `send()` → h3 skip `onBeforeResponse` cho error).
+ * - `error` hook (`captureError` → `callHookParallel("error")`) KHÔNG fire cho
+ *   IPX error vì IPX dùng `toNodeHandler` (srvx) catch/convert error thành
+ *   response nội bộ, không bubble lên h3 `onError`/`captureError`.
+ * - routeRules áp dụng qua middleware `createRouteRulesHandler` chạy trước handler,
+ *   set header qua `event.node.res.setHeader` (Node API) → Nitro errorHandler
+ *   kế thừa →靠谱 hơn hook.
  *
  * Test guard cấu trúc — không thể mock Nitro runtime trong Node runner thuần.
  */
@@ -21,64 +32,21 @@ import { describe, it } from 'node:test'
 const read = (path: string) =>
   readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
-const plugin = read('server/plugins/ipx-cache-control.ts')
 const nuxtConfig = read('nuxt.config.ts')
 
-describe('plugin ipx-cache-control', () => {
-  it('tồn tại và đăng ký hook beforeResponse', () => {
-    assert.match(
-      plugin,
-      /hooks\.hook\(\s*['"]beforeResponse['"]/,
-      'plugin phải đăng ký nitroApp.hooks.hook("beforeResponse", …) — đây là hook duy nhất chạy sau handler và cho cả error path',
-    )
-  })
-
-  it('chỉ áp dụng cho tuyến /_ipx/', () => {
-    assert.match(
-      plugin,
-      /startsWith\(\s*['"]\/_ipx\/['"]\)/,
-      'phải early-return cho path không phải /_ipx/ — tránh chạm vào response khác',
-    )
-  })
-
-  it('override cache-control sang no-store khi status >= 400', () => {
-    assert.match(
-      plugin,
-      /status\s*>=\s*400/,
-      'phải check status >= 400 — 200 giữ immutable, 4xx/5xx chuyển no-store',
-    )
-    assert.match(
-      plugin,
-      /setResponseHeader\(\s*event,\s*['"]cache-control['"],\s*['"]no-store,\s*max-age=0['"]/,
-      'phải setResponseHeader(event, "cache-control", "no-store, max-age=0") — không cache error trên CF/Nginx',
-    )
-  })
-
-  it('đọc status từ event.node.res.statusCode — không phải từ response hook arg', () => {
-    // Hook `beforeResponse` arg chỉ có { body } (không có status) — phải đọc
-    // từ event.node.res.statusCode. Nếu ai copy-paste `response.status` sẽ
-    // TS2339 (đã trả giá khi viết plugin).
-    assert.match(
-      plugin,
-      /event\.node\.res\.statusCode/,
-      'status phải đọc từ event.node.res.statusCode — hook arg chỉ có { body }',
-    )
-    assert.doesNotMatch(
-      plugin,
-      /response\.status\b/,
-      'KHÔNG dùng response.status — hook beforeResponse arg không có field này (TS2339)',
-    )
-  })
-})
-
-describe('routeRules IPX — chưa bị xóa immutable cho 200', () => {
-  it("routeRules /_ipx/** vẫn set cache-control immutable (plugin xử lý error, routeRules giữ 200)", () => {
-    // Cùng config vẫn giữ cache 1 năm cho 200 — plugin chỉ override khi >= 400.
-    // Nếu ai xóa dòng này, ảnh IPX 200 sẽ re-fetch mỗi lần → tăng tải origin.
+describe('routeRules IPX — no-store cho error (IPX 200 tự set max-age=300)', () => {
+  it('routeRules /_ipx/** set cache-control no-store (KHÔNG immutable)', () => {
+    // IPX 200 tự set `max-age=300, s-maxage=300` qua srvx API — routeRules không
+    // ghi đè. routeRules chỉ áp dụng error path → no-store để CF không cache 500.
     assert.match(
       nuxtConfig,
-      /['"]\/_ipx\/\*\*['"]:\s*\{\s*headers:\s*\{\s*['"]cache-control['"]:\s*['"]public,\s*max-age=31536000,\s*immutable['"]/,
-      "routeRules /_ipx/** phải giữ cache-control immutable 1 năm cho 200 — plugin chỉ can thiệp status >= 400",
+      /['"]\/_ipx\/\*\*['"]:\s*\{\s*headers:\s*\{\s*['"]cache-control['"]:\s*['"]no-store['"]\s*\}\s*\}/,
+      "routeRules /_ipx/** phải set 'cache-control: no-store' — IPX 200 tự set max-age=300 (routeRules không ghi đè), error path nhận no-store để CF không cache 500 vĩnh viễn",
+    )
+    assert.doesNotMatch(
+      nuxtConfig,
+      /['"]\/_ipx\/\*\*['"][^}]*immutable/,
+      'routeRules /_ipx/** KHÔNG được set immutable — CF cache error 500 immutable 1 năm → ảnh vỡ vĩnh viễn (đã trả giá 2026-10-07)',
     )
   })
 })

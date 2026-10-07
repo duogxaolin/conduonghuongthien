@@ -250,11 +250,16 @@ export default defineNuxtConfig({
     // news_danang.jpg…) — cố định, đổi nội dung là đổi tên file. Cache 1 năm immutable
     // để khách quay lại không re-fetch 155 KiB hero banner mỗi lần (giảm LCP + băng thông).
     '/assets/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
-    // IPX sinh ảnh WebP/resize có query param chứa hash nội dung (width, format,
-    // filename) — cùng URL = cùng nội dung. Cache 1 năm immutable an toàn + giảm
-    // tải origin (mỗi kích thước chỉ xử lý sharp 1 lần rồi CDN/browser giữ).
-    // Nitro tự gán `Vary: Accept` cho IPX nên browser chọn đúng variant.
-    '/_ipx/**': { headers: { 'cache-control': 'public, max-age=31536000, immutable' } },
+    // IPX (NuxtImg) sinh ảnh WebP/resize. IPX tự set `cache-control: max-age=300,
+    // s-maxage=300` cho response 200 (qua `sendResponseHeaderIfNotSet`, srvx/API
+    // riêng với `event.node.res` nên routeRules KHÔNG ghi đè lên IPX 200). routeRules
+    // ở đây CHỈ áp dụng cho error response (404/500 qua Nitro errorHandler — IPX
+    // throw HTTPError → h3 onError → errorHandler render JSON). Set `no-store` để
+    // Cloudflare KHÔNG cache IPX error (R2 fetch tạm lỗi lúc cold-start/deploy) —
+    // nếu cache error 1 năm (immutable) thì ảnh vỡ vĩnh viễn trên prod
+    // (đã trả giá 2026-10-07: cdht.delify.vn ảnh vỡ hàng loạt, `cf-cache-status: HIT`
+    // trên response 500 immutable). IPX 200 vẫn cache 300s do IPX tự set.
+    '/_ipx/**': { headers: { 'cache-control': 'no-store' } },
 
     /**
      * Security headers cho mọi response 200 (trang HTML SSR + tài nguyên).
