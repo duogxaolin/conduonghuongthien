@@ -314,7 +314,7 @@ onMounted(() => {
 
       <label class="flex items-center gap-2 text-xs font-semibold text-[#3d4f3f] select-none cursor-pointer pt-1 border-t border-[#f0f4f0]">
         <input v-model="layoutDraft.socialAutoOpen" type="checkbox" class="w-4 h-4 accent-[#2c6e33]" />
-        <span>Tự mở bảng/nút nổi (chỉ áp dụng trên PC; mobile luôn đóng để tránh che nội dung).</span>
+        <span>Tự mở khi tải trang. <strong>Nút tròn rời</strong>: mở trên cả PC lẫn mobile. <strong>Bảng nổi</strong>: chỉ mở trên PC (mobile thu gọn để không che nội dung). Tắt để thu gọn ở mọi nơi.</span>
       </label>
     </section>
     <!-- Form thêm/sửa -->

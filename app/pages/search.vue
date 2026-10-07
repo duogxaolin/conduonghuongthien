@@ -223,7 +223,7 @@
                 </span>
 
                 <!-- Published Date -->
-                <span v-if="item.publishedAt" class="text-xs text-[#889985] flex items-center gap-1 font-medium">
+                <span v-if="item.publishedAt" class="text-xs text-[#5a6c58] flex items-center gap-1 font-medium">
                   <i class="fa-regular fa-calendar-days text-[0.7rem]" aria-hidden="true"></i>
                   <span>{{ formatDate(item.publishedAt) }}</span>
                 </span>

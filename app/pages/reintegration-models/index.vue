@@ -215,7 +215,7 @@
                     <span class="text-[#4A5545] font-semibold text-[0.82rem]">
                       {{ t('ri_category_label') }}
                     </span>
-                    <span class="text-[#889684] text-[0.8rem] font-medium">
+                    <span class="text-[#5a6c58] text-[0.8rem] font-medium">
                       {{ formatDate(featured) }}
                     </span>
                   </div>
@@ -285,7 +285,7 @@
                     <span class="inline-block bg-[#E3F2FD] text-[#1565C0] font-bold text-[0.7rem] px-2.5 py-0.5 rounded-md uppercase tracking-wider">
                       {{ t('ri_card_badge') }}
                     </span>
-                    <span class="flex items-center gap-1 text-[#889684] text-[0.75rem]">
+                    <span class="flex items-center gap-1 text-[#5a6c58] text-[0.75rem]">
                       <i class="fa-regular fa-calendar-days text-[0.72rem]" aria-hidden="true"></i>
                       <span>{{ formatDate(item) }}</span>
                     </span>
@@ -422,7 +422,7 @@
 
             <a
               href="tel:0903480985"
-              class="flex items-center justify-center gap-2.5 w-full bg-[#7CB342] hover:bg-[#689F38] text-white py-2.5 px-4 rounded-xl text-sm font-black no-underline transition-all shadow-md mb-2.5"
+              class="flex items-center justify-center gap-2.5 w-full bg-[#4a7c1e] hover:bg-[#3d6b15] text-white py-2.5 px-4 rounded-xl text-sm font-black no-underline transition-all shadow-md mb-2.5"
             >
               <i class="fa-solid fa-phone" aria-hidden="true"></i>
               <span>{{ t('hotline') }}</span>

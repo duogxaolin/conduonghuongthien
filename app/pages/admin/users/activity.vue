@@ -60,6 +60,9 @@ const ACTION_LABELS: Record<string, string> = {
   repair_urls: 'Vá URL ảnh',
   // Thư viện ảnh — nút "Check chéo + tự vá" upload lại R2 object missing + repoint thumbnail.
   self_heal: 'Tự vá ảnh R2',
+  // Thư viện ảnh — self-heal step 3: đổi thumbnail + URL media của hàng R2 mất gốc
+  // sang ảnh mặc định (triệt IPX 404 tận gốc).
+  self_heal_default_lost: 'Tự vá — đổi ảnh mất gốc',
 }
 const RESOURCE_LABELS: Record<string, string> = {
   auth: 'Xác thực', profile_password: 'Mật khẩu tài khoản', profile_mfa: 'Xác thực hai bước',

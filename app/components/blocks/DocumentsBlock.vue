@@ -4,7 +4,7 @@
       <!-- Section Header with Left-Right Layout -->
       <div class="flex flex-col sm:flex-row sm:items-end justify-between gap-4 mb-8 sm:mb-10 pb-4 border-b border-[#E2E8DF]">
         <div>
-          <span class="block text-[0.78rem] font-extrabold text-[#7CB342] uppercase tracking-[1.2px] mb-1.5">
+          <span class="block text-[0.78rem] font-extrabold text-[#4A6741] uppercase tracking-[1.2px] mb-1.5">
             {{ t('guidance_and_direction') || 'Chỉ đạo & Điều hành' }}
           </span>
           <h2 class="text-2xl sm:text-3xl font-black text-[#172516] tracking-tight m-0 mb-2">
@@ -67,7 +67,7 @@
               <span class="inline-block bg-[#EEF4EC] text-[#2D5A27] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
                 {{ doc.categoryName }}
               </span>
-              <span class="flex items-center gap-1 text-[#889684] text-[0.75rem]">
+              <span class="flex items-center gap-1 text-[#5a6c58] text-[0.75rem]">
                 <i class="fa-regular fa-calendar-days text-[0.72rem]" aria-hidden="true"></i>
                 <span>{{ doc.date }}</span>
               </span>

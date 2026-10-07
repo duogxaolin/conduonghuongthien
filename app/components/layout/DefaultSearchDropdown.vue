@@ -30,7 +30,7 @@
           <div class="flex gap-2 w-full sm:w-auto shrink-0">
             <button
               type="submit"
-              class="flex-1 sm:flex-none bg-[#7CB342] hover:bg-[#689F38] text-white border-none px-6 py-3 rounded-lg font-extrabold text-[0.9rem] cursor-pointer transition-all shadow-sm flex items-center justify-center gap-2"
+              class="flex-1 sm:flex-none bg-[#4a7c1e] hover:bg-[#3d6b15] text-white border-none px-6 py-3 rounded-lg font-extrabold text-[0.9rem] cursor-pointer transition-all shadow-sm flex items-center justify-center gap-2"
             >
               <i class="fa-solid fa-magnifying-glass text-xs" aria-hidden="true"></i>
               <span>Tìm kiếm</span>

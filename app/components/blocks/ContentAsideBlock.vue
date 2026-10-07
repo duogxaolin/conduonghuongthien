@@ -16,7 +16,7 @@
         <!-- Right: green organisation sidebar -->
         <aside class="flex flex-col" role="complementary" aria-label="Thông tin thêm">
           <div class="bg-[#4A6741] text-white p-[30px] rounded-lg shadow-md">
-            <h4 v-if="d.asideLabel" class="text-[0.85rem] font-bold tracking-[1px] opacity-80 mb-2">{{ d.asideLabel }}</h4>
+            <h3 v-if="d.asideLabel" class="text-[0.85rem] font-bold tracking-[1px] opacity-80 mb-2">{{ d.asideLabel }}</h3>
             <p v-if="d.asideTitle" class="text-[1.2rem] font-extrabold leading-snug mb-1">{{ d.asideTitle }}</p>
             <p v-if="d.asideSubtitle"><strong>{{ d.asideSubtitle }}</strong></p>
             <div v-if="d.asideNote || d.highlightValue" class="h-px bg-white/[0.15] my-5"></div>
