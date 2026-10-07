@@ -1,12 +1,16 @@
 /**
  * Tích hợp self-heal media — MySQL thật.
  *
- * Kiểm hai hành vi mà guard text-source không kiểm được:
+ * Kiểm hành vi mà guard text-source không kiểm được:
  *
  *   1. Step 2 (repoint thumbnail): tạo article với thumbnail `/uploads/migrated/2026/08/foo.jpeg`,
  *      tạo media row R2 với filename `foo.jpeg` + url R2 hợp lệ → self-heal dryRun
  *      báo 1 sẽ sửa, run thực sự UPDATE thumbnail_url sang R2 URL.
- *   2. Idempotent: chạy lại sau khi đã repoint → 0 sửa.
+ *   2. Step 3 (default lost): trong CI không có R2 thật → HeadObject fail →
+ *      r2Lost → Step 3 đổi thumbnail + media.url sang DEFAULT_COVER. Test xác
+ *      nhận cả article a1 (vừa repoint) + a2 (tạo sẵn trỏ r2Url) đều bị đổi,
+ *      media.url cũng đổi, idempotent (chạy lại 0 sửa), audit log đủ.
+ *   3. Idempotent: chạy lại sau khi đã default → 0 sửa.
  *
  * Bỏ qua Step 1 (HeadObject + upload lại) vì cần R2 thật + file local thật —
  * cheeky cho CI. Step 1 được bao che bởi guard text + manual test ở prod.
@@ -94,26 +98,46 @@ test('self-heal repoint thumbnail_url /uploads/migrated/... → R2 URL khớp ba
     assert.equal(after1.thumbnailUrl, '/uploads/migrated/2026/08/self-heal-thumb.jpeg',
       'dry-run KHÔNG UPDATE — thumbnail vẫn cũ')
 
-    // Run thực sự: UPDATE thumbnail.
+    // Run thực sự: Step 2 repoint a1 sang r2Url, rồi Step 1 HeadObject fails (CI
+    // không có R2 thật) → r2Missing, không reupload được (file local cũng không
+    // còn) → r2Lost → Step 3 đổi thumbnail a1 + a2 (cùng trỏ r2Url) sang
+    // DEFAULT_COVER + media.url sang DEFAULT_COVER.
     const real = await selfHealMedia(null, { dryRun: false })
-    assert.equal(real.thumbnailsRepointed, 1, 'run thực sự sửa 1 thumbnail')
+    assert.equal(real.thumbnailsRepointed, 1, 'run thực sự sửa 1 thumbnail (Step 2)')
+    assert.ok(real.thumbnailsDefaulted >= 1, 'Step 3 defaults lost R2 thumbnails')
+    assert.ok(real.mediaUrlsDefaulted >= 1, 'Step 3 defaults lost media.url')
     const after2 = (await db.select().from(articles).where(eq(articles.id, a1.insertId)))[0]!
-    assert.equal(after2.thumbnailUrl, r2Url, 'thumbnail đã repoint sang R2 URL')
+    assert.equal(after2.thumbnailUrl, '/assets/default_cover_light.png',
+      'thumbnail đã repoint sang R2 rồi Step 3 đổi sang default cover (R2 object không tồn tại ở CI)')
 
-    // Article 2 không bị đụng.
+    // Article 2 cũng bị Step 3 đổi (cùng trỏ r2Url đã "lost").
     const afterA2 = (await db.select().from(articles).where(eq(articles.id, a2.insertId)))[0]!
-    assert.equal(afterA2.thumbnailUrl, r2Url, 'article đã đúng URL không bị đụng')
+    assert.equal(afterA2.thumbnailUrl, '/assets/default_cover_light.png',
+      'article a2 cùng trỏ R2 URL lost → cũng bị đổi sang default cover')
 
-    // Idempotent: chạy lại → 0 sửa.
+    // Media row cũng bị đổi url sang default cover.
+    const afterMedia = (await db.select().from(media).where(eq(media.id, 1)))[0]!
+    assert.equal(afterMedia.url, '/assets/default_cover_light.png',
+      'media.url của hàng lost đã đổi sang default cover')
+
+    // Idempotent: chạy lại → 0 sửa (thumbnail + url đã là default cover, không
+    // còn trỏ R2 URL lost).
     const again = await selfHealMedia(null, { dryRun: false })
     assert.equal(again.thumbnailsRepointed, 0, 'chạy lại không sửa gì — idempotent')
+    assert.equal(again.thumbnailsDefaulted, 0, 'Step 3 idempotent — không còn URL lost')
+    assert.equal(again.mediaUrlsDefaulted, 0, 'Step 3 idempotent — media.url đã default')
 
-    // Audit log: mỗi run thực sự (không dry-run) insert 1 hàng action='self_heal'.
-    // dry-run không audit. Em chạy 2 run thực sự (real + again) → 2 hàng.
+    // Audit log: mỗi run thực sự insert 1 hàng 'self_heal' (Step 2) + 1 hàng
+    // 'self_heal_default_lost' (Step 3, chỉ khi có lost). real + again = 2 run
+    // thực sự. 'self_heal_default_lost' chỉ insert lần đầu (after đó idempotent).
     const [auditRows] = await pool.query<RowDataPacket[]>(
       "SELECT COUNT(*) AS n FROM activity_logs WHERE action = 'self_heal'",
     )
     assert.equal(Number(auditRows[0]?.n), 2, 'phải có 2 hàng audit self_heal (2 run thực sự, dry-run không audit)')
+    const [defaultLostRows] = await pool.query<RowDataPacket[]>(
+      "SELECT COUNT(*) AS n FROM activity_logs WHERE action = 'self_heal_default_lost'",
+    )
+    assert.equal(Number(defaultLostRows[0]?.n), 1, '1 hàng audit self_heal_default_lost (chỉ lần đầu, idempotent sau)')
 
     // Snapshot backup phải có (run thực sự).
     assert.ok(real.backupStamp, 'run thực sự phải có backupStamp')

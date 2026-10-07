@@ -139,7 +139,9 @@ export async function selfHealMedia(
       }
       if (!buffer) {
         report.r2Lost += 1
-        if (row.url) lostR2Urls.push(row.url)
+        // Chỉ push URL R2 thật (http) — nếu row.url đã là DEFAULT_COVER (đã vá
+        // lần trước) thì không push, Step 3 sẽ không UPDATE lại (idempotent).
+        if (row.url && row.url.startsWith('http')) lostR2Urls.push(row.url)
         logWarn({
           event: 'media.self_heal_r2_lost',
           mediaId: row.id,
@@ -166,7 +168,7 @@ export async function selfHealMedia(
           error: err instanceof Error ? err.message : String(err),
         })
         report.r2Lost += 1
-        if (row.url) lostR2Urls.push(row.url)
+        if (row.url && row.url.startsWith('http')) lostR2Urls.push(row.url)
       }
     }
 
