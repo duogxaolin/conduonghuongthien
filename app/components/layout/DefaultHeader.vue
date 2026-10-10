@@ -1,9 +1,13 @@
 <template>
   <!-- Main Header: sticky giữ header trong flow, không gây reflow khi cuộn.
-       isSticky nay chỉ bật/tắt shadow — không đổi position nữa. -->
+       isSticky nay chỉ bật/tắt shadow — không đổi position nữa.
+       z-index khi mở menu: `!z-[10006]` (cùng lớp overlay, dưới drawer `10007`) —
+       Header đè overlay để nút hamburger vẫn nhận được, nhưng drawer đè Header
+       để gradient header (logo + ✕) không bị nền trắng che 30px dưới. Trước đây
+       bump lên `10008` (cao hơn drawer) khiến Header che drawer — bug #3. -->
   <header
     class="main-header notranslate bg-white w-full sticky top-0 z-[10001] border-b border-[#E2E8DF] transition-[box-shadow]"
-    :class="[isSticky ? 'shadow-md' : 'shadow-none', isMobileMenuOpen ? '!z-[10008]' : '']"
+    :class="[isSticky ? 'shadow-md' : 'shadow-none', isMobileMenuOpen ? '!z-[10006]' : '']"
     translate="no"
   >
     <!-- Dòng 1: Logo & Các nút hành động nhanh -->

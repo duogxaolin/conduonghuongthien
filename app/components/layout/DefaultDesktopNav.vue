@@ -27,12 +27,15 @@
           <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group focus-within:z-[103]' : ''">
             <!-- With children: dropdown -->
             <template v-if="item.children && item.children.length">
+              <!-- Bấm mục con (link thật) → reset dropdown toggle để đóng lại sau khi navigate. -->
               <div
                 class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-[#f0f6ef] hover:text-[#143516]"
                 :aria-haspopup="true"
                 :role="item.url === '#' ? 'button' : undefined"
                 :tabindex="item.url === '#' ? 0 : undefined"
                 :aria-label="item.url === '#' ? navItemLabel(item) : undefined"
+                :aria-expanded="item.url === '#' ? openMenuId === item.id : undefined"
+                @click="item.url === '#' ? toggleDesktopSubmenu(item.id) : undefined"
               >
                 <component
                   :is="item.url && item.url !== '#' ? NuxtLink : 'span'"
@@ -40,11 +43,11 @@
                 >{{ navItemLabel(item) }}</component>
                 <i class="fa-solid fa-chevron-down text-[0.55rem] ml-0.5 text-[#557757] transition-transform duration-200 group-hover:rotate-180 group-focus-within:rotate-180" aria-hidden="true"></i>
               </div>
-              <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-2 min-w-[220px] list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100 group-focus-within:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:scale-100 group-focus-visible:pointer-events-auto before:absolute before:top-[-4px] before:left-0 before:h-[4px] before:w-full before:content-['']">
+              <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-2 min-w-[220px] list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100 group-focus-within:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:scale-100 group-focus-visible:pointer-events-auto before:absolute before:top-[-4px] before:left-0 before:h-[4px] before:w-full before:content-['']" :class="openMenuId === item.id ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto' : ''" @click="openMenuId = null">
                 <li v-for="child in item.children" :key="child.id">
                   <component
-                    :is="child.url && child.url.startsWith('http') ? 'a' : NuxtLink"
-                    v-bind="child.url && child.url.startsWith('http') ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url, 'aria-current-value': 'page' }"
+                    :is="shouldOpenNewTab(child) ? 'a' : NuxtLink"
+                    v-bind="shouldOpenNewTab(child) ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url, 'aria-current-value': 'page' }"
                     class="block px-3.5 py-2.5 no-underline text-[#2d4a2d] text-[0.86rem] font-semibold rounded-lg transition-all hover:bg-[rgba(30,70,32,0.07)] hover:text-[#1e4620] hover:pl-[18px]"
                   >{{ navItemLabel(child) }}</component>
                 </li>
@@ -53,8 +56,8 @@
             <!-- No children: simple link -->
             <template v-else>
               <component
-                :is="item.url && item.url.startsWith('http') ? 'a' : NuxtLink"
-                v-bind="item.url && item.url.startsWith('http') ? { href: item.url, target: item.openNewTab ? '_blank' : undefined, rel: item.openNewTab ? 'noopener noreferrer' : undefined } : { to: item.url, 'active-class': 'active-item bg-[#e4f0e2] font-extrabold', 'aria-current-value': 'page' }"
+                :is="shouldOpenNewTab(item) ? 'a' : NuxtLink"
+                v-bind="shouldOpenNewTab(item) ? { href: item.url, target: item.openNewTab ? '_blank' : undefined, rel: item.openNewTab ? 'noopener noreferrer' : undefined } : { to: item.url, 'active-class': 'active-item bg-[#e4f0e2] font-extrabold', 'aria-current-value': 'page' }"
                 class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap relative transition-all hover:bg-[#f0f6ef] hover:text-[#143516]"
               >{{ navItemLabel(item) }}</component>
             </template>
@@ -66,13 +69,25 @@
 </template>
 
 <script setup lang="ts">
-import { resolveComponent } from 'vue'
+import { resolveComponent, ref } from 'vue'
 import type { NavItem } from '~/utils/nav-config'
 
 /**
  * Thanh điều hướng ngang desktop (lg+). Lặp `navMenu` + `v-for="child in item.children"`
  * cho dropdown — `tests/public-pages-structure.test.ts` đếm vòng lặp child === 2
  * (desktop + drawer mobile).
+ *
+ * Dropdown mở bằng **ba cơ chế cộng lặp**:
+ *  - `group-hover` (CSS) — trỏ chuột vào mục cha, dropdown mở, rời chuột đóng.
+ *  - `group-focus-within` (CSS) — Tab/focus vào mục cha, dropdown dính.
+ *  - `openMenuId` (JS toggle) — bấm chuột vào mục cha `url === '#'` (dropdown-only),
+ *    dropdown dính cho đến khi bấm lại. Cơ chế này cần vì click vào `<span>` con
+ *    của `<div tabindex=0>` không focus được div cha trên Chrome desktop, nên
+ *    `group-focus-within` không trigger — và `group-hover` không dính sau khi
+ *    rời chuột. Bug #1: bấm "Đào tạo nghề"/"Pháp luật" (url `#`) không mở dropdown.
+ *
+ * Mục cha có URL thật + children (vd `Bản tin` url `/news`): click navigate,
+ *    dropdown chỉ mở qua hover/focus — không toggle, không can thiệp.
  */
 defineProps<{
   navMenu: NavItem[]
@@ -82,6 +97,26 @@ defineProps<{
 defineEmits<{ 'toggle-mobile-menu': [] }>()
 
 const NuxtLink = resolveComponent('NuxtLink')
+
+const openMenuId = ref<string | null>(null)
+const toggleDesktopSubmenu = (id: string) => {
+  openMenuId.value = openMenuId.value === id ? null : id
+}
+
+/**
+ * Có nên render `<a target="_blank">` thay vì `NuxtLink` cho mục này không.
+ *
+ * Link ngoài (`http…`) luôn mở bằng `<a>` (NuxtLink không xử lý URL ngoài). Link
+ * nội bộ (`/about`) chỉ mở `<a target="_blank">` khi cán bộ tick ô "Tab mới" —
+ * trước đây `openNewTab` bị bỏ qua cho link nội bộ vì nhánh `<a>` chỉ rẽ theo
+ * `startsWith('http')`. Giờ rẽ theo helper này nên cờ có tác dụng cho cả hai.
+ *
+ * `target`/`rel` trong v-bind vẫn đọc `openNewTab` (giữ pattern test guard grep
+ * `openNewTab ? '_blank'` + `rel: …openNewTab…noopener`).
+ */
+function shouldOpenNewTab(item: NavItem): boolean {
+  return !!(item.url && (item.url.startsWith('http') || item.openNewTab === true))
+}
 </script>
 
 <style scoped>

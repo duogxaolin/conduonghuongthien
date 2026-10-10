@@ -283,6 +283,10 @@ onMounted(loadMenu)
                   </div>
                   <input v-model="child.label" type="text" placeholder="Nhãn mục con" maxlength="80" class="flex-1 min-w-0 px-2.5 py-1 rounded-lg border border-[#dce8dd] text-sm font-semibold text-[#122815] focus:outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" :disabled="!canEdit" />
                   <input v-model="child.url" type="text" placeholder="URL" maxlength="512" class="flex-1 min-w-0 px-2.5 py-1 rounded-lg border border-[#dce8dd] text-sm font-mono text-[#334e36] focus:outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" :disabled="!canEdit" />
+                  <label class="flex items-center gap-1 text-xs text-[#667768] shrink-0 cursor-pointer select-none" :title="'Mở liên kết ở tab mới'">
+                    <input type="checkbox" v-model="child.openNewTab" :disabled="!canEdit" class="w-3.5 h-3.5 accent-[#2c6e33]" />
+                    <span class="hidden sm:inline">Tab mới</span>
+                  </label>
                   <button v-if="canEdit" type="button" class="w-7 h-7 flex items-center justify-center rounded text-red-400 hover:bg-red-50 hover:text-red-600 focus:outline-none shrink-0" @click="removeChild(idx, cidx)">
                     <i class="fa-solid fa-xmark text-xs" aria-hidden="true"></i>
                   </button>

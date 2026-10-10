@@ -94,8 +94,8 @@
             <ul v-if="mobileOpenSubmenu === item.id" class="list-none static opacity-100 pointer-events-auto transform-none shadow-none p-1.5 pl-3.5 bg-[rgba(30,70,32,0.04)] border-l-[3px] border-[#4A6741] rounded-[0_10px_10px_0] my-1 ml-3">
               <li v-for="child in item.children" :key="child.id">
                 <component
-                  :is="child.url && child.url.startsWith('http') ? 'a' : NuxtLink"
-                  v-bind="child.url && child.url.startsWith('http') ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url, 'aria-current-value': 'page' }"
+                  :is="shouldOpenNewTab(child) ? 'a' : NuxtLink"
+                  v-bind="shouldOpenNewTab(child) ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url, 'aria-current-value': 'page' }"
                   class="block px-3.5 py-2.5 text-[0.88rem] font-medium text-[#4A5545] rounded-lg no-underline transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-[#4A6741]"
                 >{{ navItemLabel(child) }}</component>
               </li>
@@ -104,8 +104,8 @@
           <!-- No children: simple link -->
           <template v-else>
             <component
-              :is="item.url && item.url.startsWith('http') ? 'a' : NuxtLink"
-              v-bind="item.url && item.url.startsWith('http') ? { href: item.url, target: item.openNewTab ? '_blank' : undefined, rel: item.openNewTab ? 'noopener noreferrer' : undefined } : { to: item.url, 'active-class': 'bg-[rgba(30,70,32,0.08)] text-[#4A6741] font-extrabold', 'aria-current-value': 'page' }"
+              :is="shouldOpenNewTab(item) ? 'a' : NuxtLink"
+              v-bind="shouldOpenNewTab(item) ? { href: item.url, target: item.openNewTab ? '_blank' : undefined, rel: item.openNewTab ? 'noopener noreferrer' : undefined } : { to: item.url, 'active-class': 'bg-[rgba(30,70,32,0.08)] text-[#4A6741] font-extrabold', 'aria-current-value': 'page' }"
               class="no-underline text-[#1E251C] font-semibold text-[0.95rem] px-4 py-3 rounded-[10px] flex justify-between items-center transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-[#4A6741]"
             >{{ navItemLabel(item) }}</component>
           </template>
@@ -252,6 +252,15 @@ defineEmits<{
 const { t, currentLang, locales, setLang } = useI18n()
 
 const NuxtLink = resolveComponent('NuxtLink')
+
+/**
+ * Có nên render `<a target="_blank">` thay vì `NuxtLink` — đồng bộ với
+ * `DefaultDesktopNav`. Link ngoài luôn `<a>`; link nội bộ chỉ `<a target=_blank>`
+ * khi `openNewTab === true`. Xem lý do ở `DefaultDesktopNav.vue`.
+ */
+function shouldOpenNewTab(item: NavItem): boolean {
+  return !!(item.url && (item.url.startsWith('http') || item.openNewTab === true))
+}
 
 const FLAG_MAP: Record<string, string> = {
   vi: '🇻🇳', en: '🇬🇧', zh: '🇨🇳', fr: '🇫🇷', ru: '🇷🇺', lo: '🇱🇦',
