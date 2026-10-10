@@ -136,9 +136,9 @@ const d = computed(() => {
     btnAboutLink: '/about',
     btnHelpText: isVi ? 'Gửi yêu cầu trợ giúp' : (t('hero_btn_help') || 'Request Support'),
     btnHelpLink: '#tro-giup',
-    bgImage: data.bgImage,
-    btnAbout: data.btnAbout,
-    btnHelp: data.btnHelp,
+    bgImage: data.bgImage != null ? String(data.bgImage) : undefined,
+    btnAbout: data.btnAbout != null ? String(data.btnAbout) : undefined,
+    btnHelp: data.btnHelp != null ? String(data.btnHelp) : undefined,
   }
 })
 const bgImage = computed(() => d.value.bgImage || '/assets/hero_banner.jpg')
