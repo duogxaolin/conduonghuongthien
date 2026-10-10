@@ -232,11 +232,24 @@ onMounted(loadMenu)
               </div>
               <div class="flex-1 grid grid-cols-1 sm:grid-cols-2 gap-2 min-w-0">
                 <input v-model="item.label" type="text" placeholder="Nhãn hiển thị" maxlength="80" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-[#122815] font-semibold focus:outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" :disabled="!canEdit" />
-                <input v-model="item.url" type="text" placeholder="URL (vd: /about)" maxlength="512" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-[#334e36] font-mono focus:outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" :disabled="!canEdit" />
+                <div class="flex flex-col gap-1">
+                  <input v-model="item.url" type="text" placeholder="URL (vd: /about)" maxlength="512" class="w-full px-3 py-1.5 rounded-lg border border-[#dce8dd] text-sm text-[#334e36] font-mono focus:outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" :disabled="!canEdit || item.url === '#'" />
+                  <span v-if="item.url === '#'" class="text-[0.65rem] text-[#8ea98f] leading-none">Chỉ mở dropdown — không cần URL</span>
+                </div>
               </div>
               <label class="flex items-center gap-1.5 text-xs text-[#667768] shrink-0 cursor-pointer select-none">
                 <input type="checkbox" v-model="item.openNewTab" :disabled="!canEdit" class="w-3.5 h-3.5 accent-[#2c6e33]" />
                 <span class="hidden sm:inline">Tab mới</span>
+              </label>
+              <label v-if="item.children.length" class="flex items-center gap-1.5 text-xs text-[#667768] shrink-0 cursor-pointer select-none" :title="'Khi bật, mục cha chỉ mở dropdown — không cần URL'">
+                <input
+                  type="checkbox"
+                  :checked="item.url === '#'"
+                  :disabled="!canEdit"
+                  class="w-3.5 h-3.5 accent-[#2c6e33]"
+                  @change="item.url = ($event.target as HTMLInputElement).checked ? '#' : '/'"
+                />
+                <span class="hidden sm:inline">Chỉ dropdown</span>
               </label>
               <button type="button" class="inline-flex items-center gap-1.5 rounded-lg border border-[#e2ece3] px-2.5 py-1.5 text-xs font-semibold text-[#334e36] hover:bg-[#f0f7f1] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] shrink-0" :class="expanded.has(item.id) ? 'bg-[#f0f7f1] border-[#8ed694]' : ''" @click="toggleExpanded(item.id)" :aria-expanded="expanded.has(item.id)">
                 <i class="fa-solid fa-sitemap text-[0.65rem]" aria-hidden="true"></i>

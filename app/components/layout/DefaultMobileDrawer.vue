@@ -78,7 +78,11 @@
           <template v-if="item.children && item.children.length">
             <div
               class="no-underline text-[#1E251C] font-semibold text-[0.95rem] px-4 py-3 rounded-[10px] flex justify-between items-center cursor-pointer transition-all hover:bg-[rgba(30,70,32,0.08)] hover:text-[#4A6741]"
+              :role="item.url === '#' ? 'button' : undefined"
+              :tabindex="item.url === '#' ? 0 : undefined"
+              :aria-label="item.url === '#' ? navItemLabel(item) : undefined"
               @click.stop="toggleMobileSubmenu(item.id)"
+              @keydown.enter.stop.prevent="item.url === '#' ? toggleMobileSubmenu(item.id) : null"
             >
               <component
                 :is="item.url && item.url !== '#' ? NuxtLink : 'span'"

@@ -27,7 +27,13 @@
           <li v-for="item in navMenu" :key="item.id" :class="item.children && item.children.length ? 'relative group focus-within:z-[103]' : ''">
             <!-- With children: dropdown -->
             <template v-if="item.children && item.children.length">
-              <div class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-[#f0f6ef] hover:text-[#143516]" aria-haspopup="true">
+              <div
+                class="nav-item no-underline text-[#1e4620] font-bold text-[0.8rem] px-2 lg:text-[0.88rem] lg:px-3 py-2 rounded-lg flex items-center gap-1 whitespace-nowrap cursor-pointer transition-all hover:bg-[#f0f6ef] hover:text-[#143516]"
+                :aria-haspopup="true"
+                :role="item.url === '#' ? 'button' : undefined"
+                :tabindex="item.url === '#' ? 0 : undefined"
+                :aria-label="item.url === '#' ? navItemLabel(item) : undefined"
+              >
                 <component
                   :is="item.url && item.url !== '#' ? NuxtLink : 'span'"
                   v-bind="item.url && item.url !== '#' ? { to: item.url, 'active-class': 'active-item', class: 'text-inherit no-underline' } : {}"
