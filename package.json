@@ -52,6 +52,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.62.1",
+    "@types/archiver": "^6.0.4",
     "@types/bcryptjs": "^2.4.6",
     "@types/jsonwebtoken": "^9.0.10",
     "@types/nodemailer": "^8.0.1",
@@ -74,5 +75,8 @@
     },
     "devalue": "^5.9.1",
     "svgo": "^4.1.0"
+  },
+  "optionalDependencies": {
+    "archiver": "^7.0.1"
   }
 }
