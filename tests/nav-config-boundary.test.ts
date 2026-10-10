@@ -84,6 +84,25 @@ describe('parseNavConfig — mọi đầu vào không dùng được ra null', (
   })
 
   /**
+   * `#` là URL hợp lệ cho mục "chỉ mở dropdown" — mục cha không dẫn tới trang nào,
+   * chỉ mở dropdown khi trỏ chuột (desktop) hoặc bấm (mobile).
+   *
+   * Giá trị `#` đi qua `normalizeNavItem` như mọi URL truthy khác, và template
+   * kiểm tra `item.url !== '#'` để quyết định `<span>` hay `<NuxtLink>`. Nếu một
+   * lượt refactor sau này quên `#` là hợp lệ, mục cha sẽ trở thành liên kết rỗng.
+   */
+  it('# là URL "chỉ mở dropdown" hợp lệ', () => {
+    const items = parseNavConfig('[{"id":"dd","url":"#","label":"Dropdown","children":[{"id":"c1","url":"/c1"}]}]')
+    assert.ok(items, 'cấu hình hợp lệ với url # không được trả null')
+    assert.equal(items![0]!.url, '#',
+      'url # phải đi qua bộ khử độc nguyên vẹn — template dùng nó để vẽ <span>')
+    assert.ok(items![0]!.children!.length === 1,
+      'mục con phải được giữ lại khi cha là dropdown-only')
+    assert.equal(items![0]!.children![0]!.url, '/c1',
+      'mục con có URL thật, không bị ảnh hưởng bởi # của cha')
+  })
+
+  /**
    * Đúng MỘT cấp con. Thanh nav chỉ vẽ được một tầng dropdown, nên một cây sâu
    * hơn không phải cấu hình phong phú — nó là những mục **không bao giờ hiện ra**,
    * và cán bộ lưu xong sẽ đi tìm vì sao chúng biến mất.
