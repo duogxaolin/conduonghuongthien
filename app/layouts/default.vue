@@ -135,12 +135,25 @@ import { useLiveSearch } from '~/composables/useLiveSearch'
 import { useMobileMenu } from '~/composables/useMobileMenu'
 import { useReaderMenu } from '~/composables/useReaderMenu'
 import { useLayoutNav } from '~/composables/useLayoutNav'
-import { useSiteSettings } from '~/composables/useSiteSettings'
+import { useSiteSettings, type PublicSettingsResponse } from '~/composables/useSiteSettings'
 
 // `setConfig` ghi vào `useState('layout-config')` chia sẻ với useLayoutConfig
 // ở mọi consumer (admin, list pages, SocialBubble). Đăng ký một lần ở layout.
 // `containerPx` → set `--container-max` trên root để .container (main.css) nắm theo.
-const { containerPx, applySettings, settingsData, sitePublicSettings } = useSiteSettings()
+//
+// `useAsyncData` ở top-level setup với `await` ép Nuxt Suspense đợi settings
+// resolve trước khi commit SSR. Nếu không `await` (composable không-`await`),
+// `settingsData.value` = `null` khi setup chạy đồng bộ → `navMenu` computed
+// dựng `DEFAULT_NAV` → client hydrate dùng payload DB config → hydration
+// mismatch → class `group` trên `<li>` bị Vue gán sai chỗ → `group-hover` của
+// "Đào tạo nghề"/"Pháp luật" không trigger. Xem `useSiteSettings.ts` +
+// `useLayoutNav.ts`.
+const { data: settingsData } = await useAsyncData<PublicSettingsResponse | null>(
+  'public-settings-nav',
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  { default: () => null },
+)
+const { containerPx, applySettings, sitePublicSettings } = useSiteSettings(settingsData)
 const containerStyleVar = computed(() => ({ '--container-max': `${containerPx.value}px` }))
 
 // Resolve NuxtLink once so runtime `:is` bindings render a real <a> (a string
@@ -258,7 +271,10 @@ watch(() => route.path, () => {
 })
 
 // ── Nav config động từ admin settings (fallback DEFAULT_NAV) ───────────────
-const { navMenu, bottomNav, navItemLabel, setNavMenu, setBottomNav } = useLayoutNav()
+// Truyền `settingsData` vào `useLayoutNav` để `navMenu`/`bottomNav` computed đọc
+// trực tiếp — SSR dựng đúng DB config, tránh hydration mismatch (xem giải thích
+// trong `useLayoutNav.ts`).
+const { navMenu, bottomNav, navItemLabel, setNavMenu, setBottomNav } = useLayoutNav(settingsData)
 
 // The bottom nav dims itself while the chat is open and highlights its chatbot
 // item; both need to read the widget's state, which the widget owns.

@@ -332,7 +332,7 @@ import { formatDateVN } from '~/utils/formatDate'
 import { classifySource } from '~/utils/analytics-collector'
 import { buildToc, TOC_MIN_HEADINGS } from '~/utils/toc'
 import { useReadingHistory } from '~/composables/useReadingHistory'
-import { useSiteSettings } from '~/composables/useSiteSettings'
+import { useSiteSettings, type PublicSettingsResponse } from '~/composables/useSiteSettings'
 
 const { record: recordRead } = useReadingHistory()
 
@@ -535,7 +535,16 @@ const showTopics = computed(
 // — nên thumbnail bài viết thắng ảnh mặc định khi có. Dưới đây chỉ khai báo lại
 // để Vue head biết tag của trang này là `og:image` (đúng hơn là để dedup), và lùi
 // về ảnh mặc định nếu bài viết không có thumbnail.
-const { sitePublicSettings } = useSiteSettings()
+//
+// `useSiteSettings` giờ nhận `settingsData` ref (xem `useSiteSettings.ts`) —
+// dùng cùng key `public-settings-nav` để Nuxt dedupe với layout, không phát thêm
+// request. Component (page) có async context nên `useAsyncData` tự await.
+const { data: settingsData } = useAsyncData<PublicSettingsResponse | null>(
+  'public-settings-nav',
+  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
+  { default: () => null },
+)
+const { sitePublicSettings } = useSiteSettings(settingsData)
 const ogImageFallback = computed(() => sitePublicSettings.value.og_image_url?.trim() || '/assets/hero_banner.jpg')
 
 useSeoMeta({

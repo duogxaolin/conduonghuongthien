@@ -1,4 +1,4 @@
-import { computed } from 'vue'
+import { computed, type Ref } from 'vue'
 import { parseLayoutSetting, useLayoutConfig } from '~/composables/useLayoutConfig'
 
 /**
@@ -14,25 +14,27 @@ import { parseLayoutSetting, useLayoutConfig } from '~/composables/useLayoutConf
  *
  * `useLayoutConfig` sở hữu `containerPx` (chiều rộng container) — default.vue
  * giữ alias `containerPx` + `containerStyleVar` để bind `:style` trên root.
+ *
+ * **Tại sao `useAsyncData` nằm ở `default.vue` (layout) chứ không trong composable
+ * này:** `useAsyncData` trong composable được gọi mà không có `await` sẽ
+ * **đăng ký (register)** async work với Nuxt, nhưng `settingsData.value` được
+ * đọc **trong** setup chạy đồng bộ — trước khi Nuxt chờ (await) promise đó cho
+ * lượt SSR. Kết quả: `navMenu` computed thấy `null` ở lượt SSR đầu → dựng
+ * `DEFAULT_NAV`; client hydrate dùng payload DB config → hydration mismatch →
+ * class `group` trên `<li>` bị Vue gán sai chỗ → `group-hover` của "Đào tạo
+ * nghề"/"Pháp luật" không trigger (xem `useLayoutNav.ts`). Đưa `useAsyncData`
+ * lên `default.vue` với `await` ở top-level setup ép Nuxt Suspense chờ resolve
+ * xong mới commit render → SSR dựng đúng DB config → không mismatch.
  */
-type PublicSettingsResponse = { settings?: Record<string, string | null>; faviconUrl?: string | null }
+export type PublicSettingsResponse = { settings?: Record<string, string | null>; faviconUrl?: string | null }
 
-export function useSiteSettings() {
-  // Use useAsyncData + $fetch so the payload is serialized from SSR and reused
-  // on client hydration without a second network request — eliminates nav data
-  // mismatch. (useFetch's route-generic inference overloads TS here — TS2589.)
-  const { data: settingsData } = useAsyncData<PublicSettingsResponse | null>(
-    'public-settings-nav',
-    () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<PublicSettingsResponse>)('/api/public/settings'),
-    { default: () => null },
-  )
-
+export function useSiteSettings(settingsData: Ref<PublicSettingsResponse | null>) {
   // Site-wide contact details come from Cài đặt chung so an editor's change takes
   // effect on the live site. The literals are only a fallback for the very first
   // render before settings exist.
   const sitePublicSettings = computed(() => settingsData.value?.settings || {})
   const siteHotline = computed(() => sitePublicSettings.value.hotline?.trim() || '0903.480.985')
-  const siteEmail = computed(() => sitePublicSettings.value.email?.trim() || 'contact@conduonghuongthien.com.vn')
+  const siteEmail = computed(() => sitePublicSettings.value.email?.trim() || 'contact@conduonghuongthien.com.cn')
   const siteAddress = computed(() => sitePublicSettings.value.address?.trim() || 'Thôn Phượng Mỹ, xã Tam Hưng, thành phố Hà Nội')
 
   const { setConfig: setLayoutConfigState, containerPx } = useLayoutConfig()

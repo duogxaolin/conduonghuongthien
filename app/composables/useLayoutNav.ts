@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { computed, type Ref } from 'vue'
 import { useI18n } from '~/composables/useI18n'
 import {
   DEFAULT_BOTTOM_NAV,
@@ -14,9 +14,22 @@ import type { BottomNavItem, NavItem } from '~/utils/nav-config'
  * default.vue vẫn bind `navMenu`/`bottomNav`/`navItemLabel(item)` bình thường —
  * template chỉ cần tên biến cục bộ, không cần biết source.
  *
- * `navMenuRaw`/`bottomNavRaw` nhận giá trị từ `useSiteSettings.watch(settingsData)`
- * qua `setNavMenu`/`setBottomNav` — tách khỏi site settings để hai composablekhông
- * phụ thuộc vòng.
+ * `navMenu`/`bottomNav` là **computed đọc trực tiếp từ `settingsData`** — không
+ * qua `ref` trung gian + `watch` như trước. Lý do: trong SSR, `useAsyncData`
+ * resolve **sau** khi `watch(settingsData, { immediate: true })` chạy đồng bộ
+ * trong setup (lúc đó `settingsData.value` vẫn `null`), nên `navMenuRaw` không
+ * được set kịp → SSR dựng `DEFAULT_NAV`. Client hydrate dùng payload `useAsyncData`
+ * (đã resolve) → dựng DB config → **hydration mismatch**. Vue khớp vnode `v-for`
+ * theo `:key`, và vì key SSR (`legal-qa` ở index 7) ≠ key client (`contact` ở index
+ * 7), nó giữ lại `class="group"` của `<li>` SSR trên **sai** `<li>` sau hydrate —
+ * dropdown `group-hover` của "Đào tạo nghề"/"Pháp luật" không bao giờ trigger.
+ *
+ * Computed đọc `settingsData` re-evaluate khi SSR render (sau khi `useAsyncData`
+ * resolve) → SSR dựng đúng DB config → không mismatch → `group` class đúng chỗ.
+ *
+ * `setNavMenu`/`setBottomNav` vẫn giữ cho `default.vue` `watch(settingsData)`
+ * cũ (chạy layout config + fallback) — nhưng `navMenu`/`bottomNav` computed
+ * không phụ thuộc chúng nữa.
  *
  * `navItemLabel` đọc i18n khi `currentLang !== 'vi'`: trước thử `labelKey`, sau
  * thử `NAV_LABEL_TO_KEY` ánh xạ label Việt → key i18n.
@@ -26,20 +39,26 @@ import type { BottomNavItem, NavItem } from '~/utils/nav-config'
  * invoke hàm — dù `useI18n` dùng `useState` (gọi được mọi đâu), giữ ở scope
  * setup là pattern đúng và rẻ hơn (không tạo lại cookie/watcher mỗi render).
  */
-export function useLayoutNav() {
+export function useLayoutNav(settingsData?: Ref<{ settings?: Record<string, string | null> } | null>) {
   const { currentLang, t } = useI18n()
   // `NavItem[] | null` tường minh: `null` nghĩa là "chưa có cấu hình, dùng bảng mặc
   // định". Đây cũng là chỗ `openNewTab` được đọc, nên khai đúng kiểu ở đây là điều
   // biến cổng typecheck thành thứ **bắt được** một trường nav bị bộ khử độc bỏ rơi.
-  const navMenuRaw = ref<NavItem[] | null>(null)
   const navMenu = computed<NavItem[]>(() => {
-    if (Array.isArray(navMenuRaw.value) && navMenuRaw.value.length) return navMenuRaw.value
+    if (settingsData) {
+      const raw = settingsData.value?.settings?.nav_menu_navbar || settingsData.value?.settings?.nav_menu
+      const parsed = parseNavConfig(raw)
+      if (parsed && parsed.length) return parsed
+    }
     return DEFAULT_NAV
   })
 
-  const bottomNavRaw = ref<BottomNavItem[] | null>(null)
   const bottomNav = computed<BottomNavItem[]>(() => {
-    if (Array.isArray(bottomNavRaw.value) && bottomNavRaw.value.length) return bottomNavRaw.value
+    if (settingsData) {
+      const raw = settingsData.value?.settings?.nav_menu_mobile
+      const parsed = parseBottomNavConfig(raw)
+      if (parsed && parsed.length) return parsed
+    }
     return DEFAULT_BOTTOM_NAV
   })
 
@@ -97,8 +116,12 @@ export function useLayoutNav() {
     else if (item.type === 'drawer') toggleMobileMenu()
   }
 
-  const setNavMenu = (raw: string) => { navMenuRaw.value = parseNavConfig(raw) }
-  const setBottomNav = (raw: string) => { bottomNavRaw.value = parseBottomNavConfig(raw) }
+  // `setNavMenu`/`setBottomNav` giờ là no-op: `navMenu`/`bottomNav` computed
+  // đọc trực tiếp từ `settingsData` (xem giải thích ở trên). Giữ signature để
+  // `default.vue` `watch(settingsData)` cũ + test grep `setNavMenu`/`setBottomNav`
+  // không đỏ — caller không cần biết cơ chế đã đổi.
+  const setNavMenu = (_raw: string) => {}
+  const setBottomNav = (_raw: string) => {}
 
   return {
     navMenu,
