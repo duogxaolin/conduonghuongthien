@@ -27,8 +27,9 @@ export interface NavItem {
   labelKey?: string
   url: string
   /**
-   * Mở liên kết ở tab mới. Chỉ có nghĩa với URL ngoài (`http…`) — liên kết nội bộ
-   * đi qua `:to` của `NuxtLink`, nơi thuộc tính này không được đọc.
+   * Mở liên kết ở tab mới. Áp cho cả link ngoài (`http…`) lẫn link nội bộ (`/about`):
+   * template rẽ `<a target="_blank">` thay `NuxtLink` khi cờ này bật (xem
+   * `shouldOpenNewTab` trong `DefaultDesktopNav.vue` / `DefaultMobileDrawer.vue`).
    *
    * Trường này **từng bị rơi trong im lặng**. Cán bộ tick ô "Mở tab mới" ở
    * `/admin/content/navigation/navbar.vue`, `navigation.put.ts` lưu đúng, nhưng
