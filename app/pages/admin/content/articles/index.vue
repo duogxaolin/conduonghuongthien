@@ -362,6 +362,85 @@ function toggleRowTranslateMenu(id: number) {
   rowTranslateMenuId.value = rowTranslateMenuId.value === id ? null : id
 }
 
+// ─── Row-level Download Action ───────────────────────────────────────────
+// Menu Tải dropdown cho từng dòng: HTML/Markdown (endpoint export) + PDF (mở
+// /in-bai/<slug> tab mới — chỉ cho bài published, dùng public print route).
+const rowDownloadMenuId = ref<number | null>(null)
+function toggleRowDownloadMenu(id: number) {
+  rowDownloadMenuId.value = rowDownloadMenuId.value === id ? null : id
+  // Đóng menu dịch nếu đang mở để không chồng hai dropdown.
+  rowTranslateMenuId.value = null
+}
+
+function downloadArticleFile(id: number, format: 'html' | 'md') {
+  rowDownloadMenuId.value = null
+  // Mở tab mới tới endpoint export — trình duyệt tự xuống file (Content-Disposition: attachment).
+  window.open(`/api/admin/articles/${id}/export?format=${format}`, '_blank')
+}
+
+function printArticlePdf(slug: string | undefined) {
+  rowDownloadMenuId.value = null
+  if (!slug) {
+    toast.error('Bài viết không có slug để in.')
+    return
+  }
+  // /in-bai/[slug] tự window.print() sau mount — tận dụng route print sẵn.
+  window.open(`/in-bai/${slug}`, '_blank', 'noopener')
+}
+
+/**
+ * Tải CSV danh sách — theo filter hiện tại (toàn trang, max 500) hoặc theo
+ * selection (ids). Mở tab mới tới endpoint; trình duyệt xuống file.
+ */
+function downloadCsv(mode: 'filtered' | 'selected') {
+  const params = new URLSearchParams()
+  if (mode === 'selected') {
+    const ids = selection.ids.value
+    if (ids.length === 0) {
+      toast.error('Chưa chọn bài viết nào.')
+      return
+    }
+    params.set('ids', ids.join(','))
+  } else {
+    if (search.value.trim()) params.set('search', search.value.trim())
+    if (selectedType.value) params.set('type', selectedType.value)
+    if (selectedStatus.value) params.set('status', selectedStatus.value)
+    if (selectedCategoryId.value) params.set('categoryId', String(selectedCategoryId.value))
+    if (selectedAuthorId.value) params.set('authorId', selectedAuthorId.value)
+    if (selectedTranslationFilter.value) params.set('translation', selectedTranslationFilter.value)
+  }
+  window.open(`/api/admin/articles/export-csv?${params.toString()}`, '_blank')
+}
+
+/**
+ * Tải ZIP nhiều bài HTML — nhận blob từ endpoint, trigger download client-side.
+ * Dùng $fetch blob thay window.open vì cần tên file động + zip lớn.
+ */
+async function downloadBatchHtml() {
+  const ids = selection.ids.value
+  if (ids.length === 0) {
+    toast.error('Chưa chọn bài viết nào.')
+    return
+  }
+  if (ids.length > 50) {
+    toast.error('Tối đa 50 bài mỗi lần tải ZIP.')
+    return
+  }
+  try {
+    const blob = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<Blob>)(`/api/admin/articles/export-batch?ids=${ids.join(',')}`, { responseType: 'blob' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `bai-viet-${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.zip`
+    document.body.appendChild(a)
+    a.click()
+    document.body.removeChild(a)
+    URL.revokeObjectURL(url)
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi tải ZIP bài viết'))
+  }
+}
+
 function hasTranslation(rawLangs: string | undefined, langCode: string) {
   return parseTranslations(rawLangs).some(t => t.lang === langCode)
 }
@@ -640,6 +719,15 @@ onUnmounted(() => {
         <button
           type="button"
           class="inline-flex items-center gap-2 bg-white border border-[#2c6e33] text-[#2c6e33] hover:bg-[#f0f7f1] font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors shrink-0 text-sm shadow-2xs"
+          title="Tải danh sách bài viết đang lọc về file CSV (tối đa 500 bài, có BOM UTF-8 cho Excel)"
+          @click="downloadCsv('filtered')"
+        >
+          <i class="fa-solid fa-file-csv"></i>
+          <span>Tải CSV</span>
+        </button>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 bg-white border border-[#2c6e33] text-[#2c6e33] hover:bg-[#f0f7f1] font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors shrink-0 text-sm shadow-2xs"
           @click="openGlobalTranslateModal"
         >
           <i class="fa-solid fa-globe"></i>
@@ -772,6 +860,8 @@ onUnmounted(() => {
       <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="bulkComments(true)">Mở bình luận</button>
       <button type="button" class="rounded-lg border border-[#c8d6c9] bg-white px-3 py-2 text-sm font-bold text-[#3d4f3f] hover:bg-white/70" @click="bulkComments(false)">Đóng bình luận</button>
       <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
+      <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="downloadCsv('selected')"><i class="fa-solid fa-file-csv text-xs mr-1"></i>Tải CSV</button>
+      <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="downloadBatchHtml"><i class="fa-solid fa-file-zipper text-xs mr-1"></i>Tải HTML zip</button>
       <!-- Bulk translate action -->
       <div class="relative inline-block">
         <button
@@ -862,6 +952,14 @@ onUnmounted(() => {
                 :aria-label="`Xem thống kê lượt xem bài viết: ${a.title}`"
                 @click="openStats(a)"
               ><i class="fa-regular fa-eye" aria-hidden="true"></i> {{ formatViews(a.viewTotal) }} lượt xem</button>
+              <div class="relative inline-block">
+                <button type="button" class="bg-none border-0 p-0 text-[#1e4620] font-bold text-[0.8rem] cursor-pointer" @click="toggleRowDownloadMenu(Number(a.id))"><i class="fa-solid fa-download"></i> Tải</button>
+                <div v-if="rowDownloadMenuId === Number(a.id)" class="absolute right-0 top-full mt-1 w-44 rounded-xl bg-white border border-[#c8d6c9] shadow-xl p-1.5 z-30 flex flex-col gap-0.5">
+                  <button type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] border-none bg-transparent cursor-pointer" @click="downloadArticleFile(Number(a.id), 'html')">HTML</button>
+                  <button type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] border-none bg-transparent cursor-pointer" @click="downloadArticleFile(Number(a.id), 'md')">Markdown</button>
+                  <button v-if="a.status === 'published'" type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] border-none bg-transparent cursor-pointer" @click="printArticlePdf(a.slug)">In / Lưu PDF</button>
+                </div>
+              </div>
               <button class="bg-none border-0 text-[#d12420] font-bold text-[0.8rem] cursor-pointer p-0" @click="deleteArticle(a)"><i class="fa-regular fa-trash"></i> Xóa</button>
             </div>
           </div>
@@ -1050,6 +1148,34 @@ onUnmounted(() => {
                         </span>
                         <span v-if="hasTranslation(a.translatedLangs, lang.code)" class="text-[0.6rem] text-[#2c6e33] font-bold">Đã có</span>
                       </button>
+                    </div>
+                  </div>
+
+                  <!-- Tải dropdown: HTML / Markdown / PDF (in) -->
+                  <div class="relative inline-block">
+                    <button
+                      type="button"
+                      class="inline-flex items-center gap-1 bg-none border-0 text-[#1e4620] cursor-pointer font-bold text-[0.82rem] hover:underline p-0"
+                      title="Tải bài viết về máy (HTML, Markdown, hoặc in PDF)"
+                      @click="toggleRowDownloadMenu(Number(a.id))"
+                    >
+                      <i class="fa-solid fa-download text-xs"></i> Tải
+                    </button>
+                    <div
+                      v-if="rowDownloadMenuId === Number(a.id)"
+                      class="absolute right-0 top-full mt-1 w-48 rounded-xl bg-white border border-[#c8d6c9] shadow-xl p-1.5 z-30 flex flex-col gap-0.5"
+                    >
+                      <div class="px-2 py-1 text-[0.65rem] font-bold text-[#667768] uppercase">Tải về / In</div>
+                      <button type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] transition-colors border-none bg-transparent cursor-pointer flex items-center gap-2" @click="downloadArticleFile(Number(a.id), 'html')">
+                        <i class="fa-solid fa-file-code text-[0.65rem]"></i> HTML (.html)
+                      </button>
+                      <button type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] transition-colors border-none bg-transparent cursor-pointer flex items-center gap-2" @click="downloadArticleFile(Number(a.id), 'md')">
+                        <i class="fa-brands fa-markdown text-[0.65rem]"></i> Markdown (.md)
+                      </button>
+                      <button v-if="a.status === 'published'" type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] transition-colors border-none bg-transparent cursor-pointer flex items-center gap-2" @click="printArticlePdf(a.slug)">
+                        <i class="fa-solid fa-print text-[0.65rem]"></i> In / Lưu PDF
+                      </button>
+                      <span v-else class="px-2 py-1 text-[0.65rem] text-[#afc8b1]" title="Chỉ bài đã xuất bản mới in được qua trang công khai">In PDF (cần xuất bản)</span>
                     </div>
                   </div>
 
