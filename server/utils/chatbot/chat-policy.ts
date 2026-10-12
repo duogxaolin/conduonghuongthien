@@ -19,7 +19,7 @@ export const HOTLINE = CHATBOT_HOTLINE
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
 
 export type ChatMessage = { role?: unknown; sender?: unknown; content?: unknown; text?: unknown }
-export type ChatToolCall = { id: string; name: string; arguments?: string }
+export type ChatToolCall = { id: string; name: string; arguments?: string; count?: number }
 
 export type ChatResult = {
   answer: string
@@ -544,7 +544,7 @@ async function callProvider(
       }
       return {
         text: result.text.slice(0, CHAT_LIMITS.maxOutputChars),
-        toolCalls: result.toolCallsExecuted?.map(t => ({ id: `call_${t.name}_${Date.now()}`, name: t.name, arguments: t.query })),
+        toolCalls: result.toolCallsExecuted?.map(t => ({ id: `call_${t.name}_${Date.now()}`, name: t.name, arguments: t.query, count: t.count })),
       }
     }
     if (result.error === 'budget_exceeded') return null
