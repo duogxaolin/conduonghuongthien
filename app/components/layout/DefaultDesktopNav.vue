@@ -43,13 +43,17 @@
                 >{{ navItemLabel(item) }}</component>
                 <i class="fa-solid fa-chevron-down text-[0.55rem] ml-0.5 text-[#557757] transition-transform duration-200 group-hover:rotate-180 group-focus-within:rotate-180" aria-hidden="true"></i>
               </div>
-              <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-2 min-w-[220px] list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100 group-focus-within:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:scale-100 group-focus-visible:pointer-events-auto before:absolute before:top-[-4px] before:left-0 before:h-[4px] before:w-full before:content-['']" :class="openMenuId === item.id ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto' : ''" @click="openMenuId = null">
+              <ul class="absolute top-[calc(100%+4px)] left-0 bg-white shadow-[0_14px_36px_rgba(15,35,18,0.18),0_2px_8px_rgba(0,0,0,0.04)] rounded-xl border border-[rgba(30,70,32,0.12)] p-1.5 w-max min-w-[230px] max-w-[320px] space-y-0.5 list-none opacity-0 translate-y-2 scale-[0.97] pointer-events-none z-[102] transition-all duration-200 group-hover:opacity-100 group-hover:translate-y-0 group-hover:scale-100 group-hover:pointer-events-auto group-focus-within:opacity-100 group-focus-within:translate-y-0 group-focus-within:scale-100 group-focus-within:pointer-events-auto group-focus-visible:opacity-100 group-focus-visible:translate-y-0 group-focus-visible:scale-100 group-focus-visible:pointer-events-auto before:absolute before:top-[-4px] before:left-0 before:h-[4px] before:w-full before:content-['']" :class="openMenuId === item.id ? 'opacity-100 translate-y-0 scale-100 pointer-events-auto' : ''" @click="openMenuId = null">
                 <li v-for="child in item.children" :key="child.id">
                   <component
                     :is="shouldOpenNewTab(child) ? 'a' : NuxtLink"
-                    v-bind="shouldOpenNewTab(child) ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url, 'aria-current-value': 'page' }"
-                    class="block px-3.5 py-2.5 no-underline text-[#2d4a2d] text-[0.86rem] font-semibold rounded-lg transition-all hover:bg-[rgba(30,70,32,0.07)] hover:text-[#1e4620] hover:pl-[18px]"
-                  >{{ navItemLabel(child) }}</component>
+                    v-bind="shouldOpenNewTab(child) ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url, 'active-class': 'bg-[#e8f2e6] text-[#1e4620] font-bold', 'aria-current-value': 'page' }"
+                    :title="navItemLabel(child)"
+                    class="group/child flex items-start gap-2.5 px-3 py-2 no-underline text-[#2d4a2d] text-[0.85rem] font-semibold leading-snug rounded-lg transition-colors duration-150 hover:bg-[#eff6ee] hover:text-[#1e4620] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                  >
+                    <span class="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#7CB342]/50 transition-all duration-150 group-hover/child:bg-[#2c6e33] group-hover/child:scale-125" aria-hidden="true"></span>
+                    <span class="line-clamp-2">{{ navItemLabel(child) }}</span>
+                  </component>
                 </li>
               </ul>
             </template>
