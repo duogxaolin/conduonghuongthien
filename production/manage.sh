@@ -245,7 +245,7 @@ cmd_deploy() {
 
   # Proxy tin cậy — mặc định docker bridge gateway, anh có thể sửa
   local TRUSTED_PROXY_IPS
-  prompt "  TRUSTED_PROXY_IPS (gateway docker)" "172.17.0.1"; TRUSTED_PROXY_IPS="$PROMPT_RESULT"
+  prompt "  TRUSTED_PROXY_IPS (dải CIDR docker)" "172.16.0.0/12"; TRUSTED_PROXY_IPS="$PROMPT_RESULT"
 
   echo -e "\n${C_BOLD}Đang tạo .env ...${C_RESET}"
   cat > "$ROOT/.env" <<EOF

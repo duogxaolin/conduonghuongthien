@@ -445,6 +445,38 @@ function hasTranslation(rawLangs: string | undefined, langCode: string) {
   return parseTranslations(rawLangs).some(t => t.lang === langCode)
 }
 
+/**
+ * Export bài viết → Google Sheets + Google Docs (tạo file Google thật).
+ * POST ids → nhận `{ sheetUrl, folderUrl, count }` → mở Sheets tab mới.
+ * Chậm (1-2 phút cho 50 bài — mỗi bài 1 Doc), toast "đang tạo...".
+ */
+const isExportingGoogle = ref(false)
+async function exportGoogle(mode: 'selected' | 'single', singleId?: number) {
+  const ids = mode === 'single' && singleId ? [singleId] : selection.ids.value
+  if (ids.length === 0) {
+    toast.error('Chưa chọn bài viết nào.')
+    return
+  }
+  if (ids.length > 50) {
+    toast.error('Tối đa 50 bài mỗi lần xuất Google.')
+    return
+  }
+  isExportingGoogle.value = true
+  toast.info('Đang tạo Google Sheets + Docs... Vui lòng đợi.')
+  try {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ sheetUrl: string; folderUrl: string; count: number }>)(`/api/admin/articles/export-google`, {
+      method: 'POST',
+      body: { ids },
+    })
+    toast.success(`Đã tạo ${res.count} bài trên Google Sheets.`)
+    window.open(res.sheetUrl, '_blank', 'noopener')
+  } catch (err: unknown) {
+    toast.error(errorMessage(err, 'Lỗi xuất Google Sheets'))
+  } finally {
+    isExportingGoogle.value = false
+  }
+}
+
 async function translateSingleArticle(articleId: number, langCode: string) {
   rowTranslateMenuId.value = null
   const langObj = BULK_LANGS.find(l => l.code === langCode)
@@ -862,6 +894,7 @@ onUnmounted(() => {
       <button type="button" class="rounded-lg bg-[#d12420] px-3 py-2 text-sm font-bold text-white hover:bg-[#b01f1b]" @click="bulkDelete">Xóa</button>
       <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="downloadCsv('selected')"><i class="fa-solid fa-file-csv text-xs mr-1"></i>Tải CSV</button>
       <button type="button" class="rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] hover:bg-white/70" @click="downloadBatchHtml"><i class="fa-solid fa-file-zipper text-xs mr-1"></i>Tải HTML zip</button>
+      <button type="button" class="rounded-lg border border-[#1e4620] bg-[#1e4620] px-3 py-2 text-sm font-bold text-white hover:bg-[#133215] disabled:opacity-50 disabled:cursor-not-allowed" :disabled="isExportingGoogle" @click="exportGoogle('selected')"><i class="fa-brands fa-google-sheets text-xs mr-1"></i>{{ isExportingGoogle ? 'Đang tạo...' : 'Google Sheets' }}</button>
       <!-- Bulk translate action -->
       <div class="relative inline-block">
         <button
@@ -958,6 +991,7 @@ onUnmounted(() => {
                   <button type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] border-none bg-transparent cursor-pointer" @click="downloadArticleFile(Number(a.id), 'html')">HTML</button>
                   <button type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] border-none bg-transparent cursor-pointer" @click="downloadArticleFile(Number(a.id), 'md')">Markdown</button>
                   <button v-if="a.status === 'published'" type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] border-none bg-transparent cursor-pointer" @click="printArticlePdf(a.slug)">In / Lưu PDF</button>
+                  <button type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] border-none bg-transparent cursor-pointer disabled:opacity-50" :disabled="isExportingGoogle" @click="exportGoogle('single', Number(a.id))">Google Sheets</button>
                 </div>
               </div>
               <button class="bg-none border-0 text-[#d12420] font-bold text-[0.8rem] cursor-pointer p-0" @click="deleteArticle(a)"><i class="fa-regular fa-trash"></i> Xóa</button>
@@ -1176,6 +1210,10 @@ onUnmounted(() => {
                         <i class="fa-solid fa-print text-[0.65rem]"></i> In / Lưu PDF
                       </button>
                       <span v-else class="px-2 py-1 text-[0.65rem] text-[#afc8b1]" title="Chỉ bài đã xuất bản mới in được qua trang công khai">In PDF (cần xuất bản)</span>
+                      <div class="my-0.5 border-t border-[#e9efea]"></div>
+                      <button type="button" class="w-full text-left px-2 py-1 rounded-md text-xs font-medium hover:bg-[#f0f7f1] text-[#122815] transition-colors border-none bg-transparent cursor-pointer flex items-center gap-2 disabled:opacity-50" :disabled="isExportingGoogle" @click="exportGoogle('single', Number(a.id))">
+                        <i class="fa-brands fa-google-sheets text-[0.65rem]"></i> Google Sheets
+                      </button>
                     </div>
                   </div>
 

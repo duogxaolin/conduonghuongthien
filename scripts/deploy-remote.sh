@@ -90,9 +90,33 @@ fix_uploads_ownership() {
     || echo "  ::warning::chown uploads thất bại — upload local có thể bị 500 nếu volume vẫn thuộc root" >&2
 }
 
+# Migration: TRUSTED_PROXY_IPS cũ dùng IP cố định (172.17.0.1, 172.18.0.1,
+# 172.21.0.1...) — Docker gateway IP thay đổi theo network name, nên đặt sai
+# là lỗi IM LẶNG: mọi visitor ghi cùng IP gateway, rate limit gộp 1 bucket,
+# IP ban không trúng ai. Đổi sang CIDR 172.16.0.0/12 cover toàn dải Docker
+# private. Idempotent: đã là CIDR hoặc rỗng thì không đụng.
+migrate_trusted_proxy_ips() {
+  local current trusted_cidr='172.16.0.0/12'
+  current=$(sed -n 's/^TRUSTED_PROXY_IPS=//p' .env | tail -n 1 | tr -d "'\"")
+  # Rỗng hoặc đã là CIDR (có dấu /) → bỏ qua
+  [ -z "$current" ] && return 0
+  case "$current" in
+    */*) return 0 ;;  # đã là CIDR, không đụng
+  esac
+  echo "▸ Nâng cấp TRUSTED_PROXY_IPS: '$current' → '$trusted_cidr' (CIDR)"
+  TMP_ENV=$(mktemp ./.env.deploy.XXXXXX)
+  cp -p .env "$TMP_ENV"
+  { grep -v '^TRUSTED_PROXY_IPS=' .env || true; } > "$TMP_ENV"
+  printf 'TRUSTED_PROXY_IPS=%s\n' "$trusted_cidr" >> "$TMP_ENV"
+  mv "$TMP_ENV" .env
+  TMP_ENV=''
+}
+
 # Kéo image TRƯỚC khi đụng vào .env: registry hỏng, tag sai, hay mất mạng thì
 # deployment đang chạy không bị sứt mẻ gì.
 echo "▸ Kéo $IMAGE"
+migrate_trusted_proxy_ips
+
 docker pull "$IMAGE"
 
 PREVIOUS=$(current_image)

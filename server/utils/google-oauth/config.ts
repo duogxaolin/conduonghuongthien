@@ -31,8 +31,14 @@ export const DRIVE_CALLBACK_PATH = '/api/admin/backup/drive/callback'
  * trả `id_token` chứa email liên kết). Không thêm `profile` (không cần tên/ảnh).
  * `openid email` là tối thiểu để nhận `id_token`; thiếu nó thì token response
  * không có `id_token` → không biết email nào đã liên kết.
+ *
+ * Thêm `sheets` + `docs` cho export bài viết → Google Sheets + Google Docs
+ * (tạo file mới qua Sheets/Docs API). `drive.file` cho phép app tạo file trên
+ * Drive, nhưng Sheets/Docs API cần scope riêng để ghi nội dung. Đổi scope →
+ * admin phải re-link Drive (`/admin/settings` → backup Drive) vì refresh token
+ * cũ không có scope mới → API 403.
  */
-export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file openid email'
+export const DRIVE_SCOPE = 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/documents openid email'
 
 function stripTrailingSlashes(value: string): string {
   return value.replace(/\/+$/, '')
