@@ -185,8 +185,10 @@ Rồi thêm vào cuối `.env`:
 # CI ghi đè dòng này mỗi lần deploy; giá trị ban đầu chỉ để lần đầu chạy được.
 CDKT_IMAGE=ghcr.io/<OWNER>/<REPO>:latest
 
-# BẮT BUỘC khi có nginx/aaPanel đứng trước. Giá trị lấy từ lệnh inspect ở trên.
-TRUSTED_PROXY_IPS=172.18.0.1
+# BẮT BUỘC khi có nginx/aaPanel đứng trước. Docker gateway IP thay đổi theo
+# network name, nên dùng CIDR 172.16.0.0/12 cover toàn dải Docker private
+# thay vì IP cố định — đặt sai là lỗi IM LẶNG (xem below).
+TRUSTED_PROXY_IPS=172.16.0.0/12
 ```
 
 ⚠️ **CI không bao giờ ghi đè các dòng khác trong `.env`.** Script deploy chỉ thay

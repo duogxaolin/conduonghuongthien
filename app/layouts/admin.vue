@@ -261,6 +261,7 @@ const menuGroups = computed<AdminMenuGroup[]>(() => [
           ...(hasPermission('settings', 'read') ? [{ label: 'Mạng xã hội', icon: 'fa-solid fa-share-nodes', path: '/admin/settings/social-links' }] : []),
           { label: 'Lưu trữ Media (R2)', icon: 'fa-solid fa-cloud-arrow-up', path: '/admin/settings/media-storage' },
           ...(hasPermission('settings', 'read') ? [{ label: 'Sao lưu & Khôi phục', icon: 'fa-solid fa-floppy-disk', path: '/admin/settings/backup' }] : []),
+          ...(hasPermission('settings', 'read') ? [{ label: 'Tài liệu hệ thống', icon: 'fa-solid fa-circle-question', path: '/admin/docs' }] : []),
         ],
       },
     ],

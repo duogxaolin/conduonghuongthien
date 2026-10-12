@@ -681,31 +681,118 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
       reqBodyObj.messages = messages
       reqBodyObj.tools = formattedTools
       reqBodyObj.tool_choice = 'auto'
-      reqBodyObj.stream = false
       reqBodyObj.max_tokens = originalMaxTokens
 
-      const resp1 = await fetch(providerCall.url, {
-        method: 'POST',
-        headers: providerCall.headers,
-        body: JSON.stringify(reqBodyObj),
-      })
-      if (!resp1.ok) {
-        success = false
-        errorMessage = `HTTP ${resp1.status}`
-        return { ok: false, error: 'provider_error' }
-      }
-      let raw1 = await resp1.text()
-      const last1 = raw1.lastIndexOf('}')
-      if (last1 !== -1) raw1 = raw1.slice(0, last1 + 1)
-      const json1 = JSON.parse(raw1) as Record<string, unknown>
-      const choice1 = (json1.choices as Array<{ message?: Record<string, unknown>; finish_reason?: string }>)?.[0]
-      const msg1 = choice1?.message
+      // Step 1: Ask the model to decide whether a tool call is needed.
+      // When the caller provides `onChunk`, we stream this step so the
+      // visitor sees the model's answer tokens in real time instead of
+      // waiting 20-30 s for a reasoning model's first token (TTFT ~30 s →
+      // ~1-2 s). Tool-call deltas arriving in the SSE stream are accumulated
+      // into the same structure the non-streaming path produces, so
+      // `extractToolCallsFromMessage` and the Step 2 branch work unchanged.
+      let msg1: Record<string, unknown> | undefined
+      if (input.onChunk) {
+        reqBodyObj.stream = true
+        const resp1 = await fetch(providerCall.url, {
+          method: 'POST',
+          headers: providerCall.headers,
+          body: JSON.stringify(reqBodyObj),
+        })
+        if (!resp1.ok || !resp1.body) {
+          success = false
+          errorMessage = `HTTP ${resp1.status}`
+          return { ok: false, error: 'provider_error' }
+        }
+        const cleaner = createStreamingCleaner()
+        const reader = resp1.body.getReader()
+        const decoder = new TextDecoder()
+        let streamBuffer = ''
+        let streamText = ''
+        const toolCallAccum: Record<number, { id: string; type: string; function: { name: string; arguments: string } }> = {}
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          streamBuffer += decoder.decode(value, { stream: true })
+          const lines = streamBuffer.split('\n')
+          streamBuffer = lines.pop() || ''
+          for (const line of lines) {
+            const trimmed = line.trim()
+            if (!trimmed.startsWith('data:') || trimmed === 'data: [DONE]') continue
+            try {
+              const parsed = JSON.parse(trimmed.slice(5).trim())
+              const delta = parsed?.choices?.[0]?.delta
+              // Content deltas — relay to the visitor via the streaming cleaner
+              // (same pattern as Step 2 at lines 810-817).
+              if (typeof delta?.content === 'string' && delta.content) {
+                streamText += delta.content
+                const newChunk = cleaner.push(delta.content)
+                if (newChunk) {
+                  answerText += newChunk
+                  await input.onChunk(newChunk)
+                }
+              }
+              // Tool-call deltas — OpenAI streaming delivers these
+              // incrementally: the first chunk carries `id` + `function.name`,
+              // subsequent chunks append `function.arguments` fragments.
+              // Multiple tool calls use different `index` values.
+              if (Array.isArray(delta?.tool_calls)) {
+                for (const tc of delta.tool_calls as Array<{ index?: number; id?: string; type?: string; function?: { name?: string; arguments?: string } }>) {
+                  const idx = tc.index ?? 0
+                  if (!toolCallAccum[idx]) {
+                    toolCallAccum[idx] = { id: '', type: 'function', function: { name: '', arguments: '' } }
+                  }
+                  if (tc.id) toolCallAccum[idx].id = tc.id
+                  if (tc.type) toolCallAccum[idx].type = tc.type
+                  if (tc.function?.name) toolCallAccum[idx].function.name = tc.function.name
+                  if (tc.function?.arguments) toolCallAccum[idx].function.arguments += tc.function.arguments
+                }
+              }
+              // Usage — same prompt-token adjustment as Step 2 (lines 819-826).
+              if (parsed?.usage) {
+                const isEst = Boolean((parsed.usage as { estimated?: boolean }).estimated)
+                let p1 = Number((parsed.usage as { prompt_tokens?: number }).prompt_tokens) || 0
+                const c1 = Number((parsed.usage as { completion_tokens?: number }).completion_tokens) || 0
+                if (config.provider === 'delify' && p1 >= 2000) p1 -= 2000
+                if (p1 > 0 && !isEst) promptTokens += p1
+                if (c1 > 0 && !isEst) completionTokens += c1
+              }
+            } catch {}
+          }
+        }
+        const tail = cleaner.flush()
+        if (tail) { answerText += tail; await input.onChunk(tail) }
+        // Object.values on numeric keys returns ascending index order in V8.
+        const accumulatedToolCalls = Object.values(toolCallAccum)
+        msg1 = {
+          role: 'assistant',
+          content: streamText || null,
+          tool_calls: accumulatedToolCalls.length > 0 ? accumulatedToolCalls : undefined,
+        }
+      } else {
+        reqBodyObj.stream = false
+        const resp1 = await fetch(providerCall.url, {
+          method: 'POST',
+          headers: providerCall.headers,
+          body: JSON.stringify(reqBodyObj),
+        })
+        if (!resp1.ok) {
+          success = false
+          errorMessage = `HTTP ${resp1.status}`
+          return { ok: false, error: 'provider_error' }
+        }
+        let raw1 = await resp1.text()
+        const last1 = raw1.lastIndexOf('}')
+        if (last1 !== -1) raw1 = raw1.slice(0, last1 + 1)
+        const json1 = JSON.parse(raw1) as Record<string, unknown>
+        const choice1 = (json1.choices as Array<{ message?: Record<string, unknown>; finish_reason?: string }>)?.[0]
+        msg1 = choice1?.message
 
-      let step1Prompt = Number((json1.usage as { prompt_tokens?: number })?.prompt_tokens) || 0
-      const step1Comp = Number((json1.usage as { completion_tokens?: number })?.completion_tokens) || 0
-      if (config.provider === 'delify' && step1Prompt >= 2000) step1Prompt -= 2000
-      promptTokens += step1Prompt
-      completionTokens += step1Comp
+        let step1Prompt = Number((json1.usage as { prompt_tokens?: number })?.prompt_tokens) || 0
+        const step1Comp = Number((json1.usage as { completion_tokens?: number })?.completion_tokens) || 0
+        if (config.provider === 'delify' && step1Prompt >= 2000) step1Prompt -= 2000
+        promptTokens += step1Prompt
+        completionTokens += step1Comp
+      }
 
       const toolCalls = extractToolCallsFromMessage(msg1, toolDefs)
 

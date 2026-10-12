@@ -42,6 +42,7 @@
     "google-auth-library": "^11.1.0",
     "hls.js": "^1.7.3",
     "jsonwebtoken": "^9.0.3",
+    "mermaid": "^12.1.0",
     "mysql2": "^3.23.1",
     "nodemailer": "^10.0.15",
     "nuxt": "^4.5.2",

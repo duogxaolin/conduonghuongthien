@@ -129,6 +129,9 @@ export default defineEventHandler(async (event) => {
   setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
   setHeader(event, 'Cache-Control', 'no-cache, no-transform')
   setHeader(event, 'Connection', 'keep-alive')
+  // Ngắn nginx buffer SSE: không có header này, nginx gom nhiều res.write thành
+  // 1 TCP packet → visitor thấy text nhảy thành đoạn thay vì từng từ.
+  setHeader(event, 'X-Accel-Buffering', 'no')
 
   const res = event.node?.res
   if (res && typeof res.write === 'function') {
@@ -142,6 +145,11 @@ export default defineEventHandler(async (event) => {
         (delta: string) => {
           streamed = true
           res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: delta } }] })}\n\n`)
+          // Ép flush ngay để visitor thấy từng từ. Node `res.write` chỉ ghi vào
+          // buffer kernel; `res.uncork()` ép TCP gửi packet ngay thay vì gom
+          // nhiều write thành 1 segment. X-Accel-Buffering:no (ở header) bảo
+          // nginx không buffer; đây là phần đối ứng phía Node.
+          if (typeof res.uncork === 'function') { res.cork(); res.uncork() }
         },
         (toolEvt: { name: string; query?: string; status: 'calling' | 'done'; count?: number }) => {
           res.write(`data: ${JSON.stringify({ chatbot: { toolEvent: toolEvt } })}\n\n`)
