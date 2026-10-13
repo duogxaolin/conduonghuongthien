@@ -38,7 +38,8 @@ export type SearchableDoc = {
   questions?: string[]
 }
 
-export type SearchResult = SearchableDoc & {
+/** Kết quả giữ nguyên kiểu tài liệu truyền vào (vd. AdminDoc còn có `icon`, `summary`). */
+export type SearchResult<T extends SearchableDoc = SearchableDoc> = T & {
   score: number
   intent: SearchIntent
   matchedKeywords: number
@@ -100,7 +101,7 @@ export function scoreDoc(
 
 // ── Full search ────────────────────────────────────────────────────────
 
-export function searchDocs(docs: SearchableDoc[], query: string, topK = 10): SearchResult[] {
+export function searchDocs<T extends SearchableDoc>(docs: T[], query: string, topK = 10): SearchResult<T>[] {
   const trimmed = query.slice(0, 200)
   const normalizedQuery = normalizeKnowledgeText(trimmed)
   if (!normalizedQuery) return []
@@ -127,7 +128,7 @@ export function suggestQuestions(docs: SearchableDoc[], count = 6): string[] {
   const shuffled = [...all]
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
-    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    ;[shuffled[i], shuffled[j]] = [shuffled[j]!, shuffled[i]!]
   }
   return shuffled.slice(0, count)
 }

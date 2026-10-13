@@ -1,13 +1,14 @@
 <script setup lang="ts">
-import { detectIntent, searchDocs, type SearchableDoc, type SearchResult, type SearchIntent } from '~/utils/docs/search'
+import { detectIntent, searchDocs, type SearchResult, type SearchIntent } from '~/utils/docs/search'
+import type { AdminDoc } from '~/utils/docs/admin-docs-index'
 
-const props = defineProps<{ docs: SearchableDoc[] }>()
-const emit = defineEmits<{ results: [SearchResult[]], query: [string] }>()
+const props = defineProps<{ docs: AdminDoc[] }>()
+const emit = defineEmits<{ results: [SearchResult<AdminDoc>[]], query: [string] }>()
 
 const query = defineModel<string>({ default: '' })
 
 const intent = computed<SearchIntent>(() => detectIntent(query.value))
-const results = computed<SearchResult[]>(() => {
+const results = computed<SearchResult<AdminDoc>[]>(() => {
   if (!query.value.trim()) return []
   return searchDocs(props.docs, query.value)
 })
