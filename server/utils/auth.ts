@@ -207,7 +207,9 @@ export function checkPermission(
   action: 'create' | 'read' | 'update' | 'delete',
   isSuperAdmin: boolean = false
 ): boolean {
-  if (isSuperAdmin) return true
+  // Strict, like every other flag check here: the value can come straight from a row
+  // or a token, and a truthy string or number must not become super-admin.
+  if (isSuperAdmin === true) return true
   const perm = permissions.find(p => p.resource === resource)
   if (!perm) return false
   const map = { create: perm.canCreate, read: perm.canRead, update: perm.canUpdate, delete: perm.canDelete }
