@@ -42,13 +42,13 @@
         <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('footer_agency') }}</strong> C11 - Bộ Công an</p>
         <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('address') }}</strong> {{ siteAddress }}</p>
         <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('phone') }}</strong> {{ siteHotline }}</p>
-        <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('email') || 'Email:' }}</strong> {{ siteEmail }}</p>
+        <p class="mb-3 text-[0.9rem]"><strong class="text-white">{{ t('email') || 'Email:' }}</strong> <PublicEmail :email="siteEmail" /></p>
       </div>
     </div>
 
     <div class="border-t border-white/[0.08] py-6 text-[0.85rem]">
       <div class="container flex flex-col items-center md:items-start gap-2 text-center md:text-left md:pr-24">
-        <p class="m-0 text-white/80 leading-relaxed">&copy; 2026 {{ t('footer_copyright') }}</p>
+        <p class="m-0 text-white/80 leading-relaxed">{{ copyrightLine }}</p>
         <p class="m-0">
           <a
             href="https://delify.vn?ref=conduonghuongthien"
@@ -64,6 +64,7 @@
 
 <script setup lang="ts">
 import { useI18n } from '~/composables/useI18n'
+import { withCopyrightPrefix } from '~/utils/copyright'
 
 /**
  * Footer — logo kép (giữ `v-if="siteMainLogo || siteLogo"` / `v-if="siteMainLogo && siteLogo"`
@@ -79,4 +80,6 @@ defineProps<{
 }>()
 
 const { t } = useI18n()
+// Chuỗi dịch từ CSDL đã mang sẵn "© 2026"; từ điển dự phòng thì chưa — chỉ thêm khi thiếu.
+const copyrightLine = computed(() => withCopyrightPrefix(t('footer_copyright')))
 </script>
