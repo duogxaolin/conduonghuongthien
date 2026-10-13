@@ -561,6 +561,12 @@ const SERVICE_EXEMPTIONS: Record<string, string> = {
   // động của cán bộ, nên nó không có cặp hàng + audit nào để bọc.
   'video-processing.ts': 'holds no row+audit pair; the upload audit lives in chunked-upload.ts own transaction',
   'media-processing-reaper.ts': 'holds no row+audit pair; a reclaim is a machine event, not an officer action',
+  // `bulkTriggerTranslation` chỉ ghi MỘT dòng audit "đã yêu cầu dịch hàng loạt" rồi
+  // đẩy việc sang nền; không có hàng nghiệp vụ nào được ghi cùng lúc để giữ nguyên
+  // tử với nó. Các lượt ghi bản dịch xảy ra sau đó, ngoài request, trong worker.
+  // Trước đây cùng đoạn này nằm trong `article-translations.ts` (có transaction ở
+  // chỗ khác nên guard theo tệp không thấy); tách tệp làm nó lộ ra, không phải mới.
+  'article-translation-bulk.ts': 'audit-only insert for a queued background job; no row write to pair it with',
 }
 
 describe('no service writes activity_logs outside a transaction', () => {
