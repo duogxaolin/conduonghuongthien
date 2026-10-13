@@ -257,11 +257,40 @@ location /api/public/livestream/chat/stream {
     proxy_read_timeout 86400s;
     proxy_send_timeout 86400s;
 }
+
+# ── Luồng SSE của chatbot AI ──────────────────────────────────────────────
+# Provider AI có lúc mất 40–200 giây cho một câu trả lời (suy nghĩ rồi mới có chữ
+# đầu tiên). Suốt lúc đó server gửi một dòng `: ping` mỗi 15 giây để giữ kết nối;
+# nhưng nginx vẫn phải cho phép kết nối sống lâu và KHÔNG đệm: với
+# `proxy_read_timeout` mặc định (60s) một câu chậm bị cắt giữa chừng, và có đệm thì
+# chữ nhảy thành khối thay vì hiện dần. `proxy_cache off` vì một luồng phục vụ lại từ
+# cache là câu trả lời của người khác.
+location /api/public/chatbot {
+    proxy_pass http://127.0.0.1:54432;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+}
 ```
 
-Hai khối `location` trên phải nằm trong **cùng** khối `server { }` với các dòng
+Ba khối `location` trên phải nằm trong **cùng** khối `server { }` với các dòng
 `proxy_set_header` ở trên — dán rời ra ngoài thì nginx báo lỗi cú pháp, hoặc tệ
 hơn là nhận mà không có hiệu lực. Nhớ đổi `54432` cho khớp `PORT` trong `.env`.
+
+Kiểm tra khối chatbot đã có hiệu lực (phải thấy `: ping` xen kẽ mỗi 15 giây trong lúc
+chờ, thay vì im lặng rồi bị ngắt ở ~60 giây):
+
+```bash
+curl -N -s -X POST https://<domain>/api/public/chatbot \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"có hỗ trợ vay vốn không?"}]}' | head -20
+```
 
 Thiếu `X-Forwarded-For` thì mọi khách trông như cùng một địa chỉ, và giới hạn tần
 suất theo IP gộp thành một bucket chung cho cả internet.
