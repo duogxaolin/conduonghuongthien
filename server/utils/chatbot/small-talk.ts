@@ -100,6 +100,36 @@ function looksLikeBusinessQuery(normalized: string): boolean {
   return BUSINESS_MARKERS.some(marker => normalized.includes(marker))
 }
 
+/** Từ/cụm cho thấy đây là CÂU HỎI chứ không phải câu kể về hoàn cảnh. */
+const QUESTION_MARKERS = [
+  'lam gi', 'lam sao', 'the nao', 'la gi', 'o dau', 'bao nhieu', 'co duoc', 'duoc khong',
+  'phai khong', 'co nen', 'nen lam', 'ai ho tro', 'giup toi',
+]
+const SITUATION_MAX_TOKENS = 10
+
+/**
+ * Câu KỂ về hoàn cảnh ("tôi vừa đi tù về") khớp một hàng hỗ trợ cảm xúc (`support`).
+ *
+ * Dùng ở các đường KHÔNG có câu trả lời của AI (chế độ chỉ-kho, AI chưa cấu hình, hết hạn mức, AI lỗi):
+ * ở đó kho tri thức khớp từ khoá "tù" và trả nguyên văn một định nghĩa — đúng nội dung nhưng lạc đề với
+ * người đang cần biết việc đầu tiên phải làm. Hẹp có chủ đích: chỉ khi câu NGẮN, không có dấu hỏi, không có
+ * từ nghiệp vụ ("thủ tục", "vay vốn", "điều kiện"…) và không có từ để hỏi — mọi câu hỏi thật vẫn đi xuống kho.
+ */
+export function isSituationStatement(query: unknown): boolean {
+  if (typeof query !== 'string' || query.includes('?')) return false
+  const normalized = plain(query)
+  const tokens = tokensOf(normalized)
+  if (!tokens.length || tokens.length > SITUATION_MAX_TOKENS) return false
+  if (looksLikeBusinessQuery(normalized)) return false
+  return !QUESTION_MARKERS.some(marker => normalized.includes(marker))
+}
+
+export function matchSituationStatement(entries: readonly SmallTalkEntry[], query: unknown): SmallTalkClassification | null {
+  if (!isSituationStatement(query)) return null
+  const match = classifySmallTalk(entries, query)
+  return match && match.category === 'support' ? match : null
+}
+
 /**
  * Intent is inferred from the visitor's wording plus the row's coarse category.
  * Context is deliberately impact-limited: it can only disambiguate an otherwise

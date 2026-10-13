@@ -9,7 +9,7 @@ import { CHATBOT_HOTLINE, DEFAULT_CHATBOT_SYSTEM_PROMPT } from './prompt-default
 import { buildProviderChatCall, extractProviderAnswer } from './providers'
 import { callAi } from '../../services/ai-gateway'
 import { selectSmallTalk, type SemanticSmallTalkProvider, type SmallTalkSemanticConfig } from './small-talk-semantic'
-import { classifySmallTalk, type SmallTalkContext, type SmallTalkEntry } from './small-talk'
+import { classifySmallTalk, isSituationStatement, matchSituationStatement, type SmallTalkContext, type SmallTalkEntry } from './small-talk'
 import { logWarn } from '../logger'
 import { rateLimitDeps } from '../rate-limit-deps'
 import { desc } from 'drizzle-orm'
@@ -238,7 +238,7 @@ function friendlyKnowledgeAnswer(settings: ChatbotSettings, references: PublicKn
  * server-side from only the immediately preceding validated user turn. It is a
  * disambiguation hint after a current-turn match, never a matching bypass.
  */
-async function smallTalkResult(settings: ChatbotSettings, dependencies: ChatDependencies, query: string, history: ChatMessage[]): Promise<ChatResult | null> {
+async function smallTalkResult(settings: ChatbotSettings, dependencies: ChatDependencies, query: string, history: ChatMessage[], options: { statementOnly?: boolean } = {}): Promise<ChatResult | null> {
   if ((settings.smallTalkEnabled ?? true) === false) return null
   let entries: SmallTalkEntry[]
   try {
@@ -256,12 +256,16 @@ async function smallTalkResult(settings: ChatbotSettings, dependencies: ChatDepe
     : ''
   const previousMatch = previous ? classifySmallTalk(entries, previous) : null
   const context: SmallTalkContext = previousMatch ? { previousIntent: previousMatch.intent } : {}
+  const statementOnly = options.statementOnly === true
   const selection = await selectSmallTalk({
     businessReferences: [],
     entries,
     query,
-    ruleMatcher: (candidateEntries, value) => classifySmallTalk(candidateEntries, value, context),
-    semanticProvider: dependencies.semanticSmallTalkProvider,
+    ruleMatcher: statementOnly
+      ? (candidateEntries, value) => matchSituationStatement(candidateEntries, value)
+      : (candidateEntries, value) => classifySmallTalk(candidateEntries, value, context),
+    // Chế độ câu kể chỉ dùng luật tất định; không bao giờ để ngữ nghĩa chen vào trước câu trả lời của kho.
+    semanticProvider: statementOnly ? null : dependencies.semanticSmallTalkProvider,
     semanticConfig: dependencies.semanticSmallTalkConfig,
   })
   if (!selection) return null
@@ -273,6 +277,24 @@ async function smallTalkResult(settings: ChatbotSettings, dependencies: ChatDepe
   const greeting = settings.knowledgeGreeting?.trim()
   const answer = greeting && matchedEntry.category !== 'social' ? `${greeting}\n\n${matchedEntry.answer}` : matchedEntry.answer
   return { answer, sources: [], kind: 'small_talk' }
+}
+
+/**
+ * Đường KHÔNG có câu trả lời của AI mà kho có tham chiếu khớp: trả câu của kho — trừ khi người dùng chỉ KỂ
+ * hoàn cảnh ("tôi vừa đi tù về"). Khi đó trả hàng hỗ trợ (lời khuyên việc đầu tiên) thay vì định nghĩa khớp từ khoá.
+ * Câu hỏi thật vẫn luôn nhận câu trả lời của kho (xem `matchSituationStatement`).
+ */
+async function knowledgeOrSituation(
+  settings: ChatbotSettings,
+  dependencies: ChatDependencies,
+  query: string,
+  history: ChatMessage[],
+  references: PublicKnowledgeReference[],
+): Promise<ChatResult> {
+  // Kiểm thuần, không chạm DB: câu hỏi/nghiệp vụ không bao giờ nạp kho small-talk ("kho luôn thắng").
+  if (!isSituationStatement(query)) return friendlyKnowledgeAnswer(settings, references)
+  const situation = await smallTalkResult(settings, dependencies, query, history, { statementOnly: true })
+  return situation ?? friendlyKnowledgeAnswer(settings, references)
 }
 
 function outOfScopeResult(settings: ChatbotSettings): ChatResult {
@@ -640,7 +662,7 @@ export async function answerGroundedChat(
   // The business knowledge bank is the first routing decision and always wins.
   const mode = settings.mode === 'knowledge' ? 'knowledge' : 'ai'
   if (mode !== 'ai') {
-    if (references.length) return friendlyKnowledgeAnswer(settings, references)
+    if (references.length) return knowledgeOrSituation(settings, dependencies, query, history, references)
     return (await smallTalkResult(settings, dependencies, query, history)) ?? outOfScopeResult(settings)
   }
 
@@ -681,13 +703,13 @@ export async function answerGroundedChat(
     return outOfScopeResult(settings)
   }
 
-  if (!aiProviderReady(settings)) return friendlyKnowledgeAnswer(settings, references)
+  if (!aiProviderReady(settings)) return knowledgeOrSituation(settings, dependencies, query, history, references)
 
   // Over quota with references in hand is not a dead end: the approved answer is
   // still the answer. Falling back to it beats refusing a question the knowledge
   // bank can already answer.
   const groundedQuotaRetryAfter = await enforceAiQuota(event, sessionId)
-  if (groundedQuotaRetryAfter) return friendlyKnowledgeAnswer(settings, references)
+  if (groundedQuotaRetryAfter) return knowledgeOrSituation(settings, dependencies, query, history, references)
 
   try {
     const grounded = await callProvider(settings, dependencies, references, history, onChunk, onToolCall)
@@ -706,13 +728,13 @@ export async function answerGroundedChat(
         streamed: Boolean(onChunk),
       }
     }
-    return friendlyKnowledgeAnswer(settings, references)
+    return knowledgeOrSituation(settings, dependencies, query, history, references)
   } catch (error) {
     logWarn({
       event: 'chatbot.grounded_provider_failed',
       error,
       consequence: 'falling back to approved knowledge answer',
     })
-    return friendlyKnowledgeAnswer(settings, references)
+    return knowledgeOrSituation(settings, dependencies, query, history, references)
   }
 }
