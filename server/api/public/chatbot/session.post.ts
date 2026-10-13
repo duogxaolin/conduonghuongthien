@@ -1,4 +1,5 @@
-import { createError } from 'h3'
+import { createError, setHeader } from 'h3'
+import { enforceSessionMintLimit } from '../../../utils/chatbot/session-limit'
 import { issueSessionToken } from '../../../utils/chatbot/session-token'
 import { analyticsHmacSecret } from '../../../utils/runtime-config'
 
@@ -28,6 +29,13 @@ export default defineEventHandler(async (event) => {
     // anyone write under any id. Refusing is correct; the widget treats this as
     // "no transcript" and keeps chatting.
     throw createError({ statusCode: 503, statusMessage: 'Chat session tokens unavailable' })
+  }
+
+  // Before signing: a refused request must cost nothing.
+  const retryAfter = await enforceSessionMintLimit(event)
+  if (retryAfter) {
+    setHeader(event, 'Retry-After', retryAfter)
+    throw createError({ statusCode: 429, statusMessage: 'Too many session requests' })
   }
 
   const { token } = issueSessionToken(secret)
