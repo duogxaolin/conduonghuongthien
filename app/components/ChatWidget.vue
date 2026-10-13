@@ -218,6 +218,9 @@
               <span class="w-1.5 h-1.5 bg-[#1e4620] rounded-full animate-typing-dot [animation-delay:200ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
               <span class="w-1.5 h-1.5 bg-[#1e4620] rounded-full animate-typing-dot [animation-delay:400ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
             </div>
+            <!-- Sau ~20 giây: nói rõ lần chờ này dài hơn thường. Nằm trong vùng role="status"
+                 nên trình đọc màn hình cũng được báo; cuộc gọi không bị huỷ. -->
+            <p v-if="isSlowWait" class="m-0 mt-1.5 text-[0.72rem] leading-snug text-[#667768]">Đang chờ lâu hơn bình thường, xin anh/chị chờ thêm…</p>
           </div>
         </div>
         </div>
@@ -322,6 +325,7 @@ import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useChatbot, type StoredConversation, type ChatMessage } from '~/composables/useChatbot'
 import { useChatAutoScroll } from '~/composables/useChatAutoScroll'
 import { useKeyboardViewport } from '~/composables/useKeyboardViewport'
+import { useSlowWait } from '~/composables/useSlowWait'
 import { useI18n } from '~/composables/useI18n'
 
 const { t } = useI18n()
@@ -340,6 +344,8 @@ const {
 // rendering during SSR would produce markup the client immediately contradicts.
 const clientMounted = ref(false)
 const isChatbotOpen = ref(false)
+// "Waiting longer than usual" once the first word is 20s late.
+const isSlowWait = useSlowWait(isAwaitingFirstWord)
 // Phones: the full-screen dialog follows the visible area when the keyboard opens.
 const { keyboardViewportStyle } = useKeyboardViewport(isChatbotOpen)
 const isConversationListOpen = ref(false)
