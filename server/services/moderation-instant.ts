@@ -15,11 +15,21 @@ export interface FastPreModerateResult {
 }
 
 // ── Built-in Instant Reject Patterns (< 1ms, zero latency) ────────────────
+/**
+ * Khớp CẢ TỪ với ranh giới Unicode. `\b` của JS chỉ hiểu ASCII, nên `\b(đcm|địt|đụ|...)\b`
+ * không bao giờ khớp từ bắt đầu/kết thúc bằng chữ có dấu (`đ`, `ụ`, `ẻ`...): chỉ các biến thể
+ * thuần ASCII (`dcm`, `djt`...) bị chặn. Lookaround `\p{L}\p{N}_` là ranh giới đúng cho tiếng Việt.
+ */
+const wholeWord = (alternatives: string) =>
+  new RegExp(`(?<![\\p{L}\\p{N}_])(?:${alternatives})(?![\\p{L}\\p{N}_])`, 'iu')
+
 export const INSTANT_PROFANITY: Array<{ pattern: RegExp; label: string }> = [
   { pattern: /\b(f+u+c+k+|s+h+i+t+|b+i+t+c+h+|a+s+s+h+o+l+e*|d+i+c+k+|c+u+n+t+)\b/i, label: 'Tiếng Anh thô tục tục tĩu' },
-  { pattern: /\b(địt|djt|dcm|đcm|đm|đmm|dmm|đyt|dyt|đệt|đẹt)\b/i, label: 'Chửi thề thô tục' },
-  { pattern: /\b(lồn|cặc|buồi|đụ|đù|đĩ|đỹ|ỉa|đái|dái|hãm lồn)\b/i, label: 'Từ ngữ khiêu dâm / thô tục' },
-  { pattern: /\b(liếm đít|bú cu|bú cặc|thủ dâm|súc vật|chó đẻ|óc chó|chó dại)\b/i, label: 'Xúc phạm nhân phẩm thô bạo' },
+  { pattern: wholeWord('địt|djt|dcm|đcm|đm|đmm|dmm|đyt|dyt|đệt|đẹt'), label: 'Chửi thề thô tục' },
+  // `ỉa` và `đái` KHÔNG có trong danh sách: chúng chưa từng khớp (lỗi `\b`), và nếu khớp thì sẽ
+  // chặn nhầm thuật ngữ y khoa ("đái tháo đường", "ỉa chảy") trong tin sức khoẻ.
+  { pattern: wholeWord('lồn|cặc|buồi|đụ|đù|đĩ|đỹ|dái|hãm lồn'), label: 'Từ ngữ khiêu dâm / thô tục' },
+  { pattern: wholeWord('liếm đít|bú cu|bú cặc|thủ dâm|súc vật|chó đẻ|óc chó|chó dại'), label: 'Xúc phạm nhân phẩm thô bạo' },
 ]
 
 export const INSTANT_HOSTILE: Array<{ pattern: RegExp; label: string }> = [
