@@ -76,6 +76,9 @@ test('no other server file writes article translation content', () => {
       const path = join(dir, entry.name)
       if (entry.isDirectory()) { walk(path); continue }
       if (!/\.(ts|mjs)$/.test(entry.name) || path.endsWith('article-translations.ts')) continue
+      // Ngoại lệ có tên: chính lượt dọn một lần ghi lại `content` đã qua sanitizeHtml
+      // (kiểm ngay bên dưới), nên nó không phải đường ghi chưa lọc.
+      if (path.endsWith('stored-html-sanitize.ts')) continue
       const text = readFileSync(path, 'utf8')
       if (/(insert|update)\(articleTranslations\)/.test(text) && /\bcontent\b/.test(text.slice(text.search(/(insert|update)\(articleTranslations\)/)))) {
         offenders.push(path)
@@ -84,6 +87,12 @@ test('no other server file writes article translation content', () => {
   }
   walk(new URL('../server', import.meta.url).pathname)
   assert.deepEqual(offenders, [], 'route the write through sanitizeTranslationFields and add it to the guard above')
+})
+
+test('the one-off cleanup writes only content that went through sanitizeHtml', () => {
+  const source = read('../server/services/stored-html-sanitize.ts')
+  assert.match(source, /sanitizeHtml\(row\.content\)/)
+  assert.match(source, /set\(\{ content: fix\.content \}\)/, 'it writes the planned (sanitized) content and nothing else')
 })
 
 test('the public article endpoint sanitizes a stored translation when serving it', () => {

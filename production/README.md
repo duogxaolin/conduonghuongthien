@@ -135,6 +135,21 @@ cd production
 
 ---
 
+## Dọn HTML bản dịch đã lưu trước bản vá bảo mật (làm một lần)
+
+Bản vá XSS bản dịch (PR #92) lọc HTML ở mọi đường ghi mới và lọc lại lúc đọc, nên người đọc không còn nhận script từ dữ liệu cũ. Hàng cũ vẫn nằm nguyên trong DB; lượt dọn này đưa chính dữ liệu lưu về dạng đã lọc. Sau khi CI đã deploy bản có `db:sanitize-html`:
+
+```bash
+cd /www/wwwroot/conduonghuongthien
+./scripts/backup-db.sh                                   # sao lưu trước
+docker exec -it cdkt_app npm run db:sanitize-html        # xem trước: đếm hàng sẽ đổi, KHÔNG ghi
+docker exec -it cdkt_app npm run db:sanitize-html -- --apply   # ghi
+```
+
+Chạy lại được nhiều lần (hàng đã sạch thì không đổi). Thay đổi thường gặp là cosmetic: `alt=""` → `alt` (tương đương trong HTML); chỉ mã độc (`<script>`, `onerror=`, `javascript:`…) bị bỏ thật.
+
+---
+
 ## Tắt auto-deploy (tuỳ chọn)
 
 Hiện job `deploy` trong `.github/workflows/ci.yml` có `if: true` (bật). Muốn CI chỉ build image mà không tự lên VPS (rồi deploy bằng `./manage.sh` → 2):
