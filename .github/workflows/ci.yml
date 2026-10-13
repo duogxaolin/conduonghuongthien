@@ -101,8 +101,10 @@ jobs:
           echo "Running $(echo "$files" | wc -l) unit test files"
           node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test $files
 
+      # Cổng CHẶN: `exit $status` ở cuối + không có `continue-on-error`. Trước đây
+      # bước này có `continue-on-error: true`, nên 4 lỗi kiểu lọt vào `main` mà CI
+      # vẫn xanh (tests/ops-scripts.test.ts canh cả hai điều kiện).
       - name: Typecheck
-        continue-on-error: true
         run: |
           set +e
           npx nuxt typecheck > /tmp/tsc.log 2>&1

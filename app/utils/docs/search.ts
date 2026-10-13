@@ -38,7 +38,13 @@ export type SearchableDoc = {
   questions?: string[]
 }
 
-export type SearchResult = SearchableDoc & {
+/**
+ * Generic so the caller keeps its own fields. `searchDocs` spreads each doc into
+ * its result, so `icon`/`summary` of an `AdminDoc` are there at runtime; typing
+ * the result as plain `SearchableDoc` hid them and made the page read fields the
+ * compiler said did not exist.
+ */
+export type SearchResult<T extends SearchableDoc = SearchableDoc> = T & {
   score: number
   intent: SearchIntent
   matchedKeywords: number
@@ -100,7 +106,7 @@ export function scoreDoc(
 
 // ── Full search ────────────────────────────────────────────────────────
 
-export function searchDocs(docs: SearchableDoc[], query: string, topK = 10): SearchResult[] {
+export function searchDocs<T extends SearchableDoc>(docs: T[], query: string, topK = 10): SearchResult<T>[] {
   const trimmed = query.slice(0, 200)
   const normalizedQuery = normalizeKnowledgeText(trimmed)
   if (!normalizedQuery) return []
@@ -127,7 +133,9 @@ export function suggestQuestions(docs: SearchableDoc[], count = 6): string[] {
   const shuffled = [...all]
   for (let i = shuffled.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1))
-    ;[shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]]
+    const a = shuffled[i]!
+    shuffled[i] = shuffled[j]!
+    shuffled[j] = a
   }
   return shuffled.slice(0, count)
 }

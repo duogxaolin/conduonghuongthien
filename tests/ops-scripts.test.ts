@@ -221,6 +221,12 @@ test('nothing reaches the VPS without passing every gate first', () => {
     'bước Typecheck không còn trong job `unit-tests` — cổng kiểu đã biến mất khỏi CI')
   assert.match(unitJob, /exit \$status/,
     'Typecheck không thoát theo mã trạng thái thật — một lỗi kiểu sẽ hiện ra là màu xanh')
+  // `exit $status` chưa đủ: `continue-on-error: true` biến mã thoát đó thành màu
+  // xanh. Đây là điều đã xảy ra — 4 lỗi kiểu nằm trên `main` mà CI vẫn xanh.
+  const typecheckStep = /- name: Typecheck\n([\s\S]*?)(?=\n {6}- name:|\n {2}[a-z-]+:\n|$)/.exec(unitJob)?.[1] ?? ''
+  assert.ok(typecheckStep.includes('npx nuxt typecheck'), 'không tìm thấy bước Typecheck')
+  assert.doesNotMatch(typecheckStep, /continue-on-error/,
+    'Typecheck có `continue-on-error` — lỗi kiểu không còn chặn được merge')
   assert.match(workflow, /deploy:\s*\n[\s\S]*?needs: image/, 'deploy does not wait for the image')
   // Deploying a pull request would push a fork's code onto the server.
   assert.match(workflow, /if: github\.ref == 'refs\/heads\/main' && github\.event_name != 'pull_request'/)
