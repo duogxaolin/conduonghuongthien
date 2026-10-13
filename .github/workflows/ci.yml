@@ -99,7 +99,18 @@ jobs:
           # Liệt kê mọi tệp *.test.ts KHÔNG kết thúc bằng -integration.test.ts
           files=$(find tests -maxdepth 1 -name '*.test.ts' ! -name '*-integration.test.ts' | sort)
           echo "Running $(echo "$files" | wc -l) unit test files"
-          node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test $files
+          # `--experimental-test-coverage` adds ~5% to the run and prints the table at
+          # the end of the log; `tee` keeps it for the summary step below. `pipefail`
+          # (set above) keeps a failing test failing the step.
+          node --experimental-strip-types --experimental-test-module-mocks --experimental-test-coverage --import ./scripts/ts-resolver.mjs --test $files | tee /tmp/unit-test.log
+
+      # Báo cáo độ phủ — CHỈ báo cáo, không chặn: chưa có ngưỡng nào, vì một con số chọn
+      # trước khi ai đó thấy mức nền chỉ là cách mới để CI đỏ. `continue-on-error` ở đây
+      # đúng chỗ (bước này không phải cổng); cổng Typecheck bên dưới thì không có.
+      - name: Coverage summary
+        if: always()
+        continue-on-error: true
+        run: node --experimental-strip-types scripts/coverage-summary.ts < /tmp/unit-test.log >> "$GITHUB_STEP_SUMMARY"
 
       # Cổng CHẶN: `exit $status` ở cuối + không có `continue-on-error`. Trước đây
       # bước này có `continue-on-error: true`, nên 4 lỗi kiểu lọt vào `main` mà CI
