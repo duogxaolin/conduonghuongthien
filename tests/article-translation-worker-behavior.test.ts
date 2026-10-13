@@ -141,6 +141,8 @@ test('dịch hàng loạt: bài chưa có bản dịch được insert + dịch,
   const before = svc.getBulkTranslationTaskState().startedAt
   const res = await svc.bulkTriggerTranslation(actor, [7], 'en')
   assert.deepEqual(res, { ok: true, count: 1 })
+  // Ngay sau khi xếp hàng, tác vụ nền phải báo đang chạy (UI poll `active` để hiện banner).
+  assert.equal(svc.getBulkTranslationTaskState().active, true)
   // Việc chạy nền (setTimeout 0): chờ tới khi trạng thái tổng kết có completedAt.
   await waitForBulkRun(before)
   const s = svc.getBulkTranslationTaskState()
