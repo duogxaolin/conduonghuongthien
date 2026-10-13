@@ -128,7 +128,7 @@ onMounted(() => { fetchSitemap() })
       rows="24"
       spellcheck="false"
       class="w-full rounded-xl border border-gray-300 p-3 font-mono text-sm text-gray-800 focus:border-[#4A6741] focus:ring-2 focus:ring-[#4A6741]/20"
-      placeholder='<?xml version="1.0" encoding="UTF-8"?>&#10;<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">...'
+      placeholder="<?xml version=&quot;1.0&quot; encoding=&quot;UTF-8&quot;?>&#10;<urlset xmlns=&quot;http://www.sitemaps.org/schemas/sitemap/0.9&quot;>..."
     />
 
     <div v-if="loading" role="status" aria-busy="true" class="space-y-3">

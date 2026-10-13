@@ -277,7 +277,7 @@ export default defineEventHandler(async (event) => {
         totalPages,
       },
     }
-  } catch (err: unknown) {
+  } catch {
     return {
       ok: false,
       items: [],

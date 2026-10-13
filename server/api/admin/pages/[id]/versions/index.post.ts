@@ -40,7 +40,7 @@ export default defineEventHandler(async (event) => {
     }))
   }
   // Strip ids from snapshots so restores never collide with live block ids.
-  const cleanBlocks = snapshot.map(({ id, ...rest }) => rest)
+  const cleanBlocks = snapshot.map(({ id: _id, ...rest }) => rest)
 
   /**
    * One commit for the write and its audit line — and, on the origin path, for

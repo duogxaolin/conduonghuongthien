@@ -17,7 +17,14 @@ import { logWarn } from './logger'
 
 /** Services blocked at 100% budget. Chatbot falls back to knowledge-only in its
  *  own call path (it's never blocked — it just doesn't call the AI provider).
- *  Static record — no runtime insertion needed. */
+ *  Static record — no runtime insertion needed.
+ *
+ *  NOT read by `checkBudget`, which refuses EVERY service at 100% ("áp dụng cho toàn
+ *  bộ service", see the comment there); the chatbot then falls back because
+ *  `chat-policy.ts` treats `budget_exceeded` as "no provider". Kept as documentation
+ *  because tests/ai-budget.test.ts pins its contents — those tests read this source
+ *  text, so they prove the record exists, not how budgets are enforced. */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- documentation table, see above
 const BLOCKED_AT_FULL_BUDGET: Record<string, true> = {
   translation_article: true,
   translation_ui: true,
@@ -148,7 +155,7 @@ async function loadMonthlySpend(db: Database): Promise<number> {
  *
  * The 80% warning is emitted once per day via `logWarn`.
  */
-export async function checkBudget(db: Database, serviceKey: string): Promise<BudgetCheckResult> {
+export async function checkBudget(db: Database, _serviceKey: string): Promise<BudgetCheckResult> {
   const budget = await loadBudget(db)
 
   let budgetVnd = Number(budget?.monthlyBudgetVnd) || 0

@@ -98,6 +98,22 @@ export default tseslint.config(
       'vue/no-required-prop-with-default': 'warn',
     },
   },
+  // ── Ngoại lệ có tên (mỗi cái có lý do; thêm cái mới phải ghi lý do ở đây) ────
+  {
+    // `any` trong tests/ là mock/stub có chủ đích: test runner Node không biên dịch
+    // type nên `any` ở đó không rò rỉ ra production (CLAUDE.md, mục `any`). 154 cảnh
+    // báo này che mất tín hiệu thật ở app/ server/ scripts/, nơi `any` là 0.
+    files: ['tests/**'],
+    rules: { '@typescript-eslint/no-explicit-any': 'off' },
+  },
+  {
+    // Page Builder: component cha sở hữu cây block, panel thuộc tính và trình soạn
+    // mảng sửa `block.data` TẠI CHỖ qua v-model — thiết kế có chủ đích, và việc đổi
+    // sang emit từng thay đổi là thay đổi kiến trúc của trình soạn trang (autosave,
+    // nháp, lịch sử), không phải dọn dẹp.
+    files: ['app/components/admin/builder/PropertyPanel.vue', 'app/components/admin/builder/BuilderArrayEditor.vue'],
+    rules: { 'vue/no-mutating-props': 'off' },
+  },
   {
     ignores: [
       '.output/**',

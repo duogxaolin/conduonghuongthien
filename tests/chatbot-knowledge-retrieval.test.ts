@@ -126,14 +126,8 @@ test('failed term insert on create rolls back: no knowledge row survives', async
   }
 
   _dbHandle = {
-    transaction: async (cb: (tx: any) => Promise<any>) => {
-      try {
-        return await cb(tx)
-      } catch (err) {
-        // Transaction rolled back — re-throw so the caller sees the error
-        throw err
-      }
-    },
+    // A rollback is the callback's own error reaching the caller unchanged.
+    transaction: async (cb: (tx: any) => Promise<any>) => cb(tx),
   }
 
   // createKnowledge must reject because the term insert failed inside the transaction
@@ -198,14 +192,8 @@ test('failed term insert on update rolls back: prior knowledge row and terms rem
   _dbHandle = {
     // Pre-update getKnowledgeFrom: returns the existing row; withTerms returns no terms
     select: () => makeSelectChain([existingRow]),
-    transaction: async (cb: (tx: any) => Promise<any>) => {
-      try {
-        return await cb(tx)
-      } catch (err) {
-        // Rolled back — re-throw
-        throw err
-      }
-    },
+    // A rollback is the callback's own error reaching the caller unchanged.
+    transaction: async (cb: (tx: any) => Promise<any>) => cb(tx),
   }
 
   // updateKnowledge must reject because term insert fails inside the transaction

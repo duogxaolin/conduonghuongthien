@@ -13,7 +13,6 @@ import test from 'node:test'
 import { readFileSync } from 'node:fs'
 
 const schema = readFileSync(new URL('../server/db/schema.ts', import.meta.url), 'utf8')
-const init = readFileSync(new URL('../server/db/init.ts', import.meta.url), 'utf8')
 const chatbotDdl = readFileSync(new URL('../server/db/schema-tables/chatbot.ts', import.meta.url), 'utf8')
 
 test('chatbot_small_talk is declared in schema.ts with its type exports', () => {

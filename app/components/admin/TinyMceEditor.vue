@@ -9,7 +9,7 @@ import type { TinyMceEditorInstance, WindowWithTinyMce } from '~/types/tinymce'
 import { onMounted, onBeforeUnmount, watch } from 'vue'
 
 const props = withDefaults(defineProps<{
-  modelValue: string
+  modelValue?: string
   height?: number
   placeholder?: string
 }>(), { modelValue: '', height: 480, placeholder: '' })

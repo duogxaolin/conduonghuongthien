@@ -216,7 +216,7 @@ test('nothing reaches the VPS without passing every gate first', () => {
    * biến một cổng chặn thành một dòng nhật ký, mà nhìn từ bảng CI thì hai thứ
    * đó giống hệt nhau — cùng một dấu tích xanh.
    */
-  const unitJob = /\n  unit-tests:\n([\s\S]*?)(?=\n  [a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
+  const unitJob = /\n {2}unit-tests:\n([\s\S]*?)(?=\n {2}[a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
   assert.match(unitJob, /- name: Typecheck/,
     'bước Typecheck không còn trong job `unit-tests` — cổng kiểu đã biến mất khỏi CI')
   assert.match(unitJob, /exit \$status/,

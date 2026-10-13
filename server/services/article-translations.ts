@@ -43,7 +43,7 @@ function delay(ms: number): Promise<void> {
 export function parseTitleAndExcerpt(
   rawText: string,
   originalTitle = '',
-  originalExcerpt = '',
+  _originalExcerpt = '',
 ): { title: string; excerpt: string } {
   let title = ''
   let excerpt = ''

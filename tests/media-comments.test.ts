@@ -30,7 +30,6 @@ import {
 } from '../server/services/comments.ts'
 import {
   notificationUrl,
-  notificationTargetPage,
   COMMENT_THREAD_PER_PAGE,
 } from '../server/services/notifications.ts'
 

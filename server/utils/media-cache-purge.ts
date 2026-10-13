@@ -63,7 +63,7 @@ export function selectMediaCacheKeys(keys: readonly string[]): string[] {
  * rồi nuốt lỗi (chỉ ghi log): một lượt purge hỏng không được làm hỏng lượt
  * xuất bản đã thành công — cache sẽ tự hết hạn sau 60 giây bất cách.
  */
-export async function purgeMediaListCache(event: H3Event): Promise<number> {
+export async function purgeMediaListCache(_event: H3Event): Promise<number> {
   const storage = useStorage('cache')
   const allKeys = await storage.getKeys('nitro/routes')
   const mediaKeys = selectMediaCacheKeys(allKeys)
