@@ -11,7 +11,10 @@ const searchResults = ref<SearchResult<AdminDoc>[]>([])
 const isSearching = computed(() => searchQuery.value.trim().length > 0)
 const hasResults = computed(() => searchResults.value.length > 0)
 
-const suggestedQuestions = computed(() => suggestQuestions(ADMIN_DOCS, 6))
+// `suggestQuestions` xáo ngẫu nhiên: chạy lúc setup thì máy chủ và trình duyệt ra hai danh sách
+// khác nhau → "Hydration completed but contains mismatches". Chỉ lấy SAU khi mount.
+const suggestedQuestions = ref<string[]>([])
+onMounted(() => { suggestedQuestions.value = suggestQuestions(ADMIN_DOCS, 6) })
 
 const handleResults = (results: SearchResult<AdminDoc>[]) => {
   searchResults.value = results
@@ -68,7 +71,7 @@ const handleResults = (results: SearchResult<AdminDoc>[]) => {
       <!-- Hub content (when not searching) -->
       <div v-else class="flex flex-col gap-8 mt-2">
         <!-- Suggested questions -->
-        <div>
+        <div v-if="suggestedQuestions.length">
           <h2 class="text-[0.92rem] font-bold text-[#122815] m-0 mb-3">Câu hỏi phổ biến</h2>
           <div class="flex flex-wrap gap-2">
             <span

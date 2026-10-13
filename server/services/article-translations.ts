@@ -11,6 +11,7 @@ import { articleTranslations, articles, activityLogs, languages } from '../db/sc
 import { type ActorLike } from '../utils/permissions'
 import { articleResource } from './articles'
 import { sanitizeHtml } from '../utils/sanitize-html'
+import { stripMarkup } from '../utils/translation-html'
 import { LANGUAGE_NAMES, parseTitleAndExcerpt, runTranslationWorker } from './article-translation-worker'
 
 // Worker (job dịch) và bulk (dịch hàng loạt) đã tách file; re-export để mọi import cũ
@@ -246,8 +247,8 @@ export async function updateTranslation(
       translatorId: actor.id ?? null,
       status: 'reviewed',
     }
-    if (data.title !== undefined) updates.title = data.title
-    if (data.excerpt !== undefined) updates.excerpt = data.excerpt
+    if (data.title !== undefined) updates.title = stripMarkup(data.title)
+    if (data.excerpt !== undefined) updates.excerpt = stripMarkup(data.excerpt)
     if (data.content !== undefined) updates.content = sanitizeHtml(data.content)
 
     await tx
