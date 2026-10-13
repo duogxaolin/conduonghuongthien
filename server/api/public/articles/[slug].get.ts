@@ -1,3 +1,4 @@
+import { sanitizeHtml } from '../../../utils/sanitize-html'
 import { getDb } from '../../../utils/db'
 import { articles, users, categories, articleViewDaily, articleTranslations } from '../../../db/schema'
 import { eq, and, sql, inArray } from 'drizzle-orm'
@@ -68,7 +69,8 @@ export default defineEventHandler(async (event) => {
             ...article,
             title:    translation.title,
             excerpt:  translation.excerpt ?? article.excerpt,
-            content:  translation.content ?? article.content,
+            // Lọc lúc đọc: bản dịch ghi trước khi có lớp lọc lúc ghi vẫn nằm trong DB.
+            content:  translation.content == null ? article.content : sanitizeHtml(translation.content),
             translatedFrom: 'vi',
           },
         }

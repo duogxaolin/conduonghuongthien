@@ -9,6 +9,7 @@
  * Gated on `settings:read`: this is configuration, not the audit log, so it
  * follows the same boundary as the other settings pages.
  */
+import { intervalDays } from '../../../utils/sql-literals'
 import { sql } from 'drizzle-orm'
 import type { AnyMySqlColumn, AnyMySqlTable } from 'drizzle-orm/mysql-core'
 import { getDb } from '../../../utils/db'
@@ -61,7 +62,7 @@ export default defineEventHandler(async (event) => {
         total: sql<number>`COUNT(*)`,
         oldest: sql<string | null>`MIN(${timestamp})`,
         overdue: scope.days > 0
-          ? sql<number>`SUM(CASE WHEN ${timestamp} < (NOW() - INTERVAL ${sql.raw(String(scope.days))} DAY) THEN 1 ELSE 0 END)`
+          ? sql<number>`SUM(CASE WHEN ${timestamp} < (NOW() - INTERVAL ${intervalDays(scope.days)} DAY) THEN 1 ELSE 0 END)`
           : sql<number>`0`,
       })
       .from(target)

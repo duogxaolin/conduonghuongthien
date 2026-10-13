@@ -12,9 +12,10 @@ import { selectSmallTalk, type SemanticSmallTalkProvider, type SmallTalkSemantic
 import { classifySmallTalk, type SmallTalkContext, type SmallTalkEntry } from './small-talk'
 import { logWarn, logError } from '../logger'
 import { rateLimitDeps } from '../rate-limit-deps'
-import { eq, and, or, like, desc, inArray, sql } from 'drizzle-orm'
+import { eq, and, or, like, desc, inArray } from 'drizzle-orm'
 import { articles, mediaItems, media } from '../../db/schema'
 import { getDb } from '../db'
+import { buildArticleSearch } from './article-search'
 export const HOTLINE = CHATBOT_HOTLINE
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
 
@@ -335,39 +336,9 @@ async function callProvider(
           const db = getDb()
           const rawQ = String(args.query || '').trim()
           const type = typeof args.type === 'string' ? args.type.trim() : null
-          const whereConds = [eq(articles.status, 'published')]
-          if (type) whereConds.push(eq(articles.type, type))
-
-          const stopWords = new Set(['cho', 'tôi', 'hỏi', 'với', 'được', 'không', 'nào', 'các', 'của', 'là', 'gì', 'thế', 'ở', 'đó', 'có', 'thì', 'xin'])
-          const keywords = rawQ
-            .toLowerCase()
-            .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-            .split(/\s+/)
-            .filter(w => w.length >= 2 && !stopWords.has(w))
-
-          let orderByClause = desc(articles.publishedAt)
-          if (keywords.length > 0) {
-            const orLikes = keywords.map(kw => or(
-              like(articles.title, `%${kw}%`),
-              like(articles.excerpt, `%${kw}%`),
-              like(articles.content, `%${kw}%`)
-            )!)
-            whereConds.push(or(...orLikes)!)
-
-            // Relevance scoring: Title matches (+10), Excerpt matches (+3), Exact phrase in title (+30)
-            const safeWords = keywords.map(w => w.replace(/["\\]/g, ''))
-            const titleScore = safeWords.map(w => `(CASE WHEN LOWER(title) LIKE '%${w}%' THEN 10 ELSE 0 END)`).join(' + ')
-            const excerptScore = safeWords.map(w => `(CASE WHEN LOWER(excerpt) LIKE '%${w}%' THEN 3 ELSE 0 END)`).join(' + ')
-            const cleanQ = rawQ.toLowerCase().replace(/["\\]/g, '')
-            const exactScore = `(CASE WHEN LOWER(title) LIKE '%${cleanQ}%' THEN 30 ELSE 0 END)`
-            orderByClause = sql.raw(`(${titleScore} + ${excerptScore} + ${exactScore}) DESC, published_at DESC`)
-          } else if (rawQ) {
-            whereConds.push(or(
-              like(articles.title, `%${rawQ}%`),
-              like(articles.excerpt, `%${rawQ}%`),
-              like(articles.content, `%${rawQ}%`)
-            )!)
-          }
+          // Toàn bộ điều kiện và thứ tự sắp xếp do `buildArticleSearch` dựng — chuỗi
+          // tìm kiếm chỉ đi vào tham số của câu lệnh (xem article-search.ts).
+          const search = buildArticleSearch(rawQ, type)
 
           const rows = await db.select({
             id: articles.id,
@@ -378,8 +349,8 @@ async function callProvider(
             content: articles.content,
             thumbnailUrl: articles.thumbnailUrl,
           }).from(articles)
-          .where(and(...whereConds))
-          .orderBy(orderByClause)
+          .where(search.where)
+          .orderBy(...search.orderBy)
           .limit(5)
 
           const categoryMap: Record<string, string> = {

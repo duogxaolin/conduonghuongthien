@@ -1,4 +1,4 @@
-import type { BlockData } from '../../app/utils/blocks/types'
+import type { BlockData, BlockFieldValue } from '../../app/utils/blocks/types'
 /**
  * Dependency-free, allowlist HTML sanitizer for admin-authored rich text
  * (article bodies, richtext / content_aside blocks). Rendered on the public site
@@ -218,13 +218,41 @@ export function sanitizeHtml(input: unknown): string {
 // HTML-field names inside block `data` that hold rich text and must be sanitized.
 const HTML_BLOCK_FIELDS = ['html', 'bodyHtml', 'content', 'body', 'richtext', 'text_html']
 
-/** Sanitize the known rich-text fields of a block's `data` object (shallow). */
+type BlockRecord = { [key: string]: BlockFieldValue }
+
+const isBlockRecord = (value: unknown): value is BlockRecord =>
+  !!value && typeof value === 'object' && !Array.isArray(value)
+
+/** Copy of `record` with every known rich-text field run through `sanitizeHtml`. */
+function sanitizeHtmlFields(record: BlockRecord): BlockRecord {
+  const out: BlockRecord = { ...record }
+  for (const field of HTML_BLOCK_FIELDS) {
+    const value = out[field]
+    if (typeof value === 'string') out[field] = sanitizeHtml(value)
+  }
+  return out
+}
+
+/**
+ * Sanitize the known rich-text fields of a block's `data` object.
+ *
+ * Also the per-language overrides in `data.translations[lang]`. The public page
+ * merges the requested language's override over `data` and renders the result
+ * with `v-html`, so an override is exactly as dangerous as the top-level field —
+ * and a shallow pass over `data` alone never looked inside it.
+ */
 export function sanitizeBlockData(data: unknown): BlockData {
-  if (!data || typeof data !== 'object' || Array.isArray(data)) return {}
-  const obj = data as BlockData
+  if (!isBlockRecord(data)) return {}
+  const obj: BlockData = data
   for (const field of HTML_BLOCK_FIELDS) {
     const value = obj[field]
     if (typeof value === 'string') obj[field] = sanitizeHtml(value)
+  }
+  const translations = obj.translations
+  if (isBlockRecord(translations)) {
+    obj.translations = Object.fromEntries(
+      Object.entries(translations).map(([lang, override]) => [lang, isBlockRecord(override) ? sanitizeHtmlFields(override) : override]),
+    )
   }
   return obj
 }
