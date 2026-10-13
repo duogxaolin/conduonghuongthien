@@ -1,6 +1,7 @@
 import { computed, watch } from 'vue'
 import { useCookie, useHead, useState } from '#imports'
 import { hardcodedDictionary } from './i18n-default-dictionary'
+import { createSingleFlight } from '~/utils/single-flight'
 
 export interface LocaleOption {
   code: string
@@ -20,6 +21,9 @@ export const DEFAULT_LOCALE_OPTIONS: LocaleOption[] = [
 
 export const localeOptions = DEFAULT_LOCALE_OPTIONS
 const DEFAULT_LOCALE = 'vi'
+
+// Dùng chung cho mọi lời gọi useI18n(): chỉ MỘT yêu cầu bản dịch/ngôn ngữ đang bay tại một thời điểm.
+const singleFlight = createSingleFlight()
 
 const normalizeLocale = (value: unknown): string => {
   if (typeof value === 'string' && value.trim()) {
@@ -45,20 +49,22 @@ export const useI18n = () => {
   const currentLang = useState<string>('currentLang', () => normalizeLocale(localeCookie.value))
   const currentLocale = computed(() => locales.value.find(locale => locale.code === currentLang.value) ?? DEFAULT_LOCALE_OPTIONS[0]!)
 
-  async function loadLanguagesFromDb() {
-    try {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ code: string; name: string; nativeName: string; isDefault: boolean }> }>)('/api/public/languages')
-      if (res.ok && Array.isArray(res.items) && res.items.length > 0) {
-        dbLanguages.value = res.items.map(l => ({
-          code: l.code,
-          label: l.code.toUpperCase(),
-          name: l.nativeName || l.name,
-          htmlLang: l.code,
-        }))
+  function loadLanguagesFromDb(): Promise<void> {
+    return singleFlight('languages', async () => {
+      try {
+        const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: Array<{ code: string; name: string; nativeName: string; isDefault: boolean }> }>)('/api/public/languages')
+        if (res.ok && Array.isArray(res.items) && res.items.length > 0) {
+          dbLanguages.value = res.items.map(l => ({
+            code: l.code,
+            label: l.code.toUpperCase(),
+            name: l.nativeName || l.name,
+            htmlLang: l.code,
+          }))
+        }
+      } catch {
+        // Non-critical fallback
       }
-    } catch {
-      // Non-critical fallback
-    }
+    })
   }
 
   if (import.meta.client && dbLanguages.value.length === 0) {
@@ -106,23 +112,26 @@ export const useI18n = () => {
     // Client-side fetch only — public pages are all lazy/SWR, so this runs
     // after mount. On server, falls back to hardcoded dictionary.
     if (import.meta.client) {
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; translations: Record<string, Record<string, string>> }>)(
-        `/api/public/translations/${currentLang.value}`,
-      )
-        .then((res) => {
-          if (res.ok && res.translations) {
-            // Flatten groups: {"nav": {"home": "Home"}, ...} → {"home": "Home", ...}
-            const flat: Record<string, string> = {}
-            for (const group of Object.values(res.translations)) {
-              Object.assign(flat, group)
+      const lang = currentLang.value
+      void singleFlight(`translations:${lang}`, () =>
+        ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; translations: Record<string, Record<string, string>> }>)(
+          `/api/public/translations/${lang}`,
+        )
+          .then((res) => {
+            if (res.ok && res.translations) {
+              // Flatten groups: {"nav": {"home": "Home"}, ...} → {"home": "Home", ...}
+              const flat: Record<string, string> = {}
+              for (const group of Object.values(res.translations)) {
+                Object.assign(flat, group)
+              }
+              dbTranslations.value = { [lang]: flat }
+              dbTranslationsLang.value = lang
             }
-            dbTranslations.value = { [currentLang.value]: flat }
-            dbTranslationsLang.value = currentLang.value
-          }
-        })
-        .catch(() => {
-          dbTranslations.value = {}
-        })
+          })
+          .catch(() => {
+            dbTranslations.value = {}
+          }),
+      )
     }
   }
 
