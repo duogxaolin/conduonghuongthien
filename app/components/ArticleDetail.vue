@@ -124,7 +124,7 @@
           </ol>
         </nav>
 
-        <div class="article-body text-[1.05rem] leading-[1.7] text-[#4A5545]">
+        <div ref="articleBodyEl" class="article-body text-[1.05rem] leading-[1.7] text-[#4A5545]">
           <!-- eslint-disable-next-line vue/no-v-html -- content authored by C11 editors, sanitized on write -->
           <div v-html="toc.html"></div>
         </div>
@@ -332,6 +332,7 @@ import { formatDateVN } from '~/utils/formatDate'
 import { classifySource } from '~/utils/analytics-collector'
 import { buildToc, TOC_MIN_HEADINGS } from '~/utils/toc'
 import { useReadingHistory } from '~/composables/useReadingHistory'
+import { useBrokenImageFallback } from '~/composables/useBrokenImageFallback'
 import { useSiteSettings, type PublicSettingsResponse } from '~/composables/useSiteSettings'
 
 const { record: recordRead } = useReadingHistory()
@@ -359,6 +360,10 @@ const props = defineProps({
   seoFallbackTitle: { type: String, default: null },
   seoFallbackDescription: { type: String, default: null },
 })
+
+// Ảnh trong thân bài bị 404 (ảnh từ trang cũ không còn tệp) thì ẩn thay vì hiện khung vỡ.
+const articleBodyEl = ref<HTMLElement | null>(null)
+useBrokenImageFallback(articleBodyEl)
 
 // Variant → i18n key map. Props win when set; otherwise the variant picks the key.
 const VARIANT_KEYS = {

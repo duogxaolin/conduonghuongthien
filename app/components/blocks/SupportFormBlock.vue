@@ -7,7 +7,7 @@
           <p class="text-[#4A5545] leading-[1.6] mb-[30px]">{{ (currentLang !== 'vi' ? t('support_form_subtitle') : '') || d.subtitle || 'Điền thông tin để cán bộ chuyên môn liên hệ tư vấn miễn phí trong vòng 24 giờ.' }}</p>
           <div class="flex flex-col gap-3">
             <div class="text-[0.95rem] text-[#4A5545]">📞 <span>{{ t('hotline_support_lbl') || 'Hotline hỗ trợ:' }} <strong>{{ d.hotline || '0903.480.985' }}</strong></span></div>
-            <div class="text-[0.95rem] text-[#4A5545]">✉ <span>Email: <strong>{{ d.email || 'contact@conduonghuongthien.com.vn' }}</strong></span></div>
+            <div class="text-[0.95rem] text-[#4A5545]">✉ <span>Email: <strong><PublicEmail :email="d.email || 'contact@conduonghuongthien.com.vn'" /></strong></span></div>
           </div>
         </div>
         <div>

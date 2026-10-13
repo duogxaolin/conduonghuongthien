@@ -58,7 +58,7 @@
         </div>
 
         <!-- eslint-disable-next-line vue/no-v-html -- nội dung do biên tập viên C11 soạn, đã sanitize lúc ghi -->
-        <div class="print-article-body" v-html="article.content"></div>
+        <div ref="printBodyEl" class="print-article-body" v-html="article.content"></div>
       </main>
 
       <!-- Footer báo: nguồn + liên hệ + URL -->
@@ -69,7 +69,7 @@
             <strong>Con Đường Hướng Thiện</strong>
             <span v-if="siteAddress"> · {{ siteAddress }}</span>
             <span v-if="siteHotline"> · Đường dây nóng: {{ siteHotline }}</span>
-            <span v-if="siteEmail"> · {{ siteEmail }}</span>
+            <span v-if="siteEmail"> · <PublicEmail :email="siteEmail" /></span>
           </div>
           <div class="printFoot-url">
             <span>{{ t('a_print_source_url') }}: {{ pageUrl }}</span>
@@ -90,6 +90,10 @@
  * lọt chỉ mục tìm kiếm. Tuyến chỉ phục vụ nút "In bài" ở `ArticleDetail.vue`.
  */
 definePageMeta({ layout: false })
+
+// Ảnh trong thân bài bị 404 thì ẩn (cả khi in).
+const printBodyEl = ref<HTMLElement | null>(null)
+useBrokenImageFallback(printBodyEl)
 
 const route = useRoute()
 const { currentLang, t } = useI18n()

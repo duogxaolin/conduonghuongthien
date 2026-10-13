@@ -1,15 +1,18 @@
 <template>
   <section class="section bg-white" role="region" aria-label="Nội dung">
     <div class="container">
-      <div class="article-body max-w-[760px] mx-auto text-[#2b352a]" v-html="html"></div>
+      <div ref="bodyEl" class="article-body max-w-[760px] mx-auto text-[#2b352a]" v-html="html"></div>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
+import { useBrokenImageFallback } from '~/composables/useBrokenImageFallback'
 const props = defineProps({ block: { type: Object, required: true } })
 const html = computed(() => props.block?.data?.html || '')
+const bodyEl = ref<HTMLElement | null>(null)
+useBrokenImageFallback(bodyEl)
 </script>
 
 <style scoped>
