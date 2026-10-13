@@ -36,6 +36,10 @@ export async function bulkTriggerTranslation(
 
   // Trigger translations sequentially in background
   const langName = LANGUAGE_NAMES[langCode] || langCode
+  // Đánh dấu đang chạy NGAY (đồng bộ) — `runBulkTranslation` chỉ bắt đầu ở tick sau và
+  // `finally` của nó mới hạ cờ. Trước đây cờ không bao giờ lên `true`, nên banner chỉ
+  // sống nhờ đếm hàng `translating` trong DB và chớp tắt giữa các bài.
+  bulkTaskState.active = true
   setTimeout(() => {
     runBulkTranslation(articleIds, langCode, langName, targetStatus).catch((err) => {
       logWarn({ event: 'translation.bulk_worker_unhandled_error', error: String(err) })
