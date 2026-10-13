@@ -190,3 +190,14 @@ test('job dịch AI không ghi HTML nguy hiểm vào bản dịch (sanitize ở 
   assert.ok(written.length > 0, 'phải có ít nhất một lần ghi content')
   for (const c of written) assert.ok(!/<script|onerror/i.test(c), `content chưa được lọc: ${c}`)
 })
+
+test('job dịch AI gỡ thẻ HTML khỏi tiêu đề và tóm tắt đã dịch', async () => {
+  reset()
+  state.articles.set(1, { id: 1, title: 'Tiêu đề', excerpt: 'Tóm tắt', content: '<p>Xin chào</p>' })
+  state.aiText = '{"translatedTitle":"T <script>alert(1)</script>","translatedExcerpt":"E <img src=x onerror=alert(2)>"}'
+  await svc.runTranslationWorker(1, 'en', 'English')
+  const titles = state.updates.map(u => u.set.title).filter((t): t is string => typeof t === 'string')
+  const excerpts = state.updates.map(u => u.set.excerpt).filter((t): t is string => typeof t === 'string')
+  assert.ok(titles.length > 0 && excerpts.length > 0, 'phải ghi title và excerpt')
+  for (const v of [...titles, ...excerpts]) assert.ok(!/<script|<img|onerror/i.test(v), `chưa gỡ thẻ: ${v}`)
+})

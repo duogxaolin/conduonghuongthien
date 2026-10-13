@@ -10,10 +10,33 @@ import { sanitizeHtml } from './sanitize-html'
  *
  * Mọi nơi ghi cột `content` của `article_translations` phải đi qua hàm này
  * (`tests/security-translation-html.test.ts` quét và chặn nơi nào bỏ sót). Chỉ
- * `content` là HTML; `title`/`excerpt` hiển thị bằng nội suy `{{ }}` nên được
- * Vue tự escape.
+ * `content` là HTML. `title`/`excerpt` là văn bản thuần, hiện giờ hiển thị bằng
+ * nội suy `{{ }}` nên Vue tự escape — nhưng đó là một tính chất của nơi hiển thị,
+ * không phải của dữ liệu: chỉ cần một chỗ dùng `v-html`, JSON-LD hay email là
+ * `<script>` trong tiêu đề thành lỗ hổng. Nên cũng gỡ thẻ HTML khỏi hai trường này
+ * lúc ghi (phòng thủ chiều sâu).
  */
-export function sanitizeTranslationFields<T extends { content?: string | null }>(fields: T): T {
-  if (typeof fields.content !== 'string') return fields
-  return { ...fields, content: sanitizeHtml(fields.content) }
+
+/** Dạng thẻ HTML: `<tag ...>`, `</tag>`, `<!-- -->`. `a < b` hay `5 <3` KHÔNG khớp (sau `<` phải là chữ cái, `/` hoặc `!`). */
+const TAG_LIKE = /<\/?[a-zA-Z!][^>]*>/g
+
+/** Gỡ thẻ HTML khỏi văn bản thuần; lặp tới khi hết để `<scr<script>ipt>` không tái tạo thẻ sau một lượt. */
+export function stripMarkup(value: string): string {
+  let current = value
+  for (let i = 0; i < 10; i += 1) {
+    const next = current.replace(TAG_LIKE, '')
+    if (next === current) break
+    current = next
+  }
+  return current
+}
+
+export function sanitizeTranslationFields<T extends { content?: string | null; title?: string | null; excerpt?: string | null }>(fields: T): T {
+  const hasText = typeof fields.title === 'string' || typeof fields.excerpt === 'string'
+  if (typeof fields.content !== 'string' && !hasText) return fields
+  const out: T = { ...fields }
+  if (typeof fields.content === 'string') out.content = sanitizeHtml(fields.content)
+  if (typeof fields.title === 'string') out.title = stripMarkup(fields.title)
+  if (typeof fields.excerpt === 'string') out.excerpt = stripMarkup(fields.excerpt)
+  return out
 }

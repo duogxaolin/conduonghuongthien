@@ -123,3 +123,12 @@ describe('admin-docs: findDocBySlug works', () => {
     assert.equal(doc, undefined)
   })
 })
+
+it('trang hub không xáo câu hỏi gợi ý lúc setup (tránh hydration mismatch)', async () => {
+  const { readFileSync } = await import('node:fs')
+  const page = readFileSync(new URL('../app/pages/admin/docs/index.vue', import.meta.url), 'utf8')
+  // `suggestQuestions` dùng Math.random: gọi lúc setup → máy chủ và trình duyệt ra hai danh sách khác nhau.
+  assert.match(page, /const suggestedQuestions = ref<string\[\]>\(\[\]\)/)
+  assert.match(page, /onMounted\(\(\) => \{ suggestedQuestions\.value = suggestQuestions\(/)
+  assert.doesNotMatch(page, /computed\(\(\) => suggestQuestions\(/)
+})

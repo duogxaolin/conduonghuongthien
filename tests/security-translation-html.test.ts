@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import test from 'node:test'
 import { sanitizeBlockData, sanitizeHtml } from '../server/utils/sanitize-html'
-import { sanitizeTranslationFields } from '../server/utils/translation-html'
+import { sanitizeTranslationFields, stripMarkup } from '../server/utils/translation-html'
 
 /**
  * Bản dịch được hiển thị bằng `v-html` y như bài gốc, nhưng trước đây bài gốc
@@ -145,4 +145,32 @@ test('the public page endpoint sanitizes the merged block data at read time', ()
 
 test('sanitizeHtml itself still drops every payload used above', () => {
   for (const payload of PAYLOADS) assert.ok(neutralised(sanitizeHtml(payload)), payload)
+})
+
+test('title và excerpt là văn bản thuần: thẻ HTML bị gỡ, dấu < thường giữ nguyên', () => {
+  assert.equal(stripMarkup('Tiêu đề <script>alert(1)</script>'), 'Tiêu đề alert(1)')
+  assert.equal(stripMarkup('<b>đậm</b> và <img src=x onerror=alert(1)>'), 'đậm và ')
+  assert.equal(stripMarkup('<!-- ghi chú -->xin chào'), 'xin chào')
+  // thẻ lồng nhau không tái tạo thành thẻ sau một lượt gỡ: kết quả không còn dấu `<` nào
+  assert.ok(!stripMarkup('<scr<script>ipt>alert(1)</scr</script>ipt>').includes('<'))
+  assert.ok(!stripMarkup('<<script>script>alert(1)<</script>/script>').match(/<\/?script/i))
+  // dấu so sánh / toán học không phải thẻ
+  assert.equal(stripMarkup('Dưới 5 < 10 tuổi, 3 <3 mẹ, a<b'), 'Dưới 5 < 10 tuổi, 3 <3 mẹ, a<b')
+  assert.equal(stripMarkup('Không có gì'), 'Không có gì')
+
+  const out = sanitizeTranslationFields({ title: 'T <script>x</script>', excerpt: 'E <b>y</b>', content: '<p>ok</p><script>z</script>', status: 'x' })
+  assert.equal(out.title, 'T x')
+  assert.equal(out.excerpt, 'E y')
+  assert.ok(!/<script/i.test(out.content ?? ''))
+  assert.equal((out as { status: string }).status, 'x')
+  // không có trường nào cần lọc → trả đúng đối tượng cũ
+  const plain = { status: 'failed' }
+  assert.equal(sanitizeTranslationFields(plain), plain)
+  assert.equal(sanitizeTranslationFields({ title: null }).title, null)
+})
+
+test('đường sửa tay cũng gỡ thẻ khỏi title/excerpt', () => {
+  const source = read('../server/services/article-translations.ts')
+  assert.match(source, /updates\.title = stripMarkup\(data\.title\)/)
+  assert.match(source, /updates\.excerpt = stripMarkup\(data\.excerpt\)/)
 })
