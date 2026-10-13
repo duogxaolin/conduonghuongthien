@@ -77,7 +77,7 @@ test('normalizes live filters with the strict scope-specific server contract', (
   requireAll(script, [
     /normalizeFilter\(scope: BreakdownScope, value: unknown\): string \| null/,
     /const candidate = value\s*\n\s*if \(typeof candidate !== 'string'\) return null/,
-    /candidate\.trim\(\)\.split\(\/\[\?#\]\/\, 1\)\[0\]/,
+    /candidate\.trim\(\)\.split\(\/\[\?#\]\/, 1\)\[0\]/,
     /trimmed\.length > 512/,
     /!trimmed\.startsWith\('\/'\)/,
     /trimmed\.startsWith\('\/\/'\)/,

@@ -9,9 +9,6 @@
 
 const MAX_CHUNK_CHARS = 8000
 
-/** Regex to match top-level HTML block tags. */
-const BLOCK_TAG_RE = /<(h2|h3|h4|hr|p|div|ul|ol|table|blockquote|section|article|figure)\b[^>]*>[\s\S]*?<\/\1>|<(hr)\b[^>]*\/?>/gi
-
 export interface HtmlChunk {
   index: number
   html: string

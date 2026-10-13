@@ -67,6 +67,7 @@ const SAFE_DATA_IMAGE = /^data:image\/(png|jpe?g|gif|webp);/i
 /** True when a URL uses a safe scheme (or is relative / an anchor). */
 function isSafeUrl(raw: string): boolean {
   // Strip control chars / whitespace that are used to smuggle "java\tscript:".
+  // eslint-disable-next-line no-control-regex -- stripping control characters is the point
   const cleaned = raw.replace(/[\u0000-\u0020]+/g, '').toLowerCase()
   const scheme = /^([a-z][a-z0-9+.-]*):/.exec(cleaned)
   if (!scheme) return true // relative URL, anchor (#…), query, path

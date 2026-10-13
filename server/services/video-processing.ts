@@ -377,7 +377,7 @@ export function mediaAssetRoot(item: { storagePath?: string | null, slug: string
  * Whether this exact attempt is running in this server. This diagnostic helper
  * never extends a database lease; only the worker heartbeat does that.
  */
-export function isProcessAlive(claim: string | null | undefined, hostname: string = os.hostname()): boolean {
+export function isProcessAlive(claim: string | null | undefined, _hostname: string = os.hostname()): boolean {
   return typeof claim === 'string' && activeClaims.has(claim)
 }
 

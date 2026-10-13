@@ -71,6 +71,7 @@ export function validateDisplayName(raw: unknown): DisplayNameValidation {
 
   if (!normalized) return { ok: false, message: 'Vui lòng nhập tên hiển thị.' }
 
+  // eslint-disable-next-line no-control-regex -- rejecting control characters is the point
   if (/[\u0000-\u001F\u007F]/.test(normalized)) {
     return { ok: false, message: 'Tên hiển thị chứa ký tự không được phép.' }
   }

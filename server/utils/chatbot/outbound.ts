@@ -181,6 +181,9 @@ function executeRequest(
 ): Promise<SafeProviderResponse> {
   return new Promise((resolve, reject) => {
     let settled = false
+    // `finish` (below) reads this before the timer exists, and the timer's callback
+    // calls `finish`: a `const` here would put one of them in the temporal dead zone.
+    // eslint-disable-next-line prefer-const -- assigned once, after the closures that read it
     let deadline: ReturnType<typeof setTimeout> | undefined
     const finish = (error?: ChatbotOutboundError, response?: SafeProviderResponse) => {
       if (settled) return

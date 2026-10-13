@@ -68,7 +68,6 @@ describe('parseBulkIds — a malformed list is rejected whole', () => {
       [1, 0],
       [1, Number.NaN],
       [1, Number.POSITIVE_INFINITY],
-      [1, 1e999],
       [{ id: 1 }],
       [[1]],
       [true],

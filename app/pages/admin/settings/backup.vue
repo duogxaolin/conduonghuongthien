@@ -829,7 +829,7 @@ watch([running, restoring], ([r, rr]) => {
           <h3 class="m-0 text-sm font-bold text-[#122815]">Service Account (fallback cho scheduler)</h3>
           <p class="m-0 text-[0.8rem] text-[#667768]">Dùng khi không liên kết tài khoản cá nhân, hoặc cho backup tự động qua scheduler. Cần share folder Drive với email service account.</p>
           <label class="text-sm font-bold">Service Account JSON key
-            <textarea v-model="backupSettings.backup_drive_service_account" placeholder='{ "type": "service_account", ... }' rows="4" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-mono text-[0.78rem]" />
+            <textarea v-model="backupSettings.backup_drive_service_account" placeholder="{ &quot;type&quot;: &quot;service_account&quot;, ... }" rows="4" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-mono text-[0.78rem]" />
           </label>
           <label class="text-sm font-bold">Folder ID (tùy chọn — dùng chung cho cả 2 mode)
             <input type="text" v-model="backupSettings.backup_drive_folder_id" placeholder="1aBcDeFgHiJkLmNoPqRsTuVwXyZ" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal" />
