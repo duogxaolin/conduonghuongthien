@@ -1,3 +1,4 @@
+import { sanitizeBlockData } from '../../../utils/sanitize-html'
 import { getDb } from '../../../utils/db'
 import { logError } from '../../../utils/logger'
 import { pages, pageBlocks } from '../../../db/schema'
@@ -78,7 +79,9 @@ function pruneHiddenTree(nodes: unknown, lang?: string): PublicBlockNode[] {
     const node: PublicBlockNode = {
       id: n.id,
       blockType: String(n.blockType ?? ''),
-      data: { ...rawData, ...langOverrides } as BlockData,
+      // Lọc lúc đọc chứ không tin dữ liệu đã lưu: hàng ghi trước khi lớp lọc
+      // tồn tại (hoặc ghi qua đường khác) vẫn nằm trong DB và sẽ đi thẳng vào `v-html`.
+      data: sanitizeBlockData({ ...rawData, ...langOverrides }),
     }
     if (typeof n.colSpan === 'number') node.colSpan = n.colSpan
     if (Array.isArray(n.children)) node.children = pruneHiddenTree(n.children, lang)
@@ -149,7 +152,9 @@ export default defineEventHandler(async (event): Promise<PublicPageResponse> => 
       return {
         id: row.id,
         blockType: row.blockType,
-        data: { ...rawData, ...langOverrides } as BlockData,
+        // Lọc lúc đọc chứ không tin dữ liệu đã lưu: hàng ghi trước khi lớp lọc
+      // tồn tại (hoặc ghi qua đường khác) vẫn nằm trong DB và sẽ đi thẳng vào `v-html`.
+      data: sanitizeBlockData({ ...rawData, ...langOverrides }),
       }
     })
     return { ok: true, page: pageMeta, blocks }

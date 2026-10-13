@@ -4,6 +4,8 @@
  * All writes go through transactions with activity_logs (design.md D6).
  * Uses `articleResource(type)` + `update` for RBAC — no new resource.
  */
+import { sanitizeHtml } from '../utils/sanitize-html'
+import { sanitizeTranslationFields } from '../utils/translation-html'
 import { createError } from 'h3'
 import { eq, and, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
@@ -467,7 +469,7 @@ ${chunk.html}`
           errorMessage: `Lỗi dịch đoạn ${i + 1}/${totalChunks} (đã thử lại ${MAX_RETRIES} lần): ${chunkResult?.errorMessage || 'AI không phản hồi.'}`,
           currentChunk: i,
           progress: 10 + Math.round((i / totalChunks) * 90),
-          content: translatedChunks.join(''),
+          content: sanitizeHtml(translatedChunks.join('')),
         })
         logWarn({ event: 'translation.chunk_failed_after_retries', articleId, langCode, chunk: i + 1, total: totalChunks })
         return
@@ -488,7 +490,7 @@ ${chunk.html}`
     await db
       .update(articleTranslations)
       .set({
-        content: translatedChunks.join(''),
+        content: sanitizeHtml(translatedChunks.join('')),
         status: targetStatus,
         progress: 100,
         currentChunk: totalChunks,
@@ -530,7 +532,7 @@ async function updateTranslationStatus(
 ) {
   await db
     .update(articleTranslations)
-    .set(updates)
+    .set(sanitizeTranslationFields(updates))
     .where(
       and(
         eq(articleTranslations.articleId, articleId),
@@ -579,7 +581,7 @@ export async function updateTranslation(
     }
     if (data.title !== undefined) updates.title = data.title
     if (data.excerpt !== undefined) updates.excerpt = data.excerpt
-    if (data.content !== undefined) updates.content = data.content
+    if (data.content !== undefined) updates.content = sanitizeHtml(data.content)
 
     await tx
       .update(articleTranslations)

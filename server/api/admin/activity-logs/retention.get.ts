@@ -14,6 +14,7 @@
  * Read-only. It reports; it never purges. A purge triggered from a page load
  * would delete audit rows on a stray refresh.
  */
+import { intervalDays } from '../../../utils/sql-literals'
 import { sql } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
 import { activityLogs } from '../../../db/schema'
@@ -39,7 +40,7 @@ export default defineEventHandler(async (event) => {
       newest: sql<string | null>`MAX(${activityLogs.createdAt})`,
       // 0 days means the age condition is disabled, so nothing can be overdue.
       overdue: retentionDays > 0
-        ? sql<number>`SUM(CASE WHEN ${activityLogs.createdAt} < (NOW() - INTERVAL ${sql.raw(String(retentionDays))} DAY) THEN 1 ELSE 0 END)`
+        ? sql<number>`SUM(CASE WHEN ${activityLogs.createdAt} < (NOW() - INTERVAL ${intervalDays(retentionDays)} DAY) THEN 1 ELSE 0 END)`
         : sql<number>`0`,
     })
     .from(activityLogs)
