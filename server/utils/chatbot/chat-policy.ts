@@ -12,11 +12,12 @@ import { selectSmallTalk, type SemanticSmallTalkProvider, type SmallTalkSemantic
 import { classifySmallTalk, type SmallTalkContext, type SmallTalkEntry } from './small-talk'
 import { logWarn } from '../logger'
 import { rateLimitDeps } from '../rate-limit-deps'
-import { eq, and, or, like, desc } from 'drizzle-orm'
+import { desc } from 'drizzle-orm'
 import { articles, mediaItems, media } from '../../db/schema'
 import { getDb } from '../db'
 import { createFollowUpStreamFilter, FOLLOW_UP_LIMIT, FOLLOW_UP_MARKER, selectFollowUps, splitFollowUps } from './follow-ups'
 import { buildArticleSearch } from './article-search'
+import { photoSearchCondition, videoSearchCondition } from './media-search'
 export const HOTLINE = CHATBOT_HOTLINE
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
 
@@ -461,13 +462,7 @@ async function callProvider(
             description: mediaItems.description,
             thumbnailUrl: mediaItems.thumbnailUrl,
           }).from(mediaItems)
-          .where(and(
-            eq(mediaItems.status, 'published'),
-            or(
-              like(mediaItems.title, `%${q}%`),
-              like(mediaItems.description, `%${q}%`)
-            )!
-          ))
+          .where(videoSearchCondition(q))
           .orderBy(desc(mediaItems.createdAt))
           .limit(3)
 
@@ -501,13 +496,7 @@ async function callProvider(
             originalName: media.originalName,
             url: media.url,
           }).from(media)
-          .where(and(
-            like(media.mimeType, 'image/%'),
-            or(
-              like(media.originalName, `%${q}%`),
-              like(media.filename, `%${q}%`)
-            )!
-          ))
+          .where(photoSearchCondition(q))
           .orderBy(desc(media.createdAt))
           .limit(4)
 

@@ -125,3 +125,33 @@ test('intervalDays accepts whole day counts and nothing else', () => {
     assert.throws(() => intervalDays(bad), RangeError, `accepted ${String(bad)}`)
   }
 })
+
+// ─── Video and photo tools: same rule, same helper ───────────────────────────
+
+test('video and photo tools bind the query as an escaped LIKE operand', async () => {
+  const { photoSearchCondition, videoSearchCondition } = await import('../server/utils/chatbot/media-search')
+  for (const [name, build] of [['video', videoSearchCondition], ['photo', photoSearchCondition]] as const) {
+    const wild = compile(build('100%_x'))
+    assert.ok(wild.params.includes('%100\\%\\_x%'), `${name}: % and _ must be escaped, got ${JSON.stringify(wild.params)}`)
+    for (const payload of PAYLOADS) {
+      const { sql } = compile(build(payload))
+      assert.doesNotMatch(sql, FORBIDDEN_IN_SQL, `${name}: payload leaked into SQL: ${payload}`)
+      assert.ok(!sql.includes("'") || /image\/%/.test(sql), `${name}: stray literal in ${sql}`)
+    }
+  }
+})
+
+test('a pathological query is cut to 200 characters before it is bound', async () => {
+  const { videoSearchCondition } = await import('../server/utils/chatbot/media-search')
+  const { params } = compile(videoSearchCondition('a'.repeat(5000)))
+  const bound = params.filter((value): value is string => typeof value === 'string' && value.includes('a'))
+  assert.ok(bound.length > 0 && bound.every(value => value.length <= 204), 'pattern length: %…% around at most 200 characters')
+})
+
+test('every LIKE in chat-policy goes through the shared helper', async () => {
+  const { readFile } = await import('node:fs/promises')
+  const source = await readFile(new URL('../server/utils/chatbot/chat-policy.ts', import.meta.url), 'utf8')
+  assert.doesNotMatch(source, /like\([^)]*`%\$\{/, 'a LIKE pattern is assembled by hand again')
+  assert.match(source, /videoSearchCondition\(/)
+  assert.match(source, /photoSearchCondition\(/)
+})
