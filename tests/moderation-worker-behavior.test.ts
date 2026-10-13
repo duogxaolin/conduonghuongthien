@@ -197,3 +197,26 @@ test('rescanExistingContent trả cấu trúc tổng kết', async () => {
   const r = await svc.rescanExistingContent()
   assert.deepEqual(r, { scannedComments: 0, hiddenComments: 0, scannedMessages: 0, deletedMessages: 0 })
 })
+
+test('chặn tức thì nhận từ thô tục bắt đầu/kết thúc bằng chữ có dấu (ranh giới Unicode, không phải \\b ASCII)', async () => {
+  reset(svc)
+  for (const text of ['đcm mày', 'mày địt', 'ừ đm nó', 'đụ má', 'thằng óc chó', 'mày đĩ', 'chó đẻ']) {
+    const r = await svc.fastPreModerate(text)
+    assert.equal(r.blocked, true, `phải chặn: ${text}`)
+  }
+})
+
+test('ranh giới Unicode không chặn nhầm từ chứa chuỗi đó hoặc thuật ngữ y khoa', async () => {
+  reset(svc)
+  for (const text of [
+    'bệnh đái tháo đường cần ăn kiêng', // thuật ngữ y khoa: cố ý KHÔNG nằm trong danh sách
+    'bác sĩ nói ỉa chảy kéo dài thì đi khám',
+    'mua đĩa nhạc ở hiệu sách', // `đĩa` ≠ `đĩ`
+    'đmx là mã linh kiện', // dính liền chữ khác
+    'adcm123',
+    'xin chào các bạn',
+  ]) {
+    const r = await svc.fastPreModerate(text)
+    assert.equal(r.blocked, false, `không được chặn: ${text}`)
+  }
+})
