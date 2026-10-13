@@ -192,6 +192,36 @@ test('CI refuses a committed .env or a known-default secret', () => {
   assert.match(workflow, /PRIVATE KEY/)
 })
 
+// ─── CI tiết kiệm phút ───────────────────────────────────────────────────────
+test('PR chạy bộ nhẹ; integration và bản đầy đủ chỉ bị bỏ qua ở PR, không bao giờ ở main', () => {
+  const workflow = read('.github/workflows/ci.yml')
+  const planJob = /\n  changes:\n([\s\S]*?)(?=\n  [a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
+  assert.ok(planJob, 'thiếu job `changes` lập kế hoạch cho CI')
+
+  // Mọi sự kiện không phải PR (push main, chạy tay) phải chạy ĐỦ — nếu nhánh này sai thì
+  // integration bị bỏ qua ngay trên `main` và `image`/`deploy` ra VPS mà chưa qua cổng nào.
+  const nonPr = /if \[ "\$EVENT" != "pull_request" \]; then([\s\S]*?)\n          fi/.exec(planJob)?.[1] ?? ''
+  assert.match(nonPr, /echo "run=true"/, 'sự kiện không phải PR phải chạy')
+  assert.match(nonPr, /echo "integration=true"/, 'sự kiện không phải PR phải chạy cả integration')
+  assert.doesNotMatch(nonPr, /=false/, 'nhánh non-PR không được tắt gì')
+
+  // PR nháp bị bỏ qua; PR thường chỉ chạy integration khi đụng backend/DB/CI.
+  assert.match(planJob, /DRAFT: \$\{\{ github\.event\.pull_request\.draft \}\}/)
+  assert.match(planJob, /\^\(server\/\|migrations\/\|scripts\/\|package/, 'danh sách đường dẫn kích hoạt integration')
+  assert.match(workflow, /types: \[opened, synchronize, reopened, ready_for_review\]/,
+    'PR nháp cần ready_for_review để chạy lại khi sẵn sàng')
+  assert.match(workflow, /workflow_dispatch:/, 'cần lượt chạy tay để ép chạy đủ')
+
+  // Cổng nào cũng đi qua `changes`; chỉ integration có thêm điều kiện riêng.
+  for (const job of ['unit-tests', 'schema-drift', 'build', 'hygiene']) {
+    const body = new RegExp(`\\n  ${job}:\\n([\\s\\S]*?)(?=\\n  [a-z-]+:\\n)`).exec(workflow)?.[1] ?? ''
+    assert.match(body, /needs: changes/, `${job} không chờ job \`changes\``)
+    assert.match(body, /if: needs\.changes\.outputs\.run == 'true'/, `${job} không tôn trọng việc bỏ qua PR nháp`)
+  }
+  const integration = /\n  integration-tests:\n([\s\S]*?)(?=\n  [a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
+  assert.match(integration, /if: needs\.changes\.outputs\.run == 'true' && needs\.changes\.outputs\.integration == 'true'/)
+})
+
 // ─── Deploy ──────────────────────────────────────────────────────────────────
 test('nothing reaches the VPS without passing every gate first', () => {
   const workflow = read('.github/workflows/ci.yml')
@@ -216,11 +246,17 @@ test('nothing reaches the VPS without passing every gate first', () => {
    * biến một cổng chặn thành một dòng nhật ký, mà nhìn từ bảng CI thì hai thứ
    * đó giống hệt nhau — cùng một dấu tích xanh.
    */
-  const unitJob = /\n  unit-tests:\n([\s\S]*?)(?=\n  [a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
+  const unitJob = /\n {2}unit-tests:\n([\s\S]*?)(?=\n {2}[a-z-]+:\n)/.exec(workflow)?.[1] ?? ''
   assert.match(unitJob, /- name: Typecheck/,
     'bước Typecheck không còn trong job `unit-tests` — cổng kiểu đã biến mất khỏi CI')
   assert.match(unitJob, /exit \$status/,
     'Typecheck không thoát theo mã trạng thái thật — một lỗi kiểu sẽ hiện ra là màu xanh')
+  // `exit $status` chưa đủ: `continue-on-error: true` biến mã thoát đó thành màu
+  // xanh. Đây là điều đã xảy ra — 4 lỗi kiểu nằm trên `main` mà CI vẫn xanh.
+  const typecheckStep = /- name: Typecheck\n([\s\S]*?)(?=\n {6}- name:|\n {2}[a-z-]+:\n|$)/.exec(unitJob)?.[1] ?? ''
+  assert.ok(typecheckStep.includes('npx nuxt typecheck'), 'không tìm thấy bước Typecheck')
+  assert.doesNotMatch(typecheckStep, /continue-on-error/,
+    'Typecheck có `continue-on-error` — lỗi kiểu không còn chặn được merge')
   assert.match(workflow, /deploy:\s*\n[\s\S]*?needs: image/, 'deploy does not wait for the image')
   // Deploying a pull request would push a fork's code onto the server.
   assert.match(workflow, /if: github\.ref == 'refs\/heads\/main' && github\.event_name != 'pull_request'/)

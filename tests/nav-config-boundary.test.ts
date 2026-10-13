@@ -189,7 +189,7 @@ describe('parseNavConfig — mọi đầu vào không dùng được ra null', (
    */
   it('mọi labelKey trong bảng mặc định đều có bản dịch ở cả hai ngôn ngữ', () => {
     const dictionary = readFileSync(
-      new URL('../app/composables/useI18n.ts', import.meta.url), 'utf8')
+      new URL('../app/composables/i18n-default-dictionary.ts', import.meta.url), 'utf8')
 
     const keys: string[] = []
     const walk = (items: typeof DEFAULT_NAV) => {

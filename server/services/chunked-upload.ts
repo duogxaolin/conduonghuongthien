@@ -251,6 +251,7 @@ export function safeDisplayFilename(filename: unknown): string {
   // dấu gạch chéo đi vào một thông báo lỗi rồi vào một giao diện là một đường
   // dẫn trông như đường dẫn thật.
   const base = text.split(/[/\\]/).pop() ?? ''
+  // eslint-disable-next-line no-control-regex -- stripping control characters is the point
   const cleaned = base.replace(/[\u0000-\u001f\u007f]/g, '').trim()
   return cleaned.slice(0, 255) || 'video'
 }
@@ -756,15 +757,6 @@ async function sniffAssembledFile(filePath: string): Promise<ReturnType<typeof d
   } finally {
     await handle.close().catch(() => undefined)
   }
-}
-
-/** Đánh dấu một phiên là hỏng kèm lý do. Lượt ghi này tự nuốt lỗi của nó. */
-async function failSession(db: Database, uploadId: string, adminUserId: number, message: string): Promise<void> {
-  await db
-    .update(mediaUploadSessions)
-    .set({ status: 'failed', errorMessage: message.slice(0, 512) })
-    .where(and(eq(mediaUploadSessions.uploadId, uploadId), eq(mediaUploadSessions.adminUserId, adminUserId)))
-    .catch(() => undefined)
 }
 
 // ─── 6.6 — Dọn lượt tải bỏ dở ────────────────────────────────────────────────

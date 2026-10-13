@@ -2,7 +2,7 @@ import { getDb } from '../../../../utils/db'
 import { aiProviders, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { encryptAiSecret } from '../../../../utils/ai/crypto'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 
 /**
  * Create a new AI provider (spec R4 extension).

@@ -1,4 +1,5 @@
-import { createError } from 'h3'
+import { createError, setHeader } from 'h3'
+import { enforceSessionMintLimit } from '../../../utils/chatbot/session-limit'
 import { issueSessionToken } from '../../../utils/chatbot/session-token'
 import { analyticsHmacSecret } from '../../../utils/runtime-config'
 
@@ -13,6 +14,12 @@ import { analyticsHmacSecret } from '../../../utils/runtime-config'
  * Handing out a token grants nothing on its own: it only lets the holder write
  * a transcript under one id. What it prevents is writing under *someone else's*
  * id.
+ *
+ * It is also unmetered on purpose — signing is stateless and costs nothing — which
+ * is why a token must never carry an allowance that a fresh token resets: the AI
+ * quota has a per-address ceiling next to the per-session one
+ * (`AI_IP_CEILING_RULE` in chat-policy.ts), so minting tokens in a loop buys
+ * nothing.
  */
 export default defineEventHandler(async (event) => {
   const secret = analyticsHmacSecret(event)
@@ -22,6 +29,13 @@ export default defineEventHandler(async (event) => {
     // anyone write under any id. Refusing is correct; the widget treats this as
     // "no transcript" and keeps chatting.
     throw createError({ statusCode: 503, statusMessage: 'Chat session tokens unavailable' })
+  }
+
+  // Before signing: a refused request must cost nothing.
+  const retryAfter = await enforceSessionMintLimit(event)
+  if (retryAfter) {
+    setHeader(event, 'Retry-After', retryAfter)
+    throw createError({ statusCode: 429, statusMessage: 'Too many session requests' })
   }
 
   const { token } = issueSessionToken(secret)

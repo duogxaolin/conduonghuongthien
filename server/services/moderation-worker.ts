@@ -1,16 +1,28 @@
-import { eq, desc } from 'drizzle-orm'
-import { getHeapStatistics } from 'node:v8'
+import { eq } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import {
-  aiModerationRules,
   aiModerationQueue,
   articleComments,
   chatMessages,
   livestreamMessages,
-  type AiModerationRule,
 } from '../db/schema'
 import { callAi } from './ai-gateway'
 import { logWarn, logInfo } from '../utils/logger'
+import { getActiveModerationRules } from './moderation-rules-cache'
+import { workerStats } from './moderation-stats'
+import {
+  INSTANT_PROFANITY,
+  INSTANT_HOSTILE,
+  INSTANT_SPAM_GAMBLING,
+  recordInstantBlock,
+  type FastPreModerateResult,
+} from './moderation-instant'
+
+// Cache luật, số đo worker và chặn tức thì đã tách file; re-export để mọi import cũ
+// từ './moderation-worker' (endpoint, comments, livestream-chat, chatbot) không đổi.
+export { getActiveModerationRules, invalidateModerationRulesCache } from './moderation-rules-cache'
+export { getWorkerStats, resetWorkerStats } from './moderation-stats'
+export type { FastPreModerateResult } from './moderation-instant'
 
 export interface ModerationCheckInput {
   content: string
@@ -31,166 +43,7 @@ export interface ModerationCheckOutput {
   matchedRules: string[]
 }
 
-export interface FastPreModerateResult {
-  blocked: boolean
-  action: "allow" | "block"
-  severity: 'low' | 'medium' | 'high' | 'critical'
-  reason: string
-  matchedRule: string
-}
 
-// ── In-memory Rule Cache (TTL 60s for sub-millisecond matching) ────────────
-let cachedRules: AiModerationRule[] | null = null
-let cacheExpiresAt = 0
-
-export async function getActiveModerationRules(): Promise<AiModerationRule[]> {
-  const now = Date.now()
-  if (cachedRules && now < cacheExpiresAt) {
-    return cachedRules
-  }
-
-  const db = getDb()
-  const rows = await db
-    .select()
-    .from(aiModerationRules)
-    .where(eq(aiModerationRules.isEnabled, true))
-
-  cachedRules = rows
-  cacheExpiresAt = now + 60_000
-  return rows
-}
-
-export function invalidateModerationRulesCache(): void {
-  cachedRules = null
-  cacheExpiresAt = 0
-}
-
-// ── Worker Realtime Metrics & Health Tracker ──────────────────────────────
-interface WorkerStatsState {
-  startedAt: string
-  totalScanned: number
-  blockedInstant: number
-  blockedAi: number
-  allowedCount: number
-  errorCount: number
-  lastScannedAt: string | null
-  lastError: string | null
-  lastErrorAt: string | null
-  lastAiLatencyMs: number
-}
-
-const workerStats: WorkerStatsState = {
-  startedAt: new Date().toISOString(),
-  totalScanned: 0,
-  blockedInstant: 0,
-  blockedAi: 0,
-  allowedCount: 0,
-  errorCount: 0,
-  lastScannedAt: null,
-  lastError: null,
-  lastErrorAt: null,
-  lastAiLatencyMs: 0,
-}
-
-export function getWorkerStats() {
-  const uptimeSeconds = Math.round((Date.now() - new Date(workerStats.startedAt).getTime()) / 1000)
-  const mem = process.memoryUsage()
-  // `heapTotal` là mức V8 tự kéo theo nhu cầu, không phải trần cứng — admin nhìn
-  // "46/64 MB" mà tưởng worker bị kìm 100 MB, trong khi `--max-old-space-size`
-  // thực sự cho tới 2048 MB. `heap_size_limit` từ v8 là con số cap thật, và %
-  // heapUsed/cap nói rõ worker còn bao nhiêu room.
-  const stats = getHeapStatistics()
-  const heapLimitMb = Math.round((stats.heap_size_limit ?? 0) / 1024 / 1024)
-  const heapUsedPercent = heapLimitMb > 0
-    ? Math.round((mem.heapUsed / (stats.heap_size_limit ?? 1)) * 1000) / 10
-    : 0
-  return {
-    ...workerStats,
-    uptimeSeconds,
-    status: workerStats.errorCount > 10 ? ('degraded' as const) : ('active' as const),
-    cachedRulesCount: cachedRules ? cachedRules.length : 0,
-    memoryUsageMb: {
-      heapUsed: Math.round(mem.heapUsed / 1024 / 1024),
-      heapTotal: Math.round(mem.heapTotal / 1024 / 1024),
-      rss: Math.round(mem.rss / 1024 / 1024),
-      heapLimit: heapLimitMb,
-      heapUsedPercent,
-    },
-  }
-}
-
-export function resetWorkerStats() {
-  workerStats.errorCount = 0
-  workerStats.lastError = null
-  workerStats.lastErrorAt = null
-  invalidateModerationRulesCache()
-}
-
-// ── Built-in Instant Reject Patterns (< 1ms, zero latency) ────────────────
-const INSTANT_PROFANITY: Array<{ pattern: RegExp; label: string }> = [
-  { pattern: /\b(f+u+c+k+|s+h+i+t+|b+i+t+c+h+|a+s+s+h+o+l+e*|d+i+c+k+|c+u+n+t+)\b/i, label: 'Tiếng Anh thô tục tục tĩu' },
-  { pattern: /\b(địt|djt|dcm|đcm|đm|đmm|dmm|đyt|dyt|đệt|đẹt)\b/i, label: 'Chửi thề thô tục' },
-  { pattern: /\b(lồn|cặc|buồi|đụ|đù|đĩ|đỹ|ỉa|đái|dái|hãm lồn)\b/i, label: 'Từ ngữ khiêu dâm / thô tục' },
-  { pattern: /\b(liếm đít|bú cu|bú cặc|thủ dâm|súc vật|chó đẻ|óc chó|chó dại)\b/i, label: 'Xúc phạm nhân phẩm thô bạo' },
-]
-
-const INSTANT_HOSTILE: Array<{ pattern: RegExp; label: string }> = [
-  { pattern: /(việt tân|viet tan|triều đại việt|chính phủ quốc gia việt nam lâm thời)/i, label: 'Tổ chức phản động / khủng bố' },
-  { pattern: /(lật đổ chính quyền|lật đổ chế độ|biểu tình bạo loạn|chống phá đảng|đả đảo đảng|đả đảo chính quyền)/i, label: 'Tuyên truyền chống phá Nhà nước' },
-  { pattern: /(phản thanh phục minh.*thề giết|thề giết.*ngô tam quế|tiêu diệt cộng sản|diệt cộng)/i, label: 'Kích động bạo lực / lật đổ' },
-  { pattern: /(liếm đít trung cộng|bò đỏ.*liếm|cộng phỉ|bọn việt cộng)/i, label: 'Xúc phạm chính trị / ngôn từ thù địch' },
-]
-
-const INSTANT_SPAM_GAMBLING: Array<{ pattern: RegExp; label: string }> = [
-  { pattern: /(tài xỉu|cá độ bóng đá|cờ bạc online|ku bet|thabet|kubet|nổ hũ|game đổi thưởng)/i, label: 'Cờ bạc / Đánh bạc trực tuyến' },
-  { pattern: /(vay tiền nóng|vay lãi ngày|bốc bát họ|vay không cần thế chấp.*zalo)/i, label: 'Tín dụng đen / Vay nặng lãi' },
-]
-
-async function recordInstantBlock(
-  content: string,
-  category: string,
-  severity: 'low' | 'medium' | 'high' | 'critical',
-  reason: string,
-  context?: {
-    authorName?: string
-    authorIp?: string
-    targetType?: 'comment' | 'chat' | 'livestream_chat' | 'article'
-    sessionId?: string
-    contextTitle?: string
-    contextUrl?: string
-  },
-): Promise<FastPreModerateResult> {
-  workerStats.blockedInstant++
-
-  // Record asynchronously into queue for administrative review
-  try {
-    const db = getDb()
-    await db.insert(aiModerationQueue).values({
-      targetType: context?.targetType || 'chat',
-      targetId: null,
-      authorName: context?.authorName || 'Khách',
-      authorIp: context?.authorIp || null,
-      contextTitle: context?.contextTitle || null,
-      contextUrl: context?.contextUrl || null,
-      sessionId: context?.sessionId || null,
-      contentSnippet: content.slice(0, 1000),
-      flaggedReason: reason,
-      matchedRules: [`[Chặn tức thì - ${category}] ${reason}`],
-      severity,
-      status: 'pending',
-    })
-  } catch {
-    // Queue logging is non-blocking
-  }
-
-  return {
-    blocked: true,
-    action: "block",
-    severity,
-    reason: `Nội dung vi phạm tiêu chuẩn an ninh và quy định cộng đồng (${reason}).`,
-    matchedRule: reason,
-  }
-}
 
 /**
  * Fast synchronous pre-moderator: scans built-in dictionaries + active database rules.

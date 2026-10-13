@@ -4,7 +4,7 @@ import { aiProviders } from '../../../../../db/schema'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { decryptAiSecret } from '../../../../../utils/ai/crypto'
 import { safeProviderRequest } from '../../../../../utils/chatbot/outbound'
-import { buildProviderProbeCall, resolveProviderPolicy } from '../../../../../utils/chatbot/providers'
+import { buildProviderProbeCall } from '../../../../../utils/chatbot/providers'
 import { logWarn } from '../../../../../utils/logger'
 
 /**

@@ -20,8 +20,8 @@
  * đổi) → `mediaUpdated: 0`. An toàn chạy lại.
  */
 import { getDb, getPool } from '../utils/db'
-import { media, articles, activityLogs } from '../db/schema'
-import { like, sql } from 'drizzle-orm'
+import { activityLogs } from '../db/schema'
+import { sql } from 'drizzle-orm'
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import { withNamedLock } from '../utils/named-lock'
 import { logInfo, logWarn } from '../utils/logger'

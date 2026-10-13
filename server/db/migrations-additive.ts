@@ -18,7 +18,7 @@
  * `init.ts` re-export toàn bộ tệp này, nên bốn suite test đang import từ
  * `server/db/init` không phải đổi đường import.
  */
-import mysql, { type Connection, type RowDataPacket } from 'mysql2/promise'
+import { type Connection, type RowDataPacket } from 'mysql2/promise'
 
 import { encodeShortId } from '../utils/short-media-id'
 

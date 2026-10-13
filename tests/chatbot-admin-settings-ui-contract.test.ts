@@ -7,14 +7,12 @@ const layoutPath = new URL('../app/layouts/admin.vue', import.meta.url)
 const settingsPath = new URL('../app/pages/admin/chatbot/settings.vue', import.meta.url)
 const validatorPath = new URL('../server/utils/chatbot/settings.ts', import.meta.url)
 const patchRoutePath = new URL('../server/api/admin/chatbot/settings/index.patch.ts', import.meta.url)
-const clearRoutePath = new URL('../server/api/admin/chatbot/settings/clear.post.ts', import.meta.url)
 
-const [layoutSource, settingsSource, validatorSource, patchRouteSource, clearRouteSource] = await Promise.all([
+const [layoutSource, settingsSource, validatorSource, patchRouteSource] = await Promise.all([
   readFile(layoutPath, 'utf8'),
   readFile(settingsPath, 'utf8'),
   readFile(validatorPath, 'utf8'),
   readFile(patchRoutePath, 'utf8'),
-  readFile(clearRoutePath, 'utf8'),
 ])
 const settingsSfc = parse(settingsSource, { filename: 'settings.vue' })
 const settingsScript = settingsSfc.descriptor.scriptSetup?.content ?? ''

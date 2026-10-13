@@ -18,6 +18,11 @@
  *  11. Return `{ ok: true, text }` or `{ ok: false, error }`.
  */
 import { eq } from 'drizzle-orm'
+import { cleanAiContent, createStreamingCleaner } from './ai-text-cleaner'
+import { extractToolCallsFromMessage, parseProviderResponse, parseToolArguments } from './ai-response-parse'
+import { readChatSse, type ChatSseUsage, type ToolCallAccumulator } from './ai-sse'
+
+export { createStreamingCleaner, extractToolCallsFromMessage, parseToolArguments }
 import { getDb, type Database } from '../utils/db'
 import {
   aiServiceConfigs, aiProviders, aiModelPricing,
@@ -146,408 +151,6 @@ async function loadPricing(db: Database, model: string): Promise<AiModelPricing 
   return row ?? null
 }
 
-// ─── Provider response parsing ──────────────────────────────────────────
-
-interface UsageParseResult {
-  promptTokens: number
-  completionTokens: number
-  totalTokens: number
-  answerText: string
-}
-
-/**
- * Parse usage tokens from a provider response body (spec R10.2, design.md D8).
- *
- * Strategy map isolates provider-specific logic:
- * - Google Gemini: `usageMetadata.{promptTokenCount, candidatesTokenCount}`
- * - OpenAI/DeepSeek: `usage.{prompt_tokens, completion_tokens}`
- * - Anthropic: `usage.{input_tokens, output_tokens}`
- */
-function parseProviderResponse(provider: string, payload: unknown, policy: string): UsageParseResult {
-  const answerText = extractAnswer(policy, payload)
-  const usage = extractUsage(provider, payload)
-
-  return {
-    promptTokens: usage.promptTokens,
-    completionTokens: usage.completionTokens,
-    totalTokens: usage.totalTokens,
-    answerText,
-  }
-}
-
-/** Core cleaner: applies the 8 regexes but does NOT trim. Trimming belongs
- *  to the final answer, not to incremental streaming — a per-chunk `trim()`
- *  strips the trailing space between words ("Chào " → "Chào") so the next
- *  chunk glues them together ("Chào" + "anh" = "Chàoanh"). That was half of
- *  the garbled-output bug: the slice() shift was the other half. */
-function cleanAiContentCore(text: string): string {
-  if (!text) return ''
-  return text
-    .replace(/<\|channel>thought[\s\S]*?<channel\|>/gi, '')
-    .replace(/<\|channel\|>thought[\s\S]*?<\|channel\|>/gi, '')
-    .replace(/<\|thought\|>[\s\S]*?<\|\/thought\|>/gi, '')
-    .replace(/<think>[\s\S]*?<\/think>/gi, '')
-    .replace(/<\|channel>[\s\S]*?<channel\|>/gi, '')
-    .replace(/thought\s*<channel\|>/gi, '')
-    .replace(/<\|channel>|channel\|>|<channel\|>|<\|channel\|>/gi, '')
-    // "Actually, I'll try…" / "Actually, I will try…" leak. Both contractions
-    // ("I'll") and full forms ("I will") appear across providers; the earlier
-    // pattern only matched "I'll", so a "I will try" leak passed through raw
-    // and showed on screen. Match up to the next Vietnamese sentence boundary.
-    .replace(/(?:Actually|Wait),\s*I'?\s*(?:will|ll)\s*try[\s\S]*?(?=(?:Dạ|Chào|Theo|Hiện|Về|\d+\.|\n\n|$))/gi, '')
-}
-
-function cleanAiContent(text: string): string {
-  return cleanAiContentCore(text).trim()
-}
-
-/** Incremental cleaner for streaming: avoids re-running 8 regexes on the full
- *  `streamText` for every chunk (O(n²)). Holds an incomplete trailing tag in
- *  `carry` so a split like `<thi` + `nk>` does not leak.
- *
- * Emits by **prefix diff**, not by byte length. `cleanAiContent` runs 8 regexes
- * that *delete* spans (reasoning tags like ``, "Actually, I'll
- * try…" leaks) and those spans can straddle chunk boundaries: the opening tag
- * arrives in chunk N (already emitted), the closing tag in chunk M. Once the
- * closer arrives, `cleaned` shrinks *ahead of* the emit point, so
- * `slice(emittedLen)` indexes into the wrong position and emits garbled text
- * (missing spaces, duplicated/merged words — "Chào anh/chị" → "Chàochị"). We
- * track the emitted *string* and only emit the suffix of `cleaned` that extends
- * it; if a regex deletes inside the already-emitted region we emit nothing
- * rather than emitting from a shifted offset. The already-shown text stays
- * (a trailing reasoning fragment may linger briefly) which is the safe
- * failure mode — corrupting the answer text is not. */
-/**
- * Finds the index at which an unclosed reasoning span begins in `text`, so the
- * cleaner can hold it back instead of emitting reasoning markers (``,
- * `<|channel>…`, "Actually, I'll try…" leaks) that the regexes cannot yet
- * strip because their closer has not arrived. Returns -1 when nothing is
- * pending.
- *
- * The reasoning regexes match `open … close` pairs. While the closer is still
- * in transit, the open marker sits in the buffer and would emit raw to the
- * visitor. We hold from the open marker onward; once the closer arrives the
- * full span deletes in one regex pass and `emittedText.startsWith(cleaned)`
- * resyncs silently (the divergent-continuation branch never fires, because
- * the held region produces no `emittedText` growth).
- */
-function unclosedReasoningStart(text: string): number {
-  const thinkOpen = '<' + 'thi' + 'nk>'
-  const thinkClose = '<' + '/thi' + 'nk>'
-  // Count unmatched opening think tags.
-  let pos = 0
-  while ((pos = text.indexOf(thinkOpen, pos)) !== -1) {
-    const closeIdx = text.indexOf(thinkClose, pos + thinkOpen.length)
-    if (closeIdx === -1) return pos
-    pos = closeIdx + thinkClose.length
-  }
-  // Channel-tag span: `<|channel>…<channel|>` (the `thought` prefix variants
-  // are subsumed by the plain `<channel|>` closer — note the `<` and `|`
-  // swap positions between open and close).
-  const chOpen = '<|' + 'channel' + '>'
-  const chClose = '<' + 'channel' + '|>'
-  pos = 0
-  while ((pos = text.indexOf(chOpen, pos)) !== -1) {
-    const closeIdx = text.indexOf(chClose, pos + chOpen.length)
-    if (closeIdx === -1) return pos
-    pos = closeIdx + chClose.length
-  }
-  // "Actually, I'll try…" leak: deleted up to the next sentence boundary
-  // (Dạ/Chào/Theo/Hiện/Về/digit./\n\n). If we have an opening but none of the
-  // boundaries have arrived yet, hold from the opening so the visible answer
-  // is not corrupted by reasoning text that the regex *will* delete once the
-  // boundary lands.
-  const leakRe = /(?:Actually|Wait),\s*I'?\s*(?:will|ll)\s*try/i
-  const leakMatch = leakRe.exec(text)
-  if (leakMatch) {
-    const after = text.slice(leakMatch.index + leakMatch[0].length)
-    if (!/(?:Dạ|Chào|Theo|Hiện|Về|\d+\.|\n\n)/.test(after)) return leakMatch.index
-  }
-  return -1
-}
-
-export function createStreamingCleaner() {
-  let carry = ''
-  let emittedText = ''
-  let rawBuffer = ''
-  return {
-    push(delta: string): string {
-      rawBuffer += delta
-      // Fast path: if the buffer contains NO reasoning markers that the
-      // cleaner would delete, emit it verbatim. This is the common case — a
-      // well-behaved provider sends plain Vietnamese with no think-tags,
-      // `<|channel>` or "Actually, I'll try" leaks, and the prefix-diff
-      // machinery only needs to engage when there is something to clean.
-      // "AI trả sao thì giữ nguyên": when there is nothing to strip, return
-      // the input untouched, byte for byte — no regex pass, no prefix-diff,
-      // no hold-back. The earlier implementation re-ran 8 regexes + a
-      // prefix-diff on every chunk even when they could never match; that is
-      // complexity with no benefit, and any bug in the prefix-diff branch
-      // (e.g. emittedText tracking off-by-one after a partial tag hold)
-      // corrupts plain text that should never have entered that path.
-      const hasMarker =
-        rawBuffer.includes('<') ||
-        rawBuffer.includes('|channel') ||
-        rawBuffer.includes('channel') ||
-        rawBuffer.includes('think') ||
-        /\b(?:Actually|Wait),\s*I'?\s*(?:will|ll)\s*try/i.test(rawBuffer)
-      if (!hasMarker) {
-        const newChunk = rawBuffer.slice(emittedText.length)
-        emittedText = rawBuffer
-        carry = ''
-        return newChunk
-      }
-      // Hold incomplete trailing "<...": don't emit tail that hasn't closed yet.
-      // We compute the hold on the *full* raw buffer so a tag that opens in
-      // chunk N and is still open here is held back regardless of how many
-      // chunks the span already spans.
-      const lastOpen = rawBuffer.lastIndexOf('<')
-      const lastClose = rawBuffer.lastIndexOf('>')
-      let usable: string
-      let nextCarry = ''
-      if (lastOpen !== -1 && lastOpen > lastClose) {
-        usable = rawBuffer.slice(0, lastOpen)
-        nextCarry = rawBuffer.slice(lastOpen)
-      } else {
-        usable = rawBuffer
-      }
-      // Also hold any unclosed reasoning span (think-tag, channel-tag, or the
-      // "Actually, I'll try…" leak) whose closer has not arrived yet. Without
-      // this, the open marker would emit raw to the visitor and the suffix
-      // beyond it would be prematurely committed to `emittedText`.
-      const unclosedAt = unclosedReasoningStart(usable)
-      if (unclosedAt !== -1) {
-        nextCarry = usable.slice(unclosedAt) + nextCarry
-        usable = usable.slice(0, unclosedAt)
-      }
-      // Clean the **whole usable raw buffer**, not just the current delta. A
-      // reasoning span like `<think>…` (or the "Actually, I'll try…"
-      // lookahead match) can straddle chunk boundaries: the opening arrives
-      // in chunk N, the closing in chunk M. Cleaning only the per-chunk
-      // `toClean` means no chunk ever contains both ends, so the regex never
-      // matches and the reasoning text leaks through. Cleaning the full
-      // buffer makes the regex match once the closer arrives, and the
-      // emit-side prefix-diff below correctly suppresses the now-deleted
-      // region instead of emitting garbled shifted text.
-      const cleaned = cleanAiContentCore(usable)
-      carry = nextCarry
-      let newChunk = ''
-      if (cleaned.startsWith(emittedText)) {
-        // Normal extension: `cleaned` grew by appending to the already-emitted
-        // text. Emit only the new suffix.
-        newChunk = cleaned.slice(emittedText.length)
-      } else if (emittedText.startsWith(cleaned)) {
-        // A regex deleted the **tail** of the already-emitted region (e.g. a
-        // reasoning tag that opened inside the emit point and closed in this
-        // chunk). Emit nothing — the shown text keeps its tail (a reasoning
-        // fragment may linger briefly) and we resync so future chunks extend
-        // from the shorter cleaned form. Resyncing here is safe precisely
-        // because we are not emitting: the alternative would be emitting from
-        // a shifted offset, which is the garbled-output bug.
-        newChunk = ''
-      } else {
-        // Divergence: `cleaned` and `emittedText` share a coincidental prefix
-        // (or none) but the regexes only *delete* spans, never rewrite in
-        // place — so a real "rewrite keeping the prefix" case is already
-        // covered by `emittedText.startsWith(cleaned)` above. Anything left is
-        // genuinely new text that is not an extension of what was shown, so
-        // emit the whole `cleaned`. Using a common-prefix slice here would
-        // drop a coincidental shared character (e.g. "Cục " then "C11."
-        // shared "C", and slice(1) ate it → "11.").
-        newChunk = cleaned
-      }
-      emittedText = cleaned
-      return newChunk
-    },
-    flush(): string {
-      // Fast path: if we never saw a reasoning marker, there is nothing to
-      // clean and `emittedText` already equals `rawBuffer`. Any tailBeyond
-      // `emittedText` was already returned by `push`. Return '' so we don't
-      // re-emit anything or run regexes on plain Vietnamese.
-      const hasMarker =
-        rawBuffer.includes('<') ||
-        rawBuffer.includes('|channel') ||
-        rawBuffer.includes('channel') ||
-        rawBuffer.includes('think') ||
-        /\b(?:Actually|Wait),\s*I'?\s*(?:will|ll)\s*try/i.test(rawBuffer)
-      if (!hasMarker) {
-        const tail = rawBuffer.slice(emittedText.length)
-        carry = ''
-        return tail
-      }
-      // Final pass: clean the whole raw buffer. Any held-back trailing span
-      // is now part of `rawBuffer`; if it never closed, the regexes leave it
-      // and it emits as-is (the caller's `finalText(streamText)` fallback is
-      // the safety net for a provider that never closed its tag).
-      const cleaned = cleanAiContentCore(rawBuffer)
-      carry = ''
-      let tail = ''
-      if (cleaned.startsWith(emittedText)) {
-        tail = cleaned.slice(emittedText.length)
-      } else if (emittedText.startsWith(cleaned)) {
-        tail = ''
-      } else {
-        tail = cleaned
-      }
-      emittedText = cleaned
-      return tail
-    },
-    finalText(raw: string): string {
-      // Only the final, complete answer is trimmed. Intermediate chunks must
-      // keep their boundary whitespace or words glue together.
-      return cleanAiContentCore(raw).trim()
-    },
-  }
-}
-
-function extractAnswer(policy: string, payload: unknown): string {
-  return cleanAiContent(rawExtractAnswer(policy, payload))
-}
-
-function rawExtractAnswer(policy: string, payload: unknown): string {
-  if (!payload || typeof payload !== 'object') return ''
-  if (policy === 'anthropic') {
-    const blocks = (payload as { content?: unknown }).content
-    if (!Array.isArray(blocks)) return ''
-    return blocks
-      .filter((block): block is { type?: unknown; text?: unknown } => Boolean(block) && typeof block === 'object')
-      .filter(block => block.type === undefined || block.type === 'text')
-      .map(block => (typeof block.text === 'string' ? block.text : ''))
-      .join('')
-  }
-
-  // OpenAI-compatible (includes Google Gemini via compatible endpoint, DeepSeek)
-  const choice = (payload as { choices?: unknown }).choices
-  if (Array.isArray(choice) && choice[0] && typeof choice[0] === 'object') {
-    const message = (choice[0] as { message?: unknown }).message
-    if (message && typeof message === 'object') {
-      const content = (message as { content?: unknown }).content
-      return typeof content === 'string' ? content : ''
-    }
-  }
-
-  // Google Gemini native API shape
-  const candidates = (payload as { candidates?: unknown }).candidates
-  if (Array.isArray(candidates) && candidates[0] && typeof candidates[0] === 'object') {
-    const content = (candidates[0] as { content?: unknown }).content
-    if (content && typeof content === 'object') {
-      const parts = (content as { parts?: unknown }).parts
-      if (Array.isArray(parts) && parts[0] && typeof parts[0] === 'object') {
-        const text = (parts[0] as { text?: unknown }).text
-        return typeof text === 'string' ? text : ''
-      }
-    }
-  }
-
-  return ''
-}
-
-export function parseToolArguments(raw: unknown): Record<string, unknown> {
-  if (typeof raw === 'object' && raw !== null) return raw as Record<string, unknown>
-  let str = String(raw || '').trim()
-  str = str.replace(/<\|"\|>/g, '"').replace(/<\|/g, '').replace(/\|>/g, '')
-  try {
-    return JSON.parse(str) as Record<string, unknown>
-  } catch {
-    try {
-      const fixed = str.replace(/([{,]\s*)([a-zA-Z_]\w*)\s*:/g, '$1"$2":')
-      return JSON.parse(fixed) as Record<string, unknown>
-    } catch {
-      return {}
-    }
-  }
-}
-
-export function extractToolCallsFromMessage(
-  msg: Record<string, unknown> | undefined,
-  availableTools?: Array<{ name: string }>,
-): Array<{ id: string; function: { name: string; arguments: string } }> {
-  if (!msg) return []
-  if (Array.isArray(msg.tool_calls) && msg.tool_calls.length > 0) {
-    return msg.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }>
-  }
-  const content = typeof msg.content === 'string' ? msg.content : ''
-  if (!content) return []
-  const list: Array<{ id: string; function: { name: string; arguments: string } }> = []
-
-  // Pattern A: <|tool_call>call:funcName{...}
-  const patA = /<\|tool_call>call:(\w+)([{][\s\S]*?[}])(?:<\|?\/?tool_call\|?>)?/g
-  let mA: RegExpExecArray | null
-  while ((mA = patA.exec(content)) !== null) {
-    list.push({
-      id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      function: {
-        name: mA[1] ?? '',
-        arguments: mA[2] ?? '',
-      },
-    })
-  }
-  // Pattern B: Pythonic function calls: funcName(param="value")
-  if (list.length === 0 && Array.isArray(availableTools) && availableTools.length > 0) {
-    for (const t of availableTools) {
-      const regex = new RegExp(t.name + '\\s*\\(([^)]*)\\)', 'g')
-      let mB: RegExpExecArray | null
-      while ((mB = regex.exec(content)) !== null) {
-        const rawArgs = (mB[1] ?? '').trim()
-        const args: Record<string, unknown> = {}
-        const argRegex = /(\w+)\s*=\s*["']([^"']*)["']/g
-        let am: RegExpExecArray | null
-        while ((am = argRegex.exec(rawArgs)) !== null) {
-          args[am[1] ?? ''] = am[2] ?? ''
-        }
-        if (Object.keys(args).length > 0) {
-          list.push({
-            id: `call_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            function: {
-              name: t.name,
-              arguments: JSON.stringify(args),
-            },
-          })
-        }
-      }
-    }
-  }
-
-  return list
-}
-
-function extractUsage(provider: string, payload: unknown): { promptTokens: number; completionTokens: number; totalTokens: number } {
-  if (!payload || typeof payload !== 'object') return { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
-  if (provider === 'google') {
-    const meta = (payload as { usageMetadata?: unknown }).usageMetadata
-    if (meta && typeof meta === 'object') {
-      const m = meta as { promptTokenCount?: unknown; candidatesTokenCount?: unknown; totalTokenCount?: unknown }
-      const promptTokens = Number(m.promptTokenCount ?? 0)
-      const completionTokens = Number(m.candidatesTokenCount ?? 0)
-      return { promptTokens, completionTokens, totalTokens: Number(m.totalTokenCount ?? promptTokens + completionTokens) }
-    }
-  }
-
-  // Anthropic
-  if (provider === 'anthropic') {
-    const usage = (payload as { usage?: unknown }).usage
-    if (usage && typeof usage === 'object') {
-      const u = usage as { input_tokens?: unknown; output_tokens?: unknown }
-      const promptTokens = Number(u.input_tokens ?? 0)
-      const completionTokens = Number(u.output_tokens ?? 0)
-      return { promptTokens, completionTokens, totalTokens: promptTokens + completionTokens }
-    }
-  }
-
-  // OpenAI-compatible (OpenAI, DeepSeek)
-  const usage = (payload as { usage?: unknown }).usage
-  if (usage && typeof usage === 'object') {
-    const u = usage as { prompt_tokens?: unknown; completion_tokens?: unknown; total_tokens?: unknown }
-    const promptTokens = Number(u.prompt_tokens ?? 0)
-    const completionTokens = Number(u.completion_tokens ?? 0)
-    return { promptTokens, completionTokens, totalTokens: Number(u.total_tokens ?? promptTokens + completionTokens) }
-  }
-
-  return { promptTokens: 0, completionTokens: 0, totalTokens: 0 }
-}
-
-// ─── Gateway entry point ───────────────────────────────────────────────
-
 /**
  * Call an AI service. This is the single entry point for all AI calls (spec R10.1).
  *
@@ -647,6 +250,19 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
   let completionTokens = 0
   let totalTokens = 0
   const toolCallsExecuted: Array<{ name: string; query?: string; count?: number; data?: unknown }> = []
+  // A local const so the narrowing survives into the streaming helpers below.
+  const onChunk = input.onChunk
+
+  /**
+   * Usage reported by a streamed step of the tool loop: each step ADDS to the
+   * running totals. delify bills 2000 prompt tokens of its own overhead per call,
+   * and an `estimated` figure is the provider guessing — never billed.
+   */
+  const addStepUsage = ({ promptTokens: prompt, completionTokens: completion, estimated }: ChatSseUsage) => {
+    const adjusted = config.provider === 'delify' && prompt >= 2000 ? prompt - 2000 : prompt
+    if (adjusted > 0 && !estimated) promptTokens += adjusted
+    if (completion > 0 && !estimated) completionTokens += completion
+  }
 
   if (Array.isArray(input.tools) && input.tools.length > 0) {
     // ── Multi-Step Tool Calling Execution Loop ────────────────────────
@@ -673,8 +289,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
       // model can think ("câu này cần dẫn chứng bài viết → gọi
       // search_c11_articles") or answer straight. The grounded system prompt
       // (chat-policy.ts buildGroundedSystemPrompt) strongly instructs tool
-      // use for evidence, and `prefetchEvidence` backstops the case where the
-      // model answers without a tool so the citizen still gets links/photos.
+      // use for evidence; a model that answers without a tool simply answers.
       // `max_tokens` matches the service config (default 4096): 300 was too
       // tight — the model spent its budget on the reasoning prefix and never
       // reached the tool_call block.
@@ -691,7 +306,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
       // into the same structure the non-streaming path produces, so
       // `extractToolCallsFromMessage` and the Step 2 branch work unchanged.
       let msg1: Record<string, unknown> | undefined
-      if (input.onChunk) {
+      if (onChunk) {
         reqBodyObj.stream = true
         const resp1 = await fetch(providerCall.url, {
           method: 'POST',
@@ -703,64 +318,10 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
           errorMessage = `HTTP ${resp1.status}`
           return { ok: false, error: 'provider_error' }
         }
-        const cleaner = createStreamingCleaner()
-        const reader = resp1.body.getReader()
-        const decoder = new TextDecoder()
-        let streamBuffer = ''
-        let streamText = ''
-        const toolCallAccum: Record<number, { id: string; type: string; function: { name: string; arguments: string } }> = {}
-        while (true) {
-          const { done, value } = await reader.read()
-          if (done) break
-          streamBuffer += decoder.decode(value, { stream: true })
-          const lines = streamBuffer.split('\n')
-          streamBuffer = lines.pop() || ''
-          for (const line of lines) {
-            const trimmed = line.trim()
-            if (!trimmed.startsWith('data:') || trimmed === 'data: [DONE]') continue
-            try {
-              const parsed = JSON.parse(trimmed.slice(5).trim())
-              const delta = parsed?.choices?.[0]?.delta
-              // Content deltas — relay to the visitor via the streaming cleaner
-              // (same pattern as Step 2 at lines 810-817).
-              if (typeof delta?.content === 'string' && delta.content) {
-                streamText += delta.content
-                const newChunk = cleaner.push(delta.content)
-                if (newChunk) {
-                  answerText += newChunk
-                  await input.onChunk(newChunk)
-                }
-              }
-              // Tool-call deltas — OpenAI streaming delivers these
-              // incrementally: the first chunk carries `id` + `function.name`,
-              // subsequent chunks append `function.arguments` fragments.
-              // Multiple tool calls use different `index` values.
-              if (Array.isArray(delta?.tool_calls)) {
-                for (const tc of delta.tool_calls as Array<{ index?: number; id?: string; type?: string; function?: { name?: string; arguments?: string } }>) {
-                  const idx = tc.index ?? 0
-                  if (!toolCallAccum[idx]) {
-                    toolCallAccum[idx] = { id: '', type: 'function', function: { name: '', arguments: '' } }
-                  }
-                  if (tc.id) toolCallAccum[idx].id = tc.id
-                  if (tc.type) toolCallAccum[idx].type = tc.type
-                  if (tc.function?.name) toolCallAccum[idx].function.name = tc.function.name
-                  if (tc.function?.arguments) toolCallAccum[idx].function.arguments += tc.function.arguments
-                }
-              }
-              // Usage — same prompt-token adjustment as Step 2 (lines 819-826).
-              if (parsed?.usage) {
-                const isEst = Boolean((parsed.usage as { estimated?: boolean }).estimated)
-                let p1 = Number((parsed.usage as { prompt_tokens?: number }).prompt_tokens) || 0
-                const c1 = Number((parsed.usage as { completion_tokens?: number }).completion_tokens) || 0
-                if (config.provider === 'delify' && p1 >= 2000) p1 -= 2000
-                if (p1 > 0 && !isEst) promptTokens += p1
-                if (c1 > 0 && !isEst) completionTokens += c1
-              }
-            } catch {}
-          }
-        }
-        const tail = cleaner.flush()
-        if (tail) { answerText += tail; await input.onChunk(tail) }
+        const toolCallAccum: ToolCallAccumulator = {}
+        const step1 = await readChatSse(resp1.body, { emit: onChunk, onUsage: addStepUsage, toolCalls: toolCallAccum })
+        answerText += step1.relayed
+        const streamText = step1.streamText
         // Object.values on numeric keys returns ascending index order in V8.
         const accumulatedToolCalls = Object.values(toolCallAccum)
         msg1 = {
@@ -866,7 +427,7 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
         delete reqBodyObj.tools
         delete reqBodyObj.tool_choice
         reqBodyObj.max_tokens = originalMaxTokens
-        if (input.onChunk) {
+        if (onChunk) {
           reqBodyObj.stream = true
           const resp2 = await fetch(providerCall.url, {
             method: 'POST',
@@ -878,47 +439,11 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
             errorMessage = `HTTP ${resp2.status}`
             return { ok: false, error: 'provider_error' }
           }
-          const cleaner = createStreamingCleaner()
-          const reader = resp2.body.getReader()
-          const decoder = new TextDecoder()
-          let streamBuffer = ''
-          let streamText = ''
-          while (true) {
-            const { done, value } = await reader.read()
-            if (done) break
-            streamBuffer += decoder.decode(value, { stream: true })
-            const lines = streamBuffer.split('\n')
-            streamBuffer = lines.pop() || ''
-            for (const line of lines) {
-              const trimmed = line.trim()
-              if (!trimmed.startsWith('data:') || trimmed === 'data: [DONE]') continue
-              try {
-                const parsed = JSON.parse(trimmed.slice(5).trim())
-                const delta = parsed?.choices?.[0]?.delta?.content
-                if (typeof delta === 'string' && delta) {
-                  streamText += delta
-                  const newChunk = cleaner.push(delta)
-                  if (newChunk) {
-                    answerText += newChunk
-                    await input.onChunk(newChunk)
-                  }
-                }
-                if (parsed?.usage) {
-                  const isEst = Boolean(parsed.usage.estimated)
-                  let p2 = Number(parsed.usage.prompt_tokens) || 0
-                  const c2 = Number(parsed.usage.completion_tokens) || 0
-                  if (config.provider === 'delify' && p2 >= 2000) p2 -= 2000
-                  if (p2 > 0 && !isEst) promptTokens += p2
-                  if (c2 > 0 && !isEst) completionTokens += c2
-                }
-              } catch {}
-            }
-          }
-          const tail = cleaner.flush()
-          if (tail) { answerText += tail; await input.onChunk(tail) }
-          if (!answerText.trim()) answerText = cleaner.finalText(streamText).trim()
+          const step2 = await readChatSse(resp2.body, { emit: onChunk, onUsage: addStepUsage })
+          answerText += step2.relayed
+          if (!answerText.trim()) answerText = step2.finalText()
           if (!answerText) {
-            answerText = streamText.replace(/<\|channel>[\s\S]*?<channel\|>/gi, '').trim()
+            answerText = step2.streamText.replace(/<\|channel>[\s\S]*?<channel\|>/gi, '').trim()
           }
         } else {
           reqBodyObj.stream = false
@@ -949,11 +474,18 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
           completionTokens += c2
         }
       } else {
-        // Model answered directly without tool calls
-        delete reqBodyObj.tools
-        delete reqBodyObj.tool_choice
-        reqBodyObj.max_tokens = originalMaxTokens
-        if (input.onChunk) {
+        // Model answered directly without tool calls.
+        //
+        // When step 1 was streamed (`onChunk`), that stream already carried the
+        // answer to the visitor — `answerText` holds it. Asking the provider again
+        // here appended a SECOND, different answer to the first ("…ạ?Chào
+        // anh/chị…") and billed the call twice. The follow-up request is only the
+        // safety net for a step 1 that produced nothing visible (all reasoning).
+        const answeredInStep1 = Boolean(onChunk) && answerText.trim() !== ''
+        if (onChunk && !answeredInStep1) {
+          delete reqBodyObj.tools
+          delete reqBodyObj.tool_choice
+          reqBodyObj.max_tokens = originalMaxTokens
           reqBodyObj.stream = true
           const respDirect = await fetch(providerCall.url, {
             method: 'POST',
@@ -961,44 +493,9 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
             body: JSON.stringify(reqBodyObj),
           })
           if (respDirect.ok && respDirect.body) {
-            const cleaner2 = createStreamingCleaner()
-            const reader = respDirect.body.getReader()
-            const decoder = new TextDecoder()
-            let streamBuffer = ''
-            let streamText = ''
-            while (true) {
-              const { done, value } = await reader.read()
-              if (done) break
-              streamBuffer += decoder.decode(value, { stream: true })
-              const lines = streamBuffer.split('\n')
-              streamBuffer = lines.pop() || ''
-              for (const line of lines) {
-                const trimmed = line.trim()
-                if (!trimmed.startsWith('data:') || trimmed === 'data: [DONE]') continue
-                try {
-                  const parsed = JSON.parse(trimmed.slice(5).trim())
-                  const delta = parsed?.choices?.[0]?.delta?.content
-                  if (typeof delta === 'string' && delta) {
-                    streamText += delta
-                    const newChunk = cleaner2.push(delta)
-                    if (newChunk) {
-                      answerText += newChunk
-                      await input.onChunk(newChunk)
-                    }
-                  }
-                  if (parsed?.usage) {
-                    let p2 = Number(parsed.usage.prompt_tokens) || 0
-                    const c2 = Number(parsed.usage.completion_tokens) || 0
-                    if (config.provider === 'delify' && p2 >= 2000) p2 -= 2000
-                    if (p2 > 0 && !parsed.usage.estimated) promptTokens += p2
-                    if (c2 > 0 && !parsed.usage.estimated) completionTokens += c2
-                  }
-                } catch {}
-              }
-            }
-            const tail2 = cleaner2.flush()
-            if (tail2) { answerText += tail2; await input.onChunk(tail2) }
-            if (!answerText.trim()) answerText = cleaner2.finalText(streamText).trim()
+            const direct = await readChatSse(respDirect.body, { emit: onChunk, onUsage: addStepUsage })
+            answerText += direct.relayed
+            if (!answerText.trim()) answerText = direct.finalText()
           }
         }
         if (!answerText) {
@@ -1016,10 +513,14 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
       errorMessage = error instanceof Error ? error.message : 'unknown_error'
       return { ok: false, error: 'provider_error' }
     }
-  } else if (input.onChunk) {
+  } else if (onChunk) {
     // Real-time streaming from provider via SSE
     try {
       const streamBody = JSON.parse(providerCall.body ?? '{}')
+      // `buildProviderChatCall` builds the body with `stream: false`; without this the
+      // provider answers with one JSON document, this reader finds no `data:` lines,
+      // and the call ends as an empty response.
+      streamBody.stream = true
       const response = await fetch(providerCall.url, {
         method: 'POST',
         headers: providerCall.headers,
@@ -1042,52 +543,18 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
       // answers directly), and skipping the cleaner here was the regression:
       // garbled/cut text reappeared whenever the model answered without tool
       // calls. The fix mirrors the tool-call branch exactly.
-      const cleaner = createStreamingCleaner()
-      const reader = response.body.getReader()
-      const decoder = new TextDecoder()
-      let streamBuffer = ''
-      let streamText = ''
-
-      while (true) {
-        const { done, value } = await reader.read()
-        if (done) break
-        streamBuffer += decoder.decode(value, { stream: true })
-        const lines = streamBuffer.split('\n')
-        streamBuffer = lines.pop() || ''
-        for (const line of lines) {
-          const trimmed = line.trim()
-          if (!trimmed.startsWith('data:') || trimmed === 'data: [DONE]') continue
-          try {
-            const parsed = JSON.parse(trimmed.slice(5).trim())
-            const delta = parsed?.choices?.[0]?.delta?.content
-            if (typeof delta === 'string' && delta) {
-              streamText += delta
-              const newChunk = cleaner.push(delta)
-              if (newChunk) {
-                answerText += newChunk
-                await input.onChunk(newChunk)
-              }
-            }
-            if (parsed?.usage) {
-              const isEst = Boolean(parsed.usage.estimated)
-              const p = Number(parsed.usage.prompt_tokens) || 0
-              const c = Number(parsed.usage.completion_tokens) || 0
-              if (p > 0 && (!promptTokens || !isEst)) {
-                promptTokens = p
-              }
-              if (c > 0 && (!completionTokens || !isEst)) {
-                completionTokens = c
-              }
-            }
-          } catch {
-            // Ignore unparseable partial chunk
-          }
-        }
-      }
-
-      const tail = cleaner.flush()
-      if (tail) { answerText += tail; await input.onChunk(tail) }
-      if (!answerText.trim()) answerText = cleaner.finalText(streamText).trim()
+      // One request, one step: a later usage event REPLACES the earlier one (a real
+      // figure beats an estimate, never the other way round), unlike the tool loop
+      // where every step adds. delify's 2000-token overhead comes off at the end.
+      const streamed = await readChatSse(response.body, {
+        emit: onChunk,
+        onUsage: ({ promptTokens: prompt, completionTokens: completion, estimated }) => {
+          if (prompt > 0 && (!promptTokens || !estimated)) promptTokens = prompt
+          if (completion > 0 && (!completionTokens || !estimated)) completionTokens = completion
+        },
+      })
+      answerText += streamed.relayed
+      if (!answerText.trim()) answerText = streamed.finalText()
 
       if (!answerText) {
         success = false

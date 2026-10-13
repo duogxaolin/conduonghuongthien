@@ -6,7 +6,7 @@
  * the worker dies but the DB row stays at `translating` forever.
  * (design.md D3 — same pattern as video processing reaper)
  */
-import { eq, lt, sql } from 'drizzle-orm'
+import { eq, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { articleTranslations } from '../db/schema'
 import { logWarn } from '../utils/logger'

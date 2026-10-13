@@ -26,6 +26,21 @@ và lùi phiên bản chỉ là trỏ lại tag cũ thay vì xây lại từ đ�
 của đồ thị phụ thuộc chứ không phải một lời hứa. Không có commit nào đi ra VPS mà
 chưa qua đủ bốn cổng.
 
+**Tiết kiệm phút Actions (repo private, 3.000 phút/tháng):** một lượt CI đầy đủ ≈ 40 phút
+billed (GitHub làm tròn từng job lên phút; 13 job Integration chiếm ≈ 29). Nên job
+`changes` ("Plan") quyết định cho mỗi lượt chạy:
+
+| Sự kiện | Chạy gì |
+|---|---|
+| push vào `main`, chạy tay (Actions → CI → Run workflow) | **Đủ bộ**, gồm Integration — `image`/`deploy` vẫn chờ mọi cổng |
+| PR nháp | Bỏ qua (chạy lại khi bấm *Ready for review*) |
+| PR thường | unit + build + schema-drift + hygiene (≈ 12 phút) |
+| PR thường **có đụng** `server/`, `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 13 job Integration |
+
+Muốn ép chạy đủ cho một PR chỉ-giao-diện: Actions → CI → *Run workflow* trên nhánh đó.
+Gom commit trước khi push và dùng PR nháp cho việc dở dang cũng tiết kiệm phút.
+Kiểm lượng đã dùng: GitHub → Settings → Billing and licensing → Usage.
+
 **Repo public thì Actions miễn phí không giới hạn phút**, nhưng package trên GHCR
 **mặc định vẫn là private** — nên VPS bắt buộc phải `docker login` (Bước 4–5).
 
@@ -257,11 +272,40 @@ location /api/public/livestream/chat/stream {
     proxy_read_timeout 86400s;
     proxy_send_timeout 86400s;
 }
+
+# ── Luồng SSE của chatbot AI ──────────────────────────────────────────────
+# Provider AI có lúc mất 40–200 giây cho một câu trả lời (suy nghĩ rồi mới có chữ
+# đầu tiên). Suốt lúc đó server gửi một dòng `: ping` mỗi 15 giây để giữ kết nối;
+# nhưng nginx vẫn phải cho phép kết nối sống lâu và KHÔNG đệm: với
+# `proxy_read_timeout` mặc định (60s) một câu chậm bị cắt giữa chừng, và có đệm thì
+# chữ nhảy thành khối thay vì hiện dần. `proxy_cache off` vì một luồng phục vụ lại từ
+# cache là câu trả lời của người khác.
+location /api/public/chatbot {
+    proxy_pass http://127.0.0.1:54432;
+    proxy_http_version 1.1;
+    proxy_set_header Host              $host;
+    proxy_set_header X-Real-IP         $remote_addr;
+    proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_read_timeout 300s;
+    proxy_send_timeout 300s;
+}
 ```
 
-Hai khối `location` trên phải nằm trong **cùng** khối `server { }` với các dòng
+Ba khối `location` trên phải nằm trong **cùng** khối `server { }` với các dòng
 `proxy_set_header` ở trên — dán rời ra ngoài thì nginx báo lỗi cú pháp, hoặc tệ
 hơn là nhận mà không có hiệu lực. Nhớ đổi `54432` cho khớp `PORT` trong `.env`.
+
+Kiểm tra khối chatbot đã có hiệu lực (phải thấy `: ping` xen kẽ mỗi 15 giây trong lúc
+chờ, thay vì im lặng rồi bị ngắt ở ~60 giây):
+
+```bash
+curl -N -s -X POST https://<domain>/api/public/chatbot \
+  -H 'Content-Type: application/json' \
+  -d '{"messages":[{"role":"user","content":"có hỗ trợ vay vốn không?"}]}' | head -20
+```
 
 Thiếu `X-Forwarded-For` thì mọi khách trông như cùng một địa chỉ, và giới hạn tần
 suất theo IP gộp thành một bucket chung cho cả internet.

@@ -315,7 +315,7 @@ function boundedUserHistory(): { sender: 'user' | 'bot', text: string }[] {
  * empty; writing straight to `message.text` would show the whole answer for one
  * frame before the typewriter reset it.
  */
-function parseSseLine(line: string, target: { text: string, message: ChatMessage }): void {
+export function parseSseLine(line: string, target: { text: string, message: ChatMessage }): void {
   const trimmed = line.trim()
   if (!trimmed.startsWith('data: ') || trimmed === 'data: [DONE]') return
   let data: Record<string, unknown>

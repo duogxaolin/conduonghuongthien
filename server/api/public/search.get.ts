@@ -1,7 +1,7 @@
 import { finitePositive, MAX_PAGE } from '../../utils/query-number'
 import { getDb } from '../../utils/db'
 import { articles, categories, chatbotKnowledge, pages } from '../../db/schema'
-import { eq, like, desc, inArray, and, or, sql } from 'drizzle-orm'
+import { eq, like, desc, inArray, and, or } from 'drizzle-orm'
 
 export interface SearchItem {
   id: string | number
@@ -277,7 +277,7 @@ export default defineEventHandler(async (event) => {
         totalPages,
       },
     }
-  } catch (err: unknown) {
+  } catch {
     return {
       ok: false,
       items: [],

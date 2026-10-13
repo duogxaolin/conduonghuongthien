@@ -31,7 +31,7 @@ function actor(overrides: Partial<Actor> = {}): Actor {
 
 test('role editor imports the shared permission catalogue through the Nuxt root alias', () => {
   const page = readFileSync(new URL('../app/pages/admin/users/roles.vue', import.meta.url), 'utf8')
-  assert.match(page, /from ['\"]~~\/shared\/permissions['\"]/, 'a relative import outside app/ breaks Nitro production bundling')
+  assert.match(page, /from ['"]~~\/shared\/permissions['"]/, 'a relative import outside app/ breaks Nitro production bundling')
 })
 
 const superadmin = actor({ isSuperAdmin: true, permissions: [] })

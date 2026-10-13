@@ -177,12 +177,16 @@ export function createAnalyticsPanelPoller<T extends AnalyticsPanelResponse>(opt
         state.error = (options.errorMessage || defaultErrorMessage)(error)
       }
     } finally {
-      if (requestGeneration !== generation) return
-      controller = null
-      state.inFlight = false
-      state.loading = false
-      emit()
-      schedule()
+      // A request that was superseded must not touch the state of the one that
+      // replaced it. An `if` rather than an early `return`: a `return` inside
+      // `finally` would also swallow anything the `try`/`catch` threw.
+      if (requestGeneration === generation) {
+        controller = null
+        state.inFlight = false
+        state.loading = false
+        emit()
+        schedule()
+      }
     }
   }
   const refresh = () => { void run() }

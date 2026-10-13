@@ -28,7 +28,6 @@ import { effectiveDisplayName } from '../utils/display-name'
 
 /** Server-enforced ceiling. A client-supplied page size is a request. */
 export const READER_MAX_PER_PAGE = 100
-const READER_DEFAULT_PER_PAGE = 25
 
 // ─── Display name ────────────────────────────────────────────────────────────
 

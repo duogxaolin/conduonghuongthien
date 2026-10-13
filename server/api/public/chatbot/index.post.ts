@@ -7,6 +7,7 @@ import { persistChatTurn } from '../../../utils/chatbot/session-db'
 import { getClientIp } from '../../../utils/client-ip'
 import { analyticsHmacSecret } from '../../../utils/runtime-config'
 import { checkAndModerateContent, fastPreModerate } from '../../../services/moderation-worker'
+import { createSseHeartbeat } from '../../../utils/chatbot/sse-heartbeat'
 
 /** Serialises a result into the single-event SSE envelope the widget parses. */
 function sseEnvelope(answer: string, kind: string, sources: unknown, retryAfter: number | null, askContact: boolean, followUps: string[] = []): string {
@@ -137,12 +138,17 @@ export default defineEventHandler(async (event) => {
   if (res && typeof res.write === 'function') {
     let streamed = false
     let result
+    // Một dòng `: ping` mỗi 15 giây cho tới chữ đầu tiên, để proxy không cắt kết nối
+    // trong lúc provider AI còn đang nghĩ (xem sse-heartbeat.ts).
+    const heartbeat = createSseHeartbeat(frame => { res.write(frame) })
+    heartbeat.start()
     try {
       result = await answerChat(
         event,
         settings,
         messages,
         (delta: string) => {
+          heartbeat.stop()
           streamed = true
           res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: delta } }] })}\n\n`)
           // Ép flush ngay để visitor thấy từng từ. Node `res.write` chỉ ghi vào
@@ -158,6 +164,8 @@ export default defineEventHandler(async (event) => {
     } catch (error) {
       if ((error as Error).message === 'INVALID_MESSAGES') throw createError({ statusCode: 400, statusMessage: 'Invalid chat messages' })
       throw error
+    } finally {
+      heartbeat.stop()
     }
 
     if (!streamed) {

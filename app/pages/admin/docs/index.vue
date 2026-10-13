@@ -1,18 +1,19 @@
 <script setup lang="ts">
 import { ADMIN_DOCS, ADMIN_DOC_CATEGORIES, docsByCategory } from '~/utils/docs/admin-docs-index'
+import type { AdminDoc } from '~/utils/docs/types'
 import { searchDocs, suggestQuestions, type SearchResult } from '~/utils/docs/search'
 import { DOC_PREVIEWS } from '~/utils/docs/previews'
 
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const searchQuery = ref('')
-const searchResults = ref<SearchResult[]>([])
+const searchResults = ref<SearchResult<AdminDoc>[]>([])
 const isSearching = computed(() => searchQuery.value.trim().length > 0)
 const hasResults = computed(() => searchResults.value.length > 0)
 
 const suggestedQuestions = computed(() => suggestQuestions(ADMIN_DOCS, 6))
 
-const handleResults = (results: SearchResult[]) => {
+const handleResults = (results: SearchResult<AdminDoc>[]) => {
   searchResults.value = results
 }
 </script>

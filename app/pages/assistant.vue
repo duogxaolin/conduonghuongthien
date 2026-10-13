@@ -254,6 +254,8 @@
                     <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-[#1e4620] [animation-delay:200ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
                     <span class="h-1.5 w-1.5 animate-typing-dot rounded-full bg-[#1e4620] [animation-delay:400ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
                   </div>
+                  <!-- Sau ~20 giây: nói rõ lần chờ này dài hơn thường (trong vùng role="status"). -->
+                  <p v-if="isSlowWait" class="m-0 mt-2 text-[0.78rem] leading-snug text-[#667768]">Đang chờ lâu hơn bình thường, xin anh/chị chờ thêm…</p>
                 </div>
               </div>
             </div>
@@ -305,6 +307,7 @@
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useChatbot, type StoredConversation, type ChatMessage } from '~/composables/useChatbot'
 import { useChatAutoScroll } from '~/composables/useChatAutoScroll'
+import { useSlowWait } from '~/composables/useSlowWait'
 import { useI18n } from '~/composables/useI18n'
 
 const { t } = useI18n()
@@ -326,6 +329,9 @@ useHead({
     content: 'Trợ lý ảo hỗ trợ tra cứu thông tin về tái hòa nhập cộng đồng từ kho dữ liệu đã được Cục C11 phê duyệt.',
   }],
 })
+
+// "Waiting longer than usual" once the first word is 20s late.
+const isSlowWait = useSlowWait(isAwaitingFirstWord)
 
 const chatContainer = ref<HTMLElement | null>(null)
 const chatContent = ref<HTMLElement | null>(null)

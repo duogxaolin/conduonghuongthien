@@ -171,7 +171,7 @@ export function useLiveChat() {
       resolve(null)
     })
 
-    source.addEventListener('shutdown', (ev: MessageEvent) => {
+    source.addEventListener('shutdown', () => {
       if (attempt !== connectionAttempt) return
       // Máy chủ đang tắt: giao diện phải nói rõ "không phải lỗi kết nối, máy
       // chủ đang bảo trì" để người xem không F5 liên tục.

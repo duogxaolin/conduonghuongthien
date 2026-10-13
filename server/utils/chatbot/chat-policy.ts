@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { type H3Event } from 'h3'
 import { getClientIp } from '../client-ip'
-import { recordRateLimitHit, type RateLimitRule } from '../rate-limit-store'
+import { recordRateLimitHit, type RateLimitDeps, type RateLimitRule } from '../rate-limit-store'
 import type { ChatbotSettings } from '../../db/schema'
 import type { SafeProviderRequestOptions, SafeProviderResponse } from './outbound'
 import { retrieveKnowledge, type PublicKnowledgeReference, type RetrievalEntry } from './retrieval'
@@ -10,12 +10,14 @@ import { buildProviderChatCall, extractProviderAnswer } from './providers'
 import { callAi } from '../../services/ai-gateway'
 import { selectSmallTalk, type SemanticSmallTalkProvider, type SmallTalkSemanticConfig } from './small-talk-semantic'
 import { classifySmallTalk, type SmallTalkContext, type SmallTalkEntry } from './small-talk'
-import { logWarn, logError } from '../logger'
+import { logWarn } from '../logger'
 import { rateLimitDeps } from '../rate-limit-deps'
-import { eq, and, or, like, desc, inArray, sql } from 'drizzle-orm'
+import { desc } from 'drizzle-orm'
 import { articles, mediaItems, media } from '../../db/schema'
 import { getDb } from '../db'
 import { createFollowUpStreamFilter, FOLLOW_UP_LIMIT, FOLLOW_UP_MARKER, selectFollowUps, splitFollowUps } from './follow-ups'
+import { buildArticleSearch } from './article-search'
+import { photoSearchCondition, videoSearchCondition } from './media-search'
 export const HOTLINE = CHATBOT_HOTLINE
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
 
@@ -47,6 +49,23 @@ const RATE_LIMIT_NAMESPACE = 'cdkt-chat-rate-limit-v1'
 
 /** AI provider calls per browser session. Guards spend, not abuse of the portal. */
 export const AI_QUOTA_RULE: RateLimitRule = { limit: 20, windowSeconds: 60 * 60 }
+
+/**
+ * Ceiling on AI provider calls per client address, charged **alongside** the
+ * session quota — not instead of it.
+ *
+ * The session quota alone is a per-token allowance, and a token costs nothing:
+ * `/api/public/chatbot/session` signs a fresh one for anybody (stateless HMAC, no
+ * database row), so asking for a new token resets the 20-call allowance to zero.
+ * The only thing left between that and the AI bill was the 10-requests-a-minute
+ * chat limit, i.e. up to 600 provider calls an hour from one address — thirty
+ * times the intended allowance. This ceiling is the missing bound.
+ *
+ * 100 an hour is five sessions' worth: room for a family or a small office
+ * behind one address, an order of magnitude under what token-farming reached.
+ * Visitors past it still get the approved-bank answer (see `answerGroundedChat`).
+ */
+export const AI_IP_CEILING_RULE: RateLimitRule = { limit: 100, windowSeconds: 60 * 60 }
 
 const AI_QUOTA_MESSAGE = `Bạn đã dùng hết lượt hỏi trợ lý AI trong giờ này. Vui lòng thử lại sau, hoặc liên hệ đường dây nóng ${CHATBOT_HOTLINE} để được hỗ trợ ngay.`
 
@@ -94,10 +113,24 @@ export async function enforceChatRateLimit(key: string, limit: number, windowSec
  * next person's allowance. Sessions without a verified token fall back to the
  * IP key — otherwise dropping the header would be a way to opt out of the quota.
  */
-export async function enforceAiQuota(event: ChatEvent, sessionId: string | null): Promise<number | null> {
+export async function enforceAiQuota(
+  event: ChatEvent,
+  sessionId: string | null,
+  deps: RateLimitDeps = rateLimitDeps(),
+): Promise<number | null> {
   const key = sessionId ? `chat-ai:${sessionId}` : `chat-ai-ip:${clientKey(event)}`
-  const state = await recordRateLimitHit(key, storeRule(AI_QUOTA_RULE.limit, AI_QUOTA_RULE.windowSeconds), rateLimitDeps())
-  return state.blocked ? Math.max(1, state.retryAfterSeconds) : null
+  const state = await recordRateLimitHit(key, storeRule(AI_QUOTA_RULE.limit, AI_QUOTA_RULE.windowSeconds), deps)
+  if (state.blocked) return Math.max(1, state.retryAfterSeconds)
+
+  // A visitor with no token is already counted per address above, at the
+  // stricter limit; only a token holder needs the address ceiling on top.
+  if (!sessionId) return null
+  const ceiling = await recordRateLimitHit(
+    `chat-ai-ip-ceiling:${clientKey(event)}`,
+    storeRule(AI_IP_CEILING_RULE.limit, AI_IP_CEILING_RULE.windowSeconds),
+    deps,
+  )
+  return ceiling.blocked ? Math.max(1, ceiling.retryAfterSeconds) : null
 }
 
 export function validateChatRequestBody(body: unknown): void {
@@ -198,42 +231,6 @@ function friendlyKnowledgeAnswer(settings: ChatbotSettings, references: PublicKn
     fallback: references.slice(1, 1 + FOLLOW_UP_LIMIT).map(ref => ({ id: ref.id, question: ref.question })),
   })
   return { answer, sources: top.source ? references.slice(0, 1) : [], kind: 'curated', followUps }
-}
-
-/**
- * Render prefetched evidence (articles, videos, photos) as a Markdown block
- * surfaced to the citizen. Articles get a cover-image when `reference`
- * (thumbnailUrl) is present; videos get a poster; photos render inline. This
- * is the same display shape the AI is instructed (in the grounded system
- * prompt) to produce when it calls tools itself — so knowledge-mode and
- * AI-mode answers look the same to the citizen.
- */
-function renderEvidenceBlock(evidence: PublicKnowledgeReference[]): string {
-  const articles = evidence.filter(r => r.topic === 'role_model' || r.topic === 'reintegration' || r.topic === 'news' || r.topic === 'document' || r.topic === 'faq' || (r.topic !== 'video' && r.topic !== 'photo' && r.source?.url?.startsWith('/news/')))
-  const videos = evidence.filter(r => r.topic === 'video' || r.source?.url?.startsWith('/media/'))
-  const photos = evidence.filter(r => r.topic === 'photo')
-  const lines: string[] = []
-  if (articles.length) {
-    lines.push('📖 **Bài viết liên quan:**')
-    for (const a of articles.slice(0, 5)) {
-      const cover = a.source?.reference ? ` ![${a.question}](${a.source.reference})` : ''
-      lines.push(`- [${a.question}](${a.source?.url})${cover}`)
-    }
-  }
-  if (videos.length) {
-    lines.push('🎥 **Video liên quan:**')
-    for (const v of videos.slice(0, 3)) {
-      const poster = v.source?.reference ? ` ![${v.question}](${v.source.reference})` : ''
-      lines.push(`- [Xem video: ${v.question.replace(/^Video:\s*/, '')}](${v.source?.url})${poster}`)
-    }
-  }
-  if (photos.length) {
-    lines.push('🖼️ **Hình ảnh hoạt động:**')
-    for (const p of photos.slice(0, 4)) {
-      lines.push(`- ![${p.question.replace(/^Ảnh:\s*/, '')}](${p.source?.url})`)
-    }
-  }
-  return lines.join('\n')
 }
 
 /**
@@ -400,39 +397,9 @@ async function callProvider(
           const db = getDb()
           const rawQ = String(args.query || '').trim()
           const type = typeof args.type === 'string' ? args.type.trim() : null
-          const whereConds = [eq(articles.status, 'published')]
-          if (type) whereConds.push(eq(articles.type, type))
-
-          const stopWords = new Set(['cho', 'tôi', 'hỏi', 'với', 'được', 'không', 'nào', 'các', 'của', 'là', 'gì', 'thế', 'ở', 'đó', 'có', 'thì', 'xin'])
-          const keywords = rawQ
-            .toLowerCase()
-            .replace(/[^\p{L}\p{N}\s]/gu, ' ')
-            .split(/\s+/)
-            .filter(w => w.length >= 2 && !stopWords.has(w))
-
-          let orderByClause = desc(articles.publishedAt)
-          if (keywords.length > 0) {
-            const orLikes = keywords.map(kw => or(
-              like(articles.title, `%${kw}%`),
-              like(articles.excerpt, `%${kw}%`),
-              like(articles.content, `%${kw}%`)
-            )!)
-            whereConds.push(or(...orLikes)!)
-
-            // Relevance scoring: Title matches (+10), Excerpt matches (+3), Exact phrase in title (+30)
-            const safeWords = keywords.map(w => w.replace(/["\\]/g, ''))
-            const titleScore = safeWords.map(w => `(CASE WHEN LOWER(title) LIKE '%${w}%' THEN 10 ELSE 0 END)`).join(' + ')
-            const excerptScore = safeWords.map(w => `(CASE WHEN LOWER(excerpt) LIKE '%${w}%' THEN 3 ELSE 0 END)`).join(' + ')
-            const cleanQ = rawQ.toLowerCase().replace(/["\\]/g, '')
-            const exactScore = `(CASE WHEN LOWER(title) LIKE '%${cleanQ}%' THEN 30 ELSE 0 END)`
-            orderByClause = sql.raw(`(${titleScore} + ${excerptScore} + ${exactScore}) DESC, published_at DESC`)
-          } else if (rawQ) {
-            whereConds.push(or(
-              like(articles.title, `%${rawQ}%`),
-              like(articles.excerpt, `%${rawQ}%`),
-              like(articles.content, `%${rawQ}%`)
-            )!)
-          }
+          // Toàn bộ điều kiện và thứ tự sắp xếp do `buildArticleSearch` dựng — chuỗi
+          // tìm kiếm chỉ đi vào tham số của câu lệnh (xem article-search.ts).
+          const search = buildArticleSearch(rawQ, type)
 
           const rows = await db.select({
             id: articles.id,
@@ -443,8 +410,8 @@ async function callProvider(
             content: articles.content,
             thumbnailUrl: articles.thumbnailUrl,
           }).from(articles)
-          .where(and(...whereConds))
-          .orderBy(orderByClause)
+          .where(search.where)
+          .orderBy(...search.orderBy)
           .limit(5)
 
           const categoryMap: Record<string, string> = {
@@ -495,13 +462,7 @@ async function callProvider(
             description: mediaItems.description,
             thumbnailUrl: mediaItems.thumbnailUrl,
           }).from(mediaItems)
-          .where(and(
-            eq(mediaItems.status, 'published'),
-            or(
-              like(mediaItems.title, `%${q}%`),
-              like(mediaItems.description, `%${q}%`)
-            )!
-          ))
+          .where(videoSearchCondition(q))
           .orderBy(desc(mediaItems.createdAt))
           .limit(3)
 
@@ -535,13 +496,7 @@ async function callProvider(
             originalName: media.originalName,
             url: media.url,
           }).from(media)
-          .where(and(
-            like(media.mimeType, 'image/%'),
-            or(
-              like(media.originalName, `%${q}%`),
-              like(media.filename, `%${q}%`)
-            )!
-          ))
+          .where(photoSearchCondition(q))
           .orderBy(desc(media.createdAt))
           .limit(4)
 
@@ -651,36 +606,6 @@ async function callProvider(
   return rawAnswer ? { text: rawAnswer, proposals, knowledgeHits: [] } : null
 }
 
-/**
- * Prefetch concrete evidence (articles, photos, videos) for a citizen's
- * question and shape them as `PublicKnowledgeReference` so the grounded
- * system prompt already carries the proof — independent of whether the model
- * chooses to call a tool.
- *
- * Why this exists: the model is instructed to call `search_c11_articles` etc.
- * proactively, but for openers like "tôi vừa đi tù về" or "đi tù về có việc gì
- * không?" it often answers directly from the knowledge bank references and
- * never reaches for a tool. The citizen then receives a text answer with
- * zero links, photos, or videos — exactly the evidence that would make the
- * answer trustworthy. By prefetching articles/photos/videos from the same DB
- * queries the tools use, the proof is already in the prompt; the model can
- * weave it into its answer without a tool round-trip, and tool calls remain
- * for follow-up drilling.
- *
- * Caps: at most 5 articles + 3 videos + 4 photos. Each item is a
- * `PublicKnowledgeReference` whose `question` is the title and `answer` is
- * the snippet, so `buildGroundedSystemPrompt` renders it in the same
- * `<UNTRUSTED_KNOWLEDGE_REFERENCES>` block as knowledge-bank matches.
- */
-// prefetchEvidence — stub. Mọi evidence (bài viết/ảnh/video) giờ do model
-// tự quyết định gọi search_c11_articles / search_c11_photos / search_c11_videos
-// khi nó suy luận thấy dẫn chứng sẽ giúp câu trả lời thuyết phục hơn.
-// Hàm giữ lại để `void prefetchEvidence` trong answerGroundedChat không broken,
-// nhưng không truy vấn DB nữa.
-async function prefetchEvidence(_query: string): Promise<PublicKnowledgeReference[]> {
-  return []
-}
-
 export async function answerGroundedChat(
   event: ChatEvent,
   settings: ChatbotSettings,
@@ -707,23 +632,10 @@ export async function answerGroundedChat(
     references = []
   }
 
-  // Prefetch concrete evidence (articles, photos, videos) so the model — and
-  // the knowledge-mode answer — already carry proof links without depending on
-  // the model choosing to call a tool. For openers like "tôi vừa đi tù về" the
-  // model often answers straight from the knowledge bank and never reaches for
-  // a tool; the citizen would get a bare text answer with no links/photos/
-  // videos. This runs for both knowledge and AI modes: knowledge-mode renders
-  // these references the same way (links + snippets), and AI-mode injects them
-  // into the grounded system prompt so the model can weave them in. Errors are
-  // swallowed per-section so a failed articles query still yields videos.
-  // Prefetch evidence (articles / photos / videos) đã BỎ — để model tự suy luận
-  // khi nào cần gọi tool. Trước đây server tự đoán bằng keyword rồi nhét evidence
-  // vào prompt cho MỌI câu (kể cả "hi"), khiến chào hỏi cũng kèm 5 bài + 3 video.
-  // Giờ chỉ knowledge bank được nạp sẵn; bài viết / ảnh / video do model chủ động
-  // gọi search_c11_articles / search_c11_photos / search_c11_videos khi nó thấy
-  // câu trả lời sẽ thuyết phục hơn nếu có dẫn chứng. Người dùng yêu cầu: model
-  // phải tự nghĩ, không phải server đoán hộ.
-  void prefetchEvidence
+  // Chỉ knowledge bank được nạp sẵn. Bài viết / ảnh / video KHÔNG được server nạp
+  // trước: model tự gọi search_c11_articles / _photos / _videos khi thấy dẫn chứng
+  // làm câu trả lời thuyết phục hơn. (Nạp trước từng khiến cả "hi" cũng kèm 5 bài
+  // + 3 video.)
 
   // The business knowledge bank is the first routing decision and always wins.
   const mode = settings.mode === 'knowledge' ? 'knowledge' : 'ai'
@@ -780,18 +692,13 @@ export async function answerGroundedChat(
   try {
     const grounded = await callProvider(settings, dependencies, references, history, onChunk, onToolCall)
     if (grounded) {
-      // Prefetch đã bỏ — evidence (bài viết/ảnh/video) giờ do model tự
-      // quyết định gọi search_c11_articles / search_c11_photos / search_c11_videos.
-      // Không còn backstop nhét sẵn block vào answer: nếu model thấy cần dẫn
-      // chứng thì nó gọi tool, kết quả tool đã được nhét vào references và
-      // model tự dệt vào câu trả lời. Ép thêm block ở đây chỉ làm chào hỏi
-      // cũng kèm link thừa.
+      // Bài viết / ảnh / video do model tự gọi công cụ rồi dệt vào câu trả lời; không
+      // có block nào được ép thêm ở đây (sẽ làm chào hỏi cũng kèm link thừa).
       return {
         answer: grounded.text,
         // "Nguồn tham khảo" chỉ liệt kê trích dẫn kho kiến thức (chatbot_knowledge).
-        // Bài viết / ảnh / video (kind: 'evidence') đã được render ở trong thân câu
-        // trả lời qua `renderEvidenceBlock` ở trên — liệt kê lại ở đây là trùng lặp
-        // và là nguồn của khoảng trống dư thừa mà người dùng muốn bỏ.
+        // Bài viết / ảnh / video (kind: 'evidence') đã nằm trong thân câu trả lời do
+        // model dệt từ kết quả công cụ — liệt kê lại ở đây là trùng lặp.
         sources: references.filter(ref => ref.source && ref.kind !== 'evidence'),
         toolCalls: grounded.toolCalls,
         kind: 'provider',

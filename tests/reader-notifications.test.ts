@@ -175,7 +175,7 @@ describe('reader-scoped queries are bounded by the ticket', () => {
        * reading it off the query or the body.
        */
       assert.ok(
-        !/(query|body|payload)\s*[.\[]\s*['"]?readerId/.test(source),
+        !/(query|body|payload)\s*[.[]\s*['"]?readerId/.test(source),
         `${name} reads a readerId from the request`,
       )
     }
