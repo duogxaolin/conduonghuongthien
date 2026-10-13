@@ -1,7 +1,7 @@
 import { createHash } from 'node:crypto'
 import { type H3Event } from 'h3'
 import { getClientIp } from '../client-ip'
-import { recordRateLimitHit, type RateLimitRule } from '../rate-limit-store'
+import { recordRateLimitHit, type RateLimitDeps, type RateLimitRule } from '../rate-limit-store'
 import type { ChatbotSettings } from '../../db/schema'
 import type { SafeProviderRequestOptions, SafeProviderResponse } from './outbound'
 import { retrieveKnowledge, type PublicKnowledgeReference, type RetrievalEntry } from './retrieval'
@@ -49,6 +49,23 @@ const RATE_LIMIT_NAMESPACE = 'cdkt-chat-rate-limit-v1'
 /** AI provider calls per browser session. Guards spend, not abuse of the portal. */
 export const AI_QUOTA_RULE: RateLimitRule = { limit: 20, windowSeconds: 60 * 60 }
 
+/**
+ * Ceiling on AI provider calls per client address, charged **alongside** the
+ * session quota — not instead of it.
+ *
+ * The session quota alone is a per-token allowance, and a token costs nothing:
+ * `/api/public/chatbot/session` signs a fresh one for anybody (stateless HMAC, no
+ * database row), so asking for a new token resets the 20-call allowance to zero.
+ * The only thing left between that and the AI bill was the 10-requests-a-minute
+ * chat limit, i.e. up to 600 provider calls an hour from one address — thirty
+ * times the intended allowance. This ceiling is the missing bound.
+ *
+ * 100 an hour is five sessions' worth: room for a family or a small office
+ * behind one address, an order of magnitude under what token-farming reached.
+ * Visitors past it still get the approved-bank answer (see `answerGroundedChat`).
+ */
+export const AI_IP_CEILING_RULE: RateLimitRule = { limit: 100, windowSeconds: 60 * 60 }
+
 const AI_QUOTA_MESSAGE = `Bạn đã dùng hết lượt hỏi trợ lý AI trong giờ này. Vui lòng thử lại sau, hoặc liên hệ đường dây nóng ${CHATBOT_HOTLINE} để được hỗ trợ ngay.`
 
 function text(value: unknown): string { return typeof value === 'string' ? value.normalize('NFKC').trim() : '' }
@@ -95,10 +112,24 @@ export async function enforceChatRateLimit(key: string, limit: number, windowSec
  * next person's allowance. Sessions without a verified token fall back to the
  * IP key — otherwise dropping the header would be a way to opt out of the quota.
  */
-export async function enforceAiQuota(event: ChatEvent, sessionId: string | null): Promise<number | null> {
+export async function enforceAiQuota(
+  event: ChatEvent,
+  sessionId: string | null,
+  deps: RateLimitDeps = rateLimitDeps(),
+): Promise<number | null> {
   const key = sessionId ? `chat-ai:${sessionId}` : `chat-ai-ip:${clientKey(event)}`
-  const state = await recordRateLimitHit(key, storeRule(AI_QUOTA_RULE.limit, AI_QUOTA_RULE.windowSeconds), rateLimitDeps())
-  return state.blocked ? Math.max(1, state.retryAfterSeconds) : null
+  const state = await recordRateLimitHit(key, storeRule(AI_QUOTA_RULE.limit, AI_QUOTA_RULE.windowSeconds), deps)
+  if (state.blocked) return Math.max(1, state.retryAfterSeconds)
+
+  // A visitor with no token is already counted per address above, at the
+  // stricter limit; only a token holder needs the address ceiling on top.
+  if (!sessionId) return null
+  const ceiling = await recordRateLimitHit(
+    `chat-ai-ip-ceiling:${clientKey(event)}`,
+    storeRule(AI_IP_CEILING_RULE.limit, AI_IP_CEILING_RULE.windowSeconds),
+    deps,
+  )
+  return ceiling.blocked ? Math.max(1, ceiling.retryAfterSeconds) : null
 }
 
 export function validateChatRequestBody(body: unknown): void {

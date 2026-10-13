@@ -5,8 +5,8 @@ UI/UX work must read `openspec/ui-dna.md` (or the existing DNA doc) before any v
 **KHÔNG tự ý commit và push** — chỉ commit/push khi user yêu cầu tường minh.
 
 **Quy tắc giữ file nhỏ (đừng làm phình lại):**
-- `app/layouts/default.vue` (hiện 385 — skip-link a11y + `id="main-content"`) và `server/db/init.ts` (hiện 73) đã được tách cố ý từ 1301/1302 dòng — **KHÔNG thêm logic mới vào 2 file này**. Đặt component vào `app/components/layout/`, composable vào `app/composables/`, DDL bảng mới vào `server/db/schema-tables/<domain>.ts`. File vượt ~400 dòng → review tách ngay, đừng đợi ai báo.
-- Khi sửa code có ảnh hưởng đến deploy (đổi `.env`, đổi port, đổi lệnh build, thêm seed/migration, đổi container, đổi healthcheck, đổi `PUBLIC_BASE_URL`/domain, thêm biến môi trường) → **phải kiểm tra + update `production/`** (toolkit `manage.sh`/`README.md`/`migrations/`) để VPS deploy/update không bị lạc. Đừng chỉ sửa code rồi push — anh deploy bằng tay qua `manage.sh`, nếu toolkit không khớp code mới sẽ hỏng lúc deploy.
+- `app/layouts/default.vue` (hiện 401 — skip-link a11y + `id="main-content"` + `await useAsyncData` cho nav; đã nhỉnh hơn ngưỡng ~400 dòng, đừng thêm nữa) và `server/db/init.ts` (hiện 73) đã được tách cố ý từ 1301/1302 dòng — **KHÔNG thêm logic mới vào 2 file này**. Đặt component vào `app/components/layout/`, composable vào `app/composables/`, DDL bảng mới vào `server/db/schema-tables/<domain>.ts`. File vượt ~400 dòng → review tách ngay, đừng đợi ai báo.
+- Khi sửa code có ảnh hưởng đến deploy (đổi `.env`, đổi port, đổi lệnh build, thêm seed/migration, đổi container, đổi healthcheck, đổi `PUBLIC_BASE_URL`/domain, thêm biến môi trường) → **phải kiểm tra + update `production/`** (toolkit `manage.sh`/`README.md`/`migrations/`) để VPS deploy/update không bị lạc. Đừng chỉ sửa code rồi push — CI tự deploy khi merge `main` (job `deploy`), còn `manage.sh` dùng cho deploy lần đầu/đổi `.env`/migrate; nếu toolkit không khớp code mới sẽ hỏng lúc deploy.
 
 Cổng thông tin điện tử hỗ trợ người hoàn lương tái hòa nhập cộng đồng — Cục Cảnh sát quản lý tạm giữ, tạm giam và thi hành án hình sự tại cộng đồng (C11) - Bộ Công an.
 
@@ -73,6 +73,9 @@ Chi tiết Page Builder → § Kiến trúc Page Builder bên dưới. Lịch s�
 - **MFA & `/admin/profile`** (`server/utils/mfa/factors.ts`): 3 yếu tố độc lập `totp`/`email_otp`/`second_password` (pending→active), mã dự phòng bcrypt dùng 1 lần. Vé MFA `cdkt_mfa` 5 phút tách vé session `cdkt_admin`; chặn bằng claim `stage`. **Runbook xoay `JWT_SECRET`**: HKDF `cdkt-mfa-totp:v1` → TOTP vô hiệu, lùi về yếu tố khác/mã dự phòng, log `mfa.totp_secret_unreadable`. Xoay cũng đăng xuất toàn bộ reader (HKDF `cdkt-reader-session:v1`, vô hại). `CHATBOT_ENCRYPTION_SECRET` bảo vệ cả API key AI (`v1`) lẫn Google OAuth secret (`cdkt-google-oauth-secret:v1`). → `docs/decisions/realm-safety.md`.
 - **Rate limit** (`server/utils/rate-limit-store.ts`, `rate-limit-deps.ts`): bảng `rate_limit_counters`, mất DB lùi về memory — không mở toang. Login bước 2 giới hạn theo tài khoản (10/15 phút). Lấy deps qua `rateLimitDeps()`, không viết tay `{execute: pool ? … : null}` (19 file đã dùng helper). → `tests/shared-helpers.test.ts`.
 - **Luồng SSE của AI đọc ở MỘT nơi** (`server/services/ai-sse.ts` `readChatSse`, làm sạch "suy nghĩ" ở `ai-text-cleaner.ts`): `callAi` từng chép vòng lặp này 4 lần và mỗi lần sửa một bản lại quên bản khác (lỗi "0 kết quả", rồi câu trả lời bị lặp đôi khi model trả lời thẳng). Sửa luồng stream thì sửa ở đó. `tests/ai-gateway-streaming-paths.test.ts` chạy `callAi` thật với `fetch` giả.
+- **Không ghép dữ liệu người dùng vào SQL** (`sql.raw`, `pool.query` nối chuỗi): chỉ tham số hoá. Chuỗi do **model** truyền vào công cụ chatbot cũng là dữ liệu người dùng (prompt injection) — lỗ hổng SQLi `search_c11_articles` đã đóng bằng `server/utils/chatbot/article-search.ts`. Hằng số số nguyên bắt buộc dùng `intervalDays()` (`server/utils/sql-literals.ts`). `tests/security-chatbot-article-search.test.ts` biên dịch truy vấn sang SQL MySQL và chặn `sql.raw` trong `chat-policy.ts`.
+- **HTML hiển thị bằng `v-html` phải qua `sanitizeHtml` lúc ghi *và* lúc đọc** — kể cả bản dịch. Mọi nơi ghi `article_translations.content` đi qua `sanitizeHtml`/`sanitizeTranslationFields`; `sanitizeBlockData` đi vào `data.translations[lang]`; hai endpoint công khai (`articles/[slug]`, `pages/[slug]`) lọc lại để xử lý dữ liệu cũ. `tests/security-translation-html.test.ts` quét và chặn nơi ghi bỏ sót.
+- **Hạn mức AI** (`enforceAiQuota`, `chat-policy.ts`): 20 lượt/giờ theo phiên **và** trần 100 lượt/giờ theo IP (`AI_IP_CEILING_RULE`). Token phiên (`/api/public/chatbot/session`) cấp không giới hạn và không tốn gì — hạn mức tính trên token một mình sẽ bị reset bằng cách xin token mới. `tests/chatbot-ai-quota-ceiling.test.ts`.
 - **Client IP sau proxy** (`server/utils/client-ip.ts`, `TRUSTED_PROXY_IPS` + `NUXT_TRUSTED_PROXY_IPS`): mọi handler dùng `getClientIp(event)`, không `getRequestIP` trực tiếp (có test chặn). Chỉ đọc `x-forwarded-*` khi peer là proxy đã khai; duyệt phải→trái. Mặc định chỉ tin loopback; hỗ trợ CIDR IPv4, IPv6 từ chối. `resolveClientIp` thuần, có `spoofAttempt`.
 - **App bind loopback** (`docker-compose.yml`, `APP_BIND=127.0.0.1`): nginx proxy về loopback; `0.0.0.0` chỉ khi không có proxy.
 - **Lượt xem bài viết** (`server/services/article-views.ts`): `real_views` vs `fabricated_views` + `source_category='boost'` (không trong allowlist công khai). Đếm từ browser sau mount (`ArticleDetail.vue`), nuốt lỗi. Chống F5 30 phút qua `rate_limit_counters` (`deriveDailyVisitorToken`, `getClientIp`). Endpoint luôn `202`. Boost `instant`/`gradual` (tick 60s, lock `cdkt:articles:view-boost`, `computeBoostDue` theo thời gian tuyệt đối), audit `boost` trong cùng transaction, `started_at/ends_at` chỉ qua Drizzle (không `pool.query` trần — lệch 7h). Modal tách 3 ô, nguồn truy cập loại `boost`. Không backfill, không scope retention. → `docs/decisions/data-layer.md`.
@@ -81,13 +84,13 @@ Chi tiết Page Builder → § Kiến trúc Page Builder bên dưới. Lịch s�
 - **Log** (`server/utils/logger.ts`): 1 dòng JSON, tự che bí mật; `SECURITY_EVENTS` cho cảnh báo.
 - **Sao lưu** (`scripts/backup-db.sh`): dump→verify→xoay vòng; bản hỏng bị xoá.
 - **RAM** (`npm run check:resources`): `MYSQL_MEM_LIMIT`/`APP_MEM_LIMIT` mặc định `1g/1g`; không đề xuất CPU.
-- **CI** (`.github/workflows/ci.yml`): push chỉ trên `main` (không `["**"]`), typecheck là bước trong job `test`. Đọc job cancelled: `runner:""` + `steps_run:0` = chưa cấp máy.
+- **CI** (`.github/workflows/ci.yml`): push chỉ trên `main` (không `["**"]`), typecheck là bước **chặn** trong job `unit-tests` (không `continue-on-error`, `exit $status`; `tests/ops-scripts.test.ts` canh cả hai). **Job `deploy` đang BẬT (`if: true`): merge vào `main` là tự build image + SSH lên VPS ngay** — bản vá/tính năng đã lên production khi CI xanh. Đọc job cancelled: `runner:""` + `steps_run:0` = chưa cấp máy.
 
 ---
 
-### Quy ước tầng dữ liệu (áp cho mã MỚI, không sửa 168 endpoint cũ)
+### Quy ước tầng dữ liệu (áp cho mã MỚI, không sửa 172 endpoint cũ)
 
-Hiện 326 endpoint: 168 `getDb()` thẳng, ~112 qua `services/**`.
+Hiện 331 endpoint: 172 `getDb()` thẳng, 205 có import `services/**` (một số endpoint dùng cả hai).
 
 **Bắt buộc viết trong `server/services/**` khi:** (1) ghi hàng + `activity_logs` (phải 1 transaction), (2) nhiều lệnh ghi phải cùng thành công, (3) ≥2 nơi gọi, (4) quy tắc nghiệp vụ không diễn đạt bằng query.
 
@@ -129,10 +132,10 @@ Chi tiết & kiểm chứng âm tính → `docs/decisions/data-layer.md`.
 > Chi tiết → `docs/decisions/README.md`.
 
 - **i18n**: 567 keys trong `default-translations-seed.ts` (405 fallback hardcoded trong `useI18n.ts`), **tất cả ngôn ngữ kể cả `vi` đều fetch DB** (`server/api/public/translations/[code].get.ts`); `hardcodedDictionary` chỉ còn fallback khi DB chưa seed / API hỏng / SSR chưa fetch xong. 50 file public đã dùng `t()` (media/index, news/[id], ArticleComments, blocks 5 file, default.vue, ChatWidget, assistant, profile…). Admin `/admin/languages` sửa mọi lang kể cả `vi` → frontend hiển thị đúng. Admin giữ hardcoded (không i18n). Mở rộng thêm trang public là feature work, **không phải nợ kỹ thuật** — không ghi vào audit debt.
-- **`any` đã xoá sạch trong production** — 0 vết trong `.vue` SFC (trước đây 17), 0 trong `app/`/`server/`/`scripts/` code (comment `errorMessage.ts` không tính). **142 vết `any` còn lại trong `tests/`** (~22 file) là mock/stub cố ý — test runner không biên dịch type, `any` ở đó không rò rỉ ra production. Đừng báo "còn ~20 vết any ở SFC" — đã đóng commit `ca4f52e` 2026-10. `as unknown as` không dùng để đọc hình dạng — khai báo phản chiếu.
-- **Typecheck sạch**, ghim TS ^5 (7.x thiếu `lib/tsc.js`). `globalThis.useRuntimeConfig` cần `server/plugins/runtime-config-global.ts`.
-- **Test**: 14 suite `*-integration` + E2E (`E2E_DB_PORT` etc.), MFA spec dọn ở `afterEach`, LLM guard là lớp duy nhất bắt TDZ/insertId/DATETIME. Kiểm văn bản mã nguồn chứng minh cấu trúc, không chứng minh hành vi. Tổng 2078 test, 0 fail khi CI sạch (14 skip = 14 integration cần MySQL).
-- **Lint/Format**: `npm run lint` (ESLint v9 flat config, 0 error / 81 warning — cố ý warn không đỏ CI) + `npm run format` (Prettier). KHÔNG auto-format toàn codebase — sẽ đè diff lớn, chỉ format file chạm. Không sink vào `build`/`test` (test runner Node thuần không cài thêm).
+- **`any` đã xoá sạch trong production** — 0 vết trong `.vue` SFC (trước đây 17), 0 trong `app/`/`server/`/`scripts/` code (comment `errorMessage.ts` không tính). **154 vết `any` còn lại trong `tests/`** (22 file) là mock/stub cố ý — test runner không biên dịch type, `any` ở đó không rò rỉ ra production. Đừng báo "còn ~20 vết any ở SFC" — đã đóng commit `ca4f52e` 2026-10. `as unknown as` không dùng để đọc hình dạng — khai báo phản chiếu.
+- **Typecheck sạch (0 lỗi) và là cổng chặn CI** — một lỗi kiểu làm đỏ job `unit-tests`, không còn lọt vào `main`. Ghim TS ^5 (7.x thiếu `lib/tsc.js`). `globalThis.useRuntimeConfig` cần `server/plugins/runtime-config-global.ts`.
+- **Test**: 14 suite `*-integration` + E2E (`E2E_DB_PORT` etc.), MFA spec dọn ở `afterEach`, LLM guard là lớp duy nhất bắt TDZ/insertId/DATETIME. Kiểm văn bản mã nguồn chứng minh cấu trúc, không chứng minh hành vi. Tổng 2438 test, 0 fail khi CI sạch (14 skip = 14 integration cần MySQL).
+- **Lint/Format**: `npm run lint` (ESLint v9 flat config, 0 error / 250 warning (phần lớn: `any` trong `tests/` và biến không dùng) — cố ý warn không đỏ CI) + `npm run format` (Prettier). KHÔNG auto-format toàn codebase — sẽ đè diff lớn, chỉ format file chạm. Không sink vào `build`/`test` (test runner Node thuần không cài thêm).
 
 ### Nợ kỹ thuật đã đóng (đừng báo lại)
 
@@ -140,11 +143,11 @@ Audit 2026-09 ghi 3 nợ, **tất cả đã đóng 2026-10-05**. Agent sau rà c
 
 1. **`default.vue` 1301 → 382 dòng** ✅ `f125e09`. Tách 7 component `app/components/layout/Default*.vue` + 5 composable. Caveat "1282 dòng hồi quy" đã đóng. **Đừng báo "default.vue phình 1200+"** — đã tách xong.
 2. **`init.ts` 1302 → 73 dòng** ✅ `61fff49`. Tách 7 file `server/db/schema-tables/*.ts` theo domain. `db:drift` xanh 635 cột/62 bảng (trước 624/61). **Đừng báo "init.ts phình"** — đã tách xong.
-3. **`any` 20 vết → 0 trong production** ✅ `ca4f52e`. 4 kiểu dùng chung `UnknownError`/`CaughtError`/`Nullable<T>`/`HttpEventLike`. **Đừng báo "còn ~20 vết any ở SFC"** — SFC sạch, 142 vết còn lại ở `tests/` là mock cố ý.
+3. **`any` 20 vết → 0 trong production** ✅ `ca4f52e`. 4 kiểu dùng chung `UnknownError`/`CaughtError`/`Nullable<T>`/`HttpEventLike`. **Đừng báo "còn ~20 vết any ở SFC"** — SFC sạch, 154 vết còn lại ở `tests/` là mock cố ý.
 
 Hai hạn chế **có chủ đích, không phải nợ** (đừng đề xuất fix diện rộng):
 - **i18n** — 30+ file public đã dùng `t()`, tất cả lang kể cả `vi` fetch DB (hardcoded chỉ fallback). Mở rộng thêm trang là feature work.
-- **168 endpoint cũ `getDb()` thẳng** — quy ước CLAUDE.md "áp cho mã MỚI, không sửa 168 endpoint cũ". Refactor diện rộng endpoint đang chạy ổn định rủi ro > lợi. Endpoint mới viết trong `server/services/**`.
+- **172 endpoint cũ `getDb()` thẳng** — quy ước CLAUDE.md "áp cho mã MỚI, không sửa 172 endpoint cũ". Refactor diện rộng endpoint đang chạy ổn định rủi ro > lợi. Endpoint mới viết trong `server/services/**`.
 
 Phân biệt khi đề xuất sửa: (a) **gap chưa đóng** → fix, (b) **guarded exception** (test guard chặn) → KHÔNG fix, test sẽ đỏ, (c) **nợ đã đóng** → đừng reopen, (d) **hạn chế có chủ đích** → thiết lập ROI trước khi động.
 
@@ -209,7 +212,7 @@ docker compose up --build -d
 
 ### 3.1. `production/` — toolkit quản trị VPS (aaPanel)
 
-Folder **`production/`** trong repo là một cửa vào để deploy/update/migrate trên VPS — không cần nhớ lệnh `docker compose` dài, chạy `manage.sh` rồi làm theo menu. **Đây là cách deploy chính trên production** (CI build image + push GHCR, nhưng auto-deploy đã tắt `if: false` — deploy bằng tay qua script).
+Folder **`production/`** trong repo là một cửa vào để deploy/update/migrate trên VPS — không cần nhớ lệnh `docker compose` dài, chạy `manage.sh` rồi làm theo menu. **Đây là cách deploy chính trên production** (CI build image + push GHCR rồi **tự SSH deploy** — job `deploy` `if: true`; `manage.sh` dùng cho deploy lần đầu, đổi `.env`/port/domain, import SQL, hoặc khi CI deploy hỏng).
 
 ```
 production/

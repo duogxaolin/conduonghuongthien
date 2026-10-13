@@ -106,7 +106,9 @@ chmod +x manage.sh
 
 ### Cập nhật code mới
 
-Dev push code lên `main`. CI build image + push GHCR (nhưng **không tự deploy** từ khi tắt auto-deploy). Anh deploy bằng tay:
+Dev merge code vào `main`. **CI tự deploy**: build image → push GHCR → SSH vào VPS → `docker pull` + `docker compose up -d` → chờ healthcheck, hỏng thì tự lùi về image trước (job `deploy` trong `.github/workflows/ci.yml`, `if: true`; chi tiết `CI-CD.md`). **Merge vào `main` là lên production ngay** — chỉ merge khi đã sẵn sàng.
+
+Không cần làm gì trên VPS cho một lần cập nhật code thường. Chạy tay `manage.sh` chỉ khi cần (deploy lần đầu, đổi `.env`/port/domain, import SQL, hoặc CI deploy hỏng):
 
 ```bash
 ssh root@vps
@@ -133,13 +135,13 @@ cd production
 
 ---
 
-## Bật lại auto-deploy (tuỳ chọn)
+## Tắt auto-deploy (tuỳ chọn)
 
-Hiện job `deploy` trong `.github/workflows/ci.yml` có `if: false` (tắt). Muốn CI tự deploy mỗi push main:
+Hiện job `deploy` trong `.github/workflows/ci.yml` có `if: true` (bật). Muốn CI chỉ build image mà không tự lên VPS (rồi deploy bằng `./manage.sh` → 2):
 
 ```yaml
   deploy:
-    if: false    # → đổi thành if: true (hoặc xoá dòng if)
+    if: false    # đổi từ true
 ```
 
 ---
@@ -149,8 +151,8 @@ Hiện job `deploy` trong `.github/workflows/ci.yml` có `if: false` (tắt). Mu
 **Q: Đổi mật khẩu admin?**
 A: Vào `$PUBLIC_BASE_URL/admin/profile` sau đăng nhập. Mật khẩu đầu nằm trong `.env` (`ADMIN_PASSWORD`) — chỉ dùng lúc seed, đổi sau không cần sửa `.env`.
 
-**Q: Sao CI build image nhưng VPS không tự lên?**
-A: Auto-deploy đã tắt. Chạy `./manage.sh` → 2 (Update) để pull + restart bằng tay.
+**Q: Merge vào `main` rồi mà VPS không lên bản mới?**
+A: Auto-deploy đang bật, nên xem job `Deploy to VPS` trong Actions (có thể thiếu secret, hoặc container mới không healthy nên đã tự lùi). Cần gấp thì chạy `./manage.sh` → 2 (Update) để pull + restart bằng tay.
 
 **Q: File SQL nào nên thả vào `migrations/`?**
 A: File `.sql` chỉ `INSERT` (thêm data, không `DROP TABLE`). Script tự detect, không ghi đè file đã import trừ khi xoá marker.

@@ -1,13 +1,13 @@
-<script setup lang="ts">
+<script setup lang="ts" generic="T extends SearchableDoc">
 import { detectIntent, searchDocs, type SearchableDoc, type SearchResult, type SearchIntent } from '~/utils/docs/search'
 
-const props = defineProps<{ docs: SearchableDoc[] }>()
-const emit = defineEmits<{ results: [SearchResult[]], query: [string] }>()
+const props = defineProps<{ docs: T[] }>()
+const emit = defineEmits<{ results: [SearchResult<T>[]], query: [string] }>()
 
 const query = defineModel<string>({ default: '' })
 
 const intent = computed<SearchIntent>(() => detectIntent(query.value))
-const results = computed<SearchResult[]>(() => {
+const results = computed<SearchResult<T>[]>(() => {
   if (!query.value.trim()) return []
   return searchDocs(props.docs, query.value)
 })

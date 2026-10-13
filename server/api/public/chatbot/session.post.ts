@@ -13,6 +13,12 @@ import { analyticsHmacSecret } from '../../../utils/runtime-config'
  * Handing out a token grants nothing on its own: it only lets the holder write
  * a transcript under one id. What it prevents is writing under *someone else's*
  * id.
+ *
+ * It is also unmetered on purpose — signing is stateless and costs nothing — which
+ * is why a token must never carry an allowance that a fresh token resets: the AI
+ * quota has a per-address ceiling next to the per-session one
+ * (`AI_IP_CEILING_RULE` in chat-policy.ts), so minting tokens in a loop buys
+ * nothing.
  */
 export default defineEventHandler(async (event) => {
   const secret = analyticsHmacSecret(event)
