@@ -2,7 +2,7 @@
 import fs from 'node:fs/promises'
 import path from 'node:path'
 
-import { and, asc, eq, isNull, lte, or } from 'drizzle-orm'
+import { asc, eq, isNull, lte, or } from 'drizzle-orm'
 
 import { mediaAssetCleanup, mediaItems } from '../db/schema'
 import { getDb, type Database } from '../utils/db'

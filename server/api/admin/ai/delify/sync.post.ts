@@ -3,7 +3,7 @@ import { getDb } from '../../../../utils/db'
 import { aiProviders, aiModelPricing, aiUsageLogs, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { decryptAiSecret } from '../../../../utils/ai/crypto'
-import { logInfo, logWarn } from '../../../../utils/logger'
+import { logInfo } from '../../../../utils/logger'
 
 /**
  * Sync model pricing AND request history from Delify Router API.

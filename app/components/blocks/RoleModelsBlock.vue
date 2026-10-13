@@ -196,6 +196,11 @@ const goToSlide = (idx: number) => {
 }
 
 const startAutoplay = () => {
+  // Trình duyệt thôi. `watch(list, …, { immediate: true })` bên dưới chạy cả lúc
+  // render phía server, và ở đó `onUnmounted` không bao giờ được gọi — mỗi lượt
+  // render trang chủ sẽ để lại một `setInterval` 3,5 giây chạy mãi trong tiến
+  // trình Node, giữ nguyên cả component. Nuxt 4.6 cảnh báo `NUXT_E1004`.
+  if (!import.meta.client) return
   stopAutoplay()
   autoplayTimer = setInterval(() => {
     const el = track.value

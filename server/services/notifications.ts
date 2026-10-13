@@ -23,7 +23,7 @@
  * rows the table exists for. Same reasoning as GET /api/public/reader/comments.
  */
 
-import { and, desc, eq, inArray, isNull, lt, or, sql } from 'drizzle-orm'
+import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 
 import { getDb } from '../utils/db'
 import { articleComments, articles, mediaItems, readerNotifications } from '../db/schema'

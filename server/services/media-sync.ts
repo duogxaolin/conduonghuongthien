@@ -34,11 +34,10 @@
  * chạy chồng: moving 3000 file giữa local và R2 là race nếu chạy song song.
  */
 import { promises as fs } from 'node:fs'
-import path from 'node:path'
 import { eq, sql } from 'drizzle-orm'
 
 import { getDb, getPool } from '../utils/db'
-import { media, activityLogs, articles } from '../db/schema'
+import { media, activityLogs } from '../db/schema'
 import { uploadLocalFile, deleteLocalFile } from '../utils/media-local'
 import { uploadR2File, deleteR2File, getR2Object, headR2Object, type R2Config } from '../utils/media-r2'
 import { loadR2Config } from './media'

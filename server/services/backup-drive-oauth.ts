@@ -19,11 +19,7 @@ import { eq } from 'drizzle-orm'
 
 import { getDb } from '../utils/db'
 import { activityLogs, backupDriveOauth, type BackupDriveOauth } from '../db/schema'
-import {
-  decryptRefreshToken,
-  encryptRefreshToken,
-  type EncryptedRefreshToken,
-} from '../utils/backup-drive-oauth-crypto'
+import { decryptRefreshToken, encryptRefreshToken } from '../utils/backup-drive-oauth-crypto'
 
 /** Single-row table, same convention as `google_oauth_settings` / `chatbot_settings`. */
 export const BACKUP_DRIVE_OAUTH_ID = 1

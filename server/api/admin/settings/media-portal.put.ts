@@ -25,7 +25,6 @@ import {
   parseMediaInteger,
   MEDIA_BOUNDS,
 } from '../../../utils/media-config'
-import { MEDIA_PORTAL_SETTING_KEYS } from '../../../services/media-config-service'
 import { encryptVideoR2Secret } from '../../../utils/media-r2-secret'
 
 type FieldSpec = {

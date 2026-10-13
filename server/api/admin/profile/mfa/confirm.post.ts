@@ -9,7 +9,7 @@
 import { and, eq, gt, lt, sql } from 'drizzle-orm'
 import { readAffectedRows } from '../../../../utils/affected-rows'
 import { getDb } from '../../../../utils/db'
-import { userMfaFactors, users, activityLogs } from '../../../../db/schema'
+import { userMfaFactors, activityLogs } from '../../../../db/schema'
 import { verifyPassword } from '../../../../utils/auth'
 import { logInfo, SECURITY_EVENTS } from '../../../../utils/logger'
 import { isExpired, verifyOneTimeCode, EMAIL_CODE_MAX_ATTEMPTS } from '../../../../utils/mfa/codes'

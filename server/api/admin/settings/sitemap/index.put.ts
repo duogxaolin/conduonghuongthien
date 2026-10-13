@@ -1,4 +1,3 @@
-import { eq } from 'drizzle-orm'
 
 import { getDb } from '../../../../utils/db'
 import { settings, activityLogs } from '../../../../db/schema'
