@@ -53,6 +53,14 @@ const LEGACY_HISTORY_KEY = 'cdkt_chat_history_v2'
 const conversations = ref<StoredConversation[]>([])
 const activeId = ref<string>('')
 const isSubmitting = ref(false)
+/**
+ * The reply is in the transcript and being written. `isSubmitting` stays true
+ * until the stream closes; the pending indicator must not, or it sits under an
+ * answer that is already arriving and then vanishes at the end, jolting the
+ * transcript up by its own height.
+ */
+const isReplyStreaming = ref(false)
+const isAwaitingFirstWord = computed(() => isSubmitting.value && !isReplyStreaming.value)
 const botInput = ref('')
 const botInputError = ref('')
 const quickQuestions = ref<{ id: string, question: string }[]>([])
@@ -374,11 +382,43 @@ function parseSseLine(line: string, target: { text: string, message: ChatMessage
   }
 }
 
+// ─── Stream → transcript, once per frame ─────────────────────────────────────
+
+/** One per request, so an aborted request can never cancel the next one's frame. */
+type StreamFlush = { run: () => void, handle: number | null, closed: boolean }
+
+const canUseFrames = () => import.meta.client && typeof requestAnimationFrame === 'function'
+
+function scheduleStreamFlush(pending: StreamFlush): void {
+  if (pending.closed || pending.handle !== null) return
+  const fire = () => {
+    pending.handle = null
+    if (!pending.closed) pending.run()
+  }
+  pending.handle = canUseFrames() ? requestAnimationFrame(fire) : setTimeout(fire, 16) as unknown as number
+}
+
+function cancelStreamFlush(pending: StreamFlush): void {
+  pending.closed = true
+  if (pending.handle === null) return
+  if (canUseFrames()) cancelAnimationFrame(pending.handle)
+  else clearTimeout(pending.handle)
+  pending.handle = null
+}
+
+/** Runs the queued copy immediately — a background tab paints no frames. */
+function flushStreamNow(pending: StreamFlush): void {
+  if (pending.closed) return
+  cancelStreamFlush(pending)
+  pending.run()
+}
+
 async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => void): Promise<boolean> {
   if (isSubmitting.value) return false
   const requestSequence = ++botRequestSequence
   const conversation = activeConversation.value
   isSubmitting.value = true
+  isReplyStreaming.value = false
   botInputError.value = ''
   chatRequestController = new AbortController()
   const requestController = chatRequestController
@@ -400,6 +440,7 @@ async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => vo
   onScroll?.()
 
   const accumulator = { text: '', message: botMessage }
+  const streamFlush: StreamFlush = { run: () => {}, handle: null, closed: false }
 
   try {
     const token = await ensureSessionToken(conversation)
@@ -422,6 +463,33 @@ async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => vo
     let doneEvent = false
     let isStreamPushed = false
 
+    // Copies what has arrived so far onto the transcript. Every copy re-renders
+    // the whole transcript and re-reads its height, so it runs at most once per
+    // painted frame however many SSE events landed in between — a provider that
+    // streams token by token would otherwise cost one full render per token,
+    // which is what made long answers stutter on phones.
+    const flushToTranscript = () => {
+      const hasContentOrTools = Boolean(accumulator.text || (botMessage.toolCalls && botMessage.toolCalls.length > 0))
+      if (!hasContentOrTools) return
+      if (!isStreamPushed) {
+        isStreamPushed = true
+        botMessage.isStreaming = true
+        conversation.messages.push(botMessage)
+        if (requestSequence === botRequestSequence) isReplyStreaming.value = true
+        // The server has answered, so the question is no longer "sending". Clearing
+        // it here lands in the same frame as the reply bubble; clearing it when the
+        // stream closes shrank the question under a finished answer and pulled the
+        // whole answer up by that line's height.
+        const question = conversation.messages.find(item => item.id === userMessage.id)
+        if (question?.status === 'pending') question.status = undefined
+      }
+      const liveTracked = conversation.messages[conversation.messages.length - 1]!
+      liveTracked.text = accumulator.text
+      liveTracked.toolCalls = botMessage.toolCalls
+      onScroll?.()
+    }
+    streamFlush.run = flushToTranscript
+
     while (!doneEvent) {
       const { done, value } = await reader.read()
       buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
@@ -430,24 +498,13 @@ async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => vo
       for (const line of lines) {
         if (line.trim() === 'data: [DONE]') { doneEvent = true; break }
         parseSseLine(line, accumulator)
-        const hasContentOrTools = Boolean(accumulator.text || (botMessage.toolCalls && botMessage.toolCalls.length > 0))
-        if (hasContentOrTools && !isStreamPushed) {
-          isStreamPushed = true
-          botMessage.isStreaming = true
-          conversation.messages.push(botMessage)
-          const liveTracked = conversation.messages[conversation.messages.length - 1]!
-          liveTracked.text = accumulator.text
-          liveTracked.toolCalls = botMessage.toolCalls
-          onScroll?.()
-        } else if (isStreamPushed) {
-          const liveTracked = conversation.messages[conversation.messages.length - 1]!
-          liveTracked.text = accumulator.text
-          liveTracked.toolCalls = botMessage.toolCalls
-          onScroll?.()
-        }
       }
+      scheduleStreamFlush(streamFlush)
       if (done) break
     }
+    // Whatever is still queued lands now, before playback and persistence read
+    // the transcript.
+    flushStreamNow(streamFlush)
     if (buffer) parseSseLine(buffer, accumulator)
     if (!accumulator.text.trim()) throw new Error('EMPTY_CHATBOT_RESPONSE')
     if (!botMessage.kind) botMessage.kind = 'unavailable'
@@ -475,6 +532,8 @@ async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => vo
     }
     return true
   } catch (error) {
+    // A frame still queued would push the bot message back in after it is removed.
+    cancelStreamFlush(streamFlush)
     // The bot message is only in the transcript if the reply arrived, so a failure
     // before that point has nothing to remove. Removing it unconditionally would
     // have deleted whichever message happened to be last.
@@ -487,6 +546,7 @@ async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => vo
   } finally {
     if (requestSequence === botRequestSequence) {
       isSubmitting.value = false
+      isReplyStreaming.value = false
       chatRequestController = null
     }
     onScroll?.()
@@ -701,6 +761,7 @@ export function useChatbot() {
     activeConversation,
     chatMessages,
     isSubmitting,
+    isAwaitingFirstWord,
     botInput,
     botInputError,
     quickQuestions,

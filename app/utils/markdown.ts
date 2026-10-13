@@ -31,14 +31,34 @@ function escapeHtml(str: string): string {
 }
 
 export function renderChatMarkdown(md: string): string {
-  if (!md) return ''
+  return renderChatMarkdownBlocks(md).join('\n')
+}
 
-  // 1. Clean thinking tokens & escape all raw HTML entities first (strict anti-XSS)
-  let text = escapeHtml(cleanAiText(md))
+/**
+ * Same output as `renderChatMarkdown`, split into its top-level blocks.
+ *
+ * A streamed answer is re-rendered on every chunk. One `v-html` for the whole
+ * answer replaces every node on every chunk, so an article cover image that
+ * arrived early was destroyed and rebuilt each time more text came in: it
+ * collapsed to zero height until decoded again, and the transcript jumped. When
+ * each block is bound separately, Vue rewrites only a block whose HTML actually
+ * changed — while text is appended that is only the last one — and the blocks
+ * above it, images included, stay the same DOM nodes.
+ */
+export function renderChatMarkdownBlocks(md: string): string[] {
+  if (!md) return []
 
-  // 2. Code blocks (```lang ... ```)
+  // 1. Clean thinking tokens & escape all raw HTML entities first (strict anti-XSS).
+  //    U+E000 (private use) is reserved for the code-block placeholders below.
+  let text = escapeHtml(cleanAiText(md.replace(/\uE000/g, '')))
+
+  // 2. Code blocks (```lang ... ```) are lifted out onto their own line before
+  //    any inline rule runs. Left in place, the line pass below split them at
+  //    every newline and the inline rules rewrote `**`/`_` inside the code.
+  const codeBlocks: string[] = []
   text = text.replace(/```([a-zA-Z0-9_-]*)\n([\s\S]*?)```/g, (_, _lang, code: string) => {
-    return `<pre class="my-2 rounded-lg bg-[#111c12] p-3 text-xs text-white overflow-x-auto font-mono"><code>${code.trim()}</code></pre>`
+    codeBlocks.push(`<pre class="my-2 rounded-lg bg-[#111c12] p-3 text-xs text-white overflow-x-auto font-mono"><code>${code.trim()}</code></pre>`)
+    return `\n\uE000${codeBlocks.length - 1}\uE000\n`
   })
 
   // 3. Inline code (`code`)
@@ -54,16 +74,20 @@ export function renderChatMarkdown(md: string): string {
   text = text.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<em>$1</em>')
 
   // 7a. Media / Images ![alt](url) — must be safe https://, http:// or /
+  //     Both cards reserve their height up front (`aspect-video` + intrinsic
+  //     width/height). Without it the image is 0px tall until it decodes, then
+  //     pushes everything below it down by ~200px — that shift is what dropped
+  //     the transcript out of "follow the newest text" mid-answer.
   text = text.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)"']+|\/[^\s)"']*)\)/g, (_, alt, rawUrl) => {
     const safeUrl = rawUrl.trim()
     const safeAlt = (alt || '').trim()
     const isVideo = safeUrl.includes('/media/') || safeAlt.toLowerCase().includes('video')
 
     if (isVideo) {
-      return `<div class="chat-media-card chat-video-card my-2.5 overflow-hidden rounded-xl border border-[#c8d6c9] bg-[#f0f7f1] shadow-xs max-w-sm"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="relative block group overflow-hidden"><img src="${safeUrl}" alt="${safeAlt || 'Video thumbnail'}" class="w-full aspect-video object-cover block bg-[#122815]" loading="lazy" onerror="this.style.display='none'" /><div class="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/40 transition-colors"><span class="w-10 h-10 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><i class="fa-solid fa-play text-sm ml-0.5" aria-hidden="true"></i></span></div></a><div class="p-2.5 flex items-center justify-between gap-2 bg-white"><span class="text-xs font-bold text-[#122815] truncate">${safeAlt || 'Xem Video'}</span><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-[0.72rem] font-bold text-[#2c6e33] underline hover:text-[#1e4620] shrink-0">Xem ngay &rarr;</a></div></div>`
+      return `<div class="chat-media-card chat-video-card my-2.5 overflow-hidden rounded-xl border border-[#c8d6c9] bg-[#f0f7f1] shadow-xs max-w-sm"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="relative block group overflow-hidden"><img src="${safeUrl}" alt="${safeAlt || 'Video thumbnail'}" width="640" height="360" class="w-full aspect-video object-cover block bg-[#122815]" loading="lazy" decoding="async" onerror="this.style.display='none'" /><div class="absolute inset-0 bg-black/30 flex items-center justify-center group-hover:bg-black/40 transition-colors"><span class="w-10 h-10 rounded-full bg-red-600 text-white flex items-center justify-center shadow-lg group-hover:scale-110 transition-transform"><i class="fa-solid fa-play text-sm ml-0.5" aria-hidden="true"></i></span></div></a><div class="p-2.5 flex items-center justify-between gap-2 bg-white"><span class="text-xs font-bold text-[#122815] truncate">${safeAlt || 'Xem Video'}</span><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="text-[0.72rem] font-bold text-[#2c6e33] underline hover:text-[#1e4620] shrink-0">Xem ngay &rarr;</a></div></div>`
     }
 
-    return `<div class="chat-media-card chat-image-card my-2.5 overflow-hidden rounded-xl border border-[#e2ece3] bg-white shadow-xs max-w-sm"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="block group overflow-hidden"><img src="${safeUrl}" alt="${safeAlt || 'Hình ảnh'}" class="w-full max-h-56 object-cover block group-hover:scale-[1.02] transition-transform duration-300" loading="lazy" /></a>${safeAlt ? `<div class="p-2 text-center text-[0.72rem] font-medium text-[#667768] bg-[#fcfdfc] border-t border-[#f0f4f0]">${safeAlt}</div>` : ''}</div>`
+    return `<div class="chat-media-card chat-image-card my-2.5 overflow-hidden rounded-xl border border-[#e2ece3] bg-white shadow-xs max-w-sm"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="block group overflow-hidden"><img src="${safeUrl}" alt="${safeAlt || 'Hình ảnh'}" width="640" height="360" class="w-full aspect-video object-cover block bg-[#f0f4ef] group-hover:scale-[1.02] transition-transform duration-300" loading="lazy" decoding="async" /></a>${safeAlt ? `<div class="p-2 text-center text-[0.72rem] font-medium text-[#667768] bg-[#fcfdfc] border-t border-[#f0f4f0]">${safeAlt}</div>` : ''}</div>`
   })
 
   // 7b. Links [text](url) — must be safe https://, http:// or /
@@ -74,46 +98,61 @@ export function renderChatMarkdown(md: string): string {
   text = text.replace(/^## (.*$)/gim, '<h3 class="m-0 mt-2.5 mb-1 text-base font-extrabold text-inherit">$1</h3>')
   text = text.replace(/^# (.*$)/gim, '<h2 class="m-0 mt-3 mb-1 text-lg font-extrabold text-inherit">$1</h2>')
 
-  // 9. Process line-by-line for ordered and unordered lists.
+  // 9. Process line-by-line into blocks: paragraphs, lists, and the lines that
+  //    are blocks on their own (headings, media cards, code).
   //    Consecutive non-empty, non-list lines are grouped into a single <p> so
   //    soft line breaks don't each get their own vertical margin — that was the
   //    source of the "khoảng cách rộng" the user reported. Blank lines separate
   //    paragraphs; we don't emit extra spacer divs because the paragraph margin
   //    already gives breathing room.
   const lines = text.split('\n')
-  const out: string[] = []
-  let inUl = false
-  let inOl = false
+  const blocks: string[] = []
+  let list: { tag: 'ul' | 'ol', items: string[] } | null = null
   let paraBuffer: string[] = []
 
   const flushPara = () => {
     if (paraBuffer.length) {
-      out.push(`<p class="m-0 my-0.5 leading-relaxed break-words [overflow-wrap:anywhere] whitespace-pre-wrap">${paraBuffer.join('\n')}</p>`)
+      blocks.push(`<p class="m-0 my-0.5 leading-relaxed break-words [overflow-wrap:anywhere] whitespace-pre-wrap">${paraBuffer.join('\n')}</p>`)
       paraBuffer = []
     }
   }
+  const flushList = () => {
+    if (!list) return
+    const open = list.tag === 'ul'
+      ? '<ul class="m-0 my-1 space-y-1 pl-5 list-disc text-inherit">'
+      : '<ol class="m-0 my-1 space-y-1 pl-5 list-decimal text-inherit">'
+    blocks.push(`${open}\n${list.items.join('\n')}\n</${list.tag}>`)
+    list = null
+  }
+  const addItem = (tag: 'ul' | 'ol', item: string) => {
+    flushPara()
+    if (list && list.tag !== tag) flushList()
+    if (!list) list = { tag, items: [] }
+    list.items.push(item)
+  }
 
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i]!
+  for (const line of lines) {
     const ulMatch = line.match(/^(\s*)([-*])\s+(.*)/)
     const olMatch = line.match(/^(\s*)(\d+)\.\s+(.*)/)
+    const code = line.match(/^\uE000(\d+)\uE000$/)
 
     if (ulMatch) {
-      flushPara()
-      if (inOl) { out.push('</ol>'); inOl = false }
-      if (!inUl) { out.push('<ul class="m-0 my-1 space-y-1 pl-5 list-disc text-inherit">'); inUl = true }
       const isSubItem = ulMatch[1] && ulMatch[1].length >= 2
       const indentClass = isSubItem ? 'pl-2 ' : ''
-      out.push(`<li class="${indentClass}leading-relaxed">${ulMatch[3]}</li>`)
+      addItem('ul', `<li class="${indentClass}leading-relaxed">${ulMatch[3]}</li>`)
     } else if (olMatch) {
-      flushPara()
-      if (inUl) { out.push('</ul>'); inUl = false }
-      if (!inOl) { out.push('<ol class="m-0 my-1 space-y-1 pl-5 list-decimal text-inherit">'); inOl = true }
-      out.push(`<li class="leading-relaxed">${olMatch[3]}</li>`)
+      addItem('ol', `<li class="leading-relaxed">${olMatch[3]}</li>`)
     } else {
-      if (inUl) { out.push('</ul>'); inUl = false }
-      if (inOl) { out.push('</ol>'); inOl = false }
-      if (line.trim()) {
+      flushList()
+      if (code) {
+        flushPara()
+        blocks.push(codeBlocks[Number(code[1])] ?? '')
+      } else if (/^<(h[2-4]|div class="chat-media-card)/.test(line)) {
+        // A heading or media card is a block element; inside a <p> the browser
+        // closes the paragraph early and leaves an empty one behind.
+        flushPara()
+        blocks.push(line)
+      } else if (line.trim()) {
         paraBuffer.push(line)
       } else {
         flushPara()
@@ -121,8 +160,7 @@ export function renderChatMarkdown(md: string): string {
     }
   }
   flushPara()
-  if (inUl) out.push('</ul>')
-  if (inOl) out.push('</ol>')
+  flushList()
 
-  return out.join('\n')
+  return blocks.filter(Boolean)
 }
