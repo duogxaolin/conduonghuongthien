@@ -18,6 +18,7 @@ const state = {
   inserts: [] as Array<{ table: unknown; values: Row }>,
   aiCalls: 0,
   budgetAllowed: true,
+  aiText: '{"translatedTitle":"Title EN","translatedExcerpt":"Excerpt EN"}',
 }
 
 function reset() {
@@ -27,6 +28,7 @@ function reset() {
   state.inserts = []
   state.aiCalls = 0
   state.budgetAllowed = true
+  state.aiText = '{"translatedTitle":"Title EN","translatedExcerpt":"Excerpt EN"}'
 }
 
 /** Fake chainable db: select().from(t).where().limit(), update(t).set().where(), insert(t).values(). */
@@ -67,7 +69,7 @@ mock.module(new URL('../server/services/ai-gateway.ts', import.meta.url), {
   namedExports: {
     callAi: async () => {
       state.aiCalls++
-      return { ok: true, text: '{"translatedTitle":"Title EN","translatedExcerpt":"Excerpt EN"}' }
+      return { ok: true, text: state.aiText }
     },
   },
 })
@@ -177,4 +179,14 @@ test('dịch hàng loạt: bài đã published thì bỏ qua — không insert, 
   assert.equal(svc.getBulkTranslationTaskState().processed, 1)
   assert.equal(state.inserts.filter(i => i.table === articleTranslations).length, 0)
   assert.equal(state.aiCalls, 0)
+})
+
+test('job dịch AI không ghi HTML nguy hiểm vào bản dịch (sanitize ở worker)', async () => {
+  reset()
+  state.articles.set(1, { id: 1, title: 'Tiêu đề', excerpt: 'Tóm tắt', content: '<p>Xin chào</p>' })
+  state.aiText = '<p>ok</p><script>alert(1)</script><img src=x onerror=alert(2)>'
+  await svc.runTranslationWorker(1, 'en', 'English')
+  const written = state.updates.map(u => u.set.content).filter((c): c is string => typeof c === 'string')
+  assert.ok(written.length > 0, 'phải có ít nhất một lần ghi content')
+  for (const c of written) assert.ok(!/<script|onerror/i.test(c), `content chưa được lọc: ${c}`)
 })

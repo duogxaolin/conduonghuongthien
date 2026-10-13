@@ -54,19 +54,26 @@ test('an update without content passes through, and null stays null', () => {
   assert.equal(sanitizeTranslationFields({ content: null }).content, null)
 })
 
+// Hai tệp cùng giữ các đường ghi `article_translations.content`: `article-translations.ts`
+// (sửa tay) và `article-translation-worker.ts` (job dịch AI, tách ra khỏi tệp trên).
+const TRANSLATION_WRITERS = ['article-translations.ts', 'article-translation-worker.ts']
+
 test('every write of translation content is sanitized', () => {
-  const source = read('../server/services/article-translations.ts')
-  const lines = source.split('\n')
-  const writes = lines
-    .map((text, index) => ({ text, line: index + 1 }))
-    // a `content:` value or a `.content =` assignment, but not a type member
-    .filter(({ text }) => (/^\s*content:\s+\S/.test(text) && !/content:\s*string/.test(text)) || /\.content\s*=[^=]/.test(text))
-  assert.ok(writes.length >= 2, 'the writes this guard exists for must be found')
-  for (const { text, line } of writes) {
-    assert.match(text, /sanitizeHtml\(/, `article-translations.ts:${line} writes content without sanitizing: ${text.trim()}`)
+  let found = 0
+  for (const name of TRANSLATION_WRITERS) {
+    const lines = read(`../server/services/${name}`).split('\n')
+    const writes = lines
+      .map((text, index) => ({ text, line: index + 1 }))
+      // a `content:` value or a `.content =` assignment, but not a type member
+      .filter(({ text }) => (/^\s*content:\s+\S/.test(text) && !/content:\s*string/.test(text)) || /\.content\s*=[^=]/.test(text))
+    found += writes.length
+    for (const { text, line } of writes) {
+      assert.match(text, /sanitizeHtml\(/, `${name}:${line} writes content without sanitizing: ${text.trim()}`)
+    }
   }
+  assert.ok(found >= 3, 'the writes this guard exists for must be found')
   // The generic updater also carries `content` (the partial save after a failed chunk).
-  assert.match(source, /\.set\(sanitizeTranslationFields\(updates\)\)/)
+  assert.match(read('../server/services/article-translation-worker.ts'), /\.set\(sanitizeTranslationFields\(updates\)\)/)
 })
 
 test('no other server file writes article translation content', () => {
@@ -75,7 +82,7 @@ test('no other server file writes article translation content', () => {
     for (const entry of readdirSync(dir, { withFileTypes: true })) {
       const path = join(dir, entry.name)
       if (entry.isDirectory()) { walk(path); continue }
-      if (!/\.(ts|mjs)$/.test(entry.name) || path.endsWith('article-translations.ts')) continue
+      if (!/\.(ts|mjs)$/.test(entry.name) || TRANSLATION_WRITERS.some(name => path.endsWith(name))) continue
       // Ngoại lệ có tên: chính lượt dọn một lần ghi lại `content` đã qua sanitizeHtml
       // (kiểm ngay bên dưới), nên nó không phải đường ghi chưa lọc.
       if (path.endsWith('stored-html-sanitize.ts')) continue
