@@ -24,11 +24,7 @@ import type { H3Event } from 'h3'
 
 import { getDb } from '../utils/db'
 import { activityLogs, backupDriveOauthConfig, type BackupDriveOauthConfig } from '../db/schema'
-import {
-  decryptRefreshToken,
-  encryptRefreshToken,
-  type EncryptedRefreshToken,
-} from '../utils/backup-drive-oauth-crypto'
+import { decryptRefreshToken, encryptRefreshToken } from '../utils/backup-drive-oauth-crypto'
 import { resolveDriveRedirectUri, configuredBaseUrl } from '../utils/google-oauth/config'
 
 /** Single-row table, cùng convention `google_oauth_settings` / `backup_drive_oauth`. */

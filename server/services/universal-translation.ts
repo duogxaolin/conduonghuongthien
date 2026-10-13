@@ -1,6 +1,6 @@
-import { and, asc, count, desc, eq, inArray, isNull, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, inArray, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
-import { articles, articleTranslations, languages, langTranslations, pageBlocks, pages } from '../db/schema'
+import { articles, articleTranslations, languages, langTranslations, pageBlocks } from '../db/schema'
 import { callAi } from './ai-gateway'
 import { upsertTranslations } from './languages'
 import { runTranslationWorker } from './article-translations'

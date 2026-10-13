@@ -1,6 +1,5 @@
 import { getDb } from '../../../utils/db'
 import { roles, permissions } from '../../../db/schema'
-import { eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {

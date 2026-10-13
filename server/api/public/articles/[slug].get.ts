@@ -1,6 +1,6 @@
 import { sanitizeHtml } from '../../../utils/sanitize-html'
 import { getDb } from '../../../utils/db'
-import { articles, users, categories, articleViewDaily, articleTranslations } from '../../../db/schema'
+import { articles, users, categories, articleTranslations } from '../../../db/schema'
 import { eq, and, sql, inArray } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {

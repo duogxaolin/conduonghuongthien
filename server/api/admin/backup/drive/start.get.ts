@@ -19,12 +19,7 @@
  */
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { getUsableDriveOauthConfig } from '../../../../services/backup-drive-oauth-config'
-import {
-  DRIVE_CALLBACK_PATH,
-  DRIVE_SCOPE,
-  GOOGLE_AUTH_ENDPOINT,
-  resolveDriveRedirectUri,
-} from '../../../../utils/google-oauth/config'
+import { DRIVE_SCOPE, GOOGLE_AUTH_ENDPOINT, resolveDriveRedirectUri } from '../../../../utils/google-oauth/config'
 import { issueState, stateSigningKey } from '../../../../utils/google-oauth/state'
 
 const DRIVE_OAUTH_STATE_COOKIE = 'cdkt_drive_oauth_state'

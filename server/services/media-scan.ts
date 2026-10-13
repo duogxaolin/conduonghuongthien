@@ -24,11 +24,7 @@ import type { RowDataPacket } from 'mysql2/promise'
 import { getDb, getPool } from '../utils/db'
 import { media, activityLogs } from '../db/schema'
 import { affectedRowsOrZero } from '../utils/affected-rows'
-import {
-  detectImageMime,
-  isSharpDecodable,
-  type DetectedImageMime,
-} from '../utils/image-mime'
+import { detectImageMime, isSharpDecodable } from '../utils/image-mime'
 import { logInfo, logWarn } from '../utils/logger'
 import { uploadR2File, type R2Config } from '../utils/media-r2'
 import { loadR2Config } from './media'

@@ -1,6 +1,6 @@
 import { finitePositive, MAX_PAGE } from '../../../utils/query-number'
 import { getDb } from '../../../utils/db'
-import { articles, users, categories, articleViewDaily } from '../../../db/schema'
+import { articles, users, categories } from '../../../db/schema'
 import { ArticleFilterValidationError, parseAuthorFilter } from '../../../utils/article-filters'
 import { eq, like, desc, sql, count, isNull } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/mysql-core'

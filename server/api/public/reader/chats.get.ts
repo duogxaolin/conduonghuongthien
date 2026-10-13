@@ -18,7 +18,7 @@
 import { desc, eq, sql } from 'drizzle-orm'
 
 import { getDb } from '../../../utils/db'
-import { chatMessages, chatSessions } from '../../../db/schema'
+import { chatSessions } from '../../../db/schema'
 import { requireReader } from '../../../utils/reader-auth'
 
 /** Server-enforced ceiling; the page shows a short list, not an archive. */

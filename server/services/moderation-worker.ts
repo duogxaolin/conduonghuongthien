@@ -1,4 +1,4 @@
-import { eq, desc } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { getHeapStatistics } from 'node:v8'
 import { getDb } from '../utils/db'
 import {

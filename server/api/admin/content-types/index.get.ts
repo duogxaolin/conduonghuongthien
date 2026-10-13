@@ -1,6 +1,6 @@
 import { getDb } from '../../../utils/db'
 import { contentTypes, categories, articles } from '../../../db/schema'
-import { asc, eq, count } from 'drizzle-orm'
+import { asc, count } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 
 export default defineEventHandler(async (event) => {

@@ -1,6 +1,5 @@
 import { createReadStream, statSync } from 'node:fs'
 import path from 'node:path'
-import { lookup } from 'node:dns' // just import for tree-shaking
 
 // Serve /uploads/** from <cwd>/public/uploads/ at runtime
 // Needed because Nitro production only serves .output/public/ as static,
