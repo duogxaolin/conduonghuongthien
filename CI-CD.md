@@ -26,6 +26,21 @@ và lùi phiên bản chỉ là trỏ lại tag cũ thay vì xây lại từ đ�
 của đồ thị phụ thuộc chứ không phải một lời hứa. Không có commit nào đi ra VPS mà
 chưa qua đủ bốn cổng.
 
+**Tiết kiệm phút Actions (repo private, 3.000 phút/tháng):** một lượt CI đầy đủ ≈ 40 phút
+billed (GitHub làm tròn từng job lên phút; 13 job Integration chiếm ≈ 29). Nên job
+`changes` ("Plan") quyết định cho mỗi lượt chạy:
+
+| Sự kiện | Chạy gì |
+|---|---|
+| push vào `main`, chạy tay (Actions → CI → Run workflow) | **Đủ bộ**, gồm Integration — `image`/`deploy` vẫn chờ mọi cổng |
+| PR nháp | Bỏ qua (chạy lại khi bấm *Ready for review*) |
+| PR thường | unit + build + schema-drift + hygiene (≈ 12 phút) |
+| PR thường **có đụng** `server/`, `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 13 job Integration |
+
+Muốn ép chạy đủ cho một PR chỉ-giao-diện: Actions → CI → *Run workflow* trên nhánh đó.
+Gom commit trước khi push và dùng PR nháp cho việc dở dang cũng tiết kiệm phút.
+Kiểm lượng đã dùng: GitHub → Settings → Billing and licensing → Usage.
+
 **Repo public thì Actions miễn phí không giới hạn phút**, nhưng package trên GHCR
 **mặc định vẫn là private** — nên VPS bắt buộc phải `docker login` (Bước 4–5).
 
