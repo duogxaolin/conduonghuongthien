@@ -240,7 +240,7 @@ test('the page is reachable without going through the assistant', () => {
   const navConfig = read('../app/utils/nav-config.ts')
   assert.match(navConfig, /url: '\/qa-documents'/, 'the default nav must offer the page too')
   // The nav labels come from the dictionary, so a missing key renders as the raw URL.
-  const dictionary = read('../app/composables/useI18n.ts')
+  const dictionary = read('../app/composables/i18n-default-dictionary.ts')
   for (const key of ['faq_articles', 'faq_approved_docs']) {
     assert.ok(
       (dictionary.match(new RegExp(`${key}:`, 'g')) ?? []).length === 2,

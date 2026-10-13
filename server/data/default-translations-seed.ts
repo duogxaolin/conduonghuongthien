@@ -1,5 +1,5 @@
 // Auto-generated seed data for default languages & translations.
-// Source of truth: app/composables/useI18n.ts (hardcoded dictionary) + this file.
+// Source of truth: app/composables/i18n-default-dictionary.ts (hardcoded dictionary) + this file.
 // seedDefaultLanguagesAndTranslations() is INSERT-ONLY: re-running will NOT overwrite
 // values already in the DB. To add a new key: append here with vi+en values,
 // leave zh/fr/ru/lo empty (admin can AI-translate them via /admin/languages).

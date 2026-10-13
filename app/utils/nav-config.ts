@@ -75,7 +75,7 @@ export const DEFAULT_NAV: NavItem[] = [
   // `news` vì thanh nav cũ chiếm ~974px trong container ~992px ở `lg`; nay container
   // 1240px và label VN ngắn, nên mục thứ 9 vừa. Nếu sau này thêm "Thư viện Ảnh",
   // chuyển mục này thành dropdown `{ children: [video_lib, photo_lib] }` — key
-  // `library` đã có sẵn trong `useI18n.ts`.
+  // `library` đã có sẵn trong `i18n-default-dictionary.ts`.
   { id: 'media-video', label: null, labelKey: 'media', url: '/media', children: [] },
   { id: 'role-models', label: null, labelKey: 'role_models', url: '/role-models', children: [] },
   { id: 'reintegration', label: null, labelKey: 'reintegration', url: '/reintegration-models', children: [] },

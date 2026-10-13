@@ -47,7 +47,7 @@ app/
 │   (plain-text.ts / display-name.ts / query-number.ts đã chuyển sang `server/utils/`)
 ├── composables/
 │   ├── useAdminAuth.ts / useChatbot.ts (+ useChatbotTypewriter.ts)
-│   ├── useI18n.ts (567 keys trong seed, 405 fallback hardcoded vi; mọi lang kể cả vi fetch DB) / useReaderAuth.ts
+│   ├── useI18n.ts (+ i18n-default-dictionary.ts; 567 keys trong seed, 405 fallback hardcoded vi; mọi lang kể cả vi fetch DB) / useReaderAuth.ts
 │   ├── useReaderNotifications.ts / useReadingHistory.ts (localStorage only) / useToast.ts
 │   └── useAnalyticsNocTable.ts
 ├── layouts/default.vue (1301→385, tách 7 component layout/ + 5 composable + skip-link a11y) / admin.vue
@@ -127,7 +127,7 @@ Chi tiết & kiểm chứng âm tính → `docs/decisions/data-layer.md`.
 
 > Chi tiết → `docs/decisions/README.md`.
 
-- **i18n**: 567 keys trong `default-translations-seed.ts` (405 fallback hardcoded trong `useI18n.ts`), **tất cả ngôn ngữ kể cả `vi` đều fetch DB** (`server/api/public/translations/[code].get.ts`); `hardcodedDictionary` chỉ còn fallback khi DB chưa seed / API hỏng / SSR chưa fetch xong. 50 file public đã dùng `t()` (media/index, news/[id], ArticleComments, blocks 5 file, default.vue, ChatWidget, assistant, profile…). Admin `/admin/languages` sửa mọi lang kể cả `vi` → frontend hiển thị đúng. Admin giữ hardcoded (không i18n). Mở rộng thêm trang public là feature work, **không phải nợ kỹ thuật** — không ghi vào audit debt.
+- **i18n**: 567 keys trong `default-translations-seed.ts` (405 fallback hardcoded trong `i18n-default-dictionary.ts`, tách từ `useI18n.ts` 1011→171 dòng), **tất cả ngôn ngữ kể cả `vi` đều fetch DB** (`server/api/public/translations/[code].get.ts`); `hardcodedDictionary` chỉ còn fallback khi DB chưa seed / API hỏng / SSR chưa fetch xong. 50 file public đã dùng `t()` (media/index, news/[id], ArticleComments, blocks 5 file, default.vue, ChatWidget, assistant, profile…). Admin `/admin/languages` sửa mọi lang kể cả `vi` → frontend hiển thị đúng. Admin giữ hardcoded (không i18n). Mở rộng thêm trang public là feature work, **không phải nợ kỹ thuật** — không ghi vào audit debt.
 - **`any` đã xoá sạch trong production** — 0 vết trong `.vue` SFC (trước đây 17), 0 trong `app/`/`server/`/`scripts/` code (comment `errorMessage.ts` không tính). **142 vết `any` còn lại trong `tests/`** (~22 file) là mock/stub cố ý — test runner không biên dịch type, `any` ở đó không rò rỉ ra production. Đừng báo "còn ~20 vết any ở SFC" — đã đóng commit `ca4f52e` 2026-10. `as unknown as` không dùng để đọc hình dạng — khai báo phản chiếu.
 - **Typecheck sạch**, ghim TS ^5 (7.x thiếu `lib/tsc.js`). `globalThis.useRuntimeConfig` cần `server/plugins/runtime-config-global.ts`.
 - **Test**: 14 suite `*-integration` + E2E (`E2E_DB_PORT` etc.), MFA spec dọn ở `afterEach`, LLM guard là lớp duy nhất bắt TDZ/insertId/DATETIME. Kiểm văn bản mã nguồn chứng minh cấu trúc, không chứng minh hành vi. Tổng 2078 test, 0 fail khi CI sạch (14 skip = 14 integration cần MySQL).
