@@ -42,10 +42,13 @@ export function useKeyboardViewport(isOpen: Ref<boolean>) {
     sync()
   }
 
+  // `immediate`: a dialog that is already open when this is created must start
+  // tracking too, not wait for the next toggle. On the server `isOpen` is false
+  // and `window` does not exist, so this only runs `stop()` against nothing.
   watch(isOpen, (open) => {
     stop()
     if (open) start()
-  })
+  }, { immediate: true })
   onScopeDispose(stop)
 
   return { keyboardViewportStyle }
