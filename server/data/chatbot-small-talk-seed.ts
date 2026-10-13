@@ -519,6 +519,15 @@ export const CHATBOT_SMALL_TALK_SEED: SmallTalkSeedEntry[] = [
   },
   {
     category: 'support',
+    // Người dùng thường mở đầu bằng MỘT CÂU KỂ ("tôi vừa đi tù về"), không phải câu hỏi. Không có hàng này thì
+    // kho tri thức khớp từ "tù" và trả nguyên văn định nghĩa "Công tác tái hòa nhập cộng đồng là…" — đúng
+    // nhưng lạc đề với người đang cần biết việc đầu tiên phải làm.
+    question: 'Tôi vừa đi tù về',
+    patterns: ['vua di tu ve', 'moi di tu ve', 'vua ra tu', 'vua duoc tha tu', 'vua chap hanh xong an', 'di tu ve roi'],
+    answer: `Dạ, tôi rất thấu hiểu những băn khoăn của anh/chị lúc mới trở về. Việc đầu tiên anh/chị nên làm là đến Công an xã/phường nơi cư trú để được hướng dẫn thủ tục đăng ký cư trú. Sau đó anh/chị có thể từng bước tìm hiểu các hỗ trợ trên Cổng như vay vốn, học nghề, tìm việc làm và các mô hình tái hòa nhập. Anh/chị đang cần việc nào trước — giấy tờ, việc làm hay vay vốn — để tôi hướng dẫn cụ thể hơn ạ? ${CONTACT_LINE}`,
+  },
+  {
+    category: 'support',
     question: 'Tôi thấy bế tắc',
     patterns: ['toi thay be tac', 'toi be tac qua', 'khong loi thoat', 'toi thay tuyet vong'],
     answer: `Dạ, tôi ghi nhận điều anh/chị đang trải qua. Anh/chị không phải đối mặt một mình đâu ạ. ${CONTACT_LINE}`,
