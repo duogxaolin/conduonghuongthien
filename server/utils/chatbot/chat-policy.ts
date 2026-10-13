@@ -15,11 +15,12 @@ import { rateLimitDeps } from '../rate-limit-deps'
 import { eq, and, or, like, desc, inArray, sql } from 'drizzle-orm'
 import { articles, mediaItems, media } from '../../db/schema'
 import { getDb } from '../db'
+import { createFollowUpStreamFilter, FOLLOW_UP_LIMIT, FOLLOW_UP_MARKER, selectFollowUps, splitFollowUps } from './follow-ups'
 export const HOTLINE = CHATBOT_HOTLINE
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
 
 export type ChatMessage = { role?: unknown; sender?: unknown; content?: unknown; text?: unknown }
-export type ChatToolCall = { id: string; name: string; arguments?: string }
+export type ChatToolCall = { id: string; name: string; arguments?: string; count?: number }
 
 export type ChatResult = {
   answer: string
@@ -28,6 +29,8 @@ export type ChatResult = {
   retryAfter?: number
   askContact?: boolean
   toolCalls?: ChatToolCall[]
+  /** Câu hỏi gợi ý tiếp theo, đã đối chiếu với kho tri thức (`follow-ups.ts`). */
+  followUps?: string[]
 }
 export type ChatEvent = H3Event
 export type ChatDependencies = {
@@ -121,8 +124,13 @@ export function buildGroundedSystemPrompt(systemPrompt: string, references: Publ
 HƯỚNG DẪN SUY LUẬN & SỬ DỤNG CÔNG CỤ (TOOLS) — HÃY NGHĨ TRƯỚC KHI GỌI:
 1. SUY LUẬN trước khi gọi tool. Hỏi bản thân: "Câu này cần dẫn chứng gì không?"
    - Chào hỏi / xã giao ("hi", "chào", "cảm ơn", "bạn là ai?") → KHÔNG gọi tool. Chỉ chào lại, giới thiệu ngắn gọn là Trợ lý Hướng Thiện của Cục C11.
-   - Câu hỏi nghiệp vụ → suy ra chủ đề ẩn rồi chọn đúng tool. Ví dụ: người hỏi "tiền" hãy nghĩ tới "vốn, vay vốn, hỗ trợ việc làm"; hỏi "đi tù về" hãy nghĩ tới "tái hòa nhập, xóa án tích, cư trú". Từ suy luận đó đặt từ khóa gọi tool.
-   - Chỉ gọi tool khi dẫn chứng sẽ làm câu trả lời thuyết phục hơn. Không gọi cho có.
+   - Câu hỏi nghiệp vụ (vay vốn, tái hòa nhập, xóa án tích, cư trú, hỗ trợ việc làm, thủ tục pháp lý…) → BẮT BUỘC gọi CẢ HAI tool:
+     • search_c11_knowledge — để lấy tri thức pháp lý chính xác.
+     • search_c11_articles — để lấy bài viết / tấm gương / mô hình dẫn chứng thật.
+     Đừng chỉ trả lời text suông — người hỏi cần xem bài viết thật để tin và làm theo.
+     Ví dụ: người hỏi "tiền" → nghĩ "vốn, vay vốn" → gọi knowledge("vay vốn") + articles("vay vốn tái hòa nhập").
+   - Khi câu hỏi giàu cảm xúc hoặc hỏi kinh nghiệm ("đi tù về có ai giúp không?", "có tấm gương nào không?") → gọi search_c11_articles để lấy tấm gương hoàn lương, mô hình tái hòa nhập.
+   - Chỉ bỏ qua article khi câu hỏi THUẦN THỦ TÚC HÀNH CHÍNH không cần dẫn chứng bài viết (vd "địa chỉ Cục C11 ở đâu?").
    - Công cụ có sẵn:
      • search_c11_knowledge — tri thức nghiệp vụ (thủ tục xóa án tích, vay vốn, cư trú…)
      • search_c11_articles — bài viết / tấm gương hoàn lương / mô hình tái hòa nhập / văn bản
@@ -130,7 +138,7 @@ HƯỚNG DẪN SUY LUẬN & SỬ DỤNG CÔNG CỤ (TOOLS) — HÃY NGHĨ TRƯ�
      • search_c11_photos — ảnh hoạt động thực tế
      • get_c11_hotline_and_support — hotline 24/7
 2. Dẫn chứng thực tế và liên kết ngữ cảnh:
-   - Khi câu trả lời sẽ thuyết phục hơn nếu có bài viết / tấm gương / hình ảnh → chủ động gọi tool để lấy dẫn chứng thật, giúp nội dung xác thực và sinh động.
+   - LUÔN chèn ít nhất 2-3 bài viết dẫn chứng (nếu tìm được) khi trả lời câu hỏi nghiệp vụ. Người đọc cần link bài viết thật để bấm xem chi tiết, không chỉ text suông.
    - Khi người hỏi tiếp nối, hỏi ngắn hoặc hoài nghi ("thật không?", "có dẫn chứng không?", "ở đâu?", "ví dụ?") → BẮT BUỘC dựa vào chủ đề đã trao đổi ở các tin nhắn trước để đặt từ khóa chính xác, đưa đúng bài viết/hình ảnh có thật. Tuyệt đối không bịa.
 3. Giải đáp thấu đáo về pháp luật và chế độ thi hành án:
    - Vận dụng chuẩn mực các quy định của pháp luật Việt Nam (Luật Thi hành án hình sự, Bộ luật Hình sự, các văn bản của Bộ Công an...) để giải đáp rõ ràng, tận tình cho người dân và gia đình, kèm hướng dẫn liên hệ Công an địa phương hoặc Hotline 0903.480.985 khi cần giúp đỡ.
@@ -149,6 +157,10 @@ HƯỚNG DẪN SUY LUẬN & SỬ DỤNG CÔNG CỤ (TOOLS) — HÃY NGHĨ TRƯ�
    - Si l'utilisateur pose une question en français, répondez en français.
    - Если пользователь задает вопрос на русском языке, отвечайте на русском.
    - ຖ້າຜູ້ໃຊ້ຖາມເປັນພາສາລາວ, ກະລຸນາຕອບເປັນພາສາລາວ.
+7. CÂU HỎI GỢI Ý TIẾP THEO (chỉ với câu hỏi nghiệp vụ, KHÔNG dùng khi chào hỏi / xã giao):
+   - Sau khi trả lời xong, xuống dòng, viết đúng một dòng ${FOLLOW_UP_MARKER} rồi liệt kê 3 câu hỏi ngắn mà người hỏi có thể muốn hỏi tiếp, mỗi câu một dòng bắt đầu bằng "- ".
+   - Câu hỏi phải bám sát nội dung vừa trả lời và thuộc phạm vi nghiệp vụ C11 (thủ tục, quyền lợi, hỗ trợ, nơi liên hệ…), viết như chính người hỏi đang hỏi, dùng ngôn ngữ của người hỏi.
+   - ${FOLLOW_UP_MARKER} và danh sách câu hỏi phải nằm CUỐI CÙNG, sau đó không viết thêm gì. Không nhắc tới ${FOLLOW_UP_MARKER} trong câu trả lời.
 <UNTRUSTED_KNOWLEDGE_REFERENCES>
 ${refs}
 </UNTRUSTED_KNOWLEDGE_REFERENCES>`
@@ -177,7 +189,15 @@ function friendlyKnowledgeAnswer(settings: ChatbotSettings, references: PublicKn
   const top = references[0]!
   const greeting = settings.knowledgeGreeting?.trim()
   const answer = greeting ? `${greeting}\n\n${top.answer}` : top.answer
-  return { answer, sources: top.source ? references.slice(0, 1) : [], kind: 'curated' }
+  // The other approved rows that matched are the natural next questions: each one
+  // is a question the bank answers word for word.
+  const followUps = selectFollowUps({
+    proposals: [],
+    entries: [],
+    userQuery: top.question,
+    fallback: references.slice(1, 1 + FOLLOW_UP_LIMIT).map(ref => ({ id: ref.id, question: ref.question })),
+  })
+  return { answer, sources: top.source ? references.slice(0, 1) : [], kind: 'curated', followUps }
 }
 
 /**
@@ -270,6 +290,48 @@ function aiProviderReady(settings: ChatbotSettings): boolean {
   return Boolean(settings.enabled && settings.baseUrl && settings.model && settings.allowedHosts?.length)
 }
 
+type KnowledgeHit = { id: number, question: string }
+type ProviderReply = { text: string, toolCalls?: ChatToolCall[], proposals: string[], knowledgeHits: KnowledgeHit[] }
+
+/** Knowledge-bank rows the model pulled in through `search_c11_knowledge` this turn. */
+function knowledgeHitsOf(executed: { name: string, data?: unknown }[] | undefined): KnowledgeHit[] {
+  const hits: KnowledgeHit[] = []
+  for (const call of executed ?? []) {
+    if (call.name !== 'search_c11_knowledge' || !Array.isArray(call.data)) continue
+    for (const item of call.data) {
+      const row = item as { id?: unknown, question?: unknown }
+      if (typeof row?.id === 'number' && typeof row.question === 'string') hits.push({ id: row.id, question: row.question })
+    }
+  }
+  return hits
+}
+
+/**
+ * Follow-up chips for an AI answer: the model's proposals that match the
+ * approved bank, topped up from the bank rows used for this answer. The row the
+ * answer was grounded on first is not offered as a top-up — that is the question
+ * just answered.
+ */
+async function providerFollowUps(
+  dependencies: ChatDependencies,
+  query: string,
+  reply: ProviderReply,
+  references: PublicKnowledgeReference[],
+): Promise<string[]> {
+  const grounding = references.filter(ref => ref.kind === 'knowledge')
+  const fallback = [...grounding.slice(1), ...reply.knowledgeHits]
+    .filter(hit => hit.id !== grounding[0]?.id)
+    .map(hit => ({ id: hit.id, question: hit.question }))
+  if (!reply.proposals.length && !fallback.length) return []
+  try {
+    const entries = reply.proposals.length ? await dependencies.loadPublishedEntries() : []
+    return selectFollowUps({ proposals: reply.proposals, entries, userQuery: query, fallback, retrieve: dependencies.retrieve })
+  } catch (error) {
+    logWarn({ event: 'chatbot.follow_ups_failed', error, consequence: 'answer sent without follow-up suggestions' })
+    return []
+  }
+}
+
 async function callProvider(
   settings: ChatbotSettings,
   dependencies: ChatDependencies,
@@ -277,7 +339,7 @@ async function callProvider(
   history: ChatMessage[],
   onChunk?: (chunk: string) => void | Promise<void>,
   onToolCall?: (event: { name: string; query?: string; status: 'calling' | 'done'; count?: number }) => void | Promise<void>,
-): Promise<{ text: string; toolCalls?: ChatToolCall[] } | null> {
+): Promise<ProviderReply | null> {
   // logged and budget guard runs. The gateway reads from `ai_service_configs`
   // + `ai_providers`, which are backfilled from `chatbot_settings` on first
   // seed (spec R11.2–R11.3). If the gateway fails (service inactive, no key,
@@ -288,6 +350,9 @@ async function callProvider(
   const userTurn = history[history.length - 1]
   const queryText = text(userTurn?.content ?? userTurn?.text)
   const historyMessages = buildChatHistory(history)
+  // The follow-up block at the end of the answer is data for the chips under it,
+  // never text for the reader: it is held back from the stream here.
+  const followUpFilter = onChunk ? createFollowUpStreamFilter(onChunk) : null
   const chatbotTools = [
     {
       name: 'search_c11_knowledge',
@@ -511,10 +576,11 @@ async function callProvider(
       variables: { question: queryText, references: references.map(r => r.question).join('; '), fallback_message: settings.fallbackMessage ?? '' },
       userId: null,
       history: historyMessages,
-      onChunk,
+      onChunk: followUpFilter ? chunk => followUpFilter.push(chunk) : undefined,
       onToolCall,
       tools: chatbotTools,
     })
+    await followUpFilter?.finish()
     if (result.ok && result.text) {
       if (result.toolCallsExecuted && Array.isArray(result.toolCallsExecuted)) {
         for (const te of result.toolCallsExecuted) {
@@ -542,9 +608,12 @@ async function callProvider(
           }
         }
       }
+      const { answer, proposals } = splitFollowUps(result.text)
       return {
-        text: result.text.slice(0, CHAT_LIMITS.maxOutputChars),
-        toolCalls: result.toolCallsExecuted?.map(t => ({ id: `call_${t.name}_${Date.now()}`, name: t.name, arguments: t.query })),
+        text: answer.slice(0, CHAT_LIMITS.maxOutputChars),
+        toolCalls: result.toolCallsExecuted?.map(t => ({ id: `call_${t.name}_${Date.now()}`, name: t.name, arguments: t.query, count: t.count })),
+        proposals,
+        knowledgeHits: knowledgeHitsOf(result.toolCallsExecuted),
       }
     }
     if (result.error === 'budget_exceeded') return null
@@ -577,8 +646,9 @@ async function callProvider(
   })
   if (response.status < 200 || response.status >= 300) return null
   const payload = JSON.parse(Buffer.from(response.body).toString('utf8')) as unknown
-  const rawAnswer = text(extractProviderAnswer(settings.providerPolicy, payload)).slice(0, CHAT_LIMITS.maxOutputChars)
-  return rawAnswer ? { text: rawAnswer } : null
+  const { answer, proposals } = splitFollowUps(text(extractProviderAnswer(settings.providerPolicy, payload)))
+  const rawAnswer = answer.slice(0, CHAT_LIMITS.maxOutputChars)
+  return rawAnswer ? { text: rawAnswer, proposals, knowledgeHits: [] } : null
 }
 
 /**
@@ -678,7 +748,16 @@ export async function answerGroundedChat(
       if (quotaRetryAfter) return { answer: AI_QUOTA_MESSAGE, sources: [], kind: 'rate_limited', retryAfter: quotaRetryAfter }
       try {
         const freeform = await callProvider(settings, dependencies, [], history, onChunk, onToolCall)
-        if (freeform) return { answer: freeform.text, sources: [], toolCalls: freeform.toolCalls, kind: 'provider', streamed: Boolean(onChunk) }
+        if (freeform) {
+          return {
+            answer: freeform.text,
+            sources: [],
+            toolCalls: freeform.toolCalls,
+            kind: 'provider',
+            followUps: await providerFollowUps(dependencies, query, freeform, []),
+            streamed: Boolean(onChunk),
+          }
+        }
       } catch (error) {
         logWarn({
           event: 'chatbot.freeform_provider_failed',
@@ -716,6 +795,7 @@ export async function answerGroundedChat(
         sources: references.filter(ref => ref.source && ref.kind !== 'evidence'),
         toolCalls: grounded.toolCalls,
         kind: 'provider',
+        followUps: await providerFollowUps(dependencies, query, grounded, references),
         streamed: Boolean(onChunk),
       }
     }

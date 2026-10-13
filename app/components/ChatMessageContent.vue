@@ -11,8 +11,12 @@
 
     <!-- Main Message Content — markdown tự bọc <p> với whitespace-pre-wrap ở trong; div ngoài
          chỉ break-words + leading-relaxed. Nếu thêm whitespace-pre-wrap ở ngoài, các \n giữa
-         các <p> (do join('\n')) bị tôn trọng thành dòng trống → khoảng cách đôi giữa các câu. -->
-    <div class="chat-markdown break-words [overflow-wrap:anywhere] leading-relaxed" v-html="renderChatMarkdown(text)"></div>
+         các <p> bị tôn trọng thành dòng trống → khoảng cách đôi giữa các câu.
+         Mỗi khối một v-html: khi câu trả lời đang stream chỉ khối cuối đổi, các khối
+         trên (kể cả ảnh bìa bài viết) giữ nguyên DOM — không bị dựng lại mỗi chunk. -->
+    <div class="chat-markdown break-words [overflow-wrap:anywhere] leading-relaxed">
+      <div v-for="(block, index) in blocks" :key="index" class="contents" v-html="block"></div>
+    </div>
 
     <!-- Tool Calls (Dev Tracking & Transparency) below message -->
     <details
@@ -60,7 +64,7 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { renderChatMarkdown } from '~/utils/markdown'
+import { renderChatMarkdownBlocks } from '~/utils/markdown'
 import type { ToolCallExecution } from '~/utils/chatbot-storage'
 
 const props = defineProps<{
@@ -68,6 +72,8 @@ const props = defineProps<{
   isBot?: boolean
   toolCalls?: ToolCallExecution[]
 }>()
+
+const blocks = computed(() => (props.isBot ? renderChatMarkdownBlocks(props.text) : []))
 
 const hasActiveCall = computed(() => props.toolCalls?.some(t => t.status === 'calling'))
 </script>

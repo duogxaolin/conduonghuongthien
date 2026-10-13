@@ -4,8 +4,9 @@
     <div
       id="public-chatbot-dialog"
       ref="chatbotDialog"
-      class="fixed inset-0 w-screen h-[100dvh] bg-[#f0f4ef] flex flex-col z-[10008] overflow-hidden opacity-0 pointer-events-none translate-y-[20px] transition-all duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:inset-auto md:fixed md:right-5 md:bottom-5 md:w-[min(460px,calc(100vw-40px))] md:h-[min(680px,calc(100dvh-100px))] lg:w-[520px] lg:h-[min(760px,calc(100dvh-110px))] md:rounded-2xl md:shadow-[0_25px_60px_rgba(0,0,0,0.2)] md:border md:border-black/10 md:translate-y-3 md:scale-[0.96]"
-      :class="{ '!opacity-100 !pointer-events-auto !translate-y-0 md:!scale-100': isChatbotOpen }"
+      class="fixed inset-0 w-screen h-[100dvh] bg-[#f0f4ef] flex flex-col z-[10008] overflow-hidden invisible opacity-0 pointer-events-none translate-y-[20px] transition-[opacity,transform,visibility] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:inset-auto md:fixed md:right-5 md:bottom-5 md:w-[min(460px,calc(100vw-40px))] md:h-[min(680px,calc(100dvh-100px))] lg:w-[520px] lg:h-[min(760px,calc(100dvh-110px))] md:rounded-2xl md:shadow-[0_25px_60px_rgba(0,0,0,0.2)] md:border md:border-black/10 md:translate-y-3 md:scale-[0.96]"
+      :class="{ '!visible !opacity-100 !pointer-events-auto !translate-y-0 md:!scale-100': isChatbotOpen }"
+      :style="keyboardViewportStyle"
       role="dialog"
       aria-modal="true"
       aria-labelledby="public-chatbot-title"
@@ -85,7 +86,10 @@
       </div>
 
       <!-- Messages -->
-      <div ref="chatContainer" class="flex-1 px-4 py-5 overflow-y-auto overscroll-contain flex flex-col gap-4" aria-live="polite" aria-relevant="additions text">
+      <div ref="chatContainer" class="flex-1 min-h-0 px-4 py-5 overflow-y-auto overscroll-contain" aria-live="polite" aria-relevant="additions text">
+        <!-- Khối nội dung tách khỏi khung cuộn để ResizeObserver thấy nó cao lên
+             (ảnh tải xong, chi tiết công cụ hiện ra) và giữ khung bám đáy. -->
+        <div ref="chatContent" class="flex flex-col gap-4">
         <div v-if="chatMessages.length <= 1" class="mx-auto mt-4 mb-2 max-w-[280px] text-center">
           <div class="w-14 h-14 mx-auto mb-3 rounded-full bg-[#1e4620]/10 flex items-center justify-center">
             <i class="fa-solid fa-shield-halved text-[#1e4620] text-[1.4rem]"></i>
@@ -94,7 +98,7 @@
         </div>
 
         <template v-for="(msg, index) in chatMessages" :key="msg.id || index">
-          <div v-if="msg.id !== 'welcome'" class="flex gap-2.5" :class="msg.sender === 'user' ? 'justify-end' : 'justify-start'">
+          <div v-if="msg.id !== 'welcome'" class="flex gap-2.5" :class="msg.sender === 'user' ? 'justify-end' : 'justify-start'" :data-chat-anchor="msg.sender === 'user' ? '' : undefined">
             <div v-if="msg.sender === 'bot'" class="w-7 h-7 rounded-full bg-[#1e4620] flex items-center justify-center flex-shrink-0 mt-0.5 shadow-sm" aria-hidden="true">
               <i class="fa-solid fa-robot text-white text-[0.65rem]"></i>
             </div>
@@ -108,7 +112,6 @@
                     : 'bg-[#1e4620] text-white rounded-[18px_4px_18px_18px] shadow-[0_2px_8px_rgba(30,70,32,0.2)]',
                 msg.status === 'pending' ? 'opacity-60' : ''
               ]"
-              role="alert"
             >
               <ChatMessageContent :text="msg.text" :is-bot="msg.sender === 'bot'" :tool-calls="msg.toolCalls" />
               <span v-if="msg.status === 'pending'" class="inline-flex items-center gap-1 mt-1 text-[0.72rem] opacity-70">
@@ -174,22 +177,30 @@
                 <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.78rem] font-semibold text-[#1e4620]"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i> Đã gửi thông tin. Cán bộ sẽ liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn ạ!</p>
                 <form v-else class="flex flex-col gap-2" @submit.prevent="submitLead(msg)">
                   <p class="m-0 text-[0.75rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
-                  <input v-model="msg.lead.name" type="text" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                  <input v-model="msg.lead.phone" type="tel" :placeholder="t('cw_lead_phone')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                  <input v-model="msg.lead.email" type="email" :placeholder="t('cw_lead_email')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                  <textarea v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.8rem] outline-none focus:border-[#1e4620]"></textarea>
+                  <input v-model="msg.lead.name" type="text" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                  <input v-model="msg.lead.phone" type="tel" :placeholder="t('cw_lead_phone')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                  <input v-model="msg.lead.email" type="email" :placeholder="t('cw_lead_email')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                  <textarea v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]"></textarea>
                   <p v-if="msg.lead.error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
                   <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-[#1e4620] px-4 py-1.5 text-[0.78rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">{{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}</button>
                 </form>
               </div>
             </div>
           </div>
+          <!-- Gợi ý hỏi tiếp: chỉ dưới câu trả lời mới nhất, khi đã trả lời xong. -->
+          <ChatFollowUps
+            v-if="msg.sender === 'bot' && !msg.isStreaming && index === chatMessages.length - 1 && msg.followUps?.length"
+            :questions="msg.followUps"
+            :disabled="isSubmitting"
+            class="pl-[38px]"
+            @ask="askBot"
+          />
         </template>
 
         <!-- One indicator, from send until the first word lands. The bot message
              is not in the transcript yet, so this never sits beside an empty
              bubble. -->
-        <div v-if="isSubmitting" class="flex gap-2.5 justify-start">
+        <div v-if="isAwaitingFirstWord" class="flex gap-2.5 justify-start">
           <div class="w-7 h-7 rounded-full bg-[#1e4620] flex items-center justify-center flex-shrink-0 shadow-sm" aria-hidden="true">
             <i class="fa-solid fa-robot text-white text-[0.65rem]"></i>
           </div>
@@ -208,6 +219,7 @@
               <span class="w-1.5 h-1.5 bg-[#1e4620] rounded-full animate-typing-dot [animation-delay:400ms] motion-reduce:animate-none motion-reduce:opacity-60"></span>
             </div>
           </div>
+        </div>
         </div>
       </div>
 
@@ -261,7 +273,7 @@
               :aria-describedby="botInputError ? 'public-chatbot-error public-chatbot-counter' : 'public-chatbot-counter'"
               :aria-invalid="Boolean(botInputError)"
               :disabled="isSubmitting"
-              class="w-full px-4 py-3 rounded-full border border-[#d4e4d2] text-[0.88rem] outline-none bg-[#f8faf8] transition-all focus:border-[#1e4620] focus:bg-white focus:shadow-[0_0_0_3px_rgba(30,70,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
+              class="w-full px-4 py-3 rounded-full border border-[#d4e4d2] text-base md:text-[0.88rem] outline-none bg-[#f8faf8] transition-all focus:border-[#1e4620] focus:bg-white focus:shadow-[0_0_0_3px_rgba(30,70,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
             />
             <div v-if="botInputError" class="mt-1 px-4">
               <p id="public-chatbot-error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ botInputError }}</p>
@@ -308,12 +320,14 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
 import { useChatbot, type StoredConversation, type ChatMessage } from '~/composables/useChatbot'
+import { useChatAutoScroll } from '~/composables/useChatAutoScroll'
+import { useKeyboardViewport } from '~/composables/useKeyboardViewport'
 import { useI18n } from '~/composables/useI18n'
 
 const { t } = useI18n()
 
 const {
-  conversations, activeId, activeConversation, chatMessages, isSubmitting, botInput, botInputError,
+  conversations, activeId, activeConversation, chatMessages, isSubmitting, isAwaitingFirstWord, botInput, botInputError,
   quickQuestions, quickQuestionState, quickQuestionStatusText, limits,
   hydrate, loadQuickQuestions,
   createConversation, switchConversation, deleteConversation, clearChatHistory,
@@ -326,12 +340,16 @@ const {
 // rendering during SSR would produce markup the client immediately contradicts.
 const clientMounted = ref(false)
 const isChatbotOpen = ref(false)
+// Phones: the full-screen dialog follows the visible area when the keyboard opens.
+const { keyboardViewportStyle } = useKeyboardViewport(isChatbotOpen)
 const isConversationListOpen = ref(false)
 const isQuickQuestionsExpanded = ref(true)
 /** Bound to the honeypot input. Stays empty for a real visitor. */
 const honeypot = ref('')
 
 const chatContainer = ref<HTMLElement | null>(null)
+const chatContent = ref<HTMLElement | null>(null)
+const { isPinnedToBottom, pinToBottom, followLatestQuestion, releaseAnchor } = useChatAutoScroll(chatContainer, chatContent)
 const chatbotDialog = ref<HTMLElement | null>(null)
 const botInputRef = ref<HTMLInputElement | null>(null)
 const chatCloseButton = ref<HTMLButtonElement | null>(null)
@@ -404,8 +422,10 @@ const startTeaserCycle = () => {
  * Follows the newest content. During playback this runs every frame, and yanking
  * the view down while someone is scrolled up re-reading an earlier answer fights
  * them for control of the scrollbar — so by default it only follows when they are
- * already at the bottom. The 48px tolerance covers sub-pixel heights and the
- * moment a new line exists but has not been scrolled past.
+ * still pinned to the bottom. "Pinned" comes from their own scrolling
+ * (`useChatAutoScroll`), not from measuring after the content grew: a cover image
+ * finishing its load used to read as "the visitor scrolled up" and stop the
+ * follow mid-answer.
  *
  * `force` is for opening the panel, switching conversation and first mount, where
  * the container starts at `scrollTop = 0` and the bottom is the intended landing
@@ -415,10 +435,8 @@ const scrollChatBottom = async (force = false) => {
   await nextTick()
   const el = chatContainer.value
   if (!el) return
-  const wasAtBottom = force || el.scrollHeight - el.scrollTop - el.clientHeight < 80
-  if (wasAtBottom) {
-    el.scrollTop = el.scrollHeight
-  }
+  const wasAtBottom = force || isPinnedToBottom.value
+  if (wasAtBottom) pinToBottom()
 }
 /** Playback passes this as `onTick`, which would otherwise forward its own args. */
 const followChatBottom = () => { void scrollChatBottom() }
@@ -439,6 +457,7 @@ const openChatbot = async () => {
   if (quickQuestionState.value === 'error' || quickQuestionState.value === 'empty') loadQuickQuestions()
   await nextTick()
   chatCloseButton.value?.focus()
+  releaseAnchor()
   scrollChatBottom(true)
 }
 
@@ -496,6 +515,7 @@ const onCreateConversation = () => {
 const onSwitchConversation = (id: string) => {
   switchConversation(id)
   isConversationListOpen.value = false
+  releaseAnchor()
   scrollChatBottom(true)
 }
 
@@ -512,6 +532,7 @@ const sendBotMessage = () => {
   // round-trip; the server checks again because a client-side check protects
   // nothing on its own.
   if (honeypot.value.trim() !== '') return
+  followLatestQuestion()
   void scrollChatBottom(true)
   submitBotQuestion(botInput.value, followChatBottom).then(() => nextTick(() => botInputRef.value?.focus()))
 }
@@ -519,6 +540,7 @@ const sendBotMessage = () => {
 const askBot = (question: string) => {
   if (isSubmitting.value) return
   botInput.value = question
+  followLatestQuestion()
   void scrollChatBottom(true)
   submitBotQuestion(question, followChatBottom)
 }
@@ -530,6 +552,7 @@ function retryMessage(msg: ChatMessage) {
   const conv = activeConversation.value
   const idx = conv.messages.findIndex((m: ChatMessage) => m.id === msg.id)
   if (idx !== -1) conv.messages.splice(idx, 1)
+  followLatestQuestion()
   submitBotQuestion(msg.text, followChatBottom)
 }
 

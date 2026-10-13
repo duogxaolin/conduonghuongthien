@@ -104,7 +104,7 @@
 
           <!-- Transcript -->
           <div ref="chatContainer" class="flex-1 overflow-y-auto overscroll-contain bg-[#f8faf8] px-4 py-6 md:px-8" aria-live="polite" aria-relevant="additions text">
-            <div class="mx-auto flex max-w-[760px] flex-col gap-5">
+            <div ref="chatContent" class="mx-auto flex max-w-[760px] flex-col gap-5">
               <div v-if="chatMessages.filter(m => m.id !== 'welcome').length === 0" class="mx-auto mt-6 max-w-[420px] text-center">
                 <div class="mx-auto mb-4 flex h-16 w-16 items-center justify-center rounded-full bg-[#1e4620]/10">
                   <i class="fa-solid fa-shield-halved text-[1.6rem] text-[#1e4620]" aria-hidden="true"></i>
@@ -132,7 +132,7 @@
               </div>
 
               <template v-for="(msg, index) in chatMessages" :key="msg.id || index">
-                <div v-if="msg.id !== 'welcome'" class="flex gap-3" :class="msg.sender === 'user' ? 'justify-end' : 'justify-start'">
+                <div v-if="msg.id !== 'welcome'" class="flex gap-3" :class="msg.sender === 'user' ? 'justify-end' : 'justify-start'" :data-chat-anchor="msg.sender === 'user' ? '' : undefined">
                   <div v-if="msg.sender === 'bot'" class="mt-0.5 flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#1e4620] shadow-sm" aria-hidden="true">
                     <i class="fa-solid fa-robot text-[0.7rem] text-white"></i>
                   </div>
@@ -146,7 +146,6 @@
                           : 'bg-[#1e4620] text-white rounded-[18px_4px_18px_18px] shadow-[0_2px_8px_rgba(30,70,32,0.2)]',
                       msg.status === 'pending' ? 'opacity-60' : ''
                     ]"
-                    role="alert"
                   >
                     <ChatMessageContent :text="msg.text" :is-bot="msg.sender === 'bot'" :tool-calls="msg.toolCalls" />
                     <span v-if="msg.status === 'pending'" class="inline-flex items-center gap-1 mt-1 text-[0.72rem] opacity-70">
@@ -212,10 +211,10 @@
                       </p>
                       <form v-else class="flex flex-col gap-2" @submit.prevent="submitLead(msg)">
                         <p class="m-0 text-[0.8rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
-                        <input v-model="msg.lead.name" type="text" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]" />
-                        <input v-model="msg.lead.phone" type="tel" :placeholder="t('cw_lead_phone')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]" />
-                        <input v-model="msg.lead.email" type="email" :placeholder="t('cw_lead_email')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]" />
-                        <textarea v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-[0.84rem] outline-none focus:border-[#1e4620]"></textarea>
+                        <input v-model="msg.lead.name" type="text" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-[#1e4620]" />
+                        <input v-model="msg.lead.phone" type="tel" :placeholder="t('cw_lead_phone')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-[#1e4620]" />
+                        <input v-model="msg.lead.email" type="email" :placeholder="t('cw_lead_email')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-[#1e4620]" />
+                        <textarea v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.84rem] outline-none focus:border-[#1e4620]"></textarea>
                         <p v-if="msg.lead.error" class="m-0 text-[0.74rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
                         <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-[#1e4620] px-4 py-1.5 text-[0.82rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">
                           {{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}
@@ -224,12 +223,20 @@
                     </div>
                   </div>
                 </div>
+                <!-- Gợi ý hỏi tiếp: chỉ dưới câu trả lời mới nhất, khi đã trả lời xong. -->
+                <ChatFollowUps
+                  v-if="msg.sender === 'bot' && !msg.isStreaming && index === chatMessages.length - 1 && msg.followUps?.length"
+                  :questions="msg.followUps"
+                  :disabled="isSubmitting"
+                  class="pl-[44px]"
+                  @ask="askBot"
+                />
               </template>
 
               <!-- One indicator, from send until the first word lands. The bot
                    message is not in the transcript yet, so this never sits beside
                    an empty bubble. -->
-              <div v-if="isSubmitting" class="flex justify-start gap-3">
+              <div v-if="isAwaitingFirstWord" class="flex justify-start gap-3">
                 <div class="flex h-8 w-8 flex-shrink-0 items-center justify-center rounded-full bg-[#1e4620] shadow-sm" aria-hidden="true">
                   <i class="fa-solid fa-robot text-[0.7rem] text-white"></i>
                 </div>
@@ -269,7 +276,7 @@
                   :aria-describedby="botInputError ? 'tro-ly-error tro-ly-counter' : 'tro-ly-counter'"
                   :aria-invalid="Boolean(botInputError)"
                   :disabled="isSubmitting"
-                  class="max-h-[160px] w-full resize-none rounded-2xl border border-[#d4e4d2] bg-[#f8faf8] px-4 py-3 text-[0.92rem] leading-relaxed outline-none transition-all focus:border-[#1e4620] focus:bg-white focus:shadow-[0_0_0_3px_rgba(30,70,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
+                  class="max-h-[160px] w-full resize-none rounded-2xl border border-[#d4e4d2] bg-[#f8faf8] px-4 py-3 text-base md:text-[0.92rem] leading-relaxed outline-none transition-all focus:border-[#1e4620] focus:bg-white focus:shadow-[0_0_0_3px_rgba(30,70,32,0.08)] disabled:cursor-not-allowed disabled:opacity-60"
                   @keydown.enter.exact.prevent="sendBotMessage"
                   @input="autoGrow"
                 ></textarea>
@@ -297,12 +304,13 @@
 <script setup lang="ts">
 import { ref, computed, onMounted, nextTick } from 'vue'
 import { useChatbot, type StoredConversation, type ChatMessage } from '~/composables/useChatbot'
+import { useChatAutoScroll } from '~/composables/useChatAutoScroll'
 import { useI18n } from '~/composables/useI18n'
 
 const { t } = useI18n()
 const {
   conversations, activeId, activeConversation, chatMessages,
-  isSubmitting, botInput, botInputError,
+  isSubmitting, isAwaitingFirstWord, botInput, botInputError,
   quickQuestions, quickQuestionState, quickQuestionStatusText, limits,
   hydrate, loadQuickQuestions,
   createConversation, switchConversation, deleteConversation, clearChatHistory,
@@ -320,6 +328,8 @@ useHead({
 })
 
 const chatContainer = ref<HTMLElement | null>(null)
+const chatContent = ref<HTMLElement | null>(null)
+const { isPinnedToBottom, pinToBottom, followLatestQuestion, releaseAnchor } = useChatAutoScroll(chatContainer, chatContent)
 const botInputRef = ref<HTMLTextAreaElement | null>(null)
 /** Bound to the honeypot input. Stays empty for a real visitor. */
 const honeypot = ref('')
@@ -340,8 +350,10 @@ const sortedConversations = computed(() => [...conversations.value].sort((a, b) 
  * Follows the newest content. During playback this runs every frame, and yanking
  * the view down while someone is scrolled up re-reading an earlier answer fights
  * them for control of the scrollbar — so by default it only follows when they are
- * already at the bottom. The 48px tolerance covers sub-pixel heights and the
- * moment a new line exists but has not been scrolled past.
+ * still pinned to the bottom. "Pinned" comes from their own scrolling
+ * (`useChatAutoScroll`), not from measuring after the content grew: a cover image
+ * finishing its load used to read as "the visitor scrolled up" and stop the
+ * follow mid-answer.
  *
  * `force` is for switching conversation and first mount, where the container
  * starts at `scrollTop = 0` and the bottom is the intended landing spot rather
@@ -351,10 +363,8 @@ const scrollChatBottom = async (force = false) => {
   await nextTick()
   const el = chatContainer.value
   if (!el) return
-  const wasAtBottom = force || el.scrollHeight - el.scrollTop - el.clientHeight < 80
-  if (wasAtBottom) {
-    el.scrollTop = el.scrollHeight
-  }
+  const wasAtBottom = force || isPinnedToBottom.value
+  if (wasAtBottom) pinToBottom()
 }
 /** Playback passes this as `onTick`, which would otherwise forward its own args. */
 const followChatBottom = () => { void scrollChatBottom() }
@@ -381,6 +391,7 @@ const onCreateConversation = () => {
 
 const onSwitchConversation = (id: string) => {
   switchConversation(id)
+  releaseAnchor()
   scrollChatBottom(true)
 }
 
@@ -399,6 +410,7 @@ const resetInputHeight = () => {
 
 const sendBotMessage = () => {
   if (honeypot.value.trim() !== '') return
+  followLatestQuestion()
   void scrollChatBottom(true)
   submitBotQuestion(botInput.value, followChatBottom).then(() => {
     resetInputHeight()
@@ -409,6 +421,7 @@ const sendBotMessage = () => {
 const askBot = (question: string) => {
   if (isSubmitting.value) return
   botInput.value = question
+  followLatestQuestion()
   void scrollChatBottom(true)
   submitBotQuestion(question, followChatBottom)
 }
@@ -419,6 +432,7 @@ function retryMessage(msg: ChatMessage) {
   const conv = activeConversation.value
   const idx = conv.messages.findIndex(m => m.id === msg.id)
   if (idx !== -1) conv.messages.splice(idx, 1)
+  followLatestQuestion()
   submitBotQuestion(msg.text, followChatBottom)
 }
 

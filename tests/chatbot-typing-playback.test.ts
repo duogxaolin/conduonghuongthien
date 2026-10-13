@@ -258,10 +258,13 @@ test('each surface renders exactly one pending indicator', () => {
   for (const file of SURFACES) {
     const template = parse(read(file), { filename: file }).descriptor.template?.content ?? ''
     assert.equal(
-      (template.match(/v-if="isSubmitting"/g) ?? []).length,
+      (template.match(/v-if="isAwaitingFirstWord"/g) ?? []).length,
       1,
       `${file} must have a single pending indicator`,
     )
+    // Gated on the first word, not on the whole request: shown for the whole
+    // stream it sat under an answer already arriving, then vanished at the end.
+    assert.doesNotMatch(template, /v-if="isSubmitting"/, `${file} keeps the indicator up for the whole stream`)
     // The streaming cursor was a static block character: its keyframe lived in
     // `<style scoped>`, where Vue renames it, so the utility referenced a name
     // that existed nowhere. An empty bubble holding only that motionless glyph
@@ -313,7 +316,7 @@ test('the indicator announces itself to assistive technology', () => {
   // screen-reader user gets silence between sending and the answer arriving.
   for (const file of SURFACES) {
     const template = parse(read(file), { filename: file }).descriptor.template?.content ?? ''
-    const block = template.match(/v-if="isSubmitting"[\s\S]{0,900}/)?.[0] ?? ''
+    const block = template.match(/v-if="isAwaitingFirstWord"[\s\S]{0,900}/)?.[0] ?? ''
     assert.match(block, /role="status"/, `${file} indicator needs role="status"`)
     assert.match(block, /sr-only/, `${file} indicator needs a text label`)
     assert.match(block, /Trợ lý đang soạn/, `${file} indicator label changed wording`)
@@ -336,7 +339,10 @@ test('both surfaces offer the full approved answer with load, error and retry', 
     // Matched on the error element itself, not on how near `role="alert"` happens
     // to sit to the retry button — the utility class strings between them run to
     // several hundred characters, so a proximity window measures formatting.
-    const errorTag = template.match(/<[^>]*status === 'error'[^>]*>/)?.[0]
+    // Anchored on the source-detail state: a bare `status === 'error'` also
+    // matches the message bubble's class binding, which sits earlier in the
+    // template and is not this branch.
+    const errorTag = template.match(/<[^>]*sourceDetailOf\(source\.entryId\)\?\.status === 'error'[^>]*>/)?.[0]
     assert.ok(errorTag, `${file} needs an error branch for the source detail`)
     assert.match(errorTag, /role="alert"/, `${file} error branch is silent to screen readers`)
     assert.match(template, /retrySourceDetail\(source\.entryId\)/, `${file} retry must re-run the failed fetch`)

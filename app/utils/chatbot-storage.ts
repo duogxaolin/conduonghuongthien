@@ -28,6 +28,8 @@ export const CHATBOT_CLIENT_LIMITS = Object.freeze({
   maxSourceReferenceChars: 160,
   maxConversations: 10,
   maxTitleChars: 40,
+  maxFollowUps: 3,
+  maxFollowUpChars: 200,
 })
 
 export const CHATBOT_RESPONSE_KINDS = new Set([
@@ -65,6 +67,8 @@ export type ChatMessage = {
   kind?: string | undefined
   sources?: ChatSource[]
   toolCalls?: ToolCallExecution[]
+  /** Câu hỏi gợi ý tiếp theo do server chọn (đã khớp kho tri thức). */
+  followUps?: string[]
   askContact?: boolean
   lead?: ChatLead | null
   isStreaming?: boolean
@@ -138,6 +142,23 @@ export function normalizeSource(item: unknown, index: number): ChatSource | null
   return { id: `${idPart}-${label}-${reference}`, label: label || 'Tài liệu công khai', reference, url, entryId: knowledgeEntryId(raw) }
 }
 
+/**
+ * Câu gợi ý đi thẳng vào nhãn nút và vào ô hỏi khi bấm, nên chỉ nhận chuỗi
+ * thuần, đã cắt độ dài, bỏ trùng — dù đến từ server hay từ `localStorage`.
+ */
+export function normalizeFollowUps(value: unknown): string[] {
+  if (!Array.isArray(value)) return []
+  const out: string[] = []
+  for (const item of value) {
+    if (typeof item !== 'string') continue
+    const question = item.normalize('NFKC').replace(/\s+/gu, ' ').trim()
+    if (!question || question.length > CHATBOT_CLIENT_LIMITS.maxFollowUpChars || out.includes(question)) continue
+    out.push(question)
+    if (out.length >= CHATBOT_CLIENT_LIMITS.maxFollowUps) break
+  }
+  return out
+}
+
 export function normalizeStoredMessage(item: unknown, index: number): ChatMessage | null {
   if (!item || typeof item !== 'object') return null
   const raw = item as Record<string, unknown>
@@ -151,7 +172,8 @@ export function normalizeStoredMessage(item: unknown, index: number): ChatMessag
     ? raw.sources.slice(0, CHATBOT_CLIENT_LIMITS.maxSources).map(normalizeSource).filter((value): value is ChatSource => value !== null)
     : []
   const toolCalls = Array.isArray(raw.toolCalls) ? (raw.toolCalls as ToolCallExecution[]) : undefined
-  return { id: `stored-${index}`, sender: 'bot', text, kind, sources, toolCalls }
+  const followUps = normalizeFollowUps(raw.followUps)
+  return { id: `stored-${index}`, sender: 'bot', text, kind, sources, toolCalls, ...(followUps.length ? { followUps } : {}) }
 }
 
 /**
