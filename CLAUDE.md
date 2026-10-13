@@ -80,7 +80,7 @@ Chi tiết Page Builder → § Kiến trúc Page Builder bên dưới. Lịch s�
 - **Log** (`server/utils/logger.ts`): 1 dòng JSON, tự che bí mật; `SECURITY_EVENTS` cho cảnh báo.
 - **Sao lưu** (`scripts/backup-db.sh`): dump→verify→xoay vòng; bản hỏng bị xoá.
 - **RAM** (`npm run check:resources`): `MYSQL_MEM_LIMIT`/`APP_MEM_LIMIT` mặc định `1g/1g`; không đề xuất CPU.
-- **CI** (`.github/workflows/ci.yml`): push chỉ trên `main` (không `["**"]`), typecheck là bước trong job `test`. Đọc job cancelled: `runner:""` + `steps_run:0` = chưa cấp máy.
+- **CI** (`.github/workflows/ci.yml`): push chỉ trên `main` (không `["**"]`), typecheck là bước trong job `test`. Đọc job cancelled: `runner:""` + `steps_run:0` = chưa cấp máy (hoặc hết 3.000 phút/tháng — lỗi "payments failed or spending limit"). Job `changes` quyết định: PR nháp bỏ qua, PR thường chạy bộ nhẹ, Integration chỉ chạy khi PR đụng backend/DB/CI hoặc trên `main`/chạy tay (→ `CI-CD.md`).
 
 ---
 
