@@ -17,6 +17,7 @@ import {
   CHATBOT_WELCOME_MESSAGE,
   normalizeConversation as normalizeConversationRaw,
   normalizeSource,
+  normalizeFollowUps,
   normalizeStoredMessage,
   type ChatLead,
   type ChatMessage,
@@ -148,12 +149,13 @@ function persist(): void {
           // `sources` is rewritten rather than copied: the render key in `id` is
           // derived, while `entryId` is the only field that can reopen the full
           // approved answer after a reload.
-          .map(({ sender, text, kind, sources, toolCalls }) => ({
+          .map(({ sender, text, kind, sources, toolCalls, followUps }) => ({
             sender,
             text,
             kind,
             sources: (sources ?? []).map(({ label, reference, url, entryId }) => ({ label, reference, url, entryId })),
             toolCalls: toolCalls ?? [],
+            followUps: followUps ?? [],
           })),
       })),
     }
@@ -375,6 +377,7 @@ function parseSseLine(line: string, target: { text: string, message: ChatMessage
     if (Array.isArray(chatbot.sources)) {
       target.message.sources = chatbot.sources.slice(0, 8).map(normalizeSource).filter((value): value is ChatSource => value !== null)
     }
+    if (Array.isArray(chatbot.followUps)) target.message.followUps = normalizeFollowUps(chatbot.followUps)
     target.message.askContact = chatbot.askContact === true
     if (target.message.askContact && !target.message.lead) {
       target.message.lead = { name: '', phone: '', email: '', question: '', status: 'idle', error: '' }

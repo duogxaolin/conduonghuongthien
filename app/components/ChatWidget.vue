@@ -187,6 +187,14 @@
               </div>
             </div>
           </div>
+          <!-- Gợi ý hỏi tiếp: chỉ dưới câu trả lời mới nhất, khi đã trả lời xong. -->
+          <ChatFollowUps
+            v-if="msg.sender === 'bot' && !msg.isStreaming && index === chatMessages.length - 1 && msg.followUps?.length"
+            :questions="msg.followUps"
+            :disabled="isSubmitting"
+            class="pl-[38px]"
+            @ask="askBot"
+          />
         </template>
 
         <!-- One indicator, from send until the first word lands. The bot message

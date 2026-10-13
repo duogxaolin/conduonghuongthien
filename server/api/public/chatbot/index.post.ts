@@ -9,10 +9,10 @@ import { analyticsHmacSecret } from '../../../utils/runtime-config'
 import { checkAndModerateContent, fastPreModerate } from '../../../services/moderation-worker'
 
 /** Serialises a result into the single-event SSE envelope the widget parses. */
-function sseEnvelope(answer: string, kind: string, sources: unknown, retryAfter: number | null, askContact: boolean): string {
+function sseEnvelope(answer: string, kind: string, sources: unknown, retryAfter: number | null, askContact: boolean, followUps: string[] = []): string {
   const payload = JSON.stringify({
     choices: [{ delta: { content: answer } }],
-    chatbot: { kind, sources, retryAfter, askContact },
+    chatbot: { kind, sources, retryAfter, askContact, followUps },
   })
   return `data: ${payload}\n\ndata: [DONE]\n\n`
 }
@@ -172,6 +172,7 @@ export default defineEventHandler(async (event) => {
         toolCalls: result.toolCalls,
         retryAfter: result.retryAfter || null,
         askContact: result.askContact || false,
+        followUps: result.followUps ?? [],
       },
     })}\n\n`)
     res.write('data: [DONE]\n\n')
@@ -216,5 +217,5 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  return sseEnvelope(result.answer, result.kind, result.sources, result.retryAfter || null, result.askContact || false)
+  return sseEnvelope(result.answer, result.kind, result.sources, result.retryAfter || null, result.askContact || false, result.followUps ?? [])
 })
