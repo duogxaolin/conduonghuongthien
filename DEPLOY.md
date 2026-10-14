@@ -30,6 +30,8 @@ cd cdkt
 ### Tạo file `.env` (tự sinh mật khẩu mạnh + secret keys)
 
 ```bash
+# .env giữ mọi bí mật: chỉ chủ tệp được đọc (600). Tạo rỗng với quyền đó TRƯỚC khi ghi.
+install -m 600 /dev/null .env
 cat > .env << EOF
 # ─── MySQL ───────────────────────────────────────
 MYSQL_ROOT_PASSWORD=$(openssl rand -base64 24 | tr -d '/+=' | head -c 32)
@@ -134,10 +136,18 @@ Khi thấy `Listening on http://0.0.0.0:54432` → app sẵn sàng.
 
 ### Cách B: Khôi phục từ bản sao lưu của bạn
 
+Bản sao lưu do `scripts/backup-db.sh` tạo (`.sql.gz`) thì dùng `scripts/restore-db.sh`
+— xem **Backup & Restore** bên dưới (kiểm tra bản dump, dump bản hiện có trước khi ghi đè).
+Với một tệp `.sql` thường:
+
 ```bash
-docker exec -i cdkt_mysql mysql -u root -p"$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2)" \
-  "$(grep MYSQL_DATABASE .env | cut -d= -f2)" < backup.sql
-docker restart cdkt_app
+# Mật khẩu root đi qua biến môi trường (-e MYSQL_PWD không kèm giá trị), KHÔNG nằm
+# trên dòng lệnh — `-p<mật-khẩu>` hiện ra trong `ps` cho mọi người dùng trên máy chủ.
+docker compose stop app
+set -a; . ./.env; set +a
+MYSQL_PWD="$MYSQL_ROOT_PASSWORD" docker exec -i -e MYSQL_PWD cdkt_mysql \
+  mysql -u root "$MYSQL_DATABASE" < backup.sql
+docker compose up -d --no-deps app
 ```
 
 ---
@@ -266,12 +276,17 @@ SSL: `sudo certbot --nginx -d yourdomain.com`
 
 ---
 
-## Bảo trì định kỳ (BẮT BUỘC)
+## Bảo trì định kỳ (tự chạy trong tiến trình; cron là tuỳ chọn)
 
-Tác vụ dọn dữ liệu analytics **không tự chạy**. Không đặt cron thì bảng `analytics_page_view_events` phình vô hạn cho tới khi đầy đĩa.
+Dọn/gộp analytics và dọn retention **tự chạy trong tiến trình app** ở production
+(`server/plugins/analytics-scheduler.ts`, `retention-scheduler.ts` — bật khi
+`NODE_ENV=production`, tắt bằng `ANALYTICS_SCHEDULER=0` / `RETENTION_SCHEDULER=0`).
+Chỉ khi đặt `ANALYTICS_SCHEDULER=0` thì **bắt buộc** có cron dưới đây, nếu không bảng
+`analytics_page_view_events` phình vô hạn. Giữ cron song song vẫn an toàn (khoá
+`cdkt:analytics:maintenance`).
 
 ```bash
-# Thêm vào crontab của host (chạy 3h sáng mỗi ngày)
+# Tuỳ chọn — thêm vào crontab của host (chạy 3h sáng mỗi ngày)
 0 3 * * * cd /path/to/cdkt && docker compose exec -T app npm run analytics:maintenance >> /var/log/cdkt-analytics.log 2>&1
 ```
 
@@ -280,6 +295,35 @@ Chạy thủ công để kiểm tra:
 ```bash
 docker compose exec app npm run analytics:maintenance
 ```
+
+> Dòng crontab ở trên chạy theo giờ của **máy chủ (host)**, không theo giờ của
+> container — host để UTC thì `0 3 * * *` là 10:00 sáng giờ Việt Nam. Lượt chạy
+> trong tiến trình (scheduler) thì theo giờ của container, xem mục dưới.
+
+---
+
+## Múi giờ
+
+Container **app** chạy giờ Việt Nam (`TZ=Asia/Ho_Chi_Minh` — đặt sẵn trong image
+và ghi chữ cố định trong `docker-compose.yml`, kèm gói `tzdata`). Mã đọc giờ/ngày
+địa phương ở nhiều chỗ: lượt bảo trì analytics và lượt dọn retention lúc 03:00,
+lịch sao lưu tự động, đầu tháng của hạn mức chi phí AI. CI chạy toàn bộ bộ test ở
+`TZ=Asia/Ho_Chi_Minh` vì đó là giờ của máy chủ thật.
+
+Container **mysql** cố ý **giữ UTC** (`time_zone=SYSTEM`): `NOW()`/`CURRENT_TIMESTAMP`
+đã ghi theo UTC từ đầu, và pool CSDL của app tự khai `timezone` tường minh nên không
+phụ thuộc TZ của tiến trình. Đừng đặt `TZ` cho service mysql.
+
+**Hiệu ứng một lần khi lên bản có dòng này** (trước đó container chạy UTC):
+
+- Lượt "03:00" của analytics/retention dời từ 10:00 sáng giờ VN về đúng 03:00 sáng
+  giờ VN. Đêm chuyển đổi có thể chạy hai lượt trong cùng một ngày lịch VN hoặc bỏ
+  qua một đêm; nhánh "stale 36 giờ" của scheduler tự bù, không cần làm gì.
+- Ranh giới tháng của hạn mức AI (`ai_budget`) lùi 7 giờ: tháng mới bắt đầu lúc
+  00:00 giờ VN thay vì 07:00 giờ VN. Chi phí trong 7 giờ đầu tháng giờ được tính
+  vào tháng mới.
+- Ngày giờ do máy chủ dựng (SSR, tên tệp sao lưu, nhật ký `date` trong container)
+  hiện theo giờ VN.
 
 ---
 
@@ -304,12 +348,16 @@ npm run db:drift
 
 Đã cấu hình xong theo [CI-CD.md](./CI-CD.md) thì không phải làm gì: mỗi lần merge
 vào `main`, GitHub Actions chạy đủ bốn cổng kiểm tra, xây image, đẩy lên GHCR, rồi
-ssh vào VPS kéo về và khởi động lại. Deploy hỏng thì tự lùi về image cũ.
+ssh vào VPS kéo về và khởi động lại. `docker-compose.yml` của đúng commit đó cũng
+được gửi lên (kiểm checksum + `docker compose config -q` trước khi dùng, bản cũ sao
+lưu ở `.deploy-compose-backups/`). Deploy hỏng thì tự lùi về image **và** compose cũ.
 
 ### Cách B: Thủ công
 
 ```bash
 cd cdkt
+# docker-compose.yml do CI đặt vào là bản đã commit — bỏ nó để git pull không từ chối
+git checkout -- docker-compose.yml
 git pull origin main
 docker compose build --no-cache
 docker compose up -d
@@ -317,6 +365,14 @@ docker compose up -d
 
 > Database **không bị mất** khi update — volume `mysql_data` persist giữa các lần rebuild.
 > Chỉ mất khi chạy `docker compose down -v` hoặc `docker volume rm`.
+
+> **Một lần, sau bản cập nhật 2026-10 (healthcheck MySQL):** healthcheck của service
+> `mysql` nay đưa mật khẩu qua `MYSQL_PWD` thay vì `-p<mật-khẩu>` (dòng lệnh đó hiện
+> trong `ps` của máy chủ mỗi 10 giây). CI chỉ khởi động lại **app** (`--no-recreate mysql`),
+> nên thay đổi này chỉ có hiệu lực khi anh chủ động tạo lại mysql lúc thấp điểm:
+> `docker compose up -d mysql` (dữ liệu nằm trong volume, không mất). Cùng đợt: `.env` do
+> bản `manage.sh` cũ tạo mang quyền 644 — `./manage.sh` → Update tự siết về 600, hoặc
+> `chmod 600 .env`.
 
 ---
 
@@ -339,11 +395,18 @@ ghcr.io` trên VPS — GHCR để package ở chế độ private kể cả khi 
 
 ### Sao lưu tự động (BẮT BUỘC)
 
-`scripts/backup.sh` tạo một cặp cùng mã thời điểm: dump CSDL và archive của
-`media_work` (video gốc, thumbnail và các đoạn HLS). Media Portal lưu các asset
-này ngoài MySQL, nên chỉ dump CSDL sẽ khôi phục metadata mà không phát được video.
-Mỗi file được nén, kiểm chứng và xoay vòng; file lỗi bị xoá để không bị nhầm là
-bản tốt.
+`scripts/backup.sh` tạo một bộ ba cùng mã thời điểm:
+
+| Tệp | Nội dung |
+|-----|----------|
+| `cdkt-<db>-<mã>-<pid>.sql.gz` | dump CSDL (`mysqldump`) |
+| `cdkt-media-<mã>-<pid>.tar.gz` | volume `media_work` — video gốc, thumbnail, đoạn HLS |
+| `cdkt-uploads-<mã>-<pid>.tar.gz` | volume `uploads_data` (`/app/public/uploads`) — ảnh/tệp tải lên qua admin |
+
+Asset nằm ngoài MySQL, nên chỉ dump CSDL sẽ khôi phục các dòng trỏ vào tệp không còn.
+(Trước đây cron chỉ lưu `media_work`; `uploads_data` chỉ có trong bản sao lưu của ứng
+dụng hoặc phải `docker cp` tay.) Mỗi file được nén, kiểm chứng và xoay vòng; file lỗi
+bị xoá để không bị nhầm là bản tốt.
 
 ```bash
 # Chạy thử một lần
@@ -354,8 +417,22 @@ bản tốt.
 ```
 
 Tuỳ chọn trong `.env`: `BACKUP_DIR` (mặc định `./backups`), `BACKUP_KEEP_DAYS`
-(mặc định 14). Giữ cặp SQL và `cdkt-media-<cùng-mã>.tar.gz` cùng nhau khi sao chép
-sang nơi lưu trữ khác.
+(mặc định 14). Giữ ba tệp **cùng mã** cùng nhau khi sao chép sang nơi lưu trữ khác.
+
+**Hai bộ sao lưu dùng chung `./backups`.** Bản sao lưu trong ứng dụng
+(`/admin`, `server/services/backup.ts`) cũng ghi `cdkt-media-*` / `cdkt-uploads-*` vào
+đó, kết thúc bằng một **từ** (`-manual`, `-scheduled`, `-pre-restore`…) thay vì số pid,
+và tự xoay vòng theo **số bản** (`backup_keep_count`). Script shell xoay theo **ngày**
+và chỉ xoá tệp khớp đúng khuôn của nó (`…-<mã>-<pid>.tar.gz`, `cdkt-<db>-*.sql.gz`) —
+không xoá bản của ứng dụng. Hai bên không thấy nhau nên tổng số tệp là tổng của cả hai.
+
+> **Sao lưu nằm cùng VPS thì mất VPS là mất tất cả.** Cron ở trên chỉ ghi vào đĩa của
+> chính máy chủ này; chỗ lưu ngoài duy nhất có sẵn là backup Google Drive trong trang
+> quản trị (tuỳ chọn, phải tự bật). **Khuyến nghị**: chép định kỳ `./backups/` sang
+> một nơi khác VPS (máy khác, hoặc kho đối tượng ngoài) bằng công cụ của hạ tầng anh
+> đang dùng (ví dụ `rsync`/`rclone` trong cron), và giữ ba tệp cùng mã đi cùng nhau.
+> Repo này **không** kèm công cụ tải lên nào — việc chọn nơi lưu và cấp khoá truy cập
+> là quyết định của đơn vị vận hành.
 
 ### Kiểm chứng khôi phục (nên làm hàng tháng)
 
@@ -367,19 +444,71 @@ tạm** — không đụng tới dữ liệu đang chạy.
 ./scripts/verify-restore.sh backups/cdkt-cdkt_admin-20260726T020000Z-1234.sql.gz
 ```
 
-### Khôi phục thật (khi có sự cố)
+`verify-restore.sh` **không có trong lịch nào** — phải tự đặt cron. Dòng dưới kiểm chứng
+bản dump mới nhất vào mùng 1 hằng tháng, 3:30 sáng. `--latest` tự chọn bản
+`backup-db.sh` mới nhất của **database trong `.env`** (`MYSQL_DATABASE`, trong
+`BACKUP_DIR`) — không phải gõ tên database vào crontab:
 
 ```bash
-gzip -dc backups/<tệp>.sql.gz | \
-  docker exec -i -e MYSQL_PWD="$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2)" \
-  cdkt_mysql mysql -u root --default-character-set=utf8mb4 cdkt_admin
-
-# Dừng app trước khi thay volume media; --replace là xác nhận rõ thao tác xoá
-# nội dung media hiện tại. Chọn archive có cùng mã thời điểm với dump ở trên.
-docker compose stop app
-./scripts/restore-media.sh backups/cdkt-media-<cùng-mã>.tar.gz --replace
-docker compose up -d app
+30 3 1 * * cd /path/to/CDKT && ./scripts/verify-restore.sh --latest >> /var/log/cdkt-verify-restore.log 2>&1
 ```
+
+Script từ chối (mã 2, không nạp gì) một dump tự chọn database khác (`USE`,
+`CREATE/DROP DATABASE`, lệnh client `\u`/`connect`/`source`/`system` ở đầu dòng):
+nạp nó vào "CSDL tạm" sẽ chạy `DROP TABLE` của dump lên database mà nó chọn.
+
+Script thoát mã 0 khi khôi phục được; khác 0 thì `/var/log/cdkt-verify-restore.log`
+có sự kiện `restore_check.failed`. Cần có người đọc log đó — cron không tự báo.
+
+### Khôi phục thật (khi có sự cố)
+
+Dừng app trước (cả ba script đều từ chối chạy khi app còn chạy), chọn **ba tệp cùng
+mã thời điểm**. Mỗi script là thao tác phá huỷ nên đòi xác nhận tường minh:
+
+```bash
+docker compose stop app
+
+# 1. (tuỳ chọn, khuyến nghị) nạp thử dump vào CSDL tạm — không đụng CSDL thật
+./scripts/verify-restore.sh backups/cdkt-cdkt_admin-<mã>-<pid>.sql.gz
+
+# 2. CSDL: bắt buộc nêu tên database đích + --replace. Script kiểm dump (gzip, dấu
+#    "Dump completed", ≥20 bảng, không tự chọn database khác), DUMP BẢN HIỆN CÓ ra
+#    backups/cdkt-prerestore-<db>-*.sql.gz và kiểm chứng nó — dump đó hỏng thì KHÔNG
+#    khôi phục gì — rồi mới nạp. Database đích phải tồn tại sẵn (compose tạo
+#    MYSQL_DATABASE); gõ sai tên thì dừng chứ không tạo database lạ.
+./scripts/restore-db.sh backups/cdkt-cdkt_admin-<mã>-<pid>.sql.gz cdkt_admin --replace
+
+# 3. Volume: script nhận ra volume nào từ TÊN archive (cdkt-media-* / cdkt-uploads-*),
+#    từ chối tên lạ, đường dẫn thoát khỏi thư mục (`..`, `/`), tên có `\`/ký tự
+#    điều khiển, archive uploads có thư mục gốc không phải `uploads/`, và MỌI mục
+#    không phải tệp thường/thư mục (symlink, hard link, fifo, thiết bị — một symlink
+#    trỏ vào backups/*.sql.gz sẽ được /uploads phục vụ ra ngoài). Cần GNU tar trên
+#    máy chủ. Sau đó: sao lưu volume hiện có ra backups/cdkt-prerestore-<media|uploads>-*.tar.gz
+#    (kiểm chứng; hỏng = không đổi gì; bỏ bằng --no-safety-copy), giải nén vào thư
+#    mục tạm NGAY TRÊN volume, kiểm lại bằng `find` trong container, rồi mới thay.
+#    Cần chỗ trống trên volume cho bản mới trong lúc bản cũ còn đó. Uploads được trả
+#    quyền về user `node`.
+./scripts/restore-media.sh backups/cdkt-media-<mã>-<pid>.tar.gz   --replace
+./scripts/restore-media.sh backups/cdkt-uploads-<mã>-<pid>.tar.gz --replace
+# Lùi lại một lần restore volume: chính bản cdkt-prerestore-* vừa tạo
+# ./scripts/restore-media.sh backups/cdkt-prerestore-uploads-<mã>-<pid>.tar.gz --replace
+
+docker compose up -d --no-deps app
+```
+
+"App đã dừng" được kiểm bằng **hai** tín hiệu (`docker compose ps --status running`,
+`docker inspect cdkt_app`). Cả hai đều không trả lời được — ví dụ Docker Compose cũ không
+có `ps --status` — thì `restore-db.sh`/`restore-media.sh` **từ chối** (mã 2) thay vì coi
+như đã dừng; kiểm tay bằng `docker ps`, rồi thêm `--i-know-app-is-stopped` sau `--replace`.
+
+Ghi chú: dump chỉ `DROP`/tạo lại những bảng **có trong nó**; bảng có ở CSDL đích mà không
+có trong dump được giữ nguyên. Muốn "đúng như bản sao lưu" thì khôi phục vào CSDL rỗng.
+Archive `cdkt-uploads-*` của bản sao lưu trong ứng dụng dùng cùng khuôn (`uploads/…`) nên
+khôi phục được bằng cùng lệnh; archive `cdkt-media-*` của ứng dụng (gốc `media/`) có khuôn
+khác và `restore-media.sh` từ chối — khôi phục chúng bằng chức năng khôi phục của trang
+quản trị (`/api/admin/backup/restore`).
+Các tệp `cdkt-prerestore-*` (dump CSDL của `restore-db.sh`, archive volume của
+`restore-media.sh`) **không** bị xoay vòng; dọn tay khi không còn cần.
 
 ---
 
@@ -387,17 +516,17 @@ docker compose up -d app
 
 ```bash
 # ─── Máy cũ ─────────────────────────────────────
-docker exec cdkt_mysql mysqldump -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin > backup.sql
+# Một lệnh ra đủ bộ ba (SQL + media_work + uploads_data) cùng mã thời điểm.
 ./scripts/backup.sh ./transfer-backup
-docker cp cdkt_app:/app/public/uploads ./uploads_backup
-scp -r transfer-backup uploads_backup .env root@ip-may-moi:/path/to/cdkt/
+scp -r transfer-backup .env root@ip-may-moi:/path/to/cdkt/
 
-# ─── Máy mới (sau khi clone + docker compose up) ─
-gzip -dc transfer-backup/cdkt-cdkt_admin-<cùng-mã>-*.sql.gz | docker exec -i cdkt_mysql mysql -u root -p$(grep MYSQL_ROOT_PASSWORD .env | cut -d= -f2) cdkt_admin
-docker cp uploads_backup/. cdkt_app:/app/public/uploads/
+# ─── Máy mới (sau khi clone + .env đã chép sang + docker compose up -d) ─
+# `.env` phải là .env của máy cũ: compose dựng CSDL rỗng bằng đúng MYSQL_* trong đó.
 docker compose stop app
-./scripts/restore-media.sh transfer-backup/cdkt-media-<cùng-mã>-*.tar.gz --replace
-docker restart cdkt_app
+./scripts/restore-db.sh transfer-backup/cdkt-cdkt_admin-<mã>-*.sql.gz cdkt_admin --replace
+./scripts/restore-media.sh transfer-backup/cdkt-media-<mã>-*.tar.gz --replace
+./scripts/restore-media.sh transfer-backup/cdkt-uploads-<mã>-*.tar.gz --replace
+docker compose up -d --no-deps app
 ```
 
 ---

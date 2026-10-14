@@ -137,6 +137,116 @@ Hai allowlist nằm ở hai tệp khác nhau — `detectMime()`/`EXT_BY_MIME` �
 
 ---
 
+## Cổng `/api/admin/**` và khôi phục backup (audit 2026-10-13)
+
+### Middleware phải đọc đúng đường dẫn mà router đọc
+
+`server/middleware/admin-auth.ts` từng so `getRequestURL(event).pathname` — dạng **thô**, còn nguyên `%xx`. h3 1.15 giải mã đường dẫn **trước** khi route (`event.path` trong middleware đã giải mã), nên `/api/%61dmin/users` không bắt đầu bằng `/api/admin/` trong mắt middleware nhưng vẫn được route vào handler `users` — không token, không `isActive`, không `tokenVersion`, không chốt stage MFA. Không lộ gì chỉ nhờ từng handler tự kiểm quyền; một handler mới quên kiểm là mở toang. Test cũ giả `getRequestURL` nên không thể thấy.
+
+- `classifyAdminRequest(routedPath, rawPathname)`: là admin request nếu **bất kỳ** dạng nào (`event.path` bỏ query/fragment, dạng giải mã của nó, pathname thô, dạng giải mã của pathname thô) bắt đầu bằng `/api/admin/`; chỉ được miễn khi **mọi** dạng đã giải mã đều đúng một trong bốn endpoint đăng nhập. Chuỗi giải mã hỏng (`%zz`) giữ dạng thô → vẫn bị chặn. Pathname thô chưa giải mã không dự phần miễn trừ, nếu không `/api/admin/auth/log%69n` (router route vào login) sẽ 401.
+- `tests/admin-auth-path-gate.test.ts` chạy middleware **thật** trong app h3 + router **thật** trên cổng tạm, gửi dòng request nguyên văn qua `node:http` (không `fetch`/`URL` — chúng tự chuẩn hoá `..`, `%2e%2e`, `//` trước khi gửi nên test sẽ không kiểm gì). Mỗi handler là một sentinel đếm lượt gọi, có cả catch-all để "0 lượt" không thể là một 404. Đưa middleware cũ trở lại → 3 test đỏ.
+- `tests/admin-handler-authorization.test.ts` kiểm kê 282 handler: mỗi tệp phải **gọi** (không chỉ import) một hàm kiểm quyền, trực tiếp hoặc qua một module `services/`/`utils/` một bước (trừ `permissions.ts`/`auth.ts` — nơi định nghĩa hàm kiểm, import chúng không chứng minh gì), hoặc có tên trong `AUTH_EXEMPTIONS` kèm lý do (15 tệp: luồng đăng nhập, tài khoản của chính mình, kiểm SuperAdmin tại chỗ). Mục miễn trừ cũ (tệp mất hoặc đã tự kiểm) cũng làm test đỏ.
+
+### Khôi phục, tải về, xoá backup chỉ dành cho SuperAdmin
+
+Khôi phục chạy file SQL tải lên bằng `multipleStatements` dưới quyền `DB_USER` (root trong compose mặc định) — tức là toàn quyền CSDL, kể cả `users`/`roles` — trong khi trước đây chỉ cần `settings.update`; bản dump (hash mật khẩu, đơn của công dân) tải về được với `settings.read`. Người chỉ được sửa cài đặt leo thang được thành toàn quyền, vượt cả chốt SuperAdmin của `tracking_custom_head`. Nay `requireSuperAdmin(actor)` (`server/utils/permissions.ts`) chặn bốn endpoint `restore`, `restore-upload`, `[filename].get`, `[filename].delete` — gọi **sau** `requireResourcePermission(…, 'settings', …)` để quy ước "mọi handler gọi helper" vẫn đúng. `restore-upload` từ chối trước khi đổi trạng thái khôi phục và trước khi đọc body multipart. Liệt kê, trạng thái, tạo backup và cấu hình Drive giữ quyền cũ. Trang `/admin/settings/backup` ẩn các nút đó với người khác, nhưng server mới là nơi quyết định.
+
+Chưa làm (khuyến nghị): chạy khôi phục bằng một tài khoản MySQL bị giới hạn thay vì `root`.
+
+### Thứ tự khôi phục là hợp đồng
+
+`server/services/backup-restore.ts` + `backup-restore-guards.ts`:
+
+1. **Kiểm trước khi ghi/ghi nhận/chạy**: đuôi `.sql.gz`/`.tar.gz`, chữ ký gzip `1f 8b`, trần nén 512 MiB (endpoint còn chặn sớm theo `Content-Length`), trần giải nén **đếm theo luồng** — 256 MiB cho SQL (toàn văn SQL phải vừa một chuỗi JS), 15 GiB cho archive (giải nén thẳng ra đĩa, chặn bom làm đầy đĩa; trước 2026-10-14 là 8 GiB — chủ repo nâng để archive media 10,9 GB khôi phục được qua giao diện). Không còn `gunzipSync` không trần. Lỗi → xoá file tạm, không có hàng `backups`, trạng thái `failed` kèm lý do, mã 4xx từ `BackupRestoreError.statusCode` (không so khớp chuỗi).
+2. **Archive** (bản đầu; từ 2026-10-14 thay bằng `TarHeaderScanner` — xem § "Đợt sửa sau kiểm chứng"): `tar -tzvf` được phân tích (định dạng GNU lẫn BusyBox — container production là alpine) trước khi giải nén; một mục `..`, tuyệt đối, symlink, hard link (BusyBox in hard link như file thường kèm ` -> `), thiết bị, hay ngoài `uploads/`/`media/` → không giải nén mục nào. Dòng không đọc được → từ chối.
+3. **Sao lưu an toàn**: khôi phục CSDL tạo bản `pre-restore` trước (`runBackup(…, { rotate: false })` — xoay vòng có thể xoá đúng bản cũ nhất, tức file đang khôi phục). Sao lưu an toàn hỏng → huỷ; đang có backup chạy → 409.
+4. **Audit**: `backup_restore` trong một transaction cùng việc gắn lại các hàng `backups` mô tả file còn trên đĩa (dump vừa chạy đã `DROP TABLE backups`, nên hàng `pre-restore` và hàng của file vừa tải lên biến mất); `backup_restore_failed` trong transaction riêng, lỗi ghi audit không che lỗi gốc. Người thao tác vắng khỏi bảng `users` sau khôi phục → `user_id` null, tên và id nằm trong `meta` (khoá ngoại). Log bảo mật `backup.restore_started/succeeded/failed/refused`.
+
+### Dump định dạng 2 — ngày giờ đúng nguyên văn
+
+Dump cũ đọc qua pool (`timezone: '+07:00'`) rồi ghi `Date.toISOString()` (UTC): mọi DATETIME/TIMESTAMP **sớm 7 giờ**, DATE lùi về **ngày hôm trước** (`2026-10-13` → `2026-10-12 17:00:00`), BIGINT và số nguyên trong JSON vượt 2^53 mất chính xác, chuỗi JSON `"text"` ghi trần thành `text` nên khôi phục **hỏng hẳn** (`ER_INVALID_JSON_TEXT`). Mỗi bảng còn được đọc ở một thời điểm khác nhau.
+
+`dumpSql` (`server/services/backup-sql.ts`) nay mở kết nối riêng với `dateStrings`/`bigNumberStrings`/`jsonStrings`, `SET SESSION time_zone = '+00:00'`, đọc mọi bảng trong một `START TRANSACTION WITH CONSISTENT SNAPSHOT` (REPEATABLE READ), ghi header `-- CDKT dump-format: 2` và `SET time_zone = '+00:00';`. Chuỗi của cột số chỉ viết trần khi khớp mẫu số chặt (`'007'` trong VARCHAR luôn có nháy); giá trị kiểu bất ngờ làm dump **ném lỗi** thay vì đổi âm thầm. `tests/backup-dump-integration.test.ts` (MySQL thật, CI matrix `backup-dump`) chứng minh round trip giống hệt dưới múi giờ mặc định của server, dưới `SET GLOBAL time_zone='+07:00'`, và chéo giữa hai bên; cùng snapshot nhất quán và khôi phục đầu-cuối.
+
+Dump cũ (header `-- CDKT backup:` không có dấu định dạng 2) vẫn khôi phục được nhưng được **gắn cờ**: trạng thái và toast báo ngày giờ có thể sớm 7 giờ, audit có `legacyDateShift: true`. Không sửa được đáng tin cậy bằng SQL nên không thử. Dump `mysqldump` (`scripts/backup-db.sh`) không bị gắn cờ.
+
+---
+
+## Đích ra ngoài và bí mật đã lưu (audit 2026-10-13, phần 2)
+
+Mẫu chung của nhóm lỗi này: **một bí mật đã lưu (API key, mật khẩu SMTP) được gửi tới một đích mà request — hoặc một trường do biên tập viên sửa — tự chọn.** Cách sửa chung: đích được kiểm cả lúc ghi lẫn lúc dùng, và đổi đích thì phải đưa lại bí mật.
+
+### baseUrl của nhà cung cấp AI
+
+`providers/index.post.ts` và `[id].put.ts` lưu `baseUrl` không kiểm; `ai-gateway.ts` dựng `allowedHosts` từ chính URL đó (nên không chặn gì), và mọi đường stream/tool-calling dùng `fetch` trần — không https, không chặn IP nội bộ, không hạn giờ/trần byte. Người có `ai.update` đặt `baseUrl=http://máy-mình` thì lượt gọi chatbot/dịch kế tiếp gửi `Authorization: Bearer <key>` tới đó.
+
+- Chính sách thuần `server/utils/ai/provider-url.ts`: https, cổng 443, không userinfo, hostname không phải IP nội bộ/loopback/link-local ở mọi dạng viết (thập phân, hex, IPv6, dấu chấm cuối), không `localhost`/`.local`/`.internal`. Áp lúc **ghi** (provider tạo/sửa, PATCH cài đặt chatbot → 400 tiếng Việt) và lúc **gọi** (mọi đường trong `ai-gateway.ts`; test chứng minh URL xấu không phát ra lượt mạng nào).
+- `safeProviderStream` (`server/utils/chatbot/outbound.ts`): cùng các kiểm như `safeProviderRequest`, DNS → IP công khai và **kết nối bằng chính IP đã kiểm** (không có cửa sổ DNS-rebinding), không theo redirect, hạn tổng 300 s / im lặng 240 s, trần byte; trả luồng cho `readChatSse` (bộ đọc SSE vẫn chỉ có một).
+- Đổi `baseUrl` của provider đã có key → phải nhập lại key trong cùng request. Đổi `baseUrl`/`allowedHosts` của chatbot chỉ SuperAdmin (như xoay key); trang cài đặt không gửi lại hai trường đó khi không đổi.
+
+### Liên kết trong email thông báo
+
+`requestBase()` lùi về Host thô và tin `X-Forwarded-Host` khi peer là proxy đã khai; ví dụ nginx trong `CI-CD.md` không đặt/xoá header đó → người đọc khiến cổng gửi email thật trỏ tới `evil.example`. Triển khai đa tên miền là **chủ đích** nên không ép `PUBLIC_BASE_URL`: `server/utils/public-link-base.ts` chỉ nhận host request khi nó nằm trong `PUBLIC_HOST_ALLOWLIST` hoặc là host của `PUBLIC_BASE_URL`, còn lại dùng `PUBLIC_BASE_URL`; trống cả hai → hành vi cũ + log một lần `security.link_host_unchecked` (host bị từ chối: `security.link_host_rejected`). OAuth redirect vẫn suy từ request — Google tự đối chiếu redirect URI đã đăng ký. Phía nginx: site `default_server` từ chối host lạ + `proxy_set_header X-Forwarded-Host $host`.
+
+### Những đích khác
+
+- **Test SMTP** (`test-email.post.ts`): body gửi host/port/user + mật khẩu che `********` thì máy chủ từng nạp mật khẩu **đã lưu** và đăng nhập vào host do người gọi chọn (đọc ngược mật khẩu, kiêm quét cổng). Nay mật khẩu che/trống → dùng **trọn** cấu hình đã lưu, bỏ host/port/user trong body; muốn thử host khác phải gõ mật khẩu mới (`server/utils/smtp-test-config.ts`).
+- **Xuất Google** (`article-export-google.ts`): từng `fetch(thumbnailUrl)` bất kỳ (SSRF), đẩy bytes lên Drive và chia sẻ `anyone: reader`, chèn URL thô vào `=IMAGE("…")`. Nay chỉ lấy ảnh thuộc media của chính site (`/uploads` đọc từ đĩa, hoặc host R2 công khai đã cấu hình) — còn lại bỏ ảnh, lượt xuất vẫn chạy; không chia sẻ công khai; công thức thoát nháy; ô văn bản đầu `= + - @`/tab/CR bị vô hiệu (`server/utils/spreadsheet-cell.ts`, dùng chung cho CSV).
+- **AI biên tập**: `polishedContent` do model viết từng về client nguyên văn và vào `v-html` → nay `sanitizeHtml` ở máy chủ (cả nhánh trả lời không phân tích được và `changes[].suggested`). `tests/security-ai-editorial-html.test.ts` giữ **kiểm kê mọi `v-html` trong `app/`** kèm nguồn đã lọc — thêm `v-html` mới mà không khai là đỏ.
+- **Nhỏ**: JWT ký/kiểm ghim `HS256`; `restart-server` cần thêm SuperAdmin (kiểm `isSuperAdmin === true` tại chỗ, sau `requireResourcePermission`); link markdown của chat chỉ `https:` hoặc đường dẫn một gạch (`//evil.com` không còn là link nội bộ); `boost`/`stats` của bài kiểm quyền theo thể loại **trước** khi tra id nên 404/403 không còn lộ bài tồn tại.
+
+### Kiểm duyệt: thứ tự, trần, regex
+
+`chat.post.ts` và `public/chatbot/index.post.ts` chạy `fastPreModerate` **trước** mọi giới hạn, mỗi tin bị chặn ghi một hàng `ai_moderation_queue` → khách vô danh làm ngập hàng duyệt. Nay `chargeChatRateLimit` tính trước (nhớ trong `event.context` để không tính hai lần) và `MODERATION_QUEUE_CAP` giới hạn số hàng theo IP (không có thì theo phiên). `comments.ts`/`livestream-chat.ts` được sửa theo cùng thứ tự ở đợt G1 (§ "Đợt sửa cuối (G1–G3)" bên dưới).
+
+Regex do admin viết từng bị hạ chữ thường trước khi biên dịch ở một nhánh (`\S`→`\s`, `\W`→`\w`) và không ở nhánh kia; nay một helper `server/services/moderation-regex.ts` (cờ `iu`, trần độ dài, bỏ mẫu hỏng) dùng cho cả hai, luật lưu mới bị từ chối nếu không biên dịch được hoặc có hình dạng lùi vô hạn hiển nhiên (`(a+)+`, `(a*)*`, nhánh chồng lấn có lượng từ). **Đây là heuristic: giảm, không loại trừ ReDoS.** (Bộ phân tích + trần lúc chạy đã được làm chặt hơn ở đợt 2026-10-14 — `chatbot.md` § "Kiểm duyệt và độ dài tin".)
+
+## Đợt sửa sau kiểm chứng (2026-10-14, F1–F6)
+
+Một lượt kiểm chứng độc lập trên cây đã gộp tìm ra các lỗ dưới đây; mỗi bản sửa có test đỏ trên mã cũ → xanh trên mã mới (báo cáo của nhánh sửa), và lượt kiểm cuối đã chạy lại toàn bộ test + build + e2e.
+
+### Đổi đích thì phải đưa lại bí mật — áp cho mọi cài đặt có bí mật
+
+Mẫu "bí mật đã lưu bị gửi tới đích do request chọn" (§ trên) còn ở ba chỗ: lưu cài đặt SMTP với host mới mà không gõ mật khẩu (lần gửi email kế tiếp đăng nhập vào host đó bằng mật khẩu cũ), và đổi account/bucket R2 của ảnh hoặc video (lượt đồng bộ kế tiếp ký request bằng secret cũ tới account khác). Nay một luật thuần dùng chung `shared/settings-credential-rules.ts` — đổi host/port/user/secure SMTP, account/bucket R2 ảnh, account/bucket R2 video mà không kèm bí mật mới trong cùng request → 400; trang (`email.vue`, `media-storage.vue`, `media-portal.vue`) dùng đúng luật đó để báo lỗi tại ô trước khi gửi, máy chủ (`server/utils/settings-credential-guard.ts`, `index.put.ts`, `media-portal.put.ts`) là nơi quyết định. SMTP chỉ nhận cổng 25/465/587/2525 (chặn dùng tính năng test để quét cổng). `test-email`/`test-r2` với bí mật trống/che dùng **trọn** cấu hình đã lưu và chỉ trả lỗi đã phân loại (không phản chiếu thông báo thô của máy đích); `test-r2` nay cần `settings.update`. Xoá trắng ô mật khẩu SMTP = xoá mật khẩu đã lưu (trước đó không có cách xoá). `GET media-portal` trả giá trị R2 đã lưu + `secretStored`: trước đó provider `local`/bí mật không đọc được trả chuỗi rỗng, và lưu lại trang là xoá trắng cấu hình.
+
+Còn lại: `smtp-test-config.ts` giữ một bản chép logic của luật chung (có test đối chiếu). (Account id/bucket R2 **đã lưu từ trước** nay được kiểm lúc dùng — G3, bên dưới.)
+
+### Backup: cấu hình đích cũng là quyền SuperAdmin
+
+Khôi phục đã là SuperAdmin, nhưng người có `settings.update` vẫn đổi được **đích** Drive (service account, thư mục, bật/tắt) và `backup_keep_count` — tức là gửi bản dump (hash mật khẩu, đơn của công dân) tới Drive của mình, hoặc đặt giữ 1 bản để xoay vòng xoá bản tốt. Nay `server/api/admin/settings/backup.put.ts` (`SUPERADMIN_ONLY_KEYS`) từ chối các khoá đó với người không phải SuperAdmin (so giá trị hiệu lực, 400 chứ không 500, audit không chứa secret), mọi endpoint Drive OAuth (`config.put`, `start`, `callback`, `clear-secret`, `disconnect`) gọi `requireSuperAdmin`; trang ẩn các ô và `app/utils/backup-settings-payload.ts` bỏ các khoá đó khỏi payload. Xoay vòng (`selectRotationVictims`) luôn giữ bản mới nhất của **mỗi họ** (sql/uploads/media) và mọi bản `pre-restore`, nên `keep_count` nhỏ không xoá được bản duy nhất của một họ.
+
+Kiểm mục tar: phân tích dòng `tar -tzvf` phụ thuộc định dạng in của từng bản tar (BusyBox in hard link như file thường, tên người dùng giả mạo được cột) — một mục đặt tên khéo vượt qua được. Nay `TarHeaderScanner` (`backup-restore-guards.ts`) đọc trực tiếp header 512 byte trong Node, hiểu pax/GNU long name, từ chối loại mục không phải file/thư mục (`archive_unsupported_entry`), tên không an toàn (`archive_unsafe_name`), quá nhiều mục (`archive_too_many_entries`). Đã chạy trên archive thật trong `backups/`: uploads 3235 mục và `missing492` được nhận; một archive media bị cắt cụt thật bị từ chối `corrupt_gzip`. Header dump ghim `sql_mode='NO_AUTO_VALUE_ON_ZERO'` (cả phiên dump và phiên khôi phục) — hàng `id = 0` trong cột AUTO_INCREMENT không còn bị đánh số lại. Archive giải nén > 15 GiB bị từ chối (413; trần cũ 8 GiB) — archive media 10,9 GB đang có (luồng tar 10,59 GiB, 11.786 mục) nay được `inspectArchive` nhận; archive lớn hơn 15 GiB vẫn phải khôi phục bằng `scripts/restore-media.sh`. Archive media bị cắt cụt nói ở trên là tệp 2,3 GB `…185215Z-pre-sync`.
+
+### Cổng admin: `#` và kiểm kê handler
+
+`classifyAdminRequest` từng cắt cả `#` khi chuẩn hoá. Trình duyệt không gửi fragment nhưng client thô thì gửi được, và router h3 **không** cắt `#`: `/api/admin/auth/login#/../users` bị phân loại là trang đăng nhập (miễn kiểm) trong khi router thấy một đường dẫn khác — một route `**` bắt được nó sẽ chạy không qua phiên. Nay chỉ `?` bị cắt; đường dẫn chứa `#` hoặc `%23` không bao giờ được miễn. Kiểm kê "mọi handler admin đều kiểm quyền" từng là grep văn bản (comment hay chuỗi chứa tên helper cũng làm nó xanh); nay `tests/_admin-authz-classifier.ts` đọc AST TypeScript và chỉ tính lời gọi thật ở thân handler (15 miễn trừ giữ nguyên, đột biến bằng comment/chuỗi → đỏ). Bản build thật (CSDL không với tới, 2026-10-14): 19 cách viết × 4 method, kể cả `%61dmin`, `login#/../users`, `login%23/../users`, `..%2f`, `;` — chỉ ra 401/400/404; `/api/admin/backup/status` không cookie → 401.
+
+### Đích ra ngoài khác
+
+Thumbnail khi xuất bài lên Google đi qua `safeProviderRequest` (trước đó `fetch` trần tới URL R2 lấy từ cài đặt); dải IPv6 NAT64 (`64:ff9b::/96`, `64:ff9b:1::/48` — `64:ff9b::a9fe:a9fe` chính là 169.254.169.254) và site-local `fec0::/10` bị coi là nội bộ; Google OAuth chỉ tin `x-forwarded-proto` khi peer là proxy đã khai. Còn `fetch` trần: `ai/delify/*`, `ai-budget.ts` (`media-portal.ts` đã bỏ ở G3).
+
+## Đợt sửa cuối (G1–G3, 2026-10-14)
+
+Ba nhánh sửa sau lượt kiểm cuối của F1–F6; test đỏ → xanh theo báo cáo của nhánh sửa, lượt kiểm cuối chạy lại toàn bộ test/build/e2e (CHANGELOG § 19).
+
+### Bình luận và chat livestream: giới hạn trước kiểm duyệt, trần hàng duyệt theo nguồn
+
+`createComment` và `sendChatMessage` từng chạy `fastPreModerate` trước giới hạn của chính chúng, và không truyền `capQueuePerSource` — một reader (hay script giữ nhiều tài khoản Google) ghi hàng `ai_moderation_queue` không giới hạn. Nay thứ tự là cổng → giới hạn reader → giới hạn IP → `fastPreModerate({ readerId, capQueuePerSource: true })` → ghi. Tin bị chặn tức thì là **ngoại lệ có tên** của "lượt giới hạn chỉ tính khi ghi": nó không miễn phí vì ghi một hàng duyệt. Khoá trần hàng duyệt (20/giờ) là địa chỉ đã gộp (`server/utils/ip-bucket.ts`: IPv6 → /64, `::ffff:a.b.c.d` → IPv4) **và** reader id; không có cả hai thì theo phiên — một tài khoản đổi địa chỉ hay một /64 xoay địa chỉ vẫn đụng trần. Ngân sách tính chung theo địa chỉ giữa chatbot, bình luận, chat livestream. `ip-bucket.ts` cố ý **không** nối vào `getClientIp` hay khoá giới hạn chung (danh sách chặn IP và audit lưu địa chỉ đầy đủ) — nên `comment:ip:`, `livestream:chat:ip:`, giới hạn chat và trần AI theo IP vẫn né được bằng xoay địa chỉ trong /64 (còn mở). `recordInstantBlock` từng `catch {}`: nay log `ai_moderation.queue_insert_failed` chỉ với lớp/mã lỗi (thông điệp Drizzle nhúng tham số ràng buộc — nội dung, IP, tên).
+
+### R2: cấu hình hỏng là lỗi, không phải "không có object"
+
+Luật "đổi đích phải gõ lại bí mật" chỉ chặn lúc **ghi**; hàng đã lưu trước đó (hay sửa tay/khôi phục) vẫn đi thẳng vào `https://${accountId}.r2.cloudflarestorage.com`. Nay `openR2`/`assertUsableR2Config` (`server/utils/media-r2.ts`) kiểm account id (32 hex) + tên bucket ở **mọi** lần dùng, cho ảnh và video (`video-r2-sync.ts`): hỏng → `R2ConfigInvalidError` (400, không phản chiếu giá trị), log `r2.config_invalid` tối đa một dòng/10 phút mỗi trường. `headR2Object`/`deleteR2File` **ném** lỗi đó thay vì trả `false` — trả `false` từng khiến quét thumbnail báo mọi ảnh R2 là hỏng (lượt "sửa" thay hết bằng ảnh mặc định) và self-heal coi mọi object là mất. Lỗi mạng/xác thực/5xx của `HeadObject` thì **vẫn** trả `false` (còn mở).
+
+### Media Portal: ảnh nguồn thumbnail không đi qua `media.url`
+
+"Đặt thumbnail từ ảnh thư viện" từng `fetch(img.url)` trần — không hạn giờ, không trần byte, theo chuyển hướng; `media.url` là một ô CSDL (theo bản khôi phục/import SQL), nên một URL nội bộ biến nút này thành SSRF có kênh đọc ngược (bytes thành thumbnail công khai). Nay `readLibraryImage` đọc theo khoá R2 (`getR2Object`, trần 25 MiB, hạn 20 s, cấu hình R2 của thư viện ảnh) hoặc tệp thường dưới `public/uploads` (`lstat`, trần byte). Không có nhánh `safeProviderRequest`: không host bên thứ ba nào hợp với tính năng này. Còn mở: kiểm "nằm dưới uploads" là so chuỗi đường dẫn — thư mục cha là symlink dưới uploads vẫn lọt (giống route `/uploads`).
+
+### Sao lưu: trigger dài và xoay vòng trong lúc khôi phục
+
+`backups.trigger` là `VARCHAR(16)`; `runBackup('sql','pre-fix-thumbnails')` (18 ký tự) lỗi `ER_DATA_TOO_LONG` trên MySQL 8.0.46 strict — không hàng, không dump (hàng "failed" trong `catch` cũng hỏng theo), nên quét thumbnail chạy **không** có bản an toàn. Nay `VARCHAR(32)`, danh sách `BACKUP_TRIGGERS` là nguồn chân lý (test đòi mọi trigger vừa cột), `modifyColumn` trong `migrations-additive.ts` nâng cột lúc container khởi động. Xoay vòng (`rotateOldBackups`) bỏ cả lượt khi khoá `cdkt:backup:restore` đang bị giữ (`IS_USED_LOCK`, không chờ) hoặc không đọc được trạng thái khoá, và bỏ từng tệp đang được khôi phục (`holdRestoreTarget`, đếm tham chiếu trong tiến trình) — log `backup.rotate_skipped_restore_active`. Còn mở: khôi phục bắt đầu đúng lúc vòng xoá đang chạy thất bại sạch thay vì được ngăn; `deleteBackup` thủ công vẫn xoá được tệp đang khôi phục.
+
+---
+
 ## Pentest RedAmon 2026-10-06 — 12 findings, 0 CVE, risk 65/100 High
 
 Báo cáo external pentest `cdht.delify.vn` (RedAmon, 6/10/2026). Mọi finding đều là **misconfig deployment/DNS**, không phải soft vuln — 0 CVE, 0 confirmed exploit. Đối chiếu với codebase:

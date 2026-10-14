@@ -139,3 +139,41 @@ Chuông sống trong `ReaderNotificationBell.client.vue`, không nằm trong lay
 - **Ba dòng `redirect` 301 trong `routeRules` là BẮT BUỘC, không phải lịch sự.** Cả ba tuyến đã chạy trên production, đã được chia sẻ và đã vào chỉ mục tìm kiếm — chính trợ lý ảo cũng đã dẫn `/tai-lieu-hoi-dap` trong câu trả lời. Đổi tên mà không có chúng là **làm chết mọi liên kết đã phát ra ngoài**, kể cả liên kết đã in ra giấy hay nằm trong tin nhắn. Một liên kết không có hạn sử dụng; giá để giữ là ba dòng cấu hình. **Đừng xoá theo kiểu dọn dẹp** — có test chặn cả ba.
 - **301 chứ không 302**: chuyển hẳn thứ hạng tìm kiếm sang địa chỉ mới thay vì để công cụ tìm kiếm giữ cả hai. Query string **được giữ nguyên** qua lượt chuyển hướng (đã kiểm trên bản build thật: `/tai-lieu-hoi-dap?q=test` → `/qa-documents?q=test`), nên một liên kết đã lọc sẵn vẫn mở đúng kết quả đó.
 - **`/profile` CÓ xuất hiện trong `routeRules`** — với tư cách **đích đến** của lượt chuyển hướng, không phải một quy tắc cache. Test kiểm đúng thứ có ý nghĩa: không có khoá `'/profile':` nào (đó mới là hình dạng có thể mang `swr`), và lượt 301 vẫn còn.
+
+---
+
+## Ngôn ngữ người đọc và trang cache SWR (2026-10-13)
+
+Nitro dựng các tuyến `swr: 60` mà không thấy cookie của khách, rồi **phát lại cả header `set-cookie` đã cache cho mọi người**. `useI18n` từng dùng `useCookie('cdkt_lang', { default: () => 'vi' })`, nên lượt SSR ghi `set-cookie: cdkt_lang=vi` và mỗi trang cache đặt lại lựa chọn của **mọi** người đọc về tiếng Việt; khách chỉ có cookie `en` mất hẳn lựa chọn, khách có localStorage `en` thấy trang lật vi→en rồi lật lại ở trang cache kế tiếp.
+
+- Máy chủ **chỉ đọc** header `cookie` bằng `useRequestHeader('cookie')` + bộ phân tích thuần `app/utils/locale-preference.ts` — **không dùng `useCookie` phía máy chủ** (chính `useCookie` là thứ phát `set-cookie`); cookie chỉ được ghi ở trình duyệt khi người đọc đổi ngôn ngữ.
+- **Đánh đổi có chủ đích:** HTML của tuyến cache luôn là tiếng Việt; người đọc ngôn ngữ khác chuyển sau hydrate (`afterHydration` — đổi ngay lúc khởi tạo gây lệch hydration, đã kiểm bằng đột biến). Tuyến không cache (`/assistant`, `/profile`) vẫn render đúng ngôn ngữ từ máy chủ.
+- `tests/e2e/public-language-cache.spec.ts` (build thật): không phản hồi SSR nào mang `set-cookie: cdkt_lang`, tuyến cache render giống nhau có/không cookie `en`, khách `en` giữ được tiếng Anh qua hai trang cache, không lệch hydration.
+- Trang danh sách trần (`/news`, `/role-models`, `/reintegration-models`, `/documents`, `/legal-qa`) **không** khớp rule `/<x>/**` trong thực tế (đo trên build 2026-10-14: trang trần trả 200 nhưng không có `cache-control: s-maxage=60`/`etag`; trang con như `/news/<cat>` thì có). Thêm rule cho chúng là quyết định hiệu năng chưa đo.
+
+### Lớp phủ "Đang tải…" phải luôn có lối thoát
+
+Lớp phủ đục `fixed inset-0` trong `app.vue` nằm sẵn trong HTML máy chủ và chỉ được gỡ ở `onMounted` — tắt JS hoặc một lỗi hydrate là nó che nội dung SSR **vĩnh viễn** (đo: nội dung thấy ở ~1985 ms dù LCP Chrome báo 716 ms, vì Chrome tính LCP cả khi phần tử bị che — ghi ở `docs/perf-baseline-2026-10.md`). Nay: script failsafe nội tuyến ẩn lớp phủ sau 4 s kể cả khi bundle không tải, plugin `boot-overlay.client.ts` gỡ ở `app:error`/`vue:error`, `<noscript>` CSS ẩn nó khi tắt JS; giữ `prefers-reduced-motion` và thuộc tính aria (`app/utils/boot-overlay.ts`).
+
+### Trợ năng công khai (2026-10-13)
+
+- Ngăn kéo menu di động khi đóng mang `inert` + `aria-hidden` (trước đây chỉ đẩy ra ngoài màn hình: 18/60 lần Tab ở 1024 px rơi vào điều khiển vô hình); focus vào ngăn kéo khi mở, trả về nút gọi khi đóng (`app/utils/focus-return.ts`), Escape đóng.
+- Biểu mẫu: cặp `id`/`for` duy nhất kể cả khi một block xuất hiện hai lần (`useId()` + `app/utils/form-a11y.ts`), `aria-invalid`/`aria-describedby` trỏ tới lỗi `role="alert"`, màu lỗi đạt tương phản.
+- Liên kết "quay lại" của trang in bài: `?back=/evil.example` từng thành `href="//evil.example"` dưới tên miền chính thức → `safeInternalPath()` (`app/utils/safe-path.ts`: một gạch đầu, không `//`, không `\`, không scheme, không ký tự điều khiển, có trần độ dài).
+- Chữ phụ `#7A8A76` (3.67:1 trên trắng) → `#5A6C58` (≥ 4.62:1 trên mọi nền nhạt đang dùng); `tests/public-keyboard-a11y.test.ts` chặn màu cũ ở **mọi** tệp `app/`. Các kiểm này đọc AST template (`tests/_render-sfc-template.ts`), là kiểm **cấu trúc**, không bấm Tab thật.
+
+### Trợ năng công khai — đợt sửa (2026-10-14)
+
+Lượt kiểm chứng bấm Tab thật trên bản build và thấy điều các test cấu trúc ở trên không thấy: mở menu di động thì **focus không vào được ngăn kéo**. Nguyên nhân là `visibility` có transition — trên khung ngăn kéo **và** trên nút đóng (`transition-all` của chính nút kéo theo `visibility`), nên ở khoảnh khắc gọi `focus()` phần tử vẫn `hidden`. Nay ngăn kéo hiện ngay khi mở (transition `visibility` chỉ khi đóng), khung ngoài `role="dialog"` + `aria-modal` (khoá i18n `menu_dialog_aria`) chứa `<nav>`, mọi phần ngoài ngăn kéo `inert` khi mở (trừ vùng `aria-live` và các phần đã inert từ trước), Tab bị bẫy trong ngăn kéo. `tests/e2e/mobile-drawer-focus.spec.ts` bấm Tab thật (đột biến bỏ phần focus-khi-mở, chỉ giữ bẫy Tab → 2/12 đỏ); `tests/mobile-drawer-a11y.test.ts` giữ phần cấu trúc.
+
+- Danh sách công khai: `usePublicArticleList` + `useNavigationSnapshot` — một request mỗi lượt điều hướng, trạng thái (trang, chuyên mục, từ khoá) suy từ URL tại một thời điểm; `ContentTypeListSection` và trang media (`usePublicMediaList`, `app/utils/public-media-list.ts`) theo cùng mẫu; trang vượt số trang hiện "Về trang đầu" (`list_page_out_of_range`, `list_back_first_page`); tải hỏng lúc SSR → 503.
+- Tìm kiếm trực tiếp ở header có trạng thái lỗi `role="alert"` + Thử lại (`app/utils/live-search.ts`, `search_live_error`); nhãn ô là `site_search_aria` — **không** dùng lại `search_aria`, vì DB đã có khoá đó (nhóm role_models/reintegration) với nghĩa khác và DB thắng fallback.
+- Biểu mẫu liên hệ: sửa một ô thì kiểm lại ô đó và gỡ `aria-invalid`; lỗi từng ô không còn `role="alert"` riêng mà có **một** tóm tắt `role="alert"`.
+- Vòng focus `#7CB342` chỉ đạt 2,50:1 trên nền trắng → `#4A6741` ở header, desktop nav, `BlockLoadError`, `assistant.vue` (`tests/focus-ring-contrast.test.ts`, `tests/assistant-focus-ring-contrast.test.ts`).
+- `LiveChat.vue`: tải lịch sử hỏng → `role="alert"` + Thử lại thay vì im lặng như phòng trống.
+
+### Trang chi tiết: 404 khác lỗi tải (G2, 2026-10-14)
+
+- `ArticleDetail.vue` từng hiện cùng một cảnh báo + Thử lại với HTTP 200 cho cả "bài không có" lẫn "CSDL hỏng": 404 thật bị báo là lỗi tải, và lỗi tải thì được SWR/CDN phát lại. Nay `resolveDetailFetch` (`app/utils/ssr-failure-response.ts`, hàm thuần: `found`/`not-found`/`failed`/`pending`) quyết định: không có → "Không tìm thấy" + HTTP 404, không nút thử lại (cả khi điều hướng phía client); hỏng → 503 + `no-store` + Thử lại đọc lại đúng bài. `useSsrFailureStatus` nhận tuỳ chọn `notFound`.
+- `[slug].vue` nhánh hai đoạn (`/<thể loại>/<X>`) dùng `resolveCategoryRoute` (`app/utils/category-route-decision.ts`): tra chuyên mục hỏng → `BlockLoadError` + 503, **không** rơi sang `ArticleDetail`. `/legal-qa` gọi `useSsrFailureStatus` → 503 khi CSDL hỏng.
+- Test: `tests/public-detail-ssr-status.test.ts`, `tests/e2e/public-detail-status.spec.ts` (5 ca, gồm chuyên mục thật + bài thật vẫn 200). Còn mở: trang 404 trên tuyến `swr` mang `s-maxage=60` (đo với CSDL seed: `/news/<chuyên mục không có>`, `/news/<x>/<bài không có>`, `/role-models/<x>`).
