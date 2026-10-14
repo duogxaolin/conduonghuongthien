@@ -7,9 +7,9 @@
  *   1. `media-self-heal.ts` KHÔNG xoá file local — chỉ upload R2 + repoint URL.
  *      Self-heal chữa bệnh, không tạo bệnh. Nếu ai thêm `deleteLocalFile`/
  *      `fs.unlink` vào service thì file gốc (fallback cuối cùng) mất vĩnh viễn.
- *   2. `repointArticleThumbnails` phải tồn tại trong `media-sync.ts` và được gọi
- *      trong Phase 3 — trước đây sync chỉ repoint `content`, bỏ sót `thumbnail_url`
- *      → 1132 bài thumbnail gãy.
+ *   2. `articles.thumbnail_url` phải nằm trong danh sách cột sync thay URL (trong
+ *      transaction của từng hàng) — trước đây sync chỉ repoint `content`, bỏ sót
+ *      `thumbnail_url` → 1132 bài thumbnail gãy.
  *   3. `headR2Object` phải được dùng trong `syncOneToR2` TRƯỚC `deleteLocalFile`
  *      — verify R2 object tồn tại trước khi xoá local, không xoá vô điều kiện.
  *   4. Endpoint `self-heal.post.ts` wymag `media.update` quyền — không phải
@@ -23,7 +23,7 @@ import { describe, it } from 'node:test'
 const svcHeal = readFileSync('server/services/media-self-heal.ts', 'utf8')
 // `media-sync.ts` được tách làm 3 tệp (worker + rewrite bài viết + từng hàng); các khẳng định
 // dưới đây nói về cấu trúc của dịch vụ đồng bộ chứ không về tệp nào giữ hàm nào.
-const svcSync = ['media-sync.ts', 'media-sync-rewrite.ts', 'media-sync-files.ts']
+const svcSync = ['media-sync.ts', 'media-sync-rewrite.ts', 'media-sync-url-match.ts', 'media-sync-files.ts']
   .map(name => readFileSync(`server/services/${name}`, 'utf8'))
   .join('\n')
 const apiHeal = readFileSync('server/api/admin/media/self-heal.post.ts', 'utf8')
@@ -87,11 +87,15 @@ describe('media-self-heal: cấu trúc mã nguồn', () => {
 })
 
 describe('media-sync: repoint thumbnail_url + verify R2 trước xoá', () => {
-  it('repointArticleThumbnails tồn tại và được gọi trong Phase 3', () => {
-    assert.ok(/async function repointArticleThumbnails\(/.test(svcSync),
-      'repointArticleThumbnails phải được định nghĩa')
-    assert.ok(/await repointArticleThumbnails\(db, rewrites/.test(svcSync),
-      'Phase 3 phải gọi repointArticleThumbnails')
+  it('thumbnail_url nằm trong danh sách cột được thay URL, và lượt thay chạy trong transaction của từng hàng', () => {
+    // Trước đây `repointArticleThumbnails` chạy một lần ở Phase 3 cuối lượt; nay mỗi
+    // hàng thay URL ở mọi cột tham chiếu (gồm `articles.thumbnail_url`) trong chính
+    // transaction đổi hàng. Hành vi được kiểm thật ở `tests/media-sync-behavior.test.ts`
+    // và `tests/media-sync-rewrite-integration.test.ts`.
+    assert.ok(/label: 'articles\.thumbnail_url'/.test(svcSync),
+      'articles.thumbnail_url phải nằm trong URL_REFERENCE_TARGETS')
+    assert.ok(/db\.transaction\(async \(tx\) => {[\s\S]*?await applyUrlRewrite\(tx, rewrite\)/.test(svcSync),
+      'applyUrlRewrite phải chạy trên tx của transaction đổi hàng media')
   })
 
   it('syncOneToR2 gọi headR2Object TRƯỚC deleteLocalFile', () => {
@@ -103,10 +107,13 @@ describe('media-sync: repoint thumbnail_url + verify R2 trước xoá', () => {
   })
 
   it('nếu R2 HeadObject 404 → KHÔNG xoá local, log warn', () => {
-    // Pattern: if (r2Exists) deleteLocalFile else logWarn
+    // Pattern: if (!r2Exists) { logWarn; throw } — ném TRƯỚC mọi lượt ghi hàng và
+    // trước deleteLocalFile, nên nhánh 404 không bao giờ tới chỗ xoá local.
     assert.ok(/const r2Exists = await headR2Object/.test(svcSync))
-    assert.ok(/if \(r2Exists\) {[\s\S]*await deleteLocalFile/.test(svcSync),
-      'deleteLocalFile chỉ chạy trong nhánh r2Exists=true')
+    const branch = /if \(!r2Exists\) {[\s\S]*?throw new Error/.exec(svcSync)
+    assert.ok(branch, 'nhánh r2Exists=false phải ném lỗi')
+    assert.ok(branch.index < svcSync.indexOf('await deleteLocalFile(oldStoragePath)'),
+      'nhánh 404 phải ném trước deleteLocalFile')
     assert.ok(/media\.sync_to_r2_local_kept/.test(svcSync),
       'log warn event media.sync_to_r2_local_kept khi R2 404')
   })

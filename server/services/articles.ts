@@ -33,8 +33,22 @@ export function articleReadScope(actor: ActorLike, requestedType?: string) {
     requireResourcePermission(actor, articleResource(requestedType), 'read')
     return eq(articles.type, requestedType)
   }
-  if (actor.isSuperAdmin === true) return sql`1 = 1`
-  const allowed = Object.keys(TYPE_RESOURCE).filter(type => checkPermission(actor.permissions ?? [], articleResource(type), 'read'))
+  return articleActionScope(actor, 'read')
+}
+
+/**
+ * The article types `actor` may perform `action` on, as a WHERE condition; 403
+ * when there are none at all.
+ *
+ * A single-article endpoint that looks the row up first and checks the type's
+ * permission second answers "404" for a missing id and "403" for an id of a type
+ * the caller may not touch — an oracle for which ids exist. Scoping the lookup
+ * with this instead makes both cases the same 404 (keep the per-row
+ * `requireResourcePermission` after it as the explicit check).
+ */
+export function articleActionScope(actor: ActorLike, action: 'read' | 'update') {
+  if (actor?.isSuperAdmin === true) return sql`1 = 1`
+  const allowed = Object.keys(TYPE_RESOURCE).filter(type => checkPermission(actor?.permissions ?? [], articleResource(type), action))
   if (!allowed.length) throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
   const explicit = inArray(articles.type, allowed)
   // Dynamic CMS types deliberately inherit news permissions, exactly as writes do.

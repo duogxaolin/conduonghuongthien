@@ -62,12 +62,13 @@ function forwardedTrusted(event: H3Event): boolean {
 export function requestBase(event: H3Event): string {
   const trusted = forwardedTrusted(event)
 
-  // Đọc x-forwarded-proto kể cả khi peer không nằm trong TRUSTED_PROXY_IPS:
-  // production thường quên set TRUSTED_PROXY_IPS (gateway docker bridge), và nếu
-  // bỏ qua header ở đây thì scheme rơi về http, làm hỏng redirect_uri Google.
-  // Sau nginx/Cloudflare thì header này luôn có và bị CDN ghi đè, nên rủi ro
-  // header giả từ client trực tiếp thấp. Host vẫn chỉ tin khi trusted proxy.
-  const forwardedProto = getRequestHeader(event, 'x-forwarded-proto')
+  // Cả hai header forwarded chỉ được đọc khi peer là proxy đã khai báo — cùng quy
+  // tắc với `getClientIp`. Trước đây x-forwarded-proto được đọc từ MỌI peer (lý
+  // do: production hay quên TRUSTED_PROXY_IPS) — một client nối thẳng hạ được
+  // redirect_uri và đường dẫn trong email thông báo xuống `http://`. Không cần
+  // ngoại lệ đó: peer không tin cậy rơi về mặc định `https` ngay bên dưới, nên
+  // production sau một proxy chưa khai vẫn ra đúng `https`.
+  const forwardedProto = trusted ? getRequestHeader(event, 'x-forwarded-proto') : null
   const forwardedHost = trusted ? getRequestHeader(event, 'x-forwarded-host') : null
 
   // `x-forwarded-proto: https,http` — the leftmost hop is the one facing the client.

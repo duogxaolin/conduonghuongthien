@@ -6,7 +6,10 @@
  */
 import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
+import { MySqlDialect } from 'drizzle-orm/mysql-core'
 import { aiModerationRules, aiModerationQueue, articleComments, chatMessages } from '../server/db/schema.ts'
+
+const dialect = new MySqlDialect()
 
 type Row = Record<string, unknown>
 const rec = {
@@ -25,22 +28,43 @@ function reset(svc: { invalidateModerationRulesCache(): void }) {
   svc.invalidateModerationRulesCache()
 }
 
+/** Drizzle's builder is awaitable at `.where()` AND chainable (`.orderBy().limit()`, used by the bounded rescan). */
+function queryResult(rows: Row[]) {
+  const promise = Promise.resolve(rows)
+  return Object.assign(promise, { orderBy: () => ({ limit: async () => rows }) })
+}
+
 const fakeDb = {
   select: () => ({
     from: (t: unknown) => ({
-      where: async () => {
-        if (t === aiModerationRules) { rec.ruleSelects++; return rec.rules }
-        return []
+      where: () => {
+        if (t === aiModerationRules) { rec.ruleSelects++; return queryResult(rec.rules) }
+        return queryResult([])
       },
     }),
   }),
   insert: (t: unknown) => ({ values: async (v: Row) => { if (t === aiModerationQueue) rec.queue.push(v) } }),
+  // Hàng chờ cho một mục CÓ id: `INSERT … SELECT … WHERE NOT EXISTS (hàng pending cùng mục)`.
+  execute: async (q: Parameters<MySqlDialect['sqlToQuery']>[0]) => {
+    const { sql, params } = dialect.sqlToQuery(q)
+    const cols = /^insert into `ai_moderation_queue` \(([^)]+)\)/i.exec(sql)
+    if (!cols) throw new Error(`unexpected execute: ${sql}`)
+    const names = cols[1]!.split(',').map(c => c.trim().replace(/`/g, '').replace(/_(\w)/g, (_m, ch: string) => ch.toUpperCase()))
+    const row: Row = Object.fromEntries(names.map((n, i) => [n, params[i]]))
+    row.matchedRules = JSON.parse(String(row.matchedRules))
+    const [tt, tid, status] = params.slice(names.length)
+    if (rec.queue.some(r => r.targetType === tt && r.targetId === tid && r.status === status)) return [{ affectedRows: 0 }, undefined]
+    rec.queue.push(row)
+    return [{ affectedRows: 1 }, undefined]
+  },
   update: (t: unknown) => ({
     set: (s: Row) => ({ where: async () => { rec.updates.push({ table: t, set: s }) } }),
   }),
 }
 
-mock.module(new URL('../server/utils/db.ts', import.meta.url), { namedExports: { getDb: () => fakeDb } })
+// `getPool: null` → the review-queue cap (moderation-instant.ts) uses its in-process
+// counter; these tests do not opt in to the cap, so it is never consulted anyway.
+mock.module(new URL('../server/utils/db.ts', import.meta.url), { namedExports: { getDb: () => fakeDb, getPool: () => null } })
 mock.module(new URL('../server/services/ai-gateway.ts', import.meta.url), {
   namedExports: {
     callAi: async () => {
@@ -195,7 +219,22 @@ test('AI chưa cấu hình → flag_only (không ẩn) vào hàng đợi; lỗi 
 test('rescanExistingContent trả cấu trúc tổng kết', async () => {
   reset(svc)
   const r = await svc.rescanExistingContent()
-  assert.deepEqual(r, { scannedComments: 0, hiddenComments: 0, scannedMessages: 0, deletedMessages: 0 })
+  // Bounded rescan (batches + per-run cap + resume cursor) added the failure counts,
+  // the planned totals and the resume point to the summary.
+  assert.deepEqual(r, {
+    scannedComments: 0,
+    hiddenComments: 0,
+    failedComments: 0,
+    scannedMessages: 0,
+    deletedMessages: 0,
+    failedMessages: 0,
+    totalComments: 0,
+    totalMessages: 0,
+    truncated: false,
+    nextCursor: { commentsBeforeId: null, messagesBeforeId: null },
+    // AI chưa cấu hình được báo riêng (lượt quét lại chuyển sang chỉ chạy luật).
+    aiUnavailable: false,
+  })
 })
 
 test('chặn tức thì nhận từ thô tục bắt đầu/kết thúc bằng chữ có dấu (ranh giới Unicode, không phải \\b ASCII)', async () => {
@@ -218,5 +257,36 @@ test('ranh giới Unicode không chặn nhầm từ chứa chuỗi đó hoặc t
   ]) {
     const r = await svc.fastPreModerate(text)
     assert.equal(r.blocked, false, `không được chặn: ${text}`)
+  }
+})
+
+test('luật regex bị từ chối (dạng nguy hiểm) bị BỎ QUA ở cả hai đường — không còn khớp như chuỗi con ở checkAndModerateContent', async () => {
+  reset(svc)
+  rec.rules = [rule({ id: 9, pattern: '(a+)+', ruleType: 'regex', category: 'redos', severity: 'medium' })]
+  rec.ai = { ok: false, error: 'no_api_key' }
+  const fast = await svc.fastPreModerate('chuỗi chứa (a+)+ nguyên văn')
+  assert.equal(fast.blocked, false)
+  const full = await svc.checkAndModerateContent({ content: 'chuỗi chứa (a+)+ nguyên văn', targetType: 'comment', targetId: 5 })
+  assert.equal(full.action, 'flag_only')
+  assert.deepEqual(full.matchedRules, [], 'mẫu bị từ chối không được tính là "khớp từ khoá"')
+  assert.doesNotMatch(full.reasons.join(' '), /\(a\+\)\+/)
+})
+
+test('luật regex chạy chậm bị tắt tạm ở cả hai đường (đồng hồ giả)', async () => {
+  const regexMod = await import('../server/services/moderation-regex.ts')
+  reset(svc)
+  rec.rules = [rule({ id: 10, pattern: 'cấm\\d', ruleType: 'regex', category: 'rx', severity: 'high' })]
+  const clock = { t: 0, step: regexMod.MODERATION_RULE_WINDOW_BUDGET_MS + 5 }
+  regexMod.setModerationRegexTimingForTests({ elapsed: () => (clock.t += clock.step), now: () => 1_000 })
+  try {
+    // Lượt đầu chậm: vẫn trả kết quả của chính nó, rồi luật bị tắt.
+    assert.equal((await svc.fastPreModerate('có cấm1 đây')).blocked, true)
+    assert.equal((await svc.fastPreModerate('có cấm1 đây')).blocked, false, 'luật đang tắt')
+    rec.ai = { ok: true, text: '{"verdict":"safe"}' }
+    const full = await svc.checkAndModerateContent({ content: 'có cấm1 đây', targetType: 'comment', targetId: 6 })
+    assert.equal(full.flagged, false)
+  } finally {
+    regexMod.setModerationRegexTimingForTests(null)
+    regexMod.resetSlowModerationRules()
   }
 })

@@ -4,6 +4,7 @@ import { getDb } from '../../../../../utils/db'
 import { aiModerationRules, activityLogs } from '../../../../../db/schema'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { invalidateModerationRulesCache } from '../../../../../services/moderation-worker'
+import { checkModerationPattern } from '../../../../../services/moderation-regex'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -32,6 +33,15 @@ export default defineEventHandler(async (event) => {
   if (typeof body.severity === 'string' && body.severity.trim()) patch.severity = body.severity.trim()
   if (typeof body.action === 'string' && body.action.trim()) patch.action = body.action.trim()
   if (typeof body.category === 'string' && body.category.trim()) patch.category = body.category.trim()
+
+  if (patch.pattern !== undefined) {
+    // `ruleType` không sửa được qua đây, nên mẫu mới được kiểm theo loại của luật
+    // đang lưu — cùng phép kiểm lúc tạo (độ dài, regex hợp lệ, hình dạng lùi vô hạn).
+    const patternCheck = checkModerationPattern(patch.pattern, existing.ruleType)
+    if (!patternCheck.ok) {
+      throw createError({ statusCode: 400, statusMessage: patternCheck.reason })
+    }
+  }
 
   if (Object.keys(patch).length === 0) {
     return { ok: true, message: 'Không có thay đổi.' }

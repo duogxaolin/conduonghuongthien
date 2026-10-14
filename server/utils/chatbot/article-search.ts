@@ -1,6 +1,6 @@
 import { and, desc, eq, like, or, sql, type SQL } from 'drizzle-orm'
 import { articles } from '../../db/schema'
-import { containsPattern, escapeLikeWildcards } from '../sql-like'
+import { containsPattern } from '../sql-like'
 
 /**
  * Truy vấn tìm bài viết cho công cụ `search_c11_articles` của chatbot.
@@ -32,8 +32,9 @@ export function articleSearchKeywords(rawQuery: string): string[] {
     .filter(word => word.length >= 2 && !STOP_WORDS.has(word))
 }
 
-// Giữ tên cũ cho nơi đã import; một bản duy nhất nằm ở `server/utils/sql-like.ts`.
-export { escapeLikeWildcards }
+// `escapeLikeWildcards` KHÔNG re-export ở đây: Nitro auto-import quét `server/utils/**`,
+// thấy cùng một tên export từ hai tệp thì in cảnh báo `Duplicated imports`. Bản duy nhất
+// nằm ở `server/utils/sql-like.ts` — nơi khác import thẳng từ đó.
 const contains = containsPattern
 
 /** Hằng số trọng số — luôn là số nguyên viết cứng, không bao giờ là dữ liệu người dùng. */

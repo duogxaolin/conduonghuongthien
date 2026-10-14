@@ -3,7 +3,7 @@ import { activityLogs, chatbotSettings, type ChatbotSettings, aiServiceConfigs }
 import { getDb } from '../utils/db'
 import { buildChatbotSettingsAudit } from '../utils/chatbot/audit'
 import { decryptChatbotSecret } from '../utils/chatbot/crypto'
-import { buildChatbotApiKeyClearPatch, buildChatbotSettingsPatch, CHATBOT_SETTINGS_ID, CHATBOT_DEFAULTS, validateChatbotSettingsUpdate, type ChatbotSettingsUpdate } from '../utils/chatbot/settings'
+import { buildChatbotApiKeyClearPatch, buildChatbotSettingsPatch, CHATBOT_SETTINGS_ID, CHATBOT_DEFAULTS, chatbotDestinationChanged, validateChatbotSettingsUpdate, type ChatbotSettingsUpdate } from '../utils/chatbot/settings'
 import { serializeChatbotSettings } from '../utils/chatbot/serializers'
 
 export async function getChatbotSettings(): Promise<ChatbotSettings> {
@@ -20,9 +20,28 @@ export function publicChatbotSettings(settings: ChatbotSettings) { return serial
 
 function auditRequestId(event?: { context?: { requestId?: unknown } }): unknown { return event?.context?.requestId }
 
-export async function updateChatbotSettings(actorId: number, input: ChatbotSettingsUpdate, requestId?: unknown) {
+/** Đổi đích gọi nhà cung cấp (`baseUrl`/`allowedHosts`) mà người gọi không phải siêu quản trị. */
+export class ChatbotDestinationChangeForbiddenError extends Error {
+  constructor() {
+    super('Chỉ siêu quản trị được đổi địa chỉ nhà cung cấp (Base URL) hoặc danh sách máy chủ cho phép.')
+    this.name = 'ChatbotDestinationChangeForbiddenError'
+  }
+}
+
+export async function updateChatbotSettings(
+  actorId: number,
+  input: ChatbotSettingsUpdate,
+  requestId?: unknown,
+  // Mặc định KHÔNG cho đổi đích: nơi gọi phải khẳng định tường minh quyền siêu quản trị.
+  options: { mayChangeDestination: boolean } = { mayChangeDestination: false },
+) {
   validateChatbotSettingsUpdate(input)
   const db = getDb(); const current = await getChatbotSettings()
+  // So với hàng ĐANG LƯU, không với giá trị trang hiển thị (trang phủ địa chỉ của
+  // `ai_providers` lên form): chấp nhận "giống giá trị phủ" là để người có
+  // `ai.update` + `chatbot_settings.update` chuyển địa chỉ tự đặt bên AI Panel sang
+  // đường gọi cũ — nơi mang khoá chatbot do siêu quản trị giữ.
+  if (!options.mayChangeDestination && chatbotDestinationChanged(current, input)) throw new ChatbotDestinationChangeForbiddenError()
   validateChatbotSettingsUpdate({ ...input, baseUrl: input.baseUrl === undefined ? current.baseUrl : input.baseUrl, allowedHosts: input.allowedHosts === undefined ? current.allowedHosts : input.allowedHosts })
   const patch = buildChatbotSettingsPatch(input, process.env.CHATBOT_ENCRYPTION_SECRET)
   if (Object.keys(patch).length === 0) return current

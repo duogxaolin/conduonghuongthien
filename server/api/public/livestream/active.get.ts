@@ -30,7 +30,7 @@
 import { defineEventHandler, setHeader } from 'h3'
 
 import { buildYouTubeEmbedUrl } from '../../../utils/youtube-parser'
-import { logError } from '../../../utils/logger'
+import { reportPublicReadFailure } from '../../../utils/public-read-failure'
 import { getActiveLivestream } from '../../../services/livestream'
 
 /** Địa chỉ phát của buổi phát, **trên chính cổng này**. Xem `media-portal.ts`
@@ -67,14 +67,13 @@ export default defineEventHandler(async (event) => {
         startedAt: session.startedAt ?? null,
       },
     }
-  } catch (error) {
-    logError({
-      event: 'public.livestream_active_failed',
-      message: error instanceof Error ? error.message : String(error),
-    })
-    // Cùng hình dạng với nhánh thành công, khác đúng trường `ok`: giao diện đọc
-    // `ok` để chọn nhánh, không đi đoán từ một object rỗng. Và nó lùi về hero mặc
-    // định — một lượt truy vấn hỏng không có tư cách làm trống đầu trang.
+  } catch (error: unknown) {
+    // 503 + `no-store` + log `error`: hợp đồng chung của lượt đọc công khai hỏng
+    // (`public-read-failure.ts`). `LiveHero`/`LiveTickerBar` bắt lỗi `$fetch` và
+    // lùi về hero mặc định; trang quản trị hiện thông báo lỗi.
+    reportPublicReadFailure(event, 'public.livestream_active_failed', error)
+    // Cùng hình dạng với nhánh thành công, khác đúng trường `ok`: nơi gọi nào đọc
+    // thân phản hồi lỗi vẫn thấy "không có buổi phát", không phải một object rỗng.
     return { ok: false, active: false, session: null }
   }
 })

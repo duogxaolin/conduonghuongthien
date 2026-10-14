@@ -25,6 +25,7 @@ import { affectedRowsOrZero } from '../utils/affected-rows'
 import { withNamedLock } from '../utils/named-lock'
 import { logInfo, logWarn } from '../utils/logger'
 import { runBackup } from './backup'
+import { MEDIA_SYNC_LOCK_NAME, repairInterruptedSyncRewrites } from './media-sync-rewrite'
 
 const LOCK_NAME = 'cdkt:media:repair-urls'
 
@@ -32,6 +33,14 @@ export interface RepairResult {
   mediaFixed: number
   articlesFixed: number
   thumbnailsFixed: number
+  /**
+   * Số URL dở dang từ lượt đồng bộ local↔R2 bị cắt ngang đã được vá
+   * (`repairInterruptedSyncRewrites`). `null` = bỏ qua (khoá sync đang bận, hoặc bước
+   * này lỗi — xem `syncRepairError`).
+   */
+  syncUrlsRepaired: number | null
+  /** Lỗi của riêng bước vá lượt đồng bộ dở dang (các bước khác đã commit). */
+  syncRepairError: string | null
   backupStamp: string | null
 }
 
@@ -181,7 +190,26 @@ export async function repairMediaUrls(adminUserId: number | null): Promise<Repai
       })
     })
 
-    return { mediaFixed, articlesFixed, thumbnailsFixed, backupStamp }
+    // ── 4. URL còn trỏ bản cũ của một lượt đồng bộ bị cắt ngang ───────────
+    // Các bước trên chỉ biết mẫu `/uploads/migrated/...`. Lượt đồng bộ local↔R2
+    // bị huỷ/restart giữa chừng (mã cũ) để lại `/uploads/YYYY/MM/...`, bản dịch,
+    // khối trang… trỏ tệp đã xoá. Nút này là đường vào khi không còn ảnh local
+    // nào để bấm "Đồng bộ" (nút đó bị khoá khi Local = 0). Dùng CHUNG khoá với
+    // sync: đang có lượt sync chạy thì bỏ qua bước này (sync tự vá ở đầu lượt).
+    // Các bước 1-3 đã commit: lỗi ở bước này không được biến cả lượt vá thành 500.
+    let syncUrlsRepaired: number | null = null
+    let syncRepairError: string | null = null
+    try {
+      const syncRepair = await withNamedLock(pool, MEDIA_SYNC_LOCK_NAME, 0, async () =>
+        repairInterruptedSyncRewrites(db, adminUserId),
+      )
+      if (syncRepair.acquired) syncUrlsRepaired = syncRepair.value.urlsRepaired
+    } catch (err: unknown) {
+      syncRepairError = err instanceof Error ? err.message : String(err)
+      logWarn({ event: 'media.repair_sync_rewrites_failed', error: syncRepairError })
+    }
+
+    return { mediaFixed, articlesFixed, thumbnailsFixed, syncUrlsRepaired, syncRepairError, backupStamp }
   })
 
   if (!outcome.acquired) throw new Error('Một lượt vá URL khác đang chạy. Thử lại sau.')

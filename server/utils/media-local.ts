@@ -1,21 +1,32 @@
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 
-export async function uploadLocalFile(fileBuffer: Buffer, filename: string): Promise<{ url: string; storagePath: string }> {
-  const now = new Date()
+/**
+ * Đường dẫn mà `uploadLocalFile` sẽ ghi cho `filename` tại thời điểm `now`
+ * (`public/uploads/YYYY/MM/<filename>`). Tách ra để lượt đồng bộ R2→local kiểm được
+ * "đường dẫn này đã thuộc hàng `media` KHÁC chưa" TRƯỚC khi ghi đè — hai hàng cùng
+ * tên tệp trong cùng tháng dùng chung một tệp. Nơi gọi truyền CÙNG `now` cho cả hai
+ * lời gọi để ranh giới tháng không tách đôi phép kiểm và lượt ghi.
+ */
+export function localUploadTargetFor(filename: string, now: Date = new Date()): { url: string; storagePath: string } {
+  const { relativeDir, fullDir } = uploadDirFor(now)
+  const storagePath = path.join(fullDir, filename)
+  const url = `/${relativeDir}/${filename}`.replace(/\\/g, '/')
+  return { url, storagePath }
+}
+
+function uploadDirFor(now: Date): { relativeDir: string; fullDir: string } {
   const year = String(now.getFullYear())
   const month = String(now.getMonth() + 1).padStart(2, '0')
-
   const relativeDir = path.join('uploads', year, month)
-  const fullDir = path.resolve(process.cwd(), 'public', relativeDir)
+  return { relativeDir, fullDir: path.resolve(process.cwd(), 'public', relativeDir) }
+}
 
-  await fs.mkdir(fullDir, { recursive: true })
-
-  const fullPath = path.join(fullDir, filename)
-  await fs.writeFile(fullPath, fileBuffer)
-
-  const url = `/${relativeDir}/${filename}`.replace(/\\/g, '/')
-  return { url, storagePath: fullPath }
+export async function uploadLocalFile(fileBuffer: Buffer, filename: string, now: Date = new Date()): Promise<{ url: string; storagePath: string }> {
+  await fs.mkdir(uploadDirFor(now).fullDir, { recursive: true })
+  const target = localUploadTargetFor(filename, now)
+  await fs.writeFile(target.storagePath, fileBuffer)
+  return target
 }
 
 export async function deleteLocalFile(storagePath: string): Promise<boolean> {

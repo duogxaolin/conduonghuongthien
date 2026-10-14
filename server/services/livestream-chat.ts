@@ -212,14 +212,20 @@ export type SendChatResult =
 /**
  * Lưu một tin nhắn rồi mới phát cho người đang xem.
  *
- * ## Thứ tự: mọi lý do TỪ CHỐI đứng trước, hạn mức đứng ngay trước câu INSERT
+ * ## Thứ tự: mọi lý do TỪ CHỐI đứng trước, rồi hạn mức, rồi kiểm duyệt, rồi câu INSERT
  *
  * Đây là 12.7, và nó là một quy tắc về **thứ tự** chứ không phải về việc có gọi
  * hay không. Trừ hạn mức ở đầu hàm nghĩa là: một người mà cả hai mươi lần thử đều
  * rơi vào lúc không có buổi phát nào đang chạy vẫn tiêu hết hạn mức của chính
  * mình, và tệ hơn, một kẻ tấn công tiêu được hạn mức của người khác bằng những
  * request **luôn luôn thất bại** — chúng không cần thoả điều kiện nào cả. Nên hai
- * lượt `recordRateLimitHit` nằm ngay trước câu INSERT, sau cả bốn nhánh từ chối.
+ * lượt `recordRateLimitHit` nằm sau cả bốn nhánh từ chối, ngay trước kiểm duyệt và câu INSERT.
+ *
+ * Ngoại lệ duy nhất đứng SAU hạn mức là chặn tức thì của kiểm duyệt, vì nó không
+ * miễn phí: mỗi tin bị chặn ghi một hàng `ai_moderation_queue` cho cán bộ duyệt.
+ * Đứng trước hạn mức thì một người đọc — hay một script cầm nhiều tài khoản Google —
+ * ghi được hàng chờ duyệt không giới hạn. Nên tin bị chặn cũng tiêu hạn mức như tin
+ * được lưu, và số hàng chờ duyệt còn bị chặn trần theo tài khoản và theo địa chỉ.
  *
  * ## Phát SAU khi lưu
  *
@@ -242,18 +248,6 @@ export async function sendChatMessage(
   const verdict = validateChatContent(input.content)
   if (!verdict.ok) return { ok: false, statusCode: 400, message: verdict.message }
 
-  // ── Kiểm duyệt tức thì (< 1ms): chặn từ ngữ thô tục, chống phá, cờ bạc ──
-  const preCheck = await fastPreModerate(verdict.content, {
-    authorName: snapshotDisplayName(input.sender),
-    authorIp: input.ip,
-    targetType: 'livestream_chat',
-    sessionId: input.sessionId ? String(input.sessionId) : undefined,
-    contextTitle: `Livestream #${input.sessionId}`,
-    contextUrl: '/media',
-  })
-  if (preCheck.blocked) {
-    return { ok: false, statusCode: 400, message: preCheck.reason }
-  }
   // ── Lý do từ chối #2: không có buổi phát nào đang chạy. ──
   const session = await activeSession(db)
   if (!session) {
@@ -291,6 +285,24 @@ export async function sendChatMessage(
       message: 'Đã có quá nhiều tin nhắn gửi từ địa chỉ này. Vui lòng chờ một lát rồi thử lại.',
       retryAfterSeconds: Math.max(1, ipState.retryAfterSeconds),
     }
+  }
+
+  // ── Kiểm duyệt tức thì (< 1ms): chặn từ ngữ thô tục, chống phá, cờ bạc ──
+  // SAU hạn mức: tin bị chặn ghi một hàng chờ duyệt (xem chú thích của hàm), và
+  // số hàng đó còn bị chặn trần theo tài khoản VÀ theo địa chỉ (MODERATION_QUEUE_CAP).
+  // `session` ở đây là buổi phát máy chủ tự giải, đã khớp `input.sessionId` ở trên.
+  const preCheck = await fastPreModerate(verdict.content, {
+    authorName: snapshotDisplayName(input.sender),
+    authorIp: input.ip,
+    readerId: input.sender.id,
+    targetType: 'livestream_chat',
+    sessionId: String(session.id),
+    contextTitle: `Livestream #${session.id}`,
+    contextUrl: '/media',
+    capQueuePerSource: true,
+  })
+  if (preCheck.blocked) {
+    return { ok: false, statusCode: 400, message: preCheck.reason }
   }
 
   // Một mốc thời gian cho cả hàng và bản phát đi: hai lượt `new Date()` riêng thì

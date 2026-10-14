@@ -44,6 +44,8 @@ export interface AppRuntimeConfig {
   aiModel?: string
   trustedProxyIps?: string
   publicBaseUrl?: string
+  /** `PUBLIC_HOST_ALLOWLIST` — host được phép làm gốc liên kết trong email (`server/utils/public-link-base.ts`). */
+  publicHostAllowlist?: string
   analytics?: AnalyticsRuntimeConfig
   /** Nitro tự nạp `NUXT_`-prefix cho các khoá CSDL; không khai trong nuxt.config.ts. */
   dbHost?: string

@@ -1,6 +1,6 @@
 import { sanitizeBlockData } from '../../../utils/sanitize-html'
 import { getDb } from '../../../utils/db'
-import { logError } from '../../../utils/logger'
+import { reportPublicReadFailure } from '../../../utils/public-read-failure'
 import { pages, pageBlocks } from '../../../db/schema'
 import { and, eq, asc } from 'drizzle-orm'
 import type { BlockData, BlockNode } from '../../../../app/utils/blocks/types'
@@ -105,6 +105,7 @@ function notFound(): PublicPageResponse {
 // Prefers the published node tree (pages.published_blocks) when present; falls
 // back to the flat page_blocks table for legacy pages (published_blocks = null).
 // Unknown slug → { ok: false } with 2xx (never a 500) so the page can degrade gracefully.
+// A failed query → the same shape with 503 (logged), so it is never read as a miss.
 export default defineEventHandler(async (event): Promise<PublicPageResponse> => {
   const slug = String(getRouterParam(event, 'slug') || '').trim()
   if (!slug) return notFound()
@@ -159,7 +160,12 @@ export default defineEventHandler(async (event): Promise<PublicPageResponse> => 
     })
     return { ok: true, page: pageMeta, blocks }
   } catch (err) {
-    logError({ event: 'public.page_render_failed', slug, error: err })
+    // Cùng hình dạng với "không có trang", nhưng **503** chứ không 200: một lượt
+    // CSDL hỏng mà trả 200 thì `/` dựng ra trang chủ trống và bộ đệm SWR 60 giây
+    // giữ nó như một trang hợp lệ; còn `[slug].vue` đọc nó thành "không tồn tại"
+    // → 404 cho một trang có thật. Với 503, `useAsyncData` vào nhánh `error` và
+    // các trang dựng bằng block hiện nhánh lỗi có nút thử lại.
+    reportPublicReadFailure(event, 'public.page_render_failed', err, { slug })
     return notFound()
   }
 })

@@ -36,7 +36,7 @@
 import { defineEventHandler, getQuery, setHeader } from 'h3'
 
 import { listChatHistory } from '../../../../services/livestream-chat'
-import { logWarn } from '../../../../utils/logger'
+import { reportPublicReadFailure } from '../../../../utils/public-read-failure'
 
 export default defineEventHandler(async (event) => {
   // Một buổi phát có thể bắt đầu hoặc kết thúc ngay sau lượt hỏi này, nên câu trả
@@ -49,11 +49,12 @@ export default defineEventHandler(async (event) => {
     return { ok: true, ...history }
   } catch (err: unknown) {
     // Lịch sử chat là tính năng phụ của trang phát trực tiếp; một lượt CSDL hỏng
-    // không được phá khung chat đang chạy. Trả JSON an toàn để giao diện rơi
-    // vào nhánh "tải lại" thay vì trang lỗi 500 của Nitro. Comment trong CLAUDE.md
-    // (mục "Xử lý lỗi ở tầng giao diện"): server không import được `app/utils`,
-    // nên xử lý tại chỗ.
-    logWarn({ event: 'public.livestream_history_failed', reason: err instanceof Error ? err.message : String(err) })
+    // không được phá khung chat đang chạy — nhưng cũng không được trả lời như một
+    // lượt THÀNH CÔNG (`200`). 503 + `no-store` + log `error` (hợp đồng chung,
+    // `public-read-failure.ts`): `useLiveChat` bắt lỗi `$fetch` và giữ luồng tin
+    // mới chạy tiếp; trang quản trị hiện thông báo lỗi. Thân JSON an toàn giữ
+    // nguyên hình dạng cũ, không phải trang lỗi 500 của Nitro.
+    reportPublicReadFailure(event, 'public.livestream_history_failed', err)
     return { ok: false, sessionId: null, messages: [] }
   }
 })

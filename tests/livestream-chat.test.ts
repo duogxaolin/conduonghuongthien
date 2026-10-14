@@ -429,10 +429,15 @@ describe('12.7 — hạn mức tiêu NGAY TRƯỚC câu INSERT, không phải �
     const sessionCheck = body.indexOf('const session = await activeSession(db)')
     const firstHit = body.indexOf('recordRateLimitHit(')
     const insert = body.indexOf('db.insert(livestreamMessages)')
+    // Chặn tức thì ghi một hàng chờ duyệt, nên nó đứng SAU hạn mức (xem
+    // tests/reader-flows-rate-limit-before-moderation.test.ts cho hành vi).
+    const moderation = body.indexOf('fastPreModerate(')
 
-    assert.ok(contentCheck !== -1 && sessionCheck !== -1 && firstHit !== -1 && insert !== -1, 'không tìm thấy đủ bốn mốc')
+    assert.ok(contentCheck !== -1 && sessionCheck !== -1 && firstHit !== -1 && insert !== -1 && moderation !== -1, 'không tìm thấy đủ năm mốc')
     assert.ok(contentCheck < firstHit, 'hạn mức được tiêu TRƯỚC khi kiểm nội dung')
     assert.ok(sessionCheck < firstHit, 'hạn mức được tiêu TRƯỚC khi biết có buổi phát nào đang chạy')
+    assert.ok(firstHit < moderation, 'kiểm duyệt (ghi hàng chờ duyệt) chạy TRƯỚC khi tiêu hạn mức')
+    assert.ok(moderation < insert, 'kiểm duyệt phải chạy trước câu INSERT')
     assert.ok(firstHit < insert, 'hạn mức phải được tiêu trước câu INSERT')
   })
 })

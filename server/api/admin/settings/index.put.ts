@@ -5,6 +5,7 @@ import { settings, activityLogs } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { FAVICON_ICO_SETTING_KEY, clearFaviconSettingCache } from '../../../utils/favicon-setting'
 import { clearOgImageSettingCache } from '../../../utils/og-image-setting'
+import { credentialRetargetViolation } from '../../../utils/settings-credential-guard'
 
 /**
  * Allow-list of settings keys writable through this endpoint. Previously ANY key
@@ -56,6 +57,14 @@ export default defineEventHandler(async (event) => {
   // Current values — used to tell "unchanged" from "modified" for gated keys.
   const currentRows = await db.select({ key: settings.key, value: settings.value }).from(settings)
   const current = new Map(currentRows.map(row => [row.key, row.value ?? '']))
+
+  // Đổi đích của một bí mật đã lưu (SMTP host/cổng/user/secure, R2 account id)
+  // mà không gõ lại bí mật đó → 400. Quyết định trên TOÀN BỘ thân, trước vòng ghi,
+  // để thứ tự khoá trong JSON không đổi được kết quả. Xem `settings-credential-guard.ts`.
+  const retargetViolation = credentialRetargetViolation(newSettings as Record<string, unknown>, current)
+  if (retargetViolation) {
+    throw createError({ statusCode: 400, statusMessage: retargetViolation })
+  }
 
   const isSuperAdmin = adminUser.isSuperAdmin === true
   const applied: string[] = []

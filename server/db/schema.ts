@@ -1156,8 +1156,8 @@ export const backups = mysqlTable('backups', {
   bytes:         bigint('bytes', { mode: 'number' }).notNull().default(0),
   // Timestamp UTC YYYYMMDDTHHMMSSZ — cùng format scripts/backup.sh.
   stamp:         varchar('stamp', { length: 16 }).notNull(),
-  // manual | scheduled — phân biệt cán bộ bấm vs scheduler chạy.
-  trigger:       varchar('trigger', { length: 16 }).notNull().default('manual'),
+  // manual | scheduled | pre-* — xem BACKUP_TRIGGERS (services/backup.ts). 32: 'pre-fix-thumbnails' = 18.
+  trigger:       varchar('trigger', { length: 32 }).notNull().default('manual'),
   // pending | done | failed — backup chạy nền, cần trạng thái.
   status:        varchar('status', { length: 16 }).notNull().default('pending'),
   driveUploaded: boolean('drive_uploaded').default(false),

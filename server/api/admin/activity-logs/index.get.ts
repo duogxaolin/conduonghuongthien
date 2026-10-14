@@ -14,24 +14,33 @@
  * surveillance tool. One row per request, not per log line displayed.
  */
 
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, lt, sql } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
 import { activityLogs, users } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { getClientIp } from '../../../utils/client-ip'
+import { DAY_MS, vietnamDayStart } from '../../../utils/vn-day-range'
 
 const DEFAULT_PAGE_SIZE = 25
 const MAX_PAGE_SIZE = 100
 
-/** Rejects rather than clamping: silently substituting a different range would
- *  make the response a lie about which period was audited. */
-function parseDate(raw: string | undefined, label: string): Date | null {
-  if (!raw) return null
-  const parsed = new Date(raw)
-  if (Number.isNaN(parsed.getTime())) {
-    throw createError({ statusCode: 400, statusMessage: `Giá trị ${label} không phải là ngày hợp lệ.` })
+/**
+ * `from`/`to` are Vietnam calendar days, `YYYY-MM-DD` (the page's
+ * `<input type="date">`). Returns 00:00 +07:00 of that day. Rejects rather than
+ * clamping: silently substituting a different range would make the response a lie
+ * about which period was audited.
+ *
+ * The page used to send `…T00:00:00` / `…T23:59:59` with no zone and this handler
+ * parsed them with `new Date()` — i.e. in the PROCESS time zone, so the audited
+ * period moved with the container's TZ. See `server/utils/vn-day-range.ts`.
+ */
+function parseDay(raw: unknown, label: string): Date | null {
+  if (raw === undefined || raw === null || raw === '') return null
+  const start = vietnamDayStart(raw)
+  if (!start) {
+    throw createError({ statusCode: 400, statusMessage: `Giá trị ${label} không phải là ngày hợp lệ (YYYY-MM-DD).` })
   }
-  return parsed
+  return start
 }
 
 /** Bounded so the filter cannot be turned into a probe for arbitrary columns. */
@@ -73,9 +82,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `pageSize phải là số nguyên từ 1 đến ${MAX_PAGE_SIZE}.` })
   }
 
-  const from = parseDate(query.from as string | undefined, 'from')
-  const to = parseDate(query.to as string | undefined, 'to')
-  if (from && to && from.getTime() > to.getTime()) {
+  const from = parseDay(query.from, 'from')
+  const toDay = parseDay(query.to, 'to')
+  // The end day is inclusive: everything before 00:00 +07:00 of the NEXT day.
+  const toExclusive = toDay ? new Date(toDay.getTime() + DAY_MS) : null
+  if (from && toDay && from.getTime() > toDay.getTime()) {
     throw createError({ statusCode: 400, statusMessage: 'Khoảng thời gian không hợp lệ: from phải trước to.' })
   }
 
@@ -85,7 +96,7 @@ export default defineEventHandler(async (event) => {
   if (action) conditions.push(eq(activityLogs.action, action))
   if (resource) conditions.push(eq(activityLogs.resource, resource))
   if (from) conditions.push(gte(activityLogs.createdAt, from))
-  if (to) conditions.push(lte(activityLogs.createdAt, to))
+  if (toExclusive) conditions.push(lt(activityLogs.createdAt, toExclusive))
   const where = conditions.length ? and(...conditions) : undefined
 
   const [countRow] = await db.select({ total: sql<number>`COUNT(*)` }).from(activityLogs).where(where)

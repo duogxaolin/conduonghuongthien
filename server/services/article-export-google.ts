@@ -19,6 +19,9 @@ import { drive as createDriveClient } from '@googleapis/drive'
 import { sheets as createSheetsClient } from '@googleapis/sheets'
 import { docs as createDocsClient } from '@googleapis/docs'
 import { htmlToDocs } from '../utils/html-to-docs'
+import { neutralizeSpreadsheetText } from '../utils/spreadsheet-cell'
+import { loadOwnThumbnail } from './article-export-thumbnail'
+import { loadR2Config } from './media'
 
 /** Một bài viết đầu vào cho export (subset của articles row). */
 export interface ExportArticleInput {
@@ -65,6 +68,44 @@ async function createExportFolder(drive: ReturnType<typeof createDriveClient>, s
 }
 
 /**
+ * Công thức `=IMAGE("…")` cho ảnh bìa, hoặc `''` khi URL không phải https thuần.
+ * Dấu nháy kép được nhân đôi (cách thoát chuỗi của Sheets) — một URL không thể
+ * đóng chuỗi rồi nối công thức của riêng nó (`")&HYPERLINK(…`). `=IMAGE` do máy
+ * chủ Google tải, không phải máy chủ này, nên không cần giới hạn host ở đây.
+ */
+export function sheetsImageFormula(url: string | null | undefined): string {
+  if (!url) return ''
+  let parsed: URL
+  try {
+    parsed = new URL(url)
+  } catch {
+    return ''
+  }
+  if (parsed.protocol !== 'https:' || parsed.username || parsed.password) return ''
+  return `=IMAGE("${parsed.href.replace(/"/g, '""')}")`
+}
+
+/**
+ * Các hàng ghi vào Sheets (header + mỗi bài một hàng). Sheets ghi với
+ * `USER_ENTERED`, tức chữ bắt đầu bằng `=`/`+`/`-`/`@` thành công thức — tiêu đề
+ * bài là chữ do biên tập viên gõ nên phải qua `neutralizeSpreadsheetText`. Ô ảnh
+ * là công thức DUY NHẤT được phép, và chỉ do `sheetsImageFormula` dựng.
+ */
+export function buildExportSheetValues(
+  articles: { id: number; title: string; thumbnailUrl: string | null; docUrl: string }[],
+): (string | number)[][] {
+  return [
+    ['ID', 'Tiêu đề', 'Thumbnail', 'Xem bài'],
+    ...articles.map(a => [
+      a.id,
+      neutralizeSpreadsheetText(a.title),
+      sheetsImageFormula(a.thumbnailUrl),
+      neutralizeSpreadsheetText(a.docUrl),
+    ]),
+  ]
+}
+
+/**
  * Tạo Google Sheets trong folder + viết header + data rows.
  * Cột: ID | Tiêu đề | Thumbnail | Xem bài.
  * Thumbnail dùng `=IMAGE(url)` formula. "Xem bài" là hyperlink tới Docs.
@@ -87,16 +128,7 @@ async function createExportSheets(
   const spreadsheetId = createRes.data.id
   if (!spreadsheetId) throw new Error('Google Sheets không trả ID.')
 
-  // Viết rows: header + data.
-  const values: (string | number)[][] = [
-    ['ID', 'Tiêu đề', 'Thumbnail', 'Xem bài'],
-    ...articles.map(a => [
-      a.id,
-      a.title,
-      a.thumbnailUrl ? `=IMAGE("${a.thumbnailUrl}")` : '',
-      a.docUrl,
-    ]),
-  ]
+  const values = buildExportSheetValues(articles)
   await sheets.spreadsheets.values.update({
     spreadsheetId,
     range: 'A1',
@@ -125,35 +157,30 @@ async function createExportSheets(
 }
 
 /**
- * Upload 1 ảnh (từ URL hoặc buffer) lên Drive folder, trả fileId + URL public.
- * Cần cho InsertInlineImage trong Docs (Docs API chỉ nhận objectId từ Drive upload).
+ * Chép ảnh bìa vào thư mục xuất trên Drive, trả fileId (hoặc null nếu bỏ ảnh).
+ *
+ * Chỉ media của chính cổng (`loadOwnThumbnail`: `/uploads/…` trên đĩa hoặc host
+ * R2 đã cấu hình) — URL bất kỳ trong `thumbnail_url` không bao giờ được máy chủ
+ * này tải (SSRF). Tệp KHÔNG được chia sẻ "bất kỳ ai có link": Doc chỉ chèn một
+ * liên kết tới bản trên Drive, nên quyền của thư mục xuất (chủ tài khoản đã liên
+ * kết) là đủ; chia sẻ công khai chỉ làm lộ tệp ra ngoài.
  */
 async function uploadImageToDrive(
   drive: ReturnType<typeof createDriveClient>,
-  imageUrl: string,
+  thumbnailUrl: string,
+  r2PublicUrl: string,
   folderId: string,
   index: number,
 ): Promise<string | null> {
+  const image = await loadOwnThumbnail(thumbnailUrl, r2PublicUrl)
+  if (!image) return null
   try {
-    // Fetch ảnh từ URL (CDN/R2).
-    const res = await fetch(imageUrl)
-    if (!res.ok) return null
-    const buffer = Buffer.from(await res.arrayBuffer())
-    const mimeType = res.headers.get('content-type') || 'image/jpeg'
-    const ext = mimeType.includes('png') ? 'png' : 'jpg'
     const uploadRes = await drive.files.create({
-      requestBody: { name: `thumb-${index}.${ext}`, parents: [folderId] },
-      media: { mimeType, body: buffer },
+      requestBody: { name: `thumb-${index}.${image.ext}`, parents: [folderId] },
+      media: { mimeType: image.mimeType, body: image.buffer },
       fields: 'id',
     })
-    // Set public để Docs render được.
-    const fileId = uploadRes.data.id
-    if (!fileId) return null
-    await drive.permissions.create({
-      fileId,
-      requestBody: { role: 'reader', type: 'anyone' },
-    })
-    return fileId
+    return uploadRes.data.id ?? null
   } catch {
     return null
   }
@@ -168,6 +195,7 @@ async function createArticleDoc(
   drive: ReturnType<typeof createDriveClient>,
   article: ExportArticleInput,
   folderId: string,
+  r2PublicUrl: string,
 ): Promise<string> {
   // Tạo Doc trống.
   const createRes = await docs.documents.create({
@@ -176,10 +204,10 @@ async function createArticleDoc(
   const documentId = createRes.data.documentId
   if (!documentId) throw new Error(`Google Docs không trả ID cho bài ${article.id}.`)
 
-  // Upload thumbnail lên Drive nếu có (để chèn inline vào Doc).
+  // Chép ảnh bìa (chỉ media của cổng) vào thư mục xuất để Doc liên kết tới.
   let thumbFileId: string | null = null
   if (article.thumbnailUrl) {
-    thumbFileId = await uploadImageToDrive(drive, article.thumbnailUrl, folderId, article.id)
+    thumbFileId = await uploadImageToDrive(drive, article.thumbnailUrl, r2PublicUrl, folderId, article.id)
   }
 
   // Build content requests: title (heading) + meta + thumbnail + content.
@@ -230,18 +258,20 @@ async function createArticleDoc(
     // Docs API InsertInlineImage cần objectId (media upload) — dùng drive.files
     // upload trả fileId, nhưng Docs API dùng URI khác. Đơn giản: chèn link ảnh text.
     // (Full inline image cần 1-lần upload qua Docs media, phức tạp — MVP chèn link.)
-    const imgText = article.thumbnailUrl ? `[Ảnh bìa: ${article.thumbnailUrl}]\n` : ''
-    if (imgText) {
-      requests.push({ insertText: { location: { index: idx }, text: imgText } })
-      requests.push({
-        updateTextStyle: {
-          range: { startIndex: idx, endIndex: idx + imgText.length - 1 },
-          textStyle: { link: { url: article.thumbnailUrl } },
-          fields: 'link',
-        },
-      })
-      idx += imgText.length
-    }
+    // Liên kết trỏ tới bản chép trên Drive (cùng thư mục xuất), không trỏ tới
+    // `thumbnail_url` gốc: URL gốc có thể là đường dẫn tương đối `/uploads/…`
+    // (Docs từ chối link không tuyệt đối → cả batchUpdate hỏng) và là chữ do biên
+    // tập viên gõ.
+    const imgText = '[Ảnh bìa]\n'
+    requests.push({ insertText: { location: { index: idx }, text: imgText } })
+    requests.push({
+      updateTextStyle: {
+        range: { startIndex: idx, endIndex: idx + imgText.length - 1 },
+        textStyle: { link: { url: `https://drive.google.com/file/d/${encodeURIComponent(thumbFileId)}/view` } },
+        fields: 'link',
+      },
+    })
+    idx += imgText.length
   }
 
   // Excerpt.
@@ -315,11 +345,20 @@ export async function exportArticlesToGoogle(
 
   const folderId = await createExportFolder(drive, stamp)
 
+  // Host R2 công khai của thư viện ảnh — nguồn ảnh bìa từ xa DUY NHẤT được tải.
+  // Đọc không được → chỉ còn ảnh `/uploads/…` trên đĩa; bản xuất vẫn tiếp tục.
+  let r2PublicUrl = ''
+  try {
+    r2PublicUrl = (await loadR2Config()).publicUrl
+  } catch {
+    r2PublicUrl = ''
+  }
+
   // Tạo Doc tuần tự — bỏ bài lỗi.
   const results: { id: number; title: string; thumbnailUrl: string | null; docUrl: string }[] = []
   for (const article of articles) {
     try {
-      const docUrl = await createArticleDoc(docs, drive, article, folderId)
+      const docUrl = await createArticleDoc(docs, drive, article, folderId, r2PublicUrl)
       results.push({ id: article.id, title: article.title, thumbnailUrl: article.thumbnailUrl, docUrl })
     } catch {
       // Bỏ bài lỗi — tiếp tục batch.

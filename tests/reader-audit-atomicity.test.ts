@@ -504,6 +504,11 @@ const AUDITED_SERVICES: string[] = [
   // được — và một cặp ghi rời sẽ để lại một trạng thái đã đổi mà nhật ký nói là
   // chưa, hoặc ngược lại.
   'server/services/submission-workflow.ts',
+  // Backup & khôi phục: tạo/xoá bản backup ghi hàng `backups` + audit trong một
+  // transaction; khôi phục ghi `backup_restore` (kèm các hàng `backups` gắn lại)
+  // trong một transaction và `backup_restore_failed` trong transaction riêng.
+  'server/services/backup.ts',
+  'server/services/backup-restore.ts',
 ]
 
 describe('service-layer writes commit their mutation and their audit row together', () => {
@@ -567,13 +572,13 @@ const SERVICE_EXEMPTIONS: Record<string, string> = {
   // Trước đây cùng đoạn này nằm trong `article-translations.ts` (có transaction ở
   // chỗ khác nên guard theo tệp không thấy); tách tệp làm nó lộ ra, không phải mới.
   'article-translation-bulk.ts': 'audit-only insert for a queued background job; no row write to pair it with',
-  // Đồng bộ storage ghi audit TIẾN ĐỘ (mỗi batch / mỗi lượt thay URL / tổng kết) bằng
-  // try/catch best-effort — "audit hỏng không làm hỏng lượt sync đã thành công" là
-  // chủ đích. Cặp hàng + audit thật (đổi `provider`/`url` của một hàng `media`) nằm
-  // trong `db.transaction` ở `media-sync-files.ts`. Các tệp này trước kia cùng ở
-  // `media-sync.ts` nên guard theo tệp không thấy; tách tệp làm nó lộ ra, không phải mới.
+  // Đồng bộ storage ghi audit TIẾN ĐỘ (mỗi đợt / tổng kết) bằng try/catch
+  // best-effort — "audit hỏng không làm hỏng lượt sync đã thành công" là chủ đích.
+  // Cặp hàng + thay URL + audit thật (đổi `provider`/`url` của một hàng `media`) nằm
+  // trong `db.transaction` ở `media-sync-files.ts`. `media-sync-rewrite.ts` từng được
+  // miễn ở đây (audit thay URL best-effort ngoài transaction); nay lượt thay URL và
+  // audit của nó cùng transaction, nên tệp đó đi qua cổng như mọi service khác.
   'media-sync.ts': 'progress/summary audits are best-effort by design; the row+audit pair is transactional in media-sync-files.ts',
-  'media-sync-rewrite.ts': 'audit rows for bulk URL rewrites are best-effort (try/catch) and have no single row write to pair with',
 }
 
 describe('no service writes activity_logs outside a transaction', () => {

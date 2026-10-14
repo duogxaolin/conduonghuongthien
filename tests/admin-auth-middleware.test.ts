@@ -53,7 +53,7 @@ mock.module('../server/utils/db', {
 })
 
 type Stub = (event: Event) => unknown
-type Event = { url: string, cookies: Record<string, string>, context: Record<string, unknown> }
+type Event = { url: string, path: string, cookies: Record<string, string>, context: Record<string, unknown> }
 const globals = globalThis as unknown as Record<string, unknown>
 globals.defineEventHandler = (handler: unknown) => handler
 globals.getRequestURL = (event: Event) => new URL(event.url, 'http://localhost')
@@ -66,7 +66,8 @@ const handler = (await import('../server/middleware/admin-auth')).default as unk
 const ADMIN: NonNullable<UserRow> = { id: 7, username: 'editor', email: 'e@example.vn', isActive: true, roleId: 3, roleName: 'Biên tập viên', isSystem: false, tokenVersion: 0 }
 const sessionToken = (overrides: Record<string, unknown> = {}) => signToken({ userId: 7, username: 'editor', roleId: 3, roleName: 'Biên tập viên', tokenVersion: 0, ...overrides })
 
-const eventFor = (url: string, token?: string): Event => ({ url, cookies: token ? { cdkt_admin: token } : {}, context: {} })
+// `path` is what h3 hands middleware (already percent-decoded); `url` feeds the raw `getRequestURL`.
+const eventFor = (url: string, token?: string): Event => ({ url, path: url, cookies: token ? { cdkt_admin: token } : {}, context: {} })
 
 async function statusOf(event: Event): Promise<number | null> {
   try { await handler(event); return null } catch (error) { return (error as { statusCode?: number }).statusCode ?? -1 }

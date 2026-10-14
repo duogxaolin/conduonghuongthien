@@ -12,7 +12,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { articles, articleViewBoost } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
-import { articleResource } from '../../../../services/articles'
+import { articleActionScope, articleResource } from '../../../../services/articles'
 import { getArticleViewStats } from '../../../../services/article-views'
 
 export default defineEventHandler(async (event) => {
@@ -21,15 +21,18 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Mã bài viết không hợp lệ.' })
   }
 
+  const actor = event.context.adminUser
   const db = getDb()
+  // Scoped lookup: an id of a type the caller may not read is the same 404 as a
+  // missing one (no existence oracle via 403-vs-404).
   const [article] = await db
     .select({ id: articles.id, type: articles.type, title: articles.title })
     .from(articles)
-    .where(eq(articles.id, id))
+    .where(and(eq(articles.id, id), articleActionScope(actor, 'read')))
     .limit(1)
   if (!article) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
 
-  requireResourcePermission(event.context.adminUser, articleResource(article.type), 'read')
+  requireResourcePermission(actor, articleResource(article.type), 'read')
 
   const stats = await getArticleViewStats(article.id, { days: Number(getQuery(event).days) })
 

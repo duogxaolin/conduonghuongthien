@@ -47,6 +47,23 @@ export function requireResourcePermission(actor: ActorLike, resource: string, ac
 }
 
 /**
+ * Throw 403 unless the actor is a super-administrator (a user whose role is a
+ * system role — `event.context.adminUser.isSuperAdmin`, set by the admin-auth
+ * middleware from the database, never from the token).
+ *
+ * For actions no delegated RBAC grant may unlock: restoring, downloading or
+ * deleting a backup hands over the whole database (password hashes, citizens'
+ * submissions) or replaces it outright, so holding `settings.update` is not
+ * enough. Call it AFTER `requireResourcePermission` so every handler keeps the
+ * project-wide helper call; the stricter check is the one that decides.
+ */
+export function requireSuperAdmin(actor: ActorLike | undefined): void {
+  if (actor?.isSuperAdmin !== true) {
+    throw createError({ statusCode: 403, statusMessage: 'Chỉ quản trị viên cấp cao (SuperAdmin) được thực hiện thao tác này.' })
+  }
+}
+
+/**
  * Guard against privilege escalation when writing role permissions: every
  * resource must be valid, and a non-superadmin may not grant a permission they
  * do not themselves hold ("no granting what you don't have").

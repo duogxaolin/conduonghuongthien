@@ -387,13 +387,16 @@ test('break-glass clears both factors and codes, revokes the target, and logs bo
 test('a challenge ticket cannot be spent as a session on any admin route', () => {
   const middleware = read('server/middleware/admin-auth.ts')
   // One gate covering the whole /api/admin/** surface, rather than per-route checks.
-  assert.match(middleware, /if \(!url\.startsWith\('\/api\/admin\/'\)\) return/)
+  // (Decided on the decoded path since audit 2026-10-13 — behaviour is pinned by
+  // tests/admin-auth-path-gate.test.ts; this only checks the gate is still one gate.)
+  assert.match(middleware, /const ADMIN_API_PREFIX = '\/api\/admin\/'/)
+  assert.match(middleware, /if \(!isAdmin \|\| isExempt\) return/)
   assert.match(middleware, /if \(!isSessionStage\(payload\)\)/)
   assert.match(middleware, /statusCode: 401/)
   assert.match(middleware, /SECURITY_EVENTS\.mfaChallengeFailed/)
   // Only the two endpoints that sit between "password accepted" and "session
   // issued" are exempt, and they authenticate on the challenge cookie themselves.
-  assert.match(middleware, /url === '\/api\/admin\/auth\/mfa\/verify' \|\| url === '\/api\/admin\/auth\/mfa\/send-code'/)
+  assert.match(middleware, /'\/api\/admin\/auth\/mfa\/verify',\s*'\/api\/admin\/auth\/mfa\/send-code',\s*\]\)/)
   const auth = read('server/utils/auth.ts')
   assert.match(auth, /!payload\?\.stage \|\| payload\.stage === 'session'/, 'an absent stage reads as a session')
 })

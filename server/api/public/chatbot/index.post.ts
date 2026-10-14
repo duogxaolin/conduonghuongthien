@@ -1,7 +1,8 @@
 import { setHeader, createError, getRequestHeader } from 'h3'
 import { getChatbotSettings } from '../../../services/chatbot-settings'
 import { answerChat } from '../../../utils/chatbot/chat'
-import { validateChatRequestBody } from '../../../utils/chatbot/chat-policy'
+import { CHAT_RATE_LIMITED_MESSAGE, chargeChatRateLimit, validateChatRequestBody } from '../../../utils/chatbot/chat-policy'
+import { assertChatInputLength } from '../../../utils/chatbot/input-length'
 import { verifySessionToken } from '../../../utils/chatbot/session-token'
 import { persistChatTurn } from '../../../utils/chatbot/session-db'
 import { getClientIp } from '../../../utils/client-ip'
@@ -66,6 +67,21 @@ export default defineEventHandler(async (event) => {
   const messages = (body as { messages?: unknown } | null)?.messages
   const userText = lastUserText(messages)
 
+  // Hạn mức theo địa chỉ TRƯỚC kiểm duyệt: mỗi tin bị chặn ghi một hàng chờ duyệt
+  // (và một lượt chat khi có phiên), nên kiểm duyệt đứng trước hạn mức là cửa cho
+  // một script làm ngập hàng đợi. Quá hạn mức → trả lời ngay, không ghi gì.
+  // `answerChat` dùng lại đúng quyết định này (không trừ lượt hai lần).
+  const retryAfter = await chargeChatRateLimit(event, settings)
+  if (retryAfter) {
+    setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
+    setHeader(event, 'Cache-Control', 'no-cache, no-transform')
+    return sseEnvelope(CHAT_RATE_LIMITED_MESSAGE, 'rate_limited', [], retryAfter, false)
+  }
+
+  // Trần độ dài SAU hạn mức (lượt quá dài vẫn bị tính), TRƯỚC kiểm duyệt: đúng chuỗi
+  // sắp được quét, theo đúng trần `answerChat` áp (cài đặt `maxInputChars`).
+  assertChatInputLength(userText, settings)
+
   // Tiền kiểm duyệt an ninh tức thì (< 1ms):
   // Nếu phát hiện nội dung độc hại/chống phá/nguy hiểm: TỪ CHỐI NGAY LẬP TỨC (0ms)
   if (userText) {
@@ -75,6 +91,7 @@ export default defineEventHandler(async (event) => {
       contextTitle: sessionId ? `Phiên Chatbot #${sessionId.slice(0, 8)}` : 'Chatbot trực tuyến',
       contextUrl: sessionId ? `/admin/chatbot/sessions?search=${encodeURIComponent(sessionId)}` : '/admin/chatbot/sessions',
       authorIp: getClientIp(event) || undefined,
+      capQueuePerSource: true,
     }).catch(() => null)
 
     if (fastCheck?.blocked) {

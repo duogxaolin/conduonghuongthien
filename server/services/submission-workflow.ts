@@ -22,7 +22,7 @@ import { requireResourcePermission, type ActorLike } from '../utils/permissions'
 // Phép đọc `affectedRows` đi qua helper dùng chung, không bao giờ tự ép kiểu:
 // `as { affectedRows?: number }` **khẳng định** hình dạng chứ không **kiểm** nó,
 // và dự án đã trả giá sáu lần cho đúng cấu trúc đó (xem CLAUDE.md).
-import { affectedRowsOrZero } from '../utils/affected-rows'
+import { affectedRowsOrZero, readAffectedRows } from '../utils/affected-rows'
 import { hasForbiddenControlChars } from '../utils/plain-text'
 import {
   DEFAULT_SUBMISSION_STATUS,
@@ -168,30 +168,63 @@ export async function changeSubmissionStatus(actor: ActorLike, id: number, input
   }
   const note = normalizeNote(input.note)
 
-  const current = await loadSubmission(id)
-  if (current.status === next) {
-    throw createError({ statusCode: 400, statusMessage: 'Đơn đã ở trạng thái này.' })
-  }
-  if (!canTransition(current.status, next)) {
-    throw createError({ statusCode: 400, statusMessage: 'Không thể chuyển sang trạng thái này.' })
-  }
-
   const db = getDb()
   const now = new Date()
   const label = actorLabel(actor)
 
+  // Đọc, kiểm chuyển tiếp và ghi đều nằm TRONG transaction, và câu UPDATE mang
+  // điều kiện `status = <trạng thái vừa đọc>` — cùng khuôn với `recordSubmissionView`.
+  // Trước đây trạng thái được đọc NGOÀI transaction rồi UPDATE chỉ theo id: hai cán
+  // bộ bấm cùng lúc đều thấy cùng một trạng thái gốc, đều qua `canTransition`, và
+  // người sau ghi đè người trước — lọt một chuyển tiếp bị cấm, kèm một mục dòng
+  // thời gian khai sai trạng thái "từ". Lượt SELECT trong transaction không khoá
+  // hàng (snapshot read); thứ quyết định là con số hàng câu UPDATE có điều kiện đổi
+  // được: người thua thấy 0 hàng và nhận 409, không ghi gì cả.
   await db.transaction(async (tx) => {
-    await tx
+    const [row] = await tx
+      .select({ status: submissions.status })
+      .from(submissions)
+      .where(eq(submissions.id, id))
+      .limit(1)
+    if (!row) throw createError({ statusCode: 404, statusMessage: 'Đơn đăng ký không tồn tại.' })
+
+    // `stored` là giá trị THÔ trong CSDL — điều kiện WHERE phải khớp đúng nó. Hàng cũ
+    // mang giá trị lạ được đọc như mặc định (xem `loadSubmission`) cho phép kiểm
+    // chuyển tiếp, nhưng nếu đưa giá trị đã chuẩn hoá vào WHERE thì hàng đó sẽ 409
+    // mãi mãi.
+    const stored = row.status
+    const current: SubmissionStatus = isSubmissionStatus(stored) ? stored : DEFAULT_SUBMISSION_STATUS
+    if (current === next) {
+      throw createError({ statusCode: 400, statusMessage: 'Đơn đã ở trạng thái này.' })
+    }
+    if (!canTransition(current, next)) {
+      throw createError({ statusCode: 400, statusMessage: 'Không thể chuyển sang trạng thái này.' })
+    }
+
+    const [header] = await tx
       .update(submissions)
       .set({ status: next, statusChangedBy: actor.id, statusChangedAt: now })
-      .where(eq(submissions.id, id))
+      .where(and(eq(submissions.id, id), eq(submissions.status, stored)))
+
+    const changed = readAffectedRows(header)
+    if (changed === null) {
+      // Không đọc được số hàng thì không biết mình có thắng hay không — ném để
+      // rollback, thay vì ghi một mục dòng thời gian có thể là sai.
+      throw new Error('changeSubmissionStatus: could not read affectedRows from the conditional UPDATE')
+    }
+    if (changed === 0) {
+      throw createError({
+        statusCode: 409,
+        statusMessage: 'Trạng thái đơn vừa được người khác thay đổi. Vui lòng tải lại và thử lại.',
+      })
+    }
 
     await tx.insert(submissionEvents).values({
       submissionId: id,
       actorId: actor.id,
       actorName: label,
       eventType: 'status',
-      fromStatus: current.status,
+      fromStatus: current,
       toStatus: next,
       note,
       createdAt: now,
@@ -204,7 +237,7 @@ export async function changeSubmissionStatus(actor: ActorLike, id: number, input
       resourceId: id,
       // Giá trị trước/sau: "ai đã đóng hồ sơ này, từ trạng thái nào" đúng là câu
       // hỏi nhật ký phải trả lời được về chính nó.
-      meta: { field: 'status', from: current.status, to: next, hasNote: Boolean(note) },
+      meta: { field: 'status', from: current, to: next, hasNote: Boolean(note) },
     })
   })
 

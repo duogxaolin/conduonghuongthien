@@ -54,7 +54,8 @@ import {
 } from '../utils/youtube-parser'
 import { abortProcessingClaim, mediaAssetRoot } from './video-processing'
 import { locateR2Original, listR2Keys, putR2Object, headR2Object } from './video-r2-sync'
-import { type R2Config } from '../utils/media-r2'
+import { getR2Object, type R2Config } from '../utils/media-r2'
+import { loadR2Config } from './media'
 import sharp from 'sharp'
 
 // Hằng số chia sẻ từ file con — re-export để 168 endpoint import từ đây không đổi.
@@ -969,6 +970,54 @@ export type SetMediaThumbnailResult =
   | { ok: false, reason: 'not_found' | 'media_not_found' | 'not_an_image' | 'not_upload' }
 
 /**
+ * Trần dung lượng ảnh thư viện được đọc vào RAM để làm thumbnail. Trên trần tải
+ * lên của Thư viện Media (20MB, `media/upload.post.ts`) một chút — tệp nhập bằng
+ * quét thư mục có thể lớn hơn ảnh tải qua form, nhưng không vô hạn.
+ */
+export const THUMBNAIL_SOURCE_MAX_BYTES = 25 * 1024 * 1024
+const THUMBNAIL_SOURCE_TIMEOUT_MS = 20_000
+
+/**
+ * Bytes của một ảnh Thư viện Media — CHỈ từ kho của chính cổng, không bao giờ qua
+ * `media.url`.
+ *
+ * Trước đây ảnh R2 được tải bằng `fetch(img.url)` trần: không hạn thời gian, không
+ * trần byte, không kiểm host, theo chuyển hướng. `media.url` là một ô CSDL (đi theo
+ * bản khôi phục, import SQL, sửa tay) — một URL `http://169.254.169.254/…` hay tới
+ * dịch vụ nội bộ biến nút "đặt thumbnail" thành SSRF có kênh đọc ngược (bytes thành
+ * thumbnail công khai). Không có host bên thứ ba nào hợp với tính năng này (nguồn
+ * luôn là ảnh thư viện của cổng), nên không có allowlist mạng:
+ *  - `provider='r2'`: đọc theo KHOÁ (`storagePath` — chính là khoá R2, cùng quy ước
+ *    với đồng bộ/self-heal) bằng `getR2Object` với cấu hình R2 của **thư viện ảnh**
+ *    (`settings` group `media`; khác R2 video của `input.config`). Endpoint đi qua
+ *    `openR2` (account id 32 hex → `<hex>.r2.cloudflarestorage.com`), có trần byte
+ *    và hạn thời gian. Cấu hình hỏng → `R2ConfigInvalidError`; không có đường lùi
+ *    về URL công khai (cấu hình thư viện không dùng được thì chính thư viện cũng
+ *    không quản lý được tệp đó).
+ *  - `provider='local'`: `storagePath` phải nằm dưới `<cwd>/public/uploads` (cùng gốc
+ *    `uploadLocalFile` ghi và `deleteLocalFile` chặn), là tệp thường, dưới trần.
+ */
+async function readLibraryImage(img: { provider: string, storagePath: string }): Promise<Buffer> {
+  if (img.provider === 'r2') {
+    if (!img.storagePath) throw new Error('Ảnh thư viện R2 không có khoá lưu trữ.')
+    return await getR2Object(img.storagePath, await loadR2Config(), {
+      maxBytes: THUMBNAIL_SOURCE_MAX_BYTES,
+      timeoutMs: THUMBNAIL_SOURCE_TIMEOUT_MS,
+    })
+  }
+
+  const uploadsRoot = path.resolve(process.cwd(), 'public', 'uploads')
+  const filePath = path.resolve(img.storagePath)
+  if (!filePath.startsWith(uploadsRoot + path.sep)) {
+    throw new Error('Ảnh thư viện không nằm trong thư mục uploads — không đọc.')
+  }
+  const stat = await fs.lstat(filePath).catch(() => null)
+  if (!stat || !stat.isFile()) throw new Error('Ảnh thư viện không còn trên đĩa.')
+  if (stat.size > THUMBNAIL_SOURCE_MAX_BYTES) throw new Error('Ảnh thư viện quá lớn để làm thumbnail.')
+  return await fs.readFile(filePath)
+}
+
+/**
  * Đặt thumbnail cho mục video từ một ảnh Thư viện Media.
  *
  * Đọc bytes ảnh thư viện (đĩa hoặc R2 theo `provider`), tối ưu qua `sharp` về
@@ -1007,21 +1056,8 @@ export async function setMediaThumbnail(
   if (!img) return { ok: false, reason: 'media_not_found' }
   if (!img.mimeType.startsWith('image/')) return { ok: false, reason: 'not_an_image' }
 
-  // 2. Đọc bytes ảnh nguồn.
-  let sourceBuffer: Buffer
-  if (img.provider === 'r2') {
-    // Ảnh thư viện R2 dùng R2 của **thư viện ảnh** (group `media`), không phải R2
-    // video (group `media_portal`). Hai bucket/credential khác nhau — `input.config`
-    // là config media-portal nên không mang credentials thư viện ảnh. Vì ảnh thư
-    // viện R2 có public URL trực tiếp (không proxy như video), đọc qua fetch URL.
-    if (!img.url) throw new Error('Ảnh thư viện R2 không có URL.')
-    const res = await fetch(img.url).catch(() => null)
-    if (!res || !res.ok) throw new Error('Không tải được ảnh thumbnail từ thư viện R2.')
-    sourceBuffer = Buffer.from(await res.arrayBuffer())
-  } else {
-    // Local: storagePath là đường dẫn tuyệt đối trong public/uploads/.
-    sourceBuffer = await fs.readFile(img.storagePath)
-  }
+  // 2. Đọc bytes ảnh nguồn — chỉ từ kho của chính cổng (xem `readLibraryImage`).
+  const sourceBuffer = await readLibraryImage(img)
 
   // 3. Tối ưu qua sharp — 16:9, ≤720px, JPEG q80.
   const optimized = await sharp(sourceBuffer)

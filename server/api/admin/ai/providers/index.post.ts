@@ -2,6 +2,7 @@ import { getDb } from '../../../../utils/db'
 import { aiProviders, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { encryptAiSecret } from '../../../../utils/ai/crypto'
+import { checkProviderBaseUrl } from '../../../../utils/ai/provider-url'
 import { eq } from 'drizzle-orm'
 
 /**
@@ -20,7 +21,7 @@ export default defineEventHandler(async (event) => {
 
   const provider = typeof body.provider === 'string' ? body.provider.trim().slice(0, 32) : ''
   const label = typeof body.label === 'string' ? body.label.trim().slice(0, 128) : ''
-  const baseUrl = typeof body.baseUrl === 'string' ? body.baseUrl.trim().slice(0, 1024) || null : null
+  const rawBaseUrl = typeof body.baseUrl === 'string' ? body.baseUrl.trim() : ''
   const isActive = typeof body.isActive === 'boolean' ? body.isActive : false
   const apiKey = typeof body.apiKey === 'string' ? body.apiKey.trim() : ''
 
@@ -29,6 +30,16 @@ export default defineEventHandler(async (event) => {
   }
   if (!label) {
     throw createError({ statusCode: 400, statusMessage: 'Nhãn hiển thị (label) là bắt buộc.' })
+  }
+
+  // Mỗi lệnh gọi AI mang khoá API tới đúng địa chỉ này — kiểm trước khi lưu
+  // (https, cổng 443, không thông tin đăng nhập, không IP/localhost/tên nội bộ).
+  // `callAi` kiểm lại lúc gọi cho những hàng đã lưu từ trước.
+  let baseUrl: string | null = null
+  if (rawBaseUrl) {
+    const checked = checkProviderBaseUrl(rawBaseUrl)
+    if (!checked.ok) throw createError({ statusCode: 400, statusMessage: checked.message })
+    baseUrl = checked.url
   }
 
   const db = getDb()

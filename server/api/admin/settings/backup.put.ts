@@ -12,7 +12,7 @@
  */
 import { getDb } from '../../../utils/db'
 import { settings, activityLogs } from '../../../db/schema'
-import { requireResourcePermission } from '../../../utils/permissions'
+import { requireResourcePermission, requireSuperAdmin } from '../../../utils/permissions'
 
 const ALLOWED_KEYS = new Set([
   'backup_auto_enabled',
@@ -37,6 +37,52 @@ function validateInt(key: string, raw: string, min: number, max: number): string
     throw new Error(`${key} phải là số nguyên từ ${min} đến ${max}`)
   }
   return String(n)
+}
+
+/**
+ * Khoá chỉ SuperAdmin được ĐỔI (quyết định của chủ hệ thống, đợt rà soát 2026-10):
+ *
+ *  - `backup_drive_*` quyết định bản sao CSDL + toàn bộ file đi TỚI ĐÂU. Một người
+ *    chỉ có `settings.update` mà đổi được service account / thư mục Drive / công
+ *    tắc thì lần backup kế tiếp chép toàn bộ dữ liệu (kể cả hash mật khẩu, bí mật
+ *    đã mã hoá) sang Drive của họ.
+ *  - `backup_keep_count` quyết định bao nhiêu bản bị XOÁ: đặt 1 rồi bấm "chạy
+ *    backup" vài lần là xoá sạch lịch sử backup.
+ *
+ * Người không phải SuperAdmin vẫn lưu được biểu mẫu (lịch giờ/ngày, bật tự động)
+ * miễn là giữ nguyên các giá trị này — cùng cách `settings/index.put.ts` xử lý
+ * `tracking_custom_*`. "Giữ nguyên" so trên giá trị HIỆU LỰC (đã chuẩn hoá, có mặc
+ * định như `readBackupConfig` trong `services/backup.ts`), không so chuỗi thô: lần
+ * lưu đầu tiên trên một CSDL chưa có hàng nào gửi `14`/`false` mặc định và không
+ * được phép bị 403.
+ */
+const SUPERADMIN_ONLY_KEYS = new Set([
+  'backup_keep_count',
+  'backup_drive_enabled',
+  'backup_drive_service_account',
+  'backup_drive_folder_id',
+])
+
+const DEFAULT_KEEP_COUNT = 14
+
+function effectiveStored(key: string, stored: string | null | undefined): string {
+  const raw = (stored ?? '').trim()
+  if (key === 'backup_keep_count') return String(Number(raw) || DEFAULT_KEEP_COUNT)
+  if (key === 'backup_drive_enabled') return raw === 'true' || raw === '1' ? 'true' : 'false'
+  return raw
+}
+
+/** Giá trị gửi lên đã chuẩn hoá để so với `effectiveStored`; `null` = không đọc được (để validate báo lỗi). */
+function effectiveSubmitted(key: string, raw: string): string | null {
+  const text = raw.trim()
+  if (key === 'backup_keep_count') {
+    const n = Number(text)
+    return text !== '' && Number.isSafeInteger(n) ? String(n) : null
+  }
+  if (key === 'backup_drive_enabled') {
+    try { return validateBoolean(key, text) } catch { return null }
+  }
+  return text
 }
 
 function validateDays(raw: string): string {
@@ -67,30 +113,56 @@ export default defineEventHandler(async (event) => {
   const existing = await db.select().from(settings)
   const existingMap = new Map(existing.map(r => [r.key, r.value]))
 
+  const isSuperAdmin = adminUser?.isSuperAdmin === true
+
   for (const [key, raw] of Object.entries(body)) {
     if (!ALLOWED_KEYS.has(key)) continue // bỏ qua key lạ
-    let value: string
-    if (key === 'backup_auto_enabled' || key === 'backup_drive_enabled') {
-      value = validateBoolean(key, String(raw))
-    } else if (key === 'backup_auto_hour') {
-      value = validateInt(key, String(raw), 0, 23)
-    } else if (key === 'backup_keep_count') {
-      value = validateInt(key, String(raw), 1, 365)
-    } else if (key === 'backup_auto_days') {
-      value = validateDays(String(raw))
-    } else if (key === 'backup_drive_service_account') {
-      // `********` = giữ nguyên giá trị cũ; rỗng = xoá (lưu chuỗi rỗng).
-      const rawStr = String(raw)
-      if (rawStr === '********') {
-        const old = existingMap.get(key)
-        if (old) oldValues[key] = old // ghi nhận để audit nhưng không update
+
+    // Khoá chỉ SuperAdmin: giữ nguyên → bỏ qua (không ghi, không 403); đổi mà
+    // không phải SuperAdmin → 403 TRƯỚC mọi ghi. So TRƯỚC khi kiểm biên để một
+    // giá trị cũ ngoài biên mới (vd. keep_count=2 lưu từ trước) gửi lại vẫn là
+    // no-op chứ không phải 400.
+    if (SUPERADMIN_ONLY_KEYS.has(key)) {
+      const rawStr = String(raw ?? '')
+      if (key === 'backup_drive_service_account' && rawStr === '********') {
+        // dấu che = giữ nguyên (xử lý bên dưới)
+      } else if (effectiveSubmitted(key, rawStr) === effectiveStored(key, existingMap.get(key))) {
         continue
+      } else if (!isSuperAdmin) {
+        requireSuperAdmin(adminUser)
       }
-      value = rawStr.trim()
-    } else {
-      value = String(raw).trim()
     }
-    oldValues[key] = existingMap.get(key) ?? null
+
+    let value: string
+    try {
+      if (key === 'backup_auto_enabled' || key === 'backup_drive_enabled') {
+        value = validateBoolean(key, String(raw))
+      } else if (key === 'backup_auto_hour') {
+        value = validateInt(key, String(raw), 0, 23)
+      } else if (key === 'backup_keep_count') {
+        // Tối thiểu 1 — chỉ SuperAdmin tới được đây khi giá trị đổi (xem trên), nên
+        // trần dưới "≥ 3 cho người không phải SuperAdmin" mạnh hơn cả: họ không đổi
+        // được con số này. Xoay vòng còn tự giữ bản mới nhất của mỗi loại.
+        value = validateInt(key, String(raw), 1, 365)
+      } else if (key === 'backup_auto_days') {
+        value = validateDays(String(raw))
+      } else if (key === 'backup_drive_service_account') {
+        // `********` = giữ nguyên giá trị cũ; rỗng = xoá (lưu chuỗi rỗng).
+        const rawStr = String(raw)
+        if (rawStr === '********') continue
+        value = rawStr.trim()
+      } else {
+        value = String(raw).trim()
+      }
+    } catch (err: unknown) {
+      // Trước đây các hàm validate ném `Error` trần → 500, trái với "sai trả 400".
+      throw createError({ statusCode: 400, statusMessage: err instanceof Error ? err.message : `${key} không hợp lệ` })
+    }
+    // Khoá JSON của service account là BÍ MẬT: dòng audit chỉ ghi "đã có/chưa có",
+    // không bao giờ chép nguyên văn khoá cũ vào `activity_logs`.
+    oldValues[key] = key === 'backup_drive_service_account'
+      ? (existingMap.get(key) ? '[đã cấu hình]' : null)
+      : existingMap.get(key) ?? null
     entries.push({ key, value })
   }
 

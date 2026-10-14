@@ -21,9 +21,7 @@ const settingsTemplate = settingsSfc.descriptor.template?.content ?? ''
 const ordinaryPatchFields = [
   'enabled',
   'providerPolicy',
-  'baseUrl',
   'model',
-  'allowedHosts',
   'requestTimeoutMs',
   'maxResponseBytes',
   'maxInputChars',
@@ -39,6 +37,12 @@ const ordinaryPatchFields = [
 // regression left `small_talk_enabled` in the allowlist while everything else
 // (type, validator, schema, page) used the Drizzle field name `smallTalkEnabled`.
 const conditionalPatchFields = ['smallTalkEnabled', 'mode', 'outOfScopeBehavior', 'knowledgeGreeting', 'fallbackMessage', 'leadCaptureEnabled', 'leadCaptureEmail']
+// The provider DESTINATION. The page has no input for these — the form holds the
+// `ai_providers` address overlaid by GET — so it must NOT echo them back: changing
+// the destination needs a super admin (like key rotation), and echoing the overlay
+// silently copied an AI-Panel address onto the legacy path that carries the chatbot
+// key. The server allowlist still accepts them (a super admin can set them via API).
+const destinationFields = ['baseUrl', 'allowedHosts']
 const metadataFields = [
   'id',
   'systemPromptConfigured',
@@ -108,10 +112,14 @@ test('GET metadata is mapped separately and cannot be spread into the editable f
   assert.doesNotMatch(payloadBuilder, /\.\.\.form|\.\.\.settings|\.\.\.value/)
   for (const field of ordinaryPatchFields) assert.match(payloadBuilder, new RegExp(`${field}:`))
   for (const field of metadataFields) assert.doesNotMatch(payloadBuilder, new RegExp(`\\b${field}\\b`))
+  for (const field of destinationFields) {
+    assert.match(applyResponse, new RegExp(`form\\.${field} =`))
+    assert.doesNotMatch(payloadBuilder, new RegExp(`\\b${field}:`), `${field} must not be echoed back`)
+  }
 
   const serverFields = patchRouteSource.match(/const FIELDS = new Set\(\[([^\]]+)\]\)/)?.[1]
   assert.ok(serverFields)
-  for (const field of [...ordinaryPatchFields, ...conditionalPatchFields, 'systemPrompt', 'apiKey']) {
+  for (const field of [...ordinaryPatchFields, ...conditionalPatchFields, ...destinationFields, 'systemPrompt', 'apiKey']) {
     assert.match(serverFields, new RegExp(`['"]${field}['"]`))
   }
   // The DB column is `small_talk_enabled` (snake_case); the Drizzle field name —

@@ -1,11 +1,19 @@
-import { getDb } from '../../../utils/db'
-import { settings } from '../../../db/schema'
-import { getSmtpConfig, sendMail, type SmtpConfig } from '../../../utils/mailer'
+import { getSmtpConfig, sendMail } from '../../../utils/mailer'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { logWarn } from '../../../utils/logger'
+import {
+  SMTP_PORT_NOT_ALLOWED_MESSAGE,
+  classifySmtpError,
+  isAllowedSmtpPort,
+  resolveSmtpTestConfig,
+  smtpFailureMessage,
+  smtpTestUsesSavedConfig,
+} from '../../../utils/smtp-test-config'
 
-// Sends a test message using either the payload's SMTP fields (when the admin is
-// trying settings before saving) or the persisted config. Gated by the
-// `settings` `update` permission — same trust level as saving SMTP config.
+// Sends a test message. Gated by the `settings` `update` permission — same trust
+// level as saving SMTP config. Which config is used (saved vs. typed) is decided
+// by resolveSmtpTestConfig: the saved password is never sent to a host taken from
+// the request body.
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'update')
@@ -16,32 +24,22 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng nhập địa chỉ email nhận thử.' })
   }
 
-  // Build an override config from the request when host is supplied. When the
-  // password field is the mask token (or blank), fall back to the saved value.
-  let config: SmtpConfig | null = null
-  const bodyHost = String(body?.smtp_host || '').trim()
-  if (bodyHost) {
-    let pass = String(body?.smtp_pass ?? '')
-    if (pass === '********' || pass === '') {
-      const rows = await getDb().select().from(settings)
-      pass = rows.find((r) => r.key === 'smtp_pass')?.value ?? ''
-    }
-    const user = String(body?.smtp_user || '').trim()
-    config = {
-      host: bodyHost,
-      port: Number(body?.smtp_port) || 587,
-      secure: ['true', '1', 'yes', 'on'].includes(String(body?.smtp_secure || '').trim().toLowerCase()),
-      user,
-      pass,
-      from: String(body?.smtp_from || '').trim() || user,
-    }
-    if (!config.host || !config.user) config = null
-  } else {
-    config = await getSmtpConfig()
-  }
+  const saved = smtpTestUsesSavedConfig(body) ? await getSmtpConfig() : null
+  const { config, usedSaved, ignoredUnsavedChanges } = resolveSmtpTestConfig(body, saved)
 
   if (!config) {
-    throw createError({ statusCode: 400, statusMessage: 'SMTP chưa được cấu hình (thiếu host hoặc user).' })
+    throw createError({
+      statusCode: 400,
+      statusMessage: usedSaved
+        ? 'SMTP chưa được cấu hình (thiếu host hoặc user). Hãy lưu cấu hình, hoặc nhập mật khẩu để thử máy chủ mới.'
+        : 'Vui lòng nhập SMTP user để gửi thử.',
+    })
+  }
+
+  // Cùng trần cổng với lúc lưu (`settings/index.put.ts`). Áp cả cho cấu hình đã
+  // lưu: một cổng lạ lưu từ trước bản vá này không được quay số thêm lần nào nữa.
+  if (!isAllowedSmtpPort(config.port)) {
+    throw createError({ statusCode: 400, statusMessage: SMTP_PORT_NOT_ALLOWED_MESSAGE })
   }
 
   try {
@@ -52,11 +50,25 @@ export default defineEventHandler(async (event) => {
       html: '<div style="font-family:Arial,sans-serif;"><h2 style="color:#4A6741;">Cấu hình SMTP hoạt động</h2><p>Đây là email thử nghiệm từ Cổng thông tin Con Đường Hướng Thiện. Nếu bạn nhận được email này, cấu hình SMTP đã hoạt động chính xác.</p></div>',
       config,
     })
-    return { ok: true, message: `Đã gửi email thử tới ${to}. Vui lòng kiểm tra hộp thư.` }
+    const note = ignoredUnsavedChanges
+      ? ` Lưu ý: đã gửi bằng cấu hình ĐÃ LƯU (${config.host}); thay đổi chưa lưu không được dùng vì mật khẩu chưa được nhập lại.`
+      : ''
+    return { ok: true, message: `Đã gửi email thử tới ${to}. Vui lòng kiểm tra hộp thư.${note}` }
   } catch (err: unknown) {
+    // Chi tiết thô (IP:cổng, banner, phản hồi SMTP) chỉ vào log máy chủ; cán bộ
+    // nhận một câu đã phân loại — xem `classifySmtpError`.
+    const kind = classifySmtpError(err)
+    logWarn({
+      event: 'smtp.test_failed',
+      userId: adminUser?.id,
+      kind,
+      usedSaved,
+      code: typeof err === 'object' && err !== null && 'code' in err ? String((err as { code: unknown }).code ?? '') : undefined,
+      error: err instanceof Error ? err.message : String(err),
+    })
     throw createError({
       statusCode: 400,
-      statusMessage: `Gửi email thử thất bại: ${(err instanceof Error ? err.message : undefined) || 'Lỗi kết nối SMTP.'}`,
+      statusMessage: `Gửi email thử thất bại: ${smtpFailureMessage(kind)}`,
     })
   }
 })

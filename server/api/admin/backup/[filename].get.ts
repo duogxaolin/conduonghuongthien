@@ -1,12 +1,14 @@
 import path from 'node:path'
 import { promises as fs } from 'node:fs'
-import { requireResourcePermission } from '../../../utils/permissions'
+import { requireResourcePermission, requireSuperAdmin } from '../../../utils/permissions'
 
 const BACKUPS_DIR = path.resolve(process.cwd(), 'backups')
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'read')
+  // Một bản dump chứa hash mật khẩu và đơn của công dân — chỉ SuperAdmin tải về.
+  requireSuperAdmin(adminUser)
 
   const filename = getRouterParam(event, 'filename')
   if (!filename) throw createError({ statusCode: 400, statusMessage: 'Thiếu tên file.' })

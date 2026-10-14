@@ -11,25 +11,34 @@
  * not an audit trail. One row per request, not per session displayed.
  */
 
-import { and, desc, gte, isNotNull, lte, sql } from 'drizzle-orm'
+import { and, desc, gte, isNotNull, lt, sql } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { activityLogs, chatSessions } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { getClientIp } from '../../../../utils/client-ip'
 import { summarizeUserAgent } from '../../../../utils/chatbot/user-agent'
+import { DAY_MS, vietnamDayStart } from '../../../../utils/vn-day-range'
 
 const DEFAULT_PAGE_SIZE = 25
 const MAX_PAGE_SIZE = 100
 
-/** Rejects rather than clamping: quietly substituting a different range would
- *  make the response a lie about which period was reviewed. */
-function parseDate(raw: string | undefined, label: string): Date | null {
-  if (!raw) return null
-  const parsed = new Date(raw)
-  if (Number.isNaN(parsed.getTime())) {
-    throw createError({ statusCode: 400, statusMessage: `Giá trị ${label} không phải là ngày hợp lệ.` })
+/**
+ * `from`/`to` are the page's `<input type="date">` values — Vietnam calendar days,
+ * `YYYY-MM-DD`. Returns 00:00 +07:00 of that day. Rejects rather than clamping:
+ * quietly substituting a different range would make the response a lie about which
+ * period was reviewed.
+ *
+ * Previously `new Date(raw)` read `to=2026-10-14` as 00:00 UTC of the 14th, so the
+ * end day was excluded entirely and both bounds were 7 hours off the Vietnamese
+ * day. See `server/utils/vn-day-range.ts`.
+ */
+function parseDay(raw: unknown, label: string): Date | null {
+  if (raw === undefined || raw === null || raw === '') return null
+  const start = vietnamDayStart(raw)
+  if (!start) {
+    throw createError({ statusCode: 400, statusMessage: `Giá trị ${label} không phải là ngày hợp lệ (YYYY-MM-DD).` })
   }
-  return parsed
+  return start
 }
 
 export default defineEventHandler(async (event) => {
@@ -48,9 +57,11 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `pageSize phải là số nguyên từ 1 đến ${MAX_PAGE_SIZE}.` })
   }
 
-  const from = parseDate(query.from as string | undefined, 'from')
-  const to = parseDate(query.to as string | undefined, 'to')
-  if (from && to && from.getTime() > to.getTime()) {
+  const from = parseDay(query.from, 'from')
+  const toDay = parseDay(query.to, 'to')
+  // The end day is inclusive: everything before 00:00 +07:00 of the NEXT day.
+  const toExclusive = toDay ? new Date(toDay.getTime() + DAY_MS) : null
+  if (from && toDay && from.getTime() > toDay.getTime()) {
     throw createError({ statusCode: 400, statusMessage: 'Khoảng thời gian không hợp lệ: from phải trước to.' })
   }
 
@@ -65,7 +76,7 @@ export default defineEventHandler(async (event) => {
   const db = getDb()
   const conditions = []
   if (from) conditions.push(gte(chatSessions.startedAt, from))
-  if (to) conditions.push(lte(chatSessions.startedAt, to))
+  if (toExclusive) conditions.push(lt(chatSessions.startedAt, toExclusive))
   if (rawHasContact === 'yes') conditions.push(isNotNull(chatSessions.detectedPhone))
   if (rawHasContact === 'no') conditions.push(sql`${chatSessions.detectedPhone} IS NULL`)
   const where = conditions.length ? and(...conditions) : undefined

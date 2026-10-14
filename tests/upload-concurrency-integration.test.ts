@@ -7,9 +7,10 @@ import mysql from 'mysql2/promise'
 import { eq } from 'drizzle-orm'
 import { initDb } from '../server/db/init.ts'
 import { getDb, getPool, closeDb } from '../server/utils/db.ts'
-import { mediaItems, mediaUploadSessions, users, activityLogs } from '../server/db/schema.ts'
+import { mediaItems, mediaUploadSessions, users, activityLogs, mediaAssetCleanup } from '../server/db/schema.ts'
 import { resolveMediaConfig } from '../server/utils/media-config.ts'
 import { initUpload, receiveChunk, completeUpload, uploadStatus, chunkBodyLimit, housekeepUploads } from '../server/services/chunked-upload.ts'
+import { processMediaAssetCleanup } from '../server/services/media-asset-cleanup.ts'
 
 test('MySQL upload receipt union, completion fencing, crash recovery and cleanup races', {
   skip: process.env.MEDIA_UPLOAD_INTEGRATION !== '1', timeout: 120_000,
@@ -111,6 +112,44 @@ test('MySQL upload receipt union, completion fencing, crash recovery and cleanup
     assert.ok(!refused.ok && refused.status === 503)
     const full = await finish(busy)
     assert.ok(full.ok)
+
+    // ── Thay tệp video: cây cũ được hẹn dọn qua outbox, không xoá gì trước commit ──
+    // Mục `again` sống ở `media/<id>`. Giả lập nó đã công bố lên R2 (rendition trên
+    // R2, tệp gốc vẫn trên đĩa) — hai cây cũ phải được hẹn dọn.
+    const replacedItemId = again.ok ? again.mediaItemId : 0
+    await db.update(mediaItems).set({ storageProvider: 'r2', storagePath: `media/${id}/generations/g1` })
+      .where(eq(mediaItems.id, replacedItemId))
+    const replaceWith = (uploadId: string) =>
+      completeUpload({ adminUserId: owner, uploadId, replaceMediaItemId: replacedItemId }, options)
+
+    // Transaction thay tệp hỏng (audit bị chặn) → không task dọn nào, cây cũ nguyên.
+    const failing = await open(1024)
+    await send(failing, 0)
+    await pool.query("CREATE TRIGGER reject_replace_audit BEFORE INSERT ON activity_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'injected audit failure'")
+    const failed = await replaceWith(failing)
+    await pool.query('DROP TRIGGER reject_replace_audit')
+    assert.ok(!failed.ok)
+    assert.equal((await db.select().from(mediaAssetCleanup)).length, 0, 'rollback → không hẹn dọn cây đang phục vụ')
+    assert.equal((await fs.stat(path.join(workdir, 'media', id, 'original.mp4'))).size, 2048)
+
+    const replaced = await replaceWith(failing)
+    assert.ok(replaced.ok && replaced.mediaItemId === replacedItemId)
+    assert.ok(!('replacedClaim' in replaced), 'chi tiết nội bộ không lọt ra phản hồi')
+    assert.equal((await fs.stat(path.join(workdir, 'media', id, 'original.mp4'))).size, 2048,
+      'cây cũ chỉ được xoá bởi worker dọn, không phải trong lượt thay')
+    const tasks = await db.select().from(mediaAssetCleanup)
+    assert.deepEqual(tasks.map(t => `${t.storageProvider}:${t.assetRoot}`).sort(), [`local:media/${id}`, `r2:media/${id}`])
+    assert.ok(tasks.every(t => t.nextAttemptAt && t.nextAttemptAt.getTime() > Date.now()), 'hoãn một nhịp cho encoder cũ dừng')
+    const [afterReplace] = await db.select().from(mediaItems).where(eq(mediaItems.id, replacedItemId))
+    assert.equal(afterReplace!.storagePath, `media/${failing}`)
+    assert.equal(afterReplace!.storageProvider, 'local', 'tệp gốc mới nằm trên đĩa')
+
+    // Worker dọn: xoá cây local cũ, không chạm cây mới. R2 chưa cấu hình → task R2
+    // ở lại để thử lại (không lặng lẽ bỏ).
+    const swept = await processMediaAssetCleanup({ db, config, now: new Date(Date.now() + 120_000) })
+    assert.deepEqual(swept, { removed: 1, retried: 1, protected: 0 })
+    await assert.rejects(() => fs.stat(path.join(workdir, 'media', id)))
+    assert.equal((await fs.stat(path.join(workdir, 'media', failing, 'original.mp4'))).size, 1024)
   } finally {
     await closeDb()
     for (const key of ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME']) {

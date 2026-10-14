@@ -234,6 +234,78 @@ test('submission workflow: first-view race, audit atomicity, cascades, and DATET
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // 4b. Two officers changing the status at once: exactly ONE wins.
+    //     The status used to be read outside the transaction and updated by id
+    //     only, so both passed the transition check against the same stale
+    //     status, the second overwrote the first, and the timeline got two
+    //     entries both claiming to start from `new`. The conditional UPDATE
+    //     (`AND status = <read>`) is what decides now; the loser gets a 409.
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      const raced = await seedSubmission('Phạm Văn D')
+      const targets = ['in_progress', 'rejected', 'transferred', 'resolved', 'in_progress'] as const
+      const settled = await Promise.allSettled(
+        targets.map((status) => changeSubmissionStatus(actor, raced, { status })),
+      )
+      const won = settled.filter((s) => s.status === 'fulfilled')
+      const lost = settled.filter((s): s is PromiseRejectedResult => s.status === 'rejected')
+      assert.equal(won.length, 1, `exactly one concurrent status change may win, got ${won.length}`)
+      for (const loss of lost) {
+        const err = loss.reason as { statusCode?: number; statusMessage?: string }
+        // 409 = lost the race. A 400 "already in this status" would also be a
+        // correct refusal if the winner happened to pick the same target, but
+        // never a success.
+        assert.ok(
+          err.statusCode === 409 || err.statusCode === 400,
+          `a losing concurrent change must be refused with 409/400, got ${String(err.statusCode)} ${String(err.statusMessage)}`,
+        )
+      }
+      assert.ok(
+        lost.some((l) => (l.reason as { statusCode?: number }).statusCode === 409),
+        'at least one loser must have been refused by the conditional UPDATE (409)',
+      )
+
+      const winner = (won[0] as PromiseFulfilledResult<{ status: string }>).value.status
+      const [row] = await db
+        .select({ status: submissions.status })
+        .from(submissions)
+        .where(eq(submissions.id, raced))
+        .limit(1)
+      assert.equal(row!.status, winner, 'the stored status is not the one the winner was told it set')
+
+      const statusEvents = (await listSubmissionEvents(raced)).filter((e) => e.eventType === 'status')
+      assert.equal(statusEvents.length, 1, `the race wrote ${statusEvents.length} status entries, expected 1`)
+      assert.equal(statusEvents[0]!.fromStatus, 'new', 'the timeline "from" status must be the real prior status')
+      assert.equal(statusEvents[0]!.toStatus, winner)
+
+      const audits = await db
+        .select({ id: activityLogs.id })
+        .from(activityLogs)
+        .where(and(eq(activityLogs.resource, 'submissions'), eq(activityLogs.action, 'update'), eq(activityLogs.resourceId, raced)))
+      assert.equal(audits.length, 1, 'a loser left an audit row for a change that did not happen')
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // 4c. A legacy row with an unknown stored status still transitions. The
+    //     conditional UPDATE must match the RAW stored value, not the normalised
+    //     default, or such a row would 409 forever.
+    // ─────────────────────────────────────────────────────────────────────────
+    {
+      const legacy = await seedSubmission('Võ Thị E')
+      await db.update(submissions).set({ status: 'cu_khong_ro' }).where(eq(submissions.id, legacy))
+      await changeSubmissionStatus(actor, legacy, { status: 'in_progress' })
+      const [row] = await db
+        .select({ status: submissions.status })
+        .from(submissions)
+        .where(eq(submissions.id, legacy))
+        .limit(1)
+      assert.equal(row!.status, 'in_progress')
+      const statusEvents = (await listSubmissionEvents(legacy)).filter((e) => e.eventType === 'status')
+      assert.equal(statusEvents.length, 1)
+      assert.equal(statusEvents[0]!.fromStatus, 'new', 'an unknown stored status reads as the default')
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // 5. The audit row and the mutation commit TOGETHER.
     //    Forced by making the audit insert violate its FK to `users`.
     // ─────────────────────────────────────────────────────────────────────────

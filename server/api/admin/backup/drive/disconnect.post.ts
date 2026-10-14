@@ -6,12 +6,15 @@
  * Sau khi hủy, backup tiếp theo fallback về Service Account (nếu cấu hình) hoặc
  * báo "chưa liên kết Drive". Quyền `settings.update`.
  */
-import { requireResourcePermission } from '../../../../utils/permissions'
+import { requireResourcePermission, requireSuperAdmin } from '../../../../utils/permissions'
 import { clearDriveLink } from '../../../../services/backup-drive-oauth'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'update')
+  // Đích backup (tài khoản Drive nhận bản sao CSDL + file) chỉ SuperAdmin đổi được
+  // — người có `settings.update` vẫn xem trạng thái và chạy backup.
+  requireSuperAdmin(adminUser)
 
   await clearDriveLink(adminUser.id)
   return { ok: true }

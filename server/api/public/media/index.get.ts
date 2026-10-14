@@ -16,7 +16,7 @@
 import { defineEventHandler, getQuery } from 'h3'
 
 import { finitePositive, MAX_PAGE } from '../../../utils/query-number'
-import { logError } from '../../../utils/logger'
+import { reportPublicReadFailure } from '../../../utils/public-read-failure'
 import {
   MEDIA_LIST_MAX_LIMIT,
   MEDIA_SEARCH_MAX_LENGTH,
@@ -53,11 +53,11 @@ export default defineEventHandler(async (event) => {
         totalPages: Math.ceil(pageResult.total / limit),
       },
     }
-  } catch (error) {
-    logError({
-      event: 'public.media_list_failed',
-      message: error instanceof Error ? error.message : String(error),
-    })
+  } catch (error: unknown) {
+    // 503 + `no-store` + log `error` (hợp đồng chung của lượt đọc công khai): trang
+    // `/media` chạy `swr: 60`, nên một `200 { ok: false }` được bộ đệm giữ như một
+    // trang hợp lệ. Log không mang chuỗi tìm kiếm của khách.
+    reportPublicReadFailure(event, 'public.media_list_failed', error)
     // Cùng hình dạng với nhánh thành công, khác đúng một trường: giao diện đọc
     // `ok` để chọn nhánh, không phải đi đoán từ một mảng rỗng.
     return {
