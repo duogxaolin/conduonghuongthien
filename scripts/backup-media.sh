@@ -1,10 +1,19 @@
 #!/usr/bin/env bash
 #
-# Archive the Media Portal working volume beside its database backup.
+# Archive the app's two file volumes beside its database backup.
 #
-# The portal publishes originals, thumbnails and HLS segments under
-# /var/lib/cdkt/media.  Those files are a named Docker volume rather than rows
-# in MySQL, so a database dump alone cannot restore a playable video.
+# The portal keeps files outside MySQL, in two named Docker volumes:
+#   media_work   -> /var/lib/cdkt/media    originals, thumbnails and HLS segments
+#   uploads_data -> /app/public/uploads    images and documents uploaded through
+#                                          the admin (article photos, avatars, ...)
+# A database dump alone restores rows that point at files that are gone.  Each
+# volume gets its own archive, sharing one timestamp with the SQL dump:
+#
+#   cdkt-media-<stamp>-<pid>.tar.gz     contents of the media work dir (no prefix)
+#   cdkt-uploads-<stamp>-<pid>.tar.gz   one top-level directory `uploads/`
+#
+# `uploads/` as the top-level directory is exactly the layout the in-app backup
+# (server/services/backup.ts) writes, so one restore path serves both.
 #
 #   ./scripts/backup-media.sh [destination-directory]
 #
@@ -33,7 +42,7 @@ DEST="${1:-${BACKUP_DIR:-$REPO_ROOT/backups}}"
 KEEP_DAYS="${BACKUP_KEEP_DAYS:-14}"
 STAMP="${BACKUP_STAMP:-$(date -u +%Y%m%dT%H%M%SZ)}"
 [[ "$STAMP" =~ ^[0-9]{8}T[0-9]{6}Z$ ]] || { printf '%s\n' 'BACKUP_STAMP must use YYYYMMDDTHHMMSSZ' >&2; exit 1; }
-TARGET="$DEST/cdkt-media-$STAMP-$$.tar.gz"
+TARGET=''
 
 emit() { printf '{"event":"media_backup.%s","time":"%s","detail":%s}\n' "$1" "$(date -u +%FT%TZ)" "$2"; }
 fail() {
@@ -47,25 +56,44 @@ command -v docker >/dev/null 2>&1 || fail config "docker is not on PATH" 1
 docker inspect "$CONTAINER" >/dev/null 2>&1 || fail config "container $CONTAINER is not running" 1
 mkdir -p "$DEST"
 
+# archive_volume <volume-label> <path-in-container> <file-prefix>
+#
 # `docker cp CONTAINER:PATH -` writes a tar stream.  Its source is the mounted
 # directory in the running app container, so this follows the actual compose
-# volume name instead of guessing it from a project name.
-if ! docker cp "$CONTAINER:/var/lib/cdkt/media/." - | gzip -9 > "$TARGET"; then
-  fail archive "could not archive /var/lib/cdkt/media from $CONTAINER" 2
-fi
+# volume instead of guessing a project-name-prefixed volume name.
+#
+# Rotation only touches files this script names itself: <prefix>-<stamp>-<pid>.
+# The in-app backup writes into the same ./backups directory under the same
+# `cdkt-media-` / `cdkt-uploads-` prefixes, but ends the name with a word
+# (`-manual`, `-scheduled`, ...), and its own count-based rotation owns those.
+# A bare `cdkt-media-*` glob here would delete them by age behind its back.
+archive_volume() {
+  local label="$1" src="$2" prefix="$3"
+  TARGET="$DEST/$prefix-$STAMP-$$.tar.gz"
 
-gzip -t "$TARGET" 2>/dev/null || fail verify "gzip archive is corrupt" 3
-if ! tar -tzf "$TARGET" >/dev/null 2>&1; then
-  fail verify "tar archive cannot be listed" 3
-fi
+  if ! docker cp "$CONTAINER:$src" - | gzip -9 > "$TARGET"; then
+    fail archive "could not archive $src ($label) from $CONTAINER" 2
+  fi
 
-ENTRIES="$(tar -tzf "$TARGET" | wc -l | tr -d ' ')"
-BYTES="$(wc -c < "$TARGET" | tr -d ' ')"
+  gzip -t "$TARGET" 2>/dev/null || fail verify "gzip archive of $label is corrupt" 3
+  if ! tar -tzf "$TARGET" >/dev/null 2>&1; then
+    fail verify "tar archive of $label cannot be listed" 3
+  fi
 
-DELETED=0
-while IFS= read -r old; do
-  rm -f "$old" && DELETED=$((DELETED + 1))
-done < <(find "$DEST" -maxdepth 1 -name 'cdkt-media-*.tar.gz' -type f -mtime "+$KEEP_DAYS" 2>/dev/null)
+  local entries bytes deleted=0 remaining old
+  entries="$(tar -tzf "$TARGET" | wc -l | tr -d ' ')"
+  bytes="$(wc -c < "$TARGET" | tr -d ' ')"
 
-REMAINING="$(find "$DEST" -maxdepth 1 -name 'cdkt-media-*.tar.gz' -type f | wc -l | tr -d ' ')"
-emit "succeeded" "{\"file\":\"$TARGET\",\"bytes\":$BYTES,\"entries\":$ENTRIES,\"rotated\":$DELETED,\"retained\":$REMAINING}"
+  while IFS= read -r old; do
+    rm -f "$old" && deleted=$((deleted + 1))
+  done < <(find "$DEST" -maxdepth 1 -name "$prefix-????????T??????Z-[0-9]*.tar.gz" -type f -mtime "+$KEEP_DAYS" 2>/dev/null)
+
+  remaining="$(find "$DEST" -maxdepth 1 -name "$prefix-????????T??????Z-[0-9]*.tar.gz" -type f | wc -l | tr -d ' ')"
+  emit "succeeded" "{\"volume\":\"$label\",\"file\":\"$TARGET\",\"bytes\":$bytes,\"entries\":$entries,\"rotated\":$deleted,\"retained\":$remaining}"
+  TARGET=''
+}
+
+archive_volume media_work "/var/lib/cdkt/media/." cdkt-media
+# No trailing `/.`: copying the directory itself keeps `uploads/` as the single
+# top-level entry, matching the in-app archives and restore-uploads handling.
+archive_volume uploads_data "/app/public/uploads" cdkt-uploads

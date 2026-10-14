@@ -22,7 +22,10 @@ services:
     healthcheck:
       # Authenticated ping: an unauthenticated ping answers "alive" while the
       # server is still initialising, which let the app start too early.
-      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -u root -p\"$$MYSQL_ROOT_PASSWORD\" --silent"]
+      # The password goes in through MYSQL_PWD (the container's env, expanded by the
+      # healthcheck's sh), not `-p<password>`: every container process is visible to
+      # `ps` on the HOST, and this one ran every 10 seconds.
+      test: ["CMD-SHELL", "MYSQL_PWD=\"$$MYSQL_ROOT_PASSWORD\" mysqladmin ping -h 127.0.0.1 -u root --silent"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -84,6 +87,19 @@ services:
     environment:
       PORT: ${PORT:-3000}
       NODE_ENV: production
+      # Giờ Việt Nam cho TIẾN TRÌNH Node, và CHỈ cho service app. Mã đọc giờ/ngày
+      # địa phương ở nhiều chỗ: lượt bảo trì analytics "03:00", lượt dọn
+      # retention, lịch sao lưu (`getHours()`), đầu tháng của hạn mức AI — CI chạy
+      # cả bộ test ở TZ=Asia/Ho_Chi_Minh vì đó là giờ của máy chủ thật. Không có
+      # dòng này container chạy UTC, và "03:00" thành 10:00 sáng giờ Việt Nam.
+      # Ghi chữ cố định, không `${TZ:-…}`: biến TZ của shell trên VPS không được
+      # lặng lẽ đổi giờ của lịch chạy. Image cũng đặt sẵn (Dockerfile) — ở đây là
+      # để đọc compose là thấy.
+      #
+      # KHÔNG đặt cho service mysql: CSDL chạy time_zone=SYSTEM=UTC, NOW() và
+      # CURRENT_TIMESTAMP đã ghi theo UTC từ đầu, và pool của app tự khai
+      # `timezone` tường minh ('+07:00' / '+00:00') nên không phụ thuộc biến này.
+      TZ: Asia/Ho_Chi_Minh
       # Giới hạn heap V8 — moderation worker chạy in-process nên chia chung heap
       # với app. Mặc định 2048MB: trên VPS 1–2GB thì nên hạ lại 1024MB qua
       # NODE_OPTIONS, trên VPS 16GB như anh yêu thì AI moderation thoải mái
@@ -130,6 +146,7 @@ services:
       # settings page says so out loud.
       PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
       NUXT_PUBLIC_BASE_URL: ${PUBLIC_BASE_URL:-}
+      PUBLIC_HOST_ALLOWLIST: ${PUBLIC_HOST_ALLOWLIST:-} # host (phẩy ngăn cách) được làm gốc liên kết trong email — xem .env.example
       # Cửa sổ lưu dữ liệu cá nhân. Cả bốn khai ở đây vì compose KHÔNG dùng
       # env_file: một biến đặt trong .env mà không được liệt kê thì không tới được
       # container, nên người vận hành sẽ sửa tệp rồi không thấy gì thay đổi.
@@ -142,6 +159,21 @@ services:
       # Tài khoản người đọc — scope thứ tư. Tính tuổi theo last_seen_at, không
       # theo created_at: xoá một tài khoản là xoá luôn bình luận công khai của họ.
       READER_ACCOUNT_RETENTION_DAYS: ${READER_ACCOUNT_RETENTION_DAYS:-}
+      # ── Công tắc vận hành ─────────────────────────────────────────────────
+      # Cùng lý do: compose KHÔNG dùng env_file, nên trước khi được liệt kê ở đây
+      # năm biến này đặt trong .env cũng không tới được container. Tất cả `${VAR:-}`
+      # — rỗng đọc y như chưa đặt, nên mặc định vẫn là của code:
+      #   RETENTION_SCHEDULER / ANALYTICS_SCHEDULER : rỗng = bật ở production;
+      #       `0` trả việc cho cron (server/plugins/*-scheduler.ts).
+      #   BACKUP_SCHEDULER : rỗng = TẮT; `1` mới bật sao lưu tự động.
+      #   LOG_LEVEL        : rỗng = `info` ở production (server/utils/logger.ts).
+      #   LOGIN_CAPTCHA_ENABLED : rỗng = BẬT captcha đăng nhập. `0` TẮT captcha
+      #       trên production — biến này tồn tại cho bộ E2E; đừng đặt `0` ở VPS.
+      RETENTION_SCHEDULER: ${RETENTION_SCHEDULER:-}
+      ANALYTICS_SCHEDULER: ${ANALYTICS_SCHEDULER:-}
+      BACKUP_SCHEDULER: ${BACKUP_SCHEDULER:-}
+      LOG_LEVEL: ${LOG_LEVEL:-}
+      LOGIN_CAPTCHA_ENABLED: ${LOGIN_CAPTCHA_ENABLED:-}
       # ── Media Portal ──────────────────────────────────────────────────────
       # Thư mục làm việc của pipeline video (chứa `uploads/` và `media/`). Nằm
       # trên volume `media_work`, KHÔNG trên `uploads_data`: một video 10 GB đang

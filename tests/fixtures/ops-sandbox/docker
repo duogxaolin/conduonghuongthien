@@ -1,0 +1,163 @@
+#!/usr/bin/env bash
+# FAKE `docker` for tests/ops-scripts-sandbox.test.ts.  It touches NOTHING real: it
+# records how it was called and answers from fixtures under $SANDBOX.  The ops
+# scripts under test are copied into that sandbox and put this file first on PATH.
+#
+# Records (all under $SANDBOX):
+#   docker.log          "<n>\t<argv joined, newlines folded to spaces>"
+#   docker.pwd          "<n>\t<MYSQL_PWD seen in this process's environment>"
+#   mysql.stdin.<n>     stdin of a `mysql` (restore/import) call that had no -e
+#   run.stdin.<n>       stdin of a `docker compose run`
+# Behaviour switches (environment variables, all optional) are listed per command.
+
+set -u
+: "${SANDBOX:?}"
+n=$(( $(cat "$SANDBOX/.n" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$SANDBOX/.n"
+joined="$*"
+printf '%s\t%s\n' "$n" "${joined//$'\n'/ }" >> "$SANDBOX/docker.log"
+printf '%s\t%s\n' "$n" "${MYSQL_PWD:-}" >> "$SANDBOX/docker.pwd"
+
+cmd="${1:-}"
+[ $# -gt 0 ] && shift
+
+dump() {
+  # A mysqldump that passes backup-db.sh verification: >= 20 tables, >= 50 KB of SQL,
+  # and the completion marker as the last line.
+  local i
+  for i in $(seq 1 25); do printf 'CREATE TABLE `t%s` (id int);\n' "$i"; done
+  head -c 60000 /dev/zero | tr '\0' 'x'
+  printf '\n'
+  if [ "${FAKE_DUMP_TRUNCATED:-0}" != 1 ]; then echo '-- Dump completed on 2026-01-01 00:00:00'; fi
+}
+
+case "$cmd" in
+  inspect)
+    fmt=''
+    while [ $# -gt 0 ]; do
+      case "$1" in --format) fmt="$2"; shift 2 ;; *) break ;; esac
+    done
+    name="${1:-}"
+    if [ "${FAKE_NO_CONTAINER:-0}" = 1 ]; then exit 1; fi
+    case "$fmt" in
+      # FAKE_APP_INSPECT: true | false | missing (inspect fails). Unset: follows
+      # FAKE_APP_RUNNING, so the two "is the app up?" signals agree by default.
+      *State.Running*)
+        case "${FAKE_APP_INSPECT:-}" in
+          missing) echo "Error: No such object: $name" >&2; exit 1 ;;
+          true|false) echo "$FAKE_APP_INSPECT" ;;
+          *) if [ "${FAKE_APP_RUNNING:-0}" = 1 ]; then echo true; else echo false; fi ;;
+        esac ;;
+      *State.Health*)
+        case "${FAKE_HEALTH:-healthy}" in
+          # Healthy only once the rollback tag is what .env points at.
+          unhealthy-until-rollback)
+            if grep -q '^CDKT_IMAGE=cdkt-rollback/' "$SANDBOX/.env"; then echo healthy; else echo unhealthy; fi ;;
+          *) echo "${FAKE_HEALTH:-healthy}" ;;
+        esac ;;
+      *'{{.Image}}'*) echo "${FAKE_PREV_ID-sha256:prev}" ;;
+    esac
+    exit 0 ;;
+  pull)
+    exit "${FAKE_PULL_RC:-0}" ;;
+  image)
+    sub="${1:-}"; [ $# -gt 0 ] && shift
+    case "$sub" in
+      tag) exit "${FAKE_TAG_RC:-0}" ;;
+      inspect)
+        ref="${*: -1}"
+        # FAKE_IMAGE_MISSING=1: `pull` "succeeded" (exit 0) but the image is not there —
+        # what some Compose/registry combinations do.
+        if [ "${FAKE_IMAGE_MISSING:-0}" = 1 ]; then exit 1; fi
+        case "$ref" in cdkt-rollback/*) echo "${FAKE_PREV_ID-sha256:prev}" ;; *) echo "${FAKE_NEW_ID:-sha256:new}" ;; esac
+        exit 0 ;;
+      ls|rm) exit 0 ;;
+    esac
+    exit 0 ;;
+  logs)
+    echo 'fake app log line'; exit 0 ;;
+  cp)
+    src="${1:-}"
+    path="${src#*:}"
+    if [ -n "${FAKE_CP_FAIL_PATH:-}" ] && [ "$path" = "$FAKE_CP_FAIL_PATH" ]; then exit 1; fi
+    case "$path" in
+      /var/lib/cdkt/media/.) tar -C "$SANDBOX/fx/media" -cf - . ;;
+      /app/public/uploads)   tar -C "$SANDBOX/fx/public" -cf - uploads ;;
+      *) exit 1 ;;
+    esac
+    exit 0 ;;
+  compose)
+    sub="${1:-}"; [ $# -gt 0 ] && shift
+    case "$sub" in
+      pull)  exit "${FAKE_COMPOSE_PULL_RC:-0}" ;;
+      build) exit "${FAKE_BUILD_RC:-0}" ;;
+      up|stop|config|down) exit 0 ;;
+      ps)
+        # FAKE_COMPOSE_PS_RC: `compose ps` itself fails (old Compose without --status,
+        # broken compose file) — prints nothing, exits non-zero.
+        if [ "${FAKE_COMPOSE_PS_RC:-0}" != 0 ]; then echo 'unknown flag: --status' >&2; exit "$FAKE_COMPOSE_PS_RC"; fi
+        if [[ "$*" == *"--status running -q app"* ]] && [ "${FAKE_APP_RUNNING:-0}" = 1 ]; then echo abc123; fi
+        exit 0 ;;
+      run)
+        # stdin is recorded; then, unless FAKE_RUN_EXEC=0, the `sh -c SCRIPT ARGS…`
+        # given to the one-off container really runs — on the host, with every
+        # argument that is an absolute path re-rooted under $SANDBOX/vol (the
+        # "volumes": vol/app/public/uploads, vol/var/lib/cdkt/media) and a `chown`
+        # stub that only logs to $SANDBOX/chown.log. FAKE_RUN_RC forces an exit code
+        # without running anything.
+        cat > "$SANDBOX/run.stdin.$n"
+        if [ -n "${FAKE_RUN_RC:-}" ]; then exit "$FAKE_RUN_RC"; fi
+        if [ "${FAKE_RUN_EXEC:-1}" != 1 ]; then exit 0; fi
+        script=''; rargs=()
+        while [ $# -gt 0 ]; do
+          if [ "$1" = -c ]; then script="${2:-}"; shift 2; rargs=("$@"); break; fi
+          shift
+        done
+        [ -n "$script" ] || exit 0
+        # Only scripts that take their paths as ARGUMENTS can be re-rooted. One that
+        # spells a container path itself (an older restore-media.sh did) would run
+        # `rm -rf /app/...` on the machine running the tests — refuse instead.
+        case "$script" in
+          */app/*|*/var/lib/*) echo "fake docker: refusing to run a container script with literal absolute paths" >&2; exit 97 ;;
+        esac
+        mapped=()
+        for a in "${rargs[@]}"; do case "$a" in /*) mapped+=("$SANDBOX/vol$a") ;; *) mapped+=("$a") ;; esac; done
+        mkdir -p "$SANDBOX/vol/app/public/uploads" "$SANDBOX/vol/var/lib/cdkt/media" "$SANDBOX/runbin"
+        printf '#!/bin/sh\necho "chown $*" >> "%s/chown.log"\n' "$SANDBOX" > "$SANDBOX/runbin/chown"
+        chmod +x "$SANDBOX/runbin/chown"
+        PATH="$SANDBOX/runbin:$PATH" sh -c "$script" "${mapped[@]}" < "$SANDBOX/run.stdin.$n"
+        exit $? ;;
+    esac
+    exit 0 ;;
+  exec)
+    # exec [-i] [-e VAR[=value]]... CONTAINER cmd args...
+    while [ $# -gt 0 ]; do
+      case "$1" in -i) shift ;; -e) shift 2 ;; -*) shift ;; *) break ;; esac
+    done
+    shift   # container name
+    prog="${1:-}"; [ $# -gt 0 ] && shift
+    case "$prog" in
+      mysqldump)
+        if [ "${FAKE_MYSQLDUMP_FAIL:-0}" = 1 ]; then echo 'mysqldump: boom' >&2; exit 1; fi
+        dump; exit 0 ;;
+      mysql)
+        query=''
+        args=("$@")
+        for ((i = 0; i < ${#args[@]}; i++)); do
+          if [ "${args[$i]}" = "-e" ]; then query="${args[$((i + 1))]}"; fi
+        done
+        if [ -n "$query" ]; then
+          case "$query" in
+            *SCHEMATA*)  echo "${FAKE_DB_EXISTS:-1}" ;;
+            *.users*)    printf '%s\t%s\t%s\n' "${FAKE_RESTORED_TABLES:-62}" 2 9 ;;
+            *"FROM articles"*) echo 7 ;;
+            *information_schema.TABLES*) echo "${FAKE_TABLE_COUNT:-3}" ;;
+          esac
+          exit 0
+        fi
+        cat > "$SANDBOX/mysql.stdin.$n"
+        exit "${FAKE_MYSQL_RC:-0}" ;;
+    esac
+    exit 0 ;;
+esac
+exit 0

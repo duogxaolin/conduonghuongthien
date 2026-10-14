@@ -63,9 +63,11 @@ mkdir -p "$DEST"
 
 # --single-transaction keeps InnoDB consistent without locking the site out.
 # --routines/--triggers/--events so a restore is actually complete.
-# The password goes in through the environment, never on the command line where
-# it would show up in `ps` for every user on the host.
-if ! docker exec -e MYSQL_PWD="$MYSQL_ROOT_PASSWORD" "$CONTAINER" \
+# The password goes in through the environment, never on a command line where it
+# would show up in `ps` for every user on the host.  `-e MYSQL_PWD` WITHOUT a value
+# makes the docker CLI copy it from its own environment; the `-e MYSQL_PWD=<secret>`
+# form puts the secret in the docker client's argv, which `ps` shows just the same.
+if ! MYSQL_PWD="$MYSQL_ROOT_PASSWORD" docker exec -e MYSQL_PWD "$CONTAINER" \
       mysqldump -u root \
         --single-transaction --quick --routines --triggers --events \
         --default-character-set=utf8mb4 \

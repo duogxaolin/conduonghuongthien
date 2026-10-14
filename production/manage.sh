@@ -17,6 +17,7 @@ PROD="$ROOT/production"
 MIG_DIR="$PROD/migrations"
 
 # Màu + prompt
+# shellcheck disable=SC2034  # bảng màu đủ bộ; C_BLUE hiện chưa dùng
 if [ -t 1 ]; then
   C_RESET='\033[0m'; C_BOLD='\033[1m'; C_GREEN='\033[32m'; C_RED='\033[31m'
   C_YELLOW='\033[33m'; C_BLUE='\033[34m'; C_CYAN='\033[36m'; C_DIM='\033[2m'
@@ -94,6 +95,439 @@ set_env() {
   fi
 }
 
+# .env giữ JWT_SECRET, mật khẩu root MySQL… nên chỉ chủ tệp được đọc (600). Bản cũ
+# tạo nó bằng `cat >` theo umask mặc định (644 — mọi user trên máy đọc được), làm
+# vô nghĩa việc giấu mật khẩu khỏi `ps`. In ra quyền cũ nếu đã phải siết lại.
+# Chạy bằng root mà thư mục repo thuộc user khác (user CI deploy qua SSH, ghi .env
+# mỗi lượt deploy): trao .env cho chủ thư mục — tệp 600 của root thì lượt CI kế
+# tiếp không đọc được .env và deploy hỏng.
+secure_env_file() {
+  local f="$ROOT/.env" old_mode dir_owner
+  [ -f "$f" ] || return 0
+  old_mode=$(stat -c '%a' "$f" 2>/dev/null || echo '?')
+  # Không siết được (user chạy Update không sở hữu .env) thì CẢNH BÁO rồi đi tiếp —
+  # Update vẫn làm được việc của nó; chặn nó vì quyền tệp là chặn sai chỗ.
+  if ! chmod 600 "$f" 2>/dev/null; then
+    echo -e "${C_YELLOW}⚠  Không đặt được quyền 600 cho .env (chủ tệp: $(stat -c '%U' "$f" 2>/dev/null || echo '?'), quyền hiện tại: ${old_mode}).${C_RESET}"
+    echo -e "${C_YELLOW}   Chạy bằng chủ tệp hoặc root: chmod 600 $f${C_RESET}"
+    return 0
+  fi
+  if [ "$(id -u)" = 0 ]; then
+    dir_owner=$(stat -c '%u:%g' "$ROOT" 2>/dev/null || true)
+    if [ -n "$dir_owner" ] && [ "$(stat -c '%u:%g' "$f" 2>/dev/null || true)" != "$dir_owner" ]; then
+      chown "$dir_owner" "$f"
+    fi
+  fi
+  if [ "$old_mode" != "600" ]; then
+    echo -e "${C_YELLOW}⚠  .env có quyền ${old_mode} (user khác trên máy đọc được bí mật) — đã đặt lại 600.${C_RESET}"
+  fi
+}
+
+# ── Helper docker / MySQL / image (Deploy, Update, Migrate dùng chung) ───────
+# Tên container do docker-compose.yml cố định (`container_name:`).
+APP_CONTAINER="cdkt_app"
+MYSQL_CONTAINER="cdkt_mysql"
+# Image CI đẩy lên GHCR; dùng làm gợi ý khi CDKT_IMAGE đang ghim/chưa đặt.
+DEFAULT_IMAGE_REPO="ghcr.io/duogxaolin/conduonghuongthien"
+# Cùng thư mục và cùng khuôn tên mà scripts/deploy-remote.sh dùng cho bản sao
+# lưu docker-compose.yml, để hai bên dọn/sắp xếp chung được.
+COMPOSE_BACKUP_DIR="$ROOT/.deploy-compose-backups"
+COMPOSE_BACKUP_KEEP=10
+# Bản sao lưu compose của lượt Update đang chạy (rỗng = không có).
+UPDATE_COMPOSE_BACKUP=""
+
+# Tên database của deploy NÀY: .env là nguồn chân lý (Deploy bước 2 cho đặt tên
+# tuỳ ý). Đúng quy tắc của compose — `${MYSQL_DATABASE:-cdkt_admin}` cho cả container
+# mysql lẫn `DB_NAME` của app — và của backup-db.sh / verify-restore.sh. KHÔNG lùi về
+# DB_NAME trong .env: compose không đọc dòng đó, nên lùi về nó là nhập vào một
+# database app không dùng. Hai giá trị lệch nhau thì nói ra (stderr).
+db_name() {
+  local n legacy
+  n=$(env_get MYSQL_DATABASE)
+  n="${n:-cdkt_admin}"
+  legacy=$(env_get DB_NAME)
+  if [ -n "$legacy" ] && [ "$legacy" != "$n" ]; then
+    echo -e "${C_YELLOW}⚠  .env: DB_NAME=$legacy khác database app thật sự dùng ($n, từ MYSQL_DATABASE) — dùng $n.${C_RESET}" >&2
+  fi
+  echo "$n"
+}
+
+# Chạy `mysql` bằng root trong container mysql:  mysql_exec <mật-khẩu> [đối số mysql…]
+# stdin được chuyển tiếp (import SQL). Mật khẩu đi qua BIẾN MÔI TRƯỜNG của tiến
+# trình docker CLI (`-e MYSQL_PWD` không kèm giá trị = lấy từ môi trường gọi), KHÔNG
+# phải `-p<mật-khẩu>` và cũng không phải `-e MYSQL_PWD=<mật-khẩu>`: hai dạng đó đều
+# nằm trong argv của tiến trình, mà `ps` cho mọi người dùng trên máy chủ đọc.
+mysql_exec() {
+  local pw="$1"
+  shift
+  MYSQL_PWD="$pw" docker exec -i -e MYSQL_PWD "$MYSQL_CONTAINER" mysql -uroot "$@"
+}
+
+# RAM máy chủ (MB) ra stdout; trả 1 nếu không đọc được. `CDKT_MEMINFO_FILE` chỉ là
+# đường vào cho test.
+read_host_ram_mb() {
+  local meminfo="${CDKT_MEMINFO_FILE:-/proc/meminfo}"
+  # Đọc /proc/meminfo như scripts/check-resources.sh, không `free`: nhãn cột của
+  # `free` khác nhau giữa các bản procps, còn /proc/meminfo thì không.
+  if [ -r "$meminfo" ]; then
+    echo $(( $(awk '/^MemTotal:/ {print $2}' "$meminfo") / 1024 ))
+  elif [ "$(uname -s)" = "Darwin" ]; then
+    echo $(( $(sysctl -n hw.memsize) / 1024 / 1024 ))
+  else
+    return 1
+  fi
+}
+
+# Đợi cdkt_app healthy. Trả 0 khi healthy, 1 khi hết giờ hoặc container không có
+# HEALTHCHECK. So sánh NGUYÊN CHUỖI: `grep -q healthy` khớp cả `unhealthy`, nên
+# bản cũ báo "healthy" cho đúng container đang hỏng. Cùng ngữ nghĩa với
+# wait_healthy của scripts/deploy-remote.sh. `CDKT_HEALTH_TIMEOUT` /
+# `CDKT_HEALTH_INTERVAL` (giây) chỉ để test rút ngắn.
+wait_app_healthy() {
+  local timeout="${CDKT_HEALTH_TIMEOUT:-300}" interval="${CDKT_HEALTH_INTERVAL:-5}"
+  local deadline=$((SECONDS + timeout)) status="missing"
+  while [ "$SECONDS" -lt "$deadline" ]; do
+    status=$(docker inspect \
+      --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
+      "$APP_CONTAINER" 2>/dev/null || echo missing)
+    case "$status" in
+      healthy)
+        echo -e "${C_GREEN}✓ $APP_CONTAINER healthy${C_RESET}"
+        return 0 ;;
+      none)
+        # Image của dự án luôn khai HEALTHCHECK; "không có" nghĩa là đang chạy nhầm
+        # image. Không xác nhận được thì không báo thành công.
+        echo -e "${C_RED}✗ $APP_CONTAINER không khai HEALTHCHECK — không xác nhận được.${C_RESET}"
+        return 1 ;;
+      *) sleep "$interval" ;;
+    esac
+  done
+  echo -e "${C_RED}✗ $APP_CONTAINER chưa healthy sau ${timeout}s (trạng thái cuối: ${status:-unknown}).${C_RESET}"
+  return 1
+}
+
+show_app_logs() {
+  echo -e "${C_DIM}── 60 dòng log cuối của $APP_CONTAINER ──${C_RESET}"
+  { docker logs --tail 60 "$APP_CONTAINER" 2>&1 | sed 's/^/    /'; } || true
+}
+
+# Khởi động lại CHỈ app, đúng như CI (scripts/deploy-remote.sh `start_app`): một
+# `docker compose up -d app` trơn tạo lại cả mysql (phụ thuộc của app) mỗi khi cấu
+# hình mysql trong compose lệch — tức khởi động lại CSDL của cổng đang phục vụ.
+# `--no-recreate mysql` chỉ bật nó nếu đang dừng. Gọi trong điều kiện `if` nên mọi
+# lệnh có `|| return 1` tường minh (ở đó `set -e` không có hiệu lực).
+start_app() {
+  docker compose up -d --no-recreate mysql || return 1
+  docker compose up -d --no-deps app || return 1
+}
+
+# Sao lưu docker-compose.yml hiện tại vào .deploy-compose-backups/ (khuôn tên của
+# CI) và in đường dẫn ra stdout. Không có tệp → in rỗng.
+backup_compose_file() {
+  [ -f "$ROOT/docker-compose.yml" ] || return 0
+  mkdir -p "$COMPOSE_BACKUP_DIR"
+  local dest backups excess
+  dest="$COMPOSE_BACKUP_DIR/docker-compose.$(date -u +%Y%m%dT%H%M%SZ).yml"
+  cp -p "$ROOT/docker-compose.yml" "$dest"
+  # Giữ COMPOSE_BACKUP_KEEP bản gần nhất (tên sắp xếp được theo thời gian).
+  backups=("$COMPOSE_BACKUP_DIR"/docker-compose.*.yml)
+  excess=$(( ${#backups[@]} - COMPOSE_BACKUP_KEEP ))
+  if [ "$excess" -gt 0 ]; then rm -f -- "${backups[@]:0:excess}"; fi
+  echo "$dest"
+}
+
+# Bước "pull code" của Update. docker-compose.yml trên VPS do CI ghi đè mỗi lượt
+# deploy (scripts/deploy-remote.sh), nên cây git thấy nó "đã sửa" và `git pull` TỪ
+# CHỐI mỗi khi lượt kéo đó cũng đổi tệp này. Tệp CI đặt luôn là bản đã commit nên bỏ
+# thay đổi cục bộ là an toàn — nhưng một bản sửa tay của người vận hành cũng bị bỏ
+# cùng lúc, nên: sao lưu trước, hiện chênh lệch, nói rõ chỗ lấy lại.
+update_pull_code() {
+  UPDATE_COMPOSE_BACKUP=""
+  if ! confirm "Pull code mới từ git (git pull)?" "y"; then
+    return 0
+  fi
+  if ! git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+    echo -e "${C_RED}$ROOT không phải bản clone git — không pull được.${C_RESET}"
+    exit 1
+  fi
+  UPDATE_COMPOSE_BACKUP=$(backup_compose_file)
+  local reverted=0
+  if ! git diff --quiet HEAD -- docker-compose.yml 2>/dev/null; then
+    echo -e "${C_YELLOW}⚠  docker-compose.yml khác bản trong git HEAD (CI ghi đè tệp này mỗi lượt deploy).${C_RESET}"
+    git diff --stat HEAD -- docker-compose.yml | sed 's/^/    /' || true
+    echo -e "${C_DIM}   Bỏ thay đổi cục bộ để git pull không từ chối. Bản hiện tại đã sao lưu ở:${C_RESET}"
+    echo -e "${C_DIM}   ${UPDATE_COMPOSE_BACKUP:-(không sao lưu được)}${C_RESET}"
+    echo -e "${C_DIM}   Nếu anh từng sửa tay tệp này NGOÀI bản CI đặt, lấy phần sửa lại từ bản sao lưu đó.${C_RESET}"
+    git checkout -- docker-compose.yml
+    reverted=1
+  fi
+  if ! git pull origin main; then
+    # Tệp vừa bị trả về bản HEAD CŨ để pull không bị từ chối; pull hỏng thì phải đặt
+    # lại đúng bản đang chạy (bản CI đã ghi), nếu không lượt `docker compose` kế tiếp
+    # — kể cả của CI — chạy trên một compose khác với container hiện tại.
+    if [ "$reverted" = 1 ] && [ -n "$UPDATE_COMPOSE_BACKUP" ] && [ -f "$UPDATE_COMPOSE_BACKUP" ]; then
+      cp -p "$UPDATE_COMPOSE_BACKUP" "$ROOT/docker-compose.yml"
+      echo -e "${C_YELLOW}docker-compose.yml đã được đặt lại như trước lượt Update (từ $UPDATE_COMPOSE_BACKUP).${C_RESET}"
+    fi
+    echo -e "${C_RED}git pull thất bại — dừng. Container đang chạy không bị đụng tới.${C_RESET}"
+    exit 1
+  fi
+}
+
+# Kéo + áp dụng image mới cho Update, có đường lùi. Trả 0 khi app healthy (kể cả khi
+# không có gì để áp), 1 khi thất bại (đã in lý do; đã lùi nếu có thể).
+update_app_image() {
+  local cur_img new_img prev_id rollback_ref="" img_after reason="" latest_ref repo
+  cur_img=$(env_get CDKT_IMAGE)
+  new_img="$cur_img"
+
+  # Image đang chạy THẬT (theo ID, không theo tên thẻ): sau `docker pull` thẻ
+  # `:latest` đã trỏ sang bản mới, nên "thẻ trước đó" của nó không còn là bản trước.
+  prev_id=$(docker inspect --format '{{.Image}}' "$APP_CONTAINER" 2>/dev/null || true)
+
+  # CI ghim CDKT_IMAGE vào `:sha-<commit>` sau lượt deploy đầu tiên. Kéo lại đúng
+  # tên đó chỉ ra cùng một image — Update trông như chạy mà không đổi gì.
+  case "$cur_img" in
+    '') reason="CDKT_IMAGE chưa đặt — compose dùng cdkt/app:local (chỉ build tại chỗ, không kéo được)." ;;
+    *:sha-*) reason="CDKT_IMAGE đang ghim vào một bản CI cụ thể ($cur_img): kéo lại sẽ chỉ ra đúng bản đó." ;;
+    cdkt-rollback/*|cdkt/app:*) reason="CDKT_IMAGE là image cục bộ ($cur_img), không có trên registry để kéo." ;;
+  esac
+  if [ -n "$reason" ]; then
+    case "$cur_img" in ghcr.io/*) repo="${cur_img%:*}" ;; *) repo="$DEFAULT_IMAGE_REPO" ;; esac
+    latest_ref="$repo:latest"
+    echo -e "${C_YELLOW}⚠  $reason${C_RESET}"
+    echo -e "${C_DIM}   Lượt CI deploy kế tiếp sẽ ghim lại vào bản của nó.${C_RESET}"
+    if confirm "Trỏ CDKT_IMAGE về $latest_ref để kéo bản mới nhất?" "y"; then
+      new_img="$latest_ref"
+    fi
+  fi
+
+  # Thẻ an toàn cho image đang chạy — đích của đường lùi, độc lập với việc thẻ
+  # `:latest` / `:sha-…` có bị kéo/đè hay không.
+  if [ -n "$prev_id" ]; then
+    rollback_ref="cdkt-rollback/app:$(date -u +%Y%m%dT%H%M%SZ)"
+    if docker image tag "$prev_id" "$rollback_ref"; then
+      echo -e "${C_DIM}Image đang chạy được giữ làm đích lùi: $rollback_ref${C_RESET}"
+    else
+      echo -e "${C_YELLOW}⚠  Không gắn được thẻ lùi — nếu bản mới hỏng sẽ KHÔNG tự lùi được.${C_RESET}"
+      rollback_ref=""
+    fi
+  fi
+
+  echo -e "${C_BOLD}Pull image $new_img ...${C_RESET}"
+  if [ -z "$new_img" ] || ! docker pull "$new_img"; then
+    echo -e "${C_YELLOW}⚠  Không kéo được image (registry, thẻ, hoặc chưa 'docker login ghcr.io' — package GHCR là private).${C_RESET}"
+    echo -e "${C_YELLOW}   Build ngay trên VPS có thể bị OOM giữa chừng — đúng lúc container cũ vẫn đang phục vụ${C_RESET}"
+    echo -e "${C_YELLOW}   (docker-compose.yml, service app: 'build ở nơi khác thì một lần build hỏng không chạm được trang đang chạy').${C_RESET}"
+    if confirm "Vẫn build image trên VPS này (docker compose build app)?" "n"; then
+      if ! CDKT_IMAGE="${new_img:-cdkt/app:local}" docker compose build app; then
+        echo -e "${C_RED}✗ Build thất bại. Container đang chạy không bị đụng tới.${C_RESET}"
+        return 1
+      fi
+      [ -n "$new_img" ] || new_img="cdkt/app:local"
+    else
+      echo -e "${C_RED}✗ Không có image mới. Container đang chạy không bị đụng tới.${C_RESET}"
+      echo -e "${C_DIM}   Đăng nhập GHCR (docker login ghcr.io) hoặc chờ CI đẩy image, rồi chạy lại Update.${C_RESET}"
+      return 1
+    fi
+  fi
+
+  if [ "$new_img" != "$cur_img" ]; then
+    set_env CDKT_IMAGE "$new_img"
+    echo -e "${C_GREEN}✓ .env: CDKT_IMAGE=$new_img${C_RESET}"
+  fi
+
+  img_after=$(docker image inspect --format '{{.Id}}' "$new_img" 2>/dev/null || true)
+  if [ -n "$prev_id" ] && [ "$img_after" = "$prev_id" ]; then
+    echo -e "${C_DIM}Image kéo về trùng image đang chạy — không có bản mới hơn.${C_RESET}"
+    if ! confirm "Vẫn khởi động lại app?" "n"; then
+      return 0
+    fi
+  fi
+
+  echo -e "${C_BOLD}Khởi động lại app ...${C_RESET}"
+  if start_app && wait_app_healthy; then
+    # Chỉ giữ thẻ lùi của lượt này; thẻ của các lượt trước dọn đi cho khỏi đầy đĩa.
+    if [ -n "$rollback_ref" ]; then
+      { docker image ls --format '{{.Repository}}:{{.Tag}}' cdkt-rollback/app 2>/dev/null \
+          | grep -vxF "$rollback_ref" \
+          | while IFS= read -r old_tag; do docker image rm "$old_tag" >/dev/null 2>&1 || true; done; } || true
+    fi
+    return 0
+  fi
+
+  echo -e "${C_RED}✗ Bản mới không khoẻ.${C_RESET}"
+  show_app_logs
+  if [ -z "$rollback_ref" ]; then
+    echo -e "${C_RED}✗ Không có image trước để lùi về (chưa có container chạy, hoặc không gắn được thẻ) — cần xử lý tay.${C_RESET}"
+    return 1
+  fi
+  echo -e "${C_BOLD}Lùi về image trước ($rollback_ref) ...${C_RESET}"
+  # compose đã bị git pull thay mới: lùi cả nó, vì image trước chạy trên compose trước.
+  if [ -n "$UPDATE_COMPOSE_BACKUP" ] && [ -f "$UPDATE_COMPOSE_BACKUP" ] \
+     && ! cmp -s "$UPDATE_COMPOSE_BACKUP" "$ROOT/docker-compose.yml"; then
+    cp "$UPDATE_COMPOSE_BACKUP" "$ROOT/docker-compose.yml"
+    echo -e "${C_DIM}docker-compose.yml đã trả về bản trước lượt pull ($UPDATE_COMPOSE_BACKUP).${C_RESET}"
+  fi
+  set_env CDKT_IMAGE "$rollback_ref"
+  if start_app && wait_app_healthy; then
+    echo -e "${C_RED}✗ UPDATE THẤT BẠI — đã lùi về $rollback_ref và dịch vụ đã khoẻ trở lại.${C_RESET}"
+    echo -e "${C_DIM}   .env đang đặt CDKT_IMAGE=$rollback_ref (image cục bộ). Lượt CI deploy kế tiếp, hoặc Update${C_RESET}"
+    echo -e "${C_DIM}   lần sau, sẽ đề nghị trỏ lại về bản trên GHCR.${C_RESET}"
+  else
+    echo -e "${C_RED}✗ UPDATE THẤT BẠI VÀ lượt lùi về $rollback_ref cũng không khoẻ — cần vào máy chủ xử lý ngay.${C_RESET}"
+  fi
+  return 1
+}
+
+# Quét một file SQL tìm câu lệnh phá/ghi đè dữ liệu. In "số-dòng:câu-lệnh" (dòng nơi
+# câu lệnh BẮT ĐẦU, cắt 110 ký tự) cho từng câu lệnh bị gắn cờ; không in gì nếu sạch.
+# Chủ đích bắt THỪA hơn thiếu — gắn cờ chỉ đòi gõ lại tên file, bỏ sót thì mất bảng.
+#
+# Bản cũ dò từng dòng bằng grep nên lọt: `DROP` và `TABLE` trên hai dòng, `DROP/**/TABLE`,
+# `TRUNCATE`a`` (không có dấu cách), DROP trong thân thủ tục (`BEGIN DROP TABLE …`),
+# SQL động (PREPARE/EXECUTE), và BOM UTF-8 ở dòng 1. Nay đọc như trình phân tích của
+# MySQL ở mức token:
+#   - bỏ BOM; bỏ chú thích `-- `, `#`, `/* … */` — NHƯNG giữ phần trong `/*!NNNNN … */`
+#     và `/*M!NNNNNN … */` (MySQL/MariaDB VẪN chạy) như mã;
+#   - nhận chuỗi '…' "…" (có `\` và nháy đôi) và `định danh`, nên `--`, `/*`, `;` nằm
+#     TRONG chuỗi không bị hiểu nhầm là chú thích/kết thúc câu (`VALUES ('--'); DROP …`
+#     không lọt). Nội dung chuỗi không được đem dò (bài viết có chữ "drop" không bị gắn
+#     cờ) — trừ khi file đổi cách MySQL đọc chuỗi (NO_BACKSLASH_ESCAPES, hoặc SET NAMES
+#     big5/cp932/gbk/gb18030/sjis — byte 0x5C nằm trong ký tự nhiều byte): khi đó máy
+#     quét không chắc mình tách chuỗi giống MySQL, nên dò thêm cả văn bản thô từng dòng;
+#   - gộp mọi khoảng trắng (kể cả xuống dòng) rồi tách câu theo `;` (thân thủ tục sau
+#     `DELIMITER` cũng bị tách — vẫn dò được), so không phân biệt hoa thường.
+# Gắn cờ: mọi token DROP / TRUNCATE (cả `ALTER … DROP`, `TRUNCATE t` không có TABLE),
+# PREPARE / EXECUTE (SQL động — nội dung nằm trong chuỗi, không đọc được trước), mọi
+# DELETE (trừ mệnh đề khoá ngoại `ON DELETE`), và UPDATE không có WHERE. Chuỗi/chú thích
+# chưa đóng tới cuối file cũng bị gắn cờ (phần sau đó không quét được).
+sql_destructive_lines() {
+  local file="$1" raw=0
+  if LC_ALL=C grep -aqiE "no_backslash_escapes|(names|character_set_client|charset|character[[:space:]]+set)[[:space:]=]*['\"]?(big5|cp932|gbk|gb18030|sjis)" "$file" 2>/dev/null; then
+    raw=1
+  fi
+  { LC_ALL=C awk -v raw="$raw" "$(sql_scan_awk)" "$file" 2>/dev/null | cut -c1-110; } || true
+}
+sql_scan_awk() {
+  cat <<'AWK'
+# Theo byte (LC_ALL=C), awk POSIX: cùng kết quả dưới gawk, mawk (awk mặc định của
+# Ubuntu) và BusyBox. Tuyến tính theo kích thước file: một dòng extended-INSERT 1 MB
+# được đọc qua một cửa sổ nhỏ (`more`), không bị chép lại cả dòng cho mỗi token, và
+# câu lệnh không bị gom lại — mỗi đoạn mã được dò từng từ ngay khi đi qua.
+BEGIN { st = "N"; W = (window > 0) ? window : 512; NB = "[^a-z0-9_$]"; reset() }
+function reset() { flag = 0; firstw = ""; prevw = ""; sawwhere = 0; disp = ""; sline = 0 }
+function more() {
+  if (lpos > llen) return 0
+  s = s substr(line, lpos, W); lpos += W
+  return 1
+}
+function show(t) {
+  if (sline == 0 && t ~ /[^ \t\r\f\v]/) sline = NR
+  if (length(disp) < 200) disp = disp substr(t, 1, 200)
+}
+function word(w) {
+  if (w == "drop" || w == "truncate" || w == "prepare" || w == "execute") flag = 1
+  else if (w == "delete" && prevw != "on") flag = 1
+  else if (w == "where") sawwhere = 1
+  if (firstw == "") firstw = w
+  prevw = w
+}
+function code(t,   lt) {
+  if (t == "") return
+  show(t)
+  lt = tolower(t)
+  while (match(lt, /[a-z0-9_$]+/)) {
+    word(substr(lt, RSTART, RLENGTH))
+    lt = substr(lt, RSTART + RLENGTH)
+  }
+}
+function has(str, w) { return str ~ ("(^|" NB ")(" w ")(" NB "|$)") }
+function flush(   d) {
+  if (sline && (flag || (firstw == "update" && !sawwhere))) {
+    d = disp; gsub(/[ \t\r\f\v]+/, " ", d); sub(/^ /, "", d)
+    printf "%d:%s\n", sline, d
+  }
+  reset()
+}
+{
+  line = $0
+  if (NR == 1) sub(/^\357\273\277/, "", line)
+  if (raw && has(tolower(line), "drop|truncate|prepare|execute|delete|update")) rawhits = rawhits NR ":" substr(line, 1, 200) "\n"
+  llen = length(line); lpos = 1; s = ""
+  while (1) {
+    if (s == "" && !more()) break
+    eol = (lpos > llen)
+    if (st == "N" || st == "X") {
+      p = match(s, /['"`\/#;*-]/)
+      if (p == 0) {
+        # Không có ký tự đặc biệt trong cửa sổ: giữ lại từ cuối, nó có thể còn tiếp.
+        if (!eol && match(s, /[A-Za-z0-9_$]+$/)) {
+          if (RSTART == 1) { more(); continue }
+          hold = RSTART   # code() runs match() too, which overwrites RSTART
+          code(substr(s, 1, hold - 1)); s = substr(s, hold); more(); continue
+        }
+        code(s); s = ""; more(); continue
+      }
+      # Các quyết định dưới đây nhìn tới 3 ký tự sau ký tự đặc biệt.
+      if (!eol && p + 3 > length(s)) { more(); continue }
+      code(substr(s, 1, p - 1))
+      c = substr(s, p, 1); s = substr(s, p + 1)
+      if (c == ";") { flush(); continue }
+      if (c == "'" || c == "\"") { q = c; ret = st; st = "S"; show(c); continue }
+      if (c == "`") { ret = st; st = "B"; show(c); continue }
+      if (c == "/" && substr(s, 1, 1) == "*" && st == "N") {
+        # Số phiên bản sau `/*!` / `/*M!` có thể vắt qua cửa sổ: đọc thêm tới hết số.
+        if (substr(s, 2, 1) == "!") { s = substr(s, 3); while (s ~ /^[0-9]*$/ && more()) {}; sub(/^[0-9]*/, "", s); st = "X"; code(" "); continue }
+        if (substr(s, 2, 2) == "M!") { s = substr(s, 4); while (s ~ /^[0-9]*$/ && more()) {}; sub(/^[0-9]*/, "", s); st = "X"; code(" "); continue }
+        st = "C"; s = substr(s, 2); code(" "); continue
+      }
+      if (c == "*" && st == "X" && substr(s, 1, 1) == "/") { st = "N"; s = substr(s, 2); code(" "); continue }
+      if (c == "#" && st == "N") { s = ""; lpos = llen + 1; continue }
+      if (c == "-" && st == "N" && substr(s, 1, 1) == "-" && (length(s) == 1 || substr(s, 2, 1) <= " ")) { s = ""; lpos = llen + 1; continue }
+      code(c); continue
+    }
+    if (st == "S") {
+      pq = index(s, q); pb = index(s, "\\")
+      if (pq == 0 && pb == 0) { show(s); s = ""; more(); continue }
+      p = (pb > 0 && (pq == 0 || pb < pq)) ? pb : pq
+      # `\` hoặc nháy ở cuối cửa sổ: cần ký tự kế tiếp (ký tự bị thoát / nháy đôi).
+      if (!eol && p == length(s)) { more(); continue }
+      if (p == pb) { show(substr(s, 1, pb + 1)); s = substr(s, pb + 2); continue }
+      show(substr(s, 1, pq)); s = substr(s, pq + 1)
+      if (substr(s, 1, 1) == q) { show(q); s = substr(s, 2); continue }
+      st = ret; continue
+    }
+    if (st == "B") {
+      pq = index(s, "`")
+      if (pq == 0) { show(s); s = ""; more(); continue }
+      if (!eol && pq == length(s)) { more(); continue }
+      show(substr(s, 1, pq)); s = substr(s, pq + 1)
+      if (substr(s, 1, 1) == "`") { show("`"); s = substr(s, 2); continue }
+      st = ret; continue
+    }
+    # st == "C": chú thích thường, tới */ (giữ `*` cuối cửa sổ cho lượt sau)
+    p = index(s, "*/")
+    if (p == 0) {
+      if (eol) { s = ""; continue }
+      s = substr(s, length(s)); more(); continue
+    }
+    s = substr(s, p + 2); st = "N"
+  }
+  if (st == "S") show(" "); else code(" ")
+}
+END {
+  if (st != "N") {
+    flag = 1
+    if (sline == 0) sline = NR
+    disp = substr(disp, 1, 100) " … (chuỗi/chú thích chưa đóng tới cuối file — phần sau không quét được)"
+  }
+  flush()
+  printf "%s", rawhits
+}
+AWK
+}
+
 # ── Menu chính ─────────────────────────────────────────────────────────────
 banner() {
   echo -e "${C_BOLD}${C_GREEN}"
@@ -143,48 +577,36 @@ cmd_deploy() {
     fi
   fi
 
-  # ── Bước 1: Chọn nguồn SQL ──────────────────────────────────────────────
+  # ── Bước 1: Nguồn cơ sở dữ liệu ─────────────────────────────────────────
+  # Chỉ còn MySQL đi kèm docker compose. Lựa chọn "Existing DB" từng có ở đây là
+  # lựa chọn chết: docker-compose.yml cố định `DB_HOST: mysql` / `DB_PORT: 3306`
+  # cho container app (không đọc DB_HOST/DB_PORT từ .env), nên app luôn nối tới
+  # MySQL rỗng đi kèm dù .env khai gì — Deploy báo thành công, mà dữ liệu thật nằm
+  # ở một DB không ai dùng. Hỗ trợ MySQL ngoài cần compose cho DB_HOST/DB_PORT đi
+  # qua; muốn nạp dữ liệu cũ thì dùng Migrate (3) vào MySQL đi kèm.
   echo -e "\n${C_BOLD}Bước 1/6 — Nguồn cơ sở dữ liệu${C_RESET}"
-  echo -e "  ${C_BOLD}1)${C_RESET} Existing DB — dùng MySQL có sẵn (chỉ import data)"
-  echo -e "  ${C_BOLD}2)${C_RESET} Docker fresh — tạo MySQL mới qua docker compose (Recommended)"
-  echo
-  local sql_choice
-  prompt "Chọn nguồn SQL" "2"; sql_choice="$PROMPT_RESULT"
-  if [ "$sql_choice" != "1" ] && [ "$sql_choice" != "2" ]; then
-    echo -e "${C_RED}Chỉ 1 hoặc 2.${C_RESET}"; exit 1
-  fi
+  echo -e "  MySQL đi kèm docker compose (container ${MYSQL_CONTAINER}) — tạo mới, volume riêng."
+  echo -e "${C_DIM}  Dùng MySQL ngoài docker chưa được hỗ trợ: compose cố định DB_HOST=mysql cho app.${C_RESET}"
+  echo -e "${C_DIM}  Có dữ liệu cũ? Deploy xong rồi chạy Migrate (3) để nhập file .sql.${C_RESET}"
 
   # ── Bước 2: DB / user / password / port (gợi ý, bấm enter giữ default) ──
   echo -e "\n${C_BOLD}Bước 2/6 — Cơ sở dữ liệu${C_RESET}"
   echo -e "${C_DIM}Gõ enter để giữ giá trị gợi ý, hoặc sửa rồi enter.${C_RESET}\n"
 
-  local DB_NAME DB_USER DB_PASSWORD MYSQL_ROOT_PASSWORD DB_HOST DB_PORT
+  local DB_NAME DB_USER DB_PASSWORD MYSQL_ROOT_PASSWORD DB_HOST DB_PORT MYSQL_EXTERNAL_PORT
+  MYSQL_ROOT_PASSWORD=$(gen_password)
+  prompt "  Tên database" "cdkt_admin"; DB_NAME="$PROMPT_RESULT"
+  prompt "  DB user (app dùng)" "cdkt_user"; DB_USER="$PROMPT_RESULT"
+  prompt "  DB password (app)" "$(gen_password)"; DB_PASSWORD="$PROMPT_RESULT"
+  prompt "  MySQL root password" "$MYSQL_ROOT_PASSWORD"; MYSQL_ROOT_PASSWORD="$PROMPT_RESULT"
 
-  if [ "$sql_choice" = "1" ]; then
-    # Existing DB — user cung cấp connection string
-    prompt "  DB host" "127.0.0.1"; DB_HOST="$PROMPT_RESULT"
-    prompt "  DB port" "3306"; DB_PORT="$PROMPT_RESULT"
-    prompt "  DB name" "cdkt_admin"; DB_NAME="$PROMPT_RESULT"
-    prompt "  DB user" "root"; DB_USER="$PROMPT_RESULT"
-    prompt "  DB password" ""; DB_PASSWORD="$PROMPT_RESULT"
-    MYSQL_ROOT_PASSWORD="$DB_PASSWORD"
-    echo -e "${C_YELLOW}⚠  Existing DB: app sẽ nối tới MySQL ngoài docker compose.${C_RESET}"
-    echo -e "${C_YELLOW}   MySQL đó phải đang chạy và user có quyền CREATE/INSERT.${C_RESET}"
-  else
-    # Docker fresh — gợiy password ngẫu nhiên
-    DB_HOST="cdkt_mysql"   # tên service trong compose
-    DB_PORT="3306"          # port nội bộ container
-    MYSQL_ROOT_PASSWORD=$(gen_password)
-    prompt "  Tên database" "cdkt_admin"; DB_NAME="$PROMPT_RESULT"
-    prompt "  DB user (app dùng)" "cdkt_user"; DB_USER="$PROMPT_RESULT"
-    prompt "  DB password (app)" "$(gen_password)"; DB_PASSWORD="$PROMPT_RESULT"
-    prompt "  MySQL root password" "$MYSQL_ROOT_PASSWORD"; MYSQL_ROOT_PASSWORD="$PROMPT_RESULT"
-
-    # Port publish ra host (tránh đụng 3306 nếu máy có MySQL sẵn)
-    local ext_port
-    prompt "  Port publish ra máy chủ" "33069"; ext_port="$PROMPT_RESULT"
-    MYSQL_EXTERNAL_PORT="$ext_port"
-  fi
+  # Port publish ra host (loopback; tránh đụng 3306 nếu máy có MySQL sẵn)
+  prompt "  Port publish ra máy chủ" "33069"; MYSQL_EXTERNAL_PORT="$PROMPT_RESULT"
+  # DB_HOST/DB_PORT trong .env chỉ phục vụ lệnh chạy TRÊN HOST (npm run db:*,
+  # script bảo trì) — qua cổng loopback ở trên. Container app dùng giá trị cố
+  # định trong docker-compose.yml, không đọc hai dòng này.
+  DB_HOST="127.0.0.1"
+  DB_PORT="$MYSQL_EXTERNAL_PORT"
 
   # ── Bước 2b: Tự chủ webfont (khuyến nghị, làm 1 lần) ───────────────────────
   # Mặc định trang tải font Inter từ fonts.googleapis.com. Với cổng thông tin
@@ -236,6 +658,10 @@ cmd_deploy() {
   echo -e "${C_DIM}Anh tự cấu hình nginx/aaPanel proxy về 127.0.0.1:\$APP_PORT.${C_RESET}\n"
   local PUBLIC_BASE_URL
   prompt "  Domain (https://...)" "https://conduonghuongthien.com.vn"; PUBLIC_BASE_URL="$PROMPT_RESULT"
+  # Host được làm gốc liên kết trong email (chống Host giả) — mọi tên miền thật, phẩy ngăn cách.
+  local PUBLIC_HOST_ALLOWLIST _base_host
+  _base_host="${PUBLIC_BASE_URL#*://}"; _base_host="${_base_host%%/*}"
+  prompt "  PUBLIC_HOST_ALLOWLIST (tên miền thật, phẩy ngăn cách)" "$_base_host"; PUBLIC_HOST_ALLOWLIST="$PROMPT_RESULT"
 
   # ── Bước 5: ADMIN_PASSWORD + ghi .env ────────────────────────────────────
   echo -e "\n${C_BOLD}Bước 5/6 — Tài khoản SuperAdmin (chỉ lần đầu)${C_RESET}"
@@ -247,8 +673,35 @@ cmd_deploy() {
   local TRUSTED_PROXY_IPS
   prompt "  TRUSTED_PROXY_IPS (dải CIDR docker)" "172.16.0.0/12"; TRUSTED_PROXY_IPS="$PROMPT_RESULT"
 
+  # Tải video lên máy chủ: tôn trọng ngưỡng RAM. docker-compose.yml nói rõ chỉ
+  # `manage.sh media-tuning` — sau khi ĐO RAM máy chủ — mới được bật
+  # MEDIA_UPLOAD_ENABLED, vì FFmpeg chạy 3 bản transcode song song và trên VPS nhỏ
+  # lượt xử lý đầu tiên khiến OOM-killer hạ MỘT CONTAINER KHÁC. Deploy từng ghi cứng
+  # `true` và bỏ qua phép đo đó. Ngưỡng này PHẢI bằng RAM_FLOOR_MB của
+  # cmd_media_tuning (tests/ops-scripts.test.ts canh hai bên khớp nhau).
+  local RAM_FLOOR_MB=4000 host_ram MEDIA_UPLOAD_ENABLED
+  if host_ram=$(read_host_ram_mb) && [ "$host_ram" -ge "$RAM_FLOOR_MB" ]; then
+    MEDIA_UPLOAD_ENABLED=true
+    echo -e "${C_GREEN}✓ RAM máy chủ ${host_ram}MB ≥ ${RAM_FLOOR_MB}MB — bật tải video (MEDIA_UPLOAD_ENABLED=true).${C_RESET}"
+    echo -e "${C_DIM}  Tắt/chỉnh sau bằng: ./manage.sh media-tuning${C_RESET}"
+  else
+    MEDIA_UPLOAD_ENABLED=false
+    if [ -n "${host_ram:-}" ]; then
+      echo -e "${C_YELLOW}⚠  RAM máy chủ ${host_ram}MB < ${RAM_FLOOR_MB}MB — TẮT tải video (MEDIA_UPLOAD_ENABLED=false).${C_RESET}"
+      echo -e "${C_YELLOW}   Transcode FFmpeg trên máy nhỏ làm OOM-killer hạ container khác. Cổng vẫn chạy với video YouTube/CDN.${C_RESET}"
+    else
+      echo -e "${C_YELLOW}⚠  Không đọc được RAM máy chủ — TẮT tải video (MEDIA_UPLOAD_ENABLED=false) cho an toàn.${C_RESET}"
+    fi
+    echo -e "${C_DIM}  Muốn bật dù thiếu RAM (không khuyến nghị): ./manage.sh media-tuning${C_RESET}"
+  fi
+
   echo -e "\n${C_BOLD}Đang tạo .env ...${C_RESET}"
-  cat > "$ROOT/.env" <<EOF
+  # Ghi vào tệp tạm (mktemp tạo sẵn quyền 600) rồi `mv`: tệp chứa bí mật không lúc
+  # nào mang quyền 644, và một lần ghi đứt giữa chừng không để lại .env cụt. `cat >`
+  # thẳng lên .env cũ giữ nguyên quyền cũ của nó (thường 644).
+  local env_tmp
+  env_tmp=$(mktemp "$ROOT/.env.manage.XXXXXX")
+  cat > "$env_tmp" <<EOF
 # ─── Auto-generated by production/manage.sh  $(date '+%Y-%m-%d %H:%M') ──
 # KHÔNG commit file này (đã .gitignore). Sửa tay an toàn.
 
@@ -257,9 +710,10 @@ MYSQL_ROOT_PASSWORD=$MYSQL_ROOT_PASSWORD
 MYSQL_DATABASE=$DB_NAME
 MYSQL_USER=$DB_USER
 MYSQL_PASSWORD=$DB_PASSWORD
-$( [ "$sql_choice" = "2" ] && echo "MYSQL_EXTERNAL_PORT=$MYSQL_EXTERNAL_PORT" )
+MYSQL_EXTERNAL_PORT=$MYSQL_EXTERNAL_PORT
 
-# App nối tới DB
+# Chỉ cho lệnh chạy trên HOST (qua cổng loopback ở trên). Container app dùng
+# DB_HOST=mysql / DB_PORT=3306 cố định trong docker-compose.yml, không đọc 2 dòng này.
 DB_HOST=$DB_HOST
 DB_PORT=$DB_PORT
 DB_USER=$DB_USER
@@ -273,6 +727,8 @@ APP_BIND=127.0.0.1
 
 # Public URL — cho OAuth redirect, email, canonical
 PUBLIC_BASE_URL=$PUBLIC_BASE_URL
+# Host được làm gốc liên kết email; host lạ → dùng PUBLIC_BASE_URL
+PUBLIC_HOST_ALLOWLIST=$PUBLIC_HOST_ALLOWLIST
 
 # ─── Bí mật BẮT BUỘC ───────────────────────────
 JWT_SECRET=$JWT_SECRET
@@ -292,8 +748,9 @@ ADMIN_EMAIL=$ADMIN_EMAIL
 CDKT_IMAGE=ghcr.io/duogxaolin/conduonghuongthien:latest
 
 # ─── Media Portal ───────────────────────────────
-# Tải video lên máy chủ (cần đủ RAM — xem manage.sh media-tuning).
-MEDIA_UPLOAD_ENABLED=true
+# Tải video lên máy chủ: chỉ bật sẵn khi RAM máy chủ >= ${RAM_FLOOR_MB}MB (ngưỡng
+# thật của pipeline transcode, xem manage.sh media-tuning). Đổi sau bằng media-tuning.
+MEDIA_UPLOAD_ENABLED=$MEDIA_UPLOAD_ENABLED
 MEDIA_UPLOAD_MAX_SIZE=10737418240
 MEDIA_UPLOAD_CHUNK_SIZE=10485760
 MEDIA_DISK_FLOOR_BYTES=1073741824
@@ -316,32 +773,54 @@ CDKT_SSE_REPLICA_GUARD=1
 BACKUP_DIR=./backups
 BACKUP_KEEP_DAYS=14
 EOF
+  chmod 600 "$env_tmp"
+  mv -f "$env_tmp" "$ROOT/.env"
+  secure_env_file
 
-  echo -e "${C_GREEN}✓ Đã tạo $ROOT/.env${C_RESET}"
+  echo -e "${C_GREEN}✓ Đã tạo $ROOT/.env (quyền 600)${C_RESET}"
 
   # ── Bước 6: Hỏi build luôn ─────────────────────────────────────────────────
   echo -e "\n${C_BOLD}Bước 6/6 — Khởi động${C_RESET}"
-  local do_build
-  if confirm "Build + khởi động ngay (docker compose up -d --build)?" "y"; then
-    do_build=1
+  local do_start
+  if confirm "Kéo image CI + khởi động ngay (docker pull + docker compose up -d)?" "y"; then
+    do_start=1
   else
-    do_build=0
-    echo -e "${C_DIM}Anh có thể chạy sau: cd .. && docker compose up -d --build${C_RESET}"
+    do_start=0
+    echo -e "${C_DIM}Anh có thể chạy sau: cd .. && docker pull <CDKT_IMAGE trong .env> && docker compose up -d${C_RESET}"
   fi
 
-  if [ "$do_build" = "1" ]; then
-    echo -e "\n${C_BOLD}Đang docker compose up -d --build ...${C_RESET}"
-    docker compose up -d --build
-    echo -e "${C_GREEN}✓ Container đã khởi động. Đợi healthcheck...${C_RESET}"
-    # Đợi healthcheck
-    local i
-    for i in $(seq 1 60); do
-      if docker inspect --format '{{.State.Health.Status}}' cdkt_app 2>/dev/null | grep -q healthy; then
-        echo -e "${C_GREEN}✓ cdkt_app healthy${C_RESET}"
-        break
+  if [ "$do_start" = "1" ]; then
+    # Image do CI dựng và đẩy lên GHCR: kéo về, KHÔNG build trên VPS. `nuxi build`
+    # ngốn RAM và trên VPS nhỏ bị OOM-kill giữa chừng (docker-compose.yml, service
+    # app). Build tại chỗ chỉ còn là phương án dự phòng, hỏi tường minh.
+    #
+    # `docker pull <image>` chứ không `docker compose pull app`: với service vừa có
+    # `image:` vừa có `build:`, một số bản Compose in "must be built from source" và
+    # thoát 0 khi không kéo được — rồi `up -d` ngay sau đó âm thầm BUILD trên VPS, đúng
+    # ca OOM cần tránh. Nên sau khi kéo còn kiểm image thật sự có mặt (`image inspect`)
+    # trước khi cho `up` chạy; kiểm này đúng với mọi bản Compose.
+    local deploy_img
+    deploy_img=$(env_get CDKT_IMAGE)
+    echo -e "\n${C_BOLD}Kéo image ${deploy_img} ...${C_RESET}"
+    if ! docker pull "$deploy_img" || ! docker image inspect "$deploy_img" >/dev/null 2>&1; then
+      echo -e "${C_YELLOW}⚠  Không kéo được image (registry, thẻ, hoặc chưa 'docker login ghcr.io' — package GHCR là private).${C_RESET}"
+      echo -e "${C_YELLOW}   Build trên VPS cần nhiều RAM; thiếu RAM thì bị OOM-killer hạ build (hoặc một container khác).${C_RESET}"
+      if confirm "Vẫn build image trên VPS này (docker compose build app)?" "n"; then
+        docker compose build app || { echo -e "${C_RED}✗ Build thất bại. .env đã tạo; container chưa khởi động.${C_RESET}"; exit 1; }
+      else
+        echo -e "${C_RED}✗ Chưa có image nên chưa khởi động. .env đã tạo ở $ROOT/.env.${C_RESET}"
+        echo -e "${C_DIM}   Đăng nhập GHCR (docker login ghcr.io) hoặc chờ CI đẩy image, rồi chạy Deploy/Update lại.${C_RESET}"
+        exit 1
       fi
-      sleep 3
-    done
+    fi
+    echo -e "\n${C_BOLD}Đang docker compose up -d ...${C_RESET}"
+    docker compose up -d
+    echo -e "${C_BOLD}Đợi healthcheck...${C_RESET}"
+    if ! wait_app_healthy; then
+      show_app_logs
+      echo -e "${C_RED}✗ DEPLOY KHÔNG THÀNH CÔNG — cdkt_app không healthy. Xem log ở trên.${C_RESET}"
+      exit 1
+    fi
     # Nếu có migration folder có file → hỏi import
     if [ -d "$MIG_DIR" ] && ls "$MIG_DIR"/*.sql >/dev/null 2>&1; then
       echo
@@ -372,6 +851,8 @@ cmd_update() {
     echo -e "${C_RED}Không có .env — chạy 'Deploy' (1) trước.${C_RESET}"
     exit 1
   fi
+  # .env do bản Deploy cũ tạo mang quyền 644: siết lại ngay lượt Update đầu tiên.
+  secure_env_file
 
   # ── Hiển thị trạng thái cũ ─────────────────────────────────────────────────
   echo -e "${C_BOLD}Trạng thái hiện tại:${C_RESET}"
@@ -386,9 +867,9 @@ cmd_update() {
   echo
 
   # ── Pull code ─────────────────────────────────────────────────────────────
-  if confirm "Pull code mới từ git (git pull)?" "y"; then
-    git pull origin main
-  fi
+  # CI ghi đè docker-compose.yml trên VPS → cây git "bẩn" → git pull từ chối. Xử lý
+  # (sao lưu + bỏ thay đổi cục bộ của tệp đó) nằm trong update_pull_code.
+  update_pull_code
 
   # ── Tự chủ webfont (kiểm tra lại sau pull) ────────────────────────────────
   # Font Inter nên self-host để tránh IP visitor qua Google CDN. Sau git pull,
@@ -417,23 +898,26 @@ cmd_update() {
       echo -e "${C_GREEN}✓ .env đã cập nhật${C_RESET}"
     fi
   fi
+  # PUBLIC_HOST_ALLOWLIST: .env cũ chưa có thì gợi ý host của PUBLIC_BASE_URL.
+  local cur_hosts new_hosts _base_host
+  cur_hosts=$(env_get PUBLIC_HOST_ALLOWLIST)
+  _base_host="${new_domain#*://}"; _base_host="${_base_host%%/*}"
+  prompt "  PUBLIC_HOST_ALLOWLIST (tên miền thật, phẩy ngăn cách)" "${cur_hosts:-$_base_host}"; new_hosts="$PROMPT_RESULT"
+  if [ "$new_hosts" != "$cur_hosts" ] && confirm "Ghi PUBLIC_HOST_ALLOWLIST=$new_hosts vào .env?" "y"; then
+    set_env PUBLIC_HOST_ALLOWLIST "$new_hosts"
+    echo -e "${C_GREEN}✓ .env đã cập nhật${C_RESET}"
+  fi
 
   # ── Pull image + restart ─────────────────────────────────────────────────
   echo
   if confirm "Pull image mới + khởi động lại (docker compose pull && up -d)?" "y"; then
-    echo -e "${C_BOLD}Pull image...${C_RESET}"
-    docker compose pull app 2>/dev/null || docker compose build app
-    echo -e "${C_BOLD}Khởi động lại...${C_RESET}"
-    docker compose up -d app
-    # Đợi healthy
-    local i
-    for i in $(seq 1 60); do
-      if docker inspect --format '{{.State.Health.Status}}' cdkt_app 2>/dev/null | grep -q healthy; then
-        echo -e "${C_GREEN}✓ cdkt_app healthy${C_RESET}"
-        break
-      fi
-      sleep 3
-    done
+    # Kéo + khởi động lại + đợi healthy + TỰ LÙI nếu bản mới hỏng (xem
+    # update_app_image). Thất bại = thoát khác 0, không in "UPDATE XONG".
+    if ! update_app_image; then
+      echo -e "\n${C_RED}${C_BOLD}═══ UPDATE THẤT BẠI ═══${C_RESET}"
+      docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || true
+      exit 1
+    fi
   fi
 
   # ── Hỏi migrate ────────────────────────────────────────────────────────────
@@ -468,21 +952,23 @@ cmd_migrate() {
     exit 0
   fi
 
-  # Lấy password root từ .env
-  local root_pw
+  # Mật khẩu root + tên database: CHỈ lấy từ .env của deploy này. Không lùi về
+  # DB_PASSWORD: đó là mật khẩu của user ỨNG DỤNG, còn lệnh dưới đăng nhập bằng root —
+  # lùi về nó chỉ cho ra lỗi "Access denied" khó hiểu. Tên database cũng đọc từ
+  # .env (Deploy bước 2 cho đặt tên tuỳ ý), không cố định `cdkt_admin`.
+  local root_pw db
   root_pw=$(env_get MYSQL_ROOT_PASSWORD)
   if [ -z "$root_pw" ]; then
-    root_pw=$(env_get DB_PASSWORD)
-  fi
-  if [ -z "$root_pw" ]; then
-    echo -e "${C_RED}Không tìm thấy MYSQL_ROOT_PASSWORD/DB_PASSWORD trong .env${C_RESET}"
+    echo -e "${C_RED}Không tìm thấy MYSQL_ROOT_PASSWORD trong .env${C_RESET}"
     exit 1
   fi
+  db=$(db_name)
+  echo -e "${C_DIM}Database đích: ${db} (container ${MYSQL_CONTAINER})${C_RESET}"
 
-  # Đếm số bài hiện tại để đối chiếu
+  # Đếm số bài hiện tại để đối chiếu. `</dev/null`: `docker exec -i` không được
+  # nuốt stdin của script (các câu trả lời menu phía sau).
   local before_count
-  before_count=$(docker exec -i cdkt_mysql mysql -uroot -p"$root_pw" cdkt_admin \
-    -e "SELECT COUNT(*) FROM articles;" 2>/dev/null | tail -n1) || before_count="?"
+  before_count=$(mysql_exec "$root_pw" "$db" -N -e "SELECT COUNT(*) FROM articles;" 2>/dev/null </dev/null | tail -n1) || before_count="?"
 
   # Liệt kê file SQL + trạng thái đã import hay chưa
   echo -e "${C_BOLD}File SQL trong production/migrations/:${C_RESET}\n"
@@ -490,13 +976,19 @@ cmd_migrate() {
   local i=0
   for f in "$MIG_DIR"/*.sql; do
     [ -f "$f" ] || continue
-    local name=$(basename "$f")
+    local name
+    name=$(basename "$f")
     local marker="$MIG_DIR/.imported-$name"
     local status="chưa"
     if [ -f "$marker" ]; then status="${C_GREEN}đã import${C_RESET}"; fi
     # Kích thước
-    local sz=$(du -h "$f" | cut -f1)
-    printf "  [%d] %-40s %6s  %s\n" "$((i+1))" "$name" "$sz" "$status"
+    local sz
+    sz=$(du -h "$f" | cut -f1)
+    # Dấu cảnh báo thật, từ việc quét nội dung file (không phải dòng chữ tĩnh).
+    local danger_n
+    danger_n=$(sql_destructive_lines "$f" | wc -l | tr -d ' ')
+    if [ "$danger_n" -gt 0 ]; then status="$status  ${C_RED}⚠ ${danger_n} lệnh DROP/TRUNCATE/DELETE…${C_RESET}"; fi
+    printf "  [%d] %-40s %6s  %b\n" "$((i+1))" "$name" "$sz" "$status"
     files+=("$f")
     i=$((i+1))
   done
@@ -507,7 +999,8 @@ cmd_migrate() {
   fi
 
   echo -e "\n${C_DIM}Bài viết hiện tại trong DB: ${before_count}${C_RESET}"
-  echo -e "${C_YELLOW}⚠  File SQL có DROP TABLE sẽ XÓA data cũ rồi chèn mới. Đảm bảo có backup!${C_RESET}"
+  echo -e "${C_DIM}Mỗi file được quét tìm DROP, TRUNCATE, DELETE, UPDATE không WHERE và SQL động PREPARE/EXECUTE (bỏ qua chú thích, kể cả xuống dòng giữa lệnh).${C_RESET}"
+  echo -e "${C_DIM}File bị đánh dấu ⚠ sẽ XÓA data cũ rồi chèn mới và đòi xác nhận riêng. Đảm bảo có backup!${C_RESET}"
 
   # Hỏi chọn file
   echo
@@ -517,10 +1010,14 @@ cmd_migrate() {
   local to_import=()
   if [ "$sel" = "all" ]; then
     for f in "${files[@]}"; do
-      local name=$(basename "$f")
+      local name
+      name=$(basename "$f")
       [ -f "$MIG_DIR/.imported-$name" ] || to_import+=("$f")
     done
   else
+    if ! [[ "$sel" =~ ^[0-9]+$ ]]; then
+      echo -e "${C_RED}Lựa chọn không hợp lệ.${C_RESET}"; exit 1
+    fi
     local idx=$((sel - 1))
     if [ "$idx" -ge 0 ] && [ "$idx" -lt "${#files[@]}" ]; then
       to_import+=("${files[$idx]}")
@@ -534,36 +1031,71 @@ cmd_migrate() {
     exit 0
   fi
 
-  echo -e "\n${C_BOLD}Sẽ import:${C_RESET}"
+  echo -e "\n${C_BOLD}Sẽ import vào database '${db}':${C_RESET}"
   for f in "${to_import[@]}"; do echo "  - $(basename "$f")"; done
   echo
   if ! confirm "Xác nhận import?" "n"; then
     echo "Huyỷ."; exit 0
   fi
 
-  # Import lần lượt
+  # File có lệnh phá dữ liệu: đòi gõ lại ĐÚNG tên file (một cái "y" lặp thói quen
+  # không đủ cho thao tác xoá bảng). Không gõ đúng → bỏ qua file đó, không import.
+  local confirmed=()
   for f in "${to_import[@]}"; do
-    local name=$(basename "$f")
+    local name
+    name=$(basename "$f")
+    local danger
+    danger=$(sql_destructive_lines "$f")
+    if [ -n "$danger" ]; then
+      echo -e "\n${C_RED}${C_BOLD}⚠  $name chứa lệnh XÓA/GHI ĐÈ dữ liệu cũ:${C_RESET}"
+      # Here-string, không `printf | head`: head thoát sau 8 dòng, printf của một danh
+      # sách dài (dump lớn) ăn SIGPIPE, và dưới `set -o pipefail` + `set -e` cả script
+      # chết giữa chừng — ngay trước câu hỏi xác nhận.
+      head -n 8 <<< "$danger" | sed 's/^/    /'
+      if [ "$(wc -l <<< "$danger" | tr -d ' ')" -gt 8 ]; then
+        echo "    … (còn nữa)"
+      fi
+      echo -e "${C_YELLOW}   Bảng bị DROP/TRUNCATE, hàng bị DELETE/UPDATE sẽ mất dữ liệu hiện có trong '${db}'. Cần có bản sao lưu (scripts/backup-db.sh).${C_RESET}"
+      local typed
+      prompt "   Gõ đúng tên file '$name' để xác nhận (enter = bỏ qua file này)" ""; typed="$PROMPT_RESULT"
+      if [ "$typed" != "$name" ]; then
+        echo -e "${C_DIM}   → Bỏ qua $name (không import).${C_RESET}"
+        continue
+      fi
+    fi
+    confirmed+=("$f")
+  done
+  if [ ${#confirmed[@]} -eq 0 ]; then
+    echo -e "${C_DIM}Không có file nào được xác nhận — không import gì.${C_RESET}"
+    exit 0
+  fi
+
+  # Import lần lượt
+  for f in "${confirmed[@]}"; do
+    local name
+    name=$(basename "$f")
     echo -e "\n${C_BOLD}Import $name ...${C_RESET}"
-    # mysql in warning ra stderr; lỗi SQL cũng ra stderr. Tách stderr, chỉ exit
-    # khi mysql trả khác 0. KHÔNG pipe qua grep vì grep không match warning → trả
-    # exit 1 → if tưởng fail dù import OK.
+    # Thành công/thất bại quyết định bằng MÃ THOÁT của mysql, không bằng việc lọc
+    # chữ trên stderr (cảnh báo của từng bản mysql một khác). stderr được giữ lại để
+    # hiện: là cảnh báo khi thành công, là nguyên nhân khi thất bại.
     local err_out
-    if err_out=$(docker exec -i cdkt_mysql mysql -uroot -p"$root_pw" cdkt_admin < "$f" 2>&1 1>/dev/null) \
-       && [ -z "$err_out" -o -z "${err_out##*Using a password*}" ]; then
+    if err_out=$(mysql_exec "$root_pw" "$db" < "$f" 2>&1 1>/dev/null); then
       touch "$MIG_DIR/.imported-$name"
       echo -e "${C_GREEN}✓ $name đã import${C_RESET}"
+      if [ -n "$err_out" ]; then
+        echo -e "${C_DIM}  mysql cảnh báo:${C_RESET}"
+        printf '%s\n' "$err_out" | sed 's/^/    /'
+      fi
     else
       echo -e "${C_RED}✗ $name LỖI:${C_RESET}"
-      echo "$err_out" | grep -v "Using a password" | sed 's/^/    /'
+      printf '%s\n' "$err_out" | sed 's/^/    /'
       exit 1
     fi
   done
 
   # Đếm lại
   local after_count
-  after_count=$(docker exec -i cdkt_mysql mysql -uroot -p"$root_pw" cdkt_admin \
-    -e "SELECT COUNT(*) FROM articles;" 2>/dev/null | tail -n1) || after_count="?"
+  after_count=$(mysql_exec "$root_pw" "$db" -N -e "SELECT COUNT(*) FROM articles;" 2>/dev/null </dev/null | tail -n1) || after_count="?"
   echo -e "\n${C_GREEN}${C_BOLD}═══ MIGRATE XONG ═══${C_RESET}"
   echo -e "  Bài viết: ${before_count} → ${C_GREEN}${after_count}${C_RESET}"
   echo -e "  Đánh dấu đã import trong production/migrations/.imported-*"
@@ -594,14 +1126,9 @@ cmd_media_tuning() {
   fi
 
   # ── RAM máy chủ ───────────────────────────────────────────────────────────
-  # Đọc /proc/meminfo như scripts/check-resources.sh, không `free`: nhãn cột của
-  # `free` khác nhau giữa các bản procps, còn /proc/meminfo thì không.
+  # Đọc /proc/meminfo như scripts/check-resources.sh (xem read_host_ram_mb).
   local host_ram_mb
-  if [ -r /proc/meminfo ]; then
-    host_ram_mb=$(( $(awk '/^MemTotal:/ {print $2}' /proc/meminfo) / 1024 ))
-  elif [ "$(uname -s)" = "Darwin" ]; then
-    host_ram_mb=$(( $(sysctl -n hw.memsize) / 1024 / 1024 ))
-  else
+  if ! host_ram_mb=$(read_host_ram_mb); then
     echo -e "${C_RED}Không đọc được dung lượng RAM máy chủ.${C_RESET}"
     exit 1
   fi

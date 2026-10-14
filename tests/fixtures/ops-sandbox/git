@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# FAKE `git` for tests/ops-scripts-sandbox.test.ts: records argv, performs nothing.
+#   FAKE_GIT_DIFF_RC   exit code of `git diff --quiet ...` (1 = docker-compose.yml modified)
+#   FAKE_GIT_PULL_RC   exit code of `git pull`
+set -u
+: "${SANDBOX:?}"
+n=$(( $(cat "$SANDBOX/.n" 2>/dev/null || echo 0) + 1 ))
+echo "$n" > "$SANDBOX/.n"
+printf '%s\tgit %s\n' "$n" "$*" >> "$SANDBOX/docker.log"
+case "${1:-}" in
+  rev-parse) exit 0 ;;
+  diff)
+    if [[ "$*" == *--quiet* ]]; then exit "${FAKE_GIT_DIFF_RC:-0}"; fi
+    echo ' docker-compose.yml | 2 +-'; exit 0 ;;
+  checkout) exit 0 ;;
+  pull) exit "${FAKE_GIT_PULL_RC:-0}" ;;
+esac
+exit 0
