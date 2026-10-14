@@ -1,4 +1,4 @@
-import mysql, { type Pool, type RowDataPacket } from 'mysql2/promise'
+import type { Pool, RowDataPacket } from 'mysql2/promise'
 import {
   computeFreshness,
   encodeAnalyticsNocCursor,
@@ -13,6 +13,7 @@ import {
 } from '../utils/analytics-reporting'
 import type { AnalyticsLiveScopeType } from '../utils/analytics-live'
 import { tryRuntimeConfig } from '../utils/runtime-config'
+import { sharedUtcQueryConnection } from '../utils/utc-query'
 import {
   isAnalyticsNocComponent,
   isAnalyticsNocEventType,
@@ -113,25 +114,6 @@ export type AnalyticsNocReport = {
   meta: AnalyticsLiveMeta
 }
 
-/** Đọc một khoá CSDL của runtimeConfig. Khai `keyof` nên gõ sai khoá là lỗi
- *  biên dịch, không phải một lượt âm thầm rơi về `process.env`. */
-function runtimeValue(name: 'dbHost' | 'dbPort' | 'dbUser' | 'dbPassword' | 'dbName') {
-  return tryRuntimeConfig()?.[name]
-}
-
-export function createAnalyticsReportingPool(): Pool {
-  return mysql.createPool({
-    host: runtimeValue('dbHost') || process.env.DB_HOST || '127.0.0.1',
-    port: Number(runtimeValue('dbPort') || process.env.DB_PORT || 3306),
-    user: runtimeValue('dbUser') || process.env.DB_USER || 'root',
-    password: runtimeValue('dbPassword') || process.env.DB_PASSWORD || '',
-    database: runtimeValue('dbName') || process.env.DB_NAME || 'cdkt_admin',
-    waitForConnections: true,
-    connectionLimit: 4,
-    timezone: '+00:00',
-  })
-}
-
 function numberValue(value: unknown) {
   const number = Number(value)
   return Number.isFinite(number) && number >= 0 ? number : 0
@@ -155,14 +137,14 @@ function serializedDateTime(value: unknown): string | null {
   return dateTimeValue(value)?.toISOString() || null
 }
 
+/**
+ * Mặc định chạy trên pool dùng chung qua adapter UTC (`server/utils/utc-query.ts`):
+ * bảng analytics lưu ngày/giờ theo UTC, pool dùng chung khai `+07:00`. Trước đây
+ * mỗi lượt gọi mở rồi đóng một pool `+00:00` riêng — hai lần bắt tay TCP mỗi lượt
+ * bảng điều khiển hỏi lại (15 giây một lần).
+ */
 async function withReportingConnection<T>(connection: ReportingConnection | undefined, work: (db: ReportingConnection) => Promise<T>) {
-  if (connection) return work(connection)
-  const pool = createAnalyticsReportingPool()
-  try {
-    return await work(pool)
-  } finally {
-    await pool.end()
-  }
+  return work(connection || sharedUtcQueryConnection())
 }
 
 export async function getAnalyticsSummary(

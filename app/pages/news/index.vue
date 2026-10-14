@@ -109,7 +109,7 @@
               </div>
 
               <div v-if="activeChildren.length" class="flex items-center gap-2 overflow-x-auto pt-2.5 pb-1 sm:flex-wrap text-xs">
-                <span class="text-[#7A8A76] font-semibold flex items-center gap-1 shrink-0">
+                <span class="text-[#5A6C58] font-semibold flex items-center gap-1 shrink-0">
                   <i class="fa-solid fa-turn-down text-[0.65rem] rotate-[-90deg]" aria-hidden="true"></i>
                   {{ t('n_subtopic') }}
                 </span>
@@ -149,7 +149,7 @@
               </span>
               <span class="text-sm text-[#3E4D3C]">
                 {{ t('n_search_result') }} <strong>&laquo;{{ searchQuery }}&raquo;</strong>
-                <span v-if="!pending" class="text-[#7A8A76] ml-1.5">({{ t('n_articles_count').replace('{n}', String(pagination.total)) }})</span>
+                <span v-if="!pending" class="text-[#5A6C58] ml-1.5">({{ t('n_articles_count').replace('{n}', String(pagination.total)) }})</span>
               </span>
             </div>
             <button
@@ -229,18 +229,33 @@
             <div class="w-14 h-14 rounded-full bg-[#EEF4EC] text-[#4A6741] flex items-center justify-center mx-auto mb-3.5 text-xl">
               <i class="fa-regular fa-newspaper" aria-hidden="true"></i>
             </div>
-            <h3 class="text-base font-extrabold text-[#233520] m-0 mb-1">{{ t('n_empty_title') }}</h3>
-            <p class="text-sm text-[#6E7D6B] max-w-md mx-auto m-0 mb-5">
-              {{ t('n_empty_desc2') }}
-            </p>
-            <button
-              type="button"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4A6741] hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm"
-              @click="resetFilter"
-            >
-              <i class="fa-solid fa-arrow-rotate-left text-xs" aria-hidden="true"></i>
-              <span>{{ t('n_view_all_list') }}</span>
-            </button>
+            <template v-if="pageOutOfRange">
+              <!-- `?page=` vượt trang cuối (link cũ, gõ tay): không phải "chưa có bài" —
+                   đưa người đọc về trang đầu thay vì để kẹt ở một trang trắng. -->
+              <p class="text-sm text-[#6E7D6B] max-w-md mx-auto m-0 mb-5">{{ t('list_page_out_of_range').replace('{total}', String(pagination.totalPages)) }}</p>
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4A6741] hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+                @click="goFirstPage"
+              >
+                <i class="fa-solid fa-arrow-left text-xs" aria-hidden="true"></i>
+                <span>{{ t('list_back_first_page') }}</span>
+              </button>
+            </template>
+            <template v-else>
+              <h3 class="text-base font-extrabold text-[#233520] m-0 mb-1">{{ t('n_empty_title') }}</h3>
+              <p class="text-sm text-[#6E7D6B] max-w-md mx-auto m-0 mb-5">
+                {{ t('n_empty_desc2') }}
+              </p>
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#4A6741] hover:bg-[#385130] text-white font-bold text-sm transition-all shadow-sm"
+                @click="resetFilter"
+              >
+                <i class="fa-solid fa-arrow-rotate-left text-xs" aria-hidden="true"></i>
+                <span>{{ t('n_view_all_list') }}</span>
+              </button>
+            </template>
           </div>
 
           <!-- Content Render -->
@@ -318,7 +333,7 @@
                   {{ t('n_count_suffix').replace('{n}', String(pagination.total)) }}
                 </span>
               </div>
-              <span v-if="pagination.totalPages > 1" class="text-xs text-[#7A8A76] font-medium hidden sm:inline">
+              <span v-if="pagination.totalPages > 1" class="text-xs text-[#5A6C58] font-medium hidden sm:inline">
                 {{ t('page_of').replace('{current}', String(pagination.page)).replace('{total}', String(pagination.totalPages)) }}
               </span>
             </div>
@@ -344,7 +359,7 @@
 
                 <!-- Card Content: flex-1 flex-col justify-between -->
                 <div class="p-4 sm:p-5 flex flex-col flex-1">
-                  <div class="flex items-center gap-2 text-xs text-[#7A8A76] font-medium mb-2">
+                  <div class="flex items-center gap-2 text-xs text-[#5A6C58] font-medium mb-2">
                     <span
                       v-if="item.categoryName"
                       class="inline-block bg-[#EEF4EC] text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider"
@@ -368,7 +383,7 @@
                   </p>
 
                   <!-- Footer action pinned to bottom of card with mt-auto -->
-                  <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#7A8A76]">
+                  <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#5A6C58]">
                     <nuxt-link
                       :to="`/news/${item.slug}`"
                       class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
@@ -603,13 +618,14 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
+import { computed } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
+import { cleanExcerpt } from '~/utils/article-excerpt'
 import { useI18n } from '~/composables/useI18n'
 import { useLayoutConfig } from '~/composables/useLayoutConfig'
+import { usePublicArticleList, usePublicMostRead } from '~/composables/usePublicArticleList'
 
-const { t } = useI18n()
+const { t, currentLang } = useI18n()
 const { articleGridClass } = useLayoutConfig()
 
 useSeoMeta({
@@ -617,13 +633,39 @@ useSeoMeta({
   description: () => t('n_index_desc')
 })
 
-const route = useRoute()
-const activeCategory = ref(route.query.cat ? String(route.query.cat) : 'all')
-const searchQuery = ref(route.query.q ? String(route.query.q) : '')
-const searchInput = ref(searchQuery.value)
+// Danh sách + phân trang + tìm kiếm: trạng thái đọc từ URL, khoá fetch dẫn xuất
+// từ query (xem usePublicArticleList). Chuyên mục khác "all" sống ở path
+// `/news/<cat>` (route `news/[category]/index.vue`); `?cat=` chỉ còn cho link cũ.
+const {
+  activeCategory,
+  searchQuery,
+  searchInput,
+  articles: newsList,
+  pagination,
+  pageRange,
+  pageOutOfRange,
+  pending,
+  loadError,
+  refresh,
+  featured,
+  rest,
+  setPage,
+  goFirstPage,
+  setCategory,
+  applySearch,
+  clearSearch,
+  clearSearchInput,
+  resetFilter,
+} = usePublicArticleList({
+  type: 'news',
+  perPage: 19,
+  lang: currentLang,
+  withCategory: true,
+  pathFor: (category) => (category === 'all' ? '/news' : `/news/${category}`),
+  scrollTargetId: 'news-list-top',
+})
 
-const PER_PAGE = 19
-const currentPage = ref(Math.max(1, Math.floor(Number(route.query.page) || 1)) || 1)
+const { mostRead, mostReadPending } = usePublicMostRead('news', currentLang)
 
 // Category chips — DB-driven via /api/public/categories?type=news
 const { data: catData, pending: catPending } = useAsyncData('news-categories', () =>
@@ -677,153 +719,6 @@ const categoryIcon = (slug: string) => {
   return 'fa-solid fa-newspaper text-xs'
 }
 
-// Huy hiệu danh mục tự động khớp theo dữ liệu thực tế của từng bài viết (không bao giờ gán bừa "Tin nổi bật")
-const categoryBadge = (item: { categorySlug?: string | null; categoryName?: string | null } | null | undefined) => {
-  if (!item) return { label: t('news'), bg: 'bg-[#4A6741]', icon: 'fa-solid fa-newspaper' }
-  const slug = item.categorySlug || ''
-  const label = item.categoryName || t('news')
-  if (slug === 'tin-noi-bat') {
-    return { label, bg: 'bg-[#C62828]', icon: 'fa-solid fa-star' }
-  }
-  if (slug === 'tin-dia-phuong') {
-    return { label, bg: 'bg-[#1565C0]', icon: 'fa-solid fa-location-dot' }
-  }
-  if (slug === 'tin-hoat-dong') {
-    return { label, bg: 'bg-[#2D5A27]', icon: 'fa-solid fa-newspaper' }
-  }
-  return { label, bg: 'bg-[#4A6741]', icon: 'fa-solid fa-tag' }
-}
-
-// Khử thẻ HTML và giải mã toàn bộ thực thể HTML tiếng Việt (ngăn lỗi Ng&agrave;y, C&ocirc;ng an...)
-const cleanExcerpt = (html: string | null | undefined): string => {
-  if (!html) return ''
-  let text = String(html).replace(/<[^>]*>/g, ' ')
-  text = text.replace(/&#(\d+);/g, (_, dec) => String.fromCharCode(Number(dec)))
-  text = text.replace(/&#x([0-9a-fA-F]+);/g, (_, hex) => String.fromCharCode(parseInt(hex, 16)))
-  const map: Record<string, string> = {
-    '&nbsp;': ' ', '&amp;': '&', '&quot;': '"', '&apos;': "'", '&lt;': '<', '&gt;': '>',
-    '&Agrave;': 'À', '&Aacute;': 'Á', '&Acirc;': 'Â', '&Atilde;': 'Ã',
-    '&Egrave;': 'È', '&Eacute;': 'É', '&Ecirc;': 'Ê',
-    '&Igrave;': 'Ì', '&Iacute;': 'Í',
-    '&Ograve;': 'Ò', '&Oacute;': 'Ó', '&Ocirc;': 'Ô', '&Otilde;': 'Õ',
-    '&Ugrave;': 'Ù', '&Uacute;': 'Ú',
-    '&Yacute;': 'Ý',
-    '&agrave;': 'à', '&aacute;': 'á', '&acirc;': 'â', '&atilde;': 'ã',
-    '&egrave;': 'è', '&eacute;': 'é', '&ecirc;': 'ê',
-    '&igrave;': 'ì', '&iacute;': 'í',
-    '&ograve;': 'ò', '&oacute;': 'ó', '&ocirc;': 'ô', '&otilde;': 'õ',
-    '&ugrave;': 'ù', '&uacute;': 'ú',
-    '&yacute;': 'ý', '&yuml;': 'ÿ'
-  }
-  text = text.replace(/&[a-zA-Z]+;/g, (m) => map[m] || m)
-  return text.replace(/\s+/g, ' ').trim()
-}
-
-// Article list query
-const articlesQuery = computed(() => {
-  const q: { type: string; limit: number; page: number; categorySlug?: string; search?: string } =
-    { type: 'news', limit: PER_PAGE, page: currentPage.value }
-  if (activeCategory.value !== 'all') q.categorySlug = activeCategory.value
-  if (searchQuery.value) q.search = searchQuery.value
-  return q
-})
-
-const { data: articlesData, pending, error, refresh } = useAsyncData('news-articles-list', () =>
-  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string; categoryName?: string | null; categorySlug?: string | null }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: articlesQuery.value }),
-  {
-    lazy: true,
-    default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 } })
-  }
-)
-const newsList = computed(() => articlesData.value?.articles || [])
-const loadError = computed(() => !!error.value || articlesData.value?.ok === false)
-const pagination = computed(() => articlesData.value?.pagination || { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 })
-
-// Most Read
-const { data: mostReadData, pending: mostReadPending } = useAsyncData('news-most-read', () =>
-  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string; categoryName?: string | null; categorySlug?: string | null }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: { type: 'news', limit: 6, sort: 'views' } }),
-  {
-    lazy: true,
-    default: () => ({ ok: true, articles: [], pagination: {} })
-  }
-)
-const mostRead = computed(() => mostReadData.value?.articles || [])
-
-// Featured & Rest — chỉ hiện bài tiêu điểm ở Trang 1 khi không tìm kiếm
-const isLeadPage = computed(() => currentPage.value === 1 && !searchQuery.value)
-const featured = computed(() => (isLeadPage.value ? newsList.value[0] ?? null : null))
-const rest = computed(() => (isLeadPage.value ? newsList.value.slice(1) : newsList.value))
 const formatDate = (item: { publishedAt?: string | null; createdAt?: string | null }) =>
   formatDateVN(item.publishedAt || item.createdAt)
-
-const syncUrl = () => {
-  // Category filter pindah sang path segment `/news/<cat>` (route dishwasher
-  // `news/[category]/index.vue`). Trang `/news` này chỉ còn list "all" + search + page.
-  // Nếu activeCategory !== 'all' (link cũ ?cat= trước redirect 301, hoặc test)
-  // → navigate sang /news/<cat>; else giữ /news với search + page query.
-  if (activeCategory.value !== 'all') {
-    const query: { q?: string; page?: number } = {}
-    if (searchQuery.value) query.q = searchQuery.value
-    if (currentPage.value > 1) query.page = currentPage.value
-    navigateTo({ path: `/news/${activeCategory.value}`, query })
-    return
-  }
-  const query: { q?: string; page?: number } = {}
-  if (searchQuery.value) query.q = searchQuery.value
-  if (currentPage.value > 1) query.page = currentPage.value
-  navigateTo({ path: '/news', query })
-}
-
-const setCategory = (cat: string) => {
-  activeCategory.value = cat
-  currentPage.value = 1
-  syncUrl()
-}
-
-const applySearch = () => {
-  searchQuery.value = searchInput.value.trim()
-  currentPage.value = 1
-  syncUrl()
-}
-
-const clearSearchInput = () => {
-  searchInput.value = ''
-  if (searchQuery.value) {
-    clearSearch()
-  }
-}
-
-const clearSearch = () => {
-  searchQuery.value = ''
-  searchInput.value = ''
-  currentPage.value = 1
-  syncUrl()
-}
-
-const resetFilter = () => {
-  activeCategory.value = 'all'
-  searchQuery.value = ''
-  searchInput.value = ''
-  currentPage.value = 1
-  syncUrl()
-}
-
-const setPage = (page: number) => {
-  if (page < 1 || page > pagination.value.totalPages) return
-  currentPage.value = page
-  syncUrl()
-  if (import.meta.client) {
-    const el = document.getElementById('news-list-top')
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-}
-
-const pageRange = computed(() => {
-  const total = pagination.value.totalPages
-  const cur = pagination.value.page
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
-  const pages = new Set([1, total, cur, cur - 1, cur + 1])
-  for (const p of pages) if (p < 1 || p > total) pages.delete(p)
-  return [...pages].sort((a, b) => a - b)
-})
 </script>

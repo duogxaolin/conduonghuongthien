@@ -10,7 +10,7 @@ import test, { mock } from 'node:test'
  * greps for the pieces; this runs the handler.
  */
 
-const calls = { answer: 0, moderation: 0, persist: 0 }
+const calls = { answer: 0, moderation: 0, persist: 0, rateLimit: 0 }
 
 mock.module('h3', {
   namedExports: {
@@ -25,7 +25,17 @@ mock.module('../server/utils/chatbot/chat', {
     answerChat: async () => { calls.answer += 1; return { answer: 'Một câu trả lời thật.', kind: 'curated', sources: [], retryAfter: null, askContact: false } },
   },
 })
-mock.module('../server/utils/chatbot/chat-policy', { namedExports: { validateChatRequestBody: () => {} } })
+mock.module('../server/utils/chatbot/chat-policy', {
+  namedExports: {
+    // Read by the entry-point length cap (`utils/chatbot/input-length.ts`).
+    CHAT_LIMITS: Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 }),
+    validateChatRequestBody: () => {},
+    // The address rate limit now runs before moderation (see
+    // chatbot-rate-limit-before-moderation.test.ts); here it always allows.
+    chargeChatRateLimit: async () => { calls.rateLimit += 1; return null },
+    CHAT_RATE_LIMITED_MESSAGE: 'quá nhiều yêu cầu',
+  },
+})
 mock.module('../server/utils/chatbot/session-token', { namedExports: { verifySessionToken: () => null } })
 mock.module('../server/utils/chatbot/session-db', { namedExports: { persistChatTurn: async () => { calls.persist += 1 } } })
 mock.module('../server/utils/client-ip', { namedExports: { getClientIp: () => '203.0.113.9' } })
@@ -52,7 +62,7 @@ function parseEnvelope(text: string) {
   return JSON.parse(line.slice(6)) as { choices: Array<{ delta: { content: string } }>, chatbot: Record<string, unknown> }
 }
 
-function reset() { calls.answer = 0; calls.moderation = 0; calls.persist = 0 }
+function reset() { calls.answer = 0; calls.moderation = 0; calls.persist = 0; calls.rateLimit = 0 }
 
 test('a filled honeypot gets a normal 200 reply and costs nothing', async () => {
   reset()
@@ -64,7 +74,7 @@ test('a filled honeypot gets a normal 200 reply and costs nothing', async () => 
   assert.ok(envelope.choices[0]!.delta.content.length > 10)
   assert.match(response, /data: \[DONE\]/, 'the stream is well-formed, like a real reply')
   assert.match(e.headers['Content-Type'] ?? '', /text\/event-stream/)
-  assert.deepEqual(calls, { answer: 0, moderation: 0, persist: 0 }, 'no AI call, no moderation, nothing stored')
+  assert.deepEqual(calls, { answer: 0, moderation: 0, persist: 0, rateLimit: 0 }, 'no AI call, no moderation, nothing stored')
 })
 
 test('the honeypot is checked before the body is validated or moderated', async () => {
@@ -72,7 +82,7 @@ test('the honeypot is checked before the body is validated or moderated', async 
   // Not even a valid message list: the honeypot still decides first.
   await handler(event({ _h: 'x' }))
   await handler(event({ messages: 'garbage', _h: 'x' }))
-  assert.deepEqual(calls, { answer: 0, moderation: 0, persist: 0 })
+  assert.deepEqual(calls, { answer: 0, moderation: 0, persist: 0, rateLimit: 0 })
 })
 
 test('an empty or whitespace honeypot is a real visitor and gets a real answer', async () => {

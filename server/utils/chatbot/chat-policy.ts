@@ -104,6 +104,29 @@ export async function enforceChatRateLimit(key: string, limit: number, windowSec
   return state.blocked ? Math.max(1, state.retryAfterSeconds) : null
 }
 
+export const CHAT_RATE_LIMITED_MESSAGE = 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau.'
+
+/**
+ * Charge the per-address chat limit (`settings.rateLimitRequests` per window)
+ * for this request — exactly once — and return retry-after seconds when over it.
+ *
+ * The chat endpoints call this BEFORE the instant moderation check: every message
+ * that moderation blocks writes a review-queue row (and, with a session, a chat
+ * turn), so a limit charged only inside `answerGroundedChat` — after moderation —
+ * let an anonymous script flood the review queue with no limit at all. The
+ * decision is memoised on `event.context`, so the later call inside
+ * `answerGroundedChat` reuses it instead of counting the same request twice.
+ * Not the AI quota: `enforceAiQuota` is still charged only where a provider call
+ * is imminent.
+ */
+export async function chargeChatRateLimit(event: ChatEvent, settings: ChatbotSettings): Promise<number | null> {
+  const context = event.context as { chatRateLimit?: { retryAfter: number | null } } | undefined
+  if (context?.chatRateLimit) return context.chatRateLimit.retryAfter
+  const retryAfter = await enforceChatRateLimit(clientKey(event), settings.rateLimitRequests, settings.rateLimitWindowSeconds)
+  if (context) context.chatRateLimit = { retryAfter }
+  return retryAfter
+}
+
 /**
  * Per-session quota on AI provider calls, checked only when a provider call is
  * actually about to happen.
@@ -638,8 +661,8 @@ export async function answerGroundedChat(
 ): Promise<ChatResult & { streamed?: boolean }> {
   validateChatRequestBody({ messages })
   const history = validateChatMessages(messages, settings)
-  const retryAfter = await enforceChatRateLimit(clientKey(event), settings.rateLimitRequests, settings.rateLimitWindowSeconds)
-  if (retryAfter) return { answer: 'Bạn đã gửi quá nhiều yêu cầu. Vui lòng thử lại sau.', sources: [], kind: 'rate_limited', retryAfter }
+  const retryAfter = await chargeChatRateLimit(event, settings)
+  if (retryAfter) return { answer: CHAT_RATE_LIMITED_MESSAGE, sources: [], kind: 'rate_limited', retryAfter }
 
   const query = text(history[history.length - 1]!.content ?? history[history.length - 1]!.text)
   let references: PublicKnowledgeReference[]

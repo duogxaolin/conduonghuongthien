@@ -1,6 +1,7 @@
 import type { ChatbotSettings } from '../../db/schema'
 import { encryptChatbotSecret } from './crypto'
 import { normalizeProviderUrl } from './outbound'
+import { checkProviderBaseUrl, normalizedProviderBaseUrl, providerHostnameViolation } from '../ai/provider-url'
 import { CHATBOT_PROVIDER_POLICIES } from './providers'
 
 export const CHATBOT_SETTINGS_ID = 1
@@ -59,6 +60,15 @@ export function validateChatbotSettingsUpdate(input: ChatbotSettingsUpdate): Cha
   if (input.baseUrl != null && (typeof input.baseUrl !== 'string' || input.baseUrl.length > 1024)) throw new ChatbotSettingsValidationError('Invalid base URL')
   if (input.model != null && (typeof input.model !== 'string' || !/^[A-Za-z0-9._:-]{1,128}$/u.test(input.model.trim()))) throw new ChatbotSettingsValidationError('Invalid model')
   if (input.systemPrompt != null && (typeof input.systemPrompt !== 'string' || input.systemPrompt.length > 20_000 || !input.systemPrompt.trim())) throw new ChatbotSettingsValidationError('Invalid system prompt')
+  // Cùng chính sách với `ai_providers` (`server/utils/ai/provider-url.ts`): đường gọi
+  // cũ của chatbot mang khoá API của chính trang này tới địa chỉ này.
+  if (typeof input.baseUrl === 'string' && input.baseUrl.trim()) {
+    const checked = checkProviderBaseUrl(input.baseUrl)
+    if (!checked.ok) throw new ChatbotSettingsValidationError(checked.message)
+  }
+  if (Array.isArray(input.allowedHosts) && input.allowedHosts.some(host => typeof host === 'string' && providerHostnameViolation(host) !== null)) {
+    throw new ChatbotSettingsValidationError('Danh sách máy chủ cho phép chỉ được chứa tên miền công khai (không IP, localhost hay tên nội bộ).')
+  }
   if (input.baseUrl && input.allowedHosts?.length) {
     try { normalizeProviderUrl(input.baseUrl, { allowedHosts: input.allowedHosts }) }
     catch { throw new ChatbotSettingsValidationError('Provider URL is not approved') }
@@ -83,6 +93,39 @@ export function validateChatbotSettingsUpdate(input: ChatbotSettingsUpdate): Cha
     }
   }
   return input
+}
+
+/**
+ * Lệnh PATCH này có đổi ĐÍCH gọi nhà cung cấp (`baseUrl` hoặc `allowedHosts`) so
+ * với giá trị đang lưu không.
+ *
+ * Đích gọi quyết định khoá API của chatbot được gửi tới đâu, mà khoá đó chỉ siêu
+ * quản trị được xoay (`rotate_key`). Cho người chỉ có `chatbot_settings.update` đổi
+ * đích là cho họ lấy khoá mà không cần quyền xoay khoá — nên đổi đích cũng đòi
+ * siêu quản trị. Trang cấu hình gửi lại cả hai trường mỗi lần lưu, nên "có mặt"
+ * không có nghĩa là "đổi": chỉ khác giá trị (sau chuẩn hoá) mới tính.
+ */
+export function chatbotDestinationChanged(
+  current: Pick<ChatbotSettings, 'baseUrl' | 'allowedHosts'>,
+  input: ChatbotSettingsUpdate,
+): boolean {
+  if (input.baseUrl !== undefined && comparableBaseUrl(input.baseUrl) !== comparableBaseUrl(current.baseUrl)) return true
+  if (input.allowedHosts !== undefined && comparableHosts(input.allowedHosts) !== comparableHosts(current.allowedHosts)) return true
+  return false
+}
+
+function comparableBaseUrl(value: string | null | undefined): string | null {
+  if (typeof value !== 'string' || !value.trim()) return null
+  return normalizedProviderBaseUrl(value) ?? value.trim()
+}
+
+function comparableHosts(value: readonly string[] | null | undefined): string {
+  if (!Array.isArray(value)) return '[]'
+  const hosts = value
+    .filter((host): host is string => typeof host === 'string')
+    .map(host => host.trim().toLowerCase().replace(/\.+$/, ''))
+    .filter(Boolean)
+  return JSON.stringify([...new Set(hosts)].sort())
 }
 
 export function buildChatbotSettingsPatch(input: ChatbotSettingsUpdate, secret?: string): Partial<ChatbotSettings> {

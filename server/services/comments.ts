@@ -309,12 +309,19 @@ export type CreateCommentResult =
  *
  * The order is the point. Every gate below is a reason the write must not
  * happen, and each is checked before **either** rate limit is charged — the two
- * `recordRateLimitHit` calls sit immediately before the insert. Charging earlier
+ * `recordRateLimitHit` calls sit just before moderation and the insert. Charging earlier
  * would make a refusal cost allowance: a reader whose five attempts all landed
  * on a closed article, or all named a parent from another article, would be
  * locked out for ten minutes without a single comment existing. Worse, it hands
  * an attacker a way to exhaust someone else's allowance using requests that were
  * always going to fail. Allowance is spent on writes, not on refusals.
+ *
+ * The one refusal that comes AFTER the limits is the instant moderation block,
+ * because it is not free: every blocked comment writes an `ai_moderation_queue`
+ * row for officers to review. Checked first, it let a reader — or a script
+ * holding many Google accounts — write review rows with no limit at all. So a
+ * blocked comment spends allowance like a written one, and its review rows are
+ * further capped per account and per address (`capQueuePerSource`).
  *
  * The item may be an article or a media item; `resolveCommentTarget` decides
  * which, and the two branches below are the same four checks against the table
@@ -414,17 +421,6 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     if (!verdict.ok) return { ok: false, statusCode: 400, message: verdict.message }
   }
 
-  // ── Kiểm duyệt tức thì (< 1ms): chặn ngay từ ngữ thô tục, chống phá, cờ bạc ──
-  const preCheck = await fastPreModerate(input.body, {
-    authorName: (reader ? effectiveDisplayName(reader) : null) || 'Người đọc',
-    authorIp: input.ip ?? undefined,
-    targetType: 'comment',
-    contextTitle: contextTitle || undefined,
-    contextUrl: contextUrl || undefined,
-  })
-  if (preCheck.blocked) {
-    return { ok: false, statusCode: 400, message: preCheck.reason }
-  }
   // ── Everything above was a reason to refuse. Only now is allowance spent. ──
   const deps = rateLimitDeps()
   const readerState = await recordRateLimitHit(`comment:reader:${input.readerId}`, COMMENT_READER_RULE, deps)
@@ -446,6 +442,22 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
       message: 'Đã có quá nhiều bình luận gửi từ địa chỉ này. Vui lòng thử lại sau ít phút.',
       retryAfterSeconds: Math.max(1, ipState.retryAfterSeconds),
     }
+  }
+
+  // ── Kiểm duyệt tức thì (< 1ms): chặn ngay từ ngữ thô tục, chống phá, cờ bạc ──
+  // AFTER the limits: a block writes a review row (see the function comment).
+  // The row cap is per account AND per address — MODERATION_QUEUE_CAP.
+  const preCheck = await fastPreModerate(input.body, {
+    authorName: (reader ? effectiveDisplayName(reader) : null) || 'Người đọc',
+    authorIp: input.ip ?? undefined,
+    readerId: input.readerId,
+    targetType: 'comment',
+    contextTitle: contextTitle || undefined,
+    contextUrl: contextUrl || undefined,
+    capQueuePerSource: true,
+  })
+  if (preCheck.blocked) {
+    return { ok: false, statusCode: 400, message: preCheck.reason }
   }
 
   /**

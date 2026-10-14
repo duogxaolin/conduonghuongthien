@@ -52,7 +52,8 @@ import { detectVideoMime, EXT_BY_VIDEO_MIME, UNSUPPORTED_VIDEO_MESSAGE, VIDEO_SN
 import { logInfo, logWarn } from '../utils/logger'
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import { resolveMediaConfig, UPLOAD_DISABLED_MESSAGE, type MediaConfig } from '../utils/media-config'
-import { processMediaItem } from './video-processing'
+import { abortProcessingClaim, processMediaItem } from './video-processing'
+import { enqueueReplacedAssetCleanup } from './media-asset-cleanup'
 
 // ─── Kiểu và hằng số ─────────────────────────────────────────────────────────
 
@@ -652,7 +653,7 @@ export async function completeUpload(input: CompleteUploadInput, options: Upload
     const mediaDir = path.resolve(config.workdir, storagePath)
     const replaceId = input.replaceMediaItemId && Number.isFinite(input.replaceMediaItemId) && input.replaceMediaItemId > 0
       ? Math.floor(input.replaceMediaItemId) : null
-    const created = await db.transaction(async tx => {
+    const { replacedClaim, ...created } = await db.transaction(async tx => {
       const current = await findOwned(tx, uploadId, input.adminUserId, true)
       if (current?.completionClaim !== claim || current.status !== 'assembling' || controller.signal.aborted) throw new Error('Lượt ghép đã mất quyền sở hữu.')
       // No pending media row becomes visible before the original is durable.
@@ -666,16 +667,21 @@ export async function completeUpload(input: CompleteUploadInput, options: Upload
       // Chỉ reset pipeline: tệp gốc mới đã ghi đè, rendition cũ sẽ bị pipeline
       // ghi đè khi công bố. Audit `action: 'update'` với `operation: 'replace'`.
       if (replaceId !== null) {
-        const [existing] = await tx.select({ id: mediaItems.id, slug: mediaItems.slug, shortId: mediaItems.shortId, source: mediaItems.source })
+        const [existing] = await tx.select({ id: mediaItems.id, slug: mediaItems.slug, shortId: mediaItems.shortId, source: mediaItems.source,
+          storagePath: mediaItems.storagePath, storageProvider: mediaItems.storageProvider, claimedBy: mediaItems.claimedBy })
           .from(mediaItems).where(eq(mediaItems.id, replaceId)).limit(1).for('update')
         if (!existing) throw new Error('Mục media cần thay thế không tồn tại.')
         if (existing.source !== 'upload') throw new Error('Chỉ video tự lưu trữ mới có thể thay tệp.')
-        // Xoá cây rendition cũ (nếu có) — pipeline sẽ tạo lại trong `generations/<claim>` mới.
-        if (existing.slug) {
-          const oldTree = path.resolve(config.workdir, `media/${existing.slug}`)
-          await fs.rm(oldTree, { recursive: true, force: true }).catch(() => undefined)
-        }
+        // Cây tài sản CŨ (gốc `media/<uploadId cũ>` theo `storagePath`, cả bản local
+        // lẫn bản R2) được hẹn dọn qua outbox `media_asset_cleanup` trong CHÍNH
+        // transaction này — cùng cơ chế `deleteMediaItem`. Không xoá gì trước commit:
+        // rollback thì cây cũ vẫn là cây đang phục vụ. Trước đây đoạn này `rm`
+        // `media/<slug>` (sai thư mục — tệp nằm ở `media/<uploadId>`), bỏ qua R2, và
+        // chạy trước commit → mỗi lượt thay để rò nguyên cây cũ.
+        await enqueueReplacedAssetCleanup(tx, existing, storagePath)
         await tx.update(mediaItems).set({
+          // Tệp gốc mới nằm trên đĩa; pipeline đặt lại `r2` khi đồng bộ xong.
+          storageProvider: 'local',
           storagePath, processingStatus: 'pending', processingError: null, processingAttempts: 0,
           processingNextAttemptAt: null, processingHeartbeatAt: null, claimedBy: null,
           resolutionsReady: [], durationSeconds: null, width: null, height: null,
@@ -684,7 +690,7 @@ export async function completeUpload(input: CompleteUploadInput, options: Upload
           resourceId: replaceId, meta: { operation: 'replace', source: 'upload', declaredSize: view.declaredSize, filename: view.filename } })
         await tx.update(mediaUploadSessions).set({ status: 'completed', mediaItemId: replaceId, contentType,
           completionClaim: null, completionHeartbeatAt: null, errorMessage: null, updatedAt: new Date() }).where(owned)
-        return { mediaItemId: replaceId, slug: existing.slug, shortId: existing.shortId }
+        return { mediaItemId: replaceId, slug: existing.slug, shortId: existing.shortId, replacedClaim: existing.claimedBy }
       }
       // ── Nhánh tạo mới (mặc định) ──────────────────────────────────────────
       const slug = await uniqueMediaSlug(tx, title)
@@ -697,8 +703,11 @@ export async function completeUpload(input: CompleteUploadInput, options: Upload
         resourceId: mediaItemId, meta: { slug, shortId, source: 'upload', declaredSize: view.declaredSize } })
       await tx.update(mediaUploadSessions).set({ status: 'completed', mediaItemId, contentType,
         completionClaim: null, completionHeartbeatAt: null, errorMessage: null, updatedAt: new Date() }).where(owned)
-      return { mediaItemId, slug, shortId }
+      return { mediaItemId, slug, shortId, replacedClaim: null }
     })
+    // Lượt chuyển mã của tệp CŨ (nếu đang chạy) phải dừng trước khi worker dọn cây
+    // cũ — sau commit, cùng thứ tự `deleteMediaItem`.
+    abortProcessingClaim(replacedClaim)
     await fs.rm(dir, { recursive: true, force: true }).catch(() => undefined)
     logInfo({ event: 'media.upload_completed', uploadId, ...created, contentType })
     const dispatch = options.dispatchProcessing ?? (mediaItemId => processMediaItem({ mediaItemId }, { db, config, pool: options.pool ?? db.$client }))

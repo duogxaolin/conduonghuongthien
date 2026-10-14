@@ -21,7 +21,7 @@
  * after admin-auth middleware, so the caller is already an authenticated
  * officer, not a member of the public.
  */
-import { requireResourcePermission } from '../../../../utils/permissions'
+import { requireResourcePermission, requireSuperAdmin } from '../../../../utils/permissions'
 import { getUsableDriveOauthConfig } from '../../../../services/backup-drive-oauth-config'
 import { GOOGLE_TOKEN_ENDPOINT, resolveDriveRedirectUri } from '../../../../utils/google-oauth/config'
 import { stateSigningKey, verifyState } from '../../../../utils/google-oauth/state'
@@ -46,6 +46,9 @@ async function fetchTokenExchange(
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'update')
+  // Đích backup (tài khoản Drive nhận bản sao CSDL + file) chỉ SuperAdmin đổi được
+  // — người có `settings.update` vẫn xem trạng thái và chạy backup.
+  requireSuperAdmin(adminUser)
 
   const query = getQuery(event)
 

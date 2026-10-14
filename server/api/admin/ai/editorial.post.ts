@@ -4,6 +4,7 @@ import { requireResourcePermission } from '../../../utils/permissions'
 import { checkBudget } from '../../../utils/ai-budget'
 import { callAi } from '../../../services/ai-gateway'
 import { decodeHtmlEntities } from '../../../utils/decode-html-entities'
+import { sanitizeHtml } from '../../../utils/sanitize-html'
 
 const VALID_ACTIONS = new Set(['summary', 'suggest_titles', 'polish'])
 
@@ -178,13 +179,32 @@ Trả về đúng định dạng JSON thuần túy (không bọc trong markdown 
     }
   }
 
+  // Model output is untrusted (the article text it read can carry a prompt
+  // injection). `polishedContent` is rendered with v-html in ArticleAIPanel and
+  // both it and `changes[].suggested` are written into the TinyMCE editor, so each
+  // goes through the same allowlist sanitizer as a stored article body. When the
+  // model returned neither a polished body nor a change list, the raw reply is the
+  // only thing to show — it is sanitized too, here, so the client never has to
+  // fall back to `rawText` for HTML.
+  const changes = Array.isArray(parsed.changes)
+    ? parsed.changes
+        .filter(c => c && typeof c === 'object')
+        .map(c => ({
+          original: String(c.original ?? ''),
+          suggested: sanitizeHtml(String(c.suggested ?? '')),
+          reason: String(c.reason ?? ''),
+        }))
+    : []
+  const polishedSource = parsed.polishedContent
+    || (action === 'polish' && changes.length === 0 ? aiResult.text.trim() : '')
+
   return {
     ok: true,
     action,
     options: parsed.options || (parsed.summary ? [parsed.summary] : []),
     titles: parsed.titles || [],
-    polishedContent: parsed.polishedContent || '',
-    changes: Array.isArray(parsed.changes) ? parsed.changes : [],
+    polishedContent: sanitizeHtml(polishedSource),
+    changes,
     summaryNotes: parsed.summaryNotes || (parsed.notes?.join(' • ') || ''),
     notes: parsed.notes || [],
     rawText: aiResult.text.trim(),

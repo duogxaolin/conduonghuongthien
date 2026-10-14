@@ -49,7 +49,7 @@
                     :is="shouldOpenNewTab(child) ? 'a' : NuxtLink"
                     v-bind="shouldOpenNewTab(child) ? { href: child.url, target: child.openNewTab ? '_blank' : undefined, rel: child.openNewTab ? 'noopener noreferrer' : undefined } : { to: child.url, 'active-class': 'bg-[#e8f2e6] text-[#1e4620] font-bold', 'aria-current-value': 'page' }"
                     :title="navItemLabel(child)"
-                    class="group/child flex items-start gap-2.5 px-3 py-2 no-underline text-[#2d4a2d] text-[0.85rem] font-semibold leading-snug rounded-lg transition-colors duration-150 hover:bg-[#eff6ee] hover:text-[#1e4620] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                    class="group/child flex items-start gap-2.5 px-3 py-2 no-underline text-[#2d4a2d] text-[0.85rem] font-semibold leading-snug rounded-lg transition-colors duration-150 hover:bg-[#eff6ee] hover:text-[#1e4620] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
                   >
                     <span class="mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full bg-[#7CB342]/50 transition-all duration-150 group-hover/child:bg-[#2c6e33] group-hover/child:scale-125" aria-hidden="true"></span>
                     <span class="line-clamp-2">{{ navItemLabel(child) }}</span>

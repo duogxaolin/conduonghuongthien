@@ -52,6 +52,9 @@ const HISTORY_URL = '/api/public/livestream/chat/history'
 // phải một build xanh giả.
 const MAX_MESSAGE_LENGTH = 200
 
+/** Lượt đọc lịch sử hỏng — phòng vẫn chạy, chỉ thiếu tin cũ (xem `historyError`). */
+export const HISTORY_ERROR_MESSAGE = 'Không tải được các tin nhắn trước đó. Tin mới vẫn hiện bình thường.'
+
 export function useLiveChat() {
   const messages: Ref<LiveChatMessage[]> = ref([])
   const connection = ref<ChatConnectionState>('closed')
@@ -67,6 +70,43 @@ export function useLiveChat() {
   // Kéo 50 tin gần nhất — đúng `CHAT_HISTORY_DEFAULT` của máy chủ, không tự đặt.
   const HISTORY_LIMIT = 50
 
+  /**
+   * Lượt đọc lịch sử HỎNG (máy chủ trả 503 khi CSDL rơi, hoặc `{ ok: false }`):
+   * stream vẫn chở tin mới nên không đóng phòng — nhưng cũng không được im lặng.
+   * Trước đây lỗi bị nuốt và phòng hiện "Chưa có tin nhắn. Hãy gửi câu đầu tiên!"
+   * trong khi thật ra có cả chục tin trước đó: người xem đọc sai tình trạng phòng.
+   * Nay `historyError` được đặt và giao diện hiện cảnh báo + nút "Thử lại"
+   * (`retryHistory`), chỉ đọc lại lịch sử — không mở lại stream.
+   */
+  const historyError = ref('')
+  const historyLoading = ref(false)
+
+  const loadHistory = async (attempt: number, readySessionId: number) => {
+    historyLoading.value = true
+    try {
+      const history = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, sessionId: number | null, messages: LiveChatMessage[] }>)(HISTORY_URL, {
+        params: { limit: HISTORY_LIMIT },
+      })
+      if (attempt !== connectionAttempt) return
+      if (!history.ok) {
+        historyError.value = HISTORY_ERROR_MESSAGE
+        return
+      }
+      if (history.sessionId !== readySessionId) {
+        disconnect()
+        liveError.value = 'Buổi phát đã thay đổi. Vui lòng tải lại trang.'
+        return
+      }
+      historyError.value = ''
+      mergeMessages(history.messages)
+    } catch {
+      if (attempt !== connectionAttempt) return
+      historyError.value = HISTORY_ERROR_MESSAGE
+    } finally {
+      if (attempt === connectionAttempt) historyLoading.value = false
+    }
+  }
+
   const connect = async () => {
     disconnect()
     const attempt = ++connectionAttempt
@@ -77,23 +117,13 @@ export function useLiveChat() {
     // Subscribe first, then read history.  Frames arriving while GET is in
     // flight stay buffered in `messages`; merge-by-id closes the old history →
     // stream race instead of creating a gap or duplicate message.
-    try {
-      const history = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean, sessionId: number | null, messages: LiveChatMessage[] }>)(HISTORY_URL, {
-        params: { limit: HISTORY_LIMIT },
-      })
-      if (attempt !== connectionAttempt) return
-      if (!history.ok || history.sessionId !== readySessionId) {
-        disconnect()
-        liveError.value = 'Buổi phát đã thay đổi. Vui lòng tải lại trang.'
-        return
-      }
-      mergeMessages(history.messages)
-    } catch {
-      // Lịch sử hỏng không phải là chặn: stream vẫn có thể chở tin mới, và một
-      // lịch sử trống đọc ra là "chưa có người nói gì" — đúng thứ người xem muốn
-      // thấy trong giây đầu, không phải một cảnh báo đỏ.
-      // The stream remains useful even when a history request fails.
-    }
+    await loadHistory(attempt, readySessionId)
+  }
+
+  /** Nút "Thử lại" của cảnh báo lịch sử: đọc lại lịch sử của ĐÚNG phiên đang mở. */
+  const retryHistory = async () => {
+    if (historyLoading.value || connection.value !== 'open' || sessionId.value === null) return
+    await loadHistory(connectionAttempt, sessionId.value)
   }
 
   const mergeMessages = (incoming: LiveChatMessage[]) => {
@@ -273,6 +303,8 @@ export function useLiveChat() {
       eventSource = null
     }
     connection.value = 'closed'
+    historyError.value = ''
+    historyLoading.value = false
   }
 
   return {
@@ -281,8 +313,11 @@ export function useLiveChat() {
     sessionId,
     sessionTitle,
     liveError,
+    historyError,
+    historyLoading,
     connect,
     disconnect,
+    retryHistory,
     sendMessage,
   }
 }

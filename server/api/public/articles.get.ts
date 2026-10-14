@@ -1,5 +1,7 @@
 import { finitePositive, MAX_PAGE } from '../../utils/query-number'
 import { getDb } from '../../utils/db'
+import { reportPublicReadFailure } from '../../utils/public-read-failure'
+import { containsPattern, MAX_LIKE_QUERY_CHARS } from '../../utils/sql-like'
 import { articles, users, categories, articleTranslations } from '../../db/schema'
 import { eq, like, desc, count, inArray, and, sql } from 'drizzle-orm'
 
@@ -9,7 +11,7 @@ export default defineEventHandler(async (event) => {
     const page = finitePositive(query.page, 1, MAX_PAGE)
     const limit = finitePositive(query.limit, 10, 50)
     const offset = (page - 1) * limit
-    const search = String(query.search || '').trim()
+    const search = String(query.search || '').trim().slice(0, MAX_LIKE_QUERY_CHARS)
     const type = String(query.type || '').trim()
     const categorySlug = String(query.categorySlug || '').trim()
     const categoryIdParam = Number(query.categoryId || 0)
@@ -52,7 +54,8 @@ export default defineEventHandler(async (event) => {
 
     const conditions = [eq(articles.status, 'published')]
     if (search) {
-      conditions.push(like(articles.title, `%${search}%`))
+      // `%`/`_` khách gõ là chữ thường, không phải ký tự đại diện.
+      conditions.push(like(articles.title, containsPattern(search)))
     }
     if (type) {
       if (type === 'reintegration_model' || type === 'reintegration') {
@@ -151,7 +154,8 @@ export default defineEventHandler(async (event) => {
         totalPages: Math.ceil(Number(total) / limit)
       }
     }
-  } catch {
+  } catch (error) {
+    reportPublicReadFailure(event, 'public.articles_list_failed', error)
     return { ok: false, articles: [], pagination: { page: 1, limit: 10, total: 0, totalPages: 1 } }
   }
 })

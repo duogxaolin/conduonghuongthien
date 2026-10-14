@@ -22,7 +22,7 @@ import { articleComments, articles, mediaItems, readerAccounts } from '../db/sch
 import { getSmtpConfig, sendMail } from '../utils/mailer'
 import { escapeHtml } from '../utils/escape-html'
 import { logError } from '../utils/logger'
-import { requestBase } from '../utils/google-oauth/config'
+import { publicLinkBase } from '../utils/public-link-base'
 import { buildExcerpt, notificationTargetPage, notificationUrl, sameItemPredicate } from './notifications'
 
 /** Longer than the dropdown excerpt: an email is read once, away from the portal,
@@ -128,8 +128,14 @@ export async function sendReplyEmail(input: ReplyEmailInput): Promise<boolean> {
      * every domain to the same one. A relative path in an email is a dead
      * string — there is no page for the mail client to resolve it against — so
      * the request base is always used here.
+     *
+     * …but only a DECLARED host: the Host header is client-chosen, and an email
+     * from the real portal carrying a link to whatever host the sender typed is
+     * a phishing kit. `publicLinkBase` keeps the request host when it is in
+     * PUBLIC_HOST_ALLOWLIST (or is PUBLIC_BASE_URL's host) and falls back to
+     * PUBLIC_BASE_URL otherwise — see server/utils/public-link-base.ts.
      */
-    const base = requestBase(input.event)
+    const base = publicLinkBase(input.event)
     const path = notificationUrl({
       kind:      target.kind,
       slug:      target.slug,

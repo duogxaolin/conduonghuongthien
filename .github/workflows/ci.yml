@@ -37,9 +37,20 @@ on:
 # `push` là `refs/heads/…` — hai chuỗi khác nhau cho cùng một nhánh, nên nhóm
 # concurrency không bao giờ trùng và `cancel-in-progress` không huỷ được lượt
 # nó cần huỷ. `github.head_ref` có giá trị đúng trên PR và rỗng ở nơi khác.
+#
+# `cancel-in-progress` CHỈ đúng cho pull request. Huỷ ở cấp workflow là huỷ CẢ
+# lượt chạy — kể cả job `deploy` đang chạy bên trong nó; nhóm `deploy-production`
+# riêng của job đó không che được, vì nhóm ấy chỉ xếp hàng các job deploy với
+# nhau. Với `true` trơn, một push thứ hai vào `main` trong lúc deploy đang chờ
+# healthcheck sẽ cắt phiên SSH giữa chừng: đường lùi phiên bản không bao giờ
+# chạy, production nằm lại trên một image chưa được xác nhận.
+#
+# Nên: PR vẫn huỷ lượt cũ của chính nó (commit mới thay commit cũ, không ai cần
+# kết quả cũ); `main` và chạy tay thì XẾP HÀNG — GitHub giữ một lượt đang chờ và
+# chỉ huỷ những lượt còn ĐANG CHỜ cũ hơn, không bao giờ cắt lượt đang chạy.
 concurrency:
   group: ci-${{ github.head_ref || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read
@@ -65,7 +76,7 @@ env:
 jobs:
   # ── Lập kế hoạch: PR chỉ chạy bộ nhẹ ──────────────────────────────────────
   # Mỗi lượt CI đầy đủ tốn ~40 phút billed (GitHub làm tròn từng job lên phút), trong
-  # đó 13 job Integration chiếm ~29. Tài khoản chỉ có 3.000 phút/tháng và đã hết một
+  # đó các job Integration chiếm ~29 (đo khi matrix còn 13 job; nay 17). Tài khoản chỉ có 3.000 phút/tháng và đã hết một
   # lần, nên:
   #   - PR nháp: bỏ qua hoàn toàn (chạy lại khi bấm "Ready for review").
   #   - PR thường: unit + build + schema-drift + hygiene (~12 phút). Integration chỉ chạy
@@ -121,10 +132,10 @@ jobs:
   # `npm test` chạy 140 tệp trong một job, trong đó 13 integration suite mỗi
   # cái dựng + drop một DB throwaway — đo lần cuối bước test chạy đến `ok 900`
   # trong 25 phút rồi bị GitHub cancel ở 60 phút. Tách ra:
-  #   - job này: 127 tệp non-integration, không cần MySQL, ~30 phút trên runner
+  #   - job này: 203 tệp non-integration, không cần MySQL, ~30 phút trên runner
   #     chậm. Typecheck gộp vào đây (giữ nguyên triết lý cũ: không phải job riêng
   #     để khỏi phải xin thêm runner mà hay bị queue).
-  #   - job integration-tests: 13 tệp *-integration, cần MySQL service.
+  #   - job integration-tests: 17 tệp *-integration, cần MySQL service.
   #   - job schema-drift: `npm run db:drift`, cần MySQL, chạy nhanh.
   unit-tests:
     name: Unit and typecheck
@@ -146,7 +157,7 @@ jobs:
 
       # Unit + contract tests — mọi tệp trừ *-integration (chúng cần MySQL và
       # chạy ở job integration-tests bên dưới). Lọc bằng find để không phụ thuộc
-      # shell glob của runner. Bỏ qua 13 tệp integration để job này không cần
+      # shell glob của runner. Bỏ qua 17 tệp integration để job này không cần
       # service container và chạy nhanh hơn.
       - name: Unit and contract tests (no DB)
         env:
@@ -199,9 +210,9 @@ jobs:
           exit $status
 
   # ── Integration tests (cần MySQL) ──────────────────────────────────────────
-  # 13 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
-  # service container. Trước đây tất cả 13 suite chạy **nối tiếp trên một runner**,
-  # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 13 job song
+  # 17 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
+  # service container. Trước đây tất cả suite (khi đó 13) chạy **nối tiếp trên một runner**,
+  # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 17 job song
   # song** — mỗi suite một job + MySQL service riêng, chạy độc lập. Một runner
   # chậm chỉ kéo dài đúng suite của nó, không làm suite khác timeout theo.
   integration-tests:
@@ -256,6 +267,15 @@ jobs:
           - suite: livestream-toggle
             file: tests/livestream-toggle-integration.test.ts
             switch: LIVESTREAM_TOGGLE_INTEGRATION
+          - suite: backup-dump
+            file: tests/backup-dump-integration.test.ts
+            switch: BACKUP_DUMP_INTEGRATION
+          - suite: media-sync-rewrite
+            file: tests/media-sync-rewrite-integration.test.ts
+            switch: MEDIA_SYNC_INTEGRATION
+          - suite: public-read
+            file: tests/public-read-integration.test.ts
+            switch: PUBLIC_READ_INTEGRATION
     services:
       mysql:
         image: mysql:8.0
@@ -345,6 +365,16 @@ jobs:
           MEDIA_SELF_HEAL_PORT: 3306
           MEDIA_SELF_HEAL_USER: root
           MEDIA_SELF_HEAL_PASSWORD: test_root_password
+          BACKUP_DUMP_HOST: 127.0.0.1
+          BACKUP_DUMP_PORT: 3306
+          BACKUP_DUMP_USER: root
+          BACKUP_DUMP_PASSWORD: test_root_password
+          MEDIA_SYNC_PORT: 3306
+          MEDIA_SYNC_USER: root
+          MEDIA_SYNC_PASSWORD: test_root_password
+          PUBLIC_READ_PORT: 3306
+          PUBLIC_READ_USER: root
+          PUBLIC_READ_PASSWORD: test_root_password
         run: |
           set -euo pipefail
           node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test ${{ matrix.file }}
@@ -412,6 +442,16 @@ jobs:
           MEDIA_SELF_HEAL_PORT: 3306
           MEDIA_SELF_HEAL_USER: root
           MEDIA_SELF_HEAL_PASSWORD: test_root_password
+          BACKUP_DUMP_HOST: 127.0.0.1
+          BACKUP_DUMP_PORT: 3306
+          BACKUP_DUMP_USER: root
+          BACKUP_DUMP_PASSWORD: test_root_password
+          MEDIA_SYNC_PORT: 3306
+          MEDIA_SYNC_USER: root
+          MEDIA_SYNC_PASSWORD: test_root_password
+          PUBLIC_READ_PORT: 3306
+          PUBLIC_READ_USER: root
+          PUBLIC_READ_PASSWORD: test_root_password
         run: |
           set -euo pipefail
           # Chạy lại để dò số subtest thực sự chạy. Nếu suite tự SKIP (switch env
@@ -595,7 +635,10 @@ jobs:
         run: |
           # scheduler/retention must use localDay, not getUTC*/utcDay — UTC bug skips nightly pass at UTC+7.
           # analytics/* intentionally uses UTC (events stored in UTC).
-          offenders=$(grep -rn "getUTC\|utcDay" --include="*.ts" server/services/ server/utils/ server/plugins/ server/db/ 2>/dev/null | grep -v "analytics" | grep -v "node_modules" || true)
+          # server/utils/utc-query.ts is the analytics UTC query adapter (formats Date params
+          # as UTC for the analytics tables) — exempt by exact path, anchored so a file of the
+          # same name elsewhere is still checked.
+          offenders=$(grep -rn "getUTC\|utcDay" --include="*.ts" server/services/ server/utils/ server/plugins/ server/db/ 2>/dev/null | grep -v "analytics" | grep -v "^server/utils/utc-query\.ts:" | grep -v "node_modules" || true)
           if [ -n "$offenders" ]; then
             echo "::error::UTC date API outside analytics/: $offenders"
             echo "$offenders"
@@ -622,12 +665,11 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
 
+      # BLOCKING: `dependencies` chỉ còn gói runtime (nuxt/vue/tailwind… là
+      # build-time → devDependencies; `.output` tự chứa), nên tập này đạt 0
+      # advisory và một advisory high/critical mới ở đây là thật sự đáng đỏ.
       - name: No known vulnerabilities in production dependencies
-        continue-on-error: true
-        run: |
-          if ! npm audit --omit=dev --audit-level=high; then
-            echo "::warning::a production dependency has a high or critical advisory (non-blocking — see nodemailer/sharp/svgo debt)"
-          fi
+        run: npm audit --omit=dev --audit-level=high
 
       # Không chặn, chỉ ghi lại. Lỗ hổng ở gói dev là thông tin đáng thấy trong
       # log, nhưng nó không phải lý do để chặn một lượt deploy — xem lý do
@@ -713,10 +755,13 @@ jobs:
     if: true
     runs-on: ubuntu-latest
     timeout-minutes: 20
-    # Nhóm riêng và KHÔNG huỷ giữa chừng: nhóm `ci-${{ github.ref }}` ở đầu tệp
-    # đặt cancel-in-progress, đúng cho một lượt test bị bỏ qua, nhưng cắt ngang
-    # một lượt deploy sẽ để lại .env đã trỏ sang image mới trong khi container
-    # vẫn đang chạy image cũ.
+    # Nhóm riêng, KHÔNG huỷ: hai lượt deploy không bao giờ chạy chồng lên nhau,
+    # lượt sau chờ lượt trước xong. Nhưng nhóm này KHÔNG tự bảo vệ được lượt
+    # deploy đang chạy khỏi việc huỷ ở cấp workflow (nhóm `ci-…` ở đầu tệp): huỷ
+    # một lượt chạy là huỷ mọi job trong nó, bất kể nhóm riêng của job. Thứ thật
+    # sự giữ cho deploy không bị cắt giữa chừng là `cancel-in-progress` ở đầu tệp
+    # chỉ bật cho pull request — cắt ngang một lượt deploy sẽ để lại .env đã trỏ
+    # sang image mới trong khi chưa ai xác nhận nó khoẻ, và đường lùi không chạy.
     concurrency:
       group: deploy-production
       cancel-in-progress: false
@@ -750,15 +795,33 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+          ssh_opts=(
+            -i ~/.ssh/deploy_key
+            -o IdentitiesOnly=yes
+            -o StrictHostKeyChecking=yes
+            -o UserKnownHostsFile=~/.ssh/known_hosts
+            -p "$SSH_PORT"
+          )
+
+          # docker-compose.yml của CHÍNH commit này đi cùng image của nó. Trước
+          # đây VPS dùng bản compose nằm sẵn ở đó từ lần `git pull` cuối cùng ai
+          # đó nhớ chạy: compose chỉ chuyển vào container những biến nó liệt kê,
+          # nên một biến mới thêm vào compose không bao giờ tới được production,
+          # và một image cần cấu hình mới chạy trên cấu hình cũ. Gửi tệp sang một
+          # tên tạm; script trên VPS kiểm SHA-256 (một phiên SSH đứt giữa chừng
+          # để lại tệp cụt mà vẫn có thể là YAML hợp lệ), sao lưu bản cũ, chạy
+          # `docker compose config -q`, rồi mới dùng. Sai ở bất kỳ bước nào thì
+          # dừng mà không chạm container đang chạy.
+          compose_sha256=$(sha256sum docker-compose.yml | cut -d' ' -f1)
+          ssh "${ssh_opts[@]}" "$SSH_USER@$SSH_HOST" \
+              "cat > '$APP_DIR/.docker-compose.incoming.yml'" < docker-compose.yml
+
           # Nạp script qua stdin: VPS chạy đúng bản của commit đang được triển
           # khai, không phải bản nằm sẵn trên máy chủ từ lần deploy nào đó trước.
-          ssh -i ~/.ssh/deploy_key \
-              -o IdentitiesOnly=yes \
-              -o StrictHostKeyChecking=yes \
-              -o UserKnownHostsFile=~/.ssh/known_hosts \
-              -p "$SSH_PORT" \
-              "$SSH_USER@$SSH_HOST" \
-              "bash -s -- '$APP_DIR' '$IMAGE'" < scripts/deploy-remote.sh
+          # `env` thay vì `VAR=… bash`: không phụ thuộc shell đăng nhập của VPS_USER.
+          ssh "${ssh_opts[@]}" "$SSH_USER@$SSH_HOST" \
+              "env INCOMING_COMPOSE=.docker-compose.incoming.yml INCOMING_COMPOSE_SHA256=$compose_sha256 bash -s -- '$APP_DIR' '$IMAGE'" \
+              < scripts/deploy-remote.sh
 
       - name: Report
         if: always()
@@ -769,10 +832,11 @@ jobs:
             echo "- Image: \`${{ needs.image.outputs.image }}\`"
             echo "- Kết quả: ${{ job.status }}"
             echo
-            echo "Lùi phiên bản thủ công trên VPS:"
+            echo "Lùi phiên bản thủ công trên VPS (compose cũ nằm ở .deploy-compose-backups/ nếu lượt này đã đổi nó):"
             echo '```bash'
             echo "cd <VPS_APP_DIR>"
+            echo "cp -p .deploy-compose-backups/docker-compose.<thời-điểm>.yml docker-compose.yml   # chỉ khi compose đã đổi"
             echo "sed -i 's|^CDKT_IMAGE=.*|CDKT_IMAGE=<image-cũ>|' .env"
-            echo "docker compose up -d app"
+            echo "docker compose up -d --no-deps app"
             echo '```'
           } >> "$GITHUB_STEP_SUMMARY"

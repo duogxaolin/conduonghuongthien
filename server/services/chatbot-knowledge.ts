@@ -187,6 +187,38 @@ export async function updateKnowledge(actorId: number, id: number, input: Knowle
   })
 }
 
-export async function transitionKnowledge(actorId: number, id: number, target: 'published' | 'archived') { const current = await getKnowledge(id); if (!current) return null; if (target === 'published') validatePublish(current.approvedAnswer, current.sourceLabel, current.sourceReference, current.sourceUrl); const db = getDb(); const now = new Date(); await db.update(chatbotKnowledge).set({ status: target, publishedAt: target === 'published' ? now : current.publishedAt, archivedAt: target === 'archived' ? now : null, reviewerId: actorId, reviewedAt: now }).where(eq(chatbotKnowledge.id, id)); await audit(db, actorId, target === 'published' ? 'publish' : 'archive', id, { fromStatus: current.status, toStatus: target, termCount: current.aliases.length + current.keywords.length }); return getKnowledge(id) }
-export async function deleteKnowledge(actorId: number, id: number) { const current = await getKnowledge(id); if (!current) return false; const db = getDb(); await db.delete(chatbotKnowledge).where(eq(chatbotKnowledge.id, id)); await audit(db, actorId, 'delete', id); return true }
+/**
+ * Xuất bản / lưu trữ một mục kho. Đổi trạng thái và dòng `activity_logs` commit
+ * CÙNG NHAU trên handle `tx`, như `createKnowledge`/`updateKnowledge` phía trên.
+ * Trước đây hai lượt ghi này chạy rời trên pool: audit hỏng (FK `user_id`, JSON
+ * `meta`) thì câu trả lời đã lên chatbot công khai mà không còn dấu vết ai duyệt.
+ */
+export async function transitionKnowledge(actorId: number, id: number, target: 'published' | 'archived') {
+  const db = getDb()
+  return db.transaction(async (tx) => {
+    const current = await getKnowledgeFrom(tx, id)
+    if (!current) return null
+    if (target === 'published') validatePublish(current.approvedAnswer, current.sourceLabel, current.sourceReference, current.sourceUrl)
+    const now = new Date()
+    await tx.update(chatbotKnowledge).set({ status: target, publishedAt: target === 'published' ? now : current.publishedAt, archivedAt: target === 'archived' ? now : null, reviewerId: actorId, reviewedAt: now }).where(eq(chatbotKnowledge.id, id))
+    await audit(tx, actorId, target === 'published' ? 'publish' : 'archive', id, { fromStatus: current.status, toStatus: target, termCount: current.aliases.length + current.keywords.length })
+    return getKnowledgeFrom(tx, id)
+  })
+}
+
+/**
+ * Xoá một mục kho. Xoá-rồi-ghi-log là hình dạng sai phổ biến nhất của repo (xem
+ * "Đường ghi audit" trong CLAUDE.md): sau lượt xoá, dòng audit là bằng chứng duy
+ * nhất còn lại — nên nó phải commit cùng lượt xoá, hỏng thì cả hai cùng lùi.
+ */
+export async function deleteKnowledge(actorId: number, id: number) {
+  const db = getDb()
+  return db.transaction(async (tx) => {
+    const current = await getKnowledgeFrom(tx, id)
+    if (!current) return false
+    await tx.delete(chatbotKnowledge).where(eq(chatbotKnowledge.id, id))
+    await audit(tx, actorId, 'delete', id)
+    return true
+  })
+}
 export function adminKnowledge(entry: Awaited<ReturnType<typeof getKnowledge>>) { return entry ? { ...serializeAdminKnowledge(entry), aliases: entry.aliases, keywords: entry.keywords } : null }

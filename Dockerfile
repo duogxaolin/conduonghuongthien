@@ -34,7 +34,12 @@ FROM node:24-alpine
 WORKDIR /app
 
 COPY package*.json ./
-RUN npm ci --omit=dev && npm cache clean --force
+# Runtime = only `dependencies` (what db:init/db:seed/scripts import; `.output` is
+# self-contained — Nitro traced what it needs). `--ignore-scripts` is REQUIRED:
+# the root `postinstall` is `nuxt prepare`, and nuxt is a devDependency now, so
+# the hook would fail with "nuxt: command not found". No runtime package needs
+# an install script (sharp ships prebuilt binaries via optional deps).
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 
 # Built server + the sources the DB bootstrap scripts need.
 COPY --from=builder /app/.output ./.output
@@ -52,6 +57,13 @@ COPY public ./public
 # `cpulimit` giới hạn % CPU thật cho ffmpeg (MEDIA_PROCESSING_CPU_LIMIT, mặc định 50),
 # không phải chỉ ưu tiên thấp như `nice` — một lượt transcode không ăn sạch mọi nhân.
 RUN apk add --no-cache ffmpeg mysql-client cpulimit su-exec
+
+# Giờ Việt Nam cho tiến trình (lịch 03:00 của analytics/retention/sao lưu, đầu
+# tháng của hạn mức AI). Alpine không kèm cơ sở dữ liệu múi giờ, nên `tzdata`
+# để libc và các công cụ ngoài Node (`date`, mysqldump, ffmpeg) cũng hiểu TZ.
+# Chỉ image app — container mysql giữ UTC. Xem chú thích TZ trong docker-compose.yml.
+RUN apk add --no-cache tzdata
+ENV TZ=Asia/Ho_Chi_Minh
 
 ENV NODE_ENV=production
 ENV HOST=0.0.0.0

@@ -4,6 +4,7 @@ import { ArticleFilterValidationError, parseAuthorFilter } from '../../../utils/
 import { articleReadScope } from '../../../services/articles'
 import { eq, like, desc, sql, inArray, isNull } from 'drizzle-orm'
 import { alias } from 'drizzle-orm/mysql-core'
+import { csvCell } from '../../../utils/spreadsheet-cell'
 
 /**
  * Xuất danh sách bài viết về file CSV (có BOM UTF-8 để Excel mở đúng tiếng Việt).
@@ -110,7 +111,10 @@ export default defineEventHandler(async (event) => {
   // Sinh CSV.
   const statusLabels: Record<string, string> = { published: 'Đã xuất bản', draft: 'Bản nháp', archived: 'Lưu trữ' }
   const header = ['ID', 'Tiêu đề', 'Slug', 'Thể loại', 'Danh mục', 'Trạng thái', 'Tác giả', 'Lượt xem', 'Ngày tạo', 'Ngày xuất bản']
-  const rows: string[] = [header.map(csvField).join(',')]
+  // Tiêu đề/slug/tên tác giả là chữ người dùng gõ: `csvCell` vô hiệu hoá ô bắt
+  // đầu bằng = + - @ (tab/CR) để Excel không chạy nó như công thức (CSV
+  // injection), rồi bọc/escape theo RFC 4180.
+  const rows: string[] = [header.map(csvCell).join(',')]
 
   for (const a of items) {
     const fmtDate = (d: Date | null | string) => {
@@ -129,7 +133,7 @@ export default defineEventHandler(async (event) => {
       Number(a.viewTotal ?? 0).toLocaleString('vi-VN'),
       fmtDate(a.createdAt),
       fmtDate(a.publishedAt),
-    ].map(csvField).join(','))
+    ].map(csvCell).join(','))
   }
 
   // BOM UTF-8 ở đầu file để Excel nhận mã hoá, không hỏi charset.
@@ -142,12 +146,3 @@ export default defineEventHandler(async (event) => {
   setHeader(event, 'Content-Length', Buffer.byteLength(csv, 'utf8'))
   return csv
 })
-
-/** Bọc field CSV: bọc trong " nếu chứa , " \n; escape " thành "". */
-function csvField(value: unknown): string {
-  const s = String(value ?? '')
-  if (/[",\r\n]/.test(s)) {
-    return '"' + s.replace(/"/g, '""') + '"'
-  }
-  return s
-}

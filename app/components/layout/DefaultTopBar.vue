@@ -29,7 +29,7 @@
           >
             <!-- Popover Header -->
             <div class="px-2.5 py-1.5 flex items-center justify-between border-b border-[#f0f4f0] mb-1">
-              <span class="text-[0.68rem] font-extrabold text-[#7A8A76] uppercase tracking-wider">{{ t('language') || 'Ngôn ngữ' }}</span>
+              <span class="text-[0.68rem] font-extrabold text-[#5A6C58] uppercase tracking-wider">{{ t('language') || 'Ngôn ngữ' }}</span>
               <span class="px-1.5 py-0.2 rounded-full bg-[#f0f4f0] text-[#2c6e33] text-[0.62rem] font-bold">{{ locales.length }} ngôn ngữ</span>
             </div>
 

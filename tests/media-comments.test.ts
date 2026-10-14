@@ -538,8 +538,10 @@ describe('10.8 — email for a media reply, and never inside the transaction', (
   it('builds the link from the request host so one codebase serves many domains', () => {
     // A relative path in an email is a dead string — no page to resolve it
     // against. The base is always the request's own host (per-domain), not a
-    // fixed PUBLIC_BASE_URL, so a link always points where the reader is.
-    assert.match(send, /const base = requestBase\(input\.event\)/, 'the email no longer derives the base from the request')
+    // fixed PUBLIC_BASE_URL, so a link always points where the reader is —
+    // provided that host is declared (PUBLIC_HOST_ALLOWLIST / PUBLIC_BASE_URL);
+    // `publicLinkBase` wraps `requestBase` with that check (tests/public-link-base.test.ts).
+    assert.match(send, /const base = publicLinkBase\(input\.event\)/, 'the email no longer derives the base from the request')
     assert.match(send, /url = base \? `\$\{base\}\$\{path\}` : ''/, 'the email builds a link without a base address')
     assert.match(send, /url \? `Xem toàn bộ trao đổi/, 'the plain-text body does not fall back when there is no link')
   })

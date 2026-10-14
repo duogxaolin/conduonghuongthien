@@ -6,33 +6,85 @@
  *   1. Step 2 (repoint thumbnail): tạo article với thumbnail `/uploads/migrated/2026/08/foo.jpeg`,
  *      tạo media row R2 với filename `foo.jpeg` + url R2 hợp lệ → self-heal dryRun
  *      báo 1 sẽ sửa, run thực sự UPDATE thumbnail_url sang R2 URL.
- *   2. Step 3 (default lost): trong CI không có R2 thật → HeadObject fail →
- *      r2Lost → Step 3 đổi thumbnail + media.url sang DEFAULT_COVER. Test xác
- *      nhận cả article a1 (vừa repoint) + a2 (tạo sẵn trỏ r2Url) đều bị đổi,
- *      media.url cũng đổi, idempotent (chạy lại 0 sửa), audit log đủ.
+ *   2. Step 3 (default lost): HeadObject trả 404 (R2 giả, xem dưới) → r2Missing,
+ *      file local không còn → r2Lost → Step 3 đổi thumbnail + media.url sang
+ *      DEFAULT_COVER. Test xác nhận cả article a1 (vừa repoint) + a2 (tạo sẵn trỏ
+ *      r2Url) đều bị đổi, media.url cũng đổi, idempotent (chạy lại 0 sửa), audit log đủ.
  *   3. Idempotent: chạy lại sau khi đã default → 0 sửa.
  *
- * Bỏ qua Step 1 (HeadObject + upload lại) vì cần R2 thật + file local thật —
- * cheeky cho CI. Step 1 được bao che bởi guard text + manual test ở prod.
+ * Biên mạng duy nhất được giả: SDK `@aws-sdk/client-s3`. `openR2` (kiểm account id
+ * 32 hex + bucket lúc dùng) và cách `headR2Object` phân loại 404 vẫn là mã thật.
+ * Trước đây suite không giả gì: account id dị dạng nay bị `openR2` từ chối
+ * (`R2ConfigInvalidError`), còn account id hợp lệ thì gọi thật tới
+ * `<id>.r2.cloudflarestorage.com` và chỉ xanh nhờ lỗi TLS/mạng bị nuốt thành
+ * `false` — test phụ thuộc mạng. Test khẳng định không có lời gọi R2 nào ngoài
+ * HEAD giả, và không có dòng "headR2Object error" (tức là đi đúng nhánh 404).
+ *
+ * Bỏ qua nhánh upload lại của Step 1 vì cần file local thật — bao che bởi guard
+ * text + manual test ở prod.
  *
  * Chạy: `MEDIA_SELF_HEAL_INTEGRATION=1 npm test -- --test tests/media-self-heal-integration.test.ts`
  * Cần MySQL tại MEDIA_SELF_HEAL_HOST (mặc định 127.0.0.1:3306).
  */
 import assert from 'node:assert/strict'
-import { test } from 'node:test'
+import { mock, test } from 'node:test'
 import fs from 'node:fs/promises'
 import os from 'node:os'
 import path from 'node:path'
 import mysql, { type RowDataPacket } from 'mysql2/promise'
 import { eq } from 'drizzle-orm'
-import { initDb } from '../server/db/init.ts'
-import { getDb, getPool, closeDb } from '../server/utils/db.ts'
-import { media, articles } from '../server/db/schema.ts'
-import { selfHealMedia } from '../server/services/media-self-heal.ts'
+
+// Cấu hình R2 hợp lệ theo `shared/settings-credential-rules.ts` (account id 32 hex,
+// bucket là nhãn DNS) — `openR2` kiểm lúc dùng (`tests/r2-config-use-time.test.ts`).
+const R2_ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
+const R2_BUCKET = 'stub-bucket'
+const R2_KEY = '2026/08/self-heal-thumb.jpeg'
+
+class FakeS3Command {
+  readonly input: Record<string, unknown>
+  constructor(input: Record<string, unknown>) { this.input = input }
+}
+class HeadObjectCommand extends FakeS3Command {}
+const s3Endpoints: string[] = []
+const s3Calls: Array<{ command: string, input: Record<string, unknown> }> = []
+
+// Đủ mọi tên mà `server/**` import từ SDK (media-r2 + video-r2-sync), không thì
+// liên kết ESM hỏng. Mọi lệnh ngoài HEAD của khoá dự kiến → ném "unexpected".
+mock.module('@aws-sdk/client-s3', {
+  namedExports: {
+    S3Client: class S3Client {
+      constructor(config: { endpoint?: string }) { s3Endpoints.push(String(config.endpoint)) }
+      async send(command: FakeS3Command) {
+        s3Calls.push({ command: command.constructor.name, input: command.input })
+        if (command instanceof HeadObjectCommand && command.input.Key === R2_KEY) {
+          // Hình dạng lỗi SDK v3 khi HEAD gặp object không tồn tại.
+          throw Object.assign(new Error('NotFound'), { name: 'NotFound', $metadata: { httpStatusCode: 404 } })
+        }
+        throw new Error(`unexpected R2 call ${command.constructor.name} ${JSON.stringify(command.input)}`)
+      }
+      destroy() {}
+    },
+    HeadObjectCommand,
+    PutObjectCommand: class PutObjectCommand extends FakeS3Command {},
+    GetObjectCommand: class GetObjectCommand extends FakeS3Command {},
+    DeleteObjectCommand: class DeleteObjectCommand extends FakeS3Command {},
+    DeleteObjectsCommand: class DeleteObjectsCommand extends FakeS3Command {},
+    ListObjectsV2Command: class ListObjectsV2Command extends FakeS3Command {},
+  },
+})
+
+// Import động SAU `mock.module` (import tĩnh được hoist, sẽ nạp SDK thật).
+const { initDb } = await import('../server/db/init.ts')
+const { getDb, getPool, closeDb } = await import('../server/utils/db.ts')
+const { media, articles } = await import('../server/db/schema.ts')
+const { selfHealMedia } = await import('../server/services/media-self-heal.ts')
 
 test('self-heal repoint thumbnail_url /uploads/migrated/... → R2 URL khớp basename', {
   skip: process.env.MEDIA_SELF_HEAL_INTEGRATION !== '1', timeout: 60_000,
-}, async () => {
+}, async (t) => {
+  // `headR2Object` cũng trả `false` cho lỗi mạng/TLS/auth (kèm dòng warn này) — spy
+  // để phân biệt "404 thật" với "lỗi bị nuốt".
+  const warn = t.mock.method(console, 'warn')
   const database = `cdkt_self_heal_${Date.now()}_${process.pid}`
   assert.match(database, /^cdkt_self_heal_\d+_\d+$/)
   const connection = {
@@ -52,13 +104,13 @@ test('self-heal repoint thumbnail_url /uploads/migrated/... → R2 URL khớp ba
     const db = getDb()
     const pool = getPool()!
 
-    // Stub R2 config trong settings — self-heal chỉ cần loadR2Config trả đủ trường.
-    // Trong CI không có R2 thật, nhưng Step 2 (repoint) không dùng R2 network —
-    // chỉ dùng media.url đã có sẵn. Nên stub tuple đủ điều kiện `hasR2`.
-    await pool.query("INSERT INTO settings (`key`, value) VALUES (?, ?)", ['r2_account_id', 'stub-account'])
+    // Cấu hình R2 trong settings — phải HỢP LỆ (account id 32 hex, bucket nhãn DNS),
+    // không thì `openR2` ném `R2ConfigInvalidError` trước cả HEAD. Không có yêu cầu
+    // mạng nào: SDK là bản giả ở đầu tệp. Step 2 (repoint) chỉ dùng media.url sẵn có.
+    await pool.query("INSERT INTO settings (`key`, value) VALUES (?, ?)", ['r2_account_id', R2_ACCOUNT_ID])
     await pool.query("INSERT INTO settings (`key`, value) VALUES (?, ?)", ['r2_access_key', 'stub-access'])
     await pool.query("INSERT INTO settings (`key`, value) VALUES (?, ?)", ['r2_secret_key', 'stub-secret'])
-    await pool.query("INSERT INTO settings (`key`, value) VALUES (?, ?)", ['r2_bucket', 'stub-bucket'])
+    await pool.query("INSERT INTO settings (`key`, value) VALUES (?, ?)", ['r2_bucket', R2_BUCKET])
 
     // Tạo 1 media row R2 với filename khớp thumbnail.
     const filename = 'self-heal-thumb.jpeg'
@@ -70,7 +122,7 @@ test('self-heal repoint thumbnail_url /uploads/migrated/... → R2 URL khớp ba
       sizeBytes: 1024,
       provider: 'r2',
       url: r2Url,
-      storagePath: '2026/08/self-heal-thumb.jpeg',
+      storagePath: R2_KEY,
     })
 
     // Tạo 2 articles: 1 có thumbnail migrated (cần repoint), 1 đã đúng URL R2.
@@ -94,14 +146,14 @@ test('self-heal repoint thumbnail_url /uploads/migrated/... → R2 URL khớp ba
     // Dry-run: báo 1 sẽ sửa, không UPDATE.
     const dry = await selfHealMedia(null, { dryRun: true })
     assert.equal(dry.thumbnailsRepointed, 1, 'dry-run báo 1 thumbnail sẽ sửa')
+    assert.equal(dry.r2Missing, 1, 'HEAD 404 → hàng R2 được đếm là thiếu')
     const after1 = (await db.select().from(articles).where(eq(articles.id, a1.insertId)))[0]!
     assert.equal(after1.thumbnailUrl, '/uploads/migrated/2026/08/self-heal-thumb.jpeg',
       'dry-run KHÔNG UPDATE — thumbnail vẫn cũ')
 
-    // Run thực sự: Step 2 repoint a1 sang r2Url, rồi Step 1 HeadObject fails (CI
-    // không có R2 thật) → r2Missing, không reupload được (file local cũng không
-    // còn) → r2Lost → Step 3 đổi thumbnail a1 + a2 (cùng trỏ r2Url) sang
-    // DEFAULT_COVER + media.url sang DEFAULT_COVER.
+    // Run thực sự: Step 1 HEAD (R2 giả) trả 404 → r2Missing, không reupload được
+    // (file local cũng không còn) → r2Lost; Step 2 repoint a1 sang r2Url; Step 3
+    // đổi thumbnail a1 + a2 (cùng trỏ r2Url) + media.url sang DEFAULT_COVER.
     const real = await selfHealMedia(null, { dryRun: false })
     assert.equal(real.thumbnailsRepointed, 1, 'run thực sự sửa 1 thumbnail (Step 2)')
     assert.ok(real.thumbnailsDefaulted >= 1, 'Step 3 defaults lost R2 thumbnails')
@@ -142,6 +194,18 @@ test('self-heal repoint thumbnail_url /uploads/migrated/... → R2 URL khớp ba
     // Snapshot backup phải có (run thực sự).
     assert.ok(real.backupStamp, 'run thực sự phải có backupStamp')
     assert.ok(!dry.backupStamp, 'dry-run không backup')
+
+    // Biên R2: chỉ đúng 3 HEAD (dry, real, again) tới bucket/khoá dự kiến, qua
+    // endpoint dựng từ account id đã kiểm; không PUT/GET/DELETE nào; không lời gọi
+    // nào rơi vào nhánh "lỗi khác" (mạng/TLS/auth) của `headR2Object`.
+    const head = { command: 'HeadObjectCommand', input: { Bucket: R2_BUCKET, Key: R2_KEY } }
+    assert.deepEqual(s3Calls, [head, head, head], 'chỉ HEAD giả — không lời gọi R2 nào khác')
+    assert.ok(s3Endpoints.length > 0)
+    for (const endpoint of s3Endpoints) {
+      assert.equal(endpoint, `https://${R2_ACCOUNT_ID}.r2.cloudflarestorage.com`)
+    }
+    const headErrors = warn.mock.calls.filter(call => String(call.arguments[0]).includes('headR2Object error'))
+    assert.deepEqual(headErrors, [], 'HEAD đi nhánh 404, không phải lỗi bị nuốt')
   } finally {
     Object.assign(process.env, old)
     await closeDb?.().catch(() => {})

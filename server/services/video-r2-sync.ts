@@ -24,19 +24,18 @@ import {
 import { createReadStream, promises as fs } from 'node:fs'
 import { join, relative, sep } from 'node:path'
 import type { Readable } from 'node:stream'
-import type { R2Config } from '../utils/media-r2'
+import { openR2, type R2Config } from '../utils/media-r2'
 
-/** Dựng S3 client cho R2 video (endpoint = accountId.r2.cloudflarestorage.com). */
-function createClient(config: R2Config): S3Client {
-  const endpoint = `https://${config.accountId}.r2.cloudflarestorage.com`
-  return new S3Client({
-    region: 'auto',
-    endpoint,
-    credentials: {
-      accessKeyId: config.accessKeyId,
-      secretAccessKey: config.secretAccessKey,
-    },
-  })
+/**
+ * Client S3 + bucket đã kiểm cho R2 video. Đi qua `openR2` (cùng chốt với thư viện
+ * ảnh): account id phải 32 hex, bucket là nhãn DNS hợp lệ — giá trị lưu từ trước
+ * bản vá kiểm-lúc-lưu cũng không dựng được endpoint ngoài
+ * `<hex>.r2.cloudflarestorage.com`. Sai → `R2ConfigInvalidError` + log
+ * `r2.config_invalid` (scope `video`). Các hàm "không ném" bên dưới gọi nó TRONG
+ * khối try để giữ hợp đồng của chúng.
+ */
+function createClient(config: R2Config): { client: S3Client, bucket: string } {
+  return openR2(config, 'video')
 }
 
 /** Chuẩn hoá key prefix — loại dấu `/` đầu/cuối, đổi `\\` → `/` (Windows path). */
@@ -57,7 +56,7 @@ export async function syncDirectoryToR2(
   r2Prefix: string,
   config: R2Config,
 ): Promise<{ files: number, bytes: number }> {
-  const client = createClient(config)
+  const { client, bucket } = createClient(config)
   const prefix = normalizeKey(r2Prefix)
   let files = 0
   let bytes = 0
@@ -79,7 +78,7 @@ export async function syncDirectoryToR2(
       // `createReadStream` + `Body` stream — SDK hỗ trợ stream cho upload.
       const stream = createReadStream(full)
       await client.send(new PutObjectCommand({
-        Bucket: config.bucket,
+        Bucket: bucket,
         Key: key,
         Body: stream,
         ContentType: contentType,
@@ -101,14 +100,18 @@ export async function syncDirectoryToR2(
  * trỏ tới tệp không tồn tại).
  */
 export async function deleteR2Tree(r2Prefix: string, config: R2Config): Promise<{ deleted: number }> {
-  const client = createClient(config)
-  const prefix = normalizeKey(r2Prefix)
+  const root = normalizeKey(r2Prefix)
+  // Xoá theo THƯ MỤC, không theo tiền tố chuỗi: gốc slug cũ `media/tin` không được
+  // nuốt `media/tin-2/…` của mục khác. Gốc rỗng nghĩa là cả bucket — từ chối.
+  if (!root) throw new Error('Từ chối xoá R2 với tiền tố rỗng (sẽ xoá cả bucket).')
+  const { client, bucket } = createClient(config)
+  const prefix = `${root}/`
   let deleted = 0
   let continuationToken: string | undefined
 
   do {
     const listRes = await client.send(new ListObjectsV2Command({
-      Bucket: config.bucket,
+      Bucket: bucket,
       Prefix: prefix,
       ContinuationToken: continuationToken,
       MaxKeys: 1000,
@@ -116,7 +119,7 @@ export async function deleteR2Tree(r2Prefix: string, config: R2Config): Promise<
     const objects = (listRes.Contents ?? []).map(o => ({ Key: o.Key! })).filter(o => o.Key)
     if (objects.length > 0) {
       await client.send(new DeleteObjectsCommand({
-        Bucket: config.bucket,
+        Bucket: bucket,
         Delete: { Objects: objects, Quiet: true },
       }))
       deleted += objects.length
@@ -141,14 +144,14 @@ export async function listR2Keys(
   r2Prefix: string,
   config: R2Config,
 ): Promise<string[] | null> {
-  const client = createClient(config)
   const prefix = normalizeKey(r2Prefix)
   const keys: string[] = []
   let continuationToken: string | undefined
   try {
+    const { client, bucket } = createClient(config)
     do {
       const res = await client.send(new ListObjectsV2Command({
-        Bucket: config.bucket,
+        Bucket: bucket,
         Prefix: prefix,
         ContinuationToken: continuationToken,
         MaxKeys: 1000,
@@ -204,9 +207,9 @@ export async function streamR2Object(
   key: string,
   config: R2Config,
 ): Promise<{ stream: Readable, contentType: string, contentLength: number }> {
-  const client = createClient(config)
+  const { client, bucket } = createClient(config)
   const res = await client.send(new GetObjectCommand({
-    Bucket: config.bucket,
+    Bucket: bucket,
     Key: normalizeKey(key),
   }))
   if (!res.Body) {
@@ -248,9 +251,9 @@ export async function streamR2ObjectRange(
   totalSize: number
   contentRange: string | null
 }> {
-  const client = createClient(config)
+  const { client, bucket } = createClient(config)
   const input: { Bucket: string, Key: string, Range?: string } = {
-    Bucket: config.bucket,
+    Bucket: bucket,
     Key: normalizeKey(key),
   }
   if (range) input.Range = range
@@ -285,10 +288,10 @@ export async function headR2Object(
   key: string,
   config: R2Config,
 ): Promise<{ contentType: string, contentLength: number } | null> {
-  const client = createClient(config)
   try {
+    const { client, bucket } = createClient(config)
     const res = await client.send(new HeadObjectCommand({
-      Bucket: config.bucket,
+      Bucket: bucket,
       Key: normalizeKey(key),
     }))
     return {
@@ -316,10 +319,10 @@ export async function putR2Object(
   contentType: string,
   config: R2Config,
 ): Promise<boolean> {
-  const client = createClient(config)
   try {
+    const { client, bucket } = createClient(config)
     await client.send(new PutObjectCommand({
-      Bucket: config.bucket,
+      Bucket: bucket,
       Key: normalizeKey(key),
       Body: body,
       ContentType: contentType,

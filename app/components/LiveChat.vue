@@ -31,7 +31,7 @@ interface Props {
 }
 const props = defineProps<Props>()
 
-const { messages, connection, liveError, connect, disconnect, sendMessage } = useLiveChat()
+const { messages, connection, liveError, historyError, historyLoading, connect, disconnect, retryHistory, sendMessage } = useLiveChat()
 const { t } = useI18n()
 
 const input = ref('')
@@ -141,7 +141,7 @@ const handleKeydown = (ev: KeyboardEvent) => {
       class="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-2 text-sm"
       @scroll="handleScroll"
     >
-      <p v-if="messages.length === 0 && connection === 'open'" class="text-center text-gray-400 py-4">
+      <p v-if="messages.length === 0 && connection === 'open' && !historyError" class="text-center text-gray-400 py-4">
         {{ t('m_chat_empty') }}
       </p>
 
@@ -152,6 +152,33 @@ const handleKeydown = (ev: KeyboardEvent) => {
       >
         {{ liveError }}
       </p>
+
+      <!-- Lịch sử hỏng nhưng phòng vẫn chạy: nói rõ là THIẾU tin cũ (không phải
+           "chưa có tin"), thử lại đúng lượt đọc lịch sử — không tải lại trang. -->
+      <div
+        v-if="historyError && connection === 'open'"
+        role="alert"
+        class="flex flex-wrap items-center justify-between gap-2 rounded-md border border-red-200 bg-red-50 px-3 py-2 text-red-800"
+      >
+        <span class="flex items-start gap-1.5">
+          <i class="fa-solid fa-circle-exclamation mt-0.5 text-xs" aria-hidden="true" />
+          <span>{{ historyError }}</span>
+        </span>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1 rounded-md bg-[#3a5a40] px-3 py-1 text-xs font-semibold text-white hover:bg-[#2d4a32] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#3a5a40] focus-visible:ring-offset-2 disabled:opacity-60 disabled:cursor-wait"
+          :disabled="historyLoading"
+          :aria-busy="historyLoading ? 'true' : undefined"
+          @click="retryHistory"
+        >
+          <i
+            class="fa-solid fa-rotate-right text-[0.65rem]"
+            :class="historyLoading ? 'animate-spin motion-reduce:animate-none' : ''"
+            aria-hidden="true"
+          />
+          {{ t('retry') }}
+        </button>
+      </div>
 
       <div
         v-for="msg in messages"

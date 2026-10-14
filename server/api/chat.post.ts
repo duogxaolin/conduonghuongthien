@@ -1,6 +1,8 @@
 import { setHeader, createError } from 'h3'
 import { getChatbotSettings } from '../services/chatbot-settings'
 import { answerChat } from '../utils/chatbot/chat'
+import { CHAT_RATE_LIMITED_MESSAGE, chargeChatRateLimit } from '../utils/chatbot/chat-policy'
+import { assertChatInputLength } from '../utils/chatbot/input-length'
 import { fastPreModerate } from '../services/moderation-worker'
 import { getClientIp } from '../utils/client-ip'
 
@@ -22,12 +24,26 @@ export default defineEventHandler(async (event) => {
   if (Buffer.byteLength(JSON.stringify(body ?? null), 'utf8') > 64_000) throw createError({ statusCode: 413, statusMessage: 'Request is too large' })
   const rawMessages = (body as { messages?: unknown } | null)?.messages
   const userText = extractLastUserText(rawMessages)
+
+  // Rate limit BEFORE moderation (a blocked message writes a review-queue row);
+  // answerChat reuses this decision instead of charging the request twice.
+  const retryAfter = await chargeChatRateLimit(event, settings)
+  if (retryAfter) {
+    setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
+    setHeader(event, 'Cache-Control', 'no-cache, no-transform')
+    return `data: ${JSON.stringify({ choices: [{ delta: { content: CHAT_RATE_LIMITED_MESSAGE } }], chatbot: { kind: 'rate_limited', sources: [], retryAfter } })}\n\ndata: [DONE]\n\n`
+  }
+
+  // Length cap AFTER the rate-limit charge, BEFORE moderation (same rule answerChat applies).
+  assertChatInputLength(userText, settings)
+
   if (userText) {
     const fastCheck = await fastPreModerate(userText, {
       targetType: 'chat',
       authorIp: getClientIp(event) || undefined,
       contextTitle: 'Chatbot trực tuyến',
       contextUrl: '/admin/chatbot/sessions',
+      capQueuePerSource: true,
     }).catch(() => null)
 
     if (fastCheck?.blocked) {

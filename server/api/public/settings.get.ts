@@ -1,7 +1,8 @@
 import { getDb } from '../../utils/db'
 import { settings } from '../../db/schema'
+import { reportPublicReadFailure } from '../../utils/public-read-failure'
 
-export default defineEventHandler(async () => {
+export default defineEventHandler(async (event) => {
   try {
     const db = getDb()
     const allSettings = await db.select().from(settings)
@@ -21,7 +22,10 @@ export default defineEventHandler(async () => {
     }
 
     return { ok: true, settings: publicSettings }
-  } catch {
+  } catch (error) {
+    // Mọi nơi đọc (layout, ArticleDetail, trang in) đã chịu được `data = null`
+    // và lùi về giá trị dự phòng; 503 + log chỉ làm lượt hỏng hiện ra đúng là hỏng.
+    reportPublicReadFailure(event, 'public.settings_failed', error)
     return { ok: false, settings: {} }
   }
 })

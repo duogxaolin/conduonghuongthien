@@ -4,17 +4,77 @@ import { users, roles, permissions } from '../db/schema'
 import { verifyToken, isSessionStage } from '../utils/auth'
 import { eq } from 'drizzle-orm'
 
+const ADMIN_API_PREFIX = '/api/admin/'
+
+// Các endpoint của chính luồng đăng nhập — khớp CHÍNH XÁC trên đường dẫn đã giải mã.
+// Hai endpoint MFA nằm giữa "mật khẩu đúng" và "có phiên" nên chưa thể có phiên;
+// chúng tự xác thực bằng vé thử thách (cookie `cdkt_mfa`).
+const EXEMPT_PATHS: ReadonlySet<string> = new Set([
+  '/api/admin/auth/login',
+  '/api/admin/auth/captcha',
+  '/api/admin/auth/mfa/verify',
+  '/api/admin/auth/mfa/send-code',
+])
+
+/**
+ * Cắt query string — CHỈ `?`, đúng như router của h3 (`event.path.split('?')`).
+ *
+ * Bản trước cắt cả `#`. Trình duyệt không bao giờ gửi fragment, nhưng một client
+ * thô thì gửi được, và router KHÔNG cắt `#`: `/api/admin/auth/login#/../users`
+ * được middleware phân loại là `/api/admin/auth/login` (miễn kiểm) trong khi
+ * router thấy một đường dẫn khác — một route `**` bắt được nó sẽ chạy không qua
+ * phiên. Nay `#` ở lại trong đường dẫn, và mọi dạng chứa `#` không bao giờ được
+ * miễn (xem `classifyAdminRequest`).
+ */
+function stripQuery(path: string): string {
+  const cut = path.indexOf('?')
+  return cut === -1 ? path : path.slice(0, cut)
+}
+
+/** Giải mã percent; chuỗi hỏng (`%zz`) giữ nguyên dạng thô để vẫn bị chặn (fail closed). */
+function decodeOrKeep(path: string): string {
+  try { return decodeURIComponent(path) } catch { return path }
+}
+
+/**
+ * Hai câu hỏi "có phải request vào admin API?" và "có phải endpoint đăng nhập
+ * được miễn?" phải được trả lời trên ĐÚNG đường dẫn mà router dùng để chọn
+ * handler. h3 giải mã percent TRƯỚC khi route (`event.path` đã giải mã), còn
+ * `getRequestURL().pathname` giữ nguyên `%xx`. Trước đây middleware so dạng thô
+ * nên `/api/%61dmin/users` đi thẳng vào handler mà không qua token/isActive/
+ * tokenVersion/MFA stage.
+ *
+ * Fail closed trước mọi lệch pha giữa middleware và router (kể cả khi h3/Nitro
+ * dời chỗ giải mã ở bản sau):
+ *  - là admin request nếu BẤT KỲ dạng nào (đường route, dạng giải mã của nó,
+ *    pathname thô, dạng giải mã của pathname thô) bắt đầu bằng `/api/admin/`;
+ *  - chỉ được miễn nếu MỌI dạng đã giải mã (đường route, giải mã của nó, giải
+ *    mã của pathname thô) đều đúng một trong bốn endpoint. Pathname thô CHƯA
+ *    giải mã không dự phần miễn trừ — nếu có thì `/api/admin/auth/log%69n` (mà
+ *    router route vào login) sẽ bị 401, trái hợp đồng; nó vẫn dự phần câu hỏi
+ *    "có phải admin request" nên chỉ có thể làm cổng chặt hơn.
+ */
+export function classifyAdminRequest(routedPath: string, rawPathname: string): { isAdmin: boolean, isExempt: boolean } {
+  const routed = stripQuery(routedPath || '/')
+  const decodedForms = [...new Set([routed, decodeOrKeep(routed), decodeOrKeep(rawPathname)])]
+  const allForms = new Set([...decodedForms, rawPathname])
+  const isAdmin = [...allForms].some(form => form.startsWith(ADMIN_API_PREFIX))
+  // `#` (thô hay `%23`) trong BẤT KỲ dạng nào của PHẦN ĐƯỜNG DẪN → không miễn
+  // (query đã cắt — `?next=%23x` không ảnh hưởng). `getRequestURL()` dựng pathname
+  // bằng `new URL`, vốn vứt fragment, nên dạng đó có thể trông "sạch"; `routed`
+  // thì vẫn mang `#`, và nó nằm trong `allForms`.
+  const carriesHash = [...allForms].some(form => form.includes('#') || /%23/i.test(form))
+  const isExempt = isAdmin && !carriesHash && decodedForms.every(form => EXEMPT_PATHS.has(form))
+  return { isAdmin, isExempt }
+}
+
 // Server middleware: bảo vệ tất cả /api/admin/** routes
 export default defineEventHandler(async (event) => {
-  const url = getRequestURL(event).pathname
+  const url = stripQuery(event.path || '/')
+  const { isAdmin, isExempt } = classifyAdminRequest(event.path || '/', getRequestURL(event).pathname)
 
   // Chỉ kiểm tra route /api/admin/** và bỏ qua các endpoint của chính luồng đăng nhập.
-  // Hai endpoint MFA nằm giữa "mật khẩu đúng" và "có phiên" nên chưa thể có phiên;
-  // chúng tự xác thực bằng vé thử thách (cookie `cdkt_mfa`).
-  if (!url.startsWith('/api/admin/')) return
-  if (url === '/api/admin/auth/login') return
-  if (url === '/api/admin/auth/captcha') return
-  if (url === '/api/admin/auth/mfa/verify' || url === '/api/admin/auth/mfa/send-code') return
+  if (!isAdmin || isExempt) return
 
   // Đọc JWT từ httpOnly cookie
   const token = getCookie(event, 'cdkt_admin')

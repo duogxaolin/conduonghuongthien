@@ -16,6 +16,7 @@ import { and, asc, count, desc, eq, ne, inArray, sql } from 'drizzle-orm'
 import { defineEventHandler, getRouterParam, getQuery, getCookie } from 'h3'
 import { articles, categories, articleTranslations } from '../../../../db/schema'
 import { getDb } from '../../../../utils/db'
+import { reportPublicReadFailure } from '../../../../utils/public-read-failure'
 import { rollUpRelatedTopics } from '../../../../utils/related-topics'
 /**
  * Bốn thẻ khớp đúng lưới 2 cột của khung xương phía client (2 hàng chẵn). Là
@@ -146,9 +147,12 @@ export default defineEventHandler(async (event) => {
     const topics = rollUpRelatedTopics(categoryRows, directTotals, current.categoryId, RELATED_TOPIC_LIMIT)
 
     return { ok: true as const, articles: relatedRows, topics }
-  } catch {
+  } catch (error) {
     // Phân biệt được với "không có gì liên quan": phía client biến `ok: false`
     // thành nhánh lỗi có nút thử lại, còn danh sách rỗng thì ẩn cả khối đi.
+    // Kèm log + 503 (không phải 200): lượt hỏng phải để lại dấu vết cho người
+    // vận hành và không được bộ đệm nào lưu như một phản hồi hợp lệ.
+    reportPublicReadFailure(event, 'public.article_related_failed', error)
     return { ok: false as const, articles: [], topics: [] }
   }
 })

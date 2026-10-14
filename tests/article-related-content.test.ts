@@ -271,7 +271,10 @@ test('lỗi của khối liên quan không được gộp vào lỗi của cả 
   // Gộp là biến một khối phụ hỏng thành một trang lỗi, ném đi đúng phần nội dung
   // đã tải xong. Dòng `loadError` này cũng được `public-pages-structure` ghim.
   const source = code(COMPONENT)
-  assert.match(source, /const loadError = computed\(\(\) => !!error\.value\)/, 'loadError chỉ đọc lượt fetch bài viết')
+  // `fetchOutcome` đọc status/error/data của lượt fetch BÀI VIẾT (không phải `related*`);
+  // 404 tách khỏi "hỏng" ở `resolveDetailFetch` (tests/public-detail-ssr-status.test.ts).
+  assert.match(source, /const fetchOutcome = computed\(\(\) => resolveDetailFetch\(\{ status: status\.value, error: error\.value, hasContent: !!data\.value\?\.article \}\)\)/, 'loadError chỉ đọc lượt fetch bài viết')
+  assert.match(source, /const loadError = computed\(\(\) => fetchOutcome\.value === 'failed'\)/, 'loadError chỉ đọc lượt fetch bài viết')
   assert.match(
     source,
     /const relatedError = computed\(\(\) => !!relatedFetchError\.value \|\| relatedData\.value\?\.ok === false\)/,

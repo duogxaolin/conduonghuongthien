@@ -1,5 +1,6 @@
-import { eq } from 'drizzle-orm'
+import { and, count, desc, eq, lt, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
+import { affectedRowsOrZero } from '../utils/affected-rows'
 import {
   aiModerationQueue,
   articleComments,
@@ -7,8 +8,9 @@ import {
   livestreamMessages,
 } from '../db/schema'
 import { callAi } from './ai-gateway'
-import { logWarn, logInfo } from '../utils/logger'
+import { logWarn, logInfo, logError } from '../utils/logger'
 import { getActiveModerationRules } from './moderation-rules-cache'
+import { compileModerationRegex, isRegexRuleType, testModerationRegex } from './moderation-regex'
 import { workerStats } from './moderation-stats'
 import {
   INSTANT_PROFANITY,
@@ -16,6 +18,7 @@ import {
   INSTANT_SPAM_GAMBLING,
   recordInstantBlock,
   type FastPreModerateResult,
+  type InstantBlockContext,
 } from './moderation-instant'
 
 // Cache luật, số đo worker và chặn tức thì đã tách file; re-export để mọi import cũ
@@ -41,6 +44,120 @@ export interface ModerationCheckOutput {
   severity: 'low' | 'medium' | 'high' | 'critical'
   reasons: string[]
   matchedRules: string[]
+  /**
+   * Chỉ có khi `flagged`: hàng đích đã THẬT SỰ bị ẩn/gắn cờ/xoá chưa. `false` khi
+   * không có `targetId`, khi hành động là `flag_only`, hoặc khi lệnh ghi hỏng.
+   */
+  hidden?: boolean
+  /** Chỉ có khi `flagged`: các bước ghi đã hỏng (đã ghi log từng bước). */
+  failures?: ModerationPersistFailure[]
+  /**
+   * `true` khi AI kiểm duyệt chưa cấu hình VÀ nơi gọi chọn `onAiUnavailable: 'skip'`
+   * (lượt quét lại): không có hàng chờ duyệt nào được ghi, nơi gọi tự quyết làm gì.
+   */
+  aiUnavailable?: boolean
+}
+
+export interface ModerationCheckOptions {
+  /**
+   * AI chưa cấu hình (`service_not_found`/`service_inactive`/`no_api_key`):
+   *  - `'queue'` (mặc định — đường nhận nội dung mới): đưa vào hàng chờ `flag_only`
+   *    để con người đối soát;
+   *  - `'skip'` (lượt quét lại nội dung CŨ): không ghi gì, trả `aiUnavailable: true`.
+   *    Quét lại mọi bình luận cũ khi không có AI chỉ để dồn toàn bộ vào hàng chờ là
+   *    làm ngập hàng chờ — lượt quét lại chuyển sang chỉ chạy luật.
+   */
+  onAiUnavailable?: 'queue' | 'skip'
+}
+
+export type ModerationPersistFailure = 'queue' | 'hide'
+
+function describeError(err: unknown): string {
+  return err instanceof Error ? err.message : String(err)
+}
+
+/** Lỗi ghi cũng đẩy trạng thái worker sang `degraded` — admin thấy được ở trang trạng thái. */
+function noteWorkerError(err: unknown): void {
+  workerStats.errorCount++
+  workerStats.lastError = describeError(err)
+  workerStats.lastErrorAt = new Date().toISOString()
+}
+
+type QueueRow = typeof aiModerationQueue.$inferInsert
+
+/** Cột được ghi bởi `insertQueueRowOnce` — thứ tự khớp `queueValues`. */
+const QUEUE_COLUMNS = [
+  'target_type', 'target_id', 'author_name', 'author_ip', 'context_title', 'context_url',
+  'session_id', 'content_snippet', 'flagged_reason', 'matched_rules', 'severity', 'status',
+] as const
+
+/**
+ * Ghi một hàng chờ duyệt — trừ khi CHÍNH mục đó (cùng loại + id) đã có một hàng còn
+ * chờ (`pending`). Trả `false` khi bỏ qua vì đã có.
+ *
+ * Trước đây mỗi lượt "Quét lại" ghi thêm một hàng `flag_only` cho MỌI bình luận còn
+ * hiện khi AI chưa cấu hình (4 hàng, rồi 8…): bảng không có khoá duy nhất. Nay một
+ * câu `INSERT … SELECT … WHERE NOT EXISTS` (một câu lệnh — không phải đọc rồi ghi —
+ * dò bằng chỉ mục `ai_moderation_queue_target_idx`). Mục không có id (tin chatbot
+ * chưa lưu) luôn được ghi. Giới hạn: không có khoá duy nhất, nên hai câu chạy ĐỒNG
+ * THỜI cho cùng một mục vẫn có thể cùng ghi (quét lại và lượt đăng mới chạm cùng một
+ * bình luận đúng cùng lúc — hiếm, và chỉ là một hàng chờ thừa).
+ */
+async function insertQueueRowOnce(row: QueueRow): Promise<boolean> {
+  const db = getDb()
+  if (row.targetId === null || row.targetId === undefined) {
+    await db.insert(aiModerationQueue).values(row)
+    return true
+  }
+  const values = [
+    row.targetType, row.targetId, row.authorName ?? null, row.authorIp ?? null, row.contextTitle ?? null,
+    row.contextUrl ?? null, row.sessionId ?? null, row.contentSnippet, row.flaggedReason,
+    JSON.stringify(row.matchedRules ?? []), row.severity ?? 'high', row.status ?? 'pending',
+  ]
+  const [result] = await db.execute(sql`INSERT INTO ${aiModerationQueue} (${sql.join(QUEUE_COLUMNS.map(c => sql.identifier(c)), sql`, `)})
+    SELECT ${sql.join(values.map(v => sql`${v}`), sql`, `)} FROM DUAL
+    WHERE NOT EXISTS (SELECT 1 FROM ${aiModerationQueue} WHERE ${aiModerationQueue.targetType} = ${row.targetType} AND ${aiModerationQueue.targetId} = ${row.targetId} AND ${aiModerationQueue.status} = ${'pending'})`)
+  return affectedRowsOrZero(result) > 0
+}
+
+/**
+ * Ẩn bình luận / gắn cờ tin chatbot / xoá tin livestream. Trả `true` chỉ khi lệnh
+ * ghi chạy xong; lỗi được ghi log với sự kiện ổn định `ai_moderation.hide_failed`
+ * kèm loại + id, và thêm `'hide'` vào `failures` — không bao giờ nuốt im lặng.
+ */
+async function applyAutoHide(
+  targetType: ModerationCheckInput['targetType'],
+  targetId: number,
+  reason: string,
+  failures: ModerationPersistFailure[],
+): Promise<boolean> {
+  const db = getDb()
+  try {
+    if (targetType === 'comment') {
+      await db
+        .update(articleComments)
+        .set({ isHidden: true, flagReason: reason.slice(0, 255) })
+        .where(eq(articleComments.id, targetId))
+    } else if (targetType === 'chat') {
+      await db
+        .update(chatMessages)
+        .set({ isFlagged: true, flagReason: reason.slice(0, 255) })
+        .where(eq(chatMessages.id, targetId))
+    } else if (targetType === 'livestream_chat') {
+      await db
+        .update(livestreamMessages)
+        .set({ isDeleted: true })
+        .where(eq(livestreamMessages.id, targetId))
+    } else {
+      return false // 'article': không có cột ẩn nào để đặt
+    }
+    return true
+  } catch (err: unknown) {
+    failures.push('hide')
+    noteWorkerError(err)
+    logError({ event: 'ai_moderation.hide_failed', targetType, targetId, error: describeError(err) })
+    return false
+  }
 }
 
 
@@ -51,14 +168,8 @@ export interface ModerationCheckOutput {
  */
 export async function fastPreModerate(
   content: string,
-  context?: {
-    authorName?: string
-    authorIp?: string
-    targetType?: 'comment' | 'chat' | 'livestream_chat' | 'article'
-    sessionId?: string
-    contextTitle?: string
-    contextUrl?: string
-  },
+  /** `capQueuePerSource` caps review-queue rows per source (MODERATION_QUEUE_CAP) — public inbound flows. */
+  context?: InstantBlockContext,
 ): Promise<FastPreModerateResult> {
   const trimmed = (content || '').trim()
   if (!trimmed) {
@@ -92,7 +203,7 @@ export async function fastPreModerate(
     const rules = await getActiveModerationRules()
     const lower = trimmed.toLowerCase()
     for (const rule of rules) {
-      if (rule.ruleType === 'keyword') {
+      if (!isRegexRuleType(rule.ruleType)) {
         if (lower.includes(rule.pattern.toLowerCase().trim())) {
           return recordInstantBlock(
             trimmed,
@@ -103,19 +214,18 @@ export async function fastPreModerate(
           )
         }
       } else {
-        try {
-          const regex = new RegExp(rule.pattern, 'iu')
-          if (regex.test(trimmed)) {
-            return recordInstantBlock(
-              trimmed,
-              rule.category,
-              (rule.severity as 'low' | 'medium' | 'high' | 'critical') || 'high',
-              `Mẫu regex: ${rule.pattern}`,
-              context,
-            )
-          }
-        } catch {
-          // Skip invalid regex
+        // Một helper biên dịch dùng chung với checkAndModerateContent: cờ `iu`,
+        // không hạ chữ mẫu, bỏ qua mẫu hỏng/quá dài/có hình dạng lùi vô hạn; khớp
+        // theo cửa sổ + đo giờ, luật chậm bị tắt tạm (`testModerationRegex`).
+        const regex = compileModerationRegex(rule.pattern)
+        if (regex && testModerationRegex(rule.pattern, regex, trimmed)) {
+          return recordInstantBlock(
+            trimmed,
+            rule.category,
+            (rule.severity as 'low' | 'medium' | 'high' | 'critical') || 'high',
+            `Mẫu regex: ${rule.pattern}`,
+            context,
+          )
         }
       }
     }
@@ -133,7 +243,10 @@ export async function fastPreModerate(
  * - Automatically records to `ai_moderation_queue`
  * - Automatically marks `is_hidden = true` or `is_deleted = true`
  */
-export async function checkAndModerateContent(input: ModerationCheckInput): Promise<ModerationCheckOutput> {
+export async function checkAndModerateContent(
+  input: ModerationCheckInput,
+  options: ModerationCheckOptions = {},
+): Promise<ModerationCheckOutput> {
   const content = (input.content || '').trim()
   if (!content) {
     return { flagged: false, action: "allow", severity: 'low', reasons: [], matchedRules: [] }
@@ -143,29 +256,10 @@ export async function checkAndModerateContent(input: ModerationCheckInput): Prom
   const fast = await fastPreModerate(content, input)
   if (fast.blocked) {
     // Already flagged by pre-moderator, auto-hide database target row if targetId provided
-    if (input.targetId) {
-      const db = getDb()
-      try {
-        if (input.targetType === 'comment') {
-          await db
-            .update(articleComments)
-            .set({ isHidden: true, flagReason: fast.reason.slice(0, 255) })
-            .where(eq(articleComments.id, input.targetId))
-        } else if (input.targetType === 'chat') {
-          await db
-            .update(chatMessages)
-            .set({ isFlagged: true, flagReason: fast.reason.slice(0, 255) })
-            .where(eq(chatMessages.id, input.targetId))
-        } else if (input.targetType === 'livestream_chat') {
-          await db
-            .update(livestreamMessages)
-            .set({ isDeleted: true })
-            .where(eq(livestreamMessages.id, input.targetId))
-        }
-      } catch {
-        // Non-blocking
-      }
-    }
+    const failures: ModerationPersistFailure[] = []
+    const hidden = input.targetId
+      ? await applyAutoHide(input.targetType, input.targetId, fast.reason, failures)
+      : false
 
     return {
       flagged: true,
@@ -173,28 +267,40 @@ export async function checkAndModerateContent(input: ModerationCheckInput): Prom
       severity: fast.severity,
       reasons: [fast.reason],
       matchedRules: [fast.matchedRule],
+      hidden,
+      failures,
     }
   }
 
-  const db = getDb()
-  const rules = await getActiveModerationRules()
+  // Đọc luật hỏng thì vẫn chạy lớp AI (không còn ném ra khỏi hàm và bỏ qua cả AI);
+  // fastPreModerate ở trên cũng lùi về luật dựng sẵn theo đúng cách đó.
+  let rules: Awaited<ReturnType<typeof getActiveModerationRules>> = []
+  try {
+    rules = await getActiveModerationRules()
+  } catch (err: unknown) {
+    noteWorkerError(err)
+    logWarn({ event: 'ai_moderation.rules_unavailable', targetType: input.targetType, targetId: input.targetId, error: describeError(err) })
+  }
 
   const matchedKeywords: Array<{ pattern: string; category: string; severity: string; action: string }> = []
   const lowerContent = content.toLowerCase()
 
   for (const rule of rules) {
-    const pattern = rule.pattern.toLowerCase().trim()
+    // Từ khoá so trên bản đã hạ chữ. Regex thì KHÔNG bao giờ hạ chữ mẫu (sẽ đổi
+    // `\S \W \D \B` thành `\s \w \d \b`) — biên dịch qua helper dùng chung với
+    // fastPreModerate, không phân biệt hoa/thường bằng cờ `i`.
+    const keyword = rule.pattern.toLowerCase().trim()
     let isMatch = false
 
-    if (rule.ruleType === 'keyword') {
-      if (lowerContent.includes(pattern)) isMatch = true
+    if (!isRegexRuleType(rule.ruleType)) {
+      if (lowerContent.includes(keyword)) isMatch = true
     } else {
-      try {
-        const regex = new RegExp(pattern, 'iu')
-        if (regex.test(content)) isMatch = true
-      } catch {
-        if (lowerContent.includes(pattern)) isMatch = true
-      }
+      // Cùng cách xử lý với `fastPreModerate`: mẫu không biên dịch được (hỏng / quá
+      // dài / hình dạng nguy hiểm) bị BỎ QUA (đã ghi log một lần khi biên dịch).
+      // Trước đây đường này lại khớp nó như một chuỗi con thường — hai đường cho hai
+      // kết quả khác nhau với cùng một luật.
+      const regex = compileModerationRegex(rule.pattern)
+      if (regex && testModerationRegex(rule.pattern, regex, content)) isMatch = true
     }
 
     if (isMatch) {
@@ -300,6 +406,9 @@ CÁC TRƯỜNG HỢP ĐẶC BIỆT PHẢI NHẬN DIỆN ĐÚNG BÊN TÍCH CỰC 
           aiResult.error === 'service_inactive' ||
           aiResult.error === 'no_api_key'
 
+        if (aiUnavailable && options.onAiUnavailable === 'skip') {
+          return { flagged: false, action: "allow", severity: 'low', reasons: [], matchedRules: [], aiUnavailable: true }
+        }
         if (aiUnavailable) {
           isFlagged = true
           finalAction = 'flag_only'
@@ -339,9 +448,15 @@ CÁC TRƯỜNG HỢP ĐẶC BIỆT PHẢI NHẬN DIỆN ĐÚNG BÊN TÍCH CỰC 
   }
 
   // 3. Automated Action: Record to queue & hide content
+  // Mỗi bước ghi hỏng đều được ghi log (sự kiện ổn định + id + lỗi) và báo lại cho
+  // nơi gọi qua `hidden`/`failures`. Trước đây cả hai nằm trong `catch {}` trống:
+  // một bình luận bị gắn cờ có thể vẫn hiện công khai mà không để lại dấu vết nào,
+  // và lượt quét lại vẫn đếm nó là "đã ẩn".
+  const failures: ModerationPersistFailure[] = []
+  let hidden = false
   if (isFlagged) {
     try {
-      await db.insert(aiModerationQueue).values({
+      const queued = await insertQueueRowOnce({
         targetType: input.targetType,
         targetId: input.targetId ? Number(input.targetId) : null,
         authorName: input.authorName || 'Khách',
@@ -355,31 +470,26 @@ CÁC TRƯỜNG HỢP ĐẶC BIỆT PHẢI NHẬN DIỆN ĐÚNG BÊN TÍCH CỰC 
         severity: highestSeverity,
         status: 'pending',
       })
-    } catch {
-      // Non-blocking queue insert
+      if (!queued) {
+        logInfo({ event: 'ai_moderation.queue_already_pending', targetType: input.targetType, targetId: input.targetId })
+      }
+    } catch (err: unknown) {
+      // Không ném: ẩn nội dung (bước dưới) quan trọng hơn hàng chờ duyệt, và nơi gọi
+      // là luồng nền. Nhưng KHÔNG im lặng — mất hàng chờ là mất dấu vết duy nhất
+      // cán bộ có để đối soát.
+      failures.push('queue')
+      noteWorkerError(err)
+      logError({
+        event: 'ai_moderation.queue_insert_failed',
+        targetType: input.targetType,
+        targetId: input.targetId,
+        severity: highestSeverity,
+        error: describeError(err),
+      })
     }
 
     if (finalAction === 'auto_hide' && input.targetId) {
-      try {
-        if (input.targetType === 'comment') {
-          await db
-            .update(articleComments)
-            .set({ isHidden: true, flagReason: reasons.join('; ').slice(0, 255) })
-            .where(eq(articleComments.id, input.targetId))
-        } else if (input.targetType === 'chat') {
-          await db
-            .update(chatMessages)
-            .set({ isFlagged: true, flagReason: reasons.join('; ').slice(0, 255) })
-            .where(eq(chatMessages.id, input.targetId))
-        } else if (input.targetType === 'livestream_chat') {
-          await db
-            .update(livestreamMessages)
-            .set({ isDeleted: true })
-            .where(eq(livestreamMessages.id, input.targetId))
-        }
-      } catch {
-        // Non-blocking update
-      }
+      hidden = await applyAutoHide(input.targetType, input.targetId, reasons.join('; '), failures)
     }
   }
 
@@ -412,6 +522,7 @@ CÁC TRƯỜNG HỢP ĐẶC BIỆT PHẢI NHẬN DIỆN ĐÚNG BÊN TÍCH CỰC 
     severity: highestSeverity,
     reasons,
     matchedRules,
+    ...(isFlagged ? { hidden, failures } : {}),
   }
 }
 
@@ -423,67 +534,234 @@ CÁC TRƯỜNG HỢP ĐẶC BIỆT PHẢI NHẬN DIỆN ĐÚNG BÊN TÍCH CỰC 
  * filtering". Livestream chat stays on `fastPreModerate` because it is a live
  * stream: sub-second latency matters more than a context pass, and the entry
  * path already moderates each message in real time.
+ *
+ * BOUNDED: rows are read in keyset batches (newest first, `id < cursor`), and one
+ * run stops after `maxComments` / `maxMessages`. Before this, every visible
+ * comment was loaded at once and each cost one AI call, synchronously inside the
+ * HTTP request — a proxy timeout while the loop kept running, and a second click
+ * doubled the AI spend. The caller (`moderation-rescan-job.ts`) runs this in the
+ * background under a named lock and passes `cursor` back in, so a capped run is
+ * resumed by the next one instead of re-scanning the same newest rows forever.
+ *
+ * One item failing (AI, DB) never aborts the run: it is logged with its id and
+ * counted in `failedComments` / `failedMessages`, and an item whose hide write
+ * failed is NOT counted as hidden.
  */
-export async function rescanExistingContent(): Promise<{
+export const MODERATION_RESCAN_LIMITS = Object.freeze({
+  /** Rows read per query. */
+  batchSize: 100,
+  /** Comments per run — each one is an AI call. */
+  maxComments: 1000,
+  /** Livestream messages per run — rule matching only, no AI. */
+  maxMessages: 5000,
+})
+
+/** Where the next run resumes: scan ids strictly below these. `null` = from the newest row. */
+export interface RescanCursor {
+  commentsBeforeId: number | null
+  messagesBeforeId: number | null
+}
+
+export interface RescanCounts {
   scannedComments: number
   hiddenComments: number
+  failedComments: number
   scannedMessages: number
   deletedMessages: number
-}> {
+  failedMessages: number
+}
+
+export interface RescanProgress extends RescanCounts {
+  phase: 'comments' | 'messages' | 'done'
+  /** Rows this run will scan (remaining rows, capped). The "y" in "x/y". */
+  totalComments: number
+  totalMessages: number
+}
+
+export interface RescanSummary extends RescanCounts {
+  totalComments: number
+  totalMessages: number
+  /** True when rows remain beyond this run's cap; the next run resumes at `nextCursor`. */
+  truncated: boolean
+  nextCursor: RescanCursor
+  /**
+   * AI kiểm duyệt chưa cấu hình: bình luận được quét bằng LUẬT (chặn tức thì + luật
+   * tuỳ biến) thay vì dồn hết vào hàng chờ `flag_only`.
+   */
+  aiUnavailable: boolean
+}
+
+export interface RescanOptions {
+  batchSize?: number
+  maxComments?: number
+  maxMessages?: number
+  cursor?: RescanCursor
+  onProgress?: (progress: RescanProgress) => void
+  /**
+   * Gọi sau MỖI lô đã quét xong với con trỏ "quét tiếp từ đây". Lượt chạy hỏng giữa
+   * chừng (CSDL rơi khi đọc lô sau) thì lượt kế tiếp tiếp tục từ lô cuối đã xong,
+   * không quét lại (và trả tiền AI lại) từ bình luận mới nhất.
+   */
+  onCheckpoint?: (cursor: RescanCursor) => void
+}
+
+/** Một lô đọc hỏng được thử lại đúng một lần trước khi lượt quét dừng. */
+async function readBatchWithRetry<T>(read: () => Promise<T>, what: 'comments' | 'messages'): Promise<T> {
+  try {
+    return await read()
+  } catch (err: unknown) {
+    logWarn({ event: 'ai_moderation.rescan_batch_retry', phase: what, error: describeError(err) })
+    return await read()
+  }
+}
+
+export async function rescanExistingContent(options: RescanOptions = {}): Promise<RescanSummary> {
   const db = getDb()
-  let hiddenComments = 0
-  let deletedMessages = 0
+  const batchSize = Math.max(1, Math.trunc(options.batchSize ?? MODERATION_RESCAN_LIMITS.batchSize))
+  const maxComments = Math.max(0, Math.trunc(options.maxComments ?? MODERATION_RESCAN_LIMITS.maxComments))
+  const maxMessages = Math.max(0, Math.trunc(options.maxMessages ?? MODERATION_RESCAN_LIMITS.maxMessages))
+  const startComments = options.cursor?.commentsBeforeId ?? null
+  const startMessages = options.cursor?.messagesBeforeId ?? null
 
-  // 1. Scan article_comments — full context pass (fast pre-moderator + AI)
-  const comments = await db
-    .select({ id: articleComments.id, body: articleComments.body })
-    .from(articleComments)
-    .where(eq(articleComments.isHidden, false))
+  const commentScope = (beforeId: number | null) =>
+    and(eq(articleComments.isHidden, false), beforeId !== null ? lt(articleComments.id, beforeId) : undefined)
+  const messageScope = (beforeId: number | null) =>
+    and(eq(livestreamMessages.isDeleted, false), beforeId !== null ? lt(livestreamMessages.id, beforeId) : undefined)
 
-  for (const c of comments) {
-    const result = await checkAndModerateContent({
-      content: c.body,
-      targetType: 'comment',
-      targetId: c.id,
-      contextTitle: `Quét lại bình luận #${c.id}`,
-    })
-    if (result.flagged && result.action === 'auto_hide') {
-      hiddenComments++
+  const [commentCount] = await db.select({ total: count() }).from(articleComments).where(commentScope(startComments))
+  const [messageCount] = await db.select({ total: count() }).from(livestreamMessages).where(messageScope(startMessages))
+  const remainingComments = Number(commentCount?.total ?? 0)
+  const remainingMessages = Number(messageCount?.total ?? 0)
+
+  const progress: RescanProgress = {
+    phase: 'comments',
+    totalComments: Math.min(remainingComments, maxComments),
+    totalMessages: Math.min(remainingMessages, maxMessages),
+    scannedComments: 0,
+    hiddenComments: 0,
+    failedComments: 0,
+    scannedMessages: 0,
+    deletedMessages: 0,
+    failedMessages: 0,
+  }
+  const report = () => options.onProgress?.({ ...progress })
+  report()
+
+  let commentCursor = startComments
+  let messageCursor = startMessages
+  const checkpoint = () => options.onCheckpoint?.({ commentsBeforeId: commentCursor, messagesBeforeId: messageCursor })
+
+  // 1. Scan article_comments — full context pass (fast pre-moderator + AI). When AI
+  // moderation turns out NOT to be configured, the rest of the run is rules-only:
+  // queueing every old visible comment as `flag_only` just floods the review queue.
+  let aiUnavailable = false
+  const rulesOnly = async (c: { id: number; body: string }) => {
+    const check = await fastPreModerate(c.body, { targetType: 'comment', contextTitle: `Quét lại bình luận #${c.id}` })
+    if (!check.blocked) return
+    const failures: ModerationPersistFailure[] = []
+    if (await applyAutoHide('comment', c.id, check.reason, failures)) progress.hiddenComments++
+    else progress.failedComments++
+  }
+  while (progress.scannedComments < progress.totalComments) {
+    const take = Math.min(batchSize, progress.totalComments - progress.scannedComments)
+    const batch = await readBatchWithRetry(() => db
+      .select({ id: articleComments.id, body: articleComments.body })
+      .from(articleComments)
+      .where(commentScope(commentCursor))
+      .orderBy(desc(articleComments.id))
+      .limit(take), 'comments')
+    if (batch.length === 0) break
+
+    for (const c of batch) {
+      commentCursor = c.id
+      progress.scannedComments++
+      try {
+        if (aiUnavailable) {
+          await rulesOnly(c)
+        } else {
+          const result = await checkAndModerateContent({
+            content: c.body,
+            targetType: 'comment',
+            targetId: c.id,
+            contextTitle: `Quét lại bình luận #${c.id}`,
+          }, { onAiUnavailable: 'skip' })
+          if (result.aiUnavailable) {
+            aiUnavailable = true
+            logWarn({ event: 'ai_moderation.rescan_ai_unavailable', commentId: c.id })
+            await rulesOnly(c)
+          } else {
+            if (result.flagged && result.action === 'auto_hide' && result.hidden) progress.hiddenComments++
+            if (result.failures?.length) progress.failedComments++
+          }
+        }
+      } catch (err: unknown) {
+        progress.failedComments++
+        logError({ event: 'ai_moderation.rescan_item_failed', targetType: 'comment', targetId: c.id, error: describeError(err) })
+      }
+      report()
     }
+    checkpoint()
   }
 
   // 2. Scan livestream_messages — fast path only (live stream, latency-sensitive)
-  const liveMsgs = await db
-    .select({ id: livestreamMessages.id, content: livestreamMessages.content })
-    .from(livestreamMessages)
-    .where(eq(livestreamMessages.isDeleted, false))
+  progress.phase = 'messages'
+  report()
+  while (progress.scannedMessages < progress.totalMessages) {
+    const take = Math.min(batchSize, progress.totalMessages - progress.scannedMessages)
+    const batch = await readBatchWithRetry(() => db
+      .select({ id: livestreamMessages.id, content: livestreamMessages.content })
+      .from(livestreamMessages)
+      .where(messageScope(messageCursor))
+      .orderBy(desc(livestreamMessages.id))
+      .limit(take), 'messages')
+    if (batch.length === 0) break
 
-  for (const m of liveMsgs) {
-    const check = await fastPreModerate(m.content, {
-      targetType: 'livestream_chat',
-      contextTitle: `Quét lại tin chat trực tiếp #${m.id}`,
-    })
-    if (check.blocked) {
-      await db
-        .update(livestreamMessages)
-        .set({ isDeleted: true })
-        .where(eq(livestreamMessages.id, m.id))
-      deletedMessages++
+    for (const m of batch) {
+      messageCursor = m.id
+      progress.scannedMessages++
+      try {
+        const check = await fastPreModerate(m.content, {
+          targetType: 'livestream_chat',
+          contextTitle: `Quét lại tin chat trực tiếp #${m.id}`,
+        })
+        if (check.blocked) {
+          const failures: ModerationPersistFailure[] = []
+          if (await applyAutoHide('livestream_chat', m.id, check.reason, failures)) progress.deletedMessages++
+          else progress.failedMessages++
+        }
+      } catch (err: unknown) {
+        progress.failedMessages++
+        logError({ event: 'ai_moderation.rescan_item_failed', targetType: 'livestream_chat', targetId: m.id, error: describeError(err) })
+      }
+      report()
     }
+    checkpoint()
   }
 
-  logInfo({
-    event: 'ai_moderation.rescan_completed',
-    scannedComments: comments.length,
-    hiddenComments,
-    scannedMessages: liveMsgs.length,
-    deletedMessages,
-  })
+  progress.phase = 'done'
+  report()
 
-  return {
-    scannedComments: comments.length,
-    hiddenComments,
-    scannedMessages: liveMsgs.length,
-    deletedMessages,
+  // Rows left beyond the cap → resume below the last scanned id next run. Otherwise
+  // start again from the newest row (the queue was walked to its end).
+  const commentsTruncated = remainingComments > progress.scannedComments && progress.scannedComments >= maxComments
+  const messagesTruncated = remainingMessages > progress.scannedMessages && progress.scannedMessages >= maxMessages
+  const summary: RescanSummary = {
+    scannedComments: progress.scannedComments,
+    hiddenComments: progress.hiddenComments,
+    failedComments: progress.failedComments,
+    scannedMessages: progress.scannedMessages,
+    deletedMessages: progress.deletedMessages,
+    failedMessages: progress.failedMessages,
+    totalComments: progress.totalComments,
+    totalMessages: progress.totalMessages,
+    truncated: commentsTruncated || messagesTruncated,
+    nextCursor: {
+      commentsBeforeId: commentsTruncated ? commentCursor : null,
+      messagesBeforeId: messagesTruncated ? messageCursor : null,
+    },
+    aiUnavailable,
   }
+
+  logInfo({ event: 'ai_moderation.rescan_completed', ...summary })
+  return summary
 }

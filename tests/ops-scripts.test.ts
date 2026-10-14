@@ -9,6 +9,24 @@ import { readFileSync, statSync } from 'node:fs'
 
 const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
 
+type YamlMap = Record<string, unknown>
+const asMap = (value: unknown, what: string): YamlMap => {
+  assert.ok(value && typeof value === 'object' && !Array.isArray(value), `${what} is not a mapping`)
+  return value as YamlMap
+}
+/**
+ * Read a file the way GitHub and Docker do — as YAML — so an assertion cannot be
+ * satisfied by a comment or broken by re-indentation.
+ *
+ * js-yaml is a devDependency (package.json). It is still imported lazily, so a
+ * broken install fails only the YAML-based tests (naming the package), not every
+ * guard in this file.
+ */
+const loadYaml = async (path: string): Promise<YamlMap> => {
+  const { default: yaml } = await import('js-yaml')
+  return asMap(yaml.load(read(path)), path)
+}
+
 // ─── Backup ──────────────────────────────────────────────────────────────────
 test('the backup script is executable and fails loudly', () => {
   const mode = statSync(new URL('../scripts/backup-db.sh', import.meta.url)).mode
@@ -45,7 +63,12 @@ test('two runs in the same second cannot collide', () => {
 
 test('the database password never reaches the process list', () => {
   const script = read('scripts/backup-db.sh')
-  assert.match(script, /-e MYSQL_PWD="\$MYSQL_ROOT_PASSWORD"/)
+  // By NAME: `MYSQL_PWD=… docker exec -e MYSQL_PWD` makes the docker CLI copy the
+  // value from its environment. `-e MYSQL_PWD="$MYSQL_ROOT_PASSWORD"` would put the
+  // secret in the docker client's own argv, which `ps` shows just the same (the
+  // sandboxed behaviour test in ops-scripts-sandbox.test.ts proves it end to end).
+  assert.match(script, /MYSQL_PWD="\$MYSQL_ROOT_PASSWORD" docker exec -e MYSQL_PWD /)
+  assert.doesNotMatch(script, /-e MYSQL_PWD="/)
   // `-p<password>` on the command line is readable via `ps` by every local user.
   assert.doesNotMatch(script, /-p\$\{?MYSQL_ROOT_PASSWORD/)
 })
@@ -65,11 +88,16 @@ test('a Media Portal archive accompanies the database dump', () => {
   const script = read('scripts/backup-media.sh')
   // The directory is a named compose volume.  Reading it through the actual
   // app container avoids guessing Docker's project-name-prefixed volume name.
-  assert.match(script, /docker cp "\$CONTAINER:\/var\/lib\/cdkt\/media\/\." -/)
+  // (Both volumes now go through one `archive_volume` function, so the container
+  // path is an argument and the copy is `docker cp "$CONTAINER:$src" -`.)
+  assert.match(script, /archive_volume media_work "\/var\/lib\/cdkt\/media\/\." cdkt-media/)
+  assert.match(script, /docker cp "\$CONTAINER:\$src" -/)
   assert.match(script, /gzip -t "\$TARGET"/)
   assert.match(script, /tar -tzf "\$TARGET"/)
-  assert.match(script, /cdkt-media-\$STAMP-\$\$\.tar\.gz/)
+  assert.match(script, /TARGET="\$DEST\/\$prefix-\$STAMP-\$\$\.tar\.gz"/)
   assert.match(script, /-mtime "\+\$KEEP_DAYS"/)
+  // The uploads volume is in the cron backup too (it was only in the in-app one).
+  assert.match(script, /archive_volume uploads_data "\/app\/public\/uploads" cdkt-uploads/)
 })
 
 test('the combined backup gives SQL and media one explicit timestamp', () => {
@@ -289,6 +317,116 @@ test('a deploy run is never cancelled halfway through', () => {
   const deploy = workflow.slice(workflow.indexOf('\n  deploy:'))
   assert.match(deploy, /group: deploy-production/)
   assert.match(deploy, /cancel-in-progress: false/)
+})
+
+test('a push to main never cancels the run whose deploy is in flight (parsed, not grepped)', async () => {
+  // The deploy job's own group was believed to protect it. It cannot: a
+  // workflow-level cancel cancels every job of the run, whatever group a job
+  // names. With `cancel-in-progress: true` at the top, a second push to main
+  // during the health wait cut the SSH session mid-deploy — the rollback never
+  // ran and production stayed on an image nobody had verified.
+  const workflow = await loadYaml('.github/workflows/ci.yml')
+  const concurrency = asMap(workflow.concurrency, 'workflow concurrency')
+  assert.equal(concurrency.group, 'ci-${{ github.head_ref || github.ref }}')
+
+  const cancel = concurrency['cancel-in-progress']
+  assert.equal(typeof cancel, 'string',
+    `workflow-level cancel-in-progress is the constant ${String(cancel)} — it must depend on the event`)
+  const expression = /^\$\{\{\s*(.*?)\s*\}\}$/.exec(String(cancel))?.[1]
+  assert.equal(expression, "github.event_name == 'pull_request'",
+    'only a pull request run may cancel its predecessor')
+
+  // Evaluate the one expression form allowed above for every trigger the
+  // workflow declares: true only where a superseded run is worthless.
+  const [, comparedTo] = /^github\.event_name == '([a-z_]+)'$/.exec(expression ?? '') ?? []
+  const triggers = Object.keys(asMap(workflow.on, 'workflow triggers'))
+  assert.ok(triggers.includes('push') && triggers.includes('pull_request'), 'expected push and pull_request triggers')
+  for (const event of triggers) {
+    assert.equal(event === comparedTo, event === 'pull_request', `cancel-in-progress is wrong for ${event}`)
+  }
+
+  const jobs = asMap(workflow.jobs, 'jobs')
+  const deploy = asMap(jobs.deploy, 'deploy job')
+  assert.deepEqual(deploy.concurrency, { group: 'deploy-production', 'cancel-in-progress': false })
+  // No other job may carry a cancelling group of its own either.
+  for (const [name, job] of Object.entries(jobs)) {
+    const jobConcurrency = asMap(job, name).concurrency
+    if (jobConcurrency === undefined) continue
+    assert.notEqual(asMap(jobConcurrency, `${name} concurrency`)['cancel-in-progress'], true,
+      `job ${name} cancels in progress`)
+  }
+})
+
+test('the deploy ships the compose file of the commit it deploys, with a checksum', async () => {
+  // Without this the VPS ran whatever docker-compose.yml its last manual
+  // `git pull` left behind — a variable added to compose never reached the
+  // container, and a new image ran on an old configuration. The behaviour of
+  // the receiving side is exercised in tests/deploy-remote-behavior.test.ts.
+  const jobs = asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs')
+  const steps = asMap(jobs.deploy, 'deploy job').steps as YamlMap[]
+  const step = steps.find((s) => s.name === 'Deploy over SSH')
+  assert.ok(step, 'no "Deploy over SSH" step')
+  const run = String(step.run)
+
+  const upload = run.indexOf(`"cat > '$APP_DIR/.docker-compose.incoming.yml'" < docker-compose.yml`)
+  const script = run.indexOf('< scripts/deploy-remote.sh')
+  assert.ok(upload >= 0, 'docker-compose.yml is not sent to the VPS')
+  assert.ok(script > upload, 'the compose file must arrive before the deploy script runs')
+  assert.match(run, /compose_sha256=\$\(sha256sum docker-compose\.yml/)
+  assert.match(run, /INCOMING_COMPOSE=\.docker-compose\.incoming\.yml INCOMING_COMPOSE_SHA256=\$compose_sha256 bash -s --/)
+  // Both connections use the same pinned-host-key options.
+  assert.equal((run.match(/ssh "\$\{ssh_opts\[@\]\}"/g) ?? []).length, 2)
+  assert.match(run, /StrictHostKeyChecking=yes/)
+})
+
+test('the MySQL healthcheck keeps the root password out of the process list', async () => {
+  // Container processes are visible to `ps` on the host; the healthcheck runs every
+  // 10 s. `-p"$MYSQL_ROOT_PASSWORD"` put the password in mysqladmin's argv each time.
+  const services = asMap((await loadYaml('docker-compose.yml')).services, 'services')
+  const check = asMap(asMap(services.mysql, 'mysql').healthcheck, 'mysql healthcheck')
+  const command = (check.test as string[]).join(' ')
+  assert.doesNotMatch(command, /\s-p\S|--password/, 'the password is on the command line')
+  assert.match(command, /MYSQL_PWD="\$\$MYSQL_ROOT_PASSWORD" mysqladmin ping -h 127\.0\.0\.1 -u root /)
+})
+
+test('the app container runs on Vietnam time, and only the app container', async () => {
+  // The schedulers read local hours and days (analytics/retention "03:00",
+  // backup `getHours()`, the AI budget month). CI runs the suite at
+  // TZ=Asia/Ho_Chi_Minh; a UTC container ran the 03:00 jobs at 10:00 VN time.
+  // MySQL stays on UTC: NOW()/CURRENT_TIMESTAMP have always written UTC, and
+  // the app pools declare their timezone explicitly.
+  const services = asMap((await loadYaml('docker-compose.yml')).services, 'services')
+  const appEnv = asMap(asMap(services.app, 'app').environment, 'app environment')
+  assert.equal(appEnv.TZ, 'Asia/Ho_Chi_Minh', 'compose must state TZ literally, not from the VPS shell')
+  const mysqlEnv = asMap(asMap(services.mysql, 'mysql').environment, 'mysql environment')
+  assert.equal(mysqlEnv.TZ, undefined, 'the database container must keep UTC')
+
+  // The image carries it too, with the zone database Alpine does not ship.
+  const dockerfile = read('Dockerfile')
+  const runtime = dockerfile.slice(dockerfile.lastIndexOf('\nFROM '))
+  assert.match(runtime, /^RUN apk add --no-cache tzdata$/m)
+  assert.match(runtime, /^ENV TZ=Asia\/Ho_Chi_Minh$/m)
+})
+
+test('operational switches set in .env reach the container', async () => {
+  // compose does not use env_file: a variable it does not list never reaches
+  // the app, so setting it in .env silently does nothing. Each is a plain
+  // pass-through — empty reads exactly like unset in the code that reads it,
+  // so the code's default stays the only default.
+  const services = asMap((await loadYaml('docker-compose.yml')).services, 'services')
+  const appEnv = asMap(asMap(services.app, 'app').environment, 'app environment')
+  const readers: Record<string, string> = {
+    RETENTION_SCHEDULER: 'server/plugins/retention-scheduler.ts',
+    ANALYTICS_SCHEDULER: 'server/plugins/analytics-scheduler.ts',
+    BACKUP_SCHEDULER: 'server/plugins/backup-scheduler.ts',
+    LOG_LEVEL: 'server/utils/logger.ts',
+    LOGIN_CAPTCHA_ENABLED: 'server/api/admin/auth/login.post.ts',
+  }
+  for (const [variable, reader] of Object.entries(readers)) {
+    assert.equal(appEnv[variable], `\${${variable}:-}`, `${variable} is not passed through to the app`)
+    // A renamed variable must not leave a pass-through to nothing behind.
+    assert.ok(read(reader).includes(`process.env.${variable}`), `${reader} no longer reads ${variable}`)
+  }
 })
 
 test('the remote deploy script is executable and fails loudly', () => {

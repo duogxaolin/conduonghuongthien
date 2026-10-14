@@ -1,7 +1,9 @@
 # Media Storage — diễn giải vì-sao
 
 Phần này bổ sung cho `CLAUDE.md` mục "Media" và `openspec/changes/add-media-portal/`.
-Quy tắc hành động nằm trong `CLAUDE.md`; tệp này giữ **lý do, ràng buộc, và procedure restore** — đóng AUD-16 (task 18.6).
+Quy tắc hành động nằm trong `CLAUDE.md`; tệp này giữ **lý do, ràng buộc, và procedure restore** của AUD-16 (task 18.6) — script và procedure đã có, **lượt diễn tập restore trên host mới chưa được thực hiện** (xem mục procedure bên dưới).
+
+> Đồng bộ **ảnh** thư viện media lên R2 (`media-sync*.ts`: thay URL trong một transaction rồi mới xoá bản local, khoá tên + mã thế hệ, bước sửa lượt bị cắt ngang) và dọn cây video cũ khi thay file (outbox `media_asset_cleanup`) → `data-layer.md` § "Audit 2026-10-13".
 
 ---
 
@@ -48,20 +50,25 @@ Không bao giờ redirect tới R2 presigned URL — pipe byte qua proxy server,
 
 ---
 
-## Procedure backup/restore — đóng AUD-16 task 18.6
+## Procedure backup/restore — AUD-16 task 18.6 (đã triển khai; chưa diễn tập)
 
 > AUD-16 yêu cầu: "*archive the matching DB and `media_work`, restore onto a fresh host, and play a restored manifest, segment, and thumbnail before archive.*"
 
-Diễn tập restore làm **manual** trên host mới/docker fresh — không chạy trong CI (R2 cần credential thật, FFmpeg cần image thật). Ghi procedure đây để cán bộ vận hành lặp lại được.
+**Trạng thái có bằng chứng:** script backup/restore đã có và được test hành vi trong sandbox có `docker` giả (`tests/ops-scripts-sandbox.test.ts`); R2 cho cây HLS đã triển khai. **Chưa có lượt diễn tập restore nào trên host mới/docker fresh được ghi nhận** — nên AUD-16 chưa được coi là đóng. Khi diễn tập xong, ghi ngày, người làm và kết quả ba phép thử ở cuối mục này rồi mới đổi trạng thái.
+
+Diễn tập restore làm **manual** trên host mới/docker fresh — không chạy trong CI (R2 cần credential thật, FFmpeg cần image thật). Ghi procedure đây để cán bộ vận hành lặp lại được. Bản đầy đủ nằm ở `DEPLOY.md` § Backup & Restore; dưới đây là phần riêng của Media Portal.
 
 ### Backup
 
 ```bash
-# DB + media volume cùng timestamp (script dựng sẵn)
+# DB + hai volume file, cùng mã thời điểm (script dựng sẵn)
 scripts/backup.sh
-# → backup-db.sh → <timestamp>.sql.gz
-# → backup-media.sh → <timestamp>-media.tar.gz  (docker cp /var/lib/cdkt/media)
+# → backup-db.sh    → cdkt-<db>-<mã>-<pid>.sql.gz
+# → backup-media.sh → cdkt-media-<mã>-<pid>.tar.gz    (docker cp /var/lib/cdkt/media/.  — volume media_work)
+#                   → cdkt-uploads-<mã>-<pid>.tar.gz  (docker cp /app/public/uploads    — volume uploads_data)
 ```
+
+(Tên thật có `-<pid>` ở cuối, không phải `<timestamp>.sql.gz` / `<timestamp>-media.tar.gz` như bản trước của tài liệu này ghi. Archive uploads là mới: trước đây cron bỏ sót `uploads_data`.)
 
 Quando R2 bật: cây `published/` local đã bị xoá sau sync (R2 là nguồn chính). Media archive khi đó **có thể rỗng hoặc chỉ chứa `processing/` + `uploads/` tạm** — video thật nằm trên R2 bucket, không trên đĩa. **Restore chỉ cần DB + R2 bucket vẫn còn** (R2 bucket không nằm trong archive này).
 
@@ -71,13 +78,16 @@ Quando R2 bật: cây `published/` local đã bị xoá sau sync (R2 là nguồn
 # 1. Dừng app (giữ MySQL chạy)
 docker compose stop app
 
-# 2. Restore media volume
-scripts/restore-media.sh <timestamp>-media.tar.gz --replace
-# --replace ghi đè volume hiện có; script validate tar path trước khi ghi
+# 2. Restore hai volume (script nhận volume từ TÊN archive)
+scripts/restore-media.sh backups/cdkt-media-<mã>-<pid>.tar.gz   --replace
+scripts/restore-media.sh backups/cdkt-uploads-<mã>-<pid>.tar.gz --replace
+# --replace ghi đè volume hiện có; script validate tar path (`..`, `/`) và, với uploads,
+# thư mục gốc `uploads/` trước khi ghi
 
-# 3. Restore DB
-scripts/restore-db.sh <timestamp>.sql.gz
-# → scratch DB verify (đếm tables/users/articles) qua verify-restore.sh
+# 3. Restore DB — (tuỳ chọn) nạp thử vào CSDL tạm trước, rồi khôi phục thật
+scripts/verify-restore.sh backups/cdkt-<db>-<mã>-<pid>.sql.gz   # scratch DB, đếm tables/users/articles
+scripts/restore-db.sh     backups/cdkt-<db>-<mã>-<pid>.sql.gz <db> --replace
+# → kiểm dump, DUMP BẢN HIỆN CÓ ra cdkt-prerestore-<db>-*.sql.gz (hỏng thì không khôi phục), rồi nạp
 
 # 4. Khởi động lại
 docker compose up -d app
@@ -112,6 +122,20 @@ Sau restore (bất kỳ chế độ nào), cả ba phải trả 200:
 | Thumbnail | `GET /api/public/media/<slug>/thumb.jpg` | `image/jpeg` |
 
 Nếu một trong ba trả 404 → restore thất bại, **không** archive. Ghi lại kết quả verify vào ticket deploy.
+
+### Archive lớn và script khôi phục (đợt sửa 2026-10-14)
+
+- **Archive > 15 GiB giải nén** bị khôi phục trong app từ chối (413 `decompressed_too_large`). Trần này là hằng số `DEFAULT_RESTORE_LIMITS.maxArchiveBytes` (`backup-restore-guards.ts`, không phải biến môi trường) và đếm byte của **luồng tar** sau giải nén. Trước đây là 8 GiB; chủ repo nâng lên 15 GiB (2026-10-14) để archive media 10,9 GB nén trên máy dev (`cdkt-media-20260925T191853Z-pre-sync.tar.gz`) khôi phục được qua giao diện. Đã đo trên tệp thật: luồng tar 11.373.357.056 byte (10,59 GiB), 11.786 mục, `inspectArchive` nhận trong ~34 s (trần cũ từ chối ở mốc 8 GiB). Archive lớn hơn 15 GiB vẫn phải khôi phục bằng `scripts/restore-media.sh`. Trần tải lên (512 MiB đã nén) và trần SQL (256 MiB) không đổi. Archive media 2,3 GB còn lại (`…185215Z-pre-sync`) là tệp bị cắt cụt (`corrupt_gzip`), không phải do trần này.
+- Khôi phục theo tên chạy đồng bộ trong **một** request (kiểm ~34 s rồi thêm một lượt `tar -xzf` cho archive 10,6 GiB). Sau nginx `location /` (`proxy_read_timeout` mặc định 60 s) trình duyệt có thể nhận 504 trong khi máy chủ vẫn giải nén tiếp; giao diện đã dừng theo dõi, nên phải đợi rồi xem lại `/api/admin/backup/status` / nhật ký. Không có bước kiểm dung lượng đĩa trống trước khi giải nén.
+- `scripts/restore-media.sh` viết lại: liệt kê bằng GNU tar và chỉ nhận file thường/thư mục (symlink/hard link có thể trỏ tới `/app/backups/*.sql.gz`, và app phục vụ `/uploads` theo link); tên tuyệt đối, `..`, `\`, ký tự điều khiển, ngoài gốc → từ chối; ghi bản an toàn `cdkt-prerestore-<kind>-*.tar.gz` trước (bỏ bằng `--no-safety-copy`; tên khác mẫu của `backup-media.sh` nên xoay vòng theo tuổi không xoá); giải nén vào thư mục staging **trên chính volume**, `find` kiểm lại (symlink/thiết bị/fifo/socket/hard link → bỏ staging, volume giữ nguyên) rồi mới đổi chỗ; app phải dừng (`--i-know-app-is-stopped` khi Compose quá cũ để kiểm). Mã thoát 0/1/2/3/4 ghi ở đầu script. Đã chạy thật trên `node:24-alpine` (BusyBox): symlink/hard link/fifo → mã 4, volume giữ nguyên.
+- `scripts/restore-db.sh` + `verify-restore.sh`: bộ chặn câu lệnh cấm viết lại — `gzip -dc | grep -q` dưới `set -o pipefail`: `grep -q` dừng ở lần khớp đầu, `gzip` chết vì SIGPIPE (141), `pipefail` làm cả `if` thành sai — **đúng lúc tìm thấy câu lệnh cấm thì bộ chặn cho qua**; nay `grep -c` đọc tới EOF + kiểm `PIPESTATUS`, và tập câu lệnh cấm rộng hơn (`\u`, `connect`, `source`, comment thực thi `/*! … */`). `verify-restore.sh --latest` chọn dump mới nhất của `MYSQL_DATABASE` (dùng cho cron). Test: `tests/ops-restore-hardening.test.ts` (chạy script thật trong sandbox `docker`/`git` giả, đỏ trên bản cũ).
+
+### Cấu hình R2 kiểm lúc dùng (G3, 2026-10-14)
+
+- Mọi lệnh R2 (ảnh `media-r2.ts`, video `video-r2-sync.ts`) mở client qua `openR2(config, scope)`: account id phải là 32 ký tự hex, bucket đúng quy tắc tên, đã trim — hỏng → `R2ConfigInvalidError` (400, `code: 'R2_CONFIG_INVALID'`, không phản chiếu giá trị; log `r2.config_invalid` tối đa một dòng/10 phút mỗi `scope:field`). Trước đó luật "đổi đích phải gõ lại bí mật" chỉ chặn lúc ghi; hàng đã lưu từ trước đi thẳng vào endpoint.
+- Phân biệt "không kiểm được" với "không tồn tại": `headR2Object`/`deleteR2File` **ném** lỗi cấu hình (trả `false` từng khiến quét thumbnail báo mọi ảnh R2 hỏng và self-heal coi mọi object là mất). Các hàm video "không ném" tạo client **trong** `try`. Đồng bộ media kiểm cấu hình một lần trước khi bắt đầu. Còn mở: lỗi mạng/xác thực/5xx của `HeadObject` vẫn trả `false` → self-heal gặp R2 chập chờn đổi thumbnail + `media.url` sang ảnh mặc định (có bản `pre-self-heal` trước đó).
+- Ảnh nguồn thumbnail Media Portal (`readLibraryImage`, `media-portal.ts`): R2 → `getR2Object(storagePath, …, { maxBytes: 25 MiB, timeoutMs: 20 s })` (trần đếm cả trong lúc đọc thân, quá trần/quá hạn → `R2ReadLimitError`); local → tệp thường dưới `public/uploads` (`lstat`, trần byte). Không bao giờ `fetch(media.url)`. Theo nhánh G3 (SELECT chỉ đọc trên CSDL dev, người kiểm cuối không chạy lại): cả 3213 hàng R2 có `storage_path` dạng `YYYY/MM/…`.
+- **Fixture test phải dùng cấu hình hợp lệ**: `tests/media-replace-cleanup.test.ts` đã đổi sang account id 32 hex + bucket `video-bucket`; `tests/media-self-heal-integration.test.ts` cũng vậy (từng giữ `stub-account` → đỏ trên MySQL thật sau G3) và nay giả SDK S3 (HEAD 404) — không còn chạm mạng; trước đó nó chỉ xanh nhờ lỗi TLS tới `*.r2.cloudflarestorage.com` bị nuốt thành `false`.
 
 ---
 

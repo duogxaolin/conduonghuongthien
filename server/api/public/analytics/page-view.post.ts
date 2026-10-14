@@ -1,26 +1,31 @@
 import { createError, defineEventHandler, readRawBody, setResponseStatus } from 'h3'
 import { ingestAnalyticsPageView } from '../../../services/analytics-ingestion'
 import { getClientIp } from '../../../utils/client-ip'
+import { rateLimitDeps } from '../../../utils/rate-limit-deps'
+import { recordRateLimitHit } from '../../../utils/rate-limit-store'
 import { analyticsConfig } from '../../../utils/runtime-config'
 
 const MAX_BODY_BYTES = 1024
 
-// Each accepted page-view fans out to ~13 database writes, so an unthrottled
-// public endpoint can inflate the metrics and amplify DB load. Cap per peer IP
-// (generous enough for a real browsing session, low enough to stop flooding).
-const viewBuckets = new Map<string, number[]>()
-const VIEW_LIMIT = 120
-const VIEW_WINDOW_MS = 60 * 1000
+/** Lượt xem được nhận trong một cửa sổ, cho mỗi IP. */
+const PAGE_VIEW_ACCEPTED_PER_WINDOW = 120
+const PAGE_VIEW_WINDOW_SECONDS = 60
 
-function viewRateLimited(ip: string): boolean {
-  const now = Date.now()
-  const recent = (viewBuckets.get(ip) || []).filter(t => t > now - VIEW_WINDOW_MS)
-  if (recent.length >= VIEW_LIMIT) { viewBuckets.set(ip, recent); return true }
-  recent.push(now)
-  viewBuckets.set(ip, recent)
-  if (viewBuckets.size > 20_000) viewBuckets.delete(viewBuckets.keys().next().value as string)
-  return false
-}
+/**
+ * Each accepted page-view fans out to ~13 database writes, so an unthrottled
+ * public endpoint can inflate the metrics and amplify DB load. Cap per peer IP
+ * (generous enough for a real browsing session, low enough to stop flooding).
+ *
+ * Bộ đếm nằm ở kho dùng chung (`rate_limit_counters`, lùi về bộ nhớ khi mất CSDL)
+ * thay vì một `Map` riêng của handler: sống qua khởi động lại và giữ đúng trần
+ * khi có nhiều bản sao. `blocked` của kho nghĩa là "lượt này chạm trần"
+ * (`count >= limit`), nên `limit` là số lượt NHẬN + 1 — lượt thứ 121 trong cửa sổ
+ * bị chặn, như bản cũ. Khác biệt có chủ đích: kho dùng cửa sổ cố định (60 giây
+ * kể từ lượt đầu), bản cũ là cửa sổ trượt — ở mép cửa sổ một IP có thể được
+ * nhận tối đa ~2×120 lượt trong 60 giây liên tiếp. Cái giá: thêm hai truy vấn
+ * nhỏ (upsert + đọc lại) mỗi lượt xem, cạnh ~13 lượt ghi của chính lượt xem đó.
+ */
+const PAGE_VIEW_RATE_RULE = { limit: PAGE_VIEW_ACCEPTED_PER_WINDOW + 1, windowSeconds: PAGE_VIEW_WINDOW_SECONDS }
 
 export default defineEventHandler(async (event) => {
   const config = analyticsConfig(event)
@@ -30,7 +35,8 @@ export default defineEventHandler(async (event) => {
   }
 
   // Silently accept (202) when throttled: analytics must never disturb browsing.
-  if (viewRateLimited(getClientIp(event))) {
+  const throttle = await recordRateLimitHit(`analytics-page-view:${getClientIp(event)}`, PAGE_VIEW_RATE_RULE, rateLimitDeps())
+  if (throttle.blocked) {
     setResponseStatus(event, 202)
     return { accepted: false }
   }

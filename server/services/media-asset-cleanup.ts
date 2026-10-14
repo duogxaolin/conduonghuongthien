@@ -1,6 +1,7 @@
 /** Durable, retrying cleanup of a deleted upload's asset tree — local hoặc R2. */
 import fs from 'node:fs/promises'
 import path from 'node:path'
+import { randomUUID } from 'node:crypto'
 
 import { asc, eq, isNull, lte, or } from 'drizzle-orm'
 
@@ -12,6 +13,42 @@ import { mediaAssetRoot } from './video-processing'
 import { deleteR2Tree } from './video-r2-sync'
 
 export const MEDIA_CLEANUP_BATCH_LIMIT = 50
+
+/** Một encoder vừa bị huỷ không được đua với lượt dọn — hoãn một nhịp ngắn. */
+const CLEANUP_DEFER_MS = 30_000
+
+type CleanupWriter = Database | Parameters<Parameters<Database['transaction']>[0]>[0]
+
+/**
+ * Ghi các cây tài sản cũ của một mục `upload` vào outbox dọn tệp — gọi TRONG
+ * transaction của lượt thay tệp, để "hàng trỏ cây mới" và "cây cũ được hẹn dọn"
+ * commit cùng nhau. Không xoá gì ở đây: rollback thì không task nào tồn tại, commit
+ * rồi crash thì worker vẫn dọn sau khởi động (retry + backoff, idempotent).
+ *
+ * Gốc LOCAL luôn được ghi: tệp gốc `original.*` nằm trên đĩa kể cả khi rendition
+ * đã lên R2 (giai đoạn 7 chỉ xoá cây `published`). Gốc R2 thêm khi mục ở R2.
+ * `keepRoot` là gốc mục đang trỏ tới sau lượt thay — không bao giờ hẹn dọn nó.
+ * Đường dẫn cũ dị dạng → không ghi (giữ lại để kiểm tay), trả 0.
+ */
+export async function enqueueReplacedAssetCleanup(
+  tx: CleanupWriter,
+  item: { slug: string, storagePath: string | null, storageProvider: string | null },
+  keepRoot: string,
+  now = new Date(),
+): Promise<number> {
+  let root: string
+  try { root = mediaAssetRoot(item) } catch {
+    logWarn({ event: 'media.asset_cleanup_skipped_invalid_root', slug: item.slug })
+    return 0
+  }
+  if (root === keepRoot) return 0
+  const nextAttemptAt = new Date(now.getTime() + CLEANUP_DEFER_MS)
+  const providers = item.storageProvider === 'r2' ? ['local', 'r2'] : ['local']
+  for (const storageProvider of providers) {
+    await tx.insert(mediaAssetCleanup).values({ id: randomUUID(), assetRoot: root, storageProvider, nextAttemptAt })
+  }
+  return providers.length
+}
 
 export function cleanupRetryAt(attempts: number, now = new Date()): Date {
   return new Date(now.getTime() + Math.min(24 * 60 * 60, 30 * 2 ** Math.max(0, attempts - 1)) * 1000)

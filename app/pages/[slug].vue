@@ -10,6 +10,19 @@
         :type-description="currentType?.description || ''"
         :category-slug="idParam"
       />
+      <!-- Lượt kiểm chuyên mục HỎNG: chưa biết X là chuyên mục hay bài — không rơi
+           sang ArticleDetail, không 404; báo lỗi + thử lại (SSR 503). -->
+      <section v-else-if="showCategoryLookupError" class="section">
+        <div class="container py-10 md:py-16">
+          <BlockLoadError
+            title="Không thể tải trang"
+            description="Đã xảy ra lỗi khi kết nối dữ liệu máy chủ."
+            retry-label="Thử lại"
+            :retrying="categoryRetrying"
+            @retry="retryCategoryLookup"
+          />
+        </div>
+      </section>
       <ArticleDetail
         v-else
         :slug="idParam"
@@ -30,7 +43,7 @@
       :selected-id="selectedId"
       :pending="pending"
       :load-error="loadError"
-      :on-retry="refresh"
+      :on-retry="retryLookup"
     />
 
     <!-- Page exists but has no visible blocks yet. -->
@@ -56,7 +69,12 @@
 </template>
 
 <script setup lang="ts">
-import { computed, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
+import { resolveCategoryRoute } from '~/utils/category-route-decision'
+// Import tường minh: tên tự động của Nuxt là `BlocksBlockLoadError` — `<BlockLoadError>`
+// không import sẽ dựng ra thẻ rỗng (đã gặp ở `news/[category]/index.vue`).
+import BlockLoadError from '~/components/blocks/BlockLoadError.vue'
 
 const route = useRoute()
 const slug = computed(() => String(route.params.slug || ''))
@@ -114,12 +132,44 @@ const catAsync = useAsyncData(
 )
 const { data: catData, status: catStatus } = catAsync
 
-const isCategoryView = computed(() => {
-  if (!idParam.value) return false
-  if (catStatus.value !== 'success' && catStatus.value !== 'error') return false
-  const items = catData.value?.items || []
-  return items.some((c) => c.slug === idParam.value)
-})
+/**
+ * Cùng quyết định với `/news/<X>` (`utils/category-route-decision.ts`): lượt kiểm
+ * chuyên mục HỎNG không phải "không phải chuyên mục". Trước đây `status === 'error'`
+ * được tính là đã xong với danh sách rỗng → trang rơi sang ArticleDetail, hiện "bài
+ * không tải được" cho một chuyên mục có thật (và SSR 200 khi CSDL sập).
+ * `pending` → ArticleDetail như cũ (bài là trường hợp phổ biến).
+ */
+const categoryDecision = computed(() => (idParam.value
+  ? resolveCategoryRoute({ status: catStatus.value, data: catData.value, slug: idParam.value })
+  : 'pending'))
+const isCategoryView = computed(() => categoryDecision.value === 'category')
+const categoryLookupFailed = computed(() => !!idParam.value && categoryDecision.value === 'lookup-failed')
+
+// Đang thử lại sau một lượt hỏng: giữ nhánh lỗi (nút quay) thay vì nhảy tạm sang
+// ArticleDetail trong lúc lượt đọc mới còn bay.
+const categoryRetrying = ref(false)
+const showCategoryLookupError = computed(() => categoryLookupFailed.value || (categoryRetrying.value && categoryDecision.value === 'pending'))
+const retryCategoryLookup = async () => {
+  if (categoryRetrying.value) return
+  categoryRetrying.value = true
+  try {
+    await catAsync.refresh()
+  } finally {
+    categoryRetrying.value = false
+  }
+}
+
+/**
+ * Lượt đọc HỎNG (503 từ máy chủ, mạng đứt) khác hẳn "không có trang": hỏng thì
+ * chưa biết trang có tồn tại hay không, nên không được kết luận 404 và không được
+ * nhường sang nhánh content-type. Trước đây `/api/public/pages/<slug>` nuốt lỗi
+ * CSDL thành `{ ok: false }` 200 và trang này đọc nó thành 404 cho một trang có
+ * thật. Lượt content-types hỏng khi trang đã chắc chắn vắng cũng vậy: chưa biết
+ * slug có phải một thể loại hay không.
+ */
+const pageFetchFailed = computed(() => status.value === 'error')
+const pageMissConfirmed = computed(() => status.value === 'success' && !(data.value?.ok && data.value?.page))
+const lookupFailed = computed(() => pageFetchFailed.value || (pageMissConfirmed.value && typesStatus.value === 'error'))
 
 const isPageBranch = computed(() => {
   if (idParam.value) return false // 2-segment → DishwasherRoute, không PageBuilder
@@ -128,6 +178,7 @@ const isPageBranch = computed(() => {
   // Khi data đã settle mà không có page → nhường sang Branch 2.
   const settled = status.value === 'success' || status.value === 'error'
   if (!settled) return true
+  if (lookupFailed.value) return true
   return !!(data.value?.ok && data.value?.page)
 })
 
@@ -142,6 +193,8 @@ const isMissing = () => {
   if (isPreview.value) return false
   // 2-segment: ArticleDetail/categoryList tự throw 404 khi không có bài/cat.
   if (idParam.value) return false
+  // Lượt đọc hỏng chưa nói được gì về sự tồn tại của trang → không bao giờ 404.
+  if (lookupFailed.value) return false
   const pageMiss = !data.value?.ok || !data.value?.page
   if (!pageMiss) return false
   // Page miss → kiểm content-type
@@ -163,13 +216,24 @@ const isMissing = () => {
 // unblocked. Server-rendered HTML and the SEO tags are therefore unchanged.
 //
 // 2-segment: awaited thêm catAsync để chắc CategoryView trước khi SSR ghi.
+//
+// Lượt đọc HỎNG (trang hoặc danh sách thể loại) → 503 + no-store thay vì 200, để
+// CDN/trình duyệt không giữ trang lỗi (`utils/ssr-failure-response.ts`). Cùng biểu
+// thức với nhánh lỗi (`lookupFailed` → `isPageBranch` → PageRenderer lỗi). Phía
+// máy chủ setup bên dưới đã chờ mọi lượt đọc trước khi tới lượt prefetch, nên
+// `settled` chỉ cần lượt đọc trang. Gọi TRƯỚC các `await` để còn ngữ cảnh Nuxt.
+useSsrFailureStatus(() => asyncData, () => !idParam.value && lookupFailed.value)
+// 2-segment: lượt kiểm chuyên mục hỏng → 503 + no-store (CÙNG biểu thức với nhánh
+// lỗi `showCategoryLookupError`; lúc SSR không có lượt thử lại nên hai vế trùng nhau).
+useSsrFailureStatus(() => catAsync, () => categoryLookupFailed.value)
 if (import.meta.server) {
   await asyncData
   if (idParam.value) {
     await catAsync
   } else {
     // Chỉ fetch content-types nếu page miss (tiết kiệm truy vấn khi page hit).
-    if (!data.value?.ok || !data.value?.page) {
+    // Lượt đọc trang HỎNG không phải miss — khi đó trang hiện nhánh lỗi.
+    if (pageMissConfirmed.value) {
       await typesAsync
     }
   }
@@ -204,7 +268,23 @@ if (import.meta.client) {
   )
 }
 
-const loadError = computed(() => error.value || null)
+const loadError = computed(() => error.value || (lookupFailed.value ? typesAsync.error.value : null) || null)
+
+/** Thử lại đúng các lượt đã hỏng: trang, rồi danh sách thể loại nếu trang vắng. */
+const retryLookup = async () => {
+  await refresh()
+  if (pageMissConfirmed.value) await typesAsync.refresh()
+}
+
+// HTML mang nhánh lỗi có thể vừa ra từ bộ đệm SWR 60 giây (lượt SSR gặp CSDL
+// chập chờn) — tải lại một lần ở trình duyệt thay vì bắt khách chờ hết cửa sổ.
+onMounted(() => {
+  if (lookupFailed.value) void retryLookup()
+})
+// 2-segment: cùng lý do, cho lượt kiểm chuyên mục (nó mới quyết định nhánh).
+onMounted(() => {
+  if (categoryLookupFailed.value) void retryCategoryLookup()
+})
 const page = computed(() => data.value?.page || null)
 const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
 

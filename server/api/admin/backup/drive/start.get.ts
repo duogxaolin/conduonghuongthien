@@ -17,7 +17,7 @@
  * bounces off accounts.google.com — the officer sees a reason on the backup
  * page, not a Google error.
  */
-import { requireResourcePermission } from '../../../../utils/permissions'
+import { requireResourcePermission, requireSuperAdmin } from '../../../../utils/permissions'
 import { getUsableDriveOauthConfig } from '../../../../services/backup-drive-oauth-config'
 import { DRIVE_SCOPE, GOOGLE_AUTH_ENDPOINT, resolveDriveRedirectUri } from '../../../../utils/google-oauth/config'
 import { issueState, stateSigningKey } from '../../../../utils/google-oauth/state'
@@ -29,6 +29,9 @@ const DRIVE_OAUTH_STATE_MAX_AGE = 10 * 60
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'update')
+  // Đích backup (tài khoản Drive nhận bản sao CSDL + file) chỉ SuperAdmin đổi được
+  // — người có `settings.update` vẫn xem trạng thái và chạy backup.
+  requireSuperAdmin(adminUser)
 
   const config = await getUsableDriveOauthConfig()
   if (!config.ok) {

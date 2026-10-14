@@ -13,22 +13,22 @@
         <div>
           <form @submit.prevent="submitForm" class="bg-white p-10 sm:p-6 rounded-lg shadow-md border border-[#E2E8DF]">
             <div class="mb-5">
-              <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_name') || 'Họ và tên' }}</label>
-              <input type="text" v-model="form.name" required :placeholder="t('form_name_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+              <label :for="`${uid}-name`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_name') || 'Họ và tên' }}</label>
+              <input :id="`${uid}-name`" type="text" autocomplete="name" v-model="form.name" required :placeholder="t('form_name_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
             </div>
             <div class="grid grid-cols-1 gap-5 mb-5 sm:grid-cols-2">
               <div>
-                <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_phone') || 'Số điện thoại' }}</label>
-                <input type="tel" v-model="form.phone" required :placeholder="t('form_phone_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+                <label :for="`${uid}-phone`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_phone') || 'Số điện thoại' }}</label>
+                <input :id="`${uid}-phone`" type="tel" autocomplete="tel" v-model="form.phone" required :placeholder="t('form_phone_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
               </div>
               <div>
-                <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_city') || 'Tỉnh / Thành phố' }}</label>
-                <input type="text" v-model="form.city" required :placeholder="t('form_city_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+                <label :for="`${uid}-city`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_city') || 'Tỉnh / Thành phố' }}</label>
+                <input :id="`${uid}-city`" type="text" autocomplete="address-level1" v-model="form.city" required :placeholder="t('form_city_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
               </div>
             </div>
             <div class="mb-5">
-              <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_message') || 'Nội dung cần hỗ trợ' }}</label>
-              <textarea rows="4" v-model="form.message" required :placeholder="t('form_message_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"></textarea>
+              <label :for="`${uid}-message`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_message') || 'Nội dung cần hỗ trợ' }}</label>
+              <textarea :id="`${uid}-message`" rows="4" v-model="form.message" required :placeholder="t('form_message_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"></textarea>
             </div>
             <button type="submit" class="btn btn-primary w-full text-lg" :disabled="submitStatus === 'loading'">
               {{ submitStatus === 'loading' ? (t('form_sending') || 'Đang gửi...') : (t('form_submit') || 'Gửi đăng ký tư vấn') }}
@@ -37,8 +37,7 @@
               v-if="submitMessage"
               class="mt-4 px-[18px] py-[14px] rounded-lg text-[0.9rem] font-semibold leading-[1.5]"
               :class="submitStatus === 'success' ? 'bg-[#e8f5e9] text-[#2e6b32] border border-[#b6d7b8]' : 'bg-[#fdecea] text-[#b71c1c] border border-[#f5c6cb]'"
-              role="status"
-              aria-live="polite"
+              :role="submitStatus === 'error' ? 'alert' : 'status'"
             >
               {{ submitMessage }}
             </div>
@@ -50,11 +49,16 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref, computed, useId } from 'vue'
 import { errorMessage } from '~/utils/errorMessage'
 import { useI18n } from '~/composables/useI18n'
 
 const { t, currentLang } = useI18n()
+// id/for duy nhất theo thể hiện (hai block cùng trang không đụng id), ổn định SSR↔hydrate.
+// Form này dùng validate NATIVE (`required`): trình duyệt tự gắn trạng thái không hợp lệ
+// và chặn gửi, nên không có trạng thái lỗi từng trường để nối aria-invalid/describedby —
+// chỉ có thông báo lỗi gửi (role="alert") ở cuối form.
+const uid = useId()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 

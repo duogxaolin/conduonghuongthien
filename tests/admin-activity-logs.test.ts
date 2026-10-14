@@ -129,8 +129,13 @@ test('the page renders the log, its filters, and the retention warning', () => {
   for (const filter of ['filterUserId', 'filterAction', 'filterResource', 'filterFrom', 'filterTo']) {
     assert.match(script, new RegExp(`${filter}`))
   }
-  // A bare end date must cover the whole day, not stop at midnight.
-  assert.match(script, /T23:59:59/)
+  // A bare end date must cover the whole day, not stop at midnight. The page sends
+  // the bare `YYYY-MM-DD` (no zone-less time that the server would read in its own
+  // TZ); the handler makes the end day inclusive as a Vietnam day — behaviour pinned
+  // by tests/admin-date-filters-vn-day.test.ts under several TZs.
+  assert.match(script, /\{ to: filterTo\.value \}/)
+  assert.doesNotMatch(script, /T23:59:59|T00:00:00/)
+  assert.match(listSource, /lt\(activityLogs\.createdAt, toExclusive\)/)
   assert.match(template, /v-for="item in items"/)
   assert.match(template, /retention\.purgeOverdue/)
   assert.match(template, /analytics:maintenance|retention\.command/)

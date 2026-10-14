@@ -9,27 +9,55 @@
  * **Khoá `cdkt:backup:restore`** — restore không chạy chồng backup.
  * **File hỏng → bỏ qua + log** — không rollback, đã backup xong là giữ.
  * **Xoay vòng N bản** — xoá bản cũ vượt N (mặc định 14) sau khi backup + Drive xong.
+ *
+ * **Khôi phục** nằm ở `backup-restore.ts` (chỉ SuperAdmin — endpoint chặn);
+ * dump/chạy SQL ở `backup-sql.ts`; kiểm file trước khi khôi phục ở
+ * `backup-restore-guards.ts`.
  */
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
 import { eq, desc, sql } from 'drizzle-orm'
-import type { RowDataPacket } from 'mysql2'
+import type { RowDataPacket } from 'mysql2/promise'
 
 import { getDb, getPool } from '../utils/db'
 import { backups, activityLogs, settings } from '../db/schema'
 import { withNamedLock } from '../utils/named-lock'
 import { logInfo, logWarn } from '../utils/logger'
+import { dumpSql } from './backup-sql'
+import { backupKindOf, expectedArchiveTop } from './backup-restore-guards'
 
 const execFileAsync = promisify(execFile)
 
 const LOCK_RUN = 'cdkt:backup:run'
-const LOCK_RESTORE = 'cdkt:backup:restore'
 const LOCK_TIMEOUT = 0
 
 export type BackupType = 'sql' | 'files' | 'all'
-export type BackupTrigger = 'manual' | 'scheduled' | 'pre-sync' | 'pre-repoint' | 'pre-repair-urls' | 'pre-self-heal' | 'pre-fix-thumbnails'
+/**
+ * Mọi giá trị ghi vào `backups.trigger` (và vào tên file). Cột là VARCHAR(32):
+ * `pre-fix-thumbnails` (18 ký tự) từng vượt VARCHAR(16) cũ → dưới strict
+ * sql_mode lượt sao lưu trước khi sửa thumbnail chết với ER_DATA_TOO_LONG, không
+ * ghi hàng nào. `tests/backup-trigger-length.test.ts` so độ dài từng giá trị với
+ * cột trong `schema.ts`; thêm trigger dài hơn thì nới cột trước.
+ */
+export const BACKUP_TRIGGERS = [
+  'manual', 'scheduled', 'pre-sync', 'pre-repoint', 'pre-repair-urls', 'pre-self-heal', 'pre-fix-thumbnails', 'pre-restore',
+] as const
+export type BackupTrigger = typeof BACKUP_TRIGGERS[number]
+
+export interface RunBackupOptions {
+  /** `false` = không xoay vòng sau lượt này (bản `pre-restore` dùng — xem `takeSafetyBackup`). */
+  rotate?: boolean
+}
+
+/** Một lượt backup khác giữ khoá — phân biệt bằng kiểu, không so chuỗi. */
+export class BackupLockBusyError extends Error {
+  constructor() {
+    super('Một lượt backup khác đang chạy. Thử lại sau.')
+    this.name = 'BackupLockBusyError'
+  }
+}
 
 export interface BackupResult {
   stamp: string
@@ -39,7 +67,7 @@ export interface BackupResult {
 }
 
 /** Trạng thái chạy hiện tại — cho endpoint status poll. */
-interface RunStatus {
+export interface RunStatus {
   running: boolean
   phase: string
   message: string
@@ -48,29 +76,14 @@ interface RunStatus {
   progress?: number
 }
 let currentBackupStatus: RunStatus = { running: false, phase: '', message: '', startedAt: null, progress: undefined }
-let currentRestoreStatus: RunStatus = { running: false, phase: '', message: '', startedAt: null, progress: undefined }
 
 export function getBackupStatus(): RunStatus { return { ...currentBackupStatus } }
-export function getRestoreStatus(): RunStatus { return { ...currentRestoreStatus } }
 
-/** Báo running ngay khi endpoint nhận request — trước khi đọc multipart body. */
-export function setRestoreStatusReceiving(): void {
-  const pid = process.pid
-  const now = Date.now()
-  logInfo({ event: 'backup.restore_receiving', pid, at: now })
-  currentRestoreStatus = { running: true, phase: 'upload', message: 'Đang nhận file upload...', startedAt: now, progress: 0 }
-}
-
-/** Đánh dấu failed khi endpoint trả lỗi sớm (sai định dạng, thiếu file). */
-export function setRestoreStatusFailed(message: string): void {
-  currentRestoreStatus = { running: false, phase: 'failed', message, startedAt: Date.now(), progress: undefined }
-}
-
-function timestampStamp(): string {
+export function timestampStamp(): string {
   return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')
 }
 
-function backupsDir(): string {
+export function backupsDir(): string {
   return path.resolve(process.cwd(), 'backups')
 }
 
@@ -83,80 +96,6 @@ async function readBackupConfig(db: ReturnType<typeof getDb>) {
     driveEnabled: map.get('backup_drive_enabled') === 'true' || map.get('backup_drive_enabled') === '1',
     driveServiceAccount: map.get('backup_drive_service_account') || '',
     driveFolderId: map.get('backup_drive_folder_id') || '',
-  }
-}
-
-/**
- * Dump CSDL bằng Node `mysql2` driver — không phụ thuộc `mysqldump` binary.
- *
- * Lý do: app container (alpine + `mysql-client` = mariadb-client) không có plugin
- * `caching_sha2_password` mà MySQL 8 mặc định dùng, nên `mysqldump` từ app container
- * không kết nối được. Node driver không gặp vấn đề này. Dump sinh SQL text thuần:
- * `DROP TABLE IF EXISTS` + `CREATE TABLE` + `INSERT VALUES` cho mỗi bảng.
- */
-function escapeSqlValue(v: unknown): string {
-  if (v === null) return 'NULL'
-  if (v === undefined) return 'NULL'
-  if (typeof v === 'number') return Number.isFinite(v) ? String(v) : 'NULL'
-  if (typeof v === 'boolean') return v ? '1' : '0'
-  if (v instanceof Date) return `'${v.toISOString().slice(0, 19).replace('T', ' ')}'`
-  if (Buffer.isBuffer(v)) return `X'${v.toString('hex')}'`
-  // Object/Array (cột JSON) — stringify thành JSON text rồi escape như string.
-  if (typeof v === 'object') {
-    const json = JSON.stringify(v)
-    return `'${json.replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\0/g, '\\0')}'`
-  }
-  // String — escape ký tự đặc biệt.
-  return `'${String(v).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '\\r').replace(/\0/g, '\\0')}'`
-}
-
-async function dumpSql(target: string): Promise<number> {
-  const pool = getPool()
-  if (!pool) throw new Error('Cơ sở dữ liệu chưa sẵn sàng.')
-  const conn = await pool.getConnection()
-  try {
-    const [tables] = await conn.query<RowDataPacket[]>('SHOW TABLES')
-    const dbName = process.env.DB_NAME || 'cdkt_admin'
-    const lines: string[] = [
-      `-- CDKT backup: ${dbName}`,
-      `-- Generated: ${new Date().toISOString()}`,
-      'SET NAMES utf8mb4;',
-      'SET FOREIGN_KEY_CHECKS=0;',
-      '',
-    ]
-    for (const row of tables) {
-      const table = Object.values(row)[0] as string
-      // Table name từ SHOW TABLES — an toàn để nhét trực tiếp (không user input).
-      const [createRows] = await conn.query<RowDataPacket[]>(`SHOW CREATE TABLE \`${table}\``)
-      const createSql = (createRows[0] as Record<string, string>)['Create Table']
-      lines.push(`DROP TABLE IF EXISTS \`${table}\`;`)
-      lines.push(createSql + ';')
-      // Đếm dòng.
-      const [cntRows] = await conn.query<RowDataPacket[]>(`SELECT COUNT(*) AS cnt FROM \`${table}\``)
-      const cnt = Number((cntRows[0] as Record<string, unknown> | undefined)?.cnt ?? 0)
-      if (cnt > 0) {
-        const [rows] = await conn.query<RowDataPacket[]>(`SELECT * FROM \`${table}\``)
-        const firstRow = rows[0]
-        const cols = firstRow ? Object.keys(firstRow) : []
-        if (cols.length) {
-          lines.push(`INSERT INTO \`${table}\` (\`${cols.join('`, `')}\`) VALUES`)
-          const valuesChunks: string[] = []
-          for (const r of rows) {
-            valuesChunks.push(`(${cols.map(c => escapeSqlValue((r as Record<string, unknown>)[c])).join(', ')})`)
-          }
-          lines.push(valuesChunks.join(',\n') + ';')
-        }
-      }
-      lines.push('')
-    }
-    lines.push('SET FOREIGN_KEY_CHECKS=1;', '')
-
-    const zlib = await import('node:zlib')
-    const gzipped = zlib.gzipSync(Buffer.from(lines.join('\n'), 'utf8'), { level: 6 })
-    await fs.writeFile(target, gzipped)
-    return gzipped.length
-  } finally {
-    conn.release()
   }
 }
 
@@ -195,13 +134,146 @@ async function dirExists(p: string): Promise<boolean> {
   try { return (await fs.stat(p)).isDirectory() } catch { return false }
 }
 
-/** Xoá bản cũ vượt keepCount — chỉ đếm bản `done` để không xoá bản đang chạy. */
-async function rotateOldBackups(db: ReturnType<typeof getDb>, keepCount: number): Promise<number> {
+/** Họ file của một backup: SQL, archive `uploads/` hay archive `media/` (cùng quy tắc tên với `archiveFiles`). */
+export function backupFamilyOf(filename: string): 'sql' | 'uploads' | 'media' | null {
+  const kind = backupKindOf(filename)
+  if (kind === 'sql') return 'sql'
+  if (kind === 'media') return expectedArchiveTop(filename)
+  return null
+}
+
+/** Bản an toàn trước khi khôi phục — không bao giờ bị xoay vòng xoá (chỉ xoá tay). */
+export function isPreRestoreBackup(row: { filename: string, trigger?: string | null }): boolean {
+  return row.trigger === 'pre-restore' || /-pre-restore\.(sql|tar)\.gz$/.test(row.filename)
+}
+
+type RotationRow = { id: number, filename: string, stamp: string, trigger?: string | null, status?: string | null }
+
+/**
+ * Chọn bản bị xoá khi xoay vòng. Hai bất biến, đúng với MỌI `keepCount` (kể cả 1):
+ *  - bản `pre-restore` không bao giờ là ứng viên, cũng không chiếm chỗ trong N bản
+ *    giữ lại (nó là ảnh chụp trước một lần khôi phục, không phải lịch sử);
+ *  - bản MỚI NHẤT của mỗi họ (`sql`, `uploads`, `media`) luôn được giữ. Một lượt
+ *    "files" sinh hai archive cùng `type='media'` (`cdkt-uploads-…`, `cdkt-media-…`),
+ *    nên họ đọc từ TÊN file chứ không từ cột `type` — đếm theo cột, `keepCount=1`
+ *    sẽ giữ archive media và xoá archive uploads duy nhất.
+ * Thuần, để kiểm thử không cần CSDL hay đĩa.
+ */
+export function selectRotationVictims<T extends RotationRow>(rows: readonly T[], keepCount: number): T[] {
+  const candidates = rows
+    .filter(row => (row.status ?? 'done') === 'done' && !isPreRestoreBackup(row))
+    .slice()
+    .sort((a, b) => (a.stamp === b.stamp ? b.id - a.id : a.stamp < b.stamp ? 1 : -1))
+  const newestOfFamily = new Set<number>()
+  const seenFamilies = new Set<string>()
+  for (const row of candidates) {
+    const family = backupFamilyOf(row.filename) ?? `other:${row.filename}`
+    if (seenFamilies.has(family)) continue
+    seenFamilies.add(family)
+    newestOfFamily.add(row.id)
+  }
+  const keep = Math.max(1, Math.floor(keepCount))
+  return candidates.slice(keep).filter(row => !newestOfFamily.has(row.id))
+}
+
+// ─── Xoay vòng không được xoá file đang được khôi phục ─────────────────────────
+//
+// Bản `pre-restore` đã bỏ xoay vòng, nhưng một lượt backup KHÁC (lịch chạy, bấm
+// tay, pre-sync…) kết thúc đúng lúc đang khôi phục một bản CŨ vẫn xoay vòng — và
+// bản cũ nhất chính là ứng viên đầu tiên. Hai lớp chặn:
+//  1. Khoá `cdkt:backup:restore` đang bị giữ (bất kỳ tiến trình/container nào —
+//     `IS_USED_LOCK` hỏi MySQL, không chờ) → bỏ cả lượt xoay vòng, log
+//     `backup.rotate_skipped_restore_active`. Không đọc được trạng thái khoá →
+//     cũng bỏ (bỏ một lượt xoay vòng vô hại; xoá file đang đọc thì không).
+//  2. Tên file đang khôi phục trong tiến trình này (`holdRestoreTarget`, đăng ký
+//     TRƯỚC khi `runRestore` kiểm file và lấy khoá — phủ khoảng hở trước khi khoá
+//     được giữ) → không bao giờ là nạn nhân; kiểm lại ngay trước mỗi lần xoá.
+// Sổ đăng ký nằm ở đây chứ không ở `backup-restore.ts` vì tệp đó import tệp này
+// (`runBackup` cho bản `pre-restore`) — đặt ngược lại thành vòng import.
+// Còn lại một khe đã biết, an toàn: lượt xoay vòng đã qua phép kiểm của một file
+// rồi mới tới lượt khôi phục đăng ký file đó → khôi phục thất bại sạch (file
+// biến mất trước khi được đọc: `runRestore` 404, hoặc `ENOENT` ở bước kiểm/giải
+// nén trước khi ghi gì; khôi phục CSDL còn bị chặn 409 vì backup đang giữ khoá
+// chạy), không có lượt khôi phục nửa chừng.
+
+/** Khoá MySQL của lượt khôi phục — một nguồn cho `backup-restore.ts` và cho xoay vòng. */
+export const LOCK_RESTORE = 'cdkt:backup:restore'
+
+const activeRestoreTargets = new Map<string, number>()
+
+/**
+ * Đánh dấu `filename` (tên trong thư mục backups) là đang được khôi phục cho tới
+ * khi gọi hàm trả về. Đếm tham chiếu: `restoreUploaded` và `runRestore` cùng giữ
+ * một file mà không nhả sớm cho nhau. Gọi nhả nhiều lần vô hại.
+ */
+export function holdRestoreTarget(filename: string): () => void {
+  activeRestoreTargets.set(filename, (activeRestoreTargets.get(filename) ?? 0) + 1)
+  let released = false
+  return () => {
+    if (released) return
+    released = true
+    const left = (activeRestoreTargets.get(filename) ?? 1) - 1
+    if (left <= 0) activeRestoreTargets.delete(filename)
+    else activeRestoreTargets.set(filename, left)
+  }
+}
+
+export function restoreTargetsInProgress(): ReadonlySet<string> {
+  return new Set(activeRestoreTargets.keys())
+}
+
+/** Hai câu hỏi xoay vòng phải hỏi trước khi xoá — thay được trong kiểm thử. */
+export interface RotationGuards {
+  /** Khoá `cdkt:backup:restore` có đang bị giữ không (ném = không biết → bỏ xoay vòng). */
+  restoreLockHeld: () => Promise<boolean>
+  /** Tên file đang được khôi phục trong tiến trình này. */
+  restoreTargets: () => ReadonlySet<string>
+}
+
+async function restoreLockHeldOnServer(): Promise<boolean> {
+  const pool = getPool()
+  if (!pool) throw new Error('Cơ sở dữ liệu chưa sẵn sàng.')
+  const [rows] = await pool.query<RowDataPacket[]>('SELECT IS_USED_LOCK(?) AS holder', [LOCK_RESTORE])
+  const holder = rows[0]?.holder
+  return holder !== null && holder !== undefined
+}
+
+const DEFAULT_ROTATION_GUARDS: RotationGuards = {
+  restoreLockHeld: restoreLockHeldOnServer,
+  restoreTargets: restoreTargetsInProgress,
+}
+
+/**
+ * Xoá bản cũ vượt keepCount — chỉ đếm bản `done` để không xoá bản đang chạy, và
+ * không xoá gì khi đang có lượt khôi phục (xem khối chú thích ở trên).
+ */
+export async function rotateOldBackups(
+  db: ReturnType<typeof getDb>,
+  keepCount: number,
+  guardOverrides: Partial<RotationGuards> = {},
+): Promise<number> {
+  const guards: RotationGuards = { ...DEFAULT_ROTATION_GUARDS, ...guardOverrides }
+  let restoreActive: boolean
+  try {
+    restoreActive = await guards.restoreLockHeld()
+  } catch (err: unknown) {
+    logWarn({ event: 'backup.rotate_skipped_restore_unknown', error: err instanceof Error ? err.message : String(err) })
+    return 0
+  }
+  if (restoreActive) {
+    logWarn({ event: 'backup.rotate_skipped_restore_active', reason: 'restore_lock_held' })
+    return 0
+  }
+
   const all = await db.select().from(backups).where(eq(backups.status, 'done')).orderBy(desc(backups.stamp))
-  if (all.length <= keepCount) return 0
-  const toRemove = all.slice(keepCount)
+  const toRemove = selectRotationVictims(all, keepCount)
+  if (toRemove.length === 0) return 0
   let deleted = 0
   for (const row of toRemove) {
+    if (guards.restoreTargets().has(row.filename)) {
+      logWarn({ event: 'backup.rotate_skipped_restore_active', reason: 'restore_target', filename: row.filename })
+      continue
+    }
     try {
       const filePath = path.resolve(backupsDir(), row.filename)
       await fs.unlink(filePath).catch(() => {})
@@ -218,6 +290,7 @@ export async function runBackup(
   type: BackupType,
   trigger: BackupTrigger,
   adminUserId: number | null,
+  options: RunBackupOptions = {},
 ): Promise<BackupResult> {
   const db = getDb()
   const pool = getPool()
@@ -338,8 +411,10 @@ export async function runBackup(
       }
     }
 
-    // Xoay vòng — sau khi backup + Drive xong.
-    if (config.keepCount > 0) {
+    // Xoay vòng — sau khi backup + Drive xong. Bản `pre-restore` bỏ qua bước này:
+    // xoay vòng xoá bản `done` cũ nhất, và bản cũ nhất có thể chính là file sắp
+    // được khôi phục.
+    if (options.rotate !== false && config.keepCount > 0) {
       await rotateOldBackups(db, config.keepCount)
     }
 
@@ -349,115 +424,9 @@ export async function runBackup(
   })
 
   if (!outcome.acquired) {
-    throw new Error('Một lượt backup khác đang chạy. Thử lại sau.')
+    throw new BackupLockBusyError()
   }
   return outcome.value
-}
-
-export async function runRestore(filename: string, adminUserId: number | null): Promise<void> {
-  const db = getDb()
-  const pool = getPool()
-  if (!pool) throw new Error('Cơ sở dữ liệu chưa sẵn sàng.')
-
-  const filePath = path.resolve(backupsDir(), filename)
-  if (!filePath.startsWith(backupsDir() + path.sep)) {
-    throw new Error('Đường dẫn file không hợp lệ.')
-  }
-  try { await fs.stat(filePath) } catch { throw new Error(`File backup "${filename}" không tồn tại.`) }
-
-  const outcome = await withNamedLock(pool, LOCK_RESTORE, LOCK_TIMEOUT, async () => {
-    currentRestoreStatus = { running: true, phase: 'start', message: `Đang khôi phục ${filename}`, startedAt: Date.now(), progress: undefined }
-
-    try {
-      if (filename.endsWith('.sql.gz')) {
-        currentRestoreStatus = { running: true, phase: 'sql', message: 'Đang phục hồi CSDL', startedAt: Date.now(), progress: undefined }
-        await restoreSql(filePath)
-      } else if (filename.endsWith('.tar.gz')) {
-        currentRestoreStatus = { running: true, phase: 'extract', message: 'Đang giải nén file', startedAt: Date.now(), progress: 0 }
-        await restoreFiles(filePath)
-      } else {
-        throw new Error(`Định dạng file không hỗ trợ: ${filename}`)
-      }
-
-      currentRestoreStatus = { running: true, phase: 'audit', message: 'Đang ghi audit log', startedAt: Date.now(), progress: undefined }
-      await db.transaction(async (tx) => {
-        await tx.insert(activityLogs).values({
-          userId: adminUserId, action: 'backup_restore', resource: 'settings', resourceId: null,
-          meta: { filename },
-        })
-      })
-      currentRestoreStatus = { running: false, phase: 'done', message: 'Khôi phục xong', startedAt: Date.now(), progress: 100 }
-      logInfo({ event: 'backup.restored', filename })
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      currentRestoreStatus = { running: false, phase: 'failed', message: `Khôi phục lỗi: ${msg}`, startedAt: Date.now(), progress: undefined }
-      throw err
-    }
-  })
-
-  if (!outcome.acquired) {
-    currentRestoreStatus = { running: false, phase: 'failed', message: 'Một lượt khôi phục khác đang chạy. Thử lại sau.', startedAt: Date.now(), progress: undefined }
-    throw new Error('Một lượt khôi phục khác đang chạy. Thử lại sau.')
-  }
-}
-
-async function restoreSql(filePath: string): Promise<void> {
-  const zlib = await import('node:zlib')
-  const buf = await fs.readFile(filePath)
-  const sqlText = zlib.gunzipSync(buf).toString('utf8')
-
-  // Tạo connection riêng với `multipleStatements: true` để chạy toàn bộ SQL dump
-  // trong 1 lượt — không tách statement thủ công (dễ sai khi string literal chứa `;`).
-  // Pool của app tắt multipleStatements (mặc định) nên phải tạo connection riêng.
-  const mysql = await import('mysql2/promise')
-  const conn = await mysql.createConnection({
-    host: process.env.DB_HOST || '127.0.0.1',
-    port: Number(process.env.DB_PORT || 3306),
-    user: process.env.DB_USER || 'root',
-    password: process.env.DB_PASSWORD || '',
-    database: process.env.DB_NAME || process.env.MYSQL_DATABASE || 'cdkt_admin',
-    multipleStatements: true,
-  })
-  try {
-    await conn.query('SET FOREIGN_KEY_CHECKS = 0')
-    await conn.query(sqlText)
-    await conn.query('SET FOREIGN_KEY_CHECKS = 1')
-  } finally {
-    await conn.end()
-  }
-}
-
-async function restoreFiles(filePath: string): Promise<void> {
-  // Mỗi file backup chỉ chứa 1 cây: `uploads/` (nén từ public/) hoặc `media/`
-  // (từ /var/lib/cdkt/). Xác định cây qua tên file rồi extract về gốc đúng.
-  const filename = path.basename(filePath)
-  const isMedia = filename.includes('-media-')
-  const target = isMedia ? '/var/lib/cdkt' : path.resolve(process.cwd(), 'public')
-  await fs.mkdir(target, { recursive: true }).catch(() => {})
-  const treeName = isMedia ? 'media' : 'uploads'
-
-  // List headers trước (nhanh — không extract) để đếm tổng entries, báo cho UI.
-  let totalEntries = 0
-  try {
-    const { stdout } = await execFileAsync('tar', ['-tzf', filePath], { maxBuffer: 16 * 1024 * 1024 })
-    totalEntries = stdout.split('\n').filter(Boolean).length
-  } catch { /* list fail — vẫn extract, không có total */ }
-
-  currentRestoreStatus = {
-    running: true,
-    phase: 'extract',
-    message: totalEntries > 0 ? `Đang giải nén ${totalEntries} mục...` : 'Đang giải nén file...',
-    startedAt: Date.now(),
-    progress: 0,
-  }
-  await execFileAsync('tar', ['-xzf', filePath, '-C', target, treeName])
-  currentRestoreStatus = {
-    running: true,
-    phase: 'extract',
-    message: totalEntries > 0 ? `Đã giải nén ${totalEntries} mục` : 'Đã giải nén xong',
-    startedAt: Date.now(),
-    progress: 100,
-  }
 }
 
 /** Liệt kê backup cho trang admin. */
@@ -487,24 +456,4 @@ export async function deleteBackup(filename: string, adminUserId: number | null)
       meta: { backup: filename },
     })
   })
-}
-
-/** Lưu file upload vào backups/ rồi khôi phục. */
-export async function restoreUploaded(filename: string, fileBuffer: Buffer, adminUserId: number | null): Promise<void> {
-  const dir = backupsDir()
-  await fs.mkdir(dir, { recursive: true })
-  const safeName = path.basename(filename).replace(/[^a-zA-Z0-9._-]/g, '_')
-  const target = path.resolve(dir, safeName)
-  if (!target.startsWith(dir + path.sep)) throw new Error('Tên file không hợp lệ.')
-  // Báo running ngay từ lúc bắt đầu ghi file — UI poll thấy không còn pending.
-  currentRestoreStatus = { running: true, phase: 'save', message: `Đang ghi file ${safeName} (${Math.round(fileBuffer.length / 1024 / 1024)}MB)...`, startedAt: Date.now(), progress: undefined }
-  await fs.writeFile(target, fileBuffer)
-  // Ghi hàng backups (trigger=manual) để công khai
-  const db = getDb()
-  await db.insert(backups).values({
-    filename: safeName, type: safeName.endsWith('.sql.gz') ? 'sql' : 'media',
-    bytes: fileBuffer.length, stamp: timestampStamp(), trigger: 'manual', status: 'done',
-    createdBy: adminUserId,
-  })
-  await runRestore(safeName, adminUserId)
 }

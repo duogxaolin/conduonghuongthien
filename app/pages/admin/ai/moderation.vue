@@ -588,12 +588,29 @@
               <button
                 type="button"
                 class="w-full px-3 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold cursor-pointer transition-all flex items-center justify-center gap-1.5 disabled:opacity-50 border-none"
-                :disabled="rescanning"
+                :disabled="rescanBusy"
                 @click="triggerRescanAll"
               >
-                <i class="fa-solid fa-play text-xs" :class="rescanning ? 'animate-spin' : ''"></i>
-                <span>{{ rescanning ? 'Đang quét...' : 'Quét & Dọn ngay' }}</span>
+                <i class="fa-solid fa-play text-xs" :class="rescanBusy ? 'animate-spin motion-reduce:animate-none' : ''" aria-hidden="true"></i>
+                <span>{{ rescanBusy ? 'Đang quét...' : 'Quét & Dọn ngay' }}</span>
               </button>
+              <p
+                v-if="rescanProgressText"
+                class="m-0 text-[0.72rem] text-[#667768]"
+                role="status"
+                aria-live="polite"
+              >
+                {{ rescanProgressText }}
+              </p>
+              <!-- Lượt quét vừa xong KHÔNG có AI (chưa cấu hình) → chỉ quét bằng luật. -->
+              <p
+                v-if="rescanAiUnavailableText"
+                class="m-0 rounded-lg border border-[#f3d48a] bg-[#fff8e6] px-2.5 py-1.5 text-[0.72rem] font-semibold text-[#7a4f00] flex items-start gap-1.5"
+                role="status"
+              >
+                <i class="fa-solid fa-triangle-exclamation mt-0.5" aria-hidden="true"></i>
+                <span>{{ rescanAiUnavailableText }}</span>
+              </p>
             </div>
 
             <!-- Restart Worker -->
@@ -645,7 +662,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
+import { rescanAiNotice, rescanFinishedToast, rescanSummaryText, type RescanSummary } from '~/utils/moderation-rescan-summary'
 
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
@@ -934,9 +952,53 @@ interface WorkerStatusData {
   }
 }
 
+/** Lượt "Quét & dọn" chạy nền — hình dạng `rescan` của worker-status. */
+interface RescanStatusData {
+  state: 'idle' | 'running' | 'completed' | 'failed'
+  startedAt: string | null
+  finishedAt: string | null
+  error: string | null
+  limits?: { batchSize: number; maxComments: number; maxMessages: number }
+  progress: {
+    phase: 'comments' | 'messages' | 'done'
+    totalComments: number
+    totalMessages: number
+    scannedComments: number
+    hiddenComments: number
+    failedComments: number
+    scannedMessages: number
+    deletedMessages: number
+    failedMessages: number
+  } | null
+  /** `aiUnavailable`: AI kiểm duyệt chưa cấu hình, lượt quét chỉ áp luật. */
+  summary: RescanSummary | null
+}
+
 const workerData = ref<WorkerStatusData | null>(null)
 const workerLoading = ref(false)
 const rescanning = ref(false)
+const rescanStatus = ref<RescanStatusData | null>(null)
+// Nút khoá cả khi request đang gửi lẫn khi job nền đang chạy (kể cả sau khi tải lại trang).
+const rescanBusy = computed(() => rescanning.value || rescanStatus.value?.state === 'running')
+const rescanProgressText = computed(() => {
+  const s = rescanStatus.value
+  if (!s) return ''
+  if (s.state === 'running') {
+    const p = s.progress
+    if (!p) return 'Đang chuẩn bị quét...'
+    return p.phase === 'messages'
+      ? `Đang quét tin chat trực tiếp ${p.scannedMessages}/${p.totalMessages} · đã xóa ${p.deletedMessages}${p.failedMessages ? ` · lỗi ${p.failedMessages}` : ''}`
+      : `Đang quét bình luận ${p.scannedComments}/${p.totalComments} · đã ẩn ${p.hiddenComments}${p.failedComments ? ` · lỗi ${p.failedComments}` : ''}`
+  }
+  if (s.state === 'completed' && s.summary) return rescanSummaryText(s.summary)
+  if (s.state === 'failed') return 'Lượt quét gần nhất bị dừng do lỗi. Có thể chạy lại.'
+  return ''
+})
+const rescanAiUnavailableText = computed(() =>
+  rescanStatus.value?.state === 'completed' ? rescanAiNotice(rescanStatus.value.summary) : '',
+)
+let rescanPollTimer: ReturnType<typeof setTimeout> | null = null
+let pageUnmounted = false
 const restartingWorker = ref(false)
 const restartingServer = ref(false)
 
@@ -951,16 +1013,50 @@ function formatUptime(seconds: number): string {
 async function loadWorkerStatus() {
   workerLoading.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; worker: WorkerStatusData }>)(`/api/admin/ai/moderation/worker-status`)
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; worker: WorkerStatusData; rescan?: RescanStatusData }>)(`/api/admin/ai/moderation/worker-status`)
     if (res.ok) {
       workerData.value = res.worker
+      applyRescanStatus(res.rescan ?? null)
     }
   } catch {
     // Non-blocking status lookup
   } finally {
     workerLoading.value = false
   }
+  scheduleRescanPoll()
 }
+
+/** Cập nhật trạng thái job; khi job vừa chạy xong thì báo kết quả và tải lại hàng đợi. */
+function applyRescanStatus(next: RescanStatusData | null) {
+  const wasRunning = rescanStatus.value?.state === 'running'
+  rescanStatus.value = next
+  if (!wasRunning || !next || next.state === 'running') return
+  if (next.state === 'completed' && next.summary) {
+    const done = rescanFinishedToast(next.summary)
+    if (done.type === 'warning') toast.warning(done.message)
+    else toast.success(done.message)
+  } else if (next.state === 'failed') {
+    toast.error('Lượt quét lại bị dừng do lỗi. Vui lòng thử lại.')
+  }
+  void loadQueue()
+}
+
+/** Hỏi lại trạng thái mỗi 3 giây, chỉ khi job nền đang chạy. */
+function scheduleRescanPoll() {
+  // `pageUnmounted`: một lượt fetch trạng thái còn bay lúc rời trang không được
+  // hẹn lại timer sau khi onBeforeUnmount đã dọn.
+  if (pageUnmounted || rescanPollTimer || rescanStatus.value?.state !== 'running') return
+  rescanPollTimer = setTimeout(() => {
+    rescanPollTimer = null
+    void loadWorkerStatus()
+  }, 3000)
+}
+
+onBeforeUnmount(() => {
+  pageUnmounted = true
+  if (rescanPollTimer) clearTimeout(rescanPollTimer)
+  rescanPollTimer = null
+})
 
 async function triggerRestartWorker() {
   const ok = await confirm({
@@ -986,7 +1082,7 @@ async function triggerRestartWorker() {
 async function triggerRescanAll() {
   const ok = await confirm({
     title: 'Quét & dọn sạch nội dung bẩn cũ',
-    message: 'Hệ thống sẽ quét lại toàn bộ bình luận bài viết, video và tin chat trực tiếp hiện có trong CSDL bằng bộ lọc tức thì. Mọi nội dung vi phạm sẽ được tự động ẩn hoặc xóa ngay lập tức. Tiếp tục?',
+    message: `Hệ thống sẽ quét lại ở nền các bình luận bài viết, video (qua AI, tối đa ${rescanStatus.value?.limits?.maxComments ?? 'một số'} bình luận mỗi lượt, mới nhất trước) và tin chat trực tiếp đang hiển thị. Nội dung vi phạm sẽ được tự động ẩn hoặc xóa. Tiến độ hiện ngay dưới nút. Tiếp tục?`,
     confirmText: 'Bắt đầu quét & dọn dẹp',
     tone: 'danger',
   })
@@ -994,11 +1090,19 @@ async function triggerRescanAll() {
 
   rescanning.value = true
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/ai/moderation/rescan-all`, { method: "POST" })
-    toast.success(res.message)
-    await Promise.all([loadWorkerStatus(), loadQueue()])
+    // 202: job đã bắt đầu ở nền — tiến độ x/y hiện dưới nút, cập nhật bằng polling.
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string; rescan: RescanStatusData }>)(`/api/admin/ai/moderation/rescan-all`, { method: "POST" })
+    toast.info(res.message)
+    rescanStatus.value = res.rescan
+    scheduleRescanPoll()
   } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không thể quét lại nội dung.'))
+    if (errorStatus(err) === 409) {
+      // Đã có lượt khác chạy: không phải lỗi của cán bộ — hiện tiến độ của lượt đó.
+      toast.warning(errorMessage(err, 'Đang có một lượt quét lại chạy.'))
+      await loadWorkerStatus()
+    } else {
+      toast.error(errorMessage(err, 'Không thể quét lại nội dung.'))
+    }
   } finally {
     rescanning.value = false
   }

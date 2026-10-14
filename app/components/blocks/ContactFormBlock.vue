@@ -27,25 +27,44 @@
             <h3 v-if="hasInfo" class="text-[1.3rem] font-bold text-[#4A6741] mb-6">{{ (currentLang !== 'vi' ? t('register_help') : '') || d.title || 'Đăng ký nhận trợ giúp' }}</h3>
 
             <!-- Dynamic fields -->
-            <div v-for="field in renderFields" :key="field.id" class="mb-5">
-              <label class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">
-                {{ field.label }}<span v-if="field.required" class="text-[#b71c1c]"> *</span>
+            <!--
+              Nhãn ↔ điều khiển gắn bằng id/for sinh từ `useId()` + chỉ số (không dùng
+              `field.id` do cán bộ đặt: có thể trùng khi block xuất hiện hai lần).
+              Không dùng `required` native: validate riêng ở `validate()` và báo lỗi
+              tiếng Việt ngay dưới trường; `aria-required` công bố bắt buộc cho
+              trình đọc màn hình. Viền lỗi #b71c1c đạt 6.57:1 trên nền trắng (≥3:1).
+            -->
+            <div v-for="(field, fi) in renderFields" :key="field.id" class="mb-5">
+              <label :for="controlId(uid, fi)" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">
+                {{ field.label }}<span v-if="field.required" class="text-[#b71c1c]" aria-hidden="true"> *</span>
               </label>
 
               <textarea
                 v-if="field.type === 'textarea'"
+                :id="controlId(uid, fi)"
                 rows="4"
                 v-model="values[field.id]"
+                @input="revalidate(field)"
+                @blur="revalidate(field)"
                 :placeholder="field.placeholder || ''"
+                :aria-required="field.required ? 'true' : undefined"
+                :aria-invalid="errors[field.id] ? 'true' : undefined"
+                :aria-describedby="errors[field.id] ? errorId(uid, fi) : undefined"
                 class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"
-                :class="errors[field.id] ? 'border-[#f5c6cb]' : 'border-[#E2E8DF]'"
+                :class="errors[field.id] ? 'border-[#b71c1c]' : 'border-[#E2E8DF]'"
               ></textarea>
 
               <select
                 v-else-if="field.type === 'select'"
+                :id="controlId(uid, fi)"
                 v-model="values[field.id]"
+                @change="revalidate(field)"
+                @blur="revalidate(field)"
+                :aria-required="field.required ? 'true' : undefined"
+                :aria-invalid="errors[field.id] ? 'true' : undefined"
+                :aria-describedby="errors[field.id] ? errorId(uid, fi) : undefined"
                 class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741] bg-white"
-                :class="errors[field.id] ? 'border-[#f5c6cb]' : 'border-[#E2E8DF]'"
+                :class="errors[field.id] ? 'border-[#b71c1c]' : 'border-[#E2E8DF]'"
               >
                 <option value="">{{ t('form_select_placeholder') }}</option>
                 <option v-for="(opt, oi) in selectOptions(field)" :key="oi" :value="opt">{{ opt }}</option>
@@ -53,14 +72,25 @@
 
               <input
                 v-else
+                :id="controlId(uid, fi)"
                 :type="inputType(field.type)"
                 v-model="values[field.id]"
+                @input="revalidate(field)"
+                @blur="revalidate(field)"
                 :placeholder="field.placeholder || ''"
+                :autocomplete="autocompleteFor(field.map, field.type)"
+                :aria-required="field.required ? 'true' : undefined"
+                :aria-invalid="errors[field.id] ? 'true' : undefined"
+                :aria-describedby="errors[field.id] ? errorId(uid, fi) : undefined"
                 class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"
-                :class="errors[field.id] ? 'border-[#f5c6cb]' : 'border-[#E2E8DF]'"
+                :class="errors[field.id] ? 'border-[#b71c1c]' : 'border-[#E2E8DF]'"
               />
 
-              <p v-if="errors[field.id]" class="mt-1.5 text-[0.78rem] font-semibold text-[#b71c1c]">{{ errors[field.id] }}</p>
+              <!-- KHÔNG `role="alert"` ở từng trường: lượt gửi sai năm trường từng bắn
+                   năm thông báo cùng lúc. Trình đọc màn hình nghe MỘT tóm tắt
+                   (`submitMessage`, role="alert" bên dưới), focus nhảy tới trường lỗi
+                   đầu tiên, và lỗi của trường được đọc qua `aria-describedby`. -->
+              <p v-if="errors[field.id]" :id="errorId(uid, fi)" class="mt-1.5 text-[0.78rem] font-semibold text-[#b71c1c]">{{ errors[field.id] }}</p>
             </div>
 
             <button type="submit" class="btn btn-primary w-full text-lg" :disabled="submitStatus === 'loading'">
@@ -70,8 +100,7 @@
               v-if="submitMessage"
               class="mt-4 px-[18px] py-[14px] rounded-lg text-[0.9rem] font-semibold leading-[1.5]"
               :class="submitStatus === 'success' ? 'bg-[#e8f5e9] text-[#2e6b32] border border-[#b6d7b8]' : 'bg-[#fdecea] text-[#b71c1c] border border-[#f5c6cb]'"
-              role="status"
-              aria-live="polite"
+              :role="submitStatus === 'error' ? 'alert' : 'status'"
             >
               {{ submitMessage }}
             </div>
@@ -83,11 +112,14 @@
 </template>
 
 <script setup lang="ts">
-import { reactive, ref, computed } from 'vue'
+import { reactive, ref, computed, nextTick, useId } from 'vue'
 import { errorMessage } from '~/utils/errorMessage'
 import { useI18n } from '~/composables/useI18n'
+import { autocompleteFor, controlId, errorId, validateFormField } from '~/utils/form-a11y'
 
 const { t, currentLang } = useI18n()
+// Duy nhất theo thể hiện (hai block cùng trang không đụng id), ổn định SSR↔hydrate.
+const uid = useId()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})
 
@@ -197,26 +229,50 @@ const errors = reactive<Record<string, string>>({})
 const submitStatus = ref<null | 'loading' | 'success' | 'error'>(null)
 const submitMessage = ref('')
 
-const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-const PHONE_RE = /^[0-9+()\-\s.]{7,20}$/
-const NUMBER_RE = /^-?\d+(\.\d+)?$/
+const validationMessages = () => ({
+  required: t('form_validation_required'),
+  email: t('form_validation_email'),
+  phone: t('form_validation_phone'),
+  number: t('form_validation_number'),
+})
 
 const validate = () => {
   for (const k of Object.keys(errors)) delete errors[k]
+  const messages = validationMessages()
   let ok = true
   for (const field of renderFields.value) {
-    const val = String(values[field.id] ?? '').trim()
-    if (field.required && !val) {
-      errors[field.id] = t('form_validation_required')
+    const error = validateFormField(field, values[field.id], messages)
+    if (error) {
+      errors[field.id] = error
       ok = false
-      continue
     }
-    if (!val) continue
-    if (field.type === 'email' && !EMAIL_RE.test(val)) { errors[field.id] = t('form_validation_email'); ok = false }
-    else if (field.type === 'tel' && !PHONE_RE.test(val)) { errors[field.id] = t('form_validation_phone'); ok = false }
-    else if (field.type === 'number' && !NUMBER_RE.test(val)) { errors[field.id] = t('form_validation_number'); ok = false }
   }
   return ok
+}
+
+/**
+ * Kiểm lại MỘT trường đang báo lỗi khi người dùng sửa nó (`@input`/`@blur`): sửa
+ * đúng thì `aria-invalid` + dòng lỗi biến mất ngay, không phải đợi bấm gửi lần nữa.
+ * Trường chưa từng lỗi thì để yên — không bắt bẻ người đang gõ dở trước lượt gửi.
+ */
+const revalidate = (field: RenderField) => {
+  if (!errors[field.id]) return
+  const error = validateFormField(field, values[field.id], validationMessages())
+  if (error) errors[field.id] = error
+  else delete errors[field.id]
+  if (submitStatus.value === 'error' && !Object.keys(errors).length) {
+    submitStatus.value = null
+    submitMessage.value = ''
+  }
+}
+
+// Đưa focus tới trường lỗi đầu tiên để người dùng bàn phím/trình đọc màn hình
+// thấy ngay chỗ cần sửa (lỗi của trường được đọc nhờ aria-describedby; thông báo
+// chung duy nhất là tóm tắt `submitMessage` role="alert").
+const focusFirstInvalid = async () => {
+  await nextTick()
+  const index = renderFields.value.findIndex((f) => errors[f.id])
+  if (index >= 0) document.getElementById(controlId(uid, index))?.focus()
 }
 
 const submitForm = async () => {
@@ -224,6 +280,7 @@ const submitForm = async () => {
   if (!validate()) {
     submitStatus.value = 'error'
     submitMessage.value = t('form_validation_check')
+    await focusFirstInvalid()
     return
   }
   submitStatus.value = 'loading'

@@ -11,7 +11,10 @@
  *   4. Check budget (spec R9).
  *   5. Substitute `{{variables}}` in `system_prompt`.
  *   6. Build the HTTP request using existing `chatbot/providers.ts` patterns.
- *   7. Send via `chatbot/outbound.ts` `safeProviderRequest`.
+ *   7. Send via `chatbot/outbound.ts` — `safeProviderRequest` (buffered) or
+ *      `safeProviderStream` (SSE). No path uses a bare `fetch`: the provider URL
+ *      policy (`utils/ai/provider-url.ts`) is checked first, then DNS→public IP
+ *      pinned to the socket, https/443, no redirects, deadline, byte cap.
  *   8. Parse usage tokens from the response (provider-specific strategy).
  *   9. Calculate cost via `calculateAiCost`.
  *  10. Log to `ai_usage_logs` (awaited, errors caught).
@@ -33,10 +36,21 @@ import { calculateAiCost, type AiModelPricingEntry } from '../utils/ai-cost'
 import { checkBudget } from '../utils/ai-budget'
 import { logAiUsage } from '../utils/ai-usage'
 import { logWarn, logInfo } from '../utils/logger'
-import { safeProviderRequest } from '../utils/chatbot/outbound'
+import {
+  safeProviderRequest, safeProviderStream,
+  type ProviderRequest, type ResolveProviderHost, type SafeProviderResponse, type SafeProviderStreamResponse,
+} from '../utils/chatbot/outbound'
+import { checkProviderBaseUrl } from '../utils/ai/provider-url'
 import {
   buildProviderChatCall, resolveProviderPolicy, type ProviderCall,
 } from '../utils/chatbot/providers'
+
+// Giới hạn đường ra của vòng gọi công cụ. Bước không stream của vòng công cụ
+// trước đây dùng `fetch` trần — không hạn giờ, không trần dung lượng. Hạn giờ bằng
+// hạn tổng của luồng SSE (outbound.ts): model suy luận có thể mất tới ~200 s trước
+// khi trả gì, và quyết định đã chốt là đợi chứ không bỏ (sse-heartbeat.ts).
+const TOOL_STEP_TIMEOUT_MS = 300_000
+const TOOL_STEP_MAX_RESPONSE_BYTES = 1024 * 1024
 
 
 // ─── Types ──────────────────────────────────────────────────────────────
@@ -66,6 +80,18 @@ export interface AiCallInput {
   onToolCall?: (event: { name: string; query?: string; status: 'calling' | 'done'; count?: number; result?: unknown }) => void | Promise<void>
   /** Optional tool calling / function calling definitions */
   tools?: AiToolDefinition[]
+  /**
+   * Chỗ tiêm cho test: thay `https.request` và bộ phân giải DNS bên dưới
+   * `safeProviderRequest`/`safeProviderStream`. Mọi kiểm tra (chính sách URL, DNS→IP
+   * công khai, ghim IP, chặn chuyển hướng, hạn giờ, trần byte) vẫn chạy thật — chỉ
+   * socket là giả. Mã production không truyền trường này.
+   */
+  transport?: AiTransportOverrides
+}
+
+export interface AiTransportOverrides {
+  request?: ProviderRequest
+  resolveHost?: ResolveProviderHost
 }
 export interface AiCallResult {
   ok: boolean
@@ -156,7 +182,8 @@ async function loadPricing(db: Database, model: string): Promise<AiModelPricing 
  *
  * @returns `{ ok: true, text }` on success, `{ ok: false, error }` on failure.
  *          Failure reasons: 'service_inactive', 'no_api_key', 'budget_exceeded',
- *          'provider_error', 'parse_error'.
+ *          'provider_url_rejected' (stored base URL fails the provider URL policy —
+ *          no network call made), 'provider_error', 'parse_error'.
  */
 export async function callAi(serviceKey: string, input: AiCallInput): Promise<AiCallResult> {
   const db = input.db ?? getDb()
@@ -227,9 +254,23 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
     return { ok: false, error: 'service_inactive' }
   }
 
+  // Kiểm chính sách địa chỉ TRƯỚC khi dựng request mang khoá API. Một hàng lưu từ
+  // trước khi có kiểm lúc ghi (http://, IP, localhost, cổng lạ…) dừng ở đây — không
+  // phân giải DNS, không mở kết nối. Phần DNS→IP công khai kiểm tiếp trong outbound.
+  const baseUrlCheck = checkProviderBaseUrl(baseUrl)
+  if (!baseUrlCheck.ok) {
+    logWarn({
+      event: 'ai_gateway.provider_url_rejected',
+      serviceKey,
+      provider: config.provider,
+      violation: baseUrlCheck.violation,
+    })
+    return { ok: false, error: 'provider_url_rejected', errorMessage: baseUrlCheck.message }
+  }
+
   const providerCall: ProviderCall = buildProviderChatCall({
     policy,
-    baseUrl,
+    baseUrl: baseUrlCheck.url,
     model,
     secret,
     systemPrompt,
@@ -237,9 +278,37 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
     maxTokens: config.maxTokens ? Number(config.maxTokens) : undefined,
   })
 
-  // 6. Resolve allowed hosts from the base URL (for SSRF protection).
+  // 6. Every request below goes through `outbound.ts`. `allowedHosts` is derived
+  //    from the same URL, so on its own it proves nothing — the guards that matter
+  //    are `checkProviderBaseUrl` above (write-time policy re-checked at call time)
+  //    and, inside outbound, DNS→public-IP with the checked IP pinned to the socket,
+  //    https/443 only, no redirects, a deadline and a byte cap.
   const url = new URL(providerCall.url)
   const allowedHosts = [url.hostname]
+  const transport = input.transport
+  const postJson = (body: string): Promise<SafeProviderResponse> => safeProviderRequest({
+    url: providerCall.url,
+    allowedHosts,
+    method: 'POST',
+    headers: providerCall.headers,
+    body,
+    timeoutMs: TOOL_STEP_TIMEOUT_MS,
+    maxResponseBytes: TOOL_STEP_MAX_RESPONSE_BYTES,
+    resolveHost: transport?.resolveHost,
+    request: transport?.request,
+  })
+  /** `body` is `null` exactly when the status is not 2xx. */
+  const postStream = (body: string): Promise<SafeProviderStreamResponse> => safeProviderStream({
+    url: providerCall.url,
+    allowedHosts,
+    method: 'POST',
+    headers: providerCall.headers,
+    body,
+    resolveHost: transport?.resolveHost,
+    request: transport?.request,
+  })
+  const responseText = (response: SafeProviderResponse): string => Buffer.from(response.body).toString('utf8')
+  const isSuccess = (status: number): boolean => status >= 200 && status < 300
 
   // 7. Measure execution time from before the provider call (spec R10.6).
   const startTime = Date.now()
@@ -308,12 +377,8 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
       let msg1: Record<string, unknown> | undefined
       if (onChunk) {
         reqBodyObj.stream = true
-        const resp1 = await fetch(providerCall.url, {
-          method: 'POST',
-          headers: providerCall.headers,
-          body: JSON.stringify(reqBodyObj),
-        })
-        if (!resp1.ok || !resp1.body) {
+        const resp1 = await postStream(JSON.stringify(reqBodyObj))
+        if (!resp1.body) {
           success = false
           errorMessage = `HTTP ${resp1.status}`
           return { ok: false, error: 'provider_error' }
@@ -331,17 +396,13 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
         }
       } else {
         reqBodyObj.stream = false
-        const resp1 = await fetch(providerCall.url, {
-          method: 'POST',
-          headers: providerCall.headers,
-          body: JSON.stringify(reqBodyObj),
-        })
-        if (!resp1.ok) {
+        const resp1 = await postJson(JSON.stringify(reqBodyObj))
+        if (!isSuccess(resp1.status)) {
           success = false
           errorMessage = `HTTP ${resp1.status}`
           return { ok: false, error: 'provider_error' }
         }
-        let raw1 = await resp1.text()
+        let raw1 = responseText(resp1)
         const last1 = raw1.lastIndexOf('}')
         if (last1 !== -1) raw1 = raw1.slice(0, last1 + 1)
         const json1 = JSON.parse(raw1) as Record<string, unknown>
@@ -429,12 +490,8 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
         reqBodyObj.max_tokens = originalMaxTokens
         if (onChunk) {
           reqBodyObj.stream = true
-          const resp2 = await fetch(providerCall.url, {
-            method: 'POST',
-            headers: providerCall.headers,
-            body: JSON.stringify(reqBodyObj),
-          })
-          if (!resp2.ok || !resp2.body) {
+          const resp2 = await postStream(JSON.stringify(reqBodyObj))
+          if (!resp2.body) {
             success = false
             errorMessage = `HTTP ${resp2.status}`
             return { ok: false, error: 'provider_error' }
@@ -447,17 +504,13 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
           }
         } else {
           reqBodyObj.stream = false
-          const resp2 = await fetch(providerCall.url, {
-            method: 'POST',
-            headers: providerCall.headers,
-            body: JSON.stringify(reqBodyObj),
-          })
-          if (!resp2.ok) {
+          const resp2 = await postJson(JSON.stringify(reqBodyObj))
+          if (!isSuccess(resp2.status)) {
             success = false
             errorMessage = `HTTP ${resp2.status}`
             return { ok: false, error: 'provider_error' }
           }
-          let raw2 = await resp2.text()
+          let raw2 = responseText(resp2)
           const last2 = raw2.lastIndexOf('}')
           if (last2 !== -1) raw2 = raw2.slice(0, last2 + 1)
           const json2 = JSON.parse(raw2) as Record<string, unknown>
@@ -487,12 +540,8 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
           delete reqBodyObj.tool_choice
           reqBodyObj.max_tokens = originalMaxTokens
           reqBodyObj.stream = true
-          const respDirect = await fetch(providerCall.url, {
-            method: 'POST',
-            headers: providerCall.headers,
-            body: JSON.stringify(reqBodyObj),
-          })
-          if (respDirect.ok && respDirect.body) {
+          const respDirect = await postStream(JSON.stringify(reqBodyObj))
+          if (respDirect.body) {
             const direct = await readChatSse(respDirect.body, { emit: onChunk, onUsage: addStepUsage })
             answerText += direct.relayed
             if (!answerText.trim()) answerText = direct.finalText()
@@ -521,13 +570,9 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
       // provider answers with one JSON document, this reader finds no `data:` lines,
       // and the call ends as an empty response.
       streamBody.stream = true
-      const response = await fetch(providerCall.url, {
-        method: 'POST',
-        headers: providerCall.headers,
-        body: JSON.stringify(streamBody),
-      })
+      const response = await postStream(JSON.stringify(streamBody))
 
-      if (!response.ok || !response.body) {
+      if (!response.body) {
         success = false
         errorMessage = `HTTP ${response.status}`
         return { ok: false, error: 'provider_error' }
@@ -582,6 +627,8 @@ export async function callAi(serviceKey: string, input: AiCallInput): Promise<Ai
         body: providerCall.body,
         timeoutMs: 35_000,
         maxResponseBytes: 262_144,
+        resolveHost: transport?.resolveHost,
+        request: transport?.request,
       })
 
       if (response.status < 200 || response.status >= 300) {

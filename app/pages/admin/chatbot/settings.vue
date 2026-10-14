@@ -41,7 +41,7 @@ type SettingsMetadata = {
   hasApiKey: boolean
   apiKeyMasked: string | null
 }
-type SettingsPatch = Omit<EditableSettings, 'allowedHosts'> & {
+type SettingsPatch = Omit<EditableSettings, 'allowedHosts' | 'baseUrl'> & {
   systemPrompt?: string
   apiKey?: string
   baseUrl?: string
@@ -163,9 +163,11 @@ function buildPatchPayload(): SettingsPatch {
     enabled: form.enabled,
     providerPolicy: form.providerPolicy === 'anthropic' ? 'anthropic' : 'openai-compatible',
     provider: form.providerPolicy,
-    baseUrl: form.baseUrl,
+    // `baseUrl`/`allowedHosts` cố ý KHÔNG gửi: trang không có ô sửa chúng, giá trị
+    // trong form là địa chỉ của `ai_providers` phủ lên lúc tải. Gửi lại chúng từng
+    // chép âm thầm địa chỉ bên AI Panel sang đường gọi cũ mang khoá chatbot; nay đổi
+    // đích gọi đòi siêu quản trị, nên nếu còn gửi thì một lần lưu thường sẽ bị từ chối.
     model: form.model,
-    allowedHosts: form.allowedHosts ? form.allowedHosts.split('\n').map(h => h.trim()).filter(Boolean) : [],
     mode: form.mode,
     outOfScopeBehavior: form.outOfScopeBehavior,
     knowledgeGreeting: form.knowledgeGreeting,

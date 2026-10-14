@@ -7,7 +7,7 @@
  *   - Validation trong service, error 400 nếu fail.
  *   - `isEnabled=true` chỉ khi đã có clientId + secret (fail-closed).
  */
-import { requireResourcePermission } from '../../../../utils/permissions'
+import { requireResourcePermission, requireSuperAdmin } from '../../../../utils/permissions'
 import {
   BackupDriveOauthConfigValidationError,
   getDriveOauthConfigRow,
@@ -31,6 +31,9 @@ export default defineEventHandler(async (event) => {
 
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'update')
+  // Đích backup (tài khoản Drive nhận bản sao CSDL + file) chỉ SuperAdmin đổi được
+  // — người có `settings.update` vẫn xem trạng thái và chạy backup.
+  requireSuperAdmin(adminUser)
 
   try {
     await updateDriveOauthConfig(adminUser.id, body as DriveOauthConfigUpdate, event.context.requestId)

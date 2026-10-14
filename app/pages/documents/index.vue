@@ -24,7 +24,7 @@
     <section class="pt-6 lg:pt-8">
       <div class="container">
         <div class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-          <span class="text-xs text-[#7A8A76] font-medium shrink-0 mr-1">{{ t('quick_search') }}</span>
+          <span class="text-xs text-[#5A6C58] font-medium shrink-0 mr-1">{{ t('quick_search') }}</span>
           <button
             v-for="chip in filterChips"
             :key="chip"
@@ -52,7 +52,7 @@
           <form class="flex flex-col sm:flex-row gap-3 bg-white p-2 rounded-xl border border-[#D5E1D3] shadow-sm focus-within:border-[#4A6741] transition-all" @submit.prevent="applySearch">
             <label class="sr-only" for="doc-search">Tìm kiếm văn bản</label>
             <div class="relative flex-1 flex items-center pl-3">
-              <i class="fa-solid fa-magnifying-glass text-[#7A8A76] text-sm mr-2.5" aria-hidden="true"></i>
+              <i class="fa-solid fa-magnifying-glass text-[#5A6C58] text-sm mr-2.5" aria-hidden="true"></i>
               <input
                 id="doc-search"
                 v-model="searchInput"
@@ -90,7 +90,7 @@
                 {{ pagination.total || docs.length }} văn bản
               </span>
             </div>
-            <span v-if="pagination.totalPages > 1" class="text-xs text-[#7A8A76] font-medium hidden sm:inline">
+            <span v-if="pagination.totalPages > 1" class="text-xs text-[#5A6C58] font-medium hidden sm:inline">
               Trang {{ pagination.page }} / {{ pagination.totalPages }}
             </span>
           </div>
@@ -140,18 +140,33 @@
             <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-2xl">
               <i class="fa-solid fa-file-circle-question" aria-hidden="true"></i>
             </div>
-            <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">{{ t('no_docs_found') }}</h3>
-            <p class="text-sm text-[#556450] m-0 mb-5">
-              Không có văn bản nào khớp với từ khóa &laquo;<strong>{{ searchQuery }}</strong>&raquo;.
-            </p>
-            <button
-              type="button"
-              @click="clearSearch"
-              class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
-            >
-              <i class="fa-solid fa-rotate-left text-xs" aria-hidden="true"></i>
-              <span>{{ t('view_all_docs') }}</span>
-            </button>
+            <template v-if="pageOutOfRange">
+              <!-- `?page=` vượt trang cuối (link cũ, gõ tay): không phải "không có văn
+                   bản" — đưa người đọc về trang đầu thay vì để kẹt ở một trang trắng. -->
+              <p class="text-sm text-[#556450] m-0 mb-4">{{ t('list_page_out_of_range').replace('{total}', String(pagination.totalPages)) }}</p>
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+                @click="goFirstPage"
+              >
+                <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+                <span>{{ t('list_back_first_page') }}</span>
+              </button>
+            </template>
+            <template v-else>
+              <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">{{ t('no_docs_found') }}</h3>
+              <p class="text-sm text-[#556450] m-0 mb-5">
+                Không có văn bản nào khớp với từ khóa &laquo;<strong>{{ searchQuery }}</strong>&raquo;.
+              </p>
+              <button
+                type="button"
+                @click="clearSearch"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none"
+              >
+                <i class="fa-solid fa-rotate-left text-xs" aria-hidden="true"></i>
+                <span>{{ t('view_all_docs') }}</span>
+              </button>
+            </template>
           </div>
 
           <!-- Document Cards Grid -->
@@ -195,11 +210,11 @@
 
                   <!-- Excerpt (line-clamp-2) -->
                   <p v-if="doc.excerpt" class="text-[0.84rem] text-[#556450] leading-relaxed line-clamp-2 mb-3 m-0">
-                    {{ doc.excerpt }}
+                    {{ cleanExcerpt(doc.excerpt) }}
                   </p>
 
                   <!-- Footer Action pinned with mt-auto -->
-                  <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#7A8A76]">
+                  <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#5A6C58]">
                     <nuxt-link
                       :to="`/news/${doc.slug}`"
                       class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
@@ -277,7 +292,7 @@
                   </div>
                   <span class="min-w-0 flex-1">
                     <span class="block text-[0.88rem] font-bold leading-snug">{{ link.title }}</span>
-                    <span class="block text-[0.75rem] text-[#7A8A76] leading-relaxed mt-0.5">{{ link.description }}</span>
+                    <span class="block text-[0.75rem] text-[#5A6C58] leading-relaxed mt-0.5">{{ link.description }}</span>
                   </span>
                 </nuxt-link>
               </li>
@@ -315,12 +330,11 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
-import { useRoute } from 'vue-router'
 import { formatDateVN } from '~/utils/formatDate'
+import { cleanExcerpt } from '~/utils/article-excerpt'
 import { useI18n } from '~/composables/useI18n'
 import { useLayoutConfig } from '~/composables/useLayoutConfig'
-import type { PublicArticleListItem, PublicPagination } from '~/utils/public-types'
+import { usePublicArticleList } from '~/composables/usePublicArticleList'
 
 const { t, currentLang } = useI18n()
 const { articleGridClass } = useLayoutConfig()
@@ -329,14 +343,31 @@ useSeoMeta({
   description: 'Tra cứu văn bản quy phạm pháp luật về thi hành án hình sự, chính sách tín dụng và tái hòa nhập cộng đồng.',
 })
 
-const route = useRoute()
-const searchQuery = ref(route.query.q ? String(route.query.q) : '')
-const searchInput = ref(searchQuery.value)
-
 const filterChips = ['Nghị định 49/2020', 'Quyết định 22/2023', 'Vay vốn', 'Học nghề', 'Xóa án tích']
 
-const PER_PAGE = 3
-const currentPage = ref(Math.max(1, Math.floor(Number(route.query.page) || 1)) || 1)
+// Trạng thái đọc từ URL, khoá fetch dẫn xuất từ query (xem usePublicArticleList).
+const {
+  currentPage,
+  searchQuery,
+  searchInput,
+  articles: docs,
+  pagination,
+  pageRange,
+  pageOutOfRange,
+  pending,
+  loadError,
+  refresh,
+  setPage,
+  goFirstPage,
+  applySearch,
+  clearSearch,
+} = usePublicArticleList({
+  type: 'document',
+  perPage: 3,
+  lang: currentLang,
+  pathFor: () => '/documents',
+  scrollTargetId: 'doc-search',
+})
 
 const quickLinks = [
   { to: '/qa-documents', icon: 'fa-solid fa-book-open', title: 'Tài liệu Hỏi – Đáp', description: 'Nội dung đã được Cục C11 phê duyệt' },
@@ -344,68 +375,6 @@ const quickLinks = [
   { to: '/reintegration-models', icon: 'fa-solid fa-people-group', title: 'Mô hình tái hòa nhập', description: 'Quỹ vốn, học nghề, liên kết việc làm' },
   { to: '/contact', icon: 'fa-solid fa-headset', title: 'Đăng ký tư vấn 24/7', description: 'Gửi yêu cầu để cán bộ liên hệ lại' },
 ]
-
-const articlesQuery = computed(() => {
-  const q: { type: string; limit: number; page: number; search?: string; lang?: string } = {
-    type: 'document',
-    limit: PER_PAGE,
-    page: currentPage.value,
-    lang: currentLang.value,
-  }
-  if (searchQuery.value) q.search = searchQuery.value
-  return q
-})
-
-const { data, pending, error, refresh } = useAsyncData('public-articles-documents', () =>
-  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: articlesQuery.value }),
-  {
-    lazy: true,
-    default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 } }),
-  }
-)
-
-const docs = computed(() => (data.value as { articles?: PublicArticleListItem[] })?.articles || [])
-const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
-const pagination = computed(() => (data.value as { pagination?: PublicPagination })?.pagination || { page: 1, limit: PER_PAGE, total: 0, totalPages: 1 })
-
-const syncUrl = () => {
-  const query: { q?: string; page?: number } = {}
-  if (searchQuery.value) query.q = searchQuery.value
-  if (currentPage.value > 1) query.page = currentPage.value
-  navigateTo({ path: '/documents', query })
-}
-
-const setPage = (p: number) => {
-  if (p < 1 || p > pagination.value.totalPages) return
-  currentPage.value = p
-  syncUrl()
-  if (import.meta.client) {
-    const el = document.getElementById('doc-search')
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-}
-
-const pageRange = computed(() => {
-  const total = pagination.value.totalPages
-  const cur = pagination.value.page
-  if (total <= 7) return Array.from({ length: total }, (_, i) => i + 1)
-  const pages = new Set([1, total, cur, cur - 1, cur + 1])
-  for (const p of pages) if (p < 1 || p > total) pages.delete(p)
-  return [...pages].sort((a, b) => a - b)
-})
-
-const applySearch = () => {
-  searchQuery.value = searchInput.value.trim()
-  currentPage.value = 1
-  syncUrl()
-}
-
-const clearSearch = () => {
-  searchInput.value = ''
-  searchQuery.value = ''
-  currentPage.value = 1
-  syncUrl()
-}
 
 const setQuickChip = (chip: string) => {
   if (searchQuery.value === chip) {

@@ -14,7 +14,7 @@
     <!-- Lỗi tải -->
     <div v-else-if="loadError || !article" class="print-error" role="alert">
       <p>Không thể tải bài viết để in.</p>
-      <a :href="`/${backPath}`">Quay lại trang bài viết</a>
+      <a :href="backPath">Quay lại trang bài viết</a>
     </div>
 
     <!-- Bố cục báo giấy -->
@@ -89,6 +89,8 @@
  * tự kích hoạt `window.print()` sau khi mount (client-only). `noindex` để không
  * lọt chỉ mục tìm kiếm. Tuyến chỉ phục vụ nút "In bài" ở `ArticleDetail.vue`.
  */
+import { safeInternalPath } from '~/utils/safe-path'
+
 definePageMeta({ layout: false })
 
 // Ảnh trong thân bài bị 404 thì ẩn (cả khi in).
@@ -100,11 +102,10 @@ const { currentLang, t } = useI18n()
 
 const slug = computed(() => String(route.params.slug || ''))
 
-// Lùi về trang danh sách bài — heuristic: lấy từ query `back` nếu có, mặc định '/'.
-const backPath = computed(() => {
-  const q = String(route.query.back || '').trim()
-  return q || '/'
-})
+// Lùi về trang danh sách bài — lấy từ query `back` (nút "In bài" gửi `/news`, có dấu
+// `/` đầu). `back` do người dùng điều khiển được nên đi qua `safeInternalPath`:
+// `//evil.example` hay `/\evil.example` sẽ thành liên kết ra ngoài dưới tên miền chính thức.
+const backPath = computed(() => safeInternalPath(route.query.back, '/'))
 
 const pageUrl = computed(() => {
   if (typeof window !== 'undefined') {

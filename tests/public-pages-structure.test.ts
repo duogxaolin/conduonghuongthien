@@ -68,7 +68,11 @@ test('the shared detail component keeps loading, error, found and not-found stat
   assert.match(source, /<div v-else class="py-10 text-center">/, 'not-found state lost')
   // A 404 from the API must stay distinguishable from a transport failure,
   // otherwise an unpublished article offers the visitor a pointless retry.
-  assert.match(source, /const loadError = computed\(\(\) => !!error\.value\)/)
+  // (The API now answers a missing article with HTTP 404 — an error — so the old
+  // `!!error.value` turned every 404 into the retry branch. The decision lives in
+  // `resolveDetailFetch`, exercised in tests/public-detail-ssr-status.test.ts.)
+  assert.match(source, /const fetchOutcome = computed\(\(\) => resolveDetailFetch\(\{ status: status\.value, error: error\.value, hasContent: !!data\.value\?\.article \}\)\)/)
+  assert.match(source, /const loadError = computed\(\(\) => fetchOutcome\.value === 'failed'\)/)
 })
 
 // `news/[category]/index.vue` là route dishwasher: 1 segment `/news/<X>` phải

@@ -125,6 +125,38 @@ export async function peekRateLimit(key: string, rule: RateLimitRule, deps: Rate
   }
 }
 
+/**
+ * While the database is down EVERY limited request fails its write, and each one
+ * used to log `rate_limit.database_write_failed` — a login page under probing
+ * turned into a log flood exactly when the operator needs to read the log. The
+ * line is now written at most once per interval per process; the next line that
+ * does get written carries how many were skipped (`suppressed`). Only the log is
+ * throttled: every request still falls back to the memory counter.
+ *
+ * Clock is the caller's `now` (same clock as the counters, so tests drive it). A
+ * clock that went backwards counts as "interval elapsed" — otherwise one far-future
+ * timestamp would mute the line for good.
+ */
+export const RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS = 60_000
+const writeFailureLog = { lastLoggedAt: null as number | null, suppressed: 0 }
+
+function logWriteFailure(error: unknown, now: number): void {
+  const last = writeFailureLog.lastLoggedAt
+  if (last !== null && now >= last && now - last < RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS) {
+    writeFailureLog.suppressed += 1
+    return
+  }
+  const suppressed = writeFailureLog.suppressed
+  writeFailureLog.lastLoggedAt = now
+  writeFailureLog.suppressed = 0
+  logWarn({
+    event: 'rate_limit.database_write_failed',
+    error,
+    consequence: 'falling back to in-process counter for this request',
+    ...(suppressed > 0 ? { suppressed } : {}),
+  })
+}
+
 /** Record one attempt against the bucket and return the resulting state. */
 export async function recordRateLimitHit(key: string, rule: RateLimitRule, deps: RateLimitDeps = {}): Promise<RateLimitState> {
   const now = deps.now?.() ?? Date.now()
@@ -150,11 +182,7 @@ export async function recordRateLimitHit(key: string, rule: RateLimitRule, deps:
     )
     return stateFromRow(firstRow(result), rule, now)
   } catch (error) {
-    logWarn({
-      event: 'rate_limit.database_write_failed',
-      error,
-      consequence: 'falling back to in-process counter for this request',
-    })
+    logWriteFailure(error, now)
     return bumpMemory(deps, key, rule, now)
   }
 }

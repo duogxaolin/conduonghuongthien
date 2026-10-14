@@ -336,6 +336,11 @@ export default defineNuxtConfig({
     // here. Empty falls back to the request host with a warning on the settings
     // page (server/utils/google-oauth/config.ts).
     publicBaseUrl: process.env.PUBLIC_BASE_URL || '',
+    // Hosts (comma-separated) whose Host header may become the base of a link in
+    // an email; anything else falls back to PUBLIC_BASE_URL. Read at runtime with
+    // a process.env fallback (server/utils/public-link-base.ts), since the image is
+    // built without it.
+    publicHostAllowlist: process.env.PUBLIC_HOST_ALLOWLIST || '',
     analytics: {
       hmacSecret: analyticsHmacSecret,
       collectionEnabled: parseAnalyticsBoolean('ANALYTICS_COLLECTION_ENABLED', false),

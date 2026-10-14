@@ -95,4 +95,15 @@ export const SECURITY_EVENTS = {
   // Break-glass: a SuperAdmin stripping another account's factors.
   mfaFactorsCleared: 'auth.mfa_factors_cleared',
   passwordChanged: 'auth.password_changed',
+  // Database restore replaces every table, including users and roles: each
+  // attempt leaves a trail, and a refusal (not super-admin, invalid file, safety
+  // backup failed) is the one worth alerting on.
+  backupRestoreStarted: 'backup.restore_started',
+  backupRestoreSucceeded: 'backup.restore_succeeded',
+  backupRestoreFailed: 'backup.restore_failed',
+  backupRestoreRefused: 'backup.restore_refused',
+  // Email links: Host header not in PUBLIC_HOST_ALLOWLIST / PUBLIC_BASE_URL (rejected),
+  // or neither is configured so the Host is used unchecked (logged once per process).
+  linkHostRejected: 'security.link_host_rejected',
+  linkHostUnchecked: 'security.link_host_unchecked',
 } as const

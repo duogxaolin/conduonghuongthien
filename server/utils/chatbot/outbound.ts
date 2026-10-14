@@ -2,9 +2,18 @@ import { resolve4, resolve6 } from 'node:dns/promises'
 import { request as httpsRequest, type RequestOptions } from 'node:https'
 import { isIP } from 'node:net'
 import type { IncomingMessage } from 'node:http'
+import { providerHostnameViolation } from '../ai/provider-url'
 
 const DEFAULT_TIMEOUT_MS = 8_000
 const DEFAULT_MAX_RESPONSE_BYTES = 256 * 1024
+// Luồng SSE: provider có thể IM HẲN 40–200 s trước chữ đầu tiên (đang suy nghĩ —
+// `server/utils/chatbot/sse-heartbeat.ts`), và quyết định đã chốt là đợi chứ không
+// bỏ. Nên hạn "im lặng" của socket phải trên 200 s, và hạn tổng bằng trần
+// `proxy_read_timeout 300s` của nginx cho `/api/public/chatbot` (CI-CD.md): quá mức
+// đó người đọc đã bị nginx ngắt, giữ kết nối tới provider chỉ còn tốn tiền.
+const DEFAULT_STREAM_TIMEOUT_MS = 300_000
+const DEFAULT_STREAM_IDLE_TIMEOUT_MS = 240_000
+const DEFAULT_STREAM_MAX_RESPONSE_BYTES = 4 * 1024 * 1024
 const SAFE_PORT = '443'
 const REDIRECT_CODES = new Set([301, 302, 303, 307, 308])
 
@@ -57,6 +66,22 @@ export interface SafeProviderResponse {
   body: Uint8Array
 }
 
+export interface SafeProviderStreamOptions extends SafeProviderRequestOptions {
+  /** Socket im lặng quá chừng này thì huỷ (khác `timeoutMs` — hạn tổng của cả luồng). */
+  idleTimeoutMs?: number
+}
+
+export interface SafeProviderStreamResponse {
+  status: number
+  headers: Readonly<Record<string, string | string[] | undefined>>
+  /**
+   * Thân phản hồi dạng luồng web (đúng kiểu `readChatSse` đọc). `null` khi mã
+   * trạng thái không phải 2xx — thân đã bị huỷ, không có gì để đọc. Vượt trần byte
+   * hoặc hết hạn giữa chừng làm luồng lỗi với `ChatbotOutboundError`.
+   */
+  body: ReadableStream<Uint8Array> | null
+}
+
 export type ProviderRequest = (
   options: RequestOptions,
   onResponse: (response: IncomingMessage) => void,
@@ -82,7 +107,10 @@ export function normalizeProviderUrl(input: string | URL, policy: ProviderUrlPol
 
   const hostname = normalizeHostname(url.hostname)
   const allowedHosts = new Set(policy.allowedHosts.map(normalizeAllowedHost))
-  if (!hostname || isIP(hostname) !== 0 || !allowedHosts.has(hostname)) {
+  // `providerHostnameViolation` là chính sách dùng chung với lúc GHI cấu hình
+  // (`server/utils/ai/provider-url.ts`): localhost, tên nội bộ, tên một nhãn bị
+  // chặn ở đây kể cả khi ai đó đã đưa chúng vào `allowedHosts`.
+  if (!hostname || isIP(hostname) !== 0 || providerHostnameViolation(hostname) || !allowedHosts.has(hostname)) {
     throw new ChatbotOutboundError('DESTINATION_NOT_ALLOWED')
   }
 
@@ -113,6 +141,10 @@ export function isPublicIpAddress(input: string): boolean {
     [0n, 128],
     [1n, 128],
     [0n, 96],
+    // NAT64 well-known prefix (RFC 6052): behind a NAT64 gateway
+    // `64:ff9b::a9fe:a9fe` IS 169.254.169.254. Refused whole — whether the
+    // embedded IPv4 is reachable is the gateway's decision, not ours.
+    [ipv6('64:ff9b::'), 96],
     [ipv6('64:ff9b:1::'), 48],
     [ipv6('100::'), 64],
     [ipv6('2001::'), 23],
@@ -120,6 +152,8 @@ export function isPublicIpAddress(input: string): boolean {
     [ipv6('2002::'), 16],
     [ipv6('fc00::'), 7],
     [ipv6('fe80::'), 10],
+    // Site-local (RFC 3879, deprecated) — still routed internally on some networks.
+    [ipv6('fec0::'), 10],
     [ipv6('ff00::'), 8],
   ]
 
@@ -165,6 +199,33 @@ export async function safeProviderRequest(options: SafeProviderRequestOptions): 
   }
 }
 
+/**
+ * Bản luồng của `safeProviderRequest` cho các lệnh gọi SSE (`stream: true`) của
+ * `callAi`: cùng kiểm https/443/allowlist, cùng phân giải DNS→chỉ IP công khai, và
+ * IP đã kiểm được GHIM vào chính kết nối (`createPinnedLookup`, `agent: false`) —
+ * không có cửa sổ DNS-rebinding giữa lúc kiểm và lúc nối. Không theo chuyển hướng,
+ * có hạn tổng + hạn im lặng, và trần tổng số byte của thân.
+ *
+ * Trả về ngay khi có header, thân đọc dần (người đọc thấy chữ theo thời gian thực).
+ */
+export async function safeProviderStream(options: SafeProviderStreamOptions): Promise<SafeProviderStreamResponse> {
+  const url = normalizeProviderUrl(options.url, { allowedHosts: options.allowedHosts })
+  const addresses = await resolvePublicProviderAddresses(url.hostname, options.resolveHost)
+  const limits: StreamLimits = {
+    timeoutMs: boundedPositiveInteger(options.timeoutMs, DEFAULT_STREAM_TIMEOUT_MS),
+    idleTimeoutMs: boundedPositiveInteger(options.idleTimeoutMs, DEFAULT_STREAM_IDLE_TIMEOUT_MS),
+    maxResponseBytes: boundedPositiveInteger(options.maxResponseBytes, DEFAULT_STREAM_MAX_RESPONSE_BYTES),
+  }
+  const request = options.request ?? httpsRequest
+
+  try {
+    return await openStream(request, url, addresses, options, limits)
+  } catch (error) {
+    if (error instanceof ChatbotOutboundError) throw error
+    throw new ChatbotOutboundError('UPSTREAM_FAILURE')
+  }
+}
+
 export function redactOutboundError(error: unknown): ChatbotOutboundError {
   return error instanceof ChatbotOutboundError
     ? new ChatbotOutboundError(error.code)
@@ -193,18 +254,7 @@ function executeRequest(
       else resolve(response!)
     }
 
-    const req = request({
-      protocol: 'https:',
-      hostname: url.hostname,
-      port: 443,
-      path: `${url.pathname}${url.search}`,
-      method: input.method ?? 'GET',
-      headers: input.headers,
-      servername: url.hostname,
-      timeout: timeoutMs,
-      lookup: createPinnedLookup(addresses),
-      agent: false,
-    }, (response) => {
+    const req = request(pinnedRequestOptions(url, addresses, input, timeoutMs), (response) => {
       const status = response.statusCode ?? 0
       if (REDIRECT_CODES.has(status)) {
         response.resume()
@@ -247,6 +297,156 @@ function executeRequest(
     req.once('timeout', abortForTimeout)
     req.once('error', () => finish(new ChatbotOutboundError('UPSTREAM_FAILURE')))
     deadline = setTimeout(abortForTimeout, timeoutMs)
+    deadline.unref?.()
+
+    if (input.body !== undefined) req.write(input.body)
+    req.end()
+  })
+}
+
+/**
+ * Tuỳ chọn `https.request` chung của hai đường ra: nối tới đúng IP đã kiểm
+ * (`lookup` ghim), SNI/kiểm chứng chỉ theo tên miền, không dùng agent chung (một
+ * socket giữ sẵn từ trước có thể trỏ tới IP chưa qua kiểm).
+ */
+function pinnedRequestOptions(
+  url: URL,
+  addresses: ResolvedAddress[],
+  input: SafeProviderRequestOptions,
+  socketTimeoutMs: number,
+): RequestOptions {
+  return {
+    protocol: 'https:',
+    hostname: url.hostname,
+    port: 443,
+    path: `${url.pathname}${url.search}`,
+    method: input.method ?? 'GET',
+    headers: input.headers,
+    servername: url.hostname,
+    timeout: socketTimeoutMs,
+    lookup: createPinnedLookup(addresses),
+    agent: false,
+  }
+}
+
+interface StreamLimits {
+  timeoutMs: number
+  idleTimeoutMs: number
+  maxResponseBytes: number
+}
+
+function openStream(
+  request: ProviderRequest,
+  url: URL,
+  addresses: ResolvedAddress[],
+  input: SafeProviderStreamOptions,
+  limits: StreamLimits,
+): Promise<SafeProviderStreamResponse> {
+  return new Promise((resolve, reject) => {
+    // Hai pha: trước khi có header thì lỗi làm Promise reject; sau đó lỗi làm
+    // LUỒNG thân lỗi (người đọc `readChatSse` nhận ngoại lệ ở `reader.read()`).
+    let headersSettled = false
+    let bodyFinished = false
+    let incoming: IncomingMessage | undefined
+    let bodyController: ReadableStreamDefaultController<Uint8Array> | undefined
+    // Hạn tổng gọi `fail`, `fail` xoá hạn tổng: khai trước để không ai rơi vào TDZ.
+    let deadline: ReturnType<typeof setTimeout> | undefined
+    const clearDeadline = () => {
+      if (deadline) clearTimeout(deadline)
+      deadline = undefined
+    }
+
+    const fail = (code: OutboundErrorCode) => {
+      clearDeadline()
+      const error = new ChatbotOutboundError(code)
+      if (!headersSettled) {
+        headersSettled = true
+        bodyFinished = true
+        incoming?.destroy()
+        req.destroy()
+        reject(error)
+        return
+      }
+      if (bodyFinished) return
+      bodyFinished = true
+      incoming?.destroy()
+      req.destroy()
+      try { bodyController?.error(error) } catch { /* luồng đã đóng */ }
+    }
+
+    const req = request(pinnedRequestOptions(url, addresses, input, limits.idleTimeoutMs), (response) => {
+      incoming = response
+      if (headersSettled) {
+        // Đã hết hạn / đã lỗi trước khi header tới.
+        response.destroy()
+        return
+      }
+      const status = response.statusCode ?? 0
+      if (REDIRECT_CODES.has(status)) {
+        fail('UPSTREAM_REDIRECT')
+        return
+      }
+      const declaredLength = Number(response.headers['content-length'])
+      if (Number.isFinite(declaredLength) && declaredLength > limits.maxResponseBytes) {
+        fail('UPSTREAM_TOO_LARGE')
+        return
+      }
+      if (status < 200 || status >= 300) {
+        // Thân lỗi của provider không được đọc: huỷ ngay, chỉ trả mã trạng thái.
+        headersSettled = true
+        bodyFinished = true
+        clearDeadline()
+        response.destroy()
+        resolve({ status, headers: response.headers, body: null })
+        return
+      }
+
+      let bytes = 0
+      const body = new ReadableStream<Uint8Array>({
+        start(controller) {
+          bodyController = controller
+          response.on('data', (chunk: Buffer | string) => {
+            if (bodyFinished) return
+            const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)
+            bytes += buffer.byteLength
+            if (bytes > limits.maxResponseBytes) {
+              fail('UPSTREAM_TOO_LARGE')
+              return
+            }
+            controller.enqueue(new Uint8Array(buffer.buffer, buffer.byteOffset, buffer.byteLength))
+            // Áp lực ngược: provider nhanh hơn người đọc thì tạm dừng socket.
+            if ((controller.desiredSize ?? 1) <= 0) response.pause()
+          })
+          response.on('end', () => {
+            if (bodyFinished) return
+            bodyFinished = true
+            clearDeadline()
+            controller.close()
+          })
+          response.on('error', () => fail('UPSTREAM_FAILURE'))
+          // Đóng mà không có `end` = kết nối đứt giữa chừng.
+          response.on('close', () => {
+            if (!bodyFinished) fail('UPSTREAM_FAILURE')
+          })
+        },
+        pull() {
+          response.resume()
+        },
+        cancel() {
+          bodyFinished = true
+          clearDeadline()
+          response.destroy()
+          req.destroy()
+        },
+      })
+      headersSettled = true
+      resolve({ status, headers: response.headers, body })
+    })
+
+    // `on`, không `once`: một `error` thứ hai không người nghe sẽ làm sập tiến trình.
+    req.on('timeout', () => fail('UPSTREAM_TIMEOUT'))
+    req.on('error', () => fail('UPSTREAM_FAILURE'))
+    deadline = setTimeout(() => fail('UPSTREAM_TIMEOUT'), limits.timeoutMs)
     deadline.unref?.()
 
     if (input.body !== undefined) req.write(input.body)

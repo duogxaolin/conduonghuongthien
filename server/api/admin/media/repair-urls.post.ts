@@ -21,7 +21,13 @@ export default defineEventHandler(async (event) => {
     return {
       ok: true,
       ...result,
-      message: `Đã vá: ${result.mediaFixed} URL media + ${result.articlesFixed} lượt thay trong bài viết + ${result.thumbnailsFixed} thumbnail bài.${result.backupStamp ? ` Snapshot: ${result.backupStamp}.` : ''}`,
+      message: `Đã vá: ${result.mediaFixed} URL media + ${result.articlesFixed} lượt thay trong bài viết + ${result.thumbnailsFixed} thumbnail bài`
+        + (result.syncRepairError
+          ? `. Bước vá lượt đồng bộ dở dang lỗi: ${result.syncRepairError} — bấm lại sau.`
+          : result.syncUrlsRepaired === null
+            ? ' (bỏ qua bước vá lượt đồng bộ dở dang vì đang có lượt đồng bộ chạy).'
+            : ` + ${result.syncUrlsRepaired} URL dở dang từ lượt đồng bộ trước.`)
+        + (result.backupStamp ? ` Snapshot: ${result.backupStamp}.` : ''),
     }
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err)

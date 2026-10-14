@@ -10,6 +10,20 @@
       :category-slug="categoryParam"
     />
 
+    <!-- Lượt kiểm chuyên mục HỎNG: chưa biết [category] là chuyên mục hay bài —
+         không rơi sang ArticleDetail (200 sai), không 404; báo lỗi + thử lại. -->
+    <section v-else-if="showLookupError" class="section">
+      <div class="container py-10 md:py-16">
+        <BlockLoadError
+          :title="t('n_load_error_title')"
+          :description="t('n_load_error_desc')"
+          :retry-label="t('retry')"
+          :retrying="lookupRetrying"
+          @retry="retryLookup"
+        />
+      </div>
+    </section>
+
     <!-- Branch 2: [category] là article slug → detail bài -->
     <ArticleDetail
       v-else
@@ -26,9 +40,14 @@
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useRoute } from 'vue-router'
 import { useI18n } from '~/composables/useI18n'
+import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
+import { resolveCategoryRoute } from '~/utils/category-route-decision'
+// Import tường minh (như các khối trang chủ): tên tự động của Nuxt là
+// `BlocksBlockLoadError` — `<BlockLoadError>` không import sẽ dựng ra thẻ rỗng.
+import BlockLoadError from '~/components/blocks/BlockLoadError.vue'
 
 /**
  * Route dishwasher `/news/<X>` (1 segment):
@@ -58,14 +77,41 @@ const catAsync = useAsyncData(
 )
 const { data: catData, status: catStatus } = catAsync
 
-const isCategoryView = computed(() => {
-  if (catStatus.value !== 'success' && catStatus.value !== 'error') return false
-  const items = catData.value?.items || []
-  return items.some((c) => c.slug === categoryParam.value)
+// pending → ArticleDetail như cũ (bài là trường hợp phổ biến: fetch bài chạy song
+// song); category → danh sách; lookup-failed → nhánh lỗi (utils/category-route-decision.ts).
+const routeDecision = computed(() =>
+  resolveCategoryRoute({ status: catStatus.value, data: catData.value, slug: categoryParam.value }),
+)
+const isCategoryView = computed(() => routeDecision.value === 'category')
+const lookupFailed = computed(() => routeDecision.value === 'lookup-failed')
+
+// Đang thử lại sau một lượt hỏng: giữ nhánh lỗi (nút quay) thay vì nhảy tạm sang
+// ArticleDetail trong lúc lượt đọc mới còn bay.
+const lookupRetrying = ref(false)
+const showLookupError = computed(() => lookupFailed.value || (lookupRetrying.value && routeDecision.value === 'pending'))
+const retryLookup = async () => {
+  if (lookupRetrying.value) return
+  lookupRetrying.value = true
+  try {
+    await catAsync.refresh()
+  } finally {
+    lookupRetrying.value = false
+  }
+}
+
+// Lượt SSR hỏng → 503 + no-store (CÙNG biểu thức với nhánh lỗi). Gọi TRƯỚC `await`
+// bên dưới để còn ngữ cảnh Nuxt.
+useSsrFailureStatus(() => catAsync, () => lookupFailed.value)
+
+// HTML mang nhánh lỗi (CSDL chập chờn lúc SSR) — thử lại một lần ở trình duyệt thay
+// vì bắt khách tự bấm (cùng cách `app/pages/[slug].vue`).
+onMounted(() => {
+  if (lookupFailed.value) void retryLookup()
 })
 
 // Server: await category check trước khi SSR — quyết định branch + 404.
 // Nếu category miss → ArticleDetail fetch + tự throw 404 khi không có bài.
+// Lượt kiểm HỎNG → nhánh lỗi + 503 (không bao giờ rơi sang ArticleDetail).
 if (import.meta.server) {
   await catAsync
 }
@@ -84,6 +130,7 @@ useSeoMeta({
       const cat = (catData.value?.items || []).find((c) => c.slug === categoryParam.value)
       return cat ? `${cat.name} | Con Đường Hướng Thiện` : 'Tin tức | Con Đường Hướng Thiện'
     }
+    if (showLookupError.value) return 'Tin tức | Con Đường Hướng Thiện'
     return 'Chi tiết tin tức | Con Đường Hướng Thiện'
   },
 })

@@ -3,7 +3,7 @@
     <!-- Page Header (đồng bộ 100% với /news) -->
     <section class="border-b border-[#E2E8DF] bg-white">
       <div class="container pt-7 sm:pt-9 pb-5">
-        <nav :aria-label="t('breadcrumb_aria')" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-3">
+        <nav :aria-label="t('breadcrumb_aria')" class="flex items-center gap-2 text-xs text-[#5A6C58] mb-3">
           <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
             <span>{{ t('home') }}</span>
@@ -143,7 +143,7 @@
 
               <!-- Card Content -->
               <div class="p-4 sm:p-5 flex flex-col flex-1">
-                <div class="flex items-center gap-2 text-xs text-[#7A8A76] font-medium mb-2">
+                <div class="flex items-center gap-2 text-xs text-[#5A6C58] font-medium mb-2">
                   <span class="inline-block bg-[#EEF4EC] text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
                     {{ item.categoryName || categoryLabel }}
                   </span>
@@ -166,7 +166,7 @@
                 </p>
 
                 <!-- Footer Action: pinned to bottom with mt-auto -->
-                <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#7A8A76]">
+                <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#5A6C58]">
                   <nuxt-link
                     :to="'/news/' + item.slug"
                     class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"

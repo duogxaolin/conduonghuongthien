@@ -1,5 +1,6 @@
 import { requireResourcePermission } from '../../../utils/permissions'
-import { getBackupStatus, getRestoreStatus } from '../../../services/backup'
+import { getBackupStatus } from '../../../services/backup'
+import { getRestoreStatus } from '../../../services/backup-restore'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser

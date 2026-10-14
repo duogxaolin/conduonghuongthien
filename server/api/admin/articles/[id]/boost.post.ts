@@ -15,7 +15,7 @@ import { and, eq } from 'drizzle-orm'
 import { getDb } from '../../../../utils/db'
 import { activityLogs, articles, articleViewBoost } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
-import { articleResource } from '../../../../services/articles'
+import { articleActionScope, articleResource } from '../../../../services/articles'
 import { addFabricatedViews, validateBoostInput } from '../../../../services/article-views'
 
 export default defineEventHandler(async (event) => {
@@ -24,15 +24,17 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'Mã bài viết không hợp lệ.' })
   }
 
+  const actor = event.context.adminUser
   const db = getDb()
+  // The lookup is scoped to the types the caller may update, so an id of a type
+  // they may not touch is the same 404 as a missing one (no existence oracle).
   const [article] = await db
     .select({ id: articles.id, type: articles.type, title: articles.title })
     .from(articles)
-    .where(eq(articles.id, id))
+    .where(and(eq(articles.id, id), articleActionScope(actor, 'update')))
     .limit(1)
   if (!article) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
 
-  const actor = event.context.adminUser
   requireResourcePermission(actor, articleResource(article.type), 'update')
 
   const input = validateBoostInput(await readBody(event).catch(() => null))

@@ -4,7 +4,7 @@
  * Security:
  * 1. All raw HTML characters (&, <, >, ", ') are escaped FIRST before parsing.
  * 2. Only safe tags (p, strong, em, code, pre, ul, ol, li, a, h2-h4, br) are produced.
- * 3. Links only accept safe http://, https://, or relative / URLs with target="_blank" rel="noopener noreferrer".
+ * 3. Links only accept https:// or single-slash site paths (never `//host`) with target="_blank" rel="noopener noreferrer".
  */
 
 export function cleanAiText(raw: string): string {
@@ -29,6 +29,18 @@ function escapeHtml(str: string): string {
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&#39;')
 }
+
+/**
+ * The URLs a chat link or image may point at: an absolute `https://` URL, or a
+ * path on this site — ONE leading slash. `//evil.example/x` is not a path: the
+ * browser resolves it as a protocol-relative URL to another host, and so is
+ * `/\evil.example` (a backslash is read as a slash in http(s) URLs). Whitespace
+ * is excluded throughout, so a tab or newline (stripped by the URL parser) cannot
+ * smuggle a second slash in either.
+ */
+const SAFE_URL = String.raw`https:\/\/[^\s)"']+|\/(?![\/\\])[^\s)"']*`
+const IMAGE_PATTERN = new RegExp(String.raw`!\[([^\]]*)\]\((${SAFE_URL})\)`, 'g')
+const LINK_PATTERN = new RegExp(String.raw`\[([^\]]+)\]\((${SAFE_URL})\)`, 'g')
 
 export function renderChatMarkdown(md: string): string {
   return renderChatMarkdownBlocks(md).join('\n')
@@ -73,12 +85,12 @@ export function renderChatMarkdownBlocks(md: string): string[] {
   // 6. Italic (*text* or _text_)
   text = text.replace(/(?<!\*)\*(?!\*)(.*?)(?<!\*)\*(?!\*)/g, '<em>$1</em>')
 
-  // 7a. Media / Images ![alt](url) — must be safe https://, http:// or /
+  // 7a. Media / Images ![alt](url) — https:// or a single-slash site path (SAFE_URL)
   //     Both cards reserve their height up front (`aspect-video` + intrinsic
   //     width/height). Without it the image is 0px tall until it decodes, then
   //     pushes everything below it down by ~200px — that shift is what dropped
   //     the transcript out of "follow the newest text" mid-answer.
-  text = text.replace(/!\[([^\]]*)\]\((https?:\/\/[^\s)"']+|\/[^\s)"']*)\)/g, (_, alt, rawUrl) => {
+  text = text.replace(IMAGE_PATTERN, (_, alt, rawUrl) => {
     const safeUrl = rawUrl.trim()
     const safeAlt = (alt || '').trim()
     const isVideo = safeUrl.includes('/media/') || safeAlt.toLowerCase().includes('video')
@@ -90,8 +102,8 @@ export function renderChatMarkdownBlocks(md: string): string[] {
     return `<div class="chat-media-card chat-image-card my-2.5 overflow-hidden rounded-xl border border-[#e2ece3] bg-white shadow-xs max-w-sm"><a href="${safeUrl}" target="_blank" rel="noopener noreferrer" class="block group overflow-hidden"><img src="${safeUrl}" alt="${safeAlt || 'Hình ảnh'}" width="640" height="360" class="w-full aspect-video object-cover block bg-[#f0f4ef] group-hover:scale-[1.02] transition-transform duration-300" loading="lazy" decoding="async" /></a>${safeAlt ? `<div class="p-2 text-center text-[0.72rem] font-medium text-[#667768] bg-[#fcfdfc] border-t border-[#f0f4f0]">${safeAlt}</div>` : ''}</div>`
   })
 
-  // 7b. Links [text](url) — must be safe https://, http:// or /
-  text = text.replace(/\[([^\]]+)\]\((https?:\/\/[^\s)"']+|\/[^\s)"']*)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline hover:text-[#2c6e33]">$1</a>')
+  // 7b. Links [text](url) — https:// or a single-slash site path (SAFE_URL)
+  text = text.replace(LINK_PATTERN, '<a href="$2" target="_blank" rel="noopener noreferrer" class="font-semibold text-[#1e4620] underline hover:text-[#2c6e33]">$1</a>')
 
   // 8. Headers (###, ##, #)
   text = text.replace(/^### (.*$)/gim, '<h4 class="m-0 mt-2 mb-1 text-sm font-bold text-inherit">$1</h4>')

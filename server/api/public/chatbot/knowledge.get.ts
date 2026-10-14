@@ -1,6 +1,8 @@
 import { and, asc, count, desc, eq, like, or, sql } from 'drizzle-orm'
 import { chatbotKnowledge } from '../../../db/schema'
 import { getDb } from '../../../utils/db'
+import { reportPublicReadFailure } from '../../../utils/public-read-failure'
+import { containsPattern } from '../../../utils/sql-like'
 import { serializePublicKnowledge } from '../../../utils/chatbot/serializers'
 
 /**
@@ -43,8 +45,8 @@ export default defineEventHandler(async (event) => {
     if (search) {
       conditions.push(
         or(
-          like(chatbotKnowledge.canonicalQuestion, `%${search}%`),
-          like(chatbotKnowledge.approvedAnswer, `%${search}%`),
+          like(chatbotKnowledge.canonicalQuestion, containsPattern(search)),
+          like(chatbotKnowledge.approvedAnswer, containsPattern(search)),
         )!,
       )
     }
@@ -91,9 +93,12 @@ export default defineEventHandler(async (event) => {
         totalPages: Math.ceil(Number(total) / perPage),
       },
     }
-  } catch {
+  } catch (error) {
     // The surface distinguishes `ok: false` from an empty bank: a failed query and
-    // a bank with nothing in it must not look identical to a visitor.
+    // a bank with nothing in it must not look identical to a visitor. The failure
+    // is also logged and answered with 503, so an operator sees it and no cache
+    // keeps it as a valid page.
+    reportPublicReadFailure(event, 'public.knowledge_list_failed', error)
     return { ok: false, items: [], topics: [], pagination: { page, perPage, total: 0, totalPages: 0 } }
   }
 })

@@ -11,6 +11,7 @@
             <input
               type="text"
               :placeholder="t('search_placeholder')"
+              :aria-label="t('site_search_aria')"
               :value="searchQuery"
               @input="$emit('search-input', ($event.target as HTMLInputElement).value)"
               :ref="mountInput"
@@ -60,13 +61,29 @@
             <span v-else>
               Gợi ý kết quả cho: <strong class="text-[#2D5A27]">&laquo;{{ searchQuery }}&raquo;</strong>
             </span>
-            <span v-if="!isSearchingLive && liveSearchResults.length" class="text-[0.72rem] text-[#7A8A76]">
+            <span v-if="!isSearchingLive && liveSearchResults.length" class="text-[0.72rem] text-[#5A6C58]">
               {{ liveSearchResults.length }} kết quả nổi bật
             </span>
           </div>
 
+          <!-- Lỗi: lượt gợi ý HỎNG (503, mạng đứt) khác hẳn "không có kết quả" — trước
+               đây cả hai hiện chung một câu "Không tìm thấy…". "Thử lại" gửi lại đúng
+               từ khoá đang gõ qua cùng đường `search-input`. -->
+          <div v-if="liveSearchStatus === 'error'" role="alert" class="p-6 text-center text-xs text-[#992222]">
+            <i class="fa-solid fa-triangle-exclamation text-lg mb-2 block" aria-hidden="true"></i>
+            <span class="block mb-3 font-semibold">{{ t('search_live_error') }}</span>
+            <button
+              type="button"
+              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-[#4A6741] text-white text-xs font-bold border-none cursor-pointer hover:bg-[#385132] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+              @click="$emit('search-input', searchQuery)"
+            >
+              <i class="fa-solid fa-rotate-right" aria-hidden="true"></i>
+              <span>{{ t('retry') }}</span>
+            </button>
+          </div>
+
           <!-- List -->
-          <div v-if="liveSearchResults.length" class="overflow-y-auto divide-y divide-[#F0F5EE] p-1.5">
+          <div v-else-if="liveSearchResults.length" class="overflow-y-auto divide-y divide-[#F0F5EE] p-1.5">
             <nuxt-link
               v-for="item in liveSearchResults"
               :key="item.id"
@@ -86,7 +103,7 @@
                   <span :class="['text-[0.65rem] font-extrabold px-1.5 py-0.2 rounded uppercase tracking-wider', item.typeBadgeClass]">
                     {{ item.typeLabel }}
                   </span>
-                  <span v-if="item.categoryName" class="text-[0.7rem] text-[#7A8A76] truncate font-medium">
+                  <span v-if="item.categoryName" class="text-[0.7rem] text-[#5A6C58] truncate font-medium">
                     {{ item.categoryName }}
                   </span>
                 </div>
@@ -100,7 +117,7 @@
           </div>
 
           <!-- Empty State -->
-          <div v-else-if="!isSearchingLive" class="p-6 text-center text-xs text-[#7A8A76]">
+          <div v-else-if="!isSearchingLive" class="p-6 text-center text-xs text-[#5A6C58]">
             <i class="fa-solid fa-magnifying-glass text-lg mb-2 text-[#BAC8B6] block" aria-hidden="true"></i>
             <span>Không tìm thấy kết quả phù hợp cho &laquo;{{ searchQuery }}&raquo;</span>
           </div>
@@ -124,7 +141,7 @@
 
 <script setup lang="ts">
 import { useI18n } from '~/composables/useI18n'
-import type { LiveSearchItem } from '~/composables/useLiveSearch'
+import { useLiveSearchStatus, type LiveSearchItem } from '~/composables/useLiveSearch'
 
 /** Search dropdown — slide-down transition, live preview list.
  *  Refs của input + bar mount về layout qua emit `mount-bar`/`mount-input` để
@@ -150,6 +167,8 @@ const emit = defineEmits<{
 }>()
 
 const { t } = useI18n()
+// Trạng thái gợi ý dùng chung với `useLiveSearch` (qua `useState` — xem lý do ở đó).
+const liveSearchStatus = useLiveSearchStatus()
 
 const mountBar = (el: Element | ComponentPublicInstance | null) => {
   emit('mount-bar', el instanceof HTMLElement ? el : null)

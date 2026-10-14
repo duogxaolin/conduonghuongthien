@@ -12,9 +12,22 @@ push main → test · typecheck · build · hygiene   (4 cổng, chạy song son
               ↓ cả bốn xanh
             job "image"  → xây rồi đẩy ghcr.io/<owner>/<repo>:sha-<commit> + :latest
               ↓
-            job "deploy" → ssh vào VPS → docker pull → docker compose up -d
-                         → chờ HEALTHCHECK → hỏng thì tự lùi về image trước
+            job "deploy" → ssh: gửi docker-compose.yml của commit này (kèm SHA-256)
+                         → ssh: deploy-remote.sh → kiểm SHA-256 → docker pull
+                         → sao lưu compose cũ → đặt compose mới → docker compose config -q
+                           (sai → trả bản cũ, dừng, không chạm container)
+                         → đổi CDKT_IMAGE trong .env → up -d --no-deps app
+                         → chờ HEALTHCHECK → hỏng thì tự lùi về image + compose trước
 ```
+
+**Một lượt deploy đang chạy không bao giờ bị huỷ giữa chừng.** `concurrency` ở đầu
+`ci.yml` chỉ huỷ lượt cũ với **pull request** (`cancel-in-progress: ${{ github.event_name
+== 'pull_request' }}`). Push vào `main` thì xếp hàng: GitHub giữ một lượt chờ và chỉ
+huỷ những lượt còn *đang chờ* cũ hơn. Trước đây giá trị là `true` trơn — huỷ ở cấp
+workflow là huỷ CẢ lượt chạy, kể cả job `deploy` đang chờ healthcheck (nhóm
+`deploy-production` riêng của job không che được), nên một push thứ hai trong cửa sổ
+deploy cắt phiên SSH: đường lùi không chạy, production nằm trên image chưa xác nhận.
+Cái giá: hai lần merge sát nhau thì lượt sau chờ lượt trước chạy xong (~40 phút).
 
 **Vì sao xây ở CI chứ không `git pull && docker compose build` trên VPS:** `nuxi build`
 ngốn RAM, và trên VPS 1–2 GB nó bị OOM-kill giữa chừng — đúng lúc container cũ đã
@@ -26,8 +39,8 @@ và lùi phiên bản chỉ là trỏ lại tag cũ thay vì xây lại từ đ�
 của đồ thị phụ thuộc chứ không phải một lời hứa. Không có commit nào đi ra VPS mà
 chưa qua đủ bốn cổng.
 
-**Tiết kiệm phút Actions (repo private, 3.000 phút/tháng):** một lượt CI đầy đủ ≈ 40 phút
-billed (GitHub làm tròn từng job lên phút; 13 job Integration chiếm ≈ 29). Nên job
+**Tiết kiệm phút Actions** (hạn mức 3.000 phút/tháng chỉ áp cho repo private — repo này hiện **public**, xem dưới; tài khoản từng hết phút): một lượt CI đầy đủ ≈ 40 phút
+billed (GitHub làm tròn từng job lên phút; các job Integration chiếm ≈ 29 khi còn 13 job; nay matrix 17). Nên job
 `changes` ("Plan") quyết định cho mỗi lượt chạy:
 
 | Sự kiện | Chạy gì |
@@ -35,7 +48,7 @@ billed (GitHub làm tròn từng job lên phút; 13 job Integration chiếm ≈ 
 | push vào `main`, chạy tay (Actions → CI → Run workflow) | **Đủ bộ**, gồm Integration — `image`/`deploy` vẫn chờ mọi cổng |
 | PR nháp | Bỏ qua (chạy lại khi bấm *Ready for review*) |
 | PR thường | unit + build + schema-drift + hygiene (≈ 12 phút) |
-| PR thường **có đụng** `server/`, `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 13 job Integration |
+| PR thường **có đụng** `server/`, `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 17 job Integration |
 
 Muốn ép chạy đủ cho một PR chỉ-giao-diện: Actions → CI → *Run workflow* trên nhánh đó.
 Gom commit trước khi push và dùng PR nháp cho việc dở dang cũng tiết kiệm phút.
@@ -169,10 +182,25 @@ docker pull ghcr.io/<OWNER>/<REPO>:latest
 
 ### Bước 6 — Cập nhật repo trên VPS
 
-⚠️ **Bước dễ bỏ sót nhất.** Script deploy **không** `git pull` — nó chỉ kéo image rồi
-chạy `docker compose up -d app`, tức là dùng `docker-compose.yml` **đang nằm trên
-VPS**. Bản cũ chưa có khoá `image:`, nên compose sẽ tự build tại chỗ thay vì dùng
-image đã kéo về — đúng cái ta đang tránh.
+Script deploy **không** `git pull`, nhưng **tự gửi `docker-compose.yml`** của đúng
+commit đang triển khai lên `<APP_DIR>` mỗi lượt (trước đây VPS dùng bản compose nằm
+sẵn từ lần `git pull` cuối — bước dễ bỏ sót nhất, và một biến mới thêm vào compose
+không bao giờ tới được container). Lượt deploy:
+
+1. nhận tệp vào `<APP_DIR>/.docker-compose.incoming.yml`, kiểm **SHA-256** — tệp cụt
+   do SSH đứt thì dừng trước cả `docker pull`;
+2. `docker pull` image;
+3. sao lưu `docker-compose.yml` cũ vào `<APP_DIR>/.deploy-compose-backups/`
+   (giữ 10 bản gần nhất; compose không đổi thì không sao lưu, không ghi gì);
+4. đặt bản mới, chạy `docker compose config -q` **trên chính VPS** (gồm cả
+   `docker-compose.override.yml` nếu có, và bắt được biến bắt buộc mới mà `.env`
+   chưa có) — sai thì trả bản cũ về và dừng, **chưa container nào, chưa dòng `.env`
+   nào bị đụng**;
+5. khởi động lại **chỉ app**: `up -d --no-recreate mysql` (bật mysql nếu đang dừng,
+   không bao giờ tạo lại) rồi `up -d --no-deps app`. Thay đổi ở service `mysql` không
+   được CI tự áp — người vận hành chạy `docker compose up -d` trong giờ thấp điểm.
+
+Vẫn cần clone repo một lần (thư mục chứa `.env`, `./backups`, `production/`):
 
 ```bash
 cd <APP_DIR>
@@ -180,8 +208,14 @@ git pull origin main
 grep -n 'CDKT_IMAGE' docker-compose.yml     # phải thấy: image: ${CDKT_IMAGE:-cdkt/app:local}
 ```
 
-> Từ nay chỉ cần `git pull` lại khi `docker-compose.yml` hoặc cấu hình hạ tầng đổi.
-> **Mã ứng dụng đi bằng image, không đi bằng git.**
+> ⚠️ **`docker-compose.yml` trên VPS do CI quản lý.** Sau lượt deploy đầu, `git status`
+> trên VPS thấy tệp này "đã sửa", và `git pull` (kể cả trong `./manage.sh` → Update)
+> **từ chối** mỗi khi lượt kéo đó cũng đổi compose. Tệp CI đặt luôn là bản đã commit
+> trên `main`, nên an toàn để bỏ: `git checkout -- docker-compose.yml && git pull origin main`.
+> Script deploy in nhắc dòng này mỗi khi tệp khác bản trong `HEAD`.
+>
+> **Mã ứng dụng và `docker-compose.yml` đi theo CI; phần còn lại của repo trên VPS
+> (`production/`, `docker/`, `scripts/`) vẫn đi bằng `git pull`.**
 
 ### Bước 7 — Bổ sung `.env` trên VPS
 
@@ -233,6 +267,7 @@ proxy_set_header Host              $host;
 proxy_set_header X-Real-IP         $remote_addr;
 proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
 proxy_set_header X-Forwarded-Proto $scheme;
+proxy_set_header X-Forwarded-Host  $host;
 client_max_body_size 20M;
 
 # ── Tải video lên theo phần (Media Portal) ────────────────────────────────
@@ -247,6 +282,7 @@ location /api/admin/media-portal/ {
     proxy_set_header X-Real-IP         $remote_addr;
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host  $host;
     client_max_body_size 12g;
     proxy_read_timeout 600s;
     proxy_send_timeout 600s;
@@ -267,6 +303,7 @@ location /api/public/livestream/chat/stream {
     proxy_set_header X-Real-IP         $remote_addr;
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host  $host;
     proxy_buffering off;
     proxy_cache off;
     proxy_read_timeout 86400s;
@@ -287,6 +324,7 @@ location /api/public/chatbot {
     proxy_set_header X-Real-IP         $remote_addr;
     proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header X-Forwarded-Host  $host;
     proxy_buffering off;
     proxy_cache off;
     proxy_read_timeout 300s;
@@ -309,6 +347,38 @@ curl -N -s -X POST https://<domain>/api/public/chatbot \
 
 Thiếu `X-Forwarded-For` thì mọi khách trông như cùng một địa chỉ, và giới hạn tần
 suất theo IP gộp thành một bucket chung cho cả internet.
+
+**Host và `X-Forwarded-Host` — liên kết trong email.** Email thông báo chứa liên kết
+tuyệt đối dựng từ host của request (để cổng chạy được nhiều tên miền). Hai header đó
+do client gửi, nên phải chặn ở cả hai tầng:
+
+1. **nginx**: `proxy_set_header X-Forwarded-Host $host;` có ở khối chính **và** ở mỗi
+   `location` có `proxy_set_header` riêng (như ba khối trên) — một `location` khai
+   `proxy_set_header` là bỏ toàn bộ danh sách của khối `server`, và header client gửi
+   kèm sẽ lọt thẳng vào app. Thêm một site mặc định từ chối mọi tên miền lạ, để request
+   mang `Host` tuỳ ý không bao giờ tới được app (`/www/server/panel/vhost/nginx/0.default.conf`
+   trên aaPanel, hoặc khối `server` riêng):
+
+   ```nginx
+   server {
+       listen 80 default_server;
+       listen 443 ssl default_server;
+       server_name _;
+       ssl_reject_handshake on;   # nginx ≥ 1.19.4 — không cần chứng chỉ giả
+       return 444;
+   }
+   ```
+
+   Mỗi cặp địa chỉ:cổng chỉ được **một** `default_server` — `0.default.conf` của aaPanel
+   có thể đã khai sẵn; sửa khối đó thay vì thêm khối thứ hai. Luôn chạy `nginx -t` trước
+   khi reload.
+
+2. **app**: đặt `PUBLIC_HOST_ALLOWLIST` trong `.env` — mọi tên miền thật của cổng, phẩy
+   ngăn cách (`conduonghuongthien.com.vn,www.conduonghuongthien.com.vn`). Host không có
+   trong danh sách (và khác host của `PUBLIC_BASE_URL`) thì liên kết email dùng
+   `PUBLIC_BASE_URL`. Bỏ trống cả hai thì app giữ hành vi cũ và ghi một dòng
+   `security.link_host_unchecked` vào log. Redirect URI của Google vẫn suy từ request —
+   Google tự so với danh sách URI đã đăng ký, host giả chỉ nhận `redirect_uri_mismatch`.
 
 ### Bước 9 — Chạy thử
 
@@ -336,7 +406,7 @@ Phải thấy `healthy` và `CDKT_IMAGE=ghcr.io/...:sha-<commit>` (tag SHA, khô
 | 2 | 2 variable đã khai | `Settings → Variables` thấy `VPS_PORT`, `VPS_APP_DIR` |
 | 3 | Khoá riêng đã xoá khỏi VPS | `ls ~/.ssh/` không còn `cdkt_deploy` |
 | 4 | VPS đăng nhập được GHCR | `docker pull ghcr.io/<OWNER>/<REPO>:latest` |
-| 5 | Repo trên VPS đã có khoá `image:` | `grep CDKT_IMAGE docker-compose.yml` |
+| 5 | Repo đã clone trên VPS (compose thì CI tự gửi mỗi lượt) | `ls <APP_DIR>/docker-compose.yml <APP_DIR>/.env` |
 | 6 | `.env` có `CDKT_IMAGE` và `TRUSTED_PROXY_IPS` | `grep -E '^(CDKT_IMAGE\|TRUSTED_PROXY_IPS)=' .env` |
 | 7 | Reverse proxy đã trỏ đúng cổng, cache tắt | Mở domain bằng HTTPS thấy trang chạy |
 
@@ -358,8 +428,12 @@ Tag `sha-<commit>` tồn tại cho **mọi** lần deploy, nên lùi được v�
 
 ```bash
 cd <APP_DIR>
+# Nếu lượt deploy đó cũng đổi compose: trả compose cũ về (bản trước lượt đó, theo giờ UTC trong tên)
+ls .deploy-compose-backups/
+cp -p .deploy-compose-backups/docker-compose.<thời-điểm>.yml docker-compose.yml
+docker compose config -q
 sed -i 's|^CDKT_IMAGE=.*|CDKT_IMAGE=ghcr.io/<OWNER>/<REPO>:sha-<commit-cũ>|' .env
-docker compose up -d app
+docker compose up -d --no-deps app
 docker inspect --format '{{.State.Health.Status}}' cdkt_app
 ```
 
@@ -369,9 +443,11 @@ thì kéo lại từ GHCR.
 
 ### Lùi phiên bản tự động
 
-Container mới không `healthy` trong 300 giây thì script tự trỏ `.env` về image cũ và
-khởi động lại. Job vẫn **thất bại** (exit 1) kể cả khi lùi thành công — commit đó
-không lên được thì không được báo là đã lên.
+Container mới không `healthy` trong 300 giây — hoặc chính lệnh `docker compose up`
+hỏng — thì script trả `docker-compose.yml` về bản trước lượt này, trỏ `.env` về image
+cũ và khởi động lại: image cũ chạy trên compose cũ, đúng cặp đã từng khoẻ. Job vẫn
+**thất bại** (exit 1) kể cả khi lùi thành công — commit đó không lên được thì không
+được báo là đã lên.
 
 ### Xoay khoá SSH
 
@@ -385,6 +461,92 @@ ssh-copy-id -i ~/.ssh/cdkt_deploy_new.pub -p <VPS_PORT> <VPS_USER>@<VPS_HOST>
 
 Gỡ khoá cũ **sau** khi đã có một lần deploy xanh bằng khoá mới — không phải trước.
 
+### Múi giờ của container
+
+Container app chạy `TZ=Asia/Ho_Chi_Minh` (image + chữ cố định trong compose), mysql giữ
+UTC. Lượt deploy đầu tiên mang dòng này dời các lượt "03:00" (analytics, retention)
+từ 10:00 sáng giờ VN về đúng 03:00 giờ VN, và ranh giới tháng của hạn mức AI lùi 7
+giờ — một lần, không cần thao tác. Chi tiết: mục *Múi giờ* trong [DEPLOY.md](./DEPLOY.md).
+`manage.sh` không cần đổi gì: TZ là chữ cố định trong compose, không đọc từ `.env`.
+
+---
+
+## Việc chủ repo phải tự làm (không làm được bằng code)
+
+Kiểm ngày 2026-10-13 bằng `gh api` (chỉ đọc): `main` **chưa được bảo vệ**
+(`branches/main/protection` → 404, không có ruleset nào), và có một GitHub
+Environment lạc tên `VPS_HOST`. Vì merge vào `main` là lên production ngay, ba việc
+dưới đây là lớp chặn cuối cùng mà workflow không tự đặt được:
+
+| # | Việc | Ở đâu |
+|---|---|---|
+| 1 | **Bảo vệ nhánh `main`**: bắt buộc qua pull request, cấm push thẳng (kể cả admin — bỏ chọn *Allow bypass*), và **required status checks** — **đọc mục *Chọn required checks* ngay dưới bảng trước khi bật**: đặt thẳng năm tên job (`Plan`, `Unit and typecheck`, `Schema drift`, `Production build`, `Secrets and defaults`) với `ci.yml` hiện tại sẽ **khoá cứng mọi PR chỉ sửa tài liệu**. | `Settings → Branches → Add branch ruleset` (hoặc *Branch protection rules*) |
+| 2 | *(Tuỳ chọn)* **Cổng duyệt tay trước deploy**: tạo Environment `production` với *Required reviewers*, rồi thêm `environment: production` vào job `deploy` (secret cấp repo vẫn dùng được trong job có environment). Workflow **cố ý chưa** có khoá này: đó là quyết định đổi quy trình (mỗi lần merge phải có người bấm duyệt, lượt chờ duyệt giữ chỗ trong nhóm `deploy-production`), không phải một sửa lỗi. | `Settings → Environments → New environment` |
+| 3 | **Xoá Environment lạc tên `VPS_HOST`** — đó là tên một *secret*, bị tạo nhầm thành Environment. Ngày kiểm, nó **không chứa secret hay variable nào** và không job nào khai `environment:`; bốn secret `VPS_*` thật nằm ở cấp repo. Kiểm lại trước khi xoá: `gh api repos/<OWNER>/<REPO>/environments/VPS_HOST/secrets`. | `Settings → Environments → VPS_HOST → Delete` |
+
+### Chọn required checks (việc #1) — vì sao không đặt thẳng năm tên job
+
+Hai luật của GitHub quyết định chuyện này:
+
+- **Workflow không chạy thì check bắt buộc không bao giờ có kết quả.** `on.pull_request`
+  trong `ci.yml` có `paths-ignore: ['**.md', 'docs/**', 'openspec/**']`: PR chỉ sửa tài
+  liệu **không khởi động** workflow, nên `Plan`, `Unit and typecheck`… nằm ở *Expected —
+  Waiting for status to be reported* mãi và nút merge bị khoá. (Admin bypass được, nhưng
+  việc #1 chủ đích tắt bypass.)
+- **Job bị bỏ qua bằng `if:` lại được tính là ĐẠT** (kết luận *skipped*). Đó là lý do PR
+  nháp không bị khoá (job `changes` báo `run=false`, các job sau *skipped*) — và cũng là lỗ
+  hổng: nếu chính job `Plan` **lỗi**, mọi job `needs: changes` bị *skipped* và… đạt. Năm
+  check bắt buộc vẫn xanh trong khi không có test nào chạy.
+
+Hai cách đúng (cả hai đều cần sửa `ci.yml` — tài liệu này chỉ đề xuất, chưa áp):
+
+1. **(Khuyến nghị) Một job cổng duy nhất làm check bắt buộc.** Thêm job, ví dụ `CI gate`:
+   `needs: [changes, unit-tests, integration-tests, schema-drift, build, hygiene]`,
+   `if: always()`, và bước kiểm `needs.<job>.result` của từng job: `failure`/`cancelled`
+   → thoát 1; `changes` phải `success`; các job khác chỉ được `success` hoặc `skipped`
+   khi `changes` nói bỏ qua. Đặt **chỉ** `CI gate` là required. Đồng thời **bỏ
+   `paths-ignore` của `pull_request`** (giữ cho `push`) để workflow luôn khởi động; muốn
+   PR tài liệu vẫn rẻ thì để job `changes` xuất `run=false` khi mọi tệp đổi đều khớp
+   `*.md|docs/|openspec/` — khi đó chỉ `Plan` + `CI gate` chạy (~1 phút billed).
+   Ưu: một tên check ổn định, ma trận Integration không cần liệt kê, lỗi ở `Plan` làm đỏ
+   cổng thay vì "skipped = đạt". Nhược: thêm một job (~vài giây) mỗi lượt PR.
+2. **Giữ năm tên job làm required, bỏ `paths-ignore` của `pull_request`** và để job
+   `changes` xuất `run=false` cho PR chỉ sửa tài liệu (các job còn lại *skipped* = đạt).
+   Đơn giản hơn, nhưng giữ nguyên lỗ "Plan lỗi → mọi thứ skipped → đạt", và mỗi job mới
+   thêm vào phải nhớ thêm vào danh sách required.
+
+Trong lúc chưa sửa `ci.yml`: **đừng** bật required checks cho các tên job; chỉ bật "bắt
+buộc qua pull request" + cấm push thẳng. Đừng bao giờ đặt check `Integration · …` là
+bắt buộc (tên sinh theo ma trận; PR không đụng backend bỏ qua chúng). Integration vẫn chặn
+deploy qua `needs` của job `image`.
+
+### Khi cổng `npm audit` chặn một bản vá khẩn
+
+Bước **"No known vulnerabilities in production dependencies"** (job `hygiene`,
+`npm audit --omit=dev --audit-level=high`) chặn `image`/`deploy`. Một advisory mới công bố
+sau giờ làm việc có thể chặn đúng bản vá cần lên ngay. Quy trình (không có cờ tắt trong
+workflow — cổng có thể bị tắt là cổng không chặn gì):
+
+1. Đọc advisory: gói nào, có thật sự chạy trong image runtime không (`npm ls <gói> --omit=dev`).
+2. Nếu có bản vá: `npm install <gói>@<bản-vá> --package-lock-only --ignore-scripts` (hoặc
+   `overrides` trong `package.json` cho phụ thuộc bắc cầu), đưa vào **cùng PR** với bản vá khẩn.
+3. Nếu chưa có bản vá và bản vá khẩn không thể chờ: một PR riêng, có người duyệt, sửa đúng
+   dòng đó thành `npm audit --omit=dev --audit-level=critical` **kèm chú thích ngày hết
+   hạn + mã advisory**, merge, rồi PR hoàn nguyên ngay khi gói có bản vá. Không dùng
+   `|| true`, không `continue-on-error`.
+
+### Phạm vi shellcheck
+
+Bước shellcheck trong `hygiene` chỉ quét `./scripts` (`scandir: ./scripts`).
+`production/manage.sh` **không** được CI quét — action chỉ nhận một `scandir`, và đổi nó
+thành `.` sẽ quét cả cây (kể cả fixture test) — nên nó được kiểm **tay**: hiện sạch ở mức
+`-S warning` (2026-10-14). Khi sửa `manage.sh`, chạy
+`shellcheck -S warning production/manage.sh` (không cài được thì
+`docker run --rm -v "$PWD:/mnt:ro" -w /mnt koalaman/shellcheck:stable -S warning production/manage.sh`)
+và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừng để nó tích lại. Hành vi của nó được kiểm bằng
+`tests/ops-scripts-sandbox.test.ts` / `tests/ops-migrate-scanner.test.ts` (chạy thật với
+`docker`/`git` giả).
+
 ---
 
 ## Xử lý sự cố
@@ -397,7 +559,11 @@ Gỡ khoá cũ **sau** khi đã có một lần deploy xanh bằng khoá mới �
 | `denied: permission_denied` lúc pull trên VPS | Chưa `docker login ghcr.io`, hoặc login bằng user khác `VPS_USER` — xem Bước 5 |
 | `permission denied` khi gọi `docker` | User deploy chưa ở group `docker`: `sudo usermod -aG docker <user>` rồi đăng nhập lại |
 | `không tìm thấy .env` | `VPS_APP_DIR` trỏ sai thư mục |
-| VPS **tự build** thay vì dùng image kéo về | `docker-compose.yml` trên VPS còn là bản cũ, thiếu khoá `image:` — làm Bước 6 |
+| VPS **tự build** thay vì dùng image kéo về | `docker-compose.yml` trên VPS còn là bản cũ, thiếu khoá `image:`. Từ khi CI tự gửi compose thì không còn xảy ra; nếu vẫn gặp, kiểm `.env` có đặt `COMPOSE_FILE` lạ không |
+| `tệp compose nhận được bị hỏng trên đường truyền` | Phiên SSH gửi compose bị đứt. Chưa chạm gì trên VPS — chạy lại job |
+| `… không qua docker compose config trên máy chủ này` | Compose mới cần thứ VPS chưa có: thường là một biến `${VAR:?…}` mới chưa có trong `.env`, hoặc Docker Compose trên VPS quá cũ. Đã trả bản cũ về, chưa chạm container. Đọc lỗi ngay trên dòng đó, sửa `.env`/nâng Compose, rồi chạy lại job |
+| `git pull` trên VPS báo `docker-compose.yml` có thay đổi cục bộ | Đó là bản CI đặt vào (đã commit). `git checkout -- docker-compose.yml && git pull origin main` |
+| Sửa compose của service `mysql` mà không thấy hiệu lực | Chủ đích: CI không tạo lại CSDL. Chạy `docker compose up -d` trên VPS khi thấp điểm |
 | `chưa healthy sau 300s` | Đã tự lùi về image cũ, site vẫn chạy. Đọc log để tìm nguyên nhân: `docker logs cdkt_app --tail 100` |
 | `không có image trước đó để lùi về` | Lần deploy đầu tiên và nó hỏng. Sửa rồi deploy lại; chưa có gì để lùi về |
 | `không khai HEALTHCHECK` | Container đang chạy image sai (không phải image của dự án). Kiểm `docker inspect --format '{{.Config.Image}}' cdkt_app` |
@@ -411,10 +577,35 @@ Gỡ khoá cũ **sau** khi đã có một lần deploy xanh bằng khoá mới �
 | Tệp | Vai trò |
 |---|---|
 | `.github/workflows/ci.yml` | 4 cổng kiểm tra + job `image` + job `deploy` |
-| `scripts/deploy-remote.sh` | Chạy **trên VPS**, nạp qua ssh stdin — kéo image, đổi `.env`, chờ healthy, lùi nếu hỏng |
-| `docker-compose.yml` | Khoá `image: ${CDKT_IMAGE:-cdkt/app:local}` cho phép vừa pull vừa build cục bộ |
-| `tests/ops-scripts.test.ts` | Chặn hồi quy: thứ tự cổng, ghim SHA, ghim host key, ghi `.env` nguyên tử, đường lùi phiên bản |
+| `scripts/deploy-remote.sh` | Chạy **trên VPS**, nạp qua ssh stdin — kiểm + đặt compose, kéo image, đổi `.env`, chờ healthy, lùi (image + compose) nếu hỏng |
+| `docker-compose.yml` | Khoá `image: ${CDKT_IMAGE:-cdkt/app:local}` cho phép vừa pull vừa build cục bộ; CI gửi tệp này lên VPS mỗi lượt deploy |
+| `tests/ops-scripts.test.ts` | Chặn hồi quy: thứ tự cổng, ghim SHA, ghim host key, ghi `.env` nguyên tử, đường lùi phiên bản; đọc `ci.yml`/compose bằng trình phân tích YAML cho `concurrency`, TZ, biến chuyển tiếp |
+| `tests/deploy-remote-behavior.test.ts` | **Chạy thật** `deploy-remote.sh` (qua `bash -s` như CI) với `docker` giả: compose hỏng/cụt bị từ chối mà `.env` không đổi, lùi trả cả image lẫn compose, `up` hỏng vẫn đi vào đường lùi, mysql không bị tạo lại |
+| `tests/container-timezone.test.ts` | Scheduler analytics/retention chạy ở `TZ=Asia/Ho_Chi_Minh` bắn lúc 03:00 giờ VN, ở UTC thì 10:00 giờ VN |
 
 `deploy-remote.sh` được **nạp qua stdin** (`ssh ... "bash -s -- args" < scripts/deploy-remote.sh`)
 chứ không gọi bản nằm sẵn trên VPS: máy chủ luôn chạy đúng phiên bản script của commit
 đang được triển khai, không phải bản nào đó còn sót từ lần deploy trước.
+
+---
+
+## Phụ thuộc: `dependencies` = runtime, `devDependencies` = build
+
+Image runtime (stage 2 của `Dockerfile`) chạy `npm ci --omit=dev --ignore-scripts`, nên **chỉ gói
+trong `dependencies` được cài vào image**. `.output` của Nitro tự chứa (đã trace thứ nó cần),
+còn các script chạy trong container (`db:init`, `db:seed`, `db:sanitize-html`,
+`analytics:maintenance`…) chỉ import `drizzle-orm`, `mysql2`, `bcryptjs`, `jsonwebtoken`,
+`sharp`, `h3`. Vì vậy `nuxt`, `vue`, `vue-router`, `tailwindcss`, `@nuxtjs/tailwindcss`,
+`@nuxt/image`, `autoprefixer`, `hls.js`, `plyr`, `mermaid` nằm ở `devDependencies` (stage build
+`npm ci` đầy đủ vẫn cài chúng cho `nuxi build`).
+
+- **`--ignore-scripts` là bắt buộc ở stage runtime:** `postinstall` gốc là `nuxt prepare`, mà
+  `nuxt` không có trong image runtime → không có cờ này `npm ci` thoát 127.
+- **Thêm import mới trong `server/db/**`, `server/services/**` hoặc `scripts/**`** (được seed/script
+  nạp) → gói đó phải ở `dependencies`, kể cả khi nó đã có sẵn "ké" qua `nuxt`. `h3` từng chỉ
+  tới được nhờ `nuxt`; `seed.ts` → `services/languages.ts` import `createError` từ đó.
+- **Kiểm tra lỗ hổng:** `npm audit --omit=dev --audit-level=high` là bước **chặn** trong job `hygiene`
+  (tập runtime hiện 0 advisory). `npm audit` toàn cây (gồm công cụ dev: nuxt → nitropack/simple-git…)
+  vẫn báo, chỉ ghi log, không chặn. Tạo lại lockfile không cần cài gì:
+  `npm install --package-lock-only --ignore-scripts`. Không dùng `npm audit fix --force`
+  (npm đề xuất hạ `nuxt` xuống 3.7.4 — sai).

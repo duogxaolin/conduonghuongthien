@@ -507,3 +507,139 @@ PageSpeed Insights mobile báo 2 vấn đề:
 
 #### Kiểm chứng
 Build exit 0, typecheck 0 lỗi, eslint 0 error.
+
+### 16. Cổng admin API theo đường dẫn đã giải mã + khôi phục backup chỉ SuperAdmin (2026-10-13)
+
+#### Bối cảnh
+Audit 2026-10-13 tìm ra hai lỗi High: (1) middleware `admin-auth` so đường dẫn thô trong khi router route theo đường dẫn đã giải mã — `/api/%61dmin/users` tới handler mà không qua kiểm phiên; (2) khôi phục backup (chạy SQL tải lên bằng quyền root) chỉ cần `settings.update`, tải dump đầy đủ chỉ cần `settings.read`. Kèm theo: dump của app làm lệch mọi ngày giờ 7 giờ và không phải snapshot nhất quán. Diễn giải → `docs/decisions/realm-safety.md` § "Cổng `/api/admin/**` và khôi phục backup".
+
+#### Thay đổi
+- **Middleware** (`server/middleware/admin-auth.ts`): `classifyAdminRequest` quyết định trên các dạng đã giải mã của đường dẫn route, fail closed; test hành vi `tests/admin-auth-path-gate.test.ts` (h3 app + router thật) và kiểm kê handler `tests/admin-handler-authorization.test.ts` (`AUTH_EXEMPTIONS` 15 tệp có lý do).
+- **BREAKING — quyền backup**: khôi phục (theo tên và tải lên), tải về, xoá backup **chỉ SuperAdmin** (`requireSuperAdmin`). Người có `settings.read`/`settings.update` vẫn xem danh sách, trạng thái, tạo backup, cấu hình Drive. Trang `/admin/settings/backup` ẩn nút với người khác.
+- **Khôi phục an toàn** (`server/services/backup-restore.ts`, `backup-restore-guards.ts`): kiểm chữ ký gzip + trần nén/giải nén (đếm theo luồng) trước khi ghi; kiểm danh sách mục tar (không `..`/tuyệt đối/liên kết/ngoài cây) trước khi giải nén; bản `pre-restore` trước khi chạy SQL (không xoay vòng); audit `backup_restore` / `backup_restore_failed`; log bảo mật `backup.restore_*`; trigger mới `pre-restore`.
+- **Dump định dạng 2** (`server/services/backup-sql.ts`): ngày giờ/BIGINT/JSON ghi nguyên văn, `time_zone '+00:00'`, snapshot nhất quán; dump cũ được gắn cờ `legacyDateShift` khi khôi phục.
+- Suite integration mới `tests/backup-dump-integration.test.ts` (matrix CI `backup-dump`).
+
+#### KHÔNG đổi
+- Không đổi schema, không thêm biến môi trường → `production/` không cần sửa. Khôi phục vẫn chạy bằng `DB_USER` hiện có (khuyến nghị: tài khoản MySQL giới hạn).
+- Dump vẫn giữ toàn văn trong RAM (giới hạn đã biết).
+
+### 17. Phần còn lại của đợt rà soát 2026-10-13 (bảo mật, dữ liệu, công khai, vận hành)
+
+Diễn giải → `docs/decisions/realm-safety.md` § "Đích ra ngoài và bí mật đã lưu", `data-layer.md` § "Audit 2026-10-13", `reader-features.md` § "Ngôn ngữ người đọc và trang cache SWR".
+
+#### Bảo mật
+- **Đích AI**: chính sách URL nhà cung cấp (`server/utils/ai/provider-url.ts`) áp lúc ghi và lúc gọi; mọi đường stream/tool-calling qua `safeProviderStream` (ghim IP, không redirect, hạn giờ, trần byte); đổi baseUrl phải nhập lại key; đổi đích chatbot chỉ SuperAdmin.
+- **Liên kết email**: `PUBLIC_HOST_ALLOWLIST` (biến môi trường mới — compose, `.env.example`, `manage.sh` Deploy/Update, `production/README.md`, nginx `default_server` + `X-Forwarded-Host` trong `CI-CD.md`).
+- Test SMTP không còn gửi mật khẩu đã lưu tới host do request chọn; xuất Google chỉ lấy ảnh media của chính site, bỏ chia sẻ `anyone`; vô hiệu công thức trong CSV/Sheets; `polishedContent` của AI biên tập được sanitize + kiểm kê mọi `v-html`; JWT ghim `HS256`; `restart-server` cần SuperAdmin; link markdown của chat không nhận `//host`; `boost`/`stats` không còn lộ bài tồn tại qua 404/403.
+- Chat: rate limit trước kiểm duyệt + trần hàng duyệt theo IP/phiên; helper regex kiểm duyệt dùng chung + kiểm luật lúc lưu (giảm, không loại trừ ReDoS); lỗi ẩn/ghi hàng duyệt được log; "Quét lại tất cả" thành job nền có khoá (202/409, theo lô).
+
+#### Dữ liệu
+- Chuyển trạng thái đơn bằng `UPDATE` có điều kiện trong transaction (409 cho người thua; integration test đồng thời).
+- Publish/archive/xoá kho chatbot ghi audit cùng transaction.
+- Đồng bộ ảnh lên R2: thay URL (mọi bảng đích, kể cả JSON `page_blocks`) trong một transaction **trước** khi xoá bản local; khoá tên + mã thế hệ; bước sửa lượt bị cắt ngang trong "Sửa URL". Thay file video dọn cây cũ qua outbox. Suite integration mới `media-sync-rewrite`.
+
+#### Trang công khai
+- Endpoint công khai hỏng CSDL → 503 + `no-store` + log (`reportPublicReadFailure`); block hiện lỗi + thử lại (`BlockLoadError.vue`, khoá i18n `block_docs_load_error_title`). Tìm kiếm đếm thật + thoát `%`/`_`. Analytics dùng pool chung qua `utc-query.ts`; giới hạn page-view dùng store chung. Suite integration mới `public-read`. Spike chỉ mục danh sách bài: không thêm (không có lợi đo được).
+- Phân trang/tìm kiếm danh sách bài nạp lại đúng (khoá `useAsyncData` suy từ URL, `usePublicArticleList.ts`); role-models/reintegration-models dùng chung `ModelArticlesListPage.vue`; `/legal-qa` về trang 1 khi đổi từ khoá. E2E `public-list-pagination.spec.ts`.
+- Máy chủ không ghi cookie `cdkt_lang` (trang SWR từng đặt lại ngôn ngữ của mọi người đọc về `vi`); lớp phủ tải đầu có failsafe 4 s / `<noscript>` / gỡ khi lỗi app. E2E `public-language-cache.spec.ts`.
+- Trợ năng: ngăn kéo menu đóng là `inert`, biểu mẫu có nhãn/lỗi gắn đúng, nút thay `<div @click>`, liên kết quay lại của trang in qua `safeInternalPath`, chữ phụ `#7A8A76` → `#5A6C58` toàn `app/`.
+
+#### Vận hành
+- CI: `cancel-in-progress` chỉ cho `pull_request` (deploy đang chạy không bị cắt); deploy gửi `docker-compose.yml` của đúng commit (SHA-256, sao lưu, `config -q`) và khởi động lại chỉ app; bước audit dependency runtime là chặn (0 advisory sau khi dời nuxt/vue/tailwind… sang `devDependencies`; image runtime `npm ci --omit=dev --ignore-scripts`).
+- Container app chạy `TZ=Asia/Ho_Chi_Minh` (Dockerfile + compose; mysql giữ UTC). **Tác động một lần khi deploy**: lượt bảo trì/sao lưu "03:00" dời từ 10:00 về 03:00 giờ VN, mốc đầu tháng của hạn mức AI dịch 7 giờ. Compose truyền thêm `RETENTION_SCHEDULER`, `ANALYTICS_SCHEDULER`, `BACKUP_SCHEDULER`, `LOG_LEVEL`, `LOGIN_CAPTCHA_ENABLED` (rỗng = mặc định của code).
+- `manage.sh`: bỏ lựa chọn "Existing DB" chết, Migrate đọc tên DB từ `.env` và dò `DROP TABLE`/`DROP DATABASE`/`TRUNCATE` thật, Deploy tôn trọng ngưỡng RAM 4000 MB cho tải video và kéo image CI thay vì build trên VPS, Update đợi healthy và tự lùi về image + compose trước khi hỏng, mật khẩu qua `MYSQL_PWD`. Cron media gồm cả `uploads_data`; `scripts/restore-db.sh` mới. Test sandbox với `docker`/`git` giả (`tests/ops-scripts-sandbox.test.ts`).
+
+#### Kiểm chứng (cây đã gộp, 2026-10-14 — ảnh chụp TRƯỚC đợt sửa F1–F6 ở § 18; số mới ở § 18)
+`npm test` 3313 test / 3294 pass / 0 fail / 19 skip; typecheck 0 lỗi (không còn cảnh báo `Duplicated imports "escapeLikeWildcards"`); eslint 0 error / 17 warning; `db:drift` sạch (62 bảng / 635 cột); 17/17 suite integration xanh trên MySQL thật; `nuxt build` exit 0; Playwright 39/39; `npm audit --omit=dev` 0 lỗ hổng (toàn bộ `npm audit` còn 20 ở công cụ dev: 2 critical, 14 high, 4 moderate).
+
+### 18. Đợt sửa sau kiểm chứng (F1–F6, 2026-10-14)
+
+Sáu nhánh sửa chạy sau lượt kiểm chứng độc lập của § 16–17; mỗi mục dưới đây có test đỏ trên mã cũ → xanh trên mã mới (theo báo cáo của nhánh sửa). Diễn giải → `realm-safety.md` § "Đợt sửa sau kiểm chứng", `data-layer.md` § "Đợt sửa sau kiểm chứng", `chatbot.md` § "Kiểm duyệt và độ dài tin", `reader-features.md` § "Trợ năng công khai — đợt sửa", `media-storage.md` § "Archive lớn", `README.md` § "Bài học quy trình".
+
+#### Bảo mật
+- **Cài đặt có bí mật**: đổi host/port/user/secure SMTP, account/bucket R2 ảnh, account/bucket R2 video phải gõ lại bí mật trong cùng request (luật chung `shared/settings-credential-rules.ts` cho trang + máy chủ; `server/utils/settings-credential-guard.ts`); cổng SMTP chỉ 25/465/587/2525; `test-email`/`test-r2` (`test-r2` nay cần `settings.update` thay vì `read`) dùng cấu hình đã lưu khi bí mật trống/che và chỉ trả lỗi đã phân loại; xoá ô mật khẩu SMTP = xoá mật khẩu đã lưu; `GET media-portal` trả giá trị R2 đã lưu + `secretStored` (trước đó lưu lại trang có thể xoá trắng cấu hình).
+- **Backup**: đích Drive (service account, thư mục, bật/tắt), `backup_keep_count` và mọi endpoint Drive OAuth chỉ SuperAdmin; giao diện ẩn các ô đó và không gửi các khoá đó với người khác (`app/utils/backup-settings-payload.ts`). Xoay vòng luôn giữ bản mới nhất mỗi họ (sql/uploads/media) và mọi bản `pre-restore`. Kiểm mục tar bằng `TarHeaderScanner` đọc header 512 byte trong Node (pax/GNU long name; lý do `archive_unsupported_entry`/`archive_unsafe_name`/`archive_too_many_entries`), thay cho phân tích dòng `tar -tzvf`. Header dump ghim `sql_mode='NO_AUTO_VALUE_ON_ZERO'`. Archive giải nén > 8 GiB bị từ chối (413) — nâng lên 15 GiB ở § 20.
+- **Cổng admin**: chỉ `?` bị cắt khi phân loại; đường dẫn có `#`/`%23` không bao giờ được miễn. Kiểm kê handler (`tests/admin-handler-authorization.test.ts`) phân loại bằng AST TypeScript (`tests/_admin-authz-classifier.ts`), 15 miễn trừ giữ nguyên.
+- Ảnh thumbnail khi xuất bài đi qua `safeProviderRequest`; host IPv6 NAT64/`fec0::` bị chặn ở đích ra ngoài; Google OAuth chỉ tin `x-forwarded-proto` từ proxy đã khai.
+
+#### Vận hành
+- `scripts/restore-db.sh` + `verify-restore.sh`: bộ chặn câu lệnh viết lại (không `grep -q` dưới `pipefail`, dùng `PIPESTATUS`; chặn thêm `\u`, `connect`, `source`, comment thực thi `/*! … */`); `verify-restore.sh --latest`. `scripts/restore-media.sh` viết lại: liệt kê bằng GNU tar, allowlist loại mục, giải nén vào staging + kiểm `find`, bản an toàn (`--no-safety-copy`), `--i-know-app-is-stopped`.
+- `manage.sh` Migrate: bộ quét SQL là tokenizer awk hiểu nháy/comment, tuyến tính (dump 16 MB: gawk 0,7 s, mawk 0,4 s, busybox 12 s); `.env` mode 600.
+- Healthcheck mysql dùng `MYSQL_PWD` (chỉ có hiệu lực sau `docker compose up -d mysql` thủ công — deploy CI dùng `--no-recreate mysql`). Lưu ý: `mysqladmin ping` trả 0 kể cả khi sai mật khẩu, nên đây **không** phải kiểm xác thực.
+- `CI-CD.md` khuyến nghị một job cổng CI luôn chạy + bỏ `paths-ignore` ở `pull_request` trước khi bật required checks (nếu không, PR chỉ sửa docs bị kẹt) — `ci.yml` **chưa** đổi theo. Bước hygiene UTC của `ci.yml` miễn đúng đường dẫn `server/utils/utc-query.ts`.
+
+#### Dữ liệu
+- Lọc ngày ở admin (`ai/logs`, `chatbot/sessions`, `activity-logs`) là ngày lịch Việt Nam qua `server/utils/vn-day-range.ts` (giả định session MySQL ở UTC); `profile/history.get.ts` chưa đổi.
+- Đồng bộ media: danh sách cột tham chiếu 27 cột (`settings.value`, `chat_messages`, `page_versions`, `home_sections`, câu trả lời chatbot, `social_links.icon`, thumbnail…) kèm lý do từng cột; khớp tới ranh giới cuối URL (`REGEXP_REPLACE`, `server/services/media-sync-url-match.ts`); lưới an toàn sau commit giữ bản cũ còn bị tham chiếu (`media.sync_old_copy_kept_referenced`); bỏ qua hàng mà đường dẫn đích thuộc hàng khác; cache favicon/og-image xoá sau khi viết lại `settings`. Chi phí ≈ +0,4–0,5 s mỗi hàng media (≈ 25–30 phút thêm cho ~3,7k hàng).
+- Kiểm duyệt: bộ phân tích regex là parser nhỏ (mở nhóm lồng, lượng từ kề chồng lấn, allowlist phép hoặc literal an toàn); lúc chạy kiểm theo cửa sổ 2000 ký tự chồng lấn, một cửa sổ > 200 ms → tắt luật 10 phút (`ai_moderation.rule_slow_disabled`); luật đã lưu không qua bộ kiểm bị bỏ ở cả hai đường. Quét lại: lưu con trỏ mỗi lô, lô hỏng thử lại một lần, AI chưa cấu hình → chỉ chạy luật (`summary.aiUnavailable`, hiện ở `moderation.vue`), chèn hàng duyệt idempotent (`INSERT … SELECT … WHERE NOT EXISTS`). Chat: độ dài tin tối đa min(10000, `maxInputChars`‖2000) → 400, kiểm sau honeypot + rate limit, trước kiểm duyệt. Log `rate_limit.database_write_failed` (store chung, gồm page-view) giới hạn 1 dòng/phút kèm số lần bị nén.
+
+#### Trang công khai
+- Đọc công khai hỏng → 503 + `no-store` qua `reportPublicReadFailure` thêm cho `media/index`, `livestream/active`, `livestream/chat/history` (log không còn tham số Drizzle). `server/plugins/error-no-store.ts` (`beforeResponse`) đặt `no-store` cho mọi phản hồi ≥ 500 vì bộ bọc swr của Nitro ghi `s-maxage` cả lên trang lỗi; trang dùng `useSsrFailureStatus` → 503; `/news/<chuyên mục>` khi tra chuyên mục hỏng hiện trạng thái lỗi thay vì `ArticleDetail`.
+- `usePublicArticleList`/`useNavigationSnapshot` (một request mỗi lượt điều hướng, trạng thái suy từ URL), `usePublicMediaList`, `ContentTypeListSection` chuyển sang cùng mẫu; `ModelArticlesListPage`; trang vượt số trang có "Về trang đầu".
+- Menu di động: `role="dialog"` + `aria-modal`, phần ngoài `inert`, bẫy Tab, focus vào trong khi mở (nguyên nhân cũ: transition `visibility` trên khung ngăn kéo **và** `transition-all` của nút đóng), có spec e2e. Tìm kiếm trực tiếp có trạng thái lỗi + Thử lại. Biểu mẫu liên hệ xoá `aria-invalid` khi sửa, một tóm tắt `role="alert"`. Vòng focus `#4A6741` (`#7CB342` chỉ 2,50:1); chữ `#7A8A76` → `#5A6C58`. i18n thêm 5 khoá (`site_search_aria`, `menu_dialog_aria`, `search_live_error`, `list_page_out_of_range`, `list_back_first_page`) — **không** dùng lại `search_aria`: DB đã có khoá đó cho role_models/reintegration.
+
+#### Kiểm chứng (cây cuối, 2026-10-14, người kiểm cuối chạy lại toàn bộ)
+`npm test` 3738 test / 3717 pass / 0 fail / 21 skip (giống hệt dưới `TZ=Asia/Ho_Chi_Minh`); bước unit của CI (235 tệp, có coverage) 3716/3716, coverage 82,39 % dòng; typecheck 0 lỗi, không `Duplicated imports`; eslint 0 error / 17 warning; `db:drift` sạch (62 bảng / 635 cột); 17/17 suite integration (26 test) xanh trên MySQL thật, matrix `ci.yml` khớp 17 tệp + hai khối env giống nhau; `nuxt build` exit 0; Playwright 83/83 (3,6 phút); shellcheck `-S warning` 0 phát hiện trên `scripts/*.sh` + `manage.sh`; `npm audit --omit=dev` 0 (toàn bộ còn 20 ở công cụ dev: 2 critical, 14 high, 4 moderate); các bước hygiene của CI chạy lại cục bộ đều qua. Bản build thật với CSDL không với tới: 76 cách viết đường dẫn admin (4 method) chỉ trả 401/400/404, `/api/admin/backup/status` không cookie → 401; `/`, `/about`, `/contact`, `/media`, `/news`, `/news/<x>`, `/documents`, `/role-models`, `/reintegration-models` → 503 + `no-store`; **ngoại lệ `/legal-qa` vẫn trả 200** (không header cache) — đã đóng ở § 19.
+
+### 19. Đợt sửa cuối (G1–G3, 2026-10-14)
+
+Ba nhánh sửa sau lượt kiểm cuối của § 18; mỗi mục có test đỏ trên mã cũ → xanh trên mã mới (theo báo cáo của nhánh sửa — người kiểm cuối chạy lại toàn bộ bộ test, không chạy lại các phép đột biến). Diễn giải → `realm-safety.md` § "Đợt sửa cuối (G1–G3)", `chatbot.md` § "Kiểm duyệt và độ dài tin", `reader-features.md` § "Trang chi tiết: 404 khác lỗi tải", `media-storage.md` § "Cấu hình R2 kiểm lúc dùng", `data-layer.md` § "Trang lỗi không được vào bộ đệm".
+
+#### Kiểm duyệt luồng người đọc (G1)
+- `createComment` (`server/services/comments.ts`) và `sendChatMessage` (`livestream-chat.ts`) tính giới hạn reader rồi giới hạn IP **trước** `fastPreModerate`, và truyền `readerId` + `capQueuePerSource`: trần 20 hàng duyệt/giờ (`MODERATION_QUEUE_CAP`) nay phủ cả hai luồng, khoá theo IP gộp + reader id (không có cả hai → phiên). Ngân sách hàng duyệt dùng chung theo địa chỉ giữa chatbot, bình luận và chat livestream.
+- `server/utils/ip-bucket.ts` (mới): IPv6 → tiền tố /64, IPv4-mapped → IPv4 — **chỉ** cho khoá trần hàng duyệt; khoá giới hạn chung vẫn là địa chỉ đầy đủ (xem danh sách chưa xử lý).
+- Tin bị chặn tức thì là ngoại lệ có tên của "lượt giới hạn chỉ tính khi ghi": nó tốn lượt vì ghi một hàng duyệt.
+- `recordInstantBlock` không còn nuốt lỗi: log `ai_moderation.queue_insert_failed` với lỗi driver đã che (thông điệp Drizzle nhúng tham số ràng buộc; không ghi nội dung/IP/tên).
+- Test: `ip-bucket`, `reader-flows-rate-limit-before-moderation`, `reader-flows-moderation-queue-cap`, bổ sung `moderation-queue-cap`.
+
+#### Trang công khai + chatbot (G2)
+- `ArticleDetail.vue` tách **404** (bài thật không có → "Không tìm thấy" + HTTP 404; trước đây mọi thất bại đều hiện cảnh báo + Thử lại với HTTP 200) khỏi **lỗi tải** (→ 503 + `no-store` + Thử lại) qua `resolveDetailFetch` (`app/utils/ssr-failure-response.ts`); `useSsrFailureStatus` thêm tuỳ chọn `notFound`.
+- Nhánh hai đoạn của `[slug].vue` dùng `resolveCategoryRoute`: tra chuyên mục hỏng → `BlockLoadError` + 503, không bao giờ rơi sang `ArticleDetail`. `/legal-qa` trả 503 khi CSDL hỏng.
+- Chatbot: `describeChatSendFailure` (`app/utils/chatbot-storage.ts`) — 400 `input_too_long` hiện câu tiếng Việt của máy chủ, tin bị từ chối rút khỏi hội thoại và giữ lại làm nháp; trần phía widget chỉ **hạ** (≤ 2000) theo `maxChars` máy chủ báo về; không endpoint công khai nào lộ `maxInputChars`. `useChatbot.ts` ≈ 857 dòng (vượt quy tắc ~400).
+- Test: `chatbot-send-rejection`, `public-detail-ssr-status`, e2e `public-detail-status.spec.ts` (5).
+
+#### Sao lưu + R2 + Media Portal (G3)
+- `backups.trigger` → `VARCHAR(32)` (từng là 16: `runBackup('sql','pre-fix-thumbnails')` lỗi `ER_DATA_TOO_LONG` trên MySQL 8.0.46 strict — không hàng, không dump, nên quét thumbnail chạy **không** có bản an toàn). Nguồn chân lý `BACKUP_TRIGGERS` (`backup.ts`); production nhận qua `init.ts` lúc container khởi động (`modifyColumn` trong `migrations-additive.ts`) — không đổi `production/`.
+- Xoay vòng bỏ qua cả lượt khi khoá `cdkt:backup:restore` đang bị giữ (hoặc không đọc được trạng thái khoá) và không bao giờ xoá tệp đang được khôi phục (`holdRestoreTarget`; log `backup.rotate_skipped_restore_active`).
+- R2: account id/bucket kiểm **lúc dùng** (`openR2`/`assertUsableR2Config`, `R2ConfigInvalidError` 400, log `r2.config_invalid` giới hạn 10 phút/trường); `headR2Object`/`deleteR2File` ném lỗi khi cấu hình hỏng (trả `false` từng khiến quét thumbnail/self-heal coi mọi object là mất và ghi đè URL).
+- Media Portal: ảnh nguồn của thumbnail đọc theo khoá R2 (`getR2Object`, trần 25 MiB, hạn 20 s) hoặc tệp dưới `public/uploads` — không bao giờ qua `media.url` (bỏ `fetch(img.url)` trần); không thêm nhánh `safeProviderRequest` (không host bên thứ ba nào hợp với tính năng này).
+- Test: `backup-trigger-length`, `backup-rotation-restore`, `r2-config-use-time`, `media-portal-thumbnail-source`; `backup-dump-integration` thêm ca fresh + nâng cấp từ `VARCHAR(16)`.
+
+#### Kiểm chứng (cây cuối, 2026-10-14, người kiểm cuối)
+`npm test` 3830 test / 3808 pass / 0 fail / 22 skip (giống hệt dưới `TZ=Asia/Ho_Chi_Minh`; 22 skip đều là integration); bước unit của CI (244 tệp, có coverage) 3807/3807, coverage 83,66 % dòng; typecheck 0 lỗi, không `Duplicated imports`; eslint 0 error / 17 warning; `db:drift` sạch (62 bảng / 635 cột); `nuxt build` exit 0; Playwright 88/88 (3,4 phút theo reporter, ~207 s đồng hồ — dư ~93 s so với `globalTimeout` 300 s); shellcheck `-S warning` 0; `npm audit --omit=dev` 0; `openspec validate --specs --strict`: `admin-api-authentication`, `admin-docs`, `backup-restore` đạt (`ai-panel` + 3 spec `i18n/*` hỏng từ trước). **Integration: 17/17 suite xanh (27 test)** — `media-self-heal-integration` từng đỏ sau G3 (fixture `r2_account_id='stub-account'` bị `openR2` từ chối đúng thiết kế); nay fixture dùng account id 32 hex và SDK S3 giả (`mock.module`, HEAD trả 404 dạng SDK): test khẳng định đúng 3 HEAD tới bucket/khoá dự kiến, không lời gọi mạng thật, không lỗi bị nuốt thành "mất". Bản build với CSDL không với tới: `/`, `/about`, `/contact`, `/media`, `/legal-qa`, `/news`, `/news/<x>`, `/news/<x>/<bài>`, `/video/<x>`, `/role-models/<x>` → 503 + `no-store`; `/api/%61dmin/users`, `/api/admin/users`, `/api/admin/auth/login#/../users`, `/api/admin/backup/status` (GET/POST) → 401. Với CSDL seed thật: `/`, `/about`, `/contact`, `/media` 200 + `s-maxage=60`; trang danh sách trần 200 không header cache.
+
+### 20. Trần giải nén archive khôi phục 8 → 15 GiB (2026-10-14, quyết định của chủ repo)
+
+- `DEFAULT_RESTORE_LIMITS.maxArchiveBytes` (`server/services/backup-restore-guards.ts`) `8 * 1024 * MiB` → `15 * GiB`; vẫn là hằng số (không biến môi trường, `production/` không đổi). Trần tải lên 512 MiB đã nén và trần SQL 256 MiB giữ nguyên; thông báo 413 in trần suy từ hằng số ("15360 MB").
+- Archive media 10,9 GB nén trên máy dev (`cdkt-media-20260925T191853Z-pre-sync.tar.gz`, luồng tar 11.373.357.056 byte = 10,59 GiB, 11.786 mục): `inspectArchive` với trần mặc định từ chối 413 ở mốc 8 GiB trên mã cũ → nhận trong ~34 s trên mã mới. **Chưa** chạy một lượt khôi phục thật (giải nén) với tệp này.
+- Test: `tests/backup-tar-scanner.test.ts` § "default archive cap is 15 GiB" — luồng tar dựng tay đúng 15 GiB được nhận, thêm 1 byte → 413 `decompressed_too_large`; ghim 512 MiB/256 MiB không đổi (3 test đỏ trên mã cũ).
+
+### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14)
+
+Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.
+
+- Khoá giới hạn chung vẫn là địa chỉ IP đầy đủ (`comment:ip:`, `livestream:chat:ip:`, giới hạn chat, trần AI theo IP) — xoay địa chỉ trong một /64 IPv6 vẫn né được các giới hạn này (trần hàng duyệt đã gộp /64).
+- Luật độ dài tin chat nằm ở `server/utils/chatbot/input-length.ts`, nên chuyển vào `chat-policy.ts`; widget mặc định 2000 ký tự và chỉ hạ theo `maxChars` máy chủ báo về — `maxInputChars` > 2000 không bao giờ tới được widget.
+- `headR2Object` vẫn trả `false` cho lỗi mạng/xác thực/5xx (chỉ cấu hình hỏng mới ném): self-heal gặp R2 chập chờn sẽ coi object là mất và đổi thumbnail + `media.url` sang ảnh mặc định (có bản `pre-self-heal` trước đó).
+- `articles/export-csv` và xuất Google không có cổng quyền ở đầu handler (phạm vi bài lọc qua `articleReadScope` / kiểm từng bài).
+- `server/middleware/https-redirect.ts` tin `x-forwarded-host` thô.
+- `fetch` trần: `ai/delify/status`, `ai/delify/sync`, `server/utils/ai-budget.ts` tới `router.delify.vn`.
+- `server/utils/smtp-test-config.ts` giữ một bản chép logic của `shared/settings-credential-rules.ts` (có test đối chiếu, nhưng vẫn là hai bản).
+- Bộ nhớ đệm provider giữ baseUrl cũ tới 60 s sau khi đổi.
+- `deleteMediaItem` rò bản gốc local của video đã lên R2.
+- Media Portal: kiểm "nằm dưới `public/uploads`" của ảnh nguồn thumbnail là so chuỗi đường dẫn — thư mục cha là symlink nằm dưới uploads vẫn lọt (như route `/uploads` hiện có; tệp symlink thì bị `lstat` chặn).
+- `ai/moderation/rules/[id].put.ts` không kiểm `severity`/`action`/`category`.
+- ReDoS: parser + chạy có trần cửa sổ giảm mạnh rủi ro nhưng vẫn **không** chứng minh loại trừ.
+- `rate_limit.database_read_failed` không được giới hạn tần suất log như `database_write_failed`.
+- `server/services/analytics-maintenance.ts` vẫn tự `createPool`.
+- Trang 404 trên tuyến `swr` mang `s-maxage=60, stale-while-revalidate` (đo với CSDL seed, 2026-10-14: `/news/<chuyên mục không có>`, `/news/<x>/<bài không có>`, `/role-models/<x>`) — CDN có thể giữ 404 tới 60 s sau khi bài/chuyên mục được tạo; `/<slug>`/`/video/<x>` không có header này.
+- Đồng bộ media: bản cũ được lưới an toàn giữ lại không bao giờ bị xoá sau; tệp trùng tên từ tháng khác chặn hàng đó đồng bộ; viết lại URL làm tràn cột `VARCHAR` thì hàng đó rollback mỗi lượt; cache SWR có thể phục vụ trang trỏ tới bản cũ vừa xoá tới 60 s.
+- Tệp vượt ngưỡng ~400 dòng mà đợt rà soát này làm dài thêm (`wc -l` 2026-10-14 sau G1–G3; trong ngoặc: `origin/main` 25d0e44): `server/services/media-portal.ts` 1169 (1133), `server/services/comments.ts` 1134 (1122), `app/pages/admin/ai/moderation.vue` 1134 (1030), `app/composables/useChatbot.ts` 857 (804), `server/services/moderation-worker.ts` 767 (489), `server/utils/chatbot/chat-policy.ts` 763 (740), `server/services/ai-gateway.ts` 732 (685), `app/components/ArticleDetail.vue` 730 (717), `server/services/moderation-regex.ts` 686 (mới), `app/pages/admin/settings/media-portal.vue` 671 (645), `server/utils/chatbot/outbound.ts` 588 (388), `server/services/livestream-chat.ts` 536 (524), `app/components/ModelArticlesListPage.vue` 535 (mới), `app/pages/admin/settings/backup.vue` 529 (518), `server/services/backup-restore-guards.ts` 477 (mới; 482 sau § 20).
+- Xoay vòng backup: một lượt khôi phục bắt đầu đúng lúc vòng xoá đang chạy sẽ thất bại sạch thay vì được ngăn trước; `deleteBackup` thủ công vẫn xoá được tệp đang khôi phục. Khôi phục chạy bằng `DB_USER` (root theo mặc định compose). Archive media 10,9 GB trong `backups/` nay qua được bước kiểm (trần 15 GiB, § 20), nhưng khôi phục theo tên chạy đồng bộ trong một request (~34 s kiểm + một lượt `tar -xzf`): sau nginx `location /` (`proxy_read_timeout` mặc định 60 s) trình duyệt có thể nhận 504 trong khi máy chủ vẫn giải nén; không kiểm dung lượng đĩa trống trước khi giải nén; một mục đơn ≥ 8 GiB do GNU tar ghi (size base-256 ở `--format=gnu`, `size=` pax + 0 trong header ở `--format=posix` — đã kiểm với GNU tar 1.35) vẫn bị từ chối `archive_unparseable`, bất kể trần.
+- Hai nơi ghi `analytics_noc_minute_aggregates` với ngữ nghĩa khác nhau.
+- Cột `GEOMETRY` (nếu thêm sau này) sẽ làm dump của app hỏng.
+- Compose: `DB_HOST`/`DB_PORT` không truyền qua (MySQL ngoài chưa hỗ trợ), service mysql không có `image:` riêng; chú thích healthcheck mysql trong `docker-compose.yml` vẫn ghi "Authenticated ping" — sai: `mysqladmin ping` trả 0 cả khi sai mật khẩu.
+- `profile/history.get.ts` còn lọc ngày theo mẫu cũ (chưa qua `vn-day-range.ts`).
+- Test: suite `analytics-ddl`/`chatbot-ddl` không xoá DB `_fresh`/`_partial` của chúng; `media-self-heal-integration` ghi một `cdkt-*-pre-self-heal.sql.gz` vào `backups/` **của repo** mỗi lượt chạy; chú thích trong `ci.yml` còn ghi "203 tệp non-integration" (thực tế 244); Playwright đầy đủ (88 test) mất ~207 s trên máy dev so với `globalTimeout` 300 s (dư ~93 s) — runner CI chậm hơn có thể chạm trần, và khi chạm trần teardown bị bỏ (server mồ côi giữ cổng 3123).
+- Việc của chủ repo trên GitHub: bật branch protection cho `main` (PR + status check bắt buộc, kèm job cổng CI luôn chạy — xem `CI-CD.md`), cân nhắc `environment: production` có người duyệt, xoá environment lạc tên `VPS_HOST`; giấy phép Font Awesome Pro trong repo **public**; hash bcrypt của admin trong `migrations/002_seed_data.sql`; lịch sử git ~699 MB có dump.

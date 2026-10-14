@@ -27,6 +27,7 @@
 <script setup lang="ts">
 import { computed, onMounted, watch } from 'vue'
 import { useI18n } from '~/composables/useI18n'
+import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
 
 const { currentLang, t } = useI18n()
 
@@ -34,18 +35,26 @@ const { currentLang, t } = useI18n()
 // liệu, nên HTML đầu tiên và thẻ SEO không đổi (design.md D2). Không có nó thì
 // bấm một liên kết về trang chủ giữ nguyên trang cũ trên màn hình cho tới khi
 // dữ liệu về, trông y hệt bấm hụt.
-const { data, pending, error, refresh } = useAsyncData(
+const homeAsync = useAsyncData(
   `page-home-${currentLang.value}`,
   () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; page: { title?: string; slug?: string; seoTitle?: string | null; seoDescription?: string | null } | null; blocks: import('~/utils/blocks/types').RenderableNode[] }>)(`/api/public/pages/home?lang=${currentLang.value}`),
   { lazy: true, default: () => ({ ok: false, page: null, blocks: [] }) }
 )
+const { data, pending, error, refresh } = homeAsync
+
+// Lượt SSR hỏng → 503 + no-store: không để bộ đệm SWR/CDN phát lại trang lỗi.
+// Cùng biểu thức với nhánh lỗi (`loadError` bên dưới).
+useSsrFailureStatus(() => homeAsync, () => !!error.value)
 
 watch(currentLang, () => {
   void refresh()
 })
 
+// `error.value` lúc mount = lượt SSR hỏng (CSDL chập chờn) và HTML mang nhánh
+// lỗi đó có thể vừa ra từ bộ đệm SWR 60 giây — tải lại một lần ở trình duyệt
+// để khách không phải chờ hết cửa sổ đệm mới thấy nội dung.
 onMounted(() => {
-  if (currentLang.value !== 'vi') {
+  if (currentLang.value !== 'vi' || error.value) {
     void refresh()
   }
 })

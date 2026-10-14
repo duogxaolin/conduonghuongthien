@@ -1,8 +1,9 @@
 import { asc, eq } from 'drizzle-orm'
 import { getDb } from '../../utils/db'
 import { languages } from '../../db/schema'
+import { reportPublicReadFailure } from '../../utils/public-read-failure'
 
-export default defineEventHandler(async () => {
+export default defineEventHandler(async (event) => {
   try {
     const db = getDb()
     const rows = await db
@@ -18,7 +19,10 @@ export default defineEventHandler(async () => {
       .orderBy(asc(languages.displayOrder), asc(languages.id))
 
     return { ok: true, items: rows }
-  } catch {
+  } catch (error) {
+    // `useI18n` bắt lỗi và lùi về danh sách ngôn ngữ mặc định — giữ nguyên như
+    // trước; khác biệt là lượt hỏng nay có log và không mang mã 200.
+    reportPublicReadFailure(event, 'public.languages_failed', error)
     return { ok: false, items: [] }
   }
 })

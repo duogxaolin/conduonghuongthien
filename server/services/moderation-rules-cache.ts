@@ -5,6 +5,7 @@
 import { eq } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { aiModerationRules, type AiModerationRule } from '../db/schema'
+import { clearCompiledModerationRegexCache, resetSlowModerationRules } from './moderation-regex'
 
 // ── In-memory Rule Cache (TTL 60s for sub-millisecond matching) ────────────
 let cachedRules: AiModerationRule[] | null = null
@@ -30,6 +31,13 @@ export async function getActiveModerationRules(): Promise<AiModerationRule[]> {
 export function invalidateModerationRulesCache(): void {
   cachedRules = null
   cacheExpiresAt = 0
+  // Regex đã biên dịch (và lượt ghi log "mẫu bị bỏ qua") đi cùng vòng đời luật:
+  // sửa/xoá luật thì lượt nạp sau biên dịch — và cảnh báo — lại từ đầu.
+  clearCompiledModerationRegexCache()
+  // Luật bị tắt tạm vì chạy chậm (`testModerationRegex`) được thử lại sau một thao
+  // tác tường minh của cán bộ (sửa luật, khởi động lại worker) — vẫn chậm thì lượt
+  // chậm kế tiếp tắt nó lần nữa.
+  resetSlowModerationRules()
 }
 
 /** Số luật đang nằm trong cache (0 nếu chưa nạp / đã invalidate). */

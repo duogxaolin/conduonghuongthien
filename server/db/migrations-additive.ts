@@ -770,6 +770,14 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // (mỗi URL dài cả trăm ký tự). Lên MEDIUMTEXT (16MB) — đủ cho sitemap lớn.
   await modifyColumn(db, database, 'settings', 'value', 'MEDIUMTEXT NULL')
 
+  // ── backups.trigger: VARCHAR(16) → VARCHAR(32) ────────────────────────────
+  // `pre-fix-thumbnails` (18 ký tự) không vừa VARCHAR(16): dưới strict sql_mode
+  // `runBackup('sql', 'pre-fix-thumbnails')` chết với ER_DATA_TOO_LONG, kể cả
+  // hàng `failed` cũng không ghi được — và lượt sửa thumbnail chạy tiếp KHÔNG có
+  // bản sao lưu. CREATE TABLE ở `schema-tables/readers-media.ts` đã khai 32 cho
+  // CSDL mới; dòng này nới CSDL cũ (chỉ nới — không mất dữ liệu, chạy lại vô hại).
+  await modifyColumn(db, database, 'backups', 'trigger', "VARCHAR(32) NOT NULL DEFAULT 'manual'")
+
   // ── Tự vá URL ảnh hỏng hàng loạt (all bài) ────────────────────────────────
   // Sync trước treo ở pre-backup nên phase rewrite chưa chạy: all bài vẫn
   // `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi file local đã

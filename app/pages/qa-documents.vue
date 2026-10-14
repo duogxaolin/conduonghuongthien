@@ -3,7 +3,7 @@
     <!-- Page Header (Đồng bộ chuẩn phong cách mới) -->
     <section class="border-b border-[#E2E8DF] bg-white">
       <div class="container pt-7 sm:pt-9 pb-5">
-        <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-3">
+        <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#5A6C58] mb-3">
           <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
             <span>{{ t('home') }}</span>
@@ -20,7 +20,7 @@
 
         <!-- Topic Chips in Header -->
         <div v-if="topics.length" class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-          <span class="text-xs text-[#7A8A76] font-medium shrink-0 mr-1">Chủ đề:</span>
+          <span class="text-xs text-[#5A6C58] font-medium shrink-0 mr-1">Chủ đề:</span>
           <button
             type="button"
             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all border shrink-0 cursor-pointer"
@@ -66,7 +66,7 @@
             <form class="flex flex-col sm:flex-row gap-3 bg-white p-2 rounded-xl border border-[#D5E1D3] shadow-sm focus-within:border-[#4A6741] transition-all" @submit.prevent="applySearch">
               <label class="sr-only" for="qa-search">Tìm trong tài liệu hỏi – đáp</label>
               <div class="relative flex-1 flex items-center pl-3">
-                <i class="fa-solid fa-magnifying-glass text-[#7A8A76] text-sm mr-2.5" aria-hidden="true"></i>
+                <i class="fa-solid fa-magnifying-glass text-[#5A6C58] text-sm mr-2.5" aria-hidden="true"></i>
                 <input
                   id="qa-search"
                   v-model="searchInput"
@@ -219,7 +219,7 @@
                   >
                     <p class="text-[0.94rem] text-[#4A5545] leading-[1.7] whitespace-pre-line m-0 pt-2">{{ item.answer }}</p>
 
-                    <div class="mt-4 pt-3.5 border-t border-[#E8EEE6] flex flex-wrap items-center justify-between gap-3 text-xs text-[#7A8A76]">
+                    <div class="mt-4 pt-3.5 border-t border-[#E8EEE6] flex flex-wrap items-center justify-between gap-3 text-xs text-[#5A6C58]">
                       <div class="flex items-center gap-3 flex-wrap">
                         <span v-if="item.topic" class="inline-flex items-center gap-1.5 bg-[#EBF3E8] text-[#2D5A27] px-2.5 py-0.5 rounded text-[0.72rem] font-bold">
                           <i class="fa-solid fa-tag text-[0.65rem]" aria-hidden="true"></i>
@@ -381,7 +381,7 @@
                     </div>
                     <span class="min-w-0 flex-1">
                       <span class="block text-[0.88rem] font-bold leading-snug">{{ link.title }}</span>
-                      <span class="block text-[0.75rem] text-[#7A8A76] leading-relaxed mt-0.5">{{ link.description }}</span>
+                      <span class="block text-[0.75rem] text-[#5A6C58] leading-relaxed mt-0.5">{{ link.description }}</span>
                     </span>
                   </nuxt-link>
                 </li>

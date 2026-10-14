@@ -4,6 +4,17 @@ import { hkdfSync } from 'node:crypto'
 
 const ROUNDS = 12
 
+/**
+ * The one JWT algorithm this app signs with and accepts. jsonwebtoken already
+ * signs HS256 by default, but `verify()` without `algorithms` accepts every HMAC
+ * variant for a string/buffer key; pinning it on both sides means a token's own
+ * `alg` header can never pick how it is checked. Existing tokens were all minted
+ * HS256, so this invalidates none of them.
+ */
+const JWT_ALGORITHM = 'HS256' as const
+const SIGN_OPTIONS = { algorithm: JWT_ALGORITHM }
+const VERIFY_OPTIONS = { algorithms: [JWT_ALGORITHM] }
+
 export async function hashPassword(plain: string): Promise<string> {
   return bcrypt.hash(plain, ROUNDS)
 }
@@ -73,12 +84,12 @@ function jwtSecret(): string {
 }
 
 export function signToken(payload: AdminTokenPayload): string {
-  return jwt.sign({ stage: 'session' as const, ...payload }, jwtSecret(), { expiresIn: '8h' })
+  return jwt.sign({ stage: 'session' as const, ...payload }, jwtSecret(), { ...SIGN_OPTIONS, expiresIn: '8h' })
 }
 
 export function verifyToken(token: string): AdminTokenPayload | null {
   try {
-    return jwt.verify(token, jwtSecret()) as AdminTokenPayload
+    return jwt.verify(token, jwtSecret(), VERIFY_OPTIONS) as AdminTokenPayload
   } catch {
     return null
   }
@@ -93,7 +104,7 @@ export function signMfaChallenge(payload: Omit<MfaChallengePayload, 'stage'>): s
   return jwt.sign(
     { ...payload, stage: 'mfa-challenge' as const },
     jwtSecret(),
-    { expiresIn: MFA_CHALLENGE_TTL_SECONDS },
+    { ...SIGN_OPTIONS, expiresIn: MFA_CHALLENGE_TTL_SECONDS },
   )
 }
 
@@ -104,7 +115,7 @@ export function signMfaChallenge(payload: Omit<MfaChallengePayload, 'stage'>): s
  */
 export function verifyMfaChallenge(token: string): MfaChallengePayload | null {
   try {
-    const payload = jwt.verify(token, jwtSecret()) as MfaChallengePayload
+    const payload = jwt.verify(token, jwtSecret(), VERIFY_OPTIONS) as MfaChallengePayload
     if (payload?.stage !== 'mfa-challenge') return null
     return payload
   } catch {
@@ -178,7 +189,7 @@ export function signReaderToken(payload: { readerId: number, tokenVersion: numbe
   return jwt.sign(
     { ...payload, stage: 'reader' as const },
     readerSigningKey(),
-    { expiresIn: READER_TOKEN_TTL },
+    { ...SIGN_OPTIONS, expiresIn: READER_TOKEN_TTL },
   )
 }
 
@@ -190,7 +201,7 @@ export function signReaderToken(payload: { readerId: number, tokenVersion: numbe
  */
 export function verifyReaderToken(raw: string): ReaderTokenPayload | null {
   try {
-    const payload = jwt.verify(raw, readerSigningKey()) as ReaderTokenPayload
+    const payload = jwt.verify(raw, readerSigningKey(), VERIFY_OPTIONS) as ReaderTokenPayload
     if (payload?.stage !== 'reader') return null
     return payload
   } catch {

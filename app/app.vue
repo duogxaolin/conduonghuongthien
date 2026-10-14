@@ -1,7 +1,17 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
+import { BOOT_OVERLAY_ID, BOOT_OVERLAY_NOSCRIPT_CSS, bootOverlayFailsafeScript } from '~/utils/boot-overlay'
 
 const isInitialLoad = ref(true)
+
+// Lớp phủ tải đầu có sẵn trong HTML máy chủ và chỉ được gỡ khi mount. Hai lối
+// thoát không phụ thuộc Vue (xem utils/boot-overlay.ts): tắt JS → <noscript>
+// CSS ẩn nó; hydrate không xong → script inline ẩn nó sau thời hạn. Lỗi lúc
+// hydrate do plugins/boot-overlay.client.ts xử lý.
+useHead({
+  script: [{ key: 'cdkt-boot-overlay-failsafe', innerHTML: bootOverlayFailsafeScript() }],
+  noscript: [{ key: 'cdkt-boot-overlay-noscript', innerHTML: `<style>${BOOT_OVERLAY_NOSCRIPT_CSS}</style>` }],
+})
 const isNavigating = ref(false)
 let navTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -37,13 +47,14 @@ if (import.meta.client) {
   <div>
     <!-- Khung tải toàn màn hình cho lượt tải đầu tiên -->
     <Transition
-      enter-active-class="transition-opacity duration-200"
-      leave-active-class="transition-opacity duration-300"
+      enter-active-class="transition-opacity duration-200 motion-reduce:transition-none"
+      leave-active-class="transition-opacity duration-300 motion-reduce:transition-none"
       enter-from-class="opacity-100"
       leave-to-class="opacity-0"
     >
       <div
         v-if="isInitialLoad"
+        :id="BOOT_OVERLAY_ID"
         data-allow-mismatch
         class="fixed inset-0 bg-[#F8FAF7] z-[99999] flex items-center justify-center"
         aria-live="polite"

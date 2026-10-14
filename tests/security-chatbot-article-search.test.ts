@@ -2,7 +2,8 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { MySqlDialect } from 'drizzle-orm/mysql-core'
 import type { SQL } from 'drizzle-orm'
-import { articleSearchKeywords, buildArticleSearch, escapeLikeWildcards } from '../server/utils/chatbot/article-search'
+import { articleSearchKeywords, buildArticleSearch } from '../server/utils/chatbot/article-search'
+import { escapeLikeWildcards } from '../server/utils/sql-like'
 import { intervalDays } from '../server/utils/sql-literals'
 
 /**

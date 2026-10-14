@@ -102,3 +102,57 @@ Ba danh sách trong `tests/reader-audit-atomicity.test.ts` liệt kê **đườn
 ## `validateIdTokenClaims` — cổng chặn `aud` nay có test
 
 Chữ ký `id_token` **cố ý không kiểm** (xem `reader-features.md` mục Đăng nhập Google), nên `aud` là **thứ duy nhất** từ chối một token thật của Google nhưng phát cho ứng dụng khác — token đó mang chữ ký hợp lệ, issuer hợp lệ, `sub` thật và hạn còn xa. Module được viết ra để kiểm được (docstring nói vậy, và `nowMs` là **tham số** đúng vì "so the expiry branch is testable") rồi **không ai viết test**, nên năm nhánh từ chối chỉ được bảo vệ bằng chính lời văn mô tả chúng. Đã kiểm chứng âm tính: bỏ guard `!expectedClientId` → test đỏ, khôi phục → xanh. Có kiểm cả việc `picture` **không** lọt vào hình dạng trả về (nhúng `lh3.googleusercontent.com` là gửi IP và referrer của mọi khách tới Google trên đúng những trang công dân đọc), và **thứ tự lý do** — `iss` báo trước `aud` khi cả hai sai, vì lý do đó là thứ đi vào log và một người vận hành đọc `google_oauth.login_failed` phải được chỉ vào nguyên nhân thật.
+
+---
+
+## Audit 2026-10-13 — cạnh tranh, thứ tự ghi, lỗi đọc bị nuốt
+
+### Chuyển trạng thái đơn: kiểm và ghi trong cùng một câu lệnh có điều kiện
+
+`changeSubmissionStatus` (`server/services/submission-workflow.ts`) từng đọc trạng thái hiện tại **ngoài** transaction rồi `UPDATE … WHERE id = ?`. Hai cán bộ thao tác cùng lúc đều qua bước kiểm chuyển trạng thái → một chuyển trạng thái bị cấm lọt qua và dòng thời gian ghi sai trạng thái "từ". Nay đọc, kiểm và `UPDATE … WHERE id = ? AND status = <trạng thái đã đọc>` nằm trong transaction, `affectedRows` (qua `readAffectedRows`) bằng 0 → người thua nhận 409; audit + `submission_events` cùng transaction. `tests/submission-workflow-integration.test.ts` chạy hai lượt chuyển **đồng thời** trên MySQL thật: đúng một lượt thắng, nhật ký nhất quán (đột biến `WHERE` chỉ theo id → đỏ). Cùng mẫu với `recordSubmissionView` đã có.
+
+### Kho chatbot: publish/archive/xoá ghi audit trong transaction
+
+Ba thao tác này trong `server/services/chatbot-knowledge.ts` ghi thay đổi và hàng `activity_logs` trên pool (tạo/sửa trong cùng tệp đã bọc nên guard theo tệp vẫn xanh — đúng điểm mù "guard theo tệp" đã mô tả ở trên). Nay mỗi hàm một `db.transaction` + `tx.insert(activityLogs)`; `tests/chatbot-knowledge-audit-atomicity.test.ts` kiểm **theo hàm** bằng DB giả mà lượt insert trên pool ném lỗi.
+
+### Đồng bộ media lên R2: xoá bản local SAU khi URL đã được thay bền vững
+
+Trước: `syncOneToR2` upload, HeadObject rồi **xoá file local ngay**; các lượt thay URL trong bài chỉ gom vào một mảng trong bộ nhớ và áp **một lần ở cuối**. Huỷ giữa chừng, worker ném lỗi, hay container khởi động lại (CI tự deploy mỗi lần merge) → bài vẫn trỏ `/uploads/…` đã mất, `/uploads/[...path]` không lùi về R2 → 404, và lượt chạy lại chỉ chọn hàng còn `local` nên không bao giờ sửa. Thay URL cũng chỉ phủ `articles.content`/`thumbnail_url`.
+
+Nay (`media-sync-files.ts`, `media-sync-rewrite.ts`, `media-sync.ts`):
+- Mỗi mục: upload → Head kiểm (hỏng thì ném, hàng không đổi) → **một transaction** gồm đổi hàng `media` có điều kiện + thay URL ở **mọi** bảng đích (bài, bản dịch, `page_blocks` JSON với dạng `\/` đã thoát, trang, phiên bản trang, `home_sections`, `media_items`/livestream thumbnail, `settings`) + audit → **rồi mới** xoá bản local. REPLACE là idempotent nên chạy lại an toàn. Trên MySQL: `REGEXP` không phân biệt hoa thường dưới `utf8mb4_unicode_ci` (cần `(?-i)`), `LIKE` phải thoát `_`, REPLACE vào cột JSON với `"` chưa thoát → lỗi 3140 — `tests/media-sync-rewrite-integration.test.ts` chạy trên MySQL thật.
+- Worker giữ `withNamedLock` suốt lượt + mã thế hệ kiểm mỗi lô, nên `forceResetSyncJob` không để worker cũ ghi tiếp. "Sửa URL" (`media-repair.ts`) có bước sửa các mục bị cắt ngang: hàng đã lên R2 mà URL local cũ vẫn còn trong nội dung.
+- `media-sync-rewrite.ts` không còn trong `SERVICE_EXEMPTIONS` của `tests/reader-audit-atomicity.test.ts` (audit của nó nay cùng transaction).
+- Thay file video (`chunked-upload.ts`): cây cũ nằm ở `media/<uploadId>` chứ không phải `media/<slug>`, và bị `rm` trước khi transaction commit, bỏ qua R2 → mọi lượt thay rò cây cũ. Nay chọn đúng `storagePath`, đẩy vào outbox `media_asset_cleanup` **trong** transaction (giống `deleteMediaItem`), không xoá gì trước commit; `deleteR2Tree` xoá theo ranh giới thư mục (`prefix/`) và từ chối prefix rỗng.
+
+### Đọc công khai hỏng phải là lỗi, không phải "danh sách trống"
+
+Khoảng mười endpoint `server/api/public/**` bắt lỗi CSDL và trả `200 { ok:false, articles: [] }` không log; block công khai không đọc `ok` nên hiện trống, và với `swr: 60` trang dựng lúc CSDL chập chờn có thể được cache như một trang trống hợp lệ. Cache của Nitro không lưu phản hồi `>= 400`. Nay `reportPublicReadFailure(event, name, err)` (`server/utils/public-read-failure.ts`): log sự kiện ổn định + **503** + `cache-control: no-store`, thân giữ hình dạng `ok:false` cũ. Block (`News/RoleModels/Reintegration/DocumentsBlock`) hiện `BlockLoadError.vue` + thử lại; `[slug].vue` không trả 404 khi chỉ là lỗi tải. **Giới hạn còn lại (bản 2026-10-13):** bản thân trang SWR vẫn được cache 200 khi một fetch con hỏng lúc SSR — block tự nạp lại sau mount để lành. Đã đóng phần lớn ở đợt 2026-10-14 (§ "Đợt sửa sau kiểm chứng" bên dưới).
+
+Tìm kiếm (`search.get.ts` + `server/utils/search-paging.ts`): `total`/`totalPages` từng lấy từ lượt đọc bị giới hạn (100 hàng hoặc `limit*2+offset`) nên số trang sai và tăng dần khi lật trang; `%`/`_` lọt vào LIKE. Nay `COUNT(*)` thật mỗi nguồn, cắt lát theo trang, đếm mọi tab, LIKE thoát wildcard.
+
+Spike chỉ mục `(status, type, published_at)` cho danh sách bài: **không thêm** — ở 50k hàng optimizer bỏ qua chỉ mục (hash join với bảng nhỏ → filesort), ở cỡ production (~1.1k hàng) không đổi (5.3 ms → 5.3 ms); chỉ đổi câu truy vấn/gợi ý mới có lợi. Đó là việc riêng.
+
+### Analytics: giờ UTC trên pool chung
+
+`analytics-noc.ts`/`analytics-reporting.ts` từng mở **một pool mới mỗi lượt gọi** (pool riêng `timezone '+00:00'`, dashboard hỏi 15 s/lần). Pool chung dùng `'+07:00'`, và mysql2 định dạng tham số `Date` theo timezone **của kết nối** (chỉ phần đọc kết quả nhận `timezone` theo từng truy vấn) → cần bộ chuyển `server/utils/utc-query.ts`: tham số `Date` đổi thành chuỗi UTC, đọc kết quả với `timezone: '+00:00'`, trên `getPool()`. Bộ giới hạn page-view chuyển sang store chung (`rate_limit_counters`, 120 lượt/60 s, cửa sổ cố định). Hai nơi ghi `analytics_noc_minute_aggregates` (`analytics-noc.ts` có trần `LEAST(…)`, cộng `eventCount`; `analytics-ingestion-noc.ts` cộng 1, xử lý thời lượng > 24 h khác) **chưa hợp nhất** — ngữ nghĩa khác nhau, chưa chứng minh tương đương.
+
+## Đợt sửa sau kiểm chứng (2026-10-14, F1–F6)
+
+### Bộ lọc ngày ở admin là NGÀY LỊCH Việt Nam
+
+`<input type="date">` gửi `YYYY-MM-DD` — một ngày lịch cán bộ đọc theo giờ VN, không phải một thời điểm. Ba lỗi cùng gốc ở `ai/logs`, `chatbot/sessions`, `activity-logs`: `new Date('2026-10-14')` là 00:00 UTC = 07:00 VN (mất 7 giờ đầu ngày); `setHours(23,59,59,999)` và `'…T00:00:00'` không múi giờ tính theo `TZ` của tiến trình (kết quả đổi theo container); `to=YYYY-MM-DD` đọc thành 00:00 của chính ngày đó (ngày cuối bị loại hẳn). Nay `server/utils/vn-day-range.ts`: `[ngày đầu 00:00 +07:00, ngày sau ngày cuối 00:00 +07:00)`, so `lt` chứ không `lte`, giá trị không phải ngày → 400; `users/activity.vue` gửi ngày trần. **Điều kiện tiên quyết:** phiên MySQL chạy UTC (`time_zone=SYSTEM=UTC`, đã kiểm chỉ đọc) — đổi múi giờ phiên thì mốc lệch theo. `profile/history.get.ts` cùng mẫu cũ, chưa đổi; `analytics.vue` cố ý dùng ngày UTC. Test: `tests/admin-date-filters-vn-day.test.ts`, `tests/ai-logs-date-filter.test.ts`.
+
+### Đồng bộ media: "một tham chiếu tới ảnh X" là gì
+
+Bản 2026-10-13 thay URL ở một danh sách cột hẹp và không có quy tắc ranh giới cuối URL (`a.jpg` phải không khớp bên trong `a.jpg.webp`), còn `settings.value` (logo, favicon, og-image), `chat_messages`, `page_versions`, câu trả lời chatbot, `social_links.icon`… không được thay, nên bản local bị xoá trong khi các chỗ đó vẫn trỏ tới nó. Nay `server/services/media-sync-url-match.ts` giữ **27 cột đích** (mỗi cột ghi lý do) và **một** định nghĩa ranh giới cuối URL cho cả bản SQL (`REGEXP_REPLACE`) lẫn bản JS (bộ dò của lượt vá) — hai bản lệch nhau thì hoặc thay mà không thấy, hoặc thấy mà không thay. Sau commit, `findRemainingReferences` còn thấy tham chiếu → **giữ** bản local và log `media.sync_old_copy_kept_referenced` thay vì xoá. Trước khi đổi hàng, kiểm đường dẫn đích chưa thuộc hàng khác (bỏ qua hàng đó). Viết lại `settings` thì xoá cache favicon/og-image. Chi phí đo trên dữ liệu dev (3705 hàng media): ≈ +0,4–0,5 s mỗi hàng → ≈ 25–30 phút thêm cho một lượt đồng bộ đầy đủ. `tests/media-sync-rewrite-integration.test.ts` đỏ trên mã cũ (settings không được thay).
+
+Còn mở: bản cũ được giữ không bao giờ bị dọn sau; tệp trùng tên từ tháng khác chặn hàng đó đồng bộ; viết lại làm tràn `VARCHAR` → hàng đó rollback mỗi lượt; SWR có thể phục vụ trang trỏ tới bản cũ vừa xoá tới 60 s.
+
+### Trang lỗi không được vào bộ đệm
+
+Lượt kiểm chứng đo trên bản build với CSDL không với tới: 12 API công khai đã trả 503 + `no-store`, nhưng **trang** `/`, `/about`, `/contact`, `/<slug>` vẫn 200 kèm `s-maxage=60` — nhánh lỗi trong HTML được phát lại cho mọi người. Hai nguyên nhân: trang không đặt mã lỗi, và bộ bọc swr của Nitro **ghi đè** `cache-control` bằng `s-maxage=60, stale-while-revalidate` sau khi handler trả về, bất kể mã trạng thái (cache của Nitro tự không lưu ≥ 400, nhưng CDN thì có). Nay trang dùng `useSsrFailureStatus` (`app/utils/ssr-failure-response.ts`) → 503, và `server/plugins/error-no-store.ts` móc `beforeResponse` (chạy sau bộ bọc swr, trước khi ghi thân) đặt lại `no-store` cho mọi phản hồi ≥ 500 — `render:response` hay middleware đều chạy quá sớm. `reportPublicReadFailure` thêm cho `media/index`, `livestream/active`, `livestream/chat/history`; log không còn chứa tham số Drizzle. Đo lại ở lượt kiểm cuối (2026-10-14): `/`, `/about`, `/contact`, `/media`, `/news`, `/news/<x>`, `/documents`, `/role-models`, `/reintegration-models` → 503 + `no-store`; **`/legal-qa` vẫn 200** (không header cache).
+
+Đợt G1–G3 (2026-10-14) đóng ba lỗ còn lại: `/legal-qa` gọi `useSsrFailureStatus`; nhánh hai đoạn của `[slug].vue` quyết định bằng `resolveCategoryRoute` (tra chuyên mục hỏng → `BlockLoadError` + 503, không rơi sang `ArticleDetail`); `ArticleDetail.vue` tách "không có" khỏi "không tải được" bằng `resolveDetailFetch` — bài thật không có → 404 + "Không tìm thấy" (trước đây cả hai đều là cảnh báo + Thử lại với HTTP 200, nên lỗi tải được SWR phát lại và 404 thật bị báo là lỗi), lỗi tải → 503 + `no-store` + Thử lại (`useSsrFailureStatus` tuỳ chọn `notFound`). Đo lại trên bản build (CSDL không với tới): thêm `/legal-qa`, `/news/<x>/<bài>`, `/video/<x>`, `/role-models/<x>` → 503 + `no-store`. Với CSDL khoẻ, trang 404 trên tuyến `swr` (`/news/**`, `/role-models/**`…) vẫn mang `s-maxage=60` — còn mở.
+
+Còn mở: `rate_limit.database_read_failed` không giới hạn tần suất log (`rate_limit.database_write_failed` của store chung — page-view, đăng nhập… — nay tối đa 1 dòng/phút kèm số lần bị nén); `analytics-maintenance.ts` vẫn tự `createPool`.

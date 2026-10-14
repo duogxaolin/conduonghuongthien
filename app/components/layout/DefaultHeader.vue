@@ -67,7 +67,7 @@
               <div v-if="reader" ref="readerMenuRef" class="relative">
                 <button
                   type="button"
-                  class="flex items-center gap-2 bg-[#F8FAF7] border border-[#E2E8DF] pl-1.5 pr-2.5 py-1.5 rounded-full transition-all hover:bg-[#EEF2EC] hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                  class="flex items-center gap-2 bg-[#F8FAF7] border border-[#E2E8DF] pl-1.5 pr-2.5 py-1.5 rounded-full transition-all hover:bg-[#EEF2EC] hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
                   :aria-expanded="isReaderMenuOpen"
                   aria-haspopup="menu"
                   @click="$emit('toggle-reader-menu')"
@@ -89,7 +89,7 @@
                   <nuxt-link
                     to="/profile"
                     role="menuitem"
-                    class="mt-1 flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[0.85rem] font-semibold text-[#1E251C] no-underline transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                    class="mt-1 flex items-center gap-2.5 rounded-lg px-3 py-2.5 text-[0.85rem] font-semibold text-[#1E251C] no-underline transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
                     @click="$emit('close-reader-menu')"
                   >
                     <i class="fa-solid fa-user w-4 text-center text-[#7CB342]" aria-hidden="true"></i> {{ t('profile') }}
@@ -97,7 +97,7 @@
                   <button
                     type="button"
                     role="menuitem"
-                    class="mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[0.85rem] font-semibold text-[#1E251C] transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                    class="mt-0.5 flex w-full items-center gap-2.5 rounded-lg px-3 py-2.5 text-left text-[0.85rem] font-semibold text-[#1E251C] transition-colors hover:bg-[#F3F7F1] hover:text-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
                     @click="onReaderSignOut"
                   >
                     <i class="fa-solid fa-right-from-bracket w-4 text-center text-[#5A6C58]" aria-hidden="true"></i> {{ t('logout') }}
@@ -108,7 +108,7 @@
               <button
                 v-else
                 type="button"
-                class="inline-flex items-center gap-2 bg-[#F8FAF7] border border-[#E2E8DF] px-3.5 py-2 rounded-sm text-[0.82rem] font-semibold text-[#385130] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                class="inline-flex items-center gap-2 bg-[#F8FAF7] border border-[#E2E8DF] px-3.5 py-2 rounded-sm text-[0.82rem] font-semibold text-[#385130] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
                 @click="readerSignIn()"
               >
                 <i class="fa-solid fa-right-to-bracket" aria-hidden="true"></i> {{ t('login') }}
@@ -120,7 +120,8 @@
             class="xl:hidden flex flex-col justify-center items-center gap-1 w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all hover:bg-[#e4f0e2]"
             @click="$emit('toggle-mobile-menu')"
             :aria-label="t('menu_open')"
-            aria-expanded="false">
+            aria-controls="mobile-drawer"
+            :aria-expanded="isMobileMenuOpen">
             <span class="block w-4 sm:w-5 h-[2px] rounded-[4px] bg-current"></span>
             <span class="block w-4 sm:w-5 h-[2px] rounded-[4px] bg-current"></span>
             <span class="block w-4 sm:w-5 h-[2px] rounded-[4px] bg-current"></span>

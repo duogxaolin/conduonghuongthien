@@ -16,8 +16,9 @@
  * mount, đổi qua CSDL mà không restart = config đang chạy không khớp CSDL.
  */
 import { createError, defineEventHandler, readBody } from 'h3'
-import { eq } from 'drizzle-orm'
+import { inArray } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { videoR2RetargetViolation } from '../../../utils/settings-credential-guard'
 import { getDb } from '../../../utils/db'
 import { settings, activityLogs } from '../../../db/schema'
 import {
@@ -171,6 +172,7 @@ const FIELD_SPECS: Record<string, FieldSpec> = {
 }
 
 const ACCEPTED_FIELDS = new Set(Object.keys(FIELD_SPECS))
+const FIELD_DB_KEYS = Object.values(FIELD_SPECS).map(spec => spec.dbKey)
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -210,11 +212,27 @@ export default defineEventHandler(async (event) => {
 
   const db = getDb()
 
-  // Giá trị hiện tại cho audit (trước/sau).
+  // Giá trị hiện tại cho audit (trước/sau) và cho quy tắc đổi đích R2 bên dưới.
+  // Đọc theo KHOÁ, không theo `group`: một hàng R2 video từng được ghi với nhóm
+  // khác (seed cũ, sửa tay) vẫn là giá trị đang chạy — lọc theo nhóm sẽ thấy "chưa
+  // có bí mật" và để lọt lượt đổi account id không kèm bí mật.
   const currentRows = await db.select({ key: settings.key, value: settings.value })
     .from(settings)
-    .where(eq(settings.group, 'media_portal'))
+    .where(inArray(settings.key, FIELD_DB_KEYS))
   const current = new Map(currentRows.map(row => [row.key, row.value ?? '']))
+
+  // Đổi Account ID / Bucket của R2 video mà không gõ lại Secret Key → 400, trước
+  // mọi ghi. Cùng quy tắc với SMTP / R2 ảnh ở `settings/index.put.ts`: bí mật đã
+  // lưu không được ghép với một đích mới mà người lưu không chứng minh là biết bí
+  // mật đó. Xem `shared/settings-credential-rules.ts`.
+  const retargetViolation = videoR2RetargetViolation(incoming as Record<string, unknown>, {
+    accountId: current.get('media_video_r2_account_id') ?? '',
+    bucket: current.get('media_video_r2_bucket') ?? '',
+    secretStored: (current.get(R2_SECRET_DB_KEY_LOCAL) ?? '') !== '',
+  })
+  if (retargetViolation) {
+    throw createError({ statusCode: 400, statusMessage: retargetViolation })
+  }
 
   /**
    * Mask giá trị audit cho secret key. `from` từ CSDL là JSON envelope — đọc

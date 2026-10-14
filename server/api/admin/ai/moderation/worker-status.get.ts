@@ -1,5 +1,6 @@
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { getWorkerStats } from '../../../../services/moderation-worker'
+import { getModerationRescanStatus } from '../../../../services/moderation-rescan-job'
 import { getDb } from '../../../../utils/db'
 import { aiModerationQueue, aiServiceConfigs } from '../../../../db/schema'
 import { eq, count } from 'drizzle-orm'
@@ -27,6 +28,8 @@ export default defineEventHandler(async (event) => {
 
   return {
     ok: true,
+    // Lượt "Quét & dọn" chạy nền: trạng thái + tiến độ x/y cho trang kiểm duyệt.
+    rescan: getModerationRescanStatus(),
     worker: {
       ...stats,
       pendingQueueCount: queueCount?.total ?? 0,

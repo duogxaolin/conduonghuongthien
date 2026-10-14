@@ -3,6 +3,7 @@ import { getDb } from '../../../../utils/db'
 import { aiModerationRules, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { invalidateModerationRulesCache } from '../../../../services/moderation-worker'
+import { checkModerationPattern } from '../../../../services/moderation-regex'
 
 const VALID_CATEGORIES = new Set(['hostile_forces', 'anti_state', 'defamation', 'spam_fraud', 'profanity', 'custom'])
 const VALID_SEVERITIES = new Set(['critical', 'high', 'medium', 'low'])
@@ -38,6 +39,12 @@ export default defineEventHandler(async (event) => {
   }
   if (!VALID_RULE_TYPES.has(ruleType)) {
     throw createError({ statusCode: 400, statusMessage: 'Loại quy tắc không hợp lệ.' })
+  }
+  // Mẫu chạy trên MỌI tin nhắn công khai: từ chối mẫu quá dài, regex hỏng và hình
+  // dạng lùi vô hạn ngay lúc lưu (heuristic — xem moderation-regex.ts).
+  const patternCheck = checkModerationPattern(pattern, ruleType)
+  if (!patternCheck.ok) {
+    throw createError({ statusCode: 400, statusMessage: patternCheck.reason })
   }
 
   const db = getDb()

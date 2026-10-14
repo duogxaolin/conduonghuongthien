@@ -3,7 +3,7 @@
     <!-- Breadcrumb & Header Bar -->
     <section class="bg-white border-b border-[#E2E8DF]">
       <div class="container py-7 sm:py-9">
-        <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-3">
+        <nav aria-label="Đường dẫn trang" class="flex items-center gap-2 text-xs text-[#5A6C58] mb-3">
           <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
             <span>Trang chủ</span>
@@ -22,19 +22,21 @@
         <!-- Big Search Form -->
         <form @submit.prevent="onFormSubmit" class="mt-6 max-w-3xl">
           <div class="relative flex items-center bg-white rounded-xl border-2 border-[#D5E1D3] focus-within:border-[#4A6741] focus-within:shadow-[0_4px_16px_rgba(74,103,65,0.12)] transition-all overflow-hidden p-1.5 shadow-sm">
-            <span class="w-10 flex items-center justify-center text-[#7A8A76] text-sm shrink-0">
+            <span class="w-10 flex items-center justify-center text-[#5A6C58] text-sm shrink-0">
               <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
             </span>
             <input
+              ref="searchInputEl"
               v-model="inputQuery"
               type="text"
+              aria-label="Từ khóa tìm kiếm"
               placeholder="Nhập từ khóa cần tìm kiếm (tiêu đề, nội dung, chủ đề)..."
               class="w-full py-2.5 px-2 text-[0.95rem] text-[#172516] outline-none border-none bg-transparent font-medium placeholder:text-[#9AABA0]"
             />
             <button
               v-if="inputQuery"
               type="button"
-              @click="inputQuery = ''"
+              @click="inputQuery = ''; inputFocus()"
               class="w-8 h-8 rounded-lg text-[#8A9A88] hover:text-[#2D5A27] hover:bg-[#EEF4EC] flex items-center justify-center text-xs shrink-0 cursor-pointer border-none bg-transparent transition-colors mr-1"
               aria-label="Xóa từ khóa"
             >
@@ -61,7 +63,7 @@
             <h2 class="text-lg font-black text-[#172516] m-0">
               Kết quả cho từ khóa: <span class="text-[#2D5A27]">&laquo;{{ searchQuery }}&raquo;</span>
             </h2>
-            <p class="text-xs text-[#7A8A76] mt-1 m-0">
+            <p class="text-xs text-[#5A6C58] mt-1 m-0">
               Tìm thấy <strong>{{ searchData?.total ?? 0 }}</strong> kết quả phù hợp trên toàn hệ thống
             </p>
           </div>
@@ -144,7 +146,7 @@
           Bạn có thể tìm kiếm tên bài viết, tấm gương hoàn lương, mô hình cơ sở, câu hỏi giải đáp pháp luật hoặc số hiệu văn bản.
         </p>
         <div class="flex flex-wrap items-center justify-center gap-2 text-xs">
-          <span class="text-[#7A8A76] font-medium">Gợi ý từ khóa:</span>
+          <span class="text-[#5A6C58] font-medium">Gợi ý từ khóa:</span>
           <button
             v-for="kw in ['Ninh Bình', 'Tái hòa nhập', 'Tấm gương', 'Văn bản', 'Nghị định']"
             :key="kw"
@@ -408,9 +410,11 @@ const quickSearch = (keyword: string) => {
   onFormSubmit()
 }
 
+// Focus ô tìm kiếm CỦA TRANG này qua ref. `document.querySelector('input[type="text"]')`
+// trước đây trúng ô đầu tiên trong tài liệu — ô tìm kiếm của ngăn kéo mobile (ẩn) trong layout.
+const searchInputEl = ref<HTMLInputElement | null>(null)
 const inputFocus = () => {
-  const inputEl = document.querySelector('input[type="text"]') as HTMLInputElement | null
-  if (inputEl) inputEl.focus()
+  searchInputEl.value?.focus()
 }
 
 const formatDate = (dateStr: string | null) => {
