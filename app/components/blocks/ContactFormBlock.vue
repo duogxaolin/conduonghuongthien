@@ -9,7 +9,7 @@
             <h3 class="text-[1.4rem] font-bold text-[#4A6741] mb-5 border-b-2 border-[#E2E8DF] pb-2">{{ (currentLang !== 'vi' ? t('contact_info') : '') || d.infoTitle || 'Thông tin liên hệ' }}</h3>
             <p v-for="(row, i) in infoRows" :key="i" class="text-[0.95rem] text-[#4A5545] mb-3 leading-relaxed">
               <strong v-if="row.label" class="text-[#1E251C]">{{ row.label }}</strong>
-              <template v-if="row.label"> </template>{{ row.value }}
+              <template v-if="row.label">{{ ' ' }}</template>{{ row.value }}
             </p>
           </div>
           <div v-if="d.noteTitle || d.noteText">
@@ -50,7 +50,7 @@
                 :aria-required="field.required ? 'true' : undefined"
                 :aria-invalid="errors[field.id] ? 'true' : undefined"
                 :aria-describedby="errors[field.id] ? errorId(uid, fi) : undefined"
-                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"
+                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-base md:text-[0.9rem] outline-none transition focus:border-[#4A6741]"
                 :class="errors[field.id] ? 'border-[#b71c1c]' : 'border-[#E2E8DF]'"
               ></textarea>
 
@@ -63,7 +63,7 @@
                 :aria-required="field.required ? 'true' : undefined"
                 :aria-invalid="errors[field.id] ? 'true' : undefined"
                 :aria-describedby="errors[field.id] ? errorId(uid, fi) : undefined"
-                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741] bg-white"
+                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-base md:text-[0.9rem] outline-none transition focus:border-[#4A6741] bg-white"
                 :class="errors[field.id] ? 'border-[#b71c1c]' : 'border-[#E2E8DF]'"
               >
                 <option value="">{{ t('form_select_placeholder') }}</option>
@@ -82,7 +82,7 @@
                 :aria-required="field.required ? 'true' : undefined"
                 :aria-invalid="errors[field.id] ? 'true' : undefined"
                 :aria-describedby="errors[field.id] ? errorId(uid, fi) : undefined"
-                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"
+                class="w-full px-[14px] py-[10px] border rounded-lg font-[inherit] text-base md:text-[0.9rem] outline-none transition focus:border-[#4A6741]"
                 :class="errors[field.id] ? 'border-[#b71c1c]' : 'border-[#E2E8DF]'"
               />
 

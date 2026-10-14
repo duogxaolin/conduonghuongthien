@@ -87,7 +87,7 @@
           :aria-label="t('site_search_aria')"
           :value="searchQuery"
           @input="$emit('search-input', ($event.target as HTMLInputElement).value)"
-          class="border-none bg-transparent w-full text-[0.88rem] text-[#1E251C] outline-none"
+          class="border-none bg-transparent w-full text-base text-[#1E251C] outline-none"
         />
         <button
           v-if="searchQuery"

@@ -5,7 +5,7 @@
       id="public-chatbot-dialog"
       ref="chatbotDialog"
       class="fixed inset-0 w-screen h-[100dvh] bg-[#f0f4ef] flex flex-col z-[10008] overflow-hidden invisible opacity-0 pointer-events-none translate-y-[20px] transition-[opacity,transform,visibility] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:inset-auto md:fixed md:right-5 md:bottom-5 md:w-[min(460px,calc(100vw-40px))] md:h-[min(680px,calc(100dvh-100px))] lg:w-[520px] lg:h-[min(760px,calc(100dvh-110px))] md:rounded-2xl md:shadow-[0_25px_60px_rgba(0,0,0,0.2)] md:border md:border-black/10 md:translate-y-3 md:scale-[0.96]"
-      :class="{ '!visible !opacity-100 !pointer-events-auto !translate-y-0 md:!scale-100': isChatbotOpen }"
+      :class="{ '!visible !opacity-100 !pointer-events-auto !translate-y-0 md:!scale-100 !transition-[opacity,transform] motion-reduce:!transition-none': isChatbotOpen }"
       :style="keyboardViewportStyle"
       role="dialog"
       aria-modal="true"
@@ -18,7 +18,7 @@
       <div class="flex-shrink-0 bg-[#1e4620] px-4 pt-[calc(env(safe-area-inset-top,0px)+12px)] pb-3 md:pt-3 md:rounded-t-2xl">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <button class="md:hidden w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[1rem] border-none cursor-pointer transition-all active:scale-90" @click="closeChatbot" :aria-label="t('cw_back')">
+            <button ref="chatBackButton" class="md:hidden w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[1rem] border-none cursor-pointer transition-[background-color,transform] active:scale-90" @click="closeChatbot" :aria-label="t('cw_back')">
               <i class="fa-solid fa-arrow-left"></i>
             </button>
             <div class="w-10 h-10 rounded-full bg-white/15 border-2 border-white/30 flex items-center justify-center flex-shrink-0">
@@ -50,7 +50,7 @@
             <button class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="openFullPage" :title="t('cw_expand')" :aria-label="t('cw_expand')">
               <i class="fa-solid fa-up-right-and-down-left-from-center text-[0.75rem]"></i>
             </button>
-            <button ref="chatCloseButton" class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50" @click="closeChatbot" aria-label="Đóng">
+            <button ref="chatCloseButton" class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50" @click="closeChatbot" aria-label="Đóng">
               <i class="fa-solid fa-xmark text-[0.9rem]"></i>
             </button>
           </div>
@@ -365,6 +365,9 @@ const { isPinnedToBottom, pinToBottom, followLatestQuestion, releaseAnchor } = u
 const chatbotDialog = ref<HTMLElement | null>(null)
 const botInputRef = ref<HTMLInputElement | null>(null)
 const chatCloseButton = ref<HTMLButtonElement | null>(null)
+const chatBackButton = ref<HTMLButtonElement | null>(null)
+// Phần tử đang focus lúc mở chat — trả focus về đó khi đóng (trên điện thoại nút mở nằm ở thanh dưới, không phải launcher).
+let chatOpener: HTMLElement | null = null
 const chatToggleButton = ref<HTMLButtonElement | null>(null)
 
 /**
@@ -467,8 +470,11 @@ const openChatbot = async () => {
   teaserDismissed = true
   stopTeaserCycle()
   if (quickQuestionState.value === 'error' || quickQuestionState.value === 'empty') loadQuickQuestions()
+  chatOpener = document.activeElement instanceof HTMLElement ? document.activeElement : null
   await nextTick()
-  chatCloseButton.value?.focus()
+  // Đích focus là nút nhìn thấy được: nút Đóng trên desktop, nút Quay lại trên điện thoại (không focus ô nhập để khỏi bật bàn phím).
+  const focusTarget = chatCloseButton.value?.offsetParent ? chatCloseButton.value : chatBackButton.value
+  focusTarget?.focus()
   releaseAnchor()
   scrollChatBottom(true)
 }
@@ -477,7 +483,10 @@ const closeChatbot = async () => {
   isChatbotOpen.value = false
   isConversationListOpen.value = false
   await nextTick()
-  chatToggleButton.value?.focus()
+  const opener = chatOpener?.isConnected ? chatOpener : null
+  chatOpener = null
+  if (opener) opener.focus()
+  else chatToggleButton.value?.focus()
 }
 
 const toggleChatbot = () => {

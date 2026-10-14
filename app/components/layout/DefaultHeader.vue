@@ -14,14 +14,14 @@
     <div class="border-b border-[#E2E8DF] bg-white">
       <div class="container flex justify-between items-center h-16 lg:h-20">
         <!-- Logo Area -->
-        <nuxt-link to="/" class="flex items-center gap-3 lg:gap-3.5 no-underline">
+        <nuxt-link to="/" class="flex items-center gap-3 lg:gap-3.5 no-underline min-w-0">
           <div v-if="siteMainLogo || siteLogo" class="flex items-center gap-2 lg:gap-2.5 shrink-0">
             <NuxtImg               v-if="siteMainLogo"               class="w-auto object-contain shrink-0"               :class="siteLogo ? 'h-10 lg:h-[56px]' : 'h-9 lg:h-[50px]'"               :src="siteMainLogo"               alt="Logo cơ quan chủ quản"               sizes="64px sm:96px"              format="webp" />
             <span v-if="siteMainLogo && siteLogo" class="h-6 lg:h-8 w-px bg-[#D0DDD1] shrink-0" aria-hidden="true"></span>
             <NuxtImg               v-if="siteLogo"               class="w-auto object-contain shrink-0 transition-all"               :class="siteMainLogo ? 'h-7 lg:h-[38px]' : 'h-9 lg:h-[50px]'"               :src="siteLogo"               alt="Logo Con Đường Hướng Thiện"               sizes="64px sm:96px"              format="webp" />
           </div>
           <div class="min-w-0">
-            <h1 class="text-[0.82rem] sm:text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.2px] sm:tracking-[0.5px] leading-[1.2] whitespace-nowrap">CON ĐƯỜNG HƯỚNG THIỆN</h1>
+            <h1 class="text-[0.82rem] sm:text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.2px] sm:tracking-[0.5px] leading-[1.2] whitespace-normal sm:whitespace-nowrap">CON ĐƯỜNG HƯỚNG THIỆN</h1>
             <p class="hidden lg:block text-[0.68rem] xl:text-[0.72rem] font-semibold text-[#5A6C58] uppercase mt-0.5 max-w-[280px] xl:max-w-[440px] 2xl:max-w-none leading-tight line-clamp-2">
               {{ t('portal_subtitle') }}
             </p>
@@ -29,9 +29,9 @@
         </nuxt-link>
 
         <!-- Top Actions -->
-        <div class="flex items-center gap-2 sm:gap-3">
+        <div class="flex items-center gap-2 sm:gap-3 shrink-0">
           <button
-            class="bg-[#F8FAF7] border border-[#E2E8DF] w-9 h-9 sm:w-11 sm:h-11 rounded-full flex items-center justify-center cursor-pointer text-xs sm:text-[0.95rem] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
+            class="bg-[#F8FAF7] border border-[#E2E8DF] w-11 h-11 rounded-full flex items-center justify-center cursor-pointer text-xs sm:text-[0.95rem] transition-all hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
             :class="{ 'bg-[#4A6741] text-white border-[#4A6741]': isSearchActive }"
             @click="$emit('toggle-search')"
             :aria-label="isSearchActive ? t('search_close') : t('search_open')"
@@ -117,7 +117,7 @@
           </client-only>
           <!-- Mobile/iPad Toggle — opens drawer on screens < xl (including tablets/iPad) -->
           <button
-            class="xl:hidden flex flex-col justify-center items-center gap-1 w-9 h-9 sm:w-11 sm:h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all hover:bg-[#e4f0e2]"
+            class="xl:hidden flex flex-col justify-center items-center gap-1 w-11 h-11 rounded-xl bg-[#f0f6ef] border border-[#d9e7d7] text-[#1e4620] cursor-pointer transition-all hover:bg-[#e4f0e2]"
             @click="$emit('toggle-mobile-menu')"
             :aria-label="t('menu_open')"
             aria-controls="mobile-drawer"

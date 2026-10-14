@@ -81,7 +81,8 @@ onMounted(() => {
   // - Floating: mở trên cả PC và mobile (nút tròn rời không che nội dung).
   // - Popup: chỉ mở trên PC (≥768px); mobile thu gọn để bảng không che nội dung.
   // `socialAutoOpen` tắt → không tự mở ở đâu (admin chủ ý).
-  if (typeof window !== 'undefined' && config.value.socialAutoOpen !== false) {
+  // Màn hình thấp (< 600px, ví dụ điện thoại xoay ngang) không tự mở: bảng cao tới 410px bị cắt dưới header.
+  if (typeof window !== 'undefined' && config.value.socialAutoOpen !== false && window.innerHeight >= 600) {
     const isDesktop = window.innerWidth >= 768
     if (isFloating.value) {
       isExpanded.value = true

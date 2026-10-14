@@ -14,21 +14,21 @@
           <form @submit.prevent="submitForm" class="bg-white p-10 sm:p-6 rounded-lg shadow-md border border-[#E2E8DF]">
             <div class="mb-5">
               <label :for="`${uid}-name`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_name') || 'Họ và tên' }}</label>
-              <input :id="`${uid}-name`" type="text" autocomplete="name" v-model="form.name" required :placeholder="t('form_name_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+              <input :id="`${uid}-name`" type="text" autocomplete="name" v-model="form.name" required :placeholder="t('form_name_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-base md:text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
             </div>
             <div class="grid grid-cols-1 gap-5 mb-5 sm:grid-cols-2">
               <div>
                 <label :for="`${uid}-phone`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_phone') || 'Số điện thoại' }}</label>
-                <input :id="`${uid}-phone`" type="tel" autocomplete="tel" v-model="form.phone" required :placeholder="t('form_phone_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+                <input :id="`${uid}-phone`" type="tel" autocomplete="tel" v-model="form.phone" required :placeholder="t('form_phone_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-base md:text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
               </div>
               <div>
                 <label :for="`${uid}-city`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_city') || 'Tỉnh / Thành phố' }}</label>
-                <input :id="`${uid}-city`" type="text" autocomplete="address-level1" v-model="form.city" required :placeholder="t('form_city_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
+                <input :id="`${uid}-city`" type="text" autocomplete="address-level1" v-model="form.city" required :placeholder="t('form_city_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-base md:text-[0.9rem] outline-none transition focus:border-[#4A6741]" />
               </div>
             </div>
             <div class="mb-5">
               <label :for="`${uid}-message`" class="block text-[0.85rem] font-bold text-[#1E251C] mb-[6px]">{{ t('form_message') || 'Nội dung cần hỗ trợ' }}</label>
-              <textarea :id="`${uid}-message`" rows="4" v-model="form.message" required :placeholder="t('form_message_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-[0.9rem] outline-none transition focus:border-[#4A6741]"></textarea>
+              <textarea :id="`${uid}-message`" rows="4" v-model="form.message" required :placeholder="t('form_message_ph')" class="w-full px-[14px] py-[10px] border border-[#E2E8DF] rounded-lg font-[inherit] text-base md:text-[0.9rem] outline-none transition focus:border-[#4A6741]"></textarea>
             </div>
             <button type="submit" class="btn btn-primary w-full text-lg" :disabled="submitStatus === 'loading'">
               {{ submitStatus === 'loading' ? (t('form_sending') || 'Đang gửi...') : (t('form_submit') || 'Gửi đăng ký tư vấn') }}

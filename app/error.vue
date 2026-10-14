@@ -96,6 +96,7 @@ useSeoMeta({
             <span>{{ t('home') }}</span>
           </button>
           <button
+            v-if="code !== 404"
             type="button"
             class="inline-flex items-center gap-2 px-5 py-2.5 rounded-lg bg-white border border-[#D5E1D3] text-[#385932] text-sm font-bold hover:bg-[#F2F7F0] transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
             @click="handleRetry"
