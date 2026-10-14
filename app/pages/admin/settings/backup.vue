@@ -5,6 +5,10 @@ definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const toast = useToast()
 const { confirm } = useConfirm()
+// Khôi phục / tải về / xoá backup chỉ dành cho SuperAdmin. Server là nơi quyết
+// định (403 cho người khác); giao diện chỉ không mời bấm nút sẽ bị từ chối.
+const { user } = useAdminAuth()
+const isSuperAdmin = computed(() => user.value?.isSuperAdmin === true)
 
 // ─── Backup status (poll khi đang chạy) ──────────────────────────────────────
 interface RunStatus { running: boolean; phase: string; message: string; progress?: number }
@@ -170,8 +174,9 @@ const restoreBackup = async (filename: string) => {
   restoreLog.value = [{ phase: 'start', message: `Bắt đầu khôi phục ${filename}`, at: Date.now(), percent: 0 }]
   startPolling()
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/backup/restore`, { method: 'POST', body: { filename } })
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; warning?: string | null }>)(`/api/admin/backup/restore`, { method: 'POST', body: { filename } })
     toast.success('Đã khôi phục backup thành công.')
+    if (res?.warning) toast.warning(res.warning, undefined, 15000)
     await loadBackups()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi khôi phục'))
@@ -190,6 +195,7 @@ const RESTORE_PHASE_LABEL: Record<string, string> = {
   upload: 'Đang upload',
   save: 'Đang ghi file',
   start: 'Bắt đầu',
+  safety: 'Đang sao lưu an toàn',
   sql: 'Đang phục hồi CSDL',
   extract: 'Đang giải nén',
   audit: 'Đang ghi audit',
@@ -222,7 +228,7 @@ const onRestoreUpload = async (e: Event) => {
   restoreLog.value = [{ phase: 'upload', message: `Đang upload ${file.name} (${formatBytes(file.size)})`, at: Date.now(), percent: 0 }]
   startPolling()
   try {
-    await new Promise<void>((resolve, reject) => {
+    const warning = await new Promise<string | null>((resolve, reject) => {
       const xhr = new XMLHttpRequest()
       xhr.open('POST', '/api/admin/backup/restore-upload')
       // Upload progress — chỉ fire khi upload > 0. Tar.gz 69MB sẽ thấy 0→100.
@@ -235,8 +241,11 @@ const onRestoreUpload = async (e: Event) => {
       }
       xhr.onload = () => {
         uploadProgress.value = 100
-        if (xhr.status >= 200 && xhr.status < 300) resolve()
-        else {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          let note: string | null = null
+          try { const j = JSON.parse(xhr.responseText); if (typeof j?.warning === 'string') note = j.warning } catch { /* noop */ }
+          resolve(note)
+        } else {
           let msg = `Lỗi khôi phục (HTTP ${xhr.status})`
           try { const j = JSON.parse(xhr.responseText); if (j?.statusMessage) msg = j.statusMessage } catch { /* noop */ }
           reject(new Error(msg))
@@ -248,6 +257,7 @@ const onRestoreUpload = async (e: Event) => {
       xhr.send(formData)
     })
     toast.success('Đã khôi phục từ file upload.')
+    if (warning) toast.warning(warning, undefined, 15000)
     await loadBackups()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi khôi phục'))
@@ -362,8 +372,8 @@ watch([running, restoring], ([r, rr]) => {
       </div>
     </section>
 
-    <!-- ─── Section 2: Khôi phục từ file upload ────────────────────────────── -->
-    <section class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-3">
+    <!-- ─── Section 2: Khôi phục từ file upload (chỉ SuperAdmin) ──────────── -->
+    <section v-if="isSuperAdmin" class="rounded-xl border border-[#e2ece3] bg-white p-5 flex flex-col gap-3">
       <div class="flex items-start gap-2">
         <i class="fa-solid fa-upload text-lg text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
         <div>
@@ -387,7 +397,8 @@ watch([running, restoring], ([r, rr]) => {
           <i class="fa-solid fa-list text-lg text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
           <div>
             <h2 class="m-0 text-base font-bold text-[#122815]">Danh sách backup</h2>
-            <p class="m-0 mt-0.5 text-[0.82rem] text-[#667768]">Tải về, khôi phục hoặc xoá các bản sao lưu đã tạo.</p>
+            <p v-if="isSuperAdmin" class="m-0 mt-0.5 text-[0.82rem] text-[#667768]">Tải về, khôi phục hoặc xoá các bản sao lưu đã tạo.</p>
+            <p v-else class="m-0 mt-0.5 text-[0.82rem] text-[#667768]">Các bản sao lưu đã tạo. Chỉ SuperAdmin được tải về, khôi phục hoặc xoá.</p>
           </div>
         </div>
         <div class="flex gap-2">
@@ -438,7 +449,7 @@ watch([running, restoring], ([r, rr]) => {
             </span>
           </div>
 
-          <div class="flex items-center justify-end gap-2 pt-2 border-t border-[#f4f7f4]">
+          <div v-if="isSuperAdmin" class="flex items-center justify-end gap-2 pt-2 border-t border-[#f4f7f4]">
             <button
               type="button"
               class="inline-flex items-center gap-1.5 rounded-lg bg-[#f0f7f1] px-3 py-1.5 text-xs font-bold text-[#2c6e33] border-0 cursor-pointer hover:bg-[#e4f2e5]"
@@ -478,7 +489,7 @@ watch([running, restoring], ([r, rr]) => {
               <th class="px-3.5 py-3">File</th>
               <th class="px-3.5 py-3">Dung lượng</th>
               <th class="px-3.5 py-3">Drive</th>
-              <th class="px-3.5 py-3">Hành động</th>
+              <th v-if="isSuperAdmin" class="px-3.5 py-3">Hành động</th>
             </tr>
           </thead>
           <tbody>
@@ -491,7 +502,7 @@ watch([running, restoring], ([r, rr]) => {
                 <i v-if="item.driveUploaded" class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
                 <i v-else class="fa-regular fa-circle text-[#d1d5db]" aria-hidden="true"></i>
               </td>
-              <td class="px-3.5 py-2.5">
+              <td v-if="isSuperAdmin" class="px-3.5 py-2.5">
                 <div class="flex gap-1.5">
                   <button type="button" class="rounded-md bg-[#f0f7f1] px-2 py-1 text-[0.72rem] font-medium text-[#2c6e33] border-0 cursor-pointer hover:bg-[#e4f2e5]" title="Tải về" @click="downloadBackup(item.filename)"><i class="fa-solid fa-download" aria-hidden="true"></i></button>
                   <button type="button" class="rounded-md bg-[#fdf6e7] px-2 py-1 text-[0.72rem] font-medium text-[#8a6412] border-0 cursor-pointer hover:bg-[#f5e8c8]" title="Khôi phục" :disabled="restoring || running" @click="restoreBackup(item.filename)"><i class="fa-solid fa-rotate-left" aria-hidden="true"></i></button>

@@ -871,6 +871,7 @@ defineExpose<{
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-[#122815]">Base URL</span>
               <input v-model="providerForm.baseUrl" type="text" placeholder="https://..." class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
+              <span class="text-xs text-[#667768] font-normal">Chỉ nhận https:// với tên miền công khai. Đổi Base URL thì phải nhập lại API key bên dưới.</span>
             </label>
             <label class="flex items-center gap-3 text-sm font-semibold">
               <input v-model="providerForm.isActive" type="checkbox" class="w-4 h-4 accent-[#2c6e33]" />

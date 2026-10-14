@@ -24,7 +24,7 @@
     <section class="pt-6 lg:pt-8">
       <div class="container">
         <div class="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
-          <span class="text-xs text-[#7A8A76] font-medium shrink-0 mr-1">Chủ đề thường gặp:</span>
+          <span class="text-xs text-[#5A6C58] font-medium shrink-0 mr-1">Chủ đề thường gặp:</span>
           <button
             v-for="chip in filterChips"
             :key="chip"
@@ -49,7 +49,7 @@
         <div class="flex flex-col gap-6 min-w-0">
           <!-- Search Bar -->
           <div class="flex items-center bg-white p-2 rounded-xl border border-[#D5E1D3] shadow-sm focus-within:border-[#4A6741] transition-all">
-            <i class="fa-solid fa-magnifying-glass text-[#7A8A76] text-sm ml-3 mr-2.5" aria-hidden="true"></i>
+            <i class="fa-solid fa-magnifying-glass text-[#5A6C58] text-sm ml-3 mr-2.5" aria-hidden="true"></i>
             <input
               v-model="searchKeyword"
               type="search"
@@ -275,7 +275,7 @@
                   </div>
                   <span class="min-w-0 flex-1">
                     <span class="block text-[0.88rem] font-bold leading-snug">{{ link.title }}</span>
-                    <span class="block text-[0.75rem] text-[#7A8A76] leading-relaxed mt-0.5">{{ link.description }}</span>
+                    <span class="block text-[0.75rem] text-[#5A6C58] leading-relaxed mt-0.5">{{ link.description }}</span>
                   </span>
                 </nuxt-link>
               </li>
@@ -313,8 +313,9 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useI18n } from '~/composables/useI18n'
+import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
 import type { PublicArticleListItem } from '~/utils/public-types'
 
 const { t, currentLang } = useI18n()
@@ -335,14 +336,23 @@ const quickLinks = [
 
 const activeIndex = ref<number | null>(null)
 
-const { data, pending, error, refresh } = useAsyncData(`public-faq-articles-${currentLang.value}`, () =>
+// Khoá là hàm của ngôn ngữ: chuỗi `public-faq-articles-${currentLang.value}` chỉ
+// được tính một lần lúc setup, nên đổi ngôn ngữ trên trang này không nạp lại.
+const faqAsync = useAsyncData(() => `public-faq-articles-${currentLang.value}`, () =>
   ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; excerpt: string; thumbnailUrl: string; createdAt: string; slug: string }>; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/articles`, { query: { type: 'faq', limit: 50, lang: currentLang.value } }),
   {
     lazy: true,
     default: () => ({ ok: true, articles: [], pagination: {} }),
+    watch: [currentLang],
 })
+const { data, pending, error, refresh } = faqAsync
 const faqs = computed(() => (data.value as { articles?: PublicArticleListItem[] })?.articles || [])
 const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
+
+// Lượt SSR hỏng (CSDL sập) → 503 + no-store thay vì 200 kèm nhánh lỗi — CÙNG biểu
+// thức với nhánh lỗi (`utils/ssr-failure-response.ts`). Đo trên bản build không
+// CSDL trước bản vá: `/legal-qa` là trang công khai duy nhất còn trả 200.
+useSsrFailureStatus(() => faqAsync, () => loadError.value)
 
 const searchKeyword = ref('')
 const filteredFaqs = computed(() => {
@@ -366,6 +376,15 @@ const setPage = (p: number) => {
   currentPage.value = p
   activeIndex.value = null
 }
+
+// Từ khoá đổi (gõ, chọn chủ đề, xoá) → về trang 1. Không có lượt này, đang ở
+// trang 3 mà gõ một từ khoá chỉ còn 2 kết quả thì `paginatedFaqs` cắt từ vị trí
+// 10 trở đi: trang trắng, bộ đếm vẫn báo "2 câu hỏi". Câu đang mở cũng đóng lại
+// vì chỉ số `activeIndex` trỏ vào danh sách cũ.
+watch(searchKeyword, () => {
+  currentPage.value = 1
+  activeIndex.value = null
+})
 
 const toggleFaq = (index: number) => {
   activeIndex.value = activeIndex.value === index ? null : index

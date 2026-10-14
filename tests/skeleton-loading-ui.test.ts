@@ -278,6 +278,8 @@ test('every animated placeholder stops animating under prefers-reduced-motion', 
     'pages/legal-qa/index.vue',
     'pages/role-models/index.vue',
     'pages/reintegration-models/index.vue',
+    // Hai trang trên nay chỉ bọc component này — khung chờ của chúng nằm ở đây.
+    'components/ModelArticlesListPage.vue',
     'pages/news/index.vue',
     'pages/documents/index.vue',
     // NOTE: `pages/admin/index.vue` used to be appended here by hand. It is now in

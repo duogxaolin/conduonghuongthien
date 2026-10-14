@@ -236,13 +236,16 @@ function getIconStyle(item: SocialLink) {
         </div>
 
         <!-- Mobile (<md): Nút [ ✕ Thu gọn ] dạng pill viên nang nhỏ gọn -->
-        <div
-          class="flex md:hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-[#d2e3d3] shadow-[0_4px_14px_rgba(15,35,18,0.12)] text-[#153317] active:scale-95 transition-all duration-150 cursor-pointer select-none"
+        <button
+          type="button"
+          class="flex md:hidden items-center gap-1.5 px-3 py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-[#d2e3d3] shadow-[0_4px_14px_rgba(15,35,18,0.12)] text-[#153317] active:scale-95 transition-all duration-150 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2c6e33]"
+          :aria-label="t('social_collapse_aria')"
+          :aria-expanded="isExpanded"
           @click.stop="toggleExpand"
         >
           <i class="fa-solid fa-xmark text-xs text-[#b42318]" aria-hidden="true"></i>
           <span class="text-[0.74rem] font-bold">{{ t('social_collapse') }}</span>
-        </div>
+        </button>
       </div>
     </TransitionGroup>
 
@@ -261,6 +264,7 @@ function getIconStyle(item: SocialLink) {
         class="zalo-pulse-btn zalo-pulse-active w-12 h-12 bg-gradient-to-br from-[#2c6e33] to-[#153317] text-white border border-white/30 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 focus-visible:ring-[#2c6e33]"
         style="--pulse-color: rgba(44, 110, 51, 0.75)"
         :aria-label="t('social_expand_aria')"
+        :aria-expanded="isExpanded"
       >
         <i class="fa-solid fa-headset text-lg text-white" aria-hidden="true"></i>
       </button>
@@ -271,22 +275,27 @@ function getIconStyle(item: SocialLink) {
     </div>
 
     <!-- Mobile (<md): Viên nang hợp nhất (Unified Floating Capsule) -->
-    <div
+    <!-- Tên truy cập chứa nguyên văn chữ nhìn thấy ("Hỗ trợ 24/7") rồi mới tới mô tả (WCAG 2.5.3). -->
+    <button
       v-if="!isExpanded"
-      class="flex md:hidden items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-[#d2e3d3] shadow-[0_6px_20px_rgba(15,35,18,0.16)] active:scale-95 transition-all duration-200 cursor-pointer select-none"
+      type="button"
+      class="flex md:hidden items-center gap-2 pl-3 pr-1.5 py-1.5 rounded-full bg-white/95 backdrop-blur-md border border-[#d2e3d3] shadow-[0_6px_20px_rgba(15,35,18,0.16)] active:scale-95 transition-all duration-200 cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#2c6e33]"
+      :aria-label="`${t('social_support')}. ${t('social_expand_aria')}`"
+      :aria-expanded="isExpanded"
       @click.stop="toggleExpand"
     >
-      <div class="flex items-center gap-1.5">
-        <span class="w-2 h-2 rounded-full bg-[#2c6e33] animate-pulse"></span>
+      <span class="flex items-center gap-1.5">
+        <span class="w-2 h-2 rounded-full bg-[#2c6e33] animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
         <span class="text-[0.76rem] font-bold text-[#153317] tracking-tight">{{ t('social_support') }}</span>
-      </div>
-      <div
+      </span>
+      <span
         class="w-7 h-7 rounded-full bg-gradient-to-br from-[#2c6e33] to-[#153317] text-white flex items-center justify-center zalo-pulse-btn zalo-pulse-active shrink-0 shadow-xs"
         style="--pulse-color: rgba(44, 110, 51, 0.75)"
+        aria-hidden="true"
       >
         <i class="fa-solid fa-headset text-[0.82rem] text-white" aria-hidden="true"></i>
-      </div>
-    </div>
+      </span>
+    </button>
   </div>
 
   <!-- Popup mode: panel + launcher (mặc định) -->
@@ -458,6 +467,16 @@ function getIconStyle(item: SocialLink) {
 .zalo-pulse-btn:hover {
   transform: scale(1.1);
   animation: zalo-pulse 1.2s infinite;
+}
+
+/* Người dùng bật "giảm chuyển động": tắt vòng sáng lặp vô hạn (kể cả khi hover). */
+@media (prefers-reduced-motion: reduce) {
+  .zalo-pulse-btn,
+  .zalo-pulse-btn.zalo-pulse-active,
+  .zalo-pulse-btn:hover {
+    animation: none;
+    transition: none;
+  }
 }
 
 .zalo-pulse-btn svg,

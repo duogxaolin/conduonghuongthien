@@ -32,6 +32,68 @@ export const CHATBOT_CLIENT_LIMITS = Object.freeze({
   maxFollowUpChars: 200,
 })
 
+/**
+ * Lượt gửi câu hỏi bị máy chủ trả mã không-ok — phân loại để nơi gọi biết hiện gì
+ * và có giữ câu hỏi trong hội thoại hay không (`tests/chatbot-send-rejection.test.ts`).
+ *
+ *  - `rejected` (400/413): máy chủ TỪ CHỐI chính câu này — gửi lại y nguyên vẫn bị từ
+ *    chối, và để nó lại trong hội thoại thì `boundedUserHistory()` gửi lại nó trong mọi
+ *    lượt sau (máy chủ kiểm độ dài từng tin trong lịch sử) → cả cuộc trò chuyện chết.
+ *    Nơi gọi bỏ câu khỏi hội thoại, giữ bản nháp trong ô nhập.
+ *  - `rate_limited` (429) / `unavailable` (còn lại): tạm thời — giữ câu với "Thử lại".
+ *
+ * Câu hiện cho khách: chỉ lấy NGUYÊN VĂN từ máy chủ khi đó là câu tiếng Việt soạn cho
+ * người dùng — `data.reason === 'input_too_long'` (`server/utils/chatbot/input-length.ts`)
+ * hoặc 429 mang `message` có chữ tiếng Việt. Các 400/413 còn lại của endpoint là chữ
+ * tiếng Anh cho lập trình viên ("Invalid chat messages", "Request is too large") — thay
+ * bằng câu tiếng Việt cố định. Đọc `message` của thân JSON, KHÔNG đọc `statusMessage`
+ * hay `response.statusText`: dòng trạng thái HTTP bỏ mất ký tự ngoài Latin-1.
+ */
+export type ChatSendFailure = {
+  kind: 'rejected' | 'rate_limited' | 'unavailable'
+  message: string
+  /** Trần ký tự máy chủ báo kèm lỗi quá dài (số nguyên dương), hoặc `null`. */
+  maxChars: number | null
+}
+
+export const CHATBOT_SEND_FAILURE_MESSAGES = Object.freeze({
+  unavailable: 'Không thể nhận phản hồi lúc này. Nội dung câu hỏi đã được giữ lại để bạn thử lại.',
+  invalid: 'Không gửi được câu hỏi vì nội dung cuộc trò chuyện không hợp lệ. Vui lòng sửa câu hỏi hoặc mở cuộc trò chuyện mới.',
+  tooLarge: 'Câu hỏi quá dài. Vui lòng rút gọn rồi gửi lại.',
+  rateLimited: 'Bạn gửi câu hỏi quá nhanh. Vui lòng đợi một lát rồi thử lại.',
+})
+
+export function chatInputTooLongText(limit: number): string {
+  return `Câu hỏi không được vượt quá ${limit} ký tự. Vui lòng rút gọn rồi gửi lại.`
+}
+
+/** Câu do máy chủ soạn cho người đọc tiếng Việt (có chữ có dấu), không quá dài. */
+function vietnameseServerMessage(value: unknown): string | null {
+  if (typeof value !== 'string') return null
+  const text = value.normalize('NFC').trim()
+  // Thông điệp lập trình viên của máy chủ là ASCII tiếng Anh; câu cho khách luôn có
+  // chữ có dấu (khối Latin-1 Supplement → Latin Extended Additional, U+00C0–U+1EF9).
+  if (!text || text.length > 300 || !/[À-ỹ]/u.test(text)) return null
+  return text
+}
+
+export function describeChatSendFailure(status: number, body: unknown): ChatSendFailure {
+  const raw = body && typeof body === 'object' ? body as Record<string, unknown> : {}
+  const data = raw.data && typeof raw.data === 'object' ? raw.data as Record<string, unknown> : {}
+  if (status === 400 && data.reason === 'input_too_long') {
+    const maxChars = typeof data.maxChars === 'number' && Number.isSafeInteger(data.maxChars) && data.maxChars > 0 ? data.maxChars : null
+    const message = vietnameseServerMessage(raw.message)
+      ?? (maxChars ? chatInputTooLongText(maxChars) : CHATBOT_SEND_FAILURE_MESSAGES.tooLarge)
+    return { kind: 'rejected', message, maxChars }
+  }
+  if (status === 400) return { kind: 'rejected', message: CHATBOT_SEND_FAILURE_MESSAGES.invalid, maxChars: null }
+  if (status === 413) return { kind: 'rejected', message: CHATBOT_SEND_FAILURE_MESSAGES.tooLarge, maxChars: null }
+  if (status === 429) {
+    return { kind: 'rate_limited', message: vietnameseServerMessage(raw.message) ?? CHATBOT_SEND_FAILURE_MESSAGES.rateLimited, maxChars: null }
+  }
+  return { kind: 'unavailable', message: CHATBOT_SEND_FAILURE_MESSAGES.unavailable, maxChars: null }
+}
+
 export const CHATBOT_RESPONSE_KINDS = new Set([
   'curated', 'provider', 'small_talk', 'not_found', 'unavailable', 'rate_limited',
   // Server refused the user turn before sending anything to AI (moderation gate).

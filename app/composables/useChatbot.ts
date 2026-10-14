@@ -14,13 +14,20 @@ import { ref, computed, nextTick } from 'vue'
 export * from '../utils/chatbot-storage'
 import {
   CHATBOT_CLIENT_LIMITS,
+  // Import tường minh (không trông vào auto-import của Nuxt cho `utils/`): `parseSseLine`
+  // dùng nó, và Node test chạy composable thật (tests/chatbot-send-rejection.test.ts).
+  CHATBOT_RESPONSE_KINDS,
+  CHATBOT_SEND_FAILURE_MESSAGES,
   CHATBOT_WELCOME_MESSAGE,
+  chatInputTooLongText,
+  describeChatSendFailure,
   normalizeConversation as normalizeConversationRaw,
   normalizeSource,
   normalizeFollowUps,
   normalizeStoredMessage,
   type ChatLead,
   type ChatMessage,
+  type ChatSendFailure,
   type ChatSource,
   type StoredConversation,
 } from '../utils/chatbot-storage'
@@ -64,6 +71,16 @@ const isReplyStreaming = ref(false)
 const isAwaitingFirstWord = computed(() => isSubmitting.value && !isReplyStreaming.value)
 const botInput = ref('')
 const botInputError = ref('')
+/**
+ * Trần ký tự của ô nhập. Mặc định 2000 (`CHATBOT_CLIENT_LIMITS`); máy chủ áp
+ * `min(10000, cài đặt max_input_chars)` nhưng không có endpoint công khai nào cho
+ * biết trước con số đó. Khi máy chủ từ chối một câu vì quá dài nó kèm `maxChars` —
+ * ô nhập (maxlength + bộ đếm) và phép kiểm trước khi gửi theo con số ấy cho tới khi
+ * tải lại trang. Chỉ HẠ, không nâng quá 2000: một trần cao hơn ở máy chủ không bao
+ * giờ được báo về (không câu nào ≤ 2000 bị từ chối vì độ dài).
+ */
+const inputCharLimit = ref<number>(CHATBOT_CLIENT_LIMITS.maxMessageChars)
+const limits = computed(() => ({ ...CHATBOT_CLIENT_LIMITS, maxMessageChars: inputCharLimit.value }))
 const quickQuestions = ref<{ id: string, question: string }[]>([])
 const quickQuestionState = ref<'loading' | 'success' | 'empty' | 'error'>('loading')
 const hydrated = ref(false)
@@ -296,7 +313,9 @@ function boundedUserHistory(): { sender: 'user' | 'bot', text: string }[] {
     .filter(item => (item.sender === 'user' || item.sender === 'bot') && !item.isStreaming && typeof item.text === 'string')
     .map(item => ({
       sender: item.sender as 'user' | 'bot',
-      text: item.text.normalize('NFKC').trim().slice(0, item.sender === 'bot' ? 1200 : CHATBOT_CLIENT_LIMITS.maxMessageChars),
+      // Trần theo `inputCharLimit` (không phải hằng 2000): máy chủ kiểm độ dài TỪNG tin
+      // trong lịch sử — một câu cũ dài hơn trần máy chủ vừa báo sẽ làm mọi lượt sau 400.
+      text: item.text.normalize('NFKC').trim().slice(0, item.sender === 'bot' ? 1200 : inputCharLimit.value),
     }))
     .filter(item => item.text && item.text !== CHATBOT_WELCOME_MESSAGE.text)
     .slice(-CHATBOT_CLIENT_LIMITS.maxHistoryMessages)
@@ -416,8 +435,21 @@ function flushStreamNow(pending: StreamFlush): void {
   pending.run()
 }
 
-async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => void): Promise<boolean> {
-  if (isSubmitting.value) return false
+/** Phản hồi không-ok của endpoint chat, đã phân loại (`describeChatSendFailure`). */
+class ChatSendRejected extends Error {
+  failure: ChatSendFailure
+  constructor(failure: ChatSendFailure) {
+    super('CHATBOT_SEND_REJECTED')
+    this.failure = failure
+  }
+}
+
+/**
+ * `true` = câu trả lời đã về. Còn lại là lượt hỏng: `ChatSendFailure` khi máy chủ trả
+ * một mã không-ok (đã phân loại), `null` khi hỏng không mang mã (mạng, luồng rỗng, huỷ).
+ */
+async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => void): Promise<true | ChatSendFailure | null> {
+  if (isSubmitting.value) return null
   const requestSequence = ++botRequestSequence
   const conversation = activeConversation.value
   isSubmitting.value = true
@@ -458,7 +490,12 @@ async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => vo
       body: JSON.stringify({ messages: boundedUserHistory(), _h: '' }),
       signal: requestController.signal,
     })
-    if (!response.ok || !response.body) throw new Error('CHATBOT_UNAVAILABLE')
+    if (!response.ok) {
+      // Thân lỗi JSON của Nitro: `{ statusCode, message, data }`. Proxy có thể trả HTML.
+      const errorBody: unknown = await response.json().catch(() => null)
+      throw new ChatSendRejected(describeChatSendFailure(response.status, errorBody))
+    }
+    if (!response.body) throw new Error('CHATBOT_UNAVAILABLE')
 
     const reader = response.body.getReader()
     const decoder = new TextDecoder('utf-8')
@@ -542,10 +579,11 @@ async function fetchStreamBotReply(userMessage: ChatMessage, onScroll?: () => vo
     // have deleted whichever message happened to be last.
     const index = conversation.messages.findIndex(item => item.id === botMessage.id)
     if (index !== -1) conversation.messages.splice(index, 1)
+    const failure = error instanceof ChatSendRejected ? error.failure : null
     if ((error as Error)?.name !== 'AbortError' && requestSequence === botRequestSequence) {
-      botInputError.value = 'Không thể nhận phản hồi lúc này. Nội dung câu hỏi đã được giữ lại để bạn thử lại.'
+      botInputError.value = failure?.message ?? CHATBOT_SEND_FAILURE_MESSAGES.unavailable
     }
-    return false
+    return failure
   } finally {
     if (requestSequence === botRequestSequence) {
       isSubmitting.value = false
@@ -567,12 +605,13 @@ async function submitBotQuestion(rawText: string, onScroll?: () => void): Promis
     botInputError.value = 'Vui lòng nhập câu hỏi.'
     return
   }
-  if (text.length > CHATBOT_CLIENT_LIMITS.maxMessageChars) {
-    botInputError.value = `Câu hỏi không được vượt quá ${CHATBOT_CLIENT_LIMITS.maxMessageChars} ký tự.`
+  if (text.length > inputCharLimit.value) {
+    botInputError.value = chatInputTooLongText(inputCharLimit.value)
     return
   }
 
   const conversation = activeConversation.value
+  const titleBeforeSend = conversation.title
   applyAutoTitle(text)
   const userMessage: ChatMessage = { id: `user-${++messageSequence}`, sender: 'user', text }
   conversation.messages.push(userMessage)
@@ -582,17 +621,30 @@ async function submitBotQuestion(rawText: string, onScroll?: () => void): Promis
   userMessage.status = 'pending'
 
   const requestSequence = botRequestSequence + 1
-  const succeeded = await fetchStreamBotReply(userMessage, onScroll)
+  const outcome = await fetchStreamBotReply(userMessage, onScroll)
   if (requestSequence !== botRequestSequence) return
+  const succeeded = outcome === true
+  const failure = outcome === true ? null : outcome
   if (succeeded) {
     botInput.value = ''
     userMessage.status = undefined
+    persist()
+  } else if (failure?.kind === 'rejected') {
+    // Máy chủ từ chối CHÍNH câu này (quá dài / không hợp lệ): gửi lại y nguyên vẫn
+    // bị từ chối, và để nó trong hội thoại thì lịch sử của mọi lượt sau mang nó theo
+    // → cũng bị từ chối. Bỏ khỏi hội thoại (kể cả tiêu đề tự đặt từ nó), giữ bản
+    // nháp trong ô nhập; lý do đã ở `botInputError` (tests/chatbot-send-rejection.test.ts).
+    const index = conversation.messages.findIndex(item => item.id === userMessage.id)
+    if (index !== -1) conversation.messages.splice(index, 1)
+    conversation.title = titleBeforeSend
+    if (failure.maxChars) inputCharLimit.value = Math.min(inputCharLimit.value, failure.maxChars)
+    botInput.value = text
     persist()
   } else {
     // Don't pop the message — mark as error and allow retry.
     // Restore the text to the input so the user can edit and resubmit.
     userMessage.status = 'error'
-    userMessage.error = 'Không thể gửi câu hỏi. Vui lòng thử lại.'
+    userMessage.error = failure?.kind === 'rate_limited' ? failure.message : 'Không thể gửi câu hỏi. Vui lòng thử lại.'
     botInput.value = text
   }
 }
@@ -796,7 +848,8 @@ export function useChatbot() {
     retrySourceDetail,
 
     // helpers
-    limits: CHATBOT_CLIENT_LIMITS,
+    // Computed: `maxMessageChars` theo trần máy chủ đã báo (xem `inputCharLimit`).
+    limits,
     isProblemKind,
     messageKindLabel,
     messageKindClass,

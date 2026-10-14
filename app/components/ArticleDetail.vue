@@ -334,6 +334,8 @@ import { buildToc, TOC_MIN_HEADINGS } from '~/utils/toc'
 import { useReadingHistory } from '~/composables/useReadingHistory'
 import { useBrokenImageFallback } from '~/composables/useBrokenImageFallback'
 import { useSiteSettings, type PublicSettingsResponse } from '~/composables/useSiteSettings'
+import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
+import { resolveDetailFetch } from '~/utils/ssr-failure-response'
 
 const { record: recordRead } = useReadingHistory()
 
@@ -417,7 +419,7 @@ type ArticleDetailResponse = {
   } | null
 }
 
-const { data, pending, error, refresh } = useAsyncData(
+const articleAsync = useAsyncData(
   () => `article-detail-${props.slug}-${currentLang.value}`,
   () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ArticleDetailResponse>)(`/api/public/articles/${props.slug}?lang=${currentLang.value}`),
   {
@@ -432,6 +434,19 @@ const { data, pending, error, refresh } = useAsyncData(
     },
   },
 )
+const { data, pending, error, status, refresh } = articleAsync
+
+/**
+ * Hỏng ≠ không có (`utils/ssr-failure-response.ts` → `resolveDetailFetch`): API trả
+ * 404 cho bài không tồn tại/chưa xuất bản — đó là "Không tìm thấy" (HTTP 404), không
+ * phải "không tải được, thử lại". Chỉ lỗi KHÁC 404 mới là nhánh lỗi + thử lại.
+ */
+const fetchOutcome = computed(() => resolveDetailFetch({ status: status.value, error: error.value, hasContent: !!data.value?.article }))
+const loadError = computed(() => fetchOutcome.value === 'failed')
+
+// Lượt SSR hỏng → 503 + no-store; bài không có → 404 (CÙNG quyết định với nhánh hiển
+// thị). Phía trình duyệt: nút "thử lại" + `onMounted` bên dưới như trước.
+useSsrFailureStatus(() => articleAsync, () => loadError.value, { notFound: () => fetchOutcome.value === 'not-found' })
 
 watch(currentLang, () => {
   void refresh()
@@ -448,8 +463,6 @@ onMounted(() => {
   }
 })
 const article = computed(() => data.value?.article || null)
-// `ok: false` with no article is a legitimate 404 from the API, not a failure.
-const loadError = computed(() => !!error.value)
 
 const categoryLabel = computed(() => {
   const a = article.value

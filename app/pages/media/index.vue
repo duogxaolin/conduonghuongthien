@@ -43,7 +43,7 @@
         >
           <label class="sr-only" for="media-search">{{ t('m_search_aria') }}</label>
           <div class="relative flex-1 flex items-center pl-3">
-            <i class="fa-solid fa-magnifying-glass text-[#7A8A76] text-sm mr-2.5" aria-hidden="true"></i>
+            <i class="fa-solid fa-magnifying-glass text-[#5A6C58] text-sm mr-2.5" aria-hidden="true"></i>
             <input
               id="media-search"
               v-model="searchInput"
@@ -94,7 +94,7 @@
               {{ t('m_count_suffix').replace('{n}', String(pagination.total)) }}
             </span>
           </div>
-          <span v-if="pagination.totalPages > 1" class="text-xs text-[#7A8A76] font-medium hidden sm:inline">
+          <span v-if="pagination.totalPages > 1" class="text-xs text-[#5A6C58] font-medium hidden sm:inline">
             {{ t('m_page_of').replace('{current}', String(pagination.page)).replace('{total}', String(pagination.totalPages)) }}
           </span>
         </div>
@@ -147,6 +147,22 @@
           <div class="w-14 h-14 rounded-full bg-[#EEF4EC] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-xl">
             <i class="fa-solid fa-clapperboard" aria-hidden="true"></i>
           </div>
+          <!-- `?page=` vượt trang cuối (link cũ, gõ tay): thư viện CÓ video, chỉ là
+               trang này trống — đưa về trang đầu thay vì báo "chưa có video". -->
+          <template v-if="pageOutOfRange">
+            <p class="text-sm text-[#5A6655] m-0 mb-5 max-w-md mx-auto">
+              {{ t('list_page_out_of_range').replace('{total}', String(pagination.totalPages)) }}
+            </p>
+            <button
+              type="button"
+              class="bg-[#4A6741] hover:bg-[#385132] text-white px-6 py-2.5 rounded-lg text-xs font-extrabold cursor-pointer transition-all border-none inline-flex items-center gap-2 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+              @click="goFirstPage"
+            >
+              <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+              <span>{{ t('list_back_first_page') }}</span>
+            </button>
+          </template>
+          <template v-else>
           <h3 class="text-base font-extrabold text-[#1E251C] m-0 mb-1">
             {{ hasFilters ? t('m_empty_filtered_title') : t('m_empty_updating') }}
           </h3>
@@ -162,6 +178,7 @@
             <i class="fa-solid fa-xmark" aria-hidden="true"></i>
             <span>{{ t('m_clear_filter') }}</span>
           </button>
+          </template>
         </div>
 
         <!-- 4. Có dữ liệu -->
@@ -224,7 +241,7 @@
             class="mt-8 pt-6 border-t border-[#DDE6DC] flex flex-col sm:flex-row items-center justify-between gap-4"
             aria-label="pagination"
           >
-            <span class="text-xs text-[#7A8A76]">
+            <span class="text-xs text-[#5A6C58]">
               {{ t('m_pagination_summary').replace('{current}', String(pagination.page)).replace('{total}', String(pagination.totalPages)) }}
             </span>
 
@@ -274,155 +291,43 @@
 </template>
 
 <script setup lang="ts">
-import { computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
 import { formatMediaDuration } from '~/utils/media-duration'
 import { useI18n } from '~/composables/useI18n'
-import type { MediaListPayload, PublicMediaListItem } from '~/types/public-api'
+import { usePublicMediaList } from '~/composables/usePublicMediaList'
 
 const { t } = useI18n()
 
 const PER_PAGE = 12
 
-const route = useRoute()
-
 /**
- * Số trang đọc từ URL, và **phải qua `Number.isFinite`**.
- *
- * `Math.max(1, Number('abc'))` là `NaN` — mọi so sánh với `NaN` đều `false`, nên
- * `Math.max` trả lại chính `NaN`. Giá trị đó vào query string rồi máy chủ nhận
- * `?page=NaN`, và đây đúng là lỗi mà `finitePositive()` tồn tại ở phía máy chủ để
- * chặn. Phía giao diện cũng phải chặn, vì URL do người đọc sửa được.
+ * Trạng thái (trang, từ khoá, chuyên mục) đọc thẳng từ URL — kể cả nút Back và
+ * liên kết nội bộ `/media?category=…` — và mọi hành động chỉ điều hướng: xem
+ * `usePublicMediaList` cho lý do (mỗi lượt điều hướng đúng một lượt gọi API).
+ * Số trang lạ (`?page=abc`, `?page=-1`) về trang 1 qua `parsePageParam`.
  */
-function readPage(value: unknown): number {
-  const parsed = Number(Array.isArray(value) ? value[0] : value)
-  return Number.isFinite(parsed) && parsed >= 1 ? Math.floor(parsed) : 1
-}
-
-const currentPage = ref(readPage(route.query.page))
-const searchQuery = ref(String(route.query.q ?? '').trim())
-const searchInput = ref(searchQuery.value)
-const categoryFilter = ref(String(route.query.category ?? '').trim())
-
-const listQuery = computed(() => {
-  const query: { page: number, limit: number, search?: string, category?: string } = {
-    page: currentPage.value,
-    limit: PER_PAGE,
-  }
-  if (searchQuery.value) query.search = searchQuery.value
-  if (categoryFilter.value) query.category = categoryFilter.value
-  return query
-})
-
-const { data, pending, error, refresh } = useAsyncData('public-media-list', () =>
-  ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: PublicMediaListItem[]; categories: MediaListPayload['categories']; pagination: { page: number; limit: number; total: number; totalPages: number } }>)(`/api/public/media`, { query: listQuery.value }),
-  {
-    // `lazy` chỉ bỏ chặn điều hướng phía client; lượt dựng phía máy chủ vẫn chờ dữ
-    // liệu, nên HTML đầu tiên và thẻ SEO không đổi. Không có nó thì khung xương bên
-    // trên **không bao giờ được vẽ** — bấm một liên kết trông như bấm hụt.
-    lazy: true,
-    default: () => ({
-      ok: true,
-      items: [] as PublicMediaListItem[],
-      categories: [] as MediaListPayload['categories'],
-      pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 0 },
-    }),
-  }
-)
-
-const items = computed<PublicMediaListItem[]>(() => data.value?.items ?? [])
-const categories = computed(() => data.value?.categories ?? [])
-const pagination = computed(() => data.value?.pagination ?? { page: 1, limit: PER_PAGE, total: 0, totalPages: 0 })
-
-/**
- * Lỗi gồm **cả** một lượt fetch hỏng lẫn một phản hồi `ok: false`.
- *
- * Máy chủ cố ý tách hai nhánh đó khỏi "thư viện rỗng" (xem `index.get.ts`), nên
- * giao diện phải đọc `ok` chứ không suy từ `items.length === 0` — nếu không, một
- * lượt truy vấn hỏng hiện ra y hệt "cổng chưa đăng gì".
- */
-const loadError = computed(() => !!error.value || data.value?.ok === false)
-
-const hasFilters = computed(() => !!searchQuery.value || !!categoryFilter.value)
+const {
+  searchInput,
+  categoryFilter,
+  items,
+  categories,
+  pagination,
+  pageRange,
+  pending,
+  loadError,
+  hasFilters,
+  pageOutOfRange,
+  refresh,
+  applySearch,
+  applyCategory,
+  clearSearch,
+  goFirstPage,
+  setPage,
+} = usePublicMediaList({ perPage: PER_PAGE, scrollTargetId: 'media-search' })
 
 function reload() {
   // Gọi lại **chính lượt fetch đã hỏng**, không tải lại trang.
   refresh()
 }
-
-/** Ghi bộ lọc vào URL để chia sẻ được và sống qua F5. */
-function syncUrl() {
-  const query: { q?: string, category?: string, page?: number } = {}
-  if (searchQuery.value) query.q = searchQuery.value
-  if (categoryFilter.value) query.category = categoryFilter.value
-  if (currentPage.value > 1) query.page = currentPage.value
-  navigateTo({ path: '/media', query })
-}
-
-function applySearch() {
-  searchQuery.value = searchInput.value.trim()
-  currentPage.value = 1
-  syncUrl()
-}
-
-function applyCategory(value: string) {
-  categoryFilter.value = value
-  currentPage.value = 1
-  syncUrl()
-}
-
-function clearSearch() {
-  searchInput.value = ''
-  searchQuery.value = ''
-  categoryFilter.value = ''
-  currentPage.value = 1
-  syncUrl()
-}
-
-function setPage(page: number) {
-  if (page < 1 || page > pagination.value.totalPages) return
-  currentPage.value = page
-  syncUrl()
-  if (import.meta.client) {
-    // Cuộn về đầu danh sách, không về đầu trang: người đọc vừa bấm một số trang
-    // và thứ họ cần thấy là danh sách mới, không phải lại thanh hero.
-    document.getElementById('media-search')?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-  }
-}
-
-/**
- * Dãy số trang, có dấu `…` ở giữa.
- *
- * Cùng thuật toán `/documents` đang dùng, và cố ý không tách thành một component
- * dùng chung: hai trang có hai cách đánh số khác nhau (ở kia là `pagination.page`
- * của máy chủ, ở đây cùng thế nhưng khối này còn phụ thuộc `pending` của chính
- * trang này). Một component dùng chung sẽ phải nhận cả hai qua prop và trở thành
- * một lớp chuyển tiếp không ngăn được lỗi nào.
- */
-const pageRange = computed(() => {
-  const total = pagination.value.totalPages
-  const current = pagination.value.page
-  if (total <= 7) return Array.from({ length: total }, (_, index) => index + 1)
-  const pages = new Set([1, total, current, current - 1, current + 1])
-  for (const page of [...pages]) if (page < 1 || page > total) pages.delete(page)
-  return [...pages].sort((a, b) => a - b)
-})
-
-/**
- * Điều hướng phía client giữa hai lượt xem thư viện dùng lại chính component này,
- * nên bộ lọc phải **đọc lại từ URL** khi URL đổi vì một lý do khác — nút Back của
- * trình duyệt, hoặc một liên kết nội bộ trỏ tới `/media?category=…`.
- */
-watch(() => route.query, query => {
-  const page = readPage(query.page)
-  const search = String(query.q ?? '').trim()
-  const category = String(query.category ?? '').trim()
-  if (page === currentPage.value && search === searchQuery.value && category === categoryFilter.value) return
-  currentPage.value = page
-  searchQuery.value = search
-  searchInput.value = search
-  categoryFilter.value = category
-}, { deep: true })
 
 useSeoMeta({
   title: () => `${t('m_list_title')} | Con Đường Hướng Thiện`,

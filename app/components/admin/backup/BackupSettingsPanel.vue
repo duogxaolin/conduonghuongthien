@@ -2,6 +2,7 @@
 // Khối "Cài đặt backup" tách từ pages/admin/settings/backup.vue. Mọi lời gọi mạng nằm trong
 // useBackupSettings(); danh sách backup (error/retry/skeleton) vẫn ở trang cha.
 const {
+  isSuperAdmin, settingsLoaded, settingsLoadError, loadSettings,
   backupSettings, selectedDays, daysOptions, savingSettings, saveSettings,
   driveLink, driveRedirectUri, driveLinkLoading, disconnecting, driveToast,
   disconnectDrive, copyRedirectUri,
@@ -23,6 +24,17 @@ onMounted(() => loadAll())
       </div>
     </div>
 
+    <!-- Tải cài đặt hỏng: không cho lưu (biểu mẫu đang giữ giá trị mặc định, lưu là ghi đè cấu hình thật). -->
+    <div v-if="settingsLoadError" role="alert" class="rounded-lg border border-dashed border-[#E2A0A0] bg-white px-4 py-3 text-sm text-[#B04A4A]">
+      <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>
+      {{ settingsLoadError }} Vui lòng <button type="button" class="text-[#4A6741] font-bold underline bg-transparent border-0 p-0 cursor-pointer" @click="loadSettings()">thử lại</button>.
+    </div>
+
+    <p v-if="!isSuperAdmin" class="m-0 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3 py-2 text-[0.8rem] text-[#8a6412]">
+      <i class="fa-solid fa-lock mr-1" aria-hidden="true"></i>
+      Chỉ quản trị viên cấp cao (SuperAdmin) được đổi số bản giữ lại và cấu hình Google Drive (service account, thư mục, công tắc upload, liên kết OAuth). Bạn vẫn đổi được lịch backup tự động.
+    </p>
+
     <!-- Tự động -->
     <div class="flex flex-col gap-3 rounded-lg border border-[#e2ece3] bg-[#f8faf8] p-4">
       <label class="flex items-center gap-3 text-sm font-bold text-[#122815]">
@@ -34,7 +46,7 @@ onMounted(() => loadAll())
           <input type="number" v-model="backupSettings.backup_auto_hour" min="0" max="23" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal" />
         </label>
         <label class="text-sm font-bold">Số bản giữ
-          <input type="number" v-model="backupSettings.backup_keep_count" min="1" max="365" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal" />
+          <input type="number" v-model="backupSettings.backup_keep_count" min="1" max="365" :disabled="!isSuperAdmin" :title="isSuperAdmin ? undefined : 'Chỉ SuperAdmin được đổi'" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal disabled:cursor-not-allowed disabled:bg-[#f4f7f4] disabled:text-[#667768]" />
         </label>
       </div>
       <div class="flex flex-col gap-2">
@@ -49,7 +61,7 @@ onMounted(() => loadAll())
     <!-- Google Drive -->
     <div class="flex flex-col gap-4 rounded-lg border border-[#e2ece3] bg-[#f8faf8] p-4">
       <label class="flex items-center gap-3 text-sm font-bold text-[#122815]">
-        <input type="checkbox" v-model="backupSettings.backup_drive_enabled" true-value="true" false-value="false" class="h-4 w-4 accent-[#2c6e33]" />
+        <input type="checkbox" v-model="backupSettings.backup_drive_enabled" true-value="true" false-value="false" :disabled="!isSuperAdmin" class="h-4 w-4 accent-[#2c6e33] disabled:cursor-not-allowed" />
         Upload lên Google Drive
       </label>
 
@@ -64,7 +76,7 @@ onMounted(() => loadAll())
 
         <!-- Form credentials Drive (tách khỏi reader) -->
         <div v-if="driveConfigLoading" class="text-[0.8rem] text-[#667768]">Đang tải cấu hình…</div>
-        <div v-else class="flex flex-col gap-2.5">
+        <div v-else-if="isSuperAdmin" class="flex flex-col gap-2.5">
           <label class="text-sm font-bold text-[#122815]">Client ID (Drive)
             <input v-model="driveClientId" type="text" placeholder="xxxx.apps.googleusercontent.com" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal text-[0.82rem] outline-none focus:border-[#2c6e33]" />
           </label>
@@ -97,14 +109,18 @@ onMounted(() => loadAll())
         <div v-else-if="driveLink?.linked" class="flex flex-wrap items-center gap-2">
           <i class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
           <span class="text-[0.84rem] text-[#122815]">Đã liên kết: <strong>{{ driveLink.linkedEmail || '(không có email)' }}</strong> <span v-if="driveLink.linkedAt">— {{ formatWhen(driveLink.linkedAt) }}</span></span>
-          <button type="button" class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-[#ffebe9] px-2.5 py-1 text-[0.72rem] font-bold text-[#d12420] border-0 cursor-pointer hover:bg-red-200 disabled:opacity-50" :disabled="disconnecting" @click="disconnectDrive">
+          <button v-if="isSuperAdmin" type="button" class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-[#ffebe9] px-2.5 py-1 text-[0.72rem] font-bold text-[#d12420] border-0 cursor-pointer hover:bg-red-200 disabled:opacity-50" :disabled="disconnecting" @click="disconnectDrive">
             <i class="fa-solid fa-link-slash" :class="disconnecting ? 'fa-spinner animate-spin' : ''" aria-hidden="true"></i> Hủy liên kết
           </button>
         </div>
         <div v-else-if="driveLink?.status === 'secret_unreadable'" class="flex flex-wrap items-center gap-2">
           <i class="fa-solid fa-triangle-exclamation text-[#8a6412]" aria-hidden="true"></i>
           <span class="text-[0.84rem] text-[#8a6412]">Refresh token không giải mã được — dịch khoá CHATBOT_ENCRYPTION_SECRET hoặc liên kết lại.</span>
-          <button type="button" class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-[#fdf6e7] px-2.5 py-1 text-[0.72rem] font-bold text-[#8a6412] border-0 cursor-pointer hover:bg-[#f5e8c8]" @click="disconnectDrive">Xoá liên kết hỏng</button>
+          <button v-if="isSuperAdmin" type="button" class="ml-auto inline-flex items-center gap-1.5 rounded-md bg-[#fdf6e7] px-2.5 py-1 text-[0.72rem] font-bold text-[#8a6412] border-0 cursor-pointer hover:bg-[#f5e8c8]" @click="disconnectDrive">Xoá liên kết hỏng</button>
+        </div>
+        <div v-else-if="!isSuperAdmin" class="text-[0.78rem] text-[#667768]">
+          <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+          Chưa liên kết tài khoản Google Drive.
         </div>
         <div v-else-if="driveConfig?.isEnabled" class="flex flex-col gap-2">
           <a href="/api/admin/backup/drive/start" class="inline-flex w-fit items-center gap-2 rounded-lg bg-[#2c6e33] px-4 py-2 text-sm font-bold text-white border-0 no-underline hover:bg-[#1e4620]">
@@ -122,16 +138,21 @@ onMounted(() => loadAll())
       <div class="flex flex-col gap-2 rounded-lg border border-[#e2ece3] bg-white p-3">
         <h3 class="m-0 text-sm font-bold text-[#122815]">Service Account (fallback cho scheduler)</h3>
         <p class="m-0 text-[0.8rem] text-[#667768]">Dùng khi không liên kết tài khoản cá nhân, hoặc cho backup tự động qua scheduler. Cần share folder Drive với email service account.</p>
-        <label class="text-sm font-bold">Service Account JSON key
-          <textarea v-model="backupSettings.backup_drive_service_account" placeholder="{ &quot;type&quot;: &quot;service_account&quot;, ... }" rows="4" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-mono text-[0.78rem]" />
-        </label>
-        <label class="text-sm font-bold">Folder ID (tùy chọn — dùng chung cho cả 2 mode)
-          <input type="text" v-model="backupSettings.backup_drive_folder_id" placeholder="1aBcDeFgHiJkLmNoPqRsTuVwXyZ" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal" />
-        </label>
+        <template v-if="isSuperAdmin">
+          <label class="text-sm font-bold">Service Account JSON key
+            <textarea v-model="backupSettings.backup_drive_service_account" placeholder="{ &quot;type&quot;: &quot;service_account&quot;, ... }" rows="4" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-mono text-[0.78rem]" />
+          </label>
+          <label class="text-sm font-bold">Folder ID (tùy chọn — dùng chung cho cả 2 mode)
+            <input type="text" v-model="backupSettings.backup_drive_folder_id" placeholder="1aBcDeFgHiJkLmNoPqRsTuVwXyZ" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal" />
+          </label>
+        </template>
+        <p v-else class="m-0 text-[0.8rem] text-[#667768]">
+          Service account: <strong class="text-[#122815]">{{ backupSettings.backup_drive_service_account ? 'đã cấu hình' : 'chưa cấu hình' }}</strong>
+        </p>
       </div>
     </div>
 
-    <button type="button" class="inline-flex w-fit items-center gap-2 rounded-lg bg-[#2c6e33] px-5 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#1e4620] disabled:opacity-50" :disabled="savingSettings" @click="saveSettings">
+    <button type="button" class="inline-flex w-fit items-center gap-2 rounded-lg bg-[#2c6e33] px-5 py-2.5 text-sm font-bold text-white border-0 cursor-pointer hover:bg-[#1e4620] disabled:opacity-50 disabled:cursor-not-allowed" :disabled="savingSettings || !settingsLoaded" @click="saveSettings">
       <i class="fa-solid fa-floppy-disk" :class="savingSettings ? 'fa-spinner animate-spin' : ''" aria-hidden="true"></i> Lưu cấu hình
     </button>
   </section>

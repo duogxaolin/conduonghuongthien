@@ -1,9 +1,10 @@
 <script setup lang="ts">
-import type { PublicArticleListItem, PublicPagination } from '~/utils/public-types'
 import { useI18n } from '~/composables/useI18n'
-import { computed, ref, watch } from 'vue'
-import { useRoute, navigateTo } from '#imports'
+import { computed } from 'vue'
+import { usePublicArticleList, usePublicMostRead } from '~/composables/usePublicArticleList'
+import { ALL_CATEGORIES } from '~/utils/public-article-list'
 import { formatDateVN } from '~/utils/formatDate'
+import { cleanExcerpt } from '~/utils/article-excerpt'
 import ContentTypeSidebar from '~/components/content-type/ContentTypeSidebar.vue'
 
 /**
@@ -39,7 +40,6 @@ const props = defineProps({
 })
 
 const { t, currentLang } = useI18n()
-const route = useRoute()
 
 interface PublicCategory {
   id: number
@@ -64,8 +64,45 @@ const allCategories = computed(() => catData.value?.items || [])
 const rootCategories = computed(() => allCategories.value.filter((c) => c.parentId === null))
 const childrenOf = (parentId: number) => allCategories.value.filter((c) => c.parentId === parentId)
 
-// categorySlug prop (path segment mode) override query.cat.
-const activeCategory = ref(props.categorySlug ?? String(route.query.cat || 'all'))
+// ─── Danh sách: trang / từ khoá / chuyên mục đều đọc từ URL ───────────────────
+// Dùng chung `usePublicArticleList` với /news, /documents…: trước đây ba `ref`
+// (chuyên mục, từ khoá, trang) được ghi lần lượt rồi mới `navigateTo`, và khoá
+// `useAsyncData` (Nuxt theo dõi `flush: 'sync'`) đổi theo TỪNG lần ghi — tìm kiếm từ
+// trang 2 gửi `page=2&search=x` rồi `page=1&search=x`, chuyển chuyên mục gửi thêm
+// một lượt với trang cũ. Giờ mỗi lượt điều hướng đúng một lượt gọi
+// (tests/e2e/public-list-pagination.spec.ts).
+// `categorySlug` (chế độ đường dẫn `/<loại>/<chuyên mục>`) thắng `?cat=` (link cũ).
+const PER_PAGE = 19
+const {
+  currentPage: page,
+  searchQuery,
+  searchInput,
+  activeCategory,
+  articles,
+  pagination,
+  pageOutOfRange,
+  pending,
+  loadError,
+  refresh,
+  featured,
+  rest: restArticles,
+  pageLocation: pagePath,
+  goFirstPage,
+  setCategory,
+  applySearch,
+  clearSearchInput,
+} = usePublicArticleList({
+  type: () => props.typeSlug,
+  perPage: PER_PAGE,
+  lang: currentLang,
+  withCategory: true,
+  pathCategory: () => props.categorySlug,
+  pathFor: (category) => (category === ALL_CATEGORIES ? `/${props.typeSlug}` : `/${props.typeSlug}/${category}`),
+  scrollTargetId: `list-top-${props.typeSlug}`,
+})
+
+// Most Read (sort=views) — generic theo type
+const { mostRead, mostReadPending } = usePublicMostRead(() => props.typeSlug, currentLang)
 
 const activeRoot = computed(() => {
   if (activeCategory.value === 'all') return null
@@ -95,114 +132,9 @@ const heroDescription = computed(() => {
   return d
 })
 
-// ─── Search ────────────────────────────────────────────────────────────────────
-const searchQuery = ref(String(route.query.q || ''))
-const searchInput = ref(searchQuery.value)
-const PER_PAGE = 19
-const currentPage = ref(Math.max(1, Math.floor(Number(route.query.page) || 1) || 1))
-
-const applySearch = () => {
-  searchQuery.value = searchInput.value.trim()
-  currentPage.value = 1
-  syncUrl()
-}
-const clearSearchInput = () => {
-  searchInput.value = ''
-  searchQuery.value = ''
-  currentPage.value = 1
-  syncUrl()
-}
-
-// ─── Article list ──────────────────────────────────────────────────────────────
-const page = computed(() => {
-  const n = Number(route.query.page)
-  return Number.isSafeInteger(n) && n > 0 ? n : 1
-})
-
-interface ListResponse {
-  ok: boolean
-  articles: PublicArticleListItem[]
-  pagination: PublicPagination
-}
-
-const { data, pending, error, refresh } = await useAsyncData(
-  () => `content-type-list-${props.typeSlug}-${page.value}-${activeCategory.value}-${searchQuery.value}-${currentLang.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ListResponse>)('/api/public/articles', {
-    query: {
-      type: props.typeSlug,
-      page: page.value,
-      limit: PER_PAGE,
-      lang: currentLang.value,
-      ...(searchQuery.value ? { search: searchQuery.value } : {}),
-      ...(activeCategory.value !== 'all' ? { categorySlug: activeCategory.value } : {}),
-    },
-  }),
-  {
-    lazy: true,
-    default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: PER_PAGE, total: 0, totalPages: 0 } }),
-    watch: [() => props.typeSlug, page, activeCategory, searchQuery, currentLang],
-  },
-)
-
-const articles = computed(() => (data.value as ListResponse | null)?.articles || [])
-const loadError = computed(() => !!error.value || (data.value as { ok?: boolean } | null)?.ok === false)
-const pagination = computed(() => (data.value as ListResponse | null)?.pagination || { page: 1, limit: PER_PAGE, total: 0, totalPages: 0 })
-
-// Featured & Rest — chỉ hiện bài tiêu điểm ở Trang 1 khi không tìm kiếm
-const isLeadPage = computed(() => page.value === 1 && !searchQuery.value)
-const featured = computed(() => (isLeadPage.value ? articles.value[0] ?? null : null))
-const restArticles = computed(() => (isLeadPage.value ? articles.value.slice(1) : articles.value))
-
-// Most Read (sort=views) — generic theo type
-const { data: mostReadData, pending: mostReadPending } = await useAsyncData(
-  () => `content-type-most-read-${props.typeSlug}-${currentLang.value}`,
-  () => ($fetch as (u: string, o?: Record<string, unknown>) => Promise<ListResponse>)('/api/public/articles', {
-    query: { type: props.typeSlug, limit: 6, sort: 'views', lang: currentLang.value },
-  }),
-  {
-    lazy: true,
-    default: () => ({ ok: true, articles: [], pagination: { page: 1, limit: 6, total: 0, totalPages: 0 } }),
-    watch: [() => props.typeSlug, currentLang],
-  },
-)
-const mostRead = computed(() => (mostReadData.value as ListResponse | null)?.articles || [])
-
-// ─── Navigation (path segment /<type>/<cat>, giữ ?page + ?q) ───────────────────
-const setCategory = (cat: string) => {
-  activeCategory.value = cat
-  currentPage.value = 1
-  syncUrl()
-}
-
-const syncUrl = () => {
-  const path = activeCategory.value === 'all' ? `/${props.typeSlug}` : `/${props.typeSlug}/${activeCategory.value}`
-  const query: { page?: number; q?: string } = {}
-  if (searchQuery.value) query.q = searchQuery.value
-  if (currentPage.value > 1) query.page = currentPage.value
-  navigateTo({ path, query })
-}
-
-// Khi route.query.cat/q/page hoặc props.categorySlug đổi, sync state.
-watch(() => [route.query.cat, route.query.q, route.query.page, props.categorySlug], () => {
-  activeCategory.value = props.categorySlug ?? String(route.query.cat || 'all')
-  searchQuery.value = String(route.query.q || '')
-  searchInput.value = searchQuery.value
-  currentPage.value = Math.max(1, Math.floor(Number(route.query.page) || 1) || 1)
-})
-
-// Helper pagination: path segment + ?page/?q query.
-const pagePath = (n: number) => {
-  const path = activeCategory.value === 'all' ? `/${props.typeSlug}` : `/${props.typeSlug}/${activeCategory.value}`
-  const query: { page?: number; q?: string } = {}
-  if (searchQuery.value) query.q = searchQuery.value
-  if (n > 1) query.page = n
-  return query.page || query.q ? { path, query } : path
-}
-
 const formatDate = (item: { publishedAt?: string | null; createdAt?: string | null }) =>
   formatDateVN(item.publishedAt || item.createdAt)
 
-const cleanExcerpt = (text: string | null) => (text || '').replace(/<[^>]+>/g, '').trim()
 
 const typeLink = (slug: string) => `/${props.typeSlug}/${slug}`
 
@@ -320,7 +252,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                 </button>
               </div>
               <div v-if="activeChildren.length" class="flex items-center gap-2 overflow-x-auto pt-2.5 pb-1 sm:flex-wrap text-xs">
-                <span class="text-[#7A8A76] font-semibold flex items-center gap-1 shrink-0">
+                <span class="text-[#5A6C58] font-semibold flex items-center gap-1 shrink-0">
                   <i class="fa-solid fa-turn-down text-[0.65rem] rotate-[-90deg]" aria-hidden="true"></i>
                   {{ t('n_subtopic') }}
                 </span>
@@ -357,7 +289,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
               </span>
               <span class="text-sm text-[#3E4D3C]">
                 {{ t('n_search_result') }} <strong>&laquo;{{ searchQuery }}&raquo;</strong>
-                <span v-if="!pending" class="text-[#7A8A76] ml-1.5">({{ t('n_articles_count').replace('{n}', String(pagination.total)) }})</span>
+                <span v-if="!pending" class="text-[#5A6C58] ml-1.5">({{ t('n_articles_count').replace('{n}', String(pagination.total)) }})</span>
               </span>
             </div>
             <button
@@ -426,8 +358,23 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
             <div class="w-16 h-16 rounded-full bg-[#EBF3E8] text-[#4A6741] flex items-center justify-center mx-auto mb-4 text-2xl">
               <i :class="typeIcon || 'fa-regular fa-newspaper'" aria-hidden="true"></i>
             </div>
-            <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">{{ t('n_empty') }}</h3>
-            <p class="text-sm text-[#556450] m-0">{{ t('n_empty_desc') }}</p>
+            <template v-if="pageOutOfRange">
+              <!-- `?page=` vượt trang cuối (link cũ, gõ tay): không phải "chưa có bài" —
+                   đưa người đọc về trang đầu thay vì để kẹt ở một trang trắng. -->
+              <p class="text-sm text-[#556450] m-0 mb-4">{{ t('list_page_out_of_range').replace('{total}', String(pagination.totalPages)) }}</p>
+              <button
+                type="button"
+                class="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[#4A6741] text-white text-xs font-bold hover:bg-[#385132] transition-all cursor-pointer border-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+                @click="goFirstPage"
+              >
+                <i class="fa-solid fa-arrow-left" aria-hidden="true"></i>
+                <span>{{ t('list_back_first_page') }}</span>
+              </button>
+            </template>
+            <template v-else>
+              <h3 class="text-lg font-extrabold text-[#172516] m-0 mb-2">{{ t('n_empty') }}</h3>
+              <p class="text-sm text-[#556450] m-0">{{ t('n_empty_desc') }}</p>
+            </template>
           </div>
 
           <!-- Content -->
@@ -507,7 +454,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                   />
                 </nuxt-link>
                 <div class="p-4 sm:p-5 flex flex-col flex-1">
-                  <div class="flex items-center gap-2 text-xs text-[#7A8A76] font-medium mb-2">
+                  <div class="flex items-center gap-2 text-xs text-[#5A6C58] font-medium mb-2">
                     <span class="inline-block bg-[#EEF4EC] text-[#3A6033] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
                       {{ item.categoryName || typeName || typeSlug }}
                     </span>
@@ -524,7 +471,7 @@ const categoryIcon = (_slug: string) => 'fa-solid fa-folder'
                   <p v-if="item.excerpt" class="text-[0.84rem] text-[#556450] leading-relaxed line-clamp-2 mb-3 m-0">
                     {{ item.excerpt }}
                   </p>
-                  <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#7A8A76]">
+                  <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#5A6C58]">
                     <nuxt-link
                       :to="typeLink(item.slug)"
                       class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"

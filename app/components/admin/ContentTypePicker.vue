@@ -57,8 +57,11 @@ const fetchTypes = async () => {
     } else {
       error.value = 'Không tải được danh sách thể loại.'
     }
-  } catch (err: unknown) {
-    error.value = errorMessage(err, 'Không tải được danh sách thể loại.')
+  } catch {
+    // Endpoint công khai trả 503 `{ ok: false }` khi CSDL hỏng — thân phản hồi
+    // không có câu nào cho người đọc, chỉ có status text tiếng Anh thô
+    // ("Service Unavailable"), nên hiện thông điệp cố định như nhánh `!res.ok`.
+    error.value = 'Không tải được danh sách thể loại.'
   } finally {
     loading.value = false
   }

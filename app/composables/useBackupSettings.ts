@@ -7,10 +7,19 @@
 export function useBackupSettings() {
   const toast = useToast()
   const { confirm } = useConfirm()
+  // Đích backup (Drive: service account, thư mục, công tắc, OAuth) và số bản giữ
+  // chỉ SuperAdmin được đổi — máy chủ quyết định (403); giao diện không mời bấm
+  // những gì sẽ bị từ chối và không gửi các khoá đó (xem `backupSettingsPayload`).
+  const { user } = useAdminAuth()
+  const isSuperAdmin = computed(() => user.value?.isSuperAdmin === true)
 
   // ─── Settings ────────────────────────────────────────────────────────────────
   const savingSettings = ref(false)
-  const backupSettings = ref({
+  // Lượt tải cài đặt hỏng để lại giá trị MẶC ĐỊNH trong biểu mẫu; lưu lúc đó là
+  // ghi đè cấu hình thật bằng mặc định. Nên: báo lỗi, khoá nút lưu, cho thử lại.
+  const settingsLoaded = ref(false)
+  const settingsLoadError = ref('')
+  const backupSettings = ref<BackupSettingsForm>({
     backup_auto_enabled: 'false',
     backup_auto_hour: '3',
     backup_auto_days: '[]',
@@ -161,6 +170,7 @@ export function useBackupSettings() {
   const selectedDays = ref<number[]>([])
 
   async function loadSettings() {
+    settingsLoadError.value = ''
     try {
       const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null> }>)(`/api/admin/settings/backup`)
       const s = res.settings || {}
@@ -174,14 +184,20 @@ export function useBackupSettings() {
         backup_drive_folder_id: s.backup_drive_folder_id || '',
       }
       try { selectedDays.value = JSON.parse(backupSettings.value.backup_auto_days) } catch { selectedDays.value = [] }
-    } catch { /* ignore */ }
+      settingsLoaded.value = true
+    } catch (err: unknown) {
+      settingsLoadError.value = errorMessage(err, 'Không tải được cấu hình backup.')
+    }
   }
 
   async function saveSettings() {
+    // Chưa tải được giá trị thật thì biểu mẫu đang giữ mặc định — không gửi.
+    if (!settingsLoaded.value) return
     savingSettings.value = true
     try {
       backupSettings.value.backup_auto_days = JSON.stringify(selectedDays.value)
-      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/backup`, { method: 'PUT', body: backupSettings.value })
+      const body = backupSettingsPayload(backupSettings.value, selectedDays.value, isSuperAdmin.value)
+      await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/backup`, { method: 'PUT', body })
       toast.success('Đã lưu cấu hình backup.')
     } catch (err: unknown) {
       toast.error(errorMessage(err, 'Lỗi lưu cấu hình'))
@@ -221,6 +237,7 @@ export function useBackupSettings() {
   }
 
   return {
+    isSuperAdmin, settingsLoaded, settingsLoadError, loadSettings,
     backupSettings, selectedDays, daysOptions, savingSettings, saveSettings,
     driveLink, driveRedirectUri, driveLinkLoading, disconnecting, driveToast,
     disconnectDrive, copyRedirectUri,

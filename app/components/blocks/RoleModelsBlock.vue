@@ -104,7 +104,17 @@
         </div>
       </div>
 
-      <p v-else class="text-center text-[0.9rem] text-[#5A6C58] italic">{{ t('block_role_empty') }}</p>
+      <BlockLoadError
+        v-else-if="loadError"
+        :title="t('rm_load_error_title')"
+        :description="t('rm_load_error_desc')"
+        :retry-label="t('retry')"
+        :retrying="pending"
+        @retry="() => refresh()"
+      />
+
+      <!-- Chỉ nói "chưa có" khi đã tải xong: lúc đang tải câu đó là một lời sai. -->
+      <p v-else-if="!pending" class="text-center text-[0.9rem] text-[#5A6C58] italic">{{ t('block_role_empty') }}</p>
     </div>
   </section>
 </template>
@@ -112,6 +122,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from '~/composables/useI18n'
+import BlockLoadError from './BlockLoadError.vue'
 
 const { currentLang, t } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
@@ -122,7 +133,7 @@ const d = computed(() => props.block?.data || {})
 const maxItems = computed(() => Number(d.value.maxItems) || 8)
 const categorySlug = computed(() => d.value.categorySlug || '')
 
-const { data, refresh } = await useAsyncData(
+const { data, pending, error, refresh } = await useAsyncData(
   `block-role-models-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
   () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
     params: {
@@ -138,6 +149,10 @@ const { data, refresh } = await useAsyncData(
 watch(currentLang, () => {
   void refresh()
 })
+
+// API trả 503 khi CSDL hỏng → `$fetch` ném → `error`. Trước đây nó trả 200 rỗng
+// và khối này hiện "chưa có tấm gương" cho một lượt tải hỏng.
+const loadError = computed(() => !!error.value)
 
 const list = computed(() =>
   (data.value?.articles || []).map(a => ({
@@ -227,7 +242,9 @@ watch(list, (newList) => {
 }, { immediate: true })
 
 onMounted(() => {
-  if (currentLang.value !== 'vi') {
+  // `error.value` lúc mount = lượt SSR hỏng; HTML mang nhánh lỗi đó có thể vừa
+  // ra từ bộ đệm SWR 60 giây của trang — tải lại một lần ở trình duyệt.
+  if (currentLang.value !== 'vi' || error.value) {
     void refresh()
   }
   nextTick(() => {

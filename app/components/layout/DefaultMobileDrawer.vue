@@ -1,10 +1,38 @@
 <template>
-  <!-- Mobile Drawer Nav — available on mobile & iPad (< xl) -->
-  <nav
-    class="fixed top-0 w-[min(88vw,380px)] max-w-full h-[100dvh] flex flex-col bg-white shadow-[-12px_0_40px_rgba(15,35,18,0.24)] z-[10007] transition-[right] duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] overflow-hidden xl:hidden"
-    :class="isMobileMenuOpen ? 'right-0' : '-right-full'"
-    aria-label="Điều hướng di động"
-    @click="onNavClick" @keydown.escape="$emit('toggle-mobile-menu')"
+  <!--
+    Mobile Drawer Nav — available on mobile & iPad (< xl).
+    Trạng thái đóng KHÔNG chỉ là đẩy ra ngoài màn hình: `inert` + `aria-hidden` loại
+    cả cây khỏi thứ tự Tab và cây trợ năng (trước đây 18/60 lần Tab đầu rơi vào các
+    điều khiển vô hình ngoài màn hình).
+
+    `visibility` chỉ nằm trong `transition-property` khi ĐÓNG
+    (`transition-[right,visibility]`: ẩn SAU khi trượt ra xong, không cần timer).
+    Khi MỞ chỉ chuyển `right` (`visible transition-[right]`) nên ngăn kéo hiện NGAY ở
+    lượt đổi style đầu tiên. Trước đây visibility chuyển cả khi mở → tới khung hình
+    đầu của hiệu ứng nó vẫn `hidden`, và `focus()` lúc `nextTick` lên một cây đang ẩn
+    bị trình duyệt lặng lẽ bỏ qua: focus kẹt ở nút "Mở menu"
+    (tests/e2e/mobile-drawer-focus.spec.ts).
+    Nút đóng (đích focus khi mở) KHÔNG được `transition-all`: visibility là thuộc tính
+    kế thừa, và một phần tử con có `transition-property: all` tự chuyển visibility
+    kế thừa của nó (hidden → visible trong 150ms) — chính nó vẫn `hidden` lúc focus()
+    dù khung ngoài đã `visible` (đo bằng `document.getAnimations()` trên Chrome thật).
+
+    Hộp thoại modal (DNA giao diện): `role="dialog"` + `aria-modal` + tên truy cập;
+    phần còn lại của trang `inert` trong lúc mở (`inertOutside`) và Tab quay vòng
+    trong ngăn kéo (`trapTabTarget`). `role="dialog"` không được phép đặt lên `<nav>`,
+    nên khung ngoài là `<div>` và danh sách điều hướng nằm trong `<nav>` riêng.
+  -->
+  <div
+    id="mobile-drawer"
+    ref="drawerEl"
+    role="dialog"
+    aria-modal="true"
+    :aria-label="t('menu_dialog_aria')"
+    class="fixed top-0 w-[min(88vw,380px)] max-w-full h-[100dvh] flex flex-col bg-white shadow-[-12px_0_40px_rgba(15,35,18,0.24)] z-[10007] duration-[380ms] ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none overflow-hidden xl:hidden"
+    :class="isMobileMenuOpen ? 'right-0 visible transition-[right]' : '-right-full invisible transition-[right,visibility]'"
+    :inert="isMobileMenuOpen ? undefined : true"
+    :aria-hidden="isMobileMenuOpen ? undefined : 'true'"
+    @click="onNavClick" @keydown.escape="$emit('toggle-mobile-menu')" @keydown.tab="onTrapTab"
   >
     <!-- Drawer Header -->
     <div class="flex items-center justify-between px-5 py-[18px] bg-gradient-to-br from-[#1e4620] to-[#133215] text-white border-b border-white/10 z-[2] flex-shrink-0">
@@ -20,7 +48,9 @@
         </div>
       </div>
       <button
-        class="w-[34px] h-[34px] rounded-full border border-white/20 bg-white/[0.12] text-white text-[0.95rem] flex items-center justify-center cursor-pointer transition-all active:bg-white/25 active:scale-[0.92]"
+        ref="closeBtn"
+        type="button"
+        class="w-[34px] h-[34px] rounded-full border border-white/20 bg-white/[0.12] text-white text-[0.95rem] flex items-center justify-center cursor-pointer transition-[background-color,transform] active:bg-white/25 active:scale-[0.92] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white"
         @click.stop="$emit('toggle-mobile-menu')" :aria-label="t('menu_close')">✕</button>
     </div>
 
@@ -54,6 +84,7 @@
         <input
           type="text"
           :placeholder="t('search_placeholder')"
+          :aria-label="t('site_search_aria')"
           :value="searchQuery"
           @input="$emit('search-input', ($event.target as HTMLInputElement).value)"
           class="border-none bg-transparent w-full text-[0.88rem] text-[#1E251C] outline-none"
@@ -72,6 +103,7 @@
 
     <!-- Drawer Body -->
     <div class="flex-1 flex flex-col justify-between overflow-y-auto overscroll-contain [-webkit-overflow-scrolling:touch]">
+      <nav aria-label="Điều hướng di động">
       <ul class="list-none flex flex-col px-3.5 pt-3.5 pb-5 gap-1">
         <li v-for="item in navMenu" :key="item.id">
           <!-- Has children: accordion -->
@@ -111,6 +143,7 @@
           </template>
         </li>
       </ul>
+      </nav>
 
       <!-- Drawer Footer -->
       <div class="px-4 py-4 bg-[#f8faf7] border-t border-black/[0.06] flex flex-col gap-2.5 flex-shrink-0">
@@ -201,16 +234,17 @@
           </div>
         </a>
         <nuxt-link to="/contact" class="btn btn-primary w-full flex items-center justify-center gap-2 px-4 py-3 text-[0.88rem] font-bold rounded-xl" @click="$emit('toggle-mobile-menu')">
-          <span class="w-1.5 h-1.5 bg-[#7CB342] rounded-full inline-block animate-pulse"></span> {{ t('register_help') }}
+          <span class="w-1.5 h-1.5 bg-[#7CB342] rounded-full inline-block animate-pulse motion-reduce:animate-none" aria-hidden="true"></span> {{ t('register_help') }}
         </nuxt-link>
       </div>
     </div>
-  </nav>
+  </div>
 </template>
 
 <script setup lang="ts">
-import { resolveComponent } from 'vue'
+import { nextTick, onBeforeUnmount, ref, resolveComponent, watch } from 'vue'
 import { useI18n } from '~/composables/useI18n'
+import { createFocusReturn, inertOutside, trapTabTarget } from '~/utils/focus-return'
 import type { NavItem } from '~/utils/nav-config'
 import type { ReaderProfile } from '~/composables/useReaderAuth'
 
@@ -224,7 +258,7 @@ import type { ReaderProfile } from '~/composables/useReaderAuth'
  * `/profile#notifications`, `animate-pulse` — `tests/public-pages-structure` và
  * `tests/reader-notifications` grep.
  */
-defineProps<{
+const props = defineProps<{
   isMobileMenuOpen: boolean
   navMenu: NavItem[]
   navItemLabel: (item: NavItem) => string
@@ -252,6 +286,63 @@ defineEmits<{
 const { t, currentLang, locales, setLang } = useI18n()
 
 const NuxtLink = resolveComponent('NuxtLink')
+
+// ── Quản lý focus: mở → vào nút đóng; đóng → về đúng nút đã mở ngăn kéo ────────
+// Ngăn kéo đóng là `inert`, nên nếu focus đang nằm trong đó lúc đóng, trình duyệt
+// ném focus về <body> — người dùng bàn phím mất vị trí. `watch` mặc định chạy
+// TRƯỚC lượt cập nhật DOM, nên ở đó `document.activeElement` còn nằm trong ngăn kéo.
+const drawerEl = ref<HTMLElement | null>(null)
+const closeBtn = ref<HTMLButtonElement | null>(null)
+const focusReturn = createFocusReturn((el) => el === document.body)
+
+// Gỡ `inert` đã đặt lên phần còn lại của trang. Phải chạy TRƯỚC khi trả focus: nút
+// mở ngăn kéo nằm trong header — đang `inert` thì `focus()` lên nó vô hiệu.
+let releaseOutside: (() => void) | null = null
+const releasePage = () => {
+  releaseOutside?.()
+  releaseOutside = null
+}
+onBeforeUnmount(releasePage)
+
+watch(
+  () => props.isMobileMenuOpen,
+  async (open) => {
+    if (typeof document === 'undefined') return
+    if (open) {
+      focusReturn.remember(document.activeElement as HTMLElement | null)
+      await nextTick() // đợi `inert`/`invisible` của ngăn kéo gỡ xong rồi mới focus được
+      if (drawerEl.value && !releaseOutside) releaseOutside = inertOutside(drawerEl.value)
+      closeBtn.value?.focus()
+      return
+    }
+    const active = document.activeElement
+    // Chỉ trả focus nếu nó còn trong ngăn kéo (hoặc đã rơi về <body>); nếu người
+    // dùng đã bấm sang chỗ khác thì không giật focus của họ.
+    const shouldRestore = !active || active === document.body || !!drawerEl.value?.contains(active)
+    releasePage()
+    await nextTick()
+    focusReturn.restore(shouldRestore)
+  },
+)
+
+/** Phần tử focus được, ĐANG hiển thị, trong ngăn kéo — tính lại mỗi lần bấm Tab
+ *  vì danh sách đổi theo submenu đang mở và khối người đọc (client-only). */
+const FOCUSABLE = 'a[href], button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+function drawerFocusables(): HTMLElement[] {
+  const root = drawerEl.value
+  if (!root) return []
+  return Array.from(root.querySelectorAll<HTMLElement>(FOCUSABLE))
+    .filter((el) => el.getClientRects().length > 0 && !el.closest('[inert]'))
+}
+
+function onTrapTab(event: KeyboardEvent) {
+  if (!props.isMobileMenuOpen) return
+  const items = drawerFocusables()
+  const target = trapTabTarget(items.length, items.indexOf(document.activeElement as HTMLElement), event.shiftKey)
+  if (target === null) return
+  event.preventDefault()
+  items[target]?.focus()
+}
 
 /**
  * Có nên render `<a target="_blank">` thay vì `NuxtLink` — đồng bộ với

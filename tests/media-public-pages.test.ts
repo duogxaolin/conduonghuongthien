@@ -64,6 +64,8 @@ const templateCode = (path: string) => stripComments(templateOf(path))
 
 const LISTING = 'pages/media/index.vue'
 const DETAIL = 'pages/media/[shortId].vue'
+const LISTING_STATE = 'composables/usePublicMediaList.ts'
+const LISTING_UTIL = 'utils/public-media-list.ts'
 const PLAYER = 'components/MediaPlayer.vue'
 const LIVE_HERO = 'components/LiveHero.vue'
 const DEFAULT_HERO = 'components/MediaDefaultHero.vue'
@@ -270,29 +272,37 @@ test('trang danh sách đọc `ok: false` của máy chủ thay vì đoán từ 
    * (`index.get.ts`). Suy từ `items.length === 0` là gộp một lượt truy vấn hỏng vào
    * "chưa đăng gì" — đúng thứ mà hình dạng đó tồn tại để ngăn.
    */
-  const source = code(LISTING)
+  // Logic tải nằm ở composable của trang (`usePublicMediaList`) — đọc gộp cả hai.
+  const source = code(LISTING) + code(LISTING_STATE)
   assert.match(source, /data\.value\?\.ok === false/, 'nhánh lỗi không đọc trường `ok`')
   assert.match(source, /!!error\.value/, 'nhánh lỗi không bắt cả lượt fetch hỏng')
 })
 
 test('bộ lọc của trang danh sách nằm trong URL và số trang không tự kẹp biên', () => {
-  const source = code(LISTING)
+  // Trạng thái + điều hướng nằm ở `usePublicMediaList` + `utils/public-media-list.ts`
+  // (hành vi chạy thật: tests/public-media-list.test.ts).
+  const source = code(LISTING) + code(LISTING_STATE) + code(LISTING_UTIL)
 
   // Chia sẻ được và sống qua F5 — cùng lối `/qa-documents` và `/documents`.
   assert.match(source, /route\.query/, 'bộ lọc không đọc từ URL')
-  assert.match(source, /navigateTo\(\{ path: '\/media'/, 'bộ lọc không ghi lại vào URL')
+  assert.match(source, /navigateTo\(mediaListLocation\(/, 'bộ lọc không ghi lại vào URL')
+  assert.match(code(LISTING_UTIL), /path: '\/media'/, 'địa chỉ bộ lọc không trỏ về /media')
 
   // `Math.max(1, Number('abc'))` là `NaN` — mọi so sánh với `NaN` đều `false`, nên
   // `Math.max` trả lại chính `NaN`, và nó đi thẳng vào query string.
   assert.doesNotMatch(source, /Math\.max\(1,\s*Number\(/, 'kẹp biên trần: `NaN` lọt qua và thành `?page=NaN`')
-  assert.match(source, /Number\.isFinite/, 'không kiểm hữu hạn trước khi dùng số trang')
+  // Số trang đọc qua `parsePageParam` (`utils/pagination.ts`, có `Number.isFinite`).
+  assert.match(code(LISTING_UTIL), /parsePageParam\(query\.page\)/, 'không đọc số trang qua bộ đọc phòng thủ')
+  assert.match(read('utils/pagination.ts'), /Number\.isFinite/, 'không kiểm hữu hạn trước khi dùng số trang')
 })
 
 test('trang danh sách lọc lại từ URL khi URL đổi vì lý do khác', () => {
   // Nút Back của trình duyệt và một liên kết nội bộ trỏ tới `/media?category=…`
   // đều dùng lại chính component này. Không có lượt đọc lại thì thanh địa chỉ đổi
-  // mà danh sách thì không.
-  assert.match(code(LISTING), /watch\(\(\) => route\.query/, 'bộ lọc không theo dõi thay đổi của URL')
+  // mà danh sách thì không. Trạng thái giờ DẪN XUẤT từ `route.query` (không chép vào
+  // `ref` rồi ghi lần lượt — mỗi lần ghi như vậy từng là một lượt gọi API thừa).
+  assert.match(code(LISTING), /usePublicMediaList\(/, 'trang không dùng trạng thái dẫn xuất từ URL')
+  assert.match(code(LISTING_STATE), /useNavigationSnapshot<MediaRouteState>\(\s*\(\) => readMediaRouteState\(route\.query/, 'bộ lọc không đọc lại từ URL khi URL đổi')
 })
 
 // ─── 14.3: trang chi tiết ────────────────────────────────────────────────────

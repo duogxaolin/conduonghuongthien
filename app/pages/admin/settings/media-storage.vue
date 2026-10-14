@@ -1,4 +1,13 @@
 <script setup lang="ts">
+import {
+  R2_ACCOUNT_ID_INVALID_MESSAGE,
+  R2_BUCKET_INVALID_MESSAGE,
+  R2_RETYPE_SECRET_MESSAGE,
+  credentialRetargetViolation,
+  isCloudflareAccountId,
+  isR2BucketName,
+} from '~~/shared/settings-credential-rules'
+
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -21,6 +30,30 @@ const testMessage = ref('')
 const testError = ref('')
 const toast = useToast()
 
+// Values as last loaded (secret as the server shows it: the mask, or the real value
+// for a SuperAdmin). The save endpoint refuses a changed Account ID without the
+// Secret Key typed in the same save (it is the endpoint host); the same rule from
+// shared/settings-credential-rules.ts runs here so the officer sees it inline.
+const saved = ref<Map<string, string>>(new Map())
+const mediaSettings = () => ({
+  media_provider: settings.media_provider,
+  r2_account_id: settings.r2_account_id,
+  r2_access_key: settings.r2_access_key,
+  r2_secret_key: settings.r2_secret_key,
+  r2_bucket: settings.r2_bucket,
+  r2_public_url: settings.r2_public_url,
+})
+const formViolation = computed(() => credentialRetargetViolation(mediaSettings(), saved.value))
+const accountIdError = computed(() => {
+  const value = settings.r2_account_id.trim()
+  return value !== '' && !isCloudflareAccountId(value) ? R2_ACCOUNT_ID_INVALID_MESSAGE : ''
+})
+const bucketError = computed(() => {
+  const value = settings.r2_bucket.trim()
+  return value !== '' && !isR2BucketName(value) ? R2_BUCKET_INVALID_MESSAGE : ''
+})
+const secretError = computed(() => (formViolation.value === R2_RETYPE_SECRET_MESSAGE ? formViolation.value : ''))
+
 const fetchSettings = async () => {
   loading.value = true
   error.value = ''
@@ -37,6 +70,7 @@ const fetchSettings = async () => {
       settings.r2_secret_key = s.r2_secret_key ?? ''
       settings.r2_bucket = s.r2_bucket ?? ''
       settings.r2_public_url = s.r2_public_url ?? ''
+      saved.value = new Map(Object.keys(mediaSettings()).map((k): [string, string] => [k, s[k] ?? '']))
     } else {
       error.value = 'Không tải được cấu hình lưu trữ.'
     }
@@ -48,23 +82,25 @@ const fetchSettings = async () => {
 }
 
 const handleSave = async () => {
+  // Same rule the server applies (account id format, bucket format, retype the
+  // secret when the account id changes); refusing here only saves a round trip.
+  if (formViolation.value) {
+    toast.error(formViolation.value)
+    return
+  }
   saving.value = true
   try {
-    // Chỉ gửi đúng các khóa thuộc nhóm media storage. Trang này dùng chung endpoint
-    // /api/admin/settings với allow-list bảo mật ở server — gửi nguyên object
-    // `settings` (vốn được Object.assign từ toàn bộ settings khi fetch) sẽ kéo theo
-    // các khóa không thuộc trang này (nav_menu_*, smtp_*, tracking_*...) và bị server
-    // từ chối với "Khóa cài đặt không hợp lệ".
-    const mediaSettings = {
-      media_provider: settings.media_provider,
-      r2_account_id: settings.r2_account_id,
-      r2_access_key: settings.r2_access_key,
-      r2_secret_key: settings.r2_secret_key,
-      r2_bucket: settings.r2_bucket,
-      r2_public_url: settings.r2_public_url,
+    // Chỉ gửi đúng các khóa thuộc nhóm media storage (`mediaSettings()`). Trang này
+    // dùng chung endpoint /api/admin/settings với allow-list bảo mật ở server — gửi
+    // nguyên object `settings` sẽ kéo theo các khóa không thuộc trang này
+    // (nav_menu_*, smtp_*, tracking_*...) và bị server từ chối với "Khóa cài đặt
+    // không hợp lệ".
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/settings`, { method: 'PUT', body: { settings: mediaSettings() } })
+    if (res.ok) {
+      toast.success('Đã lưu cấu hình lưu trữ Media thành công!')
+      // Re-fetch: the secret shows the mask again and the guard compares against what is now stored.
+      await fetchSettings()
     }
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/settings`, { method: 'PUT', body: { settings: mediaSettings } })
-    if (res.ok) toast.success('Đã lưu cấu hình lưu trữ Media thành công!')
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi lưu cấu hình'))
   } finally {
@@ -175,25 +211,28 @@ onMounted(() => { fetchSettings() })
           </button>
         </div>
 
-        <div v-if="testMessage" class="bg-[#e4f2e5] text-[#2c6e33] px-4 py-3 rounded-lg text-[0.9rem] font-bold mb-4">{{ testMessage }}</div>
-        <div v-if="testError" class="bg-[#ffebe9] text-[#d12420] px-4 py-3 rounded-lg text-[0.85rem] mb-4">{{ testError }}</div>
+        <div v-if="testMessage" role="status" class="bg-[#e4f2e5] text-[#2c6e33] px-4 py-3 rounded-lg text-[0.9rem] font-bold mb-4">{{ testMessage }}</div>
+        <div v-if="testError" role="alert" class="bg-[#ffebe9] text-[#d12420] px-4 py-3 rounded-lg text-[0.85rem] mb-4">{{ testError }}</div>
 
         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Cloudflare Account ID (*)</label>
-            <input type="text" v-model="settings.r2_account_id" placeholder="eg: 4f8b9...c312" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" />
+            <label for="r2-account-id" class="text-[0.82rem] font-bold text-[#2c3e2e]">Cloudflare Account ID (*)</label>
+            <input id="r2-account-id" type="text" v-model="settings.r2_account_id" placeholder="32 ký tự hex, vd: 4f8b9…c312" maxlength="32" spellcheck="false" autocomplete="off" :aria-invalid="Boolean(accountIdError)" aria-describedby="r2-account-id-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm font-mono outline-none focus:border-[#2c6e33] box-border" :class="accountIdError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
+            <span id="r2-account-id-hint" class="text-[0.75rem]" :class="accountIdError ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">{{ accountIdError || 'Đúng 32 ký tự hex (0-9, a-f). Đổi Account ID thì phải nhập lại Secret Access Key.' }}</span>
           </div>
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Bucket Name (*)</label>
-            <input type="text" v-model="settings.r2_bucket" placeholder="eg: cdkt-uploads" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" />
+            <label for="r2-bucket" class="text-[0.82rem] font-bold text-[#2c3e2e]">Bucket Name (*)</label>
+            <input id="r2-bucket" type="text" v-model="settings.r2_bucket" placeholder="eg: cdkt-uploads" spellcheck="false" autocomplete="off" :aria-invalid="Boolean(bucketError)" :aria-describedby="bucketError ? 'r2-bucket-error' : undefined" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" :class="bucketError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
+            <span v-if="bucketError" id="r2-bucket-error" class="text-[0.75rem] text-[#B04A4A] font-semibold">{{ bucketError }}</span>
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Access Key ID (*)</label>
             <input type="text" v-model="settings.r2_access_key" placeholder="eg: a1b2c3d4e5f6..." class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" />
           </div>
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Secret Access Key (*)</label>
-            <input type="password" v-model="settings.r2_secret_key" placeholder="••••••••••••••••" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" />
+            <label for="r2-secret" class="text-[0.82rem] font-bold text-[#2c3e2e]">Secret Access Key (*)</label>
+            <input id="r2-secret" type="password" v-model="settings.r2_secret_key" placeholder="••••••••••••••••" autocomplete="new-password" :aria-invalid="Boolean(secretError)" aria-describedby="r2-secret-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" :class="secretError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
+            <span id="r2-secret-hint" class="text-[0.75rem]" :class="secretError ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">{{ secretError || 'Giữ nguyên dấu ******** để dùng Secret Key đã lưu. Không nhập lại thì nút kiểm tra dùng cấu hình ĐÃ LƯU.' }}</span>
           </div>
           <div class="flex flex-col gap-1.5 sm:col-span-2">
             <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Public Domain / R2 Public URL (*)</label>

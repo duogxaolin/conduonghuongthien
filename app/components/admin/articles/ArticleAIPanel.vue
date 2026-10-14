@@ -59,16 +59,21 @@ function applySummary(summary: string) {
 function applySingleChange(change: PolishChangeItem) {
   const current = props.getEditorContent()
   if (!change.original) return
-  if (!current.includes(change.original)) {
+  // `replaceFirstLiteral`, không `String.replace(chuỗi, chuỗi)`: vế thay thế của
+  // `replace` hiểu `$&`/`` $` ``/`$'` là mẫu — một gợi ý chứa chúng sẽ chèn lại
+  // một phần bài viết thay vì đúng chữ AI đề xuất.
+  const direct = replaceFirstLiteral(current, change.original, change.suggested)
+  if (direct === null) {
     const plainOrig = change.original.replace(/<[^>]*>/g, '').trim()
-    if (!current.includes(plainOrig)) {
+    const cleanSug = change.suggested.replace(/<[^>]*>/g, '').trim()
+    const plain = replaceFirstLiteral(current, plainOrig, cleanSug)
+    if (plain === null) {
       toast.error(`Không tìm thấy đoạn "${change.original.slice(0, 35)}..." trong bài viết hiện tại.`)
       return
     }
-    const cleanSug = change.suggested.replace(/<[^>]*>/g, '').trim()
-    props.setEditorContent(current.replace(plainOrig, cleanSug))
+    props.setEditorContent(plain)
   } else {
-    props.setEditorContent(current.replace(change.original, change.suggested))
+    props.setEditorContent(direct)
   }
   change.applied = true
   toast.success(`Đã sửa: "${change.suggested.slice(0, 30)}..."`)
@@ -81,8 +86,9 @@ function applyAllPolishedChanges() {
   } else {
     let html = props.getEditorContent()
     for (const c of polishedPreview.value.changes) {
-      if (html.includes(c.original)) {
-        html = html.replace(c.original, c.suggested)
+      const next = replaceFirstLiteral(html, c.original, c.suggested)
+      if (next !== null) {
+        html = next
         c.applied = true
       }
     }
@@ -130,7 +136,10 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
       toast.success('Đã có đề xuất tiêu đề, mời bạn bấm chọn bên dưới!')
     } else if (action === 'polish') {
       polishedPreview.value = {
-        content: res.polishedContent || res.rawText || '',
+        // Chỉ `polishedContent` — máy chủ đã lọc qua sanitizeHtml (kể cả khi đó là
+        // câu trả lời thô của model). KHÔNG lùi về `rawText`: chuỗi đó chưa lọc mà
+        // ô xem trước hiển thị bằng v-html.
+        content: res.polishedContent || '',
         summaryNotes: res.summaryNotes || (res.notes?.join(' • ')) || 'Đã rà soát chính tả, ngữ pháp và thuật ngữ pháp lý.',
         changes: Array.isArray(res.changes)
           ? res.changes.map(c => ({ ...c, applied: false }))
@@ -304,6 +313,7 @@ async function callAiEditorial(action: 'summary' | 'suggest_titles' | 'polish') 
 
       <!-- Nếu không có danh sách chi tiết mà chỉ có nội dung đã sửa -->
       <div v-else class="max-h-60 overflow-y-auto p-3 rounded-lg border border-[#e2ece3] bg-[#fcfdfc] text-xs leading-relaxed text-[#2d3748]">
+        <!-- eslint-disable-next-line vue/no-v-html -- đầu ra AI, đã sanitizeHtml ở server/api/admin/ai/editorial.post.ts -->
         <div v-html="polishedPreview.content"></div>
       </div>
 

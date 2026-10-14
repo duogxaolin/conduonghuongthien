@@ -63,7 +63,7 @@
           <!-- Card Content: flex-1 justify-between -->
           <div class="p-4 sm:p-5 flex flex-col flex-1">
             <!-- Meta row -->
-            <div class="flex items-center gap-2 text-xs text-[#7A8A76] font-medium mb-2">
+            <div class="flex items-center gap-2 text-xs text-[#5A6C58] font-medium mb-2">
               <span class="inline-block bg-[#EEF4EC] text-[#2D5A27] font-bold text-[0.68rem] px-2 py-0.5 rounded uppercase tracking-wider">
                 {{ doc.categoryName }}
               </span>
@@ -86,7 +86,7 @@
             </p>
 
             <!-- Footer: pinned with mt-auto -->
-            <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#7A8A76]">
+            <div class="mt-auto pt-3 border-t border-[#F0F5EE] flex items-center justify-between text-xs text-[#5A6C58]">
               <nuxt-link
                 :to="`/news/${doc.slug}`"
                 class="inline-flex items-center gap-1.5 font-bold text-[#385932] hover:text-[#1B3617] group-hover:translate-x-0.5 transition-all no-underline"
@@ -99,6 +99,16 @@
           </div>
         </article>
       </div>
+
+      <!-- Error State — lượt tải hỏng không được trông như "chưa có văn bản". -->
+      <BlockLoadError
+        v-else-if="loadError"
+        :title="t('block_docs_load_error_title')"
+        :description="t('n_load_error_desc')"
+        :retry-label="t('retry')"
+        :retrying="pending"
+        @retry="() => refresh()"
+      />
 
       <!-- Empty State -->
       <div v-else class="bg-white rounded-2xl border border-[#E2E8DF] p-8 text-center text-sm text-[#5A6C58] italic shadow-sm">
@@ -125,6 +135,7 @@ import { computed, onMounted, watch } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
 import type { PublicArticleListItem } from '~/utils/public-types'
+import BlockLoadError from './BlockLoadError.vue'
 
 const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
@@ -134,7 +145,7 @@ const formatDate = (dateStr: string | null | undefined) => formatDateVN(dateStr)
 const maxItems = computed(() => Number(d.value.maxItems) || 3)
 const categorySlug = computed(() => d.value.categorySlug || '')
 
-const { data, pending, refresh } = await useAsyncData(
+const { data, pending, error, refresh } = await useAsyncData(
   `block-documents-${props.block.id}-${categorySlug.value}-${currentLang.value}`,
   () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null; createdAt?: string | null; category?: { name: string; slug: string } | null }> }>)('/api/public/articles', {
     params: {
@@ -151,11 +162,18 @@ watch(currentLang, () => {
   void refresh()
 })
 
+// `error.value` lúc mount = lượt SSR hỏng; HTML mang nhánh lỗi đó có thể vừa ra
+// từ bộ đệm SWR 60 giây của trang — tải lại một lần ở trình duyệt.
 onMounted(() => {
-  if (currentLang.value !== 'vi') {
+  if (currentLang.value !== 'vi' || error.value) {
     void refresh()
   }
 })
+
+// API trả 503 khi CSDL hỏng → `$fetch` ném → `error`. Trước đây nó trả 200 rỗng
+// và khối này hiện "chưa có văn bản mới" cho một lượt tải hỏng.
+const loadError = computed(() => !!error.value)
+
 const docs = computed(() =>
   ((data.value as { articles?: PublicArticleListItem[] })?.articles || []).map(a => ({
     id: a.id,

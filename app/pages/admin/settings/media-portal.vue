@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { errorMessage } from '~/utils/errorMessage'
+import { R2_ACCOUNT_ID_INVALID_MESSAGE, R2_BUCKET_INVALID_MESSAGE, VIDEO_R2_RETYPE_SECRET_MESSAGE, isCloudflareAccountId, isR2BucketName, videoR2RetargetViolation } from '~~/shared/settings-credential-rules'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -51,6 +52,8 @@ type SettingsResponse = {
     r2Configured: boolean
     secretMasked: string
     secretUnreadable: boolean
+    /** A secret row exists (even if it cannot be decrypted) — the server then requires it retyped to change account/bucket. */
+    secretStored: boolean
     localCount: number
     r2Count: number
   }
@@ -158,7 +161,24 @@ async function load() {
   }
 }
 
+// Same rule as PUT /api/admin/settings/media-portal (shared/settings-credential-rules.ts):
+// Account ID = 32 hex chars, bucket = R2 naming rules, and changing either requires
+// typing the Secret Key in the same save. Run here so the officer sees it inline.
+const r2Violation = computed(() => data.value
+  ? videoR2RetargetViolation(
+      { videoR2AccountId: form.videoR2AccountId, videoR2Bucket: form.videoR2Bucket, videoR2SecretKey: form.videoR2SecretKey },
+      { accountId: data.value.config.videoStorage.r2AccountId, bucket: data.value.config.videoStorage.r2Bucket, secretStored: data.value.videoStorage.secretStored },
+    )
+  : null)
+const r2AccountIdError = computed(() => (form.videoR2AccountId.trim() !== '' && !isCloudflareAccountId(form.videoR2AccountId.trim()) ? R2_ACCOUNT_ID_INVALID_MESSAGE : ''))
+const r2BucketError = computed(() => (form.videoR2Bucket.trim() !== '' && !isR2BucketName(form.videoR2Bucket.trim()) ? R2_BUCKET_INVALID_MESSAGE : ''))
+const r2SecretError = computed(() => (r2Violation.value === VIDEO_R2_RETYPE_SECRET_MESSAGE ? r2Violation.value : ''))
+
 async function save() {
+  if (r2Violation.value) {
+    toast.error(r2Violation.value)
+    return
+  }
   saving.value = true
   try {
     await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/settings/media-portal`, {
@@ -571,11 +591,13 @@ onMounted(load)
         <!-- 5 ô nhập R2 (chỉ hiện khi provider=r2) -->
         <div v-if="form.videoStorageProvider === 'r2'" class="grid grid-cols-1 md:grid-cols-2 gap-5">
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">R2 Account ID</label>
-            <input type="text" v-model="form.videoR2AccountId" maxlength="128"
-              class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
-            <p class="text-[0.72rem] text-[#8a9a8c] m-0">
-              Cloudflare dashboard → R2 → Overview → Account ID.
+            <label for="video-r2-account-id" class="text-[0.82rem] font-bold text-[#2c3e2e]">R2 Account ID</label>
+            <input id="video-r2-account-id" type="text" v-model="form.videoR2AccountId" maxlength="128" spellcheck="false" autocomplete="off"
+              :aria-invalid="Boolean(r2AccountIdError)" aria-describedby="video-r2-account-id-hint"
+              class="w-full px-3.5 py-2.5 border rounded-lg text-sm font-mono outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" :class="r2AccountIdError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
+            <p id="video-r2-account-id-hint" class="text-[0.72rem] m-0" :class="r2AccountIdError ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">
+              <template v-if="r2AccountIdError">{{ r2AccountIdError }}</template>
+              <template v-else>Cloudflare dashboard → R2 → Overview → Account ID (32 ký tự hex). Đổi Account ID hoặc Bucket phải nhập lại Secret Key.</template>
               <span class="text-[#8a9a8c]">({{ SOURCE_LABELS[data.videoStorageSources.r2AccountId] }})</span>
             </p>
           </div>
@@ -591,11 +613,13 @@ onMounted(load)
           </div>
 
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">R2 Secret Key</label>
-            <input type="password" v-model="form.videoR2SecretKey" maxlength="256" placeholder="••••••••"
-              class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
-            <p class="text-[0.72rem] text-[#8a9a8c] m-0">
-              <template v-if="data.videoStorage.secretMasked">
+            <label for="video-r2-secret" class="text-[0.82rem] font-bold text-[#2c3e2e]">R2 Secret Key</label>
+            <input id="video-r2-secret" type="password" v-model="form.videoR2SecretKey" maxlength="256" placeholder="••••••••" autocomplete="new-password"
+              :aria-invalid="Boolean(r2SecretError)" aria-describedby="video-r2-secret-hint"
+              class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" :class="r2SecretError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
+            <p id="video-r2-secret-hint" class="text-[0.72rem] m-0" :class="r2SecretError ? 'text-[#B04A4A] font-semibold' : 'text-[#8a9a8c]'">
+              <template v-if="r2SecretError">{{ r2SecretError }}</template>
+              <template v-else-if="data.videoStorage.secretMasked">
                 Đã lưu: <span class="font-mono font-bold text-[#2c6e33]">{{ data.videoStorage.secretMasked }}</span>. Để trống để giữ nguyên.
               </template>
               <template v-else>
@@ -606,11 +630,13 @@ onMounted(load)
           </div>
 
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">R2 Bucket</label>
-            <input type="text" v-model="form.videoR2Bucket" maxlength="128"
-              class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
-            <p class="text-[0.72rem] text-[#8a9a8c] m-0">
-              Tên bucket R2 (tạo sẵn trong Cloudflare).
+            <label for="video-r2-bucket" class="text-[0.82rem] font-bold text-[#2c3e2e]">R2 Bucket</label>
+            <input id="video-r2-bucket" type="text" v-model="form.videoR2Bucket" maxlength="128" spellcheck="false" autocomplete="off"
+              :aria-invalid="Boolean(r2BucketError)" aria-describedby="video-r2-bucket-hint"
+              class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" :class="r2BucketError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
+            <p id="video-r2-bucket-hint" class="text-[0.72rem] m-0" :class="r2BucketError ? 'text-[#B04A4A] font-semibold' : 'text-[#8a9a8c]'">
+              <template v-if="r2BucketError">{{ r2BucketError }}</template>
+              <template v-else>Tên bucket R2 (tạo sẵn trong Cloudflare).</template>
               <span class="text-[#8a9a8c]">({{ SOURCE_LABELS[data.videoStorageSources.r2Bucket] }})</span>
             </p>
           </div>

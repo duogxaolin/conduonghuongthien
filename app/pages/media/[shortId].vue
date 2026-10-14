@@ -33,7 +33,7 @@
   <div class="bg-[#F8FAF7]">
     <section class="border-b border-[#E2E8DF] bg-white">
       <div class="container pt-7 sm:pt-9 pb-5">
-        <nav :aria-label="t('breadcrumb_aria')" class="flex items-center gap-2 text-xs text-[#7A8A76] mb-3">
+        <nav :aria-label="t('breadcrumb_aria')" class="flex items-center gap-2 text-xs text-[#5A6C58] mb-3">
           <nuxt-link to="/" class="hover:text-[#4A6741] transition-colors flex items-center gap-1.5 no-underline text-[#556450]">
             <i class="fa-solid fa-house text-[0.7rem]" aria-hidden="true"></i>
             <span>{{ t('home') }}</span>
@@ -140,7 +140,7 @@
                 {{ item.title }}
               </h1>
 
-              <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-xs text-[#7A8A76] font-medium">
+              <div class="flex flex-wrap items-center gap-x-5 gap-y-2 mt-3 text-xs text-[#5A6C58] font-medium">
                 <span v-if="publishedLabel" class="inline-flex items-center gap-1.5">
                   <i class="fa-regular fa-calendar" aria-hidden="true"></i>
                   {{ publishedLabel }}

@@ -177,11 +177,16 @@
                 <p v-if="msg.lead.status === 'done'" class="m-0 text-[0.78rem] font-semibold text-[#1e4620]"><i class="fa-solid fa-circle-check mr-1" aria-hidden="true"></i> Đã gửi thông tin. Cán bộ sẽ liên hệ với anh/chị trong thời gian sớm nhất. Cảm ơn ạ!</p>
                 <form v-else class="flex flex-col gap-2" @submit.prevent="submitLead(msg)">
                   <p class="m-0 text-[0.75rem] font-bold text-[#1f2937]">Để lại thông tin liên hệ</p>
-                  <input v-model="msg.lead.name" type="text" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                  <input v-model="msg.lead.phone" type="tel" :placeholder="t('cw_lead_phone')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                  <input v-model="msg.lead.email" type="email" :placeholder="t('cw_lead_email')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" />
-                  <textarea v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]"></textarea>
-                  <p v-if="msg.lead.error" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
+                  <!-- Nhãn sr-only: placeholder biến mất khi gõ và không phải tên truy cập đáng tin. -->
+                  <label :for="leadFieldId(uid, msg.id || index, 'name')" class="sr-only">{{ t('cw_lead_name') }}</label>
+                  <input :id="leadFieldId(uid, msg.id || index, 'name')" v-model="msg.lead.name" type="text" autocomplete="name" :placeholder="t('cw_lead_name')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" />
+                  <label :for="leadFieldId(uid, msg.id || index, 'phone')" class="sr-only">{{ t('cw_lead_phone') }}</label>
+                  <input :id="leadFieldId(uid, msg.id || index, 'phone')" v-model="msg.lead.phone" type="tel" autocomplete="tel" :placeholder="t('cw_lead_phone')" :aria-invalid="leadContactInvalid(msg.lead) ? 'true' : undefined" :aria-describedby="msg.lead.error ? leadFieldId(uid, msg.id || index, 'error') : undefined" class="w-full rounded-lg border bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" :class="leadContactInvalid(msg.lead) ? 'border-[#b42318]' : 'border-[#d4e4d2]'" />
+                  <label :for="leadFieldId(uid, msg.id || index, 'email')" class="sr-only">{{ t('cw_lead_email') }}</label>
+                  <input :id="leadFieldId(uid, msg.id || index, 'email')" v-model="msg.lead.email" type="email" autocomplete="email" :placeholder="t('cw_lead_email')" :aria-invalid="leadContactInvalid(msg.lead) ? 'true' : undefined" :aria-describedby="msg.lead.error ? leadFieldId(uid, msg.id || index, 'error') : undefined" class="w-full rounded-lg border bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]" :class="leadContactInvalid(msg.lead) ? 'border-[#b42318]' : 'border-[#d4e4d2]'" />
+                  <label :for="leadFieldId(uid, msg.id || index, 'question')" class="sr-only">{{ t('cw_lead_question') }}</label>
+                  <textarea :id="leadFieldId(uid, msg.id || index, 'question')" v-model="msg.lead.question" rows="2" :placeholder="t('cw_lead_question')" class="w-full rounded-lg border border-[#d4e4d2] bg-[#f8faf8] px-3 py-2 text-base md:text-[0.8rem] outline-none focus:border-[#1e4620]"></textarea>
+                  <p v-if="msg.lead.error" :id="leadFieldId(uid, msg.id || index, 'error')" class="m-0 text-[0.7rem] text-[#b42318]" role="alert">{{ msg.lead.error }}</p>
                   <button type="submit" :disabled="msg.lead.status === 'sending'" class="self-start rounded-full bg-[#1e4620] px-4 py-1.5 text-[0.78rem] font-bold text-white hover:bg-[#153317] disabled:opacity-50">{{ msg.lead.status === 'sending' ? 'Đang gửi...' : 'Gửi thông tin' }}</button>
                 </form>
               </div>
@@ -321,7 +326,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted, onUnmounted, nextTick, watch } from 'vue'
+import { ref, onMounted, onUnmounted, nextTick, watch, useId } from 'vue'
+import { leadContactInvalid, leadFieldId } from '~/utils/form-a11y'
 import { useChatbot, type StoredConversation, type ChatMessage } from '~/composables/useChatbot'
 import { useChatAutoScroll } from '~/composables/useChatAutoScroll'
 import { useKeyboardViewport } from '~/composables/useKeyboardViewport'
@@ -329,6 +335,8 @@ import { useSlowWait } from '~/composables/useSlowWait'
 import { useI18n } from '~/composables/useI18n'
 
 const { t } = useI18n()
+// Tiền tố id cho biểu mẫu để-lại-liên-hệ (lặp theo từng tin nhắn).
+const uid = useId()
 
 const {
   conversations, activeId, activeConversation, chatMessages, isSubmitting, isAwaitingFirstWord, botInput, botInputError,

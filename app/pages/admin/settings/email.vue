@@ -1,12 +1,29 @@
 <script setup lang="ts">
+import {
+  MASKED_SECRET,
+  SMTP_ALLOWED_PORTS,
+  SMTP_PORT_NOT_ALLOWED_MESSAGE,
+  credentialRetargetViolation,
+  effectiveSmtpPort,
+  isAllowedSmtpPort,
+  sameSmtpTarget,
+  smtpTargetOf,
+} from '~~/shared/settings-credential-rules'
+
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
 })
 
 // SMTP config lives in the shared `settings` key/value table. smtp_pass is
-// returned masked ('********') by the API; we only send it back when the admin
-// actually changes it (mirrors the r2_secret_key convention).
+// returned masked ('********') by the API. What the save endpoint does with the
+// password field (server/api/admin/settings/index.put.ts):
+//   - mask unchanged  → keeps the saved password;
+//   - empty           → SAVES an empty password, i.e. deletes it;
+//   - anything else   → the new password.
+// Changing host/port/user/secure without typing the password is refused (400) —
+// the rule lives in shared/settings-credential-rules.ts and runs here too, so the
+// officer sees it next to the field before the request is sent.
 const settings = reactive({
   smtp_host: '',
   smtp_port: '587',
@@ -23,6 +40,25 @@ const testing = ref(false)
 const testEmail = ref('')
 const toast = useToast()
 
+// Values as last loaded from the server (absent key = ''), the password as the
+// server shows it (mask = a password is saved). The guard compares against this,
+// exactly as the server compares against the stored rows.
+const saved = ref<Map<string, string>>(new Map())
+
+const passwordSaved = computed(() => (saved.value.get('smtp_pass') ?? '') !== '')
+const passwordRetyped = computed(() => settings.smtp_pass !== '' && settings.smtp_pass !== MASKED_SECRET)
+const targetChanged = computed(() => {
+  const stored = Object.fromEntries(saved.value)
+  return !sameSmtpTarget(smtpTargetOf(stored), smtpTargetOf(settings))
+})
+const portInvalid = computed(() => !isAllowedSmtpPort(effectiveSmtpPort(settings.smtp_port)))
+/** The server's verdict on this form, computed locally; `null` = the save is allowed. */
+const formViolation = computed(() => credentialRetargetViolation({ ...settings }, saved.value))
+const portError = computed(() => (formViolation.value === SMTP_PORT_NOT_ALLOWED_MESSAGE ? formViolation.value : ''))
+const passwordError = computed(() => (formViolation.value && !portError.value ? formViolation.value : ''))
+/** Saving now would store an empty password over the saved one. */
+const passwordWillBeDeleted = computed(() => passwordSaved.value && settings.smtp_pass === '')
+
 const fetchSettings = async () => {
   loading.value = true
   error.value = ''
@@ -32,6 +68,7 @@ const fetchSettings = async () => {
       for (const k of Object.keys(settings) as Array<keyof typeof settings>) {
         if (res.settings[k] != null) settings[k] = String(res.settings[k])
       }
+      saved.value = new Map((Object.keys(settings) as Array<keyof typeof settings>).map((k): [string, string] => [k, res.settings[k] == null ? '' : String(res.settings[k])]))
     } else {
       error.value = 'Không tải được cài đặt email.'
     }
@@ -43,6 +80,11 @@ const fetchSettings = async () => {
 }
 
 const handleSave = async () => {
+  // Same rule the server applies; refusing here only saves a round trip.
+  if (formViolation.value) {
+    toast.error(formViolation.value)
+    return
+  }
   saving.value = true
   try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/settings`, { method: 'PUT', body: { settings } })
@@ -128,8 +170,13 @@ onMounted(() => { fetchSettings() })
           </div>
           <div class="grid grid-cols-2 gap-3">
             <div class="flex flex-col gap-1.5">
-              <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Cổng (Port)</label>
-              <input type="text" v-model="settings.smtp_port" placeholder="587" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+              <label for="smtp-port" class="text-[0.82rem] font-bold text-[#2c3e2e]">Cổng (Port)</label>
+              <input id="smtp-port" type="text" inputmode="numeric" v-model="settings.smtp_port" placeholder="587" :aria-invalid="portInvalid" aria-describedby="smtp-port-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" :class="portInvalid ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
+              <p id="smtp-port-hint" class="text-[0.72rem] m-0" :class="portInvalid ? 'text-[#B04A4A]' : 'text-[#667768]'">
+                <template v-if="portError">{{ portError }}</template>
+                <template v-else-if="portInvalid">Cổng đang lưu không được phép — gửi email sẽ bị từ chối. Hãy đổi sang {{ SMTP_ALLOWED_PORTS.join(', ') }}.</template>
+                <template v-else>Chỉ nhận cổng {{ SMTP_ALLOWED_PORTS.join(', ') }}.</template>
+              </p>
             </div>
             <div class="flex flex-col gap-1.5">
               <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Bảo mật (SSL/TLS)</label>
@@ -151,9 +198,14 @@ onMounted(() => { fetchSettings() })
             <input type="text" v-model="settings.smtp_user" placeholder="you@gmail.com" autocomplete="off" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
           </div>
           <div class="flex flex-col gap-1.5">
-            <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Mật khẩu (Password)</label>
-            <input type="password" v-model="settings.smtp_pass" placeholder="••••••••" autocomplete="new-password" class="w-full px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
-            <p class="text-[0.72rem] text-[#8a9a8c] m-0">Để trống hoặc giữ nguyên dấu ******** nếu không muốn thay đổi mật khẩu đã lưu.</p>
+            <label for="smtp-pass" class="text-[0.82rem] font-bold text-[#2c3e2e]">Mật khẩu (Password)</label>
+            <input id="smtp-pass" type="password" v-model="settings.smtp_pass" placeholder="••••••••" autocomplete="new-password" :aria-invalid="Boolean(passwordError)" aria-describedby="smtp-pass-hint smtp-pass-status" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" :class="passwordError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
+            <p id="smtp-pass-hint" class="text-[0.72rem] text-[#667768] m-0">Giữ nguyên dấu ******** để dùng mật khẩu đã lưu. Xoá trắng ô này rồi lưu sẽ XOÁ mật khẩu đã lưu. Đổi host, cổng, tài khoản hoặc chế độ bảo mật thì phải nhập lại mật khẩu trong cùng lần lưu.</p>
+            <p id="smtp-pass-status" class="text-[0.72rem] m-0" :class="passwordError || passwordWillBeDeleted ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">
+              <template v-if="passwordError">{{ passwordError }}</template>
+              <template v-else-if="passwordWillBeDeleted">Ô mật khẩu đang trống: bấm Lưu sẽ xoá mật khẩu SMTP đã lưu.</template>
+              <template v-else-if="targetChanged && passwordRetyped">Đã nhập mật khẩu mới cho máy chủ đã đổi.</template>
+            </p>
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Email người gửi (From)</label>
@@ -166,7 +218,7 @@ onMounted(() => { fetchSettings() })
       <!-- Test send (full width) -->
       <div class="bg-white rounded-xl border border-[#e2ece3] p-6 md:col-span-2">
         <h3 class="text-[1.05rem] font-bold text-[#122815] m-0 mb-1">Gửi email thử</h3>
-        <p class="text-[0.8rem] text-[#667768] mt-0 mb-4">Nhập một địa chỉ email để kiểm tra cấu hình. Hệ thống sẽ dùng thông tin đang nhập ở trên (kể cả khi chưa lưu).</p>
+        <p class="text-[0.8rem] text-[#667768] mt-0 mb-4">Nhập một địa chỉ email để kiểm tra cấu hình. Nếu ô mật khẩu để trống hoặc giữ dấu ********, hệ thống thử bằng cấu hình ĐÃ LƯU; muốn thử máy chủ khác trước khi lưu, hãy nhập mật khẩu của máy chủ đó.</p>
         <div class="flex gap-2 items-end flex-wrap">
           <div class="flex flex-col gap-1.5 flex-1 min-w-[220px]">
             <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Địa chỉ nhận thử</label>

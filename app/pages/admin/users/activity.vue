@@ -57,6 +57,7 @@ const ACTION_LABELS: Record<string, string> = {
   // Backup & khôi phục — nút backup / khôi phục trên /admin/settings/backup.
   backup_run: 'Backup',
   backup_restore: 'Khôi phục backup',
+  backup_restore_failed: 'Khôi phục backup thất bại',
   repair_urls: 'Vá URL ảnh',
   // Thư viện ảnh — nút "Check chéo + tự vá" upload lại R2 object missing + repoint thumbnail.
   self_heal: 'Tự vá ảnh R2',
@@ -141,9 +142,11 @@ async function load(next = page.value) {
         ...(filterUserId.value ? { userId: filterUserId.value } : {}),
         ...(filterAction.value ? { action: filterAction.value } : {}),
         ...(filterResource.value ? { resource: filterResource.value } : {}),
-        // A bare date means midnight; the end of the range must include that day.
-        ...(filterFrom.value ? { from: `${filterFrom.value}T00:00:00` } : {}),
-        ...(filterTo.value ? { to: `${filterTo.value}T23:59:59` } : {}),
+        // Bare `YYYY-MM-DD` calendar days. The server reads them as Vietnam days and
+        // makes the end day inclusive (server/utils/vn-day-range.ts). Appending a time
+        // without a zone here used to make the range depend on the server's TZ.
+        ...(filterFrom.value ? { from: filterFrom.value } : {}),
+        ...(filterTo.value ? { to: filterTo.value } : {}),
       },
     })
     items.value = res.items ?? []
