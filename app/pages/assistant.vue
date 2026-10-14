@@ -439,7 +439,8 @@ const sendBotMessage = () => {
   void scrollChatBottom(true)
   submitBotQuestion(botInput.value, followChatBottom).then(() => {
     resetInputHeight()
-    nextTick(() => botInputRef.value?.focus())
+    // Chỉ focus lại ô nhập trên máy có chuột; trên điện thoại focus() làm bàn phím ảo bật lên lại sau mỗi câu trả lời.
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) nextTick(() => botInputRef.value?.focus())
   })
 }
 

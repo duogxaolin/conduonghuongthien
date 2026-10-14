@@ -548,7 +548,10 @@ const sendBotMessage = () => {
   if (honeypot.value.trim() !== '') return
   followLatestQuestion()
   void scrollChatBottom(true)
-  submitBotQuestion(botInput.value, followChatBottom).then(() => nextTick(() => botInputRef.value?.focus()))
+  // Chỉ focus lại ô nhập trên máy có chuột; trên điện thoại focus() làm bàn phím ảo bật lên lại sau mỗi câu trả lời.
+  submitBotQuestion(botInput.value, followChatBottom).then(() => {
+    if (window.matchMedia('(hover: hover) and (pointer: fine)').matches) nextTick(() => botInputRef.value?.focus())
+  })
 }
 
 const askBot = (question: string) => {
