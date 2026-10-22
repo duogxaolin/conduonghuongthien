@@ -2,8 +2,9 @@ import { getDb } from '../../../utils/db'
 import { articles, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { sanitizeHtml } from '../../../utils/sanitize-html'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { articleActionScope } from '../../../services/articles'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -11,7 +12,9 @@ export default defineEventHandler(async (event) => {
   if (!id) throw createError({ statusCode: 400, statusMessage: 'Invalid article ID' })
 
   const db = getDb()
-  const [existingArticle] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
+  // Scoped to types the actor can read or update: any other id is the same 404 as
+  // a missing one (no oracle for which ids exist); read-only still gets the 403 below.
+  const [existingArticle] = await db.select().from(articles).where(and(eq(articles.id, id), articleActionScope(adminUser, ['read', 'update']))).limit(1)
 
   if (!existingArticle) {
     throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
