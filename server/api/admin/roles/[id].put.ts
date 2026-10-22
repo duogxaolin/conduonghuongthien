@@ -1,6 +1,7 @@
 import { getDb } from '../../../utils/db'
 import { roles, permissions, activityLogs } from '../../../db/schema'
-import { assertAssignablePermissions, requireResourcePermission } from '../../../utils/permissions'
+import { assertAssignablePermissions, assertRoleWithinActor, requireResourcePermission } from '../../../utils/permissions'
+import { loadRolePermissions } from '../../../services/users'
 import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -34,6 +35,11 @@ export default defineEventHandler(async (event) => {
     }
     // Reject invalid resources and block granting permissions the actor lacks.
     permValues = assertAssignablePermissions(adminUser, body.permissions).map(p => ({ ...p, roleId: id }))
+    // A role holding rights the actor lacks is not theirs to rewrite: stripping it
+    // down to what they hold would let them then manage — re-password, lock,
+    // delete — every account in it (assertUserManageable compares against the
+    // role's CURRENT grants), and takes those rights away from its users.
+    assertRoleWithinActor(adminUser, await loadRolePermissions(id), 'Không thể sửa quyền của vai trò có quyền cao hơn quyền của bạn.')
   }
 
   // Validate first, then commit role metadata, grants and audit together.

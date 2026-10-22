@@ -54,7 +54,8 @@ import {
 } from '../utils/youtube-parser'
 import { abortProcessingClaim, mediaAssetRoot } from './video-processing'
 import { locateR2Original, listR2Keys, putR2Object, headR2Object } from './video-r2-sync'
-import { getR2Object, type R2Config } from '../utils/media-r2'
+import { deleteR2File, getR2Object, type R2Config } from '../utils/media-r2'
+import { logWarn } from '../utils/logger'
 import { loadR2Config } from './media'
 import sharp from 'sharp'
 
@@ -1059,7 +1060,7 @@ export async function setMediaThumbnail(
   // 2. Đọc bytes ảnh nguồn — chỉ từ kho của chính cổng (xem `readLibraryImage`).
   const sourceBuffer = await readLibraryImage(img)
 
-  // 3. Tối ưu qua sharp — 16:9, ≤720px, JPEG q80.
+  // 3. Tối ưu qua sharp — 16:9, 1280×720, JPEG q80.
   const optimized = await sharp(sourceBuffer)
     .resize({ width: 1280, height: 720, fit: 'cover', position: 'centre' })
     .jpeg({ quality: 80 })
@@ -1072,29 +1073,65 @@ export async function setMediaThumbnail(
   if (!directory) return { ok: false, reason: 'not_found' }
   await fs.mkdir(directory, { recursive: true })
   const localPath = path.join(directory, MEDIA_THUMBNAIL_FILE)
+  // `thumb.jpg` là tên cố định trang công khai đọc thẳng, nên không ghi tên mới rồi
+  // đổi sau commit được: giữ bản cũ để khôi phục nếu bước CSDL (6) hỏng.
+  const previous = await fs.readFile(localPath).catch(() => null)
   await fs.writeFile(localPath, optimized)
 
   // 5. Ghi R2 nếu video đang R2.
   let pushedR2 = false
-  if (item.storageProvider === 'r2' && item.storagePath && input.config.videoStorage.r2) {
-    pushedR2 = await putR2Object(r2ThumbnailKey(item.storagePath), optimized, 'image/jpeg', input.config.videoStorage.r2)
+  const r2Config = item.storageProvider === 'r2' && item.storagePath ? input.config.videoStorage.r2 : undefined
+  if (r2Config) {
+    pushedR2 = await putR2Object(r2ThumbnailKey(item.storagePath!), optimized, 'image/jpeg', r2Config)
   }
 
-  // 6. Cập nhật thumbnail_url + audit trong transaction.
-  await db.transaction(async (tx) => {
-    await tx.update(mediaItems)
-      .set({ thumbnailUrl: img.url })
-      .where(eq(mediaItems.id, input.id))
-    await tx.insert(activityLogs).values({
-      userId: input.actorId,
-      action: 'update',
-      resource: 'media_portal',
-      resourceId: input.id,
-      meta: { changed: ['thumbnail'], thumbSource: 'media_library', mediaId: input.mediaId, pushedR2 },
+  // 6. Cập nhật thumbnail_url + audit trong transaction. Hỏng → trả tệp về như cũ,
+  // để trang công khai không hiện một thumbnail mà CSDL và nhật ký không biết tới.
+  try {
+    await db.transaction(async (tx) => {
+      await tx.update(mediaItems)
+        .set({ thumbnailUrl: img.url })
+        .where(eq(mediaItems.id, input.id))
+      await tx.insert(activityLogs).values({
+        userId: input.actorId,
+        action: 'update',
+        resource: 'media_portal',
+        resourceId: input.id,
+        meta: { changed: ['thumbnail'], thumbSource: 'media_library', mediaId: input.mediaId, pushedR2 },
+      })
     })
-  })
+  } catch (err) {
+    await restoreThumbnailFiles(input.id, localPath, previous, pushedR2 && r2Config ? { key: r2ThumbnailKey(item.storagePath!), config: r2Config } : null)
+    throw err
+  }
 
   return { ok: true }
+}
+
+/**
+ * Trả `thumb.jpg` (đĩa và R2) về trạng thái trước `setMediaThumbnail` khi bước CSDL
+ * hỏng. Bản R2 được ghi cùng lượt với bản đĩa, nên bản đĩa cũ cũng là bản R2 cũ;
+ * không có bản cũ thì xoá. Hỏng ở đây chỉ còn log được — lỗi gốc vẫn được ném.
+ */
+async function restoreThumbnailFiles(
+  mediaItemId: number,
+  localPath: string,
+  previous: Buffer | null,
+  r2: { key: string, config: R2Config } | null,
+): Promise<void> {
+  let restored = true
+  try {
+    if (previous) await fs.writeFile(localPath, previous)
+    else await fs.rm(localPath, { force: true })
+    if (r2) {
+      restored = previous
+        ? await putR2Object(r2.key, previous, 'image/jpeg', r2.config)
+        : await deleteR2File(r2.key, r2.config)
+    }
+  } catch {
+    restored = false
+  }
+  logWarn({ event: 'media_portal.thumbnail_db_write_failed', mediaItemId, filesRestored: restored })
 }
 
 export type ClearMediaThumbnailInput = {
@@ -1159,11 +1196,13 @@ export async function clearMediaThumbnail(
 
 /** Best-effort xoá object R2 thumb cấp gốc. */
 async function deleteR2Thumb(storagePath: string, _r2Config: R2Config): Promise<void> {
-  // `putR2Object` dùng `PutObjectCommand`; xoá cần `DeleteObjectCommand`. Tránh
-  // thêm export mới cho một thao tác best-effort — dùng `deleteR2File` từ media-r2
-  // (R2Config khớp về shape).
+  // `deleteR2File` (media-r2) trả `false` khi R2 lỗi và ném khi cấu hình hỏng. Vẫn
+  // best-effort, nhưng không còn im lặng: object còn sót là thứ admin cần biết.
+  let deleted = false
   try {
-    const { deleteR2File } = await import('../utils/media-r2')
-    await deleteR2File(r2ThumbnailKey(storagePath), _r2Config)
-  } catch { /* best-effort */ }
+    deleted = await deleteR2File(r2ThumbnailKey(storagePath), _r2Config)
+  } catch {
+    deleted = false
+  }
+  if (!deleted) logWarn({ event: 'media_portal.thumbnail_r2_delete_failed', storagePath })
 }

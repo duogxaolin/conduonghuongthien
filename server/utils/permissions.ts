@@ -110,6 +110,32 @@ export function assertRoleAssignable(actor: ActorLike, targetRoleIsSystem: boole
   }
 }
 
+/** One permission row of a role, as stored in `permissions`. */
+export type RoleGrantRow = { resource: string } & Partial<Record<PermissionFlag, boolean | null>>
+
+/**
+ * Throw 403 unless `actor` already holds every permission `rolePerms` grants.
+ *
+ * `assertRoleAssignable` only keeps users out of the system role, so a delegated
+ * `users:update` could still move an account into a non-system role with more
+ * rights than the actor, or reset the password of an account already in one and
+ * sign in as it (rà soát 2026-10-22). Same rule as `assertAssignablePermissions`,
+ * applied to the role of the account being assigned or managed: what you do not
+ * hold, you can neither hand out nor take over. Every flag counts, not just CRUD.
+ */
+export function assertRoleWithinActor(actor: ActorLike, rolePerms: readonly RoleGrantRow[], statusMessage: string): void {
+  if (actor?.isSuperAdmin === true) return
+  const actorPerms = actor?.permissions || []
+  for (const row of rolePerms) {
+    const held = actorPerms.find(permission => permission.resource === row.resource)
+    for (const { flag } of PERMISSION_ACTIONS) {
+      if (row[flag] === true && held?.[flag] !== true) {
+        throw createError({ statusCode: 403, statusMessage })
+      }
+    }
+  }
+}
+
 type BasePermission = {
   resource: string
   canCreate: boolean | null

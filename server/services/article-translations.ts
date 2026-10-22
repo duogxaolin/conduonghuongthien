@@ -128,35 +128,38 @@ export async function triggerTranslation(
     throw createError({ statusCode: 409, statusMessage: 'Bản dịch đang được tạo, vui lòng đợi.' })
   }
 
-  // Upsert translation row with status='translating'
-  if (existing) {
-    await db
-      .update(articleTranslations)
-      .set({
+  // Upsert translation row with status='translating', and its audit row in the
+  // same transaction — a row left 'translating' with no record of who started it
+  // is exactly what the audit trail exists to prevent.
+  await db.transaction(async (tx) => {
+    if (existing) {
+      await tx
+        .update(articleTranslations)
+        .set({
+          status: 'translating',
+          progress: 0,
+          currentChunk: 0,
+          totalChunks: 0,
+          errorMessage: null,
+          completedAt: null,
+        })
+        .where(eq(articleTranslations.id, existing.id))
+    } else {
+      await tx.insert(articleTranslations).values({
+        articleId,
+        langCode,
         status: 'translating',
-        progress: 0,
-        currentChunk: 0,
-        totalChunks: 0,
-        errorMessage: null,
-        completedAt: null,
+        translatedBy: 'ai',
       })
-      .where(eq(articleTranslations.id, existing.id))
-  } else {
-    await db.insert(articleTranslations).values({
-      articleId,
-      langCode,
-      status: 'translating',
-      translatedBy: 'ai',
-    })
-  }
+    }
 
-  // Audit
-  await db.insert(activityLogs).values({
-    userId: actor.id ?? null,
-    action: 'create',
-    resource: 'settings',
-    resourceId: articleId,
-    meta: { operation: 'create_article_translation', articleId, langCode, translatedBy: 'ai' },
+    await tx.insert(activityLogs).values({
+      userId: actor.id ?? null,
+      action: 'create',
+      resource: 'settings',
+      resourceId: articleId,
+      meta: { operation: 'create_article_translation', articleId, langCode, translatedBy: 'ai' },
+    })
   })
 
   // Spawn background worker (non-blocking)

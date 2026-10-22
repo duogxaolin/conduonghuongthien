@@ -2,7 +2,9 @@ import { getDb } from '../../../utils/db'
 import { passwordRejectionMessage } from '../../../utils/password-policy'
 import { users, roles, activityLogs } from '../../../db/schema'
 import { hashPassword } from '../../../utils/auth'
-import { assertRoleAssignable, requireResourcePermission } from '../../../utils/permissions'
+import { assertRoleAssignable, assertRoleWithinActor, requireResourcePermission } from '../../../utils/permissions'
+import { loadRolePermissions } from '../../../services/users'
+import { isValidEmail } from '../../../utils/submission-recipient'
 import { eq } from 'drizzle-orm'
 
 export default defineEventHandler(async (event) => {
@@ -25,11 +27,8 @@ export default defineEventHandler(async (event) => {
   if (!roleId) {
     throw createError({ statusCode: 400, statusMessage: 'Vui lòng chọn Vai trò (Role).' })
   }
-  if (email) {
-    const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/
-    if (!EMAIL_RE.test(email)) {
-      throw createError({ statusCode: 400, statusMessage: 'Email không hợp lệ' })
-    }
+  if (email && !isValidEmail(email)) {
+    throw createError({ statusCode: 400, statusMessage: 'Email không hợp lệ' })
   }
 
   const db = getDb()
@@ -38,6 +37,8 @@ export default defineEventHandler(async (event) => {
   const [targetRole] = await db.select({ isSystem: roles.isSystem }).from(roles).where(eq(roles.id, roleId)).limit(1)
   if (!targetRole) throw createError({ statusCode: 400, statusMessage: 'Vai trò không tồn tại.' })
   assertRoleAssignable(adminUser, targetRole.isSystem)
+  // …and nobody may create an account with more rights than their own.
+  assertRoleWithinActor(adminUser, await loadRolePermissions(roleId), 'Không thể gán vai trò có quyền cao hơn quyền của bạn.')
 
   const passwordHash = await hashPassword(password)
 

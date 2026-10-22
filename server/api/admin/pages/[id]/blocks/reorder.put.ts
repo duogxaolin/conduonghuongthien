@@ -31,13 +31,14 @@ export default defineEventHandler(async (event) => {
           .where(and(eq(pageBlocks.id, Number(item.id)), eq(pageBlocks.pageId, pageId)))
       }
     }
-  })
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'update',
-    resource: 'pages',
-    meta: { pageId, action: 'reorder', count: orders.length },
+    // Audit trên `tx`, cùng commit với lượt sắp xếp.
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'update',
+      resource: 'pages',
+      meta: { pageId, action: 'reorder', count: orders.length },
+    })
   })
 
   return { ok: true }

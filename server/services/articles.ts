@@ -8,7 +8,7 @@
  * Keeping the check inside the per-row function makes that impossible.
  */
 import { createError } from 'h3'
-import { eq, inArray, notInArray, or, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, notInArray, or, isNull, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { activityLogs, articles } from '../db/schema'
 import { requireResourcePermission, type ActorLike } from '../utils/permissions'
@@ -72,7 +72,9 @@ function requireArticlePermission(actor: ActorLike, type: string | null | undefi
  */
 export async function deleteArticleById(actor: ActorLike, id: number): Promise<void> {
   const db = getDb()
-  const [existing] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
+  // Scoped to the types the actor can read: an id of a type they cannot see is
+  // the same 404 as an id that does not exist (no oracle for which ids exist).
+  const [existing] = await db.select().from(articles).where(and(eq(articles.id, id), articleActionScope(actor, 'read'))).limit(1)
   if (!existing) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
 
   requireArticlePermission(actor, existing.type, 'delete')
@@ -96,7 +98,8 @@ export async function deleteArticleById(actor: ActorLike, id: number): Promise<v
  */
 export async function setArticleStatus(actor: ActorLike, id: number, status: ArticleStatus): Promise<void> {
   const db = getDb()
-  const [existing] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
+  // Same read scope as deleteArticleById: unknown and unreadable ids both 404.
+  const [existing] = await db.select().from(articles).where(and(eq(articles.id, id), articleActionScope(actor, 'read'))).limit(1)
   if (!existing) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
 
   requireArticlePermission(actor, existing.type, 'update')

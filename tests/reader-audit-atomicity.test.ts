@@ -404,6 +404,25 @@ function writesItsOwnRow(normalized: string): boolean {
     || /\b(?:db|tx)\s*\.\s*insert\(\s*(?!activityLogs)/.test(normalized)
 }
 
+/** Dòng audit ghi trên pool (`db.insert(activityLogs)`), không phải trên `tx`. */
+function auditsOnPool(normalized: string): boolean {
+  return /\bdb\s*\.\s*insert\(\s*activityLogs\b/.test(normalized)
+}
+
+/**
+ * Có cặp hàng + audit không nguyên tử.
+ *
+ * Có `db.transaction(` trong tệp CHƯA đủ: rà soát 2026-10-22 tìm thấy ba endpoint
+ * (`home-sections/reorder.put.ts`, `pages/[id]/blocks/reorder.put.ts`,
+ * `pages/[id]/publish.post.ts`) bọc lượt ghi trong transaction rồi ghi audit trên
+ * pool **sau khi** transaction đã đóng — bản cũ của guard bỏ qua cả tệp chỉ vì
+ * thấy chữ `db.transaction(`, nên cả ba đi qua.
+ */
+function unwrappedAuditPair(normalized: string): boolean {
+  if (!/activityLogs/.test(normalized) || !writesItsOwnRow(normalized)) return false
+  return !/\bdb\s*\.\s*transaction\(/.test(normalized) || auditsOnPool(normalized)
+}
+
 describe('no admin endpoint writes a row and its audit row separately', () => {
   it('every audited mutation is either wrapped or exempt with a stated reason', () => {
     const root = 'server/api/admin'
@@ -420,10 +439,7 @@ describe('no admin endpoint writes a row and its audit row separately', () => {
 
     const offenders: string[] = []
     for (const file of walk(root)) {
-      const normalized = normalizeSource(read(file))
-      if (!/activityLogs/.test(normalized)) continue
-      if (!writesItsOwnRow(normalized)) continue
-      if (/db\.transaction\(/.test(normalized)) continue
+      if (!unwrappedAuditPair(normalizeSource(read(file)))) continue
       const key = file.slice(`${root}/`.length)
       if (MUTATION_SCAN_EXEMPTIONS[key]) continue
       offenders.push(key)
@@ -440,8 +456,8 @@ describe('no admin endpoint writes a row and its audit row separately', () => {
 
   /**
    * Phần phát hiện được kiểm chứng ngược trên mẫu dựng tay, vì một guard quét thư
-   * mục mà không thấy gì thì **cũng xanh y hệt** một guard đang chạy đúng. Hai mẫu
-   * đầu phải bị bắt, hai mẫu sau không được bị bắt.
+   * mục mà không thấy gì thì **cũng xanh y hệt** một guard đang chạy đúng. Các mẫu
+   * `caught` phải bị bắt, các mẫu `ignored` không được bị bắt.
    */
   it('the detector sees the multi-line style, and does not fire on comments', () => {
     const caught = [
@@ -449,13 +465,13 @@ describe('no admin endpoint writes a row and its audit row separately', () => {
       'await db\n  .update(users)\n  .set({})\nawait db.insert(activityLogs).values({})',
       // Xoá rồi ghi log, cùng một dòng.
       'await db.delete(users); await db.insert(activityLogs).values({})',
+      // Lượt ghi đã bọc, nhưng audit ghi trên pool sau khi transaction đóng.
+      'await db.transaction(async (tx) => { await tx.update(users).set({}) })\nawait db.insert(activityLogs).values({})',
+      // Như trên, lối viết nhiều dòng.
+      'await db.transaction(async (tx) => {\n  await tx\n    .update(users)\n    .set({})\n})\nawait db\n  .insert(activityLogs)\n  .values({})',
     ]
     for (const sample of caught) {
-      const n = normalizeSource(sample)
-      assert.ok(
-        /activityLogs/.test(n) && writesItsOwnRow(n) && !/db\.transaction\(/.test(n),
-        `bộ phát hiện bỏ sót một cặp ghi không bọc:\n${sample}`,
-      )
+      assert.ok(unwrappedAuditPair(normalizeSource(sample)), `bộ phát hiện bỏ sót một cặp ghi không bọc:\n${sample}`)
     }
 
     const ignored = [
@@ -467,9 +483,7 @@ describe('no admin endpoint writes a row and its audit row separately', () => {
       '// await db.update(users) then db.insert(activityLogs) would be wrong\nawait db.insert(activityLogs).values({})',
     ]
     for (const sample of ignored) {
-      const n = normalizeSource(sample)
-      const flagged = /activityLogs/.test(n) && writesItsOwnRow(n) && !/db\.transaction\(/.test(n)
-      assert.ok(!flagged, `bộ phát hiện báo sai trên mẫu hợp lệ:\n${sample}`)
+      assert.ok(!unwrappedAuditPair(normalizeSource(sample)), `bộ phát hiện báo sai trên mẫu hợp lệ:\n${sample}`)
     }
   })
 })
@@ -581,6 +595,28 @@ const SERVICE_EXEMPTIONS: Record<string, string> = {
   'media-sync.ts': 'progress/summary audits are best-effort by design; the row+audit pair is transactional in media-sync-files.ts',
 }
 
+/**
+ * Service CÓ `db.transaction(` nhưng vẫn còn dòng audit ghi trên pool.
+ *
+ * Cùng lỗ với guard endpoint phía trên: thấy chữ `db.transaction(` là cho qua cả
+ * tệp, nên `article-translations.ts` (đánh dấu bản dịch "đang dịch" rồi ghi audit
+ * trên pool, không bọc) đi qua cổng chỉ vì các hàm KHÁC trong tệp có bọc. Những
+ * tệp dưới đây ghi audit trên pool một cách có chủ đích.
+ *
+ * Tệp ghi audit qua helper `audit(store, …)` (`chatbot-knowledge.ts`,
+ * `chatbot-small-talk.ts`) có tham số tên `db` nên khớp chuỗi `db.insert(activityLogs)`
+ * dù không ghi trên pool; tính nguyên tử ở đó do nơi gọi quyết định và đã được
+ * khẳng định ở nhóm `AUDITED_SERVICES` (`audit(db,` bị cấm).
+ */
+const SERVICE_POOL_AUDIT_EXEMPTIONS: Record<string, string> = {
+  // `deleteArticleById`/`setArticleStatus` chủ đích không bọc — khoá bởi test
+  // `known exclusions are named` ở đầu tệp này.
+  'articles.ts': 'named known exclusion: deleteArticleById/setArticleStatus (see known exclusions test)',
+  // Audit TIẾN ĐỘ của job quét nền (mỗi lô / tổng kết), try/catch best-effort như
+  // `media-sync.ts`; cặp hàng media + audit thật nằm trong transaction của tệp.
+  'media-scan.ts': 'progress/summary audits of a background scan job are best-effort by design',
+}
+
 describe('no service writes activity_logs outside a transaction', () => {
   it('every audited service is either wrapped or exempt with a stated reason', () => {
     const dir = 'server/services'
@@ -589,16 +625,22 @@ describe('no service writes activity_logs outside a transaction', () => {
       if (!entry.endsWith('.ts')) continue
       const source = read(join(dir, entry))
       if (!/activityLogs/.test(source)) continue
-      if (/db\.transaction\(/.test(source)) continue
       if (SERVICE_EXEMPTIONS[entry]) continue
-      offenders.push(entry)
+      if (!/db\.transaction\(/.test(source)) {
+        offenders.push(entry)
+        continue
+      }
+      const normalized = normalizeSource(source)
+      const auditsViaHelper = /async function audit\(/.test(normalized)
+      if (!auditsViaHelper && auditsOnPool(normalized) && !SERVICE_POOL_AUDIT_EXEMPTIONS[entry]) offenders.push(entry)
     }
     assert.deepEqual(
       offenders,
       [],
-      'ghi `activity_logs` mà không có `db.transaction(` — bọc lại, hoặc khai vào '
-      + 'SERVICE_EXEMPTIONS kèm lý do. Một danh sách liệt kê tên tệp thì xanh vĩnh viễn '
-      + 'với tệp nó chưa biết; guard này quét cả thư mục chính vì thế.',
+      'ghi `activity_logs` ngoài transaction (không có `db.transaction(`, hoặc có nhưng '
+      + 'audit vẫn ghi trên pool) — bọc lại, hoặc khai vào SERVICE_EXEMPTIONS / '
+      + 'SERVICE_POOL_AUDIT_EXEMPTIONS kèm lý do. Một danh sách liệt kê tên tệp thì xanh '
+      + 'vĩnh viễn với tệp nó chưa biết; guard này quét cả thư mục chính vì thế.',
     )
   })
 })
