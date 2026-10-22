@@ -62,6 +62,26 @@ export function articleActionScope(actor: ActorLike, action: ArticleAction | rea
     : explicit
 }
 
+/**
+ * The article `articleId`, if `actor` may read its TYPE; 404 otherwise — the same
+ * answer as for an id that does not exist.
+ *
+ * For routes that read something hanging off an article (its translations, their
+ * progress) and so never load the article itself: those used to check only the
+ * fixed `news:read` grant, so a news reader could read the translations of a
+ * document or role-model article by its id (rà soát 2026-10-22).
+ */
+export async function requireReadableArticle(actor: ActorLike, articleId: number) {
+  const [article] = await getDb()
+    .select({ id: articles.id, type: articles.type })
+    .from(articles)
+    .where(and(eq(articles.id, articleId), articleActionScope(actor, 'read')))
+    .limit(1)
+  if (!article) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
+  requireResourcePermission(actor, articleResource(article.type), 'read')
+  return article
+}
+
 export const ARTICLE_STATUSES = ['draft', 'published', 'archived'] as const
 export type ArticleStatus = typeof ARTICLE_STATUSES[number]
 
