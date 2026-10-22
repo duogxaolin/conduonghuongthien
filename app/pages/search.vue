@@ -92,7 +92,7 @@
             <span>{{ tab.label }}</span>
             <span
               :class="[
-                'text-[0.7rem] px-1.5 py-0.2 rounded-full font-black',
+                'text-[0.7rem] px-1.5 py-px rounded-full font-black',
                 activeType === tab.key ? 'bg-white/20 text-white' : 'bg-[#EBF1EA] text-[#556653]'
               ]"
             >

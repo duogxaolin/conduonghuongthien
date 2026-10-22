@@ -24,6 +24,7 @@ type Ban = {
 }
 
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const loading = ref(true)
 const error = ref('')
@@ -79,7 +80,11 @@ async function addBan() {
 }
 
 async function liftBan(ban: Ban) {
-  if (!confirm(`Bỏ chặn ${ban.value}? Địa chỉ này sẽ đăng nhập và bình luận được ngay.`)) return
+  if (!await confirm({
+    message: `Bỏ chặn ${ban.value}? Địa chỉ này sẽ đăng nhập và bình luận được ngay.`,
+    confirmLabel: 'Bỏ chặn',
+    danger: true,
+  })) return
   busy.value = true
   try {
     await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/ip-bans/${ban.id}`, { method: 'DELETE' })

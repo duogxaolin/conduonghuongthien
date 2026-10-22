@@ -133,7 +133,7 @@ const emit = defineEmits<{
       <div class="flex flex-col gap-0.5">
         <span class="font-extrabold text-[#735100] text-sm">Lưu ý kiểm duyệt & Xuất bản bản dịch AI:</span>
         <span class="text-[#8a6500]">
-          Các bài viết dịch bằng AI được lưu ở trạng thái <strong>Bản nháp AI</strong> (huy hiệu vàng <span class="px-1.5 py-0.2 rounded bg-[#fff8e1] text-[#b78103] border border-[#ffe082] font-bold text-[0.68rem]">EN</span>, <span class="px-1.5 py-0.2 rounded bg-[#fff8e1] text-[#b78103] border border-[#ffe082] font-bold text-[0.68rem]">ZH</span>...). Cán bộ bấm vào huy hiệu để <strong>Xem nhanh</strong> và rà soát trước khi bấm <strong>Xuất bản</strong> ra trang công khai.
+          Các bài viết dịch bằng AI được lưu ở trạng thái <strong>Bản nháp AI</strong> (huy hiệu vàng <span class="px-1.5 py-px rounded bg-[#fff8e1] text-[#b78103] border border-[#ffe082] font-bold text-[0.68rem]">EN</span>, <span class="px-1.5 py-px rounded bg-[#fff8e1] text-[#b78103] border border-[#ffe082] font-bold text-[0.68rem]">ZH</span>...). Cán bộ bấm vào huy hiệu để <strong>Xem nhanh</strong> và rà soát trước khi bấm <strong>Xuất bản</strong> ra trang công khai.
         </span>
       </div>
     </div>

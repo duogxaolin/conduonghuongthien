@@ -287,7 +287,7 @@ onMounted(() => { load(); loadAccounts(); loadRetention() })
               <span class="font-bold text-[#122815] text-[0.88rem] truncate">
                 {{ item.username || (item.userId ? `#${item.userId}` : 'Hệ thống') }}
               </span>
-              <span v-if="item.userId && !item.username" class="rounded border border-[#c8d6c9] px-1 py-0.2 text-[0.65rem] text-[#667768]">đã xoá</span>
+              <span v-if="item.userId && !item.username" class="rounded border border-[#c8d6c9] px-1 py-px text-[0.65rem] text-[#667768]">đã xoá</span>
             </div>
             <span class="text-[0.72rem] text-[#667768] shrink-0">{{ formatWhen(item.createdAt) }}</span>
           </div>

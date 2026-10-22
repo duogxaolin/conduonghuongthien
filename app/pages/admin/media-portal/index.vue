@@ -35,6 +35,7 @@ definePageMeta({
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const { confirm } = useConfirm()
 const { hasPermission } = useAdminAuth()
 
 type MediaStatus = 'draft' | 'published' | 'archived'
@@ -121,7 +122,11 @@ function changePage(page: number) {
 }
 
 async function deleteItem(id: number, title: string) {
-  if (!confirm(`Xoá video "${title}"? Hành động này không thể hoàn tác.`)) return
+  if (!await confirm({
+    message: `Xoá video "${title}"? Hành động này không thể hoàn tác.`,
+    confirmLabel: 'Xoá video',
+    danger: true,
+  })) return
   try {
     await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/media-portal/${id}`, { method: 'DELETE' })
     toast.success('Đã xoá video.')

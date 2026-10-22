@@ -59,6 +59,7 @@ const TRIGGER_LABELS: Record<string, string> = {
 }
 
 const toast = useToast()
+const { confirm } = useConfirm()
 const loading = ref(true)
 const error = ref('')
 const saving = ref(false)
@@ -203,7 +204,11 @@ async function runNow() {
     .filter(s => s.overdue > 0 || s.overRowCap > 0)
     .map(s => `• ${SCOPE_LABELS[s.scope]}: khoảng ${formatNumber(s.overdue + s.overRowCap)} bản ghi`)
   const detail = lines.length ? `\n\nDự kiến xoá:\n${lines.join('\n')}` : '\n\nHiện không có bản ghi nào quá hạn.'
-  if (!confirm(`Chạy dọn dữ liệu ngay theo cấu hình đang lưu? Bản ghi bị xoá không lấy lại được.${detail}`)) return
+  if (!await confirm({
+    message: `Chạy dọn dữ liệu ngay theo cấu hình đang lưu? Bản ghi bị xoá không lấy lại được.${detail}`,
+    confirmLabel: 'Chạy dọn dữ liệu',
+    danger: true,
+  })) return
 
   running.value = true
   try {

@@ -31,7 +31,7 @@
             @click="applyTopic('')"
           >
             <span>Tất cả</span>
-            <span class="text-[0.7rem] px-1.5 py-0.2 rounded-full font-extrabold" :class="!activeTopic ? 'bg-white/20 text-white' : 'bg-[#EBF1EA] text-[#556653]'">
+            <span class="text-[0.7rem] px-1.5 py-px rounded-full font-extrabold" :class="!activeTopic ? 'bg-white/20 text-white' : 'bg-[#EBF1EA] text-[#556653]'">
               {{ pagination.total }}
             </span>
           </button>
@@ -47,7 +47,7 @@
             @click="applyTopic(item.topic)"
           >
             <span>{{ item.topic }}</span>
-            <span class="text-[0.7rem] px-1.5 py-0.2 rounded-full font-extrabold" :class="activeTopic === item.topic ? 'bg-white/20 text-white' : 'bg-[#EBF1EA] text-[#556653]'">
+            <span class="text-[0.7rem] px-1.5 py-px rounded-full font-extrabold" :class="activeTopic === item.topic ? 'bg-white/20 text-white' : 'bg-[#EBF1EA] text-[#556653]'">
               {{ item.total }}
             </span>
           </button>

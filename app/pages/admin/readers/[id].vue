@@ -45,6 +45,7 @@ type Reader = {
 const route = useRoute()
 const router = useRouter()
 const toast = useToast()
+const { confirm, prompt } = useConfirm()
 
 const readerId = computed(() => Number(route.params.id))
 
@@ -116,17 +117,24 @@ const DURABLE_ANSWER_NOTE = 'Câu trả lời cần giữ lâu dài nên đặt 
 
 async function banReader() {
   const counts = await currentImpact()
-  const reason = window.prompt('Lý do chặn (không bắt buộc, hiện trong lịch sử hoạt động):', '')
+  const reason = await prompt({
+    title: 'Chặn tài khoản người đọc',
+    message: 'Lý do chặn (không bắt buộc, hiện trong lịch sử hoạt động):',
+    label: 'Lý do chặn',
+    confirmLabel: 'Tiếp tục',
+  })
   // `prompt` trả null khi cán bộ bấm Huỷ — khác hoàn toàn với chuỗi rỗng nghĩa là
   // "chặn nhưng không ghi lý do".
   if (reason === null) return
 
-  if (!confirm(
-    `Chặn tài khoản này và xoá ${impactSentence(counts)}?\n\n`
-    + `Thao tác KHÔNG THỂ HOÀN TÁC. Bỏ chặn về sau cũng không phục hồi được bình luận đã xoá.\n\n`
-    + (counts.adminReplies > 0 ? `${DURABLE_ANSWER_NOTE}\n\n` : '')
-    + 'Người đọc sẽ bị đăng xuất ngay lập tức.',
-  )) return
+  if (!await confirm({
+    message: `Chặn tài khoản này và xoá ${impactSentence(counts)}?\n\n`
+      + `Thao tác KHÔNG THỂ HOÀN TÁC. Bỏ chặn về sau cũng không phục hồi được bình luận đã xoá.\n\n`
+      + (counts.adminReplies > 0 ? `${DURABLE_ANSWER_NOTE}\n\n` : '')
+      + 'Người đọc sẽ bị đăng xuất ngay lập tức.',
+    confirmLabel: 'Chặn và xoá bình luận',
+    danger: true,
+  })) return
 
   busy.value = true
   try {
@@ -141,7 +149,11 @@ async function banReader() {
 }
 
 async function unbanReader() {
-  if (!confirm('Bỏ chặn tài khoản này? Bình luận đã bị xoá lúc chặn sẽ KHÔNG được phục hồi, và người đọc phải đăng nhập lại.')) return
+  if (!await confirm({
+    message: 'Bỏ chặn tài khoản này? Bình luận đã bị xoá lúc chặn sẽ KHÔNG được phục hồi, và người đọc phải đăng nhập lại.',
+    confirmLabel: 'Bỏ chặn',
+    danger: true,
+  })) return
   busy.value = true
   try {
     await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/readers/${readerId.value}/unban`, { method: 'POST' })
@@ -160,10 +172,12 @@ async function purgeComments() {
     toast.info('Người đọc này chưa có bình luận nào.')
     return
   }
-  if (!confirm(
-    `Xoá ${impactSentence(counts)}?\n\nTài khoản vẫn hoạt động và vẫn bình luận được. Thao tác KHÔNG THỂ HOÀN TÁC.\n\n`
-    + (counts.adminReplies > 0 ? DURABLE_ANSWER_NOTE : ''),
-  )) return
+  if (!await confirm({
+    message: `Xoá ${impactSentence(counts)}?\n\nTài khoản vẫn hoạt động và vẫn bình luận được. Thao tác KHÔNG THỂ HOÀN TÁC.\n\n`
+      + (counts.adminReplies > 0 ? DURABLE_ANSWER_NOTE : ''),
+    confirmLabel: 'Xoá bình luận',
+    danger: true,
+  })) return
 
   busy.value = true
   try {
@@ -179,10 +193,12 @@ async function purgeComments() {
 
 async function deleteAccount() {
   const counts = await currentImpact()
-  if (!confirm(
-    `Xoá hẳn tài khoản này cùng ${impactSentence(counts)}?\n\nThao tác KHÔNG THỂ HOÀN TÁC.\n\n`
-    + (counts.adminReplies > 0 ? DURABLE_ANSWER_NOTE : ''),
-  )) return
+  if (!await confirm({
+    message: `Xoá hẳn tài khoản này cùng ${impactSentence(counts)}?\n\nThao tác KHÔNG THỂ HOÀN TÁC.\n\n`
+      + (counts.adminReplies > 0 ? DURABLE_ANSWER_NOTE : ''),
+    confirmLabel: 'Xoá tài khoản',
+    danger: true,
+  })) return
 
   busy.value = true
   try {
@@ -196,11 +212,13 @@ async function deleteAccount() {
 }
 
 async function deleteOneComment(comment: Comment) {
-  if (!confirm(
-    comment.parentId === null
+  if (!await confirm({
+    message: comment.parentId === null
       ? 'Xoá bình luận này? Mọi phản hồi bên dưới, kể cả phản hồi của Ban quản trị, sẽ bị xoá theo. Không thể hoàn tác.'
       : 'Xoá phản hồi này? Không thể hoàn tác.',
-  )) return
+    confirmLabel: 'Xoá',
+    danger: true,
+  })) return
 
   busy.value = true
   try {

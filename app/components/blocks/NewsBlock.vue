@@ -15,7 +15,7 @@
                 <div class="absolute bottom-0 left-0 right-0 p-6 text-white z-[2]">
                   <span class="inline-block bg-[#4a7c1e] text-white px-2 py-[3px] text-[0.65rem] font-extrabold rounded-sm mb-2 uppercase">{{ t('news_featured') || 'TIN NỔI BẬT' }}</span>
                   <span class="text-[0.75rem] opacity-85 ml-3"><span aria-hidden="true">📅</span> {{ formatDate(featured.publishedAt || featured.createdAt) }}</span>
-                  <h3 class="text-[1.45rem] sm:text-[1.12rem] font-extrabold leading-[1.3] my-[6px_0_10px] text-white transition-colors group-hover:text-[#c5e1a5] line-clamp-2" :title="featured.title">{{ featured.title }}</h3>
+                  <h3 class="text-[1.45rem] sm:text-[1.12rem] font-extrabold leading-[1.3] mt-[6px] mb-[10px] text-white transition-colors group-hover:text-[#c5e1a5] line-clamp-2" :title="featured.title">{{ featured.title }}</h3>
                   <p class="text-[0.88rem] sm:text-[0.82rem] leading-[1.5] opacity-[0.88] m-0 line-clamp-2">{{ featured.excerpt }}</p>
                 </div>
               </div>
