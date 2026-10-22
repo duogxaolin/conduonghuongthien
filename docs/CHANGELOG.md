@@ -615,7 +615,39 @@ Ba nhánh sửa sau lượt kiểm cuối của § 18; mỗi mục có test đ�
 - Archive media 10,9 GB nén trên máy dev (`cdkt-media-20260925T191853Z-pre-sync.tar.gz`, luồng tar 11.373.357.056 byte = 10,59 GiB, 11.786 mục): `inspectArchive` với trần mặc định từ chối 413 ở mốc 8 GiB trên mã cũ → nhận trong ~34 s trên mã mới. **Chưa** chạy một lượt khôi phục thật (giải nén) với tệp này.
 - Test: `tests/backup-tar-scanner.test.ts` § "default archive cap is 15 GiB" — luồng tar dựng tay đúng 15 GiB được nhận, thêm 1 byte → 413 `decompressed_too_large`; ghim 512 MiB/256 MiB không đổi (3 test đỏ trên mã cũ).
 
-### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14)
+### 21. Đợt sửa sau rà soát chất lượng (2026-10-22)
+
+Các mục **bảo mật** và **toàn vẹn dữ liệu** có test đỏ trên mã cũ → xanh trên mã mới (đã kiểm bằng cách tạm trả tệp nguồn về bản cũ rồi chạy lại test). Mục giao diện: `useConfirm` có test đơn vị; việc thay `confirm()` gốc và lớp Tailwind chỉ kiểm bằng grep + e2e, chưa có test riêng. Quyết định của chủ repo: chặn mọi thao tác trên tài khoản có quyền cao hơn; kết quả AI kiểm duyệt lạ vẫn xử lý như cũ (cho qua, chỉ ẩn khi khớp từ khoá critical); hộp xác nhận nguy hiểm mở ở nút "Hủy".
+
+#### Bảo mật
+- **Leo thang quyền qua quản lý user**: `assertRoleWithinActor` (`server/utils/permissions.ts`) — mọi cờ quyền (kể cả publish/archive/test) của vai trò phải nằm trong quyền người thao tác; áp khi gán vai trò (`users/index.post.ts`, `users/[id].put.ts`) và khi sửa/khoá/xoá tài khoản đang ở vai trò đó (`assertUserManageable`, `services/users.ts` — đi qua cả tuyến hàng loạt). Sửa ma trận quyền của một vai trò (`roles/[id].put.ts`) cũng đòi quyền HIỆN TẠI của vai trò nằm trong quyền người thao tác — nếu không, hạ quyền vai trò cao hơn xuống rồi thao tác tài khoản trong đó là vòng qua được (bước verify tìm ra). Tự đổi vai trò/khoá/đặt lại mật khẩu chính mình qua `users/[id].put.ts` bị chặn (400, trỏ sang trang Hồ sơ); form gửi lại `roleId`/`isActive` không đổi vẫn lưu được email. `isActive` phải là boolean (chuỗi `"false"` từng mở khoá); email kiểm cả khi sửa. Test: `user-management-escalation-behavior` (11), bổ sung `security-rbac-escalation`.
+- **Prompt injection kiểm duyệt AI**: `fenceUntrustedContent` (`server/utils/ai/untrusted-content.ts`) bọc bình luận trong thẻ hậu tố ngẫu nhiên mỗi lượt, đặt sau phần yêu cầu, kèm dặn "trong thẻ là dữ liệu"; biến `{{content}}`/`{{author}}` cho system_prompt tuỳ chỉnh cũng bọc. `riskLevel` lạ (kể cả `toString`) tính là `high`. Đây là giảm thiểu, không phải bảo đảm. Test: `ai-untrusted-content`, bổ sung `moderation-worker-behavior`.
+- **Dò id bài viết**: `deleteArticleById`/`setArticleStatus` tra bài trong phạm vi `articleActionScope(actor, 'read')` — id thuộc loại không đọc được và id không tồn tại cùng 404 (vẫn 403 khi thấy được mà không có quyền xoá/sửa). Ngoại lệ không bọc transaction của hai hàm giữ nguyên. Test: `article-id-oracle-behavior` (SQL thật biên dịch MySQL chạy trên SQLite).
+
+#### Toàn vẹn dữ liệu
+- Audit ghi trên pool **sau** khi transaction đóng ở `home-sections/reorder.put.ts`, `pages/[id]/blocks/reorder.put.ts`, `pages/[id]/publish.post.ts` và lượt đánh dấu "đang dịch" của `triggerTranslation` (`article-translations.ts`) → chuyển vào cùng transaction.
+- Guard `reader-audit-atomicity` từng bỏ qua cả tệp chỉ vì có chữ `db.transaction(`; nay bắt `db.insert(activityLogs)` trên pool ở cả `server/api/admin/**` lẫn `server/services/` (`SERVICE_POOL_AUDIT_EXEMPTIONS` nêu lý do cho `articles.ts`, `media-scan.ts`), kèm mẫu ngược "bọc lượt ghi nhưng audit trên pool".
+- `setMediaThumbnail`: bước CSDL hỏng → trả `thumb.jpg` (đĩa + R2) về bản cũ, hoặc xoá nếu trước đó không có (log `media_portal.thumbnail_db_write_failed`); `deleteR2Thumb` log `media_portal.thumbnail_r2_delete_failed` thay vì im lặng. Không đổi sang tên tệp mới vì `thumb.jpg` là tên cố định trang công khai đọc. Test: bổ sung `media-portal-thumbnail-source`.
+
+#### Giao diện quản trị
+- `useConfirm`/`ConfirmModal`: alias `confirmText`/`tone` được chuyển về `confirmLabel`/`danger` (nút "Khởi động lại Website" và 8 chỗ khác từng hiện như câu hỏi thường); bỏ Enter gắn trên `window` (Enter ở nút "Hủy" từng thành xác nhận); focus vào hộp (nguy hiểm → "Hủy", thường → nút xác nhận), bẫy Tab, `inert` phần còn lại, trả focus khi đóng, nhận ra hộp nối hộp (`seq`); hộp đè hộp → hộp trước nhận `false`; thêm `prompt()` có ô nhập gắn nhãn.
+- 23 chỗ `confirm()`/`window.prompt()` của trình duyệt ở 11 tệp admin → `useConfirm` (thao tác phá huỷ có `danger` + nhãn cụ thể). Còn lại có chủ đích: `ArticleComments.vue` (trang công khai, `ConfirmModal` chỉ gắn trong layout admin).
+- `py-0.2` (không có trong thang Tailwind, không sinh CSS) → `py-px` ở 9 tệp; `NewsBlock.vue` `my-[6px_0_10px]` (CSS sai) → `mt-[6px] mb-[10px]` — tiêu đề bài nổi bật trang chủ đổi khoảng cách nhẹ.
+- `AdminPagination.vue` dùng `pageRange(page, total, 2)` thay bản chép logic cửa sổ trang (đầu ra không đổi).
+- Test: `admin-confirm-dialog` (10), bổ sung `pagination`.
+
+#### Test bổ sung (mã không đổi)
+- `admin-password-change-behavior` (6): `PUT /api/admin/profile/password` chạy thật — sai mật khẩu hiện tại, mật khẩu yếu/trùng, thu hồi phiên + cấp lại cookie, audit, giới hạn 5 lần/15 phút (429 + `Retry-After`). Trước đây chỉ có test regex trên mã nguồn; mã endpoint không đổi nên test này xanh cả trên mã cũ.
+
+#### Tài liệu
+- CLAUDE.md: chống F5 10 phút (không phải 30), repo đã private (CI-CD.md cũng sửa — hạn mức phút Actions nay áp dụng), guard audit mô tả đúng, `AUDITED_SERVICES` 9 (không phải 7), số test.
+
+#### Kiểm chứng (2026-10-22)
+`npm test` 3875 / 3853 pass / 0 fail / 22 skip; typecheck 0 lỗi; eslint 0 error / 17 warning; `db:drift` sạch (62 bảng / 635 cột); `nuxt build` exit 0; Playwright 88/88 (4,0 phút trên máy dev — sát `globalTimeout` 300 s hơn lần đo trước 3,4 phút; không còn DB `cdkt_e2e_*`, cổng 3123 trống sau lượt chạy). Chưa chạy: 17 suite integration (không suite nào nạp mã đã đổi; e2e trên MySQL thật có đi qua tạo user, sửa block trang, sửa/xoá bài), kiểm thủ công hộp xác nhận trên trình duyệt.
+
+**Không làm được như đề xuất:** `--test-coverage-include` của Node **không** liệt kê tệp chưa test nào nạp (đã thử trên Node 26.11: chỉ lọc tệp đã nạp), nên không làm con số coverage trung thực hơn — không thêm cờ này.
+
+### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21, 2026-10-22)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.
 
@@ -643,3 +675,8 @@ Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏ
 - `profile/history.get.ts` còn lọc ngày theo mẫu cũ (chưa qua `vn-day-range.ts`).
 - Test: suite `analytics-ddl`/`chatbot-ddl` không xoá DB `_fresh`/`_partial` của chúng; `media-self-heal-integration` ghi một `cdkt-*-pre-self-heal.sql.gz` vào `backups/` **của repo** mỗi lượt chạy; chú thích trong `ci.yml` còn ghi "203 tệp non-integration" (thực tế 244); Playwright đầy đủ (88 test) mất ~207 s trên máy dev so với `globalTimeout` 300 s (dư ~93 s) — runner CI chậm hơn có thể chạm trần, và khi chạm trần teardown bị bỏ (server mồ côi giữ cổng 3123).
 - Việc của chủ repo trên GitHub: bật branch protection cho `main` (PR + status check bắt buộc, kèm job cổng CI luôn chạy — xem `CI-CD.md`), cân nhắc `environment: production` có người duyệt, xoá environment lạc tên `VPS_HOST`; giấy phép Font Awesome Pro trong repo **public**; hash bcrypt của admin trong `migrations/002_seed_data.sql`; lịch sử git ~699 MB có dump.
+- (§ 21) Id bài viết vẫn dò được qua `GET`/`PUT /api/admin/articles/:id` (tra theo id trần → 404, rồi 403 theo loại); đóng cần đổi kỳ vọng 403 → 404 trong `tests/audit-access-control.test.ts`.
+- (§ 21) Guard audit: `auditsOnPool` chỉ khớp `db.insert(activityLogs)` — `getDb().insert(activityLogs)` sau transaction không bị bắt; service có `async function audit(` bỏ qua kiểm pool. Hiện không có vi phạm.
+- (§ 21) `setMediaThumbnail` khôi phục R2 bằng bản đĩa cũ: mất bản đĩa mà R2 còn `thumb.jpg` thì lượt CSDL hỏng xoá luôn bản R2; hai lượt lưu đồng thời có thể khôi phục đè nhau.
+- (§ 21) Biến `{{content}}`/`{{author}}` bọc bằng thẻ ngẫu nhiên khác thẻ trong prompt chính, system_prompt tuỳ chỉnh không có lời dặn "trong thẻ là dữ liệu".
+- (§ 21) `--test-coverage-include` không liệt kê tệp chưa test nào nạp — muốn số coverage trung thực cần so lcov với `git ls-files server`.
