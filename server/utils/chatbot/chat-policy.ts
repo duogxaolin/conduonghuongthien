@@ -19,6 +19,7 @@ import { createFollowUpStreamFilter, FOLLOW_UP_LIMIT, FOLLOW_UP_MARKER, selectFo
 import { buildArticleSearch } from './article-search'
 import { photoSearchCondition, videoSearchCondition } from './media-search'
 import { CHAT_MAX_TOTAL_CHARS, CHAT_MAX_TURNS, chatTurnText, isChatTurn, isUserTurn, type ChatTurn } from './chat-turns'
+import { decodeHtmlEntities, plainTextField } from '../decode-html-entities'
 export const HOTLINE = CHATBOT_HOTLINE
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
 
@@ -470,13 +471,16 @@ async function callProvider(
           }
 
           return rows.map(r => {
-            const plainContent = (r.content || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
-            const snippet = plainContent ? plainContent.slice(0, 350) + (plainContent.length > 350 ? '...' : '') : (r.excerpt || '')
+            // Stored HTML (and imported excerpts) carry entities such as `Ng&agrave;y`: decode
+            // after stripping tags, so the model reads — and echoes — real Vietnamese.
+            const plainContent = decodeHtmlEntities((r.content || '').replace(/<[^>]*>/g, ' ')).replace(/\s+/g, ' ').trim()
+            const summary = plainTextField(r.excerpt)
+            const snippet = plainContent ? plainContent.slice(0, 350) + (plainContent.length > 350 ? '...' : '') : (summary || '')
             return {
-              title: r.title,
+              title: plainTextField(r.title) ?? '',
               type: r.type,
               url: `/news/${r.slug}`,
-              summary: r.excerpt,
+              summary,
               snippet,
               coverImage: r.thumbnailUrl || null,
               categoryArchiveUrl: categoryMap[r.type] || '/news',

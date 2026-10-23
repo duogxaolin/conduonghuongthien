@@ -1,6 +1,7 @@
 import { finitePositive, MAX_PAGE } from '../../utils/query-number'
 import { getDb } from '../../utils/db'
 import { reportPublicReadFailure } from '../../utils/public-read-failure'
+import { withPlainTextFields } from '../../utils/decode-html-entities'
 import { containsPattern, MAX_LIKE_QUERY_CHARS } from '../../utils/sql-like'
 import { articles, users, categories, articleTranslations } from '../../db/schema'
 import { eq, like, desc, count, inArray, and, sql } from 'drizzle-orm'
@@ -146,7 +147,7 @@ export default defineEventHandler(async (event) => {
 
     return {
       ok: true,
-      articles: items,
+      articles: items.map(withPlainTextFields),
       pagination: {
         page,
         limit,
