@@ -171,6 +171,14 @@ test('title và excerpt là văn bản thuần: thẻ HTML bị gỡ, dấu < th
 
 test('đường sửa tay cũng gỡ thẻ khỏi title/excerpt', () => {
   const source = read('../server/services/article-translations.ts')
-  assert.match(source, /updates\.title = stripMarkup\(data\.title\)/)
-  assert.match(source, /updates\.excerpt = stripMarkup\(data\.excerpt\)/)
+  // Entities are decoded first (`decodePlainTextInput`), THEN tags are stripped, so `&lt;b&gt;` cannot survive as `<b>`.
+  assert.match(source, /updates\.title = stripMarkup\(decodePlainTextInput\(data\.title\)/)
+  assert.match(source, /updates\.excerpt = stripMarkup\(decodePlainTextInput\(data\.excerpt\)/)
+})
+
+test('bản dịch: entity được giải mã TRƯỚC khi gỡ thẻ — `&lt;b&gt;` không sống sót thành `<b>`', () => {
+  const out = sanitizeTranslationFields({ title: 'Ng&agrave;y &lt;b&gt;x&lt;/b&gt;', excerpt: 'C&Ocirc;NG &lt;script&gt;alert(1)&lt;/script&gt; t&aacute;c' })
+  assert.equal(out.title, 'Ngày x')
+  assert.ok(!out.excerpt!.includes('<'), out.excerpt!)
+  assert.match(out.excerpt!, /^CÔNG .*tác$/)
 })

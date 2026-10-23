@@ -17,6 +17,7 @@ import { defineEventHandler, getRouterParam, getQuery, getCookie } from 'h3'
 import { articles, categories, articleTranslations } from '../../../../db/schema'
 import { getDb } from '../../../../utils/db'
 import { reportPublicReadFailure } from '../../../../utils/public-read-failure'
+import { withPlainTextFields } from '../../../../utils/decode-html-entities'
 import { rollUpRelatedTopics } from '../../../../utils/related-topics'
 /**
  * Bốn thẻ khớp đúng lưới 2 cột của khung xương phía client (2 hàng chẵn). Là
@@ -146,7 +147,7 @@ export default defineEventHandler(async (event) => {
     // trong im lặng, nên nó là phần cần kiểm bằng hành vi chứ không bằng văn bản.
     const topics = rollUpRelatedTopics(categoryRows, directTotals, current.categoryId, RELATED_TOPIC_LIMIT)
 
-    return { ok: true as const, articles: relatedRows, topics }
+    return { ok: true as const, articles: relatedRows.map(withPlainTextFields), topics }
   } catch (error) {
     // Phân biệt được với "không có gì liên quan": phía client biến `ok: false`
     // thành nhánh lỗi có nút thử lại, còn danh sách rỗng thì ẩn cả khối đi.

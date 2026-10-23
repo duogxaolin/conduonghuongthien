@@ -1,4 +1,5 @@
 import { sanitizeHtml } from '../../../utils/sanitize-html'
+import { plainTextField, withPlainTextFields } from '../../../utils/decode-html-entities'
 import { getDb } from '../../../utils/db'
 import { articles, users, categories, articleTranslations } from '../../../db/schema'
 import { eq, and, sql, inArray } from 'drizzle-orm'
@@ -13,7 +14,7 @@ export default defineEventHandler(async (event) => {
 
   try {
     const db = getDb()
-    const [article] = await db
+    const [found] = await db
       .select({
         id:           articles.id,
         type:         articles.type,
@@ -41,9 +42,11 @@ export default defineEventHandler(async (event) => {
       .where(and(eq(articles.slug, slug), eq(articles.status, 'published')))
       .limit(1)
 
-    if (!article) {
+    if (!found) {
       throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại hoặc chưa xuất bản.' })
     }
+    // Imported excerpts carry HTML entities (`Ng&agrave;y`); decoded here, not in the DB.
+    const article = withPlainTextFields(found)
 
     // If a language is requested, check for a published translation
     if (lang && lang !== 'vi') {
@@ -67,8 +70,8 @@ export default defineEventHandler(async (event) => {
           ok: true,
           article: {
             ...article,
-            title:    translation.title,
-            excerpt:  translation.excerpt ?? article.excerpt,
+            title:    plainTextField(translation.title) ?? article.title,
+            excerpt:  plainTextField(translation.excerpt) ?? article.excerpt,
             // Lọc lúc đọc: bản dịch ghi trước khi có lớp lọc lúc ghi vẫn nằm trong DB.
             content:  translation.content == null ? article.content : sanitizeHtml(translation.content),
             translatedFrom: 'vi',
