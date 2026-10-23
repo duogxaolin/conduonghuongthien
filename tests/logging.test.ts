@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { readFileSync, readdirSync } from 'node:fs'
-import { REDACTED, SECURITY_EVENTS, buildLogRecord } from '../server/utils/logger'
+import { BOOT_MIGRATION_EVENTS, REDACTED, SECURITY_EVENTS, buildLogRecord } from '../server/utils/logger'
 
 /**
  * The server had three bare console.error calls and nothing else. Nothing
@@ -121,4 +121,10 @@ test('the event names are one enumerated list, not scattered strings', () => {
   // So an operator can write one alert rule and know what to match on.
   assert.ok(Object.values(SECURITY_EVENTS).every(name => /^[a-z]+\.[a-z_]+$/.test(name)))
   assert.equal(new Set(Object.values(SECURITY_EVENTS)).size, Object.values(SECURITY_EVENTS).length)
+})
+
+test('the blocked media-category boot migration keeps its alert event name', () => {
+  // Operators alert on this exact string; the integration suite only runs on
+  // MySQL, so pin it in the unit job too.
+  assert.equal(BOOT_MIGRATION_EVENTS.mediaCategoryFkBlocked, 'db.migration.media_category_fk_blocked')
 })
