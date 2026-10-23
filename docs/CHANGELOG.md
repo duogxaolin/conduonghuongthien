@@ -682,6 +682,37 @@ Từ 2026-10-23 (lượt chạy đầu sau khi Actions chạy lại) `sudo apt-g
 - `Install Chromium` (`playwright install --with-deps` chạy apt riêng) có `timeout-minutes: 8`; job `build` 25 → 35 phút (hai bước apt có trần 12 + 8 phút cộng build/e2e ~14 phút — 25 phút từng cắt lượt đã xanh).
 - Guard: `tests/ci-ffmpeg-install.test.ts`. Mô phỏng luồng điều khiển bằng apt/sudo giả: tải được ngay → 1 lần; hỏng 1 lần → đổi mirror rồi cài; hỏng 2 lần → exit 1.
 
+### 26. Danh mục video bị xoá ở MỖI lần khởi động (2026-09-22 → bản vá 2026-10-23)
+
+**Lỗi.** `69a84eb` (2026-09-22) tách danh mục video khỏi `categories` bài viết sang bảng `media_categories`. Lượt chuyển trong `applyAdditiveMigrations` có hai chỗ sai:
+- Nó chạy `UPDATE media_items SET category_id = NULL WHERE category_id IS NOT NULL` **không điều kiện**.
+- Nó drop `fk_media_items_category` theo **tên**, bất kể FK đó trỏ đâu, rồi add lại.
+
+Khối này chạy mỗi lần container khởi động (Dockerfile CMD `init.ts` → `seed.ts` → server; `restart: always`; mỗi lượt CI deploy và `manage.sh` Update tạo lại container app). Danh mục cán bộ gán cho video chỉ sống tới lần khởi động kế tiếp, từ 2026-09-22 cho tới khi bản vá được deploy; riêng 2026-10-23 có bốn lượt deploy. Không test nào gán danh mục rồi khởi động lại, nên CI vẫn xanh suốt thời gian đó.
+
+**Sửa** (`convergeMediaCategoryForeignKey`, `server/db/migrations-additive.ts`): lượt chuyển khoá theo **trạng thái lược đồ**. Mọi FK trên cột `media_items.category_id` được đọc theo cột (`KEY_COLUMN_USAGE` ⋈ `REFERENTIAL_CONSTRAINTS`, cùng khuôn `ensureChatbotForeignKey`), không theo tên:
+- Còn FK trỏ `categories`: UPDATE về NULL → drop mọi FK trên cột → add `fk_media_items_category`. Bị cắt ngang ở bất kỳ bước nào thì lượt sau vẫn hoàn tất đúng.
+- Đúng một FK → `media_categories(id)` SET NULL: **không làm gì**, không UPDATE, không DROP/ADD.
+- Không FK hoặc FK sai hình: đếm giá trị treo. Nếu 0, drop FK sai rồi add, không đụng giá trị. Nếu > 0, giữ nguyên, log `db.migration.media_category_fk_blocked` `{ danglingRows }` (khai trong `BOOT_MIGRATION_EVENTS`, `server/utils/logger.ts`), và app vẫn khởi động. Trước đây add FK lúc đó sẽ ném 1452 và container khởi động lại mãi.
+- Không xoá theo giá trị: id thể loại bài viết cũ 1–7 trùng id danh mục video seed 1–4.
+
+**Test** `tests/media-category-migration-integration.test.ts` (MySQL thật, matrix CI nay 18 job; switch `MEDIA_CATEGORY_MIGRATION_INTEGRATION` + `MEDIA_CATEGORY_MIGRATION_HOST/PORT/USER/PASSWORD` ở cả hai khối env). Bốn ca:
+1. CSDL mới (init + seed thật), gán danh mục rồi khởi động lại → giữ nguyên; bộ ghi lệnh trên `applyAdditiveMigrations` thấy không lệnh ghi nào vào `media_items`.
+2. Nâng cấp từ FK `fk_media_items_category` → `categories`, có `media_categories` id 2 (ca trùng id) → id cũ 2 và 6 bị xoá đúng một lần; gán lại rồi khởi động hai lần → còn nguyên.
+3. FK cũ tên tự sinh (`media_items_ibfk_1`) và chưa có bảng `media_categories` → còn đúng một FK đúng.
+4. Thiếu FK (giá trị hợp lệ) → add, không xoá; sai luật xoá → dựng lại, không UPDATE; thiếu FK + giá trị 999 → giữ 999, không FK, log sự kiện mỗi lần khởi động.
+
+Trên mã cũ cả 4 ca đỏ: ca 1 thấy giá trị thành NULL, ca 3 thấy hai FK cùng tồn tại.
+
+**Khôi phục** giá trị đã mất: runbook do người vận hành chạy, sau khi image vá đã chạy healthy, ở [`docs/decisions/data-layer.md` § Khôi phục danh mục video](decisions/data-layer.md#media-category-restore); con trỏ ở `production/README.md`. Bước 0 là chép `./backups` ra ngoài vòng xoay **ngay**. Bản dump chỉ nạp vào CSDL nháp; UPDATE ghép video theo id + slug, danh mục theo id + slug, và chỉ điền `WHERE mi.category_id IS NULL`. Nếu không có bản dump dùng được thì lấy danh sách ứng viên từ `activity_logs`. **Không bao giờ lùi về image cũ hơn bản vá**: lần khởi động đầu của nó sẽ xoá lại.
+
+#### Kiểm chứng (2026-10-23)
+Suite mới trên MySQL dev: mã cũ 0/4 pass, bản vá 4/4. `npm test` 3930 / 3904 pass / 0 fail / 26 skip. Typecheck 0 lỗi. eslint 0 error / 16 warning. `db:drift` 62 bảng / 635 cột.
+
+Còn mở:
+- `modifyColumn(… 'media_items', 'short_id', 'VARCHAR(16) NOT NULL')` vẫn gửi một `ALTER TABLE media_items MODIFY COLUMN` ở mọi lần khởi động. Nó không đụng `category_id`, và test nêu tên nó là ngoại lệ.
+- Các lượt ghi khác lúc khởi động (`seed.ts` hồi sinh hàng mặc định đã xoá, ghi đè thứ tự `home_sections`) thuộc wave1/wave2 (`schema-upgrade-safety`).
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.

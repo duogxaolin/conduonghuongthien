@@ -40,7 +40,7 @@ của đồ thị phụ thuộc chứ không phải một lời hứa. Không c�
 chưa qua đủ bốn cổng.
 
 **Tiết kiệm phút Actions** (hạn mức 3.000 phút/tháng áp cho repo private — repo này **đã chuyển sang private** (kiểm bằng `gh repo view` ngày 2026-10-22), nên hạn mức nay áp dụng; tài khoản từng hết phút): một lượt CI đầy đủ ≈ 40 phút
-billed (GitHub làm tròn từng job lên phút; các job Integration chiếm ≈ 29 khi còn 13 job; nay matrix 17). Nên job
+billed (GitHub làm tròn từng job lên phút; các job Integration chiếm ≈ 29 khi còn 13 job; nay matrix 18). Nên job
 `changes` ("Plan") quyết định cho mỗi lượt chạy:
 
 | Sự kiện | Chạy gì |
@@ -48,7 +48,7 @@ billed (GitHub làm tròn từng job lên phút; các job Integration chiếm �
 | push vào `main`, chạy tay (Actions → CI → Run workflow) | **Đủ bộ**, gồm Integration — `image`/`deploy` vẫn chờ mọi cổng |
 | PR nháp | Bỏ qua (chạy lại khi bấm *Ready for review*) |
 | PR thường | unit + build + schema-drift + hygiene (≈ 12 phút) |
-| PR thường **có đụng** `server/`, `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 17 job Integration |
+| PR thường **có đụng** `server/`, `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 18 job Integration |
 
 Muốn ép chạy đủ cho một PR chỉ-giao-diện: Actions → CI → *Run workflow* trên nhánh đó.
 Gom commit trước khi push và dùng PR nháp cho việc dở dang cũng tiết kiệm phút.
