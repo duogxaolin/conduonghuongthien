@@ -19,7 +19,7 @@ import test, { mock } from 'node:test'
  */
 
 const PROHIBITED = 'nội dung cấm'
-const seen = { screened: [] as string[], answered: 0, persisted: [] as string[] }
+const seen = { screened: [] as string[], matched: [] as string[], answered: 0, persisted: [] as string[], answeredWith: [] as unknown[] }
 
 mock.module('h3', {
   namedExports: {
@@ -30,7 +30,7 @@ mock.module('h3', {
 })
 mock.module('../server/services/chatbot-settings', { namedExports: { getChatbotSettings: async () => ({}) } })
 mock.module('../server/utils/chatbot/chat', {
-  namedExports: { answerChat: async () => { seen.answered += 1; return { answer: 'Trả lời.', kind: 'curated', sources: [] } } },
+  namedExports: { answerChat: async (_event: unknown, _settings: unknown, messages: unknown) => { seen.answered += 1; seen.answeredWith = messages as unknown[]; return { answer: 'Trả lời.', kind: 'curated', sources: [] } } },
 })
 mock.module('../server/utils/chatbot/chat-policy', {
   namedExports: {
@@ -49,6 +49,8 @@ mock.module('../server/utils/runtime-config', { namedExports: { analyticsHmacSec
 mock.module('../server/services/moderation-worker', {
   namedExports: {
     fastPreModerate: async (text: string) => { seen.screened.push(text); return { blocked: text.includes(PROHIBITED) } },
+    // Same decision, no review row: what earlier history turns go through.
+    matchInstantRule: async (text: string) => { seen.matched.push(text); return text.includes(PROHIBITED) ? { category: 'x', severity: 'high', label: 'x' } : null },
     checkAndModerateContent: async () => ({ blocked: false }),
   },
 })
@@ -67,7 +69,7 @@ const kindOf = (reply: string) => {
   const frames = reply.split('\n').filter(line => line.startsWith('data: {')).map(line => JSON.parse(line.slice(6)))
   return frames.map(frame => frame.chatbot?.kind).find(Boolean) as string | undefined
 }
-function reset() { seen.screened.length = 0; seen.answered = 0; seen.persisted.length = 0 }
+function reset() { seen.screened.length = 0; seen.matched.length = 0; seen.answered = 0; seen.persisted.length = 0; seen.answeredWith = [] }
 
 for (const [name, handler] of [['/api/public/chatbot', publicHandler], ['/api/chat', legacyHandler]] as const) {
   test(`${name}: a harmless \`text\` cannot carry a prohibited \`content\` past moderation`, async () => {
@@ -84,16 +86,22 @@ for (const [name, handler] of [['/api/public/chatbot', publicHandler], ['/api/ch
     assert.equal(seen.answered, 0)
   })
 
-  test(`${name}: earlier user turns of the client-supplied history are screened too`, async () => {
+  test(`${name}: an earlier user turn that trips a rule is withheld from the model, without locking the conversation`, async () => {
+    // e.g. a rule an officer added after that turn had been accepted. Refusing the new
+    // question for it locked the conversation: the widget only drops the newest turn.
     reset()
     const history = [
       { role: 'user', content: `câu đầu ${PROHIBITED}` },
       { role: 'assistant', content: 'Trả lời.' },
       { role: 'user', content: 'tiếp tục đi' },
     ]
-    assert.equal(kindOf(await send(handler, history)), 'moderation_blocked')
-    assert.equal(seen.answered, 0)
-    assert.equal(seen.screened[0], 'tiếp tục đi', 'the newest turn is screened first')
+    assert.notEqual(kindOf(await send(handler, history)), 'moderation_blocked', 'the new question is answered')
+    assert.equal(seen.answered, 1)
+    assert.deepEqual(seen.screened, ['tiếp tục đi'], 'only the new question can file a review row')
+    assert.deepEqual(seen.matched, [`câu đầu ${PROHIBITED}`], 'the earlier turn is still checked')
+    const sent = JSON.stringify(seen.answeredWith)
+    assert.ok(!sent.includes(PROHIBITED), 'the flagged turn never reaches the model')
+    assert.ok(sent.includes('tiếp tục đi') && sent.includes('Trả lời.'), 'the rest of the history does')
   })
 
   test(`${name}: the bot's own earlier answer is not screened, so a keyword in it never refuses the visitor`, async () => {
@@ -105,7 +113,8 @@ for (const [name, handler] of [['/api/public/chatbot', publicHandler], ['/api/ch
     ]
     assert.notEqual(kindOf(await send(handler, history)), 'moderation_blocked')
     assert.equal(seen.answered, 1)
-    assert.deepEqual(seen.screened, ['cảm ơn', 'tội này bị xử thế nào?'])
+    assert.deepEqual(seen.screened, ['cảm ơn'])
+    assert.deepEqual(seen.matched, ['tội này bị xử thế nào?'], 'the bot turn is never checked')
   })
 
   test(`${name}: a history that does not end with the visitor's turn, or is oversized, is refused before any screening`, async () => {
@@ -118,6 +127,7 @@ for (const [name, handler] of [['/api/public/chatbot', publicHandler], ['/api/ch
       reset()
       await assert.rejects(send(handler, messages), (error: { statusCode?: number }) => error.statusCode === 400)
       assert.deepEqual(seen.screened, [], 'nothing reaches moderation')
+      assert.deepEqual(seen.matched, [])
       assert.equal(seen.answered, 0)
     }
   })
@@ -139,3 +149,48 @@ test('/api/public/chatbot: the stored transcript is the string that was screened
   await send(publicHandler, [{ role: 'user', text: 'xin chào', content: 'thủ tục xoá án tích' }])
   assert.deepEqual(seen.persisted, ['thủ tục xoá án tích'], 'an answered turn is stored as answered')
 })
+
+/** The production path: a real response object, so the handler streams. */
+async function sendStreaming(handler: (event: Event & { node?: unknown }) => Promise<unknown>, messages: unknown[]) {
+  const chunks: string[] = []
+  const res = { write: (chunk: string) => { chunks.push(chunk); return true }, end: () => {}, cork: () => {}, uncork: () => {} }
+  await handler({ body: { messages }, headers: {}, reqHeaders: { 'x-chat-session': 'token' }, context: {}, node: { res } } as Event & { node: unknown })
+  return chunks.join('')
+}
+
+test('/api/public/chatbot (streaming, as in production): a flagged earlier turn is withheld too', async () => {
+  reset()
+  const reply = await sendStreaming(publicHandler as never, [
+    { role: 'user', content: PROHIBITED },
+    { role: 'assistant', content: 'Trả lời.' },
+    { role: 'user', content: 'câu mới' },
+  ])
+  assert.equal(kindOf(reply), 'curated', 'answered through the streaming branch')
+  assert.equal(seen.answered, 1)
+  assert.ok(!JSON.stringify(seen.answeredWith).includes(PROHIBITED))
+  assert.deepEqual(seen.persisted, ['câu mới'], 'the stored question is the new one')
+})
+
+for (const [name, handler] of [['/api/public/chatbot', publicHandler], ['/api/chat', legacyHandler]] as const) {
+  test(`${name}: every raw form of a flagged earlier turn is withheld (shape, width, spacing, text/content)`, async () => {
+    reset()
+    await send(handler, [
+      { role: 'user', content: PROHIBITED },
+      { sender: 'user', text: `  ${PROHIBITED}  ` },
+      { role: 'user', text: 'xin chào', content: PROHIBITED.replace('n', 'ｎ') },
+      { role: 'assistant', content: 'Trả lời.' },
+      { role: 'user', content: 'câu mới' },
+    ])
+    assert.equal(seen.answered, 1)
+    const sent = JSON.stringify(seen.answeredWith)
+    assert.ok(!sent.includes(PROHIBITED) && !sent.includes(PROHIBITED.replace('n', 'ｎ')), sent)
+  })
+
+  test(`${name}: an empty newest turn is refused as invalid, never makes an older turn the one screened`, async () => {
+    reset()
+    await assert.rejects(send(handler, [{ role: 'user', content: PROHIBITED }, { role: 'user', content: '   ' }]),
+      (error: { statusCode?: number }) => error.statusCode === 400)
+    assert.deepEqual(seen.screened, [])
+    assert.deepEqual(seen.persisted, [])
+  })
+}

@@ -44,6 +44,8 @@ mock.module('../server/services/moderation-worker', {
   namedExports: {
     fastPreModerate: async () => { calls.moderation += 1; return { blocked: false } },
     checkAndModerateContent: async () => ({ blocked: false }),
+    // Earlier history turns are checked without filing a review row (chat-turns.ts).
+    matchInstantRule: async () => null,
   },
 })
 

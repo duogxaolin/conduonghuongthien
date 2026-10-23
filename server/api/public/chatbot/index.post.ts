@@ -7,8 +7,8 @@ import { verifySessionToken } from '../../../utils/chatbot/session-token'
 import { persistChatTurn } from '../../../utils/chatbot/session-db'
 import { getClientIp } from '../../../utils/client-ip'
 import { analyticsHmacSecret } from '../../../utils/runtime-config'
-import { fastPreModerate } from '../../../services/moderation-worker'
-import { chatHistoryShapeOk, chatTextsToScreen, lastUserTurnText } from '../../../utils/chatbot/chat-turns'
+import { fastPreModerate, matchInstantRule } from '../../../services/moderation-worker'
+import { chatHistoryShapeOk, chatTextsToScreen, lastUserTurnText, withoutUserTurns } from '../../../utils/chatbot/chat-turns'
 import { createSseHeartbeat } from '../../../utils/chatbot/sse-heartbeat'
 
 /** Serialises a result into the single-event SSE envelope the widget parses. */
@@ -80,12 +80,14 @@ export default defineEventHandler(async (event) => {
   for (const screened of screenedTexts) assertChatInputLength(screened, settings)
 
   // Tiền kiểm duyệt an ninh tức thì (< 1ms):
-  // Nếu phát hiện nội dung độc hại/chống phá/nguy hiểm: TỪ CHỐI NGAY LẬP TỨC (0ms)
-  // Quét MỌI lượt người dùng model sẽ thấy (lịch sử do trình duyệt gửi lên), không chỉ lượt cuối;
-  // dừng ở lượt bị chặn đầu tiên để mỗi request ghi tối đa một hàng chờ duyệt.
+  // Câu hỏi MỚI vi phạm → TỪ CHỐI NGAY và ghi một hàng chờ duyệt.
+  // Lượt người dùng CŨ trong lịch sử (do trình duyệt gửi lên) cũng được quét, nhưng lượt
+  // vi phạm chỉ bị bỏ khỏi lịch sử gửi model: từ chối vì nó làm kẹt cả cuộc trò chuyện
+  // (widget chỉ bỏ lượt mới nhất) và ghi lại câu cũ vào hàng chờ ở mỗi tin nhắn.
+  const [latest, ...earlier] = screenedTexts
   let blocked: string | null = null
-  for (const screened of screenedTexts) {
-    const fastCheck = await fastPreModerate(screened, {
+  if (latest) {
+    const fastCheck = await fastPreModerate(latest, {
       targetType: 'chat',
       sessionId: sessionId || undefined,
       contextTitle: sessionId ? `Phiên Chatbot #${sessionId.slice(0, 8)}` : 'Chatbot trực tuyến',
@@ -93,8 +95,15 @@ export default defineEventHandler(async (event) => {
       authorIp: getClientIp(event) || undefined,
       capQueuePerSource: true,
     }).catch(() => null)
-    if (fastCheck?.blocked) { blocked = screened; break }
+    if (fastCheck?.blocked) blocked = latest
   }
+  const withheld = new Set<string>()
+  if (blocked === null) {
+    for (const turn of earlier) {
+      if (await matchInstantRule(turn).catch(() => null)) withheld.add(turn)
+    }
+  }
+  const answerMessages = withoutUserTurns(messages, withheld)
 
   if (blocked !== null) {
     const refusalMessage = 'Nội dung câu hỏi của bạn có dấu hiệu vi phạm chính sách an toàn thông tin và quy định pháp luật (Luật An ninh mạng). Cổng thông tin Cục C11 từ chối tiếp nhận và xử lý yêu cầu này.'
@@ -122,7 +131,7 @@ export default defineEventHandler(async (event) => {
           sessionId,
           ip: getClientIp(event) || null,
           userAgent: getRequestHeader(event, 'user-agent') ?? null,
-          userText: blocked, // the string that was screened and refused
+          userText: blocked, // the newest turn, screened and refused
           botText: refusalMessage,
           kind: 'moderation_blocked',
         }).catch(() => null)
@@ -136,7 +145,7 @@ export default defineEventHandler(async (event) => {
         sessionId,
         ip: getClientIp(event) || null,
         userAgent: getRequestHeader(event, 'user-agent') ?? null,
-        userText: blocked, // the string that was screened and refused
+        userText: blocked, // the newest turn, screened and refused
         botText: refusalMessage,
         kind: 'moderation_blocked',
       }).catch(() => null)
@@ -164,7 +173,7 @@ export default defineEventHandler(async (event) => {
       result = await answerChat(
         event,
         settings,
-        messages,
+        answerMessages,
         (delta: string) => {
           heartbeat.stop()
           streamed = true
@@ -222,7 +231,7 @@ export default defineEventHandler(async (event) => {
   }
 
   let result
-  try { result = await answerChat(event, settings, messages) }
+  try { result = await answerChat(event, settings, answerMessages) }
   catch (error) {
     if ((error as Error).message === 'INVALID_MESSAGES') throw createError({ statusCode: 400, statusMessage: 'Invalid chat messages' })
     throw error

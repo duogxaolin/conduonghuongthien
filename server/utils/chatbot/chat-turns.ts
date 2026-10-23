@@ -59,12 +59,26 @@ export function chatHistoryShapeOk(messages: unknown): boolean {
   if (!Array.isArray(messages) || messages.length < 1 || messages.length > CHAT_MAX_TURNS) return false
   const turns = turnsOf(messages)
   if (!turns.length || !isUserTurn(turns[turns.length - 1])) return false
+  // An empty turn is refused here as `validateChatMessages` refuses it — otherwise an
+  // empty newest turn made an OLDER one the "latest" to screen, refuse and store.
+  if (turns.some(turn => !chatTurnText(turn))) return false
   return turns.reduce((sum, turn) => sum + chatTurnText(turn).length, 0) <= CHAT_MAX_TOTAL_CHARS
 }
 
 /**
+ * Lịch sử bỏ đi các lượt người dùng có nội dung nằm trong `texts` (so theo
+ * `chatTurnText`). Dùng để giữ lượt CŨ vi phạm khỏi model mà không từ chối câu mới
+ * — từ chối vì lượt cũ làm kẹt cả cuộc trò chuyện (widget chỉ bỏ lượt mới nhất).
+ */
+export function withoutUserTurns(messages: unknown, texts: ReadonlySet<string>): unknown {
+  if (!Array.isArray(messages) || texts.size === 0) return messages
+  return messages.filter(item => !(item && typeof item === 'object' && isUserTurn(item as ChatTurn) && texts.has(chatTurnText(item as ChatTurn))))
+}
+
+/**
  * Mọi lượt NGƯỜI DÙNG khác nhau mà model sẽ thấy, mới nhất trước — thứ kiểm duyệt
- * phải quét (không chỉ lượt cuối: lịch sử do trình duyệt gửi lên).
+ * phải quét (không chỉ lượt cuối: lịch sử do trình duyệt gửi lên). Phần tử đầu là
+ * câu hỏi mới (lượt cuối luôn của người dùng sau `chatHistoryShapeOk`).
  *
  * Không quét lượt "trợ lý": đó là lời của bot gửi lại, và một câu trả lời đúng có
  * thể chứa từ khoá trong luật (giải thích "tội lừa đảo") — quét nó từng từ chối oan

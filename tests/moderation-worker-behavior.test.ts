@@ -323,3 +323,19 @@ test('AI trả mức rủi ro lạ → tính là high, không bị bỏ qua (k�
     assert.equal(out.severity, 'high', riskLevel)
   }
 })
+
+test('matchInstantRule: cùng quyết định với fastPreModerate nhưng không ghi hàng đợi, không đếm', async () => {
+  reset(svc)
+  rec.rules = [rule({ pattern: 'từ-cấm-mới', category: 'custom', severity: 'medium' })]
+  svc.invalidateModerationRulesCache()
+  const before = svc.getWorkerStats()
+  assert.deepEqual(await svc.matchInstantRule('mày dcm'), { category: 'profanity', severity: 'high', label: 'Chửi thề thô tục' })
+  assert.equal((await svc.matchInstantRule('muốn lật đổ chính quyền'))?.severity, 'critical')
+  assert.deepEqual(await svc.matchInstantRule('có từ-cấm-mới ở đây'), { category: 'custom', severity: 'medium', label: 'Từ khóa: từ-cấm-mới' })
+  assert.equal(await svc.matchInstantRule('xin chào, thủ tục xoá án tích thế nào?'), null)
+  assert.equal(await svc.matchInstantRule('   '), null)
+  assert.equal(rec.queue.length, 0, 'no review-queue row')
+  const after = svc.getWorkerStats()
+  assert.equal(after.blockedInstant, before.blockedInstant)
+  assert.equal(after.totalScanned, before.totalScanned)
+})

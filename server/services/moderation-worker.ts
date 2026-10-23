@@ -163,9 +163,69 @@ async function applyAutoHide(
 
 
 
+/** The instant rule a text trips: what `recordInstantBlock` needs to file it. */
+export interface InstantRuleMatch {
+  category: string
+  severity: 'low' | 'medium' | 'high' | 'critical'
+  label: string
+}
+
+/**
+ * Which instant rule `content` trips, if any — built-in dictionaries first, then
+ * the active database rules. Files no review-queue row and touches no worker
+ * counters (the regex helper still keeps its own slow-rule state and cache).
+ *
+ * Split out of `fastPreModerate` for the chat history (rà soát 2026-10-23): an
+ * EARLIER visitor turn that trips a rule added after it was accepted must be kept
+ * from the model, but refusing the new question for it locked the conversation
+ * (the widget only drops the newest turn) and filed the old line again on every
+ * message. The chat endpoints withhold such turns instead — see `chat-turns.ts`.
+ */
+export async function matchInstantRule(content: string): Promise<InstantRuleMatch | null> {
+  const trimmed = (content || '').trim()
+  if (!trimmed) return null
+
+  // 1. Built-in high-confidence rules
+  for (const item of INSTANT_PROFANITY) {
+    if (item.pattern.test(trimmed)) return { category: 'profanity', severity: 'high', label: item.label }
+  }
+  for (const item of INSTANT_HOSTILE) {
+    if (item.pattern.test(trimmed)) return { category: 'anti_state', severity: 'critical', label: item.label }
+  }
+  for (const item of INSTANT_SPAM_GAMBLING) {
+    if (item.pattern.test(trimmed)) return { category: 'spam_fraud', severity: 'high', label: item.label }
+  }
+
+  // 2. Active custom rules from database
+  try {
+    const rules = await getActiveModerationRules()
+    const lower = trimmed.toLowerCase()
+    for (const rule of rules) {
+      const severity = (rule.severity as InstantRuleMatch['severity']) || 'high'
+      if (!isRegexRuleType(rule.ruleType)) {
+        if (lower.includes(rule.pattern.toLowerCase().trim())) {
+          return { category: rule.category, severity, label: `Từ khóa: ${rule.pattern}` }
+        }
+      } else {
+        // Một helper biên dịch dùng chung với checkAndModerateContent: cờ `iu`,
+        // không hạ chữ mẫu, bỏ qua mẫu hỏng/quá dài/có hình dạng lùi vô hạn; khớp
+        // theo cửa sổ + đo giờ, luật chậm bị tắt tạm (`testModerationRegex`).
+        const regex = compileModerationRegex(rule.pattern)
+        if (regex && testModerationRegex(rule.pattern, regex, trimmed)) {
+          return { category: rule.category, severity, label: `Mẫu regex: ${rule.pattern}` }
+        }
+      }
+    }
+  } catch {
+    // If DB read fails, built-in instant rules still secure the entrance
+  }
+  return null
+}
+
 /**
  * Fast synchronous pre-moderator: scans built-in dictionaries + active database rules.
- * Runs in < 1ms without external network or AI delay.
+ * Runs in < 1ms without external network or AI delay. A hit is filed in the review
+ * queue (`recordInstantBlock`); `matchInstantRule` is the same decision without that.
  */
 export async function fastPreModerate(
   content: string,
@@ -180,59 +240,8 @@ export async function fastPreModerate(
   workerStats.totalScanned++
   workerStats.lastScannedAt = new Date().toISOString()
 
-  // 1. Built-in high-confidence rules
-  for (const item of INSTANT_PROFANITY) {
-    if (item.pattern.test(trimmed)) {
-      return recordInstantBlock(trimmed, 'profanity', 'high', item.label, context)
-    }
-  }
-
-  for (const item of INSTANT_HOSTILE) {
-    if (item.pattern.test(trimmed)) {
-      return recordInstantBlock(trimmed, 'anti_state', 'critical', item.label, context)
-    }
-  }
-
-  for (const item of INSTANT_SPAM_GAMBLING) {
-    if (item.pattern.test(trimmed)) {
-      return recordInstantBlock(trimmed, 'spam_fraud', 'high', item.label, context)
-    }
-  }
-
-  // 2. Active custom rules from database
-  try {
-    const rules = await getActiveModerationRules()
-    const lower = trimmed.toLowerCase()
-    for (const rule of rules) {
-      if (!isRegexRuleType(rule.ruleType)) {
-        if (lower.includes(rule.pattern.toLowerCase().trim())) {
-          return recordInstantBlock(
-            trimmed,
-            rule.category,
-            (rule.severity as 'low' | 'medium' | 'high' | 'critical') || 'high',
-            `Từ khóa: ${rule.pattern}`,
-            context,
-          )
-        }
-      } else {
-        // Một helper biên dịch dùng chung với checkAndModerateContent: cờ `iu`,
-        // không hạ chữ mẫu, bỏ qua mẫu hỏng/quá dài/có hình dạng lùi vô hạn; khớp
-        // theo cửa sổ + đo giờ, luật chậm bị tắt tạm (`testModerationRegex`).
-        const regex = compileModerationRegex(rule.pattern)
-        if (regex && testModerationRegex(rule.pattern, regex, trimmed)) {
-          return recordInstantBlock(
-            trimmed,
-            rule.category,
-            (rule.severity as 'low' | 'medium' | 'high' | 'critical') || 'high',
-            `Mẫu regex: ${rule.pattern}`,
-            context,
-          )
-        }
-      }
-    }
-  } catch {
-    // If DB read fails, built-in instant rules still secure the entrance
-  }
+  const match = await matchInstantRule(trimmed)
+  if (match) return recordInstantBlock(trimmed, match.category, match.severity, match.label, context)
 
   workerStats.allowedCount++
   return { blocked: false, action: "allow", severity: 'low', reason: '', matchedRule: '' }

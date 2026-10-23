@@ -3,9 +3,9 @@ import { getChatbotSettings } from '../services/chatbot-settings'
 import { answerChat } from '../utils/chatbot/chat'
 import { CHAT_RATE_LIMITED_MESSAGE, chargeChatRateLimit } from '../utils/chatbot/chat-policy'
 import { assertChatInputLength } from '../utils/chatbot/input-length'
-import { fastPreModerate } from '../services/moderation-worker'
+import { fastPreModerate, matchInstantRule } from '../services/moderation-worker'
 import { getClientIp } from '../utils/client-ip'
-import { chatHistoryShapeOk, chatTextsToScreen } from '../utils/chatbot/chat-turns'
+import { chatHistoryShapeOk, chatTextsToScreen, withoutUserTurns } from '../utils/chatbot/chat-turns'
 
 /** Backwards-compatible public chatbot endpoint. The governed implementation lives in utils/chatbot/chat.ts. */
 export default defineEventHandler(async (event) => {
@@ -31,9 +31,12 @@ export default defineEventHandler(async (event) => {
   const screenedTexts = chatTextsToScreen(rawMessages)
   for (const screened of screenedTexts) assertChatInputLength(screened, settings)
 
-  // Every user turn the model will see, newest first; stop at the first refusal.
-  for (const screened of screenedTexts) {
-    const fastCheck = await fastPreModerate(screened, {
+  // The new question is screened and refused (one review-queue row); an EARLIER user
+  // turn that trips a rule is only withheld from the model — refusing for it locked
+  // the conversation and re-filed the old line on every message.
+  const [latest, ...earlier] = screenedTexts
+  if (latest) {
+    const fastCheck = await fastPreModerate(latest, {
       targetType: 'chat',
       authorIp: getClientIp(event) || undefined,
       contextTitle: 'Chatbot trực tuyến',
@@ -50,8 +53,13 @@ export default defineEventHandler(async (event) => {
     }
   }
 
+  const withheld = new Set<string>()
+  for (const turn of earlier) {
+    if (await matchInstantRule(turn).catch(() => null)) withheld.add(turn)
+  }
+
   let result
-  try { result = await answerChat(event, settings, rawMessages) }
+  try { result = await answerChat(event, settings, withoutUserTurns(rawMessages, withheld)) }
   catch (error) { if ((error as Error).message === 'INVALID_MESSAGES') throw createError({ statusCode: 400, statusMessage: 'Invalid chat messages' }); throw error }
   setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
   setHeader(event, 'Cache-Control', 'no-cache, no-transform')
