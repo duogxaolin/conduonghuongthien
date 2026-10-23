@@ -7,7 +7,8 @@ import { verifySessionToken } from '../../../utils/chatbot/session-token'
 import { persistChatTurn } from '../../../utils/chatbot/session-db'
 import { getClientIp } from '../../../utils/client-ip'
 import { analyticsHmacSecret } from '../../../utils/runtime-config'
-import { checkAndModerateContent, fastPreModerate } from '../../../services/moderation-worker'
+import { fastPreModerate } from '../../../services/moderation-worker'
+import { chatHistoryShapeOk, chatTextsToScreen, lastUserTurnText } from '../../../utils/chatbot/chat-turns'
 import { createSseHeartbeat } from '../../../utils/chatbot/sse-heartbeat'
 
 /** Serialises a result into the single-event SSE envelope the widget parses. */
@@ -19,16 +20,6 @@ function sseEnvelope(answer: string, kind: string, sources: unknown, retryAfter:
   return `data: ${payload}\n\ndata: [DONE]\n\n`
 }
 
-/** Last user turn — the only one that can contain contact details worth storing. */
-function lastUserText(messages: unknown): string {
-  if (!Array.isArray(messages)) return ''
-  for (let index = messages.length - 1; index >= 0; index -= 1) {
-    const item = messages[index] as { text?: unknown; content?: unknown } | null
-    const value = typeof item?.text === 'string' ? item.text : typeof item?.content === 'string' ? item.content : ''
-    if (value.trim()) return value.trim()
-  }
-  return ''
-}
 
 export default defineEventHandler(async (event) => {
   const settings = await getChatbotSettings()
@@ -65,7 +56,8 @@ export default defineEventHandler(async (event) => {
   if (sessionId) event.context.chatSessionId = sessionId
 
   const messages = (body as { messages?: unknown } | null)?.messages
-  const userText = lastUserText(messages)
+  // Read through chat-turns.ts — the same string the policy answers and we store.
+  const userText = lastUserTurnText(messages)
 
   // Hạn mức theo địa chỉ TRƯỚC kiểm duyệt: mỗi tin bị chặn ghi một hàng chờ duyệt
   // (và một lượt chat khi có phiên), nên kiểm duyệt đứng trước hạn mức là cửa cho
@@ -80,12 +72,20 @@ export default defineEventHandler(async (event) => {
 
   // Trần độ dài SAU hạn mức (lượt quá dài vẫn bị tính), TRƯỚC kiểm duyệt: đúng chuỗi
   // sắp được quét, theo đúng trần `answerChat` áp (cài đặt `maxInputChars`).
-  assertChatInputLength(userText, settings)
+  // History shape first (count, total size, a user turn last) so a 64 KB body of
+  // thousands of turns is refused before any of it is screened; then every user
+  // turn about to be screened is length-capped, not just the newest.
+  if (!chatHistoryShapeOk(messages)) throw createError({ statusCode: 400, statusMessage: 'Invalid chat messages' })
+  const screenedTexts = chatTextsToScreen(messages)
+  for (const screened of screenedTexts) assertChatInputLength(screened, settings)
 
   // Tiền kiểm duyệt an ninh tức thì (< 1ms):
   // Nếu phát hiện nội dung độc hại/chống phá/nguy hiểm: TỪ CHỐI NGAY LẬP TỨC (0ms)
-  if (userText) {
-    const fastCheck = await fastPreModerate(userText, {
+  // Quét MỌI lượt người dùng model sẽ thấy (lịch sử do trình duyệt gửi lên), không chỉ lượt cuối;
+  // dừng ở lượt bị chặn đầu tiên để mỗi request ghi tối đa một hàng chờ duyệt.
+  let blocked: string | null = null
+  for (const screened of screenedTexts) {
+    const fastCheck = await fastPreModerate(screened, {
       targetType: 'chat',
       sessionId: sessionId || undefined,
       contextTitle: sessionId ? `Phiên Chatbot #${sessionId.slice(0, 8)}` : 'Chatbot trực tuyến',
@@ -93,55 +93,56 @@ export default defineEventHandler(async (event) => {
       authorIp: getClientIp(event) || undefined,
       capQueuePerSource: true,
     }).catch(() => null)
+    if (fastCheck?.blocked) { blocked = screened; break }
+  }
 
-    if (fastCheck?.blocked) {
-      const refusalMessage = 'Nội dung câu hỏi của bạn có dấu hiệu vi phạm chính sách an toàn thông tin và quy định pháp luật (Luật An ninh mạng). Cổng thông tin Cục C11 từ chối tiếp nhận và xử lý yêu cầu này.'
+  if (blocked !== null) {
+    const refusalMessage = 'Nội dung câu hỏi của bạn có dấu hiệu vi phạm chính sách an toàn thông tin và quy định pháp luật (Luật An ninh mạng). Cổng thông tin Cục C11 từ chối tiếp nhận và xử lý yêu cầu này.'
 
-      setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
-      setHeader(event, 'Cache-Control', 'no-cache, no-transform')
-      setHeader(event, 'Connection', 'keep-alive')
+    setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
+    setHeader(event, 'Cache-Control', 'no-cache, no-transform')
+    setHeader(event, 'Connection', 'keep-alive')
 
-      const res = event.node?.res
-      if (res && typeof res.write === 'function') {
-        res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: refusalMessage } }] })}\n\n`)
-        res.write(`data: ${JSON.stringify({
-          choices: [{ delta: { content: '' } }],
-          chatbot: {
-            kind: 'moderation_blocked',
-            sources: [],
-            retryAfter: null,
-            askContact: false,
-          },
-        })}\n\n`)
-        res.write('data: [DONE]\n\n')
-
-        if (sessionId) {
-          await persistChatTurn({
-            sessionId,
-            ip: getClientIp(event) || null,
-            userAgent: getRequestHeader(event, 'user-agent') ?? null,
-            userText,
-            botText: refusalMessage,
-            kind: 'moderation_blocked',
-          }).catch(() => null)
-        }
-        res.end()
-        return
-      }
+    const res = event.node?.res
+    if (res && typeof res.write === 'function') {
+      res.write(`data: ${JSON.stringify({ choices: [{ delta: { content: refusalMessage } }] })}\n\n`)
+      res.write(`data: ${JSON.stringify({
+        choices: [{ delta: { content: '' } }],
+        chatbot: {
+          kind: 'moderation_blocked',
+          sources: [],
+          retryAfter: null,
+          askContact: false,
+        },
+      })}\n\n`)
+      res.write('data: [DONE]\n\n')
 
       if (sessionId) {
         await persistChatTurn({
           sessionId,
           ip: getClientIp(event) || null,
           userAgent: getRequestHeader(event, 'user-agent') ?? null,
-          userText,
+          userText: blocked, // the string that was screened and refused
           botText: refusalMessage,
           kind: 'moderation_blocked',
         }).catch(() => null)
       }
-
-      return sseEnvelope(refusalMessage, 'moderation_blocked', [], null, false)
+      res.end()
+      return
     }
+
+    if (sessionId) {
+      await persistChatTurn({
+        sessionId,
+        ip: getClientIp(event) || null,
+        userAgent: getRequestHeader(event, 'user-agent') ?? null,
+        userText: blocked, // the string that was screened and refused
+        botText: refusalMessage,
+        kind: 'moderation_blocked',
+      }).catch(() => null)
+    }
+
+    return sseEnvelope(refusalMessage, 'moderation_blocked', [], null, false)
   }
 
   setHeader(event, 'Content-Type', 'text/event-stream; charset=utf-8')
@@ -203,7 +204,6 @@ export default defineEventHandler(async (event) => {
     res.write('data: [DONE]\n\n')
 
     if (sessionId) {
-      const userText = lastUserText(messages)
       if (userText) {
         await persistChatTurn({
           sessionId,
@@ -229,7 +229,6 @@ export default defineEventHandler(async (event) => {
   }
 
   if (sessionId) {
-    const userText = lastUserText(messages)
     if (userText) {
       await persistChatTurn({
         sessionId,

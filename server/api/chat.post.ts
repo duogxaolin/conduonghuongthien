@@ -5,17 +5,7 @@ import { CHAT_RATE_LIMITED_MESSAGE, chargeChatRateLimit } from '../utils/chatbot
 import { assertChatInputLength } from '../utils/chatbot/input-length'
 import { fastPreModerate } from '../services/moderation-worker'
 import { getClientIp } from '../utils/client-ip'
-
-function extractLastUserText(messages: unknown): string {
-  if (!Array.isArray(messages)) return ''
-  for (let i = messages.length - 1; i >= 0; i--) {
-    const m = messages[i]
-    if (m && typeof m === 'object' && 'role' in m && m.role === 'user' && 'content' in m && typeof m.content === 'string') {
-      return m.content.trim()
-    }
-  }
-  return ''
-}
+import { chatHistoryShapeOk, chatTextsToScreen } from '../utils/chatbot/chat-turns'
 
 /** Backwards-compatible public chatbot endpoint. The governed implementation lives in utils/chatbot/chat.ts. */
 export default defineEventHandler(async (event) => {
@@ -23,7 +13,6 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event).catch(() => null)
   if (Buffer.byteLength(JSON.stringify(body ?? null), 'utf8') > 64_000) throw createError({ statusCode: 413, statusMessage: 'Request is too large' })
   const rawMessages = (body as { messages?: unknown } | null)?.messages
-  const userText = extractLastUserText(rawMessages)
 
   // Rate limit BEFORE moderation (a blocked message writes a review-queue row);
   // answerChat reuses this decision instead of charging the request twice.
@@ -35,10 +24,16 @@ export default defineEventHandler(async (event) => {
   }
 
   // Length cap AFTER the rate-limit charge, BEFORE moderation (same rule answerChat applies).
-  assertChatInputLength(userText, settings)
+  // Read through chat-turns.ts — the same strings the policy answers (a `{sender, text}`
+  // turn used to skip moderation here entirely). History shape is checked first; then
+  // every user turn reaches the model, so every one is length-capped and screened.
+  if (!chatHistoryShapeOk(rawMessages)) throw createError({ statusCode: 400, statusMessage: 'Invalid chat messages' })
+  const screenedTexts = chatTextsToScreen(rawMessages)
+  for (const screened of screenedTexts) assertChatInputLength(screened, settings)
 
-  if (userText) {
-    const fastCheck = await fastPreModerate(userText, {
+  // Every user turn the model will see, newest first; stop at the first refusal.
+  for (const screened of screenedTexts) {
+    const fastCheck = await fastPreModerate(screened, {
       targetType: 'chat',
       authorIp: getClientIp(event) || undefined,
       contextTitle: 'Chatbot trực tuyến',
