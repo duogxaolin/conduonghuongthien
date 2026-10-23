@@ -229,9 +229,11 @@ start_app() {
   docker compose up -d --no-deps app || return 1
 }
 
-# Dump CSDL trước khi Update đổi image, bằng scripts/backup-db.sh (cùng phép kiểm:
-# gzip, dấu "Dump completed", ≥ 20 bảng) — bản vừa `git pull` nên luôn hiểu
-# `--prefix`. Trả khác 0 khi dump hỏng; nơi gọi dừng Update.
+# Dump CSDL ở bước ĐẦU của Update, trước git pull / compose / .env / image, bằng
+# scripts/backup-db.sh (cùng phép kiểm: gzip, dấu "Dump completed", ≥ 20 bảng; tệp
+# 600, thư mục 700). Dump chạy TRƯỚC `git pull`, nên dùng backup-db.sh của CHÍNH bản
+# checkout chứa manage.sh đang chạy — cùng commit, luôn hiểu `--prefix`. Trả khác 0
+# khi dump hỏng; nơi gọi dừng Update.
 update_predeploy_dump() {
   local owner
   bash "$ROOT/scripts/backup-db.sh" --prefix cdkt-predeploy "$ROOT/.deploy-db-backups" || return 1
@@ -959,6 +961,22 @@ cmd_update() {
   docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || true
   echo
 
+  # ── Sao lưu CSDL — TRƯỚC mọi thay đổi ───────────────────────────────────────
+  # Điểm lùi dữ liệu, cùng bản dump CI deploy tự làm (scripts/deploy-remote.sh
+  # `predeploy_dump`) và cùng chỗ trong luồng: trước git pull (đổi compose), trước
+  # các câu hỏi ghi .env, trước khi kéo/đổi image. Trước nó chỉ có bước siết quyền
+  # .env về 600 (secure_env_file — không đổi nội dung). Dump hỏng thì dừng: máy chủ y
+  # như trước lượt Update. Trả lời 'n' chỉ khi đã có bản sao lưu mới, hoặc chính bước
+  # sao lưu là thứ đang hỏng.
+  if confirm "Sao lưu DB trước khi cập nhật?" "y"; then
+    echo -e "${C_BOLD}Sao lưu CSDL → .deploy-db-backups/ ...${C_RESET}"
+    if ! update_predeploy_dump; then
+      echo -e "${C_RED}✗ Sao lưu CSDL thất bại — dừng. Chưa pull code, chưa sửa .env, chưa kéo image hay khởi động lại gì.${C_RESET}"
+      echo -e "${C_DIM}   Sửa nguyên nhân (đĩa đầy? mysql không chạy?) rồi chạy lại Update.${C_RESET}"
+      exit 1
+    fi
+  fi
+
   # ── Pull code ─────────────────────────────────────────────────────────────
   # CI ghi đè docker-compose.yml trên VPS → cây git "bẩn" → git pull từ chối. Xử lý
   # (sao lưu + bỏ thay đổi cục bộ của tệp đó) nằm trong update_pull_code.
@@ -1026,18 +1044,7 @@ cmd_update() {
   # ── Pull image + restart ─────────────────────────────────────────────────
   echo
   if confirm "Pull image mới + khởi động lại (docker compose pull && up -d)?" "y"; then
-    # Điểm lùi dữ liệu TRƯỚC khi đổi image — cùng bản dump CI deploy tự làm
-    # (scripts/deploy-remote.sh `predeploy_dump`). Dump hỏng thì dừng: chưa kéo,
-    # chưa gắn thẻ, chưa khởi động lại gì. Trả lời 'n' chỉ khi đã có bản sao lưu
-    # mới hoặc chính bước sao lưu là thứ đang hỏng.
-    if confirm "Sao lưu DB trước khi cập nhật?" "y"; then
-      echo -e "${C_BOLD}Sao lưu CSDL → .deploy-db-backups/ ...${C_RESET}"
-      if ! update_predeploy_dump; then
-        echo -e "${C_RED}✗ Sao lưu CSDL thất bại — dừng. Chưa kéo image hay khởi động lại gì.${C_RESET}"
-        echo -e "${C_DIM}   Sửa nguyên nhân (đĩa đầy? mysql không chạy?) rồi chạy lại Update.${C_RESET}"
-        exit 1
-      fi
-    fi
+    # Bản dump trước cập nhật đã lấy ở đầu lượt Update (trước git pull).
     # Kéo + khởi động lại + đợi healthy + TỰ LÙI nếu bản mới hỏng (xem
     # update_app_image). Thất bại = thoát khác 0, không in "UPDATE XONG".
     if ! update_app_image; then

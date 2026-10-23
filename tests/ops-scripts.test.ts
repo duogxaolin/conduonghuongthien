@@ -1,6 +1,9 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { readFileSync, statSync } from 'node:fs'
+import { spawnSync } from 'node:child_process'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 
 /**
  * The operational scripts and the CI definition. They are not imported by the
@@ -45,15 +48,24 @@ test('a backup is verified before it is trusted', () => {
 
 test('a rejected backup is deleted, not left looking valid', () => {
   // Found by running the script against a stubbed docker: a failed verification
-  // used to leave the bad archive in the backup directory.
-  assert.match(read('scripts/backup-db.sh'), /"\$1" == "verify".*rm -f "\$TARGET"/s)
+  // used to leave the bad archive in the backup directory. The archive is now
+  // written as <name>.partial and only renamed once verified; the single exit
+  // handler removes the partial on every other path (run in
+  // tests/ops-scripts-sandbox.test.ts and tests/backup-ping-predeploy.test.ts).
+  const script = read('scripts/backup-db.sh')
+  const handler = /^on_exit\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+  assert.match(handler, /rm -f -- "\$PARTIAL"/)
+  assert.match(script, /\| gzip -9 > "\$PARTIAL"; then/)
+  const verified = script.indexOf('[[ "$PLAIN_BYTES" -ge 51200 ]]')
+  const renamed = script.indexOf('mv -f -- "$PARTIAL" "$TARGET"')
+  assert.ok(verified > 0 && renamed > verified, 'the dump gets its final name before it is verified')
 })
 
 test('the size floor is measured on the SQL, not on the compressed archive', () => {
   // Also found by running it: a highly repetitive dump compresses so well that a
   // threshold on the .gz size rejects a perfectly good backup.
   const script = read('scripts/backup-db.sh')
-  assert.match(script, /PLAIN_BYTES="\$\(gzip -dc "\$TARGET" \| wc -c/)
+  assert.match(script, /PLAIN_BYTES="\$\(gzip -dc "\$PARTIAL" \| wc -c/)
   assert.doesNotMatch(script, /\[\[ "\$BYTES" -ge/, 'the floor is back on the compressed size')
 })
 
@@ -132,6 +144,32 @@ test('the restore check never touches the live database', () => {
 
 test('backups are not committed to the repository', () => {
   assert.match(read('.gitignore'), /^backups\/$/m)
+})
+
+test('what a deploy leaves on the VPS stays out of git AND out of the Docker build context', () => {
+  // The VPS clone collects production database dumps (.deploy-db-backups/), the
+  // backup script CI ships (.deploy-incoming/), compose backups and the incoming
+  // compose. manage.sh Update can fall back to `docker compose build app` in that
+  // clone, and the builder stage runs `COPY . .` — without these lines every
+  // production dump would be sent to the daemon and baked into a cached layer.
+  const ignoredDirs = ['.deploy-db-backups', '.deploy-incoming', '.deploy-compose-backups']
+  const ignoredFiles = ['.docker-compose.incoming.yml']
+  const gitignore = read('.gitignore').split('\n').map((l) => l.trim())
+  const dockerignore = read('.dockerignore').split('\n').map((l) => l.trim())
+  for (const dir of ignoredDirs) {
+    assert.ok(gitignore.includes(`${dir}/`), `.gitignore does not list ${dir}/`)
+    // Docker matches a pattern against the whole path from the context root: a bare
+    // name covers only the top level, `**/` any depth.
+    for (const pattern of [dir, `**/${dir}`]) {
+      assert.ok(dockerignore.includes(pattern) || dockerignore.includes(`${pattern}/`), `.dockerignore does not list ${pattern}`)
+    }
+  }
+  for (const file of ignoredFiles) {
+    assert.ok(gitignore.includes(file), `.gitignore does not list ${file}`)
+    assert.ok(dockerignore.includes(file) && dockerignore.includes(`**/${file}`), `.dockerignore does not list ${file}`)
+  }
+  // Nothing re-includes them afterwards.
+  assert.ok(!dockerignore.some((l) => l.startsWith('!') && /\.deploy-|\.docker-compose\.incoming/.test(l)))
 })
 
 // ─── CI ──────────────────────────────────────────────────────────────────────
@@ -847,12 +885,21 @@ test('a verified pre-deploy dump is taken after the pull and before anything on 
   assert.match(backup, /^PREFIX_KEEP=5$/m, 'pre-deploy dumps are kept by count: 5')
 })
 
-test('manage.sh Update offers the same pre-deploy dump, defaulting to yes', () => {
+test('manage.sh Update offers the same pre-deploy dump, defaulting to yes, before it changes anything', () => {
   const script = read('production/manage.sh')
   const update = script.slice(script.indexOf('cmd_update() {'), script.indexOf('cmd_migrate() {'))
   const ask = update.indexOf('confirm "Sao lưu DB trước khi cập nhật?" "y"')
   assert.ok(ask >= 0, 'Update does not offer the pre-update dump (default yes)')
-  assert.ok(ask < update.indexOf('update_app_image'), 'the dump must come before the image is swapped')
+  // Like the CI deploy (dump before install_compose/.env/container): before git pull
+  // (which rewrites compose), before the prompts that rewrite .env, before the image.
+  const at = (re: RegExp) => update.search(re)
+  for (const [what, re] of Object.entries({
+    'git pull': /^\s+update_pull_code$/m,
+    'the PORT prompt (.env edits)': /prompt " {2}PORT"/,
+    'the image swap': /update_app_image/,
+  })) {
+    assert.ok(at(re) > ask, `the dump must come before ${what}`)
+  }
   assert.match(script, /scripts\/backup-db\.sh" --prefix cdkt-predeploy "\$ROOT\/\.deploy-db-backups"/)
 })
 
@@ -869,8 +916,11 @@ test('a docs-only merge to main skips the image and the deploy; everything else 
   const deployStep = steps.find((s) => s.id === 'deploy')
   assert.ok(deployStep, 'no step computes the deploy output')
   const run = String(deployStep.run)
-  assert.match(run, /git diff --no-renames --name-only "\$BEFORE" "\$SHA"/,
+  // The base is the commit production runs (tests/ci-docs-only-skip.test.ts runs it),
+  // never `github.event.before`.
+  assert.match(run, /git diff --no-renames --name-only "\$base" "\$SHA"/,
     '--no-renames: a renamed .ts → .md must list BOTH paths, so it still deploys')
+  assert.match(run, /git merge-base --is-ancestor "\$base" "\$SHA"/)
   assert.ok(run.includes(`grep -Ev '\\.md$|^docs/|^openspec/'`), 'the docs-only pattern changed')
 
   const image = asMap(jobs.image, 'image job')
@@ -915,13 +965,86 @@ test('the deploy is only green once the public URL serves the new version', asyn
   const run = String(smoke.run)
   assert.match(run, /::warning::/, 'an unset VPS_SMOKE_URL must warn, not fail and not pass silently')
   assert.match(run, /url="\$\{SMOKE_URL%\/\}\/api\/public\/health"/)
-  assert.match(run, /curl -fsS -m 10 "\$url\?t=\$\{GITHUB_RUN_ID\}-\$\{attempt\}"/, 'no cache-busting query')
+  // `-L`: a site that answers through a redirect (http→https, apex→www) still counts.
+  assert.match(run, /curl -fsSL -m 10 "\$url\?t=\$\{GITHUB_RUN_ID\}-\$\{attempt\}"/, 'no cache-busting query, or redirects not followed')
   assert.match(run, /seq 1 12/)
   assert.match(run, /sleep 10/)
   assert.match(run, /\.version/, 'the version in the body is never compared')
   assert.match(run, /"\$EXPECTED_VERSION"/)
   // A CDN or DNS hiccup must not roll a healthy container back.
   assert.doesNotMatch(run, /\bssh\b|set_image|CDKT_IMAGE=/, 'the smoke step must not roll back on its own')
+})
+
+test('the smoke step, RUN: 12 tries, no pause after the last, and it never claims a time it did not wait', async () => {
+  const jobs = asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs')
+  const steps = asMap(jobs.deploy, 'deploy job').steps as YamlMap[]
+  const run = String(steps.find((s) => s.name === 'Smoke test through the public URL')?.run ?? '')
+  const VERSION = '0123456789ab'
+  const smoke = (servedFrom: number | null, smokeUrl = 'https://portal.example.test/') => {
+    const dir = mkdtempSync(join(tmpdir(), 'cdkt-smoke-'))
+    try {
+      mkdirSync(join(dir, 'bin'))
+      // curl: logs argv; answers 200 with the new version from attempt `servedFrom`
+      // on (the attempt number is the `-<n>` of the cache-busting query), the old
+      // version before that, and fails outright when `servedFrom` is null.
+      writeFileSync(
+        join(dir, 'bin', 'curl'),
+        `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "${dir}/curl.log"\nn=\${*: -1}; n=\${n##*-}\n` +
+          `[ -n "\${FROM:-}" ] || { echo 'curl: (22) The requested URL returned error: 502' >&2; exit 22; }\n` +
+          `if [ "$n" -ge "$FROM" ]; then echo '{"ok":true,"version":"${VERSION}"}'; else echo '{"ok":true,"version":"oldversion00"}'; fi\n`,
+      )
+      writeFileSync(join(dir, 'bin', 'sleep'), `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "${dir}/sleep.log"\n`)
+      chmodSync(join(dir, 'bin', 'curl'), 0o755)
+      chmodSync(join(dir, 'bin', 'sleep'), 0o755)
+      const r = spawnSync('bash', ['-e', '-c', run], {
+        encoding: 'utf8',
+        env: {
+          PATH: `${join(dir, 'bin')}:${process.env.PATH ?? ''}`,
+          SMOKE_URL: smokeUrl,
+          EXPECTED_VERSION: VERSION,
+          GITHUB_RUN_ID: '77',
+          FROM: servedFrom === null ? '' : String(servedFrom),
+        },
+      })
+      const log = (name: string) =>
+        existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8').split('\n').filter(Boolean) : []
+      return { status: r.status, out: r.stdout + r.stderr, curl: log('curl.log'), sleeps: log('sleep.log') }
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+
+  const never = smoke(null)
+  assert.equal(never.status, 1, never.out)
+  assert.equal(never.curl.length, 12)
+  assert.equal(never.sleeps.length, 11, 'a pause after the last attempt only delays the red job')
+  assert.ok(never.curl.every((args, i) => /(^| )-[a-zA-Z]*L/.test(args) && args.endsWith(`?t=77-${i + 1}`)), JSON.stringify(never.curl))
+  // 12 tries × up to 10 s of curl + 11 × 10 s of pause: up to ~4 minutes, not "2".
+  assert.doesNotMatch(never.out, /2 phút/, 'the error claims a 2-minute window; the worst case is ~4 minutes')
+  assert.match(never.out, /::error::/)
+
+  const third = smoke(3)
+  assert.equal(third.status, 0, third.out)
+  assert.equal(third.curl.length, 3)
+  assert.equal(third.sleeps.length, 2)
+
+  const unset = smoke(1, '')
+  assert.equal(unset.status, 0)
+  assert.match(unset.out, /::warning::/)
+  assert.deepEqual(unset.curl, [])
+})
+
+test('the deploy SSH sessions keep alive through a long dump or health wait', async () => {
+  // The pre-deploy dump and the health wait can sit silent for minutes; a NAT or
+  // firewall that drops an idle TCP session would cut the deploy halfway, before the
+  // rollback can run. Keep-alives every 30 s, give up after 10 missed (5 minutes).
+  const jobs = asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs')
+  const steps = asMap(jobs.deploy, 'deploy job').steps as YamlMap[]
+  const run = String(steps.find((s) => s.name === 'Deploy over SSH')?.run ?? '')
+  const opts = /ssh_opts=\(\n([\s\S]*?)\n\s*\)/.exec(run)?.[1] ?? ''
+  assert.ok(opts, 'no ssh_opts array')
+  assert.match(opts, /^\s*-o ServerAliveInterval=30$/m)
+  assert.match(opts, /^\s*-o ServerAliveCountMax=10$/m)
 })
 
 test('wait_healthy gives up on a restart-looping container instead of waiting out the timeout', () => {
@@ -986,6 +1109,48 @@ test('the registry keeps the newest 20 image versions, weekly, with a pinned act
   assert.equal(inputs['min-versions-to-keep'], 20)
   assert.equal(inputs['delete-only-untagged-versions'], undefined,
     'untagged versions can be the platform manifests of a kept image')
+})
+
+test('retention prunes the package the image job pushes to, on a schedule too (RUN, not read)', async () => {
+  // `github.event.repository` is not part of a `schedule` payload: the weekly run read
+  // an empty name. The name comes from `github.repository`, which every event has, and
+  // must equal the last segment of the image the `image` job pushes.
+  const retention = await loadYaml('.github/workflows/ghcr-retention.yml')
+  // Only as code — the comment explaining why it is gone names it.
+  assert.doesNotMatch(read('.github/workflows/ghcr-retention.yml'), /^(?!\s*#).*github\.event\.repository/m)
+  const steps = Object.values(asMap(retention.jobs, 'jobs')).flatMap((job) => asMap(job, 'job').steps as YamlMap[])
+  const pkg = steps.find((s) => s.id === 'pkg')
+  assert.ok(pkg, 'no step computes the package name')
+  const action = steps.find((s) => String(s.uses ?? '').startsWith('actions/delete-package-versions@'))
+  assert.equal(asMap(action?.with, 'inputs')['package-name'], '${{ steps.pkg.outputs.name }}')
+
+  const repository = 'DuogXaolin/ConDuongHuongThien'
+  const runStep = (body: string, env: Record<string, string>) => {
+    const dir = mkdtempSync(join(tmpdir(), 'cdkt-ghcr-'))
+    try {
+      const out = join(dir, 'out')
+      writeFileSync(out, '')
+      const r = spawnSync('bash', ['-e', '-c', body], { encoding: 'utf8', env: { PATH: process.env.PATH ?? '', GITHUB_OUTPUT: out, ...env } })
+      assert.equal(r.status, 0, r.stderr)
+      return Object.fromEntries(readFileSync(out, 'utf8').split('\n').filter(Boolean).map((l) => [l.slice(0, l.indexOf('=')), l.slice(l.indexOf('=') + 1)]))
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }
+  // Only `${{ github.repository }}` may feed the name — substitute it as GitHub would.
+  const expressions = (text: string) => text.match(/\$\{\{[^}]*\}\}/g) ?? []
+  const pkgEnv = asMap(pkg.env ?? {}, 'pkg env')
+  for (const value of [...Object.values(pkgEnv).map(String), String(pkg.run)]) {
+    for (const expr of expressions(value)) assert.equal(expr, '${{ github.repository }}', `the package name reads ${expr}`)
+  }
+  const resolve = (text: string) => text.replaceAll('${{ github.repository }}', repository)
+  const name = runStep(resolve(String(pkg.run)), Object.fromEntries(Object.entries(pkgEnv).map(([k, v]) => [k, resolve(String(v))]))).name
+
+  const image = asMap(asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs').image, 'image job')
+  const meta = (image.steps as YamlMap[]).find((s) => s.id === 'meta')
+  const pushed = runStep(resolve(String(meta?.run)).replaceAll('${{ github.sha }}', 'f'.repeat(40)), { GITHUB_SHA: 'f'.repeat(40) }).repo
+  assert.equal(pushed, 'ghcr.io/duogxaolin/conduonghuongthien')
+  assert.equal(name, pushed!.split('/').at(-1), 'retention would prune a different package than the one the image job pushes')
 })
 
 test('backup jobs ping the monitor only when it is configured, and a dead monitor never fails them', async () => {

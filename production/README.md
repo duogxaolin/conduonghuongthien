@@ -76,9 +76,10 @@ Sau khi xong:
 
 Chạy khi muốn kéo code/image mới lên VPS đang chạy:
 
-1. **Hiển thị trạng thái cũ**: image, port, domain, container status
-2. **Pull code** từ `git pull origin main` (xác nhận trước). `docker-compose.yml` có thay đổi cục bộ là bản CI đã đặt — Update tự sao lưu nó vào `.deploy-compose-backups/` rồi `git checkout -- docker-compose.yml` trước khi pull (xem *An toàn khi Update* bên dưới; pull tay thì làm đúng hai bước đó)
-3. **Sửa cấu hình**: port, `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST` (gõ enter giữ giá trị cũ, hoặc sửa; `.env` cũ chưa có `PUBLIC_HOST_ALLOWLIST` thì gợi ý host của `PUBLIC_BASE_URL`), `HEALTHCHECK_PING_URL` (chỉ báo *đang đặt*/*chưa đặt* — **không in URL**; enter = giữ nguyên, `-` = xoá; URL có `?`/`&`/`#` bị từ chối)
+1. **Hiển thị trạng thái cũ**: image, port, domain, container status (trước đó Update chỉ siết quyền `.env` về 600 — không đổi nội dung)
+2. **Sao lưu DB trước khi cập nhật? [Y/n]** (mặc định **có**) — câu hỏi **đầu tiên**, trước khi Update đổi bất cứ thứ gì: trước `git pull` (đổi `docker-compose.yml`), trước các câu hỏi ghi `.env`, trước khi kéo/đổi image — đúng chỗ của lượt CI deploy. `scripts/backup-db.sh --prefix cdkt-predeploy` → `.deploy-db-backups/` — cùng bản dump, cùng thư mục, cùng vòng xoay 5 bản với lượt CI deploy (xem *Bản dump CSDL trước deploy*); dùng `backup-db.sh` của chính bản checkout đang chạy `manage.sh` (chưa pull). Dump hỏng → Update **dừng**: chưa pull code, chưa sửa `.env`, chưa kéo image hay khởi động lại gì. Chỉ trả lời `n` khi vừa có bản sao lưu mới, hoặc chính bước sao lưu đang hỏng mà phải cập nhật gấp
+3. **Pull code** từ `git pull origin main` (xác nhận trước). `docker-compose.yml` có thay đổi cục bộ là bản CI đã đặt — Update tự sao lưu nó vào `.deploy-compose-backups/` rồi `git checkout -- docker-compose.yml` trước khi pull (xem *An toàn khi Update* bên dưới; pull tay thì làm đúng hai bước đó)
+4. **Sửa cấu hình**: port, `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST` (gõ enter giữ giá trị cũ, hoặc sửa; `.env` cũ chưa có `PUBLIC_HOST_ALLOWLIST` thì gợi ý host của `PUBLIC_BASE_URL`), `HEALTHCHECK_PING_URL` (chỉ báo *đang đặt*/*chưa đặt* — **không in URL**; enter = giữ nguyên, `-` = xoá; URL có `?`/`&`/`#` bị từ chối)
 
 > **`PUBLIC_HOST_ALLOWLIST`** — mọi tên miền thật của cổng, phẩy ngăn cách
 > (`conduonghuongthien.com.vn,www.conduonghuongthien.com.vn`). Liên kết trong email
@@ -88,11 +89,10 @@ Chạy khi muốn kéo code/image mới lên VPS đang chạy:
 > trống cả hai → hành vi cũ + cảnh báo `security.link_host_unchecked` trong log.
 > Cùng lúc, nginx phải đặt `proxy_set_header X-Forwarded-Host $host;` và có site mặc
 > định từ chối tên miền lạ — xem `CI-CD.md` Bước 8.
-4. **Sao lưu DB trước khi cập nhật? [Y/n]** (chỉ hỏi khi chọn kéo image; mặc định **có**): `scripts/backup-db.sh --prefix cdkt-predeploy` → `.deploy-db-backups/` — cùng bản dump, cùng thư mục, cùng vòng xoay 5 bản với lượt CI deploy (xem *Bản dump CSDL trước deploy*). Dump hỏng → Update **dừng**, chưa kéo image hay khởi động lại gì. Chỉ trả lời `n` khi vừa có bản sao lưu mới, hoặc chính bước sao lưu đang hỏng mà phải cập nhật gấp
 5. **Pull image + restart chỉ app**: kéo image `CDKT_IMAGE`, rồi `docker compose up -d --no-recreate mysql` + `up -d --no-deps app`, đợi healthcheck (hỏng thì lùi — xem bên dưới). Khoẻ thì dọn image `sha-*` cũ (giữ image đang chạy + 5 bản mới nhất, như CI — *Giữ image*) và cảnh báo khi đĩa Docker dùng > 80 %
 6. **Hỏi migrate** nếu có file SQL mới
 
-**An toàn khi Update** (bước 2 và 4):
+**An toàn khi Update** (bước 3 và 5):
 
 - **Khởi động lại chỉ app**, đúng như CI: `docker compose up -d --no-recreate mysql` rồi
   `up -d --no-deps app`. Không bao giờ `up -d app` trơn — lệnh đó tạo lại cả mysql khi
@@ -180,7 +180,7 @@ chmod +x manage.sh
 
 ### Cập nhật code mới
 
-Dev merge code vào `main`. **CI tự deploy**: build image → push GHCR → SSH vào VPS → gửi `docker-compose.yml` và `scripts/backup-db.sh` của đúng commit đó lên (kiểm SHA-256) → `docker pull` → **dump CSDL vào `.deploy-db-backups/`** (hỏng thì dừng, chưa chạm gì — xem *Bản dump CSDL trước deploy*) → sao lưu compose cũ vào `.deploy-compose-backups/`, chạy `docker compose config -q` (sai thì dừng, không chạm container) → khởi động lại **chỉ app** (`up -d --no-deps app`; mysql chỉ được bật nếu đang dừng, không bao giờ bị tạo lại) → chờ healthcheck (container khởi động lại > 2 lần = crash loop → dừng chờ ngay), hỏng thì tự lùi về image **và** compose trước → khoẻ thì dọn image cũ → **smoke test qua tên miền công khai** (`VPS_SMOKE_URL`) (job `deploy` trong `.github/workflows/ci.yml`, chạy khi job `image` thành công; chi tiết `CI-CD.md`). **Merge vào `main` là lên production ngay** — chỉ merge khi đã sẵn sàng. Ngoại lệ: merge mà **mọi** tệp đổi là `*.md`, `docs/` hoặc `openspec/` thì CI vẫn chạy test nhưng **không** build image, **không** deploy, không khởi động lại container.
+Dev merge code vào `main`. **CI tự deploy**: build image → push GHCR → SSH vào VPS → gửi `docker-compose.yml` và `scripts/backup-db.sh` của đúng commit đó lên (kiểm SHA-256) → `docker pull` → **dump CSDL vào `.deploy-db-backups/`** (hỏng thì dừng, chưa chạm gì — xem *Bản dump CSDL trước deploy*) → sao lưu compose cũ vào `.deploy-compose-backups/`, chạy `docker compose config -q` (sai thì dừng, không chạm container) → khởi động lại **chỉ app** (`up -d --no-deps app`; mysql chỉ được bật nếu đang dừng, không bao giờ bị tạo lại) → chờ healthcheck (container khởi động lại > 2 lần = crash loop → dừng chờ ngay), hỏng thì tự lùi về image **và** compose trước → khoẻ thì dọn image cũ → **smoke test qua tên miền công khai** (`VPS_SMOKE_URL`) (job `deploy` trong `.github/workflows/ci.yml`, chạy khi job `image` thành công; chi tiết `CI-CD.md`). **Merge vào `main` là lên production ngay** — chỉ merge khi đã sẵn sàng. Ngoại lệ: merge mà **mọi** tệp đổi **so với bản đang chạy trên production** là `*.md`, `docs/` hoặc `openspec/` thì CI vẫn chạy test nhưng **không** build image, **không** deploy, không khởi động lại container. "Bản đang chạy" là `version` mà `<VPS_SMOKE_URL>/api/public/health` trả về, hoặc (biến chưa đặt / trang không trả lời) commit của lượt CI gần nhất có job `Deploy to VPS` thành công — không phải commit ngay trước trên `main`: một commit mã chưa từng lên production (lượt của nó bị huỷ khi đang chờ, hoặc đỏ trước bước build image) vẫn được deploy cùng merge tài liệu kế tiếp. Không xác định được bản đang chạy → deploy (chi tiết `CI-CD.md` § *Mốc so của "chỉ tài liệu"*).
 
 > ⚠️ **`docker-compose.yml` trên VPS do CI quản lý.** Vì CI ghi đè tệp này mỗi lượt
 > deploy, bản clone git trên VPS sẽ thấy nó "đã sửa", và `git pull` (kể cả bước Pull
@@ -308,13 +308,25 @@ xoay theo **ngày** (`BACKUP_KEEP_DAYS`), bản sao lưu trong ứng dụng xoay
 ## Bản dump CSDL trước deploy (`.deploy-db-backups/`)
 
 Mỗi lượt đổi image — CI deploy, và `./manage.sh` → Update khi trả lời *có* (mặc định) — dump
-CSDL **trước** khi đụng tới compose, `.env` hay container:
+CSDL **trước** khi đụng tới compose, `.env` hay container. CI: ngay sau `docker pull`, trước khi
+đặt compose mới hay sửa `.env`. Update: là câu hỏi **đầu tiên** — trước `git pull`, trước
+`git checkout -- docker-compose.yml`, trước các câu hỏi ghi `.env` và trước khi kéo image; thứ
+duy nhất chạy trước nó là bước siết quyền `.env` về 600 (không đổi nội dung).
 
 - **Ở đâu:** `<root repo>/.deploy-db-backups/cdkt-predeploy-<db>-<thời-điểm UTC>-<pid>.sql.gz`
   (cạnh `.deploy-compose-backups/`). Không nằm trong `./backups`: `./backups` là bind mount mà
   container giao cho user `node` (uid 1000) mỗi lần khởi động, user deploy của CI chưa chắc
   ghi được vào đó. Update chạy bằng root thì trao thư mục này cho chủ thư mục repo, để lượt
   CI kế tiếp vẫn ghi được.
+- **Ai đọc được:** bản dump là toàn bộ CSDL production (hash mật khẩu, email bạn đọc): tệp
+  quyền **600**, thư mục **700** (đặt lại cả khi đã có sẵn với quyền rộng hơn). Xem/khôi phục
+  bằng chính user deploy hoặc root. Thư mục này (và `.deploy-incoming/`,
+  `.deploy-compose-backups/`) nằm trong `.gitignore` **và** `.dockerignore` — một lượt
+  `docker compose build` ngay trên VPS không đưa bản dump vào build context.
+- **Không bao giờ có bản cụt mang tên thật:** dump được viết dưới tên `….sql.gz.partial` và
+  chỉ đổi sang `.sql.gz` sau khi kiểm xong. Lượt bị ngắt (job huỷ, SSH đứt, Ctrl-C) xoá phần
+  dở dang; phần dở dang của một lượt bị giết hẳn (`kill -9`, mất điện) được lượt sau dọn khi
+  đã quá 1 ngày.
 - **Kiểm như bản đêm:** cùng `scripts/backup-db.sh` (gzip, dấu `Dump completed`, ≥ 20 bảng,
   ≥ 50 KB SQL); bản không đạt bị xoá và lượt deploy **dừng** — compose, `.env`, container y
   như trước. Lý do thường gặp: đĩa đầy, `cdkt_mysql` không chạy, `.env` thiếu `MYSQL_ROOT_PASSWORD`.
@@ -338,8 +350,11 @@ CSDL **trước** khi đụng tới compose, `.env` hay container:
 
 Healthcheck trong container chỉ chứng minh app trả lời ở `127.0.0.1`. Sau đó job `deploy`
 hỏi `GET <VPS_SMOKE_URL>/api/public/health?t=<lượt>` từ runner của GitHub — đi qua nginx,
-CDN, DNS như khách — tối đa 12 lần × 10 giây, và chỉ xanh khi nhận `200` với `version` bằng
-SHA ngắn vừa deploy.
+CDN, DNS như khách, theo cả chuyển hướng (`curl -L`) — tối đa 12 lần, nghỉ 10 giây giữa hai
+lần (không nghỉ sau lần cuối), và chỉ xanh khi nhận `200` với `version` bằng SHA ngắn vừa
+deploy. Hết 12 lần thì job đỏ: ~2 phút nếu mỗi lần trang trả lời ngay, tệ nhất ~3 phút 50
+giây khi mỗi lần đều chờ hết trần 10 giây của curl. Job Plan của lượt CI kế tiếp cũng hỏi
+URL này để biết bản đang chạy (mốc so khi quyết định merge "chỉ tài liệu" có deploy không).
 
 - **Khai một lần:** GitHub → *Settings → Secrets and variables → Actions → Variables* →
   `VPS_SMOKE_URL` = `https://<tên miền thật>`. Chưa khai thì bước này chỉ in `::warning::`.
@@ -373,7 +388,7 @@ chạy thì chỉ phát hiện vào đúng ngày cần bản sao lưu. Đặt m�
   không nhận ping, hoặc nhận `/fail`.
 - `curl -fsS -m 10 --retry 2 … || true`: dịch vụ giám sát hỏng **không** làm cron sao lưu
   hỏng theo. Không đặt biến → script chạy y như trước.
-- **Đặt:** `./manage.sh` → Deploy (bước 5) hoặc Update (bước 3) — ghi vào `.env`; hoặc sửa tay
+- **Đặt:** `./manage.sh` → Deploy (bước 5) hoặc Update (bước 4) — ghi vào `.env`; hoặc sửa tay
   `HEALTHCHECK_PING_URL=https://hc-ping.com/<uuid>` trong `.env` (không `?`, `&`, `#`).
 - Chỉ script trên **host** đọc biến này (chúng tự đọc `.env`), nên compose **không** liệt kê
   nó trong `environment:` — container app không dùng.

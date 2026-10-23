@@ -42,12 +42,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      # Tên package trên GHCR là tên repo viết thường (job `image` cũng hạ chữ).
+      # Tên package trên GHCR là phần sau `<owner>/` của `github.repository`, viết thường
+      # — đúng đường dẫn job `image` (ci.yml) đẩy lên: `ghcr.io/<owner>/<repo>` hạ chữ.
+      # KHÔNG dùng `github.event.repository.name`: payload của `schedule` không có
+      # `repository`, nên lượt chạy hằng tuần đọc ra tên rỗng.
+      # tests/ops-scripts.test.ts chạy thật bước này và bước `meta` của job `image`.
       - name: Package name
         id: pkg
         env:
-          REPO_NAME: ${{ github.event.repository.name }}
-        run: echo "name=${REPO_NAME,,}" >> "$GITHUB_OUTPUT"
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          name=${REPOSITORY#*/}
+          echo "name=${name,,}" >> "$GITHUB_OUTPUT"
 
       # Third-party code with write access to the registry: pinned to a commit, the
       # trailing comment is the human-readable version of that SHA.

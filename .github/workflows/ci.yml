@@ -88,12 +88,12 @@ jobs:
   #
   # Output `deploy` (chỉ có ý nghĩa với push): mọi merge vào `main` đều deploy, kể cả
   # merge chỉ sửa tài liệu/kế hoạch — build lại image và khởi động lại container
-  # production vì một dấu phẩy trong tệp .md. Push mà MỌI tệp đổi khớp
-  # `\.md$|^docs/|^openspec/` thì `deploy=false`: test vẫn chạy đủ (năm test đọc
-  # tệp .md — vì vậy KHÔNG dùng `push: paths-ignore`), chỉ `image`/`deploy` bỏ qua.
-  # Không biết chắc (before toàn số 0, before không có trong lịch sử sau force-push,
-  # diff rỗng hay lỗi) → `deploy=true`. tests/ci-docs-only-skip.test.ts chạy thật
-  # script của bước này trong một repo git tạm.
+  # production vì một dấu phẩy trong tệp .md. Push mà MỌI tệp đổi TỪ COMMIT ĐANG CHẠY
+  # TRÊN PRODUCTION khớp `\.md$|^docs/|^openspec/` thì `deploy=false`: test vẫn chạy đủ
+  # (năm test đọc tệp .md — vì vậy KHÔNG dùng `push: paths-ignore`), chỉ `image`/`deploy`
+  # bỏ qua. Mốc so là bản đang chạy, KHÔNG phải `github.event.before` — xem bước
+  # "Docs-only?" bên dưới. Không biết chắc → `deploy=true`. tests/ci-docs-only-skip.test.ts
+  # chạy thật script của bước đó trong một repo git tạm (curl/gh giả).
   changes:
     name: Plan
     runs-on: ubuntu-latest
@@ -101,6 +101,8 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      # Bước "Docs-only?" đọc danh sách lượt chạy + job của chính workflow này (mốc (b)).
+      actions: read
     outputs:
       run: ${{ steps.plan.outputs.run }}
       integration: ${{ steps.plan.outputs.integration }}
@@ -137,49 +139,123 @@ jobs:
             echo "PR không đụng backend/DB/CI: bỏ integration (Actions → CI → Run workflow để ép chạy đủ)." >> "$GITHUB_STEP_SUMMARY"
           fi
 
-      # Lịch sử đầy đủ để so `before..sha` của một push. `blob:none`: chỉ commit + cây
-      # (repo có ~700 MB lịch sử blob) — `git diff --name-only` không cần nội dung tệp.
-      - name: Checkout (push — history to diff before..sha)
+      # Lịch sử ĐẦY ĐỦ: mốc so là commit đang chạy trên production, có thể cách HEAD
+      # nhiều commit (và phải tra được 12 ký tự SHA của nó). `blob:none`: chỉ commit +
+      # cây (repo có ~700 MB lịch sử blob) — `git diff --name-only`, `rev-parse`,
+      # `merge-base` không cần nội dung tệp.
+      - name: Checkout (push — history back to the live commit)
         if: github.event_name == 'push'
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
           filter: blob:none
 
+      # Mốc so = commit ĐANG CHẠY trên production, không phải `github.event.before`.
+      # `before` là đỉnh cũ của `main`, không phải thứ production chạy: lượt A đang
+      # deploy, push mã B đang chờ, push chỉ-tài-liệu C tới → GitHub huỷ B (nhóm
+      # concurrency chỉ giữ MỘT lượt chờ), C so B..C = chỉ tài liệu → không deploy, và mã
+      # của B không bao giờ lên production dù CI xanh. Cùng chuyện khi B đỏ một cổng
+      # chập chờn trước `image` rồi C chỉ đổi tài liệu.
+      #
+      # Mốc, theo thứ tự:
+      #   (a) `vars.VPS_SMOKE_URL` có đặt: `version` mà /api/public/health trả qua địa chỉ
+      #       công khai (12 ký tự SHA nướng vào image — job `image`), tra ra commit;
+      #   (b) không có/không dùng được: `head_sha` của lượt chạy MỚI NHẤT (theo lúc bắt
+      #       đầu chạy — lượt chạy lại tính theo lần chạy lại) trên `main` mà job
+      #       "Deploy to VPS" kết luận `success` (một lượt chỉ-tài-liệu cũng `success`
+      #       nhưng job deploy `skipped`, nên phải xét JOB, không xét lượt chạy);
+      #   (c) không có mốc, hoặc mốc không phải tổ tiên của commit này → deploy.
+      # Lượt này chỉ bắt đầu khi lượt trước trong nhóm `ci-…` đã xong hẳn (push vào
+      # `main` xếp hàng), nên kết quả deploy trước đó đã ngã ngũ lúc bước này chạy.
+      #
+      # Mốc == commit này: production đã chạy đúng nó → `deploy=false` (không có gì mới).
+      # Ép deploy lại cùng commit: Actions → CI → Run workflow trên `main` (luôn deploy).
+      # Mốc khác commit này nhưng diff rỗng (cây y hệt) → vẫn deploy, cho chắc.
+      #
       # `--no-renames`: một tệp .ts đổi tên thành .md phải liệt kê CẢ HAI đường dẫn
       # (bên xoá là mã), nếu không lượt đó bị coi là "chỉ tài liệu". `grep -Ev` không
       # `-q`: đọc hết đầu vào, nên printf không bao giờ chết vì SIGPIPE dưới pipefail.
+      # Chuỗi `version` từ mạng chỉ được dùng khi đúng 12 ký tự hex (không bao giờ tới
+      # git như một tuỳ chọn).
       - name: Docs-only? (decides image + deploy for a push)
         id: deploy
         env:
           EVENT: ${{ github.event_name }}
-          BEFORE: ${{ github.event.before }}
           SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          SMOKE_URL: ${{ vars.VPS_SMOKE_URL }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
+          # `name:` của job deploy bên dưới (tests/ci-docs-only-skip.test.ts ghim hai chỗ khớp nhau).
+          deploy_job='Deploy to VPS'
+
+          # (a) Commit mà địa chỉ công khai đang phục vụ.
+          live_commit() {
+            local body version
+            [ -n "$SMOKE_URL" ] || return 1
+            body=$(curl -fsSL -m 10 --retry 2 --retry-delay 3 "${SMOKE_URL%/}/api/public/health?t=${RUN_ID}-plan" 2>/dev/null) || return 1
+            version=$(printf '%s' "$body" | jq -r '.version // empty' 2>/dev/null) || return 1
+            [[ "$version" =~ ^[0-9a-f]{12}$ ]] || return 1
+            git rev-parse --verify --quiet "${version}^{commit}"
+          }
+
+          # (b) head_sha của lượt chạy mới nhất trên main có job deploy `success`.
+          last_deployed_commit() {
+            local workflow runs id sha
+            workflow=${WORKFLOW_REF%@*}
+            workflow=${workflow##*/}
+            [ -n "$workflow" ] || return 1
+            runs=$(gh api "repos/$REPO/actions/workflows/$workflow/runs?branch=main&status=completed&per_page=30" 2>/dev/null) || return 1
+            while read -r id sha; do
+              [[ "$id" =~ ^[0-9]+$ ]] || continue
+              if gh api "repos/$REPO/actions/runs/$id/jobs?filter=latest&per_page=100" 2>/dev/null \
+                  | jq -e --arg name "$deploy_job" 'any(.jobs[]; .name == $name and .conclusion == "success")' >/dev/null 2>&1; then
+                [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+                git rev-parse --verify --quiet "${sha}^{commit}"
+                return
+              fi
+            done < <(printf '%s' "$runs" | jq -r '.workflow_runs | sort_by(.run_started_at) | reverse | .[] | "\(.id) \(.head_sha)"' 2>/dev/null)
+            return 1
+          }
+
           deploy=true
           case "$EVENT" in
             pull_request)
               deploy=false
               reason="pull request — không bao giờ deploy" ;;
             push)
-              if [ -z "$BEFORE" ] || [ -z "${BEFORE//0/}" ]; then
-                reason="không có commit trước (before rỗng/toàn số 0) — deploy"
-              elif ! files=$(git diff --no-renames --name-only "$BEFORE" "$SHA" 2>/dev/null); then
-                reason="không so được $BEFORE..$SHA (force-push?) — deploy"
+              if base=$(live_commit); then
+                source="bản đang chạy trên VPS_SMOKE_URL (/api/public/health)"
+              elif base=$(last_deployed_commit); then
+                source="lượt chạy gần nhất có job \"$deploy_job\" thành công"
+              else
+                base=''
+              fi
+              if [ -z "$base" ]; then
+                reason="không xác định được commit đang chạy trên production (VPS_SMOKE_URL trống hoặc không trả version dùng được, và không tìm thấy lượt chạy có job \"$deploy_job\" thành công) — deploy"
+              elif [ "$base" = "$SHA" ]; then
+                deploy=false
+                reason="$SHA đã là bản đang chạy ($source) — không có gì mới để deploy; ép deploy lại: Actions → CI → Run workflow trên main"
+              elif ! git merge-base --is-ancestor "$base" "$SHA" 2>/dev/null; then
+                reason="bản đang chạy $base ($source) không phải tổ tiên của $SHA — deploy"
+              elif ! files=$(git diff --no-renames --name-only "$base" "$SHA" 2>/dev/null); then
+                reason="không so được $base..$SHA — deploy"
               elif [ -z "$files" ]; then
-                reason="diff rỗng — deploy"
+                reason="$base..$SHA không đổi tệp nào nhưng là commit khác bản đang chạy ($source) — deploy cho chắc"
               else
                 code=$(printf '%s\n' "$files" | grep -Ev '\.md$|^docs/|^openspec/' || true)
                 if [ -z "$code" ]; then
                   deploy=false
-                  reason="chỉ đổi tài liệu (*.md, docs/, openspec/) — bỏ build image và deploy, test vẫn chạy"
+                  reason="từ bản đang chạy $base ($source) tới $SHA chỉ đổi tài liệu (*.md, docs/, openspec/) — bỏ build image và deploy, test vẫn chạy"
                 else
-                  reason="có tệp ngoài tài liệu đổi — deploy"
+                  reason="từ bản đang chạy $base ($source) tới $SHA có tệp ngoài tài liệu đổi — deploy"
                 fi
               fi ;;
             *)
-              reason="$EVENT — deploy như trước" ;;
+              reason="$EVENT — luôn deploy (cách ép deploy lại cùng một commit)" ;;
           esac
           echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
           echo "Deploy: **$deploy** — $reason." >> "$GITHUB_STEP_SUMMARY"
@@ -851,7 +927,8 @@ jobs:
     runs-on: ubuntu-latest
     # Một job bị cắt vì quá giờ là cắt phiên SSH giữa chừng — đường lùi không chạy.
     # Trần tính đủ: dump CSDL trước deploy (lớn dần theo dữ liệu), kéo image, chờ
-    # healthy tối đa 300 s, có thể thêm một lượt lùi cũng 300 s, rồi 2 phút smoke.
+    # healthy tối đa 300 s, có thể thêm một lượt lùi cũng 300 s, rồi smoke (~2 phút khi
+    # trang trả lời ngay, tệ nhất ~4 phút).
     timeout-minutes: 30
     # Nhóm riêng, KHÔNG huỷ: hai lượt deploy không bao giờ chạy chồng lên nhau,
     # lượt sau chờ lượt trước xong. Nhưng nhóm này KHÔNG tự bảo vệ được lượt
@@ -893,11 +970,16 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+          # Keep-alive: dump CSDL và chờ healthcheck có thể im lặng nhiều phút; NAT/tường
+          # lửa cắt phiên TCP "rảnh" là cắt lượt deploy giữa chừng, trước cả đường lùi.
+          # Hỏi mỗi 30 s, bỏ cuộc sau 10 lần không trả lời (5 phút).
           ssh_opts=(
             -i ~/.ssh/deploy_key
             -o IdentitiesOnly=yes
             -o StrictHostKeyChecking=yes
             -o UserKnownHostsFile=~/.ssh/known_hosts
+            -o ServerAliveInterval=30
+            -o ServerAliveCountMax=10
             -p "$SSH_PORT"
           )
 
@@ -948,9 +1030,12 @@ jobs:
           fi
           url="${SMOKE_URL%/}/api/public/health"
           seen=''
+          # 12 lần, nghỉ 10 s GIỮA hai lần (không nghỉ sau lần cuối): ~2 phút khi mỗi lần
+          # trả lời ngay; tệ nhất ~3 phút 50 giây (12 × trần 10 s của curl + 11 × 10 s nghỉ).
+          # `-L`: trang trả lời qua chuyển hướng (http→https, tên miền gốc→www) vẫn tính.
           for attempt in $(seq 1 12); do
             # `?t=` khác nhau mỗi lần: không lớp đệm nào trả lại câu trả lời cũ.
-            if body=$(curl -fsS -m 10 "$url?t=${GITHUB_RUN_ID}-${attempt}" 2>&1); then
+            if body=$(curl -fsSL -m 10 "$url?t=${GITHUB_RUN_ID}-${attempt}" 2>&1); then
               seen=$(printf '%s' "$body" | jq -r '.version // empty' 2>/dev/null || true)
               if [ "$seen" = "$EXPECTED_VERSION" ]; then
                 echo "✅ $url trả 200 với version $seen (lần $attempt)"
@@ -960,9 +1045,11 @@ jobs:
             else
               echo "  lần $attempt: $body"
             fi
-            sleep 10
+            if [ "$attempt" -lt 12 ]; then
+              sleep 10
+            fi
           done
-          echo "::error::sau 2 phút $url vẫn không trả 200 với version $EXPECTED_VERSION (lần cuối thấy: '${seen:-không có}'). Container trên VPS đã healthy — kiểm nginx/CDN/DNS trước; cần lùi thì xem mục Deploy trong Summary của lượt chạy này và CI-CD.md § Lùi phiên bản."
+          echo "::error::sau 12 lần thử (nghỉ 10 s giữa hai lần, mỗi lần chờ tối đa 10 s) $url vẫn không trả 200 với version $EXPECTED_VERSION (lần cuối thấy: '${seen:-không có}'). Container trên VPS đã healthy — kiểm nginx/CDN/DNS trước; cần lùi thì xem mục Deploy trong Summary của lượt chạy này và CI-CD.md § Lùi phiên bản."
           exit 1
 
       - name: Report

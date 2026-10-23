@@ -8,7 +8,7 @@ Tài liệu vận hành cho việc triển khai tự động. Phần cài đặt
 ## Luồng chạy
 
 ```
-push main → Plan (deploy=false nếu MỌI tệp đổi là *.md / docs/ / openspec/)
+push main → Plan (deploy=false nếu MỌI tệp đổi TỪ BẢN ĐANG CHẠY trên production là *.md / docs/ / openspec/)
           → test · typecheck · build · hygiene   (4 cổng, chạy song song, kể cả lượt chỉ-tài-liệu)
               ↓ cả bốn xanh, và deploy=true
             job "image"  → xây rồi đẩy ghcr.io/<owner>/<repo>:sha-<commit> + :latest
@@ -56,10 +56,33 @@ billed (GitHub làm tròn từng job lên phút; các job Integration chiếm �
 | Sự kiện | Chạy gì |
 |---|---|
 | push vào `main`, chạy tay (Actions → CI → Run workflow) | **Đủ bộ**, gồm Integration — `image`/`deploy` vẫn chờ mọi cổng |
-| push vào `main` mà **mọi** tệp đổi khớp `\.md$\|^docs/\|^openspec/` | Đủ bộ test, nhưng **không** build image, **không** deploy (`changes.outputs.deploy=false`; không xác định được danh sách tệp → vẫn deploy) |
+| push vào `main` mà **mọi** tệp đổi **từ commit đang chạy trên production** khớp `\.md$\|^docs/\|^openspec/` | Đủ bộ test, nhưng **không** build image, **không** deploy (`changes.outputs.deploy=false`; không xác định được bản đang chạy → vẫn deploy — xem *Mốc so của "chỉ tài liệu"*) |
+| push vào `main` mà commit đó **đã** là bản đang chạy | Đủ bộ test, không deploy (không có gì mới). Ép deploy lại: chạy tay trên `main` |
 | PR nháp | Bỏ qua (chạy lại khi bấm *Ready for review*) |
 | PR thường | unit + build + schema-drift + hygiene (≈ 12 phút) |
 | PR thường **có đụng** `server/`, `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 18 job Integration |
+
+**Mốc so của "chỉ tài liệu"** (bước *Docs-only?* của job `changes`): commit **đang chạy trên
+production**, không phải `github.event.before`. `before` chỉ là đỉnh cũ của `main`: lượt A đang
+deploy, push mã B đang chờ, push chỉ-tài-liệu C tới → GitHub huỷ B (nhóm concurrency chỉ giữ
+một lượt chờ), C so B..C = chỉ tài liệu → không deploy, và mã của B không bao giờ lên production
+dù CI xanh (cùng chuyện khi B đỏ một cổng chập chờn trước `image`). Mốc được tìm theo thứ tự:
+
+1. **`VPS_SMOKE_URL` có đặt** → `GET <VPS_SMOKE_URL>/api/public/health?t=<run>-plan` (`curl -fsSL
+   -m 10 --retry 2`), lấy `version` (12 ký tự SHA nướng vào image) — chỉ nhận đúng 12 ký tự hex,
+   tra ra commit bằng `git rev-parse`;
+2. **không có / không dùng được** (biến trống, trang không trả lời, `dev`, commit lạ) → `gh api`
+   (quyền `actions: read`, chỉ cấp cho job `changes`): trong 30 lượt chạy mới nhất của workflow
+   trên `main`, xếp theo lúc bắt đầu chạy (lượt *re-run* tính theo lần chạy lại), lấy `head_sha`
+   của lượt đầu tiên có **job** `Deploy to VPS` kết luận `success` — lượt chỉ-tài-liệu cũng
+   `success` nhưng job deploy `skipped`, nên xét job chứ không xét lượt;
+3. **không ra mốc nào**, mốc không phải tổ tiên của commit đẩy lên, diff hỏng, hoặc diff rỗng mà
+   khác commit → **deploy**.
+
+Mốc == commit đẩy lên → không deploy. Mốc (2) có thể "mới" hơn thực tế nếu ai đó lùi phiên bản
+bằng tay ngoài CI — đặt `VPS_SMOKE_URL` để mốc (1) là đường thường. Lượt chạy của push vào `main`
+chỉ bắt đầu khi lượt trước trong nhóm đã xong hẳn, nên kết quả deploy trước đó đã ngã ngũ lúc
+mốc được đọc. `tests/ci-docs-only-skip.test.ts` chạy thật bước này (curl/gh giả).
 
 Muốn ép chạy đủ cho một PR chỉ-giao-diện: Actions → CI → *Run workflow* trên nhánh đó.
 Gom commit trước khi push và dùng PR nháp cho việc dở dang cũng tiết kiệm phút.
@@ -155,14 +178,18 @@ ssh-keyscan -p <VPS_PORT> <VPS_HOST>
 |---|---|---|
 | `VPS_PORT` | cổng SSH | `22` |
 | `VPS_APP_DIR` | đường dẫn repo trên VPS, vd `/www/wwwroot/<tên-site>` | *(bắt buộc)* |
-| `VPS_SMOKE_URL` | địa chỉ công khai của cổng, vd `https://conduonghuongthien.com.vn` (không `/` cuối cũng được) | bỏ qua bước smoke, job in `::warning::` |
+| `VPS_SMOKE_URL` | địa chỉ công khai của cổng, vd `https://conduonghuongthien.com.vn` (không `/` cuối cũng được) | bỏ qua bước smoke, job in `::warning::`; job Plan tìm bản đang chạy qua lịch sử lượt chạy thay vì hỏi trang |
 
 > **`VPS_SMOKE_URL`** — sau khi container trên VPS `healthy`, bước *Smoke test through the
-> public URL* hỏi `GET <VPS_SMOKE_URL>/api/public/health?t=<run>-<lần>` (đi qua nginx, CDN,
-> DNS — đúng đường khách đi) tối đa 12 lần × 10 giây, và chỉ coi là xong khi nhận **200**
-> với `version` bằng SHA ngắn vừa deploy. Quá 2 phút: job **đỏ nhưng không tự lùi** (nguyên
-> nhân có thể là CDN/DNS chứ không phải image; lùi một container đang khoẻ vì CDN chậm là
-> sai) — làm theo mục Deploy trong *Summary* của lượt chạy và § *Lùi phiên bản* bên dưới.
+> public URL* hỏi `GET <VPS_SMOKE_URL>/api/public/health?t=<run>-<lần>` (`curl -fsSL -m 10`,
+> theo cả chuyển hướng; đi qua nginx, CDN, DNS — đúng đường khách đi) tối đa 12 lần, nghỉ
+> 10 giây giữa hai lần (không nghỉ sau lần cuối), và chỉ coi là xong khi nhận **200** với
+> `version` bằng SHA ngắn vừa deploy. Cửa sổ chờ: ~2 phút khi mỗi lần trang trả lời ngay, tệ
+> nhất ~3 phút 50 giây (12 × trần 10 s của curl + 11 × 10 s nghỉ). Hết 12 lần: job **đỏ nhưng
+> không tự lùi** (nguyên nhân có thể là CDN/DNS chứ không phải image; lùi một container đang
+> khoẻ vì CDN chậm là sai) — làm theo mục Deploy trong *Summary* của lượt chạy và § *Lùi
+> phiên bản* bên dưới. Job Plan cũng hỏi chính URL này để biết bản đang chạy (mốc so của
+> "chỉ tài liệu", ở trên).
 > Endpoint `/api/public/health` (`server/api/public/health.get.ts`): `SELECT 1` qua pool chung,
 > trần 2 giây, luôn `Cache-Control: no-store`, 200 `{ ok: true, version }` / 503 `{ ok: false }`.
 > Dùng chính URL này cho dịch vụ giám sát uptime.
@@ -221,7 +248,13 @@ không bao giờ tới được container). Lượt deploy:
    `.env` hay container nào bị đụng. Thư mục nằm cạnh `.deploy-compose-backups/` chứ
    không trong `./backups`: `./backups` là bind mount mà container giao cho user `node`
    (uid 1000) mỗi lần khởi động, user deploy chưa chắc ghi được. Bản dump không gửi ping
-   giám sát (`HEALTHCHECK_PING_URL` chỉ dành cho cron đêm);
+   giám sát (`HEALTHCHECK_PING_URL` chỉ dành cho cron đêm). Dump là toàn bộ CSDL production:
+   tệp quyền **600**, thư mục `.deploy-db-backups/` **700** (đặt lại cả khi đã có sẵn với
+   quyền rộng hơn); tệp viết dưới tên `….sql.gz.partial`, chỉ đổi sang `.sql.gz` sau khi
+   kiểm xong — lượt bị ngắt (job huỷ, SSH đứt: HUP/INT/TERM) xoá phần dở dang thay vì để lại
+   một `.sql.gz` cụt trông như hợp lệ. Phiên SSH của job có keep-alive
+   (`ServerAliveInterval=30`, `ServerAliveCountMax=10`) để một bản dump lâu không bị NAT/tường
+   lửa cắt vì "rảnh";
 3. sao lưu `docker-compose.yml` cũ vào `<APP_DIR>/.deploy-compose-backups/`
    (giữ 10 bản gần nhất; compose không đổi thì không sao lưu, không ghi gì);
 4. đặt bản mới, chạy `docker compose config -q` **trên chính VPS** (gồm cả
@@ -496,7 +529,9 @@ docker compose stop app
   thẻ, nên mọi image `sha-*` nằm lại mãi.)
 - **GHCR** — `.github/workflows/ghcr-retention.yml` chạy hằng tuần (thứ Hai 03:17 UTC) và
   khi bấm tay: `actions/delete-package-versions` (ghim SHA commit) giữ **20 version mới
-  nhất** của package image. Job `image` build với `provenance: false` nên một lượt push là
+  nhất** của package image. Tên package = phần sau `<owner>/` của `github.repository`, viết
+  thường — đúng đường dẫn job `image` đẩy lên (không dùng `github.event.repository.name`:
+  payload của lượt `schedule` không có trường đó, lượt hằng tuần sẽ đọc ra tên rỗng). Job `image` build với `provenance: false` nên một lượt push là
   **một** version, vì vậy 20 version = 20 image `sha-*` (`latest` luôn nằm trên bản mới
   nhất). Action so `ignore-versions` theo digest chứ không theo thẻ, nên không lọc theo
   thẻ được — giữ đúng "một push = một version" là điều kiện để con số 20 đúng. Image đẩy
@@ -653,9 +688,9 @@ và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừn
 | `đã khởi động lại N lần trong lúc chờ healthy — crash loop` | Image mới chết ngay khi khởi động; 60 dòng log in ngay dưới. Đã tự lùi. Thường là biến môi trường mới chưa có trong `.env` hoặc migration lỗi |
 | `sao lưu CSDL trước deploy thất bại` | Dump trước deploy hỏng (đĩa đầy? `cdkt_mysql` không chạy? thiếu `MYSQL_ROOT_PASSWORD` trong `.env`?). **Chưa chạm gì** — compose, `.env`, container y như trước. Sửa nguyên nhân rồi *Re-run job*; cần gấp thì `./manage.sh` → Update (trả lời riêng câu sao lưu) |
 | `script sao lưu nhận được bị hỏng trên đường truyền` | Phiên SSH gửi `backup-db.sh` bị đứt. Chưa chạm gì trên VPS — chạy lại job |
-| Bước *Smoke test through the public URL* đỏ | Container trên VPS đã healthy nhưng địa chỉ công khai không trả đúng version trong 2 phút: kiểm nginx/CDN/DNS, `curl -s <VPS_SMOKE_URL>/api/public/health`. Không tự lùi; lùi tay theo § *Lùi phiên bản* nếu đúng là image hỏng |
+| Bước *Smoke test through the public URL* đỏ | Container trên VPS đã healthy nhưng địa chỉ công khai không trả đúng version sau 12 lần thử (~2 phút, tệ nhất ~4 phút): kiểm nginx/CDN/DNS, `curl -sL <VPS_SMOKE_URL>/api/public/health`. Không tự lùi; lùi tay theo § *Lùi phiên bản* nếu đúng là image hỏng |
 | `::warning::chưa đặt biến repo VPS_SMOKE_URL` | Khai variable `VPS_SMOKE_URL` (Bước 3) để lượt deploy được xác nhận qua địa chỉ công khai |
-| Merge chỉ sửa tài liệu mà không deploy | Đúng thiết kế: mọi tệp đổi là `*.md`/`docs/`/`openspec/` → `image`/`deploy` bỏ qua (xem *Summary* của job Plan). Cần deploy lại cùng mã: Actions → CI → *Run workflow* trên `main` |
+| Merge chỉ sửa tài liệu mà không deploy | Đúng thiết kế: mọi tệp đổi **từ bản đang chạy** là `*.md`/`docs/`/`openspec/` (hoặc commit đó đã là bản đang chạy) → `image`/`deploy` bỏ qua. *Summary* của job Plan ghi mốc đã dùng (bản trên `VPS_SMOKE_URL` hay lượt deploy thành công gần nhất). Cần deploy lại cùng mã: Actions → CI → *Run workflow* trên `main` |
 | `không có image trước đó để lùi về` | Lần deploy đầu tiên và nó hỏng. Sửa rồi deploy lại; chưa có gì để lùi về |
 | `không khai HEALTHCHECK` | Container đang chạy image sai (không phải image của dự án). Kiểm `docker inspect --format '{{.Config.Image}}' cdkt_app` |
 | Job `image` không chạy | Chỉ chạy trên `main`, không chạy cho pull request hay nhánh phụ — đúng thiết kế |
@@ -676,7 +711,7 @@ và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừn
 | `docker-compose.yml` | Khoá `image: ${CDKT_IMAGE:-cdkt/app:local}` cho phép vừa pull vừa build cục bộ; CI gửi tệp này lên VPS mỗi lượt deploy |
 | `tests/ops-scripts.test.ts` | Chặn hồi quy: thứ tự cổng, ghim SHA, ghim host key, ghi `.env` nguyên tử, đường lùi phiên bản, thứ tự dump → compose → `.env`, bỏ qua deploy khi chỉ đổi tài liệu, smoke, giữ image; đọc `ci.yml`/compose bằng trình phân tích YAML cho `concurrency`, TZ, biến chuyển tiếp |
 | `tests/deploy-remote-behavior.test.ts` | **Chạy thật** `deploy-remote.sh` (qua `bash -s` như CI) với `docker` giả (`tests/fixtures/deploy-remote/docker`): compose/script sao lưu hỏng/cụt bị từ chối mà `.env` không đổi, dump hỏng dừng trước mọi thay đổi, lùi trả cả image lẫn compose, `up` hỏng vẫn đi vào đường lùi, crash loop dừng chờ sau 3 lượt hỏi, mysql không bị tạo lại, 12 image → còn 6 |
-| `tests/ci-docs-only-skip.test.ts` | **Chạy thật** script của bước *Docs-only?* trong một repo git tạm: chỉ tài liệu → không deploy; có `.ts` (kể cả đổi tên sang `docs/`), `before` rỗng/không có → deploy |
+| `tests/ci-docs-only-skip.test.ts` | **Chạy thật** script của bước *Docs-only?* trong một repo git tạm với `curl`/`gh` giả: so với bản đang chạy — chỉ tài liệu → không deploy; có `.ts` (kể cả đổi tên sang `docs/`) → deploy; push mã bị huỷ khi đang chờ rồi push tài liệu → vẫn deploy; thứ tự mốc (health → lượt có job deploy `success` → deploy); mốc không phải tổ tiên → deploy; đã chạy → không deploy |
 | `tests/ci-integration-matrix.test.ts` | Mọi `tests/*-integration.test.ts` có trong matrix, đúng switch, đủ biến môi trường mà suite đọc; bước kiểm-skip đọc log, không chạy lại suite |
 | `tests/container-timezone.test.ts` | Scheduler analytics/retention chạy ở `TZ=Asia/Ho_Chi_Minh` bắn lúc 03:00 giờ VN, ở UTC thì 10:00 giờ VN |
 

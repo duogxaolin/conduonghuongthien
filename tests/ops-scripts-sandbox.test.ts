@@ -30,16 +30,16 @@ const managePrompts = (fn: string, until: string) => {
   return (slice.match(/\bprompt "/g) ?? []).length
 }
 const DEPLOY_PROMPTS = managePrompts('cmd_deploy', 'Bước 6/6')
-// Update: pull-code confirm, then these prompts, then the pull-image confirm and —
-// only when the image is pulled — the pre-update dump confirm, then whatever
-// update_app_image asks. `updateInput` answers the dump confirm `n`, so the tests
-// about restart/rollback stay about restart/rollback; `updateInputWithDump` says
-// what to answer (blank = the default, yes).
+// Update: the pre-update dump confirm FIRST — before git pull, the compose checkout
+// or any .env edit, like the CI deploy (D26) — then the pull-code confirm, these
+// prompts, the pull-image confirm, then whatever update_app_image asks.
+// `updateInput` answers the dump `n`, so the tests about restart/rollback stay about
+// restart/rollback; `updateInputWithDump` says what to answer (blank = the default, yes).
 const UPDATE_PROMPTS = managePrompts('cmd_update', 'Pull image + restart')
-const updateInputWithDump = (pullCode: string, pullImage: string | undefined, dump: string, ...rest: string[]) =>
-  lines(pullCode, ...Array(UPDATE_PROMPTS).fill(''), ...(pullImage === undefined ? [] : [pullImage]), ...(pullImage === 'y' ? [dump] : []), ...rest)
+const updateInputWithDump = (dump: string, pullCode: string, pullImage?: string, ...rest: string[]) =>
+  lines(dump, pullCode, ...Array(UPDATE_PROMPTS).fill(''), ...(pullImage === undefined ? [] : [pullImage]), ...rest)
 const updateInput = (pullCode: string, pullImage?: string, ...rest: string[]) =>
-  updateInputWithDump(pullCode, pullImage, 'n', ...rest)
+  updateInputWithDump('n', pullCode, pullImage, ...rest)
 
 function deploySandbox(ramMb: number) {
   const sb = makeSandbox()
@@ -279,7 +279,7 @@ test('a comment that merely mentions DROP TABLE is not flagged', () => {
 })
 
 // ─── manage.sh: Update ────────────────────────────────────────────────────────
-// Prompts: pull code?, PORT, PUBLIC_BASE_URL, pull image?, (pinned? re-point), ...
+// Prompts: dump?, pull code?, PORT, PUBLIC_BASE_URL, …, pull image?, (pinned? re-point), ...
 function updateSandbox(cdktImage: string) {
   // PUBLIC_HOST_ALLOWLIST is set to the host of PUBLIC_BASE_URL on purpose: another
   // change makes Update offer to write that key when the value differs from what is
@@ -469,18 +469,26 @@ test('a rollback also puts docker-compose.yml back to the pre-pull version', () 
 })
 
 // ─── manage.sh Update: pre-update dump (D26), ping URL (D35) ─────────────────
-test('Update takes a verified pre-update dump by default, before the image is touched', () => {
+test('Update takes a verified pre-update dump by default, before git pull, compose, .env or the image', () => {
   const sb = updateSandbox('ghcr.io/x/y:latest')
   try {
-    const r = sb.run('production/manage.sh', ['update'], { input: updateInputWithDump('n', 'y', '') })
+    // FAKE_GIT_DIFF_RC=1: compose differs from HEAD, so Update checks it out before pulling.
+    const r = sb.run('production/manage.sh', ['update'], { input: updateInputWithDump('', 'y', 'y'), env: { FAKE_GIT_DIFF_RC: '1' } })
     assert.equal(r.status, 0, r.stdout + r.stderr)
     assert.match(r.stdout, /Sao lưu DB trước khi cập nhật\? \(Y\/n\)/)
     const log = sb.dockerLog()
     const dump = log.findIndex((l) => / mysqldump /.test(l))
+    const checkout = log.indexOf('git checkout -- docker-compose.yml')
+    const gitPull = log.indexOf('git pull origin main')
     const tag = log.findIndex((l) => l.startsWith('image tag '))
     const pull = log.indexOf('pull ghcr.io/x/y:latest')
     const up = log.indexOf('compose up -d --no-deps app')
-    assert.ok(dump >= 0 && tag > dump && pull > dump && up > dump, `the dump must come first: ${JSON.stringify(log)}`)
+    assert.ok(dump >= 0, `no dump: ${JSON.stringify(log)}`)
+    for (const [what, at] of Object.entries({ checkout, gitPull, tag, pull, up })) {
+      assert.ok(at > dump, `the dump must come before ${what}: ${JSON.stringify(log)}`)
+    }
+    // ...and before the configuration prompts that rewrite .env.
+    assert.ok(r.stdout.indexOf('Sao lưu DB trước khi cập nhật') < r.stdout.indexOf('Sửa cấu hình'), r.stdout)
     const dumps = readdirSync(sb.path('.deploy-db-backups'))
     assert.equal(dumps.length, 1)
     assert.match(dumps[0]!, /^cdkt-predeploy-cdkt_admin-\d{8}T\d{6}Z-\d+\.sql\.gz$/, 'same name and place as the CI pre-deploy dump')
@@ -489,18 +497,25 @@ test('Update takes a verified pre-update dump by default, before the image is to
   }
 })
 
-test('a failed pre-update dump stops Update before anything is pulled or restarted', () => {
+test('a failed pre-update dump stops Update before git pull, compose, .env or the image is touched', () => {
   const sb = updateSandbox('ghcr.io/x/y:latest')
   try {
+    const envBefore = sb.env()
+    // Answers that WOULD pull code, change PORT, confirm the .env write and pull the
+    // image if Update went on past the failed dump.
     const r = sb.run('production/manage.sh', ['update'], {
-      input: updateInputWithDump('n', 'y', 'y'),
-      env: { FAKE_MYSQLDUMP_FAIL: '1' },
+      input: lines('y', 'y', '4000', ...Array(UPDATE_PROMPTS - 1).fill(''), 'y', 'y'),
+      env: { FAKE_MYSQLDUMP_FAIL: '1', FAKE_GIT_DIFF_RC: '1' },
     })
     assert.notEqual(r.status, 0)
     assert.doesNotMatch(r.stdout, /UPDATE XONG/)
+    assert.match(r.stdout, /Sao lưu CSDL thất bại/)
     const log = sb.dockerLog()
+    assert.ok(!log.some((l) => /^git (checkout|pull)/.test(l)), `git ran after a failed dump: ${JSON.stringify(log)}`)
     assert.ok(!log.some((l) => /^(pull |image tag |compose (up|pull|build))/.test(l)), `something was touched: ${JSON.stringify(log)}`)
-    assert.equal(envValue(sb.env(), 'CDKT_IMAGE'), 'ghcr.io/x/y:latest')
+    assert.equal(sb.env(), envBefore, '.env changed after a failed dump')
+    assert.equal(readFileSync(sb.path('docker-compose.yml'), 'utf8'), 'services: {}\n')
+    assert.ok(!existsSync(sb.path('.deploy-compose-backups')), 'compose was backed up/checked out after a failed dump')
   } finally {
     cleanup(sb)
   }
@@ -519,17 +534,18 @@ test('declining the pre-update dump skips it', () => {
 
 test('Update writes HEALTHCHECK_PING_URL to .env without echoing it, and refuses a malformed one', () => {
   // The ping URL is the last prompt before "Pull image": answer the others blank.
+  // The first two answers decline the pre-update dump and the code pull.
   const url = 'https://hc-ping.com/0b7c2a4e-1111-2222-3333-444455556666'
   const sb = updateSandbox('ghcr.io/x/y:latest')
   try {
     const r = sb.run('production/manage.sh', ['update'], {
-      input: lines('n', ...Array(UPDATE_PROMPTS - 1).fill(''), url, 'y', 'n'),
+      input: lines('n', 'n', ...Array(UPDATE_PROMPTS - 1).fill(''), url, 'y', 'n'),
     })
     assert.equal(r.status, 0, r.stdout + r.stderr)
     assert.equal(envValue(sb.env(), 'HEALTHCHECK_PING_URL'), url)
     assert.ok(!r.stdout.includes('0b7c2a4e-1111'), 'the ping URL (a credential for the monitor) was printed')
     // A later Update with the URL already set: still not printed, kept on enter.
-    const again = sb.run('production/manage.sh', ['update'], { input: lines('n', ...Array(UPDATE_PROMPTS).fill(''), 'n') })
+    const again = sb.run('production/manage.sh', ['update'], { input: lines('n', 'n', ...Array(UPDATE_PROMPTS).fill(''), 'n') })
     assert.equal(again.status, 0, again.stdout + again.stderr)
     assert.ok(!again.stdout.includes('0b7c2a4e-1111'), 'the stored ping URL was printed')
     assert.match(again.stdout, /HEALTHCHECK_PING_URL hiện đang đặt/)
@@ -541,7 +557,7 @@ test('Update writes HEALTHCHECK_PING_URL to .env without echoing it, and refuses
   const bad = updateSandbox('ghcr.io/x/y:latest')
   try {
     const r = bad.run('production/manage.sh', ['update'], {
-      input: lines('n', ...Array(UPDATE_PROMPTS - 1).fill(''), 'https://x.example/a?b=1&c=2', 'n'),
+      input: lines('n', 'n', ...Array(UPDATE_PROMPTS - 1).fill(''), 'https://x.example/a?b=1&c=2', 'n'),
     })
     assert.equal(r.status, 0, r.stdout + r.stderr)
     assert.equal(envValue(bad.env(), 'HEALTHCHECK_PING_URL'), undefined, 'a URL the scripts cannot use was written')
@@ -1017,6 +1033,124 @@ test('backup-db.sh and verify-restore.sh pass the root password by environment, 
         assert.equal(pwds[i], SECRET)
       }
     })
+  } finally {
+    cleanup(sb)
+  }
+})
+
+// ─── backup-db.sh: who can read a dump, and what an interrupted run leaves ────
+// A dump is the whole production database (password hashes, reader e-mails). Under
+// the usual umask 022 it used to land 0644 in a 0755 directory — readable by every
+// account on the host. The test process runs with that umask, so the script itself
+// must narrow it.
+test('backup-db.sh writes dumps owner-only (0600); the pre-deploy directory is 0700, even if it existed as 0755', () => {
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+  try {
+    // A nightly run into a directory it has to create.
+    const fresh = sb.run('scripts/backup-db.sh', [sb.path('fresh', 'backups')])
+    assert.equal(fresh.status, 0, fresh.stdout + fresh.stderr)
+    const [nightly] = readdirSync(sb.path('fresh', 'backups'))
+    assert.equal(mode(sb.path('fresh', 'backups', nightly!)).toString(8), '600')
+    assert.equal(mode(sb.path('fresh', 'backups')).toString(8), '700')
+
+    // ./backups is the app container's bind mount (in-app backups, uid 1000): the
+    // nightly run narrows its own file, never the shared directory.
+    mkdirSync(sb.path('backups'))
+    chmodSync(sb.path('backups'), 0o755)
+    assert.equal(sb.run('scripts/backup-db.sh', [sb.path('backups')]).status, 0)
+    assert.equal(mode(sb.path('backups')).toString(8), '755')
+    assert.ok(readdirSync(sb.path('backups')).every((f) => mode(sb.path('backups', f)).toString(8) === '600'))
+
+    // The pre-deploy directory is dedicated to these dumps: tightened even when an
+    // earlier run (or an operator) created it world-readable.
+    mkdirSync(sb.path('.deploy-db-backups'))
+    chmodSync(sb.path('.deploy-db-backups'), 0o755)
+    const pre = sb.run('scripts/backup-db.sh', ['--prefix', 'cdkt-predeploy', sb.path('.deploy-db-backups')])
+    assert.equal(pre.status, 0, pre.stdout + pre.stderr)
+    assert.equal(mode(sb.path('.deploy-db-backups')).toString(8), '700')
+    const [dump] = readdirSync(sb.path('.deploy-db-backups'))
+    assert.equal(mode(sb.path('.deploy-db-backups', dump!)).toString(8), '600')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('a pre-deploy directory the deploy user cannot chmod (writable, not owned) warns and still dumps', () => {
+  // E.g. created by root with group write for the deploy user. The dumps in it are
+  // 0600 regardless; refusing the dump over the directory mode would stop every
+  // deploy for a defence-in-depth setting.
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+  try {
+    writeFileSync(sb.path('bin', 'chmod'), '#!/usr/bin/env bash\ncase "${*: -1}" in */.deploy-db-backups) echo "chmod: Operation not permitted" >&2; exit 1 ;; esac\nexec /bin/chmod "$@"\n')
+    chmodSync(sb.path('bin', 'chmod'), 0o755)
+    const r = sb.run('scripts/backup-db.sh', ['--prefix', 'cdkt-predeploy', sb.path('.deploy-db-backups')])
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.match(r.stderr, /0700/, 'the operator is not told the directory stayed open')
+    const [dump] = readdirSync(sb.path('.deploy-db-backups'))
+    assert.match(dump!, /^cdkt-predeploy-cdkt_admin-.*\.sql\.gz$/)
+    assert.equal(mode(sb.path('.deploy-db-backups', dump!)).toString(8), '600')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('an interrupted backup-db.sh leaves no archive behind — not even a complete-looking one', () => {
+  for (const [signal, status] of [['TERM', 143], ['INT', 130], ['HUP', 129]] as const) {
+    for (const prefix of [[], ['--prefix', 'cdkt-predeploy']]) {
+      const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\nHEALTHCHECK_PING_URL=https://hc.example/x\n`)
+      try {
+        // The real fake docker, except that mysqldump writes half a dump and then the
+        // script receives the signal (cron killed, deploy cancelled, Ctrl-C) — the
+        // archive is still open and gzip goes on to close it as a VALID gzip file.
+        writeFileSync(sb.path('bin', 'docker-real'), readFileSync(sb.path('bin', 'docker')))
+        chmodSync(sb.path('bin', 'docker-real'), 0o755)
+        writeFileSync(
+          sb.path('bin', 'docker'),
+          `#!/usr/bin/env bash\ncase " $* " in\n  *" mysqldump "*) printf 'CREATE TABLE \`t1\` (id int);\\n'; kill -${signal} "$PPID"; exit 0 ;;\nesac\nexec "$SANDBOX/bin/docker-real" "$@"\n`,
+        )
+        writeFileSync(sb.path('bin', 'curl'), `#!/usr/bin/env bash\nprintf '%s\\n' "\${@: -1}" >> "$SANDBOX/curl.log"\n`)
+        chmodSync(sb.path('bin', 'curl'), 0o755)
+        const dest = sb.path('dumps')
+        const r = sb.run('scripts/backup-db.sh', [...prefix, dest])
+        const what = `${signal} ${prefix.join(' ') || 'nightly'}`
+        assert.equal(r.status, status, `${what}: exit ${r.status}\n${r.stdout}${r.stderr}`)
+        const left = existsSync(dest) ? readdirSync(dest) : []
+        assert.deepEqual(left, [], `${what}: an interrupted dump was left behind: ${JSON.stringify(left)}`)
+        // A nightly run reports the failure to the monitor; a pre-deploy run never pings.
+        const pings = existsSync(sb.path('curl.log')) ? readFileSync(sb.path('curl.log'), 'utf8').trim().split('\n') : []
+        assert.deepEqual(pings, prefix.length ? [] : ['https://hc.example/x/fail'], what)
+      } finally {
+        cleanup(sb)
+      }
+    }
+  }
+})
+
+test('a dump is only ever visible under its final name once it passed verification', () => {
+  // While running, the archive is <name>.sql.gz.partial: no rotation glob, restore
+  // `--latest` or operator `ls *.sql.gz` can pick a half-written file. A partial left
+  // by a run that could not clean up (SIGKILL, power loss) is removed by a later run
+  // of the same family once it is a day old — never a fresh one (another run's).
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+  try {
+    const dest = sb.path('backups')
+    mkdirSync(dest)
+    const old = new Date(Date.now() - 2 * 86_400_000)
+    const stale = 'cdkt-cdkt_admin-20000101T000000Z-1.sql.gz.partial'
+    const running = 'cdkt-cdkt_admin-20000102T000000Z-2.sql.gz.partial'
+    const otherFamily = 'cdkt-predeploy-cdkt_admin-20000101T000000Z-3.sql.gz.partial'
+    for (const f of [stale, running, otherFamily]) writeFileSync(join(dest, f), 'partial')
+    utimesSync(join(dest, stale), old, old)
+    utimesSync(join(dest, otherFamily), old, old)
+    const r = sb.run('scripts/backup-db.sh', [dest], { env: { BACKUP_STAMP: '20261023T030000Z' } })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    const left = readdirSync(dest).sort()
+    assert.ok(!left.includes(stale), 'a day-old partial of this family survived')
+    assert.ok(left.includes(running), 'a fresh partial (another run in progress) was deleted')
+    assert.ok(left.includes(otherFamily), 'a nightly run touched the pre-deploy family')
+    assert.ok(left.some((f) => /^cdkt-cdkt_admin-20261023T030000Z-\d+\.sql\.gz$/.test(f)), JSON.stringify(left))
+    assert.ok(!left.some((f) => /20261023T030000Z.*\.partial$/.test(f)), 'this run left its partial behind')
+    assert.match(readFileSync(repoFile('scripts/backup-db.sh'), 'utf8'), /^PARTIAL="\$TARGET\.partial"$/m)
   } finally {
     cleanup(sb)
   }
