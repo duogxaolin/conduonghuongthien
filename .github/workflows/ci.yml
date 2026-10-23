@@ -76,7 +76,7 @@ env:
 jobs:
   # ── Lập kế hoạch: PR chỉ chạy bộ nhẹ ──────────────────────────────────────
   # Mỗi lượt CI đầy đủ tốn ~40 phút billed (GitHub làm tròn từng job lên phút), trong
-  # đó các job Integration chiếm ~29 (đo khi matrix còn 13 job; nay 17). Tài khoản chỉ có 3.000 phút/tháng và đã hết một
+  # đó các job Integration chiếm ~29 (đo khi matrix còn 13 job; nay 18). Tài khoản chỉ có 3.000 phút/tháng và đã hết một
   # lần, nên:
   #   - PR nháp: bỏ qua hoàn toàn (chạy lại khi bấm "Ready for review").
   #   - PR thường: unit + build + schema-drift + hygiene (~12 phút). Integration chỉ chạy
@@ -135,7 +135,7 @@ jobs:
   #   - job này: 203 tệp non-integration, không cần MySQL, ~30 phút trên runner
   #     chậm. Typecheck gộp vào đây (giữ nguyên triết lý cũ: không phải job riêng
   #     để khỏi phải xin thêm runner mà hay bị queue).
-  #   - job integration-tests: 17 tệp *-integration, cần MySQL service.
+  #   - job integration-tests: 18 tệp *-integration, cần MySQL service.
   #   - job schema-drift: `npm run db:drift`, cần MySQL, chạy nhanh.
   unit-tests:
     name: Unit and typecheck
@@ -183,7 +183,7 @@ jobs:
 
       # Unit + contract tests — mọi tệp trừ *-integration (chúng cần MySQL và
       # chạy ở job integration-tests bên dưới). Lọc bằng find để không phụ thuộc
-      # shell glob của runner. Bỏ qua 17 tệp integration để job này không cần
+      # shell glob của runner. Bỏ qua 18 tệp integration để job này không cần
       # service container và chạy nhanh hơn.
       - name: Unit and contract tests (no DB)
         env:
@@ -236,9 +236,9 @@ jobs:
           exit $status
 
   # ── Integration tests (cần MySQL) ──────────────────────────────────────────
-  # 17 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
+  # 18 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
   # service container. Trước đây tất cả suite (khi đó 13) chạy **nối tiếp trên một runner**,
-  # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 17 job song
+  # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 18 job song
   # song** — mỗi suite một job + MySQL service riêng, chạy độc lập. Một runner
   # chậm chỉ kéo dài đúng suite của nó, không làm suite khác timeout theo.
   integration-tests:
@@ -302,6 +302,9 @@ jobs:
           - suite: public-read
             file: tests/public-read-integration.test.ts
             switch: PUBLIC_READ_INTEGRATION
+          - suite: media-category-migration
+            file: tests/media-category-migration-integration.test.ts
+            switch: MEDIA_CATEGORY_MIGRATION_INTEGRATION
     services:
       mysql:
         image: mysql:8.0
@@ -325,7 +328,7 @@ jobs:
 
       - run: npm ci
       # Không suite integration nào gọi FFmpeg thật (media-queue dùng runner giả) —
-      # 17 job không còn cài nó, nên mirror apt chập chờn không cắt được chúng nữa.
+      # 18 job không còn cài nó, nên mirror apt chập chờn không cắt được chúng nữa.
 
       # Mỗi job matrix chạy ĐÚNG MỘT suite. Bật switch của chính nó (qua biến
       # `SWITCH` được matrix cung cấp) — các switch khác vắng mặt nên suite khác
@@ -401,6 +404,10 @@ jobs:
           PUBLIC_READ_PORT: 3306
           PUBLIC_READ_USER: root
           PUBLIC_READ_PASSWORD: test_root_password
+          MEDIA_CATEGORY_MIGRATION_HOST: 127.0.0.1
+          MEDIA_CATEGORY_MIGRATION_PORT: 3306
+          MEDIA_CATEGORY_MIGRATION_USER: root
+          MEDIA_CATEGORY_MIGRATION_PASSWORD: test_root_password
         run: |
           set -euo pipefail
           node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test ${{ matrix.file }}
@@ -478,6 +485,10 @@ jobs:
           PUBLIC_READ_PORT: 3306
           PUBLIC_READ_USER: root
           PUBLIC_READ_PASSWORD: test_root_password
+          MEDIA_CATEGORY_MIGRATION_HOST: 127.0.0.1
+          MEDIA_CATEGORY_MIGRATION_PORT: 3306
+          MEDIA_CATEGORY_MIGRATION_USER: root
+          MEDIA_CATEGORY_MIGRATION_PASSWORD: test_root_password
         run: |
           set -euo pipefail
           # Chạy lại để dò số subtest thực sự chạy. Nếu suite tự SKIP (switch env

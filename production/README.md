@@ -234,6 +234,20 @@ Chạy lại được nhiều lần (hàng đã sạch thì không đổi). Thay
 
 ---
 
+## Sửa dữ liệu sau deploy (post-deploy data repair): danh mục video bị xoá lúc khởi động
+
+Từ 2026-09-22 tới bản vá `fix-media-category-wipe-on-boot`, **mỗi lần app khởi động** (deploy CI, `manage.sh` Update, restart sau sự cố) đều xoá danh mục của mọi video trong Media Portal. Bản vá chặn việc xoá từ lần khởi động đầu tiên của image mới. Giá trị đã mất thì không tự về: phải khôi phục từ bản sao lưu theo runbook ở [`docs/decisions/data-layer.md` § Khôi phục danh mục video sau lỗi xoá lúc khởi động](../docs/decisions/data-layer.md#media-category-restore).
+
+- **Ngay hôm nay, trước cả khi merge:** làm bước 0 của runbook — chép `./backups/*.sql.gz` ra một thư mục ngoài vòng xoay. Vòng xoay (`BACKUP_KEEP_DAYS`, `backup_keep_count`) đang xoá đúng những bản có thể còn giữ danh mục.
+- Chỉ khôi phục **sau khi** image đã vá chạy healthy. Bản dump chỉ nạp vào CSDL **nháp**, không bao giờ vào CSDL production.
+
+> ⚠️ **Đừng bao giờ lùi về image cũ hơn bản vá này** — kể cả lùi tay, kể cả lượt lùi
+> tự động của deploy khi healthcheck hỏng. Lần khởi động đầu của image cũ sẽ xoá
+> danh mục video **lại**, kể cả những giá trị vừa khôi phục. Image mới không khởi
+> động được vì lý do khác thì sửa tiến (fix forward), đừng lùi.
+
+---
+
 ## Sao lưu & khôi phục (tóm tắt — chi tiết ở `DEPLOY.md` § Backup & Restore)
 
 Toolkit này **không** tự sao lưu; sao lưu chạy bằng cron trên host:
