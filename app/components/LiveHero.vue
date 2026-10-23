@@ -42,7 +42,7 @@
               <span class="w-1.5 h-1.5 rounded-full bg-white animate-pulse motion-reduce:animate-none" aria-hidden="true"></span>
               {{ t('m_live_badge') }}
             </span>
-            <h1 class="text-sm sm:text-base font-extrabold text-white leading-tight tracking-tight m-0 min-w-0 truncate flex-1">
+            <h1 class="text-sm sm:text-base font-extrabold text-white leading-snug pt-[0.15em] tracking-tight m-0 min-w-0 truncate flex-1">
               {{ session.title }}
             </h1>
             <span v-if="startedLabel" class="text-[0.72rem] text-white/70 font-medium inline-flex items-center gap-1.5 shrink-0 bg-white/5 px-2.5 py-0.5 rounded-md border border-white/10">
