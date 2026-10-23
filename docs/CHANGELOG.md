@@ -658,7 +658,16 @@ Rà lại ba mảng chưa soi ở § 21 (bề mặt công khai, tầng dữ li�
 - **Admin**: form user theo trần mật khẩu của máy chủ (12 ký tự, 3/4 nhóm — bản chép hằng `PASSWORD_MIN_LENGTH` có trỏ nguồn), nút tạo/lưu chặn bấm hai lần; trình soạn bài (`articles/[id].vue`) hỏi trước khi rời trang (`onBeforeRouteLeave` qua `useConfirm` + `beforeunload`) khi còn thay đổi chưa lưu.
 
 #### Kiểm chứng (2026-10-23)
-`npm test` 3909 / 3887 pass / 0 fail / 22 skip; typecheck 0 lỗi; eslint 0 error / 16 warning; Playwright 88/88 (chạy trước bản sửa lượt trợ lý sau verify). **CI GitHub không chạy từ 2026-10-14** — mọi job báo "recent account payments have failed or your spending limit needs to be increased" (PR #121, #122): không cổng tự động nào chạy, merge vào `main` cũng không tự deploy cho tới khi chủ repo xử lý thanh toán.
+`npm test` 3909 / 3887 pass / 0 fail / 22 skip; typecheck 0 lỗi; eslint 0 error / 16 warning; Playwright 88/88 (chạy trước bản sửa lượt trợ lý sau verify). **CI GitHub không chạy từ 2026-10-14** (chạy lại từ 2026-10-23, xem § 25) — mọi job báo "recent account payments have failed or your spending limit needs to be increased" (PR #121, #122): không cổng tự động nào chạy, merge vào `main` cũng không tự deploy cho tới khi chủ repo xử lý thanh toán.
+
+### 25. CI: bước cài FFmpeg cắt job dù test xanh (2026-10-23)
+
+Từ 2026-10-23 (lượt chạy đầu sau khi Actions chạy lại) `sudo apt-get update && apt-get install ffmpeg` trên runner `ubuntu-24.04` (image 20261012) mất tới 20 phút (2026-10-14: 20–60 giây) — mirror `azure.archive.ubuntu.com` cấu hình sẵn chập chờn (lỗi đã biết của runner GitHub). Hậu quả: lượt `main` của PR #122 bị huỷ 2 job integration (deploy phải chạy lại), PR #123 bị huỷ 4 job integration và job build (build + e2e đã xanh, nhưng vượt timeout 25 phút của job).
+
+- 17 job integration bỏ bước cài FFmpeg: không suite nào chạy FFmpeg thật (`media-queue-integration` dùng runner giả).
+- `unit-tests` (`media-processing` chuyển mã thật) và `build` (e2e `media-portal` tạo video bằng `lavfi`) giữ bước cài, nay có `timeout-minutes: 12`, `DEBIAN_FRONTEND=noninteractive`, `Acquire::Retries`/timeout; chỉ bước **tải** (`--download-only`) có `timeout -k`, cài từ gói đã tải chạy sau (dpkg bị giết giữa chừng làm mọi lần thử sau hỏng ngay); lần thử hai đổi mirror sang `archive.ubuntu.com` **trong `/etc/apt/apt-mirrors.txt`** — runner ubuntu-24.04 khai `URIs: mirror+file:/etc/apt/apt-mirrors.txt`, bản đầu chỉ sửa sources.list nên không đổi được gì (bước verify chỉ ra); `--no-install-recommends` (290 → 198 gói trên image trần, đủ cho libx264/aac/lavfi/ffprobe — đã chạy thử trong container ubuntu:24.04).
+- `Install Chromium` (`playwright install --with-deps` chạy apt riêng) có `timeout-minutes: 8`; job `build` 25 → 35 phút (hai bước apt có trần 12 + 8 phút cộng build/e2e ~14 phút — 25 phút từng cắt lượt đã xanh).
+- Guard: `tests/ci-ffmpeg-install.test.ts`. Mô phỏng luồng điều khiển bằng apt/sudo giả: tải được ngay → 1 lần; hỏng 1 lần → đổi mirror rồi cài; hỏng 2 lần → exit 1.
 
 ### 23. Sapo bài viết hiện nguyên HTML entity (2026-10-23)
 

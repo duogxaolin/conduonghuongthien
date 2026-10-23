@@ -152,8 +152,34 @@ jobs:
           cache: npm
 
       - run: npm ci
+      # FFmpeg qua apt — có trần thời gian, và đổi sang mirror chính của Ubuntu khi mirror
+      # mặc định chậm/hỏng. Từ 2026-10-23 mirror azure.archive.ubuntu.com cấu hình sẵn trên
+      # runner làm bước này mất tới 20 phút (trước đó 20–60 giây) và cắt job vì quá timeout
+      # dù build/test đều xanh. Runner ubuntu-24.04 khai `URIs: mirror+file:/etc/apt/apt-mirrors.txt`
+      # nên tên mirror nằm trong apt-mirrors.txt — sửa sources.list mà thôi thì không đổi gì.
+      # Chỉ bước TẢI có trần thời gian; giải nén/cài từ gói đã tải chạy sau, không bị cắt giữa
+      # chừng (dpkg bị giết giữa chừng làm mọi lần thử sau hỏng ngay). `--no-install-recommends`:
+      # libx264, aac, lavfi, ffprobe đều là phụ thuộc bắt buộc của gói ffmpeg.
       - name: Install FFmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+        timeout-minutes: 12
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+          for mirror in default archive.ubuntu.com; do
+            if [ "$mirror" != default ]; then
+              echo "::warning::mirror apt mặc định chậm hoặc hỏng — chuyển sang archive.ubuntu.com"
+              sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
+              cat /etc/apt/apt-mirrors.txt 2>/dev/null || true
+            fi
+            if timeout -k 10 90 sudo -E apt-get $APT_OPTS update -qq \
+              && timeout -k 10 180 sudo -E apt-get $APT_OPTS install -y -qq --download-only --no-install-recommends ffmpeg; then
+              sudo -E apt-get install -y -qq --no-install-recommends ffmpeg
+              ffmpeg -hide_banner -version | head -1
+              exit 0
+            fi
+          done
+          exit 1
 
       # Unit + contract tests — mọi tệp trừ *-integration (chúng cần MySQL và
       # chạy ở job integration-tests bên dưới). Lọc bằng find để không phụ thuộc
@@ -298,8 +324,8 @@ jobs:
           cache: npm
 
       - run: npm ci
-      - name: Install FFmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+      # Không suite integration nào gọi FFmpeg thật (media-queue dùng runner giả) —
+      # 17 job không còn cài nó, nên mirror apt chập chờn không cắt được chúng nữa.
 
       # Mỗi job matrix chạy ĐÚNG MỘT suite. Bật switch của chính nó (qua biến
       # `SWITCH` được matrix cung cấp) — các switch khác vắng mặt nên suite khác
@@ -519,7 +545,7 @@ jobs:
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.run == 'true'
-    timeout-minutes: 25
+    timeout-minutes: 35
     # The browser suite runs in this job rather than its own because it needs the
     # bundle this job just produced. A separate job would either rebuild (another
     # five minutes) or pass .output between jobs as an artifact.
@@ -544,8 +570,34 @@ jobs:
           cache: npm
 
       - run: npm ci
+      # FFmpeg qua apt — có trần thời gian, và đổi sang mirror chính của Ubuntu khi mirror
+      # mặc định chậm/hỏng. Từ 2026-10-23 mirror azure.archive.ubuntu.com cấu hình sẵn trên
+      # runner làm bước này mất tới 20 phút (trước đó 20–60 giây) và cắt job vì quá timeout
+      # dù build/test đều xanh. Runner ubuntu-24.04 khai `URIs: mirror+file:/etc/apt/apt-mirrors.txt`
+      # nên tên mirror nằm trong apt-mirrors.txt — sửa sources.list mà thôi thì không đổi gì.
+      # Chỉ bước TẢI có trần thời gian; giải nén/cài từ gói đã tải chạy sau, không bị cắt giữa
+      # chừng (dpkg bị giết giữa chừng làm mọi lần thử sau hỏng ngay). `--no-install-recommends`:
+      # libx264, aac, lavfi, ffprobe đều là phụ thuộc bắt buộc của gói ffmpeg.
       - name: Install FFmpeg
-        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
+        timeout-minutes: 12
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          APT_OPTS="-o Acquire::Retries=3 -o Acquire::http::Timeout=20 -o Acquire::https::Timeout=20"
+          for mirror in default archive.ubuntu.com; do
+            if [ "$mirror" != default ]; then
+              echo "::warning::mirror apt mặc định chậm hoặc hỏng — chuyển sang archive.ubuntu.com"
+              sudo sed -i 's|azure\.archive\.ubuntu\.com|archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt /etc/apt/sources.list.d/*.sources /etc/apt/sources.list 2>/dev/null || true
+              cat /etc/apt/apt-mirrors.txt 2>/dev/null || true
+            fi
+            if timeout -k 10 90 sudo -E apt-get $APT_OPTS update -qq \
+              && timeout -k 10 180 sudo -E apt-get $APT_OPTS install -y -qq --download-only --no-install-recommends ffmpeg; then
+              sudo -E apt-get install -y -qq --no-install-recommends ffmpeg
+              ffmpeg -hide_banner -version | head -1
+              exit 0
+            fi
+          done
+          exit 1
 
 
       - name: Build
@@ -558,7 +610,11 @@ jobs:
 
       # Chromium only — see playwright.config.ts. Each additional browser is
       # another ~100 MB download and answers nothing these specs ask.
+      # `playwright install --with-deps` chạy apt riêng của nó trên cùng mirror — có trần thời
+      # gian để một mirror chậm không ăn hết timeout của job (bước FFmpeg phía trên chỉ
+      # chuyển mirror khi lần tải đầu hỏng/quá hạn).
       - name: Install Chromium
+        timeout-minutes: 8
         run: npm run test:e2e:install
 
       # What no source-text test can reach: the retry button actually re-issuing
