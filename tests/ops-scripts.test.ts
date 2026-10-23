@@ -122,7 +122,12 @@ test('the restore check never touches the live database', () => {
   assert.match(script, /SCRATCH="cdkt_restore_check_\$\$"/)
   assert.match(script, /refusing to use the live database as scratch/)
   assert.match(script, /DROP DATABASE IF EXISTS/)
-  assert.match(script, /trap cleanup EXIT/, 'the scratch database survives an early exit')
+  // ONE exit handler: a second `trap … EXIT` (the health-check ping) would replace
+  // `trap cleanup EXIT` and leave every scratch database behind.
+  assert.match(script, /^trap on_exit EXIT$/m, 'the scratch database survives an early exit')
+  assert.equal((script.match(/^trap .* EXIT$/gm) ?? []).length, 1, 'more than one EXIT trap — the last one silently wins')
+  const handler = /^on_exit\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+  assert.match(handler, /^\s+cleanup$/m, 'the exit handler no longer drops the scratch database')
 })
 
 test('backups are not committed to the repository', () => {
@@ -373,10 +378,26 @@ test('the deploy ships the compose file of the commit it deploys, with a checksu
   assert.ok(upload >= 0, 'docker-compose.yml is not sent to the VPS')
   assert.ok(script > upload, 'the compose file must arrive before the deploy script runs')
   assert.match(run, /compose_sha256=\$\(sha256sum docker-compose\.yml/)
-  assert.match(run, /INCOMING_COMPOSE=\.docker-compose\.incoming\.yml INCOMING_COMPOSE_SHA256=\$compose_sha256 bash -s --/)
-  // Both connections use the same pinned-host-key options.
-  assert.equal((run.match(/ssh "\$\{ssh_opts\[@\]\}"/g) ?? []).length, 2)
+  assert.match(run, /INCOMING_COMPOSE=\.docker-compose\.incoming\.yml INCOMING_COMPOSE_SHA256=\$compose_sha256 /)
+  assert.match(run, / bash -s -- '\$APP_DIR' '\$IMAGE'"/)
+  // Every connection (compose, backup script, deploy script) uses the same
+  // pinned-host-key options.
+  assert.equal((run.match(/ssh "\$\{ssh_opts\[@\]\}"/g) ?? []).length, 3)
   assert.match(run, /StrictHostKeyChecking=yes/)
+})
+
+test('the pre-deploy dump runs the backup script of the commit being deployed, checksummed', async () => {
+  // The VPS checkout is only refreshed by a manual `git pull`, so its
+  // scripts/backup-db.sh can be any age — an old copy reads `--prefix` as the
+  // destination directory. The script travels with the deploy, like compose.
+  const jobs = asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs')
+  const steps = asMap(jobs.deploy, 'deploy job').steps as YamlMap[]
+  const run = String(steps.find((s) => s.name === 'Deploy over SSH')?.run ?? '')
+  const upload = run.indexOf(`cat > '$APP_DIR/.deploy-incoming/backup-db.sh'" < scripts/backup-db.sh`)
+  assert.ok(upload >= 0, 'scripts/backup-db.sh is not sent to the VPS')
+  assert.ok(upload < run.indexOf('< scripts/deploy-remote.sh'), 'the backup script must arrive before the deploy script runs')
+  assert.match(run, /backup_sha256=\$\(sha256sum scripts\/backup-db\.sh/)
+  assert.match(run, /INCOMING_BACKUP_SCRIPT=\.deploy-incoming\/backup-db\.sh INCOMING_BACKUP_SCRIPT_SHA256=\$backup_sha256 /)
 })
 
 test('the MySQL healthcheck keeps the root password out of the process list', async () => {
@@ -621,8 +642,12 @@ test('the media volume is writable by the unprivileged user', () => {
   // nothing says why.
   const dockerfile = read('Dockerfile')
   const runtimeStage = dockerfile.slice(dockerfile.indexOf('# ─── Stage 2'))
-  const chownIndex = runtimeStage.indexOf('chown -R node:node')
-  assert.ok(chownIndex > -1, 'the runtime stage never chowns the app directory')
+  // The chown that hands the EMPTY mount points to `node` (no longer a recursive
+  // chown of /app — see tests/dockerfile-layers.test.ts). It must name the media
+  // work directory itself, the mount point of the `media_work` volume.
+  const chownMatch = /RUN [^\n]*(?:\\\n[^\n]*)*?\bchown node:node [^\n]*\/var\/lib\/cdkt\/media\b/.exec(runtimeStage)
+  assert.ok(chownMatch, 'the runtime stage never hands the media work directory to node')
+  const chownIndex = (chownMatch.index ?? 0) + chownMatch[0].indexOf('chown node:node')
 
   // Match the mkdir COMMAND, not the bare path: `ENV CDKT_MEDIA_WORKDIR=...`
   // also contains `/var/lib/cdkt`, and it sits above the chown — so asserting
@@ -784,4 +809,212 @@ test('the stream location names a route that exists', () => {
     read('DEPLOY.md').includes('/api/public/livestream/chat/stream'),
     'the documented proxy path does not match the route',
   )
+})
+
+// ─── Wave 1 · 1D: deploy pipeline ────────────────────────────────────────────
+// Behaviour (run, not read) lives in tests/deploy-remote-behavior.test.ts,
+// tests/ci-docs-only-skip.test.ts and tests/backup-ping-predeploy.test.ts. These
+// pin the shape those tests cannot see: the order of the top-level calls, and the
+// workflow wiring that only GitHub executes.
+
+/** The top-level (column-0) lines of deploy-remote.sh: the order things happen in. */
+const deployMainFlow = () => read('scripts/deploy-remote.sh').split('\n').filter((line) => /^[a-zA-Z_]/.test(line))
+const flowIndex = (flow: string[], pattern: RegExp) => flow.findIndex((line) => pattern.test(line))
+
+test('a verified pre-deploy dump is taken after the pull and before anything on the server changes', () => {
+  const flow = deployMainFlow()
+  const pull = flowIndex(flow, /^docker pull "\$IMAGE"$/)
+  const dump = flowIndex(flow, /^predeploy_dump$/)
+  const compose = flowIndex(flow, /^install_compose$/)
+  const proxy = flowIndex(flow, /^migrate_trusted_proxy_ips$/)
+  const swap = flowIndex(flow, /^set_image "\$IMAGE"$/)
+  assert.ok(pull >= 0 && dump > pull, 'the dump must come after the image is known to exist')
+  // install_compose and migrate_trusted_proxy_ips both rewrite files: a dump that
+  // fails after them would leave a new compose next to the old container.
+  assert.ok(compose > dump && proxy > dump && swap > dump, `the dump must precede every change on the server:\n${flow.join('\n')}`)
+
+  const script = read('scripts/deploy-remote.sh')
+  const fn = /^predeploy_dump\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+  assert.match(fn, /--prefix "\$PREDEPLOY_PREFIX"/)
+  assert.match(fn, /exit 1/, 'a failed dump must stop the deploy, not warn and carry on')
+  assert.match(script, /^PREDEPLOY_PREFIX=cdkt-predeploy$/m)
+
+  // The backup script: a validated prefix, the same verification, count rotation.
+  const backup = read('scripts/backup-db.sh')
+  assert.match(backup, /--prefix\)/, 'backup-db.sh takes no --prefix option')
+  assert.match(backup, /\[\[ "\$PREFIX" =~ \^cdkt/, 'the prefix becomes part of a host path and must be validated')
+  assert.match(backup, /TARGET="\$DEST\/\$PREFIX-\$DATABASE-\$STAMP-\$\$\.sql\.gz"/)
+  assert.match(backup, /^PREFIX_KEEP=5$/m, 'pre-deploy dumps are kept by count: 5')
+})
+
+test('manage.sh Update offers the same pre-deploy dump, defaulting to yes', () => {
+  const script = read('production/manage.sh')
+  const update = script.slice(script.indexOf('cmd_update() {'), script.indexOf('cmd_migrate() {'))
+  const ask = update.indexOf('confirm "Sao lưu DB trước khi cập nhật?" "y"')
+  assert.ok(ask >= 0, 'Update does not offer the pre-update dump (default yes)')
+  assert.ok(ask < update.indexOf('update_app_image'), 'the dump must come before the image is swapped')
+  assert.match(script, /scripts\/backup-db\.sh" --prefix cdkt-predeploy "\$ROOT\/\.deploy-db-backups"/)
+})
+
+test('a docs-only merge to main skips the image and the deploy; everything else still deploys', async () => {
+  const workflow = await loadYaml('.github/workflows/ci.yml')
+  const jobs = asMap(workflow.jobs, 'jobs')
+  const changes = asMap(jobs.changes, 'changes job')
+  assert.equal(asMap(changes.outputs, 'changes outputs').deploy, '${{ steps.deploy.outputs.deploy }}')
+  const steps = changes.steps as YamlMap[]
+  const checkout = steps.find((s) => String(s.uses ?? '').startsWith('actions/checkout@'))
+  assert.ok(checkout, 'the changes job needs history to diff a push')
+  assert.equal(checkout.if, "github.event_name == 'push'", 'pull requests keep the API-only plan (no checkout)')
+  assert.equal(asMap(checkout.with, 'checkout inputs')['fetch-depth'], 0)
+  const deployStep = steps.find((s) => s.id === 'deploy')
+  assert.ok(deployStep, 'no step computes the deploy output')
+  const run = String(deployStep.run)
+  assert.match(run, /git diff --no-renames --name-only "\$BEFORE" "\$SHA"/,
+    '--no-renames: a renamed .ts → .md must list BOTH paths, so it still deploys')
+  assert.ok(run.includes(`grep -Ev '\\.md$|^docs/|^openspec/'`), 'the docs-only pattern changed')
+
+  const image = asMap(jobs.image, 'image job')
+  assert.ok((image.needs as string[]).includes('changes'), 'image must need `changes` to read its output')
+  assert.equal(image.if, "github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.changes.outputs.deploy == 'true'")
+  const deploy = asMap(jobs.deploy, 'deploy job')
+  assert.equal(deploy.if, "needs.image.result == 'success'", 'deploy follows the image, never `if: true`')
+})
+
+test('the image carries the commit it was built from, as its last layer', async () => {
+  const dockerfile = read('Dockerfile')
+  const tail = dockerfile.trimEnd().split('\n').filter((line) => line && !line.startsWith('#'))
+  const cmdAt = tail.findIndex((line) => line.startsWith('CMD '))
+  assert.equal(cmdAt, tail.length - 1, 'CMD is not the last instruction')
+  // Last before CMD (HEALTHCHECK is metadata): a changing value at the end busts no cache.
+  const instructions = tail.filter((line) => /^[A-Z]+ /.test(line))
+  assert.deepEqual(instructions.slice(-3), ['ARG APP_VERSION', 'ENV APP_VERSION=$APP_VERSION', instructions.at(-1)])
+
+  const jobs = asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs')
+  const image = asMap(jobs.image, 'image job')
+  assert.equal(asMap(image.outputs, 'image outputs').version, '${{ steps.meta.outputs.version }}')
+  const meta = (image.steps as YamlMap[]).find((s) => s.id === 'meta')
+  assert.match(String(meta?.run), /echo "version=\$\{GITHUB_SHA::12\}"/)
+  const build = (image.steps as YamlMap[]).find((s) => String(s.uses ?? '').startsWith('docker/build-push-action@'))
+  const inputs = asMap(build?.with, 'build-push inputs')
+  assert.equal(String(inputs['build-args']).trim(), 'APP_VERSION=${{ steps.meta.outputs.version }}')
+  // One push = one package version (no attestation index with untagged
+  // children), so GHCR retention can count versions as images.
+  assert.equal(inputs.provenance, false)
+})
+
+test('the deploy is only green once the public URL serves the new version', async () => {
+  const jobs = asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs')
+  const steps = asMap(jobs.deploy, 'deploy job').steps as YamlMap[]
+  const ssh = steps.findIndex((s) => s.name === 'Deploy over SSH')
+  const smokeAt = steps.findIndex((s) => s.name === 'Smoke test through the public URL')
+  assert.ok(smokeAt > ssh && ssh >= 0, 'no smoke step after the SSH deploy')
+  const smoke = steps[smokeAt]!
+  const env = asMap(smoke.env, 'smoke env')
+  assert.equal(env.SMOKE_URL, '${{ vars.VPS_SMOKE_URL }}')
+  assert.equal(env.EXPECTED_VERSION, '${{ needs.image.outputs.version }}')
+  const run = String(smoke.run)
+  assert.match(run, /::warning::/, 'an unset VPS_SMOKE_URL must warn, not fail and not pass silently')
+  assert.match(run, /url="\$\{SMOKE_URL%\/\}\/api\/public\/health"/)
+  assert.match(run, /curl -fsS -m 10 "\$url\?t=\$\{GITHUB_RUN_ID\}-\$\{attempt\}"/, 'no cache-busting query')
+  assert.match(run, /seq 1 12/)
+  assert.match(run, /sleep 10/)
+  assert.match(run, /\.version/, 'the version in the body is never compared')
+  assert.match(run, /"\$EXPECTED_VERSION"/)
+  // A CDN or DNS hiccup must not roll a healthy container back.
+  assert.doesNotMatch(run, /\bssh\b|set_image|CDKT_IMAGE=/, 'the smoke step must not roll back on its own')
+})
+
+test('wait_healthy gives up on a restart-looping container instead of waiting out the timeout', () => {
+  const script = read('scripts/deploy-remote.sh')
+  const fn = /^wait_healthy\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+  assert.match(script, /\{\{\.RestartCount\}\}/)
+  // A baseline per call: compose does not recreate an unchanged container, so its
+  // absolute count can be days old.
+  assert.match(fn, /base=\$\(restart_count\)/)
+  assert.match(fn, /-gt "\$MAX_RESTARTS"/)
+  assert.match(script, /^MAX_RESTARTS=2$/m)
+  assert.match(fn, /show_container_logs/, 'the crash loop must print the container log')
+  assert.match(fn, /return 1/)
+})
+
+test('the app container is given longer to stop than Nitro takes to drain, and stops the backup scheduler', async () => {
+  const services = asMap((await loadYaml('docker-compose.yml')).services, 'services')
+  const grace = String(asMap(services.app, 'app').stop_grace_period ?? '')
+  const seconds = /^(\d+)s$/.exec(grace)?.[1]
+  assert.ok(seconds && Number(seconds) > 30, `app stop_grace_period ${grace || '(unset: 10s)'} does not exceed Nitro's 30 s shutdown`)
+  const plugin = read('server/plugins/backup-scheduler.ts')
+  assert.match(plugin, /nitroApp\.hooks\.hook\('close', stopBackupScheduler\)/)
+  // The grace period only helps if SIGTERM reaches Node: the CMD hands PID 1 to it.
+  const cmd = read('Dockerfile').split('\n').find((line) => line.startsWith('CMD ')) ?? ''
+  assert.match(cmd, /&& exec node \.output\/server\/index\.mjs"\]$/)
+})
+
+test('old app images are removed by tag and by count, never by force', () => {
+  for (const path of ['scripts/deploy-remote.sh', 'production/manage.sh']) {
+    const script = read(path)
+    const fn = /^prune_app_images\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+    assert.ok(fn, `${path} has no prune_app_images`)
+    // `image prune` alone never removes a tagged image — the bug this replaces.
+    assert.match(fn, /docker image rm "\$repo:\$tag"/, `${path} does not remove old tags`)
+    assert.doesNotMatch(fn, /image rm -f|rmi -f|--force/, `${path} force-removes images`)
+    assert.match(fn, /sha-\*\)/, `${path} must only consider sha-* tags of the app repository`)
+    assert.match(fn, /"\$running_id"/, `${path} could remove the running image`)
+    assert.match(fn, /docker image prune -f/, `${path} leaves dangling layers behind`)
+    assert.match(script, /^IMAGE_KEEP=5$/m, `${path}: keep the running image + 5`)
+    assert.match(script, /df --output=pcent/, `${path} has no disk-usage warning`)
+    assert.match(script, /DISK_WARN_PCT=80/)
+  }
+  // The deploy no longer relies on a dangling-only prune.
+  assert.doesNotMatch(read('scripts/deploy-remote.sh'), /image prune -f --filter 'until=168h'/)
+})
+
+test('the registry keeps the newest 20 image versions, weekly, with a pinned action', async () => {
+  const workflow = await loadYaml('.github/workflows/ghcr-retention.yml')
+  const on = asMap(workflow.on, 'triggers')
+  assert.ok('workflow_dispatch' in on, 'cannot be run by hand')
+  const schedule = on.schedule as YamlMap[]
+  assert.equal(schedule.length, 1)
+  assert.match(String(schedule[0]!.cron), /^\d+ \d+ \* \* [0-6]$/, 'not a weekly schedule')
+  assert.deepEqual(workflow.permissions, { packages: 'write' })
+  const jobs = Object.values(asMap(workflow.jobs, 'jobs')).map((job) => asMap(job, 'job'))
+  const steps = jobs.flatMap((job) => job.steps as YamlMap[])
+  const action = steps.find((s) => String(s.uses ?? '').startsWith('actions/delete-package-versions@'))
+  assert.ok(action, 'no delete-package-versions step')
+  assert.match(String(action.uses), /^actions\/delete-package-versions@[0-9a-f]{40}$/, 'a third-party action pinned by tag can change under us')
+  const inputs = asMap(action.with, 'inputs')
+  assert.equal(inputs['package-type'], 'container')
+  assert.equal(inputs['min-versions-to-keep'], 20)
+  assert.equal(inputs['delete-only-untagged-versions'], undefined,
+    'untagged versions can be the platform manifests of a kept image')
+})
+
+test('backup jobs ping the monitor only when it is configured, and a dead monitor never fails them', async () => {
+  for (const path of ['scripts/backup-db.sh', 'scripts/verify-restore.sh']) {
+    const script = read(path)
+    const fn = /^ping_healthcheck\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+    assert.ok(fn, `${path} has no ping_healthcheck`)
+    assert.match(fn, /\[\[ -n "\$url" \]\] \|\| return 0/, `${path} pings without HEALTHCHECK_PING_URL`)
+    assert.match(fn, /url="\$\{HEALTHCHECK_PING_URL:-\}"/)
+    assert.match(fn, /\/fail/, `${path} never reports a failure`)
+    assert.match(fn, /curl -fsS -m 10 --retry 2 [^\n]*\|\| true$/m, `${path}: an unreachable monitor would change the exit status`)
+    assert.match(script, /^trap on_exit EXIT$/m)
+    const handler = /^on_exit\(\) \{\n([\s\S]*?)\n\}/m.exec(script)?.[1] ?? ''
+    assert.match(handler, /local status=\$\?/)
+    assert.match(handler, /ping_healthcheck "\$status"/)
+    assert.match(handler, /exit "\$status"/)
+  }
+  // The host scripts read it from .env; the app container never does, so compose
+  // must not list it (nothing in the image reads it).
+  const services = asMap((await loadYaml('docker-compose.yml')).services, 'services')
+  assert.equal(asMap(asMap(services.app, 'app').environment, 'env').HEALTHCHECK_PING_URL, undefined)
+})
+
+test('manage.sh asks for the ping URL in Deploy and Update and writes it to .env', () => {
+  const script = read('production/manage.sh')
+  const deploy = script.slice(script.indexOf('cmd_deploy() {'), script.indexOf('Bước 6/6'))
+  assert.match(deploy, /prompt " {2}HEALTHCHECK_PING_URL/)
+  assert.match(script, /^HEALTHCHECK_PING_URL=\$HEALTHCHECK_PING_URL$/m, 'the .env template has no HEALTHCHECK_PING_URL line')
+  const update = script.slice(script.indexOf('cmd_update() {'), script.indexOf('Pull image + restart'))
+  assert.match(update, /prompt " {2}HEALTHCHECK_PING_URL/)
+  assert.match(update, /set_env HEALTHCHECK_PING_URL /)
 })

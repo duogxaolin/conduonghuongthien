@@ -1,4 +1,4 @@
-import { startBackupScheduler } from '../services/backup-scheduler'
+import { startBackupScheduler, stopBackupScheduler } from '../services/backup-scheduler'
 
 /**
  * Boot scheduler backup tự động. Cùng gate 2 scheduler kia
@@ -8,7 +8,13 @@ import { startBackupScheduler } from '../services/backup-scheduler'
  * tự chạy silent. Bật qua env `BACKUP_SCHEDULER=1` hoặc công tắc trong settings
  * (scheduler đọc settings mỗi tick, nên bật trong admin đủ — env chỉ là gate boot).
  */
-export default defineNitroPlugin(() => {
+export default defineNitroPlugin((nitroApp) => {
+  // Lúc tắt (docker stop → SIGTERM → Nitro chạy hook `close` trong thời gian ân hạn
+  // `stop_grace_period`): dừng scheduler để không một lượt sao lưu theo lịch nào bắt
+  // đầu khi tiến trình đang thoát. Đăng ký trước mọi nhánh return — gọi khi chưa
+  // từng start là no-op.
+  nitroApp.hooks.hook('close', stopBackupScheduler)
+
   const override = (process.env.BACKUP_SCHEDULER || '').trim().toLowerCase()
   if (['0', 'false', 'off', 'no'].includes(override)) return
   // Mặc định tắt — khác retention/analytics (bật production). Backup nặng + ghi

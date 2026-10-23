@@ -30,10 +30,16 @@ const managePrompts = (fn: string, until: string) => {
   return (slice.match(/\bprompt "/g) ?? []).length
 }
 const DEPLOY_PROMPTS = managePrompts('cmd_deploy', 'Bước 6/6')
-// Update: pull-code confirm, then these prompts, then the pull-image confirm.
+// Update: pull-code confirm, then these prompts, then the pull-image confirm and —
+// only when the image is pulled — the pre-update dump confirm, then whatever
+// update_app_image asks. `updateInput` answers the dump confirm `n`, so the tests
+// about restart/rollback stay about restart/rollback; `updateInputWithDump` says
+// what to answer (blank = the default, yes).
 const UPDATE_PROMPTS = managePrompts('cmd_update', 'Pull image + restart')
-const updateInput = (pullCode: string, ...afterPrompts: string[]) =>
-  lines(pullCode, ...Array(UPDATE_PROMPTS).fill(''), ...afterPrompts)
+const updateInputWithDump = (pullCode: string, pullImage: string | undefined, dump: string, ...rest: string[]) =>
+  lines(pullCode, ...Array(UPDATE_PROMPTS).fill(''), ...(pullImage === undefined ? [] : [pullImage]), ...(pullImage === 'y' ? [dump] : []), ...rest)
+const updateInput = (pullCode: string, pullImage?: string, ...rest: string[]) =>
+  updateInputWithDump(pullCode, pullImage, 'n', ...rest)
 
 function deploySandbox(ramMb: number) {
   const sb = makeSandbox()
@@ -457,6 +463,103 @@ test('a rollback also puts docker-compose.yml back to the pre-pull version', () 
     })
     assert.notEqual(r.status, 0)
     assert.equal(readFileSync(compose, 'utf8'), 'services: {}\n', 'compose must be restored alongside the image')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+// ─── manage.sh Update: pre-update dump (D26), ping URL (D35) ─────────────────
+test('Update takes a verified pre-update dump by default, before the image is touched', () => {
+  const sb = updateSandbox('ghcr.io/x/y:latest')
+  try {
+    const r = sb.run('production/manage.sh', ['update'], { input: updateInputWithDump('n', 'y', '') })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /Sao lưu DB trước khi cập nhật\? \(Y\/n\)/)
+    const log = sb.dockerLog()
+    const dump = log.findIndex((l) => / mysqldump /.test(l))
+    const tag = log.findIndex((l) => l.startsWith('image tag '))
+    const pull = log.indexOf('pull ghcr.io/x/y:latest')
+    const up = log.indexOf('compose up -d --no-deps app')
+    assert.ok(dump >= 0 && tag > dump && pull > dump && up > dump, `the dump must come first: ${JSON.stringify(log)}`)
+    const dumps = readdirSync(sb.path('.deploy-db-backups'))
+    assert.equal(dumps.length, 1)
+    assert.match(dumps[0]!, /^cdkt-predeploy-cdkt_admin-\d{8}T\d{6}Z-\d+\.sql\.gz$/, 'same name and place as the CI pre-deploy dump')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('a failed pre-update dump stops Update before anything is pulled or restarted', () => {
+  const sb = updateSandbox('ghcr.io/x/y:latest')
+  try {
+    const r = sb.run('production/manage.sh', ['update'], {
+      input: updateInputWithDump('n', 'y', 'y'),
+      env: { FAKE_MYSQLDUMP_FAIL: '1' },
+    })
+    assert.notEqual(r.status, 0)
+    assert.doesNotMatch(r.stdout, /UPDATE XONG/)
+    const log = sb.dockerLog()
+    assert.ok(!log.some((l) => /^(pull |image tag |compose (up|pull|build))/.test(l)), `something was touched: ${JSON.stringify(log)}`)
+    assert.equal(envValue(sb.env(), 'CDKT_IMAGE'), 'ghcr.io/x/y:latest')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('declining the pre-update dump skips it', () => {
+  const sb = updateSandbox('ghcr.io/x/y:latest')
+  try {
+    const r = sb.run('production/manage.sh', ['update'], { input: updateInput('n', 'y') })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.ok(!sb.dockerLog().some((l) => l.includes('mysqldump')))
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('Update writes HEALTHCHECK_PING_URL to .env without echoing it, and refuses a malformed one', () => {
+  // The ping URL is the last prompt before "Pull image": answer the others blank.
+  const url = 'https://hc-ping.com/0b7c2a4e-1111-2222-3333-444455556666'
+  const sb = updateSandbox('ghcr.io/x/y:latest')
+  try {
+    const r = sb.run('production/manage.sh', ['update'], {
+      input: lines('n', ...Array(UPDATE_PROMPTS - 1).fill(''), url, 'y', 'n'),
+    })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.equal(envValue(sb.env(), 'HEALTHCHECK_PING_URL'), url)
+    assert.ok(!r.stdout.includes('0b7c2a4e-1111'), 'the ping URL (a credential for the monitor) was printed')
+    // A later Update with the URL already set: still not printed, kept on enter.
+    const again = sb.run('production/manage.sh', ['update'], { input: lines('n', ...Array(UPDATE_PROMPTS).fill(''), 'n') })
+    assert.equal(again.status, 0, again.stdout + again.stderr)
+    assert.ok(!again.stdout.includes('0b7c2a4e-1111'), 'the stored ping URL was printed')
+    assert.match(again.stdout, /HEALTHCHECK_PING_URL hiện đang đặt/)
+    assert.equal(envValue(sb.env(), 'HEALTHCHECK_PING_URL'), url)
+  } finally {
+    cleanup(sb)
+  }
+
+  const bad = updateSandbox('ghcr.io/x/y:latest')
+  try {
+    const r = bad.run('production/manage.sh', ['update'], {
+      input: lines('n', ...Array(UPDATE_PROMPTS - 1).fill(''), 'https://x.example/a?b=1&c=2', 'n'),
+    })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.equal(envValue(bad.env(), 'HEALTHCHECK_PING_URL'), undefined, 'a URL the scripts cannot use was written')
+    assert.match(r.stdout, /HEALTHCHECK_PING_URL/)
+  } finally {
+    cleanup(bad)
+  }
+})
+
+test('Deploy writes a HEALTHCHECK_PING_URL line (empty unless given)', () => {
+  const sb = deploySandbox(8000)
+  try {
+    const r = sb.run('production/manage.sh', ['deploy'], {
+      input: lines(...Array(DEPLOY_PROMPTS).fill(''), 'n'),
+      env: { CDKT_MEMINFO_FILE: sb.path('meminfo') },
+    })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.equal(envValue(sb.env(), 'HEALTHCHECK_PING_URL'), '')
   } finally {
     cleanup(sb)
   }

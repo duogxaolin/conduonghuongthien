@@ -348,9 +348,13 @@ npm run db:drift
 
 Đã cấu hình xong theo [CI-CD.md](./CI-CD.md) thì không phải làm gì: mỗi lần merge
 vào `main`, GitHub Actions chạy đủ bốn cổng kiểm tra, xây image, đẩy lên GHCR, rồi
-ssh vào VPS kéo về và khởi động lại. `docker-compose.yml` của đúng commit đó cũng
+ssh vào VPS kéo về, **dump CSDL vào `.deploy-db-backups/`** (giữ 5 bản; dump hỏng thì
+dừng, chưa chạm gì) và khởi động lại. `docker-compose.yml` của đúng commit đó cũng
 được gửi lên (kiểm checksum + `docker compose config -q` trước khi dùng, bản cũ sao
-lưu ở `.deploy-compose-backups/`). Deploy hỏng thì tự lùi về image **và** compose cũ.
+lưu ở `.deploy-compose-backups/`). Deploy hỏng (kể cả container crash loop) thì tự lùi
+về image **và** compose cũ; xong thì hỏi `/api/public/health` qua tên miền công khai
+(`VPS_SMOKE_URL`) để chắc khách thấy đúng bản mới. Merge chỉ đổi `*.md`/`docs/`/`openspec/`
+thì không deploy.
 
 ### Cách B: Thủ công
 
@@ -380,14 +384,16 @@ docker compose up -d
 
 Toàn bộ hướng dẫn cài đặt, vận hành và xử lý sự cố nằm ở **[CI-CD.md](./CI-CD.md)**.
 
-Tóm tắt: mỗi lần merge vào `main`, GitHub Actions chạy bốn cổng kiểm tra (test,
-typecheck, build, hygiene), xây image và đẩy lên GHCR theo tag `sha-<commit>`, rồi
-ssh vào VPS kéo image về và khởi động lại. Container mới không `healthy` thì script
-tự trỏ `.env` về image cũ.
+Tóm tắt: mỗi lần merge vào `main` (trừ merge chỉ đổi tài liệu), GitHub Actions chạy
+bốn cổng kiểm tra (test, typecheck, build, hygiene), xây image và đẩy lên GHCR theo tag
+`sha-<commit>`, rồi ssh vào VPS kéo image về, dump CSDL, và khởi động lại. Container mới
+không `healthy` thì script tự trỏ `.env` về image cũ. Sau cùng, bước smoke hỏi
+`<VPS_SMOKE_URL>/api/public/health` và đòi đúng version vừa deploy.
 
 Cần khai trước 4 secret (`VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_SSH_KNOWN_HOSTS`)
-và 2 variable (`VPS_PORT`, `VPS_APP_DIR`) trên GitHub, cộng một lần `docker login
-ghcr.io` trên VPS — GHCR để package ở chế độ private kể cả khi repo là public.
+và variable `VPS_PORT`, `VPS_APP_DIR`, `VPS_SMOKE_URL` (cái cuối tuỳ chọn) trên GitHub,
+cộng một lần `docker login ghcr.io` trên VPS — GHCR để package ở chế độ private kể cả
+khi repo là public.
 
 ---
 
@@ -417,7 +423,15 @@ bị xoá để không bị nhầm là bản tốt.
 ```
 
 Tuỳ chọn trong `.env`: `BACKUP_DIR` (mặc định `./backups`), `BACKUP_KEEP_DAYS`
-(mặc định 14). Giữ ba tệp **cùng mã** cùng nhau khi sao chép sang nơi lưu trữ khác.
+(mặc định 14), `HEALTHCHECK_PING_URL` (URL ping kiểu healthchecks.io: `backup-db.sh` và
+`verify-restore.sh` gọi URL khi xong, `<URL>/fail` khi hỏng; giám sát hỏng không làm
+sao lưu hỏng; trống = không ping — `production/README.md` § *Giám sát cron sao lưu*).
+Giữ ba tệp **cùng mã** cùng nhau khi sao chép sang nơi lưu trữ khác.
+
+Ngoài bộ đêm còn **bản dump trước mỗi lượt deploy** (CI và `manage.sh` Update):
+`.deploy-db-backups/cdkt-predeploy-<db>-<mã>-<pid>.sql.gz`, cùng phép kiểm, giữ 5 bản,
+không nằm trong `./backups` và không gửi ping — điểm lùi dữ liệu đi cặp với image trước
+lượt đó (`production/README.md` § *Bản dump CSDL trước deploy*).
 
 **Hai bộ sao lưu dùng chung `./backups`.** Bản sao lưu trong ứng dụng
 (`/admin`, `server/services/backup.ts`) cũng ghi `cdkt-media-*` / `cdkt-uploads-*` vào

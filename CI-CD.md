@@ -8,16 +8,22 @@ Tài liệu vận hành cho việc triển khai tự động. Phần cài đặt
 ## Luồng chạy
 
 ```
-push main → test · typecheck · build · hygiene   (4 cổng, chạy song song)
-              ↓ cả bốn xanh
+push main → Plan (deploy=false nếu MỌI tệp đổi là *.md / docs/ / openspec/)
+          → test · typecheck · build · hygiene   (4 cổng, chạy song song, kể cả lượt chỉ-tài-liệu)
+              ↓ cả bốn xanh, và deploy=true
             job "image"  → xây rồi đẩy ghcr.io/<owner>/<repo>:sha-<commit> + :latest
+                           (APP_VERSION = 12 ký tự đầu của SHA, nướng vào image)
               ↓
-            job "deploy" → ssh: gửi docker-compose.yml của commit này (kèm SHA-256)
+            job "deploy" → ssh: gửi docker-compose.yml + scripts/backup-db.sh của commit này (kèm SHA-256)
                          → ssh: deploy-remote.sh → kiểm SHA-256 → docker pull
+                         → dump CSDL .deploy-db-backups/cdkt-predeploy-* (đã kiểm; hỏng → dừng, chưa chạm gì)
                          → sao lưu compose cũ → đặt compose mới → docker compose config -q
                            (sai → trả bản cũ, dừng, không chạm container)
                          → đổi CDKT_IMAGE trong .env → up -d --no-deps app
-                         → chờ HEALTHCHECK → hỏng thì tự lùi về image + compose trước
+                         → chờ HEALTHCHECK (crash loop > 2 lần khởi động lại → dừng chờ ngay)
+                           → hỏng thì tự lùi về image + compose trước
+                         → khoẻ: dọn image sha-* cũ (giữ đang chạy + 5), cảnh báo đĩa > 80 %
+                       → smoke: GET <VPS_SMOKE_URL>/api/public/health phải trả đúng version mới
 ```
 
 **Một lượt deploy đang chạy không bao giờ bị huỷ giữa chừng.** `concurrency` ở đầu
@@ -39,13 +45,18 @@ và lùi phiên bản chỉ là trỏ lại tag cũ thay vì xây lại từ đ�
 của đồ thị phụ thuộc chứ không phải một lời hứa. Không có commit nào đi ra VPS mà
 chưa qua đủ bốn cổng.
 
-**Tiết kiệm phút Actions** (hạn mức 3.000 phút/tháng áp cho repo private — repo này **đã chuyển sang private** (kiểm bằng `gh repo view` ngày 2026-10-22), nên hạn mức nay áp dụng; tài khoản từng hết phút): một lượt CI đầy đủ ≈ 40 phút
+**Tiết kiệm phút Actions** (hạn mức 3.000 phút/tháng chỉ áp cho repo private — repo này hiện
+**PUBLIC** (kiểm bằng `gh repo view --json visibility` ngày 2026-10-23), nên phút Actions
+không bị giới hạn; ghi chú ngày 2026-10-22 nói repo đã sang private là sai. Giữ các quy tắc dưới
+đây vẫn đáng: chúng rút ngắn thời gian chờ CI, và áp lại ngay nếu repo chuyển private —
+tài khoản từng hết phút khi còn private): một lượt CI đầy đủ ≈ 40 phút
 billed (GitHub làm tròn từng job lên phút; các job Integration chiếm ≈ 29 khi còn 13 job; nay matrix 18). Nên job
 `changes` ("Plan") quyết định cho mỗi lượt chạy:
 
 | Sự kiện | Chạy gì |
 |---|---|
 | push vào `main`, chạy tay (Actions → CI → Run workflow) | **Đủ bộ**, gồm Integration — `image`/`deploy` vẫn chờ mọi cổng |
+| push vào `main` mà **mọi** tệp đổi khớp `\.md$\|^docs/\|^openspec/` | Đủ bộ test, nhưng **không** build image, **không** deploy (`changes.outputs.deploy=false`; không xác định được danh sách tệp → vẫn deploy) |
 | PR nháp | Bỏ qua (chạy lại khi bấm *Ready for review*) |
 | PR thường | unit + build + schema-drift + hygiene (≈ 12 phút) |
 | PR thường **có đụng** `server/`, `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 18 job Integration |
@@ -55,8 +66,8 @@ Gom commit trước khi push và dùng PR nháp cho việc dở dang cũng tiế
 Kiểm lượng đã dùng: GitHub → Settings → Billing and licensing → Usage.
 
 Package trên GHCR **mặc định là private** (dù repo public hay private) — nên VPS
-bắt buộc phải `docker login` (Bước 4–5). Khi repo còn public, Actions không tính
-phút; từ khi chuyển private, mỗi lượt đủ bộ ăn vào hạn mức ở trên.
+bắt buộc phải `docker login` (Bước 4–5). Repo public thì Actions không tính phút; nếu
+repo chuyển private, mỗi lượt đủ bộ ăn vào hạn mức ở trên.
 
 ---
 
@@ -144,6 +155,17 @@ ssh-keyscan -p <VPS_PORT> <VPS_HOST>
 |---|---|---|
 | `VPS_PORT` | cổng SSH | `22` |
 | `VPS_APP_DIR` | đường dẫn repo trên VPS, vd `/www/wwwroot/<tên-site>` | *(bắt buộc)* |
+| `VPS_SMOKE_URL` | địa chỉ công khai của cổng, vd `https://conduonghuongthien.com.vn` (không `/` cuối cũng được) | bỏ qua bước smoke, job in `::warning::` |
+
+> **`VPS_SMOKE_URL`** — sau khi container trên VPS `healthy`, bước *Smoke test through the
+> public URL* hỏi `GET <VPS_SMOKE_URL>/api/public/health?t=<run>-<lần>` (đi qua nginx, CDN,
+> DNS — đúng đường khách đi) tối đa 12 lần × 10 giây, và chỉ coi là xong khi nhận **200**
+> với `version` bằng SHA ngắn vừa deploy. Quá 2 phút: job **đỏ nhưng không tự lùi** (nguyên
+> nhân có thể là CDN/DNS chứ không phải image; lùi một container đang khoẻ vì CDN chậm là
+> sai) — làm theo mục Deploy trong *Summary* của lượt chạy và § *Lùi phiên bản* bên dưới.
+> Endpoint `/api/public/health` (`server/api/public/health.get.ts`): `SELECT 1` qua pool chung,
+> trần 2 giây, luôn `Cache-Control: no-store`, 200 `{ ok: true, version }` / 503 `{ ok: false }`.
+> Dùng chính URL này cho dịch vụ giám sát uptime.
 
 > `VPS_SSH_KNOWN_HOSTS` không phải bí mật thật (khoá công khai của máy chủ, ai
 > `ssh-keyscan` cũng lấy được). Nó nằm ở Secrets chỉ vì Variables không tiện cho
@@ -188,9 +210,18 @@ commit đang triển khai lên `<APP_DIR>` mỗi lượt (trước đây VPS dù
 sẵn từ lần `git pull` cuối — bước dễ bỏ sót nhất, và một biến mới thêm vào compose
 không bao giờ tới được container). Lượt deploy:
 
-1. nhận tệp vào `<APP_DIR>/.docker-compose.incoming.yml`, kiểm **SHA-256** — tệp cụt
-   do SSH đứt thì dừng trước cả `docker pull`;
+1. nhận tệp vào `<APP_DIR>/.docker-compose.incoming.yml` (và `scripts/backup-db.sh` của
+   commit vào `<APP_DIR>/.deploy-incoming/backup-db.sh`), kiểm **SHA-256** cả hai — tệp
+   cụt do SSH đứt thì dừng trước cả `docker pull`;
 2. `docker pull` image;
+2b. **dump CSDL** bằng chính `backup-db.sh` vừa nhận (`--prefix cdkt-predeploy`, cùng
+   phép kiểm gzip / "Dump completed" / ≥ 20 bảng như cron đêm) vào
+   `<APP_DIR>/.deploy-db-backups/cdkt-predeploy-<db>-<thời-điểm UTC>-<pid>.sql.gz`, giữ
+   **5 bản** mới nhất. Dump hỏng (đĩa đầy, mysql không chạy) → **dừng**, chưa compose,
+   `.env` hay container nào bị đụng. Thư mục nằm cạnh `.deploy-compose-backups/` chứ
+   không trong `./backups`: `./backups` là bind mount mà container giao cho user `node`
+   (uid 1000) mỗi lần khởi động, user deploy chưa chắc ghi được. Bản dump không gửi ping
+   giám sát (`HEALTHCHECK_PING_URL` chỉ dành cho cron đêm);
 3. sao lưu `docker-compose.yml` cũ vào `<APP_DIR>/.deploy-compose-backups/`
    (giữ 10 bản gần nhất; compose không đổi thì không sao lưu, không ghi gì);
 4. đặt bản mới, chạy `docker compose config -q` **trên chính VPS** (gồm cả
@@ -404,7 +435,7 @@ Phải thấy `healthy` và `CDKT_IMAGE=ghcr.io/...:sha-<commit>` (tag SHA, khô
 | # | Việc | Kiểm bằng |
 |---|---|---|
 | 1 | 4 secret đã khai | `Settings → Secrets` thấy đủ `VPS_HOST`, `VPS_USER`, `VPS_SSH_KEY`, `VPS_SSH_KNOWN_HOSTS` |
-| 2 | 2 variable đã khai | `Settings → Variables` thấy `VPS_PORT`, `VPS_APP_DIR` |
+| 2 | Variable đã khai | `Settings → Variables` thấy `VPS_PORT`, `VPS_APP_DIR`, `VPS_SMOKE_URL` (cái cuối tuỳ chọn — thiếu thì bước smoke chỉ cảnh báo) |
 | 3 | Khoá riêng đã xoá khỏi VPS | `ls ~/.ssh/` không còn `cdkt_deploy` |
 | 4 | VPS đăng nhập được GHCR | `docker pull ghcr.io/<OWNER>/<REPO>:latest` |
 | 5 | Repo đã clone trên VPS (compose thì CI tự gửi mỗi lượt) | `ls <APP_DIR>/docker-compose.yml <APP_DIR>/.env` |
@@ -425,7 +456,9 @@ mã của một fork lên máy chủ.
 
 ### Lùi phiên bản
 
-Tag `sha-<commit>` tồn tại cho **mọi** lần deploy, nên lùi được về bất kỳ commit nào:
+Mỗi lần deploy đẩy một tag `sha-<commit>`. Lùi được về image còn trên VPS (6 bản: đang chạy
++ 5 bản `sha-*` mới nhất trước đó) hoặc còn trên GHCR (20 version mới nhất — xem *Giữ image*
+bên dưới):
 
 ```bash
 cd <APP_DIR>
@@ -439,16 +472,67 @@ docker inspect --format '{{.State.Health.Status}}' cdkt_app
 ```
 
 Lấy danh sách image còn trên máy: `docker images ghcr.io/<OWNER>/<REPO>`.
-Script deploy giữ lịch sử **7 ngày** (`docker image prune --filter until=168h`), cũ hơn
-thì kéo lại từ GHCR.
+
+**Dữ liệu** cũng lùi được: image mới chạy migration hỏng thì khôi phục bản dump lấy
+**ngay trước** lượt đó — bản `cdkt-predeploy-*` mới nhất có giờ (UTC, trong tên) trước
+giờ lượt deploy hỏng — đúng cặp với image cũ:
+
+```bash
+ls -t <APP_DIR>/.deploy-db-backups/
+# dừng app, rồi khôi phục (script tự dump bản hiện có trước khi ghi đè) — DEPLOY.md § Khôi phục thật
+docker compose stop app
+./scripts/restore-db.sh .deploy-db-backups/cdkt-predeploy-<db>-<thời-điểm>-<pid>.sql.gz <db> --replace
+```
+
+### Giữ image (VPS và GHCR)
+
+- **VPS** — sau mỗi lượt deploy khoẻ (và mỗi lượt `./manage.sh` → Update khoẻ),
+  `prune_app_images` giữ image **đang chạy + 5 bản `sha-*` mới nhất khác** của repo image
+  app (xếp theo thời điểm tạo), gỡ phần còn lại **theo thẻ** bằng `docker image rm` (không
+  `-f`: image còn container dùng thì để lại), rồi `docker image prune -f` cho layer lơ
+  lửng. Thẻ lùi `cdkt-rollback/app:*` của `manage.sh` không bao giờ bị xét. Đĩa chứa
+  dữ liệu Docker dùng **> 80 %** thì job in `::warning::`. (Trước đây script chỉ chạy
+  `docker image prune -f --filter until=168h` — lệnh đó **không bao giờ** gỡ image còn
+  thẻ, nên mọi image `sha-*` nằm lại mãi.)
+- **GHCR** — `.github/workflows/ghcr-retention.yml` chạy hằng tuần (thứ Hai 03:17 UTC) và
+  khi bấm tay: `actions/delete-package-versions` (ghim SHA commit) giữ **20 version mới
+  nhất** của package image. Job `image` build với `provenance: false` nên một lượt push là
+  **một** version, vì vậy 20 version = 20 image `sha-*` (`latest` luôn nằm trên bản mới
+  nhất). Action so `ignore-versions` theo digest chứ không theo thẻ, nên không lọc theo
+  thẻ được — giữ đúng "một push = một version" là điều kiện để con số 20 đúng. Image đẩy
+  trước khi tắt provenance nhiều khả năng có manifest con không thẻ (mặc định của buildx —
+  **chưa kiểm** trên package; trang package hiện các version không thẻ `unknown/unknown` nếu
+  đúng vậy); khi đó, trong vài tuần chuyển tiếp, image cũ nhất còn giữ có thể mất manifest
+  con (không kéo lại được) — VPS không cần nó.
+  **Một lần trên GitHub:** package → *Package settings* → *Manage Actions access* → repo
+  này quyền **Admin**, nếu không bước xoá báo lỗi quyền (không xoá gì).
 
 ### Lùi phiên bản tự động
 
 Container mới không `healthy` trong 300 giây — hoặc chính lệnh `docker compose up`
-hỏng — thì script trả `docker-compose.yml` về bản trước lượt này, trỏ `.env` về image
+hỏng, hoặc container **khởi động lại quá 2 lần** trong lúc chờ (crash loop: thiếu biến,
+migration hỏng… — `wait_healthy` dừng chờ ngay, in 60 dòng log cuối, thay vì đợi hết 300
+giây) — thì script trả `docker-compose.yml` về bản trước lượt này, trỏ `.env` về image
 cũ và khởi động lại: image cũ chạy trên compose cũ, đúng cặp đã từng khoẻ. Job vẫn
 **thất bại** (exit 1) kể cả khi lùi thành công — commit đó không lên được thì không
-được báo là đã lên.
+được báo là đã lên. Số lần khởi động lại tính từ lúc bắt đầu chờ (compose không tạo lại
+một container không đổi gì, nên con số tuyệt đối có thể đã cao từ trước).
+
+### Dừng container êm (`stop_grace_period: 45s`)
+
+`docker stop` gửi SIGTERM rồi chờ; mặc định của Docker là 10 giây, trong khi Nitro cần tới
+30 giây (`NITRO_SHUTDOWN_TIMEOUT`) để trả xong request dở và chạy hook `close` (dừng
+scheduler sao lưu, worker…). Service app trong compose đặt `stop_grace_period: 45s`.
+`CMD` của image kết thúc bằng `exec node …` nên Node là PID 1 và nhận thẳng SIGTERM.
+
+### Dependabot
+
+`.github/dependabot.yml` mở PR cập nhật **hằng tuần** cho `npm`, GitHub Actions và base
+image của `Dockerfile`; minor + patch **gộp** thành một PR mỗi hệ sinh thái, tối đa 5 PR mở
+mỗi loại; major của `node` (base image) bị bỏ qua — nâng Node là quyết định có kế hoạch.
+**Mỗi merge vào `main` là một lượt deploy production**, nên gom các PR Dependabot của tuần
+và merge **một lượt** (hoặc gộp vào một nhánh rồi merge một PR), đừng merge lẻ từng cái.
+PR Dependabot chạy CI như mọi PR (không secret, không deploy).
 
 ### Xoay khoá SSH
 
@@ -566,6 +650,12 @@ và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừn
 | `git pull` trên VPS báo `docker-compose.yml` có thay đổi cục bộ | Đó là bản CI đặt vào (đã commit). `git checkout -- docker-compose.yml && git pull origin main` |
 | Sửa compose của service `mysql` mà không thấy hiệu lực | Chủ đích: CI không tạo lại CSDL. Chạy `docker compose up -d` trên VPS khi thấp điểm |
 | `chưa healthy sau 300s` | Đã tự lùi về image cũ, site vẫn chạy. Đọc log để tìm nguyên nhân: `docker logs cdkt_app --tail 100` |
+| `đã khởi động lại N lần trong lúc chờ healthy — crash loop` | Image mới chết ngay khi khởi động; 60 dòng log in ngay dưới. Đã tự lùi. Thường là biến môi trường mới chưa có trong `.env` hoặc migration lỗi |
+| `sao lưu CSDL trước deploy thất bại` | Dump trước deploy hỏng (đĩa đầy? `cdkt_mysql` không chạy? thiếu `MYSQL_ROOT_PASSWORD` trong `.env`?). **Chưa chạm gì** — compose, `.env`, container y như trước. Sửa nguyên nhân rồi *Re-run job*; cần gấp thì `./manage.sh` → Update (trả lời riêng câu sao lưu) |
+| `script sao lưu nhận được bị hỏng trên đường truyền` | Phiên SSH gửi `backup-db.sh` bị đứt. Chưa chạm gì trên VPS — chạy lại job |
+| Bước *Smoke test through the public URL* đỏ | Container trên VPS đã healthy nhưng địa chỉ công khai không trả đúng version trong 2 phút: kiểm nginx/CDN/DNS, `curl -s <VPS_SMOKE_URL>/api/public/health`. Không tự lùi; lùi tay theo § *Lùi phiên bản* nếu đúng là image hỏng |
+| `::warning::chưa đặt biến repo VPS_SMOKE_URL` | Khai variable `VPS_SMOKE_URL` (Bước 3) để lượt deploy được xác nhận qua địa chỉ công khai |
+| Merge chỉ sửa tài liệu mà không deploy | Đúng thiết kế: mọi tệp đổi là `*.md`/`docs/`/`openspec/` → `image`/`deploy` bỏ qua (xem *Summary* của job Plan). Cần deploy lại cùng mã: Actions → CI → *Run workflow* trên `main` |
 | `không có image trước đó để lùi về` | Lần deploy đầu tiên và nó hỏng. Sửa rồi deploy lại; chưa có gì để lùi về |
 | `không khai HEALTHCHECK` | Container đang chạy image sai (không phải image của dự án). Kiểm `docker inspect --format '{{.Config.Image}}' cdkt_app` |
 | Job `image` không chạy | Chỉ chạy trên `main`, không chạy cho pull request hay nhánh phụ — đúng thiết kế |
@@ -577,11 +667,17 @@ và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừn
 
 | Tệp | Vai trò |
 |---|---|
-| `.github/workflows/ci.yml` | 4 cổng kiểm tra + job `image` + job `deploy` |
-| `scripts/deploy-remote.sh` | Chạy **trên VPS**, nạp qua ssh stdin — kiểm + đặt compose, kéo image, đổi `.env`, chờ healthy, lùi (image + compose) nếu hỏng |
+| `.github/workflows/ci.yml` | 4 cổng kiểm tra + job `image` + job `deploy` (kèm bước smoke) |
+| `.github/workflows/ghcr-retention.yml` | Hằng tuần + bấm tay: giữ 20 version mới nhất của package image trên GHCR |
+| `.github/dependabot.yml` | PR cập nhật hằng tuần, gộp nhóm (npm, Actions, base image) |
+| `scripts/deploy-remote.sh` | Chạy **trên VPS**, nạp qua ssh stdin — kiểm tệp CI gửi, kéo image, dump CSDL trước deploy, đặt compose, đổi `.env`, chờ healthy (dừng sớm khi crash loop), lùi (image + compose) nếu hỏng, dọn image cũ |
+| `scripts/backup-db.sh` | Dump + kiểm + xoay vòng; `--prefix cdkt-predeploy` cho bản dump trước deploy; ping `HEALTHCHECK_PING_URL` |
+| `server/api/public/health.get.ts` | `GET /api/public/health` — `{ ok, version }`, `no-store`, 503 khi CSDL không trả lời trong 2 giây |
 | `docker-compose.yml` | Khoá `image: ${CDKT_IMAGE:-cdkt/app:local}` cho phép vừa pull vừa build cục bộ; CI gửi tệp này lên VPS mỗi lượt deploy |
-| `tests/ops-scripts.test.ts` | Chặn hồi quy: thứ tự cổng, ghim SHA, ghim host key, ghi `.env` nguyên tử, đường lùi phiên bản; đọc `ci.yml`/compose bằng trình phân tích YAML cho `concurrency`, TZ, biến chuyển tiếp |
-| `tests/deploy-remote-behavior.test.ts` | **Chạy thật** `deploy-remote.sh` (qua `bash -s` như CI) với `docker` giả: compose hỏng/cụt bị từ chối mà `.env` không đổi, lùi trả cả image lẫn compose, `up` hỏng vẫn đi vào đường lùi, mysql không bị tạo lại |
+| `tests/ops-scripts.test.ts` | Chặn hồi quy: thứ tự cổng, ghim SHA, ghim host key, ghi `.env` nguyên tử, đường lùi phiên bản, thứ tự dump → compose → `.env`, bỏ qua deploy khi chỉ đổi tài liệu, smoke, giữ image; đọc `ci.yml`/compose bằng trình phân tích YAML cho `concurrency`, TZ, biến chuyển tiếp |
+| `tests/deploy-remote-behavior.test.ts` | **Chạy thật** `deploy-remote.sh` (qua `bash -s` như CI) với `docker` giả (`tests/fixtures/deploy-remote/docker`): compose/script sao lưu hỏng/cụt bị từ chối mà `.env` không đổi, dump hỏng dừng trước mọi thay đổi, lùi trả cả image lẫn compose, `up` hỏng vẫn đi vào đường lùi, crash loop dừng chờ sau 3 lượt hỏi, mysql không bị tạo lại, 12 image → còn 6 |
+| `tests/ci-docs-only-skip.test.ts` | **Chạy thật** script của bước *Docs-only?* trong một repo git tạm: chỉ tài liệu → không deploy; có `.ts` (kể cả đổi tên sang `docs/`), `before` rỗng/không có → deploy |
+| `tests/ci-integration-matrix.test.ts` | Mọi `tests/*-integration.test.ts` có trong matrix, đúng switch, đủ biến môi trường mà suite đọc; bước kiểm-skip đọc log, không chạy lại suite |
 | `tests/container-timezone.test.ts` | Scheduler analytics/retention chạy ở `TZ=Asia/Ho_Chi_Minh` bắn lúc 03:00 giờ VN, ở UTC thì 10:00 giờ VN |
 
 `deploy-remote.sh` được **nạp qua stdin** (`ssh ... "bash -s -- args" < scripts/deploy-remote.sh`)

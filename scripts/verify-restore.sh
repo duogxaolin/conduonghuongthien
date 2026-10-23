@@ -14,6 +14,9 @@
 # $BACKUP_DIR/cdkt-<MYSQL_DATABASE>-<stamp>-<pid>.sql.gz, so the crontab line does not
 # hard-code a database name that Deploy lets the operator choose.
 #
+# HEALTHCHECK_PING_URL (optional, from .env or the shell): requested when the check
+# succeeds, <URL>/fail when it does not — see ping_healthcheck.
+#
 # Exit codes: 0 restore verified, 1 configuration error, 2 restore failed / refused.
 
 set -Eeuo pipefail
@@ -43,7 +46,23 @@ cleanup() {
   dexec "$CONTAINER" \
     mysql -u root -e "DROP DATABASE IF EXISTS \`$SCRATCH\`" >/dev/null 2>&1 || true
 }
-trap cleanup EXIT
+# Same contract as scripts/backup-db.sh: the URL on success, <URL>/fail on failure,
+# nothing when unset, and an unreachable monitor never changes the exit status.
+ping_healthcheck() {
+  local url="${HEALTHCHECK_PING_URL:-}"
+  [[ -n "$url" ]] || return 0
+  [[ "$1" == 0 ]] || url="${url%/}/fail"
+  curl -fsS -m 10 --retry 2 -o /dev/null "$url" || true
+}
+# ONE exit handler. A second `trap … EXIT` would replace the first, and the scratch
+# database would outlive every run.
+on_exit() {
+  local status=$?
+  cleanup
+  ping_healthcheck "$status"
+  exit "$status"
+}
+trap on_exit EXIT
 
 [[ -n "$ARCHIVE" ]] || fail "usage: verify-restore.sh <backup.sql.gz> | --latest" 1
 if [[ "$ARCHIVE" == --latest ]]; then

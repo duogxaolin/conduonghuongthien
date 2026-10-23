@@ -31,21 +31,13 @@ RUN npx nuxi build
 # ─── Stage 2: Runtime ─────────────────────────────
 FROM node:24-alpine
 
-WORKDIR /app
-
-COPY package*.json ./
-# Runtime = only `dependencies` (what db:init/db:seed/scripts import; `.output` is
-# self-contained — Nitro traced what it needs). `--ignore-scripts` is REQUIRED:
-# the root `postinstall` is `nuxt prepare`, and nuxt is a devDependency now, so
-# the hook would fail with "nuxt: command not found". No runtime package needs
-# an install script (sharp ships prebuilt binaries via optional deps).
-RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
-
-# Built server + the sources the DB bootstrap scripts need.
-COPY --from=builder /app/.output ./.output
-COPY server ./server
-COPY scripts ./scripts
-COPY public ./public
+# Layer order is a deploy cost, not style. Every layer after the first one whose
+# input changed is rebuilt — new digest — and re-pulled by the VPS. The OS
+# packages and the empty mount points change almost never, so they come FIRST;
+# node_modules changes with package*.json; the app files change on every commit
+# and come LAST. (Measured with `docker history`: with apk after the app COPYs
+# and a `chown -R node:node /app` at the end, every deploy re-pulled the 175 MB
+# apk layer plus a 204 MB copy of the whole app made by that chown.)
 
 # FFmpeg/ffprobe transcode uploaded video, so they belong in the RUNTIME stage —
 # `nuxi build` never invokes them, and installing them in the builder stage would
@@ -79,22 +71,62 @@ ENV PORT=3000
 # layout is a second place to keep in step.
 ENV CDKT_MEDIA_WORKDIR=/var/lib/cdkt/media
 
-# Uploads and media are written at runtime; give the unprivileged user ownership
-# so a freshly created named volume inherits it.
-RUN mkdir -p /app/public/uploads /app/backups /var/lib/cdkt/media && chown -R node:node /app /var/lib/cdkt
-
-EXPOSE 3000
-
 # Drop privileges via entrypoint so bind mounts (./backups) owned by root on the host
 # are chowned to node on startup. The entrypoint runs as root, fixes ownership,
 # then execs as node via su-exec.
 COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+
+WORKDIR /app
+
+# The mount points, created EMPTY and handed to the unprivileged user so a freshly
+# created named volume inherits node's ownership. `/app` itself too (the server
+# runs with it as cwd), but NOT recursively: the app files below get their owner
+# from `COPY --chown` as they land, and a `chown -R` here would copy every one of
+# them into a new layer.
+RUN mkdir -p /app/public/uploads /app/backups /var/lib/cdkt/media \
+ && chown node:node /app /app/public /app/public/uploads /app/backups /var/lib/cdkt /var/lib/cdkt/media
+
+COPY --chown=node:node package*.json ./
+# Runtime = only `dependencies` (what db:init/db:seed/scripts import; `.output` is
+# self-contained — Nitro traced what it needs). `--ignore-scripts` is REQUIRED:
+# the root `postinstall` is `nuxt prepare`, and nuxt is a devDependency now, so
+# the hook would fail with "nuxt: command not found". No runtime package needs
+# an install script (sharp ships prebuilt binaries via optional deps).
+# Run as `node`, so node_modules is node's — the ownership the old recursive chown
+# produced, without a second copy of it.
+USER node
+RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
+# Back to root: the entrypoint must fix bind-mount ownership before it drops to
+# node with su-exec.
+USER root
+
+# Built server + the sources the DB bootstrap scripts need. Last: they change on
+# every commit.
+COPY --chown=node:node --from=builder /app/.output ./.output
+COPY --chown=node:node server ./server
+COPY --chown=node:node scripts ./scripts
+COPY --chown=node:node public ./public
+
+EXPOSE 3000
+
 ENTRYPOINT ["docker-entrypoint.sh"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/public/settings').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 
+# The commit this image was built from (CI passes the short SHA; a local build
+# leaves it empty and /api/public/health reports "dev"). The LAST layer before CMD
+# so a new value invalidates no cached layer above it. Baked into the image rather
+# than passed by compose: the value belongs to the image, and compose would have to
+# be told it on every deploy.
+ARG APP_VERSION
+ENV APP_VERSION=$APP_VERSION
+
 # Initialise schema, seed missing rows (both idempotent), then serve.
 # Uses Node's built-in TypeScript stripping — no `tsx` install needed at runtime.
-CMD ["sh", "-c", "node --experimental-strip-types --import ./scripts/ts-resolver.mjs server/db/init.ts && node --experimental-strip-types --import ./scripts/ts-resolver.mjs server/db/seed.ts && node .output/server/index.mjs"]
+# `exec` makes the server PID 1, so `docker stop` (SIGTERM) reaches Node and Nitro
+# drains within stop_grace_period (docker-compose.yml) instead of being SIGKILLed.
+# BusyBox sh happens to exec the last command of a `-c` list already; this says so
+# rather than relying on it.
+CMD ["sh", "-c", "node --experimental-strip-types --import ./scripts/ts-resolver.mjs server/db/init.ts && node --experimental-strip-types --import ./scripts/ts-resolver.mjs server/db/seed.ts && exec node .output/server/index.mjs"]
