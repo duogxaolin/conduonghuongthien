@@ -178,6 +178,18 @@ export function credentialRetargetViolation(body: SettingsBody, current: Readonl
 
 // ─── Quyết định cho biểu mẫu Media Portal (R2 riêng cho video) ─────────────────
 
+/**
+ * Ô Secret Key R2 video mang một bí mật MỚI thật sự không. Rỗng/khoảng trắng =
+ * "giữ nguyên" (trang để trống); `MASKED_SECRET` cũng vậy — GET trả dấu che cho bí
+ * mật đã lưu, nên một client gửi lại nguyên văn không được lưu chuỗi `********` đè
+ * lên bí mật thật, và cũng không được coi là đã nhập lại để đổi account/bucket.
+ * Dùng chung với `settings/media-portal.put.ts` (bước "giữ nguyên").
+ */
+export function isRetypedVideoSecret(value: unknown): boolean {
+  const typed = text(value).trim()
+  return typed !== '' && typed !== MASKED_SECRET
+}
+
 /** Giá trị R2 video đang lưu. `secretStored` = đã có một bí mật (kể cả không giải mã được). */
 export interface StoredVideoR2 {
   accountId: string
@@ -199,7 +211,9 @@ export interface StoredVideoR2 {
  * từ trước gửi lại nguyên văn không chặn việc lưu các ô khác.
  */
 export function videoR2RetargetViolation(fields: SettingsBody, stored: StoredVideoR2): string | null {
-  const retyped = has(fields, 'videoR2SecretKey') && text(fields.videoR2SecretKey).trim() !== ''
+  // Blank or the mask (`MASKED_SECRET`, what the GET reports for a saved secret)
+  // both mean "keep the saved one" — neither is the secret typed again.
+  const retyped = has(fields, 'videoR2SecretKey') && isRetypedVideoSecret(fields.videoR2SecretKey)
 
   let destinationChanged = false
   if (has(fields, 'videoR2AccountId')) {

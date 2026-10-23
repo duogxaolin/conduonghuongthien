@@ -353,3 +353,48 @@ describe('parseBottomNavConfig', () => {
     assert.equal(DEFAULT_BOTTOM_NAV.filter(i => i.featured).length, 1)
   })
 })
+
+/**
+ * Chính sách liên kết (spec page-builder-links): URL điều hướng đã lưu chỉ được
+ * phát ra trang công khai khi là đường dẫn trong trang (`/…`, không `//`), neo
+ * (`#…`), `http(s):`, `mailto:` hoặc `tel:`. Hàng lưu trước khi có luật (hoặc
+ * qua endpoint chưa kiểm) mang `javascript:` hay `//host` không bao giờ thành
+ * `<NuxtLink :to>` — mục đó bị bỏ như một mục thiếu url.
+ */
+describe('parseNavConfig / parseBottomNavConfig — URL không an toàn không lên trang', () => {
+  const UNSAFE = [
+    'javascript:alert(1)', 'JaVaScRiPt:alert(1)', ' javascript:alert(1)', 'java\tscript:alert(1)',
+    '&#106;avascript:alert(1)', 'javascript&colon;alert(1)', 'data:text/html,<script>alert(1)</script>',
+    'vbscript:msgbox(1)', '//evil.example/path', '/\\evil.example', '/\t/evil.example',
+  ]
+
+  for (const url of UNSAFE) {
+    it(`mục ${JSON.stringify(url)} bị bỏ, mục an toàn còn lại`, () => {
+      const items = parseNavConfig(JSON.stringify([
+        { id: 'bad', url, children: [] },
+        { id: 'ok', url: '/about', children: [{ id: 'bad-child', url }, { id: 'ok-child', url: '#tro-giup' }] },
+      ]))
+      assert.deepEqual(items!.map(i => i.id), ['ok'])
+      assert.deepEqual(items![0]!.children!.map(i => i.id), ['ok-child'])
+
+      const tabs = parseBottomNavConfig(JSON.stringify([
+        { id: 'bad', type: 'link', url },
+        { id: 'ok', type: 'link', url: '/news' },
+      ]))
+      assert.deepEqual(tabs!.map(i => i.id), ['ok'])
+    })
+  }
+
+  it('mọi dạng hợp lệ đi qua nguyên vẹn', () => {
+    const urls = ['/about', '/', '#tro-giup', '#', 'https://example.gov.vn/x', 'HTTP://example.gov.vn', 'mailto:a@b.vn', 'tel:+84123']
+    const items = parseNavConfig(JSON.stringify(urls.map((url, i) => ({ id: `i${i}`, url }))))
+    assert.deepEqual(items!.map(i => i.url), urls)
+    const tabs = parseBottomNavConfig(JSON.stringify(urls.map((url, i) => ({ id: `t${i}`, type: 'link', url }))))
+    assert.deepEqual(tabs!.map(i => i.url), urls)
+  })
+
+  it('tab chatbot/drawer không điều hướng: url lạ không đi theo nó', () => {
+    const tabs = parseBottomNavConfig('[{"id":"chat","type":"chatbot","url":"javascript:alert(1)"}]')
+    assert.equal(tabs![0]!.url, '')
+  })
+})

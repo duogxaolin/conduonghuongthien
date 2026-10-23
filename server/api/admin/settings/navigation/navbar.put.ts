@@ -1,6 +1,7 @@
 import { getDb } from '../../../../utils/db'
 import { settings, activityLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
+import { UnsafeLinkError, assertSafeLink } from '../../../../../shared/link-policy'
 
 type MenuItem = {
   id: string
@@ -15,27 +16,43 @@ const MAX_CHILDREN = 10
 const MAX_LABEL = 80
 const MAX_URL = 512
 
-function isValidUrl(url: string): boolean {
-  if (!url) return false
-  return url.startsWith('/') || url.startsWith('http://') || url.startsWith('https://') || url.startsWith('#')
-}
-
-function sanitizeItem(item: unknown): MenuItem | null {
+/**
+ * The endpoint `/admin/content/navigation/navbar.vue` saves through. An item
+ * without a label or a URL is dropped, as before. A URL that is there but is not
+ * an allowed link (shared/link-policy.ts: `/path` but not `//host` or `/\host`,
+ * `#…`, `http(s):`, `mailto:`, `tel:`) is a 400 naming the field (spec
+ * page-builder-links). The old prefix test let `//evil.example` through as "a
+ * relative path" and silently dropped anything else — a save that read as done.
+ */
+function sanitizeItem(item: unknown, field: string): MenuItem | null {
   if (!item || typeof item !== 'object') return null
   const m = item as Record<string, unknown>
   if (typeof m.label !== 'string' || !m.label.trim()) return null
-  if (typeof m.url !== 'string' || !isValidUrl(m.url.trim())) return null
-  const label = m.label.trim().slice(0, MAX_LABEL)
+  if (typeof m.url !== 'string' || !m.url.trim()) return null
   const url = m.url.trim().slice(0, MAX_URL)
+  assertSafeLink(url, `${field}.url`)
+  const label = m.label.trim().slice(0, MAX_LABEL)
   const id = typeof m.id === 'string' ? m.id.slice(0, 64) : crypto.randomUUID()
   const openNewTab = Boolean(m.openNewTab)
   const rawChildren = Array.isArray(m.children) ? m.children : []
   const children = rawChildren
     .slice(0, MAX_CHILDREN)
-    .map(c => sanitizeItem(c))
+    .map((c, index) => sanitizeItem(c, `${field}.children[${index}]`))
     .filter((c): c is MenuItem => c !== null)
     .map(({ id, label, url, openNewTab }) => ({ id, label, url, openNewTab }))
   return { id, label, url, openNewTab, ...(children.length ? { children } : {}) }
+}
+
+function sanitizeMenu(menu: unknown[]): MenuItem[] {
+  try {
+    return menu
+      .slice(0, MAX_ITEMS)
+      .map((item, index) => sanitizeItem(item, `menu[${index}]`))
+      .filter((i): i is MenuItem => i !== null)
+  } catch (error) {
+    if (error instanceof UnsafeLinkError) throw createError({ statusCode: 400, statusMessage: error.message })
+    throw error
+  }
 }
 
 export default defineEventHandler(async (event) => {
@@ -47,10 +64,7 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: 'menu phải là mảng các mục' })
   }
 
-  const items = (body.menu as unknown[])
-    .slice(0, MAX_ITEMS)
-    .map(sanitizeItem)
-    .filter((i): i is MenuItem => i !== null)
+  const items = sanitizeMenu(body.menu as unknown[])
 
   const db = getDb()
   /**

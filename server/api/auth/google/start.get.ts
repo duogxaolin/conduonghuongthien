@@ -23,6 +23,7 @@ import { getClientIp } from '../../../utils/client-ip'
 import { recordRateLimitHit, type RateLimitRule } from '../../../utils/rate-limit-store'
 import { logWarn } from '../../../utils/logger'
 import { rateLimitDeps } from '../../../utils/rate-limit-deps'
+import { isSecureRequest } from '../../../utils/request-secure'
 
 /** Per address. Ten starts in ten minutes is far above any human retry pattern
  *  and far below what a script needs to be useful. */
@@ -55,7 +56,8 @@ export default defineEventHandler(async (event) => {
 
   setCookie(event, OAUTH_STATE_COOKIE, signedState, {
     httpOnly: true,
-    secure:   getRequestURL(event).protocol === 'https:' || getRequestHeader(event, 'x-forwarded-proto') === 'https',
+    // One rule with the session cookies — see request-secure.ts.
+    secure:   isSecureRequest(event),
     // 'lax', for the same reason the reader cookie is: the callback is a
     // cross-site navigation from Google and 'strict' would withhold this cookie
     // on exactly the hop that needs it.

@@ -21,6 +21,7 @@ import { readerAccounts } from '../db/schema'
 import { verifyReaderToken } from './auth'
 import { getClientIp } from './client-ip'
 import { logWarn } from './logger'
+import { isSecureRequest } from './request-secure'
 
 /** Distinct from cdkt_admin and cdkt_mfa: no admin route reads this name. */
 const READER_COOKIE = 'cdkt_reader'
@@ -54,17 +55,12 @@ export interface ReaderIdentity {
   tokenVersion: number
 }
 
-/** Same detection as server/utils/mfa/session.ts — kept identical so the two
- *  cookie families cannot drift on the `secure` flag. */
-function requestIsHttps(event: H3Event): boolean {
-  return getRequestHeader(event, 'x-forwarded-proto') === 'https'
-    || getRequestURL(event).protocol === 'https:'
-}
-
 export function setReaderCookie(event: H3Event, token: string): void {
   setCookie(event, READER_COOKIE, token, {
     httpOnly: true,
-    secure:   requestIsHttps(event),
+    // The same rule as the admin session (request-secure.ts), so the two cookie
+    // families cannot drift on the `secure` flag.
+    secure:   isSecureRequest(event),
     // MANDATORY 'lax', never 'strict': the Google OAuth callback arrives as a
     // top-level navigation from accounts.google.com, so it is cross-site. Under
     // 'strict' the browser withholds the cookie on exactly that hop — the reader

@@ -44,6 +44,74 @@ export type DisplayNameValidation =
   | { ok: false, message: string }
 
 /**
+ * Staff and authority names a reader may not choose (spec reader-display-names).
+ *
+ * A reader's name renders next to the portal's own replies. "Ban quản trị" posting
+ * in a thread reads as the official answer the citizen was waiting for, and the
+ * reply e-mail used to carry that name in its subject line.
+ *
+ * Written in FOLDED form (see `foldDisplayName`). Deliberately short: every entry
+ * is a name somebody could plausibly use to pose as the portal, not a word list.
+ * "công an" alone is NOT here — "Công" and "An" are ordinary Vietnamese names, so
+ * "Nguyễn Công An" is a person, while "Bộ Công an" is the ministry.
+ */
+export const RESERVED_DISPLAY_NAMES: readonly string[] = Object.freeze([
+  'ban quan tri',
+  'quan tri vien',
+  'ban bien tap',
+  'admin',
+  'administrator',
+  'moderator',
+  'c11',
+  'bo cong an',
+  'con duong huong thien',
+])
+
+/** Unicode "format" characters: zero-width (U+200B–U+200D, U+FEFF), bidi
+ *  controls (U+200E/F, U+202A–U+202E, U+2066–U+2069), soft hyphen, … They
+ *  render as nothing, so a name containing one looks like a different name. */
+const FORMAT_CHARACTER = /\p{Cf}/u
+
+/**
+ * The form a name is compared in: what a reader SEES, with every way of writing
+ * the same visible name collapsed onto one string.
+ *
+ *  1. NFKC — full-width `Ａｄｍｉｎ` and other compatibility forms become ASCII.
+ *  2. NFD, then drop combining marks (`\p{Mn}`) — Vietnamese diacritics go.
+ *  3. `đ`/`Đ` → `d`: they are letters of their own, NFD does not decompose them.
+ *  4. Lower case.
+ *  5. Every run of anything that is not a letter or a digit → one space, so
+ *     `Ban-Quản_Trị` and `Ban quản trị` fold to the same thing. Digits are kept:
+ *     collapsing them too would fold "C11" to "c".
+ */
+export function foldDisplayName(value: string): string {
+  return value
+    .normalize('NFKC')
+    .normalize('NFD')
+    .replace(/[\p{Mn}\p{Cf}]/gu, '')
+    .replace(/[đĐ]/g, 'd')
+    .toLowerCase()
+    .replace(/[^\p{L}\p{N}]+/gu, ' ')
+    .trim()
+}
+
+/**
+ * Does the folded name pose as a reserved one? Equal to it, or starting or ending
+ * with it as a separate word ("Admin Hùng", "Hỗ trợ Bộ Công an"). Also equal once
+ * the spaces are gone too, so `A.D.M.I.N` and `C-11` do not slip through as
+ * "a d m i n" / "c 11". A reserved word INSIDE another word ("Adminh") is not a
+ * match — that is somebody's name.
+ */
+function isReservedDisplayName(name: string): boolean {
+  const folded = foldDisplayName(name)
+  const compact = folded.replace(/ /g, '')
+  return RESERVED_DISPLAY_NAMES.some(term => folded === term
+    || folded.startsWith(`${term} `)
+    || folded.endsWith(` ${term}`)
+    || compact === term.replace(/ /g, ''))
+}
+
+/**
  * A display name is ONE line of plain text.
  *
  * Unlike a comment body (services/comments.ts), newlines are not normalised —
@@ -58,6 +126,12 @@ export type DisplayNameValidation =
  */
 export function validateDisplayName(raw: unknown): DisplayNameValidation {
   if (typeof raw !== 'string') return { ok: false, message: 'Tên hiển thị không hợp lệ.' }
+
+  // On the RAW input, before `trim()`: trim removes U+FEFF at the edges, which
+  // would hide exactly the character this rule exists to catch.
+  if (FORMAT_CHARACTER.test(raw)) {
+    return { ok: false, message: 'Tên hiển thị chứa ký tự ẩn (ký tự rộng 0 hoặc ký tự điều khiển hướng chữ) không được phép.' }
+  }
 
   // Collapse runs of spaces so "Nguyễn   Văn A" and "Nguyễn Văn A" cannot be two
   // visually identical names in the same thread.
@@ -82,6 +156,13 @@ export function validateDisplayName(raw: unknown): DisplayNameValidation {
 
   if (normalized.length > DISPLAY_NAME_MAX_LENGTH) {
     return { ok: false, message: `Tên hiển thị quá dài (tối đa ${DISPLAY_NAME_MAX_LENGTH} ký tự).` }
+  }
+
+  if (isReservedDisplayName(normalized)) {
+    return {
+      ok: false,
+      message: 'Tên hiển thị này dành riêng cho cán bộ và cơ quan quản lý cổng (ví dụ "Ban quản trị", "Admin", "C11", "Bộ Công an"). Vui lòng chọn tên khác.',
+    }
   }
 
   return { ok: true, name: normalized }

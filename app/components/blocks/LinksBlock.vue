@@ -10,7 +10,7 @@
         <a
           v-for="(link, i) in links"
           :key="i"
-          :href="link.url"
+          :href="safeLinkOrNull(link.url) ?? undefined"
           target="_blank"
           rel="noopener"
           class="flex flex-col items-center justify-center bg-white border border-[#E2E8DF] rounded-lg p-5 text-center no-underline text-[#1E251C] shadow-sm transition hover:-translate-y-1 hover:border-[#4A6741] hover:shadow-md group"
@@ -26,6 +26,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from '~/composables/useI18n'
+// Defence in depth (spec page-builder-links): the server refuses unsafe links on
+// save and blanks old ones on read; the anchor still never binds one.
+import { safeLinkOrNull } from '~~/shared/link-policy'
 const { t } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 const d = computed(() => props.block?.data || {})

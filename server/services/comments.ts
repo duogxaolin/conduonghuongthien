@@ -43,7 +43,8 @@ import { createReplyNotification } from './notifications'
 import { sendReplyEmail } from './notification-email'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { hasForbiddenControlChars } from '../utils/plain-text'
-import { checkAndModerateContent, fastPreModerate } from './moderation-worker'
+import { checkAndModerateContent, fastPreModerate, type ModerationCheckOutput } from './moderation-worker'
+import { logError, logInfo, logWarn } from '../utils/logger'
 /** Long enough for a real question, short enough that one row cannot dominate a page. */
 export const COMMENT_MAX_LENGTH = 2000
 
@@ -500,32 +501,112 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     })
   })
 
+  if (id <= 0) return { ok: true, id }
+
+  // Full (AI) moderation, started once for every comment, after the commit and
+  // never awaited by this request. `.catch` so a moderation failure is a logged
+  // outcome, never an unhandled rejection on a promise nobody else awaits.
+  const moderation: Promise<ModerationCheckOutput | ModerationFailure> = checkAndModerateContent({
+    content: input.body,
+    targetType: 'comment',
+    targetId: id,
+    authorName: (reader ? effectiveDisplayName(reader) : null) || 'Người đọc',
+    authorIp: input.ip ?? undefined,
+    contextTitle: contextTitle || undefined,
+    contextUrl: contextUrl || undefined,
+  }).catch((error: unknown) => {
+    logError({ event: 'comment.moderation_failed', commentId: id, error })
+    return MODERATION_FAILED
+  })
+
   /**
-   * The email goes out AFTER the transaction commits, never inside it.
+   * The reply e-mail goes out only AFTER moderation has passed the reply (spec
+   * comment-notifications, design D6) — and after the transaction, never inside
+   * it (an unreachable SMTP host would hold this comment's row locks open for a
+   * network timeout).
    *
-   * Inside, an unreachable SMTP host would hold this comment's row locks open for
-   * the length of a network timeout — turning a mail outage into a comment outage.
-   * After, the row is already durable and the worst a mail failure costs is the
-   * email. `sendReplyEmail` throws nothing and awaits its own errors into a log
-   * line; it is awaited rather than fired off because Nitro can tear down the
-   * request context when a handler returns, cutting a loose promise mid-flight.
+   * Mailing first, as this did, delivered every reply moderation hid a second
+   * later — abuse, scam links — into a citizen's inbox. Now: hidden or blocked →
+   * no e-mail; moderation threw, reported that the AI never judged the reply
+   * (`aiFailed`), or did not answer within `REPLY_EMAIL_MODERATION_WAIT_MS` → no
+   * e-mail, logged as `comment.reply_email_held`. Held is final: there is no
+   * outbox to retry from (design D6 rejected one for now), and the in-portal
+   * notification already told the reader.
+   *
+   * "Only the e-mail waits" (D6): the chain runs BEHIND the response, so the
+   * reader's POST returns as soon as the reply is stored. It is registered with
+   * Nitro's `event.waitUntil`, which keeps it tracked past the handler's return,
+   * and it never rejects — everything is caught and logged.
    */
   if (notifiedReaderId !== null && input.parentId !== null) {
-    await sendReplyEmail({ commentId: id, parentId: input.parentId, recipientId: notifiedReaderId, event: input.event })
-  }
-  if (id > 0) {
-    void checkAndModerateContent({
-      content: input.body,
-      targetType: 'comment',
-      targetId: id,
-      authorName: (reader ? effectiveDisplayName(reader) : null) || 'Người đọc',
-      authorIp: input.ip ?? undefined,
-      contextTitle: contextTitle || undefined,
-      contextUrl: contextUrl || undefined,
-    })
+    const reply = { commentId: id, parentId: input.parentId, recipientId: notifiedReaderId, event: input.event }
+    const chain = (async () => {
+      try {
+        const verdict = await moderationWithin(moderation, REPLY_EMAIL_MODERATION_WAIT_MS)
+        const hold = replyEmailHoldReason(verdict)
+        if (hold === null) await sendReplyEmail(reply)
+        else logReplyEmailHeld(reply, hold, verdict)
+      } catch (error) {
+        logError({ event: 'comment.reply_email_failed', commentId: id, error })
+      }
+    })()
+    input.event.waitUntil?.(chain)
   }
 
   return { ok: true, id }
+}
+
+/**
+ * How long the background chain waits for the moderation verdict before the
+ * e-mail is held. Shorter than the AI gateway's own ~35 s timeout: a slow model
+ * should cost one e-mail, not keep a promise per reply open that long. Moderation
+ * itself keeps running to completion (and still hides the reply).
+ */
+export const REPLY_EMAIL_MODERATION_WAIT_MS = 10_000
+
+type ReplyEmailHold = 'moderation_hidden' | 'moderation_ai_failed' | 'moderation_error' | 'moderation_timeout'
+
+/** `comment.reply_email_held`: info for a moderation decision, warn for a moderation that did not complete. */
+function logReplyEmailHeld(reply: { commentId: number, parentId: number }, hold: ReplyEmailHold, verdict: ModerationVerdict): void {
+  const fields = {
+    event: 'comment.reply_email_held',
+    commentId: reply.commentId,
+    parentId: reply.parentId,
+    reason: hold,
+    ...(hold === 'moderation_ai_failed' && typeof verdict === 'object' ? { aiFailure: verdict.aiFailure } : {}),
+  }
+  if (hold === 'moderation_hidden') logInfo(fields)
+  else logWarn(fields)
+}
+
+const MODERATION_FAILED = Symbol('moderation-failed')
+const MODERATION_TIMED_OUT = Symbol('moderation-timed-out')
+type ModerationFailure = typeof MODERATION_FAILED
+type ModerationVerdict = ModerationCheckOutput | ModerationFailure | typeof MODERATION_TIMED_OUT
+
+function moderationWithin(pending: Promise<ModerationCheckOutput | ModerationFailure>, ms: number): Promise<ModerationVerdict> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<typeof MODERATION_TIMED_OUT>((resolve) => {
+    timer = setTimeout(() => resolve(MODERATION_TIMED_OUT), ms)
+  })
+  return Promise.race([pending, timeout]).finally(() => clearTimeout(timer))
+}
+
+/**
+ * `null` = the e-mail may go. Held on the VERDICT (`auto_hide`/`block`), not on
+ * whether hiding the row succeeded: a hide write that failed leaves the reply on
+ * the page, but it is still a reply moderation refused. Held too when the AI was
+ * asked and never judged the reply (`aiFailed`, e.g. provider error): its
+ * "allow" then only means "no critical keyword", not a completed moderation.
+ * `flag_only` (queued for a human, left visible — the "AI not configured" path)
+ * is neither hidden nor blocked, so it is mailed.
+ */
+function replyEmailHoldReason(verdict: ModerationVerdict): ReplyEmailHold | null {
+  if (verdict === MODERATION_TIMED_OUT) return 'moderation_timeout'
+  if (verdict === MODERATION_FAILED) return 'moderation_error'
+  if (verdict.flagged && (verdict.action === 'auto_hide' || verdict.action === 'block')) return 'moderation_hidden'
+  if (verdict.aiFailed) return 'moderation_ai_failed'
+  return null
 }
 
 export type DeleteActor =

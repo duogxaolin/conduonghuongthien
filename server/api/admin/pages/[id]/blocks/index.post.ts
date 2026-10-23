@@ -1,7 +1,8 @@
 import { getDb } from '../../../../../utils/db'
 import { pages, pageBlocks, activityLogs } from '../../../../../db/schema'
 import { isValidBlockType, getDefaultData } from '../../../../../../app/utils/blocks/registry'
-import { sanitizeBlockData } from '../../../../../utils/sanitize-html'
+import { assertSafeBlockLinks, sanitizeBlockData } from '../../../../../utils/sanitize-html'
+import { UnsafeLinkError } from '../../../../../../shared/link-policy'
 import { eq, sql } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 
@@ -30,8 +31,17 @@ export default defineEventHandler(async (event) => {
     .from(pageBlocks)
     .where(eq(pageBlocks.pageId, pageId))
 
+  const input = body?.data && typeof body.data === 'object' ? body.data : getDefaultData(blockType)
+  // Link fields (registry `type: 'url'`) must be allowed links — same rule as the
+  // draft/publish path (`normalizeBlocks`): 400 naming the field, nothing written.
+  try {
+    assertSafeBlockLinks(blockType, input)
+  } catch (error) {
+    if (error instanceof UnsafeLinkError) throw createError({ statusCode: 400, statusMessage: `${error.message} (block ${blockType})` })
+    throw error
+  }
   // Sanitize rich-text fields — block data is rendered with v-html publicly.
-  const data = sanitizeBlockData(body?.data && typeof body.data === 'object' ? body.data : getDefaultData(blockType))
+  const data = sanitizeBlockData(input)
 
   /**
    * Lượt ghi và dòng audit của nó commit cùng nhau, hoặc không cái nào.
