@@ -3,6 +3,7 @@ import { eq, and } from 'drizzle-orm'
 import { getDb } from '../../../../../utils/db'
 import { articleTranslations } from '../../../../../db/schema'
 import { requireResourcePermission } from '../../../../../utils/permissions'
+import { requireReadableArticle } from '../../../../../services/articles'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -16,6 +17,9 @@ export default defineEventHandler(async (event) => {
   if (!lang) {
     throw createError({ statusCode: 400, statusMessage: 'Mã ngôn ngữ bắt buộc.' })
   }
+
+  // `news:read` above only opens the route; the article's own type decides.
+  await requireReadableArticle(adminUser, id)
 
   const db = getDb()
   const [translation] = await db

@@ -1,13 +1,19 @@
-import { inArray } from 'drizzle-orm'
+import { and, eq, inArray } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
 import { articleComments } from '../../../db/schema'
+import { optionalReader } from '../../../utils/reader-auth'
 
 /**
- * Public comment moderation checkpoint.
+ * Moderation checkpoint for the comments a reader has just posted.
  *
- * Allows clients to verify whether recently posted comments were subsequently
- * hidden or revoked by background AI moderation, enabling real-time removal
- * from the rendered thread without a full page reload.
+ * Lets the thread drop a comment that background AI moderation hid a few seconds
+ * after it was posted, without a page reload.
+ *
+ * Answers only for the signed-in reader's OWN comments, and only `isHidden`. It
+ * used to take any ids from anyone and return `flagReason` — the officer's
+ * free-text hide note, the AI's reasoning and the literal blocklist pattern that
+ * matched — so walking ids 1..N harvested the moderation rules themselves
+ * (rà soát 2026-10-22). The author is shown a generic reason instead.
  */
 export default defineEventHandler(async (event) => {
   const query = getQuery(event)
@@ -22,15 +28,18 @@ export default defineEventHandler(async (event) => {
 
   if (ids.length === 0) return { ok: true, items: [] }
 
+  // Posting a comment requires a reader session, so its author always has one.
+  const reader = await optionalReader(event)
+  if (!reader) return { ok: true, items: [] }
+
   const db = getDb()
   const rows = await db
     .select({
       id: articleComments.id,
       isHidden: articleComments.isHidden,
-      flagReason: articleComments.flagReason,
     })
     .from(articleComments)
-    .where(inArray(articleComments.id, ids))
+    .where(and(inArray(articleComments.id, ids), eq(articleComments.readerId, reader.id)))
 
   return {
     ok: true,

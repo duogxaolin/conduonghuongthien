@@ -4,6 +4,7 @@ import { errorMessage } from '~/utils/errorMessage'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const toast = useToast()
+const { confirm } = useConfirm()
 
 // ─── Quét thư mục uploads ─────────────────────────────────────────────────────
 // Ai đó copy ảnh thẳng vào public/uploads/ (SCP, rsync, backup) thì tệp tồn tại
@@ -121,7 +122,11 @@ const scanStalled = computed(() => {
 })
 const forceResettingScan = ref(false)
 const forceResetScan = async () => {
-  if (!confirm('Buộc gỡ kẹt job quét đang treo? Job sẽ dừng ngay và có thể chạy lại. Worker cũ (nếu còn) sẽ tự hết.')) return
+  if (!await confirm({
+    message: 'Buộc gỡ kẹt job quét đang treo? Job sẽ dừng ngay và có thể chạy lại. Worker cũ (nếu còn) sẽ tự hết.',
+    confirmLabel: 'Gỡ kẹt job',
+    danger: true,
+  })) return
   forceResettingScan.value = true
   try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/media/scan-force-reset`, { method: 'POST' })
@@ -258,7 +263,11 @@ const syncStalled = computed(() => {
 })
 const forceResettingSync = ref(false)
 const forceResetSync = async () => {
-  if (!confirm('Buộc gỡ kẹt job sync đang treo? Job sẽ dừng ngay và có thể chạy lại. Worker cũ (nếu còn) sẽ tự hết — lần chạy mới có timeout 90s cho pre-backup.')) return
+  if (!await confirm({
+    message: 'Buộc gỡ kẹt job sync đang treo? Job sẽ dừng ngay và có thể chạy lại. Worker cũ (nếu còn) sẽ tự hết — lần chạy mới có timeout 90s cho pre-backup.',
+    confirmLabel: 'Gỡ kẹt job',
+    danger: true,
+  })) return
   forceResettingSync.value = true
   try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/media/sync-force-reset`, { method: 'POST' })
@@ -297,7 +306,11 @@ const repointUrls = async () => {
     toast.error('Domain cũ và domain mới giống nhau.')
     return
   }
-  if (!confirm(`Đổi URL R2 từ "${oldDomain.value}" sang "${newDomain.value}"?\n\nSẽ UPDATE media.url + articles.content. Tự backup SQL trước (snapshot recover thủ công).`)) return
+  if (!await confirm({
+    message: `Đổi URL R2 từ "${oldDomain.value}" sang "${newDomain.value}"?\n\nSẽ UPDATE media.url + articles.content. Tự backup SQL trước (snapshot recover thủ công).`,
+    confirmLabel: 'Đổi URL',
+    danger: true,
+  })) return
   repointing.value = true
   repointResult.value = null
   try {
@@ -325,7 +338,11 @@ const repairing = ref(false)
 const repairResult = ref<{ mediaFixed: number; articlesFixed: number; thumbnailsFixed: number; backupStamp: string | null } | null>(null)
 
 const repairUrls = async () => {
-  if (!confirm('Vá URL ảnh hỏng hàng loạt?\n\nSẽ:\n• Bóc prefix localhost khỏi media.url + thêm https:// nếu thiếu scheme\n• Thay /uploads/migrated/YYYY/MM/<filename> trong ALL bài viết (content + thumbnail_url) bằng URL R2 đúng\n\nTự backup SQL trước (snapshot recover thủ công). Chạy < vài giây, bấm lại an toàn.')) return
+  if (!await confirm({
+    message: 'Vá URL ảnh hỏng hàng loạt?\n\nSẽ:\n• Bóc prefix localhost khỏi media.url + thêm https:// nếu thiếu scheme\n• Thay /uploads/migrated/YYYY/MM/<filename> trong ALL bài viết (content + thumbnail_url) bằng URL R2 đúng\n\nTự backup SQL trước (snapshot recover thủ công). Chạy < vài giây, bấm lại an toàn.',
+    confirmLabel: 'Vá URL',
+    danger: true,
+  })) return
   repairing.value = true
   repairResult.value = null
   try {
@@ -362,7 +379,11 @@ interface SelfHealReport {
 const selfHealReport = ref<SelfHealReport | null>(null)
 
 const runSelfHeal = async (dryRun: boolean) => {
-  if (!dryRun && !confirm('Tự vá ảnh R2 thiếu + repoint thumbnail?\n\nSẽ:\n• Tìm media R2 mà object thực sự không tồn tại → upload lại từ file local\n• Repoint articles.thumbnail_url /uploads/migrated/... sang R2 URL khớp\n• Với ảnh R2 mất gốc (file local cũng không còn) → đổi thumbnail + URL media sang ảnh mặc định để IPX hết 404\n\nTự backup SQL trước. Bấm lại an toàn (idempotent).')) return
+  if (!dryRun && !await confirm({
+    message: 'Tự vá ảnh R2 thiếu + repoint thumbnail?\n\nSẽ:\n• Tìm media R2 mà object thực sự không tồn tại → upload lại từ file local\n• Repoint articles.thumbnail_url /uploads/migrated/... sang R2 URL khớp\n• Với ảnh R2 mất gốc (file local cũng không còn) → đổi thumbnail + URL media sang ảnh mặc định để IPX hết 404\n\nTự backup SQL trước. Bấm lại an toàn (idempotent).',
+    confirmLabel: 'Tự vá ảnh',
+    danger: true,
+  })) return
   if (dryRun) selfHealPreviewing.value = true
   else selfHealing.value = true
   selfHealReport.value = null

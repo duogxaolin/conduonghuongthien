@@ -18,10 +18,11 @@ import { getDb } from '../db'
 import { createFollowUpStreamFilter, FOLLOW_UP_LIMIT, FOLLOW_UP_MARKER, selectFollowUps, splitFollowUps } from './follow-ups'
 import { buildArticleSearch } from './article-search'
 import { photoSearchCondition, videoSearchCondition } from './media-search'
+import { CHAT_MAX_TOTAL_CHARS, CHAT_MAX_TURNS, chatTurnText, isChatTurn, isUserTurn, type ChatTurn } from './chat-turns'
 export const HOTLINE = CHATBOT_HOTLINE
 export const CHAT_LIMITS = Object.freeze({ maxBodyBytes: 64_000, maxMessageChars: 10_000, maxOutputChars: 8_000 })
 
-export type ChatMessage = { role?: unknown; sender?: unknown; content?: unknown; text?: unknown }
+export type ChatMessage = ChatTurn
 export type ChatToolCall = { id: string; name: string; arguments?: string; count?: number }
 
 export type ChatResult = {
@@ -161,15 +162,16 @@ export function validateChatRequestBody(body: unknown): void {
 }
 
 export function validateChatMessages(messages: unknown, settings: ChatbotSettings): ChatMessage[] {
-  if (!Array.isArray(messages) || messages.length < 1 || messages.length > Math.min(30, (settings.maxHistoryMessages + 1) * 2)) throw new Error('INVALID_MESSAGES')
+  if (!Array.isArray(messages) || messages.length < 1 || messages.length > Math.min(CHAT_MAX_TURNS, (settings.maxHistoryMessages + 1) * 2)) throw new Error('INVALID_MESSAGES')
   const accepted = messages.filter(message => {
     if (!message || typeof message !== 'object') return false
     const item = message as ChatMessage
-    return item.role === 'user' || item.sender === 'user' || item.role === 'assistant' || item.sender === 'bot'
+    return isChatTurn(item)
   }).map(message => message as ChatMessage)
-  if (!accepted.length) throw new Error('INVALID_MESSAGES')
-  const total = accepted.reduce((sum, item) => sum + text(item.content ?? item.text).length, 0)
-  if (accepted.some(item => !text(item.content ?? item.text) || text(item.content ?? item.text).length > Math.min(CHAT_LIMITS.maxMessageChars, settings.maxInputChars)) || total > 30_000) throw new Error('INVALID_MESSAGES')
+  // The last turn is the one answered and stored: it must be the visitor's.
+  if (!accepted.length || !isUserTurn(accepted[accepted.length - 1])) throw new Error('INVALID_MESSAGES')
+  const total = accepted.reduce((sum, item) => sum + chatTurnText(item).length, 0)
+  if (accepted.some(item => !chatTurnText(item) || chatTurnText(item).length > Math.min(CHAT_LIMITS.maxMessageChars, settings.maxInputChars)) || total > CHAT_MAX_TOTAL_CHARS) throw new Error('INVALID_MESSAGES')
   return accepted
 }
 
@@ -225,7 +227,7 @@ ${refs}
 export function buildChatHistory(history: ChatMessage[], answerLimit = CHAT_LIMITS.maxOutputChars) {
   return history.map(item => {
     const role = (item.role === 'assistant' || item.sender === 'bot') ? 'assistant' : 'user'
-    return { role, content: text(item.content ?? item.text).slice(0, answerLimit) }
+    return { role, content: chatTurnText(item).slice(0, answerLimit) }
   })
 }
 
@@ -275,7 +277,7 @@ async function smallTalkResult(settings: ChatbotSettings, dependencies: ChatDepe
     return null
   }
   const previous = history.length > 1
-    ? text(history[history.length - 2]!.content ?? history[history.length - 2]!.text)
+    ? chatTurnText(history[history.length - 2])
     : ''
   const previousMatch = previous ? classifySmallTalk(entries, previous) : null
   const context: SmallTalkContext = previousMatch ? { previousIntent: previousMatch.intent } : {}
@@ -390,7 +392,7 @@ async function callProvider(
   const basePrompt = settings.systemPrompt?.trim() ? settings.systemPrompt : DEFAULT_CHATBOT_SYSTEM_PROMPT
   const groundedPrompt = buildGroundedSystemPrompt(basePrompt, references)
   const userTurn = history[history.length - 1]
-  const queryText = text(userTurn?.content ?? userTurn?.text)
+  const queryText = chatTurnText(userTurn)
   const historyMessages = buildChatHistory(history)
   // The follow-up block at the end of the answer is data for the chips under it,
   // never text for the reader: it is held back from the stream here.
@@ -664,7 +666,7 @@ export async function answerGroundedChat(
   const retryAfter = await chargeChatRateLimit(event, settings)
   if (retryAfter) return { answer: CHAT_RATE_LIMITED_MESSAGE, sources: [], kind: 'rate_limited', retryAfter }
 
-  const query = text(history[history.length - 1]!.content ?? history[history.length - 1]!.text)
+  const query = chatTurnText(history[history.length - 1])
   let references: PublicKnowledgeReference[]
   try {
     references = (dependencies.retrieve ?? retrieveKnowledge)(await dependencies.loadPublishedEntries(), query, { topK: settings.retrievalTopK, charBudget: settings.referenceCharBudget })

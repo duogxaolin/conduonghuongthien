@@ -36,6 +36,7 @@ type Comment = {
 
 const route = useRoute()
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const loading = ref(true)
 const error = ref('')
@@ -182,11 +183,13 @@ async function submitReply(comment: Comment) {
 }
 
 async function deleteOne(comment: Comment) {
-  if (!confirm(
-    comment.parentId === null
+  if (!await confirm({
+    message: comment.parentId === null
       ? 'Xoá bình luận này? Mọi phản hồi bên dưới, kể cả phản hồi của Ban quản trị, sẽ bị xoá theo. Không thể hoàn tác.'
       : 'Xoá phản hồi này? Không thể hoàn tác.',
-  )) return
+    confirmLabel: 'Xoá',
+    danger: true,
+  })) return
 
   busy.value = true
   try {

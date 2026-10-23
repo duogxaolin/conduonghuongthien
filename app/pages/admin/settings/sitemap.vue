@@ -14,6 +14,7 @@ const xml = ref('')
 const updatedAt = ref<string | null>(null)
 const hasSaved = ref(false)
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const fetchSitemap = async () => {
   loading.value = true
@@ -41,7 +42,11 @@ const fetchSitemap = async () => {
 
 const handleGenerate = async () => {
   if (hasSaved.value) {
-    const ok = window.confirm('Sinh lại sẽ ghi đè phần bạn đã sửa trong ô dưới đây. Tiếp tục?')
+    const ok = await confirm({
+      message: 'Sinh lại sẽ ghi đè phần bạn đã sửa trong ô dưới đây. Tiếp tục?',
+      confirmLabel: 'Sinh lại',
+      danger: true,
+    })
     if (!ok) return
   }
   generating.value = true

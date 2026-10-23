@@ -38,6 +38,7 @@ const props = defineProps<{
 }>()
 
 const toast = useToast()
+const { confirm } = useConfirm()
 
 // ─── State ──────────────────────────────────────────────────────────────────
 // Phản chiếu các cột thật sự dùng từ bảng `article_translations` (schema.ts:1403).
@@ -255,7 +256,11 @@ async function toggleTranslationStatus(row: TranslationRow) {
 
 async function deleteTranslation(row: TranslationRow) {
   if (!props.articleId) return
-  if (!confirm(`Xoá bản dịch ${availableLanguages.value.find(l => l.code === row.langCode)?.label ?? row.langCode}?`)) return
+  if (!await confirm({
+    message: `Xoá bản dịch ${availableLanguages.value.find(l => l.code === row.langCode)?.label ?? row.langCode}?`,
+    confirmLabel: 'Xoá bản dịch',
+    danger: true,
+  })) return
   try {
     await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(
       `/api/admin/articles/${props.articleId}/translations/${row.langCode}`,

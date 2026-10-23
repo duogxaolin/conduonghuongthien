@@ -42,6 +42,14 @@ test('pageRange: nhiều trang → đầu, cuối, hiện tại và hai trang k�
   assert.deepEqual(pageRange(2, 8), [1, 2, 3, 8])
 })
 
+test('pageRange bán kính 2 (AdminPagination) — giữ đúng dãy của bản chép cũ trong component', () => {
+  assert.deepEqual(pageRange(10, 20, 2), [1, 8, 9, 10, 11, 12, 20])
+  assert.deepEqual(pageRange(1, 20, 2), [1, 2, 3, 20])
+  assert.deepEqual(pageRange(20, 20, 2), [1, 18, 19, 20])
+  assert.deepEqual(pageRange(3, 8, 2), [1, 2, 3, 4, 5, 8])
+  assert.deepEqual(pageRange(4, 7, 2), [1, 2, 3, 4, 5, 6, 7])
+})
+
 test('pageRange: trang hiện tại ngoài biên không đẻ ra số ngoài biên', () => {
   assert.deepEqual(pageRange(99, 10), [1, 10])
   assert.deepEqual(pageRange(-5, 10), [1, 10])

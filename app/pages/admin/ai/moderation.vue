@@ -36,7 +36,7 @@
         @click="activeTab = t.key"
       >
         <span>{{ t.label }}</span>
-        <span v-if="t.badge > 0" class="px-1.5 py-0.2 rounded-full bg-red-500 text-white text-[0.65rem] font-black">
+        <span v-if="t.badge > 0" class="px-1.5 py-px rounded-full bg-red-500 text-white text-[0.65rem] font-black">
           {{ t.badge }}
         </span>
         <span v-else-if="t.count !== undefined" class="text-[0.7rem] opacity-70">
@@ -248,7 +248,7 @@
                   <strong class="text-[#122815]">{{ item.authorName || 'Khách' }}</strong>
                   <div v-if="item.authorIp" class="flex items-center gap-1.5 mt-0.5">
                     <span class="text-[0.68rem] text-[#667768] font-mono">{{ item.authorIp }}</span>
-                    <span v-if="item.isIpBanned" class="px-1.5 py-0.2 rounded text-[0.62rem] font-bold bg-red-100 text-red-700 border border-red-200">
+                    <span v-if="item.isIpBanned" class="px-1.5 py-px rounded text-[0.62rem] font-bold bg-red-100 text-red-700 border border-red-200">
                       Đã cấm
                     </span>
                   </div>

@@ -32,6 +32,7 @@ type Settings = {
 }
 
 const toast = useToast()
+const { confirm } = useConfirm()
 
 const loading = ref(true)
 const error = ref('')
@@ -109,7 +110,11 @@ async function save() {
 }
 
 async function clearSecret() {
-  if (!confirm('Xoá Client secret đã lưu? Đăng nhập Google sẽ tắt cho tới khi bạn nhập lại secret mới.')) return
+  if (!await confirm({
+    message: 'Xoá Client secret đã lưu? Đăng nhập Google sẽ tắt cho tới khi bạn nhập lại secret mới.',
+    confirmLabel: 'Xoá secret',
+    danger: true,
+  })) return
   clearing.value = true
   try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, settings: Settings }>)(`/api/admin/settings/google-oauth/clear-secret`, { method: 'POST' })

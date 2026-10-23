@@ -182,7 +182,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
         >
           <i class="fa-solid fa-inbox" aria-hidden="true"></i>
           <span>Sổ đối soát nội dung bị ẩn</span>
-          <span v-if="moderationQueue.filter(q => q.status === 'pending').length" class="px-1.5 py-0.2 rounded-full bg-red-500 text-white text-[0.65rem]">
+          <span v-if="moderationQueue.filter(q => q.status === 'pending').length" class="px-1.5 py-px rounded-full bg-red-500 text-white text-[0.65rem]">
             {{ moderationQueue.filter(q => q.status === 'pending').length }}
           </span>
         </button>
@@ -281,7 +281,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
                   <strong class="text-[#122815]">{{ item.authorName || 'Khách' }}</strong>
                   <div v-if="item.authorIp" class="flex items-center gap-1.5 mt-0.5">
                     <span class="text-[0.68rem] text-[#667768] font-mono">{{ item.authorIp }}</span>
-                    <span v-if="item.isIpBanned" class="px-1.5 py-0.2 rounded text-[0.62rem] font-bold bg-red-100 text-red-700 border border-red-200">
+                    <span v-if="item.isIpBanned" class="px-1.5 py-px rounded text-[0.62rem] font-bold bg-red-100 text-red-700 border border-red-200">
                       Đã cấm
                     </span>
                   </div>
@@ -387,7 +387,7 @@ defineExpose<{ loadModeration: typeof loadModeration }>({ loadModeration })
             <div class="flex flex-wrap items-center gap-1.5 text-xs">
               <strong class="text-[#122815]">{{ item.authorName || 'Khách' }}</strong>
               <span v-if="item.authorIp" class="text-[0.68rem] text-[#667768] font-mono">{{ item.authorIp }}</span>
-              <span v-if="item.isIpBanned" class="px-1.5 py-0.2 rounded text-[0.62rem] font-bold bg-red-100 text-red-700 border border-red-200">Đã cấm</span>
+              <span v-if="item.isIpBanned" class="px-1.5 py-px rounded text-[0.62rem] font-bold bg-red-100 text-red-700 border border-red-200">Đã cấm</span>
             </div>
 
             <!-- Nội dung snippet -->

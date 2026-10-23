@@ -8,7 +8,7 @@
  * Keeping the check inside the per-row function makes that impossible.
  */
 import { createError } from 'h3'
-import { eq, inArray, notInArray, or, isNull, sql } from 'drizzle-orm'
+import { and, eq, inArray, notInArray, or, isNull, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { activityLogs, articles } from '../db/schema'
 import { requireResourcePermission, type ActorLike } from '../utils/permissions'
@@ -27,6 +27,8 @@ export function articleResource(type: string | null | undefined): string {
   return Object.hasOwn(TYPE_RESOURCE, type ?? '') ? TYPE_RESOURCE[type!]! : 'news'
 }
 
+type ArticleAction = 'read' | 'update' | 'delete'
+
 /** Apply the same type boundary to rows, counts and author aggregates before pagination. */
 export function articleReadScope(actor: ActorLike, requestedType?: string) {
   if (requestedType) {
@@ -37,24 +39,47 @@ export function articleReadScope(actor: ActorLike, requestedType?: string) {
 }
 
 /**
- * The article types `actor` may perform `action` on, as a WHERE condition; 403
- * when there are none at all.
+ * The article types `actor` may perform `action` on — or ANY of `action` when
+ * given a list — as a WHERE condition; 403 when there are none at all.
  *
  * A single-article endpoint that looks the row up first and checks the type's
  * permission second answers "404" for a missing id and "403" for an id of a type
  * the caller may not touch — an oracle for which ids exist. Scoping the lookup
  * with this instead makes both cases the same 404 (keep the per-row
- * `requireResourcePermission` after it as the explicit check).
+ * `requireResourcePermission` after it as the explicit check). A write path
+ * scopes by `['read', <its action>]`: a type you can see but not change is still
+ * an honest 403, and a type you may change without reading is still reachable.
  */
-export function articleActionScope(actor: ActorLike, action: 'read' | 'update') {
+export function articleActionScope(actor: ActorLike, action: ArticleAction | readonly ArticleAction[]) {
   if (actor?.isSuperAdmin === true) return sql`1 = 1`
-  const allowed = Object.keys(TYPE_RESOURCE).filter(type => checkPermission(actor?.permissions ?? [], articleResource(type), action))
+  const actions: readonly ArticleAction[] = typeof action === 'string' ? [action] : action
+  const allowed = Object.keys(TYPE_RESOURCE).filter(type => actions.some(each => checkPermission(actor?.permissions ?? [], articleResource(type), each)))
   if (!allowed.length) throw createError({ statusCode: 403, statusMessage: 'Forbidden: Insufficient permissions' })
   const explicit = inArray(articles.type, allowed)
   // Dynamic CMS types deliberately inherit news permissions, exactly as writes do.
   return allowed.includes('news')
     ? or(explicit, notInArray(articles.type, Object.keys(TYPE_RESOURCE)), isNull(articles.type))!
     : explicit
+}
+
+/**
+ * The article `articleId`, if `actor` may read its TYPE; 404 otherwise — the same
+ * answer as for an id that does not exist.
+ *
+ * For routes that read something hanging off an article (its translations, their
+ * progress) and so never load the article itself: those used to check only the
+ * fixed `news:read` grant, so a news reader could read the translations of a
+ * document or role-model article by its id (rà soát 2026-10-22).
+ */
+export async function requireReadableArticle(actor: ActorLike, articleId: number) {
+  const [article] = await getDb()
+    .select({ id: articles.id, type: articles.type })
+    .from(articles)
+    .where(and(eq(articles.id, articleId), articleActionScope(actor, 'read')))
+    .limit(1)
+  if (!article) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
+  requireResourcePermission(actor, articleResource(article.type), 'read')
+  return article
 }
 
 export const ARTICLE_STATUSES = ['draft', 'published', 'archived'] as const
@@ -72,7 +97,9 @@ function requireArticlePermission(actor: ActorLike, type: string | null | undefi
  */
 export async function deleteArticleById(actor: ActorLike, id: number): Promise<void> {
   const db = getDb()
-  const [existing] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
+  // Scoped to the types the actor can read or delete: an id of any other type is
+  // the same 404 as an id that does not exist (no oracle for which ids exist).
+  const [existing] = await db.select().from(articles).where(and(eq(articles.id, id), articleActionScope(actor, ['read', 'delete']))).limit(1)
   if (!existing) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
 
   requireArticlePermission(actor, existing.type, 'delete')
@@ -96,7 +123,8 @@ export async function deleteArticleById(actor: ActorLike, id: number): Promise<v
  */
 export async function setArticleStatus(actor: ActorLike, id: number, status: ArticleStatus): Promise<void> {
   const db = getDb()
-  const [existing] = await db.select().from(articles).where(eq(articles.id, id)).limit(1)
+  // Same rule as deleteArticleById, with `update`: unknown and out-of-scope ids both 404.
+  const [existing] = await db.select().from(articles).where(and(eq(articles.id, id), articleActionScope(actor, ['read', 'update']))).limit(1)
   if (!existing) throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại.' })
 
   requireArticlePermission(actor, existing.type, 'update')

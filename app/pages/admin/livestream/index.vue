@@ -41,6 +41,7 @@ definePageMeta({
 })
 
 const toast = useToast()
+const { confirm } = useConfirm()
 const { hasPermission } = useAdminAuth()
 
 interface LiveSession {
@@ -186,7 +187,11 @@ async function loadChatMessages(expectedSessionId?: number) {
 
 async function removeChatMessage(message: LiveChatMessage) {
   if (!canModerateChat || removingMessageId.value !== null) return
-  if (!confirm(`Gỡ tin nhắn của ${message.displayName}?`)) return
+  if (!await confirm({
+    message: `Gỡ tin nhắn của ${message.displayName}?`,
+    confirmLabel: 'Gỡ tin nhắn',
+    danger: true,
+  })) return
 
   removingMessageId.value = message.id
   try {
@@ -239,7 +244,11 @@ async function startLivestream() {
 
 async function stopLivestream() {
   if (!activeSession.value) return
-  if (!confirm('Dừng buổi phát trực tiếp này?')) return
+  if (!await confirm({
+    message: 'Dừng buổi phát trực tiếp này?',
+    confirmLabel: 'Dừng phát',
+    danger: true,
+  })) return
   isStopping.value = true
   try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; sessionId?: number }>)(`/api/admin/livestream/stop`, {

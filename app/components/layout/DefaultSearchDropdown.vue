@@ -100,7 +100,7 @@
 
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2 mb-1 flex-wrap">
-                  <span :class="['text-[0.65rem] font-extrabold px-1.5 py-0.2 rounded uppercase tracking-wider', item.typeBadgeClass]">
+                  <span :class="['text-[0.65rem] font-extrabold px-1.5 py-px rounded uppercase tracking-wider', item.typeBadgeClass]">
                     {{ item.typeLabel }}
                   </span>
                   <span v-if="item.categoryName" class="text-[0.7rem] text-[#5A6C58] truncate font-medium">

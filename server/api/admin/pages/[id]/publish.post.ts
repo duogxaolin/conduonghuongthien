@@ -123,13 +123,14 @@ export default defineEventHandler(async (event) => {
         draftUpdatedBy: null,
       }).where(eq(pages.id, pageId))
     }
-  })
 
-  await db.insert(activityLogs).values({
-    userId: adminUser.id,
-    action: 'update',
-    resource: 'pages',
-    meta: { pageId, action: 'publish', blockCount: nextBlocks.length, tree: isTree },
+    // 3. Audit trên `tx`, cùng commit với lượt xuất bản.
+    await tx.insert(activityLogs).values({
+      userId: adminUser.id,
+      action: 'update',
+      resource: 'pages',
+      meta: { pageId, action: 'publish', blockCount: nextBlocks.length, tree: isTree },
+    })
   })
 
   // Return the freshly-published state so the client can re-key.

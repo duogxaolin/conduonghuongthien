@@ -4,6 +4,7 @@ import { readFileSync } from 'node:fs'
 import {
   assertAssignablePermissions,
   assertRoleAssignable,
+  assertRoleWithinActor,
   VALID_RESOURCES,
 } from '../server/utils/permissions'
 
@@ -113,6 +114,17 @@ test('only a superadmin may place a user into a system role', () => {
   assert.equal(statusOf(() => assertRoleAssignable(actor(), false)), null)
   assert.equal(statusOf(() => assertRoleAssignable(superadmin, true)), null)
   assert.equal(statusOf(() => assertRoleAssignable(actor(), null)), null)
+})
+
+test('a role is within the actor only if every flag it grants is one the actor holds', () => {
+  const check = (rows: Parameters<typeof assertRoleWithinActor>[1], who: Actor = actor()) => statusOf(() => assertRoleWithinActor(who, rows, 'x'))
+  assert.equal(check([]), null, 'an empty role takes nothing')
+  assert.equal(check([{ resource: 'news', canRead: true, canUpdate: true }]), null)
+  assert.equal(check([{ resource: 'news', canDelete: true }]), 403, 'a CRUD flag the actor lacks')
+  assert.equal(check([{ resource: 'news', canPublish: true }]), 403, 'a non-CRUD flag counts too')
+  assert.equal(check([{ resource: 'settings', canRead: true }]), 403, 'a resource the actor has nothing on')
+  assert.equal(check([{ resource: 'settings', canRead: false, canUpdate: null }]), null, 'false/null grant nothing')
+  assert.equal(check([{ resource: 'settings', canUpdate: true }], superadmin), null, 'a superadmin is not limited')
 })
 
 test('the resource allow-list covers every resource the admin UI manages', () => {

@@ -44,6 +44,8 @@ mock.module('../server/services/moderation-worker', {
   namedExports: {
     fastPreModerate: async () => { calls.moderation += 1; return { blocked: false } },
     checkAndModerateContent: async () => ({ blocked: false }),
+    // Earlier history turns are checked without filing a review row (chat-turns.ts).
+    matchInstantRule: async () => null,
   },
 })
 
@@ -111,9 +113,10 @@ test('only a string can trip it: a number or object in `_h` is not a form-fillin
 
 test('a request with no body is not mistaken for a bot: it goes on to the normal path', async () => {
   reset()
-  const response = await handler(event(null))
-  // The honeypot reply is `not_found` without touching the answerer; an empty body
-  // reaches `answerChat` (which is where INVALID_MESSAGES is raised for real).
-  assert.equal(calls.answer, 1)
-  assert.equal(parseEnvelope(response).chatbot.kind, 'curated')
+  // The honeypot reply is a 200 `not_found`; an empty body instead takes the normal
+  // path and is refused there as an invalid history (400, checked before moderation
+  // since rà soát 2026-10-22 — it used to be raised inside `answerChat`).
+  await assert.rejects(handler(event(null)), (error: { statusCode?: number }) => error.statusCode === 400)
+  assert.equal(calls.rateLimit, 1, 'it went through the normal path, rate limit included')
+  assert.equal(calls.answer, 0)
 })

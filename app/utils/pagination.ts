@@ -27,15 +27,16 @@ export function parsePageParam(value: unknown): number {
 /**
  * Dãy số trang hiển thị trên thanh phân trang.
  *
- * ≤ 7 trang: hiện hết. Nhiều hơn: trang đầu, trang cuối, trang hiện tại và hai
- * trang kề; chỗ đứt quãng giữa hai số không liền nhau do template vẽ dấu `…`.
- * Trang hiện tại nằm ngoài [1, total] (dữ liệu máy chủ lạ) không làm vỡ dãy —
- * các số ngoài biên bị loại.
+ * ≤ 7 trang: hiện hết. Nhiều hơn: trang đầu, trang cuối, trang hiện tại và
+ * `radius` trang kề mỗi bên (công khai 1, `AdminPagination` 2); chỗ đứt quãng
+ * giữa hai số không liền nhau do template vẽ dấu `…`. Trang hiện tại nằm ngoài
+ * [1, total] (dữ liệu máy chủ lạ) không làm vỡ dãy — các số ngoài biên bị loại.
  */
-export function pageRange(current: number, total: number): number[] {
+export function pageRange(current: number, total: number, radius = 1): number[] {
   const last = Number.isFinite(total) ? Math.max(0, Math.floor(total)) : 0
   if (last <= 7) return Array.from({ length: last }, (_, index) => index + 1)
   const cur = Number.isFinite(current) ? Math.floor(current) : 1
-  const pages = new Set([1, last, cur - 1, cur, cur + 1])
+  const pages = new Set([1, last])
+  for (let page = cur - radius; page <= cur + radius; page += 1) pages.add(page)
   return [...pages].filter(page => page >= 1 && page <= last).sort((a, b) => a - b)
 }

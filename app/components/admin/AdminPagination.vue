@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { pageRange } from '~/utils/pagination'
+
 const props = defineProps<{
   page: number
   totalPages: number
@@ -15,17 +17,9 @@ function go(p: number) {
   emit('update:page', p)
 }
 
-// Cửa sổ số trang: hiển thị 5 ô quanh page hiện tại + 2 đầu/cuối, kèm "…".
-const windowPages = computed(() => {
-  const tp = props.totalPages
-  if (tp <= 7) return Array.from({ length: tp }, (_, i) => i + 1)
-  const cur = props.page
-  const pages = new Set<number>([1, tp])
-  const from = Math.max(2, cur - 2)
-  const to = Math.min(tp - 1, cur + 2)
-  for (let i = from; i <= to; i++) pages.add(i)
-  return Array.from(pages).sort((a, b) => a - b)
-})
+// Cửa sổ số trang: 5 ô quanh page hiện tại + trang đầu/cuối, kèm "…" — cùng một
+// quy tắc với thanh phân trang công khai, chỉ khác bán kính.
+const windowPages = computed(() => pageRange(props.page, props.totalPages, 2))
 
 // Chèn "…" (0) vào khoảng trống giữa các số liên tiếp.
 const slots = computed(() => {

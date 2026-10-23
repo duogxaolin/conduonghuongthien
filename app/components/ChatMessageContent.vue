@@ -42,7 +42,7 @@
             <div class="flex items-center justify-between gap-2">
               <span class="font-bold text-[#122815]">{{ tool.label }} ({{ tool.name }})</span>
               <span
-                class="rounded px-1.5 py-0.2 text-[0.65rem] font-bold"
+                class="rounded px-1.5 py-px text-[0.65rem] font-bold"
                 :class="tool.status === 'calling' ? 'bg-amber-100 text-amber-800 animate-pulse' : 'bg-[#e8efe8] text-[#2c6e33]'"
               >
                 {{ tool.status === 'calling' ? 'Đang gọi...' : (tool.count ? `${tool.count} kết quả` : '0 kết quả') }}

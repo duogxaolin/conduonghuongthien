@@ -408,7 +408,7 @@ function startModerationCheckpoint(commentId: number) {
       if (!existsTop && !existsReply) return
 
       try {
-        const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; items: Array<{ id: number; isHidden: boolean; flagReason: string | null }> }>)(
+        const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; items: Array<{ id: number; isHidden: boolean }> }>)(
           '/api/public/comments/checkpoint',
           { query: { ids: String(commentId) } },
         )
@@ -429,7 +429,9 @@ function startModerationCheckpoint(commentId: number) {
               }
             }
           }
-          revokedNotice.value = t('c_revoked_template').replace('{reason}', match.flagReason || t('c_revoked_default'))
+          // The server no longer sends the moderator's reason (it held internal notes and
+          // blocklist patterns); the author gets the generic one.
+          revokedNotice.value = t('c_revoked_template').replace('{reason}', t('c_revoked_default'))
         }
       } catch {
         // Non-blocking checkpoint lookup

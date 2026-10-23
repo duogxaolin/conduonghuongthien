@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, truncateSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { Readable } from 'node:stream'
@@ -80,6 +80,7 @@ const state = {
   item: null as Record<string, unknown> | null,
   img: null as Record<string, unknown> | null,
   writes: [] as string[],
+  txFails: false,
 }
 const fakeDb = {
   select: () => ({
@@ -93,7 +94,7 @@ const fakeDb = {
       }),
     }),
   }),
-  transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn({
+  transaction: async (fn: (tx: unknown) => Promise<unknown>) => state.txFails ? Promise.reject(new Error('db down')) : fn({
     update: () => ({ set: () => ({ where: async () => { state.writes.push('update') } }) }),
     insert: () => ({ values: async () => { state.writes.push('audit') } }),
   }),
@@ -122,6 +123,7 @@ beforeEach(() => {
   s3.respond = async () => ({ Body: Readable.from([png]), ContentLength: png.length })
   fetchCalls.length = 0
   state.writes = []
+  state.txFails = false
   libraryR2 = { accountId: HEX, accessKeyId: 'AKIA', secretAccessKey: 'secret', bucket: ' media-bucket ', publicUrl: 'https://cdn.example.com' }
   state.item = { id: 1, source: 'upload', storagePath: 'media/clip', storageProvider: 'local', slug: 'clip' }
 })
@@ -220,4 +222,22 @@ test('a local library image under public/uploads works; one over the cap is refu
   await assert.rejects(run(), /quá lớn/)
   assert.ok(!existsSync(thumbPath()))
   assert.deepEqual(state.writes, [])
+})
+
+test('the database step fails → the previous thumb.jpg is put back, so the public page shows nothing the DB and audit log do not know about', async () => {
+  state.img = r2Image('https://cdn.example.com/2026/10/cover.png')
+  mkdirSync(path.dirname(thumbPath()), { recursive: true })
+  const before = Buffer.from('anh-cu')
+  writeFileSync(thumbPath(), before)
+  state.txFails = true
+  await assert.rejects(run(), /db down/)
+  assert.deepEqual(readFileSync(thumbPath()), before)
+  assert.deepEqual(state.writes, [])
+})
+
+test('the database step fails and there was no custom thumbnail before → the new file is removed again', async () => {
+  state.img = r2Image('https://cdn.example.com/2026/10/cover.png')
+  state.txFails = true
+  await assert.rejects(run(), /db down/)
+  assert.ok(!existsSync(thumbPath()))
 })

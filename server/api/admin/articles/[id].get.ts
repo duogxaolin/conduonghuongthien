@@ -1,8 +1,8 @@
 import { getDb } from '../../../utils/db'
 import { articles, users } from '../../../db/schema'
-import { eq } from 'drizzle-orm'
+import { and, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
-import { articleResource } from '../../../services/articles'
+import { articleActionScope, articleResource } from '../../../services/articles'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -30,7 +30,9 @@ export default defineEventHandler(async (event) => {
     })
     .from(articles)
     .leftJoin(users, eq(articles.authorId, users.id))
-    .where(eq(articles.id, id))
+    // Scoped to readable types: an id of another type is the same 404 as a
+    // missing id, not a 403 that confirms it exists.
+    .where(and(eq(articles.id, id), articleActionScope(adminUser, 'read')))
     .limit(1)
 
   if (!article) {

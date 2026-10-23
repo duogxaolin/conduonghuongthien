@@ -39,7 +39,7 @@ và lùi phiên bản chỉ là trỏ lại tag cũ thay vì xây lại từ đ�
 của đồ thị phụ thuộc chứ không phải một lời hứa. Không có commit nào đi ra VPS mà
 chưa qua đủ bốn cổng.
 
-**Tiết kiệm phút Actions** (hạn mức 3.000 phút/tháng chỉ áp cho repo private — repo này hiện **public**, xem dưới; tài khoản từng hết phút): một lượt CI đầy đủ ≈ 40 phút
+**Tiết kiệm phút Actions** (hạn mức 3.000 phút/tháng áp cho repo private — repo này **đã chuyển sang private** (kiểm bằng `gh repo view` ngày 2026-10-22), nên hạn mức nay áp dụng; tài khoản từng hết phút): một lượt CI đầy đủ ≈ 40 phút
 billed (GitHub làm tròn từng job lên phút; các job Integration chiếm ≈ 29 khi còn 13 job; nay matrix 17). Nên job
 `changes` ("Plan") quyết định cho mỗi lượt chạy:
 
@@ -54,8 +54,9 @@ Muốn ép chạy đủ cho một PR chỉ-giao-diện: Actions → CI → *Run 
 Gom commit trước khi push và dùng PR nháp cho việc dở dang cũng tiết kiệm phút.
 Kiểm lượng đã dùng: GitHub → Settings → Billing and licensing → Usage.
 
-**Repo public thì Actions miễn phí không giới hạn phút**, nhưng package trên GHCR
-**mặc định vẫn là private** — nên VPS bắt buộc phải `docker login` (Bước 4–5).
+Package trên GHCR **mặc định là private** (dù repo public hay private) — nên VPS
+bắt buộc phải `docker login` (Bước 4–5). Khi repo còn public, Actions không tính
+phút; từ khi chuyển private, mỗi lượt đủ bộ ăn vào hạn mức ở trên.
 
 ---
 
@@ -71,7 +72,7 @@ Kiểm lượng đã dùng: GitHub → Settings → Billing and licensing → Us
 > | `<APP_DIR>` | thư mục chứa `docker-compose.yml` trên VPS |
 > | `<OWNER>/<REPO>` | đường dẫn repo trên GitHub |
 >
-> **Cố ý không ghi giá trị thật vào đây.** Repo này public: địa chỉ máy chủ, cổng
+> **Cố ý không ghi giá trị thật vào đây.** Repo từng public (và có thể public lại): địa chỉ máy chủ, cổng
 > SSH và tên user deploy không phải bí mật, nhưng gom cả bốn thứ vào một trang ai
 > cũng đọc được là tự soạn sẵn phiếu thông tin cho người quét cổng. Giá trị thật
 > nằm ở GitHub Secrets/Variables và trong `.env` trên máy chủ.

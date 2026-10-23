@@ -34,6 +34,7 @@ definePageMeta({
 })
 
 const toast = useToast()
+const { confirm } = useConfirm()
 
 // ─── Language list (source of truth — LanguagesListTab nhận prop) ──────
 const loading = ref(true)
@@ -157,7 +158,11 @@ async function setDefault(lang: typeof languages.value[0]) {
 }
 
 async function deleteLanguage(lang: typeof languages.value[0]) {
-  if (!confirm(`Xoá ngôn ngữ "${lang.name}"? Tất cả bản dịch cho ngôn ngữ này cũng sẽ bị xoá.`)) return
+  if (!await confirm({
+    message: `Xoá ngôn ngữ "${lang.name}"? Tất cả bản dịch cho ngôn ngữ này cũng sẽ bị xoá.`,
+    confirmLabel: 'Xoá ngôn ngữ',
+    danger: true,
+  })) return
   try {
     await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/languages/${lang.code}`, { method: 'DELETE' })
     toast.success('Đã xoá ngôn ngữ.')
@@ -412,7 +417,10 @@ async function oneTimeTranslate(lang: typeof languages.value[0]) {
 
 const seedingDefault = ref(false)
 async function seedDefaultTranslations() {
-  if (!confirm('Hệ thống sẽ nạp lại 6 ngôn ngữ và toàn bộ các bản dịch mặc định (insert-only, không ghi đè dữ liệu bạn đã sửa). Tiếp tục?')) return
+  if (!await confirm({
+    message: 'Hệ thống sẽ nạp lại 6 ngôn ngữ và toàn bộ các bản dịch mặc định (insert-only, không ghi đè dữ liệu bạn đã sửa). Tiếp tục?',
+    confirmLabel: 'Nạp bản dịch mặc định',
+  })) return
   seedingDefault.value = true
   try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; message: string }>)(`/api/admin/languages/seed-default`, { method: 'POST' })
@@ -445,7 +453,10 @@ async function translateAllLanguagesMissing() {
     return
   }
   const names = targets.map((l) => l.name).join(', ')
-  if (!confirm(`Dịch AI tất cả các key còn thiếu cho ${targets.length} ngôn ngữ (${names})?`)) return
+  if (!await confirm({
+    message: `Dịch AI tất cả các key còn thiếu cho ${targets.length} ngôn ngữ (${names})?`,
+    confirmLabel: 'Dịch bằng AI',
+  })) return
 
   translatingAll.value = true
   for (const lang of targets) {
