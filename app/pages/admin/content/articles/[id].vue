@@ -54,6 +54,38 @@ function getEditorContent(): string {
   return form.content || ''
 }
 
+// ─── Unsaved-changes guard ────────────────────────────────────────────
+// Leaving the editor (another admin link, back button, closing the tab) used to
+// drop an unsaved article without a word. The baseline is what was last loaded
+// or saved; the body is compared as TinyMCE serialises it, since setContent()
+// normalises HTML and `form.content` only follows the editor on `change`.
+const savedFields = ref('')
+const savedContent = ref<string | null>(null)
+
+function fieldsSnapshot(): string {
+  const { title, type, category, categoryId, excerpt, thumbnailUrl, status } = form
+  return JSON.stringify({ title, type, category, categoryId, excerpt, thumbnailUrl, status })
+}
+
+/** The editor's current HTML, or null before TinyMCE has initialised. */
+function editorHtml(): string | null {
+  if (typeof window === 'undefined' || !tinymceReady.value) return null
+  return (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)?.getContent() ?? null
+}
+
+/** Record the current state as saved. The body baseline waits for the editor (see `init`). */
+function markSaved(): void {
+  savedFields.value = fieldsSnapshot()
+  savedContent.value = editorHtml()
+}
+
+function hasUnsavedChanges(): boolean {
+  if (loading.value || !savedFields.value) return false
+  if (fieldsSnapshot() !== savedFields.value) return true
+  const html = editorHtml()
+  return savedContent.value !== null && html !== null && html !== savedContent.value
+}
+
 // (AI editorial + translation đã chuyển vào ArticleAIPanel.vue / ArticleTranslationPanel.vue)
 
 // Dynamic categories for the selected article type
@@ -206,6 +238,8 @@ const handleSave = async () => {
       const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; id: number }>)('/api/admin/articles', { method: 'POST', body: form })
       if (res.ok) {
         toast.success('Tạo bài viết mới thành công!')
+        // Saved: the redirect to the new article's page must not ask "leave without saving?".
+        markSaved()
         const newId = res.id
         if (autoTranslateLangs.value.length > 0 && newId) {
           try {
@@ -226,6 +260,7 @@ const handleSave = async () => {
       const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/articles/${articleId.value}`, { method: 'PUT', body: form })
       if (res.ok) {
         toast.success('Đã cập nhật bài viết thành công!')
+        markSaved()
         checkAndPromptReTranslation()
       }
     }
@@ -329,6 +364,8 @@ const initTinyMCE = () => {
       editor.on('init', () => {
         tinymceReady.value = true
         if (form.content) editor.setContent(form.content)
+        // Body baseline as the editor serialises the loaded content.
+        if (savedContent.value === null) savedContent.value = editor.getContent()
       })
       editor.on('change', () => { form.content = editor.getContent() })
     },
@@ -372,12 +409,36 @@ onMounted(async () => {
   // Article translations fetch + poll đã chuyển vào ArticleTranslationPanel
   // (con tự onMounted/onUnmounted) — cha chỉ fetch bài viết gốc.
   await fetchArticle()
+  // Field baseline once the article (or a new article's defaults and first
+  // category) is in place; the body baseline is taken in the editor's `init`.
+  markSaved()
   await scriptReady
   await nextTick()
   initTinyMCE()
 })
 
+const { confirm } = useConfirm()
+onBeforeRouteLeave(async () => {
+  if (!hasUnsavedChanges()) return true
+  return await confirm({
+    title: 'Rời trang?',
+    message: 'Bài viết có thay đổi chưa lưu. Rời trang bây giờ sẽ mất các thay đổi này.',
+    confirmLabel: 'Rời trang',
+    cancelLabel: 'Ở lại',
+    danger: true,
+  })
+})
+
+// Closing the tab or reloading: browsers show their own generic prompt.
+function warnBeforeUnload(event: BeforeUnloadEvent): void {
+  if (!hasUnsavedChanges()) return
+  event.preventDefault()
+  event.returnValue = ''
+}
+onMounted(() => window.addEventListener('beforeunload', warnBeforeUnload))
+
 onUnmounted(() => {
+  window.removeEventListener('beforeunload', warnBeforeUnload)
   if ((window as WindowWithTinyMce).tinymce) {
     const ed = (window as WindowWithTinyMce).tinymce?.get(TINYMCE_EDITOR_ID)
     if (ed) ed.destroy()

@@ -15,6 +15,12 @@ const showEditModal = ref(false)
 const form = reactive({ username: '', email: '', password: '', roleId: 2 })
 const editForm = reactive({ id: 0, username: '', email: '', password: '', roleId: 2, isActive: true })
 const errorMsg = ref('')
+// One request at a time: a double click used to send the create/update twice.
+const saving = ref(false)
+// Mirrors PASSWORD_MIN_LENGTH in server/utils/password-policy.ts (server code is not
+// importable into the client bundle). The server stays the authority: its full
+// rule — groups, common passwords, the username — arrives in its error message.
+const PASSWORD_MIN_LENGTH = 12
 const toast = useToast()
 const { confirm } = useConfirm()
 
@@ -39,7 +45,9 @@ const fetchUsers = async () => {
 }
 
 const handleCreateUser = async () => {
+  if (saving.value) return
   errorMsg.value = ''
+  saving.value = true
   try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/users`, { method: 'POST', body: form })
     if (res.ok) {
@@ -51,6 +59,8 @@ const handleCreateUser = async () => {
   } catch (err: unknown) {
     errorMsg.value = errorMessage(err, 'Tạo người dùng thất bại')
     toast.error(errorMsg.value)
+  } finally {
+    saving.value = false
   }
 }
 
@@ -61,15 +71,17 @@ const openEditModal = (user: AdminUserRow) => {
 }
 
 const handleUpdateUser = async () => {
+  if (saving.value) return
   errorMsg.value = ''
-  try {
-    const body: Record<string, string | number | boolean> = { email: editForm.email, roleId: editForm.roleId, isActive: editForm.isActive }
-    if (editForm.password.trim()) {
-      if (editForm.password.trim().length < 6) {
-        toast.warning('Mật khẩu mới phải có ít nhất 6 ký tự'); return
-      }
-      body.password = editForm.password.trim()
+  const body: Record<string, string | number | boolean> = { email: editForm.email, roleId: editForm.roleId, isActive: editForm.isActive }
+  if (editForm.password.trim()) {
+    if (editForm.password.trim().length < PASSWORD_MIN_LENGTH) {
+      toast.warning(`Mật khẩu mới phải có ít nhất ${PASSWORD_MIN_LENGTH} ký tự`); return
     }
+    body.password = editForm.password.trim()
+  }
+  saving.value = true
+  try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean }>)(`/api/admin/users/${editForm.id}`, { method: 'PUT', body })
     if (res.ok) {
       toast.success(`Đã cập nhật tài khoản ${editForm.username} thành công!`)
@@ -78,6 +90,8 @@ const handleUpdateUser = async () => {
   } catch (err: unknown) {
     errorMsg.value = errorMessage(err, 'Cập nhật người dùng thất bại')
     toast.error(errorMsg.value)
+  } finally {
+    saving.value = false
   }
 }
 
@@ -348,7 +362,7 @@ onMounted(() => { fetchUsers() })
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Mật khẩu (*)</label>
-            <input type="password" v-model="form.password" required minlength="6" placeholder="Tối thiểu 6 ký tự" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+            <input type="password" v-model="form.password" required :minlength="PASSWORD_MIN_LENGTH" :placeholder="`Tối thiểu ${PASSWORD_MIN_LENGTH} ký tự, có 3 trong 4 loại: hoa, thường, số, ký hiệu`" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Vai trò (*)</label>
@@ -358,7 +372,7 @@ onMounted(() => { fetchUsers() })
           </div>
           <div class="flex justify-end gap-3 mt-2">
             <button type="button" class="bg-[#f0f0f0] border-0 px-4 py-2.5 rounded-lg cursor-pointer font-medium" @click="showModal = false">Hủy</button>
-            <button type="submit" class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors border-0">Tạo Tài Khoản</button>
+            <button type="submit" :disabled="saving" class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed">{{ saving ? 'Đang tạo…' : 'Tạo Tài Khoản' }}</button>
           </div>
         </form>
       </div>
@@ -387,7 +401,7 @@ onMounted(() => { fetchUsers() })
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Đổi mật khẩu mới (Để trống nếu giữ nguyên)</label>
-            <input type="password" v-model="editForm.password" minlength="6" placeholder="Nhập mật khẩu mới nếu muốn đổi" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
+            <input type="password" v-model="editForm.password" :minlength="PASSWORD_MIN_LENGTH" :placeholder="`Mật khẩu mới (tối thiểu ${PASSWORD_MIN_LENGTH} ký tự) nếu muốn đổi`" class="w-full px-3 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" />
           </div>
           <div class="flex flex-col gap-1.5">
             <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Trạng thái tài khoản</label>
@@ -398,7 +412,7 @@ onMounted(() => { fetchUsers() })
           </div>
           <div class="flex justify-end gap-3 mt-2">
             <button type="button" class="bg-[#f0f0f0] border-0 px-4 py-2.5 rounded-lg cursor-pointer font-medium" @click="showEditModal = false">Hủy</button>
-            <button type="submit" class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors border-0">Cập Nhật Tài Khoản</button>
+            <button type="submit" :disabled="saving" class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed">{{ saving ? 'Đang lưu…' : 'Cập Nhật Tài Khoản' }}</button>
           </div>
         </form>
       </div>
