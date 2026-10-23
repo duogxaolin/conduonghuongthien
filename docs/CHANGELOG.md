@@ -660,15 +660,6 @@ Rà lại ba mảng chưa soi ở § 21 (bề mặt công khai, tầng dữ li�
 #### Kiểm chứng (2026-10-23)
 `npm test` 3909 / 3887 pass / 0 fail / 22 skip; typecheck 0 lỗi; eslint 0 error / 16 warning; Playwright 88/88 (chạy trước bản sửa lượt trợ lý sau verify). **CI GitHub không chạy từ 2026-10-14** (chạy lại từ 2026-10-23, xem § 25) — mọi job báo "recent account payments have failed or your spending limit needs to be increased" (PR #121, #122): không cổng tự động nào chạy, merge vào `main` cũng không tự deploy cho tới khi chủ repo xử lý thanh toán.
 
-### 25. CI: bước cài FFmpeg cắt job dù test xanh (2026-10-23)
-
-Từ 2026-10-23 (lượt chạy đầu sau khi Actions chạy lại) `sudo apt-get update && apt-get install ffmpeg` trên runner `ubuntu-24.04` (image 20261012) mất tới 20 phút (2026-10-14: 20–60 giây) — mirror `azure.archive.ubuntu.com` cấu hình sẵn chập chờn (lỗi đã biết của runner GitHub). Hậu quả: lượt `main` của PR #122 bị huỷ 2 job integration (deploy phải chạy lại), PR #123 bị huỷ 4 job integration và job build (build + e2e đã xanh, nhưng vượt timeout 25 phút của job).
-
-- 17 job integration bỏ bước cài FFmpeg: không suite nào chạy FFmpeg thật (`media-queue-integration` dùng runner giả).
-- `unit-tests` (`media-processing` chuyển mã thật) và `build` (e2e `media-portal` tạo video bằng `lavfi`) giữ bước cài, nay có `timeout-minutes: 12`, `DEBIAN_FRONTEND=noninteractive`, `Acquire::Retries`/timeout; chỉ bước **tải** (`--download-only`) có `timeout -k`, cài từ gói đã tải chạy sau (dpkg bị giết giữa chừng làm mọi lần thử sau hỏng ngay); lần thử hai đổi mirror sang `archive.ubuntu.com` **trong `/etc/apt/apt-mirrors.txt`** — runner ubuntu-24.04 khai `URIs: mirror+file:/etc/apt/apt-mirrors.txt`, bản đầu chỉ sửa sources.list nên không đổi được gì (bước verify chỉ ra); `--no-install-recommends` (290 → 198 gói trên image trần, đủ cho libx264/aac/lavfi/ffprobe — đã chạy thử trong container ubuntu:24.04).
-- `Install Chromium` (`playwright install --with-deps` chạy apt riêng) có `timeout-minutes: 8`; job `build` 25 → 35 phút (hai bước apt có trần 12 + 8 phút cộng build/e2e ~14 phút — 25 phút từng cắt lượt đã xanh).
-- Guard: `tests/ci-ffmpeg-install.test.ts`. Mô phỏng luồng điều khiển bằng apt/sudo giả: tải được ngay → 1 lần; hỏng 1 lần → đổi mirror rồi cài; hỏng 2 lần → exit 1.
-
 ### 23. Sapo bài viết hiện nguyên HTML entity (2026-10-23)
 
 Báo lỗi kèm ảnh: sapo bài "LÀO CAI: Tập huấn…" hiện `Ng&agrave;y 26/8, tại Hội trường Ủy ban nh&acirc;n d&acirc;n x&atilde;…`. Nguyên nhân: CMS cũ lưu mọi chữ Latin-1 thành named entity (chữ ngoài Latin-1 như ạ, ộ, Ủ để nguyên); sapo cắt từ HTML đó được nhập thẳng vào `articles.excerpt` và Vue in nguyên văn. CSDL dev: 17/1132 bài, 5 bài bị cắt giữa entity (`nh&ac`, `l&atild`); `content` (1040 bài có entity) hiển thị đúng vì render bằng `v-html`.
@@ -678,8 +669,20 @@ Báo lỗi kèm ảnh: sapo bài "LÀO CAI: Tập huấn…" hiện `Ng&agrave;y
 - Ghi (tạo/sửa bài, bản dịch — giải mã **trước** `stripMarkup`): `decodePlainTextInput`, chỉ giải mã, không bao giờ "sửa". Admin `articles/[id].get` trả sapo đã giải mã, nên trình soạn hiện chữ đọc được và lưu lại một bài cũ là làm sạch nó.
 - Đọc (bài cũ hiện đúng ngay sau deploy, không cần chạy script): `articles.get`, `articles/[slug]` (kể cả bản dịch), `related`, `search` (giải mã trước khi cắt 200 ký tự), chatbot `search_c11_articles` (nội dung + sapo gửi model).
 - Test: `html-entities-plain-text` (9, gồm handler công khai thật và nhánh bản dịch; ca âm `R&D`/`Q&A`/`R&amp;amp;D`), bổ sung `security-translation-html`. Trang danh sách còn `cleanExcerpt` giải mã lần nữa phía client (thừa — chỉ khác với chữ entity viết nguyên văn).
+### 24. Dòng phụ header mất dấu chồng (2026-10-23)
 
-### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–22, 2026-10-23)
+Báo lỗi kèm ảnh: dòng phụ dưới "CON ĐƯỜNG HƯỚNG THIỆN" hiện "CÔNG THÔNG TIN ĐIỆN TỬ HÔ TRỢ … CỘNG ĐÔNG". Thẻ `<p>` (`DefaultHeader.vue`) là `uppercase` + `line-clamp-2` (tức `overflow: hidden`) + `leading-tight`: chữ in hoa hai dấu chồng phía trên (Ổ, Ỗ, Ồ) cao hơn khung dòng 1,25 và bị cắt ở mép trên. Kiểm bằng ảnh chụp Playwright: thêm `pt-[0.2em]` (thay `mt-0.5`) + `leading-snug` thì "CỔNG", "HỖ", "ĐỒNG" hiện đủ ở 1100/1300/1600 px, chiều cao header không đổi (82 px). Cùng mẫu ở tiêu đề livestream (`LiveHero.vue`, `truncate` + `leading-tight`, tiêu đề in hoa từ dữ liệu). Đo bằng font Inter của repo trong Chromium (bước verify): chữ in hoa dấu chồng cao 1,11em trên đường chân chữ, chỗ trống trên dòng đầu của khung cắt là (line-height + 0,73)/2 + đệm trên — nên `leading-snug` một mình vẫn cắt, phần sửa thật là đệm trên. Nhãn địa danh in hoa của `RoleModelsBlock` (`truncate`, thừa kế line-height 1,6 của body) ghi rõ `leading-[1.6]`. Guard: `tests/vietnamese-diacritics-clipping.test.ts` — chữ in hoa trong khung cắt phải có đệm trên hoặc leading ≥ 1,5; ghim dòng phụ header và tiêu đề livestream (chứng minh tổ hợp class, không chứng minh hiển thị). Còn mở: tiêu đề thẻ bài (`NewsBlock` `[1.3]`, các `line-clamp-2 leading-snug`) mất chóp dấu khi tiêu đề trong dữ liệu viết toàn chữ hoa hoặc mở đầu bằng Ấ/Ổ…
+
+### 25. CI: bước cài FFmpeg cắt job dù test xanh (2026-10-23)
+
+Từ 2026-10-23 (lượt chạy đầu sau khi Actions chạy lại) `sudo apt-get update && apt-get install ffmpeg` trên runner `ubuntu-24.04` (image 20261012) mất tới 20 phút (2026-10-14: 20–60 giây) — mirror `azure.archive.ubuntu.com` cấu hình sẵn chập chờn (lỗi đã biết của runner GitHub). Hậu quả: lượt `main` của PR #122 bị huỷ 2 job integration (deploy phải chạy lại), PR #123 bị huỷ 4 job integration và job build (build + e2e đã xanh, nhưng vượt timeout 25 phút của job).
+
+- 17 job integration bỏ bước cài FFmpeg: không suite nào chạy FFmpeg thật (`media-queue-integration` dùng runner giả).
+- `unit-tests` (`media-processing` chuyển mã thật) và `build` (e2e `media-portal` tạo video bằng `lavfi`) giữ bước cài, nay có `timeout-minutes: 12`, `DEBIAN_FRONTEND=noninteractive`, `Acquire::Retries`/timeout; chỉ bước **tải** (`--download-only`) có `timeout -k`, cài từ gói đã tải chạy sau (dpkg bị giết giữa chừng làm mọi lần thử sau hỏng ngay); lần thử hai đổi mirror sang `archive.ubuntu.com` **trong `/etc/apt/apt-mirrors.txt`** — runner ubuntu-24.04 khai `URIs: mirror+file:/etc/apt/apt-mirrors.txt`, bản đầu chỉ sửa sources.list nên không đổi được gì (bước verify chỉ ra); `--no-install-recommends` (290 → 198 gói trên image trần, đủ cho libx264/aac/lavfi/ffprobe — đã chạy thử trong container ubuntu:24.04).
+- `Install Chromium` (`playwright install --with-deps` chạy apt riêng) có `timeout-minutes: 8`; job `build` 25 → 35 phút (hai bước apt có trần 12 + 8 phút cộng build/e2e ~14 phút — 25 phút từng cắt lượt đã xanh).
+- Guard: `tests/ci-ffmpeg-install.test.ts`. Mô phỏng luồng điều khiển bằng apt/sudo giả: tải được ngay → 1 lần; hỏng 1 lần → đổi mirror rồi cài; hỏng 2 lần → exit 1.
+
+### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.
 

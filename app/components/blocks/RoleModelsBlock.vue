@@ -32,7 +32,7 @@
                   sizes="256px sm:384px lg:512px"
                 />
               </figure>
-              <span v-if="model.location" class="block text-[0.7rem] font-extrabold text-[#4A6741] uppercase tracking-[0.5px] mt-3 mb-1 truncate">{{ model.location }}</span>
+              <span v-if="model.location" class="block text-[0.7rem] font-extrabold text-[#4A6741] uppercase tracking-[0.5px] leading-[1.6] mt-3 mb-1 truncate">{{ model.location }}</span>
               <h3 class="text-[0.95rem] font-extrabold text-[#1E251C] leading-[1.35] line-clamp-2 transition-colors group-hover:text-[#4A6741]">{{ model.name }}</h3>
             </nuxt-link>
           </article>

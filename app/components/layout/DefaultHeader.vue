@@ -22,7 +22,7 @@
           </div>
           <div class="min-w-0">
             <h1 class="text-[0.82rem] sm:text-[0.95rem] lg:text-[1.35rem] font-extrabold text-[#4A6741] tracking-[0.2px] sm:tracking-[0.5px] leading-[1.2] whitespace-nowrap">CON ĐƯỜNG HƯỚNG THIỆN</h1>
-            <p class="hidden lg:block text-[0.68rem] xl:text-[0.72rem] font-semibold text-[#5A6C58] uppercase mt-0.5 max-w-[280px] xl:max-w-[440px] 2xl:max-w-none leading-tight line-clamp-2">
+            <p class="hidden lg:block text-[0.68rem] xl:text-[0.72rem] font-semibold text-[#5A6C58] uppercase pt-[0.2em] max-w-[280px] xl:max-w-[440px] 2xl:max-w-none leading-snug line-clamp-2">
               {{ t('portal_subtitle') }}
             </p>
           </div>
