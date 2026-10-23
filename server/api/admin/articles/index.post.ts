@@ -1,6 +1,7 @@
 import { getDb } from '../../../utils/db'
 import { articles, activityLogs } from '../../../db/schema'
 import { sanitizeHtml } from '../../../utils/sanitize-html'
+import { decodePlainTextInput } from '../../../utils/decode-html-entities'
 import { defaultCommentsEnabled } from '../../../services/google-oauth-settings'
 import { requireResourcePermission } from '../../../utils/permissions'
 // Bản dùng chung, KHÔNG phải một bản chép cục bộ. Endpoint này từng giữ bản riêng
@@ -20,8 +21,10 @@ export default defineEventHandler(async (event) => {
   const type = String(body?.type || 'news').trim()
   const category = String(body?.category || '').trim() || null
   const categoryId = body?.categoryId ? Number(body.categoryId) : null
-  const title = String(body?.title || '').trim()
-  const excerpt = String(body?.excerpt || '').trim() || null
+  // Plain-text fields: HTML entities pasted from the old CMS (`Ng&agrave;y`) are decoded
+  // on the way in, or the public page shows them literally.
+  const title = decodePlainTextInput(String(body?.title || ''))
+  const excerpt = decodePlainTextInput(String(body?.excerpt || '')) || null
   // Rich text is rendered with v-html on the public site — sanitize on write so
   // a low-privilege editor cannot store executable markup (stored XSS).
   const content = sanitizeHtml(String(body?.content || ''))

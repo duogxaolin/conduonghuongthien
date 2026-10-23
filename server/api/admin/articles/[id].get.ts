@@ -3,6 +3,7 @@ import { articles, users } from '../../../db/schema'
 import { and, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { articleActionScope, articleResource } from '../../../services/articles'
+import { withPlainTextFields } from '../../../utils/decode-html-entities'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -41,5 +42,6 @@ export default defineEventHandler(async (event) => {
 
   requireResourcePermission(adminUser, articleResource(article.type), 'read')
 
-  return { ok: true, article }
+  // The editor shows (and saves back) readable text, not the old CMS's `Ng&agrave;y`.
+  return { ok: true, article: withPlainTextFields(article) }
 })

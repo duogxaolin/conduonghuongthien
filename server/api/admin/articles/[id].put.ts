@@ -2,6 +2,7 @@ import { getDb } from '../../../utils/db'
 import { articles, activityLogs } from '../../../db/schema'
 import { checkPermission } from '../../../utils/auth'
 import { sanitizeHtml } from '../../../utils/sanitize-html'
+import { decodePlainTextInput } from '../../../utils/decode-html-entities'
 import { and, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { articleActionScope } from '../../../services/articles'
@@ -34,8 +35,10 @@ export default defineEventHandler(async (event) => {
   const body = await readBody(event).catch(() => ({}))
   const updateFields: Partial<typeof articles.$inferInsert> = {}
 
-  if (body.title !== undefined) updateFields.title = String(body.title).trim()
-  if (body.excerpt !== undefined) updateFields.excerpt = String(body.excerpt).trim() || null
+  // Plain-text fields: decode HTML entities (`Ng&agrave;y`). The editor loads them
+  // already decoded ([id].get.ts), so re-saving an imported article cleans it.
+  if (body.title !== undefined) updateFields.title = decodePlainTextInput(String(body.title))
+  if (body.excerpt !== undefined) updateFields.excerpt = decodePlainTextInput(String(body.excerpt)) || null
   // Rich text is rendered with v-html on the public site — sanitize on write.
   if (body.content !== undefined) updateFields.content = sanitizeHtml(String(body.content))
   if (body.thumbnailUrl !== undefined) updateFields.thumbnailUrl = String(body.thumbnailUrl).trim() || null

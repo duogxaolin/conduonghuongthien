@@ -1,4 +1,5 @@
 import { sanitizeHtml } from './sanitize-html'
+import { decodePlainTextInput } from './decode-html-entities'
 
 /**
  * Nội dung bản dịch bài viết được trang công khai hiển thị bằng `v-html`, y như
@@ -36,7 +37,8 @@ export function sanitizeTranslationFields<T extends { content?: string | null; t
   if (typeof fields.content !== 'string' && !hasText) return fields
   const out: T = { ...fields }
   if (typeof fields.content === 'string') out.content = sanitizeHtml(fields.content)
-  if (typeof fields.title === 'string') out.title = stripMarkup(fields.title)
-  if (typeof fields.excerpt === 'string') out.excerpt = stripMarkup(fields.excerpt)
+  // Decode entities FIRST, then strip: `&lt;b&gt;` must not survive as `<b>`.
+  if (typeof fields.title === 'string') out.title = stripMarkup(decodePlainTextInput(fields.title))
+  if (typeof fields.excerpt === 'string') out.excerpt = stripMarkup(decodePlainTextInput(fields.excerpt))
   return out
 }

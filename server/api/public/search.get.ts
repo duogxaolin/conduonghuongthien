@@ -1,6 +1,7 @@
 import { finitePositive, MAX_PAGE } from '../../utils/query-number'
 import { getDb } from '../../utils/db'
 import { reportPublicReadFailure } from '../../utils/public-read-failure'
+import { plainTextField } from '../../utils/decode-html-entities'
 import { containsPattern, MAX_LIKE_QUERY_CHARS } from '../../utils/sql-like'
 import {
   buildSearchCounts,
@@ -184,8 +185,9 @@ export default defineEventHandler(async (event) => {
             typeLabel: meta.label,
             typeIcon: meta.icon,
             typeBadgeClass: meta.badge,
-            title: a.title,
-            excerpt: a.excerpt ? String(a.excerpt).replace(/<[^>]*>/g, ' ').slice(0, 200) : '',
+            title: plainTextField(a.title) ?? '',
+            // Decode BEFORE cutting: slicing an encoded string could split `&agrave;`.
+            excerpt: a.excerpt ? (plainTextField(String(a.excerpt).replace(/<[^>]*>/g, ' ')) ?? '').slice(0, 200) : '',
             url: `${meta.basePath}${a.slug}`,
             thumbnailUrl: a.thumbnailUrl || null,
             publishedAt: dateVal ? new Date(dateVal).toISOString() : null,
@@ -219,7 +221,7 @@ export default defineEventHandler(async (event) => {
             typeIcon: 'fa-solid fa-comments',
             typeBadgeClass: 'bg-[#E8F5E9] text-[#2E7D32]',
             title: qItem.canonicalQuestion,
-            excerpt: qItem.approvedAnswer ? String(qItem.approvedAnswer).replace(/<[^>]*>/g, ' ').slice(0, 200) : '',
+            excerpt: qItem.approvedAnswer ? (plainTextField(String(qItem.approvedAnswer).replace(/<[^>]*>/g, ' ')) ?? '').slice(0, 200) : '',
             url: `/qa-documents#qa-${qItem.id}`,
             thumbnailUrl: null,
             publishedAt: dateVal ? new Date(dateVal).toISOString() : null,
