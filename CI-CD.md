@@ -50,7 +50,7 @@ chưa qua đủ bốn cổng.
 không bị giới hạn; ghi chú ngày 2026-10-22 nói repo đã sang private là sai. Giữ các quy tắc dưới
 đây vẫn đáng: chúng rút ngắn thời gian chờ CI, và áp lại ngay nếu repo chuyển private —
 tài khoản từng hết phút khi còn private): một lượt CI đầy đủ ≈ 40 phút
-billed (GitHub làm tròn từng job lên phút; các job Integration chiếm ≈ 29 khi còn 13 job; nay matrix 18). Nên job
+billed (GitHub làm tròn từng job lên phút; các job Integration chiếm ≈ 29 khi còn 13 job; nay matrix 19). Nên job
 `changes` ("Plan") quyết định cho mỗi lượt chạy:
 
 | Sự kiện | Chạy gì |

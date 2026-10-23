@@ -46,9 +46,33 @@ export const BACKUP_TRIGGERS = [
 ] as const
 export type BackupTrigger = typeof BACKUP_TRIGGERS[number]
 
+/**
+ * Một cây thư mục đóng vào một archive riêng: `<parent>/<tree>` →
+ * `cdkt-<tree>-<stamp>-<trigger>.tar.gz`. Tên cây quyết định họ của archive
+ * (`backupFamilyOf`, `expectedArchiveTop`) nên chỉ có hai giá trị.
+ */
+export interface ArchiveSource {
+  tree: 'uploads' | 'media'
+  parent: string
+}
+
+/**
+ * Hai cây của một lượt "files", theo thứ tự nén. BusyBox tar trong alpine không hỗ
+ * trợ nhiều `-C` đổi dir giữa các path trong cùng lệnh, nên không gộp được hai cây
+ * có gốc khác nhau vào một archive.
+ */
+export function defaultArchiveSources(): ArchiveSource[] {
+  return [
+    { tree: 'uploads', parent: path.resolve(process.cwd(), 'public') },
+    { tree: 'media', parent: '/var/lib/cdkt' },
+  ]
+}
+
 export interface RunBackupOptions {
   /** `false` = không xoay vòng sau lượt này (bản `pre-restore` dùng — xem `takeSafetyBackup`). */
   rotate?: boolean
+  /** Cây cần nén — mặc định `defaultArchiveSources()`; kiểm thử thay bằng thư mục tạm. */
+  archiveSources?: readonly ArchiveSource[]
 }
 
 /** Một lượt backup khác giữ khoá — phân biệt bằng kiểu, không so chuỗi. */
@@ -99,39 +123,20 @@ async function readBackupConfig(db: ReturnType<typeof getDb>) {
   }
 }
 
-/**
- * Nén uploads + media thành 2 file tar.gz riêng (cùng stamp) — BusyBox tar trong
- * alpine không hỗ trợ nhiều `-C` đổi dir giữa các path trong cùng lệnh, nên không
- * thể gộp 2 cây có gốc khác nhau vào 1 archive. Trả mảng 2 file (hoặc ít hơn nếu
- * thư mục vắng).
- */
-async function archiveFiles(
-  dir: string,
-  stamp: string,
-  trigger: BackupTrigger,
-): Promise<Array<{ name: string; bytes: number }>> {
-  const uploadsParent = path.resolve(process.cwd(), 'public')
-  const mediaParent = '/var/lib/cdkt'
-  const out: Array<{ name: string; bytes: number }> = []
-
-  if (await dirExists(path.join(uploadsParent, 'uploads'))) {
-    const name = `cdkt-uploads-${stamp}-${trigger}.tar.gz`
-    const target = path.join(dir, name)
-    await execFileAsync('tar', ['czf', target, '-C', uploadsParent, 'uploads'], { maxBuffer: 1024 * 1024 * 1024 })
-    out.push({ name, bytes: (await fs.stat(target)).size })
-  }
-  if (await dirExists(path.join(mediaParent, 'media'))) {
-    const name = `cdkt-media-${stamp}-${trigger}.tar.gz`
-    const target = path.join(dir, name)
-    await execFileAsync('tar', ['czf', target, '-C', mediaParent, 'media'], { maxBuffer: 1024 * 1024 * 1024 })
-    out.push({ name, bytes: (await fs.stat(target)).size })
-  }
-  if (out.length === 0) throw new Error('Không tìm thấy thư mục uploads hoặc media để backup.')
-  return out
+/** Nén `<parent>/<tree>` vào `target`, rồi kiểm kết quả là tệp thường không rỗng; trả số byte. */
+async function writeArchive(target: string, source: ArchiveSource): Promise<number> {
+  await execFileAsync('tar', ['czf', target, '-C', source.parent, source.tree], { maxBuffer: 1024 * 1024 * 1024 })
+  const stats = await fs.stat(target)
+  if (!stats.isFile() || stats.size === 0) throw new Error(`Archive ${path.basename(target)} rỗng hoặc không phải tệp.`)
+  return stats.size
 }
 
 async function dirExists(p: string): Promise<boolean> {
   try { return (await fs.stat(p)).isDirectory() } catch { return false }
+}
+
+async function pathExists(p: string): Promise<boolean> {
+  try { await fs.lstat(p); return true } catch { return false }
 }
 
 /** Họ file của một backup: SQL, archive `uploads/` hay archive `media/` (cùng quy tắc tên với `archiveFiles`). */
@@ -306,57 +311,86 @@ export async function runBackup(
 
     const files: BackupResult['files'] = []
 
-    if (type === 'sql' || type === 'all') {
-      currentBackupStatus = { running: true, phase: 'sql', message: 'Đang dump CSDL', startedAt: Date.now() }
-      const filename = `cdkt-${stamp}-${trigger}.sql.gz`
-      const target = path.join(dir, filename)
-      try {
-        const bytes = await dumpSql(target)
-        files.push({ name: filename, type: 'sql', bytes })
-        await db.transaction(async (tx) => {
-          await tx.insert(backups).values({
-            filename, type: 'sql', bytes, stamp, trigger, status: 'done', createdBy: adminUserId,
-          })
-          await tx.insert(activityLogs).values({
-            userId: adminUserId, action: 'backup_run', resource: 'settings', resourceId: null,
-            meta: { type: 'sql', filename, bytes, trigger },
-          })
+    // ── Không để lại archive mồ côi (wave1 D11) ──
+    // Mỗi tệp lượt này TẠO ra được ghi vào `created`; tệp nào có hàng `done` vào
+    // `registered`. Hỏng ở bất kỳ bước nào → xoá mọi tệp đã tạo mà chưa có hàng
+    // `done` (kể cả archive `tar` viết dở), và hàng `failed` mang tên đúng tệp của
+    // bước đã ném. Trước đây cả hai archive được nén xong rồi mới ghi hàng, và nhánh
+    // lỗi ghi cứng `cdkt-media-…`: media hỏng sau khi uploads đã nén thì archive
+    // uploads nằm lại trên đĩa không hàng nào (danh sách admin không thấy, xoay vòng
+    // không bao giờ xoá), còn uploads hỏng thì hàng `failed` lại nêu tên media.
+    const created = new Set<string>()
+    const registered = new Set<string>()
+    let step: { name: string, kind: 'sql' | 'media' } | null = null
+
+    /**
+     * Bắt đầu một tệp. Tệp đã có sẵn cùng tên (hai lượt cùng trigger trong cùng một
+     * giây có cùng stamp) không thuộc lượt này — không bao giờ bị dọn.
+     */
+    const begin = async (name: string, kind: 'sql' | 'media'): Promise<string> => {
+      step = { name, kind }
+      const target = path.join(dir, name)
+      if (!(await pathExists(target))) created.add(name)
+      return target
+    }
+    /** Hàng `done` + audit cùng transaction, ngay sau khi tệp đã ghi xong và kiểm. */
+    const register = async (name: string, kind: 'sql' | 'media', bytes: number) => {
+      await db.transaction(async (tx) => {
+        await tx.insert(backups).values({
+          filename: name, type: kind, bytes, stamp, trigger, status: 'done', createdBy: adminUserId,
         })
-      } catch (err) {
-        currentBackupStatus = { running: false, phase: 'failed', message: 'Dump SQL thất bại', startedAt: Date.now() }
-        await fs.unlink(target).catch(() => {})
-        await db.insert(backups).values({
-          filename, type: 'sql', bytes: 0, stamp, trigger, status: 'failed',
-          error: err instanceof Error ? err.message : String(err), createdBy: adminUserId,
+        await tx.insert(activityLogs).values({
+          userId: adminUserId, action: 'backup_run', resource: 'settings', resourceId: null,
+          meta: { type: kind, filename: name, bytes, trigger },
         })
-        throw err
-      }
+      })
+      registered.add(name)
+      files.push({ name, type: kind, bytes })
     }
 
-    if (type === 'files' || type === 'all') {
-      currentBackupStatus = { running: true, phase: 'files', message: 'Đang nén file', startedAt: Date.now() }
-      try {
-        const archived = await archiveFiles(dir, stamp, trigger)
-        for (const f of archived) {
-          files.push({ name: f.name, type: 'media', bytes: f.bytes })
-          await db.transaction(async (tx) => {
-            await tx.insert(backups).values({
-              filename: f.name, type: 'media', bytes: f.bytes, stamp, trigger, status: 'done', createdBy: adminUserId,
-            })
-            await tx.insert(activityLogs).values({
-              userId: adminUserId, action: 'backup_run', resource: 'settings', resourceId: null,
-              meta: { type: 'media', filename: f.name, bytes: f.bytes, trigger },
-            })
-          })
-        }
-      } catch (err) {
-        currentBackupStatus = { running: false, phase: 'failed', message: 'Nén file thất bại', startedAt: Date.now() }
-        await db.insert(backups).values({
-          filename: `cdkt-media-${stamp}-${trigger}.tar.gz`, type: 'media', bytes: 0, stamp, trigger, status: 'failed',
-          error: err instanceof Error ? err.message : String(err), createdBy: adminUserId,
-        })
-        throw err
+    try {
+      if (type === 'sql' || type === 'all') {
+        currentBackupStatus = { running: true, phase: 'sql', message: 'Đang dump CSDL', startedAt: Date.now() }
+        const filename = `cdkt-${stamp}-${trigger}.sql.gz`
+        const bytes = await dumpSql(await begin(filename, 'sql'))
+        await register(filename, 'sql', bytes)
       }
+
+      if (type === 'files' || type === 'all') {
+        currentBackupStatus = { running: true, phase: 'files', message: 'Đang nén file', startedAt: Date.now() }
+        let archived = 0
+        for (const source of options.archiveSources ?? defaultArchiveSources()) {
+          if (!(await dirExists(path.join(source.parent, source.tree)))) continue
+          const name = `cdkt-${source.tree}-${stamp}-${trigger}.tar.gz`
+          const bytes = await writeArchive(await begin(name, 'media'), source)
+          await register(name, 'media', bytes)
+          archived += 1
+        }
+        if (archived === 0) {
+          step = { name: `cdkt-media-${stamp}-${trigger}.tar.gz`, kind: 'media' }
+          throw new Error('Không tìm thấy thư mục uploads hoặc media để backup.')
+        }
+      }
+    } catch (err) {
+      const failedStep = step as { name: string, kind: 'sql' | 'media' } | null
+      currentBackupStatus = {
+        running: false, phase: 'failed',
+        message: failedStep?.kind === 'sql' ? 'Dump SQL thất bại' : 'Nén file thất bại',
+        startedAt: Date.now(),
+      }
+      for (const name of created) {
+        if (!registered.has(name)) await fs.unlink(path.join(dir, name)).catch(() => {})
+      }
+      if (failedStep) {
+        // Không để lỗi ghi hàng `failed` (CSDL đang hỏng) che lỗi gốc của lượt sao lưu.
+        await db.insert(backups).values({
+          filename: failedStep.name, type: failedStep.kind, bytes: 0, stamp, trigger, status: 'failed',
+          error: err instanceof Error ? err.message : String(err), createdBy: adminUserId,
+        }).catch((insertErr: unknown) => {
+          logWarn({ event: 'backup.failed_row_unwritten', filename: failedStep.name, error: insertErr instanceof Error ? insertErr.message : String(insertErr) })
+        })
+      }
+      throw err
     }
 
     // Upload Google Drive (nếu bật + cấu hình). HAI mode:

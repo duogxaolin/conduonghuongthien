@@ -171,7 +171,9 @@ services:
       # — rỗng đọc y như chưa đặt, nên mặc định vẫn là của code:
       #   RETENTION_SCHEDULER / ANALYTICS_SCHEDULER : rỗng = bật ở production;
       #       `0` trả việc cho cron (server/plugins/*-scheduler.ts).
-      #   BACKUP_SCHEDULER : rỗng = TẮT; `1` mới bật sao lưu tự động.
+      #   BACKUP_SCHEDULER : rỗng = bật ở production (sao lưu chỉ chạy khi công tắc
+      #       "Backup tự động theo lịch" trong admin bật — mặc định tắt); `0` tắt
+      #       scheduler, trang cài đặt backup sẽ báo "máy chủ đang tắt".
       #   LOG_LEVEL        : rỗng = `info` ở production (server/utils/logger.ts).
       #   LOGIN_CAPTCHA_ENABLED : rỗng = BẬT captcha đăng nhập. `0` TẮT captcha
       #       trên production — biến này tồn tại cho bộ E2E; đừng đặt `0` ở VPS.

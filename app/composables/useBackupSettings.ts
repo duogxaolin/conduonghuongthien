@@ -19,6 +19,9 @@ export function useBackupSettings() {
   // ghi đè cấu hình thật bằng mặc định. Nên: báo lỗi, khoá nút lưu, cho thử lại.
   const settingsLoaded = ref(false)
   const settingsLoadError = ref('')
+  // Máy chủ không chạy scheduler sao lưu → công tắc lịch lưu được nhưng không chạy.
+  // Chỉ đọc, không nằm trong biểu mẫu (không bao giờ được PUT lại).
+  const schedulerDisabledByServer = ref(false)
   const backupSettings = ref<BackupSettingsForm>({
     backup_auto_enabled: 'false',
     backup_auto_hour: '3',
@@ -172,8 +175,9 @@ export function useBackupSettings() {
   async function loadSettings() {
     settingsLoadError.value = ''
     try {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null> }>)(`/api/admin/settings/backup`)
+      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null>; schedulerDisabledByServer?: boolean }>)(`/api/admin/settings/backup`)
       const s = res.settings || {}
+      schedulerDisabledByServer.value = res.schedulerDisabledByServer === true
       backupSettings.value = {
         backup_auto_enabled: s.backup_auto_enabled || 'false',
         backup_auto_hour: s.backup_auto_hour || '3',
@@ -239,6 +243,7 @@ export function useBackupSettings() {
   return {
     isSuperAdmin, settingsLoaded, settingsLoadError, loadSettings,
     backupSettings, selectedDays, daysOptions, savingSettings, saveSettings,
+    schedulerDisabledByServer,
     driveLink, driveRedirectUri, driveLinkLoading, disconnecting, driveToast,
     disconnectDrive, copyRedirectUri,
     driveConfig, driveConfigLoading, savingDriveConfig, clearingDriveSecret,

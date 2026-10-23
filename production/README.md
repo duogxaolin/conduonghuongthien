@@ -244,6 +244,43 @@ Chạy lại được nhiều lần (hàng đã sạch thì không đổi). Thay
 
 ---
 
+## Giải mã HTML entity trong tiêu đề/sapo đã lưu (làm một lần, `db:decode-excerpts`)
+
+Sapo nhập từ CMS cũ lưu chữ dạng entity (`Ng&agrave;y 26/8`). Trang công khai đã hiện đúng (giải mã lúc đọc), nhưng tìm kiếm SQL (`LIKE '%Ngày%'`) không khớp các hàng đó. Lệnh này ghi lại `title`/`excerpt` của `articles` và `article_translations` thành đúng chữ trang công khai đang hiện. Nó **không** đụng `content`, giữ nguyên `updated_at`, duyệt theo lô 200 hàng, và bỏ qua hàng vừa có người sửa. Sau khi CI đã deploy bản có `db:decode-excerpts`:
+
+```bash
+cd /www/wwwroot/conduonghuongthien
+docker exec -it cdkt_app npm run db:decode-excerpts              # 1. xem trước: KHÔNG ghi
+./scripts/backup-db.sh                                           # 2. sao lưu (chỉ hoàn tác được bằng bản này)
+docker exec -it cdkt_app npm run db:decode-excerpts -- --apply   # 3. ghi
+```
+
+Đọc báo cáo bước 1 trước khi ghi:
+- `changed`: số hàng sẽ đổi ở mỗi bảng.
+- `fragments`: những trường mà kết quả **bỏ một đoạn cuối** (`… nh&ac` → `… nh…`, sapo CMS cũ bị cắt giữa entity). Phép đoán không phân biệt được entity bị cắt với một `&chữ` thật ở cuối chuỗi có entity khác: `C&ocirc;ng ty AT&T` cũng thành `Công ty AT…`. Mỗi mục có `id`, `field` và phần cuối trước/sau. Thấy mục nào cắt sai thì sửa tay bài đó trong admin trước (lưu lại bài là làm sạch nó), rồi mới `--apply`.
+- `unstable`: các trường **không** được ghi. Đó là chữ entity viết nguyên văn (`&amp;agrave;`), loại mà ghi xong thì trang công khai lại giải mã thêm một lần. Sửa tay nếu cần.
+
+Chạy lại được: lượt sau chỉ báo những hàng còn ở dạng entity.
+
+---
+
+## Sao lưu tự động trong ứng dụng (scheduler)
+
+Từ đợt wave1 1B, ở production scheduler sao lưu **tự khởi động** (trước đây chỉ khởi động khi `.env` có `BACKUP_SCHEDULER=1`, nên công tắc trong admin bật mà không bao giờ chạy). Có bản sao lưu hay không vẫn do công tắc **"Backup tự động theo lịch"** ở `/admin/settings/backup` quyết định. Công tắc mặc định tắt, nên bản cập nhật này không tự sinh bản sao lưu nào.
+
+- **Trước khi deploy bản 1B:** mở `/admin/settings/backup` và xem công tắc. Nếu nó **đã bật** từ trước (lần bật cũ "không có tác dụng"), sao lưu theo lịch sẽ bắt đầu ở **khe kế tiếp** sau deploy (ngày + giờ đã chọn). Mỗi lượt tạo một dump CSDL và hai archive (`uploads`, `media`) trong `./backups`, nên kiểm dung lượng đĩa (`df -h`). Không muốn thì tắt công tắc trước.
+- **Lịch:** chạy đúng ngày + giờ đã chọn (giờ Việt Nam; `0` là nửa đêm). Lượt hỏng được thử lại sau 60 phút, tối đa 3 lượt cho một khe, rồi bỏ khe đó và ghi log `backup.slot_abandoned`. Khe lỡ vì máy chủ tắt được bù **một lần** khi khởi động lại. Riêng lần đầu bật công tắc thì không bù: đợi khe kế tiếp.
+- **Tắt hẳn ở máy chủ:** đặt `BACKUP_SCHEDULER=0` trong `.env` rồi `./manage.sh` → Update. Trang cài đặt backup sẽ hiện dòng "Máy chủ đang tắt sao lưu tự động".
+- Lượt sao lưu hỏng giữa chừng không còn để lại archive dở trong `./backups`. Hàng "thất bại" trong danh sách nêu đúng tệp đã hỏng.
+
+---
+
+## Dọn dữ liệu analytics thô (tồn đọng sau bản vá 1B)
+
+Lệnh dọn sự kiện xem trang thô (`analytics_page_view_events`, giữ 14 ngày) trước đây là câu SQL MySQL không chấp nhận, và lỗi bị nuốt. Vì vậy dữ liệu thô **chưa từng được dọn**, và các bảng tổng hợp theo ngày cũng không được dọn. Sau khi deploy, lượt bảo trì hằng đêm (scheduler trong app, hoặc cron `npm run analytics:maintenance`) bắt đầu xoá phần tồn đọng. Mỗi lượt xoá theo lô có trần (mặc định tối đa 1000 lô × 500 hàng mỗi bảng), nên với tồn đọng lớn, vài đêm đầu lượt bảo trì báo trạng thái `warning` (chưa dọn hết). Đó là bình thường; trạng thái tự về `success` khi đã dọn kịp. Chỉ xoá sự kiện của những ngày **đã tổng hợp xong**. Bước dọn nào hỏng sẽ ghi một dòng log `analytics.retention_step_failed` kèm `step` và `code`, và không chặn các bước khác.
+
+---
+
 ## Sửa dữ liệu sau deploy (post-deploy data repair): danh mục video bị xoá lúc khởi động
 
 Từ 2026-09-22 tới bản vá `fix-media-category-wipe-on-boot`, **mỗi lần app khởi động** (deploy CI, `manage.sh` Update, restart sau sự cố) đều xoá danh mục của mọi video trong Media Portal. Bản vá chặn việc xoá từ lần khởi động đầu tiên của image mới. Giá trị đã mất thì không tự về: phải khôi phục từ bản sao lưu theo runbook ở [`docs/decisions/data-layer.md` § Khôi phục danh mục video sau lỗi xoá lúc khởi động](../docs/decisions/data-layer.md#media-category-restore).

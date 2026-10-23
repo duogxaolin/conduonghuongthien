@@ -1,6 +1,7 @@
 import { getDb } from '../../../utils/db'
 import { settings } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { backupSchedulerEnabledByServer } from '../../../utils/backup-scheduler-switch'
 
 const KEYS = [
   'backup_auto_enabled',
@@ -29,5 +30,11 @@ export default defineEventHandler(async (event) => {
       result[k] = map.get(k) ?? null
     }
   }
-  return { ok: true, settings: result }
+  return {
+    ok: true,
+    settings: result,
+    // Máy chủ không chạy scheduler (BACKUP_SCHEDULER tắt, hoặc ngoài production):
+    // công tắc "Backup tự động theo lịch" lưu được nhưng không có lượt nào chạy.
+    schedulerDisabledByServer: !backupSchedulerEnabledByServer(process.env.BACKUP_SCHEDULER, process.env.NODE_ENV),
+  }
 })

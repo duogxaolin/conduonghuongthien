@@ -711,7 +711,7 @@ Suite mới trên MySQL dev: mã cũ 0/4 pass, bản vá 4/4. `npm test` 3930 / 
 
 Còn mở:
 - `modifyColumn(… 'media_items', 'short_id', 'VARCHAR(16) NOT NULL')` vẫn gửi một `ALTER TABLE media_items MODIFY COLUMN` ở mọi lần khởi động. Nó không đụng `category_id`, và test nêu tên nó là ngoại lệ.
-- Các lượt ghi khác lúc khởi động (`seed.ts` hồi sinh hàng mặc định đã xoá, ghi đè thứ tự `home_sections`) thuộc wave1/wave2 (`schema-upgrade-safety`).
+- Các lượt ghi khác lúc khởi động (`seed.ts` hồi sinh hàng mặc định đã xoá, ghi đè thứ tự `home_sections`) thuộc wave1/wave2 (`schema-upgrade-safety`). Ghi đè thứ tự `home_sections` đã đóng ở § 29; hồi sinh hàng mặc định đã xoá vẫn thuộc wave2.
 
 ### 27. Wave 1 · 1D — CI, deploy, vận hành (2026-10-23)
 
@@ -747,8 +747,64 @@ Test mới/mở rộng (đều đỏ trên mã trước đợt này): `tests/ops
 Việc của người vận hành trước khi merge: tạo variable `VPS_SMOKE_URL`; cấp quyền Admin cho repo ở *Manage Actions access* của package GHCR; tuỳ chọn tạo check ping và ghi `HEALTHCHECK_PING_URL` vào `.env` trên VPS; theo dõi lượt deploy đầu (dump, smoke, dọn image).
 
 Còn mở (1D):
-- `stopBackupScheduler` (`server/services/backup-scheduler.ts`) chỉ xoá `setInterval`, không xoá `setTimeout` khởi động 120 s: tắt trong 2 phút đầu sau khi boot thì tick khởi động vẫn có thể chạy trong lúc Nitro đang drain. Tệp đó thuộc 1B (D10) — sửa cùng đợt đó.
+- ~~`stopBackupScheduler` (`server/services/backup-scheduler.ts`) chỉ xoá `setInterval`, không xoá `setTimeout` khởi động 120 s: tắt trong 2 phút đầu sau khi boot thì tick khởi động vẫn có thể chạy trong lúc Nitro đang drain. Tệp đó thuộc 1B (D10) — sửa cùng đợt đó.~~ Đã đóng ở § 29.
 - Đợt chuyển tiếp GHCR: image đẩy khi còn provenance nhiều khả năng có manifest con không thẻ (mặc định buildx — **chưa kiểm** được: `gh` thiếu `read:packages`; trang package hiện version `unknown/unknown` nếu đúng); nếu vậy, vài tuần đầu image cũ nhất còn giữ có thể không kéo lại được (VPS không cần — giữ 6 image cục bộ).
+
+### 29. Wave 1 · 1B — Toàn vẹn dữ liệu (2026-10-23)
+
+Đợt thứ ba của `openspec/changes/wave1-quick-fixes` (D8, D10–D15). Số mục giả định 1A (§ 28) merge trước theo thứ tự 1D → 1A → 1B.
+
+- **Dọn analytics thật sự chạy** (D8, `server/services/analytics-maintenance.ts`). Lệnh dọn sự kiện thô là `DELETE e FROM … INNER JOIN analytics_maintenance_runs … LIMIT ?`, và MySQL từ chối LIMIT trên DELETE nhiều bảng (lỗi 1064). Lỗi bị nuốt, và một `try` chung còn bỏ luôn việc dọn 5 bảng theo ngày. Kết quả: từ khi có tính năng này, không bảng analytics nào được dọn, còn test fake-pool (khớp chữ SQL) vẫn xanh. Nay lệnh là DELETE một bảng: `… WHERE occurred_at < ? AND event_day IN (SELECT day FROM analytics_maintenance_runs WHERE status = 'complete') LIMIT ?`. Mỗi bước dọn (thô, 5 bảng ngày, live, dedup, NOC) chạy riêng qua `purgeStep`; bước hỏng ghi một dòng `analytics.retention_step_failed` `{ step, code }` (mã lỗi driver, không ghi message). `analytics_maintenance_runs` được dọn sau cùng, vì lệnh dọn thô đọc nó.
+- **Scheduler sao lưu theo đúng lịch** (D10, `server/services/backup-scheduler.ts`):
+  - **Khe chạy:** khe là ngày đã chọn lúc `hour` giờ (giờ địa phương, 0–23; `0` hợp lệ, giá trị sai → 3). Khe được phục vụ khi có một lượt `scheduled` thành công bắt đầu (theo `stamp`, UTC) từ khe trở đi. Một lượt (gom theo `stamp`) chỉ thành công khi có dump SQL `done` **và** archive `done`, không tệp nào hỏng. Lượt hỏng một tệp, và lượt bị cắt ngang (container dừng giữa chừng: dump có hàng, archive không, không có hàng `failed`), đều tính là lượt hỏng. Hàm thuần `isBackupDue` có test dạng bảng (20 ca).
+  - **Thử lại:** sau 60 phút, tối đa 3 lượt mỗi khe, rồi bỏ khe và log `backup.slot_abandoned` một lần mỗi khe.
+  - **Bù khe lỡ:** bù một lần, chỉ khi scheduler đang phục vụ lịch, tức có lượt `scheduled` trong 8 ngày trước khe. Bật công tắc lần đầu (hoặc bật lại sau hơn 8 ngày) thì đợi khe kế tiếp. Bản cũ chạy hễ lượt trước cũ hơn 36 giờ (cả ngày không có trong lịch), đọc giờ `0` thành 3, và coi lượt hỏng là đã xong.
+  - **Chống chồng lượt:** tick đang chạy thì tick sau không mở lượt thứ hai.
+  - **Dừng:** `stopBackupScheduler` xoá cả tick khởi động 120 s (mục "Còn mở" của § 27).
+  - **Khởi động ở production:** plugin dùng `backupSchedulerEnabledByServer` (`server/utils/backup-scheduler-switch.ts`, không import gì, để route admin nạp mà không kéo theo `services/backup.ts`) và khởi động scheduler ở production trừ khi `BACKUP_SCHEDULER` là `0`/`false`/`off`/`no`. Dev giữ mặc định tắt. Công tắc admin `backup_auto_enabled` (mặc định tắt) vẫn quyết định có bản sao lưu hay không.
+  - **Trang cài đặt:** `GET /api/admin/settings/backup` trả thêm `schedulerDisabledByServer` (ngoài `settings`, nên biểu mẫu không bao giờ PUT nó). `BackupSettingsPanel.vue` hiện một dòng báo khi cờ này bật. Chú thích compose đã sửa.
+- **Không còn archive mồ côi** (D11, `server/services/backup.ts`). Trước đây cả hai archive được nén xong rồi mới ghi hàng, và nhánh lỗi ghi cứng `cdkt-media-…`. Khi media hỏng, archive uploads đã nén nằm lại không có hàng nào (danh sách admin và xoay vòng đều không thấy). Khi uploads hỏng, hàng `failed` lại nêu tên media.
+  - Nay mỗi tệp do lượt chạy tạo ra được theo dõi. Mỗi archive có hàng `done` + audit (cùng transaction) ngay sau khi nén và kiểm (tệp thường, khác 0 byte).
+  - Hỏng ở bất kỳ bước nào thì xoá mọi tệp đã tạo mà chưa có hàng `done`, kể cả archive viết dở. Hàng `failed` nêu đúng tệp của bước đã ném. Tệp có sẵn cùng tên (hai lượt cùng trigger trong cùng một giây có cùng `stamp`) không bị lượt dọn **xoá**. Nhưng `tar`/`mysqldump` của lượt sau vẫn **ghi đè** nội dung tệp đó (va chạm có từ trước, chưa sửa). Lỗi ghi hàng `failed` được log `backup.failed_row_unwritten` và không che lỗi gốc.
+  - Nguồn nén là `defaultArchiveSources()`. `RunBackupOptions.archiveSources` chỉ để kiểm thử thay bằng thư mục tạm; đường dẫn cứng `/var/lib/cdkt` không đổi.
+- **Tải backup bằng stream** (D12, `server/api/admin/backup/[filename].get.ts`). Bản cũ dùng `readFile`, hỏng với tệp > 2 GiB và tốn RAM bằng kích thước tệp. Nay: `lstat` → chỉ tệp thường (thư mục, symlink, tệp không có → 404). Header `Content-Length` + `Content-Disposition` RFC 5987 (`filename*=UTF-8''…`, mã hoá cả `'()*`). Trả `sendStream(createReadStream)`, và huỷ stream khi **phản hồi** đóng (h3 chỉ gọi `stream.abort`; `req` `close` phát sớm từ Node 16). Thư mục lấy từ `backupsDir()` mỗi request. Có guard tĩnh: không `readFile` dưới `server/api/admin/backup/`.
+- **Chat livestream không xoá cứng tin AI ẩn** (D13). Đã bỏ `db.delete(livestreamMessages)` chạy song song với `applyAutoHide` (vốn đã đánh dấu `is_deleted = 1`). Hàng còn lại làm bằng chứng cho hàng chờ duyệt; người xem vẫn nhận sự kiện gỡ.
+- **Seed không ghi đè thứ tự `home_sections`** (D14). Upsert đổi sang `keepExisting('id')` (no-op). Guard mới `tests/seed-upsert-no-overwrite.test.ts` chặn **mọi** upsert trong `seed.ts` ghi giá trị lên hàng đã có (mục "Còn mở" của § 26 về `home_sections`).
+- **`npm run db:decode-excerpts`** (D15, `server/services/stored-plaintext-decode.ts`, `scripts/decode-stored-excerpts.ts`).
+  - **Khuôn và ngữ nghĩa:** cùng khuôn `db:sanitize-html`. Giải mã `title`/`excerpt` của `articles` + `article_translations` theo đúng `plainTextField` (kể cả sửa entity cụt khi chuỗi ở dạng mã hoá). Mặc định xem trước; `--apply` mới ghi. Đọc theo lô 200 theo `id`.
+  - **Cách ghi:** UPDATE gán `updated_at = updated_at` và kèm điều kiện "giá trị vẫn như lúc đọc", nên bản vừa được biên tập viên sửa bị bỏ qua (`skipped`). Không bao giờ đọc hay ghi `content`.
+  - **Phạm vi:** chỉ hàng có `&` mà phép giải mã thật sự đổi. Khác biệt chỉ do khoảng trắng hai đầu không tính, và `R&D`/`Q&A` để nguyên.
+  - **Báo cáo:** `fragments` liệt kê mọi trường mà kết quả bỏ một đoạn cuối (id, trường, phần cuối trước/sau; ca `AT&T` cũng nằm đây). `unstable` liệt kê, **không ghi**, chữ entity viết nguyên văn (`&amp;agrave;`), loại sẽ bị giải mã thêm lúc đọc.
+- **Test** (viết trước, chạy trên mã cũ). Đỏ vì đúng lỗi được sửa: `analytics-maintenance-retention` (5/13), `analytics-maintenance-integration` (`warning` thay vì `success`), `backup-orphan-archives` (5/6; ca uploads hỏng trước nêu tên media và để lại tệp dở), `backup-access` (4 ca stream + guard `readFile`), `livestream-chat` (có `delete from`), `seed-upsert-no-overwrite`, `backup-scheduler-notice-ui`. Lưu ý:
+    - `backup-scheduler-due` chỉ đỏ vì thiếu module: `isBackupDue` cũ khác chữ ký, nên không khẳng định nào chạy được trên ngữ nghĩa cũ.
+    - `stored-plaintext-decode` đỏ vì module chưa có.
+    - Ca thư mục/symlink của `backup-access` qua "trống" trên mã cũ, vì handler cũ cố định thư mục lúc import.
+    - Ca va chạm cùng tên của `backup-orphan-archives` được kiểm bằng cách bỏ tạm guard: đỏ, trả lại thì xanh.
+  - `analytics-maintenance-retention`: fake pool từ chối DELETE nhiều bảng + LIMIT ở mọi câu; thêm 5 ca: lệnh một bảng, bước hỏng vẫn chạy bước khác, log `step`/`code`.
+  - Mới:
+    - `analytics-maintenance-integration`: MySQL thật, `initDb()`. Thô cũ đã tổng hợp → xoá; thô cũ chưa tổng hợp/run `failed` → giữ; thô gần → giữ; bảng ngày quá hạn → xoá; lượt 2 không xoá gì. Có trong matrix CI, nay 19 job.
+    - `backup-scheduler-due` (31).
+    - `backup-scheduler-notice-ui` (handler thật + render SFC).
+    - `backup-orphan-archives` (`runBackup` thật, tar/mysqldump giả, tệp thật).
+    - `seed-upsert-no-overwrite`.
+    - `stored-plaintext-decode`: driver `drizzle-orm/mysql2` thật trên pool giả chạy SQL bằng `node:sqlite`, giả lập `ON UPDATE CURRENT_TIMESTAMP`, có ca tự kiểm.
+  - Mở rộng: `backup-access` (+5), `livestream-chat` (+1).
+
+#### Kiểm chứng (2026-10-23)
+`npm test` 4055 / 4028 pass / 0 fail / 27 skip. Typecheck 0 lỗi. eslint 0 error / 16 warning (như trước). `db:drift` 62 bảng / 635 cột. Suite mới trên MySQL dev (cổng 33069): mã cũ đỏ (`warning`), bản vá xanh; không còn CSDL `cdkt_analytics_maint_*`. Guard matrix: bỏ mục matrix → đỏ nêu tên tệp. `npm run db:decode-excerpts` (chỉ xem trước) trên CSDL dev: 1132 bài, 17 sẽ đổi, 5 `fragments` (đúng 5 sapo bị cắt giữa entity ở § 23: `nh&ac`, `ph&og`, `l&atild`, `c&oac`, `l&`), 0 `unstable`; 24 bản dịch, 0 đổi.
+
+Việc của người vận hành:
+- **Trước khi deploy:** mở `/admin/settings/backup`. Nếu "Backup tự động theo lịch" đã bật từ trước, sao lưu bắt đầu ở khe kế tiếp sau deploy; kiểm dung lượng đĩa hoặc tắt công tắc trước.
+- **Sau khi deploy:** `db:decode-excerpts` theo thứ tự xem trước → đọc `fragments` → sao lưu → `-- --apply` (`production/README.md`).
+- Vài đêm đầu lượt bảo trì analytics báo `warning` khi dọn phần tồn đọng theo lô có trần. Đó là dự kiến.
+
+Còn mở / lệch có chủ đích (1B):
+- **Bỏ khe sau 3 lượt hỏng** (lượt đầu + 2 lần thử lại), theo design D10. Spec viết "thử lại tối đa 3 lần".
+- **Thời gian chờ thử lại tính từ lúc lượt hỏng BẮT ĐẦU** (`stamp`), không từ lúc nó hỏng (design D10 viết "60 phút kể từ lần hỏng"). Các lượt cách nhau ≥ 60 phút tính theo giờ bắt đầu, đúng spec. Nhưng một archive chạy 40 phút rồi hỏng sẽ được thử lại khoảng 20 phút sau khi hỏng. Lý do: `created_at` phụ thuộc múi giờ phiên MySQL, còn `stamp` thì không.
+- **Lượt bị cắt ngang:** container dừng giữa lượt thì lượt đó tính là hỏng và được thử lại, nhưng archive viết dở của nó nằm lại trên đĩa (không có hàng nào trỏ tới; xoá tay).
+- **Bù khe lỡ khi bật lại công tắc:** quy tắc 8 ngày nghĩa là bật lại trong vòng 8 ngày kể từ lượt `scheduled` cuối sẽ bù một lượt ngay. Server tắt liền hơn 8 ngày thì không bù, đợi khe kế tiếp.
+- **Đường dẫn media của sao lưu:** `backup.ts`/`backup-restore.ts` vẫn ghi cứng `/var/lib/cdkt` cho cây media, không theo `CDKT_MEDIA_WORKDIR`.
+- **Lỗi trước khi vào bước tệp:** một lượt hỏng trước bước tệp đầu tiên (đọc cấu hình, `mkdir`) không ghi hàng `failed`, nên scheduler thử lại ở mỗi tick thay vì theo nhịp 60 phút.
 
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23)
 
