@@ -291,7 +291,7 @@ TOTP của MFA KHÔNG nằm ở đây (dẫn xuất từ `JWT_SECRET`). Không c
 
 1. Trước khi xoay: chuẩn bị lại MỌI bí mật ở bảng trên — API key AI Panel (từng nhà cung cấp), API key trợ lý, client secret Google, client secret Drive OAuth, Secret Key R2 video, mật khẩu SMTP, Secret Key R2 ảnh, khoá JSON service account. Không có chúng thì đừng xoay.
 2. Đổi `CHATBOT_ENCRYPTION_SECRET` trong `.env` (`openssl rand -base64 32`) → `./manage.sh` Update.
-3. Log khởi động có `db.migration.settings_secret_unreadable` (tên khoá, ba khoá `settings`) — dự kiến; các bí mật khác báo ở trang của chúng ("không giải mã được"/`secret_unreadable`). Nhập lại lần lượt theo cột cuối của bảng. Các trang báo "cần nhập lại" cho tới khi xong.
+3. Log khởi động có `db.migration.settings_secret_unreadable` (tên khoá, ba khoá `settings`) — dự kiến; các bí mật khác báo ở trang của chúng ("không giải mã được"/`secret_unreadable`). Nhập lại lần lượt theo cột cuối của bảng — **mật khẩu SMTP trước tiên**: tới khi nhập lại nó, **thư cảnh báo vận hành (`OPS_ALERT_EMAIL`) im lặng** (mỗi sự kiện chỉ để lại `ops.alert_failed` trong log, `production/README.md` § *Thư cảnh báo vận hành*) — đúng lúc đang xoay khoá là lúc cần nghe cảnh báo. Khoá JSON service account chưa nhập lại thì mỗi bản sao lưu mang `offsite_status = failed` (bản cục bộ vẫn có). Các trang báo "cần nhập lại" cho tới khi xong.
 4. Kiểm: "Gửi email thử", "Kiểm tra kết nối R2" (ảnh + video), một lượt "Chạy backup" có Drive, "Kiểm tra" nhà cung cấp ở AI Panel, một câu hỏi thử với trợ lý, một lượt đăng nhập Google của người đọc.
 5. Bản dump cũ chứa envelope của khoá cũ (và bản dump trước 2A chứa nguyên văn) — giữ hoặc huỷ theo chính sách lưu trữ tài liệu mật.
 

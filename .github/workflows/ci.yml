@@ -384,12 +384,16 @@ jobs:
   # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 22 job song
   # song** — mỗi suite một job + MySQL service riêng, chạy độc lập. Một runner
   # chậm chỉ kéo dài đúng suite của nó, không làm suite khác timeout theo.
+  # Trần mỗi job 30 phút: suite dài nhất (`backup-dump`, 18 test, mỗi test dựng CSDL +
+  # sao lưu + khôi phục thật) chạy 12,6 phút trên máy dev (đo 2026-10-24, nhánh tích
+  # hợp wave2 — CHANGELOG § 38); runner CI chậm hơn và job còn `npm ci` + MySQL
+  # service, nên 20 phút không còn đủ khoảng trống.
   integration-tests:
     name: Integration · ${{ matrix.suite }}
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.run == 'true' && needs.changes.outputs.integration == 'true'
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
