@@ -64,7 +64,7 @@
         <div class="flex flex-wrap gap-3 items-center">
           <nuxt-link
             v-if="d.btnAboutText"
-            :to="d.btnAboutLink || '/about'"
+            :to="safeLinkOrNull(d.btnAboutLink) || '/about'"
             class="inline-flex items-center gap-2 px-7 py-3.5 rounded-xl font-bold text-[0.95rem] text-white transition-all duration-200 hover:-translate-y-0.5"
             style="background: linear-gradient(135deg, #7CB342 0%, #5a9e2a 100%); box-shadow: 0 6px 20px rgba(124,179,66,0.45);"
           >
@@ -74,7 +74,7 @@
 
           <a
             v-if="d.btnHelpText"
-            :href="d.btnHelpLink || '#tro-giup'"
+            :href="safeLinkOrNull(d.btnHelpLink) || '#tro-giup'"
             class="inline-flex items-center gap-2 px-7 py-3.5 rounded-xl font-bold text-[0.95rem] text-white border border-white/40 backdrop-blur-sm transition-all duration-200 hover:bg-white/15 hover:-translate-y-0.5"
             style="background: rgba(255,255,255,0.1);"
           >
@@ -102,6 +102,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from '~/composables/useI18n'
+// Button links bind through the shared link policy (spec page-builder-links): an
+// unsafe value falls back to the default target instead of reaching `href`.
+import { safeLinkOrNull } from '~~/shared/link-policy'
 
 const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })

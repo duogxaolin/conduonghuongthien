@@ -219,6 +219,19 @@ export function getClientIp(event: H3Event): string {
   return inspectClientIp(event).ip
 }
 
+/**
+ * Is the socket peer of this request one of our own proxies?
+ *
+ * Only then does a forwarded header (`x-forwarded-proto`, …) mean anything: it is
+ * a request header, so any client that reaches the app directly can write one.
+ * Lives here because this file owns every read of the raw peer address
+ * (`tests/client-ip.test.ts`); `request-secure.ts` asks this instead of reading
+ * the peer itself.
+ */
+export function peerIsTrustedProxy(event: H3Event): boolean {
+  return isTrustedProxy(normalizeIp(getRequestIP(event, { xForwardedFor: false })), trustedProxies())
+}
+
 /** Same resolution, with the provenance kept — for security logging. */
 export function inspectClientIp(event: H3Event): ClientIpResult {
   return resolveClientIp({

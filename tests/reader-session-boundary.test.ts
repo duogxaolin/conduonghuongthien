@@ -19,7 +19,10 @@
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { describe, it } from 'node:test'
+import { describe, it, mock } from 'node:test'
+import { DatabaseSync } from 'node:sqlite'
+import { getTableColumns, getTableName, is, SQL } from 'drizzle-orm'
+import { MySqlDialect } from 'drizzle-orm/mysql-core'
 
 // Must be set before importing auth.ts: jwtSecret()/readerKeyMaterial() read
 // process.env at call time, but a stray production-shaped env would change which
@@ -140,5 +143,107 @@ describe('server/middleware/admin-auth.ts keeps both gates', () => {
       !/jwt\s*\.\s*decode\s*\(/.test(source),
       'admin-auth.ts decodes a token without verifying it',
     )
+  })
+})
+
+/**
+ * Reader sign-out revokes the session server-side (spec reader-session, design D4).
+ *
+ * Clearing the cookie only removes the ticket from THIS browser. A copy of it —
+ * from a shared computer, a proxy log, a stolen profile — stayed valid for the rest
+ * of its 30 days, because the ticket is self-contained and nothing on the server
+ * said it had ended. Sign-out now bumps `reader_accounts.token_version`, the same
+ * column a ban bumps, so every ticket issued before it fails `resolveReader`.
+ *
+ * Runs the REAL logout handler and the REAL `optionalReader` against an in-memory
+ * SQLite `reader_accounts` table; the WHERE and SET clauses are compiled by the
+ * MySQL dialect, so a write aimed at the wrong row or column fails here.
+ */
+const { readerAccounts } = await import('../server/db/schema')
+const sqlite = new DatabaseSync(':memory:')
+const dialect = new MySqlDialect()
+const readerColumns = getTableColumns(readerAccounts) as Record<string, { name: string }>
+sqlite.exec(`CREATE TABLE ${getTableName(readerAccounts)} (${Object.values(readerColumns).map(c => `\`${c.name}\``).join(', ')})`)
+const writes: string[] = []
+
+type Row = Record<string, unknown>
+function readerRows(where: SQL, projection: Row): Row[] {
+  const query = dialect.sqlToQuery(where)
+  const raw = sqlite.prepare(`SELECT * FROM reader_accounts WHERE ${query.sql}`).all(...query.params as never[]) as Row[]
+  return raw.map(row => Object.fromEntries(Object.keys(projection).map(key => [key, row[readerColumns[key]!.name] ?? null])))
+}
+const fakeDb = {
+  select: (projection: Row) => ({
+    from: () => ({
+      where: (where: SQL) => ({ limit: async () => readerRows(where, projection) }),
+    }),
+  }),
+  update: () => ({
+    set: (values: Row) => ({
+      where: async (where: SQL) => {
+        const params: unknown[] = []
+        const assignments = Object.entries(values).map(([key, value]) => {
+          if (is(value, SQL)) {
+            const compiled = dialect.sqlToQuery(value)
+            params.push(...compiled.params)
+            return `\`${readerColumns[key]!.name}\` = ${compiled.sql}`
+          }
+          params.push(value)
+          return `\`${readerColumns[key]!.name}\` = ?`
+        })
+        const condition = dialect.sqlToQuery(where)
+        const statement = `UPDATE reader_accounts SET ${assignments.join(', ')} WHERE ${condition.sql}`
+        writes.push(statement)
+        sqlite.prepare(statement).run(...[...params, ...condition.params] as never[])
+        return [{ affectedRows: 1 }]
+      },
+    }),
+  }),
+}
+mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb } })
+
+type ReaderEvent = { cookies: Record<string, string>, cleared: string[] }
+const nitroGlobals = globalThis as unknown as Record<string, unknown>
+nitroGlobals.defineEventHandler = (handler: unknown) => handler
+nitroGlobals.getCookie = (event: ReaderEvent, name: string) => event.cookies[name]
+nitroGlobals.deleteCookie = (event: ReaderEvent, name: string) => { event.cleared.push(name) }
+
+const { optionalReader } = await import('../server/utils/reader-auth.ts')
+const logout = (await import('../server/api/public/reader/logout.post.ts')).default as unknown as (event: ReaderEvent) => Promise<{ ok: boolean }>
+
+const withTicket = (ticket?: string): ReaderEvent => ({ cookies: ticket ? { cdkt_reader: ticket } : {}, cleared: [] })
+const tokenVersionOf = (id: number) => (sqlite.prepare('SELECT token_version FROM reader_accounts WHERE id = ?').get(id) as { token_version: number }).token_version
+
+describe('reader sign-out revokes the session (spec reader-session)', () => {
+  const insert = sqlite.prepare('INSERT INTO reader_accounts (`id`, `google_sub`, `email`, `display_name`, `email_notifications`, `is_banned`, `token_version`) VALUES (?, ?, ?, ?, 1, 0, ?)')
+  insert.run(42, 'sub-42', 'a@example.vn', 'Người đọc A', 0)
+  insert.run(43, 'sub-43', 'b@example.vn', 'Người đọc B', 7)
+
+  it('a ticket copied before sign-out is anonymous after it', async () => {
+    const ticket = signReaderToken({ readerId: 42, tokenVersion: 0 })
+    assert.equal((await optionalReader(withTicket(ticket) as never))?.id, 42, 'precondition: the ticket is a live session')
+
+    const event = withTicket(ticket)
+    assert.deepEqual(await logout(event), { ok: true })
+    assert.deepEqual(event.cleared, ['cdkt_reader'], 'the cookie is still cleared')
+
+    assert.equal(await optionalReader(withTicket(ticket) as never), null, 'the replayed ticket must not resolve to the reader')
+    assert.equal(tokenVersionOf(42), 1)
+    assert.equal(tokenVersionOf(43), 7, 'only the signed-out reader is touched')
+  })
+
+  it('a sign-out without a valid reader session only clears the cookie', async () => {
+    writes.length = 0
+    for (const event of [
+      withTicket(),
+      withTicket('not-a-ticket'),
+      // A real ticket whose version is already stale: not a session any more.
+      withTicket(signReaderToken({ readerId: 43, tokenVersion: 6 })),
+    ]) {
+      assert.deepEqual(await logout(event), { ok: true })
+      assert.deepEqual(event.cleared, ['cdkt_reader'])
+    }
+    assert.deepEqual(writes, [], 'no reader account may be modified')
+    assert.equal(tokenVersionOf(43), 7)
   })
 })

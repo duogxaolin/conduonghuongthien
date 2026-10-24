@@ -88,6 +88,16 @@ Chạy khi muốn kéo code/image mới lên VPS đang chạy:
 > trống cả hai → hành vi cũ + cảnh báo `security.link_host_unchecked` trong log.
 > Cùng lúc, nginx phải đặt `proxy_set_header X-Forwarded-Host $host;` và có site mặc
 > định từ chối tên miền lạ — xem `CI-CD.md` Bước 8.
+
+> **Cookie phiên luôn `Secure` ở production** (`server/utils/request-secure.ts`, từ
+> wave1 1A): cookie đăng nhập admin, MFA, người đọc và OAuth chỉ bỏ `Secure` khi
+> **proxy nằm trong `TRUSTED_PROXY_IPS`** báo `X-Forwarded-Proto: http`; header từ
+> peer không tin cậy bị bỏ qua. Hệ quả: phục vụ cổng qua **HTTP thường** (chưa có TLS)
+> mà proxy không nằm trong `TRUSTED_PROXY_IPS` → trình duyệt không gửi lại cookie,
+> đăng nhập admin/người đọc không giữ được phiên. Cấu hình chuẩn đã đúng: nginx mẫu
+> gửi `proxy_set_header X-Forwarded-Proto $scheme;` và `manage.sh` đặt mặc định
+> `TRUSTED_PROXY_IPS=172.16.0.0/12` (dải docker) — chạy HTTPS hay HTTP đều giữ phiên.
+> Tự sửa `.env` thì đừng xoá `TRUSTED_PROXY_IPS` khi còn phục vụ qua HTTP.
 4. **Pull image + restart chỉ app**: kéo image `CDKT_IMAGE`, rồi `docker compose up -d --no-recreate mysql` + `up -d --no-deps app`, đợi healthcheck (hỏng thì lùi — xem bên dưới)
 5. **Hỏi migrate** nếu có file SQL mới
 

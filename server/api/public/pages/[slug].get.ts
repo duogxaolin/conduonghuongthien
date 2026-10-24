@@ -1,9 +1,9 @@
-import { sanitizeBlockData } from '../../../utils/sanitize-html'
+import { blankUnsafeBlockLinks, sanitizeBlockData } from '../../../utils/sanitize-html'
 import { getDb } from '../../../utils/db'
 import { reportPublicReadFailure } from '../../../utils/public-read-failure'
 import { pages, pageBlocks } from '../../../db/schema'
 import { and, eq, asc } from 'drizzle-orm'
-import type { BlockData, BlockNode } from '../../../../app/utils/blocks/types'
+import type { BlockData, BlockFieldValue, BlockNode } from '../../../../app/utils/blocks/types'
 
 /**
  * Một node đã lọc để phát ra công khai.
@@ -61,6 +61,38 @@ interface PublicPageResponse {
   blocks: PublicBlockNode[]
 }
 
+/**
+ * Recursive copy of `value` without any `recipientEmail` key, at any depth —
+ * which covers `data.translations[lang].recipientEmail` too.
+ */
+function withoutRecipientEmail(value: BlockFieldValue): BlockFieldValue {
+  if (Array.isArray(value)) return value.map(withoutRecipientEmail)
+  if (!value || typeof value !== 'object') return value
+  const out: Record<string, BlockFieldValue> = {}
+  for (const [key, item] of Object.entries(value)) {
+    if (key === 'recipientEmail') continue
+    out[key] = withoutRecipientEmail(item)
+  }
+  return out
+}
+
+/**
+ * What a block's data may look like once it leaves the server — applied after
+ * `sanitizeBlockData` on BOTH the tree and the flat path:
+ *
+ *  - unsafe links blanked (spec page-builder-links): rows stored before the link
+ *    policy can still hold `javascript:` in a button or a Links item; the write
+ *    path refuses new ones, this neutralises the old ones;
+ *  - `recipientEmail` removed (spec public-submissions): the address a contact
+ *    or support form is delivered to is configuration, not page content. The
+ *    server resolves the recipient itself (`submission-recipient.ts`), so the
+ *    form never needs to know it — and a published address is a harvested one.
+ *    Removed from this projection only; storage keeps it.
+ */
+function publicBlockData(blockType: string, data: BlockData): BlockData {
+  return withoutRecipientEmail(blankUnsafeBlockLinks(blockType, data)) as BlockData
+}
+
 // Recursively drop any node with isVisible === false (and its whole subtree),
 // and strip the isVisible flag from the returned tree (public payload = visible
 // nodes only). Preserves colSpan and recurses into container children.
@@ -83,6 +115,7 @@ function pruneHiddenTree(nodes: unknown, lang?: string): PublicBlockNode[] {
       // tồn tại (hoặc ghi qua đường khác) vẫn nằm trong DB và sẽ đi thẳng vào `v-html`.
       data: sanitizeBlockData({ ...rawData, ...langOverrides }),
     }
+    node.data = publicBlockData(node.blockType, node.data)
     if (typeof n.colSpan === 'number') node.colSpan = n.colSpan
     if (Array.isArray(n.children)) node.children = pruneHiddenTree(n.children, lang)
     out.push(node)
@@ -150,13 +183,15 @@ export default defineEventHandler(async (event): Promise<PublicPageResponse> => 
       const rawData = (row.data as Record<string, unknown>) ?? {}
       const translations = rawData.translations as Record<string, Record<string, unknown>> | undefined
       const langOverrides = lang && lang !== 'vi' ? translations?.[lang] || {} : {}
-      return {
+      const block: PublicBlockNode = {
         id: row.id,
         blockType: row.blockType,
         // Lọc lúc đọc chứ không tin dữ liệu đã lưu: hàng ghi trước khi lớp lọc
-      // tồn tại (hoặc ghi qua đường khác) vẫn nằm trong DB và sẽ đi thẳng vào `v-html`.
-      data: sanitizeBlockData({ ...rawData, ...langOverrides }),
+        // tồn tại (hoặc ghi qua đường khác) vẫn nằm trong DB và sẽ đi thẳng vào `v-html`.
+        data: sanitizeBlockData({ ...rawData, ...langOverrides }),
       }
+      block.data = publicBlockData(block.blockType, block.data)
+      return block
     })
     return { ok: true, page: pageMeta, blocks }
   } catch (err) {
