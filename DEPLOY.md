@@ -557,6 +557,13 @@ như đã dừng; kiểm tay bằng `docker ps`, rồi thêm `--i-know-app-is-st
 
 Ghi chú: dump chỉ `DROP`/tạo lại những bảng **có trong nó**; bảng có ở CSDL đích mà không
 có trong dump được giữ nguyên. Muốn "đúng như bản sao lưu" thì khôi phục vào CSDL rỗng.
+`restore-db.sh` cũng nhận dump CSDL của chính ứng dụng (`backups/cdkt-<mã>-<trigger>.sql.gz`)
+tạo từ bản wave2 trở đi — dump đó có dòng `-- Dump completed` ở cuối như mysqldump. Đây là
+đường lui khi một lượt khôi phục trong ứng dụng hỏng ở bước cấu trúc và nêu tên bản an toàn
+`cdkt-<mã>-pre-restore.sql.gz` mà trang quản trị không khôi phục được:
+`./scripts/restore-db.sh backups/cdkt-<mã>-pre-restore.sql.gz <MYSQL_DATABASE> --replace`.
+Dump của ứng dụng tạo trước bản đó không có dòng hoàn tất và bị từ chối — khôi phục chúng
+trong trang quản trị.
 Archive `cdkt-uploads-*` của bản sao lưu trong ứng dụng dùng cùng khuôn (`uploads/…`) nên
 khôi phục được bằng cùng lệnh; archive `cdkt-media-*` của ứng dụng (gốc `media/`) có khuôn
 khác và `restore-media.sh` từ chối — khôi phục chúng bằng chức năng khôi phục của trang

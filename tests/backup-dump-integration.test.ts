@@ -30,7 +30,16 @@
  *   7. a restore whose dump dies half-way (after it replaced `backups`) puts the live
  *      backup rows back, and the sweep keeps the pre-restore dump and newer backups;
  *   8. a restore whose schema step fails (the dump's own data blocks a boot step) does
- *      the same, names the pre-restore dump to go back to, and that advice works.
+ *      the same, names the pre-restore dump to go back to, and that advice works;
+ *   9. …and the advice still works when the dump left `backups` in an OLDER shape
+ *      (the failure path brings `backups` itself up to date; rows keep their values);
+ *  10. a restore whose audit transaction fails still puts the rows back — values and
+ *      dates exactly as before — and keeps the live backup-scheduler record;
+ *  11. backup registration on an old-shape `backups` table works and keeps every value;
+ *  12. no backup starts while a restore holds its lock (it would be lost to the
+ *      registry the restore rewinds);
+ *  13. the pre-restore dump a failed restore names passes `scripts/restore-db.sh` — the
+ *      host way back the error message gives (fake `docker`, real `dumpSql` output).
  *
  * Gated and self-cleaning like the other *-integration suites:
  *
@@ -39,12 +48,14 @@
  *     --import ./scripts/ts-resolver.mjs --test tests/backup-dump-integration.test.ts
  */
 import assert from 'node:assert/strict'
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gunzipSync, gzipSync } from 'node:zlib'
 import test, { after, before } from 'node:test'
 import mysql, { type RowDataPacket } from 'mysql2/promise'
+
+import { SECRET, cleanup, makeSandbox } from './_ops-sandbox'
 
 const enabled = process.env.BACKUP_DUMP_INTEGRATION === '1'
 const host = process.env.BACKUP_DUMP_HOST || '127.0.0.1'
@@ -64,11 +75,16 @@ const DB = {
   sweep: `cdkt_backup_dump_${runId}_sweep`,
   partial: `cdkt_backup_dump_${runId}_partial`,
   converge: `cdkt_backup_dump_${runId}_converge`,
+  oldregistry: `cdkt_backup_dump_${runId}_oldregistry`,
+  audit: `cdkt_backup_dump_${runId}_audit`,
+  oldshape: `cdkt_backup_dump_${runId}_oldshape`,
+  busy: `cdkt_backup_dump_${runId}_busy`,
+  hostfallback: `cdkt_backup_dump_${runId}_hostfallback`,
 }
 
 /** Never let a typo in the env point this at a real deployment. */
 function assertDisposableDatabase(name: string) {
-  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold|oldschema|sweep|partial|converge)$/)
+  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold|oldschema|sweep|partial|converge|oldregistry|audit|oldshape|busy|hostfallback)$/)
   assert.notEqual(name, 'cdkt_admin')
 }
 
@@ -570,7 +586,7 @@ test('the orphan sweep fails closed: a backups table that is not the shape the a
  * of that dump plus `tail`, and a backup registered AFTER the dump. Returns what the
  * assertions need.
  */
-async function failingRestoreFixture(database: string, dirName: string, tail: string) {
+async function failingRestoreFixture(database: string, dirName: string, tail: string, options: { oldShapeDump?: boolean } = {}) {
   const { closeDb } = await import('../server/utils/db')
   await closeDb()
   pointAppAt(database)
@@ -582,11 +598,15 @@ async function failingRestoreFixture(database: string, dirName: string, tail: st
     await seed.query("INSERT INTO roles (id, name, is_system) VALUES (1, 'SuperAdmin', 1)")
     await seed.query("INSERT INTO users (id, username, password_hash, role_id, is_active) VALUES (1, 'root-admin', 'x', 1, 1)")
     await seed.query("INSERT INTO settings (`key`, value) VALUES ('failing_marker', 'live')")
+    // A dump from the previous release: `backups` without the column this wave added.
+    if (options.oldShapeDump) await seed.query('ALTER TABLE backups DROP COLUMN offsite_status')
   } finally {
     await seed.end()
   }
   const { dumpSql } = await import('../server/services/backup-sql')
   await dumpSql(path.join(dir, 'base.sql.gz'))
+  // The current release boots on it before anything else happens.
+  if (options.oldShapeDump) await initDb()
   const sqlText = gunzipSync(readFileSync(path.join(dir, 'base.sql.gz'))).toString('utf8')
   writeFileSync(path.join(dir, 'broken-upload.sql.gz'), gzipSync(Buffer.from(`${sqlText}\n${tail}\n`)))
   const { runBackup } = await import('../server/services/backup')
@@ -595,6 +615,36 @@ async function failingRestoreFixture(database: string, dirName: string, tail: st
 }
 
 const registryOf = async (database: string) => (await exactRows(database, 'SELECT filename FROM backups ORDER BY id')).map(row => String(row.filename))
+
+/** The registry's values as stored (UTC session, dates as strings) — for "kept exactly" checks. */
+const registryValues = async (database: string) => Object.fromEntries((await exactRows(
+  database,
+  'SELECT filename, type, bytes, stamp, `trigger`, status, created_by, CAST(created_at AS CHAR) AS created_at FROM backups ORDER BY id',
+)).map(row => [String(row.filename), row]))
+
+/**
+ * The pre-restore row is created INSIDE the restore, so no "before" snapshot has it:
+ * check it against its file — size, the stamp in its name, who took it, and a
+ * `created_at` at the moment it was taken (UTC — a raw `Date` through the +07:00 pool
+ * would be 7 h off). That `created_at` survives the reattach exactly is shown by the
+ * `newer` row, compared with its value from before the restore.
+ */
+function assertPreRestoreRow(row: Record<string, unknown> | undefined, dir: string, pre: string) {
+  assert.ok(row, `${pre} is listed`)
+  const stamp = /cdkt-(\d{8}T\d{6}Z)-pre-restore\.sql\.gz$/.exec(pre)![1]!
+  assert.deepEqual(
+    { type: row.type, bytes: row.bytes, stamp: row.stamp, trigger: row.trigger, status: row.status, created_by: row.created_by },
+    { type: 'sql', bytes: String(statSync(path.join(dir, pre)).size), stamp, trigger: 'pre-restore', status: 'done', created_by: 1 },
+  )
+  const takenAt = Date.parse(stamp.replace(/^(\d{4})(\d{2})(\d{2})T(\d{2})(\d{2})(\d{2})Z$/, '$1-$2-$3T$4:$5:$6Z'))
+  const createdAt = Date.parse(`${String(row.created_at).replace(' ', 'T')}Z`)
+  assert.ok(createdAt >= takenAt && createdAt - takenAt <= 30_000, `created_at ${String(row.created_at)} is when ${pre} was taken`)
+}
+
+const ORPHAN_READER_TAIL = [
+  'ALTER TABLE chat_sessions DROP FOREIGN KEY fk_chat_sessions_reader;',
+  "INSERT INTO chat_sessions (id, message_count, started_at, last_message_at, reader_id) VALUES ('orphan-reader', 0, NOW(), NOW(), 999);",
+].join('\n')
 
 test('a restore whose dump dies half-way puts the live backup rows back; the sweep keeps the pre-restore dump and newer backups', { skip: !enabled, timeout: 300_000 }, async () => {
   // Before: both failure exits threw before the only reattach, so the failed restore
@@ -662,4 +712,170 @@ test('a restore whose schema step fails: rows put back, files kept, the message 
   delete process.env.CDKT_BACKUPS_DIR
   const { closeDb } = await import('../server/utils/db')
   await closeDb()
+})
+
+// ─── 9–12. Round 3 (re-verification of 74cd56c) ──────────────────────────────
+
+test('the advice works even when the failed restore left `backups` in an older shape; the rows keep their values', { skip: !enabled, timeout: 300_000 }, async () => {
+  // The schema step stops before it reaches `backups.offsite_status`, so the table
+  // stays in the dump's shape. Before: the pre-restore dump's own registration (Drizzle
+  // names every column) failed and "restore the safety dump" was a dead end.
+  const { dir, newer } = await failingRestoreFixture(DB.oldregistry, 'backups-oldregistry', ORPHAN_READER_TAIL, { oldShapeDump: true })
+  const before = await registryValues(DB.oldregistry)
+  const { runRestore } = await import('../server/services/backup-restore')
+  await assert.rejects(runRestore('broken-upload.sql.gz', { id: 1, username: 'root-admin' }), (error: unknown) => (error as { reason?: string }).reason === 'schema_convergence_failed')
+  const pre = readdirSync(dir).find(name => name.endsWith('-pre-restore.sql.gz'))!
+  assert.ok(pre)
+
+  assert.ok((await columnsOf(DB.oldregistry, 'backups')).includes('offsite_status'), 'the failure path brings `backups` itself up to date')
+  const after = await registryValues(DB.oldregistry)
+  assert.ok(before[newer], 'the newer backup was listed before the restore')
+  assert.deepEqual(after[newer], before[newer], `${newer} kept exactly`)
+  assertPreRestoreRow(after[pre], dir, pre)
+
+  await runRestore(pre, { id: 1, username: 'root-admin' })
+  assert.equal((await exactRows(DB.oldregistry, "SELECT value FROM settings WHERE `key` = 'failing_marker'"))[0]!.value, 'live')
+  assert.ok((await registryOf(DB.oldregistry)).includes(newer))
+  delete process.env.CDKT_BACKUPS_DIR
+  const { closeDb } = await import('../server/utils/db')
+  await closeDb()
+})
+
+test('a restore whose audit transaction fails still puts the rows back exactly and keeps the live scheduler record', { skip: !enabled, timeout: 300_000 }, async () => {
+  // The dump brings a trigger that refuses every activity_logs insert: dump and schema
+  // step succeed, the audit transaction (which also re-adds the rows) rolls back.
+  const { dir, newer } = await failingRestoreFixture(
+    DB.audit, 'backups-audit',
+    "CREATE TRIGGER audit_block BEFORE INSERT ON activity_logs FOR EACH ROW SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'fixture: audit blocked';",
+  )
+  const live = JSON.stringify({ slot: '2026-10-24T20:00:00.000Z', attempts: 1, lastAttemptAt: '2026-10-24T20:02:00.000Z', outcome: 'done', lastDoneAt: '2026-10-24T20:02:00.000Z', schedule: { hour: 3, days: [0] } })
+  const conn = await mysql.createConnection({ host, port, user, password, database: DB.audit })
+  try {
+    await conn.query("INSERT INTO settings (`key`, value, type, `group`) VALUES ('backup_scheduler_state', ?, 'json', 'internal')", [live])
+  } finally {
+    await conn.end()
+  }
+  const before = await registryValues(DB.audit)
+  const { runRestore } = await import('../server/services/backup-restore')
+  // Drizzle reports the failed statement (`Failed query: insert into activity_logs …`).
+  await assert.rejects(runRestore('broken-upload.sql.gz', { id: 1, username: 'root-admin' }), /activity_logs/)
+  const pre = readdirSync(dir).find(name => name.endsWith('-pre-restore.sql.gz'))!
+  const after = await registryValues(DB.audit)
+  assert.ok(before[newer], 'the newer backup was listed before the restore')
+  assert.deepEqual(after[newer], before[newer], `${newer} kept exactly`)
+  assertPreRestoreRow(after[pre], dir, pre)
+  assert.equal((await exactRows(DB.audit, "SELECT value FROM settings WHERE `key` = 'backup_scheduler_state'"))[0]?.value, live, 'the live scheduler record, not the dump\'s (none)')
+  ageAll(dir)
+  const { sweepStaleBackupFiles } = await import('../server/services/backup')
+  await sweepStaleBackupFiles()
+  const left = readdirSync(dir)
+  assert.ok(left.includes(pre) && left.includes(newer), `swept: ${left.join(', ')}`)
+  delete process.env.CDKT_BACKUPS_DIR
+  const { closeDb } = await import('../server/utils/db')
+  await closeDb()
+})
+
+test('registering a backup on an old-shape `backups` table works and keeps every value, dates included', { skip: !enabled, timeout: 180_000 }, async () => {
+  const { closeDb } = await import('../server/utils/db')
+  await closeDb()
+  pointAppAt(DB.oldshape)
+  freshBackupsDir('backups-oldshape')
+  const { initDb } = await import('../server/db/init')
+  await initDb()
+  const conn = await mysql.createConnection({ host, port, user, password, database: DB.oldshape })
+  try {
+    await conn.query("INSERT INTO roles (id, name, is_system) VALUES (1, 'SuperAdmin', 1)")
+    await conn.query("INSERT INTO users (id, username, password_hash, role_id, is_active) VALUES (1, 'root-admin', 'x', 1, 1)")
+    await conn.query('ALTER TABLE backups DROP COLUMN offsite_status')
+  } finally {
+    await conn.end()
+  }
+  // runBackup's own registration (what the pre-restore safety backup goes through).
+  const { runBackup } = await import('../server/services/backup')
+  const name = (await runBackup('sql', 'manual', 1, { rotate: false })).files[0]!.name
+  assert.ok((await registryOf(DB.oldshape)).includes(name))
+
+  // The shared insert, with a known date: stored exactly as Drizzle stores it.
+  const { insertBackupRow } = await import('../server/services/backup-registry')
+  const { getDb } = await import('../server/utils/db')
+  await insertBackupRow(getDb(), {
+    filename: 'cdkt-20260301T101112Z-manual.sql.gz', type: 'sql', bytes: 123456, stamp: '20260301T101112Z', trigger: 'manual',
+    status: 'done', driveUploaded: true, driveFileId: 'drive-file', offsiteStatus: 'uploaded', error: null, createdBy: 1,
+    createdAt: new Date('2026-03-01T10:11:12.000Z'),
+  })
+  const row = (await registryValues(DB.oldshape))['cdkt-20260301T101112Z-manual.sql.gz']
+  assert.deepEqual(row, {
+    filename: 'cdkt-20260301T101112Z-manual.sql.gz', type: 'sql', bytes: '123456', stamp: '20260301T101112Z', trigger: 'manual',
+    status: 'done', created_by: 1, created_at: '2026-03-01 10:11:12',
+  })
+  await closeDb()
+  delete process.env.CDKT_BACKUPS_DIR
+})
+
+test('no backup starts while a restore holds its lock; it starts again once the lock is free', { skip: !enabled, timeout: 120_000 }, async () => {
+  const { closeDb } = await import('../server/utils/db')
+  await closeDb()
+  pointAppAt(DB.busy)
+  freshBackupsDir('backups-busy')
+  const { initDb } = await import('../server/db/init')
+  await initDb()
+  const holder = await mysql.createConnection({ host, port, user, password })
+  const { runBackup, BackupRestoreInProgressError } = await import('../server/services/backup')
+  try {
+    // NOTE: the restore lock is server-wide — another suite restoring at the same
+    // moment would hold it too; this test takes it itself.
+    const [[got]] = await holder.query<RowDataPacket[]>("SELECT GET_LOCK('cdkt:backup:restore', 5) AS got")
+    assert.equal(Number(got!.got), 1)
+    await assert.rejects(runBackup('sql', 'manual', null, { rotate: false }), (err: unknown) => err instanceof BackupRestoreInProgressError)
+    assert.deepEqual(await registryOf(DB.busy), [])
+  } finally {
+    await holder.query("SELECT RELEASE_LOCK('cdkt:backup:restore')")
+    await holder.end()
+  }
+  const ok = await runBackup('sql', 'manual', null, { rotate: false })
+  assert.equal(ok.files.length, 1)
+  await closeDb()
+  delete process.env.CDKT_BACKUPS_DIR
+})
+
+test('the pre-restore dump a failed restore names passes scripts/restore-db.sh — the host way back', { skip: !enabled, timeout: 180_000 }, async () => {
+  // The schema-step error says: if the safety dump cannot be restored in the app, run
+  // scripts/restore-db.sh on the host with that same file. Before: the script refused
+  // every app dump ("no completion marker — it is truncated"; the app never wrote the
+  // mysqldump trailer), so the way back named in the message did not exist.
+  const { closeDb } = await import('../server/utils/db')
+  await closeDb()
+  pointAppAt(DB.hostfallback)
+  const dir = freshBackupsDir('backups-hostfallback')
+  const { initDb } = await import('../server/db/init')
+  await initDb()
+  const conn = await mysql.createConnection({ host, port, user, password, database: DB.hostfallback })
+  try {
+    await conn.query("INSERT INTO roles (id, name, is_system) VALUES (1, 'SuperAdmin', 1)")
+    await conn.query("INSERT INTO users (id, username, password_hash, role_id, is_active) VALUES (1, 'root-admin', 'x', 1, 1)")
+    // Text that would read as a mysql client command if it started a line of the dump.
+    await conn.query("INSERT INTO settings (`key`, value) VALUES ('fallback_marker', ?)", ['line one\nuse other_db;\nsource /etc/passwd'])
+  } finally {
+    await conn.end()
+  }
+  // The same call the restore's safety backup makes.
+  const { runBackup } = await import('../server/services/backup')
+  const name = (await runBackup('sql', 'pre-restore', 1, { rotate: false })).files[0]!.name
+  assert.match(name, /-pre-restore\.sql\.gz$/)
+  const dumpText = gunzipSync(readFileSync(path.join(dir, name))).toString('utf8')
+
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\nMYSQL_DATABASE=cdkt_admin\n`)
+  try {
+    mkdirSync(sb.path('backups'))
+    copyFileSync(path.join(dir, name), sb.path('backups', name))
+    const r = sb.run('scripts/restore-db.sh', [sb.path('backups', name), 'cdkt_admin', '--replace'])
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    const stdin = readdirSync(sb.dir).find(file => file.startsWith('mysql.stdin.'))
+    assert.ok(stdin, 'the dump reached mysql')
+    assert.equal(readFileSync(sb.path(stdin), 'utf8'), dumpText, 'unmodified')
+  } finally {
+    cleanup(sb)
+  }
+  await closeDb()
+  delete process.env.CDKT_BACKUPS_DIR
 })

@@ -546,6 +546,37 @@ test('while a restore holds its lock — or the lock cannot be asked — no fina
   assert.ok(logs.some(entry => entry.event === 'backup.orphan_sweep_skipped' && entry.reason === 'restore_in_progress'))
 })
 
+// ─── No backup while a restore runs (wave2 ops round 3, W2) ───────────────────
+// A backup that finished DURING a database restore was not in the restore's list of
+// live rows and its stamp was after the newest pre-restore dump: the restore rewound
+// the registry under it, nothing put its row back, and the sweep deleted it. Now a
+// backup refuses to start while the restore lock is held — except the restore's own
+// pre-restore run.
+
+test('runBackup refuses while a restore holds its lock — typed, busy, nothing written, onStarted not called', async () => {
+  const { BackupRestoreInProgressError } = await import('../server/services/backup')
+  state.restoreHolder = 42
+  let started = false
+  const error = await runBackup('sql', 'manual', 1, { rotate: false, archiveSources: sources(), onStarted: async () => { started = true } }).catch((err: unknown) => err)
+  assert.ok(error instanceof BackupRestoreInProgressError, String(error))
+  assert.ok(error instanceof BackupLockBusyError, 'callers that treat "busy" as 409 / not-an-attempt keep doing so')
+  assert.match((error as Error).message, /khôi phục/)
+  assert.equal(started, false, 'the scheduler must not count it as an attempt')
+  assert.deepEqual(onDisk(), [])
+  assert.deepEqual(state.rows, [])
+})
+
+test('…unless the lock state cannot be read (refused too), and the restore\'s own pre-restore run always proceeds', async () => {
+  const { BackupRestoreInProgressError } = await import('../server/services/backup')
+  state.failRestoreLockQuery = true
+  await assert.rejects(run('sql'), (err: unknown) => err instanceof BackupRestoreInProgressError)
+  state.failRestoreLockQuery = false
+  state.restoreHolder = 42
+  const own = await runBackup('sql', 'pre-restore', 1, { rotate: false, archiveSources: sources(), allowDuringRestore: true })
+  assert.equal(own.files.length, 1)
+  assert.match(own.files[0]!.name, /-pre-restore\.sql\.gz$/)
+})
+
 test('S1: a rotation error after the backup is registered is logged, not a failed run', async () => {
   state.failRotationSelect = true
   const result = await runBackup('sql', 'scheduled', null, { archiveSources: sources() })

@@ -10,7 +10,7 @@ import test, { beforeEach, mock } from 'node:test'
  */
 
 const opened: Array<{ database: string | undefined, ended: boolean }> = []
-const failures = { createDatabase: false, schemaStep: false }
+const failures = { createDatabase: false, schemaStep: false, end: false }
 
 mock.module('mysql2/promise', {
   defaultExport: {
@@ -26,7 +26,10 @@ mock.module('mysql2/promise', {
           if (failures.schemaStep) throw new Error('fixture: ALTER TABLE failed (orphan row blocks the FK)')
           return [[], []]
         },
-        end: async () => { record.ended = true },
+        end: async () => {
+          record.ended = true
+          if (failures.end) throw new Error('fixture: connection already lost')
+        },
       }
     },
   },
@@ -38,6 +41,13 @@ beforeEach(() => {
   opened.length = 0
   failures.createDatabase = false
   failures.schemaStep = false
+  failures.end = false
+})
+
+test('a connection that cannot be closed cleanly does not hide the error of the step that failed', async () => {
+  failures.schemaStep = true
+  failures.end = true
+  await assert.rejects(initDb(), /ALTER TABLE failed/)
 })
 
 test('a failing schema step still releases the connection it opened', async () => {

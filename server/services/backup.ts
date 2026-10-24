@@ -28,6 +28,7 @@ import { logInfo, logWarn } from '../utils/logger'
 import { dumpSql } from './backup-sql'
 import { backupKindOf, expectedArchiveTop } from './backup-restore-guards'
 import { markOffsiteStatus, offsiteStatusAtRegistration, uploadRunOffsite } from './backup-offsite'
+import { insertBackupRow } from './backup-registry'
 
 const execFileAsync = promisify(execFile)
 
@@ -80,13 +81,34 @@ export interface RunBackupOptions {
    * sau đó vẫn là một lượt, còn bị từ chối vì khoá bận thì không. Ném → lượt dừng.
    */
   onStarted?: () => Promise<void>
+  /**
+   * Chỉ bản `pre-restore` của chính lượt khôi phục (`takeSafetyBackup`): chạy dù khoá
+   * khôi phục đang bị giữ — mọi lượt khác bị từ chối (`BackupRestoreInProgressError`).
+   */
+  allowDuringRestore?: boolean
 }
 
 /** Một lượt backup khác giữ khoá — phân biệt bằng kiểu, không so chuỗi. */
 export class BackupLockBusyError extends Error {
-  constructor() {
-    super('Một lượt backup khác đang chạy. Thử lại sau.')
+  constructor(message = 'Một lượt backup khác đang chạy. Thử lại sau.') {
+    super(message)
     this.name = 'BackupLockBusyError'
+  }
+}
+
+/**
+ * Một lượt khôi phục CSDL đang giữ khoá (hoặc không hỏi được MySQL): không bắt đầu lượt
+ * sao lưu nào. Lượt khôi phục thay cả bảng `backups` bằng bản trong dump; một bản sao
+ * lưu xong GIỮA lúc đó không nằm trong danh sách mà lượt khôi phục đã đọc để gắn lại, và
+ * mang mã thời điểm SAU bản `pre-restore` — hàng của nó mất, rồi lượt dọn xoá tệp.
+ * Là một dạng "bận" (kế thừa `BackupLockBusyError`): endpoint trả 409, scheduler không
+ * tính là một lượt thử (lỗi ném trước `onStarted`). Riêng bản `pre-restore` của chính
+ * lượt khôi phục đi qua (`allowDuringRestore`).
+ */
+export class BackupRestoreInProgressError extends BackupLockBusyError {
+  constructor() {
+    super('Đang khôi phục cơ sở dữ liệu — chưa thể sao lưu lúc này. Thử lại sau khi khôi phục xong.')
+    this.name = 'BackupRestoreInProgressError'
   }
 }
 
@@ -467,6 +489,21 @@ export async function runBackup(
   const stamp = timestampStamp()
 
   const outcome = await withNamedLock(pool, LOCK_RUN, LOCK_TIMEOUT, async () => {
+    // Đang khôi phục CSDL (hoặc không biết) → từ chối, TRƯỚC `onStarted` (không phải một
+    // lượt thử). Hỏi trong khoá chạy: một lượt khôi phục bắt đầu sau câu hỏi này cần
+    // khoá chạy cho bản `pre-restore` của nó, nên sẽ đợi/409 thay vì chạy song song.
+    if (!options.allowDuringRestore) {
+      let restoreActive = true
+      try {
+        restoreActive = await restoreLockHeldOnServer()
+      } catch (err: unknown) {
+        logWarn({ event: 'backup.restore_lock_unknown', trigger, error: err instanceof Error ? err.message : String(err) })
+      }
+      if (restoreActive) {
+        logInfo({ event: 'backup.refused_restore_in_progress', type, trigger })
+        throw new BackupRestoreInProgressError()
+      }
+    }
     // Đã giữ khoá chạy: từ đây là một lượt (scheduler đếm lượt ở đây — kể cả khi
     // hỏng ngay ở `mkdir`/đọc cấu hình bên dưới).
     await options.onStarted?.()
@@ -518,7 +555,9 @@ export async function runBackup(
       const moved = { done: false }
       try {
         await db.transaction(async (tx) => {
-          await tx.insert(backups).values({
+          // Qua `insertBackupRow`: bảng `backups` hình dạng cũ (khôi phục hỏng giữa chừng)
+          // vẫn nhận được hàng — đó là lúc bản `pre-restore` là đường lui duy nhất.
+          await insertBackupRow(tx, {
             filename: name, type: kind, bytes, stamp, trigger, status: 'done', createdBy: adminUserId,
             offsiteStatus: offsiteStatusAtRegistration({ driveEnabled: offsiteExpected }),
           })
@@ -586,7 +625,7 @@ export async function runBackup(
       // nào để ghi hàng `failed`; lỗi vẫn ném ra cho nơi gọi.
       if (failedStep) {
         // Không để lỗi ghi hàng `failed` (CSDL đang hỏng) che lỗi gốc của lượt sao lưu.
-        await db.insert(backups).values({
+        await insertBackupRow(db, {
           filename: failedStep.name, type: failedStep.kind, bytes: 0, stamp, trigger, status: 'failed',
           error: err instanceof Error ? err.message : String(err), createdBy: adminUserId,
         }).catch((insertErr: unknown) => {

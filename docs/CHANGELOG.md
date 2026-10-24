@@ -1118,6 +1118,34 @@ Mỗi mục có test đỏ trước khi sửa, trên 58c891c.
   - `bash -n` + shellcheck không có cảnh báo mới; `docker compose config -q` xanh với env giả.
   - Container thử journald với `--pull=never` chạy thật (exit 0).
 
+#### Sửa sau kiểm chứng lần 3 (2026-10-24)
+
+Không còn CRITICAL; sửa các cảnh báo. Mỗi mục có test đỏ trước khi sửa, trên 74cd56c (bản sao `git archive`).
+
+- **W1 — lời khuyên "khôi phục bản an toàn" thành ngõ cụt khi `backups` còn hình dạng cũ.** Bước cấu trúc hỏng trước khi tới `backups.offsite_status` thì bảng giữ hình dạng của dump. Lượt khôi phục kế tiếp (chính là làm theo lời khuyên) tạo bản an toàn mới, nhưng đăng ký nó bằng câu Drizzle nêu đủ cột → `Unknown column 'offsite_status'` → khôi phục bị huỷ. Sửa ba chỗ:
+  - **Một lối ghi sổ cho mọi nơi:** `insertBackupRow` (`server/services/backup-registry.ts`) — đăng ký lượt sao lưu (kể cả `pre-restore`), hàng `failed`, tệp tải lên, gắn lại sau khôi phục. Bảng thiếu cột (`ER_BAD_FIELD_ERROR`) → ghi chỉ các cột bảng thật có, giá trị qua `sql.param(value, column)` (cùng bộ chuyển của Drizzle, ngày giờ không lệch). Log `backup.registry_old_shape`.
+  - **Đưa riêng `backups` về hình dạng hiện tại** (`convergeBackupsTable`, tách từ `applyAdditiveMigrations` — lúc khởi động gọi đúng hàm này) ở đầu mỗi lượt khôi phục CSDL, trước bản an toàn, và ở lối thất bại trước khi gắn lại hàng.
+  - **Đường lui trên máy chủ có thật:** lời khuyên nay nêu thêm `scripts/restore-db.sh` với chính tệp `pre-restore`. Kiểm ra script đó từ chối **mọi** dump của app ("no completion marker — it is truncated"), vì dump của app không có dòng hoàn tất của mysqldump. `dumpSql` nay kết thúc bằng `-- Dump completed on <ISO>`. Đã thử thật trên container MySQL dev: `restore-db.sh` khôi phục một bản `pre-restore` của app (62 bảng, một `INSERT` 20 MB) vào CSDL thử. Dump của app tạo trước bản này vẫn bị script từ chối — README/DEPLOY.md ghi rõ, khôi phục chúng trong app.
+  - Đã thử và bỏ: thêm `--max-allowed-packet` cho client `mysql` trong script. Client 8.0.46 gửi được câu `INSERT` 20 MB với mặc định 16 MB, nên cờ này không cần.
+  - **Test:** `backup-dump-integration` mục 9 (lời khuyên chạy được khi `backups` cũ; hàng giữ nguyên giá trị), 11 (đăng ký trên bảng cũ, ngày giờ y nguyên), 13 (bản `pre-restore` của app qua được `restore-db.sh`, docker giả, đầu ra `dumpSql` thật). Trên 74cd56c: mục 9 đỏ `the failure path brings backups itself up to date`, mục 11 đỏ `Unknown column 'offsite_status'`; mục 13 đỏ trước khi thêm dòng hoàn tất.
+- **W2 — lượt sao lưu chạy giữa lúc khôi phục bị mất hàng.** `runBackup` nay từ chối khi khoá `cdkt:backup:restore` đang bị giữ (hoặc không hỏi được): `BackupRestoreInProgressError` (con của `BackupLockBusyError`) → endpoint trả 409. Scheduler coi đó là "bận": không tính lần thử, log `backup.scheduler_busy` (trước đây mọi lỗi bận ghi `backup.scheduler_failed`). Ngoại lệ duy nhất: bản `pre-restore` của chính lượt khôi phục (`allowDuringRestore`). Test: `backup-orphan-archives` (từ chối, không ghi gì, không gọi `onStarted`), `backup-run-endpoint` (409), `backup-scheduler-due` (bận ≠ lần thử), `backup-dump-integration` mục 12 (khoá thật). Trên 74cd56c mục 12 đỏ `Missing expected rejection`.
+- **W3 — trạng thái scheduler chỉ được giữ ở lối thành công.** Lối thất bại (`restoreLiveStateAfterFailedRestore`) nay ghi lại cả `backup_scheduler_state` của hệ thống đang chạy. Test: hai ca `backup-restore-hardening` (dump chết, bước cấu trúc hỏng) và `backup-dump-integration` mục 10. Trên 74cd56c mục 10 đỏ `the live scheduler record, not the dump's (none)`.
+- **W4 — thêm mục integration:**
+  - mục 10: transaction audit hỏng (trigger chặn `activity_logs` đi kèm dump) → hàng vẫn được gắn lại;
+  - mục 9: gắn lại vào bảng hình dạng cũ;
+  - mục 9 và 10: so giá trị và ngày giờ từng hàng. Bản `newer` so y nguyên với trước khôi phục. Bản `pre-restore` sinh **trong** lượt khôi phục nên so với tệp của nó: kích thước, mã thời điểm, người tạo, `created_at` theo UTC.
+- **S1:** kiểm `DB_NAME`/`MYSQL_DATABASE` (`assertOneDatabase`) chuyển lên **trước** bản an toàn và `restoreSql`. Test đỏ trước khi sửa.
+- **S3:** CLAUDE.md ghi số dòng hiện tại của `init.ts` (80, `wc -l` 2026-10-24) ở các chỗ nêu cỡ hiện tại. Dòng lịch sử "1302 → 73" giữ nguyên.
+- **S4:** `init.ts` đóng kết nối bằng `end().catch(() => {})` trong `finally`. Lỗi đóng không che lỗi của bước hỏng. Test thêm ca `end` ném.
+- **Tách tệp:** phần giữ trạng thái của lượt khôi phục chuyển sang `server/services/backup-restore-recovery.ts`, để `backup-restore.ts` ở dưới 400 dòng. Đó là các hàm: kiểm một CSDL, đưa `backups` về hình dạng hiện tại, bước cấu trúc, gắn lại hàng, lối thất bại. `backup.ts` vẫn lớn từ trước (726 dòng, trước đợt này 674) — chưa tách, ghi lại cho lượt sau.
+- **Bẫy của guard TDZ** (`tests/transaction-tdz.test.ts`): guard lấy thân khối từ dấu `{` đầu tiên sau `transaction(`. Với callback arrow một biểu thức (`db.transaction(tx => f(tx))`), dấu đó nằm ở dòng **sau** lời gọi, nên một phép đọc biến kết quả ở dòng kế tiếp bị báo oan. Chỗ này nay viết thân khối có ngoặc. Guard để nguyên, ngoài phạm vi.
+- **Đã kiểm** (sau khi rebase lên `wave1/integration` 2516422):
+  - `tests/backup-dump-integration.test.ts` trên MySQL 8.0.46 local: 14/14 xanh trong một lượt, không sót DB `cdkt_backup_dump_*`.
+  - `npm test`: 4526 test, 4490 pass, 0 fail, 36 skip.
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` xanh (636 cột / 62 bảng).
+  - Build sạch (xoá `.output` + cache) xanh 2/2 lượt.
+  - `bash -n` + shellcheck xanh cho `restore-db.sh`, `verify-restore.sh`, `deploy-remote.sh`, `manage.sh`; `docker compose config -q` xanh với env giả.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.

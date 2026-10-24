@@ -585,6 +585,25 @@ describe('a database restore brings the schema up to date before using it', () =
     assert.match(page, /if \(restoreStatus\.value\?\.phase === 'schema'\) return 100/)
   })
 
+  test('DB_NAME empty while MYSQL_DATABASE names another database: refused BEFORE the safety backup and the dump (round 3, S1)', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    const saved = { DB_NAME: process.env.DB_NAME, MYSQL_DATABASE: process.env.MYSQL_DATABASE }
+    process.env.DB_NAME = ''
+    process.env.MYSQL_DATABASE = 'cdkt_other'
+    try {
+      const error = await rejection(restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR))
+      assert.equal(error.reason, 'db_name_mismatch')
+      assert.match(error.message, /DB_NAME/)
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+    assert.ok(!backupFiles().some(name => name.endsWith('-pre-restore.sql.gz')), 'no safety backup was taken')
+    assert.deepEqual(order.filter(step => step === 'restoreSql' || step === 'initDb'), [])
+  })
+
   test('a file-archive restore touches no schema', async () => {
     const name = makeArchive('cdkt-uploads-20261013T000000Z-manual.tar.gz', (root) => { uploadsTree(root); return ['uploads'] })
     await restore.runRestore(name, ACTOR)
@@ -610,6 +629,21 @@ describe('a database restore keeps the live backup scheduler state', () => {
     assert.equal(stateValue(), LIVE)
     assert.equal(state.settings.find(row => row.key === 'site_name')?.value, 'from dump', 'every other setting is the restored one')
   })
+
+  // wave2 ops round 3 (W3): a FAILED restore after the dump ran rewinds this row too.
+  for (const [label, arm] of [
+    ['the dump dies half-way', () => { failRestoreSql = true }],
+    ['the schema step fails', () => { failConverge = true }],
+  ] as const) {
+    test(`a failed restore (${label}) keeps the live record as well`, async () => {
+      seedSqlBackup('cdkt-20261025T030000Z-scheduled.sql.gz', '20261025T030000Z', 'SELECT 1;')
+      state.settings = [{ key: KEY, value: LIVE }]
+      restoredSettings = [{ key: KEY, value: IN_DUMP }]
+      arm()
+      await assert.rejects(restore.runRestore('cdkt-20261025T030000Z-scheduled.sql.gz', ACTOR))
+      assert.equal(stateValue(), LIVE)
+    })
+  }
 
   test('no live record: the dump\'s record is removed, not kept', async () => {
     seedSqlBackup('cdkt-20261025T030000Z-scheduled.sql.gz', '20261025T030000Z', 'SELECT 1;')

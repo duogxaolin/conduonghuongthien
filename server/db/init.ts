@@ -42,7 +42,7 @@ export async function initDb() {
   try {
     await connection.query(`CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`)
   } finally {
-    await connection.end()
+    await connection.end().catch(() => {})
   }
 
   // Step 2: Connect to target database and create tables in FK order.
@@ -62,7 +62,7 @@ export async function initDb() {
     // liệu (bảng tồn tại từ deployment cũ, thiếu cột mới). Xem migrations-additive.
     await applyAdditiveMigrations(db, database)
   } finally {
-    await db.end()
+    await db.end().catch(() => {})
   }
   console.log('✅ All MySQL tables exist and ready!')
 }
