@@ -592,7 +592,7 @@ describe('deploy-remote.sh — journald, or the json-file fallback (D-LOG)', () 
     await withJournald(ok, (env) => {
       const run = runDeploy(ok, { ...shipped(), ...env, FAKE_IMAGES: `${NEW_IMAGE}|2026-01-01T00:00:00Z|sha256:new` })
       assert.equal(run.status, 0, run.stderr)
-      assert.ok(run.calls.some(c => c.startsWith(`run --rm --network none --log-driver journald --log-opt tag=cdkt-journald-probe --entrypoint true ${NEW_IMAGE} `)), run.calls.join('\n'))
+      assert.ok(run.calls.some(c => c.startsWith(`run --rm --pull=never --network none --log-driver journald --log-opt tag=cdkt-journald-probe --entrypoint true ${NEW_IMAGE} `)), run.calls.join('\n'))
       assert.equal(existsSync(join(ok.dir, OVERRIDE)), false)
     })
     const refused = makeFixture()

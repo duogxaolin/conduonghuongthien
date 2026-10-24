@@ -1305,7 +1305,7 @@ test('W2: Deploy treats a daemon without the journald driver as no journald, eve
       const r = sb.run('production/manage.sh', ['update'], { input: updateInput('n', 'n'), env: { ...env, FAKE_JOURNALD_RUN_RC: '125' } })
       assert.equal(r.status, 0, r.stdout + r.stderr)
       assert.ok(existsSync(sb.path(OVERRIDE)), 'the fallback stays while the daemon cannot log to journald')
-      assert.ok(sb.dockerLog().some(l => l.startsWith('run --rm --network none --log-driver journald ')), sb.dockerLog().join('\n'))
+      assert.ok(sb.dockerLog().some(l => l.startsWith('run --rm --pull=never --network none --log-driver journald ')), sb.dockerLog().join('\n'))
     })
   } finally {
     cleanup(sb)

@@ -267,8 +267,8 @@ không bao giờ tới được container). Lượt deploy:
 4b. **log của app** (wave2 D-LOG): compose cho app ghi vào journald (`tag: cdkt-app`).
    `ensure_log_driver "$IMAGE"` kiểm máy chủ dùng được systemd-journald: socket
    `/run/systemd/journal/socket`, `journalctl`, daemon có driver `journald`
-   (`docker info … .Plugins.Log`) và một container thử `docker run --rm --network none
-   --log-driver journald --entrypoint true <image vừa kéo>`. Không có → ghi
+   (`timeout 20 docker info … .Plugins.Log`) và một container thử `timeout 60 docker run
+   --rm --pull=never --network none --log-driver journald --entrypoint true <image vừa kéo>`. Không có → ghi
    `<APP_DIR>/docker-compose.override.yml` mang dấu `# cdkt-log-fallback` (app dùng
    `json-file` 3 × 10 MB) và in `::warning::`; có journald mà tệp có dấu còn → gỡ nó.
    Override **không** mang dấu (của người vận hành) không bao giờ bị sửa; khi đó

@@ -1084,6 +1084,40 @@ Mỗi mục có test đỏ trước khi sửa, trên 96804b0.
   - Build xanh 4/5 lượt. Lượt đỏ là `Could not resolve "../../../../../shared/link-policy.ts"` từ import tương đối **có sẵn** trong `app/utils/nav-config.ts` (bẫy § 32, ngoài phạm vi) — cần sửa riêng sang `~~/shared/link-policy`.
   - `bash -n` + shellcheck không có cảnh báo mới; `docker compose config -q` xanh với env giả.
 
+#### Sửa sau kiểm chứng lần 2 (2026-10-24)
+
+Mỗi mục có test đỏ trước khi sửa, trên 58c891c.
+
+- **CRITICAL — khôi phục THẤT BẠI vẫn để lượt dọn xoá bản `pre-restore` và mọi bản mới hơn.** 58c891c đã sửa lối thành công, nhưng hai lối thất bại — dump chết giữa chừng, và bước cấu trúc hỏng — đều ném trước chỗ gắn lại hàng duy nhất (trong transaction audit). Lối thất bại chỉ ghi audit. `backups` còn đúng như dump ghi, "đúng hình dạng" nhưng thiếu các hàng mới, nên lượt dọn kế tiếp (mỗi `runBackup`, và lượt dọn lúc khởi động) xoá bản an toàn cùng các bản mới hơn. Sửa cả hai phía:
+  - **(a) Gắn lại trên mọi lối thất bại**, ngay sau khi dump đã chạy và trước khi nhả khoá khôi phục: `reattachAfterFailedRestore`.
+    - Chạy sau bước cấu trúc khi bước đó chạy được.
+    - Chịu được bảng còn hình dạng cũ: chỉ ghi các cột của `schema.ts` mà bảng thật đang có, đọc từ `information_schema`. Giá trị mã hoá bằng `column.mapToDriverValue` của Drizzle, vì `pool.query` trần với `Date` lệch 7 giờ.
+    - `created_by` chỉ giữ id còn trong `users` vừa nạp.
+    - Không bao giờ ném đè lỗi gốc. Log `backup.restore_failed_rows_reattached`.
+  - **(b) Lượt dọn** (`deleteStaleFiles`):
+    - **Không bao giờ** xoá bản `pre-restore`, cùng quy tắc với xoay vòng.
+    - Giữ mọi tệp tên-app chưa đăng ký có mã thời điểm **không sau** bản `pre-restore` mới nhất trên đĩa. Bản đó đánh dấu lượt khôi phục gần nhất, và tệp có từ trước nó có thể mất hàng chỉ vì danh sách bị tua lại. Log `backup.orphan_kept_restore_window`.
+    - Lý do chọn mốc này: đọc thẳng từ tên tệp, không cần bảng nào, không thể sai vì danh sách sai. Cái giá: tệp sót của một lượt bị giết *trước* lượt khôi phục đó nằm lại tới khi bản `pre-restore` ấy bị xoá tay — chỉ tốn đĩa.
+    - Không xoá tệp tên-thật nào khi khoá `cdkt:backup:restore` đang bị giữ (hoặc không hỏi được), cùng cách xoay vòng hỏi `IS_USED_LOCK`. Lý do: giữa lúc dump thay bảng và lúc gắn lại, một lượt sao lưu theo lịch có thể dọn đúng lúc danh sách đang sai.
+  - **Test:**
+    - `tests/backup-dump-integration.test.ts` mục 7 (dump chết giữa chừng) và mục 8 (bước cấu trúc hỏng vì hàng `chat_sessions` mồ côi chặn `fk_chat_sessions_reader`). Mục 8 khẳng định thêm: thông báo nêu tên bản an toàn, và khôi phục bản đó thành công.
+    - Trên bản sao 58c891c (`git archive`): mục 7 đỏ `pre-restore row put back: []`; mục 8 đỏ vì thông báo không nêu tên bản an toàn.
+    - `backup-orphan-archives` có 3 ca luật dọn mới, đỏ trước khi sửa.
+- **W1 — `initDb` rò kết nối khi một bước hỏng** (repro 2 treo tới hết giờ): chỉ thêm `try/finally` quanh hai kết nối của `init.ts`, không thêm logic. Test mới `tests/init-db-connection-release.test.ts`.
+- **W2 — thông điệp `schema_convergence_failed`:** bỏ "khởi động lại ứng dụng để hoàn tất". Lỗi đến từ chính dữ liệu thì mỗi lần khởi động (`init.ts && …`) chạy đúng bước đó và container dừng lặp lại. Thông báo nay chỉ vào log và nêu **tên bản `pre-restore`** để khôi phục lại; bản đó đã được gắn lại vào danh sách, và mục 8 chứng minh khôi phục nó chạy được. README cập nhật theo.
+- **Gợi ý đã làm:**
+  - Chú thích "cùng `DB_*`" nay nói đúng: `createBackupConnection` lùi về `MYSQL_DATABASE`, còn `initDb` thì không. Nếu hai tên lệch, bước cấu trúc **dừng** thay vì chạy trên CSDL khác.
+  - Container thử journald có `--pull=never` và trần thời gian (`timeout 20 docker info`, `timeout 60 docker run`).
+  - README ghi chú: khôi phục một dump có từ trước 2026-09-22 cũng chạy các bước chuyển đổi đã thiết kế lúc khởi động (danh mục video trỏ bảng thể loại cũ bị gỡ, `short_id`, URL media cũ).
+- **Chưa làm (ghi lại):** trạng thái scheduler sao lưu (`backup_scheduler_state`) vẫn chỉ được giữ trên lối thành công. Lượt khôi phục hỏng có thể tua lại hàng đó, hậu quả tối đa là lệch một khe lịch.
+- **Đã kiểm:**
+  - `tests/backup-dump-integration.test.ts` trên MySQL 8.0.46 local: 9/9 xanh trong một lượt, tiến trình tự thoát (không còn treo), không sót DB `cdkt_backup_dump_*`.
+    - Một lượt trước đó đỏ vì nguyên nhân bên ngoài: CSDL thử của mục 7 bị xoá giữa chừng `initDb`; các lượt chạy song song của agent khác cũng gây 409 trên khoá toàn máy chủ.
+  - `npm test`: 4492 test, 4461 pass, 0 fail, 31 skip.
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` xanh; build xanh.
+  - `bash -n` + shellcheck không có cảnh báo mới; `docker compose config -q` xanh với env giả.
+  - Container thử journald với `--pull=never` chạy thật (exit 0).
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.

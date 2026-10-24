@@ -350,11 +350,13 @@ journald_available() {
   [ -S "$socket" ] || return 1
   command -v journalctl >/dev/null 2>&1 || return 1
   # Chính daemon phải có driver đó (daemon rootless / chạy trong VM không thấy journal của máy).
-  plugins=$(docker info --format '{{json .Plugins.Log}}' 2>/dev/null || true)
+  # Có trần thời gian: một daemon kẹt không được treo cả lượt deploy.
+  plugins=$(timeout 20 docker info --format '{{json .Plugins.Log}}' 2>/dev/null || true)
   case "$plugins" in *'"journald"'*) ;; *) return 1 ;; esac
-  # …và DÙNG được: một container thử trên image đã có sẵn (chưa có image thì bỏ bước này).
+  # …và DÙNG được: một container thử trên image đã có sẵn (chưa có image thì bỏ bước
+  # này). `--pull=never`: không bao giờ kéo gì qua mạng chỉ để thử.
   if [ -n "$image" ] && docker image inspect "$image" >/dev/null 2>&1; then
-    docker run --rm --network none --log-driver journald --log-opt tag=cdkt-journald-probe --entrypoint true "$image" >/dev/null 2>&1 || return 1
+    timeout 60 docker run --rm --pull=never --network none --log-driver journald --log-opt tag=cdkt-journald-probe --entrypoint true "$image" >/dev/null 2>&1 || return 1
   fi
   return 0
 }

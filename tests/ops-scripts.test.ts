@@ -1238,8 +1238,9 @@ test('the json-file fallback is ONE function, identical in manage.sh and deploy-
   assert.match(check, /CDKT_JOURNALD_SOCKET:-\/run\/systemd\/journal\/socket/, 'the socket Docker writes to, not just a journalctl binary')
   assert.match(check, /command -v journalctl/)
   // W2: and the DAEMON can use it — its log plugins, then a throwaway container.
-  assert.match(check, /docker info --format '\{\{json \.Plugins\.Log\}\}'/)
-  assert.match(check, /docker run --rm --network none --log-driver journald /)
+  // Bounded in time (a wedged daemon must not hang a deploy) and never a network pull.
+  assert.match(check, /timeout 20 docker info --format '\{\{json \.Plugins\.Log\}\}'/)
+  assert.match(check, /timeout 60 docker run --rm --pull=never --network none --log-driver journald /)
   // W1: the merged model decides, read without an early `exit` (SIGPIPE under pipefail).
   const effective = body('production/manage.sh', 'effective_app_log_driver')
   assert.match(effective, /docker compose config 2>\/dev\/null \| awk/)

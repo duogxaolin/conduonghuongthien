@@ -556,13 +556,18 @@ describe('a database restore brings the schema up to date before using it', () =
     assert.match(String((audit[0]!.values.meta as Record<string, unknown>).error), /restore died half-way/)
   })
 
-  test('schema steps that fail after a complete dump: a named failure that says the data WAS replaced and a restart is needed', async () => {
+  test('schema steps that fail after a complete dump: a named failure that says the data WAS replaced and names the pre-restore dump to go back to', async () => {
     seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
     failConverge = true
     const error = await rejection(restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR))
     assert.equal(error.reason, 'schema_convergence_failed')
     assert.match(error.message, /đã được nạp/)
-    assert.match(error.message, /khởi động lại/)
+    // Not "restart to finish": every container start runs the same failing step
+    // (`init.ts && …`) and would loop. The way back is the safety dump, by name.
+    assert.doesNotMatch(error.message, /khởi động lại ứng dụng để hoàn tất/)
+    const pre = backupFiles().find(name => name.endsWith('-pre-restore.sql.gz'))
+    assert.ok(pre && error.message.includes(pre), `the message names ${pre}: ${error.message}`)
+    assert.match(error.message, /log máy chủ/)
     const audit = restoreAudits()
     assert.deepEqual(audit.map(entry => entry.values.action), ['backup_restore_failed'])
     assert.equal((audit[0]!.values.meta as Record<string, unknown>).reason, 'schema_convergence_failed')

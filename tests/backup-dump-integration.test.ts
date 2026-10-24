@@ -26,7 +26,11 @@
  *      offsite_status`, plus another additive column) succeeds, leaves the current
  *      schema, reattaches the backup rows, and a later orphan sweep keeps every file;
  *   6. the orphan sweep fails closed: a `backups` table that is not the shape the
- *      app expects is never trusted to decide which files are orphans.
+ *      app expects is never trusted to decide which files are orphans;
+ *   7. a restore whose dump dies half-way (after it replaced `backups`) puts the live
+ *      backup rows back, and the sweep keeps the pre-restore dump and newer backups;
+ *   8. a restore whose schema step fails (the dump's own data blocks a boot step) does
+ *      the same, names the pre-restore dump to go back to, and that advice works.
  *
  * Gated and self-cleaning like the other *-integration suites:
  *
@@ -38,7 +42,7 @@ import assert from 'node:assert/strict'
 import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { gunzipSync } from 'node:zlib'
+import { gunzipSync, gzipSync } from 'node:zlib'
 import test, { after, before } from 'node:test'
 import mysql, { type RowDataPacket } from 'mysql2/promise'
 
@@ -58,11 +62,13 @@ const DB = {
   trigOld: `cdkt_backup_dump_${runId}_trigold`,
   oldSchema: `cdkt_backup_dump_${runId}_oldschema`,
   sweep: `cdkt_backup_dump_${runId}_sweep`,
+  partial: `cdkt_backup_dump_${runId}_partial`,
+  converge: `cdkt_backup_dump_${runId}_converge`,
 }
 
 /** Never let a typo in the env point this at a real deployment. */
 function assertDisposableDatabase(name: string) {
-  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold|oldschema|sweep)$/)
+  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold|oldschema|sweep|partial|converge)$/)
   assert.notEqual(name, 'cdkt_admin')
 }
 
@@ -547,10 +553,113 @@ test('the orphan sweep fails closed: a backups table that is not the shape the a
   assert.deepEqual(readdirSync(dir).sort(), [...files].sort(), 'files were deleted on the word of a table the app cannot read')
 
   // Control: once the table has the expected shape (and still no rows), the same
-  // aged, unregistered files ARE orphans — the sweep is not simply switched off.
+  // aged, unregistered files ARE orphans — the sweep is not simply switched off. (The
+  // pre-restore dump is never an orphan: it is moved aside first.)
+  rmSync(path.join(dir, files[0]!))
   await initDb()
   await sweepStaleBackupFiles()
   assert.deepEqual(readdirSync(dir), [])
   delete process.env.CDKT_BACKUPS_DIR
+  await closeDb()
+})
+
+// ─── 7–8. A restore that FAILS after the dump replaced `backups` (re-verification round 2) ─
+
+/**
+ * One database, one SuperAdmin, a dump of it (`base.sql.gz`), a "broken upload" made
+ * of that dump plus `tail`, and a backup registered AFTER the dump. Returns what the
+ * assertions need.
+ */
+async function failingRestoreFixture(database: string, dirName: string, tail: string) {
+  const { closeDb } = await import('../server/utils/db')
+  await closeDb()
+  pointAppAt(database)
+  const dir = freshBackupsDir(dirName)
+  const { initDb } = await import('../server/db/init')
+  await initDb()
+  const seed = await mysql.createConnection({ host, port, user, password, database })
+  try {
+    await seed.query("INSERT INTO roles (id, name, is_system) VALUES (1, 'SuperAdmin', 1)")
+    await seed.query("INSERT INTO users (id, username, password_hash, role_id, is_active) VALUES (1, 'root-admin', 'x', 1, 1)")
+    await seed.query("INSERT INTO settings (`key`, value) VALUES ('failing_marker', 'live')")
+  } finally {
+    await seed.end()
+  }
+  const { dumpSql } = await import('../server/services/backup-sql')
+  await dumpSql(path.join(dir, 'base.sql.gz'))
+  const sqlText = gunzipSync(readFileSync(path.join(dir, 'base.sql.gz'))).toString('utf8')
+  writeFileSync(path.join(dir, 'broken-upload.sql.gz'), gzipSync(Buffer.from(`${sqlText}\n${tail}\n`)))
+  const { runBackup } = await import('../server/services/backup')
+  const newer = (await runBackup('sql', 'manual', 1, { rotate: false })).files[0]!.name
+  return { dir, newer }
+}
+
+const registryOf = async (database: string) => (await exactRows(database, 'SELECT filename FROM backups ORDER BY id')).map(row => String(row.filename))
+
+test('a restore whose dump dies half-way puts the live backup rows back; the sweep keeps the pre-restore dump and newer backups', { skip: !enabled, timeout: 300_000 }, async () => {
+  // Before: both failure exits threw before the only reattach, so the failed restore
+  // left `backups` as the dump wrote it (empty here) and the next sweep — every
+  // runBackup, and 1 minute after a restart — deleted the pre-restore dump and the
+  // newer backup as "orphans". The restore failed AND its safety net was gone.
+  const { dir, newer } = await failingRestoreFixture(DB.partial, 'backups-partial', 'THIS IS NOT VALID SQL;')
+  const { runRestore } = await import('../server/services/backup-restore')
+  await assert.rejects(runRestore('broken-upload.sql.gz', { id: 1, username: 'root-admin' }), /THIS IS NOT VALID SQL/)
+  const pre = readdirSync(dir).find(name => name.endsWith('-pre-restore.sql.gz'))
+  assert.ok(pre, 'a pre-restore dump was taken')
+
+  const registry = await registryOf(DB.partial)
+  assert.ok(registry.includes(pre!), `pre-restore row put back: ${JSON.stringify(registry)}`)
+  assert.ok(registry.includes(newer), `newer backup row put back: ${JSON.stringify(registry)}`)
+  assert.deepEqual((await exactRows(DB.partial, "SELECT action FROM activity_logs WHERE action LIKE 'backup_restore%'")).map(row => row.action), ['backup_restore_failed'])
+
+  ageAll(dir)
+  const { sweepStaleBackupFiles } = await import('../server/services/backup')
+  await sweepStaleBackupFiles()
+  const left = readdirSync(dir)
+  assert.ok(left.includes(pre!), `the pre-restore dump was swept: ${left.join(', ')}`)
+  assert.ok(left.includes(newer), `the newer backup was swept: ${left.join(', ')}`)
+  delete process.env.CDKT_BACKUPS_DIR
+  const { closeDb } = await import('../server/utils/db')
+  await closeDb()
+})
+
+test('a restore whose schema step fails: rows put back, files kept, the message names the pre-restore dump — and restoring it works', { skip: !enabled, timeout: 300_000 }, async () => {
+  // The dump's own data blocks a boot step: an orphan `chat_sessions.reader_id` with
+  // the FK dropped, so `applyAdditiveMigrations` cannot re-add `fk_chat_sessions_reader`.
+  // The same step runs at every container start (`init.ts && …`), so "restart the app"
+  // would loop — the way back is the pre-restore dump.
+  const { dir, newer } = await failingRestoreFixture(DB.converge, 'backups-converge', [
+    'ALTER TABLE chat_sessions DROP FOREIGN KEY fk_chat_sessions_reader;',
+    "INSERT INTO chat_sessions (id, message_count, started_at, last_message_at, reader_id) VALUES ('orphan-reader', 0, NOW(), NOW(), 999);",
+  ].join('\n'))
+  const { runRestore } = await import('../server/services/backup-restore')
+  let message = ''
+  await assert.rejects(runRestore('broken-upload.sql.gz', { id: 1, username: 'root-admin' }), (error: unknown) => {
+    assert.equal((error as { reason?: string }).reason, 'schema_convergence_failed')
+    message = (error as Error).message
+    return true
+  })
+  const pre = readdirSync(dir).find(name => name.endsWith('-pre-restore.sql.gz'))
+  assert.ok(pre, 'a pre-restore dump was taken')
+  assert.ok(message.includes(pre!), `the message must name the dump to go back to: ${message}`)
+  assert.doesNotMatch(message, /khởi động lại ứng dụng để hoàn tất/, 'a restart runs the same failing step')
+
+  const registry = await registryOf(DB.converge)
+  assert.ok(registry.includes(pre!) && registry.includes(newer), `rows put back: ${JSON.stringify(registry)}`)
+  ageAll(dir)
+  const { sweepStaleBackupFiles } = await import('../server/services/backup')
+  await sweepStaleBackupFiles()
+  const left = readdirSync(dir)
+  assert.ok(left.includes(pre!) && left.includes(newer), `swept: ${left.join(', ')}`)
+
+  // The advice works: restoring the pre-restore dump brings back the state before the
+  // failed attempt, schema step included.
+  await runRestore(pre!, { id: 1, username: 'root-admin' })
+  assert.equal(Number((await exactRows(DB.converge, "SELECT COUNT(*) AS n FROM chat_sessions WHERE id = 'orphan-reader'"))[0]!.n), 0)
+  assert.equal((await exactRows(DB.converge, "SELECT value FROM settings WHERE `key` = 'failing_marker'"))[0]!.value, 'live')
+  const after = await registryOf(DB.converge)
+  assert.ok(after.includes(newer) && after.includes(pre!), `rows kept across the recovery: ${JSON.stringify(after)}`)
+  delete process.env.CDKT_BACKUPS_DIR
+  const { closeDb } = await import('../server/utils/db')
   await closeDb()
 })
