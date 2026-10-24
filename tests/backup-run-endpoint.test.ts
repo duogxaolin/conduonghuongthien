@@ -57,6 +57,13 @@ test('another backup holding the lock is a 409', async () => {
   assert.equal((await failure()).statusCode, 409)
 })
 
+test('a backup asked for while a database restore runs is a 409 that says so (wave2 ops round 3)', async () => {
+  outcome = async () => { throw new real.BackupRestoreInProgressError() }
+  const error = await failure()
+  assert.equal(error.statusCode, 409)
+  assert.match(String(error.statusMessage), /khôi phục/)
+})
+
 test('any other failure is still a 500', async () => {
   outcome = async () => { throw new Error('mysqldump died') }
   const error = await failure()

@@ -4,7 +4,7 @@
 const {
   isSuperAdmin, settingsLoaded, settingsLoadError, loadSettings,
   backupSettings, selectedDays, daysOptions, savingSettings, saveSettings,
-  schedulerDisabledByServer, serviceAccountNeedsReentry,
+  schedulerDisabledByServer, serviceAccountNeedsReentry, backupsLocalOnly,
   driveLink, driveRedirectUri, driveLinkLoading, disconnecting, driveToast,
   disconnectDrive, copyRedirectUri,
   driveConfig, driveConfigLoading, savingDriveConfig, clearingDriveSecret,
@@ -45,6 +45,12 @@ onMounted(() => loadAll())
       <p v-if="schedulerDisabledByServer" data-testid="backup-scheduler-disabled" class="m-0 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3 py-2 text-[0.8rem] text-[#8a6412]">
         <i class="fa-solid fa-circle-pause mr-1" aria-hidden="true"></i>
         Máy chủ đang tắt sao lưu tự động: lịch dưới đây vẫn lưu được nhưng sẽ không chạy cho tới khi máy chủ bật lại.
+      </p>
+      <p v-if="backupsLocalOnly" data-testid="backup-offsite-missing" class="m-0 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3 py-2 text-[0.8rem] text-[#8a6412]">
+        <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
+        Các bản sao lưu hiện chỉ nằm trên máy chủ này — chưa có nơi lưu bên ngoài (Google Drive). Máy chủ hỏng là mất luôn bản sao lưu.
+        <span v-if="isSuperAdmin">Bật “Upload lên Google Drive” rồi liên kết tài khoản Google hoặc nhập service account bên dưới.</span>
+        <span v-else>Nhờ quản trị viên cấp cao cấu hình Google Drive.</span>
       </p>
       <div class="grid grid-cols-2 gap-3">
         <label class="text-sm font-bold">Giờ chạy (0-23)

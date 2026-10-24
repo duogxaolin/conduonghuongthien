@@ -166,7 +166,10 @@ export async function dumpSql(target: string, hooks: DumpHooks = {}): Promise<nu
         lines.push('')
         await hooks.afterTable?.(table)
       }
-      lines.push('SET FOREIGN_KEY_CHECKS=1;', '')
+      // Dòng cuối mang dấu hoàn tất giống mysqldump: `scripts/restore-db.sh` (đường lui
+      // trên máy chủ mà lỗi khôi phục trong app nêu) chỉ nhận dump có dấu này ở cuối —
+      // thiếu nó, mọi bản `pre-restore` của app bị từ chối là "bị cắt cụt".
+      lines.push('SET FOREIGN_KEY_CHECKS=1;', '', `-- Dump completed on ${new Date().toISOString()}`, '')
 
       const zlib = await import('node:zlib')
       const gzipped = zlib.gzipSync(Buffer.from(lines.join('\n'), 'utf8'), { level: 6 })

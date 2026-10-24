@@ -54,7 +54,15 @@ function scrub(value: unknown, depth = 0): unknown {
   return String(value)
 }
 
-export type LogFields = Record<string, unknown> & { event: string }
+/**
+ * Marks a line written BY the ops-alert path (`ops-alert.ts`): it is never itself
+ * dispatched as an alert, whatever its event name — the logger cannot recurse
+ * through its own alerting. A symbol, so it never reaches the JSON line (`scrub`
+ * walks string keys only) and no caller-supplied field can set it by accident.
+ */
+export const SKIP_OPS_ALERT: unique symbol = Symbol('cdkt.skipOpsAlert')
+
+export type LogFields = Record<string, unknown> & { event: string, [SKIP_OPS_ALERT]?: true }
 
 /** Build the record without emitting it — the shape the tests assert on. */
 export function buildLogRecord(level: LogLevel, fields: LogFields, at: Date): Record<string, unknown> {
@@ -62,9 +70,43 @@ export function buildLogRecord(level: LogLevel, fields: LogFields, at: Date): Re
   return { level, time: at.toISOString(), event, ...(scrub(rest) as Record<string, unknown>) }
 }
 
+const pendingOpsAlerts = new Set<Promise<void>>()
+
+/**
+ * Hand an allowlisted event to `ops-alert.ts` (wave2 D-ALERT), fire-and-forget.
+ * Decided BEFORE the LOG_LEVEL filter: verbosity is about what is printed, not about
+ * what an operator must hear of. With OPS_ALERT_EMAIL unset nothing is imported and
+ * no database is touched. The import is dynamic so this module stays free of the
+ * mailer/database graph that every other module imports it alongside.
+ */
+function dispatchOpsAlert(level: LogLevel, fields: LogFields, at: Date): void {
+  if (fields[SKIP_OPS_ALERT] === true) return
+  if (!ALERT_EVENT_SET.has(fields.event)) return
+  if (!(process.env.OPS_ALERT_EMAIL ?? '').trim()) return
+  const record = buildLogRecord(level, fields, at)
+  const pending: Promise<void> = import('./ops-alert')
+    .then(({ opsAlerts }) => opsAlerts.dispatch(record))
+    .catch((error: unknown) => {
+      log('error', { event: 'ops.alert_failed', stage: 'load', alertEvent: fields.event, error, [SKIP_OPS_ALERT]: true })
+    })
+    .finally(() => { pendingOpsAlerts.delete(pending) })
+  pendingOpsAlerts.add(pending)
+}
+
+/**
+ * Resolves once every alert started so far has finished. Alerts are fire-and-forget
+ * for the request that logged them; this is for whoever must not exit first (tests,
+ * a shutdown hook).
+ */
+export async function settleOpsAlerts(): Promise<void> {
+  while (pendingOpsAlerts.size > 0) await Promise.allSettled([...pendingOpsAlerts])
+}
+
 export function log(level: LogLevel, fields: LogFields): void {
+  const at = new Date()
+  dispatchOpsAlert(level, fields, at)
   if (LEVEL_ORDER[level] < activeLevel()) return
-  const line = JSON.stringify(buildLogRecord(level, fields, new Date()))
+  const line = JSON.stringify(buildLogRecord(level, fields, at))
   // error and warn to stderr so a container runtime can split the streams.
   if (level === 'error' || level === 'warn') console.error(line)
   else console.log(line)
@@ -141,3 +183,27 @@ export const BOOT_MIGRATION_EVENTS = {
   // domain were skipped. Payload: none.
   legacyMediaDomainUnknown: 'db.migration.legacy_media_domain_unknown',
 } as const
+
+/**
+ * Events e-mailed to OPS_ALERT_EMAIL (wave2 D-ALERT; `ops-alert.ts`, at most one per
+ * event per window). Kept short on purpose: each one means an operator must act —
+ * a restore failed or was refused, someone holding a valid password is guessing
+ * second factors, an e-mail link was asked for on a forged Host, a scheduled backup
+ * slot was given up, the boot migration cannot reach its schema without losing data.
+ * Routine noise (failed logins, throttled forms) stays in the log.
+ *
+ * `backup.slot_abandoned` is a literal in `services/backup-scheduler.ts`;
+ * tests/ops-alert.test.ts checks every name here is really emitted under server/.
+ * To add one: append it here (and give it a window in `OPS_ALERT_WINDOW_SECONDS` if
+ * 15 minutes is wrong for it — e.g. `security.cross_site_refused`, rate-limited
+ * harder, when the origin gate lands).
+ */
+export const ALERT_EVENTS: readonly string[] = [
+  SECURITY_EVENTS.backupRestoreFailed,
+  SECURITY_EVENTS.backupRestoreRefused,
+  SECURITY_EVENTS.mfaChallengeLocked,
+  SECURITY_EVENTS.linkHostRejected,
+  'backup.slot_abandoned',
+  BOOT_MIGRATION_EVENTS.mediaCategoryFkBlocked,
+]
+const ALERT_EVENT_SET: ReadonlySet<string> = new Set(ALERT_EVENTS)

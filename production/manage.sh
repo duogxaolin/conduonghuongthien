@@ -293,12 +293,122 @@ warn_disk_usage() {
   fi
 }
 
+# ── Log của app: journald, hoặc json-file dự phòng (wave2 D-LOG) ──────────────
+# docker-compose.yml cho app ghi log vào journald (tag cdkt-app) để log còn sau khi
+# container bị tạo lại. Máy chủ không có systemd-journald thì `up` hỏng ("journald is
+# not enabled on this host") — nên Deploy/Update tự đặt một docker-compose.override.yml
+# có dấu (json-file xoay vòng 3 × 10 MB; compose tự đọc tệp này) và tự gỡ CHÍNH tệp đó
+# khi journald đã có. Tệp override không mang dấu (người vận hành tự viết) không bao giờ
+# bị đụng — nhưng nếu cấu hình compose HIỆU LỰC vẫn để app ghi vào journald thì dừng
+# trước khi chạm container (`ensure_log_driver` trả 1). Ba hàm dưới giống HỆT bản
+# trong scripts/deploy-remote.sh (lượt CI deploy — tests/ops-scripts.test.ts so từng
+# chữ). Gọi sau `cd "$ROOT"`. Tệp tạm của bản override (LOG_FALLBACK_TMP) được dọn ở
+# trap EXIT bên dưới.
+LOG_FALLBACK_MARKER='# cdkt-log-fallback — sinh bởi production/manage.sh / scripts/deploy-remote.sh; đừng sửa tay'
+LOG_WARN_PREFIX='⚠  '
+LOG_ERROR_PREFIX='✗ '
+LOG_FALLBACK_TMP=''
+trap 'if [ -n "$LOG_FALLBACK_TMP" ]; then rm -f "$LOG_FALLBACK_TMP"; fi' EXIT
+
+# $1 (tuỳ chọn): image đã có trên máy để thử bằng một container chạy-rồi-xoá.
+journald_available() {
+  local socket="${CDKT_JOURNALD_SOCKET:-/run/systemd/journal/socket}" image="${1:-}" plugins
+  # Driver journald của Docker ghi vào socket này; journalctl là cách đọc lại.
+  [ -S "$socket" ] || return 1
+  command -v journalctl >/dev/null 2>&1 || return 1
+  # Chính daemon phải có driver đó (daemon rootless / chạy trong VM không thấy journal của máy).
+  # Có trần thời gian: một daemon kẹt không được treo cả lượt deploy.
+  plugins=$(timeout 20 docker info --format '{{json .Plugins.Log}}' 2>/dev/null || true)
+  case "$plugins" in *'"journald"'*) ;; *) return 1 ;; esac
+  # …và DÙNG được: một container thử trên image đã có sẵn (chưa có image thì bỏ bước
+  # này). `--pull=never`: không bao giờ kéo gì qua mạng chỉ để thử.
+  if [ -n "$image" ] && docker image inspect "$image" >/dev/null 2>&1; then
+    timeout 60 docker run --rm --pull=never --network none --log-driver journald --log-opt tag=cdkt-journald-probe --entrypoint true "$image" >/dev/null 2>&1 || return 1
+  fi
+  return 0
+}
+
+# Driver log mà compose SẼ dùng cho app (docker-compose.yml + mọi override), đọc từ
+# `docker compose config`. Rỗng = không đọc được. awk đọc HẾT đầu vào (không `exit`
+# sớm: SIGPIPE dưới pipefail trong `$(…)` + `set -e` giết cả script).
+effective_app_log_driver() {
+  docker compose config 2>/dev/null | awk '
+    /^[^ ]/ { top = $0; app = 0; logging = 0 }
+    top == "services:" && /^  [^ ]/ { app = ($0 == "  app:"); logging = 0 }
+    app && /^    [^ ]/ { logging = ($0 == "    logging:") }
+    app && logging && /^      driver:/ && driver == "" { driver = $2; gsub(/"/, "", driver) }
+    END { print driver }
+  ' || true
+}
+
+# $1 (tuỳ chọn): image để thử journald (xem journald_available). Trả 1 = cấu hình
+# log không chạy được trên máy này → người gọi dừng trước khi chạm container.
+ensure_log_driver() {
+  local override=docker-compose.override.yml ours=0 driver
+  if [ -f "$override" ] && [ "$(head -n 1 "$override")" = "$LOG_FALLBACK_MARKER" ]; then
+    ours=1
+  fi
+  if journald_available "${1:-}"; then
+    if [ "$ours" = 1 ]; then
+      rm -f "$override"
+      echo "▸ Máy chủ đã có systemd-journald — gỡ $override (log json-file dự phòng); log app vào journald: journalctl CONTAINER_TAG=cdkt-app"
+    fi
+    return 0
+  fi
+  if [ -f "$override" ] && [ "$ours" = 0 ]; then
+    # Override của người vận hành: không sửa; hỏi compose driver THẬT của app.
+    driver=$(effective_app_log_driver)
+    case "$driver" in
+      journald)
+        echo "${LOG_ERROR_PREFIX}Máy chủ không có systemd-journald dùng được, mà $override (không do script này sinh) vẫn để app ghi log vào journald — dừng trước khi chạm container. Thêm vào $override: services.app.logging = { driver: json-file, options: { max-size: \"10m\", max-file: \"3\" } }, hoặc cài systemd-journald." >&2
+        return 1 ;;
+      '')
+        echo "${LOG_WARN_PREFIX}Máy chủ không có systemd-journald, đã có $override không do script này sinh, và không đọc được driver log hiệu lực (docker compose config) — nếu app vẫn ghi vào journald, lượt khởi động sẽ hỏng." >&2 ;;
+      *)
+        echo "▸ Máy chủ không có systemd-journald; $override (không do script này sinh) đặt log app = $driver — giữ nguyên." ;;
+    esac
+    return 0
+  fi
+  LOG_FALLBACK_TMP=$(mktemp ./.docker-compose.override.XXXXXX)
+  {
+    echo "$LOG_FALLBACK_MARKER"
+    echo '# Máy chủ này không có systemd-journald, nên log của app dùng json-file (xoay vòng'
+    echo '# 3 × 10 MB) thay vì journald như docker-compose.yml khai. Log json-file MẤT khi'
+    echo '# container bị tạo lại (mỗi lượt deploy). Cài/bật systemd-journald rồi chạy lại'
+    echo '# deploy (CI hoặc ./manage.sh Update): tệp này tự được gỡ.'
+    echo 'services:'
+    echo '  app:'
+    echo '    logging:'
+    echo '      driver: json-file'
+    echo '      options:'
+    echo '        max-size: "10m"'
+    echo '        max-file: "3"'
+  } > "$LOG_FALLBACK_TMP"
+  chmod 644 "$LOG_FALLBACK_TMP"
+  mv "$LOG_FALLBACK_TMP" "$override"
+  LOG_FALLBACK_TMP=''
+  echo "${LOG_WARN_PREFIX}Máy chủ không có systemd-journald — log app dùng json-file (đã ghi $override). Log json-file mất khi container bị tạo lại; cài systemd-journald để giữ log qua các lượt deploy." >&2
+}
+
 # URL ping của dịch vụ giám sát (healthchecks.io…) cho cron sao lưu. Chỉ dạng mà
 # scripts/backup-db.sh dùng được: http(s), không query/fragment (script nối `/fail`
 # vào cuối), không ký tự mà `.env` (được `source`) hay `sed` của set_env hiểu khác đi.
 valid_ping_url() {
   local re='^https?://[A-Za-z0-9._~:/%+=@-]+$'
   [[ "$1" =~ $re ]]
+}
+
+# OPS_ALERT_EMAIL (wave2 D-ALERT): một hoặc nhiều địa chỉ, phẩy ngăn cách, không dấu
+# cách. Chỉ ký tự thường gặp trong địa chỉ — giá trị đi qua `sed` của set_env và được
+# compose đọc từ .env, nên `|`, `&`, `\`, dấu nháy hay xuống dòng đều bị từ chối.
+valid_alert_emails() {
+  local re='^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$' part
+  local -a parts
+  case "$1" in ''|,*|*,|*,,*) return 1 ;; esac
+  IFS=',' read -ra parts <<< "$1"
+  for part in "${parts[@]}"; do
+    [[ "$part" =~ $re ]] || return 1
+  done
 }
 
 # Sao lưu docker-compose.yml hiện tại vào .deploy-compose-backups/ (khuôn tên của
@@ -629,6 +739,8 @@ main_menu() {
   echo -e "  ${C_BOLD}2)${C_RESET} Update   — cập nhật VPS (pull + restart)"
   echo -e "  ${C_BOLD}3)${C_RESET} Migrate  — nhập data SQL mới"
   echo -e "  ${C_BOLD}4)${C_RESET} Media    — bật/tắt tải video, đặt trần RAM"
+  echo -e "  ${C_BOLD}5)${C_RESET} Cài cron sao lưu — sao lưu đêm + kiểm chứng khôi phục hằng tháng"
+  echo -e "  ${C_BOLD}6)${C_RESET} Xuất .env đã mã hoá — giữ bí mật ngoài VPS"
   echo -e "  ${C_BOLD}q)${C_RESET} Thoát"
   echo
   prompt "Chọn" ""
@@ -638,6 +750,8 @@ main_menu() {
     2) cmd_update ;;
     3) cmd_migrate ;;
     4) cmd_media_tuning ;;
+    5) cmd_backup_cron ;;
+    6) cmd_export_env ;;
     q|Q|quit|exit) echo "Tạm biệt."; exit 0 ;;
     *) echo -e "${C_RED}Lựa chọn không hợp lệ.${C_RESET}"; main_menu ;;
   esac
@@ -765,6 +879,15 @@ cmd_deploy() {
     HEALTHCHECK_PING_URL=""
   fi
 
+  # Thư cảnh báo vận hành (tuỳ chọn): app gửi qua SMTP đã cấu hình trong admin khi
+  # khôi phục hỏng, khoá MFA, Host giả… — tối đa 1 thư mỗi sự kiện mỗi 15 phút.
+  local OPS_ALERT_EMAIL
+  prompt "  OPS_ALERT_EMAIL (tuỳ chọn — địa chỉ nhận cảnh báo vận hành, phẩy ngăn cách; enter = bỏ qua)" ""; OPS_ALERT_EMAIL="${PROMPT_RESULT//[[:space:]]/}"
+  if [ -n "$OPS_ALERT_EMAIL" ] && ! valid_alert_emails "$OPS_ALERT_EMAIL"; then
+    echo -e "${C_YELLOW}⚠  OPS_ALERT_EMAIL không hợp lệ (vd. ops@donvi.gov.vn, nhiều địa chỉ thì phẩy ngăn cách) — để trống; đặt lại sau bằng Update.${C_RESET}"
+    OPS_ALERT_EMAIL=""
+  fi
+
   # Tải video lên máy chủ: tôn trọng ngưỡng RAM. docker-compose.yml nói rõ chỉ
   # `manage.sh media-tuning` — sau khi ĐO RAM máy chủ — mới được bật
   # MEDIA_UPLOAD_ENABLED, vì FFmpeg chạy 3 bản transcode song song và trên VPS nhỏ
@@ -867,12 +990,25 @@ BACKUP_KEEP_DAYS=14
 # Ping giám sát cho cron backup-db.sh / verify-restore.sh (trống = không ping).
 # Chỉ script trên host đọc, không vào container (compose không liệt kê).
 HEALTHCHECK_PING_URL=$HEALTHCHECK_PING_URL
+
+# ─── Cảnh báo vận hành ──────────────────────────
+# Thư cảnh báo (khôi phục hỏng, khoá MFA, Host giả, khe sao lưu bị bỏ…) gửi qua SMTP
+# cấu hình trong admin; tối đa 1 thư mỗi sự kiện mỗi 15 phút. Trống = không gửi.
+OPS_ALERT_EMAIL=$OPS_ALERT_EMAIL
 EOF
   chmod 600 "$env_tmp"
   mv -f "$env_tmp" "$ROOT/.env"
   secure_env_file
 
   echo -e "${C_GREEN}✓ Đã tạo $ROOT/.env (quyền 600)${C_RESET}"
+
+  # Log app vào journald; máy chủ không có journald → override json-file (in cảnh báo).
+  # Trước bước khởi động — kể cả khi anh chọn tự `docker compose up -d` sau. Cấu hình
+  # log hiệu lực không chạy được trên máy này → dừng, chưa container nào khởi động.
+  if ! ensure_log_driver "$(env_get CDKT_IMAGE)"; then
+    echo -e "${C_RED}✗ DEPLOY DỪNG trước khi khởi động — sửa cấu hình log ở trên rồi chạy lại. .env đã tạo ở $ROOT/.env.${C_RESET}"
+    exit 1
+  fi
 
   # ── Bước 6: Hỏi build luôn ─────────────────────────────────────────────────
   echo -e "\n${C_BOLD}Bước 6/6 — Khởi động${C_RESET}"
@@ -968,19 +1104,39 @@ cmd_update() {
   # .env về 600 (secure_env_file — không đổi nội dung). Dump hỏng thì dừng: máy chủ y
   # như trước lượt Update. Trả lời 'n' chỉ khi đã có bản sao lưu mới, hoặc chính bước
   # sao lưu là thứ đang hỏng.
-  if confirm "Sao lưu DB trước khi cập nhật?" "y"; then
-    echo -e "${C_BOLD}Sao lưu CSDL → .deploy-db-backups/ ...${C_RESET}"
-    if ! update_predeploy_dump; then
-      echo -e "${C_RED}✗ Sao lưu CSDL thất bại — dừng. Chưa pull code, chưa sửa .env, chưa kéo image hay khởi động lại gì.${C_RESET}"
-      echo -e "${C_DIM}   Sửa nguyên nhân (đĩa đầy? mysql không chạy?) rồi chạy lại Update.${C_RESET}"
-      exit 1
+  #
+  # CDKT_UPDATE_RESUMED=1: đây là manage.sh VỪA KÉO VỀ, được bản cũ gọi lại ngay sau
+  # `git pull` (khối "Pull code" bên dưới) — sao lưu và pull đã xong ở bản cũ, chỉ chạy
+  # tiếp phần còn lại bằng mã mới.
+  if [ "${CDKT_UPDATE_RESUMED:-}" = 1 ]; then
+    UPDATE_COMPOSE_BACKUP="${CDKT_UPDATE_COMPOSE_BACKUP:-}"
+    echo -e "${C_DIM}▸ Tiếp tục Update bằng manage.sh vừa kéo về (sao lưu DB + pull code đã xong ở bước trước).${C_RESET}"
+  else
+    if confirm "Sao lưu DB trước khi cập nhật?" "y"; then
+      echo -e "${C_BOLD}Sao lưu CSDL → .deploy-db-backups/ ...${C_RESET}"
+      if ! update_predeploy_dump; then
+        echo -e "${C_RED}✗ Sao lưu CSDL thất bại — dừng. Chưa pull code, chưa sửa .env, chưa kéo image hay khởi động lại gì.${C_RESET}"
+        echo -e "${C_DIM}   Sửa nguyên nhân (đĩa đầy? mysql không chạy?) rồi chạy lại Update.${C_RESET}"
+        exit 1
+      fi
+    fi
+
+    # ── Pull code ───────────────────────────────────────────────────────────
+    # CI ghi đè docker-compose.yml trên VPS → cây git "bẩn" → git pull từ chối. Xử lý
+    # (sao lưu + bỏ thay đổi cục bộ của tệp đó) nằm trong update_pull_code.
+    local manage_before manage_after
+    manage_before=$(sha256sum "$PROD/manage.sh" 2>/dev/null | cut -d' ' -f1 || true)
+    update_pull_code
+    # Pull vừa đổi chính tệp này: phần còn lại của Update (kiểm log journald, kéo image,
+    # khởi động lại) phải chạy bằng mã MỚI — bash đang chạy bản cũ đã nạp. `exec` giữ
+    # nguyên stdin (các câu trả lời kế tiếp) và trao lại bản sao lưu compose của lượt này
+    # cho đường lùi. Bản mới nhận CDKT_UPDATE_RESUMED=1 nên không pull lại (không lặp).
+    manage_after=$(sha256sum "$PROD/manage.sh" 2>/dev/null | cut -d' ' -f1 || true)
+    if [ -n "$manage_before" ] && [ "$manage_after" != "$manage_before" ]; then
+      echo -e "${C_BOLD}▸ manage.sh vừa đổi theo git pull — chạy tiếp Update bằng bản mới (không hỏi lại sao lưu/pull).${C_RESET}"
+      exec env CDKT_UPDATE_RESUMED=1 CDKT_UPDATE_COMPOSE_BACKUP="$UPDATE_COMPOSE_BACKUP" bash "$PROD/manage.sh" update
     fi
   fi
-
-  # ── Pull code ─────────────────────────────────────────────────────────────
-  # CI ghi đè docker-compose.yml trên VPS → cây git "bẩn" → git pull từ chối. Xử lý
-  # (sao lưu + bỏ thay đổi cục bộ của tệp đó) nằm trong update_pull_code.
-  update_pull_code
 
   # ── Tự chủ webfont (kiểm tra lại sau pull) ────────────────────────────────
   # Font Inter nên self-host để tránh IP visitor qua Google CDN. Sau git pull,
@@ -1018,6 +1174,25 @@ cmd_update() {
     set_env PUBLIC_HOST_ALLOWLIST "$new_hosts"
     echo -e "${C_GREEN}✓ .env đã cập nhật${C_RESET}"
   fi
+  # OPS_ALERT_EMAIL — địa chỉ nhận thư cảnh báo vận hành (wave2 D-ALERT). Không phải bí
+  # mật nên in được. Enter giữ nguyên (không hỏi thêm), '-' xoá. Phải đứng TRƯỚC prompt
+  # HEALTHCHECK_PING_URL bên dưới — prompt đó phải là prompt cuối.
+  local cur_alert new_alert
+  cur_alert=$(env_get OPS_ALERT_EMAIL)
+  prompt "  OPS_ALERT_EMAIL (thư cảnh báo vận hành, phẩy ngăn cách; enter = giữ nguyên, '-' = xoá)" "$cur_alert"; new_alert="${PROMPT_RESULT//[[:space:]]/}"
+  if [ "$new_alert" = "-" ]; then
+    if [ -n "$cur_alert" ] && confirm "Xoá OPS_ALERT_EMAIL khỏi .env (tắt thư cảnh báo)?" "y"; then
+      set_env OPS_ALERT_EMAIL ""
+      echo -e "${C_GREEN}✓ .env đã cập nhật (OPS_ALERT_EMAIL trống — không gửi cảnh báo)${C_RESET}"
+    fi
+  elif [ "$new_alert" != "$cur_alert" ]; then
+    if ! valid_alert_emails "$new_alert"; then
+      echo -e "${C_YELLOW}⚠  OPS_ALERT_EMAIL không hợp lệ (vd. ops@donvi.gov.vn, nhiều địa chỉ thì phẩy ngăn cách) — giữ nguyên giá trị cũ.${C_RESET}"
+    elif confirm "Ghi OPS_ALERT_EMAIL=$new_alert vào .env?" "y"; then
+      set_env OPS_ALERT_EMAIL "$new_alert"
+      echo -e "${C_GREEN}✓ .env đã cập nhật OPS_ALERT_EMAIL${C_RESET}"
+    fi
+  fi
   # HEALTHCHECK_PING_URL — ping giám sát cho cron sao lưu (scripts/backup-db.sh,
   # verify-restore.sh). URL là thứ ai có nó đều báo "đã chạy" thay được, nên KHÔNG in
   # ra màn hình: chỉ nói đang đặt hay chưa. Prompt này phải là prompt CUỐI trước
@@ -1042,6 +1217,13 @@ cmd_update() {
   fi
 
   # ── Pull image + restart ─────────────────────────────────────────────────
+  # VPS đang chạy chưa từng chạy lại Deploy: kiểm journald ở đây, trước lượt khởi động
+  # lại (cùng hàm với lượt CI deploy). Không hỏi; cấu hình log hiệu lực không chạy được
+  # trên máy này → dừng trước khi kéo image hay khởi động lại.
+  if ! ensure_log_driver "$(env_get CDKT_IMAGE)"; then
+    echo -e "${C_RED}✗ UPDATE DỪNG trước khi kéo image/khởi động lại — sửa cấu hình log ở trên rồi chạy lại Update. Container đang chạy không bị đụng.${C_RESET}"
+    exit 1
+  fi
   echo
   if confirm "Pull image mới + khởi động lại (docker compose pull && up -d)?" "y"; then
     # Bản dump trước cập nhật đã lấy ở đầu lượt Update (trước git pull).
@@ -1362,9 +1544,225 @@ cmd_media_tuning() {
   echo -e "  ${C_DIM}(đổi trần RAM cần 'up -d' để container được tạo lại; đổi MEDIA_UPLOAD_ENABLED thì đủ)${C_RESET}"
 }
 
+# ════════════════════════════════════════════════════════════════════════════
+# 5. CÀI CRON SAO LƯU — backup.sh hằng đêm + verify-restore.sh hằng tháng (wave2 D-OFFSITE)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Đúng hai dòng DEPLOY.md / README.md vẫn bảo người vận hành tự gõ: `backup.sh` (dump
+# CSDL qua backup-db.sh + archive media/uploads, 02:00 mỗi đêm) và
+# `verify-restore.sh --latest` (nạp thử bản dump mới nhất vào CSDL tạm, 03:30 ngày 1
+# hằng tháng). Cả hai tự đọc .env (kể cả HEALTHCHECK_PING_URL), nên dòng cron không
+# mang bí mật nào.
+#
+# In ĐÚNG các dòng sẽ cài, rồi chỉ cài khi được đồng ý (mặc định KHÔNG). Các dòng nằm
+# trong một khối có dấu BEGIN/END: chạy lại là thay khối đó, không bao giờ thêm khối
+# thứ hai; dòng crontab khác của user giữ nguyên thứ tự. `crontab -l` hỏng vì lý do
+# khác "chưa có crontab" → dừng: coi nó là rỗng rồi cài là xoá crontab thật của user.
+# Log: /var/log khi user chạy lệnh ghi được vào đó (root), còn lại <repo>/logs — một
+# dòng cron chuyển hướng vào tệp không mở được thì lệnh sau nó KHÔNG chạy, lặng lẽ.
+CRON_BEGIN='# BEGIN cdkt-backup — production/manage.sh (Cài cron sao lưu); chạy lại lệnh đó để sửa'
+CRON_END='# END cdkt-backup'
+
+cmd_backup_cron() {
+  echo -e "\n${C_BOLD}${C_CYAN}═══ CÀI CRON SAO LƯU ═══${C_RESET}\n"
+  cd "$ROOT"
+
+  if [ ! -f "$ROOT/.env" ]; then
+    echo -e "${C_RED}Không có .env — chạy 'Deploy' (1) trước.${C_RESET}"
+    exit 1
+  fi
+  if ! command -v crontab >/dev/null 2>&1; then
+    echo -e "${C_RED}Máy chủ chưa có lệnh crontab — cài gói cron (cronie) rồi chạy lại.${C_RESET}"
+    exit 1
+  fi
+
+  local log_dir user
+  if [ -w /var/log ]; then log_dir=/var/log; else log_dir="$ROOT/logs"; fi
+  # cron đọc '%' là xuống dòng, và đường dẫn nằm trong dấu nháy đơn: hai ký tự đó (và
+  # xuống dòng) làm dòng cron chạy một lệnh khác với lệnh in ra.
+  case "$ROOT$log_dir" in
+    *%*|*\'*|*$'\n'*)
+      echo -e "${C_RED}Đường dẫn repo ($ROOT) chứa ký tự cron hiểu khác (%, dấu nháy đơn, xuống dòng) — không cài. Đổi tên thư mục rồi chạy lại.${C_RESET}"
+      exit 1 ;;
+  esac
+  user=$(id -un)
+
+  # Thư mục mà backup-db.sh / backup-media.sh ghi vào và verify-restore.sh đọc — BACKUP_DIR
+  # trong .env, giải như chính các script (tương đối = so với repo). ./backups là bind
+  # mount mà entrypoint của container giao cho user `node` (uid 1000) mỗi lần khởi động:
+  # user deploy không phải root thường KHÔNG ghi được vào đó, và cron của user đó sẽ hỏng
+  # EACCES mỗi đêm. Cron sao lưu là việc của máy chủ — cài bằng root.
+  local backup_dir
+  backup_dir=$(env_get BACKUP_DIR)
+  backup_dir="${backup_dir:-./backups}"
+  case "$backup_dir" in /*) ;; *) backup_dir="$ROOT/${backup_dir#./}" ;; esac
+  if { [ -d "$backup_dir" ] && [ ! -w "$backup_dir" ]; } \
+     || { [ ! -e "$backup_dir" ] && [ ! -w "$(dirname "$backup_dir")" ]; }; then
+    echo -e "${C_RED}✗ User $user không ghi được thư mục sao lưu $backup_dir — cron của user này sẽ hỏng mỗi đêm.${C_RESET}"
+    echo -e "${C_YELLOW}  Cài bằng root: sudo ./manage.sh backup-cron (thư mục ./backups thuộc user của container, uid 1000).${C_RESET}"
+    exit 1
+  fi
+
+  local block
+  block="$CRON_BEGIN
+0 2 * * * cd '$ROOT' && ./scripts/backup.sh >> '$log_dir/cdkt-backup.log' 2>&1
+30 3 1 * * cd '$ROOT' && ./scripts/verify-restore.sh --latest >> '$log_dir/cdkt-verify-restore.log' 2>&1
+$CRON_END"
+
+  echo -e "Các dòng sẽ cài vào crontab của user ${C_BOLD}$user${C_RESET}:\n"
+  echo "$block"
+  echo
+  # Ping giám sát: script tự đọc từ .env. URL là thứ ai có cũng báo "đã chạy" thay
+  # được — chỉ nói đang đặt hay chưa (cùng quy tắc với Update).
+  if [ -n "$(env_get HEALTHCHECK_PING_URL)" ]; then
+    echo -e "${C_DIM}HEALTHCHECK_PING_URL đang đặt — backup-db.sh và verify-restore.sh sẽ ping dịch vụ giám sát.${C_RESET}"
+  else
+    echo -e "${C_YELLOW}HEALTHCHECK_PING_URL chưa đặt — cron ngừng chạy sẽ không ai biết. Đặt bằng Update (2).${C_RESET}"
+  fi
+
+  local errfile current rc=0
+  errfile=$(mktemp)
+  current=$(crontab -l 2>"$errfile") || rc=$?
+  if [ "$rc" != 0 ]; then
+    if ! awk '/no crontab/ { found = 1 } END { exit found ? 0 : 1 }' "$errfile"; then
+      echo -e "${C_RED}✗ Không đọc được crontab hiện tại ($(head -n 1 "$errfile")) — không cài (cài lúc này có thể xoá crontab đang có).${C_RESET}"
+      rm -f "$errfile"
+      exit 1
+    fi
+    current=''
+  fi
+  rm -f "$errfile"
+
+  # Dòng gọi script sao lưu NGOÀI khối của lệnh này (thêm tay theo tài liệu cũ):
+  # cài thêm là mỗi đêm chạy hai lần.
+  local others
+  others=$(printf '%s\n' "$current" | awk -v b="$CRON_BEGIN" -v e="$CRON_END" '
+    $0 == b { skip = 1; next }
+    $0 == e { skip = 0; next }
+    !skip && /scripts\/(backup|backup-db|verify-restore)\.sh/')
+  if [ -n "$others" ]; then
+    echo -e "\n${C_YELLOW}⚠  Crontab đã có dòng chạy script sao lưu ngoài khối của lệnh này — cài thêm là chạy hai lần:${C_RESET}"
+    echo "$others"
+    echo -e "${C_YELLOW}   Xoá các dòng đó (crontab -e) trước, hoặc trả lời 'n'.${C_RESET}"
+  fi
+
+  echo
+  if ! confirm "Cài các dòng trên vào crontab của $user?" "n"; then
+    echo "Không cài — crontab giữ nguyên."
+    return 0
+  fi
+
+  if [ "$log_dir" = "$ROOT/logs" ]; then mkdir -p "$log_dir"; fi
+  local kept tmp
+  # Giữ mọi dòng ngoài khối cũ (`$(…)` bỏ các dòng trống ở cuối), rồi một dòng trống +
+  # khối mới — chạy lại cho ra đúng tệp cũ.
+  kept=$(printf '%s\n' "$current" | awk -v b="$CRON_BEGIN" -v e="$CRON_END" '
+    $0 == b { skip = 1; next }
+    $0 == e { skip = 0; next }
+    !skip')
+  tmp=$(mktemp)
+  if [ -n "$kept" ]; then printf '%s\n\n' "$kept" > "$tmp"; fi
+  printf '%s\n' "$block" >> "$tmp"
+  if ! crontab "$tmp"; then
+    rm -f "$tmp"
+    echo -e "${C_RED}✗ crontab từ chối tệp mới — crontab cũ giữ nguyên.${C_RESET}"
+    exit 1
+  fi
+  rm -f "$tmp"
+  echo -e "${C_GREEN}✓ Đã cài cron sao lưu cho user $user.${C_RESET} Log: $log_dir/cdkt-backup.log, $log_dir/cdkt-verify-restore.log"
+  echo -e "${C_DIM}  Xem: crontab -l   ·   Gỡ: crontab -e rồi xoá khối '# BEGIN cdkt-backup' … '# END cdkt-backup'.${C_RESET}"
+}
+
+# ════════════════════════════════════════════════════════════════════════════
+# 6. XUẤT .env ĐÃ MÃ HOÁ — bản ngoài VPS của mọi bí mật (wave2 D-OFFSITE)
+# ════════════════════════════════════════════════════════════════════════════
+#
+# Mất VPS là mất .env: JWT_SECRET (đăng nhập), CHATBOT_ENCRYPTION_SECRET (khoá giải
+# mã API key AI, Google OAuth secret, liên kết Drive đã lưu trong CSDL — bản dump CSDL
+# không có nó thì các giá trị đó vô dụng), mật khẩu MySQL. Lệnh này ghi .env.enc
+# (AES-256-CBC, khoá dẫn xuất PBKDF2 200 000 vòng) để anh tải về giữ ngoài VPS.
+#   - Passphrase gõ hai lần, không hiện, tối thiểu 12 ký tự; tới openssl qua một file
+#     descriptor (`-pass fd:3`), không bao giờ trên dòng lệnh (`ps` thấy mọi argv).
+#   - Không in nội dung .env hay passphrase. Ghi tệp tạm 600 rồi `mv`, giải mã thử
+#     ngay để chắc passphrase vừa gõ mở được tệp.
+#   - openssl không có -pbkdf2 (OpenSSL 1.0.x) → từ chối, không lùi về dẫn xuất khoá
+#     yếu hơn.
+cmd_export_env() {
+  echo -e "\n${C_BOLD}${C_CYAN}═══ XUẤT .env ĐÃ MÃ HOÁ ═══${C_RESET}\n"
+  cd "$ROOT"
+
+  if [ ! -f "$ROOT/.env" ]; then
+    echo -e "${C_RED}Không có .env — không có gì để xuất.${C_RESET}"
+    exit 1
+  fi
+  if ! command -v openssl >/dev/null 2>&1; then
+    echo -e "${C_RED}Máy chủ chưa có openssl.${C_RESET}"
+    exit 1
+  fi
+  local help
+  help=$(openssl enc -help 2>&1 || true)
+  case "$help" in
+    *-pbkdf2*) ;;
+    *)
+      echo -e "${C_RED}✗ openssl trên máy chủ này không hỗ trợ -pbkdf2 (cần OpenSSL ≥ 1.1.1) — không xuất bằng cách mã hoá yếu hơn.${C_RESET}"
+      exit 1 ;;
+  esac
+
+  if [ -f "$ROOT/.env.enc" ]; then
+    echo -e "${C_YELLOW}⚠  Đã có $ROOT/.env.enc (lần xuất trước).${C_RESET}"
+    if ! confirm "Ghi đè .env.enc?" "n"; then
+      echo "Giữ nguyên .env.enc cũ."
+      return 0
+    fi
+  fi
+
+  local pass pass2
+  # `IFS=`: giữ nguyên dấu cách đầu/cuối — passphrase là đúng những gì đã gõ.
+  printf 'Passphrase (≥ 12 ký tự, không hiện khi gõ): '
+  IFS= read -rs pass || true
+  echo
+  printf 'Gõ lại passphrase: '
+  IFS= read -rs pass2 || true
+  echo
+  if [ "$pass" != "$pass2" ]; then
+    echo -e "${C_RED}✗ Hai lần gõ không khớp — không ghi gì.${C_RESET}"
+    exit 1
+  fi
+  if [ "${#pass}" -lt 12 ]; then
+    echo -e "${C_RED}✗ Passphrase ngắn hơn 12 ký tự — không ghi gì.${C_RESET}"
+    exit 1
+  fi
+
+  local tmp
+  tmp=$(mktemp "$ROOT/.env.enc.XXXXXX")
+  if ! openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "$ROOT/.env" -out "$tmp" -pass fd:3 3< <(printf '%s' "$pass"); then
+    rm -f "$tmp"
+    echo -e "${C_RED}✗ openssl mã hoá thất bại — không ghi gì.${C_RESET}"
+    exit 1
+  fi
+  # Giải mã thử bằng đúng passphrase vừa gõ: tệp không mở lại được thì vô dụng.
+  if ! cmp -s "$ROOT/.env" <(openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in "$tmp" -pass fd:3 3< <(printf '%s' "$pass")); then
+    rm -f "$tmp"
+    echo -e "${C_RED}✗ Giải mã thử không ra đúng .env — không ghi gì.${C_RESET}"
+    exit 1
+  fi
+  pass=''
+  pass2=''
+  chmod 600 "$tmp"
+  mv -f "$tmp" "$ROOT/.env.enc"
+
+  echo -e "${C_GREEN}✓ Đã ghi $ROOT/.env.enc (quyền 600, $(wc -c < "$ROOT/.env.enc") byte).${C_RESET}"
+  echo -e "  Tải về máy của anh rồi XOÁ khỏi VPS (bản trên VPS mất cùng VPS):"
+  echo -e "    scp <user>@<vps>:$ROOT/.env.enc ./cdkt-env-$(date +%Y%m%d).enc"
+  echo -e "    rm $ROOT/.env.enc"
+  echo -e "  Giải mã (hỏi passphrase):"
+  echo -e "    openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in .env.enc -out .env"
+  echo -e "${C_YELLOW}  Giữ passphrase ở nơi KHÁC tệp này — mất passphrase là mất bản xuất.${C_RESET}"
+}
+
 # ── Entry ──────────────────────────────────────────────────────────────────
 # Cho phép truyền tham số để bypass menu (chắc ăn với terminal web aaPanel):
-#   ./manage.sh deploy | update | migrate | media-tuning | 1 | 2 | 3 | 4
+#   ./manage.sh deploy | update | migrate | media-tuning | backup-cron | export-env | 1 … 6
 # Không tham số → vào menu tương tác.
 arg="${1:-}"
 case "$arg" in
@@ -1372,14 +1770,18 @@ case "$arg" in
   update|2)  cmd_update ;;
   migrate|3) cmd_migrate ;;
   media-tuning|media|4) cmd_media_tuning ;;
+  backup-cron|cron|5) cmd_backup_cron ;;
+  export-env|6) cmd_export_env ;;
   ''|menu)  main_menu ;;
   -h|--help|help)
-    echo "Cách dùng: ./manage.sh [deploy|update|migrate|media-tuning|1|2|3|4]"
+    echo "Cách dùng: ./manage.sh [deploy|update|migrate|media-tuning|backup-cron|export-env|1…6]"
     echo "  deploy       (1)  thiết lập mới (chạy lần đầu)"
     echo "  update       (2)  cập nhật VPS (pull + restart)"
     echo "  migrate      (3)  nhập data SQL mới"
     echo "  media-tuning (4)  bật/tắt tải video, đặt trần RAM (chỉ sửa .env)"
+    echo "  backup-cron  (5)  cài cron sao lưu đêm + kiểm chứng khôi phục hằng tháng (hỏi trước)"
+    echo "  export-env   (6)  xuất .env đã mã hoá (.env.enc) để giữ ngoài VPS"
     echo "  (không tham số) vào menu tương tác"
     exit 0 ;;
-  *) echo "Tham số không hợp lệ: $arg"; echo "Dùng: ./manage.sh [deploy|update|migrate|media-tuning|1|2|3|4]"; exit 1 ;;
+  *) echo "Tham số không hợp lệ: $arg"; echo "Dùng: ./manage.sh [deploy|update|migrate|media-tuning|backup-cron|export-env|1…6]"; exit 1 ;;
 esac

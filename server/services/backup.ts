@@ -28,6 +28,8 @@ import { logInfo, logWarn } from '../utils/logger'
 import { settingsSecretForUse } from '../utils/settings-secrets'
 import { dumpSql } from './backup-sql'
 import { backupKindOf, expectedArchiveTop } from './backup-restore-guards'
+import { markOffsiteStatus, offsiteStatusAtRegistration, uploadRunOffsite } from './backup-offsite'
+import { insertBackupRow } from './backup-registry'
 
 const execFileAsync = promisify(execFile)
 
@@ -80,13 +82,34 @@ export interface RunBackupOptions {
    * sau đó vẫn là một lượt, còn bị từ chối vì khoá bận thì không. Ném → lượt dừng.
    */
   onStarted?: () => Promise<void>
+  /**
+   * Chỉ bản `pre-restore` của chính lượt khôi phục (`takeSafetyBackup`): chạy dù khoá
+   * khôi phục đang bị giữ — mọi lượt khác bị từ chối (`BackupRestoreInProgressError`).
+   */
+  allowDuringRestore?: boolean
 }
 
 /** Một lượt backup khác giữ khoá — phân biệt bằng kiểu, không so chuỗi. */
 export class BackupLockBusyError extends Error {
-  constructor() {
-    super('Một lượt backup khác đang chạy. Thử lại sau.')
+  constructor(message = 'Một lượt backup khác đang chạy. Thử lại sau.') {
+    super(message)
     this.name = 'BackupLockBusyError'
+  }
+}
+
+/**
+ * Một lượt khôi phục CSDL đang giữ khoá (hoặc không hỏi được MySQL): không bắt đầu lượt
+ * sao lưu nào. Lượt khôi phục thay cả bảng `backups` bằng bản trong dump; một bản sao
+ * lưu xong GIỮA lúc đó không nằm trong danh sách mà lượt khôi phục đã đọc để gắn lại, và
+ * mang mã thời điểm SAU bản `pre-restore` — hàng của nó mất, rồi lượt dọn xoá tệp.
+ * Là một dạng "bận" (kế thừa `BackupLockBusyError`): endpoint trả 409, scheduler không
+ * tính là một lượt thử (lỗi ném trước `onStarted`). Riêng bản `pre-restore` của chính
+ * lượt khôi phục đi qua (`allowDuringRestore`).
+ */
+export class BackupRestoreInProgressError extends BackupLockBusyError {
+  constructor() {
+    super('Đang khôi phục cơ sở dữ liệu — chưa thể sao lưu lúc này. Thử lại sau khi khôi phục xong.')
+    this.name = 'BackupRestoreInProgressError'
   }
 }
 
@@ -132,6 +155,11 @@ const APP_FINAL = new RegExp(`^${APP_BACKUP_NAME}$`)
  */
 const ORPHAN_MIN_AGE_MS = 10 * 60 * 1000
 
+/** Mã thời điểm trong tên tệp của app (`…-YYYYMMDDTHHMMSSZ-…`) — so được theo chữ. */
+function stampInName(name: string): string | null {
+  return /-(\d{8}T\d{6}Z)-/.exec(name)?.[1] ?? null
+}
+
 /**
  * Dọn rác của các lượt `runBackup` đã chết trong `dir`. Chỉ gọi khi đang giữ khoá chạy.
  *  - `.partial` mang tên của app (`STALE_PARTIAL`) — lượt bị giết khi đang ghi.
@@ -140,28 +168,69 @@ const ORPHAN_MIN_AGE_MS = 10 * 60 * 1000
  *    Không đọc được bảng `backups` → không xoá tệp tên-thật nào.
  * Không bao giờ đụng tệp có hàng, tệp không mang tên của app (`scripts/backup*.sh`,
  * `.upload-*.partial`, bản tải lên đổi tên `-upload-…`).
+ *
+ * Khôi phục CSDL thay cả bảng `backups` bằng bản trong dump: một lượt khôi phục hỏng
+ * trước khi gắn lại hàng (hoặc gắn lại hỏng) để lại một danh sách "đúng hình dạng" mà
+ * thiếu mọi tệp đăng ký sau thời điểm dump — trước bản vá, lượt dọn kế xoá luôn bản
+ * `pre-restore` và các bản mới hơn. Ba quy tắc, mỗi quy tắc tự đủ cho ca của nó:
+ *  - bản `pre-restore` không bao giờ là mồ côi (cùng quy tắc với xoay vòng);
+ *  - tệp có mã thời điểm KHÔNG SAU bản `pre-restore` mới nhất trên đĩa (= lượt khôi
+ *    phục gần nhất) có từ trước lượt khôi phục đó, nên có thể mất hàng chỉ vì danh sách
+ *    bị tua lại → giữ. Cái giá: tệp sót của lượt bị giết TRƯỚC lượt khôi phục đó nằm
+ *    lại tới khi bản `pre-restore` ấy bị xoá tay (chỉ tốn đĩa — xoá nhầm thì mất bản sao lưu);
+ *  - đang có lượt khôi phục giữ khoá (hoặc không hỏi được) → không xoá tệp tên-thật nào:
+ *    giữa lúc dump thay bảng và lúc gắn lại hàng, danh sách tạm thời sai.
  */
 async function deleteStaleFiles(dir: string, db: ReturnType<typeof getDb>): Promise<number> {
   let names: string[]
   try { names = await fs.readdir(dir) } catch { return 0 }
   let registered: Set<string> | null = null
+  let restoreAnchor: string | null = null
   if (names.some(name => APP_FINAL.test(name))) {
+    restoreAnchor = names
+      .filter(name => APP_FINAL.test(name) && isPreRestoreBackup({ filename: name }))
+      .map(stampInName)
+      .filter((stamp): stamp is string => stamp !== null)
+      .sort()
+      .pop() ?? null
+    // Đang khôi phục (hoặc không biết) → danh sách có thể đang bị tua lại: không tin nó.
+    let restoreActive = true
     try {
-      registered = new Set((await db.select({ filename: backups.filename }).from(backups)).map(row => row.filename))
+      restoreActive = await restoreLockHeldOnServer()
+      if (restoreActive) logWarn({ event: 'backup.orphan_sweep_skipped', reason: 'restore_in_progress' })
     } catch (err: unknown) {
-      logWarn({ event: 'backup.orphan_sweep_skipped', error: err instanceof Error ? err.message : String(err) })
+      logWarn({ event: 'backup.orphan_sweep_skipped', reason: 'restore_lock_unknown', error: err instanceof Error ? err.message : String(err) })
+    }
+    if (!restoreActive) {
+      try {
+        // MỌI cột, không chỉ `filename`: một bảng `backups` không đúng hình dạng app chờ
+        // (vd. vừa khôi phục một dump cũ thiếu cột mới, lượt gắn lại hàng chưa chạy) thì
+        // KHÔNG được tin để kết luận tệp nào mồ côi — câu chọn đủ cột ném và lượt dọn bỏ
+        // qua tệp tên-thật (đóng an toàn). Chỉ chọn `filename` từng đọc trót lọt bảng cũ
+        // rỗng đó và xoá bản `pre-restore` cùng các bản mới hơn.
+        registered = new Set((await db.select().from(backups)).map(row => row.filename))
+      } catch (err: unknown) {
+        logWarn({ event: 'backup.orphan_sweep_skipped', error: err instanceof Error ? err.message : String(err) })
+      }
     }
   }
   let partials = 0
   let orphans = 0
+  let keptForRestore = 0
   for (const name of names) {
     const partial = STALE_PARTIAL.test(name)
     if (!partial && !(registered && APP_FINAL.test(name) && !registered.has(name))) continue
+    // Bản an toàn của một lượt khôi phục: không bao giờ là mồ côi.
+    if (!partial && isPreRestoreBackup({ filename: name })) continue
     const file = path.join(dir, name)
     try {
       const stats = await fs.lstat(file)
       if (!stats.isFile()) continue
       if (!partial && Date.now() - stats.mtimeMs < ORPHAN_MIN_AGE_MS) continue
+      if (!partial && restoreAnchor !== null && (stampInName(name) ?? '') <= restoreAnchor) {
+        keptForRestore += 1
+        continue
+      }
       await fs.unlink(file)
       if (partial) partials += 1
       else {
@@ -173,6 +242,7 @@ async function deleteStaleFiles(dir: string, db: ReturnType<typeof getDb>): Prom
     }
   }
   if (partials > 0) logInfo({ event: 'backup.partial_swept', count: partials })
+  if (keptForRestore > 0) logInfo({ event: 'backup.orphan_kept_restore_window', count: keptForRestore, restoreAttempt: restoreAnchor })
   return partials + orphans
 }
 
@@ -426,12 +496,30 @@ export async function runBackup(
   const stamp = timestampStamp()
 
   const outcome = await withNamedLock(pool, LOCK_RUN, LOCK_TIMEOUT, async () => {
+    // Đang khôi phục CSDL (hoặc không biết) → từ chối, TRƯỚC `onStarted` (không phải một
+    // lượt thử). Hỏi trong khoá chạy: một lượt khôi phục bắt đầu sau câu hỏi này cần
+    // khoá chạy cho bản `pre-restore` của nó, nên sẽ đợi/409 thay vì chạy song song.
+    if (!options.allowDuringRestore) {
+      let restoreActive = true
+      try {
+        restoreActive = await restoreLockHeldOnServer()
+      } catch (err: unknown) {
+        logWarn({ event: 'backup.restore_lock_unknown', trigger, error: err instanceof Error ? err.message : String(err) })
+      }
+      if (restoreActive) {
+        logInfo({ event: 'backup.refused_restore_in_progress', type, trigger })
+        throw new BackupRestoreInProgressError()
+      }
+    }
     // Đã giữ khoá chạy: từ đây là một lượt (scheduler đếm lượt ở đây — kể cả khi
     // hỏng ngay ở `mkdir`/đọc cấu hình bên dưới).
     await options.onStarted?.()
     currentBackupStatus = { running: true, phase: 'start', message: 'Bắt đầu backup', startedAt: Date.now() }
     const dir = backupsDir()
     let config: Awaited<ReturnType<typeof readBackupConfig>>
+    // Drive bật ⇒ mỗi tệp của lượt này phải có bản ngoài máy chủ. Đặt ngay sau khi đọc
+    // cấu hình; `false` trước đó (chưa đăng ký tệp nào thì không có gì để đánh dấu).
+    let offsiteExpected = false
 
     const files: BackupResult['files'] = []
 
@@ -474,8 +562,11 @@ export async function runBackup(
       const moved = { done: false }
       try {
         await db.transaction(async (tx) => {
-          await tx.insert(backups).values({
+          // Qua `insertBackupRow`: bảng `backups` hình dạng cũ (khôi phục hỏng giữa chừng)
+          // vẫn nhận được hàng — đó là lúc bản `pre-restore` là đường lui duy nhất.
+          await insertBackupRow(tx, {
             filename: name, type: kind, bytes, stamp, trigger, status: 'done', createdBy: adminUserId,
+            offsiteStatus: offsiteStatusAtRegistration({ driveEnabled: offsiteExpected }),
           })
           await tx.insert(activityLogs).values({
             userId: adminUserId, action: 'backup_run', resource: 'settings', resourceId: null,
@@ -499,6 +590,7 @@ export async function runBackup(
       // của app và tệp tên-app không có hàng là của một lượt đã bị giết.
       await deleteStaleFiles(dir, db)
       config = await readBackupConfig(db)
+      offsiteExpected = config.driveEnabled
 
       if (type === 'sql' || type === 'all') {
         currentBackupStatus = { running: true, phase: 'sql', message: 'Đang dump CSDL', startedAt: Date.now() }
@@ -532,11 +624,15 @@ export async function runBackup(
         startedAt: Date.now(),
       }
       for (const partial of pending) await fs.unlink(partial).catch(() => {})
+      // Tệp đã đăng ký `done` trước bước hỏng vẫn nằm trên đĩa, nhưng lượt chết trước
+      // bước Drive: khi Drive bật thì chúng KHÔNG có bản ngoài máy chủ — nói thật là
+      // `failed` thay vì để NULL. `markOffsiteStatus` không ném, nên không che lỗi gốc.
+      if (offsiteExpected) await markOffsiteStatus(db, files.map(file => file.name), 'failed')
       // Không bước tệp nào (đọc cấu hình, `mkdir`, hoặc tên bị từ chối) → không có tên
       // nào để ghi hàng `failed`; lỗi vẫn ném ra cho nơi gọi.
       if (failedStep) {
         // Không để lỗi ghi hàng `failed` (CSDL đang hỏng) che lỗi gốc của lượt sao lưu.
-        await db.insert(backups).values({
+        await insertBackupRow(db, {
           filename: failedStep.name, type: failedStep.kind, bytes: 0, stamp, trigger, status: 'failed',
           error: err instanceof Error ? err.message : String(err), createdBy: adminUserId,
         }).catch((insertErr: unknown) => {
@@ -546,59 +642,13 @@ export async function runBackup(
       throw err
     }
 
-    // Upload Google Drive (nếu bật + cấu hình). HAI mode:
-    //   1. OAuth login (ưu tiên nếu đã liên kết) — refresh token từ `backup_drive_oauth`,
-    //      dùng client_id/secret **riêng cho Drive** từ `backup_drive_oauth_config`
-    //      (không dùng chung `google_oauth_settings` của reader — scope/audience khác).
-    //   2. Service Account (fallback) — JSON key từ settings.
-    let driveUploaded = false
-    let driveError: string | undefined
+    // Bản sao ngoài máy chủ (Google Drive, nếu bật + cấu hình) và `offsite_status` của
+    // từng tệp — `backup-offsite.ts`. Không bao giờ ném: Drive hỏng thì tệp cục bộ ở
+    // lại, hàng mang `failed`, lượt sao lưu vẫn thành công.
     if (config.driveEnabled && files.length > 0) {
       currentBackupStatus = { running: true, phase: 'drive', message: 'Đang upload Google Drive', startedAt: Date.now() }
-      try {
-        // Mode 1: OAuth link (ưu tiên — refresh token ổn định, không cần share folder).
-        const { getUsableDriveLink } = await import('./backup-drive-oauth')
-        const link = await getUsableDriveLink()
-        if (link.ok) {
-          const { getUsableDriveOauthConfig } = await import('./backup-drive-oauth-config')
-          const oauthConfig = await getUsableDriveOauthConfig()
-          if (!oauthConfig.ok) {
-            throw new Error(`OAuth config (${oauthConfig.reason}) — cần cấu hình Drive OAuth trước`)
-          }
-          const { uploadBackupToDriveOAuth } = await import('./backup-drive')
-          for (const f of files) {
-            const fileId = await uploadBackupToDriveOAuth(
-              path.join(dir, f.name), f.name, link.refreshToken,
-              oauthConfig.clientId, oauthConfig.clientSecret,
-              f.type === 'sql' ? 'sql' : 'media', stamp,
-              config.driveFolderId || undefined,
-            )
-            await db.update(backups).set({ driveUploaded: true, driveFileId: fileId }).where(eq(backups.filename, f.name))
-          }
-          driveUploaded = true
-        } else if (config.driveServiceAccount) {
-          // Mode 2: Service Account (fallback).
-          const { uploadBackupToDrive } = await import('./backup-drive')
-          for (const f of files) {
-            const fileId = await uploadBackupToDrive(
-              path.join(dir, f.name), f.name, config.driveServiceAccount,
-              f.type === 'sql' ? 'sql' : 'media', stamp,
-              config.driveFolderId || undefined,
-            )
-            await db.update(backups).set({ driveUploaded: true, driveFileId: fileId }).where(eq(backups.filename, f.name))
-          }
-          driveUploaded = true
-        } else if (link.reason === 'secret_unreadable') {
-          throw new Error('Refresh token không giải mã được — dịch khoá hoặc liên kết lại Drive')
-        } else if (config.driveServiceAccountUnreadable) {
-          throw new Error('Khoá service account không giải mã được (khoá mã hoá đã đổi) — dán lại khoá JSON ở trang Sao lưu')
-        }
-        // else: not_linked + no service account → không upload, không lỗi.
-      } catch (err) {
-        driveError = err instanceof Error ? err.message : String(err)
-        logWarn({ event: 'backup.drive_failed', error: driveError })
-      }
     }
+    const { driveUploaded, driveError } = await uploadRunOffsite(db, dir, stamp, files, config)
 
     // Xoay vòng — sau khi backup + Drive xong. Bản `pre-restore` bỏ qua bước này:
     // xoay vòng xoá bản `done` cũ nhất, và bản cũ nhất có thể chính là file sắp

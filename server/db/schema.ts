@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm'
 import { ANALYTICS_LIVE_SCOPE_TYPES } from '../utils/analytics-live'
 import type { BlockData, BlockNode } from '../../shared/blocks/types'
 import type { ContactChannel, SubmissionEventType, SubmissionStatus } from '../../shared/submission-status'
+import type { OffsiteStatus } from '../../shared/backup-offsite-status'
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 export const roles = mysqlTable('roles', {
@@ -1205,6 +1206,9 @@ export const backups = mysqlTable('backups', {
   status:        varchar('status', { length: 16 }).notNull().default('pending'),
   driveUploaded: boolean('drive_uploaded').default(false),
   driveFileId:   varchar('drive_file_id', { length: 128 }),
+  // uploaded | failed | none — bản sao ngoài máy chủ của TỆP này (shared/backup-offsite-status.ts).
+  // NULL = hàng lượt hỏng, hoặc hàng có từ trước cột (không backfill).
+  offsiteStatus: varchar('offsite_status', { length: 16 }).$type<OffsiteStatus>(),
   error:         text('error'),
   createdBy:     int('created_by').references(() => users.id),
   createdAt:     timestamp('created_at').defaultNow(),

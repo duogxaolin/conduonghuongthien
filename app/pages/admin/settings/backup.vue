@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import BackupSettingsPanel from '~/components/admin/backup/BackupSettingsPanel.vue'
+import BackupOffsiteBadge from '~/components/admin/backup/BackupOffsiteBadge.vue'
+import type { OffsiteStatus } from '~~/shared/backup-offsite-status'
 
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
@@ -20,6 +22,8 @@ interface BackupItem {
   stamp: string
   status: string
   driveUploaded: boolean
+  // Bản ngoài máy chủ của tệp này; NULL = hàng cũ (lùi về driveUploaded) — offsiteStatusDisplay().
+  offsiteStatus: OffsiteStatus | null
   createdAt: string
 }
 
@@ -47,7 +51,7 @@ const restoreLog = ref<Array<{ phase: string; message: string; at: number; perce
 //  - upload đang chạy (0-99%) → dùng uploadProgress; 100% → chuyển sang xử lý server
 //  - phase 'upload' (server đang nhận body) → dùng uploadProgress (vẫn 0→99)
 //  - phase 'save' (ghi file) → 100% (đã nhận xong, đang ghi)
-//  - phase 'sql'/'start' (chạy SQL) → 100% (giữ, không có sub-progress)
+//  - phase 'sql'/'schema'/'start' (chạy SQL, cập nhật cấu trúc) → 100% (giữ, không có sub-progress)
 //  - phase 'extract' → dùng progress từ backend (0→100)
 //  - phase 'audit'/'done' → 100%; phase 'failed' → 0 (đỏ)
 const currentRestorePercent = computed(() => {
@@ -56,6 +60,7 @@ const currentRestorePercent = computed(() => {
   if (uploadProgress.value >= 0 && uploadProgress.value < 100) return uploadProgress.value
   if (restoreStatus.value?.phase === 'save') return 100
   if (restoreStatus.value?.phase === 'sql') return 100
+  if (restoreStatus.value?.phase === 'schema') return 100
   if (restoreStatus.value?.phase === 'start') return 100
   if (uploadProgress.value === 100 && (!restoreStatus.value?.phase || restoreStatus.value.phase === 'upload')) return uploadProgress.value
   if (restoreStatus.value?.phase === 'extract') return restoreStatus.value?.progress ?? 0
@@ -197,6 +202,7 @@ const RESTORE_PHASE_LABEL: Record<string, string> = {
   start: 'Bắt đầu',
   safety: 'Đang sao lưu an toàn',
   sql: 'Đang phục hồi CSDL',
+  schema: 'Đang cập nhật cấu trúc CSDL',
   extract: 'Đang giải nén',
   audit: 'Đang ghi audit',
   done: 'Xong',
@@ -442,11 +448,7 @@ watch([running, restoring], ([r, rr]) => {
 
           <div class="flex items-center justify-between text-[0.75rem] text-[#667768] pt-1">
             <span>{{ formatWhen(item.createdAt) }}</span>
-            <span class="flex items-center gap-1">
-              <span class="text-[0.7rem] text-[#8a9a8c]">Drive:</span>
-              <i v-if="item.driveUploaded" class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
-              <i v-else class="fa-regular fa-circle text-[#d1d5db]" aria-hidden="true"></i>
-            </span>
+            <BackupOffsiteBadge :item="item" />
           </div>
 
           <div v-if="isSuperAdmin" class="flex items-center justify-end gap-2 pt-2 border-t border-[#f4f7f4]">
@@ -488,7 +490,7 @@ watch([running, restoring], ([r, rr]) => {
               <th class="px-3.5 py-3">Loại</th>
               <th class="px-3.5 py-3">File</th>
               <th class="px-3.5 py-3">Dung lượng</th>
-              <th class="px-3.5 py-3">Drive</th>
+              <th class="px-3.5 py-3">Bản ngoài máy chủ</th>
               <th v-if="isSuperAdmin" class="px-3.5 py-3">Hành động</th>
             </tr>
           </thead>
@@ -498,10 +500,7 @@ watch([running, restoring], ([r, rr]) => {
               <td class="px-3.5 py-2.5"><span class="rounded-full border border-[#cce5cd] bg-[#eef7ee] px-2 py-0.5 text-[0.72rem] font-bold text-[#1e4620]">{{ typeLabel(item.type) }}</span></td>
               <td class="px-3.5 py-2.5 truncate max-w-[200px] text-[#122815]" :title="item.filename">{{ item.filename }}</td>
               <td class="px-3.5 py-2.5 text-[#667768]">{{ formatBytes(item.bytes) }}</td>
-              <td class="px-3.5 py-2.5">
-                <i v-if="item.driveUploaded" class="fa-solid fa-circle-check text-[#2c6e33]" aria-hidden="true"></i>
-                <i v-else class="fa-regular fa-circle text-[#d1d5db]" aria-hidden="true"></i>
-              </td>
+              <td class="px-3.5 py-2.5"><BackupOffsiteBadge :item="item" /></td>
               <td v-if="isSuperAdmin" class="px-3.5 py-2.5">
                 <div class="flex gap-1.5">
                   <button type="button" class="rounded-md bg-[#f0f7f1] px-2 py-1 text-[0.72rem] font-medium text-[#2c6e33] border-0 cursor-pointer hover:bg-[#e4f2e5]" title="Tải về" @click="downloadBackup(item.filename)"><i class="fa-solid fa-download" aria-hidden="true"></i></button>

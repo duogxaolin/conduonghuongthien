@@ -26,7 +26,10 @@ export interface SmtpConfig {
 export const SMTP_PASSWORD_UNREADABLE_MESSAGE
   = 'Mật khẩu SMTP đã lưu không giải mã được (khoá mã hoá của máy chủ đã đổi). Hãy nhập lại mật khẩu ở trang Cấu hình Email.'
 
-const SMTP_KEYS = ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from'] as const
+export const SMTP_KEYS = ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from'] as const
+
+/** Reads the raw `smtp_*` settings rows into a plain map. */
+export type SmtpSettingsReader = () => Promise<Record<string, string>>
 
 /** Read the SMTP-related rows from the settings table into a plain map. */
 async function readSmtpSettings(): Promise<Record<string, string>> {
@@ -45,9 +48,14 @@ async function readSmtpSettings(): Promise<Record<string, string>> {
  * Resolve the effective SMTP configuration, or `null` when the transport is
  * not usable. We consider SMTP "configured" only when both host and user are
  * present — this is the guard the submission handler uses to skip silently.
+ *
+ * `read` defaults to the shared pool. The ops-alert path passes a reader bound to
+ * its own short-lived connection (it also runs in the boot CLI, which must not
+ * create the pool) — and still goes through THIS resolution, so whatever it does
+ * to the stored values (defaults, decryption) applies to alerts too.
  */
-export async function getSmtpConfig(): Promise<SmtpConfig | null> {
-  const map = await readSmtpSettings()
+export async function getSmtpConfig(read: SmtpSettingsReader = readSmtpSettings): Promise<SmtpConfig | null> {
+  const map = await read()
   const host = (map.smtp_host || '').trim()
   const user = (map.smtp_user || '').trim()
   if (!host || !user) return null

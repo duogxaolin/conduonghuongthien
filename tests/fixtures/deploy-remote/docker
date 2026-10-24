@@ -20,6 +20,12 @@
 #   FAKE_IMAGE_LS_FAIL=1          `docker image ls` fails
 #   FAKE_UPLOADS_OWNER=<user>     owner of /app/public/uploads in the app container
 #   FAKE_DOCKER_ROOT=<dir>        `docker info --format {{.DockerRootDir}}`
+#   FAKE_LOG_PLUGINS=<json>       `docker info --format {{json .Plugins.Log}}`
+#                                 (default: a daemon that has the journald driver)
+#   FAKE_JOURNALD_RUN_FAIL=1      the throwaway `docker run --log-driver journald` fails
+#   FAKE_COMPOSE_APP_LOG_DRIVER=<driver>  services.app.logging.driver that
+#                                 `docker compose config` prints; unset = json-file when
+#                                 docker-compose.override.yml sets it, else journald
 img=$(sed -n 's/^CDKT_IMAGE=//p' .env 2>/dev/null | tail -n 1)
 sum=$(sha256sum docker-compose.yml 2>/dev/null | cut -d' ' -f1)
 echo "$* | image=$img | compose=$sum" >> "$FAKE_DOCKER_LOG"
@@ -59,6 +65,13 @@ case "$1" in
           echo "service app: invalid" >&2
           exit 15
         fi
+        # `config -q` validates only; plain `config` prints the merged model.
+        case " $* " in *' -q '*) exit 0 ;; esac
+        driver="${FAKE_COMPOSE_APP_LOG_DRIVER:-}"
+        if [ -z "$driver" ]; then
+          if grep -s 'driver: json-file' docker-compose.override.yml >/dev/null; then driver=json-file; else driver=journald; fi
+        fi
+        printf 'name: app\nservices:\n  app:\n    image: x\n    logging:\n      driver: %s\n  mysql:\n    logging:\n      driver: json-file\n' "$driver"
         exit 0 ;;
       up)
         if [ -n "${FAKE_UP_FAIL_IMAGE:-}" ] && [ "$img" = "$FAKE_UP_FAIL_IMAGE" ]; then exit 1; fi
@@ -121,7 +134,15 @@ case "$1" in
         exit 0 ;;
       *) exit 0 ;;
     esac ;;
-  info) echo "${FAKE_DOCKER_ROOT:-}"; exit 0 ;;
+  info)
+    case "$fmt" in
+      *Plugins.Log*) echo "${FAKE_LOG_PLUGINS-[\"awslogs\",\"fluentd\",\"journald\",\"json-file\",\"local\"]}" ;;
+      *) echo "${FAKE_DOCKER_ROOT:-}" ;;
+    esac
+    exit 0 ;;
+  run)
+    [ "${FAKE_JOURNALD_RUN_FAIL:-}" = 1 ] && { echo 'docker: Error response from daemon: failed to initialize logging driver: journald is not enabled on this host' >&2; exit 125; }
+    exit 0 ;;
   logs) echo "fake container log"; exit 0 ;;
   *) exit 0 ;;
 esac

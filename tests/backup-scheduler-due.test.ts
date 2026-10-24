@@ -365,6 +365,21 @@ test('tick: a lock-busy refusal (another backup is running) is not an attempt', 
   assert.equal(storedState()?.outcome, 'done')
 })
 
+test('tick: a refusal because a database restore is running is "busy" too — not an attempt, retried at the next tick', async () => {
+  enable('3')
+  backupOutcome = async () => { throw new realBackup.BackupRestoreInProgressError() }
+  const logsBefore = logs.length
+  await tickAt(at(26, 3, 5))
+  assert.equal(storedState(), null, 'nothing recorded')
+  const tickLogs = logs.slice(logsBefore)
+  assert.ok(tickLogs.some(entry => entry.event === 'backup.scheduler_busy' && /khôi phục/.test(String(entry.reason))), 'logged as busy, with the reason')
+  assert.ok(!tickLogs.some(entry => entry.event === 'backup.scheduler_failed'), 'a refusal is not a failure')
+  backupOutcome = async (options) => { await options.onStarted?.(); writeRunRows(clock, 'scheduled'); return {} }
+  await tickAt(at(26, 3, 20))
+  assert.equal(backupCalls.length, 2)
+  assert.equal(storedState()?.outcome, 'done')
+})
+
 test('tick: a run cut off mid-way stays "running" and is retried after 60 min, then abandoned at the third', async () => {
   enable('3')
   // A process killed during the backup never gets to write the outcome.
