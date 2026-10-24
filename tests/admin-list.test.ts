@@ -84,6 +84,7 @@ describe('useAdminList — state and page/filter semantics', () => {
     assert.equal(list.page.value, 1)
     assert.deepEqual(list.items.value, [])
     assert.equal(list.error.value, '')
+    assert.equal(list.errorStatus.value, null)
     // No fetch from setup: on SSR that request would go out without the admin
     // cookie, and every one of these endpoints writes an audit row per call.
     assert.equal(loader.calls.length, 0)
@@ -192,6 +193,70 @@ describe('useAdminList — state and page/filter semantics', () => {
     assert.equal(list.page.value, 2)
     assert.deepEqual(list.items.value.map(r => r.id), [7])
     assert.equal(list.loading.value, false)
+  })
+
+  it('a server that keeps answering past the end cannot make the list loop — the action costs exactly 2 requests', async () => {
+    // Each request writes an activity_logs row. A server answering `page: 2,
+    // totalPages: 1` to EVERY request (even a request for page 1) once made the
+    // follow-up re-ask forever — an independent probe counted 41 requests. The
+    // loader answers immediately, so an unbounded loop would spin; it gives up
+    // after 12 calls so a regression fails here instead of hanging the run.
+    const requested: number[] = []
+    const list = useAdminList<Row, Filters>({
+      filters: INITIAL_FILTERS,
+      errorFallback: FALLBACK,
+      load: async ({ page }) => {
+        requested.push(page)
+        if (requested.length === 1) return pageOf([1], { total: 60, totalPages: 3 })
+        if (requested.length > 12) return null
+        return { items: [], total: 5, totalPages: 1, page: 2 }
+      },
+    })
+    await list.reload()
+    await list.goToPage(2)
+
+    assert.deepEqual(requested, [1, 2, 1], 'page 2 past the end → one re-ask for page 1, and an answer for page 1 is never "past the end" of the request')
+    assert.equal(list.page.value, 1)
+    assert.equal(list.loading.value, false)
+    assert.equal(list.error.value, '')
+
+    // A plain retry on page 1 against the same server: the request was not past
+    // the end, so its own (nonsensical) "page 2" answer earns no follow-up.
+    await list.reload()
+    assert.deepEqual(requested, [1, 2, 1, 1], 'asking for a page that exists costs exactly one request')
+    assert.equal(list.page.value, 1)
+  })
+
+  it('at most one follow-up per action, even while the total keeps shrinking under it', async () => {
+    // Strictly decreasing alone would still cost one request per page on a list
+    // that shrinks between every two answers; one follow-up per action caps it.
+    const answers: Array<AdminListPage<Row>> = [
+      pageOf([1], { total: 75, totalPages: 3 }),
+      { items: [], total: 40, totalPages: 2, page: 3 },
+      { items: [], total: 10, totalPages: 1, page: 2 },
+      pageOf([9], { total: 10, totalPages: 1, page: 1 }),
+    ]
+    const requested: number[] = []
+    const list = useAdminList<Row, Filters>({
+      filters: INITIAL_FILTERS,
+      errorFallback: FALLBACK,
+      load: async ({ page }) => {
+        requested.push(page)
+        return answers[requested.length - 1] ?? null
+      },
+    })
+    await list.reload()
+    await list.goToPage(3)
+
+    assert.deepEqual(requested, [1, 3, 2], 'go to page 3 = page 3, then ONE re-ask for page 2 — not a third request')
+    assert.equal(list.page.value, 1, 'the displayed page is clamped to what exists')
+    assert.equal(list.totalPages.value, 1)
+    assert.equal(list.loading.value, false)
+
+    // The next action gets its own single follow-up again.
+    await list.reload()
+    assert.deepEqual(requested, [1, 3, 2, 1])
+    assert.deepEqual(list.items.value.map(r => r.id), [9])
   })
 
   it('an empty result past page 1 settles on page 1 without another request', async () => {
@@ -312,7 +377,10 @@ describe('useAdminList — stale answers never overwrite a newer one', () => {
     await settle()
     assert.deepEqual(list.items.value, [], 'an answer for a page that has gone is not applied')
 
-    await list.reload()
+    // Not awaited: the loader is called synchronously, before reload's first
+    // await, so the count is final right here. Awaiting would turn a regression
+    // into a hang (this loader never answers) instead of a failure.
+    void list.reload()
     assert.equal(loader.calls.length, 1, 'a reload after unmount (a late action handler) sends nothing — each call is an audit row')
   })
 })
@@ -466,6 +534,7 @@ describe('useAdminList over adminFetch (real ofetch, fake network)', () => {
     calls[0]!.respond(json({ statusCode: 400, statusMessage: 'Bộ lọc trạng thái không hợp lệ.' }, 400, 'Bad Request'))
     await done
     assert.equal(list.error.value, 'Bộ lọc trạng thái không hợp lệ.')
+    assert.equal(list.errorStatus.value, 400)
 
     // Dropped connection: ofetch's "[GET] "/api/admin/readers…": <no response>" stays
     // in the console. ofetch retries a GET once on a network failure (it counts as a
@@ -480,6 +549,7 @@ describe('useAdminList over adminFetch (real ofetch, fake network)', () => {
     calls[2]!.fail(new TypeError('Failed to fetch'))
     await done
     assert.equal(list.error.value, FALLBACK)
+    assert.equal(list.errorStatus.value, null, 'no response, no status — not a stale 400 from the previous failure')
 
     // nginx 502 HTML page (also retried once): not "Bad Gateway", not the HTML.
     const badGateway = () => new Response('<html>502 Bad Gateway</html>', { status: 502, statusText: 'Bad Gateway', headers: { 'content-type': 'text/html' } })
@@ -492,6 +562,7 @@ describe('useAdminList over adminFetch (real ofetch, fake network)', () => {
     calls[4]!.respond(badGateway())
     await done
     assert.equal(list.error.value, FALLBACK)
+    assert.equal(list.errorStatus.value, 502)
 
     // A 200 that is not the list (proxy splash page) is an error, not "no readers".
     done = list.reload()
@@ -500,6 +571,49 @@ describe('useAdminList over adminFetch (real ofetch, fake network)', () => {
     calls[5]!.respond(new Response('<html>maintenance</html>', { status: 200, headers: { 'content-type': 'text/html' } }))
     await done
     assert.equal(list.error.value, FALLBACK)
+    assert.equal(list.errorStatus.value, null, 'a 200 that is not the list is an error with no HTTP status')
     assert.equal(list.loading.value, false)
+  })
+
+  it('exposes the HTTP status, so a page can tell "no permission" (403) from "try again" — cleared on retry', async () => {
+    // GET /api/admin/readers needs the `readers` resource, which ships granted to
+    // nobody: after an upgrade a 403 here is the expected state, and retrying it
+    // will not help. The page decides that from `errorStatus`, not from the text.
+    const calls = installFakeNetwork()
+    const list = useAdminList<Row, Filters>({ filters: INITIAL_FILTERS, load: readersLoader, errorFallback: FALLBACK })
+
+    let done = list.reload()
+    await settle()
+    calls[0]!.respond(json({ statusCode: 403, statusMessage: 'Bạn không có quyền xem danh sách người đọc.' }, 403, 'Forbidden'))
+    await done
+    assert.equal(list.errorStatus.value, 403)
+    assert.equal(list.error.value, 'Bạn không có quyền xem danh sách người đọc.')
+
+    done = list.reload()
+    assert.equal(list.errorStatus.value, null, 'cleared as soon as the retry starts, together with the message')
+    await settle()
+    calls[1]!.respond(json({ ok: true, readers: [{ id: 4 }], total: 1, totalPages: 1, page: 1 }))
+    await done
+    assert.equal(list.errorStatus.value, null)
+    assert.deepEqual(list.items.value.map(r => r.id), [4])
+  })
+
+  it('a superseded request that fails with a status leaves no status behind', async () => {
+    // A source that ignores the signal: the older request's 500 really arrives,
+    // after the newer one started. It belongs to nobody.
+    const loader = manualLoader()
+    const list = useAdminList<Row, Filters>({ filters: INITIAL_FILTERS, load: loader.load, errorFallback: FALLBACK })
+
+    void list.reload()
+    const newer = list.applyFilters()
+    loader.calls[0]!.answer.reject(Object.assign(new Error('Internal Server Error'), { statusCode: 500 }))
+    await settle()
+    assert.equal(list.errorStatus.value, null, "the older request's 500 is not the page's status")
+    assert.equal(list.loading.value, true)
+
+    loader.calls[1]!.answer.resolve(pageOf([3]))
+    await newer
+    assert.equal(list.errorStatus.value, null)
+    assert.equal(list.error.value, '')
   })
 })

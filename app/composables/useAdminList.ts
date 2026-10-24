@@ -10,7 +10,7 @@ import {
 } from 'vue'
 
 // Relative path, not `~/`: the test loader (scripts/ts-resolver.mjs) only knows `~~/`.
-import { errorMessage } from '../utils/errorMessage'
+import { errorMessage, errorStatus as httpStatusOf } from '../utils/errorMessage'
 
 /**
  * State of one paginated, filterable admin list (design.md D-FETCH).
@@ -82,6 +82,13 @@ export interface AdminList<TItem, TFilters extends object, TPage extends AdminLi
   readonly loading: Readonly<Ref<boolean>>
   /** '' when the latest request succeeded (or is still in flight). */
   readonly error: Readonly<Ref<string>>
+  /**
+   * HTTP status of the latest request's failure (`errorStatus()`), or null — no
+   * failure, no response (network), or a 200 that was not a list. Lets a page
+   * tell 403 ("you lack the permission", retrying will not help) from 401 or a
+   * transient 5xx without parsing `error`.
+   */
+  readonly errorStatus: Readonly<Ref<number | null>>
   /** The latest successful answer, for page-specific extras (e.g. a badge count). */
   readonly result: Readonly<ShallowRef<TPage | null>>
   /** Re-run the current page with the current filters — the retry button's handler. */
@@ -114,6 +121,7 @@ export function useAdminList<
   const totalPages = ref(1)
   const loading = ref(true)
   const error = ref('')
+  const errorStatus = ref<number | null>(null)
   // `shallowRef<T>` picks its return type with a conditional on `T extends Ref`,
   // which TypeScript cannot resolve while TPage is still generic — Vue's documented
   // pattern for generic composables is to state the ref type.
@@ -123,7 +131,19 @@ export function useAdminList<
   let controller: AbortController | null = null
   let disposed = false
 
+  /** Re-run the current page with the current filters — the retry button's handler. */
   async function reload(): Promise<void> {
+    await run(true)
+  }
+
+  /**
+   * One user action = one request, plus AT MOST one follow-up for the last page
+   * (`mayAskForLastPage` is false on the follow-up itself). Every request writes
+   * an audit row, so the bound is structural rather than trusting the server:
+   * a server answering "page 2 of 1" to every request once made this loop
+   * without end (41 requests in an independent probe).
+   */
+  async function run(mayAskForLastPage: boolean): Promise<void> {
     // A late action handler (`await reload()` after a delete) must not fire a
     // request — and an audit row — for a page that has already gone.
     if (disposed) return
@@ -134,6 +154,7 @@ export function useAdminList<
     controller = current
     loading.value = true
     error.value = ''
+    errorStatus.value = null
 
     const requested = page.value
     let askForLastPage = false
@@ -149,7 +170,9 @@ export function useAdminList<
       const served = pageNumber(answer.page ?? requested)
       const count = typeof answer.total === 'number' && Number.isFinite(answer.total) ? answer.total : 0
 
-      if (served > lastPage && count > 0) {
+      // Re-ask only when the page WE asked for is past the end too (so the
+      // follow-up asks for a strictly smaller page) and only once per action.
+      if (mayAskForLastPage && requested > lastPage && served > lastPage && count > 0) {
         // The server echoed a page past the end without clamping it (rows were
         // removed meanwhile). An empty page with data on the pages before it
         // reads as "nothing here"; ask once more for the last page that exists.
@@ -168,6 +191,7 @@ export function useAdminList<
       // A superseded request — aborted or merely late — has nobody waiting for it.
       if (ticket !== generation) return
       error.value = errorMessage(err, options.errorFallback)
+      errorStatus.value = httpStatusOf(err)
     } finally {
       // Only the latest request ends the loading state: an older one settling
       // must not swap the skeleton for stale rows while the newer is in flight.
@@ -177,7 +201,7 @@ export function useAdminList<
       }
     }
 
-    if (askForLastPage) await reload()
+    if (askForLastPage) await run(false)
   }
 
   async function applyFilters(): Promise<void> {
@@ -207,5 +231,5 @@ export function useAdminList<
     })
   }
 
-  return { page, filters, items, total, totalPages, loading, error, result, reload, applyFilters, goToPage, resetFilters }
+  return { page, filters, items, total, totalPages, loading, error, errorStatus, result, reload, applyFilters, goToPage, resetFilters }
 }

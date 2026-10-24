@@ -21,10 +21,10 @@ export default defineConfig({
   retries: 0,
   fullyParallel: false,
   // Seeding runs bcrypt over the permission matrix, and the first request to a
-  // cold build compiles its route chunks. The whole suite (93 tests, 2026-10-24)
-  // takes ~240 s locally with setup and longer on CI runners; 300 s left under a
-  // minute of headroom, so the budget is 480 s. Raise it again with the next
-  // batch of specs rather than let one slow runner fail every test at once.
+  // cold build compiles its route chunks. The whole suite (97 tests, 2026-10-24,
+  // after wave2 6.4) took 313 s locally with setup, and longer on CI runners.
+  // The budget went from 300 s to 480 s when 93 tests took ~240 s. Raise it again
+  // with the next batch of specs rather than let one slow runner fail every test at once.
   globalTimeout: 480_000,
   timeout: 60_000,
   expect: { timeout: 10_000 },

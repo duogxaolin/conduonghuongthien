@@ -5,9 +5,10 @@
  * tests/admin-list.test.ts proves the composable's behaviour against real ofetch
  * over a fake network; tests/admin-list-pilot-pages.test.ts proves the pages'
  * source shape. Neither mounts a page. What only a browser can answer:
- *   1. each migrated page still goes skeleton → alert (`role="alert"`) on a
- *      failure → "Thử lại" re-fetches without reloading the document → rows,
- *      total and pager rendered from the answer;
+ *   1. each migrated page: a clean first load costs exactly its request budget
+ *      (1; comments 2 — list + badge) — every request is an audit row; then a
+ *      failure → alert (`role="alert"`) → "Thử lại" re-fetches without reloading
+ *      the document, at the same budget → rows, total and pager rendered;
  *   2. the race the composable exists for, end to end: an older request still
  *      in flight when the officer applies a new filter is cancelled on the wire,
  *      and when its answer lands anyway it does not replace the newer rows.
@@ -55,6 +56,12 @@ type PilotScenario = {
   totalText: string
   /** Page-specific extras rendered from the same answer. */
   alsoRendered?: (page: Page) => Promise<void>
+  /**
+   * Requests one load costs. Every request to these endpoints writes an
+   * activity_logs row, so this is the audit-row budget of opening the page:
+   * a double load on mount, or a stray watcher, doubles the rows silently.
+   */
+  requestsPerLoad: number
 }
 
 const at = (iso: string) => new Date(iso).toISOString()
@@ -76,6 +83,7 @@ const scenarios: PilotScenario[] = [
     }),
     rowText: 'Nguyễn Văn An',
     totalText: '42 tài khoản',
+    requestsPerLoad: 1,
   },
   {
     name: 'comments/index.vue',
@@ -100,6 +108,8 @@ const scenarios: PilotScenario[] = [
     alsoRendered: async (page) => {
       await expect(page.getByRole('tab', { name: /Đã ẩn/ })).toContainText('3')
     },
+    // The list and the badge count.
+    requestsPerLoad: 2,
   },
   {
     name: 'chatbot/sessions/index.vue',
@@ -118,14 +128,18 @@ const scenarios: PilotScenario[] = [
     }),
     rowText: 'Lê Văn Cường',
     totalText: '26 phiên',
+    requestsPerLoad: 1,
   },
 ]
 
+/** Give a stray extra request (double mount, watcher) time to show up before counting. */
+const quiet = (page: Page) => page.evaluate(() => new Promise(resolve => setTimeout(resolve, 500)))
+
 for (const scenario of scenarios) {
-  test(`${scenario.name}: failure → alert → retry re-fetches without reloading → rows and pager`, async ({ page }, testInfo) => {
+  test(`${scenario.name}: first load costs ${scenario.requestsPerLoad} request(s); failure → alert → retry re-fetches without reloading → rows and pager`, async ({ page }, testInfo) => {
     await login(page)
 
-    const state = { mode: 'fail' as 'fail' | 'pass', requests: 0 }
+    const state = { mode: 'pass' as 'fail' | 'pass', requests: 0 }
     await page.route((url) => url.pathname === scenario.endpoint, async (route) => {
       state.requests += 1
       if (state.mode === 'fail') {
@@ -135,27 +149,39 @@ for (const scenario of scenarios) {
       await json(route, scenario.answer(new URL(route.request().url())))
     })
 
+    // ── 0. A clean first load: exactly the audit-row budget ──────────────────
+    const rows = page.locator('table, ul').getByText(scenario.rowText).first()
     await page.goto(scenario.path)
+    await expect(rows).toBeVisible({ timeout: 20_000 })
+    await quiet(page)
+    expect(state.requests, 'opening the page costs exactly one load').toBe(scenario.requestsPerLoad)
+
+    // ── 1. A failed load surfaces as an alert ─────────────────────────────────
+    state.mode = 'fail'
+    await page.reload()
 
     const alert = page.getByRole('alert')
     await expect(alert).toBeVisible({ timeout: 20_000 })
     await expect(alert).toContainText('Thử lại')
     await expect(page.getByRole('status')).toHaveCount(0)
     await expect(page.getByText(scenario.rowText)).toHaveCount(0)
-    const failed = state.requests
-    expect(failed).toBeGreaterThan(0)
+    await quiet(page)
+    const beforeRetry = state.requests
+    expect(beforeRetry).toBeGreaterThan(scenario.requestsPerLoad)
 
+    // ── 2. Retry is one load, in place ────────────────────────────────────────
     await markDocument(page)
     state.mode = 'pass'
     await alert.getByRole('button', { name: 'Thử lại' }).click()
 
     // Desktop viewport: the table is the visible rendering (the cards are md:hidden).
-    await expect(page.locator('table, ul').getByText(scenario.rowText).first()).toBeVisible({ timeout: 20_000 })
+    await expect(rows).toBeVisible({ timeout: 20_000 })
     await expect(page.getByText(scenario.totalText)).toBeVisible()
     await expect(page.getByRole('navigation', { name: 'Phân trang' })).toBeVisible()
     await scenario.alsoRendered?.(page)
     await expect(page.getByRole('alert')).toHaveCount(0)
-    expect(state.requests).toBeGreaterThan(failed)
+    await quiet(page)
+    expect(state.requests - beforeRetry, 'one retry costs exactly one load').toBe(scenario.requestsPerLoad)
     expect(await documentSurvived(page)).toBe(true)
 
     // Written to the test's output directory (test-results/, git-ignored) so the

@@ -1,12 +1,18 @@
 /**
- * `$fetch` for the admin panel, typed by the caller (design.md D-FETCH).
+ * `$fetch` for the admin panel, with the response type stated by the caller
+ * (design.md D-FETCH).
  *
- * Nitro types `$fetch` by route, and inferring that type across the whole route
- * tree is expensive enough that admin pages stopped asking for it: they cast
- * instead, `($fetch as (u: string, o?: Record<string, unknown>) => Promise<{…}>)`,
- * at every call site. A cast is a promise the compiler cannot check — rename a
- * response field on the server and every cast keeps compiling. This wrapper keeps
- * the ONE cast here and gives call sites `adminFetch<Response>(url, opts)`.
+ * WHAT THIS IS — AND IS NOT. `T` is an unchecked assertion: nothing compares it
+ * with what the endpoint returns, so `adminFetch<Wrong>(url)` compiles, and
+ * renaming a response field on the server still breaks no build. That is exactly
+ * as unsafe as the cast it replaces, `($fetch as (u: string, o?: …) => Promise<{…}>)`.
+ * What changes is WHERE the assertion lives: one cast here instead of one per call
+ * site, a call site that reads as a plain call, and one place to tighten later
+ * (e.g. deriving `T` from Nitro's route types). It is not type safety.
+ *
+ * Cost, stated: a page that used bare, uncast `$fetch` had its response type
+ * inferred from the Nitro route (the readers list did). Moving it here trades that
+ * for a declared type the compiler cannot verify.
  *
  * Errors are rethrown UNCHANGED. Call sites (and `useAdminList`) read them with
  * `errorMessage()` / `errorStatus()` from `app/utils/errorMessage.ts`: a wrapped
