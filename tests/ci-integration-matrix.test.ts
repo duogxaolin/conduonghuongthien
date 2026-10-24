@@ -187,3 +187,26 @@ test('a renamed suite file leaves a dangling matrix entry and an unwired file', 
     problems.join('\n'),
   )
 })
+
+test('a pull request that only refreshes the upgrade fixture runs the integration jobs', async () => {
+  const { default: yaml } = await import('js-yaml')
+  const ci = yaml.load(read('.github/workflows/ci.yml')) as {
+    jobs: Record<string, { steps?: Step[] }>
+  }
+  const plan = (ci.jobs.changes?.steps ?? []).find((step) =>
+    /grep -Eq '[^']+'; then\s+echo "integration=true"/.test(step.run ?? ''),
+  )
+  assert.ok(plan, 'the changes job no longer decides integration=true from a grep of the PR files')
+  const pattern = new RegExp(/grep -Eq '([^']+)'; then\s+echo "integration=true"/.exec(plan.run!)![1]!)
+  for (const file of [
+    'tests/fixtures/schema-prev.sql',
+    'tests/schema-upgrade-integration.test.ts',
+    'server/db/seed.ts',
+    'scripts/snapshot-schema.ts',
+  ]) {
+    assert.ok(pattern.test(file), `${file} must run the integration jobs on a PR`)
+  }
+  for (const file of ['docs/CHANGELOG.md', 'tests/fixtures/schema-prev.sql.bak', 'tests/coverage-summary.test.ts']) {
+    assert.ok(!pattern.test(file), `${file} alone must not run the integration jobs`)
+  }
+})

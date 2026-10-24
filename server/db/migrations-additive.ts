@@ -24,6 +24,7 @@ import { BOOT_MIGRATION_EVENTS, logError, logInfo } from '../utils/logger'
 import { encodeShortId } from '../utils/short-media-id'
 import { convertPlaintextSettingsSecrets } from './settings-secret-conversion'
 import { backfillReservedReaderNames } from './reader-name-backfill'
+import { repairLegacyMediaUrls } from './legacy-media-urls'
 
 export type ChatbotColumnMigration = {
   table: string
@@ -868,6 +869,14 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // CSDL mới; dòng này nới CSDL cũ (chỉ nới — không mất dữ liệu, chạy lại vô hại).
   await modifyColumn(db, database, 'backups', 'trigger', "VARCHAR(32) NOT NULL DEFAULT 'manual'")
 
+  // ── Quét thư mục ảnh: tệp nguồn của hàng đã nhập (wave2 D-SCAN) ───────────
+  // Lượt quét `public/uploads/` bỏ qua tệp đã có ở cột này — kể cả bản nhập nằm trên
+  // R2, nơi `storage_path` là khoá R2. Chỉ mục tiền tố: 1024 × 4 byte vượt trần khoá
+  // InnoDB. Cùng tên + cột ở `schema.ts` và `schema-tables/core.ts`
+  // (`tests/media-scan-index.test.ts`). Chỉ thêm cột/chỉ mục — không ghi hàng nào.
+  await ensureColumn(db, database, 'media', 'scanned_source_path', 'VARCHAR(1024) NULL')
+  await ensureIndex(db, database, 'media', 'media_scanned_source_path_idx', 'INDEX `media_scanned_source_path_idx` (`scanned_source_path`(255))')
+
   // ── settings: mã hoá smtp_pass / r2_secret_key / backup_drive_service_account ──
   // Lượt chuyển MỘT LẦN theo trạng thái giá trị (chưa phải envelope → mã hoá; đã là
   // envelope → để nguyên, kể cả khi không mở được). Lần khởi động thứ hai không ghi
@@ -886,9 +895,10 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // ── Tự vá URL ảnh hỏng hàng loạt (all bài) ────────────────────────────────
   // Sync trước treo ở pre-backup nên phase rewrite chưa chạy: all bài vẫn
   // `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi file local đã
-  // bị xoá (Local 0 / R2 3212). Kèm `media.url` thiếu scheme `cdn1...` →
-  // grid thành `http://localhost:3000/cdn1...`.
+  // bị xoá (Local 0 / R2 3212). Kèm `media.url` thiếu scheme (domain R2) →
+  // grid thành `http://localhost:3000/<domain>...`.
   // Chạy tự động mỗi lần khởi động, idempotent (< vài giây), không cần bấm nút.
+  // Thân hàm ở `legacy-media-urls.ts` (wave2 D-SCAN: domain từ cấu hình, bỏ tên mơ hồ).
   await repairLegacyMediaUrls(db)
 }
 
@@ -903,90 +913,6 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
  * Chạy một lần lúc upgrade; 11 hàng hiện có → 11 vòng loop, không đáng kể. Nếu
  * mọi hàng đã có `short_id` (chạy rồi) thì thoát ngay.
  */
-/**
- * Tự vá URL ảnh hỏng hàng loạt còn sót sau lần sync treo pre-backup.
- * Chạy mỗi lần khởi động, idempotent, không backup (migration đã là idempotent).
- * Không throw — lỗi chỉ log, không chặn khởi động.
- */
-async function repairLegacyMediaUrls(db: Connection) {
-  try {
-    // 1) media.url: bóc localhost prefix + thêm scheme — chỉ chạy khi thật sự có hàng lỗi
-    const [mediaNeed] = await db.execute<RowDataPacket[]>(
-      "SELECT 1 FROM `media` WHERE `url` LIKE 'http://localhost:3000%' OR (`url` NOT LIKE 'http%' AND `url` LIKE 'cdn1.delify.vn%') LIMIT 1",
-    ).catch(() => [[] as RowDataPacket[]] as const)
-    if ((mediaNeed as RowDataPacket[]).length > 0) {
-      await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'http://localhost:3000/', '') WHERE \`url\` LIKE 'http://localhost:3000/cdn1%'`).catch(() => {})
-      await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'https://localhost:3000/', '') WHERE \`url\` LIKE 'https://localhost:3000/cdn1%'`).catch(() => {})
-      await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'http://localhost:3000', '') WHERE \`url\` LIKE 'http://localhost:3000http%'`).catch(() => {})
-      await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'https://localhost:3000', '') WHERE \`url\` LIKE 'https://localhost:3000http%'`).catch(() => {})
-      await db.query(`UPDATE \`media\` SET \`url\` = CONCAT('https://', \`url\`) WHERE \`url\` NOT LIKE 'http%' AND \`url\` LIKE 'cdn1.delify.vn%'`).catch(() => {})
-    }
-
-    // 2) articles.content: double-prefix — cũng guard
-    const [articleDouble] = await db.execute<RowDataPacket[]>(
-      "SELECT 1 FROM `articles` WHERE `content` LIKE '%localhost:3000https://%' OR `content` LIKE '%localhost:3000/cdn1%' LIMIT 1",
-    ).catch(() => [[] as RowDataPacket[]] as const)
-    if ((articleDouble as RowDataPacket[]).length > 0) {
-      await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'http://localhost:3000https://', 'https://') WHERE \`content\` LIKE '%http://localhost:3000https://%'`).catch(() => {})
-      await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'https://localhost:3000https://', 'https://') WHERE \`content\` LIKE '%https://localhost:3000https://%'`).catch(() => {})
-      await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'http://localhost:3000/cdn1.delify.vn', 'https://cdn1.delify.vn') WHERE \`content\` LIKE '%http://localhost:3000/cdn1.delify.vn%'`).catch(() => {})
-      await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'https://localhost:3000/cdn1.delify.vn', 'https://cdn1.delify.vn') WHERE \`content\` LIKE '%https://localhost:3000/cdn1.delify.vn%'`).catch(() => {})
-    }
-
-    // 3) Thay URL `*/uploads/migrated/media/<file>` (cả relative + absolute) bằng
-    //    `media.url` R2 đúng — all bài, làm trong 1 lượt đọc/ghi (theo id).
-    //
-    // Trước đây lặp từng filename × (REGEXP_REPLACE scan cả cột LONGTEXT +
-    // REPLACE scan lại) = ~1920 quét full bảng, treo container 95s+ ở 960 file.
-    // Giờ: đọc mỗi bài 1 lần, ghép filename→url trong JS (Map lookup O(1)),
-    // thay bằng regex JS (absolute prefix bắt `https?://host/uploads/...`),
-    // UPDATE 1 câu mỗi bài. Scan articles chỉ 1 lần.
-    const [migratedNeed] = await db.execute<RowDataPacket[]>(
-      "SELECT 1 FROM `articles` WHERE `content` LIKE '%/uploads/migrated/media/%' LIMIT 1",
-    ).catch(() => [[] as RowDataPacket[]] as const)
-    if ((migratedNeed as RowDataPacket[]).length === 0) return
-
-    const [r2Rows] = await db.execute<RowDataPacket[]>(
-      "SELECT `filename`, `url` FROM `media` WHERE `provider` = 'r2' AND `filename` IS NOT NULL AND `url` IS NOT NULL"
-    ).catch(() => [[] as RowDataPacket[]] as const)
-    // URL trong articles có thể URL-encoded (`t%E1%BA%A3i%20xu%E1%BB%91ng.jpg`)
-    // trong khi `media.filename` lưu raw (`tải xuống.jpg`). Map cả hai dạng để khớp.
-    const urlByFilename = new Map<string, string>()
-    const safeEncode = (s: string) => {
-      try { return encodeURIComponent(s) } catch { return s }
-    }
-    for (const row of r2Rows as RowDataPacket[]) {
-      const fn = String((row as Record<string, unknown>).filename || '')
-      const u = String((row as Record<string, unknown>).url || '')
-      if (!fn || !u) continue
-      urlByFilename.set(fn, u)
-      const enc = safeEncode(fn)
-      if (enc !== fn) urlByFilename.set(enc, u)
-    }
-    if (urlByFilename.size === 0) return
-
-    const [articleRows] = await db.execute<RowDataPacket[]>(
-      "SELECT `id`, `content` FROM `articles` WHERE `content` LIKE '%/uploads/migrated/media/%'",
-    )
-    for (const row of articleRows as RowDataPacket[]) {
-      const id = (row as Record<string, unknown>).id as number | undefined
-      const original = (row as Record<string, unknown>).content
-      if (id === undefined || original === null) continue
-      const content = String(original)
-      const replacement = content.replace(
-        /https?:\/\/[^\s"'<>]*\/uploads\/[^\s"'<>]*migrated\/media\/([^\s"'<>\]?#]+)/g,
-        (_match, filename: string) => urlByFilename.get(filename) ?? _match,
-      ).replace(
-        /\/uploads\/migrated\/media\/([^\s"'<>\]?#]+)/g,
-        (_match, filename: string) => urlByFilename.get(filename) ?? _match,
-      )
-      if (replacement !== content) {
-        await db.query('UPDATE `articles` SET `content` = ? WHERE `id` = ?', [replacement, id])
-      }
-    }
-  } catch { /* không chặn khởi động */ }
-}
-
 async function backfillShortIds(db: Connection) {
   const [rows] = await db.execute<RowDataPacket[]>(
     'SELECT `id` FROM `media_items` WHERE `short_id` IS NULL ORDER BY `id`',

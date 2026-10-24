@@ -50,7 +50,7 @@ chưa qua đủ bốn cổng.
 không bị giới hạn; ghi chú ngày 2026-10-22 nói repo đã sang private là sai. Giữ các quy tắc dưới
 đây vẫn đáng: chúng rút ngắn thời gian chờ CI, và áp lại ngay nếu repo chuyển private —
 tài khoản từng hết phút khi còn private): một lượt CI đầy đủ ≈ 40 phút
-billed (GitHub làm tròn từng job lên phút; các job Integration chiếm ≈ 29 khi còn 13 job; nay matrix 19). Nên job
+billed (GitHub làm tròn từng job lên phút; các job Integration chiếm ≈ 29 khi còn 13 job; nay matrix 22). Nên job
 `changes` ("Plan") quyết định cho mỗi lượt chạy:
 
 | Sự kiện | Chạy gì |
@@ -60,7 +60,7 @@ billed (GitHub làm tròn từng job lên phút; các job Integration chiếm �
 | push vào `main` mà commit đó **đã** là bản đang chạy | Đủ bộ test, không deploy (không có gì mới). Ép deploy lại: chạy tay trên `main` |
 | PR nháp | Bỏ qua (chạy lại khi bấm *Ready for review*) |
 | PR thường | unit + build + schema-drift + hygiene (≈ 12 phút) |
-| PR thường **có đụng** `server/`, `shared/` (máy chủ import thẳng), `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 19 job Integration |
+| PR thường **có đụng** `server/`, `shared/` (máy chủ import thẳng), `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*`, `tests/fixtures/schema-prev.sql` | thêm 22 job Integration |
 
 **Mốc so của "chỉ tài liệu"** (bước *Docs-only?* của job `changes`): commit **đang chạy trên
 production**, không phải `github.event.before`. `before` chỉ là đỉnh cũ của `main`: lượt A đang
@@ -547,6 +547,35 @@ Job `image` và `deploy` **chỉ chạy trên `main`** — push lên nhánh ph�
 request chỉ chạy bốn cổng kiểm tra. Đây là chủ đích: deploy một pull request là đẩy
 mã của một fork lên máy chủ.
 
+### Làm mới fixture lược đồ của bản trước (sau mỗi bản phát hành)
+
+Suite `tests/schema-upgrade-integration.test.ts` (job *Integration · schema-upgrade*) làm ba việc:
+- nạp `tests/fixtures/schema-prev.sql`, tức lược đồ mà `initDb()` của **bản đang chạy trên production** dựng ra;
+- chèn hàng đại diện vào mọi bảng mà một bước migration lúc khởi động đụng tới, và mọi bảng mà `seed.ts` ghi. Ở mỗi bảng seed ghi, có hàng mang khoá default: mọi cột seed ghi đều mang giá trị khác default (như thể cán bộ đã sửa), nên seed ghi đè dữ liệu cán bộ là thấy ngay;
+- khởi động mã mới hai lần (`init.ts` → `seed.ts`).
+
+Lượt 1 chỉ được đổi dữ liệu qua các chuyển đổi một lần đã khai báo trong suite, mỗi chuyển đổi kèm lý do. Lượt 2 không được đổi gì. Fixture phải là lược đồ của bản **đang chạy**, nên làm mới nó **sau khi** một bản lên production. Làm mới sớm hơn thì fixture đã chứa sẵn các cột mới, và suite không còn kiểm đường nâng cấp của chúng nữa. Repo không có tag phát hành, nên mốc là commit đang chạy.
+
+```bash
+# 1. Commit đang chạy: trường `version` (12 hex) của health
+curl -fsS https://<domain>/api/public/health
+# 2. Chụp lược đồ của commit đó vào một CSDL tạm (script tự tạo rồi xoá CSDL
+#    `cdkt_snapshot_*` và thư mục tạm; cần quyền CREATE/DROP DATABASE). MySQL dev
+#    docker: cổng 33069. Không in mật khẩu ra lịch sử shell.
+SNAPSHOT_DB_PORT=33069 SNAPSHOT_DB_PASSWORD="$MYSQL_ROOT_PASSWORD" \
+  node --experimental-strip-types --import ./scripts/ts-resolver.mjs \
+  scripts/snapshot-schema.ts --ref <version>
+# 3. Kiểm và commit cùng PR kế tiếp
+git diff --stat tests/fixtures/schema-prev.sql
+SCHEMA_UPGRADE_INTEGRATION=1 SCHEMA_UPGRADE_PORT=33069 SCHEMA_UPGRADE_PASSWORD="$MYSQL_ROOT_PASSWORD" \
+  node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs \
+  --test tests/schema-upgrade-integration.test.ts
+```
+
+- **Script.** Nó chạy `server/db/init.ts` **của commit đó**: dùng `git archive`, mượn `node_modules` của checkout hiện tại qua symlink, và không đụng cây làm việc. Rồi nó ghi `SHOW CREATE TABLE` của từng bảng (cùng nội dung `mysqldump --no-data` in ra). Bảng xếp theo tên, không có bộ đếm `AUTO_INCREMENT`, không ngày giờ, không `DROP`. Chạy hai lần cho ra cùng từng byte. Header ghi ref, SHA đầy đủ và phiên bản MySQL.
+- **Commit chung với gì.** Một PR **chỉ** làm mới fixture vẫn chạy job Integration (đường dẫn này có trong bộ lọc của job `changes`). Nếu bản mới vừa thêm chuyển đổi một lần, suite sẽ không còn thấy nó chạy (cột đã có sẵn trong fixture). Khi đó khai báo của nó hiện ở dòng chẩn đoán *declared but not reachable from this fixture*. Giữ khai báo nếu mã còn đó; xoá khai báo khi mã đã xoá (test *every declared conversion still names code that exists* sẽ đỏ).
+- **Khi suite đỏ.** Thông báo có dạng `bảng.cột [khoá]: cũ → mới`. Một bước khởi động đang ghi đè dữ liệu. Sửa bước đó cho có điều kiện (theo trạng thái lược đồ, `WHERE cột IS NULL`…). Chỉ khi việc ghi là chuyển đổi một lần có chủ đích thì mới thêm vào `DECLARED_CONVERSIONS`, kèm mã nguồn (neo theo nội dung) và lý do.
+
 ### Lùi phiên bản
 
 > ⚠️ **Lùi tay chỉ tạm thời — lượt merge kế tiếp vào `main` sẽ deploy lại HEAD.** Khi đã đặt
@@ -781,6 +810,8 @@ và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừn
 | `tests/deploy-remote-behavior.test.ts` | **Chạy thật** `deploy-remote.sh` (qua `bash -s` như CI) với `docker` giả (`tests/fixtures/deploy-remote/docker`): compose/script sao lưu hỏng/cụt bị từ chối mà `.env` không đổi, dump hỏng dừng trước mọi thay đổi, lùi trả cả image lẫn compose, `up` hỏng vẫn đi vào đường lùi, crash loop dừng chờ sau 3 lượt hỏi, mysql không bị tạo lại, 12 image → còn 6 |
 | `tests/ci-docs-only-skip.test.ts` | **Chạy thật** script của bước *Docs-only?* trong một repo git tạm với `curl`/`gh` giả: so với bản đang chạy — chỉ tài liệu → không deploy; có `.ts` (kể cả đổi tên sang `docs/`) → deploy; push mã bị huỷ khi đang chờ rồi push tài liệu → vẫn deploy; thứ tự mốc (health → lượt có job deploy `success` → deploy); mốc không phải tổ tiên → deploy; đã chạy → không deploy |
 | `tests/ci-integration-matrix.test.ts` | Mọi `tests/*-integration.test.ts` có trong matrix, đúng switch, đủ biến môi trường mà suite đọc; bước kiểm-skip đọc log, không chạy lại suite |
+| `tests/schema-upgrade-integration.test.ts` + `tests/fixtures/schema-prev.sql` + `scripts/snapshot-schema.ts` | Khởi động bản mới hai lần trên lược đồ của bản đang chạy, với hàng đại diện ở mọi bảng migration đụng tới và mọi bảng seed ghi (hàng mang khoá default có giá trị đã sửa ở mọi cột seed ghi). Lượt 1 chỉ đổi qua chuyển đổi đã khai báo; một default seed thêm vào phải khớp đủ khoá **và** nội dung với dữ liệu của chính seed. Lượt 2 không đổi gì. Làm mới fixture: § *Làm mới fixture lược đồ của bản trước* |
+| `tests/default-permission-matrix.test.ts` | Ghim ma trận quyền mặc định (vai trò → tài nguyên → quyền) mà `seed.ts` ghi. Đổi ma trận thì phải sửa test này trong cùng thay đổi. |
 | `tests/container-timezone.test.ts` | Scheduler analytics/retention chạy ở `TZ=Asia/Ho_Chi_Minh` bắn lúc 03:00 giờ VN, ở UTC thì 10:00 giờ VN |
 
 `deploy-remote.sh` được **nạp qua stdin** (`ssh ... "bash -s -- args" < scripts/deploy-remote.sh`)

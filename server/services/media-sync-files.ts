@@ -93,8 +93,11 @@ function hasRows(result: unknown): boolean {
  * local đều là `YYYY/MM/<filename>`, nên hai hàng cùng tên tệp trong cùng tháng
  * trỏ CÙNG một đối tượng. KHÔNG dùng HeadObject/`fs.access`: một bản thừa do chính
  * hàng này để lại từ lượt trước bị cắt ngang không được chặn lượt thử lại.
+ *
+ * Lượt quét thư mục (`media-scan-import.ts`) cũng hỏi trước khi tải lên: hàng chưa
+ * có nên truyền `itemId = 0` (id tự tăng bắt đầu từ 1 — mọi hàng đều là "khác").
  */
-async function otherRowOwns(
+export async function otherRowOwns(
   db: Db,
   itemId: number,
   provider: 'local' | 'r2',

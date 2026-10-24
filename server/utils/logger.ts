@@ -131,4 +131,13 @@ export const BOOT_MIGRATION_EVENTS = {
   // A credential is still plaintext but the process has no usable encryption key,
   // so it could not be converted this boot. Payload: `{ keys }`.
   settingsSecretNoKey: 'db.migration.settings_secret_no_key',
+  // `repairLegacyMediaUrls` left `…/uploads/migrated/media/<name>` links alone
+  // because more than one `media` row carries that file name (wave2 D-SCAN) —
+  // pointing them at either row could show the wrong picture. Payload:
+  // `{ filenames (≤ 20), filenameCount, articles }`.
+  legacyMediaAmbiguous: 'db.migration.legacy_media_ambiguous',
+  // `media.url` rows still carry a `localhost:3000/` prefix but no R2 public
+  // domain is configured (`settings.r2_public_url`), so the steps that need the
+  // domain were skipped. Payload: none.
+  legacyMediaDomainUnknown: 'db.migration.legacy_media_domain_unknown',
 } as const

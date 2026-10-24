@@ -593,6 +593,11 @@ const SERVICE_EXEMPTIONS: Record<string, string> = {
   // miễn ở đây (audit thay URL best-effort ngoài transaction); nay lượt thay URL và
   // audit của nó cùng transaction, nên tệp đó đi qua cổng như mọi service khác.
   'media-sync.ts': 'progress/summary audits are best-effort by design; the row+audit pair is transactional in media-sync-files.ts',
+  // Cùng hình với `media-sync.ts`: job quét nền ghi audit TIẾN ĐỘ (mỗi lô / tổng kết)
+  // bằng try/catch best-effort. Cặp hàng `media` + audit `create` của từng tệp nhập
+  // nằm trong `db.transaction` ở `media-scan-import.ts` (wave2 D-SCAN tách ra) — trước
+  // đó cùng tệp, nên `media-scan.ts` từng nằm ở SERVICE_POOL_AUDIT_EXEMPTIONS.
+  'media-scan.ts': 'progress/summary audits of a background scan job are best-effort by design; the row+audit pair is transactional in media-scan-import.ts',
 }
 
 /**
@@ -612,9 +617,6 @@ const SERVICE_POOL_AUDIT_EXEMPTIONS: Record<string, string> = {
   // `deleteArticleById`/`setArticleStatus` chủ đích không bọc — khoá bởi test
   // `known exclusions are named` ở đầu tệp này.
   'articles.ts': 'named known exclusion: deleteArticleById/setArticleStatus (see known exclusions test)',
-  // Audit TIẾN ĐỘ của job quét nền (mỗi lô / tổng kết), try/catch best-effort như
-  // `media-sync.ts`; cặp hàng media + audit thật nằm trong transaction của tệp.
-  'media-scan.ts': 'progress/summary audits of a background scan job are best-effort by design',
 }
 
 describe('no service writes activity_logs outside a transaction', () => {

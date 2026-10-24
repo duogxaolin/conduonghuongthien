@@ -123,8 +123,16 @@ export const media = mysqlTable('media', {
   height:       int('height'),
   uploadedBy:   int('uploaded_by').references(() => users.id),
   createdAt:    timestamp('created_at').defaultNow(),
+  // Tệp nguồn của một hàng do lượt quét `public/uploads/` nhập (wave2 D-SCAN):
+  // đường dẫn tương đối với gốc uploads, gạch xuôi (`2026/10/a.jpg`). Lượt quét sau
+  // bỏ qua tệp đã có ở đây — kể cả khi bản nhập nằm trên R2, nơi `storage_path` là
+  // khoá R2 chứ không phải đường dẫn tệp. NULL = không đến từ lượt quét (hoặc hàng
+  // quét trước bản vá — báo cáo trùng lặp phủ chúng).
+  scannedSourcePath: varchar('scanned_source_path', { length: 1024 }),
 }, (t) => ({
   mimeIdx: index('mime_type_idx').on(t.mimeType),
+  // Chỉ mục tiền tố 255 ký tự: 1024 × 4 byte (utf8mb4) vượt trần khoá InnoDB.
+  scannedSourcePathIdx: index('media_scanned_source_path_idx').on(sql`${sql.identifier('scanned_source_path')}(255)`),
 }))
 
 // ─── Content Types (Thể Loại) ───────────────────────────────────────────────

@@ -965,7 +965,9 @@ interface WorkerStatusData {
 
 /** Lượt "Quét & dọn" chạy nền — hình dạng `rescan` của worker-status. */
 interface RescanStatusData {
-  state: 'idle' | 'running' | 'completed' | 'failed'
+  /** `stopped`: lượt quét tự dừng trước lô kế tiếp vì không còn giữ khoá (`stopReason: 'lock_lost'`). */
+  state: 'idle' | 'running' | 'completed' | 'failed' | 'stopped'
+  stopReason?: 'lock_lost' | null
   startedAt: string | null
   finishedAt: string | null
   error: string | null
@@ -985,6 +987,9 @@ interface RescanStatusData {
   summary: RescanSummary | null
 }
 
+/** Lượt quét tự dừng giữa chừng (máy chủ mất khoá đơn luồng) — phần đã quét giữ nguyên, lượt sau quét tiếp. */
+const RESCAN_STOPPED_TEXT = 'Lượt quét gần nhất đã tạm dừng vì máy chủ mất kết nối giữa chừng. Chạy lại để quét tiếp phần còn lại.'
+
 const workerData = ref<WorkerStatusData | null>(null)
 const workerLoading = ref(false)
 const rescanning = ref(false)
@@ -1003,6 +1008,7 @@ const rescanProgressText = computed(() => {
   }
   if (s.state === 'completed' && s.summary) return rescanSummaryText(s.summary)
   if (s.state === 'failed') return 'Lượt quét gần nhất bị dừng do lỗi. Có thể chạy lại.'
+  if (s.state === 'stopped') return RESCAN_STOPPED_TEXT
   return ''
 })
 const rescanAiUnavailableText = computed(() =>
@@ -1050,6 +1056,8 @@ function applyRescanStatus(next: RescanStatusData | null) {
     else toast.success(done.message)
   } else if (next.state === 'failed') {
     toast.error('Lượt quét lại bị dừng do lỗi. Vui lòng thử lại.')
+  } else if (next.state === 'stopped') {
+    toast.warning(RESCAN_STOPPED_TEXT)
   }
   void loadQueue()
 }
