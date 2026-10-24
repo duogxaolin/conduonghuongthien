@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# FAKE `docker` for tests/deploy-remote-behavior.test.ts. It touches NOTHING real.
+#
+# Every call appends one line to $FAKE_DOCKER_LOG:
+#   <args> | image=<CDKT_IMAGE in .env> | compose=<sha256 of docker-compose.yml>
+# so a test can say which image and which compose file each call saw.
+#
+# Outcomes are scripted through FAKE_* variables; the default is "everything works
+# and the container is healthy":
+#   FAKE_PULL_FAIL=1              `docker pull` fails
+#   FAKE_UP_FAIL_IMAGE=<ref>      `compose up` fails while .env names <ref>
+#   FAKE_UNHEALTHY_IMAGE=<ref>    health is "none" while .env names <ref>
+#   FAKE_DUMP_FAIL=1              mysqldump fails (disk full, mysql down…)
+#   FAKE_RESTART_LOOP_IMAGE=<ref> while .env names <ref>, health is "starting" and
+#                                 RestartCount rises by one on every look
+#   FAKE_RESTART_BASE=<n>         RestartCount of a container that is NOT looping
+#                                 (default 0) — e.g. restarts from days ago
+#   FAKE_STARTING_POLLS=<n>       the first <n> health looks answer "starting"
+#   FAKE_IMAGES="<repo:tag>|<created>|<id> …"   what `docker image ls/inspect` know
+#   FAKE_IMAGE_LS_FAIL=1          `docker image ls` fails
+#   FAKE_UPLOADS_OWNER=<user>     owner of /app/public/uploads in the app container
+#   FAKE_DOCKER_ROOT=<dir>        `docker info --format {{.DockerRootDir}}`
+img=$(sed -n 's/^CDKT_IMAGE=//p' .env 2>/dev/null | tail -n 1)
+sum=$(sha256sum docker-compose.yml 2>/dev/null | cut -d' ' -f1)
+echo "$* | image=$img | compose=$sum" >> "$FAKE_DOCKER_LOG"
+
+# A mysqldump that passes backup-db.sh verification (>= 20 tables, >= 50 KB of
+# SQL, the completion marker on the last line).
+dump() {
+  for i in $(seq 1 25); do printf 'CREATE TABLE t%s (id int);\n' "$i"; done
+  head -c 60000 /dev/zero | tr '\0' 'x'
+  printf '\n-- Dump completed on 2026-01-01  0:00:00\n'
+}
+
+# FAKE_IMAGES lookup by full reference: field 2 = created, field 3 = id.
+image_field() {
+  local entry
+  for entry in ${FAKE_IMAGES:-}; do
+    if [ "${entry%%|*}" = "$1" ]; then echo "$entry" | cut -d'|' -f"$2"; return 0; fi
+  done
+  return 1
+}
+
+fmt=''
+prev=''
+for a in "$@"; do
+  if [ "$prev" = --format ]; then fmt=$a; fi
+  prev=$a
+done
+
+case "$1" in
+  pull)
+    [ "${FAKE_PULL_FAIL:-}" = 1 ] && exit 1
+    exit 0 ;;
+  compose)
+    case "$2" in
+      config)
+        if grep -q 'INVALID_COMPOSE' docker-compose.yml; then
+          echo "service app: invalid" >&2
+          exit 15
+        fi
+        exit 0 ;;
+      up)
+        if [ -n "${FAKE_UP_FAIL_IMAGE:-}" ] && [ "$img" = "$FAKE_UP_FAIL_IMAGE" ]; then exit 1; fi
+        exit 0 ;;
+      *) exit 0 ;;
+    esac ;;
+  inspect)
+    case "$fmt" in
+      *RestartCount*)
+        if [ -n "${FAKE_RESTART_LOOP_IMAGE:-}" ] && [ "$img" = "$FAKE_RESTART_LOOP_IMAGE" ]; then
+          n=$(( $(cat "$FAKE_DOCKER_LOG.restarts" 2>/dev/null || echo 0) + 1 ))
+          echo "$n" > "$FAKE_DOCKER_LOG.restarts"
+          echo "$n"
+        else
+          echo "${FAKE_RESTART_BASE:-0}"
+        fi ;;
+      *State.Health*)
+        looks=$(( $(cat "$FAKE_DOCKER_LOG.health" 2>/dev/null || echo 0) + 1 ))
+        echo "$looks" > "$FAKE_DOCKER_LOG.health"
+        # "none" makes wait_healthy fail at once instead of polling for 300 s.
+        if [ "$img" = "${FAKE_UNHEALTHY_IMAGE:-}" ]; then echo none
+        elif [ -n "${FAKE_RESTART_LOOP_IMAGE:-}" ] && [ "$img" = "$FAKE_RESTART_LOOP_IMAGE" ]; then echo starting
+        elif [ "$looks" -le "${FAKE_STARTING_POLLS:-0}" ]; then echo starting
+        else echo healthy; fi ;;
+      # Plain `docker inspect <container>` (backup-db.sh: "is mysql there?").
+      *) echo '[{}]' ;;
+    esac
+    exit 0 ;;
+  exec)
+    shift
+    while [ "${1#-}" != "$1" ]; do
+      case "$1" in -e|-u) shift 2 ;; *) shift ;; esac
+    done
+    shift   # container name
+    case "${1:-}" in
+      mysqldump)
+        if [ "${FAKE_DUMP_FAIL:-}" = 1 ]; then echo 'mysqldump: Got errno 28 on write' >&2; exit 2; fi
+        dump ;;
+      stat) echo "${FAKE_UPLOADS_OWNER:-node}" ;;
+    esac
+    exit 0 ;;
+  image)
+    case "$2" in
+      ls)
+        [ "${FAKE_IMAGE_LS_FAIL:-}" = 1 ] && exit 1
+        repo="${*: -1}"
+        for entry in ${FAKE_IMAGES:-}; do
+          ref="${entry%%|*}"
+          if [ "${ref%:*}" = "$repo" ]; then echo "${ref##*:}"; fi
+        done
+        exit 0 ;;
+      inspect)
+        ref="${*: -1}"
+        created=$(image_field "$ref" 2) || exit 1
+        id=$(image_field "$ref" 3)
+        case "$fmt" in
+          *Created*) echo "$created $id" ;;
+          *) echo "$id" ;;
+        esac
+        exit 0 ;;
+      *) exit 0 ;;
+    esac ;;
+  info) echo "${FAKE_DOCKER_ROOT:-}"; exit 0 ;;
+  logs) echo "fake container log"; exit 0 ;;
+  *) exit 0 ;;
+esac

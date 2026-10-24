@@ -135,6 +135,14 @@ COMPOSE_BACKUP_DIR="$ROOT/.deploy-compose-backups"
 COMPOSE_BACKUP_KEEP=10
 # Bản sao lưu compose của lượt Update đang chạy (rỗng = không có).
 UPDATE_COMPOSE_BACKUP=""
+# Bản dump CSDL trước khi đổi image: cùng thư mục, cùng tên `cdkt-predeploy-…` với
+# lượt CI deploy (scripts/deploy-remote.sh), nên hai đường dùng chung một vòng xoay
+# 5 bản (backup-db.sh PREFIX_KEEP).
+PREDEPLOY_DIR="$ROOT/.deploy-db-backups"
+# Sau một lượt Update khoẻ: giữ image đang chạy + IMAGE_KEEP bản sha-* mới nhất khác,
+# cảnh báo khi đĩa Docker dùng quá DISK_WARN_PCT %. Cùng số với deploy-remote.sh.
+IMAGE_KEEP=5
+DISK_WARN_PCT=80
 
 # Tên database của deploy NÀY: .env là nguồn chân lý (Deploy bước 2 cho đặt tên
 # tuỳ ý). Đúng quy tắc của compose — `${MYSQL_DATABASE:-cdkt_admin}` cho cả container
@@ -219,6 +227,78 @@ show_app_logs() {
 start_app() {
   docker compose up -d --no-recreate mysql || return 1
   docker compose up -d --no-deps app || return 1
+}
+
+# Dump CSDL ở bước ĐẦU của Update, trước git pull / compose / .env / image, bằng
+# scripts/backup-db.sh (cùng phép kiểm: gzip, dấu "Dump completed", ≥ 20 bảng; tệp
+# 600, thư mục 700). Dump chạy TRƯỚC `git pull`, nên dùng backup-db.sh của CHÍNH bản
+# checkout chứa manage.sh đang chạy — cùng commit, luôn hiểu `--prefix`. Trả khác 0
+# khi dump hỏng; nơi gọi dừng Update.
+update_predeploy_dump() {
+  local owner
+  bash "$ROOT/scripts/backup-db.sh" --prefix cdkt-predeploy "$ROOT/.deploy-db-backups" || return 1
+  # Chạy bằng root mà thư mục repo thuộc user khác (user CI deploy): trao thư mục
+  # dump cho chủ thư mục repo — thư mục của root thì lượt CI deploy kế tiếp không
+  # ghi được vào đó và dừng ngay ở bước sao lưu. Cùng quy tắc với secure_env_file.
+  if [ "$(id -u)" = 0 ]; then
+    owner=$(stat -c '%u:%g' "$ROOT" 2>/dev/null || true)
+    if [ -n "$owner" ]; then chown -R "$owner" "$PREDEPLOY_DIR" 2>/dev/null || true; fi
+  fi
+}
+
+# Gỡ image app cũ THEO THẺ sau một lượt Update khoẻ — cùng hàm, cùng quy tắc với
+# scripts/deploy-remote.sh: giữ image đang chạy + IMAGE_KEEP bản sha-* mới nhất khác
+# của CÙNG repo (thẻ lùi cdkt-rollback/app:* không thuộc repo đó nên không bao giờ
+# bị xét), `docker image rm` không `-f`, rồi `image prune -f` cho layer lơ lửng.
+# Không bao giờ làm hỏng lượt Update: mọi lỗi chỉ là cảnh báo.
+prune_app_images() {
+  local repo="${1%:*}" running_id tag line
+  local -a rows=() sorted=()
+  running_id=$(docker image inspect --format '{{.Id}}' "$1" 2>/dev/null || true)
+  if [ -z "$running_id" ]; then
+    return 0
+  fi
+  while IFS= read -r tag; do
+    case "$tag" in
+      sha-*) ;;
+      *) continue ;;
+    esac
+    line=$(docker image inspect --format '{{.Created}} {{.Id}}' "$repo:$tag" 2>/dev/null || true)
+    if [ -z "$line" ] || [ "${line##* }" = "$running_id" ]; then
+      continue
+    fi
+    rows+=("${line%% *} $tag")
+  done < <(docker image ls --format '{{.Tag}}' "$repo" 2>/dev/null || true)
+  if [ "${#rows[@]}" -gt "$IMAGE_KEEP" ]; then
+    mapfile -t sorted < <(printf '%s\n' "${rows[@]}" | sort -r)
+    for line in "${sorted[@]:IMAGE_KEEP}"; do
+      tag=${line##* }
+      if docker image rm "$repo:$tag" >/dev/null 2>&1; then
+        echo -e "${C_DIM}  Gỡ image cũ $repo:$tag${C_RESET}"
+      else
+        echo -e "${C_YELLOW}⚠  Không gỡ được $repo:$tag (còn container dùng?) — để lại.${C_RESET}"
+      fi
+    done
+  fi
+  docker image prune -f >/dev/null 2>&1 || true
+}
+
+warn_disk_usage() {
+  local root pct
+  root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
+  root=${root:-/var/lib/docker}
+  pct=$(df --output=pcent "$root" 2>/dev/null | tail -n 1 | tr -dc '0-9' || true)
+  if [ -n "$pct" ] && [ "$pct" -gt "$DISK_WARN_PCT" ]; then
+    echo -e "${C_YELLOW}⚠  Đĩa chứa dữ liệu Docker ($root) đã dùng ${pct}% (ngưỡng ${DISK_WARN_PCT}%) — dọn image/backup cũ trước khi đầy.${C_RESET}"
+  fi
+}
+
+# URL ping của dịch vụ giám sát (healthchecks.io…) cho cron sao lưu. Chỉ dạng mà
+# scripts/backup-db.sh dùng được: http(s), không query/fragment (script nối `/fail`
+# vào cuối), không ký tự mà `.env` (được `source`) hay `sed` của set_env hiểu khác đi.
+valid_ping_url() {
+  local re='^https?://[A-Za-z0-9._~:/%+=@-]+$'
+  [[ "$1" =~ $re ]]
 }
 
 # Sao lưu docker-compose.yml hiện tại vào .deploy-compose-backups/ (khuôn tên của
@@ -353,6 +433,9 @@ update_app_image() {
           | grep -vxF "$rollback_ref" \
           | while IFS= read -r old_tag; do docker image rm "$old_tag" >/dev/null 2>&1 || true; done; } || true
     fi
+    # Image sha-* cũ của CI: giữ image đang chạy + IMAGE_KEEP bản mới nhất.
+    prune_app_images "$new_img" || true
+    warn_disk_usage || true
     return 0
   fi
 
@@ -673,6 +756,15 @@ cmd_deploy() {
   local TRUSTED_PROXY_IPS
   prompt "  TRUSTED_PROXY_IPS (dải CIDR docker)" "172.16.0.0/12"; TRUSTED_PROXY_IPS="$PROMPT_RESULT"
 
+  # Giám sát cron sao lưu (tuỳ chọn): scripts/backup-db.sh và verify-restore.sh gọi
+  # URL này khi xong (…/fail khi hỏng). Chỉ script trên host đọc — không vào compose.
+  local HEALTHCHECK_PING_URL
+  prompt "  HEALTHCHECK_PING_URL (tuỳ chọn, vd. https://hc-ping.com/<uuid> — enter = bỏ qua)" ""; HEALTHCHECK_PING_URL="$PROMPT_RESULT"
+  if [ -n "$HEALTHCHECK_PING_URL" ] && ! valid_ping_url "$HEALTHCHECK_PING_URL"; then
+    echo -e "${C_YELLOW}⚠  HEALTHCHECK_PING_URL không hợp lệ (chỉ http(s), không ?/&/#) — để trống; đặt lại sau bằng Update.${C_RESET}"
+    HEALTHCHECK_PING_URL=""
+  fi
+
   # Tải video lên máy chủ: tôn trọng ngưỡng RAM. docker-compose.yml nói rõ chỉ
   # `manage.sh media-tuning` — sau khi ĐO RAM máy chủ — mới được bật
   # MEDIA_UPLOAD_ENABLED, vì FFmpeg chạy 3 bản transcode song song và trên VPS nhỏ
@@ -772,6 +864,9 @@ CDKT_SSE_REPLICA_GUARD=1
 # ─── Backup ─────────────────────────────────────
 BACKUP_DIR=./backups
 BACKUP_KEEP_DAYS=14
+# Ping giám sát cho cron backup-db.sh / verify-restore.sh (trống = không ping).
+# Chỉ script trên host đọc, không vào container (compose không liệt kê).
+HEALTHCHECK_PING_URL=$HEALTHCHECK_PING_URL
 EOF
   chmod 600 "$env_tmp"
   mv -f "$env_tmp" "$ROOT/.env"
@@ -866,6 +961,22 @@ cmd_update() {
   docker compose ps --format "table {{.Name}}\t{{.Status}}" 2>/dev/null || true
   echo
 
+  # ── Sao lưu CSDL — TRƯỚC mọi thay đổi ───────────────────────────────────────
+  # Điểm lùi dữ liệu, cùng bản dump CI deploy tự làm (scripts/deploy-remote.sh
+  # `predeploy_dump`) và cùng chỗ trong luồng: trước git pull (đổi compose), trước
+  # các câu hỏi ghi .env, trước khi kéo/đổi image. Trước nó chỉ có bước siết quyền
+  # .env về 600 (secure_env_file — không đổi nội dung). Dump hỏng thì dừng: máy chủ y
+  # như trước lượt Update. Trả lời 'n' chỉ khi đã có bản sao lưu mới, hoặc chính bước
+  # sao lưu là thứ đang hỏng.
+  if confirm "Sao lưu DB trước khi cập nhật?" "y"; then
+    echo -e "${C_BOLD}Sao lưu CSDL → .deploy-db-backups/ ...${C_RESET}"
+    if ! update_predeploy_dump; then
+      echo -e "${C_RED}✗ Sao lưu CSDL thất bại — dừng. Chưa pull code, chưa sửa .env, chưa kéo image hay khởi động lại gì.${C_RESET}"
+      echo -e "${C_DIM}   Sửa nguyên nhân (đĩa đầy? mysql không chạy?) rồi chạy lại Update.${C_RESET}"
+      exit 1
+    fi
+  fi
+
   # ── Pull code ─────────────────────────────────────────────────────────────
   # CI ghi đè docker-compose.yml trên VPS → cây git "bẩn" → git pull từ chối. Xử lý
   # (sao lưu + bỏ thay đổi cục bộ của tệp đó) nằm trong update_pull_code.
@@ -907,10 +1018,33 @@ cmd_update() {
     set_env PUBLIC_HOST_ALLOWLIST "$new_hosts"
     echo -e "${C_GREEN}✓ .env đã cập nhật${C_RESET}"
   fi
+  # HEALTHCHECK_PING_URL — ping giám sát cho cron sao lưu (scripts/backup-db.sh,
+  # verify-restore.sh). URL là thứ ai có nó đều báo "đã chạy" thay được, nên KHÔNG in
+  # ra màn hình: chỉ nói đang đặt hay chưa. Prompt này phải là prompt CUỐI trước
+  # "Pull image" (tests/ops-scripts-sandbox.test.ts trả lời nó theo vị trí).
+  local cur_ping new_ping ping_state="chưa đặt"
+  cur_ping=$(env_get HEALTHCHECK_PING_URL)
+  if [ -n "$cur_ping" ]; then ping_state="đang đặt"; fi
+  echo -e "${C_DIM}  HEALTHCHECK_PING_URL hiện ${ping_state}.${C_RESET}"
+  prompt "  HEALTHCHECK_PING_URL (enter = giữ nguyên, '-' = xoá)" ""; new_ping="$PROMPT_RESULT"
+  if [ "$new_ping" = "-" ]; then
+    if [ -n "$cur_ping" ] && confirm "Xoá HEALTHCHECK_PING_URL khỏi .env?" "y"; then
+      set_env HEALTHCHECK_PING_URL ""
+      echo -e "${C_GREEN}✓ .env đã cập nhật (HEALTHCHECK_PING_URL trống)${C_RESET}"
+    fi
+  elif [ -n "$new_ping" ] && [ "$new_ping" != "$cur_ping" ]; then
+    if ! valid_ping_url "$new_ping"; then
+      echo -e "${C_YELLOW}⚠  HEALTHCHECK_PING_URL không hợp lệ (chỉ http(s), không ?/&/#) — giữ nguyên giá trị cũ.${C_RESET}"
+    elif confirm "Ghi HEALTHCHECK_PING_URL mới vào .env?" "y"; then
+      set_env HEALTHCHECK_PING_URL "$new_ping"
+      echo -e "${C_GREEN}✓ .env đã cập nhật HEALTHCHECK_PING_URL${C_RESET}"
+    fi
+  fi
 
   # ── Pull image + restart ─────────────────────────────────────────────────
   echo
   if confirm "Pull image mới + khởi động lại (docker compose pull && up -d)?" "y"; then
+    # Bản dump trước cập nhật đã lấy ở đầu lượt Update (trước git pull).
     # Kéo + khởi động lại + đợi healthy + TỰ LÙI nếu bản mới hỏng (xem
     # update_app_image). Thất bại = thoát khác 0, không in "UPDATE XONG".
     if ! update_app_image; then
