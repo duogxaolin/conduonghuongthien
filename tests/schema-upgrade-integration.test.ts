@@ -12,17 +12,23 @@
  *
  *   1. loads `tests/fixtures/schema-prev.sql` — the schema the previous release's own
  *      `initDb()` builds, captured by `scripts/snapshot-schema.ts` (refresh: CI-CD.md);
- *   2. inserts representative rows into every table a boot migration touches. The
- *      table list is DERIVED from the migration code (the exported migration arrays,
- *      helper calls and raw DML in `migrations-additive.ts` and `schema-tables/*.ts`),
- *      plus the tables those rows reference — so a new migration is covered without
- *      editing this file, and a table the generator cannot fill fails here by name.
- *      A few rows are hand-written to trip the known one-time conversions;
- *   3. boots twice, exactly like the container (`initDb()`, then `seed.ts` as its own
- *      process) and compares every table, row by row and column by column:
+ *   2. inserts representative rows into every table a boot migration touches and
+ *      every table the seed writes. Both lists are DERIVED from the code (the exported
+ *      migration arrays, helper calls and raw DML in `migrations-additive.ts` and
+ *      `schema-tables/*.ts`; the `insert(…)`/`update(…)` targets of `seed.ts`), plus
+ *      the tables those rows reference — so new code is covered without editing this
+ *      file, and a table the generator cannot fill fails here by name. Hand-written
+ *      rows trip the known one-time conversions, and give every seed-written table a
+ *      row with a DEFAULT key and staff-edited values, so a seed upsert that
+ *      overwrites staff data is a visible change;
+ *   3. boots twice, exactly like the container (`init.ts`, then `seed.ts`, each its own
+ *      process with a time limit) and compares every table, row by row and column by
+ *      column:
  *        - boot 1: nothing may change except a write a DECLARED CONVERSION below
  *          covers — each one names its code (re-located by content, not line number)
- *          and why it may rewrite data;
+ *          and why it may rewrite data. A row the seed adds must be one of the
+ *          seed's own defaults by FULL natural key, read from the seed's data, and
+ *          missing before the boot;
  *        - boot 2: nothing may change at all, in any table or column, nor the schema.
  *
  * A failure names the write: `media_items.category_id [id=1]: "1" → NULL`.
@@ -39,8 +45,15 @@ import { randomBytes } from 'node:crypto'
 import { readdirSync, readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import test, { after, before } from 'node:test'
+import { createRequire } from 'node:module'
 import mysql, { type Connection, type RowDataPacket } from 'mysql2/promise'
+import { getTableName, type Table } from 'drizzle-orm'
+import type * as TS from 'typescript'
 import * as migrations from '../server/db/migrations-additive.ts'
+import * as schema from '../server/db/schema.ts'
+import { CHATBOT_SMALL_TALK_SEED } from '../server/data/chatbot-small-talk-seed.ts'
+import { DEFAULT_TRANSLATIONS_SEED } from '../server/data/default-translations-seed.ts'
+import { normalizeQuestion } from '../server/utils/chatbot/small-talk.ts'
 
 const enabled = process.env.SCHEMA_UPGRADE_INTEGRATION === '1'
 const host = process.env.SCHEMA_UPGRADE_HOST || '127.0.0.1'
@@ -94,21 +107,47 @@ async function withConnection<T>(work: (conn: Connection) => Promise<T>): Promis
 
 // ── The boot, exactly as the container runs it ────────────────────────────────
 
-/** The `init.ts` half of a container start, in process — what `npm run db:init` runs. */
-async function bootInit() {
-  const { initDb } = await import('../server/db/init.ts')
+/**
+ * Both halves of a container start (Dockerfile CMD: `init.ts` → `seed.ts`) run as
+ * their own processes, with a time limit. `init.ts` exits 1 when a migration throws.
+ * In process, its connection would stay open (there is no try/finally around it),
+ * and the test file would hang for minutes after the failure instead of reporting it.
+ */
+const BOOT_STEP_TIMEOUT_MS = 240_000
+
+function runBootStep(script: 'server/db/init.ts' | 'server/db/seed.ts', extraEnv: Record<string, string> = {}) {
   assertDisposableDatabase(DB_NAME)
-  Object.assign(process.env, { DB_HOST: host, DB_PORT: String(port), DB_USER: user, DB_PASSWORD: password, DB_NAME })
-  await initDb()
+  const result = spawnSync(
+    process.execPath,
+    ['--experimental-strip-types', '--import', './scripts/ts-resolver.mjs', script],
+    {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+      timeout: BOOT_STEP_TIMEOUT_MS,
+      killSignal: 'SIGKILL',
+      env: {
+        ...originalEnv,
+        DB_HOST: host, DB_PORT: String(port), DB_USER: user, DB_PASSWORD: password, DB_NAME,
+        ...BOOT_SECRETS,
+        ...extraEnv,
+      },
+    },
+  )
+  const output = `${result.stdout ?? ''}\n${result.stderr ?? ''}`.trim()
+  assert.notEqual(result.signal, 'SIGKILL', `${script} did not finish within ${BOOT_STEP_TIMEOUT_MS / 1000} s\n${output}`)
+  assert.equal(result.status, 0, `${script} failed (exit ${result.status})\n${output}`)
+}
+
+/** The `init.ts` half — what `npm run db:init` runs. */
+function bootInit() {
+  runBootStep('server/db/init.ts')
 }
 
 /**
- * The `seed.ts` half. It runs itself on import and ends with `process.exit`, so —
- * like the Dockerfile CMD — it runs as its own process. The admin password is
- * generated per run, checked with the policy the seed enforces, and never printed.
+ * The `seed.ts` half. The admin password is generated per run, checked with the
+ * policy the seed enforces, and never printed.
  */
 async function bootSeed() {
-  assertDisposableDatabase(DB_NAME)
   const { passwordRejectionMessage } = await import('../server/utils/password-policy.ts')
   let adminPassword = ''
   for (let attempt = 0; attempt < 5 && !adminPassword; attempt += 1) {
@@ -116,26 +155,11 @@ async function bootSeed() {
     if (!passwordRejectionMessage(candidate, { username: 'admin' })) adminPassword = candidate
   }
   assert.ok(adminPassword, 'could not generate a password satisfying the policy')
-  const result = spawnSync(
-    process.execPath,
-    ['--experimental-strip-types', '--import', './scripts/ts-resolver.mjs', 'server/db/seed.ts'],
-    {
-      cwd: REPO_ROOT,
-      encoding: 'utf8',
-      env: {
-        ...originalEnv,
-        DB_HOST: host, DB_PORT: String(port), DB_USER: user, DB_PASSWORD: password, DB_NAME,
-        ADMIN_PASSWORD: adminPassword,
-        ADMIN_EMAIL: 'upgrade@example.test',
-        ...BOOT_SECRETS,
-      },
-    },
-  )
-  assert.equal(result.status, 0, `seed.ts failed (exit ${result.status})\n${result.stdout}\n${result.stderr}`)
+  runBootStep('server/db/seed.ts', { ADMIN_PASSWORD: adminPassword, ADMIN_EMAIL: 'upgrade@example.test' })
 }
 
 async function boot() {
-  await bootInit()
+  bootInit()
   await bootSeed()
 }
 
@@ -271,6 +295,224 @@ function tablesTouchedByBootMigrations(previousTables: Set<string>) {
   }
 }
 
+// ── The seed's own default rows ───────────────────────────────────────────────
+//
+// "The boot inserted a default the seed defines" is decided against the seed's
+// DATA, by each table's full natural key — never by a text search. Exported data is
+// imported (translations, small talk). `seed.ts` runs itself on import and keeps
+// its defaults in local constants, so those constants (and the DDL files' default
+// tuples) are read with the TypeScript parser and evaluated as literals. A renamed
+// or restructured constant fails here by name instead of quietly widening a
+// declaration.
+
+const SEED_SOURCE = 'server/db/seed.ts'
+const LANGUAGES_SOURCE = 'server/services/languages.ts'
+const NOT_A_LITERAL = Symbol('not a literal')
+const requireFromHere = createRequire(import.meta.url)
+let typescriptModule: typeof TS | undefined
+const typescript = (): typeof TS => (typescriptModule ??= requireFromHere('typescript') as typeof TS)
+const parsedSources = new Map<string, TS.SourceFile>()
+
+function parsed(path: string): TS.SourceFile {
+  const ts = typescript()
+  if (!parsedSources.has(path)) parsedSources.set(path, ts.createSourceFile(path, readSource(path), ts.ScriptTarget.Latest, true))
+  return parsedSources.get(path)!
+}
+
+function walk(node: TS.Node, visit: (node: TS.Node) => void) {
+  visit(node)
+  typescript().forEachChild(node, child => walk(child, visit))
+}
+
+/** Literal value of an expression; anything computed becomes `NOT_A_LITERAL`. */
+function literalValue(node: TS.Expression): unknown {
+  const ts = typescript()
+  if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) return node.text
+  if (ts.isNumericLiteral(node)) return Number(node.text)
+  if (node.kind === ts.SyntaxKind.TrueKeyword) return true
+  if (node.kind === ts.SyntaxKind.FalseKeyword) return false
+  if (node.kind === ts.SyntaxKind.NullKeyword) return null
+  if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node)) return literalValue(node.expression)
+  if (ts.isArrayLiteralExpression(node)) return node.elements.map(element => literalValue(element))
+  if (ts.isObjectLiteralExpression(node)) {
+    const object: Record<string, unknown> = {}
+    for (const property of node.properties) {
+      if (ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))) {
+        object[property.name.text] = literalValue(property.initializer)
+      }
+    }
+    return object
+  }
+  return NOT_A_LITERAL
+}
+
+/** The one variable named `name` in `path`, evaluated as a literal. */
+function declaredConstant(path: string, name: string): unknown {
+  const ts = typescript()
+  const found: TS.Expression[] = []
+  walk(parsed(path), (node) => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.name.text === name && node.initializer) found.push(node.initializer)
+  })
+  if (found.length !== 1) throw new Error(`${path} declares ${found.length} variables named ${name} — the upgrade suite reads the seed's defaults from it; update loadSeedData()`)
+  return literalValue(found[0]!)
+}
+
+/** The node of function `name` in `path`. */
+function functionNamed(path: string, name: string): TS.Node {
+  const ts = typescript()
+  let found: TS.Node | undefined
+  walk(parsed(path), (node) => {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === name) found = node
+  })
+  if (!found) throw new Error(`${path} has no function ${name} — update loadSeedData()`)
+  return found
+}
+
+/** `X` of every `….insert(X)` / `….update(X)` call under `root`. */
+function writtenIdentifiers(root: TS.Node): string[] {
+  const ts = typescript()
+  const names = new Set<string>()
+  walk(root, (node) => {
+    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
+      && ['insert', 'update'].includes(node.expression.name.text) && node.arguments.length === 1 && ts.isIdentifier(node.arguments[0]!)) {
+      names.add(node.arguments[0].text)
+    }
+  })
+  return [...names].sort()
+}
+
+/** The literal argument of every `….insert(<identifier>).values(…)` call in `path`. */
+function insertedValues(path: string, identifier: string): unknown[] {
+  const ts = typescript()
+  const values: unknown[] = []
+  walk(parsed(path), (node) => {
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression) || node.expression.name.text !== 'values') return
+    const target = node.expression.expression
+    if (ts.isCallExpression(target) && ts.isPropertyAccessExpression(target.expression) && target.expression.name.text === 'insert'
+      && ts.isIdentifier(target.arguments[0]!) && target.arguments[0].text === identifier && node.arguments[0]) {
+      values.push(literalValue(node.arguments[0]))
+    }
+  })
+  if (values.length === 0) throw new Error(`${path} has no insert(${identifier}).values(…) — update loadSeedData()`)
+  return values
+}
+
+function stringsOf(value: unknown, field: string | number, where: string): string[] {
+  if (!Array.isArray(value)) throw new Error(`${where} is not a literal array — update loadSeedData()`)
+  return value.map((entry) => {
+    const item = (entry as Record<string | number, unknown> | undefined)?.[field]
+    if (typeof item !== 'string' && typeof item !== 'number') throw new Error(`${where}[].${field} is not a literal — update loadSeedData()`)
+    return String(item)
+  })
+}
+
+type SeedData = {
+  /** SQL tables `seed.ts` (and the languages seed it calls) insert into or update. */
+  writtenTables: string[]
+  /** usernames in seed.ts's `insert(users).values(…)` — must stay exactly `admin` */
+  seededAccounts: string[]
+  /** table → natural keys of the rows the seed may add. `page_blocks` of `home` are added per database (copied from home_sections). */
+  keys: Map<string, Set<string>>
+  /** the DDL files' own default inserts. */
+  ddlKeys: Map<string, Set<string>>
+  pricingModels: string[]
+  moderationRules: Array<{ category: string, pattern: string }>
+}
+let seedDataCache: SeedData | undefined
+
+function loadSeedData(): SeedData {
+  if (seedDataCache) return seedDataCache
+  const tableNames = new Map<string, string>()
+  for (const [name, value] of Object.entries(schema)) {
+    if (value && typeof value === 'object' && Symbol.for('drizzle:Name') in (value as object)) tableNames.set(name, getTableName(value as Table))
+  }
+  const toTable = (identifier: string) => {
+    const table = tableNames.get(identifier)
+    if (!table) throw new Error(`the seed writes ${identifier}, which is not a table export of server/db/schema.ts`)
+    return table
+  }
+  const writtenTables = [...new Set([
+    ...writtenIdentifiers(parsed(SEED_SOURCE)),
+    ...writtenIdentifiers(functionNamed(LANGUAGES_SOURCE, 'seedDefaultLanguagesAndTranslations')),
+  ].map(toTable))].sort()
+
+  const roles = insertedValues(SEED_SOURCE, 'roles').flatMap(value => stringsOf(value, 'name', 'insert(roles).values'))
+  const resources = stringsOf((declaredConstant(SEED_SOURCE, 'RESOURCES') as unknown[]).map(resource => ({ resource })), 'resource', 'RESOURCES')
+  const block = (name: string, page: string) => {
+    const blocks = declaredConstant(SEED_SOURCE, name) as Array<Record<string, unknown>>
+    const types = stringsOf(blocks, 'blockType', name)
+    const orders = stringsOf(blocks, 'displayOrder', name)
+    return types.map((type, i) => `${page}|${type}|${orders[i]}`)
+  }
+  const seededAccounts = insertedValues(SEED_SOURCE, 'users').map(value => String((value as Record<string, unknown>).username))
+  const keys = new Map<string, Set<string>>([
+    // Pinned, not read from the seed: the one account a boot may ever create is
+    // `admin`. Another account added to seed.ts is a security change to review —
+    // it must fail here, not become a "default" by being in the seed's data.
+    ['users', new Set(['admin'])],
+    ['roles', new Set(roles)],
+    ['permissions', new Set(roles.flatMap(role => resources.map(resource => `${role}|${resource}`)))],
+    ['home_sections', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultSections'), 'type', 'defaultSections'))],
+    ['settings', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultSettings'), 'key', 'defaultSettings'))],
+    ['content_types', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'DEFAULT_CONTENT_TYPES'), 'slug', 'DEFAULT_CONTENT_TYPES'))],
+    ['categories', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'DEFAULT_CATEGORIES'), 'slug', 'DEFAULT_CATEGORIES'))],
+    ['media_categories', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'DEFAULT_MEDIA_CATEGORIES'), 'slug', 'DEFAULT_MEDIA_CATEGORIES'))],
+    ['pages', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'DEFAULT_PAGES'), 'slug', 'DEFAULT_PAGES'))],
+    ['page_blocks', new Set([...block('aboutBlocks', 'about'), ...block('contactBlocks', 'contact')])],
+    ['chatbot_settings', new Set(insertedValues(SEED_SOURCE, 'chatbotSettings').map(value => String((value as Record<string, unknown>).id)))],
+    ['chatbot_small_talk', new Set(CHATBOT_SMALL_TALK_SEED.map(entry => normalizeQuestion(entry.question)))],
+    ['ai_model_pricing', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultPricing'), 'model', 'defaultPricing'))],
+    ['ai_service_configs', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultServices'), 'serviceKey', 'defaultServices'))],
+    ['ai_budget_settings', new Set(insertedValues(SEED_SOURCE, 'aiBudgetSettings').map(value => String((value as Record<string, unknown>).id)))],
+    ['ai_providers', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultProviders'), 'provider', 'defaultProviders'))],
+    ['ai_moderation_rules', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultRules'), 'pattern', 'defaultRules'))],
+    ['social_links', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultSocialLinks'), 'platform', 'defaultSocialLinks'))],
+    ['languages', new Set(stringsOf(declaredConstant(LANGUAGES_SOURCE, 'DEFAULT_LANGUAGES'), 'code', 'DEFAULT_LANGUAGES'))],
+    ['lang_translations', new Set(DEFAULT_TRANSLATIONS_SEED.flatMap(item =>
+      Object.entries(item.values).filter(([, value]) => value).map(([lang]) => `${lang}|${item.group}|${item.key}`)))],
+  ])
+  const missing = writtenTables.filter(table => !keys.has(table))
+  if (missing.length) throw new Error(`the seed writes ${missing.join(', ')} — say how a default row of it is recognised in loadSeedData()`)
+  const ddlKeys = new Map<string, Set<string>>([
+    ['content_types', new Set(stringsOf(declaredConstant('server/db/schema-tables/core.ts', 'systemTypes'), 1, 'core.ts systemTypes'))],
+    ['categories', new Set(stringsOf(declaredConstant('server/db/schema-tables/content.ts', 'defaultCategories'), 1, 'content.ts defaultCategories'))],
+  ])
+  const rules = declaredConstant(SEED_SOURCE, 'defaultRules') as Array<Record<string, unknown>>
+  seedDataCache = {
+    writtenTables,
+    seededAccounts,
+    keys,
+    ddlKeys,
+    pricingModels: [...keys.get('ai_model_pricing')!],
+    moderationRules: rules.map(rule => ({ category: String(rule.category), pattern: String(rule.pattern) })),
+  }
+  return seedDataCache
+}
+
+const KEY_COLUMN: Record<string, string> = {
+  users: 'username', roles: 'name', settings: 'key', home_sections: 'type', content_types: 'slug', categories: 'slug',
+  media_categories: 'slug', pages: 'slug', chatbot_settings: 'id', chatbot_small_talk: 'normalized_question',
+  ai_model_pricing: 'model', ai_service_configs: 'service_key', ai_budget_settings: 'id', ai_providers: 'provider',
+  ai_moderation_rules: 'pattern', social_links: 'platform', languages: 'code',
+}
+
+/** A row's natural key as the seed identifies it; parent rows are looked up in the same snapshot. */
+function naturalKey(table: string, row: Cells, snap: Snapshot): string | null {
+  const parent = (parentTable: string, id: string | null | undefined, column: string) =>
+    id == null ? null : snap.get(parentTable)?.rows.get(`id=${id}`)?.[column] ?? null
+  if (table === 'permissions') {
+    const role = parent('roles', row.role_id, 'name')
+    return role === null ? null : `${role}|${row.resource}`
+  }
+  if (table === 'page_blocks') {
+    const page = parent('pages', row.page_id, 'slug')
+    return page === null ? null : `${page}|${row.block_type}|${row.display_order}`
+  }
+  if (table === 'lang_translations') return `${row.lang_code}|${row.group}|${row.key}`
+  const column = KEY_COLUMN[table]
+  return column ? row[column] ?? null : null
+}
+
 // ── Representative rows ───────────────────────────────────────────────────────
 
 type SqlValue = string | number | Buffer | null
@@ -281,6 +523,10 @@ type SeedOverride = { count?: number, why: string, row: (i: number) => Row }
  * Hand-written rows, where a generated value would not be representative or a
  * known one-time conversion should actually fire (so boot 2 can prove it stays
  * done). Every other column of these tables, and every other table, is generated.
+ *
+ * Every table the seed writes carries at least one row with a DEFAULT key and
+ * staff-edited values: the seed upserts on those keys, so an upsert that
+ * overwrites a staff value is a visible cell change here, not an invisible insert.
  */
 const SEED_OVERRIDES: Record<string, SeedOverride> = {
   chatbot_settings: {
@@ -294,12 +540,81 @@ const SEED_OVERRIDES: Record<string, SeedOverride> = {
     row: i => (i === 0 ? { username: 'admin', password_hash: `$2b$12$${'x'.repeat(53)}` } : {}),
   },
   roles: {
-    why: 'two of the four default roles exist, one custom role; the seed adds the missing defaults only',
-    row: i => ({ name: ['superadmin', 'editor', 'biên tập viên địa phương'][i]! }),
+    why: 'two of the four default roles exist (superadmin re-described by staff), one custom role; the seed adds the missing defaults only',
+    row: i => [{ name: 'superadmin', description: 'Toàn quyền — mô tả cán bộ đã sửa' }, { name: 'editor' }, { name: 'biên tập viên địa phương' }][i]!,
+  },
+  permissions: {
+    why: 'superadmin\'s right to delete news withdrawn by staff (a default (role, resource) pair the seed upserts on); rows 2–3 are the other roles\' custom resources',
+    row: i => (i === 0 ? { resource: 'news', can_delete: 0, can_publish: 0 } : {}),
   },
   settings: {
     why: 'staff-edited values of keys the seed also defaults — the seed is insert-only',
     row: i => ({ key: ['site_name', 'hotline', 'sitemap_note'][i]!, value: ['Con Đường Hướng Thiện — C11 (đã sửa)', '0912.345.678', null][i]!, group: ['general', 'contact', 'general'][i]! }),
+  },
+  home_sections: {
+    why: 'two default section types reordered and hidden by staff, one custom section',
+    row: i => [
+      { type: 'hero', display_order: 9, is_visible: 0, config: '{"title": "Biểu ngữ cán bộ đã sửa"}' },
+      { type: 'stats', display_order: 1, is_visible: 1, config: '{"stats": []}' },
+      { type: 'thong_bao_c11', display_order: 5, is_visible: 1, config: '{"title": "Thông báo"}' },
+    ][i]!,
+  },
+  pages: {
+    why: 'the system page "about" retitled by staff; the other two are custom pages',
+    row: i => (i === 0 ? { slug: 'about', title: 'Giới thiệu (cán bộ đã sửa)', is_system: 1 } : {}),
+  },
+  page_blocks: {
+    why: 'the "about" page already has a staff-written block, so the seed must not add its default blocks there',
+    row: i => (i === 0 ? { block_type: 'heading', display_order: 1, data: '{"text": "Giới thiệu — cán bộ viết lại"}' } : {}),
+  },
+  content_types: {
+    why: 'the default content type "news" renamed by staff',
+    row: i => (i === 0 ? { slug: 'news', name: 'Tin tức C11 (đã sửa)', is_system: 1 } : {}),
+  },
+  categories: {
+    why: 'the default category "tin-noi-bat" renamed by staff',
+    row: i => (i === 0 ? { slug: 'tin-noi-bat', name: 'Tin nổi bật (đã sửa)', type: 'news' } : {}),
+  },
+  media_categories: {
+    why: 'the default media category "video-huong-dan" renamed by staff',
+    row: i => (i === 0 ? { slug: 'video-huong-dan', name: 'Video hướng dẫn (đã sửa)' } : {}),
+  },
+  chatbot_small_talk: {
+    why: 'a default small-talk entry re-answered and switched off by staff',
+    row: (i) => {
+      if (i !== 0) return {}
+      const entry = CHATBOT_SMALL_TALK_SEED[0]!
+      return { category: entry.category, question: entry.question, normalized_question: normalizeQuestion(entry.question), answer: 'Câu trả lời cán bộ đã sửa', is_enabled: 0, is_system: 1 }
+    },
+  },
+  ai_model_pricing: {
+    why: 'the default model priced and labelled by staff',
+    row: i => (i === 0 ? { model: loadSeedData().pricingModels[0]!, provider: 'delify', label: 'Giá đã thương lượng', is_active: 0, prompt_cost_per_million: '1.2345', completion_cost_per_million: '6.7890' } : {}),
+  },
+  ai_service_configs: {
+    why: 'the default "chatbot" service re-prompted and switched off by staff',
+    row: i => (i === 0 ? { service_key: 'chatbot', service_name: 'Trợ lý (đã sửa)', model: 'mo-hinh-rieng', system_prompt: 'Lời nhắc cán bộ đã sửa', is_active: 0 } : {}),
+  },
+  ai_budget_settings: {
+    count: 1,
+    why: 'singleton row id 1 with a budget staff set',
+    row: () => ({ id: 1, monthly_budget_vnd: '1234567', warning_threshold_pct: 55 }),
+  },
+  ai_providers: {
+    why: 'the default provider relabelled and repointed by staff',
+    row: i => (i === 0 ? { provider: 'delify', label: 'Router (đã sửa)', base_url: 'https://router.example.test/v1', is_active: 1 } : {}),
+  },
+  ai_moderation_rules: {
+    why: 'a default rule softened by staff (flag instead of hide); the other rows are staff rules',
+    row: (i) => {
+      if (i !== 0) return {}
+      const rule = loadSeedData().moderationRules[0]!
+      return { category: rule.category, pattern: rule.pattern, rule_type: 'keyword', action: 'flag', severity: 'low', is_enabled: 1 }
+    },
+  },
+  languages: {
+    why: 'the default language "vi" renamed by staff, "en" as seeded, one extra language',
+    row: i => [{ code: 'vi', name: 'Tiếng Việt (đã sửa)', native_name: 'Tiếng Việt', is_default: 1 }, { code: 'en', name: 'English', native_name: 'English' }, { code: 'km', name: 'Khmer', native_name: 'ខ្មែរ' }][i]!,
   },
   social_links: {
     why: 'Facebook edited by staff (the seed must not touch it) plus two custom links',
@@ -580,7 +895,15 @@ function report(changes: Change[], limit = 40): string {
 
 // ── Declared one-time conversions ─────────────────────────────────────────────
 
-type BootContext = { before: Snapshot, after: Snapshot, foreignKeysBefore: ForeignKey[] }
+type BootContext = {
+  before: Snapshot
+  after: Snapshot
+  foreignKeysBefore: ForeignKey[]
+  seed: SeedData
+  /** each missing default may be added once */
+  claimed: Set<string>
+  keyCache: Map<string, Set<string>>
+}
 
 type DeclaredConversion = {
   id: string
@@ -664,43 +987,36 @@ function repairedArticleContent(content: string, media: Cells[]): string {
 const D7_SEED_GROUPS = new Set(['ai_moderation_rules', 'social_links', 'media_categories', 'content_types', 'categories'])
 
 /**
- * How to recognise a default row: its natural key appears as a quoted literal in
- * the code that seeds it (or it is the singleton row id 1). A boot that inserts
- * anything else into these tables is not "adding a missing default".
+ * The natural keys a boot may add to `table`: the seed's own defaults
+ * (`loadSeedData`), plus — for `page_blocks` — one block per home section, because
+ * the seed copies `home_sections` into an empty home page.
  */
-const SEED_DEFAULTS: Record<string, { column: string, sources: string[] } | 'singleton'> = {
-  roles: { column: 'name', sources: ['server/db/seed.ts'] },
-  permissions: { column: 'resource', sources: ['server/db/seed.ts'] },
-  users: { column: 'username', sources: ['server/db/seed.ts'] },
-  home_sections: { column: 'type', sources: ['server/db/seed.ts'] },
-  settings: { column: 'key', sources: ['server/db/seed.ts'] },
-  content_types: { column: 'slug', sources: ['server/db/schema-tables/core.ts', 'server/db/seed.ts'] },
-  categories: { column: 'slug', sources: ['server/db/schema-tables/content.ts', 'server/db/seed.ts'] },
-  media_categories: { column: 'slug', sources: ['server/db/seed.ts'] },
-  pages: { column: 'slug', sources: ['server/db/seed.ts'] },
-  page_blocks: { column: 'block_type', sources: ['server/db/seed.ts'] },
-  chatbot_settings: 'singleton',
-  chatbot_small_talk: { column: 'question', sources: ['server/data/chatbot-small-talk-seed.ts'] },
-  ai_model_pricing: { column: 'model', sources: ['server/db/seed.ts'] },
-  ai_service_configs: { column: 'service_key', sources: ['server/db/seed.ts'] },
-  ai_budget_settings: 'singleton',
-  ai_providers: { column: 'provider', sources: ['server/db/seed.ts'] },
-  ai_moderation_rules: { column: 'pattern', sources: ['server/db/seed.ts'] },
-  social_links: { column: 'platform', sources: ['server/db/seed.ts'] },
-  languages: { column: 'code', sources: ['server/services/languages.ts'] },
-  lang_translations: { column: 'key', sources: ['server/data/default-translations-seed.ts'] },
+function defaultKeys(table: string, ctx: BootContext, source: 'seed' | 'ddl'): Set<string> {
+  const keys = (source === 'ddl' ? ctx.seed.ddlKeys : ctx.seed.keys).get(table) ?? new Set<string>()
+  if (source === 'ddl' || table !== 'page_blocks') return keys
+  const home = rowsOf(ctx.after, 'home_sections').map(section => `home|${section.type}|${section.display_order}`)
+  return new Set([...keys, ...home])
 }
 
-function isSeedDefault(table: string, row: Cells): boolean {
-  const rule = SEED_DEFAULTS[table]
-  if (!rule) return false
-  if (rule === 'singleton') return row.id === '1'
-  const value = row[rule.column]
-  if (value === null || value === undefined) return false
-  return rule.sources.some(path => {
-    const source = readSource(path)
-    return [`'${value}'`, `"${value}"`, `\`${value}\``].some(literal => source.includes(literal))
-  })
+/**
+ * The boot added a default that was MISSING: its full natural key is one of the
+ * defaults, no row had that key before the boot, and it is added once. A row for a
+ * staff-created role, a second account, or a duplicate of a default that existed
+ * is not this — it fails as undeclared.
+ */
+function addsMissingDefault(change: Change, ctx: BootContext, source: 'seed' | 'ddl'): boolean {
+  if (change.kind !== 'inserted') return false
+  const key = naturalKey(change.table, change.row, ctx.after)
+  if (key === null || !defaultKeys(change.table, ctx, source).has(key)) return false
+  const cacheKey = `before:${change.table}`
+  if (!ctx.keyCache.has(cacheKey)) {
+    ctx.keyCache.set(cacheKey, new Set(rowsOf(ctx.before, change.table).map(row => naturalKey(change.table, row, ctx.before)).filter((k): k is string => k !== null)))
+  }
+  if (ctx.keyCache.get(cacheKey)!.has(key)) return false
+  const claim = `${change.table}\u0000${key}`
+  if (ctx.claimed.has(claim)) return false
+  ctx.claimed.add(claim)
+  return true
 }
 
 const DECLARED_CONVERSIONS: DeclaredConversion[] = [
@@ -800,30 +1116,30 @@ const DECLARED_CONVERSIONS: DeclaredConversion[] = [
     id: 'ddl.default-content-types',
     source: 'server/db/schema-tables/core.ts',
     anchor: /INSERT INTO \\`content_types\\`[\s\S]*?ON DUPLICATE KEY UPDATE \\`slug\\` = \\`slug\\`/,
-    reason: 'initDb() inserts the system content types missing by slug — into a table staff curate, that re-adds a deleted one on every boot; fixed by wave2 D7 (moved into seed.ts behind a marker)',
-    covers: change => isInsert(change, ['content_types']) && isSeedDefault('content_types', change.row),
+    reason: 'initDb() inserts the system content types missing by slug (core.ts systemTypes) — into a table staff curate, that re-adds a deleted one on every boot; fixed by wave2 D7 (moved into seed.ts behind a marker)',
+    covers: (change, ctx) => isInsert(change, ['content_types']) && addsMissingDefault(change, ctx, 'ddl'),
   },
   {
     id: 'ddl.default-categories',
     source: 'server/db/schema-tables/content.ts',
     anchor: /INSERT INTO \\`categories\\`[\s\S]*?ON DUPLICATE KEY UPDATE \\`slug\\` = \\`slug\\`/,
-    reason: 'initDb() inserts the default article categories missing by slug — same re-adding of a deleted default; fixed by wave2 D7',
-    covers: change => isInsert(change, ['categories']) && isSeedDefault('categories', change.row),
+    reason: 'initDb() inserts the default article categories missing by slug (content.ts defaultCategories) — same re-adding of a deleted default; fixed by wave2 D7',
+    covers: (change, ctx) => isInsert(change, ['categories']) && addsMissingDefault(change, ctx, 'ddl'),
   },
   {
     id: 'seed.resurrects-deleted-defaults',
     source: 'server/db/seed.ts',
     anchor: /if \(!existing\) \{\s*await db\.insert\(socialLinks\)/,
     reason: 'seed.ts adds every default missing from a table that already has rows, so a default staff deleted comes back on every boot — fixed by wave2 D7 (seed markers)',
-    covers: (change, ctx) => isInsert(change, D7_SEED_GROUPS) && hadRows(ctx.before, change.table) && isSeedDefault(change.table, change.row),
+    covers: (change, ctx) => isInsert(change, D7_SEED_GROUPS) && hadRows(ctx.before, change.table) && addsMissingDefault(change, ctx, 'seed'),
   },
   {
     id: 'seed.insert-missing-defaults',
     source: 'server/db/seed.ts',
     anchor: /const keepExisting = \(column: string\) => sql\.raw/,
-    reason: 'seed.ts is insert-only: it adds the default rows that are missing (a fresh group, a new settings key or translation) and never updates or deletes one',
-    covers: (change, ctx) => change.kind === 'inserted' && change.table in SEED_DEFAULTS
-      && !(D7_SEED_GROUPS.has(change.table) && hadRows(ctx.before, change.table)) && isSeedDefault(change.table, change.row),
+    reason: 'seed.ts is insert-only: it adds the default rows that are missing (a fresh group, a new settings key or translation) — matched by full natural key against the seed\'s own data — and never updates or deletes one',
+    covers: (change, ctx) => change.kind === 'inserted' && !(D7_SEED_GROUPS.has(change.table) && hadRows(ctx.before, change.table))
+      && addsMissingDefault(change, ctx, 'seed'),
   },
   {
     id: 'seed.ai-provider-backfill',
@@ -941,8 +1257,13 @@ test('every table a boot migration touches gets representative rows', { skip: !e
     assert.ok(touched.includes(table), `the migration parser no longer finds ${table}`)
   }
   for (const table of Object.keys(SEED_OVERRIDES)) assert.ok(previousTables.has(table), `SEED_OVERRIDES names ${table}, which the previous release does not have`)
+  // The tables the seed writes get representative rows too, each with a row that
+  // carries a default key and staff-edited values (SEED_OVERRIDES): an upsert that
+  // overwrites staff data shows up as a changed cell.
+  const seedWritten = loadSeedData().writtenTables.filter(table => previousTables.has(table))
+  for (const table of seedWritten) assert.ok(SEED_OVERRIDES[table], `the seed writes ${table} but SEED_OVERRIDES gives it no row with a default key and staff-edited values`)
 
-  const seeded = withReferencedTables(touched, current.previousSchema)
+  const seeded = withReferencedTables([...new Set([...touched, ...seedWritten])], current.previousSchema)
   const rows = buildRows(seeded, current.previousSchema)
   await withConnection(async (conn) => {
     await insertRows(conn, rows)
@@ -955,11 +1276,12 @@ test('every table a boot migration touches gets representative rows', { skip: !e
     }
   })
   const counted = await snapshot()
-  for (const table of touched) {
+  for (const table of [...touched, ...seedWritten]) {
     const expected = SEED_OVERRIDES[table]?.count ?? DEFAULT_ROW_COUNT
-    assert.equal(counted.get(table)?.rows.size, expected, `${table} is touched by a boot migration but holds ${counted.get(table)?.rows.size ?? 0} representative rows`)
+    assert.equal(counted.get(table)?.rows.size, expected, `${table} is written at boot but holds ${counted.get(table)?.rows.size ?? 0} representative rows`)
   }
   t.diagnostic(`tables touched by boot migrations: ${touched.length} (${touched.join(', ')})`)
+  t.diagnostic(`tables the seed writes: ${seedWritten.length} (${seedWritten.join(', ')})`)
   t.diagnostic(`seeded with referenced parents: ${seeded.length} tables, ${[...rows.values()].reduce((n, r) => n + r.length, 0)} rows`)
   if (newTables.length) t.diagnostic(`tables the new release creates (nothing previous to preserve): ${newTables.join(', ')}`)
   current.touched = touched
@@ -978,7 +1300,10 @@ test('boot 1 on the previous release keeps every row except the declared one-tim
     for (const column of info.columns) if (column.extra.includes('on update current_timestamp')) autoUpdated.add(`${table}.${column.name}`)
   }
   const changes = diffSnapshots(beforeBoot, afterBoot)
-  const { fired, undeclared } = classify(changes, { before: beforeBoot, after: afterBoot, foreignKeysBefore: current.previousSchema.foreignKeys }, autoUpdated)
+  const { fired, undeclared } = classify(changes, {
+    before: beforeBoot, after: afterBoot, foreignKeysBefore: current.previousSchema.foreignKeys,
+    seed: loadSeedData(), claimed: new Set(), keyCache: new Map(),
+  }, autoUpdated)
   assert.equal(undeclared.length, 0, `${undeclared.length} write(s) on boot 1 that no declared conversion covers:\n${report(undeclared)}`)
 
   // The trigger rows were really converted, to exactly these values — written out
@@ -1012,6 +1337,52 @@ test('boot 2 changes nothing at all — no row, no column, no table, no schema',
   const changes = diffSnapshots(current.afterBoot1, afterBoot2)
   assert.equal(changes.length, 0, `boot 2 changed ${changes.length} thing(s) — a boot-time write that is not idempotent:\n${report(changes)}`)
   assert.deepEqual(await withConnection(readDdl), current.ddlAfterBoot1, 'boot 2 changed the schema')
+})
+
+test('the seed declarations accept exactly the seed\'s own missing defaults, by full natural key', { skip: !enabled }, () => {
+  const seed = loadSeedData()
+  // Read from the seed's data, not guessed: the one account, the four roles, every
+  // (role, resource) pair, the tables it writes.
+  assert.deepEqual(seed.seededAccounts, ['admin'], 'seed.ts creates an account other than admin — a security change, not a default')
+  assert.deepEqual([...seed.keys.get('roles')!].sort(), ['editor', 'moderator', 'superadmin', 'viewer'])
+  const resources = (declaredConstant(SEED_SOURCE, 'RESOURCES') as string[])
+  assert.ok(resources.length > 10 && resources.includes('news'))
+  assert.equal(seed.keys.get('permissions')!.size, 4 * resources.length)
+  for (const table of ['users', 'roles', 'permissions', 'settings', 'pages', 'page_blocks', 'ai_model_pricing', 'ai_moderation_rules', 'social_links', 'languages', 'lang_translations']) {
+    assert.ok(seed.writtenTables.includes(table), `the seed-write scan no longer finds ${table}`)
+  }
+
+  const table = (rows: Array<Record<string, string | null>>, primaryKey = 'id'): TableSnapshot => ({
+    columns: Object.keys(rows[0] ?? {}),
+    primaryKey: [primaryKey],
+    rows: new Map(rows.map(row => [`${primaryKey}=${row[primaryKey]}`, row])),
+  })
+  const before: Snapshot = new Map([
+    ['users', table([{ id: '1', username: 'admin' }])],
+    ['roles', table([{ id: '1', name: 'superadmin' }, { id: '3', name: 'biên tập viên địa phương' }])],
+    ['permissions', table([{ id: '1', role_id: '1', resource: 'news' }])],
+    ['pages', table([{ id: '1', slug: 'about' }, { id: '2', slug: 'trang-rieng' }])],
+    ['page_blocks', table([])],
+    ['home_sections', table([])],
+    ['lang_translations', table([])],
+  ])
+  const after: Snapshot = new Map([...before, ['roles', table([...before.get('roles')!.rows.values(), { id: '4', name: 'moderator' }])]])
+  const ctx = (): BootContext => ({ before, after, foreignKeysBefore: [], seed, claimed: new Set(), keyCache: new Map() })
+  const declares = (context: BootContext, tableName: string, row: Record<string, string | null>) =>
+    DECLARED_CONVERSIONS.find(conversion => conversion.covers({ kind: 'inserted', table: tableName, key: `id=${row.id}`, row }, context))?.id ?? null
+
+  const one = ctx()
+  assert.equal(declares(one, 'permissions', { id: '9', role_id: '4', resource: 'news' }), 'seed.insert-missing-defaults', 'a default role\'s missing default right')
+  assert.equal(declares(one, 'permissions', { id: '10', role_id: '4', resource: 'news' }), null, 'the same default added twice')
+  assert.equal(declares(one, 'permissions', { id: '11', role_id: '3', resource: 'news' }), null, 'a right for a staff-created role is not a default (bite F)')
+  assert.equal(declares(one, 'permissions', { id: '12', role_id: '1', resource: 'news' }), null, 'a default that already existed is not missing')
+  assert.equal(declares(one, 'users', { id: '2', username: 'editor' }), null, 'a second account is not a default (bite H)')
+  assert.equal(declares(one, 'users', { id: '3', username: 'admin' }), null, 'admin already existed, so a second admin row is not a missing default')
+  assert.equal(declares(one, 'lang_translations', { id: '1', lang_code: 'vi', group: 'nav', key: 'hotline_lbl' }), 'seed.insert-missing-defaults')
+  assert.equal(declares(one, 'lang_translations', { id: '2', lang_code: 'vi', group: 'nav', key: 'not_a_seeded_key' }), null, 'a key the seed does not define')
+  assert.equal(declares(one, 'lang_translations', { id: '3', lang_code: 'xx', group: 'nav', key: 'hotline_lbl' }), null, 'a language the seed does not define for that key')
+  assert.equal(declares(one, 'page_blocks', { id: '1', page_id: '1', block_type: 'heading', display_order: '1' }), 'seed.insert-missing-defaults', 'the default heading block of "about"')
+  assert.equal(declares(one, 'page_blocks', { id: '2', page_id: '2', block_type: 'heading', display_order: '1' }), null, 'a block on a page that is not a system page')
 })
 
 test('every declared conversion still names code that exists', { skip: !enabled }, () => {

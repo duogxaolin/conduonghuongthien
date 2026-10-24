@@ -128,43 +128,68 @@ export async function snapshotRelease(options: { repoRoot: string, ref: string, 
   if (!DISPOSABLE_DB.test(database)) throw new Error(`refusing to use database ${database}`)
 
   const workDir = mkdtempSync(path.join(os.tmpdir(), 'cdkt-snapshot-'))
+  // Dọn dẹp ở MỌI đường ra: thư mục tạm (bản sao repo ~30 MB) xoá trước, rồi CSDL
+  // tạm. Lỗi được báo là lỗi ĐẦU TIÊN. Máy chủ không tới được hay sai mật khẩu thì
+  // DROP cũng hỏng, nhưng không được che lỗi gốc và không được giữ thư mục tạm lại.
+  let failure: unknown = null
+  let snapshot = ''
   try {
-    const archive = git(repoRoot, ['archive', '--format=tar', commit], 'buffer')
-    const untar = spawnSync('tar', ['-x', '-C', workDir], { input: archive })
-    if (untar.status !== 0) throw new Error(`tar -x failed (exit ${untar.status}): ${String(untar.stderr)}`)
-    symlinkSync(path.join(repoRoot, 'node_modules'), path.join(workDir, 'node_modules'), 'dir')
-
-    // Đúng lệnh `db:init` của bản đó, với CSDL tạm và các biến kết nối của script này.
-    const init = spawnSync(
-      process.execPath,
-      ['--experimental-strip-types', '--import', './scripts/ts-resolver.mjs', 'server/db/init.ts'],
-      {
-        cwd: workDir,
-        encoding: 'utf8',
-        env: {
-          ...process.env,
-          DB_HOST: connect.host,
-          DB_PORT: String(connect.port),
-          DB_USER: connect.user,
-          DB_PASSWORD: connect.password,
-          DB_NAME: database,
-        },
-      },
-    )
-    if (init.status !== 0) throw new Error(`init.ts of ${commit} failed (exit ${init.status})\n${init.stdout}\n${init.stderr}`)
-
-    const { server, tables } = await readSchema(connect, database)
-    if (tables.length === 0) throw new Error(`init.ts of ${commit} created no tables in ${database}`)
-    return renderSchemaSnapshot({ ref, commit, server }, tables)
-  } finally {
-    const conn = await mysql.createConnection(connect)
-    try {
-      await conn.query(`DROP DATABASE IF EXISTS \`${database}\``)
-    } finally {
-      await conn.end()
-    }
-    rmSync(workDir, { recursive: true, force: true })
+    snapshot = await buildSnapshot({ repoRoot, ref, connect, commit, database, workDir })
+  } catch (err) {
+    failure = err
   }
+  rmSync(workDir, { recursive: true, force: true })
+  try {
+    await dropDatabase(connect, database)
+  } catch (err) {
+    failure ??= err
+  }
+  if (failure) throw failure
+  return snapshot
+}
+
+async function dropDatabase(connect: Connect, database: string) {
+  if (!DISPOSABLE_DB.test(database)) throw new Error(`refusing to drop database ${database}`)
+  const conn = await mysql.createConnection(connect)
+  try {
+    await conn.query(`DROP DATABASE IF EXISTS \`${database}\``)
+  } finally {
+    await conn.end()
+  }
+}
+
+/** The previous release's init on a throwaway database, then its schema. */
+async function buildSnapshot(options: { repoRoot: string, ref: string, connect: Connect, commit: string, database: string, workDir: string }): Promise<string> {
+  const { repoRoot, ref, connect, commit, database, workDir } = options
+  const archive = git(repoRoot, ['archive', '--format=tar', commit], 'buffer')
+  const untar = spawnSync('tar', ['-x', '-C', workDir], { input: archive })
+  if (untar.status !== 0) throw new Error(`tar -x failed (exit ${untar.status}): ${String(untar.stderr)}`)
+  symlinkSync(path.join(repoRoot, 'node_modules'), path.join(workDir, 'node_modules'), 'dir')
+
+  // Đúng lệnh `db:init` của bản đó, với CSDL tạm và các biến kết nối của script này.
+  const init = spawnSync(
+    process.execPath,
+    ['--experimental-strip-types', '--import', './scripts/ts-resolver.mjs', 'server/db/init.ts'],
+    {
+      cwd: workDir,
+      encoding: 'utf8',
+      timeout: 300_000,
+      killSignal: 'SIGKILL',
+      env: {
+        ...process.env,
+        DB_HOST: connect.host,
+        DB_PORT: String(connect.port),
+        DB_USER: connect.user,
+        DB_PASSWORD: connect.password,
+        DB_NAME: database,
+      },
+    },
+  )
+  if (init.status !== 0) throw new Error(`init.ts of ${commit} failed (exit ${init.status}${init.signal ? `, ${init.signal}` : ''})\n${init.stdout}\n${init.stderr}`)
+
+  const { server, tables } = await readSchema(connect, database)
+  if (tables.length === 0) throw new Error(`init.ts of ${commit} created no tables in ${database}`)
+  return renderSchemaSnapshot({ ref, commit, server }, tables)
 }
 
 function argValue(name: string): string | undefined {

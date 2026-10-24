@@ -968,7 +968,7 @@ Nhóm đầu của `openspec/changes/wave2-hardening` (D-UPGRADE, D-COVERAGE). N
     - Giá trị sinh theo kiểu cột, sát biên: INT gần trần, BIGINT vượt 2^53, chữ có dấu, nháy, `\`, xuống dòng và emoji 4 byte, JSON. Cột nullable để NULL ở hàng 2. FK trỏ hàng cha thật, và được kiểm sau khi chèn.
     - Hàng viết tay ở những chỗ cần thật hoặc cần kích một chuyển đổi: `chatbot_settings` id 1, `admin`, các khoá settings đã sửa, Facebook đã sửa, nhãn hotline cũ, URL `localhost:3000`/`migrated/media`.
     - Bảng mới nào không sinh được hàng thì suite đỏ, nêu tên bảng và chỉ tới `SEED_OVERRIDES`.
-  - **Khởi động hai lần đúng như container:** `initDb()`, rồi `seed.ts` chạy thành tiến trình riêng. Sau mỗi lượt, so mọi bảng theo khoá chính, từng cột, với giá trị chính xác (`dateStrings`/`jsonStrings`/`bigNumberStrings`, `time_zone '+00:00'`).
+  - **Khởi động hai lần đúng như container:** `init.ts` rồi `seed.ts`, mỗi cái là một tiến trình riêng có trần thời gian. Sau mỗi lượt, so mọi bảng theo khoá chính, từng cột, với giá trị chính xác (`dateStrings`/`jsonStrings`/`bigNumberStrings`, `time_zone '+00:00'`).
     - Lượt 1: thay đổi nào không thuộc một `DECLARED_CONVERSIONS` thì đỏ, nêu `bảng.cột [khoá]: cũ → mới`.
     - Lượt 2: không được đổi gì, kể cả DDL.
     - Mỗi khai báo neo **theo nội dung mã**; mã đã xoá thì test riêng đỏ.
@@ -976,7 +976,7 @@ Nhóm đầu của `openspec/changes/wave2-hardening` (D-UPGRADE, D-COVERAGE). N
   - **Các chuyển đổi đã khai báo, mỗi cái kèm lý do trong test:**
     - từ `migrations-additive.ts`: backfill `WHERE col IS NULL` (2 chỗ); `mode = 'ai'` (chỉ khi cột vừa được thêm); NULL hoá tham chiếu tới user đã xoá; cha "Legacy question N" cho term mồ côi; xoá danh mục video (chỉ khi FK còn trỏ `categories`); nhãn hotline; `repairLegacyMediaUrls` (kết quả phải đúng phép viết lại); `short_id`; cột/bảng mới;
     - default content types/categories do DDL chèn;
-    - từ `seed.ts`: chèn default còn thiếu, chỉ những hàng có khoá xuất hiện như literal trong mã seed; **chèn lại default vào bảng đã có hàng**, mà wave2 D7 sẽ sửa; backfill provider AI từ `chatbot_settings`.
+    - từ `seed.ts`: chèn default còn thiếu — khớp **đủ khoá tự nhiên** với dữ liệu của chính seed (xem *Vòng sửa* bên dưới); **chèn lại default vào bảng đã có hàng**, mà wave2 D7 sẽ sửa; backfill provider AI từ `chatbot_settings`.
   - **Bằng chứng test-first:** chạy khi chưa có khai báo nào thì đỏ, 1987 lượt ghi. Gồm `articles.content` ×2, `media.url` ×1, `lang_translations.value` ×2, 4 bộ đếm `updated_at` và 1978 hàng do seed/DDL chèn. Không có lượt ghi nào khác. Các giá trị chuyển đổi được ghi cứng trong test, độc lập với vị từ.
   - **Không tới được từ fixture này** (chẩn đoán in mỗi lượt): cột/bảng mới, hai backfill NULL, `mode = 'ai'`, tham chiếu mồ côi, cha của term mồ côi, danh mục video, `short_id`, backfill provider AI. Lý do: lược đồ `7dfed8c` đã có các cột đó và FK đã ép.
   - **Suite có cắn** (làm trên bản sao trong scratch, không commit):
@@ -988,7 +988,7 @@ Nhóm đầu của `openspec/changes/wave2-hardening` (D-UPGRADE, D-COVERAGE). N
   - **Vì sao không dùng cờ của Node.** Glob `--test-coverage-include` không liệt kê tệp chưa nạp, trên phiên bản nào cũng vậy: nó chỉ lọc tệp đã nạp. `--test-coverage-include-all` thì chỉ có trên Node 26 (Node 24.21 và 22.23 báo `bad option`), mà khi đi cùng `mock.module` nó còn sinh bản ghi trùng (69 tệp, có bản toàn-0).
   - **`scripts/coverage-summary.ts` viết lại để đọc lcov**, chạy được trên Node 22/24/26. Nó làm ba việc:
     - gộp các bản ghi cùng `SF:`: dòng, hàm hay nhánh được tính là đã chạy nếu bất kỳ bản ghi nào chạy nó;
-    - thêm mọi tệp `.ts` git theo dõi dưới `server/`, `shared/`, `app/utils/`, `app/composables/` mà không test nào nạp (trừ `schema-tables/`, `*.d.ts`, tệp test), ở 0 % của **số dòng có mã**. Bộ quét đếm dòng khớp trình phân tích TypeScript trong 0,013 % trên 652 tệp;
+    - thêm mọi tệp `.ts` git theo dõi dưới `server/`, `shared/`, `app/utils/`, `app/composables/` mà không test nào nạp (trừ `schema-tables/`, `*.d.ts`, tệp test), ở 0 % của **số dòng có mã**. Bộ quét đếm dòng khớp trình phân tích TypeScript trong 0,013 % trên 660 tệp (đo trên `a7be585` + 2F; trên `694bb6e` là 652 tệp, cũng 0,013 %);
     - in tổng chung và theo thư mục cho "mọi tệp" lẫn "chỉ tệp đã nạp", rồi ghi vào `$GITHUB_STEP_SUMMARY` nếu có.
   - `npm run test:coverage` ghi lcov vào `node_modules/.cache/cdkt-coverage/` rồi chạy script. Bước CI vẫn Node 24 và vẫn `continue-on-error`; bước test unit thêm reporter lcov, bước *Coverage summary* đọc tệp đó. Từ nay trang tóm tắt CI báo cả số "mọi tệp".
   - **Lỗi đo đã tìm ra.** Quy tắc loại trừ mặc định của Node coi `test-*.ts` là tệp test, nên các handler thật `server/api/admin/settings/test-r2.post.ts` và `test-email.post.ts` mất khỏi coverage. Cả hai lệnh nay truyền `--test-coverage-exclude='tests/**'`, và quy tắc mặc định không còn áp dụng.
@@ -1008,6 +1008,41 @@ Nhóm đầu của `openspec/changes/wave2-hardening` (D-UPGRADE, D-COVERAGE). N
 - Typecheck 0 lỗi. eslint 0 error / 16 warning (như trước; không cái nào ở tệp mới).
 - `tests/ci-integration-matrix.test.ts` cùng các guard workflow khác xanh.
 - Suite nâng cấp 5/5 trên MySQL 8.0.46 local, cả Node 26.11 lẫn Node 24.21 (bản CI, chạy trong `node:24-slim`). Không để lại CSDL `cdkt_upgrade_*`/`cdkt_snapshot_*`.
+
+**Vòng sửa sau kiểm độc lập (2026-10-24).** Người kiểm thử chèn lỗi vào bản sao, và ba lỗi lọt qua suite (5/5 xanh):
+- bite F: seed cấp toàn quyền cho vai trò cán bộ tự tạo;
+- bite H: seed tạo thêm tài khoản superadmin `editor`;
+- bite G: upsert giá model xoá nhãn của cán bộ.
+
+Ngoài ra suite treo ~11 phút khi một migration ném lỗi. Đã sửa (chỉ `tests/`, `scripts/snapshot-schema.ts` và tài liệu; mã seed không đổi):
+- **Khai báo seed khớp đủ khoá tự nhiên, lấy từ dữ liệu của chính seed** (thay cho phép tìm chuỗi trong mã nguồn).
+  - Nguồn dữ liệu: dữ liệu export được import (`DEFAULT_TRANSLATIONS_SEED`, `CHATBOT_SMALL_TALK_SEED`). Hằng số nội bộ của `seed.ts` (tệp này tự chạy khi import) và bộ default của tệp DDL được đọc bằng trình phân tích TypeScript, rồi tính như literal. Một hằng số bị đổi tên hay đổi cấu trúc thì suite đỏ, nêu tên hằng số đó.
+  - Khoá tự nhiên theo bảng:
+    - `users`: ghim đúng `admin` — tài khoản khác thêm vào seed là thay đổi bảo mật cần xem xét, không phải "default";
+    - `roles`: tên vai trò default;
+    - `permissions`: cặp (vai trò default, tài nguyên);
+    - `lang_translations`: (ngôn ngữ, nhóm, khoá);
+    - `page_blocks`: (trang hệ thống, loại khối, thứ tự), cộng các khối trang chủ chép từ `home_sections`;
+    - còn lại: khoá tự nhiên của từng bảng.
+  - Một default chỉ được chèn khi khoá chưa có trước lượt khởi động, và mỗi khoá một lần.
+  - Thêm test `the seed declarations accept exactly the seed's own missing defaults` (không cần CSDL thật).
+- **Mọi bảng seed ghi (20) đều có hàng đại diện mang khoá default với giá trị cán bộ đã sửa**, nên upsert ghi đè giá trị cán bộ hiện thành ô bị đổi. Trên mã hiện tại không bảng nào bị ghi đè.
+- **`init.ts` chạy thành tiến trình riêng có trần thời gian, như `seed.ts`.** Migration ném lỗi thì suite báo lỗi ngay và thoát.
+- **`scripts/snapshot-schema.ts` dọn ở mọi đường ra.** Thư mục tạm xoá trước, CSDL tạm sau, và lỗi báo ra là lỗi đầu tiên. Trước đây, sai mật khẩu thì còn lại một bản sao repo ~30 MB trong thư mục tạm, và lỗi bị che bằng lỗi của bước dọn.
+- Test mới: `tests/snapshot-schema.test.ts` (chuẩn hoá DDL; snapshot xếp thứ tự, chỉ DDL, không ngày giờ; CSDL không tới được vẫn dọn thư mục tạm). `tests/ci-integration-matrix.test.ts` thêm một ca: PR chỉ làm mới `tests/fixtures/schema-prev.sql` vẫn chạy Integration — bỏ đường dẫn khỏi regex của job `changes` thì đỏ.
+- **Kết quả chèn lỗi lại** (bản sao trong scratch, không commit):
+  - F đỏ: `inserted permissions ×21`;
+  - G đỏ: `ai_model_pricing.label [model=delify-5.5]: "Giá đã thương lượng" → NULL` cùng giá bị ghi đè;
+  - H đỏ: `users … row inserted` cộng ca dữ liệu seed;
+  - C1 (thu hẹp `reader_accounts.display_name` xuống `VARCHAR(5)`) đỏ sau 3,8 s với `ER_DATA_TOO_LONG`, cả tệp 31 s, tiến trình thoát. Trước đây treo 643 s.
+- Kiểm chứng sau vòng sửa (Node 24.21):
+  - `npm test` 4297 / 4264 pass / 0 fail / 33 skip;
+  - suite nâng cấp 6/6 trên MySQL local (~33 s);
+  - typecheck 0 lỗi; eslint 0 error / 16 warning;
+  - guard matrix + `snapshot-schema` + `coverage-summary` + workflow 99/99;
+  - không để lại CSDL `cdkt_upgrade_*`/`cdkt_snapshot_*`.
+
+  Độ phủ không đổi, vì không có tệp nguồn nào trong phạm vi đo bị sửa.
 
 Còn mở (2F):
 - `repairLegacyMediaUrls` đổi `articles.updated_at` của bài nó vá, vì `UPDATE` không giữ cột đó. Sửa cùng D-SCAN, khi đụng hàm này.
