@@ -34,12 +34,14 @@
 # and keeps its mode; the files in it are 0600 all the same.
 #
 # The archive is written as <name>.sql.gz.partial and renamed only after it passed
-# verification, so no rotation glob, `verify-restore.sh --latest` or `ls *.sql.gz`
-# ever sees a half-written dump. INT/TERM/HUP end the run through the exit handler,
-# which removes the partial (bash would otherwise die on the spot and leave gzip to
-# close a truncated dump as a perfectly valid .sql.gz). A partial that could not be
-# cleaned up (SIGKILL, power loss) is removed by a later run of the same family once
-# it is a day old.
+# verification: whatever happens, a truncated dump never exists under a .sql.gz name,
+# so no rotation glob, `verify-restore.sh --latest` or `ls *.sql.gz` can pick one.
+# INT/TERM/HUP end the run through the exit handler, which also removes the partial
+# (bash would otherwise die on the spot and leave gzip to close a truncated dump as a
+# perfectly valid archive). A run that gets no such signal can still leave a
+# .partial: SIGKILL, power loss, or a dropped SSH session without a PTY (the remote
+# side sees no hangup; the script is killed by SIGPIPE when it next writes). A later
+# run of the same family removes such a partial once it is a day old.
 #
 # Exit codes: 0 success, 1 configuration error, 2 dump failed, 3 verification failed,
 #             128+N interrupted by signal N.
@@ -62,7 +64,10 @@ PREFIX=cdkt
 PREFIX_KEEP=5
 TARGET=''
 PARTIAL=''
-ERR_FILE="/tmp/cdkt-backup-err.$$"
+# mysqldump's stderr: a fresh `mktemp` file (0600 under the umask above), created
+# just before the dump — never a guessable /tmp/<name>.$$ another account could
+# pre-create or symlink. on_exit removes it on every path.
+ERR_FILE=''
 
 emit() { printf '{"event":"backup.%s","time":"%s","detail":%s}\n' "$1" "$(date -u +%FT%TZ)" "$2"; }
 fail() {
@@ -89,7 +94,7 @@ ping_healthcheck() {
 on_exit() {
   local status=$?
   if [[ -n "$PARTIAL" ]]; then rm -f -- "$PARTIAL"; fi
-  rm -f -- "$ERR_FILE"
+  if [[ -n "$ERR_FILE" ]]; then rm -f -- "$ERR_FILE"; fi
   if [[ "$PREFIX" == cdkt ]]; then ping_healthcheck "$status"; fi
   exit "$status"
 }
@@ -143,6 +148,7 @@ fi
 
 # Written under a name nothing else globs for, renamed once verified.
 PARTIAL="$TARGET.partial"
+ERR_FILE="$(mktemp "${TMPDIR:-/tmp}/cdkt-backup-err.XXXXXXXX")" || fail config "cannot create a temporary file in ${TMPDIR:-/tmp}" 1
 
 # --single-transaction keeps InnoDB consistent without locking the site out.
 # --routines/--triggers/--events so a restore is actually complete.

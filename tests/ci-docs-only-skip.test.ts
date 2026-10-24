@@ -93,6 +93,8 @@ interface Fakes {
   health?: unknown
   /** `gh api …/actions/workflows/ci.yml/runs?…` — newest run first, as GitHub lists them. */
   runs?: Array<{ id: number; head_sha: string; run_started_at: string; deploy: string }>
+  /** That `gh api` call never answers (a hung connection). */
+  hang?: 'runs' | 'jobs'
 }
 
 function decide(cwd: string, env: Record<string, string>, fakes: Fakes = {}) {
@@ -112,8 +114,8 @@ function decide(cwd: string, env: Record<string, string>, fakes: Fakes = {}) {
       `printf '%s\\n' "$*" >> "${dir}/gh.log"`,
       '[ "${1:-}" = api ] || exit 1',
       'case "${2:-}" in',
-      `  */actions/runs/*/jobs*) id=\${2#*/actions/runs/}; id=\${id%%/*}; f="${dir}/jobs-$id.json" ;;`,
-      `  */actions/workflows/*/runs*) f="${dir}/runs.json" ;;`,
+      `  */actions/runs/*/jobs*) id=\${2#*/actions/runs/}; id=\${id%%/*}; f="${dir}/jobs-$id.json"; [ -f "${dir}/hang-jobs" ] && exec sleep 30 ;;`,
+      `  */actions/workflows/*/runs*) f="${dir}/runs.json"; [ -f "${dir}/hang-runs" ] && exec sleep 30 ;;`,
       '  *) exit 1 ;;',
       'esac',
       '[ -f "$f" ] || exit 1',
@@ -149,13 +151,19 @@ function decide(cwd: string, env: Record<string, string>, fakes: Fakes = {}) {
     }
   }
 
+  if (fakes.hang) writeFileSync(join(dir, `hang-${fakes.hang}`), '')
+
   const out = join(cwd, '.github-output')
   const summary = join(cwd, '.github-summary')
   writeFileSync(out, '')
   writeFileSync(summary, '')
+  const startedAt = Date.now()
   const r = spawnSync('bash', ['-e', '-c', script], {
     cwd,
     encoding: 'utf8',
+    // A step that waits on a hung `gh` forever is killed here and fails below,
+    // instead of hanging the suite.
+    timeout: 15_000,
     env: {
       PATH: `${bin}:${process.env.PATH ?? ''}`,
       HOME: dir,
@@ -171,7 +179,8 @@ function decide(cwd: string, env: Record<string, string>, fakes: Fakes = {}) {
       ...env,
     },
   })
-  assert.equal(r.status, 0, `the step itself failed: ${r.stderr}`)
+  const seconds = (Date.now() - startedAt) / 1000
+  assert.equal(r.status, 0, `the step itself failed (${r.signal ?? 'exit'} after ${seconds}s): ${r.stderr}`)
   const lines = readFileSync(out, 'utf8')
     .split('\n')
     .filter((l) => l.startsWith('deploy='))
@@ -180,6 +189,7 @@ function decide(cwd: string, env: Record<string, string>, fakes: Fakes = {}) {
     existsSync(join(dir, name)) ? readFileSync(join(dir, name), 'utf8').split('\n').filter(Boolean) : []
   return {
     deploy: lines[0]!.slice('deploy='.length),
+    seconds,
     summary: readFileSync(summary, 'utf8'),
     curl: log('curl.log'),
     gh: log('gh.log'),
@@ -327,12 +337,33 @@ test('(b) live version unreachable, `dev` or unknown → the last successful dep
   assert.equal(decide(r.root, { SHA: c }, { health: { ok: true, version: 'abcdef012345' }, runs }).deploy, 'false')
   assert.equal(decide(r.root, { SHA: c }, { health: '<html>maintenance</html>', runs }).deploy, 'false')
   // An answer that is not a short SHA never reaches git as an argument.
-  assert.equal(decide(r.root, { SHA: c }, { health: { ok: true, version: '--output=/tmp/x' }, runs }).deploy, 'false')
+  const option = decide(r.root, { SHA: c }, { health: { ok: true, version: '--output=/tmp/x' }, runs })
+  assert.equal(option.deploy, 'false')
+  viaRuns(option.summary, a)
   // No VPS_SMOKE_URL: straight to (b), no request at all.
   const unset = decide(r.root, { SHA: c, SMOKE_URL: '' }, { runs })
   assert.equal(unset.deploy, 'false')
   assert.deepEqual(unset.curl, [])
   assert.ok(unset.gh.some((l) => /actions\/workflows\/ci\.yml\/runs\?/.test(l) && /branch=main/.test(l) && /status=completed/.test(l)), JSON.stringify(unset.gh))
+})
+
+test('a health `version` that is a ref name (HEAD, main) is not a commit — only a 12-hex SHA is', () => {
+  // `git rev-parse --verify "HEAD^{commit}"` resolves; so does `main`. Without the
+  // 12-hex check a site answering `"version":"HEAD"` (a build-arg mix-up, a proxy,
+  // anyone in between) would make the pushed commit look live and skip a deploy of
+  // real code. A is the last real deploy; C (= HEAD on main) changes code.
+  const r = repo()
+  const a = r.commit({ 'server/app.ts': 'export const a = 1\n' })
+  const c = r.commit({ 'server/app.ts': 'export const c = 1\n' })
+  for (const version of ['HEAD', 'main', 'HEAD~1', 'refs/heads/main']) {
+    const withRuns = decide(r.root, { SHA: c }, { health: { ok: true, version }, runs: [deployedRun(1, a, 0)] })
+    assert.equal(withRuns.deploy, 'true', `version ${version} was taken as the live commit`)
+    viaRuns(withRuns.summary, a)
+    // Nothing from (b) either: (c), deploy — never "already live".
+    const none = decide(r.root, { SHA: c }, { health: { ok: true, version } })
+    assert.equal(none.deploy, 'true', `version ${version} was taken as the live commit`)
+    assert.match(none.summary, /không xác định được commit đang chạy/, none.summary)
+  }
 })
 
 test('(b) picks the newest run whose deploy JOB succeeded — not a skipped or failed deploy', () => {
@@ -360,6 +391,26 @@ test('(b) orders runs by when they last started — a re-run of an older deploy 
   const out = decide(r.root, { SHA: c, SMOKE_URL: '' }, { runs })
   assert.equal(out.deploy, 'true')
   viaRuns(out.summary, a)
+})
+
+test('(c) a hung GitHub API call falls through to "unknown → deploy" within its time limit', () => {
+  // Without a per-call limit a stuck `gh api` eats the Plan job's 5 minutes; the job
+  // then fails, and every gate that needs it is skipped — no tests, no deploy.
+  // GH_API_TIMEOUT only shortens the per-call limit (20 s in CI) for this test.
+  const r = repo()
+  const a = r.commit({ 'server/app.ts': 'export const a = 1\n' })
+  const c = r.commit({ 'docs/a.md': 'a\n' })
+  const runs = [deployedRun(1, a, 0)]
+  for (const hang of ['runs', 'jobs'] as const) {
+    const out = decide(r.root, { SHA: c, SMOKE_URL: '', GH_API_TIMEOUT: '1' }, { runs, hang })
+    assert.equal(out.deploy, 'true', `a hung ${hang} call did not fall through to deploy`)
+    assert.match(out.summary, /không xác định được commit đang chạy/, out.summary)
+    assert.ok(out.seconds < 10, `a hung ${hang} call held the step for ${out.seconds}s`)
+  }
+  // The limit is on every `gh api` call of the step, 20 s by default.
+  const calls = script.split('\n').filter((l) => /\bgh api\b/.test(l) && !/^\s*#/.test(l))
+  assert.ok(calls.length >= 2 && calls.every((l) => /timeout "\$gh_timeout" gh api/.test(l)), calls.join('\n'))
+  assert.match(script, /^\s*gh_timeout=\$\{GH_API_TIMEOUT:-20\}$/m)
 })
 
 test('(c) neither source available → deploy', () => {

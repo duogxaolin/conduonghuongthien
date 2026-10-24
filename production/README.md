@@ -324,9 +324,11 @@ duy nhất chạy trước nó là bước siết quyền `.env` về 600 (khôn
   `.deploy-compose-backups/`) nằm trong `.gitignore` **và** `.dockerignore` — một lượt
   `docker compose build` ngay trên VPS không đưa bản dump vào build context.
 - **Không bao giờ có bản cụt mang tên thật:** dump được viết dưới tên `….sql.gz.partial` và
-  chỉ đổi sang `.sql.gz` sau khi kiểm xong. Lượt bị ngắt (job huỷ, SSH đứt, Ctrl-C) xoá phần
-  dở dang; phần dở dang của một lượt bị giết hẳn (`kill -9`, mất điện) được lượt sau dọn khi
-  đã quá 1 ngày.
+  chỉ đổi sang `.sql.gz` sau khi kiểm xong — điều này đúng dù lượt dump dừng kiểu gì. Lượt
+  nhận HUP/INT/TERM (Ctrl-C, `kill`) xoá luôn phần dở dang. Lượt không nhận tín hiệu nào có
+  thể để lại `….sql.gz.partial`: bị giết hẳn (`kill -9`, mất điện), hoặc job CI bị huỷ/SSH
+  đứt (phiên `ssh` không PTY nên VPS không nhận tín hiệu treo máy; script chạy tiếp hoặc chết
+  vì SIGPIPE khi ghi log). Lượt dump sau cùng họ xoá phần đó khi đã quá 1 ngày.
 - **Kiểm như bản đêm:** cùng `scripts/backup-db.sh` (gzip, dấu `Dump completed`, ≥ 20 bảng,
   ≥ 50 KB SQL); bản không đạt bị xoá và lượt deploy **dừng** — compose, `.env`, container y
   như trước. Lý do thường gặp: đĩa đầy, `cdkt_mysql` không chạy, `.env` thiếu `MYSQL_ROOT_PASSWORD`.
@@ -344,6 +346,9 @@ duy nhất chạy trước nó là bước siết quyền `.env` về 600 (khôn
   ```
 
   `restore-db.sh` tự dump bản hiện có (`backups/cdkt-prerestore-*`) trước khi ghi đè.
+  ⚠️ Lùi tay chỉ tạm thời: với `VPS_SMOKE_URL` đã đặt, lượt merge kế tiếp vào `main` — **kể cả
+  merge chỉ sửa tài liệu** — so với bản vừa lùi về và deploy lại `HEAD` (gồm commit hỏng) đè
+  lên nó. **Revert commit hỏng trên `main` trước lượt merge kế tiếp** (`CI-CD.md` § Lùi phiên bản).
 - Bản dump lớn dần theo dữ liệu và kéo dài lượt deploy tương ứng (job `deploy` có trần 30 phút).
 
 ## Smoke test qua tên miền công khai (`VPS_SMOKE_URL`)

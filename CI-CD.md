@@ -251,8 +251,11 @@ không bao giờ tới được container). Lượt deploy:
    giám sát (`HEALTHCHECK_PING_URL` chỉ dành cho cron đêm). Dump là toàn bộ CSDL production:
    tệp quyền **600**, thư mục `.deploy-db-backups/` **700** (đặt lại cả khi đã có sẵn với
    quyền rộng hơn); tệp viết dưới tên `….sql.gz.partial`, chỉ đổi sang `.sql.gz` sau khi
-   kiểm xong — lượt bị ngắt (job huỷ, SSH đứt: HUP/INT/TERM) xoá phần dở dang thay vì để lại
-   một `.sql.gz` cụt trông như hợp lệ. Phiên SSH của job có keep-alive
+   kiểm xong — nên **không bao giờ** có một `.sql.gz` cụt mang tên thật, dù lượt dump dừng
+   kiểu gì. Lượt nhận HUP/INT/TERM (Ctrl-C, `kill`) xoá luôn phần dở dang. Job bị huỷ hay
+   SSH đứt thì khác: phiên `ssh` của CI không có PTY, phía VPS không nhận tín hiệu treo máy
+   nào — script chạy tiếp, hoặc chết vì SIGPIPE ở lần ghi log kế tiếp và để lại
+   `….sql.gz.partial`; lượt dump sau cùng họ xoá nó khi đã quá 1 ngày. Phiên SSH của job có keep-alive
    (`ServerAliveInterval=30`, `ServerAliveCountMax=10`) để một bản dump lâu không bị NAT/tường
    lửa cắt vì "rảnh";
 3. sao lưu `docker-compose.yml` cũ vào `<APP_DIR>/.deploy-compose-backups/`
@@ -488,6 +491,14 @@ request chỉ chạy bốn cổng kiểm tra. Đây là chủ đích: deploy m�
 mã của một fork lên máy chủ.
 
 ### Lùi phiên bản
+
+> ⚠️ **Lùi tay chỉ tạm thời — lượt merge kế tiếp vào `main` sẽ deploy lại HEAD.** Khi đã đặt
+> `VPS_SMOKE_URL`, job Plan so với bản **đang chạy** (bản vừa lùi về), nên `HEAD` của `main`
+> — gồm cả commit hỏng — khác bản đó ở tệp mã: merge kế tiếp, **kể cả merge chỉ sửa tài
+> liệu**, build và deploy lại `HEAD` đè lên bản đã lùi. Trước lượt merge kế tiếp phải
+> **revert commit hỏng trên `main`** (hoặc merge bản sửa). Chưa đặt `VPS_SMOKE_URL` thì mốc là
+> lượt deploy CI thành công gần nhất — có thể chính là commit hỏng — nên một merge chỉ-tài-liệu
+> có thể không deploy, nhưng merge có mã thì vẫn deploy `HEAD`: cũng phải revert trước.
 
 Mỗi lần deploy đẩy một tag `sha-<commit>`. Lùi được về image còn trên VPS (6 bản: đang chạy
 + 5 bản `sha-*` mới nhất trước đó) hoặc còn trên GHCR (20 version mới nhất — xem *Giữ image*

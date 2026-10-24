@@ -1126,6 +1126,41 @@ test('an interrupted backup-db.sh leaves no archive behind — not even a comple
   }
 })
 
+test('mysqldump stderr goes to a private mktemp file (not a guessable /tmp/…$$ path), removed on every exit', () => {
+  // `/tmp/cdkt-backup-err.$$` is predictable: another local account can pre-create it
+  // (or a symlink by that name) and read or redirect what mysqldump says. mktemp
+  // creates a fresh 0600 file under $TMPDIR; on_exit removes it on success, failure
+  // and signal alike.
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+  try {
+    mkdirSync(sb.path('tmp'))
+    writeFileSync(sb.path('bin', 'docker-real'), readFileSync(sb.path('bin', 'docker')))
+    chmodSync(sb.path('bin', 'docker-real'), 0o755)
+    // While mysqldump runs, record what is in $TMPDIR (name + mode).
+    writeFileSync(
+      sb.path('bin', 'docker'),
+      `#!/usr/bin/env bash\ncase " $* " in\n  *" mysqldump "*) for f in "$TMPDIR"/*; do [ -e "$f" ] && stat -c '%a %n' "$f"; done >> "$SANDBOX/tmp-during-dump.txt" ;;\nesac\nexec "$SANDBOX/bin/docker-real" "$@"\n`,
+    )
+    const env = { TMPDIR: sb.path('tmp') }
+    const ok = sb.run('scripts/backup-db.sh', [sb.path('backups')], { env })
+    assert.equal(ok.status, 0, ok.stdout + ok.stderr)
+    const during = readFileSync(sb.path('tmp-during-dump.txt'), 'utf8').trim().split('\n')
+    assert.equal(during.length, 1, `expected exactly the stderr file in $TMPDIR during the dump: ${JSON.stringify(during)}`)
+    assert.match(during[0]!, /^600 .*\/tmp\/cdkt-backup-err\.[A-Za-z0-9]{6,}$/)
+    assert.doesNotMatch(during[0]!, new RegExp(`cdkt-backup-err\\.\\d+$`), 'the name is still the bare PID')
+    assert.deepEqual(readdirSync(sb.path('tmp')), [], 'the stderr file outlived a successful run')
+
+    // A failed dump still reports what mysqldump said (read from that file), then removes it.
+    const failed = sb.run('scripts/backup-db.sh', [sb.path('backups')], { env: { ...env, FAKE_MYSQLDUMP_FAIL: '1' } })
+    assert.equal(failed.status, 2)
+    assert.match(failed.stderr, /mysqldump: boom/)
+    assert.deepEqual(readdirSync(sb.path('tmp')), [], 'the stderr file outlived a failed run')
+  } finally {
+    cleanup(sb)
+  }
+  assert.doesNotMatch(readFileSync(repoFile('scripts/backup-db.sh'), 'utf8'), /cdkt-backup-err\.\$\$/)
+})
+
 test('a dump is only ever visible under its final name once it passed verification', () => {
   // While running, the archive is <name>.sql.gz.partial: no rotation glob, restore
   // `--latest` or operator `ls *.sql.gz` can pick a half-written file. A partial left

@@ -203,16 +203,21 @@ jobs:
           }
 
           # (b) head_sha của lượt chạy mới nhất trên main có job deploy `success`.
+          # Mỗi lệnh `gh api` có trần `timeout` (20 s; GH_API_TIMEOUT chỉ để test rút
+          # ngắn): một kết nối treo không được ăn hết 5 phút của job — job Plan hỏng là
+          # mọi cổng phía sau bị bỏ qua. Treo/lỗi ở BẤT KỲ lệnh nào → (b) bỏ cuộc → (c)
+          # deploy; không đi tiếp sang lượt cũ hơn (không biết lượt này có deploy không).
+          gh_timeout=${GH_API_TIMEOUT:-20}
           last_deployed_commit() {
-            local workflow runs id sha
+            local workflow runs jobs id sha
             workflow=${WORKFLOW_REF%@*}
             workflow=${workflow##*/}
             [ -n "$workflow" ] || return 1
-            runs=$(gh api "repos/$REPO/actions/workflows/$workflow/runs?branch=main&status=completed&per_page=30" 2>/dev/null) || return 1
+            runs=$(timeout "$gh_timeout" gh api "repos/$REPO/actions/workflows/$workflow/runs?branch=main&status=completed&per_page=30" 2>/dev/null) || return 1
             while read -r id sha; do
               [[ "$id" =~ ^[0-9]+$ ]] || continue
-              if gh api "repos/$REPO/actions/runs/$id/jobs?filter=latest&per_page=100" 2>/dev/null \
-                  | jq -e --arg name "$deploy_job" 'any(.jobs[]; .name == $name and .conclusion == "success")' >/dev/null 2>&1; then
+              jobs=$(timeout "$gh_timeout" gh api "repos/$REPO/actions/runs/$id/jobs?filter=latest&per_page=100" 2>/dev/null) || return 1
+              if printf '%s' "$jobs" | jq -e --arg name "$deploy_job" 'any(.jobs[]; .name == $name and .conclusion == "success")' >/dev/null 2>&1; then
                 [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 1
                 git rev-parse --verify --quiet "${sha}^{commit}"
                 return
