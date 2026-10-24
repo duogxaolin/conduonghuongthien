@@ -9,6 +9,7 @@ import { getDb } from '../db'
 import { users, roles, permissions, activityLogs } from '../../db/schema'
 import { signToken, signMfaChallenge, MFA_CHALLENGE_TTL_SECONDS } from '../auth'
 import { isSecureRequest } from '../request-secure'
+import { mfaEnrollmentFields, resolveMfaEnrollment } from './policy'
 
 export const SESSION_COOKIE = 'cdkt_admin'
 /** Deliberately a different name from the session cookie: every existing
@@ -99,6 +100,16 @@ export async function completeLogin(
 
   setSessionCookie(event, user)
 
+  // Cùng hai trường `auth/me` trả (chính sách MFA): giao diện lấy `user` từ phản hồi
+  // đăng nhập mà không gọi `me`, nên thiếu chúng thì tài khoản đã quá hạn bật MFA
+  // vào thẳng trang quản trị và chỉ gặp 403 ở từng lượt gọi API.
+  const enrollment = await resolveMfaEnrollment({
+    id: user.id,
+    tokenVersion: user.tokenVersion,
+    isSuperAdmin: user.isSystem === true,
+    permissions: userPermissions,
+  })
+
   return {
     ok: true as const,
     user: {
@@ -108,6 +119,7 @@ export async function completeLogin(
       roleName:     user.roleName,
       isSuperAdmin: user.isSystem === true,
       permissions:  userPermissions,
+      ...mfaEnrollmentFields(enrollment),
     },
   }
 }

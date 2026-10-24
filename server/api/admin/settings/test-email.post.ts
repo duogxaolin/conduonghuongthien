@@ -1,4 +1,4 @@
-import { getSmtpConfig, sendMail } from '../../../utils/mailer'
+import { SMTP_PASSWORD_UNREADABLE_MESSAGE, getSmtpConfig, sendMail } from '../../../utils/mailer'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { logWarn } from '../../../utils/logger'
 import {
@@ -34,6 +34,12 @@ export default defineEventHandler(async (event) => {
         ? 'SMTP chưa được cấu hình (thiếu host hoặc user). Hãy lưu cấu hình, hoặc nhập mật khẩu để thử máy chủ mới.'
         : 'Vui lòng nhập SMTP user để gửi thử.',
     })
+  }
+
+  // Mật khẩu đã lưu không mở được: nói thẳng, đừng để cán bộ đọc "máy chủ từ chối
+  // đăng nhập" rồi đi đổi mật khẩu ở nhà cung cấp mail.
+  if (config.passUnreadable) {
+    throw createError({ statusCode: 400, statusMessage: SMTP_PASSWORD_UNREADABLE_MESSAGE })
   }
 
   // Cùng trần cổng với lúc lưu (`settings/index.put.ts`). Áp cả cho cấu hình đã

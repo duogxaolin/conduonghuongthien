@@ -442,6 +442,7 @@ export async function renameReader(params: { readerId: number, name: string }): 
       isBanned:          readerAccounts.isBanned,
       displayName:       readerAccounts.displayName,
       customDisplayName: readerAccounts.customDisplayName,
+      displayNameReserved: readerAccounts.displayNameReserved,
     })
     .from(readerAccounts)
     .where(eq(readerAccounts.id, params.readerId))

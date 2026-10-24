@@ -25,6 +25,7 @@ import { getDb, getPool } from '../utils/db'
 import { backups, activityLogs, settings } from '../db/schema'
 import { withNamedLock } from '../utils/named-lock'
 import { logInfo, logWarn } from '../utils/logger'
+import { settingsSecretForUse } from '../utils/settings-secrets'
 import { dumpSql } from './backup-sql'
 import { backupKindOf, expectedArchiveTop } from './backup-restore-guards'
 
@@ -226,14 +227,20 @@ export function backupsDir(): string {
   return configured ? path.resolve(configured) : path.resolve(process.cwd(), 'backups')
 }
 
-/** Đọc cấu hình backup từ settings (group `backup`), lùi về mặc định nếu thiếu. */
-async function readBackupConfig(db: ReturnType<typeof getDb>) {
+/**
+ * Đọc cấu hình backup từ settings (group `backup`), lùi về mặc định nếu thiếu.
+ * Khoá service account lưu dạng envelope (`cdkt-backup-drive-key:v1`) — giải mã ở
+ * đây, nơi duy nhất dùng nó; không mở được → rỗng + `driveServiceAccountUnreadable`.
+ */
+export async function readBackupConfig(db: ReturnType<typeof getDb>) {
   const rows = await db.select().from(settings)
   const map = new Map(rows.map(r => [r.key, r.value]))
+  const serviceAccount = settingsSecretForUse('backup_drive_service_account', map.get('backup_drive_service_account'))
   return {
     keepCount: Number(map.get('backup_keep_count')) || 14,
     driveEnabled: map.get('backup_drive_enabled') === 'true' || map.get('backup_drive_enabled') === '1',
-    driveServiceAccount: map.get('backup_drive_service_account') || '',
+    driveServiceAccount: serviceAccount.value,
+    driveServiceAccountUnreadable: serviceAccount.unreadable,
     driveFolderId: map.get('backup_drive_folder_id') || '',
   }
 }
@@ -583,6 +590,8 @@ export async function runBackup(
           driveUploaded = true
         } else if (link.reason === 'secret_unreadable') {
           throw new Error('Refresh token không giải mã được — dịch khoá hoặc liên kết lại Drive')
+        } else if (config.driveServiceAccountUnreadable) {
+          throw new Error('Khoá service account không giải mã được (khoá mã hoá đã đổi) — dán lại khoá JSON ở trang Sao lưu')
         }
         // else: not_linked + no service account → không upload, không lỗi.
       } catch (err) {

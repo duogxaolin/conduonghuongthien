@@ -103,6 +103,8 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/comments/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/google-oauth.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/ip-bans.vue', marker: 'v-if="loading"' },
+  // Chính sách bắt buộc MFA (wave2 2A) — biểu mẫu, dùng SkeletonForm.
+  { file: 'pages/admin/settings/security.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/media-portal.vue', marker: 'v-if="loading"' },
   // Backup & khôi phục — danh sách bản backup mang SkeletonTable.
   { file: 'pages/admin/settings/backup.vue', marker: 'v-if="loading"' },

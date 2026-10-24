@@ -232,6 +232,8 @@ export type CommentRow = {
   // effectiveDisplayName — see utils/display-name.ts.
   readerName:       string | null
   readerCustomName: string | null
+  /** The Google name is a reserved term → "Bạn đọc" (spec reader-display-names-google). */
+  readerNameReserved: boolean | null
 }
 
 export type PublicComment = {
@@ -263,7 +265,7 @@ export function serializePublicComment(row: CommentRow, viewerReaderId: number |
   const isAdminReply = row.adminUserId !== null
   const authorName = isAdminReply
     ? ADMIN_REPLY_DISPLAY_NAME
-    : effectiveDisplayName({ customDisplayName: row.readerCustomName, displayName: row.readerName })
+    : effectiveDisplayName({ customDisplayName: row.readerCustomName, displayName: row.readerName, displayNameReserved: row.readerNameReserved })
 
   return {
     id:           row.id,
@@ -392,6 +394,7 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
       isBanned: readerAccounts.isBanned,
       displayName: readerAccounts.displayName,
       customDisplayName: readerAccounts.customDisplayName,
+      displayNameReserved: readerAccounts.displayNameReserved,
     })
     .from(readerAccounts)
     .where(eq(readerAccounts.id, input.readerId))
@@ -865,6 +868,7 @@ export async function loadCommentThread(params: {
     createdAt:   articleComments.createdAt,
     readerName:       readerAccounts.displayName,
     readerCustomName: readerAccounts.customDisplayName,
+    readerNameReserved: readerAccounts.displayNameReserved,
   }
 
   const topRows = await db
@@ -925,6 +929,8 @@ export type AdminCommentRow = {
   /** The raw Google column, kept on the row so /admin/readers/[id] can show what
    *  the account was originally called next to the chosen name. */
   readerCustomName: string | null
+  /** Google name is a reserved term — the public sees "Bạn đọc", and so does this list. */
+  readerNameReserved: boolean | null
   readerEmail:  string | null
   adminUserId:  number | null
   adminName:    string | null
@@ -1005,6 +1011,7 @@ export async function listCommentsForAdmin(params: {
       readerId:     articleComments.readerId,
       readerName:       readerAccounts.displayName,
       readerCustomName: readerAccounts.customDisplayName,
+      readerNameReserved: readerAccounts.displayNameReserved,
       readerEmail:  readerAccounts.email,
       adminUserId:  articleComments.adminUserId,
       adminName:    users.username,
@@ -1051,7 +1058,7 @@ export async function listCommentsForAdmin(params: {
       ...row,
       readerName: row.readerId === null
         ? null
-        : effectiveDisplayName({ customDisplayName: row.readerCustomName, displayName: row.readerName }),
+        : effectiveDisplayName({ customDisplayName: row.readerCustomName, displayName: row.readerName, displayNameReserved: row.readerNameReserved }),
     })),
     total,
     page,

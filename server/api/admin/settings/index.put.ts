@@ -6,6 +6,8 @@ import { requireResourcePermission } from '../../../utils/permissions'
 import { FAVICON_ICO_SETTING_KEY, clearFaviconSettingCache } from '../../../utils/favicon-setting'
 import { clearOgImageSettingCache } from '../../../utils/og-image-setting'
 import { credentialRetargetViolation } from '../../../utils/settings-credential-guard'
+import { isSettingsSecretKey, sealSettingsSecret, SettingsSecretError } from '../../../utils/settings-secrets'
+import { MASKED_SECRET } from '../../../../shared/settings-credential-rules'
 
 /**
  * Allow-list of settings keys writable through this endpoint. Previously ANY key
@@ -89,11 +91,23 @@ export default defineEventHandler(async (event) => {
       }
 
       // Masked secrets: the UI sends '********' when the field was left untouched.
-      if ((key === 'r2_secret_key' || key === 'smtp_pass') && value === '********') continue
+      if ((key === 'r2_secret_key' || key === 'smtp_pass') && value === MASKED_SECRET) continue
 
-      const strValue = value === null || value === undefined ? '' : String(value)
-      if (strValue.length > MAX_VALUE_LENGTH) {
+      const typed = value === null || value === undefined ? '' : String(value)
+      if (typed.length > MAX_VALUE_LENGTH) {
         throw createError({ statusCode: 400, statusMessage: `Giá trị cài đặt "${key}" quá dài.` })
+      }
+      // `smtp_pass` / `r2_secret_key` chỉ được lưu dạng envelope (spec
+      // settings-secret-storage): rỗng = xoá, còn lại mã hoá. Thiếu khoá vật liệu thì
+      // TỪ CHỐI lưu — không bao giờ rơi về lưu nguyên văn.
+      let strValue = typed
+      if (isSettingsSecretKey(key) && typed !== '') {
+        try {
+          strValue = sealSettingsSecret(key, typed)
+        } catch (err: unknown) {
+          if (!(err instanceof SettingsSecretError)) throw err
+          throw createError({ statusCode: 500, statusMessage: 'Máy chủ chưa có khoá mã hoá (CHATBOT_ENCRYPTION_SECRET) nên không lưu được mật khẩu/khoá bí mật.' })
+        }
       }
 
       if (SUPERADMIN_ONLY_KEYS.has(key)) {

@@ -247,6 +247,62 @@ Luật "đổi đích phải gõ lại bí mật" chỉ chặn lúc **ghi**; hà
 
 ---
 
+## Đợt 2 — 2A bảo mật (2026-10-24)
+
+Bốn khoảng hở còn lại sau Wave 1, mỗi cái một quyết định thiết kế (openspec `wave2-hardening`, design D-CSRF / D1 / D-SECRETS / D-NAMES). Lịch sử → `docs/CHANGELOG.md` § 33.
+
+### Yêu cầu ghi khác site — vì sao `SameSite=Lax` không đủ
+
+Production chia tên miền đăng ký `delify.vn` với các trang khác. "Same-site" của cookie tính theo tên miền đăng ký, nên một `<form method=post>` trên `other.delify.vn` được trình duyệt gửi kèm cookie phiên `cdkt_admin` của cán bộ — Lax không chặn. `server/middleware/00.origin-gate.ts` (chạy trước `admin-auth` — Nitro sắp middleware theo `localeCompare` tên tệp) quyết định bằng thứ trình duyệt tự tính và trang web không ghi đè được: `Sec-Fetch-Site` (chỉ `same-origin`/`none` qua), không có thì `Origin` (`null`/hỏng → chặn; host phải là host của `PUBLIC_BASE_URL`, một mục của `PUBLIC_HOST_ALLOWLIST`, hoặc host của chính request — cái sau CHỈ khi peer là proxy đã khai (`peerIsTrustedProxy`; khi đó `X-Forwarded-Host`/`Host` do proxy chuyển). `Host` thô từ một peer lạ không bao giờ được tin (design D-CSRF): app mở thẳng ra ngoài chỉ chấp nhận các host đã cấu hình). Không có cả hai → cho qua (D-CSRF: cron/curl/E2E). Áp cho **mọi** phương thức ghi, không phân loại đường dẫn: bộ phân loại là thứ đã lệch pha với router ở `admin-auth` (`/api/%61dmin`), và mọi handler ghi đều nằm dưới `/api/**`. Từ chối không dùng token CSRF: token cần trạng thái và sửa mọi form/fetch, trong khi Fetch Metadata + Origin phủ mọi trình duyệt đang dùng. Trình duyệt rất cũ (không gửi header nào) chỉ còn Lax — đánh đổi đã chấp nhận.
+
+### MFA bắt buộc — khoá ngoài & break-glass
+
+Chính sách `off|privileged|all` (khoá `settings` `mfa_policy` + `mfa_enforce_after`, chỉ ghi qua `PUT /api/admin/security/mfa-policy`, SuperAdmin, audit cùng transaction; không nằm trong `ALLOWED_SETTING_KEYS`/`SETTINGS_READ_KEYS`). Mỗi lượt đổi đặt mốc = bây giờ + 14 ngày. Chốt ở `admin-auth` (sau khi nạp quyền từ CSDL): tài khoản thuộc diện, quá mốc, không có hàng yếu tố `active` → 403 `data.code = 'mfa_enrollment_required'`, trừ `auth/me`, `auth/logout`, `profile/password` và từng endpoint `profile/mfa/*` (liệt kê đủ, không khớp tiền tố; mọi dạng đã giải mã phải khớp, `#` không bao giờ qua). Đệm: chính sách 30 s (bỏ đệm khi ghi qua endpoint), "có yếu tố" 60 s theo `(user, tokenVersion)` — mọi thao tác đổi yếu tố đều tăng `tokenVersion` nên không có cửa sổ đọc nhầm.
+
+Rủi ro khoá người vận hành ra ngoài và lối thoát, theo thứ tự nên thử:
+1. **Mã dự phòng** — bật yếu tố đầu tiên dưới chính sách khác `off` phát kèm 10 mã (hiện một lần, bcrypt, không thay lô đang có). Đăng nhập bằng mã dự phòng ở bước thứ hai.
+2. **SuperAdmin xoá yếu tố của tài khoản đó** (`DELETE /api/admin/users/[id]/mfa`, đã có từ trước) — tài khoản về trạng thái "chưa có yếu tố", lại vào được trang bật MFA.
+3. **`MFA_ENFORCEMENT=0`** trong `.env` + `docker compose up -d --no-deps app` — không ai bị chặn vì thiếu MFA (đọc lúc request; chính sách vẫn lưu, banner vẫn nhắc). Bỏ lại ngay sau sự cố.
+4. **Sự cố hàng loạt đã biết**: xoay `JWT_SECRET` làm mọi TOTP vô hiệu (HKDF `cdkt-mfa-totp:v1`) — tài khoản chỉ có TOTP mất yếu tố dùng được nhưng hàng vẫn `active`, nên chốt không chặn họ; họ kẹt ở bước đăng nhập thứ hai → dùng (1) hoặc (2). Email OTP cần SMTP: SMTP hỏng (kể cả mật khẩu SMTP không giải mã được sau khi xoay `CHATBOT_ENCRYPTION_SECRET`) → (1), (2), hoặc (3) cho người chưa bật.
+5. SuperAdmin duy nhất tự khoá mình (mất thiết bị + mất mã): không có lối trong app — đặt `MFA_ENFORCEMENT=0` không giúp bước đăng nhập thứ hai. Lối cuối: xoá hàng `user_mfa_factors` của tài khoản đó bằng SQL trên VPS (`DELETE FROM user_mfa_factors WHERE user_id = ?`), ghi lại vào nhật ký vận hành.
+
+### Bí mật trong `settings` mã hoá lúc lưu
+
+`smtp_pass`, `r2_secret_key`, `backup_drive_service_account` từng nằm nguyên văn — tức nguyên văn trong mọi bản dump (sao lưu trong app, `backup-db.sh`, dump trước deploy, bản đẩy lên Drive). Nay envelope AES-256-GCM (`server/utils/settings-secrets.ts`, cùng primitive `secret-envelope.ts`), nhãn `cdkt-smtp-pass:v1` / `cdkt-r2-secret:v1` / `cdkt-backup-drive-key:v1`, khoá `CHATBOT_ENCRYPTION_SECRET`. **Không** có `lastFour` (khác các envelope cũ) — bốn ký tự cuối là một mẩu mật khẩu nằm trong mọi bản dump, và trang không hiện nó. Giải mã đúng một chỗ mỗi loại: `getSmtpConfig`, `loadR2Config` (upload và storage-size nay đi qua nó), `readBackupConfig`. Không mở được → giá trị dùng là rỗng + cờ (`passUnreadable`/`secretUnreadable`/`driveServiceAccountUnreadable`), gửi thử/kiểm tra R2/Drive báo đúng lý do, `sendMail` từ chối (không gửi không xác thực); GET cài đặt trả `needsReentry` (tên khoá), không bao giờ envelope. Giá trị nguyên văn cũ (khôi phục từ dump trước bản này) vẫn dùng được và được mã hoá ở lần khởi động kế tiếp. Thiếu khoá lúc lưu → 500, không bao giờ lưu nguyên văn.
+
+Lượt chuyển lúc khởi động (`server/db/settings-secret-conversion.ts`): chỉ mã hoá giá trị chưa phải envelope (kích hoạt theo trạng thái giá trị, tự xoá điều kiện → khởi động lần hai không ghi), mở thử envelope mới trước khi ghi, `UPDATE … WHERE value = <giá trị vừa đọc> COLLATE utf8mb4_bin`; envelope không mở được → để nguyên + log `db.migration.settings_secret_unreadable`; không có khoá → không ghi + `…_no_key`. Kiểm trên MySQL thật: khởi động 2 không đổi `CHECKSUM TABLE settings`. Cùng lượt chuyển chạy ngay sau một lượt "Khôi phục CSDL" thành công (bản dump trước 2A mang nguyên văn về; hỏng chỉ log, không đổi kết quả khôi phục). Phân loại fail closed: JSON có khoá `sealed` là envelope — nhãn lạ/thiếu trường là `unreadable`, không bao giờ là "nguyên văn" (coi là nguyên văn thì nơi dùng sẽ đăng nhập bằng chính chuỗi JSON).
+
+### Xoay `CHATBOT_ENCRYPTION_SECRET` (runbook)
+
+Biến này là khoá lúc lưu cho TÁM loại bí mật, mỗi loại một nhãn. Kiểm kê: `grep -rn "envVar: 'CHATBOT_ENCRYPTION_SECRET'" server/utils` ra SÁU tệp — năm tệp một nhãn, riêng `server/utils/settings-secrets.ts` giữ BA nhãn (`SETTINGS_SECRET_LABELS`: SMTP, R2 ảnh, service account) dựng bằng một vòng lặp:
+
+| Nhãn | Bí mật | Bảng | Nhập lại ở |
+|---|---|---|---|
+| `cdkt-ai-provider-key:v1` (`server/utils/ai/crypto.ts`) | API key các nhà cung cấp AI của AI Panel | `ai_providers` | `/admin/ai` → Nhà cung cấp |
+| `cdkt-chatbot-provider-key:v1` (`server/utils/chatbot/crypto.ts`) | API key nhà cung cấp của trợ lý (chatbot) | `chatbot_settings` | `/admin/chatbot/settings` |
+| `cdkt-google-oauth-secret:v1` | Client secret đăng nhập Google của người đọc | `google_oauth_settings` | `/admin/settings/google-oauth` |
+| `cdkt-backup-drive-oauth:v1` | Refresh token + client secret Drive OAuth | `backup_drive_oauth`, `backup_drive_oauth_config` | `/admin/settings/backup` (dán lại client secret, liên kết lại Drive) |
+| `cdkt-video-r2-secret:v1` | Secret Key R2 video | `settings` | `/admin/settings/media-portal` |
+| `cdkt-smtp-pass:v1` (2A) | Mật khẩu SMTP | `settings` | `/admin/settings/email` |
+| `cdkt-r2-secret:v1` (2A) | Secret Key R2 ảnh | `settings` | `/admin/settings/media-storage` |
+| `cdkt-backup-drive-key:v1` (2A) | Khoá JSON service account Drive | `settings` | `/admin/settings/backup` |
+
+TOTP của MFA KHÔNG nằm ở đây (dẫn xuất từ `JWT_SECRET`). Không có lượt mã hoá lại tự động (lượt chuyển chỉ mã hoá nguyên văn, không giải mã-mã hoá lại — chủ đích: chạy nhầm khoá không được biến bí mật đọc được thành không đọc được).
+
+1. Trước khi xoay: chuẩn bị lại MỌI bí mật ở bảng trên — API key AI Panel (từng nhà cung cấp), API key trợ lý, client secret Google, client secret Drive OAuth, Secret Key R2 video, mật khẩu SMTP, Secret Key R2 ảnh, khoá JSON service account. Không có chúng thì đừng xoay.
+2. Đổi `CHATBOT_ENCRYPTION_SECRET` trong `.env` (`openssl rand -base64 32`) → `./manage.sh` Update.
+3. Log khởi động có `db.migration.settings_secret_unreadable` (tên khoá, ba khoá `settings`) — dự kiến; các bí mật khác báo ở trang của chúng ("không giải mã được"/`secret_unreadable`). Nhập lại lần lượt theo cột cuối của bảng. Các trang báo "cần nhập lại" cho tới khi xong.
+4. Kiểm: "Gửi email thử", "Kiểm tra kết nối R2" (ảnh + video), một lượt "Chạy backup" có Drive, "Kiểm tra" nhà cung cấp ở AI Panel, một câu hỏi thử với trợ lý, một lượt đăng nhập Google của người đọc.
+5. Bản dump cũ chứa envelope của khoá cũ (và bản dump trước 2A chứa nguyên văn) — giữ hoặc huỷ theo chính sách lưu trữ tài liệu mật.
+
+**Khôi phục CSDL NGOÀI app** (`scripts/restore-db.sh`, hay `mysql < dump` tay): lượt mã hoá bí mật chỉ chạy lúc app khởi động và sau "Khôi phục" TRONG app. Khôi phục từ một bản dump trước 2A bằng script thì `smtp_pass`/`r2_secret_key`/khoá service account nằm nguyên văn trong `settings` cho tới khi app khởi động lại — nên ngay sau script: `docker compose up -d --no-deps --force-recreate app` (hoặc `./manage.sh` → Update), rồi kiểm log khởi động có `db.migration.settings_secrets_encrypted` (tên khoá) hoặc không có dòng `db.migration.settings_secret_*` nào (đã là envelope).
+
+### Tên Google là từ dành riêng
+
+Luật tên dành riêng chỉ áp cho tên người đọc tự đặt; tên Google đi thẳng vào `display_name` và hiện trên bình luận công khai, email trả lời và chat livestream. Nay OAuth callback đặt `reader_accounts.display_name_reserved` (cùng phép gấp `isReservedDisplayName`) mỗi lần đăng nhập; `effectiveDisplayName` hiện "Bạn đọc" khi cờ bật và chưa có tên tự đặt — cờ là tham số **bắt buộc** của hàm, nên một nơi gọi quên chọn cột là lỗi typecheck. Đăng nhập vẫn thành công (D-NAMES: từ chối sẽ khoá một người thật), tên Google lưu nguyên văn (lần đăng nhập sau đằng nào cũng ghi lại). Hàng có sẵn được điền cờ một lần lúc cột vừa được thêm (`server/db/reader-name-backfill.ts`). Kiểm chứng độc lập tìm thấy một chỗ lọt — chuông thông báo đọc thẳng hai cột tên qua `sql` thô (cờ ra `1`, không phải `true`) — nên: resolver nhận `1`/`0`, và guard `tests/reader-name-resolver-guard.test.ts` (bộ phân tích AST `tests/_reader-name-guard.ts`) xét TỪNG HÀM cấp cao nhất dưới `server/` (trừ `db/`): hàm nào đọc tên người đọc — tham chiếu cột `readerAccounts.displayName`/`customDisplayName` ở bất kỳ đâu (kể cả trong một hằng projection cấp module mà hàm nhắc tới, hay trong `sql\`${…}\``), chuỗi/template SQL có `display_name`/`custom_display_name` (có hay không backtick, kể cả chuỗi `pool.query`), hay chọn nguyên hàng `reader_accounts` — thì phải đọc cờ VÀ gọi `effectiveDisplayName` với cờ (object literal phải có khoá `displayNameReserved`), trực tiếp hoặc qua một hàm cùng tệp. Ngoại lệ theo `tệp#hàm` kèm lý do (màn hình chỉ cán bộ, bộ nạp danh tính); mục lỗi thời cũng làm test đỏ. Tám biến thể của lượt kiểm chứng lại là fixture. Giới hạn đã nói rõ: chỉ một bước gọi trong cùng tệp, và một hàm đọc tên rồi trả nguyên hàng cho tệp khác phải nằm trong danh sách ngoại lệ. Bản chụp tên chat livestream ghi trước 2A được che lúc đọc ra (`publicNameSnapshot`), không ghi lại hàng.
+
+---
+
 ## Pentest RedAmon 2026-10-06 — 12 findings, 0 CVE, risk 65/100 High
 
 Báo cáo external pentest `cdht.delify.vn` (RedAmon, 6/10/2026). Mọi finding đều là **misconfig deployment/DNS**, không phải soft vuln — 0 CVE, 0 confirmed exploit. Đối chiếu với codebase:

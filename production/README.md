@@ -224,9 +224,10 @@ Dev merge code vào `main`. **CI tự deploy**: build image → push GHCR → SS
 >
 > Container app chạy giờ Việt Nam (`TZ=Asia/Ho_Chi_Minh`), mysql giữ UTC — xem mục
 > *Múi giờ* trong `DEPLOY.md`. Biến dạng công tắc (`RETENTION_SCHEDULER`,
-> `ANALYTICS_SCHEDULER`, `BACKUP_SCHEDULER`, `LOG_LEVEL`, `LOGIN_CAPTCHA_ENABLED`) nay
-> đặt được trong `.env`; để trống = mặc định của code. **Đừng đặt
+> `ANALYTICS_SCHEDULER`, `BACKUP_SCHEDULER`, `LOG_LEVEL`, `LOGIN_CAPTCHA_ENABLED`,
+> `MFA_ENFORCEMENT`) nay đặt được trong `.env`; để trống = mặc định của code. **Đừng đặt
 > `LOGIN_CAPTCHA_ENABLED=0` trên production** — biến đó chỉ dành cho bộ E2E.
+> `MFA_ENFORCEMENT=0` chỉ dùng như công tắc khẩn cấp (xem § *Bảo mật đợt 2 — 2A*).
 
 Không cần làm gì trên VPS cho một lần cập nhật code thường. Chạy tay `manage.sh` chỉ khi cần (deploy lần đầu, đổi `.env`/port/domain, import SQL, hoặc CI deploy hỏng):
 
@@ -305,6 +306,21 @@ Từ đợt wave1 1B, ở production scheduler sao lưu **tự khởi động** 
 
 ---
 
+## Bảo mật đợt 2 — 2A: MFA bắt buộc, bí mật mã hoá, chặn yêu cầu khác site
+
+Bản cập nhật này **không cần sửa `.env`** — mọi thứ mặc định giữ nguyên hành vi cũ, trừ hai việc tự chạy:
+
+- **Mật khẩu SMTP, Secret Key R2 (ảnh) và khoá JSON service account Drive được mã hoá** trong bảng `settings` (khoá `CHATBOT_ENCRYPTION_SECRET`). Lần khởi động đầu của image mới tự mã hoá giá trị đang lưu nguyên văn (log `db.migration.settings_secrets_encrypted`, chỉ tên khoá); các lần sau không ghi gì. Bản dump trước deploy (`.deploy-db-backups/`) còn bản nguyên văn — **xử lý như tài liệu mật**, xoá khi không cần.
+  - Log `db.migration.settings_secret_unreadable` = một bí mật đã lưu không mở được bằng khoá hiện tại (khoá đã đổi). Giá trị đó **không bị ghi đè**; trang cài đặt (Email / Lưu trữ Media / Sao lưu) báo "cần nhập lại" — nhập lại rồi lưu.
+  - **Lùi về image cũ hơn bản này** thì ba giá trị trên là envelope mà code cũ không đọc được: email, R2 ảnh, Drive service account ngừng chạy cho tới khi nhập lại ở trang cài đặt (code cũ lưu lại nguyên văn).
+- **Chặn yêu cầu ghi khác site** (`server/middleware/00.origin-gate.ts`): mọi POST/PUT/PATCH/DELETE mà trình duyệt gửi thay một trang khác (kể cả tên miền con anh em `*.delify.vn`) bị 403, log `security.cross_site_refused` (đường dẫn + host của `Origin`). Host được chấp nhận làm `Origin`: host của `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST`, và host của chính request **chỉ khi** nginx là proxy đã khai trong `TRUSTED_PROXY_IPS` (khi đó `X-Forwarded-Host`/`Host` nginx chuyển — xem `CI-CD.md`). Đặt đủ mọi tên miền thật vào `PUBLIC_HOST_ALLOWLIST` là đủ. Trình duyệt hiện đại gửi `Sec-Fetch-Site` nên phần lớn lượt được quyết định trước bước so `Origin`. Cron/curl không gửi `Origin`/`Sec-Fetch-Site` nên không bị ảnh hưởng.
+- **Chính sách bắt buộc MFA** — mặc định `off`, không đổi gì cho tới khi SuperAdmin bật ở `/admin/settings/security` (`privileged` = SuperAdmin + ai sửa/xoá được Người dùng, Vai trò, Cài đặt; `all` = mọi tài khoản). Bật = 14 ngày chuyển tiếp (banner báo ngày), sau đó tài khoản thuộc diện chưa có yếu tố chỉ vào được trang "Tài khoản của tôi" để bật; lúc bật yếu tố đầu tiên hệ thống phát kèm mã dự phòng (hiện một lần).
+  - **Công tắc khẩn cấp `MFA_ENFORCEMENT=0`** trong `.env` (đã có trong `environment:` của compose) → `./manage.sh` Update hoặc `docker compose up -d --no-deps app`: không ai bị chặn vì thiếu MFA (chính sách vẫn lưu). Dùng khi một yếu tố hỏng hàng loạt — SMTP chết (email OTP), xoay `JWT_SECRET` (TOTP vô hiệu). Bỏ lại ngay khi xong sự cố.
+  - Khoá cứng một tài khoản: SuperAdmin xoá yếu tố của nó ở trang Người dùng (break-glass), hoặc đăng nhập bằng mã dự phòng. Runbook: `docs/decisions/realm-safety.md` § *MFA bắt buộc — khoá ngoài & break-glass*.
+- **Xoay `CHATBOT_ENCRYPTION_SECRET`** nay kéo theo: nhập lại mật khẩu SMTP, Secret Key R2 (ảnh + video) và khoá service account Drive, liên kết lại Drive OAuth, nhập lại API key các nhà cung cấp ở AI Panel (`cdkt-ai-provider-key:v1`), API key của trợ lý (`cdkt-chatbot-provider-key:v1`) và secret Google OAuth — tám nhãn, bảng đầy đủ trong runbook: `docs/decisions/realm-safety.md` § *Xoay CHATBOT_ENCRYPTION_SECRET*.
+
+---
+
 ## Dọn dữ liệu analytics thô (tồn đọng sau bản vá 1B)
 
 Lệnh dọn sự kiện xem trang thô (`analytics_page_view_events`, giữ 14 ngày) trước đây là câu SQL MySQL không chấp nhận, và lỗi bị nuốt. Vì vậy dữ liệu thô **chưa từng được dọn**, và các bảng tổng hợp theo ngày cũng không được dọn. Sau khi deploy, lượt bảo trì hằng đêm (scheduler trong app, hoặc cron `npm run analytics:maintenance`) bắt đầu xoá phần tồn đọng. Mỗi lượt xoá theo lô có trần (mặc định tối đa 1000 lô × 500 hàng mỗi bảng), nên với tồn đọng lớn, vài đêm đầu lượt bảo trì báo trạng thái `warning` (chưa dọn hết). Đó là bình thường; trạng thái tự về `success` khi đã dọn kịp. Chỉ xoá sự kiện của những ngày **đã tổng hợp xong**. Bước dọn nào hỏng sẽ ghi một dòng log `analytics.retention_step_failed` kèm `step` và `code`, và không chặn các bước khác.
@@ -340,7 +356,10 @@ archive `media_work` `cdkt-media-<mã>-<pid>.tar.gz` **và** archive `uploads_da
 `cdkt-uploads-<mã>-<pid>.tar.gz` (ảnh/tệp tải lên qua admin — trước đây chỉ bản sao lưu
 trong ứng dụng mới có). Khôi phục: `scripts/restore-db.sh` (CSDL, bắt buộc nêu tên
 database + `--replace`, tự dump bản hiện có trước khi ghi đè) và
-`scripts/restore-media.sh` (media hoặc uploads, theo tên archive).
+`scripts/restore-media.sh` (media hoặc uploads, theo tên archive). **Sau `restore-db.sh`
+luôn khởi động lại app** (`docker compose up -d --no-deps --force-recreate app`): bản dump
+trước 2A mang mật khẩu SMTP / Secret Key R2 / khoá service account nguyên văn, và chỉ lượt
+khởi động mới mã hoá chúng (`db.migration.settings_secrets_encrypted` trong log).
 
 **Một bản sao lưu chưa từng được khôi phục chỉ là giả thuyết** — nên lên lịch kiểm chứng
 hằng tháng (nạp vào CSDL tạm, không đụng CSDL đang chạy):
@@ -413,6 +432,8 @@ duy nhất chạy trước nó là bước siết quyền `.env` về 600 (khôn
   ```
 
   `restore-db.sh` tự dump bản hiện có (`backups/cdkt-prerestore-*`) trước khi ghi đè.
+  Rồi `docker compose up -d --no-deps app` — app khởi động lại cũng là lúc nó mã hoá bí mật
+  nguyên văn mà một bản dump cũ mang về.
   ⚠️ Lùi tay chỉ tạm thời: với `VPS_SMOKE_URL` đã đặt, lượt merge kế tiếp vào `main` — **kể cả
   merge chỉ sửa tài liệu** — so với bản vừa lùi về và deploy lại `HEAD` (gồm commit hỏng) đè
   lên nó. **Revert commit hỏng trên `main` trước lượt merge kế tiếp** (`CI-CD.md` § Lùi phiên bản).

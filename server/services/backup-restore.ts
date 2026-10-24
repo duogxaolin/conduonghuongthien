@@ -28,6 +28,7 @@ import { withNamedLock } from '../utils/named-lock'
 import { logError, logInfo, logWarn, SECURITY_EVENTS } from '../utils/logger'
 import { BackupLockBusyError, LOCK_RESTORE, backupsDir, holdRestoreTarget, runBackup, timestampStamp, type RunStatus } from './backup'
 import { restoreSql } from './backup-sql'
+import { convertPlaintextSettingsSecrets } from '../db/settings-secret-conversion'
 import { keepSchedulerStateAcrossRestore, readSchedulerStateForRestore } from './backup-scheduler'
 import {
   BackupRestoreError,
@@ -221,7 +222,18 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
         rowsBefore = await db.select().from(backups)
         schedulerStateBefore = await readSchedulerStateForRestore(db)
         setStatus(true, 'sql', 'Đang phục hồi CSDL')
-        ;({ legacyDateShift } = await restoreSql(filePath))
+        try {
+          ;({ legacyDateShift } = await restoreSql(filePath))
+        } finally {
+          // Bản dump trước 2A mang `smtp_pass` / `r2_secret_key` / khoá service
+          // account NGUYÊN VĂN về `settings`: mã hoá ngay khi `restoreSql` xong HOẶC
+          // hỏng giữa chừng (một phần dump đã chạy — bảng `settings` có thể đã bị
+          // thay), không đợi audit bên dưới (nó có thể ném) hay lần khởi động sau
+          // (kiểm chứng 2A, W3/W4 — spec settings-secret-storage). Lượt chuyển
+          // idempotent và không bao giờ ném: hỏng chỉ log, kết quả khôi phục giữ
+          // nguyên nghĩa của nó.
+          await encryptRestoredSecrets(pool, actor, filename)
+        }
       } else {
         setStatus(true, 'extract', 'Đang giải nén file', 0)
         await restoreFiles(filePath)
@@ -262,6 +274,21 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
     throw err
   }
   return outcome.value
+}
+
+/** Lượt mã hoá bí mật sau khôi phục CSDL — không bao giờ ném (xem nơi gọi). */
+async function encryptRestoredSecrets(pool: Parameters<typeof convertPlaintextSettingsSecrets>[0], actor: RestoreActor, filename: string): Promise<void> {
+  try {
+    const report = await convertPlaintextSettingsSecrets(pool)
+    if (report.converted.length) {
+      logInfo({ event: 'backup.restore_secrets_encrypted', userId: actor.id, filename, keys: report.converted })
+    }
+    if (report.needsReentry.length || report.skippedNoKey.length) {
+      logWarn({ event: 'backup.restore_secrets_not_converted', userId: actor.id, filename, needsReentry: report.needsReentry, skippedNoKey: report.skippedNoKey })
+    }
+  } catch (err: unknown) {
+    logWarn({ event: 'backup.restore_secret_conversion_failed', userId: actor.id, filename, error: messageOf(err) })
+  }
 }
 
 /**

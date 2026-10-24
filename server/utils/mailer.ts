@@ -6,6 +6,7 @@
 import nodemailer from 'nodemailer'
 import { getDb } from './db'
 import { settings } from '../db/schema'
+import { settingsSecretForUse } from './settings-secrets'
 
 export interface SmtpConfig {
   host: string
@@ -14,7 +15,16 @@ export interface SmtpConfig {
   user: string
   pass: string
   from: string
+  /**
+   * Mật khẩu ĐÃ LƯU là envelope không mở được (khoá mã hoá đã xoay). `pass` khi đó
+   * rỗng, và `sendMail` từ chối gửi — gửi không xác thực tới máy chủ SMTP đã cấu
+   * hình không phải điều cán bộ đã chọn.
+   */
+  passUnreadable?: boolean
 }
+
+export const SMTP_PASSWORD_UNREADABLE_MESSAGE
+  = 'Mật khẩu SMTP đã lưu không giải mã được (khoá mã hoá của máy chủ đã đổi). Hãy nhập lại mật khẩu ở trang Cấu hình Email.'
 
 const SMTP_KEYS = ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from'] as const
 
@@ -45,10 +55,14 @@ export async function getSmtpConfig(): Promise<SmtpConfig | null> {
   const port = Number(map.smtp_port) || 587
   // `secure` true → implicit TLS (usually port 465). Accept common truthy strings.
   const secure = ['true', '1', 'yes', 'on'].includes(String(map.smtp_secure || '').trim().toLowerCase())
-  const pass = map.smtp_pass || ''
+  // Lưu dạng envelope (`cdkt-smtp-pass:v1`); giải mã đúng lúc dùng.
+  const password = settingsSecretForUse('smtp_pass', map.smtp_pass)
   const from = (map.smtp_from || '').trim() || user
 
-  return { host, port, secure, user, pass, from }
+  return {
+    host, port, secure, user, pass: password.value, from,
+    ...(password.unreadable ? { passUnreadable: true } : {}),
+  }
 }
 
 /** True when SMTP host + user are configured (mail can be attempted). */
@@ -74,6 +88,9 @@ export async function sendMail(args: SendMailArgs): Promise<void> {
   const config = args.config ?? (await getSmtpConfig())
   if (!config) {
     throw new Error('SMTP chưa được cấu hình.')
+  }
+  if (config.passUnreadable) {
+    throw new Error(SMTP_PASSWORD_UNREADABLE_MESSAGE)
   }
 
   const transport = nodemailer.createTransport({
