@@ -29,9 +29,11 @@ import { media, activityLogs } from '../db/schema'
 import { logInfo, logWarn } from '../utils/logger'
 import type { R2Config } from '../utils/media-r2'
 import { loadR2Config } from './media'
-import { importScannedFile, knownScanSources, scanSourcePath } from './media-scan-import'
+import { buildLegacyR2Index, claimLegacyR2Row, importScannedFile, knownScanSources, scanSourcePath } from './media-scan-import'
 
-const LOCK_NAME = 'cdkt:media:scan'
+/** Khoá tên MySQL của lượt quét — giữ suốt worker. Lượt đổi domain R2 cũng giữ nó (`media-repoint.ts`). */
+export const MEDIA_SCAN_LOCK_NAME = 'cdkt:media:scan'
+const LOCK_NAME = MEDIA_SCAN_LOCK_NAME
 
 /** Trần số file mỗi lượt quét — chống treo nếu thư mục khổng lồ. */
 const MAX_FILES_PER_SCAN = 5000
@@ -58,6 +60,11 @@ export interface ScanJobStatus {
   conflicts: number
   /** Đường dẫn nguồn (tương đối) của tối đa 50 tệp xung đột đầu tiên. */
   conflictFiles: string[]
+  /**
+   * Tệp đã được lượt quét CŨ nhập lên R2 (hàng chưa có `scanned_source_path`, cùng tên +
+   * kích thước) — không nhập lại, hàng đó được ghi nguồn. Không tính vào `skipped`.
+   */
+  legacyMatched: number
   errors: string[]
   phase: 'scanning' | 'done' | 'failed' | 'cancelled'
   message: string
@@ -131,6 +138,7 @@ export async function startScanJob(
     skipped: 0,
     conflicts: 0,
     conflictFiles: [],
+    legacyMatched: 0,
     errors: [],
     phase: 'scanning',
     message: `Đang quét ${candidates.length} file`,
@@ -164,6 +172,7 @@ async function runScanWorker(
       imported: currentScanJob.imported,
       skipped: currentScanJob.skipped,
       conflicts: currentScanJob.conflicts,
+      legacyMatched: currentScanJob.legacyMatched,
       errors: currentScanJob.errors.length,
     })
   }
@@ -190,9 +199,18 @@ async function runScanWorker(
     // Tệp đã có hàng: `scanned_source_path` của mọi hàng + `storage_path` của hàng
     // local — tra O(1) theo đường dẫn tương đối với gốc uploads.
     const knownRows = await db
-      .select({ provider: media.provider, storagePath: media.storagePath, scannedSourcePath: media.scannedSourcePath })
+      .select({
+        id: media.id,
+        filename: media.filename,
+        sizeBytes: media.sizeBytes,
+        provider: media.provider,
+        storagePath: media.storagePath,
+        scannedSourcePath: media.scannedSourcePath,
+      })
       .from(media)
     const known = knownScanSources(knownRows, uploadsRoot)
+    // Hàng R2 do lượt quét CŨ nhập: chưa có nguồn, nhận diện bằng tên + kích thước (W3).
+    const legacy = buildLegacyR2Index(knownRows)
 
     let processed = 0
     for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
@@ -220,6 +238,15 @@ async function runScanWorker(
           continue
         }
         try {
+          if (source && await claimLegacyR2Row(db, legacy, fileAbs, source) !== null) {
+            known.add(source)
+            if (currentScanJob) {
+              currentScanJob.legacyMatched += 1
+              currentScanJob.done += 1
+            }
+            processed += 1
+            continue
+          }
           const outcome = await importScannedFile(db, fileAbs, uploadsRoot, adminUserId, { r2Config })
           if (currentScanJob) {
             if (outcome.kind === 'imported') currentScanJob.imported += 1
@@ -255,6 +282,7 @@ async function runScanWorker(
             imported: currentScanJob?.imported ?? 0,
             skipped: currentScanJob?.skipped ?? 0,
             conflicts: currentScanJob?.conflicts ?? 0,
+            legacyMatched: currentScanJob?.legacyMatched ?? 0,
           },
         })
       } catch { /* audit hỏng không sập batch */ }
@@ -263,7 +291,7 @@ async function runScanWorker(
     }
 
     // Audit tổng.
-    if (currentScanJob && (currentScanJob.imported > 0 || currentScanJob.skipped > 0)) {
+    if (currentScanJob && (currentScanJob.imported > 0 || currentScanJob.skipped > 0 || currentScanJob.legacyMatched > 0)) {
       try {
         await db.insert(activityLogs).values({
           userId: adminUserId,
@@ -274,6 +302,7 @@ async function runScanWorker(
             imported: currentScanJob.imported,
             skipped: currentScanJob.skipped,
             conflicts: currentScanJob.conflicts,
+            legacyMatched: currentScanJob.legacyMatched,
             truncated: currentScanJob.truncated,
           },
         })
@@ -282,7 +311,8 @@ async function runScanWorker(
 
     if (!currentScanJob?.cancelling) {
       const conflicts = currentScanJob?.conflicts ?? 0
-      finishJob('done', `Quét xong: ${currentScanJob?.imported ?? 0} nhập, ${currentScanJob?.skipped ?? 0} bỏ qua${conflicts ? ` (${conflicts} trùng tên với ảnh đã có trên R2 — không ghi đè)` : ''}`)
+      const legacyMatched = currentScanJob?.legacyMatched ?? 0
+      finishJob('done', `Quét xong: ${currentScanJob?.imported ?? 0} nhập, ${currentScanJob?.skipped ?? 0} bỏ qua${conflicts ? ` (${conflicts} trùng tên với ảnh đã có trên R2 — không ghi đè)` : ''}${legacyMatched ? `, ${legacyMatched} đã có từ lượt quét trước` : ''}`)
     }
   } catch (err) {
     logWarn({ event: 'media.scan_job_failed', error: err instanceof Error ? err.message : String(err) })

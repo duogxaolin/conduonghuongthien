@@ -11,12 +11,19 @@
  * `settings`, câu trả lời chatbot, bản dịch) **cộng `media.url` của hàng R2**. Bản
  * cũ chỉ đổi `media.url` + `articles.content`: 25 cột còn lại trỏ domain cũ mãi.
  *
- * **Khớp đúng ranh giới** (`domainRepointForms`, cùng định nghĩa ranh giới với lượt
- * đồng bộ): domain chỉ đổi khi đứng ngay sau `scheme://` và trước `/` hoặc một ranh
- * giới URL. Bản cũ `REPLACE(col, domain, …)` thay cả chuỗi con: `xold.cdn`,
+ * **Khớp đúng ranh giới** (`domainRepointForms` ở `media-repoint-match.ts`, cùng định
+ * nghĩa ranh giới với lượt đồng bộ): domain chỉ đổi khi đứng ngay sau `scheme://` và
+ * trước `/` hoặc một ranh giới URL; scheme + host không phân biệt hoa thường, đường
+ * dẫn có. Bản cũ `REPLACE(col, domain, …)` thay cả chuỗi con: `xold.cdn`,
  * `old.cdn.evil` bị đổi theo. Hệ quả có chủ đích: `r2_public_url` trong `settings`
  * (nếu lưu kèm scheme) cũng được đổi sang domain mới — ảnh tải lên sau đó dùng
- * domain mới.
+ * domain mới; `media_video_r2_public_url` cũng vậy nếu bucket video dùng chung domain cũ.
+ *
+ * **Domain mới phải phục vụ được ảnh**: trong CSP `img-src` và `image.domains` của
+ * NuxtImg (`shared/media-hosts.ts`, cùng nguồn `nuxt.config.ts` dựng header) — nếu
+ * không, 400 trước khi chạm gì.
+ *
+ * **Khoá**: giữ khoá đồng bộ ảnh và khoá quét thư mục suốt lượt (xem chỗ lấy khoá).
  *
  * **Một transaction**: mọi lượt đổi + dòng audit (kèm số hàng từng cột) cùng commit
  * hoặc cùng rollback. Mỗi cột: chọn id bằng một lượt đọc KHÔNG khoá (LIKE lọc thô +
@@ -37,17 +44,14 @@ import { activityLogs, media } from '../db/schema'
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import { withNamedLock } from '../utils/named-lock'
 import { logError, logInfo } from '../utils/logger'
+import { CSP_IMG_SRC_HOSTS, IMAGE_PROXY_DOMAINS, mediaHostProblem } from '../../shared/media-hosts'
 import { runBackup } from './backup'
-import { afterSettingsRewritten } from './media-sync-rewrite'
-import {
-  URL_REFERENCE_TARGETS,
-  assertRewritable,
-  domainRepointForms,
-  type DomainRepointForm,
-  type ReferenceTarget,
-} from './media-sync-url-match'
+import { MEDIA_SCAN_LOCK_NAME } from './media-scan'
+import { MEDIA_SYNC_LOCK_NAME, afterSettingsRewritten } from './media-sync-rewrite'
+import { domainRepointForms, type DomainRepointForm } from './media-repoint-match'
+import { URL_REFERENCE_TARGETS, assertRewritable, type ReferenceTarget } from './media-sync-url-match'
 
-const LOCK_NAME = 'cdkt:media:repoint-urls'
+/** Không xếp hàng: một lượt ghi ảnh khác đang chạy thì trả "bận" ngay. */
 const LOCK_TIMEOUT_SECONDS = 0
 
 /** Nhãn của `media.url` (hàng R2) trong `byTarget` — nằm ngoài 27 cột tham chiếu. */
@@ -83,25 +87,60 @@ export class RepointBackupError extends Error {
   }
 }
 
-/** Một lượt đổi domain khác đang chạy — endpoint trả 409. */
+/** Một lượt ghi ảnh khác (đổi domain, đồng bộ/sửa URL, quét thư mục) đang chạy — endpoint trả 409. */
 export class RepointBusyError extends Error {
   constructor() {
-    super('Một lượt đổi domain khác đang chạy. Thử lại sau.')
+    super('Đang có lượt đồng bộ ảnh, sửa URL, quét thư mục hoặc đổi domain khác chạy. Thử lại sau khi lượt đó xong.')
     this.name = 'RepointBusyError'
   }
 }
 
 /**
- * Chuẩn hoá domain: bỏ `https://`/`http://` đầu, bỏ `/` cuối. Giữ tiền tố đường dẫn
- * nếu có (`cdn.x.vn/media`). Ném `RepointInputError` nếu không dùng được.
+ * Chuẩn hoá domain qua `URL` (W1): host chữ thường, IDN → punycode (`bücher.vn` →
+ * `xn--bcher-kva.vn`), cổng khác mặc định giữ lại, tiền tố đường dẫn giữ nguyên chữ
+ * (`CDN.X.VN/Media/` → `cdn.x.vn/Media`), bỏ `/` cuối. Nhận có hoặc không có `http(s)://`.
+ * Từ chối tài khoản (`u:p@`), `?truy vấn`, `#`, scheme khác http(s). Ném
+ * `RepointInputError` nếu không dùng được.
  */
 export function normalizeRepointDomain(input: string, field: string): string {
-  let v = input.trim()
-  if (!v) throw new RepointInputError(`${field} không được để trống.`)
-  v = v.replace(/^https?:\/\//i, '').replace(/\/+$/, '')
-  if (!v) throw new RepointInputError(`${field} không hợp lệ.`)
-  if (/\s/.test(v)) throw new RepointInputError(`${field} không được chứa khoảng trắng.`)
-  return v
+  const raw = input.trim()
+  if (!raw) throw new RepointInputError(`${field} không được để trống.`)
+  if (/\s/.test(raw)) throw new RepointInputError(`${field} không được chứa khoảng trắng.`)
+  const hasScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(raw)
+  let url: URL
+  try {
+    url = new URL(hasScheme ? raw : `https://${raw}`)
+  } catch {
+    throw new RepointInputError(`${field} không hợp lệ.`)
+  }
+  if (url.protocol !== 'https:' && url.protocol !== 'http:') throw new RepointInputError(`${field} phải là địa chỉ http(s).`)
+  if (!url.hostname) throw new RepointInputError(`${field} không hợp lệ.`)
+  if (url.username || url.password || url.search || url.hash) {
+    throw new RepointInputError(`${field} chỉ gồm domain (kèm tiền tố đường dẫn nếu có) — không tài khoản, không ?truy vấn, không #.`)
+  }
+  return `${url.host}${url.pathname.replace(/\/+$/, '')}`
+}
+
+/**
+ * Domain mới phải phục vụ được ảnh (W2): trong CSP `img-src` (nếu không, trình duyệt
+ * chặn mọi ảnh vừa đổi trên toàn site) và trong `image.domains` của NuxtImg (nếu không,
+ * ảnh tối ưu thành ảnh dự phòng). Cùng danh sách `nuxt.config.ts` dựng header từ đó.
+ */
+function assertServableImageHost(newDomain: string): void {
+  const host = newDomain.split('/')[0]!
+  const problem = mediaHostProblem(host)
+  if (problem === 'csp') {
+    throw new RepointInputError(
+      `Domain mới ${host} không nằm trong nguồn ảnh CSP img-src (${CSP_IMG_SRC_HOSTS.join(', ')}) — trình duyệt sẽ chặn mọi ảnh sau khi đổi. `
+      + 'Thêm host vào shared/media-hosts.ts và deploy trước, rồi mới đổi domain.',
+    )
+  }
+  if (problem === 'ipx') {
+    throw new RepointInputError(
+      `Domain mới ${host} chưa có trong image.domains của NuxtImg/IPX (${IMAGE_PROXY_DOMAINS.join(', ')}) — logo và ảnh đại diện tối ưu sẽ thành ảnh dự phòng. `
+      + 'Thêm host vào IMAGE_PROXY_DOMAINS ở shared/media-hosts.ts và deploy trước, rồi mới đổi domain.',
+    )
+  }
 }
 
 type Executor = Database | Parameters<Parameters<Database['transaction']>[0]>[0]
@@ -114,7 +153,9 @@ function columnText(target: ReferenceTarget): SQL {
 /** "Hàng chứa ít nhất một dạng, đúng ranh giới" — LIKE lọc thô rồi REGEXP quyết định. */
 function matchesAnyForm(target: ReferenceTarget, forms: DomainRepointForm[]): SQL {
   const text = columnText(target)
-  return or(...forms.map(f => sql`(${target.column} LIKE ${f.like} AND ${text} REGEXP ${f.pattern})`))!
+  // `LOWER(…)`: mẫu LIKE là chữ thường để khớp mọi kiểu viết hoa của scheme/host, kể cả
+  // trên cột JSON (so sánh theo collation nhị phân). REGEXP quyết định, có ranh giới.
+  return or(...forms.map(f => sql`(LOWER(${text}) LIKE ${f.like} AND ${text} REGEXP ${f.pattern})`))!
 }
 
 /** Giá trị mới của cột: mọi dạng thay lồng nhau (các dạng rời nhau — https/http, thô/thoát `\/`). */
@@ -184,6 +225,7 @@ export async function repointR2Urls(
   if (oldDomain === newDomain) {
     throw new RepointInputError('Domain cũ và domain mới giống nhau — không có gì để đổi.')
   }
+  assertServableImageHost(newDomain)
   // Domain mới chứa domain cũ (`cdn.x.vn` → `cdn.x.vn/v2`): lượt đổi không còn
   // idempotent — chạy lại sẽ nối thêm. Ký tự phá HTML/JSON cũng bị chặn ở đây.
   try {
@@ -196,8 +238,13 @@ export async function repointR2Urls(
   const pool = getPool()
   if (!pool) throw new Error('Cơ sở dữ liệu chưa sẵn sàng.')
 
-  // Khoá MySQL named lock — timeout 0 (không xếp hàng). Hai lượt đổi không chạy chồng.
-  const outcome = await withNamedLock(pool, LOCK_NAME, LOCK_TIMEOUT_SECONDS, async () => {
+  // Khoá (W4): lượt đổi giữ khoá của MỌI lượt ghi ảnh dựng URL R2 từ `r2_public_url` —
+  // đồng bộ local ↔ R2 + "Sửa URL" (`MEDIA_SYNC_LOCK_NAME`) và quét thư mục tự đẩy R2
+  // (`MEDIA_SCAN_LOCK_NAME`). Chạy song song, chúng đọc domain CŨ lúc bắt đầu và ghi
+  // hàng/nội dung mang domain cũ SAU khi lượt đổi đã commit — lượt đổi "xong" mà URL
+  // cũ vẫn mọc thêm. Khoá đồng bộ cũng chặn hai lượt đổi domain chạy chồng. Timeout 0,
+  // luôn cùng thứ tự (đồng bộ → quét): không chờ, không deadlock.
+  const locked = await withNamedLock(pool, MEDIA_SYNC_LOCK_NAME, LOCK_TIMEOUT_SECONDS, () => withNamedLock(pool, MEDIA_SCAN_LOCK_NAME, LOCK_TIMEOUT_SECONDS, async () => {
     // ── Phase 1: sao lưu SQL — bắt buộc ─────────────────────────────────────
     let backupStamp: string
     try {
@@ -234,11 +281,11 @@ export async function repointR2Urls(
       })
       return { mediaUpdated, contentRowsUpdated, byTarget, backupStamp }
     })
-  })
+  }))
 
-  if (!outcome.acquired) throw new RepointBusyError()
+  if (!locked.acquired || !locked.value.acquired) throw new RepointBusyError()
 
-  const result = outcome.value
+  const result = locked.value.value
   // Sau commit: bộ đệm favicon/og:image không được giữ URL domain cũ.
   afterSettingsRewritten(result.byTarget)
   logInfo({

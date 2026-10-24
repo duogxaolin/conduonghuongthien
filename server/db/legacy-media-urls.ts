@@ -10,7 +10,7 @@
  * URL R2 của hàng `media` mang đúng tên tệp. Ba điều wave2 D-SCAN sửa:
  *
  *   - **Tên tệp mơ hồ không được ánh xạ.** Hai hàng `media` (bất kể provider) cùng
- *     tên tệp — `2026/09/a.jpg` và `2026/10/a.jpg` sau một lượt quét — thì liên kết
+ *     tên tệp mà KHÁC URL — `2026/09/a.jpg` và `2026/10/a.jpg` sau một lượt quét — thì liên kết
  *     `migrated/media/a.jpg` không cho biết ảnh nào. Bản cũ lấy hàng đọc sau cùng
  *     (`Map.set` ghi đè), tức là trỏ bài viết vào một ảnh có thể khác. Nay: bỏ qua,
  *     giữ nguyên liên kết, và log tên tệp (`db.migration.legacy_media_ambiguous`).
@@ -58,27 +58,34 @@ export interface MigratedMediaMap {
   ambiguous: Set<string>
 }
 
-/** Mọi hàng `media` (mọi provider) → bảng ánh xạ tên tệp → URL R2, bỏ khoá mơ hồ. */
+/**
+ * Mọi hàng `media` (mọi provider) → bảng ánh xạ tên tệp → URL R2, bỏ khoá mơ hồ.
+ * Mơ hồ = khoá dẫn tới HƠN MỘT URL khác nhau (S1): hai hàng trùng chung một URL (cùng
+ * một object) không làm liên kết mơ hồ — đích của nó là duy nhất.
+ */
 export function buildMigratedMediaMap(rows: ReadonlyArray<{ filename: unknown; url: unknown; provider: unknown }>): MigratedMediaMap {
-  const owners = new Map<string, Set<number>>()
-  rows.forEach((row, index) => {
+  /** khoá → URL → có hàng R2 nào mang URL đó không. */
+  const owners = new Map<string, Map<string, boolean>>()
+  for (const row of rows) {
     const filename = typeof row.filename === 'string' ? row.filename : ''
-    if (!filename) return
+    if (!filename) continue
+    const url = typeof row.url === 'string' ? row.url : ''
     for (const key of new Set([filename, safeEncodeComponent(filename)])) {
-      const set = owners.get(key) ?? new Set<number>()
-      set.add(index)
-      owners.set(key, set)
+      const urls = owners.get(key) ?? new Map<string, boolean>()
+      urls.set(url, (urls.get(url) ?? false) || row.provider === 'r2')
+      owners.set(key, urls)
     }
-  })
+  }
   const urlByName = new Map<string, string>()
   const ambiguous = new Set<string>()
-  for (const [key, set] of owners) {
-    if (set.size > 1) {
+  for (const [key, urls] of owners) {
+    if (urls.size > 1) {
       ambiguous.add(key)
       continue
     }
-    const row = rows[[...set][0]!]!
-    if (row.provider === 'r2' && typeof row.url === 'string' && row.url) urlByName.set(key, row.url)
+    for (const [url, onR2] of urls) {
+      if (onR2 && url) urlByName.set(key, url)
+    }
   }
   return { urlByName, ambiguous }
 }

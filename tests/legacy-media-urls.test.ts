@@ -41,6 +41,16 @@ test('hai hàng cùng tên tệp: không ánh xạ, liên kết giữ nguyên, t
   assert.deepEqual([...out.ambiguousSeen], ['a.jpg'])
 })
 
+test('hai hàng cùng tên tệp nhưng CÙNG một URL R2 (hàng trùng, một object): không mơ hồ — đếm URL khác nhau, không đếm hàng (S1)', () => {
+  const map = buildMigratedMediaMap([
+    { filename: 'g.jpg', provider: 'r2', url: 'https://cdn.test/2026/10/g.jpg' },
+    { filename: 'g.jpg', provider: 'r2', url: 'https://cdn.test/2026/10/g.jpg' },
+  ])
+  assert.equal(map.urlByName.get('g.jpg'), 'https://cdn.test/2026/10/g.jpg')
+  assert.equal(map.ambiguous.has('g.jpg'), false)
+  assert.equal(rewriteMigratedMediaLinks('<img src="/uploads/migrated/media/g.jpg">', map).content, '<img src="https://cdn.test/2026/10/g.jpg">')
+})
+
 test('mơ hồ tính cả khi một trong hai hàng là local, và trên dạng mã hoá', () => {
   const localAndR2 = buildMigratedMediaMap([
     { filename: 'c.jpg', provider: 'local', url: '/uploads/2026/09/c.jpg' },

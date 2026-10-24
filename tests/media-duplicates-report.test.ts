@@ -56,11 +56,29 @@ const fakeDb = {
   delete: () => { store.writes += 1; throw new Error('the report must not write') },
 }
 
+/** Khoá tên MySQL giả: một người giữ một lúc, cộng công tắc "đang chạy ở nơi khác". */
+const lock = { busyElsewhere: false, held: false, names: [] as string[] }
+const fakePool = {
+  getConnection: async () => ({
+    query: async (sql: string, params: unknown[] = []) => {
+      if (sql.includes('GET_LOCK')) {
+        lock.names.push(String(params[0]))
+        if (lock.busyElsewhere || lock.held) return [[{ acquired: 0 }]]
+        lock.held = true
+        return [[{ acquired: 1 }]]
+      }
+      if (sql.includes('RELEASE_LOCK')) lock.held = false
+      return [[]]
+    },
+    release: () => undefined,
+  }),
+}
+
 mock.module(new URL('../server/utils/db.ts', import.meta.url), {
-  namedExports: { getDb: () => fakeDb, getPool: () => null },
+  namedExports: { getDb: () => fakeDb, getPool: () => fakePool },
 })
 
-const { findMediaDuplicates } = await import('../server/services/media-duplicates.ts')
+const { findMediaDuplicates, runMediaDuplicateReport, MEDIA_DUPLICATES_LOCK_NAME } = await import('../server/services/media-duplicates.ts')
 
 const at = new Date('2026-10-01T00:00:00Z')
 const row = (id: number, filename: string, sizeBytes: number, provider: string, url: string, storagePath: string): MediaRow =>
@@ -98,6 +116,7 @@ test('nhóm theo tên tệp + kích thước và theo chỗ lưu, kèm số nơi
   seed()
   const report = await findMediaDuplicates(fakeDb as never)
   assert.equal(report.truncated, false)
+  assert.equal(report.usageTruncated, false, 'every reference column was read to its end')
   assert.equal(store.writes, 0, 'báo cáo không ghi gì')
 
   const byFilename = report.groups.filter(g => g.kind === 'filename_size')
@@ -139,10 +158,48 @@ test('không có trùng lặp: không nhóm nào, không quét cột tham chiế
   const original = fakeDb.execute
   fakeDb.execute = async (q) => { executed += 1; return original(q) }
   try {
-    assert.deepEqual(await findMediaDuplicates(fakeDb as never), { groups: [], truncated: false })
+    assert.deepEqual(await findMediaDuplicates(fakeDb as never), { groups: [], truncated: false, usageTruncated: false })
     assert.equal(executed, 0)
   } finally {
     fakeDb.execute = original
+  }
+})
+
+test('báo cáo có trần: quá số hàng tham chiếu hoặc quá thời gian thì dừng đọc và báo usageTruncated (W5)', async () => {
+  seed()
+  const full = await findMediaDuplicates(fakeDb as never)
+  const usageOf = (report: typeof full, id: number) => report.groups.flatMap(g => g.rows).find(r => r.id === id)!.usage
+
+  // Trần hàng: dừng sau trang đầu của cột đầu tiên (`articles.content`).
+  const capped = await findMediaDuplicates(fakeDb as never, { maxReferenceRows: 1 })
+  assert.equal(capped.usageTruncated, true)
+  assert.deepEqual(capped.groups.map(g => g.rows.map(r => r.id)), full.groups.map(g => g.rows.map(r => r.id)), 'the groups are complete; only the usage counts are partial')
+  assert.deepEqual(usageOf(capped, 1), { total: 1, byTarget: { 'articles.content': 1 } }, 'a lower bound: the thumbnail column was never read')
+
+  // Hạn giờ: đồng hồ giả, mỗi lần hỏi trôi 1 giây; hạn 1,5 giây → đọc đúng một trang.
+  let now = 0
+  const timed = await findMediaDuplicates(fakeDb as never, { maxDurationMs: 1500, clock: () => (now += 1000) })
+  assert.equal(timed.usageTruncated, true)
+  assert.deepEqual(usageOf(timed, 1), { total: 1, byTarget: { 'articles.content': 1 } })
+})
+
+test('một báo cáo một lúc: lượt thứ hai (cùng tiến trình hay bản sao khác) bị từ chối, không đọc gì (W5)', async () => {
+  seed()
+  let executed = 0
+  const original = fakeDb.execute
+  fakeDb.execute = async (q) => { executed += 1; return original(q) }
+  try {
+    lock.busyElsewhere = true
+    await assert.rejects(() => runMediaDuplicateReport(fakeDb as never, fakePool as never), (err: unknown) => (err as Error).name === 'DuplicateReportBusyError')
+    assert.equal(executed, 0)
+    lock.busyElsewhere = false
+    const report = await runMediaDuplicateReport(fakeDb as never, fakePool as never)
+    assert.equal(report.groups.length, 2)
+    assert.equal(lock.held, false, 'the lock is released afterwards')
+    assert.equal(lock.names.at(-1), MEDIA_DUPLICATES_LOCK_NAME)
+  } finally {
+    fakeDb.execute = original
+    lock.busyElsewhere = false
   }
 })
 
@@ -164,4 +221,9 @@ test('endpoint: cần quyền media.read; trả nhóm trùng', async () => {
   assert.equal(res.ok, true)
   assert.equal(res.groups.length, 2)
   assert.equal(res.truncated, false)
+  assert.equal((res as unknown as { usageTruncated: boolean }).usageTruncated, false)
+
+  lock.busyElsewhere = true
+  await assert.rejects(() => handler({ context: { adminUser: mediaReader } }), (err: unknown) => (err as { statusCode?: number }).statusCode === 409)
+  lock.busyElsewhere = false
 })

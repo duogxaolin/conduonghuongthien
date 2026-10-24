@@ -1470,8 +1470,8 @@ function repairedMediaUrl(url: string, domain: string | null): string {
 
 /**
  * Steps 2 and 3 for `articles.content`, with the media rows as they stand after
- * step 1. A file name (raw or `encodeURIComponent`) carried by more than one `media`
- * row, whatever its provider, is ambiguous and never mapped.
+ * step 1. A file name (raw or `encodeURIComponent`) that leads to more than one
+ * distinct `media.url`, whatever the providers, is ambiguous and never mapped.
  */
 function repairedArticleContent(content: string, media: Cells[], domain: string | null): string {
   let value = content
@@ -1489,7 +1489,9 @@ function repairedArticleContent(content: string, media: Cells[], domain: string 
   }
   const urlByFilename = new Map<string, string>()
   for (const [name, rows] of owners) {
-    if (rows.length === 1 && rows[0]!.provider === 'r2' && rows[0]!.url) urlByFilename.set(name, rows[0]!.url)
+    // Ambiguous = more than one DISTINCT url (two duplicate rows of one object are not).
+    const urls = new Set(rows.map(row => row.url))
+    if (urls.size === 1 && rows[0]!.url && rows.some(row => row.provider === 'r2')) urlByFilename.set(name, rows[0]!.url)
   }
   if (!value.includes('/uploads/migrated/media/') || urlByFilename.size === 0) return value
   value = value

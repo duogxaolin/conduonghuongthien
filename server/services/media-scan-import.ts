@@ -18,18 +18,25 @@
  *   3. **Không để object mồ côi.** Ghi hàng hỏng sau khi đã tải lên → xoá object vừa
  *      tải, log `media.scan_insert_failed` (`objectDeleted`), rồi ném lỗi cho lượt
  *      quét đếm vào `errors`. Xoá cũng hỏng → `objectDeleted: false` kèm khoá để dọn tay.
+ *      Trước khi xoá, hỏi lại có hàng nào sở hữu khoá không (lỗi lúc COMMIT không chứng
+ *      minh hàng chưa ghi) — có thì giữ (`keptBecause`).
  *
- * Hàng đã quét TRƯỚC bản vá không có `scanned_source_path` và không suy ngược được
- * chắc chắn — báo cáo trùng lặp (`media-duplicates.ts`) phủ chúng.
+ * Hàng R2 do lượt quét TRƯỚC bản vá nhập không có `scanned_source_path`. Lượt quét
+ * đầu sau bản vá nhận chúng bằng tên tệp + kích thước (`claimLegacyR2Row`) và ghi nguồn
+ * cho chúng; phần còn mơ hồ (tên + kích thước trùng nhiều hàng) báo ở báo cáo trùng lặp
+ * (`media-duplicates.ts`).
  */
 import { promises as fs, type Stats } from 'node:fs'
 import path from 'node:path'
 import sharp from 'sharp'
 
+import { and, eq, isNull } from 'drizzle-orm'
+
 import type { getDb } from '../utils/db'
 import { activityLogs, media } from '../db/schema'
+import { affectedRowsOrZero } from '../utils/affected-rows'
 import { detectImageMime, isSharpDecodable } from '../utils/image-mime'
-import { logError, logWarn } from '../utils/logger'
+import { logError, logInfo, logWarn } from '../utils/logger'
 import { deleteR2File, r2ObjectKeyFor, uploadR2File, type R2Config } from '../utils/media-r2'
 import { otherRowOwns } from './media-sync-files'
 
@@ -81,16 +88,67 @@ function describeError(err: unknown): string {
 }
 
 /**
- * Xoá object vừa tải lên khi hàng của nó không ghi được. Không bao giờ ném — kết quả
- * nằm trong log. `deleteR2File` trả `false` khi R2 lỗi và NÉM khi cấu hình đã lưu
- * không dùng được (`R2ConfigInvalidError`): cả hai đều là "object còn đó".
+ * Xoá object vừa tải lên khi hàng của nó "không ghi được". Không bao giờ ném — kết quả
+ * nằm trong log.
+ *
+ * Hỏi lại `otherRowOwns` NGAY TRƯỚC khi xoá (W4): lỗi lúc ghi không chứng minh hàng
+ * chưa commit — kết nối rơi đúng lúc COMMIT thì hàng đã có mà nơi gọi vẫn nhận lỗi, và
+ * xoá object lúc đó là để lại một hàng trỏ vào ảnh không còn. Có hàng sở hữu khoá →
+ * GIỮ. Hỏi lỗi → cũng giữ (tệp thừa rẻ hơn ảnh vỡ). `deleteR2File` trả `false` khi
+ * R2 lỗi và NÉM khi cấu hình đã lưu không dùng được (`R2ConfigInvalidError`): cả hai
+ * đều là "object còn đó".
  */
-async function deleteOrphanObject(key: string, r2Config: R2Config): Promise<{ deleted: boolean; error?: string }> {
+async function deleteOrphanObject(db: Db, key: string, r2Config: R2Config): Promise<{ deleted: boolean; keptBecause?: 'owned_by_row' | 'ownership_unknown'; error?: string }> {
+  try {
+    if (await otherRowOwns(db, 0, 'r2', key, null)) return { deleted: false, keptBecause: 'owned_by_row' }
+  } catch (err: unknown) {
+    return { deleted: false, keptBecause: 'ownership_unknown', error: describeError(err) }
+  }
   try {
     return { deleted: await deleteR2File(key, r2Config) }
   } catch (err: unknown) {
     return { deleted: false, error: describeError(err) }
   }
+}
+
+/**
+ * Chỉ mục các hàng R2 do lượt quét CŨ nhập (W3): `provider='r2'`, chưa có
+ * `scanned_source_path`, khoá `tên tệp + kích thước` → id tăng dần. Bản quét cũ tải lên
+ * R2 theo khoá THÁNG TẢI LÊN (`r2ObjectKeyFor(filename, now)`), không theo thư mục
+ * nguồn, nên khoá R2 không suy được từ đường dẫn tệp — chỉ còn tên + kích thước.
+ */
+export function buildLegacyR2Index(
+  rows: ReadonlyArray<{ id: number; filename: string; sizeBytes: number; provider: string; scannedSourcePath: string | null }>,
+): Map<string, number[]> {
+  const index = new Map<string, number[]>()
+  for (const row of [...rows].sort((a, b) => a.id - b.id)) {
+    if (row.provider !== 'r2' || row.scannedSourcePath) continue
+    const key = `${row.filename}\u0000${row.sizeBytes}`
+    index.set(key, [...(index.get(key) ?? []), row.id])
+  }
+  return index
+}
+
+/**
+ * Tệp này có phải bản đã được lượt quét CŨ nhập lên R2 không: nhận hàng cũ còn trống
+ * nguồn có id nhỏ nhất cùng tên + kích thước, GHI nguồn cho nó (lượt sau nhận ra qua
+ * `scanned_source_path`, không cần đoán lại) và trả id; không có → `null`. Mỗi tệp
+ * nhận tối đa MỘT hàng, mỗi hàng chỉ một tệp (`WHERE scanned_source_path IS NULL`).
+ */
+export async function claimLegacyR2Row(db: Db, index: Map<string, number[]>, absolutePath: string, source: string): Promise<number | null> {
+  let stat: Stats
+  try { stat = await fs.lstat(absolutePath) } catch { return null }
+  if (!stat.isFile()) return null
+  const ids = index.get(`${path.basename(absolutePath)}\u0000${stat.size}`)
+  while (ids && ids.length > 0) {
+    const id = ids.shift()!
+    const [result] = await db.update(media).set({ scannedSourcePath: source }).where(and(eq(media.id, id), isNull(media.scannedSourcePath)))
+    if (affectedRowsOrZero(result) === 1) {
+      logInfo({ event: 'media.scan_legacy_matched', source, mediaId: id })
+      return id
+    }
+  }
+  return null
 }
 
 export interface ImportScannedFileOptions {
@@ -194,13 +252,14 @@ export async function importScannedFile(
     return { kind: 'imported', mediaId, provider }
   } catch (err: unknown) {
     if (uploadedKey && r2Config) {
-      const cleanup = await deleteOrphanObject(uploadedKey, r2Config)
+      const cleanup = await deleteOrphanObject(db, uploadedKey, r2Config)
       logError({
         event: 'media.scan_insert_failed',
         source,
         key: uploadedKey,
         objectDeleted: cleanup.deleted,
         error: describeError(err),
+        ...(cleanup.keptBecause ? { keptBecause: cleanup.keptBecause } : {}),
         ...(cleanup.error ? { deleteError: cleanup.error } : {}),
       })
     } else {

@@ -165,6 +165,12 @@ test('fresh database: every group\'s defaults are inserted once and every defaul
   const marked = await markers()
   const expectedMarkers = SEED_GROUPS.flatMap(group => group.sets.map(set => seedMarkerKey(group.name, set.version))).sort()
   assert.deepEqual(Object.keys(marked).sort(), expectedMarkers)
+  // The stored format is pinned literally, independent of `seedMarkerKey`: a changed
+  // format would leave every existing database unmarked and re-seed each group once.
+  assert.deepEqual(Object.keys(marked).sort(), [
+    'seed.categories.v1.done', 'seed.content_types.v1.done', 'seed.media_categories.v1.done',
+    'seed.moderation_rules.v1.done', 'seed.social_links.v1.done',
+  ])
   for (const value of Object.values(marked)) assert.ok(!Number.isNaN(Date.parse(value)), `marker value ${value} is an ISO time`)
 
   // Khởi động lần hai trên CSDL vừa seed: không thêm, không đổi gì.

@@ -28,6 +28,8 @@ interface ScanJobStatus {
   /** Tệp trùng tên với một ảnh đã có trên R2 — bỏ qua, không ghi đè (gồm trong `skipped`). */
   conflicts: number
   conflictFiles: string[]
+  /** Tệp lượt quét trước đã nhập lên R2 (nhận lại theo tên + kích thước) — không nhập lại. */
+  legacyMatched: number
   errors: string[]
   phase: 'scanning' | 'done' | 'failed' | 'cancelled'
   message: string
@@ -523,6 +525,10 @@ const runSelfHeal = async (dryRun: boolean) => {
         <div v-if="scanJob.errors.length > 0" class="text-xs text-[#a32924]">
           <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
           {{ scanJob.errors.length }} file lỗi: {{ scanJob.errors.slice(0, 5).join(', ') }}{{ scanJob.errors.length > 5 ? '...' : '' }}
+        </div>
+        <div v-if="scanJob.legacyMatched > 0" class="text-xs text-[#667768]">
+          <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
+          {{ scanJob.legacyMatched }} tệp đã được lượt quét trước nhập lên R2 — không nhập lại.
         </div>
         <div v-if="scanJob.conflicts > 0" class="text-xs text-[#8a6412] break-all">
           <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>

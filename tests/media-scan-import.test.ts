@@ -44,6 +44,8 @@ const store = {
   nextId: 1,
   /** Tên tệp mà lượt ghi hàng `media` sẽ hỏng. */
   failInsertFor: new Set<string>(),
+  /** Tên tệp mà hàng đã commit nhưng nơi gọi vẫn nhận lỗi (kết nối rơi lúc COMMIT). */
+  commitThenFailFor: new Set<string>(),
   uploads: [] as Array<{ filename: string; key: string }>,
   deletes: [] as string[],
 }
@@ -75,6 +77,20 @@ const fakeDb = {
       store.audits.push(values)
     },
   }),
+  // Nhận hàng R2 cũ (W3): UPDATE media SET scanned_source_path = ? WHERE id = ? AND scanned_source_path IS NULL
+  update: (table: unknown) => ({
+    set: (values: Record<string, unknown>) => ({
+      where: async (cond: Parameters<typeof dialect.sqlToQuery>[0]) => {
+        assert.equal(table, media)
+        assert.deepEqual(Object.keys(values), ['scannedSourcePath'], 'the claim writes the source path only')
+        const { sql, params } = dialect.sqlToQuery(cond)
+        assert.match(sql, /`media`\.`id` = \? and `media`\.`scanned_source_path` is null/i, `unexpected claim: ${sql}`)
+        const row = store.media.find(r => r.id === params[0] && r.scannedSourcePath === null)
+        if (row) row.scannedSourcePath = String(values.scannedSourcePath)
+        return [{ affectedRows: row ? 1 : 0 }, []]
+      },
+    }),
+  }),
   transaction: async <T>(work: (tx: unknown) => Promise<T>): Promise<T> => {
     const pendingMedia: MediaRow[] = []
     const pendingAudits: Array<Record<string, unknown>> = []
@@ -91,6 +107,10 @@ const fakeDb = {
               storagePath: String(values.storagePath),
               scannedSourcePath: (values.scannedSourcePath as string | undefined) ?? null,
               sizeBytes: Number(values.sizeBytes),
+            }
+            if (store.commitThenFailFor.has(row.filename)) {
+              store.media.push(row) // the row DID commit…
+              throw new Error('Connection lost: The server closed the connection.') // …but the caller sees an error
             }
             pendingMedia.push(row)
             return [{ insertId: row.id, affectedRows: 1 }, []]
@@ -174,6 +194,7 @@ function reset() {
   store.audits = []
   store.nextId = 1
   store.failInsertFor = new Set()
+  store.commitThenFailFor = new Set()
   store.uploads = []
   store.deletes = []
 }
@@ -248,4 +269,63 @@ test('ghi hàng hỏng sau khi đã tải lên R2: object vừa tải bị xoá 
   assert.equal(failed[0]!.objectDeleted, true)
   assert.equal(failed[0]!.key, `${R2_MONTH}/d.png`)
   assert.match(String(failed[0]!.error), /Deadlock/)
+})
+
+test('ghi hàng báo lỗi nhưng hàng ĐÃ commit (kết nối rơi lúc COMMIT): object không bị xoá vì một hàng đang trỏ tới nó (W4)', async () => {
+  reset()
+  await writeFiles({ '2026/10/f.png': PNG })
+  store.commitThenFailFor = new Set(['f.png'])
+  const before = logged.length
+  const status = await runScan(true)
+  assert.deepEqual(status.errors, ['f.png'])
+  assert.deepEqual(store.media.map(r => [r.filename, r.storagePath]), [['f.png', `${R2_MONTH}/f.png`]], 'the row that did commit points at the object')
+  assert.deepEqual(store.deletes, [], 'the object a row points at is never deleted')
+  const failed = logged.slice(before).filter(l => l.event === 'media.scan_insert_failed')
+  assert.equal(failed.length, 1)
+  assert.equal(failed[0]!.objectDeleted, false)
+  assert.equal(failed[0]!.keptBecause, 'owned_by_row')
+})
+
+test('quét lần đầu sau bản vá: hàng R2 do lượt quét CŨ nhập (chưa có nguồn) cùng tên + kích thước là "đã nhập", và được ghi nguồn (W3)', async () => {
+  reset()
+  // Lượt quét cũ: nhập cu.png lên R2 (khoá theo THÁNG TẢI LÊN, không theo thư mục nguồn), không ghi nguồn.
+  store.media.push(
+    { id: 40, filename: 'cu.png', provider: 'r2', url: 'https://cdn.test/2026/08/cu.png', storagePath: '2026/08/cu.png', scannedSourcePath: null, sizeBytes: PNG.length },
+    // Cùng tên, khác kích thước: ảnh khác — không phải bản đã nhập của tệp này.
+    { id: 41, filename: 'khac.png', provider: 'r2', url: 'https://cdn.test/2026/08/khac.png', storagePath: '2026/08/khac.png', scannedSourcePath: null, sizeBytes: 999_999 },
+  )
+  store.nextId = 100
+  await writeFiles({ '2026/09/cu.png': PNG, '2026/09/khac.png': PNG })
+  const first = await runScan(true)
+  assert.equal(first.legacyMatched, 1)
+  assert.equal(first.imported, 1, 'only khac.png (other size) is imported')
+  assert.deepEqual(store.uploads.map(u => u.filename), ['khac.png'], 'cu.png is not uploaded a second time')
+  assert.equal(store.media.find(r => r.id === 40)!.scannedSourcePath, '2026/09/cu.png', 'the legacy row now records its source (sticky)')
+  assert.equal(store.media.filter(r => r.filename === 'cu.png').length, 1)
+
+  // Lượt sau nhận ra qua `scanned_source_path`, không cần đoán lại.
+  const second = await runScan(true)
+  assert.equal(second.imported, 0)
+  assert.equal(second.legacyMatched, 0)
+
+  // Chế độ chỉ-local cũng không nhập bản sao của tệp đã có trên R2.
+  reset()
+  store.media.push({ id: 40, filename: 'cu.png', provider: 'r2', url: 'https://cdn.test/2026/08/cu.png', storagePath: '2026/08/cu.png', scannedSourcePath: null, sizeBytes: PNG.length })
+  await writeFiles({ '2026/09/cu.png': PNG })
+  const local = await runScan(false)
+  assert.equal(local.imported, 0)
+  assert.equal(local.legacyMatched, 1)
+
+  // Hai tệp nguồn cùng tên + kích thước, hai hàng cũ: mỗi tệp nhận MỘT hàng; tệp thứ ba thì không còn hàng nào để nhận.
+  reset()
+  store.media.push(
+    { id: 50, filename: 'trung.png', provider: 'r2', url: 'https://cdn.test/2026/07/trung.png', storagePath: '2026/07/trung.png', scannedSourcePath: null, sizeBytes: PNG.length },
+    { id: 51, filename: 'trung.png', provider: 'r2', url: 'https://cdn.test/2026/08/trung.png', storagePath: '2026/08/trung.png', scannedSourcePath: null, sizeBytes: PNG.length },
+  )
+  store.nextId = 100
+  await writeFiles({ '2026/07/trung.png': PNG, '2026/08/trung.png': PNG, '2026/09/trung.png': PNG })
+  const pairs = await runScan(true)
+  assert.equal(pairs.legacyMatched, 2)
+  assert.deepEqual(store.media.filter(r => r.id < 100).map(r => r.scannedSourcePath).sort(), ['2026/07/trung.png', '2026/08/trung.png'])
+  assert.equal(pairs.imported, 1, 'the third file has no legacy row left and is imported')
 })

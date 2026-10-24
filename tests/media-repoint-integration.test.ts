@@ -44,15 +44,21 @@ mock.module(new URL('../server/services/backup.ts', import.meta.url), {
 })
 
 const OLD = 'old.cdn'
-const NEW = 'new.cdn'
+/** Domain mới phải được CSP `img-src` và IPX `image.domains` cho phép (`shared/media-hosts.ts`). */
+const NEW = 'cdn1.delify.vn'
 
-/** Văn bản thô (HTML/markdown): hai URL được đổi + bốn host giống không được đổi. */
-const LOOKALIKES = 'https://xold.cdn/a.png https://old.cdn.evil/a.png https://old.cdn:8443/p.png //old.cdn/rel.png'
+/**
+ * Văn bản thô (HTML/markdown): ba URL được đổi — một viết HOA scheme + host, đường
+ * dẫn giữ nguyên chữ hoa — và năm host giống không được đổi.
+ */
+const LOOKALIKES = 'https://xold.cdn/a.png https://old.cdn.evil/a.png https://old.cdn:8443/p.png //old.cdn/rel.png https://XOLD.CDN/b.png'
+const upper = (domain: string) => (domain === OLD ? `HTTPS://${OLD.toUpperCase()}` : `https://${domain}`)
 const text = (domain: string) =>
-  `<p><img src="https://${domain}/a/x.webp" alt="a"> <a href="http://${domain}/b.pdf">b</a> ${LOOKALIKES} cuối https://${domain}</p>`
+  `<p><img src="https://${domain}/a/x.webp" alt="a"> <a href="http://${domain}/b.pdf">b</a> <img src="${upper(domain)}/Up/Case.PNG"> ${LOOKALIKES} cuối https://${domain}</p>`
 const json = (domain: string) => ({
   src: `https://${domain}/a/x.webp`,
   html: `<img src="http://${domain}/b.png">`,
+  shout: `${upper(domain)}/J.PNG`,
   others: ['https://xold.cdn/a.png', 'https://old.cdn.evil/a.png'],
 })
 const shortText = (domain: string) => `https://${domain}/i/z.svg`
@@ -129,10 +135,12 @@ test('đổi domain R2: 27 cột + media.url, ranh giới URL, chạy lại khô
       // Không phải R2 → không đổi; host giống → không đổi.
       { filename: 'y.webp', originalName: 'y.webp', mimeType: 'image/webp', sizeBytes: 1, provider: 'local', url: `https://${OLD}/2026/10/y.webp`, storagePath: '/app/public/uploads/2026/10/y.webp' },
       { filename: 'z.webp', originalName: 'z.webp', mimeType: 'image/webp', sizeBytes: 1, provider: 'r2', url: 'https://xold.cdn/2026/10/z.webp', storagePath: '2026/10/z.webp' },
+      // Host viết hoa (W1): cùng host, phải đổi; đường dẫn giữ nguyên chữ hoa.
+      { filename: 'M.webp', originalName: 'M.webp', mimeType: 'image/webp', sizeBytes: 1, provider: 'r2', url: 'https://Old.Cdn/2026/10/M.webp', storagePath: '2026/10/M.webp' },
     ])
 
-    // Mọi cột có đúng một hàng mang domain cũ, trừ `settings.value` (3 hàng).
-    const expectedFirst: Record<string, number> = { 'media.url': 1 }
+    // Mọi cột có đúng một hàng mang domain cũ, trừ `settings.value` (3 hàng); `media.url` 2.
+    const expectedFirst: Record<string, number> = { 'media.url': 2 }
     for (const target of URL_REFERENCE_TARGETS) expectedFirst[target.label] = target.label === 'settings.value' ? 3 : 1
     assert.equal(URL_REFERENCE_TARGETS.length, 27, 'danh sách cột tham chiếu đổi — cập nhật dữ liệu của suite này')
 
@@ -170,9 +178,10 @@ test('đổi domain R2: 27 cột + media.url, ranh giới URL, chạy lại khô
     assert.deepEqual(await snapshotAll(), pristine, 'audit hỏng: mọi lượt đổi URL rollback cùng nó')
 
     // ── 1–2. Lượt đổi thật ──────────────────────────────────────────────────
-    const first = await repointR2Urls(`https://${OLD}/`, NEW, null)
+    // Đầu vào viết hoa cũng được chuẩn hoá (host chữ thường).
+    const first = await repointR2Urls(`HTTPS://${OLD.toUpperCase()}/`, NEW, null)
     assert.deepEqual(first.byTarget, expectedFirst, 'đếm theo từng cột: mỗi cột đúng số hàng mang domain cũ')
-    assert.equal(first.mediaUpdated, 1)
+    assert.equal(first.mediaUpdated, 2)
     assert.equal(first.contentRowsUpdated, 29)
     assert.ok(first.backupStamp)
 
@@ -214,6 +223,7 @@ test('đổi domain R2: 27 cột + media.url, ranh giới URL, chạy lại khô
       'x.webp': `https://${NEW}/2026/10/x.webp`,
       'y.webp': `https://${OLD}/2026/10/y.webp`,
       'z.webp': 'https://xold.cdn/2026/10/z.webp',
+      'M.webp': `https://${NEW}/2026/10/M.webp`,
     })
 
     // Dòng audit: đúng một, cùng số đếm.

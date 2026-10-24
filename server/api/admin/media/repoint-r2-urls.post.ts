@@ -10,11 +10,14 @@
  * dòng audit. Trả số hàng đã đổi theo từng cột (`byTarget`).
  *
  * Trước khi đổi, sao lưu SQL là BẮT BUỘC: hỏng → 500, không hàng nào đổi.
+ * Domain mới ngoài CSP `img-src` / `image.domains` (`shared/media-hosts.ts`) → 400.
+ * Lượt đồng bộ ảnh / sửa URL / quét thư mục đang chạy → 409.
  * Idempotent — chạy 2 lần với cùng cặp domain → lần 2 không đổi gì.
  *
  * Quyền `media.update` — đổi URL hàng existing là update.
  */
 import { requireResourcePermission } from '../../../utils/permissions'
+import { logError } from '../../../utils/logger'
 import { RepointBackupError, RepointBusyError, RepointInputError, repointR2Urls } from '../../../services/media-repoint'
 
 export default defineEventHandler(async (event) => {
@@ -43,6 +46,12 @@ export default defineEventHandler(async (event) => {
     if (err instanceof RepointInputError) throw createError({ statusCode: 400, statusMessage: err.message })
     if (err instanceof RepointBusyError) throw createError({ statusCode: 409, statusMessage: err.message })
     if (err instanceof RepointBackupError) throw createError({ statusCode: 500, statusMessage: err.message })
-    throw createError({ statusCode: 500, statusMessage: err instanceof Error ? err.message : String(err) })
+    // Lỗi không phân loại (driver, CSDL…): nguyên văn chỉ vào log — câu trả về là câu
+    // soạn sẵn. Mọi lượt đổi nằm trong một transaction, nên lỗi ở đây là chưa đổi gì.
+    logError({ event: 'media.repoint_failed', actorId: adminUser.id ?? null, error: err instanceof Error ? err.message : String(err) })
+    throw createError({
+      statusCode: 500,
+      statusMessage: 'Đổi domain thất bại — chưa đổi URL nào (lượt đổi chạy trong một transaction). Xem nhật ký máy chủ (media.repoint_failed) rồi thử lại.',
+    })
   }
 })

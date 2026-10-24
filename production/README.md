@@ -343,25 +343,40 @@ Không có biến `.env` mới, không có bước tay bắt buộc. Lần khở
 - Dấu không hiện ở trang cài đặt, và API cài đặt không nhận khoá `seed.*`.
 
 **Đổi domain R2** (`/admin/media/scan` → "Đổi domain URL R2"):
+- **Điều kiện trước (bắt buộc):** domain mới phải nằm trong cả hai danh sách ở `shared/media-hosts.ts`:
+  - `CSP_IMG_SRC_HOSTS` — nguồn ảnh của header CSP `img-src`, hiện `*.delify.vn`, `*.conduonghuongthien.vn`, `www.facebook.com`, `www.googletagmanager.com`, `*.gov.vn`. `*.x` gồm mọi subdomain của `x` nhưng **không** gồm chính `x`. Host có cổng khác mặc định không khớp.
+  - `IMAGE_PROXY_DOMAINS` — `image.domains` của NuxtImg/IPX, so đúng tên host, hiện chỉ `cdn1.delify.vn`.
+
+  Ngoài danh sách thì trang trả lỗi 400 nêu đúng danh sách cho phép và **không đổi gì**. Bỏ qua phép kiểm này thì sẽ hỏng ảnh: ngoài CSP là trình duyệt chặn **mọi** ảnh vừa đổi trên toàn site; ngoài IPX là logo và ảnh đại diện tối ưu thành ảnh dự phòng. Chuyển sang CDN mới: thêm host vào file đó, merge + deploy, **rồi** mới đổi domain.
 - **Đổi ở đâu:** `media.url` của hàng R2, và **mọi** cột nội dung đang nhúng URL ảnh. Đó là 27 cột: bài viết, bản dịch, khối trang, phiên bản trang, `settings` (logo, menu…), chatbot, livestream, danh mục, bản dịch giao diện. Trước đây chỉ đổi `media.url` và `articles.content`.
-- **Đổi gì:** chỉ đổi domain đứng ngay sau `https://`/`http://` và trước `/` hoặc hết URL. `xold.cdn`, `old.cdn.evil`, `old.cdn:8443` và `//old.cdn` không bị đụng. Nếu `r2_public_url` lưu kèm `https://` và đúng domain cũ, nó cũng được đổi sang domain mới.
+- **Đổi gì:** chỉ đổi domain đứng ngay sau `https://`/`http://` và trước `/` hoặc hết URL. `xold.cdn`, `old.cdn.evil`, `old.cdn:8443` và `//old.cdn` không bị đụng.
+  - **Hoa thường:** scheme + host so không phân biệt hoa thường (`HTTPS://OLD.CDN/…` cũng đổi), đường dẫn thì có. Domain nhập vào được chuẩn hoá: host chữ thường, tên miền tiếng Việt có dấu → punycode, bỏ `/` cuối.
+  - **Cài đặt cũng đổi theo:** `r2_public_url`, nếu lưu kèm `https://` và đúng domain cũ, được đổi sang domain mới. **`media_video_r2_public_url` (R2 riêng của video) cũng bị đổi nếu nó dùng chung domain cũ** — một domain là một domain; nếu bucket video vẫn phải ở domain cũ thì sửa lại ô đó ở `/admin/settings/media-portal` sau khi đổi.
 - **Kết quả:** một transaction cùng dòng audit `repoint_urls`. Kết quả báo số hàng đã đổi theo từng cột (`byTarget`).
 - **Sao lưu SQL trước khi đổi là bắt buộc:** sao lưu hỏng (đầy đĩa, khoá backup bận…) thì trả lỗi và **không đổi URL nào**. Nguyên nhân nằm ở log `media.repoint_pre_backup_failed`. Dọn đĩa / đợi lượt backup khác xong rồi bấm lại.
+- **Không chạy song song:** lượt đổi giữ khoá của lượt đồng bộ local ↔ R2 / "Sửa URL" và của lượt quét thư mục — các lượt đó dựng URL từ domain cũ. Đang có lượt nào chạy thì trả 409, đợi xong rồi bấm lại. Lỗi khác trả câu chung, nguyên nhân ở log `media.repoint_failed`. Transaction đã rollback nên không có URL nào bị đổi.
+  - Tải ảnh lên thường (thư viện ảnh, trình soạn bài) không giữ khoá: một ảnh tải lên **đúng lúc** đang đổi domain có thể mang domain cũ. Bấm đổi lại cùng cặp domain một lần nữa thì chỉ những URL sót đó được đổi.
 - Chạy lại cùng cặp domain thì không đổi gì.
 
 **Quét thư mục ảnh** (`/admin/media/scan`):
-- Mỗi tệp được nhập ghi lại đường dẫn nguồn (tương đối với `public/uploads/`). Quét lại thì không nhập lại tệp đó, kể cả khi bản nhập nằm trên R2.
-- Tệp trùng tên với một ảnh đã có trên R2 cùng tháng (cùng khoá `YYYY/MM/<tên>`) bị **bỏ qua, không ghi đè**, và hiện ở dòng "trùng tên" của tiến độ. Đổi tên tệp rồi quét lại nếu cần nhập.
-- Ghi hàng hỏng sau khi đã tải lên thì object vừa tải bị xoá (log `media.scan_insert_failed`, `objectDeleted`).
+- **Không nhập lại:** mỗi tệp được nhập ghi lại đường dẫn nguồn (tương đối với `public/uploads/`). Quét lại thì không nhập lại tệp đó, kể cả khi bản nhập nằm trên R2.
+- **Tệp do lượt quét cũ nhập** (trước bản này, chưa ghi nguồn): lượt quét đầu tiên nhận chúng bằng **tên tệp + kích thước** của một hàng R2 còn trống nguồn, rồi ghi nguồn cho hàng đó. Dòng tiến độ báo "đã được lượt quét trước nhập lên R2". Lượt cũ đặt khoá R2 theo tháng tải lên chứ không theo thư mục nguồn, nên không so được theo khoá. Mỗi tệp nhận đúng một hàng.
+  - **Ngoại lệ còn lại:** một tệp đã bị sửa (khác kích thước) sau lượt quét cũ thì vẫn được nhập thêm. Các hàng trùng còn lại xem ở báo cáo ảnh trùng bên dưới.
+- **Không ghi đè:** tệp trùng tên với một ảnh đã có trên R2 cùng tháng (cùng khoá `YYYY/MM/<tên>`) bị **bỏ qua**, và hiện ở dòng "trùng tên" của tiến độ. Đổi tên tệp rồi quét lại nếu cần nhập.
+- **Ghi hàng hỏng sau khi đã tải lên:** object vừa tải bị xoá (log `media.scan_insert_failed`, `objectDeleted`). Ngoại lệ: lỗi mất kết nối đúng lúc COMMIT mà hàng vẫn đã được ghi. Khi đó object được **giữ**, log có `keptBecause: owned_by_row`.
 
-**Báo cáo ảnh trùng** (hàng do lượt quét **cũ** nhập không có đường dẫn nguồn): `GET /api/admin/media/duplicates`, quyền `media.read`, mở khi đã đăng nhập quản trị.
+**Báo cáo ảnh trùng**: `GET /api/admin/media/duplicates`, quyền `media.read`, mở khi đã đăng nhập quản trị.
 - **Trả về:** các nhóm hàng cùng tên tệp + kích thước, và các nhóm hai hàng chung một chỗ lưu. Mỗi hàng kèm số nơi đang dùng URL của nó (`usage.total`, `usage.byTarget`).
+- **Có trần:** đọc các cột nội dung tối đa 20 giây / 200 000 hàng.
+  - `usageTruncated: true` nghĩa là chưa đọc hết, số nơi dùng chỉ là cận dưới. **Đừng xoá hàng chỉ vì `usage.total` = 0 khi cờ này bật.**
+  - `truncated: true` nghĩa là còn nhóm ngoài trần 200 nhóm.
+  - Mỗi lúc chỉ một báo cáo chạy; lượt thứ hai trả 409.
 - **Chỉ đọc, không xoá gì.** Giữ hàng đang được dùng. Xoá hàng thừa qua thư viện ảnh; thư viện chặn xoá ảnh còn được dùng.
 - **Cảnh báo:** nhóm `storage_path` là hai hàng **một object**. Xoá một hàng qua thư viện là xoá ảnh của hàng kia.
 
 **Vá URL ảnh lúc khởi động** (`repairLegacyMediaUrls`, tự chạy):
 - Domain lấy từ `r2_public_url`, không còn `cdn1.delify.vn` viết cứng. Chưa cấu hình mà còn URL `localhost:3000/<domain>` chờ vá thì log `db.migration.legacy_media_domain_unknown`.
-- Liên kết `…/uploads/migrated/media/<tên>` mà hơn một hàng `media` mang tên đó thì được giữ nguyên, kèm log `db.migration.legacy_media_ambiguous` liệt kê tên tệp. Sửa tay bài viết đó (chọn đúng ảnh).
+- Liên kết `…/uploads/migrated/media/<tên>` mà các hàng `media` mang tên đó trỏ tới **hơn một URL khác nhau** thì được giữ nguyên, kèm log `db.migration.legacy_media_ambiguous` liệt kê tên tệp. Sửa tay bài viết đó (chọn đúng ảnh). Hai hàng trùng cùng một URL thì không tính là mơ hồ.
 - Vá liên kết không còn đổi "ngày cập nhật" của bài.
 
 **Quét lại kiểm duyệt** ("Quét & Dọn ngay" ở `/admin/ai/moderation`): nếu kết nối CSDL giữ khoá rơi giữa chừng, lượt quét dừng trước lô kế tiếp. Lúc đó trang báo "đã tạm dừng" và log ghi `ai_moderation.rescan_lock_lost`. Bấm lại để quét tiếp phần còn lại.

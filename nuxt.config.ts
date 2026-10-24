@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { resolveAnalyticsRetentionConfig } from './server/utils/analytics-config'
+import { IMAGE_PROXY_DOMAINS, cspImgSrcDirective } from './shared/media-hosts'
 
 const parseAnalyticsInteger = (name: string, fallback: number, min: number, max: number) => {
   const rawValue = process.env[name]
@@ -115,8 +116,9 @@ export default defineNuxtConfig({
     // IPX provider mặc định đọc ảnh từ `public/` (uploads serve qua
     // server/routes/uploads). Ảnh R2 có public URL riêng — `cdn1.delify.vn`
     // cho phép NuxtImg resize/WebP hóa ảnh R2 (logo Bộ Công an, ảnh bài viết).
-    // Chỉ khai báo domain IPX có quyền đọc — tránh open proxy.
-    domains: ['cdn1.delify.vn'],
+    // Chỉ khai báo domain IPX có quyền đọc — tránh open proxy. Danh sách ở
+    // `shared/media-hosts.ts` (cùng nguồn với CSP `img-src` và phép kiểm đổi domain R2).
+    domains: [...IMAGE_PROXY_DOMAINS],
   },
 
   /**
@@ -306,7 +308,8 @@ export default defineNuxtConfig({
           "default-src 'self'",
           "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://cdnjs.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://www.googletagmanager.com https://connect.facebook.net https://analytics.tiktok.com https://www.clarity.ms https://*.gov.vn",
           "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
-          "img-src 'self' data: https://*.delify.vn https://*.conduonghuongthien.vn https://www.facebook.com https://www.googletagmanager.com https://*.gov.vn",
+          // Host ảnh ở `shared/media-hosts.ts` — lượt đổi domain R2 từ chối host ngoài danh sách này.
+          cspImgSrcDirective(),
           "media-src 'self' blob: https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
           "font-src 'self' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
           "frame-src https://www.youtube-nocookie.com https://*.delify.vn https://*.conduonghuongthien.vn https://www.googletagmanager.com https://*.gov.vn",

@@ -173,30 +173,30 @@ export function assertRewritable(rewrite: UrlRewrite): void {
 const CONT_CORE = '\\p{L}\\p{N}_%/'
 /** Dấu câu chỉ nối tiếp khi theo sau là ký tự lõi. */
 const CONT_PUNCT = '.~!:=@*$+\\-'
-/** Bên phải: không nối tiếp. */
-const RIGHT_BOUNDARY = `(?![${CONT_CORE}]|[${CONT_PUNCT}]+[${CONT_CORE}])`
+/** Bên phải: không nối tiếp. Dùng chung với mẫu đổi domain (`media-repoint-match.ts`). */
+export const RIGHT_BOUNDARY = `(?![${CONT_CORE}]|[${CONT_PUNCT}]+[${CONT_CORE}])`
 /** Bên trái của URL tương đối: ký tự trước không thuộc một đường dẫn. */
 const LEFT_BOUNDARY = `(?<![${CONT_CORE}.~+\\-])`
 /** Phần host của dạng tuyệt đối — không `/` (không nuốt đường dẫn của URL khác). */
 const HOST = '[^/"\'\\s<>\\\\()]+'
 
 /** Thoát ký tự đặc biệt cho mẫu REGEXP (ICU ở MySQL 8, PCRE ở MariaDB đều hiểu). */
-function escapeRegex(s: string): string {
+export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /** Chuỗi thay thế của REGEXP_REPLACE coi `$` và `\` là đặc biệt (`$1`, `\1`). */
-function escapeRegexReplacement(s: string): string {
+export function escapeRegexReplacement(s: string): string {
   return s.replace(/[\\$]/g, '\\$&')
 }
 
 /** Mẫu LIKE "chứa chuỗi": `%`, `_`, `\` trong URL phải là chữ, không phải ký tự đại diện. */
-function likeContains(s: string): string {
+export function likeContains(s: string): string {
   return `%${s.replace(/[\\%_]/g, '\\$&')}%`
 }
 
 /** Phần trong của một chuỗi JSON — đúng như MySQL tuần tự hoá giá trị chuỗi. */
-function jsonInner(s: string): string {
+export function jsonInner(s: string): string {
   return JSON.stringify(s).slice(1, -1)
 }
 
@@ -292,58 +292,6 @@ export function detectionForms(kind: ReferenceKind, oldUrl: string): RewriteForm
     out.push(buildForm(plain, '', 'https?://'))
     const slash = plain.replace(/\//g, '\\/')
     if (slash !== plain) out.push(buildForm(slash, '', 'https?:\\\\/\\\\/'))
-  }
-  return out
-}
-
-// ─── Đổi domain R2 (`media-repoint.ts`) ──────────────────────────────────────
-//
-// Khớp một DOMAIN (host, có thể kèm tiền tố đường dẫn `cdn.x.vn/media`) trong mọi
-// URL trỏ tới nó, theo CÙNG định nghĩa ranh giới ở trên:
-//   - BÊN TRÁI là đúng `scheme://` (`https://`, `http://`; cột `json` thêm dạng thoát
-//     `https:\/\/`): `https://xold.cdn/…` (host khác) và `//old.cdn/…` không khớp;
-//   - BÊN PHẢI là `/` (đầu đường dẫn) hoặc `RIGHT_BOUNDARY`: `https://old.cdn.evil/…`,
-//     `https://old.cdn:8443/…`, `https://old.cdnx/…` không khớp. `/` phải nêu riêng vì
-//     nó thuộc `CONT_CORE` — `RIGHT_BOUNDARY` một mình coi nó là đường dẫn nối tiếp.
-// Mỗi scheme một dạng, scheme viết thẳng trong mẫu lẫn chuỗi thay (không dùng tham
-// chiếu nhóm `$1`, khác nhau giữa ICU và PCRE).
-
-export interface DomainRepointForm {
-  /** Lọc thô `LIKE` — mẫu REGEXP mới quyết định. */
-  like: string
-  /** Mẫu REGEXP có ranh giới (MySQL 8 ICU / PCRE). */
-  pattern: string
-  /** Chuỗi thay thế cho REGEXP_REPLACE (đã thoát `$`, `\`). */
-  replacement: string
-}
-
-const REPOINT_SCHEMES = ['https://', 'http://'] as const
-
-function domainForm(old: string, next: string): DomainRepointForm {
-  return {
-    like: likeContains(old),
-    pattern: `(?-i)${escapeRegex(old)}(?:(?=/)|${RIGHT_BOUNDARY})`,
-    replacement: escapeRegexReplacement(next),
-  }
-}
-
-/**
- * Mọi dạng văn bản của `scheme://<domain cũ>` trong một loại cột, kèm dạng mới
- * tương ứng. `oldDomain`/`newDomain` đã chuẩn hoá (không scheme, không `/` cuối).
- */
-export function domainRepointForms(kind: ReferenceKind, oldDomain: string, newDomain: string): DomainRepointForm[] {
-  const out: DomainRepointForm[] = []
-  for (const scheme of REPOINT_SCHEMES) {
-    const old = `${scheme}${oldDomain}`
-    const next = `${scheme}${newDomain}`
-    if (kind === 'text') {
-      out.push(domainForm(old, next))
-      continue
-    }
-    const plainOld = jsonInner(old)
-    const plainNew = jsonInner(next)
-    out.push(domainForm(plainOld, plainNew))
-    out.push(domainForm(plainOld.replace(/\//g, '\\/'), plainNew.replace(/\//g, '\\/')))
   }
   return out
 }
