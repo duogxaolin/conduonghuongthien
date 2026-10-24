@@ -80,7 +80,7 @@ jobs:
   # lần, nên:
   #   - PR nháp: bỏ qua hoàn toàn (chạy lại khi bấm "Ready for review").
   #   - PR thường: unit + build + schema-drift + hygiene (~12 phút). Integration chỉ chạy
-  #     khi PR đụng tới backend/DB/CI (`server/`, `migrations/`, `scripts/`, package*.json,
+  #     khi PR đụng tới backend/DB/CI (`server/`, `shared/`, `migrations/`, `scripts/`, package*.json,
   #     nuxt.config.ts, workflows, tests/*integration*).
   #   - push vào `main` và chạy tay: LUÔN chạy đủ. `image`/`deploy` vẫn chờ mọi cổng, nên
   #     không có commit nào ra VPS mà chưa qua integration.
@@ -131,7 +131,7 @@ jobs:
           fi
           echo "run=true" >> "$GITHUB_OUTPUT"
           files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename')
-          if printf '%s\n' "$files" | grep -Eq '^(server/|migrations/|scripts/|package(-lock)?\.json$|nuxt\.config\.ts$|\.github/workflows/|tests/[^/]*integration)'; then
+          if printf '%s\n' "$files" | grep -Eq '^(server/|shared/|migrations/|scripts/|package(-lock)?\.json$|nuxt\.config\.ts$|\.github/workflows/|tests/[^/]*integration)'; then
             echo "integration=true" >> "$GITHUB_OUTPUT"
             echo "PR đụng backend/DB/CI: chạy cả integration." >> "$GITHUB_STEP_SUMMARY"
           else

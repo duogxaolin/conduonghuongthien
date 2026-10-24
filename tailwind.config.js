@@ -5,6 +5,7 @@ module.exports = {
     './server/**/*.{ts,js}',
     // `shared/submission-status.ts` giữ lớp huy hiệu (`bg-[#fdf3e2] …`) chỉ dùng qua
     // `:class` — không quét `shared/` thì các lớp đó bị purge, huy hiệu mất màu.
+    // tests/tailwind-content-shared.test.ts ghim dòng này.
     './shared/**/*.{ts,js}',
   ],
   // `useLayoutConfig` dựng `grid-cols-${n}` theo cấu hình trong DB — Tailwind

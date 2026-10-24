@@ -10,14 +10,18 @@
  * dòng re-export cho phía app.
  *
  * `shared/` cũng là tầng đáy: nó không import `app/` (chỉ là dời vấn đề đi một
- * bậc) và không import `server/` (kéo mã máy chủ vào gói trình duyệt).
+ * bậc), không import `server/` (kéo mã máy chủ vào gói trình duyệt), và không dùng
+ * alias `#…` nào chỉ có ở một phía (`#server`, `#imports`, `#build`, `#internal`…).
  *
  * Đọc bằng TypeScript AST, không regex trên chữ thô: chú thích và chuỗi thường
  * nhắc tới `app/...` (vd. `/app/public/uploads` trong một thông báo lỗi) không bị
  * tính, còn import nhiều dòng, `import type`, `export … from`, `import()` (kể cả ở
- * vị trí kiểu: `typeof import('…')`), `require()` và `/// <reference path>` đều bị
- * bắt. Đường tương đối được **giải** theo thư mục của tệp rồi so với `<repo>/app/`
- * — không đếm `../`, nên `../application/x` không bị nhầm là `app/`.
+ * vị trí kiểu: `typeof import('…')`), `require()`, hàm require từ `createRequire`,
+ * `declare module '…'` và `/// <reference path>` đều bị bắt. Đường tương đối và
+ * alias của Nuxt 4 (`~`/`@`, `~~`/`@@`, `#shared`, `#server`) được **giải** ra thư
+ * mục rồi so với `<repo>/app/` / `server/` — không đếm `../`, nên `../application/x`
+ * không bị nhầm là `app/`. Alias phía app không có thư mục đứng sau (`#app`,
+ * `#components`, `#build`, `#app-manifest`) bị cấm theo tên.
  */
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
@@ -54,8 +58,26 @@ function moduleReferences(fileName: string, source: string): ModuleReference[] {
     out.push({ specifier: ref.fileName, line: lineOf(ref.pos), form: '/// <reference path>' })
   }
 
+  // `createRequire(import.meta.url)` cho ra một hàm require thật: gọi thẳng
+  // (`createRequire(…)('x')`) hoặc qua biến (`const req = createRequire(…)`).
+  const isCreateRequire = (node: ts.Expression) =>
+    ts.isCallExpression(node)
+    && ((ts.isIdentifier(node.expression) && node.expression.text === 'createRequire')
+      || (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'createRequire'))
+  const requireAliases = new Set<string>()
+  const collect = (node: ts.Node): void => {
+    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isCreateRequire(node.initializer)) {
+      requireAliases.add(node.name.text)
+    }
+    ts.forEachChild(node, collect)
+  }
+  collect(sf)
+
   const visit = (node: ts.Node): void => {
-    if (ts.isImportDeclaration(node)) {
+    if (ts.isModuleDeclaration(node) && ts.isStringLiteral(node.name)) {
+      // `declare module '…' { … }` — khai/augment kiểu cho đúng module đó.
+      push(node, node.name.text, 'declare module')
+    } else if (ts.isImportDeclaration(node)) {
       push(node, literal(node.moduleSpecifier), 'import')
     } else if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
       push(node, literal(node.moduleSpecifier), 'export … from')
@@ -69,6 +91,10 @@ function moduleReferences(fileName: string, source: string): ModuleReference[] {
         push(node, literal(node.arguments[0]), 'import()')
       } else if (ts.isIdentifier(node.expression) && node.expression.text === 'require') {
         push(node, literal(node.arguments[0]), 'require()')
+      } else if (isCreateRequire(node.expression)) {
+        push(node, literal(node.arguments[0]), 'createRequire(…)()')
+      } else if (ts.isIdentifier(node.expression) && requireAliases.has(node.expression.text)) {
+        push(node, literal(node.arguments[0]), `${node.expression.text}() từ createRequire`)
       }
     }
     ts.forEachChild(node, visit)
@@ -82,29 +108,55 @@ const inside = (target: string, dir: string) => {
   return rel === '' || (!rel.startsWith('..') && !path.isAbsolute(rel))
 }
 
-/** Where a specifier lands on disk, or null for a package / virtual module. */
+/** Where a specifier lands on disk, or null for a package / virtual module.
+ *  Alias theo `.nuxt/tsconfig.{server,shared}.json` của Nuxt 4. */
 function resolveOnDisk(fromFile: string, specifier: string): string | null {
   if (specifier.startsWith('.') || specifier.startsWith('/')) return path.resolve(path.dirname(fromFile), specifier)
-  // Nuxt 4: `~` / `@` = srcDir (app/), `~~` / `@@` = rootDir.
+  // `~` / `@` = srcDir (app/), `~~` / `@@` = rootDir.
   if (specifier === '~' || specifier === '@') return APP_DIR
   if (specifier.startsWith('~/') || specifier.startsWith('@/')) return path.join(APP_DIR, specifier.slice(2))
   if (specifier === '~~' || specifier === '@@') return ROOT
   if (specifier.startsWith('~~/') || specifier.startsWith('@@/')) return path.join(ROOT, specifier.slice(3))
+  // `#shared` → shared/, `#server` → server/.
+  for (const [alias, dir] of [['#shared', SHARED_DIR], ['#server', SERVER_DIR]] as const) {
+    if (specifier === alias) return dir
+    if (specifier.startsWith(`${alias}/`)) return path.join(dir, specifier.slice(alias.length + 1))
+  }
   return null
 }
 
-/** True when `specifier` (seen in `fromFile`) reaches into app/. */
-function pointsIntoApp(fromFile: string, specifier: string): boolean {
-  // Nuxt's app-side virtual modules: there is no app/ file behind them, but they
-  // only exist in the browser/SSR app bundle.
-  if (specifier === '#app' || specifier.startsWith('#app/') || specifier === '#components') return true
-  const target = resolveOnDisk(fromFile, specifier)
-  return target !== null && inside(target, APP_DIR)
-}
+/**
+ * Module ảo / đầu ra sinh ra của PHÍA APP Nuxt — không có tệp app/ nào đứng sau,
+ * nhưng chỉ tồn tại cho gói app: `#app` (+ `#app/…`), `#components`, `#build`
+ * (+ `#build/…`: thư mục `.nuxt`, gồm barrel auto-import của app `#build/imports`,
+ * components…), `#app-manifest`.
+ */
+const NUXT_APP_SIDE_ALIAS = /^#(?:app|components|build|app-manifest)(?:\/|$)/
+const SHARED_ALIAS = /^#shared(?:\/|$)/
 
-function pointsIntoServer(fromFile: string, specifier: string): boolean {
+type Side = 'server' | 'shared'
+
+/**
+ * Vì sao `specifier` (trong `fromFile`, ở phía `side`) bị cấm — hoặc null.
+ *  - server/: không vào app/ (đường, `~`/`@`, `~~/app`), không alias phía app.
+ *    `#imports` ở đây là barrel auto-import của **Nitro** → được; `#server`,
+ *    `#shared`, `#internal/…` cũng được.
+ *  - shared/: như trên, thêm không vào server/, và không alias `#…` nào ngoài
+ *    `#shared` — mọi alias khác chỉ có ở MỘT phía (`#imports` của shared trỏ barrel
+ *    auto-import của app, `#internal` là của Nitro) và test Node trần không giải
+ *    được chúng.
+ */
+function violation(side: Side, fromFile: string, specifier: string): string | null {
   const target = resolveOnDisk(fromFile, specifier)
-  return target !== null && inside(target, SERVER_DIR)
+  if (target !== null && inside(target, APP_DIR)) return 'trỏ vào app/'
+  if (NUXT_APP_SIDE_ALIAS.test(specifier)) return 'alias phía app của Nuxt'
+  if (side === 'shared') {
+    if (target !== null && inside(target, SERVER_DIR)) return 'trỏ vào server/'
+    if (specifier.startsWith('#') && !SHARED_ALIAS.test(specifier)) {
+      return 'alias chỉ có ở một phía — shared/ chỉ dùng đường tương đối, #shared/~~/shared hoặc gói npm'
+    }
+  }
+  return null
 }
 
 function walk(dir: string): string[] {
@@ -119,16 +171,21 @@ function walk(dir: string): string[] {
 
 const rel = (file: string) => path.relative(ROOT, file).split(path.sep).join('/')
 
-function offenders(files: string[], forbidden: (fromFile: string, specifier: string) => boolean): string[] {
+function offendersIn(side: Side, file: string, source: string): string[] {
   const found: string[] = []
-  for (const file of files) {
-    for (const ref of moduleReferences(file, readFileSync(file, 'utf8'))) {
-      if (ref.specifier === null) found.push(`${rel(file)}:${ref.line} ${ref.form} với đối số không phải chuỗi cố định — không kiểm được`)
-      else if (forbidden(file, ref.specifier)) found.push(`${rel(file)}:${ref.line} ${ref.form} '${ref.specifier}'`)
+  for (const ref of moduleReferences(file, source)) {
+    if (ref.specifier === null) {
+      found.push(`${rel(file)}:${ref.line} ${ref.form} với đối số không phải chuỗi cố định — không kiểm được`)
+      continue
     }
+    const why = violation(side, file, ref.specifier)
+    if (why) found.push(`${rel(file)}:${ref.line} ${ref.form} '${ref.specifier}' — ${why}`)
   }
   return found
 }
+
+const offenders = (side: Side, files: string[]) =>
+  files.flatMap((file) => offendersIn(side, file, readFileSync(file, 'utf8')))
 
 const serverFiles = walk(SERVER_DIR)
 const sharedFiles = walk(SHARED_DIR)
@@ -142,7 +199,7 @@ describe('server/ không import từ app/', () => {
 
   test('không tệp nào dưới server/ import app/ — giá trị hay kiểu', () => {
     assert.deepEqual(
-      offenders(serverFiles, pointsIntoApp),
+      offenders('server', serverFiles),
       [],
       'chuyển module dùng chung sang shared/ (như shared/blocks/registry.ts) và để app/ re-export nó',
     )
@@ -157,12 +214,8 @@ describe('shared/ là tầng đáy: không import app/ hay server/', () => {
     }
   })
 
-  test('không tệp nào dưới shared/ import app/', () => {
-    assert.deepEqual(offenders(sharedFiles, pointsIntoApp), [])
-  })
-
-  test('không tệp nào dưới shared/ import server/', () => {
-    assert.deepEqual(offenders(sharedFiles, pointsIntoServer), [])
+  test('không tệp nào dưới shared/ import app/, server/ hay alias riêng của một phía', () => {
+    assert.deepEqual(offenders('shared', sharedFiles), [])
   })
 })
 
@@ -256,13 +309,18 @@ describe('bản re-export ở app/ khớp đủ module ở shared/', () => {
 // ─── Bộ dò không mù ──────────────────────────────────────────────────────────
 // Guard đọc mã nguồn chỉ có giá trị khi chứng minh được nó bắt đúng thứ cần bắt.
 
-const appHits = (fakeFile: string, source: string) =>
-  moduleReferences(path.join(ROOT, fakeFile), source)
-    .filter((ref) => ref.specifier === null || pointsIntoApp(path.join(ROOT, fakeFile), ref.specifier))
+const hits = (side: Side, fakeFile: string, source: string) => offendersIn(side, path.join(ROOT, fakeFile), source)
+const appHits = (fakeFile: string, source: string) => hits('server', fakeFile, source)
 
 describe('bộ dò bắt mọi dạng import trỏ vào app/', () => {
   const FAKE = 'server/api/admin/demo/x.ts'
   const cases: Record<string, string> = {
+    'createRequire(…)(…)': `import { createRequire } from 'node:module'\nconst x = createRequire(import.meta.url)('../../../../app/utils/x')`,
+    'hàm require từ createRequire': `import { createRequire } from 'node:module'\nconst req = createRequire(import.meta.url)\nconst x = req('../../../../app/utils/x')`,
+    'declare module (augment module của app)': `declare module '~/utils/x' {\n  export const y: number\n}\nexport {}`,
+    '#build/… (thư mục .nuxt: barrel auto-import của app, components…)': `import { useState } from '#build/imports'`,
+    '#build': `import x from '#build'`,
+    '#app-manifest': `import meta from '#app-manifest'`,
     'import giá trị': `import { a } from '../../../../app/utils/x'`,
     'import type': `import type { T } from '../../../../app/utils/x'`,
     'import với type nội tuyến': `import { a, type T } from '../../../../app/utils/x'`,
@@ -308,12 +366,68 @@ describe('bộ dò không báo nhầm', () => {
     'chuỗi chứa /app/': `const msg = 'chown node:node /app/public/uploads'`,
     'chuỗi trông như import': `const s = "import x from '../../../../app/utils/x'"`,
     '#imports của Nitro': `import { useRuntimeConfig } from '#imports'`,
+    '#shared/…': `import { a } from '#shared/link-policy'`,
+    '#server/…': `import { getDb } from '#server/utils/db'`,
+    '#internal/… của Nitro': `import { x } from '#internal/nitro'`,
+    'declare module của gói npm': `declare module 'h3' {\n  interface H3EventContext { actor?: number }\n}\nexport {}`,
+    'createRequire với gói npm': `import { createRequire } from 'node:module'\nconst sharp = createRequire(import.meta.url)('sharp')`,
     'gói npm có scope': `import x from '@scope/app'`,
     'gói npm': `import { ref } from 'vue'`,
   }
   for (const [name, source] of Object.entries(cases)) {
     test(name, () => {
       assert.deepEqual(appHits(FAKE, source), [], `báo nhầm: ${source}`)
+    })
+  }
+})
+
+// shared/ chạy ở cả hai phía và dưới test Node trần, nên nó không được đụng alias
+// nào chỉ tồn tại ở MỘT phía. Trong `.nuxt/tsconfig.shared.json`: `#server/*` →
+// `../server/*`, `#imports` → `.nuxt/imports` (barrel auto-import của APP — khác
+// `#imports` của Nitro ở phía server), `#build/*` → thư mục `.nuxt`.
+describe('shared/: bộ dò bắt app/, server/ và alias riêng của một phía', () => {
+  const FAKE = 'shared/blocks/x.ts'
+  const cases: Record<string, string> = {
+    '#server/…': `import { getDb } from '#server/utils/db'`,
+    '#server': `import x from '#server'`,
+    '#imports (barrel auto-import của app)': `import { useState } from '#imports'`,
+    '#build/…': `import { x } from '#build/imports'`,
+    '#build': `import x from '#build'`,
+    '#internal/… (Nitro)': `import { x } from '#internal/nitro'`,
+    '#app': `import { useNuxtApp } from '#app'`,
+    '#app-manifest': `import meta from '#app-manifest'`,
+    '#components': `import { Foo } from '#components'`,
+    'đường tương đối vào app/': `import { a } from '../../app/utils/x'`,
+    'đường tương đối vào server/': `import { getDb } from '../../server/utils/db'`,
+    'alias ~/': `import { a } from '~/utils/x'`,
+    'alias @@/app': `import { a } from '@@/app/utils/x'`,
+    'alias ~~/server': `import { getDb } from '~~/server/utils/db'`,
+    'import type từ server/': `import type { ActorLike } from '../../server/utils/permissions'`,
+    'createRequire vào server/': `import { createRequire } from 'node:module'\nconst x = createRequire(import.meta.url)('../../server/utils/db')`,
+    'declare module #imports': `declare module '#imports' {\n  export const y: number\n}\nexport {}`,
+  }
+  for (const [name, source] of Object.entries(cases)) {
+    test(name, () => {
+      assert.equal(hits('shared', FAKE, source).length, 1, `không bắt được: ${source}`)
+    })
+  }
+})
+
+describe('shared/: bộ dò không báo nhầm', () => {
+  const FAKE = 'shared/blocks/x.ts'
+  const cases: Record<string, string> = {
+    'tương đối trong shared/blocks': `import type { BlockData } from './types'`,
+    'tương đối sang shared/': `import { safeLinkOrNull } from '../link-policy'`,
+    '#shared/…': `import { a } from '#shared/link-policy'`,
+    '#shared': `import x from '#shared'`,
+    'alias ~~/shared': `import { a } from '~~/shared/link-policy'`,
+    'kiểu từ gói npm': `import type { Ref } from 'vue'`,
+    'gói npm có scope': `import x from '@scope/server'`,
+    'chuỗi nhắc #imports': `const note = "đừng import '#imports' ở đây"`,
+  }
+  for (const [name, source] of Object.entries(cases)) {
+    test(name, () => {
+      assert.deepEqual(hits('shared', FAKE, source), [], `báo nhầm: ${source}`)
     })
   }
 })
