@@ -992,8 +992,9 @@ BACKUP_KEEP_DAYS=14
 HEALTHCHECK_PING_URL=$HEALTHCHECK_PING_URL
 
 # ─── Cảnh báo vận hành ──────────────────────────
-# Thư cảnh báo (khôi phục hỏng, khoá MFA, Host giả, khe sao lưu bị bỏ…) gửi qua SMTP
-# cấu hình trong admin; tối đa 1 thư mỗi sự kiện mỗi 15 phút. Trống = không gửi.
+# Thư cảnh báo (khôi phục hỏng, khoá MFA, Host giả, ghi khác site, khe sao lưu bị bỏ…)
+# gửi qua SMTP cấu hình trong admin; tối đa 1 thư mỗi sự kiện mỗi 15 phút (ghi khác
+# site: 6 giờ). Trống = không gửi.
 OPS_ALERT_EMAIL=$OPS_ALERT_EMAIL
 EOF
   chmod 600 "$env_tmp"

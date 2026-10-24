@@ -649,11 +649,12 @@ docker logs cdkt_app / docker compose logs -f app              # vẫn dùng đ�
 | `backup.restore_failed` / `backup.restore_refused` | khôi phục CSDL/tệp hỏng, hoặc bị từ chối (không phải SuperAdmin, tệp quá lớn…) |
 | `auth.mfa_challenge_locked` | ai đó có đúng mật khẩu đang đoán mã MFA và bị khoá |
 | `security.link_host_rejected` | liên kết email bị yêu cầu dưới một Host giả |
+| `security.cross_site_refused` | một trình duyệt gửi yêu cầu ghi (POST/PUT/PATCH/DELETE) thay cho trang khác và bị cổng chặn khác site từ chối (xem *Bảo mật đợt 2 — 2A*). Thư nêu đường dẫn + host của `Origin` — host thật của cổng mà vẫn bị chặn thì kiểm `PUBLIC_HOST_ALLOWLIST`/`TRUSTED_PROXY_IPS` |
 | `backup.slot_abandoned` | một khe sao lưu theo lịch hỏng 3 lần — hôm đó không có bản sao lưu |
 | `db.migration.media_category_fk_blocked` | di trú lúc khởi động không thể hoàn tất mà không mất dữ liệu (xem *Sửa dữ liệu sau deploy*) |
 
-- Gửi qua **SMTP cấu hình trong admin** (`/admin/settings/email`) — chưa cấu hình SMTP thì không gửi được (log `ops.alert_failed`).
-- **Tối đa 1 thư mỗi sự kiện mỗi 15 phút** (theo tên sự kiện, kể cả qua nhiều tiến trình/lần khởi động lại — bảng `rate_limit_counters`); thư kế tiếp nói số lần lặp lại đã gộp. Nội dung chỉ có tên sự kiện, thời điểm, máy chủ và ngữ cảnh không bí mật (khoá bí mật đã che trong log bị bỏ hẳn, không có stack trace).
+- Gửi qua **SMTP cấu hình trong admin** (`/admin/settings/email`) — chưa cấu hình SMTP thì không gửi được (log `ops.alert_failed`). Mật khẩu SMTP lưu dạng mã hoá (2A) được giải mã như mọi thư khác; không giải mã được (đã xoay `CHATBOT_ENCRYPTION_SECRET`) thì thư cảnh báo **không** gửi — `ops.alert_failed` nêu câu "nhập lại mật khẩu" — cho tới khi nhập lại mật khẩu ở trang Cấu hình Email.
+- **Tối đa 1 thư mỗi sự kiện mỗi 15 phút** — riêng `security.cross_site_refused` **6 giờ** (một lượt dò lặp lại hàng giờ; lượt đầu là tín hiệu, mọi lượt vẫn ở log) — theo tên sự kiện, kể cả qua nhiều tiến trình/lần khởi động lại (bảng `rate_limit_counters`); thư kế tiếp nói số lần lặp lại đã gộp. Nội dung chỉ có tên sự kiện, thời điểm, máy chủ và ngữ cảnh không bí mật (khoá bí mật đã che trong log bị bỏ hẳn, không có stack trace).
 - Gửi kiểu "bắn rồi quên": lỗi gửi chỉ ghi log `ops.alert_failed`, **không** ảnh hưởng request đã log sự kiện. Thư gửi thành công → log `ops.alert_sent`.
 - Trống = không gửi gì, không chạm CSDL. Sự kiện di trú lúc khởi động (`server/db/init.ts`, chạy trước server) cũng gửi được: đường gửi tự mở và đóng một kết nối riêng, không giữ container ở bước khởi động.
 

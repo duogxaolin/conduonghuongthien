@@ -40,6 +40,11 @@ import { dbConnectionOptions } from './db'
 /** Window per event name, in seconds; `default` for every event not listed. */
 export const OPS_ALERT_WINDOW_SECONDS: Readonly<Record<string, number>> = {
   default: 15 * 60,
+  // The origin gate (wave2 2A, `server/middleware/00.origin-gate.ts`) refuses a
+  // browser posting on behalf of another site — a probe repeats it for hours, a
+  // misconfigured integration on every request. The first refusal is the signal (the
+  // e-mail counts the rest); every one stays in the log. D-ALERT: rate-limited harder.
+  'security.cross_site_refused': 6 * 60 * 60,
 }
 
 const windowFor = (event: string) => OPS_ALERT_WINDOW_SECONDS[event] ?? OPS_ALERT_WINDOW_SECONDS.default!

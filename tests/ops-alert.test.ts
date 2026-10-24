@@ -131,9 +131,12 @@ test('the alert list is the D-ALERT subset, and nothing else alerts', () => {
     'backup.restore_refused',
     'backup.slot_abandoned',
     'db.migration.media_category_fk_blocked',
+    'security.cross_site_refused',
     'security.link_host_rejected',
   ])
   assert.ok(ALERT_EVENTS.includes(SECURITY_EVENTS.backupRestoreFailed))
+  // wave2 integration (2A × ops): the origin gate's refusal is on the D-ALERT list.
+  assert.ok(ALERT_EVENTS.includes(SECURITY_EVENTS.crossSiteRefused))
   assert.ok(ALERT_EVENTS.includes(BOOT_MIGRATION_EVENTS.mediaCategoryFkBlocked))
   assert.ok(!ALERT_EVENTS.includes(SECURITY_EVENTS.loginFailed), 'routine noise is not paged')
 })
@@ -315,6 +318,40 @@ test('a burst of the same event in one tick sends one e-mail (the in-memory mark
   await Promise.all([1, 2, 3, 4, 5].map(() => h.dispatcher.dispatch(record('backup.restore_failed'))))
   assert.equal(h.sent.length, 1)
   assert.equal(h.opened(), 1, 'the repeats never reach the database either')
+})
+
+test('a cross-site refusal (2A origin gate) is rate-limited harder: one e-mail per 6 hours, not per 15 minutes', async () => {
+  // D-ALERT: a browser posting from another site is either a probe that repeats for
+  // hours or a misconfigured integration — the first refusal is the signal, the rest
+  // are in the log. Six hours: four e-mails a day at most for a campaign that never stops.
+  const event = SECURITY_EVENTS.crossSiteRefused
+  assert.equal(OPS_ALERT_WINDOW_SECONDS[event], 6 * 60 * 60)
+  assert.ok(OPS_ALERT_WINDOW_SECONDS[event]! > OPS_ALERT_WINDOW_SECONDS.default!)
+  const h = harness()
+  await h.dispatcher.dispatch(record(event, { method: 'POST', path: '/api/admin/users', originHost: 'evil.example' }))
+  assert.equal(h.sent.length, 1)
+  assert.match(h.sent[0]!.subject, /security\.cross_site_refused/)
+  h.advance(15 * 60 * 1000 + 1) // past the default window
+  await h.dispatcher.dispatch(record(event))
+  h.advance(5 * 60 * 60 * 1000) // 5 h 15 min after the first
+  await h.dispatcher.dispatch(record(event))
+  assert.equal(h.sent.length, 1, 'still inside the six-hour window')
+  h.advance(45 * 60 * 1000) // 6 h after the first
+  await h.dispatcher.dispatch(record(event))
+  assert.equal(h.sent.length, 2)
+  assert.match(String(h.sent[1]!.text), /Trong 360 phút trước đó còn 2 lần/, 'the next e-mail counts what the window swallowed')
+})
+
+test('the origin gate\'s refusal alerts through the real logger, once per window', async () => {
+  mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-24T07:00:00.000Z') })
+  for (let i = 0; i < 3; i += 1) {
+    logWarn({ event: SECURITY_EVENTS.crossSiteRefused, method: 'POST', path: '/api/admin/settings', originHost: 'evil.example', reason: 'origin_not_allowed' })
+    await settleOpsAlerts()
+    mock.timers.tick(20 * 60 * 1000)
+  }
+  assert.equal(mail.sent.length, 1)
+  assert.match(mail.sent[0]!.subject, /security\.cross_site_refused/)
+  assert.match(String(mail.sent[0]!.text), /originHost: evil\.example/)
 })
 
 test('the window is 15 minutes by default and can be set per event', async () => {

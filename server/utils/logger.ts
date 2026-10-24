@@ -188,21 +188,22 @@ export const BOOT_MIGRATION_EVENTS = {
  * Events e-mailed to OPS_ALERT_EMAIL (wave2 D-ALERT; `ops-alert.ts`, at most one per
  * event per window). Kept short on purpose: each one means an operator must act —
  * a restore failed or was refused, someone holding a valid password is guessing
- * second factors, an e-mail link was asked for on a forged Host, a scheduled backup
+ * second factors, an e-mail link was asked for on a forged Host, a browser posted to
+ * the API on behalf of another site (the origin gate, wave2 2A), a scheduled backup
  * slot was given up, the boot migration cannot reach its schema without losing data.
  * Routine noise (failed logins, throttled forms) stays in the log.
  *
  * `backup.slot_abandoned` is a literal in `services/backup-scheduler.ts`;
  * tests/ops-alert.test.ts checks every name here is really emitted under server/.
  * To add one: append it here (and give it a window in `OPS_ALERT_WINDOW_SECONDS` if
- * 15 minutes is wrong for it — e.g. `security.cross_site_refused`, rate-limited
- * harder, when the origin gate lands).
+ * 15 minutes is wrong for it — `security.cross_site_refused` has six hours there).
  */
 export const ALERT_EVENTS: readonly string[] = [
   SECURITY_EVENTS.backupRestoreFailed,
   SECURITY_EVENTS.backupRestoreRefused,
   SECURITY_EVENTS.mfaChallengeLocked,
   SECURITY_EVENTS.linkHostRejected,
+  SECURITY_EVENTS.crossSiteRefused,
   'backup.slot_abandoned',
   BOOT_MIGRATION_EVENTS.mediaCategoryFkBlocked,
 ]
