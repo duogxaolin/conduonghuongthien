@@ -16,27 +16,27 @@
  * **Khoá MySQL `cdkt:media:scan`** (timeout 0) — acquire trực tiếp bằng `GET_LOCK`
  * (không dùng `withNamedLock` wrapper vì lock phải giữ suốt worker, wrapper release
  * khi `action` return).
+ *
+ * Nhập từng tệp ở `media-scan-import.ts` (wave2 D-SCAN): ghi `scanned_source_path`,
+ * không nhập lại tệp đã biết (kể cả bản nhập nằm trên R2), không tải đè khoá R2 của
+ * hàng khác (`conflicts`), xoá object vừa tải khi ghi hàng hỏng.
  */
-import { promises as fs, type Dirent, type Stats } from 'node:fs'
+import { promises as fs, type Dirent } from 'node:fs'
 import path from 'node:path'
-import sharp from 'sharp'
 import type { RowDataPacket } from 'mysql2/promise'
 import { getDb, getPool } from '../utils/db'
 import { media, activityLogs } from '../db/schema'
-import { affectedRowsOrZero } from '../utils/affected-rows'
-import { detectImageMime, isSharpDecodable } from '../utils/image-mime'
 import { logInfo, logWarn } from '../utils/logger'
-import { uploadR2File, type R2Config } from '../utils/media-r2'
+import type { R2Config } from '../utils/media-r2'
 import { loadR2Config } from './media'
+import { importScannedFile, knownScanSources, scanSourcePath } from './media-scan-import'
 
 const LOCK_NAME = 'cdkt:media:scan'
 
 /** Trần số file mỗi lượt quét — chống treo nếu thư mục khổng lồ. */
 const MAX_FILES_PER_SCAN = 5000
-/** Bỏ qua file lớn hơn ngưỡng này — không phải ảnh hợp lệ, khả năng cao là video/backup. */
-const MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024
-/** Đọc tối đa 12 byte đầu cho magic-byte. */
-const SNIFF_BYTES = 12
+/** Số tên tệp xung đột giữ lại trong trạng thái (đủ cho màn hình; tổng nằm ở `conflicts`). */
+const MAX_CONFLICT_FILES_REPORTED = 50
 
 const BATCH_SIZE = 50
 const BATCH_SLEEP_MS = 200
@@ -52,7 +52,12 @@ export interface ScanJobStatus {
   /** Số file đã xử lý (imported + skipped). */
   done: number
   imported: number
+  /** Gồm cả `conflicts`. */
   skipped: number
+  /** Tệp không nhập vì khoá R2 đích đã thuộc một ảnh khác (không tải đè). */
+  conflicts: number
+  /** Đường dẫn nguồn (tương đối) của tối đa 50 tệp xung đột đầu tiên. */
+  conflictFiles: string[]
   errors: string[]
   phase: 'scanning' | 'done' | 'failed' | 'cancelled'
   message: string
@@ -64,7 +69,7 @@ export interface ScanJobStatus {
 let currentScanJob: ScanJobStatus | null = null
 
 export function getScanJobStatus(): ScanJobStatus | null {
-  return currentScanJob ? { ...currentScanJob, errors: [...currentScanJob.errors] } : null
+  return currentScanJob ? { ...currentScanJob, errors: [...currentScanJob.errors], conflictFiles: [...currentScanJob.conflictFiles] } : null
 }
 
 export function cancelScanJob(): void {
@@ -124,6 +129,8 @@ export async function startScanJob(
     done: 0,
     imported: 0,
     skipped: 0,
+    conflicts: 0,
+    conflictFiles: [],
     errors: [],
     phase: 'scanning',
     message: `Đang quét ${candidates.length} file`,
@@ -156,6 +163,7 @@ async function runScanWorker(
       phase,
       imported: currentScanJob.imported,
       skipped: currentScanJob.skipped,
+      conflicts: currentScanJob.conflicts,
       errors: currentScanJob.errors.length,
     })
   }
@@ -179,12 +187,12 @@ async function runScanWorker(
   }
 
   try {
-    // Thu thập storage_path đã có hàng — type-check O(1).
-    const knownRows = await db.select({ storagePath: media.storagePath }).from(media)
-    const known = new Set<string>()
-    for (const row of knownRows) {
-      if (row.storagePath) known.add(path.resolve(row.storagePath))
-    }
+    // Tệp đã có hàng: `scanned_source_path` của mọi hàng + `storage_path` của hàng
+    // local — tra O(1) theo đường dẫn tương đối với gốc uploads.
+    const knownRows = await db
+      .select({ provider: media.provider, storagePath: media.storagePath, scannedSourcePath: media.scannedSourcePath })
+      .from(media)
+    const known = knownScanSources(knownRows, uploadsRoot)
 
     let processed = 0
     for (let i = 0; i < candidates.length; i += BATCH_SIZE) {
@@ -205,21 +213,24 @@ async function runScanWorker(
           if (currentScanJob) currentScanJob.truncated = true
           break
         }
-        if (known.has(path.resolve(fileAbs))) {
+        const source = scanSourcePath(uploadsRoot, fileAbs)
+        if (source && known.has(source)) {
           processed += 1
           if (currentScanJob) currentScanJob.done += 1
           continue
         }
         try {
-          const ok = await importOne(db, fileAbs, uploadsRoot, adminUserId, {
-            autoRepointToR2: r2Config != null,
-            r2Config: r2Config ?? undefined,
-          })
+          const outcome = await importScannedFile(db, fileAbs, uploadsRoot, adminUserId, { r2Config })
           if (currentScanJob) {
-            if (ok) currentScanJob.imported += 1
+            if (outcome.kind === 'imported') currentScanJob.imported += 1
             else currentScanJob.skipped += 1
+            if (outcome.kind === 'conflict') {
+              currentScanJob.conflicts += 1
+              if (source && currentScanJob.conflictFiles.length < MAX_CONFLICT_FILES_REPORTED) currentScanJob.conflictFiles.push(source)
+            }
             currentScanJob.done += 1
           }
+          if (outcome.kind === 'imported' && source) known.add(source)
         } catch {
           if (currentScanJob) {
             currentScanJob.skipped += 1
@@ -243,6 +254,7 @@ async function runScanWorker(
             total: currentScanJob?.total ?? 0,
             imported: currentScanJob?.imported ?? 0,
             skipped: currentScanJob?.skipped ?? 0,
+            conflicts: currentScanJob?.conflicts ?? 0,
           },
         })
       } catch { /* audit hỏng không sập batch */ }
@@ -261,6 +273,7 @@ async function runScanWorker(
           meta: {
             imported: currentScanJob.imported,
             skipped: currentScanJob.skipped,
+            conflicts: currentScanJob.conflicts,
             truncated: currentScanJob.truncated,
           },
         })
@@ -268,7 +281,8 @@ async function runScanWorker(
     }
 
     if (!currentScanJob?.cancelling) {
-      finishJob('done', `Quét xong: ${currentScanJob?.imported ?? 0} nhập, ${currentScanJob?.skipped ?? 0} bỏ qua`)
+      const conflicts = currentScanJob?.conflicts ?? 0
+      finishJob('done', `Quét xong: ${currentScanJob?.imported ?? 0} nhập, ${currentScanJob?.skipped ?? 0} bỏ qua${conflicts ? ` (${conflicts} trùng tên với ảnh đã có trên R2 — không ghi đè)` : ''}`)
     }
   } catch (err) {
     logWarn({ event: 'media.scan_job_failed', error: err instanceof Error ? err.message : String(err) })
@@ -299,98 +313,4 @@ async function walkUploadDir(uploadsRoot: string): Promise<string[]> {
   }
   await walk(uploadsRoot)
   return files
-}
-
-async function importOne(
-  db: ReturnType<typeof getDb>,
-  absolutePath: string,
-  uploadsRoot: string,
-  adminUserId: number | null,
-  opts?: { autoRepointToR2?: boolean; r2Config?: R2Config },
-): Promise<boolean> {
-  let stat: Stats
-  try { stat = await fs.lstat(absolutePath) } catch { return false }
-  if (!stat.isFile() || stat.size > MAX_FILE_SIZE_BYTES || stat.size === 0) return false
-
-  const handle = await fs.open(absolutePath, 'r').catch(() => null)
-  if (!handle) return false
-  try {
-    const buf = Buffer.alloc(SNIFF_BYTES)
-    const { bytesRead } = await handle.read(buf, 0, SNIFF_BYTES, 0)
-    const detected = detectImageMime(buf.subarray(0, bytesRead))
-    if (!detected) return false
-
-    let width: number | null = null
-    let height: number | null = null
-    if (isSharpDecodable(detected)) {
-      try {
-        const meta = await sharp(absolutePath).metadata()
-        width = meta.width || null
-        height = meta.height || null
-      } catch { /* sharp fail — vẫn nhập, không dimensions */ }
-    }
-
-    const filename = path.basename(absolutePath)
-    const rel = path.relative(uploadsRoot, absolutePath).replace(/\\/g, '/')
-    const localUrl = `/uploads/${rel}`
-
-    // Nếu autoRepointToR2 và có R2 config: upload R2, set provider='r2', URL=R2 URL.
-    // Giữ file local (KHÔNG xoá) để làm fallback khi R2 fail — khác hẳn `syncOneToR2`
-    // xoá local sau upload. Scan chỉ nhập mồ côi: local là chân lý gốc, R2 là cache.
-    // Nếu R2 upload fail → vẫn INSERT provider='local', không sập batch.
-    let provider: 'local' | 'r2' = 'local'
-    let url = localUrl
-    let storagePath: string = absolutePath
-    const r2Config = opts?.autoRepointToR2 ? opts?.r2Config : null
-    if (r2Config) {
-      try {
-        const buffer = await fs.readFile(absolutePath)
-        const { url: r2Url, storagePath: r2Key } = await uploadR2File(
-          buffer,
-          filename,
-          detected,
-          r2Config,
-        )
-        provider = 'r2'
-        url = r2Url
-        storagePath = r2Key
-      } catch (err) {
-        // R2 fail — lùi về local, vẫn nhập hàng. Log warn, không ném.
-        logWarn({
-          event: 'media.scan_r2_upload_failed',
-          filename,
-          path: absolutePath,
-          error: err instanceof Error ? err.message : String(err),
-        })
-      }
-    }
-
-    await db.transaction(async (tx) => {
-      const [insertRes] = await tx.insert(media).values({
-        filename,
-        originalName: filename,
-        mimeType: detected,
-        sizeBytes: stat.size,
-        provider,
-        url,
-        storagePath,
-        width,
-        height,
-        uploadedBy: adminUserId,
-      })
-      const createdId = affectedRowsOrZero(insertRes) > 0
-        ? (insertRes as { insertId?: number }).insertId ?? null
-        : null
-      await tx.insert(activityLogs).values({
-        userId: adminUserId,
-        action: 'create',
-        resource: 'media',
-        resourceId: createdId,
-        meta: { originalName: filename, url, provider, scanned: true, autoR2: provider === 'r2' },
-      })
-    })
-    return true
-  } finally {
-    await handle.close()
-  }
 }

@@ -186,9 +186,45 @@ export async function findRemainingReferences(exec: Executor, oldUrl: string): P
   return found
 }
 
-// ─── Vá lượt đồng bộ dở dang ─────────────────────────────────────────────────
+// ─── Duyệt văn bản của mọi cột tham chiếu ────────────────────────────────────
 
 const SCAN_PAGE_SIZE = 100
+
+/**
+ * Đọc văn bản của MỌI cột trong `URL_REFERENCE_TARGETS`, phân trang theo khoá chính
+ * (số, hoặc chuỗi với `settings.key`) — không nạp cả bảng vào RAM. Truy vấn MỘT
+ * bảng mỗi lần, không phải subquery tương quan: cột trần hay cột có tiền tố bảng
+ * đều chỉ có thể trỏ vào chính `table`. Trả `false` khi `shouldStop` dừng giữa chừng.
+ *
+ * Dùng chung cho lượt vá dở dang (bên dưới) và báo cáo trùng lặp
+ * (`media-duplicates.ts`) — hai nơi cùng một cách đọc, cùng bộ dò `findPresentOldUrls`.
+ */
+export async function forEachReferenceText(
+  db: Executor,
+  visit: (target: ReferenceTarget, text: string) => void,
+  opts: { shouldStop?: () => boolean } = {},
+): Promise<boolean> {
+  for (const target of URL_REFERENCE_TARGETS) {
+    const { table, id, column } = target
+    let after: number | string | null = null
+    for (;;) {
+      if (opts.shouldStop?.()) return false
+      const page = after === null ? sql`1 = 1` : sql`${id} > ${after}`
+      const list = readRows(await db.execute(
+        sql`SELECT ${id} AS id, CAST(${column} AS CHAR) AS v FROM ${table} WHERE ${page} AND ${column} IS NOT NULL ORDER BY ${id} LIMIT ${SCAN_PAGE_SIZE}`,
+      ))
+      for (const row of list) {
+        const rowId = readId(row.id)
+        if (rowId !== null) after = rowId
+        if (typeof row.v === 'string') visit(target, row.v)
+      }
+      if (list.length < SCAN_PAGE_SIZE || after === null) break
+    }
+  }
+  return true
+}
+
+// ─── Vá lượt đồng bộ dở dang ─────────────────────────────────────────────────
 
 interface SyncAuditMeta {
   sync: 'to-r2' | 'to-local'
@@ -309,26 +345,9 @@ export async function repairInterruptedSyncRewrites(
   const candidates = new Set(variantToOld.keys())
   const foundVariants = new Set<string>()
 
-  // Quét mỗi cột tham chiếu một lượt, phân trang theo khoá chính (số, hoặc chuỗi
-  // với `settings.key`) — không nạp cả bảng vào RAM.
-  for (const { table, id, column } of URL_REFERENCE_TARGETS) {
-    let after: number | string | null = null
-    for (;;) {
-      if (opts.shouldStop?.()) return empty
-      // Truy vấn MỘT bảng, không phải subquery tương quan: cột trần hay cột có tiền
-      // tố bảng đều chỉ có thể trỏ vào chính `table`.
-      const page = after === null ? sql`1 = 1` : sql`${id} > ${after}`
-      const list = readRows(await db.execute(
-        sql`SELECT ${id} AS id, CAST(${column} AS CHAR) AS v FROM ${table} WHERE ${page} AND ${column} IS NOT NULL ORDER BY ${id} LIMIT ${SCAN_PAGE_SIZE}`,
-      ))
-      for (const row of list) {
-        const rowId = readId(row.id)
-        if (rowId !== null) after = rowId
-        if (typeof row.v === 'string') findPresentOldUrls(row.v, candidates, foundVariants)
-      }
-      if (list.length < SCAN_PAGE_SIZE || after === null) break
-    }
-  }
+  // Quét mỗi cột tham chiếu một lượt (`forEachReferenceText`).
+  const completed = await forEachReferenceText(db, (_target, text) => findPresentOldUrls(text, candidates, foundVariants), opts)
+  if (!completed) return empty
   const found = new Set([...foundVariants].map(v => variantToOld.get(v) ?? v))
 
   let urlsRepaired = 0

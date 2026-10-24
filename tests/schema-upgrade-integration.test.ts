@@ -51,6 +51,7 @@ import { getTableColumns, getTableName, type Table } from 'drizzle-orm'
 import type * as TS from 'typescript'
 import * as migrations from '../server/db/migrations-additive.ts'
 import * as schema from '../server/db/schema.ts'
+import { MODERATION_RULES_SEED, SEED_GROUPS, SEED_GROUP_SPECS, seedMarkerKey } from '../server/db/seed-groups.ts'
 import { CHATBOT_SMALL_TALK_SEED } from '../server/data/chatbot-small-talk-seed.ts'
 import { DEFAULT_TRANSLATIONS_SEED } from '../server/data/default-translations-seed.ts'
 import { normalizeQuestion } from '../server/utils/chatbot/small-talk.ts'
@@ -246,6 +247,8 @@ async function readDdl(conn: Connection): Promise<Record<string, string>> {
 
 const MIGRATION_SOURCES = [
   'server/db/migrations-additive.ts',
+  // `repairLegacyMediaUrls`, called from `applyAdditiveMigrations` (moved out in wave2 D-SCAN).
+  'server/db/legacy-media-urls.ts',
   ...readdirSync(new URL('../server/db/schema-tables/', import.meta.url)).filter(name => name.endsWith('.ts')).sort().map(name => `server/db/schema-tables/${name}`),
 ]
 const sourceCache = new Map<string, string>()
@@ -300,11 +303,11 @@ function tablesTouchedByBootMigrations(previousTables: Set<string>) {
 //
 // "The boot inserted a default the seed defines" is decided against the seed's
 // DATA, by each table's full natural key — never by a text search. Exported data is
-// imported (translations, small talk). `seed.ts` runs itself on import and keeps
-// its defaults in local constants, so those constants (and the DDL files' default
-// tuples) are read with the TypeScript parser and evaluated as literals. A renamed
-// or restructured constant fails here by name instead of quietly widening a
-// declaration.
+// imported (translations, small talk, the once-per-database seed groups of
+// `seed-groups.ts`). `seed.ts` runs itself on import and keeps its other defaults in
+// local constants, so those constants are read with the TypeScript parser and
+// evaluated as literals. A renamed or restructured constant fails here by name
+// instead of quietly widening a declaration.
 
 const SEED_SOURCE = 'server/db/seed.ts'
 const LANGUAGES_SOURCE = 'server/services/languages.ts'
@@ -423,6 +426,33 @@ function stringsOf(value: unknown, field: string | number, where: string): strin
   })
 }
 
+/**
+ * The once-per-database seed groups' defaults (wave2 D7), as SQL column → value —
+ * read through each spec's own `toInsert`, the exact object `applySeedGroups` hands
+ * to `insert(…).values(…)`. The data is importable (unlike `seed.ts`, which runs on
+ * import), so it is read as data, not parsed.
+ */
+let groupDefaultRowsCache: Array<{ group: string, table: string, key: string, values: Record<string, unknown> }> | undefined
+function groupDefaultRows() {
+  if (groupDefaultRowsCache) return groupDefaultRowsCache
+  const rows: Array<{ group: string, table: string, key: string, values: Record<string, unknown> }> = []
+  for (const spec of SEED_GROUP_SPECS) {
+    const columns = new Map(Object.entries(getTableColumns(spec.table)).map(([property, column]) => [property, column.name]))
+    const allRows = [...spec.sets].sort((a, b) => a.version - b.version).flatMap(set => set.rows as readonly unknown[])
+    for (const row of allRows) {
+      const values: Record<string, unknown> = {}
+      for (const [property, value] of Object.entries((spec.toInsert as (r: unknown, all: readonly unknown[]) => Record<string, unknown>)(row, allRows))) {
+        const column = columns.get(property)
+        if (!column) throw new Error(`seed group ${spec.name} writes ${property}, which is not a column of ${getTableName(spec.table)}`)
+        values[column] = value
+      }
+      rows.push({ group: spec.name, table: getTableName(spec.table), key: (spec.keyOf as (r: unknown) => string)(row), values })
+    }
+  }
+  groupDefaultRowsCache = rows
+  return rows
+}
+
 type SeedData = {
   /** SQL tables `seed.ts` (and the languages seed it calls) insert into or update. */
   writtenTables: string[]
@@ -430,11 +460,10 @@ type SeedData = {
   seededAccounts: string[]
   /** table → natural keys of the rows the seed may add. `page_blocks` of `home` are added per database (copied from home_sections). */
   keys: Map<string, Set<string>>
-  /** the DDL files' own default inserts. */
-  ddlKeys: Map<string, Set<string>>
   /** table → natural key → every column the seed writes for that default row, with its value */
   contents: DefaultContents
-  ddlContents: DefaultContents
+  /** every `seed.<group>.v<N>.done` marker the seed groups write (wave2 D7). */
+  markerKeys: Set<string>
   pricingModels: string[]
   moderationRules: Array<{ category: string, pattern: string }>
 }
@@ -452,10 +481,19 @@ function loadSeedData(): SeedData {
     return table
   }
   const languagesSeed = functionNamed(LANGUAGES_SOURCE, 'seedDefaultLanguagesAndTranslations')
+  // Every group the seed runs once per database (wave2 D7) is one of these specs — a new
+  // group must say how its rows are recognised here.
+  if (SEED_GROUPS.map(group => group.name).sort().join() !== SEED_GROUP_SPECS.map(spec => spec.name).sort().join()) {
+    throw new Error('SEED_GROUPS changed — add the new group spec to SEED_GROUP_SPECS')
+  }
+  const groupKeys = (name: string) => new Set(groupDefaultRows().filter(row => row.group === name).map(row => row.key))
   const writtenTables = [...new Set([
     ...[...writtenIdentifiers(parsed(SEED_SOURCE)), ...writtenIdentifiers(languagesSeed)].map(toTable),
     ...rawSqlWrittenTables(parsed(SEED_SOURCE)),
     ...rawSqlWrittenTables(languagesSeed),
+    // `applySeedGroups` writes each group's table and its markers in `settings`.
+    ...SEED_GROUP_SPECS.map(spec => getTableName(spec.table)),
+    'settings',
   ])].sort()
 
   const roles = insertedValues(SEED_SOURCE, 'roles').flatMap(value => stringsOf(value, 'name', 'insert(roles).values'))
@@ -476,9 +514,9 @@ function loadSeedData(): SeedData {
     ['permissions', new Set(roles.flatMap(role => resources.map(resource => `${role}|${resource}`)))],
     ['home_sections', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultSections'), 'type', 'defaultSections'))],
     ['settings', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultSettings'), 'key', 'defaultSettings'))],
-    ['content_types', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'DEFAULT_CONTENT_TYPES'), 'slug', 'DEFAULT_CONTENT_TYPES'))],
-    ['categories', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'DEFAULT_CATEGORIES'), 'slug', 'DEFAULT_CATEGORIES'))],
-    ['media_categories', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'DEFAULT_MEDIA_CATEGORIES'), 'slug', 'DEFAULT_MEDIA_CATEGORIES'))],
+    ['content_types', groupKeys('content_types')],
+    ['categories', groupKeys('categories')],
+    ['media_categories', groupKeys('media_categories')],
     ['pages', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'DEFAULT_PAGES'), 'slug', 'DEFAULT_PAGES'))],
     ['page_blocks', new Set([...block('aboutBlocks', 'about'), ...block('contactBlocks', 'contact')])],
     ['chatbot_settings', new Set(insertedValues(SEED_SOURCE, 'chatbotSettings').map(value => String((value as Record<string, unknown>).id)))],
@@ -487,34 +525,35 @@ function loadSeedData(): SeedData {
     ['ai_service_configs', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultServices'), 'serviceKey', 'defaultServices'))],
     ['ai_budget_settings', new Set(insertedValues(SEED_SOURCE, 'aiBudgetSettings').map(value => String((value as Record<string, unknown>).id)))],
     ['ai_providers', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultProviders'), 'provider', 'defaultProviders'))],
-    ['ai_moderation_rules', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultRules'), 'pattern', 'defaultRules'))],
-    ['social_links', new Set(stringsOf(declaredConstant(SEED_SOURCE, 'defaultSocialLinks'), 'platform', 'defaultSocialLinks'))],
+    ['ai_moderation_rules', groupKeys('moderation_rules')],
+    ['social_links', groupKeys('social_links')],
     ['languages', new Set(stringsOf(declaredConstant(LANGUAGES_SOURCE, 'DEFAULT_LANGUAGES'), 'code', 'DEFAULT_LANGUAGES'))],
     ['lang_translations', new Set(DEFAULT_TRANSLATIONS_SEED.flatMap(item =>
       Object.entries(item.values).filter(([, value]) => value).map(([lang]) => `${lang}|${item.group}|${item.key}`)))],
   ])
   const missing = writtenTables.filter(table => !keys.has(table))
   if (missing.length) throw new Error(`the seed writes ${missing.join(', ')} — say how a default row of it is recognised in loadSeedData()`)
-  const ddlKeys = new Map<string, Set<string>>([
-    ['content_types', new Set(stringsOf(declaredConstant('server/db/schema-tables/core.ts', 'systemTypes'), 1, 'core.ts systemTypes'))],
-    ['categories', new Set(stringsOf(declaredConstant('server/db/schema-tables/content.ts', 'defaultCategories'), 1, 'content.ts defaultCategories'))],
-  ])
-  const rules = declaredConstant(SEED_SOURCE, 'defaultRules') as Array<Record<string, unknown>>
   const contents = collectDefaults(
-    [...seedInsertRows(SEED_SOURCE, parsed(SEED_SOURCE)), ...seedInsertRows(LANGUAGES_SOURCE, languagesSeed)],
+    [
+      ...seedInsertRows(SEED_SOURCE, parsed(SEED_SOURCE)),
+      ...seedInsertRows(LANGUAGES_SOURCE, languagesSeed),
+      ...groupDefaultRows().map(({ table, values }) => ({ table, values })),
+    ],
     // The languages seed skips an empty translation (`if (!value) continue`).
     (table, values) => table === 'lang_translations' && !values.value,
   )
-  const ddlContents = collectDefaults(['server/db/schema-tables/core.ts', 'server/db/schema-tables/content.ts'].flatMap(ddlDefaultRows))
+  // The DDL files are DDL only since wave2 D7: no INSERT is left for ddlDefaultRows to find.
+  for (const path of ['server/db/schema-tables/core.ts', 'server/db/schema-tables/content.ts']) {
+    if (ddlDefaultRows(path).length) throw new Error(`${path} inserts default rows again — the once-per-database groups live in server/db/seed-groups.ts (wave2 D7)`)
+  }
   seedDataCache = {
     writtenTables,
     seededAccounts,
     keys,
-    ddlKeys,
     contents,
-    ddlContents,
+    markerKeys: new Set(SEED_GROUPS.flatMap(group => group.sets.map(set => seedMarkerKey(group.name, set.version)))),
     pricingModels: [...keys.get('ai_model_pricing')!],
-    moderationRules: rules.map(rule => ({ category: String(rule.category), pattern: String(rule.pattern) })),
+    moderationRules: MODERATION_RULES_SEED.sets.flatMap(set => set.rows).map(rule => ({ category: rule.category, pattern: rule.pattern })),
   }
   return seedDataCache
 }
@@ -909,8 +948,13 @@ const SEED_OVERRIDES: Record<string, SeedOverride> = {
     row: i => (i === 0 ? { resource: 'news', can_delete: 0, can_publish: 0 } : {}),
   },
   settings: {
-    why: 'staff-edited values of keys the seed also defaults — the seed is insert-only',
-    row: i => ({ key: ['site_name', 'hotline', 'sitemap_note'][i]!, value: ['Con Đường Hướng Thiện — C11 (đã sửa)', '0912.345.678', null][i]!, group: ['general', 'contact', 'general'][i]! }),
+    count: 4,
+    why: 'staff-edited values of keys the seed also defaults — the seed is insert-only; r2_public_url is the R2 domain repairLegacyMediaUrls repairs `localhost:3000/<domain>` URLs to (wave2 D-SCAN: configured, no longer hard-coded)',
+    row: i => ({
+      key: ['site_name', 'hotline', 'sitemap_note', 'r2_public_url'][i]!,
+      value: ['Con Đường Hướng Thiện — C11 (đã sửa)', '0912.345.678', null, 'https://cdn1.delify.vn/'][i]!,
+      group: ['general', 'contact', 'general', 'media'][i]!,
+    }),
   },
   home_sections: {
     why: 'two default section types reordered and hidden by staff, one custom section',
@@ -1164,7 +1208,7 @@ function defaultKeyedColumns(rows: Map<string, Row[]>) {
     for (const row of tableRows) {
       const key = generatedKey(table, row, rows)
       if (key === null) continue
-      const defaults = [seed.contents, seed.ddlContents].map(contents => contents.get(table)?.get(key)).filter((d): d is Record<string, unknown> => !!d)
+      const defaults = [seed.contents.get(table)?.get(key)].filter((d): d is Record<string, unknown> => !!d)
       for (const column of new Set(defaults.flatMap(d => Object.keys(d)))) {
         if (keyColumns(table).includes(column)) continue
         found.push({ table, key, row, column, defaults: defaults.map(d => d[column]).filter(value => value !== undefined) })
@@ -1399,29 +1443,53 @@ const CHATBOT_BACKFILL = new Set(migrations.chatbotColumnMigrations.filter(m => 
 const nullFilled = (change: Change, columns: Set<string>) =>
   change.kind === 'cell' && columns.has(`${change.table}.${change.column}`) && change.before === null && change.after !== null
 
+/**
+ * The R2 public domain `repairLegacyMediaUrls` reads from `settings.r2_public_url`
+ * (scheme and trailing `/` dropped) — null when none is configured, and then the
+ * domain steps do not run (wave2 D-SCAN: no more hard-coded `cdn1.delify.vn`).
+ */
+function configuredR2Domain(snap: Snapshot): string | null {
+  const value = snap.get('settings')?.rows.get('key=r2_public_url')?.value
+  if (!value) return null
+  const domain = value.trim().replace(/^https?:\/\//i, '').replace(/\/+$/, '')
+  return domain && !/[\s"'<>\\`]/.test(domain) ? domain : null
+}
+
 /** What `repairLegacyMediaUrls` step 1 makes of a `media.url` — each SQL `REPLACE` replaces every occurrence. */
-function repairedMediaUrl(url: string): string {
+function repairedMediaUrl(url: string, domain: string | null): string {
   let value = url
-  if (value.startsWith('http://localhost:3000/cdn1')) value = value.replaceAll('http://localhost:3000/', '')
-  if (value.startsWith('https://localhost:3000/cdn1')) value = value.replaceAll('https://localhost:3000/', '')
   if (value.startsWith('http://localhost:3000http')) value = value.replaceAll('http://localhost:3000', '')
   if (value.startsWith('https://localhost:3000http')) value = value.replaceAll('https://localhost:3000', '')
-  if (!value.startsWith('http') && value.startsWith('cdn1.delify.vn')) value = `https://${value}`
+  if (domain) {
+    if (value.startsWith(`http://localhost:3000/${domain}`)) value = value.replaceAll('http://localhost:3000/', '')
+    if (value.startsWith(`https://localhost:3000/${domain}`)) value = value.replaceAll('https://localhost:3000/', '')
+    if (!value.startsWith('http') && value.startsWith(domain)) value = `https://${value}`
+  }
   return value
 }
 
-/** Steps 2 and 3 for `articles.content`, with the R2 objects as they stand after step 1. */
-function repairedArticleContent(content: string, media: Cells[]): string {
+/**
+ * Steps 2 and 3 for `articles.content`, with the media rows as they stand after
+ * step 1. A file name (raw or `encodeURIComponent`) carried by more than one `media`
+ * row, whatever its provider, is ambiguous and never mapped.
+ */
+function repairedArticleContent(content: string, media: Cells[], domain: string | null): string {
   let value = content
     .replaceAll('http://localhost:3000https://', 'https://')
     .replaceAll('https://localhost:3000https://', 'https://')
-    .replaceAll('http://localhost:3000/cdn1.delify.vn', 'https://cdn1.delify.vn')
-    .replaceAll('https://localhost:3000/cdn1.delify.vn', 'https://cdn1.delify.vn')
-  const urlByFilename = new Map<string, string>()
+  if (domain) {
+    value = value
+      .replaceAll(`http://localhost:3000/${domain}`, `https://${domain}`)
+      .replaceAll(`https://localhost:3000/${domain}`, `https://${domain}`)
+  }
+  const owners = new Map<string, Cells[]>()
   for (const row of media) {
-    if (row.provider !== 'r2' || !row.filename || !row.url) continue
-    urlByFilename.set(row.filename, row.url)
-    urlByFilename.set(encodeURIComponent(row.filename), row.url)
+    if (!row.filename) continue
+    for (const name of new Set([row.filename, encodeURIComponent(row.filename)])) owners.set(name, [...(owners.get(name) ?? []), row])
+  }
+  const urlByFilename = new Map<string, string>()
+  for (const [name, rows] of owners) {
+    if (rows.length === 1 && rows[0]!.provider === 'r2' && rows[0]!.url) urlByFilename.set(name, rows[0]!.url)
   }
   if (!value.includes('/uploads/migrated/media/') || urlByFilename.size === 0) return value
   value = value
@@ -1431,8 +1499,11 @@ function repairedArticleContent(content: string, media: Cells[]): string {
 }
 
 /**
- * Seed groups whose re-insertion of a deleted default is the bug wave2 D7 fixes.
- * Until then the seed puts a default back into a table staff already curate.
+ * The once-per-database seed groups (wave2 D7, `server/db/seed-groups.ts`). A boot
+ * may fill one of these tables only while it is EMPTY; once a table has rows, a
+ * default missing from it is one staff deleted, and re-inserting it is the bug D7
+ * fixed (until then the seed and the DDL files put it back on every boot). No
+ * declaration covers such an insert, so a regression fails boot 1 by name.
  */
 const D7_SEED_GROUPS = new Set(['ai_moderation_rules', 'social_links', 'media_categories', 'content_types', 'categories'])
 
@@ -1440,15 +1511,15 @@ const D7_SEED_GROUPS = new Set(['ai_moderation_rules', 'social_links', 'media_ca
  * What the seed writes for a default row: from its data (`loadSeedData`), or — for a
  * home-page block — from the home section the seed copies it from.
  */
-function expectedContent(table: string, key: string, ctx: BootContext, source: 'seed' | 'ddl'): Record<string, unknown> | undefined {
-  if (source === 'seed' && table === 'page_blocks' && key.startsWith('home|')) {
+function expectedContent(table: string, key: string, ctx: BootContext): Record<string, unknown> | undefined {
+  if (table === 'page_blocks' && key.startsWith('home|')) {
     const [, type, order] = key.split('|')
     const section = rowsOf(ctx.after, 'home_sections').find(row => row.type === type && row.display_order === order)
     if (!section) return undefined
     // seed.ts: `data: (s.config ?? {})`, `isVisible: s.isVisible ?? true`
     return { data: section.config === null ? {} : JSON.parse(section.config), is_visible: section.is_visible === null ? true : section.is_visible === '1' }
   }
-  return (source === 'ddl' ? ctx.seed.ddlContents : ctx.seed.contents).get(table)?.get(key)
+  return ctx.seed.contents.get(table)?.get(key)
 }
 
 /**
@@ -1456,9 +1527,9 @@ function expectedContent(table: string, key: string, ctx: BootContext, source: '
  * (`loadSeedData`), plus — for `page_blocks` — one block per home section, because
  * the seed copies `home_sections` into an empty home page.
  */
-function defaultKeys(table: string, ctx: BootContext, source: 'seed' | 'ddl'): Set<string> {
-  const keys = (source === 'ddl' ? ctx.seed.ddlKeys : ctx.seed.keys).get(table) ?? new Set<string>()
-  if (source === 'ddl' || table !== 'page_blocks') return keys
+function defaultKeys(table: string, ctx: BootContext): Set<string> {
+  const keys = ctx.seed.keys.get(table) ?? new Set<string>()
+  if (table !== 'page_blocks') return keys
   const home = rowsOf(ctx.after, 'home_sections').map(section => `home|${section.type}|${section.display_order}`)
   return new Set([...keys, ...home])
 }
@@ -1469,10 +1540,10 @@ function defaultKeys(table: string, ctx: BootContext, source: 'seed' | 'ddl'): S
  * staff-created role, a second account, or a duplicate of a default that existed
  * is not this — it fails as undeclared.
  */
-function addsMissingDefault(change: Change, ctx: BootContext, source: 'seed' | 'ddl'): boolean {
+function addsMissingDefault(change: Change, ctx: BootContext): boolean {
   if (change.kind !== 'inserted') return false
   const key = naturalKey(change.table, change.row, ctx.after)
-  if (key === null || !defaultKeys(change.table, ctx, source).has(key)) return false
+  if (key === null || !defaultKeys(change.table, ctx).has(key)) return false
   const cacheKey = `before:${change.table}`
   if (!ctx.keyCache.has(cacheKey)) {
     ctx.keyCache.set(cacheKey, new Set(rowsOf(ctx.before, change.table).map(row => naturalKey(change.table, row, ctx.before)).filter((k): k is string => k !== null)))
@@ -1481,7 +1552,7 @@ function addsMissingDefault(change: Change, ctx: BootContext, source: 'seed' | '
   const claim = `${change.table}\u0000${key}`
   if (ctx.claimed.has(claim)) return false
   // …and it holds exactly what the seed writes for that default.
-  const expected = expectedContent(change.table, key, ctx, source)
+  const expected = expectedContent(change.table, key, ctx)
   if (!expected) return false
   const referenceOf: ReferenceOf = (kind, id) => (id === null ? null
     : kind === 'role' ? ctx.after.get('roles')?.rows.get(`id=${id}`)?.name ?? null : ctx.after.get('pages')?.rows.get(`id=${id}`)?.slug ?? null)
@@ -1572,12 +1643,13 @@ const DECLARED_CONVERSIONS: DeclaredConversion[] = [
   },
   {
     id: 'additive.repair-legacy-media-urls',
-    source: 'server/db/migrations-additive.ts',
+    source: 'server/db/legacy-media-urls.ts',
     anchor: /async function repairLegacyMediaUrls\(/,
-    reason: 'strips a localhost prefix from CDN URLs and points migrated-media links at their R2 object; the result must be exactly that rewrite (ambiguity handling is wave2 D-SCAN)',
+    reason: 'strips a localhost prefix from CDN URLs (the configured R2 domain, settings.r2_public_url) and points migrated-media links at their R2 object, skipping a file name more than one media row carries (wave2 D-SCAN); the result must be exactly that rewrite',
     covers: (change, ctx) => {
-      if (isCell(change, 'media', ['url'])) return change.before !== null && change.after === repairedMediaUrl(change.before)
-      if (isCell(change, 'articles', ['content'])) return change.before !== null && change.after === repairedArticleContent(change.before, rowsOf(ctx.after, 'media'))
+      const domain = configuredR2Domain(ctx.before)
+      if (isCell(change, 'media', ['url'])) return change.before !== null && change.after === repairedMediaUrl(change.before, domain)
+      if (isCell(change, 'articles', ['content'])) return change.before !== null && change.after === repairedArticleContent(change.before, rowsOf(ctx.after, 'media'), domain)
       return false
     },
   },
@@ -1589,33 +1661,23 @@ const DECLARED_CONVERSIONS: DeclaredConversion[] = [
     covers: change => isCell(change, 'media_items', ['short_id']) && change.before === null && /^[A-Za-z0-9_-]{11}$/.test(String(change.after)),
   },
   {
-    id: 'ddl.default-content-types',
-    source: 'server/db/schema-tables/core.ts',
-    anchor: /INSERT INTO \\`content_types\\`[\s\S]*?ON DUPLICATE KEY UPDATE \\`slug\\` = \\`slug\\`/,
-    reason: 'initDb() inserts the system content types missing by slug (core.ts systemTypes) — into a table staff curate, that re-adds a deleted one on every boot; fixed by wave2 D7 (moved into seed.ts behind a marker)',
-    covers: (change, ctx) => isInsert(change, ['content_types']) && addsMissingDefault(change, ctx, 'ddl'),
-  },
-  {
-    id: 'ddl.default-categories',
-    source: 'server/db/schema-tables/content.ts',
-    anchor: /INSERT INTO \\`categories\\`[\s\S]*?ON DUPLICATE KEY UPDATE \\`slug\\` = \\`slug\\`/,
-    reason: 'initDb() inserts the default article categories missing by slug (content.ts defaultCategories) — same re-adding of a deleted default; fixed by wave2 D7',
-    covers: (change, ctx) => isInsert(change, ['categories']) && addsMissingDefault(change, ctx, 'ddl'),
-  },
-  {
-    id: 'seed.resurrects-deleted-defaults',
-    source: 'server/db/seed.ts',
-    anchor: /if \(!existing\) \{\s*await db\.insert\(socialLinks\)/,
-    reason: 'seed.ts adds every default missing from a table that already has rows, so a default staff deleted comes back on every boot — fixed by wave2 D7 (seed markers)',
-    covers: (change, ctx) => isInsert(change, D7_SEED_GROUPS) && hadRows(ctx.before, change.table) && addsMissingDefault(change, ctx, 'seed'),
+    id: 'seed.group-markers',
+    source: 'server/db/seed-groups.ts',
+    anchor: /await tx\.insert\(settings\)\.values\(\{ key, value: now\.toISOString\(\), type: 'string', group: SEED_MARKER_SETTINGS_GROUP \}\)/,
+    reason: 'wave2 D7: the first boot after the seed markers ship records each default set of each once-per-database group as seeded (`seed.<group>.v<N>.done`, value = ISO time, group internal) — a table that already has rows gets the v1 marker only, nothing inserted; from then on the set never runs again, so a default staff delete stays deleted',
+    covers: (change, ctx) => isInsert(change, ['settings'])
+      && ctx.seed.markerKeys.has(String(change.row.key))
+      && !(ctx.before.get('settings')?.rows.has(`key=${change.row.key}`) ?? false)
+      && change.row.group === 'internal'
+      && !Number.isNaN(Date.parse(String(change.row.value))),
   },
   {
     id: 'seed.insert-missing-defaults',
     source: 'server/db/seed.ts',
     anchor: /const keepExisting = \(column: string\) => sql\.raw/,
-    reason: 'seed.ts is insert-only: it adds the default rows that are missing (a fresh group, a new settings key or translation) — matched by full natural key against the seed\'s own data — and never updates or deletes one',
+    reason: 'seed.ts is insert-only: it adds the default rows that are missing (a fresh group, a new settings key or translation) — matched by full natural key against the seed\'s own data — and never updates or deletes one. A once-per-database group (wave2 D7) is only filled while its table is empty',
     covers: (change, ctx) => change.kind === 'inserted' && !(D7_SEED_GROUPS.has(change.table) && hadRows(ctx.before, change.table))
-      && addsMissingDefault(change, ctx, 'seed'),
+      && addsMissingDefault(change, ctx),
   },
   {
     id: 'seed.ai-provider-backfill',
@@ -1729,8 +1791,13 @@ test('every table a boot migration touches gets representative rows', { skip: !e
   const { touched, newTables } = tablesTouchedByBootMigrations(previousTables)
   // Non-vacuity: each derivation path found what it must — the exported arrays, the
   // literal helper calls, the DDL-file helpers and the raw conversions.
-  for (const table of ['analytics_live_minute_buckets', 'chatbot_knowledge_terms', 'reader_accounts', 'media_items', 'submissions', 'pages', 'lang_translations', 'media', 'articles', 'categories', 'content_types']) {
+  for (const table of ['analytics_live_minute_buckets', 'chatbot_knowledge_terms', 'reader_accounts', 'media_items', 'submissions', 'pages', 'lang_translations', 'media', 'articles']) {
     assert.ok(touched.includes(table), `the migration parser no longer finds ${table}`)
+  }
+  // The DDL files are DDL only since wave2 D7: the once-per-database groups are
+  // written by the seed, and reach the seeded tables through `seedWritten` below.
+  for (const table of D7_SEED_GROUPS) {
+    assert.ok(loadSeedData().writtenTables.includes(table), `the seed-write scan no longer finds the D7 group table ${table}`)
   }
   for (const table of Object.keys(SEED_OVERRIDES)) assert.ok(previousTables.has(table), `SEED_OVERRIDES names ${table}, which the previous release does not have`)
   // The tables the seed writes get representative rows too, each with a row that
@@ -1776,6 +1843,10 @@ test('boot 1 on the previous release keeps every row except the declared one-tim
   const current = requireState('boot 1')
   assert.ok(current.touched.length > 0, 'nothing was seeded')
   const beforeBoot = await snapshot()
+  // Non-vacuity for D7: every once-per-database group starts with rows (staff data,
+  // most defaults missing), so boot 1 takes the bootstrap path — markers only.
+  for (const table of D7_SEED_GROUPS) assert.ok(hadRows(beforeBoot, table), `${table} has no representative rows — the D7 bootstrap path is not exercised`)
+  assert.deepEqual([...beforeBoot.get('settings')!.rows.keys()].filter(key => key.startsWith('key=seed.')), [], 'the previous release has no seed markers')
   await boot()
   const afterBoot = await snapshot()
 
@@ -1806,6 +1877,16 @@ test('boot 1 on the previous release keeps every row except the declared one-tim
   assert.equal(cellAfter('articles', 'id=2', 'content'), '<img src="https://cdn1.delify.vn/uploads/a.jpg"><a href="https://cdn1.delify.vn/uploads/b.pdf">PDF</a>')
   assert.equal(cellAfter('articles', 'id=3', 'content'), '<p>Ảnh cũ</p><img src="/uploads/migrated/media/khong-ton-tai.jpg">', 'a migrated link with no R2 object must stay as it was')
   assert.equal(cellAfter('chatbot_settings', 'id=1', 'mode'), 'knowledge', 'the stored chatbot mode was rewritten on a database that already had the column')
+  // D7: no default came back into a table staff curate, and every set is marked.
+  for (const table of D7_SEED_GROUPS) {
+    assert.deepEqual([...afterBoot.get(table)!.rows.keys()], [...beforeBoot.get(table)!.rows.keys()], `${table}: boot 1 re-inserted a default staff deleted`)
+  }
+  assert.deepEqual(
+    [...afterBoot.get('settings')!.rows.keys()].filter(key => key.startsWith('key=seed.')).sort(),
+    [...loadSeedData().markerKeys].map(key => `key=${key}`).sort(),
+    'every default set of every group is marked on the first boot',
+  )
+  assert.equal(cellAfter('articles', 'id=1', 'updated_at'), beforeBoot.get('articles')!.rows.get('id=1')!.updated_at, 'repairing a link is not an edit of the article: updated_at is kept')
 
   t.diagnostic(`declared conversions observed on boot 1: ${[...fired].map(([id, n]) => `${id} ×${n}`).join(', ') || 'none'}`)
   const silent = DECLARED_CONVERSIONS.filter(conversion => !fired.has(conversion.id)).map(conversion => conversion.id)
@@ -1822,6 +1903,29 @@ test('boot 2 changes nothing at all — no row, no column, no table, no schema',
   const changes = diffSnapshots(current.afterBoot1, afterBoot2)
   assert.equal(changes.length, 0, `boot 2 changed ${changes.length} thing(s) — a boot-time write that is not idempotent:\n${report(changes)}`)
   assert.deepEqual(await withConnection(readDdl), current.ddlAfterBoot1, 'boot 2 changed the schema')
+})
+
+test('a default staff deleted stays deleted across another reboot (wave2 D7)', { skip: !enabled, timeout: 300_000 }, async () => {
+  const current = requireState('reboot after a delete')
+  assert.ok(current.afterBoot1, 'boot 1 did not complete')
+  // One default of every once-per-database group, deleted the way staff would.
+  const deleted: Array<[table: string, column: string, value: string]> = [
+    ['ai_moderation_rules', 'pattern', loadSeedData().moderationRules[0]!.pattern],
+    ['social_links', 'platform', 'Facebook'],
+    ['content_types', 'slug', 'news'],
+    ['categories', 'slug', 'tin-noi-bat'],
+    ['media_categories', 'slug', 'video-huong-dan'],
+  ]
+  await withConnection(async (conn) => {
+    for (const [table, column, value] of deleted) {
+      const [result] = await conn.query(`DELETE FROM \`${table}\` WHERE \`${column}\` = ?`, [value])
+      assert.equal((result as { affectedRows: number }).affectedRows, 1, `${table}: the default ${value} was not there to delete`)
+    }
+  })
+  const beforeReboot = await snapshot()
+  await boot()
+  const changes = diffSnapshots(beforeReboot, await snapshot())
+  assert.equal(changes.length, 0, `the reboot after a staff delete changed ${changes.length} thing(s) — a deleted default came back?\n${report(changes)}`)
 })
 
 test('the seed declarations accept exactly the seed\'s own missing defaults, by full natural key', { skip: !enabled }, () => {
@@ -1899,10 +2003,34 @@ test('the seed declarations accept exactly the seed\'s own missing defaults, by 
   }
 
   // The two readings of the seed agree: every default key has its content, and back.
-  for (const [tableName, keys] of [...seed.keys, ...seed.ddlKeys.entries()]) {
-    const contents = (seed.ddlKeys.get(tableName) === keys ? seed.ddlContents : seed.contents).get(tableName)
+  for (const [tableName, keys] of seed.keys) {
+    const contents = seed.contents.get(tableName)
     assert.deepEqual([...(contents?.keys() ?? [])].sort(), [...keys].sort(), `${tableName}: the default keys and the default contents read from the seed differ`)
   }
+
+  // D7 markers: exactly the markers of the seed groups, in the internal group, with an ISO time.
+  // The literal keys are pinned here, independent of `seedMarkerKey` (a renamed format
+  // would leave every existing database unmarked and re-seed every group once).
+  assert.deepEqual([...seed.markerKeys].sort(), [
+    'seed.categories.v1.done', 'seed.content_types.v1.done', 'seed.media_categories.v1.done',
+    'seed.moderation_rules.v1.done', 'seed.social_links.v1.done',
+  ])
+  const marker = (key: string, overrides: Record<string, string> = {}) => ({ key, value: '2026-10-24T03:04:05.678Z', type: 'string', group: 'internal', ...overrides })
+  const withSettings: Snapshot = new Map([...before, ['settings', table([{ key: 'site_name', value: 'C11', type: 'string', group: 'general' }, marker('seed.categories.v1.done')], 'key')]])
+  const settingsCtx = (): BootContext => ({ before: withSettings, after: withSettings, foreignKeysBefore: [], seed, claimed: new Set(), keyCache: new Map(), notes: new Set() })
+  assert.equal(declares(settingsCtx(), 'settings', marker('seed.moderation_rules.v1.done')), 'seed.group-markers')
+  assert.equal(declares(settingsCtx(), 'settings', marker('seed.categories.v1.done')), null, 'a marker that already existed is not written again')
+  assert.equal(declares(settingsCtx(), 'settings', marker('seed.moderation_rules.v9.done')), null, 'a marker for a set the seed does not define')
+  assert.equal(declares(settingsCtx(), 'settings', marker('seed.social_links.v1.done', { group: 'general' })), null, 'a marker outside the internal group')
+  assert.equal(declares(settingsCtx(), 'settings', marker('seed.social_links.v1.done', { value: 'done' })), null, 'a marker whose value is not a time')
+  // A default into a D7 table that already had rows is the resurrection D7 removed: undeclared.
+  const curated: Snapshot = new Map([...before, ['social_links', table([{ id: '1', platform: 'Diễn đàn' }])]])
+  const resurrect = (): BootContext => ({ before: curated, after: curated, foreignKeysBefore: [], seed, claimed: new Set(), keyCache: new Map(), notes: new Set() })
+  assert.equal(declares(resurrect(), 'social_links', asSeeded('social_links', 'Facebook', '2')), null, 'a deleted default re-inserted into a curated table')
+  const empty: Snapshot = new Map([...before, ['social_links', table([])]])
+  const fresh = (): BootContext => ({ before: empty, after: empty, foreignKeysBefore: [], seed, claimed: new Set(), keyCache: new Map(), notes: new Set() })
+  assert.equal(declares(fresh(), 'social_links', asSeeded('social_links', 'Facebook', '1')), 'seed.insert-missing-defaults', 'an empty group table is filled with its defaults')
+  assert.equal(declares(fresh(), 'social_links', asSeeded('social_links', 'Facebook', '1', { url: 'https://facebook.com/gia-mao' })), null, 'a group default inserted with other content than the group spec writes')
 })
 
 test('every declared conversion still names code that exists', { skip: !enabled }, () => {
