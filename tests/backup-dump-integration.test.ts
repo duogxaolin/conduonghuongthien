@@ -52,7 +52,10 @@
  *      host way back the error message gives (fake `docker`, real `dumpSql` output);
  *  16. a dump holding plaintext credentials (from before wave2 2A) leaves them sealed on
  *      every path that ran it — complete, dump dying half-way, schema step failing —
- *      because the restore seals them right after the schema step, whatever it did.
+ *      because the restore seals them right after the schema step, whatever it did;
+ *  17. a dump from before the view totals (wave2 2C) restores with `articles.view_total*`
+ *      back at once and equal to the restored daily rows (the boot reconcile runs in the
+ *      restore's schema step), `updated_at` untouched.
  *
  * Gated and self-cleaning like the other *-integration suites:
  *
@@ -100,11 +103,12 @@ const DB = {
   secretsOk: `cdkt_backup_dump_${runId}_secretsok`,
   secretsHalf: `cdkt_backup_dump_${runId}_secretshalf`,
   secretsSchema: `cdkt_backup_dump_${runId}_secretsschema`,
+  pre2c: `cdkt_backup_dump_${runId}_pre2c`,
 }
 
 /** Never let a typo in the env point this at a real deployment. */
 function assertDisposableDatabase(name: string) {
-  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold|gensrc|gendst|legacydst|oldschema|sweep|partial|converge|oldregistry|audit|oldshape|busy|hostfallback|secretsok|secretshalf|secretsschema)$/)
+  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold|gensrc|gendst|legacydst|oldschema|sweep|partial|converge|oldregistry|audit|oldshape|busy|hostfallback|secretsok|secretshalf|secretsschema|pre2c)$/)
   assert.notEqual(name, 'cdkt_admin')
 }
 
@@ -1049,4 +1053,65 @@ test('a dump holding plaintext credentials restores into envelopes — complete,
     if (previousKey === undefined) delete process.env.CHATBOT_ENCRYPTION_SECRET
     else process.env.CHATBOT_ENCRYPTION_SECRET = previousKey
   }
+})
+
+// ─── 17. wave2 integration: 2C's view totals after ops' restore ───────────────
+
+test('a dump from before the view totals (2C) restores with the columns back and every total equal to its restored daily rows, updated_at kept', { skip: !enabled, timeout: 300_000 }, async () => {
+  // 2C (§ 35) left this open: an in-app restore did not run the boot migrations, so a
+  // pre-2C dump left `articles` without `view_total*` until the next restart — every
+  // article page, "Đọc nhiều" and every counted view failed in between. Ops (§ 36) runs
+  // the boot schema steps right after the dump; those include 2C's reconcile, which
+  // rebuilds the totals from the daily rows the dump brought back.
+  const { closeDb } = await import('../server/utils/db')
+  await closeDb()
+  pointAppAt(DB.pre2c)
+  const dir = freshBackupsDir('backups-pre2c')
+  const { initDb } = await import('../server/db/init')
+  await initDb()
+  const seed = await mysql.createConnection({ host, port, user, password, database: DB.pre2c })
+  try {
+    await seed.query("SET SESSION time_zone = '+00:00'")
+    await seed.query("INSERT INTO roles (id, name, is_system) VALUES (1, 'SuperAdmin', 1)")
+    await seed.query("INSERT INTO users (id, username, password_hash, role_id, is_active) VALUES (1, 'root-admin', 'x', 1, 1)")
+    await seed.query(
+      `INSERT INTO articles (id, type, title, slug, status, created_at, updated_at)
+       VALUES (1, 'news', 'Bài có lượt xem', 'bai-co-luot-xem', 'published', '2026-03-04 05:06:07', '2026-05-06 07:08:09'),
+              (2, 'news', 'Bài chưa ai xem', 'bai-chua-ai-xem', 'published', '2026-03-05 05:06:07', '2026-05-07 07:08:09')`,
+    )
+    await seed.query(
+      `INSERT INTO article_view_daily (day, article_id, source_category, real_views, fabricated_views)
+       VALUES ('2026-10-01', 1, 'direct', 5, 0), ('2026-10-02', 1, 'search', 2, 0), ('2026-10-02', 1, 'boost', 0, 3)`,
+    )
+    // The release before 2C: no totals, no ranking index.
+    await seed.query('ALTER TABLE articles DROP INDEX articles_status_type_views_idx, DROP COLUMN view_total, DROP COLUMN view_total_fabricated, DROP COLUMN view_total_real')
+  } finally {
+    await seed.end()
+  }
+  const { dumpSql } = await import('../server/services/backup-sql')
+  await dumpSql(path.join(dir, 'pre-2c.sql.gz'))
+  assert.doesNotMatch(gunzipSync(readFileSync(path.join(dir, 'pre-2c.sql.gz'))).toString('utf8'), /view_total/, 'the dump is from before 2C')
+  // The current release boots on that database, then the old dump is restored.
+  await initDb()
+  const updatedBefore = await exactRows(DB.pre2c, 'SELECT id, CAST(updated_at AS CHAR) AS updated_at FROM articles ORDER BY id')
+
+  const { runRestore } = await import('../server/services/backup-restore')
+  await runRestore('pre-2c.sql.gz', { id: 1, username: 'root-admin' })
+
+  for (const column of ['view_total_real', 'view_total_fabricated', 'view_total']) {
+    assert.ok((await columnsOf(DB.pre2c, 'articles')).includes(column), `articles.${column} is back right after the restore`)
+  }
+  assert.deepEqual(
+    await exactRows(DB.pre2c, 'SELECT id, view_total_real, view_total_fabricated, view_total FROM articles ORDER BY id'),
+    [
+      { id: 1, view_total_real: '7', view_total_fabricated: '3', view_total: '10' },
+      { id: 2, view_total_real: '0', view_total_fabricated: '0', view_total: '0' },
+    ],
+    'every total is the sum of the restored daily rows',
+  )
+  assert.deepEqual(await exactRows(DB.pre2c, 'SELECT id, CAST(updated_at AS CHAR) AS updated_at FROM articles ORDER BY id'), updatedBefore, 'the reconcile does not edit the articles')
+  const [index] = await exactRows(DB.pre2c, "SELECT COUNT(*) AS n FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'articles' AND INDEX_NAME = 'articles_status_type_views_idx'")
+  assert.ok(Number(index!.n) > 0, 'the ranking index is back')
+  delete process.env.CDKT_BACKUPS_DIR
+  await closeDb()
 })
