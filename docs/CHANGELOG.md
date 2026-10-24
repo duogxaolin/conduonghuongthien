@@ -992,7 +992,7 @@ Nhóm đầu của `openspec/changes/wave2-hardening` (D-UPGRADE, D-COVERAGE). N
     - in tổng chung và theo thư mục cho "mọi tệp" lẫn "chỉ tệp đã nạp", rồi ghi vào `$GITHUB_STEP_SUMMARY` nếu có.
   - `npm run test:coverage` ghi lcov vào `node_modules/.cache/cdkt-coverage/` rồi chạy script. Bước CI vẫn Node 24 và vẫn `continue-on-error`; bước test unit thêm reporter lcov, bước *Coverage summary* đọc tệp đó. Từ nay trang tóm tắt CI báo cả số "mọi tệp".
   - **Lỗi đo đã tìm ra.** Quy tắc loại trừ mặc định của Node coi `test-*.ts` là tệp test, nên các handler thật `server/api/admin/settings/test-r2.post.ts` và `test-email.post.ts` mất khỏi coverage. Cả hai lệnh nay truyền `--test-coverage-exclude='tests/**'`, và quy tắc mặc định không còn áp dụng.
-  - Mức nền mới (Node 24.21, trên `wave1/integration` `a7be585` + 2F): **70,55 % dòng trên mọi tệp** (51 765 / 73 369); 296/660 tệp chưa từng được nạp; 87,10 % dòng trên tệp đã nạp; `server/api/` 45,23 %. Lệnh của bước CI cũng ra 70,55 %. Trước 1A/1C (`694bb6e`) là 68,25 %. Con số "65,7 %" không có nguồn.
+  - Mức nền mới (Node 24.21, trên `wave1/integration` `3ede49a` + 2F): **70,50 % dòng trên mọi tệp** (51 767 / 73 424); 299/663 tệp chưa từng được nạp; 87,10 % dòng trên tệp đã nạp; `server/api/` 45,23 %. Lệnh của bước CI cũng ra 70,50 %. Các mốc trước: `694bb6e` (trước 1A/1C) 68,25 %; `a7be585` (trước 2E) 70,55 %. Con số "65,7 %" không có nguồn.
   - Test: `tests/coverage-summary.test.ts` viết lại (9 test) với fixture lcov nhỏ, gồm:
     - gộp bản ghi trùng (khác chỉ số `anonymous_N` và mã khối nhánh, có bản ghi toàn-0);
     - phạm vi nguồn; số dòng có mã (chuỗi, template, regex, chú thích khối);
@@ -1035,7 +1035,7 @@ Ngoài ra suite treo ~11 phút khi một migration ném lỗi. Đã sửa (chỉ
   - G đỏ: `ai_model_pricing.label [model=delify-5.5]: "Giá đã thương lượng" → NULL` cùng giá bị ghi đè;
   - H đỏ: `users … row inserted` cộng ca dữ liệu seed;
   - C1 (thu hẹp `reader_accounts.display_name` xuống `VARCHAR(5)`) đỏ sau 3,8 s với `ER_DATA_TOO_LONG`, cả tệp 31 s, tiến trình thoát. Trước đây treo 643 s.
-- Kiểm chứng sau vòng sửa (Node 24.21):
+- Kiểm chứng sau vòng sửa (Node 24.21, trên `a7be585`):
   - `npm test` 4297 / 4264 pass / 0 fail / 33 skip;
   - suite nâng cấp 6/6 trên MySQL local (~33 s);
   - typecheck 0 lỗi; eslint 0 error / 16 warning;
@@ -1044,9 +1044,17 @@ Ngoài ra suite treo ~11 phút khi một migration ném lỗi. Đã sửa (chỉ
 
   Độ phủ không đổi, vì không có tệp nguồn nào trong phạm vi đo bị sửa.
 
+**Đo lại sau khi rebase lên `wave1/integration` `3ede49a`** (gồm 2E `shared/` § 32 và `COPY shared` của 1D), Node 24.21:
+- `npm test` 4407 / 4374 pass / 0 fail / 33 skip.
+- Suite nâng cấp 6/6 trên MySQL local. Các chuyển đổi quan sát được giống hệt trước, nên 2E/1D không thêm lượt ghi nào lúc khởi động.
+- `npm run test:coverage`: 70,50 % (Node 26.11: 70,51 %), 299/663 tệp chưa nạp. Lệnh của bước CI ra 70,50 %, 300 tệp. Bộ quét dòng có mã khớp TypeScript trong 0,013 % trên 663 tệp.
+- Typecheck 0 lỗi; eslint 0 error / 16 warning.
+- `ci-integration-matrix`, `runtime-image-sources`, `server-no-app-imports`, `snapshot-schema`, `coverage-summary` 118/118.
+- Không để lại CSDL tạm.
+
 Còn mở (2F):
 - `repairLegacyMediaUrls` đổi `articles.updated_at` của bài nó vá, vì `UPDATE` không giữ cột đó. Sửa cùng D-SCAN, khi đụng hàm này.
-- Tệp chưa nạp được tính bằng dòng có mã, còn tệp đã nạp được tính bằng mọi dòng vật lý (đó là cách Node đếm). Nếu tính dòng vật lý cho cả hai thì ra 64,48 %. Wave 3 chọn một quy ước trước khi đặt ngưỡng.
+- Tệp chưa nạp được tính bằng dòng có mã, còn tệp đã nạp được tính bằng mọi dòng vật lý (đó là cách Node đếm). Nếu tính dòng vật lý cho cả hai thì ra 64,43 % (trên `3ede49a` + 2F). Wave 3 chọn một quy ước trước khi đặt ngưỡng.
 
 ### 32. Đợt 2 — 2E shared modules (2026-10-24)
 

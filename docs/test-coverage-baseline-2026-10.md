@@ -37,25 +37,25 @@
 2. **Thêm mọi tệp nguồn không test nào nạp, ở 0 %.**
    - Tập nguồn là mọi tệp `.ts` git theo dõi (`git ls-files`; không có git thì duyệt thư mục) dưới `server/`, `shared/`, `app/utils/`, `app/composables/`.
    - Trừ ra: `server/db/schema-tables/` (DDL chỉ chạy trong suite integration), `*.d.ts`, `*.test.ts`/`*.spec.ts`.
-   - Tệp chưa nạp được tính bằng **số dòng có mã**: không trống, không chỉ là chú thích. Đếm bằng một bộ quét nhỏ trong script. Đối chiếu với trình phân tích của TypeScript trên cả 660 tệp: lệch 0,013 % tổng số (54 046 so với 54 039 dòng), chỉ 2 tệp khác, đều là tệp nhiều regex.
+   - Tệp chưa nạp được tính bằng **số dòng có mã**: không trống, không chỉ là chú thích. Đếm bằng một bộ quét nhỏ trong script. Đối chiếu với trình phân tích của TypeScript trên cả 663 tệp: lệch 0,013 % tổng số (54 099 so với 54 092 dòng), chỉ 2 tệp khác, đều là tệp nhiều regex.
 3. **In** tổng chung và theo thư mục cho "mọi tệp" lẫn "chỉ tệp đã nạp", cùng danh sách tệp chưa nạp và các tệp đã nạp ít được phủ nhất.
 
 **Phép gần đúng, nói rõ.**
 - Với tệp đã nạp, Node đếm **mọi** dòng vật lý. Dòng trống và chú thích được tính là đã chạy khi khối mã chứa nó chạy (đã kiểm trên 22.23, 24.21 và 26.11). Với tệp chưa nạp, chỉ dòng có mã được tính. Nên chú thích giúp tỉ lệ của tệp đã nạp, nhưng không kéo tệp chưa nạp xuống.
-- Nếu tính mọi dòng vật lý cho cả tệp chưa nạp, cùng lượt đo ra 64,48 % (51 765 / 80 278) thay vì 70,55 %.
+- Nếu tính mọi dòng vật lý cho cả tệp chưa nạp, cùng lượt đo ra 64,43 % (51 767 / 80 352) thay vì 70,50 %.
 - Cờ `--test-coverage-include-all` của Node 26 lại dùng quy tắc thứ ba (bỏ dòng chỉ có kiểu, giữ dòng trống). Cờ đó không có trên Node 24.21/22.23, và khi đi cùng `mock.module` nó còn sinh bản ghi lệch. Nên script không dùng nó.
 - Hàm và nhánh của tệp chưa nạp thì không biết được (Node không phân tích tệp đó), nên hai cột này chỉ nói về tệp đã nạp.
 
 **`--test-coverage-exclude='tests/**'` là cần thiết.** Mặc định Node coi tệp tên `test-*.ts` là tệp test và loại khỏi coverage. Vì thế các handler thật `server/api/admin/settings/test-r2.post.ts` và `test-email.post.ts` mất khỏi báo cáo, dù có test chạy chúng (đã tái hiện trên 24.21 và 26.11). Truyền `--test-coverage-exclude` thì Node bỏ quy tắc mặc định.
 
-### Kết quả (Node 24.21 — bản CI, `TZ=Asia/Ho_Chi_Minh`, đo trên `wave1/integration` `a7be585` + 2F)
+### Kết quả (Node 24.21 — bản CI, `TZ=Asia/Ho_Chi_Minh`, đo trên `wave1/integration` `3ede49a` + 2F)
 
-`npm test`: 4292 test, 4260 pass, 0 fail, 32 skip. Node 26.11 cho đúng các số này (cùng 70,55 % dòng, cùng 296 tệp chưa nạp).
-Node 22.23 chạy được lệnh và script, nhưng số hơi khác: 70,41 %, 288 tệp chưa nạp. Lý do: nó gán một phần lượt nạp qua `mock.module` cho chính tệp đó. Thêm nữa, trên Node 22 vốn có 19 test đỏ và 4 test bị huỷ: `backup-run-endpoint`, `backup-scheduler-due`, `article-view-ip-ceiling`, `chatbot-outbound-stream` đỏ, `thumbnail-on-demand-bounds` bị huỷ. Cả hai đều xảy ra y hệt ở `a7be585` chưa có thay đổi của 2F. Vì có test đỏ, `npm run test:coverage` dừng trước bước tóm tắt. Mức nền vì vậy lấy theo Node 24 (bản CI).
+`npm test`: 4407 test, 4374 pass, 0 fail, 33 skip. Node 26.11 cho 70,51 % dòng, cùng 299 tệp chưa nạp.
+Node 22.23 chạy được lệnh và script (đo trên `a7be585` + 2F), nhưng số hơi khác: 70,41 %, 288 tệp chưa nạp. Lý do: nó gán một phần lượt nạp qua `mock.module` cho chính tệp đó. Thêm nữa, trên Node 22 vốn có 19 test đỏ và 4 test bị huỷ: `backup-run-endpoint`, `backup-scheduler-due`, `article-view-ip-ceiling`, `chatbot-outbound-stream` đỏ, `thumbnail-on-demand-bounds` bị huỷ. Cả hai đều xảy ra y hệt ở `a7be585` chưa có thay đổi của 2F. Vì có test đỏ, `npm run test:coverage` dừng trước bước tóm tắt. Mức nền vì vậy lấy theo Node 24 (bản CI).
 
 | Thư mục | Tệp | Chưa từng nạp | Dòng, mọi tệp | Dòng, tệp đã nạp | Hàm | Nhánh |
 |---|---|---|---|---|---|---|
-| **Tất cả** | 660 | 296 | **70,55 %** (51 765 / 73 369) | 87,10 % | 80,77 % | 80,90 % |
+| **Tất cả** | 663 | 299 | **70,50 %** (51 767 / 73 424) | 87,10 % | 80,77 % | 80,90 % |
 | `server/` | 570 | 268 | 69,15 % | 85,83 % | 79,67 % | 80,09 % |
 | `server/api/` | 332 | 224 | 45,23 % | 84,48 % | 73,05 % | 64,08 % |
 | `server/services/` | 85 | 18 | 73,12 % | 82,71 % | 79,27 % | 80,58 % |
@@ -65,27 +65,31 @@ Node 22.23 chạy được lệnh và script, nhưng số hơi khác: 70,41 %, 2
 | `server/middleware/` | 5 | 4 | 72,91 % | 100,00 % | 100,00 % | 88,24 % |
 | `server/routes/` | 4 | 4 | 0,00 % | — | — | — |
 | `server/data/` | 2 | 0 | 100,00 % | 100,00 % | — | 100,00 % |
-| `shared/` | 3 | 0 | 100,00 % | 100,00 % | 100,00 % | 98,46 % |
-| `app/utils/` | 52 | 8 | 93,32 % | 97,43 % | 94,14 % | 88,98 % |
+| `shared/` | 6 | 1 | 94,64 % | 99,22 % | 97,62 % | 97,99 % |
+| `app/utils/` | 52 | 10 | 92,64 % | 97,28 % | 94,31 % | 88,87 % |
 | `app/composables/` | 35 | 20 | 59,89 % | 87,43 % | 75,89 % | 74,74 % |
 
 - Cột "Dòng, tệp đã nạp" là cách đếm của mức nền 74,80 %, nay có gộp bản ghi và có hai handler `test-*.ts`. Sự chênh giữa hai cột dòng nằm phần lớn ở `server/api/`: handler được Nitro nạp lúc chạy app, còn bộ unit chỉ nạp những handler có test hành vi.
-- Trên `694bb6e` (trước khi có 1A/1C), cùng cách đo cho ra 68,25 % (652 tệp, 312 chưa nạp). Phần tăng đến từ test mới của 1A/1C.
-- Bước CI (chỉ các tệp test không phải integration, đã chạy thử đúng lệnh của CI trên Node 24.21): **70,55 %**, 297 tệp chưa nạp. Tệp chênh là `server/services/media-processing-queue.ts`, mà ở lượt `npm run` chỉ được nạp qua import cấp đầu tệp của một suite integration (suite đó tự bỏ qua khi không có MySQL).
+- Các mốc trước, cùng cách đo:
+  - `694bb6e` (trước 1A/1C): 68,25 % (652 tệp, 312 chưa nạp). Phần tăng sau đó đến từ test mới của 1A/1C.
+  - `a7be585` (sau 1A/1C, trước 2E): 70,55 % (660 tệp, 296 chưa nạp).
+  - Từ 2E, `registry`/`types`/`submission-status` sang `shared/`, và mã import thẳng từ đó. Hai bản re-export ở `app/utils/` (`blocks/registry.ts`, `submission-status.ts`) thành tệp không ai nạp; bản thứ ba, `blocks/types.ts`, vốn chỉ có kiểu và trước đó cũng đã chưa nạp. `shared/blocks/types.ts` chỉ có kiểu, nên bị tính 0 %.
+- Bước CI (chỉ các tệp test không phải integration, đã chạy thử đúng lệnh của CI trên Node 24.21): **70,50 %**, 300 tệp chưa nạp. Tệp chênh là `server/services/media-processing-queue.ts`, mà ở lượt `npm run` chỉ được nạp qua import cấp đầu tệp của một suite integration (suite đó tự bỏ qua khi không có MySQL).
 
 ### Cách đọc cho đúng
 - Bảng mà Node in ở cuối log (khi dùng reporter `spec`) vẫn chỉ đếm tệp đã nạp, và không gộp bản ghi trùng. Con số để trích là bảng của script.
-- Tệp chỉ khai báo kiểu vẫn bị tính 0 %, dù không có mã chạy: `app/utils/blocks/types.ts`, `app/utils/public-types.ts`, `app/utils/docs/types.ts`.
+- Tệp chỉ khai báo kiểu vẫn bị tính 0 %, dù không có mã chạy: `shared/blocks/types.ts`, `app/utils/blocks/types.ts`, `app/utils/public-types.ts`, `app/utils/docs/types.ts`. Bản re-export ở đường cũ cũng vậy, khi không ai còn import chúng: `app/utils/blocks/registry.ts`, `app/utils/submission-status.ts`.
 - Module chỉ được kiểm bằng suite integration cũng bị tính 0 % ở đây. Ví dụ: `server/services/submission-workflow.ts` (`tests/submission-workflow-integration.test.ts`).
 - Tệp mà test chỉ thay bằng `mock.module` (không bao giờ chạy mã thật) bị tính là chưa nạp. Đó là đúng. Ví dụ: `server/utils/mfa/reauth.ts`, `server/utils/chatbot/chat.ts`, `server/services/categories.ts`.
 
 ### Chưa từng được nạp bởi bộ unit (danh sách việc, 2026-10-24)
-Danh sách đầy đủ (296 tệp, kèm số dòng có mã) nằm trong mục *files no test loads* của output script. Những thư mục đáng làm trước:
+Danh sách đầy đủ (299 tệp, kèm số dòng có mã) nằm trong mục *files no test loads* của output script. Những thư mục đáng làm trước:
 - `server/services/` (18): `articles-thumbnail-scan.ts`, `backup-drive-oauth-config.ts`, `backup-drive-oauth.ts`, `backup-drive.ts`, `categories.ts`, `content-types.ts`, `google-oauth-settings.ts`, `i18n-auto-translate.ts`, `languages.ts`, `layout-settings.ts`, `media-repair.ts`, `media-repoint.ts`, `media-scan.ts`, `pages.ts`, `social-links.ts`, `submission-workflow.ts`, `submissions.ts`, `universal-translation.ts`.
 - `server/utils/` (6): `backup-drive-oauth-crypto.ts`, `chatbot/chat.ts`, `chatbot/session-db.ts`, `html-to-markdown.ts`, `legacy-urls.ts`, `mfa/reauth.ts`.
 - `server/db/` (1): `seed.ts`. Nó tự chạy khi được import; suite nâng cấp chạy nó như một tiến trình riêng.
 - `app/composables/` (20): `useAdminAuth`, `useBackupSettings`, `useBrokenImageFallback`, `useBulkSelection`, `useHlsVideo`, `useI18n`, `useImagePicker`, `useLayoutConfig`, `useLayoutNav`, `useLiveSearch`, `useMobileMenu`, `usePagePreview`, `usePlyrPlayer`, `useReaderAuth`, `useReaderMenu`, `useReaderNotifications`, `useReadingHistory`, `useSiteSettings`, `useToast`, `useUpload`.
-- `app/utils/` (8): `ai-service-labels.ts`, `backup-format.ts`, `blocks/types.ts`, `docs/types.ts`, `formatDate.ts`, `language-flags.ts`, `media-duration.ts`, `public-types.ts`.
+- `app/utils/` (10): `ai-service-labels.ts`, `backup-format.ts`, `blocks/registry.ts` (re-export), `blocks/types.ts`, `docs/types.ts`, `formatDate.ts`, `language-flags.ts`, `media-duration.ts`, `public-types.ts`, `submission-status.ts` (re-export).
+- `shared/` (1): `blocks/types.ts` (chỉ có kiểu).
 
 Chưa có ngưỡng. Ngưỡng là việc của Wave 3, và đặt trên các số của script.
 
