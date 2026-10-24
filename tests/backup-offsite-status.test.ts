@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -27,6 +28,9 @@ import { activityLogs, backups, settings } from '../server/db/schema'
  * the database, the named lock and the three Drive modules are fakes.
  */
 
+// The deployment's key for 2A's envelopes (`settings-secrets.ts`); one per run, never printed.
+process.env.CHATBOT_ENCRYPTION_SECRET = randomBytes(32).toString('base64')
+
 const logs: Array<Record<string, unknown>> = []
 mock.module('../server/utils/logger', {
   namedExports: { logInfo: (e: Record<string, unknown>) => logs.push(e), logWarn: (e: Record<string, unknown>) => logs.push(e), logError: (e: Record<string, unknown>) => logs.push(e) },
@@ -48,7 +52,7 @@ const state = {
   /** Every `db.update(backups)` throws (a DB blip after the run is registered). */
   failUpdates: false,
   failTar: null as null | 'uploads' | 'media',
-  uploads: [] as Array<{ mode: 'oauth' | 'service-account', name: string }>,
+  uploads: [] as Array<{ mode: 'oauth' | 'service-account', name: string, credential?: string }>,
 }
 
 const dialect = new MySqlDialect()
@@ -141,9 +145,10 @@ mock.module('../server/services/backup-drive-oauth', {
 mock.module('../server/services/backup-drive-oauth-config', {
   namedExports: { getUsableDriveOauthConfig: async () => state.oauthConfig },
 })
-const upload = (mode: 'oauth' | 'service-account') => async (filePath: string, name: string) => {
+const upload = (mode: 'oauth' | 'service-account') => async (filePath: string, name: string, credential: string) => {
   assert.ok(existsSync(filePath), 'the upload reads the registered local file')
-  state.uploads.push({ mode, name })
+  // Service account: the third argument is the key JSON the upload signs in with.
+  state.uploads.push({ mode, name, ...(mode === 'service-account' ? { credential } : {}) })
   if (state.failUploadFor?.test(name)) throw new Error('fixture: Drive quota exceeded')
   return `drive-${name}`
 }
@@ -152,6 +157,7 @@ mock.module('../server/services/backup-drive', {
 })
 
 const { runBackup } = await import('../server/services/backup')
+const { sealSettingsSecret } = await import('../server/utils/settings-secrets')
 
 const originalCwd = process.cwd()
 let workdir = ''
@@ -306,6 +312,51 @@ test('…and with Drive off, those registered files stay none', async () => {
   await assert.rejects(scheduled('all'), /tar failed on media/)
   assert.equal(statusOf(/\.sql\.gz$/), 'none')
   assert.equal(statusOf(/^cdkt-uploads-/), 'none')
+})
+
+// ─── wave2 integration: 2A's sealed service-account key × the off-site step ────
+// 2A (§ 33, D-SECRETS) stores `backup_drive_service_account` as an envelope;
+// `readBackupConfig` opens it — an envelope this server's key cannot open gives an
+// empty key plus `driveServiceAccountUnreadable`. A key staff configured but that
+// cannot be read is a FAILED off-site copy (with 2A's re-entry message), never
+// "nothing configured": the page shows the service account as set, so `none` would
+// hide that every backup since the key rotation is local only.
+
+const SA_UNREADABLE = 'Khoá service account không giải mã được (khoá mã hoá đã đổi) — dán lại khoá JSON ở trang Sao lưu'
+
+test('a sealed service-account key is opened for the upload: Drive signs in with the key JSON, never the envelope', async () => {
+  driveOn(sealSettingsSecret('backup_drive_service_account', SERVICE_ACCOUNT))
+  await scheduled('sql')
+  assert.equal(done()[0]!.offsiteStatus, 'uploaded')
+  assert.deepEqual(state.uploads.map(entry => entry.credential), [SERVICE_ACCOUNT])
+})
+
+test('a service-account key this server cannot open is a failure with the re-entry message, not "not configured"; the local file remains', async () => {
+  driveOn(sealSettingsSecret('backup_drive_service_account', SERVICE_ACCOUNT, randomBytes(32).toString('base64')))
+  const result = await scheduled('sql')
+  assert.equal(done()[0]!.offsiteStatus, 'failed')
+  assert.equal(result.driveUploaded, false)
+  assert.equal(result.driveError, SA_UNREADABLE)
+  assert.deepEqual(state.uploads, [], 'nothing is uploaded with an empty key')
+  assert.equal(events('backup.drive_failed').length, 1)
+  assert.equal(events('backup.offsite_not_configured').length, 0, 'it is configured — just unreadable')
+  assert.deepEqual(onDisk(), [done()[0]!.filename], 'the local copy is kept')
+})
+
+test('an unreadable service-account key next to a usable OAuth link: the link uploads (OAuth is preferred, as before)', async () => {
+  driveOn(sealSettingsSecret('backup_drive_service_account', SERVICE_ACCOUNT, randomBytes(32).toString('base64')))
+  state.link = { ok: true, refreshToken: 'rt' }
+  await scheduled('sql')
+  assert.equal(done()[0]!.offsiteStatus, 'uploaded')
+  assert.deepEqual(state.uploads.map(entry => entry.mode), ['oauth'])
+})
+
+test('both credentials unreadable: the OAuth refresh-token message comes first (2A\'s order)', async () => {
+  driveOn(sealSettingsSecret('backup_drive_service_account', SERVICE_ACCOUNT, randomBytes(32).toString('base64')))
+  state.link = { ok: false, reason: 'secret_unreadable' }
+  const result = await scheduled('sql')
+  assert.equal(done()[0]!.offsiteStatus, 'failed')
+  assert.match(String(result.driveError), /^Refresh token không giải mã được/)
 })
 
 test('a backup that failed itself has no off-site status at all', async () => {

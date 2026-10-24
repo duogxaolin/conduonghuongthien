@@ -6,7 +6,9 @@
  * Tách khỏi `backup.ts` (đã quá 400 dòng) và giữ nguyên hành vi upload cũ:
  *   1. OAuth (ưu tiên nếu đã liên kết) — refresh token từ `backup_drive_oauth`, client
  *      id/secret RIÊNG cho Drive từ `backup_drive_oauth_config`;
- *   2. Service account (dự phòng) — khoá JSON trong settings.
+ *   2. Service account (dự phòng) — khoá JSON trong settings, lưu dạng envelope (wave2
+ *      2A) và đã giải mã ở `readBackupConfig`; không mở được → `failed` kèm lời nhắc
+ *      dán lại khoá (`SERVICE_ACCOUNT_UNREADABLE_MESSAGE`), không phải `none`.
  * Ba module Drive vẫn nạp động: `googleapis` chỉ vào bộ nhớ khi thật sự upload.
  *
  * Bất biến:
@@ -28,9 +30,19 @@ type Db = ReturnType<typeof getDb>
 
 export interface OffsiteConfig {
   driveEnabled: boolean
+  /** Khoá JSON service account ĐÃ GIẢI MÃ (`readBackupConfig`); rỗng = chưa có hoặc không mở được. */
   driveServiceAccount: string
+  /**
+   * Khoá service account đã lưu là envelope mà khoá mã hoá hiện tại không mở được
+   * (wave2 2A, `cdkt-backup-drive-key:v1` — đã xoay `CHATBOT_ENCRYPTION_SECRET`).
+   * Đã cấu hình nhưng không dùng được: từng tệp `failed`, không phải `none`.
+   */
+  driveServiceAccountUnreadable?: boolean
   driveFolderId: string
 }
+
+/** 2A: khoá service account không giải mã được — cán bộ phải dán lại khoá JSON. */
+export const SERVICE_ACCOUNT_UNREADABLE_MESSAGE = 'Khoá service account không giải mã được (khoá mã hoá đã đổi) — dán lại khoá JSON ở trang Sao lưu'
 
 export interface OffsiteFile {
   name: string
@@ -74,7 +86,9 @@ async function resolveUploader(dir: string, stamp: string, config: OffsiteConfig
   const configured = offsiteDestinationConfigured({
     driveEnabled: config.driveEnabled,
     oauthLinked: link.ok || link.reason === 'secret_unreadable',
-    serviceAccountConfigured: config.driveServiceAccount !== '',
+    // Một khoá đã lưu mà không mở được vẫn là "đã cấu hình" — như liên kết OAuth có
+    // token không giải mã được ở dòng trên, và như trang quản trị (ô khoá hiện dấu che).
+    serviceAccountConfigured: config.driveServiceAccount !== '' || config.driveServiceAccountUnreadable === true,
   })
   if (!configured) return null
 
@@ -95,8 +109,10 @@ async function resolveUploader(dir: string, stamp: string, config: OffsiteConfig
     const { uploadBackupToDrive } = await import('./backup-drive')
     return file => uploadBackupToDrive(path.join(dir, file.name), file.name, config.driveServiceAccount, file.type, stamp, folderId)
   }
-  // Còn lại: liên kết có mà token không giải mã được, và không có service account.
-  throw new Error('Refresh token không giải mã được — dịch khoá hoặc liên kết lại Drive')
+  // Còn lại là cấu hình không dùng được — báo cái của liên kết OAuth trước (nó được ưu
+  // tiên khi dùng được), rồi tới khoá service account không giải mã được (2A).
+  if (link.reason === 'secret_unreadable') throw new Error('Refresh token không giải mã được — dịch khoá hoặc liên kết lại Drive')
+  throw new Error(SERVICE_ACCOUNT_UNREADABLE_MESSAGE)
 }
 
 /**
