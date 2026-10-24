@@ -67,6 +67,36 @@ test('already on the profile page: flagged, no navigation loop', async () => {
   assert.deepEqual(navigations, [])
 })
 
+test('S2: a burst of 403s (a page firing several requests) navigates once; a later burst navigates again', async () => {
+  let release!: () => void
+  const pending = new Promise<void>((resolve) => { release = resolve })
+  ;(globalThis as Record<string, unknown>).navigateTo = (to: unknown) => { navigations.push(to); return pending }
+  try {
+    const burst = [1, 2, 3, 4].map(() => installedHook!({ response: enrollmentError }))
+    await Promise.resolve()
+    assert.equal(navigations.length, 1, `one burst navigated ${navigations.length} times`)
+    release()
+    await Promise.all(burst)
+    // The flag resets after the navigation settles: a new burst later (the admin went
+    // elsewhere again) is handled again.
+    await installedHook!({ response: enrollmentError })
+    assert.equal(navigations.length, 2)
+  } finally {
+    ;(globalThis as Record<string, unknown>).navigateTo = (to: unknown) => { navigations.push(to); return Promise.resolve() }
+  }
+})
+
+test('S2: /admin/profile with a trailing slash, a query or a hash is the profile page', async () => {
+  for (const path of ['/admin/profile/', '/admin/profile#security', '/admin/profile?x=1', '/admin/profile//']) {
+    currentPath = path
+    await installedHook!({ response: enrollmentError })
+  }
+  assert.deepEqual(navigations, [])
+  currentPath = '/admin/profile-other'
+  await installedHook!({ response: enrollmentError })
+  assert.equal(navigations.length, 1)
+})
+
 test('any other error is left alone', async () => {
   for (const response of [
     { status: 403, _data: { statusMessage: 'Forbidden: Insufficient permissions' } },

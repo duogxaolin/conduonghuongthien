@@ -356,7 +356,10 @@ archive `media_work` `cdkt-media-<mã>-<pid>.tar.gz` **và** archive `uploads_da
 `cdkt-uploads-<mã>-<pid>.tar.gz` (ảnh/tệp tải lên qua admin — trước đây chỉ bản sao lưu
 trong ứng dụng mới có). Khôi phục: `scripts/restore-db.sh` (CSDL, bắt buộc nêu tên
 database + `--replace`, tự dump bản hiện có trước khi ghi đè) và
-`scripts/restore-media.sh` (media hoặc uploads, theo tên archive).
+`scripts/restore-media.sh` (media hoặc uploads, theo tên archive). **Sau `restore-db.sh`
+luôn khởi động lại app** (`docker compose up -d --no-deps --force-recreate app`): bản dump
+trước 2A mang mật khẩu SMTP / Secret Key R2 / khoá service account nguyên văn, và chỉ lượt
+khởi động mới mã hoá chúng (`db.migration.settings_secrets_encrypted` trong log).
 
 **Một bản sao lưu chưa từng được khôi phục chỉ là giả thuyết** — nên lên lịch kiểm chứng
 hằng tháng (nạp vào CSDL tạm, không đụng CSDL đang chạy):
@@ -429,6 +432,8 @@ duy nhất chạy trước nó là bước siết quyền `.env` về 600 (khôn
   ```
 
   `restore-db.sh` tự dump bản hiện có (`backups/cdkt-prerestore-*`) trước khi ghi đè.
+  Rồi `docker compose up -d --no-deps app` — app khởi động lại cũng là lúc nó mã hoá bí mật
+  nguyên văn mà một bản dump cũ mang về.
   ⚠️ Lùi tay chỉ tạm thời: với `VPS_SMOKE_URL` đã đặt, lượt merge kế tiếp vào `main` — **kể cả
   merge chỉ sửa tài liệu** — so với bản vừa lùi về và deploy lại `HEAD` (gồm commit hỏng) đè
   lên nó. **Revert commit hỏng trên `main` trước lượt merge kế tiếp** (`CI-CD.md` § Lùi phiên bản).

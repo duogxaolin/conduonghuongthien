@@ -19,17 +19,35 @@ export function isMfaEnrollmentRequiredResponse(status: number | undefined, body
   return !!data && typeof data === 'object' && (data as { code?: unknown }).code === MFA_ENROLLMENT_REQUIRED_CODE
 }
 
+/** Đã ở trang hồ sơ? `/admin/profile/`, `?…`, `#…` đều tính (kiểm chứng lại 2A, S2). */
+export function isMfaEnrollmentPage(path: string): boolean {
+  const bare = (path.split(/[?#]/)[0] ?? '').replace(/\/+$/, '')
+  return bare === MFA_ENROLLMENT_ROUTE.path
+}
+
 export function createMfaEnrollmentHandler(deps: {
   currentPath: () => string
   /** Đánh dấu tài khoản đang bị khoá — banner đổi sang "phải bật ngay". */
   onRequired: () => void
   navigate: (to: { path: string, hash: string }) => unknown
 }) {
+  /**
+   * Một trang bắn nhiều request cùng lúc → một loạt 403 cùng lúc. Chỉ lượt đầu
+   * chuyển trang; các lượt sau trong cùng loạt chờ chính lượt chuyển đó. Cờ được
+   * gỡ khi lượt chuyển xong, nên một loạt về sau (cán bộ lại sang trang khác) vẫn
+   * được xử lý.
+   */
+  let inFlight: Promise<unknown> | null = null
   return async ({ response }: { response?: { status?: number, _data?: unknown } }): Promise<void> => {
     if (!response || !isMfaEnrollmentRequiredResponse(response.status, response._data)) return
     deps.onRequired()
-    if (deps.currentPath() !== MFA_ENROLLMENT_ROUTE.path) {
-      await deps.navigate({ path: MFA_ENROLLMENT_ROUTE.path, hash: MFA_ENROLLMENT_ROUTE.hash })
+    if (isMfaEnrollmentPage(deps.currentPath())) return
+    if (inFlight) {
+      await inFlight
+      return
     }
+    inFlight = Promise.resolve(deps.navigate({ path: MFA_ENROLLMENT_ROUTE.path, hash: MFA_ENROLLMENT_ROUTE.hash }))
+      .finally(() => { inFlight = null })
+    await inFlight
   }
 }

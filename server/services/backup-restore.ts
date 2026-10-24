@@ -222,7 +222,18 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
         rowsBefore = await db.select().from(backups)
         schedulerStateBefore = await readSchedulerStateForRestore(db)
         setStatus(true, 'sql', 'Đang phục hồi CSDL')
-        ;({ legacyDateShift } = await restoreSql(filePath))
+        try {
+          ;({ legacyDateShift } = await restoreSql(filePath))
+        } finally {
+          // Bản dump trước 2A mang `smtp_pass` / `r2_secret_key` / khoá service
+          // account NGUYÊN VĂN về `settings`: mã hoá ngay khi `restoreSql` xong HOẶC
+          // hỏng giữa chừng (một phần dump đã chạy — bảng `settings` có thể đã bị
+          // thay), không đợi audit bên dưới (nó có thể ném) hay lần khởi động sau
+          // (kiểm chứng 2A, W3/W4 — spec settings-secret-storage). Lượt chuyển
+          // idempotent và không bao giờ ném: hỏng chỉ log, kết quả khôi phục giữ
+          // nguyên nghĩa của nó.
+          await encryptRestoredSecrets(pool, actor, filename)
+        }
       } else {
         setStatus(true, 'extract', 'Đang giải nén file', 0)
         await restoreFiles(filePath)
@@ -243,13 +254,6 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
           },
         })
       })
-
-      // Bản dump trước 2A mang `smtp_pass` / `r2_secret_key` / khoá service account
-      // NGUYÊN VĂN về bảng `settings`: mã hoá lại ngay, không đợi lần khởi động sau
-      // (kiểm chứng 2A, W4 — spec settings-secret-storage). CSDL đã được khôi phục
-      // xong ở đây, nên lượt chuyển hỏng chỉ được log — báo khôi phục thất bại lúc
-      // này là nói sai; lần khởi động kế tiếp vẫn chuyển.
-      if (kind === 'sql') await encryptRestoredSecrets(pool, actor, filename)
 
       const warning = legacyDateShift ? LEGACY_DUMP_WARNING : null
       setStatus(false, 'done', warning ? `Khôi phục xong. ${warning}` : 'Khôi phục xong', 100)

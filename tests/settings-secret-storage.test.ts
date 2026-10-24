@@ -154,6 +154,11 @@ test('S2: anything shaped like an envelope fails CLOSED — an unknown label or 
     JSON.stringify({ sealed: 'cdkt-smtp-pass:v2', version: 2, keyId: 'k', nonce: 'n', authTag: 't', ciphertext: 'c' }),
     JSON.stringify({ sealed: 42, ciphertext: 'c' }),
   ]
+  // W2 (kiểm chứng lại): an envelope cut short (a truncated column, a bad manual
+  // edit) does not parse — it is still an envelope, not a password.
+  const truncated = sealedWith('smtp_pass', SMTP_PASSWORD).slice(0, -12)
+  assert.throws(() => JSON.parse(truncated))
+  shapes.push(truncated, '{"sealed":"cdkt-smtp-pass:v1",')
   for (const stored of shapes) {
     assert.deepEqual(secrets.openSettingsSecret('smtp_pass', stored), { state: 'unreadable', value: '' }, stored)
     assert.equal(secrets.isSettingsSecretEnvelope(stored), true, `${stored} would be encrypted again at boot`)

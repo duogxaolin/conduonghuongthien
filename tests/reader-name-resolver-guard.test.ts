@@ -3,6 +3,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs'
 import { join, relative } from 'node:path'
 import test, { mock } from 'node:test'
 import { fileURLToPath } from 'node:url'
+import { analyzeReaderNameReads, readerNameViolations } from './_reader-name-guard'
 
 /**
  * MỌI chỗ người đọc thấy tên của một người đọc khác đi qua `effectiveDisplayName`
@@ -99,43 +100,20 @@ test('livestream history: a reserved name snapshotted before the fix reads as "B
 // ─── S5: source guard ─────────────────────────────────────────────────────────
 
 /**
- * Màn hình chỉ cán bộ thấy, đọc tên Google thô CÓ CHỦ ĐÍCH. Số khối `select` được
- * ghi kèm: thêm một lượt đọc tên thô mới vào chính tệp này cũng làm test đỏ.
+ * Hàm đọc tên Google thô CÓ CHỦ ĐÍCH — chỉ cán bộ thấy, hoặc chuyển nguyên cột cho
+ * nơi gọi tự giải. Liệt kê theo `tệp#hàm`: một hàm mới đọc tên mà không qua resolver
+ * (kể cả trong chính các tệp này) làm test đỏ; một mục không còn đúng cũng đỏ.
  */
-const STAFF_ONLY_RAW_NAME_READS: Record<string, { blocks: number, reason: string }> = {
-  'services/readers.ts': {
-    blocks: 6,
-    reason: 'danh sách/chi tiết người đọc ở /admin/readers (cán bộ nhận diện tài khoản bằng tên Google thật) và tên trong dòng audit/log của chặn, bỏ chặn, xoá, xoá bình luận',
-  },
-  'api/admin/comments/ai-moderate.post.ts': {
-    blocks: 1,
-    reason: 'tên tác giả gửi cho prompt kiểm duyệt AI — không hiển thị cho người đọc',
-  },
+const STAFF_ONLY_RAW_NAME_READS: Record<string, string> = {
+  'services/readers.ts#listReaders': 'danh sách người đọc ở /admin/readers — cán bộ nhận diện tài khoản bằng tên Google thật',
+  'services/readers.ts#getReaderDetail': 'chi tiết người đọc ở /admin/readers/[id] — như trên',
+  'services/readers.ts#banReader': 'tên trong dòng audit/log của lượt chặn',
+  'services/readers.ts#unbanReader': 'tên trong dòng audit/log của lượt bỏ chặn',
+  'services/readers.ts#deleteReader': 'tên trong dòng audit/log của lượt xoá tài khoản',
+  'services/readers.ts#purgeReaderComments': 'tên trong dòng audit/log của lượt xoá bình luận',
+  'api/admin/comments/ai-moderate.post.ts#default': 'tên tác giả gửi cho prompt kiểm duyệt AI — không hiển thị cho người đọc',
+  'utils/reader-auth.ts#resolveReader': 'bộ nạp danh tính: trả cả hai cột tên + cờ cho nơi gọi (`reader/me`, bình luận, chat livestream) — chúng giải qua effectiveDisplayName',
 }
-
-/** Every `.select({ … })` block in a source text, matched by brace depth. */
-function selectBlocks(source: string): string[] {
-  const blocks: string[] = []
-  let from = 0
-  for (;;) {
-    const start = source.indexOf('.select({', from)
-    if (start === -1) return blocks
-    let depth = 0
-    let end = start + '.select('.length
-    for (; end < source.length; end++) {
-      const char = source[end]
-      if (char === '{') depth++
-      else if (char === '}') { depth--; if (depth === 0) break }
-    }
-    blocks.push(source.slice(start, end + 1))
-    from = end + 1
-  }
-}
-
-// Raw SQL lives in template literals, where the identifier quotes are escaped:
-// the source text reads \`display_name\`.
-const READS_GOOGLE_NAME = /readerAccounts\.displayName\b(?!Reserved)|`display_name\\?`/
-const READS_FLAG = /readerAccounts\.displayNameReserved|`display_name_reserved\\?`/
 
 function serverFiles(): Array<{ rel: string, source: string }> {
   const root = fileURLToPath(new URL('../server', import.meta.url))
@@ -153,31 +131,107 @@ function serverFiles(): Array<{ rel: string, source: string }> {
   return out.filter(file => !file.rel.startsWith('db/'))
 }
 
-test('S5: every select that reads a Google name also reads display_name_reserved, outside named staff-only views', () => {
-  const offenders: string[] = []
-  const staffCounts: Record<string, number> = {}
-  for (const { rel, source } of serverFiles()) {
-    for (const block of selectBlocks(source)) {
-      if (!READS_GOOGLE_NAME.test(block)) continue
-      if (READS_FLAG.test(block)) continue
-      if (STAFF_ONLY_RAW_NAME_READS[rel]) { staffCounts[rel] = (staffCounts[rel] ?? 0) + 1; continue }
-      offenders.push(`${rel}: ${block.replace(/\s+/g, ' ').slice(0, 120)}…`)
-    }
-  }
-  assert.deepEqual(offenders, [], 'a reader-facing select reads the Google name without the reserved flag')
-  for (const [rel, { blocks }] of Object.entries(STAFF_ONLY_RAW_NAME_READS)) {
-    assert.equal(staffCounts[rel] ?? 0, blocks, `${rel}: the staff-only raw name reads changed — review and update the allowlist`)
-  }
+test('S5: every function under server/ that reads a reader name reads the flag AND passes it to effectiveDisplayName (staff-only exceptions named)', () => {
+  const violations = serverFiles().flatMap(({ rel, source }) => readerNameViolations(rel, source)).sort()
+  const unexpected = violations.filter(entry => !STAFF_ONLY_RAW_NAME_READS[entry])
+  assert.deepEqual(unexpected, [], 'these functions read a reader name without resolving it through effectiveDisplayName + display_name_reserved')
+  const stale = Object.keys(STAFF_ONLY_RAW_NAME_READS).filter(entry => !violations.includes(entry))
+  assert.deepEqual(stale, [], 'these allowlist entries no longer read a raw name — drop them so the list keeps meaning something')
 })
 
-test('S5: a file that reads the reserved flag resolves the name through effectiveDisplayName', () => {
-  const offenders = serverFiles()
-    .filter(({ rel, source }) => READS_FLAG.test(source) && rel !== 'utils/reader-auth.ts')
-    .filter(({ source }) => !/effectiveDisplayName\(/.test(source))
-    .map(({ rel }) => rel)
-  // `utils/reader-auth.ts` is the identity loader: it hands the columns and the flag
-  // to its callers (`reader/me`, comments, livestream chat), which resolve the name.
-  assert.deepEqual(offenders, [], 'these files select the flag but never resolve the name with it')
+/**
+ * Tám biến thể của lượt kiểm chứng lại 2A (bản guard trước bỏ lọt 5): projection
+ * trong một hằng, SQL thô không backtick, chuỗi `pool.query`, chọn nguyên hàng,
+ * chọn cờ mà không dùng, `sql\`${cột}\`` lồng. Nguyên văn, chỉ là dữ liệu cho bộ
+ * phân tích — không bao giờ được nạp.
+ */
+const VERIFIER_VARIANTS: Record<string, string> = {
+  'A.ts': `import { eq } from 'drizzle-orm'
+import { getDb } from '../utils/db'
+import { readerAccounts } from '../db/schema'
+export async function leakA(id: number) {
+  const [row] = await getDb().select({ name: readerAccounts.displayName }).from(readerAccounts).where(eq(readerAccounts.id, id))
+  return row?.name
+}`,
+  'B.ts': `import { eq } from 'drizzle-orm'
+import { getDb } from '../utils/db'
+import { readerAccounts } from '../db/schema'
+const columns = { name: readerAccounts.displayName, custom: readerAccounts.customDisplayName }
+export async function leakB(id: number) {
+  const [row] = await getDb().select(columns).from(readerAccounts).where(eq(readerAccounts.id, id))
+  return row?.custom || row?.name
+}`,
+  'C.ts': `import { sql } from 'drizzle-orm'
+import { getDb } from '../utils/db'
+import { articleComments } from '../db/schema'
+export async function leakC() {
+  return getDb().select({ author: sql<string>\`ra.display_name\` }).from(articleComments)
+}`,
+  'D.ts': `import { getPool } from '../utils/db'
+export async function leakD(id: number) {
+  const [rows] = await getPool()!.query('SELECT display_name FROM reader_accounts WHERE id = ?', [id])
+  return rows
+}`,
+  'E.ts': `import { eq } from 'drizzle-orm'
+import { getDb } from '../utils/db'
+import { readerAccounts } from '../db/schema'
+export async function leakE(id: number) {
+  const [row] = await getDb().select().from(readerAccounts).where(eq(readerAccounts.id, id))
+  return { name: row?.customDisplayName || row?.displayName }
+}`,
+  'G.ts': `import { sql } from 'drizzle-orm'
+import { getDb } from '../utils/db'
+import { articleComments } from '../db/schema'
+export async function leakG() {
+  return getDb().select({ names: sql<string>\`GROUP_CONCAT(\\\`ra\\\`.\\\`display_name\\\`)\` }).from(articleComments)
+}`,
+  'H.ts': `import { eq } from 'drizzle-orm'
+import { getDb } from '../utils/db'
+import { readerAccounts } from '../db/schema'
+import { effectiveDisplayName } from '../utils/display-name'
+export async function okH(id: number) {
+  const [row] = await getDb().select({ displayName: readerAccounts.displayName, customDisplayName: readerAccounts.customDisplayName, displayNameReserved: readerAccounts.displayNameReserved }).from(readerAccounts).where(eq(readerAccounts.id, id))
+  return row ? effectiveDisplayName(row) : null
+}
+export async function leakH(id: number) {
+  const [row] = await getDb().select({ n: readerAccounts.displayName, c: readerAccounts.customDisplayName, f: readerAccounts.displayNameReserved }).from(readerAccounts).where(eq(readerAccounts.id, id))
+  return row?.c || row?.n
+}`,
+  'I.ts': `import { eq, sql } from 'drizzle-orm'
+import { getDb } from '../utils/db'
+import { readerAccounts } from '../db/schema'
+export async function leakI(id: number) {
+  const [row] = await getDb().select({ name: sql<string>\`COALESCE(\${readerAccounts.customDisplayName}, \${readerAccounts.displayName})\` }).from(readerAccounts).where(eq(readerAccounts.id, id))
+  return row?.name
+}`,
+}
+
+test('S5: all eight verifier variants are caught; the safe function among them passes', () => {
+  const violations = Object.entries(VERIFIER_VARIANTS).flatMap(([name, source]) => readerNameViolations(name, source)).sort()
+  assert.deepEqual(violations, ['A.ts#leakA', 'B.ts#leakB', 'C.ts#leakC', 'D.ts#leakD', 'E.ts#leakE', 'G.ts#leakG', 'H.ts#leakH', 'I.ts#leakI'])
+})
+
+test('S5: the analyzer counts comments as nothing and a flagged call in a helper as one hop', () => {
+  const source = `import { effectiveDisplayName } from '../utils/display-name'
+// the column \`display_name\` is refreshed from Google (comment, not a read)
+function serialize(row: { name: string, custom: string, flag: number }) {
+  return effectiveDisplayName({ displayName: row.name, customDisplayName: row.custom, displayNameReserved: row.flag })
+}
+export async function list(db: any) {
+  const rows = await db.select({ name: readerAccounts.displayName, custom: readerAccounts.customDisplayName, flag: readerAccounts.displayNameReserved }).from(readerAccounts)
+  return rows.map((row: any) => serialize(row))
+}
+export function noFlagKey(row: any) {
+  return effectiveDisplayName({ displayName: readerAccounts.displayName, customDisplayName: null, displayNameReserved: undefined })
+}
+export function literalWithoutFlag() {
+  return effectiveDisplayName({ displayName: readerAccounts.displayName, customDisplayName: null } as never)
+}`
+  const verdicts = Object.fromEntries(analyzeReaderNameReads('x.ts', source).map(verdict => [verdict.name, verdict.ok]))
+  assert.equal(verdicts.serialize, true, 'a function that reads no column is never a violation')
+  assert.equal(verdicts.list, true, 'one hop to a same-file resolver')
+  assert.equal(verdicts.noFlagKey, false, 'the flag key is there but the flag column is never read')
+  assert.equal(verdicts.literalWithoutFlag, false, 'an object literal without displayNameReserved is not a resolution')
 })
 
 test('S5: livestream name snapshots are resolved on the way out', () => {

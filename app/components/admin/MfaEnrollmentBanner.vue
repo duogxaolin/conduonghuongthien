@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { isMfaEnrollmentPage } from '~/utils/mfa-enrollment-redirect'
+
 /**
  * Banner chính sách bắt buộc MFA (spec admin-mfa-policy): tài khoản thuộc diện mà
  * chưa bật yếu tố nào được báo NGÀY bắt đầu cưỡng chế trong thời hạn chuyển tiếp,
@@ -15,7 +17,7 @@ const enforceAfter = computed(() => {
   return Number.isNaN(date.getTime()) ? '' : date.toLocaleString('vi-VN', { hour12: false })
 })
 const required = computed(() => user.value?.mfaEnrollmentRequired === true)
-const onProfile = computed(() => route.path === '/admin/profile')
+const onProfile = computed(() => isMfaEnrollmentPage(route.path))
 </script>
 
 <template>

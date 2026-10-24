@@ -65,7 +65,7 @@ test('a notification link opens the page that holds the comment', {
     const { initDb } = await import('../server/db/init')
     await initDb()
 
-    const { getDb, closeDb } = await import('../server/utils/db')
+    const { getDb } = await import('../server/utils/db')
     const { articles, readerAccounts, articleComments } = await import('../server/db/schema')
     const {
       createReplyNotification, listNotifications, countUnread,
@@ -211,9 +211,10 @@ test('a notification link opens the page that holds the comment', {
     assert.ok(flagged, 'the reserved-name reply produced no notification')
     assert.equal(flagged.authorName, 'Bạn đọc')
     assert.equal(flagged.isAdminReply, false)
-
-    await closeDb()
   } finally {
+    // In `finally`: a red assertion above must not leave the pool open — the open
+    // pool keeps the process alive and the run hangs instead of reporting the failure.
+    await (await import('../server/utils/db')).closeDb()
     for (const key of ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME']) {
       if (previous[key] === undefined) delete process.env[key]
       else process.env[key] = previous[key]

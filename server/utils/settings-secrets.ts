@@ -91,7 +91,10 @@ function classifyStored(raw: string): ClassifiedStored {
   const text = raw.trim()
   if (!text.startsWith('{') || !text.includes('"sealed"')) return { kind: 'plaintext' }
   let parsed: unknown
-  try { parsed = JSON.parse(text) } catch { return { kind: 'plaintext' } }
+  // Mang dấu `"sealed"` mà không đọc được JSON (cột bị cắt cụt, sửa tay hỏng) vẫn là
+  // envelope hỏng — coi là nguyên văn thì nó thành mật khẩu, và lần khởi động sau bọc
+  // nó thêm một lớp (kiểm chứng lại 2A, W2).
+  try { parsed = JSON.parse(text) } catch { return { kind: 'broken-envelope' } }
   if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { kind: 'plaintext' }
   const value = parsed as Record<string, unknown>
   if (!Object.prototype.hasOwnProperty.call(value, 'sealed')) return { kind: 'plaintext' }
