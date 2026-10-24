@@ -136,6 +136,8 @@ Hiện 332 endpoint: 172 `getDb()` thẳng, 210 có import `services/**` (một 
 
 **Query string số:** qua `finitePositive()` (`server/utils/query-number.ts`), không `Math.max(1, Number(...))` (NaN→null, Infinity→500). → `tests/query-number.test.ts`.
 
+**Đầu vào của endpoint MỚI** qua `server/utils/request-body.ts` (zod 4): thân bằng `readJsonBody`/`readValidated(event, schema)`, query bằng `readValidatedQuery` (số trang/giới hạn: `queryFinitePositive`, gọi `finitePositive`) — JSON hỏng/không phải object → 400 `Dữ liệu gửi lên không hợp lệ`, sai trường → 400 nêu tên trường, không lộ lỗi zod; không `readBody` trần/`.catch(…)`, không `readValidatedBody`/`getValidatedQuery` của h3 (gửi lỗi validator trong `data`). Guard `tests/request-body-baseline.test.ts`: 138 tệp cũ, danh sách chỉ được giảm.
+
 **`slugify` một bản duy nhất** (bản chép thiếu cắt gạch treo → `-tin-nong-`). Không backfill slug dị dạng. → `docs/decisions/data-layer.md`.
 
 **`validateIdTokenClaims` có test** (`aud` là thứ duy nhất chặn token phát cho app khác; `picture` không lọt vào return). → `docs/decisions/data-layer.md`.
