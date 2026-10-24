@@ -112,8 +112,9 @@ export default defineEventHandler(async (event) => {
     const bucket = ipBucket(clientIp)
     const ceiling = await recordRateLimitHit(`avip:${bucket}`, VIEW_IP_CEILING_RULE, deps)
     if (ceiling.count > VIEW_IP_CEILING_RULE.limit) {
-      // Once per source per window (the counter passes limit + 1 exactly once),
-      // so an operator can see the ceiling firing — notably on a proxy/CDN edge
+      // At most once per bucket per window (only the request that takes the
+      // counter to limit + 1 logs), so an operator can see the ceiling firing
+      // without one line per refused view — notably on a proxy/CDN edge
       // address when the real client IP is not restored (production/README.md,
       // "IP thật sau Cloudflare"). Bucket only, as other throttle logs carry the IP.
       if (ceiling.count === VIEW_IP_CEILING_RULE.limit + 1) {

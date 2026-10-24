@@ -54,6 +54,23 @@ const trackLeft = (page: Page) => page.evaluate(([pause, play]) => {
 /** Longer than one 3.5 s autoplay step, so a running carousel must have moved. */
 const QUIET_MS = 4_500
 
+/** Is keyboard focus anywhere inside the carousel (its root holds the control)? */
+const focusInsideCarousel = (page: Page) => page.evaluate(([pause, play]) => {
+  const control = document.querySelector(`button[aria-label="${pause}"], button[aria-label="${play}"]`)
+  const root = control?.closest('.relative')
+  return !!root && !!document.activeElement && root.contains(document.activeElement)
+}, [PAUSE, PLAY])
+
+/**
+ * The section heading above the carousel: inside the block, outside the carousel
+ * root, and not focusable — pressing it moves focus out of the carousel. Without
+ * this the "stays still" check would also pass through the focus pause (focus
+ * stays on the control after pressing it), proving nothing about the control.
+ */
+const sectionHeading = (page: Page) => page.locator('section')
+  .filter({ has: page.locator(`button[aria-label="${PAUSE}"], button[aria-label="${PLAY}"]`) })
+  .locator('h2').first()
+
 test.describe('touch screen', () => {
   test.use({ viewport: { width: 390, height: 844 }, hasTouch: true, isMobile: true })
 
@@ -64,6 +81,9 @@ test.describe('touch screen', () => {
     await pause.tap()
     await expect(page.getByRole('button', { name: PLAY }), 'after tapping pause the control must offer play').toBeVisible()
 
+    // Tap outside the carousel so only the pause itself can be holding it still.
+    await sectionHeading(page).tap()
+    expect(await focusInsideCarousel(page), 'focus is still inside the carousel').toBe(false)
     const before = await trackLeft(page)
     expect(before).toBeGreaterThanOrEqual(0)
     await page.waitForTimeout(QUIET_MS)
@@ -85,7 +105,10 @@ test.describe('mouse', () => {
     await pause.click()
     await expect(page.getByRole('button', { name: PLAY })).toBeVisible()
 
-    await page.mouse.move(2, 2) // leave the carousel: must not restart what the visitor paused
+    // Leave the carousel with the pointer AND move focus out (click the heading):
+    // neither may restart what the visitor paused, and neither can be what holds it.
+    await sectionHeading(page).click()
+    expect(await focusInsideCarousel(page), 'focus is still inside the carousel').toBe(false)
     const before = await trackLeft(page)
     await page.waitForTimeout(QUIET_MS)
     expect(await trackLeft(page), 'leaving the carousel restarted it').toBe(before)

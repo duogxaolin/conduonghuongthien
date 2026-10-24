@@ -9,12 +9,16 @@
  *
  *   • Nothing moves before `init` — i.e. never during SSR.
  *   • Reduced motion (`prefers-reduced-motion: reduce`, read at mount) starts
- *     with the wish "paused"; the control then offers "play".
+ *     with the wish "paused"; the control then offers "play". A change of that
+ *     preference while the page is open is followed too — until the visitor has
+ *     pressed the control once; from then on their explicit choice stands.
  *   • Transient pauses, each lasting only while its cause lasts:
  *       hover  — a mouse/pen pointer over the carousel (touch pointers ignored:
  *                a tap emulates mouseenter and never sends the matching leave);
- *       focus  — keyboard focus anywhere inside, the control itself included;
- *       touch  — a finger down on the slides (not on the control);
+ *       focus  — focus anywhere inside, the control itself included, however it
+ *                got there (Tab, or a click/tap that focused a button or link);
+ *       touch  — a finger down on the slides (not on the control), until the
+ *                LAST finger lifts;
  *       hidden — the tab is hidden;
  *       empty  — nothing to show.
  *   • Pressing "play" overrides the pauses that mean "the visitor is at the
@@ -38,7 +42,10 @@ export type CarouselAutoplay = {
   pressToggle: () => void
   /** `fromToggle`: the touch started on the pause/play control itself. */
   touchStart: (fromToggle: boolean) => void
-  touchEnd: () => void
+  /** `remainingTouches`: fingers still down (`TouchEvent.touches.length`). */
+  touchEnd: (remainingTouches: number) => void
+  /** The system `prefers-reduced-motion` preference changed. */
+  reducedMotionChange: (reducedMotion: boolean) => void
   pointerEnter: (pointerType: string) => void
   pointerLeave: (pointerType: string) => void
   focusIn: () => void
@@ -54,6 +61,8 @@ export type CarouselAutoplay = {
 export function createCarouselAutoplay(onChange: (running: boolean) => void): CarouselAutoplay {
   let ready = false
   let wanted = true
+  /** The visitor pressed the control at least once: preferences no longer decide. */
+  let chosen = false
   let running = false
   const reasons = new Set<AutoplayPauseReason>()
 
@@ -80,6 +89,7 @@ export function createCarouselAutoplay(onChange: (running: boolean) => void): Ca
       sync()
     },
     pressToggle() {
+      chosen = true
       wanted = !wanted
       if (wanted) for (const reason of OVERRIDDEN_BY_PLAY) reasons.delete(reason)
       sync()
@@ -87,8 +97,13 @@ export function createCarouselAutoplay(onChange: (running: boolean) => void): Ca
     touchStart(fromToggle) {
       if (!fromToggle) pause('touch')
     },
-    touchEnd() {
-      resume('touch')
+    touchEnd(remainingTouches) {
+      if (remainingTouches === 0) resume('touch')
+    },
+    reducedMotionChange(reducedMotion) {
+      if (chosen) return
+      wanted = !reducedMotion
+      sync()
     },
     pointerEnter(pointerType) {
       if (!isTouchPointer(pointerType)) pause('hover')

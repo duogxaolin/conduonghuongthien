@@ -8,8 +8,9 @@
       </div>
 
       <!-- Tự chuyển slide do `createCarouselAutoplay` quyết định (D23): CHỈ nút
-           tạm dừng–tiếp tục đổi ý muốn của người xem; trỏ chuột / focus bàn phím ở
-           trong / ngón tay trên slide / tab ẩn chỉ tạm dừng trong lúc chúng còn đó.
+           tạm dừng–tiếp tục đổi ý muốn của người xem; trỏ chuột / focus ở trong (bàn
+           phím hay cú bấm/chạm làm nút được focus) / ngón tay trên slide / tab ẩn chỉ
+           tạm dừng trong lúc chúng còn đó.
            Người dùng chọn giảm chuyển động thì không tự chạy, không cuộn mượt. -->
       <div
         v-if="list.length"
@@ -203,9 +204,16 @@ const totalCards = computed(() => list.value.length)
 let autoplayTimer: ReturnType<typeof setInterval> | null = null
 
 // ── Chuyển động do người xem kiểm soát (design D23) ──
-// Đọc `prefers-reduced-motion` lúc mount (chỉ trình duyệt): khi bật, không tự
-// chuyển và mọi lượt cuộn bằng script là tức thì (`auto`), không trượt mượt.
+// Đọc `prefers-reduced-motion` lúc mount (chỉ trình duyệt) và theo dõi khi nó
+// đổi: khi bật, không tự chuyển (tới khi người xem tự bấm) và mọi lượt cuộn bằng
+// script là tức thì (`auto`), không trượt mượt.
 let reducedMotion = false
+let reducedMotionQuery: MediaQueryList | null = null
+const onReducedMotionChange = (event: MediaQueryListEvent) => {
+  reducedMotion = event.matches
+  autoplay.reducedMotionChange(event.matches)
+  autoplayOn.value = autoplay.autoplayOn
+}
 const scrollBehavior = (): ScrollBehavior => (reducedMotion ? 'auto' : 'smooth')
 const autoplayOn = ref(true)
 const autoplay = createCarouselAutoplay((running) => {
@@ -224,10 +232,11 @@ const onPointerLeave = (event: PointerEvent) => autoplay.pointerLeave(event.poin
 // Ngón tay trên slide: dừng trong lúc chạm. Chạm vào nút tạm dừng/tiếp tục KHÔNG
 // phải chạm vào carousel — touchstart của nó nổi lên tới đây TRƯỚC cú click.
 const onTouchStart = (event: TouchEvent) => autoplay.touchStart(fromToggle(event))
-const onTouchEnd = () => autoplay.touchEnd()
-// Focus bàn phím ở bất kỳ đâu trong carousel (kể cả chính nút) thì dừng; chỉ bấm
-// "tiếp tục" mới chạy lại khi focus còn ở trong; focus ra ngoài thì chạy lại trừ
-// khi người xem đã bấm tạm dừng.
+// Chạy lại chỉ khi ngón tay CUỐI CÙNG nhấc lên (`touches` = các ngón còn chạm).
+const onTouchEnd = (event: TouchEvent) => autoplay.touchEnd(event.touches.length)
+// Focus ở bất kỳ đâu trong carousel (kể cả chính nút; bằng Tab hay bằng cú
+// bấm/chạm làm nút/liên kết được focus) thì dừng; chỉ bấm "tiếp tục" mới chạy lại
+// khi focus còn ở trong; focus ra ngoài thì chạy lại trừ khi người xem đã bấm dừng.
 const onFocusIn = () => autoplay.focusIn()
 const onFocusOut = (event: FocusEvent) => {
   const next = event.relatedTarget as Node | null
@@ -312,7 +321,9 @@ onMounted(() => {
   if (currentLang.value !== 'vi' || error.value) {
     void refresh()
   }
-  reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  reducedMotionQuery = window.matchMedia('(prefers-reduced-motion: reduce)')
+  reducedMotion = reducedMotionQuery.matches
+  reducedMotionQuery.addEventListener('change', onReducedMotionChange)
   document.addEventListener('visibilitychange', onVisibilityChange)
   if (document.visibilityState === 'hidden') autoplay.visibilityChange(true)
   autoplay.init(reducedMotion)
@@ -321,6 +332,7 @@ onMounted(() => {
 })
 onUnmounted(() => {
   document.removeEventListener('visibilitychange', onVisibilityChange)
+  reducedMotionQuery?.removeEventListener('change', onReducedMotionChange)
   stopAutoplay()
 })
 </script>

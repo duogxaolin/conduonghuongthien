@@ -55,28 +55,48 @@ test('touch screen: a tap on the pause control pauses (touchstart on it is not a
   // carousel root), touchend, focus, click. 9cf1bb8 let the touchstart set
   // "paused" and the click toggle it straight back to "playing".
   const { c } = carouselFor(false)
-  c.touchStart(true); c.touchEnd(); c.focusIn(); c.pressToggle()
+  c.touchStart(true); c.touchEnd(0); c.focusIn(); c.pressToggle()
   assert.equal(c.autoplayOn, false, 'the control still offers "pause" after tapping pause')
   assert.equal(c.running, false, 'the carousel kept moving after the visitor tapped pause')
   // Tapping elsewhere afterwards (focus leaves) must not restart it.
   c.focusOut(false)
   assert.equal(c.running, false)
   // Tap play: same event order, resumes.
-  c.touchStart(true); c.touchEnd(); c.focusIn(); c.pressToggle()
+  c.touchStart(true); c.touchEnd(0); c.focusIn(); c.pressToggle()
   assert.equal(c.autoplayOn, true)
   assert.equal(c.running, true)
 })
 
-test('a touch on the slides pauses only while the finger is down and never changes the control', () => {
+test('a touch on the slides pauses only while a finger is down and never changes the control', () => {
   const { c } = carouselFor(false)
   c.touchStart(false)
   assert.equal(c.running, false)
   assert.equal(c.autoplayOn, true, 'a touch is not the visitor pressing pause')
-  c.touchEnd()
+  // Second finger down, first one lifted: still touched.
+  c.touchStart(false)
+  c.touchEnd(1)
+  assert.equal(c.running, false, 'lifting one of two fingers resumed the carousel')
+  c.touchEnd(0)
   assert.equal(c.running, true)
   // Emulated pointer events of a touch do not count as hover.
   c.pointerEnter('touch')
   assert.equal(c.running, true)
+})
+
+test('reduced motion switched on or off while the page is open is followed until the visitor chooses', () => {
+  const { c } = carouselFor(false)
+  c.reducedMotionChange(true)
+  assert.equal(c.running, false, 'turning reduced motion on did not stop the carousel')
+  assert.equal(c.autoplayOn, false)
+  c.reducedMotionChange(false)
+  assert.equal(c.running, true)
+  // Once the visitor pressed the control, their choice stands.
+  c.pressToggle() // pause
+  c.reducedMotionChange(false)
+  assert.equal(c.running, false)
+  c.pressToggle() // play, explicitly
+  c.reducedMotionChange(true)
+  assert.equal(c.running, true, 'an explicit "play" was overridden by a preference change')
 })
 
 test('keyboard focus anywhere inside pauses, the control itself included', () => {
@@ -139,6 +159,11 @@ test('RoleModelsBlock reads reduced motion, listens for focus, touch and visibil
   const touchStart = carousel.slice(carousel.indexOf('const onTouchStart'), carousel.indexOf('const onTouchStart') + 300)
   assert.match(touchStart, /fromToggle\(event\)/)
   assert.match(carousel, /const fromToggle = \(event: Event\) => [^\n]*autoplayToggle\.value\?\.contains\(/)
+  // Resume only when the LAST finger lifts.
+  assert.match(carousel, /autoplay\.touchEnd\(event\.touches\.length\)/)
+  // A preference change while the page is open is followed, and the listener removed.
+  assert.match(carousel, /reducedMotionQuery\.addEventListener\('change', onReducedMotionChange\)/)
+  assert.match(carousel, /reducedMotionQuery\?\.removeEventListener\('change', onReducedMotionChange\)/)
   assert.match(carousel, /'visibilitychange'/)
   // Scrolling follows the preference too, in CSS and in script.
   assert.match(carousel, /motion-reduce:scroll-auto/)

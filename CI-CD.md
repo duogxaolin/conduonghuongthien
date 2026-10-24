@@ -361,9 +361,22 @@ IP edge thay vì IP khách. Sửa ở **nginx** (không đổi `client-ip.ts`), 
 `ngx_http_realip_module` (aaPanel có sẵn):
 
 ```bash
-# Sinh danh sách dải IP Cloudflare từ nguồn chính thức (chạy lại khi Cloudflare đổi dải)
+# Sinh danh sách dải IP Cloudflare từ nguồn chính thức (chạy lại khi Cloudflare đổi dải).
+# Ghi ra tệp tạm, kiểm rồi mới thay: một lần curl hỏng giữa chừng không được để lại
+# tệp rỗng/cụt (nginx sẽ lặng lẽ thôi tin Cloudflare, hoặc tin nhầm dải).
+set -euo pipefail
+out=/www/server/nginx/conf/cloudflare-realip.conf
+tmp="$(mktemp)"
 { curl -fsS https://www.cloudflare.com/ips-v4; echo; curl -fsS https://www.cloudflare.com/ips-v6; } \
-  | sed '/^\s*$/d; s/.*/set_real_ip_from &;/' > /www/server/nginx/conf/cloudflare-realip.conf
+  | sed '/^\s*$/d; s/.*/set_real_ip_from &;/' > "$tmp"
+total=$(grep -c '^set_real_ip_from ' "$tmp" || true)
+malformed=$(grep -cvE '^set_real_ip_from [0-9A-Fa-f:.]+/[0-9]{1,3};$' "$tmp" || true)
+if [ "$total" -lt 10 ] || [ "$malformed" -ne 0 ]; then
+  echo "Danh sách Cloudflare rỗng/không hợp lệ ($total dòng, $malformed dòng lạ) — giữ tệp cũ" >&2
+  rm -f "$tmp"; exit 1
+fi
+install -m 644 "$tmp" "$out" && rm -f "$tmp"
+nginx -t && nginx -s reload
 ```
 
 ```nginx
@@ -376,6 +389,11 @@ Chỉ kết nối đến **từ dải Cloudflare** mới được thay `$remote_
 `CF-Connecting-IP`; ai gọi thẳng vào IP gốc vẫn mang địa chỉ thật của họ, nên không
 giả được header. Sau đó `X-Real-IP $remote_addr` và `$proxy_add_x_forwarded_for` tự
 mang IP khách. `nginx -t && nginx -s reload`.
+
+**Không nên** "sửa" bằng cách thêm dải Cloudflare vào `TRUSTED_PROXY_IPS`: `client-ip.ts`
+từ chối CIDR IPv6 (Cloudflare có 7 dải IPv6), nên khách IPv6 vẫn ra IP edge; và
+nginx vẫn ghi IP edge vào access log, `X-Real-IP` vẫn sai — chỉ app được vá một nửa.
+Khôi phục IP ở nginx sửa tất cả cùng lúc.
 
 Kiểm tra (làm trước khi merge thay đổi có trần lượt xem, và sau mỗi lần đổi proxy):
 1. Lấy IP của chính mình: `curl -s https://<domain>/cdn-cgi/trace | grep '^ip='`.

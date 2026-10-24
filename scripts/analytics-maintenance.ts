@@ -17,55 +17,97 @@ import { closeDb } from '../server/utils/db'
  * `ignoreSchedule` rather than `force`: the crontab line is this run's schedule,
  * so `runHour` does not apply — but the auto-cleanup switch in the admin still
  * does. A switch that cron ignores is not a switch.
+ *
+ * Every pass is settled, never awaited bare: a pass that rejects (the retention
+ * pass reads its policy through `getDb()` outside any catch) lands in the JSON as
+ * `{ error }` instead of aborting the script before it prints a line, purges the
+ * rate-limit counters, or closes the pool — which then keeps cron hanging. The
+ * exit code is 1 when any pass failed or threw, 2 for warnings / a held lock.
  */
+
+type Settled<T> = { ok: true; value: T } | { ok: false; error: string }
+
+async function settle<T>(run: () => Promise<T>): Promise<Settled<T>> {
+  try {
+    return { ok: true, value: await run() }
+  } catch (error) {
+    return { ok: false, error: error instanceof Error ? error.message : String(error) }
+  }
+}
+
+const SCHEDULER_NOTE = 'The app also runs this purge in-process. Both paths share a MySQL lock, so cron remains safe to keep.'
 
 const catchUpArgument = process.argv.find(argument => argument.startsWith('--catch-up-days='))
 const catchUpDays = catchUpArgument ? Number(catchUpArgument.split('=', 2)[1]) : undefined
 
-const result = await runAnalyticsMaintenance({ catchUpDays })
+let exitCode = 0
+let printed = false
 
-// Retention runs even when aggregation reports a warning: a stale aggregate is
-// a reporting problem, holding personal data past its window is a policy one.
-// It is skipped only when analytics could not run at all, because that usually
-// means the database is unreachable.
-const retention = result.status === 'failed'
-  ? null
-  : await runRetentionPass({ ignoreSchedule: true, trigger: 'cron' })
+try {
+  const analytics = await settle(() => runAnalyticsMaintenance({ catchUpDays }))
+  const result = analytics.ok ? analytics.value : null
+  const analyticsFailed = !result || result.status === 'failed'
 
-// Expired rate-limit counters: their own pass and lock, NOT gated on the admin
-// auto-cleanup switch (they are lapsed windows, not data under a retention
-// policy). The in-process timer does the same; this covers RETENTION_SCHEDULER=0,
-// where cron may be the only purge — so it runs even when analytics failed, and
-// `reportRateLimitPurge` never throws: its error goes into the JSON below
-// instead of aborting the script before it prints anything or closes the pool.
-const rateLimits = await reportRateLimitPurge()
+  // Retention runs even when aggregation reports a warning: a stale aggregate is
+  // a reporting problem, holding personal data past its window is a policy one.
+  // It is skipped only when analytics could not run at all, because that usually
+  // means the database is unreachable.
+  const retention = analyticsFailed
+    ? null
+    : await settle(() => runRetentionPass({ ignoreSchedule: true, trigger: 'cron' }))
+  const retentionRun = retention?.ok && retention.value.ran ? retention.value.result : null
 
-const output = {
-  status: result.status,
-  processedDays: result.processedDays,
-  purgedRaw: result.purgedRaw,
-  purgedAggregates: result.purgedAggregates,
-  lastAggregatedDay: result.lastAggregatedDay,
-  stale: result.stale,
-  retention: retention && (retention.ran
-    ? {
-        ran: true,
-        status: retention.result.status,
-        tables: retention.result.tables,
-        message: retention.result.message,
-      }
-    : { ran: false, skipped: retention.reason }),
-  rateLimits,
-  scheduler: 'The app also runs this purge in-process. Both paths share a MySQL lock, so cron remains safe to keep.',
+  // Expired rate-limit counters: their own pass and lock, NOT gated on the admin
+  // auto-cleanup switch (they are lapsed windows, not data under a retention
+  // policy). The in-process timer does the same; this covers RETENTION_SCHEDULER=0,
+  // where cron may be the only purge — so it runs whatever happened above.
+  // `reportRateLimitPurge` never throws: a failure is `{ ran: false, error }`.
+  const rateLimits = await reportRateLimitPurge()
+
+  const output = {
+    status: result?.status ?? 'failed',
+    ...(analytics.ok ? {} : { error: analytics.error }),
+    processedDays: result?.processedDays ?? 0,
+    purgedRaw: result?.purgedRaw ?? 0,
+    purgedAggregates: result?.purgedAggregates ?? 0,
+    lastAggregatedDay: result?.lastAggregatedDay ?? null,
+    stale: result?.stale ?? null,
+    retention: retention === null
+      ? null
+      : !retention.ok
+          ? { ran: false, error: retention.error }
+          : retention.value.ran
+            ? {
+                ran: true,
+                status: retention.value.result.status,
+                tables: retention.value.result.tables,
+                message: retention.value.result.message,
+              }
+            : { ran: false, skipped: retention.value.reason },
+    rateLimits,
+    scheduler: SCHEDULER_NOTE,
+  }
+  console.log(JSON.stringify(output))
+  printed = true
+
+  const retentionFailed = retention !== null && (!retention.ok || retentionRun?.status === 'failed')
+  const retentionWarned = retentionRun?.status === 'warning'
+  const rateLimitsFailed = 'error' in rateLimits
+
+  if (analyticsFailed || retentionFailed || rateLimitsFailed) exitCode = 1
+  else if (result.status === 'locked' || result.status === 'warning' || retentionWarned) exitCode = 2
+} catch (error) {
+  // Only reachable through a bug in this file — every pass above is settled.
+  exitCode = 1
+  if (!printed) {
+    console.log(JSON.stringify({
+      status: 'failed',
+      error: error instanceof Error ? error.message : String(error),
+      scheduler: SCHEDULER_NOTE,
+    }))
+  }
+} finally {
+  // An open pool keeps the event loop alive: cron would hang after its result.
+  await closeDb()
+  if (exitCode !== 0) process.exitCode = exitCode
 }
-
-console.log(JSON.stringify(output))
-
-await closeDb()
-
-const retentionFailed = retention?.ran === true && retention.result.status === 'failed'
-const retentionWarned = retention?.ran === true && retention.result.status === 'warning'
-const rateLimitsFailed = 'error' in rateLimits
-
-if (result.status === 'failed' || retentionFailed || rateLimitsFailed) process.exitCode = 1
-else if (result.status === 'locked' || result.status === 'warning' || retentionWarned) process.exitCode = 2

@@ -83,7 +83,7 @@ test('one address rotating User-Agents over 100 articles gets at most 60 counted
   }
   assert.deepEqual([...statuses], [202], 'over the ceiling must look exactly like any other answer')
   assert.equal(recorded.length, 60, 'the 61st view from one address inside 10 minutes was counted')
-  // Logged once per source per window — not once per refused request.
+  // At most once per bucket per window — not once per refused request.
   assert.deepEqual(ceilingHits(), [{ event: 'article_view.ip_ceiling_hit', bucket: '203.0.113.50', limit: 60, windowSeconds: 600 }])
 })
 

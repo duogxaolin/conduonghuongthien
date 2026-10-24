@@ -386,12 +386,15 @@ test('the nightly script runs retention as well as analytics', () => {
   assert.match(script, /ignoreSchedule: true/)
   assert.match(script, /trigger: 'cron'/)
   assert.doesNotMatch(script, /force: true/)
-  // A stale aggregate must not stop a retention purge that is a policy obligation.
-  assert.match(script, /result\.status === 'failed'\s*\?\s*null/)
-  assert.match(script, /retention\.result\.status === 'failed'/)
+  // A stale aggregate must not stop a retention purge that is a policy obligation:
+  // only a FAILED analytics run (or one that threw) skips retention.
+  assert.match(script, /const analyticsFailed = !result \|\| result\.status === 'failed'/)
+  assert.match(script, /analyticsFailed\s*\?\s*null/)
+  assert.match(script, /retentionRun\?\.status === 'failed'/)
   // An open pool keeps the event loop alive, so the cron job would print its
-  // result and then hang instead of exiting.
-  assert.match(script, /closeDb\(\)/)
+  // result and then hang instead of exiting — hence `finally`. Behaviour of every
+  // failure path: tests/analytics-maintenance-script.test.ts.
+  assert.match(script, /finally \{[\s\S]*await closeDb\(\)/)
 })
 
 // ─── chat_sessions scope ──────────────────────────────────────────────────────
