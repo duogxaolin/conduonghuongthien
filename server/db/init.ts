@@ -36,27 +36,34 @@ export async function initDb() {
   const database = process.env.DB_NAME     || 'cdkt_admin'
 
   // Step 1: Connect without database to ensure database exists
+  // `finally`: initDb cũng chạy trong tiến trình server (khôi phục CSDL gọi nó) — một
+  // bước hỏng không được để lại kết nối mở.
   const connection = await mysql.createConnection({ host, port, user, password })
-  await connection.query(`CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`)
-  await connection.end()
+  try {
+    await connection.query(`CREATE DATABASE IF NOT EXISTS \`${database}\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;`)
+  } finally {
+    await connection.end().catch(() => {})
+  }
 
   // Step 2: Connect to target database and create tables in FK order.
   // Mỗi hàm tạo một nhóm bảng theo domain; thứ tự gọi bảo toàn ràng buộc FK
   // (cha trước con) — đúng thứ tự của init.ts cũ trước khi tách.
   const db = await mysql.createConnection({ host, port, user, password, database })
-  await createCoreTables(db, database)
-  await createContentTables(db, database)
-  await createGovernanceTables(db, database)
-  await createChatbotTables(db, database)
-  await createAnalyticsTables(db)
-  await createReadersMediaTables(db)
-  await createAiI18nTables(db)
+  try {
+    await createCoreTables(db, database)
+    await createContentTables(db, database)
+    await createGovernanceTables(db, database)
+    await createChatbotTables(db, database)
+    await createAnalyticsTables(db)
+    await createReadersMediaTables(db)
+    await createAiI18nTables(db)
 
-  // Additive migrations chạy cuối cùng: ensureColumn/FK/index cho DB đã có dữ
-  // liệu (bảng tồn tại từ deployment cũ, thiếu cột mới). Xem migrations-additive.
-  await applyAdditiveMigrations(db, database)
-
-  await db.end()
+    // Additive migrations chạy cuối cùng: ensureColumn/FK/index cho DB đã có dữ
+    // liệu (bảng tồn tại từ deployment cũ, thiếu cột mới). Xem migrations-additive.
+    await applyAdditiveMigrations(db, database)
+  } finally {
+    await db.end().catch(() => {})
+  }
   console.log('✅ All MySQL tables exist and ready!')
 }
 

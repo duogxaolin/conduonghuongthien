@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, symlinkSync, linkSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, linkSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gzipSync, createGzip } from 'node:zlib'
@@ -65,6 +65,22 @@ const state = {
 }
 /** SQL text executed on a `multipleStatements` (restore) connection. */
 const executed: string[] = []
+/** What happened, in order: `restoreSql` (dump executed), `initDb` (schema brought up to date), `tx` (a transaction). */
+const order: string[] = []
+/** The restored dump dies half-way through. */
+let failRestoreSql = false
+/** Bringing the schema up to date after the dump fails. */
+let failConverge = false
+// The boot's own schema steps (CREATE TABLE IF NOT EXISTS + additive migrations);
+// the real thing runs against MySQL in tests/backup-dump-integration.test.ts.
+mock.module('../server/db/init', {
+  namedExports: {
+    initDb: async () => {
+      order.push('initDb')
+      if (failConverge) throw new Error("fixture: ALTER TABLE `backups` ADD COLUMN failed")
+    },
+  },
+})
 let failDump = false
 let restoredTableWipesBackups = true
 /** The `settings` rows the restored dump brings back (it replaces the table); `null` = dump leaves settings alone. */
@@ -122,7 +138,7 @@ function fakeDb(via: 'tx' | 'db'): Record<string, unknown> {
       },
     }),
     update: () => ({ set: () => ({ where: async () => {} }) }),
-    transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(fakeDb('tx')),
+    transaction: async (fn: (tx: unknown) => Promise<unknown>) => { order.push('tx'); return fn(fakeDb('tx')) },
   }
 }
 
@@ -135,9 +151,11 @@ function fakeConnection(options: { multipleStatements?: boolean }) {
       }
       if (options.multipleStatements && !/^\s*SET FOREIGN_KEY_CHECKS/i.test(sqlText)) {
         executed.push(sqlText)
+        if (!/^\s*SET SESSION/i.test(sqlText)) order.push('restoreSql')
         // The real dump starts with DROP TABLE backups: the table is replaced.
         if (restoredTableWipesBackups) state.backups = []
         if (restoredSettings) state.settings = restoredSettings.map(row => ({ ...row }))
+        if (failRestoreSql && !/^\s*SET SESSION/i.test(sqlText)) throw new Error('fixture: restore died half-way (ER_LOCK_WAIT_TIMEOUT)')
       }
       return [[], []]
     },
@@ -181,6 +199,9 @@ beforeEach(() => {
   state.settings = []
   state.audit = []
   executed.length = 0
+  order.length = 0
+  failRestoreSql = false
+  failConverge = false
   logs.length = 0
   failDump = false
   restoredTableWipesBackups = true
@@ -382,6 +403,8 @@ describe('a database restore is preceded by a safety backup', () => {
     assert.ok(existsSync(path.join(backupsDir(), outcome.preRestoreBackup!)))
     // The restore replaced the `backups` table; the safety backup is listed again afterwards.
     assert.ok(state.backups.some(row => row.filename === outcome.preRestoreBackup && row.trigger === 'pre-restore'))
+    // …with its off-site status (Drive is off here: `none`), not a NULL "unknown" (wave2 D-OFFSITE).
+    assert.equal(state.backups.find(row => row.filename === outcome.preRestoreBackup)?.offsiteStatus, 'none')
     const audit = restoreAudits()
     assert.equal(audit.length, 1)
     assert.equal((audit[0]!.values.meta as Record<string, unknown>).preRestoreBackup, outcome.preRestoreBackup)
@@ -502,6 +525,92 @@ describe('restore is audited and logged', () => {
   })
 })
 
+// ─── The schema is brought up to date right after the dump runs (wave2 ops, re-verification CRITICAL) ─
+// An app dump carries DROP TABLE + CREATE TABLE: restoring one taken before a column
+// was added brings the table back WITHOUT that column, while Drizzle names every
+// schema column on every insert/select. The reattach insert inside the audit
+// transaction then failed (`Unknown column 'offsite_status'`), the endpoint said
+// "restore failed" although the data had been replaced, `backups` stayed empty and
+// the next orphan sweep deleted the pre-restore dump. The restore now runs the boot's
+// own schema steps (`initDb`) before anything touches the restored tables.
+
+describe('a database restore brings the schema up to date before using it', () => {
+  test('order: the dump runs, then the boot schema steps, then the reattach/audit transaction', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    await restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR)
+    const restored = order.indexOf('restoreSql')
+    const converged = order.indexOf('initDb')
+    assert.ok(restored >= 0 && converged > restored, `order: ${order.join(' → ')}`)
+    assert.equal(order.filter(step => step === 'initDb').length, 1)
+    assert.ok(order.lastIndexOf('tx') > converged, `the audit transaction must come after: ${order.join(' → ')}`)
+    assert.ok(logs.some(entry => entry.event === 'backup.restore_schema_converged'))
+  })
+
+  test('a dump that dies half-way still gets the schema steps, and its own error is what is reported', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    failRestoreSql = true
+    await assert.rejects(restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR), /restore died half-way/)
+    assert.ok(order.indexOf('initDb') > order.indexOf('restoreSql'), `order: ${order.join(' → ')}`)
+    const audit = restoreAudits()
+    assert.deepEqual(audit.map(entry => entry.values.action), ['backup_restore_failed'])
+    assert.match(String((audit[0]!.values.meta as Record<string, unknown>).error), /restore died half-way/)
+  })
+
+  test('schema steps that fail after a complete dump: a named failure that says the data WAS replaced and names the pre-restore dump to go back to', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    failConverge = true
+    const error = await rejection(restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR))
+    assert.equal(error.reason, 'schema_convergence_failed')
+    assert.match(error.message, /đã được nạp/)
+    // Not "restart to finish": every container start runs the same failing step
+    // (`init.ts && …`) and would loop. The way back is the safety dump, by name.
+    assert.doesNotMatch(error.message, /khởi động lại ứng dụng để hoàn tất/)
+    const pre = backupFiles().find(name => name.endsWith('-pre-restore.sql.gz'))
+    assert.ok(pre && error.message.includes(pre), `the message names ${pre}: ${error.message}`)
+    assert.match(error.message, /log máy chủ/)
+    const audit = restoreAudits()
+    assert.deepEqual(audit.map(entry => entry.values.action), ['backup_restore_failed'])
+    assert.equal((audit[0]!.values.meta as Record<string, unknown>).reason, 'schema_convergence_failed')
+    assert.ok(logs.some(entry => entry.event === 'backup.restore_schema_convergence_failed'))
+    assert.ok(!logs.some(entry => entry.event === 'backup.restore_succeeded'))
+  })
+
+  test('the restore page names every phase the server reports (no raw "schema" on screen) and keeps the bar full during the schema step', () => {
+    const source = (file: string) => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8')
+    const phases = new Set([...source('server/services/backup-restore.ts').matchAll(/setStatus\((?:true|false), '([a-z]+)'/g)].map(m => m[1]!))
+    assert.ok(phases.has('schema'))
+    const page = source('app/pages/admin/settings/backup.vue')
+    const labels = /const RESTORE_PHASE_LABEL: Record<string, string> = \{([\s\S]*?)\n\}/.exec(page)?.[1] ?? ''
+    for (const phase of phases) assert.match(labels, new RegExp(`^\\s+${phase}: '`, 'm'), `no label for phase "${phase}"`)
+    assert.match(page, /if \(restoreStatus\.value\?\.phase === 'schema'\) return 100/)
+  })
+
+  test('DB_NAME empty while MYSQL_DATABASE names another database: refused BEFORE the safety backup and the dump (round 3, S1)', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    const saved = { DB_NAME: process.env.DB_NAME, MYSQL_DATABASE: process.env.MYSQL_DATABASE }
+    process.env.DB_NAME = ''
+    process.env.MYSQL_DATABASE = 'cdkt_other'
+    try {
+      const error = await rejection(restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR))
+      assert.equal(error.reason, 'db_name_mismatch')
+      assert.match(error.message, /DB_NAME/)
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key]
+        else process.env[key] = value
+      }
+    }
+    assert.ok(!backupFiles().some(name => name.endsWith('-pre-restore.sql.gz')), 'no safety backup was taken')
+    assert.deepEqual(order.filter(step => step === 'restoreSql' || step === 'initDb'), [])
+  })
+
+  test('a file-archive restore touches no schema', async () => {
+    const name = makeArchive('cdkt-uploads-20261013T000000Z-manual.tar.gz', (root) => { uploadsTree(root); return ['uploads'] })
+    await restore.runRestore(name, ACTOR)
+    assert.ok(!order.includes('initDb'))
+  })
+})
+
 // ─── The scheduler's own record survives a restore (wave1 1B re-verification S3) ─
 
 describe('a database restore keeps the live backup scheduler state', () => {
@@ -520,6 +629,21 @@ describe('a database restore keeps the live backup scheduler state', () => {
     assert.equal(stateValue(), LIVE)
     assert.equal(state.settings.find(row => row.key === 'site_name')?.value, 'from dump', 'every other setting is the restored one')
   })
+
+  // wave2 ops round 3 (W3): a FAILED restore after the dump ran rewinds this row too.
+  for (const [label, arm] of [
+    ['the dump dies half-way', () => { failRestoreSql = true }],
+    ['the schema step fails', () => { failConverge = true }],
+  ] as const) {
+    test(`a failed restore (${label}) keeps the live record as well`, async () => {
+      seedSqlBackup('cdkt-20261025T030000Z-scheduled.sql.gz', '20261025T030000Z', 'SELECT 1;')
+      state.settings = [{ key: KEY, value: LIVE }]
+      restoredSettings = [{ key: KEY, value: IN_DUMP }]
+      arm()
+      await assert.rejects(restore.runRestore('cdkt-20261025T030000Z-scheduled.sql.gz', ACTOR))
+      assert.equal(stateValue(), LIVE)
+    })
+  }
 
   test('no live record: the dump\'s record is removed, not kept', async () => {
     seedSqlBackup('cdkt-20261025T030000Z-scheduled.sql.gz', '20261025T030000Z', 'SELECT 1;')

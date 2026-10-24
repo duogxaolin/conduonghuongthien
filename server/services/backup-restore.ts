@@ -20,15 +20,24 @@ import path from 'node:path'
 import { randomUUID } from 'node:crypto'
 import { execFile } from 'node:child_process'
 import { promisify } from 'node:util'
-import { inArray } from 'drizzle-orm'
 
 import { getDb, getPool } from '../utils/db'
-import { backups, activityLogs, users } from '../db/schema'
+import { backups, activityLogs } from '../db/schema'
 import { withNamedLock } from '../utils/named-lock'
 import { logError, logInfo, logWarn, SECURITY_EVENTS } from '../utils/logger'
 import { BackupLockBusyError, LOCK_RESTORE, backupsDir, holdRestoreTarget, runBackup, timestampStamp, type RunStatus } from './backup'
 import { restoreSql } from './backup-sql'
+import { insertBackupRow } from './backup-registry'
 import { keepSchedulerStateAcrossRestore, readSchedulerStateForRestore } from './backup-scheduler'
+import {
+  assertOneDatabase,
+  convergeBackupsRegistry,
+  convergeSchemaAfterRestore,
+  existingUserIds,
+  reattachBackupRows,
+  restoreLiveStateAfterFailedRestore,
+  type BackupRow,
+} from './backup-restore-recovery'
 import {
   BackupRestoreError,
   DEFAULT_RESTORE_LIMITS,
@@ -91,55 +100,11 @@ function logRefused(actor: RestoreActor, filename: string, err: unknown, source:
   })
 }
 
-/**
- * `activity_logs.user_id` và `backups.created_by` là khoá ngoại vào `users`.
- * Sau khi khôi phục một dump cũ, tài khoản đang thao tác có thể không còn trong
- * bảng `users` — ghi `null` thay vì làm hỏng cả transaction audit; tên và id
- * người thao tác vẫn nằm trong `meta`.
- */
-type Tx = Parameters<Parameters<ReturnType<typeof getDb>['transaction']>[0]>[0]
-
-async function existingUserIds(tx: Tx, ids: Array<number | null | undefined>): Promise<Set<number>> {
-  const wanted = [...new Set(ids.filter((id): id is number => typeof id === 'number'))]
-  if (wanted.length === 0) return new Set()
-  const rows = await tx.select({ id: users.id }).from(users).where(inArray(users.id, wanted))
-  return new Set(rows.map(row => row.id))
-}
-
-type BackupRow = typeof backups.$inferSelect
-
-/**
- * Dump vừa chạy đã thay bảng `backups` bằng bản trong file, nên hàng của bản
- * `pre-restore` (và của file vừa tải lên, và mọi bản tạo sau thời điểm dump)
- * biến mất dù file vẫn nằm trên đĩa. Thêm lại các hàng `done` có file còn trên
- * đĩa mà bảng sau khôi phục chưa có — danh sách khớp với thư mục backups.
- */
-async function reattachBackupRows(tx: Tx, before: BackupRow[]): Promise<string[]> {
-  if (before.length === 0) return []
-  const present = new Set((await tx.select({ filename: backups.filename }).from(backups)).map(row => row.filename))
-  const missing: BackupRow[] = []
-  for (const row of before) {
-    if (row.status !== 'done' || present.has(row.filename)) continue
-    try { await fs.stat(path.resolve(backupsDir(), row.filename)) } catch { continue }
-    missing.push(row)
-  }
-  if (missing.length === 0) return []
-  const known = await existingUserIds(tx, missing.map(row => row.createdBy))
-  for (const row of missing) {
-    await tx.insert(backups).values({
-      filename: row.filename, type: row.type, bytes: row.bytes, stamp: row.stamp, trigger: row.trigger,
-      status: row.status, driveUploaded: row.driveUploaded, driveFileId: row.driveFileId, error: row.error,
-      createdBy: row.createdBy !== null && known.has(row.createdBy) ? row.createdBy : null,
-      createdAt: row.createdAt ?? undefined,
-    })
-  }
-  return missing.map(row => row.filename)
-}
-
 /** Sao lưu an toàn trước khi chạy SQL. Hỏng hoặc bận → huỷ khôi phục với lý do rõ. */
 async function takeSafetyBackup(adminUserId: number | null): Promise<string> {
   try {
-    const result = await runBackup('sql', 'pre-restore', adminUserId, { rotate: false })
+    // `allowDuringRestore`: lượt này đang giữ khoá khôi phục — mọi lượt sao lưu khác bị từ chối.
+    const result = await runBackup('sql', 'pre-restore', adminUserId, { rotate: false, allowDuringRestore: true })
     const file = result.files.find(entry => entry.type === 'sql')
     if (!file) throw new Error('lượt sao lưu không tạo được file SQL')
     return file.name
@@ -208,20 +173,54 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
     setStatus(true, 'start', `Đang khôi phục ${filename}`)
     logWarn({ event: SECURITY_EVENTS.backupRestoreStarted, userId: actor.id, username: actor.username ?? null, filename })
     let preRestoreBackup: string | null = null
+    // Danh sách backup của hệ thống đang chạy, đọc trước khi dump chạy — gắn lại trên
+    // MỌI lối ra sau khi dump đã chạy (thành công: trong transaction audit; thất bại:
+    // `restoreLiveStateAfterFailedRestore`).
+    let rowsBefore: BackupRow[] = []
+    // Trạng thái scheduler sao lưu của hệ thống đang chạy (`undefined` = khôi phục tệp,
+    // hoặc không đọc được → không đụng tới) — ghi lại sau khi khôi phục, như `rowsBefore`.
+    let schedulerStateBefore: string | null | undefined
+    // Từ lúc dump bắt đầu chạy tới lúc transaction audit (kèm gắn lại hàng) commit,
+    // `backups` có thể đang là bản trong dump: lối thất bại phải gắn lại hàng.
+    let registryRewound = false
     try {
       let legacyDateShift = false
-      let rowsBefore: BackupRow[] = []
-      // Trạng thái scheduler sao lưu của hệ thống đang chạy (`undefined` = khôi phục tệp,
-      // hoặc không đọc được → không đụng tới) — ghi lại sau khi khôi phục, như `rowsBefore`.
-      let schedulerStateBefore: string | null | undefined
       if (kind === 'sql') {
+        assertOneDatabase()
+        // Sổ sao lưu phải đúng hình dạng TRƯỚC khi đăng ký bản an toàn: một lượt khôi phục
+        // hỏng trước đó có thể đã để nó ở hình dạng cũ (vd. khi làm theo lời khuyên
+        // "khôi phục bản an toàn"). Hỏng thì vẫn đi tiếp — `insertBackupRow` tự thích ứng.
+        await convergeBackupsRegistry(filename, actor)
         setStatus(true, 'safety', 'Đang tạo bản sao lưu an toàn trước khi khôi phục')
         preRestoreBackup = await takeSafetyBackup(actor.id)
         // Đọc SAU sao lưu an toàn để có cả hàng của bản `pre-restore`.
         rowsBefore = await db.select().from(backups)
         schedulerStateBefore = await readSchedulerStateForRestore(db)
         setStatus(true, 'sql', 'Đang phục hồi CSDL')
-        ;({ legacyDateShift } = await restoreSql(filePath))
+        registryRewound = true
+        try {
+          ;({ legacyDateShift } = await restoreSql(filePath))
+        } catch (err: unknown) {
+          // Dump chết giữa chừng: một phần bảng có thể đã mang hình dạng cũ. Vẫn đưa cấu
+          // trúc về bản hiện tại (được tới đâu hay tới đó) để audit thất bại, danh sách
+          // và lượt sao lưu kế không hỏng theo — lỗi GỐC mới là thứ được báo.
+          await convergeSchemaAfterRestore(filename, actor).catch(() => {})
+          throw err
+        }
+        // Trước MỌI thứ đụng tới bảng vừa khôi phục (gắn lại `backups`, audit, scheduler).
+        setStatus(true, 'schema', 'Đang cập nhật cấu trúc CSDL')
+        try {
+          await convergeSchemaAfterRestore(filename, actor)
+        } catch {
+          // Không bảo "khởi động lại": lỗi đến từ chính dữ liệu vừa nạp thì mỗi lần
+          // khởi động (`init.ts && …`) chạy đúng bước này và container dừng lặp lại.
+          // Đường lui là bản an toàn — nêu đúng tên (nó đã được gắn lại vào danh sách).
+          throw new BackupRestoreError(
+            `Dữ liệu của bản sao lưu đã được nạp nhưng chưa đưa được cấu trúc CSDL về phiên bản hiện tại (chi tiết trong log máy chủ). Đừng khởi động lại ứng dụng để sửa — lần khởi động chạy đúng bước này và có thể dừng lặp lại. Khôi phục bản an toàn ${preRestoreBackup} để trở về trạng thái ngay trước lượt này; nếu không khôi phục được trong ứng dụng, dùng scripts/restore-db.sh trên máy chủ với chính tệp đó (DEPLOY.md, mục Khôi phục thật).`,
+            500,
+            'schema_convergence_failed',
+          )
+        }
       } else {
         setStatus(true, 'extract', 'Đang giải nén file', 0)
         await restoreFiles(filePath)
@@ -242,6 +241,7 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
           },
         })
       })
+      registryRewound = false
 
       const warning = legacyDateShift ? LEGACY_DUMP_WARNING : null
       setStatus(false, 'done', warning ? `Khôi phục xong. ${warning}` : 'Khôi phục xong', 100)
@@ -249,6 +249,9 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
       return { warning, legacyDateShift, preRestoreBackup }
     } catch (err: unknown) {
       setStatus(false, 'failed', `Khôi phục lỗi: ${messageOf(err)}`)
+      // Còn trong khoá khôi phục: đặt lại danh sách backup TRƯỚC khi nhả khoá, để không
+      // lượt dọn nào thấy một danh sách thiếu bản `pre-restore` và các bản mới hơn.
+      if (registryRewound) await restoreLiveStateAfterFailedRestore(rowsBefore, schedulerStateBefore, filename, actor)
       logWarn({ event: SECURITY_EVENTS.backupRestoreFailed, userId: actor.id, username: actor.username ?? null, filename, reason: reasonOf(err), error: messageOf(err), preRestoreBackup })
       await recordRestoreFailure(actor, filename, err, preRestoreBackup)
       throw err
@@ -341,7 +344,8 @@ async function storeAndRestoreUpload(
     tempPath = null
 
     try {
-      await getDb().insert(backups).values({
+      // `insertBackupRow`: một lượt khôi phục hỏng trước đó có thể để sổ ở hình dạng cũ.
+      await insertBackupRow(getDb(), {
         filename: finalName, type: kind, bytes: fileBuffer.length, stamp: timestampStamp(), trigger: 'manual', status: 'done',
         createdBy: actor.id,
       })

@@ -316,6 +316,7 @@ export async function createReadersMediaTables(db: Connection): Promise<void> {
       \`status\` VARCHAR(16) NOT NULL DEFAULT 'pending',
       \`drive_uploaded\` TINYINT(1) DEFAULT 0,
       \`drive_file_id\` VARCHAR(128) NULL,
+      \`offsite_status\` VARCHAR(16) NULL,
       \`error\` TEXT NULL,
       \`created_by\` INT NULL,
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

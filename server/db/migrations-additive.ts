@@ -851,13 +851,10 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // (mỗi URL dài cả trăm ký tự). Lên MEDIUMTEXT (16MB) — đủ cho sitemap lớn.
   await modifyColumn(db, database, 'settings', 'value', 'MEDIUMTEXT NULL')
 
-  // ── backups.trigger: VARCHAR(16) → VARCHAR(32) ────────────────────────────
-  // `pre-fix-thumbnails` (18 ký tự) không vừa VARCHAR(16): dưới strict sql_mode
-  // `runBackup('sql', 'pre-fix-thumbnails')` chết với ER_DATA_TOO_LONG, kể cả
-  // hàng `failed` cũng không ghi được — và lượt sửa thumbnail chạy tiếp KHÔNG có
-  // bản sao lưu. CREATE TABLE ở `schema-tables/readers-media.ts` đã khai 32 cho
-  // CSDL mới; dòng này nới CSDL cũ (chỉ nới — không mất dữ liệu, chạy lại vô hại).
-  await modifyColumn(db, database, 'backups', 'trigger', "VARCHAR(32) NOT NULL DEFAULT 'manual'")
+  // ── backups: trigger VARCHAR(32), offsite_status ──────────────────────────
+  // Gom vào `convergeBackupsTable` (bên dưới) để lượt khôi phục CSDL hỏng giữa chừng
+  // gọi được RIÊNG nó — sổ sao lưu là thứ đường lui (bản `pre-restore`) cần.
+  await convergeBackupsTable(db, database)
 
   // ── Tự vá URL ảnh hỏng hàng loạt (all bài) ────────────────────────────────
   // Sync trước treo ở pre-backup nên phase rewrite chưa chạy: all bài vẫn
@@ -866,6 +863,30 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // grid thành `http://localhost:3000/cdn1...`.
   // Chạy tự động mỗi lần khởi động, idempotent (< vài giây), không cần bấm nút.
   await repairLegacyMediaUrls(db)
+}
+
+/**
+ * Hình dạng hiện tại của bảng `backups` (sổ sao lưu). Một phần của
+ * `applyAdditiveMigrations`; tách riêng vì lượt khôi phục CSDL hỏng (dump chết giữa
+ * chừng, hoặc một bước khởi động khác hỏng trước khi tới đây) gọi nó MỘT MÌNH để sổ
+ * sao lưu dùng được ngay — đăng ký bản `pre-restore` khi làm theo lời khuyên "khôi phục
+ * lại bản an toàn", danh sách, lượt sao lưu kế. Chạy lại vô hại.
+ */
+export async function convergeBackupsTable(db: Connection, database: string): Promise<void> {
+  // ── backups.trigger: VARCHAR(16) → VARCHAR(32) ────────────────────────────
+  // `pre-fix-thumbnails` (18 ký tự) không vừa VARCHAR(16): dưới strict sql_mode
+  // `runBackup('sql', 'pre-fix-thumbnails')` chết với ER_DATA_TOO_LONG, kể cả
+  // hàng `failed` cũng không ghi được — và lượt sửa thumbnail chạy tiếp KHÔNG có
+  // bản sao lưu. CREATE TABLE ở `schema-tables/readers-media.ts` đã khai 32 cho
+  // CSDL mới; dòng này nới CSDL cũ (chỉ nới — không mất dữ liệu, chạy lại vô hại).
+  await modifyColumn(db, database, 'backups', 'trigger', "VARCHAR(32) NOT NULL DEFAULT 'manual'")
+
+  // ── backups.offsite_status (wave2 D-OFFSITE) ──────────────────────────────
+  // uploaded | failed | none cho từng tệp sao lưu (shared/backup-offsite-status.ts).
+  // Chỉ thêm cột — KHÔNG điền giá trị cho hàng cũ: `drive_uploaded = 0` không phân
+  // biệt "Drive tắt" với "Drive hỏng", nên mọi suy ngược đều là đoán. Hàng cũ giữ
+  // NULL và trang quản trị lùi về `drive_uploaded`. Không có lệnh ghi hàng lúc khởi động.
+  await ensureColumn(db, database, 'backups', 'offsite_status', 'VARCHAR(16) NULL AFTER `drive_file_id`')
 }
 
 /**

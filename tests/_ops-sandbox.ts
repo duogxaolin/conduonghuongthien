@@ -5,7 +5,7 @@ import { join } from 'node:path'
 
 /**
  * Throwaway sandbox for running production/manage.sh and scripts/*.sh against the
- * FAKE `docker` and `git` in tests/fixtures/ops-sandbox/. Nothing real is touched:
+ * FAKE `docker`, `git` and `crontab` in tests/fixtures/ops-sandbox/. Nothing real is touched:
  * the scripts are copied into a temp directory whose bin/ comes first on PATH.
  * Shared by tests/ops-scripts-sandbox.test.ts and the hardening suites next to it.
  */
@@ -36,7 +36,8 @@ export function makeSandbox(envFile?: string): Sandbox {
   mkdirSync(path('bin'))
   mkdirSync(path('scripts'))
   mkdirSync(path('production'))
-  for (const fake of ['docker', 'git']) {
+  // `crontab` too: manage.sh "Cài cron sao lưu" must never edit the real user's crontab.
+  for (const fake of ['docker', 'git', 'crontab']) {
     copyFileSync(repoFile(`tests/fixtures/ops-sandbox/${fake}`), path('bin', fake))
     chmodSync(path('bin', fake), 0o755)
   }

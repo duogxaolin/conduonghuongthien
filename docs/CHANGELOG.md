@@ -976,6 +976,176 @@ Mỗi mục có test đỏ trước khi sửa.
   - Bộ đọc import bằng AST được tách sang `tests/_module-references.ts`, dùng chung với `server-no-app-imports`.
 - **Kiểm chứng:** 5 lượt `npm run build` sạch liên tiếp (xoá `.output` và `node_modules/.cache/nuxt` giữa các lượt) đều xanh. Đầu ra SSR không còn chuỗi `"../…shared/"` nào, và `link-policy` được nạp bằng đường tuyệt đối. `npm test` 4414 / 4387 pass / 0 fail / 27 skip (+20). Typecheck 0 lỗi, eslint 0 error / 16 warning, `db:drift` xanh.
 
+### 36. Đợt 2 — vận hành (2026-10-24)
+
+OpenSpec `wave2-hardening` nhóm 7 (2F ops), design D-OFFSITE, D-LOG, D-ALERT, D-DOCS; spec `backup-restore`, `ops-logging`. Mỗi mục có test đỏ trước khi sửa (log đỏ lưu ngoài repo).
+
+- **Bản sao ngoài máy chủ có trạng thái theo từng tệp (D-OFFSITE).** Đã kiểm: bước Drive chạy cho mọi lượt `runBackup`, kể cả theo lịch. Trước đây Drive hỏng chỉ để lại một dòng log; danh sách hiện cùng một vòng tròn rỗng cho "Drive tắt" lẫn "Drive hỏng đêm qua". Nay có cột `backups.offsite_status VARCHAR(16) NULL` với giá trị `uploaded`/`failed`/`none`. Cột khai ở `schema.ts`, `schema-tables/readers-media.ts` và `ensureColumn` trong `migrations-additive.ts`; `db:drift` báo 636 cột.
+  - **Không backfill**, không ghi hàng nào lúc khởi động. `drive_uploaded = 0` không phân biệt "tắt" với "hỏng", nên hàng cũ giữ NULL và trang lùi về `drive_uploaded`. Suite nâng cấp 2F không cần khai chuyển đổi hàng nào cho cột này, nhưng lần khởi động 1 trên CSDL cũ có thêm một cột vào `backups`. Nếu suite so bằng `CHECKSUM TABLE`, kết quả sẽ đổi dù không hàng nào được ghi, nên suite phải coi đó là bổ sung lược đồ.
+  - Bước Drive tách khỏi `backup.ts` sang `services/backup-offsite.ts`, hành vi upload giữ nguyên (OAuth ưu tiên, service account dự phòng).
+  - Cách ghi trạng thái:
+    - Drive tắt → `none` ngay lúc đăng ký hàng `done`.
+    - Drive bật nhưng chưa liên kết, không có service account → `none` + log `backup.offsite_not_configured`. Trước đây nhánh này im lặng.
+    - Upload hỏng → `failed` cho tệp hỏng và mọi tệp sau nó; tệp đã lên rồi giữ `uploaded`.
+    - Liên kết có token không giải mã được, hoặc OAuth client không dùng được → `failed`.
+    - Lượt chết trước bước Drive (Drive đang bật) → các tệp đã đăng ký mang `failed`.
+  - Tệp cục bộ không bao giờ bị xoá vì Drive, và lượt sao lưu vẫn thành công. `backup.drive_failed` nay kèm danh sách tệp. Ghi trạng thái hỏng chỉ log `backup.offsite_status_unwritten`.
+  - Khôi phục CSDL gắn lại hàng `backups` kèm `offsite_status`.
+  - Giao diện:
+    - Cột "Bản ngoài máy chủ" (`BackupOffsiteBadge.vue`, bảng và thẻ điện thoại) hiện bằng chữ: *Đã lên Drive* / *Lỗi tải lên Drive* / *Chỉ trên máy chủ*. Biểu tượng `aria-hidden` không mang trạng thái nữa.
+    - `BackupSettingsPanel` cảnh báo vàng "Các bản sao lưu hiện chỉ nằm trên máy chủ này" khi backup tự động bật mà chưa có nơi lưu ngoài. Cảnh báo tính từ biểu mẫu và trạng thái liên kết đã tải; còn đang tải thì không khẳng định.
+  - Quy tắc "đã cấu hình" nằm một chỗ (`shared/backup-offsite-status.ts`) cho máy chủ và trang. App import qua `~~/shared/…`: bản đầu dùng đường tương đối từ `app/utils` và Nitro build đỏ, đúng bẫy § 32 đã ghi.
+  - Test: `tests/backup-offsite-status.test.ts` (12, chạy `runBackup` thật), `tests/backup-offsite-ui.test.ts` (14, gồm render SFC). Thêm một khẳng định gắn lại hàng khi khôi phục ở `backup-restore-hardening`.
+- **`manage.sh` Menu 5 "Cài cron sao lưu", Menu 6 "Xuất .env đã mã hoá" (D-OFFSITE).**
+  - **Menu 5** (`backup-cron`) in đúng hai dòng tài liệu vẫn bảo gõ tay: `backup.sh` 02:00 (dump qua `backup-db.sh` + media/uploads — chọn `backup.sh` chứ không `backup-db.sh` trần để khỏi mất archive media mà DEPLOY.md hứa) và `verify-restore.sh --latest` 03:30 ngày 1.
+    - Chỉ cài khi trả lời `y`; mặc định không.
+    - Hai dòng nằm trong khối `# BEGIN/END cdkt-backup`: chạy lại là thay khối, dòng crontab khác giữ nguyên, dòng sao lưu gõ tay ngoài khối được chỉ ra.
+    - `crontab -l` hỏng vì lý do khác "no crontab" → dừng. Coi nó là rỗng rồi cài là xoá crontab thật.
+    - User không ghi được thư mục sao lưu (`BACKUP_DIR`, mặc định `./backups` — bind mount thuộc uid 1000 của container) → từ chối, bảo cài bằng root: cron của user đó sẽ hỏng `EACCES` mỗi đêm. User không ghi được `/var/log` thì log vào `<repo>/logs`. Đường dẫn chứa `%` hoặc dấu nháy đơn bị từ chối.
+    - Ping chỉ báo *đang đặt*/*chưa đặt*.
+  - **Menu 6** (`export-env`): `openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt`.
+    - Passphrase gõ hai lần, ≥ 12 ký tự, đi qua `-pass fd:3` — không bao giờ trên argv.
+    - Tệp tạm 600 rồi `mv`; giải mã thử trước khi giữ.
+    - openssl thiếu `-pbkdf2` → từ chối. Ghi đè `.env.enc` cũ phải trả lời `y`.
+  - Hộp cát test có `crontab` giả (`tests/fixtures/ops-sandbox/crontab`), nên test không bao giờ chạm crontab thật. Test xuất mã hoá chạy openssl thật qua một shim ghi argv.
+- **Log app vào journald (D-LOG).** Service app trong compose dùng `logging: driver: journald`, `tag: cdkt-app`; MySQL giữ json-file. Đọc bằng `journalctl CONTAINER_TAG=cdkt-app` — log còn sau khi container bị thay, đã thử thật.
+  - Đo trước khi chọn cơ chế: driver journald **từ chối** `max-size` ("unknown log opt", lỗi lúc `up` chứ không lúc `config -q`). json-file không có `max-size` thì không xoay vòng. Vì vậy một khối `options` chung cho hai driver (biến `APP_LOG_DRIVER`) là không làm được.
+  - Dự phòng: `ensure_log_driver` (giống từng chữ ở `scripts/deploy-remote.sh` và `production/manage.sh` Deploy/Update, test so) kiểm socket journal + `journalctl`.
+    - Không có journald → ghi `docker-compose.override.yml` mang dấu `# cdkt-log-fallback` (json-file 3 × 10 MB).
+    - Có journald → gỡ đúng tệp đó.
+    - Override không dấu của người vận hành → không bao giờ sửa.
+  - Lượt CI deploy chạy nó sau bản dump và trước `config -q`. Không có bước này, VPS thiếu journald sẽ hỏng mọi lượt deploy ở `up` rồi lùi lại.
+  - `docker-compose.override.yml` vào `.gitignore` và `.dockerignore`. `docker compose config -q` xanh với env giả, có và không có override.
+- **Thư cảnh báo vận hành (D-ALERT).** `server/utils/ops-alert.ts`, gọi từ `logger.ts` cho `ALERT_EVENTS`: `backup.restore_failed`, `backup.restore_refused`, `auth.mfa_challenge_locked`, `security.link_host_rejected`, `backup.slot_abandoned`, `db.migration.media_category_fk_blocked`. Thư gửi tới `OPS_ALERT_EMAIL` qua SMTP của admin.
+  - Giới hạn: tối đa 1 thư mỗi sự kiện mỗi 15 phút. Dấu trong bộ nhớ đặt đồng bộ, cộng hàng `rate_limit_counters` dùng chung giữa các tiến trình và qua lần khởi động lại. Thư kế tiếp ghi số lần đã gộp. Cửa sổ chỉnh được theo từng sự kiện (`OPS_ALERT_WINDOW_SECONDS`).
+  - Quyết định trước bộ lọc `LOG_LEVEL`. `OPS_ALERT_EMAIL` trống thì không import, không chạm DB.
+  - Bắn rồi quên: `dispatch` không reject; lỗi chỉ log `ops.alert_failed`. Dòng log của đường cảnh báo mang symbol `SKIP_OPS_ALERT`, nên không đệ quy.
+  - **Đường gửi tự mở và đóng một kết nối riêng** (`dbConnectionOptions()` tách từ `getDb`). Sự kiện di trú được log trong CLI `server/db/init.ts` (CMD container): tạo pool chung ở đó sẽ giữ tiến trình sống mãi và container không lên. Đã thử bằng một CLI giả: thoát ngay.
+  - SMTP đọc qua `getSmtpConfig(reader)` của mailer, nên giải mã của 2A (nếu có) cũng áp cho thư cảnh báo.
+  - Nội dung thư: tên sự kiện, thời điểm, máy chủ, các trường nguyên thuỷ đã che. Khoá bị che bị bỏ hẳn, không có stack trace, giá trị dài bị cắt.
+  - `OPS_ALERT_EMAIL` có trong compose `environment:`, `.env.example`, Deploy/Update của `manage.sh` (đứng trước prompt ping) và `production/README.md`.
+  - Test: `tests/ops-alert.test.ts` (20). Thử thật trên MariaDB dùng một lần: `init.ts` gặp hàng `media_items` treo → log `fk_blocked` → đường cảnh báo ghi hàng `rate_limit_counters`, SMTP không tới được → `ops.alert_failed`, rồi `init.ts` **thoát 0**. Lần khởi động thứ hai trong cửa sổ bị kho dùng chung chặn, không gửi lại.
+- **Tài liệu (D-DOCS), các mục là việc của người vận hành:**
+  - `production/README.md`: user deploy không phải root (group `docker` ≈ root, khoá `restrict`, đổi `VPS_USER`/`VPS_SSH_KEY`, `docker login` bằng user đó); bảng trần RAM theo cỡ máy, tính bằng đúng công thức `check-resources.sh`; journald (`Storage=persistent`, `SystemMaxUse=`); thư cảnh báo; Menu 5/6.
+  - `CI-CD.md` ghi hai quyết định đã chốt. **D2:** không có cổng duyệt tay. **D-CI:** chấp nhận CI chạy hai lần khi repo public (kiểm 2026-10-24: PUBLIC); chuyển private thì dùng lại lượt PR xanh của cùng tree SHA — chưa viết.
+  - `DEPLOY.md`: cron bằng Menu 5, bản `.env` mã hoá, yêu cầu journald.
+- **Chạm vào tệp của nhánh khác (cần lưu ý khi gộp):** `server/utils/mailer.ts`, `server/utils/logger.ts`, `docker-compose.yml`, `production/README.md`, `server/services/backup.ts` (2A sửa `readBackupConfig` và nhánh Drive — nhánh "service account không giải mã được" của 2A phải chuyển sang `services/backup-offsite.ts`, và `serviceAccountConfigured` phải tính cả `driveServiceAccountUnreadable`). Khi 2A gộp `security.cross_site_refused`: thêm vào `ALERT_EVENTS` kèm cửa sổ dài hơn trong `OPS_ALERT_WINDOW_SECONDS`.
+- **Đã kiểm:**
+  - `npm test`: 4470 test, 4443 pass, 0 fail, 27 skip (trước 4394).
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning (không đổi); `db:drift` xanh (636 cột / 62 bảng).
+  - `npm run build` xanh: mã cảnh báo nằm trong bundle Nitro, lớp huy hiệu mới có trong CSS.
+  - `docker compose config -q` xanh với env giả, có và không có override.
+  - `bash -n` xanh cho các script đã sửa. shellcheck `-S style` không có cảnh báo mới; còn một `SC2329` có từ trước ở `deploy-remote.sh`.
+  - E2E không chạy: chưa spec nào phủ trang `/admin/settings/backup`.
+
+#### Sửa sau kiểm chứng độc lập (2026-10-24)
+
+Mỗi mục có test đỏ trước khi sửa, trên 96804b0.
+
+- **CRITICAL — khôi phục một bản dump lấy trước khi có cột mới.** Dump của app mang `DROP TABLE` + `CREATE TABLE`, nên `backups` quay về không có `offsite_status`. Drizzle luôn nêu đủ cột, nên lượt gắn lại hàng `backups` trong transaction audit chết với `Unknown column`. Hậu quả:
+  - endpoint báo "khôi phục thất bại" dù dữ liệu **đã** bị thay, và audit ghi thất bại;
+  - `backups` rỗng, nên lượt dọn kế tiếp (lượt sao lưu sau, hoặc 1 phút sau khởi động) xoá bản `pre-restore` cùng các bản mới hơn như "mồ côi";
+  - danh sách và lượt sao lưu kế cũng hỏng tới khi khởi động lại.
+
+  Lỗi đúng cho **mọi** cột/bảng thêm sau thời điểm dump, ở mọi đợt.
+  - **Sửa gốc:** ngay sau `restoreSql`, vẫn trong khoá khôi phục và **trước** gắn lại/audit, chạy lại đúng các bước cấu trúc lúc khởi động (`initDb()`: `CREATE TABLE IF NOT EXISTS` + `applyAdditiveMigrations`).
+    - Không chép DDL nào. `initDb` đọc cùng `DB_*` với `restoreSql`; import động, nên chỉ nạp khi thật sự khôi phục CSDL.
+    - Dump chết giữa chừng vẫn qua bước này (được tới đâu hay tới đó), và lỗi gốc mới là thứ được báo.
+    - Bước này hỏng sau một dump đủ → `schema_convergence_failed`, nói dữ liệu đã nạp và cần khởi động lại.
+    - Log `backup.restore_schema_converged` / `…_convergence_failed`.
+  - **Lượt dọn đóng an toàn:** đọc `backups` đủ mọi cột (`db.select().from(backups)`, không chỉ `filename`). Bảng sai hình dạng → câu đọc ném → không xoá tệp tên-thật nào. Đối chứng: khi bảng đúng hình dạng, tệp mồ côi thật vẫn bị dọn.
+  - **Test MySQL thật** (`tests/backup-dump-integration.test.ts` mục 5–6, không đổi matrix CI):
+    - Dump một CSDL thiếu `backups.offsite_status` **và** `article_comments.flag_reason`, nâng CSDL lên bản hiện tại, tạo một bản sao lưu mới hơn, rồi khôi phục qua `runRestore`.
+    - Kết quả: thành công, đủ cột, hàng `pre-restore` + bản mới hơn được gắn lại (giữ `offsite_status`), audit `backup_restore`.
+    - Sau lượt dọn với tệp đã cũ hơn 10 phút, mọi tệp còn. `listBackups` và một lượt `runBackup` mới chạy được ngay.
+    - Ca dọn đóng an toàn riêng.
+    - Trên 96804b0: hai ca này đỏ (`Unknown column 'offsite_status'`; ca dọn xoá cả ba tệp).
+  - `backup-restore-hardening` có thêm 4 ca thứ tự: dump → `initDb` → transaction; dump hỏng; bước cấu trúc hỏng; khôi phục tệp không đụng cấu trúc.
+  - Trang `/admin/settings/backup` có nhãn cho phase mới ("Đang cập nhật cấu trúc CSDL") và giữ thanh tiến trình 100% trong bước đó. Trước đó nhật ký khôi phục hiện chữ thô `schema`, thanh tụt về 0%. Có test: mọi phase máy chủ báo phải có nhãn.
+  - **Hạn chế:** bước này chỉ *thêm*. Một cột đã bỏ khỏi `schema.ts` mà dump cũ còn mang (NOT NULL, không mặc định) không được gỡ; giá trị seed chỉ quay lại ở lần khởi động sau.
+  - **Lưu ý khi gộp 2A:** thứ tự phải là `restoreSql` → `convergeSchemaAfterRestore` → `encryptRestoredSecrets`.
+- **W1 — máy không có journald + override của người vận hành.** Trước chỉ cảnh báo, nên `up` vẫn hỏng. Nay hỏi `docker compose config` driver log hiệu lực của app (`effective_app_log_driver`; awk đọc hết đầu vào, không `exit` sớm — SIGPIPE dưới pipefail).
+  - Vẫn là journald → dừng trước khi chạm container. Ở CI: `::error::`, trả `docker-compose.yml` cũ về, `.env` không đổi.
+  - Override đã đặt json-file → đi tiếp.
+  - Ở `deploy-remote.sh`, `ensure_log_driver "$IMAGE"` nay chạy **sau** `install_compose` để tính trên compose của commit đang deploy.
+  - Bộ đọc đã thử trên đầu ra thật của `docker compose config`: không override → journald; override không đặt logging → journald; override json-file → json-file.
+- **W2 — "có journald" phải là daemon dùng được.** Ngoài socket + `journalctl`, nay kiểm thêm daemon có driver (`docker info --format '{{json .Plugins.Log}}'`), rồi chạy container thử `docker run --rm --network none --log-driver journald --entrypoint true <image>` khi image đã có trên máy. Hai fake docker trả lời `info`/`run`/`compose config`.
+- **W3 — Update tự chạy tiếp bằng `manage.sh` vừa kéo về.** `git pull` đổi chính `manage.sh` → `exec` bản mới với `CDKT_UPDATE_RESUMED=1`, kèm bản sao lưu compose cho đường lùi; không hỏi lại sao lưu/pull, không lặp. Bản `manage.sh` cũ trên VPS chưa có bước này, nên README ghi: lần Update tay đầu tiên trên máy không journald có thể hỏng ở `up` (tự lùi) — chạy lại một lần. Thường CI deploy đã ghi override trước đó rồi.
+- **W5 — passphrase giữ dấu cách đầu/cuối:** đọc bằng `IFS= read -rs`. Test giải mã bằng đúng chuỗi có dấu cách.
+- **Gợi ý đã làm:**
+  - Tệp tạm của override (`LOG_FALLBACK_TMP`) được dọn ở trap EXIT của cả hai script; `.docker-compose.override.*` vào `.gitignore`/`.dockerignore`.
+  - README thêm `RateLimitBurst`/`RateLimitIntervalSec` của journald và mẫu logrotate cho `/var/log/cdkt-backup.log`, `cdkt-verify-restore.log`.
+  - W6 (tách `manage.sh`) để lại cho Wave 3 task 4.4; W4/W7 xử lý lúc gộp 2A.
+- **Đã kiểm:**
+  - `npm test`: 4485 test, 4456 pass, 0 fail, 29 skip (+2 skip là hai ca MySQL mới khi không có DB).
+  - `tests/backup-dump-integration.test.ts` trên MySQL 8.0.46 local: 7/7 xanh, không sót DB `cdkt_backup_dump_*`.
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` xanh.
+  - Container thử journald chạy thật (exit 0) trên `cdkt/app:local` và `ghcr.io/…:latest`.
+  - Build xanh 4/5 lượt. Lượt đỏ là `Could not resolve "../../../../../shared/link-policy.ts"` từ import tương đối **có sẵn** trong `app/utils/nav-config.ts` (bẫy § 32, ngoài phạm vi) — cần sửa riêng sang `~~/shared/link-policy`.
+  - `bash -n` + shellcheck không có cảnh báo mới; `docker compose config -q` xanh với env giả.
+
+#### Sửa sau kiểm chứng lần 2 (2026-10-24)
+
+Mỗi mục có test đỏ trước khi sửa, trên 58c891c.
+
+- **CRITICAL — khôi phục THẤT BẠI vẫn để lượt dọn xoá bản `pre-restore` và mọi bản mới hơn.** 58c891c đã sửa lối thành công, nhưng hai lối thất bại — dump chết giữa chừng, và bước cấu trúc hỏng — đều ném trước chỗ gắn lại hàng duy nhất (trong transaction audit). Lối thất bại chỉ ghi audit. `backups` còn đúng như dump ghi, "đúng hình dạng" nhưng thiếu các hàng mới, nên lượt dọn kế tiếp (mỗi `runBackup`, và lượt dọn lúc khởi động) xoá bản an toàn cùng các bản mới hơn. Sửa cả hai phía:
+  - **(a) Gắn lại trên mọi lối thất bại**, ngay sau khi dump đã chạy và trước khi nhả khoá khôi phục: `reattachAfterFailedRestore`.
+    - Chạy sau bước cấu trúc khi bước đó chạy được.
+    - Chịu được bảng còn hình dạng cũ: chỉ ghi các cột của `schema.ts` mà bảng thật đang có, đọc từ `information_schema`. Giá trị mã hoá bằng `column.mapToDriverValue` của Drizzle, vì `pool.query` trần với `Date` lệch 7 giờ.
+    - `created_by` chỉ giữ id còn trong `users` vừa nạp.
+    - Không bao giờ ném đè lỗi gốc. Log `backup.restore_failed_rows_reattached`.
+  - **(b) Lượt dọn** (`deleteStaleFiles`):
+    - **Không bao giờ** xoá bản `pre-restore`, cùng quy tắc với xoay vòng.
+    - Giữ mọi tệp tên-app chưa đăng ký có mã thời điểm **không sau** bản `pre-restore` mới nhất trên đĩa. Bản đó đánh dấu lượt khôi phục gần nhất, và tệp có từ trước nó có thể mất hàng chỉ vì danh sách bị tua lại. Log `backup.orphan_kept_restore_window`.
+    - Lý do chọn mốc này: đọc thẳng từ tên tệp, không cần bảng nào, không thể sai vì danh sách sai. Cái giá: tệp sót của một lượt bị giết *trước* lượt khôi phục đó nằm lại tới khi bản `pre-restore` ấy bị xoá tay — chỉ tốn đĩa.
+    - Không xoá tệp tên-thật nào khi khoá `cdkt:backup:restore` đang bị giữ (hoặc không hỏi được), cùng cách xoay vòng hỏi `IS_USED_LOCK`. Lý do: giữa lúc dump thay bảng và lúc gắn lại, một lượt sao lưu theo lịch có thể dọn đúng lúc danh sách đang sai.
+  - **Test:**
+    - `tests/backup-dump-integration.test.ts` mục 7 (dump chết giữa chừng) và mục 8 (bước cấu trúc hỏng vì hàng `chat_sessions` mồ côi chặn `fk_chat_sessions_reader`). Mục 8 khẳng định thêm: thông báo nêu tên bản an toàn, và khôi phục bản đó thành công.
+    - Trên bản sao 58c891c (`git archive`): mục 7 đỏ `pre-restore row put back: []`; mục 8 đỏ vì thông báo không nêu tên bản an toàn.
+    - `backup-orphan-archives` có 3 ca luật dọn mới, đỏ trước khi sửa.
+- **W1 — `initDb` rò kết nối khi một bước hỏng** (repro 2 treo tới hết giờ): chỉ thêm `try/finally` quanh hai kết nối của `init.ts`, không thêm logic. Test mới `tests/init-db-connection-release.test.ts`.
+- **W2 — thông điệp `schema_convergence_failed`:** bỏ "khởi động lại ứng dụng để hoàn tất". Lỗi đến từ chính dữ liệu thì mỗi lần khởi động (`init.ts && …`) chạy đúng bước đó và container dừng lặp lại. Thông báo nay chỉ vào log và nêu **tên bản `pre-restore`** để khôi phục lại; bản đó đã được gắn lại vào danh sách, và mục 8 chứng minh khôi phục nó chạy được. README cập nhật theo.
+- **Gợi ý đã làm:**
+  - Chú thích "cùng `DB_*`" nay nói đúng: `createBackupConnection` lùi về `MYSQL_DATABASE`, còn `initDb` thì không. Nếu hai tên lệch, bước cấu trúc **dừng** thay vì chạy trên CSDL khác.
+  - Container thử journald có `--pull=never` và trần thời gian (`timeout 20 docker info`, `timeout 60 docker run`).
+  - README ghi chú: khôi phục một dump có từ trước 2026-09-22 cũng chạy các bước chuyển đổi đã thiết kế lúc khởi động (danh mục video trỏ bảng thể loại cũ bị gỡ, `short_id`, URL media cũ).
+- **Chưa làm (ghi lại):** trạng thái scheduler sao lưu (`backup_scheduler_state`) vẫn chỉ được giữ trên lối thành công. Lượt khôi phục hỏng có thể tua lại hàng đó, hậu quả tối đa là lệch một khe lịch.
+- **Đã kiểm:**
+  - `tests/backup-dump-integration.test.ts` trên MySQL 8.0.46 local: 9/9 xanh trong một lượt, tiến trình tự thoát (không còn treo), không sót DB `cdkt_backup_dump_*`.
+    - Một lượt trước đó đỏ vì nguyên nhân bên ngoài: CSDL thử của mục 7 bị xoá giữa chừng `initDb`; các lượt chạy song song của agent khác cũng gây 409 trên khoá toàn máy chủ.
+  - `npm test`: 4492 test, 4461 pass, 0 fail, 31 skip.
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` xanh; build xanh.
+  - `bash -n` + shellcheck không có cảnh báo mới; `docker compose config -q` xanh với env giả.
+  - Container thử journald với `--pull=never` chạy thật (exit 0).
+
+#### Sửa sau kiểm chứng lần 3 (2026-10-24)
+
+Không còn CRITICAL; sửa các cảnh báo. Mỗi mục có test đỏ trước khi sửa, trên 74cd56c (bản sao `git archive`).
+
+- **W1 — lời khuyên "khôi phục bản an toàn" thành ngõ cụt khi `backups` còn hình dạng cũ.** Bước cấu trúc hỏng trước khi tới `backups.offsite_status` thì bảng giữ hình dạng của dump. Lượt khôi phục kế tiếp (chính là làm theo lời khuyên) tạo bản an toàn mới, nhưng đăng ký nó bằng câu Drizzle nêu đủ cột → `Unknown column 'offsite_status'` → khôi phục bị huỷ. Sửa ba chỗ:
+  - **Một lối ghi sổ cho mọi nơi:** `insertBackupRow` (`server/services/backup-registry.ts`) — đăng ký lượt sao lưu (kể cả `pre-restore`), hàng `failed`, tệp tải lên, gắn lại sau khôi phục. Bảng thiếu cột (`ER_BAD_FIELD_ERROR`) → ghi chỉ các cột bảng thật có, giá trị qua `sql.param(value, column)` (cùng bộ chuyển của Drizzle, ngày giờ không lệch). Log `backup.registry_old_shape`.
+  - **Đưa riêng `backups` về hình dạng hiện tại** (`convergeBackupsTable`, tách từ `applyAdditiveMigrations` — lúc khởi động gọi đúng hàm này) ở đầu mỗi lượt khôi phục CSDL, trước bản an toàn, và ở lối thất bại trước khi gắn lại hàng.
+  - **Đường lui trên máy chủ có thật:** lời khuyên nay nêu thêm `scripts/restore-db.sh` với chính tệp `pre-restore`. Kiểm ra script đó từ chối **mọi** dump của app ("no completion marker — it is truncated"), vì dump của app không có dòng hoàn tất của mysqldump. `dumpSql` nay kết thúc bằng `-- Dump completed on <ISO>`. Đã thử thật trên container MySQL dev: `restore-db.sh` khôi phục một bản `pre-restore` của app (62 bảng, một `INSERT` 20 MB) vào CSDL thử. Dump của app tạo trước bản này vẫn bị script từ chối — README/DEPLOY.md ghi rõ, khôi phục chúng trong app.
+  - Đã thử và bỏ: thêm `--max-allowed-packet` cho client `mysql` trong script. Client 8.0.46 gửi được câu `INSERT` 20 MB với mặc định 16 MB, nên cờ này không cần.
+  - **Test:** `backup-dump-integration` mục 9 (lời khuyên chạy được khi `backups` cũ; hàng giữ nguyên giá trị), 11 (đăng ký trên bảng cũ, ngày giờ y nguyên), 13 (bản `pre-restore` của app qua được `restore-db.sh`, docker giả, đầu ra `dumpSql` thật). Trên 74cd56c: mục 9 đỏ `the failure path brings backups itself up to date`, mục 11 đỏ `Unknown column 'offsite_status'`; mục 13 đỏ trước khi thêm dòng hoàn tất.
+- **W2 — lượt sao lưu chạy giữa lúc khôi phục bị mất hàng.** `runBackup` nay từ chối khi khoá `cdkt:backup:restore` đang bị giữ (hoặc không hỏi được): `BackupRestoreInProgressError` (con của `BackupLockBusyError`) → endpoint trả 409. Scheduler coi đó là "bận": không tính lần thử, log `backup.scheduler_busy` (trước đây mọi lỗi bận ghi `backup.scheduler_failed`). Ngoại lệ duy nhất: bản `pre-restore` của chính lượt khôi phục (`allowDuringRestore`). Test: `backup-orphan-archives` (từ chối, không ghi gì, không gọi `onStarted`), `backup-run-endpoint` (409), `backup-scheduler-due` (bận ≠ lần thử), `backup-dump-integration` mục 12 (khoá thật). Trên 74cd56c mục 12 đỏ `Missing expected rejection`.
+- **W3 — trạng thái scheduler chỉ được giữ ở lối thành công.** Lối thất bại (`restoreLiveStateAfterFailedRestore`) nay ghi lại cả `backup_scheduler_state` của hệ thống đang chạy. Test: hai ca `backup-restore-hardening` (dump chết, bước cấu trúc hỏng) và `backup-dump-integration` mục 10. Trên 74cd56c mục 10 đỏ `the live scheduler record, not the dump's (none)`.
+- **W4 — thêm mục integration:**
+  - mục 10: transaction audit hỏng (trigger chặn `activity_logs` đi kèm dump) → hàng vẫn được gắn lại;
+  - mục 9: gắn lại vào bảng hình dạng cũ;
+  - mục 9 và 10: so giá trị và ngày giờ từng hàng. Bản `newer` so y nguyên với trước khôi phục. Bản `pre-restore` sinh **trong** lượt khôi phục nên so với tệp của nó: kích thước, mã thời điểm, người tạo, `created_at` theo UTC.
+- **S1:** kiểm `DB_NAME`/`MYSQL_DATABASE` (`assertOneDatabase`) chuyển lên **trước** bản an toàn và `restoreSql`. Test đỏ trước khi sửa.
+- **S3:** CLAUDE.md ghi số dòng hiện tại của `init.ts` (80, `wc -l` 2026-10-24) ở các chỗ nêu cỡ hiện tại. Dòng lịch sử "1302 → 73" giữ nguyên.
+- **S4:** `init.ts` đóng kết nối bằng `end().catch(() => {})` trong `finally`. Lỗi đóng không che lỗi của bước hỏng. Test thêm ca `end` ném.
+- **Tách tệp:** phần giữ trạng thái của lượt khôi phục chuyển sang `server/services/backup-restore-recovery.ts`, để `backup-restore.ts` ở dưới 400 dòng. Đó là các hàm: kiểm một CSDL, đưa `backups` về hình dạng hiện tại, bước cấu trúc, gắn lại hàng, lối thất bại. `backup.ts` vẫn lớn từ trước (726 dòng, trước đợt này 674) — chưa tách, ghi lại cho lượt sau.
+- **Bẫy của guard TDZ** (`tests/transaction-tdz.test.ts`): guard lấy thân khối từ dấu `{` đầu tiên sau `transaction(`. Với callback arrow một biểu thức (`db.transaction(tx => f(tx))`), dấu đó nằm ở dòng **sau** lời gọi, nên một phép đọc biến kết quả ở dòng kế tiếp bị báo oan. Chỗ này nay viết thân khối có ngoặc. Guard để nguyên, ngoài phạm vi.
+- **Đã kiểm** (sau khi rebase lên `wave1/integration` 2516422):
+  - `tests/backup-dump-integration.test.ts` trên MySQL 8.0.46 local: 14/14 xanh trong một lượt, không sót DB `cdkt_backup_dump_*`.
+  - `npm test`: 4526 test, 4490 pass, 0 fail, 36 skip.
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` xanh (636 cột / 62 bảng).
+  - Build sạch (xoá `.output` + cache) xanh 2/2 lượt.
+  - `bash -n` + shellcheck xanh cho `restore-db.sh`, `verify-restore.sh`, `deploy-remote.sh`, `manage.sh`; `docker compose config -q` xanh với env giả.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.

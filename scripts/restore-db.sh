@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 #
-# Restore a database dump made by backup-db.sh into the MySQL container.
+# Restore a database dump made by backup-db.sh — or by the app itself
+# (backups/cdkt-<stamp>-<trigger>.sql.gz, e.g. the `pre-restore` safety dump a failed
+# in-app restore names) — into the MySQL container.
 #
 # This is DESTRUCTIVE: the dump carries `DROP TABLE IF EXISTS` for every table, so
 # every table in it replaces the live one.  Hence the guards below — the target

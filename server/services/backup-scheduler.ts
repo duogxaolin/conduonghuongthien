@@ -26,12 +26,14 @@
  * cài đặt không ghi được nó.
  *
  * Khi tới lượt: `runBackup('all', 'scheduled')`. Lỗi trong tick nuốt thành
- * `backup.scheduler_failed` — không sập worker.
+ * `backup.scheduler_failed` — không sập worker. Bị từ chối vì bận (một lượt sao lưu
+ * khác, hoặc đang khôi phục CSDL — `BackupLockBusyError`, trước `onStarted`) không phải
+ * một lần thử: log `backup.scheduler_busy`, tick kế tiếp thử lại.
  */
 import { eq } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { settings } from '../db/schema'
-import { runBackup, sweepStaleBackupFiles } from './backup'
+import { BackupLockBusyError, runBackup, sweepStaleBackupFiles } from './backup'
 import { logInfo, logWarn } from '../utils/logger'
 
 const TICK_MS = 15 * 60 * 1000
@@ -303,7 +305,8 @@ export async function backupSchedulerTick(now: Date = new Date(), bootedAt: Date
         .catch((stateErr: unknown) => logStateUnwritten(stateErr, 'done'))
     }
   } catch (err) {
-    logWarn({ event: 'backup.scheduler_failed', error: err instanceof Error ? err.message : String(err) })
+    if (err instanceof BackupLockBusyError) logInfo({ event: 'backup.scheduler_busy', reason: err.message })
+    else logWarn({ event: 'backup.scheduler_failed', error: err instanceof Error ? err.message : String(err) })
   } finally {
     ticking = false
   }
