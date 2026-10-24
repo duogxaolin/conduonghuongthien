@@ -6,7 +6,8 @@
  *  - `components/admin/ai/AiDashboardTab.vue` — tổng quan chi phí + Delify status
  *  - `components/admin/ai/AiProvidersTab.vue` — nhà cung cấp + model + giá (9Router)
  *  - `components/admin/ai/AiServicesTab.vue` — phân bổ model + prompt dịch vụ
- *  - `components/admin/ai/AiModerationTab.vue` — sổ đối soát + quy tắc an ninh
+ *  - `components/admin/ai/AiModerationTab.vue` — CHỈ tóm tắt (số hàng chờ + số quy tắc
+ *    đang bật) + liên kết; quản lý quy tắc/hàng đối soát chỉ ở `/admin/ai/moderation` (D10)
  *  - `components/admin/ai/AiLogsTab.vue` — nhật ký cuộc gọi
  *
  * Cha chỉ giữ: `activeTab`, cấu hình tab nav, lazy-load wiring, và forward

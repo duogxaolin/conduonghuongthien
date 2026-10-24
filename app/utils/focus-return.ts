@@ -18,7 +18,7 @@ export interface FocusReturn {
   /**
    * Gọi lúc đóng. Chỉ trả focus khi `shouldRestore` — nơi gọi truyền `false` nếu
    * người dùng đã tự chuyển focus sang chỗ khác (không giật focus của họ).
-   * Trả `true` nếu thực sự đã focus lại.
+   * Trả `true` nếu focus THỰC SỰ đã tới phần tử (kiểm `activeElement` sau `focus()`).
    */
   restore: (shouldRestore?: boolean) => boolean
 }
@@ -142,7 +142,20 @@ export function inertOutside(root: InertNodeLike): () => void {
   }
 }
 
-export function createFocusReturn(isBody: (el: FocusTargetLike) => boolean = () => false): FocusReturn {
+/** Phần tử đang giữ focus của tài liệu (không có DOM — chạy test bằng đối tượng giả — thì không biết). */
+const documentActiveElement = (): unknown =>
+  typeof document === 'undefined' ? undefined : document.activeElement
+
+/**
+ * `restore()` trả `true` CHỈ KHI focus thực sự đã tới phần tử: `focus()` lên một nút
+ * `disabled`, đang ẩn hay đã mất `tabindex` là lặng lẽ không làm gì — báo "đã trả" thì
+ * nơi gọi bỏ qua đường dự phòng và focus nằm lại ở `<body>`. Không có DOM (đối tượng
+ * giả trong test) thì không kiểm được, coi như đã tới.
+ */
+export function createFocusReturn(
+  isBody: (el: FocusTargetLike) => boolean = () => false,
+  activeElement: () => unknown = documentActiveElement,
+): FocusReturn {
   let opener: FocusTargetLike | null = null
   return {
     remember(active) {
@@ -155,7 +168,8 @@ export function createFocusReturn(isBody: (el: FocusTargetLike) => boolean = () 
       if (!shouldRestore || !target) return false
       if (target.isConnected === false) return false
       target.focus()
-      return true
+      const now = activeElement()
+      return now === undefined || now === target
     },
   }
 }

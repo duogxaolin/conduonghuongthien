@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref, onMounted, reactive } from 'vue'
+import AdminModal from '~/components/admin/AdminModal.vue'
 
 /**
  * Dialog picker chọn một Content-Type (và tùy chọn category con) để thêm nhanh
@@ -112,23 +113,10 @@ onMounted(fetchTypes)
 </script>
 
 <template>
-  <Teleport to="body">
-    <div class="fixed inset-0 z-[200] flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/50" @click="$emit('close')" />
-        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-[480px] overflow-hidden">
-          <!-- Header -->
-          <div class="flex items-center justify-between px-6 py-4 border-b border-[#e2ece3] bg-[#f8faf8]">
-            <h2 class="text-[1.05rem] font-extrabold text-[#122815] m-0">
-              <i class="fa-solid fa-sitemap text-[#2c6e33] mr-2"></i>
-              Chọn Thể loại
-            </h2>
-            <button type="button" class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#e2ece3] cursor-pointer border-0 bg-transparent text-[#667768]" @click="$emit('close')" aria-label="Đóng">
-              <i class="fa-solid fa-xmark"></i>
-            </button>
-          </div>
-
-          <!-- Body -->
-          <div class="px-6 py-5 flex flex-col gap-3">
+  <!-- Cha mở picker bằng `v-if`: hộp luôn mở khi còn được mount, gỡ là đóng (AdminModal
+       trả focus về nút đã mở lúc bị gỡ). -->
+  <AdminModal :open="true" title="Chọn Thể loại" icon="fa-solid fa-sitemap" @close="$emit('close')">
+          <div class="flex flex-col gap-3">
             <div v-if="loading" role="status" aria-busy="true" class="flex flex-col gap-2">
               <span class="sr-only">Đang tải danh sách thể loại</span>
               <div v-for="n in 4" :key="n" class="h-10 bg-[#EEF2EC] rounded animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
@@ -193,13 +181,10 @@ onMounted(fetchTypes)
             </p>
           </div>
 
-          <!-- Footer -->
-          <div class="px-6 py-4 border-t border-[#e2ece3] flex justify-end">
+    <template #footer>
             <button type="button" class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-[#667768] font-semibold text-sm cursor-pointer hover:bg-[#f8faf8] transition-colors" @click="$emit('close')">
               Đóng
             </button>
-          </div>
-        </div>
-      </div>
-  </Teleport>
+    </template>
+  </AdminModal>
 </template>

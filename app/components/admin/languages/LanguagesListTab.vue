@@ -244,6 +244,7 @@ function moveLanguageToPosition(targetIndex: number) {
             class="px-2.5 py-1 rounded-md bg-[#2c6e33] hover:bg-[#1e4620] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-1 transition-colors disabled:opacity-50 shadow-2xs"
             :disabled="!!translatingCards[lang.code]"
             title="Dịch AI một lần (One-time) tất cả các key còn thiếu của ngôn ngữ này"
+            :data-admin-modal-opener="`translate-${lang.code}`"
             @click="emit('one-time-translate', lang)"
           >
             <i class="fa-solid fa-wand-magic-sparkles text-[0.68rem]" :class="translatingCards[lang.code] ? 'animate-spin' : ''"></i>
