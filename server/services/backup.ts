@@ -73,6 +73,12 @@ export interface RunBackupOptions {
   rotate?: boolean
   /** Cây cần nén — mặc định `defaultArchiveSources()`; kiểm thử thay bằng thư mục tạm. */
   archiveSources?: readonly ArchiveSource[]
+  /**
+   * Gọi một lần ngay khi đã giữ khoá chạy, TRƯỚC mọi việc khác (đọc cấu hình,
+   * `mkdir`, dump). Scheduler ghi "đã bắt đầu một lượt" ở đây: hỏng ở bất kỳ bước nào
+   * sau đó vẫn là một lượt, còn bị từ chối vì khoá bận thì không. Ném → lượt dừng.
+   */
+  onStarted?: () => Promise<void>
 }
 
 /** Một lượt backup khác giữ khoá — phân biệt bằng kiểu, không so chuỗi. */
@@ -81,6 +87,64 @@ export class BackupLockBusyError extends Error {
     super('Một lượt backup khác đang chạy. Thử lại sau.')
     this.name = 'BackupLockBusyError'
   }
+}
+
+/**
+ * Tên tệp của lượt này đã có trên đĩa (hai lượt cùng trigger trong cùng một giây
+ * có cùng `stamp`). Từ chối TRƯỚC khi ghi: ghi tiếp là đè nội dung một bản đã đăng
+ * ký, và một hàng `failed` cùng tên thì "xoá" hàng đó sẽ xoá luôn tệp tốt.
+ */
+export class BackupNameCollisionError extends Error {
+  constructor(filename: string) {
+    super(`Tệp backup ${filename} đã tồn tại — một lượt khác vừa chạy trong cùng giây. Thử lại sau giây lát.`)
+    this.name = 'BackupNameCollisionError'
+  }
+}
+
+/**
+ * Hậu tố của tệp đang ghi. Dump/archive ghi dưới `<tên>.partial` và chỉ đổi sang tên
+ * thật cùng lúc với hàng `done` (trong transaction), nên một lượt bị giết giữa chừng
+ * (SIGKILL, hết `stop_grace_period`) chỉ để lại tệp `.partial` — dọn được an toàn.
+ */
+const PARTIAL_SUFFIX = '.partial'
+/**
+ * Chỉ tệp `.partial` của CHÍNH lượt sao lưu trong app. Không đụng `.upload-*.partial`
+ * (khôi phục từ tệp tải lên — giữ khoá khôi phục, không phải khoá chạy), không đụng
+ * tệp của `scripts/backup*.sh` (không có hậu tố này), không đụng tệp đã đăng ký.
+ */
+const STALE_PARTIAL = /^cdkt-[^/]+\.partial$/
+
+/** Xoá mọi tệp `cdkt-*.partial` trong `dir`. Chỉ gọi khi đang giữ khoá chạy. */
+async function deleteStalePartials(dir: string): Promise<number> {
+  let names: string[]
+  try { names = await fs.readdir(dir) } catch { return 0 }
+  let deleted = 0
+  for (const name of names) {
+    if (!STALE_PARTIAL.test(name)) continue
+    const file = path.join(dir, name)
+    try {
+      if (!(await fs.lstat(file)).isFile()) continue
+      await fs.unlink(file)
+      deleted += 1
+    } catch (err: unknown) {
+      logWarn({ event: 'backup.partial_sweep_failed', filename: name, error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  if (deleted > 0) logInfo({ event: 'backup.partial_swept', count: deleted })
+  return deleted
+}
+
+/**
+ * Dọn tệp `.partial` do lượt sao lưu bị giết để lại (gọi lúc khởi động). Lấy khoá
+ * chạy (không chờ): giữ được khoá nghĩa là không lượt sao lưu nào đang ghi, nên mọi
+ * `cdkt-*.partial` đều là của một lượt đã chết. Khoá bận → bỏ qua (lượt đang chạy sẽ
+ * tự dọn ở đầu lượt sau). Trả số tệp đã xoá.
+ */
+export async function sweepPartialBackups(): Promise<number> {
+  const pool = getPool()
+  if (!pool) return 0
+  const outcome = await withNamedLock(pool, LOCK_RUN, LOCK_TIMEOUT, () => deleteStalePartials(backupsDir()))
+  return outcome.acquired ? outcome.value : 0
 }
 
 export interface BackupResult {
@@ -304,51 +368,74 @@ export async function runBackup(
   const stamp = timestampStamp()
 
   const outcome = await withNamedLock(pool, LOCK_RUN, LOCK_TIMEOUT, async () => {
+    // Đã giữ khoá chạy: từ đây là một lượt (scheduler đếm lượt ở đây — kể cả khi
+    // hỏng ngay ở `mkdir`/đọc cấu hình bên dưới).
+    await options.onStarted?.()
     currentBackupStatus = { running: true, phase: 'start', message: 'Bắt đầu backup', startedAt: Date.now() }
     const dir = backupsDir()
-    await fs.mkdir(dir, { recursive: true })
-    const config = await readBackupConfig(db)
+    let config: Awaited<ReturnType<typeof readBackupConfig>>
 
     const files: BackupResult['files'] = []
 
     // ── Không để lại archive mồ côi (wave1 D11) ──
-    // Mỗi tệp lượt này TẠO ra được ghi vào `created`; tệp nào có hàng `done` vào
-    // `registered`. Hỏng ở bất kỳ bước nào → xoá mọi tệp đã tạo mà chưa có hàng
-    // `done` (kể cả archive `tar` viết dở), và hàng `failed` mang tên đúng tệp của
-    // bước đã ném. Trước đây cả hai archive được nén xong rồi mới ghi hàng, và nhánh
-    // lỗi ghi cứng `cdkt-media-…`: media hỏng sau khi uploads đã nén thì archive
-    // uploads nằm lại trên đĩa không hàng nào (danh sách admin không thấy, xoay vòng
-    // không bao giờ xoá), còn uploads hỏng thì hàng `failed` lại nêu tên media.
-    const created = new Set<string>()
-    const registered = new Set<string>()
+    // Mỗi dump/archive ghi dưới `<tên>.partial` (`pending`) và chỉ mang tên thật cùng
+    // lúc với hàng `done` của nó (đổi tên trong transaction). Hỏng ở bất kỳ bước nào
+    // → xoá mọi `.partial` còn lại, và hàng `failed` mang tên đúng tệp của bước đã
+    // ném. Bị giết giữa chừng → chỉ còn `.partial`, lượt sau (hoặc lúc khởi động) dọn.
+    // Trước đây cả hai archive được nén xong rồi mới ghi hàng, và nhánh lỗi ghi cứng
+    // `cdkt-media-…`: media hỏng sau khi uploads đã nén thì archive uploads nằm lại
+    // trên đĩa không hàng nào, còn uploads hỏng thì hàng `failed` lại nêu tên media.
+    const pending = new Set<string>()
     let step: { name: string, kind: 'sql' | 'media' } | null = null
 
-    /**
-     * Bắt đầu một tệp. Tệp đã có sẵn cùng tên (hai lượt cùng trigger trong cùng một
-     * giây có cùng stamp) không thuộc lượt này — không bao giờ bị dọn.
-     */
+    /** Bắt đầu một tệp: từ chối tên đã có, trả đường dẫn `.partial` để ghi vào. */
     const begin = async (name: string, kind: 'sql' | 'media'): Promise<string> => {
+      step = null
+      if (await pathExists(path.join(dir, name))) {
+        logWarn({ event: 'backup.name_collision', filename: name, trigger })
+        throw new BackupNameCollisionError(name)
+      }
       step = { name, kind }
-      const target = path.join(dir, name)
-      if (!(await pathExists(target))) created.add(name)
-      return target
+      const partial = path.join(dir, `${name}${PARTIAL_SUFFIX}`)
+      pending.add(partial)
+      return partial
     }
-    /** Hàng `done` + audit cùng transaction, ngay sau khi tệp đã ghi xong và kiểm. */
+    /**
+     * Hàng `done` + audit cùng transaction, ngay sau khi tệp đã ghi xong và kiểm; tệp
+     * nhận tên thật TRONG transaction đó — đổi tên hỏng thì hàng không được ghi.
+     */
     const register = async (name: string, kind: 'sql' | 'media', bytes: number) => {
-      await db.transaction(async (tx) => {
-        await tx.insert(backups).values({
-          filename: name, type: kind, bytes, stamp, trigger, status: 'done', createdBy: adminUserId,
+      const partial = path.join(dir, `${name}${PARTIAL_SUFFIX}`)
+      const target = path.join(dir, name)
+      const moved = { done: false }
+      try {
+        await db.transaction(async (tx) => {
+          await tx.insert(backups).values({
+            filename: name, type: kind, bytes, stamp, trigger, status: 'done', createdBy: adminUserId,
+          })
+          await tx.insert(activityLogs).values({
+            userId: adminUserId, action: 'backup_run', resource: 'settings', resourceId: null,
+            meta: { type: kind, filename: name, bytes, trigger },
+          })
+          await fs.rename(partial, target)
+          moved.done = true
         })
-        await tx.insert(activityLogs).values({
-          userId: adminUserId, action: 'backup_run', resource: 'settings', resourceId: null,
-          meta: { type: kind, filename: name, bytes, trigger },
-        })
-      })
-      registered.add(name)
+      } catch (err) {
+        // Commit hỏng sau khi đã đổi tên: trả tệp về tên `.partial` để nhánh dọn xoá nó.
+        if (moved.done) await fs.rename(target, partial).catch(() => fs.unlink(target).catch(() => {}))
+        throw err
+      }
+      pending.delete(partial)
       files.push({ name, type: kind, bytes })
     }
 
     try {
+      await fs.mkdir(dir, { recursive: true })
+      // Đang giữ khoá chạy ⇒ không lượt nào khác đang ghi: mọi `cdkt-*.partial` là
+      // của một lượt đã bị giết.
+      await deleteStalePartials(dir)
+      config = await readBackupConfig(db)
+
       if (type === 'sql' || type === 'all') {
         currentBackupStatus = { running: true, phase: 'sql', message: 'Đang dump CSDL', startedAt: Date.now() }
         const filename = `cdkt-${stamp}-${trigger}.sql.gz`
@@ -375,12 +462,14 @@ export async function runBackup(
       const failedStep = step as { name: string, kind: 'sql' | 'media' } | null
       currentBackupStatus = {
         running: false, phase: 'failed',
-        message: failedStep?.kind === 'sql' ? 'Dump SQL thất bại' : 'Nén file thất bại',
+        message: err instanceof BackupNameCollisionError ? 'Tên tệp backup đã tồn tại'
+          : failedStep?.kind === 'sql' ? 'Dump SQL thất bại'
+            : failedStep ? 'Nén file thất bại' : 'Backup thất bại',
         startedAt: Date.now(),
       }
-      for (const name of created) {
-        if (!registered.has(name)) await fs.unlink(path.join(dir, name)).catch(() => {})
-      }
+      for (const partial of pending) await fs.unlink(partial).catch(() => {})
+      // Không bước tệp nào (đọc cấu hình, `mkdir`, hoặc tên bị từ chối) → không có tên
+      // nào để ghi hàng `failed`; lỗi vẫn ném ra cho nơi gọi.
       if (failedStep) {
         // Không để lỗi ghi hàng `failed` (CSDL đang hỏng) che lỗi gốc của lượt sao lưu.
         await db.insert(backups).values({

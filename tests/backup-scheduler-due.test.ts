@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict'
 import test, { beforeEach, mock } from 'node:test'
+import { readFileSync } from 'node:fs'
 
 /**
  * The backup scheduler follows its policy (wave1 D10, spec `backup-restore`).
@@ -17,55 +18,119 @@ import test, { beforeEach, mock } from 'node:test'
  * the server was down — only if the scheduler was serving slots before it, so
  * turning the switch on mid-week waits for the next configured slot.
  *
+ * The decision reads ONE durable record, the settings key `backup_scheduler_state`,
+ * never the `backups` rows: rotation deletes those rows across every trigger (a
+ * few manual backups were enough to delete this week's scheduled SQL row), and a
+ * slot whose evidence was rotated away looked failed — a full backup mid-week,
+ * repeated until a false "abandoned". The scheduler writes the record when an
+ * attempt STARTS (inside the backup lock, before any work — so a failure before
+ * the first file still counts, and a lock-busy refusal does not) and when it ends.
+ *
  * Every date here is LOCAL wall-clock time (`new Date(y, m, d, h, min)`): the
  * policy is local, so the table passes in any TZ (CI runs Asia/Ho_Chi_Minh).
  */
 
-const db = { touched: 0, settings: [] as Array<{ key: string, value: string }>, runs: [] as Array<{ stamp: string, type: string, status: string }> }
+type BackupRow = { id: number, filename: string, type: string, stamp: string, status: string, trigger: string }
+const db = {
+  touched: 0,
+  settings: new Map<string, string>(),
+  backups: [] as BackupRow[],
+}
 const fakeDb = {
   select: () => {
     db.touched += 1
     return {
       from: (table: unknown) => {
-        const rows = table === schema.settings ? db.settings : db.runs
+        if (table === schema.settings) {
+          const rows = [...db.settings].map(([key, value]) => ({ key, value }))
+          return Object.assign(Promise.resolve(rows), { where: async () => rows })
+        }
+        // The `backups` table: only scheduled rows, as the e0dbaca loader asked for.
+        const rows = db.backups.filter(row => row.trigger === 'scheduled')
         return Object.assign(Promise.resolve(rows), { where: async () => rows })
       },
     }
   },
+  insert: (table: unknown) => ({
+    values: (value: { key: string, value: string }) => ({
+      onDuplicateKeyUpdate: async ({ set }: { set: { value?: string } }) => {
+        assert.equal(table, schema.settings)
+        db.settings.set(value.key, String(set.value ?? value.value))
+      },
+    }),
+  }),
 }
-mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb } })
-const backupCalls: Array<unknown[]> = []
-let backupOutcome: () => Promise<unknown> = async () => ({})
-mock.module('../server/services/backup', {
-  namedExports: { runBackup: async (...args: unknown[]) => { backupCalls.push(args); return backupOutcome() } },
-})
+mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb, getPool: () => null } })
 const logs: Array<Record<string, unknown>> = []
 mock.module('../server/utils/logger', {
   namedExports: { logInfo: (e: Record<string, unknown>) => logs.push(e), logWarn: (e: Record<string, unknown>) => logs.push(e), logError: (e: Record<string, unknown>) => logs.push(e) },
+})
+
+// The REAL rotation selection, loaded before `runBackup` is replaced for the scheduler.
+const realBackup = await import('../server/services/backup')
+
+type RunOptions = { onStarted?: () => Promise<void> }
+const backupCalls: Array<unknown[]> = []
+/** The time the fake backup "runs" at — the stamp of the rows it writes. */
+let clock = new Date(0)
+let nextId = 1
+const stampOf = (date: Date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')
+/** Rows a real `runBackup('all', trigger)` leaves behind: the dump and two archives. */
+function writeRunRows(date: Date, trigger: string, kinds: Array<'sql' | 'uploads' | 'media'> = ['sql', 'uploads', 'media']) {
+  for (const kind of kinds) {
+    db.backups.push({
+      id: nextId++, stamp: stampOf(date), status: 'done', trigger,
+      type: kind === 'sql' ? 'sql' : 'media',
+      filename: kind === 'sql' ? `cdkt-${stampOf(date)}-${trigger}.sql.gz` : `cdkt-${kind}-${stampOf(date)}-${trigger}.tar.gz`,
+    })
+  }
+}
+/** How the fake backup ends; default: starts (lock acquired), writes its rows, succeeds. */
+let backupOutcome: (options: RunOptions) => Promise<unknown> = async (options) => {
+  await options.onStarted?.()
+  writeRunRows(clock, 'scheduled')
+  return {}
+}
+mock.module('../server/services/backup', {
+  namedExports: {
+    runBackup: async (...args: unknown[]) => { backupCalls.push(args); return backupOutcome((args[3] ?? {}) as RunOptions) },
+    BackupLockBusyError: realBackup.BackupLockBusyError,
+    sweepPartialBackups: async () => 0,
+  },
 })
 
 const schema = await import('../server/db/schema')
 const scheduler = await import('../server/services/backup-scheduler')
 const { backupSchedulerEnabledByServer } = await import('../server/utils/backup-scheduler-switch')
 const {
-  isBackupDue, lastSlot, parseBackupHour, parseBackupDays, groupScheduledRuns, parseBackupStamp,
-  backupSchedulerTick, startBackupScheduler, stopBackupScheduler,
+  isBackupDue, lastSlot, parseBackupHour, parseBackupDays, parseSchedulerState,
+  backupSchedulerTick, startBackupScheduler, stopBackupScheduler, BACKUP_SCHEDULER_STATE_KEY,
 } = scheduler
 
 beforeEach(() => {
   db.touched = 0
-  db.settings = []
-  db.runs = []
+  db.settings = new Map()
+  db.backups = []
   backupCalls.length = 0
-  backupOutcome = async () => ({})
+  backupOutcome = async (options) => {
+    await options.onStarted?.()
+    writeRunRows(clock, 'scheduled')
+    return {}
+  }
   logs.length = 0
+  nextId = 1
 })
 
 /** 2026-10: the 18th and 25th are Sundays. */
 const at = (day: number, hour: number, minute = 0) => new Date(2026, 9, day, hour, minute)
-const stampOf = (date: Date) => date.toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')
-const done = (date: Date) => ({ startedAt: date, status: 'done' as const })
-const failed = (date: Date) => ({ startedAt: date, status: 'failed' as const })
+
+type State = NonNullable<ReturnType<typeof parseSchedulerState>>
+/** A state record: the slot, attempts on it, the latest attempt, its outcome, the latest success. */
+const state = (slot: Date, attempts: number, lastAttemptAt: Date, outcome: State['outcome'], lastDoneAt: Date | null): State => ({
+  slot: slot.toISOString(), attempts, lastAttemptAt: lastAttemptAt.toISOString(), outcome,
+  lastDoneAt: lastDoneAt ? lastDoneAt.toISOString() : null,
+})
+const servedAt = (slot: Date, startedAt: Date) => state(slot, 1, startedAt, 'done', startedAt)
 
 test('fixture sanity: the 18th and 25th of October 2026 are Sundays', () => {
   assert.equal(at(18, 3).getDay(), 0)
@@ -76,37 +141,43 @@ const SUNDAY_3AM = { enabled: true, hour: 3, days: [0] }
 const DAILY_3AM = { enabled: true, hour: 3, days: [] as number[] }
 const DAILY_MIDNIGHT = { enabled: true, hour: 0, days: [] as number[] }
 
-const table: Array<{ name: string, policy: { enabled: boolean, hour: number, days: number[] }, now: Date, runs: Array<ReturnType<typeof done>>, run: boolean, reason: string, slot?: Date }> = [
-  { name: 'switch off', policy: { ...DAILY_3AM, enabled: false }, now: at(26, 3, 5), runs: [], run: false, reason: 'disabled' },
+const table: Array<{ name: string, policy: { enabled: boolean, hour: number, days: number[] }, now: Date, state: State | null, run: boolean, reason: string, slot?: Date }> = [
+  { name: 'switch off', policy: { ...DAILY_3AM, enabled: false }, now: at(26, 3, 5), state: null, run: false, reason: 'disabled' },
   // Spec: "Weekly policy does not run mid-week".
-  { name: 'weekly Sunday, Monday 15:30 after Sunday 03:05 succeeded', policy: SUNDAY_3AM, now: at(26, 15, 30), runs: [done(at(25, 3, 5))], run: false, reason: 'slot_done', slot: at(25, 3) },
-  { name: 'weekly Sunday, Sunday 03:10, last week served', policy: SUNDAY_3AM, now: at(25, 3, 10), runs: [done(at(18, 3, 5))], run: true, reason: 'slot', slot: at(25, 3) },
-  { name: 'weekly Sunday, Saturday 23:00: last slot is LAST Sunday, already served', policy: SUNDAY_3AM, now: at(24, 23), runs: [done(at(18, 3, 5))], run: false, reason: 'slot_done', slot: at(18, 3) },
+  { name: 'weekly Sunday, Monday 15:30 after Sunday 03:05 succeeded', policy: SUNDAY_3AM, now: at(26, 15, 30), state: servedAt(at(25, 3), at(25, 3, 5)), run: false, reason: 'slot_done', slot: at(25, 3) },
+  { name: 'weekly Sunday, Wednesday 10:00 after Sunday succeeded', policy: SUNDAY_3AM, now: at(28, 10), state: servedAt(at(25, 3), at(25, 3, 2)), run: false, reason: 'slot_done', slot: at(25, 3) },
+  { name: 'weekly Sunday, Sunday 03:10, last week served', policy: SUNDAY_3AM, now: at(25, 3, 10), state: servedAt(at(18, 3), at(18, 3, 5)), run: true, reason: 'slot', slot: at(25, 3) },
+  { name: 'weekly Sunday, Saturday 23:00: last slot is LAST Sunday, already served', policy: SUNDAY_3AM, now: at(24, 23), state: servedAt(at(18, 3), at(18, 3, 5)), run: false, reason: 'slot_done', slot: at(18, 3) },
   // Spec: "Midnight is honoured" — hour 0 is a slot at 00:00, not 03:00.
-  { name: 'hour 0, 00:05', policy: DAILY_MIDNIGHT, now: at(26, 0, 5), runs: [done(at(25, 0, 2))], run: true, reason: 'slot', slot: at(26, 0) },
-  { name: 'hour 0, 02:59 after the 00:02 run', policy: DAILY_MIDNIGHT, now: at(26, 2, 59), runs: [done(at(26, 0, 2))], run: false, reason: 'slot_done', slot: at(26, 0) },
+  { name: 'hour 0, 00:05', policy: DAILY_MIDNIGHT, now: at(26, 0, 5), state: servedAt(at(25, 0), at(25, 0, 2)), run: true, reason: 'slot', slot: at(26, 0) },
+  { name: 'hour 0, 02:59 after the 00:02 run', policy: DAILY_MIDNIGHT, now: at(26, 2, 59), state: servedAt(at(26, 0), at(26, 0, 2)), run: false, reason: 'slot_done', slot: at(26, 0) },
   // Spec: "Failure at 03:00 → a retry starts no earlier than 04:00".
-  { name: 'failed at 03:02, 03:40', policy: DAILY_3AM, now: at(26, 3, 40), runs: [failed(at(26, 3, 2))], run: false, reason: 'retry_wait', slot: at(26, 3) },
-  { name: 'failed at 03:02, 04:05', policy: DAILY_3AM, now: at(26, 4, 5), runs: [failed(at(26, 3, 2))], run: true, reason: 'retry', slot: at(26, 3) },
-  { name: 'failed twice, third attempt', policy: DAILY_3AM, now: at(26, 5, 10), runs: [failed(at(26, 3, 2)), failed(at(26, 4, 5))], run: true, reason: 'retry', slot: at(26, 3) },
-  { name: 'three failures: slot abandoned', policy: DAILY_3AM, now: at(26, 6, 30), runs: [failed(at(26, 3, 2)), failed(at(26, 4, 5)), failed(at(26, 5, 10))], run: false, reason: 'slot_abandoned', slot: at(26, 3) },
-  { name: 'abandoned yesterday, next slot runs', policy: DAILY_3AM, now: at(27, 3, 5), runs: [failed(at(26, 3, 2)), failed(at(26, 4, 5)), failed(at(26, 5, 10))], run: true, reason: 'slot', slot: at(27, 3) },
-  { name: 'a retry that succeeded serves the slot', policy: DAILY_3AM, now: at(26, 9), runs: [failed(at(26, 3, 2)), done(at(26, 4, 5))], run: false, reason: 'slot_done', slot: at(26, 3) },
+  { name: 'failed at 03:02, 03:40', policy: DAILY_3AM, now: at(26, 3, 40), state: state(at(26, 3), 1, at(26, 3, 2), 'failed', null), run: false, reason: 'retry_wait', slot: at(26, 3) },
+  { name: 'failed at 03:02, 04:05', policy: DAILY_3AM, now: at(26, 4, 5), state: state(at(26, 3), 1, at(26, 3, 2), 'failed', null), run: true, reason: 'retry', slot: at(26, 3) },
+  { name: 'failed twice, third attempt', policy: DAILY_3AM, now: at(26, 5, 10), state: state(at(26, 3), 2, at(26, 4, 5), 'failed', null), run: true, reason: 'retry', slot: at(26, 3) },
+  { name: 'three failures: slot abandoned', policy: DAILY_3AM, now: at(26, 6, 30), state: state(at(26, 3), 3, at(26, 5, 10), 'failed', null), run: false, reason: 'slot_abandoned', slot: at(26, 3) },
+  { name: 'marked abandoned', policy: DAILY_3AM, now: at(26, 9), state: state(at(26, 3), 3, at(26, 5, 10), 'abandoned', null), run: false, reason: 'slot_abandoned', slot: at(26, 3) },
+  { name: 'abandoned yesterday, next slot runs', policy: DAILY_3AM, now: at(27, 3, 5), state: state(at(26, 3), 3, at(26, 5, 10), 'abandoned', null), run: true, reason: 'slot', slot: at(27, 3) },
+  { name: 'a retry that succeeded serves the slot', policy: DAILY_3AM, now: at(26, 9), state: state(at(26, 3), 2, at(26, 4, 5), 'done', at(26, 4, 5)), run: false, reason: 'slot_done', slot: at(26, 3) },
+  // A run cut off mid-way (container stopped) left its record "running": an attempt, not a success.
+  { name: 'interrupted at 03:02, 03:40', policy: DAILY_3AM, now: at(26, 3, 40), state: state(at(26, 3), 1, at(26, 3, 2), 'running', null), run: false, reason: 'retry_wait', slot: at(26, 3) },
+  { name: 'interrupted at 03:02, 04:05', policy: DAILY_3AM, now: at(26, 4, 5), state: state(at(26, 3), 1, at(26, 3, 2), 'running', null), run: true, reason: 'retry', slot: at(26, 3) },
+  { name: 'third attempt interrupted', policy: DAILY_3AM, now: at(26, 6, 30), state: state(at(26, 3), 3, at(26, 5, 10), 'running', null), run: false, reason: 'slot_abandoned', slot: at(26, 3) },
   // Spec: "Missed slot is caught up once" — down at Sunday 03:00, up at 07:00.
-  { name: 'down at the slot, up at 07:00: catch up', policy: SUNDAY_3AM, now: at(25, 7), runs: [done(at(18, 3, 5))], run: true, reason: 'catch_up', slot: at(25, 3) },
-  { name: '…and only once', policy: SUNDAY_3AM, now: at(25, 7, 20), runs: [done(at(18, 3, 5)), done(at(25, 7, 2))], run: false, reason: 'slot_done', slot: at(25, 3) },
-  { name: '…not again on Monday', policy: SUNDAY_3AM, now: at(26, 15, 30), runs: [done(at(18, 3, 5)), done(at(25, 7, 2))], run: false, reason: 'slot_done', slot: at(25, 3) },
-  { name: 'daily, down for three days: catch up the latest slot once', policy: DAILY_3AM, now: at(26, 10), runs: [done(at(23, 3, 4))], run: true, reason: 'catch_up', slot: at(26, 3) },
+  { name: 'down at the slot, up at 07:00: catch up', policy: SUNDAY_3AM, now: at(25, 7), state: servedAt(at(18, 3), at(18, 3, 5)), run: true, reason: 'catch_up', slot: at(25, 3) },
+  { name: '…and only once', policy: SUNDAY_3AM, now: at(25, 7, 20), state: servedAt(at(25, 3), at(25, 7, 2)), run: false, reason: 'slot_done', slot: at(25, 3) },
+  { name: '…not again on Monday', policy: SUNDAY_3AM, now: at(26, 15, 30), state: servedAt(at(25, 3), at(25, 7, 2)), run: false, reason: 'slot_done', slot: at(25, 3) },
+  { name: 'daily, down for three days: catch up the latest slot once', policy: DAILY_3AM, now: at(26, 10), state: servedAt(at(23, 3), at(23, 3, 4)), run: true, reason: 'catch_up', slot: at(26, 3) },
   // Spec: "Admin enables automatic backups → the next configured slot produces a backup".
-  { name: 'switched on Wednesday, weekly Sunday, no history: wait', policy: SUNDAY_3AM, now: at(28, 10), runs: [], run: false, reason: 'outside_slot', slot: at(25, 3) },
-  { name: 'switched on at 10:00, daily 03:00, no history: wait for tomorrow', policy: DAILY_3AM, now: at(26, 10), runs: [], run: false, reason: 'outside_slot', slot: at(26, 3) },
-  { name: '…and the next slot runs', policy: DAILY_3AM, now: at(27, 3, 7), runs: [], run: true, reason: 'slot', slot: at(27, 3) },
-  { name: 'switched back on after a month off: no catch-up, wait for the slot', policy: DAILY_3AM, now: at(26, 10), runs: [done(at(1, 3, 2))], run: false, reason: 'outside_slot', slot: at(26, 3) },
+  { name: 'switched on Wednesday, weekly Sunday, no history: wait', policy: SUNDAY_3AM, now: at(28, 10), state: null, run: false, reason: 'outside_slot', slot: at(25, 3) },
+  { name: 'switched on at 10:00, daily 03:00, no history: wait for tomorrow', policy: DAILY_3AM, now: at(26, 10), state: null, run: false, reason: 'outside_slot', slot: at(26, 3) },
+  { name: '…and the next slot runs', policy: DAILY_3AM, now: at(27, 3, 7), state: null, run: true, reason: 'slot', slot: at(27, 3) },
+  { name: 'switched back on after a month off: no catch-up, wait for the slot', policy: DAILY_3AM, now: at(26, 10), state: servedAt(at(1, 3), at(1, 3, 2)), run: false, reason: 'outside_slot', slot: at(26, 3) },
 ]
 
 for (const row of table) {
   test(`isBackupDue — ${row.name}`, () => {
-    const decision = isBackupDue(row.policy, row.now, row.runs)
+    const decision = isBackupDue(row.policy, row.now, row.state)
     assert.equal(decision.run, row.run, `run (${decision.reason})`)
     assert.equal(decision.reason, row.reason)
     if (row.slot) assert.equal(decision.slot?.getTime(), row.slot.getTime(), `slot ${decision.slot?.toString()}`)
@@ -135,24 +206,18 @@ test('parseBackupDays: valid weekdays only, deduplicated; unreadable means every
   assert.deepEqual(parseBackupDays(null), [])
 })
 
-test('groupScheduledRuns: one run per stamp; done only with a done dump AND a done archive and no failure', () => {
-  const stamp = stampOf(at(26, 3, 2))
-  const later = stampOf(at(26, 4, 5))
-  const interrupted = stampOf(at(26, 5, 10))
-  const runs = groupScheduledRuns([
-    { stamp, type: 'sql', status: 'done' }, { stamp, type: 'media', status: 'done' }, { stamp, type: 'media', status: 'failed' },
-    { stamp: later, type: 'sql', status: 'done' }, { stamp: later, type: 'media', status: 'done' }, { stamp: later, type: 'media', status: 'done' },
-    // The container stopped mid-run (deploy during the slot hour): the dump was
-    // registered, the archive never was, and no `failed` row was written. That run
-    // did not serve the slot — it counts as a failed attempt.
-    { stamp: interrupted, type: 'sql', status: 'done' },
-    { stamp: 'garbage', type: 'sql', status: 'done' },
-  ])
-  assert.deepEqual(runs.map(r => [r.startedAt.getTime(), r.status]), [
-    [at(26, 3, 2).getTime(), 'failed'], [at(26, 4, 5).getTime(), 'done'], [at(26, 5, 10).getTime(), 'failed'],
-  ])
-  assert.equal(parseBackupStamp('20261025T200500Z')?.toISOString(), '2026-10-25T20:05:00.000Z')
-  assert.equal(parseBackupStamp('2026-10-25'), null)
+test('parseSchedulerState: a well-formed record or null — never a half-read one', () => {
+  const good = state(at(26, 3), 2, at(26, 4, 5), 'failed', at(25, 3, 2))
+  assert.deepEqual(parseSchedulerState(JSON.stringify(good)), good)
+  assert.deepEqual(parseSchedulerState(JSON.stringify({ ...good, lastDoneAt: null })), { ...good, lastDoneAt: null })
+  for (const bad of [
+    null, undefined, '', 'not json', '[]', '{}',
+    JSON.stringify({ ...good, slot: 'yesterday' }),
+    JSON.stringify({ ...good, attempts: -1 }),
+    JSON.stringify({ ...good, attempts: 1.5 }),
+    JSON.stringify({ ...good, outcome: 'maybe' }),
+    JSON.stringify({ ...good, lastAttemptAt: 42 }),
+  ]) assert.equal(parseSchedulerState(bad), null, String(bad))
 })
 
 test('server switch: on in production unless BACKUP_SCHEDULER says off; off in development unless it says on', () => {
@@ -164,59 +229,158 @@ test('server switch: on in production unless BACKUP_SCHEDULER says off; off in d
   assert.equal(backupSchedulerEnabledByServer(undefined, undefined), false)
 })
 
-test('the plugin boots the scheduler through the shared switch and stops it on close', async () => {
-  const { readFileSync } = await import('node:fs')
+test('the plugin boots the scheduler through the shared switch, sweeps partial files at startup, and stops on close', () => {
   const plugin = readFileSync(new URL('../server/plugins/backup-scheduler.ts', import.meta.url), 'utf8')
   assert.match(plugin, /backupSchedulerEnabledByServer\(process\.env\.BACKUP_SCHEDULER, process\.env\.NODE_ENV\)/)
   assert.match(plugin, /nitroApp\.hooks\.hook\('close', stopBackupScheduler\)/)
+  // The sweep is not gated on the scheduler switch: manual runs leave partial files too.
+  assert.ok(plugin.indexOf('scheduleStartupPartialSweep()') !== -1 && plugin.indexOf('scheduleStartupPartialSweep()') < plugin.indexOf('backupSchedulerEnabledByServer('))
   const endpoint = readFileSync(new URL('../server/api/admin/settings/backup.get.ts', import.meta.url), 'utf8')
   assert.match(endpoint, /schedulerDisabledByServer: !backupSchedulerEnabledByServer\(process\.env\.BACKUP_SCHEDULER, process\.env\.NODE_ENV\)/)
 })
 
-// ─── The tick ─────────────────────────────────────────────────────────────────
-
-/** The `backups` rows of one scheduled "all" run: the dump, then an archive (failed → the archive's failed row). */
-const runRows = (date: Date, status: 'done' | 'failed') => [
-  { stamp: stampOf(date), type: 'sql', status: 'done' },
-  { stamp: stampOf(date), type: 'media', status },
-]
-
-const enable = (hour: string, days = '[]') => {
-  db.settings = [
-    { key: 'backup_auto_enabled', value: 'true' },
-    { key: 'backup_auto_hour', value: hour },
-    { key: 'backup_auto_days', value: days },
-  ]
-}
-
-test('tick: hour "0" is read as midnight and the slot runs a scheduled "all" backup', async () => {
-  enable('0')
-  db.runs = runRows(at(25, 0, 2), 'done')
-  await backupSchedulerTick(at(26, 0, 5))
-  assert.deepEqual(backupCalls, [['all', 'scheduled', null]])
+test('.env.example documents BACKUP_SCHEDULER with its production default', () => {
+  const example = readFileSync(new URL('../.env.example', import.meta.url), 'utf8')
+  const block = example.slice(example.indexOf('BACKUP_SCHEDULER') - 600, example.lastIndexOf('BACKUP_SCHEDULER') + 40)
+  assert.match(example, /^# BACKUP_SCHEDULER=0$/m)
+  assert.match(block, /production/)
+  assert.match(block, /backup_auto_enabled|Backup tự động theo lịch/)
 })
 
-test('tick: a failed attempt is not the slot\'s success, and the third failure is logged as abandoned once', async () => {
-  enable('3')
-  db.runs = runRows(at(26, 3, 2), 'failed')
-  await backupSchedulerTick(at(26, 3, 30))
-  assert.equal(backupCalls.length, 0, 'within 60 min of the failure')
-  await backupSchedulerTick(at(26, 4, 5))
-  assert.equal(backupCalls.length, 1, 'retried after 60 min')
+test('the state key cannot be written through the settings API', () => {
+  const put = readFileSync(new URL('../server/api/admin/settings/index.put.ts', import.meta.url), 'utf8')
+  assert.equal(BACKUP_SCHEDULER_STATE_KEY, 'backup_scheduler_state')
+  assert.doesNotMatch(put, /backup_scheduler_state/)
+})
 
-  db.runs.push(...runRows(at(26, 4, 5), 'failed'), ...runRows(at(26, 5, 10), 'failed'))
-  await backupSchedulerTick(at(26, 6, 30))
-  await backupSchedulerTick(at(26, 6, 45))
+// ─── The tick ─────────────────────────────────────────────────────────────────
+
+const enable = (hour: string, days = '[]') => {
+  db.settings.set('backup_auto_enabled', 'true')
+  db.settings.set('backup_auto_hour', hour)
+  db.settings.set('backup_auto_days', days)
+}
+const storedState = () => parseSchedulerState(db.settings.get('backup_scheduler_state'))
+async function tickAt(now: Date) {
+  clock = now
+  await backupSchedulerTick(now)
+}
+
+test('tick: hour "0" is read as midnight and the slot runs a scheduled "all" backup, recorded as done', async () => {
+  enable('0')
+  await tickAt(at(26, 0, 5))
   assert.equal(backupCalls.length, 1)
+  assert.deepEqual(backupCalls[0]!.slice(0, 3), ['all', 'scheduled', null])
+  assert.deepEqual(storedState(), state(at(26, 0), 1, at(26, 0, 5), 'done', at(26, 0, 5)))
+})
+
+// The verifier's scenario: a weekly policy served on Sunday, then a few manual
+// backups in the week. Rotation (`selectRotationVictims` counts every trigger)
+// deletes this Sunday's scheduled SQL row first. The slot must stay served.
+for (const [label, keepCount, manual] of [
+  ['keep 14, four manual "all" backups', 14, 4],
+  ['keep 14, twelve pre-* SQL backups', 14, -12],
+  ['keep 4, one manual "all" backup', 4, 1],
+  ['keep 5, one manual "all" backup', 5, 1],
+] as const) {
+  test(`tick: rotation cannot make a served slot run again mid-week (${label})`, async () => {
+    enable('3', '[0]')
+    await tickAt(at(18, 3, 2))
+    await tickAt(at(25, 3, 2))
+    assert.equal(backupCalls.length, 2, 'both Sundays ran')
+
+    for (let i = 1; i <= Math.abs(manual); i += 1) {
+      if (manual > 0) writeRunRows(at(26, 9 + i), 'manual')
+      else writeRunRows(at(26, 9, i), 'pre-repoint', ['sql'])
+    }
+    const victims = new Set(realBackup.selectRotationVictims(db.backups, keepCount).map(row => row.id))
+    assert.ok(victims.size > 0, 'the scenario must actually rotate something')
+    db.backups = db.backups.filter(row => !victims.has(row.id))
+
+    for (const now of [at(28, 10), at(28, 11, 15), at(29, 3, 5), at(31, 23)]) await tickAt(now)
+    assert.equal(backupCalls.length, 2, 'a backup ran outside the policy')
+    assert.equal(logs.filter(entry => entry.event === 'backup.slot_abandoned').length, 0, 'no false "abandoned"')
+
+    await tickAt(at(1 + 31, 3, 4)) // next Sunday (Nov 1): the policy's next slot runs
+    assert.equal(backupCalls.length, 3)
+  })
+}
+
+test('tick: a failure before the first file (lock held, config read failed) counts — at most 3 attempts, 60 min apart', async () => {
+  enable('3')
+  backupOutcome = async (options) => {
+    await options.onStarted?.()
+    throw new Error('EACCES: mkdir backups')
+  }
+  await tickAt(at(26, 3, 5))
+  assert.equal(backupCalls.length, 1)
+  assert.equal(storedState()?.outcome, 'failed')
+  assert.equal(storedState()?.attempts, 1)
+  await tickAt(at(26, 3, 20))
+  await tickAt(at(26, 3, 35))
+  assert.equal(backupCalls.length, 1, 'not every 15-minute tick')
+  await tickAt(at(26, 4, 6))
+  await tickAt(at(26, 5, 7))
+  assert.equal(backupCalls.length, 3)
+  assert.equal(storedState()?.outcome, 'abandoned')
+  await tickAt(at(26, 6, 30))
+  await tickAt(at(26, 9))
+  assert.equal(backupCalls.length, 3)
   const abandoned = logs.filter(entry => entry.event === 'backup.slot_abandoned')
   assert.equal(abandoned.length, 1, 'one log line per abandoned slot, not one per tick')
   assert.equal(abandoned[0]!.failures, 3)
+  assert.ok(logs.filter(entry => entry.event === 'backup.scheduler_failed').length === 3)
+})
+
+test('tick: a lock-busy refusal (another backup is running) is not an attempt', async () => {
+  enable('3')
+  backupOutcome = async () => { throw new realBackup.BackupLockBusyError() }
+  await tickAt(at(26, 3, 5))
+  assert.equal(storedState(), null, 'nothing recorded')
+  backupOutcome = async (options) => { await options.onStarted?.(); writeRunRows(clock, 'scheduled'); return {} }
+  await tickAt(at(26, 3, 20))
+  assert.equal(backupCalls.length, 2, 'tried again at the next tick, not 60 min later')
+  assert.equal(storedState()?.outcome, 'done')
+})
+
+test('tick: a run cut off mid-way stays "running" and is retried after 60 min, then abandoned at the third', async () => {
+  enable('3')
+  // A process killed during the backup never gets to write the outcome.
+  db.settings.set('backup_scheduler_state', JSON.stringify(state(at(26, 3), 3, at(26, 5, 10), 'running', null)))
+  await tickAt(at(26, 6, 30))
+  assert.equal(backupCalls.length, 0)
+  assert.equal(storedState()?.outcome, 'abandoned')
+  assert.equal(logs.filter(entry => entry.event === 'backup.slot_abandoned').length, 1)
+})
+
+test('tick: only one tick runs at a time — a second tick cannot start a backup before the first records its attempt', async () => {
+  // Once the attempt is recorded (`running`), the state alone holds off a second
+  // run; the in-process guard covers the gap before that — here the first tick is
+  // still waiting to start (e.g. on the lock) when the next tick fires.
+  enable('3')
+  const waiting: Array<() => void> = []
+  backupOutcome = async (options) => {
+    await new Promise<void>(resolve => { waiting.push(resolve) })
+    await options.onStarted?.()
+    writeRunRows(clock, 'scheduled')
+    return {}
+  }
+  clock = at(26, 3, 5)
+  const first = backupSchedulerTick(at(26, 3, 5))
+  await new Promise(resolve => setImmediate(resolve))
+  const second = backupSchedulerTick(at(26, 3, 20))
+  await new Promise(resolve => setImmediate(resolve))
+  const calls = backupCalls.length
+  for (const resume of waiting) resume()
+  await Promise.all([first, second])
+  assert.equal(calls, 1, 'the second tick started a second backup')
+  assert.equal(storedState()?.outcome, 'done')
 })
 
 test('tick: a backup that throws is logged, not thrown', async () => {
   enable('3')
-  backupOutcome = async () => { throw new Error('disk full') }
-  await backupSchedulerTick(at(26, 3, 5))
+  backupOutcome = async (options) => { await options.onStarted?.(); throw new Error('disk full') }
+  await tickAt(at(26, 3, 5))
   assert.ok(logs.some(entry => entry.event === 'backup.scheduler_failed' && entry.error === 'disk full'))
 })
 

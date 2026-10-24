@@ -269,9 +269,11 @@ Chạy lại được: lượt sau chỉ báo những hàng còn ở dạng enti
 Từ đợt wave1 1B, ở production scheduler sao lưu **tự khởi động** (trước đây chỉ khởi động khi `.env` có `BACKUP_SCHEDULER=1`, nên công tắc trong admin bật mà không bao giờ chạy). Có bản sao lưu hay không vẫn do công tắc **"Backup tự động theo lịch"** ở `/admin/settings/backup` quyết định. Công tắc mặc định tắt, nên bản cập nhật này không tự sinh bản sao lưu nào.
 
 - **Trước khi deploy bản 1B:** mở `/admin/settings/backup` và xem công tắc. Nếu nó **đã bật** từ trước (lần bật cũ "không có tác dụng"), sao lưu theo lịch sẽ bắt đầu ở **khe kế tiếp** sau deploy (ngày + giờ đã chọn). Mỗi lượt tạo một dump CSDL và hai archive (`uploads`, `media`) trong `./backups`, nên kiểm dung lượng đĩa (`df -h`). Không muốn thì tắt công tắc trước.
-- **Lịch:** chạy đúng ngày + giờ đã chọn (giờ Việt Nam; `0` là nửa đêm). Lượt hỏng được thử lại sau 60 phút, tối đa 3 lượt cho một khe, rồi bỏ khe đó và ghi log `backup.slot_abandoned`. Khe lỡ vì máy chủ tắt được bù **một lần** khi khởi động lại. Riêng lần đầu bật công tắc thì không bù: đợi khe kế tiếp.
+- **Lịch:** chạy đúng ngày + giờ đã chọn (giờ Việt Nam; `0` là nửa đêm). Lượt hỏng (kể cả lượt bị cắt ngang khi container dừng) được thử lại sau 60 phút, tối đa 3 lượt cho một khe, rồi bỏ khe đó và ghi log `backup.slot_abandoned`. Khe lỡ vì máy chủ tắt được bù **một lần** khi khởi động lại. Riêng lần đầu bật công tắc thì không bù: đợi khe kế tiếp.
+- **Trạng thái lịch** nằm ở một hàng `settings` (`backup_scheduler_state`), không suy từ danh sách backup. Xoá bản sao lưu hay xoay vòng (`backup_keep_count`) không làm lịch chạy thêm lượt nào. Đừng sửa tay hàng này: xoá nó thì scheduler coi như chưa từng chạy và đợi khe kế tiếp.
 - **Tắt hẳn ở máy chủ:** đặt `BACKUP_SCHEDULER=0` trong `.env` rồi `./manage.sh` → Update. Trang cài đặt backup sẽ hiện dòng "Máy chủ đang tắt sao lưu tự động".
-- Lượt sao lưu hỏng giữa chừng không còn để lại archive dở trong `./backups`. Hàng "thất bại" trong danh sách nêu đúng tệp đã hỏng.
+- **Tệp dở:** lượt sao lưu ghi vào `<tên>.partial` và chỉ đổi sang tên thật khi đã ghi hàng vào danh sách. Lượt hỏng tự xoá `.partial` của mình. Lượt bị giết (hết thời gian dừng, `docker kill`) để lại `cdkt-*.partial`; tệp này tự được dọn ở lượt sao lưu kế tiếp và 1 phút sau mỗi lần app khởi động. Hàng "thất bại" trong danh sách nêu đúng tệp đã hỏng.
+- **Hai lượt cùng trigger trong cùng một giây** (ví dụ bấm "Backup" hai lần thật nhanh): lượt sau bị từ chối với thông báo "đã tồn tại". Bản đã có không bị đụng tới. Thử lại sau giây lát.
 
 ---
 

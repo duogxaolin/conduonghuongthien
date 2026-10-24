@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test, { after, before, beforeEach, mock } from 'node:test'
@@ -38,11 +38,24 @@ const state = {
   failDump: false,
   /** Archive name whose `done` row cannot be written. */
   failDoneRowFor: null as null | RegExp,
+  /** Archive name whose transaction fails AFTER its callback ran (commit error). */
+  failCommitFor: null as null | RegExp,
+  /** Reading the backup settings fails (a failure before the first file step). */
+  failConfigRead: false,
+  /** Another backup holds the run lock. */
+  lockBusy: false,
   tarCalls: [] as string[],
+  /** Every path `mysqldump`/`tar` was asked to write. */
+  writeTargets: [] as string[],
 }
 
 const fakeDb = {
-  select: () => ({ from: async () => [] }),
+  select: () => ({
+    from: async () => {
+      if (state.failConfigRead) throw new Error('fixture: settings read failed')
+      return []
+    },
+  }),
   insert: (table: unknown) => ({
     values: async (value: Row) => {
       assert.equal(table, backups, 'only the failed row is written outside a transaction')
@@ -63,21 +76,27 @@ const fakeDb = {
       }),
     }
     const result = await fn(tx)
+    if (pending.some(row => state.failCommitFor?.test(row.filename))) throw new Error('fixture: commit failed')
     state.rows.push(...pending)
     state.audits += audits
     return result
   },
 }
 mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb, getPool: () => ({ query: async () => [[{ holder: null }], []] }) } })
+const lockNames: string[] = []
 mock.module('../server/utils/named-lock', {
   namedExports: {
-    withNamedLock: async (_pool: unknown, _name: string, _timeout: number, action: (c: unknown) => Promise<unknown>) =>
-      ({ acquired: true, value: await action({}) }),
+    withNamedLock: async (_pool: unknown, name: string, _timeout: number, action: (c: unknown) => Promise<unknown>) => {
+      lockNames.push(name)
+      if (state.lockBusy) return { acquired: false }
+      return { acquired: true, value: await action({}) }
+    },
   },
 })
 mock.module('../server/services/backup-sql', {
   namedExports: {
     dumpSql: async (target: string) => {
+      state.writeTargets.push(target)
       writeFileSync(target, state.failDump ? 'partial' : 'complete sql dump')
       if (state.failDump) throw new Error('fixture: mysqldump died')
       return 17
@@ -91,6 +110,7 @@ mock.module('node:child_process', {
       assert.equal(file, 'tar')
       const [, target, , , tree] = args as [string, string, string, string, 'uploads' | 'media']
       state.tarCalls.push(tree)
+      state.writeTargets.push(target!)
       if (state.failTar === tree) {
         writeFileSync(target!, 'partial gzip')
         setImmediate(() => callback(new Error(`fixture: tar failed on ${tree}`)))
@@ -102,7 +122,7 @@ mock.module('node:child_process', {
   },
 })
 
-const { runBackup } = await import('../server/services/backup')
+const { runBackup, sweepPartialBackups, BackupLockBusyError } = await import('../server/services/backup')
 
 const originalCwd = process.cwd()
 let workdir = ''
@@ -130,7 +150,12 @@ beforeEach(() => {
   state.failTar = null
   state.failDump = false
   state.failDoneRowFor = null
+  state.failCommitFor = null
+  state.failConfigRead = false
+  state.lockBusy = false
   state.tarCalls = []
+  state.writeTargets = []
+  lockNames.length = 0
   logs.length = 0
 })
 
@@ -195,21 +220,95 @@ test('a failed SQL dump leaves no partial dump and names the dump in the failed 
   assert.equal(failed()[0]!.type, 'sql')
 })
 
-test('a file that already existed under the failing archive\'s name is not deleted by the cleanup', async () => {
-  // Two runs of the same trigger inside one second share a stamp, so a run can
-  // write over an earlier run's registered archive (that overwrite predates this
-  // change). The cleanup must still only DELETE files this run created: the
-  // earlier archive's `done` row must not end up pointing at nothing.
+test('a name already taken (two runs in the same second) is refused before anything is written', async () => {
+  // Two runs of the same trigger inside one second share a stamp. Writing anyway
+  // overwrote the earlier run's REGISTERED archive with this run's content; a
+  // `failed` row under the same name would also make "delete" of that row unlink
+  // the good file. The run refuses the name instead: no write, no row.
   mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-23T03:00:00.000Z') })
   try {
     mkdirSync(backupDir(), { recursive: true })
     const earlier = 'cdkt-uploads-20261023T030000Z-manual.tar.gz'
     writeFileSync(path.join(backupDir(), earlier), 'an earlier, registered archive')
-    state.failTar = 'uploads'
-    await assert.rejects(run('files'), /tar failed on uploads/)
-    assert.deepEqual(onDisk(), [earlier], 'the pre-existing archive must not be unlinked')
-    assert.equal(failed()[0]?.filename, earlier)
+    await assert.rejects(run('files'), /đã tồn tại/)
+    assert.deepEqual(state.tarCalls, [], 'nothing was written')
+    assert.deepEqual(onDisk(), [earlier])
+    assert.equal(readFileSync(path.join(backupDir(), earlier), 'utf8'), 'an earlier, registered archive', 'the registered archive is untouched')
+    assert.deepEqual(state.rows, [], 'no row of any status under a name that already exists')
   } finally {
     mock.timers.reset()
   }
+})
+
+// ─── Killed mid-write: temporary names + sweep (wave1 1B, verifier W3) ─────────
+
+test('dumps and archives are written under a `.partial` name and renamed only with their done row', async () => {
+  await run('all')
+  assert.equal(state.writeTargets.length, 3)
+  for (const target of state.writeTargets) assert.match(path.basename(target), /^cdkt-.*\.partial$/)
+  assert.deepEqual(onDisk(), done(), 'after success only the final names remain')
+  assert.ok(!onDisk().some(name => name.endsWith('.partial')))
+})
+
+test('a commit that fails after the rename leaves neither the final file nor the partial one', async () => {
+  state.failCommitFor = /^cdkt-uploads-/
+  await assert.rejects(run('files'), /commit failed/)
+  assert.deepEqual(onDisk(), [], 'a file without its done row is an orphan')
+  assert.match(failed()[0]!.filename, /^cdkt-uploads-/)
+})
+
+/** What a SIGKILL mid-run leaves, next to things the sweep must never touch. */
+function seedLeftovers() {
+  mkdirSync(backupDir(), { recursive: true })
+  const files = {
+    stale: 'cdkt-media-20261022T030000Z-scheduled.tar.gz.partial',
+    staleSql: 'cdkt-20261022T030000Z-scheduled.sql.gz.partial',
+    registered: 'cdkt-20261022T030000Z-manual.sql.gz',
+    uploadRestore: '.upload-3f1c.partial', // an upload-restore in progress (restore lock, not run lock)
+    shellDump: 'cdkt-cdkt_admin-20261022T020000Z-123.sql.gz', // scripts/backup-db.sh, no row
+    other: 'notes.partial',
+  }
+  for (const name of Object.values(files)) writeFileSync(path.join(backupDir(), name), name)
+  return files
+}
+
+test('a run starts by sweeping partial files left by a killed run — and nothing else', async () => {
+  const files = seedLeftovers()
+  await run('sql')
+  assert.ok(!onDisk().includes(files.stale) && !onDisk().includes(files.staleSql), 'stale partial archives survived')
+  for (const keep of [files.registered, files.uploadRestore, files.shellDump, files.other]) assert.ok(onDisk().includes(keep), `${keep} was deleted`)
+  assert.ok(logs.some(entry => entry.event === 'backup.partial_swept' && entry.count === 2))
+})
+
+test('sweepPartialBackups (startup) deletes only cdkt-*.partial, and only while no backup holds the run lock', async () => {
+  const files = seedLeftovers()
+  state.lockBusy = true
+  assert.equal(await sweepPartialBackups(), 0, 'a running backup owns its partial file')
+  assert.ok(onDisk().includes(files.stale))
+  state.lockBusy = false
+  assert.equal(await sweepPartialBackups(), 2)
+  assert.deepEqual(lockNames, ['cdkt:backup:run', 'cdkt:backup:run'])
+  assert.deepEqual(onDisk(), [files.uploadRestore, files.registered, files.shellDump, files.other].sort())
+})
+
+// ─── The attempt starts inside the lock (scheduler counts it there) ────────────
+
+test('onStarted runs inside the run lock before any work, so a failure before the first file is still an attempt', async () => {
+  const started: string[] = []
+  state.failConfigRead = true
+  await assert.rejects(
+    runBackup('all', 'scheduled', null, { rotate: false, archiveSources: sources(), onStarted: async () => { started.push('started') } }),
+    /settings read failed/,
+  )
+  assert.deepEqual(started, ['started'])
+})
+
+test('onStarted is not called when another backup holds the lock', async () => {
+  const started: string[] = []
+  state.lockBusy = true
+  await assert.rejects(
+    runBackup('all', 'scheduled', null, { rotate: false, archiveSources: sources(), onStarted: async () => { started.push('started') } }),
+    (error: unknown) => error instanceof BackupLockBusyError,
+  )
+  assert.deepEqual(started, [])
 })
