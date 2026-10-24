@@ -1,4 +1,5 @@
 import { startRetentionScheduler } from '../services/retention-scheduler'
+import { startRateLimitPurgeScheduler } from '../services/rate-limit-purge-scheduler'
 
 /**
  * Start the retention purge on boot.
@@ -10,6 +11,12 @@ import { startRetentionScheduler } from '../services/retention-scheduler'
  *
  * Safe to leave on alongside `npm run analytics:maintenance`: both take the same
  * MySQL named lock, so whichever arrives second finds it held and skips.
+ *
+ * The same switch starts a second, independent timer: the sweep of expired
+ * rate-limit counters (design D16). It has its own lock and never consults the
+ * admin auto-cleanup setting, so a retention scope that fails — or retention
+ * turned off in the admin — cannot stop it. With the in-process timers handed to
+ * cron, the cron entry point runs that sweep too.
  */
 export default defineNitroPlugin(() => {
   const override = (process.env.RETENTION_SCHEDULER || '').trim().toLowerCase()
@@ -18,4 +25,5 @@ export default defineNitroPlugin(() => {
   if (!enabled) return
 
   startRetentionScheduler()
+  startRateLimitPurgeScheduler()
 })

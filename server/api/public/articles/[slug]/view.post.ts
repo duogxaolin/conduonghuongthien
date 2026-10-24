@@ -30,6 +30,7 @@ import {
 } from '../../../../services/article-views'
 import { rateLimitDeps } from '../../../../utils/rate-limit-deps'
 import { analyticsConfig } from '../../../../utils/runtime-config'
+import { ipBucket } from '../../../../utils/ip-bucket'
 
 /**
  * `limit: 1` makes the store's own counter the dedupe decision: `count === 1`
@@ -37,6 +38,17 @@ import { analyticsConfig } from '../../../../utils/runtime-config'
  * upsert is a single statement, so two concurrent first-hits cannot both read 1.
  */
 const DEDUPE_RULE: RateLimitRule = { limit: 1, windowSeconds: VIEW_DEDUPE_WINDOW_SECONDS }
+
+/**
+ * Per-source ceiling across ALL articles (spec rate-limiting, design D17): at
+ * most 60 counted views per address per 10 minutes, IPv6 grouped by /64
+ * (`ipBucket`). The dedupe above keys on an HMAC of IP + User-Agent, so rotating
+ * the User-Agent from one address used to mint a new "visitor" per request.
+ * Generous on purpose — an office behind one NAT shares an address. Checked
+ * BEFORE the dedupe, so a flood never reaches the per-article buckets; over the
+ * ceiling the answer is the same 202 and nothing is counted.
+ */
+const VIEW_IP_CEILING_RULE: RateLimitRule = { limit: 60, windowSeconds: 600 }
 
 /** One log line per cause, not one per request — see `secretWarned`. */
 let secretWarned = false
@@ -70,11 +82,12 @@ export default defineEventHandler(async (event) => {
     // nothing on screen saying why, is a silent dead end.
     const config = analyticsConfig(event)
     const day = viewDay()
+    const clientIp = getClientIp(event)
 
     let visitorToken: string
     try {
       visitorToken = deriveDailyVisitorToken(config?.hmacSecret, {
-        ip: getClientIp(event),
+        ip: clientIp,
         userAgent: String(event.node.req.headers['user-agent'] || ''),
         day,
       })
@@ -94,6 +107,11 @@ export default defineEventHandler(async (event) => {
       return { accepted: false }
     }
     const deps = rateLimitDeps()
+    // `count > limit`, not `blocked`: the store reports `blocked` AT the limit,
+    // and the 60th view is still one to count.
+    const ceiling = await recordRateLimitHit(`avip:${ipBucket(clientIp)}`, VIEW_IP_CEILING_RULE, deps)
+    if (ceiling.count > VIEW_IP_CEILING_RULE.limit) return { accepted: false }
+
     const state = await recordRateLimitHit(buildViewDedupeKey(article.id, visitorToken), DEDUPE_RULE, deps)
     if (state.count !== 1) return { accepted: false }
 

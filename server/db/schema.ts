@@ -198,6 +198,11 @@ export const articles = mysqlTable('articles', {
   statusIdx:    index('status_idx').on(t.status),
   categoryIdx:  index('category_idx').on(t.category),
   categoryIdIdx: index('category_id_idx').on(t.categoryId),
+  // Public lists filter on status + type (or category) and order by
+  // published_at DESC, created_at DESC (design D18). Same names in
+  // schema-tables/content.ts and migrations-additive.ts — tests/article-list-indexes.test.ts.
+  statusTypePubIdx: index('articles_status_type_pub_idx').on(t.status, t.type, t.publishedAt, t.createdAt),
+  statusCategoryPubIdx: index('articles_status_category_pub_idx').on(t.status, t.categoryId, t.publishedAt, t.createdAt),
 }))
 
 // ─── Article view counter ────────────────────────────────────────────────────

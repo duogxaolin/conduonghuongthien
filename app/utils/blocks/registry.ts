@@ -79,9 +79,11 @@ export const BLOCK_REGISTRY: Record<string, BlockDefinition> = {
       titleLine2: 'hành trình hướng thiện',
       subtitle: 'Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý',
       bgImage: '/assets/hero_banner.jpg',
+      // Today's live labels (design D21). The previous defaults are kept in
+      // `hero-content.ts` OLD_HERO_DEFAULTS and count as "not configured".
       btnAboutText: 'Về chúng tôi',
       btnAboutLink: '/about',
-      btnHelpText: 'Nhận hỗ trợ 24/7',
+      btnHelpText: 'Gửi yêu cầu trợ giúp',
       btnHelpLink: '#tro-giup',
     },
     fields: [

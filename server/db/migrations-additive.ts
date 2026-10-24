@@ -818,6 +818,15 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureIndex(db, database, 'article_translations', 'article_translations_lang_status_idx', 'INDEX `article_translations_lang_status_idx` (`lang_code`, `status`)')
   await ensureIndex(db, database, 'article_translations', 'uk_article_lang', 'UNIQUE INDEX `uk_article_lang` (`article_id`, `lang_code`)')
 
+  // ── Public article lists (design D18) ───────────────────────────────────
+  // `articles.get.ts` / `related.get.ts` filter status + type (or category_id)
+  // and order by published_at DESC, created_at DESC. `CREATE TABLE IF NOT
+  // EXISTS` never adds a key to a table that already exists, so existing
+  // databases get them here. Same names and columns as schema.ts and
+  // schema-tables/content.ts — tests/article-list-indexes.test.ts.
+  await ensureIndex(db, database, 'articles', 'articles_status_type_pub_idx', 'INDEX `articles_status_type_pub_idx` (`status`, `type`, `published_at`, `created_at`)')
+  await ensureIndex(db, database, 'articles', 'articles_status_category_pub_idx', 'INDEX `articles_status_category_pub_idx` (`status`, `category_id`, `published_at`, `created_at`)')
+
   // ── Rút gọn nhãn hotline: "Hotline Tư Vấn 24/7" → "Hotline" ──────────────
   // Seed là insert-only nên đổi seed không cập nhật hàng đã có. Nay UPDATE
   // idempotent theo giá trị cũ — chỉ đè hàng nào còn mang text dài, không chạm

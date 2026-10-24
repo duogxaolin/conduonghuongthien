@@ -1,5 +1,6 @@
 import { runAnalyticsMaintenance } from '../server/services/analytics-maintenance'
 import { runRetentionPass } from '../server/services/retention-scheduler'
+import { runRateLimitPurgePass } from '../server/services/rate-limit-purge-scheduler'
 import { closeDb } from '../server/utils/db'
 
 /**
@@ -31,6 +32,11 @@ const retention = result.status === 'failed'
   ? null
   : await runRetentionPass({ ignoreSchedule: true, trigger: 'cron' })
 
+// Expired rate-limit counters: their own pass and lock, NOT gated on the admin
+// auto-cleanup switch (they are lapsed windows, not data under a retention
+// policy). The in-process timer does the same; this covers RETENTION_SCHEDULER=0.
+const rateLimits = result.status === 'failed' ? null : await runRateLimitPurgePass()
+
 const output = {
   status: result.status,
   processedDays: result.processedDays,
@@ -43,10 +49,12 @@ const output = {
         ran: true,
         status: retention.result.status,
         tables: retention.result.tables,
-        purgedRateLimits: retention.result.purgedRateLimits,
         message: retention.result.message,
       }
     : { ran: false, skipped: retention.reason }),
+  rateLimits: rateLimits && (rateLimits.ran
+    ? { ran: true, purged: rateLimits.result.deleted, bounded: rateLimits.result.bounded }
+    : { ran: false, skipped: rateLimits.reason }),
   scheduler: 'The app also runs this purge in-process. Both paths share a MySQL lock, so cron remains safe to keep.',
 }
 

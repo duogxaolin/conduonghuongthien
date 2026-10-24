@@ -7,13 +7,25 @@
         <p v-if="d.description" class="text-[0.95rem] text-[#4A5545] leading-[1.5]">{{ d.description }}</p>
       </div>
 
-      <div v-if="list.length" class="relative" @mouseenter="stopAutoplay" @mouseleave="startAutoplay">
+      <!-- Tự chuyển slide do `createAutoplayGate` quyết định (D23): dừng khi trỏ
+           chuột / focus bàn phím ở trong / chạm / tab ẩn; nút tạm dừng–tiếp tục
+           luôn hiện; người dùng chọn giảm chuyển động thì không tự chạy, không cuộn mượt. -->
+      <div
+        v-if="list.length"
+        ref="carouselRoot"
+        class="relative"
+        @mouseenter="onPointerEnter"
+        @mouseleave="onPointerLeave"
+        @focusin="onFocusIn"
+        @focusout="onFocusOut"
+        @touchstart.passive="onTouchStart"
+      >
         <!-- Carousel ngang theo đúng "Đa phương tiện" của cand.vn: mỗi slide chỉ có
              ẢNH TRÊN + TÊN BÀI DƯỚI, không card viền, không badge, không excerpt.
              Ảnh bo góc nhẹ, hover zoom. Autoplay + progress + "Kéo sang để xem
              nhanh hơn" ở hàng dưới, nút mũi tên tròn đè hai bên mép carousel. -->
         <div
-          class="flex overflow-x-auto scroll-smooth [scroll-snap-type:x_mandatory] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden gap-[18px] pb-1"
+          class="flex overflow-x-auto scroll-smooth motion-reduce:scroll-auto [scroll-snap-type:x_mandatory] [scrollbar-width:none] [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden gap-[18px] pb-1"
           ref="track"
           @scroll.passive="onScroll"
         >
@@ -41,7 +53,7 @@
         <!-- Nút mũi tên tròn đè hai bên mép (Desktop) -->
         <button
           type="button"
-          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 left-1 sm:left-[-10px] xl:left-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
+          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 left-1 sm:left-[-10px] xl:left-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
           @click="prevSlide"
           :aria-label="t('carousel_prev')"
         >
@@ -49,7 +61,7 @@
         </button>
         <button
           type="button"
-          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 right-1 sm:right-[-10px] xl:right-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741]"
+          class="hidden sm:flex absolute top-[calc(50%-46px)] -translate-y-1/2 right-1 sm:right-[-10px] xl:right-[-20px] w-11 h-11 rounded-full bg-white border border-black/[0.08] shadow-[0_6px_20px_rgba(0,0,0,0.12)] text-[#4A6741] items-center justify-center cursor-pointer z-10 transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
           @click="nextSlide"
           :aria-label="t('carousel_next')"
         >
@@ -58,9 +70,19 @@
 
         <!-- Thanh bấm chuyển tab / slide trực quan bên dưới -->
         <div class="mt-7 flex items-center justify-center gap-3">
+          <!-- Tạm dừng / tiếp tục tự chuyển (WCAG 2.2.2). Nhãn nói việc nút sẽ làm. -->
+          <button
+            ref="autoplayToggle"
+            type="button"
+            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
+            :aria-label="autoplayOn ? t('carousel_pause') : t('carousel_play')"
+            @click="toggleAutoplay"
+          >
+            <i :class="autoplayOn ? 'fa-solid fa-pause' : 'fa-solid fa-play'" class="text-xs" aria-hidden="true"></i>
+          </button>
           <button
             type="button"
-            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed"
+            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
             :disabled="currentIndex <= 0"
             @click="prevSlide"
             :aria-label="t('carousel_prev')"
@@ -78,7 +100,7 @@
               @click="goToSlide(idx)"
               :class="[
                 'p-1.5 rounded-full transition-colors duration-300 cursor-pointer border-none',
-                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]'
+                'focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]'
               ]"
               :aria-label="t('carousel_goto').replace('{n}', String(idx + 1))"
               :aria-current="currentIndex === idx ? 'true' : undefined"
@@ -94,7 +116,7 @@
 
           <button
             type="button"
-            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed"
+            class="w-8 h-8 rounded-full border border-[#D5E1D3] bg-white text-[#4A6741] flex items-center justify-center cursor-pointer transition hover:bg-[#4A6741] hover:text-white hover:border-[#4A6741] shadow-sm disabled:opacity-30 disabled:cursor-not-allowed focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2"
             :disabled="currentIndex >= totalCards - 1"
             @click="nextSlide"
             :aria-label="t('carousel_next')"
@@ -123,6 +145,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from '~/composables/useI18n'
 import BlockLoadError from './BlockLoadError.vue'
+import { createAutoplayGate } from '~/utils/carousel-autoplay'
 
 const { currentLang, t } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
@@ -169,10 +192,49 @@ const list = computed(() =>
 // để lệch. `HTMLElement` vì `ref(null)` trần suy ra `Ref<null>` và không có
 // `scrollLeft` trên kiểu đó.
 const track = ref<HTMLElement | null>(null)
+const carouselRoot = ref<HTMLElement | null>(null)
+const autoplayToggle = ref<HTMLButtonElement | null>(null)
 const progress = ref(0)
 const currentIndex = ref(0)
 const totalCards = computed(() => list.value.length)
 let autoplayTimer: ReturnType<typeof setInterval> | null = null
+
+// ── Chuyển động do người xem kiểm soát (design D23) ──
+// Đọc `prefers-reduced-motion` lúc mount (chỉ trình duyệt): khi bật, không tự
+// chuyển và mọi lượt cuộn bằng script là tức thì (`auto`), không trượt mượt.
+let reducedMotion = false
+const scrollBehavior = (): ScrollBehavior => (reducedMotion ? 'auto' : 'smooth')
+const autoplayOn = ref(true)
+const gate = createAutoplayGate((running) => {
+  if (running) startAutoplay()
+  else stopAutoplay()
+})
+const toggleAutoplay = () => {
+  gate.toggle()
+  autoplayOn.value = gate.autoplayOn
+}
+const onPointerEnter = () => gate.pause('hover')
+const onPointerLeave = () => gate.resume('hover')
+// Một lần chạm = người xem tự điều khiển: dừng, nút chuyển sang "tiếp tục".
+const onTouchStart = () => {
+  gate.takeControl()
+  autoplayOn.value = gate.autoplayOn
+}
+// Focus bàn phím ở trong carousel thì dừng; focus ra ngoài thì chạy lại — trừ khi
+// người xem đã bấm tạm dừng. Focus trên chính nút tạm dừng/tiếp tục không tính:
+// bấm "tiếp tục" bằng bàn phím phải thấy carousel chạy ngay.
+const onFocusIn = (event: FocusEvent) => {
+  if (event.target === autoplayToggle.value) gate.resume('focus')
+  else gate.pause('focus')
+}
+const onFocusOut = (event: FocusEvent) => {
+  const next = event.relatedTarget as Node | null
+  if (!next || !carouselRoot.value?.contains(next)) gate.resume('focus')
+}
+const onVisibilityChange = () => {
+  if (document.visibilityState === 'hidden') gate.pause('hidden')
+  else gate.resume('hidden')
+}
 
 const onScroll = () => {
   const el = track.value
@@ -191,11 +253,11 @@ const scrollByCard = (dir: 1 | -1) => {
   const step = card ? card.offsetWidth + 18 : el.clientWidth * 0.8
   const max = el.scrollWidth - el.clientWidth
   if (dir === 1 && el.scrollLeft >= max - 8) {
-    el.scrollTo({ left: 0, behavior: 'smooth' })
+    el.scrollTo({ left: 0, behavior: scrollBehavior() })
   } else if (dir === -1 && el.scrollLeft <= 8) {
-    el.scrollTo({ left: max, behavior: 'smooth' })
+    el.scrollTo({ left: max, behavior: scrollBehavior() })
   } else {
-    el.scrollBy({ left: dir * step, behavior: 'smooth' })
+    el.scrollBy({ left: dir * step, behavior: scrollBehavior() })
   }
 }
 const nextSlide = () => scrollByCard(1)
@@ -206,7 +268,7 @@ const goToSlide = (idx: number) => {
   if (!el) return
   const card = el.children[0] as HTMLElement | undefined
   const step = card ? card.offsetWidth + 18 : 268
-  el.scrollTo({ left: idx * step, behavior: 'smooth' })
+  el.scrollTo({ left: idx * step, behavior: scrollBehavior() })
   currentIndex.value = idx
 }
 
@@ -222,7 +284,7 @@ const startAutoplay = () => {
     if (!el) return
     const max = el.scrollWidth - el.clientWidth
     if (max > 0 && el.scrollLeft >= max - 8) {
-      el.scrollTo({ left: 0, behavior: 'smooth' })
+      el.scrollTo({ left: 0, behavior: scrollBehavior() })
     } else {
       scrollByCard(1)
     }
@@ -232,12 +294,16 @@ const stopAutoplay = () => {
   if (autoplayTimer) { clearInterval(autoplayTimer); autoplayTimer = null }
 }
 
+// Không có slide thì không có gì để chạy. Trước `gate.init` (lúc mount) cổng
+// không bao giờ mở, nên lượt `immediate` chạy lúc render phía server vô hại.
 watch(list, (newList) => {
   if (newList.length) {
     nextTick(() => {
       onScroll()
-      startAutoplay()
+      gate.resume('empty')
     })
+  } else {
+    gate.pause('empty')
   }
 }, { immediate: true })
 
@@ -247,10 +313,15 @@ onMounted(() => {
   if (currentLang.value !== 'vi' || error.value) {
     void refresh()
   }
-  nextTick(() => {
-    onScroll()
-    if (list.value.length) startAutoplay()
-  })
+  reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  document.addEventListener('visibilitychange', onVisibilityChange)
+  if (document.visibilityState === 'hidden') gate.pause('hidden')
+  gate.init(reducedMotion)
+  autoplayOn.value = gate.autoplayOn
+  nextTick(() => onScroll())
 })
-onUnmounted(() => stopAutoplay())
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+  stopAutoplay()
+})
 </script>

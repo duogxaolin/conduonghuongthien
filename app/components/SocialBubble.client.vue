@@ -415,7 +415,7 @@ function getIconStyle(item: SocialLink) {
     <!-- Nút launcher kích hoạt dạng viên nang hoàn mỹ (Nhỏ gọn, tinh tế, không méo tròn) -->
     <button
       type="button"
-      class="group flex items-center gap-2 bg-gradient-to-r from-[#1e4620] to-[#153317] hover:from-[#153317] hover:to-[#0f2311] text-white px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-full border border-white/20 shadow-[0_8px_24px_rgba(30,70,32,0.28)] hover:shadow-[0_12px_28px_rgba(30,70,32,0.38)] hover:-translate-y-0.5 cursor-pointer transition-all duration-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] focus-visible:ring-offset-2 motion-reduce:transition-none"
+      class="group flex items-center gap-2 bg-gradient-to-r from-[#1e4620] to-[#153317] hover:from-[#153317] hover:to-[#0f2311] text-white px-3.5 py-2 sm:px-4 sm:py-2.5 rounded-full border border-white/20 shadow-[0_8px_24px_rgba(30,70,32,0.28)] hover:shadow-[0_12px_28px_rgba(30,70,32,0.38)] hover:-translate-y-0.5 cursor-pointer transition-all duration-200 active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#1e4620] motion-reduce:transition-none"
       :class="{ 'ring-2 ring-[#7CB342] shadow-[0_12px_28px_rgba(30,70,32,0.45)]': open }"
       :aria-expanded="open"
       aria-haspopup="dialog"

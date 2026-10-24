@@ -112,7 +112,7 @@ defineExpose({ close: () => { isOpen.value = false } })
   <div ref="rootRef" class="relative">
     <button
       type="button"
-      class="relative flex items-center justify-center w-9 h-9 rounded-full bg-[#F8FAF7] border border-[#E2E8DF] text-[#385130] transition-all hover:bg-[#EEF2EC] hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+      class="relative flex items-center justify-center w-9 h-9 rounded-full bg-[#F8FAF7] border border-[#E2E8DF] text-[#385130] transition-all hover:bg-[#EEF2EC] hover:border-[#CFDDC8] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
       :aria-expanded="isOpen"
       aria-haspopup="menu"
       :aria-label="unreadCount > 0 ? `Thông báo, ${unreadCount} chưa đọc` : 'Thông báo'"
@@ -137,7 +137,7 @@ defineExpose({ close: () => { isOpen.value = false } })
         <button
           v-if="unreadCount > 0"
           type="button"
-          class="text-[0.75rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+          class="text-[0.75rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded"
           @click="markAllRead"
         >Đánh dấu đã đọc</button>
       </div>

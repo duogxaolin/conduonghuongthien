@@ -1,24 +1,30 @@
 <template>
   <div v-if="clientMounted">
-    <!-- Chat dialog -->
+    <!-- Chat dialog.
+         `visibility` is in the transition only when CLOSING (hidden after the
+         fade-out). Opening must make it visible at once: during a visibility
+         transition the dialog is still `hidden` at its start, and `focus()` on a
+         hidden tree is silently ignored — focus stayed behind the dialog on
+         phones (design D24, tests/e2e/chat-widget-focus.spec.ts; same rule as
+         DefaultMobileDrawer.vue). Header buttons avoid `transition-all` for the
+         same reason: they would transition their inherited visibility. -->
     <div
       id="public-chatbot-dialog"
       ref="chatbotDialog"
-      class="fixed inset-0 w-screen h-[100dvh] bg-[#f0f4ef] flex flex-col z-[10008] overflow-hidden invisible opacity-0 pointer-events-none translate-y-[20px] transition-[opacity,transform,visibility] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:inset-auto md:fixed md:right-5 md:bottom-5 md:w-[min(460px,calc(100vw-40px))] md:h-[min(680px,calc(100dvh-100px))] lg:w-[520px] lg:h-[min(760px,calc(100dvh-110px))] md:rounded-2xl md:shadow-[0_25px_60px_rgba(0,0,0,0.2)] md:border md:border-black/10 md:translate-y-3 md:scale-[0.96]"
-      :class="{ '!visible !opacity-100 !pointer-events-auto !translate-y-0 md:!scale-100': isChatbotOpen }"
+      class="fixed inset-0 w-screen h-[100dvh] bg-[#f0f4ef] flex flex-col z-[10008] overflow-hidden invisible opacity-0 pointer-events-none translate-y-[20px] duration-300 ease-[cubic-bezier(0.16,1,0.3,1)] motion-reduce:transition-none md:inset-auto md:fixed md:right-5 md:bottom-5 md:w-[min(460px,calc(100vw-40px))] md:h-[min(680px,calc(100dvh-100px))] lg:w-[520px] lg:h-[min(760px,calc(100dvh-110px))] md:rounded-2xl md:shadow-[0_25px_60px_rgba(0,0,0,0.2)] md:border md:border-black/10 md:translate-y-3 md:scale-[0.96]"
+      :class="isChatbotOpen ? '!visible !opacity-100 !pointer-events-auto !translate-y-0 md:!scale-100 transition-[opacity,transform]' : 'transition-[opacity,transform,visibility]'"
       :style="keyboardViewportStyle"
       role="dialog"
       aria-modal="true"
       aria-labelledby="public-chatbot-title"
       :aria-hidden="!isChatbotOpen"
       :inert="!isChatbotOpen"
-      @keydown="handleChatbotDialogKeydown"
     >
       <!-- Header -->
       <div class="flex-shrink-0 bg-[#1e4620] px-4 pt-[calc(env(safe-area-inset-top,0px)+12px)] pb-3 md:pt-3 md:rounded-t-2xl">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
-            <button class="md:hidden w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[1rem] border-none cursor-pointer transition-all active:scale-90" @click="closeChatbot" :aria-label="t('cw_back')">
+            <button class="md:hidden w-10 h-10 rounded-full bg-white/10 flex items-center justify-center text-white/90 text-[1rem] border-none cursor-pointer transition-[background-color,transform] active:scale-90" @click="closeChatbot" :aria-label="t('cw_back')">
               <i class="fa-solid fa-arrow-left"></i>
             </button>
             <div class="w-10 h-10 rounded-full bg-white/15 border-2 border-white/30 flex items-center justify-center flex-shrink-0">
@@ -34,7 +40,7 @@
           </div>
           <div class="flex items-center gap-2 md:gap-1.5">
             <button
-              class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90"
+              class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90"
               @click="isConversationListOpen = !isConversationListOpen"
               :aria-expanded="isConversationListOpen"
               :title="t('cw_history')"
@@ -42,15 +48,15 @@
             >
               <i class="fa-solid fa-clock-rotate-left text-[0.9rem] md:text-[0.8rem]"></i>
             </button>
-            <button class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="clearChatHistory" :title="t('cw_clear')" :aria-label="t('cw_clear')">
+            <button class="w-10 h-10 md:w-8 md:h-8 rounded-full bg-white/10 border-none text-white/80 flex items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90" @click="clearChatHistory" :title="t('cw_clear')" :aria-label="t('cw_clear')">
               <i class="fa-solid fa-broom text-[0.9rem] md:text-[0.8rem]"></i>
             </button>
             <!-- Expand: desktop/iPad only. The full page is a two-column layout
                  that has no room to be useful on a phone. -->
-            <button class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90" @click="openFullPage" :title="t('cw_expand')" :aria-label="t('cw_expand')">
+            <button class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90" @click="openFullPage" :title="t('cw_expand')" :aria-label="t('cw_expand')">
               <i class="fa-solid fa-up-right-and-down-left-from-center text-[0.75rem]"></i>
             </button>
-            <button ref="chatCloseButton" class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-all hover:bg-white/20 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50" @click="closeChatbot" aria-label="Đóng">
+            <button ref="chatCloseButton" class="hidden md:flex w-8 h-8 rounded-full bg-white/10 border-none text-white/80 items-center justify-center cursor-pointer transition-[background-color,transform] hover:bg-white/20 active:scale-90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white/50" @click="closeChatbot" aria-label="Đóng">
               <i class="fa-solid fa-xmark text-[0.9rem]"></i>
             </button>
           </div>
@@ -151,7 +157,7 @@
                   <button
                     v-if="source.entryId !== null"
                     type="button"
-                    class="ml-1 inline-flex items-center gap-0.5 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-1.5 py-px text-[0.62rem] font-semibold text-[#1e4620] cursor-pointer transition-colors hover:bg-[#1e4620] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                    class="ml-1 inline-flex items-center gap-0.5 rounded-full border border-[#d4e4d2] bg-[#f0f6ef] px-1.5 py-px text-[0.62rem] font-semibold text-[#1e4620] cursor-pointer transition-colors hover:bg-[#1e4620] hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
                     :aria-expanded="isSourceExpanded(source.entryId)"
                     @click="toggleSourceDetail(source.entryId)"
                   >
@@ -163,7 +169,7 @@
                     <p v-if="sourceDetailOf(source.entryId)?.status === 'loading'" class="m-0 text-[0.64rem] text-[#667768]" role="status" aria-live="polite">Đang tải nội dung đầy đủ…</p>
                     <div v-else-if="sourceDetailOf(source.entryId)?.status === 'error'" role="alert">
                       <p class="m-0 text-[0.64rem] text-[#b42318]">Không tải được nội dung đầy đủ.</p>
-                      <button type="button" class="mt-1 rounded-full bg-[#1e4620] px-2 py-0.5 text-[0.62rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]" @click="retrySourceDetail(source.entryId)">Thử lại</button>
+                      <button type="button" class="mt-1 rounded-full bg-[#1e4620] px-2 py-0.5 text-[0.62rem] font-bold text-white border-none cursor-pointer hover:bg-[#153317] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-1" @click="retrySourceDetail(source.entryId)">Thử lại</button>
                     </div>
                     <template v-else-if="sourceDetailOf(source.entryId)?.status === 'ready'">
                       <p v-if="sourceDetailOf(source.entryId)?.question" class="m-0 mb-1 text-[0.66rem] font-bold text-[#1e4620]">{{ sourceDetailOf(source.entryId)?.question }}</p>
@@ -309,7 +315,7 @@
       </div>
       <button
         ref="chatToggleButton"
-        class="chatbot-toggle-btn flex bg-[#1e4620] text-white border border-white/20 px-4 py-2.5 pl-3.5 rounded-[50px] shadow-[0_8px_24px_rgba(30,70,32,0.25)] cursor-pointer items-center gap-2 font-bold text-[0.88rem] transition-all hover:-translate-y-0.5 hover:bg-[#153317] hover:shadow-[0_12px_30px_rgba(30,70,32,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] focus-visible:ring-offset-2 motion-reduce:transition-none"
+        class="chatbot-toggle-btn flex bg-[#1e4620] text-white border border-white/20 px-4 py-2.5 pl-3.5 rounded-[50px] shadow-[0_8px_24px_rgba(30,70,32,0.25)] cursor-pointer items-center gap-2 font-bold text-[0.88rem] transition-all hover:-translate-y-0.5 hover:bg-[#153317] hover:shadow-[0_12px_30px_rgba(30,70,32,0.35)] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-[#1e4620] motion-reduce:transition-none"
         aria-controls="public-chatbot-dialog"
         :aria-expanded="isChatbotOpen"
         @click="toggleChatbot"
@@ -326,6 +332,7 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted, nextTick, watch, useId } from 'vue'
 import { leadContactInvalid, leadFieldId } from '~/utils/form-a11y'
+import { createFocusReturn, inertOutside, trapTabTarget, visibleTabbables } from '~/utils/focus-return'
 import { useChatbot, type StoredConversation, type ChatMessage } from '~/composables/useChatbot'
 import { useChatAutoScroll } from '~/composables/useChatAutoScroll'
 import { useKeyboardViewport } from '~/composables/useKeyboardViewport'
@@ -461,23 +468,64 @@ watch(isSubmitting, (submitting) => {
   if (submitting) void scrollChatBottom(true)
 })
 
+// ─── Dialog focus (design D24, same helpers as ConfirmModal) ─────────────────
+// Open: remember the opener (the bottom-nav button on phones, the launcher on
+// desktop), make the page behind `inert`, focus the first control that is
+// actually shown at this width. Close: release the page FIRST (focus() on an
+// inert opener does nothing), then return focus to the opener.
+const focusReturn = createFocusReturn((element) => element === document.body)
+let releaseOutside: (() => void) | null = null
+const releasePage = () => {
+  releaseOutside?.()
+  releaseOutside = null
+}
+
+/** Window-level while open: Escape from anywhere, and Tab wraps inside the dialog
+ *  even when focus starts outside it. */
+const onWindowKeydown = (event: KeyboardEvent) => {
+  if (!isChatbotOpen.value) return
+  if (event.key === 'Escape') {
+    void closeChatbot()
+    return
+  }
+  if (event.key !== 'Tab' || !chatbotDialog.value) return
+  const focusable = visibleTabbables<HTMLElement>(chatbotDialog.value)
+  const target = trapTabTarget(focusable.length, focusable.indexOf(document.activeElement as HTMLElement), event.shiftKey)
+  if (target === null) return
+  event.preventDefault()
+  focusable[target]?.focus()
+}
+
 const openChatbot = async () => {
+  if (!isChatbotOpen.value) focusReturn.remember(document.activeElement as HTMLElement | null)
   isChatbotOpen.value = true
   chatTeaserVisible.value = false
   teaserDismissed = true
   stopTeaserCycle()
   if (quickQuestionState.value === 'error' || quickQuestionState.value === 'empty') loadQuickQuestions()
   await nextTick()
-  chatCloseButton.value?.focus()
+  if (chatbotDialog.value) {
+    if (!releaseOutside) releaseOutside = inertOutside(chatbotDialog.value)
+    window.removeEventListener('keydown', onWindowKeydown)
+    window.addEventListener('keydown', onWindowKeydown)
+    visibleTabbables<HTMLElement>(chatbotDialog.value)[0]?.focus()
+  }
   releaseAnchor()
   scrollChatBottom(true)
 }
 
 const closeChatbot = async () => {
+  const active = document.activeElement
+  // Only take focus back if it is still in the dialog (or nowhere): a visitor who
+  // already moved on is not yanked back.
+  const shouldRestore = !active || active === document.body || !!chatbotDialog.value?.contains(active)
   isChatbotOpen.value = false
   isConversationListOpen.value = false
+  window.removeEventListener('keydown', onWindowKeydown)
+  releasePage()
   await nextTick()
-  chatToggleButton.value?.focus()
+  // No remembered opener (opened programmatically): the launcher, where shown.
+  if (!focusReturn.restore(shouldRestore) && shouldRestore) chatToggleButton.value?.focus()
 }
 
 const toggleChatbot = () => {
@@ -489,26 +537,11 @@ const toggleChatbot = () => {
 // without owning any of its state.
 defineExpose({ openChatbot, closeChatbot, toggleChatbot, isChatbotOpen })
 
-const openFullPage = () => {
-  isChatbotOpen.value = false
+// Same close path as every other exit, so the page is released and focus goes
+// back before the route changes.
+const openFullPage = async () => {
+  await closeChatbot()
   navigateTo('/assistant')
-}
-
-const handleChatbotDialogKeydown = (event: KeyboardEvent) => {
-  if (event.key === 'Escape') { closeChatbot(); return }
-  if (event.key !== 'Tab' || !chatbotDialog.value) return
-  const focusable = [...chatbotDialog.value.querySelectorAll<HTMLElement>('button:not([disabled]), a[href], input:not([disabled]), textarea:not([disabled])')]
-    .filter(element => element.tabIndex !== -1)
-  if (!focusable.length) return
-  const first = focusable[0]!
-  const last = focusable[focusable.length - 1]!
-  if (event.shiftKey && document.activeElement === first) {
-    event.preventDefault()
-    last.focus()
-  } else if (!event.shiftKey && document.activeElement === last) {
-    event.preventDefault()
-    first.focus()
-  }
 }
 
 // The dialog is full-screen on mobile; leaving the page scrollable behind it
@@ -580,6 +613,8 @@ onMounted(() => {
 
 onUnmounted(() => {
   stopTeaserCycle()
+  window.removeEventListener('keydown', onWindowKeydown)
+  releasePage()
   if (typeof document !== 'undefined') document.body.style.overflow = ''
 })
 </script>
