@@ -161,16 +161,81 @@ test('the statement is ordered and limited so one run cannot lock the table', as
   assert.match(pool.calls[0].sql, /ORDER BY id LIMIT \?$/)
 })
 
-test('lapsed rate-limit buckets are swept in the same nightly pass', async () => {
-  // Otherwise the table keeps one row per source IP for the life of the deploy.
+// ─── Rate-limit counters: their own pass, not a tail of this one ─────────────
+//
+// The counter sweep used to be the LAST statement of `runDataRetention`: a scope
+// that threw before it returned 'failed' and skipped it, and with auto-cleanup
+// switched off the pass never ran at all — the table only grew (design D16).
+
+/** A pool that grants the named lock and models the counter DELETE. */
+function lockingCounterPool(affected: number[]) {
+  const statements: string[] = []
+  const queue = [...affected]
+  const connection = {
+    release() {},
+    async query(sql: string, _params: unknown[] = []) {
+      statements.push(sql)
+      if (sql.startsWith('SELECT GET_LOCK')) return [[{ acquired: 1 }]]
+      if (sql.startsWith('SELECT RELEASE_LOCK')) return [[{ released: 1 }]]
+      if (sql.startsWith('DELETE FROM rate_limit_counters')) return [{ affectedRows: queue.shift() ?? 0 }]
+      throw new Error(`unexpected statement: ${sql}`)
+    },
+  }
+  return { statements, async getConnection() { return connection } }
+}
+
+test('the retention pass no longer touches rate-limit counters', async () => {
   const pool = fakePool({ activity_logs: [0], rate_limit_counters: [42] })
   const result = await runDataRetention({ now: NOW, activityLogDays: 365, connection: pool as never })
 
-  const sweep = pool.calls.find(c => c.sql.includes('rate_limit_counters'))
-  assert.ok(sweep, 'expired lockout counters are never removed')
-  assert.match(sweep!.sql, /window_expires_at <= \?/)
-  assert.equal((sweep!.params[0] as Date).toISOString(), NOW.toISOString())
-  assert.equal(result.purgedRateLimits, 42)
+  assert.equal(result.status, 'success')
+  assert.ok(!pool.calls.some(c => c.sql.includes('rate_limit_counters')), 'the counter sweep is still a tail of the retention pass')
+  assert.ok(!('purgedRateLimits' in result), 'a field that is always 0 would read as "nothing to purge"')
+})
+
+test('a failed retention run leaves the separate, separately locked counter purge able to run', async () => {
+  const { runRateLimitPurgePass, RATE_LIMIT_PURGE_LOCK } = await import('../server/services/rate-limit-purge-scheduler')
+  const failing = {
+    calls: [] as string[],
+    async getConnection() {
+      return {
+        release() {},
+        query: async (sql: string) => {
+          failing.calls.push(sql)
+          throw new Error('Lock wait timeout exceeded')
+        },
+      }
+    },
+    async end() {},
+  }
+  const retention = await runDataRetention({ now: NOW, activityLogDays: 365, connection: failing as never })
+  assert.equal(retention.status, 'failed')
+
+  // The purge is its own pass under its own lock: the failure above has nothing
+  // to skip, and the next tick of the purge timer still drains the table.
+  const pool = lockingCounterPool([5000, 1234])
+  const purge = await runRateLimitPurgePass({ pool: pool as never, now: () => NOW.getTime() })
+  assert.equal(purge.ran, true)
+  assert.equal(purge.ran && purge.result.deleted, 6234)
+  assert.ok(pool.statements.some(sql => sql.startsWith('SELECT GET_LOCK')), 'the purge must hold a named lock')
+  assert.ok(RATE_LIMIT_PURGE_LOCK !== 'cdkt:data:retention', 'sharing the retention lock would make a long purge skip the counter sweep')
+})
+
+test('the counter purge runs whether or not auto-cleanup is switched on', () => {
+  const service = readFileSync(new URL('../server/services/rate-limit-purge-scheduler.ts', import.meta.url), 'utf8')
+    .replace(/\/\*[\s\S]*?\*\//g, '').replace(/\/\/.*$/gm, '')
+  // The admin switch lives in the retention policy; the purge must never read it.
+  assert.doesNotMatch(service, /retention-policy|resolveRetentionPolicy|autoEnabled/)
+  assert.match(service, /withNamedLock\(/)
+  assert.match(service, /LOCK_TIMEOUT_SECONDS = 0/)
+  assert.equal((service.match(/\.unref\?\.\(\)/g) ?? []).length, 2, 'both the interval and the warm-up must be unref\'d')
+
+  const plugin = readFileSync(new URL('../server/plugins/retention-scheduler.ts', import.meta.url), 'utf8')
+  assert.match(plugin, /startRateLimitPurgeScheduler\(\)/, 'nothing starts the counter purge timer')
+  // The cron entry point covers deployments that run RETENTION_SCHEDULER=0.
+  // Behaviour of that path: tests/analytics-maintenance-script.test.ts.
+  const script = readFileSync(new URL('../scripts/analytics-maintenance.ts', import.meta.url), 'utf8')
+  assert.match(script, /await reportRateLimitPurge\(\)/)
 })
 
 test('a database failure is reported rather than thrown at cron', async () => {
@@ -321,12 +386,15 @@ test('the nightly script runs retention as well as analytics', () => {
   assert.match(script, /ignoreSchedule: true/)
   assert.match(script, /trigger: 'cron'/)
   assert.doesNotMatch(script, /force: true/)
-  // A stale aggregate must not stop a retention purge that is a policy obligation.
-  assert.match(script, /result\.status === 'failed'\s*\?\s*null/)
-  assert.match(script, /retention\.result\.status === 'failed'/)
+  // A stale aggregate must not stop a retention purge that is a policy obligation:
+  // only a FAILED analytics run (or one that threw) skips retention.
+  assert.match(script, /const analyticsFailed = !result \|\| result\.status === 'failed'/)
+  assert.match(script, /analyticsFailed\s*\?\s*null/)
+  assert.match(script, /retentionRun\?\.status === 'failed'/)
   // An open pool keeps the event loop alive, so the cron job would print its
-  // result and then hang instead of exiting.
-  assert.match(script, /closeDb\(\)/)
+  // result and then hang instead of exiting — hence `finally`. Behaviour of every
+  // failure path: tests/analytics-maintenance-script.test.ts.
+  assert.match(script, /finally \{[\s\S]*await closeDb\(\)/)
 })
 
 // ─── chat_sessions scope ──────────────────────────────────────────────────────

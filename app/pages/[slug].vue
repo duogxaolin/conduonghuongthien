@@ -35,16 +35,20 @@
       />
     </template>
 
-    <!-- Branch 1: Page Builder page (existing behavior) — render blocks khi có -->
-    <PageRenderer
-      v-else-if="isPageBranch && (pending || loadError || blocks.length)"
-      :blocks="blocks"
-      :interactive="isPreview"
-      :selected-id="selectedId"
-      :pending="pending"
-      :load-error="loadError"
-      :on-retry="retryLookup"
-    />
+    <!-- Branch 1: Page Builder page (existing behavior) — render blocks khi có.
+         Một trang đúng một <h1> (D22): khi không khối nào tự có <h1> (hero),
+         trang đặt một <h1> cho trình đọc màn hình mang tiêu đề trang. -->
+    <template v-else-if="isPageBranch && (pending || loadError || blocks.length)">
+      <h1 v-if="blocks.length && !pageHasOwnH1" class="sr-only">{{ page?.title }}</h1>
+      <PageRenderer
+        :blocks="blocks"
+        :interactive="isPreview"
+        :selected-id="selectedId"
+        :pending="pending"
+        :load-error="loadError"
+        :on-retry="retryLookup"
+      />
+    </template>
 
     <!-- Page exists but has no visible blocks yet. -->
     <section v-else-if="isPageBranch && page" class="section">
@@ -72,6 +76,7 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
 import { resolveCategoryRoute } from '~/utils/category-route-decision'
+import { blocksRenderOwnH1 } from '~/utils/blocks/page-heading'
 // Import tường minh: tên tự động của Nuxt là `BlocksBlockLoadError` — `<BlockLoadError>`
 // không import sẽ dựng ra thẻ rỗng (đã gặp ở `news/[category]/index.vue`).
 import BlockLoadError from '~/components/blocks/BlockLoadError.vue'
@@ -287,6 +292,7 @@ onMounted(() => {
 })
 const page = computed(() => data.value?.page || null)
 const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
+const pageHasOwnH1 = computed(() => blocksRenderOwnH1(blocks.value))
 
 useSeoMeta({
   title: () => {

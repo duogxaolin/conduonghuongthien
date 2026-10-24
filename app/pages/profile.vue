@@ -98,7 +98,7 @@
                     type="text"
                     :maxlength="DISPLAY_NAME_MAX_LENGTH"
                     autocomplete="nickname"
-                    class="min-w-0 flex-1 rounded-lg border border-[#E2E8DF] bg-white px-3.5 py-2.5 text-[0.9rem] text-[#1E251C] outline-none transition-colors focus:border-[#7CB342] focus:ring-2 focus:ring-[#7CB342]/30"
+                    class="min-w-0 flex-1 rounded-lg border border-[#E2E8DF] bg-white px-3.5 py-2.5 text-[0.9rem] text-[#1E251C] outline-none transition-colors focus:border-[#4A6741] focus:ring-2 focus:ring-[#4A6741]/30"
                     :placeholder="t('profile_display_name_ph')"
                   />
                   <button
@@ -169,7 +169,7 @@
                   role="switch"
                   :aria-checked="emailNotificationsOn"
                   :disabled="savingEmailPref || !reader.email"
-                  class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                  class="relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                   :class="emailNotificationsOn ? 'bg-[#4A6741]' : 'bg-[#CFDDC8]'"
                   @click="toggleEmailNotifications"
                 >

@@ -40,6 +40,45 @@ export function trapTabTarget(count: number, activeIndex: number, backwards: boo
   return null
 }
 
+/**
+ * Một bộ chọn "có thể Tab tới" dùng chung cho hộp thoại công khai (design D24).
+ * Bản viết tay trong `ChatWidget` thiếu `select`, `summary` và phần tử có
+ * `tabindex` dương/0 — bẫy Tab bỏ sót chúng, focus lọt ra trang phía sau.
+ */
+export const TABBABLE_SELECTOR = [
+  'a[href]',
+  'button:not([disabled])',
+  'input:not([disabled]):not([type="hidden"])',
+  'select:not([disabled])',
+  'textarea:not([disabled])',
+  'summary',
+  '[tabindex]:not([tabindex="-1"])',
+].join(', ')
+
+/** Phần DOM tối thiểu để xét một phần tử có đang hiện và Tab tới được không. */
+export interface TabbableLike {
+  tabIndex: number
+  offsetParent: unknown
+  getClientRects?: () => { length: number }
+  hasAttribute: (name: string) => boolean
+}
+
+/**
+ * Đang hiện + Tab tới được. `offsetParent === null` là "không được vẽ"
+ * (`display:none`, kể cả qua lớp `hidden md:flex` ở màn hẹp) — trừ phần tử
+ * `position: fixed`, vốn không có offsetParent dù đang hiện, nên kiểm thêm
+ * `getClientRects()`. `tabindex="-1"` (ô honeypot) và `disabled` bị loại.
+ */
+export function isVisibleTabbable(el: TabbableLike): boolean {
+  if (el.tabIndex < 0 || el.hasAttribute('disabled')) return false
+  return el.offsetParent !== null || (el.getClientRects?.().length ?? 0) > 0
+}
+
+/** Các phần tử Tab tới được đang hiện trong `root`, theo thứ tự tài liệu. */
+export function visibleTabbables<T extends TabbableLike>(root: { querySelectorAll: (selector: string) => ArrayLike<T> }): T[] {
+  return Array.from(root.querySelectorAll(TABBABLE_SELECTOR)).filter(isVisibleTabbable)
+}
+
 /** Phần DOM tối thiểu `inertOutside` cần — kiểm được bằng đối tượng giả, không cần DOM thật. */
 export interface InertNodeLike {
   tagName: string

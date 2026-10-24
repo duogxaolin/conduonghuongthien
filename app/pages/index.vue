@@ -2,8 +2,9 @@
   <div>
     <!-- h1 sr-only cho trang chủ khi render Page blocks — block mở bằng <h2>
          (SectionBar/section header), nên cần <h1> cha để trình tự tiêu đề hợp
-         lệ. Visually hidden, chỉ trình đọc màn hình + SEO nhìn thấy. -->
-    <h1 v-if="blocks.length" class="sr-only">{{ page?.seoTitle || t('home_seo_title') }}</h1>
+         lệ. Visually hidden, chỉ trình đọc màn hình + SEO nhìn thấy. Chỉ khi
+         không block nào tự có <h1> (hero) — một trang đúng một <h1> (D22). -->
+    <h1 v-if="blocks.length && !pageHasOwnH1" class="sr-only">{{ page?.seoTitle || t('home_seo_title') }}</h1>
     <PageRenderer
       v-if="pending || loadError || blocks.length"
       :blocks="blocks"
@@ -28,6 +29,7 @@
 import { computed, onMounted, watch } from 'vue'
 import { useI18n } from '~/composables/useI18n'
 import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
+import { blocksRenderOwnH1 } from '~/utils/blocks/page-heading'
 
 const { currentLang, t } = useI18n()
 
@@ -65,6 +67,7 @@ const page = computed(() => data.value?.page || null)
 // pushed via postMessage override the fetched ones (see usePagePreview).
 const { isPreview, previewBlocks, selectedId } = usePagePreview()
 const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
+const pageHasOwnH1 = computed(() => blocksRenderOwnH1(blocks.value))
 
 // SEO: prefer page meta, fall back to the original homepage defaults.
 useSeoMeta({

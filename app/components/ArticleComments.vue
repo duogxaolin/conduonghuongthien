@@ -111,7 +111,7 @@
                   <button
                     v-if="isSignedIn && enabled"
                     type="button"
-                    class="text-[0.82rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+                    class="text-[0.82rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded"
                     @click="toggleReply(comment.id)"
                   >
                     <i class="fa-solid fa-reply mr-1" aria-hidden="true"></i>{{ t('reply') || 'Trả lời' }}
@@ -120,7 +120,7 @@
                        neo `#qa-<id>` của /qa-documents. -->
                   <button
                     type="button"
-                    class="text-[0.82rem] font-semibold text-[#5A6C58] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+                    class="text-[0.82rem] font-semibold text-[#5A6C58] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded"
                     @click="copyLink(comment.id)"
                   >
                     <i class="fa-solid fa-link mr-1" aria-hidden="true"></i>
@@ -162,7 +162,7 @@
                         <div class="mt-1.5 flex flex-wrap items-center gap-3">
                           <button
                             type="button"
-                            class="text-[0.8rem] font-semibold text-[#5A6C58] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+                            class="text-[0.8rem] font-semibold text-[#5A6C58] hover:text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded"
                             @click="copyLink(reply.id)"
                           >
                             <i class="fa-solid fa-link mr-1" aria-hidden="true"></i>
@@ -229,7 +229,7 @@
             </div>
             <p class="m-0 text-[0.95rem] leading-[1.6] text-[#2C3529] whitespace-pre-line break-words">{{ p.body }}</p>
             <div v-if="p.status === 'error'" class="mt-2 flex gap-3">
-              <button type="button" class="text-[0.82rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded" @click="retryPendingComment(p.tempId)">
+              <button type="button" class="text-[0.82rem] font-semibold text-[#4A6741] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded" @click="retryPendingComment(p.tempId)">
                 <i class="fa-solid fa-rotate-right mr-1" aria-hidden="true"></i>{{ t('retry') || 'Thử lại' }}
               </button>
               <button type="button" class="text-[0.82rem] font-semibold text-[#5A6C58] hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#E2A0A0] rounded" @click="dismissPendingComment(p.tempId)">

@@ -263,6 +263,7 @@
 import { computed } from 'vue'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
+import { usePublicMostRead } from '~/composables/usePublicArticleList'
 import type { PublicArticleListItem } from '~/utils/public-types'
 
 const { t, currentLang } = useI18n()
@@ -297,16 +298,9 @@ const { data, pending, error, refresh } = await useAsyncData(
 const newsList = computed(() => (data.value as { articles?: PublicArticleListItem[] })?.articles || [])
 const loadError = computed(() => !!error.value || (data.value as { ok?: boolean })?.ok === false)
 
-const { data: mostReadData, pending: mostReadPending } = await useAsyncData(
-  () => 'news-category-most-read',
-  () => ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; articles: Array<{ id: number; title: string; slug: string; excerpt: string | null; featuredImage: string | null; thumbnailUrl?: string | null; publishedAt: string | null }> }>)(`/api/public/articles`, {
-    query: { type: 'news', sort: 'views', limit: 6 },
-  }),
-  {
-    lazy: true,
-    default: () => ({ ok: true, articles: [], pagination: {} }),
-  },
-)
-
-const mostRead = computed(() => (mostReadData.value as { articles?: PublicArticleListItem[] })?.articles || [])
+// "Đọc nhiều": the shared loader passes `lang` and keys `useAsyncData` on the
+// full query (design D25). The hand-written copy used the constant key
+// 'news-category-most-read' and no `lang`, so the first language fetched in a
+// session was replayed to every later visit, in every language.
+const { mostRead, mostReadPending } = usePublicMostRead('news', currentLang)
 </script>

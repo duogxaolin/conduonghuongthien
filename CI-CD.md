@@ -349,6 +349,63 @@ curl -N -s -X POST https://<domain>/api/public/chatbot \
 Thiếu `X-Forwarded-For` thì mọi khách trông như cùng một địa chỉ, và giới hạn tần
 suất theo IP gộp thành một bucket chung cho cả internet.
 
+**IP thật sau Cloudflare — BẮT BUỘC khi tên miền đi qua Cloudflare (proxy cam).**
+Với Cloudflare đứng trước nginx, `$remote_addr` của nginx là IP **edge của
+Cloudflare**, và `$proxy_add_x_forwarded_for` đặt chính IP đó ở cuối
+`X-Forwarded-For`. App (`server/utils/client-ip.ts`) đọc header phải→trái và dừng ở
+hop đầu tiên không nằm trong `TRUSTED_PROXY_IPS` (`172.16.0.0/12` chỉ phủ dải
+docker) — tức là dừng ở IP edge. Hệ quả **im lặng**: mọi khách sau cùng một edge
+dùng chung bucket giới hạn tần suất (đăng nhập, form, chat) và chung trần lượt xem
+bài **60 lượt / 10 phút** (`view.post.ts`) — lượt xem thật bị đếm thiếu; nhật ký ghi
+IP edge thay vì IP khách. Sửa ở **nginx** (không đổi `client-ip.ts`), mô-đun
+`ngx_http_realip_module` (aaPanel có sẵn):
+
+```bash
+# Sinh danh sách dải IP Cloudflare từ nguồn chính thức (chạy lại khi Cloudflare đổi dải).
+# Ghi ra tệp tạm, kiểm rồi mới thay: một lần curl hỏng giữa chừng không được để lại
+# tệp rỗng/cụt (nginx sẽ lặng lẽ thôi tin Cloudflare, hoặc tin nhầm dải).
+set -euo pipefail
+out=/www/server/nginx/conf/cloudflare-realip.conf
+tmp="$(mktemp)"
+{ curl -fsS https://www.cloudflare.com/ips-v4; echo; curl -fsS https://www.cloudflare.com/ips-v6; } \
+  | sed '/^\s*$/d; s/.*/set_real_ip_from &;/' > "$tmp"
+total=$(grep -c '^set_real_ip_from ' "$tmp" || true)
+malformed=$(grep -cvE '^set_real_ip_from [0-9A-Fa-f:.]+/[0-9]{1,3};$' "$tmp" || true)
+if [ "$total" -lt 10 ] || [ "$malformed" -ne 0 ]; then
+  echo "Danh sách Cloudflare rỗng/không hợp lệ ($total dòng, $malformed dòng lạ) — giữ tệp cũ" >&2
+  rm -f "$tmp"; exit 1
+fi
+install -m 644 "$tmp" "$out" && rm -f "$tmp"
+nginx -t && nginx -s reload
+```
+
+```nginx
+# Trong khối server { } của site (trước các proxy_set_header):
+include /www/server/nginx/conf/cloudflare-realip.conf;
+real_ip_header CF-Connecting-IP;
+```
+
+Chỉ kết nối đến **từ dải Cloudflare** mới được thay `$remote_addr` bằng
+`CF-Connecting-IP`; ai gọi thẳng vào IP gốc vẫn mang địa chỉ thật của họ, nên không
+giả được header. Sau đó `X-Real-IP $remote_addr` và `$proxy_add_x_forwarded_for` tự
+mang IP khách. `nginx -t && nginx -s reload`.
+
+**Không nên** "sửa" bằng cách thêm dải Cloudflare vào `TRUSTED_PROXY_IPS`: `client-ip.ts`
+từ chối CIDR IPv6 (Cloudflare có 7 dải IPv6), nên khách IPv6 vẫn ra IP edge; và
+nginx vẫn ghi IP edge vào access log, `X-Real-IP` vẫn sai — chỉ app được vá một nửa.
+Khôi phục IP ở nginx sửa tất cả cùng lúc.
+
+Kiểm tra (làm trước khi merge thay đổi có trần lượt xem, và sau mỗi lần đổi proxy):
+1. Lấy IP của chính mình: `curl -s https://<domain>/cdn-cgi/trace | grep '^ip='`.
+2. Đăng xuất admin rồi xem dòng mới nhất:
+   `SELECT created_at, JSON_UNQUOTE(JSON_EXTRACT(meta,'$.ip')) AS ip FROM activity_logs WHERE action='logout' ORDER BY id DESC LIMIT 5;`
+   — phải là IP ở bước 1, **không** phải một địa chỉ trong dải Cloudflare
+   (`104.16.0.0/13`, `172.64.0.0/13`, `162.158.0.0/15`, `2606:4700::/32`… — đối chiếu
+   https://www.cloudflare.com/ips/).
+3. Log app: `docker logs cdkt_app 2>&1 | grep article_view.ip_ceiling_hit` — một vài
+   dòng là bình thường (một nguồn xem > 60 bài / 10 phút); dòng lặp lại với `bucket`
+   là IP Cloudflare nghĩa là real-IP chưa đúng.
+
 **Host và `X-Forwarded-Host` — liên kết trong email.** Email thông báo chứa liên kết
 tuyệt đối dựng từ host của request (để cổng chạy được nhiều tên miền). Hai header đó
 do client gửi, nên phải chặn ở cả hai tầng:

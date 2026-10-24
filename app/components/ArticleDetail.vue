@@ -100,7 +100,7 @@
             </h2>
             <button
               type="button"
-              class="rounded px-2 py-1 text-[0.8rem] font-bold text-[#4A6741] transition hover:bg-[#F8FAF7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+              class="rounded px-2 py-1 text-[0.8rem] font-bold text-[#4A6741] transition hover:bg-[#F8FAF7] focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
               :aria-expanded="tocOpen"
               aria-controls="muc-luc-list"
               @click="tocOpen = !tocOpen"
@@ -117,7 +117,7 @@
             >
               <a
                 :href="`#${heading.id}`"
-                class="text-[0.95rem] font-semibold text-[#4A6741] no-underline transition hover:text-[#385130] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                class="text-[0.95rem] font-semibold text-[#4A6741] no-underline transition hover:text-[#385130] hover:underline focus:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
                 :class="heading.level > 2 ? 'font-medium text-[0.9rem] text-[#5C6B55]' : ''"
               >{{ heading.text }}</a>
             </li>
@@ -260,7 +260,7 @@
               <li v-for="item in relatedArticles" :key="item.id" class="py-3 first:pt-0">
                 <nuxt-link
                   :to="`${backTo}/${item.slug}`"
-                  class="group flex items-start gap-3 no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342] rounded"
+                  class="group flex items-start gap-3 no-underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741] rounded"
                 >
                   <img
                     :src="item.thumbnailUrl || '/assets/hero_banner.jpg'"
@@ -292,7 +292,7 @@
                   v-for="topic in relatedTopics"
                   :key="topic.slug"
                   :to="`${backTo}/${topic.slug}`"
-                  class="px-3 py-1.5 rounded-full text-[0.85rem] font-semibold border no-underline transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#7CB342]"
+                  class="px-3 py-1.5 rounded-full text-[0.85rem] font-semibold border no-underline transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#4A6741]"
                   :class="topic.isCurrent
                     ? 'bg-[#4A6741] border-[#4A6741] text-white'
                     : 'bg-white border-[#E2E8DF] text-[#4A5545] hover:border-[#7CB342]'"

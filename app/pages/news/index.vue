@@ -50,7 +50,7 @@
                 type="text"
                 :placeholder="t('n_search_placeholder')"
                 :aria-label="t('n_search_placeholder')"
-                class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-[#1E251C] placeholder-[#8A9986] focus:border-[#4A6741] focus:ring-2 focus:ring-[#7CB342]/30 focus:outline-none transition-all shadow-sm"
+                class="w-full pl-9 pr-20 py-2.5 bg-white rounded-xl border border-[#D5E1D3] text-sm text-[#1E251C] placeholder-[#8A9986] focus:border-[#4A6741] focus:ring-2 focus:ring-[#4A6741]/30 focus:outline-none transition-all shadow-sm"
               />
               <button
                 v-if="searchInput"

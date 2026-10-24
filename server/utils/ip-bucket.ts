@@ -14,9 +14,10 @@
  *   ::1                              → ::1                (one host, not a prefix)
  *   anything unparseable             → the trimmed input, unchanged
  *
- * Used for the review-queue cap (`moderation-instant.ts`). It is deliberately NOT
- * wired into `getClientIp` or the general rate-limit keys: those are compared
- * against ban lists and audit rows that store full addresses.
+ * Used for the review-queue cap (`moderation-instant.ts`) and the article-view
+ * ceiling (`articles/[slug]/view.post.ts`, key `avip:<bucket>`). It is
+ * deliberately NOT wired into `getClientIp` or the general rate-limit keys: those
+ * are compared against ban lists and audit rows that store full addresses.
  *
  * Self-contained on purpose (only `node:net`). `client-ip.ts` has a similar
  * `normalizeIp`, but it imports h3 and runtime config, and several test suites
