@@ -13,8 +13,10 @@
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { stripTypeScriptTypes } from 'node:module'
 import test from 'node:test'
-import { parse } from '@vue/compiler-sfc'
+import { compileScript, compileTemplate, parse } from '@vue/compiler-sfc'
+import * as Vue from 'vue'
 import { renderSfcTemplate } from './_render-sfc-template.ts'
 
 const FILE = new URL('../app/components/admin/ai/AiModerationTab.vue', import.meta.url)
@@ -68,15 +70,116 @@ test('tải / lỗi đi theo hợp đồng chung: role="status" + sr-only, lỗi
   assert.match(loading, /sr-only/)
   assert.match(loading, /motion-reduce:animate-none/)
 
-  let retried = 0
-  const failed = await render({ moderationError: 'Không thể tải số liệu kiểm duyệt an ninh.', loadModeration: () => { retried += 1 } })
+  const failed = await render({ moderationError: 'Không thể tải số liệu kiểm duyệt an ninh.' })
   assert.match(failed, /role="alert"/)
   assert.match(failed, /Không thể tải số liệu kiểm duyệt an ninh\./)
   assert.match(failed, /Thử lại/)
-  assert.equal(retried, 0)
-  assert.match(source, /@click="loadModeration\(\)"/)
   // Đang lỗi thì không hiện số cũ như thể chúng còn đúng.
   assert.doesNotMatch(failed, /data-moderation-count/)
+})
+
+/**
+ * Chạy CHÍNH `<script setup>` của tab (biên dịch thật, `$fetch` giả) và bấm CHÍNH nút
+ * "Thử lại" của template đã biên dịch (gọi `onClick` của vnode) — không phải đếm một hàm
+ * giả không ai gọi. Chứng minh: lỗi → nhánh lỗi; bấm thử lại → gọi lại đúng hai endpoint,
+ * xoá lỗi, hiện số mới.
+ */
+async function mountModerationTab(fetchImpl: (url: string, opts?: Record<string, unknown>) => Promise<unknown>) {
+  const { descriptor } = parse(source, { filename: FILE.pathname })
+  const compiled = compileScript(descriptor, { id: 'moderation-summary-test' })
+  const modules: Record<string, unknown> = {
+    vue: Vue,
+    '~/utils/errorMessage': await import('../app/utils/errorMessage.ts'),
+    '~/utils/moderation-summary': await import('../app/utils/moderation-summary.ts'),
+  }
+  const code = stripTypeScriptTypes(compiled.content)
+    .replace(/import\s*\{([^}]*)\}\s*from\s*['"]([^'"]+)['"];?/g, (_m, names: string, from: string) => {
+      if (!(from in modules)) throw new Error(`AiModerationTab.vue import ngoài dự kiến: ${from}`)
+      return `const {${names.replace(/\s+as\s+/g, ': ')}} = __modules[${JSON.stringify(from)}];`
+    })
+    .replace(/export default/, 'return')
+  // Auto-import của Nuxt (`ref`, `onMounted`) và `$fetch` toàn cục, cấp qua tham số.
+  const component = new Function('__modules', 'ref', 'onMounted', '$fetch', code)(modules, Vue.ref, () => {}, fetchImpl) as {
+    setup: (props: object, ctx: object) => Record<string, unknown>
+  }
+  const bindings = component.setup({}, { expose: () => {}, emit: () => {}, attrs: {}, slots: {} })
+
+  const template = compileTemplate({
+    source: descriptor.template!.content,
+    filename: FILE.pathname,
+    id: 'moderation-summary-test',
+    compilerOptions: { expressionPlugins: ['typescript'] },
+  })
+  const renderCode = stripTypeScriptTypes(template.code)
+    .replace(/import \{([^}]*)\} from "vue"/, (_m, names: string) => `const {${names.replace(/ as /g, ': ')}} = Vue`)
+    .replace('export function render', 'function render')
+  const renderFn = new Function('Vue', `${renderCode}\nreturn render`)(Vue) as (ctx: unknown, cache: unknown[]) => Vue.VNode
+  const ctx = Vue.proxyRefs(bindings)
+  const tree = () => {
+    // `resolveComponent('NuxtLink')` ngoài app chỉ cảnh báo — tắt cho test gọn.
+    const warn = console.warn
+    console.warn = () => {}
+    try { return renderFn(ctx, []) } finally { console.warn = warn }
+  }
+  return { bindings: ctx as Record<string, unknown> & { loadModeration: () => Promise<void> }, tree }
+}
+
+function findVNodes(node: unknown, match: (vnode: Vue.VNode) => boolean, out: Vue.VNode[] = []): Vue.VNode[] {
+  if (Array.isArray(node)) { for (const child of node) findVNodes(child, match, out); return out }
+  if (!node || typeof node !== 'object') return out
+  const vnode = node as Vue.VNode
+  if (match(vnode)) out.push(vnode)
+  findVNodes(vnode.children, match, out)
+  return out
+}
+const textOf = (vnode: Vue.VNode): string =>
+  typeof vnode.children === 'string' ? vnode.children : Array.isArray(vnode.children) ? vnode.children.map(c => (c && typeof c === 'object' ? textOf(c as Vue.VNode) : String(c ?? ''))).join('') : ''
+
+test('bấm "Thử lại" thật sự tải lại: lỗi được xoá, hai endpoint được gọi lại, số mới hiện ra', async () => {
+  const calls: Array<{ url: string; params?: unknown }> = []
+  let mode: 'fail' | 'pass' = 'fail'
+  const { bindings, tree } = await mountModerationTab(async (url, opts) => {
+    calls.push({ url, params: opts?.params })
+    if (mode === 'fail') throw Object.assign(new Error('500'), { data: { statusMessage: 'Máy chủ kiểm duyệt không phản hồi.' } })
+    if (url === '/api/admin/ai/moderation/queue') return { ok: true, total: 7, items: [] }
+    return { ok: true, rules: [{ isEnabled: true }, { isEnabled: false }, { isEnabled: true }] }
+  })
+
+  await bindings.loadModeration()
+  assert.equal(bindings.moderationError, 'Máy chủ kiểm duyệt không phản hồi.')
+  assert.equal(bindings.summary, null)
+  assert.equal(calls.length, 2)
+
+  const retry = findVNodes(tree(), v => v.type === 'button' && textOf(v).includes('Thử lại'))
+  assert.equal(retry.length, 1, 'nhánh lỗi phải có đúng một nút Thử lại')
+  mode = 'pass'
+  await (retry[0]!.props!.onClick as () => Promise<void>)()
+
+  assert.equal(calls.length, 4, 'thử lại phải gọi lại cả hai endpoint')
+  assert.deepEqual(calls[2], { url: '/api/admin/ai/moderation/queue', params: { status: 'pending', perPage: 1 } })
+  assert.equal(calls[3]!.url, '/api/admin/ai/moderation/rules')
+  assert.equal(bindings.moderationError, '')
+  assert.deepEqual(bindings.summary, { pendingCount: 7, activeRuleCount: 2, totalRuleCount: 3 })
+  const after = tree()
+  assert.equal(findVNodes(after, v => v.type === 'button' && textOf(v).includes('Thử lại')).length, 0)
+  const counts = findVNodes(after, v => typeof v.props?.['data-moderation-count'] === 'string')
+  assert.deepEqual(counts.map(v => [v.props!['data-moderation-count'], textOf(v).trim()]), [['pending', '7'], ['active-rules', '2']])
+})
+
+test('trang kiểm duyệt: huy hiệu "chờ đối soát" là tổng của máy chủ, không đếm trên một trang 20 dòng', async () => {
+  const { pendingBadgeCount } = await import('../app/utils/moderation-summary.ts')
+  // Đang lọc "pending": tổng của chính truy vấn đó (mới nhất sau mỗi lượt tải hàng đợi).
+  assert.equal(pendingBadgeCount({ filter: 'pending', queueTotal: 57, workerPending: 40 }), 57)
+  // Lọc trạng thái khác: tổng "pending" của worker-status.
+  assert.equal(pendingBadgeCount({ filter: 'approved', queueTotal: 3, workerPending: 57 }), 57)
+  assert.equal(pendingBadgeCount({ filter: 'all', queueTotal: 90, workerPending: null }), 0)
+
+  const page = readFileSync(new URL('../app/pages/admin/ai/moderation.vue', import.meta.url), 'utf8')
+  assert.doesNotMatch(page, /queue\.value\.filter\(q => q\.status === 'pending'\)/, 'đếm trên trang 20 dòng là lỗi trần 20')
+  assert.match(page, /pendingBadgeCount\(\{ filter: queueStatusFilter\.value, queueTotal: queueTotal\.value, workerPending: workerData\.value\?\.pendingQueueCount \?\? null \}\)/)
+  // Xử lý một hàng đợi xong thì số "pending" của worker cũng được làm mới.
+  const resolveFn = page.slice(page.indexOf('async function resolveItem'), page.indexOf('// ─── TAB 4'))
+  assert.match(resolveFn, /loadWorkerStatus\(\)/)
 })
 
 test('chỉ ĐỌC hai endpoint sẵn có; không còn đường ghi nào trong tab', () => {

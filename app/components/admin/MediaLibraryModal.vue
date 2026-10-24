@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import type { MediaItem } from '~/types/media'
+import AdminModal from '~/components/admin/AdminModal.vue'
+import { isDeliberateEnter } from '~/utils/admin-modal'
 
 // Driven entirely by the global useImagePicker composable
 const { isOpen, isMultiple, closePicker, handleSelect, handleSelectMultiple } = useImagePicker()
@@ -98,6 +100,14 @@ const close = () => {
   closePicker()
 }
 
+/** Enter trong ô tìm kiếm = tìm. Ở `keydown`, không `keyup`: ô này nhận focus ngay khi
+ *  hộp mở, nên phím Enter đã mở hộp sẽ được THẢ ở đây. Bỏ qua lúc đang gõ dấu (IME). */
+const onSearchEnter = (event: KeyboardEvent) => {
+  if (!isDeliberateEnter(event)) return
+  event.preventDefault()
+  void fetchMedia(1)
+}
+
 watch(isOpen, (val) => {
   if (val) {
     selectedMultiple.value = []
@@ -107,52 +117,21 @@ watch(isOpen, (val) => {
 </script>
 
 <template>
-  <Teleport to="body">
-    <div
-      v-if="isOpen"
-      class="fixed inset-0 z-[99999] overflow-y-auto"
-      role="dialog"
-      aria-modal="true"
-      @keydown.escape="close"
-    >
-      <!-- Backdrop -->
-      <div
-        class="fixed inset-0 bg-gray-900/60 backdrop-blur-sm"
-        @click="close"
-      ></div>
-
-      <!-- Modal -->
-      <div class="flex min-h-screen items-center justify-center p-4">
-        <div class="relative w-full max-w-4xl rounded-2xl bg-white p-6 shadow-xl" @click.stop>
-
-          <!-- Header -->
-          <div class="flex items-center justify-between border-b border-gray-200 pb-4">
-            <h3 class="flex items-center gap-2 text-base font-semibold text-gray-900">
-              <i class="fa-regular fa-images text-green-700"></i>
-              Thư viện ảnh
-              <span
-                v-if="isMultiple && selectedMultiple.length > 0"
-                class="ml-2 rounded-full bg-green-800 px-2 py-0.5 text-xs text-white"
-              >{{ selectedMultiple.length }} đã chọn</span>
-            </h3>
-            <button
-              class="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition"
-              @click="close"
-            >
-              <i class="fa-regular fa-xmark text-xl"></i>
-            </button>
-          </div>
-
+  <!-- Mount một lần trong layout admin (sớm nhất trong <body>): AdminModal xếp lớp theo
+       thứ tự MỞ nên thư viện mở sau vẫn nằm trên mọi hộp đang mở. -->
+  <AdminModal :open="isOpen" title="Thư viện ảnh" icon="fa-regular fa-images" size="2xl" @close="close">
           <!-- Search + Upload bar -->
-          <div class="flex items-center gap-2 pt-4 pb-2">
+          <div class="flex items-center gap-2 pb-2">
             <div class="relative flex-1">
               <i class="fa-regular fa-magnifying-glass absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
               <input
                 v-model="searchQuery"
                 type="text"
+                aria-label="Tìm ảnh theo tên file"
                 placeholder="Tìm theo tên file..."
-                class="w-full h-9 rounded-lg border border-gray-200 pl-9 pr-3 text-sm text-gray-700 outline-none focus:border-green-600 focus:ring-2 focus:ring-green-600/10"
-                @keyup.enter="fetchMedia(1)"
+                data-autofocus
+                class="w-full h-9 rounded-lg border border-gray-200 pl-9 pr-3 text-sm text-gray-700 outline-none focus:border-green-600 focus:ring-2 focus:ring-[#4A6741]/30"
+                @keydown.enter="onSearchEnter"
               />
             </div>
             <label
@@ -306,28 +285,28 @@ watch(isOpen, (val) => {
             </div>
           </div>
 
-          <!-- Footer -->
-          <div
-            v-if="totalPages > 1 || isMultiple"
-            class="flex items-center justify-between border-t border-gray-200 pt-4"
-          >
+    <template v-if="totalPages > 1 || isMultiple" #footer>
             <!-- Pagination -->
-            <div class="flex items-center gap-2">
+            <div class="mr-auto flex items-center gap-2">
               <template v-if="totalPages > 1">
                 <button
+                  type="button"
+                  aria-label="Trang trước"
                   :disabled="page <= 1"
                   class="rounded-lg border border-gray-200 px-3 py-2 text-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                   @click="fetchMedia(page - 1)"
                 >
-                  <i class="fa-regular fa-chevron-left"></i>
+                  <i class="fa-regular fa-chevron-left" aria-hidden="true"></i>
                 </button>
                 <span class="text-sm text-gray-500">{{ page }} / {{ totalPages }}</span>
                 <button
+                  type="button"
+                  aria-label="Trang sau"
                   :disabled="page >= totalPages"
                   class="rounded-lg border border-gray-200 px-3 py-2 text-sm transition hover:bg-gray-50 disabled:cursor-not-allowed disabled:opacity-50"
                   @click="fetchMedia(page + 1)"
                 >
-                  <i class="fa-regular fa-chevron-right"></i>
+                  <i class="fa-regular fa-chevron-right" aria-hidden="true"></i>
                 </button>
               </template>
             </div>
@@ -335,17 +314,14 @@ watch(isOpen, (val) => {
             <!-- Multi confirm -->
             <button
               v-if="isMultiple"
+              type="button"
               :disabled="selectedMultiple.length === 0"
               class="rounded-lg bg-green-800 px-4 py-2 text-sm font-medium text-white transition hover:bg-green-700 disabled:cursor-not-allowed disabled:opacity-50"
               @click="confirmMultiple"
             >
-              <i class="fa-regular fa-check mr-1"></i>
+              <i class="fa-regular fa-check mr-1" aria-hidden="true"></i>
               Thêm {{ selectedMultiple.length || '' }} ảnh
             </button>
-          </div>
-
-        </div>
-      </div>
-    </div>
-  </Teleport>
+    </template>
+  </AdminModal>
 </template>

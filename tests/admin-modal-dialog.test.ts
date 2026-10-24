@@ -59,33 +59,52 @@ const staticAttr = (node: TemplateNode, name: string) =>
 const directiveExp = (node: TemplateNode, name: string, arg?: string) =>
   node.props?.find(p => p.type === DIRECTIVE && p.name === name && (arg === undefined || p.arg?.content === arg))?.exp?.content
 
-const hasFixedInset0 = (classes: string) => {
-  const tokens = classes.split(/\s+/)
-  return tokens.includes('fixed') && tokens.includes('inset-0')
+/**
+ * Lớp phủ = `fixed` + phủ kín cả hai chiều: `inset-0`, hoặc ghép từng cạnh
+ * (`inset-x-0`/`left-0 right-0`/`left-0 w-full|w-screen` × `inset-y-0`/`top-0 bottom-0`/
+ * `top-0 h-full|h-screen|h-dvh`). Chỉ bắt `fixed inset-0` thì `fixed top-0 left-0 w-full
+ * h-full` — cùng một lớp phủ — lọt qua.
+ */
+function coversViewport(classes: string): boolean {
+  const t = new Set(classes.split(/\s+/))
+  if (!t.has('fixed')) return false
+  const x = t.has('inset-0') || t.has('inset-x-0') || (t.has('left-0') && (t.has('right-0') || t.has('w-full') || t.has('w-screen')))
+  const y = t.has('inset-0') || t.has('inset-y-0') || (t.has('top-0') && (t.has('bottom-0') || t.has('h-full') || t.has('h-screen') || t.has('h-dvh')))
+  return x && y
 }
 
-/** `fixed inset-0` ở `class` tĩnh, hoặc trong một chuỗi chữ của `:class`. */
+/** Lớp phủ ở `class` tĩnh, hoặc trong một chuỗi chữ của `:class`. */
 function isOverlay(node: TemplateNode): boolean {
   const fixed = staticAttr(node, 'class')
-  if (fixed && hasFixedInset0(fixed)) return true
+  if (fixed && coversViewport(fixed)) return true
   const bound = directiveExp(node, 'bind', 'class')
   if (!bound) return false
   for (const literal of bound.matchAll(/'([^']*)'|"([^"]*)"|`([^`]*)`/g)) {
-    if (hasFixedInset0(literal[1] ?? literal[2] ?? literal[3] ?? '')) return true
+    if (coversViewport(literal[1] ?? literal[2] ?? literal[3] ?? '')) return true
   }
   return false
 }
 
-const isModalDialog = (node: TemplateNode) =>
-  ['dialog', 'alertdialog'].includes(staticAttr(node, 'role') ?? '') && staticAttr(node, 'aria-modal') === 'true'
+const DIALOG_ROLES = ['dialog', 'alertdialog']
+const isDialogRole = (node: TemplateNode) => DIALOG_ROLES.includes(staticAttr(node, 'role') ?? '')
+const isModalDialog = (node: TemplateNode) => isDialogRole(node) && staticAttr(node, 'aria-modal') === 'true'
 
 /** Khung dùng chung đã mang ngữ nghĩa + hành vi hộp thoại. */
 const DIALOG_SHELLS = new Set(['AdminModal', 'admin-modal', 'ConfirmModal', 'AdminConfirmModal', 'admin-confirm-modal'])
+const isDialogShell = (node: TemplateNode) => DIALOG_SHELLS.has(node.tag ?? '')
 
-type Verdict = 'dialog' | 'inside-dialog' | 'wraps-dialog' | 'inside-shell' | 'bare'
+const elementChildren = (node: TemplateNode) => (node.children ?? []).filter(child => child.type === ELEMENT)
+
+type Verdict = 'dialog' | 'dialog-backdrop' | 'wraps-dialog' | 'bare'
 interface OverlayFinding { line: number; vIf: string | null; verdict: Verdict }
 
-/** Mọi lớp phủ `fixed inset-0` trong template của một SFC, kèm lý do nó (không) là modal. */
+/**
+ * Mọi lớp phủ trong template của một SFC, kèm lý do nó (không) là modal.
+ *
+ * Lớp phủ nằm TRONG một hộp thoại chỉ hợp lệ khi nó là nền mờ trống, con trực tiếp của
+ * hộp (MediaLibraryModal cũ, ScanThumbnailsModal). Một lớp phủ có nội dung nằm trong
+ * thân hộp thoại / thân `AdminModal` là một hộp thoại lồng không có ngữ nghĩa → `bare`.
+ */
 function classifyOverlays(source: string, filename = 'inline.vue'): OverlayFinding[] {
   const { descriptor } = parse(source, { filename })
   const root = descriptor.template?.ast as TemplateNode | undefined
@@ -93,12 +112,12 @@ function classifyOverlays(source: string, filename = 'inline.vue'): OverlayFindi
   const found: OverlayFinding[] = []
   const visit = (node: TemplateNode, ancestors: TemplateNode[]) => {
     if (node.type === ELEMENT && isOverlay(node)) {
-      const children = (node.children ?? []).filter(child => child.type === ELEMENT)
+      const parent = ancestors.at(-1)
+      const empty = elementChildren(node).length === 0 && !(node.children ?? []).some(child => child.type !== 3 /* COMMENT */)
       let verdict: Verdict = 'bare'
       if (isModalDialog(node)) verdict = 'dialog'
-      else if (ancestors.some(isModalDialog)) verdict = 'inside-dialog'
-      else if (children.some(isModalDialog)) verdict = 'wraps-dialog'
-      else if (ancestors.some(a => DIALOG_SHELLS.has(a.tag ?? ''))) verdict = 'inside-shell'
+      else if (parent && isModalDialog(parent) && empty) verdict = 'dialog-backdrop'
+      else if (elementChildren(node).some(isModalDialog)) verdict = 'wraps-dialog'
       found.push({ line: node.loc.start.line, vIf: directiveExp(node, 'if') ?? null, verdict })
     }
     const next = node.type === ELEMENT ? [...ancestors, node] : ancestors
@@ -106,6 +125,47 @@ function classifyOverlays(source: string, filename = 'inline.vue'): OverlayFindi
   }
   visit(root, [])
   return found
+}
+
+/** `role="dialog"` không có tên truy cập (`aria-label`/`aria-labelledby`, tĩnh hoặc bind không thể ra `undefined`). */
+function unnamedDialogs(source: string, filename = 'inline.vue'): number[] {
+  const { descriptor } = parse(source, { filename })
+  const root = descriptor.template?.ast as TemplateNode | undefined
+  if (!root) return []
+  const lines: number[] = []
+  const named = (node: TemplateNode) => {
+    if (staticAttr(node, 'aria-label')?.trim() || staticAttr(node, 'aria-labelledby')?.trim()) return true
+    const bound = directiveExp(node, 'bind', 'aria-labelledby') ?? directiveExp(node, 'bind', 'aria-label')
+    return !!bound && !/\bundefined\b|\bnull\b/.test(bound)
+  }
+  const visit = (node: TemplateNode) => {
+    if (node.type === ELEMENT && isDialogRole(node) && !named(node)) lines.push(node.loc.start.line)
+    for (const child of node.children ?? []) visit(child)
+  }
+  visit(root)
+  return lines
+}
+
+/**
+ * `@keyup` trên một điều khiển BÊN TRONG hộp thoại. Hộp mở bằng Enter trên nút (kích
+ * hoạt ở `keydown`) rồi đưa focus vào ô đầu tiên — phím được THẢ ở ô đó, nên `@keyup.enter`
+ * chạy mà người dùng chưa gõ gì (ngăn kéo "Phiên bản" tự lưu một bản sao lưu, hộp MFA báo
+ * "chưa nhập mật khẩu"). Trong hộp thoại dùng `@keydown`.
+ */
+function keyupInsideDialogs(source: string, filename = 'inline.vue'): number[] {
+  const { descriptor } = parse(source, { filename })
+  const root = descriptor.template?.ast as TemplateNode | undefined
+  if (!root) return []
+  const lines: number[] = []
+  const visit = (node: TemplateNode, insideDialog: boolean) => {
+    const here = insideDialog || (node.type === ELEMENT && (isDialogRole(node) || isDialogShell(node)))
+    if (node.type === ELEMENT && here && node.props?.some(p => p.type === DIRECTIVE && p.name === 'on' && p.arg?.content === 'keyup')) {
+      lines.push(node.loc.start.line)
+    }
+    for (const child of node.children ?? []) visit(child, here)
+  }
+  visit(root, false)
+  return lines
 }
 
 /**
@@ -148,16 +208,54 @@ test('classifier: nhận ra lớp phủ và các dạng làm nó thành hộp th
   // role="dialog" mà thiếu aria-modal vẫn chưa phải modal.
   assert.deepEqual(verdicts('<div class="fixed inset-0" role="dialog"></div>'), ['bare'])
   assert.deepEqual(verdicts('<div class="fixed inset-0" role="dialog" aria-modal="true"></div>'), ['dialog'])
-  // Nền mờ bên trong hộp thoại (MediaLibraryModal, ScanThumbnailsModal).
-  assert.deepEqual(verdicts('<div class="fixed inset-0" role="dialog" aria-modal="true"><div class="fixed inset-0 bg-black/60"></div></div>'), ['dialog', 'inside-dialog'])
+  // Nền mờ TRỐNG, con trực tiếp của hộp thoại (ScanThumbnailsModal).
+  assert.deepEqual(verdicts('<div class="fixed inset-0" role="dialog" aria-modal="true"><div class="fixed inset-0 bg-black/60" @click="close"></div></div>'), ['dialog', 'dialog-backdrop'])
+  // Lớp phủ CÓ nội dung nằm trong thân hộp thoại = hộp thoại lồng không ngữ nghĩa.
+  assert.deepEqual(verdicts('<div class="fixed inset-0" role="dialog" aria-modal="true"><div><div class="fixed inset-0"><button>x</button></div></div></div>'), ['dialog', 'bare'])
   // Nền bọc trực tiếp khung mang vai trò (ChatbotSmallTalkPanel).
   assert.deepEqual(verdicts('<div class="fixed inset-0 bg-black/40"><div role="dialog" aria-modal="true">x</div></div>'), ['wraps-dialog'])
   // Hộp thoại ở tầng sâu hơn KHÔNG được tính là "bọc trực tiếp".
   assert.deepEqual(verdicts('<div class="fixed inset-0"><div><div role="dialog" aria-modal="true"></div></div></div>'), ['bare'])
-  assert.deepEqual(verdicts('<AdminModal :open="x" title="t"><div class="fixed inset-0"></div></AdminModal>'), ['inside-shell'])
+  // Lớp phủ tự viết lồng trong thân AdminModal cũng phải là hộp thoại.
+  assert.deepEqual(verdicts('<AdminModal :open="x" title="t"><div class="fixed inset-0"><p>y</p></div></AdminModal>'), ['bare'])
   // `:class` cũng bị quét; `absolute inset-0` và `fixed inset-x-4` không phải lớp phủ.
   assert.deepEqual(verdicts(`<div :class="big ? 'fixed inset-0 z-50' : 'h-full'"></div>`), ['bare'])
   assert.deepEqual(verdicts('<div class="absolute inset-0"></div><div class="fixed inset-x-4 top-16"></div>'), [])
+  // Lớp phủ ghép từng cạnh vẫn là lớp phủ; sidebar `fixed top-0 bottom-0 left-0` thì không.
+  assert.deepEqual(verdicts('<div class="fixed top-0 left-0 w-full h-full bg-black/50"></div>'), ['bare'])
+  assert.deepEqual(verdicts('<div class="fixed inset-x-0 inset-y-0"></div><div class="fixed left-0 right-0 top-0 bottom-0"></div>'), ['bare', 'bare'])
+  assert.deepEqual(verdicts('<aside class="fixed top-0 bottom-0 left-0 w-64"></aside><div class="fixed top-0 left-0 w-full h-16"></div>'), [])
+})
+
+test('classifier: hộp thoại phải có tên; @keyup trong hộp thoại bị bắt', () => {
+  const unnamed = (template: string) => unnamedDialogs(`<template>${template}</template>`).length
+  assert.equal(unnamed('<div role="dialog" aria-modal="true"></div>'), 1)
+  assert.equal(unnamed('<div role="dialog" aria-labelledby="t"></div><div role="dialog" aria-label="Thư viện"></div>'), 0)
+  assert.equal(unnamed(`<div role="dialog" :aria-labelledby="titleId"></div>`), 0)
+  // Tên bind có thể ra `undefined` không phải tên chắc chắn (ConfirmModal không tiêu đề).
+  assert.equal(unnamed(`<div role="dialog" :aria-labelledby="hasTitle ? 'x' : undefined"></div>`), 1)
+
+  const keyups = (template: string) => keyupInsideDialogs(`<template>${template}</template>`).length
+  assert.equal(keyups('<input @keyup.enter="search" />'), 0, 'ô tìm kiếm của trang (ngoài hộp thoại) không bị cấm')
+  assert.equal(keyups('<AdminModal :open="o" title="t"><input @keyup.enter="save" /></AdminModal>'), 1)
+  assert.equal(keyups('<div role="dialog" aria-label="x"><div><input @keyup.enter="submit" /></div></div>'), 1)
+  assert.equal(keyups('<AdminModal :open="o" title="t"><input @keydown.enter.prevent="save" /></AdminModal>'), 0)
+})
+
+test('mọi role="dialog" trong admin có tên truy cập', () => {
+  const offenders: string[] = []
+  for (const file of adminVueFiles()) {
+    for (const line of unnamedDialogs(read(file), file)) offenders.push(`${file}:${line}`)
+  }
+  assert.deepEqual(offenders, [], 'Hộp thoại không tên: trình đọc màn hình chỉ đọc "hộp thoại". Dùng <AdminModal title=…> hoặc aria-labelledby trỏ tiêu đề.')
+})
+
+test('không có @keyup nào bên trong hộp thoại admin (phím mở hộp được thả vào ô đầu tiên)', () => {
+  const offenders: string[] = []
+  for (const file of adminVueFiles()) {
+    for (const line of keyupInsideDialogs(read(file), file)) offenders.push(`${file}:${line}`)
+  }
+  assert.deepEqual(offenders, [], 'Dùng @keydown.enter (kèm bỏ qua lúc đang gõ dấu — isComposing) thay cho @keyup trong hộp thoại.')
 })
 
 test('mọi lớp phủ admin là hộp thoại modal, nằm trong AdminModal/ConfirmModal, hoặc được miễn có lý do', () => {
@@ -187,9 +285,11 @@ test('danh sách miễn không mục nào cũ: mỗi mục còn khớp đúng m�
 })
 
 /**
- * 17 lớp phủ của D-MODAL nay dựng bằng AdminModal: 15 hộp thoại + 2 ngăn kéo của trình
- * dựng trang (bảng khối, phiên bản) — hai ngăn kéo có nền mờ chặn cả trang và bấm nền để
- * đóng, tức là modal, nên KHÔNG được miễn mà dùng `size="drawer"`.
+ * Hộp thoại dựng bằng AdminModal. 17 lớp phủ của D-MODAL: 15 hộp thoại + 2 ngăn kéo của
+ * trình dựng trang (bảng khối, phiên bản) — hai ngăn kéo có nền mờ chặn cả trang và bấm
+ * nền để đóng, tức là modal, nên KHÔNG được miễn mà dùng `size="drawer"`. Cộng 6 hộp có
+ * sẵn `role="dialog"` nhưng không tên, không bẫy Tab/`inert`/trả focus (ngôn ngữ ×2,
+ * nhắc dịch lại bài, xem nhanh bản dịch, dịch toàn bộ, thư viện ảnh).
  * Ghim số lượng: quay về `<div>` tự viết (kể cả có `role="dialog"`) là mất bẫy Tab,
  * Escape, `inert` và trả focus mà guard ở trên không thấy được.
  */
@@ -204,10 +304,15 @@ const MIGRATED_TO_ADMIN_MODAL: Record<string, number> = {
   'components/admin/ContentTypePicker.vue': 1,
   'components/admin/ai/AiServicesTab.vue': 1,
   'components/admin/ai/AiProvidersTab.vue': 5,
+  'pages/admin/languages/index.vue': 2,
+  'pages/admin/content/articles/[id].vue': 1,
+  'components/admin/articles/ArticleQuickViewModal.vue': 1,
+  'components/admin/articles/ArticleGlobalTranslateModal.vue': 1,
+  'components/admin/MediaLibraryModal.vue': 1,
 }
 
-test('17 lớp phủ của D-MODAL dựng bằng AdminModal', () => {
-  assert.equal(Object.values(MIGRATED_TO_ADMIN_MODAL).reduce((a, b) => a + b, 0), 17)
+test('23 hộp thoại admin dựng bằng AdminModal (17 của D-MODAL + 6 hộp không tên)', () => {
+  assert.equal(Object.values(MIGRATED_TO_ADMIN_MODAL).reduce((a, b) => a + b, 0), 23)
   for (const [file, expected] of Object.entries(MIGRATED_TO_ADMIN_MODAL)) {
     const source = read(file)
     const { descriptor } = parse(source, { filename: file })
@@ -378,10 +483,106 @@ test('bấm nền đóng hộp chỉ khi cả nhấn lẫn thả đều ở nề
   assert.equal(adminModalBackdropCloses({ busy: false, pressStartedOnBackdrop: true, clickOnBackdrop: false }), false)
 })
 
+test('focus mở đầu: phần tử được chỉ định (data-autofocus/autofocus) thắng ô đầu tiên của thân', async () => {
+  const { pickInitialFocus } = await import('../app/utils/admin-modal.ts')
+  const root = 'root'
+  assert.equal(pickInitialFocus({ designated: 'search', body: 'first-field', footer: 'save', close: 'x', root }), 'search')
+  assert.equal(pickInitialFocus({ designated: null, body: 'first-field', footer: 'save', close: 'x', root }), 'first-field')
+  // Đang tải (thân chưa có điều khiển): hàng nút, rồi nút đóng, rồi chính hộp.
+  assert.equal(pickInitialFocus({ designated: null, body: null, footer: 'save', close: 'x', root }), 'save')
+  assert.equal(pickInitialFocus({ designated: null, body: null, footer: null, close: 'x', root }), 'x')
+  assert.equal(pickInitialFocus({ designated: null, body: null, footer: null, close: null, root }), 'root')
+})
+
+test('trả focus khi nút mở đã bị gỡ: tìm lại theo khoá ổn định, không thì về <main> — không bao giờ để ở <body>', async () => {
+  const { openerKeyOf, focusFallbackTarget, ADMIN_MODAL_OPENER_ATTR } = await import('../app/utils/admin-modal.ts')
+  const marked = (value: string | null, id = '') => ({
+    id,
+    closest: (selector: string) => (selector === `[${ADMIN_MODAL_OPENER_ATTR}]` && value !== null ? { getAttribute: () => value } : null),
+  })
+  // Khoá đánh dấu thắng id (id có thể trùng giữa bản desktop/mobile của cùng một hàng).
+  assert.deepEqual(openerKeyOf(marked('submission-12', 'btn-1')), { attr: ADMIN_MODAL_OPENER_ATTR, value: 'submission-12' })
+  assert.deepEqual(openerKeyOf(marked(null, 'add-user')), { attr: 'id', value: 'add-user' })
+  assert.equal(openerKeyOf(marked(null)), null)
+  assert.equal(openerKeyOf(null), null)
+
+  const lookups: string[] = []
+  const find = (key: { value: string }) => { lookups.push(key.value); return key.value === 'submission-12' ? 'row-button' : null }
+  const main = () => 'main'
+  // Danh sách đã vẽ lại: nút cùng khoá được tìm thấy.
+  assert.equal(focusFallbackTarget({ attr: ADMIN_MODAL_OPENER_ATTR, value: 'submission-12' }, { find, main }), 'row-button')
+  // Hàng đã rời danh sách (đổi trạng thái ra khỏi bộ lọc) → vùng nội dung chính.
+  assert.equal(focusFallbackTarget({ attr: ADMIN_MODAL_OPENER_ATTR, value: 'submission-99' }, { find, main }), 'main')
+  assert.equal(focusFallbackTarget(null, { find, main }), 'main')
+  assert.deepEqual(lookups, ['submission-12', 'submission-99'])
+})
+
+test('phím đang GIỮ lúc hộp mở: lặp (autorepeat) và lần thả bị nuốt tới khi có một lần nhấn mới', async () => {
+  const { createHeldKeyGuard } = await import('../app/utils/admin-modal.ts')
+  const guard = createHeldKeyGuard()
+  // Chưa mở hộp: không đụng gì.
+  assert.equal(guard.keydown({ repeat: true }), false)
+  assert.equal(guard.keyup(), false)
+
+  // Enter giữ trên nút mở: hộp mở ở keydown đầu, các keydown lặp sau đó rơi vào ô
+  // vừa nhận focus — mỗi lần là một lần "lưu bản sao lưu".
+  guard.arm()
+  assert.equal(guard.keydown({ repeat: true }), true)
+  assert.equal(guard.keydown({ repeat: true }), true)
+  assert.equal(guard.keyup(), true, 'lần thả của phím đã mở hộp cũng bị nuốt')
+  // Sau khi thả, phím người dùng gõ trong hộp đi qua bình thường.
+  assert.equal(guard.keydown({ repeat: false }), false)
+  assert.equal(guard.keyup(), false)
+
+  // Một lần nhấn MỚI trong hộp (không lặp) chấm dứt việc nuốt ngay.
+  guard.arm()
+  assert.equal(guard.keydown({ repeat: false }), false)
+  assert.equal(guard.keydown({ repeat: true }), false, 'giữ phím CỦA NGƯỜI DÙNG trong hộp (vd. xoá chữ) không bị nuốt')
+  assert.equal(guard.keyup(), false)
+
+  guard.arm(); guard.disarm()
+  assert.equal(guard.keydown({ repeat: true }), false)
+})
+
+test('Enter có chủ đích: không lặp, không đang gõ dấu', async () => {
+  const { isDeliberateEnter } = await import('../app/utils/admin-modal.ts')
+  assert.equal(isDeliberateEnter({ key: 'Enter', repeat: false, isComposing: false }), true)
+  assert.equal(isDeliberateEnter({ key: 'Enter', repeat: true, isComposing: false }), false)
+  assert.equal(isDeliberateEnter({ key: 'Enter', repeat: false, isComposing: true }), false, 'IME tiếng Việt chốt chữ bằng Enter')
+  assert.equal(isDeliberateEnter({ key: 'a', repeat: false, isComposing: false }), false)
+})
+
+test('hộp thoại nuốt phím giữ từ trước khi mở; ô Enter trong hộp dùng isDeliberateEnter', () => {
+  for (const file of ['components/admin/AdminModal.vue', 'components/admin/ConfirmModal.vue']) {
+    const source = read(file)
+    assert.match(source, /createHeldKeyGuard\(\)/, `${file} phải nuốt autorepeat của phím đã mở hộp`)
+    assert.match(source, /addEventListener\('keydown', [^,]+, true\)/, `${file}: nuốt ở pha capture, trước handler của điều khiển`)
+    assert.match(source, /addEventListener\('keyup', [^,]+, true\)/)
+  }
+  for (const file of ['pages/admin/content/pages/[id].vue', 'components/admin/MediaLibraryModal.vue', 'pages/admin/profile.vue']) {
+    assert.match(read(file), /isDeliberateEnter\(/, `${file}: Enter lặp/đang gõ dấu không được gửi`)
+  }
+})
+
+test('xếp lớp: hộp mở sau nằm trên hộp mở trước, và luôn dưới ConfirmModal', async () => {
+  const { createModalLayers, adminModalLayerZ } = await import('../app/utils/admin-modal.ts')
+  const layers = createModalLayers()
+  const a = layers.open()
+  const b = layers.open()
+  assert.ok(adminModalLayerZ(b) > adminModalLayerZ(a))
+  layers.close() // một hộp đóng
+  const c = layers.open()
+  assert.ok(adminModalLayerZ(c) > adminModalLayerZ(b), 'hộp mở sau cùng phải nằm trên mọi hộp còn mở')
+  layers.close(); layers.close()
+  assert.equal(layers.open(), 1, 'hết hộp mở thì đếm lại từ đầu')
+  assert.ok(adminModalLayerZ(0) >= 9000)
+  assert.ok(adminModalLayerZ(1_000_000) < 9999, 'không bao giờ chạm ConfirmModal (z-[9999])')
+})
+
 test('AdminModal nối dây: phím qua adminModalKeyAction, nền qua adminModalBackdropCloses, focus qua focus-return', () => {
   const source = read('components/admin/AdminModal.vue')
   const script = source.slice(0, source.indexOf('</script>'))
-  for (const helper of ['adminModalKeyAction(', 'adminModalBackdropCloses(', 'inertOutside(', 'trapTabTarget(', 'visibleTabbables', 'focusReturn.restore(', 'focusReturn.remember(']) {
+  for (const helper of ['adminModalKeyAction(', 'adminModalBackdropCloses(', 'inertOutside(', 'trapTabTarget(', 'visibleTabbables', 'focusReturn.restore(', 'focusReturn.remember(', 'pickInitialFocus(', 'openerKeyOf(', 'focusFallbackTarget(', 'adminModalLayers.open(', 'adminModalLayers.close(', 'adminModalLayerZ(']) {
     assert.ok(script.includes(helper), `AdminModal.vue phải dùng ${helper}`)
   }
   // Tailwind utility, không <style> (CLAUDE.md: code mới không <style scoped>).

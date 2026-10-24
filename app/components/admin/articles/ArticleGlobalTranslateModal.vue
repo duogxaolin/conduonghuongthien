@@ -14,6 +14,7 @@
  */
 import type { AdminArticleRow } from '~/types/admin-api'
 import { errorMessage } from '~/utils/errorMessage'
+import AdminModal from '~/components/admin/AdminModal.vue'
 
 interface GlobalStats {
   totalArticles: number
@@ -109,34 +110,16 @@ async function startGlobalTranslation() {
 </script>
 
 <template>
-  <div
-    v-if="props.show"
-    class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center"
-    role="dialog"
-    aria-modal="true"
-    @click.self="emit('close')"
+  <AdminModal
+    :open="props.show"
+    title="Dịch toàn bộ bài viết bằng AI"
+    icon="fa-solid fa-globe"
+    size="lg"
+    :busy="globalTranslating"
+    @close="emit('close')"
   >
-    <div class="w-full max-w-xl rounded-xl border border-[#e2ece3] bg-white shadow-xl overflow-hidden flex flex-col">
-      <!-- Header -->
-      <div class="flex items-center justify-between gap-3 border-b border-[#eef2ee] px-5 py-4 bg-[#f8faf8]">
-        <div class="flex items-center gap-2">
-          <span class="w-8 h-8 rounded-lg bg-[#1e4620] text-white flex items-center justify-center text-sm shadow-xs">
-            <i class="fa-solid fa-globe"></i>
-          </span>
-          <div>
-            <h2 class="m-0 text-base font-extrabold text-[#122815]">Dịch toàn bộ bài viết bằng AI</h2>
-            <p class="m-0 text-xs text-[#667768]">Tự động quét và xếp lịch dịch cho các bài viết đã xuất bản chưa có bản dịch</p>
-          </div>
-        </div>
-        <button
-          type="button"
-          class="rounded-lg border-0 bg-none p-1.5 text-[#667768] hover:text-[#122815] cursor-pointer"
-          @click="emit('close')"
-        ><i class="fa-solid fa-xmark text-sm"></i></button>
-      </div>
-
-      <!-- Body -->
-      <div class="px-6 py-5 flex flex-col gap-4">
+      <div class="flex flex-col gap-4">
+        <p class="m-0 text-xs text-[#667768]">Tự động quét và xếp lịch dịch cho các bài viết đã xuất bản chưa có bản dịch</p>
         <div v-if="globalStatsLoading" class="py-8 text-center text-xs text-[#667768] flex items-center justify-center gap-2">
           <i class="fa-solid fa-circle-notch fa-spin text-sm text-[#2c6e33]"></i> Đang thống kê bài viết...
         </div>
@@ -231,8 +214,7 @@ async function startGlobalTranslation() {
         </template>
       </div>
 
-      <!-- Footer -->
-      <div class="flex items-center justify-end gap-2 border-t border-[#eef2ee] px-6 py-4 bg-[#f8faf8]">
+    <template #footer>
         <button
           type="button"
           class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-100 cursor-pointer"
@@ -244,10 +226,9 @@ async function startGlobalTranslation() {
           :disabled="globalTranslating || !globalStats"
           @click="startGlobalTranslation"
         >
-          <i class="fa-solid fa-wand-magic-sparkles text-xs" :class="globalTranslating ? 'animate-spin' : ''"></i>
+          <i class="fa-solid fa-wand-magic-sparkles text-xs" :class="globalTranslating ? 'animate-spin' : ''" aria-hidden="true"></i>
           <span>{{ globalTranslating ? 'Đang kích hoạt...' : 'Bắt đầu dịch hàng loạt' }}</span>
         </button>
-      </div>
-    </div>
-  </div>
+    </template>
+  </AdminModal>
 </template>

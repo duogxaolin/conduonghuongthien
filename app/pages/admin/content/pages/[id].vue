@@ -183,7 +183,7 @@
               type="text"
               placeholder="Tên bản sao lưu…"
               class="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
-              @keyup.enter="manualCount < 4 && !savingBackup && saveBackup()"
+              @keydown.enter="onBackupLabelEnter"
             />
             <button
               class="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-green-700 px-3 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50"
@@ -250,6 +250,7 @@ import type { BlockNode, BuilderNode, NodeLocation } from '~/utils/blocks/types'
 // persisted, so every lookup by id has to accept a not-yet-saved node.
 
 import AdminModal from '~/components/admin/AdminModal.vue'
+import { isDeliberateEnter } from '~/utils/admin-modal'
 import BuilderCanvas from '~/components/admin/builder/BuilderCanvas.vue'
 import PropertyPanel from '~/components/admin/builder/PropertyPanel.vue'
 import BlockTreeNode from '~/components/admin/builder/BlockTreeNode.vue'
@@ -691,16 +692,34 @@ const openVersions = async () => {
   showVersions.value = true
   await loadVersions()
 }
+// Chỉ lượt tải MỚI NHẤT được ghi danh sách: lưu bản sao lưu ngay sau khi mở ngăn kéo
+// làm hai lượt tải chồng nhau, và phản hồi của lượt đầu (chưa có bản vừa lưu) về sau
+// thì đè mất bản mới.
+let versionsLoadSeq = 0
 const loadVersions = async () => {
+  const seq = ++versionsLoadSeq
   versionsLoading.value = true
   try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; versions?: PageVersionRow[] }>)(`/api/admin/pages/${pageId.value}/versions`)
-    if (res.ok) versions.value = res.versions || []
+    if (seq === versionsLoadSeq && res.ok) versions.value = res.versions || []
   } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không tải được danh sách phiên bản.'))
+    if (seq === versionsLoadSeq) toast.error(errorMessage(err, 'Không tải được danh sách phiên bản.'))
   } finally {
-    versionsLoading.value = false
+    if (seq === versionsLoadSeq) versionsLoading.value = false
   }
+}
+
+/**
+ * Enter trong ô tên bản sao lưu = bấm "Lưu". Bắt ở `keydown`, KHÔNG `keyup`: mở ngăn
+ * kéo bằng Enter trên nút "Phiên bản" đưa focus vào ô này trước khi phím được thả —
+ * `@keyup.enter` từng tự lưu một bản sao lưu không ai yêu cầu (mất 1/4 chỗ). Bỏ qua lúc
+ * đang gõ dấu (IME tiếng Việt chốt chữ bằng Enter).
+ */
+const onBackupLabelEnter = (event: KeyboardEvent) => {
+  // Phím lặp (giữ Enter) mỗi lần một bản sao lưu — chỉ nhận lần nhấn có chủ đích.
+  if (!isDeliberateEnter(event)) return
+  event.preventDefault()
+  if (manualCount.value < 4 && !savingBackup.value) void saveBackup()
 }
 
 // Load a version into the working copy (draft) — user must Publish to go live.

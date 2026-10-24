@@ -1,7 +1,35 @@
 <script setup lang="ts">
 import { createFocusReturn, inertOutside, trapTabTarget } from '~/utils/focus-return'
+import { createHeldKeyGuard } from '~/utils/admin-modal'
 
 const { confirmState, accept, cancel } = useConfirm()
+
+// Enter giữ trên nút mở hộp (vd. "Khôi phục"): hộp xác nhận không nguy hiểm mở ra ở
+// nút ĐỒNG Ý, và phím lặp (autorepeat) sẽ bấm nó — đồng ý mà không ai chủ ý nhấn. Nuốt
+// keydown lặp + lần thả của phím đã giữ từ trước khi hộp mở (pha capture, trước nút).
+const heldKeys = createHeldKeyGuard()
+function onCaptureKeydown(e: KeyboardEvent) {
+  if (!heldKeys.keydown(e)) return
+  e.preventDefault()
+  e.stopImmediatePropagation()
+}
+function onCaptureKeyup(e: KeyboardEvent) {
+  if (!heldKeys.keyup()) return
+  e.preventDefault()
+  e.stopImmediatePropagation()
+}
+function watchHeldKeys(on: boolean) {
+  if (typeof document === 'undefined') return
+  document.removeEventListener('keydown', onCaptureKeydown, true)
+  document.removeEventListener('keyup', onCaptureKeyup, true)
+  if (!on) {
+    heldKeys.disarm()
+    return
+  }
+  heldKeys.arm()
+  document.addEventListener('keydown', onCaptureKeydown, true)
+  document.addEventListener('keyup', onCaptureKeyup, true)
+}
 
 // Không còn Enter-gắn-trên-window = xác nhận: trình xử lý đó chạy TRƯỚC cú click của
 // nút đang focus, nên đứng ở "Hủy" bấm Enter vẫn thành đồng ý. Giờ Enter chỉ kích
@@ -28,7 +56,10 @@ const releasePage = () => {
   releaseOutside?.()
   releaseOutside = null
 }
-onBeforeUnmount(releasePage)
+onBeforeUnmount(() => {
+  releasePage()
+  watchHeldKeys(false)
+})
 
 // Theo dõi `seq` chứ không chỉ `visible`: hộp mở ngay sau khi hộp trước đóng (vd.
 // hỏi lý do rồi xác nhận chặn) đổi `visible` true → false → true trong cùng một
@@ -38,6 +69,7 @@ watch(
   async (open) => {
     if (typeof document === 'undefined') return
     if (open) {
+      watchHeldKeys(true)
       // Hộp nối hộp: hộp vẫn đang hiển thị, focus ở trong nó (hoặc đã rơi về <body>
       // khi ô nhập biến mất) — giữ nút mở ban đầu, không ghi đè.
       if (!dialogEl.value) focusReturn.remember(document.activeElement as HTMLElement | null)
@@ -50,6 +82,7 @@ watch(
       target?.focus()
       return
     }
+    watchHeldKeys(false)
     const active = document.activeElement
     // Chỉ trả focus nếu nó còn trong hộp (hoặc đã rơi về <body>).
     const shouldRestore = !active || active === document.body || !!dialogEl.value?.contains(active)
@@ -82,8 +115,8 @@ function onTrapTab(event: KeyboardEvent) {
         @keydown.tab="onTrapTab"
         role="dialog"
         aria-modal="true"
-        :aria-labelledby="confirmState.options.title ? 'confirm-title' : undefined"
-        aria-describedby="confirm-message"
+        :aria-labelledby="confirmState.options.title ? 'confirm-title' : 'confirm-message'"
+        :aria-describedby="confirmState.options.title ? 'confirm-message' : undefined"
       >
         <div class="w-full max-w-md rounded-2xl bg-white shadow-2xl ring-1 ring-black/5 overflow-hidden">
           <!-- Header -->

@@ -12,6 +12,17 @@
  * Phản hồi sai dạng là LỖI (ném) — để tab hiện nhánh lỗi + "Thử lại", không phải
  * "0 hàng chờ" khiến cán bộ tưởng không còn gì phải xử lý.
  */
+/**
+ * Huy hiệu "chờ đối soát" của trang `/admin/ai/moderation`. Không bao giờ đếm trên một
+ * trang hàng đợi (20 dòng) — cùng lỗi trần 20 của tab cũ:
+ *   - đang lọc `pending`: tổng của chính truy vấn đó (`total`, mới nhất sau mỗi lần tải);
+ *   - lọc trạng thái khác: tổng `pending` của `worker-status` (`pendingQueueCount`).
+ */
+export function pendingBadgeCount(input: { filter: string; queueTotal: number; workerPending: number | null }): number {
+  if (input.filter === 'pending') return input.queueTotal
+  return input.workerPending ?? 0
+}
+
 export interface ModerationSummary {
   pendingCount: number
   activeRuleCount: number

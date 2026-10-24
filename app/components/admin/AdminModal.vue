@@ -14,21 +14,37 @@
  *   `:open` hay bằng `v-if` của cha (`:open="true"`) đều được: dọn dẹp chạy cả lúc
  *   gỡ component.
  * - Hành vi dựng trên `~/utils/focus-return` như `ConfirmModal.vue`: nhớ nút mở →
- *   focus vào điều khiển đầu tiên trong thân → `inertOutside` phần còn lại của trang →
- *   bẫy Tab → đóng thì gỡ `inert` TRƯỚC rồi trả focus về nút mở.
- * - Xếp lớp: `z-[9000]` — trên layout admin, DƯỚI `ConfirmModal` (`z-[9999]`) để hộp
- *   xác nhận mở đè được; khi đó hộp này bị `inert` và nhường bàn phím.
+ *   focus vào phần tử `data-autofocus`/`autofocus` nếu có, không thì điều khiển đầu tiên
+ *   trong thân → `inertOutside` phần còn lại của trang → bẫy Tab → đóng thì gỡ `inert`
+ *   TRƯỚC rồi trả focus về nút mở; nút mở đã bị gỡ thì tìm lại theo
+ *   `data-admin-modal-opener`/`id`, không thấy thì về `<main>` (không bao giờ `<body>`).
+ * - Phím Enter GIỮ trên nút mở: hộp mở ở `keydown` rồi đưa focus vào trong; các keydown
+ *   lặp (autorepeat) và lần thả rơi vào điều khiển vừa nhận focus. Hộp nuốt chúng ở pha
+ *   capture (`createHeldKeyGuard`) tới lần nhấn mới. Ô nhập trong hộp vẫn KHÔNG dùng
+ *   `@keyup.enter` và lọc bằng `isDeliberateEnter` (guard `tests/admin-modal-dialog.test.ts`).
+ * - Xếp lớp: `z-[9000]` + thứ tự mở (hộp mở sau nằm trên) — trên layout admin, DƯỚI
+ *   `ConfirmModal` (`z-[9999]`) để hộp xác nhận mở đè được; khi đó hộp này bị `inert` và
+ *   nhường bàn phím.
  * - Quyết định phím/nền là hàm thuần ở `~/utils/admin-modal` (kiểm không cần DOM).
  */
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useId, watch, type PropType } from 'vue'
-import { createFocusReturn, inertOutside, trapTabTarget, visibleTabbables } from '~/utils/focus-return'
+import { createFocusReturn, inertOutside, isVisibleTabbable, trapTabTarget, visibleTabbables } from '~/utils/focus-return'
 import {
+  ADMIN_MODAL_AUTOFOCUS_SELECTOR,
+  ADMIN_MODAL_OPENER_ATTR,
   adminModalBackdropCloses,
   adminModalKeyAction,
+  adminModalLayerZ,
+  adminModalLayers,
   adminModalOverlayClass,
   adminModalPanelClass,
+  createHeldKeyGuard,
+  focusFallbackTarget,
   isAdminModalSize,
+  openerKeyOf,
+  pickInitialFocus,
   type AdminModalSize,
+  type OpenerKey,
 } from '~/utils/admin-modal'
 
 const props = defineProps({
@@ -53,6 +69,25 @@ const closeBtn = ref<HTMLButtonElement | null>(null)
 const focusReturn = createFocusReturn((el) => el === document.body)
 let releaseOutside: (() => void) | null = null
 let active = false
+/** Lớp theo thứ tự mở (0 = chưa mở) — hộp mở sau nằm trên hộp mở trước. */
+const layer = ref(0)
+const zIndex = computed(() => adminModalLayerZ(layer.value))
+let openerKey: OpenerKey | null = null
+
+// Phím Enter giữ trên nút mở: các keydown lặp + lần thả không được tới điều khiển vừa
+// nhận focus trong hộp (xem `createHeldKeyGuard`). Pha capture của `document` chạy
+// TRƯỚC handler của điều khiển và trước hành vi kích hoạt nút của trình duyệt.
+const heldKeys = createHeldKeyGuard()
+function onCaptureKeydown(event: KeyboardEvent) {
+  if (!heldKeys.keydown(event)) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}
+function onCaptureKeyup(event: KeyboardEvent) {
+  if (!heldKeys.keyup()) return
+  event.preventDefault()
+  event.stopImmediatePropagation()
+}
 
 function requestClose() {
   if (!props.busy) emit('close')
@@ -103,20 +138,52 @@ function onBackdropClick(event: MouseEvent) {
   if (closes) emit('close')
 }
 
-/** Điều khiển đầu tiên đang hiện trong thân, rồi tới hàng nút, rồi nút đóng, rồi chính hộp. */
+/** Xem `pickInitialFocus`: chỉ định → thân → hàng nút → nút đóng → chính hộp. */
 function initialFocus(root: HTMLElement): HTMLElement {
-  for (const region of [bodyEl.value, footerEl.value]) {
-    const first = region ? visibleTabbables<HTMLElement>(region)[0] : undefined
-    if (first) return first
-  }
+  const designated = root.querySelector<HTMLElement>(ADMIN_MODAL_AUTOFOCUS_SELECTOR)
+  const firstIn = (region: HTMLElement | null) => (region ? visibleTabbables<HTMLElement>(region)[0] ?? null : null)
   const close = closeBtn.value
-  return close && !close.disabled ? close : root
+  return pickInitialFocus({
+    designated: designated && isVisibleTabbable(designated) ? designated : null,
+    body: firstIn(bodyEl.value),
+    footer: firstIn(footerEl.value),
+    close: close && !close.disabled ? close : null,
+    root,
+  })
+}
+
+/** Nút cùng khoá trong danh sách đã vẽ lại — phải đang hiện và Tab tới được. */
+function findOpener(key: OpenerKey): HTMLElement | null {
+  const found = key.attr === 'id'
+    ? document.getElementById(key.value)
+    : document.querySelector<HTMLElement>(`[${ADMIN_MODAL_OPENER_ATTR}="${CSS.escape(key.value)}"]`)
+  return found && isVisibleTabbable(found) ? found : null
+}
+
+/**
+ * Vùng nội dung chính, nhận focus được bằng script (`tabindex="-1"`, không vào thứ tự
+ * Tab). Thuộc tính chỉ gắn tạm: rời focus là gỡ (chỉ khi chính hộp này gắn), để bấm vào
+ * chỗ trống của trang sau đó không đưa focus (và viền focus) lên cả vùng nội dung.
+ */
+function mainLandmark(): HTMLElement | null {
+  const main = document.querySelector<HTMLElement>('main')
+  if (main && !main.hasAttribute('tabindex')) {
+    main.setAttribute('tabindex', '-1')
+    main.addEventListener('blur', () => main.removeAttribute('tabindex'), { once: true })
+  }
+  return main
 }
 
 async function activate() {
   if (active || typeof document === 'undefined') return
   active = true
-  focusReturn.remember(document.activeElement as HTMLElement | null)
+  layer.value = adminModalLayers.open()
+  const opener = document.activeElement as HTMLElement | null
+  focusReturn.remember(opener)
+  openerKey = openerKeyOf(opener)
+  heldKeys.arm()
+  document.addEventListener('keydown', onCaptureKeydown, true)
+  document.addEventListener('keyup', onCaptureKeyup, true)
   document.addEventListener('keydown', onDocumentKeydown)
   await nextTick()
   const root = rootEl.value
@@ -128,6 +195,10 @@ async function activate() {
 function deactivate() {
   if (!active) return
   active = false
+  adminModalLayers.close()
+  heldKeys.disarm()
+  document.removeEventListener('keydown', onCaptureKeydown, true)
+  document.removeEventListener('keyup', onCaptureKeyup, true)
   document.removeEventListener('keydown', onDocumentKeydown)
   // Chỉ lấy focus về nếu nó còn trong hộp (hoặc đã rơi về <body>) — không giật focus
   // của người đã tự chuyển đi nơi khác.
@@ -136,8 +207,13 @@ function deactivate() {
   // Gỡ `inert` TRƯỚC: nút mở nằm trong vùng đang `inert` thì `focus()` lên nó vô hiệu.
   releaseOutside?.()
   releaseOutside = null
+  const key = openerKey
+  openerKey = null
   void nextTick(() => {
-    focusReturn.restore(shouldRestore)
+    if (focusReturn.restore(shouldRestore) || !shouldRestore) return
+    // Nút mở đã bị gỡ (danh sách tải lại sau một thao tác trong hộp) hoặc hộp mở bằng
+    // script: tìm lại nút theo khoá, không thì về vùng nội dung chính.
+    focusFallbackTarget(key, { find: findOpener, main: mainLandmark })?.focus()
   })
 }
 
@@ -166,6 +242,7 @@ onBeforeUnmount(deactivate)
         ref="rootEl"
         class="fixed inset-0 z-[9000] bg-black/50 outline-none"
         :class="overlayClass"
+        :style="{ zIndex }"
         role="dialog"
         aria-modal="true"
         :aria-labelledby="titleId"

@@ -27,6 +27,7 @@ import { getFlagEmoji } from '~/utils/language-flags'
 import LanguagesListTab from '~/components/admin/languages/LanguagesListTab.vue'
 import TranslationsTab from '~/components/admin/languages/TranslationsTab.vue'
 import UniversalTab from '~/components/admin/languages/UniversalTab.vue'
+import AdminModal from '~/components/admin/AdminModal.vue'
 
 definePageMeta({
   layout: 'admin',
@@ -630,32 +631,13 @@ onMounted(() => {
     />
 
     <!-- Modal 1: Đổi vị trí thứ tự ngôn ngữ (cha sở设立的 movingLang) -->
-    <div
-      v-if="showMoveModal && movingLang"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      @click.self="showMoveModal = false"
+    <AdminModal
+      :open="showMoveModal && !!movingLang"
+      :title="movingLang ? `${getFlagEmoji(movingLang.code)} ${movingLang.nativeName} — chuyển đến vị trí nào?` : ''"
+      size="sm"
+      @close="showMoveModal = false"
     >
-      <div class="w-full max-w-sm rounded-xl border border-[#e2ece3] bg-white p-5 shadow-lg flex flex-col gap-4">
-        <div class="flex items-center justify-between border-b border-[#eef2ee] pb-3">
-          <div class="flex items-center gap-2">
-            <span class="text-2xl">{{ getFlagEmoji(movingLang.code) }}</span>
-            <div>
-              <h3 class="m-0 text-base font-bold text-[#122815]">{{ movingLang.nativeName }}</h3>
-              <p class="m-0 text-xs text-[#667768]">Chuyển đến vị trí nào?</p>
-            </div>
-          </div>
-          <button
-            type="button"
-            class="text-[#667768] hover:text-[#122815] border-0 bg-transparent cursor-pointer p-1 text-base"
-            @click="showMoveModal = false"
-          >
-            <i class="fa-solid fa-xmark"></i>
-          </button>
-        </div>
-
-        <div>
+        <div v-if="movingLang">
           <p class="text-xs text-[#667768] mb-2.5">
             Bấm chọn số thứ tự bên dưới để chuyển ngôn ngữ <strong>{{ movingLang.name }}</strong> đến vị trí đó:
           </p>
@@ -678,7 +660,7 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="flex justify-end pt-2 border-t border-[#eef2ee]">
+        <template #footer>
           <button
             type="button"
             class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-[#f8faf8] cursor-pointer"
@@ -686,38 +668,20 @@ onMounted(() => {
           >
             Đóng
           </button>
-        </div>
-      </div>
-    </div>
+        </template>
+    </AdminModal>
 
-    <!-- Modal 2: Tiến trình Dịch AI trực quan -->
-    <div
-      v-if="showTranslateProgressModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4"
-      role="dialog"
-      aria-modal="true"
-      @click.self="progressStats.finished || progressStats.stopped ? showTranslateProgressModal = false : null"
+    <!-- Modal 2: Tiến trình Dịch AI trực quan. Đang dịch = bận: Escape/✕/bấm nền không
+         đóng (như trước — chỉ nút "Đóng cửa sổ" và "Dừng lại" ở chân). -->
+    <AdminModal
+      :open="showTranslateProgressModal"
+      :title="progressModalTitle"
+      icon="fa-solid fa-wand-magic-sparkles"
+      :busy="!progressStats.finished && !progressStats.stopped"
+      @close="showTranslateProgressModal = false"
     >
-      <div class="w-full max-w-lg rounded-xl border border-[#e2ece3] bg-white p-5 shadow-xl flex flex-col gap-4">
-        <div class="flex items-center justify-between border-b border-[#eef2ee] pb-3">
-          <div class="flex items-center gap-2">
-            <div class="w-8 h-8 rounded-lg bg-[#e4f2e5] text-[#1e4620] flex items-center justify-center text-sm">
-              <i class="fa-solid fa-wand-magic-sparkles" :class="!progressStats.finished && !progressStats.stopped ? 'animate-spin' : ''"></i>
-            </div>
-            <div>
-              <h3 class="m-0 text-[1.05rem] font-bold text-[#122815]">{{ progressModalTitle }}</h3>
-              <p class="m-0 text-xs text-[#667768]">Dịch tự động các chuỗi giao diện qua AI Gateway</p>
-            </div>
-          </div>
-          <button
-            v-if="progressStats.finished || progressStats.stopped"
-            type="button"
-            class="text-[#667768] hover:text-[#122815] border-0 bg-transparent cursor-pointer p-1 text-base"
-            @click="showTranslateProgressModal = false"
-          >
-            <i class="fa-solid fa-xmark"></i>
-          </button>
-        </div>
+      <div class="flex flex-col gap-4">
+        <p class="m-0 text-xs text-[#667768]">Dịch tự động các chuỗi giao diện qua AI Gateway</p>
 
         <div class="flex flex-col gap-2 bg-[#f8faf7] p-3.5 rounded-lg border border-[#e8efe6]">
           <div class="flex items-center justify-between text-xs font-bold">
@@ -767,17 +731,17 @@ onMounted(() => {
           </div>
         </div>
 
-        <div class="flex items-center justify-between pt-2 border-t border-[#eef2ee]">
+      </div>
+      <template #footer>
           <button
             v-if="!progressStats.finished && !progressStats.stopped"
             type="button"
-            class="px-3.5 py-2 rounded-lg border border-[#e2c8c8] bg-white text-xs font-bold text-[#d12420] hover:bg-[#fff5f4] cursor-pointer flex items-center gap-1.5"
+            class="mr-auto px-3.5 py-2 rounded-lg border border-[#e2c8c8] bg-white text-xs font-bold text-[#d12420] hover:bg-[#fff5f4] cursor-pointer flex items-center gap-1.5"
             @click="stopTranslate"
           >
-            <i class="fa-solid fa-stop"></i>
+            <i class="fa-solid fa-stop" aria-hidden="true"></i>
             <span>Dừng lại</span>
           </button>
-          <div v-else></div>
 
           <button
             type="button"
@@ -789,8 +753,7 @@ onMounted(() => {
           >
             {{ progressStats.finished ? 'Hoàn tất & Đóng' : 'Đóng cửa sổ' }}
           </button>
-        </div>
-      </div>
-    </div>
+      </template>
+    </AdminModal>
   </div>
 </template>

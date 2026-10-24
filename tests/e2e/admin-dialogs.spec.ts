@@ -76,6 +76,54 @@ async function openWithKeyboard(page: Page, opener: Locator, name: string | RegE
   return dialog
 }
 
+/**
+ * Mở bằng Enter GIỮ như người thật (~100 ms): nhấn → hộp mở và nhận focus → MỚI thả.
+ * `keyboard.press()` thả ngay trong cùng nhịp nên không bao giờ thấy lỗi: phím thả
+ * (`keyup`) rơi vào ô nhập vừa nhận focus và chạy `@keyup.enter` của nó.
+ */
+async function openWithHeldEnter(page: Page, opener: Locator, name: string | RegExp, repeats = 3) {
+  // Ghi `event.repeat` của mọi keydown Enter TRƯỚC mọi handler khác (capture, đăng ký
+  // trước) — chứng minh trang thật sự nhận được keydown lặp, kể cả khi hộp nuốt chúng.
+  await page.evaluate(() => {
+    const w = window as unknown as { __enterKeydowns?: boolean[] }
+    w.__enterKeydowns = []
+    document.addEventListener('keydown', e => { if (e.key === 'Enter') w.__enterKeydowns!.push(e.repeat) }, true)
+  })
+  await opener.focus()
+  await page.keyboard.down('Enter')
+  const dialog = page.getByRole('dialog', { name })
+  await expect(dialog).toBeVisible()
+  await expect.poll(() => focusInside(dialog), { message: 'hộp phải nhận focus trước khi phím được thả' }).toBe(true)
+  // Vẫn giữ: hệ điều hành lặp phím (autorepeat) vào điều khiển VỪA nhận focus.
+  for (let i = 0; i < repeats; i += 1) await page.keyboard.down('Enter')
+  await page.keyboard.up('Enter')
+  expect(
+    await page.evaluate(() => (window as unknown as { __enterKeydowns?: boolean[] }).__enterKeydowns),
+    'trang phải nhận một keydown thường rồi các keydown lặp',
+  ).toEqual([false, ...Array.from({ length: repeats }, () => true)])
+  return dialog
+}
+
+/**
+ * Rào mạng: một request đi SAU mọi thứ phím thả có thể đã kích hoạt (handler chạy
+ * đồng bộ lúc `keyup`, `$fetch` phát request trong cùng nhịp). Sự kiện mạng tới theo
+ * thứ tự, nên khi request rào xong thì request lỡ tay (nếu có) đã được ghi lại —
+ * không cần chờ một khoảng thời gian đoán mò.
+ */
+async function networkBarrier(page: Page) {
+  await page.evaluate(() => fetch('/api/admin/pages', { credentials: 'same-origin' }).then(r => r.status))
+}
+
+async function firstPageId(page: Page): Promise<number> {
+  const list = await page.request.get('/api/admin/pages')
+  expect(list.status()).toBe(200)
+  const { items } = (await list.json()) as { items: Array<{ id: number }> }
+  expect(items.length, 'cần ít nhất một trang (trang hệ thống được seed)').toBeGreaterThan(0)
+  return items[0]!.id
+}
+
+const isVersionsPath = (url: string) => /^\/api\/admin\/pages\/\d+\/versions$/.test(new URL(url).pathname)
+
 async function expectClosedCleanly(page: Page, dialog: Locator, opener: Locator, inertBefore: string[]) {
   await expect(dialog).toHaveCount(0)
   await expect(opener, 'đóng hộp phải trả focus về nút đã mở').toBeFocused()
@@ -150,6 +198,42 @@ test.describe('hộp thoại admin (AdminModal)', () => {
     await expectClosedCleanly(page, dialog, opener, inertBefore)
   })
 
+  test('nút mở bị gỡ (đổi trạng thái tải lại bảng): Escape trả focus về nút vẽ lại của đúng hàng, không về <body>', async ({ page }) => {
+    const stamp = Date.now()
+    const submit = await page.request.post('/api/submissions', {
+      data: {
+        formTitle: 'E2E hộp thoại',
+        recipientEmail: '',
+        answers: [
+          { id: 'name', label: 'Họ và tên', value: `E2E Focus ${stamp}`, map: 'name', type: 'text', required: true },
+          { id: 'phone', label: 'Số điện thoại', value: '0901234567', map: 'phone', type: 'tel', required: true },
+          { id: 'message', label: 'Nội dung', value: `Kiểm tra trả focus ${stamp}`, map: 'message', type: 'textarea', required: true },
+        ],
+      },
+    })
+    expect(submit.status(), await submit.text()).toBe(200)
+    const id = ((await submit.json()) as { id: number }).id
+
+    await page.goto('/admin/submissions')
+    const opener = page.locator(`[data-admin-modal-opener="submission-${id}"]`)
+    await expect(opener).toBeVisible({ timeout: 20_000 })
+    await page.waitForLoadState('networkidle')
+    // Đánh dấu ĐÚNG phần tử này để chứng minh nó bị gỡ và vẽ lại.
+    await opener.evaluate(el => el.setAttribute('data-e2e-original', ''))
+    const dialog = await openWithKeyboard(page, opener, `Chi tiết Đơn đăng ký #${id}`)
+
+    const reloaded = page.waitForResponse(r => r.request().method() === 'GET' && new URL(r.url()).pathname === '/api/admin/submissions')
+    await dialog.getByRole('button', { name: 'Đang xử lý', exact: true }).click()
+    expect((await reloaded).status()).toBe(200)
+    await expect(opener, 'bảng tải lại phải vẽ lại nút (phần tử mới, không còn dấu)').not.toHaveAttribute('data-e2e-original', '')
+    await expect(dialog).not.toHaveAttribute('aria-busy', 'true')
+
+    await page.keyboard.press('Escape')
+    await expect(dialog).toHaveCount(0)
+    await expect(opener, 'focus về nút "Xem & xử lý" của đúng hàng sau khi vẽ lại').toBeFocused()
+    expect(await page.evaluate(() => document.activeElement === document.body)).toBe(false)
+  })
+
   test('sửa người dùng: tên hộp gồm tên đăng nhập, Escape trả focus về nút Sửa của hàng', async ({ page }) => {
     await page.goto('/admin/users')
     await page.waitForLoadState('networkidle')
@@ -175,25 +259,92 @@ test.describe('hộp thoại admin (AdminModal)', () => {
     await expectClosedCleanly(page, dialog, opener, inertBefore)
   })
 
-  test('hộp xác nhận mở đè lên ngăn kéo "Phiên bản": Escape chỉ đóng hộp xác nhận, ngăn kéo giữ bàn phím lại', async ({ page }) => {
-    const list = await page.request.get('/api/admin/pages')
-    expect(list.status()).toBe(200)
-    const { items } = (await list.json()) as { items: Array<{ id: number }> }
-    expect(items.length).toBeGreaterThan(0)
+  test('giữ Enter để mở ngăn kéo "Phiên bản": phím thả trong ô nhập không lưu bản sao lưu nào', async ({ page }) => {
+    await page.goto(`/admin/content/pages/${await firstPageId(page)}`)
+    const opener = page.getByRole('button', { name: 'Phiên bản', exact: true })
+    await expect(opener).toBeVisible({ timeout: 20_000 })
+    await page.waitForLoadState('networkidle')
 
-    await page.goto(`/admin/content/pages/${items[0]!.id}`)
+    const posts: string[] = []
+    page.on('request', r => { if (r.method() === 'POST' && isVersionsPath(r.url())) posts.push(r.url()) })
+    const drawer = await openWithHeldEnter(page, opener, /^Phiên bản$/)
+    // Điều kiện để lỗi xảy ra: focus đầu tiên là ô tên bản sao lưu.
+    await expect(drawer.getByPlaceholder('Tên bản sao lưu…')).toBeFocused()
+    await networkBarrier(page)
+    expect(posts, 'mở ngăn kéo không được tự lưu một bản sao lưu (mất 1/4 chỗ)').toEqual([])
+
+    // Enter do người dùng gõ TRONG ô vẫn lưu như trước.
+    const saved = page.waitForResponse(r => r.request().method() === 'POST' && isVersionsPath(r.url()))
+    await drawer.getByPlaceholder('Tên bản sao lưu…').fill(`E2E giữ phím ${Date.now()}`)
+    await page.keyboard.press('Enter')
+    expect((await saved).status()).toBe(200)
+    expect(posts).toHaveLength(1)
+  })
+
+  test('giữ Enter để mở hộp "Bật …" ở hồ sơ: không báo lỗi "chưa nhập mật khẩu" khi chưa gõ gì', async ({ page }) => {
+    await page.goto('/admin/profile')
+    const opener = page.locator('button:not([disabled])', { hasText: /^\s*Bật\s*$/ }).first()
+    await expect(opener).toBeVisible({ timeout: 20_000 })
+    await page.waitForLoadState('networkidle')
+    const dialog = await openWithHeldEnter(page, opener, /^Bật /)
+    await expect(dialog.locator('input[type="password"]').first()).toBeFocused()
+    await networkBarrier(page)
+    await expect(dialog.getByRole('alert'), 'phím thả lúc mở hộp không được gửi biểu mẫu trống').toHaveCount(0)
+  })
+
+  test('giữ Enter trên nút "Khôi phục": hộp xác nhận (focus ở nút đồng ý) không tự đồng ý', async ({ page }) => {
+    await page.goto(`/admin/content/pages/${await firstPageId(page)}`)
+    const opener = page.getByRole('button', { name: 'Phiên bản', exact: true })
+    await expect(opener).toBeVisible({ timeout: 20_000 })
+    await page.waitForLoadState('networkidle')
+    const initialList = page.waitForResponse(r => r.request().method() === 'GET' && isVersionsPath(r.url()))
+    await opener.click()
+    const drawer = page.getByRole('dialog', { name: /^Phiên bản$/ })
+    expect((await initialList).status()).toBe(200)
+
+    const label = `E2E khôi phục ${Date.now()}`
+    await drawer.getByPlaceholder('Tên bản sao lưu…').fill(label)
+    const reloaded = page.waitForResponse(r => r.request().method() === 'GET' && isVersionsPath(r.url()))
+    await drawer.getByRole('button', { name: /^Lưu \(\d\/4\)$/ }).click()
+    expect((await reloaded).status()).toBe(200)
+    const restoreButton = drawer.getByRole('button', { name: `Xóa phiên bản ${label}` }).locator('xpath=preceding-sibling::button')
+    await expect(restoreButton).toHaveText(/Khôi phục/)
+
+    const restores: string[] = []
+    page.on('request', r => { if (r.method() === 'POST' && /\/versions\/\d+\/restore$/.test(new URL(r.url()).pathname)) restores.push(r.url()) })
+    const confirmDialog = await openWithHeldEnter(page, restoreButton, 'Khôi phục phiên bản')
+    // Hộp xác nhận không nguy hiểm mở ra ở nút đồng ý — đúng chỗ phím lặp rơi vào.
+    await expect(confirmDialog.getByRole('button', { name: 'Khôi phục', exact: true })).toBeFocused()
+    await networkBarrier(page)
+    expect(restores, 'phím giữ từ nút "Khôi phục" không được tự đồng ý nạp phiên bản').toEqual([])
+    await expect(confirmDialog).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(confirmDialog).toHaveCount(0)
+    await expect(drawer).toBeVisible()
+  })
+
+  test('hộp xác nhận mở đè lên ngăn kéo "Phiên bản": Escape chỉ đóng hộp xác nhận, ngăn kéo giữ bàn phím lại', async ({ page }) => {
+    await page.goto(`/admin/content/pages/${await firstPageId(page)}`)
     const opener = page.getByRole('button', { name: 'Phiên bản', exact: true })
     await expect(opener).toBeVisible({ timeout: 20_000 })
     await page.waitForLoadState('networkidle')
     const inertBefore = await inertElements(page)
+    // Danh sách phiên bản tải sau khi mở: chờ nó xong TRƯỚC khi lưu, để lượt tải đầu
+    // không đè lên danh sách mới (không phụ thuộc thứ tự phản hồi).
+    const initialList = page.waitForResponse(r => r.request().method() === 'GET' && isVersionsPath(r.url()))
     const drawer = await openWithKeyboard(page, opener, /^Phiên bản$/)
+    expect((await initialList).status()).toBe(200)
     // Bộ chọn CSS (không theo vai trò): lúc bị `inert`, ngăn kéo rời cây truy cập.
     const drawerRoot = page.locator(`[role="dialog"][aria-labelledby="${await drawer.getAttribute('aria-labelledby')}"]`)
 
     // Tạo một bản sao lưu để có nút xoá (mở ConfirmModal).
     const label = `E2E chồng hộp ${Date.now()}`
     await drawer.getByPlaceholder('Tên bản sao lưu…').fill(label)
+    const saved = page.waitForResponse(r => r.request().method() === 'POST' && isVersionsPath(r.url()))
+    const reloaded = page.waitForResponse(r => r.request().method() === 'GET' && isVersionsPath(r.url()))
     await drawer.getByRole('button', { name: /^Lưu \(\d\/4\)$/ }).click()
+    expect((await saved).status()).toBe(200)
+    expect((await reloaded).status()).toBe(200)
     const deleteButton = drawer.getByRole('button', { name: `Xóa phiên bản ${label}` })
     await expect(deleteButton).toBeVisible()
 
@@ -216,13 +367,37 @@ test.describe('hộp thoại admin (AdminModal)', () => {
     await expectClosedCleanly(page, drawer, opener, inertBefore)
   })
 
-  test('cấu hình trang: hộp "Cấu hình trang" của trình dựng trang, Escape đóng + trả focus', async ({ page }) => {
-    const list = await page.request.get('/api/admin/pages')
-    expect(list.status()).toBe(200)
-    const { items } = (await list.json()) as { items: Array<{ id: number }> }
-    expect(items.length, 'cần ít nhất một trang (trang hệ thống được seed)').toBeGreaterThan(0)
+  test('thư viện ảnh (mount sẵn trong layout): có tên, focus vào ô tìm kiếm được chỉ định, Enter tìm, Escape đóng + trả focus', async ({ page }) => {
+    await page.goto('/admin/content/articles/new')
+    const opener = page.getByRole('button', { name: 'Chọn từ thư viện' })
+    await expect(opener).toBeVisible({ timeout: 20_000 })
+    await page.waitForLoadState('networkidle')
+    const inertBefore = await inertElements(page)
 
-    await page.goto(`/admin/content/pages/${items[0]!.id}`)
+    // Đếm TỪ TRƯỚC khi mở: phím giữ (lặp + thả) rơi vào ô tìm kiếm ngay khi hộp mở.
+    let mediaRequests = 0
+    page.on('request', r => { if (new URL(r.url()).pathname === '/api/admin/media') mediaRequests += 1 })
+    const firstLoad = page.waitForResponse(r => new URL(r.url()).pathname === '/api/admin/media')
+    const dialog = await openWithHeldEnter(page, opener, 'Thư viện ảnh')
+    expect((await firstLoad).status()).toBe(200)
+    // `data-autofocus` thắng thứ tự: ô tìm kiếm nhận focus đầu tiên.
+    const search = dialog.getByRole('textbox', { name: 'Tìm ảnh theo tên file' })
+    await expect(search).toBeFocused()
+    await networkBarrier(page)
+    expect(mediaRequests, 'chỉ một lượt tải lúc mở; phím Enter giữ từ nút mở không được chạy tìm kiếm').toBe(1)
+    // Enter do người dùng gõ trong ô vẫn tìm.
+    const searched = page.waitForResponse(r => new URL(r.url()).pathname === '/api/admin/media' && new URL(r.url()).searchParams.get('search') === 'khong-co-anh-nay')
+    await search.fill('khong-co-anh-nay')
+    await page.keyboard.press('Enter')
+    expect((await searched).status()).toBe(200)
+
+    await expectTabTrapped(page, dialog)
+    await page.keyboard.press('Escape')
+    await expectClosedCleanly(page, dialog, opener, inertBefore)
+  })
+
+  test('cấu hình trang: hộp "Cấu hình trang" của trình dựng trang, Escape đóng + trả focus', async ({ page }) => {
+    await page.goto(`/admin/content/pages/${await firstPageId(page)}`)
     const opener = page.getByRole('button', { name: 'Cấu hình', exact: true })
     await expect(opener).toBeVisible({ timeout: 20_000 })
     await page.waitForLoadState('networkidle')

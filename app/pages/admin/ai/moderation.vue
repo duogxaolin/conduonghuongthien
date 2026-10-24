@@ -664,6 +664,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { rescanAiNotice, rescanFinishedToast, rescanSummaryText, type RescanSummary } from '~/utils/moderation-rescan-summary'
+import { pendingBadgeCount } from '~/utils/moderation-summary'
 
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
@@ -745,7 +746,9 @@ const queuePerPage = ref(20)
 const queueTotalPages = ref(1)
 const queueTotal = ref(0)
 
-const pendingQueueCount = computed(() => queue.value.filter(q => q.status === 'pending').length)
+// Tổng của máy chủ, không đếm trên trang 20 dòng (lỗi trần 20) — cùng con số với bản
+// tóm tắt ở tab AI Panel. `workerData` khai báo phía dưới; computed chỉ đọc lúc render.
+const pendingQueueCount = computed(() => pendingBadgeCount({ filter: queueStatusFilter.value, queueTotal: queueTotal.value, workerPending: workerData.value?.pendingQueueCount ?? null }))
 
 const newRuleForm = reactive({
   category: 'hostile_forces',
@@ -918,7 +921,8 @@ async function resolveItem(item: ModerationQueueItem, action: 'approve' | 'rejec
       body: { action },
     })
     toast.success('Đã xử lý đối soát thành công!')
-    await loadQueue()
+    // Số "pending" của worker-status cũng đổi (huy hiệu khi đang lọc trạng thái khác).
+    await Promise.all([loadQueue(), loadWorkerStatus()])
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể xử lý đối soát.'))
   }

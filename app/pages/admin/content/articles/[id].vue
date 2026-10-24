@@ -3,6 +3,7 @@ import type { WindowWithTinyMce } from '~/types/tinymce'
 import type { AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
 import type { MediaItem } from '~/types/media'
 import TinyMceEditor from '~/components/admin/TinyMceEditor.vue'
+import AdminModal from '~/components/admin/AdminModal.vue'
 import ArticleTranslationPanel from '~/components/admin/articles/ArticleTranslationPanel.vue'
 import ArticleAIPanel from '~/components/admin/articles/ArticleAIPanel.vue'
 definePageMeta({
@@ -708,31 +709,17 @@ onUnmounted(() => {
 
 
     <!-- Modal: Nhắc nhở cập nhật bản dịch khi nội dung Tiếng Việt thay đổi -->
-    <div
-      v-if="showReTranslateModal"
-      class="fixed inset-0 z-50 flex items-center justify-center bg-black/45 p-4"
-      role="dialog"
-      aria-modal="true"
-      @click.self="showReTranslateModal = false"
+    <AdminModal
+      :open="showReTranslateModal"
+      title="Phát hiện nội dung Tiếng Việt vừa thay đổi!"
+      icon="fa-solid fa-lightbulb"
+      :busy="reTranslateRunning"
+      @close="showReTranslateModal = false"
     >
-      <div class="w-full max-w-lg rounded-2xl border border-[#c8d6c9] bg-white p-6 shadow-2xl flex flex-col gap-4 animate-fade-slide-up">
-        <!-- Header -->
-        <div class="flex items-start gap-3 border-b border-[#eef2ee] pb-4">
-          <div class="w-11 h-11 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 flex items-center justify-center text-xl shrink-0">
-            <i class="fa-solid fa-lightbulb"></i>
-          </div>
-          <div class="flex-1 min-w-0">
-            <h3 class="m-0 text-base font-black text-[#122815]">Phát hiện nội dung Tiếng Việt vừa thay đổi!</h3>
-            <p class="m-0 text-xs text-[#667768] mt-1">
-              Bài viết gốc Tiếng Việt vừa được cập nhật nội dung mới. Bạn có muốn AI tự động cập nhật và dịch lại toàn bộ các ngôn ngữ quốc tế khác không?
-            </p>
-          </div>
-          <button
-            type="button"
-            class="text-[#667768] hover:text-[#122815] border-0 bg-transparent cursor-pointer p-1 text-base shrink-0"
-            @click="showReTranslateModal = false"
-          ><i class="fa-solid fa-xmark"></i></button>
-        </div>
+      <div class="flex flex-col gap-4">
+        <p class="m-0 text-xs text-[#667768]">
+          Bài viết gốc Tiếng Việt vừa được cập nhật nội dung mới. Bạn có muốn AI tự động cập nhật và dịch lại toàn bộ các ngôn ngữ quốc tế khác không?
+        </p>
 
         <!-- Target languages preview -->
         <div class="flex flex-col gap-1.5">
@@ -762,8 +749,8 @@ onUnmounted(() => {
           </div>
         </label>
 
-        <!-- Actions -->
-        <div class="flex items-center justify-end gap-2.5 pt-2 border-t border-[#eef2ee]">
+      </div>
+      <template #footer>
           <button
             type="button"
             class="px-4 py-2.5 rounded-xl border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-50 cursor-pointer"
@@ -777,11 +764,10 @@ onUnmounted(() => {
             :disabled="reTranslateRunning"
             @click="confirmReTranslation"
           >
-            <i class="fa-solid fa-wand-magic-sparkles text-xs" :class="reTranslateRunning ? 'animate-spin' : ''"></i>
+            <i class="fa-solid fa-wand-magic-sparkles text-xs" :class="reTranslateRunning ? 'animate-spin' : ''" aria-hidden="true"></i>
             <span>{{ reTranslateRunning ? 'Đang kích hoạt...' : '⚡ Dịch lại tất cả ngay' }}</span>
           </button>
-        </div>
-      </div>
-    </div>
+      </template>
+    </AdminModal>
   </div>
 </template>
