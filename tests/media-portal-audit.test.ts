@@ -4,8 +4,8 @@
  * Preceded by `tests/reader-audit-atomicity.test.ts`, which guards the reader-side
  * and the original admin endpoints/services. This file focuses on the second axis
  * the reader-audit guard never reached: the media-portal and livestream endpoints
- * added by the `add-media-portal` change, plus the four service modules those
- * endpoints delegate to.
+ * added by the `add-media-portal` change, plus the service modules those
+ * endpoints delegate to (`AUDITED_SERVICES`).
  *
  * The failure shape is identical and the rule is the same: a row and its
  * `activity_logs` row must commit together. Written as mutate-then-log on the pool,
@@ -26,7 +26,7 @@
  * The reader-audit guard learned this the hard way: a list of file paths is green
  * forever for any file nobody remembered to add. The directory scan below walks
  * `server/api/admin/media-portal/**`, `server/api/admin/livestream/**`, and the
- * four service modules, and demands each one that touches `activity_logs` either
+ * service modules in `AUDITED_SERVICES`, and demands each one that touches `activity_logs` either
  * wraps the pair in `db.transaction` or is exempt with a stated reason. Adding a
  * new endpoint or service that mutates and audits forces that choice — there is
  * no silent third option.
@@ -76,11 +76,15 @@ function writesItsOwnRow(normalized: string): boolean {
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
-// Service-level: the four service modules carry the mutation + audit pair.
+// Service-level: the service modules carry the mutation + audit pair.
 // ──────────────────────────────────────────────────────────────────────────────
 
 const AUDITED_SERVICES = [
-  'server/services/media-portal.ts',
+  // `media-portal.ts` is now a barrel (re-exports only, no write path). The two
+  // files below carry its row + audit pairs: item create/update/delete, and the
+  // custom-thumbnail set/clear. Naming the barrel here would pass vacuously.
+  'server/services/media-portal-admin-write.ts',
+  'server/services/media-portal-thumbnail-override.ts',
   'server/services/livestream.ts',
   'server/services/livestream-chat.ts',
   'server/services/chunked-upload.ts',

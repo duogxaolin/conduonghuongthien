@@ -202,8 +202,15 @@ describe('ảnh thu nhỏ — không hot-link', () => {
     // rỗng mà không có gì nói ra. Đổi tên hay di chuyển một trong hai tệp nay làm
     // ĐỎ test này, và đó đúng là điều nên xảy ra: guard phải nói được rằng nó vừa
     // thôi bảo vệ thứ nó khai, thay vì im lặng thu về không kiểm gì.
+    //
+    // `media-portal.ts` nay chỉ là barrel: hình dạng công khai (`serializePublicMedia`)
+    // nằm ở `media-portal-public.ts`, đường phân giải ảnh thu nhỏ (nơi duy nhất gọi
+    // `buildYouTubeThumbnailUpstreamUrl`) ở `media-portal-thumbnail.ts`. Chỉ kiểm
+    // barrel thì guard xanh vì tệp rỗng logic — đúng kiểu kiểm rỗng nói ở trên.
     for (const file of [
       '../server/services/media-portal.ts',
+      '../server/services/media-portal-public.ts',
+      '../server/services/media-portal-thumbnail.ts',
       '../app/components/MediaPlayer.vue',
     ]) {
       const path = new URL(file, import.meta.url)
