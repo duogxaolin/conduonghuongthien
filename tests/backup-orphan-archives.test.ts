@@ -266,21 +266,29 @@ function seedLeftovers() {
     registered: 'cdkt-20261022T030000Z-manual.sql.gz',
     uploadRestore: '.upload-3f1c.partial', // an upload-restore in progress (restore lock, not run lock)
     shellDump: 'cdkt-cdkt_admin-20261022T020000Z-123.sql.gz', // scripts/backup-db.sh, no row
+    // scripts/backup-db.sh (nightly cron via backup.sh) writes into the SAME ./backups
+    // directory as `<name>.partial` and renames it when verified. The app's run lock
+    // says nothing about that script, so its partial may be a dump IN PROGRESS.
+    shellPartial: 'cdkt-cdkt_admin-20261022T020000Z-4242.sql.gz.partial',
+    // Same family names as the app's archives, but written by scripts/backup-media.sh (`-<pid>`).
+    shellMediaLike: 'cdkt-media-20261022T020000Z-4243.tar.gz.partial',
     other: 'notes.partial',
   }
   for (const name of Object.values(files)) writeFileSync(path.join(backupDir(), name), name)
   return files
 }
+const untouchable = (files: ReturnType<typeof seedLeftovers>) =>
+  [files.registered, files.uploadRestore, files.shellDump, files.shellPartial, files.shellMediaLike, files.other]
 
 test('a run starts by sweeping partial files left by a killed run — and nothing else', async () => {
   const files = seedLeftovers()
   await run('sql')
   assert.ok(!onDisk().includes(files.stale) && !onDisk().includes(files.staleSql), 'stale partial archives survived')
-  for (const keep of [files.registered, files.uploadRestore, files.shellDump, files.other]) assert.ok(onDisk().includes(keep), `${keep} was deleted`)
+  for (const keep of untouchable(files)) assert.ok(onDisk().includes(keep), `${keep} was deleted`)
   assert.ok(logs.some(entry => entry.event === 'backup.partial_swept' && entry.count === 2))
 })
 
-test('sweepPartialBackups (startup) deletes only cdkt-*.partial, and only while no backup holds the run lock', async () => {
+test('sweepPartialBackups (startup) deletes only the app\'s own partial names, and only while no backup holds the run lock', async () => {
   const files = seedLeftovers()
   state.lockBusy = true
   assert.equal(await sweepPartialBackups(), 0, 'a running backup owns its partial file')
@@ -288,7 +296,20 @@ test('sweepPartialBackups (startup) deletes only cdkt-*.partial, and only while 
   state.lockBusy = false
   assert.equal(await sweepPartialBackups(), 2)
   assert.deepEqual(lockNames, ['cdkt:backup:run', 'cdkt:backup:run'])
-  assert.deepEqual(onDisk(), [files.uploadRestore, files.registered, files.shellDump, files.other].sort())
+  assert.deepEqual(onDisk(), untouchable(files).sort())
+})
+
+test('the sweep pattern matches every name runBackup writes, for every trigger', async () => {
+  const { BACKUP_TRIGGERS } = await import('../server/services/backup')
+  mkdirSync(backupDir(), { recursive: true })
+  const names = BACKUP_TRIGGERS.flatMap(trigger => [
+    `cdkt-20261022T030000Z-${trigger}.sql.gz.partial`,
+    `cdkt-uploads-20261022T030000Z-${trigger}.tar.gz.partial`,
+    `cdkt-media-20261022T030000Z-${trigger}.tar.gz.partial`,
+  ])
+  for (const name of names) writeFileSync(path.join(backupDir(), name), name)
+  assert.equal(await sweepPartialBackups(), names.length)
+  assert.deepEqual(onDisk(), [])
 })
 
 // ─── The attempt starts inside the lock (scheduler counts it there) ────────────

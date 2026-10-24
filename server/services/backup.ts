@@ -108,13 +108,22 @@ export class BackupNameCollisionError extends Error {
  */
 const PARTIAL_SUFFIX = '.partial'
 /**
- * Chỉ tệp `.partial` của CHÍNH lượt sao lưu trong app. Không đụng `.upload-*.partial`
- * (khôi phục từ tệp tải lên — giữ khoá khôi phục, không phải khoá chạy), không đụng
- * tệp của `scripts/backup*.sh` (không có hậu tố này), không đụng tệp đã đăng ký.
+ * Chỉ tệp `.partial` mang ĐÚNG tên mà `runBackup` ghi:
+ * `cdkt-<stamp>-<trigger>.sql.gz.partial` và
+ * `cdkt-(uploads|media)-<stamp>-<trigger>.tar.gz.partial`, `trigger` thuộc
+ * `BACKUP_TRIGGERS`. Khoá chạy chỉ nói rằng không lượt sao lưu TRONG APP nào đang
+ * ghi; `scripts/backup-db.sh` (cron hằng đêm qua `backup.sh`) ghi vào cùng `./backups`
+ * dưới tên `cdkt-<db>-<stamp>-<pid>.sql.gz.partial` rồi mới đổi tên — tệp đó có thể
+ * là một bản dump ĐANG chạy, nên mẫu không bao giờ khớp nó (`<db>`/`<pid>` không phải
+ * dạng của app). Cũng không đụng `.upload-*.partial` (khôi phục từ tệp tải lên — giữ
+ * khoá khôi phục, không phải khoá chạy) hay tệp đã đăng ký (không có hậu tố này).
  */
-const STALE_PARTIAL = /^cdkt-[^/]+\.partial$/
+const APP_TRIGGERS = BACKUP_TRIGGERS.map(trigger => trigger.replace(/[^a-z0-9-]/g, '')).join('|')
+const STALE_PARTIAL = new RegExp(
+  `^cdkt-(?:\\d{8}T\\d{6}Z-(?:${APP_TRIGGERS})\\.sql\\.gz|(?:uploads|media)-\\d{8}T\\d{6}Z-(?:${APP_TRIGGERS})\\.tar\\.gz)\\.partial$`,
+)
 
-/** Xoá mọi tệp `cdkt-*.partial` trong `dir`. Chỉ gọi khi đang giữ khoá chạy. */
+/** Xoá các tệp `.partial` do `runBackup` để lại trong `dir`. Chỉ gọi khi đang giữ khoá chạy. */
 async function deleteStalePartials(dir: string): Promise<number> {
   let names: string[]
   try { names = await fs.readdir(dir) } catch { return 0 }
