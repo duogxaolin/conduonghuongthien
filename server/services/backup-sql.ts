@@ -140,7 +140,21 @@ export async function dumpSql(target: string, hooks: DumpHooks = {}): Promise<nu
         const createSql = (createRows[0] as Record<string, string>)['Create Table']
         lines.push(`DROP TABLE IF EXISTS \`${table}\`;`)
         lines.push(createSql + ';')
-        const [rows, fields] = await conn.query<RowDataPacket[][]>({ sql: `SELECT * FROM \`${table}\``, rowsAsArray: true })
+        // Generated columns (`articles.view_total`) are left out, as mysqldump
+        // does: MySQL refuses any value for one on INSERT (error 3105), so dumping
+        // it would make every backup — the automatic `pre-restore` copy included —
+        // impossible to restore; the CREATE TABLE above recomputes it. Matched on
+        // the exact EXTRA values: `created_at`/`updated_at` read `DEFAULT_GENERATED`
+        // and are ordinary data that must be dumped.
+        const [columnRows] = await conn.query<RowDataPacket[]>(
+          `SELECT COLUMN_NAME AS name FROM information_schema.COLUMNS
+           WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?
+             AND EXTRA NOT IN ('STORED GENERATED', 'VIRTUAL GENERATED')
+           ORDER BY ORDINAL_POSITION`,
+          [table],
+        )
+        const columnList = columnRows.map(column => `\`${String(column.name)}\``).join(', ')
+        const [rows, fields] = await conn.query<RowDataPacket[][]>({ sql: `SELECT ${columnList} FROM \`${table}\``, rowsAsArray: true })
         if (rows.length > 0 && fields.length > 0) {
           lines.push(`INSERT INTO \`${table}\` (\`${fields.map(field => field.name).join('`, `')}\`) VALUES`)
           const valuesChunks: string[] = []
