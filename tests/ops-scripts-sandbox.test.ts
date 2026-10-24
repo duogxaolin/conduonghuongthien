@@ -2,6 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { createServer } from 'node:net'
 import { join } from 'node:path'
 import { SECRET, cleanup, envValue, lines, makeSandbox, repoFile, type Sandbox } from './_ops-sandbox'
 
@@ -1186,6 +1187,343 @@ test('a dump is only ever visible under its final name once it passed verificati
     assert.ok(left.some((f) => /^cdkt-cdkt_admin-20261023T030000Z-\d+\.sql\.gz$/.test(f)), JSON.stringify(left))
     assert.ok(!left.some((f) => /20261023T030000Z.*\.partial$/.test(f)), 'this run left its partial behind')
     assert.match(readFileSync(repoFile('scripts/backup-db.sh'), 'utf8'), /^PARTIAL="\$TARGET\.partial"$/m)
+  } finally {
+    cleanup(sb)
+  }
+})
+
+// ─── manage.sh: journald or the json-file fallback (wave2 D-LOG) ──────────────
+const OVERRIDE = 'docker-compose.override.yml'
+/** journald "present" for the scripts: a real unix socket + a journalctl on PATH. */
+async function withJournald(sb: Sandbox, fn: (env: Record<string, string>) => void) {
+  writeFileSync(sb.path('bin', 'journalctl'), '#!/bin/sh\nexit 0\n')
+  chmodSync(sb.path('bin', 'journalctl'), 0o755)
+  const socket = sb.path('journal.sock')
+  const server = createServer()
+  await new Promise<void>(resolve => server.listen(socket, resolve))
+  try {
+    fn({ CDKT_JOURNALD_SOCKET: socket })
+  } finally {
+    await new Promise(resolve => server.close(resolve))
+  }
+}
+
+test('Deploy on a host without journald writes the marked json-file override and warns — no extra question', () => {
+  const sb = deploySandbox(8000)
+  try {
+    const r = sb.run('production/manage.sh', ['deploy'], {
+      input: lines(...Array(DEPLOY_PROMPTS).fill(''), 'n'),
+      env: { CDKT_MEMINFO_FILE: sb.path('meminfo'), CDKT_JOURNALD_SOCKET: sb.path('no-journal') },
+    })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    const override = readFileSync(sb.path(OVERRIDE), 'utf8')
+    assert.match(override.split('\n')[0]!, /^# cdkt-log-fallback/)
+    assert.match(override, /driver: json-file[\s\S]*max-size: "10m"[\s\S]*max-file: "3"/)
+    assert.match(r.stderr, /không có systemd-journald/)
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('Deploy on a journald host writes nothing extra', async () => {
+  const sb = deploySandbox(8000)
+  try {
+    await withJournald(sb, (env) => {
+      const r = sb.run('production/manage.sh', ['deploy'], {
+        input: lines(...Array(DEPLOY_PROMPTS).fill(''), 'n'),
+        env: { CDKT_MEMINFO_FILE: sb.path('meminfo'), ...env },
+      })
+      assert.equal(r.status, 0, r.stdout + r.stderr)
+      assert.equal(existsSync(sb.path(OVERRIDE)), false)
+    })
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('Update removes its own fallback once journald is there, and never touches an operator override', async () => {
+  const ours = updateSandbox('ghcr.io/x/y:latest')
+  try {
+    // First Update on a host without journald writes the fallback…
+    const first = ours.run('production/manage.sh', ['update'], { input: updateInput('n', 'n'), env: { CDKT_JOURNALD_SOCKET: ours.path('no-journal') } })
+    assert.equal(first.status, 0, first.stdout + first.stderr)
+    assert.ok(existsSync(ours.path(OVERRIDE)))
+    // …and the next one, with journald installed, removes it again.
+    await withJournald(ours, (env) => {
+      const r = ours.run('production/manage.sh', ['update'], { input: updateInput('n', 'n'), env })
+      assert.equal(r.status, 0, r.stdout + r.stderr)
+      assert.equal(existsSync(ours.path(OVERRIDE)), false)
+    })
+  } finally {
+    cleanup(ours)
+  }
+
+  const theirs = updateSandbox('ghcr.io/x/y:latest')
+  try {
+    writeFileSync(theirs.path(OVERRIDE), 'services: {}\n')
+    const r = theirs.run('production/manage.sh', ['update'], { input: updateInput('n', 'n'), env: { CDKT_JOURNALD_SOCKET: theirs.path('no-journal') } })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.equal(readFileSync(theirs.path(OVERRIDE), 'utf8'), 'services: {}\n')
+    assert.match(r.stderr, /không do script này sinh/)
+  } finally {
+    cleanup(theirs)
+  }
+})
+
+// ─── manage.sh: "Cài cron sao lưu" (wave2 D-OFFSITE) ──────────────────────────
+// The fake crontab keeps the user's crontab in $SANDBOX/crontab.txt.
+const crontabOf = (sb: Sandbox) => (existsSync(sb.path('crontab.txt')) ? readFileSync(sb.path('crontab.txt'), 'utf8') : null)
+const installs = (sb: Sandbox) => sb.dockerLog().filter((line) => /^crontab (?!-l)/.test(line))
+/** Where the jobs log to: /var/log for a user who can write there, else <repo>/logs. */
+const cronLogDir = (sb: Sandbox) => {
+  const probe = spawnSync('bash', ['-c', '[ -w /var/log ]'])
+  return probe.status === 0 ? '/var/log' : sb.path('logs')
+}
+
+test('cron install: prints the exact lines and installs nothing without a yes', () => {
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+  try {
+    // Blank answer = the default, which is "no".
+    for (const answer of ['', 'n']) {
+      const r = sb.run('production/manage.sh', ['backup-cron'], { input: lines(answer) })
+      assert.equal(r.status, 0, r.stdout + r.stderr)
+      const logDir = cronLogDir(sb)
+      assert.ok(r.stdout.includes(`0 2 * * * cd '${sb.dir}' && ./scripts/backup.sh >> '${logDir}/cdkt-backup.log' 2>&1`), r.stdout)
+      assert.ok(r.stdout.includes(`30 3 1 * * cd '${sb.dir}' && ./scripts/verify-restore.sh --latest >> '${logDir}/cdkt-verify-restore.log' 2>&1`), r.stdout)
+      assert.deepEqual(installs(sb), [], `answer ${JSON.stringify(answer)} installed a crontab`)
+      assert.equal(crontabOf(sb), null)
+    }
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('cron install: a yes installs one marked block, keeps the user\'s own lines, and a second run replaces it (idempotent)', () => {
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+  try {
+    writeFileSync(sb.path('crontab.txt'), 'MAILTO=""\n15 4 * * * /usr/local/bin/other-job\n')
+    const first = sb.run('production/manage.sh', ['backup-cron'], { input: lines('y') })
+    assert.equal(first.status, 0, first.stdout + first.stderr)
+    const once = crontabOf(sb)!
+    assert.match(once, /^MAILTO=""\n15 4 \* \* \* \/usr\/local\/bin\/other-job\n/, 'the user\'s lines come first, untouched')
+    assert.equal((once.match(/^# BEGIN cdkt-backup/gm) ?? []).length, 1)
+    assert.equal((once.match(/^# END cdkt-backup/gm) ?? []).length, 1)
+    assert.equal((once.match(/scripts\/backup\.sh/g) ?? []).length, 1)
+    assert.equal((once.match(/scripts\/verify-restore\.sh --latest/g) ?? []).length, 1)
+
+    const second = sb.run('production/manage.sh', ['backup-cron'], { input: lines('y') })
+    assert.equal(second.status, 0, second.stdout + second.stderr)
+    assert.equal(crontabOf(sb), once, 'a second install changed the crontab')
+    if (cronLogDir(sb) !== '/var/log') assert.ok(existsSync(sb.path('logs')), 'the log directory the jobs append to must exist')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('cron install: a backup job the operator added by hand is pointed out before installing a second one', () => {
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+  try {
+    writeFileSync(sb.path('crontab.txt'), '0 2 * * * cd /srv/cdkt && ./scripts/backup.sh >> /var/log/cdkt-backup.log 2>&1\n')
+    const r = sb.run('production/manage.sh', ['backup-cron'], { input: lines('n') })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /chạy hai lần/)
+    assert.match(r.stdout, /\/srv\/cdkt && \.\/scripts\/backup\.sh/)
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('cron install: an unreadable crontab is never mistaken for an empty one (that would wipe it)', () => {
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+  try {
+    writeFileSync(sb.path('crontab.txt'), '15 4 * * * /usr/local/bin/other-job\n')
+    const r = sb.run('production/manage.sh', ['backup-cron'], { input: lines('y'), env: { FAKE_CRONTAB_LIST_RC: '1' } })
+    assert.notEqual(r.status, 0)
+    assert.deepEqual(installs(sb), [])
+    assert.equal(crontabOf(sb), '15 4 * * * /usr/local/bin/other-job\n')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('cron install: says whether the monitor ping is set, without printing its URL', () => {
+  const url = 'https://hc-ping.com/7d1f0c2a-aaaa-bbbb-cccc-0123456789ab'
+  const withPing = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\nHEALTHCHECK_PING_URL=${url}\n`)
+  const without = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+  try {
+    const set = withPing.run('production/manage.sh', ['backup-cron'], { input: lines('n') })
+    assert.match(set.stdout, /HEALTHCHECK_PING_URL đang đặt/)
+    assert.ok(!set.stdout.includes('7d1f0c2a'), 'the ping URL was printed')
+    const unset = without.run('production/manage.sh', ['backup-cron'], { input: lines('n') })
+    assert.match(unset.stdout, /HEALTHCHECK_PING_URL chưa đặt/)
+  } finally {
+    cleanup(withPing)
+    cleanup(without)
+  }
+})
+
+test('cron install: refused for a user who cannot write the backup directory (the nightly job would fail EACCES)', (t) => {
+  // ./backups is the app container's bind mount, handed to uid 1000 (`node`) on every
+  // start: a non-root deploy user usually cannot write it. Installing the cron for
+  // that user is a backup that fails every night — so the install refuses and says
+  // to use root.
+  if (process.getuid?.() === 0) {
+    t.skip('root ignores directory modes')
+    return
+  }
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\nBACKUP_DIR=./backups\n`)
+  try {
+    mkdirSync(sb.path('backups'))
+    chmodSync(sb.path('backups'), 0o555)
+    const r = sb.run('production/manage.sh', ['backup-cron'], { input: lines('y') })
+    assert.notEqual(r.status, 0)
+    assert.match(r.stdout + r.stderr, /không ghi được thư mục sao lưu/)
+    assert.match(r.stdout + r.stderr, /root/)
+    assert.deepEqual(installs(sb), [])
+    // An absolute BACKUP_DIR elsewhere that the user CAN write is fine.
+    const elsewhere = sb.path('elsewhere')
+    mkdirSync(elsewhere)
+    writeFileSync(sb.path('.env'), `MYSQL_ROOT_PASSWORD=${SECRET}\nBACKUP_DIR=${elsewhere}\n`)
+    const ok = sb.run('production/manage.sh', ['backup-cron'], { input: lines('y') })
+    assert.equal(ok.status, 0, ok.stdout + ok.stderr)
+    assert.equal(installs(sb).length, 1)
+  } finally {
+    chmodSync(sb.path('backups'), 0o755)
+    cleanup(sb)
+  }
+})
+
+test('cron install: a repo path cron would misread (%, quote) is refused', () => {
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+  try {
+    // Copy the sandbox's manage.sh into a directory whose name contains '%'.
+    const odd = sb.path('odd%dir')
+    mkdirSync(join(odd, 'production'), { recursive: true })
+    writeFileSync(join(odd, 'production', 'manage.sh'), readFileSync(sb.path('production', 'manage.sh')))
+    writeFileSync(join(odd, '.env'), `MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+    const r = sb.run('odd%dir/production/manage.sh', ['backup-cron'], { input: lines('y') })
+    assert.notEqual(r.status, 0)
+    assert.deepEqual(installs(sb), [])
+  } finally {
+    cleanup(sb)
+  }
+})
+
+// ─── manage.sh: "Xuất .env đã mã hoá" (wave2 D-OFFSITE) ───────────────────────
+const ENV_SECRET = 'JWT_SECRET=0123456789abcdef-very-secret\nMYSQL_ROOT_PASSWORD=s3cret-ROOT-pw\n'
+const PASSPHRASE = 'correct horse battery staple'
+/** A shim that records openssl's argv, then runs the real openssl. */
+function shimOpenssl(sb: Sandbox) {
+  const real = spawnSync('bash', ['-c', 'command -v openssl'], { encoding: 'utf8' }).stdout.trim()
+  assert.ok(real, 'openssl is required for this test')
+  writeFileSync(sb.path('bin', 'openssl'), `#!/usr/bin/env bash\nprintf '%s\\n' "$*" >> "$SANDBOX/openssl.argv"\nexec '${real}' "$@"\n`)
+  chmodSync(sb.path('bin', 'openssl'), 0o755)
+  return real
+}
+
+test('export: AES-256-CBC + PBKDF2 (200000 rounds), a 0600 .env.enc the same passphrase decrypts back to .env', () => {
+  const sb = makeSandbox(ENV_SECRET)
+  try {
+    const real = shimOpenssl(sb)
+    const r = sb.run('production/manage.sh', ['export-env'], { input: lines(PASSPHRASE, PASSPHRASE) })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.equal(mode(sb.path('.env.enc')).toString(8), '600')
+    const decrypted = spawnSync(real, ['enc', '-d', '-aes-256-cbc', '-pbkdf2', '-iter', '200000', '-in', sb.path('.env.enc'), '-pass', 'stdin'], { input: PASSPHRASE, encoding: 'utf8' })
+    assert.equal(decrypted.status, 0, decrypted.stderr)
+    assert.equal(decrypted.stdout, ENV_SECRET)
+    // Secrets never on a command line (`ps`) and never on screen.
+    const argv = readFileSync(sb.path('openssl.argv'), 'utf8')
+    assert.match(argv, /enc -aes-256-cbc -pbkdf2 -iter 200000 /)
+    assert.ok(!argv.includes(PASSPHRASE) && !argv.includes('pass:'), 'the passphrase reached argv')
+    for (const secret of [PASSPHRASE, '0123456789abcdef-very-secret', 's3cret-ROOT-pw']) {
+      assert.ok(!(r.stdout + r.stderr).includes(secret), `printed: ${secret}`)
+    }
+    // It tells the operator how to get it back.
+    assert.match(r.stdout, /openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in \.env\.enc -out \.env/)
+    assert.ok(!readdirSync(sb.dir).some((f) => /^\.env\.enc\./.test(f)), 'temp file left behind')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('export: mismatched or short passphrases write nothing', () => {
+  const sb = makeSandbox(ENV_SECRET)
+  try {
+    shimOpenssl(sb)
+    const mismatch = sb.run('production/manage.sh', ['export-env'], { input: lines(PASSPHRASE, `${PASSPHRASE}!`) })
+    assert.notEqual(mismatch.status, 0)
+    const short = sb.run('production/manage.sh', ['export-env'], { input: lines('short', 'short') })
+    assert.notEqual(short.status, 0)
+    assert.equal(existsSync(sb.path('.env.enc')), false)
+    assert.equal(existsSync(sb.path('openssl.argv')) && /-aes-256-cbc/.test(readFileSync(sb.path('openssl.argv'), 'utf8')), false, 'openssl ran anyway')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('export: an existing .env.enc is only replaced on a yes', () => {
+  const sb = makeSandbox(ENV_SECRET)
+  try {
+    shimOpenssl(sb)
+    writeFileSync(sb.path('.env.enc'), 'earlier export')
+    const kept = sb.run('production/manage.sh', ['export-env'], { input: lines('') })
+    assert.equal(kept.status, 0, kept.stdout + kept.stderr)
+    assert.equal(readFileSync(sb.path('.env.enc'), 'utf8'), 'earlier export')
+    const replaced = sb.run('production/manage.sh', ['export-env'], { input: lines('y', PASSPHRASE, PASSPHRASE) })
+    assert.equal(replaced.status, 0, replaced.stdout + replaced.stderr)
+    assert.notEqual(readFileSync(sb.path('.env.enc'), 'utf8'), 'earlier export')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('export: an openssl without -pbkdf2 is refused rather than used with a weaker key derivation', () => {
+  const sb = makeSandbox(ENV_SECRET)
+  try {
+    writeFileSync(sb.path('bin', 'openssl'), '#!/usr/bin/env bash\nif [ "$1 $2" = "enc -help" ]; then echo "Usage: enc [options]" >&2; echo " -md val  Use specified digest" >&2; exit 0; fi\nprintf "%s\\n" "$*" >> "$SANDBOX/openssl.argv"\nexit 0\n')
+    chmodSync(sb.path('bin', 'openssl'), 0o755)
+    const r = sb.run('production/manage.sh', ['export-env'], { input: lines(PASSPHRASE, PASSPHRASE) })
+    assert.notEqual(r.status, 0)
+    assert.match(r.stdout + r.stderr, /-pbkdf2/)
+    assert.equal(existsSync(sb.path('.env.enc')), false)
+    assert.equal(existsSync(sb.path('openssl.argv')), false)
+  } finally {
+    cleanup(sb)
+  }
+})
+
+// ─── manage.sh: OPS_ALERT_EMAIL (wave2 D-ALERT) ───────────────────────────────
+test('Deploy writes an OPS_ALERT_EMAIL line (empty unless given)', () => {
+  const sb = deploySandbox(8000)
+  try {
+    const r = sb.run('production/manage.sh', ['deploy'], {
+      input: lines(...Array(DEPLOY_PROMPTS).fill(''), 'n'),
+      env: { CDKT_MEMINFO_FILE: sb.path('meminfo') },
+    })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.equal(envValue(sb.env(), 'OPS_ALERT_EMAIL'), '')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('Update sets OPS_ALERT_EMAIL, refuses a value that is not an address list, and keeps it on enter', () => {
+  // The OPS_ALERT_EMAIL prompt is the one just before the HEALTHCHECK_PING_URL prompt
+  // (that one must stay last — the ping tests answer it by position).
+  // dump? pull code? · the other prompts blank · OPS_ALERT_EMAIL (+ its confirm) · ping blank · pull image?
+  const answers = (ops: string[], pullImage = 'n') => lines('n', 'n', ...Array(UPDATE_PROMPTS - 2).fill(''), ...ops, '', pullImage)
+  const sb = updateSandbox('ghcr.io/x/y:latest')
+  try {
+    const set = sb.run('production/manage.sh', ['update'], { input: answers(['ops@example.test, oncall@example.test', 'y']) })
+    assert.equal(set.status, 0, set.stdout + set.stderr)
+    assert.equal(envValue(sb.env(), 'OPS_ALERT_EMAIL'), 'ops@example.test,oncall@example.test')
+    const kept = sb.run('production/manage.sh', ['update'], { input: answers(['']) })
+    assert.equal(kept.status, 0, kept.stdout + kept.stderr)
+    assert.equal(envValue(sb.env(), 'OPS_ALERT_EMAIL'), 'ops@example.test,oncall@example.test')
+    const bad = sb.run('production/manage.sh', ['update'], { input: answers(['ops@example.test|rm']) })
+    assert.equal(bad.status, 0, bad.stdout + bad.stderr)
+    assert.equal(envValue(sb.env(), 'OPS_ALERT_EMAIL'), 'ops@example.test,oncall@example.test', 'an invalid value was written')
+    assert.match(bad.stdout, /OPS_ALERT_EMAIL không hợp lệ/)
   } finally {
     cleanup(sb)
   }

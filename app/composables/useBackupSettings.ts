@@ -4,6 +4,8 @@
  * nằm trong phạm vi quét `$fetch` của guard error/retry (chỉ pages/admin + components/admin);
  * khối danh sách backup — nơi có nhánh lỗi + nút thử lại — vẫn ở trang cha.
  */
+import { isBackupLocalOnly } from '~~/shared/backup-offsite-status'
+
 export function useBackupSettings() {
   const toast = useToast()
   const { confirm } = useConfirm()
@@ -232,6 +234,12 @@ export function useBackupSettings() {
     }
   }
 
+  // Backup tự động bật mà chưa có nơi lưu ngoài máy chủ (spec backup-restore, "Local
+  // only"). Tính từ BIỂU MẪU (đổi công tắc là thấy ngay) + trạng thái liên kết đã tải;
+  // chưa tải xong cài đặt hoặc trạng thái liên kết thì không khẳng định gì.
+  const backupsLocalOnly = computed(() => settingsLoaded.value && !driveLinkLoading.value
+    && isBackupLocalOnly(backupSettings.value, driveLink.value?.status ?? null))
+
   /** Nạp mọi thứ khối cài đặt cần khi vừa mount. */
   function loadAll() {
     loadSettings()
@@ -243,7 +251,7 @@ export function useBackupSettings() {
   return {
     isSuperAdmin, settingsLoaded, settingsLoadError, loadSettings,
     backupSettings, selectedDays, daysOptions, savingSettings, saveSettings,
-    schedulerDisabledByServer,
+    schedulerDisabledByServer, backupsLocalOnly,
     driveLink, driveRedirectUri, driveLinkLoading, disconnecting, driveToast,
     disconnectDrive, copyRedirectUri,
     driveConfig, driveConfigLoading, savingDriveConfig, clearingDriveSecret,

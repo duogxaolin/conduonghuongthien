@@ -168,7 +168,7 @@ ssh-keyscan -p <VPS_PORT> <VPS_HOST>
 | Tên | Giá trị |
 |---|---|
 | `VPS_HOST` | IP hoặc domain của VPS |
-| `VPS_USER` | `root`, hoặc user đã thêm vào group `docker` |
+| `VPS_USER` | `root`, hoặc user đã thêm vào group `docker` (khuyến nghị — khoá `restrict` trong `authorized_keys`: `production/README.md` § *User deploy không phải root*) |
 | `VPS_SSH_KEY` | **toàn bộ nội dung** `~/.ssh/cdkt_deploy` (Bước 1) |
 | `VPS_SSH_KNOWN_HOSTS` | 3 dòng `ssh-keyscan` ở Bước 2 |
 
@@ -258,6 +258,14 @@ không bao giờ tới được container). Lượt deploy:
    `….sql.gz.partial`; lượt dump sau cùng họ xoá nó khi đã quá 1 ngày. Phiên SSH của job có keep-alive
    (`ServerAliveInterval=30`, `ServerAliveCountMax=10`) để một bản dump lâu không bị NAT/tường
    lửa cắt vì "rảnh";
+2c. **log của app** (wave2 D-LOG): compose cho app ghi vào journald (`tag: cdkt-app`).
+   `ensure_log_driver` kiểm máy chủ có systemd-journald (socket
+   `/run/systemd/journal/socket` + `journalctl`); không có → ghi
+   `<APP_DIR>/docker-compose.override.yml` mang dấu `# cdkt-log-fallback` (app dùng
+   `json-file` 3 × 10 MB) và in `::warning::`; có journald mà tệp có dấu còn → gỡ nó.
+   Override **không** mang dấu (của người vận hành) không bao giờ bị sửa. Chạy sau bản
+   dump (không gì đổi trước dump) và trước bước 4 (để `config -q` thấy override cuối
+   cùng). Cùng hàm, giống từng chữ, ở `production/manage.sh` Deploy/Update;
 3. sao lưu `docker-compose.yml` cũ vào `<APP_DIR>/.deploy-compose-backups/`
    (giữ 10 bản gần nhất; compose không đổi thì không sao lưu, không ghi gì);
 4. đặt bản mới, chạy `docker compose config -q` **trên chính VPS** (gồm cả
@@ -669,7 +677,7 @@ dưới đây là lớp chặn cuối cùng mà workflow không tự đặt đư
 | # | Việc | Ở đâu |
 |---|---|---|
 | 1 | **Bảo vệ nhánh `main`**: bắt buộc qua pull request, cấm push thẳng (kể cả admin — bỏ chọn *Allow bypass*), và **required status checks** — **đọc mục *Chọn required checks* ngay dưới bảng trước khi bật**: đặt thẳng năm tên job (`Plan`, `Unit and typecheck`, `Schema drift`, `Production build`, `Secrets and defaults`) với `ci.yml` hiện tại sẽ **khoá cứng mọi PR chỉ sửa tài liệu**. | `Settings → Branches → Add branch ruleset` (hoặc *Branch protection rules*) |
-| 2 | *(Tuỳ chọn)* **Cổng duyệt tay trước deploy**: tạo Environment `production` với *Required reviewers*, rồi thêm `environment: production` vào job `deploy` (secret cấp repo vẫn dùng được trong job có environment). Workflow **cố ý chưa** có khoá này: đó là quyết định đổi quy trình (mỗi lần merge phải có người bấm duyệt, lượt chờ duyệt giữ chỗ trong nhóm `deploy-production`), không phải một sửa lỗi. | `Settings → Environments → New environment` |
+| 2 | *(Tuỳ chọn — **đã chốt: không làm**, xem *Quyết định D2* bên dưới)* **Cổng duyệt tay trước deploy**: tạo Environment `production` với *Required reviewers*, rồi thêm `environment: production` vào job `deploy` (secret cấp repo vẫn dùng được trong job có environment). Workflow **cố ý chưa** có khoá này: đó là quyết định đổi quy trình (mỗi lần merge phải có người bấm duyệt, lượt chờ duyệt giữ chỗ trong nhóm `deploy-production`), không phải một sửa lỗi. | `Settings → Environments → New environment` |
 | 3 | **Xoá Environment lạc tên `VPS_HOST`** — đó là tên một *secret*, bị tạo nhầm thành Environment. Ngày kiểm, nó **không chứa secret hay variable nào** và không job nào khai `environment:`; bốn secret `VPS_*` thật nằm ở cấp repo. Kiểm lại trước khi xoá: `gh api repos/<OWNER>/<REPO>/environments/VPS_HOST/secrets`. | `Settings → Environments → VPS_HOST → Delete` |
 
 ### Chọn required checks (việc #1) — vì sao không đặt thẳng năm tên job
@@ -733,7 +741,32 @@ thành `.` sẽ quét cả cây (kể cả fixture test) — nên nó được k
 `docker run --rm -v "$PWD:/mnt:ro" -w /mnt koalaman/shellcheck:stable -S warning production/manage.sh`)
 và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừng để nó tích lại. Hành vi của nó được kiểm bằng
 `tests/ops-scripts-sandbox.test.ts` / `tests/ops-migrate-scanner.test.ts` (chạy thật với
-`docker`/`git` giả).
+`docker`/`git`/`crontab` giả).
+
+### Quyết định đã chốt (wave2): D2 và D-CI
+
+Hai quyết định quy trình của đợt 2 — ghi ở đây để lượt rà sau không đề xuất lại như
+việc còn thiếu.
+
+**D2 — Không có cổng duyệt tay trước deploy** (việc #2 ở bảng trên giữ là *tuỳ chọn*).
+Merge vào `main` vẫn tự deploy. Lớp chặn thay cho người bấm duyệt:
+bảo vệ nhánh `main` + required checks (việc #1 — **việc của chủ repo**, chưa bật thì D2
+không đứng vững), bản dump CSDL trước mỗi lượt đổi image (bước 2b), smoke test qua tên
+miền thật (`VPS_SMOKE_URL`), lùi tự động khi container không khoẻ, và bỏ qua deploy khi
+chỉ đổi tài liệu (*Mốc so của "chỉ tài liệu"*). Lý do không thêm cổng: một người vận hành,
+mỗi lần merge phải bấm duyệt thì lượt chờ giữ chỗ trong nhóm `deploy-production` và bản vá
+khẩn chậm theo người bấm. Đổi ý (thêm Environment `production` với *Required reviewers*)
+là một dòng `environment: production` ở job `deploy` — không cần sửa gì khác.
+
+**D-CI — Chấp nhận CI đầy đủ chạy hai lần mỗi lần merge** (một lượt ở PR, một lượt ở
+push lên `main`), **khi repo còn public**: Actions không tính phút cho repo public, và lượt
+push là lượt duy nhất dựng image + deploy, nên nó phải tự chạy đủ cổng
+(`needs: [test, typecheck, build, hygiene]`). Kiểm `gh repo view --json visibility` ngày
+2026-10-24: **PUBLIC** → giữ nguyên. **Nếu repo chuyển private** (hạn mức 3.000 phút/tháng
+áp ngay; tài khoản từng hết phút khi còn private): lượt push lên `main` nên **dùng lại lượt
+PR đã xanh của cùng tree SHA** (`git rev-parse HEAD^{tree}` khớp tree của commit đầu PR đã
+qua đủ cổng) và chỉ build image + deploy — đó là việc còn mở, chưa viết, cần làm trước hoặc
+ngay khi đổi visibility. Đổi visibility là quyết định của chủ repo.
 
 ---
 

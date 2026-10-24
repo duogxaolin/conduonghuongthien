@@ -5,6 +5,10 @@
 - **OS**: Ubuntu 22.04+ / Debian 12+ / CentOS 9
 - **RAM**: tối thiểu 1 GB (khuyến nghị 2 GB)
 - **Docker**: Docker Engine 24+ & Docker Compose v2+
+- **systemd-journald** (có sẵn trên các bản phân phối trên): log app ghi vào journald
+  (`journalctl CONTAINER_TAG=cdkt-app`) để còn sau mỗi lượt deploy. Không có journald thì
+  deploy (CI hoặc `manage.sh`) tự lùi về `json-file` qua `docker-compose.override.yml` —
+  xem `production/README.md` § *Log của app*. Bản tay: tự tạo override đó trước `up`.
 - **Node.js**: KHÔNG cần cài — Docker multi-stage build dùng Node 24 LTS bên trong
 
 ---
@@ -122,6 +126,8 @@ Chờ ~60-90s (MySQL healthy + app start). Kiểm tra:
 
 ```bash
 docker logs cdkt_app -f
+# Log của các container app TRƯỚC (đã bị thay ở lượt deploy trước) — chỉ journald còn giữ:
+journalctl CONTAINER_TAG=cdkt-app --since today
 ```
 
 Khi thấy `Listening on http://0.0.0.0:54432` → app sẵn sàng.
@@ -422,6 +428,16 @@ bị xoá để không bị nhầm là bản tốt.
 0 2 * * * cd /path/to/CDKT && ./scripts/backup.sh >> /var/log/cdkt-backup.log 2>&1
 ```
 
+**Cài bằng `production/manage.sh`** (khuyến nghị): `cd production && ./manage.sh backup-cron`
+(Menu 5 "Cài cron sao lưu") in **đúng** dòng trên và dòng `verify-restore.sh --latest` hằng
+tháng (mục *Kiểm chứng khôi phục* bên dưới) với đường dẫn repo thật, rồi chỉ cài khi anh trả
+lời `y`. Hai dòng nằm trong khối `# BEGIN cdkt-backup` … `# END cdkt-backup` của crontab user
+đang chạy lệnh: chạy lại là thay khối đó, không nhân đôi; dòng khác giữ nguyên; dòng sao lưu
+gõ tay từ trước (ngoài khối) được chỉ ra để xoá. **Chạy bằng root** (`sudo`): `./backups` là
+bind mount thuộc uid 1000 của container — user không ghi được thư mục sao lưu (`BACKUP_DIR`)
+thì lệnh từ chối cài, vì cron đó sẽ hỏng mỗi đêm. Chi tiết: `production/README.md` § *5. Cài
+cron sao lưu*.
+
 Tuỳ chọn trong `.env`: `BACKUP_DIR` (mặc định `./backups`), `BACKUP_KEEP_DAYS`
 (mặc định 14), `HEALTHCHECK_PING_URL` (URL ping kiểu healthchecks.io: `backup-db.sh` và
 `verify-restore.sh` gọi URL khi xong, `<URL>/fail` khi hỏng; giám sát hỏng không làm
@@ -442,11 +458,35 @@ không xoá bản của ứng dụng. Hai bên không thấy nhau nên tổng s�
 
 > **Sao lưu nằm cùng VPS thì mất VPS là mất tất cả.** Cron ở trên chỉ ghi vào đĩa của
 > chính máy chủ này; chỗ lưu ngoài duy nhất có sẵn là backup Google Drive trong trang
-> quản trị (tuỳ chọn, phải tự bật). **Khuyến nghị**: chép định kỳ `./backups/` sang
-> một nơi khác VPS (máy khác, hoặc kho đối tượng ngoài) bằng công cụ của hạ tầng anh
-> đang dùng (ví dụ `rsync`/`rclone` trong cron), và giữ ba tệp cùng mã đi cùng nhau.
-> Repo này **không** kèm công cụ tải lên nào — việc chọn nơi lưu và cấp khoá truy cập
-> là quyết định của đơn vị vận hành.
+> quản trị (tuỳ chọn, phải tự bật — mọi lượt sao lưu của ứng dụng, kể cả theo lịch, tự
+> upload khi đã cấu hình; danh sách backup có cột *Bản ngoài máy chủ* cho từng tệp, và
+> khối cài đặt cảnh báo khi backup tự động bật mà chưa có Drive). **Khuyến nghị**: chép
+> định kỳ `./backups/` sang một nơi khác VPS (máy khác, hoặc kho đối tượng ngoài) bằng
+> công cụ của hạ tầng anh đang dùng (ví dụ `rsync`/`rclone` trong cron), và giữ ba tệp
+> cùng mã đi cùng nhau. Repo này **không** kèm công cụ tải lên nào — việc chọn nơi lưu
+> và cấp khoá truy cập là quyết định của đơn vị vận hành.
+
+### Bản `.env` ngoài VPS (mã hoá)
+
+Bản dump CSDL **không đủ** để dựng lại cổng trên máy mới: các giá trị đã mã hoá trong
+CSDL (API key AI, Google OAuth secret, liên kết Drive) chỉ mở được bằng
+`CHATBOT_ENCRYPTION_SECRET` trong `.env`, và `JWT_SECRET`, mật khẩu MySQL cũng chỉ có ở
+đó. Xuất một bản mã hoá rồi cất ngoài VPS:
+
+```bash
+cd production && ./manage.sh export-env      # Menu 6 "Xuất .env đã mã hoá"
+# → <repo>/.env.enc  (openssl enc -aes-256-cbc -pbkdf2 -iter 200000; passphrase gõ 2 lần, ≥ 12 ký tự)
+scp <user>@<vps>:<repo>/.env.enc ./cdkt-env-$(date +%Y%m%d).enc   # trên máy của anh
+ssh <user>@<vps> rm <repo>/.env.enc                                # bản trên VPS mất cùng VPS
+
+# Khi dựng lại (máy mới):
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in cdkt-env-<ngày>.enc -out .env && chmod 600 .env
+```
+
+Passphrase không bao giờ nằm trên dòng lệnh (lệnh dùng `-pass fd:3`); lệnh giải mã thử
+ngay sau khi ghi. Giữ passphrase ở chỗ **khác** tệp `.enc`. Xuất lại mỗi khi đổi `.env`
+(xoay `JWT_SECRET`, đổi mật khẩu MySQL…). Chi tiết: `production/README.md` § *6. Xuất .env
+đã mã hoá*.
 
 ### Kiểm chứng khôi phục (nên làm hàng tháng)
 

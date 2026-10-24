@@ -326,6 +326,59 @@ predeploy_dump() {
   fi
 }
 
+# ── Log của app: journald, hoặc json-file dự phòng (wave2 D-LOG) ──────────────
+# docker-compose.yml cho app ghi log vào journald (tag cdkt-app) để log còn sau khi
+# container bị tạo lại. Máy chủ không có systemd-journald thì `up` hỏng ("journald is
+# not enabled on this host") và MỌI lượt deploy lùi lại — nên lượt deploy tự đặt một
+# docker-compose.override.yml có dấu (json-file xoay vòng 3 × 10 MB; compose tự đọc
+# tệp này), và tự gỡ CHÍNH tệp đó khi journald đã có. Tệp override không mang dấu
+# (người vận hành tự viết) không bao giờ bị đụng. Hai hàm dưới giống HỆT bản trong
+# production/manage.sh (tests/ops-scripts.test.ts so từng chữ).
+LOG_FALLBACK_MARKER='# cdkt-log-fallback — sinh bởi production/manage.sh / scripts/deploy-remote.sh; đừng sửa tay'
+LOG_WARN_PREFIX='::warning::'
+
+journald_available() {
+  local socket="${CDKT_JOURNALD_SOCKET:-/run/systemd/journal/socket}"
+  # Driver journald của Docker ghi vào socket này; journalctl là cách đọc lại.
+  [ -S "$socket" ] && command -v journalctl >/dev/null 2>&1
+}
+
+ensure_log_driver() {
+  local override=docker-compose.override.yml ours=0 tmp
+  if [ -f "$override" ] && [ "$(head -n 1 "$override")" = "$LOG_FALLBACK_MARKER" ]; then
+    ours=1
+  fi
+  if journald_available; then
+    if [ "$ours" = 1 ]; then
+      rm -f "$override"
+      echo "▸ Máy chủ đã có systemd-journald — gỡ $override (log json-file dự phòng); log app vào journald: journalctl CONTAINER_TAG=cdkt-app"
+    fi
+    return 0
+  fi
+  if [ -f "$override" ] && [ "$ours" = 0 ]; then
+    echo "${LOG_WARN_PREFIX}Máy chủ không có systemd-journald và đã có $override không do script này sinh — KHÔNG sửa. Nếu tệp đó chưa đặt log cho app, thêm: services.app.logging = { driver: json-file, options: { max-size: \"10m\", max-file: \"3\" } }" >&2
+    return 0
+  fi
+  tmp=$(mktemp ./.docker-compose.override.XXXXXX)
+  {
+    echo "$LOG_FALLBACK_MARKER"
+    echo '# Máy chủ này không có systemd-journald, nên log của app dùng json-file (xoay vòng'
+    echo '# 3 × 10 MB) thay vì journald như docker-compose.yml khai. Log json-file MẤT khi'
+    echo '# container bị tạo lại (mỗi lượt deploy). Cài/bật systemd-journald rồi chạy lại'
+    echo '# deploy (CI hoặc ./manage.sh Update): tệp này tự được gỡ.'
+    echo 'services:'
+    echo '  app:'
+    echo '    logging:'
+    echo '      driver: json-file'
+    echo '      options:'
+    echo '        max-size: "10m"'
+    echo '        max-file: "3"'
+  } > "$tmp"
+  chmod 644 "$tmp"
+  mv "$tmp" "$override"
+  echo "${LOG_WARN_PREFIX}Máy chủ không có systemd-journald — log app dùng json-file (đã ghi $override). Log json-file mất khi container bị tạo lại; cài systemd-journald để giữ log qua các lượt deploy." >&2
+}
+
 # Thay nội dung $LIVE_COMPOSE bằng tệp $1 theo kiểu nguyên tử, giữ chủ sở hữu và
 # quyền của tệp cũ — cùng cách set_image ghi .env.
 write_live_compose() {
@@ -443,6 +496,9 @@ echo "▸ Image hiện tại: ${PREVIOUS:-(chưa đặt)}"
 # migrate_trusted_proxy_ips đều ghi tệp — dump hỏng sau chúng sẽ để lại compose
 # mới cạnh container cũ.
 predeploy_dump
+
+# Trước install_compose: `config -q` ở đó phải thấy override cuối cùng (nếu có).
+ensure_log_driver
 
 install_compose
 

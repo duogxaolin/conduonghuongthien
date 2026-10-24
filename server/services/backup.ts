@@ -27,6 +27,7 @@ import { withNamedLock } from '../utils/named-lock'
 import { logInfo, logWarn } from '../utils/logger'
 import { dumpSql } from './backup-sql'
 import { backupKindOf, expectedArchiveTop } from './backup-restore-guards'
+import { markOffsiteStatus, offsiteStatusAtRegistration, uploadRunOffsite } from './backup-offsite'
 
 const execFileAsync = promisify(execFile)
 
@@ -425,6 +426,9 @@ export async function runBackup(
     currentBackupStatus = { running: true, phase: 'start', message: 'Bắt đầu backup', startedAt: Date.now() }
     const dir = backupsDir()
     let config: Awaited<ReturnType<typeof readBackupConfig>>
+    // Drive bật ⇒ mỗi tệp của lượt này phải có bản ngoài máy chủ. Đặt ngay sau khi đọc
+    // cấu hình; `false` trước đó (chưa đăng ký tệp nào thì không có gì để đánh dấu).
+    let offsiteExpected = false
 
     const files: BackupResult['files'] = []
 
@@ -469,6 +473,7 @@ export async function runBackup(
         await db.transaction(async (tx) => {
           await tx.insert(backups).values({
             filename: name, type: kind, bytes, stamp, trigger, status: 'done', createdBy: adminUserId,
+            offsiteStatus: offsiteStatusAtRegistration({ driveEnabled: offsiteExpected }),
           })
           await tx.insert(activityLogs).values({
             userId: adminUserId, action: 'backup_run', resource: 'settings', resourceId: null,
@@ -492,6 +497,7 @@ export async function runBackup(
       // của app và tệp tên-app không có hàng là của một lượt đã bị giết.
       await deleteStaleFiles(dir, db)
       config = await readBackupConfig(db)
+      offsiteExpected = config.driveEnabled
 
       if (type === 'sql' || type === 'all') {
         currentBackupStatus = { running: true, phase: 'sql', message: 'Đang dump CSDL', startedAt: Date.now() }
@@ -525,6 +531,10 @@ export async function runBackup(
         startedAt: Date.now(),
       }
       for (const partial of pending) await fs.unlink(partial).catch(() => {})
+      // Tệp đã đăng ký `done` trước bước hỏng vẫn nằm trên đĩa, nhưng lượt chết trước
+      // bước Drive: khi Drive bật thì chúng KHÔNG có bản ngoài máy chủ — nói thật là
+      // `failed` thay vì để NULL. `markOffsiteStatus` không ném, nên không che lỗi gốc.
+      if (offsiteExpected) await markOffsiteStatus(db, files.map(file => file.name), 'failed')
       // Không bước tệp nào (đọc cấu hình, `mkdir`, hoặc tên bị từ chối) → không có tên
       // nào để ghi hàng `failed`; lỗi vẫn ném ra cho nơi gọi.
       if (failedStep) {
@@ -539,57 +549,13 @@ export async function runBackup(
       throw err
     }
 
-    // Upload Google Drive (nếu bật + cấu hình). HAI mode:
-    //   1. OAuth login (ưu tiên nếu đã liên kết) — refresh token từ `backup_drive_oauth`,
-    //      dùng client_id/secret **riêng cho Drive** từ `backup_drive_oauth_config`
-    //      (không dùng chung `google_oauth_settings` của reader — scope/audience khác).
-    //   2. Service Account (fallback) — JSON key từ settings.
-    let driveUploaded = false
-    let driveError: string | undefined
+    // Bản sao ngoài máy chủ (Google Drive, nếu bật + cấu hình) và `offsite_status` của
+    // từng tệp — `backup-offsite.ts`. Không bao giờ ném: Drive hỏng thì tệp cục bộ ở
+    // lại, hàng mang `failed`, lượt sao lưu vẫn thành công.
     if (config.driveEnabled && files.length > 0) {
       currentBackupStatus = { running: true, phase: 'drive', message: 'Đang upload Google Drive', startedAt: Date.now() }
-      try {
-        // Mode 1: OAuth link (ưu tiên — refresh token ổn định, không cần share folder).
-        const { getUsableDriveLink } = await import('./backup-drive-oauth')
-        const link = await getUsableDriveLink()
-        if (link.ok) {
-          const { getUsableDriveOauthConfig } = await import('./backup-drive-oauth-config')
-          const oauthConfig = await getUsableDriveOauthConfig()
-          if (!oauthConfig.ok) {
-            throw new Error(`OAuth config (${oauthConfig.reason}) — cần cấu hình Drive OAuth trước`)
-          }
-          const { uploadBackupToDriveOAuth } = await import('./backup-drive')
-          for (const f of files) {
-            const fileId = await uploadBackupToDriveOAuth(
-              path.join(dir, f.name), f.name, link.refreshToken,
-              oauthConfig.clientId, oauthConfig.clientSecret,
-              f.type === 'sql' ? 'sql' : 'media', stamp,
-              config.driveFolderId || undefined,
-            )
-            await db.update(backups).set({ driveUploaded: true, driveFileId: fileId }).where(eq(backups.filename, f.name))
-          }
-          driveUploaded = true
-        } else if (config.driveServiceAccount) {
-          // Mode 2: Service Account (fallback).
-          const { uploadBackupToDrive } = await import('./backup-drive')
-          for (const f of files) {
-            const fileId = await uploadBackupToDrive(
-              path.join(dir, f.name), f.name, config.driveServiceAccount,
-              f.type === 'sql' ? 'sql' : 'media', stamp,
-              config.driveFolderId || undefined,
-            )
-            await db.update(backups).set({ driveUploaded: true, driveFileId: fileId }).where(eq(backups.filename, f.name))
-          }
-          driveUploaded = true
-        } else if (link.reason === 'secret_unreadable') {
-          throw new Error('Refresh token không giải mã được — dịch khoá hoặc liên kết lại Drive')
-        }
-        // else: not_linked + no service account → không upload, không lỗi.
-      } catch (err) {
-        driveError = err instanceof Error ? err.message : String(err)
-        logWarn({ event: 'backup.drive_failed', error: driveError })
-      }
     }
+    const { driveUploaded, driveError } = await uploadRunOffsite(db, dir, stamp, files, config)
 
     // Xoay vòng — sau khi backup + Drive xong. Bản `pre-restore` bỏ qua bước này:
     // xoay vòng xoá bản `done` cũ nhất, và bản cũ nhất có thể chính là file sắp

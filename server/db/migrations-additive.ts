@@ -859,6 +859,13 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // CSDL mới; dòng này nới CSDL cũ (chỉ nới — không mất dữ liệu, chạy lại vô hại).
   await modifyColumn(db, database, 'backups', 'trigger', "VARCHAR(32) NOT NULL DEFAULT 'manual'")
 
+  // ── backups.offsite_status (wave2 D-OFFSITE) ──────────────────────────────
+  // uploaded | failed | none cho từng tệp sao lưu (shared/backup-offsite-status.ts).
+  // Chỉ thêm cột — KHÔNG điền giá trị cho hàng cũ: `drive_uploaded = 0` không phân
+  // biệt "Drive tắt" với "Drive hỏng", nên mọi suy ngược đều là đoán. Hàng cũ giữ
+  // NULL và trang quản trị lùi về `drive_uploaded`. Không có lệnh ghi hàng lúc khởi động.
+  await ensureColumn(db, database, 'backups', 'offsite_status', 'VARCHAR(16) NULL AFTER `drive_file_id`')
+
   // ── Tự vá URL ảnh hỏng hàng loạt (all bài) ────────────────────────────────
   // Sync trước treo ở pre-backup nên phase rewrite chưa chạy: all bài vẫn
   // `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi file local đã

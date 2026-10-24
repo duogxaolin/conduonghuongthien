@@ -182,6 +182,11 @@ services:
       BACKUP_SCHEDULER: ${BACKUP_SCHEDULER:-}
       LOG_LEVEL: ${LOG_LEVEL:-}
       LOGIN_CAPTCHA_ENABLED: ${LOGIN_CAPTCHA_ENABLED:-}
+      # Địa chỉ nhận thư cảnh báo vận hành (wave2 D-ALERT, server/utils/ops-alert.ts):
+      # khôi phục hỏng/bị từ chối, khoá MFA, Host giả, khe sao lưu bị bỏ, di trú khởi
+      # động bị chặn — tối đa 1 thư mỗi sự kiện mỗi 15 phút, gửi qua SMTP đã cấu hình
+      # trong admin. Rỗng = không gửi gì. Nhiều địa chỉ: phẩy ngăn cách.
+      OPS_ALERT_EMAIL: ${OPS_ALERT_EMAIL:-}
       # ── Media Portal ──────────────────────────────────────────────────────
       # Thư mục làm việc của pipeline video (chứa `uploads/` và `media/`). Nằm
       # trên volume `media_work`, KHÔNG trên `uploads_data`: một video 10 GB đang
@@ -230,9 +235,17 @@ services:
     depends_on:
       mysql:
         condition: service_healthy
+    # Log của app vào journald của máy chủ (wave2 D-LOG): json-file nằm trong thư mục
+    # của container và bị xoá cùng nó — mỗi lượt deploy tạo lại app, nên log của hôm
+    # qua mất đúng lúc cần đọc. Đọc: `journalctl CONTAINER_TAG=cdkt-app` (docker logs
+    # vẫn dùng được); thời gian giữ đặt ở journald.conf của máy chủ (production/README.md).
+    # Driver journald TỪ CHỐI max-size/max-file ("unknown log opt") — chỉ khai `tag`.
+    # Máy chủ không có systemd-journald: deploy (CI hoặc manage.sh) tự ghi một
+    # docker-compose.override.yml có dấu, lùi về json-file xoay vòng 3 × 10 MB.
     logging:
-      driver: json-file
-      options: { max-size: "10m", max-file: "3" }
+      driver: journald
+      options:
+        tag: cdkt-app
     # KHÔNG giới hạn RAM/CPU — xem chú thích ở service mysql bên trên, gồm cả lý
     # do `${VAR:-0}` phải có `:-0`. `./manage.sh media-tuning` là chỗ đề xuất và
     # ghi hai con số này sau khi đo RAM máy chủ thật.

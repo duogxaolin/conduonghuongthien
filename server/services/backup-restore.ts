@@ -128,7 +128,7 @@ async function reattachBackupRows(tx: Tx, before: BackupRow[]): Promise<string[]
   for (const row of missing) {
     await tx.insert(backups).values({
       filename: row.filename, type: row.type, bytes: row.bytes, stamp: row.stamp, trigger: row.trigger,
-      status: row.status, driveUploaded: row.driveUploaded, driveFileId: row.driveFileId, error: row.error,
+      status: row.status, driveUploaded: row.driveUploaded, driveFileId: row.driveFileId, offsiteStatus: row.offsiteStatus, error: row.error,
       createdBy: row.createdBy !== null && known.has(row.createdBy) ? row.createdBy : null,
       createdAt: row.createdAt ?? undefined,
     })

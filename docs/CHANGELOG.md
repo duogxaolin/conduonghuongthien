@@ -976,6 +976,68 @@ Mỗi mục có test đỏ trước khi sửa.
   - Bộ đọc import bằng AST được tách sang `tests/_module-references.ts`, dùng chung với `server-no-app-imports`.
 - **Kiểm chứng:** 5 lượt `npm run build` sạch liên tiếp (xoá `.output` và `node_modules/.cache/nuxt` giữa các lượt) đều xanh. Đầu ra SSR không còn chuỗi `"../…shared/"` nào, và `link-policy` được nạp bằng đường tuyệt đối. `npm test` 4414 / 4387 pass / 0 fail / 27 skip (+20). Typecheck 0 lỗi, eslint 0 error / 16 warning, `db:drift` xanh.
 
+### 36. Đợt 2 — vận hành (2026-10-24)
+
+OpenSpec `wave2-hardening` nhóm 7 (2F ops), design D-OFFSITE, D-LOG, D-ALERT, D-DOCS; spec `backup-restore`, `ops-logging`. Mỗi mục có test đỏ trước khi sửa (log đỏ lưu ngoài repo).
+
+- **Bản sao ngoài máy chủ có trạng thái theo từng tệp (D-OFFSITE).** Đã kiểm: bước Drive chạy cho mọi lượt `runBackup`, kể cả theo lịch. Trước đây Drive hỏng chỉ để lại một dòng log; danh sách hiện cùng một vòng tròn rỗng cho "Drive tắt" lẫn "Drive hỏng đêm qua". Nay có cột `backups.offsite_status VARCHAR(16) NULL` với giá trị `uploaded`/`failed`/`none`. Cột khai ở `schema.ts`, `schema-tables/readers-media.ts` và `ensureColumn` trong `migrations-additive.ts`; `db:drift` báo 636 cột.
+  - **Không backfill**, không ghi hàng nào lúc khởi động. `drive_uploaded = 0` không phân biệt "tắt" với "hỏng", nên hàng cũ giữ NULL và trang lùi về `drive_uploaded`. Suite nâng cấp 2F không cần khai chuyển đổi hàng nào cho cột này, nhưng lần khởi động 1 trên CSDL cũ có thêm một cột vào `backups`. Nếu suite so bằng `CHECKSUM TABLE`, kết quả sẽ đổi dù không hàng nào được ghi, nên suite phải coi đó là bổ sung lược đồ.
+  - Bước Drive tách khỏi `backup.ts` sang `services/backup-offsite.ts`, hành vi upload giữ nguyên (OAuth ưu tiên, service account dự phòng).
+  - Cách ghi trạng thái:
+    - Drive tắt → `none` ngay lúc đăng ký hàng `done`.
+    - Drive bật nhưng chưa liên kết, không có service account → `none` + log `backup.offsite_not_configured`. Trước đây nhánh này im lặng.
+    - Upload hỏng → `failed` cho tệp hỏng và mọi tệp sau nó; tệp đã lên rồi giữ `uploaded`.
+    - Liên kết có token không giải mã được, hoặc OAuth client không dùng được → `failed`.
+    - Lượt chết trước bước Drive (Drive đang bật) → các tệp đã đăng ký mang `failed`.
+  - Tệp cục bộ không bao giờ bị xoá vì Drive, và lượt sao lưu vẫn thành công. `backup.drive_failed` nay kèm danh sách tệp. Ghi trạng thái hỏng chỉ log `backup.offsite_status_unwritten`.
+  - Khôi phục CSDL gắn lại hàng `backups` kèm `offsite_status`.
+  - Giao diện:
+    - Cột "Bản ngoài máy chủ" (`BackupOffsiteBadge.vue`, bảng và thẻ điện thoại) hiện bằng chữ: *Đã lên Drive* / *Lỗi tải lên Drive* / *Chỉ trên máy chủ*. Biểu tượng `aria-hidden` không mang trạng thái nữa.
+    - `BackupSettingsPanel` cảnh báo vàng "Các bản sao lưu hiện chỉ nằm trên máy chủ này" khi backup tự động bật mà chưa có nơi lưu ngoài. Cảnh báo tính từ biểu mẫu và trạng thái liên kết đã tải; còn đang tải thì không khẳng định.
+  - Quy tắc "đã cấu hình" nằm một chỗ (`shared/backup-offsite-status.ts`) cho máy chủ và trang. App import qua `~~/shared/…`: bản đầu dùng đường tương đối từ `app/utils` và Nitro build đỏ, đúng bẫy § 32 đã ghi.
+  - Test: `tests/backup-offsite-status.test.ts` (12, chạy `runBackup` thật), `tests/backup-offsite-ui.test.ts` (14, gồm render SFC). Thêm một khẳng định gắn lại hàng khi khôi phục ở `backup-restore-hardening`.
+- **`manage.sh` Menu 5 "Cài cron sao lưu", Menu 6 "Xuất .env đã mã hoá" (D-OFFSITE).**
+  - **Menu 5** (`backup-cron`) in đúng hai dòng tài liệu vẫn bảo gõ tay: `backup.sh` 02:00 (dump qua `backup-db.sh` + media/uploads — chọn `backup.sh` chứ không `backup-db.sh` trần để khỏi mất archive media mà DEPLOY.md hứa) và `verify-restore.sh --latest` 03:30 ngày 1.
+    - Chỉ cài khi trả lời `y`; mặc định không.
+    - Hai dòng nằm trong khối `# BEGIN/END cdkt-backup`: chạy lại là thay khối, dòng crontab khác giữ nguyên, dòng sao lưu gõ tay ngoài khối được chỉ ra.
+    - `crontab -l` hỏng vì lý do khác "no crontab" → dừng. Coi nó là rỗng rồi cài là xoá crontab thật.
+    - User không ghi được thư mục sao lưu (`BACKUP_DIR`, mặc định `./backups` — bind mount thuộc uid 1000 của container) → từ chối, bảo cài bằng root: cron của user đó sẽ hỏng `EACCES` mỗi đêm. User không ghi được `/var/log` thì log vào `<repo>/logs`. Đường dẫn chứa `%` hoặc dấu nháy đơn bị từ chối.
+    - Ping chỉ báo *đang đặt*/*chưa đặt*.
+  - **Menu 6** (`export-env`): `openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt`.
+    - Passphrase gõ hai lần, ≥ 12 ký tự, đi qua `-pass fd:3` — không bao giờ trên argv.
+    - Tệp tạm 600 rồi `mv`; giải mã thử trước khi giữ.
+    - openssl thiếu `-pbkdf2` → từ chối. Ghi đè `.env.enc` cũ phải trả lời `y`.
+  - Hộp cát test có `crontab` giả (`tests/fixtures/ops-sandbox/crontab`), nên test không bao giờ chạm crontab thật. Test xuất mã hoá chạy openssl thật qua một shim ghi argv.
+- **Log app vào journald (D-LOG).** Service app trong compose dùng `logging: driver: journald`, `tag: cdkt-app`; MySQL giữ json-file. Đọc bằng `journalctl CONTAINER_TAG=cdkt-app` — log còn sau khi container bị thay, đã thử thật.
+  - Đo trước khi chọn cơ chế: driver journald **từ chối** `max-size` ("unknown log opt", lỗi lúc `up` chứ không lúc `config -q`). json-file không có `max-size` thì không xoay vòng. Vì vậy một khối `options` chung cho hai driver (biến `APP_LOG_DRIVER`) là không làm được.
+  - Dự phòng: `ensure_log_driver` (giống từng chữ ở `scripts/deploy-remote.sh` và `production/manage.sh` Deploy/Update, test so) kiểm socket journal + `journalctl`.
+    - Không có journald → ghi `docker-compose.override.yml` mang dấu `# cdkt-log-fallback` (json-file 3 × 10 MB).
+    - Có journald → gỡ đúng tệp đó.
+    - Override không dấu của người vận hành → không bao giờ sửa.
+  - Lượt CI deploy chạy nó sau bản dump và trước `config -q`. Không có bước này, VPS thiếu journald sẽ hỏng mọi lượt deploy ở `up` rồi lùi lại.
+  - `docker-compose.override.yml` vào `.gitignore` và `.dockerignore`. `docker compose config -q` xanh với env giả, có và không có override.
+- **Thư cảnh báo vận hành (D-ALERT).** `server/utils/ops-alert.ts`, gọi từ `logger.ts` cho `ALERT_EVENTS`: `backup.restore_failed`, `backup.restore_refused`, `auth.mfa_challenge_locked`, `security.link_host_rejected`, `backup.slot_abandoned`, `db.migration.media_category_fk_blocked`. Thư gửi tới `OPS_ALERT_EMAIL` qua SMTP của admin.
+  - Giới hạn: tối đa 1 thư mỗi sự kiện mỗi 15 phút. Dấu trong bộ nhớ đặt đồng bộ, cộng hàng `rate_limit_counters` dùng chung giữa các tiến trình và qua lần khởi động lại. Thư kế tiếp ghi số lần đã gộp. Cửa sổ chỉnh được theo từng sự kiện (`OPS_ALERT_WINDOW_SECONDS`).
+  - Quyết định trước bộ lọc `LOG_LEVEL`. `OPS_ALERT_EMAIL` trống thì không import, không chạm DB.
+  - Bắn rồi quên: `dispatch` không reject; lỗi chỉ log `ops.alert_failed`. Dòng log của đường cảnh báo mang symbol `SKIP_OPS_ALERT`, nên không đệ quy.
+  - **Đường gửi tự mở và đóng một kết nối riêng** (`dbConnectionOptions()` tách từ `getDb`). Sự kiện di trú được log trong CLI `server/db/init.ts` (CMD container): tạo pool chung ở đó sẽ giữ tiến trình sống mãi và container không lên. Đã thử bằng một CLI giả: thoát ngay.
+  - SMTP đọc qua `getSmtpConfig(reader)` của mailer, nên giải mã của 2A (nếu có) cũng áp cho thư cảnh báo.
+  - Nội dung thư: tên sự kiện, thời điểm, máy chủ, các trường nguyên thuỷ đã che. Khoá bị che bị bỏ hẳn, không có stack trace, giá trị dài bị cắt.
+  - `OPS_ALERT_EMAIL` có trong compose `environment:`, `.env.example`, Deploy/Update của `manage.sh` (đứng trước prompt ping) và `production/README.md`.
+  - Test: `tests/ops-alert.test.ts` (20). Thử thật trên MariaDB dùng một lần: `init.ts` gặp hàng `media_items` treo → log `fk_blocked` → đường cảnh báo ghi hàng `rate_limit_counters`, SMTP không tới được → `ops.alert_failed`, rồi `init.ts` **thoát 0**. Lần khởi động thứ hai trong cửa sổ bị kho dùng chung chặn, không gửi lại.
+- **Tài liệu (D-DOCS), các mục là việc của người vận hành:**
+  - `production/README.md`: user deploy không phải root (group `docker` ≈ root, khoá `restrict`, đổi `VPS_USER`/`VPS_SSH_KEY`, `docker login` bằng user đó); bảng trần RAM theo cỡ máy, tính bằng đúng công thức `check-resources.sh`; journald (`Storage=persistent`, `SystemMaxUse=`); thư cảnh báo; Menu 5/6.
+  - `CI-CD.md` ghi hai quyết định đã chốt. **D2:** không có cổng duyệt tay. **D-CI:** chấp nhận CI chạy hai lần khi repo public (kiểm 2026-10-24: PUBLIC); chuyển private thì dùng lại lượt PR xanh của cùng tree SHA — chưa viết.
+  - `DEPLOY.md`: cron bằng Menu 5, bản `.env` mã hoá, yêu cầu journald.
+- **Chạm vào tệp của nhánh khác (cần lưu ý khi gộp):** `server/utils/mailer.ts`, `server/utils/logger.ts`, `docker-compose.yml`, `production/README.md`, `server/services/backup.ts` (2A sửa `readBackupConfig` và nhánh Drive — nhánh "service account không giải mã được" của 2A phải chuyển sang `services/backup-offsite.ts`, và `serviceAccountConfigured` phải tính cả `driveServiceAccountUnreadable`). Khi 2A gộp `security.cross_site_refused`: thêm vào `ALERT_EVENTS` kèm cửa sổ dài hơn trong `OPS_ALERT_WINDOW_SECONDS`.
+- **Đã kiểm:**
+  - `npm test`: 4470 test, 4443 pass, 0 fail, 27 skip (trước 4394).
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning (không đổi); `db:drift` xanh (636 cột / 62 bảng).
+  - `npm run build` xanh: mã cảnh báo nằm trong bundle Nitro, lớp huy hiệu mới có trong CSS.
+  - `docker compose config -q` xanh với env giả, có và không có override.
+  - `bash -n` xanh cho các script đã sửa. shellcheck `-S style` không có cảnh báo mới; còn một `SC2329` có từ trước ở `deploy-remote.sh`.
+  - E2E không chạy: chưa spec nào phủ trang `/admin/settings/backup`.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.

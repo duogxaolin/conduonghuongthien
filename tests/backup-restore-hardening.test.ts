@@ -382,6 +382,8 @@ describe('a database restore is preceded by a safety backup', () => {
     assert.ok(existsSync(path.join(backupsDir(), outcome.preRestoreBackup!)))
     // The restore replaced the `backups` table; the safety backup is listed again afterwards.
     assert.ok(state.backups.some(row => row.filename === outcome.preRestoreBackup && row.trigger === 'pre-restore'))
+    // …with its off-site status (Drive is off here: `none`), not a NULL "unknown" (wave2 D-OFFSITE).
+    assert.equal(state.backups.find(row => row.filename === outcome.preRestoreBackup)?.offsiteStatus, 'none')
     const audit = restoreAudits()
     assert.equal(audit.length, 1)
     assert.equal((audit[0]!.values.meta as Record<string, unknown>).preRestoreBackup, outcome.preRestoreBackup)

@@ -43,6 +43,7 @@ import {
   statSync,
   writeFileSync,
 } from 'node:fs'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
@@ -494,5 +495,107 @@ describe('deploy-remote.sh — a git checkout on the VPS', () => {
 
     assert.equal(run.status, 0, run.stderr)
     assert.match(run.stdout, /git checkout -- docker-compose\.yml/)
+  })
+})
+
+/**
+ * wave2 D-LOG: compose sends the app's logs to journald. A VPS without
+ * systemd-journald would fail EVERY deploy at `up` ("journald is not enabled on
+ * this host") and roll back — so the deploy itself writes a marked
+ * docker-compose.override.yml with rotated json-file logs, and removes its own file
+ * again once journald is there. An override the operator wrote is never touched.
+ */
+describe('deploy-remote.sh — journald, or the json-file fallback (D-LOG)', () => {
+  const OVERRIDE = 'docker-compose.override.yml'
+  const withJournald = async (fx: Fixture, fn: (env: Record<string, string>) => void) => {
+    // Both halves of the check: the socket Docker writes to, and journalctl to read it.
+    writeFileSync(join(fx.bin, 'journalctl'), '#!/bin/sh\nexit 0\n')
+    chmodSync(join(fx.bin, 'journalctl'), 0o755)
+    const socket = join(fx.dir, '..', 'journal.sock')
+    const server = createServer()
+    await new Promise<void>(resolve => server.listen(socket, resolve))
+    try {
+      fn({ CDKT_JOURNALD_SOCKET: socket })
+    } finally {
+      await new Promise(resolve => server.close(resolve))
+    }
+  }
+  const noJournald = (fx: Fixture) => ({ CDKT_JOURNALD_SOCKET: join(fx.dir, 'no-such-journal-socket') })
+  /** A deploy removes the files CI shipped; a second deploy needs them shipped again. */
+  const reship = (fx: Fixture) => {
+    writeFileSync(join(fx.dir, INCOMING), NEW_COMPOSE)
+    mkdirSync(join(fx.dir, '.deploy-incoming'), { recursive: true })
+    writeFileSync(join(fx.dir, INCOMING_BACKUP), BACKUP_SCRIPT)
+  }
+
+  it('no journald: writes the marked json-file override before the app starts, and says so', () => {
+    const fx = makeFixture()
+    const run = runDeploy(fx, { ...shipped(), ...noJournald(fx) })
+
+    assert.equal(run.status, 0, run.stderr)
+    const override = file(fx, OVERRIDE)
+    assert.match(override.split('\n')[0]!, /^# cdkt-log-fallback/)
+    assert.match(override, /driver: json-file/)
+    assert.match(override, /max-size: "10m"/)
+    assert.match(run.stderr, /::warning::[^\n]*journald/)
+    // It exists before the compose check and the start: both ran after it was written.
+    assert.ok(run.calls.some(c => c.startsWith('compose config -q')))
+    assert.ok(ups(run.calls).some(c => c.startsWith('compose up -d --no-deps app')))
+  })
+
+  it('a second run without journald leaves the same file (idempotent)', () => {
+    const fx = makeFixture()
+    runDeploy(fx, { ...shipped(), ...noJournald(fx) })
+    const first = file(fx, OVERRIDE)
+    reship(fx)
+    const again = runDeploy(fx, { ...shipped(), ...noJournald(fx) })
+    assert.equal(again.status, 0, again.stderr)
+    assert.equal(file(fx, OVERRIDE), first)
+  })
+
+  it('an override the operator wrote is never overwritten — only a warning', () => {
+    const fx = makeFixture()
+    const own = 'services:\n  app:\n    environment:\n      EXTRA: "1"\n'
+    writeFileSync(join(fx.dir, OVERRIDE), own)
+    const run = runDeploy(fx, { ...shipped(), ...noJournald(fx) })
+    assert.equal(run.status, 0, run.stderr)
+    assert.equal(file(fx, OVERRIDE), own)
+    assert.match(run.stderr, /không do script này sinh/)
+  })
+
+  it('journald present: nothing is written', async () => {
+    const fx = makeFixture()
+    await withJournald(fx, (env) => {
+      const run = runDeploy(fx, { ...shipped(), ...env })
+      assert.equal(run.status, 0, run.stderr)
+      assert.equal(existsSync(join(fx.dir, OVERRIDE)), false)
+    })
+  })
+
+  it('journald arrived: the deploy removes ITS fallback, and leaves an operator override alone', async () => {
+    const ours = makeFixture()
+    runDeploy(ours, { ...shipped(), ...noJournald(ours) })
+    assert.ok(existsSync(join(ours.dir, OVERRIDE)))
+    reship(ours)
+    await withJournald(ours, (env) => {
+      const run = runDeploy(ours, { ...shipped(), ...env })
+      assert.equal(run.status, 0, run.stderr)
+      assert.equal(existsSync(join(ours.dir, OVERRIDE)), false, 'the fallback outlived the reason for it')
+      assert.match(run.stdout, /journald/)
+    })
+
+    const theirs = makeFixture()
+    writeFileSync(join(theirs.dir, OVERRIDE), 'services: {}\n')
+    await withJournald(theirs, (env) => {
+      assert.equal(runDeploy(theirs, { ...shipped(), ...env }).status, 0)
+      assert.equal(file(theirs, OVERRIDE), 'services: {}\n')
+    })
+  })
+
+  it('a dump that fails stops the deploy before the fallback is written (nothing changes before the dump)', () => {
+    const fx = makeFixture({ backupScript: '#!/usr/bin/env bash\nexit 2\n' })
+    const run = runDeploy(fx, { ...shipped(undefined, '#!/usr/bin/env bash\nexit 2\n'), ...noJournald(fx) })
+    assert.notEqual(run.status, 0)
+    assert.equal(existsSync(join(fx.dir, OVERRIDE)), false)
   })
 })
