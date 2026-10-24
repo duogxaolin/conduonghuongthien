@@ -83,7 +83,11 @@ const AUDITED_SERVICES = [
   'server/services/media-portal.ts',
   'server/services/livestream.ts',
   'server/services/livestream-chat.ts',
-  'server/services/chunked-upload.ts',
+  // `chunked-upload.ts` nay là barrel (không còn mã); hai cặp hàng + audit của dịch
+  // vụ tải lên nằm ở hai tệp dưới — `housekeepUploads` (xoá phiên + audit) và
+  // `completeUpload` (tạo/thay mục + audit). `-core`/`-receipt` không ghi audit.
+  'server/services/chunked-upload-session.ts',
+  'server/services/chunked-upload-completion.ts',
 ]
 
 const SERVICE_EXEMPTIONS: Record<string, string> = {}
