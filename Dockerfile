@@ -102,9 +102,14 @@ RUN npm ci --omit=dev --ignore-scripts && npm cache clean --force
 USER root
 
 # Built server + the sources the DB bootstrap scripts need. Last: they change on
-# every commit.
+# every commit. `.output` is self-contained, but init.ts/seed.ts and every
+# `npm run db:*`/`scripts/*.ts` run from SOURCE with --experimental-strip-types, and
+# server/ imports values from shared/ (permissions, settings-credential-rules) —
+# without it those imports die with ERR_MODULE_NOT_FOUND inside the container only.
+# tests/runtime-image-sources.test.ts walks the import graph and fails on a gap.
 COPY --chown=node:node --from=builder /app/.output ./.output
 COPY --chown=node:node server ./server
+COPY --chown=node:node shared ./shared
 COPY --chown=node:node scripts ./scripts
 COPY --chown=node:node public ./public
 

@@ -804,6 +804,11 @@ còn các script chạy trong container (`db:init`, `db:seed`, `db:sanitize-html
 - **Thêm import mới trong `server/db/**`, `server/services/**` hoặc `scripts/**`** (được seed/script
   nạp) → gói đó phải ở `dependencies`, kể cả khi nó đã có sẵn "ké" qua `nuxt`. `h3` từng chỉ
   tới được nhờ `nuxt`; `seed.ts` → `services/languages.ts` import `createError` từ đó.
+- **Mã nguồn trong image runtime:** `.output` + `server/`, `shared/`, `scripts/`, `public/`. Script
+  chạy từ nguồn import tệp cùng repo bằng đường dẫn tương đối; thư mục nào nó tới mà image không
+  COPY thì chết `ERR_MODULE_NOT_FOUND` **chỉ trong container** (`shared/` từng thiếu).
+  `tests/runtime-image-sources.test.ts` dò đồ thị import và đỏ khi có lỗ (`app/` cố ý không copy:
+  chỉ handler mà Nitro đã bundle vào `.output` tới nó).
 - **Kiểm tra lỗ hổng:** `npm audit --omit=dev --audit-level=high` là bước **chặn** trong job `hygiene`
   (tập runtime hiện 0 advisory). `npm audit` toàn cây (gồm công cụ dev: nuxt → nitropack/simple-git…)
   vẫn báo, chỉ ghi log, không chặn. Tạo lại lockfile không cần cài gì:
