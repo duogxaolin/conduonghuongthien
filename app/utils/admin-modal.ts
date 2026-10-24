@@ -129,9 +129,74 @@ export function createHeldKeyGuard(): HeldKeyGuard {
  * phải Enter chốt chữ của bộ gõ (IME tiếng Việt). Dùng cho `@keydown.enter` trong hộp
  * thoại — lớp thứ hai sau `createHeldKeyGuard` (và cho hộp chưa dùng AdminModal).
  */
-export function isDeliberateEnter(event: { key: string; repeat: boolean; isComposing: boolean }): boolean {
-  return event.key === 'Enter' && !event.repeat && !event.isComposing
+export function isDeliberateEnter(event: { key: string; repeat: boolean; isComposing: boolean; keyCode?: number }): boolean {
+  // Safari chốt chữ của bộ gõ bằng một keydown `isComposing: false` mà `keyCode: 229`.
+  return event.key === 'Enter' && !event.repeat && !event.isComposing && event.keyCode !== 229
 }
+
+/**
+ * Nơi "đỗ" focus dự phòng khi không trả được về nút mở: `<main>`, nhận focus bằng
+ * script nhờ `tabindex="-1"` TẠM (đánh dấu `FOCUS_PARK_ATTR`), rời focus là gỡ cả hai.
+ * `<main>` vốn có `tabindex` của trang thì để nguyên, không gắn dấu.
+ */
+export const FOCUS_PARK_ATTR = 'data-admin-modal-focus-park'
+
+export interface ParkableLike {
+  hasAttribute: (name: string) => boolean
+  setAttribute: (name: string, value: string) => void
+  removeAttribute: (name: string) => void
+  addEventListener: (type: 'blur', listener: () => void, options: { once: true }) => void
+}
+
+export function parkFocusOn<T extends ParkableLike>(main: T | null): T | null {
+  if (!main) return null
+  if (!main.hasAttribute('tabindex')) {
+    main.setAttribute('tabindex', '-1')
+    main.setAttribute(FOCUS_PARK_ATTR, '')
+    main.addEventListener('blur', () => {
+      main.removeAttribute('tabindex')
+      main.removeAttribute(FOCUS_PARK_ATTR)
+    }, { once: true })
+  }
+  return main
+}
+
+export function isFocusPark(el: unknown): boolean {
+  const candidate = el as { hasAttribute?: (name: string) => boolean } | null
+  return typeof candidate?.hasAttribute === 'function' && candidate.hasAttribute(FOCUS_PARK_ATTR)
+}
+
+/**
+ * Phần tử đang giữ focus lúc mở hộp có đáng nhớ làm "nút mở" không. Không: `<body>`
+ * (focus không ở đâu cả) và nơi đỗ tạm (thuộc tính tạm bị gỡ ngay khi focus vào hộp —
+ * trả focus về đó là rơi xuống `<body>`).
+ */
+export function rememberableOpener<T>(el: T | null | undefined, body: unknown): T | null {
+  if (!el || el === body || isFocusPark(el)) return null
+  return el
+}
+
+/**
+ * Focus đã rơi khỏi hộp đang mở (điều khiển đang giữ focus bị gỡ khỏi DOM hoặc bị
+ * `disabled` → trình duyệt đẩy về `<body>`). Hộp đang bị phủ (`inert`, một hộp khác mở
+ * đè) thì lớp trên quản focus — không giật.
+ */
+export function focusEscaped(input: { active: unknown; body: unknown; covered: boolean }): boolean {
+  if (input.covered) return false
+  return !input.active || input.active === input.body
+}
+
+/**
+ * Đã đỗ focus ở `<main>` chờ danh sách tải lại; nút mở cùng khoá xuất hiện trở lại thì
+ * chuyển focus về nó — chỉ khi focus vẫn đang đỗ (hoặc rơi về `<body>`), không giật
+ * focus của người dùng đã tự đi chỗ khác.
+ */
+export function shouldMoveToReturnedOpener(input: { active: unknown; parked: unknown; body: unknown }): boolean {
+  return !input.active || input.active === input.body || (input.parked != null && input.active === input.parked)
+}
+
+/** Thời gian chờ nút mở xuất hiện lại sau khi danh sách tải lại (ms). */
+export const RETURNED_OPENER_WAIT_MS = 4000
 
 /** Phần tử trong hộp được chỉ định nhận focus đầu tiên (vd. ô tìm kiếm của thư viện ảnh). */
 export const ADMIN_MODAL_AUTOFOCUS_SELECTOR = '[data-autofocus], [autofocus]'
@@ -173,12 +238,14 @@ export function openerKeyOf(el: OpenerLike | null | undefined): OpenerKey | null
 }
 
 /**
- * Nút mở đã rời tài liệu: tìm lại theo khoá; không thấy (hàng đã rời bộ lọc, danh sách
- * còn đang tải) thì về vùng nội dung chính — không bao giờ để focus rơi ở `<body>`, nơi
- * người dùng bàn phím phải Tab lại từ đầu trang.
+ * Nút mở không nhận lại được focus (đã rời tài liệu, bị `disabled`): tìm lại theo khoá;
+ * không thấy (hàng đã rời bộ lọc, danh sách còn đang tải) thì về vùng nội dung chính —
+ * không bao giờ để focus rơi ở `<body>`, nơi người dùng bàn phím phải Tab lại từ đầu
+ * trang. `refound: false` = đang đỗ dự phòng; nơi gọi có thể chờ nút cùng khoá về.
  */
-export function focusFallbackTarget<T>(key: OpenerKey | null, deps: { find: (key: OpenerKey) => T | null; main: () => T | null }): T | null {
-  return (key ? deps.find(key) : null) ?? deps.main()
+export function focusFallbackTarget<T>(key: OpenerKey | null, deps: { find: (key: OpenerKey) => T | null; main: () => T | null }): { target: T | null; refound: boolean } {
+  const found = key ? deps.find(key) : null
+  return found ? { target: found, refound: true } : { target: deps.main(), refound: false }
 }
 
 /** ConfirmModal dùng `z-[9999]`; mọi lớp AdminModal phải nằm dưới nó. */

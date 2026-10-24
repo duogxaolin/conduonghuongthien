@@ -15,12 +15,15 @@
 /**
  * Huy hiệu "chờ đối soát" của trang `/admin/ai/moderation`. Không bao giờ đếm trên một
  * trang hàng đợi (20 dòng) — cùng lỗi trần 20 của tab cũ:
- *   - đang lọc `pending`: tổng của chính truy vấn đó (`total`, mới nhất sau mỗi lần tải);
- *   - lọc trạng thái khác: tổng `pending` của `worker-status` (`pendingQueueCount`).
+ *   - tổng ĐÃ TẢI là của bộ lọc `pending` (`queueTotalFilter`, đặt khi phản hồi về —
+ *     không phải lúc bấm đổi bộ lọc): dùng nó, mới nhất sau mỗi lần tải;
+ *   - còn lại: tổng `pending` của `worker-status` (`pendingQueueCount`);
+ *   - không có cả hai (worker-status hỏng/chưa tải): `null` — ẩn huy hiệu, KHÔNG hiện
+ *     "0" như thể không còn gì phải xử lý.
  */
-export function pendingBadgeCount(input: { filter: string; queueTotal: number; workerPending: number | null }): number {
-  if (input.filter === 'pending') return input.queueTotal
-  return input.workerPending ?? 0
+export function pendingBadgeCount(input: { queueTotal: number; queueTotalFilter: string | null; workerPending: number | null }): number | null {
+  if (input.queueTotalFilter === 'pending') return input.queueTotal
+  return input.workerPending
 }
 
 export interface ModerationSummary {

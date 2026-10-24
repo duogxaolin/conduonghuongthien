@@ -250,7 +250,7 @@ onMounted(() => { fetchUsers() })
           </div>
           <p class="text-[0.8rem] text-[#667768] m-0">{{ u.email || 'Chưa có email' }}</p>
           <div class="flex items-center gap-3 mt-2.5">
-            <button class="inline-flex items-center gap-1 text-[#2c6e33] font-bold text-[0.8rem] bg-none border-0 cursor-pointer p-0" @click="openEditModal(u)"><i class="fa-solid fa-pen-to-square"></i> Sửa</button>
+            <button class="inline-flex items-center gap-1 text-[#2c6e33] font-bold text-[0.8rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`user-${u.id}`" @click="openEditModal(u)"><i class="fa-solid fa-pen-to-square"></i> Sửa</button>
             <button class="inline-flex items-center gap-1 text-[#d12420] font-bold text-[0.8rem] bg-none border-0 cursor-pointer p-0" @click="deleteUser(u)"><i class="fa-solid fa-trash-can"></i> Xóa</button>
             <button class="inline-flex items-center gap-1 font-bold text-[0.8rem] bg-none border-0 cursor-pointer p-0" :class="u.isActive ? 'text-[#b78103]' : 'text-[#2c6e33]'" @click="toggleActive(u)">
               <i :class="u.isActive ? 'fa-solid fa-lock' : 'fa-solid fa-lock-open'"></i> {{ u.isActive ? 'Khóa' : 'Mở khóa' }}
@@ -329,7 +329,7 @@ onMounted(() => { fetchUsers() })
                 <div class="flex items-center gap-2">
                   <button
                     class="w-8 h-8 flex items-center justify-center rounded-md bg-[#f4f6f4] border border-[#dce4dd] text-[#445544] cursor-pointer hover:bg-[#e4f2e5] hover:text-[#1e4620] hover:border-[#a8d5ab] transition-colors"
-                    @click="openEditModal(u)"
+                    :data-admin-modal-opener="`user-${u.id}`" @click="openEditModal(u)"
                     title="Chỉnh sửa tài khoản"
                   ><i class="fa-solid fa-pen-to-square text-xs"></i></button>
                   <button

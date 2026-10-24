@@ -1,6 +1,6 @@
 <script setup lang="ts">
-import { createFocusReturn, inertOutside, trapTabTarget } from '~/utils/focus-return'
-import { createHeldKeyGuard } from '~/utils/admin-modal'
+import { createFocusReturn, inertOutside, trapTabTarget, visibleTabbables } from '~/utils/focus-return'
+import { createHeldKeyGuard, isDeliberateEnter, parkFocusOn, rememberableOpener } from '~/utils/admin-modal'
 
 const { confirmState, accept, cancel } = useConfirm()
 
@@ -36,7 +36,18 @@ function watchHeldKeys(on: boolean) {
 // hoạt nút đang focus (hành vi gốc của <button>); Escape vẫn là Hủy.
 function onKeydown(e: KeyboardEvent) {
   if (!confirmState.visible) return
-  if (e.key === 'Escape') cancel()
+  if (e.key !== 'Escape') return
+  // Đánh dấu đã xử lý: listener Escape khác ở `window` (vd. panel thuộc tính mở rộng của
+  // trình dựng trang) không được làm thêm việc của chúng với cùng một lần nhấn.
+  e.preventDefault()
+  cancel()
+}
+
+/** Enter trong ô nhập của hộp hỏi = đồng ý — chỉ khi nhấn có chủ đích (không lặp, không IME). */
+function onPromptEnter(e: KeyboardEvent) {
+  if (!isDeliberateEnter(e)) return
+  e.preventDefault()
+  accept()
 }
 
 onMounted(() => window.addEventListener('keydown', onKeydown))
@@ -48,6 +59,8 @@ const cancelBtn = ref<HTMLButtonElement | null>(null)
 const confirmBtn = ref<HTMLButtonElement | null>(null)
 const inputEl = ref<HTMLInputElement | null>(null)
 const focusReturn = createFocusReturn((el) => el === document.body)
+/** Hộp thoại chứa nút đã mở hộp xác nhận (vd. ngăn kéo "Phiên bản") — nơi lùi về khi nút đó không còn. */
+let openerDialog: HTMLElement | null = null
 
 // Gỡ `inert` đã đặt lên phần còn lại của trang — phải chạy TRƯỚC khi trả focus, vì
 // nút mở hộp nằm trong vùng đang `inert` thì `focus()` lên nó vô hiệu.
@@ -72,7 +85,11 @@ watch(
       watchHeldKeys(true)
       // Hộp nối hộp: hộp vẫn đang hiển thị, focus ở trong nó (hoặc đã rơi về <body>
       // khi ô nhập biến mất) — giữ nút mở ban đầu, không ghi đè.
-      if (!dialogEl.value) focusReturn.remember(document.activeElement as HTMLElement | null)
+      if (!dialogEl.value) {
+        const opener = document.activeElement as HTMLElement | null
+        focusReturn.remember(rememberableOpener(opener, document.body))
+        openerDialog = opener?.closest<HTMLElement>('[role="dialog"]') ?? null
+      }
       await nextTick()
       if (dialogEl.value && !releaseOutside) releaseOutside = inertOutside(dialogEl.value)
       // Thao tác nguy hiểm mở ra ở nút "Hủy": một cú Enter vô tình không xoá gì cả.
@@ -87,8 +104,17 @@ watch(
     // Chỉ trả focus nếu nó còn trong hộp (hoặc đã rơi về <body>).
     const shouldRestore = !active || active === document.body || !!dialogEl.value?.contains(active)
     releasePage()
+    const host = openerDialog
+    openerDialog = null
     await nextTick()
-    focusReturn.restore(shouldRestore)
+    if (focusReturn.restore(shouldRestore) || !shouldRestore) return
+    // Nút mở đã bị gỡ / không nhận focus: ở lại hộp thoại đã chứa nó (nếu còn mở và không
+    // bị phủ), không thì đỗ ở vùng nội dung chính — không bao giờ để focus ở <body>.
+    for (const candidate of host?.isConnected && !host.closest('[inert]') ? [host, visibleTabbables<HTMLElement>(host)[0]] : []) {
+      candidate?.focus()
+      if (candidate && document.activeElement === candidate) return
+    }
+    parkFocusOn(document.querySelector<HTMLElement>('main'))?.focus()
   },
 )
 
@@ -161,7 +187,7 @@ function onTrapTab(event: KeyboardEvent) {
               type="text"
               :placeholder="confirmState.input.placeholder"
               class="w-full rounded-lg border border-[#dce8dd] px-3 py-2 text-sm text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]"
-              @keydown.enter.prevent="accept"
+              @keydown.enter="onPromptEnter"
             >
           </div>
 

@@ -676,7 +676,7 @@ onMounted(() => {
     <AdminModal
       :open="showTranslateProgressModal"
       :title="progressModalTitle"
-      icon="fa-solid fa-wand-magic-sparkles"
+      :icon="!progressStats.finished && !progressStats.stopped ? 'fa-solid fa-wand-magic-sparkles animate-spin motion-reduce:animate-none' : 'fa-solid fa-wand-magic-sparkles'"
       :busy="!progressStats.finished && !progressStats.stopped"
       @close="showTranslateProgressModal = false"
     >

@@ -294,6 +294,7 @@ onMounted(() => {
               <button
                 type="button"
                 class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-white hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg border border-[#e2ece3] cursor-pointer transition-colors"
+                :data-admin-modal-opener="`content-type-${ct.id}`"
                 @click="openEdit(ct)"
                 :aria-label="`Sửa thể loại ${ct.name}`"
               >
@@ -396,7 +397,8 @@ onMounted(() => {
             <button
               type="button"
               class="inline-flex items-center gap-1 text-xs font-bold text-[#2c6e33] bg-[#f0f7f1] hover:bg-[#e4f2e5] px-2.5 py-1.5 rounded-lg border-0 cursor-pointer transition-colors"
-              @click="openEdit(ct)"
+              :data-admin-modal-opener="`content-type-${ct.id}`"
+                @click="openEdit(ct)"
             >
               <i class="fa-solid fa-pen text-[0.65rem]"></i> Sửa
             </button>
@@ -481,7 +483,8 @@ onMounted(() => {
                   ><i class="fa-regular fa-folder-open text-xs"></i> Danh mục</nuxt-link>
                   <button
                     class="inline-flex items-center gap-1 bg-none border-0 text-[#2c6e33] cursor-pointer font-bold text-[0.82rem] hover:underline"
-                    @click="openEdit(ct)"
+                    :data-admin-modal-opener="`content-type-${ct.id}`"
+                @click="openEdit(ct)"
                   ><i class="fa-solid fa-pen text-xs"></i> Sửa</button>
                   <button
                     v-if="!ct.isSystem"

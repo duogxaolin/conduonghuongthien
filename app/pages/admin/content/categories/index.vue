@@ -307,8 +307,8 @@ onMounted(() => {
               <code class="text-[0.72rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded">{{ root.slug }}</code>
             </div>
             <div class="flex flex-wrap items-center gap-3">
-              <button class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="openCreate(root.id)"><i class="fa-solid fa-folder-plus text-xs"></i> Thêm con</button>
-              <button class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="openEdit(root)"><i class="fa-solid fa-pen text-xs"></i> Sửa</button>
+              <button class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`category-add-child-${root.id}`" @click="openCreate(root.id)"><i class="fa-solid fa-folder-plus text-xs"></i> Thêm con</button>
+              <button class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`category-${root.id}`" @click="openEdit(root)"><i class="fa-solid fa-pen text-xs"></i> Sửa</button>
               <button class="text-[#d12420] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="deleteCategory(root)"><i class="fa-regular fa-trash text-xs"></i> Xóa</button>
             </div>
             <!-- Children inline -->
@@ -326,7 +326,7 @@ onMounted(() => {
                   <span class="text-[0.82rem] text-[#2c3e2e]">{{ child.name }}</span>
                 </div>
                 <div class="flex items-center gap-2">
-                  <button class="text-[#2c6e33] text-[0.72rem] font-bold bg-none border-0 cursor-pointer p-0" @click="openEdit(child)"><i class="fa-solid fa-pen"></i></button>
+                  <button class="text-[#2c6e33] text-[0.72rem] font-bold bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`category-${child.id}`" @click="openEdit(child)"><i class="fa-solid fa-pen"></i></button>
                   <button class="text-[#d12420] text-[0.72rem] font-bold bg-none border-0 cursor-pointer p-0" @click="deleteCategory(child)"><i class="fa-regular fa-trash"></i></button>
                 </div>
               </div>
@@ -390,7 +390,7 @@ onMounted(() => {
                   <div class="flex items-center gap-3 flex-wrap">
                     <button
                       class="inline-flex items-center gap-1 bg-none border-0 text-[#2c6e33] cursor-pointer font-bold text-[0.82rem] hover:underline"
-                      @click="openCreate(root.id)"
+                      :data-admin-modal-opener="`category-add-child-${root.id}`" @click="openCreate(root.id)"
                     ><i class="fa-solid fa-folder-plus text-xs"></i> Thêm con</button>
                     <nuxt-link
                       :to="`/admin/content/articles?categoryId=${root.id}`"
@@ -398,7 +398,7 @@ onMounted(() => {
                     ><i class="fa-regular fa-newspaper text-xs"></i> Xem bài</nuxt-link>
                     <button
                       class="inline-flex items-center gap-1 bg-none border-0 text-[#2c6e33] cursor-pointer font-bold text-[0.82rem] hover:underline"
-                      @click="openEdit(root)"
+                      :data-admin-modal-opener="`category-${root.id}`" @click="openEdit(root)"
                     ><i class="fa-solid fa-pen text-xs"></i> Sửa</button>
                     <button
                       class="inline-flex items-center gap-1 bg-none border-0 text-[#d12420] cursor-pointer font-bold text-[0.82rem] hover:underline"
@@ -446,7 +446,7 @@ onMounted(() => {
                     ><i class="fa-regular fa-newspaper text-xs"></i> Xem bài</nuxt-link>
                     <button
                       class="inline-flex items-center gap-1 bg-none border-0 text-[#2c6e33] cursor-pointer font-bold text-[0.82rem] hover:underline"
-                      @click="openEdit(child)"
+                      :data-admin-modal-opener="`category-${child.id}`" @click="openEdit(child)"
                     ><i class="fa-solid fa-pen text-xs"></i> Sửa</button>
                     <button
                       class="inline-flex items-center gap-1 bg-none border-0 text-[#d12420] cursor-pointer font-bold text-[0.82rem] hover:underline"

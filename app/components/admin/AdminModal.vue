@@ -39,10 +39,15 @@ import {
   adminModalOverlayClass,
   adminModalPanelClass,
   createHeldKeyGuard,
+  focusEscaped,
   focusFallbackTarget,
   isAdminModalSize,
   openerKeyOf,
+  parkFocusOn,
   pickInitialFocus,
+  rememberableOpener,
+  RETURNED_OPENER_WAIT_MS,
+  shouldMoveToReturnedOpener,
   type AdminModalSize,
   type OpenerKey,
 } from '~/utils/admin-modal'
@@ -152,33 +157,81 @@ function initialFocus(root: HTMLElement): HTMLElement {
   })
 }
 
-/** Nút cùng khoá trong danh sách đã vẽ lại — phải đang hiện và Tab tới được. */
+/**
+ * Nút cùng khoá trong danh sách đã vẽ lại — phải đang hiện và Tab tới được (bản desktop
+ * và bản thẻ mobile của cùng một hàng có thể dùng chung khoá; lấy bản đang hiện).
+ */
 function findOpener(key: OpenerKey): HTMLElement | null {
-  const found = key.attr === 'id'
-    ? document.getElementById(key.value)
-    : document.querySelector<HTMLElement>(`[${ADMIN_MODAL_OPENER_ATTR}="${CSS.escape(key.value)}"]`)
-  return found && isVisibleTabbable(found) ? found : null
+  const candidates = key.attr === 'id'
+    ? [document.getElementById(key.value)]
+    : Array.from(document.querySelectorAll<HTMLElement>(`[${ADMIN_MODAL_OPENER_ATTR}="${CSS.escape(key.value)}"]`))
+  return candidates.find((el): el is HTMLElement => !!el && isVisibleTabbable(el)) ?? null
+}
+
+/** Nơi đỗ focus dự phòng: `<main>` với `tabindex` tạm (xem `parkFocusOn`). */
+function parkOnMain(): HTMLElement | null {
+  return parkFocusOn(document.querySelector<HTMLElement>('main'))
 }
 
 /**
- * Vùng nội dung chính, nhận focus được bằng script (`tabindex="-1"`, không vào thứ tự
- * Tab). Thuộc tính chỉ gắn tạm: rời focus là gỡ (chỉ khi chính hộp này gắn), để bấm vào
- * chỗ trống của trang sau đó không đưa focus (và viền focus) lên cả vùng nội dung.
+ * Đã đỗ focus ở `<main>` vì nút mở chưa có (danh sách đang tải lại: skeleton → bảng mới).
+ * Theo dõi DOM một lúc; nút cùng khoá xuất hiện (hoặc hết `disabled`) thì chuyển focus về
+ * nó — chỉ khi focus vẫn đang đỗ, không giật focus người dùng đã tự đi chỗ khác.
  */
-function mainLandmark(): HTMLElement | null {
-  const main = document.querySelector<HTMLElement>('main')
-  if (main && !main.hasAttribute('tabindex')) {
-    main.setAttribute('tabindex', '-1')
-    main.addEventListener('blur', () => main.removeAttribute('tabindex'), { once: true })
+let stopAwaitingOpener: (() => void) | null = null
+function awaitReturnedOpener(key: OpenerKey, parked: HTMLElement | null) {
+  stopAwaitingOpener?.()
+  const observer = new MutationObserver(() => {
+    if (!shouldMoveToReturnedOpener({ active: document.activeElement, parked, body: document.body })) return stop()
+    const found = findOpener(key)
+    if (!found) return
+    found.focus()
+    stop()
+  })
+  const timer = window.setTimeout(stop, RETURNED_OPENER_WAIT_MS)
+  function stop() {
+    observer.disconnect()
+    window.clearTimeout(timer)
+    if (stopAwaitingOpener === stop) stopAwaitingOpener = null
   }
-  return main
+  stopAwaitingOpener = stop
+  observer.observe(document.body, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', ADMIN_MODAL_OPENER_ATTR] })
+}
+
+/**
+ * Trả focus lúc đóng: nút mở (nếu focus THỰC SỰ tới được) → nút cùng khoá → `<main>`
+ * (đỗ tạm, rồi chờ nút cùng khoá về) — không bao giờ để ở `<body>`.
+ */
+function returnFocus(shouldRestore: boolean, key: OpenerKey | null) {
+  if (!shouldRestore || focusReturn.restore(true)) return
+  const { target, refound } = focusFallbackTarget(key, { find: findOpener, main: parkOnMain })
+  target?.focus()
+  if (key && !refound) awaitReturnedOpener(key, target)
+}
+
+/**
+ * Hộp đang mở: điều khiển đang giữ focus bị gỡ khỏi DOM (hàng phiên bản vừa xoá, nút
+ * "Dừng lại" biến mất khi dịch xong) hoặc bị `disabled` → trình duyệt đẩy focus về
+ * `<body>`, ra ngoài hộp. Kéo focus về lại trong hộp (như lúc mở). Hộp đang bị phủ thì
+ * lớp trên lo.
+ */
+let keepFocusObserver: MutationObserver | null = null
+function keepFocusInside(root: HTMLElement) {
+  keepFocusObserver?.disconnect()
+  keepFocusObserver = new MutationObserver(() => {
+    if (!active) return
+    if (!focusEscaped({ active: document.activeElement, body: document.body, covered: root.hasAttribute('inert') })) return
+    initialFocus(root).focus()
+  })
+  keepFocusObserver.observe(root, { childList: true, subtree: true, attributes: true, attributeFilter: ['disabled', 'inert', 'hidden'] })
 }
 
 async function activate() {
   if (active || typeof document === 'undefined') return
   active = true
+  stopAwaitingOpener?.()
   layer.value = adminModalLayers.open()
-  const opener = document.activeElement as HTMLElement | null
+  const opener = rememberableOpener(document.activeElement as HTMLElement | null, document.body)
   focusReturn.remember(opener)
   openerKey = openerKeyOf(opener)
   heldKeys.arm()
@@ -190,11 +243,14 @@ async function activate() {
   if (!active || !root) return
   if (!releaseOutside) releaseOutside = inertOutside(root)
   initialFocus(root).focus()
+  keepFocusInside(root)
 }
 
 function deactivate() {
   if (!active) return
   active = false
+  keepFocusObserver?.disconnect()
+  keepFocusObserver = null
   adminModalLayers.close()
   heldKeys.disarm()
   document.removeEventListener('keydown', onCaptureKeydown, true)
@@ -209,12 +265,7 @@ function deactivate() {
   releaseOutside = null
   const key = openerKey
   openerKey = null
-  void nextTick(() => {
-    if (focusReturn.restore(shouldRestore) || !shouldRestore) return
-    // Nút mở đã bị gỡ (danh sách tải lại sau một thao tác trong hộp) hoặc hộp mở bằng
-    // script: tìm lại nút theo khoá, không thì về vùng nội dung chính.
-    focusFallbackTarget(key, { find: findOpener, main: mainLandmark })?.focus()
-  })
+  void nextTick(() => returnFocus(shouldRestore, key))
 }
 
 // Watcher mặc định chạy TRƯỚC khi DOM cập nhật: lúc đóng, hộp còn trong tài liệu nên

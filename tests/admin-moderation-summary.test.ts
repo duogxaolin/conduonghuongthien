@@ -168,15 +168,30 @@ test('bấm "Thử lại" thật sự tải lại: lỗi được xoá, hai endp
 
 test('trang kiểm duyệt: huy hiệu "chờ đối soát" là tổng của máy chủ, không đếm trên một trang 20 dòng', async () => {
   const { pendingBadgeCount } = await import('../app/utils/moderation-summary.ts')
-  // Đang lọc "pending": tổng của chính truy vấn đó (mới nhất sau mỗi lượt tải hàng đợi).
-  assert.equal(pendingBadgeCount({ filter: 'pending', queueTotal: 57, workerPending: 40 }), 57)
-  // Lọc trạng thái khác: tổng "pending" của worker-status.
-  assert.equal(pendingBadgeCount({ filter: 'approved', queueTotal: 3, workerPending: 57 }), 57)
-  assert.equal(pendingBadgeCount({ filter: 'all', queueTotal: 90, workerPending: null }), 0)
+  // Tổng ĐÃ TẢI cho bộ lọc "pending": dùng nó (mới nhất sau mỗi lượt tải hàng đợi).
+  assert.equal(pendingBadgeCount({ queueTotal: 57, queueTotalFilter: 'pending', workerPending: 40 }), 57)
+  // Tổng đã tải là của bộ lọc khác: tổng "pending" của worker-status.
+  assert.equal(pendingBadgeCount({ queueTotal: 3, queueTotalFilter: 'approved', workerPending: 57 }), 57)
+  // Vừa bấm sang "pending" nhưng hàng đợi chưa tải xong (`queueTotal` còn là tổng của
+  // "approved"): KHÔNG hiện số của bộ lọc trước — dùng worker-status.
+  assert.equal(pendingBadgeCount({ queueTotal: 3, queueTotalFilter: 'approved', workerPending: 57 }), 57)
+  // worker-status hỏng (hoặc chưa tải) và tổng đã tải không phải "pending": không biết
+  // → `null` (ẩn huy hiệu), KHÔNG phải "0 hàng chờ".
+  assert.equal(pendingBadgeCount({ queueTotal: 90, queueTotalFilter: 'all', workerPending: null }), null)
+  assert.equal(pendingBadgeCount({ queueTotal: 0, queueTotalFilter: null, workerPending: null }), null)
 
   const page = readFileSync(new URL('../app/pages/admin/ai/moderation.vue', import.meta.url), 'utf8')
   assert.doesNotMatch(page, /queue\.value\.filter\(q => q\.status === 'pending'\)/, 'đếm trên trang 20 dòng là lỗi trần 20')
-  assert.match(page, /pendingBadgeCount\(\{ filter: queueStatusFilter\.value, queueTotal: queueTotal\.value, workerPending: workerData\.value\?\.pendingQueueCount \?\? null \}\)/)
+  assert.match(page, /pendingBadgeCount\(\{ queueTotal: queueTotal\.value, queueTotalFilter: queueTotalFilter\.value, workerPending: workerPendingCount\.value \}\)/)
+  // `queueTotalFilter` chỉ đổi khi phản hồi của chính bộ lọc đó về (trong loadQueue).
+  const loadQueueFn = page.slice(page.indexOf('async function loadQueue'), page.indexOf('async function loadRules'))
+  assert.match(loadQueueFn, /queueTotalFilter\.value = filter/)
+  // worker-status hỏng thì xoá số "pending" cũ — huy hiệu ẩn thay vì hiện số lỗi thời.
+  const workerFn = page.slice(page.indexOf('async function loadWorkerStatus'), page.indexOf('function applyRescanStatus'))
+  assert.match(workerFn, /workerPendingCount\.value = res\.worker\.pendingQueueCount/)
+  assert.match(workerFn, /catch \{[\s\S]*workerPendingCount\.value = null/)
+  // Huy hiệu `null` = ẩn (không phải "0").
+  assert.match(page, /v-if="t\.badge !== null && t\.badge > 0"/)
   // Xử lý một hàng đợi xong thì số "pending" của worker cũng được làm mới.
   const resolveFn = page.slice(page.indexOf('async function resolveItem'), page.indexOf('// ─── TAB 4'))
   assert.match(resolveFn, /loadWorkerStatus\(\)/)

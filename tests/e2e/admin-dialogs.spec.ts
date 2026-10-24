@@ -14,7 +14,8 @@
  *     `<body>`) → Escape vẫn đóng được.
  */
 import { expect, test, type Locator, type Page } from '@playwright/test'
-import { E2E_ADMIN_USERNAME, E2E_PASSWORD_ENV } from './harness'
+import mysql from 'mysql2/promise'
+import { E2E_ADMIN_USERNAME, E2E_PASSWORD_ENV, e2eDbConfig } from './harness'
 
 async function login(page: Page) {
   const password = process.env[E2E_PASSWORD_ENV]
@@ -123,6 +124,44 @@ async function firstPageId(page: Page): Promise<number> {
 }
 
 const isVersionsPath = (url: string) => /^\/api\/admin\/pages\/\d+\/versions$/.test(new URL(url).pathname)
+
+/** Focus KHÔNG nằm ở `<body>` (người dùng bàn phím không phải Tab lại từ đầu trang). */
+const focusIsNotBody = (page: Page) => page.evaluate(() => !!document.activeElement && document.activeElement !== document.body)
+
+/**
+ * Trang ngôn ngữ với một ngôn ngữ (khác `vi`) còn thiếu 25 key và lượt dịch AI bị GIỮ
+ * lại tới khi gọi `release()` — để hộp "Tiến trình Dịch AI" ở trạng thái đang chạy.
+ */
+async function languagesWithHeldTranslation(page: Page) {
+  let release: () => void = () => {}
+  const gate = new Promise<void>(resolve => { release = resolve })
+  let target = ''
+  await page.route(url => url.pathname === '/api/admin/languages', async route => {
+    if (route.request().method() !== 'GET') return route.continue()
+    const response = await route.fetch()
+    const json = (await response.json()) as { ok: boolean; items: Array<{ code: string; stats?: { missingKeys: number; percent: number } }> }
+    const lang = json.items.find(item => item.code !== 'vi')
+    if (!lang) throw new Error('cần một ngôn ngữ khác tiếng Việt (seed)')
+    target = lang.code
+    lang.stats = { ...(lang.stats ?? { percent: 0 }), missingKeys: 25, percent: 50 }
+    await route.fulfill({ response, json })
+  })
+  await page.route(url => /^\/api\/admin\/languages\/[a-z-]+\/translations$/.test(url.pathname) && !url.pathname.startsWith('/api/admin/languages/vi/'), route =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ok: true, items: Array.from({ length: 25 }, (_, i) => ({ id: i + 1, group: 'e2e', key: `e2e.key${i}`, value: '', isAiTranslated: false })) }),
+    }))
+  await page.route(url => url.pathname === '/api/admin/languages/ai-translate-chunk', async route => {
+    await gate
+    await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify({ ok: true, translated: [] }) })
+  })
+  await page.goto('/admin/languages')
+  await page.waitForLoadState('networkidle')
+  const opener = page.locator(`[data-admin-modal-opener="translate-${target}"]`)
+  await expect(opener).toBeVisible({ timeout: 20_000 })
+  return { opener, release, code: () => target }
+}
 
 async function expectClosedCleanly(page: Page, dialog: Locator, opener: Locator, inertBefore: string[]) {
   await expect(dialog).toHaveCount(0)
@@ -406,5 +445,177 @@ test.describe('hộp thoại admin (AdminModal)', () => {
     await expectTabTrapped(page, dialog)
     await page.keyboard.press('Escape')
     await expectClosedCleanly(page, dialog, opener, inertBefore)
+  })
+
+  test('ngôn ngữ: hộp "chuyển đến vị trí nào?" — có tên, focus trong hộp, Tab bị bẫy, Escape đóng + trả focus', async ({ page }) => {
+    await page.goto('/admin/languages')
+    await page.waitForLoadState('networkidle')
+    const mover = page.locator('button[title="Bấm để chuyển đổi vị trí thứ tự"]').first()
+    await expect(mover).toBeVisible({ timeout: 20_000 })
+    const inertBefore = await inertElements(page)
+    const dialog = await openWithKeyboard(page, mover, /chuyển đến vị trí nào\?$/)
+    await expectTabTrapped(page, dialog)
+    await page.keyboard.press('Escape')
+    await expectClosedCleanly(page, dialog, mover, inertBefore)
+  })
+
+  test('dịch toàn bộ bài viết: có tên, focus trong hộp, Tab bị bẫy, Escape đóng + trả focus', async ({ page }) => {
+    await page.goto('/admin/content/articles')
+    await page.waitForLoadState('networkidle')
+    const opener = page.getByRole('button', { name: 'Dịch toàn bộ bài viết' }).first()
+    await expect(opener).toBeVisible({ timeout: 20_000 })
+    const inertBefore = await inertElements(page)
+    const stats = page.waitForResponse(r => r.request().method() === 'GET' && new URL(r.url()).pathname === '/api/admin/articles/translation-stats')
+    const dialog = await openWithKeyboard(page, opener, 'Dịch toàn bộ bài viết bằng AI')
+    // Thống kê tải xong mới đếm điều khiển (danh sách ngôn ngữ hiện ra trong thân).
+    expect((await stats).status()).toBe(200)
+    await expectTabTrapped(page, dialog)
+    await page.keyboard.press('Escape')
+    await expectClosedCleanly(page, dialog, opener, inertBefore)
+  })
+
+  test('xoá phiên bản qua hộp xác nhận trong ngăn kéo: hàng bị gỡ thì focus vẫn ở trong ngăn kéo', async ({ page }) => {
+    await page.goto(`/admin/content/pages/${await firstPageId(page)}`)
+    const opener = page.getByRole('button', { name: 'Phiên bản', exact: true })
+    await expect(opener).toBeVisible({ timeout: 20_000 })
+    await page.waitForLoadState('networkidle')
+    const initialList = page.waitForResponse(r => r.request().method() === 'GET' && isVersionsPath(r.url()))
+    await opener.click()
+    const drawer = page.getByRole('dialog', { name: /^Phiên bản$/ })
+    expect((await initialList).status()).toBe(200)
+    const label = `E2E xoá ${Date.now()}`
+    await drawer.getByPlaceholder('Tên bản sao lưu…').fill(label)
+    const saved = page.waitForResponse(r => r.request().method() === 'GET' && isVersionsPath(r.url()))
+    await drawer.getByRole('button', { name: /^Lưu \(\d\/4\)$/ }).click()
+    expect((await saved).status()).toBe(200)
+
+    const del = drawer.getByRole('button', { name: `Xóa phiên bản ${label}` })
+    await del.focus()
+    await page.keyboard.press('Enter')
+    const confirmDialog = page.getByRole('dialog', { name: 'Xóa phiên bản', exact: true })
+    // Thao tác nguy hiểm mở ra ở "Hủy"; Tab sang "Xóa" rồi Enter.
+    await expect(confirmDialog.getByRole('button', { name: 'Hủy' })).toBeFocused()
+    await page.keyboard.press('Tab')
+    const deleted = page.waitForResponse(r => r.request().method() === 'DELETE')
+    const reloaded = page.waitForResponse(r => r.request().method() === 'GET' && isVersionsPath(r.url()))
+    await page.keyboard.press('Enter')
+    expect((await deleted).status()).toBe(200)
+    expect((await reloaded).status()).toBe(200)
+    await expect(del, 'hàng phiên bản đã xoá').toHaveCount(0)
+    // Nút xoá đang giữ focus bị gỡ khỏi DOM: focus không được rơi về <body>.
+    await expect.poll(() => focusInside(drawer), { message: 'ngăn kéo còn mở thì focus phải ở trong nó' }).toBe(true)
+    await page.keyboard.press('Escape')
+    await expect(drawer).toHaveCount(0)
+    await expect(opener).toBeFocused()
+  })
+
+  test('sửa người dùng rồi lưu: bảng tải lại, focus về đúng nút "Sửa" của hàng vừa vẽ lại', async ({ page }) => {
+    const stamp = Date.now()
+    const role = await page.request.post('/api/admin/roles', { data: { name: `e2e_focus_role_${stamp}`, permissions: [{ resource: 'media_portal', canRead: true }] } })
+    expect(role.status(), await role.text()).toBe(200)
+    const account = await page.request.post('/api/admin/users', {
+      data: { username: `e2e_focus_${stamp}`, password: 'OnlyRead#72Media!', roleId: ((await role.json()) as { id: number }).id },
+    })
+    expect(account.status(), await account.text()).toBe(200)
+    const list = (await (await page.request.get('/api/admin/users')).json()) as { users: Array<{ id: number; username: string }> }
+    const userId = list.users.find(u => u.username === `e2e_focus_${stamp}`)!.id
+
+    await page.goto('/admin/users')
+    await page.waitForLoadState('networkidle')
+    const opener = page.locator(`[data-admin-modal-opener="user-${userId}"]:visible`)
+    await expect(opener).toBeVisible({ timeout: 20_000 })
+    await opener.evaluate(el => el.setAttribute('data-e2e-original', ''))
+    const dialog = await openWithKeyboard(page, opener, /^Chỉnh sửa Tài khoản: /)
+
+    const reloaded = page.waitForResponse(r => r.request().method() === 'GET' && new URL(r.url()).pathname === '/api/admin/users')
+    await dialog.getByRole('button', { name: 'Cập Nhật Tài Khoản' }).click()
+    expect((await reloaded).status()).toBe(200)
+    await expect(dialog).toHaveCount(0)
+    await expect(opener, 'bảng tải lại phải vẽ lại nút (phần tử mới)').not.toHaveAttribute('data-e2e-original', '')
+    await expect(opener, 'focus về nút "Sửa" của đúng hàng sau khi vẽ lại').toBeFocused()
+  })
+
+  test('tiến trình dịch AI: dịch xong khi hộp đang mở (nút "Dừng lại" biến mất) → focus vẫn trong hộp', async ({ page }) => {
+    const { opener, release } = await languagesWithHeldTranslation(page)
+    await opener.click()
+    const progress = page.getByRole('dialog', { name: /^Tiến trình Dịch AI/ })
+    await expect(progress).toHaveAttribute('aria-busy', 'true')
+    const stop = progress.getByRole('button', { name: 'Dừng lại' })
+    await expect(stop, 'đang dịch: focus ở nút đầu tiên của chân hộp').toBeFocused()
+    // Đang bận: Escape không đóng.
+    await page.keyboard.press('Escape')
+    await expect(progress).toBeVisible()
+    release()
+    await expect(progress.getByRole('button', { name: 'Hoàn tất & Đóng' })).toBeVisible({ timeout: 15_000 })
+    await expect(stop).toHaveCount(0)
+    await expect.poll(() => focusInside(progress), { message: 'nút đang giữ focus biến mất: focus phải ở lại trong hộp' }).toBe(true)
+    await progress.getByRole('button', { name: 'Hoàn tất & Đóng' }).click()
+    await expect(progress).toHaveCount(0)
+    await expect.poll(() => focusIsNotBody(page)).toBe(true)
+  })
+
+  test('tiến trình dịch AI: đóng bằng "Đóng cửa sổ" lúc đang dịch (nút mở đang disabled) → focus không về <body>', async ({ page }) => {
+    const { opener, release } = await languagesWithHeldTranslation(page)
+    await opener.click()
+    const progress = page.getByRole('dialog', { name: /^Tiến trình Dịch AI/ })
+    await expect(progress).toHaveAttribute('aria-busy', 'true')
+    await expect(opener, 'nút mở bị khoá trong lúc dịch').toBeDisabled()
+    await progress.getByRole('button', { name: 'Đóng cửa sổ' }).click()
+    await expect(progress).toHaveCount(0)
+    await expect.poll(() => focusIsNotBody(page), { message: 'nút mở disabled không nhận focus — phải lùi về <main>' }).toBe(true)
+    release()
+    // Dịch xong, nút mở bật lại (trong cửa sổ chờ): focus đang đỗ thì chuyển về nút.
+    await expect(opener).toBeEnabled({ timeout: 15_000 })
+    await expect(opener).toBeFocused()
+  })
+
+  test('xem nhanh bản dịch (mở từ chip không nhận focus) và nhắc dịch lại: đóng xong focus không về <body>', async ({ page }) => {
+    const stamp = Date.now()
+    const created = await page.request.post('/api/admin/articles', {
+      data: { title: `E2E hộp thoại ${stamp}`, slug: `e2e-hop-thoai-${stamp}`, type: 'news', content: '<p>Nội dung E2E</p>', excerpt: 'tóm tắt', status: 'published' },
+    })
+    expect(created.status(), await created.text()).toBe(200)
+    const articleId = ((await created.json()) as { id: number }).id
+    const connection = await mysql.createConnection(e2eDbConfig())
+    try {
+      await connection.query(
+        "INSERT INTO article_translations (article_id, lang_code, title, excerpt, content, status, translated_by) VALUES (?, 'en', 'E2E EN title', 'E2E', '<p>E2E body</p>', 'reviewed', 'ai')",
+        [articleId],
+      )
+    } finally {
+      await connection.end()
+    }
+
+    await page.goto('/admin/content/articles')
+    await page.waitForLoadState('networkidle')
+    const chip = page.locator('tr', { hasText: `E2E hộp thoại ${stamp}` }).locator('span[title^="EN:"]')
+    await expect(chip).toBeVisible({ timeout: 20_000 })
+    await chip.click()
+    const quickView = page.getByRole('dialog', { name: /^Bản dịch / })
+    await expect(quickView).toBeVisible()
+    await expect.poll(() => focusInside(quickView)).toBe(true)
+    await page.keyboard.press('Escape')
+    await expect(quickView).toHaveCount(0)
+    await expect.poll(() => focusIsNotBody(page), { message: 'chip <span> không nhận focus — phải lùi về <main>' }).toBe(true)
+    // Mở lại ngay trong lúc focus đang đỗ ở <main>: <main> không được nhớ làm nút mở.
+    await chip.click()
+    await expect(quickView).toBeVisible()
+    await page.keyboard.press('Escape')
+    await expect(quickView).toHaveCount(0)
+    await expect.poll(() => focusIsNotBody(page), { message: 'nơi đỗ tạm bị nhớ làm nút mở → focus rơi về <body>' }).toBe(true)
+
+    // Nhắc dịch lại: mở sau khi lưu bài đổi nội dung tiếng Việt.
+    await page.goto(`/admin/content/articles/${articleId}`)
+    const title = page.getByPlaceholder('Nhập tiêu đề hấp dẫn...')
+    await expect(title).toBeVisible({ timeout: 20_000 })
+    await page.waitForLoadState('networkidle')
+    await title.fill(`E2E hộp thoại ${stamp} sửa`)
+    await page.getByRole('button', { name: /Cập Nhật Bài Viết/ }).click()
+    const prompt = page.getByRole('dialog', { name: 'Phát hiện nội dung Tiếng Việt vừa thay đổi!' })
+    await expect(prompt).toBeVisible({ timeout: 15_000 })
+    await expect.poll(() => focusInside(prompt)).toBe(true)
+    await page.keyboard.press('Escape')
+    await expect(prompt).toHaveCount(0)
+    await expect.poll(() => focusIsNotBody(page)).toBe(true)
   })
 })

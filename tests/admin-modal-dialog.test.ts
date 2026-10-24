@@ -44,6 +44,7 @@ interface TemplateProp {
   value?: { content: string }
   arg?: { content?: string }
   exp?: { content?: string }
+  modifiers?: Array<string | { content: string }>
 }
 interface TemplateNode {
   type: number
@@ -166,6 +167,79 @@ function keyupInsideDialogs(source: string, filename = 'inline.vue'): number[] {
   }
   visit(root, false)
   return lines
+}
+
+/**
+ * Mọi `@keydown.enter` bên trong hộp thoại, và handler của nó có lọc bằng
+ * `isDeliberateEnter` không (trực tiếp trong biểu thức, hoặc trong thân hàm cùng tệp
+ * mà biểu thức gọi). Thiếu lọc: giữ Enter (phím lặp) hay chốt chữ của bộ gõ tiếng Việt
+ * (Safari: `keyCode 229`) đều gửi biểu mẫu.
+ */
+function enterHandlersInsideDialogs(source: string, filename = 'inline.vue'): Array<{ line: number; handler: string; deliberate: boolean }> {
+  const { descriptor } = parse(source, { filename })
+  const root = descriptor.template?.ast as TemplateNode | undefined
+  if (!root) return []
+  const script = descriptor.scriptSetup?.content ?? descriptor.script?.content ?? ''
+  const bodyOf = (name: string) => {
+    const start = script.search(new RegExp(`(?:function\\s+${name}\\s*\\(|const\\s+${name}\\s*=)`))
+    if (start < 0) return ''
+    const rest = script.slice(start + 1)
+    const end = rest.search(/\n(?:async\s+)?function\s|\nconst\s|\nlet\s|\nwatch\(|\nonMounted\(|\ndefineExpose/)
+    return script.slice(start, end < 0 ? undefined : start + 1 + end)
+  }
+  const found: Array<{ line: number; handler: string; deliberate: boolean }> = []
+  const visit = (node: TemplateNode, insideDialog: boolean) => {
+    const here = insideDialog || (node.type === ELEMENT && (isDialogRole(node) || isDialogShell(node)))
+    if (node.type === ELEMENT && here) {
+      for (const prop of node.props ?? []) {
+        if (prop.type !== DIRECTIVE || prop.name !== 'on' || prop.arg?.content !== 'keydown') continue
+        const modifiers = (prop.modifiers ?? []).map(m => (typeof m === 'string' ? m : m.content))
+        if (!modifiers.includes('enter')) continue
+        const handler = prop.exp?.content ?? ''
+        const name = handler.match(/^\s*([A-Za-z_$][\w$]*)/)?.[1] ?? ''
+        const deliberate = handler.includes('isDeliberateEnter(') || (!!name && bodyOf(name).includes('isDeliberateEnter('))
+        found.push({ line: node.loc.start.line, handler, deliberate })
+      }
+    }
+    for (const child of node.children ?? []) visit(child, here)
+  }
+  visit(root, false)
+  return found
+}
+
+/** `aria-labelledby` của hộp thoại trỏ tới id KHÔNG có trong template (tên rỗng). */
+function labelledbyTargetsMissing(source: string, filename = 'inline.vue'): string[] {
+  const { descriptor } = parse(source, { filename })
+  const root = descriptor.template?.ast as TemplateNode | undefined
+  if (!root) return []
+  const staticIds = new Set<string>()
+  const boundIds = new Set<string>()
+  const dialogs: TemplateNode[] = []
+  const visit = (node: TemplateNode) => {
+    if (node.type === ELEMENT) {
+      const id = staticAttr(node, 'id')
+      if (id) staticIds.add(id)
+      const bound = directiveExp(node, 'bind', 'id')
+      if (bound) boundIds.add(bound.trim())
+      if (isDialogRole(node)) dialogs.push(node)
+    }
+    for (const child of node.children ?? []) visit(child)
+  }
+  visit(root)
+  const missing: string[] = []
+  for (const dialog of dialogs) {
+    const fixed = staticAttr(dialog, 'aria-labelledby')
+    if (fixed) for (const id of fixed.split(/\s+/).filter(Boolean)) if (!staticIds.has(id)) missing.push(id)
+    const bound = directiveExp(dialog, 'bind', 'aria-labelledby')?.trim()
+    if (!bound) continue
+    const literals = [...bound.matchAll(/'([^']+)'|"([^"]+)"/g)].map(m => m[1] ?? m[2] ?? '')
+    if (literals.length) {
+      for (const id of literals) if (!staticIds.has(id)) missing.push(id)
+    } else if (!boundIds.has(bound)) {
+      missing.push(bound)
+    }
+  }
+  return missing
 }
 
 /**
@@ -510,10 +584,10 @@ test('trả focus khi nút mở đã bị gỡ: tìm lại theo khoá ổn đị
   const find = (key: { value: string }) => { lookups.push(key.value); return key.value === 'submission-12' ? 'row-button' : null }
   const main = () => 'main'
   // Danh sách đã vẽ lại: nút cùng khoá được tìm thấy.
-  assert.equal(focusFallbackTarget({ attr: ADMIN_MODAL_OPENER_ATTR, value: 'submission-12' }, { find, main }), 'row-button')
-  // Hàng đã rời danh sách (đổi trạng thái ra khỏi bộ lọc) → vùng nội dung chính.
-  assert.equal(focusFallbackTarget({ attr: ADMIN_MODAL_OPENER_ATTR, value: 'submission-99' }, { find, main }), 'main')
-  assert.equal(focusFallbackTarget(null, { find, main }), 'main')
+  assert.deepEqual(focusFallbackTarget({ attr: ADMIN_MODAL_OPENER_ATTR, value: 'submission-12' }, { find, main }), { target: 'row-button', refound: true })
+  // Hàng chưa/không còn trong danh sách → đỗ ở vùng nội dung chính (nơi gọi chờ nút về).
+  assert.deepEqual(focusFallbackTarget({ attr: ADMIN_MODAL_OPENER_ATTR, value: 'submission-99' }, { find, main }), { target: 'main', refound: false })
+  assert.deepEqual(focusFallbackTarget(null, { find, main }), { target: 'main', refound: false })
   assert.deepEqual(lookups, ['submission-12', 'submission-99'])
 })
 
@@ -546,10 +620,113 @@ test('phím đang GIỮ lúc hộp mở: lặp (autorepeat) và lần thả bị
 
 test('Enter có chủ đích: không lặp, không đang gõ dấu', async () => {
   const { isDeliberateEnter } = await import('../app/utils/admin-modal.ts')
-  assert.equal(isDeliberateEnter({ key: 'Enter', repeat: false, isComposing: false }), true)
-  assert.equal(isDeliberateEnter({ key: 'Enter', repeat: true, isComposing: false }), false)
-  assert.equal(isDeliberateEnter({ key: 'Enter', repeat: false, isComposing: true }), false, 'IME tiếng Việt chốt chữ bằng Enter')
-  assert.equal(isDeliberateEnter({ key: 'a', repeat: false, isComposing: false }), false)
+  assert.equal(isDeliberateEnter({ key: 'Enter', repeat: false, isComposing: false, keyCode: 13 }), true)
+  assert.equal(isDeliberateEnter({ key: 'Enter', repeat: true, isComposing: false, keyCode: 13 }), false)
+  assert.equal(isDeliberateEnter({ key: 'Enter', repeat: false, isComposing: true, keyCode: 13 }), false, 'IME tiếng Việt chốt chữ bằng Enter')
+  // Safari chốt chữ của bộ gõ bằng keydown `isComposing: false` nhưng `keyCode: 229`.
+  assert.equal(isDeliberateEnter({ key: 'Enter', repeat: false, isComposing: false, keyCode: 229 }), false, 'Safari + IME: keyCode 229')
+  assert.equal(isDeliberateEnter({ key: 'a', repeat: false, isComposing: false, keyCode: 65 }), false)
+})
+
+test('restore() chỉ báo thành công khi focus THỰC SỰ tới nút mở (nút bị disabled/mất tabindex thì không)', async () => {
+  const { createFocusReturn } = await import('../app/utils/focus-return.ts')
+  let active: unknown = 'body'
+  const focusable = { isConnected: true, focus() { active = focusable } }
+  const disabledOpener = { isConnected: true, focus() { /* nút disabled: trình duyệt bỏ qua */ } }
+
+  const ok = createFocusReturn(() => false, () => active)
+  ok.remember(focusable)
+  assert.equal(ok.restore(), true)
+  assert.equal(active, focusable)
+
+  active = 'body'
+  const lost = createFocusReturn(() => false, () => active)
+  lost.remember(disabledOpener)
+  assert.equal(lost.restore(), false, 'focus còn ở <body> — nơi gọi phải chạy đường dự phòng')
+})
+
+test('nơi "đỗ" focus dự phòng: <main> mang tabindex tạm có dấu, rời focus là gỡ, và không bao giờ được nhớ làm nút mở', async () => {
+  const { parkFocusOn, isFocusPark, rememberableOpener, FOCUS_PARK_ATTR } = await import('../app/utils/admin-modal.ts')
+  const attrs = new Map<string, string>()
+  let onBlur: (() => void) | null = null
+  const main = {
+    hasAttribute: (n: string) => attrs.has(n),
+    setAttribute: (n: string, v: string) => { attrs.set(n, v) },
+    removeAttribute: (n: string) => { attrs.delete(n) },
+    addEventListener: (_type: 'blur', fn: () => void) => { onBlur = fn },
+  }
+  assert.equal(parkFocusOn(main), main)
+  assert.equal(attrs.get('tabindex'), '-1')
+  assert.ok(attrs.has(FOCUS_PARK_ATTR))
+  assert.equal(isFocusPark(main), true)
+  // Hộp B mở trong lúc focus đang đỗ ở <main>: <main> KHÔNG được nhớ làm nút mở (thuộc
+  // tính tạm sẽ bị gỡ lúc focus rời đi → trả focus về nó là rơi xuống <body>).
+  const body = { hasAttribute: () => false }
+  assert.equal(rememberableOpener(main, body), null)
+  assert.equal(rememberableOpener(body, body), null)
+  const button = { hasAttribute: () => false }
+  assert.equal(rememberableOpener(button, body), button)
+  // Rời focus: gỡ đúng hai thuộc tính đã gắn.
+  onBlur!()
+  assert.equal(attrs.size, 0)
+  // <main> vốn có tabindex của trang: không gắn dấu, không gỡ.
+  attrs.set('tabindex', '0')
+  onBlur = null
+  assert.equal(parkFocusOn(main), main)
+  assert.equal(isFocusPark(main), false)
+  assert.equal(onBlur, null)
+  assert.equal(parkFocusOn(null), null)
+})
+
+test('focus rơi khỏi hộp đang mở (điều khiển bị gỡ/disabled) → kéo lại; hộp bị phủ thì để lớp trên lo', async () => {
+  const { focusEscaped, shouldMoveToReturnedOpener } = await import('../app/utils/admin-modal.ts')
+  const body = {}
+  assert.equal(focusEscaped({ active: body, body, covered: false }), true)
+  assert.equal(focusEscaped({ active: null, body, covered: false }), true)
+  assert.equal(focusEscaped({ active: body, body, covered: true }), false, 'ConfirmModal đang mở đè lên: không giật focus của nó')
+  assert.equal(focusEscaped({ active: {}, body, covered: false }), false)
+
+  // Đã đỗ focus ở <main> chờ danh sách tải lại: nút cùng khoá xuất hiện thì chuyển về
+  // nó — chỉ khi người dùng chưa tự đi chỗ khác.
+  const parked = {}
+  assert.equal(shouldMoveToReturnedOpener({ active: parked, parked, body }), true)
+  assert.equal(shouldMoveToReturnedOpener({ active: body, parked, body }), true)
+  assert.equal(shouldMoveToReturnedOpener({ active: {}, parked, body }), false)
+})
+
+test('mọi Enter bên trong hộp thoại admin: @keydown.enter + isDeliberateEnter (không lặp, không IME)', () => {
+  const offenders: string[] = []
+  for (const file of adminVueFiles()) {
+    for (const finding of enterHandlersInsideDialogs(read(file), file)) {
+      if (!finding.deliberate) offenders.push(`${file}:${finding.line} (${finding.handler})`)
+    }
+  }
+  assert.deepEqual(offenders, [], 'Handler Enter trong hộp thoại phải lọc bằng isDeliberateEnter (ConfirmModal prompt từng dùng @keydown.enter.prevent="accept").')
+})
+
+test('classifier: handler Enter trong hộp thoại phải gọi isDeliberateEnter', () => {
+  const sfc = (template: string, script: string) => `<script setup lang="ts">\n${script}\n</script>\n<template>${template}</template>`
+  const check = (template: string, script: string) => enterHandlersInsideDialogs(sfc(template, script)).map(f => f.deliberate)
+  assert.deepEqual(check('<AdminModal :open="o" title="t"><input @keydown.enter.prevent="accept" /></AdminModal>', 'function accept() {}'), [false])
+  assert.deepEqual(check('<div role="dialog" aria-label="x"><input @keydown.enter="onEnter" /></div>', 'const onEnter = (e: KeyboardEvent) => {\n  if (!isDeliberateEnter(e)) return\n}'), [true])
+  assert.deepEqual(check('<div role="dialog" aria-label="x"><input @keydown.enter="submitOnEnter($event, go)" /></div>', 'function submitOnEnter(e: KeyboardEvent, s: () => void) {\n  if (!isDeliberateEnter(e)) return\n  s()\n}\nfunction go() {}'), [true])
+  assert.deepEqual(check('<input @keydown.enter="search" />', 'function search() {}'), [], 'ô ngoài hộp thoại không bị xét')
+})
+
+test('aria-labelledby của hộp thoại trỏ tới id CÓ trong template', () => {
+  const missing = (template: string) => labelledbyTargetsMissing(`<template>${template}</template>`)
+  assert.deepEqual(missing('<div role="dialog" aria-labelledby="t"><h2 id="t">x</h2></div>'), [])
+  assert.deepEqual(missing('<div role="dialog" aria-labelledby="t"><h2 id="tt">x</h2></div>'), ['t'])
+  assert.deepEqual(missing(`<div role="dialog" :aria-labelledby="hasTitle ? 'a' : 'b'"><h2 id="a"></h2><p id="b"></p></div>`), [])
+  assert.deepEqual(missing(`<div role="dialog" :aria-labelledby="hasTitle ? 'a' : 'b'"><h2 id="a"></h2></div>`), ['b'])
+  assert.deepEqual(missing('<div role="dialog" :aria-labelledby="titleId"><h2 :id="titleId"></h2></div>'), [])
+  assert.deepEqual(missing('<div role="dialog" :aria-labelledby="titleId"><h2 :id="otherId"></h2></div>'), ['titleId'])
+
+  const offenders: string[] = []
+  for (const file of adminVueFiles()) {
+    for (const id of labelledbyTargetsMissing(read(file), file)) offenders.push(`${file} → ${id}`)
+  }
+  assert.deepEqual(offenders, [])
 })
 
 test('hộp thoại nuốt phím giữ từ trước khi mở; ô Enter trong hộp dùng isDeliberateEnter', () => {
@@ -561,6 +738,28 @@ test('hộp thoại nuốt phím giữ từ trước khi mở; ô Enter trong h�
   }
   for (const file of ['pages/admin/content/pages/[id].vue', 'components/admin/MediaLibraryModal.vue', 'pages/admin/profile.vue']) {
     assert.match(read(file), /isDeliberateEnter\(/, `${file}: Enter lặp/đang gõ dấu không được gửi`)
+  }
+})
+
+/**
+ * Trang đóng hộp rồi tải lại danh sách (skeleton thay bảng → nút "Sửa" của hàng bị gỡ và
+ * vẽ lại): nút mở mang khoá ổn định để AdminModal tìm lại đúng nút đó.
+ */
+const OPENER_MARKERS: Record<string, string[]> = {
+  'pages/admin/users/index.vue': ['`user-${u.id}`'],
+  'pages/admin/content/content-types.vue': ['`content-type-${ct.id}`'],
+  'pages/admin/content/categories/index.vue': ['`category-${root.id}`', '`category-${child.id}`', '`category-add-child-${root.id}`'],
+  'pages/admin/media-portal/categories.vue': ['`media-category-${cat.id}`'],
+  'pages/admin/submissions/index.vue': ['`submission-${s.id}`'],
+  'components/admin/languages/LanguagesListTab.vue': ['`translate-${lang.code}`'],
+}
+
+test('nút mở trên danh sách tải lại sau khi đóng hộp mang khoá data-admin-modal-opener', () => {
+  for (const [file, keys] of Object.entries(OPENER_MARKERS)) {
+    const source = read(file)
+    for (const key of keys) {
+      assert.ok(source.includes(`:data-admin-modal-opener="${key}"`), `${file} thiếu khoá ${key}`)
+    }
   }
 })
 
@@ -582,9 +781,27 @@ test('xếp lớp: hộp mở sau nằm trên hộp mở trước, và luôn dư
 test('AdminModal nối dây: phím qua adminModalKeyAction, nền qua adminModalBackdropCloses, focus qua focus-return', () => {
   const source = read('components/admin/AdminModal.vue')
   const script = source.slice(0, source.indexOf('</script>'))
-  for (const helper of ['adminModalKeyAction(', 'adminModalBackdropCloses(', 'inertOutside(', 'trapTabTarget(', 'visibleTabbables', 'focusReturn.restore(', 'focusReturn.remember(', 'pickInitialFocus(', 'openerKeyOf(', 'focusFallbackTarget(', 'adminModalLayers.open(', 'adminModalLayers.close(', 'adminModalLayerZ(']) {
+  for (const helper of ['adminModalKeyAction(', 'adminModalBackdropCloses(', 'inertOutside(', 'trapTabTarget(', 'visibleTabbables', 'focusReturn.restore(', 'focusReturn.remember(', 'pickInitialFocus(', 'openerKeyOf(', 'focusFallbackTarget(', 'adminModalLayers.open(', 'adminModalLayers.close(', 'adminModalLayerZ(', 'rememberableOpener(', 'focusEscaped(', 'shouldMoveToReturnedOpener(', 'parkFocusOn(']) {
     assert.ok(script.includes(helper), `AdminModal.vue phải dùng ${helper}`)
   }
+  // Giữ focus trong hộp khi điều khiển đang focus bị gỡ/disabled (theo dõi DOM của hộp),
+  // và chờ nút mở về sau khi danh sách tải lại (theo dõi <body> có thời hạn).
+  assert.match(script, /keepFocusObserver\.observe\(root, \{ childList: true, subtree: true, attributes: true/)
+  assert.match(script, /observer\.observe\(document\.body,/)
+  assert.match(script, /setTimeout\(stop, RETURNED_OPENER_WAIT_MS\)/)
+
+  const confirm = read('components/admin/ConfirmModal.vue')
+  for (const helper of ['rememberableOpener(', 'parkFocusOn(', 'isDeliberateEnter(']) {
+    assert.ok(confirm.includes(helper), `ConfirmModal.vue phải dùng ${helper}`)
+  }
+  // Escape của hộp xác nhận đánh dấu đã xử lý (panel thuộc tính không thu nhỏ theo).
+  assert.match(confirm, /if \(e\.key !== 'Escape'\) return\n[\s\S]*?e\.preventDefault\(\)\n\s*cancel\(\)/)
+  // Hộp tiến trình dịch AI: biểu tượng quay khi đang dịch (như trước khi chuyển sang
+  // AdminModal), dừng khi người dùng chọn giảm chuyển động.
+  assert.match(read('pages/admin/languages/index.vue'), /:icon="!progressStats\.finished && !progressStats\.stopped \? 'fa-solid fa-wand-magic-sparkles animate-spin motion-reduce:animate-none' : 'fa-solid fa-wand-magic-sparkles'"/)
+  // Panel thuộc tính mở rộng (nghe Escape ở window) bỏ qua Escape mà một hộp thoại đã
+  // xử lý — đóng thư viện ảnh mở từ panel không thu nhỏ luôn panel.
+  assert.match(read('components/admin/builder/PropertyPanel.vue'), /e\.key === 'Escape' && expanded\.value && !e\.defaultPrevented/)
   // Tailwind utility, không <style> (CLAUDE.md: code mới không <style scoped>).
   assert.doesNotMatch(source, /<style/)
   // Không chuyển `visibility` lúc mở: focus() vào cây đang `hidden` bị bỏ qua

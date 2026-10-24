@@ -216,7 +216,7 @@ onMounted(() => { void fetchCategories() })
           </div>
           <code class="text-[0.72rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded inline-block mb-2">{{ cat.slug }}</code>
           <div class="flex flex-wrap items-center gap-3">
-            <button v-if="canUpdate" class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="openEdit(cat)"><i class="fa-solid fa-pen text-xs" aria-hidden="true"></i> Sửa</button>
+            <button v-if="canUpdate" class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`media-category-${cat.id}`" @click="openEdit(cat)"><i class="fa-solid fa-pen text-xs" aria-hidden="true"></i> Sửa</button>
             <button v-if="canDelete" class="text-[#d12420] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="deleteCategory(cat)"><i class="fa-regular fa-trash text-xs" aria-hidden="true"></i> Xóa</button>
           </div>
         </div>
@@ -255,7 +255,7 @@ onMounted(() => { void fetchCategories() })
                   <button
                     v-if="canUpdate"
                     class="inline-flex items-center gap-1 bg-none border-0 text-[#2c6e33] cursor-pointer font-bold text-[0.82rem] hover:underline"
-                    @click="openEdit(cat)"
+                    :data-admin-modal-opener="`media-category-${cat.id}`" @click="openEdit(cat)"
                   ><i class="fa-solid fa-pen text-xs" aria-hidden="true"></i> Sửa</button>
                   <button
                     v-if="canDelete"
