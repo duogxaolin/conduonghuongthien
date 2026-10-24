@@ -64,6 +64,8 @@ for (const [id, type, status, publishedAt, real, fabricated] of FIXTURE) {
 }
 
 const executed: string[] = []
+/** The bound parameters of each executed statement, in the same order. */
+const executedParams: unknown[][] = []
 
 /**
  * `select(projection).from(table)` returns Drizzle's real builder (it mutates in
@@ -83,6 +85,7 @@ function select(projection: Record<string, unknown>) {
           try {
             const { sql, params } = query.toSQL()
             executed.push(sql)
+            executedParams.push([...params])
             const statement = sqlite.prepare(sql)
             statement.setReturnArrays(true)
             const keys = Object.keys(projection)
@@ -210,4 +213,37 @@ test('the ordinary reintegration list still reads both types in one query', asyn
   const response = await list({ query: { type: 'reintegration', limit: '10' } })
   assert.deepEqual(response.articles.map(article => article.id), [14, 13, 11, 12])
   assert.equal(executed.length, 2, 'list + count')
+})
+
+test('sort=views caps the page: an anonymous ?page=100000 cannot make the server read every row', async () => {
+  // Each per-type read takes the top `offset + limit` rows and ships them to
+  // Node to be merged. With the list endpoint's MAX_PAGE (100 000) and limit 50
+  // that is every published row of both types per request. "Đọc nhiều" is a
+  // top-N block (6 items, page 1), so its pages stop at MOST_READ_MAX_PAGE = 10:
+  // at most 10 × 50 = 500 rows per read.
+  executed.length = 0
+  executedParams.length = 0
+  const response = await list({ query: { type: 'reintegration', sort: 'views', limit: '50', page: '100000' } })
+
+  assert.equal(executed.length, 2)
+  for (const params of executedParams) {
+    assert.equal(params.at(-1), 500, 'LIMIT offset + limit with the page clamped to 10')
+  }
+  // Same response shape; the page actually served is the one reported.
+  assert.equal(response.ok, true)
+  assert.deepEqual(response.articles, [], 'page 10 of a 4-row ranking is empty')
+  assert.deepEqual(response.pagination, { page: 10, limit: 50, total: 450, totalPages: 9 })
+
+  executed.length = 0
+  executedParams.length = 0
+  await list({ query: { type: 'news', sort: 'views', limit: '50', page: '100000' } })
+  assert.equal(executed.length, 1)
+  assert.deepEqual(executedParams[0]!.slice(-2), [50, 450], 'single type: LIMIT 50 OFFSET 450, never OFFSET 4 999 950')
+})
+
+test('the ordinary list keeps its own page ceiling', async () => {
+  executed.length = 0
+  executedParams.length = 0
+  const response = await list({ query: { type: 'news', limit: '10', page: '500' } })
+  assert.equal(response.pagination.page, 500, 'only sort=views is capped at 10')
 })

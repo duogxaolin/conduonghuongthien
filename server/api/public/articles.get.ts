@@ -6,19 +6,30 @@ import { containsPattern, MAX_LIKE_QUERY_CHARS } from '../../utils/sql-like'
 import { articles, users, categories, articleTranslations } from '../../db/schema'
 import { eq, like, desc, count, inArray, and, sql } from 'drizzle-orm'
 
+/**
+ * Trần số trang của `sort=views`. "Đọc nhiều" là một khối top-N (6 bài, trang 1 —
+ * `buildMostReadQuery`); không trang nào lật nó. Với trần chung `MAX_PAGE` (100 000)
+ * một yêu cầu ẩn danh `?type=reintegration&sort=views&limit=50&page=100000` bắt mỗi
+ * lượt đọc theo tên lưu (`LIMIT offset + limit`) chở MỌI bài đã xuất bản của thể loại
+ * về Node để trộn. 10 trang × 50 = tối đa 500 hàng mỗi lượt đọc — gấp ~80 lần nhu cầu
+ * thật, vẫn nhỏ. Vượt trần thì kẹp về trang 10 như `finitePositive` vẫn kẹp ở
+ * `MAX_PAGE`; `pagination.page` báo đúng trang đã phục vụ.
+ */
+const MOST_READ_MAX_PAGE = 10
+
 export default defineEventHandler(async (event) => {
   try {
     const query = getQuery(event)
-    const page = finitePositive(query.page, 1, MAX_PAGE)
+    // `sort=views` — xếp theo tổng lượt xem hiển thị (thật + ảo), cho khối "Đọc
+    // nhiều" của trang danh mục. Giá trị lạ đọc thành "mới nhất" thay vì đoán hộ.
+    const sortByViews = String(query.sort || '').trim() === 'views'
+    const page = finitePositive(query.page, 1, sortByViews ? MOST_READ_MAX_PAGE : MAX_PAGE)
     const limit = finitePositive(query.limit, 10, 50)
     const offset = (page - 1) * limit
     const search = String(query.search || '').trim().slice(0, MAX_LIKE_QUERY_CHARS)
     const type = String(query.type || '').trim()
     const categorySlug = String(query.categorySlug || '').trim()
     const categoryIdParam = Number(query.categoryId || 0)
-    // `sort=views` — xếp theo tổng lượt xem hiển thị (thật + ảo), cho khối "Đọc
-    // nhiều" của trang danh mục. Giá trị lạ đọc thành "mới nhất" thay vì đoán hộ.
-    const sortByViews = String(query.sort || '').trim() === 'views'
     const cookieLang = getCookie(event, 'cdkt_lang')?.trim().toLowerCase() || ''
     const lang = (typeof query.lang === 'string' ? query.lang.trim().toLowerCase() : '') || cookieLang
     const db = getDb()
