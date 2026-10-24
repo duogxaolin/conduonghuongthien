@@ -76,15 +76,24 @@ env:
 jobs:
   # ── Lập kế hoạch: PR chỉ chạy bộ nhẹ ──────────────────────────────────────
   # Mỗi lượt CI đầy đủ tốn ~40 phút billed (GitHub làm tròn từng job lên phút), trong
-  # đó các job Integration chiếm ~29 (đo khi matrix còn 13 job; nay 17). Tài khoản chỉ có 3.000 phút/tháng và đã hết một
+  # đó các job Integration chiếm ~29 (đo khi matrix còn 13 job; nay 19). Tài khoản chỉ có 3.000 phút/tháng và đã hết một
   # lần, nên:
   #   - PR nháp: bỏ qua hoàn toàn (chạy lại khi bấm "Ready for review").
   #   - PR thường: unit + build + schema-drift + hygiene (~12 phút). Integration chỉ chạy
-  #     khi PR đụng tới backend/DB/CI (`server/`, `migrations/`, `scripts/`, package*.json,
+  #     khi PR đụng tới backend/DB/CI (`server/`, `shared/`, `migrations/`, `scripts/`, package*.json,
   #     nuxt.config.ts, workflows, tests/*integration*).
   #   - push vào `main` và chạy tay: LUÔN chạy đủ. `image`/`deploy` vẫn chờ mọi cổng, nên
   #     không có commit nào ra VPS mà chưa qua integration.
-  # Job này không checkout — chỉ hỏi API danh sách tệp đổi của PR (~1 phút billed).
+  # Với PR, job này không checkout — chỉ hỏi API danh sách tệp đổi của PR (~1 phút billed).
+  #
+  # Output `deploy` (chỉ có ý nghĩa với push): mọi merge vào `main` đều deploy, kể cả
+  # merge chỉ sửa tài liệu/kế hoạch — build lại image và khởi động lại container
+  # production vì một dấu phẩy trong tệp .md. Push mà MỌI tệp đổi TỪ COMMIT ĐANG CHẠY
+  # TRÊN PRODUCTION khớp `\.md$|^docs/|^openspec/` thì `deploy=false`: test vẫn chạy đủ
+  # (năm test đọc tệp .md — vì vậy KHÔNG dùng `push: paths-ignore`), chỉ `image`/`deploy`
+  # bỏ qua. Mốc so là bản đang chạy, KHÔNG phải `github.event.before` — xem bước
+  # "Docs-only?" bên dưới. Không biết chắc → `deploy=true`. tests/ci-docs-only-skip.test.ts
+  # chạy thật script của bước đó trong một repo git tạm (curl/gh giả).
   changes:
     name: Plan
     runs-on: ubuntu-latest
@@ -92,9 +101,12 @@ jobs:
     permissions:
       contents: read
       pull-requests: read
+      # Bước "Docs-only?" đọc danh sách lượt chạy + job của chính workflow này (mốc (b)).
+      actions: read
     outputs:
       run: ${{ steps.plan.outputs.run }}
       integration: ${{ steps.plan.outputs.integration }}
+      deploy: ${{ steps.deploy.outputs.deploy }}
     steps:
       - id: plan
         env:
@@ -119,13 +131,139 @@ jobs:
           fi
           echo "run=true" >> "$GITHUB_OUTPUT"
           files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename')
-          if printf '%s\n' "$files" | grep -Eq '^(server/|migrations/|scripts/|package(-lock)?\.json$|nuxt\.config\.ts$|\.github/workflows/|tests/[^/]*integration)'; then
+          if printf '%s\n' "$files" | grep -Eq '^(server/|shared/|migrations/|scripts/|package(-lock)?\.json$|nuxt\.config\.ts$|\.github/workflows/|tests/[^/]*integration)'; then
             echo "integration=true" >> "$GITHUB_OUTPUT"
             echo "PR đụng backend/DB/CI: chạy cả integration." >> "$GITHUB_STEP_SUMMARY"
           else
             echo "integration=false" >> "$GITHUB_OUTPUT"
             echo "PR không đụng backend/DB/CI: bỏ integration (Actions → CI → Run workflow để ép chạy đủ)." >> "$GITHUB_STEP_SUMMARY"
           fi
+
+      # Lịch sử ĐẦY ĐỦ: mốc so là commit đang chạy trên production, có thể cách HEAD
+      # nhiều commit (và phải tra được 12 ký tự SHA của nó). `blob:none`: chỉ commit +
+      # cây (repo có ~700 MB lịch sử blob) — `git diff --name-only`, `rev-parse`,
+      # `merge-base` không cần nội dung tệp.
+      - name: Checkout (push — history back to the live commit)
+        if: github.event_name == 'push'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+          filter: blob:none
+
+      # Mốc so = commit ĐANG CHẠY trên production, không phải `github.event.before`.
+      # `before` là đỉnh cũ của `main`, không phải thứ production chạy: lượt A đang
+      # deploy, push mã B đang chờ, push chỉ-tài-liệu C tới → GitHub huỷ B (nhóm
+      # concurrency chỉ giữ MỘT lượt chờ), C so B..C = chỉ tài liệu → không deploy, và mã
+      # của B không bao giờ lên production dù CI xanh. Cùng chuyện khi B đỏ một cổng
+      # chập chờn trước `image` rồi C chỉ đổi tài liệu.
+      #
+      # Mốc, theo thứ tự:
+      #   (a) `vars.VPS_SMOKE_URL` có đặt: `version` mà /api/public/health trả qua địa chỉ
+      #       công khai (12 ký tự SHA nướng vào image — job `image`), tra ra commit;
+      #   (b) không có/không dùng được: `head_sha` của lượt chạy MỚI NHẤT (theo lúc bắt
+      #       đầu chạy — lượt chạy lại tính theo lần chạy lại) trên `main` mà job
+      #       "Deploy to VPS" kết luận `success` (một lượt chỉ-tài-liệu cũng `success`
+      #       nhưng job deploy `skipped`, nên phải xét JOB, không xét lượt chạy);
+      #   (c) không có mốc, hoặc mốc không phải tổ tiên của commit này → deploy.
+      # Lượt này chỉ bắt đầu khi lượt trước trong nhóm `ci-…` đã xong hẳn (push vào
+      # `main` xếp hàng), nên kết quả deploy trước đó đã ngã ngũ lúc bước này chạy.
+      #
+      # Mốc == commit này: production đã chạy đúng nó → `deploy=false` (không có gì mới).
+      # Ép deploy lại cùng commit: Actions → CI → Run workflow trên `main` (luôn deploy).
+      # Mốc khác commit này nhưng diff rỗng (cây y hệt) → vẫn deploy, cho chắc.
+      #
+      # `--no-renames`: một tệp .ts đổi tên thành .md phải liệt kê CẢ HAI đường dẫn
+      # (bên xoá là mã), nếu không lượt đó bị coi là "chỉ tài liệu". `grep -Ev` không
+      # `-q`: đọc hết đầu vào, nên printf không bao giờ chết vì SIGPIPE dưới pipefail.
+      # Chuỗi `version` từ mạng chỉ được dùng khi đúng 12 ký tự hex (không bao giờ tới
+      # git như một tuỳ chọn).
+      - name: Docs-only? (decides image + deploy for a push)
+        id: deploy
+        env:
+          EVENT: ${{ github.event_name }}
+          SHA: ${{ github.sha }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+          SMOKE_URL: ${{ vars.VPS_SMOKE_URL }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # `name:` của job deploy bên dưới (tests/ci-docs-only-skip.test.ts ghim hai chỗ khớp nhau).
+          deploy_job='Deploy to VPS'
+
+          # (a) Commit mà địa chỉ công khai đang phục vụ.
+          live_commit() {
+            local body version
+            [ -n "$SMOKE_URL" ] || return 1
+            body=$(curl -fsSL -m 10 --retry 2 --retry-delay 3 "${SMOKE_URL%/}/api/public/health?t=${RUN_ID}-plan" 2>/dev/null) || return 1
+            version=$(printf '%s' "$body" | jq -r '.version // empty' 2>/dev/null) || return 1
+            [[ "$version" =~ ^[0-9a-f]{12}$ ]] || return 1
+            git rev-parse --verify --quiet "${version}^{commit}"
+          }
+
+          # (b) head_sha của lượt chạy mới nhất trên main có job deploy `success`.
+          # Mỗi lệnh `gh api` có trần `timeout` (20 s; GH_API_TIMEOUT chỉ để test rút
+          # ngắn): một kết nối treo không được ăn hết 5 phút của job — job Plan hỏng là
+          # mọi cổng phía sau bị bỏ qua. Treo/lỗi ở BẤT KỲ lệnh nào → (b) bỏ cuộc → (c)
+          # deploy; không đi tiếp sang lượt cũ hơn (không biết lượt này có deploy không).
+          gh_timeout=${GH_API_TIMEOUT:-20}
+          last_deployed_commit() {
+            local workflow runs jobs id sha
+            workflow=${WORKFLOW_REF%@*}
+            workflow=${workflow##*/}
+            [ -n "$workflow" ] || return 1
+            runs=$(timeout "$gh_timeout" gh api "repos/$REPO/actions/workflows/$workflow/runs?branch=main&status=completed&per_page=30" 2>/dev/null) || return 1
+            while read -r id sha; do
+              [[ "$id" =~ ^[0-9]+$ ]] || continue
+              jobs=$(timeout "$gh_timeout" gh api "repos/$REPO/actions/runs/$id/jobs?filter=latest&per_page=100" 2>/dev/null) || return 1
+              if printf '%s' "$jobs" | jq -e --arg name "$deploy_job" 'any(.jobs[]; .name == $name and .conclusion == "success")' >/dev/null 2>&1; then
+                [[ "$sha" =~ ^[0-9a-f]{40}$ ]] || return 1
+                git rev-parse --verify --quiet "${sha}^{commit}"
+                return
+              fi
+            done < <(printf '%s' "$runs" | jq -r '.workflow_runs | sort_by(.run_started_at) | reverse | .[] | "\(.id) \(.head_sha)"' 2>/dev/null)
+            return 1
+          }
+
+          deploy=true
+          case "$EVENT" in
+            pull_request)
+              deploy=false
+              reason="pull request — không bao giờ deploy" ;;
+            push)
+              if base=$(live_commit); then
+                source="bản đang chạy trên VPS_SMOKE_URL (/api/public/health)"
+              elif base=$(last_deployed_commit); then
+                source="lượt chạy gần nhất có job \"$deploy_job\" thành công"
+              else
+                base=''
+              fi
+              if [ -z "$base" ]; then
+                reason="không xác định được commit đang chạy trên production (VPS_SMOKE_URL trống hoặc không trả version dùng được, và không tìm thấy lượt chạy có job \"$deploy_job\" thành công) — deploy"
+              elif [ "$base" = "$SHA" ]; then
+                deploy=false
+                reason="$SHA đã là bản đang chạy ($source) — không có gì mới để deploy; ép deploy lại: Actions → CI → Run workflow trên main"
+              elif ! git merge-base --is-ancestor "$base" "$SHA" 2>/dev/null; then
+                reason="bản đang chạy $base ($source) không phải tổ tiên của $SHA — deploy"
+              elif ! files=$(git diff --no-renames --name-only "$base" "$SHA" 2>/dev/null); then
+                reason="không so được $base..$SHA — deploy"
+              elif [ -z "$files" ]; then
+                reason="$base..$SHA không đổi tệp nào nhưng là commit khác bản đang chạy ($source) — deploy cho chắc"
+              else
+                code=$(printf '%s\n' "$files" | grep -Ev '\.md$|^docs/|^openspec/' || true)
+                if [ -z "$code" ]; then
+                  deploy=false
+                  reason="từ bản đang chạy $base ($source) tới $SHA chỉ đổi tài liệu (*.md, docs/, openspec/) — bỏ build image và deploy, test vẫn chạy"
+                else
+                  reason="từ bản đang chạy $base ($source) tới $SHA có tệp ngoài tài liệu đổi — deploy"
+                fi
+              fi ;;
+            *)
+              reason="$EVENT — luôn deploy (cách ép deploy lại cùng một commit)" ;;
+          esac
+          echo "deploy=$deploy" >> "$GITHUB_OUTPUT"
+          echo "Deploy: **$deploy** — $reason." >> "$GITHUB_STEP_SUMMARY"
 
   # ── Unit tests (không cần MySQL) ───────────────────────────────────────────
   # Tách khỏi integration để hai nhóm chạy song song trên hai runner. Trước đây
@@ -135,7 +273,7 @@ jobs:
   #   - job này: 203 tệp non-integration, không cần MySQL, ~30 phút trên runner
   #     chậm. Typecheck gộp vào đây (giữ nguyên triết lý cũ: không phải job riêng
   #     để khỏi phải xin thêm runner mà hay bị queue).
-  #   - job integration-tests: 17 tệp *-integration, cần MySQL service.
+  #   - job integration-tests: 19 tệp *-integration, cần MySQL service.
   #   - job schema-drift: `npm run db:drift`, cần MySQL, chạy nhanh.
   unit-tests:
     name: Unit and typecheck
@@ -183,7 +321,7 @@ jobs:
 
       # Unit + contract tests — mọi tệp trừ *-integration (chúng cần MySQL và
       # chạy ở job integration-tests bên dưới). Lọc bằng find để không phụ thuộc
-      # shell glob của runner. Bỏ qua 17 tệp integration để job này không cần
+      # shell glob của runner. Bỏ qua 19 tệp integration để job này không cần
       # service container và chạy nhanh hơn.
       - name: Unit and contract tests (no DB)
         env:
@@ -236,9 +374,9 @@ jobs:
           exit $status
 
   # ── Integration tests (cần MySQL) ──────────────────────────────────────────
-  # 17 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
+  # 19 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
   # service container. Trước đây tất cả suite (khi đó 13) chạy **nối tiếp trên một runner**,
-  # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 17 job song
+  # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 19 job song
   # song** — mỗi suite một job + MySQL service riêng, chạy độc lập. Một runner
   # chậm chỉ kéo dài đúng suite của nó, không làm suite khác timeout theo.
   integration-tests:
@@ -302,6 +440,12 @@ jobs:
           - suite: public-read
             file: tests/public-read-integration.test.ts
             switch: PUBLIC_READ_INTEGRATION
+          - suite: media-category-migration
+            file: tests/media-category-migration-integration.test.ts
+            switch: MEDIA_CATEGORY_MIGRATION_INTEGRATION
+          - suite: analytics-maintenance
+            file: tests/analytics-maintenance-integration.test.ts
+            switch: ANALYTICS_MAINTENANCE_INTEGRATION
     services:
       mysql:
         image: mysql:8.0
@@ -325,7 +469,7 @@ jobs:
 
       - run: npm ci
       # Không suite integration nào gọi FFmpeg thật (media-queue dùng runner giả) —
-      # 17 job không còn cài nó, nên mirror apt chập chờn không cắt được chúng nữa.
+      # 19 job không còn cài nó, nên mirror apt chập chờn không cắt được chúng nữa.
 
       # Mỗi job matrix chạy ĐÚNG MỘT suite. Bật switch của chính nó (qua biến
       # `SWITCH` được matrix cung cấp) — các switch khác vắng mặt nên suite khác
@@ -348,42 +492,57 @@ jobs:
           # spot, so the whole suite runs east of UTC rather than one file.
           TZ: Asia/Ho_Chi_Minh
           ${{ matrix.switch }}: 1
+          # Mọi biến `<PREFIX>_*` mà suite đọc (kể cả HOST, dù mặc định đã là
+          # 127.0.0.1) — tests/ci-integration-matrix.test.ts đọc mã của từng suite
+          # và đỏ khi thiếu một biến ở đây.
+          ANALYTICS_DDL_HOST: 127.0.0.1
           ANALYTICS_DDL_PORT: 3306
           ANALYTICS_DDL_USER: root
           ANALYTICS_DDL_PASSWORD: test_root_password
+          CHATBOT_DDL_HOST: 127.0.0.1
           CHATBOT_DDL_PORT: 3306
           CHATBOT_DDL_USER: root
           CHATBOT_DDL_PASSWORD: test_root_password
+          MFA_DDL_HOST: 127.0.0.1
           MFA_DDL_PORT: 3306
           MFA_DDL_USER: root
           MFA_DDL_PASSWORD: test_root_password
+          VIEW_BOOST_HOST: 127.0.0.1
           VIEW_BOOST_PORT: 3306
           VIEW_BOOST_USER: root
           VIEW_BOOST_PASSWORD: test_root_password
+          CHAT_RETENTION_HOST: 127.0.0.1
           CHAT_RETENTION_PORT: 3306
           CHAT_RETENTION_USER: root
           CHAT_RETENTION_PASSWORD: test_root_password
+          READER_RETENTION_HOST: 127.0.0.1
           READER_RETENTION_PORT: 3306
           READER_RETENTION_USER: root
           READER_RETENTION_PASSWORD: test_root_password
+          INSERT_ID_HOST: 127.0.0.1
           INSERT_ID_PORT: 3306
           INSERT_ID_USER: root
           INSERT_ID_PASSWORD: test_root_password
+          NOTIFICATION_PAGE_HOST: 127.0.0.1
           NOTIFICATION_PAGE_PORT: 3306
           NOTIFICATION_PAGE_USER: root
           NOTIFICATION_PAGE_PASSWORD: test_root_password
+          NOTIFICATION_EMAIL_HOST: 127.0.0.1
           NOTIFICATION_EMAIL_PORT: 3306
           NOTIFICATION_EMAIL_USER: root
           NOTIFICATION_EMAIL_PASSWORD: test_root_password
+          SUBMISSION_WORKFLOW_HOST: 127.0.0.1
           SUBMISSION_WORKFLOW_PORT: 3306
           SUBMISSION_WORKFLOW_USER: root
           SUBMISSION_WORKFLOW_PASSWORD: test_root_password
+          MEDIA_QUEUE_HOST: 127.0.0.1
           MEDIA_QUEUE_PORT: 3306
           MEDIA_QUEUE_USER: root
           MEDIA_QUEUE_PASSWORD: test_root_password
           MEDIA_UPLOAD_PORT: 3306
           MEDIA_UPLOAD_USER: root
           MEDIA_UPLOAD_PASSWORD: test_root_password
+          LIVESTREAM_TOGGLE_HOST: 127.0.0.1
           LIVESTREAM_TOGGLE_PORT: 3306
           LIVESTREAM_TOGGLE_USER: root
           LIVESTREAM_TOGGLE_PASSWORD: test_root_password
@@ -395,108 +554,58 @@ jobs:
           BACKUP_DUMP_PORT: 3306
           BACKUP_DUMP_USER: root
           BACKUP_DUMP_PASSWORD: test_root_password
+          MEDIA_SYNC_HOST: 127.0.0.1
           MEDIA_SYNC_PORT: 3306
           MEDIA_SYNC_USER: root
           MEDIA_SYNC_PASSWORD: test_root_password
+          PUBLIC_READ_HOST: 127.0.0.1
           PUBLIC_READ_PORT: 3306
           PUBLIC_READ_USER: root
           PUBLIC_READ_PASSWORD: test_root_password
+          MEDIA_CATEGORY_MIGRATION_HOST: 127.0.0.1
+          MEDIA_CATEGORY_MIGRATION_PORT: 3306
+          MEDIA_CATEGORY_MIGRATION_USER: root
+          MEDIA_CATEGORY_MIGRATION_PASSWORD: test_root_password
+          ANALYTICS_MAINTENANCE_HOST: 127.0.0.1
+          ANALYTICS_MAINTENANCE_PORT: 3306
+          ANALYTICS_MAINTENANCE_USER: root
+          ANALYTICS_MAINTENANCE_PASSWORD: test_root_password
+        # TAP được ghim (không để Node tự chọn theo TTY — Node 24 in `ℹ tests N` khi
+        # không có TTY, bản cũ in `# Subtest:`), và `tee` giữ một bản cho bước kiểm
+        # skip bên dưới. `pipefail` giữ mã thoát của node qua ống `tee`.
         run: |
           set -euo pipefail
-          node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test ${{ matrix.file }}
+          node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test-reporter=tap --test ${{ matrix.file }} 2>&1 | tee "$RUNNER_TEMP/${{ matrix.suite }}.log"
 
       # A suite that silently stops running is worse than one that fails: the run
       # stays green. Integration tests self-skip when their switch is absent, so
       # the switch being wired is the only thing that separates "ran" from "was
       # quietly ignored". Mỗi job matrix chỉ bật đúng switch của mình — nếu
       # matrix.include quên ánh xạ một suite sang switch, suite đó sẽ SKIP mà
-      # job vẫn xanh. Step này canh đúng điều đó: mỗi `matrix.include` entry
-      # phải khai `file` trỏ tới một tệp có thật, và switch trỏ tới một biến có
-      # thật trong step trên.
+      # job vẫn xanh. Step này canh đúng điều đó; việc đối chiếu matrix ↔ tệp ↔
+      # biến môi trường nằm ở tests/ci-integration-matrix.test.ts (job unit-tests).
+      #
+      # Đọc bản log bước trên đã ghi, KHÔNG chạy lại suite: chạy lại từng làm job
+      # kéo dài gấp đôi, và một lần chạy lại thiếu biến môi trường đã treo cả job
+      # tới khi `timeout-minutes` cắt (`Integration · notification-email`).
       - name: Fail if this suite skipped
         timeout-minutes: 3
-        env:
-          # Same DB env as the integration step above. This step re-runs the
-          # suite to count subtests, and without these vars the suite's DB
-          # connect uses the fallback password (`rootpassword`) which the
-          # service container rejects — the connect then hangs/retries and
-          # the step holds the job open until `timeout-minutes` cancels the
-          # whole run. That made `Integration · notification-email` look like
-          # it "kept failing" when its actual test had passed in ~1.7s.
-          TZ: Asia/Ho_Chi_Minh
-          ${{ matrix.switch }}: 1
-          ANALYTICS_DDL_PORT: 3306
-          ANALYTICS_DDL_USER: root
-          ANALYTICS_DDL_PASSWORD: test_root_password
-          CHATBOT_DDL_PORT: 3306
-          CHATBOT_DDL_USER: root
-          CHATBOT_DDL_PASSWORD: test_root_password
-          MFA_DDL_PORT: 3306
-          MFA_DDL_USER: root
-          MFA_DDL_PASSWORD: test_root_password
-          VIEW_BOOST_PORT: 3306
-          VIEW_BOOST_USER: root
-          VIEW_BOOST_PASSWORD: test_root_password
-          CHAT_RETENTION_PORT: 3306
-          CHAT_RETENTION_USER: root
-          CHAT_RETENTION_PASSWORD: test_root_password
-          READER_RETENTION_PORT: 3306
-          READER_RETENTION_USER: root
-          READER_RETENTION_PASSWORD: test_root_password
-          INSERT_ID_PORT: 3306
-          INSERT_ID_USER: root
-          INSERT_ID_PASSWORD: test_root_password
-          NOTIFICATION_PAGE_PORT: 3306
-          NOTIFICATION_PAGE_USER: root
-          NOTIFICATION_PAGE_PASSWORD: test_root_password
-          NOTIFICATION_EMAIL_PORT: 3306
-          NOTIFICATION_EMAIL_USER: root
-          NOTIFICATION_EMAIL_PASSWORD: test_root_password
-          SUBMISSION_WORKFLOW_PORT: 3306
-          SUBMISSION_WORKFLOW_USER: root
-          SUBMISSION_WORKFLOW_PASSWORD: test_root_password
-          MEDIA_QUEUE_PORT: 3306
-          MEDIA_QUEUE_USER: root
-          MEDIA_QUEUE_PASSWORD: test_root_password
-          MEDIA_UPLOAD_PORT: 3306
-          MEDIA_UPLOAD_USER: root
-          MEDIA_UPLOAD_PASSWORD: test_root_password
-          LIVESTREAM_TOGGLE_PORT: 3306
-          LIVESTREAM_TOGGLE_USER: root
-          LIVESTREAM_TOGGLE_PASSWORD: test_root_password
-          MEDIA_SELF_HEAL_HOST: 127.0.0.1
-          MEDIA_SELF_HEAL_PORT: 3306
-          MEDIA_SELF_HEAL_USER: root
-          MEDIA_SELF_HEAL_PASSWORD: test_root_password
-          BACKUP_DUMP_HOST: 127.0.0.1
-          BACKUP_DUMP_PORT: 3306
-          BACKUP_DUMP_USER: root
-          BACKUP_DUMP_PASSWORD: test_root_password
-          MEDIA_SYNC_PORT: 3306
-          MEDIA_SYNC_USER: root
-          MEDIA_SYNC_PASSWORD: test_root_password
-          PUBLIC_READ_PORT: 3306
-          PUBLIC_READ_USER: root
-          PUBLIC_READ_PASSWORD: test_root_password
         run: |
           set -euo pipefail
-          # Chạy lại để dò số subtest thực sự chạy. Nếu suite tự SKIP (switch env
-          # không set), `--test` trả 0 nhưng không có test nào chạy. Node 24+ đổi
-          # format output — không còn marker `# Subtest:`, thay vào đó có dòng
-          # summary `ℹ tests N` + `ℹ skipped M`. Guard lỗi khi tổng số test = 0
-          # hoặc khi TẤT CẢ test bị skip (N == M), vì hai trạng thái đó đều nghĩa
-          # là suite không thật sự chạy. Phải chạy lại vì output step trước không
-          # truy cập được từ step này. (Node 22 dùng `# Subtest:`; guard cũ dựa
-          # vào marker đófail trên Node 24+ — đã trả giá 1 PR đỏ.)
-          out=$(node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test ${{ matrix.file }} 2>&1 || true)
-          echo "$out"
-          tests_total=$(printf '%s\n' "$out" | grep -oE 'tests [0-9]+' | head -1 | grep -oE '[0-9]+')
-          tests_skipped=$(printf '%s\n' "$out" | grep -oE 'skipped [0-9]+' | head -1 | grep -oE '[0-9]+')
-          tests_total=${tests_total:-0}
-          tests_skipped=${tests_skipped:-0}
-          ran=$((tests_total - tests_skipped))
-          if [ "$tests_total" -eq 0 ] || [ "$ran" -le 0 ]; then
-            echo "::error::Suite ${{ matrix.suite }} ran zero subtests (total=$tests_total skipped=$tests_skipped) — the switch ${{ matrix.switch }} is not wired in matrix.include, or the suite silently skipped."
+          log="$RUNNER_TEMP/${{ matrix.suite }}.log"
+          if [ ! -s "$log" ]; then
+            echo "::error::không có log của bước Integration ($log) — không xác nhận được suite đã chạy"
+            exit 1
+          fi
+          # Dòng tổng kết TAP (`# tests N`, `# pass N`, `# skipped N`); lấy dòng CUỐI
+          # của mỗi loại. awk đọc hết tệp — không `head`/`grep -q` trong ống dưới pipefail.
+          summary() { awk -v key="$1" '$1 == "#" && $2 == key && $3 ~ /^[0-9]+$/ { n = $3 } END { print n + 0 }' "$log"; }
+          tests_total=$(summary tests)
+          tests_pass=$(summary pass)
+          tests_skipped=$(summary skipped)
+          echo "Suite ${{ matrix.suite }}: tests=$tests_total pass=$tests_pass skipped=$tests_skipped"
+          if [ "$tests_total" -eq 0 ] || [ "$tests_pass" -eq 0 ] || [ "$tests_skipped" -ge "$tests_total" ]; then
+            echo "::error::Suite ${{ matrix.suite }} ran zero subtests (tests=$tests_total pass=$tests_pass skipped=$tests_skipped) — the switch ${{ matrix.switch }} is not wired in matrix.include, or the suite silently skipped."
             exit 1
           fi
 
@@ -750,8 +859,10 @@ jobs:
 
   image:
     name: Build and push image
-    needs: [unit-tests, integration-tests, schema-drift, build, hygiene]
-    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    # `changes` có mặt để đọc output `deploy`: push chỉ đổi tài liệu (*.md, docs/,
+    # openspec/) thì không build image, nên cũng không deploy (job `changes`).
+    needs: [changes, unit-tests, integration-tests, schema-drift, build, hygiene]
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request' && needs.changes.outputs.deploy == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -760,6 +871,7 @@ jobs:
       packages: write
     outputs:
       image: ${{ steps.meta.outputs.image }}
+      version: ${{ steps.meta.outputs.version }}
     steps:
       - uses: actions/checkout@v7
 
@@ -785,6 +897,9 @@ jobs:
             # lúc job image kết thúc và job deploy bắt đầu. Muốn lùi phiên bản
             # thì đây cũng chính là tag để trỏ lại.
             echo "image=ghcr.io/$repo:sha-${{ github.sha }}"
+            # SHA ngắn nướng vào image (APP_VERSION) — /api/public/health trả lại
+            # nó, và bước smoke của job deploy so đúng chuỗi này.
+            echo "version=${GITHUB_SHA::12}"
           } >> "$GITHUB_OUTPUT"
 
       - uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
@@ -794,6 +909,17 @@ jobs:
           tags: |
             ${{ steps.meta.outputs.image }}
             ${{ steps.meta.outputs.repo }}:latest
+          # Lớp cuối của Dockerfile (ARG/ENV ngay trước CMD): đổi mỗi commit mà
+          # không làm mất bộ nhớ đệm của lớp nào phía trên.
+          build-args: |
+            APP_VERSION=${{ steps.meta.outputs.version }}
+          # Một lượt push = MỘT version trên GHCR. Với attestation provenance mặc
+          # định, image là một index kèm hai manifest con KHÔNG thẻ; GHCR đếm mỗi
+          # cái là một version, nên `min-versions-to-keep` của ghcr-retention.yml
+          # đếm sai, và xoá version cũ nhất có thể xoá manifest con của một image
+          # còn giữ — image đó hết kéo được. Không bên nào trong luồng này đọc
+          # provenance.
+          provenance: false
           # Bộ nhớ đệm tầng của Actions: `npm ci` và `nuxi build` là phần đắt
           # nhất, và giữa hai lần push chúng gần như không đổi.
           cache-from: type=gha
@@ -807,10 +933,15 @@ jobs:
     name: Deploy to VPS
     needs: image
     # Auto-deploy: push main build + test + push image lên GHCR, RỒI tự SSH deploy
-    # lên VPS. Muốn tắt: đổi `if: true` thành `if: false`.
-    if: true
+    # lên VPS — mỗi khi job `image` thành công. `image` bị bỏ qua (push chỉ đổi tài
+    # liệu, PR) thì deploy cũng bỏ qua. Muốn tắt hẳn: `if: false`.
+    if: needs.image.result == 'success'
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    # Một job bị cắt vì quá giờ là cắt phiên SSH giữa chừng — đường lùi không chạy.
+    # Trần tính đủ: dump CSDL trước deploy (lớn dần theo dữ liệu), kéo image, chờ
+    # healthy tối đa 300 s, có thể thêm một lượt lùi cũng 300 s, rồi smoke (~2 phút khi
+    # trang trả lời ngay, tệ nhất ~4 phút).
+    timeout-minutes: 30
     # Nhóm riêng, KHÔNG huỷ: hai lượt deploy không bao giờ chạy chồng lên nhau,
     # lượt sau chờ lượt trước xong. Nhưng nhóm này KHÔNG tự bảo vệ được lượt
     # deploy đang chạy khỏi việc huỷ ở cấp workflow (nhóm `ci-…` ở đầu tệp): huỷ
@@ -851,11 +982,16 @@ jobs:
           printf '%s\n' "$SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
           chmod 600 ~/.ssh/known_hosts
 
+          # Keep-alive: dump CSDL và chờ healthcheck có thể im lặng nhiều phút; NAT/tường
+          # lửa cắt phiên TCP "rảnh" là cắt lượt deploy giữa chừng, trước cả đường lùi.
+          # Hỏi mỗi 30 s, bỏ cuộc sau 10 lần không trả lời (5 phút).
           ssh_opts=(
             -i ~/.ssh/deploy_key
             -o IdentitiesOnly=yes
             -o StrictHostKeyChecking=yes
             -o UserKnownHostsFile=~/.ssh/known_hosts
+            -o ServerAliveInterval=30
+            -o ServerAliveCountMax=10
             -p "$SSH_PORT"
           )
 
@@ -872,12 +1008,61 @@ jobs:
           ssh "${ssh_opts[@]}" "$SSH_USER@$SSH_HOST" \
               "cat > '$APP_DIR/.docker-compose.incoming.yml'" < docker-compose.yml
 
+          # scripts/backup-db.sh của CHÍNH commit này, cho bản dump CSDL trước khi
+          # đổi image (deploy-remote.sh `predeploy_dump`). Bản trong bản clone git
+          # trên VPS chỉ mới khi có người `git pull` — một bản cũ hiểu `--prefix` là
+          # thư mục đích. Vào .deploy-incoming/ (một cấp dưới APP_DIR) để script tự
+          # tìm đúng .env; cùng phép kiểm SHA-256 như compose.
+          backup_sha256=$(sha256sum scripts/backup-db.sh | cut -d' ' -f1)
+          ssh "${ssh_opts[@]}" "$SSH_USER@$SSH_HOST" \
+              "mkdir -p '$APP_DIR/.deploy-incoming' && cat > '$APP_DIR/.deploy-incoming/backup-db.sh'" < scripts/backup-db.sh
+
           # Nạp script qua stdin: VPS chạy đúng bản của commit đang được triển
           # khai, không phải bản nằm sẵn trên máy chủ từ lần deploy nào đó trước.
           # `env` thay vì `VAR=… bash`: không phụ thuộc shell đăng nhập của VPS_USER.
           ssh "${ssh_opts[@]}" "$SSH_USER@$SSH_HOST" \
-              "env INCOMING_COMPOSE=.docker-compose.incoming.yml INCOMING_COMPOSE_SHA256=$compose_sha256 bash -s -- '$APP_DIR' '$IMAGE'" \
+              "env INCOMING_COMPOSE=.docker-compose.incoming.yml INCOMING_COMPOSE_SHA256=$compose_sha256 INCOMING_BACKUP_SCRIPT=.deploy-incoming/backup-db.sh INCOMING_BACKUP_SCRIPT_SHA256=$backup_sha256 bash -s -- '$APP_DIR' '$IMAGE'" \
               < scripts/deploy-remote.sh
+
+      # "healthy" trên VPS chỉ nói container trả lời được ở 127.0.0.1. Bước này hỏi
+      # QUA ĐỊA CHỈ CÔNG KHAI (nginx, CDN, DNS) và chỉ coi là thành công khi trả 200
+      # với đúng SHA vừa deploy — một 200 của container cũ hay của bộ đệm không tính.
+      # Hỏng thì job đỏ nhưng KHÔNG tự lùi: nguyên nhân có thể là CDN/DNS chứ không
+      # phải image, và lùi một container đang khoẻ vì CDN chậm là sai. Cách lùi tay:
+      # mục Report bên dưới + CI-CD.md § Lùi phiên bản.
+      - name: Smoke test through the public URL
+        env:
+          SMOKE_URL: ${{ vars.VPS_SMOKE_URL }}
+          EXPECTED_VERSION: ${{ needs.image.outputs.version }}
+        run: |
+          set -euo pipefail
+          if [ -z "$SMOKE_URL" ]; then
+            echo "::warning::chưa đặt biến repo VPS_SMOKE_URL (vd. https://<tên miền>) — bỏ qua smoke test qua địa chỉ công khai; lượt deploy chỉ được xác nhận bằng healthcheck trong container"
+            exit 0
+          fi
+          url="${SMOKE_URL%/}/api/public/health"
+          seen=''
+          # 12 lần, nghỉ 10 s GIỮA hai lần (không nghỉ sau lần cuối): ~2 phút khi mỗi lần
+          # trả lời ngay; tệ nhất ~3 phút 50 giây (12 × trần 10 s của curl + 11 × 10 s nghỉ).
+          # `-L`: trang trả lời qua chuyển hướng (http→https, tên miền gốc→www) vẫn tính.
+          for attempt in $(seq 1 12); do
+            # `?t=` khác nhau mỗi lần: không lớp đệm nào trả lại câu trả lời cũ.
+            if body=$(curl -fsSL -m 10 "$url?t=${GITHUB_RUN_ID}-${attempt}" 2>&1); then
+              seen=$(printf '%s' "$body" | jq -r '.version // empty' 2>/dev/null || true)
+              if [ "$seen" = "$EXPECTED_VERSION" ]; then
+                echo "✅ $url trả 200 với version $seen (lần $attempt)"
+                exit 0
+              fi
+              echo "  lần $attempt: đang phục vụ version '${seen:-?}', chờ $EXPECTED_VERSION"
+            else
+              echo "  lần $attempt: $body"
+            fi
+            if [ "$attempt" -lt 12 ]; then
+              sleep 10
+            fi
+          done
+          echo "::error::sau 12 lần thử (nghỉ 10 s giữa hai lần, mỗi lần chờ tối đa 10 s) $url vẫn không trả 200 với version $EXPECTED_VERSION (lần cuối thấy: '${seen:-không có}'). Container trên VPS đã healthy — kiểm nginx/CDN/DNS trước; cần lùi thì xem mục Deploy trong Summary của lượt chạy này và CI-CD.md § Lùi phiên bản."
+          exit 1
 
       - name: Report
         if: always()
@@ -885,8 +1070,9 @@ jobs:
           {
             echo "### Deploy"
             echo
-            echo "- Image: \`${{ needs.image.outputs.image }}\`"
+            echo "- Image: \`${{ needs.image.outputs.image }}\` (version \`${{ needs.image.outputs.version }}\`)"
             echo "- Kết quả: ${{ job.status }}"
+            echo "- Bản dump CSDL trước lượt này: \`<VPS_APP_DIR>/.deploy-db-backups/cdkt-predeploy-<db>-<thời-điểm>-<pid>.sql.gz\` (giữ 5 bản mới nhất)"
             echo
             echo "Lùi phiên bản thủ công trên VPS (compose cũ nằm ở .deploy-compose-backups/ nếu lượt này đã đổi nó):"
             echo '```bash'
@@ -895,4 +1081,5 @@ jobs:
             echo "sed -i 's|^CDKT_IMAGE=.*|CDKT_IMAGE=<image-cũ>|' .env"
             echo "docker compose up -d --no-deps app"
             echo '```'
+            echo "Dữ liệu hỏng vì image mới (migration) thì khôi phục bản dump trước lượt này — DEPLOY.md § Khôi phục thật (\`scripts/restore-db.sh\`)."
           } >> "$GITHUB_STEP_SUMMARY"

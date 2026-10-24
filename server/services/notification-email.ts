@@ -151,9 +151,14 @@ export async function sendReplyEmail(input: ReplyEmailInput): Promise<boolean> {
 
     const excerpt = buildExcerpt(reply.body ?? '', EMAIL_EXCERPT_LENGTH)
 
+    // A fixed subject for a reader's reply — never the name the replier chose
+    // (spec comment-notifications). In a subject line, "<name> đã trả lời…" from
+    // the portal's own address is the portal speaking: a reader named
+    // "Ban quản trị" was mailing citizens as the administration. The name stays in
+    // the body below, as escaped text next to the quoted reply.
     const subject = isAdminReply
       ? '[Con Đường Hướng Thiện] Ban quản trị đã trả lời bình luận của bạn'
-      : `[Con Đường Hướng Thiện] ${authorName} đã trả lời bình luận của bạn`
+      : '[Con Đường Hướng Thiện] Có người trả lời bình luận của bạn'
 
     const lines = [
       `${authorName} đã trả lời bình luận của bạn trong ${target.noun} "${target.title}".`,

@@ -146,17 +146,20 @@ describe('search.vue — "xoá/nhập từ khoá mới" focus đúng ô tìm ki�
   })
 })
 
-describe('tương phản chữ phụ: #7A8A76 (3.67:1 trên trắng) không còn ở bất kỳ tệp nào trong app/', () => {
+describe('tương phản chữ phụ: #7A8A76 (3.67:1 trên trắng) không còn ở bất kỳ tệp nào trong app/ và shared/', () => {
   // Mọi tệp mã nguồn dưới app/ — kể cả các trang danh sách (news/documents/…,
   // ModelArticlesListPage, ContentTypeListSection, DocumentsBlock) đã đổi sang
   // #5A6C58 sau khi gộp PR danh sách. Tệp mới thêm vào app/ tự được canh.
-  const owned = (readdirSync(path.join(root, 'app'), { recursive: true }) as string[])
-    .filter((rel) => /\.(vue|ts|js|css)$/.test(rel))
-    .map((rel) => path.join('app', rel).split(path.sep).join('/'))
+  // shared/ cũng giữ lớp màu mà giao diện vẽ (huy hiệu ở shared/submission-status.ts).
+  const owned = ['app', 'shared']
+    .flatMap((dir) => (readdirSync(path.join(root, dir), { recursive: true }) as string[])
+      .filter((rel) => /\.(vue|ts|js|css)$/.test(rel))
+      .map((rel) => path.join(dir, rel).split(path.sep).join('/')))
     .sort()
-  it('quét được các tệp app/ (không phải danh sách rỗng)', () => {
+  it('quét được các tệp app/ và shared/ (không phải danh sách rỗng)', () => {
     assert.ok(owned.length > 100, `chỉ thấy ${owned.length} tệp`)
     assert.ok(owned.includes('app/components/ModelArticlesListPage.vue'))
+    assert.ok(owned.includes('shared/submission-status.ts'))
   })
   for (const file of owned) {
     it(file, () => {

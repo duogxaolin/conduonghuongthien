@@ -1,0 +1,64 @@
+name: GHCR retention
+
+# Mỗi lượt deploy đẩy một image `sha-<commit>` lên GHCR và không gì xoá nó: package
+# (private) lớn dần mãi, ăn vào hạn mức lưu trữ của tài khoản. Workflow này giữ
+# 20 version MỚI NHẤT của package image app, xoá phần cũ hơn — hằng tuần, hoặc bấm
+# tay (Actions → GHCR retention → Run workflow).
+#
+# Vì sao "20 version" là "20 image sha-*":
+#   - job `image` (ci.yml) chỉ gắn hai loại thẻ: `sha-<commit>` và `latest`, và
+#     `latest` luôn nằm trên version MỚI NHẤT — không bao giờ thuộc phần bị xoá;
+#   - job `image` build với `provenance: false`, nên một lượt push là MỘT version
+#     (không có index + manifest con không thẻ). Action này đếm và so
+#     `ignore-versions` theo TÊN version (digest), không theo thẻ, nên đây là cách
+#     duy nhất để "20 version" nghĩa là "20 image".
+#   - Image đẩy TRƯỚC khi tắt provenance nhiều khả năng là index kèm manifest con
+#     không thẻ (mặc định của buildx; CHƯA kiểm trên package — token dùng lúc viết
+#     thiếu `read:packages`; xem trang package: version không thẻ `unknown/unknown`).
+#     Nếu đúng vậy, chúng cũ hơn mọi image mới nên bị xoá trước, và trong vài tuần
+#     chuyển tiếp image cũ nhất còn giữ có thể mất manifest con, không kéo được nữa
+#     — VPS không cần nó (giữ sẵn 6 image cục bộ, scripts/deploy-remote.sh).
+#
+# Một lần, trên GitHub: package `conduonghuongthien` → Package settings → Manage
+# Actions access → repo này phải có quyền **Admin** (cần cho việc xoá version bằng
+# GITHUB_TOKEN). Thiếu thì bước dưới báo lỗi quyền, không xoá gì.
+
+on:
+  schedule:
+    # Thứ Hai 03:17 UTC (10:17 giờ VN) — lệch khỏi phút :00 mà mọi cron khác dồn vào.
+    - cron: '17 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  packages: write
+
+concurrency:
+  group: ghcr-retention
+  cancel-in-progress: false
+
+jobs:
+  prune:
+    name: Keep the newest 20 image versions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      # Tên package trên GHCR là phần sau `<owner>/` của `github.repository`, viết thường
+      # — đúng đường dẫn job `image` (ci.yml) đẩy lên: `ghcr.io/<owner>/<repo>` hạ chữ.
+      # KHÔNG dùng `github.event.repository.name`: payload của `schedule` không có
+      # `repository`, nên lượt chạy hằng tuần đọc ra tên rỗng.
+      # tests/ops-scripts.test.ts chạy thật bước này và bước `meta` của job `image`.
+      - name: Package name
+        id: pkg
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          name=${REPOSITORY#*/}
+          echo "name=${name,,}" >> "$GITHUB_OUTPUT"
+
+      # Third-party code with write access to the registry: pinned to a commit, the
+      # trailing comment is the human-readable version of that SHA.
+      - uses: actions/delete-package-versions@e5bc658cc4c965c472efe991f8beea3981499c55 # v5.0.0
+        with:
+          package-name: ${{ steps.pkg.outputs.name }}
+          package-type: container
+          min-versions-to-keep: 20

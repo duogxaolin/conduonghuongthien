@@ -15,7 +15,7 @@
               :value="searchQuery"
               @input="$emit('search-input', ($event.target as HTMLInputElement).value)"
               :ref="mountInput"
-              class="w-full py-3 pl-11 pr-10 rounded-lg border border-[#4A6741] bg-white font-[inherit] text-[0.95rem] text-[#172516] outline-none focus:ring-2 focus:ring-[#7CB342] shadow-inner"
+              class="w-full py-3 pl-11 pr-10 rounded-lg border border-[#4A6741] bg-white font-[inherit] text-[0.95rem] text-[#172516] outline-none focus:ring-2 focus:ring-[#4A6741] shadow-inner"
             />
             <button
               v-if="searchQuery"

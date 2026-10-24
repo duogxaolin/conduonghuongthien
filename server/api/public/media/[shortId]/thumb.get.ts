@@ -25,7 +25,7 @@ import { resolveStreamTarget, resolveThumbnailTarget, MEDIA_STREAM_MANIFEST_PATH
 import { resolveMediaConfigWithDb } from '../../../../services/media-config-service'
 import { getDb } from '../../../../utils/db'
 import { streamR2Object } from '../../../../services/video-r2-sync'
-import { extractThumbnailOnDemand } from '../../../../services/video-processing'
+import { onDemandThumbnails } from '../../../../services/thumbnail-on-demand'
 
 /** Ảnh thu nhỏ của nền tảng ngoài: vài chục KB là cùng. Trần này chỉ để một phản
  *  hồi bất thường không kéo cả tệp vào RAM của tiến trình. */
@@ -231,16 +231,20 @@ async function extractFallbackFrame(
 
   // Lưu thumb cạnh `original.<ext>` (cấp gốc directory) để lần sau `resolveThumbnailTarget`
   // tìm thấy tĩnh — tránh spawn FFmpeg mỗi lượt. Extract thẳng vào đích (không qua
-  // tmpDir) vì FFmpeg ghi atomic-enough cho một tệp JPEG nhỏ, và nếu gián đoạn giữa
-  // chừng thì `resolveThumbnailTarget` lần sau thấy tệp không hợp lệ và lại fallback.
-  // Tệp đích đã tồn tại (race hai khách) thì FFmpeg `-y` đè — cùng nội dung.
+  // tmpDir); lượt bị giết/hỏng thì `onDemandThumbnails` xoá tệp dở trước khi báo
+  // kết quả, nên một JPEG nửa vời không bao giờ thành thumb "tĩnh" lần sau.
+  //
+  // `onDemandThumbnails` (design D19): nhiều khách cùng lúc cho MỘT video dùng
+  // chung một lượt (khoá = đường dẫn đích, nên link short_id và link slug cũ là
+  // một), tối đa 2 lượt FFmpeg toàn tiến trình, hạn 15 s rồi SIGKILL, lỗi được nhớ
+  // 10 phút (trả placeholder, không spawn).
   const targetDir = dirname(streamTarget.filePath)
   const outPath = join(targetDir, 'thumb.jpg')
   try {
     await mkdir(targetDir, { recursive: true })
-    const ok = await extractThumbnailOnDemand(streamTarget.filePath, outPath)
+    const ok = await onDemandThumbnails.extract(outPath, streamTarget.filePath, outPath)
     if (!ok) {
-      logWarn({ event: 'public.media_thumbnail_fallback_failed', shortId })
+      logWarn({ event: 'public.media_thumbnail_fallback_unavailable', shortId })
       return null
     }
     return await readFile(outPath)

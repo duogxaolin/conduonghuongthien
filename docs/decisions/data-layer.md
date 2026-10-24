@@ -156,3 +156,175 @@ Lượt kiểm chứng đo trên bản build với CSDL không với tới: 12 A
 Đợt G1–G3 (2026-10-14) đóng ba lỗ còn lại: `/legal-qa` gọi `useSsrFailureStatus`; nhánh hai đoạn của `[slug].vue` quyết định bằng `resolveCategoryRoute` (tra chuyên mục hỏng → `BlockLoadError` + 503, không rơi sang `ArticleDetail`); `ArticleDetail.vue` tách "không có" khỏi "không tải được" bằng `resolveDetailFetch` — bài thật không có → 404 + "Không tìm thấy" (trước đây cả hai đều là cảnh báo + Thử lại với HTTP 200, nên lỗi tải được SWR phát lại và 404 thật bị báo là lỗi), lỗi tải → 503 + `no-store` + Thử lại (`useSsrFailureStatus` tuỳ chọn `notFound`). Đo lại trên bản build (CSDL không với tới): thêm `/legal-qa`, `/news/<x>/<bài>`, `/video/<x>`, `/role-models/<x>` → 503 + `no-store`. Với CSDL khoẻ, trang 404 trên tuyến `swr` (`/news/**`, `/role-models/**`…) vẫn mang `s-maxage=60` — còn mở.
 
 Còn mở: `rate_limit.database_read_failed` không giới hạn tần suất log (`rate_limit.database_write_failed` của store chung — page-view, đăng nhập… — nay tối đa 1 dòng/phút kèm số lần bị nén); `analytics-maintenance.ts` vẫn tự `createPool`.
+
+---
+
+<a id="media-category-restore"></a>
+
+## Khôi phục danh mục video sau lỗi xoá lúc khởi động (2026-09-22 → bản vá)
+
+**Lỗi.** Từ `69a84eb` (2026-09-22) tới bản vá `fix-media-category-wipe-on-boot`, `applyAdditiveMigrations` chạy `UPDATE media_items SET category_id = NULL` **vô điều kiện**, rồi drop/add `fk_media_items_category` theo tên. Khối đó chạy ở **mọi** lần container khởi động (Dockerfile CMD: `init.ts` → `seed.ts` → server): mỗi lượt CI deploy, mỗi `manage.sh` Update, mỗi lần `restart: always` sau sự cố. Danh mục cán bộ gán cho video chỉ sống tới lần khởi động kế tiếp; riêng 2026-10-23 có bốn lượt deploy.
+
+**Bản vá** (`convergeMediaCategoryForeignKey`, `server/db/migrations-additive.ts`):
+- Lượt chuyển `categories` → `media_categories` khoá theo **trạng thái lược đồ**. Nó chỉ chạy khi trên cột `media_items.category_id` còn FK trỏ `categories` (đọc theo cột, không theo tên), và lượt chuyển tự xoá điều kiện đó.
+- CSDL đã chuyển không nhận lệnh `UPDATE`/`ALTER` nào vào `media_items` từ khối này.
+- Không bao giờ xoá theo giá trị: id thể loại bài viết cũ 1–7 trùng id danh mục video được seed 1–4.
+- Thiếu FK mà có giá trị treo: giữ giá trị, không thêm FK, log `db.migration.media_category_fk_blocked` (`{ danglingRows }`), app vẫn khởi động.
+- Khoá bằng `tests/media-category-migration-integration.test.ts` (MySQL thật, đỏ trên mã cũ).
+
+**Giá trị đã mất không tự về.** Không có khôi phục tự động: cần người chọn bản sao lưu, và giá trị phải được đối chiếu với `media_categories` hiện tại. Quy trình dưới đây chỉ **đọc** bản dump trong một CSDL nháp, và chỉ điền những hàng đang `NULL` ở CSDL thật.
+
+> ⛔ **Không bao giờ nạp bản dump vào CSDL production** cho việc này — không `restore-db.sh --replace`, không nút khôi phục trong admin. Làm vậy là đưa **mọi** bảng về thời điểm dump. Chỉ nạp vào CSDL nháp.
+>
+> ⛔ **Không bao giờ lùi về image cũ hơn bản vá**, kể cả lượt lùi tự động của `deploy-remote.sh` khi healthcheck hỏng. Lần khởi động đầu của image cũ sẽ xoá danh mục lại, kể cả giá trị vừa khôi phục. Image mới không khởi động được vì lý do khác thì sửa tiến, đừng lùi.
+
+Các lệnh bên dưới chạy trên VPS, trong thư mục repo. Mật khẩu MySQL đi qua `MYSQL_PWD` theo **tên biến**, không bao giờ `-p<mật khẩu>` (lộ trong `ps`), cùng cách với `scripts/verify-restore.sh`:
+
+```bash
+cd /www/wwwroot/conduonghuongthien
+set -a; source <(grep -E '^[A-Za-z_][A-Za-z0-9_]*=' .env); set +a
+LIVE="${MYSQL_DATABASE:-cdkt_admin}"
+DB_CONTAINER="${MYSQL_CONTAINER:-cdkt_mysql}"
+KEEP=/root/cdkt-category-restore    # thư mục giữ bản sao lưu của bước 0 — cùng đường dẫn ở MỌI phiên
+dexec() { MYSQL_PWD="$MYSQL_ROOT_PASSWORD" docker exec -e MYSQL_PWD "$@"; }
+```
+
+Khối này phải chạy lại ở mỗi phiên shell mới, vì bước 0 làm hôm nay còn bước 1–7 làm sau khi deploy. `KEEP` là một đường dẫn cố định có chủ đích: một tên có ngày tháng sẽ trỏ sang thư mục rỗng khác ở phiên sau.
+
+### 0. Giữ lại bản sao lưu NGAY — chép ra khỏi vòng xoay
+
+Làm **hôm nay**, kể cả trước khi bản vá được merge. Cả hai loại sao lưu nằm trong `./backups` của repo (bind mount `/app/backups`), và cả hai đang bị xoay vòng:
+- `scripts/backup-db.sh` ghi `cdkt-<db>-<stamp>-<pid>.sql.gz` và xoá bản cũ hơn `BACKUP_KEEP_DAYS` (mặc định 14 ngày).
+- Sao lưu trong app ghi `cdkt-<stamp>-<trigger>.sql.gz` và chỉ giữ `backup_keep_count` bản (mặc định 14).
+
+Vòng xoay đang xoá đúng những bản có thể còn giữ danh mục đã mất.
+
+```bash
+mkdir -p "$KEEP" && chmod 700 "$KEEP"
+cp -a backups/*.sql.gz "$KEEP"/
+ls -l --time-style=full-iso "$KEEP"
+```
+
+Tốt hơn nữa: chép thêm một bản ra ngoài VPS (`scp`/`rsync` về máy khác). Thư mục `$KEEP` nằm ngoài `./backups`, nên không vòng xoay nào chạm tới nó.
+
+### 1. Xác nhận image đã vá đang chạy, và không có lượt lùi nào đang chờ
+
+- Lượt CI deploy của commit vá phải xanh (tab Actions hoặc `gh run list --branch main`), và container healthy: `docker inspect -f '{{.State.Health.Status}} {{.State.StartedAt}}' cdkt_app`.
+- Cột chỉ còn **một** FK, trỏ `media_categories (id) ON DELETE SET NULL`: `dexec "$DB_CONTAINER" mysql -u root "$LIVE" -e 'SHOW CREATE TABLE media_items\G'`.
+- Gán thử danh mục cho một video, chạy `docker compose restart app`, rồi kiểm danh mục còn nguyên.
+- Log khởi động không có sự kiện chặn: `docker logs cdkt_app 2>&1 | grep media_category_fk_blocked`. Nếu có thì dừng: cột đang thiếu FK và có giá trị trỏ tới danh mục không tồn tại, cần xem tay trước.
+
+### 2. Sao lưu mới ngay trước khi ghi
+
+```bash
+./scripts/backup-db.sh "$KEEP/truoc-khoi-phuc"   # dòng JSON `succeeded` in đường dẫn tệp
+```
+
+Thư mục đích riêng là có chủ đích. `backup-db.sh` xoay vòng **thư mục đích của nó**, xoá `cdkt-<db>-*.sql.gz` cũ hơn `BACKUP_KEEP_DAYS` theo mtime, và `cp -a` ở bước 0 giữ nguyên mtime cũ. Vì vậy **đừng bao giờ** dùng chính `$KEEP` (hay `./backups`, nếu chưa làm bước 0) làm đích.
+
+### 3. Chọn bản dump ứng viên
+
+- **Mới hơn 2026-09-22 14:23 (+01:00).** Bản cũ hơn chưa có bảng `media_categories`, và giá trị trong đó là id thể loại **bài viết**. Câu lệnh ở bước 5 sẽ báo lỗi bảng không tồn tại, nên bản đó không bao giờ được dùng nhầm.
+- **Chụp SAU khi cán bộ gán danh mục, và TRƯỚC lần khởi động kế tiếp.** Mỗi lần khởi động là một lần xoá. Đặt thời điểm của bản dump cạnh lịch khởi động để chọn:
+  - các lượt deploy CI: `gh run list --workflow ci.yml --branch main --json createdAt,conclusion`;
+  - các lần chạy `manage.sh` Update;
+  - số lần restart vì sự cố: `docker inspect -f '{{.RestartCount}}' cdkt_app`;
+  - mốc khởi động in trong log, chỉ tính từ lần container được tạo gần nhất: `docker logs --timestamps cdkt_app 2>&1 | grep 'Checking & Creating MySQL tables'`.
+- Bản tốt nhất thường là bản sao lưu đêm (03:00) sau một ngày làm việc không có deploy.
+- Không chắc thì cứ thử. Bước 5 cho biết chính xác bản đó khôi phục được những video nào. Thử từ bản **mới nhất** về cũ, và lặp lại bước 4–7 cho từng bản: điều kiện `IS NULL` bảo đảm bản sau không đè giá trị bản trước đã điền.
+
+### 4. Nạp bản dump vào CSDL NHÁP trên cùng MySQL — không bao giờ vào CSDL thật
+
+```bash
+DUMP="$KEEP/cdkt-cdkt_admin-20261020T030000Z-12345.sql.gz"   # bản đã chọn (ví dụ)
+SCRATCH=cdkt_catrestore_20261020                              # tên nháp, KHÁC "$LIVE"
+test "$SCRATCH" != "$LIVE" && echo "tên nháp OK"
+
+# 4a. Dump phải nạp được, và KHÔNG tự chọn CSDL. Một dòng `USE`/`CREATE DATABASE`
+#     sẽ ghi vào CSDL khác chứ không ở lại trong nháp. Script này kiểm cả hai, nạp
+#     thử vào một CSDL kiểm riêng rồi tự xoá CSDL đó. Phải in `restore_check.succeeded`.
+./scripts/verify-restore.sh "$DUMP"
+
+# 4b. Nạp vào nháp.
+dexec "$DB_CONTAINER" mysql -u root -e "CREATE DATABASE \`$SCRATCH\` CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci"
+gzip -dc "$DUMP" | dexec -i "$DB_CONTAINER" mysql -u root --default-character-set=utf8mb4 "$SCRATCH"
+```
+
+### 5. Xem trước (dry-run), rồi mới UPDATE
+
+Mở phiên trên CSDL **thật**: `dexec -it "$DB_CONTAINER" mysql -u root --default-character-set=utf8mb4 "$LIVE"`. Trong các câu SQL dưới đây, thay `cdkt_catrestore_20261020` bằng tên nháp của bước 4.
+
+Video được ghép trên **id + slug** của video (slug video không sửa được sau khi tạo, nên một id bị dùng lại cho video khác sẽ không khớp). Danh mục được ghép trên **id + slug** của danh mục: danh mục đã xoá, hoặc id đã bị dùng lại cho danh mục khác, sẽ bị từ chối. `WHERE mi.category_id IS NULL` bảo đảm không bao giờ đè danh mục cán bộ đã gán lại sau bản vá.
+
+```sql
+-- 5a. Những video SẼ được điền lại, và điền danh mục nào.
+SELECT mi.id, mi.title, s.category_id AS restore_to, pc.name AS category_name
+FROM media_items mi
+JOIN cdkt_catrestore_20261020.media_items s ON s.id = mi.id AND s.slug = mi.slug
+JOIN cdkt_catrestore_20261020.media_categories sc ON sc.id = s.category_id
+JOIN media_categories pc ON pc.id = sc.id AND pc.slug = sc.slug
+WHERE mi.category_id IS NULL
+ORDER BY mi.id;
+
+-- 5b. Video bản dump có danh mục nhưng KHÔNG được điền: video đã xoá hoặc id thuộc
+--     video khác, danh mục đã xoá, hoặc id danh mục nay là danh mục khác.
+SELECT s.id, s.title, s.category_id AS dump_category, sc.slug AS dump_slug, pc.slug AS live_slug,
+       mi.slug AS live_video_slug
+FROM cdkt_catrestore_20261020.media_items s
+LEFT JOIN cdkt_catrestore_20261020.media_categories sc ON sc.id = s.category_id
+LEFT JOIN media_items mi ON mi.id = s.id
+LEFT JOIN media_categories pc ON pc.id = s.category_id
+WHERE s.category_id IS NOT NULL
+  AND mi.category_id IS NULL
+  AND (mi.id IS NULL OR mi.slug <> s.slug OR pc.id IS NULL OR pc.slug <> sc.slug)
+ORDER BY s.id;
+```
+
+Cho cán bộ duyệt danh sách 5a. Danh mục trong bản dump là giá trị **tại lúc dump**: cán bộ có thể đã đổi nó sau đó, và giá trị mới hơn đã bị xoá trước khi kịp vào bản dump nào. Rồi ghi trong một transaction, và chỉ `COMMIT` khi số hàng khớp với 5a:
+
+```sql
+START TRANSACTION;
+UPDATE media_items mi
+JOIN cdkt_catrestore_20261020.media_items s ON s.id = mi.id AND s.slug = mi.slug
+JOIN cdkt_catrestore_20261020.media_categories sc ON sc.id = s.category_id
+JOIN media_categories pc ON pc.id = sc.id AND pc.slug = sc.slug
+SET mi.category_id = s.category_id
+WHERE mi.category_id IS NULL;
+SELECT ROW_COUNT() AS restored;   -- phải bằng số dòng của 5a
+COMMIT;                           -- hoặc ROLLBACK nếu không khớp
+```
+
+Đã chạy thử trên CSDL dùng một lần (2026-10-23). Kết quả đúng như mô tả:
+- 5a chỉ điền các video có cả video lẫn danh mục còn khớp.
+- 5b liệt kê ba ca bị từ chối: danh mục đã xoá, slug danh mục đổi, id video thuộc video khác.
+- UPDATE không đè video đã được gán lại.
+
+### 6. Video không khôi phục được: danh sách để cán bộ gán lại bằng tay
+
+Nhật ký kiểm toán chỉ ghi **rằng** danh mục đã được đặt, không ghi **danh mục nào**: `createMediaItem` ghi `meta.hasCategory`, `updateMediaItem` ghi `meta.changed` có `"categoryId"`. Cán bộ phải tự chọn giá trị. `changed` cũng chứa `categoryId` khi cán bộ **bỏ** danh mục, nên đây là danh sách ứng viên, không phải danh sách chắc chắn.
+
+```sql
+SELECT mi.id, mi.title, al.action, al.created_at, al.user_id
+FROM activity_logs al
+JOIN media_items mi ON mi.id = al.resource_id
+WHERE al.resource = 'media_portal'
+  AND mi.category_id IS NULL
+  AND (
+    (al.action = 'create' AND JSON_EXTRACT(al.meta, '$.hasCategory') = true)
+    OR JSON_CONTAINS(JSON_EXTRACT(al.meta, '$.changed'), '"categoryId"')
+  )
+ORDER BY mi.id, al.created_at;
+```
+
+`activity_logs` là một scope của data retention, nên hàng cũ có thể đã bị dọn và danh sách này có thể thiếu.
+
+Nếu không bản dump nào khớp (mọi bản đều chụp sau một lần khởi động), chỉ còn danh sách này. Khi đó hãy nói rõ với cán bộ rằng giá trị trong khoảng đó không khôi phục được.
+
+### 7. Xoá CSDL nháp
+
+```bash
+dexec "$DB_CONTAINER" mysql -u root -e "DROP DATABASE IF EXISTS \`$SCRATCH\`"
+dexec "$DB_CONTAINER" mysql -u root -N -e "SHOW DATABASES LIKE 'cdkt\_catrestore\_%'"   # phải rỗng
+```
+
+Giữ thư mục `$KEEP` tới khi cán bộ xác nhận xong, rồi xoá; nó chứa dữ liệu cá nhân của toàn site.

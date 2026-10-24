@@ -1,6 +1,7 @@
 import { getDb } from '../../../../../utils/db'
 import { pageBlocks, activityLogs } from '../../../../../db/schema'
-import { sanitizeBlockData } from '../../../../../utils/sanitize-html'
+import { assertSafeBlockLinks, sanitizeBlockData } from '../../../../../utils/sanitize-html'
+import { UnsafeLinkError } from '../../../../../../shared/link-policy'
 import { and, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 
@@ -28,6 +29,14 @@ export default defineEventHandler(async (event) => {
   if (body.data !== undefined) {
     if (typeof body.data !== 'object' || body.data === null) {
       throw createError({ statusCode: 400, statusMessage: 'Dữ liệu block không hợp lệ.' })
+    }
+    // Link fields of the STORED block type must be allowed links — same rule as
+    // the draft/publish path (`normalizeBlocks`): 400 naming the field, nothing written.
+    try {
+      assertSafeBlockLinks(existing.blockType, body.data)
+    } catch (error) {
+      if (error instanceof UnsafeLinkError) throw createError({ statusCode: 400, statusMessage: `${error.message} (block ${existing.blockType})` })
+      throw error
     }
     // Sanitize rich-text fields — block data is rendered with v-html publicly.
     updateFields.data = sanitizeBlockData(body.data)

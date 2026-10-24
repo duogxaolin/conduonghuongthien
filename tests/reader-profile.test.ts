@@ -108,3 +108,61 @@ test('validateDisplayName accepts exactly the boundary lengths', () => {
   assert.equal(validateDisplayName('A'.repeat(DISPLAY_NAME_MIN_LENGTH)).ok, true)
   assert.equal(validateDisplayName('A'.repeat(DISPLAY_NAME_MAX_LENGTH)).ok, true)
 })
+
+// ─── Reserved names (spec reader-display-names, design D7) ────────────────────
+//
+// A reader-chosen name shows next to staff replies on a government portal. A
+// reader who calls themselves "Ban quản trị" posts what reads as an official
+// answer. The check runs on a FOLDED form (NFKC, no diacritics, đ→d, lower case,
+// every non-letter/digit run → one space), so case, accents, full-width letters
+// and punctuation tricks all land on the same string.
+
+const refused = (input: string) => {
+  const result = validateDisplayName(input)
+  assert.equal(result.ok, false, `${JSON.stringify(input)} was accepted`)
+  return result.ok ? '' : result.message
+}
+
+test('validateDisplayName refuses the reserved staff and authority names, exactly', () => {
+  for (const input of [
+    'Ban Quản Trị', 'Quản trị viên', 'Admin', 'Administrator', 'Moderator', 'C11',
+    'Bộ Công an', 'Con Đường Hướng Thiện',
+  ]) {
+    assert.match(refused(input), /dành riêng/, `${input}: the message must name the rule`)
+  }
+})
+
+test('validateDisplayName folds case, diacritics, đ, full-width letters and punctuation before comparing', () => {
+  for (const input of [
+    'BAN QUAN TRI', 'ban quản trị', 'Bän Qüản Trị', 'ＡＤＭＩＮ', 'Ａdmin', 'A.D.M.I.N',
+    'Ban-Quản-Trị', 'Ban_quản_trị', 'CON DUONG HUONG THIEN', 'Con Duong Huong Thien',
+    'con đường hướng thiện', 'CON ĐƯỜNG HƯỚNG THIỆN', 'c 11', 'C-11', 'bo cong an',
+  ]) refused(input)
+})
+
+test('validateDisplayName refuses a reserved term at the start or the end, as its own word', () => {
+  for (const input of ['Admin Hùng', 'Nguyễn Văn Admin', 'Ban quản trị cổng', 'Hỗ trợ Bộ Công An', 'C11 Hà Nội', 'Moderator 2']) {
+    refused(input)
+  }
+})
+
+test('validateDisplayName refuses zero-width and bidi characters outright', () => {
+  // Built from code points so this source file carries no invisible characters.
+  // U+200B inside "quản" is the spec's own example. A name like "Nguyễn<ZWSP>Văn A"
+  // is no reserved word at all — it must be refused on the character itself.
+  const [ZWSP, ZWJ, BOM, RLO, LRI, PDI, LRM, SHY] = [0x200B, 0x200D, 0xFEFF, 0x202E, 0x2066, 0x2069, 0x200E, 0x00AD].map(cp => String.fromCodePoint(cp))
+  for (const input of [
+    `Ban qu${ZWSP}ản trị`, `Nguyễn${ZWSP}Văn A`, `Nguyễn Văn A${ZWJ}`, `${BOM}Nguyễn Văn A`,
+    `Nguyễn ${RLO}Văn A`, `Nguyễn ${LRI}Văn${PDI} A`, `Nguyễn${LRM}Văn A`, `Ad${SHY}min`,
+  ]) {
+    assert.match(refused(input), /ký tự ẩn/, `${JSON.stringify(input)}: the message must name the rule`)
+  }
+})
+
+test('validateDisplayName still accepts ordinary names that merely contain a reserved word inside another word', () => {
+  for (const input of ['Nguyễn Văn Adminh', 'Badmin Lê', 'Trần Thị Quản', 'Bộ Công Anh', 'C110 Phạm', 'Đường Văn Thiện', 'Nguyễn Công An Bình']) {
+    const result = validateDisplayName(input)
+    assert.equal(result.ok, true, `${JSON.stringify(input)} was refused`)
+    assert.equal(result.ok && result.name, input, 'the stored name is what was typed, not the folded form')
+  }
+})

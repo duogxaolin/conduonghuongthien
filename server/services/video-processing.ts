@@ -1062,11 +1062,16 @@ async function extractThumbnail(input: {
  * Trả `true` nếu thành công, `false` nếu FFmpeg fail (file hỏng, codec lạ). Không
  * ném: endpoint gọi sẽ lùi về 404, và một ảnh thiếu vẫn đọc ra là "chưa có thumb"
  * thay vì "cổng gãy".
+ *
+ * Không gọi thẳng từ endpoint công khai: đi qua `onDemandThumbnails`
+ * (`thumbnail-on-demand.ts` — gộp yêu cầu, trần đồng thời, hạn 15 s, nhớ lỗi).
+ * `run` là điểm tiêm cho test (mặc định `defaultProcessRunner`, giết bằng SIGKILL
+ * khi `signal` bật).
  */
 export async function extractThumbnailOnDemand(
   input: string,
   outPath: string,
-  options: { signal?: AbortSignal } = {},
+  options: { signal?: AbortSignal, run?: ProcessRunner } = {},
 ): Promise<boolean> {
   const { command, args } = ffmpegArgs([
     '-hide_banner', '-nostdin', '-y',
@@ -1079,8 +1084,8 @@ export async function extractThumbnailOnDemand(
   ])
   try {
     const signal = options.signal ?? new AbortController().signal
-    const outcome = await defaultProcessRunner(command, args, { signal })
-    return outcome.code === 0
+    const outcome = await (options.run ?? defaultProcessRunner)(command, args, { signal })
+    return outcome.code === 0 && !signal.aborted
   } catch {
     return false
   }

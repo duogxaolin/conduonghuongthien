@@ -284,7 +284,7 @@ const deleteBackup = async (item: BackupItem) => {
   const ok = await confirm({ title: 'Xoá backup', message: `Xoá file "${item.filename}"?`, danger: true, confirmLabel: 'Xoá' })
   if (!ok) return
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/backup/${encodeURIComponent(item.filename)}`, { method: 'DELETE' })
+    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/backup/${encodeURIComponent(item.filename)}?id=${item.id}`, { method: 'DELETE' })
     toast.success('Đã xoá backup.')
     await loadBackups()
   } catch (err: unknown) {

@@ -20,6 +20,12 @@
  * quan trọng nhất.
  */
 
+// `~~/shared/…`, never a relative path: Nuxt keeps shared/ external in the SSR
+// build and a relative source can render as a path Nitro cannot resolve
+// (tests/app-shared-imports.test.ts). scripts/ts-resolver.mjs resolves `~~/` for
+// the Node test runner, which loads this file directly.
+import { safeLinkOrNull } from '~~/shared/link-policy'
+
 /** Một mục điều hướng ngang (thanh nav trên đầu). */
 export interface NavItem {
   id: string
@@ -117,12 +123,17 @@ function usableText(value: unknown): string | null {
  * chỉ số và vẽ lại sai khi danh sách đổi), `url` là `:to` của `NuxtLink` (thiếu
  * thì thành một liên kết không dẫn tới đâu). `label` được phép `null` — đó là
  * cách khai "dùng `labelKey` để dịch", chứ không phải dữ liệu thiếu.
+ *
+ * `url` còn phải là liên kết được phép (`shared/link-policy.ts`): `/…` nhưng
+ * không `//host`, `#…`, `http(s):`, `mailto:`, `tel:`. Hàng lưu trước khi có
+ * luật — hoặc qua một endpoint ghi chưa kiểm — mang `javascript:` thì mục đó bị
+ * bỏ như một mục thiếu url, không bao giờ thành `<NuxtLink :to>`.
  */
 function normalizeNavItem(raw: unknown, depth = 0): NavItem | null {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null
   const item = raw as Record<string, unknown>
   const id = usableText(item.id)
-  const url = usableText(item.url)
+  const url = safeLinkOrNull(usableText(item.url))
   if (!id || !url) return null
 
   const node: NavItem = {
@@ -166,7 +177,9 @@ function normalizeBottomNavItem(raw: unknown): BottomNavItem | null {
   const type = usableText(item.type)
   if (!id || !type || !BOTTOM_NAV_TYPES.has(type)) return null
 
-  const url = usableText(item.url) ?? ''
+  // Cùng chính sách liên kết với thanh nav ngang: url không an toàn = không có url
+  // (tab `link` bị bỏ; `chatbot`/`drawer` vốn không điều hướng, giữ chuỗi rỗng).
+  const url = safeLinkOrNull(usableText(item.url)) ?? ''
   if (type === 'link' && !url) return null
 
   const node: BottomNavItem = {

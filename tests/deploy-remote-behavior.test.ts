@@ -17,13 +17,23 @@
  *   - a failed deploy rolls back the image AND the compose file together;
  *   - a failing `docker compose up` goes through the rollback instead of exiting
  *     under `set -e` with `.env` pointing at the new image;
- *   - the database container is never recreated by an app deploy.
+ *   - the database container is never recreated by an app deploy;
+ *   - a verified database dump is taken before anything on the server changes,
+ *     and a failed dump stops the deploy with compose, `.env` and the container
+ *     untouched (Wave 1 · D26);
+ *   - a container that crash-loops fails the wait within three polls instead of
+ *     after the full health timeout (D29);
+ *   - after a healthy deploy, old app images are removed by tag — the running one
+ *     and the 5 newest others stay — and a nearly full Docker disk is reported,
+ *     without either chore ever failing a deploy that succeeded (D31);
+ *   - the uploads volume is chowned only when its root is not node's (D32).
  */
 import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import {
   chmodSync,
+  copyFileSync,
   existsSync,
   mkdirSync,
   mkdtempSync,
@@ -38,49 +48,24 @@ import { join } from 'node:path'
 import { afterEach, describe, it } from 'node:test'
 
 const SCRIPT = readFileSync(new URL('../scripts/deploy-remote.sh', import.meta.url), 'utf8')
+const BACKUP_SCRIPT = readFileSync(new URL('../scripts/backup-db.sh', import.meta.url), 'utf8')
 
 const OLD_IMAGE = 'ghcr.io/owner/repo:sha-old'
 const NEW_IMAGE = 'ghcr.io/owner/repo:sha-new'
 const OLD_COMPOSE = 'services:\n  app:\n    image: ${CDKT_IMAGE}\n# old\n'
 const NEW_COMPOSE = 'services:\n  app:\n    image: ${CDKT_IMAGE}\n    environment:\n      TZ: Asia/Ho_Chi_Minh\n# new\n'
-const ENV_FILE = `JWT_SECRET=keep-this-secret\nTRUSTED_PROXY_IPS=172.16.0.0/12\nCDKT_IMAGE=${OLD_IMAGE}\n`
+const ENV_FILE = `JWT_SECRET=keep-this-secret\nMYSQL_ROOT_PASSWORD=fixture-root-pw\nTRUSTED_PROXY_IPS=172.16.0.0/12\nCDKT_IMAGE=${OLD_IMAGE}\n`
 const INCOMING = '.docker-compose.incoming.yml'
+const INCOMING_BACKUP = '.deploy-incoming/backup-db.sh'
+const DUMP_DIR = '.deploy-db-backups'
 
 /**
- * Fake `docker`. Every call appends one line:
+ * Fake `docker` (tests/fixtures/deploy-remote/docker). Every call appends one line:
  *   <args> | image=<CDKT_IMAGE in .env> | compose=<sha256 of docker-compose.yml>
- * Outcomes are scripted through FAKE_* variables; the default is "everything
- * works and the container is healthy".
+ * Outcomes are scripted through FAKE_* variables listed in that file; the default
+ * is "everything works and the container is healthy".
  */
-const FAKE_DOCKER = `#!/usr/bin/env bash
-img=$(sed -n 's/^CDKT_IMAGE=//p' .env 2>/dev/null | tail -n 1)
-sum=$(sha256sum docker-compose.yml 2>/dev/null | cut -d' ' -f1)
-echo "$* | image=$img | compose=$sum" >> "$FAKE_DOCKER_LOG"
-case "$1" in
-  pull)
-    [ "\${FAKE_PULL_FAIL:-}" = 1 ] && exit 1
-    exit 0 ;;
-  compose)
-    case "$2" in
-      config)
-        if grep -q 'INVALID_COMPOSE' docker-compose.yml; then
-          echo "service app: invalid" >&2
-          exit 15
-        fi
-        exit 0 ;;
-      up)
-        if [ -n "\${FAKE_UP_FAIL_IMAGE:-}" ] && [ "$img" = "$FAKE_UP_FAIL_IMAGE" ]; then exit 1; fi
-        exit 0 ;;
-      *) exit 0 ;;
-    esac ;;
-  inspect)
-    # "none" makes wait_healthy fail at once instead of polling for 300 s.
-    if [ "$img" = "\${FAKE_UNHEALTHY_IMAGE:-}" ]; then echo none; else echo healthy; fi
-    exit 0 ;;
-  logs) echo "fake container log"; exit 0 ;;
-  *) exit 0 ;;
-esac
-`
+const FAKE_DOCKER = new URL('./fixtures/deploy-remote/docker', import.meta.url)
 
 const sha256 = (text: string) => createHash('sha256').update(text).digest('hex')
 
@@ -96,14 +81,14 @@ afterEach(() => {
   for (const dir of fixtures.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
-function makeFixture(options: { compose?: string | null; incoming?: string | null } = {}): Fixture {
+function makeFixture(options: { compose?: string | null; incoming?: string | null; backupScript?: string | null } = {}): Fixture {
   const root = mkdtempSync(join(tmpdir(), 'cdkt-deploy-remote-'))
   fixtures.push(root)
   const dir = join(root, 'app')
   const bin = join(root, 'bin')
   mkdirSync(dir)
   mkdirSync(bin)
-  writeFileSync(join(bin, 'docker'), FAKE_DOCKER)
+  copyFileSync(FAKE_DOCKER, join(bin, 'docker'))
   chmodSync(join(bin, 'docker'), 0o755)
   writeFileSync(join(dir, '.env'), ENV_FILE)
   chmodSync(join(dir, '.env'), 0o600)
@@ -111,14 +96,24 @@ function makeFixture(options: { compose?: string | null; incoming?: string | nul
   if (compose !== null) writeFileSync(join(dir, 'docker-compose.yml'), compose)
   const incoming = options.incoming === undefined ? NEW_COMPOSE : options.incoming
   if (incoming !== null) writeFileSync(join(dir, INCOMING), incoming)
+  // The VPS checkout's own copy (used by a manual run) and the copy CI ships.
+  mkdirSync(join(dir, 'scripts'))
+  writeFileSync(join(dir, 'scripts', 'backup-db.sh'), BACKUP_SCRIPT)
+  chmodSync(join(dir, 'scripts', 'backup-db.sh'), 0o755)
+  const backupScript = options.backupScript === undefined ? BACKUP_SCRIPT : options.backupScript
+  if (backupScript !== null) {
+    mkdirSync(join(dir, '.deploy-incoming'))
+    writeFileSync(join(dir, INCOMING_BACKUP), backupScript)
+  }
   return { dir, log: join(root, 'docker.log'), bin }
 }
 
-function runDeploy(fx: Fixture, env: Record<string, string> = {}) {
+function runDeploy(fx: Fixture, env: Record<string, string> = {}, timeout = 60_000) {
   // Same invocation as the CI deploy job: the script arrives on stdin.
   const result = spawnSync('bash', ['-s', '--', fx.dir, NEW_IMAGE], {
     input: SCRIPT,
     encoding: 'utf8',
+    timeout,
     env: {
       PATH: `${fx.bin}:${process.env.PATH ?? ''}`,
       HOME: process.env.HOME ?? fx.dir,
@@ -130,10 +125,17 @@ function runDeploy(fx: Fixture, env: Record<string, string> = {}) {
   return { status: result.status, stdout: result.stdout, stderr: result.stderr, calls }
 }
 
-const shipped = (incoming = NEW_COMPOSE) => ({
+/** What the CI deploy job sets: the shipped compose and the shipped backup script, each with its SHA-256. */
+const shipped = (incoming = NEW_COMPOSE, backupScript = BACKUP_SCRIPT) => ({
   INCOMING_COMPOSE: INCOMING,
   INCOMING_COMPOSE_SHA256: sha256(incoming),
+  INCOMING_BACKUP_SCRIPT: INCOMING_BACKUP,
+  INCOMING_BACKUP_SCRIPT_SHA256: sha256(backupScript),
 })
+const dumpsIn = (fx: Fixture) => {
+  const dir = join(fx.dir, DUMP_DIR)
+  return existsSync(dir) ? readdirSync(dir).sort() : []
+}
 
 const file = (fx: Fixture, name: string) => readFileSync(join(fx.dir, name), 'utf8')
 const backups = (fx: Fixture) => {
@@ -302,6 +304,174 @@ describe('deploy-remote.sh — rollback restores what was running', () => {
     assert.equal(file(fx, 'docker-compose.yml'), OLD_COMPOSE)
     assert.deepEqual(ups(run.calls), [])
     assert.equal(existsSync(join(fx.dir, INCOMING)), false)
+    assert.equal(existsSync(join(fx.dir, INCOMING_BACKUP)), false, 'the shipped backup script was left behind')
+  })
+})
+
+describe('deploy-remote.sh — a verified database dump comes first (D26)', () => {
+  it('dumps after the pull and before the compose, .env or container are touched', () => {
+    const fx = makeFixture()
+    const run = runDeploy(fx, shipped())
+
+    assert.equal(run.status, 0, run.stderr)
+    const pull = run.calls.findIndex((c) => c.startsWith(`pull ${NEW_IMAGE}`))
+    const dump = run.calls.findIndex((c) => / cdkt_mysql mysqldump /.test(c))
+    const config = run.calls.findIndex((c) => c.startsWith('compose config -q'))
+    const firstUp = run.calls.findIndex((c) => c.startsWith('compose up'))
+    assert.ok(pull >= 0 && dump > pull, `the dump must follow the pull:\n${run.calls.join('\n')}`)
+    assert.ok(config > dump && firstUp > dump, `the dump must precede every change:\n${run.calls.join('\n')}`)
+    // Taken while the OLD compose and the OLD image were still in place.
+    assert.ok(run.calls[dump]!.includes(`image=${OLD_IMAGE}`) && run.calls[dump]!.endsWith(`compose=${sha256(OLD_COMPOSE)}`))
+    // The root password reaches docker by environment only.
+    assert.ok(!run.calls.join('\n').includes('fixture-root-pw'), 'the database password is in a docker argv')
+
+    const dumps = dumpsIn(fx)
+    assert.equal(dumps.length, 1)
+    assert.match(dumps[0]!, /^cdkt-predeploy-cdkt_admin-\d{8}T\d{6}Z-\d+\.sql\.gz$/)
+    assert.equal(existsSync(join(fx.dir, INCOMING_BACKUP)), false, 'the shipped backup script was left behind')
+    assert.match(run.stdout, /cdkt-predeploy-cdkt_admin-/, 'the deploy log does not say where the dump is')
+  })
+
+  it('a failed dump stops the deploy: compose, .env and the container stay exactly as they were', () => {
+    const fx = makeFixture()
+    const run = runDeploy(fx, { ...shipped(), FAKE_DUMP_FAIL: '1' })
+
+    assert.notEqual(run.status, 0)
+    assert.equal(file(fx, '.env'), ENV_FILE, '.env changed although the dump failed')
+    assert.equal(file(fx, 'docker-compose.yml'), OLD_COMPOSE, 'the compose was replaced although the dump failed')
+    assert.deepEqual(ups(run.calls), [], 'a container was (re)started after a failed dump')
+    assert.ok(!run.calls.some((c) => c.startsWith('compose config')), 'the deploy carried on past the failed dump')
+    assert.deepEqual(dumpsIn(fx), [], 'a rejected dump was left behind')
+    assert.match(run.stderr, /sao lưu CSDL trước deploy thất bại/)
+    assert.equal(existsSync(join(fx.dir, INCOMING)), false)
+    assert.equal(existsSync(join(fx.dir, INCOMING_BACKUP)), false)
+  })
+
+  it('keeps the 5 newest pre-deploy dumps', () => {
+    const fx = makeFixture()
+    mkdirSync(join(fx.dir, DUMP_DIR))
+    for (let day = 10; day < 17; day++) writeFileSync(join(fx.dir, DUMP_DIR, `cdkt-predeploy-cdkt_admin-200001${day}T000000Z-1.sql.gz`), 'old')
+    const run = runDeploy(fx, shipped())
+
+    assert.equal(run.status, 0, run.stderr)
+    const left = dumpsIn(fx)
+    assert.equal(left.length, 5, JSON.stringify(left))
+    assert.ok(left.some((name) => !name.includes('T000000Z-1.')), 'this deploy\'s dump was rotated away')
+  })
+
+  it('refuses a backup script cut short in transit before pulling anything', () => {
+    const fx = makeFixture({ backupScript: BACKUP_SCRIPT.slice(0, 200) })
+    const run = runDeploy(fx, shipped())
+
+    assert.notEqual(run.status, 0)
+    assert.deepEqual(run.calls, [], 'docker was called for a corrupted transfer')
+    assert.equal(file(fx, '.env'), ENV_FILE)
+    assert.match(run.stderr, /sha256/)
+  })
+
+  it('a manual run uses the checkout\'s scripts/backup-db.sh, and stops if there is none', () => {
+    const fx = makeFixture({ incoming: null, backupScript: null })
+    const run = runDeploy(fx)
+    assert.equal(run.status, 0, run.stderr)
+    assert.equal(dumpsIn(fx).length, 1)
+
+    const bare = makeFixture({ incoming: null, backupScript: null })
+    rmSync(join(bare.dir, 'scripts'), { recursive: true })
+    const refused = runDeploy(bare)
+    assert.notEqual(refused.status, 0)
+    assert.deepEqual(ups(refused.calls), [])
+    assert.equal(file(bare, '.env'), ENV_FILE)
+  })
+})
+
+describe('deploy-remote.sh — a crash-looping container fails fast (D29)', () => {
+  it('stops waiting once the new container has restarted more than twice, then rolls back', () => {
+    const fx = makeFixture()
+    const started = Date.now()
+    // 20 s cap: without the RestartCount check the wait polls every 5 s for 300 s.
+    const run = runDeploy(fx, { ...shipped(), FAKE_RESTART_LOOP_IMAGE: NEW_IMAGE, CDKT_HEALTH_INTERVAL: '0' }, 20_000)
+
+    assert.equal(run.status, 1, `the deploy did not fail fast (status ${run.status}) — still waiting out the health timeout?`)
+    assert.ok(Date.now() - started < 20_000)
+    const looks = run.calls.filter((c) => c.includes('RestartCount') && c.includes(`image=${NEW_IMAGE}`))
+    assert.ok(looks.length <= 4, `RestartCount was read ${looks.length} times — more than 3 polls`)
+    assert.match(run.stderr, /khởi động lại \d+ lần/, 'the crash loop is not named')
+    assert.match(run.stderr, /fake container log/, 'the container log tail was not printed')
+    // The existing rollback ran: previous image, previous compose.
+    assert.match(file(fx, '.env'), new RegExp(`^CDKT_IMAGE=${OLD_IMAGE}$`, 'm'))
+    assert.equal(file(fx, 'docker-compose.yml'), OLD_COMPOSE)
+    assert.match(run.stderr, /đã lùi về/)
+  })
+
+  it('a RestartCount already high before this deploy is not mistaken for a crash loop', () => {
+    // compose does not recreate an unchanged container, so its count can be days
+    // old. Seven old restarts, four "starting" polls, then healthy: no rollback.
+    const fx = makeFixture()
+    const run = runDeploy(fx, { ...shipped(), FAKE_RESTART_BASE: '7', FAKE_STARTING_POLLS: '4', CDKT_HEALTH_INTERVAL: '0' })
+    assert.equal(run.status, 0, run.stderr)
+    assert.doesNotMatch(run.stderr, /crash loop/)
+    assert.match(file(fx, '.env'), new RegExp(`^CDKT_IMAGE=${NEW_IMAGE}$`, 'm'))
+  })
+})
+
+describe('deploy-remote.sh — housekeeping after a healthy deploy (D31, D32)', () => {
+  const repo = 'ghcr.io/owner/repo'
+  // 12 sha-* tags: the one just deployed (newest) and 11 older ones.
+  const older = Array.from({ length: 11 }, (_, i) => String(i + 1).padStart(2, '0'))
+  const images = [
+    `${NEW_IMAGE}|2026-10-23T12:00:00.000000000Z|sha256:new`,
+    `${repo}:latest|2026-10-23T12:00:00.000000000Z|sha256:new`,
+    ...older.map((n) => `${repo}:sha-${n}|2026-10-${n}T00:00:00.000000000Z|sha256:id${n}`),
+    `cdkt-rollback/app:20261001T000000Z|2026-09-01T00:00:00.000000000Z|sha256:rollback`,
+  ].join(' ')
+
+  it('keeps the running image and the 5 newest others; removes the rest by tag, never by force', () => {
+    const fx = makeFixture()
+    const run = runDeploy(fx, { ...shipped(), FAKE_IMAGES: images })
+
+    assert.equal(run.status, 0, run.stderr)
+    const removed = run.calls.filter((c) => c.startsWith('image rm')).map((c) => c.split(' | ')[0])
+    assert.deepEqual(removed.sort(), ['01', '02', '03', '04', '05', '06'].map((n) => `image rm ${repo}:sha-${n}`),
+      `6 should remain (running + sha-07…sha-11):\n${run.calls.join('\n')}`)
+    assert.ok(!run.calls.some((c) => / -f |--force/.test(c) && c.startsWith('image rm')), 'an image was force-removed')
+    assert.ok(!run.calls.some((c) => c.includes('rm') && c.includes('cdkt-rollback')), 'the manage.sh rollback image was touched')
+    const lastRm = run.calls.map((c) => c.startsWith('image rm')).lastIndexOf(true)
+    const prune = run.calls.findIndex((c) => c.startsWith('image prune -f'))
+    assert.ok(prune > lastRm, 'dangling layers are not pruned after the tags are removed')
+  })
+
+  it('a failing image listing or disk check never fails a deploy that succeeded', () => {
+    const fx = makeFixture()
+    const run = runDeploy(fx, { ...shipped(), FAKE_IMAGES: images, FAKE_IMAGE_LS_FAIL: '1', FAKE_DOCKER_ROOT: '/nonexistent/docker-root' })
+    assert.equal(run.status, 0, run.stderr)
+  })
+
+  it('warns when the Docker data filesystem is more than 80% full', () => {
+    const fx = makeFixture()
+    writeFileSync(join(fx.bin, 'df'), '#!/usr/bin/env bash\nprintf "Use%%\\n 91%%\\n"\n')
+    chmodSync(join(fx.bin, 'df'), 0o755)
+    const run = runDeploy(fx, { ...shipped(), FAKE_DOCKER_ROOT: '/var/lib/docker' })
+    assert.equal(run.status, 0, run.stderr)
+    assert.match(run.stdout + run.stderr, /::warning::[^\n]*91%/)
+
+    const roomy = makeFixture()
+    writeFileSync(join(roomy.bin, 'df'), '#!/usr/bin/env bash\nprintf "Use%%\\n 42%%\\n"\n')
+    chmodSync(join(roomy.bin, 'df'), 0o755)
+    const ok = runDeploy(roomy, shipped())
+    assert.doesNotMatch(ok.stdout + ok.stderr, /42%/)
+  })
+
+  it('chowns the uploads volume only when its root is not owned by node', () => {
+    const fx = makeFixture()
+    const owned = runDeploy(fx, shipped())
+    assert.equal(owned.status, 0, owned.stderr)
+    assert.ok(owned.calls.some((c) => c.startsWith('exec cdkt_app stat -c %U /app/public/uploads')), 'the owner was never checked')
+    assert.ok(!owned.calls.some((c) => c.includes('chown')), 'a node-owned uploads tree was chowned again')
+
+    const rooted = makeFixture()
+    const fixed = runDeploy(rooted, { ...shipped(), FAKE_UPLOADS_OWNER: 'root' })
+    assert.equal(fixed.status, 0, fixed.stderr)
+    assert.ok(fixed.calls.some((c) => c.startsWith('exec -u root cdkt_app chown -R node:node /app/public/uploads')), fixed.calls.join('\n'))
   })
 })
 

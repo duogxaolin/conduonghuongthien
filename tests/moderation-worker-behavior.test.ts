@@ -218,6 +218,58 @@ test('AI chưa cấu hình → flag_only (không ẩn) vào hàng đợi; lỗi 
   assert.equal(b.severity, 'critical')
 })
 
+/**
+ * Moderation that did not complete is now SAID, without changing what it decides
+ * (spec comment-notifications: "a moderation failure MUST NOT send the e-mail").
+ * Before, a provider error, a parse error or a thrown call all came back as the
+ * very same `{ flagged: false, action: 'allow' }` as a clean "safe" verdict — the
+ * reply-email path could not tell "the AI said fine" from "the AI never answered".
+ * `aiFailed: true` (+ `aiFailure`) marks the second case; the verdict fields and
+ * every side effect (queue rows, hiding) are exactly what they were.
+ */
+test('AI failed (provider error / exception / unparseable / unknown verdict) → same allow verdict, plus aiFailed', async () => {
+  const cases: Array<[string, () => void, string]> = [
+    ['provider error', () => { rec.ai = { ok: false, error: 'provider_error' } }, 'provider_error'],
+    ['budget exceeded', () => { rec.ai = { ok: false, error: 'budget_exceeded' } }, 'budget_exceeded'],
+    ['ok but empty text', () => { rec.ai = { ok: true, text: '' } }, 'empty_response'],
+    ['call threw', () => { rec.aiThrows = true }, 'exception'],
+    ['not JSON', () => { rec.ai = { ok: true, text: 'Tôi nghĩ là an toàn.' } }, 'parse_error'],
+    ['unknown verdict', () => { rec.ai = { ok: true, text: '{"verdict":"maybe"}' } }, 'unrecognised_verdict'],
+  ]
+  for (const [name, arrange, failure] of cases) {
+    reset(svc)
+    arrange()
+    const result = await svc.checkAndModerateContent({ content: 'một câu lạ', targetType: 'comment', targetId: 4 })
+    assert.equal(result.flagged, false, `${name}: verdict changed`)
+    assert.equal(result.action, 'allow', `${name}: verdict changed`)
+    assert.equal(rec.queue.length, 0, `${name}: side effects changed`)
+    assert.equal(rec.updates.length, 0, `${name}: side effects changed`)
+    assert.equal(result.aiFailed, true, `${name}: the failure is not reported`)
+    assert.equal(result.aiFailure, failure)
+  }
+})
+
+test('aiFailed is set only when the AI was asked and did not answer usably', async () => {
+  reset(svc)
+  rec.ai = { ok: true, text: '{"verdict":"safe"}' }
+  assert.equal((await svc.checkAndModerateContent({ content: 'một câu lạ', targetType: 'comment', targetId: 4 })).aiFailed, undefined, 'clean verdict')
+  reset(svc)
+  rec.ai = { ok: true, text: '{"verdict":"spam","riskLevel":"high","reason":"quảng cáo"}' }
+  const spam = await svc.checkAndModerateContent({ content: 'một câu lạ', targetType: 'comment', targetId: 4 })
+  assert.equal(spam.action, 'auto_hide')
+  assert.equal(spam.aiFailed, undefined, 'a violation verdict is an answer')
+  reset(svc)
+  rec.ai = { ok: false, error: 'no_api_key' }
+  const unconfigured = await svc.checkAndModerateContent({ content: 'một câu lạ', targetType: 'comment', targetId: 4 })
+  assert.equal(unconfigured.action, 'flag_only', 'AI not configured keeps its own path (human review)')
+  assert.equal(unconfigured.aiFailed, undefined)
+  reset(svc)
+  const instant = await svc.checkAndModerateContent({ content: 'mày dcm', targetType: 'comment', targetId: 4 })
+  assert.equal(instant.action, 'auto_hide')
+  assert.equal(instant.aiFailed, undefined, 'the instant block never asks the AI')
+  assert.equal(rec.aiCalls, 0)
+})
+
 test('rescanExistingContent trả cấu trúc tổng kết', async () => {
   reset(svc)
   const r = await svc.rescanExistingContent()

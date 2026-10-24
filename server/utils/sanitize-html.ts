@@ -1,4 +1,6 @@
-import type { BlockData, BlockFieldValue } from '../../app/utils/blocks/types'
+import type { BlockData, BlockFieldValue } from '../../shared/blocks/types'
+import { BLOCK_REGISTRY } from '../../shared/blocks/registry'
+import { assertSafeLink, safeLinkOrNull } from '../../shared/link-policy'
 /**
  * Dependency-free, allowlist HTML sanitizer for admin-authored rich text
  * (article bodies, richtext / content_aside blocks). Rendered on the public site
@@ -256,4 +258,124 @@ export function sanitizeBlockData(data: unknown): BlockData {
     )
   }
   return obj
+}
+
+// ─── Link fields (spec page-builder-links, design D3) ────────────────────────
+//
+// Which fields of a block are LINKS comes from the registry, not from field
+// names: every field declared `type: 'url'`, and every `type: 'url'` column of an
+// `array` field (`links[].url`). Names alone would be wrong both ways — `image`
+// and `gallery` blocks have a `url` that is an image source (`type: 'image'`,
+// rendered as `src`, out of this policy's scope), while a link may be called
+// `btnLink`. The policy itself lives in `shared/link-policy.ts`.
+//
+// Kept apart from `sanitizeBlockData` on purpose: that function only knows the
+// data, not the block type, and `stored-html-sanitize.ts` reuses it for a repair
+// that must not start rewriting links.
+
+interface BlockLinkFields {
+  /** Top-level `type: 'url'` keys. */
+  fields: string[]
+  /** `type: 'array'` keys with the `type: 'url'` keys of each item. */
+  arrays: Array<{ key: string, itemFields: string[] }>
+}
+
+const NO_LINK_FIELDS: BlockLinkFields = { fields: [], arrays: [] }
+
+const linkFieldCache = new Map<string, BlockLinkFields>()
+
+function linkFieldsOf(blockType: string): BlockLinkFields {
+  const cached = linkFieldCache.get(blockType)
+  if (cached) return cached
+  const definition = Object.hasOwn(BLOCK_REGISTRY, blockType) ? BLOCK_REGISTRY[blockType] : undefined
+  if (!definition) return NO_LINK_FIELDS
+  const spec: BlockLinkFields = { fields: [], arrays: [] }
+  for (const field of definition.fields) {
+    if (field.type === 'url') spec.fields.push(field.key)
+    if (field.type === 'array') {
+      const itemFields = (field.itemSchema ?? []).filter(column => column.type === 'url').map(column => column.key)
+      if (itemFields.length) spec.arrays.push({ key: field.key, itemFields })
+    }
+  }
+  linkFieldCache.set(blockType, spec)
+  return spec
+}
+
+/**
+ * Calls `visit` on every link value of one record (the block's `data`, or one
+ * `translations[lang]` override) and writes back what it returns, when it returns
+ * a string. Copies what it changes — the caller's object is never mutated.
+ */
+function mapLinkFields(
+  spec: BlockLinkFields,
+  record: BlockRecord,
+  prefix: string,
+  visit: (value: BlockFieldValue, path: string) => string | undefined,
+): BlockRecord {
+  const out: BlockRecord = { ...record }
+  for (const key of spec.fields) {
+    if (!Object.hasOwn(out, key)) continue
+    const replaced = visit(out[key], `${prefix}${key}`)
+    if (replaced !== undefined) out[key] = replaced
+  }
+  for (const { key, itemFields } of spec.arrays) {
+    const items = out[key]
+    if (!Array.isArray(items)) continue
+    out[key] = items.map((item, index) => {
+      if (!isBlockRecord(item)) return item
+      const copy: BlockRecord = { ...item }
+      for (const field of itemFields) {
+        if (!Object.hasOwn(copy, field)) continue
+        const replaced = visit(copy[field], `${prefix}${key}[${index}].${field}`)
+        if (replaced !== undefined) copy[field] = replaced
+      }
+      return copy
+    })
+  }
+  return out
+}
+
+/** `mapLinkFields` over the block's data AND each `data.translations[lang]` override. */
+function mapBlockLinks(
+  blockType: string,
+  data: BlockRecord,
+  visit: (value: BlockFieldValue, path: string) => string | undefined,
+): BlockRecord {
+  const spec = linkFieldsOf(blockType)
+  if (!spec.fields.length && !spec.arrays.length) return data
+  const out = mapLinkFields(spec, data, '', visit)
+  const translations = out.translations
+  if (isBlockRecord(translations)) {
+    out.translations = Object.fromEntries(Object.entries(translations).map(([lang, override]) => [
+      lang,
+      isBlockRecord(override) ? mapLinkFields(spec, override, `translations.${lang}.`, visit) : override,
+    ]))
+  }
+  return out
+}
+
+/**
+ * WRITE side: throw `UnsafeLinkError` (shared/link-policy.ts) naming the first
+ * link field — e.g. `links[2].url`, `translations.en.btnLink` — whose value is
+ * neither empty nor an allowed link. The caller turns it into a 400.
+ */
+export function assertSafeBlockLinks(blockType: string, data: unknown): void {
+  if (!isBlockRecord(data)) return
+  mapBlockLinks(blockType, data, (value, path) => {
+    assertSafeLink(value, path)
+    return undefined
+  })
+}
+
+/**
+ * READ side: a copy of `data` in which every link that is not allowed is
+ * replaced by an empty string — rows stored before the rule existed are served
+ * with no link rather than with the script (spec: "replaced by an empty link").
+ * Allowed and empty links are returned unchanged.
+ */
+export function blankUnsafeBlockLinks(blockType: string, data: BlockData): BlockData {
+  return mapBlockLinks(blockType, data, (value) => {
+    if (value === undefined || value === null || value === '') return undefined
+    return safeLinkOrNull(value) === null ? '' : undefined
+  })
 }

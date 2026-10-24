@@ -5,16 +5,22 @@
 # được triển khai, chứ không phải bản nào đó nằm sẵn trên máy chủ từ năm ngoái.
 #
 #   [INCOMING_COMPOSE=<tệp> INCOMING_COMPOSE_SHA256=<hex>] \
+#   [INCOMING_BACKUP_SCRIPT=<tệp> INCOMING_BACKUP_SCRIPT_SHA256=<hex>] \
 #     deploy-remote.sh <app-dir> <image-ref> [container] [health-timeout-seconds]
 #
-# Việc build đã xong ở CI: ở đây chỉ kéo image, đặt docker-compose.yml của đúng
-# commit đó vào chỗ, trỏ compose vào image, và xác nhận container mới thật sự
-# khoẻ. Không khoẻ thì lùi về image (và compose) trước đó — một lượt deploy hỏng
-# mà vẫn báo thành công là kiểu hỏng tệ nhất, vì không ai đi tìm.
+# Việc build đã xong ở CI: ở đây chỉ kéo image, sao lưu CSDL, đặt
+# docker-compose.yml của đúng commit đó vào chỗ, trỏ compose vào image, và xác nhận
+# container mới thật sự khoẻ. Không khoẻ thì lùi về image (và compose) trước đó —
+# một lượt deploy hỏng mà vẫn báo thành công là kiểu hỏng tệ nhất, vì không ai đi tìm.
 #
 # INCOMING_COMPOSE (đường dẫn tương đối với <app-dir>) là docker-compose.yml mà
 # CI vừa gửi lên. Không đặt thì giữ nguyên tệp đang có — chỉ dành cho lượt chạy
 # tay; CI luôn đặt, kèm SHA-256 để phát hiện tệp bị cụt trên đường truyền.
+#
+# INCOMING_BACKUP_SCRIPT là scripts/backup-db.sh của CHÍNH commit này, CI gửi vào
+# .deploy-incoming/ (một cấp dưới <app-dir>, nên script tự tìm đúng .env). Bản
+# trong bản clone git trên VPS chỉ mới khi có người `git pull` — có thể là bản
+# chưa biết `--prefix`. Không đặt (lượt chạy tay) thì dùng scripts/backup-db.sh.
 set -euo pipefail
 
 APP_DIR=${1:?thiếu đường dẫn thư mục ứng dụng}
@@ -23,6 +29,11 @@ CONTAINER=${3:-cdkt_app}
 HEALTH_TIMEOUT=${4:-300}
 INCOMING_COMPOSE=${INCOMING_COMPOSE:-}
 INCOMING_COMPOSE_SHA256=${INCOMING_COMPOSE_SHA256:-}
+INCOMING_BACKUP_SCRIPT=${INCOMING_BACKUP_SCRIPT:-}
+INCOMING_BACKUP_SCRIPT_SHA256=${INCOMING_BACKUP_SCRIPT_SHA256:-}
+# Nhịp hỏi trạng thái container (giây). Chỉ test rút ngắn — cùng tên biến với
+# manage.sh.
+HEALTH_INTERVAL=${CDKT_HEALTH_INTERVAL:-5}
 
 # Tên tệp compose mặc định mà mọi lệnh `docker compose` ở đây (và lệnh gõ tay
 # của người vận hành) đọc. Không đặt tên biến là COMPOSE_FILE: docker compose
@@ -30,6 +41,18 @@ INCOMING_COMPOSE_SHA256=${INCOMING_COMPOSE_SHA256:-}
 LIVE_COMPOSE=docker-compose.yml
 COMPOSE_BACKUP_DIR=.deploy-compose-backups
 COMPOSE_BACKUP_KEEP=10
+# Bản dump CSDL trước mỗi lượt đổi image. Cạnh .deploy-compose-backups/ chứ không
+# trong ./backups: ./backups là bind mount mà entrypoint của container giao cho
+# user `node` (uid 1000) mỗi lần khởi động, nên user deploy của CI (root, hoặc một
+# user thuộc group docker) không chắc ghi được vào đó; thư mục ứng dụng thì lượt
+# deploy vốn đã phải ghi được (.env, compose). backup-db.sh giữ PREFIX_KEEP=5 bản.
+PREDEPLOY_DIR=.deploy-db-backups
+PREDEPLOY_PREFIX=cdkt-predeploy
+# Container khởi động lại quá số lần này trong lúc chờ healthy = crash loop.
+MAX_RESTARTS=2
+# Sau một lượt khoẻ: giữ image đang chạy + IMAGE_KEEP bản sha-* mới nhất khác.
+IMAGE_KEEP=5
+DISK_WARN_PCT=80
 
 cd "$APP_DIR"
 
@@ -38,12 +61,18 @@ TMP_COMPOSE=''
 # Bản sao lưu compose của CHÍNH lượt này — rỗng nghĩa là compose không đổi (hoặc
 # trước đó chưa có), nên đường lùi không có gì để trả về.
 COMPOSE_BACKUP=''
+# Đã in log container rồi (wait_healthy gặp crash loop) — đường lùi khỏi in lại.
+LOGS_SHOWN=''
 # Không để lệnh cuối của trap quyết định mã thoát của script.
 cleanup() {
   if [ -n "$TMP_ENV" ]; then rm -f "$TMP_ENV"; fi
   if [ -n "$TMP_COMPOSE" ]; then rm -f "$TMP_COMPOSE"; fi
   # Tệp CI gửi lên không bao giờ được nằm lại: lượt sau phải nhận bản của nó.
   if [ -n "$INCOMING_COMPOSE" ]; then rm -f "$INCOMING_COMPOSE"; fi
+  if [ -n "$INCOMING_BACKUP_SCRIPT" ]; then
+    rm -f "$INCOMING_BACKUP_SCRIPT"
+    rmdir "$(dirname "$INCOMING_BACKUP_SCRIPT")" 2>/dev/null || true
+  fi
 }
 trap cleanup EXIT
 
@@ -70,8 +99,26 @@ set_image() {
   TMP_ENV=''
 }
 
+show_container_logs() {
+  { docker logs --tail 60 "$CONTAINER" 2>&1 | sed 's/^/    /' >&2; } || true
+  LOGS_SHOWN=1
+}
+
+# Số lần Docker đã khởi động lại container (chính sách `restart: always`). Không
+# đọc được / không phải số → 0: một lần inspect hỏng không được biến thành
+# "crash loop" và kéo theo một lượt lùi oan.
+restart_count() {
+  local n
+  n=$(docker inspect --format '{{.RestartCount}}' "$CONTAINER" 2>/dev/null || true)
+  case "$n" in ''|*[!0-9]*) n=0 ;; esac
+  echo "$n"
+}
+
 wait_healthy() {
-  local deadline=$((SECONDS + HEALTH_TIMEOUT)) status
+  local deadline=$((SECONDS + HEALTH_TIMEOUT)) status base restarts
+  # Mốc tính từ LẦN CHỜ NÀY: compose không tạo lại một container không đổi gì, nên
+  # con số tuyệt đối có thể đã cao từ nhiều ngày trước.
+  base=$(restart_count)
   while [ "$SECONDS" -lt "$deadline" ]; do
     status=$(docker inspect \
       --format '{{if .State.Health}}{{.State.Health.Status}}{{else}}none{{end}}' \
@@ -87,7 +134,17 @@ wait_healthy() {
         return 1
         ;;
       *)
-        sleep 5
+        # Container chết ngay khi khởi động (thiếu biến, migration hỏng…) được
+        # Docker dựng lại liên tục và không bao giờ "unhealthy" đủ lâu: chờ hết
+        # HEALTH_TIMEOUT là 5 phút vô ích trước khi lùi. Quá MAX_RESTARTS lần thì
+        # dừng chờ ngay, in log, để đường lùi sẵn có chạy.
+        restarts=$(( $(restart_count) - base ))
+        if [ "$restarts" -gt "$MAX_RESTARTS" ]; then
+          echo "::error::$CONTAINER đã khởi động lại $restarts lần trong lúc chờ healthy — crash loop, không chờ hết ${HEALTH_TIMEOUT}s" >&2
+          show_container_logs
+          return 1
+        fi
+        sleep "$HEALTH_INTERVAL"
         ;;
     esac
   done
@@ -96,22 +153,84 @@ wait_healthy() {
 }
 
 # Volume `uploads_data` được tạo từ image root-cũ thì giữ quyền root, trong khi
-# container app chạy bằng user `node` (USER node trong Dockerfile) → ghi file
-# upload bị từ chối → 500. Chạy lệnh này bằng root MỘT LẦN để chuyển quyền về node.
-# Đặt TẠI ĐÂY trong deploy script chứ không phải hướng dẫn thủ công: CI/CD luồng
-# main tự lo việc này mỗi lượt deploy, nên deploy mới không phải chạy tay `chown`
-# trên VPS. Idempotent: đã là node thì chown-node giữ nguyên, không lỗi.
-# Lệnh KHÔNG nằm trong luồng healthy-check: một lần chown thất bại (volume lạ,
-# partition read-only...) không được phép làm hỏng hoặc lùi lượt deploy — file
-# cũ vẫn phục vụ được, chỉ upload mới tạm nghẽn cho tới khi admin xử lý.
+# tiến trình app chạy bằng user `node` (entrypoint hạ quyền bằng su-exec) → ghi file
+# upload bị từ chối → 500. Entrypoint đã tự sửa lúc khởi động; đây là lưới thứ hai,
+# chạy sau mỗi lượt deploy khoẻ để không ai phải SSH vào sửa tay.
+#
+# Chỉ `chown -R` khi GỐC cây chưa thuộc node: cây uploads có thể hàng chục GB, và đi
+# hết nó mỗi lượt deploy là việc vô ích. Hỏi qua `docker exec` vào container vừa
+# khoẻ — không dựng một container một-lần chỉ để đọc tên chủ sở hữu.
+# KHÔNG nằm trong luồng healthy-check: một lần chown thất bại (volume lạ, partition
+# read-only...) không được phép làm hỏng hoặc lùi lượt deploy — file cũ vẫn phục vụ
+# được, chỉ upload mới tạm nghẽn cho tới khi admin xử lý.
 fix_uploads_ownership() {
-  echo "▸ Chuẩn bị quyền ghi thư mục uploads cho user node"
-  # `|| true` ngoài: lượt chown thất bại không được làm hỏng hay lùi lượt deploy —
-  # file cũ vẫn phục vụ được, chỉ upload mới tạm nghẽn cho tới khi admin xử lý.
-  docker compose run --rm --no-deps --user root --entrypoint sh \
-    app -c 'chown -R node:node /app/public/uploads' >/dev/null 2>&1 \
-    && echo "  ✓ Đã chuyển quyền uploads" \
-    || echo "  ::warning::chown uploads thất bại — upload local có thể bị 500 nếu volume vẫn thuộc root" >&2
+  local owner
+  owner=$(docker exec "$CONTAINER" stat -c %U /app/public/uploads 2>/dev/null || true)
+  if [ "$owner" = node ]; then
+    return 0
+  fi
+  echo "▸ uploads thuộc '${owner:-?}' — chuyển quyền cho user node"
+  if docker exec -u root "$CONTAINER" chown -R node:node /app/public/uploads >/dev/null 2>&1; then
+    echo "  ✓ Đã chuyển quyền uploads"
+  else
+    echo "  ::warning::chown uploads thất bại — upload local có thể bị 500 nếu volume vẫn thuộc root" >&2
+  fi
+}
+
+# Sau một lượt deploy khoẻ: gỡ image app cũ THEO THẺ. `docker image prune` chỉ dọn
+# layer lơ lửng, không bao giờ gỡ image còn thẻ — mỗi lượt deploy để lại một image
+# sha-* nguyên vẹn, và đĩa VPS đầy dần. Giữ image đang chạy + IMAGE_KEEP bản sha-*
+# mới nhất khác (đích lùi tay), xét theo thời điểm tạo; chỉ xét thẻ `sha-*` của
+# CHÍNH repo image này, nên thẻ lùi `cdkt-rollback/app:*` của manage.sh không bao giờ
+# lọt vào. `docker image rm` không `-f`: image còn container dùng thì Docker từ chối,
+# và lời từ chối đó đúng. Cùng hàm với production/manage.sh (Update).
+#
+# Không lệnh nào ở đây được làm hỏng một lượt deploy đã thành công: hàm được gọi
+# với `|| true`, mọi lỗi chỉ thành cảnh báo.
+prune_app_images() {
+  local repo="${1%:*}" running_id tag line
+  local -a rows=() sorted=()
+  running_id=$(docker image inspect --format '{{.Id}}' "$1" 2>/dev/null || true)
+  if [ -z "$running_id" ]; then
+    echo "  ::warning::không đọc được ID của $1 — bỏ qua bước dọn image" >&2
+    return 0
+  fi
+  while IFS= read -r tag; do
+    case "$tag" in
+      sha-*) ;;
+      *) continue ;;
+    esac
+    line=$(docker image inspect --format '{{.Created}} {{.Id}}' "$repo:$tag" 2>/dev/null || true)
+    if [ -z "$line" ] || [ "${line##* }" = "$running_id" ]; then
+      continue
+    fi
+    rows+=("${line%% *} $tag")
+  done < <(docker image ls --format '{{.Tag}}' "$repo" 2>/dev/null || true)
+  if [ "${#rows[@]}" -gt "$IMAGE_KEEP" ]; then
+    # Thời điểm tạo dạng RFC 3339 UTC: so chữ là so thời gian. Mới nhất trước.
+    mapfile -t sorted < <(printf '%s\n' "${rows[@]}" | sort -r)
+    for line in "${sorted[@]:IMAGE_KEEP}"; do
+      tag=${line##* }
+      if docker image rm "$repo:$tag" >/dev/null 2>&1; then
+        echo "  ✓ Gỡ image cũ $repo:$tag"
+      else
+        echo "  ::warning::không gỡ được $repo:$tag (còn container dùng?) — để lại" >&2
+      fi
+    done
+  fi
+  docker image prune -f >/dev/null 2>&1 || true
+}
+
+# Cảnh báo (không chặn) khi đĩa chứa dữ liệu Docker sắp đầy: image, volume
+# uploads/media và log container đều nằm trên đó.
+warn_disk_usage() {
+  local root pct
+  root=$(docker info --format '{{.DockerRootDir}}' 2>/dev/null || true)
+  root=${root:-/var/lib/docker}
+  pct=$(df --output=pcent "$root" 2>/dev/null | tail -n 1 | tr -dc '0-9' || true)
+  if [ -n "$pct" ] && [ "$pct" -gt "$DISK_WARN_PCT" ]; then
+    echo "::warning::đĩa chứa dữ liệu Docker ($root) đã dùng ${pct}% (ngưỡng ${DISK_WARN_PCT}%) — dọn image/backup cũ trước khi đầy"
+  fi
 }
 
 # Migration: TRUSTED_PROXY_IPS cũ dùng IP cố định (172.17.0.1, 172.18.0.1,
@@ -159,6 +278,50 @@ verify_incoming_compose() {
   actual=$(sha256_of "$INCOMING_COMPOSE")
   if [ "$actual" != "$INCOMING_COMPOSE_SHA256" ]; then
     echo "::error::tệp compose nhận được bị hỏng trên đường truyền (sha256 $actual, mong đợi $INCOMING_COMPOSE_SHA256)" >&2
+    exit 1
+  fi
+}
+
+# Cùng phép kiểm cho scripts/backup-db.sh mà CI gửi kèm: một tệp cụt vẫn có thể là
+# bash chạy được (đứt ở ranh giới dòng), và một bước sao lưu chạy nửa vời thì tệ
+# hơn không chạy.
+verify_incoming_backup_script() {
+  if [ -z "$INCOMING_BACKUP_SCRIPT" ]; then
+    echo "  ::warning::không có INCOMING_BACKUP_SCRIPT — dùng scripts/backup-db.sh của bản clone trên máy chủ (chỉ hợp lệ cho lượt chạy tay)" >&2
+    return 0
+  fi
+  if [ ! -f "$INCOMING_BACKUP_SCRIPT" ]; then
+    echo "::error::không tìm thấy script sao lưu CI gửi lên: $APP_DIR/$INCOMING_BACKUP_SCRIPT" >&2
+    exit 1
+  fi
+  if [ -z "$INCOMING_BACKUP_SCRIPT_SHA256" ]; then
+    echo "::error::thiếu INCOMING_BACKUP_SCRIPT_SHA256 — không xác nhận được script sao lưu còn nguyên vẹn" >&2
+    exit 1
+  fi
+  local actual
+  actual=$(sha256_of "$INCOMING_BACKUP_SCRIPT")
+  if [ "$actual" != "$INCOMING_BACKUP_SCRIPT_SHA256" ]; then
+    echo "::error::script sao lưu nhận được bị hỏng trên đường truyền (sha256 $actual, mong đợi $INCOMING_BACKUP_SCRIPT_SHA256)" >&2
+    exit 1
+  fi
+}
+
+# Dump CSDL TRƯỚC khi đổi bất cứ thứ gì trên máy chủ (compose, .env, container),
+# bằng chính backup-db.sh — cùng phép kiểm (gzip, dấu "Dump completed", ≥ 20 bảng,
+# kích thước), tên riêng `cdkt-predeploy-<db>-<thời-điểm>-<pid>.sql.gz`, giữ 5 bản.
+# Đây là điểm lùi dữ liệu của lượt này: một image mới chạy migration hỏng vẫn còn
+# bản CSDL của image trước. Dump hỏng (đĩa đầy, mysql dừng…) thì DỪNG — triển khai
+# mà không có điểm lùi là đúng ca bản sao lưu này tồn tại để chặn. Chưa chạm gì,
+# nên dừng ở đây để lại máy chủ y như trước lượt này.
+predeploy_dump() {
+  local script="${INCOMING_BACKUP_SCRIPT:-scripts/backup-db.sh}"
+  echo "▸ Sao lưu CSDL trước khi đổi image (image đang chạy: ${PREVIOUS:-chưa đặt}) → $PREDEPLOY_DIR/"
+  if [ ! -f "$script" ]; then
+    echo "::error::không có $script để sao lưu CSDL trước deploy — dừng, chưa chạm container hay .env nào" >&2
+    exit 1
+  fi
+  if ! bash "$script" --prefix "$PREDEPLOY_PREFIX" "$PWD/$PREDEPLOY_DIR"; then
+    echo "::error::sao lưu CSDL trước deploy thất bại (đĩa đầy? mysql không chạy?) — dừng, chưa chạm container hay .env nào. Sửa nguyên nhân rồi chạy lại job; cần gấp thì ./manage.sh → Update (hỏi riêng bước sao lưu)" >&2
     exit 1
   fi
 }
@@ -263,37 +426,43 @@ start_app() {
   docker compose up -d --no-deps app || return 1
 }
 
-# Không có gì ở đây chạm vào máy chủ trước khi tệp compose được xác nhận nguyên vẹn.
+# Không có gì ở đây chạm vào máy chủ trước khi các tệp CI gửi lên được xác nhận
+# nguyên vẹn.
 verify_incoming_compose
+verify_incoming_backup_script
 
 # Kéo image TRƯỚC khi đụng vào .env hay docker-compose.yml: registry hỏng, tag
 # sai, hay mất mạng thì deployment đang chạy không bị sứt mẻ gì.
 echo "▸ Kéo $IMAGE"
 docker pull "$IMAGE"
 
+PREVIOUS=$(current_image)
+echo "▸ Image hiện tại: ${PREVIOUS:-(chưa đặt)}"
+
+# Sau khi image chắc chắn có, trước MỌI thay đổi: install_compose và
+# migrate_trusted_proxy_ips đều ghi tệp — dump hỏng sau chúng sẽ để lại compose
+# mới cạnh container cũ.
+predeploy_dump
+
 install_compose
 
 migrate_trusted_proxy_ips
-
-PREVIOUS=$(current_image)
-echo "▸ Image hiện tại: ${PREVIOUS:-(chưa đặt)}"
 
 set_image "$IMAGE"
 
 echo "▸ Khởi động lại app"
 if start_app && wait_healthy; then
   echo "✅ $CONTAINER healthy trên $IMAGE"
-  # Volume uploads_data tạo từ image root-cũ giữ quyền root; container app chạy
-  # bằng node nên ghi upload bị 500. Chạy một lượt chown tự động để không phải
-  # SSH vào máy sửa tay sau mỗi lần kéo image mới.
-  fix_uploads_ownership
-  # Giữ lịch sử một tuần để còn lùi được; dọn phần cũ hơn cho khỏi đầy đĩa.
-  docker image prune -f --filter 'until=168h' >/dev/null 2>&1 || true
+  # Việc dọn dẹp sau một lượt đã khoẻ: không bước nào được làm hỏng lượt deploy.
+  fix_uploads_ownership || true
+  echo "▸ Dọn image app cũ (giữ image đang chạy + $IMAGE_KEEP bản sha-* mới nhất)"
+  prune_app_images "$IMAGE" || true
+  warn_disk_usage || true
   exit 0
 fi
 
 echo "▸ Lùi lại image trước đó" >&2
-docker logs --tail 60 "$CONTAINER" 2>&1 | sed 's/^/    /' >&2 || true
+if [ -z "$LOGS_SHOWN" ]; then show_container_logs; fi
 
 if [ -z "$PREVIOUS" ]; then
   # Lượt deploy đầu tiên: không có gì để lùi về. Nói thẳng ra thay vì im lặng.

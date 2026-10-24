@@ -51,7 +51,6 @@ export default defineEventHandler(async (event) => {
         byAge: entry.deletedByAge,
         byRowCap: entry.deletedByRowCap,
       })),
-      purgedRateLimits: outcome.result.purgedRateLimits,
     },
   })
 

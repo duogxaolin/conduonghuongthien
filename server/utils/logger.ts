@@ -107,3 +107,17 @@ export const SECURITY_EVENTS = {
   linkHostRejected: 'security.link_host_rejected',
   linkHostUnchecked: 'security.link_host_unchecked',
 } as const
+
+/**
+ * Events from the schema migrations that run on every container start
+ * (`init.ts` → `migrations-additive.ts`). Kept apart from SECURITY_EVENTS: they
+ * mean "the schema could not reach its intended shape without destroying data",
+ * not an attack. Error level, one line per boot, counts only — never row data.
+ */
+export const BOOT_MIGRATION_EVENTS = {
+  // `media_items.category_id` has no correct FK and some rows point at no
+  // `media_categories` row. The FK is left as it is (adding it would fail and
+  // crash-loop the container) and the values are kept (clearing them is the
+  // 2026-09-22 boot-wipe bug). Payload: `{ danglingRows }`.
+  mediaCategoryFkBlocked: 'db.migration.media_category_fk_blocked',
+} as const

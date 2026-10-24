@@ -3,11 +3,14 @@
 # Đối chiếu tài nguyên máy chủ với trần đang đặt cho container, rồi đề xuất giá
 # trị hợp lý.
 #
-# Trần RAM trong docker-compose.yml mặc định 1g/1g — chọn cho VPS 1-2 GB. Con số
-# đó không tự lớn lên khi máy chủ được nâng cấp, nên một VPS 8 GB vẫn đang ép
-# MySQL chạy trong 1 GB. Đây không phải lỗi thấy được: MySQL đọc giới hạn cgroup
-# chứ KHÔNG đọc RAM máy chủ để tự tính InnoDB buffer pool, nên nó chỉ đơn giản là
-# chậm hơn mức đáng ra phải có, mãi mãi, mà không có gì báo.
+# Trần RAM trong docker-compose.yml mặc định là KHÔNG giới hạn:
+# `${MYSQL_MEM_LIMIT:-0}` / `${APP_MEM_LIMIT:-0}`, và `0` nghĩa là "không trần"
+# với Docker. Trần chỉ có khi .env đặt hai biến đó (tay, hoặc `./manage.sh
+# media-tuning` lấy số từ script này). Một trần đã đặt thì không tự lớn lên khi
+# máy chủ được nâng cấp, nên một VPS 8 GB có thể vẫn đang ép MySQL chạy trong 1 GB.
+# Đây không phải lỗi thấy được: MySQL đọc giới hạn cgroup chứ KHÔNG đọc RAM máy
+# chủ để tự tính InnoDB buffer pool, nên nó chỉ đơn giản là chậm hơn mức đáng ra
+# phải có, mãi mãi, mà không có gì báo.
 #
 # Chiều ngược lại cũng có thật: nới trần trên một máy còn chạy dự án khác thì
 # OOM-killer sẽ hạ một container KHÁC — nạn nhân không phải thủ phạm. Vì vậy

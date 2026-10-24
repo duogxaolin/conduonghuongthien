@@ -1,5 +1,8 @@
 <template>
   <div class="bg-[#F8FAF7]">
+    <!-- Một trang đúng một <h1> (D22): khối "heading" mở bằng <h2>, nên khi không
+         khối nào tự có <h1> (hero) thì trang đặt một <h1> cho trình đọc màn hình. -->
+    <h1 v-if="blocks.length && !pageHasOwnH1" class="sr-only">{{ t('contact_fallback_title') }}</h1>
     <PageRenderer
       v-if="pending || loadError || blocks.length"
       :blocks="blocks"
@@ -24,6 +27,7 @@
 import { computed, onMounted, watch } from 'vue'
 import { useI18n } from '~/composables/useI18n'
 import { useSsrFailureStatus } from '~/composables/useSsrFailureStatus'
+import { blocksRenderOwnH1 } from '~/utils/blocks/page-heading'
 
 const { currentLang, t } = useI18n()
 
@@ -60,6 +64,7 @@ const page = computed(() => data.value?.page || null)
 // pushed via postMessage override the fetched ones (see usePagePreview).
 const { isPreview, previewBlocks, selectedId } = usePagePreview()
 const blocks = computed(() => previewBlocks.value ?? data.value?.blocks ?? [])
+const pageHasOwnH1 = computed(() => blocksRenderOwnH1(blocks.value))
 
 useSeoMeta({
   title: () => page.value?.seoTitle || t('contact_seo_title'),

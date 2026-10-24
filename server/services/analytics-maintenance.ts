@@ -9,6 +9,7 @@ import {
   resolveAnalyticsRetentionConfig,
 } from '../utils/analytics-config'
 import { tryRuntimeConfig } from '../utils/runtime-config'
+import { logWarn } from '../utils/logger'
 import {
   normalizeAnalyticsNocEvent,
   type AnalyticsNocErrorCode,
@@ -212,6 +213,50 @@ async function purgeInBatches(
   return { count, bounded: true }
 }
 
+/**
+ * Raw page-view events older than the cutoff, of days whose aggregation completed.
+ *
+ * Single-table on purpose. The first version was `DELETE e FROM … INNER JOIN
+ * analytics_maintenance_runs … LIMIT ?`: MySQL refuses LIMIT on a multi-table
+ * DELETE (error 1064), so raw events were never purged — and the error was
+ * swallowed. A subquery on ANOTHER table is allowed with LIMIT (MySQL forbids only
+ * a subquery reading the table being deleted from). Verified on MySQL 8 by
+ * `tests/analytics-maintenance-integration.test.ts`.
+ */
+const RAW_EVENT_PURGE = `DELETE FROM analytics_page_view_events
+  WHERE occurred_at < ? AND event_day IN (SELECT day FROM analytics_maintenance_runs WHERE status = 'complete')
+  LIMIT ?`
+
+/**
+ * Daily tables past aggregate retention. `analytics_maintenance_runs` is last:
+ * the raw-event purge above reads it to know which days were aggregated.
+ */
+const AGGREGATE_TABLES = [
+  'analytics_daily_dimensions', 'analytics_daily_pages', 'analytics_daily_traffic',
+  'analytics_daily_admin_users', 'analytics_maintenance_runs',
+] as const
+
+function errorCode(error: unknown): string {
+  const code = error && typeof error === 'object' ? (error as { code?: unknown }).code : undefined
+  if (typeof code === 'string' && code) return code
+  if (typeof code === 'number') return String(code)
+  return error instanceof Error && error.name ? error.name : 'unknown'
+}
+
+/**
+ * One retention step, on its own: a failure here never skips another step, and it
+ * is one log line naming the step and the driver's error code (never the message —
+ * a SQL error can quote row data). `null` means the step failed.
+ */
+async function purgeStep(step: string, purge: () => Promise<PurgeResult>): Promise<PurgeResult | null> {
+  try {
+    return await purge()
+  } catch (error) {
+    logWarn({ event: 'analytics.retention_step_failed', step, code: errorCode(error) })
+    return null
+  }
+}
+
 function utcMinute(date: Date) {
   return new Date(Date.UTC(
     date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate(),
@@ -349,53 +394,38 @@ export async function runAnalyticsMaintenance(options: MaintenanceOptions = {}):
         aggregationFailed = true
       }
 
-      if (!aggregationFailed) {
-        try {
-          const rawCutoff = retentionCutoff(now, rawRetentionDays * 24 * 60 * 60 * 1000)
-          const raw = await purgeInBatches(connection,
-            `DELETE e FROM analytics_page_view_events e INNER JOIN analytics_maintenance_runs m
-             ON m.day = e.event_day AND m.status = 'complete' WHERE e.occurred_at < ? LIMIT ?`, [rawCutoff], rawBatchSize, maxPurgeBatches)
-          purgedRaw = raw.count
-          retentionBounded ||= raw.bounded
-
-          const aggregateCutoff = shiftUtcDay(utcDay(now), -aggregateRetentionDays)
-          for (const table of ['analytics_daily_dimensions', 'analytics_daily_pages', 'analytics_daily_traffic', 'analytics_daily_admin_users', 'analytics_maintenance_runs']) {
-            const result = await purgeInBatches(connection, `DELETE FROM ${table} WHERE day < ? LIMIT ?`, [aggregateCutoff], aggregateBatchSize, maxPurgeBatches)
-            purgedAggregates += result.count
-            retentionBounded ||= result.bounded
-          }
-        } catch {
-          retentionFailed = true
-        }
+      /** Fold one step's outcome into the run status; returns the rows it purged. */
+      const tally = (result: PurgeResult | null): number => {
+        if (!result) { retentionFailed = true; return 0 }
+        retentionBounded ||= result.bounded
+        return result.count
       }
 
+      // Every purge below is its own step (`purgeStep`): one failing never skips
+      // the others, and each failure is logged by name. The first version wrapped
+      // the raw purge and all five daily tables in ONE `try`, so the raw purge's
+      // syntax error silently skipped every daily purge as well.
       if (!aggregationFailed) {
-        try {
-          const purged = await purgeExpiredLiveBuckets(connection, now, { liveRetentionHours, liveBatchSize, maxPurgeBatches })
-          purgedLiveBuckets = purged.count
-          retentionBounded ||= purged.bounded
-        } catch {
-          retentionFailed = true
+        const rawCutoff = retentionCutoff(now, rawRetentionDays * 24 * 60 * 60 * 1000)
+        purgedRaw = tally(await purgeStep('raw_events', () =>
+          purgeInBatches(connection, RAW_EVENT_PURGE, [rawCutoff], rawBatchSize, maxPurgeBatches)))
+
+        const aggregateCutoff = shiftUtcDay(utcDay(now), -aggregateRetentionDays)
+        for (const table of AGGREGATE_TABLES) {
+          purgedAggregates += tally(await purgeStep(table, () =>
+            purgeInBatches(connection, `DELETE FROM ${table} WHERE day < ? LIMIT ?`, [aggregateCutoff], aggregateBatchSize, maxPurgeBatches)))
         }
 
-        try {
-          const purged = await purgeExpiredDedupRows(connection, now, { liveRetentionHours, dedupBatchSize, maxPurgeBatches })
-          purgedDedupRows = purged.count
-          retentionBounded ||= purged.bounded
-        } catch {
-          retentionFailed = true
-        }
+        purgedLiveBuckets = tally(await purgeStep('live_buckets', () =>
+          purgeExpiredLiveBuckets(connection, now, { liveRetentionHours, liveBatchSize, maxPurgeBatches })))
+        purgedDedupRows = tally(await purgeStep('dedup_rows', () =>
+          purgeExpiredDedupRows(connection, now, { liveRetentionHours, dedupBatchSize, maxPurgeBatches })))
       }
 
       // NOC retention is intentionally independent: operational telemetry remains
       // purgeable even when aggregation, raw, daily, or live retention fails.
-      try {
-        const purged = await purgeExpiredNocRows(connection, now, { nocRetentionDays, nocBatchSize, maxPurgeBatches })
-        purgedNocRows = purged.count
-        retentionBounded ||= purged.bounded
-      } catch {
-        retentionFailed = true
-      }
+      purgedNocRows = tally(await purgeStep('noc_rows', () =>
+        purgeExpiredNocRows(connection, now, { nocRetentionDays, nocBatchSize, maxPurgeBatches })))
 
       let lastAggregatedDay: string | null = null
       let stale = true

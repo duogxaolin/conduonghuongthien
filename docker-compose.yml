@@ -76,6 +76,12 @@ services:
         - admin_password
     container_name: cdkt_app
     restart: always
+    # Docker's default 10 s cuts Nitro's graceful shutdown short: on SIGTERM it
+    # stops accepting, waits up to 30 s (NITRO_SHUTDOWN_TIMEOUT) for in-flight
+    # requests and runs its `close` hooks (schedulers, workers) — then exits on its
+    # own. 45 s leaves room for that before SIGKILL; a process that exits sooner
+    # does not wait the full 45 s.
+    stop_grace_period: 45s
     ports:
       # Loopback only, matching the mysql service above. Published on 0.0.0.0 this
       # answered plain HTTP on :3000 from the internet, which bypasses whatever
@@ -165,7 +171,9 @@ services:
       # — rỗng đọc y như chưa đặt, nên mặc định vẫn là của code:
       #   RETENTION_SCHEDULER / ANALYTICS_SCHEDULER : rỗng = bật ở production;
       #       `0` trả việc cho cron (server/plugins/*-scheduler.ts).
-      #   BACKUP_SCHEDULER : rỗng = TẮT; `1` mới bật sao lưu tự động.
+      #   BACKUP_SCHEDULER : rỗng = bật ở production (sao lưu chỉ chạy khi công tắc
+      #       "Backup tự động theo lịch" trong admin bật — mặc định tắt); `0` tắt
+      #       scheduler, trang cài đặt backup sẽ báo "máy chủ đang tắt".
       #   LOG_LEVEL        : rỗng = `info` ở production (server/utils/logger.ts).
       #   LOGIN_CAPTCHA_ENABLED : rỗng = BẬT captcha đăng nhập. `0` TẮT captcha
       #       trên production — biến này tồn tại cho bộ E2E; đừng đặt `0` ở VPS.

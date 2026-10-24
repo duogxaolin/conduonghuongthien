@@ -100,6 +100,8 @@ export const DEFAULT_TRANSLATIONS_SEED = [
   { group: "blocks", key: "block_stats_label_supported", values: { vi: "Người được hỗ trợ", en: "People supported", zh: "", fr: "", ru: "", lo: "" } },
   { group: "blocks", key: "carousel_goto", values: { vi: "Chuyển đến tấm gương số {n}", en: "Go to role model {n}", zh: "", fr: "", ru: "", lo: "" } },
   { group: "blocks", key: "carousel_next", values: { vi: "Slide tiếp", en: "Next slide", zh: "", fr: "", ru: "", lo: "" } },
+  { group: "blocks", key: "carousel_pause", values: { vi: "Tạm dừng tự chuyển slide", en: "Pause automatic slides", zh: "", fr: "", ru: "", lo: "" } },
+  { group: "blocks", key: "carousel_play", values: { vi: "Tiếp tục tự chuyển slide", en: "Resume automatic slides", zh: "", fr: "", ru: "", lo: "" } },
   { group: "blocks", key: "carousel_prev", values: { vi: "Slide trước", en: "Previous slide", zh: "", fr: "", ru: "", lo: "" } },
   { group: "chatbot", key: "bot_clear_history", values: { vi: "Xóa lịch sử trò chuyện", en: "Clear Chat History", zh: "", fr: "", ru: "", lo: "ລຶບປະຫວັດການສົນທະນາ" } },
   { group: "chatbot", key: "bot_input_ph", values: { vi: "Hỏi trợ lý về QĐ 22, thủ tục...", en: "Ask assistant about Decision 22, procedures...", zh: "", fr: "", ru: "", lo: "ຖາມຜູ້ຊ່ວຍກ່ຽວກັບ ຂໍ້ຕົກລົງ 22, ຂັ້ນຕອນ..." } },

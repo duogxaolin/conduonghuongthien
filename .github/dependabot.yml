@@ -1,0 +1,43 @@
+# Cập nhật phụ thuộc hằng tuần, gom nhóm, tối đa 5 PR mở mỗi hệ sinh thái.
+#
+# Mọi merge vào `main` là một lượt deploy production (ci.yml, job `deploy`). Nên:
+#   - minor + patch gom thành MỘT PR mỗi hệ sinh thái mỗi tuần; major đi riêng;
+#   - gộp các PR Dependabot của tuần rồi merge MỘT lượt (CI-CD.md § Dependabot),
+#     đừng merge lẻ từng cái — mỗi cái là một lần khởi động lại container.
+# PR Dependabot chạy CI như mọi PR (không có secret, không deploy).
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      npm-minor-patch:
+        update-types: [minor, patch]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      actions-minor-patch:
+        update-types: [minor, patch]
+
+  # Chỉ Dockerfile của app (thư mục gốc). docker/Dockerfile.mysql cố ý không có ở
+  # đây: đổi phiên bản MySQL là một lượt nâng cấp CSDL có kế hoạch, không phải PR
+  # hằng tuần.
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      docker-minor-patch:
+        update-types: [minor, patch]
+    ignore:
+      # `node:<LTS>-alpine`: lên major là nâng Node (engines, NODE_VERSION của CI) —
+      # người quyết định, không phải PR tự động.
+      - dependency-name: node
+        update-types: [version-update:semver-major]

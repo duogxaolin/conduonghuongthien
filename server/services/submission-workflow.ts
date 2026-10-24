@@ -32,7 +32,7 @@ import {
   isSubmissionStatus,
   type ContactChannel,
   type SubmissionStatus,
-} from '../../app/utils/submission-status'
+} from '../../shared/submission-status'
 
 export interface SubmissionEventRow {
   id: number

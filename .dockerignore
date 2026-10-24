@@ -29,6 +29,21 @@ old-data
 public/uploads
 backups
 
+# Thứ lượt deploy để lại trong bản clone trên VPS (cùng khối trong .gitignore):
+# dump CSDL production trước mỗi lượt đổi image, script sao lưu CI gửi lên, bản sao
+# lưu compose và compose đang chờ kiểm. manage.sh Update có thể lùi về
+# `docker compose build app` NGAY trong bản clone đó, và stage builder chạy `COPY . .`
+# — thiếu các dòng này là mọi bản dump production đi vào build context và một lớp
+# cache. Tên trần chỉ khớp ở gốc context; `**/` khớp mọi độ sâu.
+.deploy-db-backups
+**/.deploy-db-backups
+.deploy-incoming
+**/.deploy-incoming
+.deploy-compose-backups
+**/.deploy-compose-backups
+.docker-compose.incoming.yml
+**/.docker-compose.incoming.yml
+
 # FontAwesome Pro ships 113MB of SVG-JS bundles the site never loads (it uses
 # the webfont CSS). Same list as .gitignore — keep them out of the image too.
 public/assets/fontawesome/js

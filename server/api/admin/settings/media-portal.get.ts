@@ -17,6 +17,7 @@ import { getDb } from '../../../utils/db'
 import { mediaItems, settings } from '../../../db/schema'
 import { resolveMediaConfigWithDb } from '../../../services/media-config-service'
 import { defaultMediaWorkdir } from '../../../utils/media-config'
+import { MASKED_SECRET } from '../../../../shared/settings-credential-rules'
 import { execFileSync } from 'node:child_process'
 
 function ffmpegPath(): string | null {
@@ -67,9 +68,11 @@ export default defineEventHandler(async (event) => {
     else localCount += Number(row.total)
   }
 
-  // R2 config — không trả secret key plaintext. Chỉ trả `secretLastFour` để
-  // trang hiển thị `••••1234` như Google OAuth. `r2Configured` = đủ credential
-  // để dựng client (accountId + accessKey + secret + bucket).
+  // R2 config — không trả secret key, kể cả 4 ký tự cuối: `secretMasked` là
+  // `********` (MASKED_SECRET) cho MỌI vai trò khi đã có bí mật (spec
+  // admin-settings-secrets) — trước đây là `••••` + 4 ký tự cuối, tức một mẩu của
+  // chính bí mật. `r2Configured` = đủ credential để dựng client (accountId +
+  // accessKey + secret + bucket).
   const r2 = config.videoStorage.r2
   const r2Configured = !!(r2 && r2.accountId && r2.accessKeyId && r2.secretAccessKey && r2.bucket)
 
@@ -87,6 +90,10 @@ export default defineEventHandler(async (event) => {
       'media_video_r2_public_url', 'media_video_r2_secret_key',
     ]))
   const storedR2 = new Map(r2Rows.map(row => [row.key, row.value ?? '']))
+  const secretStored = (storedR2.get('media_video_r2_secret_key') ?? '') !== ''
+  // Có bí mật = lưu trong bảng (kể cả không giải mã được), hoặc cấu hình hiệu lực
+  // có một bí mật đọc được (vd. từ biến môi trường).
+  const secretConfigured = secretStored || Boolean(resolved.videoStorageSecretLastFour)
   // Không trả `r2` object (có secretAccessKey plaintext) — chỉ trả trường cần
   // thiết cho UI. Secret key KHÔNG bao giờ rời máy chủ dưới dạng plaintext.
   return {
@@ -114,12 +121,10 @@ export default defineEventHandler(async (event) => {
     videoStorage: {
       provider: config.videoStorage.provider,
       r2Configured,
-      // `••••` + 4 ký tự cuối — cùng masking Google OAuth. Null khi chưa nhập.
-      secretMasked: resolved.videoStorageSecretLastFour
-        ? `••••${resolved.videoStorageSecretLastFour}`
-        : '',
+      // `********` khi đã có bí mật, '' khi chưa — không bao giờ một phần bí mật.
+      secretMasked: secretConfigured ? MASKED_SECRET : '',
       secretUnreadable: resolved.videoStorageSecretUnreadable,
-      secretStored: (storedR2.get('media_video_r2_secret_key') ?? '') !== '',
+      secretStored,
       localCount,
       r2Count,
     },

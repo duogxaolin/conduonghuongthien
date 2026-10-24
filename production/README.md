@@ -45,7 +45,7 @@ Chạy khi mới dựng VPS, chưa có `.env` và container. Sáu bước (+ 2b 
 | 2b | Tự chủ webfont Inter (nếu chưa có `public/assets/fonts/inter.css`) | `node scripts/fetch-fonts.mjs` | ✓ (bỏ qua nếu không có Internet) |
 | 3 | Bí mật app (JWT/Chatbot/Analytics) | Tự sinh hex/base64 32 | ✓ |
 | 4 | Tên miền `PUBLIC_BASE_URL` + `PUBLIC_HOST_ALLOWLIST` | `https://conduonghuongthien.com.vn` / host của nó | ✓ |
-| 5 | Tạo `.env` chuẩn | — | tự động |
+| 5 | Tài khoản SuperAdmin, `TRUSTED_PROXY_IPS`, `HEALTHCHECK_PING_URL` (tuỳ chọn — xem *Giám sát cron sao lưu*), rồi tạo `.env` chuẩn | enter = bỏ qua ping | ✓ / tự động |
 | 6 | Kéo image CI + khởi động luôn, hay làm sau | khởi động luôn | ✓ |
 
 Sau khi xong:
@@ -76,9 +76,10 @@ Sau khi xong:
 
 Chạy khi muốn kéo code/image mới lên VPS đang chạy:
 
-1. **Hiển thị trạng thái cũ**: image, port, domain, container status
-2. **Pull code** từ `git pull origin main` (xác nhận trước). `docker-compose.yml` có thay đổi cục bộ là bản CI đã đặt — Update tự sao lưu nó vào `.deploy-compose-backups/` rồi `git checkout -- docker-compose.yml` trước khi pull (xem *An toàn khi Update* bên dưới; pull tay thì làm đúng hai bước đó)
-3. **Sửa cấu hình**: port, `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST` (gõ enter giữ giá trị cũ, hoặc sửa; `.env` cũ chưa có `PUBLIC_HOST_ALLOWLIST` thì gợi ý host của `PUBLIC_BASE_URL`)
+1. **Hiển thị trạng thái cũ**: image, port, domain, container status (trước đó Update chỉ siết quyền `.env` về 600 — không đổi nội dung)
+2. **Sao lưu DB trước khi cập nhật? [Y/n]** (mặc định **có**) — câu hỏi **đầu tiên**, trước khi Update đổi bất cứ thứ gì: trước `git pull` (đổi `docker-compose.yml`), trước các câu hỏi ghi `.env`, trước khi kéo/đổi image — đúng chỗ của lượt CI deploy. `scripts/backup-db.sh --prefix cdkt-predeploy` → `.deploy-db-backups/` — cùng bản dump, cùng thư mục, cùng vòng xoay 5 bản với lượt CI deploy (xem *Bản dump CSDL trước deploy*); dùng `backup-db.sh` của chính bản checkout đang chạy `manage.sh` (chưa pull). Dump hỏng → Update **dừng**: chưa pull code, chưa sửa `.env`, chưa kéo image hay khởi động lại gì. Chỉ trả lời `n` khi vừa có bản sao lưu mới, hoặc chính bước sao lưu đang hỏng mà phải cập nhật gấp
+3. **Pull code** từ `git pull origin main` (xác nhận trước). `docker-compose.yml` có thay đổi cục bộ là bản CI đã đặt — Update tự sao lưu nó vào `.deploy-compose-backups/` rồi `git checkout -- docker-compose.yml` trước khi pull (xem *An toàn khi Update* bên dưới; pull tay thì làm đúng hai bước đó)
+4. **Sửa cấu hình**: port, `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST` (gõ enter giữ giá trị cũ, hoặc sửa; `.env` cũ chưa có `PUBLIC_HOST_ALLOWLIST` thì gợi ý host của `PUBLIC_BASE_URL`), `HEALTHCHECK_PING_URL` (chỉ báo *đang đặt*/*chưa đặt* — **không in URL**; enter = giữ nguyên, `-` = xoá; URL có `?`/`&`/`#` bị từ chối)
 
 > **`PUBLIC_HOST_ALLOWLIST`** — mọi tên miền thật của cổng, phẩy ngăn cách
 > (`conduonghuongthien.com.vn,www.conduonghuongthien.com.vn`). Liên kết trong email
@@ -88,10 +89,36 @@ Chạy khi muốn kéo code/image mới lên VPS đang chạy:
 > trống cả hai → hành vi cũ + cảnh báo `security.link_host_unchecked` trong log.
 > Cùng lúc, nginx phải đặt `proxy_set_header X-Forwarded-Host $host;` và có site mặc
 > định từ chối tên miền lạ — xem `CI-CD.md` Bước 8.
-4. **Pull image + restart chỉ app**: kéo image `CDKT_IMAGE`, rồi `docker compose up -d --no-recreate mysql` + `up -d --no-deps app`, đợi healthcheck (hỏng thì lùi — xem bên dưới)
-5. **Hỏi migrate** nếu có file SQL mới
 
-**An toàn khi Update** (bước 2 và 4):
+> **Cookie phiên luôn `Secure` ở production** (`server/utils/request-secure.ts`, từ
+> wave1 1A): cookie đăng nhập admin, MFA, người đọc và OAuth chỉ bỏ `Secure` khi
+> **proxy nằm trong `TRUSTED_PROXY_IPS`** báo `X-Forwarded-Proto: http`; header từ
+> peer không tin cậy bị bỏ qua. Hệ quả: phục vụ cổng qua **HTTP thường** (chưa có TLS)
+> mà proxy không nằm trong `TRUSTED_PROXY_IPS` → trình duyệt không gửi lại cookie,
+> đăng nhập admin/người đọc không giữ được phiên. Cấu hình chuẩn đã đúng: nginx mẫu
+> gửi `proxy_set_header X-Forwarded-Proto $scheme;` và `manage.sh` đặt mặc định
+> `TRUSTED_PROXY_IPS=172.16.0.0/12` (dải docker) — chạy HTTPS hay HTTP đều giữ phiên.
+> Tự sửa `.env` thì đừng xoá `TRUSTED_PROXY_IPS` khi còn phục vụ qua HTTP.
+
+> **IP thật sau Cloudflare** (bắt buộc khi tên miền đi qua Cloudflare, kiểm TRƯỚC khi
+> merge wave1 1C): không có real-IP ở nginx thì app thấy IP **edge của Cloudflare**
+> cho mọi khách — giới hạn tần suất theo IP gộp lại, và trần lượt xem bài **60 lượt /
+> 10 phút mỗi IP** (`view.post.ts`) đếm thiếu lượt xem thật. **Không nên** vá bằng
+> cách thêm dải Cloudflare vào `TRUSTED_PROXY_IPS`: `client-ip.ts` từ chối CIDR IPv6
+> (khách IPv6 vẫn ra IP edge), còn access log nginx và `X-Real-IP` vẫn mang IP edge.
+> Sửa ở nginx: `set_real_ip_from` cho mọi dải trong https://www.cloudflare.com/ips-v4
+> và `ips-v6` + `real_ip_header CF-Connecting-IP;` — lệnh sinh tệp (có kiểm tệp không
+> rỗng trước khi thay) và khối cấu hình ở `CI-CD.md`
+> Bước 8, mục "IP thật sau Cloudflare". Kiểm: đăng xuất admin rồi
+> `SELECT JSON_UNQUOTE(JSON_EXTRACT(meta,'$.ip')) FROM activity_logs WHERE action='logout' ORDER BY id DESC LIMIT 3;`
+> phải ra IP của bạn (`curl -s https://<domain>/cdn-cgi/trace | grep ^ip=`), không phải
+> dải Cloudflare (`104.16.0.0/13`, `172.64.0.0/13`, `162.158.0.0/15`, `2606:4700::/32`…);
+> log `article_view.ip_ceiling_hit` lặp lại với `bucket` là IP Cloudflare cũng là dấu hiệu.
+
+5. **Pull image + restart chỉ app**: kéo image `CDKT_IMAGE`, rồi `docker compose up -d --no-recreate mysql` + `up -d --no-deps app`, đợi healthcheck (hỏng thì lùi — xem bên dưới). Khoẻ thì dọn image `sha-*` cũ (giữ image đang chạy + 5 bản mới nhất, như CI — *Giữ image*) và cảnh báo khi đĩa Docker dùng > 80 %
+6. **Hỏi migrate** nếu có file SQL mới
+
+**An toàn khi Update** (bước 3 và 5):
 
 - **Khởi động lại chỉ app**, đúng như CI: `docker compose up -d --no-recreate mysql` rồi
   `up -d --no-deps app`. Không bao giờ `up -d app` trơn — lệnh đó tạo lại cả mysql khi
@@ -149,6 +176,15 @@ production/
    └─ .imported-*       # đánh dấu đã import (tự tạo)
 ```
 
+Ở **root repo** trên VPS, các thư mục deploy tự tạo (đều trong `.gitignore` — bản dump
+CSDL chứa toàn bộ dữ liệu production, không bao giờ được commit):
+
+```
+.deploy-compose-backups/   # docker-compose.yml trước mỗi lượt đổi (giữ 10)
+.deploy-db-backups/        # dump CSDL trước mỗi lượt đổi image (giữ 5)
+.deploy-incoming/          # backup-db.sh CI gửi lên trong lúc deploy (tự xoá)
+```
+
 Mẫu `.env` thật ở **root repo** (`.env.example`) — không có `.env.template` trong folder này. Trên VPS, `.env` do `manage.sh` sinh ra.
 
 ---
@@ -170,7 +206,7 @@ chmod +x manage.sh
 
 ### Cập nhật code mới
 
-Dev merge code vào `main`. **CI tự deploy**: build image → push GHCR → SSH vào VPS → gửi `docker-compose.yml` của đúng commit đó lên (kiểm SHA-256, sao lưu bản cũ vào `.deploy-compose-backups/`, chạy `docker compose config -q` — sai thì dừng, không chạm container) → `docker pull` + khởi động lại **chỉ app** (`up -d --no-deps app`; mysql chỉ được bật nếu đang dừng, không bao giờ bị tạo lại) → chờ healthcheck, hỏng thì tự lùi về image **và** compose trước (job `deploy` trong `.github/workflows/ci.yml`, `if: true`; chi tiết `CI-CD.md`). **Merge vào `main` là lên production ngay** — chỉ merge khi đã sẵn sàng.
+Dev merge code vào `main`. **CI tự deploy**: build image → push GHCR → SSH vào VPS → gửi `docker-compose.yml` và `scripts/backup-db.sh` của đúng commit đó lên (kiểm SHA-256) → `docker pull` → **dump CSDL vào `.deploy-db-backups/`** (hỏng thì dừng, chưa chạm gì — xem *Bản dump CSDL trước deploy*) → sao lưu compose cũ vào `.deploy-compose-backups/`, chạy `docker compose config -q` (sai thì dừng, không chạm container) → khởi động lại **chỉ app** (`up -d --no-deps app`; mysql chỉ được bật nếu đang dừng, không bao giờ bị tạo lại) → chờ healthcheck (container khởi động lại > 2 lần = crash loop → dừng chờ ngay), hỏng thì tự lùi về image **và** compose trước → khoẻ thì dọn image cũ → **smoke test qua tên miền công khai** (`VPS_SMOKE_URL`) (job `deploy` trong `.github/workflows/ci.yml`, chạy khi job `image` thành công; chi tiết `CI-CD.md`). **Merge vào `main` là lên production ngay** — chỉ merge khi đã sẵn sàng. Ngoại lệ: merge mà **mọi** tệp đổi **so với bản đang chạy trên production** là `*.md`, `docs/` hoặc `openspec/` thì CI vẫn chạy test nhưng **không** build image, **không** deploy, không khởi động lại container. "Bản đang chạy" là `version` mà `<VPS_SMOKE_URL>/api/public/health` trả về, hoặc (biến chưa đặt / trang không trả lời) commit của lượt CI gần nhất có job `Deploy to VPS` thành công — không phải commit ngay trước trên `main`: một commit mã chưa từng lên production (lượt của nó bị huỷ khi đang chờ, hoặc đỏ trước bước build image) vẫn được deploy cùng merge tài liệu kế tiếp. Không xác định được bản đang chạy → deploy (chi tiết `CI-CD.md` § *Mốc so của "chỉ tài liệu"*).
 
 > ⚠️ **`docker-compose.yml` trên VPS do CI quản lý.** Vì CI ghi đè tệp này mỗi lượt
 > deploy, bản clone git trên VPS sẽ thấy nó "đã sửa", và `git pull` (kể cả bước Pull
@@ -234,9 +270,66 @@ Chạy lại được nhiều lần (hàng đã sạch thì không đổi). Thay
 
 ---
 
+## Giải mã HTML entity trong tiêu đề/sapo đã lưu (làm một lần, `db:decode-excerpts`)
+
+Sapo nhập từ CMS cũ lưu chữ dạng entity (`Ng&agrave;y 26/8`). Trang công khai đã hiện đúng (giải mã lúc đọc), nhưng tìm kiếm SQL (`LIKE '%Ngày%'`) không khớp các hàng đó. Lệnh này ghi lại `title`/`excerpt` của `articles` và `article_translations` thành đúng chữ trang công khai đang hiện. Nó **không** đụng `content`, giữ nguyên `updated_at`, duyệt theo lô 200 hàng, và bỏ qua hàng vừa có người sửa. Sau khi CI đã deploy bản có `db:decode-excerpts`:
+
+```bash
+cd /www/wwwroot/conduonghuongthien
+docker exec -it cdkt_app npm run db:decode-excerpts              # 1. xem trước: KHÔNG ghi
+./scripts/backup-db.sh                                           # 2. sao lưu (chỉ hoàn tác được bằng bản này)
+docker exec -it cdkt_app npm run db:decode-excerpts -- --apply   # 3. ghi
+```
+
+Đọc báo cáo bước 1 trước khi ghi:
+- `changed`: số hàng sẽ đổi ở mỗi bảng.
+- `fragments`: những trường mà kết quả **bỏ một đoạn cuối** (`… nh&ac` → `… nh…`, sapo CMS cũ bị cắt giữa entity). Phép đoán không phân biệt được entity bị cắt với một `&chữ` thật ở cuối chuỗi có entity khác: `C&ocirc;ng ty AT&T` cũng thành `Công ty AT…`. Mỗi mục có `id`, `field` và phần cuối trước/sau. Thấy mục nào cắt sai thì sửa tay bài đó trong admin trước (lưu lại bài là làm sạch nó), rồi mới `--apply`.
+- `unstable`: các trường **không** được ghi. Đó là chữ entity viết nguyên văn (`&amp;agrave;`), loại mà ghi xong thì trang công khai lại giải mã thêm một lần. Sửa tay nếu cần.
+
+Chạy lại được: lượt sau chỉ báo những hàng còn ở dạng entity.
+
+---
+
+## Sao lưu tự động trong ứng dụng (scheduler)
+
+Từ đợt wave1 1B, ở production scheduler sao lưu **tự khởi động** (trước đây chỉ khởi động khi `.env` có `BACKUP_SCHEDULER=1`, nên công tắc trong admin bật mà không bao giờ chạy). Có bản sao lưu hay không vẫn do công tắc **"Backup tự động theo lịch"** ở `/admin/settings/backup` quyết định. Công tắc mặc định tắt, nên bản cập nhật này không tự sinh bản sao lưu nào.
+
+- **Trước khi deploy bản 1B:** mở `/admin/settings/backup` và xem công tắc. Nếu nó **đã bật** từ trước (lần bật cũ "không có tác dụng"), sao lưu theo lịch sẽ bắt đầu ở **khe kế tiếp** sau deploy (ngày + giờ đã chọn). Mỗi lượt tạo một dump CSDL và hai archive (`uploads`, `media`) trong `./backups`, nên kiểm dung lượng đĩa (`df -h`). Không muốn thì tắt công tắc trước. Cũng trước khi deploy: archive mồ côi (tệp tên-app không có trong danh sách, do lỗi cũ để lại) sẽ bị xoá ở lần khởi động đầu. Muốn giữ thì chép chúng ra ngoài `./backups`.
+- **Lịch:** chạy đúng ngày + giờ đã chọn (giờ Việt Nam; `0` là nửa đêm). Lượt hỏng (kể cả lượt bị cắt ngang khi container dừng) được thử lại sau 60 phút, tối đa 3 lượt cho một khe, rồi bỏ khe đó và ghi log `backup.slot_abandoned`. Khe lỡ vì máy chủ tắt được bù **một lần** khi khởi động lại. Những trường hợp sau thì **không** bù, mà đợi khe kế tiếp: bật công tắc lần đầu, bật lại công tắc, hoặc sửa giờ/ngày. Sửa giờ 3 → 10 thì lượt kế tiếp chạy lúc 10:00, không chạy ngay.
+- **Trạng thái lịch** nằm ở một hàng `settings` (`backup_scheduler_state`), không suy từ danh sách backup. Xoá bản sao lưu hay xoay vòng (`backup_keep_count`) không làm lịch chạy thêm lượt nào. Khôi phục một bản dump CSDL cũng không đè hàng này: app giữ trạng thái của hệ thống đang chạy. Đừng sửa tay hàng này: xoá nó thì scheduler coi như chưa từng chạy và đợi khe kế tiếp.
+- **Tắt hẳn ở máy chủ:** đặt `BACKUP_SCHEDULER=0` trong `.env` rồi `./manage.sh` → Update. Trang cài đặt backup sẽ hiện dòng "Máy chủ đang tắt sao lưu tự động".
+- **Tệp dở:** lượt sao lưu ghi vào `<tên>.partial` và chỉ đổi sang tên thật khi đã ghi hàng vào danh sách. Lượt hỏng tự xoá `.partial` của mình. Lượt bị giết (hết thời gian dừng, `docker kill`) để lại một tệp `.partial`; app tự dọn tệp đó ở lượt sao lưu kế tiếp, và 1 phút sau mỗi lần khởi động (chỉ khi máy chủ bật scheduler, tức mặc định ở production; `BACKUP_SCHEDULER=0` thì không dọn lúc khởi động). App chỉ dọn tệp mang đúng tên do chính nó sinh, nên tệp `.partial` của `scripts/backup-db.sh` (cron, cùng thư mục `./backups`) do script đó tự lo. Hàng "thất bại" trong danh sách nêu đúng tệp đã hỏng.
+- **Tệp tên dạng app mà không có trong danh sách** (`cdkt-<mã thời điểm>-<trigger>.sql.gz`, `cdkt-uploads|media-<mã thời điểm>-<trigger>.tar.gz`) và cũ hơn 10 phút sẽ bị app xoá. Đó là dấu vết của một lượt bị giết đúng lúc ghi danh sách. **Đừng chép tay** một tệp backup của app vào `./backups` để giữ: nó sẽ bị xoá. Muốn nạp một bản từ ngoài thì dùng "Khôi phục từ tệp tải lên". Tệp của `scripts/backup*.sh` (`cdkt-<db>-…-<pid>`, `cdkt-media-…-<pid>`) không bị đụng.
+- **Hai lượt cùng trigger trong cùng một giây** (ví dụ bấm "Backup" hai lần thật nhanh): lượt sau bị từ chối với thông báo "đã tồn tại" (kể cả khi lượt trước hỏng). Bản đã có không bị đụng tới. Thử lại sau giây lát.
+- **Xoá một bản** trong danh sách chỉ xoá đúng hàng đó. Tệp chỉ bị xoá khi không còn hàng nào khác cùng tên.
+
+---
+
+## Dọn dữ liệu analytics thô (tồn đọng sau bản vá 1B)
+
+Lệnh dọn sự kiện xem trang thô (`analytics_page_view_events`, giữ 14 ngày) trước đây là câu SQL MySQL không chấp nhận, và lỗi bị nuốt. Vì vậy dữ liệu thô **chưa từng được dọn**, và các bảng tổng hợp theo ngày cũng không được dọn. Sau khi deploy, lượt bảo trì hằng đêm (scheduler trong app, hoặc cron `npm run analytics:maintenance`) bắt đầu xoá phần tồn đọng. Mỗi lượt xoá theo lô có trần (mặc định tối đa 1000 lô × 500 hàng mỗi bảng), nên với tồn đọng lớn, vài đêm đầu lượt bảo trì báo trạng thái `warning` (chưa dọn hết). Đó là bình thường; trạng thái tự về `success` khi đã dọn kịp. Chỉ xoá sự kiện của những ngày **đã tổng hợp xong**. Bước dọn nào hỏng sẽ ghi một dòng log `analytics.retention_step_failed` kèm `step` và `code`, và không chặn các bước khác.
+
+---
+
+## Sửa dữ liệu sau deploy (post-deploy data repair): danh mục video bị xoá lúc khởi động
+
+Từ 2026-09-22 tới bản vá `fix-media-category-wipe-on-boot`, **mỗi lần app khởi động** (deploy CI, `manage.sh` Update, restart sau sự cố) đều xoá danh mục của mọi video trong Media Portal. Bản vá chặn việc xoá từ lần khởi động đầu tiên của image mới. Giá trị đã mất thì không tự về: phải khôi phục từ bản sao lưu theo runbook ở [`docs/decisions/data-layer.md` § Khôi phục danh mục video sau lỗi xoá lúc khởi động](../docs/decisions/data-layer.md#media-category-restore).
+
+- **Ngay hôm nay, trước cả khi merge:** làm bước 0 của runbook — chép `./backups/*.sql.gz` ra một thư mục ngoài vòng xoay. Vòng xoay (`BACKUP_KEEP_DAYS`, `backup_keep_count`) đang xoá đúng những bản có thể còn giữ danh mục.
+- Chỉ khôi phục **sau khi** image đã vá chạy healthy. Bản dump chỉ nạp vào CSDL **nháp**, không bao giờ vào CSDL production.
+
+> ⚠️ **Đừng bao giờ lùi về image cũ hơn bản vá này** — kể cả lùi tay, kể cả lượt lùi
+> tự động của deploy khi healthcheck hỏng. Lần khởi động đầu của image cũ sẽ xoá
+> danh mục video **lại**, kể cả những giá trị vừa khôi phục. Image mới không khởi
+> động được vì lý do khác thì sửa tiến (fix forward), đừng lùi.
+
+---
+
 ## Sao lưu & khôi phục (tóm tắt — chi tiết ở `DEPLOY.md` § Backup & Restore)
 
-Toolkit này **không** tự sao lưu; sao lưu chạy bằng cron trên host:
+Toolkit này **không** chạy sao lưu định kỳ (nó chỉ dump trước mỗi lượt Update — xem *Bản dump
+CSDL trước deploy*); sao lưu định kỳ chạy bằng cron trên host — đặt thêm
+`HEALTHCHECK_PING_URL` để biết khi cron ngừng (xem *Giám sát cron sao lưu*):
 
 ```bash
 0 2 * * * cd /www/wwwroot/conduonghuongthien && ./scripts/backup.sh >> /var/log/cdkt-backup.log 2>&1
@@ -279,13 +372,116 @@ xoay theo **ngày** (`BACKUP_KEEP_DAYS`), bản sao lưu trong ứng dụng xoay
 
 ---
 
+## Bản dump CSDL trước deploy (`.deploy-db-backups/`)
+
+Mỗi lượt đổi image — CI deploy, và `./manage.sh` → Update khi trả lời *có* (mặc định) — dump
+CSDL **trước** khi đụng tới compose, `.env` hay container. CI: ngay sau `docker pull`, trước khi
+đặt compose mới hay sửa `.env`. Update: là câu hỏi **đầu tiên** — trước `git pull`, trước
+`git checkout -- docker-compose.yml`, trước các câu hỏi ghi `.env` và trước khi kéo image; thứ
+duy nhất chạy trước nó là bước siết quyền `.env` về 600 (không đổi nội dung).
+
+- **Ở đâu:** `<root repo>/.deploy-db-backups/cdkt-predeploy-<db>-<thời-điểm UTC>-<pid>.sql.gz`
+  (cạnh `.deploy-compose-backups/`). Không nằm trong `./backups`: `./backups` là bind mount mà
+  container giao cho user `node` (uid 1000) mỗi lần khởi động, user deploy của CI chưa chắc
+  ghi được vào đó. Update chạy bằng root thì trao thư mục này cho chủ thư mục repo, để lượt
+  CI kế tiếp vẫn ghi được.
+- **Ai đọc được:** bản dump là toàn bộ CSDL production (hash mật khẩu, email bạn đọc): tệp
+  quyền **600**, thư mục **700** (đặt lại cả khi đã có sẵn với quyền rộng hơn). Xem/khôi phục
+  bằng chính user deploy hoặc root. Thư mục này (và `.deploy-incoming/`,
+  `.deploy-compose-backups/`) nằm trong `.gitignore` **và** `.dockerignore` — một lượt
+  `docker compose build` ngay trên VPS không đưa bản dump vào build context.
+- **Không bao giờ có bản cụt mang tên thật:** dump được viết dưới tên `….sql.gz.partial` và
+  chỉ đổi sang `.sql.gz` sau khi kiểm xong — điều này đúng dù lượt dump dừng kiểu gì. Lượt
+  nhận HUP/INT/TERM (Ctrl-C, `kill`) xoá luôn phần dở dang. Lượt không nhận tín hiệu nào có
+  thể để lại `….sql.gz.partial`: bị giết hẳn (`kill -9`, mất điện), hoặc job CI bị huỷ/SSH
+  đứt (phiên `ssh` không PTY nên VPS không nhận tín hiệu treo máy; script chạy tiếp hoặc chết
+  vì SIGPIPE khi ghi log). Lượt dump sau cùng họ xoá phần đó khi đã quá 1 ngày.
+- **Kiểm như bản đêm:** cùng `scripts/backup-db.sh` (gzip, dấu `Dump completed`, ≥ 20 bảng,
+  ≥ 50 KB SQL); bản không đạt bị xoá và lượt deploy **dừng** — compose, `.env`, container y
+  như trước. Lý do thường gặp: đĩa đầy, `cdkt_mysql` không chạy, `.env` thiếu `MYSQL_ROOT_PASSWORD`.
+- **Giữ 5 bản** mới nhất (theo số lượng, không theo ngày); không đụng tới bản đêm
+  `backups/cdkt-<db>-…` và không gửi ping giám sát.
+- **Đi cặp với lượt lùi:** bản `cdkt-predeploy-*` mới nhất có giờ trước lượt deploy hỏng là
+  CSDL của **image trước**. Image mới hỏng dữ liệu (migration) thì lùi image (CI-CD.md § Lùi
+  phiên bản) **và** khôi phục bản đó:
+
+  ```bash
+  cd /www/wwwroot/conduonghuongthien
+  ls -t .deploy-db-backups/
+  docker compose stop app
+  ./scripts/restore-db.sh .deploy-db-backups/cdkt-predeploy-<db>-<thời-điểm>-<pid>.sql.gz <db> --replace
+  ```
+
+  `restore-db.sh` tự dump bản hiện có (`backups/cdkt-prerestore-*`) trước khi ghi đè.
+  ⚠️ Lùi tay chỉ tạm thời: với `VPS_SMOKE_URL` đã đặt, lượt merge kế tiếp vào `main` — **kể cả
+  merge chỉ sửa tài liệu** — so với bản vừa lùi về và deploy lại `HEAD` (gồm commit hỏng) đè
+  lên nó. **Revert commit hỏng trên `main` trước lượt merge kế tiếp** (`CI-CD.md` § Lùi phiên bản).
+- Bản dump lớn dần theo dữ liệu và kéo dài lượt deploy tương ứng (job `deploy` có trần 30 phút).
+
+## Smoke test qua tên miền công khai (`VPS_SMOKE_URL`)
+
+Healthcheck trong container chỉ chứng minh app trả lời ở `127.0.0.1`. Sau đó job `deploy`
+hỏi `GET <VPS_SMOKE_URL>/api/public/health?t=<lượt>` từ runner của GitHub — đi qua nginx,
+CDN, DNS như khách, theo cả chuyển hướng (`curl -L`) — tối đa 12 lần, nghỉ 10 giây giữa hai
+lần (không nghỉ sau lần cuối), và chỉ xanh khi nhận `200` với `version` bằng SHA ngắn vừa
+deploy. Hết 12 lần thì job đỏ: ~2 phút nếu mỗi lần trang trả lời ngay, tệ nhất ~3 phút 50
+giây khi mỗi lần đều chờ hết trần 10 giây của curl. Job Plan của lượt CI kế tiếp cũng hỏi
+URL này để biết bản đang chạy (mốc so khi quyết định merge "chỉ tài liệu" có deploy không).
+
+- **Khai một lần:** GitHub → *Settings → Secrets and variables → Actions → Variables* →
+  `VPS_SMOKE_URL` = `https://<tên miền thật>`. Chưa khai thì bước này chỉ in `::warning::`.
+- **`/api/public/health`** trả `{ ok: true, version }` (CSDL trả lời `SELECT 1` trong 2 giây)
+  hoặc `503`, luôn `Cache-Control: no-store`. Dùng chính URL này cho dịch vụ giám sát uptime.
+- **`version` nướng vào image** (`ARG/ENV APP_VERSION`, lớp cuối của `Dockerfile`, CI truyền
+  12 ký tự đầu của SHA). Vì vậy compose **không** liệt kê `APP_VERSION` — giá trị thuộc về
+  image, không thuộc `.env`; build tại chỗ (`docker compose build`) báo `dev`.
+- **Smoke đỏ không tự lùi:** container đã healthy, nguyên nhân có thể là CDN/DNS. Kiểm
+  `curl -s https://<tên miền>/api/public/health`; đúng là image hỏng thì lùi tay (CI-CD.md
+  § Lùi phiên bản).
+
+## Giữ image (VPS và GHCR)
+
+- **VPS:** sau mỗi lượt deploy khoẻ (CI và Update), giữ image đang chạy + **5** image
+  `ghcr.io/…:sha-*` mới nhất khác; phần cũ hơn bị gỡ **theo thẻ** (`docker image rm`, không
+  `-f` — image còn container dùng thì để lại), rồi `docker image prune -f`. Thẻ lùi
+  `cdkt-rollback/app:*` của Update không bị đụng. Đĩa Docker dùng **> 80 %** → cảnh báo trong
+  log deploy. Trước đây chỉ có `docker image prune` — lệnh đó không bao giờ gỡ image còn thẻ.
+- **GHCR:** `.github/workflows/ghcr-retention.yml` giữ **20** version mới nhất, chạy hằng tuần
+  (và bấm tay được). Cần một lần: package → *Package settings* → *Manage Actions access* →
+  repo này quyền **Admin**.
+
+## Giám sát cron sao lưu (`HEALTHCHECK_PING_URL`)
+
+Cron `scripts/backup-db.sh` (qua `backup.sh`) và `scripts/verify-restore.sh` âm thầm ngừng
+chạy thì chỉ phát hiện vào đúng ngày cần bản sao lưu. Đặt một URL ping kiểu
+[healthchecks.io](https://healthchecks.io) (`https://hc-ping.com/<uuid>`):
+
+- Thành công → gọi `<URL>`; hỏng → gọi `<URL>/fail`. Dịch vụ giám sát báo động khi quá hạn
+  không nhận ping, hoặc nhận `/fail`.
+- `curl -fsS -m 10 --retry 2 … || true`: dịch vụ giám sát hỏng **không** làm cron sao lưu
+  hỏng theo. Không đặt biến → script chạy y như trước.
+- **Đặt:** `./manage.sh` → Deploy (bước 5) hoặc Update (bước 4) — ghi vào `.env`; hoặc sửa tay
+  `HEALTHCHECK_PING_URL=https://hc-ping.com/<uuid>` trong `.env` (không `?`, `&`, `#`).
+- Chỉ script trên **host** đọc biến này (chúng tự đọc `.env`), nên compose **không** liệt kê
+  nó trong `environment:` — container app không dùng.
+- Bản dump trước deploy **không** ping: một lượt deploy thành công không được che một cron
+  đêm đã chết. `verify-restore.sh` (hằng tháng) ping cùng URL.
+- Cấu hình bên dịch vụ giám sát: chu kỳ 1 ngày, ân hạn vài giờ (cron 02:00).
+
+## Dừng container êm
+
+Service app có `stop_grace_period: 45s`: `docker stop` / mỗi lượt deploy cho Nitro tới 45 giây
+để trả xong request dở và chạy hook `close` (dừng scheduler sao lưu…) thay vì bị giết sau 10
+giây mặc định. Container dừng sớm hơn thì không phải chờ đủ 45 giây.
+
 ## Tắt auto-deploy (tuỳ chọn)
 
-Hiện job `deploy` trong `.github/workflows/ci.yml` có `if: true` (bật). Muốn CI chỉ build image mà không tự lên VPS (rồi deploy bằng `./manage.sh` → 2):
+Job `deploy` trong `.github/workflows/ci.yml` chạy mỗi khi job `image` thành công
+(`if: needs.image.result == 'success'`). Muốn CI chỉ build image mà không tự lên VPS (rồi deploy bằng `./manage.sh` → 2):
 
 ```yaml
   deploy:
-    if: false    # đổi từ true
+    if: false    # thay cho needs.image.result == 'success'
 ```
 
 ---

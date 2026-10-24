@@ -141,6 +141,7 @@
 
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import { browserPollerEnv, createVisiblePoller, type VisiblePoller } from '~/utils/visible-poller'
 import { attachHlsStream, detachHlsStream, type HlsInstance } from '~/composables/useHlsVideo'
 import { formatDateVN } from '~/utils/formatDate'
 import { useI18n } from '~/composables/useI18n'
@@ -264,14 +265,17 @@ watch(session, async value => {
 }, { flush: 'post' })
 
 const ACTIVE_POLL_MS = 8_000
-let activePollTimer: number | undefined
+// Paused while the tab is hidden; one request as soon as it is shown again
+// (design D20, same poller as LiveTickerBar).
+let poller: VisiblePoller | null = null
 
 onMounted(() => {
-  void loadActive()
-  activePollTimer = window.setInterval(() => { void loadActive() }, ACTIVE_POLL_MS)
+  poller = createVisiblePoller(() => { void loadActive() }, ACTIVE_POLL_MS, browserPollerEnv())
+  poller.start(true)
 })
 onBeforeUnmount(() => {
-  if (activePollTimer) window.clearInterval(activePollTimer)
+  poller?.stop()
+  poller = null
   detachHlsStream(hlsInstance)
 })
 </script>

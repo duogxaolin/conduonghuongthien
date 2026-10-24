@@ -2,7 +2,7 @@ import { getDb } from '../utils/db'
 import { passwordRejectionMessage } from '../utils/password-policy'
 import { hashPassword } from '../utils/auth'
 import { roles, permissions, users, homeSections, settings, chatbotSettings, chatbotSmallTalk, categories, contentTypes, pages, pageBlocks, mediaCategories, aiProviders, aiServiceConfigs, aiModelPricing, aiBudgetSettings, aiModerationRules, socialLinks } from '../db/schema'
-import type { BlockData } from '../../app/utils/blocks/types'
+import type { BlockData } from '../../shared/blocks/types'
 import { eq, asc, sql } from 'drizzle-orm'
 import { CHATBOT_SMALL_TALK_SEED } from '../data/chatbot-small-talk-seed'
 import { normalizeQuestion } from '../utils/chatbot/small-talk'
@@ -199,9 +199,12 @@ async function seed() {
     { type: 'links',          displayOrder: 9, isVisible: true, config: { title: 'Liên Kết Hữu Ích' } },
   ]
 
+  // Insert-only: chỉ thêm loại section còn thiếu. Hàng đã có giữ nguyên — trước
+  // đây mỗi lần khởi động ghi lại `display_order` theo seed, xoá thứ tự cán bộ đã
+  // sắp (tests/seed-upsert-no-overwrite.test.ts).
   for (const section of defaultSections) {
     await db.insert(homeSections).values(section)
-      .onDuplicateKeyUpdate({ set: { displayOrder: section.displayOrder } })
+      .onDuplicateKeyUpdate({ set: { id: keepExisting('id') } })
   }
 
   // ── Default Settings ─────────────────────────────────────────────────────

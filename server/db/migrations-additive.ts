@@ -20,6 +20,7 @@
  */
 import { type Connection, type RowDataPacket } from 'mysql2/promise'
 
+import { BOOT_MIGRATION_EVENTS, logError } from '../utils/logger'
 import { encodeShortId } from '../utils/short-media-id'
 
 export type ChatbotColumnMigration = {
@@ -484,6 +485,96 @@ export async function modifyColumn(db: Connection, database: string, table: stri
   await db.query(`ALTER TABLE \`${table}\` MODIFY COLUMN \`${column}\` ${definition}`)
 }
 
+const MEDIA_CATEGORY_FK_NAME = 'fk_media_items_category'
+const MEDIA_CATEGORY_FK_DEFINITION = 'FOREIGN KEY (`category_id`) REFERENCES `media_categories` (`id`) ON DELETE SET NULL'
+
+/**
+ * Đưa khoá ngoại của `media_items.category_id` về đích `media_categories(id)
+ * ON DELETE SET NULL` — và là nơi DUY NHẤT trong tệp này được xoá `category_id`.
+ *
+ * **Vì sao tồn tại.** Ngày 2026-09-22 (`69a84eb`) cột này đổi đích từ
+ * `categories` (bài viết) sang `media_categories`. Bản chuyển đầu tiên chạy
+ * `UPDATE media_items SET category_id = NULL` **vô điều kiện** rồi drop/add FK
+ * theo TÊN — mà khối này chạy mỗi lần container khởi động (Dockerfile CMD:
+ * `init.ts` → `seed.ts` → server). Kết quả: mọi deploy, mọi `manage.sh` Update,
+ * mọi lần `restart: always` đều xoá danh mục video cán bộ đã gán.
+ *
+ * **Khoá theo trạng thái lược đồ, không theo giá trị.** Đọc mọi FK trên CỘT
+ * (`KEY_COLUMN_USAGE` ⋈ `REFERENTIAL_CONSTRAINTS`, cùng khuôn với
+ * `ensureChatbotForeignKey`), không theo tên — FK cũ có thể mang tên MySQL tự
+ * sinh (`media_items_ibfk_1`), và dò theo tên chính là cách bản cũ drop nhầm FK
+ * ĐÚNG mỗi lần khởi động:
+ *
+ *   - Còn FK trỏ `categories` (CSDL chưa chuyển): UPDATE về NULL → drop MỌI FK
+ *     trên cột → add FK đúng. Thứ tự này an toàn khi bị cắt ngang: chết sau
+ *     UPDATE thì FK cũ còn, lượt sau UPDATE lại hàng đã NULL (vô hại); chết sau
+ *     DROP thì còn "không FK, toàn NULL", lượt sau chỉ add FK. Không add trước
+ *     drop: hai FK trỏ hai bảng trên một cột sẽ chặn gần như mọi lượt ghi. Lượt
+ *     chuyển tự xoá điều kiện kích hoạt của chính nó — không cần cờ trong
+ *     `settings` (nguồn chân lý thứ hai, lệch được với lược đồ sau khi khôi phục
+ *     một bản dump cũ).
+ *   - Đúng một FK → `media_categories(id)` SET NULL: KHÔNG làm gì — không UPDATE,
+ *     không DROP/ADD (drop/add là dựng lại bảng).
+ *   - Không có FK, hoặc FK sai hình (sai luật xoá, sai đích): đếm giá trị treo
+ *     (không có hàng `media_categories` tương ứng). 0 → drop FK sai (nếu có) rồi
+ *     add, **không** đụng giá trị. > 0 → giữ nguyên giá trị lẫn FK hiện có, ghi
+ *     một sự kiện lỗi ổn định `db.migration.media_category_fk_blocked` kèm số
+ *     hàng, và khởi động tiếp — add FK lúc đó sẽ lỗi 1452 và container khởi động
+ *     lại mãi; xoá giá trị lúc đó chính là lỗi đang được vá.
+ *
+ * **Vì sao không xoá theo giá trị** (`LEFT JOIN media_categories … WHERE mc.id IS
+ * NULL`): id thể loại bài viết cũ 1–7 trùng id danh mục video được seed 1–4, nên
+ * id cũ "có tồn tại" trong `media_categories` vẫn sống sót và lặng lẽ mang nghĩa
+ * một danh mục khác. Chỉ FK cũ mới cho biết giá trị thuộc thế giới nào.
+ *
+ * Khoá bằng `tests/media-category-migration-integration.test.ts` (MySQL thật).
+ */
+async function convergeMediaCategoryForeignKey(db: Connection, database: string) {
+  const [rows] = await db.execute<RowDataPacket[]>(
+    `SELECT k.CONSTRAINT_NAME, k.REFERENCED_TABLE_NAME, k.REFERENCED_COLUMN_NAME, r.DELETE_RULE
+     FROM information_schema.KEY_COLUMN_USAGE k
+     JOIN information_schema.REFERENTIAL_CONSTRAINTS r
+       ON r.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND r.TABLE_NAME = k.TABLE_NAME AND r.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+     WHERE k.CONSTRAINT_SCHEMA = ? AND k.TABLE_NAME = 'media_items' AND k.COLUMN_NAME = 'category_id'
+     ORDER BY k.CONSTRAINT_NAME, k.ORDINAL_POSITION`,
+    [database],
+  )
+  const constraintNames = [...new Set(rows.map(row => String(row.CONSTRAINT_NAME)))]
+  const replaceWithConvertedForeignKey = async () => {
+    for (const name of constraintNames) {
+      await db.query(`ALTER TABLE \`media_items\` DROP FOREIGN KEY \`${name}\``)
+    }
+    await db.query(`ALTER TABLE \`media_items\` ADD CONSTRAINT \`${MEDIA_CATEGORY_FK_NAME}\` ${MEDIA_CATEGORY_FK_DEFINITION}`)
+  }
+
+  // CSDL chưa chuyển: giá trị đang là id thể loại BÀI VIẾT — vô nghĩa sau khi tách.
+  if (rows.some(row => row.REFERENCED_TABLE_NAME === 'categories')) {
+    await db.query('UPDATE `media_items` SET `category_id` = NULL WHERE `category_id` IS NOT NULL')
+    await replaceWithConvertedForeignKey()
+    return
+  }
+
+  // Đã chuyển xong: trạng thái của mọi lần khởi động sau lượt chuyển.
+  const converted = rows.length === 1
+    && rows[0]!.REFERENCED_TABLE_NAME === 'media_categories'
+    && rows[0]!.REFERENCED_COLUMN_NAME === 'id'
+    && rows[0]!.DELETE_RULE === 'SET NULL'
+  if (converted) return
+
+  // Không FK hoặc FK sai hình: giá trị có thể là phân loại thật — không bao giờ xoá.
+  const [dangling] = await db.execute<RowDataPacket[]>(
+    `SELECT COUNT(*) AS n FROM \`media_items\` mi
+     LEFT JOIN \`media_categories\` mc ON mc.\`id\` = mi.\`category_id\`
+     WHERE mi.\`category_id\` IS NOT NULL AND mc.\`id\` IS NULL`,
+  )
+  const danglingRows = Number(dangling[0]?.n ?? 0)
+  if (danglingRows > 0) {
+    logError({ event: BOOT_MIGRATION_EVENTS.mediaCategoryFkBlocked, danglingRows })
+    return
+  }
+  await replaceWithConvertedForeignKey()
+}
+
 /**
  * Cột, chỉ mục và khoá ngoại thêm vào SAU khi 41 bảng đã tồn tại.
  *
@@ -542,13 +633,12 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
 
   // ── Danh mục Media Portal (tách khỏi `categories` bài viết) ────────────────
   // Bảng riêng cho danh mục video: phẳng, không cha-con, không `type`. Trước đây
-  // `media_items.category_id` trỏ `categories` (bài viết); nay trỏ bảng này. Đổi
-  // FK trên DB đang có dữ liệu: drop FK cũ (trỏ `categories`) rồi add FK mới (trỏ
-  // `media_categories`). Video cũ `category_id` giữ nguyên giá trị cũ nhưng FK
-  // mới không khớp → MySQL SET NULL trong cùng lượt ALTER (giá trị cũ trỏ id của
-  // `categories` bài viết, không hợp lệ ở FK mới). Thực tế an toàn hơn: set
-  // `category_id = NULL` thủ công **trước** khi đổi FK, để không phụ thuộc hành
-  // vi ALTER. Cán bộ tự gán lại danh mục media mới.
+  // `media_items.category_id` trỏ `categories` (bài viết); nay trỏ bảng này.
+  // Lượt chuyển FK (và lượt xoá giá trị cũ đi kèm) nằm ở
+  // `convergeMediaCategoryForeignKey` — **theo trạng thái lược đồ, không theo giá
+  // trị**, và trên CSDL đã chuyển xong thì không ghi gì vào `media_items`. Đọc
+  // doc của hàm đó trước khi sửa: bản cũ ở đây xoá danh mục video mỗi lần khởi
+  // động từ 2026-09-22 tới khi được vá.
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`media_categories\` (
       \`id\` INT AUTO_INCREMENT PRIMARY KEY,
@@ -559,25 +649,7 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
-  // Set NULL cho mọi `media_items.category_id` cũ (trỏ `categories` bài viết) —
-  // giá trị đó không còn ý nghĩa sau khi tách. Làm trước khi đổi FK để không phụ
-  // thuộc hành vi ALTER.
-  await db.query(`UPDATE \`media_items\` SET \`category_id\` = NULL WHERE \`category_id\` IS NOT NULL`)
-  // Drop FK cũ (trỏ `categories`) nếu còn tồn tại, rồi add FK mới (trỏ
-  // `media_categories`). Kiểm `INFORMATION_SCHEMA` trước khi drop.
-  const [oldFkRows] = await db.execute<RowDataPacket[]>(
-    `SELECT 1 FROM information_schema.TABLE_CONSTRAINTS
-     WHERE CONSTRAINT_SCHEMA = ? AND TABLE_NAME = 'media_items'
-       AND CONSTRAINT_NAME = 'fk_media_items_category' AND CONSTRAINT_TYPE = 'FOREIGN KEY' LIMIT 1`,
-    [database],
-  )
-  if (oldFkRows.length > 0) {
-    await db.query(`ALTER TABLE \`media_items\` DROP FOREIGN KEY \`fk_media_items_category\``)
-  }
-  await ensureForeignKeyIfMissing(
-    db, database, 'media_items', 'fk_media_items_category',
-    'FOREIGN KEY (`category_id`) REFERENCES `media_categories` (`id`) ON DELETE SET NULL',
-  )
+  await convergeMediaCategoryForeignKey(db, database)
 
   await ensureColumn(db, database, 'media_upload_sessions', 'completion_claim', 'VARCHAR(36) NULL')
   await ensureColumn(db, database, 'media_upload_sessions', 'completion_heartbeat_at', 'TIMESTAMP NULL DEFAULT NULL')
@@ -745,6 +817,15 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // partial deploy, ensure their FK constraints are in place.
   await ensureIndex(db, database, 'article_translations', 'article_translations_lang_status_idx', 'INDEX `article_translations_lang_status_idx` (`lang_code`, `status`)')
   await ensureIndex(db, database, 'article_translations', 'uk_article_lang', 'UNIQUE INDEX `uk_article_lang` (`article_id`, `lang_code`)')
+
+  // ── Public article lists (design D18) ───────────────────────────────────
+  // `articles.get.ts` / `related.get.ts` filter status + type (or category_id)
+  // and order by published_at DESC, created_at DESC. `CREATE TABLE IF NOT
+  // EXISTS` never adds a key to a table that already exists, so existing
+  // databases get them here. Same names and columns as schema.ts and
+  // schema-tables/content.ts — tests/article-list-indexes.test.ts.
+  await ensureIndex(db, database, 'articles', 'articles_status_type_pub_idx', 'INDEX `articles_status_type_pub_idx` (`status`, `type`, `published_at`, `created_at`)')
+  await ensureIndex(db, database, 'articles', 'articles_status_category_pub_idx', 'INDEX `articles_status_category_pub_idx` (`status`, `category_id`, `published_at`, `created_at`)')
 
   // ── Rút gọn nhãn hotline: "Hotline Tư Vấn 24/7" → "Hotline" ──────────────
   // Seed là insert-only nên đổi seed không cập nhật hàng đã có. Nay UPDATE
