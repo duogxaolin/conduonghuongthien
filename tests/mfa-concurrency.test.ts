@@ -7,7 +7,7 @@ import { beforeEach, mock, test } from 'node:test'
 import { DatabaseSync } from 'node:sqlite'
 import { getTableColumns, getTableName, SQL } from 'drizzle-orm'
 import { MySqlDialect } from 'drizzle-orm/mysql-core'
-import { userMfaFactors, userRecoveryCodes } from '../server/db/schema'
+import { settings, userMfaFactors, userRecoveryCodes, users } from '../server/db/schema'
 
 const sqlite = new DatabaseSync(':memory:')
 const dialect = new MySqlDialect()
@@ -35,9 +35,16 @@ function selectRows(table: any, where: SQL, projection?: any) {
 const db = {
   select(projection?: any) { return { from(table: any) { return { where(where: SQL) {
     // Snapshot immediately, before either concurrent verifier gets to update.
-    const rows = selectRows(table, where, projection)
-    return { limit: async () => rows, then: (resolve: any) => Promise.resolve(rows).then(resolve) }
+    // `users` and `settings` are not modelled here: confirm.post.ts only takes the
+    // account's row lock (`SELECT … FOR UPDATE`) and reads the MFA policy (no rows =
+    // `off`) — wave2 2A W1. These races are about the factor rows.
+    const rows = table === users || table === settings ? [] : selectRows(table, where, projection)
+    const result: any = { limit: () => result, for: () => result, then: (resolve: any) => Promise.resolve(rows).then(resolve) }
+    return result
   } } } } },
+  // confirm.post.ts activates (and may insert codes) inside one transaction; the
+  // losing writer still sees 0 affected rows and gets its 409 from inside it.
+  async transaction(fn: (tx: any) => Promise<unknown>) { return fn(db) },
   update(table: any) { return { set(values: any) { return { async where(where: SQL) {
     beforeWrite?.()
     if (forceZero) return [{ affectedRows: 0 }, []]

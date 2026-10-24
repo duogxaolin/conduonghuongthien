@@ -270,21 +270,34 @@ Rủi ro khoá người vận hành ra ngoài và lối thoát, theo thứ tự 
 
 `smtp_pass`, `r2_secret_key`, `backup_drive_service_account` từng nằm nguyên văn — tức nguyên văn trong mọi bản dump (sao lưu trong app, `backup-db.sh`, dump trước deploy, bản đẩy lên Drive). Nay envelope AES-256-GCM (`server/utils/settings-secrets.ts`, cùng primitive `secret-envelope.ts`), nhãn `cdkt-smtp-pass:v1` / `cdkt-r2-secret:v1` / `cdkt-backup-drive-key:v1`, khoá `CHATBOT_ENCRYPTION_SECRET`. **Không** có `lastFour` (khác các envelope cũ) — bốn ký tự cuối là một mẩu mật khẩu nằm trong mọi bản dump, và trang không hiện nó. Giải mã đúng một chỗ mỗi loại: `getSmtpConfig`, `loadR2Config` (upload và storage-size nay đi qua nó), `readBackupConfig`. Không mở được → giá trị dùng là rỗng + cờ (`passUnreadable`/`secretUnreadable`/`driveServiceAccountUnreadable`), gửi thử/kiểm tra R2/Drive báo đúng lý do, `sendMail` từ chối (không gửi không xác thực); GET cài đặt trả `needsReentry` (tên khoá), không bao giờ envelope. Giá trị nguyên văn cũ (khôi phục từ dump trước bản này) vẫn dùng được và được mã hoá ở lần khởi động kế tiếp. Thiếu khoá lúc lưu → 500, không bao giờ lưu nguyên văn.
 
-Lượt chuyển lúc khởi động (`server/db/settings-secret-conversion.ts`): chỉ mã hoá giá trị chưa phải envelope (kích hoạt theo trạng thái giá trị, tự xoá điều kiện → khởi động lần hai không ghi), mở thử envelope mới trước khi ghi, `UPDATE … WHERE value = <giá trị vừa đọc> COLLATE utf8mb4_bin`; envelope không mở được → để nguyên + log `db.migration.settings_secret_unreadable`; không có khoá → không ghi + `…_no_key`. Kiểm trên MySQL thật: khởi động 2 không đổi `CHECKSUM TABLE settings`.
+Lượt chuyển lúc khởi động (`server/db/settings-secret-conversion.ts`): chỉ mã hoá giá trị chưa phải envelope (kích hoạt theo trạng thái giá trị, tự xoá điều kiện → khởi động lần hai không ghi), mở thử envelope mới trước khi ghi, `UPDATE … WHERE value = <giá trị vừa đọc> COLLATE utf8mb4_bin`; envelope không mở được → để nguyên + log `db.migration.settings_secret_unreadable`; không có khoá → không ghi + `…_no_key`. Kiểm trên MySQL thật: khởi động 2 không đổi `CHECKSUM TABLE settings`. Cùng lượt chuyển chạy ngay sau một lượt "Khôi phục CSDL" thành công (bản dump trước 2A mang nguyên văn về; hỏng chỉ log, không đổi kết quả khôi phục). Phân loại fail closed: JSON có khoá `sealed` là envelope — nhãn lạ/thiếu trường là `unreadable`, không bao giờ là "nguyên văn" (coi là nguyên văn thì nơi dùng sẽ đăng nhập bằng chính chuỗi JSON).
 
 ### Xoay `CHATBOT_ENCRYPTION_SECRET` (runbook)
 
-Biến này là khoá lúc lưu cho: API key AI (`cdkt-chatbot-provider-key:v1`), secret Google OAuth (`cdkt-google-oauth-secret:v1`), refresh token + client secret Drive OAuth (`cdkt-backup-drive-oauth:v1`), Secret Key R2 video (`cdkt-video-r2-secret:v1`), và từ 2A: mật khẩu SMTP, Secret Key R2 ảnh, khoá JSON service account Drive. Không có lượt mã hoá lại tự động (lượt chuyển chỉ mã hoá nguyên văn, không giải mã-mã hoá lại — chủ đích: chạy nhầm khoá không được biến bí mật đọc được thành không đọc được).
+Biến này là khoá lúc lưu cho TÁM loại bí mật, mỗi loại một nhãn (kiểm kê bằng `grep -rn "envVar: 'CHATBOT_ENCRYPTION_SECRET'" server/utils` — mỗi tệp một nhãn):
 
-1. Trước khi xoay: chuẩn bị lại MỌI bí mật ở danh sách trên (mật khẩu SMTP, hai Secret Key R2, khoá JSON service account, API key AI, client secret Google/Drive). Không có chúng thì đừng xoay.
+| Nhãn | Bí mật | Bảng | Nhập lại ở |
+|---|---|---|---|
+| `cdkt-ai-provider-key:v1` (`server/utils/ai/crypto.ts`) | API key các nhà cung cấp AI của AI Panel | `ai_providers` | `/admin/ai` → Nhà cung cấp |
+| `cdkt-chatbot-provider-key:v1` (`server/utils/chatbot/crypto.ts`) | API key nhà cung cấp của trợ lý (chatbot) | `chatbot_settings` | `/admin/chatbot/settings` |
+| `cdkt-google-oauth-secret:v1` | Client secret đăng nhập Google của người đọc | `google_oauth_settings` | `/admin/settings/google-oauth` |
+| `cdkt-backup-drive-oauth:v1` | Refresh token + client secret Drive OAuth | `backup_drive_oauth`, `backup_drive_oauth_config` | `/admin/settings/backup` (dán lại client secret, liên kết lại Drive) |
+| `cdkt-video-r2-secret:v1` | Secret Key R2 video | `settings` | `/admin/settings/media-portal` |
+| `cdkt-smtp-pass:v1` (2A) | Mật khẩu SMTP | `settings` | `/admin/settings/email` |
+| `cdkt-r2-secret:v1` (2A) | Secret Key R2 ảnh | `settings` | `/admin/settings/media-storage` |
+| `cdkt-backup-drive-key:v1` (2A) | Khoá JSON service account Drive | `settings` | `/admin/settings/backup` |
+
+TOTP của MFA KHÔNG nằm ở đây (dẫn xuất từ `JWT_SECRET`). Không có lượt mã hoá lại tự động (lượt chuyển chỉ mã hoá nguyên văn, không giải mã-mã hoá lại — chủ đích: chạy nhầm khoá không được biến bí mật đọc được thành không đọc được).
+
+1. Trước khi xoay: chuẩn bị lại MỌI bí mật ở bảng trên — API key AI Panel (từng nhà cung cấp), API key trợ lý, client secret Google, client secret Drive OAuth, Secret Key R2 video, mật khẩu SMTP, Secret Key R2 ảnh, khoá JSON service account. Không có chúng thì đừng xoay.
 2. Đổi `CHATBOT_ENCRYPTION_SECRET` trong `.env` (`openssl rand -base64 32`) → `./manage.sh` Update.
-3. Log khởi động có `db.migration.settings_secret_unreadable` (tên khoá) — dự kiến. Nhập lại lần lượt: Email (SMTP), Lưu trữ Media (R2), Cổng video (R2 video), Sao lưu (service account + liên kết lại Drive OAuth), Đăng nhập Google, AI Panel (API key). Các trang này báo "cần nhập lại" cho tới khi xong.
-4. Kiểm: "Gửi email thử", "Kiểm tra kết nối R2", một lượt "Chạy backup" có Drive.
+3. Log khởi động có `db.migration.settings_secret_unreadable` (tên khoá, ba khoá `settings`) — dự kiến; các bí mật khác báo ở trang của chúng ("không giải mã được"/`secret_unreadable`). Nhập lại lần lượt theo cột cuối của bảng. Các trang báo "cần nhập lại" cho tới khi xong.
+4. Kiểm: "Gửi email thử", "Kiểm tra kết nối R2" (ảnh + video), một lượt "Chạy backup" có Drive, "Kiểm tra" nhà cung cấp ở AI Panel, một câu hỏi thử với trợ lý, một lượt đăng nhập Google của người đọc.
 5. Bản dump cũ chứa envelope của khoá cũ (và bản dump trước 2A chứa nguyên văn) — giữ hoặc huỷ theo chính sách lưu trữ tài liệu mật.
 
 ### Tên Google là từ dành riêng
 
-Luật tên dành riêng chỉ áp cho tên người đọc tự đặt; tên Google đi thẳng vào `display_name` và hiện trên bình luận công khai, email trả lời và chat livestream. Nay OAuth callback đặt `reader_accounts.display_name_reserved` (cùng phép gấp `isReservedDisplayName`) mỗi lần đăng nhập; `effectiveDisplayName` hiện "Bạn đọc" khi cờ bật và chưa có tên tự đặt — cờ là tham số **bắt buộc** của hàm, nên một nơi gọi quên chọn cột là lỗi typecheck. Đăng nhập vẫn thành công (D-NAMES: từ chối sẽ khoá một người thật), tên Google lưu nguyên văn (lần đăng nhập sau đằng nào cũng ghi lại). Hàng có sẵn được điền cờ một lần lúc cột vừa được thêm (`server/db/reader-name-backfill.ts`).
+Luật tên dành riêng chỉ áp cho tên người đọc tự đặt; tên Google đi thẳng vào `display_name` và hiện trên bình luận công khai, email trả lời và chat livestream. Nay OAuth callback đặt `reader_accounts.display_name_reserved` (cùng phép gấp `isReservedDisplayName`) mỗi lần đăng nhập; `effectiveDisplayName` hiện "Bạn đọc" khi cờ bật và chưa có tên tự đặt — cờ là tham số **bắt buộc** của hàm, nên một nơi gọi quên chọn cột là lỗi typecheck. Đăng nhập vẫn thành công (D-NAMES: từ chối sẽ khoá một người thật), tên Google lưu nguyên văn (lần đăng nhập sau đằng nào cũng ghi lại). Hàng có sẵn được điền cờ một lần lúc cột vừa được thêm (`server/db/reader-name-backfill.ts`). Kiểm chứng độc lập tìm thấy một chỗ lọt — chuông thông báo đọc thẳng hai cột tên qua `sql` thô (cờ ra `1`, không phải `true`) — nên: resolver nhận `1`/`0`, và guard `tests/reader-name-resolver-guard.test.ts` từ chối mọi `select` dưới `server/` đọc tên Google mà không đọc cờ (ngoại lệ chỉ cán bộ có tên + số khối). Bản chụp tên chat livestream ghi trước 2A được che lúc đọc ra (`publicNameSnapshot`), không ghi lại hàng.
 
 ---
 

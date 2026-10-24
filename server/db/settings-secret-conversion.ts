@@ -19,10 +19,14 @@
  *
  * Envelope mới được mở thử TRƯỚC khi ghi: một khoá hỏng không bao giờ biến một mật
  * khẩu đọc được thành một chuỗi không ai mở được.
+ *
+ * Hai nơi gọi, mỗi nơi tự ghi log theo ngữ cảnh của mình (hàm này không log):
+ *  - `applyAdditiveMigrations` lúc khởi động (`db.migration.settings_secret_*`);
+ *  - `services/backup-restore.ts` ngay sau một lượt khôi phục CSDL thành công —
+ *    bản dump trước 2A mang bí mật nguyên văn về (kiểm chứng 2A, W4).
  */
 import type { Connection, ResultSetHeader, RowDataPacket } from 'mysql2/promise'
 import { readAffectedRows } from '../utils/affected-rows'
-import { BOOT_MIGRATION_EVENTS, logError, logInfo } from '../utils/logger'
 import {
   SETTINGS_SECRET_KEYS,
   isSettingsSecretEnvelope,
@@ -80,16 +84,6 @@ export async function convertPlaintextSettingsSecrets(db: Executor, options: { s
       [sealed, key, value],
     )
     if (readAffectedRows(result) === 1) report.converted.push(key)
-  }
-
-  if (report.converted.length) {
-    logInfo({ event: 'db.migration.settings_secrets_encrypted', keys: report.converted })
-  }
-  if (report.needsReentry.length) {
-    logError({ event: BOOT_MIGRATION_EVENTS.settingsSecretUnreadable, keys: report.needsReentry })
-  }
-  if (report.skippedNoKey.length) {
-    logError({ event: BOOT_MIGRATION_EVENTS.settingsSecretNoKey, keys: report.skippedNoKey })
   }
   return report
 }

@@ -193,6 +193,25 @@ test('a notification link opens the page that holds the comment', {
     }
     assert.ok(victim, 'expected at least one notification to inspect')
 
+    // ── A reserved Google name reads "Bạn đọc" on the bell (wave2 2A, D-NAMES) ──
+    // The flag comes back through raw `sql` in listNotifications — 1, not `true`,
+    // from the real driver. Before the fix this row read "Ban Quản Trị".
+    const [carolRow] = await db.insert(readerAccounts).values({
+      googleSub: 'np-carol', email: 'np-carol@example.com', displayName: 'Ban Quản Trị',
+      displayNameReserved: true, lastSeenAt: new Date(),
+    })
+    const carol = Number(carolRow.insertId)
+    const [carolReply] = await db.insert(articleComments).values({
+      articleId, readerId: carol, parentId: topIds[3]!,
+      body: 'Trả lời từ một tài khoản tên dành riêng', createdAt: new Date(base.getTime() + 950_000),
+    })
+    await createReplyNotification({ commentId: Number(carolReply.insertId), parentId: topIds[3]!, actorReaderId: carol })
+    const flagged = (await listNotifications({ readerId: alice, page: 1, perPage: 50 }))
+      .items.find(entry => entry.excerpt.includes('tài khoản tên dành riêng'))
+    assert.ok(flagged, 'the reserved-name reply produced no notification')
+    assert.equal(flagged.authorName, 'Bạn đọc')
+    assert.equal(flagged.isAdminReply, false)
+
     await closeDb()
   } finally {
     for (const key of ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME']) {

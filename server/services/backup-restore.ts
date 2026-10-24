@@ -28,6 +28,7 @@ import { withNamedLock } from '../utils/named-lock'
 import { logError, logInfo, logWarn, SECURITY_EVENTS } from '../utils/logger'
 import { BackupLockBusyError, LOCK_RESTORE, backupsDir, holdRestoreTarget, runBackup, timestampStamp, type RunStatus } from './backup'
 import { restoreSql } from './backup-sql'
+import { convertPlaintextSettingsSecrets } from '../db/settings-secret-conversion'
 import { keepSchedulerStateAcrossRestore, readSchedulerStateForRestore } from './backup-scheduler'
 import {
   BackupRestoreError,
@@ -243,6 +244,13 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
         })
       })
 
+      // Bản dump trước 2A mang `smtp_pass` / `r2_secret_key` / khoá service account
+      // NGUYÊN VĂN về bảng `settings`: mã hoá lại ngay, không đợi lần khởi động sau
+      // (kiểm chứng 2A, W4 — spec settings-secret-storage). CSDL đã được khôi phục
+      // xong ở đây, nên lượt chuyển hỏng chỉ được log — báo khôi phục thất bại lúc
+      // này là nói sai; lần khởi động kế tiếp vẫn chuyển.
+      if (kind === 'sql') await encryptRestoredSecrets(pool, actor, filename)
+
       const warning = legacyDateShift ? LEGACY_DUMP_WARNING : null
       setStatus(false, 'done', warning ? `Khôi phục xong. ${warning}` : 'Khôi phục xong', 100)
       logWarn({ event: SECURITY_EVENTS.backupRestoreSucceeded, userId: actor.id, username: actor.username ?? null, filename, preRestoreBackup, legacyDateShift })
@@ -262,6 +270,21 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
     throw err
   }
   return outcome.value
+}
+
+/** Lượt mã hoá bí mật sau khôi phục CSDL — không bao giờ ném (xem nơi gọi). */
+async function encryptRestoredSecrets(pool: Parameters<typeof convertPlaintextSettingsSecrets>[0], actor: RestoreActor, filename: string): Promise<void> {
+  try {
+    const report = await convertPlaintextSettingsSecrets(pool)
+    if (report.converted.length) {
+      logInfo({ event: 'backup.restore_secrets_encrypted', userId: actor.id, filename, keys: report.converted })
+    }
+    if (report.needsReentry.length || report.skippedNoKey.length) {
+      logWarn({ event: 'backup.restore_secrets_not_converted', userId: actor.id, filename, needsReentry: report.needsReentry, skippedNoKey: report.skippedNoKey })
+    }
+  } catch (err: unknown) {
+    logWarn({ event: 'backup.restore_secret_conversion_failed', userId: actor.id, filename, error: messageOf(err) })
+  }
 }
 
 /**

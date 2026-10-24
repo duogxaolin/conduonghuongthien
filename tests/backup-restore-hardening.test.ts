@@ -145,7 +145,25 @@ function fakeConnection(options: { multipleStatements?: boolean }) {
     release: () => {},
   }
 }
-const fakePool = { getConnection: async () => fakeConnection({}) }
+/**
+ * `execute` serves the one-time credential conversion that runs after a database
+ * restore (wave2 2A W4): it reads and conditionally rewrites `settings` rows.
+ */
+const fakePool = {
+  getConnection: async () => fakeConnection({}),
+  execute: async (sqlText: string, params: unknown[] = []) => {
+    if (/^SELECT `key`, `value` FROM `settings`/.test(sqlText)) {
+      return [state.settings.filter(row => params.includes(row.key)), []]
+    }
+    if (/^UPDATE `settings` SET `value` = \?/.test(sqlText)) {
+      const [value, key, previous] = params as [string, string, string]
+      const row = state.settings.find(candidate => candidate.key === key && candidate.value === previous)
+      if (row) row.value = value
+      return [{ affectedRows: row ? 1 : 0 }, []]
+    }
+    throw new Error(`unexpected pool statement: ${sqlText}`)
+  },
+}
 mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb('db'), getPool: () => fakePool } })
 mock.module('mysql2/promise', {
   namedExports: { createConnection: async (options: { multipleStatements?: boolean }) => fakeConnection(options) },
@@ -454,6 +472,49 @@ describe('legacy app-generated dumps are flagged on restore', () => {
       assert.equal(meta.legacyDateShift === true, legacy)
     })
   }
+})
+
+// ─── Credentials restored from a dump taken before they were encrypted ─────────
+
+describe('a database restore re-encrypts plaintext credentials it brought back (wave2 2A W4)', () => {
+  test('a dump from before the envelope change: smtp_pass / r2_secret_key come back as envelopes, not plaintext until the next boot', async () => {
+    const previousSecret = process.env.CHATBOT_ENCRYPTION_SECRET
+    process.env.CHATBOT_ENCRYPTION_SECRET = (await import('node:crypto')).randomBytes(32).toString('base64')
+    try {
+      const { openSettingsSecret, isSettingsSecretEnvelope } = await import('../server/utils/settings-secrets')
+      seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+      restoredSettings = [
+        { key: 'smtp_pass', value: 'Restored-smtp-pass-1' },
+        { key: 'r2_secret_key', value: 'restored-r2-secret' },
+        { key: 'site_name', value: 'Cổng thông tin' },
+      ]
+      await restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR)
+      const value = (key: string) => state.settings.find(row => row.key === key)?.value
+      assert.equal(isSettingsSecretEnvelope(value('smtp_pass')), true, 'smtp_pass stayed plaintext after the restore')
+      assert.equal(openSettingsSecret('smtp_pass', value('smtp_pass')).value, 'Restored-smtp-pass-1')
+      assert.equal(openSettingsSecret('r2_secret_key', value('r2_secret_key')).value, 'restored-r2-secret')
+      assert.equal(value('site_name'), 'Cổng thông tin')
+      assert.ok(logs.some(entry => entry.event === 'backup.restore_secrets_encrypted'))
+    } finally {
+      if (previousSecret === undefined) delete process.env.CHATBOT_ENCRYPTION_SECRET
+      else process.env.CHATBOT_ENCRYPTION_SECRET = previousSecret
+    }
+  })
+
+  test('a conversion failure does not turn a completed restore into a failed one (the next boot converts)', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+    const execute = fakePool.execute
+    fakePool.execute = async () => { throw new Error('simulated settings read failure') }
+    try {
+      const outcome = await restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR)
+      assert.ok(outcome)
+      assert.ok(logs.some(entry => entry.event === 'backup.restore_secret_conversion_failed'))
+      assert.ok(logs.some(entry => entry.event === 'backup.restore_succeeded'))
+    } finally {
+      fakePool.execute = execute
+    }
+  })
 })
 
 // ─── 3.4 Audit + security log ──────────────────────────────────────────────────

@@ -73,29 +73,44 @@ interface StoredSettingsEnvelope {
   ciphertext: string
 }
 
-/** Đọc dạng lưu; `null` khi chuỗi không phải một envelope của tệp này. */
-function parseEnvelope(raw: string): StoredSettingsEnvelope | null {
+type ClassifiedStored =
+  | { kind: 'plaintext' }
+  | { kind: 'envelope', envelope: StoredSettingsEnvelope }
+  /** Mang khoá `sealed` (dạng envelope) nhưng hỏng / nhãn lạ / phiên bản lạ. */
+  | { kind: 'broken-envelope' }
+
+/**
+ * Phân loại chuỗi đã lưu. Một đối tượng JSON có khoá `sealed` của riêng nó LÀ
+ * envelope — từ đó trở đi mọi sai lệch (nhãn không biết, phiên bản lạ, thiếu
+ * trường) là `broken-envelope`, KHÔNG BAO GIỜ là nguyên văn (kiểm chứng 2A, S2):
+ * coi nó là nguyên văn thì nơi dùng sẽ đăng nhập SMTP/R2 bằng chính chuỗi JSON đó,
+ * và lượt chuyển lúc khởi động sẽ mã hoá nó lần nữa. Khoá JSON service account
+ * không có khoá `sealed`, nên vẫn là nguyên văn.
+ */
+function classifyStored(raw: string): ClassifiedStored {
   const text = raw.trim()
-  if (!text.startsWith('{') || !text.includes('"sealed"')) return null
+  if (!text.startsWith('{') || !text.includes('"sealed"')) return { kind: 'plaintext' }
   let parsed: unknown
-  try { parsed = JSON.parse(text) } catch { return null }
-  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+  try { parsed = JSON.parse(text) } catch { return { kind: 'plaintext' } }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return { kind: 'plaintext' }
   const value = parsed as Record<string, unknown>
-  if (typeof value.sealed !== 'string' || !KNOWN_LABELS.has(value.sealed)) return null
-  if (typeof value.version !== 'number') return null
+  if (!Object.prototype.hasOwnProperty.call(value, 'sealed')) return { kind: 'plaintext' }
+  // Từ đây: dạng envelope — fail closed.
+  if (typeof value.sealed !== 'string' || !KNOWN_LABELS.has(value.sealed)) return { kind: 'broken-envelope' }
+  if (typeof value.version !== 'number') return { kind: 'broken-envelope' }
   for (const field of ['keyId', 'nonce', 'authTag', 'ciphertext'] as const) {
-    if (typeof value[field] !== 'string' || !value[field]) return null
+    if (typeof value[field] !== 'string' || !value[field]) return { kind: 'broken-envelope' }
   }
-  return value as unknown as StoredSettingsEnvelope
+  return { kind: 'envelope', envelope: value as unknown as StoredSettingsEnvelope }
 }
 
 /**
- * Chuỗi đã lưu có phải envelope (của BẤT KỲ khoá nào trong ba) không. Lượt chuyển
- * lúc khởi động dựa vào đây để không mã hoá hai lần — kể cả một envelope dán nhầm
- * khoá (nó vẫn là envelope, chỉ là không mở được ở khoá này).
+ * Chuỗi đã lưu có phải envelope (của BẤT KỲ khoá nào trong ba, kể cả hỏng) không.
+ * Lượt chuyển lúc khởi động dựa vào đây để không mã hoá hai lần — kể cả một envelope
+ * dán nhầm khoá hay mang nhãn lạ (nó vẫn là envelope, chỉ là không mở được).
  */
 export function isSettingsSecretEnvelope(raw: string | null | undefined): boolean {
-  return typeof raw === 'string' && parseEnvelope(raw) !== null
+  return typeof raw === 'string' && classifyStored(raw).kind !== 'plaintext'
 }
 
 /** Có khoá vật liệu dùng được không (để lưu/chuyển). Không ném. */
@@ -129,8 +144,10 @@ export type OpenedSettingsSecret =
 
 export function openSettingsSecret(key: SettingsSecretKey, raw: string | null | undefined, secret?: string): OpenedSettingsSecret {
   if (raw === null || raw === undefined || raw === '') return { state: 'empty', value: '' }
-  const envelope = parseEnvelope(raw)
-  if (!envelope) return { state: 'plaintext', value: raw }
+  const classified = classifyStored(raw)
+  if (classified.kind === 'plaintext') return { state: 'plaintext', value: raw }
+  if (classified.kind === 'broken-envelope') return { state: 'unreadable', value: '' }
+  const envelope = classified.envelope
   // Envelope của khoá khác: AAD/key id cũng sẽ không khớp, nhưng nói thẳng ra ở đây.
   if (envelope.sealed !== SETTINGS_SECRET_LABELS[key]) return { state: 'unreadable', value: '' }
   try {

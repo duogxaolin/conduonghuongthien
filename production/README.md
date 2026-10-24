@@ -317,7 +317,7 @@ Bản cập nhật này **không cần sửa `.env`** — mọi thứ mặc đ�
 - **Chính sách bắt buộc MFA** — mặc định `off`, không đổi gì cho tới khi SuperAdmin bật ở `/admin/settings/security` (`privileged` = SuperAdmin + ai sửa/xoá được Người dùng, Vai trò, Cài đặt; `all` = mọi tài khoản). Bật = 14 ngày chuyển tiếp (banner báo ngày), sau đó tài khoản thuộc diện chưa có yếu tố chỉ vào được trang "Tài khoản của tôi" để bật; lúc bật yếu tố đầu tiên hệ thống phát kèm mã dự phòng (hiện một lần).
   - **Công tắc khẩn cấp `MFA_ENFORCEMENT=0`** trong `.env` (đã có trong `environment:` của compose) → `./manage.sh` Update hoặc `docker compose up -d --no-deps app`: không ai bị chặn vì thiếu MFA (chính sách vẫn lưu). Dùng khi một yếu tố hỏng hàng loạt — SMTP chết (email OTP), xoay `JWT_SECRET` (TOTP vô hiệu). Bỏ lại ngay khi xong sự cố.
   - Khoá cứng một tài khoản: SuperAdmin xoá yếu tố của nó ở trang Người dùng (break-glass), hoặc đăng nhập bằng mã dự phòng. Runbook: `docs/decisions/realm-safety.md` § *MFA bắt buộc — khoá ngoài & break-glass*.
-- **Xoay `CHATBOT_ENCRYPTION_SECRET`** nay kéo theo: nhập lại mật khẩu SMTP, Secret Key R2 (ảnh + video) và khoá service account Drive, liên kết lại Drive OAuth, nhập lại API key AI và secret Google OAuth. Runbook: `docs/decisions/realm-safety.md` § *Xoay CHATBOT_ENCRYPTION_SECRET*.
+- **Xoay `CHATBOT_ENCRYPTION_SECRET`** nay kéo theo: nhập lại mật khẩu SMTP, Secret Key R2 (ảnh + video) và khoá service account Drive, liên kết lại Drive OAuth, nhập lại API key các nhà cung cấp ở AI Panel (`cdkt-ai-provider-key:v1`), API key của trợ lý (`cdkt-chatbot-provider-key:v1`) và secret Google OAuth — tám nhãn, bảng đầy đủ trong runbook: `docs/decisions/realm-safety.md` § *Xoay CHATBOT_ENCRYPTION_SECRET*.
 
 ---
 

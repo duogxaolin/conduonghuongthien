@@ -9,7 +9,7 @@
 import { and, eq, gt, lt, sql } from 'drizzle-orm'
 import { readAffectedRows } from '../../../../utils/affected-rows'
 import { getDb } from '../../../../utils/db'
-import { userMfaFactors, activityLogs } from '../../../../db/schema'
+import { userMfaFactors, userRecoveryCodes, activityLogs } from '../../../../db/schema'
 import { verifyPassword } from '../../../../utils/auth'
 import { logInfo, SECURITY_EVENTS } from '../../../../utils/logger'
 import { isExpired, verifyOneTimeCode, EMAIL_CODE_MAX_ATTEMPTS } from '../../../../utils/mfa/codes'
@@ -17,7 +17,7 @@ import { unsealTotpSecret } from '../../../../utils/mfa/crypto'
 import { verifyTotp } from '../../../../utils/mfa/totp'
 import { FACTOR_TYPES, FACTOR_LABELS, countUnusedRecoveryCodes, getFactor, revokeSessions, type FactorType } from '../../../../utils/mfa/factors'
 import { isCoveredByMfaPolicy, readMfaPolicy } from '../../../../utils/mfa/policy'
-import { issueRecoveryCodes } from '../../../../utils/mfa/recovery-codes'
+import { lockAccountForMfaChange, prepareRecoveryCodes } from '../../../../utils/mfa/recovery-codes'
 import { setSessionCookie } from '../../../../utils/mfa/session'
 import { getClientIp } from '../../../../utils/client-ip'
 
@@ -94,35 +94,52 @@ export default defineEventHandler(async (event) => {
     }
   }
 
-  const activated = await db
-    .update(userMfaFactors)
-    .set({
-      state: 'active',
-      pendingExpiresAt: null,
-      pendingCodeHash: null,
-      pendingCodeExpiresAt: null,
-      pendingCodeAttempts: 0,
-      lastAcceptedStep: acceptedStep,
-      lastUsedAt: new Date(),
-    })
-    .where(and(
-      pendingSnapshot,
-      gt(userMfaFactors.pendingExpiresAt, new Date()),
-      factorType === 'email_otp' ? gt(userMfaFactors.pendingCodeExpiresAt, new Date()) : undefined,
-      factorType === 'email_otp' ? lt(userMfaFactors.pendingCodeAttempts, EMAIL_CODE_MAX_ATTEMPTS) : undefined,
-    ))
-  if (readAffectedRows(activated) !== 1) {
-    throw createError({ statusCode: 409, statusMessage: 'Yêu cầu xác thực đã thay đổi hoặc hết hạn. Vui lòng thử lại.' })
-  }
-
   // Chính sách MFA khác `off` bao tài khoản này (spec admin-mfa-policy, D1): mã dự
-  // phòng là bắt buộc — phát ngay trong lượt này, hiện một lần. Chỉ khi tài khoản
-  // CHƯA có lô nào còn dùng được: một lô đang có (tờ mã đã in) không bao giờ bị
-  // thay ngầm bởi lượt bật yếu tố thứ hai.
+  // phòng là bắt buộc — phát ngay trong lượt này, hiện một lần. Băm TRƯỚC khi mở
+  // transaction (bcrypt chậm, không giữ khoá trong lúc đó).
   const mfaPolicy = await readMfaPolicy()
-  const recoveryCodes = isCoveredByMfaPolicy(mfaPolicy.policy, admin) && (await countUnusedRecoveryCodes(admin.id)) === 0
-    ? await issueRecoveryCodes(admin.id)
-    : null
+  const prepared = isCoveredByMfaPolicy(mfaPolicy.policy, admin) ? await prepareRecoveryCodes(admin.id) : null
+
+  /**
+   * Bật yếu tố và chèn lô mã là MỘT đơn vị (kiểm chứng độc lập 2A, W1):
+   *  - chèn mã hỏng → cả lượt hoàn tác, yếu tố vẫn `pending` để thử lại (bản trước
+   *    để lại một yếu tố đang bật mà không mã, và lượt thử lại thì báo "không có yêu
+   *    cầu đang chờ");
+   *  - khoá hàng `users` của tài khoản (`lockAccountForMfaChange`) tuần tự hoá các
+   *    lượt bật/tạo lại đồng thời: lượt sau thấy lô của lượt trước và không chèn —
+   *    một lô đang có (tờ mã đã hiện/in) KHÔNG BAO GIỜ bị thay bởi lượt bật yếu tố.
+   * Thu hồi phiên + cookie + audit đi SAU (ngoại lệ có tên ở reader-audit-atomicity:
+   * cookie nằm giữa hai lượt ghi).
+   */
+  // `as`: gán trong callback — không để TS thu hẹp thành `null` sau lượt await.
+  let recoveryCodes = null as string[] | null
+  await db.transaction(async (tx) => {
+    await lockAccountForMfaChange(tx, admin.id)
+    const activated = await tx
+      .update(userMfaFactors)
+      .set({
+        state: 'active',
+        pendingExpiresAt: null,
+        pendingCodeHash: null,
+        pendingCodeExpiresAt: null,
+        pendingCodeAttempts: 0,
+        lastAcceptedStep: acceptedStep,
+        lastUsedAt: new Date(),
+      })
+      .where(and(
+        pendingSnapshot,
+        gt(userMfaFactors.pendingExpiresAt, new Date()),
+        factorType === 'email_otp' ? gt(userMfaFactors.pendingCodeExpiresAt, new Date()) : undefined,
+        factorType === 'email_otp' ? lt(userMfaFactors.pendingCodeAttempts, EMAIL_CODE_MAX_ATTEMPTS) : undefined,
+      ))
+    if (readAffectedRows(activated) !== 1) {
+      throw createError({ statusCode: 409, statusMessage: 'Yêu cầu xác thực đã thay đổi hoặc hết hạn. Vui lòng thử lại.' })
+    }
+    if (prepared && (await countUnusedRecoveryCodes(admin.id, tx)) === 0) {
+      await tx.insert(userRecoveryCodes).values(prepared.rows)
+      recoveryCodes = prepared.codes
+    }
+  })
 
   // Enabling a factor revokes other live sessions, then re-issues this one.
   const tokenVersion = await revokeSessions(admin.id)

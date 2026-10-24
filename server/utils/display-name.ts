@@ -41,7 +41,12 @@ export const RESERVED_PROVIDER_NAME_FALLBACK = 'Bạn đọc'
  * `displayNameReserved` is a REQUIRED key on purpose: it is set by the OAuth
  * callback when the Google name is reserved, and a call site that forgot to
  * select it would print "Admin" on a public thread. Pass `null`/`undefined`
- * explicitly only where the row cannot have a Google name.
+ * explicitly only where the row cannot have a Google name. It is taken as MySQL
+ * hands it back too — a Drizzle `boolean()` column maps to `true`/`false`, but the
+ * same column read through `sql` is `1`/`0`, and `=== true` on a `1` is the bug
+ * that kept a reserved name on the notification bell (kiểm chứng 2A, CRITICAL).
+ * `tests/reader-name-resolver-guard.test.ts` also refuses a select that reads the
+ * Google name without the flag.
  *
  * Never returns an empty string: a blank author on a public comment reads as a
  * rendering fault rather than as a missing name.
@@ -49,13 +54,24 @@ export const RESERVED_PROVIDER_NAME_FALLBACK = 'Bạn đọc'
 export function effectiveDisplayName(row: {
   customDisplayName?: string | null
   displayName?:       string | null
-  displayNameReserved: boolean | null | undefined
+  displayNameReserved: boolean | number | null | undefined
 }): string {
   const custom = row.customDisplayName?.trim()
   if (custom) return custom
   const provider = row.displayName?.trim()
-  if (provider && row.displayNameReserved === true) return RESERVED_PROVIDER_NAME_FALLBACK
+  if (provider && Boolean(row.displayNameReserved)) return RESERVED_PROVIDER_NAME_FALLBACK
   return provider || DISPLAY_NAME_FALLBACK
+}
+
+/**
+ * A name already SNAPSHOTTED into a row (livestream chat stores the sender's name
+ * at send time, so a later rename does not rewrite what viewers saw). Snapshots
+ * taken before reserved Google names were masked can hold "Admin"; on the way out
+ * such a snapshot reads as the neutral name. A reader-chosen name can never be
+ * reserved (`validateDisplayName`), so this only ever masks a provider name.
+ */
+export function publicNameSnapshot(snapshot: string): string {
+  return isReservedDisplayName(snapshot) ? RESERVED_PROVIDER_NAME_FALLBACK : snapshot
 }
 
 export type DisplayNameValidation =

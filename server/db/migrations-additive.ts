@@ -20,7 +20,7 @@
  */
 import { type Connection, type RowDataPacket } from 'mysql2/promise'
 
-import { BOOT_MIGRATION_EVENTS, logError } from '../utils/logger'
+import { BOOT_MIGRATION_EVENTS, logError, logInfo } from '../utils/logger'
 import { encodeShortId } from '../utils/short-media-id'
 import { convertPlaintextSettingsSecrets } from './settings-secret-conversion'
 import { backfillReservedReaderNames } from './reader-name-backfill'
@@ -872,7 +872,16 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // Lượt chuyển MỘT LẦN theo trạng thái giá trị (chưa phải envelope → mã hoá; đã là
   // envelope → để nguyên, kể cả khi không mở được). Lần khởi động thứ hai không ghi
   // gì. Chi tiết và lý do: `settings-secret-conversion.ts` (spec settings-secret-storage).
-  await convertPlaintextSettingsSecrets(db)
+  const secretReport = await convertPlaintextSettingsSecrets(db)
+  if (secretReport.converted.length) {
+    logInfo({ event: 'db.migration.settings_secrets_encrypted', keys: secretReport.converted })
+  }
+  if (secretReport.needsReentry.length) {
+    logError({ event: BOOT_MIGRATION_EVENTS.settingsSecretUnreadable, keys: secretReport.needsReentry })
+  }
+  if (secretReport.skippedNoKey.length) {
+    logError({ event: BOOT_MIGRATION_EVENTS.settingsSecretNoKey, keys: secretReport.skippedNoKey })
+  }
 
   // ── Tự vá URL ảnh hỏng hàng loạt (all bài) ────────────────────────────────
   // Sync trước treo ở pre-backup nên phase rewrite chưa chạy: all bài vẫn

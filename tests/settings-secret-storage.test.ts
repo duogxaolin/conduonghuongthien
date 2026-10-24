@@ -147,6 +147,28 @@ test('an envelope does not open under another key, nor under a rotated encryptio
   assert.equal(secrets.openSettingsSecret('smtp_pass', sealedWith('smtp_pass', SMTP_PASSWORD, ROTATED)).state, 'unreadable')
 })
 
+test('S2: anything shaped like an envelope fails CLOSED — an unknown label or missing fields is unreadable, never plaintext', async () => {
+  const shapes = [
+    JSON.stringify({ sealed: 'cdkt-unknown-feature:v9', version: 1, keyId: 'k', nonce: 'n', authTag: 't', ciphertext: 'c' }),
+    JSON.stringify({ sealed: 'cdkt-smtp-pass:v1' }),
+    JSON.stringify({ sealed: 'cdkt-smtp-pass:v2', version: 2, keyId: 'k', nonce: 'n', authTag: 't', ciphertext: 'c' }),
+    JSON.stringify({ sealed: 42, ciphertext: 'c' }),
+  ]
+  for (const stored of shapes) {
+    assert.deepEqual(secrets.openSettingsSecret('smtp_pass', stored), { state: 'unreadable', value: '' }, stored)
+    assert.equal(secrets.isSettingsSecretEnvelope(stored), true, `${stored} would be encrypted again at boot`)
+  }
+  // The boot conversion leaves such a row alone and reports it.
+  const rows = new Map<string, string | null>([['smtp_pass', shapes[0]!]])
+  const connection = fakeConnection(rows)
+  const report = await convertPlaintextSettingsSecrets(connection as never)
+  assert.deepEqual(report.needsReentry, ['smtp_pass'])
+  assert.equal(rows.get('smtp_pass'), shapes[0])
+  // A use path never logs in with the stored string.
+  store.set('smtp_pass', shapes[0]!)
+  assert.equal((await getSmtpConfig())?.pass, '')
+})
+
 test('legacy plaintext (including service-account JSON) is recognised as not-an-envelope; empty is empty', () => {
   assert.deepEqual(secrets.openSettingsSecret('backup_drive_service_account', SA_JSON), { state: 'plaintext', value: SA_JSON })
   assert.equal(secrets.isSettingsSecretEnvelope(SA_JSON), false)
