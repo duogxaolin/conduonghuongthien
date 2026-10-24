@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import {
+  MASKED_SECRET,
   R2_ACCOUNT_ID_INVALID_MESSAGE,
   R2_BUCKET_INVALID_MESSAGE,
   R2_RETYPE_SECRET_MESSAGE,
@@ -53,13 +54,21 @@ const bucketError = computed(() => {
   return value !== '' && !isR2BucketName(value) ? R2_BUCKET_INVALID_MESSAGE : ''
 })
 const secretError = computed(() => (formViolation.value === R2_RETYPE_SECRET_MESSAGE ? formViolation.value : ''))
+/** Secret Key đã lưu không giải mã được bằng khoá mã hoá hiện tại — phải nhập lại. */
+const secretNeedsReentry = ref(false)
+const secretRetyped = computed(() => settings.r2_secret_key !== '' && settings.r2_secret_key !== MASKED_SECRET)
+const secretHint = computed(() => secretError.value
+  || (secretNeedsReentry.value && !secretRetyped.value
+    ? 'Secret Key đã lưu không giải mã được (khoá mã hoá của máy chủ đã đổi) — R2 không dùng được cho tới khi bạn nhập lại và lưu.'
+    : 'Giữ nguyên dấu ******** để dùng Secret Key đã lưu. Không nhập lại thì nút kiểm tra dùng cấu hình ĐÃ LƯU.'))
 
 const fetchSettings = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null> }>)(`/api/admin/settings`)
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null>; needsReentry?: string[] }>)(`/api/admin/settings`)
     if (res.ok && res.settings) {
+      secretNeedsReentry.value = (res.needsReentry ?? []).includes('r2_secret_key')
       // Chỉ nhận các khóa thuộc trang này; endpoint trả về toàn bộ settings (gồm
       // nav_menu_*, smtp_*, tracking_*...) — gán toàn bộ sẽ làm state settings
       // lẫn các khóa ngoài phạm vi và sau đó bị gửi ngược lên khi lưu.
@@ -232,7 +241,7 @@ onMounted(() => { fetchSettings() })
           <div class="flex flex-col gap-1.5">
             <label for="r2-secret" class="text-[0.82rem] font-bold text-[#2c3e2e]">Secret Access Key (*)</label>
             <input id="r2-secret" type="password" v-model="settings.r2_secret_key" placeholder="••••••••••••••••" autocomplete="new-password" :aria-invalid="Boolean(secretError)" aria-describedby="r2-secret-hint" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-[#2c6e33] box-border" :class="secretError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
-            <span id="r2-secret-hint" class="text-[0.75rem]" :class="secretError ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">{{ secretError || 'Giữ nguyên dấu ******** để dùng Secret Key đã lưu. Không nhập lại thì nút kiểm tra dùng cấu hình ĐÃ LƯU.' }}</span>
+            <span id="r2-secret-hint" class="text-[0.75rem]" :class="secretError || (secretNeedsReentry && !secretRetyped) ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">{{ secretHint }}</span>
           </div>
           <div class="flex flex-col gap-1.5 sm:col-span-2">
             <label class="text-[0.82rem] font-bold text-[#2c3e2e]">Public Domain / R2 Public URL (*)</label>

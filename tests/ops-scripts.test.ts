@@ -492,6 +492,8 @@ test('operational switches set in .env reach the container', async () => {
     BACKUP_SCHEDULER: 'server/plugins/backup-scheduler.ts',
     LOG_LEVEL: 'server/utils/logger.ts',
     LOGIN_CAPTCHA_ENABLED: 'server/api/admin/auth/login.post.ts',
+    // Kill switch of the admin MFA policy (wave2 2A, spec admin-mfa-policy).
+    MFA_ENFORCEMENT: 'server/utils/mfa/policy.ts',
   }
   for (const [variable, reader] of Object.entries(readers)) {
     assert.equal(appEnv[variable], `\${${variable}:-}`, `${variable} is not passed through to the app`)

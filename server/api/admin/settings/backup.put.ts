@@ -5,14 +5,17 @@
  * bảng `settings` (group `backup`). Validate từng giá trị — sai trả 400, không
  * lùi về mặc định (cùng quy tắc `media-portal.put.ts`).
  *
- * `backup_drive_service_account` là JSON key nhạy cảm — lưu plain text trong
- * settings (chưa encrypt để đơn giản; nếu cần encrypt sau, dùng cùng pattern
- * `media-config-service.ts` với nhãn `cdkt-backup-drive-key:v1`). Ô nhập trên
- * trang hiện `********` nếu đã có — gửi `********` lại = giữ nguyên giá trị cũ.
+ * `backup_drive_service_account` là JSON key nhạy cảm (có `private_key`) — lưu
+ * dạng envelope AES-256-GCM nhãn `cdkt-backup-drive-key:v1`
+ * (`utils/settings-secrets.ts`, spec settings-secret-storage), không bao giờ
+ * nguyên văn. Ô nhập trên trang hiện `********` nếu đã có — gửi `********` lại =
+ * giữ nguyên giá trị cũ.
  */
 import { getDb } from '../../../utils/db'
 import { settings, activityLogs } from '../../../db/schema'
 import { requireResourcePermission, requireSuperAdmin } from '../../../utils/permissions'
+import { openSettingsSecret, sealSettingsSecret, SettingsSecretError } from '../../../utils/settings-secrets'
+import { MASKED_SECRET } from '../../../../shared/settings-credential-rules'
 
 const ALLOWED_KEYS = new Set([
   'backup_auto_enabled',
@@ -65,7 +68,15 @@ const SUPERADMIN_ONLY_KEYS = new Set([
 
 const DEFAULT_KEEP_COUNT = 14
 
+/** Không trùng được với bất kỳ chuỗi nào gửi lên: khoá không mở được thì mọi giá trị gửi lên là "đổi". */
+const UNREADABLE_STORED = '\u0000unreadable'
+
 function effectiveStored(key: string, stored: string | null | undefined): string {
+  if (key === 'backup_drive_service_account') {
+    // So với giá trị THẬT (đã giải mã), không so với envelope.
+    const opened = openSettingsSecret('backup_drive_service_account', stored)
+    return opened.state === 'unreadable' ? UNREADABLE_STORED : opened.value.trim()
+  }
   const raw = (stored ?? '').trim()
   if (key === 'backup_keep_count') return String(Number(raw) || DEFAULT_KEEP_COUNT)
   if (key === 'backup_drive_enabled') return raw === 'true' || raw === '1' ? 'true' : 'false'
@@ -83,6 +94,16 @@ function effectiveSubmitted(key: string, raw: string): string | null {
     try { return validateBoolean(key, text) } catch { return null }
   }
   return text
+}
+
+/** Thiếu khoá vật liệu → 500, không bao giờ lưu nguyên văn. */
+function sealServiceAccount(text: string): string {
+  try {
+    return sealSettingsSecret('backup_drive_service_account', text)
+  } catch (err: unknown) {
+    if (!(err instanceof SettingsSecretError)) throw err
+    throw createError({ statusCode: 500, statusMessage: 'Máy chủ chưa có khoá mã hoá (CHATBOT_ENCRYPTION_SECRET) nên không lưu được khoá service account.' })
+  }
 }
 
 function validateDays(raw: string): string {
@@ -124,7 +145,7 @@ export default defineEventHandler(async (event) => {
     // no-op chứ không phải 400.
     if (SUPERADMIN_ONLY_KEYS.has(key)) {
       const rawStr = String(raw ?? '')
-      if (key === 'backup_drive_service_account' && rawStr === '********') {
+      if (key === 'backup_drive_service_account' && rawStr === MASKED_SECRET) {
         // dấu che = giữ nguyên (xử lý bên dưới)
       } else if (effectiveSubmitted(key, rawStr) === effectiveStored(key, existingMap.get(key))) {
         continue
@@ -149,7 +170,7 @@ export default defineEventHandler(async (event) => {
       } else if (key === 'backup_drive_service_account') {
         // `********` = giữ nguyên giá trị cũ; rỗng = xoá (lưu chuỗi rỗng).
         const rawStr = String(raw)
-        if (rawStr === '********') continue
+        if (rawStr === MASKED_SECRET) continue
         value = rawStr.trim()
       } else {
         value = String(raw).trim()
@@ -158,6 +179,9 @@ export default defineEventHandler(async (event) => {
       // Trước đây các hàm validate ném `Error` trần → 500, trái với "sai trả 400".
       throw createError({ statusCode: 400, statusMessage: err instanceof Error ? err.message : `${key} không hợp lệ` })
     }
+    // Khoá service account chỉ được lưu dạng envelope (ngoài khối validate ở trên:
+    // thiếu khoá mã hoá là lỗi cấu hình máy chủ, không phải "dữ liệu gửi lên sai").
+    if (key === 'backup_drive_service_account' && value) value = sealServiceAccount(value)
     // Khoá JSON của service account là BÍ MẬT: dòng audit chỉ ghi "đã có/chưa có",
     // không bao giờ chép nguyên văn khoá cũ vào `activity_logs`.
     oldValues[key] = key === 'backup_drive_service_account'

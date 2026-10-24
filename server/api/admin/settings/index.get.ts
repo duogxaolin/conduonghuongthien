@@ -4,6 +4,7 @@ import { getDb } from '../../../utils/db'
 import { settings } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { MASKED_SECRET } from '../../../../shared/settings-credential-rules'
+import { settingsSecretNeedsReentry, type SettingsSecretKey } from '../../../utils/settings-secrets'
 
 /**
  * The ONLY keys `GET /api/admin/settings` returns (spec admin-settings-secrets,
@@ -43,7 +44,8 @@ export const SETTINGS_READ_KEYS: readonly string[] = Object.freeze([
  * field still holds it. An empty value stays empty, because the pages read
  * "no value" as "not configured yet".
  */
-const MASKED_KEYS: ReadonlySet<string> = new Set(['r2_secret_key', 'smtp_pass'])
+const MASKED_KEYS: ReadonlySet<SettingsSecretKey> = new Set<SettingsSecretKey>(['r2_secret_key', 'smtp_pass'])
+const isMaskedKey = (key: string): key is SettingsSecretKey => (MASKED_KEYS as ReadonlySet<string>).has(key)
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -59,11 +61,19 @@ export default defineEventHandler(async (event) => {
   // Built FROM the allowlist, not from the rows: the response cannot carry a key
   // the list does not name, whatever the query returned.
   const settingsMap: Record<string, string | null> = {}
+  // Bí mật đã lưu mà khoá hiện tại không mở được (CHATBOT_ENCRYPTION_SECRET đã xoay):
+  // chỉ báo TÊN khoá — giá trị vẫn là dấu che, không bao giờ là envelope.
+  const needsReentry: string[] = []
   for (const key of SETTINGS_READ_KEYS) {
     if (!stored.has(key)) continue
     const value = stored.get(key) ?? null
-    settingsMap[key] = MASKED_KEYS.has(key) && value ? MASKED_SECRET : value
+    if (isMaskedKey(key)) {
+      settingsMap[key] = value ? MASKED_SECRET : value
+      if (value && settingsSecretNeedsReentry(key, value)) needsReentry.push(key)
+      continue
+    }
+    settingsMap[key] = value
   }
 
-  return { ok: true, settings: settingsMap }
+  return { ok: true, settings: settingsMap, needsReentry }
 })

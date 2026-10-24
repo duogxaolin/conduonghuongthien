@@ -2,6 +2,7 @@ import { getDb } from '../utils/db'
 import { logWarn, SECURITY_EVENTS } from '../utils/logger'
 import { users, roles, permissions } from '../db/schema'
 import { verifyToken, isSessionStage } from '../utils/auth'
+import { MFA_ENROLLMENT_REQUIRED_CODE, MFA_ENROLLMENT_REQUIRED_MESSAGE, resolveMfaEnrollment } from '../utils/mfa/policy'
 import { eq } from 'drizzle-orm'
 
 const ADMIN_API_PREFIX = '/api/admin/'
@@ -55,17 +56,51 @@ function decodeOrKeep(path: string): string {
  *    "có phải admin request" nên chỉ có thể làm cổng chặt hơn.
  */
 export function classifyAdminRequest(routedPath: string, rawPathname: string): { isAdmin: boolean, isExempt: boolean } {
+  const { decodedForms, allForms, carriesHash } = pathForms(routedPath, rawPathname)
+  const isAdmin = [...allForms].some(form => form.startsWith(ADMIN_API_PREFIX))
+  const isExempt = isAdmin && !carriesHash && decodedForms.every(form => EXEMPT_PATHS.has(form))
+  return { isAdmin, isExempt }
+}
+
+/**
+ * Mọi dạng của một đường dẫn mà middleware và router có thể đọc khác nhau — dùng
+ * chung cho hai câu hỏi "được miễn phiên?" và "được qua chốt bắt buộc MFA?".
+ * `#` (thô hay `%23`) trong BẤT KỲ dạng nào của PHẦN ĐƯỜNG DẪN → `carriesHash`
+ * (query đã cắt — `?next=%23x` không ảnh hưởng). `getRequestURL()` dựng pathname
+ * bằng `new URL`, vốn vứt fragment, nên dạng đó có thể trông "sạch"; `routed` thì
+ * vẫn mang `#`, và nó nằm trong `allForms`.
+ */
+function pathForms(routedPath: string, rawPathname: string): { decodedForms: string[], allForms: Set<string>, carriesHash: boolean } {
   const routed = stripQuery(routedPath || '/')
   const decodedForms = [...new Set([routed, decodeOrKeep(routed), decodeOrKeep(rawPathname)])]
   const allForms = new Set([...decodedForms, rawPathname])
-  const isAdmin = [...allForms].some(form => form.startsWith(ADMIN_API_PREFIX))
-  // `#` (thô hay `%23`) trong BẤT KỲ dạng nào của PHẦN ĐƯỜNG DẪN → không miễn
-  // (query đã cắt — `?next=%23x` không ảnh hưởng). `getRequestURL()` dựng pathname
-  // bằng `new URL`, vốn vứt fragment, nên dạng đó có thể trông "sạch"; `routed`
-  // thì vẫn mang `#`, và nó nằm trong `allForms`.
   const carriesHash = [...allForms].some(form => form.includes('#') || /%23/i.test(form))
-  const isExempt = isAdmin && !carriesHash && decodedForms.every(form => EXEMPT_PATHS.has(form))
-  return { isAdmin, isExempt }
+  return { decodedForms, allForms, carriesHash }
+}
+
+/**
+ * Endpoint vẫn mở cho tài khoản đang bị chốt "phải bật MFA" (spec admin-mfa-policy):
+ * phiên (`auth/me`), đăng xuất, đổi mật khẩu, và mọi bước bật yếu tố dưới
+ * `profile/mfa/`. Liệt kê đủ từng endpoint — không khớp tiền tố, để
+ * `profile/mfa/../../users` không bao giờ "nằm dưới" `profile/mfa/`.
+ * `tests/admin-mfa-enforcement-behavior.test.ts` đọc thư mục `profile/mfa/` và đỏ
+ * khi một endpoint mới ở đó chưa có tên ở đây.
+ */
+export const MFA_ENROLLMENT_PATHS: ReadonlySet<string> = new Set([
+  '/api/admin/auth/me',
+  '/api/admin/auth/logout',
+  '/api/admin/profile/password',
+  '/api/admin/profile/mfa',
+  '/api/admin/profile/mfa/enroll',
+  '/api/admin/profile/mfa/confirm',
+  '/api/admin/profile/mfa/disable',
+  '/api/admin/profile/mfa/recovery-codes',
+])
+
+/** Chỉ qua khi MỌI dạng đã giải mã đều đúng một endpoint trong danh sách (fail closed). */
+export function isMfaEnrollmentPath(routedPath: string, rawPathname: string): boolean {
+  const { decodedForms, carriesHash } = pathForms(routedPath, rawPathname)
+  return !carriesHash && decodedForms.every(form => MFA_ENROLLMENT_PATHS.has(form))
 }
 
 // Server middleware: bảo vệ tất cả /api/admin/** routes
@@ -140,9 +175,28 @@ export default defineEventHandler(async (event) => {
     .where(eq(permissions.roleId, user.roleId!))
 
   // Attach vào event context
-  event.context.adminUser = {
+  const adminUser = {
     ...user,
     permissions: userPermissions,
     isSuperAdmin: user.isSystem === true,
+  }
+  event.context.adminUser = adminUser
+
+  // Chính sách bắt buộc MFA (server/utils/mfa/policy.ts). Tính sau khi đã có quyền
+  // từ CSDL — diện "đặc quyền" suy từ chính các cờ đó. `auth/me` đọc lại kết quả
+  // này để báo giao diện, không tính lần hai.
+  const enrollment = await resolveMfaEnrollment({
+    id: user.id,
+    tokenVersion: user.tokenVersion,
+    isSuperAdmin: adminUser.isSuperAdmin,
+    permissions: userPermissions,
+  })
+  event.context.mfaEnrollment = enrollment
+  if (enrollment.enforced && !isMfaEnrollmentPath(event.path || '/', getRequestURL(event).pathname)) {
+    throw createError({
+      statusCode: 403,
+      statusMessage: MFA_ENROLLMENT_REQUIRED_MESSAGE,
+      data: { code: MFA_ENROLLMENT_REQUIRED_CODE, message: MFA_ENROLLMENT_REQUIRED_MESSAGE },
+    })
   }
 })

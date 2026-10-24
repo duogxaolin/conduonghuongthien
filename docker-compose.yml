@@ -167,7 +167,7 @@ services:
       READER_ACCOUNT_RETENTION_DAYS: ${READER_ACCOUNT_RETENTION_DAYS:-}
       # ── Công tắc vận hành ─────────────────────────────────────────────────
       # Cùng lý do: compose KHÔNG dùng env_file, nên trước khi được liệt kê ở đây
-      # năm biến này đặt trong .env cũng không tới được container. Tất cả `${VAR:-}`
+      # các biến này đặt trong .env cũng không tới được container. Tất cả `${VAR:-}`
       # — rỗng đọc y như chưa đặt, nên mặc định vẫn là của code:
       #   RETENTION_SCHEDULER / ANALYTICS_SCHEDULER : rỗng = bật ở production;
       #       `0` trả việc cho cron (server/plugins/*-scheduler.ts).
@@ -177,11 +177,17 @@ services:
       #   LOG_LEVEL        : rỗng = `info` ở production (server/utils/logger.ts).
       #   LOGIN_CAPTCHA_ENABLED : rỗng = BẬT captcha đăng nhập. `0` TẮT captcha
       #       trên production — biến này tồn tại cho bộ E2E; đừng đặt `0` ở VPS.
+      #   MFA_ENFORCEMENT  : rỗng = chính sách bắt buộc MFA (SuperAdmin đặt ở
+      #       /admin/settings/security) được cưỡng chế. `0` = công tắc khẩn cấp: không
+      #       tài khoản nào bị chặn vì thiếu MFA (vd. SMTP hỏng làm email OTP chết,
+      #       xoay JWT_SECRET làm TOTP vô hiệu). Đọc lúc request — sửa .env rồi
+      #       `docker compose up -d --no-deps app`. Bỏ lại `0` ngay khi xong sự cố.
       RETENTION_SCHEDULER: ${RETENTION_SCHEDULER:-}
       ANALYTICS_SCHEDULER: ${ANALYTICS_SCHEDULER:-}
       BACKUP_SCHEDULER: ${BACKUP_SCHEDULER:-}
       LOG_LEVEL: ${LOG_LEVEL:-}
       LOGIN_CAPTCHA_ENABLED: ${LOGIN_CAPTCHA_ENABLED:-}
+      MFA_ENFORCEMENT: ${MFA_ENFORCEMENT:-}
       # ── Media Portal ──────────────────────────────────────────────────────
       # Thư mục làm việc của pipeline video (chứa `uploads/` và `media/`). Nằm
       # trên volume `media_work`, KHÔNG trên `uploads_data`: một video 10 GB đang

@@ -7,18 +7,11 @@
  */
 
 import { getDb } from '../../../../utils/db'
-import { userRecoveryCodes, activityLogs } from '../../../../db/schema'
+import { activityLogs } from '../../../../db/schema'
 import { logInfo } from '../../../../utils/logger'
 import { requireCurrentPassword } from '../../../../utils/mfa/reauth'
+import { issueRecoveryCodes } from '../../../../utils/mfa/recovery-codes'
 import {
-  RECOVERY_CODE_COUNT,
-  generateBatchId,
-  generateRecoveryCodes,
-  hashOneTimeCode,
-  normalizeRecoveryCode,
-} from '../../../../utils/mfa/codes'
-import {
-  deleteAllRecoveryCodes,
   hasAnyActiveFactor,
   revokeSessions,
 } from '../../../../utils/mfa/factors'
@@ -41,20 +34,11 @@ export default defineEventHandler(async (event) => {
     })
   }
 
-  const codes = generateRecoveryCodes(RECOVERY_CODE_COUNT)
-  const batchId = generateBatchId()
+  // Lô cũ bị xoá hẳn, lô mới băm bcrypt — một nơi cho cả lượt bật MFA dưới chính
+  // sách (`confirm.post.ts`): `utils/mfa/recovery-codes.ts`.
+  const codes = await issueRecoveryCodes(admin.id)
 
   const db = getDb()
-  await deleteAllRecoveryCodes(admin.id)
-  await db.insert(userRecoveryCodes).values(
-    await Promise.all(codes.map(async code => ({
-      userId: admin.id,
-      // Hashed over the normalized form so the separator is irrelevant at redemption.
-      codeHash: await hashOneTimeCode(normalizeRecoveryCode(code)),
-      batchId,
-    }))),
-  )
-
   const tokenVersion = await revokeSessions(admin.id)
   setSessionCookie(event, {
     id: admin.id,

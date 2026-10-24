@@ -69,6 +69,10 @@ let failDump = false
 let restoredTableWipesBackups = true
 /** The `settings` rows the restored dump brings back (it replaces the table); `null` = dump leaves settings alone. */
 let restoredSettings: Array<{ key: string, value: string }> | null = null
+/** The dump body lands (settings replaced) and then the restore connection fails. */
+let failRestoreMidway = false
+/** The success audit row (`backup_restore`) fails to insert. */
+let failRestoreAudit = false
 
 const schema = await import('../server/db/schema')
 
@@ -108,6 +112,9 @@ function fakeDb(via: 'tx' | 'db'): Record<string, unknown> {
             },
           }
         }
+        if (table === schema.activityLogs && failRestoreAudit && values.action === 'backup_restore') {
+          return Promise.reject(new Error('simulated audit failure'))
+        }
         if (table === schema.activityLogs) state.audit.push({ via, values })
         else if (table === schema.backups) state.backups.push({ id: state.nextId++, driveUploaded: false, driveFileId: null, error: null, createdAt: new Date(), createdBy: null, ...values } as Row)
         return Promise.resolve()
@@ -138,6 +145,7 @@ function fakeConnection(options: { multipleStatements?: boolean }) {
         // The real dump starts with DROP TABLE backups: the table is replaced.
         if (restoredTableWipesBackups) state.backups = []
         if (restoredSettings) state.settings = restoredSettings.map(row => ({ ...row }))
+        if (failRestoreMidway && !/^\s*SET /i.test(sqlText)) throw new Error('simulated failure after part of the dump ran')
       }
       return [[], []]
     },
@@ -145,7 +153,25 @@ function fakeConnection(options: { multipleStatements?: boolean }) {
     release: () => {},
   }
 }
-const fakePool = { getConnection: async () => fakeConnection({}) }
+/**
+ * `execute` serves the one-time credential conversion that runs after a database
+ * restore (wave2 2A W4): it reads and conditionally rewrites `settings` rows.
+ */
+const fakePool = {
+  getConnection: async () => fakeConnection({}),
+  execute: async (sqlText: string, params: unknown[] = []) => {
+    if (/^SELECT `key`, `value` FROM `settings`/.test(sqlText)) {
+      return [state.settings.filter(row => params.includes(row.key)), []]
+    }
+    if (/^UPDATE `settings` SET `value` = \?/.test(sqlText)) {
+      const [value, key, previous] = params as [string, string, string]
+      const row = state.settings.find(candidate => candidate.key === key && candidate.value === previous)
+      if (row) row.value = value
+      return [{ affectedRows: row ? 1 : 0 }, []]
+    }
+    throw new Error(`unexpected pool statement: ${sqlText}`)
+  },
+}
 mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb('db'), getPool: () => fakePool } })
 mock.module('mysql2/promise', {
   namedExports: { createConnection: async (options: { multipleStatements?: boolean }) => fakeConnection(options) },
@@ -185,6 +211,8 @@ beforeEach(() => {
   failDump = false
   restoredTableWipesBackups = true
   restoredSettings = null
+  failRestoreMidway = false
+  failRestoreAudit = false
   busyLocks.clear()
 })
 
@@ -454,6 +482,73 @@ describe('legacy app-generated dumps are flagged on restore', () => {
       assert.equal(meta.legacyDateShift === true, legacy)
     })
   }
+})
+
+// ─── Credentials restored from a dump taken before they were encrypted ─────────
+
+describe('a database restore re-encrypts plaintext credentials it brought back (wave2 2A W4)', () => {
+  test('a dump from before the envelope change: smtp_pass / r2_secret_key come back as envelopes, not plaintext until the next boot', async () => {
+    const previousSecret = process.env.CHATBOT_ENCRYPTION_SECRET
+    process.env.CHATBOT_ENCRYPTION_SECRET = (await import('node:crypto')).randomBytes(32).toString('base64')
+    try {
+      const { openSettingsSecret, isSettingsSecretEnvelope } = await import('../server/utils/settings-secrets')
+      seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+      restoredSettings = [
+        { key: 'smtp_pass', value: 'Restored-smtp-pass-1' },
+        { key: 'r2_secret_key', value: 'restored-r2-secret' },
+        { key: 'site_name', value: 'Cổng thông tin' },
+      ]
+      await restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR)
+      const value = (key: string) => state.settings.find(row => row.key === key)?.value
+      assert.equal(isSettingsSecretEnvelope(value('smtp_pass')), true, 'smtp_pass stayed plaintext after the restore')
+      assert.equal(openSettingsSecret('smtp_pass', value('smtp_pass')).value, 'Restored-smtp-pass-1')
+      assert.equal(openSettingsSecret('r2_secret_key', value('r2_secret_key')).value, 'restored-r2-secret')
+      assert.equal(value('site_name'), 'Cổng thông tin')
+      assert.ok(logs.some(entry => entry.event === 'backup.restore_secrets_encrypted'))
+    } finally {
+      if (previousSecret === undefined) delete process.env.CHATBOT_ENCRYPTION_SECRET
+      else process.env.CHATBOT_ENCRYPTION_SECRET = previousSecret
+    }
+  })
+
+  for (const [label, arrange] of [
+    ['the dump fails part-way after the settings table landed', () => { failRestoreMidway = true }],
+    ['the dump landed but the restore audit fails', () => { failRestoreAudit = true }],
+  ] as const) {
+    test(`W3: ${label} → the restore fails, and the plaintext it brought back is still encrypted at once`, async () => {
+      const previousSecret = process.env.CHATBOT_ENCRYPTION_SECRET
+      process.env.CHATBOT_ENCRYPTION_SECRET = (await import('node:crypto')).randomBytes(32).toString('base64')
+      try {
+        const { openSettingsSecret, isSettingsSecretEnvelope } = await import('../server/utils/settings-secrets')
+        seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+        restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+        arrange()
+        await assert.rejects(restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR))
+        const stored = state.settings.find(row => row.key === 'smtp_pass')?.value
+        assert.equal(isSettingsSecretEnvelope(stored), true, 'plaintext stayed in settings until the next boot')
+        assert.equal(openSettingsSecret('smtp_pass', stored).value, 'Restored-smtp-pass-1')
+        assert.ok(logs.some(entry => entry.event === 'backup.restore_failed'), 'the restore still reports its failure')
+      } finally {
+        if (previousSecret === undefined) delete process.env.CHATBOT_ENCRYPTION_SECRET
+        else process.env.CHATBOT_ENCRYPTION_SECRET = previousSecret
+      }
+    })
+  }
+
+  test('a conversion failure does not turn a completed restore into a failed one (the next boot converts)', async () => {
+    seedSqlBackup('cdkt-20260101T000000Z-manual.sql.gz', '20260101T000000Z', 'SELECT 1;')
+    restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+    const execute = fakePool.execute
+    fakePool.execute = async () => { throw new Error('simulated settings read failure') }
+    try {
+      const outcome = await restore.runRestore('cdkt-20260101T000000Z-manual.sql.gz', ACTOR)
+      assert.ok(outcome)
+      assert.ok(logs.some(entry => entry.event === 'backup.restore_secret_conversion_failed'))
+      assert.ok(logs.some(entry => entry.event === 'backup.restore_succeeded'))
+    } finally {
+      fakePool.execute = execute
+    }
+  })
 })
 
 // ─── 3.4 Audit + security log ──────────────────────────────────────────────────

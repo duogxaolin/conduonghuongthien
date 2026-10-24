@@ -94,8 +94,9 @@ export async function hasAnyActiveFactor(userId: number): Promise<boolean> {
   return rows.some(row => row.state === 'active')
 }
 
-export async function countUnusedRecoveryCodes(userId: number): Promise<number> {
-  const db = getDb()
+/** `executor`: đếm bên trong một transaction đang giữ khoá tài khoản (`confirm.post.ts`). */
+export async function countUnusedRecoveryCodes(userId: number, executor?: Pick<ReturnType<typeof getDb>, 'select'>): Promise<number> {
+  const db = executor ?? getDb()
   const [row] = await db
     .select({ total: sql<number>`COUNT(*)` })
     .from(userRecoveryCodes)

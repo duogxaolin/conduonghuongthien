@@ -86,6 +86,7 @@ const ADMIN_PAGE_TITLES: Record<string, string> = {
   'admin-settings-social-links': 'Mạng xã hội & Bố cục',
   'admin-settings-data-retention': 'Lưu trữ dữ liệu',
   'admin-settings-backup': 'Sao lưu & Phục hồi',
+  'admin-settings-security': 'Bắt buộc xác thực hai bước',
   'admin-profile': 'Tài khoản của tôi',
   'admin-ai': 'Kiểm duyệt an ninh AI',
 }
@@ -257,6 +258,8 @@ const menuGroups = computed<AdminMenuGroup[]>(() => [
           ...(hasPermission('settings', 'read') ? [{ label: 'Sitemap', icon: 'fa-solid fa-sitemap', path: '/admin/settings/sitemap' }] : []),
           ...(hasPermission('settings', 'read') ? [{ label: 'Đăng nhập Google', icon: 'fa-solid fa-right-to-bracket', path: '/admin/settings/google-oauth' }] : []),
           ...(hasPermission('readers', 'read') ? [{ label: 'Chặn địa chỉ IP', icon: 'fa-solid fa-ban', path: '/admin/settings/ip-bans' }] : []),
+          // Chính sách bắt buộc MFA: endpoint chỉ nhận SuperAdmin, nên chỉ họ thấy mục này.
+          ...(user.value?.isSuperAdmin ? [{ label: 'Bắt buộc xác thực hai bước', icon: 'fa-solid fa-shield-halved', path: '/admin/settings/security' }] : []),
           ...(hasPermission('settings', 'read') ? [{ label: 'Ngôn ngữ & Bản dịch', icon: 'fa-solid fa-language', path: '/admin/languages' }] : []),
           ...(hasPermission('settings', 'read') ? [{ label: 'Mạng xã hội', icon: 'fa-solid fa-share-nodes', path: '/admin/settings/social-links' }] : []),
           { label: 'Lưu trữ Media (R2)', icon: 'fa-solid fa-cloud-arrow-up', path: '/admin/settings/media-storage' },
@@ -726,6 +729,7 @@ const filteredMenuGroups = computed(() => {
       <!-- Page Content -->
       <main class="p-4 md:p-6 flex-1 min-w-0 max-w-full">
         <div class="mx-auto w-full min-w-0 max-w-full" :style="containerStyleVar">
+          <AdminMfaEnrollmentBanner />
           <slot />
         </div>
       </main>
