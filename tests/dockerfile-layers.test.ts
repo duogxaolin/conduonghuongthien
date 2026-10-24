@@ -28,7 +28,9 @@ function runtimeInstructions(): string[] {
     .filter((line) => /^[A-Z]+ /.test(line))
 }
 
-const APP_COPIES = ['./.output', './server', './scripts', './public']
+// `./shared`: server/ code imports values from it (tests/runtime-image-sources.test.ts
+// proves which directories the container's TypeScript needs).
+const APP_COPIES = ['./.output', './server', './shared', './scripts', './public']
 
 test('OS packages are installed before the first app COPY, so their layers stay cached', () => {
   const lines = runtimeInstructions()
