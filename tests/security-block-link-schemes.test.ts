@@ -47,6 +47,12 @@ const UNSAFE: readonly string[] = [
   '/\t/evil.example',
   '/&#47;evil.example',
   '&#47;&#47;evil.example',
+  // Zero padding is free in HTML: a browser decodes any number of digits. A cap
+  // on the digit count left these as text, so they read as "/&…" — a site path.
+  '/&#0000000047;evil.example',
+  '/&#x0000002F;evil.example',
+  '/&#00000000000000000000047evil.example',
+  '&#0000000000106;avascript:alert(1)',
   'about:blank',
   'file:///etc/passwd',
   'news/relative-without-slash',
@@ -60,6 +66,21 @@ test('safeLinkOrNull: every unsafe form is null, every allowed form comes back u
   for (const value of UNSAFE) assert.equal(safeLinkOrNull(value), null, `${JSON.stringify(value)} was allowed`)
   for (const value of SAFE) assert.equal(safeLinkOrNull(value), value, `${JSON.stringify(value)} was refused or rewritten`)
   for (const value of ['', '   ', null, undefined, 42, {}, ['/a']]) assert.equal(safeLinkOrNull(value), null)
+})
+
+test('decoding runs until the value is stable; one that never settles within the bound is refused, not guessed', async () => {
+  const { safeLinkOrNull } = await import('../shared/link-policy.ts')
+  const encode = (value: string, times: number) => {
+    let out = value
+    for (let i = 0; i < times; i += 1) out = out.replace(/&/g, '&amp;')
+    return out
+  }
+  for (const times of [3, 4, 6, 50]) {
+    assert.equal(safeLinkOrNull(`/${encode('&#47;', times)}evil.example`), null, `${times}× encoded "//" was allowed`)
+    assert.equal(safeLinkOrNull(encode('&#106;', times) + 'avascript:alert(1)'), null)
+  }
+  // An ordinary link with one literal entity is still fine.
+  assert.equal(safeLinkOrNull('/search?q=a&amp;b=c'), '/search?q=a&amp;b=c')
 })
 
 test('assertSafeLink: an empty link is fine, an unsafe one throws a 400 naming the field', async () => {
@@ -87,6 +108,11 @@ test('the shared entity decoder agrees with server/utils/decode-html-entities on
   assert.equal(decodeLinkEntities('&#106avascript'), 'javascript')
   // Hex digits run as far as they go, exactly as in a browser: `&#x2F/` ends at `/`.
   assert.equal(decodeLinkEntities('&#x2F/evil'), '//evil')
+  // Any number of (zero-padded) digits, as long as the value is a code point.
+  assert.equal(decodeLinkEntities('&#0000000047;&#x0000002F;'), '//')
+  assert.equal(decodeLinkEntities(`&#${'0'.repeat(200)}106;`), 'j')
+  assert.equal(decodeLinkEntities('&#99999999999;'), '&#99999999999;', 'outside Unicode stays text')
+  assert.equal(decodeLinkEntities(`&#x${'F'.repeat(40)};`), `&#x${'F'.repeat(40)};`)
   assert.equal(decodeLinkEntities('/&sol;evil &bsol;'), '//evil \\')
 })
 

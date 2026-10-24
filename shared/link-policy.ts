@@ -45,8 +45,14 @@ const NAMED: Readonly<Record<string, string>> = Object.freeze({
 /**
  * Numeric references with or without the closing `;` (a browser decodes
  * `&#106avascript:` inside an attribute), and the named ones above with it.
+ *
+ * Any NUMBER of digits: HTML puts no limit on zero padding, so `&#0000000047;` is
+ * a `/` to a browser. A digit cap here left such a reference as literal text,
+ * and `/&#0000000047;evil.com` then read as a site path. The value is still
+ * range-checked (`fromCodePoint`): a huge or out-of-Unicode number stays text.
+ * Both patterns are linear — one character class repeated, no nesting.
  */
-const ENTITY = /&(?:#(\d{1,8});?|#[xX]([0-9a-fA-F]{1,7});?|([A-Za-z][A-Za-z0-9]{1,8});)/g
+const ENTITY = /&(?:#(\d+);?|#[xX]([0-9a-fA-F]+);?|([A-Za-z][A-Za-z0-9]{1,8});)/g
 
 function fromCodePoint(code: number): string | null {
   // Outside Unicode, NUL and lone surrogates are not characters — keep the text.
@@ -72,15 +78,27 @@ export function decodeLinkEntities(value: string): string {
 // eslint-disable-next-line no-control-regex -- removing control characters is the point
 const INVISIBLE = /[\u0000-\u001F\u007F-\u009F\s]/g
 
-/** The form the decision is made on. Decoded until stable (bounded), so a double-encoded value cannot hide. */
-function normalizeForCheck(value: string): string {
+/**
+ * Most decode passes a value may need. A real link carries at most one level of
+ * encoding; this leaves room for a few, while keeping the work linear in the
+ * input (each pass is one linear `replace`) even for a hostile, very long value.
+ */
+const MAX_DECODE_PASSES = 8
+
+/**
+ * The form the decision is made on: entities decoded until the value no longer
+ * changes, so a multiply-encoded value cannot hide behind a fixed pass count.
+ * `null` when it is still changing after `MAX_DECODE_PASSES` — such a value is
+ * refused rather than judged on a half-decoded form.
+ */
+function normalizeForCheck(value: string): string | null {
   let current = value
-  for (let pass = 0; pass < 3; pass += 1) {
+  for (let pass = 0; pass < MAX_DECODE_PASSES; pass += 1) {
     const next = decodeLinkEntities(current)
-    if (next === current) break
+    if (next === current) return current.replace(INVISIBLE, '').toLowerCase()
     current = next
   }
-  return current.replace(INVISIBLE, '').toLowerCase()
+  return null
 }
 
 function isAllowedForm(normalized: string): boolean {

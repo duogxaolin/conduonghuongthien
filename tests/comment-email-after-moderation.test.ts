@@ -72,7 +72,7 @@ mock.module('../server/utils/rate-limit-deps', { namedExports: { rateLimitDeps: 
 mock.module('../server/services/ip-bans', { namedExports: { loadIpBanValues: async () => [] } })
 
 // ─── Moderation: the verdict each test wants ──────────────────────────────────
-type Behaviour = 'clean' | 'hide' | 'hide-write-failed' | 'flag-only' | 'ai-failed' | 'throw' | 'hang' | 'deferred'
+type Behaviour = 'clean' | 'hide' | 'hide-write-failed' | 'flag-only' | 'ai-failed' | 'throw' | 'slow-clean' | 'slow-ai-failed' | 'deferred'
 let behaviour: Behaviour = 'clean'
 const moderationCalls: Array<{ targetId?: number }> = []
 mock.module('../server/services/moderation-worker', {
@@ -92,7 +92,10 @@ mock.module('../server/services/moderation-worker', {
         // but moderation did not complete (moderation-worker reports `aiFailed`).
         case 'ai-failed': return Promise.resolve({ flagged: false, action: 'allow', severity: 'low', reasons: [], matchedRules: [], aiFailed: true, aiFailure: 'provider_error' })
         case 'throw': return Promise.reject(new Error('moderation exploded'))
-        case 'hang': return new Promise(() => {})
+        // The model answers late — 30 s, past any 10 s timer, inside the gateway's 35 s.
+        case 'slow-clean': return new Promise((resolve) => { setTimeout(() => resolve(CLEAN), 30_000) })
+        // The gateway gives up at its own limit and reports the failure.
+        case 'slow-ai-failed': return new Promise((resolve) => { setTimeout(() => resolve({ ...CLEAN, aiFailed: true, aiFailure: 'provider_error' }), 35_000) })
         // Resolved by the test, with whatever verdict it wants, when it wants.
         case 'deferred': return new Promise((resolve) => { release = resolve })
       }
@@ -208,20 +211,41 @@ test('an AI that failed (allow verdict + aiFailed) holds the e-mail — moderati
   assert.equal(held()[0]!.aiFailure, 'provider_error')
 })
 
-test('a moderation that does not answer within the bound holds the e-mail; the request never waited for it', async () => {
-  behaviour = 'hang'
+/**
+ * Design D6: moderation is "bounded by its existing timeout" — the AI gateway's
+ * own ~35 s request limit, which turns a slow provider into a failed call
+ * (`aiFailed` → held). A shorter timer of our own on top of it only dropped the
+ * e-mail of clean replies the model judged in 10–35 s, and a held e-mail is never
+ * retried. So the chain waits for the verdict itself.
+ */
+test('a slow but clean verdict (well past 10 s, inside the gateway limit) still sends the e-mail', async () => {
+  behaviour = 'slow-clean'
   mock.timers.enable({ apis: ['setTimeout'] })
   try {
     await reply()
-    assert.equal(held().length, 0, 'held before the bound elapsed')
-    mock.timers.tick(10_000)
+    assert.equal(mails.length, 0, 'mailed before the verdict')
+    mock.timers.tick(30_000)
+    await settle()
+  } finally {
+    mock.timers.reset()
+  }
+  assert.equal(held().length, 0, `held: ${JSON.stringify(held())}`)
+  assert.equal(mails.length, 1)
+})
+
+test('a slow verdict that ends in a gateway failure is held (the gateway timeout is the bound)', async () => {
+  behaviour = 'slow-ai-failed'
+  mock.timers.enable({ apis: ['setTimeout'] })
+  try {
+    await reply()
+    mock.timers.tick(35_000)
     await settle()
   } finally {
     mock.timers.reset()
   }
   assert.equal(mails.length, 0)
   assert.equal(held().length, 1)
-  assert.equal(held()[0]!.reason, 'moderation_timeout')
+  assert.equal(held()[0]!.reason, 'moderation_ai_failed')
 })
 
 test('the subject of a reader reply is fixed and never carries the replier\'s chosen name', async () => {

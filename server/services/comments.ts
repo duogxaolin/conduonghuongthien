@@ -527,11 +527,15 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
    *
    * Mailing first, as this did, delivered every reply moderation hid a second
    * later — abuse, scam links — into a citizen's inbox. Now: hidden or blocked →
-   * no e-mail; moderation threw, reported that the AI never judged the reply
-   * (`aiFailed`), or did not answer within `REPLY_EMAIL_MODERATION_WAIT_MS` → no
-   * e-mail, logged as `comment.reply_email_held`. Held is final: there is no
-   * outbox to retry from (design D6 rejected one for now), and the in-portal
-   * notification already told the reader.
+   * no e-mail; moderation threw, or reported that the AI never judged the reply
+   * (`aiFailed` — which is also how the gateway's own ~35 s request timeout
+   * surfaces) → no e-mail, logged as `comment.reply_email_held`. Held is final:
+   * there is no outbox to retry from (design D6 rejected one for now), and the
+   * in-portal notification already told the reader.
+   *
+   * No timer of our own: D6 bounds moderation by its EXISTING timeout (the AI
+   * gateway's). A shorter one on top only dropped the e-mail of clean replies
+   * the model judged in 10–35 s.
    *
    * "Only the e-mail waits" (D6): the chain runs BEHIND the response, so the
    * reader's POST returns as soon as the reply is stored. It is registered with
@@ -542,7 +546,7 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
     const reply = { commentId: id, parentId: input.parentId, recipientId: notifiedReaderId, event: input.event }
     const chain = (async () => {
       try {
-        const verdict = await moderationWithin(moderation, REPLY_EMAIL_MODERATION_WAIT_MS)
+        const verdict = await moderation
         const hold = replyEmailHoldReason(verdict)
         if (hold === null) await sendReplyEmail(reply)
         else logReplyEmailHeld(reply, hold, verdict)
@@ -556,15 +560,7 @@ export async function createComment(input: CreateCommentInput): Promise<CreateCo
   return { ok: true, id }
 }
 
-/**
- * How long the background chain waits for the moderation verdict before the
- * e-mail is held. Shorter than the AI gateway's own ~35 s timeout: a slow model
- * should cost one e-mail, not keep a promise per reply open that long. Moderation
- * itself keeps running to completion (and still hides the reply).
- */
-export const REPLY_EMAIL_MODERATION_WAIT_MS = 10_000
-
-type ReplyEmailHold = 'moderation_hidden' | 'moderation_ai_failed' | 'moderation_error' | 'moderation_timeout'
+type ReplyEmailHold = 'moderation_hidden' | 'moderation_ai_failed' | 'moderation_error'
 
 /** `comment.reply_email_held`: info for a moderation decision, warn for a moderation that did not complete. */
 function logReplyEmailHeld(reply: { commentId: number, parentId: number }, hold: ReplyEmailHold, verdict: ModerationVerdict): void {
@@ -580,17 +576,8 @@ function logReplyEmailHeld(reply: { commentId: number, parentId: number }, hold:
 }
 
 const MODERATION_FAILED = Symbol('moderation-failed')
-const MODERATION_TIMED_OUT = Symbol('moderation-timed-out')
 type ModerationFailure = typeof MODERATION_FAILED
-type ModerationVerdict = ModerationCheckOutput | ModerationFailure | typeof MODERATION_TIMED_OUT
-
-function moderationWithin(pending: Promise<ModerationCheckOutput | ModerationFailure>, ms: number): Promise<ModerationVerdict> {
-  let timer: ReturnType<typeof setTimeout> | undefined
-  const timeout = new Promise<typeof MODERATION_TIMED_OUT>((resolve) => {
-    timer = setTimeout(() => resolve(MODERATION_TIMED_OUT), ms)
-  })
-  return Promise.race([pending, timeout]).finally(() => clearTimeout(timer))
-}
+type ModerationVerdict = ModerationCheckOutput | ModerationFailure
 
 /**
  * `null` = the e-mail may go. Held on the VERDICT (`auto_hide`/`block`), not on
@@ -602,7 +589,6 @@ function moderationWithin(pending: Promise<ModerationCheckOutput | ModerationFai
  * is neither hidden nor blocked, so it is mailed.
  */
 function replyEmailHoldReason(verdict: ModerationVerdict): ReplyEmailHold | null {
-  if (verdict === MODERATION_TIMED_OUT) return 'moderation_timeout'
   if (verdict === MODERATION_FAILED) return 'moderation_error'
   if (verdict.flagged && (verdict.action === 'auto_hide' || verdict.action === 'block')) return 'moderation_hidden'
   if (verdict.aiFailed) return 'moderation_ai_failed'
