@@ -199,9 +199,12 @@ async function seed() {
     { type: 'links',          displayOrder: 9, isVisible: true, config: { title: 'Liên Kết Hữu Ích' } },
   ]
 
+  // Insert-only: chỉ thêm loại section còn thiếu. Hàng đã có giữ nguyên — trước
+  // đây mỗi lần khởi động ghi lại `display_order` theo seed, xoá thứ tự cán bộ đã
+  // sắp (tests/seed-upsert-no-overwrite.test.ts).
   for (const section of defaultSections) {
     await db.insert(homeSections).values(section)
-      .onDuplicateKeyUpdate({ set: { displayOrder: section.displayOrder } })
+      .onDuplicateKeyUpdate({ set: { id: keepExisting('id') } })
   }
 
   // ── Default Settings ─────────────────────────────────────────────────────

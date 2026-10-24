@@ -4,6 +4,7 @@
 const {
   isSuperAdmin, settingsLoaded, settingsLoadError, loadSettings,
   backupSettings, selectedDays, daysOptions, savingSettings, saveSettings,
+  schedulerDisabledByServer,
   driveLink, driveRedirectUri, driveLinkLoading, disconnecting, driveToast,
   disconnectDrive, copyRedirectUri,
   driveConfig, driveConfigLoading, savingDriveConfig, clearingDriveSecret,
@@ -41,6 +42,10 @@ onMounted(() => loadAll())
         <input type="checkbox" v-model="backupSettings.backup_auto_enabled" true-value="true" false-value="false" class="h-4 w-4 accent-[#2c6e33]" />
         Backup tự động theo lịch
       </label>
+      <p v-if="schedulerDisabledByServer" data-testid="backup-scheduler-disabled" class="m-0 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3 py-2 text-[0.8rem] text-[#8a6412]">
+        <i class="fa-solid fa-circle-pause mr-1" aria-hidden="true"></i>
+        Máy chủ đang tắt sao lưu tự động: lịch dưới đây vẫn lưu được nhưng sẽ không chạy cho tới khi máy chủ bật lại.
+      </p>
       <div class="grid grid-cols-2 gap-3">
         <label class="text-sm font-bold">Giờ chạy (0-23)
           <input type="number" v-model="backupSettings.backup_auto_hour" min="0" max="23" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-normal" />

@@ -711,7 +711,7 @@ Suite mới trên MySQL dev: mã cũ 0/4 pass, bản vá 4/4. `npm test` 3930 / 
 
 Còn mở:
 - `modifyColumn(… 'media_items', 'short_id', 'VARCHAR(16) NOT NULL')` vẫn gửi một `ALTER TABLE media_items MODIFY COLUMN` ở mọi lần khởi động. Nó không đụng `category_id`, và test nêu tên nó là ngoại lệ.
-- Các lượt ghi khác lúc khởi động (`seed.ts` hồi sinh hàng mặc định đã xoá, ghi đè thứ tự `home_sections`) thuộc wave1/wave2 (`schema-upgrade-safety`).
+- Các lượt ghi khác lúc khởi động (`seed.ts` hồi sinh hàng mặc định đã xoá, ghi đè thứ tự `home_sections`) thuộc wave1/wave2 (`schema-upgrade-safety`). Ghi đè thứ tự `home_sections` đã đóng ở § 29; hồi sinh hàng mặc định đã xoá vẫn thuộc wave2.
 
 ### 27. Wave 1 · 1D — CI, deploy, vận hành (2026-10-23)
 
@@ -747,8 +747,104 @@ Test mới/mở rộng (đều đỏ trên mã trước đợt này): `tests/ops
 Việc của người vận hành trước khi merge: tạo variable `VPS_SMOKE_URL`; cấp quyền Admin cho repo ở *Manage Actions access* của package GHCR; tuỳ chọn tạo check ping và ghi `HEALTHCHECK_PING_URL` vào `.env` trên VPS; theo dõi lượt deploy đầu (dump, smoke, dọn image).
 
 Còn mở (1D):
-- `stopBackupScheduler` (`server/services/backup-scheduler.ts`) chỉ xoá `setInterval`, không xoá `setTimeout` khởi động 120 s: tắt trong 2 phút đầu sau khi boot thì tick khởi động vẫn có thể chạy trong lúc Nitro đang drain. Tệp đó thuộc 1B (D10) — sửa cùng đợt đó.
+- ~~`stopBackupScheduler` (`server/services/backup-scheduler.ts`) chỉ xoá `setInterval`, không xoá `setTimeout` khởi động 120 s: tắt trong 2 phút đầu sau khi boot thì tick khởi động vẫn có thể chạy trong lúc Nitro đang drain. Tệp đó thuộc 1B (D10) — sửa cùng đợt đó.~~ Đã đóng ở § 29.
 - Đợt chuyển tiếp GHCR: image đẩy khi còn provenance nhiều khả năng có manifest con không thẻ (mặc định buildx — **chưa kiểm** được: `gh` thiếu `read:packages`; trang package hiện version `unknown/unknown` nếu đúng); nếu vậy, vài tuần đầu image cũ nhất còn giữ có thể không kéo lại được (VPS không cần — giữ 6 image cục bộ).
+
+### 29. Wave 1 · 1B — Toàn vẹn dữ liệu (2026-10-23)
+
+Đợt thứ ba của `openspec/changes/wave1-quick-fixes` (D8, D10–D15). Số mục giả định 1A (§ 28) merge trước theo thứ tự 1D → 1A → 1B.
+
+- **Dọn analytics thật sự chạy** (D8, `server/services/analytics-maintenance.ts`). Lệnh dọn sự kiện thô là `DELETE e FROM … INNER JOIN analytics_maintenance_runs … LIMIT ?`, và MySQL từ chối LIMIT trên DELETE nhiều bảng (lỗi 1064). Lỗi bị nuốt, và một `try` chung còn bỏ luôn việc dọn 5 bảng theo ngày. Kết quả: từ khi có tính năng này, không bảng analytics nào được dọn, còn test fake-pool (khớp chữ SQL) vẫn xanh. Nay lệnh là DELETE một bảng: `… WHERE occurred_at < ? AND event_day IN (SELECT day FROM analytics_maintenance_runs WHERE status = 'complete') LIMIT ?`. Mỗi bước dọn (thô, 5 bảng ngày, live, dedup, NOC) chạy riêng qua `purgeStep`; bước hỏng ghi một dòng `analytics.retention_step_failed` `{ step, code }` (mã lỗi driver, không ghi message). `analytics_maintenance_runs` được dọn sau cùng, vì lệnh dọn thô đọc nó.
+- **Scheduler sao lưu theo đúng lịch** (D10, `server/services/backup-scheduler.ts`):
+  - **Khe chạy:** khe là ngày đã chọn lúc `hour` giờ (giờ địa phương, 0–23; `0` hợp lệ, giá trị sai → 3). Khe được phục vụ khi một lượt theo lịch thành công bắt đầu từ khe trở đi. Hàm thuần `isBackupDue` có test dạng bảng (34 ca).
+  - **Trạng thái bền, không suy từ hàng `backups`:** kết quả của khe nằm ở khoá settings `backup_scheduler_state` (JSON `{ slot, attempts, lastAttemptAt, outcome, lastDoneAt, schedule }`, nhóm `internal`, không có trong `ALLOWED_SETTING_KEYS`).
+    - **Vì sao không suy từ hàng `backups`:** bản đầu của đợt này suy kết quả từ hàng `backups`, và lượt kiểm chứng độc lập tìm ra lỗi nghiêm trọng. Xoay vòng xoá hàng của mọi trigger, nên vài bản sao lưu tay trong tuần (hoặc 12 bản `pre-*` SQL, hoặc `backup_keep_count` 4–5 với một bản tay) đủ xoá hàng SQL của lượt Chủ nhật. Lịch hằng tuần khi đó chạy sao lưu toàn bộ vào thứ Tư, lặp ba lần rồi báo "bỏ khe" sai.
+    - **Khi nào bản ghi được viết:** khi một lượt **bắt đầu**. Đó là lúc `RunBackupOptions.onStarted` được gọi, trong khoá chạy và trước mọi việc. Nhờ vậy, hỏng ở `mkdir`/đọc cấu hình vẫn là một lượt, còn bị từ chối vì khoá bận thì không. Bản ghi được viết lại khi lượt kết thúc (`done`/`failed`) và khi bỏ khe. Bản ghi còn `running` (lượt bị giết giữa chừng) tính là một lượt hỏng.
+  - **Thử lại:** sau 60 phút, tối đa 3 lượt mỗi khe, rồi bỏ khe (`outcome: 'abandoned'`) và log `backup.slot_abandoned` một lần.
+  - **Bù khe lỡ:** bù một lần, và chỉ khi khe đó thật sự bị lỡ **vì máy chủ tắt**. Phải đủ ba điều kiện:
+    1. Khe rơi trước lúc tiến trình này khởi động scheduler (mốc giữ trong bộ nhớ).
+    2. Lịch hiện tại trùng lịch mà lượt gần nhất đã phục vụ (`schedule` trong bản ghi, ghi lúc lượt bắt đầu).
+    3. `lastAttemptAt` nằm trong 8 ngày trước khe.
+
+    Lượt kiểm chứng lại chỉ ra bản trước (chỉ có điều kiện 3) bù cả "khe" mà một lần **sửa lịch** tạo ra:
+    - Đổi giờ 03 → 10 thì 09:00 hôm sau chạy bù, rồi 10:05 chạy tiếp.
+    - Thêm thứ Tư vào lịch Chủ nhật thì thứ Năm chạy bù.
+    - Bật lại công tắc trong 8 ngày thì chạy bù ngay.
+
+    Nay cả ba trường hợp đều đợi khe kế tiếp. Bật công tắc lần đầu cũng đợi khe kế tiếp. Bản cũ chạy hễ lượt trước cũ hơn 36 giờ (cả ngày không có trong lịch), đọc giờ `0` thành 3, và coi lượt hỏng là đã xong.
+  - **Chống chồng lượt:** tick đang chạy thì tick sau không mở lượt thứ hai. Sau khi lượt đã ghi `running`, chính bản ghi cũng chặn.
+  - **Dừng:** `stopBackupScheduler` xoá cả tick khởi động 120 s (mục "Còn mở" của § 27) và lượt dọn rác lúc khởi động.
+  - **Khôi phục CSDL giữ trạng thái scheduler của hệ thống đang chạy** (`keepSchedulerStateAcrossRestore`, `backup-restore.ts`, cùng khuôn `reattachBackupRows`). Bản dump của lượt theo lịch chứa chính lượt đó ở trạng thái `running`. Khôi phục nó vào thứ Tư thì khe Chủ nhật đã xong trông như bị cắt ngang, và scheduler chạy lại ngay, ngoài lịch. Nay giá trị đọc trước khi khôi phục được ghi lại trong transaction audit. Trước đó không có giá trị nào thì bản ghi của bản dump bị xoá.
+  - **Khởi động ở production:** plugin dùng `backupSchedulerEnabledByServer` (`server/utils/backup-scheduler-switch.ts`, không import gì, để route admin nạp mà không kéo theo `services/backup.ts`) và khởi động scheduler ở production trừ khi `BACKUP_SCHEDULER` là `0`/`false`/`off`/`no`. Dev giữ mặc định tắt. Công tắc admin `backup_auto_enabled` (mặc định tắt) vẫn quyết định có bản sao lưu hay không.
+  - **Trang cài đặt:** `GET /api/admin/settings/backup` trả thêm `schedulerDisabledByServer` (ngoài `settings`, nên biểu mẫu không bao giờ PUT nó). `BackupSettingsPanel.vue` hiện một dòng báo khi cờ này bật. Chú thích compose đã sửa.
+- **Không còn archive mồ côi** (D11, `server/services/backup.ts`). Trước đây cả hai archive được nén xong rồi mới ghi hàng, và nhánh lỗi ghi cứng `cdkt-media-…`. Khi media hỏng, archive uploads đã nén nằm lại không có hàng nào (danh sách admin và xoay vòng đều không thấy). Khi uploads hỏng, hàng `failed` lại nêu tên media.
+  - Nay mỗi dump/archive ghi dưới `<tên>.partial` rồi được kiểm (tệp thường, khác 0 byte). Nó chỉ nhận tên thật **trong** transaction ghi hàng `done` + audit. Đổi tên hỏng thì không có hàng; commit hỏng sau khi đổi tên thì tệp bị trả về `.partial`.
+  - Hỏng ở bất kỳ bước nào thì xoá mọi `.partial` của lượt. Hàng `failed` nêu đúng tệp của bước đã ném. Lỗi ghi hàng `failed` được log `backup.failed_row_unwritten` và không che lỗi gốc.
+  - **Lượt bị giết giữa chừng** (SIGKILL, hết `stop_grace_period`) chỉ để lại `cdkt-*.partial`. Tệp này bị dọn khi giữ được khoá chạy, tức không lượt nào đang ghi: ở đầu mỗi lượt sao lưu, và một lần sau khởi động 60 s (`sweepStaleBackupFiles`, plugin; khoá bận thì bỏ qua). Lượt dọn lúc khởi động **chỉ chạy khi máy chủ bật scheduler**. Trước khi merge, lượt kiểm tích hợp chỉ ra rằng E2E và dev chạy với cwd = bản checkout và một CSDL mới (bảng `backups` rỗng). Khi đó lượt dọn lúc khởi động sẽ coi mọi bản sao lưu cục bộ trong `./backups` là mồ côi và xoá: một checkout có 36 tệp như vậy.
+    - **Sửa:** thêm `CDKT_BACKUPS_DIR`, chỉ dùng cho test và dev. `backupsDir()` đọc biến này và là nơi duy nhất dựng đường dẫn; có guard grep. Production không đặt biến này, không có trong compose; mặc định là `<cwd>/backups` = `/app/backups`.
+    - **E2E** (`tests/e2e/global-setup.ts`): mỗi lượt có một thư mục tạm riêng, xoá trên mọi lối ra, và đặt `BACKUP_SCHEDULER=0`.
+    - **Test:** `tests/backup-dir-isolation.test.ts`.
+    - **Bị giết đúng giữa lúc đổi tên và commit:** tệp đã mang tên thật nhưng không có hàng. Cùng lượt dọn xoá tệp mang **đúng tên cuối cùng của app** mà không có hàng nào trong `backups` và cũ hơn 10 phút. Mốc 10 phút có vì khôi phục từ tệp tải lên đổi tên tệp rồi mới ghi hàng, và nó giữ khoá khôi phục, không phải khoá chạy. Không đọc được bảng `backups` thì không xoá tệp tên thật nào. Log `backup.orphan_swept` `{ filename }`. Lượt dọn không đụng tệp đã đăng ký, `.upload-*.partial` (khôi phục từ tệp tải lên, giữ khoá khôi phục), hay tệp của `scripts/backup*.sh`. Log `backup.partial_swept` `{ count }`.
+    - **Mẫu chỉ khớp đúng tên app tự sinh** (`cdkt-<stamp>-<trigger>.sql.gz.partial`, `cdkt-(uploads|media)-<stamp>-<trigger>.tar.gz.partial`, `trigger` ∈ `BACKUP_TRIGGERS`). Sau khi rebase lên 1D, `scripts/backup-db.sh` (cron hằng đêm) cũng ghi `cdkt-<db>-<stamp>-<pid>.sql.gz.partial` vào **cùng** `./backups`. Khoá chạy của app không nói gì về script đó, nên mẫu cũ `cdkt-*.partial` sẽ xoá bản dump đang chạy của cron. Mẫu mới không khớp tên đó (test: tệp `.partial` của `backup-db.sh` và một tên `cdkt-media-<stamp>-<pid>` còn nguyên; mọi trigger đều bị dọn).
+  - **Tên trùng** (hai lượt cùng trigger trong cùng một giây có cùng `stamp`): lượt sau **từ chối trước khi ghi** (`BackupNameCollisionError`, log `backup.name_collision`), không ghi tệp và không ghi hàng nào. Ở `POST /api/admin/backup/run`, lỗi này trả **409** (như khoá bận; cả hai giờ phân biệt bằng kiểu lỗi, không so chuỗi), không phải 500 (`tests/backup-run-endpoint.test.ts`). Bản trước của đợt này ghi đè nội dung bản đã đăng ký. Còn một hàng `failed` cùng tên thì bấm "xoá" hàng đó sẽ xoá luôn tệp tốt.
+    - **Kiểm cả hàng, không chỉ đĩa:** một lượt hỏng xoá tệp của nó nhưng để lại hàng `failed` mang đúng tên đó. Lượt sau cùng giây khi đó thấy đĩa trống, ghi thêm hàng `done` cùng tên, và xoá theo tên sẽ xoá cả hai hàng lẫn tệp tốt (lượt kiểm chứng lại tái hiện trên MySQL thật). Nay `begin` từ chối khi có hàng bất kỳ trạng thái mang tên đó.
+    - **Xoá theo id:** `deleteBackup` xoá **một** hàng theo id (trang admin gửi `?id=`). Tệp chỉ bị xoá khi không còn hàng nào khác trỏ tới. Không có id (giao diện cũ trong bộ nhớ đệm): đúng một hàng thì xoá, nhiều hàng thì 409. Id không thuộc tên đó thì 404; id sai dạng thì 400.
+  - **Xoay vòng hỏng không làm hỏng lượt:** mọi tệp đã có hàng `done` rồi mới xoay vòng. Lỗi lúc đó (CSDL chập chờn) giờ chỉ log `backup.rotate_failed`. Trước đây nó ném ra, biến một bản đã đăng ký thành lượt hỏng, và scheduler chạy lại cả lượt đầy đủ.
+  - Nguồn nén là `defaultArchiveSources()`. `RunBackupOptions.archiveSources` chỉ để kiểm thử thay bằng thư mục tạm; đường dẫn cứng `/var/lib/cdkt` không đổi.
+- **Tải backup bằng stream** (D12, `server/api/admin/backup/[filename].get.ts`). Bản cũ dùng `readFile`, hỏng với tệp > 2 GiB và tốn RAM bằng kích thước tệp. Nay: `lstat` → chỉ tệp thường (thư mục, symlink, tệp không có → 404). Header `Content-Length` + `Content-Disposition` RFC 5987 (`filename*=UTF-8''…`, mã hoá cả `'()*`). Trả `sendStream(createReadStream)`, và huỷ stream khi **phản hồi** đóng (h3 chỉ gọi `stream.abort`; `req` `close` phát sớm từ Node 16). Thư mục lấy từ `backupsDir()` mỗi request. Có guard tĩnh: không `readFile` dưới `server/api/admin/backup/`.
+- **Chat livestream không xoá cứng tin AI ẩn** (D13). Đã bỏ `db.delete(livestreamMessages)` chạy song song với `applyAutoHide` (vốn đã đánh dấu `is_deleted = 1`). Hàng còn lại làm bằng chứng cho hàng chờ duyệt; người xem vẫn nhận sự kiện gỡ.
+- **Seed không ghi đè thứ tự `home_sections`** (D14). Upsert đổi sang `keepExisting('id')` (no-op). Guard mới `tests/seed-upsert-no-overwrite.test.ts` chặn **mọi** upsert trong `seed.ts` ghi giá trị lên hàng đã có (mục "Còn mở" của § 26 về `home_sections`).
+- **`npm run db:decode-excerpts`** (D15, `server/services/stored-plaintext-decode.ts`, `scripts/decode-stored-excerpts.ts`).
+  - **Khuôn và ngữ nghĩa:** cùng khuôn `db:sanitize-html`. Giải mã `title`/`excerpt` của `articles` + `article_translations` theo đúng `plainTextField` (kể cả sửa entity cụt khi chuỗi ở dạng mã hoá). Mặc định xem trước; `--apply` mới ghi. Đọc theo lô 200 theo `id`.
+  - **Cách ghi:** UPDATE gán `updated_at = updated_at` và kèm điều kiện "giá trị vẫn như lúc đọc", nên bản vừa được biên tập viên sửa bị bỏ qua (`skipped`). Không bao giờ đọc hay ghi `content`.
+  - **Phạm vi:** chỉ hàng có `&` mà phép giải mã thật sự đổi. Khác biệt chỉ do khoảng trắng hai đầu không tính, và `R&D`/`Q&A` để nguyên.
+  - **Báo cáo:** `fragments` liệt kê mọi trường mà kết quả bỏ một đoạn cuối (id, trường, phần cuối trước/sau; ca `AT&T` cũng nằm đây). `unstable` liệt kê, **không ghi**, chữ entity viết nguyên văn (`&amp;agrave;`), loại sẽ bị giải mã thêm lúc đọc.
+- **Test** (viết trước, chạy trên mã cũ). Đỏ vì đúng lỗi được sửa: `analytics-maintenance-retention` (5/13), `analytics-maintenance-integration` (`warning` thay vì `success`), `backup-orphan-archives` (5/6; ca uploads hỏng trước nêu tên media và để lại tệp dở), `backup-access` (4 ca stream + guard `readFile`), `livestream-chat` (có `delete from`), `seed-upsert-no-overwrite`, `backup-scheduler-notice-ui`. Lưu ý:
+    - `backup-scheduler-due` chỉ đỏ vì thiếu module: `isBackupDue` cũ khác chữ ký, nên không khẳng định nào chạy được trên ngữ nghĩa cũ.
+    - `stored-plaintext-decode` đỏ vì module chưa có.
+    - Ca thư mục/symlink của `backup-access` qua "trống" trên mã cũ, vì handler cũ cố định thư mục lúc import.
+  - **Sau lượt kiểm chứng độc lập** (bản ghi trạng thái, `.partial`, tên trùng), chạy trên commit `e0dbaca`:
+    - `backup-scheduler-due` đỏ 37/45. Gồm cả 4 kịch bản xoay vòng của người kiểm chứng: xoay vòng thật bằng `selectRotationVictims` rồi tick, kết quả "a backup ran outside the policy", 3 lượt thay vì 2.
+    - `backup-orphan-archives` đỏ 5/12: ghi `.partial`, dọn lúc bắt đầu lượt, `sweepPartialBackups` (nay là `sweepStaleBackupFiles`), `onStarted` trước khi đọc cấu hình, tên trùng không bị ghi đè.
+    - Ca "commit hỏng sau khi đổi tên" và "khoá bận không gọi `onStarted`" xanh trên mã cũ, vì mã cũ không đổi tên và không có `onStarted`. Chúng canh đường mới.
+    - Ca chống chồng tick xanh trên mã cũ (guard đã có từ trước). Bỏ tạm guard thì nó đỏ ("the second tick started a second backup"), trả lại thì xanh.
+  - **Sau lượt kiểm chứng lại** (`278c5b6`), chạy trên chính commit đó:
+    - `backup-scheduler-due` đỏ 11/57: sửa giờ (có/không deploy xen giữa), thêm ngày, đổi ngày, bật lại công tắc, "khe rơi sau lúc khởi động", `schedule` trong bản ghi, và hai ca tick.
+    - Ca S5 ("dừng thì huỷ lượt dọn lúc khởi động") xanh trên mã cũ, vì phần huỷ đã có. Bỏ tạm `clearTimeout` thì nó đỏ.
+    - `backup-orphan-archives` đỏ 8/19. Trong đó có lượt cùng giây sau một lượt hỏng (lượt thứ hai không bị từ chối), xoá theo id (3 ca), tệp tên-app không có hàng (2 ca), và lỗi xoay vòng làm hỏng lượt.
+    - `backup-access` đỏ 3: id từ query, ánh xạ 404/409, trang admin gửi `?id=`.
+    - `backup-restore-hardening` đỏ 2: bản ghi `running` của bản dump đè bản ghi đang chạy, hoặc còn lại khi trước đó không có.
+  - `analytics-maintenance-retention`: fake pool từ chối DELETE nhiều bảng + LIMIT ở mọi câu; thêm 5 ca: lệnh một bảng, bước hỏng vẫn chạy bước khác, log `step`/`code`.
+  - Mới:
+    - `analytics-maintenance-integration`: MySQL thật, `initDb()`. Thô cũ đã tổng hợp → xoá; thô cũ chưa tổng hợp/run `failed` → giữ; thô gần → giữ; bảng ngày quá hạn → xoá; lượt 2 không xoá gì. Có trong matrix CI, nay 19 job.
+    - `backup-scheduler-due` (45; tick chạy trên settings giả có upsert).
+    - `backup-scheduler-notice-ui` (handler thật + render SFC).
+    - `backup-orphan-archives` (`runBackup` thật, tar/mysqldump giả, tệp thật).
+    - `seed-upsert-no-overwrite`.
+    - `stored-plaintext-decode`: driver `drizzle-orm/mysql2` thật trên pool giả chạy SQL bằng `node:sqlite`, giả lập `ON UPDATE CURRENT_TIMESTAMP`, có ca tự kiểm.
+  - Mở rộng: `backup-access` (+5), `livestream-chat` (+1).
+
+#### Kiểm chứng (2026-10-23)
+`npm test` 4125 / 4098 pass / 0 fail / 27 skip (sau bản sửa của lượt kiểm chứng, rebase lên 1D `8be4766`, mẫu dọn `.partial` chỉ khớp tên của app, 409 cho tên trùng, các bản sửa của lượt kiểm chứng lại và thư mục backup tách cho test/dev; trên `d3c3073`: 4075 / 4048, trước bản sửa 4055 / 4028). Typecheck 0 lỗi. eslint 0 error / 16 warning (như trước). `db:drift` 62 bảng / 635 cột. Suite mới trên MySQL dev (cổng 33069): mã cũ đỏ (`warning`), bản vá xanh; không còn CSDL `cdkt_analytics_maint_*`. Guard matrix: bỏ mục matrix → đỏ nêu tên tệp. E2E 88/88 (3,6 phút, build production của nhánh): tiến trình server E2E có `BACKUP_SCHEDULER=0` và `CDKT_BACKUPS_DIR=/tmp/cdkt-e2e-backups-…` (đọc từ `/proc/<pid>/environ`); thư mục tạm bị xoá khi xong, không có `./backups` nào được tạo trong bản checkout, cổng 3123 đã trả, không còn CSDL `cdkt_e2e_*`. `npm run db:decode-excerpts` (chỉ xem trước) trên CSDL dev: 1132 bài, 17 sẽ đổi, 5 `fragments` (đúng 5 sapo bị cắt giữa entity ở § 23: `nh&ac`, `ph&og`, `l&atild`, `c&oac`, `l&`), 0 `unstable`; 24 bản dịch, 0 đổi.
+
+Việc của người vận hành:
+- **Trước khi deploy:** mở `/admin/settings/backup`. Nếu "Backup tự động theo lịch" đã bật từ trước, sao lưu bắt đầu ở khe kế tiếp sau deploy; kiểm dung lượng đĩa hoặc tắt công tắc trước.
+- **Trước khi deploy:** lượt dọn lúc khởi động sẽ xoá các archive mồ côi mà lỗi cũ (D11) để lại trong `./backups`, tức tệp tên-app không có hàng trong danh sách. Muốn giữ thì chép chúng ra ngoài `./backups` trước.
+- **Sau khi deploy:** `db:decode-excerpts` theo thứ tự xem trước → đọc `fragments` → sao lưu → `-- --apply` (`production/README.md`).
+- Vài đêm đầu lượt bảo trì analytics báo `warning` khi dọn phần tồn đọng theo lô có trần. Đó là dự kiến.
+
+Còn mở / lệch có chủ đích (1B):
+- **Bỏ khe sau 3 lượt hỏng** (lượt đầu + 2 lần thử lại), theo design D10. Spec viết "thử lại tối đa 3 lần".
+- **Thời gian chờ thử lại tính từ lúc lượt hỏng BẮT ĐẦU** (`lastAttemptAt`), không từ lúc nó hỏng (design D10 viết "60 phút kể từ lần hỏng"). Các lượt cách nhau ≥ 60 phút tính theo giờ bắt đầu, đúng spec. Nhưng một archive chạy 40 phút rồi hỏng sẽ được thử lại khoảng 20 phút sau khi hỏng.
+- **Bù khe lỡ — phần còn lại sau khi siết** (đã thu hẹp từ "bật lại trong 8 ngày là bù ngay"):
+  - Server tắt liền hơn 8 ngày thì không bù, đợi khe kế tiếp.
+  - Khe trôi qua lúc máy chủ chạy nhưng CSDL hỏng (scheduler đọc như "tắt") thì không bù.
+  - Còn một ca hẹp vẫn bù ngay: công tắc tắt đúng lúc khe, máy chủ khởi động lại **sau** khe đó, rồi công tắc bật lại với lịch không đổi, trong 8 ngày.
+- **Ghi bản ghi trạng thái hỏng sau một lượt thành công** (CSDL chập chờn đúng lúc đó): bản ghi còn `running`, nên khe được thử lại sau 60 phút, thêm một bản sao lưu thừa. Log `backup.scheduler_state_unwritten`.
+- **Bản ghi trạng thái không có hàng nào khi mới deploy**, nên coi như chưa có lịch sử: khe đầu tiên chạy đúng giờ, không bù.
+- **Đường dẫn media của sao lưu:** `backup.ts`/`backup-restore.ts` vẫn ghi cứng `/var/lib/cdkt` cho cây media, không theo `CDKT_MEDIA_WORKDIR`.
+- **Tệp tên-app không có hàng sẽ bị xoá** (sau 10 phút, dưới khoá chạy). Đừng chép tay một tệp `cdkt-<stamp>-<trigger>.sql.gz` / `cdkt-(uploads|media)-<stamp>-<trigger>.tar.gz` vào `./backups` mà không có hàng. Muốn khôi phục một bản ngoài thì dùng "Khôi phục từ tệp tải lên": tệp mang tên trùng được đặt lại thành `…-upload-<stamp>`, có hàng, không bị dọn.
+- **`.upload-*.partial` của một lượt khôi phục từ tệp tải lên bị cắt ngang** không bị dọn (nằm ngoài đợt này).
 
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23)
 

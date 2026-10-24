@@ -8,6 +8,8 @@ import { createWriteStream } from 'node:fs'
 import { pipeline } from 'node:stream/promises'
 import { Readable } from 'node:stream'
 import test, { after, before, beforeEach, describe, mock } from 'node:test'
+import type { SQL } from 'drizzle-orm'
+import { MySqlDialect } from 'drizzle-orm/mysql-core'
 
 /**
  * Restore hardening, run against the REAL service code (`backup-restore.ts`,
@@ -65,6 +67,8 @@ const state = {
 const executed: string[] = []
 let failDump = false
 let restoredTableWipesBackups = true
+/** The `settings` rows the restored dump brings back (it replaces the table); `null` = dump leaves settings alone. */
+let restoredSettings: Array<{ key: string, value: string }> | null = null
 
 const schema = await import('../server/db/schema')
 
@@ -95,12 +99,28 @@ function fakeDb(via: 'tx' | 'db'): Record<string, unknown> {
   return {
     select: () => ({ from: (table: unknown) => chain(table) }),
     insert: (table: unknown) => ({
-      values: async (values: Record<string, unknown>) => {
+      values: (values: Record<string, unknown>) => {
+        if (table === schema.settings) {
+          return {
+            onDuplicateKeyUpdate: async ({ set }: { set: { value?: unknown } }) => {
+              const value = String(set.value ?? values.value)
+              state.settings = [...state.settings.filter(row => row.key !== values.key), { key: String(values.key), value }]
+            },
+          }
+        }
         if (table === schema.activityLogs) state.audit.push({ via, values })
         else if (table === schema.backups) state.backups.push({ id: state.nextId++, driveUploaded: false, driveFileId: null, error: null, createdAt: new Date(), createdBy: null, ...values } as Row)
+        return Promise.resolve()
       },
     }),
-    delete: () => ({ where: async () => {} }),
+    delete: (table: unknown) => ({
+      where: async (condition: SQL) => {
+        if (table !== schema.settings) return
+        const { sql, params } = new MySqlDialect().sqlToQuery(condition)
+        assert.match(sql, /`settings`\.`key` = \?$/)
+        state.settings = state.settings.filter(row => row.key !== params[0])
+      },
+    }),
     update: () => ({ set: () => ({ where: async () => {} }) }),
     transaction: async (fn: (tx: unknown) => Promise<unknown>) => fn(fakeDb('tx')),
   }
@@ -117,6 +137,7 @@ function fakeConnection(options: { multipleStatements?: boolean }) {
         executed.push(sqlText)
         // The real dump starts with DROP TABLE backups: the table is replaced.
         if (restoredTableWipesBackups) state.backups = []
+        if (restoredSettings) state.settings = restoredSettings.map(row => ({ ...row }))
       }
       return [[], []]
     },
@@ -163,6 +184,7 @@ beforeEach(() => {
   logs.length = 0
   failDump = false
   restoredTableWipesBackups = true
+  restoredSettings = null
   busyLocks.clear()
 })
 
@@ -477,5 +499,32 @@ describe('restore is audited and logged', () => {
     assert.equal(audit.length, 1)
     assert.equal(audit[0]!.values.userId, null)
     assert.equal((audit[0]!.values.meta as Record<string, unknown>).actorUsername, 'admin')
+  })
+})
+
+// ─── The scheduler's own record survives a restore (wave1 1B re-verification S3) ─
+
+describe('a database restore keeps the live backup scheduler state', () => {
+  const KEY = 'backup_scheduler_state'
+  // The dump was taken DURING the Sunday scheduled run, so it holds that run as `running`.
+  const IN_DUMP = JSON.stringify({ slot: '2026-10-24T20:00:00.000Z', attempts: 1, lastAttemptAt: '2026-10-24T20:02:00.000Z', outcome: 'running', lastDoneAt: '2026-10-17T20:02:00.000Z', schedule: { hour: 3, days: [0] } })
+  // What actually happened afterwards on the live system: the run finished.
+  const LIVE = JSON.stringify({ slot: '2026-10-24T20:00:00.000Z', attempts: 1, lastAttemptAt: '2026-10-24T20:02:00.000Z', outcome: 'done', lastDoneAt: '2026-10-24T20:02:00.000Z', schedule: { hour: 3, days: [0] } })
+  const stateValue = () => state.settings.find(row => row.key === KEY)?.value
+
+  test('the dump\'s stale "running" record is replaced by the live one — no off-policy retry after the restore', async () => {
+    seedSqlBackup('cdkt-20261025T030000Z-scheduled.sql.gz', '20261025T030000Z', 'SELECT 1;')
+    state.settings = [{ key: KEY, value: LIVE }, { key: 'site_name', value: 'live' }]
+    restoredSettings = [{ key: KEY, value: IN_DUMP }, { key: 'site_name', value: 'from dump' }]
+    await restore.runRestore('cdkt-20261025T030000Z-scheduled.sql.gz', ACTOR)
+    assert.equal(stateValue(), LIVE)
+    assert.equal(state.settings.find(row => row.key === 'site_name')?.value, 'from dump', 'every other setting is the restored one')
+  })
+
+  test('no live record: the dump\'s record is removed, not kept', async () => {
+    seedSqlBackup('cdkt-20261025T030000Z-scheduled.sql.gz', '20261025T030000Z', 'SELECT 1;')
+    restoredSettings = [{ key: KEY, value: IN_DUMP }]
+    await restore.runRestore('cdkt-20261025T030000Z-scheduled.sql.gz', ACTOR)
+    assert.equal(stateValue(), undefined)
   })
 })

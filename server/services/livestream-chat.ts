@@ -333,9 +333,11 @@ export async function sendChatMessage(
   }
   // ── Broadcast ngay, kiểm duyệt nền ──
   // Tin nhắn hiện ngay cho mọi người xem qua SSE. AI kiểm duyệt chạy nền
-  // (không block response): nếu AI flag vi phạm, broadcast removal event
-  // rồi xoá hàng trong DB. Người xem thấy tin biến mất thay vì chờ 11 giây
-  // cho AI trả lời trước khi tin hiện.
+  // (không block response): nếu AI flag vi phạm, broadcast removal event.
+  // Hàng KHÔNG bị xoá: `applyAutoHide` (moderation-worker.ts) đã đánh dấu
+  // `is_deleted = 1` — lịch sử công khai lọc nó ở tầng CSDL, còn tác giả, IP,
+  // thời điểm ở lại làm bằng chứng cho hàng chờ duyệt. Người xem thấy tin biến
+  // mất thay vì chờ 11 giây cho AI trả lời trước khi tin hiện.
   const message: ChatMessage = {
     id,
     displayName,
@@ -361,14 +363,12 @@ export async function sendChatMessage(
       contextUrl: '/media',
     }).then((modResult) => {
       if (modResult.flagged && modResult.action === 'auto_hide') {
-        // AI flag vi phạm — broadcast removal rồi xoá hàng
+        // AI flag vi phạm — hàng đã được đánh dấu xoá mềm bên trong lượt kiểm
+        // duyệt; ở đây chỉ báo cho người đang xem gỡ tin khỏi màn hình.
         broadcastToSession(session.id, {
           event: SSE_EVENT_REMOVAL,
           data:  JSON.stringify({ id }),
         })
-        // Xoá trong DB — fire and forget, tự nuốt lỗi
-        db.delete(livestreamMessages).where(eq(livestreamMessages.id, id))
-          .catch(() => {})
       }
     }).catch(() => {
       // Lỗi AI không được làm hỏng tin đã gửi — chỉ log
