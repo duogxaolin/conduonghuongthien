@@ -1,5 +1,5 @@
-import type { BlockData, BlockFieldValue } from '../../app/utils/blocks/types'
-import { BLOCK_REGISTRY } from '../../app/utils/blocks/registry'
+import type { BlockData, BlockFieldValue } from '../../shared/blocks/types'
+import { BLOCK_REGISTRY } from '../../shared/blocks/registry'
 import { assertSafeLink, safeLinkOrNull } from '../../shared/link-policy'
 /**
  * Dependency-free, allowlist HTML sanitizer for admin-authored rich text

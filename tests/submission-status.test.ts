@@ -31,7 +31,7 @@ import {
   isContactChannel,
   isSubmissionEventType,
   isSubmissionStatus,
-} from '../app/utils/submission-status.ts'
+} from '../shared/submission-status.ts'
 
 describe('mọi trạng thái đều hiện được lên màn hình', () => {
   test('mỗi trạng thái có nhãn, mô tả, icon và lớp huy hiệu', () => {

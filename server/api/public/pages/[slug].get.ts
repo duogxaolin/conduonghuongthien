@@ -3,7 +3,7 @@ import { getDb } from '../../../utils/db'
 import { reportPublicReadFailure } from '../../../utils/public-read-failure'
 import { pages, pageBlocks } from '../../../db/schema'
 import { and, eq, asc } from 'drizzle-orm'
-import type { BlockData, BlockFieldValue, BlockNode } from '../../../../app/utils/blocks/types'
+import type { BlockData, BlockFieldValue, BlockNode } from '../../../../shared/blocks/types'
 
 /**
  * Một node đã lọc để phát ra công khai.

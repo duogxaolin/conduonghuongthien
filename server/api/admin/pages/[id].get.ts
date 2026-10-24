@@ -1,4 +1,4 @@
-import type { BlockNode } from '../../../../app/utils/blocks/types'
+import type { BlockNode } from '../../../../shared/blocks/types'
 import { getDb } from '../../../utils/db'
 import { pages, pageBlocks } from '../../../db/schema'
 import { eq, asc } from 'drizzle-orm'

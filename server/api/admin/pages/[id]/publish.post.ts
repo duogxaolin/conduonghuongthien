@@ -1,7 +1,7 @@
 import { getDb } from '../../../../utils/db'
 import { pages, pageBlocks, pageVersions, activityLogs } from '../../../../db/schema'
 import { normalizeBlocks, VERSION_LIMITS } from '../../../../utils/page-versions'
-import type { BlockNode } from '../../../../../app/utils/blocks/types'
+import type { BlockNode } from '../../../../../shared/blocks/types'
 import { and, asc, eq } from 'drizzle-orm'
 import { requireResourcePermission } from '../../../../utils/permissions'
 

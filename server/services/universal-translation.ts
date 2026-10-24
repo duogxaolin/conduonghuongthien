@@ -5,7 +5,7 @@ import { callAi } from './ai-gateway'
 import { upsertTranslations } from './languages'
 import { runTranslationWorker } from './article-translations'
 import type { ActorLike } from '../utils/permissions'
-import type { BlockData } from '../../app/utils/blocks/types'
+import type { BlockData } from '../../shared/blocks/types'
 import { logInfo, logWarn } from '../utils/logger'
 export interface UniversalCoverageStats {
   totalArticles: number

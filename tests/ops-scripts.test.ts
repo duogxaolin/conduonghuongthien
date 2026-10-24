@@ -278,7 +278,19 @@ test('PR chạy bộ nhẹ; integration và bản đầy đủ chỉ bị bỏ q
 
   // PR nháp bị bỏ qua; PR thường chỉ chạy integration khi đụng backend/DB/CI.
   assert.match(planJob, /DRAFT: \$\{\{ github\.event\.pull_request\.draft \}\}/)
-  assert.match(planJob, /\^\(server\/\|migrations\/\|scripts\/\|package/, 'danh sách đường dẫn kích hoạt integration')
+  assert.match(planJob, /\^\(server\/\|shared\/\|migrations\/\|scripts\/\|package/, 'danh sách đường dẫn kích hoạt integration')
+  // Chạy chính biểu thức lọc của ci.yml trên vài đường dẫn: shared/ là mã máy chủ
+  // import thẳng (registry block, trạng thái đơn, quyền…), nên PR chỉ đụng shared/
+  // vẫn phải chạy integration.
+  const filter = /grep -Eq '([^']+)'/.exec(planJob)?.[1] ?? ''
+  assert.ok(filter, 'không đọc được biểu thức lọc đường dẫn integration')
+  const triggersIntegration = new RegExp(filter)
+  for (const file of ['server/utils/db.ts', 'shared/blocks/registry.ts', 'shared/submission-status.ts', 'migrations/001.sql', 'tests/media-category-migration-integration.test.ts']) {
+    assert.match(file, triggersIntegration, `PR đụng ${file} phải chạy integration`)
+  }
+  for (const file of ['app/pages/index.vue', 'docs/CHANGELOG.md', 'tests/cms-core-content.test.ts', 'app/shared/x.ts']) {
+    assert.doesNotMatch(file, triggersIntegration, `PR chỉ đụng ${file} không cần integration`)
+  }
   assert.match(workflow, /types: \[opened, synchronize, reopened, ready_for_review\]/,
     'PR nháp cần ready_for_review để chạy lại khi sẵn sàng')
   assert.match(workflow, /workflow_dispatch:/, 'cần lượt chạy tay để ép chạy đủ')

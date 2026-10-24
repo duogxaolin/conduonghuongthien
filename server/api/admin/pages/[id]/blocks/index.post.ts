@@ -1,6 +1,6 @@
 import { getDb } from '../../../../../utils/db'
 import { pages, pageBlocks, activityLogs } from '../../../../../db/schema'
-import { isValidBlockType, getDefaultData } from '../../../../../../app/utils/blocks/registry'
+import { isValidBlockType, getDefaultData } from '../../../../../../shared/blocks/registry'
 import { assertSafeBlockLinks, sanitizeBlockData } from '../../../../../utils/sanitize-html'
 import { UnsafeLinkError } from '../../../../../../shared/link-policy'
 import { eq, sql } from 'drizzle-orm'

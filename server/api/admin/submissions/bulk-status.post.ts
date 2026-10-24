@@ -1,6 +1,6 @@
 import { createError } from 'h3'
 import { changeSubmissionStatus } from '../../../services/submission-workflow'
-import { isSubmissionStatus } from '../../../../app/utils/submission-status'
+import { isSubmissionStatus } from '../../../../shared/submission-status'
 import { parseBulkIds, runBulk } from '../../../utils/bulk'
 
 /**
