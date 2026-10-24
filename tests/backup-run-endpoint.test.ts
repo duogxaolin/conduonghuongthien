@@ -14,10 +14,13 @@ import { startH3TestServer, type H3TestServer } from './_h3-test-server'
  * And how its body is read (wave2 5.2): through `readValidated`
  * (`server/utils/request-body.ts`), so the handler runs inside a REAL h3 app and
  * gets real bytes — a fake event with a `readBody` global would skip exactly the
- * parsing under test. Before, a bare `readBody<{ type?: string }>(event)` answered
- * a truncated body with h3's English "Invalid JSON body", handed this code the
- * truncated TEXT when the client wrote `; charset=utf-8`, and took a urlencoded
- * form `type=all` — what a plain HTML form sends — as a valid request.
+ * parsing under test. Before, a bare `readBody<{ type?: string }>(event)` had two
+ * faults (measured against the old handler on a real h3 app):
+ *  - a truncated body with `Content-Type: application/json` was h3's English 400
+ *    "Bad Request";
+ *  - a body a cross-site page can send WITHOUT a preflight started a real backup:
+ *    a urlencoded form `type=all`, and `{"type":"all"}` with no Content-Type at all
+ *    (`sendBeacon`, a no-cors `fetch` with an untyped Blob).
  */
 
 mock.module('../server/utils/db', { namedExports: { getDb: () => ({}), getPool: () => null } })
@@ -121,6 +124,12 @@ test('a body that is not a JSON object is a 400 with the shared message, and no 
     calls.length = 0
     await assertRefused(await run(body, contentType), 'Dữ liệu gửi lên không hợp lệ')
   }
+})
+
+test('a JSON body with NO Content-Type (sendBeacon, a no-cors fetch with an untyped Blob) is a 400, and no backup starts', async () => {
+  // Both legacy forms ran a real backup on this: h3 parses an untyped body as JSON.
+  calls.length = 0
+  await assertRefused(await server.send('POST', PATH, { body: '{"type":"all"}' }), 'Dữ liệu gửi lên không hợp lệ')
 })
 
 test('an unknown or missing type is a 400 with the endpoint\'s own message, and no backup starts', async () => {

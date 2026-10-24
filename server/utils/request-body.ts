@@ -8,7 +8,9 @@
  * body — a dropped connection, a client bug — turns into `{}`, the endpoint runs
  * on "nothing was sent", and a save reads as done. Without the `.catch`, h3 still
  * only parses strictly for a bare `application/json`: with
- * `application/json; charset=utf-8` the truncated text comes back as a STRING.
+ * `application/json; charset=utf-8` the truncated text comes back as a STRING. And
+ * it takes a urlencoded form, or a body with no Content-Type, as an object — both
+ * are bodies a cross-site page can send without a CORS preflight.
  *
  * Why not h3's own `readValidatedBody`/`getValidatedQuery`: on failure they put
  * the validator's error object in `data`, which goes to the client as is (zod's
@@ -33,13 +35,16 @@ const MAX_FIELD_PATH = 80
 const JSON_MEDIA_TYPE = /^application\/(?:[\w.!#$&^-]+\+)?json$/i
 
 /**
- * Absent counts as JSON (h3 then parses strictly). A form (`urlencoded`,
- * `multipart`) or `text/plain` does not: those are the content types a cross-site
- * HTML form can send without a preflight, and h3 would turn the first into an
- * object of strings that passes for a JSON object.
+ * A body must SAY it is JSON. Everything a cross-site page can send without a CORS
+ * preflight is refused: a form (`urlencoded`, `multipart`), `text/plain`, and no
+ * Content-Type at all — `navigator.sendBeacon` or a `fetch(…, { mode: 'no-cors' })`
+ * with an untyped Blob, which h3 would parse into an object. `application/json` is
+ * not a "simple" content type, so a browser only sends it cross-origin after a
+ * preflight the server does not grant. Every caller in `app/` posts with `$fetch`
+ * and an object body, for which ofetch sets `application/json`.
  */
 function isJsonContentType(header: string | undefined): boolean {
-  if (!header) return true
+  if (!header) return false
   return JSON_MEDIA_TYPE.test(header.split(';', 1)[0]!.trim())
 }
 
@@ -52,12 +57,14 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 const invalidBody = (): H3Error => createError({ statusCode: 400, statusMessage: INVALID_BODY_MESSAGE })
 
 /**
- * The request body as a JSON object, or a 400 with `INVALID_BODY_MESSAGE`: not
- * JSON (truncated, a form, text), empty, or JSON that is not an object (an array,
- * `null`, a string, a number).
+ * The request body as a JSON object, or a 400 with `INVALID_BODY_MESSAGE`: no JSON
+ * Content-Type (see `isJsonContentType`), not JSON (truncated), empty, or JSON
+ * that is not an object (an array, `null`, a string, a number).
  *
- * Parsed by h3 in strict mode — so a body another handler already read is not
- * parsed twice, and `__proto__`/`constructor.prototype` keys are dropped by destr.
+ * Parsed by h3's `readBody` in strict mode (h3 caches the parsed body, so a body
+ * already read in this request is not read again). Strict destr also REFUSES —
+ * not drops — any body with a `"__proto__":` or `"constructor":` key at any depth,
+ * which is a 400 here: a new endpoint cannot take a field named `constructor`.
  */
 export async function readJsonBody(event: H3Event): Promise<Record<string, unknown>> {
   if (!isJsonContentType(getRequestHeader(event, 'content-type'))) throw invalidBody()

@@ -54,8 +54,9 @@ before(async () => {
 after(() => server.close())
 
 const JSON_TYPE = 'application/json'
-const postJson = (path: string, body: string, contentType: string | undefined = JSON_TYPE) =>
-  server.send('POST', path, { body, contentType })
+/** `contentType: null` sends no `Content-Type` header at all. */
+const postJson = (path: string, body: string, contentType: string | null = JSON_TYPE) =>
+  server.send('POST', path, { body, contentType: contentType ?? undefined })
 
 /** A refusal that says nothing about zod: no `data`, no issue list, no English default. */
 function assertCleanRefusal(response: { status: number, text: string, json: () => Record<string, unknown> }, message: string | RegExp) {
@@ -70,7 +71,7 @@ function assertCleanRefusal(response: { status: number, text: string, json: () =
 // ─── readJsonBody ─────────────────────────────────────────────────────────────
 
 test('readJsonBody: truncated JSON is a 400 with the stable message, whatever the JSON Content-Type spelling', async () => {
-  for (const contentType of [JSON_TYPE, 'application/json; charset=utf-8', 'Application/JSON;charset=UTF-8', undefined]) {
+  for (const contentType of [JSON_TYPE, 'application/json; charset=utf-8', 'Application/JSON;charset=UTF-8', 'application/vnd.api+json']) {
     assertCleanRefusal(await postJson('/json', '{"name":', contentType), INVALID_BODY_MESSAGE)
   }
   assert.equal(INVALID_BODY_MESSAGE, 'Dữ liệu gửi lên không hợp lệ')
@@ -95,18 +96,35 @@ test('readJsonBody: a form or text body is not JSON — urlencoded and text/plai
   assertCleanRefusal(await postJson('/json', '{"a":1}', 'multipart/form-data; boundary=x'), INVALID_BODY_MESSAGE)
 })
 
+test('readJsonBody: a body with NO Content-Type is refused, even a valid JSON object', async () => {
+  // What a cross-site page sends without a preflight: `navigator.sendBeacon` or a
+  // `fetch(…, { mode: 'no-cors', body: new Blob([json]) })` with an untyped Blob.
+  // h3 would parse it (non-strict) into an object; legacy `backup/run.post.ts` ran a
+  // real backup on `{"type":"all"}` sent this way.
+  assertCleanRefusal(await postJson('/json', '{"type":"all"}', null), INVALID_BODY_MESSAGE)
+  assertCleanRefusal(await postJson('/json', '{"name":', null), INVALID_BODY_MESSAGE)
+  assertCleanRefusal(await postJson('/json', '{"type":"all"}', ''), INVALID_BODY_MESSAGE)
+})
+
 test('readJsonBody: a JSON object is returned as parsed, for application/json and +json types', async () => {
-  for (const contentType of [JSON_TYPE, 'application/json; charset=utf-8', 'application/vnd.api+json', undefined]) {
+  for (const contentType of [JSON_TYPE, 'application/json; charset=utf-8', 'application/vnd.api+json']) {
     const response = await postJson('/json', '{"name":"Nguyễn","n":2,"tags":["a"]}', contentType)
     assert.equal(response.status, 200, `${contentType}: ${response.text}`)
     assert.deepEqual(response.json().body, { name: 'Nguyễn', n: 2, tags: ['a'] })
   }
 })
 
-test('readJsonBody: a body with a `__proto__` or `constructor.prototype` key is refused (destr strict), never parsed', async () => {
+test('readJsonBody: a body with a `"__proto__":` or `"constructor":` key ANYWHERE is a 400 (destr strict) — refused, not parsed with the key dropped', async () => {
   // A plain `JSON.parse` would hand the endpoint an own `__proto__` property, and
-  // one `Object.assign` later the prototype is the request's.
-  for (const body of ['{"__proto__":{"polluted":true},"a":1}', '{"constructor":{"prototype":{"polluted":true}}}']) {
+  // one `Object.assign` later the prototype is the request's. destr in strict mode
+  // throws on the key itself, at any depth and whatever its value — so a new
+  // endpoint cannot accept a field literally named `constructor`.
+  for (const body of [
+    '{"__proto__":{"polluted":true},"a":1}',
+    '{"constructor":{"prototype":{"polluted":true}}}',
+    '{"a":{"constructor":1}}',
+    '{"items":[{"__proto__":null}]}',
+  ]) {
     assertCleanRefusal(await postJson('/json', body), INVALID_BODY_MESSAGE)
   }
   assert.equal(({} as Record<string, unknown>).polluted, undefined)
