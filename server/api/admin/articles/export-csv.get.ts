@@ -92,11 +92,8 @@ export default defineEventHandler(async (event) => {
       status: articles.status,
       categoryName: categories.name,
       authorName: users.username,
-      viewTotal: sql<number>`(
-        SELECT COALESCE(SUM(\`v\`.\`real_views\` + \`v\`.\`fabricated_views\`), 0)
-        FROM \`article_view_daily\` \`v\`
-        WHERE \`v\`.\`article_id\` = \`articles\`.\`id\`
-      )`,
+      // Displayed total (real + fabricated), the maintained column (wave2 design D6).
+      viewTotal: articles.viewTotal,
       publishedAt: articles.publishedAt,
       createdAt: articles.createdAt,
     })

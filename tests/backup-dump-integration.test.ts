@@ -21,7 +21,17 @@
  *   4. `backups.trigger` holds every trigger the app writes — on a fresh
  *      `initDb()` AND on an old database whose column is still VARCHAR(16)
  *      (`runBackup('sql', 'pre-fix-thumbnails')` used to die with
- *      ER_DATA_TOO_LONG under strict sql_mode, writing no row at all).
+ *      ER_DATA_TOO_LONG under strict sql_mode, writing no row at all);
+ *   5. generated columns (a fixture table: no column of ours is generated) are
+ *      left out of the dump's INSERT and recomputed by the restored DDL — MySQL
+ *      refuses any value for one (error 3105) — while `created_at`/`updated_at`
+ *      (EXTRA `DEFAULT_GENERATED`, not generated columns) are kept byte for byte;
+ *      `articles.view_total*` (wave2 design D6) are plain data and are dumped;
+ *   6. a dump written the way an OLDER image writes it (`SELECT *` of every
+ *      column, as at 3ede49a) restores into the current schema. `view_total` was
+ *      a generated column in d079453, and a deploy that rolls back past it would
+ *      have left exactly such dumps — `pre-restore` copies included — that fail
+ *      with 3105 and leave `articles` half restored.
  *
  * Gated and self-cleaning like the other *-integration suites:
  *
@@ -30,10 +40,10 @@
  *     --import ./scripts/ts-resolver.mjs --test tests/backup-dump-integration.test.ts
  */
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
-import { gunzipSync } from 'node:zlib'
+import { gunzipSync, gzipSync } from 'node:zlib'
 import test, { after, before } from 'node:test'
 import mysql, { type RowDataPacket } from 'mysql2/promise'
 
@@ -51,11 +61,14 @@ const DB = {
   modeDst: `cdkt_backup_dump_${runId}_modedst`,
   trigFresh: `cdkt_backup_dump_${runId}_trigfresh`,
   trigOld: `cdkt_backup_dump_${runId}_trigold`,
+  genSrc: `cdkt_backup_dump_${runId}_gensrc`,
+  genDst: `cdkt_backup_dump_${runId}_gendst`,
+  legacyDst: `cdkt_backup_dump_${runId}_legacydst`,
 }
 
 /** Never let a typo in the env point this at a real deployment. */
 function assertDisposableDatabase(name: string) {
-  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold)$/)
+  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold|gensrc|gendst|legacydst)$/)
   assert.notEqual(name, 'cdkt_admin')
 }
 
@@ -414,4 +427,110 @@ test('backups.trigger fits every trigger: fresh initDb() and an old VARCHAR(16) 
   }
   await backupEveryTrigger(DB.trigOld)
   await closeDb()
+})
+
+const SELECT_TOTALS = 'SELECT id, view_total_real, view_total_fabricated, view_total, created_at, updated_at FROM articles ORDER BY id'
+
+test('generated columns are recomputed on restore, never dumped; view totals are dumped as plain data', { skip: !enabled, timeout: 300_000 }, async () => {
+  const { closeDb } = await import('../server/utils/db')
+  const { dumpSql, restoreSql } = await import('../server/services/backup-sql')
+  const { initDb } = await import('../server/db/init')
+  await closeDb()
+
+  pointAppAt(DB.genSrc)
+  await initDb()
+  const conn = await mysql.createConnection({ host, port, user, password, database: DB.genSrc })
+  try {
+    await conn.query("SET SESSION time_zone = '+00:00'")
+    await conn.query(
+      `INSERT INTO \`articles\` (\`id\`, \`type\`, \`title\`, \`slug\`, \`status\`, \`view_total_real\`, \`view_total_fabricated\`, \`view_total\`, \`created_at\`, \`updated_at\`)
+       VALUES (1, 'news', 'Bài có lượt xem', 'bai-co-luot-xem', 'published', 41, 9, 50, '2026-03-04 05:06:07', '2026-05-06 07:08:09'),
+              (2, 'news', 'Bài chưa ai xem', 'bai-chua-ai-xem', 'published', 0, 0, 0, '2026-03-05 05:06:07', '2026-05-07 07:08:09')`,
+    )
+    // The general rule, on a fixture: no column of ours is generated any more.
+    await conn.query(`CREATE TABLE \`gen_fixture\` (
+      \`id\` INT PRIMARY KEY,
+      \`a\` BIGINT NOT NULL,
+      \`b\` BIGINT NOT NULL,
+      \`s\` BIGINT AS (\`a\` + \`b\`) STORED,
+      \`v\` BIGINT AS (\`a\` - \`b\`) VIRTUAL,
+      \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+    ) ENGINE=InnoDB`)
+    await conn.query("INSERT INTO `gen_fixture` (`id`, `a`, `b`, `created_at`, `updated_at`) VALUES (1, 5, 2, '2026-01-01 01:02:03', '2026-02-02 04:05:06')")
+  } finally {
+    await conn.end()
+  }
+
+  const target = path.join(workdir, 'generated-columns.sql.gz')
+  await dumpSql(target)
+  await closeDb()
+  const dump = gunzipSync(readFileSync(target)).toString('utf8')
+
+  const articleColumns = /INSERT INTO `articles` \(([^)]*)\) VALUES/.exec(dump)?.[1] ?? ''
+  assert.match(articleColumns, /`view_total_real`, `view_total_fabricated`, `view_total`/, 'all three totals are plain data and are dumped')
+  const fixtureColumns = /INSERT INTO `gen_fixture` \(([^)]*)\) VALUES/.exec(dump)?.[1] ?? ''
+  assert.equal(fixtureColumns, '`id`, `a`, `b`, `created_at`, `updated_at`', 'STORED and VIRTUAL generated columns are left out; DEFAULT_GENERATED timestamps stay')
+
+  pointAppAt(DB.genDst)
+  await restoreSql(target)
+  await closeDb()
+
+  const restored = await exactRows(DB.genDst, SELECT_TOTALS)
+  assert.deepEqual(restored, await exactRows(DB.genSrc, SELECT_TOTALS), 'every value, timestamps included, comes back identical')
+  assert.deepEqual(restored.map(row => row.view_total), ['50', '0'])
+  const SELECT_FIXTURE = 'SELECT id, a, b, s, v, created_at, updated_at FROM gen_fixture'
+  assert.deepEqual(await exactRows(DB.genDst, SELECT_FIXTURE), [{ id: 1, a: '5', b: '2', s: '7', v: '3', created_at: '2026-01-01 01:02:03', updated_at: '2026-02-02 04:05:06' }])
+})
+
+test('a dump written the way an older image writes it (SELECT * of every column) restores into the current schema', { skip: !enabled, timeout: 300_000 }, async () => {
+  // 3ede49a's dumpSql: SHOW CREATE TABLE, then SELECT * into one INSERT naming
+  // every column. That is what a deploy rolled back past wave2-2C writes —
+  // nightly backups and the automatic `pre-restore` copy alike — against a
+  // database the 2C boot has already given the view-total columns. Uses the
+  // database the previous test booted (DB.genSrc), with rows of its own.
+  const { closeDb } = await import('../server/utils/db')
+  const { restoreSql } = await import('../server/services/backup-sql')
+  await closeDb()
+
+  const conn = await mysql.createConnection({ host, port, user, password, database: DB.genSrc, dateStrings: true, supportBigNumbers: true, bigNumberStrings: true })
+  let legacyDump = ''
+  try {
+    await conn.query("SET SESSION time_zone = '+00:00'")
+    // As an older image writes an article: it knows nothing of the totals.
+    await conn.query(
+      `INSERT INTO \`articles\` (\`id\`, \`type\`, \`title\`, \`slug\`, \`status\`, \`created_at\`, \`updated_at\`)
+       VALUES (101, 'news', 'Bài từ image cũ', 'bai-tu-image-cu', 'published', '2026-04-04 04:04:04', '2026-04-05 05:05:05')`,
+    )
+    const [[create]] = await conn.query<RowDataPacket[]>('SHOW CREATE TABLE `articles`')
+    const [rows, fields] = await conn.query<RowDataPacket[][]>({ sql: 'SELECT * FROM `articles` ORDER BY `id`', rowsAsArray: true })
+    assert.ok(rows.length > 0, 'there are rows to dump')
+    const columns = fields.map(field => `\`${field.name}\``)
+    assert.ok(columns.includes('`view_total`'), 'SELECT * reads every column, view_total included')
+    legacyDump = [
+      'SET NAMES utf8mb4;',
+      "SET time_zone = '+00:00';",
+      'SET FOREIGN_KEY_CHECKS=0;',
+      'DROP TABLE IF EXISTS `articles`;',
+      `${(create as Record<string, string>)['Create Table']};`,
+      `INSERT INTO \`articles\` (${columns.join(', ')}) VALUES`,
+      rows.map(values => `(${values.map(value => conn.escape(value)).join(', ')})`).join(',\n') + ';',
+      'SET FOREIGN_KEY_CHECKS=1;',
+      '',
+    ].join('\n')
+  } finally {
+    await conn.end()
+  }
+  const target = path.join(workdir, 'legacy-select-star.sql.gz')
+  writeFileSync(target, gzipSync(Buffer.from(legacyDump, 'utf8')))
+
+  pointAppAt(DB.legacyDst)
+  await restoreSql(target)
+  await closeDb()
+
+  assert.deepEqual(
+    await exactRows(DB.legacyDst, SELECT_TOTALS),
+    await exactRows(DB.genSrc, SELECT_TOTALS),
+    'every row is restored with its totals — no 3105, no half-restored articles table',
+  )
 })

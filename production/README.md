@@ -139,6 +139,16 @@ Chạy khi muốn kéo code/image mới lên VPS đang chạy:
   bản trước lượt pull, trỏ `CDKT_IMAGE` về thẻ lùi, khởi động lại, rồi **thoát mã khác 0**
   ("UPDATE THẤT BẠI"). `.env` khi đó đang đặt `CDKT_IMAGE=cdkt-rollback/app:…`; lượt CI
   deploy kế tiếp, hoặc Update lần sau, sẽ đề nghị trỏ lại về GHCR.
+  - **Lùi chạy image cũ trên CSDL image mới đã nâng cấp** (`init.ts` của image mới đã chạy
+    trước khi healthcheck hỏng). Vì vậy lược đồ chỉ được thêm theo cách image cũ chịu được.
+    Với tổng lượt xem bài viết (đợt 2C — `articles.view_total_real`/`view_total_fabricated`/
+    `view_total`): lùi **an toàn** — ba cột là cột thường, image cũ không biết tới chúng nên
+    đọc/ghi bài như cũ, và bản sao lưu nó dump (`SELECT *`) khôi phục được. Lượt xem image cũ
+    đếm trong lúc đó không vào tổng; lần khởi động kế tiếp của image mới **tự đối soát** và
+    sửa đúng những bài lệch (log `db.migration.article_view_totals_reconciled` kèm số bài),
+    không cần làm gì tay. (d079453 từng khai `view_total` là cột sinh — bản dump của image
+    cũ khi đó chết 3105 lúc khôi phục; bản này đã đổi thành cột thường, CSDL nào đã chạy
+    d079453 được đổi lại lúc khởi động.)
 - **`CDKT_IMAGE` bị CI ghim vào `:sha-<commit>`** sau lượt deploy đầu tiên, nên "pull"
   chỉ kéo đúng bản đó. Update nói rõ điều này và hỏi có trỏ về `:latest` không (CI sẽ ghim
   lại ở lượt deploy sau). Kéo về trùng image đang chạy → báo "không có bản mới hơn".

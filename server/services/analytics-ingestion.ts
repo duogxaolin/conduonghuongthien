@@ -129,20 +129,92 @@ function createDrizzleTransactionStore(db: DrizzleTransactionDb): AnalyticsPageV
   }
 }
 
+/**
+ * One page view in one transaction: the raw event, then every dedupe row, then
+ * every minute-bucket upsert — `total` first (wave2 design D8, as measured).
+ *
+ * Every page view upserts the same `total` bucket row for the current minute, and
+ * the lock its upsert takes is held until COMMIT. In the previous order that
+ * upsert came second and the ten dedupe/bucket statements after it ran while it
+ * was held. Now the per-visitor dedupe rows — which no other page view waits on —
+ * are all written BEFORE the first shared row is locked, so `total` is held across
+ * the remaining bucket upserts only.
+ *
+ * **`total` stays the first bucket upsert, deliberately — not the last.** Both
+ * live tables have an auto-increment surrogate PK next to their natural unique
+ * key, and an `INSERT … ON DUPLICATE KEY UPDATE` there holds an X next-key lock on
+ * the PK supremum until commit. With `total` first, the upsert every page view
+ * shares serialises the bucket phase per minute. With `total` last (the literal
+ * D8 text), each transaction takes the supremum lock on its own first, distinct,
+ * bucket row and then waits for the other's: ~37 % of page views rolled back with
+ * ER_LOCK_DEADLOCK under 10 concurrent requests. The previous interleaved order
+ * also deadlocked once visitors repeat within a minute (a duplicate dedupe insert
+ * takes a shared next-key lock while the `total` row is held); this order cut
+ * that ~10× in a sustained run but not to zero — the root fix is a natural-key
+ * primary key on both tables (follow-up). Numbers, the deadlock dump and the four
+ * orders compared are in docs/decisions/data-layer.md; the order is pinned by
+ * tests/analytics-ingestion.test.ts.
+ */
 export async function storeAnalyticsPageView(
   row: MinimalPageViewRow,
   store: AnalyticsPageViewTransactionStore = createDrizzleTransactionStore(getDb() as DrizzleTransactionDb),
+  options: { sleep?: (ms: number) => Promise<void> } = {},
 ): Promise<void> {
+  // Build order: `total` first, then the dimensions.
   const scopes = buildAnalyticsLiveScopes(row)
   const bucketStart = formatUtcDateTime(utcMinuteStart(row.occurredAt))
+  const sleep = options.sleep ?? (ms => new Promise<void>(resolve => setTimeout(resolve, ms)))
 
-  await store.transaction(async (tx) => {
-    await tx.insertRaw(row)
-    for (const scope of scopes) {
-      const isUnique = await tx.insertDeduplication(bucketStart, row.visitorToken, scope)
-      await tx.incrementBucket(bucketStart, scope, isUnique ? 1 : 0)
+  for (let attempt = 1; ; attempt++) {
+    try {
+      await store.transaction(async (tx) => {
+        await tx.insertRaw(row)
+        const unique: Array<0 | 1> = []
+        for (const scope of scopes) {
+          unique.push(await tx.insertDeduplication(bucketStart, row.visitorToken, scope) ? 1 : 0)
+        }
+        for (const [index, scope] of scopes.entries()) {
+          await tx.incrementBucket(bucketStart, scope, unique[index]!)
+        }
+      })
+      break
+    } catch (error) {
+      if (attempt >= INGESTION_DEADLOCK_ATTEMPTS || !isDeadlock(error)) throw error
+      await sleep(INGESTION_RETRY_MIN_MS + Math.floor(Math.random() * (INGESTION_RETRY_MAX_MS - INGESTION_RETRY_MIN_MS + 1)))
     }
-  })
+  }
+  // The NOC aggregate is recorded by the caller (`ingestAnalyticsPageView`) after
+  // this transaction has committed, never inside it.
+}
+
+/**
+ * A page view that loses a deadlock is retried — at most this many attempts in
+ * all. The statement order above cut deadlocks ~10× but not to zero under
+ * sustained load (docs/decisions/data-layer.md: 3.9 % / 2.3 % of transactions in
+ * a 185 s run), and an unretried victim is a page view lost with a 500.
+ *
+ * Safe to repeat whole: InnoDB rolls the deadlock victim's transaction back in
+ * full, and the transaction wrapper rolls back on any error, so nothing of the
+ * failed attempt — raw row, dedupe rows, bucket increments — survives; the retry
+ * counts the visitor exactly as the first attempt would have.
+ *
+ * Only a deadlock. A lock-wait timeout (1205) has already waited
+ * `innodb_lock_wait_timeout` (50 s by default): retrying a page-view beacon would
+ * hold the request minutes longer on a server that is already saturated.
+ */
+export const INGESTION_DEADLOCK_ATTEMPTS = 3
+/** Jittered pause before a retry, so two victims of one deadlock do not collide again. */
+const INGESTION_RETRY_MIN_MS = 5
+const INGESTION_RETRY_MAX_MS = 25
+
+/** ER_LOCK_DEADLOCK (1213), on the error or anywhere down its `cause` chain (Drizzle wraps the driver's error). */
+function isDeadlock(error: unknown): boolean {
+  for (let current: unknown = error, depth = 0; current && typeof current === 'object' && depth < 5; depth++) {
+    const { code, errno, cause } = current as { code?: unknown, errno?: unknown, cause?: unknown }
+    if (code === 'ER_LOCK_DEADLOCK' || errno === 1213) return true
+    current = cause
+  }
+  return false
 }
 
 export async function ingestAnalyticsPageView(options: {
