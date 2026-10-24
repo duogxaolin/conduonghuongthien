@@ -33,7 +33,8 @@ import { MEDIA_THUMBNAIL_FILE, resolveMediaDirectory } from './media-portal-asse
 //
 // Cột `thumbnail_url` lưu URL/đường dẫn ảnh thư viện **chỉ để admin page hiển thị
 // preview** "đang dùng ảnh nào". Phía công khai vẫn serve qua `resolveThumbnailTarget`
-// (không redirect theo URL tự do — xem comment `serializePublicMedia` dòng 310).
+// (không redirect theo URL tự do — xem comment của `serializePublicMedia` trong
+// `media-portal-public.ts`).
 
 /** Đường dẫn R2 key của thumb cấp gốc: `<storagePath>/thumb.jpg`. */
 function r2ThumbnailKey(storagePath: string): string {

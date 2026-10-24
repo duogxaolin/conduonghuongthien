@@ -68,8 +68,8 @@ export async function resolveThumbnailTarget(
   }
 
   // R2 thumbnail — cùng key prefix với rendition, tệp `thumb.jpg`. Pipeline lưu
-  // thumb ở `${stored}/generations/<claim>/thumb.jpg` (dòng 596 của video-processing
-  // đặt `published` sâu hơn `assetRoot`), nên phải **list** keys để tìm nó thay
+  // thumb ở `${stored}/generations/<claim>/thumb.jpg` (`processMediaItem` trong
+  // video-processing đặt `published` sâu hơn `assetRoot`), nên phải **list** keys để tìm nó thay
   // vì đoán cấp. Ưu tiên `thumb.jpg` ở cấp gốc (cho deployment sửa sau này), rồi
   // mới tới `generations/<claim>/thumb.jpg` (kiểu present).
   if (row.storageProvider === 'r2') {
@@ -97,8 +97,8 @@ export async function resolveThumbnailTarget(
         }
       }
     }
-    // R2 không có thumb → thử đĩa local. Cùng lý do `resolveStreamTarget` dòng
-    // 960-1008 lùi local khi R2 thiếu original: pipeline sync R2 có thể bỏ sót
+    // R2 không có thumb → thử đĩa local. Cùng lý do `resolveStreamTarget`
+    // (`media-portal-stream.ts`) lùi local khi R2 thiếu original: pipeline sync R2 có thể bỏ sót
     // thumb, và khi đó thumb thường vẫn còn trên đĩa (sync xoá `published` chỉ
     // chạy sau khi sync thành công toàn cây). Trả 404 trên một mục có thumb trên
     // đĩa chỉ vì R2 liệt kê thiếu là đúng loại hỏng đọc ra "cổng bị gãy".

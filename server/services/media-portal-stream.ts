@@ -139,7 +139,8 @@ export async function resolveStreamTarget(
     // `locateOriginalFile` nhưng list R2 prefix.
     //
     // **Lùi về local nếu R2 không có original**: pipeline `video-processing.ts`
-    // sync cây `published` lên R2 rồi xoá local (dòng 741), nhưng sync có thể bỏ
+    // sync cây `published` lên R2 rồi xoá local (`processMediaItem`, sau
+    // `syncDirectoryToR2`), nhưng sync có thể bỏ
     // sót `original.<ext>` — tệp gốc lớn có thể put fail một phần mà log vẫn ghi
     // `r2_synced` cho phần đã xong. Khi R2 thiếu original, local thường vẫn còn,
     // vì xoá `published` chỉ chạy sau sync thành công toàn cây; một original còn

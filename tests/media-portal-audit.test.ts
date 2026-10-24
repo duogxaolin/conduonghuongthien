@@ -92,6 +92,28 @@ const AUDITED_SERVICES = [
 
 const SERVICE_EXEMPTIONS: Record<string, string> = {}
 
+describe('AUDITED_SERVICES names every media-portal file that writes activity_logs', () => {
+  it('a media-portal*.ts touching `activityLogs` cannot be missing from the list', () => {
+    // The list above stays explicit, but the media portal is split across
+    // `media-portal-*.ts` files: a new sub-file that writes a row + audit pair
+    // must not slip past the per-file atomicity checks just because nobody added
+    // it here. Raw source match (comments included), like the reader-audit scan —
+    // a false positive asks a question, a false negative hides a write.
+    const portalFiles = readdirSync('server/services')
+      .filter(name => /^media-portal.*\.ts$/.test(name))
+      .map(name => `server/services/${name}`)
+    assert.ok(portalFiles.includes('server/services/media-portal.ts'), 'scan found no media-portal files — it is checking nothing')
+    const auditing = portalFiles.filter(file => /activityLogs/.test(read(file)))
+    assert.ok(auditing.length > 0, 'no media-portal file writes activity_logs — the scan is checking nothing')
+    assert.deepEqual(
+      auditing.filter(file => !AUDITED_SERVICES.includes(file)),
+      [],
+      'a media-portal file touches `activityLogs` but is not in AUDITED_SERVICES — add it so its '
+      + 'row + audit pair is checked for one transaction on the tx handle',
+    )
+  })
+})
+
 describe('media-portal/livestream services commit row + audit row together', () => {
   for (const file of AUDITED_SERVICES) {
     it(`${file.replace('server/services/', '')} wraps its audited writes in one transaction`, () => {
