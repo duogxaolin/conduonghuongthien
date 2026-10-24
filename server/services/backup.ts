@@ -211,8 +211,19 @@ export function timestampStamp(): string {
   return new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d+Z$/, 'Z')
 }
 
+/**
+ * Thư mục backup của app — NƠI DUY NHẤT dựng đường dẫn này (tải về, khôi phục, khôi
+ * phục từ tệp tải lên, xoay vòng, lượt dọn, xoá đều gọi hàm này;
+ * tests/backup-dir-isolation.test.ts chặn chỗ tự dựng `…/backups`).
+ *
+ * `CDKT_BACKUPS_DIR` — CHỈ cho test/dev: E2E và `nuxt dev` chạy với cwd = bản checkout
+ * và một CSDL mới tinh (bảng `backups` rỗng), nên mọi bản sao lưu cục bộ trong
+ * `./backups` trông như tệp mồ côi và bị lượt dọn xoá. Production không đặt biến này
+ * (không có trong compose): mặc định `<cwd>/backups` = `/app/backups` trong container.
+ */
 export function backupsDir(): string {
-  return path.resolve(process.cwd(), 'backups')
+  const configured = (process.env.CDKT_BACKUPS_DIR || '').trim()
+  return configured ? path.resolve(configured) : path.resolve(process.cwd(), 'backups')
 }
 
 /** Đọc cấu hình backup từ settings (group `backup`), lùi về mặc định nếu thiếu. */
