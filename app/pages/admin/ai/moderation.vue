@@ -36,7 +36,7 @@
         @click="activeTab = t.key"
       >
         <span>{{ t.label }}</span>
-        <span v-if="t.badge > 0" class="px-1.5 py-px rounded-full bg-red-500 text-white text-[0.65rem] font-black">
+        <span v-if="t.badge !== null && t.badge > 0" class="px-1.5 py-px rounded-full bg-red-500 text-white text-[0.65rem] font-black">
           {{ t.badge }}
         </span>
         <span v-else-if="t.count !== undefined" class="text-[0.7rem] opacity-70">
@@ -664,6 +664,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onBeforeUnmount } from 'vue'
 import { rescanAiNotice, rescanFinishedToast, rescanSummaryText, type RescanSummary } from '~/utils/moderation-rescan-summary'
+import { pendingBadgeCount } from '~/utils/moderation-summary'
 
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
@@ -745,7 +746,14 @@ const queuePerPage = ref(20)
 const queueTotalPages = ref(1)
 const queueTotal = ref(0)
 
-const pendingQueueCount = computed(() => queue.value.filter(q => q.status === 'pending').length)
+// Tổng của máy chủ, không đếm trên trang 20 dòng (lỗi trần 20) — cùng con số với bản
+// tóm tắt ở tab AI Panel. `queueTotalFilter` = bộ lọc mà `queueTotal` ĐÃ TẢI thuộc về
+// (đặt khi phản hồi về), để vừa bấm đổi bộ lọc không hiện tổng của bộ lọc trước.
+// `workerPendingCount` = `pendingQueueCount` của worker-status, `null` khi lượt đọc hỏng
+// (huy hiệu ẩn, không hiện "0").
+const queueTotalFilter = ref<string | null>(null)
+const workerPendingCount = ref<number | null>(null)
+const pendingQueueCount = computed(() => pendingBadgeCount({ queueTotal: queueTotal.value, queueTotalFilter: queueTotalFilter.value, workerPending: workerPendingCount.value }))
 
 const newRuleForm = reactive({
   category: 'hostile_forces',
@@ -794,13 +802,15 @@ async function loadSettings() {
 }
 
 async function loadQueue() {
+  const filter = queueStatusFilter.value
   const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; items: ModerationQueueItem[]; page: number; perPage: number; total: number; totalPages: number }>)('/api/admin/ai/moderation/queue', {
-    params: { status: queueStatusFilter.value, page: queuePage.value, perPage: queuePerPage.value },
+    params: { status: filter, page: queuePage.value, perPage: queuePerPage.value },
   })
   queue.value = res.items
   queuePage.value = res.page
   queuePerPage.value = res.perPage
   queueTotal.value = res.total
+  queueTotalFilter.value = filter
   queueTotalPages.value = res.totalPages
 }
 
@@ -918,7 +928,8 @@ async function resolveItem(item: ModerationQueueItem, action: 'approve' | 'rejec
       body: { action },
     })
     toast.success('Đã xử lý đối soát thành công!')
-    await loadQueue()
+    // Số "pending" của worker-status cũng đổi (huy hiệu khi đang lọc trạng thái khác).
+    await Promise.all([loadQueue(), loadWorkerStatus()])
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không thể xử lý đối soát.'))
   }
@@ -1016,10 +1027,12 @@ async function loadWorkerStatus() {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; worker: WorkerStatusData; rescan?: RescanStatusData }>)(`/api/admin/ai/moderation/worker-status`)
     if (res.ok) {
       workerData.value = res.worker
+      workerPendingCount.value = res.worker.pendingQueueCount
       applyRescanStatus(res.rescan ?? null)
     }
   } catch {
-    // Non-blocking status lookup
+    // Non-blocking status lookup — nhưng số "pending" cũ không còn đáng tin: ẩn huy hiệu.
+    workerPendingCount.value = null
   } finally {
     workerLoading.value = false
   }

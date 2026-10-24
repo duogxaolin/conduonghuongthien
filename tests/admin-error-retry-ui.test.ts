@@ -115,6 +115,8 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'components/admin/ai/AiDashboardTab.vue', refs: ['usageError'], retries: ['loadUsage'] },
   { file: 'components/admin/ai/AiProvidersTab.vue', refs: ['providersError'], retries: ['loadProviders'] },
   { file: 'components/admin/ai/AiServicesTab.vue', refs: ['servicesError'], retries: ['loadServices'] },
+  // Tab kiểm duyệt nay chỉ là bản tóm tắt (D10): hai con số + liên kết sang
+  // `/admin/ai/moderation`. Vẫn tự fetch hai endpoint nên vẫn giữ nhánh lỗi riêng.
   { file: 'components/admin/ai/AiModerationTab.vue', refs: ['moderationError'], retries: ['loadModeration'] },
   { file: 'components/admin/ai/AiLogsTab.vue', refs: ['logsError'], retries: ['loadLogs'] },
   { file: 'pages/admin/ai/moderation.vue', refs: ['error'], retries: ['loadData'] },

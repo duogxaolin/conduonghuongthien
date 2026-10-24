@@ -7,6 +7,8 @@
  * nhận id từ request. Ngoại lệ duy nhất là ô xem lịch sử tài khoản khác, chỉ hiện
  * với SuperAdmin.
  */
+import { isDeliberateEnter } from '~/utils/admin-modal'
+
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 type FactorType = 'totp' | 'email_otp' | 'second_password'
@@ -125,6 +127,18 @@ const enrollDialog = reactive({
  *  phím không phải tab xuyên qua cả trang phía sau lớp phủ mới tới được nó. */
 function focusFirstField(id: string) {
   nextTick(() => (document.getElementById(id) as HTMLInputElement | null)?.focus())
+}
+
+/** Enter trong ô nhập của hộp thoại = gửi bước hiện tại. Ở `keydown`, KHÔNG `keyup`:
+ *  hộp mở bằng Enter trên nút "Bật"/"Tắt" đưa focus vào ô đầu tiên trước khi phím được
+ *  thả — `@keyup.enter` từng gửi biểu mẫu trống và báo "Vui lòng nhập mật khẩu hiện
+ *  tại" khi người dùng chưa gõ gì. Bỏ qua lúc đang gõ dấu (IME chốt chữ bằng Enter). */
+function submitOnEnter(event: KeyboardEvent, submit: () => Promise<void>) {
+  // Giữ Enter trên nút mở: hệ điều hành lặp phím vào ô vừa nhận focus — chỉ nhận lần
+  // nhấn có chủ đích (không lặp, không phải Enter chốt chữ của bộ gõ).
+  if (!isDeliberateEnter(event)) return
+  event.preventDefault()
+  void submit()
 }
 
 function openEnroll(type: FactorType) {
@@ -375,7 +389,7 @@ function loadHistory() { historyRef.value?.reload() }
 /** Escape đóng hộp thoại đang mở — cùng cách làm với ConfirmModal. Bắt ở window
  *  vì tiêu điểm có thể đang nằm trên nút đóng hay một ô nhập bất kỳ bên trong
  *  hộp thoại. Hộp thoại đang bận gọi API thì không đóng, để không bỏ dở một
- *  thao tác đã gửi đi. Không bắt Enter: mỗi ô nhập đã tự nối @keyup.enter tới
+ *  thao tác đã gửi đi. Không bắt Enter: mỗi ô nhập đã tự nối @keydown.enter tới
  *  đúng bước của nó, còn ở đây thì không biết đang ở bước nào. */
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
@@ -696,7 +710,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <label for="enroll-pw" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu hiện tại</label>
               <input id="enroll-pw" v-model="enrollDialog.currentPassword" type="password" autocomplete="current-password"
                      class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                     @keyup.enter="submitEnroll" />
+                     @keydown.enter="submitOnEnter($event, submitEnroll)" />
             </div>
             <template v-if="enrollDialog.factorType === 'second_password'">
               <div>
@@ -711,7 +725,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <label for="enroll-sp2" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Nhập lại mật khẩu cấp 2</label>
                 <input id="enroll-sp2" v-model="enrollDialog.secondPasswordConfirm" type="password" autocomplete="new-password"
                        class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                       @keyup.enter="submitEnroll" />
+                       @keydown.enter="submitOnEnter($event, submitEnroll)" />
               </div>
             </template>
           </template>
@@ -761,13 +775,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <input id="enroll-code" v-model="enrollDialog.code" type="text" inputmode="numeric"
                      autocomplete="one-time-code" maxlength="8"
                      class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[1rem] font-mono tracking-[0.3em] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                     @keyup.enter="submitConfirm" />
+                     @keydown.enter="submitOnEnter($event, submitConfirm)" />
             </div>
             <div v-else>
               <label for="enroll-sp-confirm" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu cấp 2</label>
               <input id="enroll-sp-confirm" v-model="enrollDialog.secondPassword" type="password" autocomplete="off"
                      class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                     @keyup.enter="submitConfirm" />
+                     @keydown.enter="submitOnEnter($event, submitConfirm)" />
             </div>
 
             <p class="text-[0.78rem] text-[#8ea98f] m-0">
@@ -817,7 +831,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <label for="disable-pw" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu hiện tại</label>
             <input id="disable-pw" v-model="disableDialog.currentPassword" type="password" autocomplete="current-password"
                    class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                   @keyup.enter="submitDisable" />
+                   @keydown.enter="submitOnEnter($event, submitDisable)" />
           </div>
         </div>
         <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-[#e2ece3]">
@@ -866,7 +880,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <label for="recovery-pw" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu hiện tại</label>
             <input id="recovery-pw" v-model="recoveryDialog.currentPassword" type="password" autocomplete="current-password"
                    class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                   @keyup.enter="submitRecovery" />
+                   @keydown.enter="submitOnEnter($event, submitRecovery)" />
           </div>
         </div>
         <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-[#e2ece3]">
