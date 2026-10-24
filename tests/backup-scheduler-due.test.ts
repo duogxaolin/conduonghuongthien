@@ -255,8 +255,8 @@ test('the plugin boots the scheduler through the shared switch, sweeps partial f
   const plugin = readFileSync(new URL('../server/plugins/backup-scheduler.ts', import.meta.url), 'utf8')
   assert.match(plugin, /backupSchedulerEnabledByServer\(process\.env\.BACKUP_SCHEDULER, process\.env\.NODE_ENV\)/)
   assert.match(plugin, /nitroApp\.hooks\.hook\('close', stopBackupScheduler\)/)
-  // The sweep is not gated on the scheduler switch: manual runs leave partial files too.
-  assert.ok(plugin.indexOf('scheduleStartupBackupSweep()') !== -1 && plugin.indexOf('scheduleStartupBackupSweep()') < plugin.indexOf('backupSchedulerEnabledByServer('))
+  // The startup sweep only where the scheduler runs (behaviour: tests/backup-dir-isolation.test.ts).
+  assert.ok(plugin.indexOf('scheduleStartupBackupSweep()') > plugin.indexOf('backupSchedulerEnabledByServer('))
   const endpoint = readFileSync(new URL('../server/api/admin/settings/backup.get.ts', import.meta.url), 'utf8')
   assert.match(endpoint, /schedulerDisabledByServer: !backupSchedulerEnabledByServer\(process\.env\.BACKUP_SCHEDULER, process\.env\.NODE_ENV\)/)
 })

@@ -19,11 +19,14 @@ export default defineNitroPlugin((nitroApp) => {
   // từng start là no-op.
   nitroApp.hooks.hook('close', stopBackupScheduler)
 
-  // Rác của một lượt sao lưu bị giết (SIGKILL, hết thời gian ân hạn): `.partial` và
-  // tệp tên-app không có hàng — dọn một lần sau khi khởi động, dưới khoá chạy. Không
-  // phụ thuộc công tắc scheduler: lượt sao lưu tay cũng có thể bị cắt ngang.
-  scheduleStartupBackupSweep()
-
+  // Máy chủ tắt scheduler (dev, E2E, `BACKUP_SCHEDULER=0`) → không đụng gì vào thư
+  // mục backup lúc khởi động. E2E/dev chạy với cwd = bản checkout và CSDL mới (bảng
+  // `backups` rỗng): lượt dọn lúc khởi động sẽ coi mọi bản sao lưu cục bộ là mồ côi.
   if (!backupSchedulerEnabledByServer(process.env.BACKUP_SCHEDULER, process.env.NODE_ENV)) return
+
+  // Rác của một lượt sao lưu bị giết (SIGKILL, hết thời gian ân hạn): `.partial` và
+  // tệp tên-app không có hàng — dọn một lần sau khi khởi động, dưới khoá chạy. Lượt
+  // sao lưu nào cũng tự dọn ở đầu lượt (`runBackup`), kể cả khi scheduler tắt.
+  scheduleStartupBackupSweep()
   startBackupScheduler()
 })
