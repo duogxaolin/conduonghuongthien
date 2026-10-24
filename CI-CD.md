@@ -60,7 +60,7 @@ billed (GitHub làm tròn từng job lên phút; các job Integration chiếm �
 | push vào `main` mà commit đó **đã** là bản đang chạy | Đủ bộ test, không deploy (không có gì mới). Ép deploy lại: chạy tay trên `main` |
 | PR nháp | Bỏ qua (chạy lại khi bấm *Ready for review*) |
 | PR thường | unit + build + schema-drift + hygiene (≈ 12 phút) |
-| PR thường **có đụng** `server/`, `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 18 job Integration |
+| PR thường **có đụng** `server/`, `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 19 job Integration |
 
 **Mốc so của "chỉ tài liệu"** (bước *Docs-only?* của job `changes`): commit **đang chạy trên
 production**, không phải `github.event.before`. `before` chỉ là đỉnh cũ của `main`: lượt A đang

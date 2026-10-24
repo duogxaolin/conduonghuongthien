@@ -24,9 +24,17 @@ const record = (name: string) => (..._args: unknown[]) => { calls.push(name); re
 
 /** Where the download handler looks — the real `backupsDir()` is `<cwd>/backups`. */
 const backupDir = { current: path.resolve(process.cwd(), 'backups') }
+/** Stand-in for the service's error type: the endpoint maps its `statusCode`. */
+class BackupDeleteError extends Error {
+  statusCode: number
+  constructor(message: string, statusCode: number) { super(message); this.statusCode = statusCode }
+}
+const deleteArgs: unknown[][] = []
+let deleteOutcome: () => Promise<void> = async () => {}
 mock.module('../server/services/backup', {
   namedExports: {
-    deleteBackup: record('deleteBackup'),
+    deleteBackup: (...args: unknown[]) => { calls.push('deleteBackup'); deleteArgs.push(args); return deleteOutcome() },
+    BackupDeleteError,
     backupsDir: () => backupDir.current,
   },
 })
@@ -54,6 +62,7 @@ type FakeEvent = {
   context: { adminUser: unknown }
   body?: unknown
   params?: Record<string, string>
+  query?: Record<string, string>
   node?: { res: EventEmitter }
 }
 const globals = globalThis as unknown as Record<string, unknown>
@@ -62,6 +71,7 @@ globals.createError = h3.createError
 globals.readBody = async (event: FakeEvent) => { calls.push('readBody'); return event.body }
 globals.readMultipartFormData = async () => { calls.push('readMultipartFormData'); return [{ name: 'file', filename: 'x.sql.gz', data: Buffer.from([0x1f, 0x8b]) }] }
 globals.getRouterParam = (event: FakeEvent, name: string) => event.params?.[name]
+globals.getQuery = (event: FakeEvent) => event.query ?? {}
 let contentLength: string | undefined
 globals.getRequestHeader = (_event: unknown, name: string) => (name === 'content-length' ? contentLength : undefined)
 const headers: Record<string, unknown> = {}
@@ -268,6 +278,45 @@ test('download: the file stream is destroyed when the response closes early', wi
   event.node.res.emit('close')
   assert.equal(stream.destroyed, true, 'a client that disconnects mid-download must not leave the file descriptor open')
 }))
+
+// ─── Delete one row by id (wave1 1B re-verification W2) ──────────────────────
+
+const deleteEvent = (query?: Record<string, string>): FakeEvent => ({
+  context: { adminUser: superAdmin },
+  params: { filename: 'cdkt-20261024T030000Z-manual.sql.gz' },
+  query,
+})
+
+test('delete: the row id from the query reaches the service; a malformed id is a 400 and deletes nothing', async () => {
+  deleteArgs.length = 0
+  deleteOutcome = async () => {}
+  assert.equal(await asyncStatusOf(handlers.remove(deleteEvent({ id: '42' }))), null)
+  assert.deepEqual(deleteArgs, [['cdkt-20261024T030000Z-manual.sql.gz', 1, 42]])
+  for (const id of ['0', '-3', '1.5', 'abc', '9'.repeat(20)]) {
+    deleteArgs.length = 0
+    assert.equal(await asyncStatusOf(handlers.remove(deleteEvent({ id }))), 400, id)
+    assert.deepEqual(deleteArgs, [], `${id} reached the service`)
+  }
+  // An older page without the id still works when the name has a single row.
+  deleteArgs.length = 0
+  assert.equal(await asyncStatusOf(handlers.remove(deleteEvent())), null)
+  assert.deepEqual(deleteArgs, [['cdkt-20261024T030000Z-manual.sql.gz', 1, undefined]])
+})
+
+test('delete: the service\'s 404/409 reach the admin as such, not as a 500', async () => {
+  for (const status of [404, 409]) {
+    deleteOutcome = async () => { throw new BackupDeleteError('refused', status) }
+    assert.equal(await asyncStatusOf(handlers.remove(deleteEvent({ id: '42' }))), status)
+  }
+  deleteOutcome = async () => { throw new Error('disk on fire') }
+  assert.equal(await asyncStatusOf(handlers.remove(deleteEvent({ id: '42' }))), 500)
+  deleteOutcome = async () => {}
+})
+
+test('the admin page deletes a backup by its row id', () => {
+  const page = readFileSync(new URL('../app/pages/admin/settings/backup.vue', import.meta.url), 'utf8')
+  assert.match(page, /`\/api\/admin\/backup\/\$\{encodeURIComponent\(item\.filename\)\}\?id=\$\{item\.id\}`, \{ method: 'DELETE' \}/)
+})
 
 test('no handler under server/api/admin/backup/ reads a whole file into memory', () => {
   const offenders: string[] = []

@@ -90,9 +90,10 @@ export class BackupLockBusyError extends Error {
 }
 
 /**
- * Tên tệp của lượt này đã có trên đĩa (hai lượt cùng trigger trong cùng một giây
- * có cùng `stamp`). Từ chối TRƯỚC khi ghi: ghi tiếp là đè nội dung một bản đã đăng
- * ký, và một hàng `failed` cùng tên thì "xoá" hàng đó sẽ xoá luôn tệp tốt.
+ * Tên tệp của lượt này đã có — trên đĩa HOẶC trong bảng `backups` (hai lượt cùng
+ * trigger trong cùng một giây có cùng `stamp`; lượt trước có thể đã hỏng, xoá tệp
+ * của nó nhưng để lại hàng `failed` mang đúng tên đó). Từ chối TRƯỚC khi ghi: ghi
+ * tiếp là đè nội dung một bản đã đăng ký, hoặc sinh hàng thứ hai cùng tên.
  */
 export class BackupNameCollisionError extends Error {
   constructor(filename: string) {
@@ -119,40 +120,70 @@ const PARTIAL_SUFFIX = '.partial'
  * khoá khôi phục, không phải khoá chạy) hay tệp đã đăng ký (không có hậu tố này).
  */
 const APP_TRIGGERS = BACKUP_TRIGGERS.map(trigger => trigger.replace(/[^a-z0-9-]/g, '')).join('|')
-const STALE_PARTIAL = new RegExp(
-  `^cdkt-(?:\\d{8}T\\d{6}Z-(?:${APP_TRIGGERS})\\.sql\\.gz|(?:uploads|media)-\\d{8}T\\d{6}Z-(?:${APP_TRIGGERS})\\.tar\\.gz)\\.partial$`,
-)
+/** Đúng tên cuối cùng mà `runBackup` đặt (dump hoặc archive), không hơn. */
+const APP_BACKUP_NAME = `cdkt-(?:\\d{8}T\\d{6}Z-(?:${APP_TRIGGERS})\\.sql\\.gz|(?:uploads|media)-\\d{8}T\\d{6}Z-(?:${APP_TRIGGERS})\\.tar\\.gz)`
+const STALE_PARTIAL = new RegExp(`^${APP_BACKUP_NAME}\\.partial$`)
+const APP_FINAL = new RegExp(`^${APP_BACKUP_NAME}$`)
+/**
+ * Tệp tên-app không có hàng chỉ bị coi là mồ côi khi đã cũ hơn mốc này: khôi phục từ
+ * tệp tải lên (giữ khoá KHÔI PHỤC, không phải khoá chạy) đổi tên tệp về tên thật rồi
+ * mới ghi hàng — tệp vừa đổi tên còn mới, không bị dọn giữa hai bước đó.
+ */
+const ORPHAN_MIN_AGE_MS = 10 * 60 * 1000
 
-/** Xoá các tệp `.partial` do `runBackup` để lại trong `dir`. Chỉ gọi khi đang giữ khoá chạy. */
-async function deleteStalePartials(dir: string): Promise<number> {
+/**
+ * Dọn rác của các lượt `runBackup` đã chết trong `dir`. Chỉ gọi khi đang giữ khoá chạy.
+ *  - `.partial` mang tên của app (`STALE_PARTIAL`) — lượt bị giết khi đang ghi.
+ *  - Tệp mang ĐÚNG tên cuối cùng của app nhưng không có hàng nào trong `backups` và
+ *    cũ hơn `ORPHAN_MIN_AGE_MS` — lượt bị giết giữa lúc đổi tên và commit hàng `done`.
+ *    Không đọc được bảng `backups` → không xoá tệp tên-thật nào.
+ * Không bao giờ đụng tệp có hàng, tệp không mang tên của app (`scripts/backup*.sh`,
+ * `.upload-*.partial`, bản tải lên đổi tên `-upload-…`).
+ */
+async function deleteStaleFiles(dir: string, db: ReturnType<typeof getDb>): Promise<number> {
   let names: string[]
   try { names = await fs.readdir(dir) } catch { return 0 }
-  let deleted = 0
+  let registered: Set<string> | null = null
+  if (names.some(name => APP_FINAL.test(name))) {
+    try {
+      registered = new Set((await db.select({ filename: backups.filename }).from(backups)).map(row => row.filename))
+    } catch (err: unknown) {
+      logWarn({ event: 'backup.orphan_sweep_skipped', error: err instanceof Error ? err.message : String(err) })
+    }
+  }
+  let partials = 0
+  let orphans = 0
   for (const name of names) {
-    if (!STALE_PARTIAL.test(name)) continue
+    const partial = STALE_PARTIAL.test(name)
+    if (!partial && !(registered && APP_FINAL.test(name) && !registered.has(name))) continue
     const file = path.join(dir, name)
     try {
-      if (!(await fs.lstat(file)).isFile()) continue
+      const stats = await fs.lstat(file)
+      if (!stats.isFile()) continue
+      if (!partial && Date.now() - stats.mtimeMs < ORPHAN_MIN_AGE_MS) continue
       await fs.unlink(file)
-      deleted += 1
+      if (partial) partials += 1
+      else {
+        orphans += 1
+        logWarn({ event: 'backup.orphan_swept', filename: name })
+      }
     } catch (err: unknown) {
       logWarn({ event: 'backup.partial_sweep_failed', filename: name, error: err instanceof Error ? err.message : String(err) })
     }
   }
-  if (deleted > 0) logInfo({ event: 'backup.partial_swept', count: deleted })
-  return deleted
+  if (partials > 0) logInfo({ event: 'backup.partial_swept', count: partials })
+  return partials + orphans
 }
 
 /**
- * Dọn tệp `.partial` do lượt sao lưu bị giết để lại (gọi lúc khởi động). Lấy khoá
- * chạy (không chờ): giữ được khoá nghĩa là không lượt sao lưu nào đang ghi, nên mọi
- * `cdkt-*.partial` đều là của một lượt đã chết. Khoá bận → bỏ qua (lượt đang chạy sẽ
- * tự dọn ở đầu lượt sau). Trả số tệp đã xoá.
+ * Dọn rác của lượt sao lưu bị giết (gọi lúc khởi động — xem `deleteStaleFiles`). Lấy
+ * khoá chạy (không chờ): giữ được khoá nghĩa là không lượt sao lưu nào trong app đang
+ * ghi. Khoá bận → bỏ qua (lượt đang chạy sẽ tự dọn ở đầu lượt sau). Trả số tệp đã xoá.
  */
-export async function sweepPartialBackups(): Promise<number> {
+export async function sweepStaleBackupFiles(): Promise<number> {
   const pool = getPool()
   if (!pool) return 0
-  const outcome = await withNamedLock(pool, LOCK_RUN, LOCK_TIMEOUT, () => deleteStalePartials(backupsDir()))
+  const outcome = await withNamedLock(pool, LOCK_RUN, LOCK_TIMEOUT, () => deleteStaleFiles(backupsDir(), getDb()))
   return outcome.acquired ? outcome.value : 0
 }
 
@@ -397,10 +428,16 @@ export async function runBackup(
     const pending = new Set<string>()
     let step: { name: string, kind: 'sql' | 'media' } | null = null
 
-    /** Bắt đầu một tệp: từ chối tên đã có, trả đường dẫn `.partial` để ghi vào. */
+    /**
+     * Bắt đầu một tệp: từ chối tên đã có (trên đĩa, hoặc một hàng bất kỳ trạng thái —
+     * lượt hỏng trước đó trong cùng giây đã xoá tệp nhưng giữ hàng `failed` cùng tên),
+     * trả đường dẫn `.partial` để ghi vào.
+     */
     const begin = async (name: string, kind: 'sql' | 'media'): Promise<string> => {
       step = null
-      if (await pathExists(path.join(dir, name))) {
+      const rowsWithName = (await db.select({ filename: backups.filename }).from(backups).where(eq(backups.filename, name)))
+        .filter(row => row.filename === name)
+      if (rowsWithName.length > 0 || await pathExists(path.join(dir, name))) {
         logWarn({ event: 'backup.name_collision', filename: name, trigger })
         throw new BackupNameCollisionError(name)
       }
@@ -440,9 +477,9 @@ export async function runBackup(
 
     try {
       await fs.mkdir(dir, { recursive: true })
-      // Đang giữ khoá chạy ⇒ không lượt nào khác đang ghi: mọi `cdkt-*.partial` là
-      // của một lượt đã bị giết.
-      await deleteStalePartials(dir)
+      // Đang giữ khoá chạy ⇒ không lượt nào khác trong app đang ghi: `.partial` mang tên
+      // của app và tệp tên-app không có hàng là của một lượt đã bị giết.
+      await deleteStaleFiles(dir, db)
       config = await readBackupConfig(db)
 
       if (type === 'sql' || type === 'all') {
@@ -546,8 +583,15 @@ export async function runBackup(
     // Xoay vòng — sau khi backup + Drive xong. Bản `pre-restore` bỏ qua bước này:
     // xoay vòng xoá bản `done` cũ nhất, và bản cũ nhất có thể chính là file sắp
     // được khôi phục.
+    // Mọi tệp của lượt này đã có hàng `done`: lỗi xoay vòng (CSDL chập chờn) chỉ được
+    // log — ném ra sẽ biến một bản sao lưu đã đăng ký thành "lượt hỏng", và scheduler
+    // sẽ chạy lại cả một lượt đầy đủ.
     if (options.rotate !== false && config.keepCount > 0) {
-      await rotateOldBackups(db, config.keepCount)
+      try {
+        await rotateOldBackups(db, config.keepCount)
+      } catch (err: unknown) {
+        logWarn({ event: 'backup.rotate_failed', error: err instanceof Error ? err.message : String(err) })
+      }
     }
 
     currentBackupStatus = { running: false, phase: 'done', message: 'Backup xong', startedAt: Date.now() }
@@ -576,16 +620,44 @@ export async function listBackups(page: number, pageSize: number, typeFilter?: s
   return { items: rows, total: totalRow[0]?.c ?? 0 }
 }
 
-export async function deleteBackup(filename: string, adminUserId: number | null): Promise<void> {
+/** Xoá backup bị từ chối: 404 (không có hàng đó), 409 (tên trùng nhiều hàng, cần id). */
+export class BackupDeleteError extends Error {
+  readonly statusCode: 400 | 404 | 409
+  constructor(message: string, statusCode: 400 | 404 | 409) {
+    super(message)
+    this.name = 'BackupDeleteError'
+    this.statusCode = statusCode
+  }
+}
+
+/**
+ * Xoá MỘT hàng backup — theo `rowId` (trang admin gửi kèm) — rồi xoá tệp chỉ khi không
+ * còn hàng nào khác trỏ tới cùng tên. Xoá theo tên từng xoá mọi hàng cùng tên và tệp:
+ * bấm "xoá" một hàng `failed` trùng tên với một bản `done` là mất luôn bản tốt.
+ * Không có `rowId` (giao diện cũ còn trong bộ nhớ đệm): đúng một hàng mang tên đó thì
+ * xoá hàng đó; nhiều hàng → 409.
+ */
+export async function deleteBackup(filename: string, adminUserId: number | null, rowId?: number): Promise<void> {
   const db = getDb()
   const filePath = path.resolve(backupsDir(), filename)
-  if (!filePath.startsWith(backupsDir() + path.sep)) throw new Error('Đường dẫn không hợp lệ.')
-  await fs.unlink(filePath).catch(() => {})
+  if (!filePath.startsWith(backupsDir() + path.sep)) throw new BackupDeleteError('Đường dẫn không hợp lệ.', 400)
+  const rows = (await db.select({ id: backups.id, filename: backups.filename }).from(backups).where(eq(backups.filename, filename)))
+    .filter(row => row.filename === filename)
+  const target = rowId !== undefined ? rows.find(row => row.id === rowId) : rows.length === 1 ? rows[0] : undefined
+  if (!target) {
+    if (rowId === undefined && rows.length > 1) {
+      throw new BackupDeleteError('Có nhiều bản ghi cùng tên tệp này — tải lại trang rồi xoá từng bản.', 409)
+    }
+    throw new BackupDeleteError('Không tìm thấy bản backup này.', 404)
+  }
   await db.transaction(async (tx) => {
-    await tx.delete(backups).where(eq(backups.filename, filename))
+    await tx.delete(backups).where(eq(backups.id, target.id))
     await tx.insert(activityLogs).values({
       userId: adminUserId, action: 'delete', resource: 'settings', resourceId: null,
-      meta: { backup: filename },
+      meta: { backup: filename, backupId: target.id },
     })
   })
+  // Sau khi hàng đã đi: tệp còn hàng khác trỏ tới thì giữ. Xoá tệp hỏng thì tệp tên-app
+  // không còn hàng sẽ được lượt dọn dưới khoá chạy xoá sau (`deleteStaleFiles`).
+  if (rows.every(row => row.id === target.id)) await fs.unlink(filePath).catch(() => {})
 }

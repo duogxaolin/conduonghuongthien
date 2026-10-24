@@ -28,9 +28,10 @@
  * Khi tới lượt: `runBackup('all', 'scheduled')`. Lỗi trong tick nuốt thành
  * `backup.scheduler_failed` — không sập worker.
  */
+import { eq } from 'drizzle-orm'
 import { getDb } from '../utils/db'
 import { settings } from '../db/schema'
-import { runBackup, sweepPartialBackups } from './backup'
+import { runBackup, sweepStaleBackupFiles } from './backup'
 import { logInfo, logWarn } from '../utils/logger'
 
 const TICK_MS = 15 * 60 * 1000
@@ -48,9 +49,15 @@ export const RETRY_AFTER_MS = HOUR_MS
 /** Số lượt (kể cả lượt đầu) dành cho một khe trước khi bỏ khe. */
 export const MAX_SLOT_ATTEMPTS = 3
 /**
- * Bù khe lỡ chỉ khi scheduler có một lượt trong 8 ngày trước khe — tức đang phục vụ
- * lịch (8 > 7 ngày của lịch hằng tuần). Không có: công tắc vừa được bật (hoặc bật
- * lại sau thời gian dài) → đợi khe kế tiếp.
+ * Bù khe lỡ chỉ khi khe đó đúng là bị lỡ VÌ MÁY CHỦ TẮT — ba điều kiện cùng đúng:
+ *  1. khe rơi TRƯỚC lúc tiến trình này khởi động scheduler (`bootedAt`) — máy chủ
+ *     đang chạy mà khe trôi qua (công tắc tắt lúc đó, CSDL hỏng) thì không bù;
+ *  2. lịch hiện tại TRÙNG lịch mà lượt gần nhất đã phục vụ (`schedule` trong bản
+ *     ghi) — sửa giờ/ngày tạo ra những "khe" trong quá khứ chưa từng tồn tại theo
+ *     lịch cũ; chúng không phải khe bị lỡ;
+ *  3. scheduler có một lượt trong 8 ngày trước khe — tức đang phục vụ lịch (8 > 7
+ *     ngày của lịch hằng tuần); không có thì là bật lần đầu/bật lại sau thời gian dài.
+ * Không bù → đợi khe kế tiếp.
  */
 export const CATCH_UP_LOOKBACK_MS = 8 * DAY_MS
 /** Khoá settings giữ trạng thái của scheduler. Không ai ngoài scheduler ghi nó. */
@@ -66,6 +73,8 @@ export type BackupPolicy = { enabled: boolean; hour: number; days: number[] }
  *  - `outcome`: `running` = đã bắt đầu, chưa ghi kết quả (đang chạy, hoặc bị giết
  *    giữa chừng — lúc quyết định thì tính như một lượt hỏng).
  *  - `lastDoneAt`: lúc bắt đầu lượt thành công gần nhất.
+ *  - `schedule`: lịch (giờ + ngày) mà lượt gần nhất phục vụ — `null` khi không đọc
+ *    được; khi đó không bao giờ bù khe lỡ.
  */
 export type BackupSchedulerState = {
   slot: string
@@ -73,7 +82,9 @@ export type BackupSchedulerState = {
   lastAttemptAt: string
   outcome: 'running' | 'done' | 'failed' | 'abandoned'
   lastDoneAt: string | null
+  schedule: BackupSchedule | null
 }
+export type BackupSchedule = { hour: number; days: number[] }
 export type DueReason =
   | 'disabled' | 'slot_done' | 'slot_abandoned' | 'retry_wait' | 'retry' | 'slot' | 'catch_up' | 'outside_slot'
 export type DueDecision = { run: boolean; reason: DueReason; slot: Date | null }
@@ -116,7 +127,23 @@ export function parseSchedulerState(raw: unknown): BackupSchedulerState | null {
     lastAttemptAt: record.lastAttemptAt,
     outcome: record.outcome as BackupSchedulerState['outcome'],
     lastDoneAt: record.lastDoneAt as string | null,
+    schedule: parseSchedule(record.schedule),
   }
+}
+
+/** `{ hour: 0–23, days: [0–6…] }` hợp lệ (ngày đã chuẩn hoá) hoặc `null`. */
+function parseSchedule(value: unknown): BackupSchedule | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null
+  const { hour, days } = value as Record<string, unknown>
+  if (!Number.isInteger(hour) || (hour as number) < 0 || (hour as number) > 23) return null
+  if (!Array.isArray(days) || !days.every(day => Number.isInteger(day) && day >= 0 && day <= 6)) return null
+  return { hour: hour as number, days: [...new Set(days as number[])].sort((a, b) => a - b) }
+}
+
+function sameSchedule(schedule: BackupSchedule, policy: BackupPolicy): boolean {
+  return schedule.hour === policy.hour
+    && schedule.days.length === policy.days.length
+    && schedule.days.every((day, index) => day === policy.days[index])
 }
 
 /** Khe gần nhất ≤ `now`: ngày đã chọn (giờ địa phương) lúc `hour`:00. */
@@ -130,8 +157,11 @@ export function lastSlot(now: Date, days: readonly number[], hour: number): Date
   return new Date(now.getFullYear(), now.getMonth(), now.getDate() - 7, hour, 0, 0, 0)
 }
 
-/** Hàm thuần — mọi quyết định chạy/không chạy nằm ở đây (tests/backup-scheduler-due.test.ts). */
-export function isBackupDue(policy: BackupPolicy, now: Date, state: BackupSchedulerState | null): DueDecision {
+/**
+ * Hàm thuần — mọi quyết định chạy/không chạy nằm ở đây (tests/backup-scheduler-due.test.ts).
+ * `bootedAt`: lúc tiến trình này khởi động scheduler (`null` = chưa khởi động → không bù khe).
+ */
+export function isBackupDue(policy: BackupPolicy, now: Date, state: BackupSchedulerState | null, bootedAt: Date | null): DueDecision {
   if (!policy.enabled) return { run: false, reason: 'disabled', slot: null }
   const slot = lastSlot(now, policy.days, policy.hour)
   if (state?.lastDoneAt && Date.parse(state.lastDoneAt) >= slot.getTime()) return { run: false, reason: 'slot_done', slot }
@@ -146,9 +176,12 @@ export function isBackupDue(policy: BackupPolicy, now: Date, state: BackupSchedu
   }
 
   if (now.getTime() - slot.getTime() < SLOT_WINDOW_MS) return { run: true, reason: 'slot', slot }
+  // Bù khe lỡ — xem CATCH_UP_LOOKBACK_MS cho ba điều kiện.
+  const missedWhileDown = bootedAt !== null && slot.getTime() < bootedAt.getTime()
+  const sameScheduleAsServed = Boolean(state?.schedule && sameSchedule(state.schedule, policy))
   const lastAttempt = state ? Date.parse(state.lastAttemptAt) : Number.NaN
   const servingBefore = lastAttempt < slot.getTime() && lastAttempt >= slot.getTime() - CATCH_UP_LOOKBACK_MS
-  if (servingBefore) return { run: true, reason: 'catch_up', slot }
+  if (missedWhileDown && sameScheduleAsServed && servingBefore) return { run: true, reason: 'catch_up', slot }
   return { run: false, reason: 'outside_slot', slot }
 }
 
@@ -177,6 +210,39 @@ async function saveSchedulerState(state: BackupSchedulerState): Promise<void> {
     .onDuplicateKeyUpdate({ set: { value } })
 }
 
+type SettingsWriter = Pick<ReturnType<typeof getDb>, 'insert' | 'delete'>
+
+/**
+ * Giá trị thô của bản ghi trạng thái trên hệ thống ĐANG CHẠY — đọc trước khi khôi phục
+ * một bản dump CSDL (`backup-restore.ts`). Không đọc được → `undefined` (không giữ gì).
+ */
+export async function readSchedulerStateForRestore(db: Pick<ReturnType<typeof getDb>, 'select'>): Promise<string | null | undefined> {
+  try {
+    const rows = await db.select({ key: settings.key, value: settings.value }).from(settings).where(eq(settings.key, BACKUP_SCHEDULER_STATE_KEY))
+    return rows.find(row => row.key === BACKUP_SCHEDULER_STATE_KEY)?.value ?? null
+  } catch (err: unknown) {
+    logWarn({ event: 'backup.scheduler_state_unread', error: err instanceof Error ? err.message : String(err) })
+    return undefined
+  }
+}
+
+/**
+ * Sau khi khôi phục một bản dump CSDL: bản ghi trạng thái phải là của hệ thống đang
+ * chạy, không phải của bản dump. Bản dump của lượt theo lịch chứa chính lượt đó ở
+ * trạng thái `running` (ghi trước khi dump) — giữ nó thì khe đã xong trông như bị cắt
+ * ngang và scheduler chạy lại ngay, ngoài lịch. Ghi lại giá trị đọc trước khi khôi phục
+ * (cùng transaction với audit); trước đó không có → xoá bản ghi của bản dump.
+ */
+export async function keepSchedulerStateAcrossRestore(tx: SettingsWriter, before: string | null): Promise<void> {
+  if (before === null) {
+    await tx.delete(settings).where(eq(settings.key, BACKUP_SCHEDULER_STATE_KEY))
+    return
+  }
+  await tx.insert(settings)
+    .values({ key: BACKUP_SCHEDULER_STATE_KEY, value: before, type: 'json', group: 'internal' })
+    .onDuplicateKeyUpdate({ set: { value: before } })
+}
+
 function logStateUnwritten(err: unknown, outcome: BackupSchedulerState['outcome']) {
   logWarn({ event: 'backup.scheduler_state_unwritten', outcome, error: err instanceof Error ? err.message : String(err) })
 }
@@ -185,16 +251,18 @@ let timer: NodeJS.Timeout | null = null
 let warmup: NodeJS.Timeout | null = null
 let partialSweep: NodeJS.Timeout | null = null
 let ticking = false
+/** Lúc tiến trình này khởi động scheduler — khe rơi trước mốc này là khe lỡ vì máy chủ tắt. */
+let schedulerBootedAt: Date | null = null
 
 /** Một tick (xuất ra để kiểm thử). Không bao giờ ném. */
-export async function backupSchedulerTick(now: Date = new Date()): Promise<void> {
+export async function backupSchedulerTick(now: Date = new Date(), bootedAt: Date | null = schedulerBootedAt): Promise<void> {
   // Một lượt sao lưu dài hơn khoảng tick: tick kế tiếp không được mở lượt thứ hai.
   if (ticking) return
   ticking = true
   try {
     const { policy, state } = await loadSchedulerInputs()
     if (!policy.enabled) return
-    const decision = isBackupDue(policy, now, state)
+    const decision = isBackupDue(policy, now, state, bootedAt)
     if (decision.reason === 'slot_abandoned' && state && state.outcome !== 'abandoned') {
       // Lượt thứ ba bị cắt ngang (không kịp ghi kết quả): bỏ khe ở đây, log một lần.
       await saveSchedulerState({ ...state, outcome: 'abandoned' })
@@ -214,6 +282,7 @@ export async function backupSchedulerTick(now: Date = new Date()): Promise<void>
             lastAttemptAt: now.toISOString(),
             outcome: 'running',
             lastDoneAt: state?.lastDoneAt ?? null,
+            schedule: { hour: policy.hour, days: [...policy.days] },
           }
           await saveSchedulerState(started.state)
         },
@@ -242,6 +311,7 @@ export async function backupSchedulerTick(now: Date = new Date()): Promise<void>
 
 export function startBackupScheduler(): void {
   if (timer) return
+  schedulerBootedAt = new Date()
   timer = setInterval(() => { backupSchedulerTick().catch(() => {}) }, TICK_MS)
   timer.unref()
   warmup = setTimeout(() => {
@@ -253,15 +323,15 @@ export function startBackupScheduler(): void {
 }
 
 /**
- * Một lượt dọn `cdkt-*.partial` sau khi khởi động (`sweepPartialBackups`, dưới khoá
- * chạy) — không phụ thuộc công tắc scheduler: lượt sao lưu tay bị giết giữa chừng
- * cũng để lại tệp `.partial`.
+ * Một lượt dọn rác của lượt sao lưu bị giết sau khi khởi động (`sweepStaleBackupFiles`,
+ * dưới khoá chạy: `.partial` mang tên của app + tệp tên-app không có hàng) — không phụ
+ * thuộc công tắc scheduler: lượt sao lưu tay bị giết giữa chừng cũng để lại rác.
  */
-export function scheduleStartupPartialSweep(): void {
+export function scheduleStartupBackupSweep(): void {
   if (partialSweep) return
   partialSweep = setTimeout(() => {
     partialSweep = null
-    sweepPartialBackups().catch((err: unknown) => {
+    sweepStaleBackupFiles().catch((err: unknown) => {
       logWarn({ event: 'backup.partial_sweep_failed', error: err instanceof Error ? err.message : String(err) })
     })
   }, PARTIAL_SWEEP_DELAY_MS)

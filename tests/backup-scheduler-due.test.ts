@@ -70,6 +70,7 @@ mock.module('../server/utils/logger', {
 const realBackup = await import('../server/services/backup')
 
 type RunOptions = { onStarted?: () => Promise<void> }
+const sweeps = { count: 0 }
 const backupCalls: Array<unknown[]> = []
 /** The time the fake backup "runs" at — the stamp of the rows it writes. */
 let clock = new Date(0)
@@ -95,7 +96,7 @@ mock.module('../server/services/backup', {
   namedExports: {
     runBackup: async (...args: unknown[]) => { backupCalls.push(args); return backupOutcome((args[3] ?? {}) as RunOptions) },
     BackupLockBusyError: realBackup.BackupLockBusyError,
-    sweepPartialBackups: async () => 0,
+    sweepStaleBackupFiles: async () => { sweeps.count += 1; return 0 },
   },
 })
 
@@ -104,7 +105,7 @@ const scheduler = await import('../server/services/backup-scheduler')
 const { backupSchedulerEnabledByServer } = await import('../server/utils/backup-scheduler-switch')
 const {
   isBackupDue, lastSlot, parseBackupHour, parseBackupDays, parseSchedulerState,
-  backupSchedulerTick, startBackupScheduler, stopBackupScheduler, BACKUP_SCHEDULER_STATE_KEY,
+  backupSchedulerTick, startBackupScheduler, stopBackupScheduler, BACKUP_SCHEDULER_STATE_KEY, scheduleStartupBackupSweep,
 } = scheduler
 
 beforeEach(() => {
@@ -125,12 +126,17 @@ beforeEach(() => {
 const at = (day: number, hour: number, minute = 0) => new Date(2026, 9, day, hour, minute)
 
 type State = NonNullable<ReturnType<typeof parseSchedulerState>>
-/** A state record: the slot, attempts on it, the latest attempt, its outcome, the latest success. */
-const state = (slot: Date, attempts: number, lastAttemptAt: Date, outcome: State['outcome'], lastDoneAt: Date | null): State => ({
+type Schedule = { hour: number, days: number[] }
+const DAILY_3 : Schedule = { hour: 3, days: [] }
+const SUNDAY_3: Schedule = { hour: 3, days: [0] }
+/** A state record: the slot, attempts on it, the latest attempt, its outcome, the latest success, the schedule it served. */
+const state = (slot: Date, attempts: number, lastAttemptAt: Date, outcome: State['outcome'], lastDoneAt: Date | null, schedule: Schedule = DAILY_3): State => ({
   slot: slot.toISOString(), attempts, lastAttemptAt: lastAttemptAt.toISOString(), outcome,
-  lastDoneAt: lastDoneAt ? lastDoneAt.toISOString() : null,
+  lastDoneAt: lastDoneAt ? lastDoneAt.toISOString() : null, schedule,
 })
-const servedAt = (slot: Date, startedAt: Date) => state(slot, 1, startedAt, 'done', startedAt)
+const servedAt = (slot: Date, startedAt: Date, schedule: Schedule = DAILY_3) => state(slot, 1, startedAt, 'done', startedAt, schedule)
+/** The scheduler process started long before every row below, unless a row says otherwise. */
+const LONG_AGO = new Date(2026, 9, 1, 0, 0)
 
 test('fixture sanity: the 18th and 25th of October 2026 are Sundays', () => {
   assert.equal(at(18, 3).getDay(), 0)
@@ -141,7 +147,7 @@ const SUNDAY_3AM = { enabled: true, hour: 3, days: [0] }
 const DAILY_3AM = { enabled: true, hour: 3, days: [] as number[] }
 const DAILY_MIDNIGHT = { enabled: true, hour: 0, days: [] as number[] }
 
-const table: Array<{ name: string, policy: { enabled: boolean, hour: number, days: number[] }, now: Date, state: State | null, run: boolean, reason: string, slot?: Date }> = [
+const table: Array<{ name: string, policy: { enabled: boolean, hour: number, days: number[] }, now: Date, state: State | null, run: boolean, reason: string, slot?: Date, boot?: Date }> = [
   { name: 'switch off', policy: { ...DAILY_3AM, enabled: false }, now: at(26, 3, 5), state: null, run: false, reason: 'disabled' },
   // Spec: "Weekly policy does not run mid-week".
   { name: 'weekly Sunday, Monday 15:30 after Sunday 03:05 succeeded', policy: SUNDAY_3AM, now: at(26, 15, 30), state: servedAt(at(25, 3), at(25, 3, 5)), run: false, reason: 'slot_done', slot: at(25, 3) },
@@ -163,21 +169,32 @@ const table: Array<{ name: string, policy: { enabled: boolean, hour: number, day
   { name: 'interrupted at 03:02, 03:40', policy: DAILY_3AM, now: at(26, 3, 40), state: state(at(26, 3), 1, at(26, 3, 2), 'running', null), run: false, reason: 'retry_wait', slot: at(26, 3) },
   { name: 'interrupted at 03:02, 04:05', policy: DAILY_3AM, now: at(26, 4, 5), state: state(at(26, 3), 1, at(26, 3, 2), 'running', null), run: true, reason: 'retry', slot: at(26, 3) },
   { name: 'third attempt interrupted', policy: DAILY_3AM, now: at(26, 6, 30), state: state(at(26, 3), 3, at(26, 5, 10), 'running', null), run: false, reason: 'slot_abandoned', slot: at(26, 3) },
-  // Spec: "Missed slot is caught up once" — down at Sunday 03:00, up at 07:00.
-  { name: 'down at the slot, up at 07:00: catch up', policy: SUNDAY_3AM, now: at(25, 7), state: servedAt(at(18, 3), at(18, 3, 5)), run: true, reason: 'catch_up', slot: at(25, 3) },
-  { name: '…and only once', policy: SUNDAY_3AM, now: at(25, 7, 20), state: servedAt(at(25, 3), at(25, 7, 2)), run: false, reason: 'slot_done', slot: at(25, 3) },
-  { name: '…not again on Monday', policy: SUNDAY_3AM, now: at(26, 15, 30), state: servedAt(at(25, 3), at(25, 7, 2)), run: false, reason: 'slot_done', slot: at(25, 3) },
-  { name: 'daily, down for three days: catch up the latest slot once', policy: DAILY_3AM, now: at(26, 10), state: servedAt(at(23, 3), at(23, 3, 4)), run: true, reason: 'catch_up', slot: at(26, 3) },
+  // Spec: "Missed slot is caught up once" — down at Sunday 03:00, up at 07:00: the
+  // slot fell BEFORE this process started, under the schedule it was serving.
+  { name: 'down at the slot, up at 07:00: catch up', policy: SUNDAY_3AM, now: at(25, 7, 2), boot: at(25, 7), state: servedAt(at(18, 3), at(18, 3, 5), SUNDAY_3), run: true, reason: 'catch_up', slot: at(25, 3) },
+  { name: '…and only once', policy: SUNDAY_3AM, now: at(25, 7, 20), boot: at(25, 7), state: servedAt(at(25, 3), at(25, 7, 2), SUNDAY_3), run: false, reason: 'slot_done', slot: at(25, 3) },
+  { name: '…not again on Monday', policy: SUNDAY_3AM, now: at(26, 15, 30), boot: at(25, 7), state: servedAt(at(25, 3), at(25, 7, 2), SUNDAY_3), run: false, reason: 'slot_done', slot: at(25, 3) },
+  { name: 'daily, down for three days: catch up the latest slot once', policy: DAILY_3AM, now: at(26, 10), boot: at(26, 9, 58), state: servedAt(at(23, 3), at(23, 3, 4)), run: true, reason: 'catch_up', slot: at(26, 3) },
+  { name: 'up all along (the slot fell after boot): a missed slot is not made up', policy: SUNDAY_3AM, now: at(25, 7), boot: at(25, 2), state: servedAt(at(18, 3), at(18, 3, 5), SUNDAY_3), run: false, reason: 'outside_slot', slot: at(25, 3) },
   // Spec: "Admin enables automatic backups → the next configured slot produces a backup".
   { name: 'switched on Wednesday, weekly Sunday, no history: wait', policy: SUNDAY_3AM, now: at(28, 10), state: null, run: false, reason: 'outside_slot', slot: at(25, 3) },
   { name: 'switched on at 10:00, daily 03:00, no history: wait for tomorrow', policy: DAILY_3AM, now: at(26, 10), state: null, run: false, reason: 'outside_slot', slot: at(26, 3) },
   { name: '…and the next slot runs', policy: DAILY_3AM, now: at(27, 3, 7), state: null, run: true, reason: 'slot', slot: at(27, 3) },
+  { name: '…even just after a deploy: no history, nothing to catch up', policy: SUNDAY_3AM, now: at(28, 10), boot: at(28, 9, 58), state: null, run: false, reason: 'outside_slot', slot: at(25, 3) },
   { name: 'switched back on after a month off: no catch-up, wait for the slot', policy: DAILY_3AM, now: at(26, 10), state: servedAt(at(1, 3), at(1, 3, 2)), run: false, reason: 'outside_slot', slot: at(26, 3) },
+  { name: 'switched off for three days and back on (server up): no catch-up', policy: DAILY_3AM, now: at(26, 10), state: servedAt(at(23, 3), at(23, 3, 2)), run: false, reason: 'outside_slot', slot: at(26, 3) },
+  // A policy EDIT creates past "slots" that never existed under the old schedule.
+  { name: 'hour edited 03 → 10 (served at 03:02 the 26th): the 27th at 09:00 does not run', policy: { enabled: true, hour: 10, days: [] }, now: at(27, 9), state: servedAt(at(26, 3), at(26, 3, 2)), run: false, reason: 'outside_slot', slot: at(26, 10) },
+  { name: '…nor right after a deploy that came after the "new" slot', policy: { enabled: true, hour: 10, days: [] }, now: at(27, 9), boot: at(27, 8), state: servedAt(at(26, 3), at(26, 3, 2)), run: false, reason: 'outside_slot', slot: at(26, 10) },
+  { name: '…and the new hour runs once at 10:05', policy: { enabled: true, hour: 10, days: [] }, now: at(27, 10, 5), state: servedAt(at(26, 3), at(26, 3, 2)), run: true, reason: 'slot', slot: at(27, 10) },
+  { name: 'Wednesday added to a Sunday schedule: Thursday 10:00 does not run', policy: { enabled: true, hour: 3, days: [0, 3] }, now: at(29, 10), state: servedAt(at(25, 3), at(25, 3, 2), SUNDAY_3), run: false, reason: 'outside_slot', slot: at(28, 3) },
+  { name: '…nor after a deploy on Thursday morning', policy: { enabled: true, hour: 3, days: [0, 3] }, now: at(29, 10), boot: at(29, 8), state: servedAt(at(25, 3), at(25, 3, 2), SUNDAY_3), run: false, reason: 'outside_slot', slot: at(28, 3) },
+  { name: 'Sunday switched to Monday: Tuesday does not run', policy: { enabled: true, hour: 3, days: [1] }, now: at(27, 10), state: servedAt(at(25, 3), at(25, 3, 2), SUNDAY_3), run: false, reason: 'outside_slot', slot: at(26, 3) },
 ]
 
 for (const row of table) {
   test(`isBackupDue — ${row.name}`, () => {
-    const decision = isBackupDue(row.policy, row.now, row.state)
+    const decision = isBackupDue(row.policy, row.now, row.state, row.boot ?? LONG_AGO)
     assert.equal(decision.run, row.run, `run (${decision.reason})`)
     assert.equal(decision.reason, row.reason)
     if (row.slot) assert.equal(decision.slot?.getTime(), row.slot.getTime(), `slot ${decision.slot?.toString()}`)
@@ -210,6 +227,11 @@ test('parseSchedulerState: a well-formed record or null — never a half-read on
   const good = state(at(26, 3), 2, at(26, 4, 5), 'failed', at(25, 3, 2))
   assert.deepEqual(parseSchedulerState(JSON.stringify(good)), good)
   assert.deepEqual(parseSchedulerState(JSON.stringify({ ...good, lastDoneAt: null })), { ...good, lastDoneAt: null })
+  // No recorded schedule (or an unreadable one): known history, unknown schedule — never caught up.
+  const { schedule: _omitted, ...withoutSchedule } = good
+  assert.deepEqual(parseSchedulerState(JSON.stringify(withoutSchedule)), { ...good, schedule: null })
+  assert.deepEqual(parseSchedulerState(JSON.stringify({ ...good, schedule: { hour: 24, days: [] } })), { ...good, schedule: null })
+  assert.deepEqual(parseSchedulerState(JSON.stringify({ ...good, schedule: { hour: 3, days: [7] } })), { ...good, schedule: null })
   for (const bad of [
     null, undefined, '', 'not json', '[]', '{}',
     JSON.stringify({ ...good, slot: 'yesterday' }),
@@ -234,7 +256,7 @@ test('the plugin boots the scheduler through the shared switch, sweeps partial f
   assert.match(plugin, /backupSchedulerEnabledByServer\(process\.env\.BACKUP_SCHEDULER, process\.env\.NODE_ENV\)/)
   assert.match(plugin, /nitroApp\.hooks\.hook\('close', stopBackupScheduler\)/)
   // The sweep is not gated on the scheduler switch: manual runs leave partial files too.
-  assert.ok(plugin.indexOf('scheduleStartupPartialSweep()') !== -1 && plugin.indexOf('scheduleStartupPartialSweep()') < plugin.indexOf('backupSchedulerEnabledByServer('))
+  assert.ok(plugin.indexOf('scheduleStartupBackupSweep()') !== -1 && plugin.indexOf('scheduleStartupBackupSweep()') < plugin.indexOf('backupSchedulerEnabledByServer('))
   const endpoint = readFileSync(new URL('../server/api/admin/settings/backup.get.ts', import.meta.url), 'utf8')
   assert.match(endpoint, /schedulerDisabledByServer: !backupSchedulerEnabledByServer\(process\.env\.BACKUP_SCHEDULER, process\.env\.NODE_ENV\)/)
 })
@@ -271,7 +293,7 @@ test('tick: hour "0" is read as midnight and the slot runs a scheduled "all" bac
   await tickAt(at(26, 0, 5))
   assert.equal(backupCalls.length, 1)
   assert.deepEqual(backupCalls[0]!.slice(0, 3), ['all', 'scheduled', null])
-  assert.deepEqual(storedState(), state(at(26, 0), 1, at(26, 0, 5), 'done', at(26, 0, 5)))
+  assert.deepEqual(storedState(), state(at(26, 0), 1, at(26, 0, 5), 'done', at(26, 0, 5), { hour: 0, days: [] }))
 })
 
 // The verifier's scenario: a weekly policy served on Sunday, then a few manual
@@ -396,4 +418,48 @@ test('stopBackupScheduler clears the 120 s startup tick as well as the interval'
     stopBackupScheduler()
     mock.timers.reset()
   }
+})
+
+test('stopBackupScheduler clears the startup partial-file sweep too', () => {
+  mock.timers.enable({ apis: ['setTimeout', 'setInterval'] })
+  try {
+    sweeps.count = 0
+    scheduleStartupBackupSweep()
+    stopBackupScheduler()
+    mock.timers.tick(10 * 60_000)
+    assert.equal(sweeps.count, 0, 'the sweep ran after the scheduler was stopped')
+    // Control: not stopped, it runs once.
+    scheduleStartupBackupSweep()
+    mock.timers.tick(10 * 60_000)
+    assert.equal(sweeps.count, 1)
+  } finally {
+    stopBackupScheduler()
+    mock.timers.reset()
+  }
+})
+
+test('tick: an attempt records the schedule it served; a boot after a missed slot catches it up once', async () => {
+  enable('3', '[0]')
+  await tickAt(at(18, 3, 2))
+  assert.deepEqual(storedState()?.schedule, { hour: 3, days: [0] })
+  // Down over the next Sunday 03:00, back at 07:00 — this process started after the slot.
+  clock = at(25, 7, 2)
+  await backupSchedulerTick(at(25, 7, 2), at(25, 7))
+  assert.equal(backupCalls.length, 2, 'the slot missed while down is caught up')
+  clock = at(25, 7, 20)
+  await backupSchedulerTick(at(25, 7, 20), at(25, 7))
+  assert.equal(backupCalls.length, 2, 'only once')
+})
+
+test('tick: a schedule edit never runs a backup outside the new schedule', async () => {
+  enable('3')
+  await tickAt(at(26, 3, 2))
+  enable('10') // edited the next morning
+  for (const [now, boot] of [[at(27, 9), at(20, 0)], [at(27, 9, 15), at(27, 9, 10)]] as const) {
+    clock = now
+    await backupSchedulerTick(now, boot)
+  }
+  assert.equal(backupCalls.length, 1, 'ran before the new hour')
+  await tickAt(at(27, 10, 5))
+  assert.equal(backupCalls.length, 2)
 })

@@ -28,6 +28,7 @@ import { withNamedLock } from '../utils/named-lock'
 import { logError, logInfo, logWarn, SECURITY_EVENTS } from '../utils/logger'
 import { BackupLockBusyError, LOCK_RESTORE, backupsDir, holdRestoreTarget, runBackup, timestampStamp, type RunStatus } from './backup'
 import { restoreSql } from './backup-sql'
+import { keepSchedulerStateAcrossRestore, readSchedulerStateForRestore } from './backup-scheduler'
 import {
   BackupRestoreError,
   DEFAULT_RESTORE_LIMITS,
@@ -210,11 +211,15 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
     try {
       let legacyDateShift = false
       let rowsBefore: BackupRow[] = []
+      // Trạng thái scheduler sao lưu của hệ thống đang chạy (`undefined` = khôi phục tệp,
+      // hoặc không đọc được → không đụng tới) — ghi lại sau khi khôi phục, như `rowsBefore`.
+      let schedulerStateBefore: string | null | undefined
       if (kind === 'sql') {
         setStatus(true, 'safety', 'Đang tạo bản sao lưu an toàn trước khi khôi phục')
         preRestoreBackup = await takeSafetyBackup(actor.id)
         // Đọc SAU sao lưu an toàn để có cả hàng của bản `pre-restore`.
         rowsBefore = await db.select().from(backups)
+        schedulerStateBefore = await readSchedulerStateForRestore(db)
         setStatus(true, 'sql', 'Đang phục hồi CSDL')
         ;({ legacyDateShift } = await restoreSql(filePath))
       } else {
@@ -225,6 +230,7 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
       setStatus(true, 'audit', 'Đang ghi audit log')
       await db.transaction(async (tx) => {
         const reattached = await reattachBackupRows(tx, rowsBefore)
+        if (schedulerStateBefore !== undefined) await keepSchedulerStateAcrossRestore(tx, schedulerStateBefore)
         const known = await existingUserIds(tx, [actor.id])
         await tx.insert(activityLogs).values({
           userId: actor.id !== null && known.has(actor.id) ? actor.id : null,

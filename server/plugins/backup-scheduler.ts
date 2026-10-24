@@ -1,4 +1,4 @@
-import { scheduleStartupPartialSweep, startBackupScheduler, stopBackupScheduler } from '../services/backup-scheduler'
+import { scheduleStartupBackupSweep, startBackupScheduler, stopBackupScheduler } from '../services/backup-scheduler'
 import { backupSchedulerEnabledByServer } from '../utils/backup-scheduler-switch'
 
 /**
@@ -19,10 +19,10 @@ export default defineNitroPlugin((nitroApp) => {
   // từng start là no-op.
   nitroApp.hooks.hook('close', stopBackupScheduler)
 
-  // Tệp `.partial` của một lượt sao lưu bị giết (SIGKILL, hết thời gian ân hạn) —
-  // dọn một lần sau khi khởi động, dưới khoá chạy. Không phụ thuộc công tắc
-  // scheduler: lượt sao lưu tay cũng có thể bị cắt ngang.
-  scheduleStartupPartialSweep()
+  // Rác của một lượt sao lưu bị giết (SIGKILL, hết thời gian ân hạn): `.partial` và
+  // tệp tên-app không có hàng — dọn một lần sau khi khởi động, dưới khoá chạy. Không
+  // phụ thuộc công tắc scheduler: lượt sao lưu tay cũng có thể bị cắt ngang.
+  scheduleStartupBackupSweep()
 
   if (!backupSchedulerEnabledByServer(process.env.BACKUP_SCHEDULER, process.env.NODE_ENV)) return
   startBackupScheduler()

@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict'
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test, { after, before, beforeEach, mock } from 'node:test'
+import type { SQL } from 'drizzle-orm'
+import { MySqlDialect } from 'drizzle-orm/mysql-core'
 import { activityLogs, backups } from '../server/db/schema'
 
 /**
@@ -28,9 +30,12 @@ mock.module('../server/utils/logger', {
   namedExports: { logInfo: (e: Record<string, unknown>) => logs.push(e), logWarn: (e: Record<string, unknown>) => logs.push(e), logError: (e: Record<string, unknown>) => logs.push(e) },
 })
 
-type Row = { filename: string, type: string, status: string, stamp: string, trigger: string, error?: string | null }
+type Row = { id: number, filename: string, type: string, status: string, stamp: string, trigger: string, error?: string | null }
 const state = {
   rows: [] as Row[],
+  nextId: 1,
+  /** The rotation's read of `done` rows fails (a transient DB error after the run is registered). */
+  failRotationSelect: false,
   audits: 0,
   /** The tree whose `tar` fails after writing part of its archive. */
   failTar: null as null | 'uploads' | 'media',
@@ -49,35 +54,74 @@ const state = {
   writeTargets: [] as string[],
 }
 
+/**
+ * `backups` WHERE clauses the service builds, compiled with the real MySQL dialect and
+ * evaluated here: `filename = ?`, `id = ?`, `status = ?` (the shapes `backup.ts` uses).
+ */
+const dialect = new MySqlDialect()
+function matches(row: Row, where: SQL | undefined): boolean {
+  if (!where) return true
+  const { sql, params } = dialect.sqlToQuery(where)
+  const column = /`backups`\.`(filename|id|status)` = \?$/.exec(sql)?.[1] as keyof Row | undefined
+  assert.ok(column, `fake db cannot evaluate: ${sql}`)
+  return row[column] === params[0]
+}
+function selectBackups(projection: Record<string, unknown> | undefined) {
+  let where: SQL | undefined
+  let ordered = false
+  const run = async () => {
+    if (state.failRotationSelect && ordered) throw new Error('fixture: connection reset during rotation')
+    const rows = state.rows.filter(row => matches(row, where))
+    return projection ? rows.map(row => Object.fromEntries(Object.keys(projection).map(key => [key, row[key as keyof Row]]))) : rows
+  }
+  const query = {
+    where: (condition: SQL) => { where = condition; return query },
+    orderBy: () => { ordered = true; return query },
+    limit: () => query,
+    then: (resolve: (rows: unknown[]) => unknown, reject?: (error: unknown) => unknown) => run().then(resolve, reject),
+  }
+  return query
+}
+const deleteFrom = (table: unknown) => ({
+  where: async (condition: SQL) => {
+    assert.equal(table, backups)
+    state.rows = state.rows.filter(row => !matches(row, condition))
+  },
+})
 const fakeDb = {
-  select: () => ({
-    from: async () => {
-      if (state.failConfigRead) throw new Error('fixture: settings read failed')
-      return []
+  select: (projection?: Record<string, unknown>) => ({
+    from: (table: unknown) => {
+      if (table === backups) return selectBackups(projection)
+      if (state.failConfigRead) return Promise.reject(new Error('fixture: settings read failed'))
+      return Promise.resolve([])
     },
   }),
   insert: (table: unknown) => ({
-    values: async (value: Row) => {
+    values: async (value: Omit<Row, 'id'>) => {
       assert.equal(table, backups, 'only the failed row is written outside a transaction')
-      state.rows.push({ ...value })
+      state.rows.push({ id: state.nextId++, ...value })
     },
   }),
+  delete: deleteFrom,
   transaction: async (fn: (tx: unknown) => Promise<unknown>) => {
     const pending: Row[] = []
+    const deletes: SQL[] = []
     let audits = 0
     const tx = {
       insert: (table: unknown) => ({
-        values: async (value: Row) => {
+        values: async (value: Omit<Row, 'id'>) => {
           if (table === backups) {
             if (state.failDoneRowFor?.test(value.filename)) throw new Error('fixture: done row insert failed')
-            pending.push({ ...value })
+            pending.push({ id: state.nextId++, ...value })
           } else if (table === activityLogs) audits += 1
         },
       }),
+      delete: (table: unknown) => ({ where: async (condition: SQL) => { assert.equal(table, backups); deletes.push(condition) } }),
     }
     const result = await fn(tx)
     if (pending.some(row => state.failCommitFor?.test(row.filename))) throw new Error('fixture: commit failed')
     state.rows.push(...pending)
+    for (const condition of deletes) state.rows = state.rows.filter(row => !matches(row, condition))
     state.audits += audits
     return result
   },
@@ -122,7 +166,7 @@ mock.module('node:child_process', {
   },
 })
 
-const { runBackup, sweepPartialBackups, BackupLockBusyError } = await import('../server/services/backup')
+const { runBackup, sweepStaleBackupFiles, deleteBackup, BackupLockBusyError, BackupDeleteError } = await import('../server/services/backup')
 
 const originalCwd = process.cwd()
 let workdir = ''
@@ -152,6 +196,8 @@ beforeEach(() => {
   state.failDoneRowFor = null
   state.failCommitFor = null
   state.failConfigRead = false
+  state.failRotationSelect = false
+  state.nextId = 1
   state.lockBusy = false
   state.tarCalls = []
   state.writeTargets = []
@@ -275,6 +321,8 @@ function seedLeftovers() {
     other: 'notes.partial',
   }
   for (const name of Object.values(files)) writeFileSync(path.join(backupDir(), name), name)
+  // "registered" means it has a row.
+  state.rows.push({ id: state.nextId++, filename: files.registered, type: 'sql', status: 'done', stamp: '20261022T030000Z', trigger: 'manual' })
   return files
 }
 const untouchable = (files: ReturnType<typeof seedLeftovers>) =>
@@ -288,13 +336,13 @@ test('a run starts by sweeping partial files left by a killed run — and nothin
   assert.ok(logs.some(entry => entry.event === 'backup.partial_swept' && entry.count === 2))
 })
 
-test('sweepPartialBackups (startup) deletes only the app\'s own partial names, and only while no backup holds the run lock', async () => {
+test('sweepStaleBackupFiles (startup) deletes only the app\'s own partial names, and only while no backup holds the run lock', async () => {
   const files = seedLeftovers()
   state.lockBusy = true
-  assert.equal(await sweepPartialBackups(), 0, 'a running backup owns its partial file')
+  assert.equal(await sweepStaleBackupFiles(), 0, 'a running backup owns its partial file')
   assert.ok(onDisk().includes(files.stale))
   state.lockBusy = false
-  assert.equal(await sweepPartialBackups(), 2)
+  assert.equal(await sweepStaleBackupFiles(), 2)
   assert.deepEqual(lockNames, ['cdkt:backup:run', 'cdkt:backup:run'])
   assert.deepEqual(onDisk(), untouchable(files).sort())
 })
@@ -308,7 +356,7 @@ test('the sweep pattern matches every name runBackup writes, for every trigger',
     `cdkt-media-20261022T030000Z-${trigger}.tar.gz.partial`,
   ])
   for (const name of names) writeFileSync(path.join(backupDir(), name), name)
-  assert.equal(await sweepPartialBackups(), names.length)
+  assert.equal(await sweepStaleBackupFiles(), names.length)
   assert.deepEqual(onDisk(), [])
 })
 
@@ -332,4 +380,103 @@ test('onStarted is not called when another backup holds the lock', async () => {
     (error: unknown) => error instanceof BackupLockBusyError,
   )
   assert.deepEqual(started, [])
+})
+
+// ─── Re-verification (W2, W3, S1) ─────────────────────────────────────────────
+
+test('W2: a failed run keeps its name taken — a same-second run of the same trigger is refused, not a second row', async () => {
+  mock.timers.enable({ apis: ['Date'], now: new Date('2026-10-24T03:00:00.000Z') })
+  try {
+    state.failDump = true
+    await assert.rejects(run('sql'), /mysqldump died/)
+    const name = 'cdkt-20261024T030000Z-manual.sql.gz'
+    assert.deepEqual(state.rows.map(row => [row.filename, row.status]), [[name, 'failed']])
+    assert.deepEqual(onDisk(), [], 'the failed dump is gone, so the disk alone says the name is free')
+
+    state.failDump = false
+    await assert.rejects(run('sql'), /đã tồn tại/)
+    assert.equal(state.rows.filter(row => row.filename === name).length, 1, 'two rows with one filename: deleting one would delete the other\'s file')
+    assert.equal(state.writeTargets.length, 1, 'the refused run wrote nothing')
+  } finally {
+    mock.timers.reset()
+  }
+})
+
+/** Two rows sharing one filename (legacy data, before W2): a failed one and a done one. */
+function seedDuplicateRows() {
+  mkdirSync(backupDir(), { recursive: true })
+  const name = 'cdkt-20261024T030000Z-manual.sql.gz'
+  writeFileSync(path.join(backupDir(), name), 'the good dump')
+  state.rows.push(
+    { id: 11, filename: name, type: 'sql', status: 'failed', stamp: '20261024T030000Z', trigger: 'manual' },
+    { id: 12, filename: name, type: 'sql', status: 'done', stamp: '20261024T030000Z', trigger: 'manual' },
+  )
+  return name
+}
+
+test('W2: deleting a row by id removes only that row, and the file only when no other row still references it', async () => {
+  const name = seedDuplicateRows()
+  await deleteBackup(name, 1, 11)
+  assert.deepEqual(state.rows.map(row => row.id), [12], 'only the failed row is gone')
+  assert.deepEqual(onDisk(), [name], 'the done row still references the file')
+  assert.equal(state.audits, 1)
+  await deleteBackup(name, 1, 12)
+  assert.deepEqual(state.rows, [])
+  assert.deepEqual(onDisk(), [])
+})
+
+test('W2: without an id, one row is deleted as before; two rows sharing the name are a 409; a wrong id is a 404', async () => {
+  const name = seedDuplicateRows()
+  const statusOf = async (promise: Promise<unknown>) => {
+    try { await promise; return null } catch (error) { assert.ok(error instanceof BackupDeleteError, String(error)); return error.statusCode }
+  }
+  assert.equal(await statusOf(deleteBackup(name, 1)), 409)
+  assert.equal(await statusOf(deleteBackup(name, 1, 99)), 404)
+  assert.equal(await statusOf(deleteBackup('cdkt-20261001T000000Z-manual.sql.gz', 1, 11)), 404, 'the id must belong to that filename')
+  assert.equal(state.rows.length, 2, 'nothing deleted by a refused request')
+  state.rows = state.rows.filter(row => row.id === 12)
+  await deleteBackup(name, 1)
+  assert.deepEqual(state.rows, [])
+  assert.deepEqual(onDisk(), [])
+})
+
+test('W3: final-named app backups with no row (killed between rename and commit) are swept under the run lock — nothing else is', async () => {
+  const files = seedLeftovers()
+  const old = new Date(Date.now() - 60 * 60 * 1000)
+  const orphan = 'cdkt-uploads-20261022T030000Z-scheduled.tar.gz'
+  const fresh = 'cdkt-media-20261024T030000Z-manual.tar.gz' // just renamed: an upload-restore inserts its row right after
+  const shellArchive = 'cdkt-media-20261022T020000Z-4243.tar.gz' // scripts/backup-media.sh, never has a row
+  for (const name of [orphan, fresh, shellArchive]) writeFileSync(path.join(backupDir(), name), name)
+  for (const name of [orphan, shellArchive, files.registered, files.shellDump]) utimesSync(path.join(backupDir(), name), old, old)
+
+  assert.equal(await sweepStaleBackupFiles(), 3, 'two partials + one unregistered final archive')
+  assert.ok(!onDisk().includes(orphan), 'the unregistered app archive survived')
+  for (const keep of [...untouchable(files), fresh, shellArchive]) assert.ok(onDisk().includes(keep), `${keep} was deleted`)
+  assert.ok(logs.some(entry => entry.event === 'backup.orphan_swept' && entry.filename === orphan))
+})
+
+test('W3: when the rows cannot be read, no final file is deleted', async () => {
+  const orphan = 'cdkt-uploads-20261022T030000Z-scheduled.tar.gz'
+  mkdirSync(backupDir(), { recursive: true })
+  writeFileSync(path.join(backupDir(), orphan), orphan)
+  const old = new Date(Date.now() - 60 * 60 * 1000)
+  utimesSync(path.join(backupDir(), orphan), old, old)
+  const original = fakeDb.select
+  fakeDb.select = ((projection?: Record<string, unknown>) => ({
+    from: (table: unknown) => (table === backups ? Promise.reject(new Error('fixture: db down')) : original(projection).from(table)),
+  })) as typeof fakeDb.select
+  try {
+    assert.equal(await sweepStaleBackupFiles(), 0)
+  } finally {
+    fakeDb.select = original
+  }
+  assert.deepEqual(onDisk(), [orphan])
+})
+
+test('S1: a rotation error after the backup is registered is logged, not a failed run', async () => {
+  state.failRotationSelect = true
+  const result = await runBackup('sql', 'scheduled', null, { archiveSources: sources() })
+  assert.equal(result.files.length, 1)
+  assert.deepEqual(state.rows.map(row => row.status), ['done'])
+  assert.ok(logs.some(entry => entry.event === 'backup.rotate_failed' && /connection reset/.test(String(entry.error))))
 })
