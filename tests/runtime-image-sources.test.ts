@@ -328,10 +328,14 @@ test('the runtime image contains every directory the container\'s TypeScript ent
  * Directories that shipped `server/` code imports but that the image deliberately
  * does not copy, each with the reason. Only code Nitro bundles into `.output` may
  * reach them; the test above proves no container entry point does.
+ *
+ * Empty since wave2-hardening 5.1. `app/` used to be here (page-versions →
+ * blocks/registry, submission-status); those modules moved to `shared/`, which the
+ * image copies. `app/` can never come back: it is client code, and NO code the
+ * image ships may reach it, bundle-only or not — asserted below, and statically
+ * (every import form, `import type` included) by tests/server-no-app-imports.test.ts.
  */
-const NOT_COPIED_ON_PURPOSE: Record<string, string> = {
-  app: 'client code; only API handlers/services reach it (page-versions → blocks/registry, submission-status), and those run from the Nitro bundle in .output, never from source',
-}
+const NOT_COPIED_ON_PURPOSE: Record<string, string> = {}
 
 /** Every .ts/.mts file under the given repo-relative directories. */
 function shippedSources(root: string, dirs: string[]): string[] {
@@ -360,6 +364,18 @@ test('everything the image ships under server/ and scripts/ can load what it imp
   const reached = new Set([...files].map((f) => f.split('/')[0]!))
   const entryClosure = missingFromImage(REPO).files
   const ignore = readFileSync(join(REPO, '.dockerignore'), 'utf8')
+
+  // app/ is client code: nothing the image ships may load it, not even code that
+  // only runs from the Nitro bundle. This is the runtime half of the rule; the
+  // static half (server/ and shared/, every import form) is
+  // tests/server-no-app-imports.test.ts. This one also covers scripts/ and
+  // transitive hops (scripts → server → shared → …).
+  assert.ok(!('app' in NOT_COPIED_ON_PURPOSE), 'app/ cannot be exempted: shipped code must never reach client code')
+  assert.deepEqual(
+    [...files].filter((f) => f.startsWith('app/')).sort(),
+    [],
+    'shipped server/ or scripts/ code loads these app/ files — move what both sides need to shared/ (see tests/server-no-app-imports.test.ts)',
+  )
   for (const top of reached) {
     if (copied.some((re) => re.test(top))) {
       const ignored = [...files].filter((f) => f.startsWith(`${top}/`) && dockerignored(ignore, f))

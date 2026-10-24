@@ -22,6 +22,12 @@
  * mục rồi so với `<repo>/app/` / `server/` — không đếm `../`, nên `../application/x`
  * không bị nhầm là `app/`. Alias phía app không có thư mục đứng sau (`#app`,
  * `#components`, `#build`, `#app-manifest`) bị cấm theo tên.
+ *
+ * Nửa còn lại của cùng luật nằm ở `tests/runtime-image-sources.test.ts`: image
+ * runtime không chép `app/`, và test đó đòi KHÔNG mã nào image mang theo (`server/`,
+ * `scripts/`) chạm tới `app/` lúc chạy — đi theo closure import bắc cầu (vd.
+ * `scripts/` → `server/` → `shared/`), bỏ qua `import type` vì Node xoá nó. Test này
+ * là phần tĩnh: mọi dạng import, kể cả kiểu, ngay trong `server/` và `shared/`.
  */
 import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
