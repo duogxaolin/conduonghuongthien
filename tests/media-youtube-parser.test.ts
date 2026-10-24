@@ -13,7 +13,7 @@
  * chối là cán bộ dán đúng địa chỉ họ đang có và nhận câu "không nhận ra video".
  */
 import assert from 'node:assert/strict'
-import { existsSync, readFileSync } from 'node:fs'
+import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { describe, it } from 'node:test'
 
 import {
@@ -202,8 +202,33 @@ describe('ảnh thu nhỏ — không hot-link', () => {
     // rỗng mà không có gì nói ra. Đổi tên hay di chuyển một trong hai tệp nay làm
     // ĐỎ test này, và đó đúng là điều nên xảy ra: guard phải nói được rằng nó vừa
     // thôi bảo vệ thứ nó khai, thay vì im lặng thu về không kiểm gì.
+    //
+    // Cổng media không còn là MỘT tệp: `media-portal.ts` là barrel, mã thật nằm ở
+    // các tệp `media-portal-*.ts`. Một danh sách tên viết tay ở đây từng chỉ kiểm
+    // barrel + vài tệp con, nên chuỗi máy chủ ảnh đặt vào tệp con KHÔNG được liệt
+    // kê (stream, admin-write, admin-read…) vẫn xanh — trong khi trước khi tách cả
+    // 1208 dòng đều bị quét. Tập quét vì thế được SUY từ thư mục: mọi
+    // `server/services/media-portal*.ts`, kể cả tệp con thêm sau này.
+    const servicesDir = new URL('../server/services/', import.meta.url)
+    const portalFiles = readdirSync(servicesDir)
+      .filter(name => /^media-portal.*\.ts$/.test(name))
+      .sort()
+    // Tập suy ra không được rỗng và phải chứa đủ các tệp đang mang mã của cổng —
+    // đổi tên/di chuyển một tệp làm ĐỎ ở đây, không âm thầm thu hẹp tập quét.
+    for (const expected of [
+      'media-portal.ts',
+      'media-portal-admin-read.ts',
+      'media-portal-admin-write.ts',
+      'media-portal-assets.ts',
+      'media-portal-public.ts',
+      'media-portal-stream.ts',
+      'media-portal-thumbnail.ts',
+      'media-portal-thumbnail-override.ts',
+    ]) {
+      assert.ok(portalFiles.includes(expected), `${expected} vắng khỏi tập quét ${JSON.stringify(portalFiles)}`)
+    }
     for (const file of [
-      '../server/services/media-portal.ts',
+      ...portalFiles.map(name => `../server/services/${name}`),
       '../app/components/MediaPlayer.vue',
     ]) {
       const path = new URL(file, import.meta.url)

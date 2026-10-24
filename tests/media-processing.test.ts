@@ -1172,8 +1172,9 @@ describe('7.4 playlist được thay nguyên tử', () => {
     /** Chỗ duy nhất được phép **ghi**: lời gọi bọc tệp tạm rồi `rename`. */
     const WRITE_SITE = 'services/video-processing.ts'
     /** Chỗ duy nhất được phép **gọi tên**: hằng số mà đường đọc dùng để phục vụ
-     *  manifest. Khai một lần, ở tệp sở hữu đường đọc công khai. */
-    const NAME_SITE = 'services/media-portal.ts'
+     *  manifest. Khai một lần, ở tệp sở hữu đường phục vụ manifest
+     *  (`media-portal.ts` nay là barrel; `resolveStreamTarget` nằm ở tệp này). */
+    const NAME_SITE = 'services/media-portal-stream.ts'
     const NAME_DECLARATION = /^const MEDIA_MASTER_PLAYLIST = 'master\.m3u8'$/
 
     const hits: string[] = []
