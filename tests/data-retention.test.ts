@@ -193,7 +193,7 @@ test('the retention pass no longer touches rate-limit counters', async () => {
   assert.ok(!('purgedRateLimits' in result), 'a field that is always 0 would read as "nothing to purge"')
 })
 
-test('a scope that throws cannot skip the rate-limit purge', async () => {
+test('a failed retention run leaves the separate, separately locked counter purge able to run', async () => {
   const { runRateLimitPurgePass, RATE_LIMIT_PURGE_LOCK } = await import('../server/services/rate-limit-purge-scheduler')
   const failing = {
     calls: [] as string[],
@@ -233,8 +233,9 @@ test('the counter purge runs whether or not auto-cleanup is switched on', () => 
   const plugin = readFileSync(new URL('../server/plugins/retention-scheduler.ts', import.meta.url), 'utf8')
   assert.match(plugin, /startRateLimitPurgeScheduler\(\)/, 'nothing starts the counter purge timer')
   // The cron entry point covers deployments that run RETENTION_SCHEDULER=0.
+  // Behaviour of that path: tests/analytics-maintenance-script.test.ts.
   const script = readFileSync(new URL('../scripts/analytics-maintenance.ts', import.meta.url), 'utf8')
-  assert.match(script, /runRateLimitPurgePass\(/)
+  assert.match(script, /await reportRateLimitPurge\(\)/)
 })
 
 test('a database failure is reported rather than thrown at cron', async () => {

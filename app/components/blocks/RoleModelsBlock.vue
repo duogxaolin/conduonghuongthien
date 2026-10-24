@@ -7,18 +7,21 @@
         <p v-if="d.description" class="text-[0.95rem] text-[#4A5545] leading-[1.5]">{{ d.description }}</p>
       </div>
 
-      <!-- Tự chuyển slide do `createAutoplayGate` quyết định (D23): dừng khi trỏ
-           chuột / focus bàn phím ở trong / chạm / tab ẩn; nút tạm dừng–tiếp tục
-           luôn hiện; người dùng chọn giảm chuyển động thì không tự chạy, không cuộn mượt. -->
+      <!-- Tự chuyển slide do `createCarouselAutoplay` quyết định (D23): CHỈ nút
+           tạm dừng–tiếp tục đổi ý muốn của người xem; trỏ chuột / focus bàn phím ở
+           trong / ngón tay trên slide / tab ẩn chỉ tạm dừng trong lúc chúng còn đó.
+           Người dùng chọn giảm chuyển động thì không tự chạy, không cuộn mượt. -->
       <div
         v-if="list.length"
         ref="carouselRoot"
         class="relative"
-        @mouseenter="onPointerEnter"
-        @mouseleave="onPointerLeave"
+        @pointerenter="onPointerEnter"
+        @pointerleave="onPointerLeave"
         @focusin="onFocusIn"
         @focusout="onFocusOut"
         @touchstart.passive="onTouchStart"
+        @touchend.passive="onTouchEnd"
+        @touchcancel.passive="onTouchEnd"
       >
         <!-- Carousel ngang theo đúng "Đa phương tiện" của cand.vn: mỗi slide chỉ có
              ẢNH TRÊN + TÊN BÀI DƯỚI, không card viền, không badge, không excerpt.
@@ -145,7 +148,7 @@
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import { useI18n } from '~/composables/useI18n'
 import BlockLoadError from './BlockLoadError.vue'
-import { createAutoplayGate } from '~/utils/carousel-autoplay'
+import { createCarouselAutoplay } from '~/utils/carousel-autoplay'
 
 const { currentLang, t } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
@@ -205,36 +208,32 @@ let autoplayTimer: ReturnType<typeof setInterval> | null = null
 let reducedMotion = false
 const scrollBehavior = (): ScrollBehavior => (reducedMotion ? 'auto' : 'smooth')
 const autoplayOn = ref(true)
-const gate = createAutoplayGate((running) => {
+const autoplay = createCarouselAutoplay((running) => {
   if (running) startAutoplay()
   else stopAutoplay()
 })
+// The ONLY place the visitor's wish changes (see carousel-autoplay.ts).
 const toggleAutoplay = () => {
-  gate.toggle()
-  autoplayOn.value = gate.autoplayOn
+  autoplay.pressToggle()
+  autoplayOn.value = autoplay.autoplayOn
 }
-const onPointerEnter = () => gate.pause('hover')
-const onPointerLeave = () => gate.resume('hover')
-// Một lần chạm = người xem tự điều khiển: dừng, nút chuyển sang "tiếp tục".
-const onTouchStart = () => {
-  gate.takeControl()
-  autoplayOn.value = gate.autoplayOn
-}
-// Focus bàn phím ở trong carousel thì dừng; focus ra ngoài thì chạy lại — trừ khi
-// người xem đã bấm tạm dừng. Focus trên chính nút tạm dừng/tiếp tục không tính:
-// bấm "tiếp tục" bằng bàn phím phải thấy carousel chạy ngay.
-const onFocusIn = (event: FocusEvent) => {
-  if (event.target === autoplayToggle.value) gate.resume('focus')
-  else gate.pause('focus')
-}
+/** The event started on the pause/play control: it belongs to that control. */
+const fromToggle = (event: Event) => !!(event.target instanceof Node && autoplayToggle.value?.contains(event.target))
+const onPointerEnter = (event: PointerEvent) => autoplay.pointerEnter(event.pointerType)
+const onPointerLeave = (event: PointerEvent) => autoplay.pointerLeave(event.pointerType)
+// Ngón tay trên slide: dừng trong lúc chạm. Chạm vào nút tạm dừng/tiếp tục KHÔNG
+// phải chạm vào carousel — touchstart của nó nổi lên tới đây TRƯỚC cú click.
+const onTouchStart = (event: TouchEvent) => autoplay.touchStart(fromToggle(event))
+const onTouchEnd = () => autoplay.touchEnd()
+// Focus bàn phím ở bất kỳ đâu trong carousel (kể cả chính nút) thì dừng; chỉ bấm
+// "tiếp tục" mới chạy lại khi focus còn ở trong; focus ra ngoài thì chạy lại trừ
+// khi người xem đã bấm tạm dừng.
+const onFocusIn = () => autoplay.focusIn()
 const onFocusOut = (event: FocusEvent) => {
   const next = event.relatedTarget as Node | null
-  if (!next || !carouselRoot.value?.contains(next)) gate.resume('focus')
+  autoplay.focusOut(!!next && !!carouselRoot.value?.contains(next))
 }
-const onVisibilityChange = () => {
-  if (document.visibilityState === 'hidden') gate.pause('hidden')
-  else gate.resume('hidden')
-}
+const onVisibilityChange = () => autoplay.visibilityChange(document.visibilityState === 'hidden')
 
 const onScroll = () => {
   const el = track.value
@@ -294,16 +293,16 @@ const stopAutoplay = () => {
   if (autoplayTimer) { clearInterval(autoplayTimer); autoplayTimer = null }
 }
 
-// Không có slide thì không có gì để chạy. Trước `gate.init` (lúc mount) cổng
-// không bao giờ mở, nên lượt `immediate` chạy lúc render phía server vô hại.
+// Không có slide thì không có gì để chạy. Trước `autoplay.init` (lúc mount)
+// không gì chạy được, nên lượt `immediate` chạy lúc render phía server vô hại.
 watch(list, (newList) => {
   if (newList.length) {
     nextTick(() => {
       onScroll()
-      gate.resume('empty')
+      autoplay.slidesChange(newList.length)
     })
   } else {
-    gate.pause('empty')
+    autoplay.slidesChange(0)
   }
 }, { immediate: true })
 
@@ -315,9 +314,9 @@ onMounted(() => {
   }
   reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches
   document.addEventListener('visibilitychange', onVisibilityChange)
-  if (document.visibilityState === 'hidden') gate.pause('hidden')
-  gate.init(reducedMotion)
-  autoplayOn.value = gate.autoplayOn
+  if (document.visibilityState === 'hidden') autoplay.visibilityChange(true)
+  autoplay.init(reducedMotion)
+  autoplayOn.value = autoplay.autoplayOn
   nextTick(() => onScroll())
 })
 onUnmounted(() => {

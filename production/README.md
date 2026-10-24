@@ -98,6 +98,19 @@ Chạy khi muốn kéo code/image mới lên VPS đang chạy:
 > gửi `proxy_set_header X-Forwarded-Proto $scheme;` và `manage.sh` đặt mặc định
 > `TRUSTED_PROXY_IPS=172.16.0.0/12` (dải docker) — chạy HTTPS hay HTTP đều giữ phiên.
 > Tự sửa `.env` thì đừng xoá `TRUSTED_PROXY_IPS` khi còn phục vụ qua HTTP.
+
+> **IP thật sau Cloudflare** (bắt buộc khi tên miền đi qua Cloudflare, kiểm TRƯỚC khi
+> merge wave1 1C): không có real-IP ở nginx thì app thấy IP **edge của Cloudflare**
+> cho mọi khách — giới hạn tần suất theo IP gộp lại, và trần lượt xem bài **60 lượt /
+> 10 phút mỗi IP** (`view.post.ts`) đếm thiếu lượt xem thật. `TRUSTED_PROXY_IPS`
+> không sửa được việc này (đừng thêm dải Cloudflare vào đó). Sửa ở nginx:
+> `set_real_ip_from` cho mọi dải trong https://www.cloudflare.com/ips-v4 và `ips-v6`
+> + `real_ip_header CF-Connecting-IP;` — lệnh sinh tệp và khối cấu hình ở `CI-CD.md`
+> Bước 8, mục "IP thật sau Cloudflare". Kiểm: đăng xuất admin rồi
+> `SELECT JSON_UNQUOTE(JSON_EXTRACT(meta,'$.ip')) FROM activity_logs WHERE action='logout' ORDER BY id DESC LIMIT 3;`
+> phải ra IP của bạn (`curl -s https://<domain>/cdn-cgi/trace | grep ^ip=`), không phải
+> dải Cloudflare (`104.16.0.0/13`, `172.64.0.0/13`, `162.158.0.0/15`, `2606:4700::/32`…);
+> log `article_view.ip_ceiling_hit` lặp lại với `bucket` là IP Cloudflare cũng là dấu hiệu.
 4. **Pull image + restart chỉ app**: kéo image `CDKT_IMAGE`, rồi `docker compose up -d --no-recreate mysql` + `up -d --no-deps app`, đợi healthcheck (hỏng thì lùi — xem bên dưới)
 5. **Hỏi migrate** nếu có file SQL mới
 

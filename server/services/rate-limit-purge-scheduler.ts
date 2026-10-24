@@ -69,26 +69,57 @@ export async function runRateLimitPurgePass(options: RateLimitPurgeOptions = {})
   return { ran: true, result }
 }
 
+/** JSON-safe outcome for callers that report rather than retry (the cron script). */
+export type RateLimitPurgeReport =
+  | { ran: true; purged: number; bounded: boolean }
+  | { ran: false; skipped: 'no-database' | 'locked' }
+  | { ran: false; error: string }
+
+/**
+ * One pass that never throws: a failure becomes `{ ran: false, error }` plus the
+ * `rate_limit.purge_failed` log line. The cron entry point prints its result as
+ * JSON and must still close the pool afterwards — an unwrapped rejection lost
+ * both (found in verification of 9cf1bb8).
+ */
+export async function reportRateLimitPurge(options: RateLimitPurgeOptions = {}): Promise<RateLimitPurgeReport> {
+  try {
+    const outcome = await runRateLimitPurgePass(options)
+    return outcome.ran
+      ? { ran: true, purged: outcome.result.deleted, bounded: outcome.result.bounded }
+      : { ran: false, skipped: outcome.reason }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error)
+    logError({ event: 'rate_limit.purge_failed', message })
+    return { ran: false, error: message }
+  }
+}
+
 let timer: ReturnType<typeof setInterval> | null = null
+let warmup: ReturnType<typeof setTimeout> | null = null
 
 /** Idempotent; both timers are `unref()`ed so a sweep never delays shutdown. */
 export function startRateLimitPurgeScheduler(): void {
   if (timer) return
-  const tick = () => {
-    runRateLimitPurgePass().catch((error) => {
-      // A rejected timer callback is an unhandled rejection in the worker. The
-      // next tick tries again.
-      logError({ event: 'rate_limit.purge_failed', message: error instanceof Error ? error.message : String(error) })
-    })
-  }
+  // `reportRateLimitPurge` never rejects: a rejected timer callback would be an
+  // unhandled rejection in the worker. The next tick tries again.
+  const tick = () => { void reportRateLimitPurge() }
   timer = setInterval(tick, RATE_LIMIT_PURGE_TICK_MS)
   timer.unref?.()
-  const warmup = setTimeout(tick, WARMUP_MS)
+  warmup = setTimeout(() => {
+    warmup = null
+    tick()
+  }, WARMUP_MS)
   warmup.unref?.()
 }
 
+/** Clears BOTH timers — the warm-up too, or a stop within 90 s of boot still sweeps once. */
 export function stopRateLimitPurgeScheduler(): void {
-  if (!timer) return
-  clearInterval(timer)
-  timer = null
+  if (warmup) {
+    clearTimeout(warmup)
+    warmup = null
+  }
+  if (timer) {
+    clearInterval(timer)
+    timer = null
+  }
 }

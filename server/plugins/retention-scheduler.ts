@@ -1,5 +1,5 @@
 import { startRetentionScheduler } from '../services/retention-scheduler'
-import { startRateLimitPurgeScheduler } from '../services/rate-limit-purge-scheduler'
+import { startRateLimitPurgeScheduler, stopRateLimitPurgeScheduler } from '../services/rate-limit-purge-scheduler'
 
 /**
  * Start the retention purge on boot.
@@ -16,9 +16,10 @@ import { startRateLimitPurgeScheduler } from '../services/rate-limit-purge-sched
  * rate-limit counters (design D16). It has its own lock and never consults the
  * admin auto-cleanup setting, so a retention scope that fails — or retention
  * turned off in the admin — cannot stop it. With the in-process timers handed to
- * cron, the cron entry point runs that sweep too.
+ * cron, the cron entry point runs that sweep too. Nitro `close` stops that timer
+ * (interval and warm-up) so a shutting-down worker starts no new sweep.
  */
-export default defineNitroPlugin(() => {
+export default defineNitroPlugin((nitroApp) => {
   const override = (process.env.RETENTION_SCHEDULER || '').trim().toLowerCase()
   if (['0', 'false', 'off', 'no'].includes(override)) return
   const enabled = ['1', 'true', 'on', 'yes'].includes(override) || process.env.NODE_ENV === 'production'
@@ -26,4 +27,5 @@ export default defineNitroPlugin(() => {
 
   startRetentionScheduler()
   startRateLimitPurgeScheduler()
+  nitroApp.hooks.hook('close', () => stopRateLimitPurgeScheduler())
 })

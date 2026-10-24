@@ -31,6 +31,19 @@ mock.module('../server/utils/db', {
   },
 })
 
+// The ceiling-hit line is what tells an operator the ceiling is firing — e.g. on
+// one Cloudflare edge address when nginx has no real-IP setup and every visitor
+// looks like the same few IPs (see production/README.md).
+const warnings: Array<Record<string, unknown>> = []
+const realLogger = await import('../server/utils/logger')
+mock.module('../server/utils/logger', {
+  namedExports: {
+    ...realLogger,
+    logWarn: (fields: Record<string, unknown>) => { warnings.push(fields) },
+  },
+})
+const ceilingHits = () => warnings.filter(fields => fields.event === 'article_view.ip_ceiling_hit')
+
 const realViews = await import('../server/services/article-views')
 mock.module('../server/services/article-views', {
   namedExports: {
@@ -70,6 +83,8 @@ test('one address rotating User-Agents over 100 articles gets at most 60 counted
   }
   assert.deepEqual([...statuses], [202], 'over the ceiling must look exactly like any other answer')
   assert.equal(recorded.length, 60, 'the 61st view from one address inside 10 minutes was counted')
+  // Logged once per source per window — not once per refused request.
+  assert.deepEqual(ceilingHits(), [{ event: 'article_view.ip_ceiling_hit', bucket: '203.0.113.50', limit: 60, windowSeconds: 600 }])
 })
 
 test('IPv6 addresses in one /64 share the ceiling; another /64 does not', async () => {
@@ -88,6 +103,20 @@ test('IPv6 addresses in one /64 share the ceiling; another /64 does not', async 
   const elsewhere = await view('2001:db8:bb:2::1', 'ua-other')
   assert.equal(elsewhere.accepted, true, 'another subscriber was throttled by someone else\'s traffic')
   assert.equal(recorded.length, 61)
+  // The log names the /64 bucket, never the full rotating address.
+  assert.equal(ceilingHits().at(-1)?.bucket, '2001:db8:aa:1::/64')
+})
+
+test('the deploy docs say how to restore the client IP behind Cloudflare', async () => {
+  // Without it every visitor behind one Cloudflare edge shares one bucket and the
+  // ceiling undercounts real views — a silent failure, so the runbook must say it.
+  const { readFileSync } = await import('node:fs')
+  for (const doc of ['CI-CD.md', 'production/README.md']) {
+    const text = readFileSync(new URL(`../${doc}`, import.meta.url), 'utf8')
+    assert.match(text, /set_real_ip_from/, `${doc}: no set_real_ip_from`)
+    assert.match(text, /real_ip_header CF-Connecting-IP/, `${doc}: no real_ip_header CF-Connecting-IP`)
+    assert.match(text, /article_view\.ip_ceiling_hit/, `${doc}: no pointer to the ceiling-hit log`)
+  }
 })
 
 test('under the ceiling the per-article dedupe still applies', async () => {

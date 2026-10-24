@@ -109,8 +109,18 @@ export default defineEventHandler(async (event) => {
     const deps = rateLimitDeps()
     // `count > limit`, not `blocked`: the store reports `blocked` AT the limit,
     // and the 60th view is still one to count.
-    const ceiling = await recordRateLimitHit(`avip:${ipBucket(clientIp)}`, VIEW_IP_CEILING_RULE, deps)
-    if (ceiling.count > VIEW_IP_CEILING_RULE.limit) return { accepted: false }
+    const bucket = ipBucket(clientIp)
+    const ceiling = await recordRateLimitHit(`avip:${bucket}`, VIEW_IP_CEILING_RULE, deps)
+    if (ceiling.count > VIEW_IP_CEILING_RULE.limit) {
+      // Once per source per window (the counter passes limit + 1 exactly once),
+      // so an operator can see the ceiling firing — notably on a proxy/CDN edge
+      // address when the real client IP is not restored (production/README.md,
+      // "IP thật sau Cloudflare"). Bucket only, as other throttle logs carry the IP.
+      if (ceiling.count === VIEW_IP_CEILING_RULE.limit + 1) {
+        logWarn({ event: 'article_view.ip_ceiling_hit', bucket, limit: VIEW_IP_CEILING_RULE.limit, windowSeconds: VIEW_IP_CEILING_RULE.windowSeconds })
+      }
+      return { accepted: false }
+    }
 
     const state = await recordRateLimitHit(buildViewDedupeKey(article.id, visitorToken), DEDUPE_RULE, deps)
     if (state.count !== 1) return { accepted: false }
