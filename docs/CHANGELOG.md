@@ -965,6 +965,17 @@ Mỗi mục có test đỏ trước khi sửa.
 - **Đường cũ trong chú thích:** `server/utils/submission-recipient.ts` và `docs/decisions/realm-safety.md` (2 chỗ) nay trỏ `shared/`.
 - **Kiểm chứng lại:** `npm test` 4390 / 4363 pass / 0 fail / 27 skip (+38: 35 guard + 3 Tailwind). Typecheck 0 lỗi, eslint 0 error / 16 warning, `db:drift` xanh. Build sạch xanh, đủ 15 màu huy hiệu trong CSS.
 
+#### `npm run build` đỏ ngẫu nhiên trên nhánh tích hợp (2026-10-24)
+- **Lỗi:** khoảng 1/5 lượt build báo `Could not resolve "../../../../../shared/link-policy.ts"`. Nguyên nhân là `app/utils/nav-config.ts` (từ 1A) và `app/utils/blocks/hero-content.ts` import `shared/` bằng đường **tương đối**.
+  - Nuxt để `shared/` là external ở bản build SSR.
+  - Khi nguồn import là đường tương đối, rolldown có lúc in ra một đường tương đối tính từ thư mục build, và Nitro không giải được. Có lúc hay không là tuỳ cách chia chunk.
+  - Đây cũng là cơ chế từng làm re-export tương đối ở § 32 đỏ mọi lượt.
+- **Sửa:** cả hai tệp nay import `~~/shared/link-policy`. `scripts/ts-resolver.mjs` giải `~~/` từ gốc repo, vì test nạp thẳng hai tệp này. `tests/runtime-image-sources.test.ts` cũng giải `~~/` giống resolver, nên một import `~~/…` trong mã chạy ở container không lọt khỏi guard image.
+- **Guard mới `tests/app-shared-imports.test.ts`:** `app/` (gồm khối `<script>` của 174 tệp `.vue`) chỉ được nạp `shared/` qua `~~/shared/…`. Cấm đường tương đối, `#shared` và `@@/shared`; cấm cả `import()` có đối số không phải chuỗi cố định.
+  - Guard đỏ trên đúng hai dòng thật trước khi sửa.
+  - Bộ đọc import bằng AST được tách sang `tests/_module-references.ts`, dùng chung với `server-no-app-imports`.
+- **Kiểm chứng:** 5 lượt `npm run build` sạch liên tiếp (xoá `.output` và `node_modules/.cache/nuxt` giữa các lượt) đều xanh. Đầu ra SSR không còn chuỗi `"../…shared/"` nào, và `link-policy` được nạp bằng đường tuyệt đối. `npm test` 4414 / 4387 pass / 0 fail / 27 skip (+20). Typecheck 0 lỗi, eslint 0 error / 16 warning, `db:drift` xanh.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.

@@ -34,6 +34,7 @@ import { readdirSync, readFileSync } from 'node:fs'
 import path from 'node:path'
 import { describe, test } from 'node:test'
 import ts from 'typescript'
+import { moduleReferences } from './_module-references.ts'
 
 const ROOT = path.resolve(import.meta.dirname, '..')
 const APP_DIR = path.join(ROOT, 'app')
@@ -41,73 +42,6 @@ const SERVER_DIR = path.join(ROOT, 'server')
 const SHARED_DIR = path.join(ROOT, 'shared')
 
 const SOURCE_FILE = /\.[cm]?[jt]s$/
-
-interface ModuleReference {
-  specifier: string | null
-  line: number
-  form: string
-}
-
-/** Every module this source refers to. `specifier: null` = an `import()` whose
- *  argument is not a literal, so it cannot be checked (and is reported). */
-function moduleReferences(fileName: string, source: string): ModuleReference[] {
-  const kind = /\.[cm]?js$/.test(fileName) ? ts.ScriptKind.JS : ts.ScriptKind.TS
-  const sf = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, kind)
-  const out: ModuleReference[] = []
-  const lineOf = (pos: number) => sf.getLineAndCharacterOfPosition(pos).line + 1
-  const literal = (node: ts.Node | undefined): string | null =>
-    node && (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) ? node.text : null
-  const push = (node: ts.Node, specifier: string | null, form: string) =>
-    out.push({ specifier, line: lineOf(node.getStart(sf)), form })
-
-  for (const ref of sf.referencedFiles) {
-    out.push({ specifier: ref.fileName, line: lineOf(ref.pos), form: '/// <reference path>' })
-  }
-
-  // `createRequire(import.meta.url)` cho ra một hàm require thật: gọi thẳng
-  // (`createRequire(…)('x')`) hoặc qua biến (`const req = createRequire(…)`).
-  const isCreateRequire = (node: ts.Expression) =>
-    ts.isCallExpression(node)
-    && ((ts.isIdentifier(node.expression) && node.expression.text === 'createRequire')
-      || (ts.isPropertyAccessExpression(node.expression) && node.expression.name.text === 'createRequire'))
-  const requireAliases = new Set<string>()
-  const collect = (node: ts.Node): void => {
-    if (ts.isVariableDeclaration(node) && ts.isIdentifier(node.name) && node.initializer && isCreateRequire(node.initializer)) {
-      requireAliases.add(node.name.text)
-    }
-    ts.forEachChild(node, collect)
-  }
-  collect(sf)
-
-  const visit = (node: ts.Node): void => {
-    if (ts.isModuleDeclaration(node) && ts.isStringLiteral(node.name)) {
-      // `declare module '…' { … }` — khai/augment kiểu cho đúng module đó.
-      push(node, node.name.text, 'declare module')
-    } else if (ts.isImportDeclaration(node)) {
-      push(node, literal(node.moduleSpecifier), 'import')
-    } else if (ts.isExportDeclaration(node) && node.moduleSpecifier) {
-      push(node, literal(node.moduleSpecifier), 'export … from')
-    } else if (ts.isImportEqualsDeclaration(node) && ts.isExternalModuleReference(node.moduleReference)) {
-      push(node, literal(node.moduleReference.expression), 'import = require()')
-    } else if (ts.isImportTypeNode(node)) {
-      const arg = node.argument
-      push(node, ts.isLiteralTypeNode(arg) ? literal(arg.literal) : null, 'import() type')
-    } else if (ts.isCallExpression(node)) {
-      if (node.expression.kind === ts.SyntaxKind.ImportKeyword) {
-        push(node, literal(node.arguments[0]), 'import()')
-      } else if (ts.isIdentifier(node.expression) && node.expression.text === 'require') {
-        push(node, literal(node.arguments[0]), 'require()')
-      } else if (isCreateRequire(node.expression)) {
-        push(node, literal(node.arguments[0]), 'createRequire(…)()')
-      } else if (ts.isIdentifier(node.expression) && requireAliases.has(node.expression.text)) {
-        push(node, literal(node.arguments[0]), `${node.expression.text}() từ createRequire`)
-      }
-    }
-    ts.forEachChild(node, visit)
-  }
-  visit(sf)
-  return out
-}
 
 const inside = (target: string, dir: string) => {
   const rel = path.relative(dir, target)

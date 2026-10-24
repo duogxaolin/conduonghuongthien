@@ -20,7 +20,8 @@
  *     an unsafe value (shared/link-policy.ts) falls back to the default target.
  *     `HeroBlock.vue` binds through `safeLinkOrNull` again (1A, defence in depth).
  */
-import { safeLinkOrNull } from '../../../shared/link-policy'
+// `~~/shared/…`, never relative — see app/utils/nav-config.ts and tests/app-shared-imports.test.ts.
+import { safeLinkOrNull } from '~~/shared/link-policy'
 
 /** Registry defaults as shipped in `20073b4` and saved by editors since. Never edit. */
 export const OLD_HERO_DEFAULTS = Object.freeze({

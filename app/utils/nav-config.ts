@@ -20,8 +20,11 @@
  * quan trọng nhất.
  */
 
-// Relative path (not `~~/`): this file is also loaded by the Node test runner.
-import { safeLinkOrNull } from '../../shared/link-policy'
+// `~~/shared/…`, never a relative path: Nuxt keeps shared/ external in the SSR
+// build and a relative source can render as a path Nitro cannot resolve
+// (tests/app-shared-imports.test.ts). scripts/ts-resolver.mjs resolves `~~/` for
+// the Node test runner, which loads this file directly.
+import { safeLinkOrNull } from '~~/shared/link-policy'
 
 /** Một mục điều hướng ngang (thanh nav trên đầu). */
 export interface NavItem {

@@ -28,7 +28,9 @@ import ts from 'typescript'
  *     the first test below against the Node running the suite);
  *   - side-effect imports, re-exports and literal dynamic `import()` load;
  *   - relative specifiers resolve like scripts/ts-resolver.mjs (exact, `.ts`,
- *     `/index.ts`, `.mts`, `.js`); bare specifiers are packages (node_modules).
+ *     `/index.ts`, `.mts`, `.js`), and so does `~~/…` (Nuxt's rootDir alias, from
+ *     the repo root — the resolver supports it); other bare specifiers are
+ *     packages (node_modules).
  * Then it checks each top-level directory/file of that closure is COPYed into /app by
  * the runtime stage and not excluded by .dockerignore.
  */
@@ -99,8 +101,9 @@ function importClosure(root: string, entries: string[]) {
     files.add(rel)
     if (!/\.(m?ts|m?js)$/.test(file)) continue
     for (const spec of runtimeSpecifiers(file, readFileSync(file, 'utf8'))) {
-      if (!spec.startsWith('.') && !spec.startsWith('/')) continue // package or node: builtin
-      const target = resolveRelative(file, spec)
+      const rootAlias = spec.startsWith('~~/')
+      if (!rootAlias && !spec.startsWith('.') && !spec.startsWith('/')) continue // package or node: builtin
+      const target = rootAlias ? resolveRelative(join(root, 'package.json'), `./${spec.slice(3)}`) : resolveRelative(file, spec)
       if (target) queue.push(target)
       else unresolved.push(`${rel} → ${spec}`)
     }
@@ -288,6 +291,14 @@ test('the checker reports a directory the closure needs and the image does not c
     'server/utils/clean.ts': "import { type Rule } from '../../shared/rules'\nexport const clean = (r?: Rule) => r\n",
   })
   assert.deepEqual(missingFromImage(inlineType).missing, ['shared'])
+
+  // `~~/…` (Nuxt rootDir alias) resolves like scripts/ts-resolver.mjs does: from the repo root.
+  const rootAlias = fixture({
+    ...base,
+    Dockerfile: FIXTURE_DOCKERFILE(),
+    'server/utils/clean.ts': "import { RULES } from '~~/shared/rules'\nexport const clean = () => RULES.length\n",
+  })
+  assert.deepEqual(missingFromImage(rootAlias).missing, ['shared'])
 
   // `import type` only: erased, nothing to copy.
   const typeOnly = fixture({
