@@ -42,9 +42,9 @@ app/
 │   ├── admin/MediaLibraryModal.vue / TinyMceEditor.vue / ConfirmModal.vue
 │   └── layout/ (7 component tách từ default.vue: DefaultTopBar/Header/MobileDrawer/DesktopNav/SearchDropdown/Footer/BottomNav)
 ├── utils/
-│   ├── formatDate.ts / blocks/registry.ts / blocks/types.ts (BlockNode/BuilderNode)
+│   ├── formatDate.ts / blocks/hero-content.ts / blocks/page-heading.ts
 │   ├── chatbot-storage.ts / nav-config.ts / analytics-noc.ts
-│   └── submission-status.ts
+│   └── blocks/registry.ts / blocks/types.ts / submission-status.ts = CHỈ re-export từ `shared/` (liệt kê tên, alias `~~/shared`)
 │   (plain-text.ts / display-name.ts / query-number.ts đã chuyển sang `server/utils/`)
 ├── composables/
 │   ├── useAdminAuth.ts / useChatbot.ts (+ useChatbotTypewriter.ts)
@@ -63,7 +63,12 @@ app/
         ├── chatbot/{knowledge/, small-talk/, sessions/, settings.vue}
         ├── media/ / settings/{data-retention.vue, google-oauth.vue, ip-bans.vue}
         ├── readers/ / comments/ / submissions/ / users/activity.vue
+shared/   (mã thuần dùng chung server + app — không import `app/` hay `server/`)
+├── blocks/registry.ts / blocks/types.ts (BlockNode/BuilderNode)
+├── submission-status.ts / permissions.ts / link-policy.ts / settings-credential-rules.ts
 ```
+
+**`server/` không bao giờ import `app/`** (giá trị hay kiểu, tĩnh/động/`typeof import()`); `shared/` không import `app/` lẫn `server/` — `tests/server-no-app-imports.test.ts` (AST). Module cả hai phía cần → đặt ở `shared/`, phía app import `~~/shared/…`. Re-export ở `app/utils` phải **liệt kê tên** và trỏ `~~/shared/…`: `export *` làm mất auto-import (unimport không giải alias), còn re-export **tương đối** của `shared/` vỡ Nitro build (Nuxt để `shared/` là external ở bản SSR, rolldown in ra đường tương đối hỏng); test cùng tệp canh danh sách khớp đủ module gốc. `tailwind.config.js` quét cả `./shared/**` (lớp huy hiệu trạng thái đơn chỉ nằm ở đó).
 
 Chi tiết Page Builder → § Kiến trúc Page Builder bên dưới. Lịch sử tính năng → `docs/CHANGELOG.md`.
 
@@ -185,11 +190,11 @@ Phân biệt khi đề xuất sửa: (a) **gap chưa đóng** → fix, (b) **gua
 
 ### Kiến trúc Page Builder
 
-- **Registry** (`app/utils/blocks/registry.ts`): `{label, icon, category, defaultData, fields}` — 19 block (9 section + 7 content + 3 layout `section/row/column`). `content_aside` 2 cột (rich-text + "ĐƠN VỊ CHỦ QUẢN"). Hero: nội dung qua `resolveHeroContent` (`app/utils/blocks/hero-content.ts`) — nút theo dữ liệu khối, giá trị bằng mặc định CŨ (`OLD_HERO_DEFAULTS`, đừng sửa) = chưa cấu hình, nhãn rỗng ẩn nút, liên kết qua `safeLinkOrNull`.
+- **Registry** (`shared/blocks/registry.ts`; app import qua `~/utils/blocks/registry`): `{label, icon, category, defaultData, fields}` — 19 block (9 section + 7 content + 3 layout `section/row/column`). `content_aside` 2 cột (rich-text + "ĐƠN VỊ CHỦ QUẢN"). Hero: nội dung qua `resolveHeroContent` (`app/utils/blocks/hero-content.ts`) — nút theo dữ liệu khối, giá trị bằng mặc định CŨ (`OLD_HERO_DEFAULTS`, đừng sửa) = chưa cấu hình, nhãn rỗng ẩn nút, liên kết qua `safeLinkOrNull`.
 - **Renderer** (`app/components/PageRenderer.vue`): map `blockType` → `app/components/blocks/*.vue`.
 - **DB**: `pages` + `page_blocks` (`home_sections` cũ giữ, migrate 1 lần). **API**: admin CRUD `server/api/admin/pages/**` (resource `pages`), public `server/api/public/pages/[slug].get.ts` (`isVisible=true`).
 - **Trang hệ thống** `home/about/contact`: `isSystem=true` (khóa slug, không xóa).
-- **Kiểu cây** (`app/utils/blocks/types.ts`): `BlockNode`/`BuilderNode` một định nghĩa dùng chung (Drizzle `.$type<BlockNode[]>()`).
+- **Kiểu cây** (`shared/blocks/types.ts`; app import qua `~/utils/blocks/types`): `BlockNode`/`BuilderNode` một định nghĩa dùng chung (Drizzle `.$type<BlockNode[]>()`).
 
 ### Tóm tắt tính năng đã hoàn thành
 

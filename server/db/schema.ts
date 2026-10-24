@@ -4,8 +4,8 @@ import {
 import type { AnyMySqlColumn } from 'drizzle-orm/mysql-core'
 import { sql } from 'drizzle-orm'
 import { ANALYTICS_LIVE_SCOPE_TYPES } from '../utils/analytics-live'
-import type { BlockData, BlockNode } from '../../app/utils/blocks/types'
-import type { ContactChannel, SubmissionEventType, SubmissionStatus } from '../../app/utils/submission-status'
+import type { BlockData, BlockNode } from '../../shared/blocks/types'
+import type { ContactChannel, SubmissionEventType, SubmissionStatus } from '../../shared/submission-status'
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 export const roles = mysqlTable('roles', {
@@ -407,7 +407,7 @@ export const submissions = mysqlTable('submissions', {
   // Title of the form/block that produced this submission.
   formTitle: varchar('form_title', { length: 255 }),
   // ─── Vòng đời xử lý ───
-  // Giá trị nằm trong SUBMISSION_STATUSES (app/utils/submission-status.ts) — một
+  // Giá trị nằm trong SUBMISSION_STATUSES (shared/submission-status.ts) — một
   // nguồn chân lý dùng chung cho phép kiểm máy chủ và nhãn hiển thị.
   status:    varchar('status', { length: 24 }).notNull().default('new').$type<SubmissionStatus>(),
   statusChangedBy: int('status_changed_by').references(() => users.id, { onDelete: 'set null' }),

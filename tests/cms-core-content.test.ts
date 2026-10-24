@@ -2,7 +2,7 @@ import assert from 'node:assert/strict'
 import test from 'node:test'
 import { slugify } from '../server/utils/slug'
 import { normalizeBlocks, VERSION_LIMITS } from '../server/utils/page-versions'
-import { clampColSpan, isValidBlockType, getDefaultData, BLOCK_TYPES } from '../app/utils/blocks/registry'
+import { clampColSpan, isValidBlockType, getDefaultData, BLOCK_TYPES } from '../shared/blocks/registry'
 import { readFileSync } from 'node:fs'
 
 /**
@@ -113,7 +113,7 @@ test('version quotas leave room for the origin snapshot plus manual saves', () =
 // ─── One definition of the block tree ────────────────────────────────────────
 test('the block tree shape is declared once and shared', () => {
   const read = (path: string) => readFileSync(new URL(`../${path}`, import.meta.url), 'utf8')
-  const types = read('app/utils/blocks/types.ts')
+  const types = read('shared/blocks/types.ts')
   assert.match(types, /export interface BlockNode/)
   assert.match(types, /export type BuilderNode/)
 

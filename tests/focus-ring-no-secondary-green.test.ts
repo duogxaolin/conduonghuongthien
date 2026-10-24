@@ -1,5 +1,5 @@
 /**
- * No focus indicator anywhere in `app/` uses `#7CB342` (spec public-accessibility,
+ * No focus indicator anywhere in `app/` or `shared/` uses `#7CB342` (spec public-accessibility,
  * design D9).
  *
  * `tests/focus-ring-contrast.test.ts` checks five named files. Thirteen others —
@@ -17,7 +17,10 @@ import assert from 'node:assert/strict'
 import { readdirSync, readFileSync } from 'node:fs'
 import test from 'node:test'
 
-const root = new URL('../app/', import.meta.url)
+const repo = new URL('../', import.meta.url)
+const root = new URL('app/', repo)
+// shared/ cũng giữ lớp Tailwind mà giao diện vẽ (registry block, huy hiệu trạng thái đơn).
+const roots = [root, new URL('shared/', repo)]
 
 function walk(dir: URL): URL[] {
   const files: URL[] = []
@@ -31,11 +34,11 @@ function walk(dir: URL): URL[] {
 
 test('no focus ring, outline or focus border uses #7CB342', () => {
   const offenders: string[] = []
-  for (const file of walk(root)) {
+  for (const file of roots.flatMap(walk)) {
     const source = readFileSync(file, 'utf8')
     for (const match of source.matchAll(/[\w:-]*focus[\w-]*:[^\s"'`]*\[#7cb342\][^\s"'`]*/gi)) {
       const line = source.slice(0, match.index).split('\n').length
-      offenders.push(`${file.pathname.split('/app/')[1]}:${line} ${match[0]}`)
+      offenders.push(`${file.pathname.slice(repo.pathname.length)}:${line} ${match[0]}`)
     }
   }
   assert.deepEqual(offenders, [], 'use #4A6741 (white ring + dark offset on dark green)')

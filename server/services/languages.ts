@@ -10,7 +10,7 @@ import { eq, and, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
 import { languages, langTranslations, articleTranslations, pageBlocks, activityLogs } from '../db/schema'
 import type { ActorLike } from '../utils/permissions'
-import type { BlockData, BlockFieldValue } from '../../app/utils/blocks/types'
+import type { BlockData, BlockFieldValue } from '../../shared/blocks/types'
 
 // ─── Language CRUD ───────────────────────────────────────────────────────
 

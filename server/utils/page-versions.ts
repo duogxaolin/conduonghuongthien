@@ -1,6 +1,6 @@
 import { createError } from 'h3'
-import { isValidBlockType, isContainerType, clampColSpan } from '../../app/utils/blocks/registry'
-import type { BlockData, BlockNode } from '../../app/utils/blocks/types'
+import { isValidBlockType, isContainerType, clampColSpan } from '../../shared/blocks/registry'
+import type { BlockData, BlockNode } from '../../shared/blocks/types'
 import { UnsafeLinkError } from '../../shared/link-policy'
 import { assertSafeBlockLinks, sanitizeBlockData } from './sanitize-html'
 
