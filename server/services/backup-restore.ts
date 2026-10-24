@@ -10,7 +10,10 @@
  *  2. Khoá `cdkt:backup:restore` — không hai lượt khôi phục chồng nhau.
  *  3. CSDL: sao lưu an toàn `pre-restore` (không xoay vòng → không xoá được file
  *     đang khôi phục). Sao lưu an toàn hỏng → KHÔNG khôi phục.
- *  4. Chạy SQL / giải nén.
+ *  4. Chạy SQL / giải nén. CSDL — trên MỌI lối sau khi dump đã chạy (kể cả dump chết
+ *     giữa chừng, bước cấu trúc hỏng): đưa cấu trúc về bản hiện tại
+ *     (`convergeSchemaAfterRestore`) RỒI mã hoá bí mật nguyên văn bản dump mang về
+ *     (`sealRestoredCredentials`), trước gắn lại/audit — `backup-restore-recovery.ts`.
  *  5. Audit thành công trong một transaction (kèm khôi phục các hàng `backups`
  *     mô tả file còn trên đĩa — dump vừa chạy đã `DROP TABLE backups`); thất bại
  *     ghi `backup_restore_failed` trong transaction riêng. Mỗi lượt có log bảo mật.
@@ -27,7 +30,6 @@ import { withNamedLock } from '../utils/named-lock'
 import { logError, logInfo, logWarn, SECURITY_EVENTS } from '../utils/logger'
 import { BackupLockBusyError, LOCK_RESTORE, backupsDir, holdRestoreTarget, runBackup, timestampStamp, type RunStatus } from './backup'
 import { restoreSql } from './backup-sql'
-import { convertPlaintextSettingsSecrets } from '../db/settings-secret-conversion'
 import { insertBackupRow } from './backup-registry'
 import { keepSchedulerStateAcrossRestore, readSchedulerStateForRestore } from './backup-scheduler'
 import {
@@ -37,6 +39,7 @@ import {
   existingUserIds,
   reattachBackupRows,
   restoreLiveStateAfterFailedRestore,
+  sealRestoredCredentials,
   type BackupRow,
 } from './backup-restore-recovery'
 import {
@@ -199,29 +202,32 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
         schedulerStateBefore = await readSchedulerStateForRestore(db)
         setStatus(true, 'sql', 'Đang phục hồi CSDL')
         registryRewound = true
+        // Mọi lối sau khi dump đã chạy giữ MỘT thứ tự: dump → cấu trúc → mã hoá bí mật
+        // (`sealRestoredCredentials`) → gắn lại/audit. Cấu trúc đi trước mọi thứ đụng tới
+        // bảng vừa khôi phục, `settings` cũng vậy; bước cấu trúc hỏng thì vẫn mã hoá.
         try {
           ;({ legacyDateShift } = await restoreSql(filePath))
         } catch (err: unknown) {
           // Dump chết giữa chừng: một phần bảng có thể đã mang hình dạng cũ. Vẫn đưa cấu
           // trúc về bản hiện tại (được tới đâu hay tới đó) để audit thất bại, danh sách
-          // và lượt sao lưu kế không hỏng theo — lỗi GỐC mới là thứ được báo.
+          // và lượt sao lưu kế không hỏng theo — lỗi GỐC mới là thứ được báo. Bảng
+          // `settings` có thể đã bị thay: mã hoá bí mật nguyên văn ngay sau bước đó.
           await convergeSchemaAfterRestore(filename, actor).catch(() => {})
+          await sealRestoredCredentials(pool, filename, actor)
           throw err
-        } finally {
-          // Bản dump trước 2A mang `smtp_pass` / `r2_secret_key` / khoá service
-          // account NGUYÊN VĂN về `settings`: mã hoá ngay khi `restoreSql` xong HOẶC
-          // hỏng giữa chừng (một phần dump đã chạy — bảng `settings` có thể đã bị
-          // thay), không đợi audit bên dưới (nó có thể ném) hay lần khởi động sau
-          // (kiểm chứng 2A, W3/W4 — spec settings-secret-storage). Lượt chuyển
-          // idempotent và không bao giờ ném: hỏng chỉ log, kết quả khôi phục giữ
-          // nguyên nghĩa của nó.
-          await encryptRestoredSecrets(pool, actor, filename)
         }
         // Trước MỌI thứ đụng tới bảng vừa khôi phục (gắn lại `backups`, audit, scheduler).
         setStatus(true, 'schema', 'Đang cập nhật cấu trúc CSDL')
+        let schemaConverged = true
         try {
           await convergeSchemaAfterRestore(filename, actor)
         } catch {
+          schemaConverged = false
+        }
+        // Bí mật nguyên văn mà bản dump trước 2A mang về: mã hoá ngay, dù bước cấu trúc
+        // vừa hỏng, và trước audit bên dưới (nó có thể ném) — không đợi lần khởi động sau.
+        await sealRestoredCredentials(pool, filename, actor)
+        if (!schemaConverged) {
           // Không bảo "khởi động lại": lỗi đến từ chính dữ liệu vừa nạp thì mỗi lần
           // khởi động (`init.ts && …`) chạy đúng bước này và container dừng lặp lại.
           // Đường lui là bản an toàn — nêu đúng tên (nó đã được gắn lại vào danh sách).
@@ -277,20 +283,6 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
   return outcome.value
 }
 
-/** Lượt mã hoá bí mật sau khôi phục CSDL — không bao giờ ném (xem nơi gọi). */
-async function encryptRestoredSecrets(pool: Parameters<typeof convertPlaintextSettingsSecrets>[0], actor: RestoreActor, filename: string): Promise<void> {
-  try {
-    const report = await convertPlaintextSettingsSecrets(pool)
-    if (report.converted.length) {
-      logInfo({ event: 'backup.restore_secrets_encrypted', userId: actor.id, filename, keys: report.converted })
-    }
-    if (report.needsReentry.length || report.skippedNoKey.length) {
-      logWarn({ event: 'backup.restore_secrets_not_converted', userId: actor.id, filename, needsReentry: report.needsReentry, skippedNoKey: report.skippedNoKey })
-    }
-  } catch (err: unknown) {
-    logWarn({ event: 'backup.restore_secret_conversion_failed', userId: actor.id, filename, error: messageOf(err) })
-  }
-}
 
 /**
  * Giải nén archive về đúng gốc. Danh sách mục được kiểm TRƯỚC (`inspectArchive`):

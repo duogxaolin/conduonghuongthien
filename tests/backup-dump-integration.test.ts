@@ -49,7 +49,10 @@
  *  14. no backup starts while a restore holds its lock (it would be lost to the
  *      registry the restore rewinds);
  *  15. the pre-restore dump a failed restore names passes `scripts/restore-db.sh` — the
- *      host way back the error message gives (fake `docker`, real `dumpSql` output).
+ *      host way back the error message gives (fake `docker`, real `dumpSql` output);
+ *  16. a dump holding plaintext credentials (from before wave2 2A) leaves them sealed on
+ *      every path that ran it — complete, dump dying half-way, schema step failing —
+ *      because the restore seals them right after the schema step, whatever it did.
  *
  * Gated and self-cleaning like the other *-integration suites:
  *
@@ -58,6 +61,7 @@
  *     --import ./scripts/ts-resolver.mjs --test tests/backup-dump-integration.test.ts
  */
 import assert from 'node:assert/strict'
+import { randomBytes } from 'node:crypto'
 import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
@@ -93,11 +97,14 @@ const DB = {
   oldshape: `cdkt_backup_dump_${runId}_oldshape`,
   busy: `cdkt_backup_dump_${runId}_busy`,
   hostfallback: `cdkt_backup_dump_${runId}_hostfallback`,
+  secretsOk: `cdkt_backup_dump_${runId}_secretsok`,
+  secretsHalf: `cdkt_backup_dump_${runId}_secretshalf`,
+  secretsSchema: `cdkt_backup_dump_${runId}_secretsschema`,
 }
 
 /** Never let a typo in the env point this at a real deployment. */
 function assertDisposableDatabase(name: string) {
-  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold|gensrc|gendst|legacydst|oldschema|sweep|partial|converge|oldregistry|audit|oldshape|busy|hostfallback)$/)
+  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold|gensrc|gendst|legacydst|oldschema|sweep|partial|converge|oldregistry|audit|oldshape|busy|hostfallback|secretsok|secretshalf|secretsschema)$/)
   assert.notEqual(name, 'cdkt_admin')
 }
 
@@ -997,4 +1004,49 @@ test('the pre-restore dump a failed restore names passes scripts/restore-db.sh �
   }
   await closeDb()
   delete process.env.CDKT_BACKUPS_DIR
+})
+
+// ─── 16. wave2 integration: 2A's envelopes on every path of ops' restore ──────
+
+test('a dump holding plaintext credentials restores into envelopes — complete, dump dying half-way, schema step failing', { skip: !enabled, timeout: 600_000 }, async () => {
+  // The order on every path that ran the dump: restoreSql → schema convergence →
+  // credential envelopes → reattach/audit. When the schema step fails, it stops at the
+  // failing boot step — BEFORE `initDb`'s own conversion — so only the restore's
+  // conversion pass seals what the dump brought back.
+  const { openSettingsSecret, isSettingsSecretEnvelope } = await import('../server/utils/settings-secrets')
+  const { runRestore } = await import('../server/services/backup-restore')
+  const previousKey = process.env.CHATBOT_ENCRYPTION_SECRET
+  process.env.CHATBOT_ENCRYPTION_SECRET = randomBytes(32).toString('base64')
+  const PLAINTEXT = 'mat-khau-smtp-tu-ban-dump-cu'
+  const plaintextTail = `INSERT INTO settings (\`key\`, value) VALUES ('smtp_pass', '${PLAINTEXT}') ON DUPLICATE KEY UPDATE value = VALUES(value);`
+  const storedSmtpPass = async (database: string) =>
+    String((await exactRows(database, "SELECT value FROM settings WHERE `key` = 'smtp_pass'"))[0]?.value ?? '')
+  try {
+    const cases: Array<{ database: string, dirName: string, tail: string, outcome: (error: unknown) => boolean }> = [
+      { database: DB.secretsOk, dirName: 'backups-secrets-ok', tail: plaintextTail, outcome: () => false },
+      { database: DB.secretsHalf, dirName: 'backups-secrets-half', tail: `${plaintextTail}\nTHIS IS NOT VALID SQL;`, outcome: error => /THIS IS NOT VALID SQL/.test(String(error)) },
+      { database: DB.secretsSchema, dirName: 'backups-secrets-schema', tail: `${plaintextTail}\n${ORPHAN_READER_TAIL}`, outcome: error => (error as { reason?: string }).reason === 'schema_convergence_failed' },
+    ]
+    for (const { database, dirName, tail, outcome } of cases) {
+      await failingRestoreFixture(database, dirName, tail)
+      let failure: unknown = null
+      try {
+        await runRestore('broken-upload.sql.gz', { id: 1, username: 'root-admin' })
+      } catch (error: unknown) {
+        failure = error
+      }
+      if (database === DB.secretsOk) assert.equal(failure, null, `the complete restore failed: ${String(failure)}`)
+      else assert.ok(failure !== null && outcome(failure), `${dirName}: unexpected outcome ${String(failure)}`)
+      const stored = await storedSmtpPass(database)
+      assert.ok(isSettingsSecretEnvelope(stored), `${dirName}: smtp_pass is still plaintext after the restore`)
+      assert.ok(!stored.includes(PLAINTEXT), `${dirName}: the stored row still contains the plaintext`)
+      assert.deepEqual(openSettingsSecret('smtp_pass', stored), { state: 'sealed', value: PLAINTEXT }, dirName)
+      delete process.env.CDKT_BACKUPS_DIR
+      const { closeDb } = await import('../server/utils/db')
+      await closeDb()
+    }
+  } finally {
+    if (previousKey === undefined) delete process.env.CHATBOT_ENCRYPTION_SECRET
+    else process.env.CHATBOT_ENCRYPTION_SECRET = previousKey
+  }
 })

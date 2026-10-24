@@ -3,7 +3,9 @@
  * `backup-restore.ts` (đã quá 400 dòng) theo đường nối tự nhiên: luồng khôi phục ở đó
  * gọi các hàm dưới đây ở đúng ba điểm.
  *  - TRƯỚC bản sao lưu an toàn: `assertOneDatabase`, `convergeBackupsRegistry`.
- *  - SAU dump: `convergeSchemaAfterRestore` (bước cấu trúc lúc khởi động).
+ *  - SAU dump, trên MỌI lối (thành công, dump chết giữa chừng, bước cấu trúc hỏng):
+ *    `convergeSchemaAfterRestore` (bước cấu trúc lúc khởi động) RỒI
+ *    `sealRestoredCredentials` (mã hoá bí mật nguyên văn bản dump mang về — 2A).
  *  - Gắn lại sổ `backups` (+ trạng thái scheduler): lối thành công trong transaction
  *    audit (`reattachBackupRows`), lối thất bại ở `restoreLiveStateAfterFailedRestore`.
  *
@@ -11,7 +13,7 @@
  * phục THAY cả sổ sao lưu (và hàng `backup_scheduler_state`) bằng bản trong dump — có
  * thể ở hình dạng cũ hơn `schema.ts`. Thiếu các bước này: khôi phục báo hỏng dù dữ liệu
  * đã thay, sổ thiếu bản `pre-restore` và các bản mới hơn, lượt dọn xoá chúng, và lời
- * khuyên "khôi phục bản an toàn" thành ngõ cụt. → docs/CHANGELOG.md § 36.
+ * khuyên "khôi phục bản an toàn" thành ngõ cụt. → docs/CHANGELOG.md § 36, § 38.
  */
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
@@ -19,6 +21,7 @@ import { inArray } from 'drizzle-orm'
 import type { RowDataPacket } from 'mysql2/promise'
 
 import { getDb } from '../utils/db'
+import { convertPlaintextSettingsSecrets } from '../db/settings-secret-conversion'
 import { backups, users } from '../db/schema'
 import { logError, logInfo, logWarn } from '../utils/logger'
 import { backupsDir } from './backup'
@@ -204,4 +207,32 @@ export async function convergeSchemaAfterRestore(filename: string, actor: Restor
     throw err
   }
   logInfo({ event: 'backup.restore_schema_converged', filename, userId: actor.id, ms: Date.now() - startedAt })
+}
+
+/**
+ * Mã hoá `smtp_pass` / `r2_secret_key` / `backup_drive_service_account` còn nguyên văn
+ * sau một lượt khôi phục CSDL (wave2 2A, spec settings-secret-storage, kiểm chứng W3/W4):
+ * bản dump trước 2A mang chúng NGUYÊN VĂN về `settings`. Gọi trên MỌI lối mà dump đã
+ * chạy, ngay SAU `convergeSchemaAfterRestore` — kể cả khi bước đó hỏng (nó dừng ở bước
+ * khởi động hỏng, trước lượt chuyển của chính nó) — và TRƯỚC gắn lại/audit (có thể ném).
+ * Không đợi lần khởi động sau. Khi bước cấu trúc chạy trọn thì `initDb` đã chuyển rồi và
+ * lượt này không ghi gì (lượt chuyển idempotent).
+ *
+ * Không bao giờ ném: hỏng chỉ log, kết quả khôi phục giữ nguyên nghĩa của nó (lần khởi
+ * động sau vẫn chuyển).
+ */
+export async function sealRestoredCredentials(
+  pool: Parameters<typeof convertPlaintextSettingsSecrets>[0], filename: string, actor: RestoreActor,
+): Promise<void> {
+  try {
+    const report = await convertPlaintextSettingsSecrets(pool)
+    if (report.converted.length) {
+      logInfo({ event: 'backup.restore_secrets_encrypted', userId: actor.id, filename, keys: report.converted })
+    }
+    if (report.needsReentry.length || report.skippedNoKey.length) {
+      logWarn({ event: 'backup.restore_secrets_not_converted', userId: actor.id, filename, needsReentry: report.needsReentry, skippedNoKey: report.skippedNoKey })
+    }
+  } catch (err: unknown) {
+    logWarn({ event: 'backup.restore_secret_conversion_failed', userId: actor.id, filename, error: messageOf(err) })
+  }
 }

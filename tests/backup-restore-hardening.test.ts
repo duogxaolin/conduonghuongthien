@@ -65,7 +65,10 @@ const state = {
 }
 /** SQL text executed on a `multipleStatements` (restore) connection. */
 const executed: string[] = []
-/** What happened, in order: `restoreSql` (dump executed), `initDb` (schema brought up to date), `tx` (a transaction). */
+/**
+ * What happened, in order: `restoreSql` (dump executed), `initDb` (schema brought up to
+ * date), `secrets` (the credential conversion read `settings`), `tx` (a transaction).
+ */
 const order: string[] = []
 /** The restored dump dies half-way through. */
 let failRestoreSql = false
@@ -179,6 +182,8 @@ const fakePool = {
   getConnection: async () => fakeConnection({}),
   execute: async (sqlText: string, params: unknown[] = []) => {
     if (/^SELECT `key`, `value` FROM `settings`/.test(sqlText)) {
+      // The credential conversion reads its three keys here first: its place in `order`.
+      order.push('secrets')
       return [state.settings.filter(row => params.includes(row.key)), []]
     }
     if (/^UPDATE `settings` SET `value` = \?/.test(sqlText)) {
@@ -703,7 +708,83 @@ describe('a database restore brings the schema up to date before using it', () =
     const name = makeArchive('cdkt-uploads-20261013T000000Z-manual.tar.gz', (root) => { uploadsTree(root); return ['uploads'] })
     await restore.runRestore(name, ACTOR)
     assert.ok(!order.includes('initDb'))
+    assert.ok(!order.includes('secrets'), 'a file-archive restore brings no settings back')
   })
+})
+
+// ─── wave2 integration: 2A's credential envelopes and ops' schema step, one path ─
+//
+// 2A (§ 33, W3/W4) seals the plaintext credentials an old dump brings back; ops (§ 36)
+// brings the schema up to date right after the dump, before anything touches the
+// restored tables. Merged, EVERY path on which the dump ran keeps one order:
+//   restoreSql → schema convergence → credential conversion → reattach/audit.
+// The schema step may fail, and the conversion still runs after it. `initDb` is mocked
+// here, so only the restore's own conversion seals anything (the real `initDb` runs it
+// too, unless it fails first — tests/backup-dump-integration.test.ts).
+
+describe('a database restore: dump, then schema, then credential envelopes, then the audit (wave2 integration)', () => {
+  const DUMP = 'cdkt-20260101T000000Z-manual.sql.gz'
+  async function withEncryptionKey(work: () => Promise<void>): Promise<void> {
+    const previous = process.env.CHATBOT_ENCRYPTION_SECRET
+    process.env.CHATBOT_ENCRYPTION_SECRET = (await import('node:crypto')).randomBytes(32).toString('base64')
+    try {
+      await work()
+    } finally {
+      if (previous === undefined) delete process.env.CHATBOT_ENCRYPTION_SECRET
+      else process.env.CHATBOT_ENCRYPTION_SECRET = previous
+    }
+  }
+  async function storedSmtpPass() {
+    const { openSettingsSecret } = await import('../server/utils/settings-secrets')
+    return openSettingsSecret('smtp_pass', state.settings.find(row => row.key === 'smtp_pass')?.value)
+  }
+  /** One conversion pass, after the schema step, after the dump. */
+  function assertDumpSchemaSecrets() {
+    const restored = order.indexOf('restoreSql')
+    const converged = order.indexOf('initDb')
+    const sealed = order.indexOf('secrets')
+    assert.ok(restored >= 0 && converged > restored && sealed > converged, `order: ${order.join(' → ')}`)
+    assert.equal(order.filter(step => step === 'secrets').length, 1, `one conversion pass: ${order.join(' → ')}`)
+    return sealed
+  }
+
+  test('a complete restore: restoreSql → schema → envelopes → the reattach/audit transaction', async () => withEncryptionKey(async () => {
+    seedSqlBackup(DUMP, '20260101T000000Z', 'SELECT 1;')
+    restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+    await restore.runRestore(DUMP, ACTOR)
+    const sealed = assertDumpSchemaSecrets()
+    assert.ok(order.lastIndexOf('tx') > sealed, `the audit transaction comes after the envelopes: ${order.join(' → ')}`)
+    assert.deepEqual(await storedSmtpPass(), { state: 'sealed', value: 'Restored-smtp-pass-1' })
+  }))
+
+  test('the schema step fails after a complete dump: the restored plaintext is still sealed, after the schema attempt', async () => withEncryptionKey(async () => {
+    seedSqlBackup(DUMP, '20260101T000000Z', 'SELECT 1;')
+    restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+    failConverge = true
+    const error = await rejection(restore.runRestore(DUMP, ACTOR))
+    assert.equal(error.reason, 'schema_convergence_failed')
+    assertDumpSchemaSecrets()
+    assert.deepEqual(await storedSmtpPass(), { state: 'sealed', value: 'Restored-smtp-pass-1' })
+    assert.deepEqual(restoreAudits().map(entry => entry.values.action), ['backup_restore_failed'])
+  }))
+
+  test('the dump dies half-way: schema attempt, then envelopes, and the dump\'s own error is reported', async () => withEncryptionKey(async () => {
+    seedSqlBackup(DUMP, '20260101T000000Z', 'SELECT 1;')
+    restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+    failRestoreSql = true
+    await assert.rejects(restore.runRestore(DUMP, ACTOR), /restore died half-way/)
+    assertDumpSchemaSecrets()
+    assert.deepEqual(await storedSmtpPass(), { state: 'sealed', value: 'Restored-smtp-pass-1' })
+  }))
+
+  test('the audit transaction fails: the envelopes were written before it', async () => withEncryptionKey(async () => {
+    seedSqlBackup(DUMP, '20260101T000000Z', 'SELECT 1;')
+    restoredSettings = [{ key: 'smtp_pass', value: 'Restored-smtp-pass-1' }]
+    failRestoreAudit = true
+    await assert.rejects(restore.runRestore(DUMP, ACTOR), /simulated audit failure/)
+    assertDumpSchemaSecrets()
+    assert.deepEqual(await storedSmtpPass(), { state: 'sealed', value: 'Restored-smtp-pass-1' })
+  }))
 })
 
 // ─── The scheduler's own record survives a restore (wave1 1B re-verification S3) ─
