@@ -14,7 +14,7 @@
     "postinstall": "nuxt prepare",
     "typecheck": "nuxt typecheck",
     "test": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test tests/*.test.ts",
-    "test:coverage": "node --experimental-strip-types --experimental-test-module-mocks --experimental-test-coverage --import ./scripts/ts-resolver.mjs --test tests/*.test.ts",
+    "test:coverage": "node -e \"require('node:fs').mkdirSync('node_modules/.cache/cdkt-coverage', { recursive: true })\" && node --experimental-strip-types --experimental-test-module-mocks --experimental-test-coverage --test-coverage-exclude=\"tests/**\" --import ./scripts/ts-resolver.mjs --test-reporter=dot --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=node_modules/.cache/cdkt-coverage/lcov.info --test tests/*.test.ts && node --experimental-strip-types scripts/coverage-summary.ts node_modules/.cache/cdkt-coverage/lcov.info",
     "test:watch": "node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs --test --watch tests/*.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:install": "playwright install --with-deps chromium",
