@@ -23,21 +23,41 @@ type Reader = {
   commentCount: number
 }
 
+type ReaderFilters = {
+  /** Name or email fragment; applied on submit. */
+  q: string
+  /** Applied as soon as the select changes. */
+  banned: 'all' | 'active' | 'banned'
+}
+
+type ReaderListResponse = { ok: boolean; readers: Reader[]; total: number; totalPages: number; page: number }
+
 const BAN_FILTERS = [
   { value: 'all', label: 'Tất cả' },
   { value: 'active', label: 'Đang hoạt động' },
   { value: 'banned', label: 'Đã bị chặn' },
 ] as const
 
-const loading = ref(true)
-const error = ref('')
-const readers = ref<Reader[]>([])
-const total = ref(0)
-const page = ref(1)
-const totalPages = ref(1)
-
-const search = ref('')
-const banned = ref<'all' | 'active' | 'banned'>('all')
+// List state, stale-request guard and paging: useAdminList (tests/admin-list.test.ts).
+const list = useAdminList<Reader, ReaderFilters>({
+  filters: { q: '', banned: 'all' },
+  // Never left as an empty table: an empty list and a failed fetch look
+  // identical on screen, and an officer would conclude nobody has signed up.
+  errorFallback: 'Không tải được danh sách người đọc.',
+  load: async ({ page, filters, signal }) => {
+    const res = await adminFetch<ReaderListResponse>('/api/admin/readers', {
+      query: { q: filters.q || undefined, banned: filters.banned, page },
+      signal,
+    })
+    if (!res?.ok) return null
+    return { items: res.readers || [], total: res.total || 0, totalPages: res.totalPages || 1, page: res.page || 1 }
+  },
+})
+const { items: readers, page, total, totalPages, loading, filters, applyFilters, goToPage } = list
+// The error branch and its retry are declared here, in the page, on purpose:
+// tests/admin-error-retry-ui.test.ts reads this file's own source.
+const error = computed(() => list.error.value)
+const reload = list.reload
 
 function formatMoment(value: string | null) {
   if (!value) return '—'
@@ -45,42 +65,7 @@ function formatMoment(value: string | null) {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('vi-VN', { hour12: false })
 }
 
-async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const res = await $fetch('/api/admin/readers', {
-      query: { q: search.value || undefined, banned: banned.value, page: page.value },
-    })
-    if (!res?.ok) {
-      error.value = 'Không tải được danh sách người đọc.'
-      return
-    }
-    readers.value = res.readers || []
-    total.value = res.total || 0
-    totalPages.value = res.totalPages || 1
-    page.value = res.page || 1
-  } catch (err: unknown) {
-    // Never left as an empty table: an empty list and a failed fetch look
-    // identical on screen, and an officer would conclude nobody has signed up.
-    error.value = errorMessage(err, 'Không tải được danh sách người đọc.')
-  } finally {
-    loading.value = false
-  }
-}
-
-function applyFilters() {
-  page.value = 1
-  load()
-}
-
-function goToPage(next: number) {
-  if (next < 1 || next > totalPages.value) return
-  page.value = next
-  load()
-}
-
-onMounted(load)
+onMounted(reload)
 </script>
 
 <template>
@@ -96,7 +81,7 @@ onMounted(load)
       <label class="flex min-w-[220px] flex-1 flex-col gap-1.5 text-sm font-bold">
         Tìm theo tên hoặc email
         <input
-          v-model="search"
+          v-model="filters.q"
           type="search"
           maxlength="100"
           placeholder="Nhập tên hiển thị hoặc email…"
@@ -106,7 +91,7 @@ onMounted(load)
       <label class="flex flex-col gap-1.5 text-sm font-bold">
         Trạng thái
         <select
-          v-model="banned"
+          v-model="filters.banned"
           class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
           @change="applyFilters"
         >
@@ -146,7 +131,7 @@ onMounted(load)
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }}
-      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="load">Thử lại</button>
+      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="reload">Thử lại</button>
     </div>
 
     <template v-else>
