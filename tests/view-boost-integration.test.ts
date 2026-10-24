@@ -17,11 +17,15 @@
  *
  * It also holds the real-MySQL half of the per-article view totals (design D6,
  * spec `most-read-ranking`): `articles.view_total_real` / `view_total_fabricated`
- * must equal the sums of `article_view_daily` after real views, an instant boost,
- * the gradual passes and a concurrent burst; `articles.updated_at` must not move
- * (the column is `ON UPDATE CURRENT_TIMESTAMP`); and the one-time backfill at
- * boot must run when the totals are introduced and never again. The statement
- * shapes are pinned without a database in `tests/view-totals-integrity.test.ts`.
+ * (and `view_total` their sum) must equal the sums of `article_view_daily` after
+ * real views, an instant boost, the gradual passes and a concurrent burst;
+ * `articles.updated_at` must not move (the column is `ON UPDATE
+ * CURRENT_TIMESTAMP`); and the boot-time reconcile must heal exactly the articles
+ * whose totals differ from their daily rows — an upgrade, a rollback to an image
+ * that counted views without the totals, a d079453 database whose `view_total`
+ * was a generated column — and write nothing on a consistent database. The
+ * statement shapes are pinned without a database in
+ * `tests/view-totals-integrity.test.ts`.
  *
  * Gated and self-cleaning, following the *-ddl-integration precedent:
  *
@@ -37,11 +41,11 @@ const port = Number(process.env.VIEW_BOOST_PORT || 3306)
 const user = process.env.VIEW_BOOST_USER || 'root'
 const password = process.env.VIEW_BOOST_PASSWORD || 'rootpassword'
 const database = `cdkt_view_boost_${Date.now()}_${process.pid}`
-const backfillDatabase = `${database}_backfill`
+const reconcileDatabase = `${database}_reconcile`
 
 /** Never let a typo in the env point this at a real deployment. */
 function assertDisposableDatabase(name: string) {
-  assert.match(name, /^cdkt_view_boost_\d+_\d+(?:_backfill)?$/)
+  assert.match(name, /^cdkt_view_boost_\d+_\d+(?:_reconcile)?$/)
   assert.notEqual(name, 'cdkt_admin')
   assert.notEqual(name, process.env.DB_NAME)
 }
@@ -307,6 +311,11 @@ test('a gradual job survives the round trip through MySQL and delivers proportio
       const afterBurst = await assertTotalsEqualDailySums(raw, articleId, PINNED_UPDATED_AT, 'after the concurrent burst')
       assert.equal(afterBurst.real, totals.real + 20)
       assert.equal(afterBurst.fabricated, totals.fabricated + 12)
+      assert.equal(afterBurst.total, totals.total + 32, 'view_total moved with its halves under concurrency')
+
+      // The live write path leaves nothing for the boot reconcile to heal.
+      const { reconcileArticleViewTotals } = await import('../server/db/init')
+      assert.equal(await reconcileArticleViewTotals(raw), 0, 'the write path keeps every total equal to its daily sums')
     } finally {
       await raw.end()
     }
@@ -326,81 +335,127 @@ test('a gradual job survives the round trip through MySQL and delivers proportio
 })
 
 /**
- * The one-time backfill (design D6). Its trigger is schema state the conversion
- * itself removes: the index `articles_status_type_views_idx` is absent. The
- * sequence at boot is probe → add the three columns → backfill → add the index,
- * so
- *   - an upgrade (columns and index absent) backfills once;
- *   - a second boot finds the index and writes nothing — a total changed after
- *     the backfill stays as it is;
- *   - a boot that died after the columns but before the index resumes: the
- *     backfill runs again, and since it SETs the totals to the sums it lands on
- *     the same values an uninterrupted boot would have.
- * A fresh database is born with the columns and the index, so it never backfills.
+ * The boot-time reconcile (design D6, reworked after the rollback finding on
+ * d079453). Every boot recomputes the totals from `article_view_daily` for the
+ * articles whose totals differ from those sums, and only those; a consistent
+ * database gets no write at all. That one rule covers:
+ *   - an upgrade from the previous release (columns added at 0, articles with
+ *     views get their sums);
+ *   - a rollback to an image that counts views without the totals, followed by a
+ *     roll-forward (the views counted meanwhile land in the totals);
+ *   - a boot cut short anywhere — the next boot simply compares again.
+ * It also converts a d079453 database, where `view_total` was a STORED generated
+ * column, to the plain column (MySQL keeps the values).
  */
-test('the view-total backfill runs when the totals are introduced, once, and resumes after an interrupted boot', {
+test('the boot reconcile heals exactly the drifted articles and writes nothing on a consistent database', {
   skip: !enabled,
-  // Four full boots (initDb) — each one walks every table's DDL.
+  // Several full boots (initDb) — each one walks every table's DDL.
   timeout: 600_000,
 }, async () => {
-  assertDisposableDatabase(backfillDatabase)
+  assertDisposableDatabase(reconcileDatabase)
   const admin = await mysql.createConnection({ host, port, user, password })
-  await admin.query(`CREATE DATABASE \`${backfillDatabase}\` CHARACTER SET utf8mb4`)
+  await admin.query(`CREATE DATABASE \`${reconcileDatabase}\` CHARACTER SET utf8mb4`)
   await admin.end()
 
   const previous = { ...process.env }
-  Object.assign(process.env, { DB_HOST: host, DB_PORT: String(port), DB_USER: user, DB_PASSWORD: password, DB_NAME: backfillDatabase })
-  const connection = await mysql.createConnection({ host, port, user, password, database: backfillDatabase })
+  Object.assign(process.env, { DB_HOST: host, DB_PORT: String(port), DB_USER: user, DB_PASSWORD: password, DB_NAME: reconcileDatabase })
+  const connection = await mysql.createConnection({ host, port, user, password, database: reconcileDatabase })
   try {
-    const { initDb } = await import('../server/db/init')
+    const { initDb, reconcileArticleViewTotals } = await import('../server/db/init')
     await initDb()
 
-    const indexExists = async () => {
+    const viewTotalColumn = async () => {
       const [rows] = await connection.query<RowDataPacket[]>(
-        "SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'articles' AND INDEX_NAME = 'articles_status_type_views_idx' LIMIT 1",
-        [backfillDatabase],
+        "SELECT IS_NULLABLE AS nullable, EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'articles' AND COLUMN_NAME = 'view_total'",
+        [reconcileDatabase],
       )
-      return rows.length > 0
+      return { nullable: String(rows[0]?.nullable), extra: String(rows[0]?.extra) }
     }
-    assert.equal(await indexExists(), true, 'a fresh database is born with the index')
+    const indexColumns = async () => {
+      const [rows] = await connection.query<RowDataPacket[]>(
+        "SELECT COLUMN_NAME AS name FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'articles' AND INDEX_NAME = 'articles_status_type_views_idx' ORDER BY SEQ_IN_INDEX",
+        [reconcileDatabase],
+      )
+      return rows.map(row => String(row.name))
+    }
+    const INDEX = ['status', 'type', 'view_total', 'published_at', 'created_at']
+    const snapshot = async () => {
+      const [rows] = await connection.query<RowDataPacket[]>(
+        "SELECT id, view_total_real, view_total_fabricated, view_total, DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at FROM articles ORDER BY id",
+      )
+      return rows.map(row => ({ ...row }))
+    }
+    const assertAllConsistent = async (label: string) => {
+      for (const id of [1, 2, 3, 4]) await assertTotalsEqualDailySums(connection, id, PINNED_UPDATED_AT, `${label}, article ${id}`)
+    }
 
-    // ── Simulate the previous release: no totals, no index ──────────────────
+    assert.deepEqual(await viewTotalColumn(), { nullable: 'NO', extra: '' }, 'a fresh database: view_total is a plain NOT NULL column, never generated')
+    assert.deepEqual(await indexColumns(), INDEX)
+
+    // ── Drift as a rollback leaves it ───────────────────────────────────────
+    // 1: consistent. 2: views counted by an image that knew nothing of the
+    // totals (daily rows, totals 0). 3: totals with no daily row behind them.
+    // 4: never viewed.
     await connection.query(
-      'ALTER TABLE `articles` DROP INDEX `articles_status_type_views_idx`, DROP COLUMN `view_total`, DROP COLUMN `view_total_real`, DROP COLUMN `view_total_fabricated`',
-    )
-    await connection.query(
-      "INSERT INTO `articles` (`id`, `type`, `title`, `slug`, `status`, `updated_at`) VALUES (1, 'news', 'Có lượt xem', 'co-luot-xem', 'published', ?), (2, 'news', 'Chưa ai xem', 'chua-ai-xem', 'published', ?)",
-      [PINNED_UPDATED_AT, PINNED_UPDATED_AT],
+      `INSERT INTO \`articles\` (\`id\`, \`type\`, \`title\`, \`slug\`, \`status\`, \`view_total_real\`, \`view_total_fabricated\`, \`view_total\`, \`updated_at\`) VALUES
+        (1, 'news', 'Nhất quán', 'nhat-quan', 'published', 4, 6, 10, ?),
+        (2, 'news', 'Đếm lúc lùi bản', 'dem-luc-lui-ban', 'published', 0, 0, 0, ?),
+        (3, 'news', 'Tổng không có hàng', 'tong-khong-co-hang', 'published', 7, 1, 8, ?),
+        (4, 'news', 'Chưa ai xem', 'chua-ai-xem', 'published', 0, 0, 0, ?)`,
+      [PINNED_UPDATED_AT, PINNED_UPDATED_AT, PINNED_UPDATED_AT, PINNED_UPDATED_AT],
     )
     await connection.query(
       `INSERT INTO \`article_view_daily\` (\`day\`, \`article_id\`, \`source_category\`, \`real_views\`, \`fabricated_views\`) VALUES
-        ('2026-10-01', 1, 'direct', 40, 0),
-        ('2026-10-01', 1, 'search', 2, 0),
-        ('2026-10-02', 1, 'direct', 5, 0),
-        ('2026-10-02', 1, 'boost', 0, 300)`,
+        ('2026-10-01', 1, 'direct', 4, 0),
+        ('2026-10-01', 1, 'boost', 0, 6),
+        ('2026-10-01', 2, 'direct', 40, 0),
+        ('2026-10-01', 2, 'search', 2, 0),
+        ('2026-10-02', 2, 'boost', 0, 300)`,
     )
 
-    // ── Boot 1: the upgrade ─────────────────────────────────────────────────
-    await initDb()
-    assert.equal(await indexExists(), true, 'the index is added after the backfill')
-    const upgraded = await assertTotalsEqualDailySums(connection, 1, PINNED_UPDATED_AT, 'boot 1')
-    assert.deepEqual([upgraded.real, upgraded.fabricated, upgraded.total], [47, 300, 347])
-    const untouched = await assertTotalsEqualDailySums(connection, 2, PINNED_UPDATED_AT, 'boot 1, article without views')
-    assert.deepEqual([untouched.real, untouched.fabricated], [0, 0])
+    assert.equal(await reconcileArticleViewTotals(connection), 2, 'articles 2 and 3 are healed, nothing else is written')
+    await assertAllConsistent('after the reconcile')
+    const healed = await readTotals(connection, 2)
+    assert.deepEqual([healed.real, healed.fabricated, healed.total], [42, 300, 342])
+    assert.deepEqual(Object.values(await readTotals(connection, 3)).slice(0, 3), [0, 0, 0])
+    assert.equal(await reconcileArticleViewTotals(connection), 0, 'a consistent database: nothing to write')
 
-    // ── Boot 2: nothing to convert, so nothing is written ───────────────────
-    await connection.query('UPDATE `articles` SET `view_total_real` = 999, `updated_at` = `updated_at` WHERE `id` = 1')
+    // ── Through a real boot, then a second boot that changes nothing ────────
+    // An older image counts more views after the reconcile: daily rows only.
+    await connection.query(
+      "INSERT INTO `article_view_daily` (`day`, `article_id`, `source_category`, `real_views`, `fabricated_views`) VALUES ('2026-10-03', 1, 'direct', 5, 0), ('2026-10-03', 4, 'search', 3, 0)",
+    )
     await initDb()
-    const secondBoot = await readTotals(connection, 1)
-    assert.equal(secondBoot.real, 999, 'a second boot must not re-run the backfill')
-    assert.equal(secondBoot.updatedAt, PINNED_UPDATED_AT)
+    await assertAllConsistent('boot 1')
+    assert.deepEqual([(await readTotals(connection, 1)).total, (await readTotals(connection, 4)).total], [15, 3])
+    const afterBoot1 = await snapshot()
+    await initDb()
+    assert.deepEqual(await snapshot(), afterBoot1, 'boot 2 changes no row')
+    assert.equal(await reconcileArticleViewTotals(connection), 0)
 
-    // ── Interrupted boot: columns present, index never added ────────────────
-    await connection.query('ALTER TABLE `articles` DROP INDEX `articles_status_type_views_idx`')
+    // ── Upgrade from the release before the totals ──────────────────────────
+    await connection.query(
+      'ALTER TABLE `articles` DROP INDEX `articles_status_type_views_idx`, DROP COLUMN `view_total`, DROP COLUMN `view_total_real`, DROP COLUMN `view_total_fabricated`',
+    )
     await initDb()
-    assert.equal(await indexExists(), true)
-    const resumed = await assertTotalsEqualDailySums(connection, 1, PINNED_UPDATED_AT, 'resumed boot')
-    assert.deepEqual([resumed.real, resumed.fabricated], [47, 300], 'the resumed backfill lands on the uninterrupted result')
+    assert.deepEqual(await viewTotalColumn(), { nullable: 'NO', extra: '' })
+    assert.deepEqual(await indexColumns(), INDEX)
+    await assertAllConsistent('upgrade')
+    assert.deepEqual(await snapshot(), afterBoot1, 'the upgrade lands on the same totals')
+
+    // ── A database booted by d079453: view_total was STORED generated ───────
+    await connection.query('ALTER TABLE `articles` DROP INDEX `articles_status_type_views_idx`, DROP COLUMN `view_total`')
+    await connection.query('ALTER TABLE `articles` ADD COLUMN `view_total` BIGINT AS (`view_total_real` + `view_total_fabricated`) STORED')
+    await connection.query('ALTER TABLE `articles` ADD INDEX `articles_status_type_views_idx` (`status`, `type`, `view_total`, `published_at`, `created_at`)')
+    assert.equal((await viewTotalColumn()).extra, 'STORED GENERATED')
+    await initDb()
+    assert.deepEqual(await viewTotalColumn(), { nullable: 'NO', extra: '' }, 'the generated column is converted to a plain one')
+    assert.deepEqual(await snapshot(), afterBoot1, 'its values survive the conversion')
+    // A plain column accepts the write path's increment; a generated one refuses it (3105).
+    await connection.query('UPDATE `articles` SET `view_total_real` = `view_total_real` + 1, `view_total` = `view_total` + 1, `updated_at` = `updated_at` WHERE `id` = 4')
+    assert.deepEqual([(await readTotals(connection, 4)).real, (await readTotals(connection, 4)).total], [4, 4])
+    assert.equal(await reconcileArticleViewTotals(connection), 1, 'the hand-made write above has no daily row, so the reconcile undoes exactly it')
+    await assertAllConsistent('after the last reconcile')
   } finally {
     await connection.end()
     for (const key of ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME']) {
@@ -408,7 +463,7 @@ test('the view-total backfill runs when the totals are introduced, once, and res
       else process.env[key] = previous[key]
     }
     const cleanup = await mysql.createConnection({ host, port, user, password })
-    await cleanup.query(`DROP DATABASE IF EXISTS \`${backfillDatabase}\``)
+    await cleanup.query(`DROP DATABASE IF EXISTS \`${reconcileDatabase}\``)
     await cleanup.end()
   }
 })

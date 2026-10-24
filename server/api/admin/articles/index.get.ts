@@ -118,9 +118,7 @@ export default defineEventHandler(async (event) => {
 
   return {
     ok: true,
-    // `view_total` is generated, so Drizzle types it nullable; both halves are NOT
-    // NULL, and the list keeps reporting 0 rather than null for an unread article.
-    items: items.map(item => ({ ...item, viewTotal: Number(item.viewTotal ?? 0) })),
+    items,
     pagination: {
       page,
       perPage,

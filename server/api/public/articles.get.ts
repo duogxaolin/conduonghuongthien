@@ -53,85 +53,102 @@ export default defineEventHandler(async (event) => {
       }
     }
 
+    // `reintegration` và `reintegration_model` là cùng một thể loại, lưu dưới hai tên.
+    const storedTypes = !type
+      ? null
+      : type === 'reintegration_model' || type === 'reintegration'
+        ? ['reintegration', 'reintegration_model']
+        : [type]
+
     const conditions = [eq(articles.status, 'published')]
     if (search) {
       // `%`/`_` khách gõ là chữ thường, không phải ký tự đại diện.
       conditions.push(like(articles.title, containsPattern(search)))
     }
-    if (type) {
-      if (type === 'reintegration_model' || type === 'reintegration') {
-        conditions.push(inArray(articles.type, ['reintegration', 'reintegration_model']))
-      } else {
-        conditions.push(eq(articles.type, type))
-      }
-    }
     if (categoryIds) {
       const onlyId = categoryIds.length === 1 ? categoryIds[0] : undefined
       conditions.push(onlyId !== undefined ? eq(articles.categoryId, onlyId) : inArray(articles.categoryId, categoryIds))
     }
+    const whereFor = (types: string[] | null) => and(
+      ...conditions,
+      ...(types ? [types.length === 1 ? eq(articles.type, types[0]!) : inArray(articles.type, types)] : []),
+    )
+    const whereClause = whereFor(storedTypes)
 
-    const whereClause = and(...conditions)
-
-    /**
-     * Cột tổng lượt xem — chỉ chọn khi `sort=views` (khối "Đọc nhiều"); danh sách
-     * thường không hiện nó.
-     *
-     * Đọc `articles.view_total` (wave2 design D6): cột sinh STORED = thật + ảo,
-     * được `server/services/article-views.ts` giữ bằng tổng các hàng
-     * `article_view_daily` trong cùng transaction. Trước đây đây là một truy vấn
-     * con cộng hàng theo ngày cho MỌI bài đã xuất bản của thể loại, mỗi lượt tải.
-     * Chỉ trả tổng gộp — như trước — không bao giờ trả phần thật/ảo riêng.
-     */
-    const viewTotalColumn = { viewTotal: articles.viewTotal }
-
-    const itemsQuery = db
-      .select({
-        id:           articles.id,
-        type:         articles.type,
-        category:     articles.category,
-        categoryId:   articles.categoryId,
-        categoryName: categories.name,
-        categorySlug: categories.slug,
-        title:        lang && lang !== 'vi'
-          ? sql<string>`COALESCE(NULLIF(${articleTranslations.title}, ''), ${articles.title})`
-          : articles.title,
-        slug:         articles.slug,
-        excerpt:      lang && lang !== 'vi'
-          ? sql<string>`COALESCE(NULLIF(${articleTranslations.excerpt}, ''), ${articles.excerpt})`
-          : articles.excerpt,
-        thumbnailUrl: articles.thumbnailUrl,
-        publishedAt:  articles.publishedAt,
-        createdAt:    articles.createdAt,
-        authorName:   users.username,
-        ...(sortByViews ? viewTotalColumn : {}),
-      })
-      .from(articles)
-      .leftJoin(users, eq(articles.authorId, users.id))
-      .leftJoin(categories, eq(articles.categoryId, categories.id))
-
-    if (lang && lang !== 'vi') {
-      itemsQuery.leftJoin(
-        articleTranslations,
-        and(
-          eq(articleTranslations.articleId, articles.id),
-          eq(articleTranslations.langCode, lang),
-          inArray(articleTranslations.status, ['published', 'ai_draft', 'reviewed']),
-        ),
-      )
+    const listFields = {
+      id:           articles.id,
+      type:         articles.type,
+      category:     articles.category,
+      categoryId:   articles.categoryId,
+      categoryName: categories.name,
+      categorySlug: categories.slug,
+      title:        lang && lang !== 'vi'
+        ? sql<string>`COALESCE(NULLIF(${articleTranslations.title}, ''), ${articles.title})`
+        : articles.title,
+      slug:         articles.slug,
+      excerpt:      lang && lang !== 'vi'
+        ? sql<string>`COALESCE(NULLIF(${articleTranslations.excerpt}, ''), ${articles.excerpt})`
+        : articles.excerpt,
+      thumbnailUrl: articles.thumbnailUrl,
+      publishedAt:  articles.publishedAt,
+      createdAt:    articles.createdAt,
+      authorName:   users.username,
     }
 
-    const items = await itemsQuery
-      .where(whereClause)
-      .orderBy(...(sortByViews
-        ? // Sắp theo tổng lượt xem rồi mới đến ngày đăng — đề phòng một bài cùng
-          // số lượt xem thì thứ tự ổn định theo thời gian thay vì tuỳ ý. Cột của
-          // bảng, không phải alias: MySQL dùng được `articles_status_type_views_idx`.
-          [desc(articles.viewTotal), desc(articles.publishedAt), desc(articles.createdAt)]
-        : [desc(articles.publishedAt), desc(articles.createdAt)]))
-      .limit(limit)
-      .offset(offset)
+    const withTranslation = Boolean(lang && lang !== 'vi')
+    const translationJoin = and(
+      eq(articleTranslations.articleId, articles.id),
+      eq(articleTranslations.langCode, lang),
+      inArray(articleTranslations.status, ['published', 'ai_draft', 'reviewed']),
+    )
+    // Một truy vấn mới mỗi lần gọi — builder của Drizzle đổi tại chỗ khi nối thêm.
+    const selectList = () => {
+      const query = db.select(listFields).from(articles)
+        .leftJoin(users, eq(articles.authorId, users.id))
+        .leftJoin(categories, eq(articles.categoryId, categories.id))
+      if (withTranslation) query.leftJoin(articleTranslations, translationJoin)
+      return query
+    }
+    const selectRanked = () => {
+      const query = db.select({ ...listFields, viewTotal: articles.viewTotal }).from(articles)
+        .leftJoin(users, eq(articles.authorId, users.id))
+        .leftJoin(categories, eq(articles.categoryId, categories.id))
+      if (withTranslation) query.leftJoin(articleTranslations, translationJoin)
+      return query
+    }
 
     if (sortByViews) {
+      /**
+       * "Đọc nhiều" đọc `articles.view_total` (wave2 design D6) — tổng thật + ảo do
+       * `server/services/article-views.ts` giữ bằng tổng hàng `article_view_daily`.
+       * Trước đây là một truy vấn con cộng hàng theo ngày cho MỌI bài của thể loại,
+       * mỗi lượt tải. Chỉ trả tổng gộp — như trước — không bao giờ trả phần thật/ảo.
+       *
+       * Sắp theo tổng rồi tới ngày đăng (hoà thì thứ tự ổn định theo thời gian),
+       * bằng cột của bảng: `articles_status_type_views_idx (status, type,
+       * view_total, published_at, created_at)` trả thẳng hàng theo thứ tự đó cho
+       * MỘT `type`. Với `type IN (…)` MySQL không đọc theo thứ tự index được
+       * (filesort trên mọi bài của các thể loại) — nên một thể loại nhiều tên lưu
+       * đọc riêng từng tên, mỗi lượt lấy `offset + limit` hàng đầu theo index, rồi
+       * trộn và cắt trang ở đây. Khoá bằng tests/most-read-ranking.test.ts.
+       */
+      const byViews = [desc(articles.viewTotal), desc(articles.publishedAt), desc(articles.createdAt)]
+      type Ranked = Awaited<ReturnType<typeof selectRanked>>[number]
+      let items: Ranked[]
+      if (storedTypes && storedTypes.length > 1) {
+        const perType = await Promise.all(storedTypes.map(storedType =>
+          selectRanked().where(whereFor([storedType])).orderBy(...byViews).limit(offset + limit)))
+        const time = (value: Date | string | null) => (value == null ? Number.NEGATIVE_INFINITY : new Date(value).getTime())
+        items = perType.flat()
+          // Cùng thứ tự với ORDER BY ở trên; NULL xếp cuối như DESC của MySQL.
+          .sort((a: Ranked, b: Ranked) => (b.viewTotal - a.viewTotal)
+            || (time(b.publishedAt) - time(a.publishedAt))
+            || (time(b.createdAt) - time(a.createdAt)))
+          .slice(offset, offset + limit)
+      } else {
+        items = await selectRanked().where(whereClause).orderBy(...byViews).limit(limit).offset(offset)
+      }
+
       /**
        * "Đọc nhiều" là một bảng xếp hạng top-N (khối 6 bài), không phải danh sách
        * phân trang: không chạy `COUNT(*)` (wave2 design D6). `total` vì thế đếm
@@ -142,10 +159,16 @@ export default defineEventHandler(async (event) => {
       const seen = offset + items.length
       return {
         ok: true,
-        articles: items.map(article => withPlainTextFields({ ...article, viewTotal: Number(article.viewTotal ?? 0) })),
+        articles: items.map(withPlainTextFields),
         pagination: { page, limit, total: seen, totalPages: Math.ceil(seen / limit) },
       }
     }
+
+    const items = await selectList()
+      .where(whereClause)
+      .orderBy(desc(articles.publishedAt), desc(articles.createdAt))
+      .limit(limit)
+      .offset(offset)
 
     const [{ total } = { total: 0 }] = await db
       .select({ total: count() })

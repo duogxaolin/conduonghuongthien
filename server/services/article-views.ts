@@ -104,8 +104,10 @@ type ViewWriteExecutor = Pick<ReturnType<typeof getDb>, 'insert' | 'update'>
 /**
  * The per-article total on `articles` (wave2 design D6) moves in the same
  * transaction as the daily row, so `view_total_real` / `view_total_fabricated`
- * always equal the sums of `article_view_daily` — the "Đọc nhiều" ranking reads
- * them instead of summing daily rows per request.
+ * always equal the sums of `article_view_daily` and `view_total` their sum — the
+ * "Đọc nhiều" ranking reads it instead of summing daily rows per request. An image
+ * that counts views without these columns (a rollback) leaves them behind; the
+ * boot reconcile in migrations-additive.ts heals exactly those articles.
  *
  * **The article row is written first, on purpose.** Inserting a new daily row
  * takes a shared lock on its parent `articles` row (foreign-key check). If the
@@ -132,6 +134,10 @@ async function bumpArticleTotal(
     .update(articles)
     .set({
       ...(column === 'viewTotalReal' ? { viewTotalReal: increment } : { viewTotalFabricated: increment }),
+      // `view_total` is a plain column (a generated one makes older images'
+      // dumps unrestorable — schema.ts), kept equal to real + fabricated by
+      // moving it in the same statement as the half that changed.
+      viewTotal: sql`${articles.viewTotal} + ${amount}`,
       updatedAt: sql`${articles.updatedAt}`,
     })
     .where(eq(articles.id, articleId))

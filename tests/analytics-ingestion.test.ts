@@ -230,3 +230,94 @@ test('best-effort NOC records accepted, rejected, and bot outcomes without unsaf
   assert.equal(noc.length, 3)
   assert.doesNotMatch(JSON.stringify(noc), /secret=1|private|Googlebot|203\.0\.113\.42|visitor-token/i)
 })
+
+// ─── Deadlock retry ──────────────────────────────────────────────────────────
+//
+// The order above cut deadlocks by ~10× under sustained load but not to zero
+// (docs/decisions/data-layer.md: 3.9 % / 2.3 % of transactions in a 185 s run). A
+// deadlock victim's transaction is rolled back whole by InnoDB, so the page view
+// is retried from the start: nothing of the failed attempt survived, the dedupe
+// rows included, and the retry counts the visitor exactly as the first attempt
+// would have.
+
+/** What the driver throws, wrapped the way Drizzle wraps it ("Failed query: …"). */
+function driverError(code: string, errno: number, message: string) {
+  return Object.assign(new Error('Failed query: INSERT INTO analytics_live_minute_buckets …'), {
+    cause: Object.assign(new Error(message), { code, errno }),
+  })
+}
+const deadlock = () => driverError('ER_LOCK_DEADLOCK', 1213, 'Deadlock found when trying to get lock; try restarting transaction')
+
+/** `transactionStore` semantics plus an error injected on chosen attempts. */
+function flakyStore(failures: Array<Error | null>) {
+  const { state, store } = transactionStore()
+  let attempt = 0
+  const attempts: number[] = []
+  return {
+    state,
+    attempts,
+    store: {
+      async transaction<T>(callback: (tx: AnalyticsPageViewTransaction) => Promise<T>): Promise<T> {
+        const failure = failures[attempt] ?? null
+        attempt += 1
+        attempts.push(attempt)
+        return store.transaction(async (tx) => {
+          const result = await callback({
+            ...tx,
+            async incrementBucket(bucketStart, scope, unique) {
+              // Fail half-way through the buckets, after every dedupe row was written.
+              if (failure && scope.scopeType === 'source_category') throw failure
+              return tx.incrementBucket(bucketStart, scope, unique)
+            },
+          })
+          return result
+        }) as Promise<T>
+      },
+    },
+  }
+}
+
+const noWait = async () => {}
+
+test('a deadlock retries the whole page view and commits it once, dedupe included', async () => {
+  const { state, attempts, store } = flakyStore([deadlock(), null])
+  await storeAnalyticsPageView(row(), store, { sleep: noWait })
+  assert.deepEqual(attempts, [1, 2])
+  assert.equal(state.committed, true)
+  assert.equal(state.raw.length, 1, 'the raw event is written once, not once per attempt')
+  for (const bucket of state.buckets.values()) {
+    assert.deepEqual([bucket.pageViews, bucket.unique], [1, 1], `${bucket.scope.scopeType}: the rolled-back attempt left no dedupe row, so the visitor is still unique`)
+  }
+})
+
+test('the retry is bounded: three deadlocks in a row fail the page view, nothing committed', async () => {
+  const { state, attempts, store } = flakyStore([deadlock(), deadlock(), deadlock(), null])
+  await assert.rejects(storeAnalyticsPageView(row(), store, { sleep: noWait }), /Failed query/)
+  assert.deepEqual(attempts, [1, 2, 3])
+  assert.equal(state.committed, false)
+  assert.equal(state.raw.length, 0)
+  assert.equal(state.buckets.size, 0)
+})
+
+test('the retry waits a small jittered pause between attempts', async () => {
+  const pauses: number[] = []
+  const { store } = flakyStore([deadlock(), deadlock(), null])
+  await storeAnalyticsPageView(row(), store, { sleep: async (ms) => { pauses.push(ms) } })
+  assert.equal(pauses.length, 2)
+  for (const ms of pauses) assert.ok(ms >= 5 && ms <= 50, `pause ${ms} ms`)
+})
+
+test('only a deadlock is retried — a lock-wait timeout or any other error fails at once', async () => {
+  // A lock-wait timeout already waited innodb_lock_wait_timeout (50 s by default):
+  // retrying a page-view beacon would hold the request minutes longer on a server
+  // that is already saturated.
+  for (const error of [
+    driverError('ER_LOCK_WAIT_TIMEOUT', 1205, 'Lock wait timeout exceeded; try restarting transaction'),
+    driverError('ER_DUP_ENTRY', 1062, 'Duplicate entry'),
+    new Error('bucket failure'),
+  ]) {
+    const { attempts, store } = flakyStore([error, null])
+    await assert.rejects(storeAnalyticsPageView(row(), store, { sleep: noWait }))
+    assert.deepEqual(attempts, [1], String(error.message))
+  }
+})

@@ -45,9 +45,7 @@ export default defineEventHandler(async (event) => {
       throw createError({ statusCode: 404, statusMessage: 'Bài viết không tồn tại hoặc chưa xuất bản.' })
     }
     // Imported excerpts carry HTML entities (`Ng&agrave;y`); decoded here, not in the DB.
-    // `view_total` is a generated column, so Drizzle types it nullable; both of its
-    // halves are NOT NULL, and the response keeps the numeric shape it always had.
-    const article = withPlainTextFields({ ...found, viewTotal: Number(found.viewTotal ?? 0) })
+    const article = withPlainTextFields(found)
 
     // If a language is requested, check for a published translation
     if (lang && lang !== 'vi') {

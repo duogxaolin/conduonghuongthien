@@ -1,5 +1,10 @@
 /**
- * `npm run db:drift` and generated columns (design D6: `articles.view_total`).
+ * `npm run db:drift` and generated columns.
+ *
+ * Added with `articles.view_total` (design D6), which was a STORED generated
+ * column in d079453 and is a plain, app-maintained column since — the last test
+ * pins that no column of ours is generated. The gate keeps reading generation so
+ * a future generated column is compared on both sides.
  *
  * The gate compares, per column, a coarse type family and NULL-ability. A
  * generated column passes that comparison whether or not one side knows it is
@@ -78,15 +83,24 @@ test('a generated column on one side only, or with a different storage, is drift
   assert.equal(agreeing.comparedColumns, 1)
 })
 
-test('the repo agrees with itself, and articles.view_total is read as STORED on both sides', () => {
+test('the repo agrees with itself, and no column of ours is generated', () => {
   const declared = tablesFromSchema(schema as Record<string, unknown>, new Set())
   const created = tablesFromDdl(readDdlSource())
   assert.deepEqual(compareSchemas(declared, created).problems, [])
 
   for (const [side, tables] of [['schema.ts', declared], ['DDL', created]] as const) {
+    // `articles.view_total` was a STORED generated column for one commit (d079453).
+    // An image older than that dumps every column with `SELECT *`, and MySQL
+    // refuses any value for a generated column on restore (3105) — so a rollback
+    // past the change would leave backups that cannot be restored. It is a plain
+    // column maintained by server/services/article-views.ts instead.
     const columns = tables.get('articles')?.columns
-    assert.deepEqual(columns?.get('view_total'), { type: 'bigint', nullable: true, generated: 'stored' }, `${side}: view_total`)
+    assert.deepEqual(columns?.get('view_total'), { type: 'bigint', nullable: false, generated: null }, `${side}: view_total`)
     assert.deepEqual(columns?.get('view_total_real'), { type: 'bigint', nullable: false, generated: null }, `${side}: view_total_real`)
     assert.deepEqual(columns?.get('view_total_fabricated'), { type: 'bigint', nullable: false, generated: null }, `${side}: view_total_fabricated`)
+    const generated = [...tables.values()].flatMap(table => [...table.columns]
+      .filter(([, shape]) => shape.generated !== null)
+      .map(([column]) => `${table.table}.${column}`))
+    assert.deepEqual(generated, [], `${side}: a generated column makes dumps from older images unrestorable — keep the value in a plain column`)
   }
 })

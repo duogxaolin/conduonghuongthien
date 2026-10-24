@@ -112,8 +112,11 @@ mock.module('../server/utils/db', {
 const { recordArticleView, addFabricatedViews } = await import('../server/services/article-views')
 
 const DAY = '2026-10-24'
-const TOTAL_REAL = /^update `articles` set `updated_at` = `articles`\.`updated_at`, `view_total_real` = `articles`\.`view_total_real` \+ \? where `articles`\.`id` = \?$/
-const TOTAL_FABRICATED = /^update `articles` set `updated_at` = `articles`\.`updated_at`, `view_total_fabricated` = `articles`\.`view_total_fabricated` \+ \? where `articles`\.`id` = \?$/
+// `view_total` is a plain column the write path maintains in the SAME statement
+// as the half it belongs to — not a generated column (an older image dumps every
+// column, and MySQL refuses a value for a generated one on restore: error 3105).
+const TOTAL_REAL = /^update `articles` set `updated_at` = `articles`\.`updated_at`, `view_total_real` = `articles`\.`view_total_real` \+ \?, `view_total` = `articles`\.`view_total` \+ \? where `articles`\.`id` = \?$/
+const TOTAL_FABRICATED = /^update `articles` set `updated_at` = `articles`\.`updated_at`, `view_total_fabricated` = `articles`\.`view_total_fabricated` \+ \?, `view_total` = `articles`\.`view_total` \+ \? where `articles`\.`id` = \?$/
 const DAILY_REAL = /^insert into `article_view_daily` .* on duplicate key update `real_views` = `article_view_daily`\.`real_views` \+ 1$/
 const DAILY_FABRICATED = /^insert into `article_view_daily` .* on duplicate key update `fabricated_views` = `article_view_daily`\.`fabricated_views` \+ \?$/
 
@@ -125,7 +128,7 @@ test('a real view bumps view_total_real in the same transaction as its daily row
   assert.equal(ledger.committed.length, 2, 'exactly the total and the daily row')
   const [total, daily] = ledger.committed
   assert.match(total!.sql, TOTAL_REAL)
-  assert.deepEqual(total!.params, [1, 7], 'one real view on article 7')
+  assert.deepEqual(total!.params, [1, 1, 7], 'one real view on article 7, added to view_total in the same statement')
   assert.doesNotMatch(total!.sql, /view_total_fabricated/, 'a real view must never reach the fabricated total')
   assert.match(daily!.sql, DAILY_REAL)
   assert.deepEqual(daily!.params, [DAY, 7, 'search', 1, 0], 'the daily row counts one real view and no fabricated one')
@@ -142,7 +145,7 @@ test('a fabricated delivery bumps view_total_fabricated by the amount, never the
   assert.equal(tx.length, 2)
   const [total, daily] = tx
   assert.match(total!.sql, TOTAL_FABRICATED)
-  assert.deepEqual(total!.params, [50, 7])
+  assert.deepEqual(total!.params, [50, 50, 7])
   assert.doesNotMatch(total!.sql, /view_total_real/, 'a fabricated view must never reach the real total')
   assert.match(daily!.sql, DAILY_FABRICATED)
   assert.deepEqual(daily!.params, [DAY, 7, 'boost', 0, 50, 50])
@@ -155,7 +158,7 @@ test('the gradual scheduler (no executor) gets its own transaction around both s
   assert.deepEqual(ledger.pool, [])
   assert.equal(ledger.committed.length, 2)
   assert.match(ledger.committed[0]!.sql, TOTAL_FABRICATED)
-  assert.deepEqual(ledger.committed[0]!.params, [3, 9])
+  assert.deepEqual(ledger.committed[0]!.params, [3, 3, 9])
   assert.match(ledger.committed[1]!.sql, DAILY_FABRICATED)
 })
 
@@ -205,10 +208,12 @@ test('only article-views.ts writes the daily rows or the split totals', () => {
   for (const file of walk('.')) {
     if (file.startsWith('db/') || file === 'services/article-views.ts') continue
     const source = readFileSync(new URL(file, serverRoot), 'utf8')
-    const hits = source.match(/(?:insert|update)\(\s*articleViewDaily\b|(?:INTO|UPDATE)\s+\\?`?article_view_daily\b|viewTotalReal|viewTotalFabricated|view_total_real|view_total_fabricated/gi)
+    // `view_total` is now a plain column, so a write to it is as much a write as
+    // one to either half: `viewTotal: sql…` (Drizzle set) or `view_total =` (raw SQL).
+    const hits = source.match(/(?:insert|update)\(\s*articleViewDaily\b|(?:INTO|UPDATE)\s+\\?`?article_view_daily\b|viewTotalReal|viewTotalFabricated|view_total_real|view_total_fabricated|\bviewTotal\s*:\s*sql\b|\bview_total\\?`?\s*=[^=]/gi)
     if (hits) offenders.push(`${file}: ${[...new Set(hits)].join(', ')}`)
   }
-  assert.deepEqual(offenders, [], 'only server/services/article-views.ts may write views or read the real/fabricated split')
+  assert.deepEqual(offenders, [], 'only server/services/article-views.ts may write views or the totals, or read the real/fabricated split')
 })
 
 test('both boost paths deliver through addFabricatedViews', () => {

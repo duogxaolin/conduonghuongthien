@@ -15,9 +15,10 @@ import { ensureColumn, ensureIndex } from '../migrations-additive'
  * nên đặt trong content.ts đúng domain và giữ an toàn FK.
  */
 export async function createContentTables(db: Connection, database: string): Promise<void> {
-  // Articles table. The three `view_total*` columns and their index are born here
-  // on a fresh database; an existing one gets them — and the one-time backfill
-  // from `article_view_daily` — from `convergeArticleViewTotals` in
+  // Articles table. The three `view_total*` columns (all plain, app-maintained —
+  // never a generated column, see schema.ts) and their index are born here on a
+  // fresh database; an existing one gets them — and the boot-time reconcile with
+  // `article_view_daily` — from `convergeArticleViewTotals` in
   // migrations-additive.ts (wave2 design D6).
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`articles\` (
@@ -36,7 +37,7 @@ export async function createContentTables(db: Connection, database: string): Pro
       \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       \`view_total_real\` BIGINT NOT NULL DEFAULT 0,
       \`view_total_fabricated\` BIGINT NOT NULL DEFAULT 0,
-      \`view_total\` BIGINT AS (\`view_total_real\` + \`view_total_fabricated\`) STORED,
+      \`view_total\` BIGINT NOT NULL DEFAULT 0,
       KEY \`type_idx\` (\`type\`),
       KEY \`status_idx\` (\`status\`),
       KEY \`articles_status_type_pub_idx\` (\`status\`, \`type\`, \`published_at\`, \`created_at\`),

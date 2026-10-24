@@ -621,6 +621,17 @@ cũ và khởi động lại: image cũ chạy trên compose cũ, đúng cặp �
 được báo là đã lên. Số lần khởi động lại tính từ lúc bắt đầu chờ (compose không tạo lại
 một container không đổi gì, nên con số tuyệt đối có thể đã cao từ trước).
 
+**Image cũ chạy trên lược đồ mới.** Lượt lùi xảy ra **sau** khi container mới đã chạy
+`init.ts` (di trú bổ sung) — CSDL không lùi theo image. Vì vậy mỗi thay đổi lược đồ phải
+để image cũ chạy được trên nó: chỉ thêm cột có mặc định, không đổi nghĩa cột cũ, **không
+cột sinh** (image cũ — và bản sao lưu trong app của nó — `SELECT *` rồi `INSERT` mọi cột;
+MySQL từ chối mọi giá trị cho cột sinh, lỗi 3105, nên bản sao lưu đó không khôi phục được),
+và dữ liệu dẫn xuất phải tự sửa ở lần khởi động sau. Ví dụ đợt 2C: tổng lượt xem trên
+`articles` là ba cột thường; image cũ đếm lượt xem không cộng tổng, và lần khởi động kế tiếp
+của image mới đối soát (`reconcileArticleViewTotals`, chỉ ghi bài lệch, CSDL khớp thì không
+ghi gì) — lùi rồi tiến lại không để lại tổng sai (`tests/view-boost-integration.test.ts`,
+`tests/backup-dump-integration.test.ts` dựng đúng bản dump kiểu image cũ).
+
 ### Dừng container êm (`stop_grace_period: 45s`)
 
 `docker stop` gửi SIGTERM rồi chờ; mặc định của Docker là 10 giây, trong khi Nitro cần tới

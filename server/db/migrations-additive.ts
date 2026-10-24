@@ -828,7 +828,7 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureIndex(db, database, 'articles', 'articles_status_type_pub_idx', 'INDEX `articles_status_type_pub_idx` (`status`, `type`, `published_at`, `created_at`)')
   await ensureIndex(db, database, 'articles', 'articles_status_category_pub_idx', 'INDEX `articles_status_category_pub_idx` (`status`, `category_id`, `published_at`, `created_at`)')
 
-  // ── Per-article view totals + one-time backfill (wave2 design D6) ─────────
+  // ── Per-article view totals + boot reconcile with daily rows (wave2 D6) ───
   await convergeArticleViewTotals(db, database)
 
   // ── Rút gọn nhãn hotline: "Hotline Tư Vấn 24/7" → "Hotline" ──────────────
@@ -874,66 +874,84 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
 
 /**
  * Tổng lượt xem theo bài trên `articles` (wave2 design D6, spec `most-read-ranking`)
- * và lượt điền một lần từ `article_view_daily`.
+ * và lượt đối soát với `article_view_daily` mỗi lần khởi động.
  *
- * Ba cột: `view_total_real`, `view_total_fabricated` (BIGINT NOT NULL DEFAULT 0)
- * và `view_total` = tổng hai cột, cột sinh STORED để đánh index cho khối "Đọc
- * nhiều". Sau lượt điền này, chỉ `server/services/article-views.ts` ghi hai cột
- * đầu — trong cùng transaction với hàng theo ngày.
+ * Ba cột THƯỜNG: `view_total_real`, `view_total_fabricated`, `view_total` (BIGINT
+ * NOT NULL DEFAULT 0). `view_total` = tổng hai cột, do `article-views.ts` ghi trong
+ * CÙNG câu UPDATE với nửa của nó — **không** phải cột sinh: image cũ hơn (vd. khi
+ * deploy tự lùi vì healthcheck hỏng, SAU khi image mới đã chạy `init.ts`) dump
+ * `SELECT *` mọi cột, và MySQL từ chối mọi giá trị cho cột sinh lúc khôi phục
+ * (3105) → bản sao lưu của image cũ, kể cả `pre-restore`, không khôi phục được và
+ * để `articles` dở dang. d079453 từng khai cột sinh STORED; CSDL nào đã chạy bản
+ * đó được đổi sang cột thường ở đây (MySQL giữ nguyên giá trị) — điều kiện kích
+ * hoạt là chính trạng thái "cột còn là cột sinh", lượt đổi tự xoá nó.
  *
- * **Khoá theo trạng thái lược đồ, không theo cờ.** Điều kiện kích hoạt là *index
- * `articles_status_type_views_idx` chưa có*, đo TRƯỚC mọi lượt ALTER; thứ tự là
- * dò → thêm 3 cột → điền → thêm index. Index được thêm SAU CÙNG nên nó là dấu
- * "đã điền xong":
- *   - nâng cấp từ bản trước (không cột, không index): điền đúng một lần;
- *   - khởi động lần hai: index đã có → không ghi gì;
- *   - lượt khởi động chết giữa ADD COLUMN và UPDATE: lượt sau vẫn thấy thiếu
- *     index → điền lại. Lượt điền GÁN tổng bằng tổng hàng theo ngày (không cộng
- *     dồn), nên chạy lại cho đúng kết quả của một lượt không bị cắt ngang.
- *     Khoá theo "cột vừa được thêm" thì trường hợp này để tổng = 0 mãi mãi mà
- *     không gì báo — cùng lý do lượt chuyển danh mục video ở trên khoá theo FK.
- *   - CSDL mới: CREATE TABLE ở `schema-tables/content.ts` đã có cả cột lẫn index
- *     → không điền (cũng chẳng có hàng nào để điền).
+ * **Đối soát mỗi lần khởi động** (`reconcileArticleViewTotals`) thay cho lượt điền
+ * một lần: một image cũ đếm lượt xem mà không biết tới tổng (sau một lượt lùi), rồi
+ * image mới quay lại → tổng lệch; một lượt "điền một lần" khoá theo trạng thái lược
+ * đồ không bao giờ chạy lại cho trường hợp đó. Đối soát ghi ĐÚNG những bài có tổng
+ * khác tổng hàng theo ngày, và không ghi gì khi đã khớp — nên chạy lại vô hại,
+ * khởi động bị cắt ngang ở đâu cũng được lượt sau sửa tiếp.
  *
- * **`updated_at = updated_at`**: cột đó `ON UPDATE CURRENT_TIMESTAMP`; không ghim
- * thì lượt điền đổi "lần sửa cuối" của mọi bài có lượt xem (danh sách admin,
- * `lastmod` sitemap). Cùng lý do ở hai đường ghi của article-views.ts.
+ * Thứ tự: 3 cột → đổi cột sinh (nếu có) → đối soát → index (đối soát trước index
+ * để lượt nâng cấp không phải cập nhật index cho từng hàng).
  *
- * **Lượt ghi lúc khởi động đã khai báo** (bộ kiểm nâng cấp `schema-upgrade-
- * integration` phải liệt kê nó): UPDATE `articles` JOIN tổng `article_view_daily`
- * theo bài, ghi `view_total_real`/`view_total_fabricated`, chỉ khi index trên
- * chưa có. Thêm cột sinh STORED dựng lại bảng `articles` một lần (ALGORITHM=COPY).
- *
- * Khoá bằng `tests/view-boost-integration.test.ts` (MySQL thật: khởi động hai lần,
- * khởi động bị cắt ngang).
+ * Khoá bằng `tests/view-boost-integration.test.ts` (MySQL thật: lệch kiểu "lùi
+ * bản", nâng cấp, CSDL của d079453, khởi động lần hai không đổi hàng nào).
  */
 export async function convergeArticleViewTotals(db: Connection, database: string) {
-  const [indexRows] = await db.execute<RowDataPacket[]>(
-    'SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ? LIMIT 1',
-    [database, 'articles', 'articles_status_type_views_idx'],
-  )
-  const totalsNotYetFilled = indexRows.length === 0
-
   await ensureColumn(db, database, 'articles', 'view_total_real', 'BIGINT NOT NULL DEFAULT 0')
   await ensureColumn(db, database, 'articles', 'view_total_fabricated', 'BIGINT NOT NULL DEFAULT 0')
-  await ensureColumn(db, database, 'articles', 'view_total', 'BIGINT AS (`view_total_real` + `view_total_fabricated`) STORED')
+  await ensureColumn(db, database, 'articles', 'view_total', 'BIGINT NOT NULL DEFAULT 0')
 
-  if (totalsNotYetFilled) {
-    const [result] = await db.query(`
-      UPDATE \`articles\` a
-      JOIN (
-        SELECT \`article_id\`, SUM(\`real_views\`) AS r, SUM(\`fabricated_views\`) AS f
-        FROM \`article_view_daily\`
-        GROUP BY \`article_id\`
-      ) s ON s.\`article_id\` = a.\`id\`
-      SET a.\`view_total_real\` = s.r,
-          a.\`view_total_fabricated\` = s.f,
-          a.\`updated_at\` = a.\`updated_at\`
-    `)
-    logInfo({ event: 'db.migration.article_view_totals_backfilled', articles: readAffectedRows(result) })
+  const [generated] = await db.execute<RowDataPacket[]>(
+    "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'articles' AND COLUMN_NAME = 'view_total' AND EXTRA = 'STORED GENERATED' LIMIT 1",
+    [database],
+  )
+  if (generated.length > 0) {
+    await db.query('ALTER TABLE `articles` MODIFY COLUMN `view_total` BIGINT NOT NULL DEFAULT 0')
+    logInfo({ event: 'db.migration.article_view_total_ungenerated' })
   }
 
+  await reconcileArticleViewTotals(db)
+
   await ensureIndex(db, database, 'articles', 'articles_status_type_views_idx', 'INDEX `articles_status_type_views_idx` (`status`, `type`, `view_total`, `published_at`, `created_at`)')
+}
+
+/**
+ * Đưa `view_total_real`/`view_total_fabricated`/`view_total` của mọi bài về đúng
+ * tổng `article_view_daily` — CHỈ ghi bài đang lệch; CSDL đã khớp thì không hàng
+ * nào bị ghi (`WHERE` so cả ba cột). Bài không còn hàng theo ngày nào về 0.
+ * `updated_at = updated_at`: cột `ON UPDATE CURRENT_TIMESTAMP`, không ghim thì đối
+ * soát đổi "lần sửa cuối" của bài.
+ *
+ * **Lượt ghi lúc khởi động đã khai báo** (bộ kiểm nâng cấp `schema-upgrade-
+ * integration` phải liệt kê nó — CHANGELOG § 35): chính câu UPDATE dưới đây.
+ *
+ * Chạy trong `init.ts` TRƯỚC khi server nhận yêu cầu (CMD của image): không có lượt
+ * đếm nào chen giữa lúc cộng và lúc ghi. Chạy tay `npm run db:init` khi app đang
+ * phục vụ thì một lượt xem đúng lúc đó có thể bị ghi đè bằng tổng cũ hơn một nhịp —
+ * lần khởi động sau tự sửa. Trả số bài đã sửa.
+ */
+export async function reconcileArticleViewTotals(db: Pick<Connection, 'query'>): Promise<number> {
+  const [result] = await db.query(`
+    UPDATE \`articles\` a
+    LEFT JOIN (
+      SELECT \`article_id\`, SUM(\`real_views\`) AS r, SUM(\`fabricated_views\`) AS f
+      FROM \`article_view_daily\`
+      GROUP BY \`article_id\`
+    ) s ON s.\`article_id\` = a.\`id\`
+    SET a.\`view_total_real\` = COALESCE(s.r, 0),
+        a.\`view_total_fabricated\` = COALESCE(s.f, 0),
+        a.\`view_total\` = COALESCE(s.r, 0) + COALESCE(s.f, 0),
+        a.\`updated_at\` = a.\`updated_at\`
+    WHERE a.\`view_total_real\` <> COALESCE(s.r, 0)
+       OR a.\`view_total_fabricated\` <> COALESCE(s.f, 0)
+       OR a.\`view_total\` <> COALESCE(s.r, 0) + COALESCE(s.f, 0)
+  `)
+  const healed = readAffectedRows(result)
+  if (healed !== 0) logInfo({ event: 'db.migration.article_view_totals_reconciled', articles: healed })
+  return healed ?? 0
 }
 
 /**
