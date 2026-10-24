@@ -1083,7 +1083,7 @@ Ngoài ra suite treo ~11 phút khi một migration ném lỗi. Đã sửa (chỉ
   - guard 165/165.
 
 Còn mở (2F):
-- `repairLegacyMediaUrls` đổi `articles.updated_at` của bài nó vá, vì `UPDATE` không giữ cột đó. Sửa cùng D-SCAN, khi đụng hàm này.
+- ~~`repairLegacyMediaUrls` đổi `articles.updated_at` của bài nó vá, vì `UPDATE` không giữ cột đó. Sửa cùng D-SCAN, khi đụng hàm này.~~ Đã sửa ở § 37 (`updated_at = updated_at`).
 - Tệp chưa nạp được tính bằng dòng có mã, còn tệp đã nạp được tính bằng mọi dòng vật lý (đó là cách Node đếm). Nếu tính dòng vật lý cho cả hai thì ra 64,43 % (trên `3ede49a` + 2F). Wave 3 chọn một quy ước trước khi đặt ngưỡng.
 
 ### 32. Đợt 2 — 2E shared modules (2026-10-24)
@@ -1100,6 +1100,131 @@ Mỗi mục có test đỏ trước khi sửa.
 - **CI:** PR đụng `shared/` chạy cả integration (`ci.yml` job `changes`, `CI-CD.md`). `tests/ops-scripts.test.ts` nay chạy chính biểu thức lọc trên vài đường dẫn.
 - **Đường cũ trong chú thích:** `server/utils/submission-recipient.ts` và `docs/decisions/realm-safety.md` (2 chỗ) nay trỏ `shared/`.
 - **Kiểm chứng lại:** `npm test` 4390 / 4363 pass / 0 fail / 27 skip (+38: 35 guard + 3 Tailwind). Typecheck 0 lỗi, eslint 0 error / 16 warning, `db:drift` xanh. Build sạch xanh, đủ 15 màu huy hiệu trong CSS.
+
+### 37. Đợt 2 — 2B dữ liệu (2026-10-24)
+
+OpenSpec `wave2-hardening` nhóm 3 (task 3.1, 3.2, 3.3, 3.4, 3.6), design D-REPOINT, D-SCAN, D7, D-RESCAN. Task 3.5 (D-PLAIN, bỏ phép đoán entity cụt lúc đọc) **chưa làm**: điều kiện tiên quyết là chủ repo xác nhận `db:decode-excerpts --apply` của Wave 1 đã chạy trên production — chưa có xác nhận.
+
+- **Đổi domain R2 (3.1, D-REPOINT)** — `server/services/media-repoint.ts`.
+  - **Phạm vi.** Bản cũ `REPLACE(col, domain, …)` trên đúng hai cột (`media.url`, `articles.content`). Nay đổi trên 27 cột `URL_REFERENCE_TARGETS` (cùng danh sách lượt đồng bộ local ↔ R2 dùng) cộng `media.url` hàng `r2`.
+  - **Mẫu khớp.** `domainRepointForms` (nay ở `media-repoint-match.ts`, xem "Sửa sau kiểm chứng độc lập"), dựng từ cùng `RIGHT_BOUNDARY`. Bên trái phải đúng `scheme://`; bên phải là `/` hoặc ranh giới URL. Mỗi scheme một dạng, không dùng `$1`. Cột JSON thêm dạng thoát `\/`.
+  - **Không đụng host giống:** `xold.cdn`, `old.cdn.evil`, `old.cdn:8443`, `//old.cdn`. Bản cũ thay chuỗi con, nên đổi cả mấy host này.
+  - **Đếm.** Chọn id bằng một lượt đọc không khoá (LIKE + REGEXP), rồi UPDATE theo id kèm lại điều kiện REGEXP. Số đếm vì thế đúng bằng số hàng thật sự đổi, và hàng chỉ chứa host giống không được tính.
+  - **Một transaction** cùng audit `repoint_urls` (`byTarget` đủ 28 nhãn). `afterSettingsRewritten` chạy sau commit.
+  - **Sao lưu trước là bắt buộc.** Sao lưu hỏng → `RepointBackupError` (500, câu không lộ chi tiết máy chủ, nguyên nhân ở log `media.repoint_pre_backup_failed`), không đổi hàng nào. Bản cũ chỉ cảnh báo rồi đổi tiếp.
+  - **Lỗi có kiểu, không còn đoán theo chuỗi.** `RepointInputError` → 400: domain mới chứa domain cũ (`assertRewritable`, giữ nguyên), domain trùng, ký tự phá HTML. `RepointBusyError` → 409.
+  - `/admin/media/scan` hiện số "Nội dung sửa URL" (`contentRowsUpdated`) thay cho "Bài viết sửa URL".
+  - **Hệ quả có chủ đích:** `r2_public_url` lưu kèm scheme cũng được đổi sang domain mới; `media_video_r2_public_url` cũng vậy khi bucket video dùng chung domain cũ (S6, ghi ở `production/README.md`).
+- **Quét thư mục ảnh (3.2, D-SCAN)** — `media-scan.ts` cùng tệp mới `media-scan-import.ts` (nhập một tệp; `media-scan.ts` từ 396 xuống còn khoảng 300 dòng).
+  - **Cột mới** `media.scanned_source_path VARCHAR(1024) NULL` cùng chỉ mục tiền tố `media_scanned_source_path_idx` (255). Khai ở `schema.ts`, ở `core.ts` và ở `ensureColumn`/`ensureIndex`; `tests/media-scan-index.test.ts` canh cả ba nơi.
+  - **Không nhập lại.** Giá trị lưu là đường dẫn POSIX tương đối với `public/uploads`. Tập "đã biết" = cột này của mọi hàng + `storage_path` của hàng `local`. `storage_path` của hàng R2 là khoá R2: bản cũ chỉ biết `storage_path`, nên mỗi lượt quét lại nhập lại mọi tệp đã lên R2.
+  - **Không tải đè.** Trước khi tải lên, gọi `otherRowOwns(db, 0, 'r2', key, null)` (nay export từ `media-sync-files.ts`), với cùng `now` cho khoá lẫn lượt tải. Khoá trùng → `conflict`: không tải, không ghi, không lùi về local. Trạng thái có `conflicts`/`conflictFiles`, trang hiện dòng "trùng tên", log `media.scan_conflict`.
+  - **Không để object mồ côi.** Ghi hàng hỏng sau khi đã tải → xoá object vừa tải, log `media.scan_insert_failed` `{ key, objectDeleted }`.
+  - **Báo cáo trùng lặp** `GET /api/admin/media/duplicates` (`media.read`, `media-duplicates.ts`, chỉ đọc). Nhóm hàng theo tên tệp + kích thước, và theo provider + chỗ lưu. Mỗi hàng có số hàng nội dung đang dùng URL của nó, đếm trong một lượt đọc phân trang 27 cột. Vòng đọc phân trang tách thành `forEachReferenceText` (`media-sync-rewrite.ts`), dùng chung với lượt vá đồng bộ dở dang.
+- **`repairLegacyMediaUrls` (3.3)** — chuyển sang `server/db/legacy-media-urls.ts` (cùng các mảnh thuần), `applyAdditiveMigrations` gọi như cũ. `migrations-additive.ts` từ 986 còn 912 dòng; suite nâng cấp thêm tệp mới vào `MIGRATION_SOURCES` và neo lại khai báo `additive.repair-legacy-media-urls`.
+  - **Domain** lấy từ `settings.r2_public_url` thay cho `cdn1.delify.vn` viết cứng. Chưa cấu hình → bỏ các bước cần domain; còn URL đang chờ vá thì log `db.migration.legacy_media_domain_unknown`.
+  - **Tên tệp mơ hồ.** Tên mà hơn một hàng `media` (mọi provider) cùng mang thì không ánh xạ, tính trên khoá cuối của bảng ánh xạ, kể cả dạng `encodeURIComponent`. Liên kết được giữ, kèm log `db.migration.legacy_media_ambiguous`. Bản cũ lấy hàng đọc sau cùng.
+  - Mọi `UPDATE articles` giữ `updated_at`, đóng mục "Còn mở (2F)" ở § 31.
+  - Hai sự kiện mới nằm trong `BOOT_MIGRATION_EVENTS`.
+- **Seed một lần mỗi CSDL (3.4, D7)** — `server/db/seed-groups.ts`.
+  - **Phạm vi:** 5 nhóm `content_types`, `categories`, `media_categories`, `moderation_rules`, `social_links`. Mỗi bộ default có phiên bản, kèm dấu `seed.<nhóm>.v<N>.done` (nhóm `internal`, giá trị giờ ISO).
+  - **Luật mỗi bộ:** có dấu → bỏ qua; v1 + bảng có hàng → chỉ ghi dấu; còn lại → chèn default thiếu + ghi dấu.
+  - **Một transaction mỗi bộ, dấu ghi trước.** Bản sao chạy seed song song nhận ER_DUP_ENTRY rồi bỏ qua.
+  - **So khoá theo collation của cột:** kiểm từng hàng, nên không chèn một slug mà chỉ mục UNIQUE coi là trùng.
+  - **Hàng mặc định rời tệp DDL.** Thể loại / danh mục bài viết chuyển từ `schema-tables/core.ts`/`content.ts` sang `seed-groups.ts`. `seed.ts` từ 622 còn 500 dòng.
+  - **Hệ quả cho CSDL mới:** `db:init` một mình không còn tạo thể loại / danh mục. Ba danh mục bài viết nay có mô tả: bản DDL chạy trước và thiếu mô tả nên trước đây luôn thắng.
+  - **Dấu không qua API:** mọi lượt đọc cài đặt đã là allowlist, và `ALLOWED_SETTING_KEYS` không nhận `seed.*`. Test: `tests/seed-markers-settings-read.test.ts`.
+  - **Hai ca test phải sửa theo.** `tests/media-category-migration-integration.test.ts` trước dựa vào `initDb()` chèn danh mục bài viết id 2, 6, nay tự chèn (`insertLegacyArticleCategories`). Hằng `action: "auto_hide"` giữ nháy kép như bản gốc, vì `tests/activity-log-labels.test.ts` quét `action: '…'` nháy đơn.
+- **Quét lại kiểm duyệt (3.6, D-RESCAN)** — `moderation-rescan-job.ts`.
+  - Trước mỗi lô (hook `beforeBatch` mới của `rescanExistingContent`), job hỏi `SELECT IS_USED_LOCK(?) = CONNECTION_ID()` trên chính kết nối giữ khoá.
+  - Kết quả 0, NULL hoặc lỗi → dừng trước lô kế: `state: 'stopped'`, `stopReason: 'lock_lost'`, log `ai_moderation.rescan_lock_lost`. Con trỏ giữ tới lô cuối đã xong, `onFinished` không chạy.
+  - `/admin/ai/moderation` hiện "đã tạm dừng…" cùng toast cảnh báo.
+
+**Lượt ghi lúc khởi động mà bản này thêm hoặc đổi** (so với `264fdea`):
+1. `ALTER TABLE media ADD COLUMN scanned_source_path` và `ADD INDEX media_scanned_source_path_idx`: chỉ đổi lược đồ, một lần, không ghi hàng nào.
+2. Năm hàng `settings` `seed.<nhóm>.v1.done` ở lần khởi động đầu, một lần; lần sau thấy dấu thì bỏ qua.
+3. `repairLegacyMediaUrls`: domain lấy từ cấu hình, bỏ tên mơ hồ, không còn đổi `articles.updated_at`.
+4. Bị gỡ: `init.ts` không còn chèn `content_types`/`categories`; `seed.ts` không còn chèn lại default vào bảng nhóm D7 đã có hàng.
+
+**Suite nâng cấp** (`tests/schema-upgrade-integration.test.ts`):
+- **Gỡ ba khai báo:** `seed.resurrects-deleted-defaults` (từ nay hồi sinh default là đỏ), `ddl.default-content-types` và `ddl.default-categories` (mã đã gỡ).
+- **Thêm** `seed.group-markers`: chỉ khoá dấu của chính các nhóm, chưa có trước lượt boot, nhóm `internal`, giá trị là giờ.
+- **Khoá default của 5 nhóm** đọc thẳng từ `seed-groups.ts`.
+- **`repairedMediaUrl`/`repairedArticleContent`** lấy domain từ `ctx.before` và bỏ tên mơ hồ. `SEED_OVERRIDES.settings` thêm `r2_public_url = https://cdn1.delify.vn/`.
+- **Khẳng định mới ở lượt 1:** mọi bảng nhóm D7 có hàng trước boot, không bảng nào thêm hàng, đủ 5 dấu, `articles.updated_at` không đổi.
+- **Ca mới:** xoá một default của mỗi nhóm → khởi động lại → không gì đổi.
+- **Ca khai báo không cần CSDL thật:** dấu (đúng / đã có / ngoài bộ / sai nhóm / giá trị không phải giờ), hồi sinh vào bảng đã có hàng (không khai báo nào phủ), lấp bảng trống.
+
+**Bằng chứng test-first** (trên `264fdea`, trước khi sửa mã):
+- **`moderation-rescan-job`:** 3 ca mới đỏ.
+- **`media-repoint-integration`:** đỏ: "Missing expected rejection" — sao lưu hỏng mà vẫn đổi.
+- **`media-scan-import`:** 3/3 đỏ:
+  - `scanned_source_path` trống;
+  - nhập 3 tệp, trong đó tệp sau ghi đè khoá R2 của tệp trước;
+  - object không bị xoá khi ghi hàng hỏng.
+- **`media-duplicates-report`:** đỏ (chưa có module).
+- **`seed-markers-integration`:** "the deleted default "lừa đảo" came back on restart".
+- **Suite nâng cấp, chỉ gỡ `seed.resurrects-deleted-defaults`** (bản sao `264fdea` trong scratch): lượt 1 đỏ với 35 lượt ghi không khai báo — `ai_moderation_rules` ×27, `social_links` ×5, `media_categories` ×3.
+- **`legacy-media-urls`:** đỏ do module/export chưa có. Thêm một lần chạy hàm gốc (chỉ export tạm trong bản sao scratch) trên cùng kết nối giả: hai hàng `a.jpg` → bài bị viết lại thành `https://cdn.test/2026/10/a.jpg`, tức URL của hàng đọc sau cùng.
+
+**Kiểm chứng (2026-10-24, Node 26.11 + Node 24.21 trong `node:24-slim`, MySQL 8.0.46 local):**
+- `npm test`:
+  - Node 26.11: 4444 / 4405 pass / 0 fail / 39 skip.
+  - Node 24.21 (`node:24-slim`, lượt trước test cuối cùng: 4443 test): 4384 pass, 17 fail + 2 cancelled. Cả 19 đều ở `ci-docs-only-skip`, `coverage-summary`, `snapshot-schema`, `ops-scripts`, `media-processing`, vì image không có `git`/FFmpeg. Bản sao `264fdea` trong cùng container cho đúng 17 + 2.
+- typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` 62 bảng / 636 cột; `npm run build` xanh.
+- E2E chọn lọc: `media-portal`, `public-single-h1` (cần danh mục `tin-noi-bat` do seed tạo trên CSDL mới), `public-detail-status` — 11/11. Không sót `cdkt_e2e_*`, cổng 3123 trống.
+- Trên Node 24.21: `media-repoint` 1/1, `seed-markers` 4/4, `schema-upgrade` 7/7.
+- Integration trên MySQL thật:
+  - `schema-upgrade` 7/7: lượt 1 quan sát `seed.insert-missing-defaults` ×1920, `repair-legacy-media-urls` ×3, `hotline-label` ×2, `add-column` ×1, `seed.group-markers` ×5, `mysql.on-update-timestamp` ×2 (trước ×4: `articles.updated_at` không còn đổi);
+  - `seed-markers` 4/4;
+  - `media-repoint` 1/1;
+  - `media-sync-rewrite` 2/2;
+  - `media-category-migration` 4/4;
+  - `public-read` 5/5.
+- Không để lại CSDL tạm.
+- Matrix CI thêm `media-repoint` và `seed-markers`: 22 job (`tests/ci-integration-matrix.test.ts` xanh).
+
+#### Sửa sau kiểm chứng độc lập (2026-10-24)
+
+Kiểm chứng độc lập bản `63d1e8a`: 0 nghiêm trọng, 6 cảnh báo (W1–W6), 4 gợi ý (S1, S5–S7). Nhánh được rebase lên `6389c10` (2F: suite nâng cấp so default theo **nội dung**) trước, rồi sửa cả mười trong một commit.
+
+- **W1 — hoa thường khi đổi domain.** Trước: `HTTPS://OLD.CDN/…`, `https://Old.Cdn/…` không bị đổi, và domain nhập `HTTPS://OLD.CDN/` thành `OLD.CDN` nên không khớp gì.
+  - Scheme + host nay khớp không phân biệt hoa thường; đường dẫn vẫn phân biệt. Mẫu REGEXP dùng lớp ký tự `[oO]` sau `(?-i)` (REGEXP_REPLACE của MySQL không có `$1`, và collation không được quyết định). Lọc thô `LOWER(…) LIKE` vì cột JSON so nhị phân.
+  - Domain nhập chuẩn hoá qua `new URL('https://' + …)`: host chữ thường, tên miền có dấu → punycode, giữ tiền tố đường dẫn, bỏ `/` cuối. Từ chối userinfo, `?`, `#`, scheme khác http(s).
+- **W2 — domain mới phải phục vụ được ảnh.** Module mới `shared/media-hosts.ts`: `CSP_IMG_SRC_HOSTS` (nguồn `img-src` — `nuxt.config.ts` dựng header bằng `cspImgSrcDirective()`, không chép chuỗi) và `IMAGE_PROXY_DOMAINS` (`image.domains` của NuxtImg).
+  - Đổi domain sang host ngoài một trong hai danh sách → 400 nêu đúng danh sách cho phép, trước khi sao lưu hay chạm hàng nào. Ngoài CSP thì trình duyệt chặn mọi ảnh vừa đổi; ngoài IPX (so đúng tên host) thì ảnh tối ưu thành ảnh dự phòng. Hiện chỉ `cdn1.delify.vn` qua cả hai.
+  - Điều kiện trước ghi ở `production/README.md`: thêm host vào module, deploy, rồi mới đổi domain. `tests/media-hosts-policy.test.ts` canh `nuxt.config.ts` đọc từ module.
+- **W3 — tệp do lượt quét cũ nhập lên R2.** Hàng đó chưa có `scanned_source_path`, nên lượt quét đầu sau bản vá vẫn nhập lại. Nay hàng R2 còn trống nguồn cùng **tên tệp + kích thước** với tệp đĩa được coi là đã nhập (`buildLegacyR2Index`/`claimLegacyR2Row` ở `media-scan-import.ts`).
+  - Ghi nguồn bằng `UPDATE … WHERE id = ? AND scanned_source_path IS NULL`: mỗi hàng nhận đúng một tệp, và từ đó dính vĩnh viễn. Trạng thái có `legacyMatched`, trang quét hiện dòng thông báo, log `media.scan_legacy_matched`.
+  - Không so khoá `YYYY/MM/<tên>`: lượt cũ đặt khoá theo tháng tải lên, không theo thư mục nguồn.
+  - Ngoại lệ còn lại (sửa câu nói quá ở `production/README.md`): tệp đã bị sửa khác kích thước sau lượt quét cũ vẫn được nhập thêm.
+- **W4 — object vừa tải và lượt ghi đồng thời.**
+  - Ghi hàng báo lỗi sau khi đã tải lên → hỏi lại `otherRowOwns` trước khi xoá object. Kết nối rơi đúng lúc COMMIT mà hàng đã ghi thì object được **giữ** (`keptBecause: 'owned_by_row'`); không kiểm được thì cũng giữ (`ownership_unknown`). Thừa một object rẻ hơn một ảnh vỡ.
+  - Đổi domain giữ khoá `cdkt:media:sync-storage` (đồng bộ, "Sửa URL") rồi `cdkt:media:scan` (quét), timeout 0, thứ tự cố định nên không deadlock, suốt sao lưu + transaction. Lý do: ba lượt đó dựng URL từ `r2_public_url` đọc lúc bắt đầu, chạy chồng sẽ ghi URL domain cũ sau khi đổi domain đã commit. Bận → 409 nêu tên các lượt. Khoá riêng `cdkt:media:repoint-urls` bỏ (khoá đồng bộ đã loại hai lượt đổi domain chồng nhau).
+  - Còn mở, có ghi ở README: tải ảnh lên thường không giữ khoá; ảnh tải đúng lúc đổi domain có thể mang domain cũ, bấm đổi lại cùng cặp domain sẽ bắt nó.
+- **W5 — báo cáo ảnh trùng có trần.** Đọc cột nội dung tối đa 20 giây / 200 000 hàng (`MAX_DUPLICATE_SCAN_MS`, `MAX_DUPLICATE_REFERENCE_ROWS`). Vượt trần → `usageTruncated: true`, số nơi dùng chỉ là cận dưới. Khoá tên `cdkt:media:duplicates-report` timeout 0: lượt thứ hai → 409. Không có pool → 503.
+- **W6 — tách `media-sync-url-match.ts`** (408 → 356 dòng): phần đổi domain sang `media-repoint-match.ts` (89 dòng). Đường nối là phần dùng chung đã có (`RIGHT_BOUNDARY`, `escapeRegex`, `escapeRegexReplacement`, `likeContains`, `jsonInner` nay export), không đổi hành vi lượt đồng bộ.
+- **S1 — mơ hồ đếm URL, không đếm hàng.** Hai hàng trùng chung **một** URL R2 (một object) không làm liên kết `…/migrated/media/<tên>` mơ hồ. Chỉ khi các hàng mang tên đó trỏ tới hơn một URL khác nhau mới giữ nguyên. Suite nâng cấp phản chiếu cùng luật.
+- **S5 — lỗi 500 của đổi domain** không còn trả nguyên `err.message`: câu chung (đã rollback, không URL nào đổi), nguyên nhân ở log `media.repoint_failed`.
+- **S6** — ghi ở README: `media_video_r2_public_url` cũng đổi khi dùng chung domain cũ.
+- **S7** — `tests/seed-markers-integration.test.ts` ghim tên dấu bằng chuỗi viết tay (`seed.categories.v1.done`, …), không dựng lại qua `seedMarkerKey`: đổi định dạng khoá làm test đỏ thay vì trôi theo.
+
+**Rebase lên `6389c10`** (2F, suite nâng cấp so nội dung từng hàng default):
+- `seed-groups.ts`: mỗi nhóm có `toInsert(row, allRows)` (đúng giá trị seed sẽ ghi) và `SEED_GROUP_SPECS` export. Suite đọc nội dung default của 5 nhóm từ đó (`groupDefaultRows`) thay cho DDL. DDL không còn hàng default nào; suite đỏ nếu `core.ts`/`content.ts` lại có.
+- Khai báo `seed.group-markers` giữ nguyên, kèm khẳng định mới: một default của nhóm bị sửa `url` thì không khai báo nào phủ.
+
+**Bằng chứng test-first** (trên `b5c4826`, trước khi sửa mã):
+- W1: phép thử trong scratch — `https://OLD.CDN/a.png HTTPS://old.cdn/b.png https://Old.Cdn/c.png` giữ nguyên sau khi đổi; `normalizeRepointDomain('HTTPS://OLD.CDN/')` trả `OLD.CDN`.
+- `media-repoint`, `media-hosts-policy`: đỏ (module chưa có).
+- `media-scan-import`: 2 ca đỏ — W4 (object bị xoá dù hàng đã commit), W3 (tệp lượt cũ nhập lại).
+- `media-duplicates-report`: 5 ca đỏ (trần, khoá, endpoint).
+- `legacy-media-urls`: ca S1 đỏ.
+- `media-repoint` (S5): đỏ tới khi endpoint thôi trả nguyên văn lỗi.
+
+**Kiểm chứng (2026-10-24, Node 26.11, MySQL 8.0.46 local):**
+- `npm test`: 4460 / 4421 pass / 0 fail / 39 skip.
+- typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` 62 bảng / 636 cột; `npm run build` xanh.
+- Integration: `schema-upgrade` 7/7 (lượt 1: `seed.insert-missing-defaults` ×1920, `repair-legacy-media-urls` ×3, `hotline-label` ×2, `add-column` ×1, `seed.group-markers` ×5, `mysql.on-update-timestamp` ×2), `seed-markers` 4/4, `media-repoint` 1/1 (thêm URL viết hoa, domain nhập `HTTPS://OLD.CDN/`, đích `cdn1.delify.vn`), `media-sync-rewrite` 2/2. `tests/ci-integration-matrix.test.ts` 5/5. Không để lại CSDL tạm.
 
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 

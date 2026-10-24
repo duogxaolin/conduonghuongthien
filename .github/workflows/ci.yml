@@ -273,7 +273,7 @@ jobs:
   #   - job này: 203 tệp non-integration, không cần MySQL, ~30 phút trên runner
   #     chậm. Typecheck gộp vào đây (giữ nguyên triết lý cũ: không phải job riêng
   #     để khỏi phải xin thêm runner mà hay bị queue).
-  #   - job integration-tests: 20 tệp *-integration, cần MySQL service.
+  #   - job integration-tests: 22 tệp *-integration, cần MySQL service.
   #   - job schema-drift: `npm run db:drift`, cần MySQL, chạy nhanh.
   unit-tests:
     name: Unit and typecheck
@@ -321,7 +321,7 @@ jobs:
 
       # Unit + contract tests — mọi tệp trừ *-integration (chúng cần MySQL và
       # chạy ở job integration-tests bên dưới). Lọc bằng find để không phụ thuộc
-      # shell glob của runner. Bỏ qua 20 tệp integration để job này không cần
+      # shell glob của runner. Bỏ qua 22 tệp integration để job này không cần
       # service container và chạy nhanh hơn.
       - name: Unit and contract tests (no DB)
         env:
@@ -379,9 +379,9 @@ jobs:
           exit $status
 
   # ── Integration tests (cần MySQL) ──────────────────────────────────────────
-  # 20 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
+  # 22 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
   # service container. Trước đây tất cả suite (khi đó 13) chạy **nối tiếp trên một runner**,
-  # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 20 job song
+  # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 22 job song
   # song** — mỗi suite một job + MySQL service riêng, chạy độc lập. Một runner
   # chậm chỉ kéo dài đúng suite của nó, không làm suite khác timeout theo.
   integration-tests:
@@ -442,6 +442,10 @@ jobs:
           - suite: media-sync-rewrite
             file: tests/media-sync-rewrite-integration.test.ts
             switch: MEDIA_SYNC_INTEGRATION
+          # Đổi domain R2: 27 cột + media.url, ranh giới URL, một transaction (wave2 2B).
+          - suite: media-repoint
+            file: tests/media-repoint-integration.test.ts
+            switch: MEDIA_REPOINT_INTEGRATION
           - suite: public-read
             file: tests/public-read-integration.test.ts
             switch: PUBLIC_READ_INTEGRATION
@@ -451,6 +455,10 @@ jobs:
           - suite: analytics-maintenance
             file: tests/analytics-maintenance-integration.test.ts
             switch: ANALYTICS_MAINTENANCE_INTEGRATION
+          # Default seed một lần mỗi CSDL: xoá rồi không quay lại, bộ v2 tới đúng một lần (wave2 D7).
+          - suite: seed-markers
+            file: tests/seed-markers-integration.test.ts
+            switch: SEED_MARKERS_INTEGRATION
           # Boot bản mới trên lược đồ bản phát hành trước (tests/fixtures/schema-prev.sql)
           # hai lần: chỉ các chuyển đổi một lần đã khai báo được đổi dữ liệu (wave2 2F).
           - suite: schema-upgrade
@@ -479,7 +487,7 @@ jobs:
 
       - run: npm ci
       # Không suite integration nào gọi FFmpeg thật (media-queue dùng runner giả) —
-      # 20 job không còn cài nó, nên mirror apt chập chờn không cắt được chúng nữa.
+      # 22 job không còn cài nó, nên mirror apt chập chờn không cắt được chúng nữa.
 
       # Mỗi job matrix chạy ĐÚNG MỘT suite. Bật switch của chính nó (qua biến
       # `SWITCH` được matrix cung cấp) — các switch khác vắng mặt nên suite khác
@@ -568,6 +576,10 @@ jobs:
           MEDIA_SYNC_PORT: 3306
           MEDIA_SYNC_USER: root
           MEDIA_SYNC_PASSWORD: test_root_password
+          MEDIA_REPOINT_HOST: 127.0.0.1
+          MEDIA_REPOINT_PORT: 3306
+          MEDIA_REPOINT_USER: root
+          MEDIA_REPOINT_PASSWORD: test_root_password
           PUBLIC_READ_HOST: 127.0.0.1
           PUBLIC_READ_PORT: 3306
           PUBLIC_READ_USER: root
@@ -580,6 +592,10 @@ jobs:
           ANALYTICS_MAINTENANCE_PORT: 3306
           ANALYTICS_MAINTENANCE_USER: root
           ANALYTICS_MAINTENANCE_PASSWORD: test_root_password
+          SEED_MARKERS_HOST: 127.0.0.1
+          SEED_MARKERS_PORT: 3306
+          SEED_MARKERS_USER: root
+          SEED_MARKERS_PASSWORD: test_root_password
           SCHEMA_UPGRADE_HOST: 127.0.0.1
           SCHEMA_UPGRADE_PORT: 3306
           SCHEMA_UPGRADE_USER: root

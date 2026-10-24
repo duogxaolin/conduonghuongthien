@@ -20,6 +20,12 @@
  *    (`summary.aiUnavailable`), không dồn mọi bình luận cũ vào hàng chờ `flag_only`;
  *    hàng chờ cũng không ghi thêm cho mục đã có hàng `pending`.
  *  - Tiến độ đọc qua `getModerationRescanStatus()` — trang trạng thái worker trả nó.
+ *  - Trước MỖI lô, job hỏi lại trên chính kết nối giữ khoá
+ *    `SELECT IS_USED_LOCK(?) = CONNECTION_ID()`. Kết nối đó rơi giữa chừng (MySQL
+ *    khởi động lại, `wait_timeout`, mạng) thì MySQL đã nhả khoá và một bản sao khác
+ *    có thể đang quét song song — trả tiền AI hai lần. Không còn giữ (hoặc câu hỏi
+ *    lỗi) → dừng trước lô kế tiếp, trạng thái `stopped`, `stopReason: 'lock_lost'`,
+ *    log `ai_moderation.rescan_lock_lost`. Con trỏ giữ tới lô cuối đã xong.
  *
  * GIỚI HẠN (cố ý, ghi rõ):
  *  - Tiến độ và con trỏ nằm trong BỘ NHỚ tiến trình. Khởi động lại thì mất: lượt
@@ -28,6 +34,8 @@
  *    khác" (khoá MySQL bận) chứ không thấy x/y.
  *  - Dòng nhật ký kiểm toán do endpoint ghi (qua `onFinished`), không ở tệp này.
  */
+import type { PoolConnection, RowDataPacket } from 'mysql2/promise'
+
 import { getPool } from '../utils/db'
 import { withNamedLock } from '../utils/named-lock'
 import { logError, logInfo } from '../utils/logger'
@@ -41,7 +49,10 @@ import {
 
 export const MODERATION_RESCAN_LOCK = 'cdkt:ai:moderation-rescan'
 
-export type ModerationRescanState = 'idle' | 'running' | 'completed' | 'failed'
+export type ModerationRescanState = 'idle' | 'running' | 'completed' | 'failed' | 'stopped'
+
+/** Vì sao một lượt `stopped`: `lock_lost` = kết nối giữ khoá không còn giữ khoá. */
+export type ModerationRescanStopReason = 'lock_lost'
 
 export interface ModerationRescanStatus {
   state: ModerationRescanState
@@ -51,6 +62,8 @@ export interface ModerationRescanStatus {
   progress: RescanProgress | null
   summary: RescanSummary | null
   error: string | null
+  /** Chỉ có khi `state === 'stopped'`. */
+  stopReason: ModerationRescanStopReason | null
   limits: typeof MODERATION_RESCAN_LIMITS
 }
 
@@ -72,6 +85,7 @@ const IDLE: ModerationRescanStatus = Object.freeze({
   progress: null,
   summary: null,
   error: null,
+  stopReason: null,
   limits: MODERATION_RESCAN_LIMITS,
 }) as ModerationRescanStatus
 
@@ -97,7 +111,33 @@ export function waitForModerationRescan(): Promise<void> {
   return currentJob ?? Promise.resolve()
 }
 
-async function runRescan(options: StartModerationRescanOptions): Promise<void> {
+/** Kết nối giữ khoá không còn giữ khoá (hoặc không trả lời được câu hỏi). */
+class RescanLockLostError extends Error {
+  constructor(detail: string) {
+    super(`Mất khoá ${MODERATION_RESCAN_LOCK}: ${detail}`)
+  }
+}
+
+/**
+ * `IS_USED_LOCK(name)` trả id kết nối đang giữ khoá (NULL nếu khoá trống), nên
+ * `= CONNECTION_ID()` chỉ là 1 khi CHÍNH kết nối này còn giữ. 0 (bản sao khác giữ),
+ * NULL (khoá đã nhả) hay lỗi (kết nối rơi) đều là mất khoá.
+ */
+async function assertStillHoldsLock(connection: PoolConnection): Promise<void> {
+  let held: boolean
+  try {
+    const [rows] = await connection.query<RowDataPacket[]>(
+      'SELECT IS_USED_LOCK(?) = CONNECTION_ID() AS held',
+      [MODERATION_RESCAN_LOCK],
+    )
+    held = Number(rows[0]?.held) === 1
+  } catch (err: unknown) {
+    throw new RescanLockLostError(describeError(err))
+  }
+  if (!held) throw new RescanLockLostError('kết nối giữ khoá không còn giữ khoá')
+}
+
+async function runRescan(connection: PoolConnection, options: StartModerationRescanOptions): Promise<void> {
   try {
     const summary = await rescanExistingContent({
       cursor: resumeCursor,
@@ -106,6 +146,7 @@ async function runRescan(options: StartModerationRescanOptions): Promise<void> {
       // lô kế tiếp — đã thử lại một lần) thì lượt sau quét tiếp từ đây thay vì quét
       // lại (và trả tiền AI lại) từ bình luận mới nhất.
       onCheckpoint: (cursor) => { resumeCursor = cursor },
+      beforeBatch: () => assertStillHoldsLock(connection),
     })
     resumeCursor = summary.nextCursor
     status = { ...status, state: 'completed', finishedAt: new Date().toISOString(), summary }
@@ -117,6 +158,17 @@ async function runRescan(options: StartModerationRescanOptions): Promise<void> {
       }
     }
   } catch (err: unknown) {
+    if (err instanceof RescanLockLostError) {
+      status = { ...status, state: 'stopped', stopReason: 'lock_lost', finishedAt: new Date().toISOString() }
+      logError({
+        event: 'ai_moderation.rescan_lock_lost',
+        error: err.message,
+        scannedComments: status.progress?.scannedComments ?? 0,
+        scannedMessages: status.progress?.scannedMessages ?? 0,
+        resumeCursor,
+      })
+      return
+    }
     status = { ...status, state: 'failed', finishedAt: new Date().toISOString(), error: describeError(err) }
     logError({ event: 'ai_moderation.rescan_failed', error: describeError(err) })
   }
@@ -150,9 +202,9 @@ export async function startModerationRescan(options: StartModerationRescanOption
   let fail!: (err: unknown) => void
   const decision = new Promise<boolean>((resolve, reject) => { decide = resolve; fail = reject })
 
-  currentJob = withNamedLock(pool, MODERATION_RESCAN_LOCK, 0, async () => {
+  currentJob = withNamedLock(pool, MODERATION_RESCAN_LOCK, 0, async (connection) => {
     decide(true)
-    await runRescan(options)
+    await runRescan(connection, options)
   }, async () => { decide(false) })
     .then(() => undefined)
     .catch((err: unknown) => {

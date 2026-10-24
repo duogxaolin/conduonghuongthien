@@ -2,7 +2,7 @@ import type { Connection } from 'mysql2/promise'
 import { ensureColumn, ensureIndex } from '../migrations-additive'
 
 /**
- * Bảng nội dung: articles (+cột/category_id + seed mặc định), article_view_*,
+ * Bảng nội dung: articles (+cột/category_id), article_view_*,
  * home_sections, page_contents, pages, page_blocks, page_versions.
  *
  * `articles` nhận `category`/`category_id` qua `ensureColumn` chứ không nằm
@@ -54,26 +54,9 @@ export async function createContentTables(db: Connection, database: string): Pro
     ADD CONSTRAINT \`fk_articles_category\` FOREIGN KEY (\`category_id\`) REFERENCES \`categories\` (\`id\`) ON DELETE SET NULL;
   `).catch(() => {/* ignore if already exists */})
 
-  // Seed default categories idempotently (keyed on unique slug). News slugs match
-  // the legacy hardcoded slugs. ON DUPLICATE KEY UPDATE keeps re-runs duplicate-free
-  // and preserves any admin edits to name/order.
-  const defaultCategories: Array<[string, string, string, number]> = [
-    ['Tin nổi bật', 'tin-noi-bat', 'news', 1],
-    ['Tin hoạt động', 'tin-hoat-dong', 'news', 2],
-    ['Tin địa phương', 'tin-dia-phuong', 'news', 3],
-    ['Tấm gương tiêu biểu', 'tam-guong-tieu-bieu', 'role_model', 1],
-    ['Mô hình tái hòa nhập', 'mo-hinh-tai-hoa-nhap', 'reintegration', 1],
-    ['Văn bản pháp luật', 'van-ban-phap-luat', 'document', 1],
-    ['Hỏi đáp pháp luật', 'hoi-dap-phap-luat', 'faq', 1],
-  ]
-  for (const [name, slug, type, displayOrder] of defaultCategories) {
-    await db.query(
-      `INSERT INTO \`categories\` (\`name\`, \`slug\`, \`type\`, \`parent_id\`, \`display_order\`)
-       VALUES (?, ?, ?, NULL, ?)
-       ON DUPLICATE KEY UPDATE \`slug\` = \`slug\``,
-      [name, slug, type, displayOrder],
-    )
-  }
+  // Danh mục bài viết mặc định: chèn MỘT lần cho mỗi CSDL bởi `seed.ts`
+  // (`server/db/seed-groups.ts`, wave2 D7) — không chèn ở đây. Tệp này chỉ còn DDL:
+  // chèn ở mỗi lần `init.ts` chạy là đưa lại danh mục cán bộ đã xoá sau mỗi deploy.
 
   // Per-article view counter. Real and fabricated views are separated twice:
   // by column, and by a `source_category` value ('boost') that the public

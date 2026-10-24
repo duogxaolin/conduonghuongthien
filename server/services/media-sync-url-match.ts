@@ -173,30 +173,30 @@ export function assertRewritable(rewrite: UrlRewrite): void {
 const CONT_CORE = '\\p{L}\\p{N}_%/'
 /** Dấu câu chỉ nối tiếp khi theo sau là ký tự lõi. */
 const CONT_PUNCT = '.~!:=@*$+\\-'
-/** Bên phải: không nối tiếp. */
-const RIGHT_BOUNDARY = `(?![${CONT_CORE}]|[${CONT_PUNCT}]+[${CONT_CORE}])`
+/** Bên phải: không nối tiếp. Dùng chung với mẫu đổi domain (`media-repoint-match.ts`). */
+export const RIGHT_BOUNDARY = `(?![${CONT_CORE}]|[${CONT_PUNCT}]+[${CONT_CORE}])`
 /** Bên trái của URL tương đối: ký tự trước không thuộc một đường dẫn. */
 const LEFT_BOUNDARY = `(?<![${CONT_CORE}.~+\\-])`
 /** Phần host của dạng tuyệt đối — không `/` (không nuốt đường dẫn của URL khác). */
 const HOST = '[^/"\'\\s<>\\\\()]+'
 
 /** Thoát ký tự đặc biệt cho mẫu REGEXP (ICU ở MySQL 8, PCRE ở MariaDB đều hiểu). */
-function escapeRegex(s: string): string {
+export function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 }
 
 /** Chuỗi thay thế của REGEXP_REPLACE coi `$` và `\` là đặc biệt (`$1`, `\1`). */
-function escapeRegexReplacement(s: string): string {
+export function escapeRegexReplacement(s: string): string {
   return s.replace(/[\\$]/g, '\\$&')
 }
 
 /** Mẫu LIKE "chứa chuỗi": `%`, `_`, `\` trong URL phải là chữ, không phải ký tự đại diện. */
-function likeContains(s: string): string {
+export function likeContains(s: string): string {
   return `%${s.replace(/[\\%_]/g, '\\$&')}%`
 }
 
 /** Phần trong của một chuỗi JSON — đúng như MySQL tuần tự hoá giá trị chuỗi. */
-function jsonInner(s: string): string {
+export function jsonInner(s: string): string {
   return JSON.stringify(s).slice(1, -1)
 }
 
