@@ -15,7 +15,9 @@ import { logInfo, SECURITY_EVENTS } from '../../../../utils/logger'
 import { isExpired, verifyOneTimeCode, EMAIL_CODE_MAX_ATTEMPTS } from '../../../../utils/mfa/codes'
 import { unsealTotpSecret } from '../../../../utils/mfa/crypto'
 import { verifyTotp } from '../../../../utils/mfa/totp'
-import { FACTOR_TYPES, FACTOR_LABELS, getFactor, revokeSessions, type FactorType } from '../../../../utils/mfa/factors'
+import { FACTOR_TYPES, FACTOR_LABELS, countUnusedRecoveryCodes, getFactor, revokeSessions, type FactorType } from '../../../../utils/mfa/factors'
+import { isCoveredByMfaPolicy, readMfaPolicy } from '../../../../utils/mfa/policy'
+import { issueRecoveryCodes } from '../../../../utils/mfa/recovery-codes'
 import { setSessionCookie } from '../../../../utils/mfa/session'
 import { getClientIp } from '../../../../utils/client-ip'
 
@@ -113,6 +115,15 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 409, statusMessage: 'Yêu cầu xác thực đã thay đổi hoặc hết hạn. Vui lòng thử lại.' })
   }
 
+  // Chính sách MFA khác `off` bao tài khoản này (spec admin-mfa-policy, D1): mã dự
+  // phòng là bắt buộc — phát ngay trong lượt này, hiện một lần. Chỉ khi tài khoản
+  // CHƯA có lô nào còn dùng được: một lô đang có (tờ mã đã in) không bao giờ bị
+  // thay ngầm bởi lượt bật yếu tố thứ hai.
+  const mfaPolicy = await readMfaPolicy()
+  const recoveryCodes = isCoveredByMfaPolicy(mfaPolicy.policy, admin) && (await countUnusedRecoveryCodes(admin.id)) === 0
+    ? await issueRecoveryCodes(admin.id)
+    : null
+
   // Enabling a factor revokes other live sessions, then re-issues this one.
   const tokenVersion = await revokeSessions(admin.id)
   setSessionCookie(event, {
@@ -131,8 +142,8 @@ export default defineEventHandler(async (event) => {
     action: 'update',
     resource: 'profile_mfa',
     resourceId: admin.id,
-    // Factor type only — no secret, no code, no hash.
-    meta: { factorType, enabled: true, ip },
+    // Factor type only — no secret, no code, no hash. Recovery codes: the count only.
+    meta: { factorType, enabled: true, ip, ...(recoveryCodes ? { recoveryCodesGenerated: recoveryCodes.length } : {}) },
   })
   logInfo({ event: SECURITY_EVENTS.mfaFactorEnabled, userId: admin.id, username: admin.username, factorType, ip })
 
@@ -140,5 +151,7 @@ export default defineEventHandler(async (event) => {
     ok: true,
     factorType,
     message: `Đã bật ${FACTOR_LABELS[factorType]}. Các phiên đăng nhập khác đã bị thu hồi.`,
+    // Hiện đúng một lần; chỉ lưu dạng bcrypt.
+    ...(recoveryCodes ? { recoveryCodes } : {}),
   }
 })

@@ -37,6 +37,11 @@ export default defineEventHandler(async (event) => {
   const body = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw as Record<string, unknown> : {}
 
   const saved = r2TestUsesSavedConfig(body) ? await loadR2Config() : null
+  // Secret Key đã lưu là envelope không mở được (khoá mã hoá đã xoay): nói đúng lý
+  // do thay vì "chưa cấu hình đủ".
+  if (saved?.secretUnreadable) {
+    throw createError({ statusCode: 400, statusMessage: 'Secret Key R2 đã lưu không giải mã được (khoá mã hoá của máy chủ đã đổi). Hãy nhập lại Secret Key và lưu.' })
+  }
   const decision = resolveR2TestConfig(body, saved)
   if (!decision.ok) {
     throw createError({ statusCode: 400, statusMessage: decision.message })

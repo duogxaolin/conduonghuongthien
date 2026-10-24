@@ -106,6 +106,10 @@ export const SECURITY_EVENTS = {
   // or neither is configured so the Host is used unchecked (logged once per process).
   linkHostRejected: 'security.link_host_rejected',
   linkHostUnchecked: 'security.link_host_unchecked',
+  // A state-changing request a browser sent on behalf of another site
+  // (`server/middleware/00.origin-gate.ts`). Payload: path (no query), origin
+  // host, reason — never cookies or the full Origin URL.
+  crossSiteRefused: 'security.cross_site_refused',
 } as const
 
 /**
@@ -120,4 +124,11 @@ export const BOOT_MIGRATION_EVENTS = {
   // crash-loop the container) and the values are kept (clearing them is the
   // 2026-09-22 boot-wipe bug). Payload: `{ danglingRows }`.
   mediaCategoryFkBlocked: 'db.migration.media_category_fk_blocked',
+  // A stored credential (`smtp_pass`, `r2_secret_key`, `backup_drive_service_account`)
+  // is an envelope this CHATBOT_ENCRYPTION_SECRET cannot open. Left untouched; it
+  // must be re-entered on its settings page. Payload: `{ keys }` — names only.
+  settingsSecretUnreadable: 'db.migration.settings_secret_unreadable',
+  // A credential is still plaintext but the process has no usable encryption key,
+  // so it could not be converted this boot. Payload: `{ keys }`.
+  settingsSecretNoKey: 'db.migration.settings_secret_no_key',
 } as const

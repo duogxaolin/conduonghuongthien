@@ -5,6 +5,7 @@ import { uploadR2File, type R2Config } from '../../../utils/media-r2'
 import sharp from 'sharp'
 import path from 'node:path'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { loadR2Config } from '../../../services/media'
 import {
   EXT_BY_IMAGE_MIME,
   detectImageMime,
@@ -152,13 +153,8 @@ export default defineEventHandler(async (event) => {
   let uploadResult: { url: string; storagePath: string }
 
   if (provider === 'r2') {
-    const r2Config: R2Config = {
-      accountId:       settingsMap.get('r2_account_id') || '',
-      accessKeyId:     settingsMap.get('r2_access_key') || '',
-      secretAccessKey: settingsMap.get('r2_secret_key') || '',
-      bucket:          settingsMap.get('r2_bucket') || '',
-      publicUrl:       settingsMap.get('r2_public_url') || '',
-    }
+    // Secret Key lưu dạng envelope — đọc qua `loadR2Config`, nơi duy nhất giải mã nó.
+    const r2Config: R2Config = await loadR2Config()
     if (!r2Config.accountId || !r2Config.accessKeyId || !r2Config.secretAccessKey || !r2Config.bucket) {
       throw createError({ statusCode: 400, statusMessage: 'Cấu hình Cloudflare R2 chưa đầy đủ. Hãy kiểm tra lại Cài đặt.' })
     }

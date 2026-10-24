@@ -224,9 +224,10 @@ Dev merge code vào `main`. **CI tự deploy**: build image → push GHCR → SS
 >
 > Container app chạy giờ Việt Nam (`TZ=Asia/Ho_Chi_Minh`), mysql giữ UTC — xem mục
 > *Múi giờ* trong `DEPLOY.md`. Biến dạng công tắc (`RETENTION_SCHEDULER`,
-> `ANALYTICS_SCHEDULER`, `BACKUP_SCHEDULER`, `LOG_LEVEL`, `LOGIN_CAPTCHA_ENABLED`) nay
-> đặt được trong `.env`; để trống = mặc định của code. **Đừng đặt
+> `ANALYTICS_SCHEDULER`, `BACKUP_SCHEDULER`, `LOG_LEVEL`, `LOGIN_CAPTCHA_ENABLED`,
+> `MFA_ENFORCEMENT`) nay đặt được trong `.env`; để trống = mặc định của code. **Đừng đặt
 > `LOGIN_CAPTCHA_ENABLED=0` trên production** — biến đó chỉ dành cho bộ E2E.
+> `MFA_ENFORCEMENT=0` chỉ dùng như công tắc khẩn cấp (xem § *Bảo mật đợt 2 — 2A*).
 
 Không cần làm gì trên VPS cho một lần cập nhật code thường. Chạy tay `manage.sh` chỉ khi cần (deploy lần đầu, đổi `.env`/port/domain, import SQL, hoặc CI deploy hỏng):
 
@@ -302,6 +303,21 @@ Từ đợt wave1 1B, ở production scheduler sao lưu **tự khởi động** 
 - **Tệp tên dạng app mà không có trong danh sách** (`cdkt-<mã thời điểm>-<trigger>.sql.gz`, `cdkt-uploads|media-<mã thời điểm>-<trigger>.tar.gz`) và cũ hơn 10 phút sẽ bị app xoá. Đó là dấu vết của một lượt bị giết đúng lúc ghi danh sách. **Đừng chép tay** một tệp backup của app vào `./backups` để giữ: nó sẽ bị xoá. Muốn nạp một bản từ ngoài thì dùng "Khôi phục từ tệp tải lên". Tệp của `scripts/backup*.sh` (`cdkt-<db>-…-<pid>`, `cdkt-media-…-<pid>`) không bị đụng.
 - **Hai lượt cùng trigger trong cùng một giây** (ví dụ bấm "Backup" hai lần thật nhanh): lượt sau bị từ chối với thông báo "đã tồn tại" (kể cả khi lượt trước hỏng). Bản đã có không bị đụng tới. Thử lại sau giây lát.
 - **Xoá một bản** trong danh sách chỉ xoá đúng hàng đó. Tệp chỉ bị xoá khi không còn hàng nào khác cùng tên.
+
+---
+
+## Bảo mật đợt 2 — 2A: MFA bắt buộc, bí mật mã hoá, chặn yêu cầu khác site
+
+Bản cập nhật này **không cần sửa `.env`** — mọi thứ mặc định giữ nguyên hành vi cũ, trừ hai việc tự chạy:
+
+- **Mật khẩu SMTP, Secret Key R2 (ảnh) và khoá JSON service account Drive được mã hoá** trong bảng `settings` (khoá `CHATBOT_ENCRYPTION_SECRET`). Lần khởi động đầu của image mới tự mã hoá giá trị đang lưu nguyên văn (log `db.migration.settings_secrets_encrypted`, chỉ tên khoá); các lần sau không ghi gì. Bản dump trước deploy (`.deploy-db-backups/`) còn bản nguyên văn — **xử lý như tài liệu mật**, xoá khi không cần.
+  - Log `db.migration.settings_secret_unreadable` = một bí mật đã lưu không mở được bằng khoá hiện tại (khoá đã đổi). Giá trị đó **không bị ghi đè**; trang cài đặt (Email / Lưu trữ Media / Sao lưu) báo "cần nhập lại" — nhập lại rồi lưu.
+  - **Lùi về image cũ hơn bản này** thì ba giá trị trên là envelope mà code cũ không đọc được: email, R2 ảnh, Drive service account ngừng chạy cho tới khi nhập lại ở trang cài đặt (code cũ lưu lại nguyên văn).
+- **Chặn yêu cầu ghi khác site** (`server/middleware/00.origin-gate.ts`): mọi POST/PUT/PATCH/DELETE mà trình duyệt gửi thay một trang khác (kể cả tên miền con anh em `*.delify.vn`) bị 403, log `security.cross_site_refused` (đường dẫn + host của `Origin`). Host được chấp nhận làm `Origin`: host của `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST`, và host của chính request **chỉ khi** nginx là proxy đã khai trong `TRUSTED_PROXY_IPS` (khi đó `X-Forwarded-Host`/`Host` nginx chuyển — xem `CI-CD.md`). Đặt đủ mọi tên miền thật vào `PUBLIC_HOST_ALLOWLIST` là đủ. Trình duyệt hiện đại gửi `Sec-Fetch-Site` nên phần lớn lượt được quyết định trước bước so `Origin`. Cron/curl không gửi `Origin`/`Sec-Fetch-Site` nên không bị ảnh hưởng.
+- **Chính sách bắt buộc MFA** — mặc định `off`, không đổi gì cho tới khi SuperAdmin bật ở `/admin/settings/security` (`privileged` = SuperAdmin + ai sửa/xoá được Người dùng, Vai trò, Cài đặt; `all` = mọi tài khoản). Bật = 14 ngày chuyển tiếp (banner báo ngày), sau đó tài khoản thuộc diện chưa có yếu tố chỉ vào được trang "Tài khoản của tôi" để bật; lúc bật yếu tố đầu tiên hệ thống phát kèm mã dự phòng (hiện một lần).
+  - **Công tắc khẩn cấp `MFA_ENFORCEMENT=0`** trong `.env` (đã có trong `environment:` của compose) → `./manage.sh` Update hoặc `docker compose up -d --no-deps app`: không ai bị chặn vì thiếu MFA (chính sách vẫn lưu). Dùng khi một yếu tố hỏng hàng loạt — SMTP chết (email OTP), xoay `JWT_SECRET` (TOTP vô hiệu). Bỏ lại ngay khi xong sự cố.
+  - Khoá cứng một tài khoản: SuperAdmin xoá yếu tố của nó ở trang Người dùng (break-glass), hoặc đăng nhập bằng mã dự phòng. Runbook: `docs/decisions/realm-safety.md` § *MFA bắt buộc — khoá ngoài & break-glass*.
+- **Xoay `CHATBOT_ENCRYPTION_SECRET`** nay kéo theo: nhập lại mật khẩu SMTP, Secret Key R2 (ảnh + video) và khoá service account Drive, liên kết lại Drive OAuth, nhập lại API key AI và secret Google OAuth. Runbook: `docs/decisions/realm-safety.md` § *Xoay CHATBOT_ENCRYPTION_SECRET*.
 
 ---
 

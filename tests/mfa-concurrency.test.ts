@@ -78,6 +78,11 @@ mock.module('../server/utils/mfa/codes', { namedExports: {
   ENROLLMENT_TTL_MS: 900000,
   isExpired: (expires: Date | null) => !expires || expires.getTime() <= Date.now(),
   normalizeRecoveryCode: (code: string) => code.replace(/-/g, '').toUpperCase(),
+  // confirm.post.ts can issue recovery codes under an MFA policy (wave2 2A); these
+  // races never reach that branch, but the module must still link.
+  RECOVERY_CODE_COUNT: 10,
+  generateRecoveryCodes: () => { throw new Error('unexpected recovery-code issuance') },
+  generateBatchId: () => 'batch',
   verifyOneTimeCode: async (code: string, hash: string) => { await beforeVerify(); return hash === `hash:${code}` },
   generateEmailCode: () => String(++generated),
   hashOneTimeCode: async (code: string) => { await beforeVerify(); return `hash:${code}` },

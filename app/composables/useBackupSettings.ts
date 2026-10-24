@@ -22,6 +22,9 @@ export function useBackupSettings() {
   // Máy chủ không chạy scheduler sao lưu → công tắc lịch lưu được nhưng không chạy.
   // Chỉ đọc, không nằm trong biểu mẫu (không bao giờ được PUT lại).
   const schedulerDisabledByServer = ref(false)
+  // Khoá service account đã lưu là envelope không mở được bằng khoá mã hoá hiện tại
+  // (spec settings-secret-storage) — Drive qua service account dừng cho tới khi dán lại.
+  const serviceAccountNeedsReentry = ref(false)
   const backupSettings = ref<BackupSettingsForm>({
     backup_auto_enabled: 'false',
     backup_auto_hour: '3',
@@ -175,9 +178,10 @@ export function useBackupSettings() {
   async function loadSettings() {
     settingsLoadError.value = ''
     try {
-      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null>; schedulerDisabledByServer?: boolean }>)(`/api/admin/settings/backup`)
+      const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null>; schedulerDisabledByServer?: boolean; needsReentry?: string[] }>)(`/api/admin/settings/backup`)
       const s = res.settings || {}
       schedulerDisabledByServer.value = res.schedulerDisabledByServer === true
+      serviceAccountNeedsReentry.value = (res.needsReentry ?? []).includes('backup_drive_service_account')
       backupSettings.value = {
         backup_auto_enabled: s.backup_auto_enabled || 'false',
         backup_auto_hour: s.backup_auto_hour || '3',
@@ -243,7 +247,7 @@ export function useBackupSettings() {
   return {
     isSuperAdmin, settingsLoaded, settingsLoadError, loadSettings,
     backupSettings, selectedDays, daysOptions, savingSettings, saveSettings,
-    schedulerDisabledByServer,
+    schedulerDisabledByServer, serviceAccountNeedsReentry,
     driveLink, driveRedirectUri, driveLinkLoading, disconnecting, driveToast,
     disconnectDrive, copyRedirectUri,
     driveConfig, driveConfigLoading, savingDriveConfig, clearingDriveSecret,

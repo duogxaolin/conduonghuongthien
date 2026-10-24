@@ -29,7 +29,7 @@ interface MfaStatus {
   lockoutRisk: boolean
 }
 
-const { user } = useAdminAuth()
+const { user, fetchUser } = useAdminAuth()
 const toast = useToast()
 
 const FACTOR_META: Record<FactorType, { label: string; icon: string; desc: string }> = {
@@ -204,13 +204,18 @@ async function submitConfirm() {
   }
   enrollDialog.busy = true
   try {
-    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; message: string }>)(`/api/admin/profile/mfa/confirm`, {
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; message: string; recoveryCodes?: string[] }>)(`/api/admin/profile/mfa/confirm`, {
       method: 'POST',
       body: { factorType: enrollDialog.factorType, code: value },
     })
     toast.success(res.message || 'Đã bật xác thực hai bước.')
+    // Chính sách MFA đang bật: máy chủ phát mã dự phòng ngay trong lượt này — hiện
+    // một lần ở khung "mã dự phòng" như khi tự tạo.
+    if (res.recoveryCodes?.length) revealedCodes.value = res.recoveryCodes
     closeEnroll()
-    await Promise.all([loadMfa(), loadHistory()])
+    // Cookie phiên đã được cấp lại trong chính phản hồi; đọc lại `me` để banner và
+    // chốt chuyển trang của chính sách MFA biết tài khoản đã có yếu tố.
+    await Promise.all([loadMfa(), loadHistory(), fetchUser()])
   } catch (err: unknown) {
     enrollDialog.error = errorMessage(err, 'Mã không đúng.')
     if (needsCode) enrollDialog.code = ''
@@ -461,7 +466,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     </section>
 
     <!-- ── Xác thực hai bước ─────────────────────────────────────────── -->
-    <section class="rounded-xl border border-[#e2ece3] bg-white p-5">
+    <!-- `#security`: đích chuyển trang của chính sách bắt buộc MFA (middleware + banner). -->
+    <section id="security" class="rounded-xl border border-[#e2ece3] bg-white p-5 scroll-mt-4">
       <div class="flex items-center gap-3 mb-4">
         <span class="w-1 h-5 rounded-full bg-[#2c6e33]" aria-hidden="true"></span>
         <h2 class="text-[1rem] font-extrabold text-[#122815] m-0">Xác thực hai bước</h2>
@@ -651,7 +657,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <!-- ── Lịch sử truy cập & hoạt động ──────────────────────────────── -->
     <!-- Bật/tắt một yếu tố ghi thêm một dòng vào bảng này, nên trang cha giữ
          `ref` để gọi `reload()` sau hai thao tác đó. -->
-    <ProfileActivityHistory ref="historyRef" />
+    <!-- Ẩn khi chính sách MFA đang khoá tài khoản: endpoint lịch sử không nằm trong
+         danh sách được mở lúc đó, nên khối này chỉ hiện được một lỗi 403.
+         Tên CÓ tiền tố thư mục (`Admin…`, quy ước auto-import của nuxt.config): tên
+         trần `<ProfileActivityHistory>` không phân giải được — khối lịch sử không
+         bao giờ hiện, và `historyRef.reload()` ném lỗi làm hỏng `Promise.all` của
+         lượt bật/tắt yếu tố (lượt đọc lại `me` sau khi bật MFA không chạy). -->
+    <AdminProfileActivityHistory v-if="!user?.mfaEnrollmentRequired" ref="historyRef" />
 
     <!-- ── Modal: bật một yếu tố ─────────────────────────────────────── -->
     <div v-if="enrollDialog.open" class="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" @click.self="closeEnroll">

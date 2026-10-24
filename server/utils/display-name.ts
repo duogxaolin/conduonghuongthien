@@ -27,7 +27,21 @@ export const DISPLAY_NAME_MAX_LENGTH = 60
 export const DISPLAY_NAME_FALLBACK = 'Người dùng'
 
 /**
- * The name to show for a reader, from the two columns that can carry one.
+ * Shown instead of a Google name that folds to a reserved term ("Admin", "Ban
+ * quản trị", "C11"…) until the reader chooses a name of their own (spec
+ * reader-display-names-google, decision D-NAMES). Sign-in still succeeds:
+ * refusing it would lock out a real person whose Google profile happens to say
+ * "Admin".
+ */
+export const RESERVED_PROVIDER_NAME_FALLBACK = 'Bạn đọc'
+
+/**
+ * The name to show for a reader, from the columns that can carry one.
+ *
+ * `displayNameReserved` is a REQUIRED key on purpose: it is set by the OAuth
+ * callback when the Google name is reserved, and a call site that forgot to
+ * select it would print "Admin" on a public thread. Pass `null`/`undefined`
+ * explicitly only where the row cannot have a Google name.
  *
  * Never returns an empty string: a blank author on a public comment reads as a
  * rendering fault rather than as a missing name.
@@ -35,8 +49,13 @@ export const DISPLAY_NAME_FALLBACK = 'Người dùng'
 export function effectiveDisplayName(row: {
   customDisplayName?: string | null
   displayName?:       string | null
+  displayNameReserved: boolean | null | undefined
 }): string {
-  return row.customDisplayName?.trim() || row.displayName?.trim() || DISPLAY_NAME_FALLBACK
+  const custom = row.customDisplayName?.trim()
+  if (custom) return custom
+  const provider = row.displayName?.trim()
+  if (provider && row.displayNameReserved === true) return RESERVED_PROVIDER_NAME_FALLBACK
+  return provider || DISPLAY_NAME_FALLBACK
 }
 
 export type DisplayNameValidation =
@@ -101,8 +120,11 @@ export function foldDisplayName(value: string): string {
  * the spaces are gone too, so `A.D.M.I.N` and `C-11` do not slip through as
  * "a d m i n" / "c 11". A reserved word INSIDE another word ("Adminh") is not a
  * match — that is somebody's name.
+ *
+ * Exported for the Google sign-in (spec reader-display-names-google): the SAME
+ * folding decides whether a provider-supplied name is shown.
  */
-function isReservedDisplayName(name: string): boolean {
+export function isReservedDisplayName(name: string): boolean {
   const folded = foldDisplayName(name)
   const compact = folded.replace(/ /g, '')
   return RESERVED_DISPLAY_NAMES.some(term => folded === term

@@ -14,6 +14,10 @@ export interface AdminUser {
     canArchive?: boolean
     canTest?: boolean
   }>
+  /** Chính sách MFA: request ngoài trang bật MFA đang bị 403 (`mfa_enrollment_required`). */
+  mfaEnrollmentRequired?: boolean
+  /** Chính sách MFA: mốc cưỡng chế (ISO) khi tài khoản thuộc diện mà chưa có yếu tố nào. */
+  mfaEnforceAfter?: string | null
 }
 
 export type MfaMethod = 'totp' | 'email_otp' | 'second_password' | 'recovery_code'

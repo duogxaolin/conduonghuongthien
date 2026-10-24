@@ -111,6 +111,8 @@ export type ChatSender = {
   id: number
   displayName: string | null
   customDisplayName: string | null
+  /** Tên Google là từ dành riêng → hiện "Bạn đọc" (spec reader-display-names-google). */
+  displayNameReserved: boolean
 }
 
 /** Tin nhắn ở dạng trang công khai được thấy. Không `readerId`, không `isDeleted`. */
@@ -164,6 +166,7 @@ export function snapshotDisplayName(sender: ChatSender): string {
   return effectiveDisplayName({
     customDisplayName: sender.customDisplayName,
     displayName:      sender.displayName,
+    displayNameReserved: sender.displayNameReserved,
   }).slice(0, LIVESTREAM_CHAT_NAME_MAX_LENGTH)
 }
 

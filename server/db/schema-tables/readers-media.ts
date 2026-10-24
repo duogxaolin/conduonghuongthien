@@ -30,6 +30,7 @@ export async function createReadersMediaTables(db: Connection): Promise<void> {
       \`email\` VARCHAR(255) NULL,
       \`display_name\` VARCHAR(255) NULL,
       \`custom_display_name\` VARCHAR(255) NULL,
+      \`display_name_reserved\` TINYINT(1) NOT NULL DEFAULT 0,
       \`email_notifications\` TINYINT(1) NOT NULL DEFAULT 1,
       \`is_banned\` TINYINT(1) NOT NULL DEFAULT 0,
       \`ban_reason\` TEXT NULL,

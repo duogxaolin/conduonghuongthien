@@ -14,6 +14,11 @@ import test, { mock } from 'node:test'
  * gửi kèm nguyên các ô Drive/keep_count không đổi (biểu mẫu luôn gửi đủ 7 ô).
  */
 
+// The service-account key is stored as an envelope (spec settings-secret-storage):
+// saving one needs the at-rest key. Throwaway value, generated per run.
+process.env.CHATBOT_ENCRYPTION_SECRET = (await import('node:crypto')).randomBytes(32).toString('base64')
+const { openSettingsSecret } = await import('../server/utils/settings-secrets')
+
 const store = new Map<string, string>()
 const audits: Array<Record<string, unknown>> = []
 const serviceCalls: string[] = []
@@ -150,7 +155,13 @@ for (const [label, change] of SUPERADMIN_CHANGES) {
     reset()
     assert.equal(await statusOf(put({ ...EDITOR_FORM, ...change }, SUPER)), null)
     const [key, value] = Object.entries(change)[0]!
-    assert.equal(store.get(key), String(value))
+    if (key === 'backup_drive_service_account' && value) {
+      // Saved as an envelope that opens to the typed key — never the key itself.
+      assert.equal(openSettingsSecret(key, store.get(key)).value, String(value))
+      assert.ok(!String(store.get(key)).includes('private_key'))
+    } else {
+      assert.equal(store.get(key), String(value))
+    }
   })
 }
 

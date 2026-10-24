@@ -22,6 +22,8 @@ import { type Connection, type RowDataPacket } from 'mysql2/promise'
 
 import { BOOT_MIGRATION_EVENTS, logError } from '../utils/logger'
 import { encodeShortId } from '../utils/short-media-id'
+import { convertPlaintextSettingsSecrets } from './settings-secret-conversion'
+import { backfillReservedReaderNames } from './reader-name-backfill'
 
 export type ChatbotColumnMigration = {
   table: string
@@ -677,6 +679,13 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // every sign-in: writing the chosen name into that column would have the next
   // sign-in quietly erase it. Read only through effectiveDisplayName().
   await ensureColumn(db, database, 'reader_accounts', 'custom_display_name', 'VARCHAR(255) NULL AFTER `display_name`')
+  // Tên Google gấp ra một từ dành riêng ("Admin", "Ban quản trị", "C11"…) → hiện
+  // "Bạn đọc" (spec reader-display-names-google, D-NAMES). OAuth callback đặt cờ mỗi
+  // lần đăng nhập; hàng có sẵn được điền MỘT LẦN, đúng lúc cột vừa được thêm (lượt
+  // chuyển theo trạng thái lược đồ — khởi động lần hai cột đã có, không ghi gì).
+  const readerNameFlagExisted = await hasColumn(db, database, 'reader_accounts', 'display_name_reserved')
+  await ensureColumn(db, database, 'reader_accounts', 'display_name_reserved', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER `custom_display_name`')
+  if (!readerNameFlagExisted) await backfillReservedReaderNames(db)
   // Defaults to 1 so an existing reader keeps being told when the portal answers
   // them. Switchable from /profile — emailing a citizen with no way to stop is
   // spam, whoever is sending it.
@@ -858,6 +867,12 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // bản sao lưu. CREATE TABLE ở `schema-tables/readers-media.ts` đã khai 32 cho
   // CSDL mới; dòng này nới CSDL cũ (chỉ nới — không mất dữ liệu, chạy lại vô hại).
   await modifyColumn(db, database, 'backups', 'trigger', "VARCHAR(32) NOT NULL DEFAULT 'manual'")
+
+  // ── settings: mã hoá smtp_pass / r2_secret_key / backup_drive_service_account ──
+  // Lượt chuyển MỘT LẦN theo trạng thái giá trị (chưa phải envelope → mã hoá; đã là
+  // envelope → để nguyên, kể cả khi không mở được). Lần khởi động thứ hai không ghi
+  // gì. Chi tiết và lý do: `settings-secret-conversion.ts` (spec settings-secret-storage).
+  await convertPlaintextSettingsSecrets(db)
 
   // ── Tự vá URL ảnh hỏng hàng loạt (all bài) ────────────────────────────────
   // Sync trước treo ở pre-backup nên phase rewrite chưa chạy: all bài vẫn

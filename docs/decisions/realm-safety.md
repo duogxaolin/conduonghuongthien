@@ -247,6 +247,47 @@ Luật "đổi đích phải gõ lại bí mật" chỉ chặn lúc **ghi**; hà
 
 ---
 
+## Đợt 2 — 2A bảo mật (2026-10-24)
+
+Bốn khoảng hở còn lại sau Wave 1, mỗi cái một quyết định thiết kế (openspec `wave2-hardening`, design D-CSRF / D1 / D-SECRETS / D-NAMES). Lịch sử → `docs/CHANGELOG.md` § 33.
+
+### Yêu cầu ghi khác site — vì sao `SameSite=Lax` không đủ
+
+Production chia tên miền đăng ký `delify.vn` với các trang khác. "Same-site" của cookie tính theo tên miền đăng ký, nên một `<form method=post>` trên `other.delify.vn` được trình duyệt gửi kèm cookie phiên `cdkt_admin` của cán bộ — Lax không chặn. `server/middleware/00.origin-gate.ts` (chạy trước `admin-auth` — Nitro sắp middleware theo `localeCompare` tên tệp) quyết định bằng thứ trình duyệt tự tính và trang web không ghi đè được: `Sec-Fetch-Site` (chỉ `same-origin`/`none` qua), không có thì `Origin` (`null`/hỏng → chặn; host phải là host của `PUBLIC_BASE_URL`, một mục của `PUBLIC_HOST_ALLOWLIST`, hoặc host của chính request — cái sau CHỈ khi peer là proxy đã khai (`peerIsTrustedProxy`; khi đó `X-Forwarded-Host`/`Host` do proxy chuyển). `Host` thô từ một peer lạ không bao giờ được tin (design D-CSRF): app mở thẳng ra ngoài chỉ chấp nhận các host đã cấu hình). Không có cả hai → cho qua (D-CSRF: cron/curl/E2E). Áp cho **mọi** phương thức ghi, không phân loại đường dẫn: bộ phân loại là thứ đã lệch pha với router ở `admin-auth` (`/api/%61dmin`), và mọi handler ghi đều nằm dưới `/api/**`. Từ chối không dùng token CSRF: token cần trạng thái và sửa mọi form/fetch, trong khi Fetch Metadata + Origin phủ mọi trình duyệt đang dùng. Trình duyệt rất cũ (không gửi header nào) chỉ còn Lax — đánh đổi đã chấp nhận.
+
+### MFA bắt buộc — khoá ngoài & break-glass
+
+Chính sách `off|privileged|all` (khoá `settings` `mfa_policy` + `mfa_enforce_after`, chỉ ghi qua `PUT /api/admin/security/mfa-policy`, SuperAdmin, audit cùng transaction; không nằm trong `ALLOWED_SETTING_KEYS`/`SETTINGS_READ_KEYS`). Mỗi lượt đổi đặt mốc = bây giờ + 14 ngày. Chốt ở `admin-auth` (sau khi nạp quyền từ CSDL): tài khoản thuộc diện, quá mốc, không có hàng yếu tố `active` → 403 `data.code = 'mfa_enrollment_required'`, trừ `auth/me`, `auth/logout`, `profile/password` và từng endpoint `profile/mfa/*` (liệt kê đủ, không khớp tiền tố; mọi dạng đã giải mã phải khớp, `#` không bao giờ qua). Đệm: chính sách 30 s (bỏ đệm khi ghi qua endpoint), "có yếu tố" 60 s theo `(user, tokenVersion)` — mọi thao tác đổi yếu tố đều tăng `tokenVersion` nên không có cửa sổ đọc nhầm.
+
+Rủi ro khoá người vận hành ra ngoài và lối thoát, theo thứ tự nên thử:
+1. **Mã dự phòng** — bật yếu tố đầu tiên dưới chính sách khác `off` phát kèm 10 mã (hiện một lần, bcrypt, không thay lô đang có). Đăng nhập bằng mã dự phòng ở bước thứ hai.
+2. **SuperAdmin xoá yếu tố của tài khoản đó** (`DELETE /api/admin/users/[id]/mfa`, đã có từ trước) — tài khoản về trạng thái "chưa có yếu tố", lại vào được trang bật MFA.
+3. **`MFA_ENFORCEMENT=0`** trong `.env` + `docker compose up -d --no-deps app` — không ai bị chặn vì thiếu MFA (đọc lúc request; chính sách vẫn lưu, banner vẫn nhắc). Bỏ lại ngay sau sự cố.
+4. **Sự cố hàng loạt đã biết**: xoay `JWT_SECRET` làm mọi TOTP vô hiệu (HKDF `cdkt-mfa-totp:v1`) — tài khoản chỉ có TOTP mất yếu tố dùng được nhưng hàng vẫn `active`, nên chốt không chặn họ; họ kẹt ở bước đăng nhập thứ hai → dùng (1) hoặc (2). Email OTP cần SMTP: SMTP hỏng (kể cả mật khẩu SMTP không giải mã được sau khi xoay `CHATBOT_ENCRYPTION_SECRET`) → (1), (2), hoặc (3) cho người chưa bật.
+5. SuperAdmin duy nhất tự khoá mình (mất thiết bị + mất mã): không có lối trong app — đặt `MFA_ENFORCEMENT=0` không giúp bước đăng nhập thứ hai. Lối cuối: xoá hàng `user_mfa_factors` của tài khoản đó bằng SQL trên VPS (`DELETE FROM user_mfa_factors WHERE user_id = ?`), ghi lại vào nhật ký vận hành.
+
+### Bí mật trong `settings` mã hoá lúc lưu
+
+`smtp_pass`, `r2_secret_key`, `backup_drive_service_account` từng nằm nguyên văn — tức nguyên văn trong mọi bản dump (sao lưu trong app, `backup-db.sh`, dump trước deploy, bản đẩy lên Drive). Nay envelope AES-256-GCM (`server/utils/settings-secrets.ts`, cùng primitive `secret-envelope.ts`), nhãn `cdkt-smtp-pass:v1` / `cdkt-r2-secret:v1` / `cdkt-backup-drive-key:v1`, khoá `CHATBOT_ENCRYPTION_SECRET`. **Không** có `lastFour` (khác các envelope cũ) — bốn ký tự cuối là một mẩu mật khẩu nằm trong mọi bản dump, và trang không hiện nó. Giải mã đúng một chỗ mỗi loại: `getSmtpConfig`, `loadR2Config` (upload và storage-size nay đi qua nó), `readBackupConfig`. Không mở được → giá trị dùng là rỗng + cờ (`passUnreadable`/`secretUnreadable`/`driveServiceAccountUnreadable`), gửi thử/kiểm tra R2/Drive báo đúng lý do, `sendMail` từ chối (không gửi không xác thực); GET cài đặt trả `needsReentry` (tên khoá), không bao giờ envelope. Giá trị nguyên văn cũ (khôi phục từ dump trước bản này) vẫn dùng được và được mã hoá ở lần khởi động kế tiếp. Thiếu khoá lúc lưu → 500, không bao giờ lưu nguyên văn.
+
+Lượt chuyển lúc khởi động (`server/db/settings-secret-conversion.ts`): chỉ mã hoá giá trị chưa phải envelope (kích hoạt theo trạng thái giá trị, tự xoá điều kiện → khởi động lần hai không ghi), mở thử envelope mới trước khi ghi, `UPDATE … WHERE value = <giá trị vừa đọc> COLLATE utf8mb4_bin`; envelope không mở được → để nguyên + log `db.migration.settings_secret_unreadable`; không có khoá → không ghi + `…_no_key`. Kiểm trên MySQL thật: khởi động 2 không đổi `CHECKSUM TABLE settings`.
+
+### Xoay `CHATBOT_ENCRYPTION_SECRET` (runbook)
+
+Biến này là khoá lúc lưu cho: API key AI (`cdkt-chatbot-provider-key:v1`), secret Google OAuth (`cdkt-google-oauth-secret:v1`), refresh token + client secret Drive OAuth (`cdkt-backup-drive-oauth:v1`), Secret Key R2 video (`cdkt-video-r2-secret:v1`), và từ 2A: mật khẩu SMTP, Secret Key R2 ảnh, khoá JSON service account Drive. Không có lượt mã hoá lại tự động (lượt chuyển chỉ mã hoá nguyên văn, không giải mã-mã hoá lại — chủ đích: chạy nhầm khoá không được biến bí mật đọc được thành không đọc được).
+
+1. Trước khi xoay: chuẩn bị lại MỌI bí mật ở danh sách trên (mật khẩu SMTP, hai Secret Key R2, khoá JSON service account, API key AI, client secret Google/Drive). Không có chúng thì đừng xoay.
+2. Đổi `CHATBOT_ENCRYPTION_SECRET` trong `.env` (`openssl rand -base64 32`) → `./manage.sh` Update.
+3. Log khởi động có `db.migration.settings_secret_unreadable` (tên khoá) — dự kiến. Nhập lại lần lượt: Email (SMTP), Lưu trữ Media (R2), Cổng video (R2 video), Sao lưu (service account + liên kết lại Drive OAuth), Đăng nhập Google, AI Panel (API key). Các trang này báo "cần nhập lại" cho tới khi xong.
+4. Kiểm: "Gửi email thử", "Kiểm tra kết nối R2", một lượt "Chạy backup" có Drive.
+5. Bản dump cũ chứa envelope của khoá cũ (và bản dump trước 2A chứa nguyên văn) — giữ hoặc huỷ theo chính sách lưu trữ tài liệu mật.
+
+### Tên Google là từ dành riêng
+
+Luật tên dành riêng chỉ áp cho tên người đọc tự đặt; tên Google đi thẳng vào `display_name` và hiện trên bình luận công khai, email trả lời và chat livestream. Nay OAuth callback đặt `reader_accounts.display_name_reserved` (cùng phép gấp `isReservedDisplayName`) mỗi lần đăng nhập; `effectiveDisplayName` hiện "Bạn đọc" khi cờ bật và chưa có tên tự đặt — cờ là tham số **bắt buộc** của hàm, nên một nơi gọi quên chọn cột là lỗi typecheck. Đăng nhập vẫn thành công (D-NAMES: từ chối sẽ khoá một người thật), tên Google lưu nguyên văn (lần đăng nhập sau đằng nào cũng ghi lại). Hàng có sẵn được điền cờ một lần lúc cột vừa được thêm (`server/db/reader-name-backfill.ts`).
+
+---
+
 ## Pentest RedAmon 2026-10-06 — 12 findings, 0 CVE, risk 65/100 High
 
 Báo cáo external pentest `cdht.delify.vn` (RedAmon, 6/10/2026). Mọi finding đều là **misconfig deployment/DNS**, không phải soft vuln — 0 CVE, 0 confirmed exploit. Đối chiếu với codebase:

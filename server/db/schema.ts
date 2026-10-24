@@ -753,6 +753,14 @@ export const readerAccounts = mysqlTable('reader_accounts', {
   // in server/services/readers.ts, never column-by-column at a call site.
   customDisplayName: varchar('custom_display_name', { length: 255 }),
   /**
+   * The Google name (`display_name`) folds to a reserved staff/authority term
+   * ("Admin", "Ban quản trị", "C11"…). Set by the OAuth callback on every
+   * sign-in, alongside the refreshed `display_name`, which is kept as Google sent
+   * it. While set and no custom name exists, effectiveDisplayName() shows
+   * "Bạn đọc" (spec reader-display-names-google, decision D-NAMES).
+   */
+  displayNameReserved: boolean('display_name_reserved').notNull().default(false),
+  /**
    * Whether to email this reader when somebody answers their comment.
    *
    * Defaults ON because the notification is the whole point — a citizen asks a

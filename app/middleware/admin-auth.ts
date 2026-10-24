@@ -15,4 +15,11 @@ export default defineNuxtRouteMiddleware(async (to) => {
   if (!user.value) {
     return navigateTo('/admin/login')
   }
+
+  // Chính sách bắt buộc MFA đã tới hạn mà tài khoản chưa bật yếu tố nào: máy chủ
+  // từ chối mọi API admin ngoài trang bật MFA (403 `mfa_enrollment_required`), nên
+  // đưa thẳng về đó thay vì để từng trang hiện lỗi.
+  if (user.value.mfaEnrollmentRequired && to.path !== '/admin/profile') {
+    return navigateTo({ path: '/admin/profile', hash: '#security' })
+  }
 })
