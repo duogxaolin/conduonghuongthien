@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import type { AdminUserRow, AdminRoleRow } from '~/types/admin-api'
+import AdminModal from '~/components/admin/AdminModal.vue'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -346,9 +347,7 @@ onMounted(() => { fetchUsers() })
     </div>
 
     <!-- Create User Modal -->
-    <div v-if="showModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4" @click.self="showModal = false">
-      <div class="bg-white rounded-2xl p-7 w-full max-w-[460px] max-h-[90vh] overflow-y-auto">
-        <h3 class="text-[1.15rem] font-extrabold text-[#122815] m-0 mb-1">Thêm Tài khoản Admin Mới</h3>
+    <AdminModal :open="showModal" title="Thêm Tài khoản Admin Mới" size="sm" :busy="saving" @close="showModal = false">
         <p class="text-[0.82rem] text-[#667768] m-0 mb-5">Cấp tài khoản và gán vai trò quản trị</p>
         <div v-if="errorMsg" class="bg-[#ffebe9] text-[#d12420] px-3 py-2 rounded-lg text-[0.82rem] mb-4">{{ errorMsg }}</div>
         <form @submit.prevent="handleCreateUser" class="flex flex-col gap-4">
@@ -375,13 +374,10 @@ onMounted(() => { fetchUsers() })
             <button type="submit" :disabled="saving" class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed">{{ saving ? 'Đang tạo…' : 'Tạo Tài Khoản' }}</button>
           </div>
         </form>
-      </div>
-    </div>
+    </AdminModal>
 
     <!-- Edit User Modal -->
-    <div v-if="showEditModal" class="fixed inset-0 bg-black/50 flex items-center justify-center z-[2000] p-4" @click.self="showEditModal = false">
-      <div class="bg-white rounded-2xl p-7 w-full max-w-[460px] max-h-[90vh] overflow-y-auto">
-        <h3 class="text-[1.15rem] font-extrabold text-[#122815] m-0 mb-1">Chỉnh sửa Tài khoản: {{ editForm.username }}</h3>
+    <AdminModal :open="showEditModal" :title="`Chỉnh sửa Tài khoản: ${editForm.username}`" size="sm" :busy="saving" @close="showEditModal = false">
         <p class="text-[0.82rem] text-[#667768] m-0 mb-5">Cập nhật Email, Vai trò, Trạng thái hoặc Đổi mật khẩu mới</p>
         <div v-if="errorMsg" class="bg-[#ffebe9] text-[#d12420] px-3 py-2 rounded-lg text-[0.82rem] mb-4">{{ errorMsg }}</div>
         <form @submit.prevent="handleUpdateUser" class="flex flex-col gap-4">
@@ -415,7 +411,6 @@ onMounted(() => { fetchUsers() })
             <button type="submit" :disabled="saving" class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-4 py-2.5 rounded-lg cursor-pointer transition-colors border-0 disabled:opacity-60 disabled:cursor-not-allowed">{{ saving ? 'Đang lưu…' : 'Cập Nhật Tài Khoản' }}</button>
           </div>
         </form>
-      </div>
-    </div>
+    </AdminModal>
   </div>
 </template>

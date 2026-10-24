@@ -129,6 +129,7 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'components/admin/ai/AiDashboardTab.vue', marker: 'v-if="usageLoading"' },
   { file: 'components/admin/ai/AiProvidersTab.vue', marker: 'v-if="providersLoading"' },
   { file: 'components/admin/ai/AiServicesTab.vue', marker: 'v-if="servicesLoading"' },
+  // Bản tóm tắt (D10): khung chờ là hai ô số liệu.
   { file: 'components/admin/ai/AiModerationTab.vue', marker: 'v-if="moderationLoading"' },
   { file: 'components/admin/ai/AiLogsTab.vue', marker: 'v-if="logsLoading"' },
   { file: 'pages/admin/ai/moderation.vue', marker: 'v-if="loading"' },

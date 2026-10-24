@@ -10,6 +10,7 @@
  */
 import { errorMessage } from '~/utils/errorMessage'
 import { formatTime, formatVnd, type ProviderOption, type PricingRow } from '~/utils/ai-service-labels'
+import AdminModal from '~/components/admin/AdminModal.vue'
 
 interface ServiceRow {
   id: number
@@ -215,10 +216,15 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
         </table>
       </div>
 
-      <!-- Edit Service Drawer -->
-      <div v-if="editingService" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="editingService = null">
-        <div class="bg-white rounded-2xl p-6 max-w-2xl w-full flex flex-col gap-4 max-h-[90vh] overflow-y-auto" @click.stop>
-          <h2 class="m-0 text-lg font-bold text-[#122815]">Cấu hình: {{ editingService.serviceName }}</h2>
+      <!-- Edit Service Modal -->
+      <AdminModal
+        :open="!!editingService"
+        :title="`Cấu hình: ${editingService?.serviceName ?? ''}`"
+        size="lg"
+        :busy="savingService"
+        @close="editingService = null"
+      >
+        <div v-if="editingService" class="flex flex-col gap-4">
 
           <!-- 1. Chọn Nhà cung cấp -->
           <label class="flex flex-col gap-1.5 text-sm font-bold">
@@ -311,25 +317,22 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
             </div>
           </div>
 
-          <!-- Footer actions -->
-          <div class="flex justify-between gap-3 pt-2 border-t border-[#e2ece3]">
+        </div>
+        <template #footer>
             <button
               type="button"
-              class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#122815] hover:bg-[#f0f7f1]"
+              class="mr-auto px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#122815] hover:bg-[#f0f7f1]"
               :disabled="testingService"
               @click="testService()"
             >
               {{ testingService ? 'Đang test...' : 'Kiểm tra kết nối' }}
             </button>
-            <div class="flex gap-2">
-              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="editingService = null">Huỷ</button>
-              <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="saveService()" :disabled="savingService">
-                {{ savingService ? 'Đang lưu...' : 'Lưu cấu hình' }}
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
+            <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="editingService = null">Huỷ</button>
+            <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="saveService()" :disabled="savingService">
+              {{ savingService ? 'Đang lưu...' : 'Lưu cấu hình' }}
+            </button>
+        </template>
+      </AdminModal>
     </template>
   </div>
 </template>
