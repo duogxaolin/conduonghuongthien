@@ -55,6 +55,7 @@ import { MODERATION_RULES_SEED, SEED_GROUPS, SEED_GROUP_SPECS, seedMarkerKey } f
 import { CHATBOT_SMALL_TALK_SEED } from '../server/data/chatbot-small-talk-seed.ts'
 import { DEFAULT_TRANSLATIONS_SEED } from '../server/data/default-translations-seed.ts'
 import { normalizeQuestion } from '../server/utils/chatbot/small-talk.ts'
+import { SETTINGS_SECRET_LABELS, isSettingsSecretEnvelope, isSettingsSecretKey, openSettingsSecret } from '../server/utils/settings-secrets.ts'
 import { DEFAULT_ROLE_PERMISSION_ARRAYS, evaluateInitializer, seedResources } from './_seed-source.ts'
 
 const enabled = process.env.SCHEMA_UPGRADE_INTEGRATION === '1'
@@ -73,6 +74,17 @@ const BOOT_SECRETS = {
   JWT_SECRET: randomBytes(32).toString('hex'),
   CHATBOT_ENCRYPTION_SECRET: randomBytes(32).toString('base64'),
   ANALYTICS_HMAC_SECRET: randomBytes(32).toString('hex'),
+}
+
+/**
+ * The three credentials the previous release kept in plaintext in `settings`
+ * (wave2 2A D-SECRETS). Made-up values, never real ones; a JSON service-account key
+ * has no `sealed` field, so it is plaintext too.
+ */
+const PLAINTEXT_SECRETS: Readonly<Record<'smtp_pass' | 'r2_secret_key' | 'backup_drive_service_account', string>> = {
+  smtp_pass: 'Mật-khẩu SMTP cũ #1 \'nháy\'',
+  r2_secret_key: 'r2-secret-plaintext-0123456789abcdef',
+  backup_drive_service_account: JSON.stringify({ type: 'service_account', client_email: 'backup@example.iam.gserviceaccount.com', private_key: '-----BEGIN PRIVATE KEY-----\nMIIfake\n-----END PRIVATE KEY-----\n' }),
 }
 
 /** Never let a typo in the env point this at a real deployment. */
@@ -249,6 +261,11 @@ const MIGRATION_SOURCES = [
   'server/db/migrations-additive.ts',
   // `repairLegacyMediaUrls`, called from `applyAdditiveMigrations` (moved out in wave2 D-SCAN).
   'server/db/legacy-media-urls.ts',
+  // Both called from `applyAdditiveMigrations` (wave2 2A, CHANGELOG § 33): the
+  // credential envelope conversion of `settings` and the one-time
+  // `reader_accounts.display_name_reserved` backfill.
+  'server/db/settings-secret-conversion.ts',
+  'server/db/reader-name-backfill.ts',
   ...readdirSync(new URL('../server/db/schema-tables/', import.meta.url)).filter(name => name.endsWith('.ts')).sort().map(name => `server/db/schema-tables/${name}`),
 ]
 const sourceCache = new Map<string, string>()
@@ -298,6 +315,21 @@ function tablesTouchedByBootMigrations(previousTables: Set<string>) {
     newTables: [...named].filter(name => currentTables.has(name) && !previousTables.has(name)).sort(),
   }
 }
+
+/**
+ * Tables a boot write only READS, to compute what it writes elsewhere. They are not
+ * found by `tablesTouchedByBootMigrations` (nothing writes them), yet without rows in
+ * them the write branch never runs on boot 1, and boot 2 proves nothing about it.
+ * Each entry names the source that reads it — the last test checks the read is still
+ * there, so a stale entry fails instead of seeding a table for nothing.
+ */
+const BOOT_READ_TABLES: Array<{ table: string, source: string, reason: string }> = [
+  {
+    table: 'article_view_daily',
+    source: 'server/db/migrations-additive.ts',
+    reason: 'reconcileArticleViewTotals (wave2 2C, CHANGELOG § 35) sets articles.view_total* to the sums of these rows on every boot — with no daily rows every total is already 0 = 0 and the reconcile writes nothing',
+  },
+]
 
 // ── The seed's own default rows ───────────────────────────────────────────────
 //
@@ -948,13 +980,24 @@ const SEED_OVERRIDES: Record<string, SeedOverride> = {
     row: i => (i === 0 ? { resource: 'news', can_delete: 0, can_publish: 0 } : {}),
   },
   settings: {
-    count: 4,
-    why: 'staff-edited values of keys the seed also defaults — the seed is insert-only; r2_public_url is the R2 domain repairLegacyMediaUrls repairs `localhost:3000/<domain>` URLs to (wave2 D-SCAN: configured, no longer hard-coded)',
-    row: i => ({
-      key: ['site_name', 'hotline', 'sitemap_note', 'r2_public_url'][i]!,
-      value: ['Con Đường Hướng Thiện — C11 (đã sửa)', '0912.345.678', null, 'https://cdn1.delify.vn/'][i]!,
-      group: ['general', 'contact', 'general', 'media'][i]!,
-    }),
+    count: 4 + Object.keys(PLAINTEXT_SECRETS).length,
+    why: 'staff-edited values of keys the seed also defaults — the seed is insert-only; r2_public_url is the R2 domain repairLegacyMediaUrls repairs `localhost:3000/<domain>` URLs to (wave2 D-SCAN: configured, no longer hard-coded); the three credentials stored in plaintext by the previous release, which boot 1 seals into envelopes (wave2 2A D-SECRETS)',
+    row: (i) => {
+      const secrets = Object.entries(PLAINTEXT_SECRETS)
+      if (i >= 4) {
+        const [key, value] = secrets[i - 4]!
+        return { key, value, group: key === 'smtp_pass' ? 'email' : key === 'r2_secret_key' ? 'media' : 'backup' }
+      }
+      return {
+        key: ['site_name', 'hotline', 'sitemap_note', 'r2_public_url'][i]!,
+        value: ['Con Đường Hướng Thiện — C11 (đã sửa)', '0912.345.678', null, 'https://cdn1.delify.vn/'][i]!,
+        group: ['general', 'contact', 'general', 'media'][i]!,
+      }
+    },
+  },
+  reader_accounts: {
+    why: 'a reader whose Google name is the reserved word "Admin" (row 1): the boot that adds reader_accounts.display_name_reserved flags exactly that reader (wave2 2A D-NAMES); rows 2–3 keep ordinary names',
+    row: i => (i === 0 ? { display_name: 'Admin', custom_display_name: null } : {}),
   },
   home_sections: {
     why: 'two default section types reordered and hidden by staff, one custom section',
@@ -1568,6 +1611,21 @@ function addsMissingDefault(change: Change, ctx: BootContext): boolean {
   return true
 }
 
+/** The per-article totals the reconcile maintains (wave2 2C D6). */
+const VIEW_TOTAL_COLUMNS = ['view_total_real', 'view_total_fabricated', 'view_total']
+
+/** Sum of `article_view_daily` per article id, exactly (BIGINT UNSIGNED — no JS number). */
+function dailyViewSums(snap: Snapshot): Map<string, { real: bigint, fabricated: bigint }> {
+  const sums = new Map<string, { real: bigint, fabricated: bigint }>()
+  for (const row of rowsOf(snap, 'article_view_daily')) {
+    const entry = sums.get(String(row.article_id)) ?? { real: 0n, fabricated: 0n }
+    entry.real += BigInt(row.real_views ?? '0')
+    entry.fabricated += BigInt(row.fabricated_views ?? '0')
+    sums.set(String(row.article_id), entry)
+  }
+  return sums
+}
+
 const DECLARED_CONVERSIONS: DeclaredConversion[] = [
   {
     id: 'ddl.create-table',
@@ -1576,6 +1634,58 @@ const DECLARED_CONVERSIONS: DeclaredConversion[] = [
     reason: 'a table the new release creates: nothing previous to preserve, and its rows are compared from boot 2 on',
     covers: (change, ctx) => (change.kind === 'table-added' && TABLES_CREATED_BY_BOOT.has(change.table))
       || (change.kind === 'inserted' && !ctx.before.has(change.table)),
+  },
+  // ── wave2 boot writes (2A § 33, 2C § 35, ops § 36). Listed before the generic
+  // `additive.add-column`: the first declaration that covers a change claims it, and
+  // the columns these add are part of their own conversion.
+  {
+    id: '2a.settings-secret-envelopes',
+    source: 'server/db/settings-secret-conversion.ts',
+    anchor: /if \(isSettingsSecretEnvelope\(value\)\) \{[\s\S]*?'UPDATE `settings` SET `value` = \? WHERE `key` = \? AND `value` = \? COLLATE utf8mb4_bin'/,
+    reason: 'wave2 2A D-SECRETS (CHANGELOG § 33): smtp_pass / r2_secret_key / backup_drive_service_account still stored in plaintext are sealed once into an AES-256-GCM envelope under their own label; the trigger (a value that is not yet an envelope) is removed by the write itself, and an envelope — readable or not — is never rewritten. The new value must open, with this deployment\'s key, to exactly the old one',
+    covers: (change) => {
+      if (!isCell(change, 'settings', ['value'])) return false
+      const key = String(change.beforeRow.key)
+      if (!isSettingsSecretKey(key) || !change.before || isSettingsSecretEnvelope(change.before) || !change.after) return false
+      const opened = openSettingsSecret(key, change.after, BOOT_SECRETS.CHATBOT_ENCRYPTION_SECRET)
+      return opened.state === 'sealed' && opened.value === change.before
+    },
+  },
+  {
+    id: '2a.reader-reserved-name-flag',
+    source: 'server/db/migrations-additive.ts',
+    anchor: /const readerNameFlagExisted = await hasColumn\(db, database, 'reader_accounts', 'display_name_reserved'\)[\s\S]*?if \(!readerNameFlagExisted\) await backfillReservedReaderNames\(db\)/,
+    reason: 'wave2 2A D-NAMES (CHANGELOG § 33): adds reader_accounts.display_name_reserved and, on that same boot only, sets it to 1 for readers whose Google name folds to a reserved term. Its values live in the column being added, which the row diff cannot compare — the boot-1 assertions check them; once the column exists, any write to it is undeclared',
+    covers: (change, ctx) => change.kind === 'column-added' && change.table === 'reader_accounts' && change.column === 'display_name_reserved'
+      && !(ctx.before.get('reader_accounts')?.columns.includes('display_name_reserved') ?? false),
+  },
+  {
+    id: '2c.article-view-totals',
+    source: 'server/db/migrations-additive.ts',
+    anchor: /export async function reconcileArticleViewTotals\([\s\S]*?a\.\\`updated_at\\` = a\.\\`updated_at\\`\s*WHERE a\.\\`view_total_real\\` <> COALESCE\(s\.r, 0\)/,
+    reason: 'wave2 2C D6 (CHANGELOG § 35): adds articles.view_total_real / view_total_fabricated / view_total (plain BIGINT) and reconciles them with article_view_daily on EVERY boot, writing only the articles whose totals differ from the daily sums, with updated_at pinned. Without the columns its writes land in the columns being added (asserted after boot 1); with them, a change is declared only when the new value is exactly the daily sum',
+    covers: (change, ctx) => {
+      if (change.kind === 'column-added') return change.table === 'articles' && VIEW_TOTAL_COLUMNS.includes(change.column)
+      if (!isCell(change, 'articles', VIEW_TOTAL_COLUMNS)) return false
+      const sums = dailyViewSums(ctx.after).get(String(change.afterRow.id)) ?? { real: 0n, fabricated: 0n }
+      const expected: Record<string, bigint> = { view_total_real: sums.real, view_total_fabricated: sums.fabricated, view_total: sums.real + sums.fabricated }
+      return change.after === String(expected[change.column])
+    },
+  },
+  {
+    id: '2c.view-total-ungenerated',
+    source: 'server/db/migrations-additive.ts',
+    anchor: /if \(generated\.length > 0\) \{\s*await db\.query\('ALTER TABLE `articles` MODIFY COLUMN `view_total` BIGINT NOT NULL DEFAULT 0'\)/,
+    reason: 'wave2 2C D6: a database that ran d079453 has view_total as a STORED generated column; it becomes a plain column while — and only while — one exists. MODIFY COLUMN keeps every value, so no row change is ever attributed to it. Unreachable from the 7dfed8c fixture (no generated column there); declared so its code stays anchored',
+    covers: () => false,
+  },
+  {
+    id: 'ops.backups-offsite-status',
+    source: 'server/db/migrations-additive.ts',
+    anchor: /export async function convergeBackupsTable\([\s\S]*?await ensureColumn\(db, database, 'backups', 'offsite_status', 'VARCHAR\(16\) NULL AFTER `drive_file_id`'\)/,
+    reason: 'wave2 ops D-OFFSITE (CHANGELOG § 36): convergeBackupsTable — also run on its own by a failed database restore — widens backups.trigger and adds backups.offsite_status. Schema only: no row of the previous release is given a status (asserted after boot 1)',
+    covers: (change, ctx) => change.kind === 'column-added' && change.table === 'backups' && change.column === 'offsite_status'
+      && !(ctx.before.get('backups')?.columns.includes('offsite_status') ?? false),
   },
   {
     id: 'additive.add-column',
@@ -1807,8 +1917,11 @@ test('every table a boot migration touches gets representative rows', { skip: !e
   // overwrites staff data shows up as a changed cell.
   const seedWritten = loadSeedData().writtenTables.filter(table => previousTables.has(table))
   for (const table of seedWritten) assert.ok(SEED_OVERRIDES[table], `the seed writes ${table} but SEED_OVERRIDES gives it no row with a default key and staff-edited values`)
+  // The inputs of boot writes (BOOT_READ_TABLES): rows there make those writes run.
+  const bootRead = BOOT_READ_TABLES.map(entry => entry.table)
+  for (const table of bootRead) assert.ok(previousTables.has(table), `BOOT_READ_TABLES names ${table}, which the previous release does not have`)
 
-  const seeded = withReferencedTables([...new Set([...touched, ...seedWritten])], current.previousSchema)
+  const seeded = withReferencedTables([...new Set([...touched, ...seedWritten, ...bootRead])], current.previousSchema)
   const rows = buildRows(seeded, current.previousSchema)
   // Contract: in every row keyed like a seed default, every column the seed writes
   // differs from the seed's value — so a seed that resets staff data is visible.
@@ -1829,12 +1942,13 @@ test('every table a boot migration touches gets representative rows', { skip: !e
     }
   })
   const counted = await snapshot()
-  for (const table of [...touched, ...seedWritten]) {
+  for (const table of [...touched, ...seedWritten, ...bootRead]) {
     const expected = SEED_OVERRIDES[table]?.count ?? DEFAULT_ROW_COUNT
-    assert.equal(counted.get(table)?.rows.size, expected, `${table} is written at boot but holds ${counted.get(table)?.rows.size ?? 0} representative rows`)
+    assert.equal(counted.get(table)?.rows.size, expected, `${table} is written or read at boot but holds ${counted.get(table)?.rows.size ?? 0} representative rows`)
   }
   t.diagnostic(`tables touched by boot migrations: ${touched.length} (${touched.join(', ')})`)
   t.diagnostic(`tables the seed writes: ${seedWritten.length} (${seedWritten.join(', ')})`)
+  t.diagnostic(`tables boot writes read: ${bootRead.join(', ')}`)
   t.diagnostic(`seeded with referenced parents: ${seeded.length} tables, ${[...rows.values()].reduce((n, r) => n + r.length, 0)} rows`)
   if (newTables.length) t.diagnostic(`tables the new release creates (nothing previous to preserve): ${newTables.join(', ')}`)
   current.touched = touched
@@ -1889,6 +2003,54 @@ test('boot 1 on the previous release keeps every row except the declared one-tim
     'every default set of every group is marked on the first boot',
   )
   assert.equal(cellAfter('articles', 'id=1', 'updated_at'), beforeBoot.get('articles')!.rows.get('id=1')!.updated_at, 'repairing a link is not an edit of the article: updated_at is kept')
+
+  // ── wave2 boot writes (2A § 33, 2C § 35, ops § 36), checked independently of
+  // their declarations. Some of them write only into a column this same boot adds,
+  // which the row diff above cannot see (it compares the columns both snapshots
+  // share) — so their result is asserted here, and boot 2 proves they stay put.
+  // 2A D-SECRETS: each plaintext credential is now an envelope under its own label
+  // that opens, with this deployment's key, to exactly the old value.
+  for (const [key, plaintext] of Object.entries(PLAINTEXT_SECRETS) as Array<[keyof typeof PLAINTEXT_SECRETS, string]>) {
+    const stored = cellAfter('settings', `key=${key}`, 'value')
+    assert.ok(stored && isSettingsSecretEnvelope(stored), `settings.${key} is still plaintext after boot 1`)
+    assert.equal((JSON.parse(stored) as { sealed?: unknown }).sealed, SETTINGS_SECRET_LABELS[key], `settings.${key} is sealed under another label`)
+    assert.ok(!stored.includes(plaintext), `settings.${key}: the stored row still contains the plaintext`)
+    assert.deepEqual(openSettingsSecret(key, stored, BOOT_SECRETS.CHATBOT_ENCRYPTION_SECRET), { state: 'sealed', value: plaintext })
+  }
+  // 2A D-NAMES: the column is added and filled in the same boot — exactly the reader
+  // whose Google name is reserved is flagged, and the Google name itself is kept.
+  const readers = rowsOf(afterBoot, 'reader_accounts')
+  assert.equal(readers.length, 3)
+  for (const reader of readers) {
+    assert.equal(reader.display_name_reserved, reader.id === '1' ? '1' : '0', `reader ${reader.id} (${shown(reader.display_name ?? null)}): display_name_reserved`)
+  }
+  assert.equal(cellAfter('reader_accounts', 'id=1', 'display_name'), 'Admin', 'the Google name is kept as Google sent it')
+  // 2C D6: every article's three totals equal the sums of its daily rows (written
+  // into columns this boot adds), and no boot write changed an article's updated_at —
+  // article 3 has no other declared change, so a lost `updated_at = updated_at` pin
+  // in the reconcile also shows above as an undeclared write.
+  const dailySums = dailyViewSums(afterBoot)
+  assert.ok(dailySums.has('3') && dailySums.get('3')!.real > 0n, 'article 3 has no daily rows — the reconcile write branch is not exercised where nothing else hides it')
+  for (const article of rowsOf(afterBoot, 'articles')) {
+    const sums = dailySums.get(article.id!) ?? { real: 0n, fabricated: 0n }
+    assert.deepEqual(
+      [article.view_total_real, article.view_total_fabricated, article.view_total],
+      [String(sums.real), String(sums.fabricated), String(sums.real + sums.fabricated)],
+      `article ${article.id}: view totals are not the sums of its daily rows`,
+    )
+    assert.equal(article.updated_at, beforeBoot.get('articles')!.rows.get(`id=${article.id}`)!.updated_at, `article ${article.id}: a boot write changed updated_at`)
+  }
+  // ops D-OFFSITE: the column is schema only — no row of the previous release is
+  // given a guessed status (`drive_uploaded = 0` cannot tell "off" from "failed").
+  const backupRows = rowsOf(afterBoot, 'backups')
+  assert.ok(backupRows.length > 0, 'backups has no representative rows')
+  assert.deepEqual(backupRows.map(row => row.offsite_status), backupRows.map(() => null), 'backups.offsite_status was backfilled on boot')
+  // …and each of those writes was attributed to ITS declaration, not to a generic one.
+  const previouslyHad = (table: string, column: string) => current.previousSchema.tables.get(table)?.columns.some(c => c.name === column) ?? false
+  assert.equal(fired.get('2a.settings-secret-envelopes'), Object.keys(PLAINTEXT_SECRETS).length, 'each plaintext credential is one declared conversion')
+  if (!previouslyHad('reader_accounts', 'display_name_reserved')) assert.equal(fired.get('2a.reader-reserved-name-flag'), 1)
+  if (VIEW_TOTAL_COLUMNS.every(column => !previouslyHad('articles', column))) assert.equal(fired.get('2c.article-view-totals'), VIEW_TOTAL_COLUMNS.length)
+  if (!previouslyHad('backups', 'offsite_status')) assert.equal(fired.get('ops.backups-offsite-status'), 1)
 
   t.diagnostic(`declared conversions observed on boot 1: ${[...fired].map(([id, n]) => `${id} ×${n}`).join(', ') || 'none'}`)
   const silent = DECLARED_CONVERSIONS.filter(conversion => !fired.has(conversion.id)).map(conversion => conversion.id)
@@ -2040,5 +2202,9 @@ test('every declared conversion still names code that exists', { skip: !enabled 
   assert.equal(new Set(ids).size, ids.length, 'two declared conversions share an id')
   for (const conversion of DECLARED_CONVERSIONS) {
     assert.match(readSource(conversion.source), conversion.anchor, `declared conversion ${conversion.id}: its code is gone from ${conversion.source} — delete the declaration (or re-anchor it if the write moved)`)
+  }
+  for (const entry of BOOT_READ_TABLES) {
+    assert.ok(MIGRATION_SOURCES.includes(entry.source), `BOOT_READ_TABLES: ${entry.source} is not a boot source`)
+    assert.match(readSource(entry.source), new RegExp(`\\b(?:FROM|JOIN)\\s+\\\\?\`${entry.table}\\\\?\``), `BOOT_READ_TABLES: ${entry.source} no longer reads ${entry.table} — delete the entry`)
   }
 })
