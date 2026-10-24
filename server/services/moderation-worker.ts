@@ -57,6 +57,20 @@ export interface ModerationCheckOutput {
    * (lượt quét lại): không có hàng chờ duyệt nào được ghi, nơi gọi tự quyết làm gì.
    */
   aiUnavailable?: boolean
+  /**
+   * `true` when the AI pass was attempted and did not produce a usable answer: a
+   * gateway error other than "not configured" (provider error, budget, …), an
+   * empty or unparseable reply, an unknown verdict, or a thrown call. The verdict
+   * fields above are UNCHANGED by it — the content is still allowed, or hidden by
+   * the critical-keyword fallback, exactly as before. It only says the AI never
+   * judged this content, so a caller that must not act on an unfinished
+   * moderation (the reply e-mail, `comments.ts`) can tell that apart from a clean
+   * "safe". Absent on every other path. "Not configured" keeps its own path
+   * (`flag_only` / `aiUnavailable`).
+   */
+  aiFailed?: true
+  /** Only with `aiFailed`: the gateway error code, or `empty_response` / `parse_error` / `unrecognised_verdict` / `exception`. */
+  aiFailure?: string
 }
 
 export interface ModerationCheckOptions {
@@ -334,6 +348,9 @@ export async function checkAndModerateContent(
   let highestSeverity: 'low' | 'medium' | 'high' | 'critical' = 'low'
   const reasons: string[] = []
   const matchedRules: string[] = []
+  // Set when the AI was asked and gave no usable answer — see `aiFailed` on the
+  // output. Recorded only; it does not change any decision below.
+  let aiFailure: string | null = null
 
   const severityWeight = { low: 1, medium: 2, high: 3, critical: 4 }
 
@@ -413,6 +430,8 @@ ${fencedContent.fenced}${detectedStr}`
           isFlagged = false
           finalAction = 'allow'
           workerStats.allowedCount++
+          // Anything but the three verdicts the prompt asks for is not an answer.
+          if (parsed.verdict !== 'safe') aiFailure = 'unrecognised_verdict'
         }
       } else {
         // Fallback on AI error. Phân biệt hai nhóm lý do:
@@ -431,6 +450,7 @@ ${fencedContent.fenced}${detectedStr}`
         if (aiUnavailable && options.onAiUnavailable === 'skip') {
           return { flagged: false, action: "allow", severity: 'low', reasons: [], matchedRules: [], aiUnavailable: true }
         }
+        if (!aiUnavailable) aiFailure = aiResult.ok ? 'empty_response' : (aiResult.error || 'provider_error')
         if (aiUnavailable) {
           isFlagged = true
           finalAction = 'flag_only'
@@ -459,6 +479,8 @@ ${fencedContent.fenced}${detectedStr}`
       workerStats.errorCount++
       workerStats.lastError = err instanceof Error ? err.message : String(err)
       workerStats.lastErrorAt = new Date().toISOString()
+      // `JSON.parse` of the reply throws a SyntaxError; anything else is the call itself.
+      aiFailure = err instanceof SyntaxError ? 'parse_error' : 'exception'
       if (matchedKeywords.some(k => k.severity === 'critical')) {
         isFlagged = true
         finalAction = 'auto_hide'
@@ -545,6 +567,7 @@ ${fencedContent.fenced}${detectedStr}`
     reasons,
     matchedRules,
     ...(isFlagged ? { hidden, failures } : {}),
+    ...(aiFailure !== null ? { aiFailed: true as const, aiFailure } : {}),
   }
 }
 

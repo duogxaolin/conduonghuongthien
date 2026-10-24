@@ -240,10 +240,10 @@ const importingFromMediaStorage = ref(false)
 const usingSharedMediaStorageR2 = ref(false)
 
 /**
- * "Dùng R2 của Media Storage" — copy cả 5 field + set provider=r2 + báo dùng chung.
- * Endpoint `/api/admin/settings` mask `r2_secret_key` thành `********` cho non-superadmin,
- * nên chỉ superadmin mới thấy secret thật để tự điền. Non-superadmin phải nhập tay.
- * Đây là "sử dụng chung" copy 1 lần, không phải reference động.
+ * "Dùng R2 của Media Storage" — copy 4 field công khai + set provider=r2 + báo dùng
+ * chung. Secret Key KHÔNG copy được: `/api/admin/settings` trả `r2_secret_key` dạng
+ * `********` cho MỌI vai trò (spec admin-settings-secrets), nên ai cũng phải nhập tay
+ * Secret Key bên dưới. Đây là "sử dụng chung" copy 1 lần, không phải reference động.
  */
 async function useMediaStorageR2() {
   importingFromMediaStorage.value = true
@@ -255,11 +255,6 @@ async function useMediaStorageR2() {
     if (s.r2_access_key) { form.videoR2AccessKey = s.r2_access_key; filled.push('Access Key') }
     if (s.r2_bucket) { form.videoR2Bucket = s.r2_bucket; filled.push('Bucket') }
     if (s.r2_public_url) { form.videoR2PublicUrl = s.r2_public_url; filled.push('Public URL') }
-    // Secret chỉ plaintext khi superadmin; `********` = mask, không điền mask giả.
-    if (s.r2_secret_key && s.r2_secret_key !== '********') {
-      form.videoR2SecretKey = s.r2_secret_key
-      filled.push('Secret Key')
-    }
     if (s.media_provider === 'r2') {
       form.videoStorageProvider = 'r2'
     }
@@ -269,10 +264,7 @@ async function useMediaStorageR2() {
       return
     }
     usingSharedMediaStorageR2.value = true
-    const secretNote = filled.includes('Secret Key')
-      ? ''
-      : '. Secret Key nhập tay bên dưới (chỉ SuperAdmin thấy sẵn)'
-    toast.success(`Đã dùng chung R2 với Media Storage (${filled.join(', ')}). Bấm "Lưu cấu hình" để áp dụng${secretNote}.`)
+    toast.success(`Đã dùng chung R2 với Media Storage (${filled.join(', ')}). Secret Key không được gửi về trình duyệt — nhập tay bên dưới, rồi bấm "Lưu cấu hình" để áp dụng.`)
   } catch (err) {
     toast.error(errorMessage(err, 'Không lấy được config từ Media Storage'))
   } finally {

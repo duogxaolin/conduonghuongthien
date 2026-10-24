@@ -64,7 +64,7 @@
         <div class="flex flex-wrap gap-3 items-center">
           <nuxt-link
             v-if="d.btnAboutText"
-            :to="d.btnAboutLink || '/about'"
+            :to="safeLinkOrNull(d.btnAboutLink) || '/about'"
             class="inline-flex items-center gap-2 px-7 py-3.5 rounded-xl font-bold text-[0.95rem] text-white transition-all duration-200 hover:-translate-y-0.5"
             style="background: linear-gradient(135deg, #7CB342 0%, #5a9e2a 100%); box-shadow: 0 6px 20px rgba(124,179,66,0.45);"
           >
@@ -74,7 +74,7 @@
 
           <a
             v-if="d.btnHelpText"
-            :href="d.btnHelpLink || '#tro-giup'"
+            :href="safeLinkOrNull(d.btnHelpLink) || '#tro-giup'"
             class="inline-flex items-center gap-2 px-7 py-3.5 rounded-xl font-bold text-[0.95rem] text-white border border-white/40 backdrop-blur-sm transition-all duration-200 hover:bg-white/15 hover:-translate-y-0.5"
             style="background: rgba(255,255,255,0.1);"
           >
@@ -102,45 +102,19 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useI18n } from '~/composables/useI18n'
+// Button links bind through the shared link policy (spec page-builder-links): an
+// unsafe value falls back to the default target instead of reaching `href`.
+import { safeLinkOrNull } from '~~/shared/link-policy'
+import { resolveHeroContent } from '~/utils/blocks/hero-content'
 
 const { t, currentLang } = useI18n()
 const props = defineProps({ block: { type: Object, required: true } })
 
-// Block data (từ Page Builder / DB) là nguồn gốc tiếng Việt. Khi chuyển ngữ,
-// ưu tiên theo thứ tự: (1) bản dịch trong `block.data.translations[lang]` (cán bộ
-// tự dịch trong Page Builder), (2) i18n dictionary (`lang_translations` / hardcode),
-// (3) fallback tiếng Việt gốc. Trước đây `...(props.block?.data || {})` ở cuối
-// **đè** mọi giá trị i18n bằng tiếng Việt cứng → hero không bao giờ dịch.
-const d = computed(() => {
-  const lang = currentLang.value
-  const isVi = lang === 'vi'
-  const data = (props.block?.data || {}) as Record<string, unknown>
-  type Dict = Record<string, string>
-  const translations = (data.translations || {}) as Record<string, Dict>
-  const tr = !isVi ? (translations[lang] || {}) : ({} as Dict)
-  const pick = (field: string, i18nKey: string, fbEn: string, fbVi: string): string => {
-    if (isVi) return String(data[field] ?? fbVi)
-    if (tr[field]) return tr[field]
-    const dict = t(i18nKey)
-    if (dict && dict !== i18nKey) return dict
-    return fbEn
-  }
-  return {
-    badge: data.badge
-      ? (isVi ? String(data.badge) : (tr.badge || t('hero_badge') || 'C11 PORTAL - MINISTRY OF PUBLIC SAFETY'))
-      : (isVi ? 'CỔNG THÔNG TIN C11 - BỘ CÔNG AN' : (t('hero_badge') || 'C11 PORTAL - MINISTRY OF PUBLIC SAFETY')),
-    titleLine1: pick('titleLine1', 'hero_title_line1', 'Accompanying the', 'Đồng hành cùng'),
-    titleLine2: pick('titleLine2', 'hero_title_line2', 'Journey of Rehabilitation', 'hành trình hướng thiện'),
-    subtitle: pick('subtitle', 'hero_subtitle', 'A comprehensive platform offering vocational, legal, and psychological support to help former inmates reintegrate into society and build sustainable lives.', 'Nền tảng hỗ trợ toàn diện về nghề nghiệp, pháp lý và tư vấn tâm lý giúp người chấp hành xong án phạt tù vững vàng tái hòa nhập cộng đồng, xây dựng cuộc sống mới bền vững.'),
-    btnAboutText: isVi ? 'Về chúng tôi' : (t('hero_btn_about') || 'About Us'),
-    btnAboutLink: '/about',
-    btnHelpText: isVi ? 'Gửi yêu cầu trợ giúp' : (t('hero_btn_help') || 'Request Support'),
-    btnHelpLink: '#tro-giup',
-    bgImage: data.bgImage != null ? String(data.bgImage) : undefined,
-    btnAbout: data.btnAbout != null ? String(data.btnAbout) : undefined,
-    btnHelp: data.btnHelp != null ? String(data.btnHelp) : undefined,
-  }
-})
+// Block data (từ Page Builder / DB) là nguồn gốc tiếng Việt. Thứ tự chọn (bản
+// dịch → giá trị của block → từ điển i18n → mặc định), nút theo cấu hình của
+// cán bộ (nhãn rỗng = ẩn nút; giá trị bằng mặc định CŨ của registry = chưa cấu
+// hình) — xem `app/utils/blocks/hero-content.ts` (design D21).
+const d = computed(() => resolveHeroContent(props.block?.data, currentLang.value, t))
 const bgImage = computed(() => d.value.bgImage || '/assets/hero_banner.jpg')
 
 /**

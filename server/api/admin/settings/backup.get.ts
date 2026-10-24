@@ -2,6 +2,7 @@ import { getDb } from '../../../utils/db'
 import { settings } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { backupSchedulerEnabledByServer } from '../../../utils/backup-scheduler-switch'
+import { MASKED_SECRET } from '../../../../shared/settings-credential-rules'
 
 const KEYS = [
   'backup_auto_enabled',
@@ -21,11 +22,15 @@ export default defineEventHandler(async (event) => {
   const rows = await db.select().from(settings)
   const map = new Map(rows.map(r => [r.key, r.value]))
 
-  // Service account JSON key — mask nếu đã cấu hình, chỉ superadmin thấy thật.
+  // Service account JSON key (có `private_key`) — che bằng `********` cho MỌI vai
+  // trò, kể cả SuperAdmin (spec admin-settings-secrets). Không trang nào cần đọc
+  // lại khoá đã lưu: `backup.put.ts` coi `********` là "giữ nguyên", nên biểu mẫu
+  // lưu lại dấu che không đổi gì; muốn thay thì dán JSON mới. Rỗng vẫn trả rỗng
+  // để trang hiện "chưa cấu hình".
   const result: Record<string, string | null> = {}
   for (const k of KEYS) {
-    if (k === 'backup_drive_service_account' && map.get(k) && !adminUser.isSuperAdmin) {
-      result[k] = '********'
+    if (k === 'backup_drive_service_account' && map.get(k)) {
+      result[k] = MASKED_SECRET
     } else {
       result[k] = map.get(k) ?? null
     }

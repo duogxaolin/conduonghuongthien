@@ -31,7 +31,9 @@ import { defineEventHandler, setHeader } from 'h3'
 
 import { buildYouTubeEmbedUrl } from '../../../utils/youtube-parser'
 import { reportPublicReadFailure } from '../../../utils/public-read-failure'
-import { getActiveLivestream } from '../../../services/livestream'
+// Cached 3 s in-process (design D20): every public page polls this. Start/stop
+// in this process invalidate it on commit.
+import { getActiveLivestreamCached } from '../../../services/livestream'
 
 /** Địa chỉ phát của buổi phát, **trên chính cổng này**. Xem `media-portal.ts`
  *  cho cùng lý do: đưa vị trí kho cho trình duyệt là đưa luôn cấu trúc kho. */
@@ -42,7 +44,7 @@ export default defineEventHandler(async (event) => {
   setHeader(event, 'Cache-Control', 'no-store')
 
   try {
-    const session = await getActiveLivestream()
+    const session = await getActiveLivestreamCached()
     if (!session) {
       // `active: false` là một câu trả lời **thành công**, không phải 404: giao
       // diện phân biệt được "chưa có buổi phát" với "không hỏi được", và chỉ nhánh

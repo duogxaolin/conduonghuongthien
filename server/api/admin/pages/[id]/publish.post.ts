@@ -38,7 +38,9 @@ export default defineEventHandler(async (event) => {
 
     let snapshot: BlockNode[] | null = null
     if (Array.isArray(prevTree) && prevTree.length) {
-      snapshot = normalizeBlocks(prevTree)
+      // `links: 'keep'`: a snapshot of what is live, as it is. A legacy unsafe
+      // link in the OLD tree must not 400 the publish that replaces it.
+      snapshot = normalizeBlocks(prevTree, { links: 'keep' })
     } else if (current.length) {
       snapshot = current.map((b) => ({
         blockType: b.blockType,

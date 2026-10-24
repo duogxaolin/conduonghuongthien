@@ -33,6 +33,7 @@ export async function createContentTables(db: Connection, database: string): Pro
       \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
       KEY \`type_idx\` (\`type\`),
       KEY \`status_idx\` (\`status\`),
+      KEY \`articles_status_type_pub_idx\` (\`status\`, \`type\`, \`published_at\`, \`created_at\`),
       CONSTRAINT \`fk_articles_thumbnail\` FOREIGN KEY (\`thumbnail_id\`) REFERENCES \`media\` (\`id\`) ON DELETE SET NULL,
       CONSTRAINT \`fk_articles_author\` FOREIGN KEY (\`author_id\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -43,6 +44,9 @@ export async function createContentTables(db: Connection, database: string): Pro
   await ensureIndex(db, database, 'articles', 'category_idx', 'INDEX `category_idx` (`category`)')
   await ensureColumn(db, database, 'articles', 'category_id', 'INT NULL AFTER `category`')
   await ensureIndex(db, database, 'articles', 'category_id_idx', 'INDEX `category_id_idx` (`category_id`)')
+  // Cannot sit in the CREATE TABLE body above: `category_id` is added after it.
+  // Existing databases get both composite list indexes from migrations-additive.ts.
+  await ensureIndex(db, database, 'articles', 'articles_status_category_pub_idx', 'INDEX `articles_status_category_pub_idx` (`status`, `category_id`, `published_at`, `created_at`)')
 
   // Add FK constraint for category_id
   await db.query(`

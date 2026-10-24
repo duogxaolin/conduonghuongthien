@@ -168,7 +168,7 @@
                   type="button"
                   :aria-expanded="activeIndex === index"
                   :aria-controls="`faq-answer-${item.id}`"
-                  class="w-full px-5 sm:px-6 py-4 sm:py-4.5 flex justify-between items-center gap-4 bg-transparent border-none font-[inherit] text-left cursor-pointer transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#7CB342]"
+                  class="w-full px-5 sm:px-6 py-4 sm:py-4.5 flex justify-between items-center gap-4 bg-transparent border-none font-[inherit] text-left cursor-pointer transition-colors duration-200 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-[#4A6741]"
                   @click="toggleFaq(index)"
                 >
                   <div class="flex items-center gap-3.5 min-w-0">
