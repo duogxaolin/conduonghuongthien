@@ -1052,6 +1052,36 @@ Ngoài ra suite treo ~11 phút khi một migration ném lỗi. Đã sửa (chỉ
 - `ci-integration-matrix`, `runtime-image-sources`, `server-no-app-imports`, `snapshot-schema`, `coverage-summary` 118/118.
 - Không để lại CSDL tạm.
 
+**Vòng sửa thứ ba (kiểm lại `264fdea`, 0 lỗi nghiêm trọng).** Có bốn lỗi chèn vẫn lọt qua:
+- N7: seed đặt lại `is_visible` của link Facebook đã có — giá trị sinh ra trùng default, nên đổi không thấy;
+- N2: bản dịch được chèn với chữ khác dữ liệu seed;
+- N3: khối trang liên hệ được chèn với `data` khác;
+- N1: ma trận quyền mặc định bị đổi ngay trong seed.
+
+Đã sửa (chỉ `tests/` và tài liệu):
+- **Hàng mang khoá default có giá trị "cán bộ đã sửa" ở MỌI cột seed ghi.** Cột nào trùng giá trị seed (hoặc DDL) đều bị dời đi:
+  - boolean đảo, số dời, chữ đánh dấu, JSON thêm khoá;
+  - khoá ngoại trỏ sang hàng khác, kể cả tham chiếu `@role:`/`@page:` của seed.
+
+  Test gieo dữ liệu kiểm hợp đồng này cho từng cột trước khi chèn.
+- **Một default seed thêm vào phải khớp NỘI DUNG, không chỉ khoá.** Mỗi `insert(T).values(…)` của seed được tính lại, với biến vòng `for … of` gắn vào chính hằng số dữ liệu của seed. Các khởi tạo là mã chứ không phải literal (bốn mảng `…Perms`, `smallTalkRows`) chạy trong `vm` rỗng, qua `tests/_seed-source.ts`. Kết quả là đúng các cột seed ghi cho từng default.
+  - Hàng chèn khác dữ liệu đó thì không được khai báo, và thông báo nêu cột lệch.
+  - Phép so sánh chỉ đúng khi lệnh chèn chép dữ liệu nguyên trạng, nên suite từ chối, nêu tên, mọi biến đổi dữ liệu default ngay lúc chèn (``value: `${value} …` ``, `{ ...b.data, … }`). Các lệnh chèn hiện có của seed đều là chép nguyên trạng.
+  - Khối trang chủ (chép từ `home_sections`) được so với chính hàng nguồn.
+- **`tests/default-permission-matrix.test.ts` ghim ma trận vai trò → tài nguyên → quyền**, đọc từ chính `seed.ts`. Đổi ma trận thì phải sửa test trong cùng thay đổi.
+- Thông báo "row inserted" kèm khoá tự nhiên. Bộ quét bảng seed ghi nhận thêm `delete(X)`, `insert(schema.x)` và SQL thô trong `execute`/`query`.
+- `CI-CD.md` ghi: bảng seed ghi cũng có hàng đại diện, có hàng mang khoá default đã sửa, và có test ma trận quyền.
+- **Chèn lỗi lại:**
+  - N1 làm đỏ test ma trận, nêu từng ô (`moderator · news: seed grants "read,update,delete,publish", pinned "read,update"`);
+  - N2, N3 làm suite đỏ trước khi khởi động, nêu đúng biểu thức biến đổi;
+  - N7 đỏ ở lượt 1: `social_links.is_visible [id=1]: "0" → "1"`;
+  - mã không sửa thì 6/6.
+- **Kiểm chứng (Node 24.21):**
+  - `npm test` 4410 / 4377 pass / 0 fail / 33 skip;
+  - suite nâng cấp 6/6 trên MySQL local; 1921 hàng seed chèn đều khớp nội dung dữ liệu seed;
+  - typecheck 0 lỗi; eslint 0 error / 16 warning;
+  - guard 165/165.
+
 Còn mở (2F):
 - `repairLegacyMediaUrls` đổi `articles.updated_at` của bài nó vá, vì `UPDATE` không giữ cột đó. Sửa cùng D-SCAN, khi đụng hàm này.
 - Tệp chưa nạp được tính bằng dòng có mã, còn tệp đã nạp được tính bằng mọi dòng vật lý (đó là cách Node đếm). Nếu tính dòng vật lý cho cả hai thì ra 64,43 % (trên `3ede49a` + 2F). Wave 3 chọn một quy ước trước khi đặt ngưỡng.

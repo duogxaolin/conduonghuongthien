@@ -551,7 +551,7 @@ mã của một fork lên máy chủ.
 
 Suite `tests/schema-upgrade-integration.test.ts` (job *Integration · schema-upgrade*) làm ba việc:
 - nạp `tests/fixtures/schema-prev.sql`, tức lược đồ mà `initDb()` của **bản đang chạy trên production** dựng ra;
-- chèn hàng đại diện vào mọi bảng mà một bước migration lúc khởi động đụng tới;
+- chèn hàng đại diện vào mọi bảng mà một bước migration lúc khởi động đụng tới, và mọi bảng mà `seed.ts` ghi. Ở mỗi bảng seed ghi, có hàng mang khoá default: mọi cột seed ghi đều mang giá trị khác default (như thể cán bộ đã sửa), nên seed ghi đè dữ liệu cán bộ là thấy ngay;
 - khởi động mã mới hai lần (`init.ts` → `seed.ts`).
 
 Lượt 1 chỉ được đổi dữ liệu qua các chuyển đổi một lần đã khai báo trong suite, mỗi chuyển đổi kèm lý do. Lượt 2 không được đổi gì. Fixture phải là lược đồ của bản **đang chạy**, nên làm mới nó **sau khi** một bản lên production. Làm mới sớm hơn thì fixture đã chứa sẵn các cột mới, và suite không còn kiểm đường nâng cấp của chúng nữa. Repo không có tag phát hành, nên mốc là commit đang chạy.
@@ -810,7 +810,8 @@ và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừn
 | `tests/deploy-remote-behavior.test.ts` | **Chạy thật** `deploy-remote.sh` (qua `bash -s` như CI) với `docker` giả (`tests/fixtures/deploy-remote/docker`): compose/script sao lưu hỏng/cụt bị từ chối mà `.env` không đổi, dump hỏng dừng trước mọi thay đổi, lùi trả cả image lẫn compose, `up` hỏng vẫn đi vào đường lùi, crash loop dừng chờ sau 3 lượt hỏi, mysql không bị tạo lại, 12 image → còn 6 |
 | `tests/ci-docs-only-skip.test.ts` | **Chạy thật** script của bước *Docs-only?* trong một repo git tạm với `curl`/`gh` giả: so với bản đang chạy — chỉ tài liệu → không deploy; có `.ts` (kể cả đổi tên sang `docs/`) → deploy; push mã bị huỷ khi đang chờ rồi push tài liệu → vẫn deploy; thứ tự mốc (health → lượt có job deploy `success` → deploy); mốc không phải tổ tiên → deploy; đã chạy → không deploy |
 | `tests/ci-integration-matrix.test.ts` | Mọi `tests/*-integration.test.ts` có trong matrix, đúng switch, đủ biến môi trường mà suite đọc; bước kiểm-skip đọc log, không chạy lại suite |
-| `tests/schema-upgrade-integration.test.ts` + `tests/fixtures/schema-prev.sql` + `scripts/snapshot-schema.ts` | Khởi động bản mới hai lần trên lược đồ của bản đang chạy, với hàng đại diện ở mọi bảng migration đụng tới. Lượt 1 chỉ đổi qua chuyển đổi đã khai báo; lượt 2 không đổi gì. Làm mới fixture: § *Làm mới fixture lược đồ của bản trước* |
+| `tests/schema-upgrade-integration.test.ts` + `tests/fixtures/schema-prev.sql` + `scripts/snapshot-schema.ts` | Khởi động bản mới hai lần trên lược đồ của bản đang chạy, với hàng đại diện ở mọi bảng migration đụng tới và mọi bảng seed ghi (hàng mang khoá default có giá trị đã sửa ở mọi cột seed ghi). Lượt 1 chỉ đổi qua chuyển đổi đã khai báo; một default seed thêm vào phải khớp đủ khoá **và** nội dung với dữ liệu của chính seed. Lượt 2 không đổi gì. Làm mới fixture: § *Làm mới fixture lược đồ của bản trước* |
+| `tests/default-permission-matrix.test.ts` | Ghim ma trận quyền mặc định (vai trò → tài nguyên → quyền) mà `seed.ts` ghi. Đổi ma trận thì phải sửa test này trong cùng thay đổi. |
 | `tests/container-timezone.test.ts` | Scheduler analytics/retention chạy ở `TZ=Asia/Ho_Chi_Minh` bắn lúc 03:00 giờ VN, ở UTC thì 10:00 giờ VN |
 
 `deploy-remote.sh` được **nạp qua stdin** (`ssh ... "bash -s -- args" < scripts/deploy-remote.sh`)

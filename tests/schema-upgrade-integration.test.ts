@@ -47,13 +47,14 @@ import { fileURLToPath } from 'node:url'
 import test, { after, before } from 'node:test'
 import { createRequire } from 'node:module'
 import mysql, { type Connection, type RowDataPacket } from 'mysql2/promise'
-import { getTableName, type Table } from 'drizzle-orm'
+import { getTableColumns, getTableName, type Table } from 'drizzle-orm'
 import type * as TS from 'typescript'
 import * as migrations from '../server/db/migrations-additive.ts'
 import * as schema from '../server/db/schema.ts'
 import { CHATBOT_SMALL_TALK_SEED } from '../server/data/chatbot-small-talk-seed.ts'
 import { DEFAULT_TRANSLATIONS_SEED } from '../server/data/default-translations-seed.ts'
 import { normalizeQuestion } from '../server/utils/chatbot/small-talk.ts'
+import { DEFAULT_ROLE_PERMISSION_ARRAYS, evaluateInitializer, seedResources } from './_seed-source.ts'
 
 const enabled = process.env.SCHEMA_UPGRADE_INTEGRATION === '1'
 const host = process.env.SCHEMA_UPGRADE_HOST || '127.0.0.1'
@@ -368,17 +369,33 @@ function functionNamed(path: string, name: string): TS.Node {
   return found
 }
 
-/** `X` of every `….insert(X)` / `….update(X)` call under `root`. */
+/** `X` of every `….insert(X)` / `….update(X)` / `….delete(X)` call under `root` (also `insert(schema.X)`). */
 function writtenIdentifiers(root: TS.Node): string[] {
   const ts = typescript()
   const names = new Set<string>()
   walk(root, (node) => {
-    if (ts.isCallExpression(node) && ts.isPropertyAccessExpression(node.expression)
-      && ['insert', 'update'].includes(node.expression.name.text) && node.arguments.length === 1 && ts.isIdentifier(node.arguments[0]!)) {
-      names.add(node.arguments[0].text)
-    }
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression)
+      || !['insert', 'update', 'delete'].includes(node.expression.name.text) || node.arguments.length !== 1) return
+    const target = node.arguments[0]!
+    if (ts.isIdentifier(target)) names.add(target.text)
+    else if (ts.isPropertyAccessExpression(target)) names.add(target.name.text)
   })
   return [...names].sort()
+}
+
+/** SQL tables written by raw SQL (`….execute(sql\`…\`)`, `….query('…')`) under `root`. */
+function rawSqlWrittenTables(root: TS.Node): string[] {
+  const ts = typescript()
+  const tables = new Set<string>()
+  const dataWrite = /\b(?:UPDATE|INSERT\s+(?:IGNORE\s+)?INTO|DELETE\s+FROM|REPLACE\s+INTO)\s+`?([a-z_][a-z0-9_]*)/gi
+  walk(root, (node) => {
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression) || !['execute', 'query'].includes(node.expression.name.text)) return
+    const first = node.arguments[0]
+    if (!first) return
+    const text = ts.isTaggedTemplateExpression(first) ? first.template.getText() : first.getText()
+    for (const match of text.matchAll(dataWrite)) tables.add(match[1]!)
+  })
+  return [...tables].sort()
 }
 
 /** The literal argument of every `….insert(<identifier>).values(…)` call in `path`. */
@@ -415,6 +432,9 @@ type SeedData = {
   keys: Map<string, Set<string>>
   /** the DDL files' own default inserts. */
   ddlKeys: Map<string, Set<string>>
+  /** table → natural key → every column the seed writes for that default row, with its value */
+  contents: DefaultContents
+  ddlContents: DefaultContents
   pricingModels: string[]
   moderationRules: Array<{ category: string, pattern: string }>
 }
@@ -431,10 +451,12 @@ function loadSeedData(): SeedData {
     if (!table) throw new Error(`the seed writes ${identifier}, which is not a table export of server/db/schema.ts`)
     return table
   }
+  const languagesSeed = functionNamed(LANGUAGES_SOURCE, 'seedDefaultLanguagesAndTranslations')
   const writtenTables = [...new Set([
-    ...writtenIdentifiers(parsed(SEED_SOURCE)),
-    ...writtenIdentifiers(functionNamed(LANGUAGES_SOURCE, 'seedDefaultLanguagesAndTranslations')),
-  ].map(toTable))].sort()
+    ...[...writtenIdentifiers(parsed(SEED_SOURCE)), ...writtenIdentifiers(languagesSeed)].map(toTable),
+    ...rawSqlWrittenTables(parsed(SEED_SOURCE)),
+    ...rawSqlWrittenTables(languagesSeed),
+  ])].sort()
 
   const roles = insertedValues(SEED_SOURCE, 'roles').flatMap(value => stringsOf(value, 'name', 'insert(roles).values'))
   const resources = stringsOf((declaredConstant(SEED_SOURCE, 'RESOURCES') as unknown[]).map(resource => ({ resource })), 'resource', 'RESOURCES')
@@ -478,11 +500,19 @@ function loadSeedData(): SeedData {
     ['categories', new Set(stringsOf(declaredConstant('server/db/schema-tables/content.ts', 'defaultCategories'), 1, 'content.ts defaultCategories'))],
   ])
   const rules = declaredConstant(SEED_SOURCE, 'defaultRules') as Array<Record<string, unknown>>
+  const contents = collectDefaults(
+    [...seedInsertRows(SEED_SOURCE, parsed(SEED_SOURCE)), ...seedInsertRows(LANGUAGES_SOURCE, languagesSeed)],
+    // The languages seed skips an empty translation (`if (!value) continue`).
+    (table, values) => table === 'lang_translations' && !values.value,
+  )
+  const ddlContents = collectDefaults(['server/db/schema-tables/core.ts', 'server/db/schema-tables/content.ts'].flatMap(ddlDefaultRows))
   seedDataCache = {
     writtenTables,
     seededAccounts,
     keys,
     ddlKeys,
+    contents,
+    ddlContents,
     pricingModels: [...keys.get('ai_model_pricing')!],
     moderationRules: rules.map(rule => ({ category: String(rule.category), pattern: String(rule.pattern) })),
   }
@@ -513,6 +543,335 @@ function naturalKey(table: string, row: Cells, snap: Snapshot): string | null {
   return column ? row[column] ?? null : null
 }
 
+// ── The seed's default rows, with every column it writes ─────────────────────
+//
+// Each `insert(T).values(…)` call of the seed is evaluated with its `for … of`
+// loop variables bound to the seed's own constants, so a default row is known with
+// exactly the columns the seed writes and the values it writes. Values the seed
+// computes at run time (a password hash, an e-mail from the environment) are
+// NOT_A_LITERAL and are not compared. Rows the seed copies from the database (the
+// home page's blocks) are not evaluated here — see `expectedContent`.
+
+/** A reference the seed resolves in the database at run time: `@role:<name>`, `@page:<slug>`. */
+const REF = /^@(role|page):(.+)$/
+const NO_VALUE = Symbol('no binding')
+
+type Bindings = Map<string, unknown>
+
+function evaluateExpression(node: TS.Expression, env: Bindings, resolve: (name: string) => unknown): unknown {
+  const ts = typescript()
+  const known = (value: unknown) => value !== NOT_A_LITERAL
+  if (ts.isIdentifier(node)) return env.has(node.text) ? env.get(node.text) : resolve(node.text)
+  if (ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node) || ts.isNonNullExpression(node)) return evaluateExpression(node.expression, env, resolve)
+  if (ts.isPropertyAccessExpression(node)) {
+    const base = evaluateExpression(node.expression, env, resolve)
+    return base && typeof base === 'object' && known(base) ? (base as Record<string, unknown>)[node.name.text] : NOT_A_LITERAL
+  }
+  if (ts.isBinaryExpression(node) && [ts.SyntaxKind.QuestionQuestionToken, ts.SyntaxKind.BarBarToken].includes(node.operatorToken.kind)) {
+    const left = evaluateExpression(node.left, env, resolve)
+    if (!known(left)) return NOT_A_LITERAL
+    const useRight = node.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken ? left == null : !left
+    return useRight ? evaluateExpression(node.right, env, resolve) : left
+  }
+  if (ts.isArrayLiteralExpression(node)) {
+    const items: unknown[] = []
+    for (const element of node.elements) {
+      if (ts.isSpreadElement(element)) {
+        const spread = evaluateExpression(element.expression, env, resolve)
+        if (!Array.isArray(spread)) return NOT_A_LITERAL
+        items.push(...spread)
+      } else {
+        items.push(evaluateExpression(element, env, resolve))
+      }
+    }
+    return items
+  }
+  if (ts.isObjectLiteralExpression(node)) {
+    const object: Record<string, unknown> = {}
+    for (const property of node.properties) {
+      if (ts.isSpreadAssignment(property)) {
+        const spread = evaluateExpression(property.expression, env, resolve)
+        if (!spread || typeof spread !== 'object' || !known(spread)) return NOT_A_LITERAL
+        Object.assign(object, spread)
+      } else if (ts.isShorthandPropertyAssignment(property)) {
+        object[property.name.text] = evaluateExpression(property.name, env, resolve)
+      } else if (ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))) {
+        object[property.name.text] = evaluateExpression(property.initializer, env, resolve)
+      }
+    }
+    return object
+  }
+  if (ts.isCallExpression(node)) {
+    const callee = node.expression
+    if (ts.isPropertyAccessExpression(callee)) {
+      const method = callee.name.text
+      if (ts.isIdentifier(callee.expression) && callee.expression.text === 'Object' && method === 'entries') {
+        const target = evaluateExpression(node.arguments[0]!, env, resolve)
+        return target && typeof target === 'object' && known(target) ? Object.entries(target) : NOT_A_LITERAL
+      }
+      const base = evaluateExpression(callee.expression, env, resolve)
+      if (Array.isArray(base) && method === 'slice') return base // the seed inserts in batches; every batch is a default
+      if (Array.isArray(base) && method === 'indexOf') return base.indexOf(evaluateExpression(node.arguments[0]!, env, resolve))
+    }
+    return NOT_A_LITERAL
+  }
+  return literalValue(node)
+}
+
+/**
+ * What an identifier in a seed source means: a binding of an enclosing loop
+ * (handled by the caller), an imported data constant, one of the initializers that
+ * only `vm` can evaluate (`tests/_seed-source.ts`), a database lookup of a role or a
+ * page, or a literal constant.
+ */
+function seedResolver(path: string): (name: string) => unknown {
+  const ts = typescript()
+  const cache = new Map<string, unknown>()
+  const source = readSource(path)
+  const roleStubs = Object.fromEntries(Object.keys(DEFAULT_ROLE_PERMISSION_ARRAYS).map(role => [`${role}Role`, { id: `@role:${role}`, name: role }]))
+  const vmConstants: Record<string, () => unknown> = {
+    smallTalkRows: () => evaluateInitializer(source, 'smallTalkRows', { CHATBOT_SMALL_TALK_SEED, normalizeQuestion }, path),
+  }
+  for (const variable of Object.values(DEFAULT_ROLE_PERMISSION_ARRAYS)) {
+    vmConstants[variable] = () => evaluateInitializer(source, variable, { RESOURCES: seedResources(source), ...roleStubs }, path)
+  }
+  const imports: Record<string, unknown> = { DEFAULT_TRANSLATIONS_SEED, CHATBOT_SMALL_TALK_SEED }
+  return (name: string) => {
+    if (cache.has(name)) return cache.get(name)
+    let value: unknown = NOT_A_LITERAL
+    if (name in imports) value = imports[name]
+    else if (vmConstants[name]) value = vmConstants[name]!()
+    else {
+      const declarations: TS.VariableDeclaration[] = []
+      walk(parsed(path), (node) => {
+        if (!ts.isVariableDeclaration(node)) return
+        if (ts.isIdentifier(node.name) && node.name.text === name) declarations.push(node)
+        if (ts.isArrayBindingPattern(node.name) && node.name.elements.some(element => ts.isBindingElement(element) && ts.isIdentifier(element.name) && element.name.text === name)) declarations.push(node)
+      })
+      const initializer = declarations.length === 1 ? declarations[0]!.initializer : undefined
+      const text = initializer?.getText() ?? ''
+      const literal = /=== '([^']+)'|eq\(pages\.slug, '([^']+)'\)/.exec(text)
+      if (initializer && /allRoles\.find\(/.test(text) && literal?.[1]) value = { id: `@role:${literal[1]}`, name: literal[1] }
+      else if (initializer && /\.from\(pages\)/.test(text) && literal?.[2]) value = { id: `@page:${literal[2]}`, slug: literal[2] }
+      else if (initializer && ts.isIdentifier(declarations[0]!.name)) value = literalValue(initializer)
+    }
+    cache.set(name, value)
+    return value
+  }
+}
+
+/** Drizzle property → SQL column, for one table identifier of server/db/schema.ts. */
+function columnNames(identifier: string): { table: string, columns: Map<string, string> } {
+  const table = (schema as Record<string, unknown>)[identifier] as Table | undefined
+  if (!table) throw new Error(`${identifier} is not a table export of server/db/schema.ts`)
+  return { table: getTableName(table), columns: new Map(Object.entries(getTableColumns(table)).map(([property, column]) => [property, column.name])) }
+}
+
+/** Whether `node` reads one of `bindings` (property names and member names do not count). */
+function readsBinding(node: TS.Node, bindings: Set<string>): boolean {
+  const ts = typescript()
+  let found = false
+  walk(node, (child) => {
+    if (!ts.isIdentifier(child) || !bindings.has(child.text)) return
+    const parent = child.parent
+    if (parent && ts.isPropertyAccessExpression(parent) && parent.name === child) return
+    if (parent && (ts.isPropertyAssignment(parent) || ts.isPropertyDeclaration(parent)) && parent.name === child) return
+    found = true
+  })
+  return found
+}
+
+/**
+ * The oracle is the seed's DATA as stored, so an insert must copy it plainly: a
+ * literal, `loopVar.field` (optionally `?? literal`), a spread or a binding of the
+ * loop, `CONST.indexOf(loopVar)`, or a run-time value that does not touch the
+ * default data (a role or page looked up, the hashed password, the environment).
+ * Anything else that reads the default data — `\`${value} …\``, `{ ...b.data, … }`,
+ * `value.trim()` — transforms the default at insert time, and the suite refuses it
+ * by name: whoever adds it decides what the stored default is.
+ */
+function assertPlainCopy(path: string, table: string, argument: TS.Expression, bindings: Set<string>) {
+  const ts = typescript()
+  const unwrap = (node: TS.Expression): TS.Expression => (ts.isAsExpression(node) || ts.isParenthesizedExpression(node) || ts.isNonNullExpression(node) ? unwrap(node.expression) : node)
+  // Strict: every nested element is itself a literal — no spread, no shorthand, no identifier.
+  const isLiteral = (node: TS.Expression): boolean => {
+    const inner = unwrap(node)
+    if (ts.isArrayLiteralExpression(inner)) return inner.elements.every(element => !ts.isSpreadElement(element) && isLiteral(element))
+    if (ts.isObjectLiteralExpression(inner)) return inner.properties.every(property => ts.isPropertyAssignment(property) && isLiteral(property.initializer))
+    return literalValue(inner) !== NOT_A_LITERAL
+  }
+  const isDataField = (node: TS.Expression): boolean => {
+    const inner = unwrap(node)
+    if (ts.isIdentifier(inner)) return bindings.has(inner.text)
+    return ts.isPropertyAccessExpression(inner) && isDataField(inner.expression)
+  }
+  const plain = (node: TS.Expression): boolean => {
+    const inner = unwrap(node)
+    if (isLiteral(inner) || isDataField(inner) || !readsBinding(inner, bindings)) return true
+    if (ts.isBinaryExpression(inner) && inner.operatorToken.kind === ts.SyntaxKind.QuestionQuestionToken) return isDataField(inner.left) && isLiteral(inner.right)
+    if (ts.isCallExpression(inner) && ts.isPropertyAccessExpression(inner.expression) && inner.expression.name.text === 'indexOf') return !readsBinding(inner.expression.expression, bindings) && inner.arguments.every(isDataField)
+    return false
+  }
+  const inner = unwrap(argument)
+  const properties = ts.isObjectLiteralExpression(inner) ? inner.properties : []
+  if (!ts.isObjectLiteralExpression(inner) && !plain(inner) && !(ts.isCallExpression(inner) && ts.isPropertyAccessExpression(inner.expression) && inner.expression.name.text === 'slice')) {
+    throw new Error(`${path}: insert(${table}).values(${inner.getText()}) — the default data is transformed at insert time; insert it as stored, or teach the upgrade suite what the stored default is`)
+  }
+  for (const property of properties) {
+    const value = ts.isSpreadAssignment(property) ? property.expression : ts.isPropertyAssignment(property) ? property.initializer : ts.isShorthandPropertyAssignment(property) ? property.name : undefined
+    if (!value) continue
+    if (ts.isSpreadAssignment(property) ? isDataField(value) : plain(value)) continue
+    throw new Error(`${path}: insert(${table}) writes ${property.getText()} — the seed's default data is transformed at insert time; insert it as stored, or teach the upgrade suite what the stored default is`)
+  }
+}
+
+/** Every default row an `insert(T).values(…)` under `root` writes, as SQL column → value. */
+function seedInsertRows(path: string, root: TS.Node): Array<{ table: string, values: Record<string, unknown> }> {
+  const ts = typescript()
+  const resolve = seedResolver(path)
+  const rows: Array<{ table: string, values: Record<string, unknown> }> = []
+  walk(root, (node) => {
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression) || node.expression.name.text !== 'values' || !node.arguments[0]) return
+    const target = node.expression.expression
+    if (!ts.isCallExpression(target) || !ts.isPropertyAccessExpression(target.expression) || target.expression.name.text !== 'insert') return
+    const tableNode = target.arguments[0]!
+    const { table, columns } = columnNames(ts.isPropertyAccessExpression(tableNode) ? tableNode.name.text : tableNode.getText())
+    const loops: TS.ForOfStatement[] = []
+    for (let parent: TS.Node | undefined = node.parent; parent; parent = parent.parent) if (ts.isForOfStatement(parent)) loops.unshift(parent)
+    const bindingNames = new Set(loops.flatMap((loop) => {
+      const name = (loop.initializer as TS.VariableDeclarationList).declarations[0]!.name
+      return ts.isIdentifier(name) ? [name.text] : ts.isArrayBindingPattern(name)
+        ? name.elements.flatMap(element => (ts.isBindingElement(element) && ts.isIdentifier(element.name) ? [element.name.text] : []))
+        : []
+    }))
+    assertPlainCopy(path, table, node.arguments[0] as TS.Expression, bindingNames)
+    const expand = (depth: number, env: Bindings) => {
+      if (depth === loops.length) {
+        const value = evaluateExpression(node.arguments[0] as TS.Expression, env, resolve)
+        for (const row of Array.isArray(value) ? value : [value]) {
+          if (!row || typeof row !== 'object' || row === NOT_A_LITERAL) continue
+          const values: Record<string, unknown> = {}
+          for (const [property, item] of Object.entries(row)) if (columns.has(property)) values[columns.get(property)!] = item
+          rows.push({ table, values })
+        }
+        return
+      }
+      const loop = loops[depth]!
+      const iterable = evaluateExpression(loop.expression, env, resolve)
+      if (!Array.isArray(iterable)) return // iterates rows read from the database (the home page's sections)
+      const binding = (loop.initializer as TS.VariableDeclarationList).declarations[0]!.name
+      for (const item of iterable) {
+        const next = new Map(env)
+        if (ts.isIdentifier(binding)) next.set(binding.text, item)
+        else if (ts.isArrayBindingPattern(binding)) {
+          binding.elements.forEach((element, i) => {
+            if (ts.isBindingElement(element) && ts.isIdentifier(element.name)) next.set(element.name.text, Array.isArray(item) ? item[i] : NO_VALUE)
+          })
+        }
+        expand(depth + 1, next)
+      }
+    }
+    expand(0, new Map())
+  })
+  return rows
+}
+
+/** The natural key of a default row as the seed writes it (references are `@role:`/`@page:`). */
+function defaultRowKey(table: string, values: Record<string, unknown>): string | null {
+  const ref = (value: unknown) => REF.exec(String(value))?.[2] ?? null
+  if (table === 'permissions') return `${ref(values.role_id)}|${values.resource}`
+  if (table === 'page_blocks') return `${ref(values.page_id)}|${values.block_type}|${values.display_order}`
+  if (table === 'lang_translations') return `${values.lang_code}|${values.group}|${values.key}`
+  const column = KEY_COLUMN[table]
+  return column && values[column] != null ? String(values[column]) : null
+}
+
+type DefaultContents = Map<string, Map<string, Record<string, unknown>>>
+
+function collectDefaults(rows: Array<{ table: string, values: Record<string, unknown> }>, skip: (table: string, values: Record<string, unknown>) => boolean = () => false): DefaultContents {
+  const contents: DefaultContents = new Map()
+  for (const { table, values } of rows) {
+    if (skip(table, values)) continue
+    const key = defaultRowKey(table, values)
+    if (key === null) throw new Error(`a default row of ${table} has no natural key: ${JSON.stringify(values)}`)
+    if (!contents.has(table)) contents.set(table, new Map())
+    if (contents.get(table)!.has(key)) throw new Error(`the seed writes the default ${table} [${key}] twice`)
+    contents.get(table)!.set(key, values)
+  }
+  return contents
+}
+
+/** The DDL files' default inserts: `INSERT INTO t (cols) VALUES (?, …, literal)` with the loop's tuple as parameters. */
+function ddlDefaultRows(path: string): Array<{ table: string, values: Record<string, unknown> }> {
+  const ts = typescript()
+  const resolve = seedResolver(path)
+  const rows: Array<{ table: string, values: Record<string, unknown> }> = []
+  walk(parsed(path), (node) => {
+    if (!ts.isCallExpression(node) || !ts.isPropertyAccessExpression(node.expression) || node.expression.name.text !== 'query' || node.arguments.length < 2) return
+    const sqlNode = node.arguments[0]!
+    const sqlText = ts.isNoSubstitutionTemplateLiteral(sqlNode) || ts.isStringLiteral(sqlNode) ? sqlNode.text : ''
+    const insert = /INSERT INTO `([a-z_]+)` \(([^)]*)\)\s*VALUES \(([^)]*)\)/.exec(sqlText)
+    if (!insert) return
+    const columns = insert[2]!.split(',').map(column => column.trim().replace(/`/g, ''))
+    const placeholders = insert[3]!.split(',').map(value => value.trim())
+    let loop: TS.Node | undefined = node.parent
+    while (loop && !ts.isForOfStatement(loop)) loop = loop.parent
+    if (!loop || !ts.isForOfStatement(loop)) return
+    const binding = (loop.initializer as TS.VariableDeclarationList).declarations[0]!.name
+    const tuples = evaluateExpression(loop.expression, new Map(), resolve)
+    if (!Array.isArray(tuples) || !ts.isArrayBindingPattern(binding)) throw new Error(`${path}: the default INSERT INTO ${insert[1]} is not a loop over a literal tuple list — update ddlDefaultRows()`)
+    for (const tuple of tuples) {
+      const env: Bindings = new Map()
+      binding.elements.forEach((element, i) => { if (ts.isBindingElement(element) && ts.isIdentifier(element.name)) env.set(element.name.text, (tuple as unknown[])[i]) })
+      const parameters = evaluateExpression(node.arguments[1] as TS.Expression, env, resolve) as unknown[]
+      let next = 0
+      const values: Record<string, unknown> = {}
+      columns.forEach((column, i) => {
+        const placeholder = placeholders[i]!
+        values[column] = placeholder === '?' ? parameters[next++] : placeholder.toUpperCase() === 'NULL' ? null : Number(placeholder)
+      })
+      rows.push({ table: insert[1]!, values })
+    }
+  })
+  return rows
+}
+
+type ReferenceOf = (kind: 'role' | 'page', id: string | null) => string | null
+
+/**
+ * Same value? `expected` is what the seed writes (JS value, NOT_A_LITERAL when
+ * unknown); `cell` is the database text. `referenceOf(kind, id)` names the role or
+ * page a foreign key points at, for the seed's `@role:`/`@page:` references.
+ */
+function sameAsDefault(expected: unknown, cell: string | null, referenceOf: ReferenceOf): boolean | 'unknown' {
+  const containsUnknown = (value: unknown): boolean => value === NOT_A_LITERAL || value === NO_VALUE
+    || (Array.isArray(value) ? value.some(containsUnknown) : !!value && typeof value === 'object' && Object.values(value).some(containsUnknown))
+  if (containsUnknown(expected)) return 'unknown'
+  if (expected === undefined || expected === null) return cell === null
+  if (typeof expected === 'boolean') return cell === (expected ? '1' : '0')
+  if (typeof expected === 'number') return cell !== null && Number(cell) === expected
+  if (typeof expected === 'string') {
+    const ref = REF.exec(expected)
+    if (ref) return referenceOf(ref[1] as 'role' | 'page', cell) === ref[2]
+    if (cell === expected) return true
+    return cell !== null && /^-?\d+(\.\d+)?$/.test(expected) && /^-?\d+(\.\d+)?$/.test(cell) && Number(cell) === Number(expected)
+  }
+  if (cell === null) return false
+  try {
+    const canonical = (value: unknown): unknown => Array.isArray(value) ? value.map(canonical)
+      : value && typeof value === 'object' ? Object.fromEntries(Object.keys(value).sort().map(key => [key, canonical((value as Record<string, unknown>)[key])])) : value
+    return JSON.stringify(canonical(JSON.parse(cell))) === JSON.stringify(canonical(expected))
+  } catch {
+    return false
+  }
+}
+
+/** Columns that identify a default row — they are its key, never "staff-edited". */
+const KEY_PARTS: Record<string, string[]> = {
+  permissions: ['role_id', 'resource'], page_blocks: ['page_id', 'block_type', 'display_order'], lang_translations: ['lang_code', 'group', 'key'],
+}
+const keyColumns = (table: string) => KEY_PARTS[table] ?? (KEY_COLUMN[table] ? [KEY_COLUMN[table]!] : [])
+
 // ── Representative rows ───────────────────────────────────────────────────────
 
 type SqlValue = string | number | Buffer | null
@@ -527,6 +886,8 @@ type SeedOverride = { count?: number, why: string, row: (i: number) => Row }
  * Every table the seed writes carries at least one row with a DEFAULT key and
  * staff-edited values: the seed upserts on those keys, so an upsert that
  * overwrites a staff value is a visible cell change here, not an invisible insert.
+ * The values below only set the scene; `editDefaultRowsLikeStaff` then moves EVERY
+ * column the seed writes away from the seed's own value, and the seeding test checks it.
  */
 const SEED_OVERRIDES: Record<string, SeedOverride> = {
   chatbot_settings: {
@@ -561,7 +922,7 @@ const SEED_OVERRIDES: Record<string, SeedOverride> = {
   },
   pages: {
     why: 'the system page "about" retitled by staff; the other two are custom pages',
-    row: i => (i === 0 ? { slug: 'about', title: 'Giới thiệu (cán bộ đã sửa)', is_system: 1 } : {}),
+    row: i => (i === 0 ? { slug: 'about', title: 'Giới thiệu (cán bộ đã sửa)' } : {}),
   },
   page_blocks: {
     why: 'the "about" page already has a staff-written block, so the seed must not add its default blocks there',
@@ -569,7 +930,7 @@ const SEED_OVERRIDES: Record<string, SeedOverride> = {
   },
   content_types: {
     why: 'the default content type "news" renamed by staff',
-    row: i => (i === 0 ? { slug: 'news', name: 'Tin tức C11 (đã sửa)', is_system: 1 } : {}),
+    row: i => (i === 0 ? { slug: 'news', name: 'Tin tức C11 (đã sửa)' } : {}),
   },
   categories: {
     why: 'the default category "tin-noi-bat" renamed by staff',
@@ -584,7 +945,7 @@ const SEED_OVERRIDES: Record<string, SeedOverride> = {
     row: (i) => {
       if (i !== 0) return {}
       const entry = CHATBOT_SMALL_TALK_SEED[0]!
-      return { category: entry.category, question: entry.question, normalized_question: normalizeQuestion(entry.question), answer: 'Câu trả lời cán bộ đã sửa', is_enabled: 0, is_system: 1 }
+      return { category: entry.category, question: entry.question, normalized_question: normalizeQuestion(entry.question), answer: 'Câu trả lời cán bộ đã sửa', is_enabled: 0 }
     },
   },
   ai_model_pricing: {
@@ -614,7 +975,7 @@ const SEED_OVERRIDES: Record<string, SeedOverride> = {
   },
   languages: {
     why: 'the default language "vi" renamed by staff, "en" as seeded, one extra language',
-    row: i => [{ code: 'vi', name: 'Tiếng Việt (đã sửa)', native_name: 'Tiếng Việt', is_default: 1 }, { code: 'en', name: 'English', native_name: 'English' }, { code: 'km', name: 'Khmer', native_name: 'ខ្មែរ' }][i]!,
+    row: i => [{ code: 'vi', name: 'Tiếng Việt (đã sửa)', native_name: 'Tiếng Việt' },{ code: 'en', name: 'English', native_name: 'English' }, { code: 'km', name: 'Khmer', native_name: 'ខ្មែរ' }][i]!,
   },
   social_links: {
     why: 'Facebook edited by staff (the seed must not touch it) plus two custom links',
@@ -764,7 +1125,94 @@ function buildRows(tables: string[], schema: SchemaInfo): Map<string, Row[]> {
       row[column] = nullable && i === 1 ? null : parents[i % parents.length]![fk.refColumns[0]!] ?? null
     })
   }
+  editDefaultRowsLikeStaff(rows, schema)
   return rows
+}
+
+// ── Default-keyed rows carry staff edits in every column the seed writes ──────
+//
+// A row whose natural key is one of the seed's defaults stands for a default that
+// staff later edited. If any column the seed writes still held the seed's value, a
+// seed that resets it would change nothing visible. So every such column gets a
+// value that differs from the seed's (and the DDL files') default: booleans flipped,
+// numbers moved, text marked, JSON extended, a foreign key pointed at another row.
+
+const STAFF_EDIT = 'cán bộ đã sửa'
+const cellOf = (value: SqlValue | undefined): string | null =>
+  value === null || value === undefined ? null : Buffer.isBuffer(value) ? `0x${value.toString('hex')}` : String(value)
+
+function generatedKey(table: string, row: Row, rows: Map<string, Row[]>): string | null {
+  const parent = (parentTable: string, id: SqlValue | undefined, column: string) =>
+    cellOf(rows.get(parentTable)?.find(candidate => cellOf(candidate.id) === cellOf(id ?? null))?.[column])
+  if (table === 'permissions') return `${parent('roles', row.role_id, 'name')}|${cellOf(row.resource)}`
+  if (table === 'page_blocks') return `${parent('pages', row.page_id, 'slug')}|${cellOf(row.block_type)}|${cellOf(row.display_order)}`
+  if (table === 'lang_translations') return `${cellOf(row.lang_code)}|${cellOf(row.group)}|${cellOf(row.key)}`
+  const column = KEY_COLUMN[table]
+  return column ? cellOf(row[column]) : null
+}
+
+function buildTimeReferences(rows: Map<string, Row[]>): ReferenceOf {
+  return (kind, id) => cellOf((kind === 'role' ? rows.get('roles') : rows.get('pages'))
+    ?.find(candidate => cellOf(candidate.id) === id)?.[kind === 'role' ? 'name' : 'slug'])
+}
+
+/** For every default-keyed row: the seed-written columns and the default values they must differ from. */
+function defaultKeyedColumns(rows: Map<string, Row[]>) {
+  const seed = loadSeedData()
+  const found: Array<{ table: string, key: string, row: Row, column: string, defaults: unknown[] }> = []
+  for (const [table, tableRows] of rows) {
+    for (const row of tableRows) {
+      const key = generatedKey(table, row, rows)
+      if (key === null) continue
+      const defaults = [seed.contents, seed.ddlContents].map(contents => contents.get(table)?.get(key)).filter((d): d is Record<string, unknown> => !!d)
+      for (const column of new Set(defaults.flatMap(d => Object.keys(d)))) {
+        if (keyColumns(table).includes(column)) continue
+        found.push({ table, key, row, column, defaults: defaults.map(d => d[column]).filter(value => value !== undefined) })
+      }
+    }
+  }
+  return found
+}
+
+function editDefaultRowsLikeStaff(rows: Map<string, Row[]>, schema: SchemaInfo) {
+  const referenceOf = buildTimeReferences(rows)
+  for (const { table, row, column: name, defaults } of defaultKeyedColumns(rows)) {
+    const atDefault = (value: SqlValue | undefined) => defaults.some(d => sameAsDefault(d, cellOf(value), referenceOf) === true)
+    if (!atDefault(row[name])) continue
+    const column = schema.tables.get(table)?.columns.find(c => c.name === name)
+    if (!column) continue
+    const fk = schema.foreignKeys.find(candidate => candidate.table === table && candidate.columns[0] === name)
+    const first = defaults[0]
+    const candidates: SqlValue[] = []
+    if (fk) {
+      for (const parent of rows.get(fk.refTable) ?? []) if (parent !== row) candidates.push(parent[fk.refColumns[0]!] ?? null)
+    } else if (column.columnType.startsWith('tinyint(1)') || typeof first === 'boolean') {
+      candidates.push(0, 1)
+    } else if (column.dataType === 'enum' || column.dataType === 'set') {
+      candidates.push(...enumValues(column.columnType))
+    } else if (column.dataType === 'json') {
+      candidates.push(JSON.stringify(Array.isArray(first) ? [...first, STAFF_EDIT] : first && typeof first === 'object' ? { ...first, ghi_chu: STAFF_EDIT } : { ghi_chu: STAFF_EDIT }))
+    } else if (['tinyint', 'smallint', 'mediumint', 'int', 'bigint', 'decimal', 'float', 'double', 'year'].includes(column.dataType)) {
+      const n = Number(first ?? 0)
+      for (const delta of [7, 1, -1]) candidates.push(column.dataType === 'decimal' ? (n + delta).toFixed(column.scale ?? 0) : n + delta)
+    } else if (['char', 'varchar', 'tinytext', 'text', 'mediumtext', 'longtext'].includes(column.dataType)) {
+      const max = column.maxLength ?? Number.MAX_SAFE_INTEGER
+      const base = first == null || typeof first === 'object' ? STAFF_EDIT : `${String(first)} (${STAFF_EDIT})`
+      candidates.push(Array.from(base).slice(0, max).join(''), Array.from(STAFF_EDIT).slice(0, max).join(''), 'x'.repeat(Math.min(max, 3)))
+    } else {
+      candidates.push(generatedValue(table, column, 2, false), generatedValue(table, column, 0, false))
+    }
+    const edited = candidates.find(candidate => !atDefault(candidate))
+    if (edited !== undefined) row[name] = edited
+  }
+}
+
+/** `table.column [key]` of every seed-written column of a default-keyed row that still holds the seed's value. */
+function columnsStillAtSeedValue(rows: Map<string, Row[]>): string[] {
+  const referenceOf = buildTimeReferences(rows)
+  return defaultKeyedColumns(rows)
+    .filter(({ row, column, defaults }) => defaults.some(d => sameAsDefault(d, cellOf(row[column]), referenceOf) === true))
+    .map(({ table, key, column }) => `${table}.${column} [${key}]`)
 }
 
 async function insertRows(conn: Connection, rows: Map<string, Row[]>) {
@@ -825,7 +1273,7 @@ async function snapshot(): Promise<Snapshot> {
 
 type Change =
   | { kind: 'cell', table: string, key: string, column: string, before: string | null, after: string | null, beforeRow: Cells, afterRow: Cells }
-  | { kind: 'inserted', table: string, key: string, row: Cells }
+  | { kind: 'inserted', table: string, key: string, row: Cells, natural?: string | null }
   | { kind: 'deleted', table: string, key: string, row: Cells }
   | { kind: 'table-added', table: string }
   | { kind: 'table-dropped', table: string }
@@ -854,7 +1302,7 @@ function diffSnapshots(before: Snapshot, after: Snapshot): Change[] {
         if (row[column] !== next[column]) changes.push({ kind: 'cell', table, key, column, before: row[column] ?? null, after: next[column] ?? null, beforeRow: row, afterRow: next })
       }
     }
-    for (const [key, row] of now.rows) if (!old.rows.has(key)) changes.push({ kind: 'inserted', table, key, row })
+    for (const [key, row] of now.rows) if (!old.rows.has(key)) changes.push({ kind: 'inserted', table, key, row, natural: naturalKey(table, row, after) })
   }
   return changes
 }
@@ -867,7 +1315,7 @@ function shown(value: string | null): string {
 function describe(change: Change): string {
   switch (change.kind) {
     case 'cell': return `${change.table}.${change.column} [${change.key}]: ${shown(change.before)} → ${shown(change.after)}`
-    case 'inserted': return `${change.table} [${change.key}]: row inserted`
+    case 'inserted': return `${change.table} [${change.key}]${change.natural ? ` (${change.natural})` : ''}: row inserted`
     case 'deleted': return `${change.table} [${change.key}]: row deleted`
     case 'table-added': return `${change.table}: table created`
     case 'table-dropped': return `${change.table}: table dropped`
@@ -903,6 +1351,8 @@ type BootContext = {
   /** each missing default may be added once */
   claimed: Set<string>
   keyCache: Map<string, Set<string>>
+  /** why a seed insert was refused, for the failure message */
+  notes: Set<string>
 }
 
 type DeclaredConversion = {
@@ -987,6 +1437,21 @@ function repairedArticleContent(content: string, media: Cells[]): string {
 const D7_SEED_GROUPS = new Set(['ai_moderation_rules', 'social_links', 'media_categories', 'content_types', 'categories'])
 
 /**
+ * What the seed writes for a default row: from its data (`loadSeedData`), or — for a
+ * home-page block — from the home section the seed copies it from.
+ */
+function expectedContent(table: string, key: string, ctx: BootContext, source: 'seed' | 'ddl'): Record<string, unknown> | undefined {
+  if (source === 'seed' && table === 'page_blocks' && key.startsWith('home|')) {
+    const [, type, order] = key.split('|')
+    const section = rowsOf(ctx.after, 'home_sections').find(row => row.type === type && row.display_order === order)
+    if (!section) return undefined
+    // seed.ts: `data: (s.config ?? {})`, `isVisible: s.isVisible ?? true`
+    return { data: section.config === null ? {} : JSON.parse(section.config), is_visible: section.is_visible === null ? true : section.is_visible === '1' }
+  }
+  return (source === 'ddl' ? ctx.seed.ddlContents : ctx.seed.contents).get(table)?.get(key)
+}
+
+/**
  * The natural keys a boot may add to `table`: the seed's own defaults
  * (`loadSeedData`), plus — for `page_blocks` — one block per home section, because
  * the seed copies `home_sections` into an empty home page.
@@ -1015,6 +1480,17 @@ function addsMissingDefault(change: Change, ctx: BootContext, source: 'seed' | '
   if (ctx.keyCache.get(cacheKey)!.has(key)) return false
   const claim = `${change.table}\u0000${key}`
   if (ctx.claimed.has(claim)) return false
+  // …and it holds exactly what the seed writes for that default.
+  const expected = expectedContent(change.table, key, ctx, source)
+  if (!expected) return false
+  const referenceOf: ReferenceOf = (kind, id) => (id === null ? null
+    : kind === 'role' ? ctx.after.get('roles')?.rows.get(`id=${id}`)?.name ?? null : ctx.after.get('pages')?.rows.get(`id=${id}`)?.slug ?? null)
+  const mismatches = Object.entries(expected).filter(([column, value]) => sameAsDefault(value, change.row[column] ?? null, referenceOf) === false)
+  if (mismatches.length) {
+    ctx.notes.add(`${change.table} [${key}] was inserted with content the seed does not write: ${mismatches
+      .map(([column, value]) => `${column} = ${shown(change.row[column] ?? null)}, seed writes ${JSON.stringify(value)}`).join('; ')}`)
+    return false
+  }
   ctx.claimed.add(claim)
   return true
 }
@@ -1265,6 +1741,14 @@ test('every table a boot migration touches gets representative rows', { skip: !e
 
   const seeded = withReferencedTables([...new Set([...touched, ...seedWritten])], current.previousSchema)
   const rows = buildRows(seeded, current.previousSchema)
+  // Contract: in every row keyed like a seed default, every column the seed writes
+  // differs from the seed's value — so a seed that resets staff data is visible.
+  assert.deepEqual(columnsStillAtSeedValue(rows), [], 'a default-keyed representative row still holds the seed\'s value — the seed could reset it unseen')
+  const defaultKeyed = defaultKeyedColumns(rows)
+  assert.ok(defaultKeyed.length > 50, `only ${defaultKeyed.length} seed-written columns are covered by default-keyed rows`)
+  for (const table of seedWritten) {
+    assert.ok(defaultKeyed.some(entry => entry.table === table), `the seed writes ${table} but no representative row carries one of its default keys`)
+  }
   await withConnection(async (conn) => {
     await insertRows(conn, rows)
     for (const fk of current.previousSchema.foreignKeys.filter(fk => seeded.includes(fk.table))) {
@@ -1300,11 +1784,12 @@ test('boot 1 on the previous release keeps every row except the declared one-tim
     for (const column of info.columns) if (column.extra.includes('on update current_timestamp')) autoUpdated.add(`${table}.${column.name}`)
   }
   const changes = diffSnapshots(beforeBoot, afterBoot)
+  const notes = new Set<string>()
   const { fired, undeclared } = classify(changes, {
     before: beforeBoot, after: afterBoot, foreignKeysBefore: current.previousSchema.foreignKeys,
-    seed: loadSeedData(), claimed: new Set(), keyCache: new Map(),
+    seed: loadSeedData(), claimed: new Set(), keyCache: new Map(), notes,
   }, autoUpdated)
-  assert.equal(undeclared.length, 0, `${undeclared.length} write(s) on boot 1 that no declared conversion covers:\n${report(undeclared)}`)
+  assert.equal(undeclared.length, 0, `${undeclared.length} write(s) on boot 1 that no declared conversion covers:\n${report(undeclared)}${notes.size ? `\n  why seed inserts were refused:\n${[...notes].slice(0, 20).map(note => `    ${note}`).join('\n')}` : ''}`)
 
   // The trigger rows were really converted, to exactly these values — written out
   // here independently of the predicates above, and proof that boot 1 ran the
@@ -1367,22 +1852,57 @@ test('the seed declarations accept exactly the seed\'s own missing defaults, by 
     ['lang_translations', table([])],
   ])
   const after: Snapshot = new Map([...before, ['roles', table([...before.get('roles')!.rows.values(), { id: '4', name: 'moderator' }])]])
-  const ctx = (): BootContext => ({ before, after, foreignKeysBefore: [], seed, claimed: new Set(), keyCache: new Map() })
+  const ctx = (): BootContext => ({ before, after, foreignKeysBefore: [], seed, claimed: new Set(), keyCache: new Map(), notes: new Set() })
   const declares = (context: BootContext, tableName: string, row: Record<string, string | null>) =>
     DECLARED_CONVERSIONS.find(conversion => conversion.covers({ kind: 'inserted', table: tableName, key: `id=${row.id}`, row }, context))?.id ?? null
 
+  // A row exactly as the seed would insert it (from its data), optionally altered.
+  const refIds: Record<string, string> = { '@role:superadmin': '1', '@role:moderator': '4', '@page:about': '1' }
+  const asSeeded = (tableName: string, key: string, id: string, change: Record<string, unknown> = {}): Record<string, string | null> => {
+    const expected = seed.contents.get(tableName)?.get(key)
+    assert.ok(expected, `the seed has no default ${tableName} [${key}]`)
+    const row: Record<string, string | null> = { id }
+    for (const [column, value] of Object.entries({ ...expected, ...change })) {
+      if (value === NOT_A_LITERAL || value === undefined) continue
+      row[column] = value === null ? null : typeof value === 'boolean' ? (value ? '1' : '0') : typeof value === 'object' ? JSON.stringify(value) : refIds[String(value)] ?? String(value)
+    }
+    return row
+  }
+
   const one = ctx()
-  assert.equal(declares(one, 'permissions', { id: '9', role_id: '4', resource: 'news' }), 'seed.insert-missing-defaults', 'a default role\'s missing default right')
-  assert.equal(declares(one, 'permissions', { id: '10', role_id: '4', resource: 'news' }), null, 'the same default added twice')
-  assert.equal(declares(one, 'permissions', { id: '11', role_id: '3', resource: 'news' }), null, 'a right for a staff-created role is not a default (bite F)')
-  assert.equal(declares(one, 'permissions', { id: '12', role_id: '1', resource: 'news' }), null, 'a default that already existed is not missing')
+  assert.equal(declares(one, 'permissions', asSeeded('permissions', 'moderator|news', '9')), 'seed.insert-missing-defaults', 'a default role\'s missing default right')
+  assert.equal(declares(one, 'permissions', asSeeded('permissions', 'moderator|news', '10')), null, 'the same default added twice')
+  assert.equal(declares(one, 'permissions', { ...asSeeded('permissions', 'moderator|news', '11'), role_id: '3' }), null, 'a right for a staff-created role is not a default (bite F)')
+  assert.equal(declares(one, 'permissions', asSeeded('permissions', 'superadmin|news', '12')), null, 'a default that already existed is not missing')
+  assert.equal(declares(ctx(), 'permissions', asSeeded('permissions', 'moderator|news', '13', { can_delete: true })), null, 'a missing default inserted with other rights than the seed\'s')
   assert.equal(declares(one, 'users', { id: '2', username: 'editor' }), null, 'a second account is not a default (bite H)')
   assert.equal(declares(one, 'users', { id: '3', username: 'admin' }), null, 'admin already existed, so a second admin row is not a missing default')
-  assert.equal(declares(one, 'lang_translations', { id: '1', lang_code: 'vi', group: 'nav', key: 'hotline_lbl' }), 'seed.insert-missing-defaults')
-  assert.equal(declares(one, 'lang_translations', { id: '2', lang_code: 'vi', group: 'nav', key: 'not_a_seeded_key' }), null, 'a key the seed does not define')
-  assert.equal(declares(one, 'lang_translations', { id: '3', lang_code: 'xx', group: 'nav', key: 'hotline_lbl' }), null, 'a language the seed does not define for that key')
-  assert.equal(declares(one, 'page_blocks', { id: '1', page_id: '1', block_type: 'heading', display_order: '1' }), 'seed.insert-missing-defaults', 'the default heading block of "about"')
-  assert.equal(declares(one, 'page_blocks', { id: '2', page_id: '2', block_type: 'heading', display_order: '1' }), null, 'a block on a page that is not a system page')
+  assert.equal(declares(one, 'lang_translations', asSeeded('lang_translations', 'vi|nav|hotline_lbl', '1')), 'seed.insert-missing-defaults')
+  assert.equal(declares(one, 'lang_translations', { id: '2', lang_code: 'vi', group: 'nav', key: 'not_a_seeded_key', value: 'x', is_ai_translated: '0' }), null, 'a key the seed does not define')
+  assert.equal(declares(one, 'lang_translations', { ...asSeeded('lang_translations', 'en|nav|hotline_lbl', '3'), lang_code: 'xx' }), null, 'a language the seed does not define for that key')
+  const altered = ctx()
+  assert.equal(declares(altered, 'lang_translations', asSeeded('lang_translations', 'en|nav|hotline_lbl', '4', { value: 'Hotline (sai)' })), null, 'a missing translation inserted with other text (bite N2)')
+  assert.match([...altered.notes].join('\n'), /lang_translations \[en\|nav\|hotline_lbl\] was inserted with content the seed does not write: value = "Hotline \(sai\)"/)
+  const aboutHeading = seed.contents.get('page_blocks')!.get('about|heading|1')!
+  assert.equal(declares(one, 'page_blocks', asSeeded('page_blocks', 'about|heading|1', '1')), 'seed.insert-missing-defaults', 'the default heading block of "about"')
+  assert.equal(declares(ctx(), 'page_blocks', asSeeded('page_blocks', 'about|heading|1', '5', { data: { ...(aboutHeading.data as object), text: 'Tiêu đề sai' } })), null, 'a missing default block inserted with other data (bite N3)')
+  assert.equal(declares(one, 'page_blocks', { ...asSeeded('page_blocks', 'about|heading|1', '2'), page_id: '2' }), null, 'a block on a page that is not a system page')
+
+  // A default transformed at insert time is refused by name, before any boot (bites N2, N3).
+  const transformed: Array<[string, string, RegExp]> = [
+    ['n2', 'for (const item of DEFAULT_TRANSLATIONS_SEED) { for (const [langCode, value] of Object.entries(item.values)) { await db.insert(langTranslations).values({ langCode, group: item.group, key: item.key, value: `${value} (sai)` }) } }', /writes value: `\$\{value\} \(sai\)`/],
+    ['n3', 'for (const b of aboutBlocks) { await db.insert(pageBlocks).values({ pageId: aboutPage.id, ...b, data: { ...b.data, title: "x" } }) }', /writes data: \{ \.\.\.b\.data, title: "x" \}/],
+  ]
+  for (const [name, code, message] of transformed) {
+    sourceCache.set(`fixture/${name}.ts`, code)
+    assert.throws(() => seedInsertRows(`fixture/${name}.ts`, parsed(`fixture/${name}.ts`)), message)
+  }
+
+  // The two readings of the seed agree: every default key has its content, and back.
+  for (const [tableName, keys] of [...seed.keys, ...seed.ddlKeys.entries()]) {
+    const contents = (seed.ddlKeys.get(tableName) === keys ? seed.ddlContents : seed.contents).get(tableName)
+    assert.deepEqual([...(contents?.keys() ?? [])].sort(), [...keys].sort(), `${tableName}: the default keys and the default contents read from the seed differ`)
+  }
 })
 
 test('every declared conversion still names code that exists', { skip: !enabled }, () => {
