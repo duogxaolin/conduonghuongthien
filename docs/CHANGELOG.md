@@ -976,6 +976,53 @@ Mỗi mục có test đỏ trước khi sửa.
   - Bộ đọc import bằng AST được tách sang `tests/_module-references.ts`, dùng chung với `server-no-app-imports`.
 - **Kiểm chứng:** 5 lượt `npm run build` sạch liên tiếp (xoá `.output` và `node_modules/.cache/nuxt` giữa các lượt) đều xanh. Đầu ra SSR không còn chuỗi `"../…shared/"` nào, và `link-policy` được nạp bằng đường tuyệt đối. `npm test` 4414 / 4387 pass / 0 fail / 27 skip (+20). Typecheck 0 lỗi, eslint 0 error / 16 warning, `db:drift` xanh.
 
+### 39. Đợt 2 — 6.4 adminFetch/useAdminList (2026-10-24)
+
+OpenSpec `wave2-hardening` task 6.4, design D-FETCH. Thí điểm trên ba trang danh sách admin: `admin/comments`, `admin/readers`, `admin/chatbot/sessions`.
+
+- **Lỗi thật đã đóng — câu trả lời cũ đè câu trả lời mới.** Cả ba trang tự chép cùng một `load()` và không trang nào chặn cuộc đua này: cán bộ áp bộ lọc, đổi bộ lọc lần nữa trước khi lượt đầu về, rồi lượt **cũ** về sau cùng. Trang hiện hàng của bộ lọc cũ dưới ô điều khiển của bộ lọc mới, không có gì báo. Ở trang người đọc/bình luận đó là tên và email công dân; ở trang phiên chat là số điện thoại. Spec E2E mới đỏ đúng lỗi này trên mã cũ: "Khách cũ A" thay chỗ "Khách mới B".
+- **`app/composables/adminFetch.ts`:** `adminFetch<T>(url, opts)` thay `($fetch as (u: string, o?: …) => Promise<…>)` ở mỗi lượt gọi. Đây **không** phải an toàn kiểu: `T` là khẳng định không được kiểm, `adminFetch<Sai>()` vẫn biên dịch, và đổi tên trường ở máy chủ vẫn không làm đỏ build — y như cast cũ. Cái được là phép ép kiểu nằm ở một chỗ thay vì mỗi lượt gọi một bản, và có một chỗ để siết sau (vd. suy `T` từ kiểu route Nitro). Các trang admin chưa chuyển vẫn tự cast cho tới Wave 3. Lỗi được ném lại **nguyên vẹn**, nên `errorMessage`/`errorStatus` vẫn thấy `FetchError` và mã trạng thái; chỉ câu máy chủ soạn mới tới người dùng.
+- **`app/composables/useAdminList.ts`:** `useAdminList<TItem, TFilters>({ filters, load, errorFallback })` giữ page, filters, items, total, totalPages, loading, error, `errorStatus`, result và `reload`. `errorStatus` là mã HTTP của lỗi của lượt mới nhất (qua `errorStatus()`), hoặc `null` khi không có lỗi, mất mạng, hay 200 không phải danh sách. Nhờ vậy 401 vẫn tách khỏi 403 ở tầng danh sách: trang ở Wave 3 rẽ nhánh theo 403 mà không phải đọc câu chữ.
+  - Lượt mới huỷ lượt cũ trên đường truyền (`signal`), đồng thời so **mã thế hệ** ở cả `try`, `catch` và `finally`. Lý do: lượt bị huỷ của ofetch ném `FetchError` có `cause` là AbortError, nên `isAbortError()` (đọc `.name`) không nhận ra. Một nguồn cũng có thể bỏ qua `signal`.
+  - `applyFilters` về trang 1. `goToPage` bỏ qua số không nguyên, ngoài 1..totalPages, hoặc trùng trang đang xem. `resetFilters` trả về giá trị ban đầu.
+  - `load` trả `null` (máy chủ trả lời mà không có danh sách) thì hiện là lỗi, không phải danh sách rỗng.
+  - Huỷ phạm vi (trang bị gỡ) thì huỷ lượt đang bay. Gọi `reload` sau đó không gửi gì, vì mỗi lượt là một hàng audit.
+  - **Không** có watcher trên filters, vì cả ba endpoint ghi audit mỗi lượt gọi. Lượt đầu chạy từ `onMounted(reload)`.
+- **Trang giữ hợp đồng của mình:** khối lỗi `role="alert"`, nút "Thử lại" `@click="reload"` và skeleton vẫn nằm trong từng trang (`const error = computed(() => list.error.value)`, `const reload = list.reload`). Guard đọc nguồn từng tệp (quy tắc split-guard). Template chỉ đổi binding (`v-model="filters.q"`…), không đổi lớp hay cấu trúc. Ba trang không còn `$fetch` nào.
+- **Guard:**
+  - `tests/_admin-fetch-call.ts` là định nghĩa chung "trang có fetch" cho hai cổng phủ `admin-error-retry-ui` và `skeleton-loading-ui`, nay gồm cả `adminFetch`/`useAdminList`. Regex cũ chỉ tìm `$fetch`, nên trang đã chuyển sẽ lặng lẽ rời khỏi cả hai cổng (vẫn xanh nhưng không còn được kiểm), và mọi trang chuyển ở Wave 3 sẽ theo sau.
+  - `VIEWS_WITH_ERROR_BRANCH`: ba mục đổi tên handler sang `reload`; sessions đổi `loadError` thành `error`. Chỉ đổi dữ liệu, không nới phép kiểm.
+  - `tests/admin-list-pilot-pages.test.ts` (`ADMIN_LIST_PAGES`, Wave 3 thêm vào đây) kiểm: không có `$fetch` (chịu khoảng trắng), dùng `useAdminList<`, `onMounted(reload)`, khối lỗi + retry trong trang, và cổng phủ vẫn thấy trang.
+- **Khác hành vi cũ (có chủ đích):**
+  - Trang sessions trước im lặng giữ hàng cũ khi `ok: false`, nay hiện lỗi như hai trang kia. Máy chủ không trả `ok: false`, nên thực tế chỉ xảy ra với một trang HTML 200 của proxy.
+  - Endpoint sessions trả nguyên số trang đã hỏi mà không kẹp. Khi hàng bị xoá trong lúc cán bộ đứng ở trang cuối, danh sách nay hỏi lại trang cuối còn tồn tại, **tối đa một lần mỗi thao tác**, thay vì hiện "chưa có phiên nào" trong khi các trang trước vẫn có dữ liệu. Comments/readers vốn đã kẹp ở máy chủ, nên không phát sinh lượt hỏi thêm.
+  - `readers` mất kiểu suy từ route Nitro (`$fetch` không cast). Kiểu trả lời nay khai báo ở trang như hai trang kia, và là khẳng định không được kiểm.
+- **Test** (đỏ trước khi viết mã: module chưa có, 7 khẳng định guard trượt):
+  - `tests/admin-list.test.ts`, 19 test. Phần 1 dùng loader viết tay. Phần 2 chạy **ofetch thật** (`createFetch({ fetch })`) trên mạng giả: lượt cũ về sau cùng, lượt cũ hỏng khi lượt mới đang bay, gỡ phạm vi, retry đúng trang + bộ lọc, ánh xạ lỗi (400 có câu máy chủ, mất mạng, 502 HTML, 200 HTML), ofetch tự thử lại GET một lần, `FetchError` có `cause` AbortError.
+  - Ba đột biến (bỏ phép so thế hệ ở `try`, `catch`, `finally`), mỗi đột biến làm đỏ 2 test.
+  - E2E `tests/e2e/admin-list-pilot.spec.ts`, 4 test. Mỗi trang đi lỗi → alert → "Thử lại" không tải lại tài liệu → hàng, tổng, phân trang (comments thêm huy hiệu "Đã ẩn") và đính kèm ảnh chụp. Thêm một test cuộc đua trên sessions: lượt cũ về muộn không thay hàng, và lượt cũ bị huỷ trên đường truyền.
+- **Không hồi quy giao diện:** chụp cùng spec trên bản build trước và sau. `readers` và `comments` giống từng pixel; `sessions` khác 34 pixel, tất cả lệch 1/255 ở khử răng cưa góc bo.
+
+#### Kiểm chứng (2026-10-24, worktree `wave2/6-4-admin-fetch`)
+`npm test` 4439 / 4412 pass / 0 fail / 27 skip (trước 4414 / 4387, thêm 25). Typecheck 0 lỗi. eslint 0 error / 16 warning, không tệp nào đổi có cảnh báo. `npm run build` xanh. E2E toàn bộ trên bản build cuối: 97/97, Playwright báo 5,2 phút, 313 s tính cả khởi động. Sau lượt chạy cổng 3123 trống và không còn DB `cdkt_e2e_*`. Trên bản build cũ, spec mới cho 3 xanh và 1 đỏ đúng chỗ (hàng của bộ lọc cũ đè lên). `globalTimeout` 480 s, bốn spec mới lấy thêm một phần dư địa. Nên nâng ngân sách ở đợt spec kế tiếp.
+
+#### Sửa sau kiểm chứng độc lập (2026-10-24)
+Mỗi mục có test đỏ trước khi sửa. Các đột biến được kiểm lại đều đỏ nhanh, không treo.
+- **Lượt hỏi lại trang cuối không có trần.** Nếu máy chủ trả `page: 2, totalPages: 1` cho **mọi** lượt (kể cả lượt hỏi trang 1), danh sách hỏi lại mãi; một đầu dò độc lập đếm được 41 lượt, mỗi lượt một hàng `activity_logs`.
+  - Nay chỉ hỏi lại khi **cả** trang đã hỏi **lẫn** trang được trả đều vượt cuối, nên trang hỏi lại nhỏ hơn hẳn.
+  - Mỗi thao tác chỉ được **một** lượt hỏi lại (`run(mayAskForLastPage)`; lượt hỏi lại tự nó là `false`).
+  - Hai test mới: máy chủ trả "trang 2 / 1" cho mọi lượt thì thao tác tốn đúng 2 request, và retry ở trang 1 tốn đúng 1; tổng trang co lại liên tục thì thao tác tốn đúng 2 request, không phải 3. Loader trả lời ngay và tự dừng sau 12 lượt, nên hồi quy làm test đỏ chứ không treo.
+  - Hai đột biến (bỏ giới hạn một lần; bỏ điều kiện trang đã hỏi) mỗi cái đỏ một test.
+- **Test gỡ phạm vi treo thay vì đỏ.** Test cũ `await list.reload()` sau khi gỡ, với loader không bao giờ trả lời: bỏ phép chặn `disposed` thì test treo. Nay gọi `void list.reload()` và đếm lượt gọi loader ngay lập tức, vì loader được gọi trước `await` đầu tiên. Đột biến cho đỏ sau 0,4 s.
+- **`adminFetch` nói quá:** chú thích đầu tệp, § 39 và dòng `CLAUDE.md` nay nói rõ `T` là khẳng định không được kiểm, `adminFetch<Sai>()` vẫn biên dịch, và `readers` mất kiểu suy từ route Nitro.
+- **`errorStatus` trên danh sách.** "401 vẫn tách khỏi 403" trước chỉ đúng ở tầng `adminFetch`, vì `useAdminList` chỉ đưa ra chuỗi lỗi. Nay có `errorStatus`:
+  - Giá trị lấy qua `errorStatus()`. Xoá về `null` khi lượt mới bắt đầu; `null` khi mất mạng hay khi 200 không phải danh sách. Lượt cũ bị thay thì không để lại mã.
+  - Test 403 rồi retry chạy với ofetch thật.
+  - Đột biến không xoá mã khi bắt đầu lượt mới thì đỏ 2 test.
+- **E2E ghim ngân sách request:** lượt tải đầu sạch tốn đúng 1 request (readers, sessions) hoặc 2 (comments: danh sách + huy hiệu), và một lần "Thử lại" cũng đúng chừng đó. Phần lỗi nay đi qua `page.reload()` ở chế độ lỗi. Chưa thử đột biến tải đôi cho phần này, vì cần build lại.
+- **`playwright.config.ts`:** chỉ sửa chú thích (97 test, 313 s); ngân sách vẫn 480 s.
+- **Kiểm chứng lại:** `npm test` 4443 / 4416 pass / 0 fail / 27 skip (thêm 4). Typecheck 0 lỗi. eslint 0 error / 16 warning. `npm run build` xanh. E2E toàn bộ 97/97, Playwright báo 5,0 phút, 301 s cả khởi động. Cổng 3123 trống, không còn DB `cdkt_e2e_*`.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.

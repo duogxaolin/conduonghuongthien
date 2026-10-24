@@ -18,6 +18,8 @@ import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
+import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
 
 /**
@@ -386,7 +388,9 @@ test('placeholder containers announce themselves as busy', async () => {
  * So this walks the directories and demands every admin view that fetches is
  * EITHER pinned above OR named in `NO_SKELETON_NEEDED` with its reason.
  */
-const FETCH_CALL = /\$fetch|useFetch\(|useAsyncData\(/
+// Shared with tests/admin-error-retry-ui.test.ts — includes adminFetch/useAdminList,
+// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan.
+const FETCH_CALL = ADMIN_FETCH_CALL
 
 async function adminViewsThatFetch(): Promise<string[]> {
   const found: string[] = []
