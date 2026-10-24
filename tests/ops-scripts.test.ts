@@ -155,7 +155,8 @@ test('what a deploy leaves on the VPS stays out of git AND out of the Docker bui
   const ignoredDirs = ['.deploy-db-backups', '.deploy-incoming', '.deploy-compose-backups']
   // docker-compose.override.yml: host-local (the json-file log fallback the deploy
   // writes when the VPS has no journald, or the operator's own) — never committed.
-  const ignoredFiles = ['.docker-compose.incoming.yml', 'docker-compose.override.yml']
+  // `.docker-compose.override.*`: the fallback's temp file before its `mv`.
+  const ignoredFiles = ['.docker-compose.incoming.yml', 'docker-compose.override.yml', '.docker-compose.override.*']
   const gitignore = read('.gitignore').split('\n').map((l) => l.trim())
   const dockerignore = read('.dockerignore').split('\n').map((l) => l.trim())
   for (const dir of ignoredDirs) {
@@ -1220,7 +1221,7 @@ test('the app logs to journald with the cdkt-app tag; MySQL keeps its rotated js
 
 test('the json-file fallback is ONE function, identical in manage.sh and deploy-remote.sh, called before the app starts', () => {
   const body = (path: string, fn: string) => new RegExp(`^${fn}\\(\\) \\{\\n([\\s\\S]*?)\\n\\}`, 'm').exec(read(path))?.[1] ?? ''
-  for (const fn of ['journald_available', 'ensure_log_driver']) {
+  for (const fn of ['journald_available', 'effective_app_log_driver', 'ensure_log_driver']) {
     const manage = body('production/manage.sh', fn)
     assert.ok(manage, `manage.sh has no ${fn}`)
     assert.equal(body('scripts/deploy-remote.sh', fn), manage, `${fn} differs between manage.sh and deploy-remote.sh`)
@@ -1236,19 +1237,49 @@ test('the json-file fallback is ONE function, identical in manage.sh and deploy-
   const check = body('production/manage.sh', 'journald_available')
   assert.match(check, /CDKT_JOURNALD_SOCKET:-\/run\/systemd\/journal\/socket/, 'the socket Docker writes to, not just a journalctl binary')
   assert.match(check, /command -v journalctl/)
+  // W2: and the DAEMON can use it — its log plugins, then a throwaway container.
+  assert.match(check, /docker info --format '\{\{json \.Plugins\.Log\}\}'/)
+  assert.match(check, /docker run --rm --network none --log-driver journald /)
+  // W1: the merged model decides, read without an early `exit` (SIGPIPE under pipefail).
+  const effective = body('production/manage.sh', 'effective_app_log_driver')
+  assert.match(effective, /docker compose config 2>\/dev\/null \| awk/)
+  assert.doesNotMatch(effective, /\bexit\b/)
 
-  // deploy-remote: after the dump (nothing changes before it), before the compose
-  // check (so `config -q` sees the final override) and before the app starts.
+  // deploy-remote: after the dump (nothing changes before it) and after the shipped
+  // compose is in place (the merged model must be the one `up` will use), before the
+  // app starts; a refusal puts the previous compose back.
   const deploy = read('scripts/deploy-remote.sh')
   const main = deploy.slice(deploy.lastIndexOf('\npredeploy_dump\n'))
-  assert.ok(main.indexOf('\nensure_log_driver\n') > 0, 'deploy-remote.sh never calls ensure_log_driver after the dump')
-  assert.ok(main.indexOf('\nensure_log_driver\n') < main.indexOf('\ninstall_compose\n'))
+  const call = main.indexOf('\nif ! ensure_log_driver "$IMAGE"; then\n  restore_compose\n  exit 1\nfi\n')
+  assert.ok(call > 0, 'deploy-remote.sh must call ensure_log_driver "$IMAGE" and stop (restoring compose) when it refuses')
+  assert.ok(call > main.indexOf('\ninstall_compose\n'))
+  assert.ok(call < main.indexOf('\nset_image "$IMAGE"\n'))
   // manage.sh: Deploy before the stack is first started, Update before the restart.
   const manage = read('production/manage.sh')
   const deployCmd = manage.slice(manage.indexOf('cmd_deploy() {'), manage.indexOf('cmd_update() {'))
   assert.ok(deployCmd.indexOf('ensure_log_driver') > 0 && deployCmd.indexOf('ensure_log_driver') < deployCmd.indexOf('Bước 6/6'))
   const updateCmd = manage.slice(manage.indexOf('cmd_update() {'), manage.indexOf('cmd_migrate() {'))
   assert.ok(updateCmd.indexOf('ensure_log_driver') > 0 && updateCmd.indexOf('ensure_log_driver') < updateCmd.indexOf('update_app_image'))
+})
+
+test('the effective-driver parser reads real `docker compose config` output', () => {
+  // Shape of a real `docker compose config` (Compose v2): two-space service keys,
+  // `logging:` four spaces in, `driver:` six. Run the function itself on it.
+  const fn = /^effective_app_log_driver\(\) \{\n[\s\S]*?\n\}/m.exec(read('production/manage.sh'))?.[0] ?? ''
+  assert.ok(fn)
+  const sample = (appDriver: string) => [
+    'name: conduonghuongthien', 'services:', '  app:', '    environment:', '      PORT: "3000"',
+    '    logging:', `      driver: ${appDriver}`, '      options:', '        tag: cdkt-app',
+    '  mysql:', '    logging:', '      driver: json-file', 'volumes:', '  mysql_data:', '    name: x_mysql_data', '',
+  ].join('\n')
+  for (const driver of ['journald', 'json-file']) {
+    const r = spawnSync('bash', ['-c', `docker() { cat; }\n${fn}\neffective_app_log_driver`], { input: sample(driver), encoding: 'utf8' })
+    assert.equal(r.stdout.trim(), driver)
+  }
+  // Nothing to read → empty, not a guess.
+  const none = spawnSync('bash', ['-c', `docker() { return 1; }\nset -euo pipefail\n${fn}\nd=$(effective_app_log_driver); echo "[$d]"`], { encoding: 'utf8' })
+  assert.equal(none.status, 0, none.stderr)
+  assert.equal(none.stdout.trim(), '[]')
 })
 
 // ─── manage.sh: off-VPS copies (wave2 D-OFFSITE) ──────────────────────────────

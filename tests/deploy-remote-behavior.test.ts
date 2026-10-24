@@ -553,14 +553,54 @@ describe('deploy-remote.sh — journald, or the json-file fallback (D-LOG)', () 
     assert.equal(file(fx, OVERRIDE), first)
   })
 
-  it('an override the operator wrote is never overwritten — only a warning', () => {
+  it('an override the operator wrote is never overwritten; when it already sets the app logging, the deploy goes on', () => {
     const fx = makeFixture()
-    const own = 'services:\n  app:\n    environment:\n      EXTRA: "1"\n'
+    const own = 'services:\n  app:\n    logging:\n      driver: json-file\n'
     writeFileSync(join(fx.dir, OVERRIDE), own)
     const run = runDeploy(fx, { ...shipped(), ...noJournald(fx) })
     assert.equal(run.status, 0, run.stderr)
     assert.equal(file(fx, OVERRIDE), own)
-    assert.match(run.stderr, /không do script này sinh/)
+    assert.match(run.stdout + run.stderr, /không do script này sinh/)
+  })
+
+  it('W1: no journald and an operator override that leaves the app on journald → stop before any container, compose and .env as they were', () => {
+    const fx = makeFixture()
+    const own = 'services:\n  app:\n    environment:\n      EXTRA: "1"\n'
+    writeFileSync(join(fx.dir, OVERRIDE), own)
+    const run = runDeploy(fx, { ...shipped(), ...noJournald(fx) })
+    assert.notEqual(run.status, 0)
+    assert.match(run.stderr, /::error::[^\n]*journald/)
+    // The merged model was asked, not guessed from the files.
+    assert.ok(run.calls.some(c => /^compose config( |$)/.test(c) && !c.includes(' -q')), run.calls.join('\n'))
+    assert.deepEqual(ups(run.calls), [], 'a container was started on a config that cannot log')
+    assert.equal(file(fx, OVERRIDE), own)
+    assert.equal(file(fx, 'docker-compose.yml'), OLD_COMPOSE, 'the shipped compose must be put back')
+    assert.equal(file(fx, '.env'), ENV_FILE)
+  })
+
+  it('W2: a daemon without the journald driver counts as no journald, even with the host socket', async () => {
+    const fx = makeFixture()
+    await withJournald(fx, (env) => {
+      const run = runDeploy(fx, { ...shipped(), ...env, FAKE_LOG_PLUGINS: '["json-file","local"]' })
+      assert.equal(run.status, 0, run.stderr)
+      assert.match(file(fx, OVERRIDE), /^# cdkt-log-fallback/)
+    })
+  })
+
+  it('W2: the daemon is asked to really use journald — a throwaway container on the pulled image', async () => {
+    const ok = makeFixture()
+    await withJournald(ok, (env) => {
+      const run = runDeploy(ok, { ...shipped(), ...env, FAKE_IMAGES: `${NEW_IMAGE}|2026-01-01T00:00:00Z|sha256:new` })
+      assert.equal(run.status, 0, run.stderr)
+      assert.ok(run.calls.some(c => c.startsWith(`run --rm --network none --log-driver journald --log-opt tag=cdkt-journald-probe --entrypoint true ${NEW_IMAGE} `)), run.calls.join('\n'))
+      assert.equal(existsSync(join(ok.dir, OVERRIDE)), false)
+    })
+    const refused = makeFixture()
+    await withJournald(refused, (env) => {
+      const run = runDeploy(refused, { ...shipped(), ...env, FAKE_IMAGES: `${NEW_IMAGE}|2026-01-01T00:00:00Z|sha256:new`, FAKE_JOURNALD_RUN_FAIL: '1' })
+      assert.equal(run.status, 0, run.stderr)
+      assert.match(file(refused, OVERRIDE), /^# cdkt-log-fallback/, 'a daemon that refuses journald gets the json-file fallback')
+    })
   })
 
   it('journald present: nothing is written', async () => {

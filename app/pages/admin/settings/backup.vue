@@ -51,7 +51,7 @@ const restoreLog = ref<Array<{ phase: string; message: string; at: number; perce
 //  - upload đang chạy (0-99%) → dùng uploadProgress; 100% → chuyển sang xử lý server
 //  - phase 'upload' (server đang nhận body) → dùng uploadProgress (vẫn 0→99)
 //  - phase 'save' (ghi file) → 100% (đã nhận xong, đang ghi)
-//  - phase 'sql'/'start' (chạy SQL) → 100% (giữ, không có sub-progress)
+//  - phase 'sql'/'schema'/'start' (chạy SQL, cập nhật cấu trúc) → 100% (giữ, không có sub-progress)
 //  - phase 'extract' → dùng progress từ backend (0→100)
 //  - phase 'audit'/'done' → 100%; phase 'failed' → 0 (đỏ)
 const currentRestorePercent = computed(() => {
@@ -60,6 +60,7 @@ const currentRestorePercent = computed(() => {
   if (uploadProgress.value >= 0 && uploadProgress.value < 100) return uploadProgress.value
   if (restoreStatus.value?.phase === 'save') return 100
   if (restoreStatus.value?.phase === 'sql') return 100
+  if (restoreStatus.value?.phase === 'schema') return 100
   if (restoreStatus.value?.phase === 'start') return 100
   if (uploadProgress.value === 100 && (!restoreStatus.value?.phase || restoreStatus.value.phase === 'upload')) return uploadProgress.value
   if (restoreStatus.value?.phase === 'extract') return restoreStatus.value?.progress ?? 0
@@ -201,6 +202,7 @@ const RESTORE_PHASE_LABEL: Record<string, string> = {
   start: 'Bắt đầu',
   safety: 'Đang sao lưu an toàn',
   sql: 'Đang phục hồi CSDL',
+  schema: 'Đang cập nhật cấu trúc CSDL',
   extract: 'Đang giải nén',
   audit: 'Đang ghi audit',
   done: 'Xong',

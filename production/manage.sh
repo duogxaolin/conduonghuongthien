@@ -299,23 +299,54 @@ warn_disk_usage() {
 # not enabled on this host") — nên Deploy/Update tự đặt một docker-compose.override.yml
 # có dấu (json-file xoay vòng 3 × 10 MB; compose tự đọc tệp này) và tự gỡ CHÍNH tệp đó
 # khi journald đã có. Tệp override không mang dấu (người vận hành tự viết) không bao giờ
-# bị đụng. Hai hàm dưới giống HỆT bản trong scripts/deploy-remote.sh (lượt CI deploy —
-# tests/ops-scripts.test.ts so từng chữ). Gọi sau `cd "$ROOT"`.
+# bị đụng — nhưng nếu cấu hình compose HIỆU LỰC vẫn để app ghi vào journald thì dừng
+# trước khi chạm container (`ensure_log_driver` trả 1). Ba hàm dưới giống HỆT bản
+# trong scripts/deploy-remote.sh (lượt CI deploy — tests/ops-scripts.test.ts so từng
+# chữ). Gọi sau `cd "$ROOT"`. Tệp tạm của bản override (LOG_FALLBACK_TMP) được dọn ở
+# trap EXIT bên dưới.
 LOG_FALLBACK_MARKER='# cdkt-log-fallback — sinh bởi production/manage.sh / scripts/deploy-remote.sh; đừng sửa tay'
 LOG_WARN_PREFIX='⚠  '
+LOG_ERROR_PREFIX='✗ '
+LOG_FALLBACK_TMP=''
+trap 'if [ -n "$LOG_FALLBACK_TMP" ]; then rm -f "$LOG_FALLBACK_TMP"; fi' EXIT
 
+# $1 (tuỳ chọn): image đã có trên máy để thử bằng một container chạy-rồi-xoá.
 journald_available() {
-  local socket="${CDKT_JOURNALD_SOCKET:-/run/systemd/journal/socket}"
+  local socket="${CDKT_JOURNALD_SOCKET:-/run/systemd/journal/socket}" image="${1:-}" plugins
   # Driver journald của Docker ghi vào socket này; journalctl là cách đọc lại.
-  [ -S "$socket" ] && command -v journalctl >/dev/null 2>&1
+  [ -S "$socket" ] || return 1
+  command -v journalctl >/dev/null 2>&1 || return 1
+  # Chính daemon phải có driver đó (daemon rootless / chạy trong VM không thấy journal của máy).
+  plugins=$(docker info --format '{{json .Plugins.Log}}' 2>/dev/null || true)
+  case "$plugins" in *'"journald"'*) ;; *) return 1 ;; esac
+  # …và DÙNG được: một container thử trên image đã có sẵn (chưa có image thì bỏ bước này).
+  if [ -n "$image" ] && docker image inspect "$image" >/dev/null 2>&1; then
+    docker run --rm --network none --log-driver journald --log-opt tag=cdkt-journald-probe --entrypoint true "$image" >/dev/null 2>&1 || return 1
+  fi
+  return 0
 }
 
+# Driver log mà compose SẼ dùng cho app (docker-compose.yml + mọi override), đọc từ
+# `docker compose config`. Rỗng = không đọc được. awk đọc HẾT đầu vào (không `exit`
+# sớm: SIGPIPE dưới pipefail trong `$(…)` + `set -e` giết cả script).
+effective_app_log_driver() {
+  docker compose config 2>/dev/null | awk '
+    /^[^ ]/ { top = $0; app = 0; logging = 0 }
+    top == "services:" && /^  [^ ]/ { app = ($0 == "  app:"); logging = 0 }
+    app && /^    [^ ]/ { logging = ($0 == "    logging:") }
+    app && logging && /^      driver:/ && driver == "" { driver = $2; gsub(/"/, "", driver) }
+    END { print driver }
+  ' || true
+}
+
+# $1 (tuỳ chọn): image để thử journald (xem journald_available). Trả 1 = cấu hình
+# log không chạy được trên máy này → người gọi dừng trước khi chạm container.
 ensure_log_driver() {
-  local override=docker-compose.override.yml ours=0 tmp
+  local override=docker-compose.override.yml ours=0 driver
   if [ -f "$override" ] && [ "$(head -n 1 "$override")" = "$LOG_FALLBACK_MARKER" ]; then
     ours=1
   fi
-  if journald_available; then
+  if journald_available "${1:-}"; then
     if [ "$ours" = 1 ]; then
       rm -f "$override"
       echo "▸ Máy chủ đã có systemd-journald — gỡ $override (log json-file dự phòng); log app vào journald: journalctl CONTAINER_TAG=cdkt-app"
@@ -323,10 +354,20 @@ ensure_log_driver() {
     return 0
   fi
   if [ -f "$override" ] && [ "$ours" = 0 ]; then
-    echo "${LOG_WARN_PREFIX}Máy chủ không có systemd-journald và đã có $override không do script này sinh — KHÔNG sửa. Nếu tệp đó chưa đặt log cho app, thêm: services.app.logging = { driver: json-file, options: { max-size: \"10m\", max-file: \"3\" } }" >&2
+    # Override của người vận hành: không sửa; hỏi compose driver THẬT của app.
+    driver=$(effective_app_log_driver)
+    case "$driver" in
+      journald)
+        echo "${LOG_ERROR_PREFIX}Máy chủ không có systemd-journald dùng được, mà $override (không do script này sinh) vẫn để app ghi log vào journald — dừng trước khi chạm container. Thêm vào $override: services.app.logging = { driver: json-file, options: { max-size: \"10m\", max-file: \"3\" } }, hoặc cài systemd-journald." >&2
+        return 1 ;;
+      '')
+        echo "${LOG_WARN_PREFIX}Máy chủ không có systemd-journald, đã có $override không do script này sinh, và không đọc được driver log hiệu lực (docker compose config) — nếu app vẫn ghi vào journald, lượt khởi động sẽ hỏng." >&2 ;;
+      *)
+        echo "▸ Máy chủ không có systemd-journald; $override (không do script này sinh) đặt log app = $driver — giữ nguyên." ;;
+    esac
     return 0
   fi
-  tmp=$(mktemp ./.docker-compose.override.XXXXXX)
+  LOG_FALLBACK_TMP=$(mktemp ./.docker-compose.override.XXXXXX)
   {
     echo "$LOG_FALLBACK_MARKER"
     echo '# Máy chủ này không có systemd-journald, nên log của app dùng json-file (xoay vòng'
@@ -340,9 +381,10 @@ ensure_log_driver() {
     echo '      options:'
     echo '        max-size: "10m"'
     echo '        max-file: "3"'
-  } > "$tmp"
-  chmod 644 "$tmp"
-  mv "$tmp" "$override"
+  } > "$LOG_FALLBACK_TMP"
+  chmod 644 "$LOG_FALLBACK_TMP"
+  mv "$LOG_FALLBACK_TMP" "$override"
+  LOG_FALLBACK_TMP=''
   echo "${LOG_WARN_PREFIX}Máy chủ không có systemd-journald — log app dùng json-file (đã ghi $override). Log json-file mất khi container bị tạo lại; cài systemd-journald để giữ log qua các lượt deploy." >&2
 }
 
@@ -959,8 +1001,12 @@ EOF
   echo -e "${C_GREEN}✓ Đã tạo $ROOT/.env (quyền 600)${C_RESET}"
 
   # Log app vào journald; máy chủ không có journald → override json-file (in cảnh báo).
-  # Trước bước khởi động — kể cả khi anh chọn tự `docker compose up -d` sau.
-  ensure_log_driver
+  # Trước bước khởi động — kể cả khi anh chọn tự `docker compose up -d` sau. Cấu hình
+  # log hiệu lực không chạy được trên máy này → dừng, chưa container nào khởi động.
+  if ! ensure_log_driver "$(env_get CDKT_IMAGE)"; then
+    echo -e "${C_RED}✗ DEPLOY DỪNG trước khi khởi động — sửa cấu hình log ở trên rồi chạy lại. .env đã tạo ở $ROOT/.env.${C_RESET}"
+    exit 1
+  fi
 
   # ── Bước 6: Hỏi build luôn ─────────────────────────────────────────────────
   echo -e "\n${C_BOLD}Bước 6/6 — Khởi động${C_RESET}"
@@ -1056,19 +1102,39 @@ cmd_update() {
   # .env về 600 (secure_env_file — không đổi nội dung). Dump hỏng thì dừng: máy chủ y
   # như trước lượt Update. Trả lời 'n' chỉ khi đã có bản sao lưu mới, hoặc chính bước
   # sao lưu là thứ đang hỏng.
-  if confirm "Sao lưu DB trước khi cập nhật?" "y"; then
-    echo -e "${C_BOLD}Sao lưu CSDL → .deploy-db-backups/ ...${C_RESET}"
-    if ! update_predeploy_dump; then
-      echo -e "${C_RED}✗ Sao lưu CSDL thất bại — dừng. Chưa pull code, chưa sửa .env, chưa kéo image hay khởi động lại gì.${C_RESET}"
-      echo -e "${C_DIM}   Sửa nguyên nhân (đĩa đầy? mysql không chạy?) rồi chạy lại Update.${C_RESET}"
-      exit 1
+  #
+  # CDKT_UPDATE_RESUMED=1: đây là manage.sh VỪA KÉO VỀ, được bản cũ gọi lại ngay sau
+  # `git pull` (khối "Pull code" bên dưới) — sao lưu và pull đã xong ở bản cũ, chỉ chạy
+  # tiếp phần còn lại bằng mã mới.
+  if [ "${CDKT_UPDATE_RESUMED:-}" = 1 ]; then
+    UPDATE_COMPOSE_BACKUP="${CDKT_UPDATE_COMPOSE_BACKUP:-}"
+    echo -e "${C_DIM}▸ Tiếp tục Update bằng manage.sh vừa kéo về (sao lưu DB + pull code đã xong ở bước trước).${C_RESET}"
+  else
+    if confirm "Sao lưu DB trước khi cập nhật?" "y"; then
+      echo -e "${C_BOLD}Sao lưu CSDL → .deploy-db-backups/ ...${C_RESET}"
+      if ! update_predeploy_dump; then
+        echo -e "${C_RED}✗ Sao lưu CSDL thất bại — dừng. Chưa pull code, chưa sửa .env, chưa kéo image hay khởi động lại gì.${C_RESET}"
+        echo -e "${C_DIM}   Sửa nguyên nhân (đĩa đầy? mysql không chạy?) rồi chạy lại Update.${C_RESET}"
+        exit 1
+      fi
+    fi
+
+    # ── Pull code ───────────────────────────────────────────────────────────
+    # CI ghi đè docker-compose.yml trên VPS → cây git "bẩn" → git pull từ chối. Xử lý
+    # (sao lưu + bỏ thay đổi cục bộ của tệp đó) nằm trong update_pull_code.
+    local manage_before manage_after
+    manage_before=$(sha256sum "$PROD/manage.sh" 2>/dev/null | cut -d' ' -f1 || true)
+    update_pull_code
+    # Pull vừa đổi chính tệp này: phần còn lại của Update (kiểm log journald, kéo image,
+    # khởi động lại) phải chạy bằng mã MỚI — bash đang chạy bản cũ đã nạp. `exec` giữ
+    # nguyên stdin (các câu trả lời kế tiếp) và trao lại bản sao lưu compose của lượt này
+    # cho đường lùi. Bản mới nhận CDKT_UPDATE_RESUMED=1 nên không pull lại (không lặp).
+    manage_after=$(sha256sum "$PROD/manage.sh" 2>/dev/null | cut -d' ' -f1 || true)
+    if [ -n "$manage_before" ] && [ "$manage_after" != "$manage_before" ]; then
+      echo -e "${C_BOLD}▸ manage.sh vừa đổi theo git pull — chạy tiếp Update bằng bản mới (không hỏi lại sao lưu/pull).${C_RESET}"
+      exec env CDKT_UPDATE_RESUMED=1 CDKT_UPDATE_COMPOSE_BACKUP="$UPDATE_COMPOSE_BACKUP" bash "$PROD/manage.sh" update
     fi
   fi
-
-  # ── Pull code ─────────────────────────────────────────────────────────────
-  # CI ghi đè docker-compose.yml trên VPS → cây git "bẩn" → git pull từ chối. Xử lý
-  # (sao lưu + bỏ thay đổi cục bộ của tệp đó) nằm trong update_pull_code.
-  update_pull_code
 
   # ── Tự chủ webfont (kiểm tra lại sau pull) ────────────────────────────────
   # Font Inter nên self-host để tránh IP visitor qua Google CDN. Sau git pull,
@@ -1150,8 +1216,12 @@ cmd_update() {
 
   # ── Pull image + restart ─────────────────────────────────────────────────
   # VPS đang chạy chưa từng chạy lại Deploy: kiểm journald ở đây, trước lượt khởi động
-  # lại (cùng hàm với lượt CI deploy). Chỉ in, không hỏi.
-  ensure_log_driver
+  # lại (cùng hàm với lượt CI deploy). Không hỏi; cấu hình log hiệu lực không chạy được
+  # trên máy này → dừng trước khi kéo image hay khởi động lại.
+  if ! ensure_log_driver "$(env_get CDKT_IMAGE)"; then
+    echo -e "${C_RED}✗ UPDATE DỪNG trước khi kéo image/khởi động lại — sửa cấu hình log ở trên rồi chạy lại Update. Container đang chạy không bị đụng.${C_RESET}"
+    exit 1
+  fi
   echo
   if confirm "Pull image mới + khởi động lại (docker compose pull && up -d)?" "y"; then
     # Bản dump trước cập nhật đã lấy ở đầu lượt Update (trước git pull).
@@ -1645,11 +1715,12 @@ cmd_export_env() {
   fi
 
   local pass pass2
+  # `IFS=`: giữ nguyên dấu cách đầu/cuối — passphrase là đúng những gì đã gõ.
   printf 'Passphrase (≥ 12 ký tự, không hiện khi gõ): '
-  read -rs pass || true
+  IFS= read -rs pass || true
   echo
   printf 'Gõ lại passphrase: '
-  read -rs pass2 || true
+  IFS= read -rs pass2 || true
   echo
   if [ "$pass" != "$pass2" ]; then
     echo -e "${C_RED}✗ Hai lần gõ không khớp — không ghi gì.${C_RESET}"

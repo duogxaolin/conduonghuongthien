@@ -21,7 +21,12 @@
  *   4. `backups.trigger` holds every trigger the app writes — on a fresh
  *      `initDb()` AND on an old database whose column is still VARCHAR(16)
  *      (`runBackup('sql', 'pre-fix-thumbnails')` used to die with
- *      ER_DATA_TOO_LONG under strict sql_mode, writing no row at all).
+ *      ER_DATA_TOO_LONG under strict sql_mode, writing no row at all);
+ *   5. restoring a dump taken BEFORE a column was added (wave2: `backups.
+ *      offsite_status`, plus another additive column) succeeds, leaves the current
+ *      schema, reattaches the backup rows, and a later orphan sweep keeps every file;
+ *   6. the orphan sweep fails closed: a `backups` table that is not the shape the
+ *      app expects is never trusted to decide which files are orphans.
  *
  * Gated and self-cleaning like the other *-integration suites:
  *
@@ -30,7 +35,7 @@
  *     --import ./scripts/ts-resolver.mjs --test tests/backup-dump-integration.test.ts
  */
 import assert from 'node:assert/strict'
-import { mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, utimesSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { gunzipSync } from 'node:zlib'
@@ -51,11 +56,13 @@ const DB = {
   modeDst: `cdkt_backup_dump_${runId}_modedst`,
   trigFresh: `cdkt_backup_dump_${runId}_trigfresh`,
   trigOld: `cdkt_backup_dump_${runId}_trigold`,
+  oldSchema: `cdkt_backup_dump_${runId}_oldschema`,
+  sweep: `cdkt_backup_dump_${runId}_sweep`,
 }
 
 /** Never let a typo in the env point this at a real deployment. */
 function assertDisposableDatabase(name: string) {
-  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold)$/)
+  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold|oldschema|sweep)$/)
   assert.notEqual(name, 'cdkt_admin')
 }
 
@@ -413,5 +420,137 @@ test('backups.trigger fits every trigger: fresh initDb() and an old VARCHAR(16) 
     await cleanup.end()
   }
   await backupEveryTrigger(DB.trigOld)
+  await closeDb()
+})
+
+// ─── 5–6. Restoring a dump from before a schema addition (wave2 ops re-verification CRITICAL) ─
+
+/** Column names of `table` in `database`. */
+async function columnsOf(database: string, table: string): Promise<string[]> {
+  assertDisposableDatabase(database)
+  const conn = await mysql.createConnection({ host, port, user, password })
+  try {
+    const [rows] = await conn.query<RowDataPacket[]>(
+      'SELECT COLUMN_NAME AS c FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+      [database, table],
+    )
+    return rows.map(row => String(row.c))
+  } finally {
+    await conn.end()
+  }
+}
+
+/** A backups directory of its own (the end-to-end test above already wrote into ./backups). */
+function freshBackupsDir(name: string): string {
+  const dir = path.join(workdir, name)
+  mkdirSync(dir, { recursive: true })
+  process.env.CDKT_BACKUPS_DIR = dir
+  return dir
+}
+
+/** Every file older than the sweep's 10-minute floor for unregistered app-named files. */
+function ageAll(dir: string) {
+  const hourAgo = new Date(Date.now() - 60 * 60 * 1000)
+  for (const name of readdirSync(dir)) utimesSync(path.join(dir, name), hourAgo, hourAgo)
+}
+
+test('a dump taken before a column was added restores: current schema, rows reattached, files survive the sweep, app usable at once', { skip: !enabled, timeout: 240_000 }, async () => {
+  // An app dump carries DROP TABLE + CREATE TABLE, so restoring one from the previous
+  // release brought `backups` back WITHOUT `offsite_status`. Drizzle names every
+  // schema column, so the reattach insert inside the audit transaction failed: the
+  // restore reported "failed" although the data WAS replaced, `backups` stayed empty,
+  // and the next sweep deleted the pre-restore dump and newer backups as orphans.
+  const { closeDb, getDb } = await import('../server/utils/db')
+  await closeDb()
+  pointAppAt(DB.oldSchema)
+  const dir = freshBackupsDir('backups-oldschema')
+  const { initDb } = await import('../server/db/init')
+  await initDb()
+  const old = await mysql.createConnection({ host, port, user, password, database: DB.oldSchema })
+  try {
+    await old.query("INSERT INTO roles (id, name, is_system) VALUES (1, 'SuperAdmin', 1)")
+    await old.query("INSERT INTO users (id, username, password_hash, role_id, is_active) VALUES (1, 'root-admin', 'x', 1, 1)")
+    await old.query("INSERT INTO settings (`key`, value) VALUES ('oldschema_marker', 'from-old-release')")
+    // The previous release: neither additive column exists yet (two tables, so the
+    // fix cannot be a special case for `backups`).
+    await old.query('ALTER TABLE backups DROP COLUMN offsite_status')
+    await old.query('ALTER TABLE article_comments DROP COLUMN flag_reason')
+  } finally {
+    await old.end()
+  }
+  const { dumpSql } = await import('../server/services/backup-sql')
+  await dumpSql(path.join(dir, 'old-release.sql.gz'))
+
+  // The current release boots on the same database: columns back, data moves on,
+  // and a newer manual backup is registered.
+  await initDb()
+  assert.ok((await columnsOf(DB.oldSchema, 'backups')).includes('offsite_status'))
+  const db = getDb()
+  const { settings, backups, activityLogs } = await import('../server/db/schema')
+  const { eq } = await import('drizzle-orm')
+  await db.update(settings).set({ value: 'changed-after' }).where(eq(settings.key, 'oldschema_marker'))
+  const { runBackup, sweepStaleBackupFiles, listBackups } = await import('../server/services/backup')
+  const manualName = (await runBackup('sql', 'manual', 1, { rotate: false })).files[0]!.name
+
+  // Restore the old-release dump through the service, the path the admin endpoint takes.
+  const { runRestore } = await import('../server/services/backup-restore')
+  const outcome = await runRestore('old-release.sql.gz', { id: 1, username: 'root-admin' })
+  assert.match(String(outcome.preRestoreBackup), /-pre-restore\.sql\.gz$/)
+
+  assert.equal((await exactRows(DB.oldSchema, "SELECT value FROM settings WHERE `key` = 'oldschema_marker'"))[0]!.value, 'from-old-release', 'the data was restored')
+  assert.ok((await columnsOf(DB.oldSchema, 'backups')).includes('offsite_status'), 'backups.offsite_status is back')
+  assert.ok((await columnsOf(DB.oldSchema, 'article_comments')).includes('flag_reason'), 'article_comments.flag_reason is back')
+  const rows = await exactRows(DB.oldSchema, 'SELECT filename, status, offsite_status FROM backups ORDER BY id')
+  const names = rows.map(row => String(row.filename))
+  assert.ok(names.includes(outcome.preRestoreBackup!), `pre-restore row reattached: ${JSON.stringify(rows)}`)
+  assert.ok(names.includes(manualName), `newer manual backup reattached: ${JSON.stringify(rows)}`)
+  assert.ok(rows.every(row => row.offsite_status === 'none'), `off-site status kept: ${JSON.stringify(rows)}`)
+  assert.equal((await db.select().from(activityLogs).where(eq(activityLogs.action, 'backup_restore'))).length, 1)
+  assert.equal((await db.select().from(activityLogs).where(eq(activityLogs.action, 'backup_restore_failed'))).length, 0)
+
+  // A later sweep (next run, or 1 minute after a restart) keeps every registered file.
+  ageAll(dir)
+  await sweepStaleBackupFiles()
+  const left = readdirSync(dir)
+  for (const name of [outcome.preRestoreBackup!, manualName, 'old-release.sql.gz']) {
+    assert.ok(left.includes(name), `${name} was swept: ${left.join(', ')}`)
+  }
+
+  // The list and a new backup work on the restored database right away — no restart.
+  assert.ok((await listBackups(1, 20)).items.some(item => item.filename === manualName))
+  const after = (await runBackup('sql', 'pre-sync', 1, { rotate: false })).files[0]!.name
+  assert.equal((await db.select().from(backups).where(eq(backups.filename, after)))[0]?.offsiteStatus, 'none')
+  delete process.env.CDKT_BACKUPS_DIR
+  await closeDb()
+})
+
+test('the orphan sweep fails closed: a backups table that is not the shape the app expects decides nothing', { skip: !enabled, timeout: 120_000 }, async () => {
+  const { closeDb } = await import('../server/utils/db')
+  await closeDb()
+  pointAppAt(DB.sweep)
+  const dir = freshBackupsDir('backups-sweep')
+  const { initDb } = await import('../server/db/init')
+  await initDb()
+  // What a restore of an older dump left before the fix: the old table shape, no rows.
+  const conn = await mysql.createConnection({ host, port, user, password, database: DB.sweep })
+  try {
+    await conn.query('ALTER TABLE backups DROP COLUMN offsite_status')
+  } finally {
+    await conn.end()
+  }
+  const files = ['cdkt-20260101T000000Z-pre-restore.sql.gz', 'cdkt-20260102T000000Z-manual.sql.gz', 'cdkt-uploads-20260102T000000Z-manual.tar.gz']
+  for (const name of files) writeFileSync(path.join(dir, name), 'a registered backup the table no longer lists')
+  ageAll(dir)
+
+  const { sweepStaleBackupFiles } = await import('../server/services/backup')
+  assert.equal(await sweepStaleBackupFiles(), 0)
+  assert.deepEqual(readdirSync(dir).sort(), [...files].sort(), 'files were deleted on the word of a table the app cannot read')
+
+  // Control: once the table has the expected shape (and still no rows), the same
+  // aged, unregistered files ARE orphans — the sweep is not simply switched off.
+  await initDb()
+  await sweepStaleBackupFiles()
+  assert.deepEqual(readdirSync(dir), [])
+  delete process.env.CDKT_BACKUPS_DIR
   await closeDb()
 })

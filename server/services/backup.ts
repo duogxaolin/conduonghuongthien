@@ -147,7 +147,12 @@ async function deleteStaleFiles(dir: string, db: ReturnType<typeof getDb>): Prom
   let registered: Set<string> | null = null
   if (names.some(name => APP_FINAL.test(name))) {
     try {
-      registered = new Set((await db.select({ filename: backups.filename }).from(backups)).map(row => row.filename))
+      // MỌI cột, không chỉ `filename`: một bảng `backups` không đúng hình dạng app chờ
+      // (vd. vừa khôi phục một dump cũ thiếu cột mới, lượt gắn lại hàng chưa chạy) thì
+      // KHÔNG được tin để kết luận tệp nào mồ côi — câu chọn đủ cột ném và lượt dọn bỏ
+      // qua tệp tên-thật (đóng an toàn). Chỉ chọn `filename` từng đọc trót lọt bảng cũ
+      // rỗng đó và xoá bản `pre-restore` cùng các bản mới hơn.
+      registered = new Set((await db.select().from(backups)).map(row => row.filename))
     } catch (err: unknown) {
       logWarn({ event: 'backup.orphan_sweep_skipped', error: err instanceof Error ? err.message : String(err) })
     }

@@ -151,6 +151,38 @@ async function takeSafetyBackup(adminUserId: number | null): Promise<string> {
   }
 }
 
+/**
+ * Đưa cấu trúc CSDL về phiên bản hiện tại ngay sau khi chạy một bản dump — đúng các
+ * bước lúc khởi động (`initDb`: `CREATE TABLE IF NOT EXISTS` theo thứ tự FK +
+ * `applyAdditiveMigrations`), không chép lại DDL nào.
+ *
+ * Vì sao: dump của app mang `DROP TABLE` + `CREATE TABLE`, nên khôi phục một bản lấy
+ * TRƯỚC khi có một cột mới (wave2: `backups.offsite_status`; các đợt khác cũng thêm
+ * cột) trả bảng về hình dạng cũ, trong khi Drizzle luôn nêu mọi cột của `schema.ts`.
+ * Trước bản này, lượt gắn lại hàng `backups` trong transaction audit chết với
+ * `Unknown column` → khôi phục báo "thất bại" dù dữ liệu ĐÃ bị thay, `backups` rỗng,
+ * và lượt dọn kế tiếp xoá bản `pre-restore` cùng các bản mới hơn như "mồ côi"; danh
+ * sách và lượt sao lưu kế cũng hỏng tới khi khởi động lại.
+ *
+ * Chạy lại an toàn (cùng tính idempotent của lúc khởi động); `initDb` đọc `DB_*` như
+ * `restoreSql` (`createBackupConnection`), nên đụng đúng CSDL vừa được khôi phục.
+ * Chỉ THÊM — một cột đã bỏ khỏi `schema.ts` mà dump cũ còn mang (NOT NULL, không mặc
+ * định) không được gỡ ở đây, như lúc khởi động.
+ */
+async function convergeSchemaAfterRestore(filename: string, actor: RestoreActor): Promise<void> {
+  const startedAt = Date.now()
+  try {
+    // Nạp động: toàn bộ DDL + di trú chỉ vào bộ nhớ khi thật sự khôi phục CSDL, và
+    // module khôi phục không kéo `migrations-additive` theo mọi nơi import nó.
+    const { initDb } = await import('../db/init')
+    await initDb()
+  } catch (err: unknown) {
+    logError({ event: 'backup.restore_schema_convergence_failed', filename, userId: actor.id, error: messageOf(err) })
+    throw err
+  }
+  logInfo({ event: 'backup.restore_schema_converged', filename, userId: actor.id, ms: Date.now() - startedAt })
+}
+
 /** Ghi `backup_restore_failed` trong transaction riêng; lỗi ghi audit không che lỗi gốc. */
 async function recordRestoreFailure(actor: RestoreActor, filename: string, err: unknown, preRestoreBackup: string | null): Promise<void> {
   try {
@@ -221,7 +253,26 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
         rowsBefore = await db.select().from(backups)
         schedulerStateBefore = await readSchedulerStateForRestore(db)
         setStatus(true, 'sql', 'Đang phục hồi CSDL')
-        ;({ legacyDateShift } = await restoreSql(filePath))
+        try {
+          ;({ legacyDateShift } = await restoreSql(filePath))
+        } catch (err: unknown) {
+          // Dump chết giữa chừng: một phần bảng có thể đã mang hình dạng cũ. Vẫn đưa cấu
+          // trúc về bản hiện tại (được tới đâu hay tới đó) để audit thất bại, danh sách
+          // và lượt sao lưu kế không hỏng theo — lỗi GỐC mới là thứ được báo.
+          await convergeSchemaAfterRestore(filename, actor).catch(() => {})
+          throw err
+        }
+        // Trước MỌI thứ đụng tới bảng vừa khôi phục (gắn lại `backups`, audit, scheduler).
+        setStatus(true, 'schema', 'Đang cập nhật cấu trúc CSDL')
+        try {
+          await convergeSchemaAfterRestore(filename, actor)
+        } catch {
+          throw new BackupRestoreError(
+            'Dữ liệu của bản sao lưu đã được nạp nhưng chưa đưa được cấu trúc CSDL về phiên bản hiện tại — khởi động lại ứng dụng để hoàn tất (chi tiết trong log máy chủ).',
+            500,
+            'schema_convergence_failed',
+          )
+        }
       } else {
         setStatus(true, 'extract', 'Đang giải nén file', 0)
         await restoreFiles(filePath)

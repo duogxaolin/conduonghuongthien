@@ -258,20 +258,24 @@ không bao giờ tới được container). Lượt deploy:
    `….sql.gz.partial`; lượt dump sau cùng họ xoá nó khi đã quá 1 ngày. Phiên SSH của job có keep-alive
    (`ServerAliveInterval=30`, `ServerAliveCountMax=10`) để một bản dump lâu không bị NAT/tường
    lửa cắt vì "rảnh";
-2c. **log của app** (wave2 D-LOG): compose cho app ghi vào journald (`tag: cdkt-app`).
-   `ensure_log_driver` kiểm máy chủ có systemd-journald (socket
-   `/run/systemd/journal/socket` + `journalctl`); không có → ghi
-   `<APP_DIR>/docker-compose.override.yml` mang dấu `# cdkt-log-fallback` (app dùng
-   `json-file` 3 × 10 MB) và in `::warning::`; có journald mà tệp có dấu còn → gỡ nó.
-   Override **không** mang dấu (của người vận hành) không bao giờ bị sửa. Chạy sau bản
-   dump (không gì đổi trước dump) và trước bước 4 (để `config -q` thấy override cuối
-   cùng). Cùng hàm, giống từng chữ, ở `production/manage.sh` Deploy/Update;
 3. sao lưu `docker-compose.yml` cũ vào `<APP_DIR>/.deploy-compose-backups/`
    (giữ 10 bản gần nhất; compose không đổi thì không sao lưu, không ghi gì);
 4. đặt bản mới, chạy `docker compose config -q` **trên chính VPS** (gồm cả
    `docker-compose.override.yml` nếu có, và bắt được biến bắt buộc mới mà `.env`
    chưa có) — sai thì trả bản cũ về và dừng, **chưa container nào, chưa dòng `.env`
    nào bị đụng**;
+4b. **log của app** (wave2 D-LOG): compose cho app ghi vào journald (`tag: cdkt-app`).
+   `ensure_log_driver "$IMAGE"` kiểm máy chủ dùng được systemd-journald: socket
+   `/run/systemd/journal/socket`, `journalctl`, daemon có driver `journald`
+   (`docker info … .Plugins.Log`) và một container thử `docker run --rm --network none
+   --log-driver journald --entrypoint true <image vừa kéo>`. Không có → ghi
+   `<APP_DIR>/docker-compose.override.yml` mang dấu `# cdkt-log-fallback` (app dùng
+   `json-file` 3 × 10 MB) và in `::warning::`; có journald mà tệp có dấu còn → gỡ nó.
+   Override **không** mang dấu (của người vận hành) không bao giờ bị sửa; khi đó
+   `docker compose config` cho biết driver hiệu lực của app — vẫn là journald thì
+   `::error::`, trả compose cũ về và dừng (chưa `.env`, chưa container). Chạy sau bước 4
+   để driver hiệu lực tính trên compose của commit này. Cùng ba hàm, giống từng chữ, ở
+   `production/manage.sh` Deploy/Update;
 5. khởi động lại **chỉ app**: `up -d --no-recreate mysql` (bật mysql nếu đang dừng,
    không bao giờ tạo lại) rồi `up -d --no-deps app`. Thay đổi ở service `mysql` không
    được CI tự áp — người vận hành chạy `docker compose up -d` trong giờ thấp điểm.

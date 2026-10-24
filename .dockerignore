@@ -45,6 +45,8 @@ backups
 **/.docker-compose.incoming.yml
 docker-compose.override.yml
 **/docker-compose.override.yml
+.docker-compose.override.*
+**/.docker-compose.override.*
 
 # FontAwesome Pro ships 113MB of SVG-JS bundles the site never loads (it uses
 # the webfont CSS). Same list as .gitignore — keep them out of the image too.

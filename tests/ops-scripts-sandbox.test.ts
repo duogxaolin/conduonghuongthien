@@ -1260,13 +1260,73 @@ test('Update removes its own fallback once journald is there, and never touches 
 
   const theirs = updateSandbox('ghcr.io/x/y:latest')
   try {
-    writeFileSync(theirs.path(OVERRIDE), 'services: {}\n')
+    const own = 'services:\n  app:\n    logging:\n      driver: json-file\n'
+    writeFileSync(theirs.path(OVERRIDE), own)
     const r = theirs.run('production/manage.sh', ['update'], { input: updateInput('n', 'n'), env: { CDKT_JOURNALD_SOCKET: theirs.path('no-journal') } })
     assert.equal(r.status, 0, r.stdout + r.stderr)
-    assert.equal(readFileSync(theirs.path(OVERRIDE), 'utf8'), 'services: {}\n')
-    assert.match(r.stderr, /không do script này sinh/)
+    assert.equal(readFileSync(theirs.path(OVERRIDE), 'utf8'), own)
+    assert.match(r.stdout + r.stderr, /không do script này sinh/)
   } finally {
     cleanup(theirs)
+  }
+})
+
+test('W1: Update stops before the restart when no journald is usable and the merged config still logs the app to journald', () => {
+  const sb = updateSandbox('ghcr.io/x/y:latest')
+  try {
+    const own = 'services:\n  app:\n    environment:\n      EXTRA: "1"\n'
+    writeFileSync(sb.path(OVERRIDE), own)
+    const r = sb.run('production/manage.sh', ['update'], { input: updateInput('n', 'y'), env: { CDKT_JOURNALD_SOCKET: sb.path('no-journal') } })
+    assert.notEqual(r.status, 0)
+    assert.match(r.stdout + r.stderr, /journald/)
+    assert.equal(readFileSync(sb.path(OVERRIDE), 'utf8'), own, 'the operator override is not touched')
+    const log = sb.dockerLog()
+    assert.ok(log.some(l => /^compose config$/.test(l)), log.join('\n'))
+    assert.ok(!log.some(l => l.startsWith('pull ') || l.startsWith('compose up')), `nothing pulled or started:\n${log.join('\n')}`)
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('W2: Deploy treats a daemon without the journald driver as no journald, even with the host socket', async () => {
+  const sb = deploySandbox(8000)
+  try {
+    await withJournald(sb, (env) => {
+      const r = sb.run('production/manage.sh', ['deploy'], {
+        input: lines(...Array(DEPLOY_PROMPTS).fill(''), 'n'),
+        env: { CDKT_MEMINFO_FILE: sb.path('meminfo'), ...env, FAKE_LOG_PLUGINS: '["json-file","local"]' },
+      })
+      assert.equal(r.status, 0, r.stdout + r.stderr)
+      assert.match(readFileSync(sb.path(OVERRIDE), 'utf8'), /^# cdkt-log-fallback/)
+    })
+    // Update on the same host with a daemon that DOES have it, but the throwaway
+    // container on the running image is refused: still no journald.
+    await withJournald(sb, (env) => {
+      const r = sb.run('production/manage.sh', ['update'], { input: updateInput('n', 'n'), env: { ...env, FAKE_JOURNALD_RUN_RC: '125' } })
+      assert.equal(r.status, 0, r.stdout + r.stderr)
+      assert.ok(existsSync(sb.path(OVERRIDE)), 'the fallback stays while the daemon cannot log to journald')
+      assert.ok(sb.dockerLog().some(l => l.startsWith('run --rm --network none --log-driver journald ')), sb.dockerLog().join('\n'))
+    })
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('W3: when git pull brings a new manage.sh, Update continues in the NEW script — once, without asking the dump/pull again', () => {
+  const sb = updateSandbox('ghcr.io/x/y:latest')
+  try {
+    const r = sb.run('production/manage.sh', ['update'], {
+      input: updateInputWithDump('n', 'y', 'n'),
+      env: { FAKE_GIT_PULL_APPEND: '# pulled: a newer manage.sh' },
+    })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.match(r.stdout, /manage\.sh vừa đổi theo git pull/)
+    assert.equal((r.stdout.match(/Sao lưu DB trước khi cập nhật\?/g) ?? []).length, 1, 'the resumed Update asked for the dump again')
+    assert.equal(sb.dockerLog().filter(l => l.startsWith('git pull')).length, 1, 'pulled twice')
+    assert.match(r.stdout, /UPDATE XONG/)
+    assert.equal((r.stdout.match(/UPDATE XONG/g) ?? []).length, 1)
+  } finally {
+    cleanup(sb)
   }
 })
 
@@ -1441,6 +1501,23 @@ test('export: AES-256-CBC + PBKDF2 (200000 rounds), a 0600 .env.enc the same pas
     // It tells the operator how to get it back.
     assert.match(r.stdout, /openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -in \.env\.enc -out \.env/)
     assert.ok(!readdirSync(sb.dir).some((f) => /^\.env\.enc\./.test(f)), 'temp file left behind')
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('W5: a passphrase with leading/trailing spaces is used exactly as typed', () => {
+  const spaced = '   correct horse battery staple   '
+  const sb = makeSandbox(ENV_SECRET)
+  try {
+    const real = shimOpenssl(sb)
+    const r = sb.run('production/manage.sh', ['export-env'], { input: lines(spaced, spaced) })
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    const decrypt = (pass: string) => spawnSync(real, ['enc', '-d', '-aes-256-cbc', '-pbkdf2', '-iter', '200000', '-in', sb.path('.env.enc'), '-pass', 'stdin'], { input: pass, encoding: 'utf8' })
+    const exact = decrypt(spaced)
+    assert.equal(exact.status, 0, exact.stderr)
+    assert.equal(exact.stdout, ENV_SECRET)
+    assert.notEqual(decrypt(spaced.trim()).stdout, ENV_SECRET, 'the spaces were trimmed away')
   } finally {
     cleanup(sb)
   }

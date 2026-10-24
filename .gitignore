@@ -54,8 +54,10 @@ backups/
 .deploy-compose-backups/
 .docker-compose.incoming.yml
 # Override riêng của máy chủ: log json-file dự phòng khi VPS không có journald (do
-# deploy-remote.sh / manage.sh ghi, có dấu `# cdkt-log-fallback`), hoặc của người vận hành.
+# deploy-remote.sh / manage.sh ghi, có dấu `# cdkt-log-fallback`), hoặc của người vận hành;
+# và tệp tạm của bản override đó trước khi `mv` (lượt bị cắt ngang có thể để lại).
 docker-compose.override.yml
+.docker-compose.override.*
 # Dump CSDL trước mỗi lượt deploy (toàn bộ dữ liệu production — không bao giờ được
 # commit) và scripts/backup-db.sh CI gửi lên trong lúc deploy.
 .deploy-db-backups/

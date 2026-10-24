@@ -1038,6 +1038,52 @@ OpenSpec `wave2-hardening` nhóm 7 (2F ops), design D-OFFSITE, D-LOG, D-ALERT, D
   - `bash -n` xanh cho các script đã sửa. shellcheck `-S style` không có cảnh báo mới; còn một `SC2329` có từ trước ở `deploy-remote.sh`.
   - E2E không chạy: chưa spec nào phủ trang `/admin/settings/backup`.
 
+#### Sửa sau kiểm chứng độc lập (2026-10-24)
+
+Mỗi mục có test đỏ trước khi sửa, trên 96804b0.
+
+- **CRITICAL — khôi phục một bản dump lấy trước khi có cột mới.** Dump của app mang `DROP TABLE` + `CREATE TABLE`, nên `backups` quay về không có `offsite_status`. Drizzle luôn nêu đủ cột, nên lượt gắn lại hàng `backups` trong transaction audit chết với `Unknown column`. Hậu quả:
+  - endpoint báo "khôi phục thất bại" dù dữ liệu **đã** bị thay, và audit ghi thất bại;
+  - `backups` rỗng, nên lượt dọn kế tiếp (lượt sao lưu sau, hoặc 1 phút sau khởi động) xoá bản `pre-restore` cùng các bản mới hơn như "mồ côi";
+  - danh sách và lượt sao lưu kế cũng hỏng tới khi khởi động lại.
+
+  Lỗi đúng cho **mọi** cột/bảng thêm sau thời điểm dump, ở mọi đợt.
+  - **Sửa gốc:** ngay sau `restoreSql`, vẫn trong khoá khôi phục và **trước** gắn lại/audit, chạy lại đúng các bước cấu trúc lúc khởi động (`initDb()`: `CREATE TABLE IF NOT EXISTS` + `applyAdditiveMigrations`).
+    - Không chép DDL nào. `initDb` đọc cùng `DB_*` với `restoreSql`; import động, nên chỉ nạp khi thật sự khôi phục CSDL.
+    - Dump chết giữa chừng vẫn qua bước này (được tới đâu hay tới đó), và lỗi gốc mới là thứ được báo.
+    - Bước này hỏng sau một dump đủ → `schema_convergence_failed`, nói dữ liệu đã nạp và cần khởi động lại.
+    - Log `backup.restore_schema_converged` / `…_convergence_failed`.
+  - **Lượt dọn đóng an toàn:** đọc `backups` đủ mọi cột (`db.select().from(backups)`, không chỉ `filename`). Bảng sai hình dạng → câu đọc ném → không xoá tệp tên-thật nào. Đối chứng: khi bảng đúng hình dạng, tệp mồ côi thật vẫn bị dọn.
+  - **Test MySQL thật** (`tests/backup-dump-integration.test.ts` mục 5–6, không đổi matrix CI):
+    - Dump một CSDL thiếu `backups.offsite_status` **và** `article_comments.flag_reason`, nâng CSDL lên bản hiện tại, tạo một bản sao lưu mới hơn, rồi khôi phục qua `runRestore`.
+    - Kết quả: thành công, đủ cột, hàng `pre-restore` + bản mới hơn được gắn lại (giữ `offsite_status`), audit `backup_restore`.
+    - Sau lượt dọn với tệp đã cũ hơn 10 phút, mọi tệp còn. `listBackups` và một lượt `runBackup` mới chạy được ngay.
+    - Ca dọn đóng an toàn riêng.
+    - Trên 96804b0: hai ca này đỏ (`Unknown column 'offsite_status'`; ca dọn xoá cả ba tệp).
+  - `backup-restore-hardening` có thêm 4 ca thứ tự: dump → `initDb` → transaction; dump hỏng; bước cấu trúc hỏng; khôi phục tệp không đụng cấu trúc.
+  - Trang `/admin/settings/backup` có nhãn cho phase mới ("Đang cập nhật cấu trúc CSDL") và giữ thanh tiến trình 100% trong bước đó. Trước đó nhật ký khôi phục hiện chữ thô `schema`, thanh tụt về 0%. Có test: mọi phase máy chủ báo phải có nhãn.
+  - **Hạn chế:** bước này chỉ *thêm*. Một cột đã bỏ khỏi `schema.ts` mà dump cũ còn mang (NOT NULL, không mặc định) không được gỡ; giá trị seed chỉ quay lại ở lần khởi động sau.
+  - **Lưu ý khi gộp 2A:** thứ tự phải là `restoreSql` → `convergeSchemaAfterRestore` → `encryptRestoredSecrets`.
+- **W1 — máy không có journald + override của người vận hành.** Trước chỉ cảnh báo, nên `up` vẫn hỏng. Nay hỏi `docker compose config` driver log hiệu lực của app (`effective_app_log_driver`; awk đọc hết đầu vào, không `exit` sớm — SIGPIPE dưới pipefail).
+  - Vẫn là journald → dừng trước khi chạm container. Ở CI: `::error::`, trả `docker-compose.yml` cũ về, `.env` không đổi.
+  - Override đã đặt json-file → đi tiếp.
+  - Ở `deploy-remote.sh`, `ensure_log_driver "$IMAGE"` nay chạy **sau** `install_compose` để tính trên compose của commit đang deploy.
+  - Bộ đọc đã thử trên đầu ra thật của `docker compose config`: không override → journald; override không đặt logging → journald; override json-file → json-file.
+- **W2 — "có journald" phải là daemon dùng được.** Ngoài socket + `journalctl`, nay kiểm thêm daemon có driver (`docker info --format '{{json .Plugins.Log}}'`), rồi chạy container thử `docker run --rm --network none --log-driver journald --entrypoint true <image>` khi image đã có trên máy. Hai fake docker trả lời `info`/`run`/`compose config`.
+- **W3 — Update tự chạy tiếp bằng `manage.sh` vừa kéo về.** `git pull` đổi chính `manage.sh` → `exec` bản mới với `CDKT_UPDATE_RESUMED=1`, kèm bản sao lưu compose cho đường lùi; không hỏi lại sao lưu/pull, không lặp. Bản `manage.sh` cũ trên VPS chưa có bước này, nên README ghi: lần Update tay đầu tiên trên máy không journald có thể hỏng ở `up` (tự lùi) — chạy lại một lần. Thường CI deploy đã ghi override trước đó rồi.
+- **W5 — passphrase giữ dấu cách đầu/cuối:** đọc bằng `IFS= read -rs`. Test giải mã bằng đúng chuỗi có dấu cách.
+- **Gợi ý đã làm:**
+  - Tệp tạm của override (`LOG_FALLBACK_TMP`) được dọn ở trap EXIT của cả hai script; `.docker-compose.override.*` vào `.gitignore`/`.dockerignore`.
+  - README thêm `RateLimitBurst`/`RateLimitIntervalSec` của journald và mẫu logrotate cho `/var/log/cdkt-backup.log`, `cdkt-verify-restore.log`.
+  - W6 (tách `manage.sh`) để lại cho Wave 3 task 4.4; W4/W7 xử lý lúc gộp 2A.
+- **Đã kiểm:**
+  - `npm test`: 4485 test, 4456 pass, 0 fail, 29 skip (+2 skip là hai ca MySQL mới khi không có DB).
+  - `tests/backup-dump-integration.test.ts` trên MySQL 8.0.46 local: 7/7 xanh, không sót DB `cdkt_backup_dump_*`.
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` xanh.
+  - Container thử journald chạy thật (exit 0) trên `cdkt/app:local` và `ghcr.io/…:latest`.
+  - Build xanh 4/5 lượt. Lượt đỏ là `Could not resolve "../../../../../shared/link-policy.ts"` từ import tương đối **có sẵn** trong `app/utils/nav-config.ts` (bẫy § 32, ngoài phạm vi) — cần sửa riêng sang `~~/shared/link-policy`.
+  - `bash -n` + shellcheck không có cảnh báo mới; `docker compose config -q` xanh với env giả.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.

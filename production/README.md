@@ -80,8 +80,8 @@ Chạy khi muốn kéo code/image mới lên VPS đang chạy:
 
 1. **Hiển thị trạng thái cũ**: image, port, domain, container status (trước đó Update chỉ siết quyền `.env` về 600 — không đổi nội dung)
 2. **Sao lưu DB trước khi cập nhật? [Y/n]** (mặc định **có**) — câu hỏi **đầu tiên**, trước khi Update đổi bất cứ thứ gì: trước `git pull` (đổi `docker-compose.yml`), trước các câu hỏi ghi `.env`, trước khi kéo/đổi image — đúng chỗ của lượt CI deploy. `scripts/backup-db.sh --prefix cdkt-predeploy` → `.deploy-db-backups/` — cùng bản dump, cùng thư mục, cùng vòng xoay 5 bản với lượt CI deploy (xem *Bản dump CSDL trước deploy*); dùng `backup-db.sh` của chính bản checkout đang chạy `manage.sh` (chưa pull). Dump hỏng → Update **dừng**: chưa pull code, chưa sửa `.env`, chưa kéo image hay khởi động lại gì. Chỉ trả lời `n` khi vừa có bản sao lưu mới, hoặc chính bước sao lưu đang hỏng mà phải cập nhật gấp
-3. **Pull code** từ `git pull origin main` (xác nhận trước). `docker-compose.yml` có thay đổi cục bộ là bản CI đã đặt — Update tự sao lưu nó vào `.deploy-compose-backups/` rồi `git checkout -- docker-compose.yml` trước khi pull (xem *An toàn khi Update* bên dưới; pull tay thì làm đúng hai bước đó)
-4. **Sửa cấu hình**: port, `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST` (gõ enter giữ giá trị cũ, hoặc sửa; `.env` cũ chưa có `PUBLIC_HOST_ALLOWLIST` thì gợi ý host của `PUBLIC_BASE_URL`), `OPS_ALERT_EMAIL` (địa chỉ nhận thư cảnh báo, phẩy ngăn cách; enter = giữ nguyên, `-` = xoá; giá trị không phải danh sách địa chỉ bị từ chối), `HEALTHCHECK_PING_URL` (chỉ báo *đang đặt*/*chưa đặt* — **không in URL**; enter = giữ nguyên, `-` = xoá; URL có `?`/`&`/`#` bị từ chối). Ngay trước bước 5, Update kiểm journald và đặt/gỡ override log dự phòng (xem *Log của app*) — chỉ in, không hỏi
+3. **Pull code** từ `git pull origin main` (xác nhận trước). `docker-compose.yml` có thay đổi cục bộ là bản CI đã đặt — Update tự sao lưu nó vào `.deploy-compose-backups/` rồi `git checkout -- docker-compose.yml` trước khi pull (xem *An toàn khi Update* bên dưới; pull tay thì làm đúng hai bước đó). Pull mà đổi chính `production/manage.sh` → Update **tự chạy tiếp bằng bản vừa kéo về** (`exec`, không hỏi lại sao lưu/pull; bản sao lưu compose của lượt này đi theo cho đường lùi) — phần còn lại luôn là mã mới
+4. **Sửa cấu hình**: port, `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST` (gõ enter giữ giá trị cũ, hoặc sửa; `.env` cũ chưa có `PUBLIC_HOST_ALLOWLIST` thì gợi ý host của `PUBLIC_BASE_URL`), `OPS_ALERT_EMAIL` (địa chỉ nhận thư cảnh báo, phẩy ngăn cách; enter = giữ nguyên, `-` = xoá; giá trị không phải danh sách địa chỉ bị từ chối), `HEALTHCHECK_PING_URL` (chỉ báo *đang đặt*/*chưa đặt* — **không in URL**; enter = giữ nguyên, `-` = xoá; URL có `?`/`&`/`#` bị từ chối). Ngay trước bước 5, Update kiểm journald và đặt/gỡ override log dự phòng (xem *Log của app*) — không hỏi; cấu hình log hiệu lực không chạy được trên máy này thì **dừng** trước khi kéo image hay khởi động lại
 
 > **`PUBLIC_HOST_ALLOWLIST`** — mọi tên miền thật của cổng, phẩy ngăn cách
 > (`conduonghuongthien.com.vn,www.conduonghuongthien.com.vn`). Liên kết trong email
@@ -182,7 +182,17 @@ Cài đúng hai dòng mà mục *Sao lưu & khôi phục* bên dưới bảo gõ
 - **Chạy lại an toàn:** các dòng nằm trong khối `# BEGIN cdkt-backup` … `# END cdkt-backup`; chạy lại là **thay** khối đó (đổi đường dẫn repo, đổi log), không thêm khối thứ hai. Dòng crontab khác của user giữ nguyên.
 - Crontab đã có dòng gọi `scripts/backup*.sh`/`verify-restore.sh` **ngoài** khối (thêm tay theo tài liệu cũ) → lệnh chỉ ra các dòng đó (cài thêm là mỗi đêm chạy hai lần); xoá chúng bằng `crontab -e` trước.
 - **User không ghi được thư mục sao lưu** (`BACKUP_DIR` trong `.env`, mặc định `./backups`) → từ chối cài và bảo dùng root: cron của user đó sẽ hỏng `EACCES` mỗi đêm mà không ai thấy.
-- **Log:** `/var/log/…` khi user ghi được vào đó (root); user khác (đã qua phép kiểm trên, vd. `BACKUP_DIR` trỏ chỗ khác) → `<repo>/logs/…` (tạo sẵn). Một dòng cron chuyển hướng vào tệp không mở được thì lệnh **không chạy**, không báo gì.
+- **Log:** `/var/log/…` khi user ghi được vào đó (root); user khác (đã qua phép kiểm trên, vd. `BACKUP_DIR` trỏ chỗ khác) → `<repo>/logs/…` (tạo sẵn). Một dòng cron chuyển hướng vào tệp không mở được thì lệnh **không chạy**, không báo gì. Hai tệp log chỉ lớn dần (vài dòng JSON mỗi đêm/tháng) — muốn xoay vòng thì thêm `/etc/logrotate.d/cdkt-backup`:
+  ```
+  /var/log/cdkt-backup.log /var/log/cdkt-verify-restore.log {
+      monthly
+      rotate 12
+      compress
+      missingok
+      notifempty
+      copytruncate
+  }
+  ```
 - Không đọc được crontab hiện tại (lỗi khác "chưa có crontab") → dừng, không cài: coi nó là rỗng rồi cài là xoá crontab thật. Đường dẫn repo chứa `%` hoặc dấu nháy đơn → từ chối (cron hiểu `%` là xuống dòng).
 - Gỡ: `crontab -e`, xoá khối `# BEGIN cdkt-backup` … `# END cdkt-backup`.
 
@@ -334,6 +344,8 @@ Từ đợt wave1 1B, ở production scheduler sao lưu **tự khởi động** 
 - **Hai lượt cùng trigger trong cùng một giây** (ví dụ bấm "Backup" hai lần thật nhanh): lượt sau bị từ chối với thông báo "đã tồn tại" (kể cả khi lượt trước hỏng). Bản đã có không bị đụng tới. Thử lại sau giây lát.
 - **Xoá một bản** trong danh sách chỉ xoá đúng hàng đó. Tệp chỉ bị xoá khi không còn hàng nào khác cùng tên.
 - **Bản ngoài máy chủ (Google Drive) — wave2 D-OFFSITE.** Mọi lượt sao lưu (theo lịch, bấm tay, `pre-*`) tự upload lên Drive khi đã bật "Upload lên Google Drive" **và** có liên kết OAuth hoặc service account. Cột **"Bản ngoài máy chủ"** trong danh sách nói từng tệp: *Đã lên Drive* / *Lỗi tải lên Drive* / *Chỉ trên máy chủ* (cột `backups.offsite_status`: `uploaded`/`failed`/`none`). Drive hỏng **không xoá tệp cục bộ** và không làm lượt sao lưu hỏng — tệp mang *Lỗi tải lên Drive* và log có `backup.drive_failed` (kèm tên tệp). Lượt chết giữa chừng khi Drive đang bật: các tệp đã ghi trước đó mang *Lỗi tải lên Drive*. Drive bật mà chưa liên kết, chưa có service account → *Chỉ trên máy chủ* + log `backup.offsite_not_configured`. Hàng có từ trước bản này giữ trống trong CSDL (không suy ngược), trang hiển thị theo `drive_uploaded` cũ.
+- **Khôi phục một bản dump cũ hơn bản đang chạy.** Dump của app mang `DROP TABLE` + `CREATE TABLE`, nên bảng quay về hình dạng của lúc dump — thiếu các cột/bảng thêm sau đó (vd. `backups.offsite_status`). Ngay sau khi nạp dump (cả khi dump hỏng giữa chừng), app chạy lại đúng các bước cấu trúc của lúc khởi động (`initDb`: `CREATE TABLE IF NOT EXISTS` + di trú bổ sung) **trước** khi gắn lại danh sách backup và ghi audit — nên khôi phục thành công, danh sách và lượt sao lưu kế dùng được ngay, không cần khởi động lại. Log `backup.restore_schema_converged`. Bước đó hỏng → khôi phục báo lỗi `schema_convergence_failed` nói rõ dữ liệu **đã** được nạp và cần khởi động lại app (log `backup.restore_schema_convergence_failed`). Bước này chỉ *thêm*: cột đã bỏ khỏi mã mà dump cũ còn mang không được gỡ; giá trị mặc định (seed) chỉ quay lại ở lần khởi động sau.
+- **Lượt dọn tệp mồ côi đóng an toàn:** nó chỉ tin bảng `backups` khi đọc được **đủ mọi cột** app chờ; bảng sai hình dạng (vd. vừa nạp dump cũ) → không xoá tệp tên-thật nào, log `backup.orphan_sweep_skipped`.
 - **Cảnh báo "chỉ nằm trên máy chủ".** Khối *Cài đặt backup* hiện cảnh báo vàng khi "Backup tự động theo lịch" bật mà chưa có nơi lưu ngoài máy chủ (Drive tắt, hoặc bật mà chưa liên kết/không có service account). Ngoài Drive, nơi lưu ngoài VPS còn lại là việc của anh: chép `./backups/` sang máy khác, và giữ `.env.enc` (Menu 6) ngoài VPS.
 
 ---
@@ -518,13 +530,15 @@ docker logs cdkt_app / docker compose logs -f app              # vẫn dùng đ�
 - **Kiểm máy chủ có journald** — *trước* khi merge bản này: `journalctl --version` và `ls -l /run/systemd/journal/socket`. Ubuntu/Debian/CentOS/AlmaLinux cài aaPanel đều có.
 - **Giữ log qua lần khởi động lại máy:** journald mặc định có thể chỉ ghi vào RAM (`/run/log/journal`). Bật lưu đĩa: `sudo mkdir -p /var/log/journal && sudo systemctl restart systemd-journald` (hoặc `Storage=persistent` trong `/etc/systemd/journald.conf`).
 - **Trần dung lượng:** trong `/etc/systemd/journald.conf` đặt ví dụ `SystemMaxUse=1G` (và tuỳ chọn `MaxRetentionSec=3month`), rồi `sudo systemctl restart systemd-journald`. Xem đang dùng bao nhiêu: `journalctl --disk-usage`.
+- **Giới hạn tốc độ của journald:** mặc định `RateLimitIntervalSec=30s` + `RateLimitBurst=10000` mỗi dịch vụ — một trận lỗi dồn dập (vd. CSDL mất kết nối, mỗi request một dòng) vượt mức đó thì journald **bỏ** phần còn lại của 30 giây và chỉ ghi "Suppressed N messages". Máy chủ bận có thể nâng `RateLimitBurst` (hoặc đặt `RateLimitIntervalSec=0` để tắt) trong cùng tệp, rồi khởi động lại journald.
 
-**Máy chủ không có journald:** driver journald làm `docker compose up` hỏng ("journald is not enabled on this host"), tức mọi lượt deploy lùi lại. Nên **cả lượt CI deploy (`scripts/deploy-remote.sh`) lẫn `manage.sh` Deploy/Update** kiểm (socket `/run/systemd/journal/socket` + lệnh `journalctl`) trước khi khởi động app:
+**Máy chủ không có journald:** driver journald làm `docker compose up` hỏng ("journald is not enabled on this host"), tức mọi lượt deploy lùi lại. Nên **cả lượt CI deploy (`scripts/deploy-remote.sh`) lẫn `manage.sh` Deploy/Update** kiểm trước khi khởi động app. "Có journald" nghĩa là đủ cả: socket `/run/systemd/journal/socket`, lệnh `journalctl`, daemon Docker có driver `journald` (`docker info --format '{{json .Plugins.Log}}'` — daemon rootless/chạy trong VM có thể không có), và — khi image đã có trên máy — một container thử `docker run --rm --network none --log-driver journald --entrypoint true <image>` chạy được.
 
 - Không có journald → tự ghi `docker-compose.override.yml` có dấu `# cdkt-log-fallback` (app dùng `json-file`, 3 × 10 MB — như trước) và in cảnh báo. Compose tự đọc tệp này ở mọi lệnh `docker compose` trong thư mục repo.
 - Có journald mà tệp có dấu đó còn → tự gỡ (lượt deploy kế tiếp app chuyển sang journald).
-- Đã có `docker-compose.override.yml` **không** mang dấu (của anh) → không bao giờ sửa; chỉ cảnh báo kèm khối `logging` cần thêm tay.
-- Tệp này nằm trong `.gitignore`/`.dockerignore` — `git pull` không vướng.
+- Đã có `docker-compose.override.yml` **không** mang dấu (của anh) → không bao giờ sửa. Script hỏi `docker compose config` driver log **hiệu lực** của app: nếu override của anh đã đặt `json-file` (hay driver khác) thì đi tiếp; nếu app vẫn ghi vào journald thì **dừng trước khi chạm container** (CI: trả `docker-compose.yml` cũ về, `.env` không đổi) và in khối `logging` cần thêm vào override.
+- Tệp này (và tệp tạm `.docker-compose.override.*` của nó) nằm trong `.gitignore`/`.dockerignore` — `git pull` không vướng.
+- **Update tay lần đầu sau bản này** trên máy **không** có journald mà CI deploy chưa chạy (CI deploy tự ghi override nên thường đã có): `manage.sh` cũ trên VPS chưa biết kiểm journald. Từ bản này, Update thấy `git pull` vừa đổi `manage.sh` thì **tự chạy tiếp bằng bản mới** (không hỏi lại sao lưu/pull) — nhưng bản *cũ* không có bước đó, nên lần đầu có thể hỏng ở `up` (tự lùi lại như mọi lượt hỏng). Chạy lại Update một lần: bản mới ghi override rồi khởi động bình thường.
 
 ## Thư cảnh báo vận hành (`OPS_ALERT_EMAIL` — wave2 D-ALERT)
 
