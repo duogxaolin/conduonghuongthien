@@ -73,26 +73,16 @@ export default defineEventHandler(async (event) => {
     const whereClause = and(...conditions)
 
     /**
-     * Cột tổng lượt xem — chỉ chọn khi `sort=views` (khối "Đọc nhiều"). Mọi lượt
-     * liệt kê thường không phải trả giá một truy vấn con mỗi hàng cho một cột
-     * không ai đọc.
+     * Cột tổng lượt xem — chỉ chọn khi `sort=views` (khối "Đọc nhiều"); danh sách
+     * thường không hiện nó.
      *
-     * Correlated subquery viết TÊN BẢNG THẲNG RA — xem cảnh báo ở
-     * `articles/[slug].get.ts` và tests/correlated-subquery-qualification.test.ts:
-     * Drizzle chỉ gắn tiền tố tên bảng khi truy vấn bao ngoài CÓ JOIN, nên dạng
-     * nội suy `${...}` trong truy vấn con là đúng NHỜ phép join ở trên, và xoá
-     * join đi là bộ đếm lặng lẽ báo 0 cho mọi bài mà không gì đỏ.
-     *
-     * `.as('view_total')` không phải trang trí: MySQL giải `ORDER BY view_total`
-     * qua alias của SELECT, mà Drizzle chỉ phát alias khi được bảo tường minh.
+     * Đọc `articles.view_total` (wave2 design D6): cột sinh STORED = thật + ảo,
+     * được `server/services/article-views.ts` giữ bằng tổng các hàng
+     * `article_view_daily` trong cùng transaction. Trước đây đây là một truy vấn
+     * con cộng hàng theo ngày cho MỌI bài đã xuất bản của thể loại, mỗi lượt tải.
+     * Chỉ trả tổng gộp — như trước — không bao giờ trả phần thật/ảo riêng.
      */
-    const viewTotalColumn = {
-      viewTotal: sql<number>`(
-        SELECT COALESCE(SUM(\`v\`.\`real_views\` + \`v\`.\`fabricated_views\`), 0)
-        FROM \`article_view_daily\` \`v\`
-        WHERE \`v\`.\`article_id\` = \`articles\`.\`id\`
-      )`.as('view_total'),
-    }
+    const viewTotalColumn = { viewTotal: articles.viewTotal }
 
     const itemsQuery = db
       .select({
@@ -134,11 +124,28 @@ export default defineEventHandler(async (event) => {
       .where(whereClause)
       .orderBy(...(sortByViews
         ? // Sắp theo tổng lượt xem rồi mới đến ngày đăng — đề phòng một bài cùng
-          // số lượt xem thì thứ tự ổn định theo thời gian thay vì tuỳ ý.
-          [desc(sql`view_total`), desc(articles.publishedAt), desc(articles.createdAt)]
+          // số lượt xem thì thứ tự ổn định theo thời gian thay vì tuỳ ý. Cột của
+          // bảng, không phải alias: MySQL dùng được `articles_status_type_views_idx`.
+          [desc(articles.viewTotal), desc(articles.publishedAt), desc(articles.createdAt)]
         : [desc(articles.publishedAt), desc(articles.createdAt)]))
       .limit(limit)
       .offset(offset)
+
+    if (sortByViews) {
+      /**
+       * "Đọc nhiều" là một bảng xếp hạng top-N (khối 6 bài), không phải danh sách
+       * phân trang: không chạy `COUNT(*)` (wave2 design D6). `total` vì thế đếm
+       * số bài TỚI HẾT trang này (`offset + số bài trả về`) — đúng khi đã hết bảng
+       * xếp hạng, là CẬN DƯỚI khi trang đầy. Ai cần tổng thật thì gọi không kèm
+       * `sort=views`. Khoá bằng tests/most-read-ranking.test.ts.
+       */
+      const seen = offset + items.length
+      return {
+        ok: true,
+        articles: items.map(article => withPlainTextFields({ ...article, viewTotal: Number(article.viewTotal ?? 0) })),
+        pagination: { page, limit, total: seen, totalPages: Math.ceil(seen / limit) },
+      }
+    }
 
     const [{ total } = { total: 0 }] = await db
       .select({ total: count() })

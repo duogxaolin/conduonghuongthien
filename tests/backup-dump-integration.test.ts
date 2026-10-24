@@ -21,7 +21,13 @@
  *   4. `backups.trigger` holds every trigger the app writes — on a fresh
  *      `initDb()` AND on an old database whose column is still VARCHAR(16)
  *      (`runBackup('sql', 'pre-fix-thumbnails')` used to die with
- *      ER_DATA_TOO_LONG under strict sql_mode, writing no row at all).
+ *      ER_DATA_TOO_LONG under strict sql_mode, writing no row at all);
+ *   5. generated columns (`articles.view_total`, wave2 design D6) are left out of
+ *      the dump's INSERT and recomputed by the restored DDL — MySQL refuses any
+ *      value for one (error 3105), so dumping it makes every backup, the
+ *      automatic `pre-restore` copy included, impossible to restore — while
+ *      `created_at`/`updated_at` (EXTRA `DEFAULT_GENERATED`, not generated
+ *      columns) are kept byte for byte.
  *
  * Gated and self-cleaning like the other *-integration suites:
  *
@@ -51,11 +57,13 @@ const DB = {
   modeDst: `cdkt_backup_dump_${runId}_modedst`,
   trigFresh: `cdkt_backup_dump_${runId}_trigfresh`,
   trigOld: `cdkt_backup_dump_${runId}_trigold`,
+  genSrc: `cdkt_backup_dump_${runId}_gensrc`,
+  genDst: `cdkt_backup_dump_${runId}_gendst`,
 }
 
 /** Never let a typo in the env point this at a real deployment. */
 function assertDisposableDatabase(name: string) {
-  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold)$/)
+  assert.match(name, /^cdkt_backup_dump_\d+_\d+_(src|dst|e2e|modesrc|modedst|trigfresh|trigold|gensrc|gendst)$/)
   assert.notEqual(name, 'cdkt_admin')
 }
 
@@ -414,4 +422,46 @@ test('backups.trigger fits every trigger: fresh initDb() and an old VARCHAR(16) 
   }
   await backupEveryTrigger(DB.trigOld)
   await closeDb()
+})
+
+test('generated columns are recomputed on restore, never dumped — view totals and timestamps survive', { skip: !enabled, timeout: 300_000 }, async () => {
+  const { closeDb } = await import('../server/utils/db')
+  const { dumpSql, restoreSql } = await import('../server/services/backup-sql')
+  const { initDb } = await import('../server/db/init')
+  await closeDb()
+
+  pointAppAt(DB.genSrc)
+  await initDb()
+  const conn = await mysql.createConnection({ host, port, user, password, database: DB.genSrc })
+  try {
+    await conn.query("SET SESSION time_zone = '+00:00'")
+    await conn.query(
+      `INSERT INTO \`articles\` (\`id\`, \`type\`, \`title\`, \`slug\`, \`status\`, \`view_total_real\`, \`view_total_fabricated\`, \`created_at\`, \`updated_at\`)
+       VALUES (1, 'news', 'Bài có lượt xem', 'bai-co-luot-xem', 'published', 41, 9, '2026-03-04 05:06:07', '2026-05-06 07:08:09'),
+              (2, 'news', 'Bài chưa ai xem', 'bai-chua-ai-xem', 'published', 0, 0, '2026-03-05 05:06:07', '2026-05-07 07:08:09')`,
+    )
+  } finally {
+    await conn.end()
+  }
+
+  const target = path.join(workdir, 'generated-columns.sql.gz')
+  await dumpSql(target)
+  await closeDb()
+  const dump = gunzipSync(readFileSync(target)).toString('utf8')
+  const insertColumns = /INSERT INTO `articles` \(([^)]*)\) VALUES/.exec(dump)?.[1] ?? ''
+  assert.match(insertColumns, /`view_total_real`, `view_total_fabricated`/, 'the stored halves are data and must be dumped')
+  assert.doesNotMatch(insertColumns, /`view_total`(?!_)/, 'a generated column must not be in the INSERT: MySQL refuses any value for it (3105)')
+  assert.match(insertColumns, /`created_at`/, 'DEFAULT_GENERATED timestamps are ordinary columns and must stay in the dump')
+  assert.match(insertColumns, /`updated_at`/)
+  assert.match(dump, /`view_total` bigint GENERATED ALWAYS AS/, 'the restored DDL recomputes it')
+
+  pointAppAt(DB.genDst)
+  await restoreSql(target)
+  await closeDb()
+
+  const SELECT_TOTALS = 'SELECT id, view_total_real, view_total_fabricated, view_total, created_at, updated_at FROM articles ORDER BY id'
+  const restored = await exactRows(DB.genDst, SELECT_TOTALS)
+  assert.deepEqual(restored, await exactRows(DB.genSrc, SELECT_TOTALS), 'every value, timestamps included, comes back identical')
+  assert.deepEqual(restored.map(row => row.view_total), ['50', '0'], 'view_total is recomputed from the restored halves')
+  assert.deepEqual(restored.map(row => row.updated_at), ['2026-05-06 07:08:09', '2026-05-07 07:08:09'])
 })

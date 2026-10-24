@@ -157,6 +157,103 @@ Lượt kiểm chứng đo trên bản build với CSDL không với tới: 12 A
 
 Còn mở: `rate_limit.database_read_failed` không giới hạn tần suất log (`rate_limit.database_write_failed` của store chung — page-view, đăng nhập… — nay tối đa 1 dòng/phút kèm số lần bị nén); `analytics-maintenance.ts` vẫn tự `createPool`.
 
+## Đợt 2 — 2C hiệu năng (2026-10-24)
+
+OpenSpec `wave2-hardening` nhóm 4, design D6 + D8. Tóm tắt thay đổi → `docs/CHANGELOG.md` § 35. Ở đây là vì sao và số đo.
+
+### "Đọc nhiều" đọc tổng duy trì sẵn (D6)
+
+`GET /api/public/articles?sort=views` từng cộng `article_view_daily` trong một truy vấn con tương quan cho **mọi** bài đã xuất bản của thể loại, rồi chạy thêm `COUNT(*)` cho một khối phân trang không ai đọc. Nay `articles` giữ `view_total_real`/`view_total_fabricated` (hai cột riêng — bất biến trung thực của `article-views.ts`) và `view_total` = tổng, cột sinh STORED có index `articles_status_type_views_idx (status, type, view_total, published_at, created_at)`.
+
+**Hai cột luôn bằng tổng hàng theo ngày vì cấu trúc, không vì quy ước:** chỉ `recordArticleView`/`addFabricatedViews` ghi, và cộng tổng trong cùng transaction với upsert hàng ngày. Ba chi tiết đã đo/đã trả giá:
+- **Thứ tự khoá: `articles` trước.** Chèn một hàng `article_view_daily` mới lấy khoá S trên hàng `articles` cha (kiểm FK). Nếu cộng tổng sau, hai transaction cùng bài (hai nguồn lượt xem đầu ngày; lượt xem thật cạnh lượt giao boost) mỗi bên giữ S, chờ X của bên kia → deadlock, và `view.post.ts` nuốt lỗi nên lượt xem mất im lặng. Lấy X trên `articles` trước thì các transaction cùng bài xếp hàng.
+- **`updated_at = updated_at`** trong mọi câu UPDATE `articles` của đường đếm và của lượt điền: cột `ON UPDATE CURRENT_TIMESTAMP`; MySQL để yên cột tự cập nhật khi câu lệnh gán nó tường minh.
+- **Bản dump trong app bỏ cột sinh** (`backup-sql.ts`): `SELECT *` → `INSERT` từng ghi cả `view_total`, và MySQL từ chối mọi giá trị cho cột sinh (lỗi 3105) — mọi bản sao lưu sau 2C, kể cả `pre-restore`, sẽ không khôi phục được. Nay liệt kê cột theo `information_schema.COLUMNS` với `EXTRA NOT IN ('STORED GENERATED','VIRTUAL GENERATED')` — **không** `LIKE '%GENERATED%'`: trên 8.0.46 `created_at`/`updated_at` mang `DEFAULT_GENERATED` (đã kiểm), lọc lỏng sẽ đánh rơi mọi mốc thời gian và bản khôi phục nhận NOW() im lặng. `scripts/backup-db.sh` (mysqldump) vốn đã bỏ cột sinh.
+
+**Lượt điền một lần** khoá theo trạng thái lược đồ: index `articles_status_type_views_idx` chưa có (dò trước ba `ensureColumn`, index thêm sau lượt điền). Lý do chọn index thay cho "cột vừa được thêm": một lượt khởi động chết giữa `ADD COLUMN` và `UPDATE` thì lượt sau vẫn thấy thiếu index và điền lại; khoá theo cột thì tổng = 0 mãi mãi. Hệ quả có lợi: khôi phục một bản dump **trước 2C** (bảng `articles` không có ba cột) thì lần khởi động kế tiếp điền lại tổng từ hàng theo ngày vừa khôi phục. **Còn mở:** khôi phục trong app không chạy di trú sau đó, nên từ lúc khôi phục bản trước 2C tới lần khởi động lại, mọi lượt đọc `articles.view_total` và mọi lượt đếm báo lỗi (cùng lớp vấn đề với mọi cột thêm bằng `ensureColumn`; đề xuất: chạy `applyAdditiveMigrations` sau khôi phục).
+
+**Index 5 cột, không phải 3 cột như chữ của D6 — lệch có chủ đích, theo EXPLAIN.** Spec đòi hoà thì xếp theo ngày đăng, nên câu sắp `view_total DESC, published_at DESC, created_at DESC`. Với index `(status, type, view_total)` của D6, optimizer **không dùng nó** cho câu đó: chọn `articles_status_type_pub_idx` rồi filesort mọi bài cùng thể loại (đo ở cả 1100 và 5000 bài) — tức mỗi lượt xem trả phí cập nhật một index không ai đọc. Thêm hai cột phá hoà (giữ nguyên tiền tố và tên) thì MySQL đọc ngược thẳng trên index, dừng ở hàng thứ 6. Tên giữ nguyên nên điều kiện kích hoạt lượt điền và các test không đổi; `ensureIndex` chỉ so **tên** — một CSDL dev từng chạy bản 3 cột của nhánh này phải tự `DROP INDEX` (chưa CSDL thật nào có bản 3 cột).
+
+Đo trên CSDL dùng một lần của MySQL dev (8.0.46, đĩa btrfs, `innodb_flush_log_at_trx_commit=2`), bài 20 KB nội dung, 30 hàng `article_view_daily` mỗi bài, script đo tạm `view-totals-measure.ts` (giả lập bản trước 2C rồi gọi `convergeArticleViewTotals`):
+
+| cỡ | bảng `articles` | "Đọc nhiều" cũ (truy vấn con) + `COUNT` | mới, index 3 cột (D6) | mới, index 5 cột (bản giao) | lượt nâng cấp (một lần) | khởi động lần hai |
+|---|---|---|---|---|---|---|
+| 1 100 bài / 33 000 hàng ngày (cỡ production) | 34,8 MB | 14,0 ms + 0,4 ms | 0,88 ms — `articles_status_type_pub_idx` + filesort | **0,28 ms** — `articles_status_type_views_idx (reverse)` | 3,6 s | 2 ms |
+| 5 000 bài / 150 000 hàng ngày | 158,8 MB | 63,7 ms + 0,8 ms | 3,7 ms — `pub_idx` + filesort | 0,27 ms (index thăm dò cùng cột) | 23,0 s | 2 ms |
+
+Cả hai cỡ: top-6 cũ = top-6 mới, 0 bài lệch tổng sau lượt điền, 0 bài đổi `updated_at`. **Rủi ro deploy:** lượt nâng cấp chạy trong CMD của container (`init.ts` trước khi server lên) và dựng lại bảng `articles` một lần (thêm cột sinh STORED = ALGORITHM=COPY, giữ khoá ghi trên bảng suốt lượt đó). Healthcheck của image có `start-period=45s` + 3 lần × 30 s, `deploy-remote.sh` chờ 300 s — 3,6 s ở cỡ production (23 s ở 5 000 bài) nằm gọn trong đó.
+
+### Ghi analytics: thứ tự câu lệnh trong transaction (D8) — đo, rồi lệch khỏi chữ của D8
+
+D8 viết: "upsert `total` cuối cùng" để rút thời gian giữ hàng nóng. Đo cho thấy chữ đó **làm mất ~37 % lượt xem**. Nguyên nhân (bản dump `SHOW ENGINE INNODB STATUS`, rút gọn):
+
+```
+*** (1) TRANSACTION: INSERT INTO analytics_live_minute_buckets (…'device_class','desktop'…) ON DUPLICATE KEY UPDATE …
+*** (1) HOLDS THE LOCK(S):   index PRIMARY … lock_mode X            (heap no 1 = supremum)
+*** (1) WAITING FOR THIS LOCK: index PRIMARY … lock_mode X insert intention waiting (supremum)
+*** (2) TRANSACTION: INSERT INTO analytics_live_minute_buckets (…'source_category','direct'…) ON DUPLICATE KEY UPDATE …
+*** (2) HOLDS / WAITING: giống hệt (1)
+*** WE ROLL BACK TRANSACTION (2)
+```
+
+`analytics_live_minute_buckets` (và `analytics_live_deduplication`) có PK tự tăng cạnh khoá tự nhiên `(bucket_start, scope_type, scope_value_hash[, visitor_token])`. `INSERT … ON DUPLICATE KEY UPDATE` ở đó giữ khoá X next-key trên **supremum của PK** tới commit. Khi upsert bucket đầu tiên của mỗi transaction là hàng **chung** (`total` của phút), nó tuần tự hoá pha bucket; khi là hàng riêng (`path`…), hai transaction cùng giữ supremum rồi chờ nhau ở upsert thứ hai.
+
+**Bộ mô phỏng** (cùng SQL với `analytics-ingestion.ts`, pool 10, hình dạng production 4 scope `total/path/source_category/device_class`, MySQL 8.0.46 image production — `innodb_flush_log_at_trx_commit=2`, `sync_binlog=1` — datadir tmpfs để fsync không lấn át):
+
+Lượt ngắn (3000 transaction, < 1 phút, không qua mốc phút):
+
+| thứ tự | đồng thời | deadlock | commit/s | p95 ms |
+|---|---|---|---|---|
+| cũ (`3ede49a`): `total` đầu, dedupe/bucket xen kẽ | 10 | 85 | 558 | 23,9 |
+| chữ D8: xen kẽ, `total` cuối | 10 | 1108 | 509 | 33,5 |
+| dedupe trước, `total` cuối (bản cài đầu tiên) | 10 | 1145 | 504 | 28,5 |
+| **dedupe trước, `total` đầu (bản giao)** | 10 | **0** | **705** | **20,4** |
+| cũ | 40 | 92 | 524 | 93,4 |
+| chữ D8 | 40 | 1083 | 496 | 80,3 |
+| dedupe trước, `total` cuối | 40 | 1114 | 602 | 59,7 |
+| **dedupe trước, `total` đầu** | 40 | **0** | **947** | **53,4** |
+
+Lượt dài 185 s (qua 3 mốc phút; khách lặp lại trong phút → `INSERT IGNORE` trùng lấy khoá S next-key):
+
+| thứ tự | đồng thời | transaction | deadlock | tỉ lệ hỏng | commit/s | p95 / p99 ms |
+|---|---|---|---|---|---|---|
+| cũ | 10 | 159 106 | 60 047 | 37,7 % | 535 | 21,4 / 99 |
+| **dedupe trước, `total` đầu** | 10 | 159 353 | 6 234 | **3,9 %** | **828** | 20,7 / 33,2 |
+| cũ | 40 | 181 156 | 70 889 | 39,1 % | 595 | 62,3 / 164,1 |
+| **dedupe trước, `total` đầu** | 40 | 102 335 | 2 390 | **2,3 %** | 539 | 258 / 397 |
+
+Đọc bảng: thứ tự cũ cũng deadlock nặng khi tải kéo dài (lượt ngắn 3000 transaction che mất điều đó); bản giao giảm deadlock ~10–17 lần nhưng **không về 0**; ở 40 đồng thời đuôi trễ của bản giao dài hơn vì giao dịch chờ khoá thay vì chết sớm (thứ tự cũ "nhanh" một phần nhờ 39 % chết ngay). Máy đo chia sẻ CPU với các tác tử khác (load ≈ 8/8 lõi lúc chạy bộ mô phỏng) — số tuyệt đối dao động, tỉ lệ deadlock thì không.
+
+**Qua endpoint thật** (`POST /api/public/analytics/page-view`, hai bản build `nuxt build` cạnh nhau chỉ khác `analytics-ingestion.ts` — "trước" = thứ tự của `3ede49a`; app pool 10, rate limit thật, NOC thật, mỗi yêu cầu một `X-Forwarded-For` ngẫu nhiên để không chạm trần 120/phút/IP, User-Agent trình duyệt; MySQL 8.0.46 dùng một lần từ image production; xen kẽ trước/sau, mỗi lượt 75 s (qua mốc phút), bảng analytics xoá trắng trước mỗi lượt; máy rảnh, load ≈ 0,3):
+
+Datadir tmpfs (fsync ≈ 0 — tách riêng thời gian giữ khoá khỏi chi phí đĩa), 2 vòng:
+
+| bản | đồng thời | nhận/s | p50 / p95 / p99 ms | 500 (deadlock) | thời gian chờ khoá hàng |
+|---|---|---|---|---|---|
+| trước | 1 | 206–214 | 4,3–4,6 / 5,9–6,6 / 9,8–13 | 0 | 0 |
+| sau | 1 | 178–209 | 4,3–5,1 / 6,7–8,1 / 11–23 | 0 | 0 |
+| trước | 10 | 460 / 467 | 20 / **29,6–29,7** / 41–43 | 22 / 39 | 572 s / 572 s |
+| **sau** | 10 | **572 / 544** | 17 / **23,1–25,6** / 30–33 | **0 / 0** | **468 s / 469 s** |
+| trước | 40 | 484 / 492 | 79–80 / 101–102 / 119–121 | 41 / 40 | 601 s / 602 s |
+| **sau** | 40 | **573 / 548** | 67–70 / 90–96 / 105–122 | **0 / 0** | **520 s / 520 s** |
+
+Datadir trên đĩa (độ bền như production: `innodb_flush_log_at_trx_commit=2`, `sync_binlog=1`, binlog bật), 1 vòng — **bị fsync lúc commit chi phối**: một lượt xem có ba commit (rate limit, transaction ghi, NOC), mỗi commit một fsync binlog trên btrfs:
+
+| bản | đồng thời | nhận/s | p50 / p95 ms | 500 |
+|---|---|---|---|---|
+| trước | 1 | 14 | 79 / 118 | 0 |
+| sau | 1 | 12 | 89 / 132 | 0 |
+| trước | 10 | 18 | 541 / 642 | 0 |
+| sau | 10 | 17 | 589 / 735 | 0 |
+| trước | 40 | 18 | 2265 / 2478 | 0 |
+| sau | 40 | 30 | 1219 / 2238 | 0 |
+
+Khác biệt trên đĩa nằm trong nhiễu (thứ tự câu lệnh không đổi số fsync).
+
+**Ngưỡng batching của D8 (p95 > 50 ms).** tmpfs ở 10 đồng thời (≈ pool): p95 23–26 ms — dưới ngưỡng. Ở 40 đồng thời p95 90–96 ms, nhưng phần lớn là chờ một trong 10 kết nối pool. Trên đĩa btrfs của máy dev p95 vượt ngưỡng **ngay ở 1 đồng thời** (118–132 ms) vì fsync binlog mỗi commit — batching (gộp nhiều lượt xem vào một commit) chính là thứ giảm được chi phí đó, nhưng con số này là của đĩa máy dev, không phải VPS. **Không làm batching trong 2C**; đề xuất đo p95 của endpoint này trên VPS (log thời gian của nginx) trước khi quyết.
+
+**Gốc rễ (đề xuất, ngoài phạm vi 2C):** cho hai bảng live dùng khoá tự nhiên làm PRIMARY KEY (bỏ `id` tự tăng). Không còn supremum chung thì mọi thứ tự đều không deadlock vì lý do này, và "hàng nóng cuối" của D8 mới thực sự rút được thời gian giữ khoá. Đổi PK trên bảng đang ghi liên tục cần một lượt chuyển riêng.
+
 ---
 
 <a id="media-category-restore"></a>

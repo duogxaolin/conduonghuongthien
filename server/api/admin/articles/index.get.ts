@@ -90,30 +90,12 @@ export default defineEventHandler(async (event) => {
       updatedAt:    articles.updatedAt,
       authorName:   users.username,
       /**
-       * Total displayed views (real + fabricated) per row.
-       *
-       * A correlated subquery rather than a fourth left join: `article_view_daily`
-       * holds one row per day per source, so joining it would fan each article
-       * out into many rows and `limit`/`offset` would then paginate view rows
-       * instead of articles. Still one statement for the whole page — the
-       * per-row fetch this replaces would be N+1 on a list that already joins
-       * three tables. Articles with no views report 0, not null.
-       *
-       * ⚠️ Tên bảng viết THẲNG RA, không nội suy `${articleViewDaily.articleId}`.
-       * Drizzle chỉ gắn tiền tố tên bảng khi truy vấn bao ngoài CÓ JOIN; không có
-       * join thì nó phát ra tên cột trần, và trong một truy vấn con trên
-       * `article_view_daily` thì `` \`id\` `` trần trỏ vào khoá chính của chính
-       * bảng đó chứ không phải bài viết ở ngoài — tương quan lặng lẽ ngừng tương
-       * quan, MySQL không báo gì, và mọi bài đều trả về 0. Ở đây hiện có join nên
-       * dạng nội suy vẫn đúng; nó chỉ đúng NHỜ một phần khác của truy vấn, và xoá
-       * join đi là hỏng bộ đếm mà không có gì đỏ. Xem
-       * tests/correlated-subquery-qualification.test.ts.
+       * Total displayed views (real + fabricated) per row — the maintained column
+       * (wave2 design D6), equal to the sum of the article's `article_view_daily`
+       * rows. It replaced a correlated subquery per row; the real/fabricated split
+       * is in the per-article stats modal (`getArticleViewStats`), not here.
        */
-      viewTotal: sql<number>`(
-        SELECT COALESCE(SUM(\`v\`.\`real_views\` + \`v\`.\`fabricated_views\`), 0)
-        FROM \`article_view_daily\` \`v\`
-        WHERE \`v\`.\`article_id\` = \`articles\`.\`id\`
-      )`,
+      viewTotal:    articles.viewTotal,
       translatedLangs: sql<string>`(
         SELECT COALESCE(GROUP_CONCAT(DISTINCT CONCAT(\`t\`.\`lang_code\`, ':', \`t\`.\`status\`) SEPARATOR ','), '')
         FROM \`article_translations\` \`t\`
@@ -136,7 +118,9 @@ export default defineEventHandler(async (event) => {
 
   return {
     ok: true,
-    items,
+    // `view_total` is generated, so Drizzle types it nullable; both halves are NOT
+    // NULL, and the list keeps reporting 0 rather than null for an unread article.
+    items: items.map(item => ({ ...item, viewTotal: Number(item.viewTotal ?? 0) })),
     pagination: {
       page,
       perPage,

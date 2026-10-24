@@ -22,7 +22,7 @@
  */
 import { and, desc, eq, gte, sql } from 'drizzle-orm'
 import { getDb } from '../utils/db'
-import { articleViewDaily } from '../db/schema'
+import { articles, articleViewDaily } from '../db/schema'
 import { SOURCE_CATEGORIES, type SourceCategory } from '../utils/analytics-collection'
 
 /**
@@ -95,58 +95,106 @@ export function viewDay(at: Date = new Date()): string {
 }
 
 /**
- * One real view. The upsert is a single statement so two concurrent readers of
- * the same article cannot both insert the day's first row.
+ * The statements a view write runs. Typed structurally rather than importing
+ * Drizzle's transaction type, which is not exported in a usable shape here —
+ * same approach as `deleteReaderComments` in services/comments.ts.
  */
-export async function recordArticleView(input: { articleId: number; sourceCategory: SourceCategory; day?: string }): Promise<void> {
-  const db = getDb()
-  await db
-    .insert(articleViewDaily)
-    .values({
-      day: input.day ?? viewDay(),
-      articleId: input.articleId,
-      sourceCategory: input.sourceCategory,
-      realViews: 1,
-      fabricatedViews: 0,
+type ViewWriteExecutor = Pick<ReturnType<typeof getDb>, 'insert' | 'update'>
+
+/**
+ * The per-article total on `articles` (wave2 design D6) moves in the same
+ * transaction as the daily row, so `view_total_real` / `view_total_fabricated`
+ * always equal the sums of `article_view_daily` — the "Đọc nhiều" ranking reads
+ * them instead of summing daily rows per request.
+ *
+ * **The article row is written first, on purpose.** Inserting a new daily row
+ * takes a shared lock on its parent `articles` row (foreign-key check). If the
+ * total were bumped second, two transactions on the same article — two sources
+ * on the day's first view, or a real view next to a boost delivery — would each
+ * hold that shared lock and wait for the other's exclusive one: a deadlock, and
+ * `view.post.ts` swallows the error, so a real view would silently vanish. Taking
+ * the exclusive lock first serialises them instead (proved under concurrency in
+ * tests/view-boost-integration.test.ts).
+ *
+ * **`updated_at` is pinned to itself**: the column is `ON UPDATE
+ * CURRENT_TIMESTAMP`, so without it every page view would rewrite the article's
+ * "last modified" (admin list, sitemap `lastmod`). MySQL leaves an auto-updated
+ * column alone when the statement assigns it explicitly.
+ */
+async function bumpArticleTotal(
+  executor: ViewWriteExecutor,
+  articleId: number,
+  column: 'viewTotalReal' | 'viewTotalFabricated',
+  amount: number,
+): Promise<void> {
+  const increment = sql`${articles[column]} + ${amount}`
+  await executor
+    .update(articles)
+    .set({
+      ...(column === 'viewTotalReal' ? { viewTotalReal: increment } : { viewTotalFabricated: increment }),
+      updatedAt: sql`${articles.updatedAt}`,
     })
-    .onDuplicateKeyUpdate({ set: { realViews: sql`${articleViewDaily.realViews} + 1` } })
+    .where(eq(articles.id, articleId))
 }
 
 /**
- * Fabricated views, always into the `boost` row for the day. `fabricatedViews`
- * is the only column this function touches — a fabricated write physically
- * cannot land in `real_views`.
+ * One real view: the article's real total, then the day's row, in one
+ * transaction. The upsert is a single statement so two concurrent readers of
+ * the same article cannot both insert the day's first row.
+ */
+export async function recordArticleView(input: { articleId: number; sourceCategory: SourceCategory; day?: string }): Promise<void> {
+  await getDb().transaction(async (tx) => {
+    await bumpArticleTotal(tx, input.articleId, 'viewTotalReal', 1)
+    await tx
+      .insert(articleViewDaily)
+      .values({
+        day: input.day ?? viewDay(),
+        articleId: input.articleId,
+        sourceCategory: input.sourceCategory,
+        realViews: 1,
+        fabricatedViews: 0,
+      })
+      .onDuplicateKeyUpdate({ set: { realViews: sql`${articleViewDaily.realViews} + 1` } })
+  })
+}
+
+/**
+ * Fabricated views, always into the `boost` row for the day and into
+ * `view_total_fabricated`. Those are the only columns this function touches — a
+ * fabricated write physically cannot land in `real_views` or `view_total_real`.
  *
  * `executor` lets a caller run this inside a transaction it already opened, so
- * the count and the audit row describing who authorised it commit together.
- * Defaults to the pool for callers that own no transaction — the scheduler is
- * one: it delivers on its own tick with no actor to attribute, and its own
- * ordering guarantees (claim the counter, then write the views) are documented
- * where it calls this. Typed structurally rather than importing Drizzle's
- * transaction type, which is not exported in a usable shape here — same
- * approach as `deleteReaderComments` in services/comments.ts.
+ * the count and the audit row describing who authorised it commit together (the
+ * instant boost). Without one — the gradual scheduler, which delivers on its own
+ * tick with no actor to attribute, and whose ordering guarantees (claim the
+ * counter, then write the views) are documented where it calls this — the two
+ * statements get a transaction of their own. Either way the total and the daily
+ * row commit together.
  */
-type ViewInsertExecutor = Pick<ReturnType<typeof getDb>, 'insert'>
-
 export async function addFabricatedViews(input: {
   articleId: number
   amount: number
   day?: string
-  executor?: ViewInsertExecutor
+  executor?: ViewWriteExecutor
 }): Promise<void> {
   if (!Number.isInteger(input.amount) || input.amount < 1) {
     throw new Error('fabricated view amount must be a positive integer')
   }
-  await (input.executor ?? getDb())
-    .insert(articleViewDaily)
-    .values({
-      day: input.day ?? viewDay(),
-      articleId: input.articleId,
-      sourceCategory: BOOST_SOURCE_CATEGORY,
-      realViews: 0,
-      fabricatedViews: input.amount,
-    })
-    .onDuplicateKeyUpdate({ set: { fabricatedViews: sql`${articleViewDaily.fabricatedViews} + ${input.amount}` } })
+  const write = async (executor: ViewWriteExecutor) => {
+    await bumpArticleTotal(executor, input.articleId, 'viewTotalFabricated', input.amount)
+    await executor
+      .insert(articleViewDaily)
+      .values({
+        day: input.day ?? viewDay(),
+        articleId: input.articleId,
+        sourceCategory: BOOST_SOURCE_CATEGORY,
+        realViews: 0,
+        fabricatedViews: input.amount,
+      })
+      .onDuplicateKeyUpdate({ set: { fabricatedViews: sql`${articleViewDaily.fabricatedViews} + ${input.amount}` } })
+  }
+  if (input.executor) await write(input.executor)
+  else await getDb().transaction(write)
 }
 
 export type ArticleViewStats = {

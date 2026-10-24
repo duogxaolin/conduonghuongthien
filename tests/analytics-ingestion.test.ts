@@ -90,6 +90,101 @@ test('writes exactly six bounded scopes and preserves only normalized values', a
   assert.doesNotMatch(serialized, /203\.0\.113\.42|Private Browser|\?|#|cookie|referrer/i)
 })
 
+/**
+ * Design D8, as measured (docs/decisions/data-layer.md). Every page view upserts
+ * the same `total` bucket row for the current minute, and that row's lock is held
+ * until COMMIT. The per-visitor dedupe rows — which no other page view waits on —
+ * now all go BEFORE the first shared row is locked, so `total` is held across the
+ * bucket upserts only, not the dedupe inserts too (the old order interleaved
+ * them: dedupe, bucket, dedupe, bucket …).
+ *
+ * `total` stays the FIRST bucket upsert. The live tables have an auto-increment
+ * PK beside their natural unique key, so each upsert holds an X next-key lock on
+ * the PK supremum until commit; `total` first serialises the bucket phase per
+ * minute. `total` last — the literal D8 text — rolled back ~37 % of page views
+ * with ER_LOCK_DEADLOCK under 10 concurrent requests. This test keeps it first.
+ */
+test('statement order: raw row, every dedupe insert, then the bucket upserts with total first', async () => {
+  const calls: string[] = []
+  await storeAnalyticsPageView(row(), {
+    async transaction(callback) {
+      calls.push('begin')
+      const result = await callback({
+        async insertRaw() { calls.push('raw') },
+        async insertDeduplication(_bucket, _visitor, scope) { calls.push(`dedup:${scope.scopeType}`); return true },
+        async incrementBucket(_bucket, scope) { calls.push(`bucket:${scope.scopeType}`) },
+      })
+      calls.push('commit')
+      return result
+    },
+  })
+  assert.deepEqual(calls, [
+    'begin',
+    'raw',
+    'dedup:total', 'dedup:path', 'dedup:source_category', 'dedup:device_class', 'dedup:country_code', 'dedup:region_code',
+    'bucket:total', 'bucket:path', 'bucket:source_category', 'bucket:device_class', 'bucket:country_code', 'bucket:region_code',
+    'commit',
+  ])
+})
+
+test('statement order holds when geography is absent (the production shape: four scopes, total first)', async () => {
+  const buckets: string[] = []
+  await storeAnalyticsPageView(row({ countryCode: null, regionCode: null }), {
+    async transaction(callback) {
+      return callback({
+        async insertRaw() {},
+        async insertDeduplication() { return true },
+        async incrementBucket(_bucket, scope) { buckets.push(scope.scopeType) },
+      })
+    },
+  })
+  assert.deepEqual(buckets, ['total', 'path', 'source_category', 'device_class'])
+})
+
+test('a dedupe result still decides the unique increment of its own scope once dedupes run first', async () => {
+  const increments: Array<[string, number]> = []
+  await storeAnalyticsPageView(row(), {
+    async transaction(callback) {
+      return callback({
+        async insertRaw() {},
+        // Only the path scope has seen this visitor before in this minute.
+        async insertDeduplication(_bucket, _visitor, scope) { return scope.scopeType !== 'path' },
+        async incrementBucket(_bucket, scope, unique) { increments.push([scope.scopeType, unique]) },
+      })
+    },
+  })
+  assert.deepEqual(Object.fromEntries(increments), {
+    path: 0, region_code: 1, source_category: 1, device_class: 1, country_code: 1, total: 1,
+  })
+})
+
+test('the NOC aggregate is written only after the ingestion transaction committed', async () => {
+  const events: string[] = []
+  const store = (value: MinimalPageViewRow) => storeAnalyticsPageView(value, {
+    async transaction(callback) {
+      const result = await callback({
+        async insertRaw() { events.push('raw') },
+        async insertDeduplication() { return true },
+        async incrementBucket(_bucket, scope) { events.push(`bucket:${scope.scopeType}`) },
+      })
+      events.push('commit')
+      return result
+    },
+  })
+  const outcome = await ingestAnalyticsPageView({
+    event,
+    payload: { path: '/news', sourceCategory: 'direct', deviceClass: 'desktop' },
+    config: { collectionEnabled: true, hmacSecret: SECRET },
+    now: new Date('2026-07-22T12:00:00Z'),
+    store,
+    storeNoc: async (record) => { events.push(`noc:${record.eventType}`) },
+  })
+  assert.equal(outcome, 'accepted')
+  // No geography in this payload: the last bucket is the last dimension.
+  assert.deepEqual(events.slice(-3), ['bucket:device_class', 'commit', 'noc:ingestion_accepted'])
+  assert.equal(events.filter(event => event.startsWith('noc:')).length, 1)
+})
+
 test('increments page views for repeats but approximate unique once per minute and scope', async () => {
   const { state, store } = transactionStore()
   await storeAnalyticsPageView(row(), store)

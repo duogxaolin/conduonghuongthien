@@ -20,7 +20,8 @@
  */
 import { type Connection, type RowDataPacket } from 'mysql2/promise'
 
-import { BOOT_MIGRATION_EVENTS, logError } from '../utils/logger'
+import { readAffectedRows } from '../utils/affected-rows'
+import { BOOT_MIGRATION_EVENTS, logError, logInfo } from '../utils/logger'
 import { encodeShortId } from '../utils/short-media-id'
 
 export type ChatbotColumnMigration = {
@@ -827,6 +828,9 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureIndex(db, database, 'articles', 'articles_status_type_pub_idx', 'INDEX `articles_status_type_pub_idx` (`status`, `type`, `published_at`, `created_at`)')
   await ensureIndex(db, database, 'articles', 'articles_status_category_pub_idx', 'INDEX `articles_status_category_pub_idx` (`status`, `category_id`, `published_at`, `created_at`)')
 
+  // ── Per-article view totals + one-time backfill (wave2 design D6) ─────────
+  await convergeArticleViewTotals(db, database)
+
   // ── Rút gọn nhãn hotline: "Hotline Tư Vấn 24/7" → "Hotline" ──────────────
   // Seed là insert-only nên đổi seed không cập nhật hàng đã có. Nay UPDATE
   // idempotent theo giá trị cũ — chỉ đè hàng nào còn mang text dài, không chạm
@@ -866,6 +870,70 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // grid thành `http://localhost:3000/cdn1...`.
   // Chạy tự động mỗi lần khởi động, idempotent (< vài giây), không cần bấm nút.
   await repairLegacyMediaUrls(db)
+}
+
+/**
+ * Tổng lượt xem theo bài trên `articles` (wave2 design D6, spec `most-read-ranking`)
+ * và lượt điền một lần từ `article_view_daily`.
+ *
+ * Ba cột: `view_total_real`, `view_total_fabricated` (BIGINT NOT NULL DEFAULT 0)
+ * và `view_total` = tổng hai cột, cột sinh STORED để đánh index cho khối "Đọc
+ * nhiều". Sau lượt điền này, chỉ `server/services/article-views.ts` ghi hai cột
+ * đầu — trong cùng transaction với hàng theo ngày.
+ *
+ * **Khoá theo trạng thái lược đồ, không theo cờ.** Điều kiện kích hoạt là *index
+ * `articles_status_type_views_idx` chưa có*, đo TRƯỚC mọi lượt ALTER; thứ tự là
+ * dò → thêm 3 cột → điền → thêm index. Index được thêm SAU CÙNG nên nó là dấu
+ * "đã điền xong":
+ *   - nâng cấp từ bản trước (không cột, không index): điền đúng một lần;
+ *   - khởi động lần hai: index đã có → không ghi gì;
+ *   - lượt khởi động chết giữa ADD COLUMN và UPDATE: lượt sau vẫn thấy thiếu
+ *     index → điền lại. Lượt điền GÁN tổng bằng tổng hàng theo ngày (không cộng
+ *     dồn), nên chạy lại cho đúng kết quả của một lượt không bị cắt ngang.
+ *     Khoá theo "cột vừa được thêm" thì trường hợp này để tổng = 0 mãi mãi mà
+ *     không gì báo — cùng lý do lượt chuyển danh mục video ở trên khoá theo FK.
+ *   - CSDL mới: CREATE TABLE ở `schema-tables/content.ts` đã có cả cột lẫn index
+ *     → không điền (cũng chẳng có hàng nào để điền).
+ *
+ * **`updated_at = updated_at`**: cột đó `ON UPDATE CURRENT_TIMESTAMP`; không ghim
+ * thì lượt điền đổi "lần sửa cuối" của mọi bài có lượt xem (danh sách admin,
+ * `lastmod` sitemap). Cùng lý do ở hai đường ghi của article-views.ts.
+ *
+ * **Lượt ghi lúc khởi động đã khai báo** (bộ kiểm nâng cấp `schema-upgrade-
+ * integration` phải liệt kê nó): UPDATE `articles` JOIN tổng `article_view_daily`
+ * theo bài, ghi `view_total_real`/`view_total_fabricated`, chỉ khi index trên
+ * chưa có. Thêm cột sinh STORED dựng lại bảng `articles` một lần (ALGORITHM=COPY).
+ *
+ * Khoá bằng `tests/view-boost-integration.test.ts` (MySQL thật: khởi động hai lần,
+ * khởi động bị cắt ngang).
+ */
+export async function convergeArticleViewTotals(db: Connection, database: string) {
+  const [indexRows] = await db.execute<RowDataPacket[]>(
+    'SELECT 1 FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ? AND INDEX_NAME = ? LIMIT 1',
+    [database, 'articles', 'articles_status_type_views_idx'],
+  )
+  const totalsNotYetFilled = indexRows.length === 0
+
+  await ensureColumn(db, database, 'articles', 'view_total_real', 'BIGINT NOT NULL DEFAULT 0')
+  await ensureColumn(db, database, 'articles', 'view_total_fabricated', 'BIGINT NOT NULL DEFAULT 0')
+  await ensureColumn(db, database, 'articles', 'view_total', 'BIGINT AS (`view_total_real` + `view_total_fabricated`) STORED')
+
+  if (totalsNotYetFilled) {
+    const [result] = await db.query(`
+      UPDATE \`articles\` a
+      JOIN (
+        SELECT \`article_id\`, SUM(\`real_views\`) AS r, SUM(\`fabricated_views\`) AS f
+        FROM \`article_view_daily\`
+        GROUP BY \`article_id\`
+      ) s ON s.\`article_id\` = a.\`id\`
+      SET a.\`view_total_real\` = s.r,
+          a.\`view_total_fabricated\` = s.f,
+          a.\`updated_at\` = a.\`updated_at\`
+    `)
+    logInfo({ event: 'db.migration.article_view_totals_backfilled', articles: readAffectedRows(result) })
+  }
+
+  await ensureIndex(db, database, 'articles', 'articles_status_type_views_idx', 'INDEX `articles_status_type_views_idx` (`status`, `type`, `view_total`, `published_at`, `created_at`)')
 }
 
 /**

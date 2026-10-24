@@ -129,20 +129,52 @@ function createDrizzleTransactionStore(db: DrizzleTransactionDb): AnalyticsPageV
   }
 }
 
+/**
+ * One page view in one transaction: the raw event, then every dedupe row, then
+ * every minute-bucket upsert — `total` first (wave2 design D8, as measured).
+ *
+ * Every page view upserts the same `total` bucket row for the current minute, and
+ * the lock its upsert takes is held until COMMIT. In the previous order that
+ * upsert came second and the ten dedupe/bucket statements after it ran while it
+ * was held. Now the per-visitor dedupe rows — which no other page view waits on —
+ * are all written BEFORE the first shared row is locked, so `total` is held across
+ * the remaining bucket upserts only.
+ *
+ * **`total` stays the first bucket upsert, deliberately — not the last.** Both
+ * live tables have an auto-increment surrogate PK next to their natural unique
+ * key, and an `INSERT … ON DUPLICATE KEY UPDATE` there holds an X next-key lock on
+ * the PK supremum until commit. With `total` first, the upsert every page view
+ * shares serialises the bucket phase per minute. With `total` last (the literal
+ * D8 text), each transaction takes the supremum lock on its own first, distinct,
+ * bucket row and then waits for the other's: ~37 % of page views rolled back with
+ * ER_LOCK_DEADLOCK under 10 concurrent requests. The previous interleaved order
+ * also deadlocked once visitors repeat within a minute (a duplicate dedupe insert
+ * takes a shared next-key lock while the `total` row is held); this order cut
+ * that ~10× in a sustained run but not to zero — the root fix is a natural-key
+ * primary key on both tables (follow-up). Numbers, the deadlock dump and the four
+ * orders compared are in docs/decisions/data-layer.md; the order is pinned by
+ * tests/analytics-ingestion.test.ts.
+ */
 export async function storeAnalyticsPageView(
   row: MinimalPageViewRow,
   store: AnalyticsPageViewTransactionStore = createDrizzleTransactionStore(getDb() as DrizzleTransactionDb),
 ): Promise<void> {
+  // Build order: `total` first, then the dimensions.
   const scopes = buildAnalyticsLiveScopes(row)
   const bucketStart = formatUtcDateTime(utcMinuteStart(row.occurredAt))
 
   await store.transaction(async (tx) => {
     await tx.insertRaw(row)
+    const unique: Array<0 | 1> = []
     for (const scope of scopes) {
-      const isUnique = await tx.insertDeduplication(bucketStart, row.visitorToken, scope)
-      await tx.incrementBucket(bucketStart, scope, isUnique ? 1 : 0)
+      unique.push(await tx.insertDeduplication(bucketStart, row.visitorToken, scope) ? 1 : 0)
+    }
+    for (const [index, scope] of scopes.entries()) {
+      await tx.incrementBucket(bucketStart, scope, unique[index]!)
     }
   })
+  // The NOC aggregate is recorded by the caller (`ingestAnalyticsPageView`) after
+  // this transaction has committed, never inside it.
 }
 
 export async function ingestAnalyticsPageView(options: {

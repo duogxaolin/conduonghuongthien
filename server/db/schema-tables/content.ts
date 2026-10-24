@@ -15,7 +15,10 @@ import { ensureColumn, ensureIndex } from '../migrations-additive'
  * nên đặt trong content.ts đúng domain và giữ an toàn FK.
  */
 export async function createContentTables(db: Connection, database: string): Promise<void> {
-  // Articles table
+  // Articles table. The three `view_total*` columns and their index are born here
+  // on a fresh database; an existing one gets them — and the one-time backfill
+  // from `article_view_daily` — from `convergeArticleViewTotals` in
+  // migrations-additive.ts (wave2 design D6).
   await db.query(`
     CREATE TABLE IF NOT EXISTS \`articles\` (
       \`id\` INT AUTO_INCREMENT PRIMARY KEY,
@@ -31,9 +34,13 @@ export async function createContentTables(db: Connection, database: string): Pro
       \`published_at\` TIMESTAMP NULL,
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
       \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+      \`view_total_real\` BIGINT NOT NULL DEFAULT 0,
+      \`view_total_fabricated\` BIGINT NOT NULL DEFAULT 0,
+      \`view_total\` BIGINT AS (\`view_total_real\` + \`view_total_fabricated\`) STORED,
       KEY \`type_idx\` (\`type\`),
       KEY \`status_idx\` (\`status\`),
       KEY \`articles_status_type_pub_idx\` (\`status\`, \`type\`, \`published_at\`, \`created_at\`),
+      KEY \`articles_status_type_views_idx\` (\`status\`, \`type\`, \`view_total\`, \`published_at\`, \`created_at\`),
       CONSTRAINT \`fk_articles_thumbnail\` FOREIGN KEY (\`thumbnail_id\`) REFERENCES \`media\` (\`id\`) ON DELETE SET NULL,
       CONSTRAINT \`fk_articles_author\` FOREIGN KEY (\`author_id\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
