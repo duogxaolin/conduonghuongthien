@@ -52,22 +52,22 @@ const emit = defineEmits<{
   <!-- Background Translation Task Banner (Live Real-time Progress) -->
   <div
     v-if="props.bulkTranslateTask?.active"
-    class="bg-gradient-to-r from-[#f0f7f1] to-[#e4f2e5] border border-[#a2cca4] rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all"
+    class="bg-gradient-to-r from-surface-tint to-[#e4f2e5] border border-[#a2cca4] rounded-xl p-4 shadow-sm flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 transition-all"
   >
     <div class="flex items-start sm:items-center gap-3 flex-1 min-w-0">
-      <div class="w-10 h-10 rounded-xl bg-[#2c6e33] text-white flex items-center justify-center shrink-0 shadow-xs">
+      <div class="w-10 h-10 rounded-xl bg-brand-700 text-white flex items-center justify-center shrink-0 shadow-xs">
         <i class="fa-solid fa-wand-magic-sparkles text-base animate-spin motion-reduce:animate-none"></i>
       </div>
       <div class="flex flex-col gap-1 flex-1 min-w-0">
         <div class="flex items-center gap-2 flex-wrap">
-          <span class="px-2 py-0.5 rounded-full bg-[#2c6e33] text-white text-[0.68rem] font-bold uppercase tracking-wider">
+          <span class="px-2 py-0.5 rounded-full bg-brand-700 text-white text-[0.68rem] font-bold uppercase tracking-wider">
             Đang dịch ngầm
           </span>
-          <span class="text-xs font-extrabold text-[#122815]">
+          <span class="text-xs font-extrabold text-brand-950">
             {{ props.bulkLangs.find(b => b.code === props.bulkTranslateTask?.task.langCode)?.flag || '🌐' }}
             {{ props.bulkTranslateTask?.task.langName || props.bulkTranslateTask?.task.langCode }}
           </span>
-          <span class="text-xs text-[#667768] font-semibold">
+          <span class="text-xs text-ink-muted font-semibold">
             — Tiến độ: {{ props.bulkTranslateTask?.task.processed || 0 }} / {{ props.bulkTranslateTask?.task.total || props.bulkTranslateTask?.dbTranslatingCount }} bài viết
             ({{ Math.round(((props.bulkTranslateTask?.task.processed || 0) / (props.bulkTranslateTask?.task.total || 1)) * 100) }}%)
           </span>
@@ -76,12 +76,12 @@ const emit = defineEmits<{
         <!-- Animated progress bar -->
         <div class="w-full max-w-lg h-2 rounded-full bg-[#c8dcc9] overflow-hidden">
           <div
-            class="h-full bg-[#2c6e33] transition-all duration-500 rounded-full"
+            class="h-full bg-brand-700 transition-all duration-500 rounded-full"
             :style="{ width: `${Math.max(5, Math.round(((props.bulkTranslateTask?.task.processed || 0) / (props.bulkTranslateTask?.task.total || 1)) * 100))}%` }"
           ></div>
         </div>
 
-        <p v-if="props.bulkTranslateTask?.task.currentArticleTitle" class="m-0 text-xs text-[#4A5545] truncate" :title="props.bulkTranslateTask.task.currentArticleTitle">
+        <p v-if="props.bulkTranslateTask?.task.currentArticleTitle" class="m-0 text-xs text-ink-secondary truncate" :title="props.bulkTranslateTask.task.currentArticleTitle">
           Đang xử lý: <strong>{{ props.bulkTranslateTask.task.currentArticleTitle }}</strong>
         </p>
 
@@ -96,7 +96,7 @@ const emit = defineEmits<{
     <div class="flex items-center gap-2 shrink-0">
       <button
         type="button"
-        class="px-3 py-1.5 rounded-lg border border-[#a2cca4] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#e4ece4] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
+        class="px-3 py-1.5 rounded-lg border border-[#a2cca4] bg-white text-xs font-bold text-brand-900 hover:bg-[#e4ece4] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
         @click="emit('refresh-table', props.currentPage); emit('fetch-bulk-status')"
       >
         <i class="fa-solid fa-arrows-rotate text-[0.7rem]" :class="props.loading ? 'animate-spin' : ''"></i>
@@ -108,15 +108,15 @@ const emit = defineEmits<{
   <!-- Completed Notice Banner -->
   <div
     v-else-if="props.completedBannerMsg"
-    class="bg-[#e4f2e5] border border-[#a2cca4] rounded-xl p-3.5 shadow-sm flex items-center justify-between gap-3 text-xs text-[#1e4620]"
+    class="bg-[#e4f2e5] border border-[#a2cca4] rounded-xl p-3.5 shadow-sm flex items-center justify-between gap-3 text-xs text-brand-900"
   >
     <div class="flex items-center gap-2">
-      <i class="fa-solid fa-circle-check text-base text-[#2c6e33]"></i>
+      <i class="fa-solid fa-circle-check text-base text-brand-700"></i>
       <span class="font-bold">{{ props.completedBannerMsg }}</span>
     </div>
     <button
       type="button"
-      class="border-0 bg-transparent text-[#667768] hover:text-[#122815] cursor-pointer text-xs"
+      class="border-0 bg-transparent text-ink-muted hover:text-brand-950 cursor-pointer text-xs"
       @click="emit('dismiss-completed')"
     >✕</button>
   </div>
@@ -140,7 +140,7 @@ const emit = defineEmits<{
     <div class="flex flex-wrap items-center gap-2 shrink-0">
       <button
         type="button"
-        class="px-3.5 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-bold text-[#1e4620] hover:bg-[#f0f7f1] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
+        class="px-3.5 py-2 rounded-lg border border-line-strong bg-white text-xs font-bold text-brand-900 hover:bg-surface-tint transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs"
         @click="emit('open-global-translate')"
       >
         <i class="fa-solid fa-wand-magic-sparkles text-[0.7rem]"></i>
@@ -148,7 +148,7 @@ const emit = defineEmits<{
       </button>
       <button
         type="button"
-        class="px-3.5 py-2 rounded-lg bg-[#2c6e33] text-white text-xs font-bold hover:bg-[#245928] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+        class="px-3.5 py-2 rounded-lg bg-brand-700 text-white text-xs font-bold hover:bg-[#245928] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
         :disabled="props.aiPublishing || props.aiPendingTranslations === 0"
         :title="props.aiPendingTranslations === 0 ? 'Không có bản dịch AI nào sẵn sàng xuất bản' : `Xuất bản ${props.aiPendingTranslations} bản dịch AI đang chờ`"
         @click="emit('bulk-publish-ai')"
@@ -157,7 +157,7 @@ const emit = defineEmits<{
         <span>Xuất bản toàn bộ bản dịch AI</span>
         <span
           v-if="props.aiPendingTranslations > 0"
-          class="ml-0.5 inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-white text-[#2c6e33] text-[0.65rem] font-extrabold leading-none"
+          class="ml-0.5 inline-flex items-center justify-center min-w-4 h-4 px-1 rounded-full bg-white text-brand-700 text-[0.65rem] font-extrabold leading-none"
         >{{ props.aiPendingTranslations }}</span>
       </button>
     </div>
