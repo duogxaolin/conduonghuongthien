@@ -25,6 +25,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
+import { commentServiceFiles } from './_comments-service-source'
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
 
@@ -42,7 +43,11 @@ function functionBody(source: string, name: string): string {
 
 /** Every path this change added that both mutates a row and audits the mutation. */
 const AUDITED_WRITES: Array<{ file: string, fn: string, why: string }> = [
-  { file: 'server/services/comments.ts', fn: 'deleteComment', why: 'a public comment vanishes with no record of who removed it' },
+  // The comment service is split into `comments-*.ts` sub-files (wave2 D-SPLIT);
+  // `comments.ts` is a barrel. Each entry names the file that holds the function —
+  // the family check further down fails if a comment sub-file writes
+  // `activity_logs` without appearing here or in SERVICE_EXEMPTIONS.
+  { file: 'server/services/comments-deletion.ts', fn: 'deleteComment', why: 'a public comment vanishes with no record of who removed it' },
   { file: 'server/services/readers.ts', fn: 'banReader', why: 'a flag set without the deletion leaves comments under a banned name' },
   { file: 'server/services/readers.ts', fn: 'deleteReader', why: 'an account and its comment history disappear untraceably' },
   { file: 'server/services/readers.ts', fn: 'purgeReaderComments', why: 'every comment a citizen wrote is removed with nothing recording it' },
@@ -52,7 +57,7 @@ const AUDITED_WRITES: Array<{ file: string, fn: string, why: string }> = [
   { file: 'server/services/google-oauth-settings.ts', fn: 'updateGoogleOAuthSettings', why: '"who turned Google sign-in on, and when" becomes unanswerable' },
   { file: 'server/services/google-oauth-settings.ts', fn: 'clearGoogleOAuthSecret', why: 'credentials are dropped with no record of it' },
   { file: 'server/services/articles.ts', fn: 'setArticleCommentsEnabled', why: 'a thread opens or closes with nobody accountable' },
-  { file: 'server/services/comments.ts', fn: 'createAdminReply', why: 'an administrator\'s public reply exists with no record of which admin posted it' },
+  { file: 'server/services/comments-admin-reply.ts', fn: 'createAdminReply', why:'an administrator\'s public reply exists with no record of which admin posted it' },
   // A rename is a write to a citizen's personal data, and it is the one audited
   // path here whose actor is NOT a member of staff — see the `userId: null` note in
   // renameReader for why the reader's id goes in `meta` instead of the user column.
@@ -122,7 +127,7 @@ describe('the shared deletion path can join a caller transaction', () => {
     // Without this, purgeReaderComments could not delete and audit atomically: it
     // would have to either duplicate the DELETE (breaking the single-deletion-path
     // rule from design.md D8) or leave the pair unwrapped.
-    const body = functionBody(read('server/services/comments.ts'), 'deleteReaderComments')
+    const body = functionBody(read('server/services/comments-deletion.ts'), 'deleteReaderComments')
     assert.match(body, /executor\?:/, 'deleteReaderComments no longer accepts an executor')
     assert.match(
       body,
@@ -598,7 +603,22 @@ const SERVICE_EXEMPTIONS: Record<string, string> = {
   // nằm trong `db.transaction` ở `media-scan-import.ts` (wave2 D-SCAN tách ra) — trước
   // đó cùng tệp, nên `media-scan.ts` từng nằm ở SERVICE_POOL_AUDIT_EXEMPTIONS.
   'media-scan.ts': 'progress/summary audits of a background scan job are best-effort by design; the row+audit pair is transactional in media-scan-import.ts',
+  // Danh sách kiểm duyệt bình luận: `auditCommentRead` chỉ ghi MỘT dòng audit
+  // "đã xem danh sách" — không có hàng nghiệp vụ nào để nguyên tử cùng. Trước wave2
+  // D-SPLIT nó nằm trong `comments.ts` cùng các hàm có transaction nên cổng theo
+  // tệp không hỏi; tách tệp làm nó lộ ra, không phải mới. Cặp hàng + audit thật
+  // của dịch vụ bình luận nằm ở `comments-deletion.ts`/`comments-admin-reply.ts`
+  // (AUDITED_WRITES). Tiền đề "tệp này không tự ghi hàng nào" được kiểm ngay dưới
+  // (AUDIT_ONLY_SERVICE_EXEMPTIONS) — thêm một lượt ghi hàng vào đây là đỏ.
+  'comments-moderation.ts': 'audit-only insert recording a read of the moderation list; no row write to pair it with',
 }
+
+/**
+ * Miễn trừ "chỉ ghi audit" phải còn đúng tiền đề của nó: tệp không tự ghi hàng
+ * nào khác dòng audit. Không kiểm thì một mục miễn theo TỆP xanh vĩnh viễn với
+ * lượt ghi hàng + audit thêm vào tệp đó sau này.
+ */
+const AUDIT_ONLY_SERVICE_EXEMPTIONS = ['comments-moderation.ts']
 
 /**
  * Service CÓ `db.transaction(` nhưng vẫn còn dòng audit ghi trên pool.
@@ -644,6 +664,49 @@ describe('no service writes activity_logs outside a transaction', () => {
       + 'SERVICE_POOL_AUDIT_EXEMPTIONS kèm lý do. Một danh sách liệt kê tên tệp thì xanh '
       + 'vĩnh viễn với tệp nó chưa biết; guard này quét cả thư mục chính vì thế.',
     )
+  })
+
+  it('an audit-only exemption still writes no row besides the audit row', () => {
+    for (const entry of AUDIT_ONLY_SERVICE_EXEMPTIONS) {
+      assert.ok(SERVICE_EXEMPTIONS[entry], `${entry} is listed as audit-only but is not in SERVICE_EXEMPTIONS`)
+      const normalized = normalizeSource(read(join('server/services', entry)))
+      assert.match(normalized, /activityLogs/, `${entry} no longer audits — drop its exemption`)
+      const writesRow = writesItsOwnRow(normalized)
+        || /\bgetDb\(\)\s*\.\s*(?:update|delete)\(/.test(normalized)
+        || /\bgetDb\(\)\s*\.\s*insert\(\s*(?!activityLogs)/.test(normalized)
+        || /\b(?:pool|getPool\(\)!?)\s*\.\s*(?:query|execute)\(/.test(normalized)
+      assert.ok(
+        !writesRow,
+        `${entry} được miễn vì "chỉ ghi audit" nhưng nay tự ghi một hàng khác — cặp hàng + audit phải nằm trong `
+        + 'transaction (rời tệp khỏi SERVICE_EXEMPTIONS và bọc lại)',
+      )
+    }
+  })
+})
+
+/**
+ * Dịch vụ bình luận là MỘT họ tệp (`comments.ts` barrel + `comments-*.ts`, wave2
+ * D-SPLIT). Trước khi tách, cả 1208 dòng nằm trong một tệp mà AUDITED_WRITES trỏ
+ * tới; sau khi tách, mỗi tệp con ghi `activity_logs` phải được nêu tên — trong
+ * AUDITED_WRITES (hàm ghi hàng + audit) hoặc SERVICE_EXEMPTIONS (kèm lý do). Tập
+ * tệp suy từ thư mục, nên tệp con thêm sau này cũng bị hỏi.
+ */
+describe('every comment-service file that writes activity_logs is named', () => {
+  it('a comments*.ts touching activityLogs is in AUDITED_WRITES or SERVICE_EXEMPTIONS', () => {
+    const files = commentServiceFiles()
+    const auditing = files.filter(file => /activityLogs/.test(read(file)))
+    assert.ok(auditing.length > 0, 'no comment-service file writes activity_logs — the scan is checking nothing')
+    const unnamed = auditing.filter(file =>
+      !AUDITED_WRITES.some(entry => entry.file === file)
+      && !SERVICE_EXEMPTIONS[file.replace('server/services/', '')])
+    assert.deepEqual(
+      unnamed,
+      [],
+      'tệp con của dịch vụ bình luận ghi `activity_logs` mà không được nêu tên — thêm hàm ghi hàng + '
+      + 'audit vào AUDITED_WRITES, hoặc khai SERVICE_EXEMPTIONS kèm lý do',
+    )
+    // The barrel only re-exports: it must hold no code that the guards above would have to judge.
+    assert.ok(!/activityLogs|\.transaction\(/.test(read('server/services/comments.ts')), 'comments.ts is a barrel — code belongs in a comments-*.ts sub-file')
   })
 })
 
