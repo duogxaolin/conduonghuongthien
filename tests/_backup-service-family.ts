@@ -21,12 +21,24 @@ export const EXPECTED_BACKUP_FAMILY: readonly string[] = [
   'backup.ts', 'backup-catalog.ts', 'backup-locks.ts', 'backup-names.ts', 'backup-rotation.ts', 'backup-run.ts', 'backup-sweep.ts',
 ]
 /** Files that share the prefix but were their own modules before the split. */
-const BACKUP_SIBLINGS: readonly string[] = [
+export const BACKUP_SIBLINGS: readonly string[] = [
   'backup-drive.ts', 'backup-drive-oauth.ts', 'backup-drive-oauth-config.ts', 'backup-offsite.ts', 'backup-registry.ts',
   'backup-restore.ts', 'backup-restore-guards.ts', 'backup-restore-recovery.ts', 'backup-scheduler.ts', 'backup-sql.ts',
   // Split from backup-scheduler.ts (its busy-streak alert), not from backup.ts.
   'backup-scheduler-busy.ts',
 ]
+
+/**
+ * A part of the split (`backup-<seam>.ts`, siblings excluded) — the `backup` family of
+ * `tests/service-split-boundaries.test.ts` uses THIS pattern, built from the list above,
+ * so a file cannot be a part for one guard and a sibling for another. Siblings such as
+ * `backup-restore.ts` import the barrel on purpose (`runBackup` for the `pre-restore`
+ * copy); counting them as parts would turn "a part never imports its barrel" red on them.
+ * Same character class as the on-disk scan below (`[\w-]+`).
+ */
+export const BACKUP_PART = new RegExp(
+  `^(?!(?:${BACKUP_SIBLINGS.map(name => name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})$)backup-[\\w-]+\\.ts$`,
+)
 
 const repoUrl = (relative: string) => new URL(`../${relative}`, import.meta.url)
 

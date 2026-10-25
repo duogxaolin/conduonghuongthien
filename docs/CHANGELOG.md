@@ -1801,6 +1801,60 @@ OpenSpec `wave2-hardening` task 5.5, design D-SPLIT. Không đổi hành vi, kh�
   - Mã thật không có vi phạm nào.
 - **Kiểm chứng (2026-10-25, Node 26.11, worktree `wave2/integration`):** `npm test` 5007 / 4954 pass / 0 fail / 53 skip (+16 so với lượt gộp 5.5: 4991 / 4938 / 0 / 53). Typecheck 0 lỗi. eslint 0 error / 16 warning (không cảnh báo nào ở tệp mới/sửa). Không chạy integration/E2E ở lượt này: MySQL dùng chung đang có agent khác chạy, và khoá tên của backup là khoá toàn máy chủ.
 
+### 43. Đợt 2 — tách `backup.ts`, khôi phục ↔ job media loại trừ nhau (2026-10-25)
+
+Nhánh `wave2/backup-split-followups` (PR #143, 9 commit `4c1ad54`…`09e8dcd`), gộp vào `wave2/integration` ở `3d69836`. OpenSpec `wave2-hardening`: phần tách theo design D-SPLIT; phần còn lại là việc vận hành quanh sao lưu/khôi phục. Kiểm chứng độc lập trên commit 1–5 ra 0 CRITICAL; 2 WARNING + 3 SUGGESTION đã sửa ở gốc trong commit 6–9, mỗi test mới có bằng chứng đỏ-trước.
+
+- **Tách `server/services/backup.ts`** 733 → 41 (barrel liệt kê tên, không `export *`). Nơi gọi và `mock.module` của test vẫn trỏ `services/backup`. Số dòng đo bằng `wc -l` sau khi gộp:
+  - `backup-names.ts` (85): trigger, mã thời điểm, `backupsDir()`, mẫu tên tệp của app, họ tệp, bản `pre-restore`.
+  - `backup-locks.ts` (116; 84 lúc tách): khoá chạy/khôi phục, sổ tệp đang khôi phục (`holdRestoreTarget`), các lỗi "bận"; từ `09e8dcd` thêm phép hỏi chung `refuseIfRestoreInProgress`.
+  - `backup-run.ts` (337): `runBackup` + trạng thái chạy + `readBackupConfig`. `backup-rotation.ts` (119), `backup-sweep.ts` (119), `backup-catalog.ts` (69).
+  - 46/47 khai báo cấp đỉnh giống bản gốc từng byte (khác duy nhất một chú thích). Không vòng import, tệp con không import barrel.
+  - API barrel: 21 giá trị + 7 kiểu lúc tách, nay 23 + 7 (`09e8dcd` thêm `BackupRestoreStateUnknownError`, `refuseIfRestoreInProgress`). Ghim ở `tests/backup-service-api.test.ts` — viết **trước** khi tách, xanh trên tệp gốc: `Object.keys` lúc chạy + TS checker, kèm hành vi `timestampStamp`/`defaultArchiveSources`/`getBackupStatus`/`listBackups`.
+  - Guard từng đọc chữ của tệp cũ (trigger, `backupsDir()` mặc định, `AUDITED_SERVICES`, thư mục `backups`) nay đọc **cả nhóm** qua `tests/_backup-service-family.ts`: nhóm suy từ dòng re-export của barrel, đối chiếu `EXPECTED_BACKUP_FAMILY`; mọi `backup*.ts` khác phải là anh em có tên.
+  - `2e8829f`: re-export từ ngoài `./backup-*` (`../utils/backup-x`, `./media`) hay một `import` trong barrel đều đỏ. Trước đó helper chỉ nhận dạng `./x`, nên một re-export từ `../utils/backup-x` lọt hẳn khỏi các guard (86/86 vẫn xanh).
+- **5 job media dừng với 409 khi đang khôi phục CSDL** (`a635940`): tự vá, sửa URL, đổi domain R2, đồng bộ local↔R2, quét/sửa thumbnail.
+  - Bản sao lưu trước job hỏng vì đúng `BackupRestoreInProgressError` → `abortJobIfRestoreInProgress` (`pre-job-backup.ts`) log `media.job_aborted_restore_in_progress` và ném `JobBlockedByRestoreError` → 409 câu cố định, chưa ghi gì. Đồng bộ chạy nền → job `failed` mang đúng câu đó.
+  - Lỗi sao lưu khác (kể cả lớp cha `BackupLockBusyError`) giữ cách cũ: bốn job chạy tiếp không bản chụp, đổi domain dừng 500 (D-REPOINT).
+  - `runBackup`: khoá chạy bận vì chính bản `pre-restore` của một lượt khôi phục (giữ vài phút) nay báo "đang khôi phục" thay vì "bận" thường. Job rơi vào lúc đó trước đây chạy tiếp.
+  - `tests/media-jobs-restore-abort.test.ts`: 9/12 + 5 ca khe hở đỏ trên mã cũ, 17/17 ở commit đó; nay 22 test sau `09e8dcd`.
+- **Khôi phục ↔ job media loại trừ nhau từ CẢ HAI phía** (`09e8dcd`). Mỗi phía giữ khoá của mình TRƯỚC rồi mới hỏi khoá phía kia (`IS_USED_LOCK`), nên hai lượt bắt đầu cùng lúc thì ít nhất một lượt thấy lượt kia.
+  - Phía khôi phục (`backup-restore.ts` → `mediaJobsBlockingRestore`): giữ `cdkt:backup:restore` rồi hỏi mọi khoá trong `MEDIA_JOB_LOCK_NAMES`. Job đang chạy → 409 `media_job_running` nêu tên việc; không hỏi được → 503 `media_job_state_unknown`. Từ chối xảy ra trước bản `pre-restore`, và khoá khôi phục được nhả.
+  - Một danh sách khoá `MEDIA_JOB_LOCK` (`pre-job-backup.ts`, 5 khoá) cho cả job lẫn lượt khôi phục. `tests/media-job-locks.test.ts` suy từ AST mọi khoá các job thật sự giữ và đòi khớp đúng danh sách.
+  - Lượt quét thư mục ảnh (`media-scan.ts`, không sao lưu trước) cũng giữ khoá rồi mới hỏi trạng thái khôi phục, như các job khác.
+  - Câu hỏi "đang khôi phục không?" chỉ qua `refuseIfRestoreInProgress`, câu chung "Đang khôi phục từ bản sao lưu…" (khoá này giữ cả khi khôi phục archive). Không hỏi được MySQL → vẫn từ chối, nhưng ném lớp con `BackupRestoreStateUnknownError` ("Không kiểm tra được trạng thái khôi phục — … Thử lại sau.", log `backup.restore_lock_unknown`).
+  - `tests/restore-media-job-exclusion.test.ts` (10 test).
+- **Cảnh báo `backup.scheduler_blocked` tính theo thời gian** (`4394fd5`, thay ở `507ec8f`).
+  - Trước đây lịch sao lưu bị "bận" (khoá khôi phục kẹt, MySQL không hỏi được) chỉ log info `backup.scheduler_busy`: lịch ngừng mà không ai biết.
+  - Bản đầu đếm 4 tick, và hỏng theo bốn cách: tick khởi động lệch lưới; timer trôi chỉ còn 3 tick (khe không bao giờ báo); chuỗi kéo sang khe sau (nêu sai khe); báo khi khe còn cơ hội chạy.
+  - Nay theo hạn chót (`busyStreakDeadline`, thuần): khe + 60 phút khi chuỗi mở ở tick `slot`, hoặc lần bị từ chối đầu + 60 phút khi mở ở `retry`/`catch_up`. Kiểm ở cuối mọi tick; một dòng warn mỗi khe, đúng tên khe (thư cảnh báo qua `ALERT_EVENTS`). Chuỗi xoá khi một lượt bắt đầu hoặc công tắc tắt.
+  - Trạng thái chuỗi tách sang `backup-scheduler-busy.ts` (49) để `backup-scheduler.ts` dưới 400 dòng (383). `tests/backup-scheduler-due.test.ts` (63 test).
+- **Dấu hoàn tất dump: một luật cho `backup-db.sh` và `restore-db.sh`** (`0960b90`, `8f0eb43`).
+  - `restore-db.sh` chỉ nhận `^-- Dump completed` ở ĐẦU một trong 5 dòng cuối, cho cả dump cần khôi phục lẫn bản `pre-restore` (`has_completion_marker`, `grep -c … || true`, không `grep -q` trong pipe). Đỏ trước: dump cắt giữa một INSERT chứa chữ đó vẫn khôi phục exit 0, bản `pre-restore` cụt vẫn được nhận; nay exit 2 / 3.
+  - `backup-db.sh` trước đó nhận chữ "Dump completed" ở bất kỳ đâu trong dòng: dump cụt được giữ như bản tốt (exit 0), rồi bị `restore-db.sh` từ chối đúng lúc cần lùi. Nay khối `dump-completion-marker` giống từng byte ở hai script (`tests/ops-scripts.test.ts` so); ca sandbox `FAKE_DUMP_MARKER_MIDLINE=1` đỏ trên script cũ.
+  - Sửa các câu "cùng phép kiểm" sai ở `deploy-remote.sh`, `manage.sh`, `CI-CD.md`, `DEPLOY.md`, `production/README.md`, `CLAUDE.md`.
+- **`isAbortError` đi dọc chuỗi `.cause`** (`b2bfa8e`): tối đa 4 lớp, chống vòng; `TimeoutError` không tính là tự huỷ. Lượt huỷ thật của ofetch là `FetchError` có `cause` AbortError — trước đây trả `false`. Test với ofetch thật trên `node:http` (`tests/error-abort-detection.test.ts`). `analytics.vue` (nơi gọi duy nhất) không còn đặt thông báo lỗi lúc rời trang.
+  - Sửa lúc gộp: test của 6.4 (`tests/admin-list.test.ts`) từng ghim `isAbortError(FetchError có cause AbortError) === false`, nay `true` (đổi tên test + chú thích). Chú thích "Note on aborts" ở `app/composables/adminFetch.ts` sửa theo. `useAdminList` vẫn quyết định "lượt cũ" theo lượt yêu cầu, vì nguồn có thể bỏ qua `signal` và trả muộn.
+- **Guard ranh giới `tests/service-split-boundaries.test.ts` thêm nhóm `backup`** (33 → 42 test; làm sau khi gộp).
+  - Nhóm = barrel `backup.ts` + `backup-*.ts` **trừ anh em** (`backup-restore.ts`, `backup-scheduler.ts`, `backup-sql.ts`, `backup-scheduler-busy.ts`…). Mẫu tệp `BACKUP_PART` dựng từ chính danh sách `BACKUP_SIBLINGS` của `tests/_backup-service-family.ts` — một nguồn, không bản chép thứ hai. Test mới ghim nhóm khớp đúng `backupServiceFiles()`, và không anh em nào thuộc nhóm.
+  - Luật 1: không tệp con nào nạp `./backup` ở bất kỳ dạng nào, kể cả một tệp con mới mà barrel chưa xuất lại (thuộc nhóm nhờ mẫu tệp).
+  - Luật 4: kho trạng thái của nhóm là `currentBackupStatus` (`backup-run.ts`), `activeRestoreTargets` (`backup-locks.ts`), `BACKUP_TRIGGERS`/`STALE_PARTIAL`/`APP_FINAL` (`backup-names.ts`), `DEFAULT_ROTATION_GUARDS` (`backup-rotation.ts`). Hai trạng thái thật không `export`, nên không tệp nào khác ghi được. Sổ tệp đang khôi phục chỉ đổi qua `holdRestoreTarget`, mà nơi gọi duy nhất là `backup-restore.ts`.
+  - Luật 2/3 không áp: chúng canh một tệp/một sổ riêng của nhóm `chunked-upload`/`video-processing`. Luật 5 không chép: API barrel `backup.ts` đã ghim ở `tests/backup-service-api.test.ts` bằng cách mạnh hơn (TS checker); guard ranh giới chỉ trỏ sang.
+  - 8 bằng chứng đột biến mới: luật 1 ở 6 dạng (`import`, `import type` có `.ts`, `export … from`, `import()`, `typeof import('#server/…')`, tệp con mới); "KHÔNG đỏ" với `./backup-names` và với anh em import barrel; bỏ phần loại anh em → chính mã thật đỏ ở đúng 3 anh em; nhóm lệch `backupServiceFiles()`; luật 4 chép sổ/trạng thái chạy sang tệp con khác; tệp con `.clear()` sổ; endpoint ghi trạng thái chạy qua barrel; anh em `backup-restore.ts` `.push()` vào `BACKUP_TRIGGERS`.
+  - Bằng chứng đỏ trước — chỉ sửa phía test (bản nháp, đã hoàn lại; không đụng `server/`):
+    - bỏ nhóm `backup` khỏi `FAMILIES` → 8 test đỏ;
+    - bỏ phần loại anh em khỏi `BACKUP_PART` → 12 đỏ, kể cả luật 1 trên mã thật: `backup-restore.ts:31`, `backup-restore-recovery.ts:27`, `backup-scheduler.ts:38` import barrel;
+    - tắt phép kiểm "khai ở hai tệp" của luật 4 → 2 đỏ (kể cả bằng chứng backup); tắt phép kiểm lượt ghi → 10 đỏ (kể cả 3 bằng chứng backup);
+    - luật 1 so barrel theo tiền tố → ca "KHÔNG nhầm `./backup-names`" đỏ.
+  - Mã thật không có vi phạm nào.
+  - Giới hạn, nêu tên: tên khoá `LOCK_RUN`/`LOCK_RESTORE` là `const` chuỗi, không phải trạng thái theo luật 4. Hôm nay chữ `'cdkt:backup:run'`/`'cdkt:backup:restore'` chỉ có ở `backup-locks.ts`, nhưng đó là kết quả grep, chưa có guard. Phép kiểm "khai ở hai tệp" chỉ trong một nhóm, nên một bản chép sổ sang anh em (`backup-restore.ts`) không bị luật 4 bắt.
+- **Còn mở (nêu tên, chưa làm):**
+  - Housekeep, transcode, quét lại kiểm duyệt và các worker nền chưa nằm trong danh sách loại trừ với lượt khôi phục.
+  - Đổi domain R2 khi một lượt sao lưu khác đang chạy (`BackupLockBusyError` lúc sao lưu `pre-repoint`) vẫn trả 500 "… Kiểm tra dung lượng đĩa / nhật ký máy chủ rồi thử lại." (thiết kế D-REPOINT) — câu nói về đĩa dù lý do là bận.
+- **Kiểm chứng:**
+  - Trên nhánh (PR #143): unit 4839 / 4786 pass / 0 fail / 53 skip; typecheck 0 lỗi, lint 0 error. Integration trên MySQL 8 dev, chạy lần lượt: `backup-dump` 18/18, `media-repoint` 1/1, `media-self-heal` 1/1, `media-sync-rewrite` 2/2, không DB/khoá nào sót.
+  - Sau khi gộp vào `wave2/integration` (2026-10-25, Node 26.11): `npm test` 5063 / 5010 pass / 0 fail / 53 skip trước guard nhóm `backup`; sau guard 5072 / 5019 / 0 / 53 (+9, đều ở `service-split-boundaries`). Typecheck 0 lỗi. eslint 0 error / 16 warning (không cảnh báo nào ở tệp mới/sửa). Không chạy integration/E2E ở lượt này (MySQL dùng chung đang chạy suite khác).
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.

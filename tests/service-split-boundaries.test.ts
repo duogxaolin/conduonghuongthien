@@ -1,5 +1,5 @@
 /**
- * Ranh giới của bốn nhóm service đã tách (wave2-hardening 5.3 / 5.4 / 5.5 / 5.6).
+ * Ranh giới của năm nhóm service đã tách (wave2-hardening 5.3 / 5.4 / 5.5 / 5.6 + `backup.ts`).
  *
  *   • `media-portal.ts`     — barrel; mã ở `media-portal-*.ts` (+ `media-validation.ts`,
  *     `media-views.ts` mà barrel xuất lại).
@@ -7,6 +7,11 @@
  *   • `video-processing.ts` — cửa vào; mã ở `video-*.ts`.
  *   • `comments.ts`         — barrel; mã ở `comments-*.ts` (kể cả `comments-reply-email.ts`,
  *     tệp barrel cố ý không xuất lại).
+ *   • `backup.ts`           — barrel; mã ở `backup-{names,locks,run,rotation,sweep,catalog}.ts`.
+ *     `backup-*.ts` có từ trước khi tách (`backup-restore.ts`, `backup-scheduler.ts`,
+ *     `backup-sql.ts`…) là ANH EM, không thuộc nhóm: chúng import barrel đúng chủ đích.
+ *     Mẫu tệp `BACKUP_PART` dựng từ danh sách anh em ở `_backup-service-family.ts` — một
+ *     nguồn với các guard đọc mã sao lưu.
  *
  * Năm luật, mỗi luật chặn một kiểu hỏng không có triệu chứng lúc viết:
  *
@@ -36,7 +41,14 @@
  *      như trước khi tách** — bỏ, đổi tên hay đổi loại một export là đỏ; xuất thêm
  *      (helper nội bộ thành API) cũng đỏ. Hình dạng barrel (chỉ `export { … } from
  *      './comments-…'`, không mã, không `export *`) do `reader-audit-atomicity.test.ts`
- *      (`barrelProblems`) canh; luật 5 ghim TÊN.
+ *      (`barrelProblems`) canh; luật 5 ghim TÊN. API của barrel `backup.ts` KHÔNG ghim ở
+ *      đây mà ở `tests/backup-service-api.test.ts` (viết trước khi tách, xanh trên tệp gốc):
+ *      `Object.keys` lúc chạy + TS type checker (giá trị/kiểu qua alias) — mạnh hơn phép
+ *      đọc AST của luật 5, nên không chép danh sách thứ hai. Hình dạng barrel `backup.ts`
+ *      (chỉ re-export từ `./backup-*`, không import) do `_backup-service-family.ts` canh.
+ *
+ * Luật 2 và 3 không lặp theo nhóm: chúng canh một tệp/một sổ cụ thể của nhóm
+ * `chunked-upload`/`video-processing`, nên không áp cho nhóm khác.
  *
  * Đọc bằng TypeScript AST (`_module-references.ts` cho đường dẫn module, một lượt
  * AST nhỏ ở `_service-split-sources.ts` cho tên được nhập): chú thích nhắc tới
@@ -50,6 +62,13 @@
  */
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
+import {
+  BACKUP_BARREL,
+  BACKUP_PART,
+  BACKUP_SIBLINGS,
+  EXPECTED_BACKUP_FAMILY,
+  backupServiceFiles,
+} from './_backup-service-family.ts'
 import {
   COMMENT_SUBFILE,
   EXPECTED_COMMENT_SERVICE_FILES,
@@ -96,11 +115,21 @@ const FAMILIES: Record<string, Family> = {
     barrel: `${SERVICES}/comments.ts`,
     prefix: COMMENT_SUBFILE,
   },
+  // `backup-*.ts` TRỪ anh em có từ trước khi tách (`BACKUP_SIBLINGS`): `backup-restore.ts`,
+  // `backup-restore-recovery.ts`, `backup-scheduler.ts` import barrel đúng chủ đích — barrel
+  // không import chúng, nên không có vòng. Tệp con mới mà barrel chưa xuất lại vẫn thuộc nhóm.
+  backup: {
+    barrel: BACKUP_BARREL,
+    prefix: BACKUP_PART,
+  },
 }
 
-function selfImportViolations(sources: Sources): string[] {
+function selfImportViolations(
+  sources: Sources,
+  families: Record<string, Family> = FAMILIES,
+): string[] {
   const violations: string[] = []
-  for (const [name, family] of Object.entries(FAMILIES)) {
+  for (const [name, family] of Object.entries(families)) {
     const barrelModule = moduleOf(family.barrel)
     for (const member of familyMembers(sources, family)) {
       for (const site of importSites(member, sources.get(member)!)) {
@@ -114,6 +143,27 @@ function selfImportViolations(sources: Sources): string[] {
     }
   }
   return violations
+}
+
+/**
+ * Nhóm `backup` của guard này và tập tệp các guard đọc mã sao lưu dùng (`backupServiceFiles()`:
+ * barrel + đích re-export, mọi `backup*.ts` khác phải là anh em có tên) — chênh nhau ở đâu.
+ * Một tệp chỉ nằm ở một bên là tệp mà nửa kia của các guard không hỏi tới.
+ */
+function backupFamilyDrift(sources: Sources, family: Family): string[] {
+  const guarded = backupServiceFiles()
+  const members = [family.barrel, ...familyMembers(sources, family)]
+  return [
+    ...members
+      .filter((file) => !guarded.includes(file))
+      .map(
+        (file) =>
+          `${file} thuộc nhóm backup nhưng vắng khỏi backupServiceFiles() — guard đọc mã sao lưu không đọc nó`,
+      ),
+    ...guarded
+      .filter((file) => !members.includes(file))
+      .map((file) => `${file} có trong backupServiceFiles() nhưng vắng khỏi nhóm backup`),
+  ]
 }
 
 // ─── Luật 2: lõi của đường tải lên chỉ nhóm `chunked-upload*` import ─────────
@@ -206,6 +256,11 @@ function claimRegistryCheck(sources: Sources): { violations: string[]; importers
 const stateViolations = (sources: Sources) => stateOwnerCheck(sources, FAMILIES).violations
 
 // ─── Luật 5: API công khai của barrel comments.ts giữ đúng như trước khi tách ─
+//
+// Barrel `backup.ts`: API (23 giá trị + 7 kiểu — 21 + 7 lúc tách `4c1ad54`, `09e8dcd` thêm
+// `BackupRestoreStateUnknownError`, `refuseIfRestoreInProgress`) ghim ở
+// `tests/backup-service-api.test.ts` bằng `Object.keys` + TS checker. Không import test đó
+// ở đây (nó `mock.module` CSDL/khoá — rò sang tiến trình này, và test của nó chạy lần hai).
 
 const COMMENTS_BARREL = `${SERVICES}/comments.ts`
 
@@ -324,8 +379,11 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       ],
       // Cùng danh sách mà các guard đọc mã dịch vụ bình luận dùng — một nguồn.
       comments: EXPECTED_COMMENT_SERVICE_FILES.filter((file) => file !== 'comments.ts'),
+      // Cùng danh sách mà các guard đọc mã sao lưu dùng (`_backup-service-family.ts`).
+      backup: EXPECTED_BACKUP_FAMILY.filter((file) => file !== 'backup.ts'),
     }
     assert.equal(expected.comments!.length, 7)
+    assert.equal(expected.backup!.length, 6)
     for (const [name, family] of Object.entries(FAMILIES)) {
       const members = familyMembers(REPO, family)
       for (const file of expected[name]!) {
@@ -350,6 +408,19 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
         scanned.includes(member),
         `${member} thuộc nhóm comments nhưng vắng khỏi tập quét của guard audit`,
       )
+  })
+
+  it('nhóm backup và các guard đọc mã sao lưu là cùng một tập tệp; anh em không thuộc nhóm', () => {
+    // Một mẫu dựng từ một danh sách anh em, không hai bản chép.
+    assert.equal(FAMILIES.backup!.prefix, BACKUP_PART)
+    assert.equal(FAMILIES.backup!.barrel, BACKUP_BARREL)
+    for (const file of EXPECTED_BACKUP_FAMILY.filter((name) => name !== 'backup.ts'))
+      assert.ok(BACKUP_PART.test(file), `${file} phải là tệp con của nhóm backup`)
+    assert.ok(BACKUP_PART.test('backup-extra.ts'), 'tệp con mới (chưa xuất lại) vẫn thuộc nhóm')
+    assert.ok(BACKUP_SIBLINGS.length >= 11, `chỉ thấy ${BACKUP_SIBLINGS.length} anh em`)
+    for (const name of [...BACKUP_SIBLINGS, 'backup.ts', 'backup-.ts', 'backup-x.js'])
+      assert.ok(!BACKUP_PART.test(name), `${name} không phải tệp con của nhóm backup`)
+    assert.deepEqual(backupFamilyDrift(REPO, FAMILIES.backup!), [])
   })
 
   it('luật 1: không tệp con nào import barrel/cửa vào của chính nhóm mình', () => {
@@ -380,6 +451,11 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
       'server/services/chunked-upload-core.ts#NOT_FOUND',
       'server/services/media-portal-constants.ts#MEDIA_VIEW_DEDUPE_RULE',
       'server/services/comments-posting.ts#COMMENT_READER_RULE',
+      // Trạng thái chạy của sao lưu (`getBackupStatus` trả bản sao) và sổ tệp đang khôi phục
+      // (chỉ `holdRestoreTarget` ghi): mỗi thứ một chủ, không `export`. Tên khoá
+      // (`LOCK_RUN`/`LOCK_RESTORE`) là `const` chuỗi — không ghi được, nên không phải trạng thái.
+      'server/services/backup-run.ts#currentBackupStatus',
+      'server/services/backup-locks.ts#activeRestoreTargets',
     ])
       assert.ok(inventory.includes(state), `${state} vắng khỏi kho ${JSON.stringify(inventory)}`)
     // …và phép giải tên thật sự đi tới trạng thái, cả thẳng lẫn qua barrel. Nhóm
@@ -388,6 +464,7 @@ describe('ranh giới nhóm service đã tách — mã thật', () => {
     for (const edge of [
       'server/services/chunked-upload-session.ts ← server/services/chunked-upload-core.ts#NOT_FOUND',
       'server/api/admin/media-portal/[id]/process.post.ts ← server/services/video-renditions.ts#RENDITIONS',
+      'server/services/backup-sweep.ts ← server/services/backup-names.ts#STALE_PARTIAL',
     ])
       assert.ok(stateImports.includes(edge), `${edge} vắng khỏi ${JSON.stringify(stateImports)}`)
   })
@@ -901,5 +978,181 @@ describe('ranh giới nhóm service đã tách — bằng chứng đột biến'
         label,
       )
     }
+  })
+
+  // ─── Nhóm backup ───────────────────────────────────────────────────────────
+
+  it('luật 1 đỏ khi tệp con backup-* nạp barrel ./backup, ở mọi dạng import — kể cả tệp con barrel chưa xuất lại', () => {
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        'import',
+        inject('server/services/backup-sweep.ts', "import { runBackup as _r } from './backup'"),
+        /^\[backup\] server\/services\/backup-sweep\.ts:1 \(import\) import ngược server\/services\/backup\.ts$/,
+      ],
+      [
+        'import type, có đuôi .ts',
+        inject('server/services/backup-locks.ts', "import type { RunStatus as _S } from './backup.ts'"),
+        /^\[backup\] server\/services\/backup-locks\.ts:1 \(import\)/,
+      ],
+      [
+        'export … from',
+        inject('server/services/backup-catalog.ts', "export { backupsDir as _dir } from './backup'"),
+        /^\[backup\] server\/services\/backup-catalog\.ts:1 \(export … from\)/,
+      ],
+      [
+        'import() động trong hàm',
+        append(
+          'server/services/backup-rotation.ts',
+          "export async function _lazy() { return (await import('./backup')).runBackup }",
+        ),
+        /^\[backup\] server\/services\/backup-rotation\.ts:\d+ \(import\(\)\)/,
+      ],
+      [
+        'typeof import() qua alias #server',
+        append(
+          'server/services/backup-run.ts',
+          "export type _Api = typeof import('#server/services/backup')",
+        ),
+        /^\[backup\] server\/services\/backup-run\.ts:\d+ \(import\(\) type\)/,
+      ],
+      [
+        'tệp con mới mà barrel chưa xuất lại (thuộc nhóm nhờ mẫu tệp, không nhờ re-export)',
+        {
+          'server/services/backup-extra.ts':
+            "import { runBackup } from './backup'\nexport const _run = runBackup\n",
+        },
+        /^\[backup\] server\/services\/backup-extra\.ts:1 \(import\) import ngược server\/services\/backup\.ts$/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const violations = selfImportViolations(withOverrides(override))
+      assert.equal(violations.length, 1, `${label}: ${JSON.stringify(violations)}`)
+      assert.match(violations[0]!, expected, label)
+    }
+  })
+
+  it('luật 1 KHÔNG nhầm `./backup-names` với barrel `./backup`, và anh em import barrel thì không đỏ', () => {
+    assert.deepEqual(
+      selfImportViolations(
+        withOverrides({
+          ...inject(
+            'server/services/backup-catalog.ts',
+            "import { timestampStamp as _t } from './backup-names'",
+          ),
+          // Anh em (không phải tệp con của lần tách): import barrel là đúng chủ đích.
+          ...inject(
+            'server/services/backup-scheduler-busy.ts',
+            "import { runBackup as _r } from './backup'",
+          ),
+        }),
+      ),
+      [],
+    )
+  })
+
+  it('bỏ phần loại anh em khỏi mẫu nhóm backup thì chính mã thật đỏ — ranh giới anh em là phần chịu lực', () => {
+    const naive: Family = { barrel: BACKUP_BARREL, prefix: /^backup-[\w-]+\.ts$/ }
+    const flagged = selfImportViolations(REPO, { ...FAMILIES, backup: naive })
+      .map((violation) => /^\[backup\] (\S+):/.exec(violation)?.[1])
+      .sort()
+    assert.deepEqual(flagged, [
+      'server/services/backup-restore-recovery.ts',
+      'server/services/backup-restore.ts',
+      'server/services/backup-scheduler.ts',
+    ])
+    // …và nhóm lệch khỏi tập tệp các guard đọc mã sao lưu, đúng một dòng mỗi anh em.
+    const drift = backupFamilyDrift(REPO, naive)
+    assert.deepEqual(
+      drift.map((line) => line.split(' ')[0]).sort(),
+      BACKUP_SIBLINGS.map((name) => `${SERVICES}/${name}`).sort(),
+    )
+  })
+
+  it('nhóm backup lệch backupServiceFiles() thì đỏ: tệp con mới chưa được barrel xuất lại', () => {
+    const drift = backupFamilyDrift(
+      withOverrides({ 'server/services/backup-extra.ts': 'export const _extra = 1\n' }),
+      FAMILIES.backup!,
+    )
+    assert.equal(drift.length, 1, JSON.stringify(drift))
+    assert.match(
+      drift[0]!,
+      /^server\/services\/backup-extra\.ts thuộc nhóm backup nhưng vắng khỏi backupServiceFiles\(\)/,
+    )
+  })
+
+  it('luật 4 đỏ khi sổ tệp đang khôi phục hay trạng thái chạy bị chép sang tệp con thứ hai', () => {
+    const cases: Array<[string, Record<string, string>, RegExp]> = [
+      [
+        'sổ tệp đang khôi phục chép sang xoay vòng',
+        inject(
+          'server/services/backup-rotation.ts',
+          'const activeRestoreTargets = new Map<string, number>()',
+        ),
+        /^\[backup\] 'activeRestoreTargets' khai ở 2 tệp \(server\/services\/backup-locks\.ts:\d+, server\/services\/backup-rotation\.ts:1\)/,
+      ],
+      [
+        'trạng thái chạy chép sang lượt dọn',
+        inject('server/services/backup-sweep.ts', 'let currentBackupStatus: unknown = null'),
+        /^\[backup\] 'currentBackupStatus' khai ở 2 tệp \(server\/services\/backup-run\.ts:\d+, server\/services\/backup-sweep\.ts:1\)/,
+      ],
+    ]
+    for (const [label, override, expected] of cases) {
+      const violations = stateViolations(withOverrides(override))
+      assert.equal(violations.length, 1, `${label}: ${JSON.stringify(violations)}`)
+      assert.match(violations[0]!, expected, label)
+    }
+  })
+
+  it('luật 4 đỏ khi tệp con khác ghi vào sổ tệp đang khôi phục (mở export rồi `.clear()`)', () => {
+    const violations = stateViolations(
+      withOverrides({
+        ...replaceIn(
+          'server/services/backup-locks.ts',
+          'const activeRestoreTargets = new Map',
+          'export const activeRestoreTargets = new Map',
+        ),
+        'server/services/backup-rotation.ts': `import { activeRestoreTargets } from './backup-locks'\n${REPO.get('server/services/backup-rotation.ts')}\nexport function _forgetAll() { activeRestoreTargets.clear() }\n`,
+      }),
+    )
+    assert.equal(violations.length, 1, JSON.stringify(violations))
+    assert.match(
+      violations[0]!,
+      /^\[backup\] server\/services\/backup-rotation\.ts:\d+ \(\.clear\(\)\) ghi vào 'activeRestoreTargets' của server\/services\/backup-locks\.ts/,
+    )
+  })
+
+  it('luật 4 đỏ khi endpoint ghi trạng thái chạy nhập qua barrel backup.ts', () => {
+    const endpoint = 'server/api/admin/backup/status.get.ts'
+    const violations = stateViolations(
+      withOverrides({
+        ...replaceIn(
+          'server/services/backup-run.ts',
+          'let currentBackupStatus: RunStatus',
+          'export let currentBackupStatus: RunStatus',
+        ),
+        ...append(BACKUP_BARREL, "export { currentBackupStatus } from './backup-run'"),
+        [endpoint]: `import { currentBackupStatus } from '../../../services/backup'\n${REPO.get(endpoint)}\nexport function _reset() { currentBackupStatus.running = false }\n`,
+      }),
+    )
+    assert.equal(violations.length, 1, JSON.stringify(violations))
+    assert.match(
+      violations[0]!,
+      /^\[backup\] server\/api\/admin\/backup\/status\.get\.ts:\d+ \(gán\) ghi vào 'currentBackupStatus' của server\/services\/backup-run\.ts/,
+    )
+  })
+
+  it('luật 4 đỏ khi anh em ngoài nhóm (backup-restore.ts) đổi BACKUP_TRIGGERS nhập qua barrel', () => {
+    // Anh em không thuộc nhóm, nhưng lượt ghi được dò trên MỌI tệp chạy thật.
+    const file = 'server/services/backup-restore.ts'
+    const violations = stateViolations(
+      withOverrides({
+        [file]: `import { BACKUP_TRIGGERS as _triggers } from './backup'\n${REPO.get(file)}\nexport function _extend() { (_triggers as unknown as string[]).push('pre-x') }\n`,
+      }),
+    )
+    assert.equal(violations.length, 1, JSON.stringify(violations))
+    assert.match(
+      violations[0]!,
+      /^\[backup\] server\/services\/backup-restore\.ts:\d+ \(\.push\(\)\) ghi vào 'BACKUP_TRIGGERS' của server\/services\/backup-names\.ts/,
+    )
   })
 })
