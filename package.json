@@ -27,7 +27,8 @@
     "db:check": "drizzle-kit check",
     "db:sanitize-html": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/sanitize-stored-html.ts",
     "db:decode-excerpts": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/decode-stored-excerpts.ts",
-    "db:drift": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/check-schema-drift.ts"
+    "db:drift": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/check-schema-drift.ts",
+    "docs:facts": "node --experimental-strip-types --import ./scripts/ts-resolver.mjs scripts/docs-facts.ts"
   },
   "engines": {
     "node": "^22.19.0 || ^24.11.0 || >=26.0.0"
