@@ -169,28 +169,28 @@ const cancelBoost = async () => {
     aria-labelledby="stats-modal-title"
     @click.self="emit('close')"
   >
-    <div class="w-full max-w-2xl rounded-xl border border-[#e2ece3] bg-white shadow-lg">
+    <div class="w-full max-w-2xl rounded-xl border border-line bg-white shadow-lg">
       <div class="flex items-start justify-between gap-3 border-b border-[#eef2ee] px-5 py-4">
         <div class="min-w-0">
-          <h2 id="stats-modal-title" class="m-0 text-[1.05rem] font-extrabold text-[#122815]">Thống kê lượt xem</h2>
-          <p class="m-0 mt-1 line-clamp-2 text-[0.82rem] text-[#667768]">{{ props.article.title }}</p>
+          <h2 id="stats-modal-title" class="m-0 text-[1.05rem] font-extrabold text-brand-950">Thống kê lượt xem</h2>
+          <p class="m-0 mt-1 line-clamp-2 text-[0.82rem] text-ink-muted">{{ props.article.title }}</p>
         </div>
         <button
           type="button"
-          class="shrink-0 rounded-lg border-0 bg-none p-1.5 text-[#667768] hover:text-[#122815] cursor-pointer"
+          class="shrink-0 rounded-lg border-0 bg-none p-1.5 text-ink-muted hover:text-brand-950 cursor-pointer"
           aria-label="Đóng"
           @click="emit('close')"
         ><i class="fa-solid fa-xmark" aria-hidden="true"></i></button>
       </div>
 
       <div class="px-5 py-4">
-        <div v-if="statsLoading" class="py-10 text-center text-[0.85rem] text-[#667768]">Đang tải số liệu lượt xem...</div>
+        <div v-if="statsLoading" class="py-10 text-center text-[0.85rem] text-ink-muted">Đang tải số liệu lượt xem...</div>
 
         <div v-else-if="statsError" role="alert" class="rounded-lg border border-dashed border-[#e2b3b3] bg-[#fdf6f6] px-4 py-6 text-center">
           <p class="m-0 text-[0.85rem] font-semibold text-[#b01f1b]">{{ statsError }}</p>
           <button
             type="button"
-            class="mt-3 rounded-lg border border-[#2c6e33] bg-white px-3 py-2 text-sm font-bold text-[#2c6e33] cursor-pointer hover:bg-[#f0f7f1]"
+            class="mt-3 rounded-lg border border-brand-700 bg-white px-3 py-2 text-sm font-bold text-brand-700 cursor-pointer hover:bg-surface-tint"
             @click="loadStats"
           >Thử lại</button>
         </div>
@@ -202,13 +202,13 @@ const cancelBoost = async () => {
             cộng vào.
           -->
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-            <div class="rounded-lg border border-[#e2ece3] bg-[#f8faf8] px-4 py-3">
-              <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-[#667768]">Tổng hiển thị</p>
-              <p class="m-0 mt-1 text-[1.35rem] font-extrabold text-[#122815]">{{ formatViews(statsData.totalDisplayed) }}</p>
+            <div class="rounded-lg border border-line bg-[#f8faf8] px-4 py-3">
+              <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-ink-muted">Tổng hiển thị</p>
+              <p class="m-0 mt-1 text-[1.35rem] font-extrabold text-brand-950">{{ formatViews(statsData.totalDisplayed) }}</p>
             </div>
-            <div class="rounded-lg border border-[#cfe4d1] bg-[#f0f7f1] px-4 py-3">
-              <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-[#2c6e33]">Lượt xem thật</p>
-              <p class="m-0 mt-1 text-[1.35rem] font-extrabold text-[#1e4620]">{{ formatViews(statsData.totalReal) }}</p>
+            <div class="rounded-lg border border-[#cfe4d1] bg-surface-tint px-4 py-3">
+              <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-brand-700">Lượt xem thật</p>
+              <p class="m-0 mt-1 text-[1.35rem] font-extrabold text-brand-900">{{ formatViews(statsData.totalReal) }}</p>
             </div>
             <div class="rounded-lg border border-[#f0dcae] bg-[#fff8e1] px-4 py-3">
               <p class="m-0 text-[0.72rem] font-bold uppercase tracking-wide text-[#b78103]">Lượt xem ảo</p>
@@ -225,7 +225,7 @@ const cancelBoost = async () => {
               </p>
               <button
                 type="button"
-                class="rounded-lg border border-[#d12420] bg-white px-3 py-1.5 text-[0.8rem] font-bold text-[#d12420] cursor-pointer hover:bg-[#fdf6f6]"
+                class="rounded-lg border border-danger bg-white px-3 py-1.5 text-[0.8rem] font-bold text-danger cursor-pointer hover:bg-[#fdf6f6]"
                 @click="cancelBoost"
               >Huỷ lượt tăng</button>
             </div>
@@ -237,67 +237,67 @@ const cancelBoost = async () => {
 
           <!-- Nguồn truy cập (chỉ lượt xem thật) -->
           <div>
-            <h3 class="m-0 mb-2 text-[0.85rem] font-extrabold text-[#122815]">
-              Nguồn truy cập <span class="font-medium text-[#667768]">— {{ statsData.days }} ngày gần nhất, chỉ tính lượt xem thật</span>
+            <h3 class="m-0 mb-2 text-[0.85rem] font-extrabold text-brand-950">
+              Nguồn truy cập <span class="font-medium text-ink-muted">— {{ statsData.days }} ngày gần nhất, chỉ tính lượt xem thật</span>
             </h3>
             <table v-if="statsData.bySource.length" class="w-full border-collapse text-left text-[0.82rem]">
               <thead>
                 <tr>
-                  <th class="border-b border-[#e2ece3] bg-[#f8faf8] px-3 py-2 font-bold text-[#667768]">Nguồn</th>
-                  <th class="border-b border-[#e2ece3] bg-[#f8faf8] px-3 py-2 text-right font-bold text-[#667768]">Lượt xem</th>
+                  <th class="border-b border-line bg-[#f8faf8] px-3 py-2 font-bold text-ink-muted">Nguồn</th>
+                  <th class="border-b border-line bg-[#f8faf8] px-3 py-2 text-right font-bold text-ink-muted">Lượt xem</th>
                 </tr>
               </thead>
               <tbody>
                 <tr v-for="row in statsData.bySource" :key="row.sourceCategory">
                   <td class="border-b border-[#eef2ee] px-3 py-2 text-[#445546]">{{ sourceLabels[row.sourceCategory] || row.sourceCategory }}</td>
-                  <td class="border-b border-[#eef2ee] px-3 py-2 text-right font-bold text-[#122815]">{{ formatViews(row.views) }}</td>
+                  <td class="border-b border-[#eef2ee] px-3 py-2 text-right font-bold text-brand-950">{{ formatViews(row.views) }}</td>
                 </tr>
               </tbody>
             </table>
-            <p v-else class="m-0 rounded-lg border border-dashed border-[#e2ece3] px-3 py-4 text-center text-[0.82rem] text-[#8a9f8c]">
+            <p v-else class="m-0 rounded-lg border border-dashed border-line px-3 py-4 text-center text-[0.82rem] text-[#8a9f8c]">
               Chưa ghi nhận lượt xem thật nào trong khoảng thời gian này.
             </p>
           </div>
 
           <!-- Diễn biến theo ngày -->
           <div>
-            <h3 class="m-0 mb-2 text-[0.85rem] font-extrabold text-[#122815]">Diễn biến theo ngày</h3>
+            <h3 class="m-0 mb-2 text-[0.85rem] font-extrabold text-brand-950">Diễn biến theo ngày</h3>
             <ul v-if="statsData.daily.length" class="m-0 flex list-none flex-col gap-1.5 p-0">
               <li v-for="row in statsData.daily" :key="row.day" class="flex items-center gap-3">
-                <span class="w-20 shrink-0 text-[0.78rem] text-[#667768]">{{ new Date(row.day).toLocaleDateString('vi-VN') }}</span>
+                <span class="w-20 shrink-0 text-[0.78rem] text-ink-muted">{{ new Date(row.day).toLocaleDateString('vi-VN') }}</span>
                 <span class="h-2 flex-1 overflow-hidden rounded-full bg-[#eef2ee]">
-                  <span class="block h-full rounded-full bg-[#2c6e33]" :style="{ width: dailyPeak ? `${(row.total / dailyPeak) * 100}%` : '0%' }"></span>
+                  <span class="block h-full rounded-full bg-brand-700" :style="{ width: dailyPeak ? `${(row.total / dailyPeak) * 100}%` : '0%' }"></span>
                 </span>
                 <span class="w-32 shrink-0 text-right text-[0.78rem] text-[#445546]">
-                  <strong class="text-[#122815]">{{ formatViews(row.total) }}</strong>
+                  <strong class="text-brand-950">{{ formatViews(row.total) }}</strong>
                   <span class="text-[#8a9f8c]"> ({{ formatViews(row.real) }} thật / {{ formatViews(row.fabricated) }} ảo)</span>
                 </span>
               </li>
             </ul>
-            <p v-else class="m-0 rounded-lg border border-dashed border-[#e2ece3] px-3 py-4 text-center text-[0.82rem] text-[#8a9f8c]">
+            <p v-else class="m-0 rounded-lg border border-dashed border-line px-3 py-4 text-center text-[0.82rem] text-[#8a9f8c]">
               Bài viết chưa có lượt xem nào được ghi nhận.
             </p>
           </div>
 
           <!-- Tăng lượt xem ảo -->
-          <div class="rounded-lg border border-[#e2ece3] bg-[#f8faf8] px-4 py-4">
-            <h3 class="m-0 text-[0.85rem] font-extrabold text-[#122815]">Tăng lượt xem ảo</h3>
-            <p class="m-0 mt-1 text-[0.78rem] text-[#667768]">
+          <div class="rounded-lg border border-line bg-[#f8faf8] px-4 py-4">
+            <h3 class="m-0 text-[0.85rem] font-extrabold text-brand-950">Tăng lượt xem ảo</h3>
+            <p class="m-0 mt-1 text-[0.78rem] text-ink-muted">
               Lượt xem ảo được lưu tách khỏi lượt xem thật và mọi thao tác đều ghi vào nhật ký hoạt động kèm tên tài khoản thực hiện.
             </p>
             <div class="mt-3 flex flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-end">
               <label class="flex flex-col gap-1">
-                <span class="text-[0.75rem] font-bold text-[#667768]">Chế độ</span>
+                <span class="text-[0.75rem] font-bold text-ink-muted">Chế độ</span>
                 <select
                   v-model="boostMode"
-                  class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+                  class="rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
                 >
                   <option value="instant">Cộng ngay</option>
                   <option value="gradual">Cộng dần theo thời gian</option>
                 </select>
               </label>
               <label class="flex flex-col gap-1">
-                <span class="text-[0.75rem] font-bold text-[#667768]">Số lượt xem</span>
+                <span class="text-[0.75rem] font-bold text-ink-muted">Số lượt xem</span>
                 <input
                   v-model.number="boostAmount"
                   type="number"
@@ -305,23 +305,23 @@ const cancelBoost = async () => {
                   max="1000000"
                   step="1"
                   placeholder="Ví dụ: 500"
-                  class="w-40 rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+                  class="w-40 rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
                 />
               </label>
               <label v-if="boostMode === 'gradual'" class="flex flex-col gap-1">
-                <span class="text-[0.75rem] font-bold text-[#667768]">Thời lượng (phút)</span>
+                <span class="text-[0.75rem] font-bold text-ink-muted">Thời lượng (phút)</span>
                 <input
                   v-model.number="boostMinutes"
                   type="number"
                   min="1"
                   max="10080"
                   step="1"
-                  class="w-40 rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15"
+                  class="w-40 rounded-lg border border-line-strong px-3 py-2 text-sm outline-none focus:border-brand-700 focus:ring-2 focus:ring-brand-700/15"
                 />
               </label>
               <button
                 type="button"
-                class="inline-flex items-center gap-2 rounded-lg border-0 bg-[#2c6e33] px-4 py-2.5 font-bold text-white transition-colors hover:bg-[#1e4620] disabled:cursor-not-allowed disabled:opacity-50"
+                class="inline-flex items-center gap-2 rounded-lg border-0 bg-brand-700 px-4 py-2.5 font-bold text-white transition-colors hover:bg-brand-900 disabled:cursor-not-allowed disabled:opacity-50"
                 :disabled="boostSubmitting"
                 @click="submitBoost"
               >

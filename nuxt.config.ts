@@ -1,7 +1,8 @@
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { resolveAnalyticsRetentionConfig } from './server/utils/analytics-config'
-import { IMAGE_PROXY_DOMAINS, cspImgSrcDirective } from './shared/media-hosts'
+import { CONTENT_SECURITY_POLICY, CONTENT_SECURITY_POLICY_REPORT_ONLY } from './shared/csp-policy'
+import { IMAGE_PROXY_DOMAINS } from './shared/media-hosts'
 
 const parseAnalyticsInteger = (name: string, fallback: number, min: number, max: number) => {
   const rawValue = process.env[name]
@@ -278,6 +279,13 @@ export default defineNuxtConfig({
      * domain ngoài hai nhánh này thì **phải** cập nhật CSP, đó là ràng buộc cố
      * ý: CSP tồn tại để chặn domain lạ. `'unsafe-inline'` cho script/style vì
      * Nuxt hydration + Tailwind dùng inline; `'unsafe-eval'` không có.
+     *
+     * Hai chuỗi CSP dựng ở `shared/csp-policy.ts`: header thực thi (không đổi) và
+     * header Report-Only mang chính sách đích không `'unsafe-inline'` cho script
+     * (wave3 D-CSP giai đoạn 1 — trình duyệt chỉ báo về `/api/csp-report`, không
+     * chặn). Header đặt ở đây là tĩnh theo bản build và được Nitro gắn lại cho TỪNG
+     * request (kể cả bản phát lại từ bộ nhớ đệm `swr`), nên không bao giờ lệch hay
+     * nhân đôi.
      */
     '/**': {
       headers: {
@@ -304,21 +312,9 @@ export default defineNuxtConfig({
         // YouTube iframe. Đợi browser support rộng + R2 gửi CORP rồi mới bật.
         'Cross-Origin-Opener-Policy': 'same-origin',
         'Cross-Origin-Resource-Policy': 'same-origin',
-        'Content-Security-Policy': [
-          "default-src 'self'",
-          "script-src 'self' 'unsafe-inline' https://static.cloudflareinsights.com https://cdnjs.cloudflare.com https://www.youtube.com https://www.youtube-nocookie.com https://www.googletagmanager.com https://connect.facebook.net https://analytics.tiktok.com https://www.clarity.ms https://*.gov.vn",
-          "style-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
-          // Host ảnh ở `shared/media-hosts.ts` — lượt đổi domain R2 từ chối host ngoài danh sách này.
-          cspImgSrcDirective(),
-          "media-src 'self' blob: https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
-          "font-src 'self' https://cdnjs.cloudflare.com https://*.delify.vn https://*.conduonghuongthien.vn https://*.gov.vn",
-          "frame-src https://www.youtube-nocookie.com https://*.delify.vn https://*.conduonghuongthien.vn https://www.googletagmanager.com https://*.gov.vn",
-          "connect-src 'self' https://static.cloudflareinsights.com https://*.delify.vn https://*.conduonghuongthien.vn https://www.google-analytics.com https://*.facebook.com https://analytics.tiktok.com https://www.clarity.ms https://*.gov.vn",
-          "frame-ancestors 'self'",
-          "base-uri 'self'",
-          "form-action 'self'",
-          "object-src 'none'",
-        ].join('; '),
+        // Host ảnh ở `shared/media-hosts.ts` — lượt đổi domain R2 từ chối host ngoài danh sách đó.
+        'Content-Security-Policy': CONTENT_SECURITY_POLICY,
+        'Content-Security-Policy-Report-Only': CONTENT_SECURITY_POLICY_REPORT_ONLY,
       },
     },
   },

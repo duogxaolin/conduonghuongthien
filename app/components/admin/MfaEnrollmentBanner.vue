@@ -40,7 +40,7 @@ const onProfile = computed(() => isMfaEnrollmentPage(route.path))
     <NuxtLink
       v-if="!onProfile"
       :to="{ path: '/admin/profile', hash: '#security' }"
-      class="font-bold underline focus:outline-none focus:ring-2 focus:ring-[#4A6741] rounded"
+      class="font-bold underline focus:outline-none focus:ring-2 focus:ring-brand-600 rounded"
     >Bật ngay</NuxtLink>
   </div>
 </template>

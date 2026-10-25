@@ -56,10 +56,16 @@ function expandIpv6(address: string): number[] | null {
   return groups.length === 8 && groups.every(group => Number.isInteger(group) && group >= 0 && group <= 0xffff) ? groups : null
 }
 
-export function ipBucket(raw: string): string {
-  const fallback = raw.trim()
+type ParsedAddress =
+  | { kind: 'ipv4', address: string }
+  | { kind: 'ipv6', groups: number[] }
+  | { kind: 'loopback6' }
+  | { kind: 'unparsed', text: string }
+
+function parseAddress(raw: string): ParsedAddress {
+  const fallback: ParsedAddress = { kind: 'unparsed', text: raw.trim() }
   const address = bareAddress(raw)
-  if (isIPv4(address)) return address
+  if (isIPv4(address)) return { kind: 'ipv4', address }
   if (!isIPv6(address)) return fallback
 
   const groups = expandIpv6(address)
@@ -68,10 +74,38 @@ export function ipBucket(raw: string): string {
   const zeroPrefix = groups.slice(0, 5).every(group => group === 0)
   // ::ffff:a.b.c.d — an IPv4 host reached over a dual-stack socket.
   if (zeroPrefix && groups[5] === 0xffff) {
-    return [groups[6]! >> 8, groups[6]! & 0xff, groups[7]! >> 8, groups[7]! & 0xff].join('.')
+    return { kind: 'ipv4', address: [groups[6]! >> 8, groups[6]! & 0xff, groups[7]! >> 8, groups[7]! & 0xff].join('.') }
   }
-  // ::1 is one host; its /64 would be the "all zeros" prefix shared with `::`.
-  if (zeroPrefix && groups[5] === 0 && groups[6] === 0 && groups[7] === 1) return '::1'
+  // ::1 is one host; its prefix would be the "all zeros" prefix shared with `::`.
+  if (zeroPrefix && groups[5] === 0 && groups[6] === 0 && groups[7] === 1) return { kind: 'loopback6' }
+  return { kind: 'ipv6', groups }
+}
 
-  return `${groups.slice(0, 4).map(group => group.toString(16)).join(':')}::/64`
+export function ipBucket(raw: string): string {
+  const parsed = parseAddress(raw)
+  if (parsed.kind === 'ipv4') return parsed.address
+  if (parsed.kind === 'loopback6') return '::1'
+  if (parsed.kind === 'unparsed') return parsed.text
+  return `${parsed.groups.slice(0, 4).map(group => group.toString(16)).join(':')}::/64`
+}
+
+/**
+ * A coarser unit than `ipBucket`: the NETWORK a source sits in — IPv4 /24, IPv6 /48.
+ * For a budget that must not multiply with addresses one party controls: a /48 is what
+ * one site is routinely delegated (65 536 /64s), and a /24 is the smallest IPv4 block
+ * one party usually holds. Too coarse for a per-person limit (a carrier NAT puts many
+ * people in one /24) — use it only where sharing the budget is acceptable.
+ *
+ *   203.0.113.9                  → 203.0.113.0/24
+ *   2001:db8:85a3:8d3::1         → 2001:db8:85a3::/48
+ *   ::ffff:203.0.113.9           → 203.0.113.0/24
+ *   ::1                          → ::1
+ *   anything unparseable         → the trimmed input, unchanged
+ */
+export function ipNetworkBucket(raw: string): string {
+  const parsed = parseAddress(raw)
+  if (parsed.kind === 'ipv4') return `${parsed.address.split('.').slice(0, 3).join('.')}.0/24`
+  if (parsed.kind === 'loopback6') return '::1'
+  if (parsed.kind === 'unparsed') return parsed.text
+  return `${parsed.groups.slice(0, 3).map(group => group.toString(16)).join(':')}::/48`
 }
