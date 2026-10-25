@@ -12,7 +12,6 @@ import test from 'node:test'
  */
 
 const {
-  CSP_COARSE_GROUP,
   CSP_OTHER_PAGES_GROUP,
   CSP_PAGE_SECTIONS,
   cspAggregateKey,
@@ -22,7 +21,7 @@ const {
 } = await import('../server/utils/csp-report')
 const {
   CSP_REPORT_COARSE_KEYS,
-  CSP_REPORT_COARSE_KNOWN_MAX,
+  CSP_REPORT_FIRSTS_WHILE_FULL,
   CSP_REPORT_KNOWN_KEYS_MAX,
   CSP_REPORT_MAX_KEYS,
   CSP_REPORT_NEW_KEYS_PER_NETWORK,
@@ -167,7 +166,7 @@ test('the stated limits', () => {
   assert.equal(CSP_REPORT_MAX_KEYS, 500)
   assert.equal(CSP_REPORT_KNOWN_KEYS_MAX, 400)
   assert.equal(CSP_REPORT_COARSE_KEYS, 100)
-  assert.equal(CSP_REPORT_COARSE_KNOWN_MAX, 80)
+  assert.equal(CSP_REPORT_FIRSTS_WHILE_FULL, 100)
   assert.equal(CSP_REPORT_SEEN_KEYS, 5000)
   assert.equal(CSP_REPORT_NEW_KEYS_PER_NETWORK, 20)
   assert.equal(CSP_REPORT_SOURCES_PER_KEY, 50)
@@ -200,8 +199,7 @@ test('W7: a known key across 3 windows logs first exactly once, then only repeat
 })
 
 test('W7: a quiet window writes nothing for a known key; an evicted key just logs first again', () => {
-  // A logged key takes two places in the seen set (its own and its coarse key), so 4 = two keys.
-  const { instance, report, kinds } = aggregator({ seenKeys: 4 })
+  const { instance, report, kinds } = aggregator({ seenKeys: 2 })
   const [a, b, c] = ['a.example', 'b.example', 'c.example'].map(host => hostEntry(host))
   report(a!)
   report(b!)
@@ -231,12 +229,12 @@ test('W6: each network gets 20 new keys per window; over budget is counted, neve
 })
 
 test('W6: known keys may fill only 400 of the 500 main slots — the rest is kept for never-seen keys', () => {
-  const { instance, emitted, report, kinds } = aggregator({ maxKeys: 5, knownKeysMax: 3, coarseKeys: 2, coarseKnownMax: 1 })
+  const { instance, emitted, report, kinds } = aggregator({ maxKeys: 5, knownKeysMax: 3, coarseKeys: 2 })
   const junk = Array.from({ length: 5 }, (_, index) => hostEntry(`junk${index}.example`))
   junk.forEach((entry, index) => report(entry, `10.${index}.0.1`, `10.${index}.0.0/24`))
   assert.equal(kinds().length, 5, 'window 1: five new keys fill the map')
   instance.flush()
-  // Window 2: the same five, now known — only 3 fit; one more fits the coarse map; the last overflows.
+  // Window 2: the same five, now known — only 3 fit in the main map; the other two are counted under coarse keys.
   junk.forEach((entry, index) => report(entry, `10.${index}.0.1`, `10.${index}.0.0/24`))
   const fresh = hostEntry('fresh.example')
   assert.equal(report(fresh, '10.99.0.1', '10.99.0.0/24'), 'new', 'a never-seen key still finds a main slot')
@@ -247,20 +245,144 @@ test('W6: known keys may fill only 400 of the 500 main slots — the rest is kep
   instance.stop()
 })
 
-test('W6: when the main map is full, a newly blocked host is still logged — as a coarse key', () => {
-  const { instance, emitted, report, dropped } = aggregator({ maxKeys: 3, knownKeysMax: 3, coarseKeys: 2, coarseKnownMax: 2 })
+test('W9: with the main map full, a never-seen key still gets a first line with its FULL identity; only its count goes to the coarse key', () => {
+  const { instance, emitted, report, dropped } = aggregator({ maxKeys: 3, knownKeysMax: 3, coarseKeys: 2, firstsWhileFull: 2 })
   ;['a', 'b', 'c'].forEach((host, index) => report(hostEntry(`${host}.example`), `10.${index}.0.1`, `10.${index}.0.0/24`))
-  assert.equal(report(hostEntry('new-host.example', '/media/x'), '10.50.0.1', '10.50.0.0/24'), 'new')
-  const coarse = emitted.at(-1)!.fields
-  assert.deepEqual([coarse.kind, coarse.blocked, coarse.pathGroup, coarse.path], ['first', 'new-host.example', CSP_COARSE_GROUP, '/media/x'])
-  // Same host on another page: the coarse key counts it.
-  assert.equal(report(hostEntry('new-host.example', '/news/y'), '10.51.0.1', '10.51.0.0/24'), 'counted')
-  // Both maps full: only a count survives.
-  report(hostEntry('second-new.example'), '10.52.0.1', '10.52.0.0/24')
-  assert.equal(report(hostEntry('third-new.example'), '10.53.0.1', '10.53.0.0/24'), 'dropped')
+  const inline = (sample: string, page: string) => entryOf(legacy({ 'script-sample': sample, 'document-uri': `https://portal.example.vn${page}` }))
+  assert.equal(report(inline('known-portal-script', '/news/a'), '10.40.0.1', '10.40.0.0/24'), 'new', 'the map is full — but this inline script was never seen')
+  assert.equal(report(inline('injected-script', '/media/x'), '10.50.0.1', '10.50.0.0/24'), 'new')
+  const injected = emitted.at(-1)!.fields
+  assert.deepEqual(
+    [injected.kind, injected.blocked, injected.path, injected.pathGroup, injected.sampleSha256],
+    ['first', 'inline', '/media/x', '/media/*', createHash('sha256').update('injected-script').digest('hex').slice(0, 12)],
+  )
+  // Its later reports, and the other inline script's, are counted under the coarse key (inline).
+  assert.equal(report(inline('injected-script', '/media/y'), '10.51.0.1', '10.51.0.0/24'), 'counted')
+  // The hourly cap of "first while full" lines (2 here) is spent: the next never-seen key collapses, visibly.
+  assert.equal(report(inline('third-script', '/news/b'), '10.52.0.1', '10.52.0.0/24'), 'counted')
+  assert.equal(emitted.filter(line => line.fields.kind === 'first').length, 5)
+  report(hostEntry('d.example'), '10.53.0.1', '10.53.0.0/24') // collapses into a 2nd coarse key
+  assert.equal(report(hostEntry('e.example'), '10.54.0.1', '10.54.0.0/24'), 'dropped', 'both maps full: only a count')
   instance.flush()
-  assert.equal(dropped()?.overflow, 1)
+  const inlineRepeats = emitted.find(line => line.fields.kind === 'repeats' && line.fields.blocked === 'inline')!.fields
+  assert.equal(inlineRepeats.pathGroup, '*')
+  assert.equal(inlineRepeats.count, 2, 'the two first-while-full reports are not counted twice')
+  assert.deepEqual({ collapsed: dropped()?.collapsed, overflow: dropped()?.overflow }, { collapsed: 3, overflow: 1 })
   assert.equal(emitted.find(line => line.fields.event === 'csp_report.dropped')?.level, 'warn', 'a lost identity is worth a warning')
+  instance.stop()
+})
+
+test('W9 guarantee: even with 400 known junk keys pre-seeded, a new key keeps its identity until 200 never-seen keys have been logged in the same hour', () => {
+  const { instance, emitted, report, dropped } = aggregator()
+  const sent = { reports: 0 }
+  const send = (entry: ReturnType<typeof entryOf>, source: string, network: string) => { sent.reports += 1; return report(entry, source, network) }
+  const portalInline = entryOf(legacy({ 'script-sample': 'window.__NUXT__={};window.__NUXT__.con', 'document-uri': 'https://portal.example.vn/news/a' }))
+  const seed = () => {
+    for (let network = 0; network < 20; network += 1) {
+      for (let key = 0; key < 20; key += 1) send(hostEntry(`seed-${network}-${key}.example`), `10.${network}.0.1`, `10.${network}.0.0/24`)
+    }
+    send(portalInline, '10.200.0.1', '10.200.0.0/24')
+  }
+  seed()
+  instance.flush()
+  seed() // hour 2: 400 known junk keys take their 400 slots; the portal script is counted coarse
+  const firstsBefore = emitted.filter(line => line.fields.kind === 'first').length
+  // 9 networks spend their budget: 100 fill the main map, 80 are logged while full.
+  for (let network = 0; network < 9; network += 1) {
+    for (let key = 0; key < 20; key += 1) send(hostEntry(`fill-${network}-${key}.example`), `10.${50 + network}.0.1`, `10.${50 + network}.0.0/24`)
+  }
+  const injected = entryOf(legacy({ 'script-sample': 'new-injected', 'document-uri': 'https://portal.example.vn/news/x' }))
+  assert.equal(send(injected, '10.99.0.1', '10.99.0.0/24'), 'new', '181 never-seen keys this hour: the new inline script still has its first line')
+  // One more network: 19 more while full — 200 never-seen keys logged this hour.
+  for (let key = 0; key < 19; key += 1) send(hostEntry(`fill-9-${key}.example`), '10.59.0.1', '10.59.0.0/24')
+  assert.equal(emitted.filter(line => line.fields.kind === 'first').length - firstsBefore, 200)
+  const lost = entryOf(legacy({ 'script-sample': 'too-late', 'document-uri': 'https://portal.example.vn/news/y' }))
+  assert.equal(send(lost, '10.98.0.1', '10.98.0.0/24'), 'counted', 'the 201st collapses into the coarse inline count')
+  instance.flush()
+  assert.equal(dropped()?.collapsed, 1)
+  // The count invariant: every report is in a line's count or a dropped counter.
+  const counted = emitted.filter(line => line.fields.event === 'security.csp_violation').reduce((sum, line) => sum + Number(line.fields.count), 0)
+  const allDropped = emitted.filter(line => line.fields.event === 'csp_report.dropped')
+    .reduce((sum, line) => sum + Number(line.fields.overflow) + Number(line.fields.budget) + Number(line.fields.limited) + Number(line.fields.failed), 0)
+  assert.equal(counted + allDropped, sent.reports)
+  instance.stop()
+})
+
+test('W9 reserve: 450 known keys cannot take the 100 main slots kept for never-seen keys — the while-full cap is not spent early', () => {
+  const { instance, emitted, report } = aggregator()
+  const known = Array.from({ length: 450 }, (_, index) => hostEntry(`known-${index}.example`))
+  const knownNet = (index: number) => [`10.${Math.floor(index / 20)}.0.1`, `10.${Math.floor(index / 20)}.0.0/24`] as const
+  known.forEach((entry, index) => report(entry, ...knownNet(index)))
+  instance.flush()
+  known.forEach((entry, index) => report(entry, ...knownNet(index))) // 400 take main slots, 50 are counted coarse
+  const fresh = Array.from({ length: 101 }, (_, index) => hostEntry(`fresh-${index}.example`))
+  const freshNet = (index: number) => [`10.${100 + Math.floor(index / 20)}.0.1`, `10.${100 + Math.floor(index / 20)}.0.0/24`] as const
+  fresh.forEach((entry, index) => report(entry, ...freshNet(index)))
+  fresh.forEach((entry, index) => report(entry, ...freshNet(index))) // a second report each
+  instance.flush()
+  const groupOf = (host: string) => emitted.find(line => line.fields.kind === 'repeats' && line.fields.blocked === host)?.fields.pathGroup
+  for (let index = 0; index < 100; index += 1) assert.equal(groupOf(`fresh-${index}.example`), '/news/*', `fresh-${index} did not get a main slot`)
+  assert.equal(groupOf('fresh-100.example'), '*', 'only the 101st never-seen key is logged while full')
+  instance.stop()
+})
+
+test('W9 race at the last slot: a new key that loses the last main slot to a concurrent request is still logged, counted coarse — not overflow', () => {
+  const { instance, emitted, dropped } = aggregator({ maxKeys: 2 })
+  const a = { source: '10.1.0.1', network: '10.1.0.0/24' }
+  const b = { source: '10.2.0.1', network: '10.2.0.0/24' }
+  const first = instance.classify(hostEntry('one.example'), a)
+  assert.ok(first.outcome === 'new')
+  instance.logFirst(first.pending, a) // 1 of 2 slots
+  const slow = instance.classify(hostEntry('slow.example'), a) // sees the last free slot
+  const fast = instance.classify(hostEntry('fast.example'), b)
+  assert.ok(slow.outcome === 'new' && fast.outcome === 'new')
+  assert.equal(instance.logFirst(fast.pending, b), true) // takes the last slot
+  assert.equal(instance.logFirst(slow.pending, a), true, 'the loser of the race is still logged')
+  assert.equal(emitted.at(-1)!.fields.blocked, 'slow.example')
+  instance.flush()
+  assert.equal(dropped(), undefined, 'nothing overflowed or collapsed')
+  instance.stop()
+})
+
+test('W10-E: a new blocked host gets its first line even when known keys have filled the main AND the coarse map', () => {
+  const { instance, emitted, report } = aggregator({ maxKeys: 4, knownKeysMax: 2, coarseKeys: 1, firstsWhileFull: 5 })
+  const known = ['k1', 'k2', 'k3', 'k4'].map(host => hostEntry(`${host}.example`))
+  known.forEach((entry, index) => report(entry, `10.${index}.0.1`, `10.${index}.0.0/24`))
+  instance.flush()
+  known.forEach((entry, index) => report(entry, `10.${index}.0.1`, `10.${index}.0.0/24`)) // 2 in main, 1 coarse (full), 1 overflow
+  report(hostEntry('n1.example'), '10.10.0.1', '10.10.0.0/24')
+  report(hostEntry('n2.example'), '10.11.0.1', '10.11.0.0/24') // main full
+  assert.equal(report(hostEntry('new-host.example', '/media/z'), '10.12.0.1', '10.12.0.0/24'), 'new')
+  const line = emitted.at(-1)!.fields
+  assert.deepEqual([line.kind, line.blocked, line.pathGroup], ['first', 'new-host.example', '/media/*'])
+  instance.stop()
+})
+
+test('W10-C: concurrent first sightings from one network cannot overspend its 20-key budget', () => {
+  const { instance, kinds, dropped } = aggregator()
+  const origin = { source: '203.0.113.5', network: '203.0.113.0/24' }
+  // All 25 are classified before any is logged — what concurrent requests waiting on the
+  // database limiter look like.
+  const results = Array.from({ length: 25 }, (_, index) => instance.classify(hostEntry(`race${index}.example`), origin))
+  assert.ok(results.every(result => result.outcome === 'new'))
+  for (const result of results) if (result.outcome === 'new') instance.logFirst(result.pending, origin)
+  assert.equal(kinds().filter(([kind]) => kind === 'first').length, 20)
+  instance.flush()
+  assert.equal(dropped()?.budget, 5)
+  instance.stop()
+})
+
+test('W10-H: an active key survives 5 000 newer keys — the seen set is least-recently-used, not first-in-first-out', () => {
+  const { instance, report, kinds } = aggregator({ maxKeys: 10_000, knownKeysMax: 10_000, newKeysPerNetwork: 100_000 })
+  const active = hostEntry('active.example')
+  report(active)
+  for (let index = 1; index <= 5000; index += 1) {
+    report(hostEntry(`newer${index}.example`), `198.18.${index % 250}.1`, '198.18.0.0/16')
+    if (index % 100 === 0 && index <= 4900) report(active) // still being reported
+  }
+  instance.flush()
+  assert.equal(report(active), 'counted', 'the active key was forgotten and would log first again')
+  assert.equal(kinds().filter(([kind]) => kind === 'first').length, 5001, 'one first line per key, the active one included only once')
   instance.stop()
 })
 
@@ -319,7 +441,7 @@ test('limited and failed reports are counted in the window summary, so the total
   instance.countFailed(3)
   instance.countFailed(0)
   instance.flush()
-  assert.deepEqual(dropped(), { event: 'csp_report.dropped', overflow: 0, budget: 0, limited: 1, failed: 3, windowSeconds: 3600 })
+  assert.deepEqual(dropped(), { event: 'csp_report.dropped', overflow: 0, budget: 0, limited: 1, failed: 3, collapsed: 0, windowSeconds: 3600 })
   instance.stop()
 })
 

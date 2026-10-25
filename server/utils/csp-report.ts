@@ -291,8 +291,8 @@ export const CSP_COARSE_GROUP = '*'
 
 /**
  * Khoá THÔ — chỉ chỉ thị + nguồn bị chặn + disposition (nhóm đường dẫn `*`, không tiền tố
- * mẫu): dùng khi bản đồ chính đã đầy, để một host bị chặn MỚI vẫn có một dòng `first`
- * thay vì chỉ được đếm. `path` giữ trang của báo cáo làm mẫu.
+ * mẫu): nơi ĐẾM báo cáo khi bản đồ chính không còn chỗ. Chỉ để đếm — danh tính của một khoá
+ * mới vẫn nằm ở dòng `first` đầy đủ của nó (`csp-report-log.ts`). `path` giữ trang mẫu.
  */
 export function cspCoarseEntry(entry: CspLogEntry): CspLogEntry {
   const coarse: CspLogEntry = { directive: entry.directive, blocked: entry.blocked, path: entry.path, pathGroup: CSP_COARSE_GROUP }
