@@ -16,13 +16,13 @@ import test, { after, before, beforeEach, mock } from 'node:test'
  * tin cậy mặc định, `client-ip.ts` thật) — mỗi test một IP vì bộ đếm bộ nhớ là toàn cục.
  *
  * Hợp đồng: luôn 204 (kể cả thân hỏng, sai Content-Type, quá cỡ, bị giới hạn, lỗi bất
- * ngờ); báo cáo hợp lệ được GỘP (`csp-report-log.ts`): lần đầu của một khoá → một dòng
+ * ngờ); báo cáo hợp lệ được GỘP (`csp-report-log.ts`): khoá chưa từng thấy → một dòng
  * `security.csp_violation` `kind: "first"` ngay, mang directive + host (hoặc nhãn
  * `inline`/`eval`) + đường dẫn trang không query (trang lạ → `foreign:<host>`) + nhóm đường
- * dẫn + disposition + tiền tố SHA-256 của mẫu; lặp lại → chỉ đếm, không log, không CSDL;
- * hết cửa sổ → một dòng `kind: "repeats"`. Không lưu gì vào CSDL ngoài bộ đếm; không bao
- * giờ gửi thư cảnh báo vận hành. Mỗi test bắt đầu bằng một cửa sổ rỗng (`flush()` ở
- * `beforeEach` — đúng việc hẹn giờ làm khi hết cửa sổ).
+ * dẫn + disposition + tiền tố SHA-256 của mẫu; mọi báo cáo khác → chỉ đếm, không log, không
+ * CSDL; hết cửa sổ (`flush()` — việc của hẹn giờ) → một dòng `kind: "repeats"`. Không lưu gì
+ * vào CSDL ngoài bộ đếm; không bao giờ gửi thư cảnh báo vận hành. Mỗi test bắt đầu từ một bộ
+ * gộp trống (`reset()` ở `beforeEach`).
  */
 
 process.env.PUBLIC_BASE_URL = 'https://portal.example.vn'
@@ -62,7 +62,12 @@ const {
   CSP_REPORTS_LOGGED_PER_WINDOW,
   CSP_REPORT_WINDOW_SECONDS,
 } = await import('../server/utils/csp-report')
-const { CSP_REPORT_MAX_KEYS, CSP_REPORT_SUMMARY_WINDOW_SECONDS, cspViolationLog } = await import('../server/utils/csp-report-log')
+const {
+  CSP_REPORT_MAX_KEYS,
+  CSP_REPORT_NEW_KEYS_PER_NETWORK,
+  CSP_REPORT_SUMMARY_WINDOW_SECONDS,
+  cspViolationLog,
+} = await import('../server/utils/csp-report-log')
 
 const hits = new Map<string, number>()
 const sentinel = (name: string) => h3.defineEventHandler(() => {
@@ -112,8 +117,9 @@ beforeEach(() => {
   poolThrows = false
   console.log = capture(realLog)
   console.error = capture(realError)
-  // Each test starts in an empty aggregation window — what the window timer does.
-  cspViolationLog.flush()
+  // Each test starts from a fresh aggregator: no window, no seen keys, no budgets.
+  // (`flush()` alone would keep the seen keys — the point of first-once logging.)
+  cspViolationLog.reset()
   lines.length = 0
 })
 after(() => {
@@ -372,40 +378,122 @@ test('at most CSP_REPORT_MAX_PER_REQUEST reports of one request are read', async
 
 // ─── The flood (spec scenario "Report flood") ─────────────────────────────────
 
-test('the stated limits: 60 first sightings per source per minute, 10-minute summary window, 500 keys', () => {
+test('the stated limits: 20 new keys per network per hour, 60 per /64 per minute as the shared backstop, 1-hour summary window, 500 keys', () => {
+  assert.equal(CSP_REPORT_NEW_KEYS_PER_NETWORK, 20)
   assert.equal(CSP_REPORTS_LOGGED_PER_WINDOW, 60)
   assert.equal(CSP_REPORT_WINDOW_SECONDS, 60)
   assert.equal(CSP_REPORT_MAX_PER_REQUEST, 20)
   assert.equal(CSP_REPORT_MAX_BODY_BYTES, 64 * 1024)
-  assert.equal(CSP_REPORT_SUMMARY_WINDOW_SECONDS, 600)
+  assert.equal(CSP_REPORT_SUMMARY_WINDOW_SECONDS, 3600)
   assert.equal(CSP_REPORT_MAX_KEYS, 500)
 })
 
-test('spec: one IP sends 1 000 distinct reports in a minute → at most the limit is logged and every response is 204', async () => {
+test('spec: one IP sends 1 000 distinct reports → at most its network’s new-key budget (20) is logged, and every response is 204', async () => {
   const statuses = new Map<number, number>()
   for (let index = 0; index < 1000; index += 1) {
     const res = await send(CSP_REPORT_PATH, browserHeaders('203.0.113.50', LEGACY), legacyReport({ 'blocked-uri': `https://h${index}.example/x.js` }))
     statuses.set(res.status, (statuses.get(res.status) ?? 0) + 1)
   }
   assert.deepEqual([...statuses], [[204, 1000]], 'every response must be 204')
-  assert.equal(violations().length, CSP_REPORTS_LOGGED_PER_WINDOW, 'exactly the first <limit> reports are logged, none after')
-  assert.deepEqual(violations().map(line => line.blocked), Array.from({ length: CSP_REPORTS_LOGGED_PER_WINDOW }, (_, index) => `h${index}.example`))
+  assert.equal(violations().length, 20, 'exactly the first 20 new keys are logged, none after')
+  assert.deepEqual(violations().map(line => line.blocked), Array.from({ length: 20 }, (_, index) => `h${index}.example`))
 
-  // The limit is per source: another IP is still heard.
+  // The budget is per network: another network is still heard.
   lines.length = 0
-  await send(CSP_REPORT_PATH, browserHeaders('203.0.113.51', LEGACY), legacyReport())
+  await send(CSP_REPORT_PATH, browserHeaders('198.51.99.1', LEGACY), legacyReport({ 'blocked-uri': 'https://other-network.example/x.js' }))
   assert.equal(violations().length, 1)
+  cspViolationLog.flush()
+  assert.equal(lines.find(line => line.event === 'csp_report.dropped')?.budget, 980, 'every report over budget is counted')
 })
 
-test('the limit counts reports, not requests: 55 single reports then a batch of 20 → exactly 5 of the batch are logged', async () => {
-  for (let index = 0; index < 55; index += 1) {
-    await send(CSP_REPORT_PATH, browserHeaders('203.0.113.60', LEGACY), legacyReport({ 'blocked-uri': `https://single${index}.example/x.js` }))
+test('the budget counts reports, not requests: 15 single new keys then a batch of 20 → exactly 5 of the batch are logged', async () => {
+  for (let index = 0; index < 15; index += 1) {
+    await send(CSP_REPORT_PATH, browserHeaders('203.0.114.60', LEGACY), legacyReport({ 'blocked-uri': `https://single${index}.example/x.js` }))
   }
-  assert.equal(violations().length, 55)
+  assert.equal(violations().length, 15)
   const batch = JSON.stringify(Array.from({ length: 20 }, (_, index) => reportingEntry({ blockedURL: `https://batch${index}.example/x.js` })))
-  assert.equal((await send(CSP_REPORT_PATH, browserHeaders('203.0.113.60', REPORTING), batch)).status, 204)
-  assert.equal(violations().length, CSP_REPORTS_LOGGED_PER_WINDOW)
-  assert.deepEqual(violations().slice(55).map(line => line.blocked), ['batch0.example', 'batch1.example', 'batch2.example', 'batch3.example', 'batch4.example'])
+  assert.equal((await send(CSP_REPORT_PATH, browserHeaders('203.0.114.60', REPORTING), batch)).status, 204)
+  assert.equal(violations().length, 20)
+  assert.deepEqual(violations().slice(15).map(line => line.blocked), ['batch0.example', 'batch1.example', 'batch2.example', 'batch3.example', 'batch4.example'])
+})
+
+test('the shared per-/64 counter is the backstop across restarts: a source already at 55 gets exactly 5 of a batch of 20 logged', async () => {
+  const { pool, rows } = countingPool()
+  fakePool = pool
+  rows.set('csp-report:203.0.115.61', 55) // counted before this process started
+  const batch = JSON.stringify(Array.from({ length: 20 }, (_, index) => reportingEntry({ blockedURL: `https://backstop${index}.example/x.js` })))
+  assert.equal((await send(CSP_REPORT_PATH, browserHeaders('203.0.115.61', REPORTING), batch)).status, 204)
+  assert.deepEqual(violations().map(line => line.blocked), ['backstop0.example', 'backstop1.example', 'backstop2.example', 'backstop3.example', 'backstop4.example'])
+})
+
+test('W6: one network cannot multiply its budget — 30 /64s inside one IPv6 /48 share 20 new keys', async () => {
+  for (let index = 0; index < 30; index += 1) {
+    await send(CSP_REPORT_PATH, browserHeaders(`2001:db8:5:${(index + 1).toString(16)}::1`, LEGACY), legacyReport({ 'blocked-uri': `https://v48-${index}.example/x.js` }))
+  }
+  assert.equal(violations().length, 20)
+  lines.length = 0
+  await send(CSP_REPORT_PATH, browserHeaders('2001:db8:6::1', LEGACY), legacyReport({ 'blocked-uri': 'https://v48-other.example/x.js' }))
+  assert.equal(violations().length, 1, 'another /48 is another network')
+})
+
+test('W6: 9 sources × 60 junk keys cannot blind the window — a new violation from a fresh source is still logged', async () => {
+  for (let source = 0; source < 9; source += 1) {
+    for (let key = 0; key < 60; key += 1) {
+      await send(CSP_REPORT_PATH, browserHeaders(`10.${source}.0.1`, LEGACY), legacyReport({ 'blocked-uri': `https://junk-${source}-${key}.example/x.js` }))
+    }
+  }
+  lines.length = 0
+  await send(CSP_REPORT_PATH, browserHeaders('10.200.0.1', LEGACY), legacyReport({ 'blocked-uri': 'https://fresh-violation.example/x.js' }))
+  const fresh = violations().find(line => line.blocked === 'fresh-violation.example')
+  assert.ok(fresh, 'the new violation was only counted, its identity lost')
+  assert.equal(fresh.kind, 'first')
+})
+
+test('W6: junk keys minted in an earlier window cannot refill the map and hide a new violation', async () => {
+  const sendJunk = async () => {
+    for (let network = 0; network < 25; network += 1) {
+      for (let key = 0; key < 20; key += 1) {
+        await send(CSP_REPORT_PATH, browserHeaders(`10.${50 + network}.0.1`, LEGACY), legacyReport({ 'blocked-uri': `https://refill-${network}-${key}.example/x.js` }))
+      }
+    }
+  }
+  await sendJunk()
+  cspViolationLog.flush() // the hour is over
+  await sendJunk() // the same 500 keys, now all known, in a new window
+  lines.length = 0
+  await send(CSP_REPORT_PATH, browserHeaders('10.250.0.1', LEGACY), legacyReport({ 'blocked-uri': 'https://fresh-after-refill.example/x.js' }))
+  const fresh = violations().find(line => line.blocked === 'fresh-after-refill.example')
+  assert.ok(fresh, 'known junk filled every slot and the new violation was only counted')
+  assert.equal(fresh.kind, 'first')
+  assert.equal(fresh.pathGroup, '/news/*', 'the slots kept for never-seen keys give it its full identity, not just a coarse one')
+})
+
+test('W7: a known key across 3 windows → exactly one first line in total, then one repeats line per window', async () => {
+  const report = legacyReport({ 'blocked-uri': 'inline', 'script-sample': 'three-windows' })
+  const perWindow = [3, 4, 4]
+  for (const reports of perWindow) {
+    for (let index = 0; index < reports; index += 1) await send(CSP_REPORT_PATH, browserHeaders(`198.20.0.${index + 1}`, LEGACY), report)
+    cspViolationLog.flush()
+  }
+  const lines3 = violations()
+  assert.deepEqual(lines3.map(line => [line.kind, line.count]), [['first', 1], ['repeats', 2], ['repeats', 4], ['repeats', 4]])
+  assert.equal(lines3.reduce((sum, line) => sum + Number(line.count), 0), 11, 'every report is accounted for')
+})
+
+test('W6: a page that is not an app section collapses into one group — 404s and page-builder slugs do not mint keys', async () => {
+  const pages: Array<[string, string]> = [
+    ['/gioi-thieu-chung', '/:page'],
+    ['/trang-go-sai-404', '/:page'],
+    ['/mot-trang/123', '/:page/*'],
+    ['/search', '/search'],
+    ['/about', '/about'],
+    ['/news/tin-a/bai-b', '/news/*'],
+  ]
+  for (const [index, [path]] of pages.entries()) {
+    await send(CSP_REPORT_PATH, browserHeaders('198.21.0.1', LEGACY), legacyReport({ 'document-uri': `https://portal.example.vn${path}`, 'blocked-uri': `https://page${index}.example/x.js` }))
+  }
+  assert.deepEqual(violations().map(line => line.pathGroup), pages.map(([, group]) => group))
+  assert.deepEqual(violations().map(line => line.path), pages.map(([path]) => path), 'the first line still names the real page')
 })
 
 /** A fake pool that records every statement and keeps the shared counters. */
@@ -438,10 +526,11 @@ test('W1: 1 000 identical reports from 100 IPs → one first-sighting line, no d
   assert.equal(statements.filter(statement => /INSERT/.test(statement.sql)).length, 1, 'only the first sighting reaches the limiter')
   assert.equal(statements.length, 2, 'the repeats cost no database call at all')
 
-  cspViolationLog.flush() // the window timer, 10 minutes later
+  cspViolationLog.flush() // the window timer, an hour later
   const summary = violations()[1]!
   assert.equal(summary.kind, 'repeats')
   assert.equal(summary.count, 999)
+  assert.equal(summary.sources, 50, 'distinct sources, capped at 50 ("50" reads as 50 or more)')
   assert.equal(summary.blocked, 'inline')
   assert.equal(summary.pathGroup, '/news/*')
   assert.equal(violations().reduce((sum, line) => sum + Number(line.count), 0), 1000, 'every report is accounted for')
@@ -454,16 +543,6 @@ test('W1: a new key in the middle of a flood is logged at once', async () => {
   await send(CSP_REPORT_PATH, browserHeaders('198.19.200.1', LEGACY), legacyReport({ 'blocked-uri': 'https://new-tracker.example/t.js' }))
   assert.equal(violations().length, 2, 'the new violation did not wait for the window')
   assert.equal(violations()[1]!.blocked, 'new-tracker.example')
-})
-
-test('an IPv6 flooder cannot rotate addresses inside its /64 to get a fresh budget', async () => {
-  for (let index = 0; index < CSP_REPORTS_LOGGED_PER_WINDOW + 10; index += 1) {
-    await send(CSP_REPORT_PATH, browserHeaders(`2001:db8:1:2::${(index + 1).toString(16)}`, LEGACY), legacyReport({ 'blocked-uri': `https://v6-${index}.example/x.js` }))
-  }
-  assert.equal(violations().length, CSP_REPORTS_LOGGED_PER_WINDOW)
-  lines.length = 0
-  await send(CSP_REPORT_PATH, browserHeaders('2001:db8:1:3::1', LEGACY), legacyReport({ 'blocked-uri': 'https://v6-other.example/x.js' }))
-  assert.equal(violations().length, 1, 'another /64 is another source')
 })
 
 test('the counter lives in the shared rate_limit_counters table under its own key prefix', async () => {
@@ -496,13 +575,17 @@ test('the counter lives in the shared rate_limit_counters table under its own ke
   assert.equal(violations().find(line => line.kind === 'repeats')?.count, 1)
 })
 
-test('W5: an unexpected failure inside the handler is logged and still answered 204', async () => {
+test('W5: an unexpected failure inside the handler is logged, still answered 204, and the unprocessed reports are counted as failed', async () => {
   poolThrows = true
-  const res = await send(CSP_REPORT_PATH, browserHeaders('198.51.100.31', LEGACY), legacyReport({ 'blocked-uri': 'https://w5.example/x.js' }))
+  const batch = JSON.stringify(Array.from({ length: 3 }, (_, index) => reportingEntry({ blockedURL: `https://w5-${index}.example/x.js` })))
+  const res = await send(CSP_REPORT_PATH, browserHeaders('198.51.100.31', REPORTING), batch)
   assert.equal(res.status, 204)
   assert.equal(res.body, '')
   assert.ok(lines.some(line => line.event === 'csp_report.failed'), 'the failure is not silent')
   assert.deepEqual(violations(), [])
+  poolThrows = false
+  cspViolationLog.flush()
+  assert.equal(lines.find(line => line.event === 'csp_report.dropped')?.failed, 3, 'the totals stay honest: the report in flight and the rest of the batch')
 })
 
 // ─── Never an ops alert ───────────────────────────────────────────────────────

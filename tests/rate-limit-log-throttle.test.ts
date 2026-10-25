@@ -18,7 +18,7 @@ mock.module('../server/utils/logger', {
   },
 })
 
-const { peekRateLimit, recordRateLimitHit, RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS } = await import('../server/utils/rate-limit-store')
+const { peekRateLimit, recordRateLimitHit, RATE_LIMIT_FAILURE_LOG_INTERVAL_MS } = await import('../server/utils/rate-limit-store')
 
 const RULE = { limit: 3, windowSeconds: 900 }
 const brokenDatabase = async () => { throw new Error('connect ECONNREFUSED 127.0.0.1:3306') }
@@ -26,7 +26,7 @@ const writeFailures = () => warnings.filter(entry => entry.event === 'rate_limit
 const readFailures = () => warnings.filter(entry => entry.event === 'rate_limit.database_read_failed')
 
 test('khoảng nén là một phút', () => {
-  assert.equal(RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS, 60_000)
+  assert.equal(RATE_LIMIT_FAILURE_LOG_INTERVAL_MS, 60_000)
 })
 
 test('CSDL sập: 200 lượt trong 59 giây chỉ ghi MỘT dòng log; tới phút sau ghi dòng thứ hai kèm số lượt đã nén', async () => {

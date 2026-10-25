@@ -153,8 +153,8 @@ export const SECURITY_EVENTS = {
   // host, reason — never cookies or the full Origin URL.
   crossSiteRefused: 'security.cross_site_refused',
   // A browser reported a Content-Security-Policy violation (`server/api/csp-report.post.ts`,
-  // wave3 D-CSP). Aggregated in memory (`csp-report-log.ts`): `kind: "first"` the first time
-  // a key is seen in a 10-minute window, `kind: "repeats"` with `count` when it closes.
+  // wave3 D-CSP). Aggregated in memory (`csp-report-log.ts`): `kind: "first"` once per key
+  // per process, `kind: "repeats"` with `count` and `sources` at the end of each hour.
   // Payload: directive name, blocked host or tag (`inline`, `eval`, `data`), page path
   // without query (or `foreign:<host>`), path group, disposition, a 12-hex SHA-256 prefix of
   // the script sample — never URLs, sample text, IPs or user agents.

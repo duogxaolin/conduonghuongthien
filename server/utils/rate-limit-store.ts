@@ -138,7 +138,7 @@ export async function peekRateLimit(key: string, rule: RateLimitRule, deps: Rate
  * clock that went backwards counts as "interval elapsed" — otherwise one far-future
  * timestamp would mute the line for good.
  */
-export const RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS = 60_000
+export const RATE_LIMIT_FAILURE_LOG_INTERVAL_MS = 60_000
 const failureLogs = {
   read: { lastLoggedAt: null as number | null, suppressed: 0 },
   write: { lastLoggedAt: null as number | null, suppressed: 0 },
@@ -147,7 +147,7 @@ const failureLogs = {
 function logStoreFailure(kind: 'read' | 'write', error: unknown, now: number): void {
   const state = failureLogs[kind]
   const last = state.lastLoggedAt
-  if (last !== null && now >= last && now - last < RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS) {
+  if (last !== null && now >= last && now - last < RATE_LIMIT_FAILURE_LOG_INTERVAL_MS) {
     state.suppressed += 1
     return
   }

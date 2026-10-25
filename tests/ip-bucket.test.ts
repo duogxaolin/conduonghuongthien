@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 
-import { ipBucket } from '../server/utils/ip-bucket.ts'
+import { ipBucket, ipNetworkBucket } from '../server/utils/ip-bucket.ts'
 
 /**
  * The review-queue cap (MODERATION_QUEUE_CAP) is keyed on the sender's address.
@@ -54,4 +54,33 @@ test('ipBucket: every address inside one /64 lands in one bucket, a neighbouring
   for (let i = 1; i <= 64; i++) buckets.add(ipBucket(`2001:db8:aa:bb:${i.toString(16)}::${(i * 7).toString(16)}`))
   assert.deepEqual([...buckets], ['2001:db8:aa:bb::/64'])
   assert.notEqual(ipBucket('2001:db8:aa:bc::1'), ipBucket('2001:db8:aa:bb::1'))
+})
+
+// ─── ipNetworkBucket: IPv4 /24, IPv6 /48 (CSP report new-key budget) ──────────
+
+const networkCases: Array<[label: string, input: string, expected: string]> = [
+  ['IPv4 → /24', '203.0.113.9', '203.0.113.0/24'],
+  ['IPv4 with port → /24', '203.0.113.9:8443', '203.0.113.0/24'],
+  ['IPv6 → /48', '2001:db8:85a3:8d3:1319:8a2e:370:7348', '2001:db8:85a3::/48'],
+  ['IPv6 compressed → /48', '2001:db8::1', '2001:db8:0::/48'],
+  ['IPv6 bracketed with port → /48', '[2001:db8:1:2::7]:443', '2001:db8:1::/48'],
+  ['IPv4-mapped → the IPv4 /24', '::ffff:203.0.113.9', '203.0.113.0/24'],
+  ['IPv6 loopback stays one host', '::1', '::1'],
+  ['unknown → raw', 'unknown', 'unknown'],
+  ['garbage → raw', 'not-an-ip', 'not-an-ip'],
+]
+
+for (const [label, input, expected] of networkCases) {
+  test(`ipNetworkBucket: ${label}`, () => {
+    assert.equal(ipNetworkBucket(input), expected)
+  })
+}
+
+test('ipNetworkBucket: 65 536 /64s of one /48 are one network; a neighbouring /48 and a neighbouring /24 are not', () => {
+  const networks = new Set<string>()
+  for (let i = 0; i < 300; i++) networks.add(ipNetworkBucket(`2001:db8:5:${i.toString(16)}::1`))
+  assert.deepEqual([...networks], ['2001:db8:5::/48'])
+  assert.notEqual(ipNetworkBucket('2001:db8:6::1'), ipNetworkBucket('2001:db8:5::1'))
+  assert.equal(ipNetworkBucket('198.51.100.1'), ipNetworkBucket('198.51.100.254'))
+  assert.notEqual(ipNetworkBucket('198.51.101.1'), ipNetworkBucket('198.51.100.1'))
 })

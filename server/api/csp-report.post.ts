@@ -8,14 +8,15 @@
  *    lỗi bất ngờ. Không có gì ở đây được phép làm hỏng trang, và mã lỗi không cho người
  *    gửi biết thêm điều gì.
  *  - Không lưu gì vào CSDL ngoài bộ đếm giới hạn tần suất dùng chung (`rate_limit_counters`).
- *  - Mỗi báo cáo hợp lệ đi qua bộ gộp trong bộ nhớ (`server/utils/csp-report-log.ts`):
- *    khoá đã thấy trong cửa sổ → chỉ đếm (không log, không CSDL, không cả tra IP); khoá mới
- *    → hỏi bộ giới hạn theo nguồn rồi log NGAY một dòng `security.csp_violation`
- *    `kind: "first"`; hết cửa sổ 10 phút → một dòng `kind: "repeats"` mỗi khoá.
- *  - Giới hạn theo nguồn chỉ áp cho LẦN ĐẦU: `CSP_REPORTS_LOGGED_PER_WINDOW` (60) / 60 giây
- *    cho mỗi IP (IPv6 theo /64 — `ipBucket`), đếm theo báo cáo. Nguồn đã bị từ chối được nhớ
- *    trong tiến trình tới hết hạn của nó, nên một nguồn tự chế khoá mới liên tục chỉ tốn MỘT
- *    lượt CSDL mỗi cửa sổ.
+ *  - Mỗi báo cáo hợp lệ đi qua bộ gộp trong bộ nhớ (`server/utils/csp-report-log.ts` — quy
+ *    tắc và bảo đảm đầy đủ ở đó): khoá chưa từng thấy → một dòng `security.csp_violation`
+ *    `kind: "first"` NGAY (một lần cho cả tiến trình); mọi báo cáo khác → chỉ đếm (không log,
+ *    không CSDL); hết cửa sổ 1 giờ → một dòng `kind: "repeats"` mỗi khoá có báo cáo.
+ *  - Khoá mới bị giới hạn hai tầng: ngân sách theo MẠNG trong bộ nhớ (20 khoá mới / mạng
+ *    /24 hay /48 / giờ — giới hạn thường ngày, không tốn CSDL), rồi chốt chặn theo nguồn /64
+ *    trên bảng dùng chung (`CSP_REPORTS_LOGGED_PER_WINDOW` = 60 / 60 giây — sống qua khởi
+ *    động lại). Nguồn đã bị chốt chặn từ chối được nhớ tới hết hạn (`CspSourceLimiter`).
+ *  - Một lỗi bất ngờ giữa lô: báo cáo đang xử lý và phần còn lại đếm vào `failed`.
  *  - Trang không thuộc cổng (host của `document-uri` ngoài tập host của cổng — cùng tập mà
  *    cổng chặn khác site dùng, `allowedOriginHosts`: `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST`,
  *    host của request sau proxy đã khai) → `foreign:<host>`, không bao giờ như đường dẫn của
@@ -35,32 +36,17 @@ import { readBoundedUploadBody } from '../utils/bounded-upload-body'
 import { getClientIp } from '../utils/client-ip'
 import { CSP_REPORT_MAX_BODY_BYTES, CSP_REPORT_RATE_RULE, cspLogEntry, cspReportFormat, parseCspReportBody } from '../utils/csp-report'
 import { cspViolationLog, noteCspHostsUnconfigured } from '../utils/csp-report-log'
-import { ipBucket } from '../utils/ip-bucket'
+import { CspSourceLimiter } from '../utils/csp-report-source-limiter'
+import { ipBucket, ipNetworkBucket } from '../utils/ip-bucket'
 import { logWarn } from '../utils/logger'
 import { allowedOriginHosts, normalizeGateHost } from '../utils/origin-gate'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
 import { recordRateLimitHit } from '../utils/rate-limit-store'
 
-/** Nguồn đã bị bộ giới hạn từ chối → mốc hết hạn (ms). Có trần; mục cũ nhất ra trước. */
-const refusedSources = new Map<string, number>()
-const REFUSED_SOURCES_MAX = 10_000
-
-async function firstSightingAllowed(source: string): Promise<boolean> {
-  const now = Date.now()
-  const until = refusedSources.get(source)
-  if (until !== undefined) {
-    if (until > now) return false
-    refusedSources.delete(source)
-  }
-  const state = await recordRateLimitHit(source, CSP_REPORT_RATE_RULE, rateLimitDeps())
-  if (!state.blocked) return true
-  refusedSources.set(source, now + state.retryAfterSeconds * 1000)
-  if (refusedSources.size > REFUSED_SOURCES_MAX) {
-    const oldest = refusedSources.keys().next().value
-    if (oldest !== undefined) refusedSources.delete(oldest)
-  }
-  return false
-}
+/** Chốt chặn theo nguồn /64 trên bảng dùng chung — chỉ được hỏi cho lần đầu của một khoá. */
+const sourceLimiter = new CspSourceLimiter({
+  record: source => recordRateLimitHit(`csp-report:${source}`, CSP_REPORT_RATE_RULE, rateLimitDeps()),
+})
 
 /** "Host này có phải của cổng?" — `null` khi chưa khai host nào (mọi trang tính là của cổng). */
 function ownHostCheck(event: H3Event): ((host: string) => boolean) | null {
@@ -88,15 +74,24 @@ async function receiveReports(event: H3Event): Promise<void> {
   const reports = parseCspReportBody(format, text)
   if (reports.length === 0) return
 
-  const isOwnHost = ownHostCheck(event)
-  let source: string | null = null
-  for (const report of reports) {
-    const entry = cspLogEntry(report, isOwnHost)
-    // Lặp lại hay bản đồ đầy: đã đếm trong bộ nhớ — xong, không CSDL.
-    if (cspViolationLog.observe(entry) !== 'new') continue
-    source ??= `csp-report:${ipBucket(getClientIp(event))}`
-    if (await firstSightingAllowed(source)) cspViolationLog.logFirst(entry)
-    else cspViolationLog.countLimited()
+  let processed = 0
+  try {
+    const ip = getClientIp(event)
+    const origin = { source: ipBucket(ip), network: ipNetworkBucket(ip) }
+    const isOwnHost = ownHostCheck(event)
+    for (const report of reports) {
+      const result = cspViolationLog.classify(cspLogEntry(report, isOwnHost), origin)
+      // `counted`/`dropped`: đã đếm trong bộ nhớ — xong, không CSDL.
+      if (result.outcome === 'new') {
+        if (await sourceLimiter.allow(origin.source)) cspViolationLog.logFirst(result.pending, origin)
+        else cspViolationLog.countLimited()
+      }
+      processed += 1
+    }
+  } catch (error) {
+    // Tổng phải khớp: báo cáo đang xử lý và phần còn lại của lô vào `failed`.
+    cspViolationLog.countFailed(reports.length - processed)
+    throw error
   }
 }
 

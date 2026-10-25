@@ -64,7 +64,6 @@ const MAX_DIRECTIVE_CHARS = 40
 const MAX_TAG_CHARS = 32
 const MAX_BLOCKED_CHARS = 128
 const MAX_PATH_CHARS = 200
-const MAX_GROUP_SEGMENT_CHARS = 64
 const MAX_FOREIGN_HOST_CHARS = 100
 const SAMPLE_PREFIX_HEX = 12
 
@@ -221,17 +220,45 @@ export function parseCspReportBody(format: CspReportFormat, text: string): CspVi
 }
 
 /**
- * Nhóm đường dẫn cho khoá gộp: giữ đoạn đầu, phần còn lại thành `*` — `/news/tin-tuc/bai-a`
- * → `/news/*`, `/admin/content/articles/12` → `/admin/*`, `/` → `/`, `/news/` → `/news`.
- * Đủ để biết vi phạm thuộc khu nào (tin, media, admin…) mà không tách một script inline
- * dùng chung thành một khoá cho mỗi bài viết. Không phải đường dẫn (`about:`, `unknown`,
- * `foreign:…`) → giữ nguyên.
+ * Các khu của ứng dụng: tên tệp/thư mục cấp đầu của `app/pages/` (trừ `index` và trang
+ * động `[slug]`). `server/` không được import `app/`, nên danh sách viết tay ở đây và
+ * `tests/csp-report-aggregate.test.ts` đối chiếu nó với `app/pages/` — thêm một khu mà
+ * quên ở đây thì test đỏ.
+ */
+export const CSP_PAGE_SECTIONS: ReadonlySet<string> = new Set([
+  'about',
+  'admin',
+  'assistant',
+  'contact',
+  'documents',
+  'in-bai',
+  'legal-qa',
+  'media',
+  'news',
+  'profile',
+  'qa-documents',
+  'reintegration-models',
+  'role-models',
+  'search',
+])
+
+/** Nhóm của mọi trang không thuộc khu nào: trang Page Builder `/[slug]`, đường dẫn gõ sai (404). */
+export const CSP_OTHER_PAGES_GROUP = '/:page'
+
+/**
+ * Nhóm đường dẫn cho khoá gộp: giữ đoạn đầu NẾU nó là một khu của ứng dụng
+ * (`CSP_PAGE_SECTIONS`), phần còn lại thành `*` — `/news/tin-tuc/bai-a` → `/news/*`,
+ * `/admin/content/articles/12` → `/admin/*`, `/about` → `/about`, `/` → `/`. Đoạn đầu
+ * KHÔNG phải một khu (trang Page Builder `/gioi-thieu`, mọi đường dẫn gõ sai) → `/:page`
+ * (hay `/:page/*`): nếu không, mỗi slug và mỗi lỗi 404 thành một nhóm riêng, nhân số khoá
+ * theo số trang và làm đầy bản đồ gộp không cần ai tấn công. Không phải đường dẫn
+ * (`about:`, `unknown`, `foreign:…`) → giữ nguyên.
  */
 export function cspPathGroup(path: string): string {
   if (!path.startsWith('/')) return path
   const segments = path.split('/').filter(Boolean)
   if (segments.length === 0) return '/'
-  const first = `/${segments[0]!.slice(0, MAX_GROUP_SEGMENT_CHARS)}`
+  const first = CSP_PAGE_SECTIONS.has(segments[0]!) ? `/${segments[0]!}` : CSP_OTHER_PAGES_GROUP
   return segments.length === 1 ? first : `${first}/*`
 }
 
@@ -257,4 +284,18 @@ export function cspLogEntry(report: CspViolation, isOwnHost: ((host: string) => 
 /** Khoá gộp: chỉ thị, nguồn bị chặn, disposition, nhóm đường dẫn, tiền tố mẫu. */
 export function cspAggregateKey(entry: CspLogEntry): string {
   return [entry.directive, entry.blocked, entry.disposition ?? '-', entry.pathGroup, entry.sampleSha256 ?? '-'].join('|')
+}
+
+/** `pathGroup` của khoá thô: mọi trang. */
+export const CSP_COARSE_GROUP = '*'
+
+/**
+ * Khoá THÔ — chỉ chỉ thị + nguồn bị chặn + disposition (nhóm đường dẫn `*`, không tiền tố
+ * mẫu): dùng khi bản đồ chính đã đầy, để một host bị chặn MỚI vẫn có một dòng `first`
+ * thay vì chỉ được đếm. `path` giữ trang của báo cáo làm mẫu.
+ */
+export function cspCoarseEntry(entry: CspLogEntry): CspLogEntry {
+  const coarse: CspLogEntry = { directive: entry.directive, blocked: entry.blocked, path: entry.path, pathGroup: CSP_COARSE_GROUP }
+  if (entry.disposition) coarse.disposition = entry.disposition
+  return coarse
 }
