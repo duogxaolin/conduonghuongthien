@@ -16,8 +16,21 @@ import { readdirSync, readFileSync } from 'node:fs'
 
 const SERVICES_DIR = new URL('../server/services/', import.meta.url)
 
-/** The comment service family: the barrel plus every `comments-<seam>.ts`. */
-export const COMMENT_SERVICE_FILE = /^comments(-[a-z-]+)?\.ts$/
+/** The comment-service barrel. */
+export const COMMENT_SERVICE_BARREL = 'comments.ts'
+
+/**
+ * A comment-service sub-file, `comments-<seam>.ts` — digits allowed (`comments-v2.ts`).
+ * The ONE definition: the audit/source guards here and the `comments` family of
+ * `tests/service-split-boundaries.test.ts` both use it, so a file cannot be inside
+ * one scan and outside the other. (An earlier `[a-z-]+` copy here let a
+ * `comments-v2.ts` skip every guard below while the boundary guard saw it.)
+ */
+export const COMMENT_SUBFILE = /^comments-[a-z0-9-]+\.ts$/
+
+/** The comment service family: the barrel plus every sub-file. */
+export const isCommentServiceFile = (name: string): boolean =>
+  name === COMMENT_SERVICE_BARREL || COMMENT_SUBFILE.test(name)
 
 /** Files that carry the service's code today. A subset check — new sub-files join the scan automatically. */
 export const EXPECTED_COMMENT_SERVICE_FILES = [
@@ -33,7 +46,7 @@ export const EXPECTED_COMMENT_SERVICE_FILES = [
 
 /** Repo-relative paths (`server/services/…`) of every comment-service file. */
 export function commentServiceFiles(): string[] {
-  const found = readdirSync(SERVICES_DIR).filter(name => COMMENT_SERVICE_FILE.test(name)).sort()
+  const found = readdirSync(SERVICES_DIR).filter(isCommentServiceFile).sort()
   for (const expected of EXPECTED_COMMENT_SERVICE_FILES) {
     assert.ok(
       found.includes(expected),

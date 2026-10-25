@@ -1744,6 +1744,63 @@ OpenSpec `wave2-hardening` task 5.3 / 5.4 / 5.6, design D-SPLIT. Không đổi h
   - Typecheck 0 lỗi, eslint 0 error / 16 warning, `npm run build` xanh.
   - Integration trên MySQL dev (`127.0.0.1:33069`, TZ `Asia/Ho_Chi_Minh`): `media-queue`, `upload-concurrency`, `livestream-toggle` mỗi suite 1/1, không sót DB nào của lượt chạy.
 
+### 42. Đợt 2 — 5.5 tách `comments.ts` (2026-10-25)
+
+OpenSpec `wave2-hardening` task 5.5, design D-SPLIT. Không đổi hành vi, không đổi đường import của nơi gọi. Cùng cách làm với § 41: barrel xuất lại bằng **danh sách tên tường minh**, mã ở tệp con tách theo đường nối, test hành vi viết **trước** khi tách và xanh trên mã gốc. Số dòng đo bằng `wc -l` sau các vòng sửa:
+
+- **`server/services/comments.ts`** 1208 → 86 (barrel: 17 tên chạy + 17 kiểu — đúng tập export của bản trước khi tách `262eee8`, so bằng AST).
+  - `comments-rules.ts` (165): luật thuần — kiểm thân bình luận, đích bài/video (XOR), một cấp trả lời, `?source=`.
+  - `comments-thread.ts` (222): `serializePublicComment` + `loadCommentThread` cố ý cùng tệp (guard tên người đọc chỉ lần lời gọi trong một tệp).
+  - `comments-posting.ts` (314): `createComment` — cổng từ chối, giới hạn tần suất, kiểm duyệt trước, ghi + thông báo; thứ tự "kiểm duyệt xong mới gửi email trả lời" giữ trong một hàm.
+  - `comments-reply-email.ts` (51): luật giữ email trả lời (`MODERATION_FAILED`, `replyEmailHoldReason`) — barrel không xuất lại.
+  - `comments-deletion.ts` (196): một đường xoá duy nhất + đếm ảnh hưởng. `comments-moderation.ts` (199): danh sách kiểm duyệt + `auditCommentRead`. `comments-admin-reply.ts` (142): trả lời chính thức của cổng.
+  - 45 khai báo cấp đỉnh giống bản gốc (so AST); `db.transaction` + `tx.insert(activityLogs)` nguyên văn.
+  - 28 test hành vi mới (`tests/comments-service-behavior.test.ts`): pool, transaction và executor là ba đối tượng khác nhau, nên "audit nằm trên transaction" được kiểm thật. Test thứ tự email của Wave 1 vẫn xanh.
+- **Guard đọc mã dịch vụ bình luận:** tập tệp suy từ thư mục (`tests/_comments-service-source.ts`, kiểm đủ 8 tệp); `AUDITED_WRITES` trỏ tệp thật; mọi `comments*.ts` chạm `activityLogs` phải được nêu tên; barrel chỉ được là `export { … } from './comments-…'` (`barrelProblems`, AST).
+- **Miễn trừ audit theo HÀM — `AUDIT_ONLY_FUNCTION_EXEMPTIONS` (`tests/reader-audit-atomicity.test.ts`).**
+  - `auditCommentRead` chỉ ghi một dòng audit "đã xem danh sách kiểm duyệt", không có hàng nghiệp vụ nào để nguyên tử cùng. Trước khi tách nó nằm chung tệp với các hàm có transaction nên cổng theo tệp không hỏi; tách ra thì lộ ở `comments-moderation.ts`.
+  - Bản tách đầu (`4975679`) miễn **cả tệp** qua `SERVICE_EXEMPTIONS`. Miễn theo tệp bỏ qua mọi thứ trong tệp: một hàm "ẩn bình luận" thêm sau — `db.execute(sql\`UPDATE …\`)` rồi `db.insert(activityLogs)` trên pool, không transaction — vẫn xanh (110/110), trong khi cùng đoạn mã ở bản trước khi tách thì đỏ.
+  - Nay miễn trừ chỉ có hiệu lực khi tiền đề đúng, kiểm bằng AST (`auditOnlyFunctionProblems`): mọi tham chiếu `activityLogs` (trừ import) nằm trong `auditCommentRead`; lời gọi ghi duy nhất của cả tệp (`insert`/`update`/`delete`/`execute`/`query`/`transaction` trên bất kỳ handle nào) là `.insert(activityLogs)` trong hàm đó; không hàm nào trong tệp gọi nó; không lời gọi có dáng ghi (`delete…`/`hide…`/`set…`…) ngoài nó. Sai một điều → tệp bị xét như mọi service.
+  - 8 đột biến đều đỏ: X1 `db.execute(UPDATE)` + audit trên pool, X2 cùng cặp trên handle tên khác (`conn`), X3 `db.update` + audit trên pool, X4 qua `getDb()` trực tiếp, X5 ghi qua service khác rồi audit, G12 đường xoá thứ hai không audit, `caller` (hàm khác gọi `auditCommentRead`), `inside` (ghi hàng ngay trong hàm được miễn).
+- **Guard ranh giới `tests/service-split-boundaries.test.ts` thêm nhóm `comments`** (17 → 33 test). Hạ tầng tách sang `tests/_service-split-sources.ts` (tập quét, đột biến, giải đích import), `_service-split-modules.ts` (bảng export/import, giải tên qua barrel), `_service-split-state.ts` (luật 4); các luật cũ giữ nguyên hành vi, trừ nhánh mới của luật 1 cho đối số không cố định (dưới đây).
+  - Nhóm = `comments-*.ts` ∪ đích barrel xuất lại (suy ra, không chép tay), nên `comments-reply-email.ts` cũng thuộc nhóm. Danh sách tối thiểu lấy từ `EXPECTED_COMMENT_SERVICE_FILES` — một nguồn với các guard đọc mã bình luận.
+  - **Mẫu tệp dùng chung — đóng một lỗ có thật.** `tests/_comments-service-source.ts` từng có bản chép riêng `comments(-[a-z-]+)?` (không có chữ số), còn nhóm của guard ranh giới cho phép chữ số. Một `comments-v2.ts` vì thế nằm ngoài mọi guard dùng `commentServiceFiles()`/`fileDeclaring()`.
+    - Đã thử: cắm tạm `server/services/comments-v2.ts` mang một cặp xoá hàng + audit, bọc trong transaction đúng chuẩn nhưng không được nêu tên, kèm một đường `.delete(articleComments)` thứ hai. `reader-audit-atomicity` + `media-comments` vẫn xanh 113/113.
+    - Nay chỉ còn một định nghĩa `COMMENT_SUBFILE = /^comments-[a-z0-9-]+\.ts$/` (+ `isCommentServiceFile`), và nhóm `comments` của guard ranh giới import chính nó.
+    - Cùng tệp cắm đó nay làm đỏ đúng hai guard, cả hai nêu `comments-v2.ts`: "every comment-service file that writes activity_logs is named" và "every deletion path still routes through this one function". Đã xoá tệp cắm.
+    - Test mới ghim hai tập quét khớp nhau: nhóm dùng đúng `COMMENT_SUBFILE`, mẫu nhận `comments-v2.ts`, mọi thành viên của nhóm có trong `commentServiceFiles()`. Thu hẹp mẫu về `[a-z-]+` → test này đỏ.
+    - `barrelProblems` (`reader-audit-atomicity.test.ts`) còn một bản `^\./comments-[a-z-]+$` cho specifier của barrel. Bản này đóng kín: barrel xuất lại từ `./comments-v2` sẽ bị từ chối (đỏ), không lọt — chưa đổi.
+  - Luật 1: không `comments-*.ts` nào nạp `./comments` ở bất kỳ dạng nào: `import`, `import type`, `export … from`, `import()` trong hàm, `require()`, `typeof import('#server/…')`. Thêm cho cả bốn nhóm: `import()`/`require()` với đối số không cố định trong tệp con là đỏ, vì không kiểm được đích.
+  - **Luật 4 (mới, cả bốn nhóm): trạng thái cấp module có một chủ.** § 41 ghi "mỗi trạng thái cấp module chỉ có một chủ", nhưng trước đây chỉ luật 3 (nhập tên của sổ lượt chạy) canh một phần, và không có phép kiểm lượt ghi nào.
+    - "Trạng thái" là `let`/`var` cấp đỉnh, và `const` khởi tạo bằng object/array literal hoặc `new …`.
+    - (a) Cùng một tên không được khai ở hai tệp của một nhóm: chép thay vì import lúc tách là thành hai sổ độc lập.
+    - (b) Chỉ tệp khai báo được ghi vào trạng thái. Guard quét mọi tệp trong `server/`, `scripts/`, `shared/`.
+    - Gốc của đích ghi được lần qua `.p`, `[k]` (kể cả khoá tính toán), `!`, `( )`, `as`/`satisfies`, nhưng không qua lời gọi.
+    - Các dạng ghi bị bắt: gán (kể cả toán tử ghép, destructure, `for…of/in`), `++`/`--`, `delete`, các phương thức đổi nội dung (`.set`, `.push`, `.splice`…), `Object.assign`/`defineProperty`, `Reflect.set`.
+    - Tên đã nhập được giải qua barrel về tệp khai báo, cho mọi dạng nhập: named, default, namespace, `import =`, `await import()`, `.then((m) => …)`, destructure. Tên cục bộ che tên đã nhập thì không bị tính.
+    - Ghi `ns[k]` lên namespace của một module có xuất trạng thái là đỏ, vì không xác định được tên.
+    - Nhóm comments hôm nay chưa xuất trạng thái nào: `COMMENT_READER_RULE`/`COMMENT_IP_RULE` là `const` riêng của `comments-posting.ts`, còn `MODERATION_FAILED` là Symbol. Luật canh từ lượt xuất đầu tiên.
+    - Giới hạn: một hàm của chủ trả về chính đối tượng trạng thái thì không lần được, nên trạng thái thật (`activeClaims`, `cpulimitAvailable`) giữ không `export`.
+  - **Luật 5 (mới): API của barrel `comments.ts`.** Barrel phải xuất đúng 17 giá trị + 17 kiểu của bản `262eee8`, so theo tên xuất và theo loại. Danh sách chép cứng, vì job unit của CI checkout nông và không có `262eee8`. Kèm một phép so tên giá trị lúc chạy. Các trường hợp đỏ: bỏ một tên, đổi tên, đổi giá trị thành kiểu, lộ helper (`MODERATION_FAILED`), `export *`.
+  - 12 bằng chứng đột biến mới nằm trong bộ test.
+  - Bằng chứng đỏ trước — vô hiệu từng phép kiểm (bản nháp, đã hoàn lại):
+    - luật 1: 5 bằng chứng đỏ;
+    - nhánh đối số không cố định: đúng ca đó đỏ;
+    - luật 4: 8 bằng chứng đỏ;
+    - luật 5: 1 bằng chứng đỏ;
+    - bỏ xử lý khoá tính toán (chỉ còn `.p`): đúng 5 bằng chứng ghi qua `[k]` đỏ, còn `X.p = …` vẫn xanh.
+  - Bằng chứng KHÔNG đỏ cũng được kiểm ngược — nới từng chỗ một (bản nháp, đã hoàn lại):
+    - luật 1 so barrel theo tiền tố → hai ca "KHÔNG nhầm" (`./comments-rules`, `./media-portal-assets`) đỏ;
+    - luật 4 bỏ phạm vi cục bộ (chỉ còn phạm vi tệp) → phần "tên cục bộ che tên đã nhập" đỏ;
+    - luật 4 lần gốc xuyên qua lời gọi → phần `RENDITIONS.slice().sort()` đỏ;
+    - luật 4 bỏ ngoại lệ "chủ tự ghi" → phần chủ ghi qua bí danh nhập lại chính tệp đó đỏ. Lượt nới này lúc đầu vẫn xanh: lượt ghi thẳng của chủ có gốc là khai báo cục bộ, không bao giờ thành lượt ghi cần xét. Bằng chứng được thêm ca bí danh để ngoại lệ thật sự được kiểm.
+  - Đột biến thật trên đĩa (đã hoàn lại):
+    - `comments-thread.ts` import `./comments` → luật 1 đỏ;
+    - barrel bỏ `initialsFrom` → luật 5 đỏ, cả AST lẫn lúc chạy;
+    - `chunked-upload-receipt.ts` ghi `NOT_FOUND[key]` → luật 4 đỏ.
+  - Mã thật không có vi phạm nào.
+- **Kiểm chứng (2026-10-25, Node 26.11, worktree `wave2/integration`):** `npm test` 5007 / 4954 pass / 0 fail / 53 skip (+16 so với lượt gộp 5.5: 4991 / 4938 / 0 / 53). Typecheck 0 lỗi. eslint 0 error / 16 warning (không cảnh báo nào ở tệp mới/sửa). Không chạy integration/E2E ở lượt này: MySQL dùng chung đang có agent khác chạy, và khoá tên của backup là khoá toàn máy chủ.
+
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
 Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏi danh sách): `comments.ts`/`livestream-chat.ts` kiểm duyệt trước giới hạn; xoay IPv6 né trần hàng duyệt (chỉ trần hàng duyệt); thông báo 400 của `useChatbot.ts` bị nuốt; `fetch(img.url)` trần ở `media-portal.ts`; account id R2 đã lưu không kiểm lúc dùng; `[slug].vue` hai đoạn + lỗi tải `ArticleDetail.vue` trả 200; `/legal-qa` 200 khi CSDL hỏng; `backups.trigger` `VARCHAR(16)`; xoay vòng theo lịch xoá tệp đang khôi phục; `recordInstantBlock` nuốt lỗi; fixture `stub-account` làm đỏ `media-self-heal-integration`.
