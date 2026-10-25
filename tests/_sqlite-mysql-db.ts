@@ -23,8 +23,13 @@
  *  - `failNext(pattern)` makes the next statement whose SQL matches throw, so a
  *    suite can break the audit insert and watch what survives.
  *  - JSON columns are decoded on read, as mysql2 does. Statements outside the
- *    dialect subset SQLite shares with MySQL (`ON DUPLICATE KEY`, `now()`) throw
- *    rather than being approximated.
+ *    dialect subset SQLite shares with MySQL (`now()`, `IF()`) throw rather than
+ *    being approximated.
+ *  - One form of `ON DUPLICATE KEY UPDATE` is supported, because it has an exact
+ *    SQLite twin: a single-row insert whose update list is only `` `col` = ? ``
+ *    becomes `ON CONFLICT DO UPDATE SET` with the same assignments. With no unique
+ *    index besides the primary key (see above), both fire on the same conflict.
+ *    Anything else in the update list (`values(col)`, `col + 1`, `IF(...)`) throws.
  */
 import { DatabaseSync, type SQLInputValue } from 'node:sqlite'
 import { getTableColumns, getTableName, SQL } from 'drizzle-orm'
@@ -97,16 +102,34 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
     }
   }
 
+  /**
+   * `… on duplicate key update `a` = ?, `b` = ?` → the insert part and SQLite's
+   * `ON CONFLICT DO UPDATE SET` clause; null when the statement is a plain insert.
+   */
+  function splitUpsert(sql: string): { insert: string, conflictClause: string } | null {
+    const marker = ' on duplicate key update '
+    const at = sql.indexOf(marker)
+    if (at === -1) return null
+    const assignments = splitTopLevel(sql.slice(at + marker.length))
+    if (!assignments.length || !assignments.every(assignment => /^`[^`]+` = \?$/.test(assignment))) {
+      throw new Error(`unsupported statement for the SQLite harness: ${sql}`)
+    }
+    return { insert: sql.slice(0, at), conflictClause: ` ON CONFLICT DO UPDATE SET ${assignments.join(', ')}` }
+  }
+
   /** MySQL `insert … values (default, ?, …)` → one SQLite insert per row, defaults omitted. */
-  function runInsert(sql: string, params: unknown[]): ProxyResult {
+  function runInsert(fullSql: string, params: unknown[]): ProxyResult {
+    const upsert = splitUpsert(fullSql)
+    const sql = upsert ? upsert.insert : fullSql
     const match = /^insert(?: ignore)? into (`[^`]+`) \((.*?)\) values (.*)$/s.exec(sql)
-    if (!match) throw new Error(`unsupported insert for the SQLite harness: ${sql}`)
+    if (!match) throw new Error(`unsupported insert for the SQLite harness: ${fullSql}`)
     const [, tableName, columnList, valuesList] = match
     const columns = splitTopLevel(columnList!)
     const rows = splitTopLevel(valuesList!).map((tuple) => {
       if (!tuple.startsWith('(') || !tuple.endsWith(')')) throw new Error(`unsupported insert values: ${sql}`)
       return splitTopLevel(tuple.slice(1, -1))
     })
+    if (upsert && rows.length !== 1) throw new Error(`unsupported multi-row upsert for the SQLite harness: ${fullSql}`)
     let cursor = 0
     let affectedRows = 0
     let insertId = 0
@@ -120,9 +143,12 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
         values.push(toSqliteParam(params[cursor]))
         cursor += 1
       })
+      if (upsert && !names.length) throw new Error(`unsupported upsert of default values: ${fullSql}`)
       const statement = names.length
-        ? `INSERT INTO ${tableName} (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})`
+        ? `INSERT INTO ${tableName} (${names.join(', ')}) VALUES (${names.map(() => '?').join(', ')})${upsert?.conflictClause ?? ''}`
         : `INSERT INTO ${tableName} DEFAULT VALUES`
+      // The update list's parameters follow the values' in MySQL's order too.
+      if (upsert) values.push(...params.slice(cursor).map(toSqliteParam))
       const result = sqlite.prepare(statement).run(...values)
       affectedRows += Number(result.changes)
       insertId = insertId || Number(result.lastInsertRowid)
@@ -133,8 +159,8 @@ export function createSqliteMysqlDb(tables: MySqlTable[]) {
   async function execute(sql: string, params: unknown[], method: Method): Promise<ProxyResult> {
     statements.push(sql)
     maybeFail(sql)
-    if (/on duplicate key/i.test(sql)) throw new Error(`unsupported statement for the SQLite harness: ${sql}`)
     if (/^insert/i.test(sql)) return runInsert(sql, params)
+    if (/on duplicate key/i.test(sql)) throw new Error(`unsupported statement for the SQLite harness: ${sql}`)
 
     const statement = sqlite.prepare(sql.replace(/ for update$/, ''))
     const bound = params.map(toSqliteParam)
