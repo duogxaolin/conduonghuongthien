@@ -10,7 +10,8 @@
  *    sang R2 URL khớp qua basename JOIN với `media.filename` (provider='r2',
  *    đã có object). Trả số bài được sửa.
  *
- * Idempotent: chạy lại không thay đổi kết quả. Tự backup SQL trước (`runBackup`).
+ * Idempotent: chạy lại không thay đổi kết quả. Tự backup SQL trước (`runBackup`);
+ * đang khôi phục CSDL → dừng trước mọi lượt ghi (`JobBlockedByRestoreError`, 409).
  * Khoá MySQL `cdkt:media:self-heal` (timeout 0 — không xếp hàng).
  *
  * `dryRun: true` — chỉ phân tích, không upload/UPDATE; trả preview số lượng.
@@ -26,9 +27,11 @@ import { withNamedLock } from '../utils/named-lock'
 import { headR2Object, uploadR2File } from '../utils/media-r2'
 import { loadR2Config } from './media'
 import { runBackup } from './backup'
+import { MEDIA_JOB_LOCK, abortJobIfRestoreInProgress } from './pre-job-backup'
 import { logInfo, logWarn } from '../utils/logger'
 
-const LOCK_NAME = 'cdkt:media:self-heal'
+/** `cdkt:media:self-heal` — tên ở `MEDIA_JOB_LOCK` (lượt khôi phục đọc cùng danh sách). */
+const LOCK_NAME = MEDIA_JOB_LOCK.selfHeal
 
 /**
  * Ảnh mặc định thay thế khi R2 object bị mất vĩnh viễn (file local cũng không còn).
@@ -83,6 +86,9 @@ export async function selfHealMedia(
         const r = await runBackup('sql', 'pre-self-heal', adminUserId)
         backupStamp = r.stamp
       } catch (err) {
+        // Đang khôi phục CSDL → dừng, chưa ghi/tải gì (`pre-job-backup.ts`). Lỗi khác:
+        // vá tiếp, không có bản chụp.
+        abortJobIfRestoreInProgress(err, 'self-heal', 'tự vá ảnh')
         logWarn({ event: 'media.self_heal_pre_backup_failed', error: err instanceof Error ? err.message : String(err) })
       }
     }

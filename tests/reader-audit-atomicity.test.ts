@@ -25,6 +25,9 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
+import ts from 'typescript'
+import { BACKUP_BARREL, backupServiceSource } from './_backup-service-family'
+import { commentServiceFiles } from './_comments-service-source'
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
 
@@ -42,7 +45,11 @@ function functionBody(source: string, name: string): string {
 
 /** Every path this change added that both mutates a row and audits the mutation. */
 const AUDITED_WRITES: Array<{ file: string, fn: string, why: string }> = [
-  { file: 'server/services/comments.ts', fn: 'deleteComment', why: 'a public comment vanishes with no record of who removed it' },
+  // The comment service is split into `comments-*.ts` sub-files (wave2 D-SPLIT);
+  // `comments.ts` is a barrel. Each entry names the file that holds the function —
+  // the family check further down fails if a comment sub-file writes
+  // `activity_logs` without appearing here or in SERVICE_EXEMPTIONS.
+  { file: 'server/services/comments-deletion.ts', fn: 'deleteComment', why: 'a public comment vanishes with no record of who removed it' },
   { file: 'server/services/readers.ts', fn: 'banReader', why: 'a flag set without the deletion leaves comments under a banned name' },
   { file: 'server/services/readers.ts', fn: 'deleteReader', why: 'an account and its comment history disappear untraceably' },
   { file: 'server/services/readers.ts', fn: 'purgeReaderComments', why: 'every comment a citizen wrote is removed with nothing recording it' },
@@ -52,7 +59,7 @@ const AUDITED_WRITES: Array<{ file: string, fn: string, why: string }> = [
   { file: 'server/services/google-oauth-settings.ts', fn: 'updateGoogleOAuthSettings', why: '"who turned Google sign-in on, and when" becomes unanswerable' },
   { file: 'server/services/google-oauth-settings.ts', fn: 'clearGoogleOAuthSecret', why: 'credentials are dropped with no record of it' },
   { file: 'server/services/articles.ts', fn: 'setArticleCommentsEnabled', why: 'a thread opens or closes with nobody accountable' },
-  { file: 'server/services/comments.ts', fn: 'createAdminReply', why: 'an administrator\'s public reply exists with no record of which admin posted it' },
+  { file: 'server/services/comments-admin-reply.ts', fn: 'createAdminReply', why:'an administrator\'s public reply exists with no record of which admin posted it' },
   // A rename is a write to a citizen's personal data, and it is the one audited
   // path here whose actor is NOT a member of staff — see the `userId: null` note in
   // renameReader for why the reader's id goes in `meta` instead of the user column.
@@ -122,7 +129,7 @@ describe('the shared deletion path can join a caller transaction', () => {
     // Without this, purgeReaderComments could not delete and audit atomically: it
     // would have to either duplicate the DELETE (breaking the single-deletion-path
     // rule from design.md D8) or leave the pair unwrapped.
-    const body = functionBody(read('server/services/comments.ts'), 'deleteReaderComments')
+    const body = functionBody(read('server/services/comments-deletion.ts'), 'deleteReaderComments')
     assert.match(body, /executor\?:/, 'deleteReaderComments no longer accepts an executor')
     assert.match(
       body,
@@ -521,14 +528,24 @@ const AUDITED_SERVICES: string[] = [
   // Backup & khôi phục: tạo/xoá bản backup ghi hàng `backups` + audit trong một
   // transaction; khôi phục ghi `backup_restore` (kèm các hàng `backups` gắn lại)
   // trong một transaction và `backup_restore_failed` trong transaction riêng.
-  'server/services/backup.ts',
+  // `backup.ts` là barrel từ 2026-10-25: mục này đọc CẢ nhóm tệp từng là nó
+  // (`serviceSource`, `tests/_backup-service-family.ts`).
+  BACKUP_BARREL,
   'server/services/backup-restore.ts',
 ]
+
+/**
+ * Text a service entry stands for. A service split into a barrel plus parts is
+ * checked over ALL of its parts — the barrel alone holds no code, so reading only it
+ * would pass vacuously, and reading one hand-picked part would miss a write moved to
+ * another.
+ */
+const serviceSource = (file: string) => (file === BACKUP_BARREL ? backupServiceSource() : read(file))
 
 describe('service-layer writes commit their mutation and their audit row together', () => {
   for (const file of AUDITED_SERVICES) {
     it(`${file.replace('server/services/', '')} wraps every audited write`, () => {
-      const source = read(file)
+      const source = serviceSource(file)
       assert.match(source, /db\.transaction\(/, 'the write and its audit row are not atomic')
       // `chatbot-small-talk.ts` audits through a local `audit(store, …)` helper
       // whose PARAMETER is also named `db`, so a literal search for
@@ -575,10 +592,15 @@ const SERVICE_EXEMPTIONS: Record<string, string> = {
   // thích và hỏi một câu mà câu trả lời đúng là "không có lượt ghi nào để bọc".
   //
   // Hành động đáng ghi kiểm toán là **lượt tải lên**, và cặp hàng + nhật ký đó
-  // nằm trong transaction của `completeUpload` (`server/services/chunked-upload.ts`).
+  // nằm trong transaction của `completeUpload` (`server/services/chunked-upload-completion.ts`,
+  // xuất lại qua barrel `chunked-upload.ts`).
   // Một lượt chuyển mã chạy hàng chục phút là sự kiện của máy, không phải hành
   // động của cán bộ, nên nó không có cặp hàng + audit nào để bọc.
-  'video-processing.ts': 'holds no row+audit pair; the upload audit lives in chunked-upload.ts own transaction',
+  //
+  // Mục này từng mang tên `video-processing.ts`. Từ khi tách tệp (wave2 5.4), tệp
+  // đó chỉ còn là cửa vào re-export; `processMediaItem` và phần đầu tệp giải thích
+  // (thứ cổng quét bắt) sống ở `video-transcode-pipeline.ts`.
+  'video-transcode-pipeline.ts': 'holds no row+audit pair; the upload audit lives in chunked-upload-completion.ts own transaction',
   'media-processing-reaper.ts': 'holds no row+audit pair; a reclaim is a machine event, not an officer action',
   // `bulkTriggerTranslation` chỉ ghi MỘT dòng audit "đã yêu cầu dịch hàng loạt" rồi
   // đẩy việc sang nền; không có hàng nghiệp vụ nào được ghi cùng lúc để giữ nguyên
@@ -593,6 +615,88 @@ const SERVICE_EXEMPTIONS: Record<string, string> = {
   // miễn ở đây (audit thay URL best-effort ngoài transaction); nay lượt thay URL và
   // audit của nó cùng transaction, nên tệp đó đi qua cổng như mọi service khác.
   'media-sync.ts': 'progress/summary audits are best-effort by design; the row+audit pair is transactional in media-sync-files.ts',
+  // Cùng hình với `media-sync.ts`: job quét nền ghi audit TIẾN ĐỘ (mỗi lô / tổng kết)
+  // bằng try/catch best-effort. Cặp hàng `media` + audit `create` của từng tệp nhập
+  // nằm trong `db.transaction` ở `media-scan-import.ts` (wave2 D-SCAN tách ra) — trước
+  // đó cùng tệp, nên `media-scan.ts` từng nằm ở SERVICE_POOL_AUDIT_EXEMPTIONS.
+  'media-scan.ts': 'progress/summary audits of a background scan job are best-effort by design; the row+audit pair is transactional in media-scan-import.ts',
+}
+
+/**
+ * Miễn trừ "chỉ ghi audit" theo HÀM, không theo tệp.
+ *
+ * `auditCommentRead` chỉ ghi MỘT dòng audit "đã xem danh sách kiểm duyệt" —
+ * không có hàng nghiệp vụ nào để nguyên tử cùng. Trước wave2 D-SPLIT nó nằm trong
+ * `comments.ts` cùng các hàm có transaction nên cổng theo tệp không hỏi; tách tệp
+ * làm nó lộ ra ở `comments-moderation.ts`, không phải mới. Cặp hàng + audit thật
+ * của dịch vụ bình luận nằm ở `comments-deletion.ts`/`comments-admin-reply.ts`
+ * (AUDITED_WRITES).
+ *
+ * Miễn theo TỆP (`SERVICE_EXEMPTIONS`) là sai ở đây: nó bỏ qua cả tệp, nên một
+ * hành động "ẩn bình luận" thêm sau này vào cùng tệp — `db.execute(sql\`UPDATE …\`)`
+ * rồi `db.insert(activityLogs)` trên pool — vẫn xanh, trong khi ở bản trước khi
+ * tách cùng đoạn mã đó đỏ. Nên miễn trừ chỉ có hiệu lực khi TỆP đúng như tiền đề,
+ * kiểm bằng AST (`auditOnlyFunctionProblems`): mọi tham chiếu `activityLogs` (trừ
+ * import) nằm trong hàm được miễn, lời gọi ghi duy nhất của cả tệp là
+ * `.insert(activityLogs)` trong hàm đó, và không hàm nào trong tệp gọi nó. Sai một
+ * điều → tệp KHÔNG được miễn, các phép kiểm thường áp như mọi service khác, và
+ * test riêng bên dưới nêu đúng điều sai.
+ */
+const AUDIT_ONLY_FUNCTION_EXEMPTIONS: Record<string, { fn: string, why: string }> = {
+  'comments-moderation.ts': {
+    fn: 'auditCommentRead',
+    why: 'audit-only insert recording a read of the moderation list; no row write to pair it with',
+  },
+}
+
+/** Lời gọi phương thức có thể ghi CSDL, trên bất kỳ handle nào (`db`, `tx`, `conn`, `getDb()`, `pool`…). */
+const WRITE_METHODS = new Set(['insert', 'update', 'delete', 'execute', 'query', 'transaction'])
+/** Hàm (gọi bằng tên) có dáng một lượt ghi — nằm ngoài hàm được miễn là tệp không còn "chỉ ghi audit". */
+const WRITE_SHAPED_CALL = /^(?:delete|create|update|insert|set|ban|purge|hide|remove|save|write)/i
+
+/**
+ * Vì sao `source` KHÔNG còn đúng tiền đề "chỉ `fn` ghi, và chỉ ghi một dòng audit".
+ * Mảng rỗng = miễn trừ giữ được. Phân tích AST (TypeScript compiler API): chú
+ * thích và chuỗi không tính, mọi tên handle đều bị hỏi.
+ */
+function auditOnlyFunctionProblems(fileName: string, source: string, fn: string): string[] {
+  const sourceFile = ts.createSourceFile(fileName, source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const allowed = sourceFile.statements.find(
+    (statement): statement is ts.FunctionDeclaration => ts.isFunctionDeclaration(statement) && statement.name?.text === fn,
+  )
+  if (!allowed) return [`${fn} is no longer declared in ${fileName}`]
+  const inside = (node: ts.Node) => node.getStart(sourceFile) >= allowed.getStart(sourceFile) && node.end <= allowed.end
+  const problems = new Set<string>()
+  let auditInserts = 0
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isImportDeclaration(node)) return
+    if (ts.isIdentifier(node)) {
+      if (node.text === 'activityLogs' && !inside(node)) problems.add(`activityLogs referenced outside ${fn}`)
+      // An in-file caller could pair its own write (through another module) with this audit row.
+      if (node.text === fn && node !== allowed.name) problems.add(`${fn} is referenced inside the file — the audit could be paired with a write`)
+    }
+    if (ts.isCallExpression(node)) {
+      const callee = node.expression
+      if (ts.isPropertyAccessExpression(callee) && WRITE_METHODS.has(callee.name.text)) {
+        const [first] = node.arguments
+        const isAudit = callee.name.text === 'insert' && first !== undefined && ts.isIdentifier(first) && first.text === 'activityLogs'
+        if (isAudit && inside(node)) auditInserts += 1
+        else problems.add(`.${callee.name.text}( call besides the one audit insert in ${fn}`)
+      }
+      if (ts.isIdentifier(callee) && WRITE_SHAPED_CALL.test(callee.text) && !inside(node)) problems.add(`call to write-shaped ${callee.text}(`)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sourceFile)
+  if (auditInserts === 0) problems.add(`${fn} no longer inserts its audit row — drop the exemption`)
+  return [...problems]
+}
+
+/** The scan's question for an exempted file: does the function-scoped premise still hold? */
+function auditOnlyExemptionHolds(entry: string, source: string): boolean {
+  const scoped = AUDIT_ONLY_FUNCTION_EXEMPTIONS[entry]
+  return scoped !== undefined && auditOnlyFunctionProblems(entry, source, scoped.fn).length === 0
 }
 
 /**
@@ -612,9 +716,6 @@ const SERVICE_POOL_AUDIT_EXEMPTIONS: Record<string, string> = {
   // `deleteArticleById`/`setArticleStatus` chủ đích không bọc — khoá bởi test
   // `known exclusions are named` ở đầu tệp này.
   'articles.ts': 'named known exclusion: deleteArticleById/setArticleStatus (see known exclusions test)',
-  // Audit TIẾN ĐỘ của job quét nền (mỗi lô / tổng kết), try/catch best-effort như
-  // `media-sync.ts`; cặp hàng media + audit thật nằm trong transaction của tệp.
-  'media-scan.ts': 'progress/summary audits of a background scan job are best-effort by design',
 }
 
 describe('no service writes activity_logs outside a transaction', () => {
@@ -626,6 +727,8 @@ describe('no service writes activity_logs outside a transaction', () => {
       const source = read(join(dir, entry))
       if (!/activityLogs/.test(source)) continue
       if (SERVICE_EXEMPTIONS[entry]) continue
+      // Function-scoped: exempt only while the premise holds; otherwise judged like any service.
+      if (auditOnlyExemptionHolds(entry, source)) continue
       if (!/db\.transaction\(/.test(source)) {
         offenders.push(entry)
         continue
@@ -643,7 +746,122 @@ describe('no service writes activity_logs outside a transaction', () => {
       + 'vĩnh viễn với tệp nó chưa biết; guard này quét cả thư mục chính vì thế.',
     )
   })
+
+  it('a function-scoped audit-only exemption still holds', () => {
+    for (const [entry, { fn }] of Object.entries(AUDIT_ONLY_FUNCTION_EXEMPTIONS)) {
+      assert.ok(!SERVICE_EXEMPTIONS[entry], `${entry} must not also carry a whole-file exemption — that would skip the premise check`)
+      assert.deepEqual(
+        auditOnlyFunctionProblems(entry, read(join('server/services', entry)), fn),
+        [],
+        `${entry} được miễn vì chỉ ${fn} ghi một dòng audit — tiền đề không còn đúng, nên tệp bị xét như `
+        + 'mọi service: bọc cặp hàng + audit trong transaction, hoặc đưa lượt ghi ra tệp khác',
+      )
+    }
+  })
+
+  /**
+   * The detector, pinned on hand-made mutations of the real file — a scoped
+   * exemption that misses a shape is green exactly like one that works.
+   * X1–X5 / G12 are the verifier's mutations of the 5.5 split.
+   */
+  it('the scoped exemption is lost to a row write in any shape, on any handle', () => {
+    const entry = 'comments-moderation.ts'
+    const { fn } = AUDIT_ONLY_FUNCTION_EXEMPTIONS[entry]!
+    const base = read(join('server/services', entry))
+    const mutations: Record<string, string> = {
+      // Raw UPDATE through execute, then an audit row on the pool.
+      X1: 'export async function hideComment(id: number, actorId: number) {\n  const db = getDb()\n  await db.execute(sql`UPDATE article_comments SET is_hidden = 1 WHERE id = ${id}`)\n  await db.insert(activityLogs).values({ userId: actorId, action: \'hide\', resource: \'comments\', resourceId: id })\n}',
+      // Same pair on a handle that is not called `db`.
+      X2: 'export async function hideComment(id: number, actorId: number) {\n  const conn = getDb()\n  await conn.update(articleComments).set({ isHidden: true }).where(eq(articleComments.id, id))\n  await conn.insert(activityLogs).values({ userId: actorId, action: \'hide\', resource: \'comments\', resourceId: id })\n}',
+      X3: 'export async function hideComment(id: number, actorId: number) {\n  const db = getDb()\n  await db.update(articleComments).set({ isHidden: true }).where(eq(articleComments.id, id))\n  await db.insert(activityLogs).values({ userId: actorId, action: \'hide\', resource: \'comments\', resourceId: id })\n}',
+      X4: 'export async function hideComment(id: number, actorId: number) {\n  await getDb().update(articleComments).set({ isHidden: true }).where(eq(articleComments.id, id))\n  await getDb().insert(activityLogs).values({ userId: actorId, action: \'hide\', resource: \'comments\', resourceId: id })\n}',
+      // The write happens in another service, the audit row here — still an unwrapped pair.
+      X5: 'import { deleteComment as dc2 } from \'./comments-deletion\'\nexport async function removeAndLog(id: number, actorId: number) {\n  await dc2({ id, actor: { kind: \'system\', reason: \'retention\' } } as never)\n  await getDb().insert(activityLogs).values({ userId: actorId, action: \'delete\', resource: \'comments\', resourceId: id })\n}',
+      // A second deletion path, no audit at all.
+      G12: 'export async function purgeHidden() { await getDb().delete(articleComments).where(eq(articleComments.isHidden, true)) }',
+      // A write elsewhere paired with the exempted audit function itself.
+      caller: `export async function hideAndAudit(id: number, actorId: number) {\n  await hideElsewhere(id)\n  await ${fn}({ actorId, meta: { id } })\n}`,
+      // A row write inside the exempted function.
+      inside: base.replace('await getDb().insert(activityLogs)', 'await getDb().update(articleComments).set({ isHidden: true })\n  await getDb().insert(activityLogs)'),
+    }
+    assert.deepEqual(auditOnlyFunctionProblems(entry, base, fn), [], 'the clean file must keep its exemption')
+    for (const [id, mutation] of Object.entries(mutations)) {
+      const mutated = id === 'inside' ? mutation : `${base}\n${mutation}\n`
+      assert.notEqual(mutated, base, `${id}: the mutation did not apply`)
+      assert.ok(auditOnlyFunctionProblems(entry, mutated, fn).length > 0, `${id}: the scoped exemption still holds on a file that writes a row`)
+      assert.equal(auditOnlyExemptionHolds(entry, mutated), false, `${id}: the directory scan would still skip this file`)
+    }
+  })
 })
+
+/**
+ * Dịch vụ bình luận là MỘT họ tệp (`comments.ts` barrel + `comments-*.ts`, wave2
+ * D-SPLIT). Trước khi tách, cả 1208 dòng nằm trong một tệp mà AUDITED_WRITES trỏ
+ * tới; sau khi tách, mỗi tệp con ghi `activity_logs` phải được nêu tên — trong
+ * AUDITED_WRITES (hàm ghi hàng + audit), AUDIT_ONLY_FUNCTION_EXEMPTIONS (miễn
+ * theo hàm, tiền đề kiểm bằng AST) hoặc SERVICE_EXEMPTIONS (kèm lý do). Tập tệp
+ * suy từ thư mục, nên tệp con thêm sau này cũng bị hỏi.
+ */
+describe('every comment-service file that writes activity_logs is named', () => {
+  it('a comments*.ts touching activityLogs is in AUDITED_WRITES or exempt', () => {
+    const files = commentServiceFiles()
+    const auditing = files.filter(file => /activityLogs/.test(read(file)))
+    assert.ok(auditing.length > 0, 'no comment-service file writes activity_logs — the scan is checking nothing')
+    const unnamed = auditing.filter((file) => {
+      const entry = file.replace('server/services/', '')
+      return !AUDITED_WRITES.some(audited => audited.file === file)
+        && !SERVICE_EXEMPTIONS[entry]
+        && !AUDIT_ONLY_FUNCTION_EXEMPTIONS[entry]
+    })
+    assert.deepEqual(
+      unnamed,
+      [],
+      'tệp con của dịch vụ bình luận ghi `activity_logs` mà không được nêu tên — thêm hàm ghi hàng + '
+      + 'audit vào AUDITED_WRITES, hoặc khai miễn trừ kèm lý do',
+    )
+  })
+
+  /**
+   * The barrel holds re-exports and nothing else, so no code can sit where the
+   * per-file guards above do not look for it. Checked on the AST: every statement
+   * is a named `export { … } from './comments-…'` (type or value) — no
+   * declaration, no import, no `export *` (which would also leak the sub-files'
+   * internal exports into the public API).
+   */
+  it('comments.ts holds only named re-exports from ./comments-* sub-files', () => {
+    assert.deepEqual(barrelProblems(read('server/services/comments.ts')), [])
+  })
+
+  it('the barrel check refuses code, star exports and foreign re-exports', () => {
+    const base = read('server/services/comments.ts')
+    for (const [id, mutated] of Object.entries({
+      declaration: `${base}\nconst x = 1\n`,
+      function: `${base}\nexport async function hide(): Promise<void> {}\n`,
+      star: `${base}\nexport * from './comments-rules'\n`,
+      foreign: `${base}\nexport { getDb } from '../utils/db'\n`,
+      importThenExport: `import { sql } from 'drizzle-orm'\n${base}\nexport { sql }\n`,
+    })) {
+      assert.ok(barrelProblems(mutated).length > 0, `${id}: the barrel check accepted a non-re-export`)
+    }
+  })
+})
+
+function barrelProblems(source: string): string[] {
+  const sourceFile = ts.createSourceFile('comments.ts', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TS)
+  const problems: string[] = []
+  if (sourceFile.statements.length === 0) problems.push('the barrel exports nothing')
+  for (const statement of sourceFile.statements) {
+    const text = statement.getText(sourceFile).slice(0, 60)
+    if (!ts.isExportDeclaration(statement)) {
+      problems.push(`not a re-export: ${text}`)
+      continue
+    }
+    if (!statement.exportClause || !ts.isNamedExports(statement.exportClause)) problems.push(`not a NAMED re-export: ${text}`)
+    const from = statement.moduleSpecifier
+    if (!from || !ts.isStringLiteral(from) || !/^\.\/comments-[a-z-]+$/.test(from.text)) problems.push(`not re-exported from a ./comments-* sub-file: ${text}`)
+  }
+  return problems
+}
 
 /**
  * Câu hỏi mà KHÔNG cổng nào trong repo này từng đặt ra: "một endpoint quản trị

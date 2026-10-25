@@ -15,13 +15,25 @@
  * then the behavioural consequence: a freshly created hour-long job must deliver
  * a time-proportional sliver on its first tick, not the lot.
  *
+ * It also holds the real-MySQL half of the per-article view totals (design D6,
+ * spec `most-read-ranking`): `articles.view_total_real` / `view_total_fabricated`
+ * (and `view_total` their sum) must equal the sums of `article_view_daily` after
+ * real views, an instant boost, the gradual passes and a concurrent burst;
+ * `articles.updated_at` must not move (the column is `ON UPDATE
+ * CURRENT_TIMESTAMP`); and the boot-time reconcile must heal exactly the articles
+ * whose totals differ from their daily rows — an upgrade, a rollback to an image
+ * that counted views without the totals, a d079453 database whose `view_total`
+ * was a generated column — and write nothing on a consistent database. The
+ * statement shapes are pinned without a database in
+ * `tests/view-totals-integrity.test.ts`.
+ *
  * Gated and self-cleaning, following the *-ddl-integration precedent:
  *
  *   VIEW_BOOST_INTEGRATION=1 VIEW_BOOST_PORT=33069 VIEW_BOOST_PASSWORD=... npm test
  */
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import mysql from 'mysql2/promise'
+import mysql, { type Connection, type RowDataPacket } from 'mysql2/promise'
 
 const enabled = process.env.VIEW_BOOST_INTEGRATION === '1'
 const host = process.env.VIEW_BOOST_HOST || '127.0.0.1'
@@ -29,17 +41,58 @@ const port = Number(process.env.VIEW_BOOST_PORT || 3306)
 const user = process.env.VIEW_BOOST_USER || 'root'
 const password = process.env.VIEW_BOOST_PASSWORD || 'rootpassword'
 const database = `cdkt_view_boost_${Date.now()}_${process.pid}`
+const reconcileDatabase = `${database}_reconcile`
 
 /** Never let a typo in the env point this at a real deployment. */
 function assertDisposableDatabase(name: string) {
-  assert.match(name, /^cdkt_view_boost_\d+_\d+$/)
+  assert.match(name, /^cdkt_view_boost_\d+_\d+(?:_reconcile)?$/)
   assert.notEqual(name, 'cdkt_admin')
   assert.notEqual(name, process.env.DB_NAME)
 }
 
+type TotalsRow = RowDataPacket & {
+  real: string | number
+  fabricated: string | number
+  total: string | number
+  dailyReal: string | number
+  dailyFabricated: string | number
+  updatedAt: string
+}
+
+/** The article's maintained totals next to the sums they must equal. */
+async function readTotals(connection: Connection, articleId: number) {
+  const [[row]] = await connection.query<TotalsRow[]>(
+    `SELECT a.view_total_real AS \`real\`, a.view_total_fabricated AS fabricated, a.view_total AS total,
+            DATE_FORMAT(a.updated_at, '%Y-%m-%d %H:%i:%s') AS updatedAt,
+            (SELECT COALESCE(SUM(v.real_views), 0) FROM article_view_daily v WHERE v.article_id = a.id) AS dailyReal,
+            (SELECT COALESCE(SUM(v.fabricated_views), 0) FROM article_view_daily v WHERE v.article_id = a.id) AS dailyFabricated
+       FROM articles a WHERE a.id = ?`,
+    [articleId],
+  )
+  return {
+    real: Number(row!.real),
+    fabricated: Number(row!.fabricated),
+    total: Number(row!.total),
+    dailyReal: Number(row!.dailyReal),
+    dailyFabricated: Number(row!.dailyFabricated),
+    updatedAt: row!.updatedAt,
+  }
+}
+
+async function assertTotalsEqualDailySums(connection: Connection, articleId: number, updatedAt: string, label: string) {
+  const totals = await readTotals(connection, articleId)
+  assert.equal(totals.real, totals.dailyReal, `${label}: view_total_real must equal SUM(real_views)`)
+  assert.equal(totals.fabricated, totals.dailyFabricated, `${label}: view_total_fabricated must equal SUM(fabricated_views)`)
+  assert.equal(totals.total, totals.real + totals.fabricated, `${label}: view_total is the stored sum of the two halves`)
+  assert.equal(totals.updatedAt, updatedAt, `${label}: counting a view must not touch articles.updated_at`)
+  return totals
+}
+
+const PINNED_UPDATED_AT = '2026-01-02 03:04:05'
+
 test('a gradual job survives the round trip through MySQL and delivers proportionally', {
   skip: !enabled,
-  timeout: 120_000,
+  timeout: 180_000,
 }, async () => {
   assertDisposableDatabase(database)
 
@@ -218,6 +271,54 @@ test('a gradual job survives the round trip through MySQL and delivers proportio
     // A completed row is not picked up again, so nothing can exceed the total.
     const idle = await runBoostPass({ now: afterWindow })
     assert.deepEqual(idle, { jobs: 0, delivered: 0, completed: 0 })
+
+    // ── Per-article totals (design D6) ──────────────────────────────────────
+    // Every delivery above went through addFabricatedViews without an executor
+    // (the scheduler's path). Add real views and an instant boost the way
+    // view.post.ts and boost.post.ts write them, then compare against the sums.
+    const { recordArticleView, addFabricatedViews } = await import('../server/services/article-views')
+    const raw = await mysql.createConnection({ host, port, user, password, database })
+    try {
+      await raw.query('UPDATE `articles` SET `updated_at` = ? WHERE `id` = ?', [PINNED_UPDATED_AT, articleId])
+
+      await recordArticleView({ articleId, sourceCategory: 'direct' })
+      await recordArticleView({ articleId, sourceCategory: 'search' })
+      await recordArticleView({ articleId, sourceCategory: 'direct' })
+      await db.transaction(async (tx) => {
+        await addFabricatedViews({ articleId, amount: 50, executor: tx })
+      })
+
+      const totals = await assertTotalsEqualDailySums(raw, articleId, PINNED_UPDATED_AT, 'after record + instant + gradual')
+      assert.equal(totals.real, 3, 'three real views, nothing else reached the real total')
+      assert.equal(totals.fabricated, TOTAL + 50, 'the gradual job and the instant boost, nothing else')
+
+      // ── Concurrent burst on a fresh day ───────────────────────────────────
+      // The first view of a (day, article, source) INSERTs a daily row, which
+      // takes a shared lock on the parent article row (FK check). With the
+      // total bumped AFTER that insert, two such transactions each hold the
+      // shared lock and wait for the other's exclusive one — a deadlock, and
+      // view.post.ts swallows the error, so the view would silently vanish.
+      // The total is bumped FIRST; this burst proves no write is lost.
+      const burstDay = '2031-02-03'
+      const sources = ['direct', 'search', 'social', 'referral'] as const
+      const outcomes = await Promise.allSettled([
+        ...Array.from({ length: 20 }, (_, index) => recordArticleView({ articleId, sourceCategory: sources[index % sources.length]!, day: burstDay })),
+        addFabricatedViews({ articleId, amount: 7, day: burstDay }),
+        addFabricatedViews({ articleId, amount: 5, day: burstDay }),
+      ])
+      const rejected = outcomes.filter(outcome => outcome.status === 'rejected')
+      assert.deepEqual(rejected.map(outcome => String((outcome as PromiseRejectedResult).reason)), [], 'no concurrent view may fail')
+      const afterBurst = await assertTotalsEqualDailySums(raw, articleId, PINNED_UPDATED_AT, 'after the concurrent burst')
+      assert.equal(afterBurst.real, totals.real + 20)
+      assert.equal(afterBurst.fabricated, totals.fabricated + 12)
+      assert.equal(afterBurst.total, totals.total + 32, 'view_total moved with its halves under concurrency')
+
+      // The live write path leaves nothing for the boot reconcile to heal.
+      const { reconcileArticleViewTotals } = await import('../server/db/init')
+      assert.equal(await reconcileArticleViewTotals(raw), 0, 'the write path keeps every total equal to its daily sums')
+    } finally {
+      await raw.end()
+    }
   } finally {
     // getDb() caches a pool with no exported teardown; left open it holds the
     // test runner's event loop past the last assertion.
@@ -229,6 +330,140 @@ test('a gradual job survives the round trip through MySQL and delivers proportio
     }
     const cleanup = await mysql.createConnection({ host, port, user, password })
     await cleanup.query(`DROP DATABASE IF EXISTS \`${database}\``)
+    await cleanup.end()
+  }
+})
+
+/**
+ * The boot-time reconcile (design D6, reworked after the rollback finding on
+ * d079453). Every boot recomputes the totals from `article_view_daily` for the
+ * articles whose totals differ from those sums, and only those; a consistent
+ * database gets no write at all. That one rule covers:
+ *   - an upgrade from the previous release (columns added at 0, articles with
+ *     views get their sums);
+ *   - a rollback to an image that counts views without the totals, followed by a
+ *     roll-forward (the views counted meanwhile land in the totals);
+ *   - a boot cut short anywhere — the next boot simply compares again.
+ * It also converts a d079453 database, where `view_total` was a STORED generated
+ * column, to the plain column (MySQL keeps the values).
+ */
+test('the boot reconcile heals exactly the drifted articles and writes nothing on a consistent database', {
+  skip: !enabled,
+  // Several full boots (initDb) — each one walks every table's DDL.
+  timeout: 600_000,
+}, async () => {
+  assertDisposableDatabase(reconcileDatabase)
+  const admin = await mysql.createConnection({ host, port, user, password })
+  await admin.query(`CREATE DATABASE \`${reconcileDatabase}\` CHARACTER SET utf8mb4`)
+  await admin.end()
+
+  const previous = { ...process.env }
+  Object.assign(process.env, { DB_HOST: host, DB_PORT: String(port), DB_USER: user, DB_PASSWORD: password, DB_NAME: reconcileDatabase })
+  const connection = await mysql.createConnection({ host, port, user, password, database: reconcileDatabase })
+  try {
+    const { initDb, reconcileArticleViewTotals } = await import('../server/db/init')
+    await initDb()
+
+    const viewTotalColumn = async () => {
+      const [rows] = await connection.query<RowDataPacket[]>(
+        "SELECT IS_NULLABLE AS nullable, EXTRA AS extra FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'articles' AND COLUMN_NAME = 'view_total'",
+        [reconcileDatabase],
+      )
+      return { nullable: String(rows[0]?.nullable), extra: String(rows[0]?.extra) }
+    }
+    const indexColumns = async () => {
+      const [rows] = await connection.query<RowDataPacket[]>(
+        "SELECT COLUMN_NAME AS name FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'articles' AND INDEX_NAME = 'articles_status_type_views_idx' ORDER BY SEQ_IN_INDEX",
+        [reconcileDatabase],
+      )
+      return rows.map(row => String(row.name))
+    }
+    const INDEX = ['status', 'type', 'view_total', 'published_at', 'created_at']
+    const snapshot = async () => {
+      const [rows] = await connection.query<RowDataPacket[]>(
+        "SELECT id, view_total_real, view_total_fabricated, view_total, DATE_FORMAT(updated_at, '%Y-%m-%d %H:%i:%s') AS updated_at FROM articles ORDER BY id",
+      )
+      return rows.map(row => ({ ...row }))
+    }
+    const assertAllConsistent = async (label: string) => {
+      for (const id of [1, 2, 3, 4]) await assertTotalsEqualDailySums(connection, id, PINNED_UPDATED_AT, `${label}, article ${id}`)
+    }
+
+    assert.deepEqual(await viewTotalColumn(), { nullable: 'NO', extra: '' }, 'a fresh database: view_total is a plain NOT NULL column, never generated')
+    assert.deepEqual(await indexColumns(), INDEX)
+
+    // ── Drift as a rollback leaves it ───────────────────────────────────────
+    // 1: consistent. 2: views counted by an image that knew nothing of the
+    // totals (daily rows, totals 0). 3: totals with no daily row behind them.
+    // 4: never viewed.
+    await connection.query(
+      `INSERT INTO \`articles\` (\`id\`, \`type\`, \`title\`, \`slug\`, \`status\`, \`view_total_real\`, \`view_total_fabricated\`, \`view_total\`, \`updated_at\`) VALUES
+        (1, 'news', 'Nhất quán', 'nhat-quan', 'published', 4, 6, 10, ?),
+        (2, 'news', 'Đếm lúc lùi bản', 'dem-luc-lui-ban', 'published', 0, 0, 0, ?),
+        (3, 'news', 'Tổng không có hàng', 'tong-khong-co-hang', 'published', 7, 1, 8, ?),
+        (4, 'news', 'Chưa ai xem', 'chua-ai-xem', 'published', 0, 0, 0, ?)`,
+      [PINNED_UPDATED_AT, PINNED_UPDATED_AT, PINNED_UPDATED_AT, PINNED_UPDATED_AT],
+    )
+    await connection.query(
+      `INSERT INTO \`article_view_daily\` (\`day\`, \`article_id\`, \`source_category\`, \`real_views\`, \`fabricated_views\`) VALUES
+        ('2026-10-01', 1, 'direct', 4, 0),
+        ('2026-10-01', 1, 'boost', 0, 6),
+        ('2026-10-01', 2, 'direct', 40, 0),
+        ('2026-10-01', 2, 'search', 2, 0),
+        ('2026-10-02', 2, 'boost', 0, 300)`,
+    )
+
+    assert.equal(await reconcileArticleViewTotals(connection), 2, 'articles 2 and 3 are healed, nothing else is written')
+    await assertAllConsistent('after the reconcile')
+    const healed = await readTotals(connection, 2)
+    assert.deepEqual([healed.real, healed.fabricated, healed.total], [42, 300, 342])
+    assert.deepEqual(Object.values(await readTotals(connection, 3)).slice(0, 3), [0, 0, 0])
+    assert.equal(await reconcileArticleViewTotals(connection), 0, 'a consistent database: nothing to write')
+
+    // ── Through a real boot, then a second boot that changes nothing ────────
+    // An older image counts more views after the reconcile: daily rows only.
+    await connection.query(
+      "INSERT INTO `article_view_daily` (`day`, `article_id`, `source_category`, `real_views`, `fabricated_views`) VALUES ('2026-10-03', 1, 'direct', 5, 0), ('2026-10-03', 4, 'search', 3, 0)",
+    )
+    await initDb()
+    await assertAllConsistent('boot 1')
+    assert.deepEqual([(await readTotals(connection, 1)).total, (await readTotals(connection, 4)).total], [15, 3])
+    const afterBoot1 = await snapshot()
+    await initDb()
+    assert.deepEqual(await snapshot(), afterBoot1, 'boot 2 changes no row')
+    assert.equal(await reconcileArticleViewTotals(connection), 0)
+
+    // ── Upgrade from the release before the totals ──────────────────────────
+    await connection.query(
+      'ALTER TABLE `articles` DROP INDEX `articles_status_type_views_idx`, DROP COLUMN `view_total`, DROP COLUMN `view_total_real`, DROP COLUMN `view_total_fabricated`',
+    )
+    await initDb()
+    assert.deepEqual(await viewTotalColumn(), { nullable: 'NO', extra: '' })
+    assert.deepEqual(await indexColumns(), INDEX)
+    await assertAllConsistent('upgrade')
+    assert.deepEqual(await snapshot(), afterBoot1, 'the upgrade lands on the same totals')
+
+    // ── A database booted by d079453: view_total was STORED generated ───────
+    await connection.query('ALTER TABLE `articles` DROP INDEX `articles_status_type_views_idx`, DROP COLUMN `view_total`')
+    await connection.query('ALTER TABLE `articles` ADD COLUMN `view_total` BIGINT AS (`view_total_real` + `view_total_fabricated`) STORED')
+    await connection.query('ALTER TABLE `articles` ADD INDEX `articles_status_type_views_idx` (`status`, `type`, `view_total`, `published_at`, `created_at`)')
+    assert.equal((await viewTotalColumn()).extra, 'STORED GENERATED')
+    await initDb()
+    assert.deepEqual(await viewTotalColumn(), { nullable: 'NO', extra: '' }, 'the generated column is converted to a plain one')
+    assert.deepEqual(await snapshot(), afterBoot1, 'its values survive the conversion')
+    // A plain column accepts the write path's increment; a generated one refuses it (3105).
+    await connection.query('UPDATE `articles` SET `view_total_real` = `view_total_real` + 1, `view_total` = `view_total` + 1, `updated_at` = `updated_at` WHERE `id` = 4')
+    assert.deepEqual([(await readTotals(connection, 4)).real, (await readTotals(connection, 4)).total], [4, 4])
+    assert.equal(await reconcileArticleViewTotals(connection), 1, 'the hand-made write above has no daily row, so the reconcile undoes exactly it')
+    await assertAllConsistent('after the last reconcile')
+  } finally {
+    await connection.end()
+    for (const key of ['DB_HOST', 'DB_PORT', 'DB_USER', 'DB_PASSWORD', 'DB_NAME']) {
+      if (previous[key] === undefined) delete process.env[key]
+      else process.env[key] = previous[key]
+    }
+    const cleanup = await mysql.createConnection({ host, port, user, password })
+    await cleanup.query(`DROP DATABASE IF EXISTS \`${reconcileDatabase}\``)
     await cleanup.end()
   }
 })

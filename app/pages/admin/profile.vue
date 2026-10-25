@@ -7,6 +7,8 @@
  * nhận id từ request. Ngoại lệ duy nhất là ô xem lịch sử tài khoản khác, chỉ hiện
  * với SuperAdmin.
  */
+import { isDeliberateEnter } from '~/utils/admin-modal'
+
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 type FactorType = 'totp' | 'email_otp' | 'second_password'
@@ -29,7 +31,7 @@ interface MfaStatus {
   lockoutRisk: boolean
 }
 
-const { user } = useAdminAuth()
+const { user, fetchUser } = useAdminAuth()
 const toast = useToast()
 
 const FACTOR_META: Record<FactorType, { label: string; icon: string; desc: string }> = {
@@ -127,6 +129,18 @@ function focusFirstField(id: string) {
   nextTick(() => (document.getElementById(id) as HTMLInputElement | null)?.focus())
 }
 
+/** Enter trong ô nhập của hộp thoại = gửi bước hiện tại. Ở `keydown`, KHÔNG `keyup`:
+ *  hộp mở bằng Enter trên nút "Bật"/"Tắt" đưa focus vào ô đầu tiên trước khi phím được
+ *  thả — `@keyup.enter` từng gửi biểu mẫu trống và báo "Vui lòng nhập mật khẩu hiện
+ *  tại" khi người dùng chưa gõ gì. Bỏ qua lúc đang gõ dấu (IME chốt chữ bằng Enter). */
+function submitOnEnter(event: KeyboardEvent, submit: () => Promise<void>) {
+  // Giữ Enter trên nút mở: hệ điều hành lặp phím vào ô vừa nhận focus — chỉ nhận lần
+  // nhấn có chủ đích (không lặp, không phải Enter chốt chữ của bộ gõ).
+  if (!isDeliberateEnter(event)) return
+  event.preventDefault()
+  void submit()
+}
+
 function openEnroll(type: FactorType) {
   Object.assign(enrollDialog, {
     open: true, factorType: type, stage: 'password',
@@ -204,13 +218,18 @@ async function submitConfirm() {
   }
   enrollDialog.busy = true
   try {
-    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; message: string }>)(`/api/admin/profile/mfa/confirm`, {
+    const res = await ($fetch as (u: string, o: Record<string, unknown> | undefined) => Promise<{ ok: boolean; message: string; recoveryCodes?: string[] }>)(`/api/admin/profile/mfa/confirm`, {
       method: 'POST',
       body: { factorType: enrollDialog.factorType, code: value },
     })
     toast.success(res.message || 'Đã bật xác thực hai bước.')
+    // Chính sách MFA đang bật: máy chủ phát mã dự phòng ngay trong lượt này — hiện
+    // một lần ở khung "mã dự phòng" như khi tự tạo.
+    if (res.recoveryCodes?.length) revealedCodes.value = res.recoveryCodes
     closeEnroll()
-    await Promise.all([loadMfa(), loadHistory()])
+    // Cookie phiên đã được cấp lại trong chính phản hồi; đọc lại `me` để banner và
+    // chốt chuyển trang của chính sách MFA biết tài khoản đã có yếu tố.
+    await Promise.all([loadMfa(), loadHistory(), fetchUser()])
   } catch (err: unknown) {
     enrollDialog.error = errorMessage(err, 'Mã không đúng.')
     if (needsCode) enrollDialog.code = ''
@@ -370,7 +389,7 @@ function loadHistory() { historyRef.value?.reload() }
 /** Escape đóng hộp thoại đang mở — cùng cách làm với ConfirmModal. Bắt ở window
  *  vì tiêu điểm có thể đang nằm trên nút đóng hay một ô nhập bất kỳ bên trong
  *  hộp thoại. Hộp thoại đang bận gọi API thì không đóng, để không bỏ dở một
- *  thao tác đã gửi đi. Không bắt Enter: mỗi ô nhập đã tự nối @keyup.enter tới
+ *  thao tác đã gửi đi. Không bắt Enter: mỗi ô nhập đã tự nối @keydown.enter tới
  *  đúng bước của nó, còn ở đây thì không biết đang ở bước nào. */
 function onKeydown(e: KeyboardEvent) {
   if (e.key !== 'Escape') return
@@ -461,7 +480,8 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     </section>
 
     <!-- ── Xác thực hai bước ─────────────────────────────────────────── -->
-    <section class="rounded-xl border border-[#e2ece3] bg-white p-5">
+    <!-- `#security`: đích chuyển trang của chính sách bắt buộc MFA (middleware + banner). -->
+    <section id="security" class="rounded-xl border border-[#e2ece3] bg-white p-5 scroll-mt-4">
       <div class="flex items-center gap-3 mb-4">
         <span class="w-1 h-5 rounded-full bg-[#2c6e33]" aria-hidden="true"></span>
         <h2 class="text-[1rem] font-extrabold text-[#122815] m-0">Xác thực hai bước</h2>
@@ -651,7 +671,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
     <!-- ── Lịch sử truy cập & hoạt động ──────────────────────────────── -->
     <!-- Bật/tắt một yếu tố ghi thêm một dòng vào bảng này, nên trang cha giữ
          `ref` để gọi `reload()` sau hai thao tác đó. -->
-    <ProfileActivityHistory ref="historyRef" />
+    <!-- Ẩn khi chính sách MFA đang khoá tài khoản: endpoint lịch sử không nằm trong
+         danh sách được mở lúc đó, nên khối này chỉ hiện được một lỗi 403.
+         Tên CÓ tiền tố thư mục (`Admin…`, quy ước auto-import của nuxt.config): tên
+         trần `<ProfileActivityHistory>` không phân giải được — khối lịch sử không
+         bao giờ hiện, và `historyRef.reload()` ném lỗi làm hỏng `Promise.all` của
+         lượt bật/tắt yếu tố (lượt đọc lại `me` sau khi bật MFA không chạy). -->
+    <AdminProfileActivityHistory v-if="!user?.mfaEnrollmentRequired" ref="historyRef" />
 
     <!-- ── Modal: bật một yếu tố ─────────────────────────────────────── -->
     <div v-if="enrollDialog.open" class="fixed inset-0 z-50 bg-black/40 flex items-start justify-center p-4 overflow-y-auto" @click.self="closeEnroll">
@@ -684,7 +710,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <label for="enroll-pw" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu hiện tại</label>
               <input id="enroll-pw" v-model="enrollDialog.currentPassword" type="password" autocomplete="current-password"
                      class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                     @keyup.enter="submitEnroll" />
+                     @keydown.enter="submitOnEnter($event, submitEnroll)" />
             </div>
             <template v-if="enrollDialog.factorType === 'second_password'">
               <div>
@@ -699,7 +725,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
                 <label for="enroll-sp2" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Nhập lại mật khẩu cấp 2</label>
                 <input id="enroll-sp2" v-model="enrollDialog.secondPasswordConfirm" type="password" autocomplete="new-password"
                        class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                       @keyup.enter="submitEnroll" />
+                       @keydown.enter="submitOnEnter($event, submitEnroll)" />
               </div>
             </template>
           </template>
@@ -749,13 +775,13 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
               <input id="enroll-code" v-model="enrollDialog.code" type="text" inputmode="numeric"
                      autocomplete="one-time-code" maxlength="8"
                      class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[1rem] font-mono tracking-[0.3em] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                     @keyup.enter="submitConfirm" />
+                     @keydown.enter="submitOnEnter($event, submitConfirm)" />
             </div>
             <div v-else>
               <label for="enroll-sp-confirm" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu cấp 2</label>
               <input id="enroll-sp-confirm" v-model="enrollDialog.secondPassword" type="password" autocomplete="off"
                      class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                     @keyup.enter="submitConfirm" />
+                     @keydown.enter="submitOnEnter($event, submitConfirm)" />
             </div>
 
             <p class="text-[0.78rem] text-[#8ea98f] m-0">
@@ -805,7 +831,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <label for="disable-pw" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu hiện tại</label>
             <input id="disable-pw" v-model="disableDialog.currentPassword" type="password" autocomplete="current-password"
                    class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                   @keyup.enter="submitDisable" />
+                   @keydown.enter="submitOnEnter($event, submitDisable)" />
           </div>
         </div>
         <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-[#e2ece3]">
@@ -854,7 +880,7 @@ onUnmounted(() => window.removeEventListener('keydown', onKeydown))
             <label for="recovery-pw" class="block text-[0.82rem] font-semibold text-[#3d4a3e] mb-1.5">Mật khẩu hiện tại</label>
             <input id="recovery-pw" v-model="recoveryDialog.currentPassword" type="password" autocomplete="current-password"
                    class="w-full rounded-lg border border-[#e2ece3] px-3.5 py-2.5 text-[0.88rem] text-[#122815] focus:outline-none focus:ring-2 focus:ring-[#2c6e33] focus:border-[#2c6e33]"
-                   @keyup.enter="submitRecovery" />
+                   @keydown.enter="submitOnEnter($event, submitRecovery)" />
           </div>
         </div>
         <div class="flex items-center justify-end gap-2 px-5 py-4 border-t border-[#e2ece3]">

@@ -122,13 +122,8 @@
     </div>
 
     <!-- Block palette drawer (context-filtered) -->
-    <div v-if="showPalette" class="fixed inset-0 z-50 flex justify-end bg-black/40" @click.self="showPalette = false">
-      <div class="h-full w-full max-w-md overflow-y-auto bg-white p-6 shadow-xl">
-        <div class="mb-1 flex items-center justify-between">
-          <h2 class="text-lg font-bold text-gray-800">Thêm khối</h2>
-          <button class="text-gray-400 hover:text-gray-600" @click="showPalette = false"><i class="fa-solid fa-xmark text-xl"></i></button>
-        </div>
-        <p class="mb-4 text-xs text-gray-400">{{ paletteContextLabel }}</p>
+    <AdminModal :open="showPalette" title="Thêm khối" size="drawer" :busy="adding" @close="showPalette = false">
+        <p class="mb-4 mt-0 text-xs text-gray-500">{{ paletteContextLabel }}</p>
         <div v-for="group in paletteGroups" :key="group.key" class="mb-6">
           <h3 class="mb-2 text-xs font-bold uppercase tracking-wide text-gray-400">{{ group.title }}</h3>
           <div class="grid grid-cols-2 gap-2">
@@ -145,13 +140,10 @@
           </div>
         </div>
         <p v-if="!paletteGroups.length" class="py-8 text-center text-sm text-gray-400">Không có khối phù hợp cho vị trí này.</p>
-      </div>
-    </div>
+    </AdminModal>
 
     <!-- Meta modal -->
-    <div v-if="showMeta" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showMeta = false">
-      <div class="w-full max-w-lg rounded-xl bg-white p-6 shadow-xl">
-        <h2 class="mb-4 text-lg font-bold text-gray-800">Cấu hình trang</h2>
+    <AdminModal :open="showMeta" title="Cấu hình trang" :busy="savingMeta" @close="showMeta = false">
         <div class="space-y-4">
           <div>
             <label class="mb-1 block text-sm font-semibold text-gray-700">Tiêu đề trang</label>
@@ -171,35 +163,27 @@
             <textarea v-model="metaForm.seoDescription" rows="3" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"></textarea>
           </div>
         </div>
-        <div class="mt-6 flex justify-end gap-2">
-          <button class="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100" @click="showMeta = false">Hủy</button>
-          <button class="inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50" :disabled="savingMeta" @click="saveMeta">
-            <i v-if="savingMeta" class="fa-solid fa-spinner fa-spin"></i> Lưu
+        <template #footer>
+          <button type="button" class="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100" @click="showMeta = false">Hủy</button>
+          <button type="button" class="inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50" :disabled="savingMeta" @click="saveMeta">
+            <i v-if="savingMeta" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i> Lưu
           </button>
-        </div>
-      </div>
-    </div>
+        </template>
+    </AdminModal>
 
     <!-- Versions drawer -->
-    <div v-if="showVersions" class="fixed inset-0 z-50 flex justify-end bg-black/40" @click.self="showVersions = false">
-      <div class="flex h-full w-full max-w-md flex-col bg-white shadow-xl">
-        <div class="flex shrink-0 items-center justify-between border-b border-gray-200 p-5">
-          <div>
-            <h2 class="text-lg font-bold text-gray-800">Phiên bản</h2>
-            <p class="mt-0.5 text-xs text-gray-500">1 bản gốc · tối đa 4 bản sao lưu · 5 bản tự động (cuộn vòng)</p>
-          </div>
-          <button class="text-gray-400 hover:text-gray-600" @click="showVersions = false"><i class="fa-solid fa-xmark text-xl"></i></button>
-        </div>
+    <AdminModal :open="showVersions" title="Phiên bản" size="drawer" :busy="savingBackup" @close="showVersions = false">
+        <p class="mb-4 mt-0 text-xs text-gray-500">1 bản gốc · tối đa 4 bản sao lưu · 5 bản tự động (cuộn vòng)</p>
 
         <!-- Actions -->
-        <div class="shrink-0 space-y-3 border-b border-gray-200 bg-gray-50 p-4">
+        <div class="mb-4 space-y-3 rounded-lg border border-gray-200 bg-gray-50 p-4">
           <div class="flex gap-2">
             <input
               v-model="backupLabel"
               type="text"
               placeholder="Tên bản sao lưu…"
               class="min-w-0 flex-1 rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600"
-              @keyup.enter="manualCount < 4 && !savingBackup && saveBackup()"
+              @keydown.enter="onBackupLabelEnter"
             />
             <button
               class="inline-flex shrink-0 items-center gap-1.5 rounded-lg bg-green-700 px-3 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50"
@@ -216,7 +200,7 @@
         </div>
 
         <!-- List -->
-        <div class="flex-1 overflow-y-auto p-4">
+        <div>
           <div v-if="versionsLoading" class="flex justify-center py-10 text-gray-400"><i class="fa-solid fa-spinner fa-spin text-xl"></i></div>
           <p v-else-if="!versions.length" class="py-10 text-center text-sm text-gray-400">Chưa có phiên bản nào. Bấm Xuất bản để tạo bản tự động đầu tiên.</p>
           <div
@@ -241,15 +225,15 @@
               <button
                 v-if="v.kind !== 'origin'"
                 class="rounded-md border border-gray-200 px-2 py-1.5 text-xs font-semibold text-red-500 hover:bg-red-50"
+                :aria-label="`Xóa phiên bản ${v.label || kindMeta[v.kind]?.label || v.kind}`"
                 @click="deleteVersion(v)"
               >
-                <i class="fa-solid fa-trash"></i>
+                <i class="fa-solid fa-trash" aria-hidden="true"></i>
               </button>
             </div>
           </div>
         </div>
-      </div>
-    </div>
+    </AdminModal>
   </div>
 </template>
 
@@ -265,6 +249,8 @@ import type { BlockNode, BuilderNode, NodeLocation } from '~/utils/blocks/types'
 // `undefined` is part of the domain: BlockNode.id is optional until the node is
 // persisted, so every lookup by id has to accept a not-yet-saved node.
 
+import AdminModal from '~/components/admin/AdminModal.vue'
+import { isDeliberateEnter } from '~/utils/admin-modal'
 import BuilderCanvas from '~/components/admin/builder/BuilderCanvas.vue'
 import PropertyPanel from '~/components/admin/builder/PropertyPanel.vue'
 import BlockTreeNode from '~/components/admin/builder/BlockTreeNode.vue'
@@ -706,16 +692,34 @@ const openVersions = async () => {
   showVersions.value = true
   await loadVersions()
 }
+// Chỉ lượt tải MỚI NHẤT được ghi danh sách: lưu bản sao lưu ngay sau khi mở ngăn kéo
+// làm hai lượt tải chồng nhau, và phản hồi của lượt đầu (chưa có bản vừa lưu) về sau
+// thì đè mất bản mới.
+let versionsLoadSeq = 0
 const loadVersions = async () => {
+  const seq = ++versionsLoadSeq
   versionsLoading.value = true
   try {
     const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; versions?: PageVersionRow[] }>)(`/api/admin/pages/${pageId.value}/versions`)
-    if (res.ok) versions.value = res.versions || []
+    if (seq === versionsLoadSeq && res.ok) versions.value = res.versions || []
   } catch (err: unknown) {
-    toast.error(errorMessage(err, 'Không tải được danh sách phiên bản.'))
+    if (seq === versionsLoadSeq) toast.error(errorMessage(err, 'Không tải được danh sách phiên bản.'))
   } finally {
-    versionsLoading.value = false
+    if (seq === versionsLoadSeq) versionsLoading.value = false
   }
+}
+
+/**
+ * Enter trong ô tên bản sao lưu = bấm "Lưu". Bắt ở `keydown`, KHÔNG `keyup`: mở ngăn
+ * kéo bằng Enter trên nút "Phiên bản" đưa focus vào ô này trước khi phím được thả —
+ * `@keyup.enter` từng tự lưu một bản sao lưu không ai yêu cầu (mất 1/4 chỗ). Bỏ qua lúc
+ * đang gõ dấu (IME tiếng Việt chốt chữ bằng Enter).
+ */
+const onBackupLabelEnter = (event: KeyboardEvent) => {
+  // Phím lặp (giữ Enter) mỗi lần một bản sao lưu — chỉ nhận lần nhấn có chủ đích.
+  if (!isDeliberateEnter(event)) return
+  event.preventDefault()
+  if (manualCount.value < 4 && !savingBackup.value) void saveBackup()
 }
 
 // Load a version into the working copy (draft) — user must Publish to go live.

@@ -950,6 +950,142 @@ OpenSpec `wave1-quick-fixes`, quyết định D9, D16–D25. Mỗi mục có tes
 
 Bằng chứng test-đỏ-trước, nói đúng mức đã đo: test hành vi của mục 1, 2, 3 đỏ trên mã cũ vì khẳng định trượt (purge một lô, đếm 100/100 lượt xem, thiếu chỉ mục). Test của mục 4, 5, 6, 8, 9, 10 đỏ trước tiên vì module/export chưa có; các guard bên trong cũng trượt trên mã cũ (endpoint gọi thẳng `extractThumbnailOnDemand`, component tự `setInterval`, `HeroBlock` không có `resolveHeroContent`, header là `<h1>`, carousel không có `prefers-reduced-motion`/nút tạm dừng, `ChatWidget` focus nút đóng desktop và không `inertOutside`). Mục 7, 11: guard trượt trên mã cũ (24 chỗ `#7CB342`; khoá cố định). Spec E2E `public-single-h1` CHƯA chạy trên bản build trước khi sửa (dự kiến đỏ: `<h1>` header + `<h1>` trang). Spec chat đỏ trên bản build TRUNG GIAN (đã có focus/inert mới nhưng còn transition `visibility` lúc mở), xanh sau khi sửa. Hai khẳng định cố ý xanh trên mã cũ vì giữ hành vi sẵn có: khử trùng theo bài (mục 2) và khoá `listDataKey` theo `lang` của tiện ích dùng chung (mục 11).
 
+### 31. Wave 2 · 2F — Suite nâng cấp lược đồ + đo lại độ phủ (2026-10-24)
+
+Nhóm đầu của `openspec/changes/wave2-hardening` (D-UPGRADE, D-COVERAGE). Nó đi trước mọi thay đổi lược đồ của Wave 2, để những thay đổi đó được kiểm ngay từ PR đầu.
+
+- **Fixture lược đồ của bản trước** (`tests/fixtures/schema-prev.sql`, `scripts/snapshot-schema.ts`). Lược đồ do `initDb()` **của chính** commit `7dfed8c` dựng: đó là `main` đã deploy trước Wave 0–1, và repo không có tag phát hành. Fixture có 62 bảng, chỉ DDL.
+  - Script chạy như sau: `git archive <ref>` vào thư mục tạm, symlink `node_modules`, chạy `server/db/init.ts` của ref đó vào CSDL tạm `cdkt_snapshot_*`, ghi `SHOW CREATE TABLE`, rồi xoá CSDL lẫn thư mục tạm, kể cả khi lỗi.
+  - Không dùng `mysqldump`, vì máy dev không có client (chỉ container có). `backup-sql.ts` cũng đã dump bằng `SHOW CREATE TABLE`.
+  - Kết quả xác định: bảng xếp theo tên, bỏ `AUTO_INCREMENT=`, không ngày giờ, không `DROP`. Hai lần chạy giống nhau từng byte. Fixture nạp vào CSDL trống không lỗi.
+  - Wave 0–1 không thêm cột nào. Chụp `694bb6e` (sau 1D/1B) ra lược đồ giống hệt `7dfed8c`; `wave1/integration` có thêm hai chỉ mục `articles` của 1C. Bước làm mới sau mỗi bản phát hành nằm ở `CI-CD.md` § *Làm mới fixture lược đồ của bản trước*.
+- **`tests/schema-upgrade-integration.test.ts`** (matrix `schema-upgrade`, switch `SCHEMA_UPGRADE_INTEGRATION`, biến `SCHEMA_UPGRADE_{HOST,PORT,USER,PASSWORD}`; job `changes` cũng chạy Integration khi PR chỉ đổi fixture).
+  - **Bảng được chèn hàng: suy từ mã, không liệt kê tay.** Có ba nguồn:
+    - mọi mảng mà `migrations-additive.ts` export (`{table}`/`{referencedTable}`/tuple);
+    - lời gọi `ensureColumn`/`ensureIndex`/`modifyColumn`/`ensureForeignKeyIfMissing`/`ensureRequiredColumn` trong `migrations-additive.ts` và `schema-tables/*.ts`;
+    - đích của mọi `UPDATE`/`INSERT … INTO`/`DELETE FROM`/`ALTER TABLE` thô trong các tệp đó.
+  - Kết quả là 35 bảng, cộng các bảng chúng trỏ FK tới: 37 bảng, 109 hàng.
+    - Giá trị sinh theo kiểu cột, sát biên: INT gần trần, BIGINT vượt 2^53, chữ có dấu, nháy, `\`, xuống dòng và emoji 4 byte, JSON. Cột nullable để NULL ở hàng 2. FK trỏ hàng cha thật, và được kiểm sau khi chèn.
+    - Hàng viết tay ở những chỗ cần thật hoặc cần kích một chuyển đổi: `chatbot_settings` id 1, `admin`, các khoá settings đã sửa, Facebook đã sửa, nhãn hotline cũ, URL `localhost:3000`/`migrated/media`.
+    - Bảng mới nào không sinh được hàng thì suite đỏ, nêu tên bảng và chỉ tới `SEED_OVERRIDES`.
+  - **Khởi động hai lần đúng như container:** `init.ts` rồi `seed.ts`, mỗi cái là một tiến trình riêng có trần thời gian. Sau mỗi lượt, so mọi bảng theo khoá chính, từng cột, với giá trị chính xác (`dateStrings`/`jsonStrings`/`bigNumberStrings`, `time_zone '+00:00'`).
+    - Lượt 1: thay đổi nào không thuộc một `DECLARED_CONVERSIONS` thì đỏ, nêu `bảng.cột [khoá]: cũ → mới`.
+    - Lượt 2: không được đổi gì, kể cả DDL.
+    - Mỗi khai báo neo **theo nội dung mã**; mã đã xoá thì test riêng đỏ.
+    - Bộ đếm thời gian `ON UPDATE CURRENT_TIMESTAMP` chỉ được đổi theo một thay đổi đã khai báo của cùng hàng.
+  - **Các chuyển đổi đã khai báo, mỗi cái kèm lý do trong test:**
+    - từ `migrations-additive.ts`: backfill `WHERE col IS NULL` (2 chỗ); `mode = 'ai'` (chỉ khi cột vừa được thêm); NULL hoá tham chiếu tới user đã xoá; cha "Legacy question N" cho term mồ côi; xoá danh mục video (chỉ khi FK còn trỏ `categories`); nhãn hotline; `repairLegacyMediaUrls` (kết quả phải đúng phép viết lại); `short_id`; cột/bảng mới;
+    - default content types/categories do DDL chèn;
+    - từ `seed.ts`: chèn default còn thiếu — khớp **đủ khoá tự nhiên** với dữ liệu của chính seed (xem *Vòng sửa* bên dưới); **chèn lại default vào bảng đã có hàng**, mà wave2 D7 sẽ sửa; backfill provider AI từ `chatbot_settings`.
+  - **Bằng chứng test-first:** chạy khi chưa có khai báo nào thì đỏ, 1987 lượt ghi. Gồm `articles.content` ×2, `media.url` ×1, `lang_translations.value` ×2, 4 bộ đếm `updated_at` và 1978 hàng do seed/DDL chèn. Không có lượt ghi nào khác. Các giá trị chuyển đổi được ghi cứng trong test, độc lập với vị từ.
+  - **Không tới được từ fixture này** (chẩn đoán in mỗi lượt): cột/bảng mới, hai backfill NULL, `mode = 'ai'`, tham chiếu mồ côi, cha của term mồ côi, danh mục video, `short_id`, backfill provider AI. Lý do: lược đồ `7dfed8c` đã có các cột đó và FK đã ép.
+  - **Suite có cắn** (làm trên bản sao trong scratch, không commit):
+    - thêm lại `UPDATE media_items SET category_id = NULL` vô điều kiện → lượt 1 đỏ: `media_items.category_id [id=1]: "1" → NULL`;
+    - thêm `UPDATE settings SET group = 'general'` → `settings.group [key=hotline]: "contact" → "general"`;
+    - bỏ phép kiểm tồn tại trước khi seed luật kiểm duyệt → lượt 1 xanh (chèn default vào bảng trống), lượt 2 đỏ: `ai_moderation_rules … row inserted ×28`.
+  - Thời gian: ~32 s trên MySQL 8.0.46 local.
+- **Đo lại độ phủ** (`npm run test:coverage`, `docs/test-coverage-baseline-2026-10.md` § 2026-10-24).
+  - **Vì sao không dùng cờ của Node.** Glob `--test-coverage-include` không liệt kê tệp chưa nạp, trên phiên bản nào cũng vậy: nó chỉ lọc tệp đã nạp. `--test-coverage-include-all` thì chỉ có trên Node 26 (Node 24.21 và 22.23 báo `bad option`), mà khi đi cùng `mock.module` nó còn sinh bản ghi trùng (69 tệp, có bản toàn-0).
+  - **`scripts/coverage-summary.ts` viết lại để đọc lcov**, chạy được trên Node 22/24/26. Nó làm ba việc:
+    - gộp các bản ghi cùng `SF:`: dòng, hàm hay nhánh được tính là đã chạy nếu bất kỳ bản ghi nào chạy nó;
+    - thêm mọi tệp `.ts` git theo dõi dưới `server/`, `shared/`, `app/utils/`, `app/composables/` mà không test nào nạp (trừ `schema-tables/`, `*.d.ts`, tệp test), ở 0 % của **số dòng có mã**. Bộ quét đếm dòng khớp trình phân tích TypeScript trong 0,013 % trên 660 tệp (đo trên `a7be585` + 2F; trên `694bb6e` là 652 tệp, cũng 0,013 %);
+    - in tổng chung và theo thư mục cho "mọi tệp" lẫn "chỉ tệp đã nạp", rồi ghi vào `$GITHUB_STEP_SUMMARY` nếu có.
+  - `npm run test:coverage` ghi lcov vào `node_modules/.cache/cdkt-coverage/` rồi chạy script. Bước CI vẫn Node 24 và vẫn `continue-on-error`; bước test unit thêm reporter lcov, bước *Coverage summary* đọc tệp đó. Từ nay trang tóm tắt CI báo cả số "mọi tệp".
+  - **Lỗi đo đã tìm ra.** Quy tắc loại trừ mặc định của Node coi `test-*.ts` là tệp test, nên các handler thật `server/api/admin/settings/test-r2.post.ts` và `test-email.post.ts` mất khỏi coverage. Cả hai lệnh nay truyền `--test-coverage-exclude='tests/**'`, và quy tắc mặc định không còn áp dụng.
+  - Mức nền mới (Node 24.21, trên `wave1/integration` `3ede49a` + 2F): **70,50 % dòng trên mọi tệp** (51 767 / 73 424); 299/663 tệp chưa từng được nạp; 87,10 % dòng trên tệp đã nạp; `server/api/` 45,23 %. Lệnh của bước CI cũng ra 70,50 %. Các mốc trước: `694bb6e` (trước 1A/1C) 68,25 %; `a7be585` (trước 2E) 70,55 %. Con số "65,7 %" không có nguồn.
+  - Test: `tests/coverage-summary.test.ts` viết lại (9 test) với fixture lcov nhỏ, gồm:
+    - gộp bản ghi trùng (khác chỉ số `anonymous_N` và mã khối nhánh, có bản ghi toàn-0);
+    - phạm vi nguồn; số dòng có mã (chuỗi, template, regex, chú thích khối);
+    - thêm tệp chưa nạp; tổng theo thư mục;
+    - CLI với git, không git (`PATH=''`) và thiếu lcov.
+
+#### Kiểm chứng (2026-10-24)
+- Đo sau khi đặt lên `wave1/integration` (`a7be585`: Wave 0–1 gồm cả 1A và 1C).
+- `npm test` 4292 / 4260 pass / 0 fail / 32 skip trên Node 24.21 (5 skip mới là suite nâng cấp khi không có MySQL).
+- `npm run test:coverage` xanh trên Node 24.21 và 26.11 (cùng 70,55 %). Lệnh của hai bước CI (unit + *Coverage summary*) đã chạy thử trên Node 24.21 với `GITHUB_STEP_SUMMARY`: 4259 pass, 70,55 %.
+- Node 22.23: các cờ và script chạy được (70,41 %), và `tests/coverage-summary.test.ts` 9/9. Có 19 test vốn đỏ trên Node 22 (`backup-run-endpoint`, `backup-scheduler-due`, `article-view-ip-ceiling`, `chatbot-outbound-stream`) và 4 test bị huỷ (`thumbnail-on-demand-bounds`); cả hai đều xảy ra y hệt ở `a7be585` chưa có thay đổi của 2F. Chúng làm `npm run test:coverage` dừng trước bước tóm tắt.
+- 1A/1C không thêm lượt ghi nào lúc khởi động mà chưa khai báo. Hai chỉ mục `articles` mới (1C) chỉ đổi lược đồ, và lượt 2 giữ nguyên lược đồ. Hai khoá dịch mới rơi vào `seed.insert-missing-defaults`: seed chèn ×1961, so với ×1957 trên `694bb6e`.
+- Typecheck 0 lỗi. eslint 0 error / 16 warning (như trước; không cái nào ở tệp mới).
+- `tests/ci-integration-matrix.test.ts` cùng các guard workflow khác xanh.
+- Suite nâng cấp 5/5 trên MySQL 8.0.46 local, cả Node 26.11 lẫn Node 24.21 (bản CI, chạy trong `node:24-slim`). Không để lại CSDL `cdkt_upgrade_*`/`cdkt_snapshot_*`.
+
+**Vòng sửa sau kiểm độc lập (2026-10-24).** Người kiểm thử chèn lỗi vào bản sao, và ba lỗi lọt qua suite (5/5 xanh):
+- bite F: seed cấp toàn quyền cho vai trò cán bộ tự tạo;
+- bite H: seed tạo thêm tài khoản superadmin `editor`;
+- bite G: upsert giá model xoá nhãn của cán bộ.
+
+Ngoài ra suite treo ~11 phút khi một migration ném lỗi. Đã sửa (chỉ `tests/`, `scripts/snapshot-schema.ts` và tài liệu; mã seed không đổi):
+- **Khai báo seed khớp đủ khoá tự nhiên, lấy từ dữ liệu của chính seed** (thay cho phép tìm chuỗi trong mã nguồn).
+  - Nguồn dữ liệu: dữ liệu export được import (`DEFAULT_TRANSLATIONS_SEED`, `CHATBOT_SMALL_TALK_SEED`). Hằng số nội bộ của `seed.ts` (tệp này tự chạy khi import) và bộ default của tệp DDL được đọc bằng trình phân tích TypeScript, rồi tính như literal. Một hằng số bị đổi tên hay đổi cấu trúc thì suite đỏ, nêu tên hằng số đó.
+  - Khoá tự nhiên theo bảng:
+    - `users`: ghim đúng `admin` — tài khoản khác thêm vào seed là thay đổi bảo mật cần xem xét, không phải "default";
+    - `roles`: tên vai trò default;
+    - `permissions`: cặp (vai trò default, tài nguyên);
+    - `lang_translations`: (ngôn ngữ, nhóm, khoá);
+    - `page_blocks`: (trang hệ thống, loại khối, thứ tự), cộng các khối trang chủ chép từ `home_sections`;
+    - còn lại: khoá tự nhiên của từng bảng.
+  - Một default chỉ được chèn khi khoá chưa có trước lượt khởi động, và mỗi khoá một lần.
+  - Thêm test `the seed declarations accept exactly the seed's own missing defaults` (không cần CSDL thật).
+- **Mọi bảng seed ghi (20) đều có hàng đại diện mang khoá default với giá trị cán bộ đã sửa**, nên upsert ghi đè giá trị cán bộ hiện thành ô bị đổi. Trên mã hiện tại không bảng nào bị ghi đè.
+- **`init.ts` chạy thành tiến trình riêng có trần thời gian, như `seed.ts`.** Migration ném lỗi thì suite báo lỗi ngay và thoát.
+- **`scripts/snapshot-schema.ts` dọn ở mọi đường ra.** Thư mục tạm xoá trước, CSDL tạm sau, và lỗi báo ra là lỗi đầu tiên. Trước đây, sai mật khẩu thì còn lại một bản sao repo ~30 MB trong thư mục tạm, và lỗi bị che bằng lỗi của bước dọn.
+- Test mới: `tests/snapshot-schema.test.ts` (chuẩn hoá DDL; snapshot xếp thứ tự, chỉ DDL, không ngày giờ; CSDL không tới được vẫn dọn thư mục tạm). `tests/ci-integration-matrix.test.ts` thêm một ca: PR chỉ làm mới `tests/fixtures/schema-prev.sql` vẫn chạy Integration — bỏ đường dẫn khỏi regex của job `changes` thì đỏ.
+- **Kết quả chèn lỗi lại** (bản sao trong scratch, không commit):
+  - F đỏ: `inserted permissions ×21`;
+  - G đỏ: `ai_model_pricing.label [model=delify-5.5]: "Giá đã thương lượng" → NULL` cùng giá bị ghi đè;
+  - H đỏ: `users … row inserted` cộng ca dữ liệu seed;
+  - C1 (thu hẹp `reader_accounts.display_name` xuống `VARCHAR(5)`) đỏ sau 3,8 s với `ER_DATA_TOO_LONG`, cả tệp 31 s, tiến trình thoát. Trước đây treo 643 s.
+- Kiểm chứng sau vòng sửa (Node 24.21, trên `a7be585`):
+  - `npm test` 4297 / 4264 pass / 0 fail / 33 skip;
+  - suite nâng cấp 6/6 trên MySQL local (~33 s);
+  - typecheck 0 lỗi; eslint 0 error / 16 warning;
+  - guard matrix + `snapshot-schema` + `coverage-summary` + workflow 99/99;
+  - không để lại CSDL `cdkt_upgrade_*`/`cdkt_snapshot_*`.
+
+  Độ phủ không đổi, vì không có tệp nguồn nào trong phạm vi đo bị sửa.
+
+**Đo lại sau khi rebase lên `wave1/integration` `3ede49a`** (gồm 2E `shared/` § 32 và `COPY shared` của 1D), Node 24.21:
+- `npm test` 4407 / 4374 pass / 0 fail / 33 skip.
+- Suite nâng cấp 6/6 trên MySQL local. Các chuyển đổi quan sát được giống hệt trước, nên 2E/1D không thêm lượt ghi nào lúc khởi động.
+- `npm run test:coverage`: 70,50 % (Node 26.11: 70,51 %), 299/663 tệp chưa nạp. Lệnh của bước CI ra 70,50 %, 300 tệp. Bộ quét dòng có mã khớp TypeScript trong 0,013 % trên 663 tệp.
+- Typecheck 0 lỗi; eslint 0 error / 16 warning.
+- `ci-integration-matrix`, `runtime-image-sources`, `server-no-app-imports`, `snapshot-schema`, `coverage-summary` 118/118.
+- Không để lại CSDL tạm.
+
+**Vòng sửa thứ ba (kiểm lại `264fdea`, 0 lỗi nghiêm trọng).** Có bốn lỗi chèn vẫn lọt qua:
+- N7: seed đặt lại `is_visible` của link Facebook đã có — giá trị sinh ra trùng default, nên đổi không thấy;
+- N2: bản dịch được chèn với chữ khác dữ liệu seed;
+- N3: khối trang liên hệ được chèn với `data` khác;
+- N1: ma trận quyền mặc định bị đổi ngay trong seed.
+
+Đã sửa (chỉ `tests/` và tài liệu):
+- **Hàng mang khoá default có giá trị "cán bộ đã sửa" ở MỌI cột seed ghi.** Cột nào trùng giá trị seed (hoặc DDL) đều bị dời đi:
+  - boolean đảo, số dời, chữ đánh dấu, JSON thêm khoá;
+  - khoá ngoại trỏ sang hàng khác, kể cả tham chiếu `@role:`/`@page:` của seed.
+
+  Test gieo dữ liệu kiểm hợp đồng này cho từng cột trước khi chèn.
+- **Một default seed thêm vào phải khớp NỘI DUNG, không chỉ khoá.** Mỗi `insert(T).values(…)` của seed được tính lại, với biến vòng `for … of` gắn vào chính hằng số dữ liệu của seed. Các khởi tạo là mã chứ không phải literal (bốn mảng `…Perms`, `smallTalkRows`) chạy trong `vm` rỗng, qua `tests/_seed-source.ts`. Kết quả là đúng các cột seed ghi cho từng default.
+  - Hàng chèn khác dữ liệu đó thì không được khai báo, và thông báo nêu cột lệch.
+  - Phép so sánh chỉ đúng khi lệnh chèn chép dữ liệu nguyên trạng, nên suite từ chối, nêu tên, mọi biến đổi dữ liệu default ngay lúc chèn (``value: `${value} …` ``, `{ ...b.data, … }`). Các lệnh chèn hiện có của seed đều là chép nguyên trạng.
+  - Khối trang chủ (chép từ `home_sections`) được so với chính hàng nguồn.
+- **`tests/default-permission-matrix.test.ts` ghim ma trận vai trò → tài nguyên → quyền**, đọc từ chính `seed.ts`. Đổi ma trận thì phải sửa test trong cùng thay đổi.
+- Thông báo "row inserted" kèm khoá tự nhiên. Bộ quét bảng seed ghi nhận thêm `delete(X)`, `insert(schema.x)` và SQL thô trong `execute`/`query`.
+- `CI-CD.md` ghi: bảng seed ghi cũng có hàng đại diện, có hàng mang khoá default đã sửa, và có test ma trận quyền.
+- **Chèn lỗi lại:**
+  - N1 làm đỏ test ma trận, nêu từng ô (`moderator · news: seed grants "read,update,delete,publish", pinned "read,update"`);
+  - N2, N3 làm suite đỏ trước khi khởi động, nêu đúng biểu thức biến đổi;
+  - N7 đỏ ở lượt 1: `social_links.is_visible [id=1]: "0" → "1"`;
+  - mã không sửa thì 6/6.
+- **Kiểm chứng (Node 24.21):**
+  - `npm test` 4410 / 4377 pass / 0 fail / 33 skip;
+  - suite nâng cấp 6/6 trên MySQL local; 1921 hàng seed chèn đều khớp nội dung dữ liệu seed;
+  - typecheck 0 lỗi; eslint 0 error / 16 warning;
+  - guard 165/165.
+
+Còn mở (2F):
+- ~~`repairLegacyMediaUrls` đổi `articles.updated_at` của bài nó vá, vì `UPDATE` không giữ cột đó. Sửa cùng D-SCAN, khi đụng hàm này.~~ Đã sửa ở § 37 (`updated_at = updated_at`).
+- Tệp chưa nạp được tính bằng dòng có mã, còn tệp đã nạp được tính bằng mọi dòng vật lý (đó là cách Node đếm). Nếu tính dòng vật lý cho cả hai thì ra 64,43 % (trên `3ede49a` + 2F). Wave 3 chọn một quy ước trước khi đặt ngưỡng.
+
 ### 32. Đợt 2 — 2E shared modules (2026-10-24)
 
 OpenSpec `wave2-hardening` task 5.1, design D-SHARED. Không đổi hành vi: `app/utils/blocks/registry.ts`, `app/utils/blocks/types.ts` và `app/utils/submission-status.ts` chuyển sang `shared/blocks/registry.ts`, `shared/blocks/types.ts` và `shared/submission-status.ts`. Git ghi nhận ba tệp mới ở `shared/` cộng bản re-export ở đường cũ, không phải một lượt đổi tên; `git log --follow shared/…` vẫn nối được lịch sử trước đó. 14 tệp `server/` (17 dòng import; design ghi 11 tệp ở 7dfed8c) nay import thẳng từ `shared/`, và server không còn tệp nào import `app/`. Guard mới `tests/server-no-app-imports.test.ts` dùng TypeScript AST để chặn mọi dạng import: tĩnh, `import type`, `export … from`, `import()`, `typeof import()`, `require`, `/// <reference>`, cùng các alias `~/` `@/` `~~/app` `#app`. Nó chặn `server/`→`app/` và `shared/`→`app/`/`server/`, đồng thời có bằng chứng bắt đủ 17 dòng cũ. Đường cũ ở `app/` giữ bản re-export **liệt kê tên**, trỏ `~~/shared/…`, có test canh khớp đủ export của module gốc. Lý do không dùng `export *` một dòng như design: `export *` qua alias làm unimport mất 16 auto-import của `submission-status`, còn re-export qua đường tương đối thì vỡ Nitro build (Nuxt để `shared/` là external ở bản SSR, rolldown in ra `../../../../../shared/….ts` không giải được). `tailwind.config.js` thêm `./shared/**`: 7 trong 15 lớp huy hiệu trạng thái đơn chỉ nằm ở `shared/` và sẽ bị purge nếu không quét. Ba guard quét lớp giao diện (họ icon FontAwesome, `#7A8A76`, vòng focus `#7CB342`) nay quét cả `shared/`. Đã kiểm: `npm test` 4352 / 4325 pass / 0 fail / 27 skip (trước 4284; +68 = 59 guard + 3 khớp re-export + 6 tệp `shared/` trong quét tương phản). Typecheck 0 lỗi, eslint 0 error / 16 warning, `db:drift` xanh. Build xanh: 15 màu huy hiệu có trong CSS, đầu ra SSR không còn đường tương đối tới `shared/`, `.nuxt/imports.d.ts` giống từng byte bản trước. E2E 93/93 (7,2 phút), không sót DB `cdkt_e2e_*`.
@@ -975,6 +1111,749 @@ Mỗi mục có test đỏ trước khi sửa.
   - Guard đỏ trên đúng hai dòng thật trước khi sửa.
   - Bộ đọc import bằng AST được tách sang `tests/_module-references.ts`, dùng chung với `server-no-app-imports`.
 - **Kiểm chứng:** 5 lượt `npm run build` sạch liên tiếp (xoá `.output` và `node_modules/.cache/nuxt` giữa các lượt) đều xanh. Đầu ra SSR không còn chuỗi `"../…shared/"` nào, và `link-policy` được nạp bằng đường tuyệt đối. `npm test` 4414 / 4387 pass / 0 fail / 27 skip (+20). Typecheck 0 lỗi, eslint 0 error / 16 warning, `db:drift` xanh.
+
+### 33. Đợt 2 — 2A bảo mật (2026-10-24)
+
+OpenSpec `wave2-hardening`, nhóm 2 (task 2.1–2.6), quyết định D-CSRF, D1, D-SECRETS, D-NAMES theo mặc định của proposal. Đã đọc `openspec/ui-dna.md` trước mọi thay đổi giao diện. Lý do + runbook → `docs/decisions/realm-safety.md` § *Đợt 2 — 2A bảo mật*.
+
+**1. Chặn yêu cầu ghi khác site** (`server/middleware/00.origin-gate.ts`, `server/utils/origin-gate.ts` mới, `SECURITY_EVENTS.crossSiteRefused`).
+- Lỗi: thứ duy nhất chặn một `<form method=post>` trên tên miền con anh em (`*.delify.vn`, cùng tên miền đăng ký) là `SameSite=Lax` — mà "same-site" thì trình duyệt VẪN gửi cookie phiên của cán bộ.
+- Sửa: mọi POST/PUT/PATCH/DELETE (không phân loại đường dẫn): `Sec-Fetch-Site` có mặt → chỉ `same-origin`/`none`; không có → `Origin` (`null`/không đọc được → 403; host ∉ {host `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST`, host request — CHỈ khi peer là proxy đã khai (`peerIsTrustedProxy`, rồi `requestBase`: `X-Forwarded-Host`/`Host` do proxy chuyển); `Host` thô từ peer lạ không bao giờ được tin} → 403, so không phân biệt hoa/thường, bỏ cổng mặc định); không có cả hai → cho qua (D-CSRF). Log `security.cross_site_refused` `{ method, path (không query), originHost, reason }`. Tên `00.` → chạy trước `admin-auth` (Nitro `scanDir` sắp `localeCompare`; đã xem thứ tự mảng `handlers` trong `.output`: tài sản tĩnh → cổng này → `admin-auth` → `https-redirect`).
+- Test `tests/csrf-origin-gate-behavior.test.ts` (middleware thật trong app h3 + router thật, header gửi thô): 4 kịch bản spec, `cross-site`/giá trị lạ, `none`, Origin lạ/hỏng/`null`, host `PUBLIC_BASE_URL` + allowlist, `X-Forwarded-Host` từ proxy tin cậy (biểu mẫu công khai từ host thật) vs từ peer lạ (bị bỏ qua), `Host` thô = `Origin` từ peer lạ → 403 (host đã cấu hình vẫn qua), bình luận/beacon page-view, multipart 4 KB tới handler nguyên vẹn, multipart khác site bị chặn trước khi đọc body, GET/HEAD/OPTIONS không bao giờ bị chặn, bốn cách viết đường dẫn, dòng log không chứa query/cookie/đường dẫn Origin, thứ tự tệp.
+
+**2. Chính sách bắt buộc MFA** (`server/utils/mfa/policy.ts`, `server/services/mfa-policy.ts`, `server/api/admin/security/mfa-policy.{get,put}.ts` mới; `admin-auth.ts`, `auth/me.get.ts`, `mfa/session.ts` `completeLogin`; trang `app/pages/admin/settings/security.vue`, `AdminMfaEnrollmentBanner.vue`, `app/middleware/admin-auth.ts`, mục menu SuperAdmin).
+- `off|privileged|all` (khoá `mfa_policy`, `mfa_enforce_after`, nhóm `security`), chỉ ghi qua endpoint SuperAdmin (`requireResourcePermission` + `requireSuperAdmin`), hai hàng + audit `{ mfaPolicy: { from, to }, enforceAfter }` trong CÙNG transaction; mỗi lượt đổi đặt mốc +14 ngày, `off` xoá mốc, gửi lại cùng giá trị không ghi. Không trong `ALLOWED_SETTING_KEYS` (PUT chung → 400) / `SETTINGS_READ_KEYS`. GET liệt kê tài khoản chưa có yếu tố ở từng mức.
+- Cưỡng chế trong `admin-auth` (sau khi nạp quyền từ CSDL): `privileged` = SuperAdmin hoặc sửa/xoá `users`/`roles`/`settings` (sao lưu không có tài nguyên riêng — đi theo `settings`); quá mốc + không hàng yếu tố `active` → 403 `data.code = 'mfa_enrollment_required'`, trừ `MFA_ENROLLMENT_PATHS` (liệt kê đủ, mọi dạng đã giải mã phải khớp, `#`/`%23` không qua — dùng chung `pathForms` với `classifyAdminRequest`). `MFA_ENFORCEMENT=0|false|off|no` (đọc lúc request) tắt cưỡng chế. Đệm chính sách 30 s (bỏ khi ghi), "có yếu tố" 60 s theo `(user, tokenVersion)`.
+- Giao diện: `me` và phản hồi đăng nhập trả `mfaEnrollmentRequired` + `mfaEnforceAfter`; middleware client chuyển về `/admin/profile#security` khi bị khoá; banner ở layout admin (thời hạn chuyển tiếp: ngày; khi khoá: lý do); trang profile ẩn khối lịch sử khi bị khoá (endpoint đó không mở), đọc lại `me` sau khi bật yếu tố.
+- **Lỗi có từ trước, tìm ra nhờ E2E mới:** `profile.vue` dùng `<ProfileActivityHistory>` — tên trần không phân giải (auto-import đăng ký `AdminProfileActivityHistory`, tiền tố thư mục). Từ lần tách tệp (1076 → 875 dòng) khối "Lịch sử truy cập & hoạt động" **chưa từng hiện**, và `historyRef.reload()` trên phần tử lạ ném lỗi đồng bộ bên trong `Promise.all([...])` của lượt bật/tắt yếu tố — lỗi bị `catch` nuốt vào hộp thoại đã đóng; lượt đọc lại `me` sau khi bật MFA không bao giờ chạy nên banner không tắt. Sửa gốc: `<AdminProfileActivityHistory>`. E2E khẳng định khối lịch sử hiện sau khi bật.
+- Test `tests/admin-mfa-enforcement-behavior.test.ts` (middleware + `me` + endpoint + PUT cài đặt chung chạy thật, CSDL giả có transaction thật-sự-hoãn-ghi): mặc định off, trong thời hạn, quá thời hạn (spec), danh sách mở (spec) + MỌI tệp dưới `profile/mfa/` phải mở được, dạng đường dẫn lách, có yếu tố, yếu tố `pending` không tính, bật xong có hiệu lực ngay lượt sau, công tắc (spec), diện `privileged`/`all`, non-SuperAdmin 403 (spec), audit trong transaction, tắt xoá mốc, giá trị lạ 400, GET, khoá không ghi được qua PUT chung.
+
+**3. Mã dự phòng bắt buộc khi bật yếu tố đầu tiên** (`server/utils/mfa/recovery-codes.ts` mới — `issueRecoveryCodes`, một nơi sinh/băm/lưu, xoá + chèn trong một transaction; `confirm.post.ts`, `recovery-codes.post.ts` dùng chung): chính sách khác `off` bao tài khoản và tài khoản chưa có lô nào → phản hồi xác nhận kèm `recoveryCodes` (10, hiện một lần ở khung "mã dự phòng" sẵn có), audit chỉ ghi số lượng; không bao giờ thay một lô đang có. Thứ tự ghi/cookie/audit của `confirm.post.ts` giữ nguyên (ngoại lệ có tên ở `reader-audit-atomicity`). Test `tests/mfa-enrollment-recovery-codes-behavior.test.ts` (endpoint thật, bcrypt thật: mã băm, đổi được, cookie cấp lại sau khi tăng `tokenVersion`; trong thời hạn chuyển tiếp cũng phát; off/ngoài diện/đã có lô → không) + E2E `tests/e2e/admin-mfa.spec.ts` mới: SuperAdmin bật chính sách trên trang, banner báo ngày, bật TOTP bằng mã thật → 10 mã hiện ngay, `auth/me` bằng cookie cấp lại trả 200, banner tắt, trang khác vào được; `afterEach` trả chính sách về `off` QUA ENDPOINT (bỏ đệm 30 s của máy chủ — để lại sẽ hiện banner `role="status"` ở spec sau).
+
+**4. Bí mật trong `settings` mã hoá lúc lưu** (`server/utils/settings-secrets.ts`, `server/db/settings-secret-conversion.ts` mới; `settings/index.{get,put}.ts`, `settings/backup.{get,put}.ts`, `test-email.post.ts`, `test-r2.post.ts`, `utils/mailer.ts`, `services/media.ts` `loadR2Config`, `media/upload.post.ts`, `media/storage-size.get.ts`, `services/backup.ts` `readBackupConfig`; `email.vue`, `media-storage.vue`, `BackupSettingsPanel.vue`/`useBackupSettings.ts` báo "cần nhập lại").
+- Lỗi: `smtp_pass`, `r2_secret_key`, `backup_drive_service_account` (có `private_key`) nằm nguyên văn trong bảng → nguyên văn trong mọi bản dump.
+- Sửa: envelope AES-256-GCM (`secret-envelope.ts`), nhãn `cdkt-smtp-pass:v1` / `cdkt-r2-secret:v1` / `cdkt-backup-drive-key:v1`, không `lastFour`. Ghi luôn mã hoá (thiếu khoá → 500, không lưu nguyên văn). Dùng: ba hàm đọc giải mã; không mở được → rỗng + cờ, "gửi thử"/"kiểm tra R2"/Drive báo đúng lý do, `sendMail` từ chối thay vì gửi không xác thực. `upload.post.ts`/`storage-size.get.ts` từng tự đọc `r2_secret_key` → nay qua `loadR2Config`. GET: dấu che + `needsReentry: string[]`. Lượt chuyển một lần lúc khởi động (`applyAdditiveMigrations` → `convertPlaintextSettingsSecrets`). Email trả lời mang tên người trả lời qua `effectiveDisplayName` (mục 5).
+- Test `tests/settings-secret-storage.test.ts`: khứ hồi + nhãn riêng + hàng lưu không chứa mật khẩu lẫn 4 ký tự cuối; spec "lưu mật khẩu SMTP" (envelope, gửi thử thành công với đúng mật khẩu); R2 (kiểm tra R2 nhận khoá thật) và service account; dấu che giữ envelope từng byte; không phản hồi nào chứa envelope/nguyên văn; thiếu khoá → 500; spec "khoá đã xoay" (`needsReentry`, mọi đường dùng từ chối, hàng không đổi); spec "nâng cấp" (khởi động 2 lần: lần 2 không UPDATE), không ghi đè envelope hỏng, không khoá → không ghi, lượt lưu chen giữa không bị đè; nguyên văn cũ vẫn dùng được; guard: tệp nào nhắc ba khoá phải import `settings-secrets`. Đã chạy trên MySQL 8 local (CSDL dùng một lần, đã xoá): khởi động 1 mã hoá + gắn cờ tên, khởi động 2 `CHECKSUM TABLE settings`/`reader_accounts` không đổi.
+
+**5. Tên Google là từ dành riêng** (`reader_accounts.display_name_reserved` — `schema.ts`, `schema-tables/readers-media.ts`, `ensureColumn` + `server/db/reader-name-backfill.ts`; `auth/google/callback.get.ts`, `utils/display-name.ts`, `utils/reader-auth.ts`, `services/{comments,readers,livestream-chat,notification-email}.ts`, `livestream/chat/send.post.ts`).
+- Callback đặt cờ bằng `isReservedDisplayName` (nay export, cùng phép gấp với tên tự đặt) mỗi lần đăng nhập, tên Google lưu nguyên văn, đăng nhập không bị từ chối (D-NAMES). `effectiveDisplayName` hiện "Bạn đọc" (`RESERVED_PROVIDER_NAME_FALLBACK`) khi cờ bật và chưa có tên tự đặt; cờ là khoá **bắt buộc** của tham số — typecheck tìm ra 7 nơi gọi (bình luận công khai, danh sách kiểm duyệt, kiểm duyệt nhanh/AI, đổi tên, chat livestream, `reader/me`) và email trả lời (`notification-email.ts` từng in tên Google thô cạnh địa chỉ của cổng). Hàng có sẵn: điền cờ một lần đúng lúc cột vừa được thêm.
+- Test `tests/reader-display-names-google-behavior.test.ts` (callback thật — state ký thật, id_token giải/kiểm thật): spec "Admin" → đăng nhập thành công, bình luận hiện "Bạn đọc"; các cách viết (dấu, full-width, gạch nối); tên thường giữ nguyên ("Nguyễn Công An", "Adminh Trần"); cờ theo tên Google hai chiều; tên tự đặt thắng; lượt điền một lần.
+
+**Cập nhật kèm** (người dùng trực tiếp của hợp đồng đổi): `tests/mfa-codes-endpoints.test.ts` (guard mã nguồn theo `issueRecoveryCodes`), `tests/mfa-concurrency.test.ts` (mock `mfa/codes` thêm ba export để module liên kết được), `tests/settings-credential-retarget.test.ts` + `tests/backup-superadmin-gates.test.ts` (đặt khoá mã hoá dùng một lần; khẳng định "lưu đúng giá trị" nay mở envelope thay vì so nguyên văn), `tests/admin-error-retry-ui.test.ts` + `tests/skeleton-loading-ui.test.ts` (đăng ký trang `settings/security.vue`), `tests/ops-scripts.test.ts` (`MFA_ENFORCEMENT` đi qua compose). Vận hành: `MFA_ENFORCEMENT` trong `environment:` của compose, `.env.example`, `production/README.md` § *Bảo mật đợt 2 — 2A*; `manage.sh` không đổi (nó không ghi mặc định cho các biến công tắc).
+
+**Lượt ghi lúc khởi động mới — phải khai báo trong bộ nâng cấp lược đồ** (`tests/schema-upgrade-integration.test.ts`, task 1.2 — chưa có trên nhánh này): (a) mã hoá ba bí mật `settings` khi giá trị chưa phải envelope; (b) điền `reader_accounts.display_name_reserved` khi cột vừa được thêm.
+
+#### Sửa sau kiểm chứng độc lập (2026-10-24, trên `8149ee8`)
+- **(CRITICAL) Chuông thông báo của người đọc còn hiện tên Google dành riêng.** `listNotifications` (`server/services/notifications.ts`) đọc thẳng `author.custom_display_name`/`display_name` và in `authorName || authorGoogleName` — một người tên Google "Ban Quản Trị" trả lời thì người nhận thấy "Ban quản trị đã trả lời", y hệt câu trả lời thật của cổng. Sửa gốc: chọn kèm `display_name_reserved` và giải qua `effectiveDisplayName`; hàm này nay nhận cờ dạng `1`/`0` (cột đọc qua `sql` thô ra số; `=== true` trên `1` là đúng loại lỗi này). Rà mọi chỗ đọc tên người đọc: bình luận công khai, danh sách kiểm duyệt, kiểm duyệt nhanh/AI, email trả lời, `reader/me`, chat livestream đều đã qua resolver; phiên chatbot không hiện tên người đọc; danh sách/chi tiết người đọc ở admin và prompt kiểm duyệt AI đọc tên thô CÓ CHỦ ĐÍCH (chỉ cán bộ). Guard mới `tests/reader-name-resolver-guard.test.ts` (S5): mọi `.select({…})` dưới `server/` (trừ `db/`) đọc tên Google phải đọc kèm cờ, ngoại lệ có tên + số khối (`readers.ts` 6, `ai-moderate.post.ts` 1); tệp đọc cờ phải gọi `effectiveDisplayName`; tệp đọc bản chụp tên livestream phải gọi `publicNameSnapshot`. Test hành vi: `listNotifications` thật với hàng đúng hình dạng MySQL (cờ = `1`) → "Bạn đọc"; suite `notification-page-integration` (MySQL thật) thêm một người đọc gắn cờ trả lời — đỏ trên `notifications.ts` cũ (`'Ban Quản Trị'`), xanh sau sửa.
+- **(W3) Bản chụp tên chat livestream ghi trước 2A.** `livestream_messages.display_name` là bản chụp lúc gửi (cố ý: đổi tên không viết lại thứ người xem đã thấy). Chọn đọc-lúc-ra thay vì ghi lại hàng lúc khởi động: `listChatHistory` → `publicNameSnapshot` (bản chụp gấp ra từ dành riêng → "Bạn đọc"; tên tự đặt không thể dành riêng nên chỉ che tên nhà cung cấp), hàng gốc giữ nguyên làm bằng chứng kiểm duyệt; không thêm lượt ghi lúc khởi động. Lịch sử không join `reader_accounts` nên giải theo cờ của người gửi sẽ thêm một join chỉ để đạt cùng kết quả.
+- **(W1) Bật yếu tố + phát mã dự phòng không nguyên tử.** Bản trước bật yếu tố rồi mới phát mã: phát hỏng → yếu tố đang bật không mã, thử lại báo "không có yêu cầu chờ"; hai lượt xác nhận đồng thời cùng thấy "chưa có lô", lượt sau xoá lô lượt trước vừa hiện. Nay: băm mã TRƯỚC (`prepareRecoveryCodes`), rồi MỘT transaction: `lockAccountForMfaChange` (`SELECT … FOR UPDATE` hàng `users`) → CAS bật → nếu chưa có lô thì chèn (không bao giờ xoá). `issueRecoveryCodes` (tạo lại) giữ cùng khoá. Test (CSDL giả có hoàn tác + khoá hàng thật sự chờ): chèn hỏng → xác nhận hỏng, yếu tố vẫn `pending`, không cookie/audit, thử lại được; hai yếu tố xác nhận đồng thời → đúng một lô, mọi mã đã hiện đều đổi được; tạo lại chen giữa → một lô, tờ của lượt tạo lại đổi được — cả ba đỏ trên mã cũ. `tests/mfa-concurrency.test.ts`: CSDL giả thêm `transaction`/`for()` (lượt thua vẫn 409 từ bên trong transaction).
+- **(W4) Khôi phục CSDL mang bí mật nguyên văn về.** `restoreHeldTarget` (cả khôi phục theo tên lẫn từ tệp tải lên) gọi `convertPlaintextSettingsSecrets(pool)` ngay sau khi khôi phục SQL + audit thành công; hỏng chỉ log `backup.restore_secret_conversion_failed` (CSDL đã khôi phục xong — báo thất bại là sai; lần khởi động sau vẫn chuyển). Hàm chuyển không còn tự log (mỗi nơi gọi log theo ngữ cảnh — `migrations-additive.ts` giữ các sự kiện `db.migration.settings_secret_*`). Test trong `tests/backup-restore-hardening.test.ts` (pool giả có `execute`): dump mang `smtp_pass`/`r2_secret_key` nguyên văn → envelope ngay sau khôi phục; lượt chuyển ném → khôi phục vẫn thành công + log.
+- **(S2) Envelope hỏng fail closed.** JSON có khoá `sealed` của riêng nó là envelope; nhãn lạ, phiên bản lạ, thiếu trường → `unreadable` (bản trước coi là nguyên văn: nơi dùng sẽ đăng nhập bằng chính chuỗi JSON, lượt khởi động mã hoá nó lần nữa). Lượt chuyển để nguyên + báo `needsReentry`.
+- **(S4) Bị khoá giữa phiên.** `app/plugins/mfa-enrollment-redirect.client.ts` + `app/utils/mfa-enrollment-redirect.ts`: hook `onResponseError` trên `$fetch` toàn cục — 403 `data.code = 'mfa_enrollment_required'` → đánh dấu `mfaEnrollmentRequired` (banner) + chuyển `/admin/profile#security` (không chuyển khi đã ở đó); lỗi khác đi tiếp như cũ. `tests/mfa-enrollment-redirect-client.test.ts` chạy plugin thật với global Nuxt giả.
+- **(W2)** Runbook xoay `CHATBOT_ENCRYPTION_SECRET` (realm-safety) nay là bảng đủ tám nhãn — thêm `cdkt-ai-provider-key:v1` (AI Panel) tách khỏi `cdkt-chatbot-provider-key:v1` (trợ lý) — kèm nơi nhập lại và bước kiểm cho từng loại; `production/README.md`, `.env.example`, CLAUDE.md theo.
+- Không đổi (quyết định của người dùng, W6): dưới chính sách, tài khoản thuộc diện vẫn tự tắt được mã dự phòng.
+- **Lượt ghi lúc khởi động của 2A (để bộ nâng cấp lược đồ khai báo, nhánh 2F):** không đổi sau đợt sửa — (a) `settings`: mã hoá `smtp_pass`/`r2_secret_key`/`backup_drive_service_account` khi giá trị khác rỗng và chưa phải envelope (lý do: bí mật nguyên văn trong mọi bản dump; tự xoá điều kiện); (b) `reader_accounts.display_name_reserved = 1` cho hàng có `display_name` gấp ra từ dành riêng, CHỈ khi cột vừa được thêm (lý do: người đọc đang đăng nhập với tên "Admin" không đợi tới lần đăng nhập sau). Lượt chuyển sau khôi phục (W4) chạy lúc chạy, không lúc khởi động.
+- Kiểm chứng sau đợt sửa: `npm test` 4380 / 4353 pass / 0 fail / 27 skip; typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` xanh (636 cột); `npm run build` xanh (plugin client có trong bundle); `notification-page-integration` xanh trên MySQL 8 local (CSDL dùng một lần, đã xoá); E2E chọn lọc 14/14 (`admin-mfa`, `admin-login-challenge`, `admin-retry`, `admin-write-paths`, `media-portal` — các luồng chạm hook `$fetch` toàn cục và MFA), không dòng `security.cross_site_refused`, cổng 3123 trống và không còn DB `cdkt_e2e_*` sau lượt chạy. Không spec E2E nào đăng nhập người đọc (cần Google OAuth thật) — chuông thông báo được phủ bằng suite MySQL thật.
+
+#### Sửa sau kiểm chứng lại (2026-10-24, trên `196f907` — 0 CRITICAL)
+- **(W1) Guard tên người đọc bỏ lọt 5/8 biến thể.** Bản trước chỉ soi khối `.select({ … })` viết nguyên văn và kiểm "có gọi resolver" theo TỆP: lọt projection giữ trong một hằng (`.select(columns)` — đúng cách bình luận công khai được viết), SQL thô không backtick (`ra.display_name`), chuỗi `pool.query('SELECT display_name …')`, chọn nguyên hàng `reader_accounts`, và chọn cờ rồi không dùng. Nay `tests/_reader-name-guard.ts` phân tích AST theo TỪNG HÀM cấp cao nhất (bình luận không tính): đọc tên = cột `readerAccounts.displayName`/`customDisplayName` ở bất kỳ đâu (kể cả trong hằng cấp module mà hàm nhắc tới, trong `sql\`${…}\``), chuỗi/template SQL có `display_name`/`custom_display_name` (có/không backtick), hoặc `.select().from(readerAccounts)`; hàm đó phải đọc cờ VÀ gọi `effectiveDisplayName` có cờ (object literal phải có `displayNameReserved`), trực tiếp hoặc một bước qua hàm cùng tệp. Ngoại lệ theo `tệp#hàm` kèm lý do (6 hàm admin của `readers.ts`, `ai-moderate.post.ts#default`, `reader-auth.ts#resolveReader`), mục lỗi thời cũng đỏ. Tám biến thể là fixture nhúng nguyên văn: cả 8 hàm rò bị bắt, `okH` qua; chạy trên `notifications.ts` của `8149ee8` → `listNotifications` bị bắt.
+- **(W2) Envelope cụt bị coi là nguyên văn.** Chuỗi bắt đầu `{` có `"sealed"` mà `JSON.parse` hỏng → `broken-envelope` (unreadable), không còn là mật khẩu, không bị bọc thêm lần khởi động sau. Test: envelope thật cắt 12 ký tự cuối.
+- **(W3) Lượt mã hoá sau khôi phục chạy quá muộn.** Bản trước chạy SAU transaction audit: `restoreSql` xong mà audit/gắn lại hàng ném, hay `restoreSql` hỏng giữa chừng sau khi bảng `settings` đã bị thay → nguyên văn nằm tới lần khởi động sau. Nay chạy trong `finally` của `restoreSql` (idempotent, không ném). Test: dump hỏng giữa chừng sau khi `settings` đã thay, và audit khôi phục ném — cả hai: khôi phục báo thất bại, bí mật đã là envelope.
+- **(S1)** `notification-page-integration`: `closeDb()` vào `finally` (assert đỏ không còn treo tiến trình).
+- **(S2)** Hook client: một loạt 403 cùng lúc chỉ chuyển trang một lần (cờ đang-chuyển gỡ khi xong); `/admin/profile/`, `?…`, `#…` tính là trang hồ sơ (`isMfaEnrollmentPage`, dùng chung cho middleware route và banner).
+- **(S3/S4)** Runbook: lệnh kiểm kê ra 6 tệp — riêng `settings-secrets.ts` giữ 3 nhãn; sau `scripts/restore-db.sh` (ngoài app) phải khởi động lại app để lượt khởi động mã hoá bí mật nguyên văn (realm-safety + `production/README.md`).
+- **Rebase lên nhánh tích hợp `3ede49a`** (Wave 1 + 2E § 32 — `shared/`): một xung đột ở CHANGELOG (giữ cả § 32 lẫn § 33); không mã 2A nào dưới `server/` import `app/` (guard `server-no-app-imports`, `runtime-image-sources` xanh — đồ thị khởi động của 2A nằm trọn trong `server/`, `shared/` đã được Dockerfile chép). Kiểm chứng trên đỉnh mới: `npm test` 4495 / 4468 pass / 0 fail / 27 skip; typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` xanh (636 cột / 62 bảng); `npm run build` xanh; `notification-page-integration` xanh trên MySQL 8 local; E2E `admin-mfa` + `admin-login-challenge` 3/3 (1,5 phút), không dòng `security.cross_site_refused`, cổng 3123 trống và không còn DB `cdkt_e2e_*`/`cdkt_notif_page_*` sau lượt chạy. Endpoint: 334 (172 `getDb()` thẳng, 214 có import `services/**`).
+
+#### Kiểm chứng (2026-10-24, worktree `wave2/2a-security`, gốc `a7be585`)
+`npm test` 4360 / 4333 pass / 0 fail / 27 skip. Typecheck 0 lỗi. eslint 0 error / 16 warning (không cảnh báo mới). `db:drift` xanh (636 cột / 62 bảng). `npm run build` xanh; thứ tự `handlers` trong `.output`: tài sản tĩnh → cổng khác site → `admin-auth`. Ảnh runtime chạy `init.ts` từ mã nguồn: đồ thị import lúc khởi động (init + seed, 30 tệp) nằm trọn trong `server/` (Dockerfile chỉ chép `server/`, `scripts/`, `public/`), gói đều trong `dependencies`. E2E (build production, cổng 3123, MySQL local): 94/94 — Playwright báo 7,4 phút trên máy đang chạy song song việc khác (lượt trước, máy nhẹ hơn: 5,1 phút), sát `globalTimeout` 480 s; không dòng `security.cross_site_refused` nào trong log của lượt chạy (cổng không chặn nhầm luồng nào của E2E); trước/sau lượt chạy cổng 3123 trống, không còn DB `cdkt_e2e_*`. Lượt E2E đầu (trước khi sửa tên `<AdminProfileActivityHistory>`) 93/94: đúng ca MFA mới đỏ ở bước "banner tắt sau khi bật".
+
+Bằng chứng test-đỏ-trước: năm tệp test mới chạy trên bản xuất `a7be585` (`git archive`) đều đỏ — trước tiên vì module mới chưa có (cổng, endpoint chính sách, `mfa/policy`, `settings-secrets`, `reader-name-backfill`). Hành vi cũ được dò trực tiếp trên `a7be585`: `effectiveDisplayName` của tên Google "Admin" là "Admin"; khẳng định cũ `store.get('smtp_pass') === 'typed-new-password'` (lưu nguyên văn) xanh; `admin-auth`/`me`/`confirm` không có mã cưỡng chế. Riêng test mã dự phòng: chạy khi `policy.ts` đã có mà `confirm.post.ts` chưa sửa → 2 ca phát mã đỏ, 3 ca "không phát" xanh (chủ đích: giữ hành vi cũ).
+
+### 34. Đợt 2 — 2D hộp thoại admin (2026-10-24)
+
+OpenSpec `wave2-hardening`, nhóm 6 mục 6.1–6.3 (D-MODAL, D10; spec `admin-dialogs`, `admin-moderation-ui`). Mục 6.4 (`adminFetch`/`useAdminList`) chưa làm. Đã đọc `openspec/ui-dna.md` trước mọi thay đổi giao diện.
+
+**1. Khung `AdminModal.vue` dùng chung** (`app/components/admin/AdminModal.vue`, `app/utils/admin-modal.ts` mới).
+- Lỗi: 17 lớp phủ `fixed inset-0` ở 10 tệp admin tự viết khung — không `role="dialog"`, không `aria-modal`, không tên; Tab đi ra trang phía sau, Escape không đóng, đóng xong focus rơi về `<body>`.
+- Sửa: một khung, props `open`/`title`/`busy`/`size` (`sm|md|lg|xl|2xl|drawer`) + `icon` trang trí, slot `default`/`footer`, phát `close`. Dựng trên `focus-return.ts` như `ConfirmModal`: nhớ nút mở → focus điều khiển đầu tiên đang hiện trong thân (rồi chân, rồi nút đóng) → `inertOutside` → bẫy Tab (`visibleTabbables` + `trapTabTarget`) → đóng thì gỡ `inert` TRƯỚC rồi trả focus. Teleport tới `body`, `z-[9000]` — dưới `ConfirmModal` (`z-[9999]`): hộp xác nhận mở đè lên thì hộp này bị `inert` và nhường bàn phím. Mở bằng `:open` hoặc bằng `v-if` của cha (`ContentTypePicker`) đều dọn dẹp đúng (gỡ component cũng trả focus).
+- Phím nghe ở mức `document`, quyết định qua `adminModalKeyAction` (hàm thuần): nút "Lưu" bị `disabled` lúc lưu đẩy focus về `<body>` — nghe trên hộp thôi thì sau một lần lưu hỏng Escape không còn đóng được và Tab đi ra lớp toast. Phím ở lớp khác (hộp xác nhận, toast, thư viện ảnh) hoặc đã bị điều khiển bên trong `preventDefault` thì bỏ qua. `busy` chặn Escape, nút đóng và bấm nền (không chặn Tab).
+- Bấm nền đóng hộp như cũ, nhưng chỉ khi cả `pointerdown` lẫn `click` ở nền (`adminModalBackdropCloses`): bôi đen chữ trong ô nhập rồi thả chuột ra ngoài khung từng đóng mất biểu mẫu đang gõ.
+- Chuyển cảnh chỉ `opacity` bằng lớp Tailwind (`motion-reduce:transition-none`), không `visibility` (focus vào cây đang `hidden` bị bỏ qua — bài học `DefaultMobileDrawer`/`ChatWidget`), không `<style>`.
+
+**2. Chuyển 17 lớp phủ** (10 tệp): `content/content-types.vue`, `content/categories/index.vue`, `content/pages/index.vue`, `content/pages/[id].vue` (hộp "Cấu hình trang" + ngăn kéo "Thêm khối" và "Phiên bản"), `users/index.vue` (tạo + sửa), `media-portal/categories.vue`, `SubmissionDetailModal.vue`, `ContentTypePicker.vue`, `ai/AiServicesTab.vue`, `ai/AiProvidersTab.vue` (5). Hai ngăn kéo của trình dựng trang có nền mờ chặn cả trang và bấm nền để đóng — tức là modal — nên dùng `size="drawer"` thay vì được miễn. Nhánh tải/lỗi/`role="alert"`/thử lại vẫn nằm trong chính tệp (guard `admin-error-retry-ui`/`skeleton-loading-ui` đọc theo tệp). Biểu mẫu người dùng giữ nút submit trong `<form>` (slot mặc định). `busy` theo cờ lưu của từng hộp; nút "Kiểm tra kết nối" (AI) không khoá hộp vì kết quả chỉ ghi vào ref. Ba khối `<style scoped>` `.modal-fade` bị gỡ. Nút xoá phiên bản (chỉ icon) có `aria-label`.
+- Guard `tests/admin-modal-dialog.test.ts` quét CÂY TEMPLATE (không grep dòng) của `pages/admin`, `components/admin`, `layouts/admin.vue`: mỗi `fixed inset-0` (cả trong `:class`) phải là hộp thoại (`role="dialog"` + `aria-modal="true"`), nằm trong/bọc trực tiếp một hộp thoại, nằm trong `AdminModal`/`ConfirmModal`, hoặc có tên trong `EXEMPT_OVERLAYS` (khoá theo biểu thức `v-if`, kèm lý do; mục cũ không còn khớp → đỏ). Hai mục miễn: nền chế độ mở rộng của `builder/PropertyPanel.vue` (cùng panel phóng to tại chỗ) và nền sidebar `layouts/admin.vue` (ngăn kéo điều hướng). Ghim 17 `<AdminModal>` ở 10 tệp + import tường minh, và thứ tự z-index. Render SSR của CHÍNH `AdminModal.vue` (script + template biên dịch, props/slot/`useId` thật): vai trò, `aria-modal`, `aria-labelledby` trỏ tiêu đề, bận → `aria-busy` + nút đóng `disabled`, hai hộp hai id, kích thước.
+- E2E `tests/e2e/admin-dialogs.spec.ts`: người dùng (tạo: focus vào ô đầu, Tab/Shift+Tab không rời hộp, trang `inert`, Escape đóng + focus về nút mở + tập `inert` trở về như trước, bấm nền đóng; đang lưu Escape không đóng, lưu hỏng + focus ở `<body>` thì Escape vẫn đóng; sửa: tên hộp có tên đăng nhập), danh mục, cấu hình trang, và xếp lớp: `ConfirmModal` mở đè lên ngăn kéo "Phiên bản" → ngăn kéo `inert`, Escape chỉ đóng hộp xác nhận, `inert` được gỡ, focus về nút xoá trong ngăn kéo, Tab vẫn bị bẫy, Escape lần hai đóng ngăn kéo.
+- Thay đổi hình thức có chủ đích (chưa chụp ảnh so sánh — việc kiểm "không hồi quy hình ảnh, PR kèm ảnh" của nhóm 6 còn để ngỏ): mọi hộp đã chuyển có dải tiêu đề nền `#f8faf8` + nút ✕ và dải chân viền trên (hộp người dùng, tạo trang, cấu hình trang, AI trước đây không có); nút đóng của hộp chi tiết đơn đổi sang nút ✕ chung; đệm thân `px-6 py-5`; dòng phụ của ngăn kéo "Thêm khối" `text-gray-400` → `text-gray-500` (tương phản); hộp "Test Call" bỏ ô icon riêng (icon nằm trong tiêu đề). E2E chỉ chạy ở khổ desktop.
+
+**3. Kiểm duyệt an ninh một nơi** (`ai/AiModerationTab.vue`, `app/utils/moderation-summary.ts` mới): tab AI Panel là bản chép thứ hai của `/admin/ai/moderation` (thêm/bật/tắt/xoá quy tắc, duyệt/xoá/cấm IP) và huy hiệu "chờ đối soát" đếm trên trang 20 dòng đầu. Nay tab chỉ hiện số hàng chờ (`total` của `queue?status=pending&perPage=1`) + số quy tắc đang bật / tổng + liên kết sang trang kiểm duyệt; không còn đường ghi nào. Phản hồi sai dạng → nhánh lỗi + "Thử lại", không phải "0". Tệp giữ lại làm thành phần tóm tắt (xoá cần anh duyệt). Test `tests/admin-moderation-summary.test.ts` (kịch bản spec qua render template; tổng từ máy chủ; chỉ đọc).
+
+#### Sửa sau kiểm chứng độc lập (2026-10-24, trên `c04dd6f`)
+- **(Nghiêm trọng) Mở ngăn kéo "Phiên bản" bằng Enter tự lưu một bản sao lưu.** Nút mở kích hoạt ở `keydown`, AdminModal đưa focus vào ô "Tên bản sao lưu…", phím được THẢ ở ô đó và `@keyup.enter` chạy `saveBackup()` — mất 1/4 chỗ sao lưu thủ công, xoá chữ đang gõ. Cùng lỗi ở 3 hộp MFA của `/admin/profile` (`focusFirstField` + `@keyup.enter` → báo "Vui lòng nhập mật khẩu hiện tại." khi chưa gõ gì; bước mật khẩu → bước mã cũng vậy). Đổi riêng `keyup` → `keydown` CHƯA đủ: giữ Enter quá nhịp lặp của hệ điều hành (~250–500 ms) thì các keydown LẶP rơi vào ô vừa nhận focus — mỗi lần một bản sao lưu; hộp xác nhận không nguy hiểm (focus ở nút đồng ý, vd. "Khôi phục phiên bản") bị tự đồng ý. Sửa gốc hai lớp: (1) `createHeldKeyGuard` (`app/utils/admin-modal.ts`) — AdminModal và ConfirmModal, khi mở, nuốt ở pha capture của `document` mọi keydown lặp và lần thả của phím đã giữ từ trước, tới lần nhấn mới (giữ phím của chính người dùng trong hộp không bị nuốt); (2) ô Enter trong hộp dùng `@keydown.enter` + `isDeliberateEnter` (không lặp, không `isComposing` — IME tiếng Việt chốt chữ bằng Enter) ở `pages/[id].vue`, `profile.vue` (6 ô, `submitOnEnter`), ô tìm của thư viện ảnh. KHÔNG đổi focus mở đầu của AdminModal. Guard mới: không `@keyup` nào bên trong `AdminModal`/`ConfirmModal`/`role="dialog"` của admin. `loadVersions` chỉ ghi kết quả của lượt tải MỚI NHẤT (lượt tải đầu về sau từng đè danh sách vừa có bản mới — test xếp lớp trước đó xanh nhờ thời điểm). `<main>` chỉ mang `tabindex="-1"` tạm khi nhận focus dự phòng, rời focus là gỡ.
+- **6 hộp `role="dialog"` không tên chuyển sang AdminModal**: `languages/index.vue` (đổi vị trí; tiến trình dịch AI — đang dịch = `busy`), `content/articles/[id].vue` (nhắc dịch lại), `ArticleQuickViewModal`, `ArticleGlobalTranslateModal`, `MediaLibraryModal` (`size="2xl"`, ô tìm `data-autofocus` + `aria-label`, nút trang có tên). Guard đòi MỌI `role="dialog"` có `aria-label`/`aria-labelledby` (bind không được có thể ra `undefined`) — `ConfirmModal` không tiêu đề nay lấy tên từ câu hỏi. Nhánh lỗi/`role="alert"`/thử lại ở nguyên tệp; `v-html` của xem nhanh giữ nguyên biểu thức (kiểm kê không đổi).
+- **Huy hiệu "chờ đối soát" của `/admin/ai/moderation`** đếm `queue.filter` trên trang 20 dòng → `pendingBadgeCount` (`app/utils/moderation-summary.ts`): đang lọc `pending` dùng `total` của truy vấn, lọc khác dùng `pendingQueueCount` của `worker-status`; xử lý một hàng xong làm mới cả worker-status. Trang và tab tóm tắt nay cùng một con số.
+- **Trả focus khi nút mở đã bị gỡ** (hộp chi tiết đơn: đổi trạng thái → bảng tải lại → nút "Xem & xử lý" bị vẽ lại): AdminModal nhớ khoá `data-admin-modal-opener` (hoặc `id`) lúc mở, tìm lại nút cùng khoá, không thấy thì focus `<main>` (gắn `tabindex="-1"`) — không bao giờ để ở `<body>`.
+- **Focus chỉ định**: phần tử `data-autofocus`/`autofocus` (đang hiện, Tab tới được) thắng ô đầu tiên của thân.
+- **Xếp lớp theo thứ tự MỞ**: `z-index` = 9000 + thứ tự mở (luôn < 9999). Thư viện ảnh mount sớm nhất trong `<body>`, cùng z-index thì luôn nằm dưới một hộp mở sau.
+- **Guard rộng hơn**: lớp phủ ghép cạnh (`fixed top-0 left-0 w-full h-full`, `inset-x-0 inset-y-0`…) cũng bị bắt; lớp phủ có nội dung lồng trong thân hộp thoại/AdminModal là hộp lồng không ngữ nghĩa (chỉ nền mờ TRỐNG, con trực tiếp của hộp, được chấp nhận).
+- **Test thử lại thật**: `admin-moderation-summary` chạy chính `<script setup>` của tab (biên dịch thật, `$fetch` giả) và gọi `onClick` của nút "Thử lại" trong template đã biên dịch — gọi lại đúng hai endpoint, xoá lỗi, hiện số mới (thay cho `retried === 0` không chứng minh gì).
+
+#### Sửa sau kiểm chứng lần 2 (2026-10-24, trên `e729115`)
+- **Focus vẫn rơi về `<body>` khi đóng hộp.** `createFocusReturn().restore()` (`app/utils/focus-return.ts`) báo "đã trả" mỗi khi nút mở còn trong DOM, không kiểm focus có thật sự tới — nút mở `disabled` (đóng hộp tiến trình dịch bằng "Đóng cửa sổ" lúc đang dịch: nút "Dịch AI" bị khoá) hay `<main>` đã mất `tabindex` tạm thì `focus()` không làm gì, đường dự phòng của AdminModal bị bỏ qua. Sửa gốc: `restore()` trả `activeElement === nút mở` (dùng chung cho ConfirmModal, ngăn kéo mobile, hộp chat). Chuỗi trả focus của AdminModal: nút mở (nếu focus thật sự tới) → nút cùng khoá `data-admin-modal-opener` → đỗ ở `<main>` (`tabindex="-1"` tạm, có dấu `data-admin-modal-focus-park`, rời focus là gỡ) rồi THEO DÕI DOM tối đa 4 giây chờ nút cùng khoá xuất hiện/hết `disabled` (bảng tải lại qua skeleton) và chuyển về nó nếu focus vẫn đang đỗ. Nơi đỗ tạm KHÔNG bao giờ được nhớ làm nút mở (`rememberableOpener`) — mở hộp khác trong lúc focus đang đỗ (bấm chip `<span>` của xem nhanh) từng trả focus về `<main>` đã mất `tabindex` → `<body>`. Khoá đánh dấu thêm ở nút "Sửa"/"Thêm con" của người dùng, thể loại, danh mục, danh mục video, nút "Dịch AI" của ngôn ngữ.
+- **Focus rơi khỏi hộp đang mở.** Điều khiển đang giữ focus bị gỡ (xoá một phiên bản qua hộp xác nhận: nút xoá của hàng biến mất khi danh sách tải lại; "Dừng lại" biến mất khi dịch xong) hoặc bị `disabled` → trình duyệt đẩy focus về `<body>`. AdminModal theo dõi DOM của chính hộp (`MutationObserver`: con, `disabled`/`inert`/`hidden`) và kéo focus về lại (như lúc mở) khi focus rơi ra `<body>` mà hộp không bị lớp khác phủ. ConfirmModal không trả được focus về nút mở thì ở lại hộp thoại đã chứa nút đó (nếu còn mở, không bị phủ), không thì đỗ ở `<main>`.
+- **Enter trong hộp thoại**: `isDeliberateEnter` thêm `keyCode !== 229` (Safari chốt chữ của bộ gõ tiếng Việt bằng keydown `isComposing: false`, `keyCode: 229`). Ô nhập của hộp hỏi `ConfirmModal` (lý do chặn bạn đọc…) bỏ `@keydown.enter.prevent="accept"` trần, dùng `onPromptEnter` + `isDeliberateEnter`. Guard nay BẮT BUỘC: mọi `@keydown.enter` bên trong hộp thoại admin phải lọc bằng `isDeliberateEnter` (trong biểu thức hoặc thân hàm cùng tệp).
+- **Huy hiệu "chờ đối soát"**: worker-status hỏng → ẩn (`null`), không hiện "0"; vừa bấm đổi bộ lọc mà hàng đợi chưa tải xong không hiện tổng của bộ lọc trước (`queueTotalFilter` chỉ đổi khi phản hồi của chính bộ lọc đó về).
+- **Nhỏ**: Escape của ConfirmModal đánh dấu đã xử lý và `PropertyPanel` bỏ qua Escape đã bị xử lý — đóng thư viện ảnh/hộp xác nhận mở từ panel mở rộng không thu nhỏ luôn panel; biểu tượng hộp tiến trình dịch quay lại khi đang dịch (`animate-spin motion-reduce:animate-none`); guard bắt `aria-labelledby` trỏ tới id không có trong template.
+
+#### Kiểm chứng
+- **Lượt 1** (`c04dd6f`, 2026-10-24): `npm test` 4306 / 4279 pass / 0 fail / 27 skip. Typecheck 0 lỗi, eslint 0 error / 16 warning, build xanh (lần đầu đỏ vì cache `node_modules/.cache/nuxt` cũ — xoá cache, build lại xanh). Bộ E2E đủ 99/99 (4,3 phút). Nhưng ca xếp lớp chỉ xanh nhờ thời điểm: mở ngăn kéo bằng `keyboard.press('Enter')` đã tự lưu một bản sao lưu ngay trong chính ca đó (lỗi nghiêm trọng ở trên), và lượt tải danh sách đầu có thể đè danh sách mới.
+- **Lượt 2** (sau các sửa ở trên, kể cả nuốt phím lặp): `npm test` 4317 / 4290 pass / 0 fail / 27 skip. Typecheck 0 lỗi. eslint 0 error / 16 warning (cảnh báo duy nhất ở tệp đã đổi là `vue/no-v-html` có sẵn của xem nhanh, cùng biểu thức đã kiểm kê). Build xanh. E2E chạy theo spec (không chạy cả bộ — máy tải nặng, nhiều agent dùng chung cổng 3123): `admin-dialogs` 11/11 + `admin-mfa`, `admin-write-paths`, `submission-workflow`, `admin-retry`, `media-portal`, `admin-login-challenge` = 26/26 (2,6 phút); cổng 3123 trống trước/sau, không còn DB `cdkt_e2e_*`. Một lượt chạy bị agent khác chiếm cổng giữa chừng (đăng nhập vào máy chủ/CSDL của họ, đỏ sai lý do) — chạy lại khi cổng và tiến trình Playwright đều trống. Chưa có ca trình duyệt riêng cho hộp ngôn ngữ ×2, nhắc dịch lại, xem nhanh, dịch toàn bộ — chúng được che bởi guard + test chung của AdminModal.
+- **Lượt 3** (sau "Sửa sau kiểm chứng lần 2", trước khi rebase lên `wave1/integration`): `npm test` 4324 / 4297 pass / 0 fail / 27 skip. Typecheck 0 lỗi. eslint 0 error / 16 warning. Build xanh. E2E `admin-dialogs` 16/16 (1,4 phút) — thêm ca xoá phiên bản trong ngăn kéo, sửa người dùng rồi lưu (focus về nút "Sửa" vẽ lại), tiến trình dịch AI ×2 (dịch xong lúc đang mở; đóng lúc nút mở bị khoá → đỗ `<main>` rồi về nút khi dịch xong), xem nhanh mở từ chip + nhắc dịch lại.
+- **Sau rebase lên `wave1/integration` (`3ede49a`, gồm 2E § 32)**: `npm test` 4434 / 4407 pass / 0 fail / 27 skip. Typecheck 0 lỗi, eslint 0 error / 16 warning, build xanh. E2E `admin-dialogs` 16/16 + `admin-write-paths` + `submission-workflow` = 20/20 (3,0 phút); sau đó thêm hai ca hộp "chuyển đến vị trí nào?" của ngôn ngữ và "Dịch toàn bộ bài viết" (từ kịch bản R5/R6 của lượt kiểm chứng lần 2), chạy `admin-dialogs` 18/18 cùng hai spec hộp thoại công khai dùng chung `restore()` — `chat-widget-focus` 2/2, `mobile-drawer-focus` 12/12 — 32/32 (4,2 phút); cổng 3123 trống trước/sau, không còn DB `cdkt_e2e_*`. Xung đột duy nhất: `docs/CHANGELOG.md` (giữ cả § 32 và § 34). Hộp còn CHƯA có ca trình duyệt riêng: 5 hộp AI (nhà cung cấp/model), hộp dịch vụ AI, thể loại, danh mục video, chọn thể loại (`ContentTypePicker`) — che bởi guard + test chung của AdminModal. Đường lùi của ConfirmModal (nút mở đã bị gỡ ngay lúc hộp xác nhận đóng → ở lại hộp chứa nó, không thì đỗ `<main>`) CHƯA có ca kiểm hành vi: ca xoá phiên bản đi qua bộ theo dõi của AdminModal (nút mở còn khi hộp xác nhận đóng). `content/pages/index.vue` không gắn khoá nút mở: tạo trang xong điều hướng sang trình dựng, không có thao tác hàng nào đóng hộp rồi tải lại.
+
+Test-đỏ-trước:
+- Đo trên `a7be585`: `admin-modal-dialog` 12/14 đỏ — guard liệt kê đúng 17 lớp phủ trần (15 hộp + 2 ngăn kéo), các test ghim/z-index/render/quyết định đỏ vì `AdminModal.vue`/`admin-modal.ts` chưa có; 2 test xanh là self-test của bộ phân loại và kiểm mục miễn. `admin-moderation-summary` 5/5 đỏ.
+- Đo trên `c04dd6f`: guard tên đỏ với 7 hộp (6 hộp trên + `ConfirmModal` không tiêu đề); guard `@keyup` đỏ với 8 ô (`pages/[id].vue`, `MediaLibraryModal`, `profile.vue` ×6); test helper (focus chỉ định, trả focus dự phòng, xếp lớp) và huy hiệu kiểm duyệt đỏ. E2E trên bản build `c04dd6f`: "giữ Enter mở ngăn kéo Phiên bản" đỏ (có `POST /versions`), "giữ Enter mở hộp Bật" đỏ (hiện `role="alert"`). Ca "trả focus khi nút mở bị gỡ" đỏ trên bản cũ vì thuộc tính `data-admin-modal-opener` chưa có (thuộc tính là một phần của bản sửa — không phải bằng chứng hành vi). Test thử lại thật xanh trên cả mã cũ: nối dây vốn đúng, test cũ chỉ yếu.
+- Đo trên bản build có `keydown` nhưng CHƯA nuốt phím lặp: E2E giữ Enter + 3 keydown lặp (`event.repeat` được ghi lại ở trang: `[false, true, true, true]`) đỏ cả ba — ngăn kéo vẫn `POST /versions`, hộp "Bật" vẫn hiện `role="alert"`, hộp xác nhận "Khôi phục phiên bản" tự đồng ý (hộp đóng, phiên bản bị nạp). Ca thư viện ảnh khi đó xanh SAI vì chỉ đếm request sau khi hộp đã mở — đã sửa để đếm từ trước khi mở (đúng 1 lượt tải).
+
+- Đo trên bản build `e729115` (spec E2E mới, dựng từ kịch bản R2b/R4–R6 của lượt kiểm chứng lần 2): "xoá phiên bản qua hộp xác nhận trong ngăn kéo" đỏ (focus không còn trong ngăn kéo khi hàng bị gỡ); "xem nhanh mở lại lúc focus đang đỗ ở `<main>`" đỏ (focus rơi về `<body>`). Ba ca người dùng/ngôn ngữ đỏ trên bản cũ vì thuộc tính `data-admin-modal-opener` chưa có (không phải bằng chứng hành vi). Unit: `restore()` trả focus về nút "disabled" đỏ với thân hàm cũ (`return true`); `keyCode 229`, các hàm đỗ focus/kéo focus về, huy hiệu kiểm duyệt mới và guard `@keydown.enter` (bắt `ConfirmModal.vue` ô hỏi `accept`) đỏ trước khi sửa.
+
+**Còn mở sau 2D** (không sửa ở đây): (a) nút "Hủy" trong thân/chân hộp vẫn đóng được lúc `busy` (chỉ Escape, ✕ và bấm nền bị chặn) — giữ hành vi cũ có chủ đích; (b) ô ảnh trong thư viện ảnh là `<div @click>` — chưa chọn được bằng bàn phím; (c) chưa chụp ảnh so sánh, E2E chỉ ở khổ desktop; (d) xoá một HÀNG qua ConfirmModal ở trang danh sách (người dùng, danh mục…): hộp xác nhận trả focus về nút xoá, rồi danh sách tải lại gỡ nút đó → focus về `<body>` khi KHÔNG còn hộp nào mở (ngoài phạm vi AdminModal) — việc của 6.4 `useAdminList` / Wave 3.
+
+### 35. Đợt 2 — 2C hiệu năng (2026-10-24)
+
+OpenSpec `wave2-hardening` nhóm 4 (task 4.1–4.4), design D6 + D8, spec `most-read-ranking`. Mỗi test mới đỏ trên `3ede49a` trước khi sửa.
+
+**4.1 — Tổng lượt xem theo bài (D6).** `articles` thêm `view_total_real BIGINT NOT NULL DEFAULT 0`, `view_total_fabricated BIGINT NOT NULL DEFAULT 0`, `view_total BIGINT NOT NULL DEFAULT 0` (= thật + ảo, **cột thường** do đường ghi giữ trong cùng câu lệnh — d079453 từng khai nó là cột sinh STORED, xem *Sửa sau kiểm chứng độc lập* bên dưới) và index `articles_status_type_views_idx (status, type, view_total, published_at, created_at)` — **5 cột, lệch có chủ đích khỏi 3 cột của D6**: với `(status, type, view_total)` optimizer bỏ qua index cho `ORDER BY view_total, published_at, created_at` của spec (chọn `articles_status_type_pub_idx` + filesort, 0,88 ms ở 1 100 bài) nên mỗi lượt xem trả phí cập nhật một index không ai đọc; 5 cột → đọc ngược thẳng trên index, 0,28 ms. Cùng tên, cùng tiền tố (EXPLAIN ở `data-layer.md`). Khai ở cả ba nơi: `schema.ts`, thân CREATE TABLE `schema-tables/content.ts`, `ensureColumn`/`ensureIndex` trong `convergeArticleViewTotals` (`migrations-additive.ts`). `tests/article-list-indexes.test.ts` canh index ở cả ba nơi.
+- **`db:drift` nay so cả cột sinh** (`stored`/`virtual`/thường). Trước đó `view_total BIGINT` ở schema.ts và `view_total BIGINT AS (…) STORED` ở DDL đọc như nhau — đã thử: bỏ `.generatedAlwaysAs` khỏi schema.ts thì bộ kiểm cũ vẫn xanh, bộ kiểm mới báo `LỆCH CỘT SINH`. Script tách thành các hàm export (`parseDdlColumn`, `tablesFromDdl`, `tablesFromSchema`, `compareSchemas`), `main()` chỉ chạy khi gọi trực tiếp; `tests/schema-drift-generated-columns.test.ts` (nay còn chặn: **không cột nào của ta là cột sinh**). 638 cột / 62 bảng.
+- **Lượt ghi lúc khởi động — khai báo cho bộ kiểm nâng cấp** (`tests/schema-upgrade-integration.test.ts`, nhánh `wave2/2f`; cần thêm vào danh sách conversion đã khai khi tích hợp):
+
+  | Vị trí | Ghi gì | Điều kiện kích hoạt (trạng thái lược đồ) | Lý do |
+  |---|---|---|---|
+  | `migrations-additive.ts` `reconcileArticleViewTotals` (gọi từ `convergeArticleViewTotals`, **mỗi** lần khởi động) | `UPDATE articles a LEFT JOIN (SELECT article_id, SUM(real_views) AS r, SUM(fabricated_views) AS f FROM article_view_daily GROUP BY article_id) s ON s.article_id = a.id SET a.view_total_real = COALESCE(s.r, 0), a.view_total_fabricated = COALESCE(s.f, 0), a.view_total = COALESCE(s.r, 0) + COALESCE(s.f, 0), a.updated_at = a.updated_at WHERE a.view_total_real <> COALESCE(s.r, 0) OR a.view_total_fabricated <> COALESCE(s.f, 0) OR a.view_total <> COALESCE(s.r, 0) + COALESCE(s.f, 0)` | không cờ, không trạng thái lược đồ: **chỉ những bài có tổng khác tổng hàng theo ngày** (CSDL đã khớp → 0 hàng bị ghi) | đưa ba cột tổng về đúng tổng `article_view_daily`: lúc nâng cấp (cột mới = 0), sau một lượt lùi về image không biết tới tổng rồi quay lại, sau một lượt khởi động bị cắt ngang; chỉ đổi ba cột tổng, không đổi `updated_at` |
+  | `migrations-additive.ts` `convergeArticleViewTotals` | `ALTER TABLE articles MODIFY COLUMN view_total BIGINT NOT NULL DEFAULT 0` | `view_total` còn là cột sinh (`EXTRA = 'STORED GENERATED'` — chỉ CSDL đã chạy d079453) | đổi cột sinh thành cột thường, MySQL giữ nguyên giá trị; lượt đổi tự xoá điều kiện của nó |
+
+  Kèm theo là DDL: ba `ALTER TABLE articles ADD COLUMN … BIGINT NOT NULL DEFAULT 0` (cột thường: MySQL 8 thêm tức thì, không dựng lại bảng) và một `ADD INDEX`. **Ghi chú cho bộ kiểm nâng cấp (nhánh `wave2/2f`):** fixture hiện **không** seed `article_view_daily`, nên ở đó lượt đối soát không ghi hàng nào (mọi bài có tổng 0 = tổng 0) — điều kiện "khởi động 2 không đổi gì" vẫn kiểm được, nhưng nhánh "ghi khi lệch" chỉ được phủ khi suite đó seed vài hàng `article_view_daily` (việc tiếp theo ở 2F; hành vi đã có test MySQL thật ở `view-boost-integration`).
+- **`updated_at = updated_at`** trong lượt đối soát (cột `ON UPDATE CURRENT_TIMESTAMP`; câu SQL của design thiếu vế này → mọi bài có lượt xem sẽ đổi "lần sửa cuối").
+- MySQL thật (`tests/view-boost-integration.test.ts`, test thứ hai): CSDL mới → `view_total` là cột thường NOT NULL, index 5 cột; lệch kiểu "lùi bản" (bài có hàng ngày nhưng tổng 0; bài có tổng mà không hàng ngày) → đối soát sửa **đúng 2 bài**, gọi lại → 0; image cũ đếm thêm → khởi động sửa đúng bài đó, khởi động lần hai **không đổi hàng nào** (so ảnh chụp từng hàng); nâng cấp từ bản trước 2C → cùng kết quả; CSDL của d079453 (cột sinh) → đổi sang cột thường, giữ giá trị, ghi được.
+- Đo (giả lập bản trước, bài 20 KB, 30 hàng ngày/bài, MySQL dev trên đĩa): lượt nâng cấp 1 100 bài → 0,9 s, 5 000 bài (159 MB) → 2,4 s (cột thường không dựng lại bảng — bản cột sinh mất 3,6 s / 23 s); **mỗi lần khởi động sau** lượt đối soát (CSDL đã khớp, không ghi gì) tốn 41 ms ở 1 100 bài / 33 000 hàng ngày và 179 ms ở 5 000 bài / 150 000 hàng ngày; 0 bài lệch tổng, 0 bài đổi `updated_at`.
+- **Bản sao lưu trong app bỏ cột sinh** (`server/services/backup-sql.ts` — tệp ngoài danh sách của task): quy tắc chung, vô hại, giữ lại — `dumpSql` liệt kê cột theo `information_schema.COLUMNS` với `EXTRA NOT IN ('STORED GENERATED','VIRTUAL GENERATED')` (**không** `LIKE '%GENERATED%'`: trên 8.0.46 `created_at`/`updated_at` mang `DEFAULT_GENERATED`). Nay kiểm bằng bảng fixture có cột sinh STORED + VIRTUAL (`tests/backup-dump-integration.test.ts` test 5); `articles.view_total*` là dữ liệu thường và được dump. `tests/backup-sql-mode.test.ts`: fake connection trả danh sách cột. `scripts/backup-db.sh` (mysqldump) vốn đã bỏ cột sinh.
+- **Còn mở (không chặn):** khôi phục trong app không chạy di trú sau đó. Khôi phục một bản dump **trước 2C** → bảng `articles` thiếu ba cột tới lần khởi động lại; trong khoảng đó mọi lượt đọc `articles.view_total` (trang bài, "Đọc nhiều", danh sách admin) và mọi lượt đếm báo lỗi. Khởi động lại thì lượt đối soát dựng lại tổng từ hàng theo ngày vừa khôi phục. Đề xuất: chạy `applyAdditiveMigrations` sau khi khôi phục.
+
+**4.2 — Đường ghi.** `recordArticleView` và `addFabricatedViews` (`server/services/article-views.ts`) cộng cột tổng tương ứng **trong cùng transaction** với upsert hàng theo ngày: có `executor` (boost tức thì, transaction audit của `boost.post.ts`) thì dùng nó; không có (lượt xem thật, scheduler tăng dần) thì tự mở transaction. Hai quyết định đã trả giá bằng số đo:
+- **`articles` ghi TRƯỚC hàng theo ngày.** Chèn một hàng `article_view_daily` mới giữ khoá S trên hàng `articles` cha (kiểm FK); cộng tổng sau đó thì hai transaction cùng bài (hai nguồn lượt xem đầu ngày, hoặc lượt xem thật cạnh một lượt giao boost) mỗi bên giữ khoá S và chờ khoá X của bên kia → deadlock, và `view.post.ts` nuốt lỗi → mất lượt xem im lặng. Integration bắn 20 lượt xem đồng thời (4 nguồn) + 2 lượt boost vào một bài ở một ngày mới: không lượt nào hỏng, tổng = tổng hàng theo ngày.
+- **`updated_at = updated_at`** ở câu UPDATE: không có thì mỗi lượt xem đổi "lần sửa cuối" của bài.
+- `tests/view-totals-integrity.test.ts` (SQL thật của Drizzle, transaction giả commit/huỷ): thứ tự `articles` → hàng ngày, cả hai trên một executor, không câu nào chạy trên pool, hỏng câu thứ hai huỷ câu thứ nhất, lượt xem thật không chạm tổng ảo và ngược lại; guard "chỉ `article-views.ts` ghi hàng theo ngày hoặc đọc/ghi phần thật/ảo" ngoài `server/db/`. Bất biến trung thực giữ nguyên: thật và ảo vẫn hai cột riêng, API công khai chỉ trả tổng gộp `viewTotal` như trước.
+
+**4.3 — Đường đọc.** `GET /api/public/articles?sort=views` sắp theo `articles.view_total DESC, published_at DESC, created_at DESC` — bỏ truy vấn con tương quan trên `article_view_daily` và bỏ `COUNT(*)` (khối "Đọc nhiều" là top-N; `pagination.total` = `offset + số bài trả về`, cận dưới khi trang đầy — ghi ở handler, ghim trong test). `articles/[slug].get.ts`, danh sách admin và `export-csv` đọc cột `view_total` (NOT NULL). `tests/most-read-ranking.test.ts` chạy handler thật: Drizzle biên dịch bằng phương ngữ MySQL, chạy trên SQLite trong bộ nhớ với ba cột tổng đúng như đường ghi để lại và **không có** bảng `article_view_daily` → A (10 + 5) đứng trước B (12 + 0), hoà thì bài mới hơn trước, đúng một câu truy vấn.
+- **Thể loại lưu dưới hai tên** (`type=reintegration` → `reintegration` + `reintegration_model`): `type IN (…)` không đọc theo thứ tự index được — EXPLAIN: `Filter: type in (…)` trên `status_idx`/`articles_status_category_pub_idx` + **filesort** mọi bài của hai thể loại (1,46 ms ở 1 100 bài, 6,24 ms ở 5 000). `sort=views` nay đọc **từng tên một** (`type = ?`, mỗi lượt `LIMIT offset + limit`, đọc ngược trên `articles_status_type_views_idx`), trộn theo cùng thứ tự rồi cắt trang ở handler: 0,57 ms / 0,63 ms cho cả hai lượt. Danh sách thường của thể loại đó vẫn một câu `IN (…)` + `COUNT`. `tests/most-read-ranking.test.ts`: thứ tự trộn, phân trang qua ranh giới hai tên, và **hình dạng câu lệnh** (hai câu `type = ?`, không `in (`, không `offset`, không `count(`). `tests/correlated-subquery-qualification.test.ts`: mọi handler `server/api/**` không đọc `article_view_daily` (bỏ qua chú thích), `sort=views` sắp theo cột chứ không theo alias.
+- Số đo (1 100 bài / 33 000 hàng ngày): "Đọc nhiều" cũ 14,0 ms + `COUNT` 0,4 ms → mới 0,28 ms (đọc ngược trên `articles_status_type_views_idx`); 5 000 bài: 63,7 ms → 0,27–0,31 ms. Top-6 giống bản cũ theo bộ (tổng, ngày đăng, ngày tạo); id chỉ khác giữa những bài hoà trọn cả ba khoá — thứ tự đó MySQL không xác định (dữ liệu đo lặp ngày mỗi 900 bài).
+
+**4.4 — Ghi analytics (D8), theo số đo — lệch có chủ đích so với chữ "total cuối".** `storeAnalyticsPageView`: sự kiện thô → **mọi** hàng dedupe (theo khách, không ai chờ) → các bucket phút với **`total` đầu tiên**; NOC vẫn ghi sau commit. Đặt `total` cuối như chữ D8 làm ~37 % lượt xem chết vì `ER_LOCK_DEADLOCK` dưới 10 yêu cầu đồng thời (bản cài đầu tiên làm đúng chữ đó và đã đo được điều này qua endpoint thật — 820/2000 lượt 500): hai bảng live có PK tự tăng cạnh khoá tự nhiên, nên mỗi `INSERT … ON DUPLICATE KEY UPDATE` giữ khoá X next-key trên supremum của PK tới commit; `total` đầu tuần tự hoá pha bucket mỗi phút. Bản giao giữ `total` đầu nhưng dồn mọi dedupe lên trước, nên hàng nóng chỉ bị giữ qua các upsert bucket — đúng mục đích của D8. `tests/analytics-ingestion.test.ts` ghim thứ tự (đỏ trên `3ede49a`).
+- **Số đo qua endpoint** (hai bản build chỉ khác tệp này, xen kẽ, 75 s/lượt, datadir tmpfs): 10 đồng thời 460–467 → 544–572 lượt nhận/s, p95 29,6–29,7 → 23,1–25,6 ms, deadlock 22–39 → 0 **trong mỗi lượt 75 s đo được** (không phải "không còn deadlock": xem câu dưới và mục thử lại), thời gian chờ khoá hàng 572 → 468 s; 40 đồng thời 484–492 → 548–573/s, p95 ~101 → 90–96 ms, deadlock ~40 → 0. Datadir trên đĩa (độ bền production): fsync lúc commit chi phối, hai bản như nhau trong nhiễu, không deadlock. **Không về 0 ở mọi tải:** bộ mô phỏng chạy 185 s liền (khách lặp lại trong phút) còn 3,9 % (10 đồng thời) / 2,3 % (40) transaction deadlock, so với 37,7 % / 39,1 % của thứ tự cũ; ở 40 đồng thời đuôi trễ của bản giao dài hơn (p95 258 ms so với 62 ms — thứ tự cũ "nhanh" một phần vì 39 % chết sớm). Bốn thứ tự so sánh, bản dump deadlock, bảng đầy đủ → `docs/decisions/data-layer.md` § "Đợt 2 — 2C".
+- **Không làm batching.** p95 > 50 ms: tmpfs 10 đồng thời 23–26 ms (dưới ngưỡng); 40 đồng thời 90–96 ms (phần lớn là chờ pool 10 kết nối); trên đĩa btrfs máy dev 118–132 ms **ngay ở 1 đồng thời** (fsync binlog mỗi commit, ba commit mỗi lượt xem). Batching giảm đúng chi phí đó, nhưng số đĩa là của máy dev — đề xuất đo p95 trên VPS trước; quyết định thuộc về người điều phối.
+- **Đề xuất tiếp (ngoài phạm vi):** đổi PK của `analytics_live_minute_buckets`/`analytics_live_deduplication` thành khoá tự nhiên (bỏ `id` tự tăng) — gỡ tranh chấp supremum tận gốc.
+
+#### Sửa sau kiểm chứng độc lập (2026-10-24, sau commit d079453)
+Mỗi mục có test đỏ trên d079453 trước khi sửa (MySQL 8.0.46 thật cho mục 1).
+- **NGHIÊM TRỌNG — lùi bản qua 2C làm hỏng sao lưu và để tổng lệch mãi.** `deploy-remote.sh` tự lùi image khi healthcheck hỏng, **sau** khi image mới đã chạy `init.ts`. Image cũ (`3ede49a`) dump `SELECT *` — gồm cả `view_total` khi đó là cột sinh STORED — vào mọi bản sao lưu trong app, kể cả bản `pre-restore`; khôi phục bản đó chết với `ER_NON_DEFAULT_VALUE_FOR_GENERATED_COLUMN` (3105) và để `articles` dở dang. Image cũ cũng đếm lượt xem không cộng tổng; khi quay lại, index đã có nên lượt "điền một lần" không bao giờ chạy lại → tổng lệch vĩnh viễn. Sửa gốc (đường lùi của chính D6):
+  - `view_total` thành **cột thường** `BIGINT NOT NULL DEFAULT 0`, do `article-views.ts` cộng **trong cùng câu UPDATE** với nửa thật/ảo. Không còn cột sinh nào → bản dump của image cũ khôi phục được, image cũ không tạo ra bản dump hỏng. CSDL đã chạy d079453 được đổi cột sinh → cột thường lúc khởi động (MySQL giữ giá trị). Index 5 cột giữ nguyên.
+  - Lượt "điền một lần khoá theo index" thay bằng **đối soát mỗi lần khởi động** (`reconcileArticleViewTotals`, bảng khai báo ở trên): chỉ ghi bài có tổng ≠ tổng hàng theo ngày, ghim `updated_at`, CSDL khớp thì không ghi gì. Chữa cả lượt nâng cấp lẫn mọi độ lệch sau một lượt lùi/tiến.
+  - `backup-sql.ts`: giữ quy tắc bỏ cột sinh (đúng cho mọi bảng, vô hại), nay kiểm bằng fixture có cột sinh thật.
+  - Test MySQL thật: (1) bản dump kiểu image cũ (`SELECT *` mọi cột, có giá trị `view_total`) khôi phục được vào lược đồ hiện tại — đỏ với 3105 trên d079453; (2) giả lập lệch (hàng ngày thêm mà không cộng tổng) → khởi động kế tiếp sửa đúng những bài đó, khởi động lần hai không đổi hàng nào; (3) 20 lượt xem + 2 lượt boost đồng thời giữ tổng = tổng hàng ngày, và lượt đối soát ngay sau đó trả 0.
+  - Ghi chú vận hành: `production/README.md` + `CI-CD.md` § Lùi phiên bản.
+- **Analytics: deadlock còn sót được thử lại** (`storeAnalyticsPageView`). Thứ tự câu lệnh giảm deadlock ~10 lần nhưng không về 0 khi tải kéo dài, và mỗi nạn nhân là một lượt xem mất kèm 500. Nay: tối đa **3 lần** cho `ER_LOCK_DEADLOCK` (1213, tìm cả trong chuỗi `cause` Drizzle bọc ngoài), nghỉ ngẫu nhiên 5–25 ms giữa hai lần. Lặp nguyên transaction là an toàn: InnoDB huỷ trọn transaction của nạn nhân và lớp bọc transaction rollback khi có lỗi, nên không gì của lần hỏng còn lại — hàng dedupe cũng không — và lần thử lại đếm khách đúng như lần đầu. **Không** thử lại `ER_LOCK_WAIT_TIMEOUT` (1205): lượt đó đã chờ `innodb_lock_wait_timeout` (50 s), thử lại chỉ giữ yêu cầu lâu hơn trên một máy chủ đang quá tải. `tests/analytics-ingestion.test.ts`: deadlock bơm vào → thử lại, ghi một lần, dedupe không bị tính hai lần; 3 deadlock liên tiếp → lỗi, không gì được ghi; khoảng nghỉ có giới hạn; timeout và lỗi khác không thử lại. Câu "analytics không còn deadlock khi tải cao" trong tiêu đề commit d079453 là nói quá: số đúng là 0 trong mỗi lượt đo 75 s qua endpoint, 3,9 % / 2,3 % transaction trong bộ mô phỏng 185 s — nay các nạn nhân đó được thử lại tối đa 3 lần. **Chưa đo** tỉ lệ lượt xem còn mất sau khi thử lại: deadlock dưới tải dồn theo cụm chứ không độc lập, nên ba lần chưa chắc đủ trong một cơn bão; test chỉ chứng minh thử lại có chạy và không đếm trùng.
+- **`type=reintegration` + `sort=views` dùng index** — mục 4.3 ở trên.
+- **Trần trang của `sort=views`** (kiểm chứng lại 88e384f, S1). Lượt đọc theo từng tên lưu lấy `LIMIT offset + limit`; với trần chung `MAX_PAGE` (100 000), một yêu cầu ẩn danh `?type=reintegration&sort=views&limit=50&page=100000` đọc `LIMIT 5 000 000` mỗi tên — chở mọi bài đã xuất bản của thể loại về Node. Nay `sort=views` có trần riêng `MOST_READ_MAX_PAGE = 10` (khối "Đọc nhiều" chỉ dùng trang 1, 6 bài): tối đa 10 × 50 = 500 hàng mỗi lượt đọc. Vượt trần thì kẹp về trang 10 như `finitePositive` vẫn kẹp ở `MAX_PAGE`, cùng hình dạng phản hồi, `pagination.page` báo trang đã phục vụ; danh sách thường giữ trần cũ. `tests/most-read-ranking.test.ts` đọc tham số LIMIT thật (đỏ trên 88e384f: 5 000 000).
+
+**Kiểm chứng d079453 (2026-10-24, worktree `wave2/2c-perf` trên `3ede49a`):** `npm test` 4418 / 4389 pass / 0 fail / 29 skip. Typecheck 0 lỗi. eslint 0 error / 16 warning. `db:drift` 62 bảng / 638 cột (cột sinh được so). `nuxt build` xanh. MySQL 8.0.46 thật (chạy lại sau khi đổi index sang 5 cột): `view-boost-integration` 2/2 (đảo thứ tự thành hàng-ngày-trước thì đợt bắn đồng thời đỏ vì deadlock — đã thử rồi trả lại), `backup-dump-integration` 6/6. E2E 39/39 (`public-list-pagination`, `public-detail-status`, `admin-write-paths`, `analytics-ingestion`).
+
+**Kiểm chứng bản sửa sau kiểm chứng độc lập (2026-10-24, trên d079453):** test mới/đổi đỏ trên d079453 — 9 test đơn vị (đường ghi `view_total`, chặn cột sinh, hình dạng câu `reintegration`, thử lại deadlock), `view-boost-integration` 2/2 đỏ (`reconcileArticleViewTotals` chưa có), `backup-dump-integration` 2 test mới đỏ với `ER_NON_DEFAULT_VALUE_FOR_GENERATED_COLUMN` (3105). Sau sửa: `npm test` 4427 / 4397 pass / 0 fail / 30 skip. Typecheck 0 lỗi. eslint 0 error / 16 warning. `db:drift` 62 bảng / 638 cột. `nuxt build` xanh. MySQL 8.0.46 thật: `view-boost-integration` 2/2, `backup-dump-integration` 7/7. E2E 39/39 (cùng bốn spec).
+
+### 36. Đợt 2 — vận hành (2026-10-24)
+
+OpenSpec `wave2-hardening` nhóm 7 (2F ops), design D-OFFSITE, D-LOG, D-ALERT, D-DOCS; spec `backup-restore`, `ops-logging`. Mỗi mục có test đỏ trước khi sửa (log đỏ lưu ngoài repo).
+
+- **Bản sao ngoài máy chủ có trạng thái theo từng tệp (D-OFFSITE).** Đã kiểm: bước Drive chạy cho mọi lượt `runBackup`, kể cả theo lịch. Trước đây Drive hỏng chỉ để lại một dòng log; danh sách hiện cùng một vòng tròn rỗng cho "Drive tắt" lẫn "Drive hỏng đêm qua". Nay có cột `backups.offsite_status VARCHAR(16) NULL` với giá trị `uploaded`/`failed`/`none`. Cột khai ở `schema.ts`, `schema-tables/readers-media.ts` và `ensureColumn` trong `migrations-additive.ts`; `db:drift` báo 636 cột.
+  - **Không backfill**, không ghi hàng nào lúc khởi động. `drive_uploaded = 0` không phân biệt "tắt" với "hỏng", nên hàng cũ giữ NULL và trang lùi về `drive_uploaded`. Suite nâng cấp 2F không cần khai chuyển đổi hàng nào cho cột này, nhưng lần khởi động 1 trên CSDL cũ có thêm một cột vào `backups`. Nếu suite so bằng `CHECKSUM TABLE`, kết quả sẽ đổi dù không hàng nào được ghi, nên suite phải coi đó là bổ sung lược đồ.
+  - Bước Drive tách khỏi `backup.ts` sang `services/backup-offsite.ts`, hành vi upload giữ nguyên (OAuth ưu tiên, service account dự phòng).
+  - Cách ghi trạng thái:
+    - Drive tắt → `none` ngay lúc đăng ký hàng `done`.
+    - Drive bật nhưng chưa liên kết, không có service account → `none` + log `backup.offsite_not_configured`. Trước đây nhánh này im lặng.
+    - Upload hỏng → `failed` cho tệp hỏng và mọi tệp sau nó; tệp đã lên rồi giữ `uploaded`.
+    - Liên kết có token không giải mã được, hoặc OAuth client không dùng được → `failed`.
+    - Lượt chết trước bước Drive (Drive đang bật) → các tệp đã đăng ký mang `failed`.
+  - Tệp cục bộ không bao giờ bị xoá vì Drive, và lượt sao lưu vẫn thành công. `backup.drive_failed` nay kèm danh sách tệp. Ghi trạng thái hỏng chỉ log `backup.offsite_status_unwritten`.
+  - Khôi phục CSDL gắn lại hàng `backups` kèm `offsite_status`.
+  - Giao diện:
+    - Cột "Bản ngoài máy chủ" (`BackupOffsiteBadge.vue`, bảng và thẻ điện thoại) hiện bằng chữ: *Đã lên Drive* / *Lỗi tải lên Drive* / *Chỉ trên máy chủ*. Biểu tượng `aria-hidden` không mang trạng thái nữa.
+    - `BackupSettingsPanel` cảnh báo vàng "Các bản sao lưu hiện chỉ nằm trên máy chủ này" khi backup tự động bật mà chưa có nơi lưu ngoài. Cảnh báo tính từ biểu mẫu và trạng thái liên kết đã tải; còn đang tải thì không khẳng định.
+  - Quy tắc "đã cấu hình" nằm một chỗ (`shared/backup-offsite-status.ts`) cho máy chủ và trang. App import qua `~~/shared/…`: bản đầu dùng đường tương đối từ `app/utils` và Nitro build đỏ, đúng bẫy § 32 đã ghi.
+  - Test: `tests/backup-offsite-status.test.ts` (12, chạy `runBackup` thật), `tests/backup-offsite-ui.test.ts` (14, gồm render SFC). Thêm một khẳng định gắn lại hàng khi khôi phục ở `backup-restore-hardening`.
+- **`manage.sh` Menu 5 "Cài cron sao lưu", Menu 6 "Xuất .env đã mã hoá" (D-OFFSITE).**
+  - **Menu 5** (`backup-cron`) in đúng hai dòng tài liệu vẫn bảo gõ tay: `backup.sh` 02:00 (dump qua `backup-db.sh` + media/uploads — chọn `backup.sh` chứ không `backup-db.sh` trần để khỏi mất archive media mà DEPLOY.md hứa) và `verify-restore.sh --latest` 03:30 ngày 1.
+    - Chỉ cài khi trả lời `y`; mặc định không.
+    - Hai dòng nằm trong khối `# BEGIN/END cdkt-backup`: chạy lại là thay khối, dòng crontab khác giữ nguyên, dòng sao lưu gõ tay ngoài khối được chỉ ra.
+    - `crontab -l` hỏng vì lý do khác "no crontab" → dừng. Coi nó là rỗng rồi cài là xoá crontab thật.
+    - User không ghi được thư mục sao lưu (`BACKUP_DIR`, mặc định `./backups` — bind mount thuộc uid 1000 của container) → từ chối, bảo cài bằng root: cron của user đó sẽ hỏng `EACCES` mỗi đêm. User không ghi được `/var/log` thì log vào `<repo>/logs`. Đường dẫn chứa `%` hoặc dấu nháy đơn bị từ chối.
+    - Ping chỉ báo *đang đặt*/*chưa đặt*.
+  - **Menu 6** (`export-env`): `openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt`.
+    - Passphrase gõ hai lần, ≥ 12 ký tự, đi qua `-pass fd:3` — không bao giờ trên argv.
+    - Tệp tạm 600 rồi `mv`; giải mã thử trước khi giữ.
+    - openssl thiếu `-pbkdf2` → từ chối. Ghi đè `.env.enc` cũ phải trả lời `y`.
+  - Hộp cát test có `crontab` giả (`tests/fixtures/ops-sandbox/crontab`), nên test không bao giờ chạm crontab thật. Test xuất mã hoá chạy openssl thật qua một shim ghi argv.
+- **Log app vào journald (D-LOG).** Service app trong compose dùng `logging: driver: journald`, `tag: cdkt-app`; MySQL giữ json-file. Đọc bằng `journalctl CONTAINER_TAG=cdkt-app` — log còn sau khi container bị thay, đã thử thật.
+  - Đo trước khi chọn cơ chế: driver journald **từ chối** `max-size` ("unknown log opt", lỗi lúc `up` chứ không lúc `config -q`). json-file không có `max-size` thì không xoay vòng. Vì vậy một khối `options` chung cho hai driver (biến `APP_LOG_DRIVER`) là không làm được.
+  - Dự phòng: `ensure_log_driver` (giống từng chữ ở `scripts/deploy-remote.sh` và `production/manage.sh` Deploy/Update, test so) kiểm socket journal + `journalctl`.
+    - Không có journald → ghi `docker-compose.override.yml` mang dấu `# cdkt-log-fallback` (json-file 3 × 10 MB).
+    - Có journald → gỡ đúng tệp đó.
+    - Override không dấu của người vận hành → không bao giờ sửa.
+  - Lượt CI deploy chạy nó sau bản dump và trước `config -q`. Không có bước này, VPS thiếu journald sẽ hỏng mọi lượt deploy ở `up` rồi lùi lại.
+  - `docker-compose.override.yml` vào `.gitignore` và `.dockerignore`. `docker compose config -q` xanh với env giả, có và không có override.
+- **Thư cảnh báo vận hành (D-ALERT).** `server/utils/ops-alert.ts`, gọi từ `logger.ts` cho `ALERT_EVENTS`: `backup.restore_failed`, `backup.restore_refused`, `auth.mfa_challenge_locked`, `security.link_host_rejected`, `backup.slot_abandoned`, `db.migration.media_category_fk_blocked`. Thư gửi tới `OPS_ALERT_EMAIL` qua SMTP của admin.
+  - Giới hạn: tối đa 1 thư mỗi sự kiện mỗi 15 phút. Dấu trong bộ nhớ đặt đồng bộ, cộng hàng `rate_limit_counters` dùng chung giữa các tiến trình và qua lần khởi động lại. Thư kế tiếp ghi số lần đã gộp. Cửa sổ chỉnh được theo từng sự kiện (`OPS_ALERT_WINDOW_SECONDS`).
+  - Quyết định trước bộ lọc `LOG_LEVEL`. `OPS_ALERT_EMAIL` trống thì không import, không chạm DB.
+  - Bắn rồi quên: `dispatch` không reject; lỗi chỉ log `ops.alert_failed`. Dòng log của đường cảnh báo mang symbol `SKIP_OPS_ALERT`, nên không đệ quy.
+  - **Đường gửi tự mở và đóng một kết nối riêng** (`dbConnectionOptions()` tách từ `getDb`). Sự kiện di trú được log trong CLI `server/db/init.ts` (CMD container): tạo pool chung ở đó sẽ giữ tiến trình sống mãi và container không lên. Đã thử bằng một CLI giả: thoát ngay.
+  - SMTP đọc qua `getSmtpConfig(reader)` của mailer, nên giải mã của 2A (nếu có) cũng áp cho thư cảnh báo.
+  - Nội dung thư: tên sự kiện, thời điểm, máy chủ, các trường nguyên thuỷ đã che. Khoá bị che bị bỏ hẳn, không có stack trace, giá trị dài bị cắt.
+  - `OPS_ALERT_EMAIL` có trong compose `environment:`, `.env.example`, Deploy/Update của `manage.sh` (đứng trước prompt ping) và `production/README.md`.
+  - Test: `tests/ops-alert.test.ts` (20). Thử thật trên MariaDB dùng một lần: `init.ts` gặp hàng `media_items` treo → log `fk_blocked` → đường cảnh báo ghi hàng `rate_limit_counters`, SMTP không tới được → `ops.alert_failed`, rồi `init.ts` **thoát 0**. Lần khởi động thứ hai trong cửa sổ bị kho dùng chung chặn, không gửi lại.
+- **Tài liệu (D-DOCS), các mục là việc của người vận hành:**
+  - `production/README.md`: user deploy không phải root (group `docker` ≈ root, khoá `restrict`, đổi `VPS_USER`/`VPS_SSH_KEY`, `docker login` bằng user đó); bảng trần RAM theo cỡ máy, tính bằng đúng công thức `check-resources.sh`; journald (`Storage=persistent`, `SystemMaxUse=`); thư cảnh báo; Menu 5/6.
+  - `CI-CD.md` ghi hai quyết định đã chốt. **D2:** không có cổng duyệt tay. **D-CI:** chấp nhận CI chạy hai lần khi repo public (kiểm 2026-10-24: PUBLIC); chuyển private thì dùng lại lượt PR xanh của cùng tree SHA — chưa viết.
+  - `DEPLOY.md`: cron bằng Menu 5, bản `.env` mã hoá, yêu cầu journald.
+- **Chạm vào tệp của nhánh khác (cần lưu ý khi gộp):** `server/utils/mailer.ts`, `server/utils/logger.ts`, `docker-compose.yml`, `production/README.md`, `server/services/backup.ts` (2A sửa `readBackupConfig` và nhánh Drive — nhánh "service account không giải mã được" của 2A phải chuyển sang `services/backup-offsite.ts`, và `serviceAccountConfigured` phải tính cả `driveServiceAccountUnreadable`). Khi 2A gộp `security.cross_site_refused`: thêm vào `ALERT_EVENTS` kèm cửa sổ dài hơn trong `OPS_ALERT_WINDOW_SECONDS`.
+- **Đã kiểm:**
+  - `npm test`: 4470 test, 4443 pass, 0 fail, 27 skip (trước 4394).
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning (không đổi); `db:drift` xanh (636 cột / 62 bảng).
+  - `npm run build` xanh: mã cảnh báo nằm trong bundle Nitro, lớp huy hiệu mới có trong CSS.
+  - `docker compose config -q` xanh với env giả, có và không có override.
+  - `bash -n` xanh cho các script đã sửa. shellcheck `-S style` không có cảnh báo mới; còn một `SC2329` có từ trước ở `deploy-remote.sh`.
+  - E2E không chạy: chưa spec nào phủ trang `/admin/settings/backup`.
+
+#### Sửa sau kiểm chứng độc lập (2026-10-24)
+
+Mỗi mục có test đỏ trước khi sửa, trên 96804b0.
+
+- **CRITICAL — khôi phục một bản dump lấy trước khi có cột mới.** Dump của app mang `DROP TABLE` + `CREATE TABLE`, nên `backups` quay về không có `offsite_status`. Drizzle luôn nêu đủ cột, nên lượt gắn lại hàng `backups` trong transaction audit chết với `Unknown column`. Hậu quả:
+  - endpoint báo "khôi phục thất bại" dù dữ liệu **đã** bị thay, và audit ghi thất bại;
+  - `backups` rỗng, nên lượt dọn kế tiếp (lượt sao lưu sau, hoặc 1 phút sau khởi động) xoá bản `pre-restore` cùng các bản mới hơn như "mồ côi";
+  - danh sách và lượt sao lưu kế cũng hỏng tới khi khởi động lại.
+
+  Lỗi đúng cho **mọi** cột/bảng thêm sau thời điểm dump, ở mọi đợt.
+  - **Sửa gốc:** ngay sau `restoreSql`, vẫn trong khoá khôi phục và **trước** gắn lại/audit, chạy lại đúng các bước cấu trúc lúc khởi động (`initDb()`: `CREATE TABLE IF NOT EXISTS` + `applyAdditiveMigrations`).
+    - Không chép DDL nào. `initDb` đọc cùng `DB_*` với `restoreSql`; import động, nên chỉ nạp khi thật sự khôi phục CSDL.
+    - Dump chết giữa chừng vẫn qua bước này (được tới đâu hay tới đó), và lỗi gốc mới là thứ được báo.
+    - Bước này hỏng sau một dump đủ → `schema_convergence_failed`, nói dữ liệu đã nạp và cần khởi động lại.
+    - Log `backup.restore_schema_converged` / `…_convergence_failed`.
+  - **Lượt dọn đóng an toàn:** đọc `backups` đủ mọi cột (`db.select().from(backups)`, không chỉ `filename`). Bảng sai hình dạng → câu đọc ném → không xoá tệp tên-thật nào. Đối chứng: khi bảng đúng hình dạng, tệp mồ côi thật vẫn bị dọn.
+  - **Test MySQL thật** (`tests/backup-dump-integration.test.ts` mục 5–6, không đổi matrix CI):
+    - Dump một CSDL thiếu `backups.offsite_status` **và** `article_comments.flag_reason`, nâng CSDL lên bản hiện tại, tạo một bản sao lưu mới hơn, rồi khôi phục qua `runRestore`.
+    - Kết quả: thành công, đủ cột, hàng `pre-restore` + bản mới hơn được gắn lại (giữ `offsite_status`), audit `backup_restore`.
+    - Sau lượt dọn với tệp đã cũ hơn 10 phút, mọi tệp còn. `listBackups` và một lượt `runBackup` mới chạy được ngay.
+    - Ca dọn đóng an toàn riêng.
+    - Trên 96804b0: hai ca này đỏ (`Unknown column 'offsite_status'`; ca dọn xoá cả ba tệp).
+  - `backup-restore-hardening` có thêm 4 ca thứ tự: dump → `initDb` → transaction; dump hỏng; bước cấu trúc hỏng; khôi phục tệp không đụng cấu trúc.
+  - Trang `/admin/settings/backup` có nhãn cho phase mới ("Đang cập nhật cấu trúc CSDL") và giữ thanh tiến trình 100% trong bước đó. Trước đó nhật ký khôi phục hiện chữ thô `schema`, thanh tụt về 0%. Có test: mọi phase máy chủ báo phải có nhãn.
+  - **Hạn chế:** bước này chỉ *thêm*. Một cột đã bỏ khỏi `schema.ts` mà dump cũ còn mang (NOT NULL, không mặc định) không được gỡ; giá trị seed chỉ quay lại ở lần khởi động sau.
+  - **Lưu ý khi gộp 2A:** thứ tự phải là `restoreSql` → `convergeSchemaAfterRestore` → `encryptRestoredSecrets`.
+- **W1 — máy không có journald + override của người vận hành.** Trước chỉ cảnh báo, nên `up` vẫn hỏng. Nay hỏi `docker compose config` driver log hiệu lực của app (`effective_app_log_driver`; awk đọc hết đầu vào, không `exit` sớm — SIGPIPE dưới pipefail).
+  - Vẫn là journald → dừng trước khi chạm container. Ở CI: `::error::`, trả `docker-compose.yml` cũ về, `.env` không đổi.
+  - Override đã đặt json-file → đi tiếp.
+  - Ở `deploy-remote.sh`, `ensure_log_driver "$IMAGE"` nay chạy **sau** `install_compose` để tính trên compose của commit đang deploy.
+  - Bộ đọc đã thử trên đầu ra thật của `docker compose config`: không override → journald; override không đặt logging → journald; override json-file → json-file.
+- **W2 — "có journald" phải là daemon dùng được.** Ngoài socket + `journalctl`, nay kiểm thêm daemon có driver (`docker info --format '{{json .Plugins.Log}}'`), rồi chạy container thử `docker run --rm --network none --log-driver journald --entrypoint true <image>` khi image đã có trên máy. Hai fake docker trả lời `info`/`run`/`compose config`.
+- **W3 — Update tự chạy tiếp bằng `manage.sh` vừa kéo về.** `git pull` đổi chính `manage.sh` → `exec` bản mới với `CDKT_UPDATE_RESUMED=1`, kèm bản sao lưu compose cho đường lùi; không hỏi lại sao lưu/pull, không lặp. Bản `manage.sh` cũ trên VPS chưa có bước này, nên README ghi: lần Update tay đầu tiên trên máy không journald có thể hỏng ở `up` (tự lùi) — chạy lại một lần. Thường CI deploy đã ghi override trước đó rồi.
+- **W5 — passphrase giữ dấu cách đầu/cuối:** đọc bằng `IFS= read -rs`. Test giải mã bằng đúng chuỗi có dấu cách.
+- **Gợi ý đã làm:**
+  - Tệp tạm của override (`LOG_FALLBACK_TMP`) được dọn ở trap EXIT của cả hai script; `.docker-compose.override.*` vào `.gitignore`/`.dockerignore`.
+  - README thêm `RateLimitBurst`/`RateLimitIntervalSec` của journald và mẫu logrotate cho `/var/log/cdkt-backup.log`, `cdkt-verify-restore.log`.
+  - W6 (tách `manage.sh`) để lại cho Wave 3 task 4.4; W4/W7 xử lý lúc gộp 2A.
+- **Đã kiểm:**
+  - `npm test`: 4485 test, 4456 pass, 0 fail, 29 skip (+2 skip là hai ca MySQL mới khi không có DB).
+  - `tests/backup-dump-integration.test.ts` trên MySQL 8.0.46 local: 7/7 xanh, không sót DB `cdkt_backup_dump_*`.
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` xanh.
+  - Container thử journald chạy thật (exit 0) trên `cdkt/app:local` và `ghcr.io/…:latest`.
+  - Build xanh 4/5 lượt. Lượt đỏ là `Could not resolve "../../../../../shared/link-policy.ts"` từ import tương đối **có sẵn** trong `app/utils/nav-config.ts` (bẫy § 32, ngoài phạm vi) — cần sửa riêng sang `~~/shared/link-policy`.
+  - `bash -n` + shellcheck không có cảnh báo mới; `docker compose config -q` xanh với env giả.
+
+#### Sửa sau kiểm chứng lần 2 (2026-10-24)
+
+Mỗi mục có test đỏ trước khi sửa, trên 58c891c.
+
+- **CRITICAL — khôi phục THẤT BẠI vẫn để lượt dọn xoá bản `pre-restore` và mọi bản mới hơn.** 58c891c đã sửa lối thành công, nhưng hai lối thất bại — dump chết giữa chừng, và bước cấu trúc hỏng — đều ném trước chỗ gắn lại hàng duy nhất (trong transaction audit). Lối thất bại chỉ ghi audit. `backups` còn đúng như dump ghi, "đúng hình dạng" nhưng thiếu các hàng mới, nên lượt dọn kế tiếp (mỗi `runBackup`, và lượt dọn lúc khởi động) xoá bản an toàn cùng các bản mới hơn. Sửa cả hai phía:
+  - **(a) Gắn lại trên mọi lối thất bại**, ngay sau khi dump đã chạy và trước khi nhả khoá khôi phục: `reattachAfterFailedRestore`.
+    - Chạy sau bước cấu trúc khi bước đó chạy được.
+    - Chịu được bảng còn hình dạng cũ: chỉ ghi các cột của `schema.ts` mà bảng thật đang có, đọc từ `information_schema`. Giá trị mã hoá bằng `column.mapToDriverValue` của Drizzle, vì `pool.query` trần với `Date` lệch 7 giờ.
+    - `created_by` chỉ giữ id còn trong `users` vừa nạp.
+    - Không bao giờ ném đè lỗi gốc. Log `backup.restore_failed_rows_reattached`.
+  - **(b) Lượt dọn** (`deleteStaleFiles`):
+    - **Không bao giờ** xoá bản `pre-restore`, cùng quy tắc với xoay vòng.
+    - Giữ mọi tệp tên-app chưa đăng ký có mã thời điểm **không sau** bản `pre-restore` mới nhất trên đĩa. Bản đó đánh dấu lượt khôi phục gần nhất, và tệp có từ trước nó có thể mất hàng chỉ vì danh sách bị tua lại. Log `backup.orphan_kept_restore_window`.
+    - Lý do chọn mốc này: đọc thẳng từ tên tệp, không cần bảng nào, không thể sai vì danh sách sai. Cái giá: tệp sót của một lượt bị giết *trước* lượt khôi phục đó nằm lại tới khi bản `pre-restore` ấy bị xoá tay — chỉ tốn đĩa.
+    - Không xoá tệp tên-thật nào khi khoá `cdkt:backup:restore` đang bị giữ (hoặc không hỏi được), cùng cách xoay vòng hỏi `IS_USED_LOCK`. Lý do: giữa lúc dump thay bảng và lúc gắn lại, một lượt sao lưu theo lịch có thể dọn đúng lúc danh sách đang sai.
+  - **Test:**
+    - `tests/backup-dump-integration.test.ts` mục 7 (dump chết giữa chừng) và mục 8 (bước cấu trúc hỏng vì hàng `chat_sessions` mồ côi chặn `fk_chat_sessions_reader`). Mục 8 khẳng định thêm: thông báo nêu tên bản an toàn, và khôi phục bản đó thành công.
+    - Trên bản sao 58c891c (`git archive`): mục 7 đỏ `pre-restore row put back: []`; mục 8 đỏ vì thông báo không nêu tên bản an toàn.
+    - `backup-orphan-archives` có 3 ca luật dọn mới, đỏ trước khi sửa.
+- **W1 — `initDb` rò kết nối khi một bước hỏng** (repro 2 treo tới hết giờ): chỉ thêm `try/finally` quanh hai kết nối của `init.ts`, không thêm logic. Test mới `tests/init-db-connection-release.test.ts`.
+- **W2 — thông điệp `schema_convergence_failed`:** bỏ "khởi động lại ứng dụng để hoàn tất". Lỗi đến từ chính dữ liệu thì mỗi lần khởi động (`init.ts && …`) chạy đúng bước đó và container dừng lặp lại. Thông báo nay chỉ vào log và nêu **tên bản `pre-restore`** để khôi phục lại; bản đó đã được gắn lại vào danh sách, và mục 8 chứng minh khôi phục nó chạy được. README cập nhật theo.
+- **Gợi ý đã làm:**
+  - Chú thích "cùng `DB_*`" nay nói đúng: `createBackupConnection` lùi về `MYSQL_DATABASE`, còn `initDb` thì không. Nếu hai tên lệch, bước cấu trúc **dừng** thay vì chạy trên CSDL khác.
+  - Container thử journald có `--pull=never` và trần thời gian (`timeout 20 docker info`, `timeout 60 docker run`).
+  - README ghi chú: khôi phục một dump có từ trước 2026-09-22 cũng chạy các bước chuyển đổi đã thiết kế lúc khởi động (danh mục video trỏ bảng thể loại cũ bị gỡ, `short_id`, URL media cũ).
+- **Chưa làm (ghi lại):** trạng thái scheduler sao lưu (`backup_scheduler_state`) vẫn chỉ được giữ trên lối thành công. Lượt khôi phục hỏng có thể tua lại hàng đó, hậu quả tối đa là lệch một khe lịch.
+- **Đã kiểm:**
+  - `tests/backup-dump-integration.test.ts` trên MySQL 8.0.46 local: 9/9 xanh trong một lượt, tiến trình tự thoát (không còn treo), không sót DB `cdkt_backup_dump_*`.
+    - Một lượt trước đó đỏ vì nguyên nhân bên ngoài: CSDL thử của mục 7 bị xoá giữa chừng `initDb`; các lượt chạy song song của agent khác cũng gây 409 trên khoá toàn máy chủ.
+  - `npm test`: 4492 test, 4461 pass, 0 fail, 31 skip.
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` xanh; build xanh.
+  - `bash -n` + shellcheck không có cảnh báo mới; `docker compose config -q` xanh với env giả.
+  - Container thử journald với `--pull=never` chạy thật (exit 0).
+
+#### Sửa sau kiểm chứng lần 3 (2026-10-24)
+
+Không còn CRITICAL; sửa các cảnh báo. Mỗi mục có test đỏ trước khi sửa, trên 74cd56c (bản sao `git archive`).
+
+- **W1 — lời khuyên "khôi phục bản an toàn" thành ngõ cụt khi `backups` còn hình dạng cũ.** Bước cấu trúc hỏng trước khi tới `backups.offsite_status` thì bảng giữ hình dạng của dump. Lượt khôi phục kế tiếp (chính là làm theo lời khuyên) tạo bản an toàn mới, nhưng đăng ký nó bằng câu Drizzle nêu đủ cột → `Unknown column 'offsite_status'` → khôi phục bị huỷ. Sửa ba chỗ:
+  - **Một lối ghi sổ cho mọi nơi:** `insertBackupRow` (`server/services/backup-registry.ts`) — đăng ký lượt sao lưu (kể cả `pre-restore`), hàng `failed`, tệp tải lên, gắn lại sau khôi phục. Bảng thiếu cột (`ER_BAD_FIELD_ERROR`) → ghi chỉ các cột bảng thật có, giá trị qua `sql.param(value, column)` (cùng bộ chuyển của Drizzle, ngày giờ không lệch). Log `backup.registry_old_shape`.
+  - **Đưa riêng `backups` về hình dạng hiện tại** (`convergeBackupsTable`, tách từ `applyAdditiveMigrations` — lúc khởi động gọi đúng hàm này) ở đầu mỗi lượt khôi phục CSDL, trước bản an toàn, và ở lối thất bại trước khi gắn lại hàng.
+  - **Đường lui trên máy chủ có thật:** lời khuyên nay nêu thêm `scripts/restore-db.sh` với chính tệp `pre-restore`. Kiểm ra script đó từ chối **mọi** dump của app ("no completion marker — it is truncated"), vì dump của app không có dòng hoàn tất của mysqldump. `dumpSql` nay kết thúc bằng `-- Dump completed on <ISO>`. Đã thử thật trên container MySQL dev: `restore-db.sh` khôi phục một bản `pre-restore` của app (62 bảng, một `INSERT` 20 MB) vào CSDL thử. Dump của app tạo trước bản này vẫn bị script từ chối — README/DEPLOY.md ghi rõ, khôi phục chúng trong app.
+  - Đã thử và bỏ: thêm `--max-allowed-packet` cho client `mysql` trong script. Client 8.0.46 gửi được câu `INSERT` 20 MB với mặc định 16 MB, nên cờ này không cần.
+  - **Test:** `backup-dump-integration` mục 9 (lời khuyên chạy được khi `backups` cũ; hàng giữ nguyên giá trị), 11 (đăng ký trên bảng cũ, ngày giờ y nguyên), 13 (bản `pre-restore` của app qua được `restore-db.sh`, docker giả, đầu ra `dumpSql` thật). Trên 74cd56c: mục 9 đỏ `the failure path brings backups itself up to date`, mục 11 đỏ `Unknown column 'offsite_status'`; mục 13 đỏ trước khi thêm dòng hoàn tất.
+- **W2 — lượt sao lưu chạy giữa lúc khôi phục bị mất hàng.** `runBackup` nay từ chối khi khoá `cdkt:backup:restore` đang bị giữ (hoặc không hỏi được): `BackupRestoreInProgressError` (con của `BackupLockBusyError`) → endpoint trả 409. Scheduler coi đó là "bận": không tính lần thử, log `backup.scheduler_busy` (trước đây mọi lỗi bận ghi `backup.scheduler_failed`). Ngoại lệ duy nhất: bản `pre-restore` của chính lượt khôi phục (`allowDuringRestore`). Test: `backup-orphan-archives` (từ chối, không ghi gì, không gọi `onStarted`), `backup-run-endpoint` (409), `backup-scheduler-due` (bận ≠ lần thử), `backup-dump-integration` mục 12 (khoá thật). Trên 74cd56c mục 12 đỏ `Missing expected rejection`.
+- **W3 — trạng thái scheduler chỉ được giữ ở lối thành công.** Lối thất bại (`restoreLiveStateAfterFailedRestore`) nay ghi lại cả `backup_scheduler_state` của hệ thống đang chạy. Test: hai ca `backup-restore-hardening` (dump chết, bước cấu trúc hỏng) và `backup-dump-integration` mục 10. Trên 74cd56c mục 10 đỏ `the live scheduler record, not the dump's (none)`.
+- **W4 — thêm mục integration:**
+  - mục 10: transaction audit hỏng (trigger chặn `activity_logs` đi kèm dump) → hàng vẫn được gắn lại;
+  - mục 9: gắn lại vào bảng hình dạng cũ;
+  - mục 9 và 10: so giá trị và ngày giờ từng hàng. Bản `newer` so y nguyên với trước khôi phục. Bản `pre-restore` sinh **trong** lượt khôi phục nên so với tệp của nó: kích thước, mã thời điểm, người tạo, `created_at` theo UTC.
+- **S1:** kiểm `DB_NAME`/`MYSQL_DATABASE` (`assertOneDatabase`) chuyển lên **trước** bản an toàn và `restoreSql`. Test đỏ trước khi sửa.
+- **S3:** CLAUDE.md ghi số dòng hiện tại của `init.ts` (80, `wc -l` 2026-10-24) ở các chỗ nêu cỡ hiện tại. Dòng lịch sử "1302 → 73" giữ nguyên.
+- **S4:** `init.ts` đóng kết nối bằng `end().catch(() => {})` trong `finally`. Lỗi đóng không che lỗi của bước hỏng. Test thêm ca `end` ném.
+- **Tách tệp:** phần giữ trạng thái của lượt khôi phục chuyển sang `server/services/backup-restore-recovery.ts`, để `backup-restore.ts` ở dưới 400 dòng. Đó là các hàm: kiểm một CSDL, đưa `backups` về hình dạng hiện tại, bước cấu trúc, gắn lại hàng, lối thất bại. `backup.ts` vẫn lớn từ trước (726 dòng, trước đợt này 674) — chưa tách, ghi lại cho lượt sau.
+- **Bẫy của guard TDZ** (`tests/transaction-tdz.test.ts`): guard lấy thân khối từ dấu `{` đầu tiên sau `transaction(`. Với callback arrow một biểu thức (`db.transaction(tx => f(tx))`), dấu đó nằm ở dòng **sau** lời gọi, nên một phép đọc biến kết quả ở dòng kế tiếp bị báo oan. Chỗ này nay viết thân khối có ngoặc. Guard để nguyên, ngoài phạm vi.
+- **Đã kiểm** (sau khi rebase lên `wave1/integration` 2516422):
+  - `tests/backup-dump-integration.test.ts` trên MySQL 8.0.46 local: 14/14 xanh trong một lượt, không sót DB `cdkt_backup_dump_*`.
+  - `npm test`: 4526 test, 4490 pass, 0 fail, 36 skip.
+  - Typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` xanh (636 cột / 62 bảng).
+  - Build sạch (xoá `.output` + cache) xanh 2/2 lượt.
+  - `bash -n` + shellcheck xanh cho `restore-db.sh`, `verify-restore.sh`, `deploy-remote.sh`, `manage.sh`; `docker compose config -q` xanh với env giả.
+
+### 37. Đợt 2 — 2B dữ liệu (2026-10-24)
+
+OpenSpec `wave2-hardening` nhóm 3 (task 3.1, 3.2, 3.3, 3.4, 3.6), design D-REPOINT, D-SCAN, D7, D-RESCAN. Task 3.5 (D-PLAIN, bỏ phép đoán entity cụt lúc đọc) **chưa làm**: điều kiện tiên quyết là chủ repo xác nhận `db:decode-excerpts --apply` của Wave 1 đã chạy trên production — chưa có xác nhận.
+
+- **Đổi domain R2 (3.1, D-REPOINT)** — `server/services/media-repoint.ts`.
+  - **Phạm vi.** Bản cũ `REPLACE(col, domain, …)` trên đúng hai cột (`media.url`, `articles.content`). Nay đổi trên 27 cột `URL_REFERENCE_TARGETS` (cùng danh sách lượt đồng bộ local ↔ R2 dùng) cộng `media.url` hàng `r2`.
+  - **Mẫu khớp.** `domainRepointForms` (nay ở `media-repoint-match.ts`, xem "Sửa sau kiểm chứng độc lập"), dựng từ cùng `RIGHT_BOUNDARY`. Bên trái phải đúng `scheme://`; bên phải là `/` hoặc ranh giới URL. Mỗi scheme một dạng, không dùng `$1`. Cột JSON thêm dạng thoát `\/`.
+  - **Không đụng host giống:** `xold.cdn`, `old.cdn.evil`, `old.cdn:8443`, `//old.cdn`. Bản cũ thay chuỗi con, nên đổi cả mấy host này.
+  - **Đếm.** Chọn id bằng một lượt đọc không khoá (LIKE + REGEXP), rồi UPDATE theo id kèm lại điều kiện REGEXP. Số đếm vì thế đúng bằng số hàng thật sự đổi, và hàng chỉ chứa host giống không được tính.
+  - **Một transaction** cùng audit `repoint_urls` (`byTarget` đủ 28 nhãn). `afterSettingsRewritten` chạy sau commit.
+  - **Sao lưu trước là bắt buộc.** Sao lưu hỏng → `RepointBackupError` (500, câu không lộ chi tiết máy chủ, nguyên nhân ở log `media.repoint_pre_backup_failed`), không đổi hàng nào. Bản cũ chỉ cảnh báo rồi đổi tiếp.
+  - **Lỗi có kiểu, không còn đoán theo chuỗi.** `RepointInputError` → 400: domain mới chứa domain cũ (`assertRewritable`, giữ nguyên), domain trùng, ký tự phá HTML. `RepointBusyError` → 409.
+  - `/admin/media/scan` hiện số "Nội dung sửa URL" (`contentRowsUpdated`) thay cho "Bài viết sửa URL".
+  - **Hệ quả có chủ đích:** `r2_public_url` lưu kèm scheme cũng được đổi sang domain mới; `media_video_r2_public_url` cũng vậy khi bucket video dùng chung domain cũ (S6, ghi ở `production/README.md`).
+- **Quét thư mục ảnh (3.2, D-SCAN)** — `media-scan.ts` cùng tệp mới `media-scan-import.ts` (nhập một tệp; `media-scan.ts` từ 396 xuống còn khoảng 300 dòng).
+  - **Cột mới** `media.scanned_source_path VARCHAR(1024) NULL` cùng chỉ mục tiền tố `media_scanned_source_path_idx` (255). Khai ở `schema.ts`, ở `core.ts` và ở `ensureColumn`/`ensureIndex`; `tests/media-scan-index.test.ts` canh cả ba nơi.
+  - **Không nhập lại.** Giá trị lưu là đường dẫn POSIX tương đối với `public/uploads`. Tập "đã biết" = cột này của mọi hàng + `storage_path` của hàng `local`. `storage_path` của hàng R2 là khoá R2: bản cũ chỉ biết `storage_path`, nên mỗi lượt quét lại nhập lại mọi tệp đã lên R2.
+  - **Không tải đè.** Trước khi tải lên, gọi `otherRowOwns(db, 0, 'r2', key, null)` (nay export từ `media-sync-files.ts`), với cùng `now` cho khoá lẫn lượt tải. Khoá trùng → `conflict`: không tải, không ghi, không lùi về local. Trạng thái có `conflicts`/`conflictFiles`, trang hiện dòng "trùng tên", log `media.scan_conflict`.
+  - **Không để object mồ côi.** Ghi hàng hỏng sau khi đã tải → xoá object vừa tải, log `media.scan_insert_failed` `{ key, objectDeleted }`.
+  - **Báo cáo trùng lặp** `GET /api/admin/media/duplicates` (`media.read`, `media-duplicates.ts`, chỉ đọc). Nhóm hàng theo tên tệp + kích thước, và theo provider + chỗ lưu. Mỗi hàng có số hàng nội dung đang dùng URL của nó, đếm trong một lượt đọc phân trang 27 cột. Vòng đọc phân trang tách thành `forEachReferenceText` (`media-sync-rewrite.ts`), dùng chung với lượt vá đồng bộ dở dang.
+- **`repairLegacyMediaUrls` (3.3)** — chuyển sang `server/db/legacy-media-urls.ts` (cùng các mảnh thuần), `applyAdditiveMigrations` gọi như cũ. `migrations-additive.ts` từ 986 còn 912 dòng; suite nâng cấp thêm tệp mới vào `MIGRATION_SOURCES` và neo lại khai báo `additive.repair-legacy-media-urls`.
+  - **Domain** lấy từ `settings.r2_public_url` thay cho `cdn1.delify.vn` viết cứng. Chưa cấu hình → bỏ các bước cần domain; còn URL đang chờ vá thì log `db.migration.legacy_media_domain_unknown`.
+  - **Tên tệp mơ hồ.** Tên mà hơn một hàng `media` (mọi provider) cùng mang thì không ánh xạ, tính trên khoá cuối của bảng ánh xạ, kể cả dạng `encodeURIComponent`. Liên kết được giữ, kèm log `db.migration.legacy_media_ambiguous`. Bản cũ lấy hàng đọc sau cùng.
+  - Mọi `UPDATE articles` giữ `updated_at`, đóng mục "Còn mở (2F)" ở § 31.
+  - Hai sự kiện mới nằm trong `BOOT_MIGRATION_EVENTS`.
+- **Seed một lần mỗi CSDL (3.4, D7)** — `server/db/seed-groups.ts`.
+  - **Phạm vi:** 5 nhóm `content_types`, `categories`, `media_categories`, `moderation_rules`, `social_links`. Mỗi bộ default có phiên bản, kèm dấu `seed.<nhóm>.v<N>.done` (nhóm `internal`, giá trị giờ ISO).
+  - **Luật mỗi bộ:** có dấu → bỏ qua; v1 + bảng có hàng → chỉ ghi dấu; còn lại → chèn default thiếu + ghi dấu.
+  - **Một transaction mỗi bộ, dấu ghi trước.** Bản sao chạy seed song song nhận ER_DUP_ENTRY rồi bỏ qua.
+  - **So khoá theo collation của cột:** kiểm từng hàng, nên không chèn một slug mà chỉ mục UNIQUE coi là trùng.
+  - **Hàng mặc định rời tệp DDL.** Thể loại / danh mục bài viết chuyển từ `schema-tables/core.ts`/`content.ts` sang `seed-groups.ts`. `seed.ts` từ 622 còn 500 dòng.
+  - **Hệ quả cho CSDL mới:** `db:init` một mình không còn tạo thể loại / danh mục. Ba danh mục bài viết nay có mô tả: bản DDL chạy trước và thiếu mô tả nên trước đây luôn thắng.
+  - **Dấu không qua API:** mọi lượt đọc cài đặt đã là allowlist, và `ALLOWED_SETTING_KEYS` không nhận `seed.*`. Test: `tests/seed-markers-settings-read.test.ts`.
+  - **Hai ca test phải sửa theo.** `tests/media-category-migration-integration.test.ts` trước dựa vào `initDb()` chèn danh mục bài viết id 2, 6, nay tự chèn (`insertLegacyArticleCategories`). Hằng `action: "auto_hide"` giữ nháy kép như bản gốc, vì `tests/activity-log-labels.test.ts` quét `action: '…'` nháy đơn.
+- **Quét lại kiểm duyệt (3.6, D-RESCAN)** — `moderation-rescan-job.ts`.
+  - Trước mỗi lô (hook `beforeBatch` mới của `rescanExistingContent`), job hỏi `SELECT IS_USED_LOCK(?) = CONNECTION_ID()` trên chính kết nối giữ khoá.
+  - Kết quả 0, NULL hoặc lỗi → dừng trước lô kế: `state: 'stopped'`, `stopReason: 'lock_lost'`, log `ai_moderation.rescan_lock_lost`. Con trỏ giữ tới lô cuối đã xong, `onFinished` không chạy.
+  - `/admin/ai/moderation` hiện "đã tạm dừng…" cùng toast cảnh báo.
+
+**Lượt ghi lúc khởi động mà bản này thêm hoặc đổi** (so với `264fdea`):
+1. `ALTER TABLE media ADD COLUMN scanned_source_path` và `ADD INDEX media_scanned_source_path_idx`: chỉ đổi lược đồ, một lần, không ghi hàng nào.
+2. Năm hàng `settings` `seed.<nhóm>.v1.done` ở lần khởi động đầu, một lần; lần sau thấy dấu thì bỏ qua.
+3. `repairLegacyMediaUrls`: domain lấy từ cấu hình, bỏ tên mơ hồ, không còn đổi `articles.updated_at`.
+4. Bị gỡ: `init.ts` không còn chèn `content_types`/`categories`; `seed.ts` không còn chèn lại default vào bảng nhóm D7 đã có hàng.
+
+**Suite nâng cấp** (`tests/schema-upgrade-integration.test.ts`):
+- **Gỡ ba khai báo:** `seed.resurrects-deleted-defaults` (từ nay hồi sinh default là đỏ), `ddl.default-content-types` và `ddl.default-categories` (mã đã gỡ).
+- **Thêm** `seed.group-markers`: chỉ khoá dấu của chính các nhóm, chưa có trước lượt boot, nhóm `internal`, giá trị là giờ.
+- **Khoá default của 5 nhóm** đọc thẳng từ `seed-groups.ts`.
+- **`repairedMediaUrl`/`repairedArticleContent`** lấy domain từ `ctx.before` và bỏ tên mơ hồ. `SEED_OVERRIDES.settings` thêm `r2_public_url = https://cdn1.delify.vn/`.
+- **Khẳng định mới ở lượt 1:** mọi bảng nhóm D7 có hàng trước boot, không bảng nào thêm hàng, đủ 5 dấu, `articles.updated_at` không đổi.
+- **Ca mới:** xoá một default của mỗi nhóm → khởi động lại → không gì đổi.
+- **Ca khai báo không cần CSDL thật:** dấu (đúng / đã có / ngoài bộ / sai nhóm / giá trị không phải giờ), hồi sinh vào bảng đã có hàng (không khai báo nào phủ), lấp bảng trống.
+
+**Bằng chứng test-first** (trên `264fdea`, trước khi sửa mã):
+- **`moderation-rescan-job`:** 3 ca mới đỏ.
+- **`media-repoint-integration`:** đỏ: "Missing expected rejection" — sao lưu hỏng mà vẫn đổi.
+- **`media-scan-import`:** 3/3 đỏ:
+  - `scanned_source_path` trống;
+  - nhập 3 tệp, trong đó tệp sau ghi đè khoá R2 của tệp trước;
+  - object không bị xoá khi ghi hàng hỏng.
+- **`media-duplicates-report`:** đỏ (chưa có module).
+- **`seed-markers-integration`:** "the deleted default "lừa đảo" came back on restart".
+- **Suite nâng cấp, chỉ gỡ `seed.resurrects-deleted-defaults`** (bản sao `264fdea` trong scratch): lượt 1 đỏ với 35 lượt ghi không khai báo — `ai_moderation_rules` ×27, `social_links` ×5, `media_categories` ×3.
+- **`legacy-media-urls`:** đỏ do module/export chưa có. Thêm một lần chạy hàm gốc (chỉ export tạm trong bản sao scratch) trên cùng kết nối giả: hai hàng `a.jpg` → bài bị viết lại thành `https://cdn.test/2026/10/a.jpg`, tức URL của hàng đọc sau cùng.
+
+**Kiểm chứng (2026-10-24, Node 26.11 + Node 24.21 trong `node:24-slim`, MySQL 8.0.46 local):**
+- `npm test`:
+  - Node 26.11: 4444 / 4405 pass / 0 fail / 39 skip.
+  - Node 24.21 (`node:24-slim`, lượt trước test cuối cùng: 4443 test): 4384 pass, 17 fail + 2 cancelled. Cả 19 đều ở `ci-docs-only-skip`, `coverage-summary`, `snapshot-schema`, `ops-scripts`, `media-processing`, vì image không có `git`/FFmpeg. Bản sao `264fdea` trong cùng container cho đúng 17 + 2.
+- typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` 62 bảng / 636 cột; `npm run build` xanh.
+- E2E chọn lọc: `media-portal`, `public-single-h1` (cần danh mục `tin-noi-bat` do seed tạo trên CSDL mới), `public-detail-status` — 11/11. Không sót `cdkt_e2e_*`, cổng 3123 trống.
+- Trên Node 24.21: `media-repoint` 1/1, `seed-markers` 4/4, `schema-upgrade` 7/7.
+- Integration trên MySQL thật:
+  - `schema-upgrade` 7/7: lượt 1 quan sát `seed.insert-missing-defaults` ×1920, `repair-legacy-media-urls` ×3, `hotline-label` ×2, `add-column` ×1, `seed.group-markers` ×5, `mysql.on-update-timestamp` ×2 (trước ×4: `articles.updated_at` không còn đổi);
+  - `seed-markers` 4/4;
+  - `media-repoint` 1/1;
+  - `media-sync-rewrite` 2/2;
+  - `media-category-migration` 4/4;
+  - `public-read` 5/5.
+- Không để lại CSDL tạm.
+- Matrix CI thêm `media-repoint` và `seed-markers`: 22 job (`tests/ci-integration-matrix.test.ts` xanh).
+
+#### Sửa sau kiểm chứng độc lập (2026-10-24)
+
+Kiểm chứng độc lập bản `63d1e8a`: 0 nghiêm trọng, 6 cảnh báo (W1–W6), 4 gợi ý (S1, S5–S7). Nhánh được rebase lên `6389c10` (2F: suite nâng cấp so default theo **nội dung**) trước, rồi sửa cả mười trong một commit.
+
+- **W1 — hoa thường khi đổi domain.** Trước: `HTTPS://OLD.CDN/…`, `https://Old.Cdn/…` không bị đổi, và domain nhập `HTTPS://OLD.CDN/` thành `OLD.CDN` nên không khớp gì.
+  - Scheme + host nay khớp không phân biệt hoa thường; đường dẫn vẫn phân biệt. Mẫu REGEXP dùng lớp ký tự `[oO]` sau `(?-i)` (REGEXP_REPLACE của MySQL không có `$1`, và collation không được quyết định). Lọc thô `LOWER(…) LIKE` vì cột JSON so nhị phân.
+  - Domain nhập chuẩn hoá qua `new URL('https://' + …)`: host chữ thường, tên miền có dấu → punycode, giữ tiền tố đường dẫn, bỏ `/` cuối. Từ chối userinfo, `?`, `#`, scheme khác http(s).
+- **W2 — domain mới phải phục vụ được ảnh.** Module mới `shared/media-hosts.ts`: `CSP_IMG_SRC_HOSTS` (nguồn `img-src` — `nuxt.config.ts` dựng header bằng `cspImgSrcDirective()`, không chép chuỗi) và `IMAGE_PROXY_DOMAINS` (`image.domains` của NuxtImg).
+  - Đổi domain sang host ngoài một trong hai danh sách → 400 nêu đúng danh sách cho phép, trước khi sao lưu hay chạm hàng nào. Ngoài CSP thì trình duyệt chặn mọi ảnh vừa đổi; ngoài IPX (so đúng tên host) thì ảnh tối ưu thành ảnh dự phòng. Hiện chỉ `cdn1.delify.vn` qua cả hai.
+  - Điều kiện trước ghi ở `production/README.md`: thêm host vào module, deploy, rồi mới đổi domain. `tests/media-hosts-policy.test.ts` canh `nuxt.config.ts` đọc từ module.
+- **W3 — tệp do lượt quét cũ nhập lên R2.** Hàng đó chưa có `scanned_source_path`, nên lượt quét đầu sau bản vá vẫn nhập lại. Nay hàng R2 còn trống nguồn cùng **tên tệp + kích thước** với tệp đĩa được coi là đã nhập (`buildLegacyR2Index`/`claimLegacyR2Row` ở `media-scan-import.ts`).
+  - Ghi nguồn bằng `UPDATE … WHERE id = ? AND scanned_source_path IS NULL`: mỗi hàng nhận đúng một tệp, và từ đó dính vĩnh viễn. Trạng thái có `legacyMatched`, trang quét hiện dòng thông báo, log `media.scan_legacy_matched`.
+  - Không so khoá `YYYY/MM/<tên>`: lượt cũ đặt khoá theo tháng tải lên, không theo thư mục nguồn.
+  - Ngoại lệ còn lại (sửa câu nói quá ở `production/README.md`): tệp đã bị sửa khác kích thước sau lượt quét cũ vẫn được nhập thêm.
+- **W4 — object vừa tải và lượt ghi đồng thời.**
+  - Ghi hàng báo lỗi sau khi đã tải lên → hỏi lại `otherRowOwns` trước khi xoá object. Kết nối rơi đúng lúc COMMIT mà hàng đã ghi thì object được **giữ** (`keptBecause: 'owned_by_row'`); không kiểm được thì cũng giữ (`ownership_unknown`). Thừa một object rẻ hơn một ảnh vỡ.
+  - Đổi domain giữ khoá `cdkt:media:sync-storage` (đồng bộ, "Sửa URL") rồi `cdkt:media:scan` (quét), timeout 0, thứ tự cố định nên không deadlock, suốt sao lưu + transaction. Lý do: ba lượt đó dựng URL từ `r2_public_url` đọc lúc bắt đầu, chạy chồng sẽ ghi URL domain cũ sau khi đổi domain đã commit. Bận → 409 nêu tên các lượt. Khoá riêng `cdkt:media:repoint-urls` bỏ (khoá đồng bộ đã loại hai lượt đổi domain chồng nhau).
+  - Còn mở, có ghi ở README: tải ảnh lên thường không giữ khoá; ảnh tải đúng lúc đổi domain có thể mang domain cũ, bấm đổi lại cùng cặp domain sẽ bắt nó.
+- **W5 — báo cáo ảnh trùng có trần.** Đọc cột nội dung tối đa 20 giây / 200 000 hàng (`MAX_DUPLICATE_SCAN_MS`, `MAX_DUPLICATE_REFERENCE_ROWS`). Vượt trần → `usageTruncated: true`, số nơi dùng chỉ là cận dưới. Khoá tên `cdkt:media:duplicates-report` timeout 0: lượt thứ hai → 409. Không có pool → 503.
+- **W6 — tách `media-sync-url-match.ts`** (408 → 356 dòng): phần đổi domain sang `media-repoint-match.ts` (89 dòng). Đường nối là phần dùng chung đã có (`RIGHT_BOUNDARY`, `escapeRegex`, `escapeRegexReplacement`, `likeContains`, `jsonInner` nay export), không đổi hành vi lượt đồng bộ.
+- **S1 — mơ hồ đếm URL, không đếm hàng.** Hai hàng trùng chung **một** URL R2 (một object) không làm liên kết `…/migrated/media/<tên>` mơ hồ. Chỉ khi các hàng mang tên đó trỏ tới hơn một URL khác nhau mới giữ nguyên. Suite nâng cấp phản chiếu cùng luật.
+- **S5 — lỗi 500 của đổi domain** không còn trả nguyên `err.message`: câu chung (đã rollback, không URL nào đổi), nguyên nhân ở log `media.repoint_failed`.
+- **S6** — ghi ở README: `media_video_r2_public_url` cũng đổi khi dùng chung domain cũ.
+- **S7** — `tests/seed-markers-integration.test.ts` ghim tên dấu bằng chuỗi viết tay (`seed.categories.v1.done`, …), không dựng lại qua `seedMarkerKey`: đổi định dạng khoá làm test đỏ thay vì trôi theo.
+
+**Rebase lên `6389c10`** (2F, suite nâng cấp so nội dung từng hàng default):
+- `seed-groups.ts`: mỗi nhóm có `toInsert(row, allRows)` (đúng giá trị seed sẽ ghi) và `SEED_GROUP_SPECS` export. Suite đọc nội dung default của 5 nhóm từ đó (`groupDefaultRows`) thay cho DDL. DDL không còn hàng default nào; suite đỏ nếu `core.ts`/`content.ts` lại có.
+- Khai báo `seed.group-markers` giữ nguyên, kèm khẳng định mới: một default của nhóm bị sửa `url` thì không khai báo nào phủ.
+
+**Bằng chứng test-first** (trên `b5c4826`, trước khi sửa mã):
+- W1: phép thử trong scratch — `https://OLD.CDN/a.png HTTPS://old.cdn/b.png https://Old.Cdn/c.png` giữ nguyên sau khi đổi; `normalizeRepointDomain('HTTPS://OLD.CDN/')` trả `OLD.CDN`.
+- `media-repoint`, `media-hosts-policy`: đỏ (module chưa có).
+- `media-scan-import`: 2 ca đỏ — W4 (object bị xoá dù hàng đã commit), W3 (tệp lượt cũ nhập lại).
+- `media-duplicates-report`: 5 ca đỏ (trần, khoá, endpoint).
+- `legacy-media-urls`: ca S1 đỏ.
+- `media-repoint` (S5): đỏ tới khi endpoint thôi trả nguyên văn lỗi.
+
+**Kiểm chứng (2026-10-24, Node 26.11, MySQL 8.0.46 local):**
+- `npm test`: 4460 / 4421 pass / 0 fail / 39 skip.
+- typecheck 0 lỗi; eslint 0 error / 16 warning; `db:drift` 62 bảng / 636 cột; `npm run build` xanh.
+- Integration: `schema-upgrade` 7/7 (lượt 1: `seed.insert-missing-defaults` ×1920, `repair-legacy-media-urls` ×3, `hotline-label` ×2, `add-column` ×1, `seed.group-markers` ×5, `mysql.on-update-timestamp` ×2), `seed-markers` 4/4, `media-repoint` 1/1 (thêm URL viết hoa, domain nhập `HTTPS://OLD.CDN/`, đích `cdn1.delify.vn`), `media-sync-rewrite` 2/2. `tests/ci-integration-matrix.test.ts` 5/5. Không để lại CSDL tạm.
+
+### 38. Đợt 2 — nhánh tích hợp `wave2/integration` (2026-10-24)
+
+Gộp lần lượt (mỗi nhánh `git merge --no-ff`, `npm test` + typecheck sau từng lượt) `wave2/2a-security` (§ 33) → `wave2/2d-admin-dialogs` (§ 34) → `wave2/2b-data` (gồm 2F § 31 và 2B § 37) → `wave2/2c-perf` (§ 35) → `wave2/7-ops` (§ 36) lên Wave 1 + 2E (`2516422`). Xung đột chỉ ở chỗ hai nhánh cùng sửa: mỗi bên giữ đủ, rồi các việc dưới đây làm riêng từng commit.
+
+**A. Suite nâng cấp khai báo mọi lượt ghi lúc khởi động mới** (`tests/schema-upgrade-integration.test.ts`). Gộp xong, suite vẫn xanh 7/7 — nhưng xanh rỗng: không hàng đại diện nào kích hoạt các lượt ghi mới, và ba trong số đó chỉ ghi vào cột chính chúng vừa thêm (lượt so chỉ so cột có ở cả hai ảnh chụp).
+- Dữ liệu đại diện: `settings` thêm `smtp_pass`/`r2_secret_key`/`backup_drive_service_account` nguyên văn (giá trị bịa); `reader_accounts` hàng 1 mang tên Google "Admin"; `article_view_daily` được seed qua danh sách mới `BOOT_READ_TABLES` (bảng mà một lượt ghi lúc khởi động chỉ **đọc** — test cuối kiểm nguồn còn đọc nó). `MIGRATION_SOURCES` thêm `settings-secret-conversion.ts` + `reader-name-backfill.ts`.
+- Năm khai báo, đặt trước `additive.add-column` (khai báo đầu tiên phủ được thì nhận): `2a.settings-secret-envelopes` (ô `settings.value` của đúng ba khoá, trước là nguyên văn, sau là envelope mở bằng khoá của lượt chạy ra **đúng** giá trị cũ); `2a.reader-reserved-name-flag` (chỉ việc thêm cột, khi cột chưa có — có rồi thì mọi lượt ghi vào nó là không khai báo); `2c.article-view-totals` (thêm ba cột; ô `view_total*` chỉ được đổi thành đúng tổng hàng theo ngày, cho fixture sau này đã có cột); `2c.view-total-ungenerated` (không phủ thay đổi hàng nào — `MODIFY COLUMN` giữ giá trị; không tới được từ fixture `7dfed8c`, khai để neo mã); `ops.backups-offsite-status` (chỉ thêm cột).
+- Khẳng định sau lượt 1, độc lập với khai báo: ba bí mật là envelope đúng nhãn, không còn chuỗi nguyên văn, mở ra đúng giá trị; đúng người đọc "Admin" có cờ, tên Google giữ nguyên; tổng lượt xem của mọi bài = tổng hàng theo ngày, `updated_at` của **mọi** bài không đổi (bài 3 không có thay đổi khai báo nào khác, nên mất vế ghim cũng hiện thành lượt ghi không khai báo); mọi hàng `backups` cũ giữ `offsite_status` NULL; mỗi lượt ghi được tính cho đúng khai báo của nó. Lượt 2 vẫn phải không đổi gì.
+- Bằng chứng đỏ trước: thêm dữ liệu + khẳng định, chưa thêm khai báo → lượt 1 đỏ với đúng 3 lượt ghi không khai báo (`settings.value` của ba khoá). Bản nháp bỏ vế `a.updated_at = a.updated_at` khỏi `reconcileArticleViewTotals` (không commit) → đỏ `articles.updated_at [id=3]` + neo khai báo mất. Sau khi khai báo: 7/7 trên MySQL 8.0.46 local; lượt 1 quan sát `2a.settings-secret-envelopes` ×3, `2a.reader-reserved-name-flag` ×1, `2c.article-view-totals` ×3, `ops.backups-offsite-status` ×1. `CI-CD.md` § *Làm mới fixture* thêm cách khai báo lượt ghi vào cột vừa thêm và `BOOT_READ_TABLES`.
+
+**B. Thứ tự của lượt khôi phục CSDL** (`server/services/backup-restore.ts`, `backup-restore-recovery.ts`). 2A mã hoá bí mật nguyên văn mà bản dump mang về trong `finally` của `restoreSql` (W3); vận hành đưa cấu trúc về bản hiện tại ngay sau dump, trên mọi lối. Gộp thẳng hai bên cho thứ tự `restoreSql → mã hoá → cấu trúc` ở lối thành công: lượt mã hoá đụng `settings` vừa khôi phục TRƯỚC bước cấu trúc (trái bất biến của vận hành), và khi bước cấu trúc hỏng thì không có lượt mã hoá nào sau nó.
+- Nay mọi lối mà dump đã chạy giữ một thứ tự: `restoreSql` → `convergeSchemaAfterRestore` → `sealRestoredCredentials` (chuyển từ `encryptRestoredSecrets` của 2A sang `backup-restore-recovery.ts`, không bao giờ ném) → gắn lại/audit. Dump chết giữa chừng: cấu trúc (được tới đâu hay tới đó) rồi mã hoá rồi ném lỗi gốc. Bước cấu trúc hỏng: vẫn mã hoá, rồi `schema_convergence_failed`. Bước cấu trúc chạy trọn thì `initDb` đã tự mã hoá và lượt này không ghi gì; hỏng thì `initDb` dừng ở bước khởi động hỏng — trước lượt chuyển của chính nó — nên lượt này là thứ duy nhất mã hoá.
+- Test: `tests/backup-restore-hardening.test.ts` thêm bốn ca ghim thứ tự `restoreSql → initDb → secrets → tx` + đúng một lượt chuyển (thành công, bước cấu trúc hỏng, dump chết giữa chừng, audit hỏng); trên bản gộp thẳng ba ca đỏ (`tx → restoreSql → secrets → initDb → …`). `tests/backup-dump-integration.test.ts` test 16 (MySQL thật, `initDb` thật): bản dump mang `smtp_pass` nguyên văn → sau khôi phục là envelope mở ra đúng giá trị, ở cả ba lối; bản nháp bỏ lượt mã hoá sau bước cấu trúc (không commit) → đỏ đúng lối bước cấu trúc hỏng ("smtp_pass is still plaintext"). Suite 17/17.
+
+**C. Thư cảnh báo vận hành đăng nhập SMTP bằng mật khẩu đã giải mã** (`server/utils/mailer.ts`). 2A giải mã `smtp_pass` trong `getSmtpConfig`; vận hành thêm tham số `read` để đường cảnh báo (chạy cả trong tiến trình CLI `init.ts`, không được tạo pool) đọc `smtp_*` qua kết nối ngắn hạn của nó. Bản gộp giữ cả hai: `getSmtpConfig(read = readSmtpSettings)` với phần giải mã bên trong, `passUnreadable` + `sendMail` từ chối gửi không xác thực. Test mới `tests/ops-alert-smtp-envelope.test.ts` (logger → `ops-alert.ts` → mailer **thật**, chỉ giả `mysql2/promise` và `nodemailer`): `smtp_pass` là envelope → transport nhận đúng mật khẩu gốc, không tạo pool; envelope không mở được → không mở transport, `ops.alert_failed` mang đúng câu "nhập lại mật khẩu"; `getSmtpConfig(read)` dùng reader được truyền. Bản nháp lấy phía vận hành (`pass: map.smtp_pass`) → 3/3 đỏ.
+
+**D. Cổng chặn khác site có thư cảnh báo** (`server/utils/logger.ts` `ALERT_EVENTS`, `server/utils/ops-alert.ts` `OPS_ALERT_WINDOW_SECONDS`). D-ALERT liệt kê `security.cross_site_refused` "rate-limited harder"; vận hành để chỗ chờ tới khi 2A có sự kiện đó. Nay nó nằm trong `ALERT_EVENTS`, cửa sổ **6 giờ** (mặc định 15 phút): lượt dò khác site lặp lại hàng giờ, một tích hợp cấu hình sai thì mỗi request — lượt đầu là tín hiệu, thư kế nói số lần đã gộp, mọi lượt vẫn ở log; tối đa 4 thư/ngày cho một chiến dịch không dừng. Test (`tests/ops-alert.test.ts`): danh sách D-ALERT có sự kiện này; cửa sổ 6 giờ > mặc định, qua 15 phút vẫn không gửi lại, đúng 6 giờ thì gửi kèm "còn 2 lần"; qua logger thật 3 lượt cách 20 phút → 1 thư nêu `originHost`. Ba ca đỏ trước khi sửa. Tài liệu: bảng sự kiện `production/README.md` (kèm cách đọc thư khi host thật bị chặn, và mật khẩu SMTP không giải mã được), `.env.example`, chú thích compose và mẫu `.env` của `manage.sh`.
+
+**E. Khoá service account Drive không giải mã được là bản sao ngoài máy chủ `failed`** (`server/services/backup-offsite.ts`). 2A cho `readBackupConfig` trả khoá đã giải mã + `driveServiceAccountUnreadable`, và nhánh Drive cũ của `runBackup` ném "Khoá service account không giải mã được… dán lại khoá JSON" khi không có liên kết OAuth. Vận hành chuyển cả bước Drive sang `uploadRunOffsite` — gộp lấy bước đó thì nhánh của 2A mất: khoá rỗng → "chưa cấu hình" → mọi tệp `none` + `backup.offsite_not_configured`, trong khi trang Sao lưu hiện ô khoá là đã đặt (dấu che) và không hiện cảnh báo "chỉ nằm trên máy chủ". Không test nào của hai nhánh bắt được (lượt gộp xanh 4768/0).
+- Nay `OffsiteConfig.driveServiceAccountUnreadable`; khoá không mở được tính là "đã cấu hình" (cùng luật với liên kết OAuth có token không giải mã được); không liên kết dùng được thì ném lỗi theo thứ tự cũ của 2A (refresh token trước, rồi `SERVICE_ACCOUNT_UNREADABLE_MESSAGE`) → từng tệp `failed`, `backup.drive_failed`, tệp cục bộ giữ, lượt vẫn thành công.
+- Test (`tests/backup-offsite-status.test.ts`, `runBackup` thật, khoá mã hoá dùng một lần): khoá envelope mở được → Drive nhận đúng JSON khoá (không phải envelope); khoá không mở được → `failed` + đúng câu của 2A, không upload, không `offsite_not_configured`, tệp còn; kèm liên kết OAuth dùng được → OAuth tải lên; cả hai không giải mã được → câu refresh token trước. Ca thứ hai đỏ trên bản gộp (`none`).
+
+**F. Những chỗ khác hai nhánh chạm nhau.**
+- **Mục "Còn mở" của § 35 đã đóng nhờ § 36.** 2C ghi: khôi phục trong app không chạy di trú, nên một bản dump trước 2C để `articles` thiếu `view_total*` tới lần khởi động lại. Bước cấu trúc sau dump của vận hành chạy đúng các bước khởi động — gồm lượt đối soát của 2C. Test MySQL thật mới (`backup-dump-integration` test 17): bản dump trước 2C (không ba cột, không index) khôi phục xong là có lại cột + index, tổng = tổng hàng theo ngày vừa khôi phục (7 / 3 / 10 và 0 / 0 / 0), `updated_at` không đổi.
+- **Không xung đột hành vi** ở: dấu seed của 2B (`settings` `seed.*`) với lượt mã hoá của 2A (chỉ ba khoá, so nhị phân) và lượt điền cờ tên (bảng `reader_accounts`) — suite nâng cấp chạy cả ba trên cùng một CSDL, lượt 2 không đổi gì; guard hộp thoại của 2D với trang `settings/security.vue` và banner MFA của 2A (không lớp phủ `fixed inset-0`); `init.ts` (`finally` của vận hành) với lượt đối soát của 2C; `backup-sql.ts` (bỏ cột sinh của 2C, `-- Dump completed` của vận hành).
+- **Tài liệu:** § 26–37 mỗi mục một lần, đúng thứ tự (2B mang § 31 trước § 32 và § 37; § 35/36 chèn trước § 37); dòng CLAUDE.md của hai bên gộp (số cột 641 = 635 + `display_name_reserved` + `scanned_source_path` + 3 `view_total*` + `offsite_status`; 22 suite integration = 22 job matrix; 335 endpoint: 173 `getDb()` thẳng, 215 import `services/**`; 222 tệp `server/` dùng `requireResourcePermission`, 209 dưới `server/api/`; `npm test` 4783 / 4730 pass / 0 fail / 53 skip).
+- **Ngân sách thời gian.** `backup-dump` nay 18 test, 12,6 phút trên máy dev (test 16 + 17 thêm ~3,7 phút) — trần job `Integration · *` 20 phút (gồm `npm ci` + MySQL service) không còn đủ khoảng trống trên runner chậm hơn → 30 phút (`.github/workflows/ci.yml`). E2E 112 test (2A +1, lô `admin-dialogs` của 2D +18) chạy 298 s cả khởi động → `globalTimeout` 480 → 600 s, giữ ~2× như lần nâng trước (chú thích trong `playwright.config.ts` dặn nâng theo mỗi lô spec).
+- **Runbook xoay `CHATBOT_ENCRYPTION_SECRET`** (`docs/decisions/realm-safety.md`): nhập lại mật khẩu SMTP **trước tiên** — tới lúc đó thư cảnh báo vận hành im lặng (chỉ `ops.alert_failed` trong log); khoá service account chưa nhập lại thì mỗi bản sao lưu `offsite_status = failed`.
+
+**G. Gộp tiếp 5.2 (§ 39), 6.4 (§ 40), tách service 5.3/5.4/5.6 (§ 41)** — mục của các nhánh đánh số lại cho § 38 này đứng trước.
+- **5.2 × 2A — `PUT /api/admin/security/mfa-policy` chuyển sang `readValidated`.** Guard ratchet của 5.2 (`tests/request-body-baseline.test.ts`) đỏ ngay khi gộp: endpoint mới của 2A đọc `readBody(event).catch(() => null)`, mà danh sách cũ chỉ được giảm. Không thêm nó vào danh sách: schema zod `{ policy: z.enum(MFA_POLICIES) }` với đúng câu 400 cũ (nay là hằng `MFA_POLICY_INVALID_MESSAGE` ở `utils/mfa/policy.ts`, service dùng chung), đọc SAU hai chốt quyền. Test mới `tests/mfa-policy-endpoint-body.test.ts` (app h3 thật): trên handler của 2A ba ca đỏ — form urlencoded `policy=all` tới được `setMfaPolicy` (200), JSON cụt bị nuốt thành "chính sách không hợp lệ", giá trị lạ đi tới service; sau khi chuyển 4/4. `tests/admin-mfa-enforcement-behavior.test.ts` (sự kiện giả) thay `readValidated` bằng bản kiểm `event.body` theo chính schema của endpoint. Các endpoint mới khác của 2A/2B/vận hành/tích hợp không đọc thân (`security/mfa-policy.get.ts`, `media/duplicates.get.ts` không nhận đầu vào nào) — guard quét cả `server/` chỉ bắt đúng một tệp này, danh sách cũ không thêm mục nào.
+- **Tách service (§ 41) × nhánh tích hợp:** `git diff 2516422 262eee8 -- server/services/{media-portal,video-processing,chunked-upload}.ts` rỗng — không nhánh nào của đợt 2 sửa ba tệp đó sau gốc của nhánh tách, nên không có đoạn mã nào phải chuyển sang tệp con. Các tệp nhắc tới chúng gộp tự động và đúng: `tests/reader-audit-atomicity.test.ts` (miễn trừ nay ở `video-transcode-pipeline.ts`, audit tải lên ở `chunked-upload-completion.ts`), chú thích `media-sync-url-match.ts`, `production/manage.sh`, `docs/decisions/data-layer.md`. `media-portal-audit`, `service-split-boundaries`, guard ảnh YouTube toàn `server/` + `app/` xanh trên cây gộp (gồm tệp mới của 2A/2B/2C/vận hành).
+- **`MFA_ENFORCEMENT` trong mẫu `.env` của `manage.sh`** (mục kiểm nhóm 7 của tasks.md: biến mới phải có ở compose, mẫu `.env` và README — 2A giữ nguyên `manage.sh`, vận hành chưa có 2A nên chưa ai kiểm chung). Deploy nay ghi một dòng đã comment `# MFA_ENFORCEMENT=` (giá trị mặc định: trống = cưỡng chế theo chính sách) kèm một dòng giải thích; không hỏi, không bật/tắt gì. `production/README.md` nói `.env` cũ phải thêm tay. Test mới ở `tests/ops-scripts.test.ts` đỏ trước khi sửa; `bash -n` + `ops-scripts`/`ops-scripts-sandbox` xanh.
+- **5.2 × vận hành — `backup/run.post.ts`:** thân hợp lệ mới tới `runBackup`; lượt khôi phục đang giữ khoá → `BackupRestoreInProgressError` (con của `BackupLockBusyError`) → 409 như cũ — test của vận hành chạy trên app h3 thật của 5.2 và xanh.
+
+**Kiểm chứng nhánh tích hợp (2026-10-24, Node 26.11, MySQL 8.0.46 local):** `npm test` 4783 / 4730 pass / 0 fail / 53 skip (sau từng lượt gộp: 2A 4515/0, 2D 4555/0, 2B 4621/0, 2C 4656/0, vận hành 4768/0). Typecheck 0 lỗi (sau từng lượt gộp và cuối). eslint 0 error / 16 warning. `db:drift` 62 bảng / 641 cột. `npm run build` sạch hai lượt (xoá `.output` + cache) xanh. `tests/ci-integration-matrix.test.ts` 5/5. Integration: `schema-upgrade` 7/7, `backup-dump` 18/18, `seed-markers` 4/4, `media-repoint` 1/1, `media-sync-rewrite` 2/2, `view-boost` 2/2, `notification-page` 1/1. E2E 112/112 (5,0 phút) — nơi duy nhất chạy giao diện 2A × 2D (hộp thoại hồ sơ đã sang `@keydown.enter` của 2D, spec `admin-mfa` của 2A viết trước đó) — không dòng `security.cross_site_refused`, cổng 3123 trống, không còn CSDL `cdkt_e2e_*`/`cdkt_upgrade_*`/`cdkt_backup_dump_*` của các lượt chạy này.
+
+**Kiểm chứng sau khi gộp 5.2 / 6.4 / tách service (mục G, 2026-10-25, Node 26.11, MySQL 8.0.46 local):** `npm test` 4958 / 4905 pass / 0 fail / 53 skip (sau từng lượt gộp: 5.2 4814/0, 6.4 4843/0, tách service 4957/0; +1 test mẫu `.env`). Typecheck 0 lỗi (sau từng lượt gộp và cuối). eslint 0 error / 16 warning. `db:drift` 62 bảng / 641 cột. `npm run build` sạch hai lượt xanh, `zod` 4.6.6 có trong `.output/server/node_modules`. `ci-integration-matrix` 5/5. Integration (`TZ=Asia/Ho_Chi_Minh` như CI): `schema-upgrade` 7/7, `backup-dump` 18/18 (13,4 phút), `media-queue` 1/1, `upload-concurrency` 1/1, `livestream-toggle` 1/1. E2E 116/116 (5,5 phút / 331 s cả khởi động, dưới `globalTimeout` 600 s) — không dòng `security.cross_site_refused` trong log server, cổng 3123 trống, không còn CSDL `cdkt_e2e_*` nào. 335 endpoint (173 `getDb()` thẳng, 215 import `services/**`) — không đổi.
+
+### 39. Đợt 2 — 5.2 kiểm đầu vào (2026-10-24)
+
+OpenSpec `wave2-hardening` task 5.2, design D5, spec `request-validation`. Endpoint mới đọc đầu vào qua một chỗ; 138 tệp cũ bị khoá lại, danh sách chỉ được giảm.
+
+- **`zod` 4.6.6 vào `dependencies`, ghim chính xác.** Không lấy được bản ≥ 14 ngày tuổi: 4.6.5 (2026-09-13) dính GHSA-mrhx-c7xc-m3w5 (high, mọi bản `< 4.6.6`: cạn bộ nhớ khi kiểm collection lớn có ràng buộc) và làm đỏ cổng `npm audit --omit=dev --audit-level=high`. 4.6.6 (2026-10-11, 13 ngày, có SLSA provenance) là bản sớm nhất qua cổng. Nitro để `zod` là external và chép vào `.output/server/node_modules/zod`; image runtime vẫn cài nó qua `npm ci --omit=dev`. Không script nào chạy trong container nạp `zod`.
+- **`server/utils/request-body.ts`:**
+  - `readJsonBody(event)`: trả object JSON, hoặc 400 `Dữ liệu gửi lên không hợp lệ` khi thân hỏng, rỗng, là mảng/`null`/chuỗi/số, hay không phải JSON. Chỉ nhận `Content-Type` là `application/json`/`…+json`. **Thiếu** `Content-Type`, urlencoded, multipart và `text/plain` đều bị từ chối: đó là mọi thân mà một trang khác site gửi được mà không cần preflight (form HTML, `navigator.sendBeacon`, `fetch` no-cors với Blob không có type). Mọi chỗ gọi trong `app/` dùng `$fetch` với object, và ofetch tự đặt `application/json`. h3 tự nó chỉ parse strict với đúng `application/json` (với `; charset=utf-8` thân cụt thành chuỗi, thân không `Content-Type` được parse thành object); ở đây h3 parse strict với mọi cách viết. destr ở chế độ strict **từ chối** (không phải bỏ khoá) mọi thân có khoá `"__proto__":` hoặc `"constructor":` ở bất kỳ độ sâu nào → 400, nên endpoint mới không nhận được trường tên `constructor`.
+  - `readValidated(event, schema)` và `readValidatedQuery(event, schema)`: 400 nêu trường sai đầu tiên, dạng `Trường "nested.items[1].id" không hợp lệ.`. Nếu schema tự đặt thông báo (`z.enum([...], { error: '…' })`) thì dùng nguyên văn. Lỗi chỉ mang `statusMessage`, không có `data`, nên danh sách issue và câu tiếng Anh của zod không ra ngoài; `readValidatedBody`/`getValidatedQuery`/`getValidatedRouterParams` của h3 thì gửi cả lỗi validator trong `data`. Đường dẫn trường dài quá 80 ký tự bị cắt, vì khoá có thể lấy từ request. Hàm query không tên `getValidatedQuery` vì Nitro auto-import cả h3 lẫn `server/utils/**`, trùng tên thì một bên bị che.
+  - `queryFinitePositive(fallback, max)` gọi `finitePositive`, không chép lại logic. Test so từng cách viết query (`abc`, `1e999`, rỗng, `0`, `7.9`, khoá lặp, thiếu khoá) với chính `finitePositive`.
+- **Guard `tests/request-body-baseline.test.ts`:** dò bằng AST TypeScript và quét cả `server/`, không chỉ `server/api/`, trừ `request-body.ts`.
+  - Cấm dùng thẳng `readBody` cùng ba validator của h3 (`readValidatedBody`, `getValidatedQuery`, `getValidatedRouterParams`), dù đi đường nào: auto-import không có dòng import, import có alias, `h3.readBody`, `h3['readBody']`, destructure từ module, re-export, gọi qua ngoặc hay `.call`, hoặc truyền/gán như một giá trị. Cũng cấm `.catch(…)` gắn vào `readJsonBody`/`readValidated`/`readValidatedQuery`, vì nó biến 400 thành "không gửi gì" như cũ.
+  - Tệp tự khai báo `readBody` (function, biến, tham số) không bị bắt khi gọi bản của chính nó.
+  - Đo ở `2516422`: 139 lời gọi trong 139 tệp. Design ghi 133 vì `grep 'readBody('` sót 6 lời gọi generic `readBody<…>(`. Sau khi chuyển `backup/run.post.ts`, danh sách còn 138.
+  - Ratchet thật, cả bốn trường hợp đều đỏ: (1) tệp mới có cách dùng bị cấm; (2) tệp trong danh sách có thêm một chỗ thứ hai; (3) tệp trong danh sách không còn chỗ nào — phải xoá mục ngay trong cùng thay đổi, nếu không tệp đó quay lại `readBody` vẫn xanh; (4) tổng vượt trần, mà trần là độ dài của chính danh sách, không phải một con số viết cứng.
+  - Bằng chứng guard cắn trên repo thật: tạo một endpoint tạm gọi `getValidatedQuery`, đồng thời trả `backup/run.post.ts` về bản ở `2516422`. Guard đỏ đúng hai dòng `run.post.ts — line 8: uncaught` và `zz-bite-scratch.get.ts — line 2: h3 getValidatedQuery`; khôi phục thì xanh. Fixture trong test kiểm 20 cách dùng theo đúng dòng, cùng các tệp sạch (chú thích, chuỗi, khoá object, `this.readBody()`, `typeof`, `readBody` của chính tệp, tham số) không bị bắt.
+- **Endpoint dùng thật: `server/api/admin/backup/run.post.ts`.** Lệch so với design ("chỉ endpoint mới"): nhánh này chưa có endpoint mới nào nhận đầu vào. Endpoint duy nhất thêm sau `7dfed8c` là `public/health.get.ts`, không đọc gì; `mfa-policy.put.ts` và `media/duplicates.get.ts` nằm ở nhánh 2a/2b. Endpoint được chọn không dùng `getDb()`, đã sửa ở Wave 1 (1B), và chỉ có một trường enum. Đo handler cũ trong app h3 thật, nó có đúng hai lỗi:
+  - thân cụt với `Content-Type: application/json` trả 400 "Bad Request" tiếng Anh của h3;
+  - thân mà trang khác site gửi được không cần preflight vẫn chạy backup thật: form urlencoded `type=all`, và `{"type":"all"}` không có `Content-Type`.
+
+  Lỗi `; charset=utf-8` là của h3 nói chung, không phải lỗi đang có của endpoint này: thân cụt thành chuỗi và endpoint vẫn trả 400 tiếng Việt. Câu báo lỗi cũ `Loại backup không hợp lệ (sql | files | all).` giữ nguyên. `tests/backup-run-endpoint.test.ts` chuyển sang app h3 thật (`tests/_h3-test-server.ts`), giữ 4 khẳng định cũ và thêm 4 test. Chạy trên mã cũ (gắn `readBody` thật), test thân hỏng đỏ vì nhận `'Bad Request'`.
+- `CLAUDE.md` § Quy ước tầng dữ liệu: thêm một dòng "Đầu vào của endpoint MỚI".
+- **Kiểm chứng (commit đầu, `fb8cda9`):** `npm test` 4438 / 4411 pass / 0 fail / 27 skip (+24: 17 helper, 4 guard, 3 endpoint). Typecheck 0 lỗi, eslint 0 error / 16 warning. `npm run build` xanh, không có cảnh báo "Duplicated imports"; `run.post.mjs` import `zod` từ `.output/server/node_modules/zod` 4.6.6. `npm audit --omit=dev --audit-level=high` thoát 0; cảnh báo nodemailer mức moderate có từ trước và dưới ngưỡng.
+
+#### Sửa sau kiểm chứng độc lập (2026-10-24)
+Mỗi mục có test đỏ trước khi sửa. Các gạch đầu dòng ở trên đã được viết lại theo trạng thái sau khi sửa.
+- **Thân không có `Content-Type` từng được nhận.** `fb8cda9` coi thiếu `Content-Type` là JSON, nên `{"type":"all"}` gửi bằng `sendBeacon` hay `fetch` no-cors với Blob không type (không cần preflight) vẫn chạy backup thật. Nay thiếu `Content-Type` → 400. Test cũ không bắt được vì helper gửi trong test dùng tham số mặc định, nên truyền `undefined` vẫn thành `application/json`. Đã sửa: `null` mới có nghĩa là không gửi header. Hai test mới, ở helper và ở endpoint, đỏ với `200` trên mã cũ.
+- **Ratchet thật.** Tệp trong danh sách mà không còn cách dùng cũ giờ làm đỏ test, thay vì chỉ in `t.diagnostic`. Trần lấy từ độ dài danh sách, không còn số 138 viết cứng. Test cho hai trường hợp: mục cũ còn sót thì đỏ; xoá mục rồi tệp quay lại `readBody` thì đỏ như tệp mới.
+- **Cấm thêm `getValidatedQuery` và `getValidatedRouterParams` của h3**, vì chúng cũng gửi lỗi validator trong `data`. Có fixture cho cả hai.
+- **Cấm `.catch(…)` trên `readJsonBody`/`readValidated`/`readValidatedQuery`.** Guard bắt mọi cách dùng tên `readBody`: destructure, `h3['readBody']`, `.call`, gọi qua ngoặc, gán vào biến, re-export. Guard không bắt tệp tự khai báo `readBody` của mình, dò theo phạm vi khai báo.
+- **Mô tả destr đã sửa cho đúng.** Strict từ chối mọi thân có khoá `"constructor":`/`"__proto__":` (400), không phải "bỏ khoá". Tên test và chú thích ở `request-body.ts` đã sửa theo.
+- **Kiểm chứng:** `npm test` 4441 / 4414 pass / 0 fail / 27 skip (+27 so với 4414 của nhánh tích hợp: 18 helper, 5 guard, 4 endpoint). Typecheck 0 lỗi, eslint 0 error / 16 warning. `npm run build` xanh, không có "Duplicated imports", `zod` 4.6.6 nằm trong `.output`. `npm audit --omit=dev --audit-level=high` thoát 0.
+
+### 40. Đợt 2 — 6.4 adminFetch/useAdminList (2026-10-24)
+
+OpenSpec `wave2-hardening` task 6.4, design D-FETCH. Thí điểm trên ba trang danh sách admin: `admin/comments`, `admin/readers`, `admin/chatbot/sessions`.
+
+- **Lỗi thật đã đóng — câu trả lời cũ đè câu trả lời mới.** Cả ba trang tự chép cùng một `load()` và không trang nào chặn cuộc đua này: cán bộ áp bộ lọc, đổi bộ lọc lần nữa trước khi lượt đầu về, rồi lượt **cũ** về sau cùng. Trang hiện hàng của bộ lọc cũ dưới ô điều khiển của bộ lọc mới, không có gì báo. Ở trang người đọc/bình luận đó là tên và email công dân; ở trang phiên chat là số điện thoại. Spec E2E mới đỏ đúng lỗi này trên mã cũ: "Khách cũ A" thay chỗ "Khách mới B".
+- **`app/composables/adminFetch.ts`:** `adminFetch<T>(url, opts)` thay `($fetch as (u: string, o?: …) => Promise<…>)` ở mỗi lượt gọi. Đây **không** phải an toàn kiểu: `T` là khẳng định không được kiểm, `adminFetch<Sai>()` vẫn biên dịch, và đổi tên trường ở máy chủ vẫn không làm đỏ build — y như cast cũ. Cái được là phép ép kiểu nằm ở một chỗ thay vì mỗi lượt gọi một bản, và có một chỗ để siết sau (vd. suy `T` từ kiểu route Nitro). Các trang admin chưa chuyển vẫn tự cast cho tới Wave 3. Lỗi được ném lại **nguyên vẹn**, nên `errorMessage`/`errorStatus` vẫn thấy `FetchError` và mã trạng thái; chỉ câu máy chủ soạn mới tới người dùng.
+- **`app/composables/useAdminList.ts`:** `useAdminList<TItem, TFilters>({ filters, load, errorFallback })` giữ page, filters, items, total, totalPages, loading, error, `errorStatus`, result và `reload`. `errorStatus` là mã HTTP của lỗi của lượt mới nhất (qua `errorStatus()`), hoặc `null` khi không có lỗi, mất mạng, hay 200 không phải danh sách. Nhờ vậy 401 vẫn tách khỏi 403 ở tầng danh sách: trang ở Wave 3 rẽ nhánh theo 403 mà không phải đọc câu chữ.
+  - Lượt mới huỷ lượt cũ trên đường truyền (`signal`), đồng thời so **mã thế hệ** ở cả `try`, `catch` và `finally`. Lý do: lượt bị huỷ của ofetch ném `FetchError` có `cause` là AbortError, nên `isAbortError()` (đọc `.name`) không nhận ra. Một nguồn cũng có thể bỏ qua `signal`.
+  - `applyFilters` về trang 1. `goToPage` bỏ qua số không nguyên, ngoài 1..totalPages, hoặc trùng trang đang xem. `resetFilters` trả về giá trị ban đầu.
+  - `load` trả `null` (máy chủ trả lời mà không có danh sách) thì hiện là lỗi, không phải danh sách rỗng.
+  - Huỷ phạm vi (trang bị gỡ) thì huỷ lượt đang bay. Gọi `reload` sau đó không gửi gì, vì mỗi lượt là một hàng audit.
+  - **Không** có watcher trên filters, vì cả ba endpoint ghi audit mỗi lượt gọi. Lượt đầu chạy từ `onMounted(reload)`.
+- **Trang giữ hợp đồng của mình:** khối lỗi `role="alert"`, nút "Thử lại" `@click="reload"` và skeleton vẫn nằm trong từng trang (`const error = computed(() => list.error.value)`, `const reload = list.reload`). Guard đọc nguồn từng tệp (quy tắc split-guard). Template chỉ đổi binding (`v-model="filters.q"`…), không đổi lớp hay cấu trúc. Ba trang không còn `$fetch` nào.
+- **Guard:**
+  - `tests/_admin-fetch-call.ts` là định nghĩa chung "trang có fetch" cho hai cổng phủ `admin-error-retry-ui` và `skeleton-loading-ui`, nay gồm cả `adminFetch`/`useAdminList`. Regex cũ chỉ tìm `$fetch`, nên trang đã chuyển sẽ lặng lẽ rời khỏi cả hai cổng (vẫn xanh nhưng không còn được kiểm), và mọi trang chuyển ở Wave 3 sẽ theo sau.
+  - `VIEWS_WITH_ERROR_BRANCH`: ba mục đổi tên handler sang `reload`; sessions đổi `loadError` thành `error`. Chỉ đổi dữ liệu, không nới phép kiểm.
+  - `tests/admin-list-pilot-pages.test.ts` (`ADMIN_LIST_PAGES`, Wave 3 thêm vào đây) kiểm: không có `$fetch` (chịu khoảng trắng), dùng `useAdminList<`, `onMounted(reload)`, khối lỗi + retry trong trang, và cổng phủ vẫn thấy trang.
+- **Khác hành vi cũ (có chủ đích):**
+  - Trang sessions trước im lặng giữ hàng cũ khi `ok: false`, nay hiện lỗi như hai trang kia. Máy chủ không trả `ok: false`, nên thực tế chỉ xảy ra với một trang HTML 200 của proxy.
+  - Endpoint sessions trả nguyên số trang đã hỏi mà không kẹp. Khi hàng bị xoá trong lúc cán bộ đứng ở trang cuối, danh sách nay hỏi lại trang cuối còn tồn tại, **tối đa một lần mỗi thao tác**, thay vì hiện "chưa có phiên nào" trong khi các trang trước vẫn có dữ liệu. Comments/readers vốn đã kẹp ở máy chủ, nên không phát sinh lượt hỏi thêm.
+  - `readers` mất kiểu suy từ route Nitro (`$fetch` không cast). Kiểu trả lời nay khai báo ở trang như hai trang kia, và là khẳng định không được kiểm.
+- **Test** (đỏ trước khi viết mã: module chưa có, 7 khẳng định guard trượt):
+  - `tests/admin-list.test.ts`, 19 test. Phần 1 dùng loader viết tay. Phần 2 chạy **ofetch thật** (`createFetch({ fetch })`) trên mạng giả: lượt cũ về sau cùng, lượt cũ hỏng khi lượt mới đang bay, gỡ phạm vi, retry đúng trang + bộ lọc, ánh xạ lỗi (400 có câu máy chủ, mất mạng, 502 HTML, 200 HTML), ofetch tự thử lại GET một lần, `FetchError` có `cause` AbortError.
+  - Ba đột biến (bỏ phép so thế hệ ở `try`, `catch`, `finally`), mỗi đột biến làm đỏ 2 test.
+  - E2E `tests/e2e/admin-list-pilot.spec.ts`, 4 test. Mỗi trang đi lỗi → alert → "Thử lại" không tải lại tài liệu → hàng, tổng, phân trang (comments thêm huy hiệu "Đã ẩn") và đính kèm ảnh chụp. Thêm một test cuộc đua trên sessions: lượt cũ về muộn không thay hàng, và lượt cũ bị huỷ trên đường truyền.
+- **Không hồi quy giao diện:** chụp cùng spec trên bản build trước và sau. `readers` và `comments` giống từng pixel; `sessions` khác 34 pixel, tất cả lệch 1/255 ở khử răng cưa góc bo.
+
+#### Kiểm chứng (2026-10-24, worktree `wave2/6-4-admin-fetch`)
+`npm test` 4439 / 4412 pass / 0 fail / 27 skip (trước 4414 / 4387, thêm 25). Typecheck 0 lỗi. eslint 0 error / 16 warning, không tệp nào đổi có cảnh báo. `npm run build` xanh. E2E toàn bộ trên bản build cuối: 97/97, Playwright báo 5,2 phút, 313 s tính cả khởi động. Sau lượt chạy cổng 3123 trống và không còn DB `cdkt_e2e_*`. Trên bản build cũ, spec mới cho 3 xanh và 1 đỏ đúng chỗ (hàng của bộ lọc cũ đè lên). `globalTimeout` 480 s, bốn spec mới lấy thêm một phần dư địa. Nên nâng ngân sách ở đợt spec kế tiếp.
+
+#### Sửa sau kiểm chứng độc lập (2026-10-24)
+Mỗi mục có test đỏ trước khi sửa. Các đột biến được kiểm lại đều đỏ nhanh, không treo.
+- **Lượt hỏi lại trang cuối không có trần.** Nếu máy chủ trả `page: 2, totalPages: 1` cho **mọi** lượt (kể cả lượt hỏi trang 1), danh sách hỏi lại mãi; một đầu dò độc lập đếm được 41 lượt, mỗi lượt một hàng `activity_logs`.
+  - Nay chỉ hỏi lại khi **cả** trang đã hỏi **lẫn** trang được trả đều vượt cuối, nên trang hỏi lại nhỏ hơn hẳn.
+  - Mỗi thao tác chỉ được **một** lượt hỏi lại (`run(mayAskForLastPage)`; lượt hỏi lại tự nó là `false`).
+  - Hai test mới: máy chủ trả "trang 2 / 1" cho mọi lượt thì thao tác tốn đúng 2 request, và retry ở trang 1 tốn đúng 1; tổng trang co lại liên tục thì thao tác tốn đúng 2 request, không phải 3. Loader trả lời ngay và tự dừng sau 12 lượt, nên hồi quy làm test đỏ chứ không treo.
+  - Hai đột biến (bỏ giới hạn một lần; bỏ điều kiện trang đã hỏi) mỗi cái đỏ một test.
+- **Test gỡ phạm vi treo thay vì đỏ.** Test cũ `await list.reload()` sau khi gỡ, với loader không bao giờ trả lời: bỏ phép chặn `disposed` thì test treo. Nay gọi `void list.reload()` và đếm lượt gọi loader ngay lập tức, vì loader được gọi trước `await` đầu tiên. Đột biến cho đỏ sau 0,4 s.
+- **`adminFetch` nói quá:** chú thích đầu tệp, § 39 và dòng `CLAUDE.md` nay nói rõ `T` là khẳng định không được kiểm, `adminFetch<Sai>()` vẫn biên dịch, và `readers` mất kiểu suy từ route Nitro.
+- **`errorStatus` trên danh sách.** "401 vẫn tách khỏi 403" trước chỉ đúng ở tầng `adminFetch`, vì `useAdminList` chỉ đưa ra chuỗi lỗi. Nay có `errorStatus`:
+  - Giá trị lấy qua `errorStatus()`. Xoá về `null` khi lượt mới bắt đầu; `null` khi mất mạng hay khi 200 không phải danh sách. Lượt cũ bị thay thì không để lại mã.
+  - Test 403 rồi retry chạy với ofetch thật.
+  - Đột biến không xoá mã khi bắt đầu lượt mới thì đỏ 2 test.
+- **E2E ghim ngân sách request:** lượt tải đầu sạch tốn đúng 1 request (readers, sessions) hoặc 2 (comments: danh sách + huy hiệu), và một lần "Thử lại" cũng đúng chừng đó. Phần lỗi nay đi qua `page.reload()` ở chế độ lỗi. Chưa thử đột biến tải đôi cho phần này, vì cần build lại.
+- **`playwright.config.ts`:** chỉ sửa chú thích (97 test, 313 s); ngân sách vẫn 480 s.
+- **Kiểm chứng lại:** `npm test` 4443 / 4416 pass / 0 fail / 27 skip (thêm 4). Typecheck 0 lỗi. eslint 0 error / 16 warning. `npm run build` xanh. E2E toàn bộ 97/97, Playwright báo 5,0 phút, 301 s cả khởi động. Cổng 3123 trống, không còn DB `cdkt_e2e_*`.
+
+### 41. Đợt 2 — 5.3/5.4/5.6 tách service lớn (2026-10-24)
+
+OpenSpec `wave2-hardening` task 5.3 / 5.4 / 5.6, design D-SPLIT. Không đổi hành vi, không đổi đường import của nơi gọi. Ba tệp lớn nay chỉ còn là barrel/cửa vào: chúng xuất lại bằng **danh sách tên tường minh** (không `export *`, để helper nội bộ không thành API), còn mã nằm ở tệp con, tách theo đường nối. Tập export chạy và kiểu trước/sau khớp nhau. Mỗi nhánh có test hành vi viết **trước** khi tách, và xanh trên mã gốc. Số dòng đo bằng `wc -l` sau các vòng sửa:
+
+- **5.3 `server/services/media-portal.ts`** 1208 → 74 (barrel: 44 tên chạy + 23 kiểu).
+  - `media-portal-assets.ts` (150): thư mục/đường dẫn tài nguyên đã kiểm.
+  - `media-portal-stream.ts` (348): `resolveStreamTarget`.
+  - `media-portal-thumbnail.ts` (151): `resolveThumbnailTarget`.
+  - `media-portal-admin-write.ts` (294): tạo/sửa/xoá mục, audit trong cùng transaction.
+  - `media-portal-thumbnail-override.ts` (291): `setMediaThumbnail`/`clearMediaThumbnail`.
+  - Có từ trước, vẫn xuất lại qua barrel: `-constants`/`-public`/`-admin-read`, `media-validation.ts`, `media-views.ts`.
+  - 44 test mới: `media-portal-asset-targets` (25), `media-portal-admin-write-behavior` (19). Trước đó `clearMediaThumbnail` chưa có test nào.
+- **5.4 `server/services/video-processing.ts`** 1168 → 38 (cửa vào: 23 tên chạy + 13 kiểu).
+  - `video-transcode-pipeline.ts` (397): `processMediaItem` giữ nguyên văn.
+  - `video-process-runner.ts` (280): chạy tiến trình, argv FFmpeg/ffprobe, dò `cpulimit`.
+  - `video-renditions.ts` (232), `video-thumbnail-frame.ts` (88), `video-disk-guard.ts` (111), `video-processing-job.ts` (186).
+  - Mỗi trạng thái cấp module chỉ có một chủ: `activeClaims` ở `-job` (không xuất Map ra ngoài), `cpulimitAvailable` ở `-runner`.
+  - 24 test hành vi mới ở `media-processing` và `video-processing-r2-publish`: hủy/dừng lượt đang chạy, tiến độ, argv đầy đủ, CPU < 100 %, `autoTranscode`, nhánh R2 hỏng và thành công.
+- **5.6 `server/services/chunked-upload.ts`** 923 → 47 (barrel: 22 tên chạy + 12 kiểu).
+  - `chunked-upload-core.ts` (349): hàm thuần, helper dùng chung, và **một** hằng `NOT_FOUND` duy nhất.
+  - `chunked-upload-session.ts` (275), `chunked-upload-receipt.ts` (171), `chunked-upload-completion.ts` (256).
+  - 45 khai báo cấp đỉnh giống bản gốc từng byte (so bằng AST).
+  - 22 test mới: `chunkBodyLimit`, rào hoàn tất, thay tệp, `housekeepUploads`.
+- **Guard đổi theo:**
+  - `AUDITED_SERVICES` nay trỏ đúng tệp ghi audit thật: `chunked-upload-session`/`-completion`, `media-portal-admin-write`/`-thumbnail-override`.
+  - `SERVICE_EXEMPTIONS` chuyển từ `video-processing.ts` sang `video-transcode-pipeline.ts`, giữ nguyên lý do.
+  - `WRITE_SITE`/`NAME_SITE` trỏ sang tệp mới.
+- **Kiểm chứng độc lập:** cả ba nhánh đều được kiểm riêng và ra 0 CRITICAL.
+  - Vòng 1 của 5.3 có **một CRITICAL**: tập quét của guard ảnh YouTube bị **thu hẹp**. Trước khi tách, guard quét cả 1208 dòng; sau khi tách chỉ còn 3 tệp, nên chuỗi `i.ytimg.com` đặt vào `-admin-write`/`-stream` lọt qua.
+  - Đã sửa ở 2126ade: tập quét suy từ thư mục, vá luôn lỗ cũ ở `media-portal-admin-read.ts`.
+
+#### Sửa sau kiểm chứng (2026-10-24, nhánh `wave2/5-split-services`)
+- **Argv `cpulimit` của production nay có test.** Máy dev/CI không có `cpulimit`, nhưng image chạy thật luôn có (Dockerfile cài nó, trần CPU mặc định 50). Test cũ chấp nhận "nhánh nào cũng được", nên bỏ `-z` vẫn xanh.
+  - Điểm tiêm `setCpulimitAvailableForTests(next | null)` ở `video-process-runner.ts` theo lối `setModerationRegexTimingForTests`. Phép dò vẫn chạy một lần lúc import; `null` trả về kết quả dò.
+  - Ba test thay một test cũ: ép có `cpulimit` → ghim nguyên argv `cpulimit -l 50 -z ffmpeg …` của bản 360p; ép không có → `nice -n 19 ffmpeg`, một luồng; và `ffmpegArgs` ở biên 99/100.
+  - Đột biến đều đỏ: bỏ `-z` (2 test), `< 100` → `<= 100` (2 test), `transcodeRendition` thôi truyền trần CPU (1 test — test cũ xanh với cả ba đột biến).
+- **Cắt vòng import** `video-disk-guard → chunked-upload → chunked-upload-completion → video-processing → video-disk-guard`.
+  - `video-disk-guard.ts` lấy `formatBytes` từ `chunked-upload-core.ts`, không qua barrel. Một lượt dò SCC bằng `tests/_module-references.ts` không còn thấy vòng nào giữa các nhóm `video-*`/`chunked-upload*`/`media-portal*`.
+  - Chú thích ở năm tệp từng nói "vòng có sẵn, giữ nguyên" đã được sửa.
+- **Guard mới `tests/service-split-boundaries.test.ts`** (17 test, đọc bằng TypeScript AST, quét `server/`, `scripts/`, `shared/`).
+  - Luật 1: tệp con không import barrel/cửa vào của **chính** nhóm mình. Nhóm = tiền tố ∪ đích barrel xuất lại, nên `media-validation.ts`/`media-views.ts` và `video-r2-sync.ts` cũng bị tính.
+  - Luật 2: `chunked-upload-core.ts` chỉ nhóm `chunked-upload*` import. Ngoại lệ nêu tên duy nhất là `video-disk-guard.ts`, và chỉ cho đúng `formatBytes`. Nhập thêm tên khác thì đỏ; ngoại lệ chết (quay lại lấy qua barrel) cũng đỏ.
+  - Luật 3: `trackProcessingClaim`/`forgetProcessingClaim` chỉ `video-transcode-pipeline.ts` được nhập. Cả nhập namespace, xuất lại từ cửa vào và nhập ở reaper đều bị bắt; guard cũng đòi đường ống thật sự nhập hai tên này, để không kiểm rỗng.
+  - 12 bằng chứng đột biến nằm ngay trong bộ test. Thêm vào đó, đột biến thật trên đĩa (tệp con `media-portal-thumbnail.ts` import barrel, `video-disk-guard.ts` quay lại barrel, reaper nhập `forgetProcessingClaim`) làm đỏ đúng luật tương ứng.
+- **Guard ảnh YouTube (`tests/media-youtube-parser.test.ts`) quét toàn bộ `server/` + `app/`** (864 tệp, sàn ≥ 800), chỉ cho phép `server/utils/youtube-parser.ts`. Mẫu bắt cả `*.ytimg.com` và `img.youtube.com`.
+  - Có danh sách tệp bắt buộc phải nằm trong tập quét, gồm `media-validation.ts`, `MediaPlayer.vue`, `app/pages/media/index.vue`.
+  - Chèn chuỗi máy chủ ảnh vào `media-validation.ts`: guard mới đỏ, guard cũ xanh.
+  - Chú thích HTML ở `app/pages/media/index.vue` nay trỏ `YOUTUBE_THUMBNAIL_HOST` thay vì nêu thẳng host, nên không cần mục miễn trừ nào.
+- **`auditScopedFiles` (`tests/media-processing.test.ts`)** = mọi `video-*.ts` trên đĩa (trừ `video-r2-sync.ts`, tầng R2 dùng chung) ∪ đích cửa vào xuất lại ∪ reaper, rồi so bằng `deepEqual` với danh sách ghim.
+  - Thêm một `video-*.ts` không được cửa vào xuất lại mà có ghi `activityLogs`: guard mới đỏ, guard cũ xanh.
+  - Khẳng định `flagged` vẫn chính xác (nay theo thứ tự đã sắp).
+- **Chú thích cũ** chỉ sửa chữ, không đổi lệnh nào. Các chú thích nay trỏ tên hàm + tệp đang giữ mã (không ghi số dòng):
+  - `MediaProcessingTimeline.vue`, `activity.vue`, `video-mime.ts`, `unique-media-slug.ts`.
+  - `housekeep.post.ts`, `livestream/active.get.ts`, `media-sync-url-match.ts`, `media-config-service.ts`.
+  - Các tệp con `media-portal-*` và `video-transcode-pipeline.ts`: "bốn quyết định", và câu "không cần `SERVICE_EXEMPTIONS`" vốn sai.
+  - `Dockerfile`, `production/manage.sh` (`bash -n` xanh), `docs/decisions/media-storage.md`, `docs/decisions/data-layer.md`.
+  - `video-process-runner.ts`: sửa chữ "khôngговорит" bị lẫn ký tự.
+- **Kiểm chứng:**
+  - `npm test` 4528 / 4501 pass / 0 fail / 27 skip (+19: 2 ở `media-processing`, 17 ở `service-split-boundaries`).
+  - Typecheck 0 lỗi, eslint 0 error / 16 warning, `npm run build` xanh.
+  - Integration trên MySQL dev (`127.0.0.1:33069`, TZ `Asia/Ho_Chi_Minh`): `media-queue`, `upload-concurrency`, `livestream-toggle` mỗi suite 1/1, không sót DB nào của lượt chạy.
+
+### 42. Đợt 2 — 5.5 tách `comments.ts` (2026-10-25)
+
+OpenSpec `wave2-hardening` task 5.5, design D-SPLIT. Không đổi hành vi, không đổi đường import của nơi gọi. Cùng cách làm với § 41: barrel xuất lại bằng **danh sách tên tường minh**, mã ở tệp con tách theo đường nối, test hành vi viết **trước** khi tách và xanh trên mã gốc. Số dòng đo bằng `wc -l` sau các vòng sửa:
+
+- **`server/services/comments.ts`** 1208 → 86 (barrel: 17 tên chạy + 17 kiểu — đúng tập export của bản trước khi tách `262eee8`, so bằng AST).
+  - `comments-rules.ts` (165): luật thuần — kiểm thân bình luận, đích bài/video (XOR), một cấp trả lời, `?source=`.
+  - `comments-thread.ts` (222): `serializePublicComment` + `loadCommentThread` cố ý cùng tệp (guard tên người đọc chỉ lần lời gọi trong một tệp).
+  - `comments-posting.ts` (314): `createComment` — cổng từ chối, giới hạn tần suất, kiểm duyệt trước, ghi + thông báo; thứ tự "kiểm duyệt xong mới gửi email trả lời" giữ trong một hàm.
+  - `comments-reply-email.ts` (51): luật giữ email trả lời (`MODERATION_FAILED`, `replyEmailHoldReason`) — barrel không xuất lại.
+  - `comments-deletion.ts` (196): một đường xoá duy nhất + đếm ảnh hưởng. `comments-moderation.ts` (199): danh sách kiểm duyệt + `auditCommentRead`. `comments-admin-reply.ts` (142): trả lời chính thức của cổng.
+  - 45 khai báo cấp đỉnh giống bản gốc (so AST); `db.transaction` + `tx.insert(activityLogs)` nguyên văn.
+  - 28 test hành vi mới (`tests/comments-service-behavior.test.ts`): pool, transaction và executor là ba đối tượng khác nhau, nên "audit nằm trên transaction" được kiểm thật. Test thứ tự email của Wave 1 vẫn xanh.
+- **Guard đọc mã dịch vụ bình luận:** tập tệp suy từ thư mục (`tests/_comments-service-source.ts`, kiểm đủ 8 tệp); `AUDITED_WRITES` trỏ tệp thật; mọi `comments*.ts` chạm `activityLogs` phải được nêu tên; barrel chỉ được là `export { … } from './comments-…'` (`barrelProblems`, AST).
+- **Miễn trừ audit theo HÀM — `AUDIT_ONLY_FUNCTION_EXEMPTIONS` (`tests/reader-audit-atomicity.test.ts`).**
+  - `auditCommentRead` chỉ ghi một dòng audit "đã xem danh sách kiểm duyệt", không có hàng nghiệp vụ nào để nguyên tử cùng. Trước khi tách nó nằm chung tệp với các hàm có transaction nên cổng theo tệp không hỏi; tách ra thì lộ ở `comments-moderation.ts`.
+  - Bản tách đầu (`4975679`) miễn **cả tệp** qua `SERVICE_EXEMPTIONS`. Miễn theo tệp bỏ qua mọi thứ trong tệp: một hàm "ẩn bình luận" thêm sau — `db.execute(sql\`UPDATE …\`)` rồi `db.insert(activityLogs)` trên pool, không transaction — vẫn xanh (110/110), trong khi cùng đoạn mã ở bản trước khi tách thì đỏ.
+  - Nay miễn trừ chỉ có hiệu lực khi tiền đề đúng, kiểm bằng AST (`auditOnlyFunctionProblems`): mọi tham chiếu `activityLogs` (trừ import) nằm trong `auditCommentRead`; lời gọi ghi duy nhất của cả tệp (`insert`/`update`/`delete`/`execute`/`query`/`transaction` trên bất kỳ handle nào) là `.insert(activityLogs)` trong hàm đó; không hàm nào trong tệp gọi nó; không lời gọi có dáng ghi (`delete…`/`hide…`/`set…`…) ngoài nó. Sai một điều → tệp bị xét như mọi service.
+  - 8 đột biến đều đỏ: X1 `db.execute(UPDATE)` + audit trên pool, X2 cùng cặp trên handle tên khác (`conn`), X3 `db.update` + audit trên pool, X4 qua `getDb()` trực tiếp, X5 ghi qua service khác rồi audit, G12 đường xoá thứ hai không audit, `caller` (hàm khác gọi `auditCommentRead`), `inside` (ghi hàng ngay trong hàm được miễn).
+- **Guard ranh giới `tests/service-split-boundaries.test.ts` thêm nhóm `comments`** (17 → 33 test). Hạ tầng tách sang `tests/_service-split-sources.ts` (tập quét, đột biến, giải đích import), `_service-split-modules.ts` (bảng export/import, giải tên qua barrel), `_service-split-state.ts` (luật 4); các luật cũ giữ nguyên hành vi, trừ nhánh mới của luật 1 cho đối số không cố định (dưới đây).
+  - Nhóm = `comments-*.ts` ∪ đích barrel xuất lại (suy ra, không chép tay), nên `comments-reply-email.ts` cũng thuộc nhóm. Danh sách tối thiểu lấy từ `EXPECTED_COMMENT_SERVICE_FILES` — một nguồn với các guard đọc mã bình luận.
+  - **Mẫu tệp dùng chung — đóng một lỗ có thật.** `tests/_comments-service-source.ts` từng có bản chép riêng `comments(-[a-z-]+)?` (không có chữ số), còn nhóm của guard ranh giới cho phép chữ số. Một `comments-v2.ts` vì thế nằm ngoài mọi guard dùng `commentServiceFiles()`/`fileDeclaring()`.
+    - Đã thử: cắm tạm `server/services/comments-v2.ts` mang một cặp xoá hàng + audit, bọc trong transaction đúng chuẩn nhưng không được nêu tên, kèm một đường `.delete(articleComments)` thứ hai. `reader-audit-atomicity` + `media-comments` vẫn xanh 113/113.
+    - Nay chỉ còn một định nghĩa `COMMENT_SUBFILE = /^comments-[a-z0-9-]+\.ts$/` (+ `isCommentServiceFile`), và nhóm `comments` của guard ranh giới import chính nó.
+    - Cùng tệp cắm đó nay làm đỏ đúng hai guard, cả hai nêu `comments-v2.ts`: "every comment-service file that writes activity_logs is named" và "every deletion path still routes through this one function". Đã xoá tệp cắm.
+    - Test mới ghim hai tập quét khớp nhau: nhóm dùng đúng `COMMENT_SUBFILE`, mẫu nhận `comments-v2.ts`, mọi thành viên của nhóm có trong `commentServiceFiles()`. Thu hẹp mẫu về `[a-z-]+` → test này đỏ.
+    - `barrelProblems` (`reader-audit-atomicity.test.ts`) còn một bản `^\./comments-[a-z-]+$` cho specifier của barrel. Bản này đóng kín: barrel xuất lại từ `./comments-v2` sẽ bị từ chối (đỏ), không lọt — chưa đổi.
+  - Luật 1: không `comments-*.ts` nào nạp `./comments` ở bất kỳ dạng nào: `import`, `import type`, `export … from`, `import()` trong hàm, `require()`, `typeof import('#server/…')`. Thêm cho cả bốn nhóm: `import()`/`require()` với đối số không cố định trong tệp con là đỏ, vì không kiểm được đích.
+  - **Luật 4 (mới, cả bốn nhóm): trạng thái cấp module có một chủ.** § 41 ghi "mỗi trạng thái cấp module chỉ có một chủ", nhưng trước đây chỉ luật 3 (nhập tên của sổ lượt chạy) canh một phần, và không có phép kiểm lượt ghi nào.
+    - "Trạng thái" là `let`/`var` cấp đỉnh, và `const` khởi tạo bằng object/array literal hoặc `new …`.
+    - (a) Cùng một tên không được khai ở hai tệp của một nhóm: chép thay vì import lúc tách là thành hai sổ độc lập.
+    - (b) Chỉ tệp khai báo được ghi vào trạng thái. Guard quét mọi tệp trong `server/`, `scripts/`, `shared/`.
+    - Gốc của đích ghi được lần qua `.p`, `[k]` (kể cả khoá tính toán), `!`, `( )`, `as`/`satisfies`, nhưng không qua lời gọi.
+    - Các dạng ghi bị bắt: gán (kể cả toán tử ghép, destructure, `for…of/in`), `++`/`--`, `delete`, các phương thức đổi nội dung (`.set`, `.push`, `.splice`…), `Object.assign`/`defineProperty`, `Reflect.set`.
+    - Tên đã nhập được giải qua barrel về tệp khai báo, cho mọi dạng nhập: named, default, namespace, `import =`, `await import()`, `.then((m) => …)`, destructure. Tên cục bộ che tên đã nhập thì không bị tính.
+    - Ghi `ns[k]` lên namespace của một module có xuất trạng thái là đỏ, vì không xác định được tên.
+    - Nhóm comments hôm nay chưa xuất trạng thái nào: `COMMENT_READER_RULE`/`COMMENT_IP_RULE` là `const` riêng của `comments-posting.ts`, còn `MODERATION_FAILED` là Symbol. Luật canh từ lượt xuất đầu tiên.
+    - Giới hạn: một hàm của chủ trả về chính đối tượng trạng thái thì không lần được, nên trạng thái thật (`activeClaims`, `cpulimitAvailable`) giữ không `export`.
+  - **Luật 5 (mới): API của barrel `comments.ts`.** Barrel phải xuất đúng 17 giá trị + 17 kiểu của bản `262eee8`, so theo tên xuất và theo loại. Danh sách chép cứng, vì job unit của CI checkout nông và không có `262eee8`. Kèm một phép so tên giá trị lúc chạy. Các trường hợp đỏ: bỏ một tên, đổi tên, đổi giá trị thành kiểu, lộ helper (`MODERATION_FAILED`), `export *`.
+  - 12 bằng chứng đột biến mới nằm trong bộ test.
+  - Bằng chứng đỏ trước — vô hiệu từng phép kiểm (bản nháp, đã hoàn lại):
+    - luật 1: 5 bằng chứng đỏ;
+    - nhánh đối số không cố định: đúng ca đó đỏ;
+    - luật 4: 8 bằng chứng đỏ;
+    - luật 5: 1 bằng chứng đỏ;
+    - bỏ xử lý khoá tính toán (chỉ còn `.p`): đúng 5 bằng chứng ghi qua `[k]` đỏ, còn `X.p = …` vẫn xanh.
+  - Bằng chứng KHÔNG đỏ cũng được kiểm ngược — nới từng chỗ một (bản nháp, đã hoàn lại):
+    - luật 1 so barrel theo tiền tố → hai ca "KHÔNG nhầm" (`./comments-rules`, `./media-portal-assets`) đỏ;
+    - luật 4 bỏ phạm vi cục bộ (chỉ còn phạm vi tệp) → phần "tên cục bộ che tên đã nhập" đỏ;
+    - luật 4 lần gốc xuyên qua lời gọi → phần `RENDITIONS.slice().sort()` đỏ;
+    - luật 4 bỏ ngoại lệ "chủ tự ghi" → phần chủ ghi qua bí danh nhập lại chính tệp đó đỏ. Lượt nới này lúc đầu vẫn xanh: lượt ghi thẳng của chủ có gốc là khai báo cục bộ, không bao giờ thành lượt ghi cần xét. Bằng chứng được thêm ca bí danh để ngoại lệ thật sự được kiểm.
+  - Đột biến thật trên đĩa (đã hoàn lại):
+    - `comments-thread.ts` import `./comments` → luật 1 đỏ;
+    - barrel bỏ `initialsFrom` → luật 5 đỏ, cả AST lẫn lúc chạy;
+    - `chunked-upload-receipt.ts` ghi `NOT_FOUND[key]` → luật 4 đỏ.
+  - Mã thật không có vi phạm nào.
+- **Kiểm chứng (2026-10-25, Node 26.11, worktree `wave2/integration`):** `npm test` 5007 / 4954 pass / 0 fail / 53 skip (+16 so với lượt gộp 5.5: 4991 / 4938 / 0 / 53). Typecheck 0 lỗi. eslint 0 error / 16 warning (không cảnh báo nào ở tệp mới/sửa). Không chạy integration/E2E ở lượt này: MySQL dùng chung đang có agent khác chạy, và khoá tên của backup là khoá toàn máy chủ.
+
+### 43. Đợt 2 — tách `backup.ts`, khôi phục ↔ job media loại trừ nhau (2026-10-25)
+
+Nhánh `wave2/backup-split-followups` (PR #143, 9 commit `4c1ad54`…`09e8dcd`), gộp vào `wave2/integration` ở `3d69836`. OpenSpec `wave2-hardening`: phần tách theo design D-SPLIT; phần còn lại là việc vận hành quanh sao lưu/khôi phục. Kiểm chứng độc lập trên commit 1–5 ra 0 CRITICAL; 2 WARNING + 3 SUGGESTION đã sửa ở gốc trong commit 6–9, mỗi test mới có bằng chứng đỏ-trước.
+
+- **Tách `server/services/backup.ts`** 733 → 41 (barrel liệt kê tên, không `export *`). Nơi gọi và `mock.module` của test vẫn trỏ `services/backup`. Số dòng đo bằng `wc -l` sau khi gộp:
+  - `backup-names.ts` (85): trigger, mã thời điểm, `backupsDir()`, mẫu tên tệp của app, họ tệp, bản `pre-restore`.
+  - `backup-locks.ts` (116; 84 lúc tách): khoá chạy/khôi phục, sổ tệp đang khôi phục (`holdRestoreTarget`), các lỗi "bận"; từ `09e8dcd` thêm phép hỏi chung `refuseIfRestoreInProgress`.
+  - `backup-run.ts` (337): `runBackup` + trạng thái chạy + `readBackupConfig`. `backup-rotation.ts` (119), `backup-sweep.ts` (119), `backup-catalog.ts` (69).
+  - 46/47 khai báo cấp đỉnh giống bản gốc từng byte (khác duy nhất một chú thích). Không vòng import, tệp con không import barrel.
+  - API barrel: 21 giá trị + 7 kiểu lúc tách, nay 23 + 7 (`09e8dcd` thêm `BackupRestoreStateUnknownError`, `refuseIfRestoreInProgress`). Ghim ở `tests/backup-service-api.test.ts` — viết **trước** khi tách, xanh trên tệp gốc: `Object.keys` lúc chạy + TS checker, kèm hành vi `timestampStamp`/`defaultArchiveSources`/`getBackupStatus`/`listBackups`.
+  - Guard từng đọc chữ của tệp cũ (trigger, `backupsDir()` mặc định, `AUDITED_SERVICES`, thư mục `backups`) nay đọc **cả nhóm** qua `tests/_backup-service-family.ts`: nhóm suy từ dòng re-export của barrel, đối chiếu `EXPECTED_BACKUP_FAMILY`; mọi `backup*.ts` khác phải là anh em có tên.
+  - `2e8829f`: re-export từ ngoài `./backup-*` (`../utils/backup-x`, `./media`) hay một `import` trong barrel đều đỏ. Trước đó helper chỉ nhận dạng `./x`, nên một re-export từ `../utils/backup-x` lọt hẳn khỏi các guard (86/86 vẫn xanh).
+- **5 job media dừng với 409 khi đang khôi phục CSDL** (`a635940`): tự vá, sửa URL, đổi domain R2, đồng bộ local↔R2, quét/sửa thumbnail.
+  - Bản sao lưu trước job hỏng vì đúng `BackupRestoreInProgressError` → `abortJobIfRestoreInProgress` (`pre-job-backup.ts`) log `media.job_aborted_restore_in_progress` và ném `JobBlockedByRestoreError` → 409 câu cố định, chưa ghi gì. Đồng bộ chạy nền → job `failed` mang đúng câu đó.
+  - Lỗi sao lưu khác (kể cả lớp cha `BackupLockBusyError`) giữ cách cũ: bốn job chạy tiếp không bản chụp, đổi domain dừng 500 (D-REPOINT).
+  - `runBackup`: khoá chạy bận vì chính bản `pre-restore` của một lượt khôi phục (giữ vài phút) nay báo "đang khôi phục" thay vì "bận" thường. Job rơi vào lúc đó trước đây chạy tiếp.
+  - `tests/media-jobs-restore-abort.test.ts`: 9/12 + 5 ca khe hở đỏ trên mã cũ, 17/17 ở commit đó; nay 22 test sau `09e8dcd`.
+- **Khôi phục ↔ job media loại trừ nhau từ CẢ HAI phía** (`09e8dcd`). Mỗi phía giữ khoá của mình TRƯỚC rồi mới hỏi khoá phía kia (`IS_USED_LOCK`), nên hai lượt bắt đầu cùng lúc thì ít nhất một lượt thấy lượt kia.
+  - Phía khôi phục (`backup-restore.ts` → `mediaJobsBlockingRestore`): giữ `cdkt:backup:restore` rồi hỏi mọi khoá trong `MEDIA_JOB_LOCK_NAMES`. Job đang chạy → 409 `media_job_running` nêu tên việc; không hỏi được → 503 `media_job_state_unknown`. Từ chối xảy ra trước bản `pre-restore`, và khoá khôi phục được nhả.
+  - Một danh sách khoá `MEDIA_JOB_LOCK` (`pre-job-backup.ts`, 5 khoá) cho cả job lẫn lượt khôi phục. `tests/media-job-locks.test.ts` suy từ AST mọi khoá các job thật sự giữ và đòi khớp đúng danh sách.
+  - Lượt quét thư mục ảnh (`media-scan.ts`, không sao lưu trước) cũng giữ khoá rồi mới hỏi trạng thái khôi phục, như các job khác.
+  - Câu hỏi "đang khôi phục không?" chỉ qua `refuseIfRestoreInProgress`, câu chung "Đang khôi phục từ bản sao lưu…" (khoá này giữ cả khi khôi phục archive). Không hỏi được MySQL → vẫn từ chối, nhưng ném lớp con `BackupRestoreStateUnknownError` ("Không kiểm tra được trạng thái khôi phục — … Thử lại sau.", log `backup.restore_lock_unknown`).
+  - `tests/restore-media-job-exclusion.test.ts` (10 test).
+- **Cảnh báo `backup.scheduler_blocked` tính theo thời gian** (`4394fd5`, thay ở `507ec8f`).
+  - Trước đây lịch sao lưu bị "bận" (khoá khôi phục kẹt, MySQL không hỏi được) chỉ log info `backup.scheduler_busy`: lịch ngừng mà không ai biết.
+  - Bản đầu đếm 4 tick, và hỏng theo bốn cách: tick khởi động lệch lưới; timer trôi chỉ còn 3 tick (khe không bao giờ báo); chuỗi kéo sang khe sau (nêu sai khe); báo khi khe còn cơ hội chạy.
+  - Nay theo hạn chót (`busyStreakDeadline`, thuần): khe + 60 phút khi chuỗi mở ở tick `slot`, hoặc lần bị từ chối đầu + 60 phút khi mở ở `retry`/`catch_up`. Kiểm ở cuối mọi tick; một dòng warn mỗi khe, đúng tên khe (thư cảnh báo qua `ALERT_EVENTS`). Chuỗi xoá khi một lượt bắt đầu hoặc công tắc tắt.
+  - Trạng thái chuỗi tách sang `backup-scheduler-busy.ts` (49) để `backup-scheduler.ts` dưới 400 dòng (383). `tests/backup-scheduler-due.test.ts` (63 test).
+- **Dấu hoàn tất dump: một luật cho `backup-db.sh` và `restore-db.sh`** (`0960b90`, `8f0eb43`).
+  - `restore-db.sh` chỉ nhận `^-- Dump completed` ở ĐẦU một trong 5 dòng cuối, cho cả dump cần khôi phục lẫn bản `pre-restore` (`has_completion_marker`, `grep -c … || true`, không `grep -q` trong pipe). Đỏ trước: dump cắt giữa một INSERT chứa chữ đó vẫn khôi phục exit 0, bản `pre-restore` cụt vẫn được nhận; nay exit 2 / 3.
+  - `backup-db.sh` trước đó nhận chữ "Dump completed" ở bất kỳ đâu trong dòng: dump cụt được giữ như bản tốt (exit 0), rồi bị `restore-db.sh` từ chối đúng lúc cần lùi. Nay khối `dump-completion-marker` giống từng byte ở hai script (`tests/ops-scripts.test.ts` so); ca sandbox `FAKE_DUMP_MARKER_MIDLINE=1` đỏ trên script cũ.
+  - Sửa các câu "cùng phép kiểm" sai ở `deploy-remote.sh`, `manage.sh`, `CI-CD.md`, `DEPLOY.md`, `production/README.md`, `CLAUDE.md`.
+- **`isAbortError` đi dọc chuỗi `.cause`** (`b2bfa8e`): tối đa 4 lớp, chống vòng; `TimeoutError` không tính là tự huỷ. Lượt huỷ thật của ofetch là `FetchError` có `cause` AbortError — trước đây trả `false`. Test với ofetch thật trên `node:http` (`tests/error-abort-detection.test.ts`). `analytics.vue` (nơi gọi duy nhất) không còn đặt thông báo lỗi lúc rời trang.
+  - Sửa lúc gộp: test của 6.4 (`tests/admin-list.test.ts`) từng ghim `isAbortError(FetchError có cause AbortError) === false`, nay `true` (đổi tên test + chú thích). Chú thích "Note on aborts" ở `app/composables/adminFetch.ts` sửa theo. `useAdminList` vẫn quyết định "lượt cũ" theo lượt yêu cầu, vì nguồn có thể bỏ qua `signal` và trả muộn.
+- **Guard ranh giới `tests/service-split-boundaries.test.ts` thêm nhóm `backup`** (33 → 42 test; làm sau khi gộp).
+  - Nhóm = barrel `backup.ts` + `backup-*.ts` **trừ anh em** (`backup-restore.ts`, `backup-scheduler.ts`, `backup-sql.ts`, `backup-scheduler-busy.ts`…). Mẫu tệp `BACKUP_PART` dựng từ chính danh sách `BACKUP_SIBLINGS` của `tests/_backup-service-family.ts` — một nguồn, không bản chép thứ hai. Test mới ghim nhóm khớp đúng `backupServiceFiles()`, và không anh em nào thuộc nhóm.
+  - Luật 1: không tệp con nào nạp `./backup` ở bất kỳ dạng nào, kể cả một tệp con mới mà barrel chưa xuất lại (thuộc nhóm nhờ mẫu tệp).
+  - Luật 4: kho trạng thái của nhóm là `currentBackupStatus` (`backup-run.ts`), `activeRestoreTargets` (`backup-locks.ts`), `BACKUP_TRIGGERS`/`STALE_PARTIAL`/`APP_FINAL` (`backup-names.ts`), `DEFAULT_ROTATION_GUARDS` (`backup-rotation.ts`). Hai trạng thái thật không `export`, nên không tệp nào khác ghi được. Sổ tệp đang khôi phục chỉ đổi qua `holdRestoreTarget`, mà nơi gọi duy nhất là `backup-restore.ts`.
+  - Luật 2/3 không áp: chúng canh một tệp/một sổ riêng của nhóm `chunked-upload`/`video-processing`. Luật 5 không chép: API barrel `backup.ts` đã ghim ở `tests/backup-service-api.test.ts` bằng cách mạnh hơn (TS checker); guard ranh giới chỉ trỏ sang.
+  - 8 bằng chứng đột biến mới: luật 1 ở 6 dạng (`import`, `import type` có `.ts`, `export … from`, `import()`, `typeof import('#server/…')`, tệp con mới); "KHÔNG đỏ" với `./backup-names` và với anh em import barrel; bỏ phần loại anh em → chính mã thật đỏ ở đúng 3 anh em; nhóm lệch `backupServiceFiles()`; luật 4 chép sổ/trạng thái chạy sang tệp con khác; tệp con `.clear()` sổ; endpoint ghi trạng thái chạy qua barrel; anh em `backup-restore.ts` `.push()` vào `BACKUP_TRIGGERS`.
+  - Bằng chứng đỏ trước — chỉ sửa phía test (bản nháp, đã hoàn lại; không đụng `server/`):
+    - bỏ nhóm `backup` khỏi `FAMILIES` → 8 test đỏ;
+    - bỏ phần loại anh em khỏi `BACKUP_PART` → 12 đỏ, kể cả luật 1 trên mã thật: `backup-restore.ts:31`, `backup-restore-recovery.ts:27`, `backup-scheduler.ts:38` import barrel;
+    - tắt phép kiểm "khai ở hai tệp" của luật 4 → 2 đỏ (kể cả bằng chứng backup); tắt phép kiểm lượt ghi → 10 đỏ (kể cả 3 bằng chứng backup);
+    - luật 1 so barrel theo tiền tố → ca "KHÔNG nhầm `./backup-names`" đỏ.
+  - Mã thật không có vi phạm nào.
+  - Giới hạn, nêu tên: tên khoá `LOCK_RUN`/`LOCK_RESTORE` là `const` chuỗi, không phải trạng thái theo luật 4. Hôm nay chữ `'cdkt:backup:run'`/`'cdkt:backup:restore'` chỉ có ở `backup-locks.ts`, nhưng đó là kết quả grep, chưa có guard. Phép kiểm "khai ở hai tệp" chỉ trong một nhóm, nên một bản chép sổ sang anh em (`backup-restore.ts`) không bị luật 4 bắt.
+- **Còn mở (nêu tên, chưa làm):**
+  - Housekeep, transcode, quét lại kiểm duyệt và các worker nền chưa nằm trong danh sách loại trừ với lượt khôi phục.
+  - Đổi domain R2 khi một lượt sao lưu khác đang chạy (`BackupLockBusyError` lúc sao lưu `pre-repoint`) vẫn trả 500 "… Kiểm tra dung lượng đĩa / nhật ký máy chủ rồi thử lại." (thiết kế D-REPOINT) — câu nói về đĩa dù lý do là bận.
+- **Kiểm chứng:**
+  - Trên nhánh (PR #143): unit 4839 / 4786 pass / 0 fail / 53 skip; typecheck 0 lỗi, lint 0 error. Integration trên MySQL 8 dev, chạy lần lượt: `backup-dump` 18/18, `media-repoint` 1/1, `media-self-heal` 1/1, `media-sync-rewrite` 2/2, không DB/khoá nào sót.
+  - Sau khi gộp vào `wave2/integration` (2026-10-25, Node 26.11): `npm test` 5063 / 5010 pass / 0 fail / 53 skip trước guard nhóm `backup`; sau guard 5072 / 5019 / 0 / 53 (+9, đều ở `service-split-boundaries`). Typecheck 0 lỗi. eslint 0 error / 16 warning (không cảnh báo nào ở tệp mới/sửa). Không chạy integration/E2E ở lượt này (MySQL dùng chung đang chạy suite khác).
 
 ### Chưa xử lý (cập nhật sau đợt G1–G3, 2026-10-14; thêm mục từ § 21–25, 2026-10-23; đánh dấu phần đã đóng ở § 28–30, 2026-10-24)
 
@@ -1012,11 +1891,17 @@ Ghi thật để không ai tưởng đã xong. Đã đóng ở § 19 (gỡ khỏ
 - (§ 23) Phép sửa entity cụt lúc đọc vẫn cắt chuỗi PHA (có entity đầy đủ và kết thúc bằng `&chữ` thật: `C&ocirc;ng ty AT&T` → `Công ty AT…`) — dev 0 hàng; lời giải gốc: backfill một lần 17 sapo cũ (giải mã + sửa đuôi cụt) rồi cho đường đọc chỉ giải mã. Giải mã ở cả ghi lẫn đọc nên chữ entity viết nguyên văn đi hết vòng thành ký tự. Phần backfill nay có công cụ (`npm run db:decode-excerpts`, § 29 — người vận hành chạy sau deploy); đường đọc vẫn đoán.
 - (§ 23) Admin còn đọc sapo thô ở xuất Word/HTML/Google (`articles/[id]/export.get.ts`, `export-batch.get.ts`, `article-export-google.ts`) và worker dịch AI (`article-translation-worker.ts` gửi sapo thô cho model; khi lùi về sapo gốc, đuôi `nh&ac` được giải mã lúc ghi rồi không sửa được nữa). Chưa có test hành vi cho `related`/`search`/chatbot và cho POST/PUT bài với entity.
 - (§ 23) 17 sapo cũ vẫn lưu dạng entity trong CSDL (chỉ hiển thị đã đúng): tìm kiếm `LIKE` theo sapo không khớp chữ có dấu Latin-1 ở các bài này cho tới khi lưu lại bài hoặc chạy một lượt làm sạch dữ liệu (`npm run db:decode-excerpts -- --apply`, § 29 — chưa chạy trên production).
-- (§ 22, phần lớn đóng ở § 28) Giả danh "Ban quản trị": tên reader tự đặt nay bị chặn tên dành riêng/ký tự ẩn, tiêu đề email trả lời trung tính, email chờ kiểm duyệt (lỗi AI cũng giữ email). Còn mở: tên lấy từ Google không bị kiểm (wave2).
+- (§ 22, phần lớn đóng ở § 28) Giả danh "Ban quản trị": tên reader tự đặt nay bị chặn tên dành riêng/ký tự ẩn, tiêu đề email trả lời trung tính, email chờ kiểm duyệt (lỗi AI cũng giữ email). ~~Còn mở: tên lấy từ Google không bị kiểm (wave2).~~ (đóng ở § 33: tên Google dành riêng hiện "Bạn đọc")
 - (§ 22) Tầng dữ liệu: ~~`purgeExpiredRateLimits` xoá một lô 5000/đêm, không lặp — `rate_limit_counters` phình (lượt xem bài mỗi (bài, khách, ngày) một khoá, `view.post` không giới hạn theo IP)~~ (đóng ở § 30); khối "Đọc nhiều" (`articles.get.ts` `sort=views`) cộng `article_view_daily` cho mọi bài mỗi lượt, không cache; ghi analytics giữ khoá dòng `total` suốt ~10 lệnh; ~~`articles` thiếu chỉ mục ghép `(status, type, published_at)`; FFmpeg thumbnail công khai không gộp yêu cầu, không thời hạn~~ (đóng ở § 30); `aggregateDay` nạp cả ngày vào RAM.
-- (§ 22) Gia cố công khai: chỉ dựa SameSite=Lax chống CSRF trong khi site chạy chung `*.delify.vn` (nên kiểm `Origin` ở POST/PUT/DELETE, cookie `__Host-`); ~~cờ `Secure` suy từ `x-forwarded-proto` thô; đăng xuất reader không tăng `tokenVersion`~~ (đóng ở § 28); SMTP 587 không `requireTLS`; SSE livestream không trần kết nối mỗi IP; form liên hệ không trần số/độ dài câu trả lời.
+- (§ 22) Gia cố công khai: ~~chỉ dựa SameSite=Lax chống CSRF trong khi site chạy chung `*.delify.vn` (nên kiểm `Origin` ở POST/PUT/DELETE~~ (đóng ở § 33: cổng Fetch-Metadata/Origin), cookie `__Host-` (còn mở); ~~cờ `Secure` suy từ `x-forwarded-proto` thô; đăng xuất reader không tăng `tokenVersion`~~ (đóng ở § 28); SMTP 587 không `requireTLS`; SSE livestream không trần kết nối mỗi IP; form liên hệ không trần số/độ dài câu trả lời.
 - (§ 22, phần lớn đóng ở § 30) Trợ năng công khai: ~~hộp chat (focus trên điện thoại, bẫy Tab lọt phần tử ẩn)~~; ~~carousel `RoleModelsBlock` tự trượt không dừng/không theo reduced-motion~~; ~~vòng focus `#7CB342` (2,5:1)~~; ~~nhiều `<h1>` mỗi trang~~; ~~`LiveTickerBar` hỏi livestream 8 s trên mọi trang kể cả tab ẩn~~. Còn mở: hộp chat `aria-live` đọc từng nhịp gõ; `sm:py-4.5` không sinh CSS.
 - (§ 21) Guard audit: `auditsOnPool` chỉ khớp `db.insert(activityLogs)` — `getDb().insert(activityLogs)` sau transaction không bị bắt; service có `async function audit(` bỏ qua kiểm pool. Hiện không có vi phạm.
 - (§ 21) `setMediaThumbnail` khôi phục R2 bằng bản đĩa cũ: mất bản đĩa mà R2 còn `thumb.jpg` thì lượt CSDL hỏng xoá luôn bản R2; hai lượt lưu đồng thời có thể khôi phục đè nhau.
 - (§ 21) Biến `{{content}}`/`{{author}}` bọc bằng thẻ ngẫu nhiên khác thẻ trong prompt chính, system_prompt tuỳ chỉnh không có lời dặn "trong thẻ là dữ liệu".
 - (§ 21) Coverage thật (đo 2026-10-22, lcov của `npm test` so với `git ls-files`; `--test-coverage-include` của Node không liệt kê tệp chưa nạp nên không dùng được): `server/**/*.ts` 570 tệp, test nạp 275, **chưa nạp 295** (219 ở `server/api/admin`, 23 ở `server/api/public`); 81,9 % dòng trong các tệp đã nạp, ≈ 65 % nếu tính tệp chưa nạp là 0 % (ước ~12.200 dòng mã). `app/**/*.ts` 92 tệp, chưa nạp 37, ≈ 76 %. 174 tệp `.vue` không đo được bằng runner Node (chỉ e2e + guard mã nguồn). E2E có gọi nhiều handler qua HTTP nhưng không được đo.
+- (§ 33) Dưới chính sách MFA, tài khoản thuộc diện vẫn tự tắt được mã dự phòng (`recovery-codes.delete.ts`) — "bắt buộc" chỉ áp lúc bật yếu tố đầu (đúng phạm vi spec); khoá lại sẽ cần quyết định riêng.
+- (§ 33) Trình duyệt không gửi cả `Sec-Fetch-Site` lẫn `Origin` chỉ còn `SameSite=Lax` (D-CSRF, chấp nhận). Cookie `__Host-` chưa làm.
+- ~~(§ 33) "Khôi phục CSDL" trong app không chạy lượt mã hoá bí mật~~ (đóng trong § 33, sửa sau kiểm chứng W4).
+- (§ 33) Mã dự phòng: phản hồi xác nhận hỏng SAU commit (thu hồi phiên/cookie/audit) thì lô mã đã lưu mà cán bộ chưa thấy — tạo lại ở trang "Tài khoản của tôi" (cần một yếu tố đang bật, đã có). Thu hồi phiên chưa nằm trong transaction vì `revokeSessions` dùng pool riêng.
+- (§ 33) Tiến trình chết đúng giữa `ensureColumn('display_name_reserved')` và lượt điền cờ → tên Google dành riêng của hàng có sẵn hiện nguyên văn tới lần đăng nhập kế tiếp của người đó (lượt điền không chạy lại vì cột đã có).
+- (§ 33) Danh sách người đọc ở admin (`services/readers.ts`) và prompt kiểm duyệt AI (`ai-moderate.post.ts`) vẫn đọc tên Google thô — chủ đích (cán bộ cần thấy tên thật), không phải đường hiển thị công khai.

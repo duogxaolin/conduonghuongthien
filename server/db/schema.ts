@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm'
 import { ANALYTICS_LIVE_SCOPE_TYPES } from '../utils/analytics-live'
 import type { BlockData, BlockNode } from '../../shared/blocks/types'
 import type { ContactChannel, SubmissionEventType, SubmissionStatus } from '../../shared/submission-status'
+import type { OffsiteStatus } from '../../shared/backup-offsite-status'
 
 // ─── Roles ───────────────────────────────────────────────────────────────────
 export const roles = mysqlTable('roles', {
@@ -123,8 +124,16 @@ export const media = mysqlTable('media', {
   height:       int('height'),
   uploadedBy:   int('uploaded_by').references(() => users.id),
   createdAt:    timestamp('created_at').defaultNow(),
+  // Tệp nguồn của một hàng do lượt quét `public/uploads/` nhập (wave2 D-SCAN):
+  // đường dẫn tương đối với gốc uploads, gạch xuôi (`2026/10/a.jpg`). Lượt quét sau
+  // bỏ qua tệp đã có ở đây — kể cả khi bản nhập nằm trên R2, nơi `storage_path` là
+  // khoá R2 chứ không phải đường dẫn tệp. NULL = không đến từ lượt quét (hoặc hàng
+  // quét trước bản vá — báo cáo trùng lặp phủ chúng).
+  scannedSourcePath: varchar('scanned_source_path', { length: 1024 }),
 }, (t) => ({
   mimeIdx: index('mime_type_idx').on(t.mimeType),
+  // Chỉ mục tiền tố 255 ký tự: 1024 × 4 byte (utf8mb4) vượt trần khoá InnoDB.
+  scannedSourcePathIdx: index('media_scanned_source_path_idx').on(sql`${sql.identifier('scanned_source_path')}(255)`),
 }))
 
 // ─── Content Types (Thể Loại) ───────────────────────────────────────────────
@@ -193,6 +202,22 @@ export const articles = mysqlTable('articles', {
   // historical article the moment this feature deploys would be a moderation
   // load no officer chose, decided by a schema migration rather than a click.
   commentsEnabled: boolean('comments_enabled').notNull().default(false),
+  // Lifetime view totals (wave2 design D6). They always equal the sums of this
+  // article's `article_view_daily` rows: server/services/article-views.ts is the
+  // only writer and bumps them in the same transaction as the daily upsert
+  // (tests/view-totals-integrity.test.ts), and the boot reconcile in
+  // migrations-additive.ts heals any article whose totals differ from those sums.
+  // Real and fabricated stay separate columns — the honesty split of
+  // article-views.ts — and no public endpoint reads either half, only `view_total`.
+  viewTotalReal:       bigint('view_total_real', { mode: 'number' }).notNull().default(0),
+  viewTotalFabricated: bigint('view_total_fabricated', { mode: 'number' }).notNull().default(0),
+  // real + fabricated, indexed for the "Đọc nhiều" ranking. A PLAIN column the
+  // write path updates in the same statement as each half — deliberately not a
+  // generated one: an image older than this column dumps every column with
+  // `SELECT *`, and MySQL refuses any value for a generated column on restore
+  // (3105), so a rollback would leave backups that cannot be restored. It was a
+  // STORED generated column in d079453; the boot converts such a database.
+  viewTotal:           bigint('view_total', { mode: 'number' }).notNull().default(0),
 }, (t) => ({
   typeIdx:      index('type_idx').on(t.type),
   statusIdx:    index('status_idx').on(t.status),
@@ -203,6 +228,12 @@ export const articles = mysqlTable('articles', {
   // schema-tables/content.ts and migrations-additive.ts — tests/article-list-indexes.test.ts.
   statusTypePubIdx: index('articles_status_type_pub_idx').on(t.status, t.type, t.publishedAt, t.createdAt),
   statusCategoryPubIdx: index('articles_status_category_pub_idx').on(t.status, t.categoryId, t.publishedAt, t.createdAt),
+  // `GET /api/public/articles?sort=views` (design D6). The two tie-break columns
+  // are what let MySQL read the ranking straight off the index: with only
+  // (status, type, view_total) the optimizer ignored it for `ORDER BY view_total,
+  // published_at, created_at` and sorted (EXPLAIN in docs/decisions/data-layer.md).
+  // Also the trigger of the one-time backfill: added last, after the totals are filled.
+  statusTypeViewsIdx: index('articles_status_type_views_idx').on(t.status, t.type, t.viewTotal, t.publishedAt, t.createdAt),
 }))
 
 // ─── Article view counter ────────────────────────────────────────────────────
@@ -753,6 +784,14 @@ export const readerAccounts = mysqlTable('reader_accounts', {
   // in server/services/readers.ts, never column-by-column at a call site.
   customDisplayName: varchar('custom_display_name', { length: 255 }),
   /**
+   * The Google name (`display_name`) folds to a reserved staff/authority term
+   * ("Admin", "Ban quản trị", "C11"…). Set by the OAuth callback on every
+   * sign-in, alongside the refreshed `display_name`, which is kept as Google sent
+   * it. While set and no custom name exists, effectiveDisplayName() shows
+   * "Bạn đọc" (spec reader-display-names-google, decision D-NAMES).
+   */
+  displayNameReserved: boolean('display_name_reserved').notNull().default(false),
+  /**
    * Whether to email this reader when somebody answers their comment.
    *
    * Defaults ON because the notification is the whole point — a citizen asks a
@@ -1167,6 +1206,9 @@ export const backups = mysqlTable('backups', {
   status:        varchar('status', { length: 16 }).notNull().default('pending'),
   driveUploaded: boolean('drive_uploaded').default(false),
   driveFileId:   varchar('drive_file_id', { length: 128 }),
+  // uploaded | failed | none — bản sao ngoài máy chủ của TỆP này (shared/backup-offsite-status.ts).
+  // NULL = hàng lượt hỏng, hoặc hàng có từ trước cột (không backfill).
+  offsiteStatus: varchar('offsite_status', { length: 16 }).$type<OffsiteStatus>(),
   error:         text('error'),
   createdBy:     int('created_by').references(() => users.id),
   createdAt:     timestamp('created_at').defaultNow(),

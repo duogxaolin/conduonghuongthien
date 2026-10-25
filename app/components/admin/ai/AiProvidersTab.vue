@@ -11,6 +11,7 @@
  */
 import { errorMessage } from '~/utils/errorMessage'
 import { PROVIDER_PRESETS, formatVnd, type ProviderRow, type PricingRow } from '~/utils/ai-service-labels'
+import AdminModal from '~/components/admin/AdminModal.vue'
 
 const emit = defineEmits<{ invalidate: [] }>()
 
@@ -821,9 +822,8 @@ defineExpose<{
         <!-- ── Modals ────────────────────────────────────────────────── -->
 
         <!-- Create Provider Modal -->
-        <div v-if="showCreateForm" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showCreateForm = false">
-          <div class="bg-white rounded-2xl p-6 max-w-lg w-full flex flex-col gap-4" @click.stop>
-            <h2 class="m-0 text-lg font-bold text-[#122815]">Thêm nhà cung cấp mới</h2>
+        <AdminModal :open="showCreateForm" title="Thêm nhà cung cấp mới" :busy="savingNewProvider" @close="showCreateForm = false">
+          <div class="flex flex-col gap-4">
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-[#122815]">Loại nhà cung cấp</span>
               <select v-model="newProviderForm.provider" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm bg-white" @change="onNewProviderPresetChange()">
@@ -851,19 +851,23 @@ defineExpose<{
               <span class="text-xs text-[#667768] font-normal">Có thể nhập sau nếu chưa có.</span>
             </label>
             <div v-if="newProviderError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ newProviderError }}</div>
-            <div class="flex justify-end gap-2">
+          </div>
+          <template #footer>
               <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="showCreateForm = false">Huỷ</button>
               <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="createProvider()" :disabled="savingNewProvider">
                 {{ savingNewProvider ? 'Đang thêm...' : 'Thêm' }}
               </button>
-            </div>
-          </div>
-        </div>
+          </template>
+        </AdminModal>
 
         <!-- Edit Provider Modal -->
-        <div v-if="editingProvider" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="editingProvider = null">
-          <div class="bg-white rounded-2xl p-6 max-w-lg w-full flex flex-col gap-4" @click.stop>
-            <h2 class="m-0 text-lg font-bold text-[#122815]">Cài đặt kết nối: {{ editingProvider.label }}</h2>
+        <AdminModal
+          :open="!!editingProvider"
+          :title="`Cài đặt kết nối: ${editingProvider?.label ?? ''}`"
+          :busy="savingProvider"
+          @close="editingProvider = null"
+        >
+          <div v-if="editingProvider" class="flex flex-col gap-4">
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-[#122815]">Nhãn hiển thị</span>
               <input v-model="providerForm.label" type="text" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
@@ -883,24 +887,26 @@ defineExpose<{
               <span class="text-xs text-[#667768] font-normal">Để trống để giữ nguyên key hiện tại.</span>
             </label>
             <div v-if="testResult" class="rounded-lg p-3 text-sm" :class="testResult.includes('Thất bại') ? 'bg-red-50 text-red-700' : 'bg-green-50 text-green-700'" role="status">{{ testResult }}</div>
-            <div class="flex justify-between gap-3">
-              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="testProvider(editingProvider.id)" :disabled="!!testingProvider">
+          </div>
+          <template #footer>
+              <button v-if="editingProvider" type="button" class="mr-auto px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="testProvider(editingProvider.id)" :disabled="!!testingProvider">
                 {{ testingProvider ? 'Đang kiểm tra...' : 'Kiểm tra kết nối' }}
               </button>
-              <div class="flex gap-2">
-                <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="editingProvider = null">Huỷ</button>
-                <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="saveProvider()" :disabled="savingProvider">
-                  {{ savingProvider ? 'Đang lưu...' : 'Lưu' }}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
+              <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="editingProvider = null">Huỷ</button>
+              <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="saveProvider()" :disabled="savingProvider">
+                {{ savingProvider ? 'Đang lưu...' : 'Lưu' }}
+              </button>
+          </template>
+        </AdminModal>
 
         <!-- Add Model to Provider Modal -->
-        <div v-if="showAddModelModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showAddModelModal = false">
-          <div class="bg-white rounded-2xl p-6 max-w-lg w-full flex flex-col gap-4" @click.stop>
-            <h2 class="m-0 text-lg font-bold text-[#122815]">Thêm Model cho {{ targetProviderForModel }}</h2>
+        <AdminModal
+          :open="showAddModelModal"
+          :title="`Thêm Model cho ${targetProviderForModel}`"
+          :busy="savingNewModel"
+          @close="showAddModelModal = false"
+        >
+          <div class="flex flex-col gap-4">
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-[#122815]">Mã Model (ID gọi API)</span>
               <input v-model="newModelForm.model" type="text" placeholder="flash, glm-5.3, gpt-4o..." class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm font-mono" />
@@ -924,19 +930,23 @@ defineExpose<{
               <span class="text-[#122815]">Kích hoạt model (cho phép các dịch vụ sử dụng)</span>
             </label>
             <div v-if="newModelError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">{{ newModelError }}</div>
-            <div class="flex justify-end gap-2">
+          </div>
+          <template #footer>
               <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="showAddModelModal = false">Huỷ</button>
               <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="addModelToProvider()" :disabled="savingNewModel">
                 {{ savingNewModel ? 'Đang thêm...' : 'Thêm Model' }}
               </button>
-            </div>
-          </div>
-        </div>
+          </template>
+        </AdminModal>
 
         <!-- Edit Model Price Modal -->
-        <div v-if="editingModel" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="editingModel = null">
-          <div class="bg-white rounded-2xl p-6 max-w-lg w-full flex flex-col gap-4" @click.stop>
-            <h2 class="m-0 text-lg font-bold text-[#122815]">Sửa Model: <span class="font-mono text-[#2c6e33]">{{ editingModel.model }}</span></h2>
+        <AdminModal
+          :open="!!editingModel"
+          :title="`Sửa Model: ${editingModel?.model ?? ''}`"
+          :busy="savingModelEdit"
+          @close="editingModel = null"
+        >
+          <div v-if="editingModel" class="flex flex-col gap-4">
             <p class="m-0 text-xs text-[#667768]">Nhà cung cấp: <strong>{{ editingModel.provider }}</strong></p>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
               <span class="text-[#122815]">Tên hiển thị</span>
@@ -956,30 +966,26 @@ defineExpose<{
               <input v-model="editModelForm.isActive" type="checkbox" class="w-4 h-4 accent-[#2c6e33]" />
               <span class="text-[#122815]">Kích hoạt model này</span>
             </label>
-            <div class="flex justify-end gap-2">
+          </div>
+          <template #footer>
               <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="editingModel = null">Huỷ</button>
               <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="saveEditModel()" :disabled="savingModelEdit">
                 {{ savingModelEdit ? 'Đang lưu...' : 'Lưu' }}
               </button>
-            </div>
-          </div>
-        </div>
+          </template>
+        </AdminModal>
 
         <!-- Model Test Call Result Modal (9Router style) -->
-        <div v-if="modelTestModal" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="modelTestModal = null">
-          <div class="bg-white rounded-2xl p-6 max-w-xl w-full flex flex-col gap-4 shadow-xl" @click.stop>
-            <div class="flex items-center justify-between">
-              <div class="flex items-center gap-2.5">
-                <div class="w-9 h-9 rounded-xl bg-[#e4f0e2] text-[#2c6e33] flex items-center justify-center font-bold text-base">
-                  <i class="fa-solid fa-bolt" aria-hidden="true"></i>
-                </div>
-                <div>
-                  <h2 class="m-0 text-base font-extrabold text-[#122815]">
-                    Test Call: <span class="font-mono text-[#2c6e33]">{{ modelTestModal.model }}</span>
-                  </h2>
-                  <p class="m-0 text-xs text-[#667768]">Nhà cung cấp: <strong>{{ modelTestModal.provider }}</strong></p>
-                </div>
-              </div>
+        <AdminModal
+          :open="!!modelTestModal"
+          :title="`Test Call: ${modelTestModal?.model ?? ''}`"
+          icon="fa-solid fa-bolt"
+          size="lg"
+          @close="modelTestModal = null"
+        >
+          <div v-if="modelTestModal" class="flex flex-col gap-4">
+            <div class="flex flex-wrap items-center justify-between gap-2">
+              <p class="m-0 text-xs text-[#667768]">Nhà cung cấp: <strong>{{ modelTestModal.provider }}</strong></p>
               <span
                 class="px-2.5 py-1 rounded-full text-xs font-bold"
                 :class="!modelTestModal.error ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'"
@@ -1014,14 +1020,13 @@ defineExpose<{
             <div v-else class="rounded-xl border border-red-200 bg-red-50 p-4 text-xs text-red-700 font-mono whitespace-pre-wrap">
               {{ modelTestModal.error }}
             </div>
-
-            <div class="flex justify-end pt-2 border-t border-[#e2ece3]">
+          </div>
+          <template #footer>
               <button type="button" class="px-5 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="modelTestModal = null">
                 Đóng
               </button>
-            </div>
-          </div>
-        </div>
+          </template>
+        </AdminModal>
       </template>
     </div>
 </template>

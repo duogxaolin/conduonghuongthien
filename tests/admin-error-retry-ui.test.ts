@@ -39,6 +39,8 @@ import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
+import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
 
 /**
@@ -61,6 +63,7 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/settings/tracking.vue', refs: ['error'], retries: ['fetchSettings'] },
   { file: 'pages/admin/settings/google-oauth.vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/settings/ip-bans.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/settings/security.vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/settings/media-portal.vue', refs: ['error'], retries: ['load'] },
   // Backup & khôi phục — danh sách bản backup.
   { file: 'pages/admin/settings/backup.vue', refs: ['error'], retries: ['loadBackups'] },
@@ -83,15 +86,17 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/chatbot/knowledge/index.vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/chatbot/knowledge/[id].vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/chatbot/settings.vue', refs: ['errorMessage'], retries: ['load'] },
-  { file: 'pages/admin/chatbot/sessions/index.vue', refs: ['loadError'], retries: ['fetchSessions'] },
+  // List state from useAdminList (D-FETCH): `error` is a computed over the list's
+  // error and `reload` its retry — both declared in the page, the block stays here.
+  { file: 'pages/admin/chatbot/sessions/index.vue', refs: ['error'], retries: ['reload'] },
   { file: 'pages/admin/chatbot/sessions/[id].vue', refs: ['loadError'], retries: ['fetchSession'] },
 
   // Reader moderation. These read citizens' personal data, so a failed fetch
   // rendering as "chưa có ai" is worse than usual: an officer would conclude
   // nobody has signed up rather than that the query broke.
-  { file: 'pages/admin/readers/index.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/readers/index.vue', refs: ['error'], retries: ['reload'] },
   { file: 'pages/admin/readers/[id].vue', refs: ['error'], retries: ['load'] },
-  { file: 'pages/admin/comments/index.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/comments/index.vue', refs: ['error'], retries: ['reload'] },
 
   // Users, media, submissions.
   { file: 'pages/admin/users/index.vue', refs: ['loadError'], retries: ['fetchUsers'] },
@@ -114,6 +119,8 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'components/admin/ai/AiDashboardTab.vue', refs: ['usageError'], retries: ['loadUsage'] },
   { file: 'components/admin/ai/AiProvidersTab.vue', refs: ['providersError'], retries: ['loadProviders'] },
   { file: 'components/admin/ai/AiServicesTab.vue', refs: ['servicesError'], retries: ['loadServices'] },
+  // Tab kiểm duyệt nay chỉ là bản tóm tắt (D10): hai con số + liên kết sang
+  // `/admin/ai/moderation`. Vẫn tự fetch hai endpoint nên vẫn giữ nhánh lỗi riêng.
   { file: 'components/admin/ai/AiModerationTab.vue', refs: ['moderationError'], retries: ['loadModeration'] },
   { file: 'components/admin/ai/AiLogsTab.vue', refs: ['logsError'], retries: ['loadLogs'] },
   { file: 'pages/admin/ai/moderation.vue', refs: ['error'], retries: ['loadData'] },
@@ -368,7 +375,9 @@ test('no admin view reaches for a full page reload as its retry', async () => {
  * Same shape as the directory-scanning guards in tests/reader-audit-atomicity.ts
  * and tests/client-ip.test.ts, and for the same reason.
  */
-const FETCH_CALL = /\$fetch|useFetch\(|useAsyncData\(/
+// Shared with tests/skeleton-loading-ui.test.ts — includes adminFetch/useAdminList,
+// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan.
+const FETCH_CALL = ADMIN_FETCH_CALL
 
 async function adminViewsThatFetch(): Promise<string[]> {
   const roots = ['pages/admin', 'components/admin']

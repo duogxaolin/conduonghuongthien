@@ -4,10 +4,11 @@
  * ## Danh tính lấy từ VÉ, không bao giờ từ thân request
  *
  * `requireReader` trả về danh tính đã giải từ cookie phiên (401 khi chưa đăng nhập,
- * 403 khi bị chặn), và ba trường gửi xuống service đều lấy từ **đó**. Không có
+ * 403 khi bị chặn), và bốn trường gửi xuống service đều lấy từ **đó**. Không có
  * `displayName`, `readerId` hay bất cứ trường nào của thân request đi vào
  * `ChatSender` — nên không có ô nào để một script tự nhận là người khác. Đó cũng là
- * lý do `ChatSender` chỉ có ba trường và **không** có tên hiển thị đã giải sẵn: tên
+ * lý do `ChatSender` chỉ có bốn trường (cột tên của hàng reader, gồm cờ tên dành
+ * riêng) và **không** có tên hiển thị đã giải sẵn: tên
  * được suy ra bên trong service bằng `effectiveDisplayName`, nên nơi gọi thứ hai
  * cũng không truyền được một cái tên vào.
  *
@@ -56,6 +57,7 @@ export default defineEventHandler(async (event) => {
       id:                reader.id,
       displayName:       reader.displayName,
       customDisplayName: reader.customDisplayName,
+      displayNameReserved: reader.displayNameReserved,
     },
     ip:      getClientIp(event),
     content,

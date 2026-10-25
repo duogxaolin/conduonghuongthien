@@ -50,7 +50,7 @@ chưa qua đủ bốn cổng.
 không bị giới hạn; ghi chú ngày 2026-10-22 nói repo đã sang private là sai. Giữ các quy tắc dưới
 đây vẫn đáng: chúng rút ngắn thời gian chờ CI, và áp lại ngay nếu repo chuyển private —
 tài khoản từng hết phút khi còn private): một lượt CI đầy đủ ≈ 40 phút
-billed (GitHub làm tròn từng job lên phút; các job Integration chiếm ≈ 29 khi còn 13 job; nay matrix 19). Nên job
+billed (GitHub làm tròn từng job lên phút; các job Integration chiếm ≈ 29 khi còn 13 job; nay matrix 22). Nên job
 `changes` ("Plan") quyết định cho mỗi lượt chạy:
 
 | Sự kiện | Chạy gì |
@@ -60,7 +60,7 @@ billed (GitHub làm tròn từng job lên phút; các job Integration chiếm �
 | push vào `main` mà commit đó **đã** là bản đang chạy | Đủ bộ test, không deploy (không có gì mới). Ép deploy lại: chạy tay trên `main` |
 | PR nháp | Bỏ qua (chạy lại khi bấm *Ready for review*) |
 | PR thường | unit + build + schema-drift + hygiene (≈ 12 phút) |
-| PR thường **có đụng** `server/`, `shared/` (máy chủ import thẳng), `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*` | thêm 19 job Integration |
+| PR thường **có đụng** `server/`, `shared/` (máy chủ import thẳng), `migrations/`, `scripts/`, `package*.json`, `nuxt.config.ts`, `.github/workflows/`, `tests/*integration*`, `tests/fixtures/schema-prev.sql` | thêm 22 job Integration |
 
 **Mốc so của "chỉ tài liệu"** (bước *Docs-only?* của job `changes`): commit **đang chạy trên
 production**, không phải `github.event.before`. `before` chỉ là đỉnh cũ của `main`: lượt A đang
@@ -168,7 +168,7 @@ ssh-keyscan -p <VPS_PORT> <VPS_HOST>
 | Tên | Giá trị |
 |---|---|
 | `VPS_HOST` | IP hoặc domain của VPS |
-| `VPS_USER` | `root`, hoặc user đã thêm vào group `docker` |
+| `VPS_USER` | `root`, hoặc user đã thêm vào group `docker` (khuyến nghị — khoá `restrict` trong `authorized_keys`: `production/README.md` § *User deploy không phải root*) |
 | `VPS_SSH_KEY` | **toàn bộ nội dung** `~/.ssh/cdkt_deploy` (Bước 1) |
 | `VPS_SSH_KNOWN_HOSTS` | 3 dòng `ssh-keyscan` ở Bước 2 |
 
@@ -242,7 +242,8 @@ không bao giờ tới được container). Lượt deploy:
    cụt do SSH đứt thì dừng trước cả `docker pull`;
 2. `docker pull` image;
 2b. **dump CSDL** bằng chính `backup-db.sh` vừa nhận (`--prefix cdkt-predeploy`, cùng
-   phép kiểm gzip / "Dump completed" / ≥ 20 bảng như cron đêm) vào
+   phép kiểm gzip / dòng `-- Dump completed` ở đầu một trong 5 dòng cuối (đúng luật
+   `restore-db.sh` nhận — hai script mang cùng một khối, test so) / ≥ 20 bảng như cron đêm) vào
    `<APP_DIR>/.deploy-db-backups/cdkt-predeploy-<db>-<thời-điểm UTC>-<pid>.sql.gz`, giữ
    **5 bản** mới nhất. Dump hỏng (đĩa đầy, mysql không chạy) → **dừng**, chưa compose,
    `.env` hay container nào bị đụng. Thư mục nằm cạnh `.deploy-compose-backups/` chứ
@@ -264,6 +265,18 @@ không bao giờ tới được container). Lượt deploy:
    `docker-compose.override.yml` nếu có, và bắt được biến bắt buộc mới mà `.env`
    chưa có) — sai thì trả bản cũ về và dừng, **chưa container nào, chưa dòng `.env`
    nào bị đụng**;
+4b. **log của app** (wave2 D-LOG): compose cho app ghi vào journald (`tag: cdkt-app`).
+   `ensure_log_driver "$IMAGE"` kiểm máy chủ dùng được systemd-journald: socket
+   `/run/systemd/journal/socket`, `journalctl`, daemon có driver `journald`
+   (`timeout 20 docker info … .Plugins.Log`) và một container thử `timeout 60 docker run
+   --rm --pull=never --network none --log-driver journald --entrypoint true <image vừa kéo>`. Không có → ghi
+   `<APP_DIR>/docker-compose.override.yml` mang dấu `# cdkt-log-fallback` (app dùng
+   `json-file` 3 × 10 MB) và in `::warning::`; có journald mà tệp có dấu còn → gỡ nó.
+   Override **không** mang dấu (của người vận hành) không bao giờ bị sửa; khi đó
+   `docker compose config` cho biết driver hiệu lực của app — vẫn là journald thì
+   `::error::`, trả compose cũ về và dừng (chưa `.env`, chưa container). Chạy sau bước 4
+   để driver hiệu lực tính trên compose của commit này. Cùng ba hàm, giống từng chữ, ở
+   `production/manage.sh` Deploy/Update;
 5. khởi động lại **chỉ app**: `up -d --no-recreate mysql` (bật mysql nếu đang dừng,
    không bao giờ tạo lại) rồi `up -d --no-deps app`. Thay đổi ở service `mysql` không
    được CI tự áp — người vận hành chạy `docker compose up -d` trong giờ thấp điểm.
@@ -547,6 +560,36 @@ Job `image` và `deploy` **chỉ chạy trên `main`** — push lên nhánh ph�
 request chỉ chạy bốn cổng kiểm tra. Đây là chủ đích: deploy một pull request là đẩy
 mã của một fork lên máy chủ.
 
+### Làm mới fixture lược đồ của bản trước (sau mỗi bản phát hành)
+
+Suite `tests/schema-upgrade-integration.test.ts` (job *Integration · schema-upgrade*) làm ba việc:
+- nạp `tests/fixtures/schema-prev.sql`, tức lược đồ mà `initDb()` của **bản đang chạy trên production** dựng ra;
+- chèn hàng đại diện vào mọi bảng mà một bước migration lúc khởi động đụng tới, và mọi bảng mà `seed.ts` ghi. Ở mỗi bảng seed ghi, có hàng mang khoá default: mọi cột seed ghi đều mang giá trị khác default (như thể cán bộ đã sửa), nên seed ghi đè dữ liệu cán bộ là thấy ngay;
+- khởi động mã mới hai lần (`init.ts` → `seed.ts`).
+
+Lượt 1 chỉ được đổi dữ liệu qua các chuyển đổi một lần đã khai báo trong suite, mỗi chuyển đổi kèm lý do. Lượt 2 không được đổi gì. Fixture phải là lược đồ của bản **đang chạy**, nên làm mới nó **sau khi** một bản lên production. Làm mới sớm hơn thì fixture đã chứa sẵn các cột mới, và suite không còn kiểm đường nâng cấp của chúng nữa. Repo không có tag phát hành, nên mốc là commit đang chạy.
+
+```bash
+# 1. Commit đang chạy: trường `version` (12 hex) của health
+curl -fsS https://<domain>/api/public/health
+# 2. Chụp lược đồ của commit đó vào một CSDL tạm (script tự tạo rồi xoá CSDL
+#    `cdkt_snapshot_*` và thư mục tạm; cần quyền CREATE/DROP DATABASE). MySQL dev
+#    docker: cổng 33069. Không in mật khẩu ra lịch sử shell.
+SNAPSHOT_DB_PORT=33069 SNAPSHOT_DB_PASSWORD="$MYSQL_ROOT_PASSWORD" \
+  node --experimental-strip-types --import ./scripts/ts-resolver.mjs \
+  scripts/snapshot-schema.ts --ref <version>
+# 3. Kiểm và commit cùng PR kế tiếp
+git diff --stat tests/fixtures/schema-prev.sql
+SCHEMA_UPGRADE_INTEGRATION=1 SCHEMA_UPGRADE_PORT=33069 SCHEMA_UPGRADE_PASSWORD="$MYSQL_ROOT_PASSWORD" \
+  node --experimental-strip-types --experimental-test-module-mocks --import ./scripts/ts-resolver.mjs \
+  --test tests/schema-upgrade-integration.test.ts
+```
+
+- **Script.** Nó chạy `server/db/init.ts` **của commit đó**: dùng `git archive`, mượn `node_modules` của checkout hiện tại qua symlink, và không đụng cây làm việc. Rồi nó ghi `SHOW CREATE TABLE` của từng bảng (cùng nội dung `mysqldump --no-data` in ra). Bảng xếp theo tên, không có bộ đếm `AUTO_INCREMENT`, không ngày giờ, không `DROP`. Chạy hai lần cho ra cùng từng byte. Header ghi ref, SHA đầy đủ và phiên bản MySQL.
+- **Commit chung với gì.** Một PR **chỉ** làm mới fixture vẫn chạy job Integration (đường dẫn này có trong bộ lọc của job `changes`). Nếu bản mới vừa thêm chuyển đổi một lần, suite sẽ không còn thấy nó chạy (cột đã có sẵn trong fixture). Khi đó khai báo của nó hiện ở dòng chẩn đoán *declared but not reachable from this fixture*. Giữ khai báo nếu mã còn đó; xoá khai báo khi mã đã xoá (test *every declared conversion still names code that exists* sẽ đỏ).
+- **Khi suite đỏ.** Thông báo có dạng `bảng.cột [khoá]: cũ → mới`. Một bước khởi động đang ghi đè dữ liệu. Sửa bước đó cho có điều kiện (theo trạng thái lược đồ, `WHERE cột IS NULL`…). Chỉ khi việc ghi là chuyển đổi một lần có chủ đích thì mới thêm vào `DECLARED_CONVERSIONS`, kèm mã nguồn (neo theo nội dung) và lý do.
+- **Ghi vào chính cột vừa thêm, hoặc chỉ chạy khi có dữ liệu đầu vào.** Lượt so chỉ so các cột có ở cả hai ảnh chụp, nên giá trị một bước ghi vào cột nó vừa thêm (2A `reader_accounts.display_name_reserved`, 2C `articles.view_total*`) không hiện thành thay đổi. Khi đó: khai báo riêng cho bước đó (đặt trước `additive.add-column` để cột thêm vào được tính cho đúng nó) và khẳng định kết quả ngay sau lượt 1; lượt 2 vẫn chứng minh bước đó không ghi lại. Bước chỉ **đọc** một bảng không bước nào ghi (lượt đối soát tổng lượt xem đọc `article_view_daily`) thì thêm bảng đó vào `BOOT_READ_TABLES` của suite, nếu không thì nhánh ghi không bao giờ chạy trên dữ liệu đại diện.
+
 ### Lùi phiên bản
 
 > ⚠️ **Lùi tay chỉ tạm thời — lượt merge kế tiếp vào `main` sẽ deploy lại HEAD.** Khi đã đặt
@@ -621,6 +664,27 @@ cũ và khởi động lại: image cũ chạy trên compose cũ, đúng cặp �
 được báo là đã lên. Số lần khởi động lại tính từ lúc bắt đầu chờ (compose không tạo lại
 một container không đổi gì, nên con số tuyệt đối có thể đã cao từ trước).
 
+**Image cũ chạy trên lược đồ mới.** Lượt lùi xảy ra **sau** khi container mới đã chạy
+`init.ts` (di trú bổ sung) — CSDL không lùi theo image. Vì vậy mỗi thay đổi lược đồ phải
+để image cũ chạy được trên nó: chỉ thêm cột có mặc định, không đổi nghĩa cột cũ, **không
+cột sinh** (image cũ — và bản sao lưu trong app của nó — `SELECT *` rồi `INSERT` mọi cột;
+MySQL từ chối mọi giá trị cho cột sinh, lỗi 3105, nên bản sao lưu đó không khôi phục được),
+và dữ liệu dẫn xuất phải tự sửa ở lần khởi động sau. Ví dụ đợt 2C: tổng lượt xem trên
+`articles` là ba cột thường; image cũ đếm lượt xem không cộng tổng, và lần khởi động kế tiếp
+của image mới đối soát (`reconcileArticleViewTotals`, chỉ ghi bài lệch, CSDL khớp thì không
+ghi gì) — lùi rồi tiến lại không để lại tổng sai (`tests/view-boost-integration.test.ts`,
+`tests/backup-dump-integration.test.ts` dựng đúng bản dump kiểu image cũ).
+
+**Ngoại lệ đã biết — bí mật đã mã hoá (đợt 2A, CHANGELOG § 33).** Lần khởi động đầu của image
+từ đợt 2A trở đi mã hoá `smtp_pass`, `r2_secret_key` và `backup_drive_service_account` trong
+`settings` (envelope, khoá `CHATBOT_ENCRYPTION_SECRET`). Đây là lượt ghi khởi động duy nhất của
+đợt 2 mà image cũ **không** chạy được trên nó: image trước 2A đọc nguyên văn, nên nếu lượt deploy
+đầu tiên chứa 2A bị lùi tự động thì gửi email (thông báo, mã OTP qua email), tải ảnh lên R2 và
+sao lưu Drive ngừng chạy — job chỉ báo "đã lùi về … khoẻ trở lại". Cách xử lý: nhập lại mật khẩu
+SMTP, Secret Key R2 (ảnh) và khoá service account Drive ở trang cài đặt của image đang chạy (code
+cũ lưu lại nguyên văn), hoặc sửa lỗi rồi deploy lại bản mới (bản mới đọc được cả hai dạng). Không
+đảo lượt mã hoá — xem `production/README.md` § *Bảo mật đợt 2 — 2A*.
+
 ### Dừng container êm (`stop_grace_period: 45s`)
 
 `docker stop` gửi SIGTERM rồi chờ; mặc định của Docker là 10 giây, trong khi Nitro cần tới
@@ -669,7 +733,7 @@ dưới đây là lớp chặn cuối cùng mà workflow không tự đặt đư
 | # | Việc | Ở đâu |
 |---|---|---|
 | 1 | **Bảo vệ nhánh `main`**: bắt buộc qua pull request, cấm push thẳng (kể cả admin — bỏ chọn *Allow bypass*), và **required status checks** — **đọc mục *Chọn required checks* ngay dưới bảng trước khi bật**: đặt thẳng năm tên job (`Plan`, `Unit and typecheck`, `Schema drift`, `Production build`, `Secrets and defaults`) với `ci.yml` hiện tại sẽ **khoá cứng mọi PR chỉ sửa tài liệu**. | `Settings → Branches → Add branch ruleset` (hoặc *Branch protection rules*) |
-| 2 | *(Tuỳ chọn)* **Cổng duyệt tay trước deploy**: tạo Environment `production` với *Required reviewers*, rồi thêm `environment: production` vào job `deploy` (secret cấp repo vẫn dùng được trong job có environment). Workflow **cố ý chưa** có khoá này: đó là quyết định đổi quy trình (mỗi lần merge phải có người bấm duyệt, lượt chờ duyệt giữ chỗ trong nhóm `deploy-production`), không phải một sửa lỗi. | `Settings → Environments → New environment` |
+| 2 | *(Tuỳ chọn — **đã chốt: không làm**, xem *Quyết định D2* bên dưới)* **Cổng duyệt tay trước deploy**: tạo Environment `production` với *Required reviewers*, rồi thêm `environment: production` vào job `deploy` (secret cấp repo vẫn dùng được trong job có environment). Workflow **cố ý chưa** có khoá này: đó là quyết định đổi quy trình (mỗi lần merge phải có người bấm duyệt, lượt chờ duyệt giữ chỗ trong nhóm `deploy-production`), không phải một sửa lỗi. | `Settings → Environments → New environment` |
 | 3 | **Xoá Environment lạc tên `VPS_HOST`** — đó là tên một *secret*, bị tạo nhầm thành Environment. Ngày kiểm, nó **không chứa secret hay variable nào** và không job nào khai `environment:`; bốn secret `VPS_*` thật nằm ở cấp repo. Kiểm lại trước khi xoá: `gh api repos/<OWNER>/<REPO>/environments/VPS_HOST/secrets`. | `Settings → Environments → VPS_HOST → Delete` |
 
 ### Chọn required checks (việc #1) — vì sao không đặt thẳng năm tên job
@@ -733,7 +797,32 @@ thành `.` sẽ quét cả cây (kể cả fixture test) — nên nó được k
 `docker run --rm -v "$PWD:/mnt:ro" -w /mnt koalaman/shellcheck:stable -S warning production/manage.sh`)
 và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừng để nó tích lại. Hành vi của nó được kiểm bằng
 `tests/ops-scripts-sandbox.test.ts` / `tests/ops-migrate-scanner.test.ts` (chạy thật với
-`docker`/`git` giả).
+`docker`/`git`/`crontab` giả).
+
+### Quyết định đã chốt (wave2): D2 và D-CI
+
+Hai quyết định quy trình của đợt 2 — ghi ở đây để lượt rà sau không đề xuất lại như
+việc còn thiếu.
+
+**D2 — Không có cổng duyệt tay trước deploy** (việc #2 ở bảng trên giữ là *tuỳ chọn*).
+Merge vào `main` vẫn tự deploy. Lớp chặn thay cho người bấm duyệt:
+bảo vệ nhánh `main` + required checks (việc #1 — **việc của chủ repo**, chưa bật thì D2
+không đứng vững), bản dump CSDL trước mỗi lượt đổi image (bước 2b), smoke test qua tên
+miền thật (`VPS_SMOKE_URL`), lùi tự động khi container không khoẻ, và bỏ qua deploy khi
+chỉ đổi tài liệu (*Mốc so của "chỉ tài liệu"*). Lý do không thêm cổng: một người vận hành,
+mỗi lần merge phải bấm duyệt thì lượt chờ giữ chỗ trong nhóm `deploy-production` và bản vá
+khẩn chậm theo người bấm. Đổi ý (thêm Environment `production` với *Required reviewers*)
+là một dòng `environment: production` ở job `deploy` — không cần sửa gì khác.
+
+**D-CI — Chấp nhận CI đầy đủ chạy hai lần mỗi lần merge** (một lượt ở PR, một lượt ở
+push lên `main`), **khi repo còn public**: Actions không tính phút cho repo public, và lượt
+push là lượt duy nhất dựng image + deploy, nên nó phải tự chạy đủ cổng
+(`needs: [test, typecheck, build, hygiene]`). Kiểm `gh repo view --json visibility` ngày
+2026-10-24: **PUBLIC** → giữ nguyên. **Nếu repo chuyển private** (hạn mức 3.000 phút/tháng
+áp ngay; tài khoản từng hết phút khi còn private): lượt push lên `main` nên **dùng lại lượt
+PR đã xanh của cùng tree SHA** (`git rev-parse HEAD^{tree}` khớp tree của commit đầu PR đã
+qua đủ cổng) và chỉ build image + deploy — đó là việc còn mở, chưa viết, cần làm trước hoặc
+ngay khi đổi visibility. Đổi visibility là quyết định của chủ repo.
 
 ---
 
@@ -781,6 +870,8 @@ và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừn
 | `tests/deploy-remote-behavior.test.ts` | **Chạy thật** `deploy-remote.sh` (qua `bash -s` như CI) với `docker` giả (`tests/fixtures/deploy-remote/docker`): compose/script sao lưu hỏng/cụt bị từ chối mà `.env` không đổi, dump hỏng dừng trước mọi thay đổi, lùi trả cả image lẫn compose, `up` hỏng vẫn đi vào đường lùi, crash loop dừng chờ sau 3 lượt hỏi, mysql không bị tạo lại, 12 image → còn 6 |
 | `tests/ci-docs-only-skip.test.ts` | **Chạy thật** script của bước *Docs-only?* trong một repo git tạm với `curl`/`gh` giả: so với bản đang chạy — chỉ tài liệu → không deploy; có `.ts` (kể cả đổi tên sang `docs/`) → deploy; push mã bị huỷ khi đang chờ rồi push tài liệu → vẫn deploy; thứ tự mốc (health → lượt có job deploy `success` → deploy); mốc không phải tổ tiên → deploy; đã chạy → không deploy |
 | `tests/ci-integration-matrix.test.ts` | Mọi `tests/*-integration.test.ts` có trong matrix, đúng switch, đủ biến môi trường mà suite đọc; bước kiểm-skip đọc log, không chạy lại suite |
+| `tests/schema-upgrade-integration.test.ts` + `tests/fixtures/schema-prev.sql` + `scripts/snapshot-schema.ts` | Khởi động bản mới hai lần trên lược đồ của bản đang chạy, với hàng đại diện ở mọi bảng migration đụng tới và mọi bảng seed ghi (hàng mang khoá default có giá trị đã sửa ở mọi cột seed ghi). Lượt 1 chỉ đổi qua chuyển đổi đã khai báo; một default seed thêm vào phải khớp đủ khoá **và** nội dung với dữ liệu của chính seed. Lượt 2 không đổi gì. Làm mới fixture: § *Làm mới fixture lược đồ của bản trước* |
+| `tests/default-permission-matrix.test.ts` | Ghim ma trận quyền mặc định (vai trò → tài nguyên → quyền) mà `seed.ts` ghi. Đổi ma trận thì phải sửa test này trong cùng thay đổi. |
 | `tests/container-timezone.test.ts` | Scheduler analytics/retention chạy ở `TZ=Asia/Ho_Chi_Minh` bắn lúc 03:00 giờ VN, ở UTC thì 10:00 giờ VN |
 
 `deploy-remote.sh` được **nạp qua stdin** (`ssh ... "bash -s -- args" < scripts/deploy-remote.sh`)

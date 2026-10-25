@@ -17,10 +17,12 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
+import { backupServiceSource } from './_backup-service-family'
 
 const svc = readFileSync('server/services/articles-thumbnail-scan.ts', 'utf8')
 const api = readFileSync('server/api/admin/articles/scan-thumbnails.post.ts', 'utf8')
-const backup = readFileSync('server/services/backup.ts', 'utf8')
+// `services/backup.ts` là barrel + các tệp con (tách 2026-10-25) — đọc cả nhóm.
+const backup = backupServiceSource()
 
 describe('articles-thumbnail-scan: cấu trúc mã nguồn', () => {
   it('endpoint yêu cầu quyền media.update (không phải articles)', () => {
@@ -34,8 +36,12 @@ describe('articles-thumbnail-scan: cấu trúc mã nguồn', () => {
   })
 
   it('service dùng named lock cdkt:articles:scan-thumbnails (timeout 0)', () => {
-    assert.ok(/LOCK_NAME = 'cdkt:articles:scan-thumbnails'/.test(svc),
-      'phải khai báo LOCK_NAME')
+    // Tên khoá nằm ở danh sách khoá job media (`pre-job-backup.ts`) — lượt khôi phục đọc
+    // cùng danh sách đó (`tests/media-job-locks.test.ts`).
+    assert.ok(/LOCK_NAME = MEDIA_JOB_LOCK\.fixThumbnails/.test(svc),
+      'phải khai báo LOCK_NAME từ MEDIA_JOB_LOCK')
+    assert.ok(/fixThumbnails: 'cdkt:articles:scan-thumbnails'/.test(readFileSync('server/services/pre-job-backup.ts', 'utf8')),
+      'khoá phải là cdkt:articles:scan-thumbnails')
     assert.ok(/withNamedLock\(pool, LOCK_NAME, 0/.test(svc),
       'phải gọi withNamedLock timeout 0 (không xếp hàng)')
     assert.ok(/Một lượt quét thumbnail khác đang chạy/.test(svc),

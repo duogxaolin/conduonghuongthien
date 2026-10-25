@@ -9,6 +9,7 @@
  * nhánh tải / lỗi / rỗng của chính nó.
  */
 import type { AdminSubmissionDetail, AdminSubmissionEvent } from '~/types/admin-api'
+import AdminModal from '~/components/admin/AdminModal.vue'
 import {
   CONTACT_CHANNELS,
   CONTACT_CHANNEL_LABELS,
@@ -171,27 +172,14 @@ const logContact = async () => {
 </script>
 
 <template>
-  <div
-    v-if="id"
-    class="fixed inset-0 z-[2000] flex items-center justify-center bg-black/50 p-4"
-    @click.self="emit('close')"
+  <AdminModal
+    :open="!!id"
+    :title="`Chi tiết Đơn đăng ký #${id ?? ''}`"
+    icon="fa-solid fa-clipboard-list"
+    size="xl"
+    :busy="busy !== ''"
+    @close="emit('close')"
   >
-    <div class="max-h-[90vh] w-full max-w-[720px] overflow-y-auto rounded-2xl bg-white p-6 sm:p-7">
-      <div class="mb-4 flex items-start justify-between gap-3">
-        <h3 class="m-0 text-[1.15rem] font-extrabold text-[#122815]">
-          <i class="fa-solid fa-clipboard-list mr-2 text-[#2c6e33]" aria-hidden="true"></i>
-          Chi tiết Đơn đăng ký #{{ id }}
-        </h3>
-        <button
-          type="button"
-          class="rounded-lg border border-[#c8d6c9] bg-white px-2.5 py-1.5 text-sm text-[#2c3e2e] hover:bg-[#f4f7f4]"
-          aria-label="Đóng"
-          @click="emit('close')"
-        >
-          <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-        </button>
-      </div>
-
       <!-- Loading -->
       <div v-if="loading" role="status" aria-busy="true" class="flex flex-col gap-3">
         <span class="sr-only">Đang tải chi tiết đơn đăng ký</span>
@@ -386,6 +374,5 @@ const logContact = async () => {
           </a>
         </div>
       </template>
-    </div>
-  </div>
+  </AdminModal>
 </template>

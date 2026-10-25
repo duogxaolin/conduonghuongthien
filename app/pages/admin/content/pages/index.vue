@@ -160,10 +160,8 @@
     </div>
 
     <!-- Create modal -->
-    <div v-if="showCreate" class="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" @click.self="showCreate = false">
-      <div class="w-full max-w-md rounded-xl bg-white p-6 shadow-xl">
-        <h2 class="text-lg font-bold text-gray-800">Tạo trang mới</h2>
-        <div class="mt-4 space-y-4">
+    <AdminModal :open="showCreate" title="Tạo trang mới" size="sm" :busy="creating" @close="showCreate = false">
+        <div class="space-y-4">
           <div>
             <label class="block text-sm font-semibold text-gray-700 mb-1">Tiêu đề trang *</label>
             <input v-model="createForm.title" type="text" placeholder="VD: Chương trình hỗ trợ" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600" />
@@ -173,24 +171,25 @@
             <input v-model="createForm.slug" type="text" placeholder="tự động tạo từ tiêu đề nếu để trống" class="w-full rounded-lg border border-gray-300 px-3 py-2 text-sm outline-none focus:border-green-600" />
           </div>
         </div>
-        <div class="mt-6 flex justify-end gap-2">
-          <button class="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100" @click="showCreate = false">Hủy</button>
+        <template #footer>
+          <button type="button" class="rounded-lg px-4 py-2 text-sm font-semibold text-gray-600 hover:bg-gray-100" @click="showCreate = false">Hủy</button>
           <button
+            type="button"
             class="inline-flex items-center gap-2 rounded-lg bg-green-700 px-4 py-2 text-sm font-semibold text-white hover:bg-green-800 disabled:opacity-50"
             :disabled="creating || !createForm.title.trim()"
             @click="createPage"
           >
-            <i v-if="creating" class="fa-solid fa-spinner fa-spin"></i>
+            <i v-if="creating" class="fa-solid fa-spinner fa-spin" aria-hidden="true"></i>
             Tạo trang
           </button>
-        </div>
-      </div>
-    </div>
+        </template>
+    </AdminModal>
   </div>
 </template>
 
 <script setup lang="ts">
 import type { AdminPageRow } from '~/types/admin-api'
+import AdminModal from '~/components/admin/AdminModal.vue'
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 const toast = useToast()

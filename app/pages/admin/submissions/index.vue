@@ -334,7 +334,11 @@ onMounted(() => { fetchSubmissions() })
                 {{ fmtDate(s.createdAt) }}
               </td>
               <td class="px-4 py-3.5 border-b border-[#eef2ee]">
+                <!-- Khoá ổn định: thao tác trong hộp chi tiết tải lại bảng (nút này bị gỡ
+                     và vẽ lại) — AdminModal tìm lại đúng nút này để trả focus. -->
                 <button
+                  type="button"
+                  :data-admin-modal-opener="`submission-${s.id}`"
                   class="inline-flex items-center gap-1.5 bg-[#f0f7f1] text-[#2c6e33] border border-[#8ed694] px-2.5 py-1.5 rounded-md text-[0.78rem] font-bold cursor-pointer hover:bg-[#e4f2e5] transition-colors"
                   @click="openId = Number(s.id)"
                 >

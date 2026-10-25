@@ -14,6 +14,7 @@
  * không render thành empty-state (modal đóng về table), nên không cần contract.
  */
 import { errorMessage } from '~/utils/errorMessage'
+import AdminModal from '~/components/admin/AdminModal.vue'
 
 interface QuickViewTranslation {
   articleId: number
@@ -42,6 +43,9 @@ const emit = defineEmits<{
 const quickViewLoading = ref(false)
 const quickViewData = ref<QuickViewTranslation | null>(null)
 const toast = useToast()
+
+/** Cờ + tên ngôn ngữ của bản dịch đang xem — tiêu đề hộp (tên truy cập) dùng tên. */
+const langMeta = computed(() => props.bulkLangs.find(l => l.code === quickViewData.value?.langCode) ?? null)
 
 // Khi `show` chuyển true và có articleId → fetch. Watch cho phép cha
 // bật modal bằng `show=true` rồi con tự load (KHÔNG cần cha gọi hàm).
@@ -105,42 +109,26 @@ async function toggleStatus() {
 </script>
 
 <template>
-  <div
-    v-if="props.show && quickViewData"
-    class="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-black/40 p-4 sm:items-center"
-    role="dialog"
-    aria-modal="true"
-    @click.self="emit('close')"
+  <AdminModal
+    :open="props.show && !!quickViewData"
+    :title="`Bản dịch ${langMeta?.label || quickViewData?.langCode || ''}`"
+    size="xl"
+    @close="emit('close')"
   >
-    <div class="w-full max-w-3xl rounded-xl border border-[#e2ece3] bg-white shadow-xl overflow-hidden flex flex-col max-h-[90vh]">
-      <!-- Header -->
-      <div class="flex items-center justify-between gap-3 border-b border-[#eef2ee] px-5 py-4 bg-[#f8faf8]">
-        <div class="flex items-center gap-2">
-          <span class="text-xl leading-none">{{ props.bulkLangs.find(l => l.code === quickViewData!.langCode)?.flag }}</span>
-          <div>
-            <h2 class="m-0 text-base font-extrabold text-[#122815]">
-              Bản dịch {{ props.bulkLangs.find(l => l.code === quickViewData!.langCode)?.label || quickViewData!.langCode }}
-            </h2>
-            <p class="m-0 text-xs text-[#667768]">Bài viết gốc: {{ quickViewData.articleTitle }}</p>
-          </div>
-        </div>
-        <div class="flex items-center gap-2">
+      <div v-if="quickViewData" class="flex flex-col gap-4">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <p class="m-0 flex items-center gap-2 text-xs text-[#667768]">
+            <span class="text-xl leading-none" aria-hidden="true">{{ langMeta?.flag }}</span>
+            Bài viết gốc: {{ quickViewData.articleTitle }}
+          </p>
           <span
             class="px-2.5 py-1 rounded-full text-xs font-bold uppercase tracking-wider"
             :class="quickViewData.status === 'published' ? 'bg-[#e4f2e5] text-[#1e4620]' : 'bg-[#fff8e1] text-[#b78103]'"
           >
             {{ quickViewData.status === 'published' ? 'Đã xuất bản' : 'Bản nháp AI' }}
           </span>
-          <button
-            type="button"
-            class="rounded-lg border-0 bg-none p-1.5 text-[#667768] hover:text-[#122815] cursor-pointer"
-            @click="emit('close')"
-          ><i class="fa-solid fa-xmark text-sm"></i></button>
         </div>
-      </div>
 
-      <!-- Body -->
-      <div class="px-6 py-4 overflow-y-auto flex-1 flex flex-col gap-4">
         <div v-if="quickViewLoading" class="py-12 text-center text-xs text-[#667768] flex items-center justify-center gap-2">
           <i class="fa-solid fa-circle-notch fa-spin text-sm text-[#2c6e33]"></i> Đang tải bản dịch...
         </div>
@@ -166,16 +154,13 @@ async function toggleStatus() {
         </template>
       </div>
 
-      <!-- Footer Actions -->
-      <div class="flex items-center justify-between border-t border-[#eef2ee] px-6 py-3.5 bg-[#f8faf8]">
+    <template v-if="quickViewData" #footer>
         <nuxt-link
           :to="`/admin/content/articles/${quickViewData.articleId}`"
-          class="text-xs font-bold text-[#2c6e33] hover:underline flex items-center gap-1.5 no-underline"
+          class="mr-auto text-xs font-bold text-[#2c6e33] hover:underline flex items-center gap-1.5 no-underline"
         >
-          <i class="fa-solid fa-pen-to-square"></i> Mở trong trang soạn thảo
+          <i class="fa-solid fa-pen-to-square" aria-hidden="true"></i> Mở trong trang soạn thảo
         </nuxt-link>
-
-        <div class="flex items-center gap-2">
           <button
             type="button"
             class="px-4 py-2 rounded-lg text-xs font-bold cursor-pointer border transition-colors"
@@ -191,8 +176,6 @@ async function toggleStatus() {
             class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-100 cursor-pointer"
             @click="emit('close')"
           >Đóng</button>
-        </div>
-      </div>
-    </div>
-  </div>
+    </template>
+  </AdminModal>
 </template>

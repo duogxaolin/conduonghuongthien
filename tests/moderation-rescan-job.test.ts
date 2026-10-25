@@ -32,6 +32,14 @@ const store = {
   failQueue: false,
   lockHeldElsewhere: false,
   lockHeld: false,
+  /** `IS_USED_LOCK(?) = CONNECTION_ID()` checks the job ran on its lock connection. */
+  lockChecks: 0,
+  /** From this check on (1-based), the lock connection no longer holds the lock. */
+  loseLockAtCheck: null as number | null,
+  /** This check (1-based) fails like a dropped connection. */
+  lockCheckThrowsAt: null as number | null,
+  /** Number of comment/message batch reads done when each lock check ran. */
+  readsAtCheck: [] as number[],
 }
 
 function reset() {
@@ -43,6 +51,10 @@ function reset() {
   store.failHideIds = new Set()
   store.failQueue = false
   store.lockHeldElsewhere = false
+  store.lockChecks = 0
+  store.loseLockAtCheck = null
+  store.lockCheckThrowsAt = null
+  store.readsAtCheck = []
   ai.gate = null
   ai.calls = 0
   ai.throws = false
@@ -126,17 +138,33 @@ const fakeDb = {
   }),
 }
 
-/** MySQL named lock, faked: one holder at a time, plus a switch for "held by another replica". */
+/**
+ * MySQL named lock, faked: one holder at a time, plus a switch for "held by another
+ * replica", and the per-batch ownership check (`IS_USED_LOCK(?) = CONNECTION_ID()`),
+ * which can be made to report the lock lost or to fail like a dropped connection.
+ * Unknown SQL throws, so a check written differently cannot pass by accident.
+ */
 const fakePool = {
   getConnection: async () => ({
-    query: async (sql: string) => {
+    query: async (sql: string, params?: unknown[]) => {
       if (sql.includes('GET_LOCK')) {
         if (store.lockHeldElsewhere || store.lockHeld) return [[{ acquired: 0 }]]
         store.lockHeld = true
         return [[{ acquired: 1 }]]
       }
-      if (sql.includes('RELEASE_LOCK')) store.lockHeld = false
-      return [[]]
+      if (sql.includes('RELEASE_LOCK')) {
+        store.lockHeld = false
+        return [[]]
+      }
+      if (/IS_USED_LOCK\(\?\)\s*=\s*CONNECTION_ID\(\)/.test(sql)) {
+        assert.deepEqual(params, ['cdkt:ai:moderation-rescan'], 'the check must ask about the rescan lock itself')
+        store.lockChecks += 1
+        store.readsAtCheck.push(store.limits.length)
+        if (store.lockCheckThrowsAt === store.lockChecks) throw new Error('Connection lost: The server closed the connection.')
+        const lost = store.loseLockAtCheck !== null && store.lockChecks >= store.loseLockAtCheck
+        return [[{ held: store.lockHeld && !lost ? 1 : 0 }]]
+      }
+      throw new Error(`unexpected lock-connection SQL: ${sql}`)
     },
     release: () => undefined,
   }),
@@ -449,4 +477,78 @@ test('hàng chờ không nhân đôi cho cùng một mục còn pending (đườ
   await worker.checkAndModerateContent({ content: 'xin chào', targetType: 'chat' })
   await worker.checkAndModerateContent({ content: 'xin chào', targetType: 'chat' })
   assert.equal(store.queue.filter(r => r.targetType === 'chat').length, 2)
+})
+
+// ── 6. D-RESCAN: còn giữ khoá trước MỖI lô, mất khoá thì dừng ──────────────────
+//
+// `withNamedLock` giữ khoá trên MỘT kết nối. Kết nối đó rơi giữa chừng (MySQL khởi
+// động lại, `wait_timeout`, mạng) thì MySQL nhả khoá, bản sao khác lấy được và hai
+// lượt quét chạy song song — nhân đôi chi phí AI. Job hỏi lại trên chính kết nối
+// giữ khoá trước mỗi lô và dừng khi không còn giữ.
+
+test('job: the lock is checked on the lock connection before EVERY batch of a run', async () => {
+  await job.waitForModerationRescan()
+  reset()
+  seedComments(250)
+  store.messages = Array.from({ length: 150 }, (_, i) => ({ id: i + 1, content: `tin ${i + 1}`, isDeleted: false }))
+  assert.equal((await job.startModerationRescan({ actorId: 1 })).started, true)
+  await job.waitForModerationRescan()
+  assert.equal(job.getModerationRescanStatus().state, 'completed')
+  // 3 comment batches (100 + 100 + 50) then 2 message batches (100 + 50).
+  assert.equal(store.limits.length, 5)
+  assert.deepEqual(store.readsAtCheck, [0, 1, 2, 3, 4], 'a check precedes every batch read, the first one included')
+})
+
+test('job: losing the lock between batches stops the run before the next batch (stopped / lock_lost), logs it, and the next run resumes', async () => {
+  await job.waitForModerationRescan()
+  reset()
+  seedComments(250)
+  // Held for batch 1; gone before batch 2 (the lock connection dropped and the lock
+  // was released — another replica may already hold it).
+  store.loseLockAtCheck = 2
+  const before = logged.length
+  let finished = 0
+  assert.equal((await job.startModerationRescan({ actorId: 1, onFinished: async () => { finished += 1 } })).started, true)
+  await job.waitForModerationRescan()
+  const stopped = job.getModerationRescanStatus()
+  assert.equal(stopped.state, 'stopped')
+  assert.equal(stopped.stopReason, 'lock_lost')
+  assert.ok(stopped.finishedAt, 'a stopped run has an end time')
+  assert.equal(stopped.progress!.scannedComments, 100, 'batch 1 only — nothing was scanned after the lock was lost')
+  assert.equal(ai.calls, 100)
+  assert.equal(store.limits.length, 1, 'the second batch was never read')
+  assert.equal(finished, 0, 'a stopped run is not reported as finished')
+  const lost = logged.slice(before).filter(l => l.event === 'ai_moderation.rescan_lock_lost')
+  assert.equal(lost.length, 1, 'the stop is logged once, with a stable event')
+  assert.equal(lost[0]!.level, 'error')
+  assert.equal(lost[0]!.scannedComments, 100)
+
+  // The lock is healthy again: the next run resumes below the last finished batch.
+  store.loseLockAtCheck = null
+  ai.calls = 0
+  assert.equal((await job.startModerationRescan({ actorId: 1 })).started, true)
+  await job.waitForModerationRescan()
+  const done = job.getModerationRescanStatus()
+  assert.equal(done.state, 'completed')
+  assert.equal(done.stopReason, null)
+  assert.equal(done.summary!.scannedComments, 150, 'only the 150 comments the stopped run never reached')
+  assert.equal(ai.calls, 150)
+})
+
+test('job: a lock check that errors (connection dropped) also stops with lock_lost, before the next batch', async () => {
+  await job.waitForModerationRescan()
+  reset()
+  seedComments(150)
+  store.lockCheckThrowsAt = 2
+  const before = logged.length
+  assert.equal((await job.startModerationRescan({ actorId: 1 })).started, true)
+  await job.waitForModerationRescan()
+  const stopped = job.getModerationRescanStatus()
+  assert.equal(stopped.state, 'stopped')
+  assert.equal(stopped.stopReason, 'lock_lost')
+  assert.equal(stopped.progress!.scannedComments, 100)
+  assert.equal(store.limits.length, 1, 'the second batch was never read')
+  const lost = logged.slice(before).filter(l => l.event === 'ai_moderation.rescan_lock_lost')
+  assert.equal(lost.length, 1)
+  assert.match(String(lost[0]!.error), /Connection lost/)
 })

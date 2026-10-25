@@ -20,8 +20,12 @@
  */
 import { type Connection, type RowDataPacket } from 'mysql2/promise'
 
-import { BOOT_MIGRATION_EVENTS, logError } from '../utils/logger'
+import { readAffectedRows } from '../utils/affected-rows'
+import { BOOT_MIGRATION_EVENTS, logError, logInfo } from '../utils/logger'
 import { encodeShortId } from '../utils/short-media-id'
+import { convertPlaintextSettingsSecrets } from './settings-secret-conversion'
+import { backfillReservedReaderNames } from './reader-name-backfill'
+import { repairLegacyMediaUrls } from './legacy-media-urls'
 
 export type ChatbotColumnMigration = {
   table: string
@@ -677,6 +681,13 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // every sign-in: writing the chosen name into that column would have the next
   // sign-in quietly erase it. Read only through effectiveDisplayName().
   await ensureColumn(db, database, 'reader_accounts', 'custom_display_name', 'VARCHAR(255) NULL AFTER `display_name`')
+  // Tên Google gấp ra một từ dành riêng ("Admin", "Ban quản trị", "C11"…) → hiện
+  // "Bạn đọc" (spec reader-display-names-google, D-NAMES). OAuth callback đặt cờ mỗi
+  // lần đăng nhập; hàng có sẵn được điền MỘT LẦN, đúng lúc cột vừa được thêm (lượt
+  // chuyển theo trạng thái lược đồ — khởi động lần hai cột đã có, không ghi gì).
+  const readerNameFlagExisted = await hasColumn(db, database, 'reader_accounts', 'display_name_reserved')
+  await ensureColumn(db, database, 'reader_accounts', 'display_name_reserved', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER `custom_display_name`')
+  if (!readerNameFlagExisted) await backfillReservedReaderNames(db)
   // Defaults to 1 so an existing reader keeps being told when the portal answers
   // them. Switchable from /profile — emailing a citizen with no way to stop is
   // spam, whoever is sending it.
@@ -827,6 +838,9 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   await ensureIndex(db, database, 'articles', 'articles_status_type_pub_idx', 'INDEX `articles_status_type_pub_idx` (`status`, `type`, `published_at`, `created_at`)')
   await ensureIndex(db, database, 'articles', 'articles_status_category_pub_idx', 'INDEX `articles_status_category_pub_idx` (`status`, `category_id`, `published_at`, `created_at`)')
 
+  // ── Per-article view totals + boot reconcile with daily rows (wave2 D6) ───
+  await convergeArticleViewTotals(db, database)
+
   // ── Rút gọn nhãn hotline: "Hotline Tư Vấn 24/7" → "Hotline" ──────────────
   // Seed là insert-only nên đổi seed không cập nhật hàng đã có. Nay UPDATE
   // idempotent theo giá trị cũ — chỉ đè hàng nào còn mang text dài, không chạm
@@ -851,6 +865,134 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // (mỗi URL dài cả trăm ký tự). Lên MEDIUMTEXT (16MB) — đủ cho sitemap lớn.
   await modifyColumn(db, database, 'settings', 'value', 'MEDIUMTEXT NULL')
 
+  // ── backups: trigger VARCHAR(32), offsite_status ──────────────────────────
+  // Gom vào `convergeBackupsTable` (bên dưới) để lượt khôi phục CSDL hỏng giữa chừng
+  // gọi được RIÊNG nó — sổ sao lưu là thứ đường lui (bản `pre-restore`) cần.
+  await convergeBackupsTable(db, database)
+
+  // ── Quét thư mục ảnh: tệp nguồn của hàng đã nhập (wave2 D-SCAN) ───────────
+  // Lượt quét `public/uploads/` bỏ qua tệp đã có ở cột này — kể cả bản nhập nằm trên
+  // R2, nơi `storage_path` là khoá R2. Chỉ mục tiền tố: 1024 × 4 byte vượt trần khoá
+  // InnoDB. Cùng tên + cột ở `schema.ts` và `schema-tables/core.ts`
+  // (`tests/media-scan-index.test.ts`). Chỉ thêm cột/chỉ mục — không ghi hàng nào.
+  await ensureColumn(db, database, 'media', 'scanned_source_path', 'VARCHAR(1024) NULL')
+  await ensureIndex(db, database, 'media', 'media_scanned_source_path_idx', 'INDEX `media_scanned_source_path_idx` (`scanned_source_path`(255))')
+
+  // ── settings: mã hoá smtp_pass / r2_secret_key / backup_drive_service_account ──
+  // Lượt chuyển MỘT LẦN theo trạng thái giá trị (chưa phải envelope → mã hoá; đã là
+  // envelope → để nguyên, kể cả khi không mở được). Lần khởi động thứ hai không ghi
+  // gì. Chi tiết và lý do: `settings-secret-conversion.ts` (spec settings-secret-storage).
+  const secretReport = await convertPlaintextSettingsSecrets(db)
+  if (secretReport.converted.length) {
+    logInfo({ event: 'db.migration.settings_secrets_encrypted', keys: secretReport.converted })
+  }
+  if (secretReport.needsReentry.length) {
+    logError({ event: BOOT_MIGRATION_EVENTS.settingsSecretUnreadable, keys: secretReport.needsReentry })
+  }
+  if (secretReport.skippedNoKey.length) {
+    logError({ event: BOOT_MIGRATION_EVENTS.settingsSecretNoKey, keys: secretReport.skippedNoKey })
+  }
+
+  // ── Tự vá URL ảnh hỏng hàng loạt (all bài) ────────────────────────────────
+  // Sync trước treo ở pre-backup nên phase rewrite chưa chạy: all bài vẫn
+  // `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi file local đã
+  // bị xoá (Local 0 / R2 3212). Kèm `media.url` thiếu scheme (domain R2) →
+  // grid thành `http://localhost:3000/<domain>...`.
+  // Chạy tự động mỗi lần khởi động, idempotent (< vài giây), không cần bấm nút.
+  // Thân hàm ở `legacy-media-urls.ts` (wave2 D-SCAN: domain từ cấu hình, bỏ tên mơ hồ).
+  await repairLegacyMediaUrls(db)
+}
+
+/**
+ * Tổng lượt xem theo bài trên `articles` (wave2 design D6, spec `most-read-ranking`)
+ * và lượt đối soát với `article_view_daily` mỗi lần khởi động.
+ *
+ * Ba cột THƯỜNG: `view_total_real`, `view_total_fabricated`, `view_total` (BIGINT
+ * NOT NULL DEFAULT 0). `view_total` = tổng hai cột, do `article-views.ts` ghi trong
+ * CÙNG câu UPDATE với nửa của nó — **không** phải cột sinh: image cũ hơn (vd. khi
+ * deploy tự lùi vì healthcheck hỏng, SAU khi image mới đã chạy `init.ts`) dump
+ * `SELECT *` mọi cột, và MySQL từ chối mọi giá trị cho cột sinh lúc khôi phục
+ * (3105) → bản sao lưu của image cũ, kể cả `pre-restore`, không khôi phục được và
+ * để `articles` dở dang. d079453 từng khai cột sinh STORED; CSDL nào đã chạy bản
+ * đó được đổi sang cột thường ở đây (MySQL giữ nguyên giá trị) — điều kiện kích
+ * hoạt là chính trạng thái "cột còn là cột sinh", lượt đổi tự xoá nó.
+ *
+ * **Đối soát mỗi lần khởi động** (`reconcileArticleViewTotals`) thay cho lượt điền
+ * một lần: một image cũ đếm lượt xem mà không biết tới tổng (sau một lượt lùi), rồi
+ * image mới quay lại → tổng lệch; một lượt "điền một lần" khoá theo trạng thái lược
+ * đồ không bao giờ chạy lại cho trường hợp đó. Đối soát ghi ĐÚNG những bài có tổng
+ * khác tổng hàng theo ngày, và không ghi gì khi đã khớp — nên chạy lại vô hại,
+ * khởi động bị cắt ngang ở đâu cũng được lượt sau sửa tiếp.
+ *
+ * Thứ tự: 3 cột → đổi cột sinh (nếu có) → đối soát → index (đối soát trước index
+ * để lượt nâng cấp không phải cập nhật index cho từng hàng).
+ *
+ * Khoá bằng `tests/view-boost-integration.test.ts` (MySQL thật: lệch kiểu "lùi
+ * bản", nâng cấp, CSDL của d079453, khởi động lần hai không đổi hàng nào).
+ */
+export async function convergeArticleViewTotals(db: Connection, database: string) {
+  await ensureColumn(db, database, 'articles', 'view_total_real', 'BIGINT NOT NULL DEFAULT 0')
+  await ensureColumn(db, database, 'articles', 'view_total_fabricated', 'BIGINT NOT NULL DEFAULT 0')
+  await ensureColumn(db, database, 'articles', 'view_total', 'BIGINT NOT NULL DEFAULT 0')
+
+  const [generated] = await db.execute<RowDataPacket[]>(
+    "SELECT 1 FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ? AND TABLE_NAME = 'articles' AND COLUMN_NAME = 'view_total' AND EXTRA = 'STORED GENERATED' LIMIT 1",
+    [database],
+  )
+  if (generated.length > 0) {
+    await db.query('ALTER TABLE `articles` MODIFY COLUMN `view_total` BIGINT NOT NULL DEFAULT 0')
+    logInfo({ event: 'db.migration.article_view_total_ungenerated' })
+  }
+
+  await reconcileArticleViewTotals(db)
+
+  await ensureIndex(db, database, 'articles', 'articles_status_type_views_idx', 'INDEX `articles_status_type_views_idx` (`status`, `type`, `view_total`, `published_at`, `created_at`)')
+}
+
+/**
+ * Đưa `view_total_real`/`view_total_fabricated`/`view_total` của mọi bài về đúng
+ * tổng `article_view_daily` — CHỈ ghi bài đang lệch; CSDL đã khớp thì không hàng
+ * nào bị ghi (`WHERE` so cả ba cột). Bài không còn hàng theo ngày nào về 0.
+ * `updated_at = updated_at`: cột `ON UPDATE CURRENT_TIMESTAMP`, không ghim thì đối
+ * soát đổi "lần sửa cuối" của bài.
+ *
+ * **Lượt ghi lúc khởi động đã khai báo** (bộ kiểm nâng cấp `schema-upgrade-
+ * integration` phải liệt kê nó — CHANGELOG § 35): chính câu UPDATE dưới đây.
+ *
+ * Chạy trong `init.ts` TRƯỚC khi server nhận yêu cầu (CMD của image): không có lượt
+ * đếm nào chen giữa lúc cộng và lúc ghi. Chạy tay `npm run db:init` khi app đang
+ * phục vụ thì một lượt xem đúng lúc đó có thể bị ghi đè bằng tổng cũ hơn một nhịp —
+ * lần khởi động sau tự sửa. Trả số bài đã sửa.
+ */
+export async function reconcileArticleViewTotals(db: Pick<Connection, 'query'>): Promise<number> {
+  const [result] = await db.query(`
+    UPDATE \`articles\` a
+    LEFT JOIN (
+      SELECT \`article_id\`, SUM(\`real_views\`) AS r, SUM(\`fabricated_views\`) AS f
+      FROM \`article_view_daily\`
+      GROUP BY \`article_id\`
+    ) s ON s.\`article_id\` = a.\`id\`
+    SET a.\`view_total_real\` = COALESCE(s.r, 0),
+        a.\`view_total_fabricated\` = COALESCE(s.f, 0),
+        a.\`view_total\` = COALESCE(s.r, 0) + COALESCE(s.f, 0),
+        a.\`updated_at\` = a.\`updated_at\`
+    WHERE a.\`view_total_real\` <> COALESCE(s.r, 0)
+       OR a.\`view_total_fabricated\` <> COALESCE(s.f, 0)
+       OR a.\`view_total\` <> COALESCE(s.r, 0) + COALESCE(s.f, 0)
+  `)
+  const healed = readAffectedRows(result)
+  if (healed !== 0) logInfo({ event: 'db.migration.article_view_totals_reconciled', articles: healed })
+  return healed ?? 0
+}
+
+/**
+ * Hình dạng hiện tại của bảng `backups` (sổ sao lưu). Một phần của
+ * `applyAdditiveMigrations`; tách riêng vì lượt khôi phục CSDL hỏng (dump chết giữa
+ * chừng, hoặc một bước khởi động khác hỏng trước khi tới đây) gọi nó MỘT MÌNH để sổ
+ * sao lưu dùng được ngay — đăng ký bản `pre-restore` khi làm theo lời khuyên "khôi phục
+ * lại bản an toàn", danh sách, lượt sao lưu kế. Chạy lại vô hại.
+ */
+export async function convergeBackupsTable(db: Connection, database: string): Promise<void> {
   // ── backups.trigger: VARCHAR(16) → VARCHAR(32) ────────────────────────────
   // `pre-fix-thumbnails` (18 ký tự) không vừa VARCHAR(16): dưới strict sql_mode
   // `runBackup('sql', 'pre-fix-thumbnails')` chết với ER_DATA_TOO_LONG, kể cả
@@ -859,13 +1001,12 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
   // CSDL mới; dòng này nới CSDL cũ (chỉ nới — không mất dữ liệu, chạy lại vô hại).
   await modifyColumn(db, database, 'backups', 'trigger', "VARCHAR(32) NOT NULL DEFAULT 'manual'")
 
-  // ── Tự vá URL ảnh hỏng hàng loạt (all bài) ────────────────────────────────
-  // Sync trước treo ở pre-backup nên phase rewrite chưa chạy: all bài vẫn
-  // `http://localhost:3000/uploads/migrated/media/*.jpeg` trong khi file local đã
-  // bị xoá (Local 0 / R2 3212). Kèm `media.url` thiếu scheme `cdn1...` →
-  // grid thành `http://localhost:3000/cdn1...`.
-  // Chạy tự động mỗi lần khởi động, idempotent (< vài giây), không cần bấm nút.
-  await repairLegacyMediaUrls(db)
+  // ── backups.offsite_status (wave2 D-OFFSITE) ──────────────────────────────
+  // uploaded | failed | none cho từng tệp sao lưu (shared/backup-offsite-status.ts).
+  // Chỉ thêm cột — KHÔNG điền giá trị cho hàng cũ: `drive_uploaded = 0` không phân
+  // biệt "Drive tắt" với "Drive hỏng", nên mọi suy ngược đều là đoán. Hàng cũ giữ
+  // NULL và trang quản trị lùi về `drive_uploaded`. Không có lệnh ghi hàng lúc khởi động.
+  await ensureColumn(db, database, 'backups', 'offsite_status', 'VARCHAR(16) NULL AFTER `drive_file_id`')
 }
 
 /**
@@ -879,90 +1020,6 @@ export async function applyAdditiveMigrations(db: Connection, database: string) 
  * Chạy một lần lúc upgrade; 11 hàng hiện có → 11 vòng loop, không đáng kể. Nếu
  * mọi hàng đã có `short_id` (chạy rồi) thì thoát ngay.
  */
-/**
- * Tự vá URL ảnh hỏng hàng loạt còn sót sau lần sync treo pre-backup.
- * Chạy mỗi lần khởi động, idempotent, không backup (migration đã là idempotent).
- * Không throw — lỗi chỉ log, không chặn khởi động.
- */
-async function repairLegacyMediaUrls(db: Connection) {
-  try {
-    // 1) media.url: bóc localhost prefix + thêm scheme — chỉ chạy khi thật sự có hàng lỗi
-    const [mediaNeed] = await db.execute<RowDataPacket[]>(
-      "SELECT 1 FROM `media` WHERE `url` LIKE 'http://localhost:3000%' OR (`url` NOT LIKE 'http%' AND `url` LIKE 'cdn1.delify.vn%') LIMIT 1",
-    ).catch(() => [[] as RowDataPacket[]] as const)
-    if ((mediaNeed as RowDataPacket[]).length > 0) {
-      await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'http://localhost:3000/', '') WHERE \`url\` LIKE 'http://localhost:3000/cdn1%'`).catch(() => {})
-      await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'https://localhost:3000/', '') WHERE \`url\` LIKE 'https://localhost:3000/cdn1%'`).catch(() => {})
-      await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'http://localhost:3000', '') WHERE \`url\` LIKE 'http://localhost:3000http%'`).catch(() => {})
-      await db.query(`UPDATE \`media\` SET \`url\` = REPLACE(\`url\`, 'https://localhost:3000', '') WHERE \`url\` LIKE 'https://localhost:3000http%'`).catch(() => {})
-      await db.query(`UPDATE \`media\` SET \`url\` = CONCAT('https://', \`url\`) WHERE \`url\` NOT LIKE 'http%' AND \`url\` LIKE 'cdn1.delify.vn%'`).catch(() => {})
-    }
-
-    // 2) articles.content: double-prefix — cũng guard
-    const [articleDouble] = await db.execute<RowDataPacket[]>(
-      "SELECT 1 FROM `articles` WHERE `content` LIKE '%localhost:3000https://%' OR `content` LIKE '%localhost:3000/cdn1%' LIMIT 1",
-    ).catch(() => [[] as RowDataPacket[]] as const)
-    if ((articleDouble as RowDataPacket[]).length > 0) {
-      await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'http://localhost:3000https://', 'https://') WHERE \`content\` LIKE '%http://localhost:3000https://%'`).catch(() => {})
-      await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'https://localhost:3000https://', 'https://') WHERE \`content\` LIKE '%https://localhost:3000https://%'`).catch(() => {})
-      await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'http://localhost:3000/cdn1.delify.vn', 'https://cdn1.delify.vn') WHERE \`content\` LIKE '%http://localhost:3000/cdn1.delify.vn%'`).catch(() => {})
-      await db.query(`UPDATE \`articles\` SET \`content\` = REPLACE(\`content\`, 'https://localhost:3000/cdn1.delify.vn', 'https://cdn1.delify.vn') WHERE \`content\` LIKE '%https://localhost:3000/cdn1.delify.vn%'`).catch(() => {})
-    }
-
-    // 3) Thay URL `*/uploads/migrated/media/<file>` (cả relative + absolute) bằng
-    //    `media.url` R2 đúng — all bài, làm trong 1 lượt đọc/ghi (theo id).
-    //
-    // Trước đây lặp từng filename × (REGEXP_REPLACE scan cả cột LONGTEXT +
-    // REPLACE scan lại) = ~1920 quét full bảng, treo container 95s+ ở 960 file.
-    // Giờ: đọc mỗi bài 1 lần, ghép filename→url trong JS (Map lookup O(1)),
-    // thay bằng regex JS (absolute prefix bắt `https?://host/uploads/...`),
-    // UPDATE 1 câu mỗi bài. Scan articles chỉ 1 lần.
-    const [migratedNeed] = await db.execute<RowDataPacket[]>(
-      "SELECT 1 FROM `articles` WHERE `content` LIKE '%/uploads/migrated/media/%' LIMIT 1",
-    ).catch(() => [[] as RowDataPacket[]] as const)
-    if ((migratedNeed as RowDataPacket[]).length === 0) return
-
-    const [r2Rows] = await db.execute<RowDataPacket[]>(
-      "SELECT `filename`, `url` FROM `media` WHERE `provider` = 'r2' AND `filename` IS NOT NULL AND `url` IS NOT NULL"
-    ).catch(() => [[] as RowDataPacket[]] as const)
-    // URL trong articles có thể URL-encoded (`t%E1%BA%A3i%20xu%E1%BB%91ng.jpg`)
-    // trong khi `media.filename` lưu raw (`tải xuống.jpg`). Map cả hai dạng để khớp.
-    const urlByFilename = new Map<string, string>()
-    const safeEncode = (s: string) => {
-      try { return encodeURIComponent(s) } catch { return s }
-    }
-    for (const row of r2Rows as RowDataPacket[]) {
-      const fn = String((row as Record<string, unknown>).filename || '')
-      const u = String((row as Record<string, unknown>).url || '')
-      if (!fn || !u) continue
-      urlByFilename.set(fn, u)
-      const enc = safeEncode(fn)
-      if (enc !== fn) urlByFilename.set(enc, u)
-    }
-    if (urlByFilename.size === 0) return
-
-    const [articleRows] = await db.execute<RowDataPacket[]>(
-      "SELECT `id`, `content` FROM `articles` WHERE `content` LIKE '%/uploads/migrated/media/%'",
-    )
-    for (const row of articleRows as RowDataPacket[]) {
-      const id = (row as Record<string, unknown>).id as number | undefined
-      const original = (row as Record<string, unknown>).content
-      if (id === undefined || original === null) continue
-      const content = String(original)
-      const replacement = content.replace(
-        /https?:\/\/[^\s"'<>]*\/uploads\/[^\s"'<>]*migrated\/media\/([^\s"'<>\]?#]+)/g,
-        (_match, filename: string) => urlByFilename.get(filename) ?? _match,
-      ).replace(
-        /\/uploads\/migrated\/media\/([^\s"'<>\]?#]+)/g,
-        (_match, filename: string) => urlByFilename.get(filename) ?? _match,
-      )
-      if (replacement !== content) {
-        await db.query('UPDATE `articles` SET `content` = ? WHERE `id` = ?', [replacement, id])
-      }
-    }
-  } catch { /* không chặn khởi động */ }
-}
-
 async function backfillShortIds(db: Connection) {
   const [rows] = await db.execute<RowDataPacket[]>(
     'SELECT `id` FROM `media_items` WHERE `short_id` IS NULL ORDER BY `id`',

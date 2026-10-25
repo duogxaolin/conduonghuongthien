@@ -12,61 +12,49 @@ interface SessionRow {
   lastMessageAt: string
 }
 
-const rows = ref<SessionRow[]>([])
-const loading = ref(true)
-// A persistent error branch, not just a toast: a failed fetch and an empty
-// table look identical otherwise, and a cán bộ would read "chưa có phiên nào"
-// as fact.
-const loadError = ref('')
+type SessionFilters = {
+  /** `<input type="date">` values — Vietnam calendar days, `YYYY-MM-DD`; '' = no bound. */
+  from: string
+  to: string
+  hasContact: '' | 'yes' | 'no'
+}
 
-const page = ref(1)
+/** `page` is the requested page echoed back — this endpoint does not clamp it. */
+type SessionListResponse = { ok: boolean; page: number; total: number; totalPages: number; items: SessionRow[] }
+
 const pageSize = 25
-const total = ref(0)
-const totalPages = ref(1)
 
-const from = ref('')
-const to = ref('')
-const hasContact = ref<'' | 'yes' | 'no'>('')
-
-const fetchSessions = async () => {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{
-      ok: boolean; total: number; totalPages: number; items: SessionRow[]
-    }>)('/api/admin/chatbot/sessions', {
+// List state, stale-request guard and paging: useAdminList (tests/admin-list.test.ts).
+const list = useAdminList<SessionRow, SessionFilters>({
+  filters: { from: '', to: '', hasContact: '' },
+  // A persistent error branch, not just a toast: a failed fetch and an empty
+  // table look identical otherwise, and a cán bộ would read "chưa có phiên nào"
+  // as fact.
+  errorFallback: 'Không thể tải danh sách phiên trò chuyện.',
+  load: async ({ page, filters, signal }) => {
+    const res = await adminFetch<SessionListResponse>('/api/admin/chatbot/sessions', {
       query: {
-        page: page.value,
+        page,
         pageSize,
-        ...(from.value ? { from: from.value } : {}),
-        ...(to.value ? { to: to.value } : {}),
-        ...(hasContact.value ? { hasContact: hasContact.value } : {}),
+        ...(filters.from ? { from: filters.from } : {}),
+        ...(filters.to ? { to: filters.to } : {}),
+        ...(filters.hasContact ? { hasContact: filters.hasContact } : {}),
       },
+      signal,
     })
-    if (res.ok) {
-      rows.value = res.items
-      total.value = res.total
-      totalPages.value = res.totalPages
-    }
-  } catch (err: unknown) {
-    loadError.value = errorMessage(err, 'Không thể tải danh sách phiên trò chuyện.')
-  } finally {
-    loading.value = false
-  }
-}
-
-const applyFilters = () => { page.value = 1; fetchSessions() }
-const resetFilters = () => { from.value = ''; to.value = ''; hasContact.value = ''; applyFilters() }
-
-const goPage = (next: number) => {
-  if (next < 1 || next > totalPages.value || next === page.value) return
-  page.value = next
-  fetchSessions()
-}
+    if (!res?.ok) return null
+    return { items: res.items, total: res.total, totalPages: res.totalPages, page: res.page }
+  },
+})
+const { items: rows, page, total, totalPages, loading, filters, applyFilters, goToPage, resetFilters } = list
+// The error branch and its retry are declared here, in the page, on purpose:
+// tests/admin-error-retry-ui.test.ts reads this file's own source.
+const error = computed(() => list.error.value)
+const reload = list.reload
 
 const fmtDate = (v: string | null) => (v ? new Date(v).toLocaleString('vi-VN') : '—')
 
-onMounted(() => { fetchSessions() })
+onMounted(reload)
 </script>
 
 <template>
@@ -82,15 +70,15 @@ onMounted(() => { fetchSessions() })
     <div class="flex flex-col gap-3 rounded-xl border border-[#e2ece3] bg-white p-4 sm:flex-row sm:items-end">
       <label class="flex flex-1 flex-col gap-1">
         <span class="text-[0.78rem] font-bold text-[#667768]">Từ ngày</span>
-        <input v-model="from" type="date" class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
+        <input v-model="filters.from" type="date" class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
       </label>
       <label class="flex flex-1 flex-col gap-1">
         <span class="text-[0.78rem] font-bold text-[#667768]">Đến ngày</span>
-        <input v-model="to" type="date" class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
+        <input v-model="filters.to" type="date" class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15" />
       </label>
       <label class="flex flex-1 flex-col gap-1">
         <span class="text-[0.78rem] font-bold text-[#667768]">Thông tin liên hệ</span>
-        <select v-model="hasContact" class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15">
+        <select v-model="filters.hasContact" class="rounded-lg border border-[#c8d6c9] px-3 py-2 text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15">
           <option value="">Tất cả</option>
           <option value="yes">Đã có số điện thoại</option>
           <option value="no">Chưa có</option>
@@ -104,10 +92,10 @@ onMounted(() => { fetchSessions() })
 
     <SkeletonTable v-if="loading" label="Đang tải danh sách phiên trò chuyện" :rows="6" :cols="6" />
 
-    <div v-else-if="loadError" role="alert" class="rounded-xl border border-dashed border-[#e2a0a0] bg-white px-6 py-10 text-center text-[0.9rem] text-[#b04a4a]">
+    <div v-else-if="error" role="alert" class="rounded-xl border border-dashed border-[#e2a0a0] bg-white px-6 py-10 text-center text-[0.9rem] text-[#b04a4a]">
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
-      {{ loadError }}
-      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="fetchSessions()">Thử lại</button>
+      {{ error }}
+      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="reload()">Thử lại</button>
     </div>
 
     <div v-else-if="rows.length === 0" class="rounded-xl border border-dashed border-[#e2ece3] bg-white px-6 py-10 text-center text-[0.9rem] text-[#667768]">
@@ -188,7 +176,7 @@ onMounted(() => { fetchSessions() })
         :total-pages="totalPages"
         :total="total"
         item-label="phiên"
-        @update:page="goPage"
+        @update:page="goToPage"
       />
     </template>
   </div>

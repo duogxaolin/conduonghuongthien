@@ -7,7 +7,9 @@
  * matter most and the ones easiest to undo by accident.
  *
  *   1. **A notification is written in the SAME transaction as the reply.** Both
- *      call sites in services/comments.ts pass their `tx` handle down. A reply
+ *      call sites — `createComment` (services/comments-posting.ts) and
+ *      `createAdminReply` (services/comments-admin-reply.ts) — pass their `tx`
+ *      handle down. A reply
  *      that exists with nobody told about it is exactly the state this feature
  *      was built to prevent, and a fire-and-forget insert next to the reply
  *      produces that state every time the second statement fails.
@@ -26,10 +28,13 @@
 import { and, desc, eq, inArray, sql } from 'drizzle-orm'
 
 import { getDb } from '../utils/db'
+import { effectiveDisplayName } from '../utils/display-name'
 import { articleComments, articles, mediaItems, readerNotifications } from '../db/schema'
 // Type-only, so it is erased at compile time and creates no runtime cycle with
-// comments.ts — which imports this module's `createReplyNotification` for value.
-// The kind is declared there because the write guard is what enforces it.
+// the comment service — comments-posting.ts and comments-admin-reply.ts import
+// this module's `createReplyNotification` for value. The kind is declared in
+// comments-rules.ts (re-exported by the comments.ts barrel) because the write
+// guard there (`parseCommentSource`) is what enforces it.
 import type { CommentSource } from './comments'
 
 /** The only kind today. Stored in a column so a second kind (a new article in a
@@ -321,6 +326,10 @@ export async function listNotifications(params: {
       rootId: sql<number>`\`root\`.\`id\``,
       authorName: sql<string | null>`\`author\`.\`custom_display_name\``,
       authorGoogleName: sql<string | null>`\`author\`.\`display_name\``,
+      // Raw `sql` → MySQL returns 0/1 here, not a boolean; effectiveDisplayName
+      // coerces it. Without this column a reader whose Google name is "Ban Quản Trị"
+      // appeared on the bell exactly like the portal's own reply.
+      authorNameReserved: sql<number | null>`\`author\`.\`display_name_reserved\``,
     })
     .from(readerNotifications)
     .innerJoin(articleComments, eq(readerNotifications.commentId, articleComments.id))
@@ -370,9 +379,15 @@ export async function listNotifications(params: {
       createdAt: row.createdAt ? row.createdAt.toISOString() : null,
       // Administrator replies always show the fixed portal label, never the
       // officer's account name — the same rule serializePublicComment enforces.
+      // Readers: the same resolution as the public thread and the reply e-mail
+      // (spec reader-display-names-google) — a reserved Google name reads "Bạn đọc".
       authorName: isAdminReply
         ? 'Ban quản trị'
-        : (row.authorName || row.authorGoogleName || 'Người dùng'),
+        : effectiveDisplayName({
+            customDisplayName:   row.authorName,
+            displayName:         row.authorGoogleName,
+            displayNameReserved: row.authorNameReserved,
+          }),
       isAdminReply,
       excerpt: buildExcerpt(row.body ?? ''),
       target: readable

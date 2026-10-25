@@ -39,11 +39,38 @@ test('the backup script is executable and fails loudly', () => {
 
 test('a backup is verified before it is trusted', () => {
   const script = read('scripts/backup-db.sh')
-  // A dump that fails halfway leaves a plausible-looking file behind.
-  assert.match(script, /Dump completed/, 'no completion marker check — a truncated dump would pass')
+  // A dump that fails halfway leaves a plausible-looking file behind. The marker must
+  // start a line — "Dump completed" inside a row's text is a dump cut off mid-INSERT
+  // (behaviour: tests/ops-scripts-sandbox.test.ts, FAKE_DUMP_MARKER_MIDLINE).
+  assert.match(script, /^DUMP_MARKER='\^-- Dump completed'$/m, 'the completion marker is not anchored to the start of a line — a truncated dump would pass')
+  assert.match(script, /^has_completion_marker "\$PARTIAL" \|\| fail verify /m, 'the dump being written is not checked for its completion marker')
+  assert.doesNotMatch(script, /\| *grep -q/, '`grep -q` in a pipe under pipefail: SIGPIPE makes the pipeline lie')
   assert.match(script, /gzip -t/, 'the archive is never integrity-checked')
   assert.match(script, /CREATE TABLE/, 'the table count is never checked')
   assert.match(script, /PLAIN_BYTES.*-ge/s, 'no size floor')
+})
+
+test('restore-db trusts only an anchored completion marker, and never `grep -q` in a pipe', () => {
+  const script = read('scripts/restore-db.sh')
+  // Behaviour (a dump cut off inside a row holding the marker text is refused, for the
+  // dump to restore and for the pre-restore dump) is in tests/ops-scripts-sandbox.test.ts.
+  assert.match(script, /^DUMP_MARKER='\^-- Dump completed'$/m, 'the marker is not anchored to the start of a line')
+  assert.equal((script.match(/has_completion_marker "\$(ARCHIVE|PRE_DUMP)"/g) ?? []).length, 2, 'both the dump to restore and the pre-restore dump are checked')
+  assert.doesNotMatch(script, /\| *grep -q/, '`grep -q` in a pipe under pipefail: SIGPIPE makes the pipeline lie')
+})
+
+test('backup-db.sh and restore-db.sh decide "complete dump" with the SAME block, byte for byte', () => {
+  // No shared library: the deploy ships backup-db.sh alone (checksummed) for the
+  // pre-deploy dump, so a sourced file would not be there. Two copies, kept identical
+  // here — a dump backup-db.sh keeps must be a dump restore-db.sh restores.
+  const block = (file: string) => {
+    const match = /^# >>> dump-completion-marker\b[\s\S]*?^# <<< dump-completion-marker$/m.exec(read(file))
+    assert.ok(match, `${file}: no dump-completion-marker block`)
+    return match[0]
+  }
+  const writer = block('scripts/backup-db.sh')
+  assert.match(writer, /^has_completion_marker\(\) \{$/m)
+  assert.equal(block('scripts/restore-db.sh'), writer, 'the two scripts no longer agree on what a complete dump is')
 })
 
 test('a rejected backup is deleted, not left looking valid', () => {
@@ -153,7 +180,10 @@ test('what a deploy leaves on the VPS stays out of git AND out of the Docker bui
   // clone, and the builder stage runs `COPY . .` — without these lines every
   // production dump would be sent to the daemon and baked into a cached layer.
   const ignoredDirs = ['.deploy-db-backups', '.deploy-incoming', '.deploy-compose-backups']
-  const ignoredFiles = ['.docker-compose.incoming.yml']
+  // docker-compose.override.yml: host-local (the json-file log fallback the deploy
+  // writes when the VPS has no journald, or the operator's own) — never committed.
+  // `.docker-compose.override.*`: the fallback's temp file before its `mv`.
+  const ignoredFiles = ['.docker-compose.incoming.yml', 'docker-compose.override.yml', '.docker-compose.override.*']
   const gitignore = read('.gitignore').split('\n').map((l) => l.trim())
   const dockerignore = read('.dockerignore').split('\n').map((l) => l.trim())
   for (const dir of ignoredDirs) {
@@ -492,6 +522,10 @@ test('operational switches set in .env reach the container', async () => {
     BACKUP_SCHEDULER: 'server/plugins/backup-scheduler.ts',
     LOG_LEVEL: 'server/utils/logger.ts',
     LOGIN_CAPTCHA_ENABLED: 'server/api/admin/auth/login.post.ts',
+    // Kill switch of the admin MFA policy (wave2 2A, spec admin-mfa-policy).
+    MFA_ENFORCEMENT: 'server/utils/mfa/policy.ts',
+    // wave2 D-ALERT: empty = no alert e-mail at all.
+    OPS_ALERT_EMAIL: 'server/utils/ops-alert.ts',
   }
   for (const [variable, reader] of Object.entries(readers)) {
     assert.equal(appEnv[variable], `\${${variable}:-}`, `${variable} is not passed through to the app`)
@@ -1194,4 +1228,157 @@ test('manage.sh asks for the ping URL in Deploy and Update and writes it to .env
   const update = script.slice(script.indexOf('cmd_update() {'), script.indexOf('Pull image + restart'))
   assert.match(update, /prompt " {2}HEALTHCHECK_PING_URL/)
   assert.match(update, /set_env HEALTHCHECK_PING_URL /)
+})
+
+// ─── Logs that survive a deploy (wave2 D-LOG) ─────────────────────────────────
+test('the app logs to journald with the cdkt-app tag; MySQL keeps its rotated json-file', async () => {
+  // json-file logs live inside the container's directory and are deleted with it —
+  // every deploy recreates the app container, so yesterday's log was gone exactly
+  // when someone came to read it. journald keeps them on the host
+  // (`journalctl CONTAINER_TAG=cdkt-app`), with retention set in journald.conf.
+  const services = asMap((await loadYaml('docker-compose.yml')).services, 'services')
+  const appLogging = asMap(asMap(services.app, 'app').logging, 'app logging')
+  assert.equal(appLogging.driver, 'journald')
+  const options = asMap(appLogging.options, 'app logging options')
+  assert.equal(options.tag, 'cdkt-app')
+  // The journald driver REFUSES max-size/max-file ("unknown log opt") at container
+  // create — `docker compose config` does not catch it, the deploy's `up` would.
+  assert.deepEqual(Object.keys(options), ['tag'], 'only options the journald driver accepts')
+  const mysqlLogging = asMap(asMap(services.mysql, 'mysql').logging, 'mysql logging')
+  assert.equal(mysqlLogging.driver, 'json-file')
+})
+
+test('the json-file fallback is ONE function, identical in manage.sh and deploy-remote.sh, called before the app starts', () => {
+  const body = (path: string, fn: string) => new RegExp(`^${fn}\\(\\) \\{\\n([\\s\\S]*?)\\n\\}`, 'm').exec(read(path))?.[1] ?? ''
+  for (const fn of ['journald_available', 'effective_app_log_driver', 'ensure_log_driver']) {
+    const manage = body('production/manage.sh', fn)
+    assert.ok(manage, `manage.sh has no ${fn}`)
+    assert.equal(body('scripts/deploy-remote.sh', fn), manage, `${fn} differs between manage.sh and deploy-remote.sh`)
+  }
+  for (const path of ['production/manage.sh', 'scripts/deploy-remote.sh']) {
+    const script = read(path)
+    assert.match(script, /^LOG_FALLBACK_MARKER='# cdkt-log-fallback[^']*'$/m, `${path}: the marker must be the same literal`)
+    assert.equal(
+      /^LOG_FALLBACK_MARKER=.*$/m.exec(script)?.[0],
+      /^LOG_FALLBACK_MARKER=.*$/m.exec(read('production/manage.sh'))?.[0],
+    )
+  }
+  const check = body('production/manage.sh', 'journald_available')
+  assert.match(check, /CDKT_JOURNALD_SOCKET:-\/run\/systemd\/journal\/socket/, 'the socket Docker writes to, not just a journalctl binary')
+  assert.match(check, /command -v journalctl/)
+  // W2: and the DAEMON can use it — its log plugins, then a throwaway container.
+  // Bounded in time (a wedged daemon must not hang a deploy) and never a network pull.
+  assert.match(check, /timeout 20 docker info --format '\{\{json \.Plugins\.Log\}\}'/)
+  assert.match(check, /timeout 60 docker run --rm --pull=never --network none --log-driver journald /)
+  // W1: the merged model decides, read without an early `exit` (SIGPIPE under pipefail).
+  const effective = body('production/manage.sh', 'effective_app_log_driver')
+  assert.match(effective, /docker compose config 2>\/dev\/null \| awk/)
+  assert.doesNotMatch(effective, /\bexit\b/)
+
+  // deploy-remote: after the dump (nothing changes before it) and after the shipped
+  // compose is in place (the merged model must be the one `up` will use), before the
+  // app starts; a refusal puts the previous compose back.
+  const deploy = read('scripts/deploy-remote.sh')
+  const main = deploy.slice(deploy.lastIndexOf('\npredeploy_dump\n'))
+  const call = main.indexOf('\nif ! ensure_log_driver "$IMAGE"; then\n  restore_compose\n  exit 1\nfi\n')
+  assert.ok(call > 0, 'deploy-remote.sh must call ensure_log_driver "$IMAGE" and stop (restoring compose) when it refuses')
+  assert.ok(call > main.indexOf('\ninstall_compose\n'))
+  assert.ok(call < main.indexOf('\nset_image "$IMAGE"\n'))
+  // manage.sh: Deploy before the stack is first started, Update before the restart.
+  const manage = read('production/manage.sh')
+  const deployCmd = manage.slice(manage.indexOf('cmd_deploy() {'), manage.indexOf('cmd_update() {'))
+  assert.ok(deployCmd.indexOf('ensure_log_driver') > 0 && deployCmd.indexOf('ensure_log_driver') < deployCmd.indexOf('Bước 6/6'))
+  const updateCmd = manage.slice(manage.indexOf('cmd_update() {'), manage.indexOf('cmd_migrate() {'))
+  assert.ok(updateCmd.indexOf('ensure_log_driver') > 0 && updateCmd.indexOf('ensure_log_driver') < updateCmd.indexOf('update_app_image'))
+})
+
+test('the effective-driver parser reads real `docker compose config` output', () => {
+  // Shape of a real `docker compose config` (Compose v2): two-space service keys,
+  // `logging:` four spaces in, `driver:` six. Run the function itself on it.
+  const fn = /^effective_app_log_driver\(\) \{\n[\s\S]*?\n\}/m.exec(read('production/manage.sh'))?.[0] ?? ''
+  assert.ok(fn)
+  const sample = (appDriver: string) => [
+    'name: conduonghuongthien', 'services:', '  app:', '    environment:', '      PORT: "3000"',
+    '    logging:', `      driver: ${appDriver}`, '      options:', '        tag: cdkt-app',
+    '  mysql:', '    logging:', '      driver: json-file', 'volumes:', '  mysql_data:', '    name: x_mysql_data', '',
+  ].join('\n')
+  for (const driver of ['journald', 'json-file']) {
+    const r = spawnSync('bash', ['-c', `docker() { cat; }\n${fn}\neffective_app_log_driver`], { input: sample(driver), encoding: 'utf8' })
+    assert.equal(r.stdout.trim(), driver)
+  }
+  // Nothing to read → empty, not a guess.
+  const none = spawnSync('bash', ['-c', `docker() { return 1; }\nset -euo pipefail\n${fn}\nd=$(effective_app_log_driver); echo "[$d]"`], { encoding: 'utf8' })
+  assert.equal(none.status, 0, none.stderr)
+  assert.equal(none.stdout.trim(), '[]')
+})
+
+// ─── manage.sh: off-VPS copies (wave2 D-OFFSITE) ──────────────────────────────
+// Behaviour is in tests/ops-scripts-sandbox.test.ts; these pin the shape a later
+// edit must not lose.
+const fnBody = (script: string, fn: string) => new RegExp(`^${fn}\\(\\) \\{\\n([\\s\\S]*?)\\n\\}`, 'm').exec(script)?.[1] ?? ''
+
+test('manage.sh offers the cron install and the encrypted export, in the menu and as arguments', () => {
+  const script = read('production/manage.sh')
+  assert.match(script, /^ {2}echo -e " {2}\$\{C_BOLD\}5\)\$\{C_RESET\} Cài cron sao lưu/m)
+  assert.match(script, /^ {2}echo -e " {2}\$\{C_BOLD\}6\)\$\{C_RESET\} Xuất \.env đã mã hoá/m)
+  assert.match(script, /^ {4}5\) cmd_backup_cron ;;$/m)
+  assert.match(script, /^ {4}6\) cmd_export_env ;;$/m)
+  assert.match(script, /^ {2}backup-cron\|cron\|5\) cmd_backup_cron ;;$/m)
+  assert.match(script, /^ {2}export-env\|6\) cmd_export_env ;;$/m)
+})
+
+test('cron install: confirmation required (default no), one marked block replaced in place, the documented jobs', () => {
+  const cron = fnBody(read('production/manage.sh'), 'cmd_backup_cron')
+  assert.ok(cron, 'no cmd_backup_cron')
+  assert.match(cron, /if ! confirm "Cài các dòng trên vào crontab của \$user\?" "n"; then/)
+  // The install comes after the confirm, and only through `crontab <file>`.
+  assert.ok(cron.indexOf('crontab "$tmp"') > cron.indexOf('confirm "Cài các dòng'))
+  assert.equal((cron.match(/crontab "\$tmp"/g) ?? []).length, 1)
+  // Idempotent: the old block is filtered out before the new one is appended.
+  assert.match(cron, /\$0 == b \{ skip = 1; next \}/)
+  assert.match(read('production/manage.sh'), /^CRON_BEGIN='# BEGIN cdkt-backup/m)
+  // The same two jobs DEPLOY.md documents: backup.sh (database + media + uploads) and
+  // the monthly restore check.
+  assert.match(cron, /^0 2 \* \* \* cd '\$ROOT' && \.\/scripts\/backup\.sh >> '\$log_dir\/cdkt-backup\.log' 2>&1$/m)
+  assert.match(cron, /^30 3 1 \* \* cd '\$ROOT' && \.\/scripts\/verify-restore\.sh --latest >> '\$log_dir\/cdkt-verify-restore\.log' 2>&1$/m)
+  // No `grep -q` in a pipe under pipefail (SIGPIPE makes it lie).
+  assert.doesNotMatch(cron, /\| *grep -q/)
+})
+
+test('export: AES-256-CBC with PBKDF2 at 200000 iterations, the passphrase through a file descriptor', () => {
+  const exp = fnBody(read('production/manage.sh'), 'cmd_export_env')
+  assert.ok(exp, 'no cmd_export_env')
+  assert.match(exp, /openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -in "\$ROOT\/\.env" -out "\$tmp" -pass fd:3 3< <\(printf '%s' "\$pass"\)/)
+  assert.doesNotMatch(exp, /-pass (pass|env):/, 'pass: is in argv (ps); env: in /proc/<pid>/environ')
+  assert.match(exp, /read -rs pass/)
+  assert.match(exp, /\*-pbkdf2\*\) ;;/, 'an openssl without -pbkdf2 must be refused')
+  assert.match(exp, /chmod 600 "\$tmp"/)
+  assert.doesNotMatch(exp, /cat "\$ROOT\/\.env"|echo "\$pass/, 'the export never prints .env or the passphrase')
+})
+
+test('OPS_ALERT_EMAIL: asked in Deploy and Update, written to the .env template', () => {
+  const script = read('production/manage.sh')
+  const deploy = script.slice(script.indexOf('cmd_deploy() {'), script.indexOf('Bước 6/6'))
+  assert.match(deploy, /prompt " {2}OPS_ALERT_EMAIL/)
+  assert.match(script, /^OPS_ALERT_EMAIL=\$OPS_ALERT_EMAIL$/m)
+  const update = script.slice(script.indexOf('cmd_update() {'), script.indexOf('Pull image + restart'))
+  assert.match(update, /prompt " {2}OPS_ALERT_EMAIL/)
+  assert.match(update, /set_env OPS_ALERT_EMAIL /)
+  // The ping prompt stays the LAST prompt before "Pull image" (the sandbox tests answer it by position).
+  assert.ok(update.lastIndexOf('prompt "  OPS_ALERT_EMAIL') < update.lastIndexOf('prompt "  HEALTHCHECK_PING_URL'))
+  assert.match(read('.env.example'), /^# OPS_ALERT_EMAIL=/m)
+})
+
+test('MFA_ENFORCEMENT: the Deploy .env template carries the break-glass switch as a commented line at its default', () => {
+  // wave2 2A × 7 checkpoint (tasks.md group 7): compose `environment:`, the manage.sh
+  // `.env` template and production/README.md all name it. It is NOT asked and NOT set:
+  // empty (the default) enforces whatever the SuperAdmin chose; `0` is for an incident.
+  const script = read('production/manage.sh')
+  const template = script.slice(script.indexOf('cat > "$env_tmp" <<EOF'), script.indexOf('\nEOF\n', script.indexOf('cat > "$env_tmp" <<EOF')))
+  assert.match(template, /^# MFA_ENFORCEMENT=$/m, 'a commented line with the default (empty)')
+  assert.doesNotMatch(template, /^MFA_ENFORCEMENT=/m, 'never switched on (or off) by Deploy')
+  const explanation = template.slice(0, template.indexOf('# MFA_ENFORCEMENT=')).split('\n').at(-2) ?? ''
+  assert.match(explanation, /^# .*0.*\/admin\/settings\/security|^# .*\/admin\/settings\/security.*0/, `one-line explanation above it: ${explanation}`)
+  assert.match(read('production/README.md'), /MFA_ENFORCEMENT/)
+  assert.match(read('.env.example'), /^# MFA_ENFORCEMENT=/m)
 })

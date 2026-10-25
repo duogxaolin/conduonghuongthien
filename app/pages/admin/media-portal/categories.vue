@@ -12,6 +12,7 @@
  * đọc ra "chưa có danh mục", và cán bộ đi tạo lại bản ghi đã có.
  */
 import { errorMessage } from '~/utils/errorMessage'
+import AdminModal from '~/components/admin/AdminModal.vue'
 
 definePageMeta({
   layout: 'admin',
@@ -215,7 +216,7 @@ onMounted(() => { void fetchCategories() })
           </div>
           <code class="text-[0.72rem] text-[#667768] bg-[#f4f7f4] px-1.5 py-0.5 rounded inline-block mb-2">{{ cat.slug }}</code>
           <div class="flex flex-wrap items-center gap-3">
-            <button v-if="canUpdate" class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="openEdit(cat)"><i class="fa-solid fa-pen text-xs" aria-hidden="true"></i> Sửa</button>
+            <button v-if="canUpdate" class="text-[#2c6e33] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" :data-admin-modal-opener="`media-category-${cat.id}`" @click="openEdit(cat)"><i class="fa-solid fa-pen text-xs" aria-hidden="true"></i> Sửa</button>
             <button v-if="canDelete" class="text-[#d12420] font-bold text-[0.78rem] bg-none border-0 cursor-pointer p-0" @click="deleteCategory(cat)"><i class="fa-regular fa-trash text-xs" aria-hidden="true"></i> Xóa</button>
           </div>
         </div>
@@ -254,7 +255,7 @@ onMounted(() => { void fetchCategories() })
                   <button
                     v-if="canUpdate"
                     class="inline-flex items-center gap-1 bg-none border-0 text-[#2c6e33] cursor-pointer font-bold text-[0.82rem] hover:underline"
-                    @click="openEdit(cat)"
+                    :data-admin-modal-opener="`media-category-${cat.id}`" @click="openEdit(cat)"
                   ><i class="fa-solid fa-pen text-xs" aria-hidden="true"></i> Sửa</button>
                   <button
                     v-if="canDelete"
@@ -271,21 +272,14 @@ onMounted(() => { void fetchCategories() })
   </div>
 
   <!-- Create / Edit Modal -->
-  <Teleport to="body">
-    <Transition name="modal-fade">
-      <div v-if="showModal" class="fixed inset-0 z-[200] flex items-center justify-center p-4">
-        <div class="absolute inset-0 bg-black/50" @click="showModal = false" />
-        <div class="relative bg-white rounded-2xl shadow-2xl w-full max-w-[500px] overflow-hidden">
-          <div class="flex items-center justify-between px-6 py-4 border-b border-[#e2ece3] bg-[#f8faf8]">
-            <h2 class="text-[1.05rem] font-extrabold text-[#122815] m-0">
-              <i class="fa-solid fa-folder-plus text-[#2c6e33] mr-2" aria-hidden="true"></i>
-              {{ modalMode === 'create' ? 'Tạo Danh Mục Video' : 'Chỉnh Sửa Danh Mục' }}
-            </h2>
-            <button class="w-8 h-8 flex items-center justify-center rounded-lg hover:bg-[#e2ece3] cursor-pointer border-0 bg-transparent text-[#667768]" @click="showModal = false">
-              <i class="fa-solid fa-xmark" aria-hidden="true"></i>
-            </button>
-          </div>
-          <div class="px-6 py-5 flex flex-col gap-4">
+  <AdminModal
+    :open="showModal"
+    :title="modalMode === 'create' ? 'Tạo Danh Mục Video' : 'Chỉnh Sửa Danh Mục'"
+    icon="fa-solid fa-folder-plus"
+    :busy="saving"
+    @close="showModal = false"
+  >
+          <div class="flex flex-col gap-4">
             <div class="flex flex-col gap-1.5">
               <label class="text-[0.82rem] font-bold text-[#2c3e2e]" for="mcat-name">Tên danh mục (*)</label>
               <input
@@ -328,12 +322,14 @@ onMounted(() => { void fetchCategories() })
               />
             </div>
           </div>
-          <div class="px-6 py-4 border-t border-[#e2ece3] flex justify-end gap-3">
+    <template #footer>
             <button
+              type="button"
               class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-[#667768] font-semibold text-sm cursor-pointer hover:bg-[#f8faf8] transition-colors"
               @click="showModal = false"
             >Hủy</button>
             <button
+              type="button"
               class="inline-flex items-center gap-2 bg-[#1e4620] hover:bg-[#2c6e33] text-white font-bold px-5 py-2 rounded-lg cursor-pointer border-0 transition-colors disabled:opacity-60 disabled:cursor-not-allowed text-sm"
               :disabled="saving"
               @click="handleSave"
@@ -341,14 +337,6 @@ onMounted(() => { void fetchCategories() })
               <i class="fa-solid fa-floppy-disk" aria-hidden="true"></i>
               {{ saving ? 'Đang lưu...' : (modalMode === 'create' ? 'Tạo Danh Mục' : 'Cập Nhật') }}
             </button>
-          </div>
-        </div>
-      </div>
-    </Transition>
-  </Teleport>
+    </template>
+  </AdminModal>
 </template>
-
-<style scoped>
-.modal-fade-enter-active, .modal-fade-leave-active { transition: opacity 0.2s ease; }
-.modal-fade-enter-from, .modal-fade-leave-to { opacity: 0; }
-</style>

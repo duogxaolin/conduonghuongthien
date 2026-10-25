@@ -10,10 +10,12 @@
  * Body: `{ dryRun?: boolean }`. Dry-run chỉ phân tích, không UPDATE/upload.
  *
  * Quyền `media.update` (cùng repair/repoint — sửa `media` + `articles.thumbnail_url`).
- * Idempotent, tự backup SQL trước (snapshot recover thủ công).
+ * Idempotent, tự backup SQL trước (snapshot recover thủ công). Đang khôi phục CSDL → 409,
+ * chưa ghi gì.
  */
 import { requireResourcePermission } from '../../../utils/permissions'
 import { selfHealMedia } from '../../../services/media-self-heal'
+import { JobBlockedByRestoreError } from '../../../services/pre-job-backup'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -40,6 +42,7 @@ export default defineEventHandler(async (event) => {
       message: prefix + detail + (r.backupStamp ? `. Snapshot: ${r.backupStamp}.` : ''),
     }
   } catch (err) {
+    if (err instanceof JobBlockedByRestoreError) throw createError({ statusCode: 409, statusMessage: err.message })
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('Một lượt tự vá')) throw createError({ statusCode: 409, statusMessage: msg })
     if (msg.includes('Cấu hình Cloudflare R2')) throw createError({ statusCode: 400, statusMessage: msg })

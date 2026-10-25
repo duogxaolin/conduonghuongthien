@@ -17,9 +17,10 @@ import { sql } from 'drizzle-orm'
 import { promises as fs } from 'node:fs'
 import path from 'node:path'
 import { getDb } from '../../../utils/db'
-import { media, settings } from '../../../db/schema'
+import { media } from '../../../db/schema'
 import { requireResourcePermission } from '../../../utils/permissions'
 import { getR2BucketSize } from '../../../utils/media-r2'
+import { loadR2Config } from '../../../services/media'
 
 async function diskUsage(dir: string): Promise<{ count: number; totalBytes: number }> {
   let count = 0
@@ -78,26 +79,20 @@ export default defineEventHandler(async (event) => {
     // thư mục chưa tồn tại — giữ 0.
   }
 
-  // R2: chỉ đọc khi đã cấu hình.
-  const settingRows = await db.select().from(settings)
-  const sMap = new Map(settingRows.map(r => [r.key, r.value]))
+  // R2: chỉ đọc khi đã cấu hình. Secret Key lưu dạng envelope — `loadR2Config` là
+  // nơi duy nhất giải mã nó (khoá không mở được → rỗng → "chưa cấu hình").
+  const r2Config = await loadR2Config()
   const r2Configured = !!(
-    sMap.get('r2_account_id') &&
-    sMap.get('r2_access_key') &&
-    sMap.get('r2_secret_key') &&
-    sMap.get('r2_bucket')
+    r2Config.accountId &&
+    r2Config.accessKeyId &&
+    r2Config.secretAccessKey &&
+    r2Config.bucket
   )
 
   let r2: { count: number; totalBytes: number } | null = null
   if (r2Configured) {
     try {
-      r2 = await getR2BucketSize({
-        accountId: sMap.get('r2_account_id') || '',
-        accessKeyId: sMap.get('r2_access_key') || '',
-        secretAccessKey: sMap.get('r2_secret_key') || '',
-        bucket: sMap.get('r2_bucket') || '',
-        publicUrl: sMap.get('r2_public_url') || '',
-      })
+      r2 = await getR2BucketSize(r2Config)
     } catch {
       // R2 lỗi (network/credential hỏng) — trả null để UI phân biệt với "0 byte".
       r2 = null

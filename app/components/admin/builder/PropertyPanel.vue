@@ -184,7 +184,9 @@ const { openPicker } = useImagePicker()
 const expanded = ref(false)
 // Collapse when switching to another block, or when nothing is selected.
 watch(() => props.block?.id, () => { expanded.value = false })
-const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape' && expanded.value) expanded.value = false }
+// Escape mà một hộp thoại mở đè lên (thư viện ảnh, hộp xác nhận) đã xử lý thì không thu
+// nhỏ panel theo — một lần nhấn chỉ đóng một lớp.
+const onKeydown = (e: KeyboardEvent) => { if (e.key === 'Escape' && expanded.value && !e.defaultPrevented) expanded.value = false }
 onMounted(() => window.addEventListener('keydown', onKeydown))
 onBeforeUnmount(() => window.removeEventListener('keydown', onKeydown))
 

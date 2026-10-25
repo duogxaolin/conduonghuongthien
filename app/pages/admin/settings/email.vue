@@ -44,6 +44,8 @@ const toast = useToast()
 // server shows it (mask = a password is saved). The guard compares against this,
 // exactly as the server compares against the stored rows.
 const saved = ref<Map<string, string>>(new Map())
+/** Mật khẩu đã lưu không giải mã được bằng khoá mã hoá hiện tại — phải nhập lại. */
+const passwordNeedsReentry = ref(false)
 
 const passwordSaved = computed(() => (saved.value.get('smtp_pass') ?? '') !== '')
 const passwordRetyped = computed(() => settings.smtp_pass !== '' && settings.smtp_pass !== MASKED_SECRET)
@@ -63,12 +65,13 @@ const fetchSettings = async () => {
   loading.value = true
   error.value = ''
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null> }>)(`/api/admin/settings`)
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; settings: Record<string, string | null>; needsReentry?: string[] }>)(`/api/admin/settings`)
     if (res.ok && res.settings) {
       for (const k of Object.keys(settings) as Array<keyof typeof settings>) {
         if (res.settings[k] != null) settings[k] = String(res.settings[k])
       }
       saved.value = new Map((Object.keys(settings) as Array<keyof typeof settings>).map((k): [string, string] => [k, res.settings[k] == null ? '' : String(res.settings[k])]))
+      passwordNeedsReentry.value = (res.needsReentry ?? []).includes('smtp_pass')
     } else {
       error.value = 'Không tải được cài đặt email.'
     }
@@ -201,8 +204,9 @@ onMounted(() => { fetchSettings() })
             <label for="smtp-pass" class="text-[0.82rem] font-bold text-[#2c3e2e]">Mật khẩu (Password)</label>
             <input id="smtp-pass" type="password" v-model="settings.smtp_pass" placeholder="••••••••" autocomplete="new-password" :aria-invalid="Boolean(passwordError)" aria-describedby="smtp-pass-hint smtp-pass-status" class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/15 box-border" :class="passwordError ? 'border-[#B04A4A]' : 'border-[#c8d6c9]'" />
             <p id="smtp-pass-hint" class="text-[0.72rem] text-[#667768] m-0">Giữ nguyên dấu ******** để dùng mật khẩu đã lưu. Xoá trắng ô này rồi lưu sẽ XOÁ mật khẩu đã lưu. Đổi host, cổng, tài khoản hoặc chế độ bảo mật thì phải nhập lại mật khẩu trong cùng lần lưu.</p>
-            <p id="smtp-pass-status" class="text-[0.72rem] m-0" :class="passwordError || passwordWillBeDeleted ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">
+            <p id="smtp-pass-status" class="text-[0.72rem] m-0" :class="passwordError || passwordWillBeDeleted || (passwordNeedsReentry && !passwordRetyped) ? 'text-[#B04A4A] font-semibold' : 'text-[#667768]'">
               <template v-if="passwordError">{{ passwordError }}</template>
+              <template v-else-if="passwordNeedsReentry && !passwordRetyped">Mật khẩu đã lưu không giải mã được (khoá mã hoá của máy chủ đã đổi) — email sẽ không gửi được cho tới khi bạn nhập lại mật khẩu và lưu.</template>
               <template v-else-if="passwordWillBeDeleted">Ô mật khẩu đang trống: bấm Lưu sẽ xoá mật khẩu SMTP đã lưu.</template>
               <template v-else-if="targetChanged && passwordRetyped">Đã nhập mật khẩu mới cho máy chủ đã đổi.</template>
             </p>

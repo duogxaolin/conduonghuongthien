@@ -64,7 +64,8 @@ export interface ModerationCheckOutput {
    * fields above are UNCHANGED by it — the content is still allowed, or hidden by
    * the critical-keyword fallback, exactly as before. It only says the AI never
    * judged this content, so a caller that must not act on an unfinished
-   * moderation (the reply e-mail, `comments.ts`) can tell that apart from a clean
+   * moderation (the reply e-mail — `replyEmailHoldReason` in
+   * `comments-reply-email.ts`) can tell that apart from a clean
    * "safe". Absent on every other path. "Not configured" keeps its own path
    * (`flag_only` / `aiUnavailable`).
    */
@@ -648,6 +649,13 @@ export interface RescanOptions {
    * không quét lại (và trả tiền AI lại) từ bình luận mới nhất.
    */
   onCheckpoint?: (cursor: RescanCursor) => void
+  /**
+   * Chạy TRƯỚC mỗi lần đọc một lô (bình luận lẫn tin chat). Ném lỗi → lượt quét dừng
+   * ngay, lỗi đi thẳng ra nơi gọi (không thử lại, không nuốt) — con trỏ đã lưu qua
+   * `onCheckpoint` vẫn đúng tới lô cuối đã xong. Job nền dùng nó để kiểm còn giữ khoá
+   * tên MySQL (`moderation-rescan-job.ts`).
+   */
+  beforeBatch?: () => Promise<void>
 }
 
 /** Một lô đọc hỏng được thử lại đúng một lần trước khi lượt quét dừng. */
@@ -708,6 +716,7 @@ export async function rescanExistingContent(options: RescanOptions = {}): Promis
     else progress.failedComments++
   }
   while (progress.scannedComments < progress.totalComments) {
+    await options.beforeBatch?.()
     const take = Math.min(batchSize, progress.totalComments - progress.scannedComments)
     const batch = await readBatchWithRetry(() => db
       .select({ id: articleComments.id, body: articleComments.body })
@@ -752,6 +761,7 @@ export async function rescanExistingContent(options: RescanOptions = {}): Promis
   progress.phase = 'messages'
   report()
   while (progress.scannedMessages < progress.totalMessages) {
+    await options.beforeBatch?.()
     const take = Math.min(batchSize, progress.totalMessages - progress.scannedMessages)
     const batch = await readBatchWithRetry(() => db
       .select({ id: livestreamMessages.id, content: livestreamMessages.content })

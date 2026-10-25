@@ -18,6 +18,8 @@ import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
+import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
 
 /**
@@ -103,6 +105,8 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'pages/admin/comments/index.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/google-oauth.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/ip-bans.vue', marker: 'v-if="loading"' },
+  // Chính sách bắt buộc MFA (wave2 2A) — biểu mẫu, dùng SkeletonForm.
+  { file: 'pages/admin/settings/security.vue', marker: 'v-if="loading"' },
   { file: 'pages/admin/settings/media-portal.vue', marker: 'v-if="loading"' },
   // Backup & khôi phục — danh sách bản backup mang SkeletonTable.
   { file: 'pages/admin/settings/backup.vue', marker: 'v-if="loading"' },
@@ -129,6 +133,7 @@ const VIEWS_WITH_LOADING_BRANCH = [
   { file: 'components/admin/ai/AiDashboardTab.vue', marker: 'v-if="usageLoading"' },
   { file: 'components/admin/ai/AiProvidersTab.vue', marker: 'v-if="providersLoading"' },
   { file: 'components/admin/ai/AiServicesTab.vue', marker: 'v-if="servicesLoading"' },
+  // Bản tóm tắt (D10): khung chờ là hai ô số liệu.
   { file: 'components/admin/ai/AiModerationTab.vue', marker: 'v-if="moderationLoading"' },
   { file: 'components/admin/ai/AiLogsTab.vue', marker: 'v-if="logsLoading"' },
   { file: 'pages/admin/ai/moderation.vue', marker: 'v-if="loading"' },
@@ -386,7 +391,9 @@ test('placeholder containers announce themselves as busy', async () => {
  * So this walks the directories and demands every admin view that fetches is
  * EITHER pinned above OR named in `NO_SKELETON_NEEDED` with its reason.
  */
-const FETCH_CALL = /\$fetch|useFetch\(|useAsyncData\(/
+// Shared with tests/admin-error-retry-ui.test.ts — includes adminFetch/useAdminList,
+// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan.
+const FETCH_CALL = ADMIN_FETCH_CALL
 
 async function adminViewsThatFetch(): Promise<string[]> {
   const found: string[] = []

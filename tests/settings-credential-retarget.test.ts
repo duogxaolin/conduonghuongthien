@@ -15,6 +15,11 @@ import test, { mock } from 'node:test'
  * nhập — khẳng định quan trọng: mật khẩu đã lưu không bao giờ tới một host khác.
  */
 
+// A typed secret is stored as an envelope (spec settings-secret-storage): saving one
+// needs the at-rest key. Throwaway value, generated per run.
+process.env.CHATBOT_ENCRYPTION_SECRET = (await import('node:crypto')).randomBytes(32).toString('base64')
+const { openSettingsSecret } = await import('../server/utils/settings-secrets')
+
 const SAVED_SECRET = 'SAVED-SMTP-SECRET'
 const SAVED_R2_SECRET = 'SAVED-R2-SECRET'
 const ACCOUNT_ID = '0123456789abcdef0123456789abcdef'
@@ -143,7 +148,9 @@ test('a new host WITH a typed password is saved; the stored secret is replaced a
   reset()
   await save({ smtp_host: 'smtp.new.vn', smtp_port: '465', smtp_secure: 'true', smtp_user: 'new@new.vn', smtp_pass: 'typed-new-password' })
   assert.equal(store.get('smtp_host'), 'smtp.new.vn')
-  assert.equal(store.get('smtp_pass'), 'typed-new-password')
+  // Stored as an envelope that opens to the typed password (spec settings-secret-storage).
+  assert.equal(openSettingsSecret('smtp_pass', store.get('smtp_pass')).value, 'typed-new-password')
+  assert.ok(!store.get('smtp_pass')!.includes('typed-new-password'))
   await sendTest({ smtp_pass: '********' })
   assert.deepEqual(logins, [{ host: 'smtp.new.vn', port: 465, user: 'new@new.vn', pass: 'typed-new-password' }])
   assert.ok(!logins.some(login => login.pass === SAVED_SECRET))
@@ -212,7 +219,8 @@ test('R2: a changed account id without the secret is refused; with the secret ty
   }
   await save({ r2_account_id: other, r2_secret_key: 'typed-r2-secret' })
   assert.equal(store.get('r2_account_id'), other)
-  assert.equal(store.get('r2_secret_key'), 'typed-r2-secret')
+  assert.equal(openSettingsSecret('r2_secret_key', store.get('r2_secret_key')).value, 'typed-r2-secret')
+  assert.ok(!store.get('r2_secret_key')!.includes('typed-r2-secret'))
 })
 
 test('R2: an account id that would steer the endpoint host is refused even with a typed secret', async () => {

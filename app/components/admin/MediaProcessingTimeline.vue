@@ -10,7 +10,8 @@ import { mediaProcessingMessage } from '~/composables/mediaProcessingMessage'
  * dấu vết trên hàng `media_items` (probe ghi `durationSeconds/width/height`,
  * thumbnail ghi `thumbnailUrl`, ready ghi `processingStatus='ready'`).
  *
- * 7 bước khớp pipeline thật trong `server/services/video-processing.ts`:
+ * 7 bước khớp pipeline thật — `processMediaItem` trong
+ * `server/services/video-transcode-pipeline.ts`:
  *   1. Nhận lượt xử lý (claim)  — `processingStatus === 'processing'`
  *   2. Kiểm tra tệp gốc (sniff)  — không có signal riêng, ✓ ngay khi bước 3 có data
  *   3. Đọc metadata (ffprobe)   — `durationSeconds`/`width`/`height` ≠ null
@@ -35,7 +36,7 @@ const liveProgress = computed(() => {
   return { rendition, percent: Math.min(100, Math.max(0, Math.round(percent))) }
 })
 
-// Ba rendition theo `RENDITIONS` ở `server/services/video-processing.ts:99-102`.
+// Ba rendition theo `RENDITIONS` ở `server/services/video-renditions.ts`.
 // Hardcode ở UI vì không import được từ `server/`; nếu server đổi, đổi cả hai.
 const ALL_RENDITIONS = [
   { name: '360p', height: 360 },

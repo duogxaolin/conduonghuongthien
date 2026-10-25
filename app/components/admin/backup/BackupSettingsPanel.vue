@@ -4,7 +4,7 @@
 const {
   isSuperAdmin, settingsLoaded, settingsLoadError, loadSettings,
   backupSettings, selectedDays, daysOptions, savingSettings, saveSettings,
-  schedulerDisabledByServer,
+  schedulerDisabledByServer, serviceAccountNeedsReentry, backupsLocalOnly,
   driveLink, driveRedirectUri, driveLinkLoading, disconnecting, driveToast,
   disconnectDrive, copyRedirectUri,
   driveConfig, driveConfigLoading, savingDriveConfig, clearingDriveSecret,
@@ -45,6 +45,12 @@ onMounted(() => loadAll())
       <p v-if="schedulerDisabledByServer" data-testid="backup-scheduler-disabled" class="m-0 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3 py-2 text-[0.8rem] text-[#8a6412]">
         <i class="fa-solid fa-circle-pause mr-1" aria-hidden="true"></i>
         Máy chủ đang tắt sao lưu tự động: lịch dưới đây vẫn lưu được nhưng sẽ không chạy cho tới khi máy chủ bật lại.
+      </p>
+      <p v-if="backupsLocalOnly" data-testid="backup-offsite-missing" class="m-0 rounded-lg border border-[#f0dcae] bg-[#fdf6e7] px-3 py-2 text-[0.8rem] text-[#8a6412]">
+        <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
+        Các bản sao lưu hiện chỉ nằm trên máy chủ này — chưa có nơi lưu bên ngoài (Google Drive). Máy chủ hỏng là mất luôn bản sao lưu.
+        <span v-if="isSuperAdmin">Bật “Upload lên Google Drive” rồi liên kết tài khoản Google hoặc nhập service account bên dưới.</span>
+        <span v-else>Nhờ quản trị viên cấp cao cấu hình Google Drive.</span>
       </p>
       <div class="grid grid-cols-2 gap-3">
         <label class="text-sm font-bold">Giờ chạy (0-23)
@@ -143,6 +149,9 @@ onMounted(() => loadAll())
       <div class="flex flex-col gap-2 rounded-lg border border-[#e2ece3] bg-white p-3">
         <h3 class="m-0 text-sm font-bold text-[#122815]">Service Account (fallback cho scheduler)</h3>
         <p class="m-0 text-[0.8rem] text-[#667768]">Dùng khi không liên kết tài khoản cá nhân, hoặc cho backup tự động qua scheduler. Cần share folder Drive với email service account.</p>
+        <p v-if="serviceAccountNeedsReentry" class="m-0 text-[0.8rem] font-semibold text-[#B04A4A]">
+          <i class="fa-solid fa-triangle-exclamation mr-1.5" aria-hidden="true"></i>Khoá JSON đã lưu không giải mã được (khoá mã hoá của máy chủ đã đổi) — bản sao lưu không lên Drive qua service account cho tới khi SuperAdmin dán lại khoá và lưu.
+        </p>
         <template v-if="isSuperAdmin">
           <label class="text-sm font-bold">Service Account JSON key
             <textarea v-model="backupSettings.backup_drive_service_account" placeholder="{ &quot;type&quot;: &quot;service_account&quot;, ... }" rows="4" class="mt-1 w-full rounded-lg border border-[#c8d6c9] px-3 py-2 font-mono text-[0.78rem]" />

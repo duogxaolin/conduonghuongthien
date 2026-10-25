@@ -25,6 +25,11 @@ interface ScanJobStatus {
   done: number
   imported: number
   skipped: number
+  /** Tệp trùng tên với một ảnh đã có trên R2 — bỏ qua, không ghi đè (gồm trong `skipped`). */
+  conflicts: number
+  conflictFiles: string[]
+  /** Tệp lượt quét trước đã nhập lên R2 (nhận lại theo tên + kích thước) — không nhập lại. */
+  legacyMatched: number
   errors: string[]
   phase: 'scanning' | 'done' | 'failed' | 'cancelled'
   message: string
@@ -291,11 +296,12 @@ onUnmounted(() => { stopPolling(); stopScanPolling() })
 
 // ─── Đổi domain URL R2 ─────────────────────────────────────────────────────────
 // Đổi domain CDN R2 (cùng account + bucket) — chỉ update URL trong DB, không
-// tải file. Chạy &lt; 2 giây. Tự backup SQL trước (snapshot recover thủ công).
+// tải file: `media.url` + mọi cột nội dung nhúng URL ảnh, đúng ranh giới URL, một
+// transaction. Sao lưu SQL trước là bắt buộc (hỏng → không đổi gì).
 const repointing = ref(false)
 const oldDomain = ref('')
 const newDomain = ref('')
-const repointResult = ref<{ mediaUpdated: number; articlesUpdated: number; backupStamp: string | null } | null>(null)
+const repointResult = ref<{ mediaUpdated: number; contentRowsUpdated: number; backupStamp: string } | null>(null)
 
 const repointUrls = async () => {
   if (!oldDomain.value.trim() || !newDomain.value.trim()) {
@@ -307,18 +313,18 @@ const repointUrls = async () => {
     return
   }
   if (!await confirm({
-    message: `Đổi URL R2 từ "${oldDomain.value}" sang "${newDomain.value}"?\n\nSẽ UPDATE media.url + articles.content. Tự backup SQL trước (snapshot recover thủ công).`,
+    message: `Đổi URL R2 từ "${oldDomain.value}" sang "${newDomain.value}"?\n\nSẽ đổi URL ảnh trong thư viện và mọi nội dung đang nhúng ảnh (bài viết, trang, cài đặt, chatbot…). Hệ thống sao lưu CSDL trước; sao lưu hỏng thì không đổi gì.`,
     confirmLabel: 'Đổi URL',
     danger: true,
   })) return
   repointing.value = true
   repointResult.value = null
   try {
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, mediaUpdated: number, articlesUpdated: number, backupStamp: string | null, message: string }>)(`/api/admin/media/repoint-r2-urls`, {
+    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean, mediaUpdated: number, contentRowsUpdated: number, backupStamp: string, message: string }>)(`/api/admin/media/repoint-r2-urls`, {
       method: 'POST',
       body: { oldDomain: oldDomain.value.trim(), newDomain: newDomain.value.trim() },
     })
-    repointResult.value = { mediaUpdated: res.mediaUpdated, articlesUpdated: res.articlesUpdated, backupStamp: res.backupStamp }
+    repointResult.value = { mediaUpdated: res.mediaUpdated, contentRowsUpdated: res.contentRowsUpdated, backupStamp: res.backupStamp }
     toast.success(res.message)
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Lỗi đổi domain URL'))
@@ -519,6 +525,14 @@ const runSelfHeal = async (dryRun: boolean) => {
         <div v-if="scanJob.errors.length > 0" class="text-xs text-[#a32924]">
           <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
           {{ scanJob.errors.length }} file lỗi: {{ scanJob.errors.slice(0, 5).join(', ') }}{{ scanJob.errors.length > 5 ? '...' : '' }}
+        </div>
+        <div v-if="scanJob.legacyMatched > 0" class="text-xs text-[#667768]">
+          <i class="fa-solid fa-circle-info mr-1" aria-hidden="true"></i>
+          {{ scanJob.legacyMatched }} tệp đã được lượt quét trước nhập lên R2 — không nhập lại.
+        </div>
+        <div v-if="scanJob.conflicts > 0" class="text-xs text-[#8a6412] break-all">
+          <i class="fa-solid fa-triangle-exclamation mr-1" aria-hidden="true"></i>
+          {{ scanJob.conflicts }} tệp trùng tên với ảnh đã có trên R2 — bỏ qua, không ghi đè: {{ scanJob.conflictFiles.slice(0, 5).join(', ') }}{{ scanJob.conflicts > 5 ? '...' : '' }}
         </div>
       </div>
 
@@ -742,7 +756,7 @@ const runSelfHeal = async (dryRun: boolean) => {
         <i class="fa-solid fa-arrow-right-arrow-left text-2xl text-[#2c6e33] mt-0.5" aria-hidden="true"></i>
         <div>
           <h2 class="m-0 text-base font-bold text-[#122815]">Đổi domain URL R2</h2>
-          <p class="m-0 mt-1 text-[0.82rem] text-[#667768]">Đổi domain CDN R2 (cùng account + bucket) — tự cập nhật URL trong <code class="font-mono">media.url</code> + <code class="font-mono">articles.content</code>. File không tải lại (đã ở R2). Chạy &lt; 2 giây. Tự backup SQL trước.</p>
+          <p class="m-0 mt-1 text-[0.82rem] text-[#667768]">Đổi domain CDN R2 (cùng account + bucket) — tự cập nhật URL ảnh trong thư viện và mọi nội dung đang nhúng ảnh (bài viết, trang, cài đặt, chatbot…). Chỉ đổi đúng domain đã nhập, không đụng domain trông giống. File không tải lại (đã ở R2). Sao lưu CSDL trước là bắt buộc.</p>
         </div>
       </header>
 
@@ -784,7 +798,7 @@ const runSelfHeal = async (dryRun: boolean) => {
           {{ repointing ? 'Đang đổi...' : 'Đổi URL R2' }}
         </button>
 
-        <p v-if="repointing" class="m-0 text-sm text-[#667768]">Đang backup SQL + REPLACE URL... (&lt; 2 giây)</p>
+        <p v-if="repointing" class="m-0 text-sm text-[#667768]">Đang sao lưu CSDL rồi đổi URL...</p>
 
         <div v-if="repointResult" class="grid grid-cols-2 sm:grid-cols-3 gap-3 mt-2">
           <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
@@ -792,8 +806,8 @@ const runSelfHeal = async (dryRun: boolean) => {
             <p class="m-0 mt-1 text-xl font-extrabold text-[#1e4620]">{{ repointResult.mediaUpdated }}</p>
           </div>
           <div class="rounded-lg border border-[#cce5cd] bg-[#eef7ee] p-3">
-            <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Bài viết sửa URL</p>
-            <p class="m-0 mt-1 text-xl font-extrabold text-[#1e4620]">{{ repointResult.articlesUpdated }}</p>
+            <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#667768]">Nội dung sửa URL</p>
+            <p class="m-0 mt-1 text-xl font-extrabold text-[#1e4620]">{{ repointResult.contentRowsUpdated }}</p>
           </div>
           <div v-if="repointResult.backupStamp" class="rounded-lg border border-[#f0dcae] bg-[#fdf6e7] p-3">
             <p class="m-0 text-xs font-bold uppercase tracking-wide text-[#8a6412]">Snapshot</p>

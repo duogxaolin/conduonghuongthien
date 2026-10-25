@@ -26,6 +26,7 @@ import {
   COMMENT_THREAD_PER_PAGE,
   NOTIFICATION_EXCERPT_LENGTH,
 } from '../server/services/notifications.ts'
+import { fileDeclaring } from './_comments-service-source'
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
 
@@ -120,22 +121,26 @@ describe('one page size, imported not redeclared', () => {
 })
 
 describe('the notification is written with the reply, not after it', () => {
-  const comments = read('server/services/comments.ts')
-
   /**
    * A reply that exists with nobody told about it is the exact state this feature
    * was built to prevent, and it fails silently: the thread looks correct to
    * everyone except the person waiting for an answer.
+   *
+   * Each function is read from the comment-service file that declares it
+   * (`server/services/comments.ts` is a barrel since the wave2 split).
    */
   it('createComment inserts inside a transaction', () => {
+    const comments = fileDeclaring('createComment').source
     const start = comments.indexOf('export async function createComment')
-    const body = comments.slice(start, comments.indexOf('\nexport ', start + 10))
+    const next = comments.indexOf('\nexport ', start + 10)
+    const body = next === -1 ? comments.slice(start) : comments.slice(start, next)
     assert.match(body, /db\.transaction\(/, 'createComment no longer wraps its writes in a transaction')
     assert.match(body, /createReplyNotification\(/, 'createComment stopped announcing replies')
     assert.match(body, /tx,/, 'the notification is not being written on the transaction handle')
   })
 
   it('createAdminReply notifies on the transaction handle', () => {
+    const comments = fileDeclaring('createAdminReply').source
     const start = comments.indexOf('export async function createAdminReply')
     const body = comments.slice(start)
     assert.match(body, /createReplyNotification\(/, 'the portal reply no longer notifies the citizen')

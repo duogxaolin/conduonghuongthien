@@ -76,12 +76,12 @@ env:
 jobs:
   # ── Lập kế hoạch: PR chỉ chạy bộ nhẹ ──────────────────────────────────────
   # Mỗi lượt CI đầy đủ tốn ~40 phút billed (GitHub làm tròn từng job lên phút), trong
-  # đó các job Integration chiếm ~29 (đo khi matrix còn 13 job; nay 19). Tài khoản chỉ có 3.000 phút/tháng và đã hết một
+  # đó các job Integration chiếm ~29 (đo khi matrix còn 13 job; nay 20). Tài khoản chỉ có 3.000 phút/tháng và đã hết một
   # lần, nên:
   #   - PR nháp: bỏ qua hoàn toàn (chạy lại khi bấm "Ready for review").
   #   - PR thường: unit + build + schema-drift + hygiene (~12 phút). Integration chỉ chạy
   #     khi PR đụng tới backend/DB/CI (`server/`, `shared/`, `migrations/`, `scripts/`, package*.json,
-  #     nuxt.config.ts, workflows, tests/*integration*).
+  #     nuxt.config.ts, workflows, tests/*integration*, tests/fixtures/schema-prev.sql).
   #   - push vào `main` và chạy tay: LUÔN chạy đủ. `image`/`deploy` vẫn chờ mọi cổng, nên
   #     không có commit nào ra VPS mà chưa qua integration.
   # Với PR, job này không checkout — chỉ hỏi API danh sách tệp đổi của PR (~1 phút billed).
@@ -131,7 +131,7 @@ jobs:
           fi
           echo "run=true" >> "$GITHUB_OUTPUT"
           files=$(gh api "repos/$REPO/pulls/$PR/files" --paginate --jq '.[].filename')
-          if printf '%s\n' "$files" | grep -Eq '^(server/|shared/|migrations/|scripts/|package(-lock)?\.json$|nuxt\.config\.ts$|\.github/workflows/|tests/[^/]*integration)'; then
+          if printf '%s\n' "$files" | grep -Eq '^(server/|shared/|migrations/|scripts/|package(-lock)?\.json$|nuxt\.config\.ts$|\.github/workflows/|tests/[^/]*integration|tests/fixtures/schema-prev\.sql$)'; then
             echo "integration=true" >> "$GITHUB_OUTPUT"
             echo "PR đụng backend/DB/CI: chạy cả integration." >> "$GITHUB_STEP_SUMMARY"
           else
@@ -273,7 +273,7 @@ jobs:
   #   - job này: 203 tệp non-integration, không cần MySQL, ~30 phút trên runner
   #     chậm. Typecheck gộp vào đây (giữ nguyên triết lý cũ: không phải job riêng
   #     để khỏi phải xin thêm runner mà hay bị queue).
-  #   - job integration-tests: 19 tệp *-integration, cần MySQL service.
+  #   - job integration-tests: 22 tệp *-integration, cần MySQL service.
   #   - job schema-drift: `npm run db:drift`, cần MySQL, chạy nhanh.
   unit-tests:
     name: Unit and typecheck
@@ -321,7 +321,7 @@ jobs:
 
       # Unit + contract tests — mọi tệp trừ *-integration (chúng cần MySQL và
       # chạy ở job integration-tests bên dưới). Lọc bằng find để không phụ thuộc
-      # shell glob của runner. Bỏ qua 19 tệp integration để job này không cần
+      # shell glob của runner. Bỏ qua 22 tệp integration để job này không cần
       # service container và chạy nhanh hơn.
       - name: Unit and contract tests (no DB)
         env:
@@ -334,18 +334,23 @@ jobs:
           # Liệt kê mọi tệp *.test.ts KHÔNG kết thúc bằng -integration.test.ts
           files=$(find tests -maxdepth 1 -name '*.test.ts' ! -name '*-integration.test.ts' | sort)
           echo "Running $(echo "$files" | wc -l) unit test files"
-          # `--experimental-test-coverage` adds ~5% to the run and prints the table at
-          # the end of the log; `tee` keeps it for the summary step below. `pipefail`
-          # (set above) keeps a failing test failing the step.
-          node --experimental-strip-types --experimental-test-module-mocks --experimental-test-coverage --import ./scripts/ts-resolver.mjs --test $files | tee /tmp/unit-test.log
+          # `--experimental-test-coverage` adds ~5% to the run. The spec reporter keeps the
+          # log as before; the lcov reporter writes the raw coverage for the summary step
+          # below (Node's own table counts loaded files only, and counts a file twice
+          # when a test `mock.module`s it). `--test-coverage-exclude` replaces Node's
+          # default exclusion, which matches `test-*.ts` and so silently dropped real
+          # handlers such as `server/api/admin/settings/test-r2.post.ts`.
+          node --experimental-strip-types --experimental-test-module-mocks --experimental-test-coverage --test-coverage-exclude='tests/**' --import ./scripts/ts-resolver.mjs --test-reporter=spec --test-reporter-destination=stdout --test-reporter=lcov --test-reporter-destination=/tmp/unit-test.lcov --test $files
 
       # Báo cáo độ phủ — CHỈ báo cáo, không chặn: chưa có ngưỡng nào, vì một con số chọn
       # trước khi ai đó thấy mức nền chỉ là cách mới để CI đỏ. `continue-on-error` ở đây
       # đúng chỗ (bước này không phải cổng); cổng Typecheck bên dưới thì không có.
+      # Script gộp các bản ghi lcov trùng, thêm mọi tệp nguồn không test nào nạp ở 0 %, và
+      # tự ghi vào $GITHUB_STEP_SUMMARY (docs/test-coverage-baseline-2026-10.md).
       - name: Coverage summary
         if: always()
         continue-on-error: true
-        run: node --experimental-strip-types scripts/coverage-summary.ts < /tmp/unit-test.log >> "$GITHUB_STEP_SUMMARY"
+        run: node --experimental-strip-types scripts/coverage-summary.ts /tmp/unit-test.lcov
 
       # Cổng CHẶN: `exit $status` ở cuối + không có `continue-on-error`. Trước đây
       # bước này có `continue-on-error: true`, nên 4 lỗi kiểu lọt vào `main` mà CI
@@ -374,17 +379,21 @@ jobs:
           exit $status
 
   # ── Integration tests (cần MySQL) ──────────────────────────────────────────
-  # 19 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
+  # 22 tệp *-integration.test.ts, mỗi cái dựng + drop một DB throwaway qua MySQL
   # service container. Trước đây tất cả suite (khi đó 13) chạy **nối tiếp trên một runner**,
-  # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 19 job song
+  # tổng >45 phút và đẩy job vượt timeout. Nay tách thành **matrix 22 job song
   # song** — mỗi suite một job + MySQL service riêng, chạy độc lập. Một runner
   # chậm chỉ kéo dài đúng suite của nó, không làm suite khác timeout theo.
+  # Trần mỗi job 30 phút: suite dài nhất (`backup-dump`, 18 test, mỗi test dựng CSDL +
+  # sao lưu + khôi phục thật) chạy 12,6 phút trên máy dev (đo 2026-10-24, nhánh tích
+  # hợp wave2 — CHANGELOG § 38); runner CI chậm hơn và job còn `npm ci` + MySQL
+  # service, nên 20 phút không còn đủ khoảng trống.
   integration-tests:
     name: Integration · ${{ matrix.suite }}
     runs-on: ubuntu-latest
     needs: changes
     if: needs.changes.outputs.run == 'true' && needs.changes.outputs.integration == 'true'
-    timeout-minutes: 20
+    timeout-minutes: 30
     strategy:
       fail-fast: false
       matrix:
@@ -437,6 +446,10 @@ jobs:
           - suite: media-sync-rewrite
             file: tests/media-sync-rewrite-integration.test.ts
             switch: MEDIA_SYNC_INTEGRATION
+          # Đổi domain R2: 27 cột + media.url, ranh giới URL, một transaction (wave2 2B).
+          - suite: media-repoint
+            file: tests/media-repoint-integration.test.ts
+            switch: MEDIA_REPOINT_INTEGRATION
           - suite: public-read
             file: tests/public-read-integration.test.ts
             switch: PUBLIC_READ_INTEGRATION
@@ -446,6 +459,15 @@ jobs:
           - suite: analytics-maintenance
             file: tests/analytics-maintenance-integration.test.ts
             switch: ANALYTICS_MAINTENANCE_INTEGRATION
+          # Default seed một lần mỗi CSDL: xoá rồi không quay lại, bộ v2 tới đúng một lần (wave2 D7).
+          - suite: seed-markers
+            file: tests/seed-markers-integration.test.ts
+            switch: SEED_MARKERS_INTEGRATION
+          # Boot bản mới trên lược đồ bản phát hành trước (tests/fixtures/schema-prev.sql)
+          # hai lần: chỉ các chuyển đổi một lần đã khai báo được đổi dữ liệu (wave2 2F).
+          - suite: schema-upgrade
+            file: tests/schema-upgrade-integration.test.ts
+            switch: SCHEMA_UPGRADE_INTEGRATION
     services:
       mysql:
         image: mysql:8.0
@@ -469,7 +491,7 @@ jobs:
 
       - run: npm ci
       # Không suite integration nào gọi FFmpeg thật (media-queue dùng runner giả) —
-      # 19 job không còn cài nó, nên mirror apt chập chờn không cắt được chúng nữa.
+      # 22 job không còn cài nó, nên mirror apt chập chờn không cắt được chúng nữa.
 
       # Mỗi job matrix chạy ĐÚNG MỘT suite. Bật switch của chính nó (qua biến
       # `SWITCH` được matrix cung cấp) — các switch khác vắng mặt nên suite khác
@@ -558,6 +580,10 @@ jobs:
           MEDIA_SYNC_PORT: 3306
           MEDIA_SYNC_USER: root
           MEDIA_SYNC_PASSWORD: test_root_password
+          MEDIA_REPOINT_HOST: 127.0.0.1
+          MEDIA_REPOINT_PORT: 3306
+          MEDIA_REPOINT_USER: root
+          MEDIA_REPOINT_PASSWORD: test_root_password
           PUBLIC_READ_HOST: 127.0.0.1
           PUBLIC_READ_PORT: 3306
           PUBLIC_READ_USER: root
@@ -570,6 +596,14 @@ jobs:
           ANALYTICS_MAINTENANCE_PORT: 3306
           ANALYTICS_MAINTENANCE_USER: root
           ANALYTICS_MAINTENANCE_PASSWORD: test_root_password
+          SEED_MARKERS_HOST: 127.0.0.1
+          SEED_MARKERS_PORT: 3306
+          SEED_MARKERS_USER: root
+          SEED_MARKERS_PASSWORD: test_root_password
+          SCHEMA_UPGRADE_HOST: 127.0.0.1
+          SCHEMA_UPGRADE_PORT: 3306
+          SCHEMA_UPGRADE_USER: root
+          SCHEMA_UPGRADE_PASSWORD: test_root_password
         # TAP được ghim (không để Node tự chọn theo TTY — Node 24 in `ℹ tests N` khi
         # không có TTY, bản cũ in `# Subtest:`), và `tee` giữ một bản cho bước kiểm
         # skip bên dưới. `pipefail` giữ mã thoát của node qua ống `tee`.

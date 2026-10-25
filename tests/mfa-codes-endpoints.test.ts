@@ -267,8 +267,12 @@ test('recovery codes are only issued to an account that already has a factor', (
 
 test('a regeneration deletes the previous batch outright', () => {
   const src = read('server/api/admin/profile/mfa/recovery-codes.post.ts')
-  assert.match(src, /await deleteAllRecoveryCodes\(admin\.id\)/)
-  assert.match(src, /codeHash: await hashOneTimeCode\(normalizeRecoveryCode\(code\)\)/)
+  // Issuing lives in ONE helper, shared with the policy-driven issue on first-factor
+  // confirm (wave2 2A, D1); the endpoint must go through it.
+  assert.match(src, /const codes = await issueRecoveryCodes\(admin\.id\)/)
+  const issuer = read('server/utils/mfa/recovery-codes.ts')
+  assert.match(issuer, /await deleteAllRecoveryCodes\(userId, tx\)/)
+  assert.match(issuer, /codeHash: await hashOneTimeCode\(normalizeRecoveryCode\(code\)\)/)
   // Only the count reaches the audit trail — never the codes themselves.
   assert.match(src, /meta: \{ generated: codes\.length, ip \}/)
   assert.ok(!/meta: \{[^}]*\bcodes\b(?!\.length)/.test(src), 'the codes must never enter a log row')

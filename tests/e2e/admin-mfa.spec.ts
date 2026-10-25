@@ -121,7 +121,7 @@ async function disableTotp(page: Page) {
  * một mã mà phần dọn không có: sau một lần đỏ, `disableTotp` cũng không đăng nhập
  * vào được để bấm nút "Tắt".
  */
-test.afterEach(async () => {
+test.afterEach(async ({ request }) => {
   const connection = await mysql.createConnection(e2eDbConfig())
   try {
     await connection.execute('DELETE FROM user_mfa_factors')
@@ -129,6 +129,16 @@ test.afterEach(async () => {
   } finally {
     await connection.end()
   }
+
+  // Chính sách MFA về `off` QUA ENDPOINT, không qua CSDL: máy chủ đệm chính sách
+  // 30 s và chỉ lượt ghi qua endpoint bỏ đệm. Để lại `privileged` thì mọi spec sau
+  // (cùng tài khoản seed, SuperAdmin) thấy banner chuyển tiếp — admin-retry.spec.ts
+  // khẳng định không còn `role="status"` nào trên trang. Đăng nhập được vì yếu tố
+  // vừa bị xoá ở trên.
+  const signIn = await request.post('/api/admin/auth/login', { data: { username: E2E_ADMIN_USERNAME, password: adminPassword() } })
+  expect(signIn.ok(), `cleanup login failed: ${signIn.status()}`).toBe(true)
+  const reset = await request.put('/api/admin/security/mfa-policy', { data: { policy: 'off' } })
+  expect(reset.ok(), `MFA policy reset failed: ${reset.status()}`).toBe(true)
 })
 
 /**
@@ -215,4 +225,56 @@ test('two-factor enrollment: real code accepted, wrong code rejected, codes show
   // load, so that assertion was checking the page had not updated — a claim about
   // this spec's own navigation, not about the feature.
   await disableTotp(page)
+})
+
+/**
+ * Chính sách bắt buộc MFA (wave2 2A, spec admin-mfa-policy): SuperAdmin bật chính
+ * sách trên trang của nó, tài khoản thuộc diện thấy ngày cưỡng chế, và bật yếu tố
+ * ĐẦU TIÊN phát mã dự phòng ngay trong lượt xác nhận.
+ *
+ * Điều chỉ trình duyệt trả lời được: lượt xác nhận thu hồi mọi phiên rồi cấp lại
+ * cookie trong CHÍNH phản hồi — nếu giao diện không dùng cookie mới, lượt gọi kế
+ * tiếp là 401 và cán bộ bị đá ra trang đăng nhập ngay sau khi bật MFA. Chính sách
+ * để trong thời hạn chuyển tiếp (không cưỡng chế), nên spec khác không bị chặn;
+ * `afterEach` trả nó về `off` qua endpoint.
+ */
+test('MFA policy on: the first factor confirm reveals recovery codes once and the re-issued session keeps working', async ({ page }) => {
+  await login(page)
+
+  // ── SuperAdmin bật chính sách ───────────────────────────────────────────────
+  await page.goto('/admin/settings/security')
+  await page.getByRole('radio', { name: /tài khoản đặc quyền/ }).check()
+  await page.getByRole('button', { name: 'Lưu' }).click()
+  await page.getByRole('dialog').getByRole('button', { name: 'Bật chính sách' }).click()
+  await expect(page.getByText(/Cưỡng chế từ/)).toBeVisible()
+
+  // ── Thời hạn chuyển tiếp: banner báo ngày ───────────────────────────────────
+  await expect(page.getByText(/phải bật xác thực hai bước để tiếp tục dùng trang quản trị/)).toBeVisible()
+
+  // ── Bật yếu tố đầu tiên ─────────────────────────────────────────────────────
+  const secret = await beginTotpEnrollment(page)
+  const dialog = page.getByRole('dialog')
+  await dialog.locator('#enroll-code').fill(currentCode(secret))
+  await dialog.getByRole('button', { name: /Xác nhận|Bật/ }).last().click()
+  await expect(dialog).toBeHidden()
+
+  // Mã dự phòng hiện ngay, từ phản hồi xác nhận — không cần bấm "Tạo mã dự phòng".
+  const shown = page.locator('li.font-mono')
+  await expect(shown.first()).toBeVisible()
+  expect(await shown.count(), 'the confirm response did not reveal the full batch').toBe(10)
+
+  // ── Cookie cấp lại trong phản hồi xác nhận vẫn là một phiên sống ───────────
+  const me = await page.request.get('/api/admin/auth/me')
+  expect(me.status(), 'the session re-issued by confirm was not kept — the next call is unauthenticated').toBe(200)
+  const body = await me.json() as { user: { mfaEnrollmentRequired: boolean, mfaEnforceAfter: string | null } }
+  expect(body.user.mfaEnrollmentRequired).toBe(false)
+  expect(body.user.mfaEnforceAfter, 'an account with a factor is no longer told to enroll').toBeNull()
+
+  // Banner đã tắt (giao diện đọc lại `me` sau khi bật), và trang khác vẫn vào được.
+  // Lượt đọc lại đó từng không bao giờ chạy: `<ProfileActivityHistory>` (tên thiếu
+  // tiền tố `Admin`) không phân giải, `historyRef.reload()` ném trong `Promise.all`.
+  await expect(page.getByText(/phải bật xác thực hai bước để tiếp tục dùng trang quản trị/)).toHaveCount(0)
+  await expect(page.getByRole('heading', { name: 'Lịch sử truy cập & hoạt động' })).toBeVisible()
+  await page.goto('/admin/users')
+  await expect(page).toHaveURL(/\/admin\/users/)
 })

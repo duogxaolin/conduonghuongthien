@@ -43,7 +43,7 @@ import { and, desc, eq } from 'drizzle-orm'
 import { activityLogs, livestreamMessages, livestreamSessions } from '../db/schema'
 import { affectedRowsOrZero } from '../utils/affected-rows'
 import { getDb, type Database } from '../utils/db'
-import { effectiveDisplayName } from '../utils/display-name'
+import { effectiveDisplayName, publicNameSnapshot } from '../utils/display-name'
 import { hasForbiddenControlChars } from '../utils/plain-text'
 import { finitePositive } from '../utils/query-number'
 import { rateLimitDeps } from '../utils/rate-limit-deps'
@@ -111,6 +111,8 @@ export type ChatSender = {
   id: number
   displayName: string | null
   customDisplayName: string | null
+  /** Tên Google là từ dành riêng → hiện "Bạn đọc" (spec reader-display-names-google). */
+  displayNameReserved: boolean
 }
 
 /** Tin nhắn ở dạng trang công khai được thấy. Không `readerId`, không `isDeleted`. */
@@ -164,10 +166,18 @@ export function snapshotDisplayName(sender: ChatSender): string {
   return effectiveDisplayName({
     customDisplayName: sender.customDisplayName,
     displayName:      sender.displayName,
+    displayNameReserved: sender.displayNameReserved,
   }).slice(0, LIVESTREAM_CHAT_NAME_MAX_LENGTH)
 }
 
-/** Hàng đã lưu, ở dạng ra được khỏi máy chủ. */
+/**
+ * Hàng đã lưu, ở dạng ra được khỏi máy chủ.
+ *
+ * Tên là bản chụp lúc gửi (12.9) — giữ nguyên, TRỪ bản chụp mang tên dành riêng:
+ * tin gửi trước 2A chụp thẳng tên Google ("Admin"), nên lịch sử đọc ra "Bạn đọc"
+ * (`publicNameSnapshot`, spec reader-display-names-google). Không ghi lại hàng:
+ * bản chụp gốc vẫn là bằng chứng cho hàng chờ kiểm duyệt.
+ */
 function serializeChatMessage(row: {
   id: number
   displayName: string
@@ -176,7 +186,7 @@ function serializeChatMessage(row: {
 }): ChatMessage {
   return {
     id:          row.id,
-    displayName: row.displayName,
+    displayName: publicNameSnapshot(row.displayName),
     content:     row.content,
     createdAt:   row.createdAt ? row.createdAt.toISOString() : '',
   }

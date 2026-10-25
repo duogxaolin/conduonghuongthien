@@ -6,6 +6,7 @@
 import nodemailer from 'nodemailer'
 import { getDb } from './db'
 import { settings } from '../db/schema'
+import { settingsSecretForUse } from './settings-secrets'
 
 export interface SmtpConfig {
   host: string
@@ -14,9 +15,21 @@ export interface SmtpConfig {
   user: string
   pass: string
   from: string
+  /**
+   * Mật khẩu ĐÃ LƯU là envelope không mở được (khoá mã hoá đã xoay). `pass` khi đó
+   * rỗng, và `sendMail` từ chối gửi — gửi không xác thực tới máy chủ SMTP đã cấu
+   * hình không phải điều cán bộ đã chọn.
+   */
+  passUnreadable?: boolean
 }
 
-const SMTP_KEYS = ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from'] as const
+export const SMTP_PASSWORD_UNREADABLE_MESSAGE
+  = 'Mật khẩu SMTP đã lưu không giải mã được (khoá mã hoá của máy chủ đã đổi). Hãy nhập lại mật khẩu ở trang Cấu hình Email.'
+
+export const SMTP_KEYS = ['smtp_host', 'smtp_port', 'smtp_secure', 'smtp_user', 'smtp_pass', 'smtp_from'] as const
+
+/** Reads the raw `smtp_*` settings rows into a plain map. */
+export type SmtpSettingsReader = () => Promise<Record<string, string>>
 
 /** Read the SMTP-related rows from the settings table into a plain map. */
 async function readSmtpSettings(): Promise<Record<string, string>> {
@@ -35,9 +48,14 @@ async function readSmtpSettings(): Promise<Record<string, string>> {
  * Resolve the effective SMTP configuration, or `null` when the transport is
  * not usable. We consider SMTP "configured" only when both host and user are
  * present — this is the guard the submission handler uses to skip silently.
+ *
+ * `read` defaults to the shared pool. The ops-alert path passes a reader bound to
+ * its own short-lived connection (it also runs in the boot CLI, which must not
+ * create the pool) — and still goes through THIS resolution, so whatever it does
+ * to the stored values (defaults, decryption) applies to alerts too.
  */
-export async function getSmtpConfig(): Promise<SmtpConfig | null> {
-  const map = await readSmtpSettings()
+export async function getSmtpConfig(read: SmtpSettingsReader = readSmtpSettings): Promise<SmtpConfig | null> {
+  const map = await read()
   const host = (map.smtp_host || '').trim()
   const user = (map.smtp_user || '').trim()
   if (!host || !user) return null
@@ -45,10 +63,14 @@ export async function getSmtpConfig(): Promise<SmtpConfig | null> {
   const port = Number(map.smtp_port) || 587
   // `secure` true → implicit TLS (usually port 465). Accept common truthy strings.
   const secure = ['true', '1', 'yes', 'on'].includes(String(map.smtp_secure || '').trim().toLowerCase())
-  const pass = map.smtp_pass || ''
+  // Lưu dạng envelope (`cdkt-smtp-pass:v1`); giải mã đúng lúc dùng.
+  const password = settingsSecretForUse('smtp_pass', map.smtp_pass)
   const from = (map.smtp_from || '').trim() || user
 
-  return { host, port, secure, user, pass, from }
+  return {
+    host, port, secure, user, pass: password.value, from,
+    ...(password.unreadable ? { passUnreadable: true } : {}),
+  }
 }
 
 /** True when SMTP host + user are configured (mail can be attempted). */
@@ -74,6 +96,9 @@ export async function sendMail(args: SendMailArgs): Promise<void> {
   const config = args.config ?? (await getSmtpConfig())
   if (!config) {
     throw new Error('SMTP chưa được cấu hình.')
+  }
+  if (config.passUnreadable) {
+    throw new Error(SMTP_PASSWORD_UNREADABLE_MESSAGE)
   }
 
   const transport = nodemailer.createTransport({

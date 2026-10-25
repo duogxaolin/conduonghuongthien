@@ -71,7 +71,9 @@ export async function createCoreTables(db: Connection, database: string): Promis
       \`height\` INT NULL,
       \`uploaded_by\` INT NULL,
       \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      \`scanned_source_path\` VARCHAR(1024) NULL,
       KEY \`mime_type_idx\` (\`mime_type\`),
+      KEY \`media_scanned_source_path_idx\` (\`scanned_source_path\`(255)),
       CONSTRAINT \`fk_media_user\` FOREIGN KEY (\`uploaded_by\`) REFERENCES \`users\` (\`id\`) ON DELETE SET NULL
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
@@ -90,23 +92,9 @@ export async function createCoreTables(db: Connection, database: string): Promis
     ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
   `)
 
-  // Seed the 5 system content types idempotently (keyed on unique slug).
-  // is_system=1 → editable name/icon/order but NOT deletable (fixed public pages depend on them).
-  const systemTypes: Array<[string, string, string, number]> = [
-    ['Bản tin & Tin tức', 'news', 'fa-solid fa-newspaper', 1],
-    ['Tấm gương tiêu biểu', 'role_model', 'fa-solid fa-award', 2],
-    ['Mô hình tái hòa nhập', 'reintegration', 'fa-solid fa-people-roof', 3],
-    ['Văn bản pháp luật', 'document', 'fa-solid fa-file-lines', 4],
-    ['Giải đáp pháp luật', 'faq', 'fa-solid fa-circle-question', 5],
-  ]
-  for (const [name, slug, icon, displayOrder] of systemTypes) {
-    await db.query(
-      `INSERT INTO \`content_types\` (\`name\`, \`slug\`, \`icon\`, \`display_order\`, \`is_system\`)
-       VALUES (?, ?, ?, ?, 1)
-       ON DUPLICATE KEY UPDATE \`slug\` = \`slug\``,
-      [name, slug, icon, displayOrder],
-    )
-  }
+  // Thể loại hệ thống mặc định: chèn MỘT lần cho mỗi CSDL bởi `seed.ts`
+  // (`server/db/seed-groups.ts`, wave2 D7) — không chèn ở đây. Tệp này chỉ còn DDL:
+  // chèn ở mỗi lần `init.ts` chạy là đưa lại thể loại cán bộ đã xoá sau mỗi deploy.
 
   // Categories table (create before articles FK reference)
   await db.query(`

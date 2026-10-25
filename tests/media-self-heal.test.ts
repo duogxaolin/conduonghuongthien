@@ -18,6 +18,7 @@
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { backupServiceSource } from './_backup-service-family'
 import { describe, it } from 'node:test'
 
 const svcHeal = readFileSync('server/services/media-self-heal.ts', 'utf8')
@@ -27,7 +28,8 @@ const svcSync = ['media-sync.ts', 'media-sync-rewrite.ts', 'media-sync-url-match
   .map(name => readFileSync(`server/services/${name}`, 'utf8'))
   .join('\n')
 const apiHeal = readFileSync('server/api/admin/media/self-heal.post.ts', 'utf8')
-const backup = readFileSync('server/services/backup.ts', 'utf8')
+// `services/backup.ts` là barrel + các tệp con (tách 2026-10-25) — đọc cả nhóm.
+const backup = backupServiceSource()
 
 describe('media-self-heal: cấu trúc mã nguồn', () => {
   it('KHÔNG xoá file local — chỉ upload + repoint', () => {
@@ -70,7 +72,11 @@ describe('media-self-heal: cấu trúc mã nguồn', () => {
   })
 
   it('khoá named lock cdkt:media:self-heal', () => {
-    assert.ok(/LOCK_NAME = 'cdkt:media:self-heal'/.test(svcHeal),
+    // Tên khoá nằm ở danh sách khoá job media (`pre-job-backup.ts`) — lượt khôi phục đọc
+    // cùng danh sách đó (`tests/media-job-locks.test.ts`).
+    assert.ok(/LOCK_NAME = MEDIA_JOB_LOCK\.selfHeal/.test(svcHeal),
+      'phải dùng named lock từ MEDIA_JOB_LOCK')
+    assert.ok(/selfHeal: 'cdkt:media:self-heal'/.test(readFileSync('server/services/pre-job-backup.ts', 'utf8')),
       'phải dùng named lock cdkt:media:self-heal')
     assert.ok(/withNamedLock\(pool, LOCK_NAME, 0/.test(svcHeal),
       'phải gọi withNamedLock timeout 0 (không xếp hàng)')
