@@ -13,6 +13,7 @@
  */
 import { errorMessage } from '~/utils/errorMessage'
 import AdminModal from '~/components/admin/AdminModal.vue'
+import { slugify } from '~~/shared/slugify'
 
 definePageMeta({
   layout: 'admin',
@@ -54,20 +55,10 @@ const form = reactive({
   displayOrder: 0,
 })
 
-// Auto-fill slug from name (chỉ ở mode create).
-const slugifyLocal = (text: string): string =>
-  text.toString().toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[đĐ]/g, 'd')
-    .replace(/([^0-9a-z-\s])/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-
+// Auto-fill slug from name (chỉ ở mode create) — `slugify` của `shared/`, cùng luật máy chủ lưu.
 watch(() => form.name, (val) => {
   if (modalMode.value === 'create') {
-    form.slug = slugifyLocal(val)
+    form.slug = slugify(val)
   }
 })
 
@@ -117,7 +108,7 @@ async function handleSave() {
   try {
     const payload = {
       name: form.name.trim(),
-      slug: form.slug.trim(),
+      slug: slugify(form.slug),
       description: form.description.trim() || null,
       displayOrder: form.displayOrder,
     }

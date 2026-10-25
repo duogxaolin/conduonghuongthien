@@ -1,6 +1,7 @@
 /**
  * Host được phép phục vụ ảnh cho trang — MỘT nguồn cho:
- *   - header CSP `img-src` (`nuxt.config.ts` dựng bằng `cspImgSrcDirective()`);
+ *   - chỉ thị CSP `img-src` của cả hai header (`shared/csp-policy.ts` dựng bằng
+ *     `cspImgSrcDirective()`, `nuxt.config.ts` gắn);
  *   - `image.domains` của @nuxt/image (IPX chỉ tải ảnh từ host có tên ở đây, so đúng
  *     tên host — `node_modules/ipx`: `domains.has(url.hostname)`);
  *   - phép kiểm của lượt đổi domain R2 (`server/services/media-repoint.ts`, wave2 2B W2):

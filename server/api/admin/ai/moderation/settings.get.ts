@@ -31,11 +31,15 @@ export default defineEventHandler(async (event) => {
     .from(aiModelPricing)
     .where(eq(aiModelPricing.isActive, true))
 
+  // Annotated so the page's type (derived from this handler, app/types/moderation.ts)
+  // is the two modes, not the `string` an object literal widens it to.
+  const mode: 'ai' | 'keyword_only' = config?.isActive ? 'ai' : 'keyword_only'
+
   return {
     ok: true,
     settings: {
       enabled: config ? config.isActive : true,
-      mode: config?.isActive ? 'ai' : 'keyword_only',
+      mode,
       provider: config?.provider ?? 'delify',
       model: config?.model ?? 'delify-5.5',
       systemPrompt: config?.systemPrompt ?? DEFAULT_MODERATION_SYSTEM_PROMPT,
