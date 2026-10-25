@@ -16,6 +16,7 @@
  */
 import { callAi } from './ai-gateway'
 import { upsertTranslations, DEFAULT_LANGUAGES } from './languages'
+import { readModelTranslations } from '../utils/ai/model-translations'
 import { logWarn } from '../utils/logger'
 import type { ActorLike } from '../utils/permissions'
 
@@ -51,17 +52,8 @@ ${promptLines.join('\n')}`
 
   const result = await callAi('translation_ui', { prompt, userId })
   if (!result.ok || !result.text) return []
-
-  try {
-    const raw = result.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
-    const parsed = JSON.parse(raw) as Array<{ key: string; value: string }>
-    const map = new Map(parsed.map((p) => [p.key, p.value]))
-    return viItems
-      .map((it) => ({ group: it.group, key: it.key, value: map.get(it.key) ?? '' }))
-      .filter((it) => it.value.trim() !== '')
-  } catch {
-    return []
-  }
+  // Only text for the keys asked for — a model "null" is not a translation.
+  return readModelTranslations(result.text, viItems)
 }
 
 /**

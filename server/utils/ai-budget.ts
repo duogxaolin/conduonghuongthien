@@ -13,6 +13,7 @@ import { sum, gte, eq } from 'drizzle-orm'
 import type { Database } from '../utils/db'
 import { aiUsageLogs, aiBudgetSettings, aiProviders, type AiBudgetSettings } from '../db/schema'
 import { decryptAiSecret } from './ai/crypto'
+import { fetchDelifyUsage } from './ai/delify-usage'
 import { logWarn } from './logger'
 
 /** Services blocked at 100% budget. Chatbot falls back to knowledge-only in its
@@ -97,23 +98,17 @@ export async function loadDelifyQuota(db: Database): Promise<CachedDelifyQuota |
       lastFour: delifyRow.apiKeyLastFour ?? '',
     })
 
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), 2500)
-    try {
-      const resp = await fetch(`https://router.delify.vn/api/usage/key?key=${encodeURIComponent(secret)}`, {
-        signal: controller.signal,
-      })
-      if (resp.ok) {
-        const data = await resp.json() as { budgetUsd?: number | null; active?: boolean }
-        cachedDelifyQuota = {
-          budgetUsd: typeof data.budgetUsd === 'number' ? data.budgetUsd : null,
-          active: typeof data.active === 'boolean' ? data.active : true,
-          fetchedAt: Date.now(),
-        }
-        return cachedDelifyQuota
+    // Through outbound.ts, to the delify row's own host (a refused base URL is never
+    // resolved); a short deadline — this check runs before every AI call.
+    const resp = await fetchDelifyUsage({ baseUrl: delifyRow.baseUrl, secret, path: '/api/usage/key', timeoutMs: 2500, maxResponseBytes: 64 * 1024 })
+    if (resp.data && typeof resp.data === 'object') {
+      const data = resp.data as { budgetUsd?: number | null; active?: boolean }
+      cachedDelifyQuota = {
+        budgetUsd: typeof data.budgetUsd === 'number' ? data.budgetUsd : null,
+        active: typeof data.active === 'boolean' ? data.active : true,
+        fetchedAt: Date.now(),
       }
-    } finally {
-      clearTimeout(timer)
+      return cachedDelifyQuota
     }
   } catch {
     // Return last known cache on error or timeout

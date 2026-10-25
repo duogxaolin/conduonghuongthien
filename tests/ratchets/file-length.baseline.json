@@ -9,7 +9,7 @@
     "value": 1060,
     "reason": "Unsplittable: tests/analytics-live-dashboard-ui.test.ts greps ~30 patterns in this file's template and runs its script through Function() (docs/decisions/refactor-large-files.md). Allowed above the 400-line default, but capped: it may only shrink."
   },
-  "app/components/admin/ai/AiProvidersTab.vue": 1025,
+  "app/components/admin/ai/AiProvidersTab.vue": 1018,
   "app/components/admin/articles/ArticleTranslationPanel.vue": 595,
   "app/components/admin/languages/UniversalTab.vue": 545,
   "app/composables/i18n-default-dictionary.ts": {
@@ -32,7 +32,7 @@
   "app/pages/admin/content/navigation/navbar.vue": 425,
   "app/pages/admin/content/pages/[id].vue": 795,
   "app/pages/admin/index.vue": 567,
-  "app/pages/admin/languages/index.vue": 757,
+  "app/pages/admin/languages/index.vue": 756,
   "app/pages/admin/livestream/index.vue": 573,
   "app/pages/admin/login.vue": 429,
   "app/pages/admin/media-portal/[id].vue": 414,
@@ -84,9 +84,9 @@
   "server/services/moderation-worker.ts": 822,
   "server/services/notifications.ts": 449,
   "server/services/readers.ts": 550,
-  "server/services/universal-translation.ts": 546,
+  "server/services/universal-translation.ts": 540,
   "server/utils/chatbot/chat-policy.ts": 769,
-  "server/utils/chatbot/outbound.ts": 588,
+  "server/utils/chatbot/outbound.ts": 587,
   "server/utils/xlsx-reader.ts": 434,
   "shared/blocks/registry.ts": 469
 }

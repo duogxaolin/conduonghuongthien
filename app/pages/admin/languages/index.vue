@@ -24,6 +24,7 @@ import { ref, onMounted } from 'vue'
 import { useToast } from '~/composables/useToast'
 import { errorMessage } from '~/utils/errorMessage'
 import { getFlagEmoji } from '~/utils/language-flags'
+import { missingTranslations } from '~/utils/translation-keys'
 import LanguagesListTab from '~/components/admin/languages/LanguagesListTab.vue'
 import TranslationsTab from '~/components/admin/languages/TranslationsTab.vue'
 import UniversalTab from '~/components/admin/languages/UniversalTab.vue'
@@ -79,9 +80,10 @@ const viTranslationsMap = ref<Map<string, string>>(new Map())
 type TranslationRecord = { id: number; langCode: string; group: string; key: string; value: string | null; isAiTranslated: boolean }
 type TranslationList = { ok: true; items: TranslationRecord[]; groups: string[] }
 
+// Every vi key (the server answers a language whole — it used to cap at 500 of ~600).
 async function loadViSourceMap() {
   try {
-    const res = await adminFetch<TranslationList>(`/api/admin/languages/vi/translations?limit=500`)
+    const res = await adminFetch<TranslationList>(`/api/admin/languages/vi/translations`)
     if (res.ok) viTranslationsMap.value = new Map(res.items.map((item): [string, string] => [`${item.group}::${item.key}`, item.value || '']))
   } catch {
     // Non-critical
@@ -334,8 +336,8 @@ async function startBatchTranslateWithProgress(langCode: string, langName: strin
   translatingCards[langCode] = true
 
   try {
-    const res = await adminFetch<TranslationList>(`/api/admin/languages/${langCode}/translations?limit=500`)
-    const missing = (res.items || []).filter((item) => !item.value || !item.value.trim())
+    const res = await adminFetch<TranslationList>(`/api/admin/languages/${langCode}/translations`)
+    const missing = missingTranslations(res.items || [], viTranslationsMap.value)
 
     if (missing.length === 0) {
       progressStats.value.currentKey = 'Tất cả các key đã có bản dịch!'
@@ -359,19 +361,13 @@ async function startBatchTranslateWithProgress(langCode: string, langName: strin
       const chunk = missing.slice(i, i + CHUNK_SIZE)
       progressStats.value.currentKey = `Đang dịch: ${chunk.map((c) => c.key).slice(0, 3).join(', ')}...`
 
-      const payloadItems = chunk.map((item) => ({
-        group: item.group,
-        key: item.key,
-        sourceText: viTranslationsMap.value.get(`${item.group}::${item.key}`) || item.key,
-      }))
-
       try {
         const chunkRes = await adminFetch<{ ok: true; translated: Array<{ group: string; key: string; value: string }> }>(`/api/admin/languages/ai-translate-chunk`, {
           method: 'POST',
           body: {
             langCode,
             langName,
-            items: payloadItems,
+            items: chunk,
           },
         })
 
@@ -576,16 +572,9 @@ onMounted(() => {
       <button type="button" class="shrink-0 text-sm font-bold underline text-[#d12420] bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchLanguages">Thử lại</button>
     </div>
 
-    <!-- Skeleton + Error (Translations tab — guard ghim translationsError/fetchTranslations ở file gốc) -->
-    <SkeletonTable v-if="translationsLoading && activeTab === 'translations'" label="Đang tải bản dịch" :rows="8" :cols="4" />
-    <div v-else-if="translationsError && activeTab === 'translations'" role="alert" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
-      <span>{{ translationsError }}</span>
-      <button type="button" class="shrink-0 text-sm font-bold underline text-[#d12420] bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchTranslations">Thử lại</button>
-    </div>
-
     <!-- Languages Tab -->
     <LanguagesListTab
-      v-else-if="activeTab === 'languages'"
+      v-if="activeTab === 'languages'"
       :languages="languages"
       :translating-cards="translatingCards"
       @toggle-active="toggleActive"
@@ -600,9 +589,11 @@ onMounted(() => {
       @add-language="addLanguage"
     />
 
-    <!-- Translations Tab (chỉ mount khi không loading/error — skeleton+error render ở cha) -->
+    <!-- Translations Tab: luôn mount khi mở tab — bộ lọc + ô tìm kiếm giữ nguyên (không mất focus)
+         lúc tải lại; khung chờ/lỗi chỉ thay bảng qua slot #status (guard ghim translationsError/fetchTranslations ở đây) -->
     <TranslationsTab
-      v-if="activeTab === 'translations' && !translationsLoading && !translationsError"
+      v-if="activeTab === 'translations'"
+      :busy="translationsLoading || !!translationsError"
       :languages="languages"
       :translations="translations"
       :translation-groups="translationGroups"
@@ -621,7 +612,15 @@ onMounted(() => {
       @translate-key="translateSingleKey"
       @ai-translate-all="aiTranslateAll"
       @fetch-translations="fetchTranslations"
-    />
+    >
+      <template #status>
+        <SkeletonTable v-if="translationsLoading" label="Đang tải bản dịch" :rows="8" :cols="4" />
+        <div v-else-if="translationsError" role="alert" class="bg-[#ffebe9] text-[#d12420] px-4 py-2.5 rounded-lg text-[0.85rem] flex items-center justify-between gap-3">
+          <span>{{ translationsError }}</span>
+          <button type="button" class="shrink-0 text-sm font-bold underline text-[#d12420] bg-transparent border-0 cursor-pointer p-0 hover:no-underline" @click="fetchTranslations">Thử lại</button>
+        </div>
+      </template>
+    </TranslationsTab>
 
     <!-- Universal Tab (self-contained, tự onMounted loadCoverage khi mount) -->
     <UniversalTab

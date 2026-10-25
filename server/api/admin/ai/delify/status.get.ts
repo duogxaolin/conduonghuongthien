@@ -3,14 +3,15 @@ import { getDb } from '../../../../utils/db'
 import { aiProviders, aiUsageLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { decryptAiSecret } from '../../../../utils/ai/crypto'
+import { DelifyUsageError, fetchDelifyUsage, type DelifyUsagePath } from '../../../../utils/ai/delify-usage'
 
 const ALLOWED_PERIODS = new Set(['1h', '24h', '7d', '30d', 'all'])
 
 /**
- * Fetch real-time status, budget, and receipts breakdown from Delify Router API.
- * Calls:
- * 1. https://router.delify.vn/api/usage/key?key=... (key info, total budget, used, remaining)
- * 2. https://router.delify.vn/api/usage/key/receipts?key=...&period=... (breakdown by period)
+ * Fetch real-time status, budget, and receipts breakdown from Delify Router API, on the
+ * delify provider's host, through `fetchDelifyUsage` (outbound.ts — never a bare fetch):
+ * 1. /api/usage/key (key info, total budget, used, remaining)
+ * 2. /api/usage/key/receipts?period=... (breakdown by period)
  */
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -51,9 +52,8 @@ export default defineEventHandler(async (event) => {
   }
 
   // 3. Query Delify Key endpoint and Receipts endpoint in parallel
-  const encodedKey = encodeURIComponent(apiKey)
-  const keyUrl = `https://router.delify.vn/api/usage/key?key=${encodedKey}`
-  const receiptsUrl = `https://router.delify.vn/api/usage/key/receipts?key=${encodedKey}&period=${period}&page=1&pageSize=20`
+  const ask = (path: DelifyUsagePath, params?: Record<string, string>) =>
+    fetchDelifyUsage({ baseUrl: delifyProvider.baseUrl, secret: apiKey, path, params })
 
   interface DelifyKeyData {
     name?: string
@@ -118,22 +118,22 @@ export default defineEventHandler(async (event) => {
 
   try {
     const [keyResp, receiptsResp] = await Promise.all([
-      fetch(keyUrl, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10_000) }),
-      fetch(receiptsUrl, { headers: { 'Content-Type': 'application/json' }, signal: AbortSignal.timeout(10_000) }),
+      ask('/api/usage/key'),
+      ask('/api/usage/key/receipts', { period, page: '1', pageSize: '20' }),
     ])
 
-    if (keyResp.ok) {
-      keyData = (await keyResp.json()) as DelifyKeyData
+    if (keyResp.data && typeof keyResp.data === 'object') {
+      keyData = keyResp.data as DelifyKeyData
     } else {
       fetchError = `Key API trả HTTP ${keyResp.status}`
     }
 
-    if (receiptsResp.ok) {
-      receiptsData = (await receiptsResp.json()) as DelifyReceiptsData
+    if (receiptsResp.data && typeof receiptsResp.data === 'object') {
+      receiptsData = receiptsResp.data as DelifyReceiptsData
     }
   } catch (err: unknown) {
-    const msg = err instanceof Error ? err.message : 'Lỗi kết nối'
-    fetchError = `Không thể kết nối tới Delify API: ${msg}`
+    // A fixed sentence (the old one appended the driver's own message).
+    fetchError = err instanceof DelifyUsageError ? err.message : 'Không thể kết nối tới Delify Router API.'
   }
 
   if (!keyData) {

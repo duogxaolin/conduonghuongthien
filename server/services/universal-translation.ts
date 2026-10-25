@@ -3,6 +3,7 @@ import { getDb, type Database } from '../utils/db'
 import { articles, articleTranslations, languages, langTranslations, pageBlocks } from '../db/schema'
 import { callAi } from './ai-gateway'
 import { upsertTranslations } from './languages'
+import { readModelTranslations } from '../utils/ai/model-translations'
 import { runTranslationWorker } from './article-translations'
 import type { ActorLike } from '../utils/permissions'
 import type { BlockData } from '../../shared/blocks/types'
@@ -446,18 +447,11 @@ export async function startUniversalAutoTranslate(
             const prompt = `Translate software UI strings to ${lang.name}. Return ONLY valid JSON array [{"key":"...", "value":"..."}]:\n${promptLines.join('\n')}`
 
             const res = await callAi('translation_ui', { prompt, userId: actor.id ?? null })
-            if (res.ok && res.text) {
-              try {
-                const raw = res.text.replace(/```json\s*/gi, '').replace(/```\s*$/g, '').trim()
-                const parsed = JSON.parse(raw) as Array<{ key: string; value: string }>
-                const itemsToSave = parsed.map((p) => {
-                  const m = chunk.find(c => c.key === p.key)
-                  return { group: m?.group || 'general', key: p.key, value: String(p.value).trim() }
-                })
-                if (itemsToSave.length > 0) {
-                  await upsertTranslations(actor, lang.code, itemsToSave, true)
-                }
-              } catch {}
+            // Only text for keys in this chunk: stringifying the model's value stored
+            // "null"/"undefined", and a key the model invented became a row under "general".
+            const itemsToSave = res.ok && res.text ? readModelTranslations(res.text, chunk) : []
+            if (itemsToSave.length > 0) {
+              await upsertTranslations(actor, lang.code, itemsToSave, true)
             }
             universalTaskState.processedItems++
             universalTaskState.percent = Math.min(99, Math.round((universalTaskState.processedItems / universalTaskState.totalItems) * 100))

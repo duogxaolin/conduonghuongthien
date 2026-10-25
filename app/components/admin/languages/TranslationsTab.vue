@@ -10,6 +10,13 @@
  * selectedLangCode/Group/searchQuery/statusFilter khi "Bảng dịch"/"Xem thiếu",
  * (3) `startBatchTranslateWithProgress` chạy ở cha cho cả 2 tab. Con chỉ giữ
  * `editingKey`/`editingValue` nội bộ.
+ *
+ * Tab luôn mount khi đang mở: mỗi phím gõ ở ô tìm kiếm là một lượt tải lại, và bản
+ * cũ gỡ cả tab (kèm ô đang gõ) suốt lượt đó — ô mất focus sau một ký tự. Nay
+ * `busy` chỉ thay BẢNG bằng slot `#status` (khung chờ / lỗi + "Thử lại" do cha vẽ).
+ * Tìm kiếm chạy ở máy chủ trên mọi hàng (SQL, không phân biệt hoa thường/dấu);
+ * không lọc lần hai ở đây — phép `includes` phía trình duyệt phân biệt dấu nên sẽ
+ * giấu hàng máy chủ đã khớp.
  */
 
 interface LanguageRow {
@@ -32,6 +39,8 @@ interface TranslationRow {
 }
 
 const props = defineProps<{
+  /** Đang tải hoặc lỗi: bảng nhường chỗ cho slot `#status`. */
+  busy: boolean
   languages: LanguageRow[]
   translations: TranslationRow[]
   translationGroups: string[]
@@ -58,21 +67,22 @@ const emit = defineEmits<{
 // `editingKey`/`editingValue` chỉ dùng trong tab này — giữ nội bộ.
 const editingKey = ref<string | null>(null)
 const editingValue = ref('')
+// Tab không còn bị gỡ mỗi lượt tải lại, nên ô đang sửa sống qua lượt đổi ngôn ngữ.
+// `editingKey` (`group::key`) giống nhau ở mọi ngôn ngữ và "Lưu" ghi vào ngôn ngữ
+// đang chọn lúc bấm: bản nháp tiếng Anh sẽ hiện ở hàng tiếng Pháp và bị lưu thành
+// tiếng Pháp. Đổi ngôn ngữ thì đóng ô sửa; tìm kiếm/nhóm cùng ngôn ngữ thì giữ.
+watch(() => props.selectedLangCode, () => {
+  editingKey.value = null
+  editingValue.value = ''
+})
 
+// Search is already applied by the server (see the header); only the status filter is local.
 const filteredTranslations = computed(() => {
-  let list = props.translations
-  if (props.statusFilter === 'untranslated') {
-    list = list.filter((t) => !t.value || !t.value.trim())
-  } else if (props.statusFilter === 'translated') {
-    list = list.filter((t) => t.value && t.value.trim())
-  } else if (props.statusFilter === 'ai') {
-    list = list.filter((t) => t.isAiTranslated)
-  }
-  if (!props.searchQuery) return list
-  const s = props.searchQuery.toLowerCase()
-  return list.filter(
-    (t) => t.key.toLowerCase().includes(s) || (t.value || '').toLowerCase().includes(s),
-  )
+  const list = props.translations
+  if (props.statusFilter === 'untranslated') return list.filter((t) => !t.value || !t.value.trim())
+  if (props.statusFilter === 'translated') return list.filter((t) => t.value && t.value.trim())
+  if (props.statusFilter === 'ai') return list.filter((t) => t.isAiTranslated)
+  return list
 })
 
 function startEdit(t: TranslationRow) {
@@ -134,11 +144,12 @@ function saveEdit(t: TranslationRow) {
       </button>
     </div>
 
-    <!-- Skeleton + error render ở cha (guard ghim translationsError/fetchTranslations
-         ở pages/admin/languages/index.vue). Con chỉ mount khi đã có data. -->
+    <!-- Khung chờ + lỗi do cha vẽ (guard ghim translationsError/fetchTranslations ở
+         pages/admin/languages/index.vue); chỉ thay bảng — bộ lọc phía trên giữ nguyên. -->
+    <slot v-if="props.busy" name="status" />
 
     <!-- Translation table -->
-    <div class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden shadow-xs">
+    <div v-else class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden shadow-xs">
       <!-- Mobile Card View -->
       <div class="md:hidden divide-y divide-[#eef2ee]">
         <div

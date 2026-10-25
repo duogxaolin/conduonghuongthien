@@ -1,24 +1,25 @@
-import { createError } from 'h3'
+import { z } from 'zod'
 import { requireResourcePermission } from '../../../utils/permissions'
+import { readValidated } from '../../../utils/request-body'
 import { getDb } from '../../../utils/db'
 import { langTranslations } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { callAi } from '../../../services/ai-gateway'
 import { upsertTranslations } from '../../../services/languages'
+import { readModelTranslations } from '../../../utils/ai/model-translations'
+
+const LANG_CODE_REQUIRED = 'Mã ngôn ngữ bắt buộc.'
+const bodySchema = z.object({
+  langCode: z.string({ error: LANG_CODE_REQUIRED }).trim().toLowerCase().min(1, LANG_CODE_REQUIRED).max(10),
+  langName: z.string().trim().max(100).optional(),
+})
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
   requireResourcePermission(adminUser, 'settings', 'update')
 
-  const body = await readBody(event).catch(() => ({}))
-  if (!body || typeof body !== 'object') {
-    throw createError({ statusCode: 400, statusMessage: 'Dữ liệu không hợp lệ.' })
-  }
-
-  const langCode = String(body.langCode || '').trim().toLowerCase()
-  if (!langCode) {
-    throw createError({ statusCode: 400, statusMessage: 'Mã ngôn ngữ bắt buộc.' })
-  }
+  const body = await readValidated(event, bodySchema)
+  const langCode = body.langCode
 
   const db = getDb()
 
@@ -50,7 +51,7 @@ export default defineEventHandler(async (event) => {
   }
 
   // Batch translate via AI
-  const langName = String(body.langName || langCode)
+  const langName = body.langName || langCode
   const items: Array<{ group: string; key: string; value: string }> = []
 
   // Process in batches of 20 keys to keep prompt manageable
@@ -68,20 +69,8 @@ ${promptLines.join('\n')}`
 
     const result = await callAi('translation_article', { prompt, userId: adminUser?.id ?? null })
 
-    if (result.ok && result.text) {
-      try {
-        const raw = result.text.replace(/```json\s*/g, '').replace(/```\s*$/g, '').trim()
-        const parsed = JSON.parse(raw) as Array<{ key: string; value: string }>
-        for (const p of parsed) {
-          const viRow = batch.find((b) => b.key === p.key)
-          if (viRow) {
-            items.push({ group: viRow.group, key: p.key, value: p.value })
-          }
-        }
-      } catch {
-        // Skip unparseable batch
-      }
-    }
+    // Only text for keys in this batch; an unreadable answer skips the batch.
+    if (result.ok && result.text) items.push(...readModelTranslations(result.text, batch))
   }
 
   if (items.length > 0) {

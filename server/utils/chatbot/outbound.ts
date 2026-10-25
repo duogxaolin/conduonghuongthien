@@ -53,6 +53,8 @@ export interface SafeProviderRequestOptions {
   allowedHosts: readonly string[]
   method?: string
   headers?: Readonly<Record<string, string>>
+  /** Query string, appended AFTER the URL checks (a `?` in `url` stays refused). For an API that takes its key only there (Delify usage); never logged. */
+  query?: Readonly<Record<string, string>>
   body?: string | Uint8Array
   timeoutMs?: number
   maxResponseBytes?: number
@@ -95,13 +97,10 @@ export function normalizeProviderUrl(input: string | URL, policy: ProviderUrlPol
     throw new ChatbotOutboundError('INVALID_URL')
   }
 
-  if (url.protocol !== 'https:' || url.username || url.password || url.hash) {
+  if (url.protocol !== 'https:' || url.username || url.password || url.hash || url.search) {
     throw new ChatbotOutboundError('INVALID_URL')
   }
   if (url.port && url.port !== SAFE_PORT) {
-    throw new ChatbotOutboundError('INVALID_URL')
-  }
-  if (url.search) {
     throw new ChatbotOutboundError('INVALID_URL')
   }
 
@@ -319,7 +318,7 @@ function pinnedRequestOptions(
     protocol: 'https:',
     hostname: url.hostname,
     port: 443,
-    path: `${url.pathname}${url.search}`,
+    path: input.query ? `${url.pathname}?${new URLSearchParams(input.query)}` : url.pathname,
     method: input.method ?? 'GET',
     headers: input.headers,
     servername: url.hostname,

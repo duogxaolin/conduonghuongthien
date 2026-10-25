@@ -27,7 +27,9 @@
  *      sent `value: null`, which the PUT handler's `String(i.value)` stores as "null");
  *   5. every action sends exactly the requests it sent before (method, path, query,
  *      body, and the reloads after it) — green on the base too: the conversion is a
- *      no-op on the wire;
+ *      no-op on the wire. One change since, on purpose: the vi source map and the
+ *      missing-keys scan no longer ask for `?limit=500` — the server capped the list
+ *      there and ~600 keys exist (see "more than 500 keys" below);
  *   6. neither file mentions `$fetch` any more (RED on the base), and both still count
  *      as "fetching" for the error/skeleton coverage gates.
  *
@@ -200,7 +202,6 @@ type ProvidersTab = {
   newModelForm: { model: string, label: string, promptCostPerMillion: number, completionCostPerMillion: number, isActive: boolean }
   editModelForm: { label: string, promptCostPerMillion: number, completionCostPerMillion: number, isActive: boolean }
   loadProviders: () => Promise<void>
-  loadPricing: () => Promise<void>
   toggleSelectProvider: (id: number) => void
   bulkDeleteProviders: () => Promise<void>
   toggleSelectModel: (model: string) => void
@@ -404,8 +405,12 @@ describe(`${PROVIDERS_TAB} — actions`, () => {
     assert.deepEqual(await sent(page.syncDelifyPricing), [{ wire: 'POST /api/admin/ai/delify/sync', body: undefined }, ...reload])
     assert.equal(page.delifyUsage?.windowCostUsd, 0.5)
     assert.equal(lastToast(toasts, 'success'), 'Đã đồng bộ 3 model và 2 cuộc gọi từ Delify Router.')
+  })
 
-    assert.deepEqual(await sent(page.loadPricing), [{ wire: 'GET /api/admin/ai/pricing', body: undefined }])
+  it('pricing is loaded with the providers only — the uncalled `loadPricing` is gone (no caller: not in the template, not exposed)', async () => {
+    const { page, exposed } = await providersTab()
+    assert.equal((page as unknown as Record<string, unknown>).loadPricing, undefined)
+    assert.deepEqual(Object.keys(exposed).sort(), ['loadProviders', 'pricingRows', 'providers'])
   })
 })
 
@@ -422,6 +427,7 @@ type LanguagesPage = {
   translationsError: string
   translations: TranslationRow[]
   translationGroups: string[]
+  viTranslationsMap: Map<string, string>
   selectedGroup: string
   searchQuery: string
   selectedLangCode: string
@@ -491,7 +497,7 @@ describe(`${LANGUAGES_PAGE} — loading`, () => {
     assert.deepEqual(calls.map(wire), [
       'GET /api/admin/languages',
       'GET /api/admin/languages/en/translations',
-      'GET /api/admin/languages/vi/translations?limit=500',
+      'GET /api/admin/languages/vi/translations',
     ])
     assert.deepEqual(page.languages.map(l => l.code), ['vi', 'en', 'fr'])
     assert.equal(page.selectedLangCode, 'en')
@@ -608,7 +614,8 @@ describe(`${LANGUAGES_PAGE} — the translations table follows the latest filter
     en.respond(h3Error(403, 'Forbidden: Insufficient permissions'))
     await older
     await settle()
-    // TranslationsTab is mounted only while `!translationsError`: a stale error would hide the table.
+    // TranslationsTab shows its `#status` slot (the error) in place of the table while
+    // `translationsError` is set: a stale error would hide the table.
     assert.equal(page.translationsError, '')
     assert.deepEqual(page.translations.map(t => t.value), ['Accueil', 'Actualités'])
   })
@@ -630,7 +637,7 @@ describe(`${LANGUAGES_PAGE} — actions`, () => {
       return calls.slice(from).map(call => (call.body === undefined ? wire(call) : { wire: wire(call), body: call.body }))
     }
     const reloadLanguages = 'GET /api/admin/languages'
-    const reloadAll = [reloadLanguages, 'GET /api/admin/languages/en/translations', 'GET /api/admin/languages/vi/translations?limit=500']
+    const reloadAll = [reloadLanguages, 'GET /api/admin/languages/en/translations', 'GET /api/admin/languages/vi/translations']
     const english = page.languages[1]!
 
     const added = { code: 'de', name: 'German', nativeName: 'Deutsch', displayOrder: 3 }
@@ -670,11 +677,54 @@ describe(`${LANGUAGES_PAGE} — actions`, () => {
     assert.equal(lastToast(toasts, 'success'), 'Tất cả các ngôn ngữ đã được đồng bộ đầy đủ các khóa từ ngôn ngữ mặc định.')
 
     assert.deepEqual(await sent(() => page.startBatchTranslateWithProgress('fr', 'French')), [
-      'GET /api/admin/languages/fr/translations?limit=500',
+      'GET /api/admin/languages/fr/translations',
       { wire: 'POST /api/admin/languages/ai-translate-chunk', body: { langCode: 'fr', langName: 'French', items: [{ group: 'nav', key: 'news', sourceText: 'Tin tức' }] } },
       ...reloadAll,
     ])
     assert.equal(lastToast(toasts, 'success'), 'Đã hoàn tất dịch 1/1 key cho French!')
+  })
+})
+
+describe(`${LANGUAGES_PAGE} — more than 500 keys`, () => {
+  // ~600 keys per language when this was found; the server used to cap a list at 500,
+  // and both "every key" callers asked for `?limit=500`. This fake server keeps that
+  // cap for a client that asks for it, so a client still asking is seen to lose keys.
+  const COUNT = 581
+  const pad = (n: number) => String(n).padStart(4, '0')
+  const rows = (code: string, value: (n: number) => string | null, skip?: number) =>
+    Array.from({ length: COUNT }, (_, i) => i + 1).filter(n => n !== skip)
+      .map(n => record(code, n, `key-${pad(n)}`, value(n), 'ui'))
+  const BIG: Record<string, ReturnType<typeof record>[]> = {
+    vi: rows('vi', n => `Giá trị ${pad(n)}`),
+    // en: everything translated except key-0560, and key-0581 has no en row at all.
+    en: rows('en', n => (n === 560 ? null : `Value ${pad(n)}`), 581),
+  }
+  const bigServer: Responder = (call) => {
+    const list = /^\/api\/admin\/languages\/(\w+)\/translations$/.exec(call.url.pathname)
+    if (call.method !== 'GET' || !list) return undefined
+    const limit = call.url.searchParams.get('limit')
+    const items = BIG[list[1]!] ?? []
+    return json({ ok: true, items: limit ? items.slice(0, Math.min(500, Number(limit))) : items, groups: ['ui'] })
+  }
+
+  it(`the Vietnamese source map holds all ${COUNT} keys (RED before: 500)`, async () => {
+    const { page, calls } = await languagesPage(bigServer)
+    assert.equal(page.viTranslationsMap.size, COUNT)
+    assert.equal(page.viTranslationsMap.get(`ui::key-${pad(COUNT)}`), `Giá trị ${pad(COUNT)}`)
+    assert.ok(calls.every(call => !call.url.searchParams.has('limit')), 'no list request asks for a capped page')
+  })
+
+  it('the missing-keys scan finds a blank key past row 500 and a key the language has no row for, each with its Vietnamese source (RED before: "100%")', async () => {
+    const { page, calls, toasts } = await languagesPage(bigServer)
+    const from = calls.length
+    await page.startBatchTranslateWithProgress('en', 'English')
+    const chunks = calls.slice(from).filter(call => call.url.pathname === '/api/admin/languages/ai-translate-chunk')
+    assert.equal(chunks.length, 1, `toasts: ${JSON.stringify(toasts)}`)
+    assert.deepEqual((chunks[0]!.body as { items: unknown[] }).items, [
+      { group: 'ui', key: 'key-0560', sourceText: 'Giá trị 0560' },
+      { group: 'ui', key: 'key-0581', sourceText: 'Giá trị 0581' },
+    ])
+    assert.equal(lastToast(toasts, 'info'), undefined, 'no "đã có bản dịch đầy đủ 100%" while two keys are untranslated')
   })
 })
 

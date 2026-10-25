@@ -6,8 +6,9 @@
  * `settings` RBAC resource — no new resource needed.
  */
 import { createError } from 'h3'
-import { eq, and, sql } from 'drizzle-orm'
+import { eq, and, or, like, asc, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
+import { containsPattern } from '../utils/sql-like'
 import { languages, langTranslations, articleTranslations, pageBlocks, activityLogs } from '../db/schema'
 import type { ActorLike } from '../utils/permissions'
 import type { BlockData, BlockFieldValue } from '../../shared/blocks/types'
@@ -199,33 +200,28 @@ export async function reorderLanguages(
 
 // ─── UI Translations ─────────────────────────────────────────────────────
 
-export async function listTranslations(
-  code: string,
-  opts: { group?: string; search?: string; limit?: number; offset?: number },
-  db: Database = getDb(),
-) {
+/**
+ * Every row of one language (optionally one group), in id order — no cut: ~630 keys,
+ * and the tab's status filter and counter, the vi source map and the AI batch scan
+ * are only right over all of them. The search is SQL (key OR value, wildcards
+ * escaped) so it covers every row; it used to run in JS after a 200/500-row LIMIT.
+ */
+export async function listTranslations(code: string, opts: { group?: string; search?: string }, db: Database = getDb()) {
   const conditions = [eq(langTranslations.langCode, code)]
-  if (opts.group && opts.group !== 'all') {
-    conditions.push(eq(langTranslations.group, opts.group))
+  if (opts.group && opts.group !== 'all') conditions.push(eq(langTranslations.group, opts.group))
+  const search = opts.search?.trim()
+  if (search) {
+    const pattern = containsPattern(search)
+    conditions.push(or(like(langTranslations.key, pattern), like(langTranslations.value, pattern))!)
   }
-
-  let query = db.select().from(langTranslations).where(and(...conditions))
-  if (opts.limit) query = query.limit(opts.limit) as typeof query
-  if (opts.offset) query = query.offset(opts.offset) as typeof query
-
-  const rows = await query
-  if (!opts.search) return rows
-
-  const s = opts.search.toLowerCase()
-  return rows.filter(
-    (r) => r.key.toLowerCase().includes(s) || (r.value ?? '').toLowerCase().includes(s),
-  )
+  return db.select().from(langTranslations).where(and(...conditions)).orderBy(asc(langTranslations.id))
 }
 
+/** `value: null` clears the row (SQL NULL = untranslated); see the PUT handler. */
 export async function upsertTranslations(
   actor: ActorLike,
   code: string,
-  items: Array<{ group: string; key: string; value: string }>,
+  items: Array<{ group: string; key: string; value: string | null }>,
   isAiTranslated: boolean = false,
   db: Database = getDb(),
 ) {
