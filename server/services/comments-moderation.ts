@@ -8,9 +8,12 @@
  * official reply through comments-admin-reply.ts.
  *
  * This file writes no row of its own — only the read audit, which has nothing to
- * be atomic with — so it is named in `SERVICE_EXEMPTIONS` of
- * `tests/reader-audit-atomicity.test.ts`, and that test also checks the premise
- * (no row write here) still holds.
+ * be atomic with. `tests/reader-audit-atomicity.test.ts` exempts the FUNCTION
+ * `auditCommentRead` (`AUDIT_ONLY_FUNCTION_EXEMPTIONS`), not the file: the
+ * exemption holds only while that one audit insert is the file's only write. A
+ * row write added anywhere here — even with its own audit row — loses the
+ * exemption, and the file is judged like any other service (row + audit in one
+ * transaction).
  */
 
 import { and, desc, eq, isNotNull, sql } from 'drizzle-orm'
@@ -89,7 +92,8 @@ export async function listCommentsForAdmin(params: {
   if (params.source === 'media') conditions.push(isNotNull(articleComments.mediaItemId))
   if (params.source === 'article') conditions.push(isNotNull(articleComments.articleId))
   // Mặc định `visible`: comment ẩn chỉ hiện ở tab "Đã ẩn". `all` chỉ dành cho
-  // trường hợp officer muốn xem toàn bộ —但目前 UI không expose, giữ phòng sau.
+  // trường hợp officer muốn xem toàn bộ — hiện giao diện chưa dùng tới, giữ để
+  // dành về sau.
   if (params.visibility !== 'all') {
     const wantHidden = params.visibility === 'hidden'
     conditions.push(eq(articleComments.isHidden, wantHidden))

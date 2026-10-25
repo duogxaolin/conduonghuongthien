@@ -168,6 +168,15 @@ export async function countReaderCommentImpact(readerId: number): Promise<Reader
 }
 
 /**
+ * What `deleteReaderComments` runs its DELETE on. `executor` lets a caller run
+ * it inside a transaction it already opened, so a deletion and the audit row
+ * describing it commit together. Defaults to the pool for callers that own no
+ * transaction. Typed structurally rather than importing Drizzle's transaction
+ * type, which is not exported in a usable shape here.
+ */
+type CommentDeleteExecutor = Pick<ReturnType<typeof getDb>, 'delete'>
+
+/**
  * Removes every comment a reader wrote, and the administrator replies beneath
  * their top-level comments (design.md D8 — the `parentId` cascade).
  *
@@ -175,14 +184,6 @@ export async function countReaderCommentImpact(readerId: number): Promise<Reader
  * nothing left to count and a successful purge would be indistinguishable from
  * one that never ran.
  */
-/**
- * `executor` lets a caller run this inside a transaction it already opened, so a
- * deletion and the audit row describing it commit together. Defaults to the pool
- * for callers that own no transaction. Typed structurally rather than importing
- * Drizzle's transaction type, which is not exported in a usable shape here.
- */
-type CommentDeleteExecutor = Pick<ReturnType<typeof getDb>, 'delete'>
-
 export async function deleteReaderComments(readerId: number, executor?: CommentDeleteExecutor): Promise<ReaderCommentImpact> {
   const { impact } = await countImpact(readerId)
   if (impact.comments === 0) return impact

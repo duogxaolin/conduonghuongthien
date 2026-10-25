@@ -7,7 +7,9 @@
  * matter most and the ones easiest to undo by accident.
  *
  *   1. **A notification is written in the SAME transaction as the reply.** Both
- *      call sites in services/comments.ts pass their `tx` handle down. A reply
+ *      call sites — `createComment` (services/comments-posting.ts) and
+ *      `createAdminReply` (services/comments-admin-reply.ts) — pass their `tx`
+ *      handle down. A reply
  *      that exists with nobody told about it is exactly the state this feature
  *      was built to prevent, and a fire-and-forget insert next to the reply
  *      produces that state every time the second statement fails.
@@ -29,8 +31,10 @@ import { getDb } from '../utils/db'
 import { effectiveDisplayName } from '../utils/display-name'
 import { articleComments, articles, mediaItems, readerNotifications } from '../db/schema'
 // Type-only, so it is erased at compile time and creates no runtime cycle with
-// comments.ts — which imports this module's `createReplyNotification` for value.
-// The kind is declared there because the write guard is what enforces it.
+// the comment service — comments-posting.ts and comments-admin-reply.ts import
+// this module's `createReplyNotification` for value. The kind is declared in
+// comments-rules.ts (re-exported by the comments.ts barrel) because the write
+// guard there (`parseCommentSource`) is what enforces it.
 import type { CommentSource } from './comments'
 
 /** The only kind today. Stored in a column so a second kind (a new article in a

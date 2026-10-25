@@ -9,18 +9,14 @@
  * (`checkParentEligibility`).
  */
 
+// Phép kiểm ký tự điều khiển dùng chung với ghi chú xử lý đơn đăng ký
+// (`submission-workflow.ts`). Một danh sách chặn tồn tại hai bản là hai chỗ để
+// làm sai, và hai bản chỉ được đối chiếu khi một trong hai ngừng chặn — tức là
+// sau khi việc đã xảy ra. Xem server/utils/plain-text.ts.
 import { hasForbiddenControlChars } from '../utils/plain-text'
 
 /** Long enough for a real question, short enough that one row cannot dominate a page. */
 export const COMMENT_MAX_LENGTH = 2000
-
-/**
- * Phep kiem ky tu dieu khien dung chung voi ghi chu xu ly don dang ky.
- *
- * Mot danh sach chan ton tai hai ban la hai cho de lam sai, va hai ban chi
- * duoc doi chieu khi mot trong hai ngung chan - tuc la sau khi viec da xay ra.
- * Xem server/utils/plain-text.ts.
- */
 
 export type BodyValidation =
   | { ok: true, body: string }
