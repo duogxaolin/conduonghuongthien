@@ -137,6 +137,9 @@ export async function storeDriveLink(actorId: number, input: StoreDriveLinkInput
           refreshTokenKeyId:      envelope.keyId,
           linkedEmail:            input.linkedEmail,
           linkedSub:              input.linkedSub,
+          // A re-link is a new link: without this the page shows the new account
+          // next to the first account's link time (the column has no ON UPDATE).
+          linkedAt:               new Date(),
           updatedBy:              actorId,
         },
       })

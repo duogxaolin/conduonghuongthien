@@ -93,97 +93,97 @@ defineExpose<{ loadLogs: typeof loadLogs; clearLogs: typeof clearLogs }>({
   <div class="flex flex-col gap-5">
     <div v-if="logsError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">
       <strong>Lỗi:</strong> {{ logsError }}
-      <button type="button" class="font-bold underline text-[#4A6741] ml-2" @click="loadLogs()">Thử lại</button>
+      <button type="button" class="font-bold underline text-brand-600 ml-2" @click="loadLogs()">Thử lại</button>
     </div>
 
     <!-- Filters -->
-    <div class="rounded-xl border border-[#e2ece3] bg-white p-4">
+    <div class="rounded-xl border border-line bg-white p-4">
       <div class="flex flex-wrap gap-3 items-end">
         <label class="flex flex-col gap-1 text-xs font-semibold">
-          <span class="text-[#667768]">Dịch vụ</span>
+          <span class="text-ink-muted">Dịch vụ</span>
           <select v-model="logsFilters.serviceKey" class="rounded-lg border border-[#d0ddd1] px-3 py-1.5 text-sm bg-white">
             <option value="">Tất cả</option>
             <option v-for="key in Object.keys(SERVICE_LABELS)" :key="key" :value="key">{{ SERVICE_LABELS[key] }}</option>
           </select>
         </label>
         <label class="flex flex-col gap-1 text-xs font-semibold">
-          <span class="text-[#667768]">Nhà cung cấp</span>
+          <span class="text-ink-muted">Nhà cung cấp</span>
           <select v-model="logsFilters.provider" class="rounded-lg border border-[#d0ddd1] px-3 py-1.5 text-sm bg-white">
             <option value="">Tất cả</option>
             <option v-for="p in props.providers" :key="p.provider" :value="p.provider">{{ p.label }}</option>
           </select>
         </label>
         <label class="flex flex-col gap-1 text-xs font-semibold">
-          <span class="text-[#667768]">Từ ngày</span>
+          <span class="text-ink-muted">Từ ngày</span>
           <input v-model="logsFilters.startDate" type="date" class="rounded-lg border border-[#d0ddd1] px-3 py-1.5 text-sm" />
         </label>
         <label class="flex flex-col gap-1 text-xs font-semibold">
-          <span class="text-[#667768]">Đến ngày</span>
+          <span class="text-ink-muted">Đến ngày</span>
           <input v-model="logsFilters.endDate" type="date" class="rounded-lg border border-[#d0ddd1] px-3 py-1.5 text-sm" />
         </label>
         <label class="flex flex-col gap-1 text-xs font-semibold">
-          <span class="text-[#667768]">Trạng thái</span>
+          <span class="text-ink-muted">Trạng thái</span>
           <select v-model="logsFilters.success" class="rounded-lg border border-[#d0ddd1] px-3 py-1.5 text-sm bg-white">
             <option value="">Tất cả</option>
             <option value="true">Thành công</option>
             <option value="false">Lỗi</option>
           </select>
         </label>
-        <button type="button" class="px-4 py-1.5 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="applyFilters">Lọc</button>
+        <button type="button" class="px-4 py-1.5 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="applyFilters">Lọc</button>
       </div>
-      <p class="m-0 mt-3 text-xs text-[#667768]">Chỉ hiển thị nhật ký 90 ngày gần nhất.</p>
+      <p class="m-0 mt-3 text-xs text-ink-muted">Chỉ hiển thị nhật ký 90 ngày gần nhất.</p>
     </div>
 
     <div v-if="logsLoading" class="flex items-center justify-center py-12" role="status" aria-busy="true">
       <span class="sr-only">Đang tải nhật ký</span>
       <div class="flex gap-1.5" aria-hidden="true">
-        <span class="w-2.5 h-2.5 rounded-full bg-[#2c6e33] animate-pulse motion-reduce:animate-none"></span>
-        <span class="w-2.5 h-2.5 rounded-full bg-[#2c6e33] animate-pulse motion-reduce:animate-none" style="animation-delay: 0.15s"></span>
-        <span class="w-2.5 h-2.5 rounded-full bg-[#2c6e33] animate-pulse motion-reduce:animate-none" style="animation-delay: 0.3s"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-brand-700 animate-pulse motion-reduce:animate-none"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-brand-700 animate-pulse motion-reduce:animate-none" style="animation-delay: 0.15s"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-brand-700 animate-pulse motion-reduce:animate-none" style="animation-delay: 0.3s"></span>
       </div>
     </div>
 
     <template v-if="!logsLoading && !logsError">
-      <div v-if="logs.length === 0" class="rounded-xl border border-[#e2ece3] bg-white p-8 text-center text-sm text-[#667768]">
+      <div v-if="logs.length === 0" class="rounded-xl border border-line bg-white p-8 text-center text-sm text-ink-muted">
         Chưa có nhật ký nào.
       </div>
-      <div v-else class="rounded-xl border border-[#e2ece3] bg-white overflow-x-auto">
+      <div v-else class="rounded-xl border border-line bg-white overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="bg-[#f4f7f4] text-left">
             <tr>
-              <th class="px-3 py-3 font-bold text-[#122815]">Thời gian</th>
-              <th class="px-3 py-3 font-bold text-[#122815]">Dịch vụ</th>
-              <th class="px-3 py-3 font-bold text-[#122815]">Nhà cung cấp</th>
-              <th class="px-3 py-3 font-bold text-[#122815]">Model</th>
-              <th class="px-3 py-3 font-bold text-[#122815] text-right">Input</th>
-              <th class="px-3 py-3 font-bold text-[#122815] text-right">Output</th>
-              <th class="px-3 py-3 font-bold text-[#122815] text-right">Chi phí</th>
-              <th class="px-3 py-3 font-bold text-[#122815] text-right">Thời gian</th>
-              <th class="px-3 py-3 font-bold text-[#122815]">Trạng thái</th>
+              <th class="px-3 py-3 font-bold text-brand-950">Thời gian</th>
+              <th class="px-3 py-3 font-bold text-brand-950">Dịch vụ</th>
+              <th class="px-3 py-3 font-bold text-brand-950">Nhà cung cấp</th>
+              <th class="px-3 py-3 font-bold text-brand-950">Model</th>
+              <th class="px-3 py-3 font-bold text-brand-950 text-right">Input</th>
+              <th class="px-3 py-3 font-bold text-brand-950 text-right">Output</th>
+              <th class="px-3 py-3 font-bold text-brand-950 text-right">Chi phí</th>
+              <th class="px-3 py-3 font-bold text-brand-950 text-right">Thời gian</th>
+              <th class="px-3 py-3 font-bold text-brand-950">Trạng thái</th>
             </tr>
           </thead>
           <tbody>
             <template v-for="log in logs" :key="log.id">
               <tr
-                class="border-t border-[#e2ece3] cursor-pointer hover:bg-[#f4f7f4]"
+                class="border-t border-line cursor-pointer hover:bg-[#f4f7f4]"
                 :class="!log.success ? 'bg-red-50/50' : ''"
                 @click="!log.success && toggleRowExpand(log.id)"
               >
-                <td class="px-3 py-2.5 text-xs text-[#667768] whitespace-nowrap">{{ formatTime(log.createdAt) }}</td>
-                <td class="px-3 py-2.5 font-semibold text-[#122815]">{{ SERVICE_LABELS[log.serviceKey] ?? log.serviceKey }}</td>
-                <td class="px-3 py-2.5 text-[#667768]">{{ log.provider }}</td>
-                <td class="px-3 py-2.5 text-[#122815] font-mono">{{ log.model ?? '—' }}</td>
-                <td class="px-3 py-2.5 text-right text-[#667768]">{{ formatNum(log.promptTokens) }}</td>
-                <td class="px-3 py-2.5 text-right text-[#667768]">{{ formatNum(log.completionTokens) }}</td>
-                <td class="px-3 py-2.5 text-right text-[#2c6e33] font-mono font-bold whitespace-nowrap">{{ formatVnd(Number(log.costVnd)) }}</td>
-                <td class="px-3 py-2.5 text-right text-[#667768]">{{ log.executionMs }}ms</td>
+                <td class="px-3 py-2.5 text-xs text-ink-muted whitespace-nowrap">{{ formatTime(log.createdAt) }}</td>
+                <td class="px-3 py-2.5 font-semibold text-brand-950">{{ SERVICE_LABELS[log.serviceKey] ?? log.serviceKey }}</td>
+                <td class="px-3 py-2.5 text-ink-muted">{{ log.provider }}</td>
+                <td class="px-3 py-2.5 text-brand-950 font-mono">{{ log.model ?? '—' }}</td>
+                <td class="px-3 py-2.5 text-right text-ink-muted">{{ formatNum(log.promptTokens) }}</td>
+                <td class="px-3 py-2.5 text-right text-ink-muted">{{ formatNum(log.completionTokens) }}</td>
+                <td class="px-3 py-2.5 text-right text-brand-700 font-mono font-bold whitespace-nowrap">{{ formatVnd(Number(log.costVnd)) }}</td>
+                <td class="px-3 py-2.5 text-right text-ink-muted">{{ log.executionMs }}ms</td>
                 <td class="px-3 py-2.5">
                   <span :class="log.success ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'" class="px-2 py-0.5 rounded-full text-xs font-semibold">
                     {{ log.success ? 'OK' : 'Lỗi' }}
                   </span>
                 </td>
               </tr>
-              <tr v-if="!log.success && expandedRows.has(log.id)" class="border-t border-[#e2ece3] bg-red-50/30">
+              <tr v-if="!log.success && expandedRows.has(log.id)" class="border-t border-line bg-red-50/30">
                 <td colspan="9" class="px-3 py-3">
                   <div class="rounded-lg bg-red-50 p-3 text-xs text-red-700 font-mono">{{ log.errorMessage ?? 'Không có chi tiết lỗi.' }}</div>
                 </td>

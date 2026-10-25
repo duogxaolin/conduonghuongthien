@@ -151,56 +151,10 @@ describe('the notification is written with the reply, not after it', () => {
   })
 })
 
-describe('reader-scoped queries are bounded by the ticket', () => {
-  const service = read('server/services/notifications.ts')
-
-  /**
-   * Filtering on id alone would let a caller mark somebody else's notifications
-   * read. Small on its own, but it is the shape of query that later grows into
-   * reading them.
-   */
-  it('markRead and markAllRead both filter on readerId', () => {
-    for (const fn of ['markRead', 'markAllRead']) {
-      const start = service.indexOf(`export async function ${fn}`)
-      assert.ok(start !== -1, `${fn} no longer exists`)
-      const body = service.slice(start, service.indexOf('\nexport ', start + 10) + 1 || undefined)
-      assert.match(body, /readerNotifications\.readerId/, `${fn} does not bound its update by reader`)
-    }
-  })
-
-  it('neither endpoint accepts a readerId from the request', () => {
-    const list = stripComments(read('server/api/public/reader/notifications.get.ts'))
-    const mark = stripComments(read('server/api/public/reader/notifications/read.post.ts'))
-    for (const [name, source] of [['notifications.get', list], ['read.post', mark]] as const) {
-      assert.match(source, /requireReader\(event\)/, `${name} does not require a reader ticket`)
-      /**
-       * Looks for a readerId taken from the REQUEST, not for the string itself:
-       * `readerId: reader.id` is the correct shape (identity from the ticket,
-       * passed to the service) and must not fail this guard. What would fail is
-       * reading it off the query or the body.
-       */
-      assert.ok(
-        !/(query|body|payload)\s*[.[]\s*['"]?readerId/.test(source),
-        `${name} reads a readerId from the request`,
-      )
-    }
-  })
-
-  /**
-   * Charging allowance before the refusals would let a client with a malformed
-   * body burn its own quota on calls that were always going to fail — the same
-   * ordering mistake the comment and rename paths document.
-   */
-  it('the mark-read endpoint spends allowance after its refusals', () => {
-    const source = read('server/api/public/reader/notifications/read.post.ts')
-    // The CALL, not the import line at the top of the file.
-    const limit = source.indexOf('await recordRateLimitHit')
-    const refusal = source.indexOf('Không có thông báo nào được chỉ định')
-    assert.ok(limit !== -1, 'the mark-read endpoint is no longer rate limited')
-    assert.ok(refusal !== -1, 'the empty-request refusal is gone')
-    assert.ok(limit > refusal, 'rate limit is charged before the request is validated')
-  })
-})
+// Reader-scoped queries bounded by the ticket (list and mark-read ignore any readerId in
+// the request; markRead/markAllRead bound the UPDATE by reader; refusals cost no
+// allowance) run against the real endpoints and service in
+// tests/reader-notifications-scope-behavior.test.ts.
 
 describe('notifications never enter server-rendered HTML', () => {
   /**
