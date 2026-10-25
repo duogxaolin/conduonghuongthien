@@ -1,13 +1,13 @@
 {
-  "app/composables": 61.87,
-  "app/utils": 93.25,
-  "server/api": 47.65,
+  "app/composables": 61.88,
+  "app/utils": 93.27,
+  "server/api": 48.42,
   "server/data": 100,
   "server/db": 71.84,
   "server/middleware": 81.96,
   "server/plugins": 36.38,
   "server/routes": 0,
-  "server/services": 80.21,
+  "server/services": 81.56,
   "server/utils": 90.35,
-  "shared": 95.26
+  "shared": 95.44
 }
