@@ -152,7 +152,7 @@ export function isReservedDisplayName(name: string): boolean {
 /**
  * A display name is ONE line of plain text.
  *
- * Unlike a comment body (services/comments.ts), newlines are not normalised —
+ * Unlike a comment body (`validateBody`, services/comments-rules.ts), newlines are not normalised —
  * they are refused along with every other control character. A comment is a
  * paragraph and its line breaks are the author's; a name that contains a newline
  * renders as a name that has broken the layout of every list it appears in, and

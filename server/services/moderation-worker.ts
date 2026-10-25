@@ -64,7 +64,8 @@ export interface ModerationCheckOutput {
    * fields above are UNCHANGED by it — the content is still allowed, or hidden by
    * the critical-keyword fallback, exactly as before. It only says the AI never
    * judged this content, so a caller that must not act on an unfinished
-   * moderation (the reply e-mail, `comments.ts`) can tell that apart from a clean
+   * moderation (the reply e-mail — `replyEmailHoldReason` in
+   * `comments-reply-email.ts`) can tell that apart from a clean
    * "safe". Absent on every other path. "Not configured" keeps its own path
    * (`flag_only` / `aiUnavailable`).
    */
