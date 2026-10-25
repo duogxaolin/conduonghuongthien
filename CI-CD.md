@@ -790,14 +790,18 @@ workflow — cổng có thể bị tắt là cổng không chặn gì):
 ### Phạm vi shellcheck
 
 Bước shellcheck trong `hygiene` chỉ quét `./scripts` (`scandir: ./scripts`).
-`production/manage.sh` **không** được CI quét — action chỉ nhận một `scandir`, và đổi nó
-thành `.` sẽ quét cả cây (kể cả fixture test) — nên nó được kiểm **tay**: hiện sạch ở mức
-`-S warning` (2026-10-14). Khi sửa `manage.sh`, chạy
-`shellcheck -S warning production/manage.sh` (không cài được thì
-`docker run --rm -v "$PWD:/mnt:ro" -w /mnt koalaman/shellcheck:stable -S warning production/manage.sh`)
-và `bash -n`. Một cảnh báo mới ở đây không làm đỏ CI — đừng để nó tích lại. Hành vi của nó được kiểm bằng
+`production/manage.sh` và `production/lib/*.sh` **không** được CI quét — action chỉ nhận một
+`scandir`, và đổi nó thành `.` sẽ quét cả cây (kể cả fixture test) — nên chúng được kiểm
+**tay**: hiện sạch ở mức `-S style` (2026-10-25, sau khi tách `lib/`). `manage.sh` nạp
+`lib/` bằng các dòng `.` có chỉ thị `# shellcheck source=lib/…`, nên `-x` trên riêng
+`manage.sh` kiểm cả bộ như MỘT chương trình (biến của `common.sh` dùng ở `lib/` khác không
+bị báo nhầm). Khi sửa `manage.sh` hay một tệp `lib/`, chạy
+`shellcheck -x -S warning production/manage.sh` (không cài được thì
+`docker run --rm -v "$PWD:/mnt:ro" -w /mnt koalaman/shellcheck:stable -x -S warning production/manage.sh`)
+và `bash -n` trên từng tệp (`tests/ops-scripts.test.ts` cũng chạy `bash -n` trên cả bộ). Một
+cảnh báo mới ở đây không làm đỏ CI — đừng để nó tích lại. Hành vi của nó được kiểm bằng
 `tests/ops-scripts-sandbox.test.ts` / `tests/ops-migrate-scanner.test.ts` (chạy thật với
-`docker`/`git`/`crontab` giả).
+`docker`/`git`/`crontab` giả; Update tự chạy tiếp bằng bản mới qua `git pull` thật).
 
 ### Quyết định đã chốt (wave2): D2 và D-CI
 

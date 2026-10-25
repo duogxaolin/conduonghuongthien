@@ -1,10 +1,12 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
 import { spawnSync } from 'node:child_process'
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs'
 import { createServer } from 'node:net'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { SECRET, cleanup, envValue, lines, makeSandbox, repoFile, type Sandbox } from './_ops-sandbox'
+import { manageSource } from './_manage-sh-source'
+import { SECRET, cleanup, envValue, lines, makeSandbox, manageToolkitFiles, repoFile, type Sandbox } from './_ops-sandbox'
 
 /**
  * BEHAVIOUR tests for production/manage.sh and the backup/restore scripts.
@@ -24,7 +26,7 @@ import { SECRET, cleanup, envValue, lines, makeSandbox, repoFile, type Sandbox }
 // (another agent did, for PUBLIC_HOST_ALLOWLIST) does not silently shift every
 // answer below it. The confirm that follows the prompts takes the next line.
 const managePrompts = (fn: string, until: string) => {
-  const script = readFileSync(repoFile('production/manage.sh'), 'utf8')
+  const script = manageSource()
   const start = script.indexOf(`${fn}() {`)
   const slice = script.slice(start, script.indexOf(until, start))
   assert.ok(start >= 0 && slice.length > 0, `${fn} not found`)
@@ -681,7 +683,7 @@ test('Migrate uses the database compose uses (MYSQL_DATABASE, default cdkt_admin
 })
 
 test('the RAM floor is the same number in Deploy and media-tuning', () => {
-  const script = readFileSync(repoFile('production/manage.sh'), 'utf8')
+  const script = manageSource()
   const floors = [...script.matchAll(/RAM_FLOOR_MB=(\d+)/g)].map((m) => m[1])
   assert.ok(floors.length >= 2, 'both Deploy and cmd_media_tuning declare the floor')
   assert.deepEqual([...new Set(floors)], ['4000'])
@@ -1359,6 +1361,186 @@ test('W3: when git pull brings a new manage.sh, Update continues in the NEW scri
     assert.equal((r.stdout.match(/UPDATE XONG/g) ?? []).length, 1)
   } finally {
     cleanup(sb)
+  }
+})
+
+// ─── manage.sh split: Update's self-update across REAL `git pull`s (wave3 4.4) ─
+// W3 above fakes the pull by appending to manage.sh. These pull for real, from a bare
+// "origin" into a clone checked out at commit 1, so git replaces the files the way it
+// does on the VPS. Update started in commit 1's code must finish in the LAST commit's:
+//   (a) the single-file manage.sh every VPS runs today (adb47a2, vendored as
+//       tests/fixtures/ops-sandbox/manage-monolith-adb47a2.sh) pulls the split toolkit;
+//   (b) a split manage.sh pulls a later one where ONLY a lib changed.
+// The marker is the "UPDATE XONG" line of the last commit's lib/update.sh, rewritten by
+// the test: it is printed only when the tail of Update ran from the pulled libs.
+
+const GIT_ENV = {
+  GIT_CONFIG_NOSYSTEM: '1',
+  GIT_CONFIG_GLOBAL: '/dev/null',
+  GIT_AUTHOR_NAME: 'cdkt-test',
+  GIT_AUTHOR_EMAIL: 'cdkt-test@example.test',
+  GIT_COMMITTER_NAME: 'cdkt-test',
+  GIT_COMMITTER_EMAIL: 'cdkt-test@example.test',
+}
+/** repo-relative path → content of the toolkit at one commit. */
+type Tree = Record<string, string>
+const monolithTree = (): Tree => ({ 'production/manage.sh': readFileSync(repoFile('tests/fixtures/ops-sandbox/manage-monolith-adb47a2.sh'), 'utf8') })
+const withMarker = (tree: Tree, marker: string): Tree => {
+  const lib = tree['production/lib/update.sh'] ?? ''
+  const marked = lib.replace('═══ UPDATE XONG ═══', `═══ UPDATE XONG ═══ [${marker}]`)
+  assert.notEqual(marked, lib, 'production/lib/update.sh has no "UPDATE XONG" line to mark')
+  return { ...tree, 'production/lib/update.sh': marked }
+}
+const countOf = (text: string, re: RegExp) => (text.match(new RegExp(re.source, 'g')) ?? []).length
+
+function gitUpdateSandbox(commits: Tree[]) {
+  const sb = makeSandbox(
+    `MYSQL_ROOT_PASSWORD=${SECRET}\nPORT=3000\nPUBLIC_BASE_URL=https://example.test\nPUBLIC_HOST_ALLOWLIST=example.test\nCDKT_IMAGE=ghcr.io/x/y:latest\n`,
+    { realGit: true },
+  )
+  const outside = mkdtempSync(join(tmpdir(), 'cdkt-ops-git-'))
+  const git = (cwd: string, ...args: string[]) => {
+    const r = spawnSync('git', args, { cwd, encoding: 'utf8', env: { PATH: process.env.PATH ?? '', HOME: outside, ...GIT_ENV } })
+    assert.equal(r.status, 0, `git ${args.join(' ')}: ${r.stderr}`)
+    return r.stdout.trim()
+  }
+  const seed = join(outside, 'seed')
+  const origin = join(outside, 'origin.git')
+  mkdirSync(seed)
+  git(seed, 'init', '-q', '-b', 'main')
+  for (const [i, tree] of commits.entries()) {
+    rmSync(join(seed, 'production'), { recursive: true, force: true })
+    for (const [file, text] of Object.entries(tree)) {
+      mkdirSync(join(seed, file, '..'), { recursive: true })
+      writeFileSync(join(seed, file), text)
+    }
+    chmodSync(join(seed, 'production/manage.sh'), 0o755)
+    writeFileSync(join(seed, 'docker-compose.yml'), 'services: {}\n')
+    git(seed, 'add', '-A')
+    git(seed, 'commit', '-q', '-m', `commit ${i + 1}`)
+  }
+  git(outside, 'init', '-q', '--bare', '-b', 'main', origin)
+  git(seed, 'push', '-q', origin, 'HEAD:main')
+  const shas = git(seed, 'rev-list', '--reverse', 'HEAD').split('\n')
+  // The VPS clone, at commit 1: its production/ comes from that commit, not the sandbox copy.
+  rmSync(sb.path('production'), { recursive: true, force: true })
+  git(sb.dir, 'init', '-q', '-b', 'main')
+  git(sb.dir, 'remote', 'add', 'origin', origin)
+  git(sb.dir, 'fetch', '-q', 'origin')
+  git(sb.dir, 'checkout', '-q', '-B', 'main', shas[0]!)
+  mkdirSync(sb.path('public/assets/fonts'), { recursive: true })
+  writeFileSync(sb.path('public/assets/fonts/inter.css'), '/* self-hosted */')
+  return {
+    shas,
+    head: () => git(sb.dir, 'rev-parse', 'HEAD'),
+    // Dump: no. Pull code: yes. Every .env prompt: keep. Pull image: no.
+    update: () => sb.run('production/manage.sh', ['update'], {
+      input: updateInputWithDump('n', 'y', 'n'),
+      env: { ...GIT_ENV, CDKT_JOURNALD_SOCKET: sb.path('no-journal') },
+    }),
+    cleanup: () => {
+      cleanup(sb)
+      rmSync(outside, { recursive: true, force: true })
+    },
+  }
+}
+
+function assertResumedInPulledCode(r: { status: number, stdout: string, stderr: string }, marker: string) {
+  const out = `${r.stdout}\n${r.stderr}`
+  assert.equal(r.status, 0, out)
+  assert.doesNotMatch(out, /không đọc được .*\/lib\//, 'the pulled manage.sh did not find its libs')
+  // Dump + pull asked ONCE, by the running (old) code; then it handed over with `exec`.
+  assert.equal(countOf(r.stdout, /Sao lưu DB trước khi cập nhật\?/), 1, out)
+  assert.equal(countOf(r.stdout, /Pull code mới từ git/), 1, out)
+  assert.match(r.stdout, /manage\.sh vừa đổi theo git pull/, out)
+  assert.match(r.stdout, /Tiếp tục Update bằng manage\.sh vừa kéo về/, out)
+  // The tail of Update ran from the PULLED lib/update.sh, and only once (no old process
+  // carrying on after a child returned).
+  assert.equal(countOf(r.stdout, /UPDATE XONG/), 1, out)
+  assert.equal(countOf(r.stdout, new RegExp(`UPDATE XONG ═══ \\[${marker}\\]`)), 1, out)
+}
+
+test('(a) real git pull: the single-file manage.sh (adb47a2) pulls the split toolkit and Update finishes in the NEW code', () => {
+  const split = manageToolkitFiles()
+  assert.ok(Object.keys(split).some((f) => f.startsWith('production/lib/')), 'the tree under test has no production/lib/')
+  const g = gitUpdateSandbox([monolithTree(), withMarker(split, 'MARKER-SPLIT')])
+  try {
+    const r = g.update()
+    assert.equal(g.head(), g.shas[1], 'the pull did not reach the split commit')
+    assertResumedInPulledCode(r, 'MARKER-SPLIT')
+  } finally {
+    g.cleanup()
+  }
+})
+
+test('(b) real git pull: a split manage.sh pulls a change to ONLY a lib (manage.sh identical) and Update finishes in the new lib', () => {
+  const split = manageToolkitFiles()
+  const next = withMarker(split, 'MARKER-NEXT')
+  assert.equal(next['production/manage.sh'], split['production/manage.sh'], 'the entry must be unchanged in this case')
+  const g = gitUpdateSandbox([split, next])
+  try {
+    const r = g.update()
+    assert.equal(g.head(), g.shas[1], 'the pull did not reach the second commit')
+    assertResumedInPulledCode(r, 'MARKER-NEXT')
+  } finally {
+    g.cleanup()
+  }
+})
+
+test('a pull that leaves manage.sh and lib/ alone does not re-run Update', () => {
+  const split = manageToolkitFiles()
+  const g = gitUpdateSandbox([split, { ...split, 'production/NOTES.md': 'not part of the toolkit\n' }])
+  try {
+    const r = g.update()
+    assert.equal(r.status, 0, r.stdout + r.stderr)
+    assert.equal(g.head(), g.shas[1])
+    assert.doesNotMatch(r.stdout, /manage\.sh vừa đổi theo git pull/)
+    assert.equal(countOf(r.stdout, /UPDATE XONG/), 1)
+  } finally {
+    g.cleanup()
+  }
+})
+
+test('manage.sh finds its libs and the repo however it is started: relative, from production/, absolute, through a symlink', () => {
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+  try {
+    mkdirSync(sb.path('a/b'), { recursive: true })
+    symlinkSync('../../production/manage.sh', sb.path('a/b/cdkt-rel'))
+    symlinkSync(sb.path('production/manage.sh'), sb.path('a/b/cdkt-abs'))
+    const env = { PATH: `${sb.path('bin')}:${process.env.PATH ?? ''}`, HOME: sb.dir, SANDBOX: sb.dir }
+    const runs: Array<{ how: string, argv: string[], cwd: string }> = [
+      { how: 'bash production/manage.sh, from the repo root', argv: ['bash', 'production/manage.sh'], cwd: sb.dir },
+      { how: 'cd production && ./manage.sh', argv: ['./manage.sh'], cwd: sb.path('production') },
+      { how: 'absolute path, cwd /', argv: [sb.path('production/manage.sh')], cwd: '/' },
+      { how: 'relative symlink two levels away', argv: ['b/cdkt-rel'], cwd: sb.path('a') },
+      { how: 'absolute symlink, cwd /', argv: [sb.path('a/b/cdkt-abs')], cwd: '/' },
+    ]
+    for (const { how, argv, cwd } of runs) {
+      const r = spawnSync(argv[0]!, [...argv.slice(1), 'backup-cron'], { cwd, env, input: lines('n'), encoding: 'utf8' })
+      assert.equal(r.status, 0, `${how}: ${r.stdout}${r.stderr}`)
+      // ROOT is the repo, whatever the CWD or the link: the cron line it prints `cd`s there.
+      assert.ok(r.stdout.includes(`0 2 * * * cd '${sb.dir}' && ./scripts/backup.sh`), `${how}: ${r.stdout}`)
+      assert.match(r.stdout, /Không cài — crontab giữ nguyên\./, how)
+    }
+  } finally {
+    cleanup(sb)
+  }
+})
+
+test('a missing lib stops manage.sh before it does anything, and says lib/ must sit next to it', () => {
+  for (const missing of ['production/lib/media.sh', 'production/lib']) {
+    const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
+    try {
+      rmSync(sb.path(missing), { recursive: true, force: true })
+      const r = sb.run('production/manage.sh', ['backup-cron'], { input: lines('y') })
+      assert.equal(r.status, 1, `${missing}: ${r.stdout}${r.stderr}`)
+      assert.equal(r.stdout, '', `${missing}: nothing may run before the libs are all there`)
+      assert.match(r.stderr, /không đọc được .*\/production\/lib\/\S+\.sh/)
+      assert.match(r.stderr, /lib\/ phải nằm cạnh manage\.sh/)
+      assert.equal(existsSync(sb.path('crontab.txt')), false)
+    } finally {
+      cleanup(sb)
+    }
   }
 })
 
