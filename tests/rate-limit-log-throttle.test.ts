@@ -18,11 +18,12 @@ mock.module('../server/utils/logger', {
   },
 })
 
-const { recordRateLimitHit, RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS } = await import('../server/utils/rate-limit-store')
+const { peekRateLimit, recordRateLimitHit, RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS } = await import('../server/utils/rate-limit-store')
 
 const RULE = { limit: 3, windowSeconds: 900 }
 const brokenDatabase = async () => { throw new Error('connect ECONNREFUSED 127.0.0.1:3306') }
 const writeFailures = () => warnings.filter(entry => entry.event === 'rate_limit.database_write_failed')
+const readFailures = () => warnings.filter(entry => entry.event === 'rate_limit.database_read_failed')
 
 test('khoảng nén là một phút', () => {
   assert.equal(RATE_LIMIT_WRITE_FAILURE_LOG_INTERVAL_MS, 60_000)
@@ -65,6 +66,34 @@ test('đồng hồ lùi (lượt trước dùng đồng hồ ở tương lai) kh
   await recordRateLimitHit('a', RULE, { execute: brokenDatabase, now: () => 5_000_000_000_000, memory })
   await recordRateLimitHit('a', RULE, { execute: brokenDatabase, now: () => 1_000, memory })
   assert.equal(writeFailures().length, 2)
+})
+
+test('CSDL sập: 200 lượt ĐỌC (peekRateLimit) cũng chỉ ghi MỘT dòng `database_read_failed` mỗi phút, kèm số lượt đã nén', async () => {
+  // Trước đây mỗi lượt đọc hỏng ghi một dòng (kèm stack) — đọc trước khi ghi ở đăng nhập,
+  // mã MFA, đổi mật khẩu, captcha: cùng trận lụt log như nhánh ghi, chỉ là nhánh kia.
+  warnings.length = 0
+  const memory = new Map<string, { count: number; expiresAt: number }>()
+  const start = 7_000_000_000_000
+  for (let i = 0; i < 200; i += 1) {
+    const now = start + Math.floor((i * 59_000) / 199)
+    const state = await peekRateLimit(`ip:${i % 7}`, RULE, { execute: brokenDatabase, now: () => now, memory })
+    assert.equal(state.backend, 'memory', 'vẫn lùi về bộ đếm trong bộ nhớ ở mọi lượt đọc')
+  }
+  assert.equal(readFailures().length, 1)
+  await peekRateLimit('ip:x', RULE, { execute: brokenDatabase, now: () => start + 60_000, memory })
+  assert.equal(readFailures().length, 2)
+  assert.equal(readFailures()[1]!.suppressed, 199)
+  assert.ok(readFailures()[1]!.error instanceof Error, 'vẫn mang lỗi gốc')
+})
+
+test('nhánh đọc và nhánh ghi nén riêng: một lỗi đọc vừa ghi không làm câm lỗi ghi', async () => {
+  warnings.length = 0
+  const memory = new Map<string, { count: number; expiresAt: number }>()
+  const now = 8_000_000_000_000
+  await peekRateLimit('c', RULE, { execute: brokenDatabase, now: () => now, memory })
+  await recordRateLimitHit('c', RULE, { execute: brokenDatabase, now: () => now + 1, memory })
+  assert.equal(readFailures().length, 1)
+  assert.equal(writeFailures().length, 1)
 })
 
 test('CSDL khoẻ lại: không ghi gì thêm', async () => {

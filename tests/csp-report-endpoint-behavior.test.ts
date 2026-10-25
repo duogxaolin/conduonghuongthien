@@ -1,4 +1,5 @@
 import assert from 'node:assert/strict'
+import { createHash } from 'node:crypto'
 import { Agent, request, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import test, { after, before, beforeEach, mock } from 'node:test'
@@ -14,10 +15,14 @@ import test, { after, before, beforeEach, mock } from 'node:test'
  * vào bảng dùng chung. IP khách đổi bằng `X-Forwarded-For` (peer loopback là proxy
  * tin cậy mặc định, `client-ip.ts` thật) — mỗi test một IP vì bộ đếm bộ nhớ là toàn cục.
  *
- * Hợp đồng: luôn 204 (kể cả thân hỏng, sai Content-Type, quá cỡ, bị giới hạn); chỉ
- * một dòng log `security.csp_violation` mỗi báo cáo hợp lệ, mang directive + host
- * (hoặc nhãn `inline`/`eval`) + đường dẫn trang không query + disposition; không
- * lưu gì vào CSDL; không bao giờ gửi thư cảnh báo vận hành.
+ * Hợp đồng: luôn 204 (kể cả thân hỏng, sai Content-Type, quá cỡ, bị giới hạn, lỗi bất
+ * ngờ); báo cáo hợp lệ được GỘP (`csp-report-log.ts`): lần đầu của một khoá → một dòng
+ * `security.csp_violation` `kind: "first"` ngay, mang directive + host (hoặc nhãn
+ * `inline`/`eval`) + đường dẫn trang không query (trang lạ → `foreign:<host>`) + nhóm đường
+ * dẫn + disposition + tiền tố SHA-256 của mẫu; lặp lại → chỉ đếm, không log, không CSDL;
+ * hết cửa sổ → một dòng `kind: "repeats"`. Không lưu gì vào CSDL ngoài bộ đếm; không bao
+ * giờ gửi thư cảnh báo vận hành. Mỗi test bắt đầu bằng một cửa sổ rỗng (`flush()` ở
+ * `beforeEach` — đúng việc hẹn giờ làm khi hết cửa sổ).
  */
 
 process.env.PUBLIC_BASE_URL = 'https://portal.example.vn'
@@ -27,10 +32,15 @@ process.env.OPS_ALERT_EMAIL = 'ops@example.vn'
 
 /** null = CSDL mất (kho lùi về bộ nhớ); một object = pool giả ghi lại SQL. */
 let fakePool: { query: (sql: string, params: unknown[]) => Promise<unknown> } | null = null
+/** true = `getPool()` ném lỗi — một lỗi lập trình bất ngờ trong `rateLimitDeps()`. */
+let poolThrows = false
 mock.module('../server/utils/db', {
   namedExports: {
     getDb: () => { throw new Error('the CSP report endpoint must not touch the database') },
-    getPool: () => fakePool,
+    getPool: () => {
+      if (poolThrows) throw new Error('unexpected failure inside rateLimitDeps')
+      return fakePool
+    },
     dbConnectionOptions: () => ({}),
   },
 })
@@ -43,7 +53,7 @@ mock.module('../server/utils/ops-alert', {
 const h3 = await import('h3')
 const gate = (await import('../server/middleware/00.origin-gate')).default
 const handler = (await import('../server/api/csp-report.post')).default
-const { isOriginGateExemptPath } = await import('../server/utils/origin-gate')
+const { isOriginGateExempt } = await import('../server/utils/origin-gate')
 const { ALERT_EVENTS, SECURITY_EVENTS, settleOpsAlerts } = await import('../server/utils/logger')
 const { CSP_REPORT_PATH } = await import('../shared/csp-policy')
 const {
@@ -52,6 +62,7 @@ const {
   CSP_REPORTS_LOGGED_PER_WINDOW,
   CSP_REPORT_WINDOW_SECONDS,
 } = await import('../server/utils/csp-report')
+const { CSP_REPORT_MAX_KEYS, CSP_REPORT_SUMMARY_WINDOW_SECONDS, cspViolationLog } = await import('../server/utils/csp-report-log')
 
 const hits = new Map<string, number>()
 const sentinel = (name: string) => h3.defineEventHandler(() => {
@@ -96,17 +107,22 @@ const capture = (real: (...args: unknown[]) => void) => (...args: unknown[]) => 
   try { lines.push(JSON.parse(text)) } catch { real(...args) }
 }
 beforeEach(() => {
-  lines.length = 0
   hits.clear()
   fakePool = null
+  poolThrows = false
   console.log = capture(realLog)
   console.error = capture(realError)
+  // Each test starts in an empty aggregation window — what the window timer does.
+  cspViolationLog.flush()
+  lines.length = 0
 })
 after(() => {
+  cspViolationLog.stop()
   console.log = realLog
   console.error = realError
 })
 
+/** Lines written so far for `security.csp_violation` (first sightings, and summaries after a flush). */
 const violations = () => lines.filter(line => line.event === 'security.csp_violation')
 
 type Sent = { status: number, body: string, headers: Record<string, string | string[] | undefined> }
@@ -178,7 +194,9 @@ function reportingEntry(body: Record<string, unknown>, type = 'csp-violation') {
 
 // ─── The contract: 204, one structured line, nothing else ─────────────────────
 
-test('legacy application/csp-report: 204 and ONE line with directive, blocked host, page path and disposition only', async () => {
+const samplePrefix = (sample: string) => createHash('sha256').update(sample, 'utf8').digest('hex').slice(0, 12)
+
+test('legacy application/csp-report: 204 and ONE first-sighting line with directive, blocked host, page path, group, disposition and sample prefix only', async () => {
   const res = await send(CSP_REPORT_PATH, browserHeaders('198.51.100.10', LEGACY, { 'sec-fetch-site': 'same-origin', origin: 'https://portal.example.vn' }), legacyReport())
   assert.equal(res.status, 204)
   assert.equal(res.body, '')
@@ -189,10 +207,14 @@ test('legacy application/csp-report: 204 and ONE line with directive, blocked ho
   assert.ok(typeof time === 'string')
   assert.deepEqual(fields, {
     event: 'security.csp_violation',
+    kind: 'first',
     directive: 'script-src-elem',
     blocked: 'evil.example.com:8443',
     path: '/news/tin-tuc/bai-viet',
+    pathGroup: '/news/*',
     disposition: 'report',
+    sampleSha256: samplePrefix('alert(document.cookie)'),
+    count: 1,
   })
 })
 
@@ -228,13 +250,26 @@ test('application/reports+json: every csp-violation entry is logged, other repor
   ])
   const res = await send(CSP_REPORT_PATH, browserHeaders('198.51.100.13', `${REPORTING}; charset=utf-8`), body)
   assert.equal(res.status, 204)
-  const logged = violations().map(({ level, time: _time, ...fields }) => ({ level, ...fields }))
+  const logged = violations().map(({ level, kind, directive, blocked, path, pathGroup, disposition }) => ({ level, kind, directive, blocked, path, pathGroup, disposition }))
   assert.deepEqual(logged, [
-    { level: 'info', event: 'security.csp_violation', directive: 'script-src-elem', blocked: 'inline', path: '/media/abc', disposition: 'report' },
+    { level: 'info', kind: 'first', directive: 'script-src-elem', blocked: 'inline', path: '/media/abc', pathGroup: '/media/*', disposition: 'report' },
     // A script the browser actually refused is a warning; a report-only observation is not.
-    { level: 'warn', event: 'security.csp_violation', directive: 'script-src-elem', blocked: 'www.googletagmanager.com', path: '/media/abc', disposition: 'enforce' },
-    { level: 'info', event: 'security.csp_violation', directive: 'script-src', blocked: 'eval', path: '/media/abc', disposition: 'report' },
+    { level: 'warn', kind: 'first', directive: 'script-src-elem', blocked: 'www.googletagmanager.com', path: '/media/abc', pathGroup: '/media/*', disposition: 'enforce' },
+    { level: 'info', kind: 'first', directive: 'script-src', blocked: 'eval', path: '/media/abc', pathGroup: '/media/*', disposition: 'report' },
   ])
+})
+
+test('a report from a page on another site is logged as foreign:<host>, never as a portal path (W4)', async () => {
+  await send(CSP_REPORT_PATH, browserHeaders('198.51.100.17', LEGACY), legacyReport({ 'document-uri': 'https://evil.example/news/fake-portal-page?x=1' }))
+  await send(CSP_REPORT_PATH, browserHeaders('198.51.100.17', LEGACY), legacyReport({ 'document-uri': 'https://www.portal.example.vn.attacker.example/news/a' }))
+  // The portal's own hosts: PUBLIC_BASE_URL, and the request host behind the trusted proxy.
+  await send(CSP_REPORT_PATH, browserHeaders('198.51.100.17', LEGACY), legacyReport({ 'document-uri': 'https://PORTAL.example.vn/news/that/bai' }))
+  assert.deepEqual(violations().map(line => [line.path, line.pathGroup]), [
+    ['foreign:evil.example', 'foreign:evil.example'],
+    ['foreign:www.portal.example.vn.attacker.example', 'foreign:www.portal.example.vn.attacker.example'],
+    ['/news/that/bai', '/news/*'],
+  ])
+  assert.ok(!JSON.stringify(violations()).includes('fake-portal-page'))
 })
 
 test('a blocked data:/blob: URL is logged as its scheme only — its payload never', async () => {
@@ -337,14 +372,16 @@ test('at most CSP_REPORT_MAX_PER_REQUEST reports of one request are read', async
 
 // ─── The flood (spec scenario "Report flood") ─────────────────────────────────
 
-test('the stated limit: 60 logged reports per IP per 60-second window', () => {
+test('the stated limits: 60 first sightings per source per minute, 10-minute summary window, 500 keys', () => {
   assert.equal(CSP_REPORTS_LOGGED_PER_WINDOW, 60)
   assert.equal(CSP_REPORT_WINDOW_SECONDS, 60)
   assert.equal(CSP_REPORT_MAX_PER_REQUEST, 20)
   assert.equal(CSP_REPORT_MAX_BODY_BYTES, 64 * 1024)
+  assert.equal(CSP_REPORT_SUMMARY_WINDOW_SECONDS, 600)
+  assert.equal(CSP_REPORT_MAX_KEYS, 500)
 })
 
-test('spec: one IP sends 1 000 reports in a minute → at most the limit is logged and every response is 204', async () => {
+test('spec: one IP sends 1 000 distinct reports in a minute → at most the limit is logged and every response is 204', async () => {
   const statuses = new Map<number, number>()
   for (let index = 0; index < 1000; index += 1) {
     const res = await send(CSP_REPORT_PATH, browserHeaders('203.0.113.50', LEGACY), legacyReport({ 'blocked-uri': `https://h${index}.example/x.js` }))
@@ -360,29 +397,21 @@ test('spec: one IP sends 1 000 reports in a minute → at most the limit is logg
   assert.equal(violations().length, 1)
 })
 
-test('the limit counts reports, not requests: 1 000 reports batched 20 per request still log at most the limit', async () => {
-  const batch = JSON.stringify(Array.from({ length: 20 }, () => reportingEntry({ blockedURL: 'inline' })))
-  for (let index = 0; index < 50; index += 1) {
-    const res = await send(CSP_REPORT_PATH, browserHeaders('203.0.113.60', REPORTING), batch)
-    assert.equal(res.status, 204)
+test('the limit counts reports, not requests: 55 single reports then a batch of 20 → exactly 5 of the batch are logged', async () => {
+  for (let index = 0; index < 55; index += 1) {
+    await send(CSP_REPORT_PATH, browserHeaders('203.0.113.60', LEGACY), legacyReport({ 'blocked-uri': `https://single${index}.example/x.js` }))
   }
+  assert.equal(violations().length, 55)
+  const batch = JSON.stringify(Array.from({ length: 20 }, (_, index) => reportingEntry({ blockedURL: `https://batch${index}.example/x.js` })))
+  assert.equal((await send(CSP_REPORT_PATH, browserHeaders('203.0.113.60', REPORTING), batch)).status, 204)
   assert.equal(violations().length, CSP_REPORTS_LOGGED_PER_WINDOW)
+  assert.deepEqual(violations().slice(55).map(line => line.blocked), ['batch0.example', 'batch1.example', 'batch2.example', 'batch3.example', 'batch4.example'])
 })
 
-test('an IPv6 flooder cannot rotate addresses inside its /64 to get a fresh budget', async () => {
-  for (let index = 0; index < CSP_REPORTS_LOGGED_PER_WINDOW + 10; index += 1) {
-    await send(CSP_REPORT_PATH, browserHeaders(`2001:db8:1:2::${(index + 1).toString(16)}`, LEGACY), legacyReport())
-  }
-  assert.equal(violations().length, CSP_REPORTS_LOGGED_PER_WINDOW)
-  lines.length = 0
-  await send(CSP_REPORT_PATH, browserHeaders('2001:db8:1:3::1', LEGACY), legacyReport())
-  assert.equal(violations().length, 1, 'another /64 is another source')
-})
-
-test('the counter lives in the shared rate_limit_counters table under its own key prefix', async () => {
+/** A fake pool that records every statement and keeps the shared counters. */
+function countingPool(rows = new Map<string, number>()) {
   const statements: Array<{ sql: string, params: unknown[] }> = []
-  const rows = new Map<string, number>()
-  fakePool = {
+  const pool = {
     query: async (sql: string, params: unknown[]) => {
       statements.push({ sql, params })
       const key = String(params[0])
@@ -393,6 +422,53 @@ test('the counter lives in the shared rate_limit_counters table under its own ke
       return [[{ hit_count: rows.get(key) ?? 0, window_expires_at: new Date(Date.now() + 60_000).toISOString() }], []]
     },
   }
+  return { pool, statements, rows }
+}
+
+test('W1: 1 000 identical reports from 100 IPs → one first-sighting line, no database work for the repeats, one summary of 999 after the window', async () => {
+  const { pool, statements } = countingPool()
+  fakePool = pool
+  const report = legacyReport({ 'blocked-uri': 'inline', 'script-sample': 'window.__NUXT__={};window.__NUXT__.con' })
+  for (let index = 0; index < 1000; index += 1) {
+    const res = await send(CSP_REPORT_PATH, browserHeaders(`198.18.${Math.floor(index / 10)}.${(index % 10) + 1}`, LEGACY), report)
+    assert.equal(res.status, 204)
+  }
+  assert.equal(violations().length, 1, 'repeats are counted, not logged')
+  assert.equal(violations()[0]!.kind, 'first')
+  assert.equal(statements.filter(statement => /INSERT/.test(statement.sql)).length, 1, 'only the first sighting reaches the limiter')
+  assert.equal(statements.length, 2, 'the repeats cost no database call at all')
+
+  cspViolationLog.flush() // the window timer, 10 minutes later
+  const summary = violations()[1]!
+  assert.equal(summary.kind, 'repeats')
+  assert.equal(summary.count, 999)
+  assert.equal(summary.blocked, 'inline')
+  assert.equal(summary.pathGroup, '/news/*')
+  assert.equal(violations().reduce((sum, line) => sum + Number(line.count), 0), 1000, 'every report is accounted for')
+})
+
+test('W1: a new key in the middle of a flood is logged at once', async () => {
+  const flood = legacyReport({ 'blocked-uri': 'inline' })
+  for (let index = 0; index < 300; index += 1) await send(CSP_REPORT_PATH, browserHeaders(`198.19.${Math.floor(index / 10)}.${(index % 10) + 1}`, LEGACY), flood)
+  assert.equal(violations().length, 1)
+  await send(CSP_REPORT_PATH, browserHeaders('198.19.200.1', LEGACY), legacyReport({ 'blocked-uri': 'https://new-tracker.example/t.js' }))
+  assert.equal(violations().length, 2, 'the new violation did not wait for the window')
+  assert.equal(violations()[1]!.blocked, 'new-tracker.example')
+})
+
+test('an IPv6 flooder cannot rotate addresses inside its /64 to get a fresh budget', async () => {
+  for (let index = 0; index < CSP_REPORTS_LOGGED_PER_WINDOW + 10; index += 1) {
+    await send(CSP_REPORT_PATH, browserHeaders(`2001:db8:1:2::${(index + 1).toString(16)}`, LEGACY), legacyReport({ 'blocked-uri': `https://v6-${index}.example/x.js` }))
+  }
+  assert.equal(violations().length, CSP_REPORTS_LOGGED_PER_WINDOW)
+  lines.length = 0
+  await send(CSP_REPORT_PATH, browserHeaders('2001:db8:1:3::1', LEGACY), legacyReport({ 'blocked-uri': 'https://v6-other.example/x.js' }))
+  assert.equal(violations().length, 1, 'another /64 is another source')
+})
+
+test('the counter lives in the shared rate_limit_counters table under its own key prefix', async () => {
+  const { pool, statements, rows } = countingPool()
+  fakePool = pool
   await send(CSP_REPORT_PATH, browserHeaders('192.0.2.77', LEGACY), legacyReport())
   assert.equal(violations().length, 1)
   const insert = statements.find(statement => /INSERT INTO rate_limit_counters/.test(statement.sql))
@@ -400,13 +476,33 @@ test('the counter lives in the shared rate_limit_counters table under its own ke
   assert.equal(insert.params[0], 'csp-report:192.0.2.77')
   assert.ok(statements.every(statement => /rate_limit_counters/.test(statement.sql)), 'nothing but the counter is written')
 
-  // Once the shared counter is over the limit, the body is not even read.
+  // Over the shared limit: the next new key is refused (one hit that says so), and the
+  // process remembers it — later new keys from that source cost no database call.
   rows.set('csp-report:192.0.2.77', CSP_REPORTS_LOGGED_PER_WINDOW + 1)
   lines.length = 0
   statements.length = 0
-  assert.equal((await send(CSP_REPORT_PATH, browserHeaders('192.0.2.77', LEGACY), legacyReport())).status, 204)
+  assert.equal((await send(CSP_REPORT_PATH, browserHeaders('192.0.2.77', LEGACY), legacyReport({ 'blocked-uri': 'https://k1.example/x.js' }))).status, 204)
   assert.deepEqual(violations(), [])
-  assert.equal(statements.filter(statement => /INSERT/.test(statement.sql)).length, 0, 'a source over the limit costs one read, no write')
+  const afterRefusal = statements.length
+  assert.ok(afterRefusal > 0, 'the refusal came from the shared counter')
+  assert.equal((await send(CSP_REPORT_PATH, browserHeaders('192.0.2.77', LEGACY), legacyReport({ 'blocked-uri': 'https://k2.example/x.js' }))).status, 204)
+  assert.equal(statements.length, afterRefusal, 'a source known to be over the limit costs no further database call')
+  // A repeat of a key already seen is still counted, for free.
+  await send(CSP_REPORT_PATH, browserHeaders('192.0.2.77', LEGACY), legacyReport())
+  assert.equal(statements.length, afterRefusal)
+  cspViolationLog.flush()
+  const dropped = lines.find(line => line.event === 'csp_report.dropped')
+  assert.equal(dropped?.limited, 2, 'refused first sightings are counted in the window summary')
+  assert.equal(violations().find(line => line.kind === 'repeats')?.count, 1)
+})
+
+test('W5: an unexpected failure inside the handler is logged and still answered 204', async () => {
+  poolThrows = true
+  const res = await send(CSP_REPORT_PATH, browserHeaders('198.51.100.31', LEGACY), legacyReport({ 'blocked-uri': 'https://w5.example/x.js' }))
+  assert.equal(res.status, 204)
+  assert.equal(res.body, '')
+  assert.ok(lines.some(line => line.event === 'csp_report.failed'), 'the failure is not silent')
+  assert.deepEqual(violations(), [])
 })
 
 // ─── Never an ops alert ───────────────────────────────────────────────────────
@@ -431,8 +527,8 @@ test('a cross-site, Origin: null or foreign-Origin report still reaches the endp
     { origin: 'https://mirror.example.org' },
     {},
   ]
-  for (const extra of variants) {
-    const res = await send(CSP_REPORT_PATH, browserHeaders('198.51.100.40', LEGACY, extra), legacyReport())
+  for (const [index, extra] of variants.entries()) {
+    const res = await send(CSP_REPORT_PATH, browserHeaders('198.51.100.40', LEGACY, extra), legacyReport({ 'blocked-uri': `https://variant${index}.example/x.js` }))
     assert.equal(res.status, 204, JSON.stringify(extra))
   }
   assert.equal(violations().length, variants.length)
@@ -440,8 +536,8 @@ test('a cross-site, Origin: null or foreign-Origin report still reaches the endp
 })
 
 test('the exemption also covers spellings the router decodes to the same path (same rule as admin-auth)', async () => {
-  for (const path of [`${CSP_REPORT_PATH}?from=browser`, '/api/csp%2Dreport', '/api/%63sp-report']) {
-    const res = await send(path, browserHeaders('198.51.100.41', LEGACY, { 'sec-fetch-site': 'cross-site', origin: 'null' }), legacyReport())
+  for (const [index, path] of [`${CSP_REPORT_PATH}?from=browser`, '/api/csp%2Dreport', '/api/%63sp-report'].entries()) {
+    const res = await send(path, browserHeaders('198.51.100.41', LEGACY, { 'sec-fetch-site': 'cross-site', origin: 'null' }), legacyReport({ 'blocked-uri': `https://spelling${index}.example/x.js` }))
     assert.equal(res.status, 204, path)
   }
   assert.equal(violations().length, 3)
@@ -475,17 +571,34 @@ for (const path of NOT_EXEMPT) {
   })
 }
 
-test('the exemption predicate: every decoded form must be exactly the report path, and no form may carry #', () => {
-  assert.equal(isOriginGateExemptPath('/api/csp-report', '/api/csp-report'), true)
-  assert.equal(isOriginGateExemptPath('/api/csp-report?x=1', '/api/csp-report?x=1'), true)
-  assert.equal(isOriginGateExemptPath('/api/csp-report', '/api/csp%2Dreport'), true)
+// W2: browsers only ever POST a report. Any other state-changing method on the exact path
+// is gated like everywhere else — the catch-all sentinel would run if the gate let it by.
+for (const method of ['PUT', 'PATCH', 'DELETE']) {
+  test(`origin gate: a cross-site ${method} to /api/csp-report is refused — the exemption is for POST only`, async () => {
+    const body = legacyReport()
+    // Explicit length: Node's client does not chunk-encode a DELETE body on its own.
+    const headers = browserHeaders('198.51.100.43', LEGACY, { 'sec-fetch-site': 'cross-site', origin: 'null', 'content-length': String(Buffer.byteLength(body)) })
+    const res = await send(CSP_REPORT_PATH, headers, body, method)
+    assert.equal(res.status, 403, `${method} slipped through the gate (status ${res.status})`)
+    assert.equal(totalSentinelHits(), 0, `a handler ran for ${method}: ${JSON.stringify([...hits])}`)
+  })
+}
+
+test('the exemption predicate: POST only, every decoded form must be exactly the report path, and no form may carry #', () => {
+  assert.equal(isOriginGateExempt('POST', '/api/csp-report', '/api/csp-report'), true)
+  assert.equal(isOriginGateExempt('post', '/api/csp-report', '/api/csp-report'), true)
+  assert.equal(isOriginGateExempt('POST', '/api/csp-report?x=1', '/api/csp-report?x=1'), true)
+  assert.equal(isOriginGateExempt('POST', '/api/csp-report', '/api/csp%2Dreport'), true)
+  for (const method of ['PUT', 'PATCH', 'DELETE', 'GET', '']) {
+    assert.equal(isOriginGateExempt(method, '/api/csp-report', '/api/csp-report'), false, method)
+  }
   // The routed form and the raw request-target disagree → not exempt (fail closed).
-  assert.equal(isOriginGateExemptPath('/api/submissions', '/api/csp-report'), false)
-  assert.equal(isOriginGateExemptPath('/api/csp-report', '/api/submissions'), false)
-  assert.equal(isOriginGateExemptPath('/api/submissions/../csp-report', '/api/submissions/../csp-report'), false)
-  assert.equal(isOriginGateExemptPath('/api/csp-report#x', '/api/csp-report#x'), false)
-  assert.equal(isOriginGateExemptPath('/api/csp-report', '/api/csp-report%23'), false)
-  assert.equal(isOriginGateExemptPath('/api/csp-report%zz', '/api/csp-report%zz'), false)
-  assert.equal(isOriginGateExemptPath('/api/csp-report/', '/api/csp-report/'), false)
-  assert.equal(isOriginGateExemptPath('', ''), false)
+  assert.equal(isOriginGateExempt('POST', '/api/submissions', '/api/csp-report'), false)
+  assert.equal(isOriginGateExempt('POST', '/api/csp-report', '/api/submissions'), false)
+  assert.equal(isOriginGateExempt('POST', '/api/submissions/../csp-report', '/api/submissions/../csp-report'), false)
+  assert.equal(isOriginGateExempt('POST', '/api/csp-report#x', '/api/csp-report#x'), false)
+  assert.equal(isOriginGateExempt('POST', '/api/csp-report', '/api/csp-report%23'), false)
+  assert.equal(isOriginGateExempt('POST', '/api/csp-report%zz', '/api/csp-report%zz'), false)
+  assert.equal(isOriginGateExempt('POST', '/api/csp-report/', '/api/csp-report/'), false)
+  assert.equal(isOriginGateExempt('POST', '', ''), false)
 })

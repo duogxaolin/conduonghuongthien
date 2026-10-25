@@ -9,6 +9,7 @@ import {
   CONTENT_SECURITY_POLICY_REPORT_ONLY,
   CSP_REPORT_PATH,
   CSP_SCRIPT_SRC_HOSTS,
+  CSP_TARGET_SCRIPT_SRC_HOSTS,
 } from '../shared/csp-policy.ts'
 
 /**
@@ -17,8 +18,11 @@ import {
  * Mọi phản hồi mang HAI header:
  *  - `Content-Security-Policy` — chính sách đang THỰC THI, giữ nguyên từng byte như
  *    trước giai đoạn này (bản chụp `PINNED_ENFORCING` bên dưới);
- *  - `Content-Security-Policy-Report-Only` — chính sách ĐÍCH: `script-src` không có
- *    `'unsafe-inline'`, cùng tập host; mọi chỉ thị khác y hệt bản thực thi; báo cáo về
+ *  - `Content-Security-Policy-Report-Only` — chính sách ĐÍCH: `script-src` là `'self'`
+ *    `'report-sample'` + danh sách host ĐÍCH của design ("Target `script-src`") — không
+ *    `'unsafe-inline'`, không wildcard, không `cdnjs`/`*.gov.vn`: một chính sách chỉ-báo
+ *    mà còn cho phép host nào thì không bao giờ báo lượt tải từ host đó, nên hai tuần quan
+ *    sát mới là bằng chứng cho giai đoạn 2. Mọi chỉ thị khác y hệt bản thực thi; báo cáo về
  *    `report-uri /api/csp-report`. Trình duyệt không chặn gì theo header này, chỉ báo.
  *
  * Hai chuỗi dựng ở `shared/csp-policy.ts` (mã thuần); `nuxt.config.ts` gắn chúng vào
@@ -75,19 +79,47 @@ test('nuxt.config sends the Report-Only policy from the shared module, next to t
 
 // ─── The target script-src ────────────────────────────────────────────────────
 
-test("Report-Only script-src: 'self' plus the same host set, and no 'unsafe-inline' or 'unsafe-eval'", () => {
+/** The design's "Target `script-src`" hosts (design.md § D-CSP), in that order. */
+const DESIGN_TARGET_HOSTS = [
+  'https://www.googletagmanager.com',
+  'https://connect.facebook.net',
+  'https://analytics.tiktok.com',
+  'https://www.clarity.ms',
+  'https://static.cloudflareinsights.com',
+  'https://www.youtube.com',
+  'https://www.youtube-nocookie.com',
+]
+
+test("Report-Only script-src is the design's TARGET: 'self', 'report-sample' and the target hosts — no 'unsafe-inline', no wildcard", () => {
   const target = reportOnly.get('script-src')
   const current = enforcing.get('script-src')
   assert.ok(target && current)
   assert.ok(!target.includes("'unsafe-inline'"), 'the target policy must report the inline scripts phase 3 will hash')
   assert.ok(!target.includes("'unsafe-eval'"))
   assert.ok(current.includes("'unsafe-inline'"), 'the enforcing policy still allows inline scripts until phase 5')
-  assert.equal(target[0], "'self'")
-  // Same hosts in the same order; phase 2 narrows them on report evidence, not here.
-  assert.deepEqual(target.filter(isHost), current.filter(isHost))
-  assert.deepEqual(target.filter(isHost), CSP_SCRIPT_SRC_HOSTS.map(host => `https://${host}`))
-  // Nothing but 'self' and hosts: no hashes yet (phase 3), no nonces (swr would replay one).
-  assert.deepEqual(target.filter(token => !isHost(token)), ["'self'"])
+  assert.deepEqual(target.filter(isHost), DESIGN_TARGET_HOSTS)
+  assert.deepEqual(CSP_TARGET_SCRIPT_SRC_HOSTS.map(host => `https://${host}`), DESIGN_TARGET_HOSTS)
+  // Only 'self' and 'report-sample' besides hosts: no hashes yet (phase 3), no nonces
+  // (swr would replay one to every visitor). 'report-sample' makes the browser send the
+  // first 40 characters of a blocked inline script; the endpoint logs only a hash prefix.
+  assert.deepEqual(target.filter(token => !isHost(token)), ["'self'", "'report-sample'"])
+})
+
+test('every target host is one the enforcing policy already allows (phase 1 adds no host)', () => {
+  const enforcingHosts = new Set(enforcing.get('script-src')!.filter(isHost))
+  for (const host of reportOnly.get('script-src')!.filter(isHost)) {
+    assert.ok(enforcingHosts.has(host), `${host} is in the Report-Only target but not in the enforcing policy`)
+  }
+  assert.deepEqual(CSP_SCRIPT_SRC_HOSTS.map(host => `https://${host}`), enforcing.get('script-src')!.filter(isHost))
+})
+
+test('the target script-src has no wildcard host, and cdnjs and *.gov.vn are absent so their loads ARE reported', () => {
+  const target = reportOnly.get('script-src')!
+  assert.deepEqual(target.filter(token => token.includes('*')), [])
+  for (const absent of ['https://cdnjs.cloudflare.com', 'https://*.gov.vn']) {
+    assert.ok(!target.includes(absent), `${absent} in the Report-Only script-src would hide every load from it`)
+    assert.ok(enforcing.get('script-src')!.includes(absent), `${absent} is still allowed by the enforcing policy until phase 2 decides`)
+  }
 })
 
 // ─── Reporting ────────────────────────────────────────────────────────────────

@@ -59,15 +59,18 @@ function decodeOrKeep(path: string): string {
  * hạn theo nguồn), không đọc cookie hay phiên, và luôn trả 204 rỗng. Một trang khác ép
  * trình duyệt của khách gửi báo cáo giả không làm được gì hơn chính nó gửi bằng curl.
  *
- * Vì sao không nới rộng được: cùng quy tắc với `classifyAdminRequest` của `admin-auth` —
- * MỌI dạng đã giải mã (đường đã route, dạng giải mã của nó, dạng giải mã của request-target
- * thô) phải đúng bằng `CSP_REPORT_PATH`, và không dạng nào (kể cả dạng thô) được mang `#`
- * hay `%23`. Một dạng khác đi là router có thể chọn handler khác, nên không miễn. Request-
- * target thô lấy từ `req.originalUrl`/`req.url`, KHÔNG từ `getRequestURL()` — nó dựng bằng
- * `new URL`, vốn rút gọn `..` và vứt fragment, nên `/api/submissions/../csp-report` sẽ trông
- * "đúng" ở đó trong khi router thấy một đường dẫn khác.
+ * Vì sao không nới rộng được: CHỈ `POST` (trình duyệt chỉ gửi báo cáo bằng POST, và handler
+ * chỉ đăng ký POST — PUT/PATCH/DELETE vào đúng đường dẫn này vẫn qua cổng như mọi nơi, để
+ * một route `**` sau này không nhận chúng mà không bị xét). Và cùng quy tắc với
+ * `classifyAdminRequest` của `admin-auth` — MỌI dạng đã giải mã (đường đã route, dạng giải
+ * mã của nó, dạng giải mã của request-target thô) phải đúng bằng `CSP_REPORT_PATH`, và không
+ * dạng nào (kể cả dạng thô) được mang `#` hay `%23`. Một dạng khác đi là router có thể chọn
+ * handler khác, nên không miễn. Request-target thô lấy từ `req.originalUrl`/`req.url`, KHÔNG
+ * từ `getRequestURL()` — nó dựng bằng `new URL`, vốn rút gọn `..` và vứt fragment, nên
+ * `/api/submissions/../csp-report` sẽ trông "đúng" ở đó trong khi router thấy một đường dẫn khác.
  */
-export function isOriginGateExemptPath(routedPath: string, rawTarget: string): boolean {
+export function isOriginGateExempt(method: string, routedPath: string, rawTarget: string): boolean {
+  if (String(method || '').toUpperCase() !== 'POST') return false
   const routed = stripQuery(routedPath || '/')
   const raw = stripQuery(rawTarget || '/')
   if ([routed, raw].some(form => form.includes('#') || /%23/i.test(form))) return false

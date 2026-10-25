@@ -8,10 +8,14 @@
  *    `server/plugins/tracking.ts` chèn đoạn mã theo dõi inline. Bỏ nó là giai đoạn 5.
  *  - `Content-Security-Policy-Report-Only` (`CONTENT_SECURITY_POLICY_REPORT_ONLY`) — chính
  *    sách ĐÍCH (openspec `wave3-long-term`, design D-CSP giai đoạn 1): cùng mọi chỉ thị,
- *    trừ `script-src` không có `'unsafe-inline'`, cộng `report-uri /api/csp-report`.
+ *    trừ `script-src` = `'self' 'report-sample'` + `CSP_TARGET_SCRIPT_SRC_HOSTS` (không
+ *    `'unsafe-inline'`, không `cdnjs`, không `*.gov.vn`), cộng `report-uri /api/csp-report`.
  *    Trình duyệt không chặn gì theo header này — chỉ báo về `server/api/csp-report.post.ts`
- *    (log `security.csp_violation`). Nó CỐ Ý báo mọi script inline ở trên: đó là danh
- *    sách sẽ băm ở giai đoạn 3. Đọc log → `docs/decisions/realm-safety.md`.
+ *    (log `security.csp_violation`). Nó CỐ Ý báo mọi script inline ở trên và mọi lượt tải
+ *    từ host ngoài danh sách đích: đó là bằng chứng cho giai đoạn 2 (thu hẹp host ở header
+ *    thực thi) và danh sách sẽ băm ở giai đoạn 3. Đọc log → `docs/decisions/realm-safety.md`.
+ *    Chỉ `script-src` khác: các chỉ thị khác (style/font/frame/img/media/connect) vẫn chép
+ *    nguyên bản thực thi, kể cả `cdnjs`/`*.gov.vn` — giai đoạn 1 chỉ quan sát script.
  *
  * Không có `report-to` (+ header `Reporting-Endpoints`) ở giai đoạn này: Chromium BỎ
  * `report-uri` khi chính sách có `report-to` (đo trên Chromium 151 — trang có cả hai không
@@ -30,9 +34,10 @@ import { cspImgSrcDirective } from './media-hosts'
 export const CSP_REPORT_PATH = '/api/csp-report'
 
 /**
- * Host được chạy script, ngoài `'self'` — đúng thứ tự trong header. Giai đoạn 2 thu hẹp
- * danh sách này theo bằng chứng báo cáo (`*.gov.vn`; `cdnjs` chỉ khi đường CDN của
- * TinyMCE đã chết), không phải ở đây.
+ * Host được chạy script ở header THỰC THI, ngoài `'self'` — đúng thứ tự trong header (giữ
+ * nguyên từng byte ở giai đoạn 1). Giai đoạn 2 thu hẹp danh sách này về
+ * `CSP_TARGET_SCRIPT_SRC_HOSTS` theo bằng chứng báo cáo (`*.gov.vn`; `cdnjs` chỉ khi
+ * đường CDN của TinyMCE đã chết).
  */
 export const CSP_SCRIPT_SRC_HOSTS = [
   'static.cloudflareinsights.com',
@@ -44,6 +49,23 @@ export const CSP_SCRIPT_SRC_HOSTS = [
   'analytics.tiktok.com',
   'www.clarity.ms',
   '*.gov.vn',
+] as const
+
+/**
+ * Host ĐÍCH của `script-src` (design D-CSP, "Target `script-src`") — dùng cho header
+ * Report-Only. Là tập con của `CSP_SCRIPT_SRC_HOSTS`, KHÔNG có `cdnjs.cloudflare.com` và
+ * `*.gov.vn`: một chính sách chỉ-báo mà còn cho phép host nào thì trình duyệt không bao
+ * giờ báo lượt tải từ host đó, nên chỉ khi vắng chúng ở đây hai tuần quan sát mới cho
+ * bằng chứng để giai đoạn 2 bỏ (hay giữ) chúng ở header thực thi. Không wildcard.
+ */
+export const CSP_TARGET_SCRIPT_SRC_HOSTS = [
+  'www.googletagmanager.com',
+  'connect.facebook.net',
+  'analytics.tiktok.com',
+  'www.clarity.ms',
+  'static.cloudflareinsights.com',
+  'www.youtube.com',
+  'www.youtube-nocookie.com',
 ] as const
 
 const scriptHosts = CSP_SCRIPT_SRC_HOSTS.map(host => `https://${host}`)
@@ -69,8 +91,12 @@ function directives(scriptSrc: readonly string[]): string[] {
 /** Header `Content-Security-Policy` — chính sách đang thực thi. */
 export const CONTENT_SECURITY_POLICY = directives(["'self'", "'unsafe-inline'", ...scriptHosts]).join('; ')
 
-/** Header `Content-Security-Policy-Report-Only` — chính sách đích, chỉ báo cáo. */
+/**
+ * Header `Content-Security-Policy-Report-Only` — chính sách đích, chỉ báo cáo. `'report-sample'`
+ * để trình duyệt gửi 40 ký tự đầu của script inline bị chặn: endpoint chỉ ghi tiền tố
+ * SHA-256 của nó (không bao giờ nội dung) để phân biệt các script inline với nhau.
+ */
 export const CONTENT_SECURITY_POLICY_REPORT_ONLY = [
-  ...directives(["'self'", ...scriptHosts]),
+  ...directives(["'self'", "'report-sample'", ...CSP_TARGET_SCRIPT_SRC_HOSTS.map(host => `https://${host}`)]),
   `report-uri ${CSP_REPORT_PATH}`,
 ].join('; ')

@@ -1,16 +1,17 @@
 /**
  * Đọc báo cáo vi phạm CSP (`server/api/csp-report.post.ts`; openspec `wave3-long-term`,
- * design D-CSP giai đoạn 1). Mã thuần: không đọc request, không log, không ném lỗi.
+ * design D-CSP giai đoạn 1). Mã thuần: không đọc request, không log, không ném lỗi. Gộp
+ * và ghi log: `csp-report-log.ts`.
  *
  * Hai định dạng trình duyệt gửi:
  *  - `application/csp-report` (chỉ thị `report-uri`): `{"csp-report": {…}}`, khoá
  *    gạch nối (`document-uri`, `effective-directive`, `violated-directive`,
- *    `blocked-uri`, `disposition`);
+ *    `blocked-uri`, `disposition`, `script-sample`);
  *  - `application/reports+json` (Reporting API, chỉ thị `report-to`): MẢNG
  *    `{type: "csp-violation", url, body: {documentURL, effectiveDirective, blockedURL,
- *    disposition}}`; mục khác `csp-violation` (deprecation, intervention…) bị bỏ qua.
+ *    disposition, sample}}`; mục khác `csp-violation` (deprecation, intervention…) bị bỏ qua.
  *
- * Mỗi vi phạm rút về đúng bốn trường, mỗi trường có trần độ dài:
+ * Mỗi vi phạm rút về các trường sau, mỗi trường có trần độ dài:
  *  - `directive` — TÊN chỉ thị (`script-src-elem`), không bao giờ phần chính sách theo
  *    sau (CSP2 gửi `violated-directive` kèm toàn bộ giá trị);
  *  - `blocked` — host (`www.googletagmanager.com`, kèm cổng nếu khác mặc định) cho URL
@@ -19,11 +20,18 @@
  *    (`inline`, `eval`, `wasm-eval`…) cho từ khoá; `none` khi trống; `other` khi đọc
  *    không được. Không bao giờ đường dẫn, query hay fragment;
  *  - `path` — pathname của trang (không query, không fragment — query có thể mang mã/
- *    token); trang không phải http(s) chỉ ghi lược đồ (`about:`);
- *  - `disposition` — `enforce`/`report`, giá trị khác bị bỏ.
- * Không bao giờ: `script-sample`/`sample`, `source-file`, `referrer`, `original-policy`,
- * user agent, IP. Báo cáo không có tên chỉ thị hợp lệ bị bỏ (không gì để quan sát).
+ *    token); trang không phải http(s) chỉ ghi lược đồ (`about:`); trang trên host KHÔNG phải
+ *    của cổng → `foreign:<host>` (`cspLogEntry`) — bất kỳ trang nào cũng trỏ được
+ *    `report-uri` của nó về đây, và đường dẫn của nó không phải đường dẫn của cổng;
+ *  - `disposition` — `enforce`/`report`, giá trị khác bị bỏ;
+ *  - `sampleSha256` — 12 ký tự hex đầu của SHA-256 của `script-sample`/`sample` (40 ký tự
+ *    đầu của script inline bị chặn, nhờ `'report-sample'`), để phân biệt các script inline
+ *    với nhau; KHÔNG BAO GIỜ chính mẫu. Không phải băm CSP của cả script (giai đoạn 3 tự
+ *    băm script của cổng). Tên trường cố ý tránh chữ `hash` — logger che mọi khoá chứa nó.
+ * Không bao giờ: `source-file`, `referrer`, `original-policy`, user agent, IP. Báo cáo không
+ * có tên chỉ thị hợp lệ bị bỏ (không gì để quan sát).
  */
+import { createHash } from 'node:crypto'
 import type { RateLimitRule } from './rate-limit-store'
 
 /** Trần thân yêu cầu. Một báo cáo kiểu cũ ~1,6 KB (mang cả `original-policy`). */
@@ -33,11 +41,11 @@ export const CSP_REPORT_MAX_BODY_BYTES = 64 * 1024
 export const CSP_REPORT_MAX_PER_REQUEST = 20
 
 /**
- * Số báo cáo được LOG tối đa cho mỗi nguồn (IP, IPv6 theo /64) trong một cửa sổ. Đếm
- * theo báo cáo, không theo yêu cầu: một lô 20 báo cáo tốn 20 lượt. Một lượt xem trang
- * ở giai đoạn 1 sinh vài báo cáo (script inline của Nuxt, failsafe, mã theo dõi), nên
- * 60/phút đủ cho một người đọc thật; quá trần thì im lặng — báo cáo trùng không thêm
- * bằng chứng, và một nguồn không được làm ngập log.
+ * Số lần-đầu-thấy được LOG tối đa cho mỗi nguồn (IP, IPv6 theo /64) trong một cửa sổ.
+ * Báo cáo lặp lại một khoá đã thấy KHÔNG tốn lượt nào (chỉ được đếm trong bộ nhớ —
+ * `csp-report-log.ts`); trần này chặn một nguồn tự chế vô hạn khoá mới, mỗi khoá một dòng
+ * log và một lượt ghi CSDL. Đếm theo báo cáo, không theo yêu cầu: một lô 20 khoá mới tốn
+ * 20 lượt.
  */
 export const CSP_REPORTS_LOGGED_PER_WINDOW = 60
 export const CSP_REPORT_WINDOW_SECONDS = 60
@@ -56,14 +64,30 @@ const MAX_DIRECTIVE_CHARS = 40
 const MAX_TAG_CHARS = 32
 const MAX_BLOCKED_CHARS = 128
 const MAX_PATH_CHARS = 200
+const MAX_GROUP_SEGMENT_CHARS = 64
+const MAX_FOREIGN_HOST_CHARS = 100
+const SAMPLE_PREFIX_HEX = 12
 
 export type CspReportFormat = 'csp-report' | 'reports+json'
 
 export type CspViolation = {
   directive: string
   blocked: string
+  /** Host[:cổng] của trang (chữ thường, bỏ dấu chấm cuối); `null` khi trang không phải http(s). */
+  documentHost: string | null
   path: string
   disposition?: 'enforce' | 'report'
+  sampleSha256?: string
+}
+
+/** Đúng những trường đi vào log và khoá gộp. */
+export type CspLogEntry = {
+  directive: string
+  blocked: string
+  path: string
+  pathGroup: string
+  disposition?: 'enforce' | 'report'
+  sampleSha256?: string
 }
 
 /** Định dạng theo `Content-Type` (bỏ tham số, không phân biệt hoa thường); `null` = không phải báo cáo CSP. */
@@ -117,20 +141,26 @@ function blockedSource(value: unknown): string {
   return url.host ? url.host.slice(0, MAX_BLOCKED_CHARS) : 'other'
 }
 
-function pagePath(value: unknown): string {
-  if (typeof value !== 'string' || !value.trim()) return 'unknown'
+function documentOf(value: unknown): { host: string | null, path: string } {
+  if (typeof value !== 'string' || !value.trim()) return { host: null, path: 'unknown' }
   let url: URL
   try {
     url = new URL(value.trim())
   } catch {
-    return 'unknown'
+    return { host: null, path: 'unknown' }
   }
-  if (url.protocol !== 'http:' && url.protocol !== 'https:') return `${schemeTag(url.protocol)}:`
-  return url.pathname.slice(0, MAX_PATH_CHARS)
+  if (url.protocol !== 'http:' && url.protocol !== 'https:') return { host: null, path: `${schemeTag(url.protocol)}:` }
+  const hostname = url.hostname.replace(/\.+$/, '')
+  return { host: url.port ? `${hostname}:${url.port}` : hostname, path: url.pathname.slice(0, MAX_PATH_CHARS) }
 }
 
 function dispositionOf(value: unknown): CspViolation['disposition'] {
   return value === 'enforce' || value === 'report' ? value : undefined
+}
+
+function samplePrefix(value: unknown): string | undefined {
+  if (typeof value !== 'string' || value === '') return undefined
+  return createHash('sha256').update(value, 'utf8').digest('hex').slice(0, SAMPLE_PREFIX_HEX)
 }
 
 /** Tên chỉ thị: `effective` (một tên) trước, rồi `violated` (CSP2: tên + giá trị). */
@@ -138,11 +168,14 @@ function reportedDirective(effective: unknown, violated: unknown): string | null
   return directiveName(effective, false) ?? directiveName(violated, true)
 }
 
-function violation(directive: string | null, blocked: unknown, documentUrl: unknown, disposition: unknown): CspViolation | null {
+function violation(directive: string | null, blocked: unknown, documentUrl: unknown, disposition: unknown, sample: unknown): CspViolation | null {
   if (!directive) return null
-  const result: CspViolation = { directive, blocked: blockedSource(blocked), path: pagePath(documentUrl) }
+  const page = documentOf(documentUrl)
+  const result: CspViolation = { directive, blocked: blockedSource(blocked), documentHost: page.host, path: page.path }
   const kind = dispositionOf(disposition)
   if (kind) result.disposition = kind
+  const prefix = samplePrefix(sample)
+  if (prefix) result.sampleSha256 = prefix
   return result
 }
 
@@ -151,7 +184,7 @@ function fromLegacy(body: unknown): CspViolation[] {
   const report = body['csp-report']
   if (!isPlainObject(report)) return []
   const directive = reportedDirective(report['effective-directive'], report['violated-directive'])
-  const found = violation(directive, report['blocked-uri'], report['document-uri'], report.disposition)
+  const found = violation(directive, report['blocked-uri'], report['document-uri'], report.disposition, report['script-sample'])
   return found ? [found] : []
 }
 
@@ -166,6 +199,7 @@ function fromReportingApi(body: unknown): CspViolation[] {
       report.blockedURL,
       report.documentURL ?? entry.url,
       report.disposition,
+      report.sample,
     )
     if (item) found.push(item)
   }
@@ -184,4 +218,43 @@ export function parseCspReportBody(format: CspReportFormat, text: string): CspVi
     return []
   }
   return format === 'csp-report' ? fromLegacy(body) : fromReportingApi(body)
+}
+
+/**
+ * Nhóm đường dẫn cho khoá gộp: giữ đoạn đầu, phần còn lại thành `*` — `/news/tin-tuc/bai-a`
+ * → `/news/*`, `/admin/content/articles/12` → `/admin/*`, `/` → `/`, `/news/` → `/news`.
+ * Đủ để biết vi phạm thuộc khu nào (tin, media, admin…) mà không tách một script inline
+ * dùng chung thành một khoá cho mỗi bài viết. Không phải đường dẫn (`about:`, `unknown`,
+ * `foreign:…`) → giữ nguyên.
+ */
+export function cspPathGroup(path: string): string {
+  if (!path.startsWith('/')) return path
+  const segments = path.split('/').filter(Boolean)
+  if (segments.length === 0) return '/'
+  const first = `/${segments[0]!.slice(0, MAX_GROUP_SEGMENT_CHARS)}`
+  return segments.length === 1 ? first : `${first}/*`
+}
+
+/**
+ * Trường log của một vi phạm. `isOwnHost` trả lời "host này có phải của cổng không";
+ * `null` = chưa khai host nào → mọi trang tính là của cổng (nơi gọi báo điều đó một lần).
+ * Trang trên host khác → `path` = `pathGroup` = `foreign:<host>` (cắt 100 ký tự).
+ */
+export function cspLogEntry(report: CspViolation, isOwnHost: ((host: string) => boolean) | null): CspLogEntry {
+  const foreign = isOwnHost !== null && report.documentHost !== null && !isOwnHost(report.documentHost)
+  const path = foreign ? `foreign:${report.documentHost!.slice(0, MAX_FOREIGN_HOST_CHARS)}` : report.path
+  const entry: CspLogEntry = {
+    directive: report.directive,
+    blocked: report.blocked,
+    path,
+    pathGroup: foreign ? path : cspPathGroup(path),
+  }
+  if (report.disposition) entry.disposition = report.disposition
+  if (report.sampleSha256) entry.sampleSha256 = report.sampleSha256
+  return entry
+}
+
+/** Khoá gộp: chỉ thị, nguồn bị chặn, disposition, nhóm đường dẫn, tiền tố mẫu. */
+export function cspAggregateKey(entry: CspLogEntry): string {
+  return [entry.directive, entry.blocked, entry.disposition ?? '-', entry.pathGroup, entry.sampleSha256 ?? '-'].join('|')
 }
