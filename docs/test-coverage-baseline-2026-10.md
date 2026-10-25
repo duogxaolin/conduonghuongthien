@@ -93,8 +93,50 @@ Danh sách đầy đủ (299 tệp, kèm số dòng có mã) nằm trong mục *
 
 Chưa có ngưỡng. Ngưỡng là việc của Wave 3, và đặt trên các số của script.
 
+## Ratchet độ phủ theo thư mục (wave3 D-R, 2026-10-25)
+
+- **Cổng chặn duy nhất:** `scripts/coverage-ratchet.ts` so cột "Dòng, mọi tệp" (cùng code với bảng trên) theo thư mục với `tests/ratchets/coverage.baseline.json`. Đỏ khi một thư mục tụt **quá 0,5 điểm**, khi mức nền còn ghi một thư mục không còn tệp nguồn, khi một thư mục **chưa có trong mức nền** (thư mục mới chưa test, hay tệp chưa nạp bị `git mv` sang thư mục mới làm thư mục cũ "tăng"), hoặc khi lcov thiếu/rỗng. Không có ngưỡng tuyệt đối. Tăng thì xanh và in giá trị mới.
+- **Thư mục** = hàng nhỏ nhất của bảng: `server/<cấp 1>`, `shared`, `app/utils`, `app/composables`.
+- **Độ nhạy** (đo trên mức nền này — số dòng có mã của một tệp mới chưa test, hoặc số dòng đã phủ bị mất, đủ để đỏ):
+
+  | thư mục | tổng dòng | tệp mới chưa test | dòng phủ bị mất |
+  |---|---|---|---|
+  | `server/middleware` | 305 | **2** | **2** |
+  | `server/plugins` | 393 | **6** | **2** |
+  | `shared` | 1 226 | **7** | **7** |
+  | `server/data` (100 %) | 1 416 | 8 | 8 |
+  | `server/db` | 3 651 | 26 | 19 |
+  | `app/utils` | 5 542 | 30 | 28 |
+  | `app/composables` | 5 564 | 47 | 29 |
+  | `server/utils` | 15 891 | 89 | 80 |
+  | `server/services` | 27 502 | 175 | 140 |
+  | `server/api` | 17 235 | 186 | 88 |
+  | `server/routes` (0 %) | 136 | không thể tụt | — |
+
+  Ba thư mục đầu gần như đòi mọi mã mới phải có test ngay trong PR đó — đó là ý muốn, nhưng một tệp tiện ích vài dòng cũng đủ làm đỏ. Hạ có chủ đích: `--allow-drop <thư mục>`, ghi lý do trong PR.
+- **Node trôi theo bản vá:** CI dùng `node-version: '24'` (không ghim bản vá, cố ý). Một bản vá Node/V8 đổi cách gán dòng cho coverage sẽ dịch **mọi thư mục cùng lúc** (thường đều một chiều) — dấu hiệu là nhiều thư mục DROP/RISE trong một PR không đụng mã. Cách xử lý: xác nhận trên bản Node mới (so `node -v` trong log CI), rồi hạ có chủ đích bằng `--allow-drop <thư mục>` cho từng thư mục tụt (hoặc `--rebaseline` nếu mọi thư mục cùng dịch), ghi bản Node cũ → mới và lý do trong PR. Không nới dung sai.
+- **CI:** bước *Coverage ratchet* của job `unit-tests`, sau Typecheck, chặn (bước *Coverage summary* vẫn chỉ báo cáo). **Cục bộ:** `npm run test:coverage` chạy nó sau bảng tóm tắt.
+- **Tập tệp:** từ nay `npm run test:coverage` chạy đúng tập của CI — mọi `tests/*.test.ts` trừ `*-integration`, cộng `tests/ratchets/*.test.ts`. Trước đây nó gồm cả suite integration (tự bỏ qua, nhưng import cấp đầu tệp vẫn nạp `media-processing-queue.ts`), nên ra 299 tệp chưa nạp so với 300 của CI.
+- **Mức nền** đo trên `wave3/1-ratchets` (gốc `423013d`, nhánh tích hợp wave2): Node 24.21, `TZ=Asia/Ho_Chi_Minh`, có ffmpeg, lệnh của CI, **hai lần**: 4970 test, 0 đỏ, tổng 74,62 % (58 844 / 78 861, 713 tệp), 294 tệp chưa nạp — cao hơn 70,50 % ở trên vì test thêm từ sau mốc đó. Hai lần giống hệt nhau theo thư mục. Dao động thấy được: 3 dòng của `server/services/video-process-runner.ts` (hàm dựng `ProcessingAborted`, chạy hay không tuỳ thời điểm) — 0,011 điểm ở `server/services`, gặp ở 3/6 lượt: một lượt Node 24 trước đó (13 test đỏ vì môi trường container thiếu `jq`/danh tính git, đều là test không nạp mã được đo), một lượt Node 26 `TZ` UTC, và lượt `npm run test:coverage` cuối. Mức nền giữ 80,21 (hai lượt Node 24 sạch); phía thấp nằm trong dung sai (−0,005). Node 26.11 cho cùng số theo thư mục ở cả `TZ=Asia/Ho_Chi_Minh` lẫn UTC.
+- **Cập nhật:** `node --experimental-strip-types scripts/coverage-ratchet.ts node_modules/.cache/cdkt-coverage/lcov.info --update` chỉ **nâng** mục (làm tròn xuống 2 chữ số) và bỏ mục cũ. Hạ một mục phải ghi rõ `--allow-drop <thư mục>`; thêm thư mục mới phải ghi rõ `--add-dir <thư mục>` — cả hai trong cùng PR.
+
+### Tạo lại cả bốn mức nền sau khi gộp nhánh nền đã đổi
+
+Dùng **một lần** khi mức nền được đo trên cây cũ (ví dụ sau khi gộp đỉnh mới của `wave2/integration`). `--rebaseline` cho mọi mục đi theo cây hiện tại, lên hoặc xuống, thêm/bỏ tệp và thư mục, in từng thay đổi; giữ nguyên mọi `reason` và mọi mục `exempt` (mục `exempt` của tệp đã mất → sửa tay). Chạy từ gốc repo, theo đúng thứ tự (các ratchet tệp phải xanh trước, vì `test:coverage` chạy chúng):
+
+```bash
+node --experimental-strip-types --import ./scripts/ts-resolver.mjs tests/ratchets/hex-colors.test.ts --rebaseline
+node --experimental-strip-types --import ./scripts/ts-resolver.mjs tests/ratchets/file-length.test.ts --rebaseline
+node --experimental-strip-types --import ./scripts/ts-resolver.mjs tests/ratchets/fetch-casts.test.ts --rebaseline
+npm run test:coverage   # chỉ được đỏ ở phần độ phủ (bước ratchet cuối, hoặc test "names exactly the measured directories" khi có thư mục mới/mất) — lcov vẫn được ghi; đỏ chỗ khác thì sửa trước
+node --experimental-strip-types scripts/coverage-ratchet.ts node_modules/.cache/cdkt-coverage/lcov.info --rebaseline
+node --experimental-strip-types scripts/coverage-ratchet.ts node_modules/.cache/cdkt-coverage/lcov.info   # phải xanh
+npm test                # mọi ratchet xanh trên mức nền mới
+```
+
+Mức nền độ phủ nên đo bằng lệnh của CI trên Node 24 với `TZ=Asia/Ho_Chi_Minh`; trên mức nền này Node 26 cục bộ (cả UTC) cho cùng số theo thư mục. Xem diff của bốn tệp `tests/ratchets/*.baseline.json` như mọi thay đổi mức nền khác.
+
 ## Cách dùng
-- Cục bộ: `npm run test:coverage`. Bảng của script in ở cuối log; lcov ở `node_modules/.cache/cdkt-coverage/lcov.info`. Các cờ và script chạy được trên Node 22, 24 và 26. Một test đỏ thì dừng trước bước tóm tắt (`&&`).
-- CI: mở một lần chạy → *Summary* → mục **Test coverage**.
-- Khi viết test hành vi mới cho một file trong danh sách trên, chạy lại và cập nhật bảng này nếu muốn ghi mốc mới.
-- Đặt ngưỡng (nếu sau này cần): theo thư mục (`server/utils`, `server/services`) và chỉ sau vài tuần nhìn thấy mức dao động thật.
+- Cục bộ: `npm run test:coverage`. Bảng của script in ở cuối log; lcov ở `node_modules/.cache/cdkt-coverage/lcov.info`; sau đó là ratchet. Các cờ và script chạy được trên Node 22, 24 và 26. Một test đỏ thì dừng trước bước tóm tắt (`&&`).
+- CI: mở một lần chạy → *Summary* → mục **Test coverage** và **Coverage ratchet**.
+- Khi viết test hành vi mới cho một file trong danh sách trên, chạy lại và nâng mức nền bằng `--update` trong cùng PR.

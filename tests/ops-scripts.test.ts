@@ -375,6 +375,66 @@ test('nothing reaches the VPS without passing every gate first', () => {
   assert.match(workflow, /if: github\.ref == 'refs\/heads\/main' && github\.event_name != 'pull_request'/)
 })
 
+test('the ratchets run in npm test and in CI, and the coverage ratchet is its own blocking step', async () => {
+  // wave3 D-R. A ratchet that never runs is green forever, and two ways to lose one
+  // look harmless in review: the tests sit in tests/ratchets/, which `tests/*.test.ts`
+  // and `find tests -maxdepth 1` do not reach; and the coverage comparison is a CI step,
+  // which one `continue-on-error` (as the summary step has, on purpose) turns into a
+  // log line with a green tick.
+  const repo = new URL('..', import.meta.url).pathname
+  const ci = await loadYaml('.github/workflows/ci.yml')
+  const unit = asMap(asMap(ci.jobs, 'jobs')['unit-tests'], 'unit-tests')
+  const steps = (unit.steps ?? []) as YamlMap[]
+  const testStep = steps.find((step) => step.name === 'Unit and contract tests (no DB)')
+  assert.ok(testStep, 'the unit test step is gone')
+  assert.equal(testStep.id, 'unit', 'the Coverage ratchet step keys off the test step id `unit`')
+
+  // The file list CI builds, by running its own `find` line in this checkout.
+  const findLine = /^\s*files=\$\(find [^\n]+\)\s*$/m.exec(String(testStep.run))?.[0]
+  assert.ok(findLine, 'the unit step no longer builds its file list with find')
+  const listed = spawnSync('bash', ['-c', `${findLine.trim()}\nprintf '%s\\n' "$files"`], { cwd: repo, encoding: 'utf8' })
+    .stdout.split('\n').filter(Boolean).sort()
+  const { globSync, readdirSync } = await import('node:fs')
+  const ratchets = readdirSync(join(repo, 'tests/ratchets')).filter((f) => f.endsWith('.test.ts')).map((f) => `tests/ratchets/${f}`)
+  assert.ok(ratchets.length >= 4, `expected the ratchet tests in tests/ratchets/, found ${ratchets.length}`)
+  for (const file of ratchets) assert.ok(listed.includes(file), `CI's unit step does not run ${file}`)
+  assert.deepEqual(listed.filter((f) => f.endsWith('-integration.test.ts') || f.startsWith('tests/e2e/')), [],
+    'the unit step picked up an integration suite or a browser spec')
+
+  // npm test runs at least what CI runs; test:coverage runs exactly what CI runs, so the
+  // coverage ratchet compares the same measurement locally and in CI.
+  const pkg = JSON.parse(read('package.json')) as { scripts: Record<string, string> }
+  const testFiles = (script: string) => {
+    const tail = /--test (?:--watch )?(.+?)(?: &&|$)/.exec(pkg.scripts[script] ?? '')?.[1] ?? ''
+    const patterns = tail.split(/\s+/).map((p) => p.replace(/^"|"$/g, '')).filter(Boolean)
+    return [...new Set(patterns.flatMap((p) => globSync(p, { cwd: repo })))].sort()
+  }
+  for (const script of ['test', 'test:watch']) {
+    const files = testFiles(script)
+    for (const file of listed) assert.ok(files.includes(file), `npm run ${script} does not run ${file}`)
+  }
+  assert.deepEqual(testFiles('test:coverage'), listed, 'npm run test:coverage must run the same files as CI, or the coverage ratchet compares two different measurements')
+  assert.match(pkg.scripts['test:coverage']!, /&& node --experimental-strip-types scripts\/coverage-ratchet\.ts node_modules\/\.cache\/cdkt-coverage\/lcov\.info$/,
+    'npm run test:coverage no longer ends with the coverage ratchet')
+
+  // The comparison: its own step, blocking, on the lcov the test step wrote.
+  assert.match(String(testStep.run), /--test-reporter=lcov --test-reporter-destination=\/tmp\/unit-test\.lcov/)
+  const ratchetStep = steps.find((step) => step.name === 'Coverage ratchet')
+  assert.ok(ratchetStep, 'the Coverage ratchet step is gone from the unit-tests job — a coverage drop no longer fails CI')
+  assert.match(String(ratchetStep.run), /^node --experimental-strip-types scripts\/coverage-ratchet\.ts \/tmp\/unit-test\.lcov$/)
+  assert.ok(!('continue-on-error' in ratchetStep), 'the Coverage ratchet step has continue-on-error — a drop would show green')
+  // Exactly this condition. Without `always()` the ratchet never compares the partial lcov
+  // of a failed test run; without a status function GitHub prepends an implicit
+  // `success() &&`, so `!cancelled()` is what keeps the ratchet running when only the
+  // Typecheck step before it failed; `steps.unit.outcome` ties it to the test step.
+  const condition = String(ratchetStep.if ?? '').replace(/^\$\{\{\s*|\s*\}\}$/g, '').replace(/\s+/g, ' ').trim()
+  assert.doesNotMatch(condition, /always\(\)/, 'the ratchet would compare the partial lcov of a failed run')
+  assert.equal(condition, "!cancelled() && steps.unit.outcome == 'success'",
+    'the Coverage ratchet `if:` must be `!cancelled() && steps.unit.outcome == \'success\'` — without `!cancelled()` a Typecheck failure silently skips it')
+  const summary = steps.find((step) => step.name === 'Coverage summary')
+  assert.doesNotMatch(String(summary?.run ?? ''), /coverage-ratchet/, 'the comparison must not hide inside the report-only summary step')
+})
+
 test('the deployed image is pinned to a commit, not to a moving tag', () => {
   const workflow = read('.github/workflows/ci.yml')
   // `latest` can move between the image job finishing and the deploy starting,
