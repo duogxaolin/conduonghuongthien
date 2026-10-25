@@ -899,6 +899,19 @@ jobs:
           scandir: ./scripts
           severity: warning
 
+      # production/manage.sh nạp production/lib/*.sh: kiểm cả bộ như MỘT chương trình, bắt
+      # đầu từ cửa vào. `-x` theo các dòng `.` (chỉ thị `# shellcheck source=lib/…`), `-a`
+      # báo cả cảnh báo NẰM TRONG lib — thiếu `-a` thì lỗi ở lib im lặng. Action không tự
+      # thêm hai cờ đó; chính shellcheck đọc SHELLCHECK_OPTS. lib/ bị loại khỏi lượt tìm
+      # tệp: kiểm từng lib một mình là kiểm nó không có biến của common.sh.
+      - uses: ludeeus/action-shellcheck@00cae500b08a931fb5698e11e79bfbd38e612a38 # 2.0.0
+        env:
+          SHELLCHECK_OPTS: -x -a
+        with:
+          scandir: ./production
+          ignore_paths: production/lib
+          severity: warning
+
   # ── Triển khai ──────────────────────────────────────────────────────────────
   # Hai job dưới đây chỉ chạy trên `main`, và chỉ SAU khi cả năm cổng trên đã
   # xanh. Chúng nằm trong cùng một workflow (thay vì `workflow_run` riêng) để

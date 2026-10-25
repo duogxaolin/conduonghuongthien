@@ -53,7 +53,6 @@
   "app/pages/search.vue": 423,
   "app/utils/docs/admin-docs-system.ts": 526,
   "nuxt.config.ts": 412,
-  "production/manage.sh": 1793,
   "scripts/deploy-remote.sh": 587,
   "server/data/chatbot-small-talk-seed.ts": {
     "exempt": true,
