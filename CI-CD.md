@@ -675,6 +675,16 @@ của image mới đối soát (`reconcileArticleViewTotals`, chỉ ghi bài l�
 ghi gì) — lùi rồi tiến lại không để lại tổng sai (`tests/view-boost-integration.test.ts`,
 `tests/backup-dump-integration.test.ts` dựng đúng bản dump kiểu image cũ).
 
+**Ngoại lệ đã biết — bí mật đã mã hoá (đợt 2A, CHANGELOG § 33).** Lần khởi động đầu của image
+từ đợt 2A trở đi mã hoá `smtp_pass`, `r2_secret_key` và `backup_drive_service_account` trong
+`settings` (envelope, khoá `CHATBOT_ENCRYPTION_SECRET`). Đây là lượt ghi khởi động duy nhất của
+đợt 2 mà image cũ **không** chạy được trên nó: image trước 2A đọc nguyên văn, nên nếu lượt deploy
+đầu tiên chứa 2A bị lùi tự động thì gửi email (thông báo, mã OTP qua email), tải ảnh lên R2 và
+sao lưu Drive ngừng chạy — job chỉ báo "đã lùi về … khoẻ trở lại". Cách xử lý: nhập lại mật khẩu
+SMTP, Secret Key R2 (ảnh) và khoá service account Drive ở trang cài đặt của image đang chạy (code
+cũ lưu lại nguyên văn), hoặc sửa lỗi rồi deploy lại bản mới (bản mới đọc được cả hai dạng). Không
+đảo lượt mã hoá — xem `production/README.md` § *Bảo mật đợt 2 — 2A*.
+
 ### Dừng container êm (`stop_grace_period: 45s`)
 
 `docker stop` gửi SIGTERM rồi chờ; mặc định của Docker là 10 giây, trong khi Nitro cần tới
