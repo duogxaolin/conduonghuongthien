@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import type { AdminListPage } from '~/composables/useAdminList'
+
 definePageMeta({ layout: 'admin', middleware: 'admin-auth' })
 
 /**
@@ -34,22 +36,82 @@ type Comment = {
   flagReason: string | null
 }
 
+type CommentFilters = {
+  /** From the URL a string; once typed into the `type="number"` input Vue casts it to a number. */
+  articleId: string | number
+  source: '' | 'article' | 'media'
+  /** Tab hiển thị: 'visible' = comment bình thường (mặc định), 'hidden' = bị ẩn. */
+  visibility: 'visible' | 'hidden'
+}
+
+type CommentListResponse = { ok: boolean; comments: Comment[]; total: number; totalPages: number; page: number }
+/** The list plus the "Đã ẩn" tab badge, fetched in the same load. */
+type CommentListPage = AdminListPage<Comment> & { hiddenCount: number }
+
+type AiVerdict = { verdict: 'safe' | 'spam' | 'violation'; riskLevel: string; flags: string[]; reason: string }
+type AiModerateResponse = { ok: boolean; results: Array<{ id: number } & AiVerdict> }
+
 const route = useRoute()
 const toast = useToast()
 const { confirm } = useConfirm()
 
-const loading = ref(true)
-const error = ref('')
+// List state, stale-request guard and paging: useAdminList (tests/admin-list.test.ts).
+const list = useAdminList<Comment, CommentFilters, CommentListPage>({
+  filters: {
+    articleId: route.query.articleId ? String(route.query.articleId) : '',
+    source: route.query.source === 'article' || route.query.source === 'media' ? route.query.source : '',
+    visibility: route.query.visibility === 'hidden' ? 'hidden' : 'visible',
+  },
+  errorFallback: 'Không tải được danh sách bình luận.',
+  load: async ({ page, filters, signal }) => {
+    // The badge count travels with the list on the same signal: a superseded load
+    // cannot update the badge any more than it can update the rows.
+    const [res, hiddenRes] = await Promise.all([
+      adminFetch<CommentListResponse>('/api/admin/comments', {
+        query: {
+          articleId: filters.articleId || undefined,
+          source: filters.source || undefined,
+          visibility: filters.visibility,
+          page,
+        },
+        signal,
+      }),
+      adminFetch<{ ok: boolean; total: number }>('/api/admin/comments', {
+        query: { visibility: 'hidden', perPage: 1 },
+        signal,
+      }),
+    ])
+    if (!res?.ok) return null
+    return {
+      items: res.comments || [],
+      total: res.total || 0,
+      totalPages: res.totalPages || 1,
+      page: res.page || 1,
+      hiddenCount: hiddenRes?.total ?? 0,
+    }
+  },
+})
+const { items: comments, page, total, totalPages, loading, filters, applyFilters, goToPage } = list
+// The error branch and its retry are declared here, in the page, on purpose:
+// tests/admin-error-retry-ui.test.ts reads this file's own source.
+const error = computed(() => list.error.value)
+const reload = list.reload
+const hiddenCount = computed(() => list.result.value?.hiddenCount ?? 0)
+
 const busy = ref(false)
 const moderating = ref(false)
-const moderationMap = ref<Record<number, { verdict: 'safe' | 'spam' | 'violation'; riskLevel: string; flags: string[]; reason: string }>>({})
+const moderationMap = ref<Record<number, AiVerdict>>({})
+
+const replyTo = ref<number | null>(null)
+const replyBody = ref('')
+const replying = ref(false)
 
 async function runAiModerationScan() {
   if (!comments.value.length) return
   moderating.value = true
   try {
     const ids = comments.value.map(c => c.id).slice(0, 10)
-    const res = await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; results: Array<{ id: number; verdict: 'safe' | 'spam' | 'violation'; riskLevel: string; flags: string[]; reason: string }> }>)('/api/admin/comments/ai-moderate', {
+    const res = await adminFetch<AiModerateResponse>('/api/admin/comments/ai-moderate', {
       method: 'POST',
       body: { commentIds: ids },
     })
@@ -63,20 +125,6 @@ async function runAiModerationScan() {
     moderating.value = false
   }
 }
-const comments = ref<Comment[]>([])
-const total = ref(0)
-const page = ref(1)
-const totalPages = ref(1)
-
-const articleFilter = ref(route.query.articleId ? String(route.query.articleId) : '')
-const sourceFilter = ref(route.query.source === 'article' || route.query.source === 'media' ? route.query.source : '')
-// Tab hiển thị: 'visible' = comment bình thường (mặc định), 'hidden' = bị ẩn.
-const visibilityFilter = ref<'visible' | 'hidden'>(route.query.visibility === 'hidden' ? 'hidden' : 'visible')
-const hiddenCount = ref(0)
-
-const replyTo = ref<number | null>(null)
-const replyBody = ref('')
-const replying = ref(false)
 
 function formatMoment(value: string | null) {
   if (!value) return '—'
@@ -84,50 +132,17 @@ function formatMoment(value: string | null) {
   return Number.isNaN(date.getTime()) ? '—' : date.toLocaleString('vi-VN', { hour12: false })
 }
 
-async function load() {
-  loading.value = true
-  error.value = ''
-  try {
-    const [res, hiddenRes] = await Promise.all([
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; comments: Comment[]; total: number; totalPages: number; page: number }>)('/api/admin/comments', {
-        query: {
-          articleId: articleFilter.value || undefined,
-          source: sourceFilter.value || undefined,
-          visibility: visibilityFilter.value,
-          page: page.value,
-        },
-      }),
-      ($fetch as (u: string, o?: Record<string, unknown>) => Promise<{ ok: boolean; total: number }>)('/api/admin/comments', {
-        query: { visibility: 'hidden', perPage: 1 },
-      }),
-    ])
-    if (!res?.ok) {
-      error.value = 'Không tải được danh sách bình luận.'
-      return
-    }
-    comments.value = res.comments || []
-    total.value = res.total || 0
-    totalPages.value = res.totalPages || 1
-    page.value = res.page || 1
-    hiddenCount.value = hiddenRes?.total ?? 0
-  } catch (err: unknown) {
-    error.value = errorMessage(err, 'Không tải được danh sách bình luận.')
-  } finally {
-    loading.value = false
-  }
-}
-
 async function toggleVisibility(comment: Comment) {
   if (busy.value) return
   const next = !comment.isHidden
   busy.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/comments/${comment.id}/visibility`, {
+    await adminFetch<unknown>(`/api/admin/comments/${comment.id}/visibility`, {
       method: 'PATCH',
       body: { hidden: next },
     })
     toast.success(next ? 'Đã ẩn bình luận.' : 'Đã hiện lại bình luận.')
-    await load()
+    await reload()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không đổi được trạng thái bình luận.'))
   } finally {
@@ -136,21 +151,9 @@ async function toggleVisibility(comment: Comment) {
 }
 
 function switchVisibility(tab: 'visible' | 'hidden') {
-  if (visibilityFilter.value === tab) return
-  visibilityFilter.value = tab
-  page.value = 1
-  load()
-}
-
-function applyFilters() {
-  page.value = 1
-  load()
-}
-
-function goToPage(next: number) {
-  if (next < 1 || next > totalPages.value) return
-  page.value = next
-  load()
+  if (filters.visibility === tab) return
+  filters.visibility = tab
+  applyFilters()
 }
 
 function toggleReply(comment: Comment) {
@@ -165,7 +168,7 @@ async function submitReply(comment: Comment) {
   if (!replyBody.value.trim() || replying.value) return
   replying.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)('/api/admin/comments/reply', {
+    await adminFetch<unknown>('/api/admin/comments/reply', {
       method: 'POST',
       body: { parentId: comment.id, body: replyBody.value },
     })
@@ -174,7 +177,7 @@ async function submitReply(comment: Comment) {
     replyBody.value = ''
     replyTo.value = null
     toast.success('Đã gửi phản hồi của Ban quản trị.')
-    await load()
+    await reload()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không gửi được phản hồi.'))
   } finally {
@@ -193,9 +196,9 @@ async function deleteOne(comment: Comment) {
 
   busy.value = true
   try {
-    await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
+    await adminFetch<unknown>(`/api/admin/comments/${comment.id}`, { method: 'DELETE' })
     toast.success('Đã xoá bình luận.')
-    await load()
+    await reload()
   } catch (err: unknown) {
     toast.error(errorMessage(err, 'Không xoá được bình luận.'))
   } finally {
@@ -203,7 +206,7 @@ async function deleteOne(comment: Comment) {
   }
 }
 
-onMounted(load)
+onMounted(reload)
 </script>
 
 <template>
@@ -219,9 +222,9 @@ onMounted(load)
       <button
         type="button"
         role="tab"
-        :aria-selected="visibilityFilter === 'visible'"
+        :aria-selected="filters.visibility === 'visible'"
         class="rounded-lg px-4 py-2 text-sm font-semibold transition-colors cursor-pointer"
-        :class="visibilityFilter === 'visible' ? 'bg-[#1e4620] text-white' : 'bg-white border border-[#c8d6c9] text-[#2c3e2e] hover:bg-[#f0f7f1]'"
+        :class="filters.visibility === 'visible' ? 'bg-[#1e4620] text-white' : 'bg-white border border-[#c8d6c9] text-[#2c3e2e] hover:bg-[#f0f7f1]'"
         @click="switchVisibility('visible')"
       >
         Bình luận hiện
@@ -229,9 +232,9 @@ onMounted(load)
       <button
         type="button"
         role="tab"
-        :aria-selected="visibilityFilter === 'hidden'"
+        :aria-selected="filters.visibility === 'hidden'"
         class="rounded-lg px-4 py-2 text-sm font-semibold transition-colors cursor-pointer"
-        :class="visibilityFilter === 'hidden' ? 'bg-[#7a3520] text-white' : 'bg-white border border-[#c8d6c9] text-[#2c3e2e] hover:bg-[#f0f7f1]'"
+        :class="filters.visibility === 'hidden' ? 'bg-[#7a3520] text-white' : 'bg-white border border-[#c8d6c9] text-[#2c3e2e] hover:bg-[#f0f7f1]'"
         @click="switchVisibility('hidden')"
       >
         Đã ẩn
@@ -243,7 +246,7 @@ onMounted(load)
       <label class="flex flex-col gap-1.5 text-sm font-bold">
         Lọc theo mã bài viết
         <input
-          v-model="articleFilter"
+          v-model="filters.articleId"
           type="number"
           min="1"
           placeholder="Để trống để xem tất cả"
@@ -253,7 +256,7 @@ onMounted(load)
       <label class="flex flex-col gap-1.5 text-sm font-bold">
         Nguồn bình luận
         <select
-          v-model="sourceFilter"
+          v-model="filters.source"
           class="rounded-lg border border-[#c8d6c9] px-3 py-2.5 font-normal outline-none focus:border-[#2c6e33] focus:ring-2 focus:ring-[#2c6e33]/20"
         >
           <option value="">Tất cả</option>
@@ -299,7 +302,7 @@ onMounted(load)
     >
       <i class="fa-solid fa-triangle-exclamation mr-2" aria-hidden="true"></i>
       {{ error }}
-      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="load">Thử lại</button>
+      <button type="button" class="ml-1 font-bold text-[#2c6e33] underline" @click="reload">Thử lại</button>
     </div>
 
     <template v-else>

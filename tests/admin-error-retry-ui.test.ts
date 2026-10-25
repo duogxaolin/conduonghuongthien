@@ -39,6 +39,8 @@ import { readFile, readdir } from 'node:fs/promises'
 import test from 'node:test'
 import { parse } from '@vue/compiler-sfc'
 
+import { ADMIN_FETCH_CALL } from './_admin-fetch-call.ts'
+
 const read = (relative: string) => readFile(new URL(`../app/${relative}`, import.meta.url), 'utf8')
 
 /**
@@ -84,15 +86,17 @@ const VIEWS_WITH_ERROR_BRANCH: Array<{ file: string; refs: string[]; retries: st
   { file: 'pages/admin/chatbot/knowledge/index.vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/chatbot/knowledge/[id].vue', refs: ['error'], retries: ['load'] },
   { file: 'pages/admin/chatbot/settings.vue', refs: ['errorMessage'], retries: ['load'] },
-  { file: 'pages/admin/chatbot/sessions/index.vue', refs: ['loadError'], retries: ['fetchSessions'] },
+  // List state from useAdminList (D-FETCH): `error` is a computed over the list's
+  // error and `reload` its retry — both declared in the page, the block stays here.
+  { file: 'pages/admin/chatbot/sessions/index.vue', refs: ['error'], retries: ['reload'] },
   { file: 'pages/admin/chatbot/sessions/[id].vue', refs: ['loadError'], retries: ['fetchSession'] },
 
   // Reader moderation. These read citizens' personal data, so a failed fetch
   // rendering as "chưa có ai" is worse than usual: an officer would conclude
   // nobody has signed up rather than that the query broke.
-  { file: 'pages/admin/readers/index.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/readers/index.vue', refs: ['error'], retries: ['reload'] },
   { file: 'pages/admin/readers/[id].vue', refs: ['error'], retries: ['load'] },
-  { file: 'pages/admin/comments/index.vue', refs: ['error'], retries: ['load'] },
+  { file: 'pages/admin/comments/index.vue', refs: ['error'], retries: ['reload'] },
 
   // Users, media, submissions.
   { file: 'pages/admin/users/index.vue', refs: ['loadError'], retries: ['fetchUsers'] },
@@ -371,7 +375,9 @@ test('no admin view reaches for a full page reload as its retry', async () => {
  * Same shape as the directory-scanning guards in tests/reader-audit-atomicity.ts
  * and tests/client-ip.test.ts, and for the same reason.
  */
-const FETCH_CALL = /\$fetch|useFetch\(|useAsyncData\(/
+// Shared with tests/skeleton-loading-ui.test.ts — includes adminFetch/useAdminList,
+// so a page migrated off bare `$fetch` (D-FETCH) is not silently dropped from the scan.
+const FETCH_CALL = ADMIN_FETCH_CALL
 
 async function adminViewsThatFetch(): Promise<string[]> {
   const roots = ['pages/admin', 'components/admin']
