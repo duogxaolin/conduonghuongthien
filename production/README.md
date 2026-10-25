@@ -540,7 +540,7 @@ duy nhất chạy trước nó là bước siết quyền `.env` về 600 (khôn
   thể để lại `….sql.gz.partial`: bị giết hẳn (`kill -9`, mất điện), hoặc job CI bị huỷ/SSH
   đứt (phiên `ssh` không PTY nên VPS không nhận tín hiệu treo máy; script chạy tiếp hoặc chết
   vì SIGPIPE khi ghi log). Lượt dump sau cùng họ xoá phần đó khi đã quá 1 ngày.
-- **Kiểm như bản đêm:** cùng `scripts/backup-db.sh` (gzip, dấu `Dump completed`, ≥ 20 bảng,
+- **Kiểm như bản đêm:** cùng `scripts/backup-db.sh` (gzip, dòng `-- Dump completed` ở **đầu** một trong 5 dòng cuối — đúng luật `scripts/restore-db.sh` dùng để nhận một bản dump, ≥ 20 bảng,
   ≥ 50 KB SQL); bản không đạt bị xoá và lượt deploy **dừng** — compose, `.env`, container y
   như trước. Lý do thường gặp: đĩa đầy, `cdkt_mysql` không chạy, `.env` thiếu `MYSQL_ROOT_PASSWORD`.
 - **Giữ 5 bản** mới nhất (theo số lượng, không theo ngày); không đụng tới bản đêm

@@ -526,7 +526,8 @@ docker compose stop app
 ./scripts/verify-restore.sh backups/cdkt-cdkt_admin-<mã>-<pid>.sql.gz
 
 # 2. CSDL: bắt buộc nêu tên database đích + --replace. Script kiểm dump (gzip, dấu
-#    "Dump completed", ≥20 bảng, không tự chọn database khác), DUMP BẢN HIỆN CÓ ra
+#    "-- Dump completed" ở đầu một trong 5 dòng cuối — cùng luật backup-db.sh, ≥20 bảng,
+#    không tự chọn database khác), DUMP BẢN HIỆN CÓ ra
 #    backups/cdkt-prerestore-<db>-*.sql.gz và kiểm chứng nó — dump đó hỏng thì KHÔNG
 #    khôi phục gì — rồi mới nạp. Database đích phải tồn tại sẵn (compose tạo
 #    MYSQL_DATABASE); gõ sai tên thì dừng chứ không tạo database lạ.

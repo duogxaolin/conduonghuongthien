@@ -866,6 +866,28 @@ test('restore-media refuses while the app is running (exit 2)', () => {
   }
 })
 
+// ─── scripts/backup-db.sh: the completion marker, the same rule as restore-db.sh ─
+test('backup-db rejects a dump cut off inside a row that holds the marker text (not at a line start), leaving no dump behind', () => {
+  // Before: backup-db.sh accepted "Dump completed" anywhere in the last lines and KEPT
+  // such a dump as a good backup — restore-db.sh (anchored) then refused it, on the
+  // day it was needed.
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\nMYSQL_DATABASE=cdkt_admin\n`)
+  try {
+    const dir = sb.path('backups')
+    const r = sb.run('scripts/backup-db.sh', [dir], { env: { FAKE_DUMP_MARKER_MIDLINE: '1' } })
+    assert.equal(r.status, 3, r.stdout + r.stderr)
+    assert.match(r.stderr, /no completion marker/)
+    const left = existsSync(dir) ? readdirSync(dir) : []
+    assert.deepEqual(left.filter((f) => f.endsWith('.sql.gz') || f.endsWith('.partial')), [], `a rejected dump was left behind: ${left.join(', ')}`)
+    // The marker at the start of the last line is still a complete dump.
+    const good = sb.run('scripts/backup-db.sh', [dir])
+    assert.equal(good.status, 0, good.stdout + good.stderr)
+    assert.equal(readdirSync(dir).filter((f) => f.endsWith('.sql.gz')).length, 1)
+  } finally {
+    cleanup(sb)
+  }
+})
+
 // ─── scripts/restore-db.sh ────────────────────────────────────────────────────
 function dbSandbox() {
   const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\nMYSQL_DATABASE=cdkt_admin\n`)

@@ -242,7 +242,8 @@ không bao giờ tới được container). Lượt deploy:
    cụt do SSH đứt thì dừng trước cả `docker pull`;
 2. `docker pull` image;
 2b. **dump CSDL** bằng chính `backup-db.sh` vừa nhận (`--prefix cdkt-predeploy`, cùng
-   phép kiểm gzip / "Dump completed" / ≥ 20 bảng như cron đêm) vào
+   phép kiểm gzip / dòng `-- Dump completed` ở đầu một trong 5 dòng cuối (đúng luật
+   `restore-db.sh` nhận — hai script mang cùng một khối, test so) / ≥ 20 bảng như cron đêm) vào
    `<APP_DIR>/.deploy-db-backups/cdkt-predeploy-<db>-<thời-điểm UTC>-<pid>.sql.gz`, giữ
    **5 bản** mới nhất. Dump hỏng (đĩa đầy, mysql không chạy) → **dừng**, chưa compose,
    `.env` hay container nào bị đụng. Thư mục nằm cạnh `.deploy-compose-backups/` chứ

@@ -230,7 +230,8 @@ start_app() {
 }
 
 # Dump CSDL ở bước ĐẦU của Update, trước git pull / compose / .env / image, bằng
-# scripts/backup-db.sh (cùng phép kiểm: gzip, dấu "Dump completed", ≥ 20 bảng; tệp
+# scripts/backup-db.sh (cùng phép kiểm: gzip, dòng "-- Dump completed" ở ĐẦU một trong
+# 5 dòng cuối — đúng luật restore-db.sh nhận, ≥ 20 bảng; tệp
 # 600, thư mục 700). Dump chạy TRƯỚC `git pull`, nên dùng backup-db.sh của CHÍNH bản
 # checkout chứa manage.sh đang chạy — cùng commit, luôn hiểu `--prefix`. Trả khác 0
 # khi dump hỏng; nơi gọi dừng Update.

@@ -39,8 +39,12 @@ test('the backup script is executable and fails loudly', () => {
 
 test('a backup is verified before it is trusted', () => {
   const script = read('scripts/backup-db.sh')
-  // A dump that fails halfway leaves a plausible-looking file behind.
-  assert.match(script, /Dump completed/, 'no completion marker check — a truncated dump would pass')
+  // A dump that fails halfway leaves a plausible-looking file behind. The marker must
+  // start a line — "Dump completed" inside a row's text is a dump cut off mid-INSERT
+  // (behaviour: tests/ops-scripts-sandbox.test.ts, FAKE_DUMP_MARKER_MIDLINE).
+  assert.match(script, /^DUMP_MARKER='\^-- Dump completed'$/m, 'the completion marker is not anchored to the start of a line — a truncated dump would pass')
+  assert.match(script, /^has_completion_marker "\$PARTIAL" \|\| fail verify /m, 'the dump being written is not checked for its completion marker')
+  assert.doesNotMatch(script, /\| *grep -q/, '`grep -q` in a pipe under pipefail: SIGPIPE makes the pipeline lie')
   assert.match(script, /gzip -t/, 'the archive is never integrity-checked')
   assert.match(script, /CREATE TABLE/, 'the table count is never checked')
   assert.match(script, /PLAIN_BYTES.*-ge/s, 'no size floor')
@@ -53,6 +57,20 @@ test('restore-db trusts only an anchored completion marker, and never `grep -q` 
   assert.match(script, /^DUMP_MARKER='\^-- Dump completed'$/m, 'the marker is not anchored to the start of a line')
   assert.equal((script.match(/has_completion_marker "\$(ARCHIVE|PRE_DUMP)"/g) ?? []).length, 2, 'both the dump to restore and the pre-restore dump are checked')
   assert.doesNotMatch(script, /\| *grep -q/, '`grep -q` in a pipe under pipefail: SIGPIPE makes the pipeline lie')
+})
+
+test('backup-db.sh and restore-db.sh decide "complete dump" with the SAME block, byte for byte', () => {
+  // No shared library: the deploy ships backup-db.sh alone (checksummed) for the
+  // pre-deploy dump, so a sourced file would not be there. Two copies, kept identical
+  // here — a dump backup-db.sh keeps must be a dump restore-db.sh restores.
+  const block = (file: string) => {
+    const match = /^# >>> dump-completion-marker\b[\s\S]*?^# <<< dump-completion-marker$/m.exec(read(file))
+    assert.ok(match, `${file}: no dump-completion-marker block`)
+    return match[0]
+  }
+  const writer = block('scripts/backup-db.sh')
+  assert.match(writer, /^has_completion_marker\(\) \{$/m)
+  assert.equal(block('scripts/restore-db.sh'), writer, 'the two scripts no longer agree on what a complete dump is')
 })
 
 test('a rejected backup is deleted, not left looking valid', () => {

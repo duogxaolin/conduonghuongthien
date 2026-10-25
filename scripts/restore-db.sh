@@ -85,9 +85,11 @@ command -v docker >/dev/null 2>&1 || fail config "docker is not on PATH" 1
 docker inspect "$CONTAINER" >/dev/null 2>&1 || fail config "container $CONTAINER is not running" 1
 
 # ── The dump must be a complete mysqldump of ONE database ────────────────────
-# Same completion rule backup-db.sh enforces when it writes the file: a truncated
-# dump restored over live tables is worse than no restore.
-#
+# The completion rule backup-db.sh enforces when it writes the file — the block
+# below is byte-for-byte the one in backup-db.sh (tests/ops-scripts.test.ts compares
+# them): a dump backup-db.sh keeps is one this script accepts, and a truncated dump
+# restored over live tables is worse than no restore.
+# >>> dump-completion-marker (identical in backup-db.sh and restore-db.sh)
 # The marker is mysqldump's own line, at the START of one of the last lines
 # ("-- Dump completed on …"; the app's dumps end the same way).  Anchored: a dump cut
 # off inside an INSERT whose data happens to contain "Dump completed" is truncated.
@@ -97,6 +99,7 @@ DUMP_MARKER='^-- Dump completed'
 has_completion_marker() {
   [[ "$(gzip -dc -- "$1" 2>/dev/null | tail -5 | grep -c -e "$DUMP_MARKER" || true)" -ge 1 ]]
 }
+# <<< dump-completion-marker
 gzip -t "$ARCHIVE" 2>/dev/null || fail archive "gzip archive is corrupt" 2
 has_completion_marker "$ARCHIVE" || fail archive "dump has no completion marker — it is truncated" 2
 TABLE_COUNT="$(gzip -dc "$ARCHIVE" | grep -c '^CREATE TABLE' || true)"
