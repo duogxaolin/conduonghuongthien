@@ -43,7 +43,13 @@ let storedR2 = { accountId: '', accessKeyId: '', secretAccessKey: '', bucket: ''
 const locksTaken: string[] = []
 mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb, getPool: () => ({}) } })
 mock.module('../server/services/media', { namedExports: { loadR2Config: async () => storedR2 } })
-mock.module('../server/services/backup', { namedExports: { runBackup: async () => ({ stamp: 'stamp-1' }) } })
+mock.module('../server/services/backup', {
+  namedExports: {
+    runBackup: async () => ({ stamp: 'stamp-1' }),
+    // `pre-job-backup.ts` imports the class; the restore case is `media-jobs-restore-abort.test.ts`.
+    BackupRestoreInProgressError: class BackupRestoreInProgressError extends Error {},
+  },
+})
 mock.module('../server/utils/named-lock', {
   namedExports: {
     withNamedLock: async (_p: unknown, name: string, _t: number, fn: () => Promise<unknown>) => {

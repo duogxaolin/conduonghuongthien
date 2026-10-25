@@ -15,7 +15,8 @@
  *   - UPDATE `articles.thumbnail_url`: fix scheme/prefix + repoint sang R2 URL
  *     qua basename JOIN với `media.filename`.
  *
- * Idempotent, < vài giây, tự backup SQL trước. Không tải file — chỉ UPDATE chuỗi.
+ * Idempotent, < vài giây, tự backup SQL trước (đang khôi phục CSDL → dừng trước mọi lượt
+ * ghi, `JobBlockedByRestoreError` 409). Không tải file — chỉ UPDATE chuỗi.
  */
 import { eq, like, sql } from 'drizzle-orm'
 
@@ -25,6 +26,7 @@ import { affectedRowsOrZero } from '../utils/affected-rows'
 import { withNamedLock } from '../utils/named-lock'
 import { logInfo, logWarn } from '../utils/logger'
 import { runBackup } from './backup'
+import { abortJobIfRestoreInProgress } from './pre-job-backup'
 import { MEDIA_SYNC_LOCK_NAME, repairInterruptedSyncRewrites } from './media-sync-rewrite'
 
 const LOCK_NAME = 'cdkt:media:repair-urls'
@@ -55,6 +57,9 @@ export async function repairMediaUrls(adminUserId: number | null): Promise<Repai
       const r = await runBackup('sql', 'pre-repair-urls', adminUserId)
       backupStamp = r.stamp
     } catch (err) {
+      // Đang khôi phục CSDL → dừng, chưa ghi gì (`pre-job-backup.ts`). Lỗi khác: vá tiếp,
+      // không có bản chụp.
+      abortJobIfRestoreInProgress(err, 'repair-urls', 'vá URL ảnh')
       logWarn({ event: 'media.repair_pre_backup_failed', error: err instanceof Error ? err.message : String(err) })
     }
 

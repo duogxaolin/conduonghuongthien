@@ -14,10 +14,12 @@
  * (cùng họ `self-heal`/`repair-urls` đã dùng `media.update`); quét **tất cả**
  * article types → cần quyền cha. Backend không phân biệt quyền từng type.
  *
- * Idempotent, tự backup SQL trước khi sửa. Khoá `cdkt:articles:scan-thumbnails`.
+ * Idempotent, tự backup SQL trước khi sửa (đang khôi phục CSDL → 409, chưa ghi gì).
+ * Khoá `cdkt:articles:scan-thumbnails`.
  */
 import { requireResourcePermission } from '../../../utils/permissions'
 import { scanArticleThumbnails, DEFAULT_COVER } from '../../../services/articles-thumbnail-scan'
+import { JobBlockedByRestoreError } from '../../../services/pre-job-backup'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -67,6 +69,7 @@ export default defineEventHandler(async (event) => {
         : 'Không có bài nào được sửa (thumbnail đã đúng hoặc id không hợp lệ).',
     }
   } catch (err) {
+    if (err instanceof JobBlockedByRestoreError) throw createError({ statusCode: 409, statusMessage: err.message })
     const msg = err instanceof Error ? err.message : String(err)
     if (msg.includes('Một lượt quét')) throw createError({ statusCode: 409, statusMessage: msg })
     if (msg.includes('Cơ sở dữ liệu')) throw createError({ statusCode: 503, statusMessage: msg })

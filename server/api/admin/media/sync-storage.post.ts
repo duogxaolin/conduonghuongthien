@@ -14,6 +14,8 @@
  *
  * Trước sync, worker tự `runBackup('all', 'pre-sync')` → snapshot recover thủ
  * công nếu thảm họa (không auto-rollback — restore toàn DB mất dữ liệu unrelated).
+ * Đang khôi phục CSDL → worker dừng trước lượt ghi đầu tiên; endpoint này đã trả
+ * `{ jobId }`, nên lý do nằm ở `sync-status` (`phase: 'failed'`, câu "Đang khôi phục…").
  */
 import { requireResourcePermission } from '../../../utils/permissions'
 import { startSyncJob, type SyncDirection } from '../../../services/media-sync'

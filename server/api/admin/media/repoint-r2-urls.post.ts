@@ -11,7 +11,7 @@
  *
  * Trước khi đổi, sao lưu SQL là BẮT BUỘC: hỏng → 500, không hàng nào đổi.
  * Domain mới ngoài CSP `img-src` / `image.domains` (`shared/media-hosts.ts`) → 400.
- * Lượt đồng bộ ảnh / sửa URL / quét thư mục đang chạy → 409.
+ * Lượt đồng bộ ảnh / sửa URL / quét thư mục đang chạy → 409; đang khôi phục CSDL → 409.
  * Idempotent — chạy 2 lần với cùng cặp domain → lần 2 không đổi gì.
  *
  * Quyền `media.update` — đổi URL hàng existing là update.
@@ -19,6 +19,7 @@
 import { requireResourcePermission } from '../../../utils/permissions'
 import { logError } from '../../../utils/logger'
 import { RepointBackupError, RepointBusyError, RepointInputError, repointR2Urls } from '../../../services/media-repoint'
+import { JobBlockedByRestoreError } from '../../../services/pre-job-backup'
 
 export default defineEventHandler(async (event) => {
   const adminUser = event.context.adminUser
@@ -45,6 +46,7 @@ export default defineEventHandler(async (event) => {
   } catch (err: unknown) {
     if (err instanceof RepointInputError) throw createError({ statusCode: 400, statusMessage: err.message })
     if (err instanceof RepointBusyError) throw createError({ statusCode: 409, statusMessage: err.message })
+    if (err instanceof JobBlockedByRestoreError) throw createError({ statusCode: 409, statusMessage: err.message })
     if (err instanceof RepointBackupError) throw createError({ statusCode: 500, statusMessage: err.message })
     // Lỗi không phân loại (driver, CSDL…): nguyên văn chỉ vào log — câu trả về là câu
     // soạn sẵn. Mọi lượt đổi nằm trong một transaction, nên lỗi ở đây là chưa đổi gì.

@@ -40,6 +40,8 @@ mock.module(new URL('../server/services/backup.ts', import.meta.url), {
       if (backup.fail) throw new Error('mysqldump: Got errno 28 on write (disk full)')
       return { stamp: `stamp-${backup.calls}`, files: [], driveUploaded: false }
     },
+    // `pre-job-backup.ts` imports the class; the restore case is `media-jobs-restore-abort.test.ts`.
+    BackupRestoreInProgressError: class BackupRestoreInProgressError extends Error {},
   },
 })
 

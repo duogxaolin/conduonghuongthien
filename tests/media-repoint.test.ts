@@ -58,7 +58,11 @@ mock.module('../server/utils/logger', {
 })
 let backupOutcome: () => Promise<unknown> = async () => ({ stamp: 's', files: [], driveUploaded: false })
 mock.module('../server/services/backup', {
-  namedExports: { runBackup: async () => backupOutcome() },
+  namedExports: {
+    runBackup: async () => backupOutcome(),
+    // `pre-job-backup.ts` imports the class; the restore case is `media-jobs-restore-abort.test.ts`.
+    BackupRestoreInProgressError: class BackupRestoreInProgressError extends Error {},
+  },
 })
 mock.module('../server/utils/permissions', { namedExports: { requireResourcePermission: () => {} } })
 

@@ -135,6 +135,16 @@ async function pathExists(p: string): Promise<boolean> {
   try { await fs.lstat(p); return true } catch { return false }
 }
 
+/** Khoá khôi phục đang bị giữ — hoặc không hỏi được MySQL (log, coi như đang giữ). */
+async function restoreActiveOrUnknown(trigger: BackupTrigger): Promise<boolean> {
+  try {
+    return await restoreLockHeldOnServer()
+  } catch (err: unknown) {
+    logWarn({ event: 'backup.restore_lock_unknown', trigger, error: err instanceof Error ? err.message : String(err) })
+    return true
+  }
+}
+
 export async function runBackup(
   type: BackupType,
   trigger: BackupTrigger,
@@ -151,17 +161,9 @@ export async function runBackup(
     // Đang khôi phục CSDL (hoặc không biết) → từ chối, TRƯỚC `onStarted` (không phải một
     // lượt thử). Hỏi trong khoá chạy: một lượt khôi phục bắt đầu sau câu hỏi này cần
     // khoá chạy cho bản `pre-restore` của nó, nên sẽ đợi/409 thay vì chạy song song.
-    if (!options.allowDuringRestore) {
-      let restoreActive = true
-      try {
-        restoreActive = await restoreLockHeldOnServer()
-      } catch (err: unknown) {
-        logWarn({ event: 'backup.restore_lock_unknown', trigger, error: err instanceof Error ? err.message : String(err) })
-      }
-      if (restoreActive) {
-        logInfo({ event: 'backup.refused_restore_in_progress', type, trigger })
-        throw new BackupRestoreInProgressError()
-      }
+    if (!options.allowDuringRestore && await restoreActiveOrUnknown(trigger)) {
+      logInfo({ event: 'backup.refused_restore_in_progress', type, trigger })
+      throw new BackupRestoreInProgressError()
     }
     // Đã giữ khoá chạy: từ đây là một lượt (scheduler đếm lượt ở đây — kể cả khi
     // hỏng ngay ở `mkdir`/đọc cấu hình bên dưới).
@@ -322,6 +324,15 @@ export async function runBackup(
   })
 
   if (!outcome.acquired) {
+    // Khoá chạy bận có thể chính là bản `pre-restore` của một lượt khôi phục: lượt đó giữ
+    // khoá khôi phục rồi giữ khoá chạy suốt bản dump an toàn (`allowDuringRestore`, có khi
+    // vài phút). Nói đúng "đang khôi phục" — job media (`pre-job-backup.ts`) dừng thay vì
+    // ghi tiếp như khi chỉ có một lượt sao lưu khác; vẫn là một lỗi "bận" (409, không phải
+    // lần thử). Bản `pre-restore` của chính lượt khôi phục thì không hỏi: khoá là của nó.
+    if (!options.allowDuringRestore && await restoreActiveOrUnknown(trigger)) {
+      logInfo({ event: 'backup.refused_restore_in_progress', type, trigger, runLock: 'busy' })
+      throw new BackupRestoreInProgressError()
+    }
     throw new BackupLockBusyError()
   }
   return outcome.value

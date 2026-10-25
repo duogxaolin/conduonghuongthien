@@ -213,6 +213,8 @@ mock.module(new URL('../server/services/backup.ts', import.meta.url), {
       if (rec.backupFails) throw new Error('backup down')
       return { stamp: 'stamp-1' }
     },
+    // `pre-job-backup.ts` imports the class; the restore case is `media-jobs-restore-abort.test.ts`.
+    BackupRestoreInProgressError: class BackupRestoreInProgressError extends Error {},
   },
 })
 mock.module(new URL('../server/utils/media-r2.ts', import.meta.url), {
