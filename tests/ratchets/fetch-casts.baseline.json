@@ -75,7 +75,6 @@
   "app/pages/admin/media-portal/index.vue": 3,
   "app/pages/admin/media-portal/upload.vue": 1,
   "app/pages/admin/media/index.vue": 3,
-  "app/pages/admin/media/scan.vue": 12,
   "app/pages/admin/profile.vue": 8,
   "app/pages/admin/readers/[id].vue": 7,
   "app/pages/admin/settings/backup.vue": 5,
