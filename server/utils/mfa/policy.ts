@@ -31,6 +31,8 @@ import { hasAnyActiveFactor } from './factors'
 
 export const MFA_POLICIES = ['off', 'privileged', 'all'] as const
 export type MfaPolicy = typeof MFA_POLICIES[number]
+/** 400 cho một giá trị ngoài `MFA_POLICIES` — endpoint (zod) và service nói cùng một câu. */
+export const MFA_POLICY_INVALID_MESSAGE = 'Chính sách MFA không hợp lệ (off, privileged hoặc all).'
 
 export const MFA_POLICY_KEY = 'mfa_policy'
 export const MFA_ENFORCE_AFTER_KEY = 'mfa_enforce_after'

@@ -121,6 +121,18 @@ globals.getRequestURL = (event: Event) => new URL(event.url, 'http://localhost')
 globals.getCookie = (event: Event, name: string) => event.cookies[name]
 globals.readBody = async (event: Event) => event.body
 globals.createError = (input: { statusCode: number, statusMessage: string, data?: unknown }) => Object.assign(new Error(input.statusMessage), input)
+// `mfa-policy.put.ts` reads its body through `readValidated` (wave2 5.2). Its real
+// byte-level reading runs in a real h3 app in tests/mfa-policy-endpoint-body.test.ts;
+// here the fake event carries the parsed body, checked by the endpoint's own schema.
+mock.module('../server/utils/request-body', {
+  namedExports: {
+    readValidated: async (event: Event, schema: { safeParse: (input: unknown) => { success: boolean, data?: unknown, error?: { issues: Array<{ message?: string }> } } }) => {
+      const result = schema.safeParse(event.body)
+      if (result.success) return result.data
+      throw Object.assign(new Error('invalid body'), { statusCode: 400, statusMessage: result.error?.issues[0]?.message ?? 'Dữ liệu gửi lên không hợp lệ' })
+    },
+  },
+})
 
 const { signToken } = await import('../server/utils/auth')
 const middleware = (await import('../server/middleware/admin-auth')).default as unknown as (event: Event) => Promise<void>

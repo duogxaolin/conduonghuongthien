@@ -14,6 +14,7 @@ import { requireResourcePermission, requireSuperAdmin, type ActorLike } from '..
 import {
   MFA_ENFORCE_AFTER_KEY,
   MFA_GRACE_DAYS,
+  MFA_POLICY_INVALID_MESSAGE,
   MFA_POLICY_KEY,
   clearMfaFactorCache,
   clearMfaPolicyCache,
@@ -82,7 +83,7 @@ export async function setMfaPolicy(actor: ActorLike & { id?: number }, input: un
   requireSuperAdmin(actor)
 
   if (!isMfaPolicy(input)) {
-    throw createError({ statusCode: 400, statusMessage: 'Chính sách MFA không hợp lệ (off, privileged hoặc all).' })
+    throw createError({ statusCode: 400, statusMessage: MFA_POLICY_INVALID_MESSAGE })
   }
   const next = input
 
