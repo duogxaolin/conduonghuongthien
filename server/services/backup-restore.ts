@@ -32,6 +32,7 @@ import { BackupLockBusyError, LOCK_RESTORE, backupsDir, holdRestoreTarget, runBa
 import { restoreSql } from './backup-sql'
 import { insertBackupRow } from './backup-registry'
 import { keepSchedulerStateAcrossRestore, readSchedulerStateForRestore } from './backup-scheduler'
+import { mediaJobsBlockingRestore } from './pre-job-backup'
 import {
   assertOneDatabase,
   convergeBackupsRegistry,
@@ -175,6 +176,12 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
   }
 
   const outcome = await withNamedLock(pool, LOCK_RESTORE, LOCK_TIMEOUT, async () => {
+    // Đã giữ khoá khôi phục → hỏi khoá của các job media (`pre-job-backup.ts`: job giữ khoá
+    // của nó rồi mới hỏi khoá khôi phục — thứ tự đối xứng, hai bên không cùng lọt). Từ chối
+    // TRƯỚC mọi thứ của một lượt khôi phục (trạng thái, log "bắt đầu", bản an toàn, audit
+    // thất bại); trả lỗi để xử lý ngoài khoá như nhánh "khôi phục khác đang chạy".
+    const refusal = await mediaJobsBlockingRestore(pool)
+    if (refusal) return refusal
     setStatus(true, 'start', `Đang khôi phục ${filename}`)
     logWarn({ event: SECURITY_EVENTS.backupRestoreStarted, userId: actor.id, username: actor.username ?? null, filename })
     let preRestoreBackup: string | null = null
@@ -275,13 +282,16 @@ async function restoreHeldTarget(filename: string, actor: RestoreActor): Promise
     }
   })
 
-  if (!outcome.acquired) {
-    const err = new BackupRestoreError('Một lượt khôi phục khác đang chạy. Thử lại sau.', 409, 'restore_running')
-    setStatus(false, 'failed', err.message)
-    logRefused(actor, filename, err, 'stored')
-    throw err
-  }
+  // Hai lối từ chối, khoá khôi phục đã nhả (`withNamedLock`) — chưa làm gì của lượt khôi phục.
+  if (!outcome.acquired) refuseRestore(actor, filename, new BackupRestoreError('Một lượt khôi phục khác đang chạy. Thử lại sau.', 409, 'restore_running'))
+  if (outcome.value instanceof BackupRestoreError) refuseRestore(actor, filename, outcome.value)
   return outcome.value
+}
+
+function refuseRestore(actor: RestoreActor, filename: string, err: BackupRestoreError): never {
+  setStatus(false, 'failed', err.message)
+  logRefused(actor, filename, err, 'stored')
+  throw err
 }
 
 

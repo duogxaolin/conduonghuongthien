@@ -64,6 +64,13 @@ test('a backup asked for while a database restore runs is a 409 that says so (wa
   assert.match(String(error.statusMessage), /khôi phục/)
 })
 
+test('a restore state that cannot be read is still a 409 — with its own sentence, not "a restore is running"', async () => {
+  outcome = async () => { throw new real.BackupRestoreStateUnknownError() }
+  const error = await failure()
+  assert.equal(error.statusCode, 409)
+  assert.equal(error.statusMessage, 'Không kiểm tra được trạng thái khôi phục — chưa thể sao lưu lúc này. Thử lại sau.')
+})
+
 test('any other failure is still a 500', async () => {
   outcome = async () => { throw new Error('mysqldump died') }
   const error = await failure()

@@ -34,10 +34,11 @@ import { withNamedLock } from '../utils/named-lock'
 import { headR2Object } from '../utils/media-r2'
 import { loadR2Config } from './media'
 import { runBackup } from './backup'
-import { abortJobIfRestoreInProgress } from './pre-job-backup'
+import { MEDIA_JOB_LOCK, abortJobIfRestoreInProgress } from './pre-job-backup'
 import { logInfo, logWarn } from '../utils/logger'
 
-const LOCK_NAME = 'cdkt:articles:scan-thumbnails'
+/** `cdkt:articles:scan-thumbnails` — tên ở `MEDIA_JOB_LOCK` (lượt khôi phục đọc cùng danh sách). */
+const LOCK_NAME = MEDIA_JOB_LOCK.fixThumbnails
 
 /**
  * Ảnh mặc định thay thế — phải nằm trong `public/assets/` (IPX đọc được, không

@@ -32,7 +32,7 @@
  */
 export { BACKUP_TRIGGERS, backupFamilyOf, backupsDir, isPreRestoreBackup, timestampStamp } from './backup-names'
 export type { BackupTrigger } from './backup-names'
-export { BackupLockBusyError, BackupRestoreInProgressError, LOCK_RESTORE, holdRestoreTarget, restoreTargetsInProgress } from './backup-locks'
+export { BackupLockBusyError, BackupRestoreInProgressError, BackupRestoreStateUnknownError, LOCK_RESTORE, holdRestoreTarget, refuseIfRestoreInProgress, restoreTargetsInProgress } from './backup-locks'
 export { BackupNameCollisionError, defaultArchiveSources, getBackupStatus, readBackupConfig, runBackup } from './backup-run'
 export type { ArchiveSource, BackupResult, BackupType, RunBackupOptions, RunStatus } from './backup-run'
 export { rotateOldBackups, selectRotationVictims } from './backup-rotation'

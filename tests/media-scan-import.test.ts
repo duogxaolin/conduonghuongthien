@@ -133,6 +133,12 @@ const fakePool = {
     query: async (sql: string) => (sql.includes('GET_LOCK') ? [[{ acquired: 1 }]] : [[]]),
     release: () => undefined,
   }),
+  // Holding its lock, the scan asks whether a restore holds `cdkt:backup:restore`
+  // (`tests/restore-media-job-exclusion.test.ts`): no restore here.
+  query: async (sql: string) => {
+    if (/IS_USED_LOCK\(\?\) AS holder/.test(sql)) return [[{ holder: null }], []]
+    throw new Error(`unexpected pool query: ${sql}`)
+  },
 }
 
 mock.module(new URL('../server/utils/db.ts', import.meta.url), {

@@ -20,6 +20,7 @@
  */
 import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
+import { restoreRefusalStubs } from './_restore-refusal-stubs'
 
 const locks = { busy: new Set<string>(), acquired: [] as string[], released: [] as string[] }
 const transactions = { opened: 0, fail: null as Error | null }
@@ -60,8 +61,7 @@ let backupOutcome: () => Promise<unknown> = async () => ({ stamp: 's', files: []
 mock.module('../server/services/backup', {
   namedExports: {
     runBackup: async () => backupOutcome(),
-    // `pre-job-backup.ts` imports the class; the restore case is `media-jobs-restore-abort.test.ts`.
-    BackupRestoreInProgressError: class BackupRestoreInProgressError extends Error {},
+    ...restoreRefusalStubs(),
   },
 })
 mock.module('../server/utils/permissions', { namedExports: { requireResourcePermission: () => {} } })

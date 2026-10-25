@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test, { mock } from 'node:test'
+import { restoreRefusalStubs } from './_restore-refusal-stubs'
 
 /**
  * Account id / bucket R2 ĐÃ LƯU được kiểm lúc DÙNG, không chỉ lúc lưu.
@@ -46,8 +47,7 @@ mock.module('../server/services/media', { namedExports: { loadR2Config: async ()
 mock.module('../server/services/backup', {
   namedExports: {
     runBackup: async () => ({ stamp: 'stamp-1' }),
-    // `pre-job-backup.ts` imports the class; the restore case is `media-jobs-restore-abort.test.ts`.
-    BackupRestoreInProgressError: class BackupRestoreInProgressError extends Error {},
+    ...restoreRefusalStubs(),
   },
 })
 mock.module('../server/utils/named-lock', {

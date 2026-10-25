@@ -72,7 +72,11 @@ describe('media-self-heal: cấu trúc mã nguồn', () => {
   })
 
   it('khoá named lock cdkt:media:self-heal', () => {
-    assert.ok(/LOCK_NAME = 'cdkt:media:self-heal'/.test(svcHeal),
+    // Tên khoá nằm ở danh sách khoá job media (`pre-job-backup.ts`) — lượt khôi phục đọc
+    // cùng danh sách đó (`tests/media-job-locks.test.ts`).
+    assert.ok(/LOCK_NAME = MEDIA_JOB_LOCK\.selfHeal/.test(svcHeal),
+      'phải dùng named lock từ MEDIA_JOB_LOCK')
+    assert.ok(/selfHeal: 'cdkt:media:self-heal'/.test(readFileSync('server/services/pre-job-backup.ts', 'utf8')),
       'phải dùng named lock cdkt:media:self-heal')
     assert.ok(/withNamedLock\(pool, LOCK_NAME, 0/.test(svcHeal),
       'phải gọi withNamedLock timeout 0 (không xếp hàng)')

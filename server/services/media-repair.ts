@@ -26,10 +26,11 @@ import { affectedRowsOrZero } from '../utils/affected-rows'
 import { withNamedLock } from '../utils/named-lock'
 import { logInfo, logWarn } from '../utils/logger'
 import { runBackup } from './backup'
-import { abortJobIfRestoreInProgress } from './pre-job-backup'
+import { MEDIA_JOB_LOCK, abortJobIfRestoreInProgress } from './pre-job-backup'
 import { MEDIA_SYNC_LOCK_NAME, repairInterruptedSyncRewrites } from './media-sync-rewrite'
 
-const LOCK_NAME = 'cdkt:media:repair-urls'
+/** `cdkt:media:repair-urls` — tên ở `MEDIA_JOB_LOCK` (lượt khôi phục đọc cùng danh sách). */
+const LOCK_NAME = MEDIA_JOB_LOCK.repairUrls
 
 export interface RepairResult {
   mediaFixed: number

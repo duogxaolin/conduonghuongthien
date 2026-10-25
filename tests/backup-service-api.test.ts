@@ -118,9 +118,9 @@ getStatus = backup.getBackupStatus
 // ─── The surface ──────────────────────────────────────────────────────────────
 const RUNTIME_EXPORTS = [
   'BACKUP_TRIGGERS', 'BackupDeleteError', 'BackupLockBusyError', 'BackupNameCollisionError',
-  'BackupRestoreInProgressError', 'LOCK_RESTORE', 'backupFamilyOf', 'backupsDir',
+  'BackupRestoreInProgressError', 'BackupRestoreStateUnknownError', 'LOCK_RESTORE', 'backupFamilyOf', 'backupsDir',
   'defaultArchiveSources', 'deleteBackup', 'getBackupStatus', 'holdRestoreTarget',
-  'isPreRestoreBackup', 'listBackups', 'readBackupConfig', 'restoreTargetsInProgress',
+  'isPreRestoreBackup', 'listBackups', 'readBackupConfig', 'refuseIfRestoreInProgress', 'restoreTargetsInProgress',
   'rotateOldBackups', 'runBackup', 'selectRotationVictims', 'sweepStaleBackupFiles', 'timestampStamp',
 ]
 const TYPE_ONLY_EXPORTS = ['ArchiveSource', 'BackupResult', 'BackupTrigger', 'BackupType', 'RotationGuards', 'RunBackupOptions', 'RunStatus']

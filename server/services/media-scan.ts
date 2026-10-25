@@ -15,7 +15,8 @@
  *
  * **Khoá MySQL `cdkt:media:scan`** (timeout 0) — acquire trực tiếp bằng `GET_LOCK`
  * (không dùng `withNamedLock` wrapper vì lock phải giữ suốt worker, wrapper release
- * khi `action` return).
+ * khi `action` return). Giữ được khoá rồi mới hỏi khoá khôi phục: đang khôi phục → job
+ * `failed` trước khi đọc/ghi gì (`pre-job-backup.ts`).
  *
  * Nhập từng tệp ở `media-scan-import.ts` (wave2 D-SCAN): ghi `scanned_source_path`,
  * không nhập lại tệp đã biết (kể cả bản nhập nằm trên R2), không tải đè khoá R2 của
@@ -30,9 +31,15 @@ import { logInfo, logWarn } from '../utils/logger'
 import type { R2Config } from '../utils/media-r2'
 import { loadR2Config } from './media'
 import { buildLegacyR2Index, claimLegacyR2Row, importScannedFile, knownScanSources, scanSourcePath } from './media-scan-import'
+import { refuseIfRestoreInProgress } from './backup'
+import { MEDIA_JOB_LOCK, abortJobIfRestoreInProgress } from './pre-job-backup'
 
-/** Khoá tên MySQL của lượt quét — giữ suốt worker. Lượt đổi domain R2 cũng giữ nó (`media-repoint.ts`). */
-export const MEDIA_SCAN_LOCK_NAME = 'cdkt:media:scan'
+/**
+ * Khoá tên MySQL của lượt quét — giữ suốt worker. Lượt đổi domain R2 cũng giữ nó
+ * (`media-repoint.ts`). Tên ở `MEDIA_JOB_LOCK` (`pre-job-backup.ts`) — lượt khôi phục đọc
+ * cùng danh sách.
+ */
+export const MEDIA_SCAN_LOCK_NAME = MEDIA_JOB_LOCK.scan
 const LOCK_NAME = MEDIA_SCAN_LOCK_NAME
 
 /** Trần số file mỗi lượt quét — chống treo nếu thư mục khổng lồ. */
@@ -196,6 +203,17 @@ async function runScanWorker(
   }
 
   try {
+    // Đã giữ khoá quét → hỏi khoá khôi phục (thứ tự đối xứng với lượt khôi phục, xem
+    // `pre-job-backup.ts`): đang khôi phục (hoặc không hỏi được) → dừng TRƯỚC khi đọc/ghi
+    // hàng `media` nào; `catch` bên dưới kết thúc job `failed` với câu của job, `finally`
+    // nhả khoá.
+    try {
+      await refuseIfRestoreInProgress({ job: 'scan' })
+    } catch (err: unknown) {
+      abortJobIfRestoreInProgress(err, 'scan', 'quét thư mục ảnh')
+      throw err
+    }
+
     // Tệp đã có hàng: `scanned_source_path` của mọi hàng + `storage_path` của hàng
     // local — tra O(1) theo đường dẫn tương đối với gốc uploads.
     const knownRows = await db

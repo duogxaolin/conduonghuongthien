@@ -44,6 +44,7 @@ import { affectedRowsOrZero } from '../utils/affected-rows'
 import { clearFaviconSettingCache } from '../utils/favicon-setting'
 import { logInfo, logWarn } from '../utils/logger'
 import { clearOgImageSettingCache } from '../utils/og-image-setting'
+import { MEDIA_JOB_LOCK } from './pre-job-backup'
 import {
   SETTINGS_TARGET_LABEL,
   URL_REFERENCE_TARGETS,
@@ -69,8 +70,11 @@ export {
   type UrlRewrite,
 }
 
-/** Khoá MySQL của mọi lượt ghi dời chỗ ảnh + thay URL. Dùng chung với `media-repair.ts`. */
-export const MEDIA_SYNC_LOCK_NAME = 'cdkt:media:sync-storage'
+/**
+ * Khoá MySQL của mọi lượt ghi dời chỗ ảnh + thay URL. Dùng chung với `media-repair.ts`.
+ * Tên ở `MEDIA_JOB_LOCK` (`pre-job-backup.ts`) — lượt khôi phục đọc cùng danh sách.
+ */
+export const MEDIA_SYNC_LOCK_NAME = MEDIA_JOB_LOCK.sync
 
 type Executor = Database | Parameters<Parameters<Database['transaction']>[0]>[0]
 

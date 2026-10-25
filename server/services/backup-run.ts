@@ -20,7 +20,7 @@ import { dumpSql } from './backup-sql'
 import { markOffsiteStatus, offsiteStatusAtRegistration, uploadRunOffsite } from './backup-offsite'
 import { insertBackupRow } from './backup-registry'
 import { PARTIAL_SUFFIX, backupsDir, timestampStamp, type BackupTrigger } from './backup-names'
-import { BackupLockBusyError, BackupRestoreInProgressError, LOCK_RUN, LOCK_TIMEOUT, restoreLockHeldOnServer } from './backup-locks'
+import { BackupLockBusyError, BackupRestoreStateUnknownError, LOCK_RUN, LOCK_TIMEOUT, refuseIfRestoreInProgress } from './backup-locks'
 import { deleteStaleFiles } from './backup-sweep'
 import { rotateOldBackups } from './backup-rotation'
 
@@ -135,13 +135,17 @@ async function pathExists(p: string): Promise<boolean> {
   try { await fs.lstat(p); return true } catch { return false }
 }
 
-/** Khoá khôi phục đang bị giữ — hoặc không hỏi được MySQL (log, coi như đang giữ). */
-async function restoreActiveOrUnknown(trigger: BackupTrigger): Promise<boolean> {
+/**
+ * Đang khôi phục — hoặc không hỏi được MySQL — thì ném (`refuseIfRestoreInProgress`:
+ * `BackupRestoreInProgressError`, hoặc lớp con `BackupRestoreStateUnknownError` mang câu
+ * "không kiểm tra được") sau khi log lượt từ chối.
+ */
+async function refuseDuringRestore(type: BackupType, trigger: BackupTrigger, runLock: 'held' | 'busy'): Promise<void> {
   try {
-    return await restoreLockHeldOnServer()
+    await refuseIfRestoreInProgress({ trigger })
   } catch (err: unknown) {
-    logWarn({ event: 'backup.restore_lock_unknown', trigger, error: err instanceof Error ? err.message : String(err) })
-    return true
+    logInfo({ event: 'backup.refused_restore_in_progress', type, trigger, runLock, stateUnknown: err instanceof BackupRestoreStateUnknownError })
+    throw err
   }
 }
 
@@ -161,10 +165,7 @@ export async function runBackup(
     // Đang khôi phục CSDL (hoặc không biết) → từ chối, TRƯỚC `onStarted` (không phải một
     // lượt thử). Hỏi trong khoá chạy: một lượt khôi phục bắt đầu sau câu hỏi này cần
     // khoá chạy cho bản `pre-restore` của nó, nên sẽ đợi/409 thay vì chạy song song.
-    if (!options.allowDuringRestore && await restoreActiveOrUnknown(trigger)) {
-      logInfo({ event: 'backup.refused_restore_in_progress', type, trigger })
-      throw new BackupRestoreInProgressError()
-    }
+    if (!options.allowDuringRestore) await refuseDuringRestore(type, trigger, 'held')
     // Đã giữ khoá chạy: từ đây là một lượt (scheduler đếm lượt ở đây — kể cả khi
     // hỏng ngay ở `mkdir`/đọc cấu hình bên dưới).
     await options.onStarted?.()
@@ -329,10 +330,7 @@ export async function runBackup(
     // vài phút). Nói đúng "đang khôi phục" — job media (`pre-job-backup.ts`) dừng thay vì
     // ghi tiếp như khi chỉ có một lượt sao lưu khác; vẫn là một lỗi "bận" (409, không phải
     // lần thử). Bản `pre-restore` của chính lượt khôi phục thì không hỏi: khoá là của nó.
-    if (!options.allowDuringRestore && await restoreActiveOrUnknown(trigger)) {
-      logInfo({ event: 'backup.refused_restore_in_progress', type, trigger, runLock: 'busy' })
-      throw new BackupRestoreInProgressError()
-    }
+    if (!options.allowDuringRestore) await refuseDuringRestore(type, trigger, 'busy')
     throw new BackupLockBusyError()
   }
   return outcome.value

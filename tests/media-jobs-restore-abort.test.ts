@@ -119,7 +119,11 @@ function reset() {
   state.runLockBusy = false
   state.restoreQueryFails = false
 }
-const RESTORE_MESSAGE = /^Đang khôi phục cơ sở dữ liệu — chưa .+, chưa ghi gì\. Thử lại sau khi khôi phục xong\.$/
+// "từ bản sao lưu", not "cơ sở dữ liệu": the restore lock is held by archive (uploads /
+// media) restores too.
+const RESTORE_MESSAGE = /^Đang khôi phục từ bản sao lưu — chưa .+, chưa ghi gì\. Thử lại sau khi khôi phục xong\.$/
+/** The restore lock could not be asked about: still refused, but it does not claim a restore. */
+const UNKNOWN_MESSAGE = /^Không kiểm tra được trạng thái khôi phục — chưa .+, chưa ghi gì\. Thử lại sau\.$/
 const aborted = (job: string) => logs.filter(record => record.event === 'media.job_aborted_restore_in_progress' && record.job === job)
 async function httpFailure(handler: Handler, body: unknown): Promise<{ statusCode?: number, statusMessage?: string }> {
   try {
@@ -202,6 +206,42 @@ test('runBackup: run lock busy + restore lock held → BackupRestoreInProgressEr
   assert.ok(unknown instanceof BackupRestoreInProgressError, String(unknown))
   assert.ok(logs.some(record => record.event === 'backup.restore_lock_unknown'))
 })
+
+test('runBackup: the restore state cannot be read → still refused (same "busy" family), but the message says so instead of claiming a restore', async () => {
+  const { runBackup, BackupLockBusyError, BackupRestoreInProgressError, BackupRestoreStateUnknownError } = await import('../server/services/backup')
+  for (const runLockBusy of [false, true]) {
+    reset()
+    state.restoreQueryFails = true
+    state.runLockBusy = runLockBusy
+    const err = await runBackup('sql', 'manual', 1).catch((error: unknown) => error)
+    assert.ok(err instanceof BackupRestoreStateUnknownError, `run lock ${runLockBusy ? 'busy' : 'free'}: ${String(err)}`)
+    assert.ok(err instanceof BackupRestoreInProgressError && err instanceof BackupLockBusyError, 'every caller still refuses / answers 409 as before')
+    assert.equal((err as Error).message, 'Không kiểm tra được trạng thái khôi phục — chưa thể sao lưu lúc này. Thử lại sau.')
+    assert.equal(logs.filter(record => record.event === 'backup.restore_lock_unknown').length, 1, 'logged once')
+  }
+  reset()
+  state.restoreHolder = 42
+  const held = await runBackup('sql', 'manual', 1).catch((error: unknown) => error)
+  assert.ok(held instanceof BackupRestoreInProgressError && !(held instanceof BackupRestoreStateUnknownError))
+  assert.equal((held as Error).message, 'Đang khôi phục từ bản sao lưu — chưa thể sao lưu lúc này. Thử lại sau khi khôi phục xong.')
+})
+
+for (const job of JOBS) {
+  test(`${job.id}: restore state unreadable → aborted the same way (409, nothing written), with the "cannot check" sentence`, async () => {
+    reset()
+    state.restoreQueryFails = true
+    await assert.rejects(job.run(), (err: unknown) => {
+      const shaped = err as { statusCode?: unknown, message?: unknown }
+      assert.equal(shaped.statusCode, 409)
+      assert.match(String(shaped.message), UNKNOWN_MESSAGE)
+      return true
+    })
+    assert.deepEqual(dbCalls, [])
+    assert.deepEqual(r2Calls, [])
+    assert.equal(aborted(job.id).length, 1)
+    assert.equal(aborted(job.id)[0]!.stateUnknown, true)
+  })
+}
 
 test('self-heal / repair-urls / fix-thumbnails: any OTHER pre-backup failure still carries on (another backup running)', async () => {
   for (const job of JOBS.filter(candidate => candidate.id !== 'repoint')) {

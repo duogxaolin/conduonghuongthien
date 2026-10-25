@@ -6,7 +6,8 @@
  *  - Khoá `cdkt:backup:restore` (`LOCK_RESTORE`): lượt khôi phục giữ nó; lượt sao lưu,
  *    xoay vòng và lượt dọn hỏi nó (`restoreLockHeldOnServer`).
  *  - Sổ tên tệp đang được khôi phục trong tiến trình này (`holdRestoreTarget`).
- *  - Hai lỗi "bận" mà nơi gọi phân biệt bằng kiểu.
+ *  - Các lỗi "bận" mà nơi gọi phân biệt bằng kiểu, và `refuseIfRestoreInProgress` — phép
+ *    hỏi "đang khôi phục không?" dùng chung (kể cả khi không hỏi được).
  *
  * Sổ tên tệp nằm ở đây chứ không ở `backup-restore.ts`: tệp đó import barrel
  * `backup.ts` (`runBackup` cho bản `pre-restore`), mà barrel kéo theo xoay vòng — đặt
@@ -15,6 +16,7 @@
 import type { RowDataPacket } from 'mysql2/promise'
 
 import { getPool } from '../utils/db'
+import { logWarn } from '../utils/logger'
 
 /** Khoá MySQL của lượt sao lưu (và lượt dọn rác) — không chờ: bận thì từ chối ngay. */
 export const LOCK_RUN = 'cdkt:backup:run'
@@ -41,9 +43,23 @@ export class BackupLockBusyError extends Error {
  * lượt khôi phục đi qua (`allowDuringRestore`).
  */
 export class BackupRestoreInProgressError extends BackupLockBusyError {
-  constructor() {
-    super('Đang khôi phục cơ sở dữ liệu — chưa thể sao lưu lúc này. Thử lại sau khi khôi phục xong.')
+  // "từ bản sao lưu", không "cơ sở dữ liệu": khôi phục archive uploads/media cũng giữ khoá này.
+  constructor(message = 'Đang khôi phục từ bản sao lưu — chưa thể sao lưu lúc này. Thử lại sau khi khôi phục xong.') {
+    super(message)
     this.name = 'BackupRestoreInProgressError'
+  }
+}
+
+/**
+ * Không hỏi được MySQL xem khoá khôi phục có đang bị giữ không (lỗi truy vấn thoáng qua).
+ * Quyết định không đổi — vẫn TỪ CHỐI như khi đang khôi phục (không biết = coi như đang khôi
+ * phục); là lớp con nên mọi nơi bắt `BackupRestoreInProgressError`/`BackupLockBusyError`
+ * (job media, "bận" của scheduler, 409 của endpoint) xử lý y như cũ. Chỉ câu nói đúng lý do.
+ */
+export class BackupRestoreStateUnknownError extends BackupRestoreInProgressError {
+  constructor() {
+    super('Không kiểm tra được trạng thái khôi phục — chưa thể sao lưu lúc này. Thử lại sau.')
+    this.name = 'BackupRestoreStateUnknownError'
   }
 }
 
@@ -81,4 +97,20 @@ export async function restoreLockHeldOnServer(): Promise<boolean> {
   const [rows] = await pool.query<RowDataPacket[]>('SELECT IS_USED_LOCK(?) AS holder', [LOCK_RESTORE])
   const holder = rows[0]?.holder
   return holder !== null && holder !== undefined
+}
+
+/**
+ * Từ chối khi một lượt khôi phục đang giữ khoá: ném `BackupRestoreInProgressError`. Không hỏi
+ * được MySQL → log `backup.restore_lock_unknown` (kèm `context`) và ném
+ * `BackupRestoreStateUnknownError` — vẫn từ chối. Khoá trống → trả về bình thường.
+ */
+export async function refuseIfRestoreInProgress(context: Record<string, unknown>): Promise<void> {
+  let held: boolean
+  try {
+    held = await restoreLockHeldOnServer()
+  } catch (err: unknown) {
+    logWarn({ event: 'backup.restore_lock_unknown', ...context, error: err instanceof Error ? err.message : String(err) })
+    throw new BackupRestoreStateUnknownError()
+  }
+  if (held) throw new BackupRestoreInProgressError()
 }
