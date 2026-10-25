@@ -1429,7 +1429,7 @@ cmd_migrate() {
 #
 # Ngưỡng RAM 4000 MB là ngưỡng **thật**, không phải con số cho tròn: pipeline
 # transcode chạy tới `MAX_CONCURRENT_RENDITIONS = 3` tiến trình FFmpeg song song
-# (`server/services/video-processing.ts`), mỗi tiến trình giữ nguyên khung hình
+# (`server/services/video-renditions.ts`), mỗi tiến trình giữ nguyên khung hình
 # trong RAM. Trên VPS nhỏ, lượt transcode đầu tiên sẽ khiến OOM-killer hạ **một
 # container khác** — nạn nhân không phải thủ phạm. Nên dưới ngưỡng thì từ chối
 # bật, và nói rõ vì sao, thay vì để cán bộ tự phát hiện qua một lần sập.

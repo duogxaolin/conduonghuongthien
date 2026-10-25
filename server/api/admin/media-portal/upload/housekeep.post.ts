@@ -1,7 +1,8 @@
 /**
  * Dọn upload bỏ dở ngay — kích hoạt `housekeepUploads` thủ công.
  *
- * `housekeepUploads` (`server/services/chunked-upload.ts`) vốn do bộ đếm lịch
+ * `housekeepUploads` (`server/services/chunked-upload-session.ts`, xuất lại qua
+ * barrel `chunked-upload.ts`) vốn do bộ đếm lịch
  * chạy nền (tick 15 phút). Nút này cho cán bộ chạy lượt dọn ngay khi muốn — ví dụ
  * sau khi đổi `sessionInactivityHours` từ 12 sang 2, muốn dọn ngay phần cũ còn
  * nằm trên đĩa thay vì chờ tick kế tiếp.

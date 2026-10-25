@@ -51,20 +51,29 @@ import {
   PROCESSING_ERROR_LIMIT,
   RENDITIONS,
   TRANSCODE_LOCK_NAME,
+  abortProcessingClaim,
   buildMasterPlaylist,
   checkDiskSpace,
   defaultProcessRunner,
+  extractThumbnailOnDemand,
   isPlayable,
   isProcessAlive,
+  mediaAssetRoot,
   parseProbeJson,
   processMediaItem,
   processingClaim,
+  retryAt,
   scaledWidth,
   selectRenditions,
   startDiskGuard,
+  stopMediaProcessingJobs,
   writeManifestAtomically,
   type ProcessRunner,
+  type ProcessingDeps,
 } from '../server/services/video-processing.ts'
+// Không qua cửa vào: `ffmpegArgs` là nội bộ của nhóm `video-*`, còn điểm tiêm
+// `setCpulimitAvailableForTests` chỉ dành cho test — cửa vào giữ đúng API công khai.
+import { ffmpegArgs, setCpulimitAvailableForTests } from '../server/services/video-process-runner.ts'
 import {
   REAP_BATCH_LIMIT,
   TICK_INTERVAL_MS,
@@ -1169,11 +1178,13 @@ describe('7.4 playlist được thay nguyên tử', () => {
     const files = readdirSync('server', { recursive: true, encoding: 'utf8' })
       .filter(entry => entry.endsWith('.ts'))
 
-    /** Chỗ duy nhất được phép **ghi**: lời gọi bọc tệp tạm rồi `rename`. */
-    const WRITE_SITE = 'services/video-processing.ts'
+    /** Chỗ duy nhất được phép **ghi**: lời gọi bọc tệp tạm rồi `rename` — giai
+     *  đoạn 4 của `processMediaItem`, từ khi tách `video-processing.ts` (5.4). */
+    const WRITE_SITE = 'services/video-transcode-pipeline.ts'
     /** Chỗ duy nhất được phép **gọi tên**: hằng số mà đường đọc dùng để phục vụ
-     *  manifest. Khai một lần, ở tệp sở hữu đường đọc công khai. */
-    const NAME_SITE = 'services/media-portal.ts'
+     *  manifest. Khai một lần, ở tệp sở hữu đường phục vụ manifest
+     *  (`media-portal.ts` nay là barrel; `resolveStreamTarget` nằm ở tệp này). */
+    const NAME_SITE = 'services/media-portal-stream.ts'
     const NAME_DECLARATION = /^const MEDIA_MASTER_PLAYLIST = 'master\.m3u8'$/
 
     const hits: string[] = []
@@ -1891,10 +1902,638 @@ describe('runner giả không ghi ra ngoài thư mục tạm', () => {
   })
 })
 
+// ─── Hành vi chưa có test nào khoá ───────────────────────────────────────────
+//
+// Viết trước khi tách `video-processing.ts` thành nhiều tệp (wave2 5.4), chạy
+// xanh trên tệp gốc, và phải xanh y nguyên sau khi tách. Mỗi khối dưới đây khoá
+// một nhánh mà phần trên không chạm: một nhánh không có test thì một lượt tách
+// làm rơi import hay đổi thứ tự của nó vẫn đi qua toàn bộ bộ test.
+
+/**
+ * Bề mặt giá trị của `video-processing.ts`, chụp từ tệp gốc (23 tên).
+ *
+ * Đường dẫn này là nơi mọi bên gọi import (endpoint, reaper, `chunked-upload`,
+ * `media-portal`, `thumbnail-on-demand`, test). Một tên rơi khỏi đó chỉ lộ ra khi
+ * đúng bên gọi tên ấy được nạp — nên chụp cả bề mặt ở một chỗ. Kiểu bị xoá lúc
+ * chạy; phần đó do `typecheck` canh.
+ */
+const VIDEO_PROCESSING_VALUE_EXPORTS = [
+  'DISK_CHECK_INTERVAL_MS', 'MAX_CONCURRENT_RENDITIONS', 'PROCESSING_ERROR_LIMIT', 'PROCESSING_STATUSES',
+  'RENDITIONS', 'TRANSCODE_LOCK_NAME', 'abortProcessingClaim', 'buildMasterPlaylist', 'checkDiskSpace',
+  'defaultProcessRunner', 'extractThumbnailOnDemand', 'isPlayable', 'isProcessAlive', 'mediaAssetRoot',
+  'parseProbeJson', 'processMediaItem', 'processingClaim', 'retryAt', 'scaledWidth', 'selectRenditions',
+  'startDiskGuard', 'stopMediaProcessingJobs', 'writeManifestAtomically',
+]
+
+describe('bề mặt công khai của video-processing', () => {
+  it('xuất đúng 23 tên giá trị như trước khi tách tệp', async () => {
+    const surface = await import('../server/services/video-processing.ts')
+    assert.deepEqual(Object.keys(surface).sort(), [...VIDEO_PROCESSING_VALUE_EXPORTS].sort())
+  })
+})
+
+/** Đợi cho tới khi `ready()` đúng — có trần, để một test hỏng đỏ thay vì treo. */
+async function until(ready: () => boolean, label: string): Promise<void> {
+  const deadline = Date.now() + 5_000
+  while (!ready()) {
+    if (Date.now() > deadline) throw new Error(`hết giờ chờ: ${label}`)
+    await new Promise(resolve => setTimeout(resolve, 2))
+  }
+}
+
+describe('sổ lượt đang chạy: hủy một lượt từ bên ngoài', () => {
+  /**
+   * Chạy tới lúc FFmpeg đầu tiên của nhánh HLS được sinh ra rồi **treo ở đó** cho
+   * tới khi tín hiệu hủy bật lên — y như `defaultProcessRunner` với một FFmpeg dài.
+   * Trả về danh tính đang giữ hàng, đọc từ chính hàng.
+   */
+  async function startBlockedRun(slug: string) {
+    const workdirB = await workdirWith(slug)
+    const fake = fakeMediaPool({ items: [pendingItem({ slug })] })
+    let hlsSpawned = false
+    const runner = scriptedRunner({
+      delayForRendition: () => 60_000,
+      onSpawn: (_command, args) => { if (args.includes('-hls_segment_filename')) hlsSpawned = true },
+    })
+    let settled = false
+    const result = runPipeline(fake, { runner, config: testConfig(workdirB) })
+    void result.then(() => { settled = true })
+    await until(() => hlsSpawned, `${slug}: lượt HLS đầu tiên`)
+    return {
+      fake,
+      result,
+      claim: String(fake.item(1)!.claimedBy),
+      get settled() { return settled },
+      cleanup: () => fs.rm(workdirB, { recursive: true, force: true }),
+    }
+  }
+
+  it('abortProcessingClaim chỉ dừng đúng lượt mang danh tính đó, và lượt đó được ghi là hỏng', async () => {
+    const run = await startBlockedRun('huy-theo-danh-tinh')
+    try {
+      assert.match(run.claim, /^[a-f0-9]{8}:[a-f0-9-]{36}$/)
+      assert.equal(isProcessAlive(run.claim), true, 'lượt đang chạy phải có trong sổ')
+
+      // Danh tính lạ, rỗng, null: không được chạm lượt đang chạy.
+      abortProcessingClaim('ab12cd34:00000000-0000-0000-0000-000000000000')
+      abortProcessingClaim('')
+      abortProcessingClaim(null)
+      abortProcessingClaim(undefined)
+      await new Promise(resolve => setTimeout(resolve, 30))
+      assert.equal(run.settled, false, 'một danh tính khác đã dừng lượt này')
+      assert.equal(isProcessAlive(run.claim), true)
+
+      abortProcessingClaim(run.claim)
+      const result = await run.result
+      assert.equal(result.ok, false)
+      assert.equal(result.ok === false && result.code, 'failed')
+      assert.equal(isProcessAlive(run.claim), false, 'lượt đã kết thúc phải rời sổ')
+      const row = run.fake.item(1)!
+      assert.equal(row.processingStatus, 'failed', 'processingMaxAttempts = 1 nên lượt bị hủy là lượt cuối')
+      assert.equal(row.claimedBy, null)
+      assert.ok(String(row.processingError).length > 0)
+    } finally {
+      await run.cleanup()
+    }
+  })
+
+  it('stopMediaProcessingJobs dừng MỌI lượt đang chạy trong tiến trình', async () => {
+    const first = await startBlockedRun('dung-tat-ca-mot')
+    const second = await startBlockedRun('dung-tat-ca-hai')
+    try {
+      assert.notEqual(first.claim, second.claim)
+      assert.equal(isProcessAlive(first.claim), true)
+      assert.equal(isProcessAlive(second.claim), true)
+
+      stopMediaProcessingJobs()
+      const results = await Promise.all([first.result, second.result])
+      assert.deepEqual(results.map(result => result.ok), [false, false])
+      assert.equal(isProcessAlive(first.claim), false)
+      assert.equal(isProcessAlive(second.claim), false)
+      assert.equal(first.fake.item(1)!.claimedBy, null)
+      assert.equal(second.fake.item(1)!.claimedBy, null)
+    } finally {
+      await first.cleanup()
+      await second.cleanup()
+    }
+  })
+})
+
+describe('tiến độ chuyển mã ghi lên hàng', () => {
+  const PROGRESS_LINE = 'frame=  150 fps=30 q=28.0 size=  512kB time=00:00:06.00 bitrate= 699.1kbits/s speed=1x'
+
+  it('ghi bản đang nén, phần trăm suy từ `time=` của FFmpeg, rồi xoá tiến độ khi xong', async () => {
+    const slug = 'tien-do-nen'
+    const workdirB = await workdirWith(slug)
+    const fake = fakeMediaPool({ items: [pendingItem({ slug })] })
+    // Nguồn 360p, dài 12 giây → đúng một bản; `time=00:00:06` là 50 %.
+    const inner = scriptedRunner({ probe: { durationSeconds: 12, width: 640, height: 360 } })
+    const progressHooks: string[] = []
+    try {
+      const result = await runPipeline(fake, {
+        config: testConfig(workdirB),
+        runner: async (command, args, ctx) => {
+          if (args.includes('-hls_segment_filename')) {
+            progressHooks.push(typeof ctx.onProgress)
+            ctx.onProgress?.('Stream mapping:')
+            ctx.onProgress?.(PROGRESS_LINE)
+          }
+          return inner(command, args, ctx)
+        },
+      })
+      assert.equal(result.ok, true, JSON.stringify(result))
+      assert.deepEqual(result.ok && result.renditions, ['360p'])
+      assert.deepEqual(progressHooks, ['function'], 'lượt HLS phải nhận móc tiến độ khi biết thời lượng')
+
+      assert.ok(fake.writes('processingRendition').includes('360p'))
+      assert.ok(fake.writes('processingPhase').includes('transcode'))
+      const percents = fake.writes('processingPercent')
+      assert.equal(percents[0], 0, `bản mới bắt đầu ở 0 %, thấy ${JSON.stringify(percents)}`)
+      assert.ok(percents.includes(50), `time=6s / 12s phải ghi 50 %, thấy ${JSON.stringify(percents)}`)
+      assert.ok(percents.indexOf(100) > percents.indexOf(50), `100 % đến sau 50 %, thấy ${JSON.stringify(percents)}`)
+      assert.equal(percents[percents.length - 1], null, 'lượt đóng phải xoá phần trăm')
+
+      const row = fake.item(1)!
+      assert.equal(row.processingRendition, null)
+      assert.equal(row.processingPercent, null)
+      assert.equal(row.processingPhase, 'sync')
+    } finally {
+      await fs.rm(workdirB, { recursive: true, force: true })
+    }
+  })
+
+  it('không biết thời lượng thì không gắn móc tiến độ, và lượt nén vẫn xong', async () => {
+    const slug = 'tien-do-khong-thoi-luong'
+    const workdirB = await workdirWith(slug)
+    const fake = fakeMediaPool({ items: [pendingItem({ slug })] })
+    const inner = scriptedRunner()
+    const progressHooks: string[] = []
+    try {
+      const result = await runPipeline(fake, {
+        config: testConfig(workdirB),
+        runner: async (command, args, ctx) => {
+          if (command === 'ffprobe') {
+            return { code: 0, stdout: JSON.stringify({ format: {}, streams: [{ codec_type: 'video', width: 640, height: 360 }] }), stderr: '' }
+          }
+          if (args.includes('-hls_segment_filename')) progressHooks.push(typeof ctx.onProgress)
+          return inner(command, args, ctx)
+        },
+      })
+      assert.equal(result.ok, true, JSON.stringify(result))
+      assert.deepEqual(progressHooks, ['undefined'])
+      assert.deepEqual(fake.writes('processingPercent').filter(value => value !== 0 && value !== 100 && value !== null), [])
+    } finally {
+      await fs.rm(workdirB, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('lệnh FFmpeg mà đường ống dựng', () => {
+  /** Chạy trọn một lượt, ghi lại mọi lệnh kèm danh tính đang giữ hàng lúc spawn. */
+  async function capture(slug: string, overrides: Partial<MediaConfig> = {}, runnerOptions: Parameters<typeof scriptedRunner>[0] = {}) {
+    const workdirB = await workdirWith(slug)
+    const fake = fakeMediaPool({ items: [pendingItem({ slug })] })
+    const calls: Array<{ command: string, args: string[], claim: string }> = []
+    let running = 0
+    let peak = 0
+    const inner = scriptedRunner(runnerOptions)
+    const result = await runPipeline(fake, {
+      config: { ...testConfig(workdirB), ...overrides },
+      runner: async (command, args, ctx) => {
+        calls.push({ command, args: [...args], claim: String(fake.item(1)!.claimedBy) })
+        const hls = args.includes('-hls_segment_filename')
+        if (hls) { running += 1; peak = Math.max(peak, running) }
+        try {
+          return await inner(command, args, ctx)
+        } finally {
+          if (hls) running -= 1
+        }
+      },
+    })
+    return { workdirB, fake, result, calls, peak, original: path.join(workdirB, 'media', slug, 'original.mp4') }
+  }
+
+  it('CPU 100 %: ffprobe, ba bản HLS hai luồng qua `nice`, và ảnh đại diện ở 10 % thời lượng', async () => {
+    // 20 giây chứ không 12: `12 * 0.1` là 1.2000000000000002 trong JS, và test
+    // này khoá lệnh, không khoá sai số dấu phẩy động.
+    const run = await capture('lenh-ffmpeg-day-du', {}, {
+      delayForRendition: () => 5,
+      probe: { durationSeconds: 20, width: 1920, height: 1080 },
+    })
+    try {
+      assert.equal(run.result.ok, true, JSON.stringify(run.result))
+      const [probe, ...rest] = run.calls
+      assert.deepEqual(
+        { command: probe!.command, args: probe!.args },
+        { command: 'ffprobe', args: ['-v', 'error', '-print_format', 'json', '-show_format', '-show_streams', run.original] },
+      )
+
+      const hls = rest.filter(call => call.args.includes('-hls_segment_filename'))
+      assert.deepEqual(hls.map(call => call.args[call.args.indexOf('-vf') + 1]).sort(), ['scale=-2:1080', 'scale=-2:360', 'scale=-2:720'])
+      const first = hls.find(call => call.args.includes('scale=-2:360'))!
+      const scratch = path.join(path.resolve(run.workdirB, 'processing'), `1-${first.claim}`)
+      assert.equal(first.command, 'nice')
+      assert.deepEqual(first.args, [
+        '-n', '19', 'ffmpeg',
+        '-hide_banner', '-nostdin', '-y',
+        '-i', run.original,
+        '-vf', 'scale=-2:360',
+        '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-profile:v', 'main', '-pix_fmt', 'yuv420p',
+        '-threads', '2',
+        '-force_key_frames', 'expr:gte(t,n_forced*4)',
+        '-c:a', 'aac', '-b:a', '96k', '-ac', '2',
+        '-f', 'hls',
+        '-hls_time', '4',
+        '-hls_playlist_type', 'vod',
+        '-hls_flags', 'independent_segments',
+        '-hls_segment_filename', path.join(scratch, '360p', 'seg_%03d.ts'),
+        path.join(scratch, '360p', 'index.m3u8'),
+      ])
+      assert.ok(run.peak > 1, `CPU 100 % chạy song song, đỉnh thấy ${run.peak}`)
+
+      const thumb = rest.find(call => call.args[call.args.length - 1]!.endsWith('thumb.jpg'))!
+      assert.equal(thumb.command, 'nice')
+      assert.deepEqual(thumb.args, [
+        '-n', '19', 'ffmpeg',
+        '-hide_banner', '-nostdin', '-y',
+        '-ss', '2',
+        '-i', run.original,
+        '-frames:v', '1',
+        '-vf', 'scale=-2:720',
+        '-q:v', '3',
+        path.join(scratch, 'thumb.jpg'),
+      ])
+    } finally {
+      await fs.rm(run.workdirB, { recursive: true, force: true })
+    }
+  })
+
+  // `cpulimit` có trong image chạy thật (Dockerfile cài nó, trần CPU mặc định 50)
+  // nhưng không có trên máy dev lẫn CI. Bản trước chấp nhận "nhánh nào cũng được",
+  // nên argv của nhánh production chưa từng được chạy qua: bỏ `-z` vẫn xanh. Hai
+  // test dưới ép từng nhánh bằng `setCpulimitAvailableForTests`, và một lượt ép
+  // `true` xanh cũng chứng minh điểm tiêm chạm đúng module mà đường ống dùng.
+  it('CPU dưới 100 %, có `cpulimit` (image chạy thật): argv đầy đủ `cpulimit -l 50 -z ffmpeg …`, một luồng, tuần tự', async () => {
+    setCpulimitAvailableForTests(true)
+    try {
+      const run = await capture('lenh-ffmpeg-cpulimit', { processingCpuLimit: 50 }, {
+        delayForRendition: () => 5,
+        probe: { durationSeconds: 20, width: 1920, height: 1080 },
+      })
+      try {
+        assert.equal(run.result.ok, true, JSON.stringify(run.result))
+        const hls = run.calls.filter(call => call.args.includes('-hls_segment_filename'))
+        assert.equal(hls.length, 3)
+        assert.equal(run.peak, 1, 'giới hạn CPU phải chạy tuần tự')
+        for (const call of hls) {
+          assert.equal(call.command, 'cpulimit')
+          assert.deepEqual(call.args.slice(0, 4), ['-l', '50', '-z', 'ffmpeg'])
+        }
+        const first = hls.find(call => call.args.includes('scale=-2:360'))!
+        const scratch = path.join(path.resolve(run.workdirB, 'processing'), `1-${first.claim}`)
+        // Nguyên argv của nhánh production, kể cả `-z` (cpulimit thoát khi tiến
+        // trình đích không còn): bỏ, đổi chỗ hay đổi giá trị một cờ đều làm đỏ.
+        assert.deepEqual(first.args, [
+          '-l', '50', '-z', 'ffmpeg',
+          '-hide_banner', '-nostdin', '-y',
+          '-i', run.original,
+          '-vf', 'scale=-2:360',
+          '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '23', '-profile:v', 'main', '-pix_fmt', 'yuv420p',
+          '-threads', '1',
+          '-force_key_frames', 'expr:gte(t,n_forced*4)',
+          '-c:a', 'aac', '-b:a', '96k', '-ac', '2',
+          '-f', 'hls',
+          '-hls_time', '4',
+          '-hls_playlist_type', 'vod',
+          '-hls_flags', 'independent_segments',
+          '-hls_segment_filename', path.join(scratch, '360p', 'seg_%03d.ts'),
+          path.join(scratch, '360p', 'index.m3u8'),
+        ])
+
+        // Hành vi hiện có, ghim lại: lượt trích ảnh đại diện gọi `ffmpegArgs` không
+        // kèm trần CPU (một khung hình, vài trăm mili giây), nên vẫn đi qua `nice`.
+        const thumb = run.calls.find(call => call.args[call.args.length - 1]!.endsWith('thumb.jpg'))!
+        assert.equal(thumb.command, 'nice')
+        assert.deepEqual(thumb.args.slice(0, 3), ['-n', '19', 'ffmpeg'])
+      } finally {
+        await fs.rm(run.workdirB, { recursive: true, force: true })
+      }
+    } finally {
+      setCpulimitAvailableForTests(null)
+    }
+  })
+
+  it('CPU dưới 100 %, không có `cpulimit` (máy dev): lùi về `nice -n 19 ffmpeg`, một luồng, tuần tự', async () => {
+    setCpulimitAvailableForTests(false)
+    try {
+      const run = await capture('lenh-ffmpeg-gioi-han', { processingCpuLimit: 50 }, { delayForRendition: () => 5 })
+      try {
+        assert.equal(run.result.ok, true, JSON.stringify(run.result))
+        const hls = run.calls.filter(call => call.args.includes('-hls_segment_filename'))
+        assert.equal(hls.length, 3)
+        assert.equal(run.peak, 1, 'giới hạn CPU phải chạy tuần tự')
+        for (const call of hls) {
+          assert.equal(call.command, 'nice')
+          assert.deepEqual(call.args.slice(0, 4), ['-n', '19', 'ffmpeg', '-hide_banner'])
+          assert.equal(call.args[call.args.indexOf('-threads') + 1], '1')
+        }
+      } finally {
+        await fs.rm(run.workdirB, { recursive: true, force: true })
+      }
+    } finally {
+      setCpulimitAvailableForTests(null)
+    }
+  })
+
+  it('`ffmpegArgs`: chỉ trần < 100 VÀ có `cpulimit` mới bọc qua `cpulimit`; còn lại luôn `nice`', () => {
+    try {
+      setCpulimitAvailableForTests(true)
+      assert.deepEqual(ffmpegArgs(['-i', 'in.mp4', 'out.ts'], 50), {
+        command: 'cpulimit', args: ['-l', '50', '-z', 'ffmpeg', '-i', 'in.mp4', 'out.ts'],
+      })
+      assert.deepEqual(ffmpegArgs(['-i', 'in.mp4'], 99), {
+        command: 'cpulimit', args: ['-l', '99', '-z', 'ffmpeg', '-i', 'in.mp4'],
+      })
+      // Biên: 100 % là "không giới hạn" — có `cpulimit` cũng không bọc.
+      assert.deepEqual(ffmpegArgs(['-i', 'in.mp4'], 100), { command: 'nice', args: ['-n', '19', 'ffmpeg', '-i', 'in.mp4'] })
+      assert.deepEqual(ffmpegArgs(['-i', 'in.mp4']), { command: 'nice', args: ['-n', '19', 'ffmpeg', '-i', 'in.mp4'] })
+
+      setCpulimitAvailableForTests(false)
+      assert.deepEqual(ffmpegArgs(['-i', 'in.mp4'], 50), { command: 'nice', args: ['-n', '19', 'ffmpeg', '-i', 'in.mp4'] })
+    } finally {
+      setCpulimitAvailableForTests(null)
+    }
+  })
+
+  it('ảnh đại diện lấy khung ở 10 giây khi video dài, không trôi theo thời lượng', async () => {
+    const run = await capture('lenh-ffmpeg-video-dai', {}, { probe: { durationSeconds: 600, width: 640, height: 360 } })
+    try {
+      assert.equal(run.result.ok, true, JSON.stringify(run.result))
+      const thumb = run.calls.find(call => call.args[call.args.length - 1]!.endsWith('thumb.jpg'))!
+      assert.equal(thumb.args[thumb.args.indexOf('-ss') + 1], '10')
+    } finally {
+      await fs.rm(run.workdirB, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('chọn bản: tự động, tắt tự động, và chọn tay', () => {
+  it('autoTranscode tắt: chỉ dò + ảnh đại diện, không nén bản nào, mục vẫn sẵn sàng', async () => {
+    const slug = 'khong-tu-nen'
+    const workdirB = await workdirWith(slug)
+    const fake = fakeMediaPool({ items: [pendingItem({ slug })] })
+    const calls: string[][] = []
+    const logs = captureLogs()
+    try {
+      const result = await runPipeline(fake, {
+        config: { ...testConfig(workdirB), autoTranscode: false },
+        runner: scriptedRunner({ onSpawn: (_command, args) => calls.push(args) }),
+      })
+      assert.deepEqual(result, { ok: true, slug, renditions: [] })
+      assert.equal(calls.filter(args => args.includes('-hls_segment_filename')).length, 0)
+      assert.equal(calls.filter(args => args[args.length - 1]!.endsWith('thumb.jpg')).length, 1)
+      assert.ok(logs.events().includes('media.transcode_skipped'))
+      assert.equal(fake.item(1)!.processingStatus, 'ready')
+      assert.deepEqual(fake.item(1)!.resolutionsReady, [])
+
+      const generations = await fs.readdir(path.join(workdirB, 'media', slug, 'generations'))
+      assert.equal(generations.length, 1)
+      await fs.access(path.join(workdirB, 'media', slug, 'generations', generations[0]!, 'thumb.jpg'))
+    } finally {
+      logs.restore()
+      await fs.rm(workdirB, { recursive: true, force: true })
+    }
+  })
+
+  it('bản chọn tay chạy kể cả khi autoTranscode tắt, chỉ những bản có thật trong RENDITIONS', async () => {
+    const slug = 'chon-tay'
+    const workdirB = await workdirWith(slug)
+    const fake = fakeMediaPool({ items: [pendingItem({ slug })] })
+    const hls: string[] = []
+    try {
+      const result = await processMediaItem(
+        { mediaItemId: 1, renditions: ['720p', '4k-khong-co'] },
+        {
+          db: dbOver(fake),
+          pool: fake.pool as never,
+          config: { ...testConfig(workdirB), autoTranscode: false },
+          run: scriptedRunner({
+            onSpawn: (_command, args) => {
+              const at = args.indexOf('-hls_segment_filename')
+              if (at !== -1) hls.push(path.basename(path.dirname(args[at + 1]!)))
+            },
+          }),
+        },
+      )
+      assert.deepEqual(result, { ok: true, slug, renditions: ['720p'] })
+      assert.deepEqual(hls, ['720p'])
+      assert.deepEqual(fake.item(1)!.resolutionsReady, ['720p'])
+    } finally {
+      await fs.rm(workdirB, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('giai đoạn 7: đồng bộ R2 hỏng thì lùi về đĩa', () => {
+  it('account id sai: giữ cây local, đánh dấu `local`, lượt chuyển mã vẫn sẵn sàng', async () => {
+    // `openR2` từ chối account id không phải 32 hex TRƯỚC khi có request nào, nên
+    // nhánh hỏng chạy được không cần mạng hay mock. Nhánh thành công ở
+    // `tests/video-processing-r2-publish.test.ts`.
+    const slug = 'r2-hong'
+    const workdirB = await workdirWith(slug)
+    const fake = fakeMediaPool({ items: [pendingItem({ slug })] })
+    const logs = captureLogs()
+    try {
+      const result = await runPipeline(fake, {
+        runner: scriptedRunner({ probe: { durationSeconds: 12, width: 640, height: 360 } }),
+        config: {
+          ...testConfig(workdirB),
+          videoStorage: {
+            provider: 'r2',
+            r2: { accountId: 'khong-phai-hex', accessKeyId: 'id', secretAccessKey: 'secret', bucket: 'bucket', publicUrl: 'https://cdn.example.test' },
+          },
+        },
+      })
+      assert.equal(result.ok, true, JSON.stringify(result))
+      assert.ok(logs.events().includes('media.r2_sync_failed'))
+      assert.ok(!logs.events().includes('media.r2_synced'))
+      const row = fake.item(1)!
+      assert.equal(row.processingStatus, 'ready')
+      assert.equal(row.storageProvider, 'local')
+      await fs.access(path.join(workdirB, String(row.storagePath), 'master.m3u8'))
+      await fs.access(path.join(workdirB, String(row.storagePath), 'thumb.jpg'))
+    } finally {
+      logs.restore()
+      await fs.rm(workdirB, { recursive: true, force: true })
+    }
+  })
+})
+
+describe('lịch thử lại và gốc cây tài sản', () => {
+  it('retryAt lùi theo cấp số nhân từ 30 giây, trần một giờ', () => {
+    const now = new Date('2026-01-01T00:00:00Z')
+    const delay = (attempts: number) => (retryAt(attempts, now).getTime() - now.getTime()) / 1000
+    assert.deepEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 20].map(delay), [30, 30, 60, 120, 240, 480, 960, 1920, 3600, 3600])
+    const fromNow = retryAt(1).getTime() - Date.now()
+    assert.ok(fromNow > 25_000 && fromNow <= 30_000, `mặc định tính từ bây giờ, thấy ${fromNow} ms`)
+  })
+
+  it('mediaAssetRoot bỏ phần thế hệ, lùi về slug, và từ chối gốc dị dạng', () => {
+    assert.equal(mediaAssetRoot({ storagePath: null, slug: 'phim-a' }), 'media/phim-a')
+    assert.equal(mediaAssetRoot({ storagePath: '', slug: 'phim-a' }), 'media/phim-a')
+    assert.equal(mediaAssetRoot({ storagePath: 'media/phim-a', slug: 'khac' }), 'media/phim-a')
+    assert.equal(
+      mediaAssetRoot({ storagePath: 'media/0b5f_x-1/generations/ab12cd34:0000-1111', slug: 'khac' }),
+      'media/0b5f_x-1',
+    )
+    for (const storagePath of ['media/../etc', 'media/a/b', 'media/', 'uploads/a', '/media/a']) {
+      assert.throws(() => mediaAssetRoot({ storagePath, slug: 'phim-a' }), /Invalid media asset root/, storagePath)
+    }
+    assert.throws(() => mediaAssetRoot({ storagePath: null, slug: 'co dau cach' }), /Invalid media asset root/)
+  })
+
+  it('gốc dị dạng trên hàng: đánh hỏng ngay, mã `source_missing`, không spawn gì', async () => {
+    const fake = fakeMediaPool({ items: [pendingItem({ storagePath: 'media/../../etc' })] })
+    const spawned: string[] = []
+    const result = await runPipeline(fake, { runner: scriptedRunner({ onSpawn: command => spawned.push(command) }) })
+    assert.deepEqual(result, { ok: false, code: 'source_missing', message: 'Đường dẫn media không hợp lệ.' })
+    assert.deepEqual(spawned, [])
+    assert.equal(fake.item(1)!.processingStatus, 'failed')
+    assert.equal(fake.item(1)!.processingError, 'Đường dẫn media không hợp lệ.')
+  })
+})
+
+describe('trích ảnh đại diện lúc phục vụ', () => {
+  type Call = { command: string, args: string[], aborted: boolean }
+  const recording = (calls: Call[], outcome: { code: number }): ProcessRunner => async (command, args, ctx) => {
+    calls.push({ command, args: [...args], aborted: ctx.signal.aborted })
+    return { code: outcome.code, stdout: '', stderr: '' }
+  }
+
+  it('dựng đúng lệnh: khung ở giây thứ 2, cao 720, đích là tham số cuối, luôn qua `nice`', async () => {
+    const calls: Call[] = []
+    assert.equal(await extractThumbnailOnDemand('/v/original.mp4', '/v/thumb.jpg', { run: recording(calls, { code: 0 }) }), true)
+    assert.deepEqual(calls, [{
+      command: 'nice',
+      args: ['-n', '19', 'ffmpeg', '-hide_banner', '-nostdin', '-y', '-ss', '2', '-i', '/v/original.mp4',
+        '-frames:v', '1', '-vf', 'scale=-2:720', '-q:v', '3', '/v/thumb.jpg'],
+      aborted: false,
+    }])
+  })
+
+  it('mã thoát khác 0 trả false', async () => {
+    assert.equal(await extractThumbnailOnDemand('/v/a.mp4', '/v/t.jpg', { run: recording([], { code: 1 }) }), false)
+  })
+
+  it('tín hiệu bật trong lúc chạy thì false, kể cả khi tiến trình báo 0', async () => {
+    const controller = new AbortController()
+    const run: ProcessRunner = async () => {
+      controller.abort()
+      return { code: 0, stdout: '', stderr: '' }
+    }
+    assert.equal(await extractThumbnailOnDemand('/v/a.mp4', '/v/t.jpg', { signal: controller.signal, run }), false)
+  })
+
+  it('runner ném thì trả false, không ném ra ngoài', async () => {
+    const run: ProcessRunner = async () => { throw new Error('spawn hỏng') }
+    assert.equal(await extractThumbnailOnDemand('/v/a.mp4', '/v/t.jpg', { run }), false)
+  })
+})
+
+describe('bộ chạy tiến trình mặc định', () => {
+  const node = process.execPath
+  const idle = () => new AbortController().signal
+
+  it('giữ cả stdout lẫn stderr, và chỉ chuyển dòng `time=` cho móc tiến độ', async () => {
+    const lines: string[] = []
+    const outcome = await defaultProcessRunner(node, ['-e',
+      'process.stdout.write(\'{"ok":1}\'); process.stderr.write("Stream mapping\\nframe=1 time=00:00:02.00 bitrate=1\\n")',
+    ], { signal: idle(), onProgress: line => lines.push(line) })
+    assert.equal(outcome.code, 0, outcome.stderr)
+    assert.equal(outcome.stdout, '{"ok":1}')
+    assert.match(outcome.stderr, /Stream mapping/)
+    assert.deepEqual(lines, ['frame=1 time=00:00:02.00 bitrate=1'])
+  })
+
+  it('phần giữ lại của mỗi luồng có trần', async () => {
+    const outcome = await defaultProcessRunner(node, ['-e',
+      'const b = "x".repeat(16 * 1024); for (let i = 0; i < 32; i++) { process.stdout.write(b); process.stderr.write(b) }',
+    ], { signal: idle() })
+    assert.equal(outcome.code, 0)
+    assert.ok(outcome.stdout.length >= 64 * 1024 && outcome.stdout.length < 512 * 1024, `stdout ${outcome.stdout.length}`)
+    assert.ok(outcome.stderr.length >= 64 * 1024 && outcome.stderr.length < 512 * 1024, `stderr ${outcome.stderr.length}`)
+  })
+
+  it('tín hiệu hủy giết tiến trình và trả mã -1', async () => {
+    const controller = new AbortController()
+    const started = Date.now()
+    const pending = defaultProcessRunner(node, ['-e', 'setTimeout(() => {}, 60000)'], { signal: controller.signal })
+    setTimeout(() => controller.abort(), 50)
+    const outcome = await pending
+    assert.equal(outcome.code, -1)
+    assert.ok(Date.now() - started < 10_000, 'tiến trình không bị giết khi tín hiệu bật')
+  })
+
+  it('tín hiệu đã hủy từ trước thì không sinh tiến trình nào', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'cdkt-runner-cancelled-'))
+    const marker = path.join(dir, 'ran')
+    try {
+      const controller = new AbortController()
+      controller.abort()
+      const outcome = await defaultProcessRunner(node, ['-e', `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'x')`], { signal: controller.signal })
+      assert.deepEqual(outcome, { code: -1, stdout: '', stderr: 'Processing cancelled' })
+      await assert.rejects(fs.access(marker))
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('lệnh không tồn tại trả mã -1 kèm lỗi, không ném', async () => {
+    const outcome = await defaultProcessRunner('cdkt-khong-co-lenh-nay', [], { signal: idle() })
+    assert.equal(outcome.code, -1)
+    assert.match(outcome.stderr, /ENOENT/)
+  })
+})
+
 // ─── Đối chiếu nguồn: đường ống không ghi nhật ký kiểm toán ──────────────────
 
+/**
+ * Các tệp của đường ống + bộ thu hồi.
+ *
+ * Suy ra từ HAI nguồn rồi đối chiếu với một danh sách ghim:
+ *   • mọi `server/services/video-*.ts` trên đĩa (trừ `video-r2-sync.ts` — tầng lưu
+ *     trữ R2 dùng chung, cổng media cũng gọi nó, không phải mã của cửa vào), và
+ *   • mọi tệp mà cửa vào `video-processing.ts` re-export,
+ * cộng `media-processing-reaper.ts`.
+ *
+ * Chỉ suy từ cửa vào thì một tệp bị bỏ khỏi re-export (mã dời sang tệp mới mà
+ * cửa vào chưa xuất lại) rơi khỏi tập quét mà không có gì đỏ; chỉ suy từ thư mục
+ * thì một tệp đổi tiền tố cũng vậy. Ghim danh sách đầy đủ bằng `deepEqual` nghĩa
+ * là thêm, bớt hay đổi tên một tệp đều làm ĐỎ ở đây — người sửa phải quyết định
+ * tệp mới có thuộc đường ống không, thay vì tập quét tự co lại.
+ */
+const AUDIT_SCOPED_FILES = [
+  'media-processing-reaper.ts',
+  'video-disk-guard.ts',
+  'video-process-runner.ts',
+  'video-processing-job.ts',
+  'video-processing.ts',
+  'video-renditions.ts',
+  'video-thumbnail-frame.ts',
+  'video-transcode-pipeline.ts',
+]
+
+function auditScopedFiles(): string[] {
+  const onDisk = readdirSync('server/services').filter(name => /^video-.*\.ts$/.test(name) && name !== 'video-r2-sync.ts')
+  const entry = readFileSync('server/services/video-processing.ts', 'utf8')
+  const reExported = [...entry.matchAll(/from '\.\/([a-z0-9-]+)(?:\.ts)?'/g)].map(match => `${match[1]}.ts`)
+  const files = [...new Set([...onDisk, ...reExported, 'media-processing-reaper.ts'])].sort()
+  assert.deepEqual(files, AUDIT_SCOPED_FILES, 'tập tệp của đường ống đổi — cập nhật AUDIT_SCOPED_FILES sau khi xét tệp mới/mất')
+  return files
+}
+
 describe('đường ống và bộ thu hồi không ghi nhật ký kiểm toán', () => {
-  it('cả hai tệp đều không chạm `activity_logs`, nên không có lượt ghi nào để bọc', () => {
+  it('không tệp nào của đường ống hay bộ thu hồi chạm `activity_logs`, nên không có lượt ghi nào để bọc', () => {
     // Hành động đáng ghi kiểm toán là **lượt tải lên**, và cặp hàng + nhật ký đó
     // nằm trong transaction của `completeUpload` (`chunked-upload.ts`). Một lượt
     // chuyển mã là sự kiện của máy, không phải hành động của cán bộ.
@@ -1903,24 +2542,33 @@ describe('đường ống và bộ thu hồi không ghi nhật ký kiểm toán'
     // không chạm `activityLogs` có chứa chuỗi đó, nên không lọc nó ra thì lời giải
     // thích làm đỏ cái test nó đang giải thích — và bài học rút ra sẽ là xoá lời
     // giải thích, không phải giữ guard.
-    for (const file of ['video-processing.ts', 'media-processing-reaper.ts']) {
+    for (const file of auditScopedFiles()) {
       const source = stripComments(readFileSync(path.join('server/services', file), 'utf8'))
       assert.doesNotMatch(source, /activityLogs/, `${file} không được ghi nhật ký kiểm toán`)
     }
   })
 
-  it('hai tệp này được khai trong `SERVICE_EXEMPTIONS` kèm lý do, không phải đi qua im lặng', () => {
+  it('tệp nào bị cổng quét bắt thì được khai trong `SERVICE_EXEMPTIONS` kèm lý do, và không mục nào chết', () => {
     // Cổng quét trong `tests/reader-audit-atomicity.test.ts` khớp chuỗi trên **văn
     // bản mã nguồn** và **không bỏ chú thích**, nên phần đầu tệp — vốn nhắc tới
-    // `activityLogs` để giải thích vì sao nó không ghi — vẫn khớp. Nghĩa là hai tệp
-    // này **cần** một mục miễn trừ, và mục đó phải nói ra hình dạng thật: không có
-    // cặp hàng + audit nào để bọc.
+    // `activityLogs` để giải thích vì sao nó không ghi — vẫn khớp. Nghĩa là những
+    // tệp đó **cần** một mục miễn trừ, và mục đó phải nói ra hình dạng thật: không
+    // có cặp hàng + audit nào để bọc.
     //
     // Đây là chỗ dễ viết sai nhất: một mục miễn trừ mô tả một hình dạng không tồn
     // tại thì đọc ra y hệt một mục đúng, và nó sống lâu hơn ký ức của người viết.
+    // Chiều ngược lại cũng vậy: tách tệp làm phần đầu tệp đổi chỗ, và một mục còn
+    // trỏ vào tệp cũ (nay không còn nhắc `activityLogs`) là một mục chết.
     const audit = readFileSync('tests/reader-audit-atomicity.test.ts', 'utf8')
-    for (const file of ['video-processing.ts', 'media-processing-reaper.ts']) {
-      const entry = new RegExp(`'${file.replace('.', '\\.')}':\\s*'([^']+)'`).exec(audit)
+    const flagged: string[] = []
+    for (const file of auditScopedFiles()) {
+      const raw = readFileSync(path.join('server/services', file), 'utf8')
+      const entry = new RegExp(`'${file.replace(/\./g, '\\.')}':\\s*'([^']+)'`).exec(audit)
+      if (!/activityLogs/.test(raw)) {
+        assert.equal(entry, null, `${file} không còn bị cổng quét bắt — bỏ mục SERVICE_EXEMPTIONS chết của nó`)
+        continue
+      }
+      flagged.push(file)
       assert.ok(entry, `${file} phải có một mục trong SERVICE_EXEMPTIONS kèm lý do`)
       assert.match(
         entry[1]!,
@@ -1928,5 +2576,6 @@ describe('đường ống và bộ thu hồi không ghi nhật ký kiểm toán'
         `lý do miễn trừ của ${file} phải nói ra hình dạng thật: không có cặp hàng + audit nào`,
       )
     }
+    assert.deepEqual(flagged, ['media-processing-reaper.ts', 'video-transcode-pipeline.ts'])
   })
 })

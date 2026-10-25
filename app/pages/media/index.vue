@@ -191,7 +191,8 @@
               >
                 <span class="relative block w-full aspect-video bg-[#EEF2EC] overflow-hidden">
                   <!-- Ảnh thu nhỏ luôn đến từ **chính cổng này** (`/api/public/media/<slug>/thumb`),
-                       kể cả với video nguồn ngoài — không hot-link `i.ytimg.com`. -->
+                       kể cả với video nguồn ngoài — không hot-link máy chủ ảnh của YouTube
+                       (`YOUTUBE_THUMBNAIL_HOST`, `server/utils/youtube-parser.ts`). -->
                   <img
                     v-if="entry.thumbnailUrl"
                     :src="entry.thumbnailUrl"
