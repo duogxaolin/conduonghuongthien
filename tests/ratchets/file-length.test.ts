@@ -25,7 +25,9 @@ import {
  *     files `app/composables/i18n-default-dictionary.ts`,
  *     `server/data/default-translations-seed.ts`, `server/data/chatbot-small-talk-seed.ts`.
  *     Still listed: a removed or renamed one fails as stale, and one that loses its reason
- *     fails. Only a hand edit makes an entry exempt; `--update` never does.
+ *     fails. The list is `FILE_LENGTH.exemptAllowed`, enforced by the engine's baseline
+ *     check (no other path may be exempt; each listed one must be). Only a hand edit
+ *     makes an entry exempt; no command does.
  * Every other file over 400 lines is capped debt.
  *
  * Baseline: tests/ratchets/file-length.baseline.json. Regenerate (lowers only):
@@ -74,6 +76,7 @@ export const FILE_LENGTH: FileRatchet = {
     return lines
   },
   hint: 'Split the file: extract presentational subcomponents and pure helpers, keeping state, error/retry and role="alert" in the parent (design D-SPLIT, docs/decisions/refactor-large-files.md).',
+  exemptAllowed: EXEMPT_UNCAPPED,
 }
 
 ratchet(FILE_LENGTH, () => {
@@ -105,13 +108,13 @@ ratchet(FILE_LENGTH, () => {
       assert.ok(typeof entry === 'object' && !isExempt(entry) && typeof entry.value === 'number' && entry.reason.trim() !== '',
         `${file} must stay CAPPED with a reason ({ "value", "reason" }) — it is unsplittable, not append-only`)
     }
-    for (const file of EXEMPT_UNCAPPED) {
-      const entry = baseline[file]
-      assert.ok(entry !== undefined && isExempt(entry) && typeof entry.reason === 'string' && entry.reason.trim() !== '',
-        `${file} must be listed as { "exempt": true, "reason": "…" } (append-only data, design D-R)`)
-    }
-    const unexpected = Object.entries(baseline).filter(([file, entry]) => isExempt(entry) && !EXEMPT_UNCAPPED.includes(file)).map(([file]) => file)
-    assert.deepEqual(unexpected, [], 'only the append-only files named in this test may be exempt; everything else over 400 lines stays capped')
+    // The exempt allowlist is the engine's (baselineProblems): exactly these files, each one exempt.
+    assert.deepEqual(baselineProblems(FILE_LENGTH, baseline), [])
+    const { 'server/data/chatbot-small-talk-seed.ts': _dropped, ...withoutOne } = baseline
+    assert.ok(baselineProblems(FILE_LENGTH, withoutOne).some(problem => problem.startsWith('server/data/chatbot-small-talk-seed.ts: allowed to be exempt but not listed')))
+    const sneaky = { ...baseline, 'server/services/backup.ts': { exempt: true, reason: 'it is big' } }
+    assert.ok(baselineProblems(FILE_LENGTH, sneaky).some(problem => problem.startsWith('server/services/backup.ts: may not be exempt')),
+      'everything else over 400 lines stays capped')
   })
 
   // The two kinds, on the real baseline: every capped file exactly at its entry, every
@@ -147,8 +150,8 @@ ratchet(FILE_LENGTH, () => {
     }
     assert.deepEqual(baselineProblems(FILE_LENGTH, baseline), [])
     // Malformed exempt entries are rejected too.
-    assert.ok(baselineProblems(FILE_LENGTH, { 'server/db/schema.ts': { exempt: 'yes', reason: 'x' } })[0]!.includes('"exempt" must be true'))
-    assert.ok(baselineProblems(FILE_LENGTH, { 'server/db/schema.ts': { exempt: true, value: 1496, reason: 'x' } })[0]!.includes('takes no "value"'))
+    assert.ok(baselineProblems(FILE_LENGTH, { 'server/db/schema.ts': { exempt: 'yes', reason: 'x' } }).some(problem => problem.includes('"exempt" must be true')))
+    assert.ok(baselineProblems(FILE_LENGTH, { 'server/db/schema.ts': { exempt: true, value: 1496, reason: 'x' } }).some(problem => problem.includes('takes no "value"')))
   })
 
   test('file-length: --update leaves exempt entries alone, and never makes an entry exempt', () => {

@@ -2,10 +2,15 @@
  * Coverage ratchet per directory (wave3-long-term, design D-R, task 1.4).
  *
  * Compares line coverage per directory, from an lcov report, with the checked-in
- * baseline `tests/ratchets/coverage.baseline.json`. It fails when any directory drops
- * MORE than 0.5 point below its baseline, or when a baseline directory is no longer
- * measured (stale). A rise passes and prints the new value. There is no absolute
- * threshold anywhere: only "not worse than before".
+ * baseline `tests/ratchets/coverage.baseline.json`. It fails when:
+ *   - a directory drops MORE than 0.5 point below its baseline;
+ *   - a baseline directory is no longer measured (stale);
+ *   - a measured directory is NOT in the baseline (new). A new directory has no floor,
+ *     so an untested `server/jobs/big.ts`, or a never-loaded file `git mv`-ed out of
+ *     `server/services` (which then rises), would otherwise pass unseen. It must be added
+ *     deliberately: `--update --add-dir <directory>`, and the reviewer sees its number.
+ * A rise passes and prints the new value. There is no absolute threshold anywhere: only
+ * "not worse than before".
  *
  * The number is the "lines, all files" column of scripts/coverage-summary.ts, computed
  * by the same code: duplicate lcov records merged, and every tracked source file no
@@ -19,17 +24,22 @@
  * layer someone owns. Deeper levels (server/api/admin/…) are small enough that one file
  * moves them by several points.
  *
- * The 0.5-point tolerance absorbs run-to-run wobble (measured twice for the baseline,
- * see the doc) and the small differences between Node 24 (CI) and Node 26. Small
- * directories (server/data, server/middleware, server/routes, shared) move more per
- * line: adding one untested file there can be a real, visible drop.
+ * The 0.5-point tolerance absorbs run-to-run wobble (measured for the baseline, see the
+ * doc). Small directories (server/middleware, server/plugins, server/data, shared) move
+ * more per line: adding one untested file there can be a real, visible drop.
  *
  *   node --experimental-strip-types scripts/coverage-ratchet.ts <lcov> [--baseline <file>] [--root <repo>]
- *   node --experimental-strip-types scripts/coverage-ratchet.ts <lcov> --update [--allow-drop <directory>]…
+ *   node --experimental-strip-types scripts/coverage-ratchet.ts <lcov> --update [--allow-drop <dir>]… [--add-dir <dir>]…
+ *   node --experimental-strip-types scripts/coverage-ratchet.ts <lcov> --rebaseline
  *
- * `--update` only RAISES entries (to the measured value, rounded down to 2 decimals),
- * adds new directories and removes stale ones. It never lowers an entry unless that
- * directory is named with `--allow-drop <directory>` (repeatable).
+ * `--update` RAISES entries that rose (to the measured value, rounded down to 2
+ * decimals) and removes stale ones. It never lowers an entry unless that directory is
+ * named with `--allow-drop <dir>`, and never adds a new directory unless it is named
+ * with `--add-dir <dir>` (both repeatable).
+ *
+ * `--rebaseline` is for one moment only: after merging a base branch that moved. Every
+ * directory follows the measured value, up or down, new ones are added and stale ones
+ * removed, each change printed — `--update` with every `--allow-drop`/`--add-dir`.
  *
  * A missing or empty report FAILS (exit 1): unlike the summary, this is a gate, and
  * "no data" must not read as "no drop".
@@ -42,6 +52,7 @@ import {
 
 export const TOLERANCE = 0.5
 export const DEFAULT_BASELINE = 'tests/ratchets/coverage.baseline.json'
+const COMMAND = 'node --experimental-strip-types scripts/coverage-ratchet.ts'
 
 export type CoverageBaseline = Record<string, number>
 
@@ -102,7 +113,8 @@ export function compareCoverage(baseline: CoverageBaseline, current: Map<string,
   return rows.sort((a, b) => (a.directory < b.directory ? -1 : a.directory > b.directory ? 1 : 0))
 }
 
-export const isFailure = (row: CoverageRow) => row.status === 'drop' || row.status === 'stale'
+/** A drop beyond the tolerance, a stale baseline directory, or a directory with no baseline. */
+export const isFailure = (row: CoverageRow) => row.status === 'drop' || row.status === 'stale' || row.status === 'new'
 
 export function describeRow(row: CoverageRow, tolerance: number = TOLERANCE): string {
   const counts = row.ratio ? ` (${row.ratio.hit}/${row.ratio.total} lines)` : ''
@@ -113,7 +125,7 @@ export function describeRow(row: CoverageRow, tolerance: number = TOLERANCE): st
     case 'within': return `ok    ${row.directory}: ${fixed(row.baseline!)}% → ${fixed(row.current!)}%${delta}${counts} — within the ${tolerance}-point tolerance`
     case 'same': return `ok    ${row.directory}: ${fixed(row.current!)}%${counts}`
     case 'rise': return `RISE  ${row.directory}: ${fixed(row.baseline!)}% → ${fixed(row.current!)}%${delta}${counts} — new value ${fixed(floor2(row.current!))}; raise the baseline with --update`
-    case 'new': return `NEW   ${row.directory}: ${fixed(row.current!)}%${counts} — not in the baseline yet; record it with --update`
+    case 'new': return `NEW   ${row.directory}: ${fixed(row.current!)}%${counts} — no baseline for this directory, so nothing guards it; add it deliberately with --update --add-dir ${row.directory}`
     case 'stale': return `STALE ${row.directory}: in the baseline (${fixed(row.baseline!)}%) but no tracked source file is measured there any more — remove it with --update`
   }
 }
@@ -121,12 +133,20 @@ export function describeRow(row: CoverageRow, tolerance: number = TOLERANCE): st
 export interface CoverageUpdate {
   baseline: CoverageBaseline
   changes: string[]
-  /** Drops left alone because the directory was not passed to --allow-drop. */
+  /** Drops left alone (no --allow-drop) and new directories left out (no --add-dir). */
   refused: string[]
 }
 
-/** Raises, adds and removes stale on its own; lowers only the directories in `allowDrop`. */
-export function updateCoverageBaseline(baseline: CoverageBaseline, current: Map<string, Ratio>, allowDrop: Set<string> = new Set()): CoverageUpdate {
+/**
+ * Raises and removes stale on its own; lowers only the directories in `allowDrop`, and
+ * adds only the new directories in `addDirs`.
+ */
+export function updateCoverageBaseline(
+  baseline: CoverageBaseline,
+  current: Map<string, Ratio>,
+  allowDrop: Set<string> = new Set(),
+  addDirs: Set<string> = new Set(),
+): CoverageUpdate {
   const next: CoverageBaseline = {}
   const changes: string[] = []
   const refused: string[] = []
@@ -135,8 +155,12 @@ export function updateCoverageBaseline(baseline: CoverageBaseline, current: Map<
     if (row.status === 'stale') {
       changes.push(`removed (stale): ${row.directory} ${fixed(row.baseline!)}`)
     } else if (row.status === 'new') {
-      next[row.directory] = value!
-      changes.push(`added: ${row.directory} ${fixed(value!)}`)
+      if (addDirs.has(row.directory)) {
+        next[row.directory] = value!
+        changes.push(`ADDED (--add-dir): ${row.directory} ${fixed(value!)}`)
+      } else {
+        refused.push(`${row.directory}: new directory at ${fixed(row.current!)}% — pass --add-dir ${row.directory}`)
+      }
     } else if (row.status === 'rise') {
       next[row.directory] = value!
       changes.push(`raised: ${row.directory} ${fixed(row.baseline!)}→${fixed(value!)}`)
@@ -145,7 +169,7 @@ export function updateCoverageBaseline(baseline: CoverageBaseline, current: Map<
       changes.push(`LOWERED (--allow-drop): ${row.directory} ${fixed(row.baseline!)}→${fixed(value!)}`)
     } else {
       next[row.directory] = row.baseline!
-      if (row.status === 'drop') refused.push(`${row.directory}: ${fixed(row.current!)}%, baseline ${fixed(row.baseline!)}%`)
+      if (row.status === 'drop') refused.push(`${row.directory}: ${fixed(row.current!)}%, baseline ${fixed(row.baseline!)}% — pass --allow-drop ${row.directory}`)
     }
   }
   return { baseline: next, changes, refused }
@@ -191,7 +215,7 @@ function markdown(rows: CoverageRow[], failed: boolean): string {
     '### Coverage ratchet',
     '',
     failed
-      ? `**Failed:** a directory dropped more than ${TOLERANCE} point below \`${DEFAULT_BASELINE}\`, or a baseline directory is stale.`
+      ? `**Failed:** a directory dropped more than ${TOLERANCE} point below \`${DEFAULT_BASELINE}\`, a baseline directory is stale, or a new directory has no baseline.`
       : `Passed: no directory dropped more than ${TOLERANCE} point below \`${DEFAULT_BASELINE}\`.`,
     '',
     '| directory | baseline | now | status |',
@@ -201,30 +225,47 @@ function markdown(rows: CoverageRow[], failed: boolean): string {
   ].join('\n')
 }
 
+/** Values of a repeatable flag; `undefined` when one is missing its value. */
+function repeated(argv: string[], flag: string): Set<string> | undefined {
+  const values = new Set<string>()
+  for (let i = 0; i < argv.length; i += 1) {
+    if (argv[i] !== flag) continue
+    const value = argv[i + 1]
+    if (!value || value.startsWith('--')) return undefined
+    values.add(value.replace(/\/$/, ''))
+    i += 1
+  }
+  return values
+}
+
 /** The command line. Returns the exit code. */
 export function runCoverageRatchet(argv: string[], log: (line: string) => void = console.log, cwd: string = process.cwd()): number {
   const valueOf = (flag: string) => {
     const index = argv.indexOf(flag)
     return index >= 0 ? argv[index + 1] : undefined
   }
-  const allowDrop = new Set<string>()
-  for (let i = 0; i < argv.length; i += 1) {
-    if (argv[i] === '--allow-drop') {
-      const directory = argv[i + 1]
-      if (!directory || directory.startsWith('--')) {
-        log('--allow-drop needs a directory, e.g. --allow-drop server/api')
-        return 2
-      }
-      allowDrop.add(directory.replace(/\/$/, ''))
-      i += 1
-    }
+  const allowDrop = repeated(argv, '--allow-drop')
+  const addDirs = repeated(argv, '--add-dir')
+  if (!allowDrop || !addDirs) {
+    log('--allow-drop / --add-dir need a directory, e.g. --allow-drop server/api')
+    return 2
+  }
+  const rebaseline = argv.includes('--rebaseline')
+  const updating = rebaseline || argv.includes('--update')
+  if (rebaseline && (allowDrop.size || addDirs.size)) {
+    log('--rebaseline already follows every directory; drop --allow-drop/--add-dir')
+    return 2
+  }
+  if (!updating && (allowDrop.size || addDirs.size)) {
+    log('--allow-drop / --add-dir only make sense with --update')
+    return 2
   }
   const root = path.resolve(cwd, valueOf('--root') ?? '.')
   const baselineFile = path.resolve(root, valueOf('--baseline') ?? DEFAULT_BASELINE)
-  const flagsWithValue = new Set(['--root', '--baseline', '--allow-drop'])
+  const flagsWithValue = new Set(['--root', '--baseline', '--allow-drop', '--add-dir'])
   const lcovPath = argv.find((arg, index) => !arg.startsWith('--') && !flagsWithValue.has(argv[index - 1] ?? ''))
   if (!lcovPath) {
-    log('usage: coverage-ratchet.ts <lcov> [--baseline <file>] [--root <repo>] [--update [--allow-drop <directory>]…]')
+    log(`usage: coverage-ratchet.ts <lcov> [--baseline <file>] [--root <repo>] [--update [--allow-drop <dir>]… [--add-dir <dir>]… | --rebaseline]`)
     return 2
   }
 
@@ -241,18 +282,25 @@ export function runCoverageRatchet(argv: string[], log: (line: string) => void =
   }
   const baseline = JSON.parse(readFileSync(baselineFile, 'utf8')) as CoverageBaseline
   const problems = coverageBaselineProblems(baseline)
-  if (problems.length && !argv.includes('--update')) {
+  if (problems.length && !updating) {
     log(`coverage ratchet: ${baselineFile} is malformed:\n${problems.join('\n')}`)
     return 1
   }
 
-  if (argv.includes('--update')) {
-    const update = updateCoverageBaseline(baseline, current, allowDrop)
+  if (updating) {
+    if (rebaseline) {
+      log('--rebaseline: every directory follows the measured value; new directories are added, stale ones removed')
+      for (const directory of current.keys()) {
+        allowDrop.add(directory)
+        addDirs.add(directory)
+      }
+    }
+    const update = updateCoverageBaseline(baseline, current, allowDrop, addDirs)
     writeFileSync(baselineFile, serializeCoverageBaseline(update.baseline))
     for (const line of update.changes) log(line)
     if (update.changes.length === 0) log('coverage baseline unchanged')
     if (update.refused.length) {
-      log(`\nNOT lowered — ${update.refused.length} directory(ies) dropped more than ${TOLERANCE} point. Add tests, or name each one deliberately with --allow-drop <directory>:`)
+      log(`\nNOT recorded — ${update.refused.length} directory(ies) need an explicit decision. Add tests, or name each one deliberately:`)
       for (const line of update.refused) log(`  ${line}`)
       return 1
     }
@@ -267,16 +315,19 @@ export function runCoverageRatchet(argv: string[], log: (line: string) => void =
   const drops = rows.filter(row => row.status === 'drop')
   if (drops.length) {
     log(`\nFAILED. Add tests for the code that lowered coverage. If the drop is deliberate (e.g. code moved to a directory the unit suite cannot load), lower exactly that entry in the same PR:`)
-    log(`  node --experimental-strip-types scripts/coverage-ratchet.ts ${lcovPath} --update ${drops.map(row => `--allow-drop ${row.directory}`).join(' ')}`)
+    log(`  ${COMMAND} ${lcovPath} --update ${drops.map(row => `--allow-drop ${row.directory}`).join(' ')}`)
+  }
+  const added = rows.filter(row => row.status === 'new')
+  if (added.length) {
+    log(`\nFAILED. A directory without a baseline is not guarded (an untested new directory, or files moved out of a guarded one). Add tests if it is low, then record it deliberately in the same PR:`)
+    log(`  ${COMMAND} ${lcovPath} --update ${added.map(row => `--add-dir ${row.directory}`).join(' ')}`)
   }
   if (rows.some(row => row.status === 'stale')) {
     log(`\nFAILED. The baseline names a directory with no measured source any more. Remove it in the same PR:`)
-    log(`  node --experimental-strip-types scripts/coverage-ratchet.ts ${lcovPath} --update`)
+    log(`  ${COMMAND} ${lcovPath} --update`)
   }
-  if (failed) {
-    // reported above
-  } else if (rows.some(row => row.status === 'rise' || row.status === 'new' || row.status === 'stale')) {
-    log(`\nRecord the new values in the same PR: node --experimental-strip-types scripts/coverage-ratchet.ts ${lcovPath} --update`)
+  if (!failed && rows.some(row => row.status === 'rise')) {
+    log(`\nRecord the new values in the same PR: ${COMMAND} ${lcovPath} --update`)
   }
   if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, markdown(rows, failed))
   return failed ? 1 : 0

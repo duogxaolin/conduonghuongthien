@@ -22,6 +22,7 @@ const LINES: FileRatchet = {
   inScope: file => file.endsWith('.ts') && !file.startsWith('tests/'),
   measure: text => text.split('\n').length - 1,
   hint: 'Split it.',
+  exemptAllowed: [],
 }
 
 const roots: string[] = []
@@ -109,6 +110,15 @@ test('exempt entries: growth never fails, a gone file is stale, and --update cop
   assert.deepEqual(update.baseline['capped.ts'], { value: 11, reason: 'unsplittable' }, '--raise never turns a capped entry exempt')
 })
 
+test('exempt allowlist: only the named paths may be exempt, and each of them must be', () => {
+  const withData: FileRatchet = { ...LINES, exemptAllowed: ['data.ts'] }
+  const ok: Baseline = { 'a.ts': 9, 'data.ts': { exempt: true, reason: 'seed data' } }
+  assert.deepEqual(baselineProblems(withData, ok), [])
+  assert.match(baselineProblems(LINES, ok).join('\n'), /data\.ts: may not be exempt — the lines ratchet allows "exempt" only for no file/)
+  assert.match(baselineProblems(withData, { 'a.ts': 9, 'b.ts': { exempt: true, reason: 'x' }, 'data.ts': { exempt: true, reason: 'y' } }).join('\n'), /b\.ts: may not be exempt.*only for data\.ts/)
+  assert.match(baselineProblems(withData, { 'a.ts': 9, 'data.ts': 120 }).join('\n'), /data\.ts: allowed to be exempt but not listed/)
+})
+
 test('baseline shape: sorted by path, integers above the default, reasons non-empty', () => {
   assert.deepEqual(baselineProblems(LINES, { 'a.ts': 4, 'b.ts': { value: 5, reason: 'why' } }), [])
   const problems = baselineProblems(LINES, { 'b.ts': 4, 'a.ts': 3, 'c.ts': 4.5, 'd.ts': { value: 9, reason: ' ' }, 'e.ts': { value: 9, reason: 'x', extra: 1 } })
@@ -158,15 +168,43 @@ test('--init / --update / --raise on a real tree, end to end', () => {
   log.length = 0
   assert.equal(run('--update', '--raise', 'b.ts'), 0)
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), { 'a.ts': 4, 'b.ts': 8 })
-  assert.match(log.join('\n'), /RAISED \(--raise\): b\.ts 5→8/)
+  assert.match(log.join('\n'), /RAISED: b\.ts 5→8/)
   assert.equal(run('--update', '--raise'), 2, '--raise without a path is a usage error')
 
   // An exempt entry is a hand edit: --update keeps it byte for byte, even when its file is gone.
-  const exempt = { 'a.ts': 4, 'b.ts': { exempt: true, reason: 'seed data' }, 'removed.ts': { exempt: true, reason: 'seed data' } }
+  const exempt: Baseline = { 'a.ts': 4, 'b.ts': { exempt: true, reason: 'seed data' }, 'removed.ts': { exempt: true, reason: 'seed data' } }
   writeFileSync(file, serializeBaseline(exempt))
   writeFileSync(path.join(root, 'b.ts'), lines(80))
   log.length = 0
   assert.equal(run('--update'), 1, 'a gone exempt entry needs a hand edit')
   assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), exempt)
   assert.match(log.join('\n'), /Exempt entries whose file is gone[\s\S]*removed\.ts/)
+})
+
+test('--rebaseline follows the current tree both ways, keeps reasons and exempt entries', () => {
+  // After merging a base branch that moved: one command per metric, every change printed.
+  const root = repo({ 'up.ts': lines(9), 'down.ts': lines(4), 'pinned.ts': lines(12), 'data.ts': lines(99), 'new.ts': lines(7), 'tiny.ts': lines(2) })
+  mkdirSync(path.join(root, 'tests/ratchets'), { recursive: true })
+  const file = path.join(root, 'tests/ratchets/lines.baseline.json')
+  writeFileSync(file, serializeBaseline({
+    'data.ts': { exempt: true, reason: 'seed data' },
+    'down.ts': 6,
+    'gone.ts': 5,
+    'pinned.ts': { value: 10, reason: 'unsplittable' },
+    'tiny.ts': 5,
+    'up.ts': 5,
+  }))
+  const log: string[] = []
+  assert.equal(runUpdate(LINES, ['--rebaseline'], root, line => log.push(line)), 0, log.join('\n'))
+  assert.deepEqual(JSON.parse(readFileSync(file, 'utf8')), {
+    'data.ts': { exempt: true, reason: 'seed data' },
+    'down.ts': 4,
+    'new.ts': 7,
+    'pinned.ts': { value: 12, reason: 'unsplittable' },
+    'up.ts': 9,
+  })
+  for (const line of ['RAISED: up.ts 5→9', 'lowered: down.ts 6→4', 'ADDED: new.ts 7', 'RAISED: pinned.ts 10→12', 'gone.ts', 'tiny.ts']) {
+    assert.ok(log.some(entry => entry.includes(line)), `--rebaseline did not report: ${line}`)
+  }
+  assert.equal(runUpdate(LINES, ['--rebaseline', '--raise', 'up.ts'], root, () => {}), 2, '--rebaseline already raises everything')
 })

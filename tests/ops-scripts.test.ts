@@ -396,8 +396,14 @@ test('the ratchets run in npm test and in CI, and the coverage ratchet is its ow
   assert.ok(ratchetStep, 'the Coverage ratchet step is gone from the unit-tests job — a coverage drop no longer fails CI')
   assert.match(String(ratchetStep.run), /^node --experimental-strip-types scripts\/coverage-ratchet\.ts \/tmp\/unit-test\.lcov$/)
   assert.ok(!('continue-on-error' in ratchetStep), 'the Coverage ratchet step has continue-on-error — a drop would show green')
-  assert.doesNotMatch(String(ratchetStep.if ?? ''), /always\(\)/, 'the ratchet would compare the partial lcov of a failed run')
-  assert.match(String(ratchetStep.if ?? ''), /steps\.unit\.outcome == 'success'/, 'the ratchet must still run when only Typecheck failed')
+  // Exactly this condition. Without `always()` the ratchet never compares the partial lcov
+  // of a failed test run; without a status function GitHub prepends an implicit
+  // `success() &&`, so `!cancelled()` is what keeps the ratchet running when only the
+  // Typecheck step before it failed; `steps.unit.outcome` ties it to the test step.
+  const condition = String(ratchetStep.if ?? '').replace(/^\$\{\{\s*|\s*\}\}$/g, '').replace(/\s+/g, ' ').trim()
+  assert.doesNotMatch(condition, /always\(\)/, 'the ratchet would compare the partial lcov of a failed run')
+  assert.equal(condition, "!cancelled() && steps.unit.outcome == 'success'",
+    'the Coverage ratchet `if:` must be `!cancelled() && steps.unit.outcome == \'success\'` — without `!cancelled()` a Typecheck failure silently skips it')
   const summary = steps.find((step) => step.name === 'Coverage summary')
   assert.doesNotMatch(String(summary?.run ?? ''), /coverage-ratchet/, 'the comparison must not hide inside the report-only summary step')
 })

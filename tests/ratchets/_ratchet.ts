@@ -21,9 +21,10 @@ import { fileURLToPath } from 'node:url'
  *   - `"file": { "value": 1060, "reason": "…" }` — capped WITH a reason: allowed above the
  *     default for good (e.g. a guard forbids splitting it), still may only go down;
  *   - `"file": { "exempt": true, "reason": "…" }` — exempt, UNCAPPED: the file grows by
- *     nature (append-only schema, seed data), so growth is not a regression. Only a hand
- *     edit creates one: `--update`/`--raise`/`--init` never write `exempt`, and `--update`
- *     never changes or removes an exempt entry.
+ *     nature (append-only schema, seed data), so growth is not a regression. Only paths in
+ *     the ratchet's `exemptAllowed` list may be exempt, and each of them must be (the
+ *     baseline check fails either way). Only a hand edit writes one: no command writes
+ *     `exempt`, and none changes or removes an exempt entry.
  *
  * The baseline cannot rot: an entry whose file is no longer tracked (or no longer
  * measured) fails as stale — exempt entries included — and the file is kept sorted by
@@ -44,6 +45,12 @@ import { fileURLToPath } from 'node:url'
  * on entries are kept; exempt entries are left exactly as they are (a stale one is
  * reported for a hand edit). `--init` writes a baseline from the current tree and
  * refuses when one exists.
+ *
+ * `--rebaseline` is for one moment only: after merging a base branch that moved (the
+ * baseline was measured on an older tree). It sets every capped entry to today's value,
+ * up or down, adds every file above the default and removes the rest — printing each
+ * change — while keeping every reason and every exempt entry. It is `--update` with
+ * `--raise` for every path; review its diff like any other baseline change.
  */
 
 export const REPO_ROOT = fileURLToPath(new URL('../../', import.meta.url))
@@ -71,6 +78,11 @@ export interface FileRatchet {
   measure: (text: string, file: string) => number
   /** How to fix a regression, printed with the failure. */
   hint: string
+  /**
+   * The only paths whose baseline entry may be `{ "exempt": true, "reason" }` — and each
+   * of them must be. Empty for a metric with no growth-by-nature files.
+   */
+  exemptAllowed: readonly string[]
 }
 
 export interface Comparison {
@@ -156,7 +168,8 @@ export function compare(ratchet: FileRatchet, current: Map<string, number>, base
 /**
  * Shape problems: unsorted keys, non-integer values, capped values at or below the default,
  * an object entry without a non-empty reason, an exempt entry that is not exactly
- * `{ "exempt": true, "reason": "…" }`.
+ * `{ "exempt": true, "reason": "…" }`, an exempt entry for a path outside
+ * `ratchet.exemptAllowed`, and an allowed path that is not listed as exempt.
  */
 export function baselineProblems(ratchet: FileRatchet, baseline: unknown): string[] {
   if (!baseline || typeof baseline !== 'object' || Array.isArray(baseline)) return ['the baseline is not a JSON object']
@@ -164,6 +177,7 @@ export function baselineProblems(ratchet: FileRatchet, baseline: unknown): strin
   const keys = Object.keys(baseline)
   const sorted = [...keys].sort(byPath)
   if (keys.join('\n') !== sorted.join('\n')) problems.push('entries are not sorted by path (regenerate with --update)')
+  const exemptSeen = new Set<string>()
   for (const [file, entry] of Object.entries(baseline as Record<string, unknown>)) {
     let value: unknown = entry
     if (entry && typeof entry === 'object') {
@@ -171,6 +185,10 @@ export function baselineProblems(ratchet: FileRatchet, baseline: unknown): strin
       if (typeof reason !== 'string' || reason.trim() === '') problems.push(`${file}: an object entry needs a non-empty "reason"`)
       if ('exempt' in rest) {
         const { exempt, ...others } = rest
+        exemptSeen.add(file)
+        if (!ratchet.exemptAllowed.includes(file)) {
+          problems.push(`${file}: may not be exempt — the ${ratchet.name} ratchet allows "exempt" only for ${ratchet.exemptAllowed.length ? ratchet.exemptAllowed.join(', ') : 'no file'}`)
+        }
         if (exempt !== true) problems.push(`${file}: "exempt" must be true (or the key removed)`)
         if (inner !== undefined) problems.push(`${file}: an exempt entry is uncapped and takes no "value"`)
         if (Object.keys(others).length) problems.push(`${file}: unknown keys ${Object.keys(others).join(', ')}`)
@@ -184,6 +202,9 @@ export function baselineProblems(ratchet: FileRatchet, baseline: unknown): strin
     } else if (value <= ratchet.defaultForNewFiles) {
       problems.push(`${file}: ${value} is not above the default (${ratchet.defaultForNewFiles}); the entry is redundant — remove it`)
     }
+  }
+  for (const file of ratchet.exemptAllowed) {
+    if (!exemptSeen.has(file)) problems.push(`${file}: allowed to be exempt but not listed as { "exempt": true, "reason": "…" } — add it by hand, or drop it from exemptAllowed`)
   }
   return problems
 }
@@ -238,7 +259,7 @@ export function updateBaseline(ratchet: FileRatchet, current: Map<string, number
     } else if (value > old && raise.has(file)) {
       next[file] = withValue(entry, value)
       used.add(file)
-      changes.push(`RAISED (--raise): ${file} ${old}→${value}`)
+      changes.push(`RAISED: ${file} ${old}→${value}`)
     } else {
       next[file] = entry
       if (value > old) refused.push({ file, detail: `${value} ${ratchet.unit}, baseline ${old}` })
@@ -249,7 +270,7 @@ export function updateBaseline(ratchet: FileRatchet, current: Map<string, number
     if (raise.has(file)) {
       next[file] = value
       used.add(file)
-      changes.push(`ADDED (--raise): ${file} ${value}`)
+      changes.push(`ADDED: ${file} ${value}`)
     } else {
       refused.push({ file, detail: `${value} ${ratchet.unit}, new file (default ${ratchet.defaultForNewFiles})` })
     }
@@ -269,10 +290,11 @@ export function readBaseline(file: string): Baseline {
   return JSON.parse(readFileSync(file, 'utf8')) as Baseline
 }
 
-/** The `--update` / `--init` command line. Returns the exit code. */
+/** The `--update` / `--rebaseline` / `--init` command line. Returns the exit code. */
 export function runUpdate(ratchet: FileRatchet, argv: string[], root: string = REPO_ROOT, log: (line: string) => void = console.log): number {
   const file = baselinePath(ratchet.name, root)
   const raise = new Set<string>()
+  const rebaseline = argv.includes('--rebaseline')
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--raise') {
       const target = argv[i + 1]
@@ -296,11 +318,19 @@ export function runUpdate(ratchet: FileRatchet, argv: string[], root: string = R
     log(`created ${file}: ${Object.keys(init).length} files, ${Object.values(init).reduce((sum, v) => sum + v, 0)} ${ratchet.unit} (every entry capped; reasons and exemptions are hand edits)`)
     return 0
   }
+  if (rebaseline) {
+    if (raise.size) {
+      log('--rebaseline already raises every path; drop --raise')
+      return 2
+    }
+    for (const path_ of current.keys()) raise.add(path_)
+    log(`--rebaseline: every capped entry follows the current tree; reasons and exempt entries are kept`)
+  }
   const result = updateBaseline(ratchet, current, readBaseline(file), raise)
   writeFileSync(file, serializeBaseline(result.baseline))
   for (const line of result.changes) log(line)
   if (result.changes.length === 0) log('baseline unchanged')
-  for (const path_ of result.unusedRaises) log(`--raise ${path_}: nothing to raise (exempt, or not above its entry or the default)`)
+  if (!rebaseline) for (const path_ of result.unusedRaises) log(`--raise ${path_}: nothing to raise (exempt, or not above its entry or the default)`)
   let code = 0
   if (result.staleExempt.length) {
     log(`\nExempt entries whose file is gone — left in place; edit the baseline by hand (rename the path, or delete the entry):`)
@@ -339,7 +369,7 @@ export function describeRegressions(ratchet: FileRatchet, result: Comparison): s
  * so the test run is unaffected.
  */
 export function ratchet(definition: FileRatchet, unitTests?: () => void): void {
-  if (process.argv.includes('--update') || process.argv.includes('--init')) {
+  if (['--update', '--rebaseline', '--init'].some(flag => process.argv.includes(flag))) {
     process.exitCode = runUpdate(definition, process.argv.slice(2))
     return
   }

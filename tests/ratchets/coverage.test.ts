@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { spawnSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
@@ -78,23 +78,75 @@ test('a rise passes and prints the new value', () => {
   assert.match(describeRow(utils), /RISE {2}server\/utils: 50\.00% → 52\.30% \(\+2\.30\).*new value 52\.30/)
 })
 
-test('a baseline directory that is no longer measured fails as stale; a new directory passes with a note', () => {
+test('a baseline directory that is no longer measured fails as stale', () => {
   const rows = compareCoverage({ ...BASELINE, 'server/gone': 80 }, simulated(500))
   assert.equal(rows.find(row => row.directory === 'server/gone')!.status, 'stale')
   assert.ok(rows.some(isFailure))
-  const fresh = compareCoverage({ 'server/utils': 50 }, simulated(500))
-  assert.equal(fresh.find(row => row.directory === 'server/services')!.status, 'new')
-  assert.ok(!fresh.some(isFailure))
 })
 
-test('--update raises, adds and drops stale entries, and lowers only a directory named with --allow-drop', () => {
+test('a directory with no baseline fails: an untested 3000-line server/jobs/big.ts is not let through', () => {
+  // Before: status `new` passed, so a whole untested directory had no floor at all.
+  const lcov = [record('server/utils/a.ts', 500, 1000), record('server/services/x.ts', 300, 400)].join('\n')
+  const big = { path: 'server/jobs/big.ts', text: 'export const v = 1\n'.repeat(3000) }
+  const rows = compareCoverage(BASELINE, directoryCoverage(withUnloadedSources(parseLcov(lcov), [big])))
+  const jobs = rows.find(row => row.directory === 'server/jobs')!
+  assert.equal(jobs.status, 'new')
+  assert.ok(isFailure(jobs))
+  assert.match(describeRow(jobs), /^NEW {3}server\/jobs: 0\.00% \(0\/3000 lines\) — no baseline .* --update --add-dir server\/jobs$/)
+})
+
+test('a never-loaded file git-mv-ed out of a guarded directory into a new one fails, though the old directory rises', () => {
+  // server/services: a.ts loaded (60/100) + never.ts never loaded (40 code lines) = 60/140.
+  // Moving never.ts to server/tasks/ lifts server/services to 60/100 and would hide the
+  // file in an unguarded directory.
+  const root = mkdtempSync(path.join(os.tmpdir(), 'coverage-ratchet-mv-'))
+  roots.push(root)
+  const git = (...args: string[]) => execFileSync('git', args, { cwd: root, stdio: 'ignore', env: { ...process.env, GIT_CONFIG_NOSYSTEM: '1', HOME: root } })
+  git('init', '-q')
+  mkdirSync(path.join(root, 'server/services'), { recursive: true })
+  writeFileSync(path.join(root, 'server/services/a.ts'), 'export const a = 1\n'.repeat(100))
+  writeFileSync(path.join(root, 'server/services/never.ts'), 'export const n = 1\n'.repeat(40))
+  git('add', '-A')
+  const lcovFile = path.join(root, 'unit.lcov')
+  writeFileSync(lcovFile, record('server/services/a.ts', 60, 100))
+  const baselineFile = path.join(root, 'baseline.json')
+  writeFileSync(baselineFile, JSON.stringify({ 'server/services': 42.85 }))
+  const run = (...argv: string[]) => {
+    const log: string[] = []
+    const code = runCoverageRatchet([lcovFile, '--root', root, '--baseline', baselineFile, ...argv], line => log.push(line))
+    return { code, out: log.join('\n') }
+  }
+  assert.equal(run().code, 0, 'before the move: services at its baseline')
+
+  mkdirSync(path.join(root, 'server/tasks'))
+  git('mv', 'server/services/never.ts', 'server/tasks/never.ts')
+  const moved = run()
+  assert.equal(moved.code, 1, moved.out)
+  assert.match(moved.out, /RISE {2}server\/services: 42\.85% → 60\.00%/)
+  assert.match(moved.out, /NEW {3}server\/tasks: 0\.00% \(0\/40 lines\)/)
+  assert.match(moved.out, /--update --add-dir server\/tasks/)
+
+  // --update does not add it on its own; --add-dir does, and the number is in the diff.
+  assert.equal(run('--update').code, 1)
+  assert.deepEqual(JSON.parse(readFileSync(baselineFile, 'utf8')), { 'server/services': 60 }, 'the rise is recorded, the new directory is not')
+  assert.equal(run('--update', '--add-dir', 'server/tasks').code, 0)
+  assert.deepEqual(JSON.parse(readFileSync(baselineFile, 'utf8')), { 'server/services': 60, 'server/tasks': 0 })
+  assert.equal(run().code, 0)
+})
+
+test('--update raises and drops stale entries; it lowers only --allow-drop directories and adds only --add-dir ones', () => {
   const current = simulated(494) // utils 49.40 (drop), services 75.00 (same)
   const plain = updateCoverageBaseline({ ...BASELINE, 'server/gone': 1, 'server/services': 70 }, current)
   assert.deepEqual(plain.baseline, { 'server/services': 75, 'server/utils': 50 })
-  assert.deepEqual(plain.refused, ['server/utils: 49.40%, baseline 50.00%'])
+  assert.deepEqual(plain.refused, ['server/utils: 49.40%, baseline 50.00% — pass --allow-drop server/utils'])
   const allowed = updateCoverageBaseline(BASELINE, current, new Set(['server/utils']))
   assert.deepEqual(allowed.baseline, { 'server/services': 75, 'server/utils': 49.4 })
   assert.deepEqual(allowed.refused, [])
+  const fresh = updateCoverageBaseline({ 'server/utils': 49 }, current)
+  assert.deepEqual(fresh.baseline, { 'server/utils': 49.4 })
+  assert.deepEqual(fresh.refused, ['server/services: new directory at 75.00% — pass --add-dir server/services'])
+  assert.deepEqual(updateCoverageBaseline({ 'server/utils': 49 }, current, new Set(), new Set(['server/services'])).baseline,
+    { 'server/services': 75, 'server/utils': 49.4 })
   // Raised values are rounded DOWN: 2/3 = 66.666… is stored as 66.66.
   const third = directoryCoverage([...parseLcov(record('server/utils/a.ts', 2, 3)).values()])
   assert.deepEqual(updateCoverageBaseline({ 'server/utils': 10 }, third).baseline, { 'server/utils': 66.66 })
@@ -135,6 +187,16 @@ test('the command line: exit 1 on a drop, a missing report or an empty one; exit
   assert.equal(run(lcov('drop.lcov', 494), '--update').code, 1)
   assert.deepEqual(JSON.parse(readFileSync(baselineFile, 'utf8')), { 'server/utils': 52.3 })
 
+  // --rebaseline (after merging a moved base): follows the measurement both ways.
+  writeFileSync(baselineFile, JSON.stringify({ 'server/gone': 10, 'server/utils': 60 }))
+  const rebase = run(lcov('drop.lcov', 494), '--rebaseline')
+  assert.equal(rebase.code, 0, rebase.out)
+  assert.deepEqual(JSON.parse(readFileSync(baselineFile, 'utf8')), { 'server/utils': 49.4 })
+  assert.match(rebase.out, /LOWERED \(--allow-drop\): server\/utils 60\.00→49\.40/)
+  assert.match(rebase.out, /removed \(stale\): server\/gone/)
+  assert.equal(run(lcov('drop.lcov', 494), '--rebaseline', '--add-dir', 'x').code, 2)
+  assert.equal(run(lcov('drop.lcov', 494), '--add-dir', 'x').code, 2, '--add-dir without --update is a usage error')
+
   // The real entry point, as CI calls it.
   const cli = spawnSync(process.execPath, ['--experimental-strip-types', SCRIPT, path.join(root, 'missing.lcov'), '--root', root, '--baseline', baselineFile], { encoding: 'utf8' })
   assert.equal(cli.status, 1, cli.stdout + cli.stderr)
@@ -150,13 +212,14 @@ test('directories are the finest rows of the coverage report', () => {
   assert.equal(ratchetDirectory('app/components/Foo.vue'), undefined)
 })
 
-test('the checked-in coverage baseline is well-formed and names exactly the measured directories', (t) => {
+test('the checked-in coverage baseline is well-formed and names exactly the measured directories', () => {
+  // Checked without running coverage, so `npm test` already catches a renamed, removed or
+  // added directory.
   const baseline = JSON.parse(readFileSync(path.join(REPO, DEFAULT_BASELINE), 'utf8')) as CoverageBaseline
   assert.deepEqual(coverageBaselineProblems(baseline), [])
   const tracked = trackedCoverageDirectories(REPO)
   const stale = Object.keys(baseline).filter(directory => !tracked.has(directory))
   assert.deepEqual(stale, [], `stale coverage baseline directories (no tracked source there any more) — run the coverage and update: npm run test:coverage, then node --experimental-strip-types scripts/coverage-ratchet.ts node_modules/.cache/cdkt-coverage/lcov.info --update`)
-  for (const directory of tracked) {
-    if (!(directory in baseline)) t.diagnostic(`new coverage directory without a baseline yet: ${directory} — record it with --update after the next coverage run`)
-  }
+  const unguarded = [...tracked].filter(directory => !(directory in baseline)).sort()
+  assert.deepEqual(unguarded, [], `directories with no coverage baseline — run npm run test:coverage, then add each deliberately: node --experimental-strip-types scripts/coverage-ratchet.ts node_modules/.cache/cdkt-coverage/lcov.info --update ${unguarded.map(d => `--add-dir ${d}`).join(' ')}`)
 })

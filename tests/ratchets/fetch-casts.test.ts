@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import test from 'node:test'
-import { baselinePath, ratchet, readBaseline, type FileRatchet } from './_ratchet'
+import { baselinePath, isExempt, ratchet, readBaseline, type FileRatchet } from './_ratchet'
 
 /**
  * `$fetch`-cast ratchet (wave3-long-term D-R, task 1.3).
@@ -11,8 +11,11 @@ import { baselinePath, ratchet, readBaseline, type FileRatchet } from './_ratche
  * (app/composables/adminFetch.ts, useAdminList.ts) instead, so a new file starts at 0;
  * D-FETCH converts the existing call sites area by area and lowers the baseline.
  *
- * The match is `(` `$fetch` `as`, with any whitespace between, so a reformatted cast
- * still counts. Tests, docs and CLAUDE.md quote the pattern and are not measured.
+ * The match is ANY `$fetch as` — parenthesised at the call site, or aliased first
+ * (`const typed = $fetch as unknown as F`, which would otherwise dodge the count) — with
+ * any whitespace between, so a reformatted cast still counts. `$fetchRaw as`, `my$fetch as`,
+ * `$fetch<T>(…)` and `$fetch(url) as T` (a cast of the result, not of `$fetch`) do not.
+ * Tests, docs and CLAUDE.md quote the pattern and are not measured.
  *
  * Named entry: `app/composables/adminFetch.ts` holds the one sanctioned cast plus the doc
  * comment that quotes the pattern it replaces (2).
@@ -21,27 +24,34 @@ import { baselinePath, ratchet, readBaseline, type FileRatchet } from './_ratche
  *   node --experimental-strip-types --import ./scripts/ts-resolver.mjs tests/ratchets/fetch-casts.test.ts --update
  */
 
-const FETCH_CAST = /\(\s*\$fetch\s+as\b/g
+const FETCH_CAST = /(?<![\w$])\$fetch\s+as\b/g
 
 export const FETCH_CASTS: FileRatchet = {
   name: 'fetch-casts',
-  unit: '`($fetch as` casts',
+  unit: '`$fetch as` casts',
   defaultForNewFiles: 0,
   inScope: file => /^(?:app|server|shared)\/.+\.(?:vue|ts)$/.test(file),
   measure: text => text.match(FETCH_CAST)?.length ?? 0,
   hint: 'Call `adminFetch<T>(url, options)` or `useAdminList` (app/composables/adminFetch.ts, useAdminList.ts) instead of casting `$fetch` (design D-FETCH).',
+  exemptAllowed: [],
 }
 
 ratchet(FETCH_CASTS, () => {
-  test('fetch-casts: counts a cast however it is spaced, and nothing else', () => {
+  test('fetch-casts: counts a cast however it is spaced or aliased, and nothing else', () => {
     const sample = [
       'const a = await ($fetch as (u: string) => Promise<{ ok: boolean }>)(url)',
       'const b = await (\n  $fetch  as unknown as Fetcher)(url)',
       'const c = await $fetch<Thing>(url)',
       'const d = await $fetch(url) as Thing',
       'const e = await ($fetchAll as Fetcher)(url)',
+      'const f = my$fetch as Fetcher',
     ].join('\n')
     assert.equal(FETCH_CASTS.measure(sample, 'app/x.vue'), 2)
+  })
+
+  test('fetch-casts: an alias cast counts — the dodge around a parenthesised-only match', () => {
+    assert.equal(FETCH_CASTS.measure('const typed = $fetch as unknown as F\nconst rows = await typed<Row[]>(url)', 'app/x.vue'), 1)
+    assert.equal(FETCH_CASTS.measure('const typed = $fetch\n  as F', 'app/x.vue'), 1)
   })
 
   test('fetch-casts: measures app/, server/ and shared/ code only', () => {
@@ -58,8 +68,9 @@ ratchet(FETCH_CASTS, () => {
     // and the pilot pages go through it. If one of them grows a cast, the helper failed.
     const baseline = readBaseline(baselinePath(FETCH_CASTS.name))
     const adminFetch = baseline['app/composables/adminFetch.ts']
-    assert.ok(adminFetch && typeof adminFetch === 'object' && adminFetch.value <= 2 && adminFetch.reason.trim() !== '',
-      'app/composables/adminFetch.ts must stay a named entry (its one cast plus the doc comment), with its reason')
+    assert.ok(adminFetch !== undefined && typeof adminFetch === 'object' && !isExempt(adminFetch)
+      && adminFetch.value <= 2 && adminFetch.reason.trim() !== '',
+      'app/composables/adminFetch.ts must stay a CAPPED named entry (its one cast plus the doc comment), with its reason')
     // Absent from the baseline = capped at 0 by the ratchet test above.
     for (const file of ['app/composables/useAdminList.ts', 'app/pages/admin/comments/index.vue', 'app/pages/admin/readers/index.vue',
       'app/pages/admin/chatbot/sessions/index.vue']) {

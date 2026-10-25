@@ -383,7 +383,8 @@ jobs:
 
       # Cổng CHẶN độ phủ (wave3 D-R): đỏ khi một thư mục (server/api, server/services, …,
       # shared, app/utils, app/composables) tụt QUÁ 0,5 điểm so với
-      # tests/ratchets/coverage.baseline.json, hoặc mức nền còn ghi một thư mục không còn.
+      # tests/ratchets/coverage.baseline.json, khi mức nền còn ghi một thư mục không còn, hoặc
+      # khi một thư mục chưa có trong mức nền (thêm có chủ đích: --update --add-dir <thư mục>).
       # Không có ngưỡng tuyệt đối. Không nuốt lỗi (khác bước tóm tắt ở trên), không
       # `always()`: chỉ chạy khi bước test xanh (lcov của một lượt đỏ là lcov dở), kể cả
       # khi Typecheck đỏ — nên đứng sau Typecheck để một lần tụt độ phủ không che kết quả

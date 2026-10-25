@@ -163,5 +163,8 @@
   "app/pages/qa-documents.vue": 124,
   "app/pages/search.vue": 95,
   "app/utils/markdown.ts": 16,
-  "app/utils/model-article-variants.ts": 48
+  "app/utils/model-article-variants.ts": 48,
+  "server/api/public/search.get.ts": 14,
+  "shared/backup-offsite-status.ts": 9,
+  "shared/submission-status.ts": 15
 }
