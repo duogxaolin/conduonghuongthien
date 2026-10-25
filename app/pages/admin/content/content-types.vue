@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AdminContentTypeRow, AdminCategoryRow } from '~/types/admin-api'
 import AdminModal from '~/components/admin/AdminModal.vue'
+import { slugify, slugifyDraft } from '~~/shared/slugify'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -31,32 +32,25 @@ const form = reactive({
   displayOrder: 0,
 })
 
-// Auto-fill slug from name — gạch ngang chuẩn (giống category). System types
-// (isSystem) giữ `_` do seed built-in, nhưng type custom tạo qua UI luôn `-`.
-const slugifyLocal = (text: string): string =>
-  text.toString().toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[đĐ]/g, 'd')
-    .replace(/([^0-9a-z-\s])/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-
+// Slug (`shared/slugify.ts`, cùng luật máy chủ lưu) — gạch ngang chuẩn (giống
+// category): sinh từ tên, rời ô và lúc lưu dùng bản chuẩn `slugify`; đang gõ dùng
+// `slugifyDraft` — giữ gạch cuối để gõ tiếp. System types (isSystem) giữ `_` do seed
+// built-in và không sửa được, nên không chuẩn hoá chúng (`role_model` ≠ `rolemodel`).
 watch(() => form.name, (val) => {
   if (modalMode.value === 'create') {
-    form.slug = slugifyLocal(val)
+    form.slug = slugify(val)
   }
 })
 
 /**
  * Validate slug real-time: nếu admin nhập tay ký tự không hợp lệ (dấu, space,
  * ký tự lạ) → slug sau slugify khác input → báo lỗi + auto-clean để admin thấy
- * slug tự đổi. Nút Lưu disabled khi slugError truthy.
+ * slug tự đổi. Nút Lưu disabled khi slugError truthy. Đo bằng bản "đang gõ": gạch
+ * cuối chưa gõ xong không phải lỗi (rời ô/lưu sẽ cắt nó).
  */
 const slugError = computed(() => {
-  if (!form.slug) return ''
-  const cleaned = slugifyLocal(form.slug)
+  if (!form.slug || editingIsSystem.value) return ''
+  const cleaned = slugifyDraft(form.slug)
   if (cleaned !== form.slug) {
     return 'Định danh chỉ chứa chữ thường, số, gạch ngang. Không dấu, không khoảng trắng, không ký tự lạ.'
   }
@@ -65,10 +59,14 @@ const slugError = computed(() => {
 
 // Auto-clean slug khi admin paste/thủ công ký tự sai — slug tự đổi + lỗi biến mất.
 watch(() => form.slug, (val) => {
-  if (val && slugifyLocal(val) !== val) {
-    form.slug = slugifyLocal(val)
+  if (val && !editingIsSystem.value && slugifyDraft(val) !== val) {
+    form.slug = slugifyDraft(val)
   }
 })
+
+const onSlugBlur = () => {
+  if (!editingIsSystem.value) form.slug = slugify(form.slug)
+}
 
 // ─── Fetch ────────────────────────────────────────────────────────────────────
 const fetchTypes = async () => {
@@ -151,7 +149,7 @@ const handleSave = async () => {
     }
     // Only send slug when editable (create, or edit of a non-system type)
     if (modalMode.value === 'create' || !editingIsSystem.value) {
-      payload.slug = form.slug.trim()
+      payload.slug = slugify(form.slug)
     }
     if (modalMode.value === 'create') {
       await ($fetch as (u: string, o?: Record<string, unknown>) => Promise<unknown>)("/api/admin/content-types", { method: "POST", body: payload })
@@ -530,6 +528,7 @@ onMounted(() => {
                 class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2c6e33]/15 font-mono disabled:bg-[#f4f7f4] disabled:text-[#8a9a8c] disabled:cursor-not-allowed"
                 :class="slugError ? 'border-[#d12420] focus:border-[#d12420]' : 'border-[#c8d6c9] focus:border-[#2c6e33]'"
                 :aria-invalid="!!slugError"
+                @blur="onSlugBlur"
               />
               <p v-if="editingIsSystem" class="text-[0.73rem] text-[#b06a20] m-0">Thể loại hệ thống — không thể đổi định danh.</p>
               <p v-else-if="slugError" role="alert" class="text-[0.73rem] text-[#d12420] m-0 font-semibold flex items-center gap-1.5">

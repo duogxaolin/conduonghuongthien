@@ -152,6 +152,16 @@ export const SECURITY_EVENTS = {
   // (`server/middleware/00.origin-gate.ts`). Payload: path (no query), origin
   // host, reason — never cookies or the full Origin URL.
   crossSiteRefused: 'security.cross_site_refused',
+  // A browser reported a Content-Security-Policy violation (`server/api/csp-report.post.ts`,
+  // wave3 D-CSP). Aggregated in memory (`csp-report-log.ts`): `kind: "first"` once per key
+  // per process, `kind: "repeats"` with `count` and `sources` at the end of each hour.
+  // Payload: directive name, blocked host or tag (`inline`, `eval`, `data`), page path
+  // without query (or `foreign:<host>`), path group, disposition, a 12-hex SHA-256 prefix of
+  // the script sample — never URLs, sample text, IPs or user agents.
+  // Deliberately NOT in ALERT_EVENTS: the Report-Only phase reports every inline script
+  // on every page view by design, and the endpoint is public — a report flood must
+  // never become an e-mail flood. Bounded by aggregation and a per-source limit instead.
+  cspViolation: 'security.csp_violation',
 } as const
 
 /**
