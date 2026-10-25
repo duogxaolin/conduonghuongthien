@@ -24,6 +24,8 @@ export const EXPECTED_BACKUP_FAMILY: readonly string[] = [
 const BACKUP_SIBLINGS: readonly string[] = [
   'backup-drive.ts', 'backup-drive-oauth.ts', 'backup-drive-oauth-config.ts', 'backup-offsite.ts', 'backup-registry.ts',
   'backup-restore.ts', 'backup-restore-guards.ts', 'backup-restore-recovery.ts', 'backup-scheduler.ts', 'backup-sql.ts',
+  // Split from backup-scheduler.ts (its busy-streak alert), not from backup.ts.
+  'backup-scheduler-busy.ts',
 ]
 
 const repoUrl = (relative: string) => new URL(`../${relative}`, import.meta.url)
