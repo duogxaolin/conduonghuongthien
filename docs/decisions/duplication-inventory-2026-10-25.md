@@ -273,10 +273,10 @@ Chế độ `mild` bỏ qua chú thích, nên jscpd không đếm những khối
 
 Một dòng cho mỗi nhóm trùng **thật**, xếp theo ưu tiên. File này không mở việc nào.
 
-1. **T1 (cao):** `server/utils/smtp-test-config.ts` re-export luật SMTP từ `shared/settings-credential-rules.ts` thay vì giữ bản chép (cổng cho phép, đích SMTP, dấu che).
-2. **T3 (cao, sửa lỗi):** một helper `htmlFragmentToText()` dùng `decode-html-entities.ts` cho `html-to-markdown.ts` và `html-to-docs.ts`; test đỏ-trước với `R&amp;D`, `Ng&agrave;y`, `&lt;`.
+1. ~~**T1 (cao):** `server/utils/smtp-test-config.ts` re-export luật SMTP từ `shared/settings-credential-rules.ts` thay vì giữ bản chép (cổng cho phép, đích SMTP, dấu che).~~ **Đã xong** (nhánh `wave3/fix-striptags-slugify`): import + re-export, `isTruthy` export từ `shared/`; guard trong `tests/settings-credential-rules.test.ts`.
+2. ~~**T3 (cao, sửa lỗi):** một helper `htmlFragmentToText()` dùng `decode-html-entities.ts` cho `html-to-markdown.ts` và `html-to-docs.ts`; test đỏ-trước với `R&amp;D`, `Ng&agrave;y`, `&lt;`.~~ **Đã xong** (nhánh `wave3/fix-striptags-slugify`): `server/utils/html-fragment-text.ts` (+ `headingLevel`), escape theo định dạng ra; `tests/html-export-entities.test.ts`.
 3. **T4 (trung bình–cao):** tách bộ lọc menu + "ghi một khoá settings + audit" dùng chung cho `navigation.put.ts`, `navigation/navbar.put.ts`, `navigation/mobile.put.ts`; quyết riêng việc bỏ cặp route `navigation.{get,put}.ts` cũ; chốt `=== true` cho `openNewTab`.
-4. **T2 (trung bình):** đưa `slugify` thuần sang `shared/`, ba trang admin bỏ `slugifyLocal` (cắt gạch treo lúc lưu/blur, không lúc gõ), mở rộng `tests/slugify.test.ts` bắt bản chép dạng arrow.
+4. ~~**T2 (trung bình):** đưa `slugify` thuần sang `shared/`, ba trang admin bỏ `slugifyLocal` (cắt gạch treo lúc lưu/blur, không lúc gõ), mở rộng `tests/slugify.test.ts` bắt bản chép dạng arrow.~~ **Đã xong phần `slugify`** (nhánh `wave3/fix-striptags-slugify`): `shared/slugify.ts` (`slugify` + `slugifyDraft`), `tests/admin-slug-input.test.ts`. Phần markup form/nút cuối modal (#28, #30) vẫn để sau.
 5. **T5 (trung bình):** `auth/login.post.ts` gọi `loadSessionUser()` thay vì câu truy vấn chép.
 6. **T6 (trung bình):** `parseDay` → `vn-day-range.ts`, helper phân trang chặt, helper ánh xạ hàng nhật ký cho `activity-logs`, `chatbot/sessions`, `profile/history`.
 7. **T7 (trung bình):** `loadExportableArticles()` + `parseArticleListFilters()` trong `services/articles.ts` cho bốn route xuất/danh sách.
