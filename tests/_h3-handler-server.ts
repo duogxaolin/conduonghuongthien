@@ -50,7 +50,12 @@ export interface HandlerResponse {
 }
 
 export interface HandlerServer {
-  request(method: string, path: string, options?: { cookie?: string, body?: unknown, headers?: Record<string, string> }): Promise<HandlerResponse>
+  /**
+   * `redirect: 'manual'` answers a 3xx as it is (status + `Location`) instead of
+   * following it — a handler that redirects to an outside host (an OAuth start)
+   * would otherwise send the test to the network.
+   */
+  request(method: string, path: string, options?: { cookie?: string, body?: unknown, headers?: Record<string, string>, redirect?: 'follow' | 'manual' }): Promise<HandlerResponse>
   close(): Promise<void>
 }
 
@@ -91,7 +96,7 @@ export async function startHandlerServer(routes: HandlerRoute[], middleware: h3.
         body = typeof options.body === 'string' ? options.body : JSON.stringify(options.body)
         headers['content-type'] ??= 'application/json'
       }
-      const response = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers, body })
+      const response = await fetch(`http://127.0.0.1:${port}${path}`, { method, headers, body, redirect: options.redirect ?? 'follow' })
       const text = await response.text()
       let parsed: Record<string, unknown> = {}
       try { parsed = text ? JSON.parse(text) as Record<string, unknown> : {} } catch { parsed = { text } }
