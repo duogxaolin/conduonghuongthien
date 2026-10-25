@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { AdminCategoryRow, AdminContentTypeRow } from '~/types/admin-api'
 import AdminModal from '~/components/admin/AdminModal.vue'
+import { slugify, slugifyDraft } from '~~/shared/slugify'
 definePageMeta({
   layout: 'admin',
   middleware: 'admin-auth'
@@ -45,30 +46,22 @@ const form = reactive({
   displayOrder: 0,
 })
 
-// Auto-fill slug from name
-const slugifyLocal = (text: string): string =>
-  text.toString().toLowerCase()
-    .normalize('NFD')
-    .replace(/[̀-ͯ]/g, '')
-    .replace(/[đĐ]/g, 'd')
-    .replace(/([^0-9a-z-\s])/g, '')
-    .trim()
-    .replace(/\s+/g, '-')
-    .replace(/-+/g, '-')
-
+// Slug (`shared/slugify.ts`, cùng luật máy chủ lưu): sinh từ tên, rời ô và lúc lưu
+// dùng bản chuẩn `slugify`; đang gõ dùng `slugifyDraft` — giữ gạch cuối để gõ tiếp.
 watch(() => form.name, (val) => {
   if (modalMode.value === 'create') {
-    form.slug = slugifyLocal(val)
+    form.slug = slugify(val)
   }
 })
 
 /**
  * Validate slug real-time: nếu admin nhập tay ký tự không hợp lệ → slug sau slugify
- * khác input → báo lỗi + auto-clean. Nút Lưu disabled khi slugError truthy.
+ * khác input → báo lỗi + auto-clean. Nút Lưu disabled khi slugError truthy. Đo bằng
+ * bản "đang gõ": gạch cuối chưa gõ xong không phải lỗi (rời ô/lưu sẽ cắt nó).
  */
 const slugError = computed(() => {
   if (!form.slug) return ''
-  const cleaned = slugifyLocal(form.slug)
+  const cleaned = slugifyDraft(form.slug)
   if (cleaned !== form.slug) {
     return 'Định danh chỉ chứa chữ thường, số, gạch ngang. Không dấu, không khoảng trắng, không ký tự lạ.'
   }
@@ -77,10 +70,12 @@ const slugError = computed(() => {
 
 // Auto-clean slug khi admin paste ký tự sai — slug tự đổi + lỗi biến mất.
 watch(() => form.slug, (val) => {
-  if (val && slugifyLocal(val) !== val) {
-    form.slug = slugifyLocal(val)
+  if (val && slugifyDraft(val) !== val) {
+    form.slug = slugifyDraft(val)
   }
 })
+
+const onSlugBlur = () => { form.slug = slugify(form.slug) }
 
 // ─── Computed tree ────────────────────────────────────────────────────────────
 const tree = computed(() => {
@@ -161,7 +156,7 @@ const handleSave = async () => {
   try {
     const payload = {
       name: form.name.trim(),
-      slug: form.slug.trim(),
+      slug: slugify(form.slug),
       type: form.type,
       description: form.description.trim() || null,
       parentId: form.parentId || null,
@@ -491,6 +486,7 @@ onMounted(() => {
                 class="w-full px-3.5 py-2.5 border rounded-lg text-sm outline-none focus:ring-2 focus:ring-[#2c6e33]/15 font-mono"
                 :class="slugError ? 'border-[#d12420] focus:border-[#d12420]' : 'border-[#c8d6c9] focus:border-[#2c6e33]'"
                 :aria-invalid="!!slugError"
+                @blur="onSlugBlur"
               />
               <p v-if="slugError" role="alert" class="text-[0.73rem] text-[#d12420] m-0 font-semibold flex items-center gap-1.5">
                 <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
