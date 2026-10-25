@@ -27,25 +27,16 @@
  *   type-hint         `bg-[color:#…]`: an explicitly typed arbitrary value is never
  *                     touched (0 in app/ when written; not counted by the hex ratchet)
  *   no-colour-prefix  `[#hex]` that is not the value of a colour utility (`xbg-[#…]`)
- *   order             see below
+ *   order             renaming would change which of two colour classes on one element
+ *                     wins the cascade — see scripts/codemod-hex-tokens-order.ts
  * A hex that is not in Tailwind arbitrary-value brackets (CSS, chart configs, SVG
  * attributes) is never even looked at.
- *
- * `order` — the one pixel trap a per-class rewrite cannot see. Tailwind v3 sorts its
- * candidate class names in ASCII order before generating rules, and rules of one
- * utility with the same variants keep that order (`expandTailwindAtRules`; ties in
- * `offsets.compare` fall back to it). `[` sorts before every letter, so today an
- * arbitrary `bg-[#…]` sits BEFORE `bg-red-50` in the CSS and loses to it; renamed to
- * `bg-surface` it would sort after and win. So, for every element (a start tag in a
- * `.vue` template) or line (script, `.ts`), colour utilities with the same variants
- * and prefix are compared pairwise: if a rewrite flips the ASCII order of a pair,
- * both members keep their original text. This is conservative (two branches of a
- * ternary never apply together, but are compared anyway) — never the other way round.
  */
 import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { COLOR_TOKENS } from '../shared/color-tokens.ts'
+import { END_CHARS, IS_END, cascadeGroups, inRanges, keepCascadeOrder, type CascadeMember, type Range } from './codemod-hex-tokens-order.ts'
 
 /** Every Tailwind v3 utility whose arbitrary value can be a colour. */
 export const COLOR_PREFIXES: readonly string[] = Object.freeze([
@@ -66,9 +57,6 @@ const byLengthDesc = (a: string, b: string) => b.length - a.length || (a < b ? -
 
 // Longest first, so `ring-offset` wins over `ring` and `border-x` over `border`.
 const PREFIX_ALT = [...COLOR_PREFIXES].sort(byLengthDesc).map(escapeRe).join('|')
-/** Characters that end a class name in source text (whitespace, quotes, JS/HTML punctuation). */
-const END_CHARS = '\\s\'"`,;(){}<>'
-const IS_END = new RegExp(`[${END_CHARS}]`)
 /** `bg-[#2c6e33]` + whatever follows up to the end of the class (validated afterwards). */
 const HEX_UTILITY = new RegExp(`(?<![\\w-])(${PREFIX_ALT})-\\[#([0-9a-fA-F]{3,8})\\]([^${END_CHARS}]*)`, 'g')
 /** `bg-[color:#2c6e33]` — a typed arbitrary value. */
@@ -110,89 +98,12 @@ function prepare(tokens: Readonly<Record<string, string>>): Prepared {
   return prepared
 }
 
-type Range = readonly [number, number]
-const inRanges = (index: number, ranges: readonly Range[]) => ranges.some(([start, end]) => index >= start && index < end)
-
 /** `<style>` blocks and `style=` / `:style=` / `v-bind:style=` attribute values. */
 function styleRanges(source: string): Range[] {
   const ranges: Range[] = []
   for (const m of source.matchAll(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi)) ranges.push([m.index, m.index + m[0].length])
   for (const m of source.matchAll(/(?<![\w-])(?:v-bind)?:?style\s*=\s*(?:"[^"]*"|'[^']*')/g)) ranges.push([m.index, m.index + m[0].length])
   return ranges
-}
-
-/** Start tags (`<div …>`, quotes respected) in a template region of a `.vue` file. */
-function startTags(source: string, from: number, to: number): Range[] {
-  const tags: Range[] = []
-  let i = from
-  while (i < to) {
-    const lt = source.indexOf('<', i)
-    if (lt === -1 || lt >= to) break
-    if (source.startsWith('<!--', lt)) {
-      const close = source.indexOf('-->', lt + 4)
-      i = close === -1 ? to : close + 3
-      continue
-    }
-    if (!/[A-Za-z]/.test(source[lt + 1] ?? '')) { i = lt + 1; continue }
-    let j = lt + 1
-    let quote = ''
-    for (; j < to; j++) {
-      const ch = source[j]!
-      if (quote) { if (ch === quote) quote = '' }
-      else if (ch === '"' || ch === '\'') quote = ch
-      else if (ch === '>') break
-    }
-    tags.push([lt, Math.min(j + 1, to)])
-    i = j + 1
-  }
-  return tags
-}
-
-/**
- * Which colour utilities can apply to the same element at once: in a `.vue` template,
- * those inside one start tag; in a script block or a `.ts` file, those on one line.
- */
-function scopeResolver(source: string, isSfc: boolean): (index: number) => string {
-  const lineStarts = [0]
-  for (let i = source.indexOf('\n'); i !== -1; i = source.indexOf('\n', i + 1)) lineStarts.push(i + 1)
-  const lineOf = (index: number) => {
-    let lo = 0
-    let hi = lineStarts.length - 1
-    while (lo < hi) {
-      const mid = (lo + hi + 1) >> 1
-      if (lineStarts[mid]! <= index) lo = mid
-      else hi = mid - 1
-    }
-    return lo
-  }
-  if (!isSfc) return (index) => `L${lineOf(index)}`
-
-  const blocks: Range[] = []
-  const scripts: Range[] = []
-  for (const m of source.matchAll(/<(script|style)\b[^>]*>[\s\S]*?<\/\1\s*>/gi)) {
-    const range: Range = [m.index, m.index + m[0].length]
-    blocks.push(range)
-    if (m[1]!.toLowerCase() === 'script') scripts.push(range)
-  }
-  const tags: Range[] = []
-  let cursor = 0
-  for (const [start, end] of [...blocks].sort((a, b) => a[0] - b[0])) {
-    tags.push(...startTags(source, cursor, start))
-    cursor = end
-  }
-  tags.push(...startTags(source, cursor, source.length))
-  return (index) => {
-    if (inRanges(index, scripts)) return `L${lineOf(index)}`
-    const tag = tags.find(([start, end]) => index >= start && index < end)
-    return tag ? `T${tag[0]}` : `X${index}` // text outside any tag: interacts with nothing
-  }
-}
-
-/** The variants and `!` written before a utility (`hover:!`, `md:`), up to the start of the class. */
-function variantsBefore(source: string, start: number): string {
-  let i = start
-  while (i > 0 && !IS_END.test(source[i - 1]!)) i--
-  return source.slice(i, start)
 }
 
 /** The whole class around `index` (for reporting a `[#hex]` that is not a colour utility). */
@@ -209,12 +120,9 @@ function expandHex(hex: string): string {
   return lower.length === 3 ? [...lower].map((c) => c + c).join('') : lower
 }
 
-interface Member {
+interface Member extends CascadeMember {
   index: number
   end: number
-  group: string
-  before: string
-  after: string
   rewrite?: Rewrite
 }
 
@@ -222,7 +130,7 @@ export function rewriteSource(source: string, options: RewriteOptions = {}): Rew
   const { hexMap, named } = prepare(options.tokens ?? COLOR_TOKENS)
   const isSfc = options.fileName ? options.fileName.endsWith('.vue') : /<template[\s>]/.test(source)
   const masked = styleRanges(source)
-  const scopeOf = scopeResolver(source, isSfc)
+  const groupOf = cascadeGroups(source, isSfc)
   const leftAlone: LeftAlone[] = []
   const members: Member[] = []
   const coveredBrackets = new Set<number>()
@@ -237,8 +145,7 @@ export function rewriteSource(source: string, options: RewriteOptions = {}): Rew
     const value = `#${hex.toLowerCase()}`
     const leave = (reason: LeaveReason) => leftAlone.push({ index, text, value, reason })
     if (inRanges(index, masked)) { leave('style'); continue }
-    const group = `${scopeOf(index)}|${variantsBefore(source, index)}|${prefix}`
-    const member: Member = { index, end: index + text.length, group, before: text, after: text }
+    const member: Member = { index, end: index + text.length, group: groupOf(index, prefix), before: text, after: text }
     members.push(member)
     if (!OPACITY_SUFFIX.test(tail)) { leave('suffix'); continue }
     if (hex.length === 4 || hex.length === 8) { leave('alpha'); continue }
@@ -266,33 +173,14 @@ export function rewriteSource(source: string, options: RewriteOptions = {}): Rew
   // Named colour utilities share the cascade with the hex ones (they never change).
   for (const m of source.matchAll(named)) {
     if (inRanges(m.index, masked)) continue
-    const group = `${scopeOf(m.index)}|${variantsBefore(source, m.index)}|${m[1]}`
-    members.push({ index: m.index, end: m.index + m[0].length, group, before: m[0], after: m[0] })
+    members.push({ index: m.index, end: m.index + m[0].length, group: groupOf(m.index, m[1]!), before: m[0], after: m[0] })
   }
 
-  // Keep every pair's ASCII order (= CSS order, = which colour wins) as it is today.
-  const groups = new Map<string, Member[]>()
-  for (const member of members) groups.set(member.group, [...(groups.get(member.group) ?? []), member])
-  const sign = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
-  for (let changed = true; changed;) {
-    changed = false
-    for (const list of groups.values()) {
-      for (let i = 0; i < list.length; i++) {
-        for (let j = i + 1; j < list.length; j++) {
-          const a = list[i]!
-          const b = list[j]!
-          if (sign(a.before, b.before) === sign(a.after, b.after)) continue
-          for (const member of [a, b]) {
-            if (!member.rewrite) continue
-            leftAlone.push({ index: member.index, text: member.before, value: member.rewrite.value, reason: 'order' })
-            member.rewrite = undefined
-            member.after = member.before
-            changed = true
-          }
-        }
-      }
-    }
-  }
+  // A rewrite that would change which colour wins on an element is undone (see the order module).
+  keepCascadeOrder(members, (member) => {
+    leftAlone.push({ index: member.index, text: member.before, value: member.rewrite!.value, reason: 'order' })
+    member.rewrite = undefined
+  })
 
   const rewrites = members.flatMap((member) => (member.rewrite ? [member.rewrite] : [])).sort((a, b) => a.index - b.index)
   let output = ''
