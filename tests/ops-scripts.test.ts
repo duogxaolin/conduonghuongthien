@@ -1341,3 +1341,17 @@ test('OPS_ALERT_EMAIL: asked in Deploy and Update, written to the .env template'
   assert.ok(update.lastIndexOf('prompt "  OPS_ALERT_EMAIL') < update.lastIndexOf('prompt "  HEALTHCHECK_PING_URL'))
   assert.match(read('.env.example'), /^# OPS_ALERT_EMAIL=/m)
 })
+
+test('MFA_ENFORCEMENT: the Deploy .env template carries the break-glass switch as a commented line at its default', () => {
+  // wave2 2A × 7 checkpoint (tasks.md group 7): compose `environment:`, the manage.sh
+  // `.env` template and production/README.md all name it. It is NOT asked and NOT set:
+  // empty (the default) enforces whatever the SuperAdmin chose; `0` is for an incident.
+  const script = read('production/manage.sh')
+  const template = script.slice(script.indexOf('cat > "$env_tmp" <<EOF'), script.indexOf('\nEOF\n', script.indexOf('cat > "$env_tmp" <<EOF')))
+  assert.match(template, /^# MFA_ENFORCEMENT=$/m, 'a commented line with the default (empty)')
+  assert.doesNotMatch(template, /^MFA_ENFORCEMENT=/m, 'never switched on (or off) by Deploy')
+  const explanation = template.slice(0, template.indexOf('# MFA_ENFORCEMENT=')).split('\n').at(-2) ?? ''
+  assert.match(explanation, /^# .*0.*\/admin\/settings\/security|^# .*\/admin\/settings\/security.*0/, `one-line explanation above it: ${explanation}`)
+  assert.match(read('production/README.md'), /MFA_ENFORCEMENT/)
+  assert.match(read('.env.example'), /^# MFA_ENFORCEMENT=/m)
+})

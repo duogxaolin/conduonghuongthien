@@ -996,6 +996,10 @@ HEALTHCHECK_PING_URL=$HEALTHCHECK_PING_URL
 # gửi qua SMTP cấu hình trong admin; tối đa 1 thư mỗi sự kiện mỗi 15 phút (ghi khác
 # site: 6 giờ). Trống = không gửi.
 OPS_ALERT_EMAIL=$OPS_ALERT_EMAIL
+
+# ─── Chính sách MFA: công tắc khẩn cấp ──────────
+# Trống (mặc định) = cưỡng chế MFA theo chính sách ở /admin/settings/security; bỏ dấu # và đặt 0 chỉ khi một yếu tố MFA hỏng hàng loạt, bỏ lại ngay khi xong sự cố.
+# MFA_ENFORCEMENT=
 EOF
   chmod 600 "$env_tmp"
   mv -f "$env_tmp" "$ROOT/.env"
