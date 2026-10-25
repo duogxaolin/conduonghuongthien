@@ -303,6 +303,28 @@ Luật tên dành riêng chỉ áp cho tên người đọc tự đặt; tên Go
 
 ---
 
+## Wave 3 — CSP giai đoạn 1: quan sát (2026-10-25)
+
+Openspec `wave3-long-term`, design D-CSP. **Header `Content-Security-Policy-Report-Only` đang chạy** trên mọi phản hồi, cạnh header thực thi (giữ nguyên từng byte — `tests/csp-report-only-header.test.ts` ghim bản chụp). Chính sách đích: `script-src` bỏ `'unsafe-inline'`, giữ nguyên tập host (thu hẹp là giai đoạn 2); mọi chỉ thị khác y bản thực thi; `report-uri /api/csp-report`. Hai chuỗi dựng ở `shared/csp-policy.ts`. Trình duyệt không chặn gì theo header này, chỉ báo — và nó CỐ Ý báo mọi script inline của cổng (cấu hình khởi động của Nuxt, failsafe của lớp phủ tải đầu, mã theo dõi): đó là danh sách sẽ băm ở giai đoạn 3.
+
+Không có `report-to`: Chromium bỏ `report-uri` khi chính sách có `report-to` (đo trên Chromium 151), và đường Reporting API chưa kiểm được ngoài production — thêm nó là đặt mọi báo cáo của Chrome lên một đường chưa kiểm. Endpoint đã đọc `application/reports+json`; bật sau chỉ là sửa header, sau khi thấy báo cáo tới thật qua HTTPS.
+
+Endpoint `POST /api/csp-report` (`server/api/csp-report.post.ts`): luôn 204; không ghi CSDL ngoài bộ đếm `rate_limit_counters`; 60 báo cáo được log / nguồn / 60 giây (IP, IPv6 theo /64; đếm theo báo cáo); thân ≤ 64 KiB, ≤ 20 báo cáo / yêu cầu. Cổng chặn yêu cầu ghi khác site miễn đúng đường dẫn này (`isOriginGateExemptPath`, cùng quy tắc "mọi dạng đã giải mã" của `admin-auth`).
+
+**Đọc log.** Mỗi báo cáo là một dòng `security.csp_violation` với `directive` (tên chỉ thị, vd. `script-src-elem`), `blocked` (host như `www.googletagmanager.com`, hoặc nhãn `inline`/`eval`/`data`/`blob`/`chrome-extension`/`none`/`other` — không bao giờ URL đầy đủ), `path` (đường dẫn trang, không query), `disposition` (`report` → mức `info`; `enforce` → `warn`). Không có IP, user agent, mẫu script hay URL có query. Sự kiện này KHÔNG nằm trong `ALERT_EVENTS` (không gửi thư cảnh báo).
+
+```bash
+# Tổng hợp 14 ngày: mỗi cặp chỉ thị/nguồn bị chặn, số báo cáo, số trang khác nhau
+journalctl CONTAINER_TAG=cdkt-app -o cat --since "14 days ago" \
+  | jq -cR 'fromjson? | select(.event == "security.csp_violation")' \
+  | jq -s 'group_by([.directive, .blocked]) | map({directive: .[0].directive, blocked: .[0].blocked, reports: length, pages: ([.[].path] | unique | length)}) | sort_by(-.reports)'
+# Máy không có journald (json-file): thay dòng đầu bằng `docker logs --since 336h cdkt_app 2>&1`
+```
+
+Nhiễu đã biết: `chrome-extension`/`moz-extension`/`safari-web-extension` là tiện ích của khách, bỏ qua. Trần 60 là theo nguồn, không có trần toàn cục: nhiều khách cùng sinh báo cáo thì log tăng theo lượt xem — dung lượng giữ do journald quyết định (`production/README.md`); máy lùi về json-file chỉ giữ 3 × 10 MB. Task 2.3 tóm tắt báo cáo vào đây sau khoảng 2 tuần.
+
+---
+
 ## Pentest RedAmon 2026-10-06 — 12 findings, 0 CVE, risk 65/100 High
 
 Báo cáo external pentest `cdht.delify.vn` (RedAmon, 6/10/2026). Mọi finding đều là **misconfig deployment/DNS**, không phải soft vuln — 0 CVE, 0 confirmed exploit. Đối chiếu với codebase:

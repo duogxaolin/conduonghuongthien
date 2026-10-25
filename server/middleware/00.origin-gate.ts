@@ -13,14 +13,20 @@
  * nên không cần — và không nên — có một bộ phân loại đường dẫn: `admin-auth` từng
  * lệch pha với router đúng ở chỗ đó (`/api/%61dmin/…`). Không phân loại thì không
  * có cách viết đường dẫn nào lọt qua.
+ *
+ * MỘT ngoại lệ có tên, khớp chính xác chứ không theo tiền tố: `POST /api/csp-report`
+ * (báo cáo vi phạm CSP do trình duyệt tự gửi, không đổi trạng thái gì). Lý do và phép
+ * so đường dẫn — cùng quy tắc "mọi dạng đã giải mã" của `admin-auth` — ở
+ * `isOriginGateExemptPath`; test: `tests/csp-report-endpoint-behavior.test.ts`.
  */
 import { createError, defineEventHandler, getRequestHeader } from 'h3'
-import { allowedOriginHosts, decideOriginGate, STATE_CHANGING_METHODS } from '../utils/origin-gate'
+import { allowedOriginHosts, decideOriginGate, isOriginGateExemptPath, STATE_CHANGING_METHODS } from '../utils/origin-gate'
 import { logWarn, SECURITY_EVENTS } from '../utils/logger'
 
 export default defineEventHandler((event) => {
   const method = String(event.method || '').toUpperCase()
   if (!STATE_CHANGING_METHODS.has(method)) return
+  if (isOriginGateExemptPath(String(event.path || '/'), String(event.node.req.originalUrl || event.node.req.url || '/'))) return
 
   const secFetchSite = getRequestHeader(event, 'sec-fetch-site')
   const origin = getRequestHeader(event, 'origin')

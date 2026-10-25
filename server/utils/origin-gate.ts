@@ -26,12 +26,53 @@
  * host đã cấu hình được chấp nhận làm `Origin`.
  */
 import type { H3Event } from 'h3'
+import { CSP_REPORT_PATH } from '../../shared/csp-policy'
 import { peerIsTrustedProxy } from './client-ip'
 import { configuredBaseUrl, requestBase } from './google-oauth/config'
 import { configuredHostAllowlist } from './public-link-base'
 
 /** Phương thức đổi trạng thái. GET/HEAD/OPTIONS không bao giờ bị cổng này chặn. */
 export const STATE_CHANGING_METHODS: ReadonlySet<string> = new Set(['POST', 'PUT', 'PATCH', 'DELETE'])
+
+/** Cắt query string — CHỈ `?`, đúng như router của h3 (không cắt `#`). */
+function stripQuery(path: string): string {
+  const cut = path.indexOf('?')
+  return cut === -1 ? path : path.slice(0, cut)
+}
+
+/** Giải mã percent; chuỗi hỏng (`%zz`) giữ dạng thô — và dạng thô thì không khớp (fail closed). */
+function decodeOrKeep(path: string): string {
+  try { return decodeURIComponent(path) } catch { return path }
+}
+
+/**
+ * Đường dẫn DUY NHẤT cổng không xét: điểm nhận báo cáo vi phạm CSP
+ * (`server/api/csp-report.post.ts`, wave3 D-CSP).
+ *
+ * Vì sao phải miễn: trình duyệt tự gửi báo cáo, không phải trang, và mỗi trình duyệt gửi
+ * một kiểu — Chromium gửi `Sec-Fetch-Site: same-origin` + `Origin` của trang (đo trên bản
+ * 151), nhưng báo cáo có thể mang `Origin: null`, không có header nào, hay đến từ một host
+ * không nằm trong tập được phép (trang mở qua một tên miền phụ chưa khai). Chặn chúng là mù
+ * đúng thứ giai đoạn quan sát cần thấy.
+ *
+ * Vì sao miễn là an toàn: endpoint đó không đổi trạng thái nào (chỉ một dòng log, có giới
+ * hạn theo nguồn), không đọc cookie hay phiên, và luôn trả 204 rỗng. Một trang khác ép
+ * trình duyệt của khách gửi báo cáo giả không làm được gì hơn chính nó gửi bằng curl.
+ *
+ * Vì sao không nới rộng được: cùng quy tắc với `classifyAdminRequest` của `admin-auth` —
+ * MỌI dạng đã giải mã (đường đã route, dạng giải mã của nó, dạng giải mã của request-target
+ * thô) phải đúng bằng `CSP_REPORT_PATH`, và không dạng nào (kể cả dạng thô) được mang `#`
+ * hay `%23`. Một dạng khác đi là router có thể chọn handler khác, nên không miễn. Request-
+ * target thô lấy từ `req.originalUrl`/`req.url`, KHÔNG từ `getRequestURL()` — nó dựng bằng
+ * `new URL`, vốn rút gọn `..` và vứt fragment, nên `/api/submissions/../csp-report` sẽ trông
+ * "đúng" ở đó trong khi router thấy một đường dẫn khác.
+ */
+export function isOriginGateExemptPath(routedPath: string, rawTarget: string): boolean {
+  const routed = stripQuery(routedPath || '/')
+  const raw = stripQuery(rawTarget || '/')
+  if ([routed, raw].some(form => form.includes('#') || /%23/i.test(form))) return false
+  return [routed, decodeOrKeep(routed), decodeOrKeep(raw)].every(form => form === CSP_REPORT_PATH)
+}
 
 /** `Sec-Fetch-Site` được phép: cùng origin, hoặc người dùng tự gõ/đánh dấu trang. */
 const ALLOWED_FETCH_SITES: ReadonlySet<string> = new Set(['same-origin', 'none'])
