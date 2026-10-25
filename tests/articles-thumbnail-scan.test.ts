@@ -17,10 +17,12 @@
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
 import { describe, it } from 'node:test'
+import { backupServiceSource } from './_backup-service-family'
 
 const svc = readFileSync('server/services/articles-thumbnail-scan.ts', 'utf8')
 const api = readFileSync('server/api/admin/articles/scan-thumbnails.post.ts', 'utf8')
-const backup = readFileSync('server/services/backup.ts', 'utf8')
+// `services/backup.ts` là barrel + các tệp con (tách 2026-10-25) — đọc cả nhóm.
+const backup = backupServiceSource()
 
 describe('articles-thumbnail-scan: cấu trúc mã nguồn', () => {
   it('endpoint yêu cầu quyền media.update (không phải articles)', () => {

@@ -18,6 +18,7 @@
  */
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
+import { backupServiceSource } from './_backup-service-family'
 import { describe, it } from 'node:test'
 
 const svcHeal = readFileSync('server/services/media-self-heal.ts', 'utf8')
@@ -27,7 +28,8 @@ const svcSync = ['media-sync.ts', 'media-sync-rewrite.ts', 'media-sync-url-match
   .map(name => readFileSync(`server/services/${name}`, 'utf8'))
   .join('\n')
 const apiHeal = readFileSync('server/api/admin/media/self-heal.post.ts', 'utf8')
-const backup = readFileSync('server/services/backup.ts', 'utf8')
+// `services/backup.ts` là barrel + các tệp con (tách 2026-10-25) — đọc cả nhóm.
+const backup = backupServiceSource()
 
 describe('media-self-heal: cấu trúc mã nguồn', () => {
   it('KHÔNG xoá file local — chỉ upload + repoint', () => {

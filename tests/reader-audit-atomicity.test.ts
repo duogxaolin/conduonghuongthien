@@ -25,6 +25,7 @@ import assert from 'node:assert/strict'
 import { readFileSync, readdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, it } from 'node:test'
+import { BACKUP_BARREL, backupServiceSource } from './_backup-service-family'
 
 const read = (relative: string) => readFileSync(new URL(`../${relative}`, import.meta.url), 'utf8')
 
@@ -521,14 +522,24 @@ const AUDITED_SERVICES: string[] = [
   // Backup & khôi phục: tạo/xoá bản backup ghi hàng `backups` + audit trong một
   // transaction; khôi phục ghi `backup_restore` (kèm các hàng `backups` gắn lại)
   // trong một transaction và `backup_restore_failed` trong transaction riêng.
-  'server/services/backup.ts',
+  // `backup.ts` là barrel từ 2026-10-25: mục này đọc CẢ nhóm tệp từng là nó
+  // (`serviceSource`, `tests/_backup-service-family.ts`).
+  BACKUP_BARREL,
   'server/services/backup-restore.ts',
 ]
+
+/**
+ * Text a service entry stands for. A service split into a barrel plus parts is
+ * checked over ALL of its parts — the barrel alone holds no code, so reading only it
+ * would pass vacuously, and reading one hand-picked part would miss a write moved to
+ * another.
+ */
+const serviceSource = (file: string) => (file === BACKUP_BARREL ? backupServiceSource() : read(file))
 
 describe('service-layer writes commit their mutation and their audit row together', () => {
   for (const file of AUDITED_SERVICES) {
     it(`${file.replace('server/services/', '')} wraps every audited write`, () => {
-      const source = read(file)
+      const source = serviceSource(file)
       assert.match(source, /db\.transaction\(/, 'the write and its audit row are not atomic')
       // `chatbot-small-talk.ts` audits through a local `audit(store, …)` helper
       // whose PARAMETER is also named `db`, so a literal search for

@@ -55,8 +55,9 @@ import {
 
 const execFileAsync = promisify(execFile)
 
-// Tên khoá `LOCK_RESTORE` sống ở `backup.ts`: xoay vòng ở đó hỏi `IS_USED_LOCK`
-// trên đúng khoá này để không xoá file đang được khôi phục.
+// Tên khoá `LOCK_RESTORE` sống ở `backup-locks.ts` (xuất qua barrel `backup.ts`): xoay
+// vòng (`backup-rotation.ts`) hỏi `IS_USED_LOCK` trên đúng khoá này để không xoá file
+// đang được khôi phục.
 const LOCK_TIMEOUT = 0
 
 /** Người khôi phục — `username` đi vào audit để vẫn nêu được tên dù bảng `users` vừa bị thay. */
