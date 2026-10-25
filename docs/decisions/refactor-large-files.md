@@ -143,3 +143,40 @@ Sau rollback `8ea5662`:
 - `admin-bulk-selection` báo `should have 2 row-checkbox site(s), found 0` — đã tách desktop table + mobile card ra component con, mất `selection.toggle(Number(`.
 - `analytics-live-dashboard-ui` báo `assert.match(template, ...)` fail — đã tách template panel ra component con.
 - `analytics-live-dashboard-ui` báo `assert.match(script, ...)` fail — đã tách script ra composable/util (normalizeFilter/normalizeScope).
+
+---
+
+## 2026-10-25 — `pages/admin/media/scan.vue` (908 → 228)
+
+Wave 3, task 4.1 + 7.1. Bản tách giữ lại (không rollback). **Khác hình dạng "873 → 44, mỗi section tự fetch" ghi ở trên**: 5 panel ở đây CHỈ trình bày — panel tự fetch sẽ lọt vào hai cổng phủ (`admin-error-retry-ui`, `skeleton-loading-ui`) mà không có nhánh lỗi để khai.
+
+- **Đường tách** (đường job/panel):
+  - 5 panel trình bày trong `app/components/admin/media/scan/`, mỗi panel một `<section>` gốc:
+    - `ScanFolderPanel` (157 dòng);
+    - `StorageSyncPanel` (192);
+    - `RepairUrlsPanel` (54);
+    - `RepointDomainPanel` (83);
+    - `SelfHealPanel` (104).
+
+    Props vào, emit ra, `defineModel` cho ô tích "Tự đẩy lên R2" và hai ô domain. Phần suy ra thuần (phần trăm tiến độ, nhãn phase, "treo > 90 s") nằm ở panel.
+  - Hai job NỀN (quét thư mục, đồng bộ local ↔ R2: khởi tạo, poll 3 giây, huỷ, buộc gỡ kẹt) → `app/composables/useMediaStorageJobs.ts` (262), gồm `useMediaScanJob` + `useMediaSyncJob`. `toast`/`confirm` được truyền vào, như `useModerationWorker`.
+  - Kiểu suy ra từ handler (`Payload<…>`) → `app/types/media-scan.ts` (67).
+- **Giữ ở cha:**
+  - số ảnh local/R2 (`loadCounts`);
+  - ba thao tác một lần: vá URL, đổi domain R2, self-heal — state, confirm, request;
+  - lời gọi hai composable trong `setup`.
+
+  Cha vẫn gọi `adminFetch<…>()` nên vẫn nằm trong hai cổng phủ — mục `NO_CONTRACT_NEEDED`/`NO_SKELETON_NEEDED` của trang vẫn đúng (không có danh sách tải, nút là thử lại, kết quả vào toast). Trang không có nhánh lỗi/`role="alert"` nào để giữ: trước và sau tách đều vậy.
+- **Tên component:** trang import panel tường minh. Tên auto-import toàn cục là `AdminMediaScanFolderPanel` (Nuxt gộp đoạn `scan` lặp), `AdminMediaScanStorageSyncPanel`… — không trùng tên nào có sẵn.
+- **12 chỗ ép kiểu `($fetch as …)` → `adminFetch<T>()`.** `T` suy ra từ 12 handler dưới `server/api/admin/media/`. Không dùng `useAdminList`: trang không có danh sách.
+- **Hai lỗi sửa kèm,** mỗi lỗi có test đỏ trên bản gốc:
+  - rời trang khi lượt đọc trạng thái đầu tiên, hoặc POST "Bắt đầu quét"/"Đồng bộ", còn đang bay → trước đây `startPolling()` chạy SAU `onUnmounted`, để lại một vòng poll 3 giây không ai dừng (toast của job còn hiện ở trang khác). Nay bộ hẹn giờ không bao giờ được bật sau khi trang đã rời;
+  - "Hủy quét"/"Hủy sync" bấm sau khi job vừa kết thúc giữa hai lượt poll: máy chủ trả `{ ok: false, "Không có job … đang chạy." }` (HTTP 200) mà trang vẫn báo "Đã yêu cầu hủy". Nay hiện câu của máy chủ.
+- **Hành vi:** `tests/admin-media-scan-page.test.ts` (36 test) mount trang thật cùng các panel trên DOM tối giản (`tests/_sfc-mount-media-scan.ts`) và bấm đúng các nút thật. Trên bản gốc: 32/36 xanh, 4 đỏ đúng là 4 test "[fixed by the split]". Sau tách: 36/36.
+- **Chứng minh DOM không đổi** (chạy một lần, không commit): mount bản gốc và bản tách trong 22 kịch bản (62 ảnh chụp sau từng bước), so DOM tuần tự hoá + request + toast:
+  - trước codemod: 62/62 DOM giống hệt bản gốc;
+  - sau codemod: 62/62 giống hệt `codemod(bản gốc)`.
+
+  Request giống hệt; toast giống hệt, trừ đúng lỗi "Hủy" đã sửa.
+- **Mã màu hex:** đã chạy `scripts/codemod-hex-tokens.ts --write` trên 5 panel VÀ trang. Kết quả 115 thay thế — đúng con số codemod cho ra trên tệp gốc nguyên khối. Trang về 0 hex. 89 hex còn lại là giá trị chưa có token (`#8a6412`, `#cce5cd`, `#a32924`, … — quyết định D-T1) + 3 giữ vì thứ tự cascade. Chúng nằm ở 5 panel, vào ratchet bằng `--raise` (14/9/21/21/24); tổng hex của trang cũ 204 → 89.
+- **Việc sau:** nhánh tách `moderation.vue` có `tests/_sfc-mount.ts` cùng ý tưởng với `tests/_sfc-mount-media-scan.ts`. Khi cả hai đã vào, giữ một.

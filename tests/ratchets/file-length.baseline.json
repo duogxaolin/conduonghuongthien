@@ -37,7 +37,6 @@
   "app/pages/admin/login.vue": 429,
   "app/pages/admin/media-portal/[id].vue": 414,
   "app/pages/admin/media/index.vue": 456,
-  "app/pages/admin/media/scan.vue": 908,
   "app/pages/admin/profile.vue": 901,
   "app/pages/admin/settings/backup.vue": 528,
   "app/pages/admin/settings/data-retention.vue": 514,
