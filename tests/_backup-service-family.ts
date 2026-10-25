@@ -28,10 +28,24 @@ const BACKUP_SIBLINGS: readonly string[] = [
 
 const repoUrl = (relative: string) => new URL(`../${relative}`, import.meta.url)
 
+/** Every module specifier the barrel names, whatever its form (`export {…}`, `export type {…}`, `export *`, `import`). */
+function barrelSpecifiers(barrel: string): { reExports: string[], all: string[] } {
+  const reExports = [...barrel.matchAll(/^export\s+(?:type\s+)?(?:\*(?:\s+as\s+\w+)?|\{[^}]*\})\s+from\s+['"]([^'"]+)['"]/gm)].map(match => match[1]!)
+  const all = [...barrel.matchAll(/\bfrom\s+['"]([^'"]+)['"]|\bimport\s*\(?\s*['"]([^'"]+)['"]/g)].map(match => (match[1] ?? match[2])!)
+  return { reExports, all }
+}
+
 /** Repo-relative paths (`server/services/…`) of the barrel and every part, sorted. */
 export function backupServiceFiles(): string[] {
   const barrel = readFileSync(repoUrl(BACKUP_BARREL), 'utf8')
-  const parts = [...barrel.matchAll(/^export\s+(?:type\s+)?\{[^}]*\}\s+from\s+'\.\/([\w-]+)'/gm)].map(match => `${match[1]}.ts`)
+  // The barrel re-exports from its own parts and nothing else: a source outside
+  // `./backup-*` (`../utils/backup-x`, a sibling like `./media`) would never be read by
+  // the guards below — the family is derived from these specifiers.
+  const { reExports, all } = barrelSpecifiers(barrel)
+  assert.ok(reExports.length > 0, 'no re-export found in the backup barrel — the parser no longer matches it')
+  assert.deepEqual(all.filter(source => !reExports.includes(source)), [], 'the backup barrel imports something — it may only re-export')
+  assert.deepEqual(reExports.filter(source => !/^\.\/backup-[\w-]+$/.test(source)), [], 'the backup barrel re-exports from outside its own parts (every source must be ./backup-*)')
+  const parts = reExports.map(source => `${source.slice(2)}.ts`)
   const family = [...new Set(['backup.ts', ...parts])].sort()
   assert.deepEqual(family, [...EXPECTED_BACKUP_FAMILY].sort(), 'the backup barrel re-exports from a different set of files — update EXPECTED_BACKUP_FAMILY (and check every guard that reads the family)')
   const onDisk = readdirSync(repoUrl(SERVICES)).filter(name => /^backup(-[\w-]+)?\.ts$/.test(name)).sort()
