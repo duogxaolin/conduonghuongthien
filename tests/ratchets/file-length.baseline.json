@@ -19,7 +19,6 @@
   "app/composables/useChatbot.ts": 857,
   "app/layouts/admin.vue": 767,
   "app/layouts/default.vue": 401,
-  "app/pages/admin/ai/moderation.vue": 1155,
   "app/pages/admin/chatbot/settings.vue": 448,
   "app/pages/admin/comments/index.vue": 438,
   "app/pages/admin/content/articles/[id].vue": 773,
