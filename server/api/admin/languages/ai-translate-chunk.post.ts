@@ -3,7 +3,7 @@ import { requireResourcePermission } from '../../../utils/permissions'
 import { readValidated } from '../../../utils/request-body'
 import { callAi } from '../../../services/ai-gateway'
 import { upsertTranslations } from '../../../services/languages'
-import { readModelTranslations } from '../../../utils/ai/model-translations'
+import { MODEL_TRANSLATION_ANSWER_FORMAT, readModelTranslations } from '../../../utils/ai/model-translations'
 
 const LANG_CODE_REQUIRED = 'Mã ngôn ngữ bắt buộc.'
 
@@ -34,7 +34,7 @@ Dịch các chuỗi giao diện người dùng sau sang ${langName || langCode}.
 Yêu cầu:
 1. Chuẩn xác, ngắn gọn, phù hợp nút bấm / nhãn phần mềm.
 2. Giữ nguyên mọi placeholder như {0}, {name}, %s.
-3. Trả về DUY NHẤT một JSON array hợp lệ, mỗi phần tử là {"key":"...", "value":"..."}:
+3. Trả về DUY NHẤT một JSON array hợp lệ, mỗi phần tử là ${MODEL_TRANSLATION_ANSWER_FORMAT} — n là số trong ngoặc vuông [n] của dòng đó (cùng một key có thể ở nhiều nhóm):
 ${promptLines.join('\n')}`
 
   const result = await callAi('translation_ui', { prompt, userId: adminUser?.id ?? null })

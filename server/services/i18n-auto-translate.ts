@@ -16,7 +16,7 @@
  */
 import { callAi } from './ai-gateway'
 import { upsertTranslations, DEFAULT_LANGUAGES } from './languages'
-import { readModelTranslations } from '../utils/ai/model-translations'
+import { MODEL_TRANSLATION_ANSWER_FORMAT, readModelTranslations } from '../utils/ai/model-translations'
 import { logWarn } from '../utils/logger'
 import type { ActorLike } from '../utils/permissions'
 
@@ -47,7 +47,7 @@ async function translateBatchForLang(
 ): Promise<Array<{ group: string; key: string; value: string }>> {
   const promptLines = viItems.map((it, i) => `[${i + 1}] key=${it.key} value=${it.value}`)
   const prompt = `Dịch các chuỗi giao diện sau sang ${langName}.
-Giữ nguyên placeholder như {name}, {0}, %s. Trả về JSON array, mỗi phần tử {"key":"...", "value":"..."}:
+Giữ nguyên placeholder như {name}, {0}, %s. Trả về JSON array, mỗi phần tử ${MODEL_TRANSLATION_ANSWER_FORMAT} — n là số trong ngoặc vuông [n] của dòng đó:
 ${promptLines.join('\n')}`
 
   const result = await callAi('translation_ui', { prompt, userId })

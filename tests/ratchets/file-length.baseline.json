@@ -86,7 +86,7 @@
   "server/services/readers.ts": 550,
   "server/services/universal-translation.ts": 540,
   "server/utils/chatbot/chat-policy.ts": 769,
-  "server/utils/chatbot/outbound.ts": 587,
+  "server/utils/chatbot/outbound.ts": 520,
   "server/utils/xlsx-reader.ts": 434,
   "shared/blocks/registry.ts": 469
 }

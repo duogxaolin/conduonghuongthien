@@ -57,6 +57,43 @@ test('the JSON reader keeps asked-for keys with their group, first answer wins, 
   ])
 })
 
+// The seed has keys that exist in several groups (`retry`, …). Two of them in one chunk
+// used to lose the second answer ("already taken"), and a reordered answer landed in
+// the wrong group. Prompts now ask the model to echo the line number `i`.
+const DUPLICATES = [{ group: 'nav', key: 'retry' }, { group: 'form', key: 'retry' }, { group: 'nav', key: 'home' }]
+
+test('a key asked for in two groups: the echoed line number puts each answer in its own group, even reordered (RED before)', () => {
+  const answer = JSON.stringify([
+    { i: 2, key: 'retry', value: 'Retry the form' },
+    { i: 3, key: 'home', value: 'Home' },
+    { i: 1, key: 'retry', value: 'Retry' },
+  ])
+  assert.deepEqual(readModelTranslations(answer, DUPLICATES), [
+    { group: 'form', key: 'retry', value: 'Retry the form' },
+    { group: 'nav', key: 'home', value: 'Home' },
+    { group: 'nav', key: 'retry', value: 'Retry' },
+  ])
+  // A number sent as a string is still the line number.
+  assert.deepEqual(readModelTranslations(JSON.stringify([{ i: '2', key: 'retry', value: 'B' }]), DUPLICATES), [{ group: 'form', key: 'retry', value: 'B' }])
+})
+
+test('without a line number: an echoed group decides, else the answers fill the asked items in order (RED before: the second was dropped)', () => {
+  assert.deepEqual(readModelTranslations(JSON.stringify([{ key: 'retry', value: 'A' }, { key: 'retry', value: 'B' }]), DUPLICATES), [
+    { group: 'nav', key: 'retry', value: 'A' },
+    { group: 'form', key: 'retry', value: 'B' },
+  ])
+  assert.deepEqual(readModelTranslations(JSON.stringify([{ key: 'retry', group: 'form', value: 'B' }, { key: 'retry', group: 'nav', value: 'A' }]), DUPLICATES), [
+    { group: 'form', key: 'retry', value: 'B' },
+    { group: 'nav', key: 'retry', value: 'A' },
+  ])
+  // A line number that points at another key is ignored, not trusted.
+  assert.deepEqual(readModelTranslations(JSON.stringify([{ i: 3, key: 'retry', value: 'A' }]), DUPLICATES), [{ group: 'nav', key: 'retry', value: 'A' }])
+  // An answer with no usable value still takes its place: the next one is for the next item.
+  assert.deepEqual(readModelTranslations(JSON.stringify([{ key: 'retry', value: null }, { key: 'retry', value: 'B' }]), DUPLICATES), [{ group: 'form', key: 'retry', value: 'B' }])
+  // More answers than asked items for a key: the extra one has nowhere to go.
+  assert.deepEqual(readModelTranslations(JSON.stringify([{ key: 'home', value: 'H' }, { key: 'home', value: 'H2' }]), DUPLICATES), [{ group: 'nav', key: 'home', value: 'H' }])
+})
+
 test('an answer that is not a JSON array is no answer at all', () => {
   const requested = [{ group: 'nav', key: 'home' }]
   for (const text of ['', 'Xin lỗi, tôi không thể dịch.', '{"key":"home","value":"Home"}', '[{"key":"home","value":"Home"}']) {

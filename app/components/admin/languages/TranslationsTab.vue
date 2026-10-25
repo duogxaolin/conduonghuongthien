@@ -11,13 +11,19 @@
  * (3) `startBatchTranslateWithProgress` chạy ở cha cho cả 2 tab. Con chỉ giữ
  * `editingKey`/`editingValue` nội bộ.
  *
- * Tab luôn mount khi đang mở: mỗi phím gõ ở ô tìm kiếm là một lượt tải lại, và bản
- * cũ gỡ cả tab (kèm ô đang gõ) suốt lượt đó — ô mất focus sau một ký tự. Nay
- * `busy` chỉ thay BẢNG bằng slot `#status` (khung chờ / lỗi + "Thử lại" do cha vẽ).
- * Tìm kiếm chạy ở máy chủ trên mọi hàng (SQL, không phân biệt hoa thường/dấu);
- * không lọc lần hai ở đây — phép `includes` phía trình duyệt phân biệt dấu nên sẽ
- * giấu hàng máy chủ đã khớp.
+ * Tab luôn mount khi đang mở: bản cũ gỡ cả tab (kèm ô đang gõ) suốt mỗi lượt tải
+ * lại — ô mất focus sau một ký tự. Slot `#status` (khung chờ / lỗi + "Thử lại" do cha
+ * vẽ) chỉ thay BẢNG, và chỉ ở lượt tải đầu hoặc khi lỗi; các lượt tải lại sau giữ bảng
+ * cũ với `aria-busy="true"` (không nháy khung chờ mỗi phím). Ô tìm kiếm gửi yêu cầu
+ * sau `SEARCH_DEBOUNCE_MS` ngừng gõ, không phải mỗi phím. Tìm kiếm chạy ở máy chủ
+ * trên mọi hàng (SQL, không phân biệt hoa thường/dấu); không lọc lần hai ở đây —
+ * phép `includes` phía trình duyệt phân biệt dấu nên sẽ giấu hàng máy chủ đã khớp.
+ * Hàng `id: null` là khoá tiếng Việt mà ngôn ngữ này chưa có hàng (máy chủ thêm vào
+ * để "Xem thiếu" khớp số trên thẻ) — khoá `v-for` theo `group::key`.
  */
+
+/** Ngừng gõ chừng này thì mới tìm (một yêu cầu, không phải một yêu cầu mỗi phím). */
+const SEARCH_DEBOUNCE_MS = 300
 
 interface LanguageRow {
   id: number
@@ -31,7 +37,8 @@ interface LanguageRow {
 }
 
 interface TranslationRow {
-  id: number
+  /** `null`: a vi key this language has no row for yet (saving it creates the row). */
+  id: number | null
   group: string
   key: string
   value: string
@@ -39,8 +46,10 @@ interface TranslationRow {
 }
 
 const props = defineProps<{
-  /** Đang tải hoặc lỗi: bảng nhường chỗ cho slot `#status`. */
-  busy: boolean
+  /** Một lượt tải danh sách đang chạy. */
+  loading: boolean
+  /** Lượt tải gần nhất lỗi: bảng nhường chỗ cho slot `#status` (thông báo + "Thử lại"). */
+  failed: boolean
   languages: LanguageRow[]
   translations: TranslationRow[]
   translationGroups: string[]
@@ -76,6 +85,34 @@ watch(() => props.selectedLangCode, () => {
   editingValue.value = ''
 })
 
+// The skeleton stands in for the table only until the first answer; a later reload
+// (a search, a filter) keeps the rows on screen, marked busy.
+const loadedOnce = ref(!props.loading)
+watch(() => props.loading, (loading) => {
+  if (!loading && !props.failed) loadedOnce.value = true
+})
+const showStatus = computed(() => props.failed || (props.loading && !loadedOnce.value))
+
+// One request once typing pauses; a select change fetches at once (with the current text).
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+function cancelPendingSearch() {
+  clearTimeout(searchTimer)
+  searchTimer = undefined
+}
+function onSearchInput(value: string) {
+  emit('update:searchQuery', value)
+  cancelPendingSearch()
+  searchTimer = setTimeout(() => {
+    searchTimer = undefined
+    emit('fetch-translations')
+  }, SEARCH_DEBOUNCE_MS)
+}
+function fetchNow() {
+  cancelPendingSearch()
+  emit('fetch-translations')
+}
+onBeforeUnmount(cancelPendingSearch)
+
 // Search is already applied by the server (see the header); only the status filter is local.
 const filteredTranslations = computed(() => {
   const list = props.translations
@@ -102,21 +139,24 @@ function saveEdit(t: TranslationRow) {
     <div class="bg-white rounded-xl border border-[#e2ece3] p-4 flex flex-col sm:flex-row flex-wrap gap-3">
       <select
         :value="props.selectedLangCode"
+        aria-label="Ngôn ngữ"
         class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
-        @change="emit('update:selectedLangCode', ($event.target as HTMLSelectElement).value); emit('fetch-translations')"
+        @change="emit('update:selectedLangCode', ($event.target as HTMLSelectElement).value); fetchNow()"
       >
         <option v-for="lang in props.languages.filter(l => l.isActive)" :key="lang.code" :value="lang.code">{{ lang.name }}</option>
       </select>
       <select
         :value="props.selectedGroup"
+        aria-label="Nhóm bản dịch"
         class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
-        @change="emit('update:selectedGroup', ($event.target as HTMLSelectElement).value); emit('fetch-translations')"
+        @change="emit('update:selectedGroup', ($event.target as HTMLSelectElement).value); fetchNow()"
       >
         <option value="all">Tất cả nhóm</option>
         <option v-for="g in props.translationGroups" :key="g" :value="g">{{ g }}</option>
       </select>
       <select
         :value="props.statusFilter"
+        aria-label="Trạng thái bản dịch"
         class="px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
         @change="emit('update:statusFilter', ($event.target as HTMLSelectElement).value as 'all' | 'untranslated' | 'translated' | 'ai')"
       >
@@ -128,9 +168,10 @@ function saveEdit(t: TranslationRow) {
       <input
         :value="props.searchQuery"
         type="text"
+        aria-label="Tìm kiếm khoá hoặc bản dịch"
         placeholder="Tìm kiếm key hoặc giá trị..."
         class="flex-1 min-w-[200px] px-3.5 py-2.5 border border-[#c8d6c9] rounded-lg text-sm outline-none focus:border-[#2c6e33]"
-        @input="emit('update:searchQuery', ($event.target as HTMLInputElement).value); emit('fetch-translations')"
+        @input="onSearchInput(($event.target as HTMLInputElement).value)"
       />
       <span class="text-xs font-bold text-[#667768] self-center px-1 whitespace-nowrap">
         {{ filteredTranslations.length }} / {{ props.translations.length }} key
@@ -144,17 +185,26 @@ function saveEdit(t: TranslationRow) {
       </button>
     </div>
 
-    <!-- Khung chờ + lỗi do cha vẽ (guard ghim translationsError/fetchTranslations ở
-         pages/admin/languages/index.vue); chỉ thay bảng — bộ lọc phía trên giữ nguyên. -->
-    <slot v-if="props.busy" name="status" />
+    <!-- Khung chờ (lượt tải đầu) + lỗi do cha vẽ (guard ghim translationsError/fetchTranslations
+         ở pages/admin/languages/index.vue); chỉ thay bảng — bộ lọc phía trên giữ nguyên. -->
+    <slot v-if="showStatus" name="status" />
 
-    <!-- Translation table -->
-    <div v-else class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden shadow-xs">
+    <!-- Translation table — tải lại thì giữ bảng cũ, đánh dấu bận -->
+    <div
+      v-else
+      class="bg-white rounded-xl border border-[#e2ece3] overflow-hidden shadow-xs transition-opacity motion-reduce:transition-none"
+      :class="props.loading ? 'opacity-60' : ''"
+      :aria-busy="props.loading ? 'true' : undefined"
+    >
+      <!-- Live region always present, only its text changes: one that appears already
+           holding text is often not announced. -->
+      <p role="status" class="sr-only">{{ props.loading ? 'Đang tải lại danh sách bản dịch…' : '' }}</p>
       <!-- Mobile Card View -->
       <div class="md:hidden divide-y divide-[#eef2ee]">
+        <p v-if="filteredTranslations.length === 0" class="m-0 p-6 text-center text-sm text-ink-muted">Không tìm thấy bản dịch</p>
         <div
           v-for="t in filteredTranslations"
-          :key="'m-'+t.id"
+          :key="`m-${t.group}::${t.key}`"
           class="p-3.5 flex flex-col gap-2"
         >
           <div class="flex items-center justify-between gap-2">
@@ -220,7 +270,10 @@ function saveEdit(t: TranslationRow) {
             </tr>
           </thead>
           <tbody class="divide-y divide-[#eef2ee]">
-            <tr v-for="t in filteredTranslations" :key="t.id" class="hover:bg-[#f0f7f1]">
+            <tr v-if="filteredTranslations.length === 0">
+              <td colspan="6" class="px-4 py-8 text-center text-sm text-ink-muted">Không tìm thấy bản dịch</td>
+            </tr>
+            <tr v-for="t in filteredTranslations" :key="`${t.group}::${t.key}`" class="hover:bg-[#f0f7f1]">
               <td class="px-4 py-2.5 font-mono text-[0.78rem] text-[#667768]">{{ t.key }}</td>
               <td class="px-4 py-2.5 text-[0.78rem] text-[#667768]">{{ t.group }}</td>
               <td class="px-4 py-2.5 text-xs text-[#4A5545] bg-[#fafcfa]">

@@ -1,18 +1,22 @@
 import { z } from 'zod'
 import { requireResourcePermission } from '../../../../../utils/permissions'
 import { readValidatedQuery } from '../../../../../utils/request-body'
-import { listTranslations, listTranslationGroups } from '../../../../../services/languages'
+import { listTranslations, listTranslationGroups } from '../../../../../services/translation-list'
 
 /**
- * Every translation of one language — a deliberate full load (~630 rows). It used to
- * cap at 200 (500 at most) and search in JS after the cut, so rows past the cap could
- * not be seen or found in the tab, and the two "every key" callers (vi source map, AI
- * batch scan) got an incomplete list. `limit`/`offset` are no longer read: a client
- * still sending `?limit=500` gets every row. The search runs in SQL over all rows.
+ * Every translation of one language, plus the vi keys it has no row for (`id: null`) —
+ * a deliberate full load (~630 rows; see `services/translation-list.ts`). It used to cap
+ * at 200 (500 at most) and search in JS after the cut. `limit`/`offset` are no longer
+ * read: a client still sending `?limit=500` gets every row. The search runs in SQL.
+ *
+ * A repeated `?search=`/`?group=` (h3 gives an array) takes the first value — the page
+ * sends one; the handler before the schema ignored an array instead of failing.
  */
+const firstValue = (value: unknown) => (Array.isArray(value) ? value[0] : value)
 const querySchema = z.object({
-  group: z.string().max(50).optional(),
-  search: z.string().optional(),
+  group: z.preprocess(firstValue, z.string().max(50)).optional(),
+  // MAX_LIKE_QUERY_CHARS: `containsPattern` would cut a longer one silently.
+  search: z.preprocess(firstValue, z.string().max(200)).optional(),
 })
 
 export default defineEventHandler(async (event) => {

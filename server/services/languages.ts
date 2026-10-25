@@ -6,9 +6,8 @@
  * `settings` RBAC resource — no new resource needed.
  */
 import { createError } from 'h3'
-import { eq, and, or, like, asc, sql } from 'drizzle-orm'
+import { eq, and, sql } from 'drizzle-orm'
 import { getDb, type Database } from '../utils/db'
-import { containsPattern } from '../utils/sql-like'
 import { languages, langTranslations, articleTranslations, pageBlocks, activityLogs } from '../db/schema'
 import type { ActorLike } from '../utils/permissions'
 import type { BlockData, BlockFieldValue } from '../../shared/blocks/types'
@@ -200,22 +199,7 @@ export async function reorderLanguages(
 
 // ─── UI Translations ─────────────────────────────────────────────────────
 
-/**
- * Every row of one language (optionally one group), in id order — no cut: ~630 keys,
- * and the tab's status filter and counter, the vi source map and the AI batch scan
- * are only right over all of them. The search is SQL (key OR value, wildcards
- * escaped) so it covers every row; it used to run in JS after a 200/500-row LIMIT.
- */
-export async function listTranslations(code: string, opts: { group?: string; search?: string }, db: Database = getDb()) {
-  const conditions = [eq(langTranslations.langCode, code)]
-  if (opts.group && opts.group !== 'all') conditions.push(eq(langTranslations.group, opts.group))
-  const search = opts.search?.trim()
-  if (search) {
-    const pattern = containsPattern(search)
-    conditions.push(or(like(langTranslations.key, pattern), like(langTranslations.value, pattern))!)
-  }
-  return db.select().from(langTranslations).where(and(...conditions)).orderBy(asc(langTranslations.id))
-}
+// The tab's list (`listTranslations`, `listTranslationGroups`) is in `translation-list.ts`.
 
 /** `value: null` clears the row (SQL NULL = untranslated); see the PUT handler. */
 export async function upsertTranslations(
@@ -262,15 +246,6 @@ export async function upsertTranslations(
       meta: { operation: 'update_translations', langCode: code, count: items.length, isAiTranslated },
     })
   })
-}
-
-export async function listTranslationGroups(code: string, db: Database = getDb()) {
-  const rows = await db
-    .select({ group: langTranslations.group })
-    .from(langTranslations)
-    .where(eq(langTranslations.langCode, code))
-    .groupBy(langTranslations.group)
-  return rows.map((r) => r.group)
 }
 
 /** Get all translations for a language as a flat key→value map, grouped. */

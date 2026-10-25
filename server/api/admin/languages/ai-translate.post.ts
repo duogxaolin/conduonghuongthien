@@ -6,7 +6,7 @@ import { langTranslations } from '../../../db/schema'
 import { eq } from 'drizzle-orm'
 import { callAi } from '../../../services/ai-gateway'
 import { upsertTranslations } from '../../../services/languages'
-import { readModelTranslations } from '../../../utils/ai/model-translations'
+import { MODEL_TRANSLATION_ANSWER_FORMAT, readModelTranslations } from '../../../utils/ai/model-translations'
 
 const LANG_CODE_REQUIRED = 'Mã ngôn ngữ bắt buộc.'
 const bodySchema = z.object({
@@ -59,12 +59,12 @@ export default defineEventHandler(async (event) => {
   for (let i = 0; i < toTranslate.length; i += BATCH) {
     const batch = toTranslate.slice(i, i + BATCH)
     const promptLines = batch.map(
-      (r, idx) => `[${idx + 1}] key=${r.key} value=${r.value ?? ''}`,
+      (r, idx) => `[${idx + 1}] key=${r.key} group=${r.group} value=${r.value ?? ''}`,
     )
 
     const prompt = `Dịch các chuỗi giao diện sau sang ${langName}.
 Giữ nguyên placeholder như {0}, {name}, %s.
-Trả về JSON array, mỗi phần tử là {"key":"...", "value":"..."}:
+Trả về JSON array, mỗi phần tử là ${MODEL_TRANSLATION_ANSWER_FORMAT} — n là số trong ngoặc vuông [n] của dòng đó:
 ${promptLines.join('\n')}`
 
     const result = await callAi('translation_article', { prompt, userId: adminUser?.id ?? null })

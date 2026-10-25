@@ -66,7 +66,7 @@ async function fetchLanguages() {
 const translationsLoading = ref(false)
 const translationsError = ref('')
 const translations = ref<Array<{
-  id: number; group: string; key: string; value: string; isAiTranslated: boolean
+  id: number | null; group: string; key: string; value: string; isAiTranslated: boolean
 }>>([])
 const translationGroups = ref<string[]>([])
 const selectedGroup = ref('all')
@@ -76,8 +76,8 @@ const statusFilter = ref<'all' | 'untranslated' | 'translated' | 'ai'>('all')
 
 const viTranslationsMap = ref<Map<string, string>>(new Map())
 
-// A `GET …/:code/translations` row. `value` is nullable: keys a new language or "Đồng bộ key" adds are null.
-type TranslationRecord = { id: number; langCode: string; group: string; key: string; value: string | null; isAiTranslated: boolean }
+// A `GET …/:code/translations` row: `value` null = untranslated; `id` null = a vi key with no row here yet.
+type TranslationRecord = { id: number | null; langCode: string; group: string; key: string; value: string | null; isAiTranslated: boolean }
 type TranslationList = { ok: true; items: TranslationRecord[]; groups: string[] }
 
 // Every vi key (the server answers a language whole — it used to cap at 500 of ~600).
@@ -593,7 +593,7 @@ onMounted(() => {
          lúc tải lại; khung chờ/lỗi chỉ thay bảng qua slot #status (guard ghim translationsError/fetchTranslations ở đây) -->
     <TranslationsTab
       v-if="activeTab === 'translations'"
-      :busy="translationsLoading || !!translationsError"
+      :loading="translationsLoading" :failed="!!translationsError"
       :languages="languages"
       :translations="translations"
       :translation-groups="translationGroups"

@@ -73,13 +73,33 @@ interface CachedDelifyQuota {
 }
 
 let cachedDelifyQuota: CachedDelifyQuota | null = null
+/**
+ * How long ANY outcome of a lookup is kept — a quota, and equally a failure (refused
+ * base URL, no key, timeout, error answer). `checkBudget` runs before every AI call,
+ * public chatbot turns included; caching only successes made an outage cost every
+ * call the 2.5 s deadline and a log line. 60 s: the same freshness as a good answer,
+ * and how long a configured quota or a recovered API takes to be seen. During a
+ * failure the last known quota (or none) stands, as before.
+ */
 const DELIFY_QUOTA_CACHE_TTL_MS = 60_000
+let lastQuotaLookupAt: number | null = null
+/** The lookup in flight: concurrent budget checks share it instead of each asking. */
+let quotaLookup: Promise<CachedDelifyQuota | null> | null = null
 
 export async function loadDelifyQuota(db: Database): Promise<CachedDelifyQuota | null> {
-  if (cachedDelifyQuota && Date.now() - cachedDelifyQuota.fetchedAt < DELIFY_QUOTA_CACHE_TTL_MS) {
+  const now = Date.now()
+  // A clock that went backwards counts as expired.
+  if (lastQuotaLookupAt !== null && now >= lastQuotaLookupAt && now - lastQuotaLookupAt < DELIFY_QUOTA_CACHE_TTL_MS) {
     return cachedDelifyQuota
   }
+  quotaLookup ??= lookupDelifyQuota(db).finally(() => {
+    lastQuotaLookupAt = Date.now()
+    quotaLookup = null
+  })
+  return quotaLookup
+}
 
+async function lookupDelifyQuota(db: Database): Promise<CachedDelifyQuota | null> {
   try {
     const [delifyRow] = await db.select().from(aiProviders)
       .where(eq(aiProviders.provider, 'delify'))

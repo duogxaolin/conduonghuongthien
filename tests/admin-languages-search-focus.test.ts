@@ -118,8 +118,12 @@ const LANGUAGES = [
   { id: 1, code: 'vi', name: 'Tiếng Việt', nativeName: 'Tiếng Việt', isActive: true, isDefault: true, displayOrder: 0 },
   { id: 2, code: 'en', name: 'English', nativeName: 'English', isActive: true, isDefault: false, displayOrder: 1 },
   { id: 3, code: 'fr', name: 'French', nativeName: 'Français', isActive: true, isDefault: false, displayOrder: 2 },
+  { id: 4, code: 'lo', name: 'Lao', nativeName: 'ພາສາລາວ', isActive: true, isDefault: false, displayOrder: 3 },
 ]
-const rowsFor = (langCode: string) => ['home', 'news', 'contact'].map((key, i) => ({ id: i + 1, langCode, group: 'nav', key, value: `${langCode}:${key}`, isAiTranslated: false }))
+const rowsFor = (langCode: string) => ['home', 'news', 'contact'].map((key, i) => (langCode === 'lo' && i > 0
+  // lo has a row for `home` only; the server lists the other vi keys with `id: null`.
+  ? { id: null, langCode, group: 'nav', key, value: null, isAiTranslated: false }
+  : { id: i + 1, langCode, group: 'nav', key, value: `${langCode}:${key}`, isAiTranslated: false }))
 
 /** Answers at once, except translation lists while `hold` is set — those wait for the test. */
 function installNetwork() {
@@ -153,12 +157,13 @@ const settle = async () => {
   }
 }
 
-async function mountPage() {
+async function mountPage(options: { manualOpen?: boolean } = {}) {
   const network = installNetwork()
   const toast = Object.fromEntries(['success', 'error', 'warning', 'info'].map(type => [type, () => {}]))
   const auto = {
     definePageMeta: () => {}, useConfirm: () => ({ confirm: async () => true }), adminFetch,
     ref: Vue.ref, reactive: Vue.reactive, computed: Vue.computed, watch: Vue.watch, nextTick: Vue.nextTick,
+    onBeforeUnmount: Vue.onBeforeUnmount,
   }
   const stub = Vue.defineComponent({ render: () => null })
   const tab = await component('components/admin/languages/TranslationsTab.vue', { vue: Vue }, auto)
@@ -183,52 +188,98 @@ async function mountPage() {
   await settle()
 
   const button = (label: string) => findAll(root, n => n.tag === 'button' && textOf(n).includes(label))
-  // Open the tab the way the officer does.
-  ;(button('Bản dịch UI')[0]!.props.onClick as () => void)()
-  await settle()
+  const openTab = async () => {
+    // Open the tab the way the officer does.
+    ;(button('Bản dịch UI')[0]!.props.onClick as () => void)()
+    await settle()
+  }
+  if (!options.manualOpen) await openTab()
 
   const searchBoxes = () => findAll(root, n => n.tag === 'input' && n.props.placeholder === 'Tìm kiếm key hoặc giá trị...')
-  const tableRows = () => findAll(root, n => n.tag === 'tr' && n.parent?.tag === 'tbody')
+  const bodyRows = () => findAll(root, n => n.tag === 'tr' && n.parent?.tag === 'tbody')
+  /** Data rows (six cells); the empty-state row is one cell spanning them. */
+  const tableRows = () => bodyRows().filter(row => row.children.filter(c => c.tag === 'td').length > 1)
+  const emptyRows = () => bodyRows().filter(row => textOf(row).includes('Không tìm thấy bản dịch'))
   const skeletons = () => findAll(root, n => n.props['data-skeleton'] === '')
+  const busyTables = () => findAll(root, n => n.props['aria-busy'] === 'true' && n.props['data-skeleton'] === undefined)
   const alerts = () => findAll(root, n => n.props.role === 'alert')
   const type = (box: TNode, value: string) => (box.props.onInput as (event: unknown) => void)({ target: { value } })
-  return { root, network, button, searchBoxes, tableRows, skeletons, alerts, type }
+  const selectWith = (text: string) => findAll(root, n => n.tag === 'select' && textOf(n).includes(text))[0]!
+  return { root, network, button, openTab, searchBoxes, tableRows, emptyRows, skeletons, busyTables, alerts, type, selectWith }
 }
 
+/** The tab's debounce (TranslationsTab.vue `SEARCH_DEBOUNCE_MS`) plus a margin. */
+const pastDebounce = () => new Promise(resolve => setTimeout(resolve, 300 + 80))
+
 describe('pages/admin/languages/index.vue — the translations search box', () => {
-  it('stays the same node while the table reloads for a keystroke, and after (RED before: unmounted mid-reload)', async () => {
+  it('the first load shows the skeleton in place of the table, below filters that are already there', async () => {
+    const view = await mountPage({ manualOpen: true })
+    view.network.state.hold = true
+    await view.openTab()
+    assert.equal(view.searchBoxes().length, 1, 'the filters render at once')
+    assert.equal(view.skeletons().length, 1)
+    assert.equal(view.tableRows().length, 0)
+    view.network.held.shift()!.respond(new Response())
+    await settle()
+    assert.equal(view.skeletons().length, 0)
+    assert.equal(view.tableRows().length, 3)
+  })
+
+  it('typing sends ONE request once the officer pauses, not one per key (RED before: one per keystroke)', async () => {
     const view = await mountPage()
-    assert.equal(view.searchBoxes().length, 1)
+    const box = view.searchBoxes()[0]!
+    const listCalls = () => view.network.sent.filter(call => call.startsWith('GET /api/admin/languages/en/translations')).length
+    const before = listCalls()
+    for (const text of ['h', 'ho', 'hom']) {
+      view.type(box, text)
+      await settle()
+    }
+    assert.equal(listCalls(), before, 'nothing is sent while the officer is still typing')
+    view.network.state.hold = true
+    await pastDebounce()
+    await settle()
+    assert.equal(listCalls(), before + 1)
+    assert.equal(view.network.held[0]!.url.searchParams.get('search'), 'hom')
+  })
+
+  it('a reload keeps the same input node and the old table, marked busy — no skeleton flash (RED before: unmounted, then skeleton)', async () => {
+    const view = await mountPage()
     assert.equal(view.tableRows().length, 3)
     const box = view.searchBoxes()[0]!
 
     view.network.state.hold = true
     view.type(box, 'ho')
+    await pastDebounce()
     await settle()
-    assert.equal(view.network.held.length, 1, 'the keystroke started a reload')
+    assert.equal(view.network.held.length, 1, 'the search started a reload')
     assert.equal(view.network.held[0]!.url.searchParams.get('search'), 'ho')
 
-    // Mid-reload: the filters are still there — the same input — and only the table
-    // body is replaced by the skeleton.
     assert.equal(view.searchBoxes().length, 1, 'the search box is still rendered while the table reloads')
     assert.ok(view.searchBoxes()[0] === box, 'the search box is the same node mid-reload')
-    assert.equal(view.skeletons().length, 1, 'the skeleton stands in for the table')
-    assert.equal(view.tableRows().length, 0, 'no stale rows under the skeleton')
+    assert.equal(view.skeletons().length, 0, 'no skeleton on a reload')
+    assert.equal(view.tableRows().length, 3, 'the previous rows stay on screen')
+    assert.equal(view.busyTables().length, 1, 'the table is marked aria-busy="true"')
+    const live = findAll(view.busyTables()[0]!, n => n.tag === 'p' && n.props.role === 'status')
+    assert.equal(live.length, 1)
+    assert.match(textOf(live[0]!), /Đang tải lại/, 'screen readers are told the list is reloading')
 
     view.network.held.shift()!.respond(new Response())
     await settle()
+    assert.ok(findAll(view.root, n => n.props.role === 'status' && n.tag === 'p')[0] === live[0], 'the live region stays in place')
+    assert.equal(textOf(live[0]!), '', 'and goes quiet once the rows are in')
     assert.ok(view.searchBoxes()[0] === box, 'the search box is the same node after the reload')
     assert.equal(box.props.value, 'ho')
-    assert.equal(view.skeletons().length, 0)
+    assert.equal(view.busyTables().length, 0)
     assert.deepEqual(view.tableRows().map(row => textOf(row.children[0]!)), ['home'])
   })
 
-  it('a failed reload shows the alert with its retry in place of the table, and the box is still the same node', async () => {
+  it('a failed reload shows the alert with its retry in place of the table; a search with no match says so (RED before: no empty state)', async () => {
     const view = await mountPage()
     const box = view.searchBoxes()[0]!
 
     view.network.state.fail = true
     view.type(box, 'x')
+    await pastDebounce()
     await settle()
     assert.ok(view.searchBoxes()[0] === box, 'the search box is the same node while the error shows')
     assert.equal(view.alerts().length, 1)
@@ -242,6 +293,30 @@ describe('pages/admin/languages/index.vue — the translations search box', () =
     assert.equal(view.alerts().length, 0)
     assert.ok(view.searchBoxes()[0] === box, 'the search box is the same node after the retry')
     assert.equal(view.tableRows().length, 0, 'the retry re-ran the same search ("x" matches nothing)')
+    assert.equal(view.emptyRows().length, 1, '"Không tìm thấy bản dịch" instead of a bare header')
+  })
+
+  it('the search box and the three filters have accessible names (RED before: none)', async () => {
+    const view = await mountPage()
+    assert.equal(view.searchBoxes()[0]!.props['aria-label'], 'Tìm kiếm khoá hoặc bản dịch')
+    assert.equal(view.selectWith('English').props['aria-label'], 'Ngôn ngữ')
+    assert.equal(view.selectWith('Tất cả nhóm').props['aria-label'], 'Nhóm bản dịch')
+    assert.equal(view.selectWith('Tất cả trạng thái').props['aria-label'], 'Trạng thái bản dịch')
+  })
+
+  it('vi keys the language has no row for (id null) render as untranslated rows', async () => {
+    const view = await mountPage()
+    ;(view.selectWith('English').props.onChange as (event: unknown) => void)({ target: { value: 'lo' } })
+    await settle()
+    // Rows are keyed `group::key` (unique per language); `id` is null for these two.
+    // The page's warnHandler throws on any Vue warning.
+    assert.deepEqual(view.tableRows().map(row => [textOf(row.children[0]!), textOf(row.children[3]!)]), [
+      ['home', 'lo:home'], ['news', '(chưa dịch)'], ['contact', '(chưa dịch)'],
+    ])
+    // "Xem thiếu" (the untranslated filter) lists them — the set the coverage card counts.
+    ;(view.selectWith('Tất cả trạng thái').props.onChange as (event: unknown) => void)({ target: { value: 'untranslated' } })
+    await settle()
+    assert.deepEqual(view.tableRows().map(row => textOf(row.children[0]!)), ['news', 'contact'])
   })
 
   // Keeping the tab mounted also keeps its editor state across reloads. The editor is

@@ -30,10 +30,18 @@ export function modelSingleTranslation(answer: string): string | null {
 }
 
 /**
- * The model's JSON array of `{ "key", "value" }` (a ```json fence is tolerated), read
- * against the items that were ASKED for: a key the model invented never becomes a
- * row, and each answer keeps the group it was asked under. Unreadable JSON is no
- * answer at all (`[]`), as before.
+ * The model's JSON array of `{ "i", "key", "value" }` (a ```json fence is tolerated),
+ * read against the items that were ASKED for — `requested[n - 1]` is prompt line `[n]`.
+ * A key the model invented never becomes a row, and each answer lands on ONE asked
+ * item, which it then claims:
+ *   1. the line number it echoes (`i`, a number or a numeric string), when that line
+ *      asked for this key;
+ *   2. else the group it echoes, if any: the first unclaimed item with that group+key;
+ *   3. else the first unclaimed item with that key — answers taken in the order asked.
+ * The same key exists in several groups (`retry`, …): matching on the key alone used
+ * to drop the second answer and could file a reordered one under the wrong group. An
+ * answer without usable text still claims its item (so the next answer is for the next
+ * one) but stores nothing. Unreadable JSON is no answer at all (`[]`).
  */
 export function readModelTranslations(
   answer: string,
@@ -48,15 +56,23 @@ export function readModelTranslations(
   if (!Array.isArray(parsed)) return []
 
   const out: Array<{ group: string; key: string; value: string }> = []
-  const taken = new Set<string>()
+  const claimed = new Set<number>()
+  const free = (at: number) => at >= 0 && !claimed.has(at)
   for (const entry of parsed) {
     if (typeof entry !== 'object' || entry === null) continue
-    const { key, value } = entry as { key?: unknown; value?: unknown }
-    const asked = typeof key === 'string' ? requested.find(item => item.key === key) : undefined
+    const { i, group, key, value } = entry as { i?: unknown; group?: unknown; key?: unknown; value?: unknown }
+    if (typeof key !== 'string') continue
+    const line = typeof i === 'number' ? i : typeof i === 'string' && /^\d+$/.test(i) ? Number(i) : NaN
+    let at = Number.isInteger(line) && requested[line - 1]?.key === key && free(line - 1) ? line - 1 : -1
+    if (at < 0 && typeof group === 'string') at = requested.findIndex((item, n) => free(n) && item.key === key && item.group === group)
+    if (at < 0) at = requested.findIndex((item, n) => free(n) && item.key === key)
+    if (at < 0) continue
+    claimed.add(at)
     const text = modelTranslationText(value)
-    if (!asked || text === null || taken.has(`${asked.group}::${asked.key}`)) continue
-    taken.add(`${asked.group}::${asked.key}`)
-    out.push({ group: asked.group, key: asked.key, value: text })
+    if (text !== null) out.push({ group: requested[at]!.group, key: requested[at]!.key, value: text })
   }
   return out
 }
+
+/** The element every UI-translation prompt asks for; each prompt says `n` is the line's `[n]`. */
+export const MODEL_TRANSLATION_ANSWER_FORMAT = '{"i": n, "key": "...", "value": "..."}'

@@ -196,12 +196,35 @@ test('status: both calls go through outbound.ts with the period as a query value
   assert.equal(failed.error, 'Không thể kết nối tới Delify Router API.')
 })
 
-test('budget guard: the quota lookup goes through outbound.ts, and a refused base URL makes no call at all (RED before)', async () => {
+test('status: a bad receipts answer does not take the key card down with it, and the card names the configured host (RED before)', async () => {
+  providerRow = provider('https://llm-router.example.org/openai/v1')
+  answer = url => (url.endsWith('/receipts') ? { status: 200, body: '<html>maintenance</html>' } : { status: 200, body: { name: 'Key', active: true, budgetUsd: 10 } })
+  const result = await statusHandler(event())
+  assert.equal(result.ok, true, JSON.stringify(result))
+  assert.equal((result.keyInfo as { name: string }).name, 'Key')
+  assert.equal(result.periodSummary, null)
+  assert.deepEqual(result.recentHistory, [])
+  assert.equal(result.host, 'llm-router.example.org', 'the dashboard shows the host it really asked, not a hard-coded router.delify.vn')
+
+  answer = url => (url.endsWith('/receipts') ? { status: 200, body: { summary: null } } : { status: 0, body: '' })
+  const keyDown = await statusHandler(event())
+  assert.equal(keyDown.ok, false)
+  assert.equal(keyDown.error, 'Không thể kết nối tới Delify Router API.')
+})
+
+/** The budget guard remembers any answer — quota or failure — this long (ai-budget.ts). */
+const QUOTA_CACHE_MS = 60_000
+/** The guard's cache and the log throttle are per process: each test starts its own hour. */
+const HOUR = 3_600_000
+
+test('budget guard: the quota lookup goes through outbound.ts, and a refused base URL makes no call at all (RED before)', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + HOUR })
   providerRow = provider('https://127.0.0.1/v1')
   assert.equal(await loadDelifyQuota(fakeDb() as never), null)
   assert.deepEqual(bareFetches, [])
   assert.deepEqual(sent, [])
 
+  t.mock.timers.tick(QUOTA_CACHE_MS)
   providerRow = provider('https://router.delify.vn/v1')
   answer = () => ({ status: 200, body: { budgetUsd: 12.5, active: true } })
   const quota = await loadDelifyQuota(fakeDb() as never)
@@ -209,4 +232,37 @@ test('budget guard: the quota lookup goes through outbound.ts, and a refused bas
   assert.deepEqual(sent.map(s => [s.url, s.query]), [['https://router.delify.vn/api/usage/key', { key: SECRET }]])
   assert.ok((sent[0]!.timeoutMs ?? Infinity) <= 2_500, 'the budget check sits in front of every AI call: a short deadline')
   assert.deepEqual(bareFetches, [])
+})
+
+test('budget guard: a failed lookup is remembered — the next calls within the window cost no network call and no log line (RED before)', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 2 * HOUR })
+  providerRow = provider('https://router.delify.vn/v1')
+  answer = () => ({ status: 0, body: '' })
+  const logged: string[] = []
+  const original = console.error
+  console.error = (...args: unknown[]) => { logged.push(args.join(' ')) }
+  try {
+    await loadDelifyQuota(fakeDb() as never)
+    // Every chatbot turn calls checkBudget: ten more within the window.
+    for (let i = 0; i < 5; i++) await loadDelifyQuota(fakeDb() as never)
+    await Promise.all(Array.from({ length: 5 }, () => loadDelifyQuota(fakeDb() as never)))
+    assert.equal(sent.length, 1, 'one lookup for eleven budget checks')
+    assert.equal(logged.filter(line => line.includes('ai_panel.delify_usage_failed')).length, 1)
+
+    t.mock.timers.tick(QUOTA_CACHE_MS)
+    answer = () => ({ status: 200, body: { budgetUsd: 7, active: true } })
+    assert.equal((await loadDelifyQuota(fakeDb() as never))?.budgetUsd, 7, 'after the window it asks again')
+    assert.equal(sent.length, 2)
+  } finally {
+    console.error = original
+  }
+})
+
+test('budget guard: concurrent checks share one lookup (RED before: one request each)', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() + 3 * HOUR })
+  providerRow = provider('https://router.delify.vn/v1')
+  answer = () => ({ status: 200, body: { budgetUsd: 3, active: true } })
+  const quotas = await Promise.all(Array.from({ length: 8 }, () => loadDelifyQuota(fakeDb() as never)))
+  assert.deepEqual(quotas.map(quota => quota?.budgetUsd), Array(8).fill(3))
+  assert.equal(sent.length, 1)
 })

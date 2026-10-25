@@ -33,6 +33,9 @@ for (let n = 1; n <= KEY_COUNT; n++) {
   insert.run(n * 2 - 1, 'vi', group, `key-${pad(n)}`, `Giá trị ${pad(n)}`)
   insert.run(n * 2, 'en', group, `key-${pad(n)}`, n % 3 ? `Value ${pad(n)}` : null)
 }
+// lo: rows for the first 10 keys only (all 'nav' or 'footer'), plus one key vi does not have.
+for (let n = 1; n <= 10; n++) insert.run(10_000 + n, 'lo', n % 2 ? 'nav' : 'footer', `key-${pad(n)}`, n === 4 ? null : `lo ${pad(n)}`)
+insert.run(10_100, 'lo', 'legacy', 'orphan', 'lo orphan')
 
 const queries: Array<{ sql: string, params: unknown[] }> = []
 const pool = {
@@ -69,7 +72,7 @@ before(async () => {
 after(() => server.close())
 beforeEach(() => { queries.length = 0 })
 
-type Row = { id: number, langCode: string, group: string, key: string, value: string | null }
+type Row = { id: number | null, langCode: string, group: string, key: string, value: string | null, isAiTranslated?: boolean, createdAt?: string | null, updatedAt?: string | null }
 async function list(path: string): Promise<{ items: Row[], groups: string[] }> {
   const response = await server.send('GET', path)
   assert.equal(response.status, 200, response.text)
@@ -121,4 +124,34 @@ test('the group filter alone narrows to that group; "all" means no filter', asyn
   assert.equal(nav.items.length, Math.ceil(KEY_COUNT / 2))
   const all = await list('/api/admin/languages/vi/translations?group=all')
   assert.equal(all.items.length, KEY_COUNT)
+})
+
+test('a vi key the language has no row for is listed too — id null, value null — so the tab lists what the card counts (RED before)', async () => {
+  const { items, groups } = await list('/api/admin/languages/lo/translations')
+  const real = items.filter(row => row.id !== null)
+  const absent = items.filter(row => row.id === null)
+  assert.equal(real.length, 11, 'its own rows first, in id order')
+  assert.deepEqual(real.map(row => row.key).slice(0, 2), ['key-0001', 'key-0002'])
+  assert.equal(absent.length, KEY_COUNT - 10)
+  assert.deepEqual(absent[0], { id: null, langCode: 'lo', group: 'nav', key: 'key-0011', value: null, isAiTranslated: false, createdAt: null, updatedAt: null })
+  assert.equal(items.length, KEY_COUNT + 1, 'every vi key once, plus the language\'s own extra key')
+  assert.deepEqual([...groups].sort(), ['footer', 'legacy', 'nav'], 'the groups of the vi keys are offered too')
+
+  const missing = items.filter(row => !row.value)
+  assert.equal(missing.length, 1 + (KEY_COUNT - 10), '"Xem thiếu": the blank row plus every key with no row')
+})
+
+test('the vi-only keys follow the group filter and the search (key), and vi itself has none', async () => {
+  const footer = await list('/api/admin/languages/lo/translations?group=footer&search=key-058')
+  assert.deepEqual(footer.items.map(row => [row.id, row.key]), [[null, 'key-0580']])
+  const vi = await list('/api/admin/languages/vi/translations?search=key-0011')
+  assert.deepEqual(vi.items.map(row => row.id), [21])
+})
+
+test('the search is bounded at 200 characters, and a repeated ?search= takes the first (RED before: 200 OK / 400)', async () => {
+  const long = await server.send('GET', `/api/admin/languages/vi/translations?search=${'x'.repeat(201)}`)
+  assert.equal(long.status, 400, long.text)
+  assert.equal(long.json().statusMessage, 'Trường "search" không hợp lệ.')
+  const twice = await list('/api/admin/languages/vi/translations?search=key-0450&search=key-0451')
+  assert.deepEqual(twice.items.map(row => row.key), ['key-0450'])
 })

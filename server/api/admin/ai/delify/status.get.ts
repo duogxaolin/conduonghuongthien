@@ -4,6 +4,7 @@ import { aiProviders, aiUsageLogs } from '../../../../db/schema'
 import { requireResourcePermission } from '../../../../utils/permissions'
 import { decryptAiSecret } from '../../../../utils/ai/crypto'
 import { DelifyUsageError, fetchDelifyUsage, type DelifyUsagePath } from '../../../../utils/ai/delify-usage'
+import { checkProviderBaseUrl } from '../../../../utils/ai/provider-url'
 
 const ALLOWED_PERIODS = new Set(['1h', '24h', '7d', '30d', 'all'])
 
@@ -116,24 +117,24 @@ export default defineEventHandler(async (event) => {
   let receiptsData: DelifyReceiptsData | null = null
   let fetchError: string | null = null
 
-  try {
-    const [keyResp, receiptsResp] = await Promise.all([
-      ask('/api/usage/key'),
-      ask('/api/usage/key/receipts', { period, page: '1', pageSize: '20' }),
-    ])
+  // Settled separately: the key card needs only the key answer, and a bad receipts
+  // answer (down, not JSON) must not take it down — the breakdown is just left empty.
+  const [keyResult, receiptsResult] = await Promise.allSettled([
+    ask('/api/usage/key'),
+    ask('/api/usage/key/receipts', { period, page: '1', pageSize: '20' }),
+  ])
 
-    if (keyResp.data && typeof keyResp.data === 'object') {
-      keyData = keyResp.data as DelifyKeyData
-    } else {
-      fetchError = `Key API trả HTTP ${keyResp.status}`
-    }
-
-    if (receiptsResp.data && typeof receiptsResp.data === 'object') {
-      receiptsData = receiptsResp.data as DelifyReceiptsData
-    }
-  } catch (err: unknown) {
+  if (keyResult.status === 'rejected') {
     // A fixed sentence (the old one appended the driver's own message).
-    fetchError = err instanceof DelifyUsageError ? err.message : 'Không thể kết nối tới Delify Router API.'
+    fetchError = keyResult.reason instanceof DelifyUsageError ? keyResult.reason.message : 'Không thể kết nối tới Delify Router API.'
+  } else if (keyResult.value.data && typeof keyResult.value.data === 'object') {
+    keyData = keyResult.value.data as DelifyKeyData
+  } else {
+    fetchError = `Key API trả HTTP ${keyResult.value.status}`
+  }
+
+  if (receiptsResult.status === 'fulfilled' && receiptsResult.value.data && typeof receiptsResult.value.data === 'object') {
+    receiptsData = receiptsResult.value.data as DelifyReceiptsData
   }
 
   if (!keyData) {
@@ -163,6 +164,8 @@ export default defineEventHandler(async (event) => {
   return {
     ok: true,
     configured: true,
+    // The host actually asked (the delify row's base URL) — the dashboard shows it.
+    host: ((target) => (target.ok ? target.hostname : null))(checkProviderBaseUrl(delifyProvider.baseUrl)),
     keyInfo: {
       name: keyData.name ?? 'Delify Key',
       groupName: keyData.groupName ?? 'Default',

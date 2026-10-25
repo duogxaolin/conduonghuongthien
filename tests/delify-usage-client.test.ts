@@ -7,6 +7,9 @@ import test from 'node:test'
 import type { ProviderRequest, ResolveProviderHost } from '../server/utils/chatbot/outbound'
 import { DelifyUsageError, fetchDelifyUsage } from '../server/utils/ai/delify-usage'
 
+/** The throttle interval of the failure log line (one a minute, as rate-limit-store.ts). */
+const DELIFY_USAGE_FAILURE_LOG_INTERVAL_MS = 60_000
+
 /**
  * `fetchDelifyUsage` — the one way to Delify Router's usage API
  * (`/api/usage/key`, `/api/usage/key/receipts`). Everything below `https.request` is
@@ -78,8 +81,12 @@ test('a refused base URL never reaches DNS or a socket: loopback, private, IP li
   }
 })
 
-test('a public name that resolves to a private or loopback address is refused before any connection', async () => {
+test('a public name that resolves to a private or loopback address is refused before any connection', async (t) => {
+  // The failure line is throttled to one a minute (next test): step the clock past it
+  // so each address's own line can be read.
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() })
   for (const address of ['127.0.0.1', '10.0.0.8', '192.168.1.1', '169.254.169.254', '::1', 'fd00::5', '::ffff:10.0.0.1']) {
+    t.mock.timers.tick(DELIFY_USAGE_FAILURE_LOG_INTERVAL_MS)
     const net = transport([{ status: 200, body: '{}' }])
     const resolveHost: ResolveProviderHost = async () => [{ address, family: address.includes(':') ? 6 : 4 }]
     const { error, output } = await captured(() => fetchDelifyUsage({ baseUrl: 'https://router.delify.vn/v1', secret: SECRET, path: '/api/usage/key', resolveHost, request: net.request }))
@@ -89,6 +96,26 @@ test('a public name that resolves to a private or loopback address is refused be
     assert.match(output, /"code":"DESTINATION_UNSAFE"/)
     assert.ok(!output.includes(SECRET), 'the key is not in the log line')
   }
+})
+
+test('failures write one log line a minute, and the next line says how many it skipped (RED before: a line per failure)', async (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: Date.now() })
+  t.mock.timers.tick(DELIFY_USAGE_FAILURE_LOG_INTERVAL_MS)
+  const refuse: ResolveProviderHost = async () => [{ address: '127.0.0.1', family: 4 }]
+  const fail = () => captured(() => fetchDelifyUsage({ baseUrl: 'https://router.delify.vn/v1', secret: SECRET, path: '/api/usage/key', resolveHost: refuse }))
+  const lines = (output: string) => output.split('\n').filter(line => line.includes('ai_panel.delify_usage_failed'))
+
+  const first = await fail()
+  assert.equal(lines(first.output).length, 1)
+  for (let i = 0; i < 4; i++) {
+    const again = await fail()
+    assert.ok(again.error instanceof DelifyUsageError, 'every call still fails as before — only the log is throttled')
+    assert.deepEqual(lines(again.output), [], `failure ${i + 2} within the minute writes no line`)
+  }
+  t.mock.timers.tick(DELIFY_USAGE_FAILURE_LOG_INTERVAL_MS)
+  const later = await fail()
+  assert.equal(lines(later.output).length, 1)
+  assert.match(lines(later.output)[0]!, /"suppressed":4/)
 })
 
 test('the request: the base URL\'s host, pinned to the checked IP, https/443, the key only as the `key` query value', async () => {

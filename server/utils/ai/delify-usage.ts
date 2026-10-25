@@ -15,7 +15,7 @@
  * is known to take (Delify's own usage page calls `/api/usage/key?key=…`); a header
  * would be better but is unverified. So the URL is never logged, never put in an
  * error, and the logger's name-based redaction is not relied on: a failure logs the
- * outbound error code and the path only.
+ * outbound error code and the path only, at most once a minute (`logUsageFailure`).
  */
 import { checkProviderBaseUrl } from './provider-url'
 import { ChatbotOutboundError, safeProviderRequest, type ProviderRequest, type ResolveProviderHost } from '../chatbot/outbound'
@@ -74,8 +74,7 @@ export async function fetchDelifyUsage(input: DelifyUsageRequest): Promise<{ sta
       request: input.request,
     })
   } catch (error) {
-    const code = error instanceof ChatbotOutboundError ? error.code : 'UPSTREAM_FAILURE'
-    logWarn({ event: 'ai_panel.delify_usage_failed', path: input.path, code })
+    logUsageFailure(input.path, error instanceof ChatbotOutboundError ? error.code : 'UPSTREAM_FAILURE')
     throw new DelifyUsageError('unreachable', UNREACHABLE)
   }
 
@@ -83,7 +82,31 @@ export async function fetchDelifyUsage(input: DelifyUsageRequest): Promise<{ sta
   try {
     return { status: response.status, data: JSON.parse(Buffer.from(response.body).toString('utf8')) as unknown }
   } catch {
-    logWarn({ event: 'ai_panel.delify_usage_failed', path: input.path, code: 'BAD_JSON' })
+    logUsageFailure(input.path, 'BAD_JSON')
     throw new DelifyUsageError('bad_response', BAD_RESPONSE)
   }
+}
+
+/**
+ * `ai_panel.delify_usage_failed` is written at most once per interval per process, the
+ * way `rate-limit-store.ts` throttles its database lines: the budget guard asks before
+ * AI calls (public chatbot turns included), so an outage of the usage API would
+ * otherwise write a line per turn. The next line written carries how many were skipped
+ * (`suppressed`). Only the log is throttled — every call still fails as it did. A clock
+ * that went backwards counts as "interval elapsed".
+ */
+export const DELIFY_USAGE_FAILURE_LOG_INTERVAL_MS = 60_000
+const failureLog = { lastLoggedAt: null as number | null, suppressed: 0 }
+
+function logUsageFailure(path: DelifyUsagePath, code: string): void {
+  const now = Date.now()
+  const last = failureLog.lastLoggedAt
+  if (last !== null && now >= last && now - last < DELIFY_USAGE_FAILURE_LOG_INTERVAL_MS) {
+    failureLog.suppressed += 1
+    return
+  }
+  const suppressed = failureLog.suppressed
+  failureLog.lastLoggedAt = now
+  failureLog.suppressed = 0
+  logWarn({ event: 'ai_panel.delify_usage_failed', path, code, ...(suppressed > 0 ? { suppressed } : {}) })
 }

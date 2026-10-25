@@ -61,9 +61,12 @@ function fakeDb() {
 }
 
 let aiAnswer: { ok: boolean, text?: string } = { ok: true, text: '' }
+const prompts: string[] = []
 mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb() } })
 mock.module('../server/utils/permissions', { namedExports: { requireResourcePermission: () => {} } })
-mock.module('../server/services/ai-gateway', { namedExports: { callAi: async () => aiAnswer } })
+mock.module('../server/services/ai-gateway', {
+  namedExports: { callAi: async (_service: string, input: { prompt: string }) => { prompts.push(input.prompt); return aiAnswer } },
+})
 
 const h3 = await import('h3')
 const globals = globalThis as unknown as Record<string, unknown>
@@ -199,6 +202,15 @@ test('chunk: only string values for keys that were asked for are stored (RED bef
   assert.equal(response.status, 200, response.text)
   assert.deepEqual(response.json().translated, [{ group: 'nav', key: 'home', value: 'Accueil' }])
   assert.deepEqual(stored().map(v => [v.group, v.key, v.value]), [['nav', 'home', 'Accueil']])
+})
+
+test('chunk: the same key in two groups gets both answers, each in its own group, even when the model reorders them (RED before)', async () => {
+  aiAnswer = { ok: true, text: JSON.stringify([{ i: 2, key: 'retry', value: 'Try the form again' }, { i: 1, key: 'retry', value: 'Retry' }]) }
+  const items = [{ group: 'nav', key: 'retry', sourceText: 'Thử lại' }, { group: 'form', key: 'retry', sourceText: 'Gửi lại biểu mẫu' }]
+  const response = await send('POST', '/api/admin/languages/ai-translate-chunk', { langCode: 'fr', items })
+  assert.equal(response.status, 200, response.text)
+  assert.deepEqual(stored().map(v => [v.group, v.key, v.value]), [['form', 'retry', 'Try the form again'], ['nav', 'retry', 'Retry']])
+  assert.match(prompts.at(-1)!, /"i"/, 'the prompt asks the model to echo the line number')
 })
 
 test('chunk: an item without a group is 400, not a row written under group "undefined" (RED before)', async () => {
