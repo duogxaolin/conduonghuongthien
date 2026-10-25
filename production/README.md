@@ -87,7 +87,7 @@ Chạy khi muốn kéo code/image mới lên VPS đang chạy:
 
 1. **Hiển thị trạng thái cũ**: image, port, domain, container status (trước đó Update chỉ siết quyền `.env` về 600 — không đổi nội dung)
 2. **Sao lưu DB trước khi cập nhật? [Y/n]** (mặc định **có**) — câu hỏi **đầu tiên**, trước khi Update đổi bất cứ thứ gì: trước `git pull` (đổi `docker-compose.yml`), trước các câu hỏi ghi `.env`, trước khi kéo/đổi image — đúng chỗ của lượt CI deploy. `scripts/backup-db.sh --prefix cdkt-predeploy` → `.deploy-db-backups/` — cùng bản dump, cùng thư mục, cùng vòng xoay 5 bản với lượt CI deploy (xem *Bản dump CSDL trước deploy*); dùng `backup-db.sh` của chính bản checkout đang chạy `manage.sh` (chưa pull). Dump hỏng → Update **dừng**: chưa pull code, chưa sửa `.env`, chưa kéo image hay khởi động lại gì. Chỉ trả lời `n` khi vừa có bản sao lưu mới, hoặc chính bước sao lưu đang hỏng mà phải cập nhật gấp
-3. **Pull code** từ `git pull origin main` (xác nhận trước). `docker-compose.yml` có thay đổi cục bộ là bản CI đã đặt — Update tự sao lưu nó vào `.deploy-compose-backups/` rồi `git checkout -- docker-compose.yml` trước khi pull (xem *An toàn khi Update* bên dưới; pull tay thì làm đúng hai bước đó). Pull mà đổi `production/manage.sh` **hoặc bất kỳ tệp `production/lib/*.sh` nào** → Update **tự chạy tiếp bằng bản vừa kéo về** (`exec`, không hỏi lại sao lưu/pull; bản sao lưu compose của lượt này đi theo cho đường lùi) — phần còn lại luôn là mã mới, kể cả lần đầu kéo từ bản `manage.sh` một tệp cũ về bản tách `lib/`
+3. **Pull code** từ `git pull origin main` (xác nhận trước). `docker-compose.yml` có thay đổi cục bộ là bản CI đã đặt — Update tự sao lưu nó vào `.deploy-compose-backups/` rồi `git checkout -- docker-compose.yml` trước khi pull (xem *An toàn khi Update* bên dưới; pull tay thì làm đúng hai bước đó). Pull mà đổi `production/manage.sh` **hoặc bất kỳ tệp `production/lib/*.sh` nào** → Update **tự chạy tiếp bằng bản vừa kéo về** (`exec`, không hỏi lại sao lưu/pull; bản sao lưu compose của lượt này đi theo cho đường lùi) — phần còn lại là mã mới. Bước tự chạy tiếp đó nằm trong **bản đang chạy**, không phải bản kéo về: nó có từ bản `manage.sh` một tệp ngày 2026-10-24 (`5e9e14b`) trở đi. VPS còn chạy `manage.sh` cũ hơn — như bản trên `main` trước đợt tách `lib/` (`7dfed8c`, 1251 dòng) — thì lượt Update kéo bản tách `lib/` về **chạy hết bằng mã cũ** (thoát 0, không hỏng gì: hàm của bản cũ đã nạp sẵn, `git pull` thay tệp bằng inode mới); **chạy Update thêm một lần** sau lượt đó để phần sửa `.env`/kiểm journald/đổi image dùng mã mới (`tests/ops-scripts-sandbox.test.ts`, ca `(a0)`)
 4. **Sửa cấu hình**: port, `PUBLIC_BASE_URL`, `PUBLIC_HOST_ALLOWLIST` (gõ enter giữ giá trị cũ, hoặc sửa; `.env` cũ chưa có `PUBLIC_HOST_ALLOWLIST` thì gợi ý host của `PUBLIC_BASE_URL`), `OPS_ALERT_EMAIL` (địa chỉ nhận thư cảnh báo, phẩy ngăn cách; enter = giữ nguyên, `-` = xoá; giá trị không phải danh sách địa chỉ bị từ chối), `HEALTHCHECK_PING_URL` (chỉ báo *đang đặt*/*chưa đặt* — **không in URL**; enter = giữ nguyên, `-` = xoá; URL có `?`/`&`/`#` bị từ chối). Ngay trước bước 5, Update kiểm journald và đặt/gỡ override log dự phòng (xem *Log của app*) — không hỏi; cấu hình log hiệu lực không chạy được trên máy này thì **dừng** trước khi kéo image hay khởi động lại
 
 > **`PUBLIC_HOST_ALLOWLIST`** — mọi tên miền thật của cổng, phẩy ngăn cách
@@ -249,6 +249,26 @@ production/
 Thêm một tệp `lib/` mới: thêm nó vào **cả** vòng kiểm và các dòng `.` trong `manage.sh`
 lẫn `EXPECTED_MANAGE_LIBS` (`tests/_manage-sh-source.ts`) — `tests/ops-scripts.test.ts`
 đỏ cho tới khi ba chỗ khớp thư mục.
+
+**Quyền và chủ sở hữu của `lib/` trên VPS** — hai cách làm `git pull` (kể cả bước pull
+của Update) dừng lại:
+
+- **Đổi quyền tệp.** git lưu `lib/*.sh` với quyền **644** (chỉ `manage.sh` là 755). Một lần
+  `chmod +x production/lib/*.sh`, hay "đặt quyền 755 đệ quy" cho thư mục site trong aaPanel,
+  làm git thấy các tệp đó "đã sửa"; lượt `git pull` kế tiếp đổi một trong các tệp ấy dừng
+  với *"Your local changes to the following files would be overwritten by merge"* (Update
+  in `git pull thất bại — dừng`, container không bị đụng). Cách sửa an toàn — chỉ trả lại
+  quyền, không đụng nội dung: `chmod 644 production/lib/*.sh`, rồi
+  `git status --short production/` phải trống. Đừng `git checkout --`/`git reset --hard`
+  (xoá luôn mọi sửa tay chưa commit) và đừng tắt `core.fileMode` (che luôn lần mất `+x`
+  của `manage.sh`).
+- **Pull bằng root.** Lượt `git pull` đầu tiên kéo `lib/` về — trực tiếp, hoặc qua
+  `sudo ./manage.sh` → Update — mà chạy bằng **root** trong bản clone thuộc user khác (user
+  deploy, xem *User deploy không phải root*) thì `production/lib/` và các tệp trong nó thuộc
+  root; lượt pull sau bằng user kia không thay được chúng (*Permission denied*). Cách sửa:
+  ở gốc repo, trao lại cho chủ thư mục repo —
+  `sudo chown -R "$(stat -c '%u:%g' .)" production/lib` (cùng quy tắc `manage.sh` dùng cho
+  `.env` và `.deploy-db-backups/`) — và về sau pull bằng chính user sở hữu repo.
 
 Ở **root repo** trên VPS, các thư mục deploy tự tạo (đều trong `.gitignore` — bản dump
 CSDL chứa toàn bộ dữ liệu production, không bao giờ được commit):

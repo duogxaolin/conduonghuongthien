@@ -6,7 +6,7 @@ import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { manageSource } from './_manage-sh-source'
-import { SECRET, cleanup, envValue, lines, makeSandbox, manageToolkitFiles, repoFile, type Sandbox } from './_ops-sandbox'
+import { SECRET, assertToolkitLoaded, cleanup, envValue, lines, makeSandbox, manageToolkitFiles, repoFile, type Sandbox } from './_ops-sandbox'
 
 /**
  * BEHAVIOUR tests for production/manage.sh and the backup/restore scripts.
@@ -465,6 +465,10 @@ test('a rollback also puts docker-compose.yml back to the pre-pull version', () 
       env: { FAKE_HEALTH: 'unhealthy-until-rollback' },
     })
     assert.notEqual(r.status, 0)
+    // It got there by rolling back — not by failing before the pull (an unloadable
+    // toolkit, a refused pull) with compose never touched.
+    assert.match(r.stdout, /docker-compose\.yml đã trả về bản trước lượt pull/, r.stdout + r.stderr)
+    assert.match(r.stdout, /UPDATE THẤT BẠI — đã lùi về cdkt-rollback\/app:\S+ và dịch vụ đã khoẻ trở lại/, r.stdout + r.stderr)
     assert.equal(readFileSync(compose, 'utf8'), 'services: {}\n', 'compose must be restored alongside the image')
   } finally {
     cleanup(sb)
@@ -1367,9 +1371,14 @@ test('W3: when git pull brings a new manage.sh, Update continues in the NEW scri
 // ─── manage.sh split: Update's self-update across REAL `git pull`s (wave3 4.4) ─
 // W3 above fakes the pull by appending to manage.sh. These pull for real, from a bare
 // "origin" into a clone checked out at commit 1, so git replaces the files the way it
-// does on the VPS. Update started in commit 1's code must finish in the LAST commit's:
-//   (a) the single-file manage.sh every VPS runs today (adb47a2, vendored as
-//       tests/fixtures/ops-sandbox/manage-monolith-adb47a2.sh) pulls the split toolkit;
+// does on the VPS. What a VPS runs is whatever manage.sh its operator last pulled, so
+// there are two single-file starting points:
+//   (a) the LAST single-file manage.sh (adb47a2, vendored as
+//       tests/fixtures/ops-sandbox/manage-monolith-adb47a2.sh). It has the re-exec added in
+//       5e9e14b (2026-10-24), so the Update that pulls the split toolkit FINISHES in it.
+//   (a0) `main` as of 7dfed8c (2026-10-23), the 1251-line manage.sh with no re-exec
+//       (tests/fixtures/ops-sandbox/manage-main-7dfed8c.sh): the Update that pulls the
+//       split toolkit finishes in its OWN old code; the next Update runs the split one.
 //   (b) a split manage.sh pulls a later one where ONLY a lib changed.
 // The marker is the "UPDATE XONG" line of the last commit's lib/update.sh, rewritten by
 // the test: it is printed only when the tail of Update ran from the pulled libs.
@@ -1385,6 +1394,7 @@ const GIT_ENV = {
 /** repo-relative path → content of the toolkit at one commit. */
 type Tree = Record<string, string>
 const monolithTree = (): Tree => ({ 'production/manage.sh': readFileSync(repoFile('tests/fixtures/ops-sandbox/manage-monolith-adb47a2.sh'), 'utf8') })
+const mainTree = (): Tree => ({ 'production/manage.sh': readFileSync(repoFile('tests/fixtures/ops-sandbox/manage-main-7dfed8c.sh'), 'utf8') })
 const withMarker = (tree: Tree, marker: string): Tree => {
   const lib = tree['production/lib/update.sh'] ?? ''
   const marked = lib.replace('═══ UPDATE XONG ═══', `═══ UPDATE XONG ═══ [${marker}]`)
@@ -1433,9 +1443,10 @@ function gitUpdateSandbox(commits: Tree[]) {
   return {
     shas,
     head: () => git(sb.dir, 'rev-parse', 'HEAD'),
-    // Dump: no. Pull code: yes. Every .env prompt: keep. Pull image: no.
-    update: () => sb.run('production/manage.sh', ['update'], {
-      input: updateInputWithDump('n', 'y', 'n'),
+    // Default answers (current toolkit): dump no, pull code yes, every .env prompt keep,
+    // pull image no.
+    update: (input: string = updateInputWithDump('n', 'y', 'n')) => sb.run('production/manage.sh', ['update'], {
+      input,
       env: { ...GIT_ENV, CDKT_JOURNALD_SOCKET: sb.path('no-journal') },
     }),
     cleanup: () => {
@@ -1468,6 +1479,34 @@ test('(a) real git pull: the single-file manage.sh (adb47a2) pulls the split too
     const r = g.update()
     assert.equal(g.head(), g.shas[1], 'the pull did not reach the split commit')
     assertResumedInPulledCode(r, 'MARKER-SPLIT')
+  } finally {
+    g.cleanup()
+  }
+})
+
+test('(a0) real git pull from main (7dfed8c, no re-exec): the first Update finishes in its OWN old code, exit 0; the next Update runs the split toolkit', () => {
+  const split = manageToolkitFiles()
+  const g = gitUpdateSandbox([mainTree(), withMarker(split, 'MARKER-SPLIT')])
+  try {
+    // main's Update asks: pull code? (no dump question), PORT, PUBLIC_BASE_URL,
+    // PUBLIC_HOST_ALLOWLIST, pull image?
+    const first = g.update(lines('y', '', '', '', 'n'))
+    const firstOut = `${first.stdout}\n${first.stderr}`
+    assert.equal(first.status, 0, firstOut)
+    assert.equal(g.head(), g.shas[1], 'the pull did not reach the split commit')
+    assert.doesNotMatch(first.stdout, /Sao lưu DB trước khi cập nhật\?/, 'main has no dump question — this was not main\'s code')
+    assert.doesNotMatch(first.stdout, /manage\.sh vừa đổi theo git pull/, 'main has no re-exec')
+    assert.equal(countOf(first.stdout, /UPDATE XONG/), 1, firstOut)
+    assert.doesNotMatch(first.stdout, /MARKER-SPLIT/, 'the first Update cannot have run the pulled libs')
+
+    // The operator runs Update again: now the split toolkit runs from the start.
+    const second = g.update()
+    const secondOut = `${second.stdout}\n${second.stderr}`
+    assert.equal(second.status, 0, secondOut)
+    assert.equal(g.head(), g.shas[1])
+    assert.equal(countOf(second.stdout, /Sao lưu DB trước khi cập nhật\?/), 1, secondOut)
+    assert.doesNotMatch(second.stdout, /manage\.sh vừa đổi theo git pull/, 'nothing new was pulled — no re-exec')
+    assert.equal(countOf(second.stdout, /UPDATE XONG ═══ \[MARKER-SPLIT\]/), 1, secondOut)
   } finally {
     g.cleanup()
   }
@@ -1517,6 +1556,7 @@ test('manage.sh finds its libs and the repo however it is started: relative, fro
     ]
     for (const { how, argv, cwd } of runs) {
       const r = spawnSync(argv[0]!, [...argv.slice(1), 'backup-cron'], { cwd, env, input: lines('n'), encoding: 'utf8' })
+      assertToolkitLoaded(`${r.stdout}\n${r.stderr}`, how)
       assert.equal(r.status, 0, `${how}: ${r.stdout}${r.stderr}`)
       // ROOT is the repo, whatever the CWD or the link: the cron line it prints `cd`s there.
       assert.ok(r.stdout.includes(`0 2 * * * cd '${sb.dir}' && ./scripts/backup.sh`), `${how}: ${r.stdout}`)
@@ -1532,7 +1572,7 @@ test('a missing lib stops manage.sh before it does anything, and says lib/ must 
     const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
     try {
       rmSync(sb.path(missing), { recursive: true, force: true })
-      const r = sb.run('production/manage.sh', ['backup-cron'], { input: lines('y') })
+      const r = sb.run('production/manage.sh', ['backup-cron'], { input: lines('y'), expectLibLoadFailure: true })
       assert.equal(r.status, 1, `${missing}: ${r.stdout}${r.stderr}`)
       assert.equal(r.stdout, '', `${missing}: nothing may run before the libs are all there`)
       assert.match(r.stderr, /không đọc được .*\/production\/lib\/\S+\.sh/)
@@ -1613,6 +1653,8 @@ test('cron install: an unreadable crontab is never mistaken for an empty one (th
     writeFileSync(sb.path('crontab.txt'), '15 4 * * * /usr/local/bin/other-job\n')
     const r = sb.run('production/manage.sh', ['backup-cron'], { input: lines('y'), env: { FAKE_CRONTAB_LIST_RC: '1' } })
     assert.notEqual(r.status, 0)
+    // Refused for THIS reason: the read failed and it said so (naming crontab's own error).
+    assert.match(r.stdout + r.stderr, /Không đọc được crontab hiện tại \(crontab: cannot open \/var\/spool\/cron: Permission denied\)/)
     assert.deepEqual(installs(sb), [])
     assert.equal(crontabOf(sb), '15 4 * * * /usr/local/bin/other-job\n')
   } finally {
@@ -1670,13 +1712,18 @@ test('cron install: refused for a user who cannot write the backup directory (th
 test('cron install: a repo path cron would misread (%, quote) is refused', () => {
   const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\n`)
   try {
-    // Copy the sandbox's manage.sh into a directory whose name contains '%'.
+    // The whole toolkit (manage.sh + lib/) into a directory whose name contains '%':
+    // manage.sh alone stops at its missing libs and never reaches the refusal.
     const odd = sb.path('odd%dir')
-    mkdirSync(join(odd, 'production'), { recursive: true })
-    writeFileSync(join(odd, 'production', 'manage.sh'), readFileSync(sb.path('production', 'manage.sh')))
+    for (const [file, text] of Object.entries(manageToolkitFiles())) {
+      mkdirSync(join(odd, file, '..'), { recursive: true })
+      writeFileSync(join(odd, file), text)
+    }
     writeFileSync(join(odd, '.env'), `MYSQL_ROOT_PASSWORD=${SECRET}\n`)
     const r = sb.run('odd%dir/production/manage.sh', ['backup-cron'], { input: lines('y') })
     assert.notEqual(r.status, 0)
+    assert.doesNotMatch(r.stdout + r.stderr, /không đọc được/)
+    assert.match(r.stdout + r.stderr, /chứa ký tự cron hiểu khác/)
     assert.deepEqual(installs(sb), [])
   } finally {
     cleanup(sb)
@@ -1743,8 +1790,10 @@ test('export: mismatched or short passphrases write nothing', () => {
     shimOpenssl(sb)
     const mismatch = sb.run('production/manage.sh', ['export-env'], { input: lines(PASSPHRASE, `${PASSPHRASE}!`) })
     assert.notEqual(mismatch.status, 0)
+    assert.match(mismatch.stdout, /Hai lần gõ không khớp — không ghi gì/, mismatch.stdout + mismatch.stderr)
     const short = sb.run('production/manage.sh', ['export-env'], { input: lines('short', 'short') })
     assert.notEqual(short.status, 0)
+    assert.match(short.stdout, /Passphrase ngắn hơn 12 ký tự — không ghi gì/, short.stdout + short.stderr)
     assert.equal(existsSync(sb.path('.env.enc')), false)
     assert.equal(existsSync(sb.path('openssl.argv')) && /-aes-256-cbc/.test(readFileSync(sb.path('openssl.argv'), 'utf8')), false, 'openssl ran anyway')
   } finally {

@@ -1,3 +1,4 @@
+import assert from 'node:assert/strict'
 import { spawnSync } from 'node:child_process'
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -37,10 +38,25 @@ export function manageToolkitFiles(): Record<string, string> {
   return files
 }
 
+/** What production/manage.sh prints when a lib/*.sh is missing (and then exits 1). */
+export const LIB_LOAD_FAILURE = /không đọc được [^\n]*\/lib\/[^\n]*\.sh/
+
+/**
+ * Every sandbox run asserts the toolkit loaded: a test that only checks "exit ≠ 0" or
+ * "nothing was written" would otherwise pass because manage.sh stopped at a missing
+ * lib — before the code under test ever ran. Only a test about that very refusal
+ * passes `expectLibLoadFailure`.
+ */
+export function assertToolkitLoaded(output: string, what: string) {
+  assert.doesNotMatch(output, LIB_LOAD_FAILURE, `${what}: production/manage.sh could not load its libs — the code under test never ran`)
+}
+
+export interface RunOptions { input?: string; env?: Record<string, string>; cwd?: string; expectLibLoadFailure?: boolean }
+
 export interface Sandbox {
   dir: string
   path: (...parts: string[]) => string
-  run: (script: string, args: string[], opts?: { input?: string; env?: Record<string, string>; cwd?: string }) => { status: number; stdout: string; stderr: string }
+  run: (script: string, args: string[], opts?: RunOptions) => { status: number; stdout: string; stderr: string }
   dockerLog: () => string[]
   dockerPwd: () => string[]
   env: () => string
@@ -89,6 +105,7 @@ export function makeSandbox(envFile?: string, opts: { realGit?: boolean } = {}):
         timeout: 60_000,
         maxBuffer: 64 * 1024 * 1024,
       })
+      if (!opts.expectLibLoadFailure) assertToolkitLoaded(`${r.stdout}\n${r.stderr}`, `${script} ${args.join(' ')}`)
       return { status: r.status ?? -1, stdout: r.stdout, stderr: r.stderr }
     },
     dockerLog: () => read('docker.log').map((l) => l.replace(/^\d+\t/, '')),

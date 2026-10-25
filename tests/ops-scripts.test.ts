@@ -1501,38 +1501,125 @@ test('the entry: set -euo pipefail first, the whole file one `{ … exit }` bloc
   assert.doesNotMatch(entry, /^[A-Za-z_][A-Za-z0-9_]*\(\) \{/m, 'functions belong in production/lib/, not in the entry')
 })
 
-test('libs other than common.sh only define functions; no function is defined twice across the toolkit', () => {
-  // All libs share one shell: a variable set at a lib's top level, or a function defined
-  // in two libs, would depend on the source order. Globals live in common.sh alone.
-  const owner = new Map<string, string>()
-  for (const { file } of manageParts().filter((p) => p.file !== MANAGE_ENTRY)) {
-    const probe = spawnSync('bash', ['--noprofile', '--norc', '-c', [
-      'v0=$(compgen -v | LC_ALL=C sort); f0=$(compgen -A function | LC_ALL=C sort); t0=$(trap -p)',
-      '. "$1" > "$2" 2>&1',
-      'v1=$(compgen -v | LC_ALL=C sort); f1=$(compgen -A function | LC_ALL=C sort); t1=$(trap -p)',
-      'echo "vars:$(comm -13 <(printf "%s\\n" "$v0") <(printf "%s\\n" "$v1") | grep -vxE "v0|f0|t0|PIPESTATUS" | tr "\\n" " ")"',
-      'echo "funcs:$(comm -13 <(printf "%s\\n" "$f0") <(printf "%s\\n" "$f1") | tr "\\n" " ")"',
-      'if [ "$t0" = "$t1" ]; then echo "trap:same"; else echo "trap:changed"; fi',
-    ].join('\n'), '_', new URL(`../${file}`, import.meta.url).pathname, '/dev/null'], {
+/**
+ * Source ONE lib into a clean bash that starts like the entry (`set -euo pipefail`)
+ * and report everything loading it changed: new variables, new functions, the shell's
+ * state (`$-`, `set +o`, `shopt -p`, umask, working directory), the traps, and anything
+ * it printed. State is written to files by builtins (no `$(…)`: a command substitution
+ * drops errexit and would hide a lib's `set +e`).
+ */
+const LIB_PROBE = [
+  'set -euo pipefail',
+  'state() { printf "flags=%s\\npwd=%s\\numask=%s\\n" "$-" "$PWD" "$(umask)"; set +o; shopt -p; }',
+  'v0=$(compgen -v | LC_ALL=C sort); f0=$(compgen -A function | LC_ALL=C sort)',
+  'state > "$2/state.before"',
+  '. "$1" > "$2/out" 2>&1',
+  'state > "$2/state.after"',
+  'trap -p > "$2/traps"',
+  'v1=$(compgen -v | LC_ALL=C sort); f1=$(compgen -A function | LC_ALL=C sort)',
+  'echo "@@vars"; comm -13 <(printf "%s\\n" "$v0") <(printf "%s\\n" "$v1") | grep -vxE "v0|f0|PIPESTATUS" || true',
+  'echo "@@funcs"; comm -13 <(printf "%s\\n" "$f0") <(printf "%s\\n" "$f1") || true',
+  'echo "@@state"; diff "$2/state.before" "$2/state.after" || true',
+  'echo "@@traps"; cat "$2/traps"',
+  'echo "@@out"; cat "$2/out"',
+].join('\n')
+function probeLib(libPath: string) {
+  const work = mkdtempSync(join(tmpdir(), 'cdkt-lib-probe-'))
+  try {
+    const r = spawnSync('bash', ['--noprofile', '--norc', '-c', LIB_PROBE, '_', libPath, work], {
+      cwd: work,
       encoding: 'utf8',
       // common.sh refuses to load without the two paths manage.sh sets.
       env: { PATH: process.env.PATH ?? '', ROOT: '/nonexistent', PROD: '/nonexistent/production' },
     })
+    const sections = new Map<string, string[]>()
+    let current: string[] | undefined
+    for (const line of r.stdout.split('\n')) {
+      const marker = /^@@(vars|funcs|state|traps|out)$/.exec(line)
+      if (marker) sections.set(marker[1]!, (current = []))
+      else current?.push(line)
+    }
+    const list = (name: string) => (sections.get(name) ?? []).filter(Boolean)
+    const text = (name: string) => list(name).join('\n')
+    return { status: r.status, stderr: r.stderr, vars: list('vars'), funcs: list('funcs'), state: text('state'), traps: list('traps'), out: text('out') }
+  } finally {
+    rmSync(work, { recursive: true, force: true })
+  }
+}
+
+test('loading a lib changes no shell state; only common.sh sets variables (and its one EXIT trap); no function is defined twice', () => {
+  // All libs share one shell. A lib's top level doing `set +e`, `umask 000`,
+  // `shopt -s nullglob` or `cd` would silently undo the entry's `set -euo pipefail` (or
+  // move every relative path) for the WHOLE toolkit; a variable set there, or a function
+  // defined in two libs, would depend on the source order. Globals live in common.sh alone.
+  const owner = new Map<string, string>()
+  for (const { file } of manageParts().filter((p) => p.file !== MANAGE_ENTRY)) {
+    const probe = probeLib(new URL(`../${file}`, import.meta.url).pathname)
     assert.equal(probe.status, 0, `${file}: ${probe.stderr}`)
-    const field = (name: string) => (new RegExp(`^${name}:(.*)$`, 'm').exec(probe.stdout)?.[1] ?? '').trim()
-    const funcs = field('funcs').split(/\s+/).filter(Boolean)
-    assert.ok(funcs.length > 0, `${file} defines no function`)
-    for (const fn of funcs) {
+    assert.equal(probe.state, '', `${file} changes the shell's state at load time:\n${probe.state}`)
+    assert.equal(probe.out, '', `${file} prints at load time`)
+    assert.ok(probe.funcs.length > 0, `${file} defines no function`)
+    for (const fn of probe.funcs) {
       assert.equal(owner.get(fn), undefined, `${fn} is defined in both ${owner.get(fn)} and ${file}`)
       owner.set(fn, file)
     }
-    if (file === 'production/lib/common.sh') continue
-    assert.equal(field('vars'), '', `${file} sets a top-level variable — globals belong in production/lib/common.sh`)
-    assert.equal(field('trap'), 'same', `${file} installs a trap at load time`)
+    if (file === 'production/lib/common.sh') {
+      assert.equal(probe.traps.length, 1, `common.sh installs exactly one trap:\n${probe.traps.join('\n')}`)
+      assert.match(probe.traps[0]!, /^trap -- 'if \[ -n "\$LOG_FALLBACK_TMP" \]; then rm -f "\$LOG_FALLBACK_TMP"; fi' EXIT$/)
+      continue
+    }
+    assert.deepEqual(probe.vars, [], `${file} sets a top-level variable — globals belong in production/lib/common.sh`)
+    assert.deepEqual(probe.traps, [], `${file} installs a trap at load time`)
   }
   // Every command the entry dispatches to exists.
   for (const cmd of ['cmd_deploy', 'cmd_update', 'cmd_migrate', 'cmd_media_tuning', 'cmd_backup_cron', 'cmd_export_env', 'main_menu']) {
     assert.ok(owner.has(cmd), `${cmd} is not defined by any lib`)
+  }
+})
+
+test('shellcheck -x -a -S warning on the entry is clean — the whole toolkit, warnings inside lib/ included', (t) => {
+  // `-x` alone only FOLLOWS the `.` lines for definitions; a warning inside a lib is
+  // reported only with `-a` (--check-sourced). CI runs the same check (next test).
+  const root = new URL('..', import.meta.url).pathname
+  if (spawnSync('shellcheck', ['--version'], { encoding: 'utf8' }).status !== 0) {
+    t.skip('shellcheck is not installed here. Run it by hand: docker run --rm -v "$PWD:/mnt:ro" -w /mnt koalaman/shellcheck:stable -x -a -S warning production/manage.sh')
+    return
+  }
+  const r = spawnSync('shellcheck', ['-x', '-a', '-S', 'warning', '--format=gcc', 'production/manage.sh'], { cwd: root, encoding: 'utf8' })
+  assert.equal(r.status, 0, `shellcheck found problems in production/manage.sh or production/lib/:\n${r.stdout}${r.stderr}`)
+})
+
+test('CI shellchecks production/ from the entry with -x -a, and never a lib on its own', async () => {
+  const hygiene = asMap(asMap((await loadYaml('.github/workflows/ci.yml')).jobs, 'jobs').hygiene, 'hygiene job')
+  const steps = (hygiene.steps as YamlMap[]).filter((s) => String(s.uses ?? '').startsWith('ludeeus/action-shellcheck@'))
+  const scripts = steps.find((s) => asMap(s.with, 'with').scandir === './scripts')
+  const production = steps.find((s) => asMap(s.with, 'with').scandir === './production')
+  assert.ok(scripts && production, 'hygiene must shellcheck both ./scripts and ./production')
+  assert.equal(production.uses, scripts.uses, 'the same pinned action for both')
+  const opts = String(asMap(production.env ?? {}, 'env').SHELLCHECK_OPTS ?? '').split(/\s+/)
+  assert.ok(opts.includes('-x') && opts.includes('-a'), `SHELLCHECK_OPTS must carry -x and -a (got ${JSON.stringify(opts)}): without -a a warning inside lib/ is silent`)
+  const inputs = asMap(production.with, 'with')
+  // The action's find excludes `*/<path>/*`: lib/ is checked through the entry, not alone
+  // (alone, a lib has none of common.sh's variables).
+  assert.equal(inputs.ignore_paths, 'production/lib')
+  assert.equal(inputs.severity, 'warning')
+})
+
+test('the lib probe itself: each kind of load-time state change is caught, in an ordinary lib and in common.sh', () => {
+  const work = mkdtempSync(join(tmpdir(), 'cdkt-lib-plant-'))
+  try {
+    for (const lib of ['menu.sh', 'common.sh']) {
+      const clean = read(`production/lib/${lib}`)
+      for (const plant of ['set +e +o pipefail', 'umask 000', 'shopt -s nullglob', 'cd /']) {
+        const file = join(work, `${plant.replace(/\W+/g, '_')}.${lib}`)
+        writeFileSync(file, `${clean}${plant}\n`)
+        const probe = probeLib(file)
+        assert.equal(probe.status, 0, `${plant} in ${lib}: ${probe.stderr}`)
+        assert.notEqual(probe.state, '', `\`${plant}\` at the top level of ${lib} went unnoticed`)
+      }
+    }
+  } finally {
+    rmSync(work, { recursive: true, force: true })
   }
 })
 
