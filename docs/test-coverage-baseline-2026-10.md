@@ -186,7 +186,7 @@ So với 2026-10-24 (663 tệp, 299 chưa nạp, 70,50 %): Wave 2 thêm tệp m�
 |---|---|---|---|---|---|
 | 1 | `server/services/google-oauth-settings.ts` | R1 | 198 | Cấu hình Google OAuth đăng nhập người đọc; nơi duy nhất giải mã client secret. | — |
 | 2 | `app/composables/useReaderAuth.ts` | R1 | 119 | Danh tính người đọc phía trình duyệt (đăng nhập Google, đăng xuất, `me`). | — |
-| 3 | `server/api/admin/profile/history.get.ts` | R1 | 116 | Lịch sử đăng nhập/thao tác; xem của tài khoản khác cần `users.read`. | — |
+| 3 | `server/api/admin/profile/history.get.ts` | R1 | 116 | Lịch sử đăng nhập/thao tác; xem của tài khoản khác cần SuperAdmin nghiêm ngặt (`isSuperAdmin === true`), không phải `users.read`. | — |
 | 4 | `app/composables/useAdminAuth.ts` | R1 | 100 | Phiên admin phía trình duyệt: tải `me`, đăng xuất, chuyển hướng khi 403 `mfa_enrollment_required`. | — |
 | 5 | `server/api/admin/users/[id]/mfa.delete.ts` | R1 | 59 | Break-glass: SuperAdmin xoá yếu tố MFA của tài khoản khác. | — |
 | 6 | `server/api/admin/profile/mfa/disable.post.ts` | R1 | 58 | Tắt một yếu tố MFA sau khi nhập lại mật khẩu; thu hồi phiên khác. | — |
@@ -517,7 +517,7 @@ Kết quả: 13 tệp R1 có logic thật, rồi hai service R2 lớn nhất. Vi
 | # | Tệp | Lớp | Dòng mã | Hành vi nên chốt |
 |---|---|---|---|---|
 | 1 | `server/services/google-oauth-settings.ts` | R1 | 198 | Client secret chỉ giải mã ở đây và không lọt ra phản hồi (`serializeGoogleOAuthSettings`); `clearGoogleOAuthSecret` xoá secret, ép tắt công tắc, giữ client id; `updateGoogleOAuthSettings` ghi kèm audit. |
-| 2 | `server/api/admin/profile/history.get.ts` | R1 | 116 | Đọc lịch sử của chính mình không cần resource; đọc của tài khoản khác thiếu `users.read` → 403; lọc `from`/`to` theo ngày lịch VN. |
+| 2 | `server/api/admin/profile/history.get.ts` | R1 | 116 | Đọc lịch sử của chính mình không cần resource; đọc của tài khoản khác cần SuperAdmin nghiêm ngặt (`isSuperAdmin === true`) — có đủ mọi cờ trên `users` vẫn 403; lọc `from`/`to` theo ngày lịch VN. |
 | 3 | `server/api/admin/users/[id]/mfa.delete.ts` | R1 | 59 | Không phải SuperAdmin → 403 (kể cả có `users.update`); xoá yếu tố và tăng `tokenVersion` của tài khoản đích trong cùng transaction với audit. |
 | 4 | `server/api/admin/profile/mfa/disable.post.ts` | R1 | 58 | Sai mật khẩu nhập lại → từ chối, không xoá gì; đúng → xoá hẳn hàng và bí mật (không chỉ gắn cờ), thu hồi phiên khác. |
 | 5 | `server/api/admin/auth/mfa/send-code.post.ts` | R1 | 47 | Chỉ chạy với vé challenge hợp lệ, không cần phiên; vượt giới hạn → 429. (Utils MFA đã có suite `mfa-email-code`; handler thì chưa.) |

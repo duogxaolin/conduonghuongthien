@@ -10,21 +10,23 @@ import test, { after, beforeEach, mock } from 'node:test'
  *   - any signed-in administrator reads their OWN history with no RBAC grant, and
  *     only their own rows — the `user_id = ?` condition is the boundary;
  *   - reading another account's history takes a strict SuperAdmin; every flag on
- *     `users` is not enough (the code and its header say SuperAdmin — the ranking
- *     doc's "users.read" hint is stale);
+ *     `users` is not enough;
  *   - a cross-account read is itself audited, and a refused one leaves no trace of
  *     the target's rows;
  *   - of the free-form `meta`, only ip / userAgent / mfaMethod reach the response;
+ *   - `from`/`to` are Vietnam calendar days (`YYYY-MM-DD`), like every admin date
+ *     filter (`server/utils/vn-day-range.ts`): `[from 00:00 +07, day after to
+ *     00:00 +07)`, the end day included. Anything else — an ISO instant, a time
+ *     with no zone, an impossible date, a reversed range — is a 400, as on
+ *     `/api/admin/activity-logs` and `/api/admin/chatbot/sessions`. It used to be
+ *     `new Date(raw)`: `from=to=2026-10-25` was a zero-width range at 07:00 VN and
+ *     returned nothing for that day;
  *   - malformed paging and ranges are refused, never silently replaced.
  *
  * Real h3 app with the real `admin-auth` middleware in front; Drizzle's SQL on
  * SQLite (`_sqlite-mysql-db.ts`), so the WHERE, ORDER BY and LIMIT/OFFSET the
- * handler builds are what select the rows. Fixture times are explicit UTC.
- *
- * Not pinned: what a date-only `from`/`to` means. The handler parses both with
- * `new Date(raw)` (a UTC instant), unlike the VN-calendar-day rule other admin
- * date filters follow; no client sends these parameters today. Reported to the
- * caller rather than frozen here.
+ * handler builds are what select the rows. Fixture times are explicit UTC, so the
+ * day boundaries below hold under any process `TZ`.
  */
 
 process.env.JWT_SECRET = 'admin-profile-history-behavior-test-secret-0123456789'
@@ -151,15 +153,53 @@ test('only ip, userAgent and mfaMethod leave meta — nothing else in it reaches
   assert.deepEqual([login.ip, login.userAgent, login.mfaMethod], ['10.0.0.8', 'UA-nobody', 'totp'])
 })
 
-test('from/to bound the rows by instant; a bad date or an inverted range is refused, not replaced', async () => {
-  const bounded = await read(NOBODY, `?from=${encodeURIComponent('2026-10-20T12:00:00Z')}&to=${encodeURIComponent('2026-10-21T12:00:00Z')}`)
-  assert.equal(bounded.status, 200)
-  assert.deepEqual(itemsOf(bounded.body).map(item => item.action), ['update'])
-  assert.equal(bounded.body.total, 1)
+/**
+ * Rows of NOBODY around the Vietnam calendar day 25/10/2026 = [2026-10-24T17:00Z,
+ * 2026-10-25T17:00Z). Whole seconds: `activity_logs.created_at` is TIMESTAMP(0).
+ */
+async function seedAroundVietnamDay25() {
+  const at = (iso: string, resource: string) => ({ userId: NOBODY.id, action: 'login', resource, createdAt: new Date(iso) })
+  await harness.db.insert(activityLogs).values([
+    at('2026-10-24T16:59:59Z', '23:59:59 VN 24/10'),
+    at('2026-10-24T17:00:00Z', '00:00:00 VN 25/10'),
+    at('2026-10-24T18:30:00Z', '01:30:00 VN 25/10'),
+    at('2026-10-25T15:00:00Z', '22:00:00 VN 25/10'),
+    at('2026-10-25T16:59:59Z', '23:59:59 VN 25/10'),
+    at('2026-10-25T17:00:00Z', '00:00:00 VN 26/10'),
+  ])
+}
+const resourcesOf = (body: Record<string, unknown>) => itemsOf(body).map(item => item.resource).sort()
 
-  assert.equal((await read(NOBODY, '?from=yesterday')).status, 400)
-  assert.equal((await read(NOBODY, '?to=2026-13-45')).status, 400)
-  assert.equal((await read(NOBODY, `?from=${encodeURIComponent('2026-10-22T00:00:00Z')}&to=${encodeURIComponent('2026-10-21T00:00:00Z')}`)).status, 400)
+test('from=to=D is exactly the Vietnam calendar day D: from its 00:00 +07 up to, not including, the next', async () => {
+  await seedAroundVietnamDay25()
+  const response = await read(NOBODY, '?from=2026-10-25&to=2026-10-25')
+  assert.equal(response.status, 200)
+  assert.equal(response.body.total, 4, `got ${response.body.total} rows for the Vietnam day 25/10`)
+  assert.deepEqual(resourcesOf(response.body), ['00:00:00 VN 25/10', '01:30:00 VN 25/10', '22:00:00 VN 25/10', '23:59:59 VN 25/10'])
+})
+
+test('from alone starts at 00:00 +07 of its day; to alone keeps the whole of its day', async () => {
+  await seedAroundVietnamDay25()
+  const fromOnly = await read(NOBODY, '?from=2026-10-25')
+  assert.deepEqual(resourcesOf(fromOnly.body), ['00:00:00 VN 25/10', '00:00:00 VN 26/10', '01:30:00 VN 25/10', '22:00:00 VN 25/10', '23:59:59 VN 25/10'])
+  const toOnly = await read(NOBODY, '?to=2026-10-24')
+  assert.ok(resourcesOf(toOnly.body).includes('23:59:59 VN 24/10'), 'the last second of the end day was dropped')
+  assert.ok(!resourcesOf(toOnly.body).includes('00:00:00 VN 25/10'), 'the end day ran into the next one')
+  assert.equal(toOnly.body.total, 4, 'the three fixture rows from 20–22/10 plus 23:59:59 on 24/10')
+})
+
+test('anything but a calendar day is a 400, as on the other admin date filters — never reinterpreted', async () => {
+  for (const query of [
+    `?from=${encodeURIComponent('2026-10-25T00:00:00Z')}`,
+    `?to=${encodeURIComponent('2026-10-25T23:59:59Z')}`,
+    '?from=2026-10-25T00:00:00',
+    '?from=2026-02-30',
+    '?to=2026-13-45',
+    '?from=yesterday',
+    '?from=2026-10-26&to=2026-10-25',
+  ]) {
+    assert.equal((await read(NOBODY, query)).status, 400, query)
+  }
 })
 
 test('paging is bounded and stable; malformed paging or ids are refused', async () => {
