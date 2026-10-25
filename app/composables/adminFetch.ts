@@ -22,9 +22,10 @@
  * (tests/error-message.test.ts, tests/admin-list.test.ts).
  *
  * Note on aborts: a request cancelled through `signal` rejects as a `FetchError`
- * whose `cause` is the `AbortError` — `isAbortError()` reads `.name` and does not
- * see it. Decide staleness by which request is current, as `useAdminList` does,
- * not by inspecting the error.
+ * whose `cause` is the `AbortError`. `isAbortError()` follows `.cause` and does
+ * see it, but a source may also ignore the signal and resolve late — so decide
+ * staleness by which request is current, as `useAdminList` does, not by
+ * inspecting the error.
  *
  * `$fetch` stays a bare global (Nuxt auto-import) so tests install a real ofetch
  * over a fake network in its place.

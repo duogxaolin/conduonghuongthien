@@ -34,9 +34,11 @@ import { withNamedLock } from '../utils/named-lock'
 import { headR2Object } from '../utils/media-r2'
 import { loadR2Config } from './media'
 import { runBackup } from './backup'
+import { MEDIA_JOB_LOCK, abortJobIfRestoreInProgress } from './pre-job-backup'
 import { logInfo, logWarn } from '../utils/logger'
 
-const LOCK_NAME = 'cdkt:articles:scan-thumbnails'
+/** `cdkt:articles:scan-thumbnails` — tên ở `MEDIA_JOB_LOCK` (lượt khôi phục đọc cùng danh sách). */
+const LOCK_NAME = MEDIA_JOB_LOCK.fixThumbnails
 
 /**
  * Ảnh mặc định thay thế — phải nằm trong `public/assets/` (IPX đọc được, không
@@ -123,7 +125,8 @@ async function checkThumbnail(
  *
  * `dryRun: true` → chỉ trả danh sách hỏng.
  * `dryRun: false` + `fixIds` → UPDATE thumbnail_url cho `fixIds` sang
- * `defaultCover` (mặc định `DEFAULT_COVER`). Tự backup trước.
+ * `defaultCover` (mặc định `DEFAULT_COVER`). Tự backup trước; đang khôi phục CSDL →
+ * dừng trước mọi lượt ghi (`JobBlockedByRestoreError`, 409).
  */
 export async function scanArticleThumbnails(
   adminUserId: number | null,
@@ -166,6 +169,9 @@ export async function scanArticleThumbnails(
         const r = await runBackup('sql', 'pre-fix-thumbnails', adminUserId)
         backupStamp = r.stamp
       } catch (err) {
+        // Đang khôi phục CSDL → dừng, chưa ghi gì (`pre-job-backup.ts`). Lỗi khác: sửa
+        // tiếp, không có bản chụp.
+        abortJobIfRestoreInProgress(err, 'fix-thumbnails', 'sửa ảnh đại diện bài viết')
         logWarn({
           event: 'articles.thumbnail_fix_pre_backup_failed',
           error: err instanceof Error ? err.message : String(err),

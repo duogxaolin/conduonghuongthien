@@ -32,7 +32,9 @@
  * `chat_messages` không bị khoá cả bảng trong lúc đổi.
  *
  * **Sao lưu trước là bắt buộc**: `runBackup('sql', 'pre-repoint')` hỏng → dừng,
- * không hàng nào đổi (`RepointBackupError`). Snapshot dùng để khôi phục thủ công,
+ * không hàng nào đổi (`RepointBackupError`). Bị từ chối vì đang khôi phục CSDL → cũng
+ * dừng, nhưng là `JobBlockedByRestoreError` (409, "thử lại sau khi khôi phục xong") —
+ * không phải lỗi đĩa. Snapshot dùng để khôi phục thủ công,
  * không tự rollback (khôi phục cả CSDL sẽ mất dữ liệu không liên quan).
  *
  * **Idempotent**: chạy lại cùng cặp domain → không khớp gì, mọi số đếm 0.
@@ -46,6 +48,7 @@ import { withNamedLock } from '../utils/named-lock'
 import { logError, logInfo } from '../utils/logger'
 import { CSP_IMG_SRC_HOSTS, IMAGE_PROXY_DOMAINS, mediaHostProblem } from '../../shared/media-hosts'
 import { runBackup } from './backup'
+import { abortJobIfRestoreInProgress } from './pre-job-backup'
 import { MEDIA_SCAN_LOCK_NAME } from './media-scan'
 import { MEDIA_SYNC_LOCK_NAME, afterSettingsRewritten } from './media-sync-rewrite'
 import { domainRepointForms, type DomainRepointForm } from './media-repoint-match'
@@ -250,6 +253,9 @@ export async function repointR2Urls(
     try {
       backupStamp = (await runBackup('sql', 'pre-repoint', adminUserId)).stamp
     } catch (err: unknown) {
+      // Đang khôi phục CSDL: không phải "sao lưu hỏng" (đĩa/nhật ký) mà là "chưa phải
+      // lúc" — 409 với câu riêng (`pre-job-backup.ts`). Mọi lỗi khác vẫn dừng như cũ.
+      abortJobIfRestoreInProgress(err, 'repoint', 'đổi domain')
       logError({
         event: 'media.repoint_pre_backup_failed',
         oldDomain,

@@ -20,6 +20,7 @@
  */
 import assert from 'node:assert/strict'
 import test, { mock } from 'node:test'
+import { restoreRefusalStubs } from './_restore-refusal-stubs'
 
 const locks = { busy: new Set<string>(), acquired: [] as string[], released: [] as string[] }
 const transactions = { opened: 0, fail: null as Error | null }
@@ -58,7 +59,10 @@ mock.module('../server/utils/logger', {
 })
 let backupOutcome: () => Promise<unknown> = async () => ({ stamp: 's', files: [], driveUploaded: false })
 mock.module('../server/services/backup', {
-  namedExports: { runBackup: async () => backupOutcome() },
+  namedExports: {
+    runBackup: async () => backupOutcome(),
+    ...restoreRefusalStubs(),
+  },
 })
 mock.module('../server/utils/permissions', { namedExports: { requireResourcePermission: () => {} } })
 

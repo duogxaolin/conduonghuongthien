@@ -34,7 +34,9 @@
  * Trước khi sync, tự chạy `runBackup('all')` → snapshot SQL + file. KHÔNG dùng
  * để auto-rollback (restore toàn DB = mất mọi thao tác unrelated trong window
  * sync). Snapshot để **recover thủ công** nếu thảm họa. Sync ngược (`to-r2` →
- * `to-local`) mới là rollback đúng — idempotent, không mất dữ liệu.
+ * `to-local`) mới là rollback đúng — idempotent, không mất dữ liệu. Snapshot hỏng thì
+ * vẫn sync — trừ khi bị từ chối vì đang khôi phục CSDL: khi đó job `failed` trước lượt
+ * ghi đầu tiên (`pre-job-backup.ts`).
  *
  * **File hỏng → bỏ qua + đi tiếp** (try/catch mỗi hàng). Một file R2 fail không
  * chặn cả lượt sync — đã chuyển X file xong thì vẫn giữ X, file hỏng vào
@@ -49,6 +51,7 @@ import { assertUsableR2Config } from '../utils/media-r2'
 import { withNamedLock } from '../utils/named-lock'
 import { logInfo, logWarn } from '../utils/logger'
 import { runBackup } from './backup'
+import { abortJobIfRestoreInProgress } from './pre-job-backup'
 import { MEDIA_SYNC_LOCK_NAME, repairInterruptedSyncRewrites } from './media-sync-rewrite'
 import { hasR2Config, isSyncSuperseded, syncOneToR2, syncOneToLocal } from './media-sync-files'
 
@@ -275,7 +278,11 @@ async function runLocked(
     update({ preBackupStamp: backupRes.stamp })
     logInfo({ event: 'media.sync_pre_backup_done', stamp: backupRes.stamp })
   } catch (err: unknown) {
-    // Pre-backup fail/timeout → cảnh báo nhưng vẫn tiếp sync. Snapshot là bonus,
+    // Đang khôi phục CSDL → dừng cả lượt TRƯỚC bước vá URL (lượt ghi đầu tiên): lỗi ném
+    // ra tới `runSyncWorker`, trạng thái job `failed` mang câu của `pre-job-backup.ts`
+    // (UI poll `sync-status` hiện nó).
+    abortJobIfRestoreInProgress(err, 'sync', 'đồng bộ ảnh')
+    // Pre-backup fail/timeout khác → cảnh báo nhưng vẫn tiếp sync. Snapshot là bonus,
     // không phải điều kiện tiên quyết — sync vẫn idempotent.
     logWarn({
       event: 'media.sync_pre_backup_failed',

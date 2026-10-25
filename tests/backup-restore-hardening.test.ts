@@ -180,6 +180,13 @@ function fakeConnection(options: { multipleStatements?: boolean }) {
  */
 const fakePool = {
   getConnection: async () => fakeConnection({}),
+  // Holding its lock, a restore asks whether any media job holds one (`backup-restore.ts`,
+  // `tests/restore-media-job-exclusion.test.ts`): none does here. Any other pool query
+  // still fails, as it did before the pool had `query` at all.
+  query: async (sqlText: string, params: unknown[] = []) => {
+    if (/IS_USED_LOCK\(\?\) AS media_job_0\b/.test(sqlText)) return [[Object.fromEntries(params.map((_, index) => [`media_job_${index}`, null]))], []]
+    throw new Error(`unexpected pool query: ${sqlText}`)
+  },
   execute: async (sqlText: string, params: unknown[] = []) => {
     if (/^SELECT `key`, `value` FROM `settings`/.test(sqlText)) {
       // The credential conversion reads its three keys here first: its place in `order`.

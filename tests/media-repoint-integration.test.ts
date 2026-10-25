@@ -25,6 +25,7 @@
  */
 import assert from 'node:assert/strict'
 import { mock, test } from 'node:test'
+import { restoreRefusalStubs } from './_restore-refusal-stubs'
 import mysql, { type RowDataPacket } from 'mysql2/promise'
 
 const ENABLED = process.env.MEDIA_REPOINT_INTEGRATION === '1'
@@ -40,6 +41,7 @@ mock.module(new URL('../server/services/backup.ts', import.meta.url), {
       if (backup.fail) throw new Error('mysqldump: Got errno 28 on write (disk full)')
       return { stamp: `stamp-${backup.calls}`, files: [], driveUploaded: false }
     },
+    ...restoreRefusalStubs(),
   },
 })
 

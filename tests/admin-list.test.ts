@@ -481,9 +481,10 @@ describe('adminFetch', () => {
     assert.equal(errorMessage(error, FALLBACK), 'Bạn không có quyền xem danh sách người đọc.')
   })
 
-  it('an aborted request rejects as FetchError with the AbortError as cause — isAbortError() alone cannot see it', async () => {
-    // This is why useAdminList decides staleness by request generation, not by
-    // inspecting the error: the name on the thrown error is "FetchError".
+  it('an aborted request rejects as FetchError with the AbortError as cause — isAbortError() follows the cause', async () => {
+    // The name on the thrown error is "FetchError"; isAbortError() sees the abort only
+    // because it walks `.cause` (tests/error-abort-detection.test.ts). useAdminList still
+    // decides staleness by request generation, since a source may ignore the signal.
     const calls = installFakeNetwork()
     const controller = new AbortController()
     const pending = adminFetch<unknown>('/api/admin/readers', { signal: controller.signal })
@@ -494,7 +495,7 @@ describe('adminFetch', () => {
     const error = await pending.then(() => null, (err: unknown) => err)
     assert.ok(error instanceof FetchError)
     assert.equal((error.cause as { name?: string } | undefined)?.name, 'AbortError')
-    assert.equal(isAbortError(error), false)
+    assert.equal(isAbortError(error), true)
     assert.equal(calls.length, 1, 'ofetch does not retry an abort')
   })
 })

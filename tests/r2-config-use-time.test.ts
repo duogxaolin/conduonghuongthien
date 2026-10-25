@@ -3,6 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import path from 'node:path'
 import test, { mock } from 'node:test'
+import { restoreRefusalStubs } from './_restore-refusal-stubs'
 
 /**
  * Account id / bucket R2 ĐÃ LƯU được kiểm lúc DÙNG, không chỉ lúc lưu.
@@ -43,7 +44,12 @@ let storedR2 = { accountId: '', accessKeyId: '', secretAccessKey: '', bucket: ''
 const locksTaken: string[] = []
 mock.module('../server/utils/db', { namedExports: { getDb: () => fakeDb, getPool: () => ({}) } })
 mock.module('../server/services/media', { namedExports: { loadR2Config: async () => storedR2 } })
-mock.module('../server/services/backup', { namedExports: { runBackup: async () => ({ stamp: 'stamp-1' }) } })
+mock.module('../server/services/backup', {
+  namedExports: {
+    runBackup: async () => ({ stamp: 'stamp-1' }),
+    ...restoreRefusalStubs(),
+  },
+})
 mock.module('../server/utils/named-lock', {
   namedExports: {
     withNamedLock: async (_p: unknown, name: string, _t: number, fn: () => Promise<unknown>) => {

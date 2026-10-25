@@ -310,8 +310,8 @@ verify_incoming_backup_script() {
 }
 
 # Dump CSDL TRƯỚC khi đổi bất cứ thứ gì trên máy chủ (compose, .env, container),
-# bằng chính backup-db.sh — cùng phép kiểm (gzip, dấu "Dump completed", ≥ 20 bảng,
-# kích thước), tên riêng `cdkt-predeploy-<db>-<thời-điểm>-<pid>.sql.gz`, giữ 5 bản.
+# bằng chính backup-db.sh — cùng phép kiểm (gzip, dòng "-- Dump completed" ở ĐẦU một
+# trong 5 dòng cuối — đúng luật restore-db.sh nhận, ≥ 20 bảng, kích thước), tên riêng `cdkt-predeploy-<db>-<thời-điểm>-<pid>.sql.gz`, giữ 5 bản.
 # Đây là điểm lùi dữ liệu của lượt này: một image mới chạy migration hỏng vẫn còn
 # bản CSDL của image trước. Dump hỏng (đĩa đầy, mysql dừng…) thì DỪNG — triển khai
 # mà không có điểm lùi là đúng ca bản sao lưu này tồn tại để chặn. Chưa chạm gì,

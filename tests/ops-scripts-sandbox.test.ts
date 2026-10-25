@@ -866,6 +866,28 @@ test('restore-media refuses while the app is running (exit 2)', () => {
   }
 })
 
+// ─── scripts/backup-db.sh: the completion marker, the same rule as restore-db.sh ─
+test('backup-db rejects a dump cut off inside a row that holds the marker text (not at a line start), leaving no dump behind', () => {
+  // Before: backup-db.sh accepted "Dump completed" anywhere in the last lines and KEPT
+  // such a dump as a good backup — restore-db.sh (anchored) then refused it, on the
+  // day it was needed.
+  const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\nMYSQL_DATABASE=cdkt_admin\n`)
+  try {
+    const dir = sb.path('backups')
+    const r = sb.run('scripts/backup-db.sh', [dir], { env: { FAKE_DUMP_MARKER_MIDLINE: '1' } })
+    assert.equal(r.status, 3, r.stdout + r.stderr)
+    assert.match(r.stderr, /no completion marker/)
+    const left = existsSync(dir) ? readdirSync(dir) : []
+    assert.deepEqual(left.filter((f) => f.endsWith('.sql.gz') || f.endsWith('.partial')), [], `a rejected dump was left behind: ${left.join(', ')}`)
+    // The marker at the start of the last line is still a complete dump.
+    const good = sb.run('scripts/backup-db.sh', [dir])
+    assert.equal(good.status, 0, good.stdout + good.stderr)
+    assert.equal(readdirSync(dir).filter((f) => f.endsWith('.sql.gz')).length, 1)
+  } finally {
+    cleanup(sb)
+  }
+})
+
 // ─── scripts/restore-db.sh ────────────────────────────────────────────────────
 function dbSandbox() {
   const sb = makeSandbox(`MYSQL_ROOT_PASSWORD=${SECRET}\nMYSQL_DATABASE=cdkt_admin\n`)
@@ -939,6 +961,9 @@ test('restore-db refuses a dump that is truncated, too small, or picks its own d
     const tables = Array.from({ length: 25 }, (_, i) => `CREATE TABLE t${i} (id int);`).join('\n')
     const cases: Array<[string, string, RegExp]> = [
       ['truncated', `${tables}\n`, /truncated/],
+      // Cut off inside a row whose text holds the marker: in the last 5 lines, not at a line start.
+      ['marker mid-line', `${tables}\nINSERT INTO t0 VALUES (1,'note -- Dump completed on x');\n`, /truncated/],
+      ['marker indented', `${tables}\n  -- Dump completed on x\n`, /truncated/],
       ['few tables', 'CREATE TABLE a (id int);\n-- Dump completed on x\n', /only 1 tables/],
       ['USE statement', `USE \`other_db\`;\n${tables}\n-- Dump completed on x\n`, /selects its own database/],
       ['CREATE DATABASE', `CREATE DATABASE other_db;\n${tables}\n-- Dump completed on x\n`, /selects its own database/],
@@ -987,6 +1012,13 @@ test('restore-db restores nothing if the pre-restore dump cannot be taken (exit 
     const truncated = sb.run('scripts/restore-db.sh', [file, 'cdkt_admin', '--replace'], { env: { FAKE_DUMP_TRUNCATED: '1' } })
     assert.equal(truncated.status, 3)
     assert.ok(!readdirSync(sb.dir).some((f) => f.startsWith('mysql.stdin.')))
+
+    // …and so is one cut off inside a row whose text holds the marker (not at a line start).
+    const midLine = sb.run('scripts/restore-db.sh', [file, 'cdkt_admin', '--replace'], { env: { FAKE_DUMP_MARKER_MIDLINE: '1' } })
+    assert.equal(midLine.status, 3, midLine.stdout + midLine.stderr)
+    assert.match(midLine.stderr, /nothing was restored/)
+    assert.ok(!readdirSync(sb.dir).some((f) => f.startsWith('mysql.stdin.')), 'restored over a pre-dump that was cut off')
+    assert.ok(readdirSync(sb.path('backups')).every((f) => !f.startsWith('cdkt-prerestore-')), 'the cut-off pre-dump was kept as if valid')
   } finally {
     cleanup(sb)
   }
