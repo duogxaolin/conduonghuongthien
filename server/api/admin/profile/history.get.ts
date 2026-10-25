@@ -7,23 +7,33 @@
  * tool rather than an audit trail.
  */
 
-import { and, desc, eq, gte, lte, sql } from 'drizzle-orm'
+import { and, desc, eq, gte, lt, sql } from 'drizzle-orm'
 import { getDb } from '../../../utils/db'
 import { activityLogs, users } from '../../../db/schema'
 import { getClientIp } from '../../../utils/client-ip'
+import { DAY_MS, vietnamDayStart } from '../../../utils/vn-day-range'
 
 const DEFAULT_PAGE_SIZE = 20
 const MAX_PAGE_SIZE = 100
 
-/** Rejects rather than clamping: a malformed range is a caller bug, and silently
- *  substituting a different range makes the response a lie. */
-function parseDate(raw: string | undefined, label: string): Date | null {
-  if (!raw) return null
-  const parsed = new Date(raw)
-  if (Number.isNaN(parsed.getTime())) {
-    throw createError({ statusCode: 400, statusMessage: `Giá trị ${label} không phải là ngày hợp lệ.` })
+/**
+ * `from`/`to` are Vietnam calendar days, `YYYY-MM-DD` — the rule every admin date
+ * filter follows (`server/utils/vn-day-range.ts`, same parsing as
+ * `activity-logs/index.get.ts` and `chatbot/sessions/index.get.ts`). Returns
+ * 00:00 +07:00 of that day. Rejects rather than clamping: a malformed range is a
+ * caller bug, and silently substituting a different range makes the response a lie.
+ *
+ * This used to be `new Date(raw)`: a date-only value became 00:00 UTC (07:00 in
+ * Vietnam), so `from=to=2026-10-25` was a zero-width range that returned nothing
+ * for that day, and `from` alone dropped its first seven hours.
+ */
+function parseDay(raw: unknown, label: string): Date | null {
+  if (raw === undefined || raw === null || raw === '') return null
+  const start = vietnamDayStart(raw)
+  if (!start) {
+    throw createError({ statusCode: 400, statusMessage: `Giá trị ${label} không phải là ngày hợp lệ (YYYY-MM-DD).` })
   }
-  return parsed
+  return start
 }
 
 export default defineEventHandler(async (event) => {
@@ -59,16 +69,18 @@ export default defineEventHandler(async (event) => {
     throw createError({ statusCode: 400, statusMessage: `pageSize phải là số nguyên từ 1 đến ${MAX_PAGE_SIZE}.` })
   }
 
-  const from = parseDate(query.from as string | undefined, 'from')
-  const to = parseDate(query.to as string | undefined, 'to')
-  if (from && to && from.getTime() > to.getTime()) {
+  const from = parseDay(query.from, 'from')
+  const toDay = parseDay(query.to, 'to')
+  // The end day is inclusive: everything before 00:00 +07:00 of the NEXT day.
+  const toExclusive = toDay ? new Date(toDay.getTime() + DAY_MS) : null
+  if (from && toDay && from.getTime() > toDay.getTime()) {
     throw createError({ statusCode: 400, statusMessage: 'Khoảng thời gian không hợp lệ: from phải trước to.' })
   }
 
   const db = getDb()
   const conditions = [eq(activityLogs.userId, targetId)]
   if (from) conditions.push(gte(activityLogs.createdAt, from))
-  if (to) conditions.push(lte(activityLogs.createdAt, to))
+  if (toExclusive) conditions.push(lt(activityLogs.createdAt, toExclusive))
   const where = and(...conditions)
 
   const [countRow] = await db

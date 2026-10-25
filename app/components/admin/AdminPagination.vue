@@ -42,13 +42,13 @@ function applyJump() {
 
 <template>
   <div v-if="totalPages > 1" class="flex flex-wrap items-center justify-between gap-3">
-    <span class="text-sm text-[#667768]">
+    <span class="text-sm text-ink-muted">
       {{ total != null ? total : '' }}{{ total != null && itemLabel ? ' ' : '' }}{{ itemLabel ?? '' }}
     </span>
     <nav class="flex flex-wrap items-center gap-1.5" aria-label="Phân trang">
       <button
         type="button"
-        class="flex h-9 w-9 items-center justify-center rounded-lg border border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
+        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="page <= 1"
         title="Trang đầu"
         aria-label="Trang đầu"
@@ -58,7 +58,7 @@ function applyJump() {
       </button>
       <button
         type="button"
-        class="flex h-9 w-9 items-center justify-center rounded-lg border border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
+        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="page <= 1"
         title="Trang trước"
         aria-label="Trang trước"
@@ -70,7 +70,7 @@ function applyJump() {
       <template v-for="(s, i) in slots" :key="i">
         <span
           v-if="s === 'ellipsis'"
-          class="flex h-9 w-9 items-center justify-center text-[#667768]"
+          class="flex h-9 w-9 items-center justify-center text-ink-muted"
           aria-hidden="true"
         >…</span>
         <button
@@ -78,8 +78,8 @@ function applyJump() {
           type="button"
           class="flex h-9 min-w-9 items-center justify-center rounded-lg border px-2 text-sm font-semibold"
           :class="s === page
-            ? 'border-[#2c6e33] bg-[#2c6e33] text-white'
-            : 'border-[#c8d6c9] bg-white text-[#3d4f3f] hover:bg-[#f4f7f4]'"
+            ? 'border-brand-700 bg-brand-700 text-white'
+            : 'border-line-strong bg-white text-[#3d4f3f] hover:bg-[#f4f7f4]'"
           :aria-current="s === page ? 'page' : undefined"
           :aria-label="`Trang ${s}`"
           @click="go(s as number)"
@@ -88,7 +88,7 @@ function applyJump() {
 
       <button
         type="button"
-        class="flex h-9 w-9 items-center justify-center rounded-lg border border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
+        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="page >= totalPages"
         title="Trang sau"
         aria-label="Trang sau"
@@ -98,7 +98,7 @@ function applyJump() {
       </button>
       <button
         type="button"
-        class="flex h-9 w-9 items-center justify-center rounded-lg border border-[#c8d6c9] bg-white text-[#667768] hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
+        class="flex h-9 w-9 items-center justify-center rounded-lg border border-line-strong bg-white text-ink-muted hover:bg-[#f4f7f4] disabled:cursor-not-allowed disabled:opacity-40"
         :disabled="page >= totalPages"
         title="Trang cuối"
         aria-label="Trang cuối"
@@ -119,13 +119,13 @@ function applyJump() {
           :min="1"
           :max="totalPages"
           inputmode="numeric"
-          class="h-9 w-14 rounded-lg border border-[#c8d6c9] bg-white px-2 text-center text-sm text-[#3d4f3f] focus:border-[#2c6e33] focus:outline-none focus:ring-2 focus:ring-[#2c6e33]/30"
+          class="h-9 w-14 rounded-lg border border-line-strong bg-white px-2 text-center text-sm text-[#3d4f3f] focus:border-brand-700 focus:outline-none focus:ring-2 focus:ring-brand-700/30"
           placeholder="Tr."
           :aria-label="`Nhập số trang (1-${totalPages})`"
         />
         <button
           type="submit"
-          class="flex h-9 items-center justify-center rounded-lg border border-[#c8d6c9] bg-white px-2.5 text-sm font-semibold text-[#2c6e33] hover:bg-[#f4f7f4]"
+          class="flex h-9 items-center justify-center rounded-lg border border-line-strong bg-white px-2.5 text-sm font-semibold text-brand-700 hover:bg-[#f4f7f4]"
           :aria-label="`Đi đến trang đã nhập`"
         >Đi</button>
       </form>

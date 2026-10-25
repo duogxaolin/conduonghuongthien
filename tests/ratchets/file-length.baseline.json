@@ -1,0 +1,90 @@
+{
+  "app/components/ArticleComments.vue": 732,
+  "app/components/ArticleDetail.vue": 730,
+  "app/components/ChatWidget.vue": 620,
+  "app/components/ContentTypeListSection.vue": 525,
+  "app/components/ModelArticlesListPage.vue": 535,
+  "app/components/SocialBubble.client.vue": 518,
+  "app/components/admin/AnalyticsLiveDashboard.client.vue": {
+    "value": 1060,
+    "reason": "Unsplittable: tests/analytics-live-dashboard-ui.test.ts greps ~30 patterns in this file's template and runs its script through Function() (docs/decisions/refactor-large-files.md). Allowed above the 400-line default, but capped: it may only shrink."
+  },
+  "app/components/admin/ai/AiProvidersTab.vue": 1025,
+  "app/components/admin/articles/ArticleTranslationPanel.vue": 595,
+  "app/components/admin/languages/UniversalTab.vue": 545,
+  "app/composables/i18n-default-dictionary.ts": {
+    "exempt": true,
+    "reason": "Content, not logic: the hardcoded Vietnamese fallback dictionary used when the translations API is unreachable. It grows by one line per i18n key, so growth is not a regression."
+  },
+  "app/composables/useChatbot.ts": 857,
+  "app/layouts/admin.vue": 767,
+  "app/layouts/default.vue": 401,
+  "app/pages/admin/ai/moderation.vue": 1155,
+  "app/pages/admin/chatbot/settings.vue": 448,
+  "app/pages/admin/comments/index.vue": 438,
+  "app/pages/admin/content/articles/[id].vue": 773,
+  "app/pages/admin/content/articles/index.vue": {
+    "value": 1272,
+    "reason": "Unsplittable: tests/admin-bulk-selection-ui.test.ts pins selection.* in this file's template, desktop table and mobile card both (docs/decisions/refactor-large-files.md). Allowed above the 400-line default, but capped: it may only shrink."
+  },
+  "app/pages/admin/content/categories/index.vue": 551,
+  "app/pages/admin/content/content-types.vue": 594,
+  "app/pages/admin/content/navigation/navbar.vue": 425,
+  "app/pages/admin/content/pages/[id].vue": 795,
+  "app/pages/admin/index.vue": 567,
+  "app/pages/admin/languages/index.vue": 757,
+  "app/pages/admin/livestream/index.vue": 573,
+  "app/pages/admin/login.vue": 429,
+  "app/pages/admin/media-portal/[id].vue": 414,
+  "app/pages/admin/media/index.vue": 456,
+  "app/pages/admin/profile.vue": 901,
+  "app/pages/admin/settings/backup.vue": 528,
+  "app/pages/admin/settings/data-retention.vue": 514,
+  "app/pages/admin/settings/general.vue": 539,
+  "app/pages/admin/settings/media-portal.vue": 663,
+  "app/pages/admin/settings/social-links.vue": 531,
+  "app/pages/admin/users/index.vue": 416,
+  "app/pages/assistant.vue": 470,
+  "app/pages/in-bai/[slug].vue": 496,
+  "app/pages/news/index.vue": 724,
+  "app/pages/profile.vue": 741,
+  "app/pages/qa-documents.vue": 480,
+  "app/pages/search.vue": 423,
+  "app/utils/docs/admin-docs-system.ts": 526,
+  "nuxt.config.ts": 412,
+  "scripts/deploy-remote.sh": 587,
+  "server/data/chatbot-small-talk-seed.ts": {
+    "exempt": true,
+    "reason": "Seed data, not logic: the reviewed, insert-only dataset of chatbot everyday replies (one object per reply, bounded by tests/chatbot-small-talk-dataset.test.ts). It grows when a reply is added, so growth is not a regression."
+  },
+  "server/data/default-translations-seed.ts": {
+    "exempt": true,
+    "reason": "Seed data, not logic: the insert-only seed of default languages and translation keys (one line per key). It grows with every new i18n key, so growth is not a regression."
+  },
+  "server/db/migrations-additive.ts": {
+    "exempt": true,
+    "reason": "Append-only by nature: the ensureColumn/ensureIndex/FK steps that bring databases already holding data up to the schema (design D-R). It grows with every additive migration, so growth is not a regression."
+  },
+  "server/db/schema.ts": {
+    "exempt": true,
+    "reason": "Single source of truth for every table, guarded by npm run db:drift (design D-R). It grows with every schema change, so growth is not a regression."
+  },
+  "server/db/seed.ts": 500,
+  "server/services/ai-gateway.ts": 732,
+  "server/services/analytics-maintenance.ts": 522,
+  "server/services/analytics-reporting.ts": 496,
+  "server/services/article-translations.ts": 467,
+  "server/services/backup-restore-guards.ts": 482,
+  "server/services/livestream-chat.ts": 546,
+  "server/services/livestream.ts": 513,
+  "server/services/media-sync.ts": 457,
+  "server/services/moderation-regex.ts": 686,
+  "server/services/moderation-worker.ts": 822,
+  "server/services/notifications.ts": 449,
+  "server/services/readers.ts": 550,
+  "server/services/universal-translation.ts": 546,
+  "server/utils/chatbot/chat-policy.ts": 769,
+  "server/utils/chatbot/outbound.ts": 588,
+  "server/utils/xlsx-reader.ts": 434,
+  "shared/blocks/registry.ts": 469
+}

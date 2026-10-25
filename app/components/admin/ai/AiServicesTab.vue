@@ -172,44 +172,44 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
   <div class="flex flex-col gap-5">
     <div v-if="servicesError" class="rounded-lg border border-[#f1b8b5] bg-[#fff4f3] p-3 text-sm text-[#a32924]" role="alert">
       <strong>Lỗi:</strong> {{ servicesError }}
-      <button type="button" class="font-bold underline text-[#4A6741] ml-2" @click="loadServices()">Thử lại</button>
+      <button type="button" class="font-bold underline text-brand-600 ml-2" @click="loadServices()">Thử lại</button>
     </div>
 
     <div v-if="servicesLoading" class="flex items-center justify-center py-12" role="status" aria-busy="true">
       <span class="sr-only">Đang tải danh sách dịch vụ</span>
       <div class="flex gap-1.5" aria-hidden="true">
-        <span class="w-2.5 h-2.5 rounded-full bg-[#2c6e33] animate-pulse motion-reduce:animate-none"></span>
-        <span class="w-2.5 h-2.5 rounded-full bg-[#2c6e33] animate-pulse motion-reduce:animate-none" style="animation-delay: 0.15s"></span>
-        <span class="w-2.5 h-2.5 rounded-full bg-[#2c6e33] animate-pulse motion-reduce:animate-none" style="animation-delay: 0.3s"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-brand-700 animate-pulse motion-reduce:animate-none"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-brand-700 animate-pulse motion-reduce:animate-none" style="animation-delay: 0.15s"></span>
+        <span class="w-2.5 h-2.5 rounded-full bg-brand-700 animate-pulse motion-reduce:animate-none" style="animation-delay: 0.3s"></span>
       </div>
     </div>
 
     <template v-if="!servicesLoading && !servicesError">
-      <div class="rounded-xl border border-[#e2ece3] bg-white overflow-x-auto">
+      <div class="rounded-xl border border-line bg-white overflow-x-auto">
         <table class="w-full text-sm">
           <thead class="bg-[#f4f7f4] text-left">
             <tr>
-              <th class="px-4 py-3 font-bold text-[#122815]">Dịch vụ</th>
-              <th class="px-4 py-3 font-bold text-[#122815]">Nhà cung cấp</th>
-              <th class="px-4 py-3 font-bold text-[#122815]">Model đang dùng</th>
-              <th class="px-4 py-3 font-bold text-[#122815]">Trạng thái</th>
-              <th class="px-4 py-3 font-bold text-[#122815]">Cập nhật</th>
-              <th class="px-4 py-3 font-bold text-[#122815]"></th>
+              <th class="px-4 py-3 font-bold text-brand-950">Dịch vụ</th>
+              <th class="px-4 py-3 font-bold text-brand-950">Nhà cung cấp</th>
+              <th class="px-4 py-3 font-bold text-brand-950">Model đang dùng</th>
+              <th class="px-4 py-3 font-bold text-brand-950">Trạng thái</th>
+              <th class="px-4 py-3 font-bold text-brand-950">Cập nhật</th>
+              <th class="px-4 py-3 font-bold text-brand-950"></th>
             </tr>
           </thead>
           <tbody>
-            <tr v-for="s in services" :key="s.id" class="border-t border-[#e2ece3]">
-              <td class="px-4 py-3 font-semibold text-[#122815]">{{ s.serviceName }}</td>
-              <td class="px-4 py-3 text-[#2c6e33] font-semibold">{{ s.provider }}</td>
-              <td class="px-4 py-3 text-[#122815] font-mono">{{ s.model ?? '—' }}</td>
+            <tr v-for="s in services" :key="s.id" class="border-t border-line">
+              <td class="px-4 py-3 font-semibold text-brand-950">{{ s.serviceName }}</td>
+              <td class="px-4 py-3 text-brand-700 font-semibold">{{ s.provider }}</td>
+              <td class="px-4 py-3 text-brand-950 font-mono">{{ s.model ?? '—' }}</td>
               <td class="px-4 py-3">
                 <span :class="s.isActive ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'" class="px-2 py-0.5 rounded-full text-xs font-semibold">
                   {{ s.isActive ? 'Bật' : 'Tắt' }}
                 </span>
               </td>
-              <td class="px-4 py-3 text-[#667768] text-xs">{{ formatTime(s.updatedAt) }}</td>
+              <td class="px-4 py-3 text-ink-muted text-xs">{{ formatTime(s.updatedAt) }}</td>
               <td class="px-4 py-3">
-                <button type="button" class="text-[#2c6e33] font-semibold text-xs hover:underline" @click="openServiceEdit(s)">Cấu hình</button>
+                <button type="button" class="text-brand-700 font-semibold text-xs hover:underline" @click="openServiceEdit(s)">Cấu hình</button>
               </td>
             </tr>
           </tbody>
@@ -228,7 +228,7 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
 
           <!-- 1. Chọn Nhà cung cấp -->
           <label class="flex flex-col gap-1.5 text-sm font-bold">
-            <span class="text-[#122815]">Nhà cung cấp (Provider)</span>
+            <span class="text-brand-950">Nhà cung cấp (Provider)</span>
             <select v-model="serviceForm.provider" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm bg-white">
               <option v-for="p in props.providers.filter(pr => pr.isActive)" :key="p.provider" :value="p.provider">
                 {{ p.label }} ({{ p.provider }})
@@ -237,14 +237,14 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
                 {{ serviceForm.provider }}
               </option>
             </select>
-            <span class="text-xs text-[#667768] font-normal">Chỉ hiển thị nhà cung cấp đang hoạt động.</span>
+            <span class="text-xs text-ink-muted font-normal">Chỉ hiển thị nhà cung cấp đang hoạt động.</span>
           </label>
 
           <!-- 2. Chọn Model (Lọc theo NCC đã chọn - 9Router style) -->
           <div class="flex flex-col gap-1.5 text-sm font-bold">
             <div class="flex items-center justify-between">
-              <span class="text-[#122815]">Model sử dụng</span>
-              <span class="text-xs text-[#667768] font-normal">
+              <span class="text-brand-950">Model sử dụng</span>
+              <span class="text-xs text-ink-muted font-normal">
                 Chỉ hiển thị model <strong>đang bật</strong> của {{ serviceForm.provider }}
               </span>
             </div>
@@ -255,7 +255,7 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
                   {{ m.model }} {{ m.label ? `(${m.label})` : '' }} — ${{ m.promptCostPerMillion }} in / ${{ m.completionCostPerMillion }} out
                 </option>
               </select>
-              <div v-else class="rounded-lg border border-dashed border-[#c8d6c9] p-3 text-xs text-[#a32924] bg-red-50/50">
+              <div v-else class="rounded-lg border border-dashed border-line-strong p-3 text-xs text-[#a32924] bg-red-50/50">
                 Chưa có model nào được bật cho nhà cung cấp này. Vui lòng vào tab <strong>"Nhà cung cấp & Models"</strong> để bật ít nhất 1 model.
               </div>
               <input
@@ -270,11 +270,11 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
           <!-- 3. System Prompt -->
           <div class="flex flex-col gap-1.5 text-sm font-bold">
             <div class="flex items-center justify-between">
-              <span class="text-[#122815]">System Prompt</span>
+              <span class="text-brand-950">System Prompt</span>
               <button
                 v-if="editingService.defaultSystemPrompt"
                 type="button"
-                class="px-3 py-1.5 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#122815] hover:bg-[#f0f7f1] transition-colors cursor-pointer"
+                class="px-3 py-1.5 rounded-lg border border-line-strong bg-white text-xs font-semibold text-brand-950 hover:bg-surface-tint transition-colors cursor-pointer"
                 @click="restoreDefaultServicePrompt"
               >
                 <i class="fa-solid fa-rotate-left mr-1" aria-hidden="true"></i> Khôi phục mặc định
@@ -282,28 +282,28 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
             </div>
             <textarea v-model="serviceForm.systemPrompt" rows="7" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm font-mono resize-y" placeholder="Nhập system prompt..."></textarea>
           </div>
-          <div v-if="TEMPLATE_HINTS[editingService.serviceKey]" class="flex flex-col gap-1 text-xs text-[#667768]">
+          <div v-if="TEMPLATE_HINTS[editingService.serviceKey]" class="flex flex-col gap-1 text-xs text-ink-muted">
             <span class="font-bold">Biến template có sẵn:</span>
             <div class="flex flex-wrap gap-1">
-              <code v-for="hint in TEMPLATE_HINTS[editingService.serviceKey]" :key="hint" class="px-2 py-0.5 rounded bg-[#f4f7f4] text-[#2c6e33]">{{ hint }}</code>
+              <code v-for="hint in TEMPLATE_HINTS[editingService.serviceKey]" :key="hint" class="px-2 py-0.5 rounded bg-[#f4f7f4] text-brand-700">{{ hint }}</code>
             </div>
           </div>
 
           <!-- 4. Parameters -->
           <div class="grid grid-cols-2 gap-4">
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">Temperature: {{ serviceForm.temperature }}</span>
-              <input v-model="serviceForm.temperature" type="range" min="0" max="2" step="0.01" class="accent-[#2c6e33]" />
+              <span class="text-brand-950">Temperature: {{ serviceForm.temperature }}</span>
+              <input v-model="serviceForm.temperature" type="range" min="0" max="2" step="0.01" class="accent-brand-700" />
             </label>
             <label class="flex flex-col gap-1.5 text-sm font-bold">
-              <span class="text-[#122815]">Max Tokens</span>
+              <span class="text-brand-950">Max Tokens</span>
               <input v-model.number="serviceForm.maxTokens" type="number" min="1" max="32768" class="rounded-lg border border-[#d0ddd1] px-3 py-2 text-sm" />
             </label>
           </div>
 
           <label class="flex items-center gap-3 text-sm font-semibold">
-            <input v-model="serviceForm.isActive" type="checkbox" class="w-4 h-4 accent-[#2c6e33]" />
-            <span class="text-[#122815]">Kích hoạt dịch vụ này</span>
+            <input v-model="serviceForm.isActive" type="checkbox" class="w-4 h-4 accent-brand-700" />
+            <span class="text-brand-950">Kích hoạt dịch vụ này</span>
           </label>
 
           <!-- Test result banner -->
@@ -321,14 +321,14 @@ defineExpose<{ loadServices: typeof loadServices }>({ loadServices })
         <template #footer>
             <button
               type="button"
-              class="mr-auto px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#122815] hover:bg-[#f0f7f1]"
+              class="mr-auto px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-brand-950 hover:bg-surface-tint"
               :disabled="testingService"
               @click="testService()"
             >
               {{ testingService ? 'Đang test...' : 'Kiểm tra kết nối' }}
             </button>
-            <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-[#667768] hover:bg-[#f4f7f4]" @click="editingService = null">Huỷ</button>
-            <button type="button" class="px-4 py-2 rounded-lg bg-[#2c6e33] text-white text-sm font-semibold hover:bg-[#1e4620]" @click="saveService()" :disabled="savingService">
+            <button type="button" class="px-4 py-2 rounded-lg border border-[#d0ddd1] text-sm font-semibold text-ink-muted hover:bg-[#f4f7f4]" @click="editingService = null">Huỷ</button>
+            <button type="button" class="px-4 py-2 rounded-lg bg-brand-700 text-white text-sm font-semibold hover:bg-brand-900" @click="saveService()" :disabled="savingService">
               {{ savingService ? 'Đang lưu...' : 'Lưu cấu hình' }}
             </button>
         </template>

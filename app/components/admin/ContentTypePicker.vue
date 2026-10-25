@@ -125,27 +125,27 @@ onMounted(fetchTypes)
             <div v-else-if="error" role="alert" class="text-sm text-[#B04A4A] flex items-center gap-2">
               <i class="fa-solid fa-triangle-exclamation" aria-hidden="true"></i>
               {{ error }}
-              <button type="button" class="text-[#4A6741] font-bold underline" @click="fetchTypes">Thử lại</button>
+              <button type="button" class="text-brand-600 font-bold underline" @click="fetchTypes">Thử lại</button>
             </div>
 
             <ul v-else-if="items.length" class="list-none m-0 p-0 flex flex-col gap-2 max-h-[380px] overflow-y-auto">
               <li v-for="ct in items" :key="ct.slug" class="flex flex-col">
                 <div class="flex items-center gap-2">
                   <!-- Row thể loại (click = thêm root) -->
-                  <button type="button" class="flex-1 flex items-center gap-3 px-3.5 py-2.5 rounded-lg border border-[#e2ece3] bg-white text-left text-sm hover:border-[#2c6e33] hover:bg-[#f0f7f1] transition-colors cursor-pointer" @click="pick(ct)">
-                    <i :class="[ct.icon || 'fa-solid fa-sitemap', 'text-[#2c6e33] text-[1rem]']" aria-hidden="true"></i>
-                    <span class="flex-1 font-semibold text-[#122815]">{{ ct.name }}</span>
-                    <span class="text-[0.72rem] text-[#667768] font-normal">/{{ ct.slug }}</span>
-                    <i class="fa-solid fa-plus text-[#2c6e33] text-[0.72rem]" aria-hidden="true"></i>
+                  <button type="button" class="flex-1 flex items-center gap-3 px-3.5 py-2.5 rounded-lg border border-line bg-white text-left text-sm hover:border-brand-700 hover:bg-surface-tint transition-colors cursor-pointer" @click="pick(ct)">
+                    <i :class="[ct.icon || 'fa-solid fa-sitemap', 'text-brand-700 text-[1rem]']" aria-hidden="true"></i>
+                    <span class="flex-1 font-semibold text-brand-950">{{ ct.name }}</span>
+                    <span class="text-[0.72rem] text-ink-muted font-normal">/{{ ct.slug }}</span>
+                    <i class="fa-solid fa-plus text-brand-700 text-[0.72rem]" aria-hidden="true"></i>
                   </button>
                   <!-- Nút expand category con -->
-                  <button type="button" class="w-9 h-9 flex items-center justify-center rounded-lg border border-[#e2ece3] bg-white hover:bg-[#f0f7f1] transition-colors cursor-pointer shrink-0" :aria-expanded="!!expanded[ct.slug]" :aria-label="expanded[ct.slug] ? `Thu gọn danh mục con của ${ct.name}` : `Xem danh mục con của ${ct.name}`" @click="toggleExpand(ct.slug)">
-                    <i :class="['fa-solid', expanded[ct.slug] ? 'fa-chevron-up' : 'fa-chevron-down', 'text-[#667768] text-[0.72rem]']" aria-hidden="true"></i>
+                  <button type="button" class="w-9 h-9 flex items-center justify-center rounded-lg border border-line bg-white hover:bg-surface-tint transition-colors cursor-pointer shrink-0" :aria-expanded="!!expanded[ct.slug]" :aria-label="expanded[ct.slug] ? `Thu gọn danh mục con của ${ct.name}` : `Xem danh mục con của ${ct.name}`" @click="toggleExpand(ct.slug)">
+                    <i :class="['fa-solid', expanded[ct.slug] ? 'fa-chevron-up' : 'fa-chevron-down', 'text-ink-muted text-[0.72rem]']" aria-hidden="true"></i>
                   </button>
                 </div>
 
                 <!-- Category con (expand) -->
-                <div v-if="expanded[ct.slug]" class="mt-1.5 ml-4 border-l-2 border-[#e2ece3] pl-3 flex flex-col gap-1.5">
+                <div v-if="expanded[ct.slug]" class="mt-1.5 ml-4 border-l-2 border-line pl-3 flex flex-col gap-1.5">
                   <div v-if="loadingChildren[ct.slug]" role="status" aria-busy="true" class="flex flex-col gap-1.5 py-1">
                     <span class="sr-only">Đang tải danh mục con</span>
                     <div v-for="n in 2" :key="n" class="h-8 bg-[#EEF2EC] rounded animate-pulse motion-reduce:animate-none" aria-hidden="true"></div>
@@ -155,34 +155,34 @@ onMounted(fetchTypes)
                       v-for="child in childrenByType[ct.slug]"
                       :key="child.id"
                       type="button"
-                      class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white border border-transparent hover:border-[#2c6e33] hover:bg-[#f0f7f1] transition-colors cursor-pointer text-left"
+                      class="w-full flex items-center gap-2.5 px-3 py-2 rounded-lg bg-white border border-transparent hover:border-brand-700 hover:bg-surface-tint transition-colors cursor-pointer text-left"
                       @click="pickChild(ct, child)"
                     >
                       <i class="fa-regular fa-folder text-[#8ed694] text-[0.82rem]" aria-hidden="true"></i>
                       <span class="flex-1 text-[0.85rem] font-semibold text-[#2c3e2e]">{{ child.name }}</span>
-                      <span class="text-[0.68rem] text-[#667768] font-normal">/{{ child.slug }}</span>
-                      <i class="fa-solid fa-plus text-[#2c6e33] text-[0.68rem]" aria-hidden="true"></i>
+                      <span class="text-[0.68rem] text-ink-muted font-normal">/{{ child.slug }}</span>
+                      <i class="fa-solid fa-plus text-brand-700 text-[0.68rem]" aria-hidden="true"></i>
                     </button>
                   </template>
-                  <p v-else class="text-[0.78rem] text-[#667768] m-0 py-2 px-3 italic">
+                  <p v-else class="text-[0.78rem] text-ink-muted m-0 py-2 px-3 italic">
                     Thể loại này chưa có danh mục con.
                   </p>
                 </div>
               </li>
             </ul>
 
-            <p v-else class="text-sm text-[#667768] m-0 py-6 text-center">
+            <p v-else class="text-sm text-ink-muted m-0 py-6 text-center">
               Chưa có thể loại nào. Tạo thể loại tại <strong>Quản lý nội dung → Thể loại</strong>.
             </p>
 
-            <p v-if="!loading && !error && items.length" class="text-[0.78rem] text-[#667768] m-0">
-              <i class="fa-solid fa-circle-info text-[#2c6e33] mr-1" aria-hidden="true"></i>
+            <p v-if="!loading && !error && items.length" class="text-[0.78rem] text-ink-muted m-0">
+              <i class="fa-solid fa-circle-info text-brand-700 mr-1" aria-hidden="true"></i>
               Bấm <strong>tên thể loại</strong> để thêm mục gốc, hoặc <strong>▸</strong> để xem + thêm danh mục con. Vẫn sửa label/URL tay sau khi thêm.
             </p>
           </div>
 
     <template #footer>
-            <button type="button" class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-[#667768] font-semibold text-sm cursor-pointer hover:bg-[#f8faf8] transition-colors" @click="$emit('close')">
+            <button type="button" class="px-4 py-2 rounded-lg border border-line-strong bg-white text-ink-muted font-semibold text-sm cursor-pointer hover:bg-[#f8faf8] transition-colors" @click="$emit('close')">
               Đóng
             </button>
     </template>

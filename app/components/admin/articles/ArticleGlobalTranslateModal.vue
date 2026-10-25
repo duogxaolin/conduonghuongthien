@@ -119,29 +119,29 @@ async function startGlobalTranslation() {
     @close="emit('close')"
   >
       <div class="flex flex-col gap-4">
-        <p class="m-0 text-xs text-[#667768]">Tự động quét và xếp lịch dịch cho các bài viết đã xuất bản chưa có bản dịch</p>
-        <div v-if="globalStatsLoading" class="py-8 text-center text-xs text-[#667768] flex items-center justify-center gap-2">
-          <i class="fa-solid fa-circle-notch fa-spin text-sm text-[#2c6e33]"></i> Đang thống kê bài viết...
+        <p class="m-0 text-xs text-ink-muted">Tự động quét và xếp lịch dịch cho các bài viết đã xuất bản chưa có bản dịch</p>
+        <div v-if="globalStatsLoading" class="py-8 text-center text-xs text-ink-muted flex items-center justify-center gap-2">
+          <i class="fa-solid fa-circle-notch fa-spin text-sm text-brand-700"></i> Đang thống kê bài viết...
         </div>
 
         <template v-else-if="globalStats">
-          <div class="p-3 bg-[#f0f7f1] border border-[#c8dcc9] rounded-lg text-xs text-[#1e4620]">
+          <div class="p-3 bg-surface-tint border border-[#c8dcc9] rounded-lg text-xs text-brand-900">
             Tổng số bài viết đã xuất bản trên cổng: <strong class="text-sm font-extrabold">{{ globalStats.totalArticles }}</strong> bài viết.
           </div>
 
           <div class="flex flex-col gap-2">
             <div class="flex items-center justify-between">
-              <label class="text-xs font-bold text-[#122815]">Chọn các ngôn ngữ muốn dịch toàn bộ:</label>
+              <label class="text-xs font-bold text-brand-950">Chọn các ngôn ngữ muốn dịch toàn bộ:</label>
               <div class="flex items-center gap-2 text-xs">
                 <button
                   type="button"
-                  class="text-[#2c6e33] hover:underline bg-transparent border-0 cursor-pointer p-0 font-bold"
+                  class="text-brand-700 hover:underline bg-transparent border-0 cursor-pointer p-0 font-bold"
                   @click="selectedGlobalTargetLangs = globalStats!.languages.map(l => l.code)"
                 >Chọn tất cả</button>
-                <span class="text-[#c8d6c9]">|</span>
+                <span class="text-line-strong">|</span>
                 <button
                   type="button"
-                  class="text-[#667768] hover:underline bg-transparent border-0 cursor-pointer p-0"
+                  class="text-ink-muted hover:underline bg-transparent border-0 cursor-pointer p-0"
                   @click="selectedGlobalTargetLangs = []"
                 >Bỏ chọn</button>
               </div>
@@ -152,17 +152,17 @@ async function startGlobalTranslation() {
                 v-for="l in globalStats.languages"
                 :key="l.code"
                 class="flex items-center justify-between p-3 rounded-lg border cursor-pointer transition-all"
-                :class="selectedGlobalTargetLangs.includes(l.code) ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50'"
+                :class="selectedGlobalTargetLangs.includes(l.code) ? 'border-brand-700 bg-surface-tint ring-1 ring-brand-700' : 'border-line hover:bg-gray-50'"
               >
                 <div class="flex items-center gap-2.5">
                   <input
                     type="checkbox"
                     :value="l.code"
                     v-model="selectedGlobalTargetLangs"
-                    class="h-4 w-4 accent-[#2c6e33] rounded cursor-pointer"
+                    class="h-4 w-4 accent-brand-700 rounded cursor-pointer"
                   />
                   <span class="text-base leading-none">{{ props.bulkLangs.find(b => b.code === l.code)?.flag || '🌐' }}</span>
-                  <span class="text-xs font-bold text-[#122815]">{{ l.name }}</span>
+                  <span class="text-xs font-bold text-brand-950">{{ l.name }}</span>
                 </div>
                 <span
                   class="px-2 py-0.5 rounded-full text-[0.65rem] font-bold"
@@ -175,27 +175,27 @@ async function startGlobalTranslation() {
           </div>
           <!-- Trạng thái sau khi dịch -->
           <div class="flex flex-col gap-1.5">
-            <label class="text-xs font-bold text-[#122815]">Trạng thái bản dịch sau khi AI dịch xong:</label>
+            <label class="text-xs font-bold text-brand-950">Trạng thái bản dịch sau khi AI dịch xong:</label>
             <div class="grid grid-cols-1 sm:grid-cols-2 gap-2">
               <label
                 class="flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-all"
-                :class="globalTargetStatus === 'ai_draft' ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50'"
+                :class="globalTargetStatus === 'ai_draft' ? 'border-brand-700 bg-surface-tint ring-1 ring-brand-700' : 'border-line hover:bg-gray-50'"
               >
-                <input type="radio" value="ai_draft" v-model="globalTargetStatus" class="accent-[#2c6e33] mt-0.5" />
+                <input type="radio" value="ai_draft" v-model="globalTargetStatus" class="accent-brand-700 mt-0.5" />
                 <div class="flex flex-col">
-                  <span class="text-xs font-bold text-[#122815]">📝 Lưu làm Bản nháp AI</span>
-                  <span class="text-[0.68rem] text-[#667768] mt-0.5">Rà soát, kiểm tra lại rồi mới xuất bản (Khuyên dùng)</span>
+                  <span class="text-xs font-bold text-brand-950">📝 Lưu làm Bản nháp AI</span>
+                  <span class="text-[0.68rem] text-ink-muted mt-0.5">Rà soát, kiểm tra lại rồi mới xuất bản (Khuyên dùng)</span>
                 </div>
               </label>
 
               <label
                 class="flex items-start gap-2.5 p-3 rounded-lg border cursor-pointer transition-all"
-                :class="globalTargetStatus === 'published' ? 'border-[#2c6e33] bg-[#f0f7f1] ring-1 ring-[#2c6e33]' : 'border-[#e2ece3] hover:bg-gray-50'"
+                :class="globalTargetStatus === 'published' ? 'border-brand-700 bg-surface-tint ring-1 ring-brand-700' : 'border-line hover:bg-gray-50'"
               >
-                <input type="radio" value="published" v-model="globalTargetStatus" class="accent-[#2c6e33] mt-0.5" />
+                <input type="radio" value="published" v-model="globalTargetStatus" class="accent-brand-700 mt-0.5" />
                 <div class="flex flex-col">
-                  <span class="text-xs font-bold text-[#122815]">🚀 Xuất bản luôn</span>
-                  <span class="text-[0.68rem] text-[#667768] mt-0.5">Hiển thị ngay lập tức ra trang công khai</span>
+                  <span class="text-xs font-bold text-brand-950">🚀 Xuất bản luôn</span>
+                  <span class="text-[0.68rem] text-ink-muted mt-0.5">Hiển thị ngay lập tức ra trang công khai</span>
                 </div>
               </label>
             </div>
@@ -217,12 +217,12 @@ async function startGlobalTranslation() {
     <template #footer>
         <button
           type="button"
-          class="px-4 py-2 rounded-lg border border-[#c8d6c9] bg-white text-xs font-semibold text-[#667768] hover:bg-gray-100 cursor-pointer"
+          class="px-4 py-2 rounded-lg border border-line-strong bg-white text-xs font-semibold text-ink-muted hover:bg-gray-100 cursor-pointer"
           @click="emit('close')"
         >Hủy</button>
         <button
           type="button"
-          class="px-5 py-2 rounded-lg bg-[#1e4620] hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-2 shadow-xs disabled:opacity-50"
+          class="px-5 py-2 rounded-lg bg-brand-900 hover:bg-[#153317] text-white text-xs font-bold border-none cursor-pointer flex items-center gap-2 shadow-xs disabled:opacity-50"
           :disabled="globalTranslating || !globalStats"
           @click="startGlobalTranslation"
         >
